@@ -17,3 +17,6 @@ Commits favor short imperative subjects; add Conventional Commit prefixes only w
 
 ## Provider Configuration & Security
 Load configuration from `.env` but keep secrets out of Git. Required keys: `AICE_PROVIDER`, `AICE_OPENAI_API_KEY`, `AICE_ANTHROPIC_API_KEY`, `AICE_DEEPSEEK_API_KEY`; optional overrides include `AICE_MODEL` or `AICE_TIMEOUT_MS`. Validate inputs before instantiating SDK clients and display actionable errors in the status bar. Gate verbose HTTP tracing behind `DEBUG` and redact prompt text in logs.
+
+## Planning & Tracking
+Maintain a living `TODO.md` at the repo root. Every major phase (dependencies, session layer, providers, Ink UI, Agents integration) should have a checkbox entry, updated as work progresses. When plans change, edit both `TODO.md` and this guide so contributors always know the current roadmap and documentation expectations.
