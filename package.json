@@ -10,7 +10,11 @@
   "dependencies": {
     "@oclif/core": "^4",
     "@oclif/plugin-help": "^6",
-    "@oclif/plugin-plugins": "^5"
+    "@oclif/plugin-plugins": "^5",
+    "dotenv": "^17.2.3",
+    "ink": "^6.4.0",
+    "openai": "^6.8.1",
+    "react": "^19.2.0"
   },
   "devDependencies": {
     "@eslint/compat": "^1",
@@ -19,6 +23,7 @@
     "@types/chai": "^4",
     "@types/mocha": "^10",
     "@types/node": "^18",
+    "@types/react": "^19.2.3",
     "chai": "^4",
     "eslint": "^9",
     "eslint-config-oclif": "^6",
