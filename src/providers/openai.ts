@@ -1,3 +1,5 @@
+import type {ResponseStreamEvent, ResponseUsage} from 'openai/resources/responses/responses'
+
 import OpenAI from 'openai'
 
 import type {LLMProvider, SessionRequest} from '../core/session.js'
@@ -46,51 +48,53 @@ export class OpenAIProvider implements LLMProvider<OpenAISessionRequest> {
     return segments
   }
 
-  #mapEventToChunk(event: OpenAI.Client.Responses.Stream.Event): null | ProviderStreamChunk {
+  #mapEventToChunks(event: ResponseStreamEvent): ProviderStreamChunk[] {
+    const now = Date.now()
+
     switch (event.type) {
-      case 'response.completed': {
-        return {
-          status: 'completed',
-          timestamp: Date.now(),
-          type: 'status',
-        }
+      case 'error': {
+        return [{error: new Error(event.message), timestamp: now, type: 'error'}]
       }
 
-      case 'response.error': {
-        return {
-          error: event.error ?? new Error('Unknown OpenAI error'),
-          timestamp: Date.now(),
-          type: 'error',
+      case 'response.completed': {
+        const chunks: ProviderStreamChunk[] = []
+
+        if (event.response.usage) {
+          chunks.push({
+            timestamp: now,
+            type: 'usage',
+            usage: this.#mapUsage(event.response.usage),
+          })
         }
+
+        chunks.push({status: 'completed', timestamp: now, type: 'status'})
+
+        return chunks
+      }
+
+      case 'response.failed': {
+        return [{error: new Error('OpenAI response failed'), timestamp: now, type: 'error'}]
+      }
+
+      case 'response.in_progress': {
+        return [{status: 'running', timestamp: now, type: 'status'}]
       }
 
       case 'response.output_text.delta': {
-        return {
-          text: event.delta,
-          timestamp: Date.now(),
-          type: 'text',
-        }
+        return [{text: event.delta, timestamp: now, type: 'text'}]
       }
 
       case 'response.output_text.done': {
-        return null
-      }
-
-      case 'response.output_usage': {
-        return {
-          timestamp: Date.now(),
-          type: 'usage',
-          usage: this.#mapUsage(event.usage),
-        }
+        return []
       }
 
       default: {
-        return null
+        return []
       }
     }
   }
 
-  #mapUsage(usage?: null | OpenAI.ResponseUsage): TokenUsage {
+  #mapUsage(usage?: null | ResponseUsage): TokenUsage {
     return {
       inputTokens: usage?.input_tokens ?? undefined,
       outputTokens: usage?.output_tokens ?? undefined,
@@ -114,8 +118,8 @@ export class OpenAIProvider implements LLMProvider<OpenAISessionRequest> {
 
     try {
       for await (const event of response) {
-        const chunk = this.#mapEventToChunk(event)
-        if (chunk) {
+        const chunks = this.#mapEventToChunks(event)
+        for (const chunk of chunks) {
           yield chunk
         }
       }

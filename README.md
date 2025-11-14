@@ -17,9 +17,26 @@ Install dependencies:
 yarn install
 ```
 
+Create a `.env` (or export vars) with at least:
+
+```
+AICE_PROVIDER=openai
+AICE_OPENAI_API_KEY=sk-...
+AICE_MODEL=gpt-4o-mini   # optional override
+```
+
+## Usage
+Run the TypeScript CLI directly via the dev entrypoint:
+
+```bash
+AICE_OPENAI_API_KEY=sk-test node bin/dev.js chat "Hello there"
+```
+
+The MVP shell streams chunks to stdout, logging provider/model metadata, delta tokens, and usage stats when provided by OpenAI.
+
 ## Development
 - `yarn build` — type-check and compile to `dist/`
-- `yarn test` — run the Mocha suite (currently empty, add specs as features land)
+- `yarn test` — run the Mocha suite (session/provider/chat-runner tests + smoke test)
 - `yarn lint` — ESLint with the oclif + Prettier config
 - `node bin/dev.js --help` — run the CLI in ts-node dev mode
 

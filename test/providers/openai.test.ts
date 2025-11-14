@@ -1,4 +1,5 @@
 import type OpenAI from 'openai'
+import type {ResponseStreamEvent} from 'openai/resources/responses/responses'
 
 import {expect} from 'chai'
 
@@ -6,7 +7,7 @@ import type {ProviderStreamChunk} from '../../src/core/stream.ts'
 
 import {OpenAIProvider, type OpenAISessionRequest} from '../../src/providers/openai.ts'
 
-type StreamEvent = OpenAI.Client.Responses.Stream.Event
+type StreamEvent = ResponseStreamEvent | {[key: string]: unknown; type: string}
 
 class FakeResponseStream implements AsyncIterable<StreamEvent> {
   aborted = false
@@ -69,15 +70,17 @@ describe('OpenAIProvider', () => {
 
   it('streams delta, usage, and completion events in order', async () => {
     const events: StreamEvent[] = [
-      {delta: 'Hello', type: 'response.output_text.delta'},
-      {delta: ' world', type: 'response.output_text.delta'},
+      {delta: 'Hello', type: 'response.output_text.delta'} as StreamEvent,
+      {delta: ' world', type: 'response.output_text.delta'} as StreamEvent,
       {
-        type: 'response.output_usage',
-        /* eslint-disable camelcase */
-        usage: {input_tokens: 5, output_tokens: 7, total_tokens: 12},
-        /* eslint-enable camelcase */
-      },
-      {type: 'response.completed'},
+        response: {
+          /* eslint-disable camelcase */
+          usage: {input_tokens: 5, output_tokens: 7, total_tokens: 12},
+          /* eslint-enable camelcase */
+        },
+        'sequence_number': 3,
+        type: 'response.completed',
+      } as StreamEvent,
     ]
 
     const fakeClient = new FakeOpenAI(events)
@@ -114,9 +117,9 @@ describe('OpenAIProvider', () => {
 
   it('emits error chunks when the stream reports response.error', async () => {
     const events: StreamEvent[] = [
-      {delta: 'partial', type: 'response.output_text.delta'},
-      {error: new Error('boom'), type: 'response.error'},
-      {type: 'response.completed'},
+      {delta: 'partial', type: 'response.output_text.delta'} as StreamEvent,
+      {message: 'boom', type: 'error'} as StreamEvent,
+      {type: 'response.completed'} as StreamEvent,
     ]
 
     const fakeClient = new FakeOpenAI(events)

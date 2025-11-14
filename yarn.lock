@@ -4249,6 +4249,11 @@ init-package-json@^7.0.2:
     validate-npm-package-license "^3.0.4"
     validate-npm-package-name "^6.0.0"
 
+ink-testing-library@^4.0.0:
+  version "4.0.0"
+  resolved "https://registry.npmmirror.com/ink-testing-library/-/ink-testing-library-4.0.0.tgz#7071dac9a3d783e7bab2ee05fdf1d01a2cd3bb0d"
+  integrity sha512-yF92kj3pmBvk7oKbSq5vEALO//o7Z9Ck/OaLNlkzXNeYdwfpxMQkSowGTFUCS5MSu9bWfSZMewGpp7bFc66D7Q==
+
 ink@^6.4.0:
   version "6.4.0"
   resolved "https://registry.npmmirror.com/ink/-/ink-6.4.0.tgz#40c365767995b3ff6309ca80a3c3aefdac504f1a"

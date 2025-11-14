@@ -28,6 +28,7 @@
     "eslint": "^9",
     "eslint-config-oclif": "^6",
     "eslint-config-prettier": "^10",
+    "ink-testing-library": "^4.0.0",
     "mocha": "^10",
     "oclif": "^4",
     "shx": "^0.3.3",
