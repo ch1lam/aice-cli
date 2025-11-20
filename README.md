@@ -1,11 +1,11 @@
 # aice-cli
 
-Early-stage CLI for experimenting with local and cloud LLM providers. The current repo is an oclif shell that we will extend with streaming chat, an Ink-based TUI, and first-class adapters for OpenAI, Anthropic, and DeepSeek.
+Early-stage CLI for experimenting with cloud LLM providers. The current repo is an oclif shell with a streaming chat path and a thin provider layer (OpenAI), plus room for an Ink-based TUI.
 
 ## Status
-- Ready: project skeleton (oclif executables + TypeScript tooling)
-- In progress: chat session core, provider adapters, and Ink UI
-- On deck: streaming conversations, multi-model config, prompt history, extensibility hooks
+- Ready: oclif skeleton + streaming chat path (`chat` -> controller -> session/stream -> provider) for OpenAI
+- In progress: Ink UI components and higher-level orchestration
+- On deck: Anthropic/DeepSeek adapters, provider switching, prompt history, and extensibility hooks
 
 ## Requirements
 - Node.js >= 18
@@ -32,7 +32,7 @@ Run the TypeScript CLI directly via the dev entrypoint:
 AICE_OPENAI_API_KEY=sk-test node bin/dev.js chat "Hello there"
 ```
 
-The MVP shell streams chunks to stdout, logging provider/model metadata, delta tokens, and usage stats when provided by OpenAI.
+The MVP shell streams chunks to stdout: `chat.ts` parses flags, `ChatController` delegates to the provider via the session layer, and `chat-runner.ts` renders meta/status/text/usage chunks.
 
 ## Development
 - `yarn build` — type-check and compile to `dist/`

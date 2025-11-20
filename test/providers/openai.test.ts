@@ -1,4 +1,4 @@
-import type OpenAI from 'openai'
+import type {OpenAI as OpenAIClient} from 'openai'
 import type {ResponseStreamEvent} from 'openai/resources/responses/responses'
 
 import {expect} from 'chai'
@@ -86,7 +86,7 @@ describe('OpenAIProvider', () => {
     const fakeClient = new FakeOpenAI(events)
     const provider = new OpenAIProvider(
       {apiKey: 'test-key', model: 'gpt-4o-mini'},
-      fakeClient as unknown as OpenAI,
+      fakeClient as unknown as OpenAIClient,
     )
 
     const request = {
@@ -123,7 +123,10 @@ describe('OpenAIProvider', () => {
     ]
 
     const fakeClient = new FakeOpenAI(events)
-    const provider = new OpenAIProvider({apiKey: 'test-key', model: 'gpt-4o-mini'}, fakeClient as unknown as OpenAI)
+    const provider = new OpenAIProvider(
+      {apiKey: 'test-key', model: 'gpt-4o-mini'},
+      fakeClient as unknown as OpenAIClient,
+    )
 
     const request: OpenAISessionRequest = {
       model: 'gpt-4o-mini',

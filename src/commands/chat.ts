@@ -1,8 +1,7 @@
 import {Args, Command, Flags} from '@oclif/core'
 
+import {ChatController} from '../chat/controller.js'
 import {loadProviderEnv} from '../config/env.js'
-import {runSession} from '../core/session.js'
-import {OpenAIProvider} from '../providers/openai.js'
 import {renderStream} from './chat-runner.js'
 
 export default class Chat extends Command {
@@ -36,27 +35,15 @@ export default class Chat extends Command {
   async run(): Promise<void> {
     const {args, flags} = await this.parse(Chat)
     const env = loadProviderEnv()
+    const controller = new ChatController({env})
 
-    if (flags.provider !== env.providerId) {
-      throw new Error(`Only ${env.providerId} provider is available right now`)
-    }
-
-    const providerConfig = {
-      apiKey: env.apiKey,
-      baseURL: env.baseURL,
-      model: env.model ?? flags.model,
-    }
-    const provider = new OpenAIProvider(providerConfig)
-
-    const request = {
-      model: flags.model ?? env.model ?? 'gpt-4o-mini',
+    const stream = controller.createStream({
+      model: flags.model,
       prompt: args.prompt,
-      providerId: provider.id,
+      providerId: flags.provider,
       systemPrompt: flags.system,
       temperature: flags.temperature,
-    }
-
-    const stream = runSession(provider, request)
+    })
 
     await renderStream(stream, {
       error: error => this.error(error, {exit: 1}),

@@ -1,9 +1,15 @@
-import type {ResponseStreamEvent, ResponseUsage} from 'openai/resources/responses/responses'
+import type {
+  EasyInputMessage,
+  ResponseCreateParamsStreaming,
+  ResponseStreamEvent,
+  ResponseUsage,
+} from 'openai/resources/responses/responses'
 
-import OpenAI from 'openai'
+import {OpenAI} from 'openai'
 
 import type {LLMProvider, SessionRequest} from '../core/session.js'
 import type {ProviderStream, ProviderStreamChunk, TokenUsage} from '../core/stream.js'
+
 
 export interface OpenAIProviderConfig {
   apiKey: string
@@ -36,8 +42,8 @@ export class OpenAIProvider implements LLMProvider<OpenAISessionRequest> {
     return this.#streamResponses(request)
   }
 
-  #buildInput(request: OpenAISessionRequest): Array<{content: string; role: 'system' | 'user'}> {
-    const segments: Array<{content: string; role: 'system' | 'user'}> = []
+  #buildInput(request: OpenAISessionRequest): ResponseCreateParamsStreaming['input'] {
+    const segments: EasyInputMessage[] = []
 
     if (request.systemPrompt) {
       segments.push({content: request.systemPrompt, role: 'system'})
