@@ -39,7 +39,9 @@ export class ChatController {
 
   #assertProvider(requestedId: ProviderId): void {
     if (requestedId !== this.#env.providerId) {
-      throw new Error(`Only ${this.#env.providerId} provider is available right now`)
+      throw new Error(
+        `Configured provider ${this.#env.providerId} does not match requested ${requestedId}`,
+      )
     }
   }
 }

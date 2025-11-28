@@ -70,7 +70,7 @@ describe('ChatController', () => {
     })
 
     expect(() => controller.createStream({prompt: 'hi', providerId: 'anthropic'})).to.throw(
-      'Only openai provider is available right now',
+      'Configured provider openai does not match requested anthropic',
     )
   })
 })

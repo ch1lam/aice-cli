@@ -11,6 +11,7 @@
     "@oclif/core": "^4",
     "@oclif/plugin-help": "^6",
     "@oclif/plugin-plugins": "^5",
+    "@anthropic-ai/sdk": "^0.36.0",
     "dotenv": "^17.2.3",
     "ink": "^6.4.0",
     "openai": "^6.8.1",

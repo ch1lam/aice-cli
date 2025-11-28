@@ -19,8 +19,7 @@ export default class Chat extends Command {
     }),
     provider: Flags.string({
       char: 'p',
-      default: 'openai',
-      description: 'Provider ID (currently openai only)',
+      description: 'Provider ID (openai, anthropic, deepseek)',
     }),
     system: Flags.string({
       char: 's',
@@ -34,13 +33,14 @@ export default class Chat extends Command {
 
   async run(): Promise<void> {
     const {args, flags} = await this.parse(Chat)
-    const env = loadProviderEnv()
+    const providerId = flags.provider ?? (process.env.AICE_PROVIDER as string) ?? 'openai'
+    const env = loadProviderEnv({providerId})
     const controller = new ChatController({env})
 
     const stream = controller.createStream({
       model: flags.model,
       prompt: args.prompt,
-      providerId: flags.provider,
+      providerId,
       systemPrompt: flags.system,
       temperature: flags.temperature,
     })
