@@ -4,7 +4,7 @@ import path from 'node:path'
 
 import type {ProviderId} from '../core/stream.js'
 
-dotenv.config()
+dotenv.config({quiet: true})
 
 export interface ProviderEnv {
   apiKey: string

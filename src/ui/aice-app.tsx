@@ -52,6 +52,7 @@ export function AiceApp(props: AiceAppProps) {
     providerId: props.initialEnv?.providerId ?? 'openai',
     step: 'provider',
   })
+  const [cursorVisible, setCursorVisible] = useState(true)
 
   const messageId = useRef(0)
 
@@ -68,6 +69,16 @@ export function AiceApp(props: AiceAppProps) {
       addSystemMessage('No provider configured. Starting setup...')
     }
   }, [props.initialEnv, props.initialError])
+
+  useEffect(() => {
+    const intervalId = setInterval(() => {
+      setCursorVisible(current => !current)
+    }, 500)
+
+    return () => {
+      clearInterval(intervalId)
+    }
+  }, [])
 
   useInput((receivedInput, key) => {
     if (key.ctrl && receivedInput === 'c') {
@@ -451,14 +462,16 @@ export function AiceApp(props: AiceAppProps) {
         ))}
         {streaming ? (
           <Text color="green" wrap="wrap">
-            {`Assistant: ${currentResponse || '...'}${sessionStatus === 'completed' ? '' : ' ▌'}`}
+            {`Assistant: ${currentResponse || '...'}${
+              sessionStatus === 'completed' || !cursorVisible ? '  ' : ' ▌'
+            }`}
           </Text>
         ) : null}
       </Box>
       <StatusBar meta={providerMeta} status={sessionStatus} usage={sessionUsage} />
       <Box>
         <Text color="yellow">{inputLabel}</Text>
-        <Text>{` ${renderedInput}`}</Text>
+        <Text>{` ${renderedInput}${streaming ? '' : cursorVisible ? '▌' : ' '}`}</Text>
       </Box>
       <Text dimColor>{hint}</Text>
     </Box>
