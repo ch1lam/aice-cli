@@ -444,14 +444,15 @@ export function AiceApp(props: AiceAppProps) {
     return {id, role, text}
   }
 
-  const inputLabel = mode === 'setup' ? 'setup' : 'chat'
+  const inputLabel = '>'
   const renderedInput = maskInput ? '*'.repeat(input.length) : input
   const providerMeta = sessionMeta ?? (providerEnv ? createMetaFromEnv(providerEnv) : undefined)
   const hint =
     mode === 'setup'
       ? setupPrompt(setupState.step)
       : 'Type a prompt or use /help, /login, /provider, /model, /clear'
-  const inputHint = streaming ? 'Processing response...' : hint
+  const inputHint =
+    streaming || mode === 'setup' ? hint : 'Chat mode. Type a prompt or use /help.'
   const showCursor = !streaming && cursorVisible
 
   return (
