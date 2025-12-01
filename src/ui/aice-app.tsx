@@ -9,6 +9,7 @@ import {
   type ProviderEnv,
   tryLoadProviderEnv,
 } from '../config/env.js'
+import {InputPanel} from './input-panel.js'
 import {StatusBar} from './status-bar.js'
 
 type Mode = 'chat' | 'setup'
@@ -443,13 +444,15 @@ export function AiceApp(props: AiceAppProps) {
     return {id, role, text}
   }
 
-  const inputLabel = mode === 'setup' ? 'setup>' : 'aice>'
+  const inputLabel = mode === 'setup' ? 'setup' : 'chat'
   const renderedInput = maskInput ? '*'.repeat(input.length) : input
   const providerMeta = sessionMeta ?? (providerEnv ? createMetaFromEnv(providerEnv) : undefined)
   const hint =
     mode === 'setup'
       ? setupPrompt(setupState.step)
       : 'Type a prompt or use /help, /login, /provider, /model, /clear'
+  const inputHint = streaming ? 'Processing response...' : hint
+  const showCursor = !streaming && cursorVisible
 
   return (
     <Box flexDirection="column">
@@ -469,11 +472,15 @@ export function AiceApp(props: AiceAppProps) {
         ) : null}
       </Box>
       <StatusBar meta={providerMeta} status={sessionStatus} usage={sessionUsage} />
-      <Box>
-        <Text color="yellow">{inputLabel}</Text>
-        <Text>{` ${renderedInput}${streaming ? '' : cursorVisible ? '▌' : ' '}`}</Text>
+      <Box marginTop={1}>
+        <InputPanel
+          cursorVisible={showCursor}
+          disabled={streaming}
+          hint={inputHint}
+          label={inputLabel}
+          value={renderedInput}
+        />
       </Box>
-      <Text dimColor>{hint}</Text>
     </Box>
   )
 }
