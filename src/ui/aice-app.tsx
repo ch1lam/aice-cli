@@ -1,16 +1,16 @@
-import {Box, Text, useApp, useInput} from 'ink'
-import {useEffect, useRef, useState} from 'react'
+import { Box, Text, useApp, useInput } from 'ink'
+import { useEffect, useRef, useState } from 'react'
 
-import type {ProviderId, SessionStream, StreamStatus, TokenUsage} from '../core/stream.js'
+import type { ProviderId, SessionStream, StreamStatus, TokenUsage } from '../core/stream.js'
 
-import {ChatController} from '../chat/controller.js'
+import { ChatController } from '../chat/controller.js'
 import {
   persistProviderEnv,
   type ProviderEnv,
   tryLoadProviderEnv,
 } from '../config/env.js'
-import {InputPanel} from './input-panel.js'
-import {StatusBar} from './status-bar.js'
+import { InputPanel } from './input-panel.js'
+import { StatusBar } from './status-bar.js'
 
 type Mode = 'chat' | 'setup'
 
@@ -472,8 +472,7 @@ export function AiceApp(props: AiceAppProps) {
           </Text>
         ) : null}
       </Box>
-      <StatusBar meta={providerMeta} status={sessionStatus} usage={sessionUsage} />
-      <Box marginTop={1}>
+      <Box>
         <InputPanel
           cursorVisible={showCursor}
           disabled={streaming}
@@ -481,6 +480,9 @@ export function AiceApp(props: AiceAppProps) {
           label={inputLabel}
           value={renderedInput}
         />
+      </Box>
+      <Box>
+        <StatusBar meta={providerMeta} status={sessionStatus} usage={sessionUsage} />
       </Box>
     </Box>
   )
