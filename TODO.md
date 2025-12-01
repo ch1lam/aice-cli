@@ -11,4 +11,4 @@
 - [x] Add a first-run setup flow that guides provider selection and API key entry, writes `.env`, and validates connectivity; expose `/login` to update credentials later.
 - [x] Implement a slash-command router in the TUI (`/help`, `/provider`, `/model`, `/login`, `/clear` to start) with status feedback.
 - [x] Support multi-turn sessions in the TUI, keeping history and provider settings across messages.
-- [ ] Layer in the OpenAI Agents SDK for high-level orchestration once the core streaming path and TUI shell are stable.
+- [x] Layer in the OpenAI Agents SDK for high-level orchestration once the core streaming path and TUI shell are stable.

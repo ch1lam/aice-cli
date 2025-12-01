@@ -5,7 +5,8 @@ Early-stage CLI for experimenting with cloud LLM providers. It defaults to an In
 ## Status
 - Ready: streaming chat path (`chat` -> controller -> session/stream -> provider) for OpenAI/Anthropic/DeepSeek; provider adapters follow a shared chunking interface.
 - Ready: TUI-first default command (`aice`) that opens an Ink chat shell with an input bar, streaming transcript, first-run setup for provider/API key, and slash commands (`/help`, `/login`, `/provider`, `/model`, `/clear`).
-- On deck: richer prompt history, provider/agent orchestration, and OpenAI Agents integration once the TUI shell is fully hardened.
+- Ready: OpenAI Agents SDK provider wired into the shared streaming path for higher-level orchestration.
+- On deck: richer prompt history and provider orchestration polish.
 
 ## Requirements
 - Node.js >= 18
@@ -24,6 +25,11 @@ Create a `.env` (or export vars) with at least one provider configured:
 AICE_PROVIDER=openai
 AICE_OPENAI_API_KEY=sk-...
 AICE_MODEL=gpt-4o-mini           # optional OpenAI override
+
+# OpenAI Agents
+# AICE_PROVIDER=openai-agents
+# AICE_OPENAI_API_KEY=sk-...
+# AICE_OPENAI_AGENT_MODEL=gpt-4.1 # optional override for the Agents SDK
 
 # Anthropic
 # AICE_PROVIDER=anthropic

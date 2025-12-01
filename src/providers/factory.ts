@@ -4,6 +4,7 @@ import type {ProviderId} from '../core/stream.js'
 
 import {AnthropicProvider, type AnthropicSessionRequest} from './anthropic.js'
 import {DeepSeekProvider, type DeepSeekSessionRequest} from './deepseek.js'
+import {OpenAIAgentsProvider, type OpenAIAgentsSessionRequest} from './openai-agents.js'
 import {OpenAIProvider} from './openai.js'
 
 export interface ProviderRequestInput {
@@ -88,6 +89,27 @@ export function createProviderBinding(
             systemPrompt: input.systemPrompt,
             temperature: input.temperature,
           }
+        },
+        provider,
+      }
+    }
+
+    case 'openai-agents': {
+      const provider = new OpenAIAgentsProvider({
+        apiKey: options.env.apiKey,
+        baseURL: options.env.baseURL,
+        model: options.env.model,
+      })
+
+      return {
+        createRequest(input) {
+          return {
+            model: input.model ?? options.env.model ?? 'gpt-4.1',
+            prompt: input.prompt,
+            providerId: provider.id,
+            systemPrompt: input.systemPrompt,
+            temperature: input.temperature,
+          } satisfies OpenAIAgentsSessionRequest
         },
         provider,
       }

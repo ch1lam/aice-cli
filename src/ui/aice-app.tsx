@@ -111,7 +111,7 @@ export function AiceApp(props: AiceAppProps) {
     if (setupState.step === 'provider') {
       const providerId = parseProviderId(value) ?? (value ? undefined : 'openai')
       if (!providerId) {
-        addSystemMessage('Provider must be one of: openai, anthropic, deepseek')
+        addSystemMessage('Provider must be one of: openai, openai-agents, anthropic, deepseek')
         return
       }
 
@@ -253,7 +253,9 @@ export function AiceApp(props: AiceAppProps) {
           step: 'provider',
         }))
         setMaskInput(false)
-        addSystemMessage('Restarting setup. Choose provider (openai/anthropic/deepseek).')
+        addSystemMessage(
+          'Restarting setup. Choose provider (openai/openai-agents/anthropic/deepseek).',
+        )
         break
       }
 
@@ -306,7 +308,7 @@ export function AiceApp(props: AiceAppProps) {
       case 'provider': {
         const providerId = parseProviderId(rest[0] ?? '')
         if (!providerId) {
-          addSystemMessage('Usage: /provider <openai|anthropic|deepseek>')
+          addSystemMessage('Usage: /provider <openai|openai-agents|anthropic|deepseek>')
           return
         }
 
@@ -464,7 +466,12 @@ export function AiceApp(props: AiceAppProps) {
 }
 
 function parseProviderId(value: string): ProviderId | undefined {
-  if (value === 'openai' || value === 'anthropic' || value === 'deepseek') {
+  if (
+    value === 'openai' ||
+    value === 'openai-agents' ||
+    value === 'anthropic' ||
+    value === 'deepseek'
+  ) {
     return value
   }
 
@@ -502,7 +509,7 @@ function createMetaFromEnv(env: ProviderEnv): {model: string; providerId: Provid
 
 function setupPrompt(step: SetupStep): string {
   if (step === 'provider') {
-    return 'Choose provider (openai/anthropic/deepseek). Press Enter for openai.'
+    return 'Choose provider (openai/openai-agents/anthropic/deepseek). Press Enter for openai.'
   }
 
   if (step === 'apiKey') {

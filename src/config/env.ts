@@ -66,6 +66,24 @@ export function loadProviderEnv(options?: LoadProviderEnvOptions): ProviderEnv {
       }
     }
 
+    case 'openai-agents': {
+      const apiKey = process.env.AICE_OPENAI_API_KEY
+
+      if (!apiKey) {
+        throw new Error('Missing AICE_OPENAI_API_KEY')
+      }
+
+      return {
+        apiKey,
+        baseURL: process.env.AICE_OPENAI_BASE_URL,
+        model:
+          process.env.AICE_OPENAI_AGENT_MODEL ??
+          process.env.AICE_OPENAI_MODEL ??
+          process.env.AICE_MODEL,
+        providerId,
+      }
+    }
+
     default: {
       throw new Error(`Unsupported provider: ${providerId}`)
     }
@@ -144,6 +162,16 @@ function buildEnvEntries(options: ProviderCredentials): Record<string, string | 
         AICE_OPENAI_API_KEY: options.apiKey,
         AICE_OPENAI_BASE_URL: options.baseURL,
         AICE_OPENAI_MODEL: options.model,
+      }
+    }
+
+    case 'openai-agents': {
+      return {
+        AICE_MODEL: undefined,
+        AICE_OPENAI_AGENT_MODEL: options.model,
+        AICE_OPENAI_API_KEY: options.apiKey,
+        AICE_OPENAI_BASE_URL: options.baseURL,
+        AICE_OPENAI_MODEL: undefined,
       }
     }
 
