@@ -7,4 +7,8 @@
 - [x] Add a controller + provider binding layer between the CLI and providers; keep CLI rendering in `chat-runner.ts`.
 - [x] Create Ink components (`ChatWindow`, `StatusBar`) that render streaming output and provider status; cover with `ink-testing-library`.
 - [x] Clone the provider pattern for Anthropic and DeepSeek (official SDKs) and allow `--provider` switching via the binding factory.
-- [ ] Layer in the OpenAI Agents SDK for high-level orchestration once the core streaming path is stable.
+- [x] Make `aice` (no args) launch the Ink TUI with a chat input bar; keep `chat` for scripted single-turn calls.
+- [x] Add a first-run setup flow that guides provider selection and API key entry, writes `.env`, and validates connectivity; expose `/login` to update credentials later.
+- [x] Implement a slash-command router in the TUI (`/help`, `/provider`, `/model`, `/login`, `/clear` to start) with status feedback.
+- [x] Support multi-turn sessions in the TUI, keeping history and provider settings across messages.
+- [ ] Layer in the OpenAI Agents SDK for high-level orchestration once the core streaming path and TUI shell are stable.

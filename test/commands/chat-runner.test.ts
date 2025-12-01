@@ -2,7 +2,7 @@ import {expect} from 'chai'
 
 import type {SessionStreamChunk} from '../../src/core/stream.ts'
 
-import {renderStream} from '../../src/commands/chat-runner.ts'
+import {renderStream} from '../../src/chat/chat-runner.js'
 
 async function* chunkStream(chunks: SessionStreamChunk[]) {
   for (const chunk of chunks) {

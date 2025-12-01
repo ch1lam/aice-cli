@@ -8,10 +8,15 @@
     "strict": true,
     "target": "es2022",
     "moduleResolution": "node16",
-    "composite": true
+    "composite": true,
+    "skipLibCheck": true,
+    "paths": {
+      "@anthropic-ai/sdk/resources/*": ["./node_modules/@anthropic-ai/sdk/resources/*"]
+    }
   },
   "include": ["./src/**/*"],
   "ts-node": {
-    "esm": true
+    "esm": true,
+    "experimentalSpecifierResolution": "node"
   }
 }

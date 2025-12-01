@@ -1,8 +1,8 @@
 import {Args, Command, Flags} from '@oclif/core'
 
+import {renderStream} from '../chat/chat-runner.js'
 import {ChatController} from '../chat/controller.js'
 import {loadProviderEnv} from '../config/env.js'
-import {renderStream} from './chat-runner.js'
 
 export default class Chat extends Command {
   static args = {
@@ -46,9 +46,9 @@ export default class Chat extends Command {
     })
 
     await renderStream(stream, {
-      error: error => this.error(error, {exit: 1}),
-      log: message => this.log(message),
-      write(text) {
+      error: (error: Error) => this.error(error, {exit: 1}),
+      log: (message: string) => this.log(message),
+      write(text: string) {
         process.stdout.write(text)
       },
     })

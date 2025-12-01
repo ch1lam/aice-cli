@@ -20,7 +20,6 @@ export function renderChunk(chunk: SessionStreamChunk, io: ChatIO): void {
     }
 
     case 'error': {
-
       if (io.error) {
         io.error(chunk.error)
       } else {

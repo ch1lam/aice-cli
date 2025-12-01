@@ -1,11 +1,11 @@
 # aice-cli
 
-Early-stage CLI for experimenting with cloud LLM providers. The current repo is an oclif shell with a streaming chat path and a provider layer (OpenAI/Anthropic/DeepSeek), plus room for an Ink-based TUI.
+Early-stage CLI for experimenting with cloud LLM providers. It defaults to an Ink TUI when you run `aice` with no args and still exposes a scriptable chat command for single-turn calls.
 
 ## Status
-- Ready: oclif skeleton + streaming chat path (`chat` -> controller -> session/stream -> provider) for OpenAI/Anthropic/DeepSeek
-- In progress: Ink UI components and higher-level orchestration
-- On deck: prompt history, provider/agent orchestration, and extensibility hooks
+- Ready: streaming chat path (`chat` -> controller -> session/stream -> provider) for OpenAI/Anthropic/DeepSeek; provider adapters follow a shared chunking interface.
+- Ready: TUI-first default command (`aice`) that opens an Ink chat shell with an input bar, streaming transcript, first-run setup for provider/API key, and slash commands (`/help`, `/login`, `/provider`, `/model`, `/clear`).
+- On deck: richer prompt history, provider/agent orchestration, and OpenAI Agents integration once the TUI shell is fully hardened.
 
 ## Requirements
 - Node.js >= 18
@@ -39,15 +39,17 @@ AICE_MODEL=gpt-4o-mini           # optional OpenAI override
 `AICE_MODEL` only applies to OpenAI. Set `AICE_ANTHROPIC_MODEL` or `AICE_DEEPSEEK_MODEL` for other providers.
 
 ## Usage
-Run the TypeScript CLI directly via the dev entrypoint:
+### TUI
+- Run `aice` (or `node bin/dev.js`) with no args to open the Ink UI. On first run it prompts for provider + API key, writes `.env`, and validates connectivity. Slash commands (prefixed with `/`) handle help, login, provider/model switching, and clearing the transcript; plain input sends messages.
 
-```bash
-AICE_OPENAI_API_KEY=sk-test node bin/dev.js chat "Hello there"
-# or pick another provider
-AICE_ANTHROPIC_API_KEY=sk-ant-test node bin/dev.js chat -p anthropic "Hi Claude"
-```
-
-The MVP shell streams chunks to stdout: `chat.ts` parses flags, `ChatController` delegates to the provider via the session layer, and `chat-runner.ts` renders meta/status/text/usage chunks.
+### Single-turn CLI
+- Run the TypeScript CLI directly via the dev entrypoint:
+  ```bash
+  AICE_OPENAI_API_KEY=sk-test node bin/dev.js chat "Hello there"
+  # or pick another provider
+  AICE_ANTHROPIC_API_KEY=sk-ant-test node bin/dev.js chat -p anthropic "Hi Claude"
+  ```
+- The MVP shell streams chunks to stdout: `chat.ts` parses flags, `ChatController` delegates to the provider via the session layer, and `chat-runner.ts` renders meta/status/text/usage chunks.
 
 ## Development
 - `yarn build` — type-check and compile to `dist/`

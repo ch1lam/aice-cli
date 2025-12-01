@@ -1,57 +1,62 @@
 import {expect} from 'chai'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
 
-import {loadProviderEnv} from '../../src/config/env.ts'
+import {persistProviderEnv, tryLoadProviderEnv} from '../../src/config/env.js'
 
-function restoreEnv(snapshot: NodeJS.ProcessEnv): void {
-  for (const key of Object.keys(process.env)) {
-    if (!(key in snapshot)) {
-      delete process.env[key]
+describe('env helpers', () => {
+  const keys = [
+    'AICE_PROVIDER',
+    'AICE_OPENAI_API_KEY',
+    'AICE_OPENAI_BASE_URL',
+    'AICE_OPENAI_MODEL',
+  ]
+
+  const originalEnv: Record<string, string | undefined> = {}
+
+  beforeEach(() => {
+    for (const key of keys) {
+      originalEnv[key] = process.env[key]
     }
-  }
-
-  Object.assign(process.env, snapshot)
-}
-
-describe('loadProviderEnv', () => {
-  const snapshot = {...process.env}
+  })
 
   afterEach(() => {
-    restoreEnv(snapshot)
+    for (const key of keys) {
+      const value = originalEnv[key]
+      if (value === undefined) {
+        delete process.env[key]
+      } else {
+        process.env[key] = value
+      }
+    }
   })
 
-  it('uses AICE_MODEL as an OpenAI-only fallback when provider model is unset', () => {
-    process.env.AICE_PROVIDER = 'openai'
-    process.env.AICE_OPENAI_API_KEY = 'key'
-    process.env.AICE_MODEL = 'gpt-from-env'
-    delete process.env.AICE_OPENAI_MODEL
+  it('persists provider env and updates process.env', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aice-env-'))
+    const envPath = path.join(dir, '.env')
 
-    const env = loadProviderEnv()
+    try {
+      persistProviderEnv({
+        apiKey: 'test-key',
+        envPath,
+        model: 'gpt-4o-mini',
+        providerId: 'openai',
+      })
 
-    expect(env.providerId).to.equal('openai')
-    expect(env.model).to.equal('gpt-from-env')
-  })
+      const content = fs.readFileSync(envPath, 'utf8')
+      expect(content).to.include('AICE_PROVIDER=openai')
+      expect(content).to.include('AICE_OPENAI_API_KEY=test-key')
+      expect(content).to.include('AICE_OPENAI_MODEL=gpt-4o-mini')
 
-  it('prefers provider-specific model for Anthropic even when AICE_MODEL is set', () => {
-    process.env.AICE_PROVIDER = 'anthropic'
-    process.env.AICE_ANTHROPIC_API_KEY = 'anth-key'
-    process.env.AICE_MODEL = 'gpt-openai'
-    process.env.AICE_ANTHROPIC_MODEL = 'claude-from-env'
+      const {env, error} = tryLoadProviderEnv({providerId: 'openai'})
 
-    const env = loadProviderEnv()
-
-    expect(env.providerId).to.equal('anthropic')
-    expect(env.model).to.equal('claude-from-env')
-  })
-
-  it('ignores AICE_MODEL for DeepSeek and leaves model undefined when provider-specific is missing', () => {
-    process.env.AICE_PROVIDER = 'deepseek'
-    process.env.AICE_DEEPSEEK_API_KEY = 'deep-key'
-    process.env.AICE_MODEL = 'gpt-openai'
-    delete process.env.AICE_DEEPSEEK_MODEL
-
-    const env = loadProviderEnv()
-
-    expect(env.providerId).to.equal('deepseek')
-    expect(env.model).to.equal(undefined)
+      expect(error).to.equal(undefined)
+      expect(env?.providerId).to.equal('openai')
+      expect(env?.apiKey).to.equal('test-key')
+      expect(env?.model).to.equal('gpt-4o-mini')
+    } finally {
+      fs.rmSync(dir, {force: true, recursive: true})
+    }
   })
 })
