@@ -1,4 +1,4 @@
-import {Box, Text} from 'ink'
+import {Box, Text, useStdout} from 'ink'
 import {type ReactElement, useEffect, useState} from 'react'
 
 import type {StreamStatus, TokenUsage} from '../core/stream.js'
@@ -17,6 +17,24 @@ export interface StatusBarProps {
 }
 
 export function StatusBar(props: StatusBarProps): ReactElement {
+  const {stdout} = useStdout()
+  const [columns, setColumns] = useState<number | undefined>(stdout?.columns)
+  const barWidth =
+    typeof columns === 'number' && Number.isFinite(columns) && columns > 0 ? columns : 80
+
+  useEffect(() => {
+    if (!stdout) return
+
+    const handleResize = () => {
+      setColumns(stdout.columns)
+    }
+
+    handleResize()
+    stdout.on('resize', handleResize)
+    return () => {
+      stdout.off('resize', handleResize)
+    }
+  }, [stdout])
   const providerText = props.meta
     ? `${props.meta.providerId}:${props.meta.model}`
     : 'provider:-'
@@ -47,12 +65,17 @@ export function StatusBar(props: StatusBarProps): ReactElement {
   const usageText = formatUsage(props.usage)
 
   return (
-    <Box>
-      <Text color={colors.provider}>{providerText}</Text>
-      <Text color={colors.separator}>{' | '}</Text>
-      <Text color={statusColor}>{statusText}</Text>
-      <Text color={colors.separator}>{' | '}</Text>
-      <Text color={colors.usage}>{usageText}</Text>
+    <Box alignItems="center" justifyContent="space-between" paddingX={1} width={barWidth}>
+      <Box flexShrink={1}>
+        <Text color={colors.provider}>{providerText}</Text>
+        <Text color={colors.separator}>{'  |  '}</Text>
+        <Text backgroundColor={theme.semantic.active} bold color={statusColor}>
+          {` ${statusText} `}
+        </Text>
+      </Box>
+      <Text color={colors.usage} wrap="truncate">
+        {usageText}
+      </Text>
     </Box>
   )
 }
