@@ -15,6 +15,8 @@ type SetupStep = 'apiKey' | 'model' | 'provider'
 
 type MessageRole = 'assistant' | 'system' | 'user'
 
+type SlashHandler = (args: string[]) => void
+
 type ProviderOption = SelectInputItem<ProviderId>
 
 const providerOptions: ProviderOption[] = [
@@ -264,8 +266,16 @@ export function AiceApp(props: AiceAppProps) {
     })
   }
 
+  const slashHandlers: Record<string, SlashHandler> = {
+    clear: handleClearCommand,
+    help: handleHelpCommand,
+    login: handleLoginCommand,
+    model: handleModelCommand,
+    provider: handleProviderCommand,
+  }
+
   function handleSlashCommand(raw: string): void {
-    const [command, ...rest] = raw
+    const [command, ...args] = raw
       .slice(1)
       .split(' ')
       .map(part => part.trim())
@@ -276,125 +286,118 @@ export function AiceApp(props: AiceAppProps) {
       return
     }
 
-    switch (command) {
-      case 'clear': {
-        setMessages([])
-        setSessionMeta(undefined)
-        setSessionStatus(undefined)
-        setSessionUsage(undefined)
-        setCurrentResponse('')
-        addSystemMessage('Cleared transcript.')
-        break
-      }
-
-      case 'help': {
-        addSystemMessage('Commands: /help, /login, /provider <id>, /model <name>, /clear')
-        break
-      }
-
-      case 'login': {
-        setMode('setup')
-        setMaskInput(false)
-        const nextProviderId = providerEnv?.providerId ?? setupState.providerId
-        setProviderChoiceIndex(providerOptionIndex(nextProviderId))
-        setSetupState(current => ({
-          ...current,
-          apiKey: undefined,
-          model: undefined,
-          providerId: nextProviderId,
-          step: 'provider',
-        }))
-        addSystemMessage(
-          'Restarting setup. Use arrow keys to choose provider (openai/openai-agents/anthropic/deepseek).',
-        )
-        break
-      }
-
-      case 'model': {
-        if (!providerEnv) {
-          addSystemMessage('Provider not configured. Run /login first.')
-          return
-        }
-
-        const model = rest.join(' ').trim()
-        if (!model) {
-          addSystemMessage('Usage: /model <model-name>')
-          return
-        }
-
-        try {
-          persistProviderEnv({
-            apiKey: providerEnv.apiKey,
-            baseURL: providerEnv.baseURL,
-            model,
-            providerId: providerEnv.providerId,
-          })
-        } catch (persistError) {
-          const message =
-            persistError instanceof Error ? persistError.message : String(persistError)
-          addSystemMessage(`Failed to save model: ${message}`)
-          return
-        }
-
-        setProviderEnv(current =>
-          current
-            ? {
-              ...current,
-              model,
-            }
-            : current,
-        )
-        setSessionMeta(current =>
-          current
-            ? {
-              ...current,
-              model,
-            }
-            : current,
-        )
-        addSystemMessage(`Model set to ${model}.`)
-        break
-      }
-
-      case 'provider': {
-        const providerId = parseProviderId(rest[0] ?? '')
-        if (!providerId) {
-          addSystemMessage('Usage: /provider <openai|openai-agents|anthropic|deepseek>')
-          return
-        }
-
-        const { env, error } = tryLoadProviderEnv({ providerId })
-        if (!env || error) {
-          addSystemMessage(
-            `Provider ${providerId} is not configured. Run /login to set API key first.`,
-          )
-          return
-        }
-
-        try {
-          persistProviderEnv({
-            apiKey: env.apiKey,
-            baseURL: env.baseURL,
-            model: env.model,
-            providerId,
-          })
-        } catch (persistError) {
-          const message =
-            persistError instanceof Error ? persistError.message : String(persistError)
-          addSystemMessage(`Failed to switch provider: ${message}`)
-          return
-        }
-
-        setProviderEnv(env)
-        setSessionMeta({ model: env.model ?? 'default', providerId: env.providerId })
-        addSystemMessage(`Switched to ${providerId} (${env.model ?? 'default model'}).`)
-        break
-      }
-
-      default: {
-        addSystemMessage(`Unknown command: /${command}`)
-      }
+    const handler = slashHandlers[command]
+    if (!handler) {
+      addSystemMessage(`Unknown command: /${command}`)
+      return
     }
+
+    handler(args)
+  }
+
+  function handleClearCommand(): void {
+    setMessages([])
+    setSessionMeta(undefined)
+    setSessionStatus(undefined)
+    setSessionUsage(undefined)
+    setCurrentResponse('')
+    addSystemMessage('Cleared transcript.')
+  }
+
+  function handleHelpCommand(): void {
+    addSystemMessage('Commands: /help, /login, /provider <id>, /model <name>, /clear')
+  }
+
+  function handleLoginCommand(): void {
+    setMode('setup')
+    setMaskInput(false)
+    const nextProviderId = providerEnv?.providerId ?? setupState.providerId
+    setProviderChoiceIndex(providerOptionIndex(nextProviderId))
+    setSetupState(current => ({
+      ...current,
+      apiKey: undefined,
+      model: undefined,
+      providerId: nextProviderId,
+      step: 'provider',
+    }))
+    addSystemMessage(
+      'Restarting setup. Use arrow keys to choose provider (openai/openai-agents/anthropic/deepseek).',
+    )
+  }
+
+  function handleModelCommand(args: string[]): void {
+    if (!providerEnv) {
+      addSystemMessage('Provider not configured. Run /login first.')
+      return
+    }
+
+    const model = args.join(' ').trim()
+    if (!model) {
+      addSystemMessage('Usage: /model <model-name>')
+      return
+    }
+
+    try {
+      persistProviderEnv({
+        apiKey: providerEnv.apiKey,
+        baseURL: providerEnv.baseURL,
+        model,
+        providerId: providerEnv.providerId,
+      })
+    } catch (persistError) {
+      const message = persistError instanceof Error ? persistError.message : String(persistError)
+      addSystemMessage(`Failed to save model: ${message}`)
+      return
+    }
+
+    setProviderEnv(current =>
+      current
+        ? {
+            ...current,
+            model,
+          }
+        : current,
+    )
+    setSessionMeta(current =>
+      current
+        ? {
+            ...current,
+            model,
+          }
+        : current,
+    )
+    addSystemMessage(`Model set to ${model}.`)
+  }
+
+  function handleProviderCommand(args: string[]): void {
+    const providerId = parseProviderId(args[0] ?? '')
+    if (!providerId) {
+      addSystemMessage('Usage: /provider <openai|openai-agents|anthropic|deepseek>')
+      return
+    }
+
+    const {env, error} = tryLoadProviderEnv({providerId})
+    if (!env || error) {
+      addSystemMessage(`Provider ${providerId} is not configured. Run /login to set API key first.`)
+      return
+    }
+
+    try {
+      persistProviderEnv({
+        apiKey: env.apiKey,
+        baseURL: env.baseURL,
+        model: env.model,
+        providerId,
+      })
+    } catch (persistError) {
+      const message = persistError instanceof Error ? persistError.message : String(persistError)
+      addSystemMessage(`Failed to switch provider: ${message}`)
+      return
+    }
+
+    setProviderEnv(env)
+    setSessionMeta({model: env.model ?? 'default', providerId: env.providerId})
+    addSystemMessage(`Switched to ${providerId} (${env.model ?? 'default model'}).`)
   }
 
   function startStream(history: Message[], env: ProviderEnv): void {
