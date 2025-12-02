@@ -1,14 +1,48 @@
-import type {
-  EasyInputMessage,
-  ResponseCreateParamsStreaming,
-  ResponseStreamEvent,
-  ResponseUsage,
-} from 'openai/resources/responses/responses'
+import type { ChatCompletionChunk, ChatCompletionMessageParam } from 'openai/resources/chat/completions'
+import type { Stream } from 'openai/streaming'
 
-import {OpenAI} from 'openai'
+import { OpenAI } from 'openai'
 
-import type {LLMProvider, SessionRequest} from '../core/session.js'
-import type {ProviderStream, ProviderStreamChunk, TokenUsage} from '../core/stream.js'
+import type { LLMProvider, SessionRequest } from '../core/session.js'
+import type { ProviderStream, ProviderStreamChunk, TokenUsage } from '../core/stream.js'
+
+type ChatCompletionStream = Stream<ChatCompletionChunk> & {
+  controller?: {
+    abort: () => void
+  }
+}
+
+type DeepSeekDelta =
+  & ChatCompletionChunk['choices'][number]['delta']
+  & { reasoning_content?: null | string }
+
+type ChatCompletionsClient = {
+  chat: {
+    completions: {
+      create(args: {
+        messages: ChatCompletionMessageParam[]
+        model: string
+        signal?: AbortSignal
+        stream: true
+        temperature?: number
+      }): Promise<ChatCompletionStream>
+    }
+  }
+}
+
+type DeltaContent =
+  | Array<{
+    text?: string
+    type: string
+  }>
+  | null
+  | string
+
+type DeepSeekUsage = {
+  completion_tokens?: number
+  prompt_tokens?: number
+  total_tokens?: number
+}
 
 export interface DeepSeekProviderConfig {
   apiKey: string
@@ -22,111 +56,115 @@ export interface DeepSeekSessionRequest extends SessionRequest {
 
 export class DeepSeekProvider implements LLMProvider<DeepSeekSessionRequest> {
   readonly id = 'deepseek' as const
-  #client: OpenAI
+  #client: ChatCompletionsClient
   #defaultModel?: string
 
-  constructor(config: DeepSeekProviderConfig, client?: OpenAI) {
+  constructor(config: DeepSeekProviderConfig, client?: ChatCompletionsClient) {
     if (!config.apiKey) {
       throw new Error('Missing DeepSeek API key')
     }
 
-    this.#client = client ?? new OpenAI({apiKey: config.apiKey, baseURL: config.baseURL})
+    this.#client = client ?? new OpenAI({ apiKey: config.apiKey, baseURL: config.baseURL })
     this.#defaultModel = config.model
   }
 
   stream(request: DeepSeekSessionRequest): ProviderStream {
-    return this.#streamResponses(request)
+    return this.#streamChatCompletions(request)
   }
 
-  #buildInput(request: DeepSeekSessionRequest): ResponseCreateParamsStreaming['input'] {
-    const segments: EasyInputMessage[] = []
+  #buildMessages(request: DeepSeekSessionRequest): ChatCompletionMessageParam[] {
+    const messages: ChatCompletionMessageParam[] = []
 
     if (request.systemPrompt) {
-      segments.push({content: request.systemPrompt, role: 'system'})
+      messages.push({ content: request.systemPrompt, role: 'system' })
     }
 
-    segments.push({content: request.prompt, role: 'user'})
+    messages.push({ content: request.prompt, role: 'user' })
 
-    return segments
+    return messages
   }
 
-  #mapEventToChunks(event: ResponseStreamEvent): ProviderStreamChunk[] {
+  #extractContent(deltaContent?: DeltaContent): string[] {
+    if (!deltaContent) return []
+    if (typeof deltaContent === 'string') return [deltaContent]
+
+    return deltaContent.flatMap(part => (part.text ? [part.text] : []))
+  }
+
+  #mapChunk(chunk: ChatCompletionChunk): ProviderStreamChunk[] {
     const now = Date.now()
+    const chunks: ProviderStreamChunk[] = []
 
-    switch (event.type) {
-      case 'error': {
-        return [{error: new Error(event.message), timestamp: now, type: 'error'}]
-      }
+    for (const choice of chunk.choices) {
+      const delta = choice.delta as DeepSeekDelta | undefined
+      const deltas = [
+        ...this.#extractContent(delta?.content as DeltaContent | undefined),
+        ...(delta?.reasoning_content ? [delta.reasoning_content] : []),
+      ]
 
-      case 'response.completed': {
-        const chunks: ProviderStreamChunk[] = []
-
-        if (event.response.usage) {
-          chunks.push({
-            timestamp: now,
-            type: 'usage',
-            usage: this.#mapUsage(event.response.usage),
-          })
-        }
-
-        chunks.push({status: 'completed', timestamp: now, type: 'status'})
-
-        return chunks
-      }
-
-      case 'response.failed': {
-        return [{error: new Error('DeepSeek response failed'), timestamp: now, type: 'error'}]
-      }
-
-      case 'response.in_progress': {
-        return [{status: 'running', timestamp: now, type: 'status'}]
-      }
-
-      case 'response.output_text.delta': {
-        return [{text: event.delta, timestamp: now, type: 'text'}]
-      }
-
-      case 'response.output_text.done': {
-        return []
-      }
-
-      default: {
-        return []
+      for (const delta of deltas) {
+        chunks.push({ text: delta, timestamp: now, type: 'text' })
       }
     }
+
+    if (chunk.usage) {
+      chunks.push({ timestamp: now, type: 'usage', usage: this.#mapUsage(chunk.usage) })
+    }
+
+    return chunks
   }
 
-  #mapUsage(usage?: null | ResponseUsage): TokenUsage {
+  #mapUsage(usage?: DeepSeekUsage | null): TokenUsage {
     return {
-      inputTokens: usage?.input_tokens ?? undefined,
-      outputTokens: usage?.output_tokens ?? undefined,
+      inputTokens: usage?.prompt_tokens ?? undefined,
+      outputTokens: usage?.completion_tokens ?? undefined,
       totalTokens: usage?.total_tokens ?? undefined,
     }
   }
 
-  async *#streamResponses(request: DeepSeekSessionRequest): ProviderStream {
+  async *#streamChatCompletions(request: DeepSeekSessionRequest): ProviderStream {
     const model = request.model ?? this.#defaultModel
 
     if (!model) {
       throw new Error('DeepSeek model is required')
     }
 
-    const response = await this.#client.responses.stream({
-      input: this.#buildInput(request),
-      model,
-      signal: request.signal,
-      temperature: request.temperature,
-    })
+    let stream: ChatCompletionStream
 
     try {
-      for await (const event of response) {
-        const chunks = this.#mapEventToChunks(event)
-        for (const chunk of chunks) {
-          yield chunk
+      stream = await this.#client.chat.completions.create({
+        messages: this.#buildMessages(request),
+        model,
+        signal: request.signal,
+        stream: true,
+        temperature: request.temperature,
+      })
+    } catch (error) {
+      yield { error: this.#toError(error), timestamp: Date.now(), type: 'error' }
+      return
+    }
+
+    yield { status: 'running', timestamp: Date.now(), type: 'status' }
+
+    try {
+      for await (const chunk of stream as AsyncIterable<ChatCompletionChunk>) {
+        const mapped = this.#mapChunk(chunk)
+        for (const item of mapped) {
+          yield item
         }
       }
+    } catch (error) {
+      yield { error: this.#toError(error), timestamp: Date.now(), type: 'error' }
+      return
     } finally {
-      await response.controller?.abort()
+      await stream.controller?.abort()
     }
+
+    yield { status: 'completed', timestamp: Date.now(), type: 'status' }
+  }
+
+  #toError(error: unknown): Error {
+    if (error instanceof Error) return error
+    return new Error(typeof error === 'string' ? error : 'DeepSeek request failed')
   }
 }

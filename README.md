@@ -39,6 +39,7 @@ AICE_MODEL=gpt-4o-mini           # optional OpenAI override
 # DeepSeek
 # AICE_PROVIDER=deepseek
 # AICE_DEEPSEEK_API_KEY=sk-deep-...
+# AICE_DEEPSEEK_BASE_URL=https://api.deepseek.com # optional override (OpenAI-compatible)
 # AICE_DEEPSEEK_MODEL=deepseek-chat
 ```
 

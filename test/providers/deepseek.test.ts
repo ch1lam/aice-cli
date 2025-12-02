@@ -1,87 +1,111 @@
-import type {OpenAI as OpenAIClient} from 'openai'
-import type {ResponseStreamEvent} from 'openai/resources/responses/responses'
+import type { OpenAI as OpenAIClient } from 'openai'
+import type { ChatCompletionChunk } from 'openai/resources/chat/completions'
 
-import {expect} from 'chai'
+import { expect } from 'chai'
 
-import type {ProviderStreamChunk} from '../../src/core/stream.ts'
+import type { ProviderStreamChunk } from '../../src/core/stream.ts'
 
-import {DeepSeekProvider, type DeepSeekSessionRequest} from '../../src/providers/deepseek.ts'
+import { DeepSeekProvider, type DeepSeekSessionRequest } from '../../src/providers/deepseek.ts'
 
-type StreamEvent = ResponseStreamEvent | {[key: string]: unknown; type: string}
+type StreamChunk = ChatCompletionChunk | Error
 
-class FakeResponseStream implements AsyncIterable<StreamEvent> {
+class FakeCompletionStream implements AsyncIterable<StreamChunk> {
   aborted = false
   controller = {
     abort: () => {
       this.aborted = true
     },
   }
-  private readonly events: StreamEvent[]
+  private readonly events: StreamChunk[]
 
-  constructor(events: StreamEvent[]) {
+  constructor(events: StreamChunk[]) {
     this.events = events
   }
 
   async *[Symbol.asyncIterator]() {
     for (const event of this.events) {
+      if (event instanceof Error) {
+        throw event
+      }
+
       yield event
     }
   }
 }
 
-class FakeResponses {
+class FakeCompletions {
   lastArgs?: {
-    input: unknown
+    messages: unknown
     model: string
     signal?: AbortSignal
     temperature?: number
   }
-  lastStream?: FakeResponseStream
-  private readonly events: StreamEvent[]
+  lastStream?: FakeCompletionStream
+  private readonly events: StreamChunk[]
 
-  constructor(events: StreamEvent[]) {
+  constructor(events: StreamChunk[]) {
     this.events = events
   }
 
-  async stream(args: {
-    input: unknown
+  async create(args: {
+    messages: unknown
     model: string
     signal?: AbortSignal
     temperature?: number
-  }): Promise<FakeResponseStream> {
+  }): Promise<FakeCompletionStream> {
     this.lastArgs = args
-    this.lastStream = new FakeResponseStream(this.events)
+    this.lastStream = new FakeCompletionStream(this.events)
     return this.lastStream
   }
 }
 
 class FakeOpenAI {
-  responses: FakeResponses
+  chat: { completions: FakeCompletions }
 
-  constructor(events: StreamEvent[]) {
-    this.responses = new FakeResponses(events)
+  constructor(events: StreamChunk[]) {
+    this.chat = { completions: new FakeCompletions(events) }
   }
 }
 
 describe('DeepSeekProvider', () => {
   it('streams delta, usage, and completion events in order', async () => {
-    const events: StreamEvent[] = [
-      {type: 'response.in_progress'} as StreamEvent,
-      {delta: 'Hello', type: 'response.output_text.delta'} as StreamEvent,
-      {delta: ' world', type: 'response.output_text.delta'} as StreamEvent,
+    /* eslint-disable camelcase */
+    const events: StreamChunk[] = [
       {
-        response: {
-          /* eslint-disable camelcase */
-          usage: {input_tokens: 2, output_tokens: 3, total_tokens: 5},
-          /* eslint-enable camelcase */
-        },
-        type: 'response.completed',
-      } as StreamEvent,
+        choices: [{ delta: { role: 'assistant' }, finish_reason: null, index: 0 }],
+        created: 0,
+        id: 'chatcmpl-1',
+        model: 'deepseek-chat',
+        object: 'chat.completion.chunk',
+      },
+      {
+        choices: [{ delta: { content: 'Hello' }, finish_reason: null, index: 0 }],
+        created: 0,
+        id: 'chatcmpl-1',
+        model: 'deepseek-chat',
+        object: 'chat.completion.chunk',
+      },
+      {
+        choices: [{ delta: { content: ' world' }, finish_reason: null, index: 0 }],
+        created: 0,
+        id: 'chatcmpl-1',
+        model: 'deepseek-chat',
+        object: 'chat.completion.chunk',
+      },
+      {
+        choices: [{ delta: {}, finish_reason: 'stop', index: 0 }],
+        created: 0,
+        id: 'chatcmpl-1',
+        model: 'deepseek-chat',
+        object: 'chat.completion.chunk',
+        usage: { completion_tokens: 3, prompt_tokens: 2, total_tokens: 5 },
+      },
     ]
+    /* eslint-enable camelcase */
 
     const fakeClient = new FakeOpenAI(events)
     const provider = new DeepSeekProvider(
-      {apiKey: 'deepseek-key', model: 'deepseek-chat'},
+      { apiKey: 'deepseek-key', model: 'deepseek-chat' },
       fakeClient as unknown as OpenAIClient,
     )
 
@@ -99,21 +123,29 @@ describe('DeepSeekProvider', () => {
 
     expect(chunks.map(chunk => chunk.type)).to.deep.equal(['status', 'text', 'text', 'usage', 'status'])
     expect(chunks.find(chunk => chunk.type === 'usage')).to.deep.include({
-      usage: {inputTokens: 2, outputTokens: 3, totalTokens: 5},
+      usage: { inputTokens: 2, outputTokens: 3, totalTokens: 5 },
     })
-    expect(fakeClient.responses.lastArgs).to.deep.include({model: 'deepseek-chat'})
-    expect(fakeClient.responses.lastStream?.aborted).to.equal(true)
+    expect(fakeClient.chat.completions.lastArgs).to.deep.include({ model: 'deepseek-chat' })
+    expect(fakeClient.chat.completions.lastStream?.aborted).to.equal(true)
   })
 
   it('emits error chunks when the stream reports a failure', async () => {
-    const events: StreamEvent[] = [
-      {delta: 'partial', type: 'response.output_text.delta'} as StreamEvent,
-      {type: 'response.failed'} as StreamEvent,
+    /* eslint-disable camelcase */
+    const events: StreamChunk[] = [
+      {
+        choices: [{ delta: { content: 'partial' }, finish_reason: null, index: 0 }],
+        created: 0,
+        id: 'chatcmpl-err',
+        model: 'deepseek-chat',
+        object: 'chat.completion.chunk',
+      },
+      new Error('DeepSeek response failed'),
     ]
+    /* eslint-enable camelcase */
 
     const fakeClient = new FakeOpenAI(events)
     const provider = new DeepSeekProvider(
-      {apiKey: 'deepseek-key', model: 'deepseek-chat'},
+      { apiKey: 'deepseek-key', model: 'deepseek-chat' },
       fakeClient as unknown as OpenAIClient,
     )
 
