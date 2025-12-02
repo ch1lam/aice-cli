@@ -451,8 +451,7 @@ export function AiceApp(props: AiceAppProps) {
     mode === 'setup'
       ? setupPrompt(setupState.step)
       : 'Type a prompt or use /help, /login, /provider, /model, /clear'
-  const inputHint =
-    streaming || mode === 'setup' ? hint : 'Chat mode. Type a prompt or use /help.'
+  const placeholder = streaming ? 'Processing response...' : hint
   const showCursor = !streaming && cursorVisible
 
   return (
@@ -475,8 +474,8 @@ export function AiceApp(props: AiceAppProps) {
         <InputPanel
           cursorVisible={showCursor}
           disabled={streaming}
-          hint={inputHint}
           label={inputLabel}
+          placeholder={placeholder}
           value={renderedInput}
         />
       </Box>

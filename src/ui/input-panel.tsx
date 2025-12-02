@@ -5,8 +5,8 @@ import {Box, Text} from 'ink'
 export interface InputPanelProps {
   cursorVisible?: boolean
   disabled?: boolean
-  hint?: string
   label: string
+  placeholder?: string
   value: string
 }
 
@@ -24,14 +24,16 @@ export function InputPanel(props: InputPanelProps): ReactElement {
     >
       <Box>
         <Text color="yellow">{props.label}</Text>
-        <Text>{` ${props.value}${cursor}`}</Text>
+        {props.value ? (
+          <Text>{` ${props.value}${cursor}`}</Text>
+        ) : (
+          <>
+            <Text>{` ${cursor}`}</Text>
+            {props.placeholder ? <Text dimColor>{props.placeholder}</Text> : null}
+          </>
+        )}
         {props.disabled ? <Text dimColor>{' (busy)'}</Text> : null}
       </Box>
-      {props.hint ? (
-        <Text dimColor wrap="wrap">
-          {props.hint}
-        </Text>
-      ) : null}
     </Box>
   )
 }
