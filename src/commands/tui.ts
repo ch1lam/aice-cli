@@ -1,9 +1,9 @@
-import {Command} from '@oclif/core'
-import {render} from 'ink'
+import { Command } from '@oclif/core'
+import { render } from 'ink'
 import React from 'react'
 
-import {tryLoadProviderEnv} from '../config/env.js'
-import {AiceApp} from '../ui/aice-app.js'
+import { tryLoadProviderEnv } from '../config/env.js'
+import { AiceApp } from '../ui/aice-app.js'
 
 export default class Tui extends Command {
   static description = 'Launch the interactive aice TUI shell.'
@@ -18,10 +18,17 @@ export default class Tui extends Command {
       })
     }
 
+    clearTerminal()
+
     const {env, error} = tryLoadProviderEnv()
     const {waitUntilExit} = render(
       React.createElement(AiceApp, {initialEnv: env, initialError: error}),
     )
     await waitUntilExit()
   }
+}
+
+function clearTerminal(): void {
+  // Clear screen and scrollback so the TUI starts on a clean surface.
+  process.stdout.write('\u001B[2J\u001B[3J\u001B[H')
 }
