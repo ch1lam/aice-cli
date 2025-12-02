@@ -20,6 +20,7 @@ export function InputPanel(props: InputPanelProps): ReactElement {
       flexDirection="column"
       paddingX={1}
       paddingY={0}
+      width="100%"
     >
       <Box>
         <Text color="yellow">{props.label}</Text>

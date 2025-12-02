@@ -37,14 +37,14 @@ interface SetupState {
 }
 
 export function AiceApp(props: AiceAppProps) {
-  const {exit} = useApp()
+  const { exit } = useApp()
 
   const [mode, setMode] = useState<Mode>(props.initialEnv ? 'chat' : 'setup')
   const [input, setInput] = useState('')
   const [maskInput, setMaskInput] = useState(false)
   const [messages, setMessages] = useState<Message[]>([])
   const [providerEnv, setProviderEnv] = useState<ProviderEnv | undefined>(props.initialEnv)
-  const [sessionMeta, setSessionMeta] = useState<{model: string; providerId: ProviderId}>()
+  const [sessionMeta, setSessionMeta] = useState<{ model: string; providerId: ProviderId }>()
   const [sessionStatus, setSessionStatus] = useState<StreamStatus | undefined>()
   const [sessionUsage, setSessionUsage] = useState<TokenUsage | undefined>()
   const [streaming, setStreaming] = useState(false)
@@ -177,7 +177,7 @@ export function AiceApp(props: AiceAppProps) {
       return
     }
 
-    const {env, error} = tryLoadProviderEnv({providerId: setupState.providerId})
+    const { env, error } = tryLoadProviderEnv({ providerId: setupState.providerId })
     if (!env || error) {
       addSystemMessage(
         `Failed to load provider config. ${error ? error.message : 'Unknown error.'}`,
@@ -191,7 +191,7 @@ export function AiceApp(props: AiceAppProps) {
     }
 
     setProviderEnv(env)
-    setSessionMeta({model: env.model ?? 'default', providerId: env.providerId})
+    setSessionMeta({ model: env.model ?? 'default', providerId: env.providerId })
     setMode('chat')
     setSetupState({
       providerId: env.providerId,
@@ -300,17 +300,17 @@ export function AiceApp(props: AiceAppProps) {
         setProviderEnv(current =>
           current
             ? {
-                ...current,
-                model,
-              }
+              ...current,
+              model,
+            }
             : current,
         )
         setSessionMeta(current =>
           current
             ? {
-                ...current,
-                model,
-              }
+              ...current,
+              model,
+            }
             : current,
         )
         addSystemMessage(`Model set to ${model}.`)
@@ -324,7 +324,7 @@ export function AiceApp(props: AiceAppProps) {
           return
         }
 
-        const {env, error} = tryLoadProviderEnv({providerId})
+        const { env, error } = tryLoadProviderEnv({ providerId })
         if (!env || error) {
           addSystemMessage(
             `Provider ${providerId} is not configured. Run /login to set API key first.`,
@@ -347,7 +347,7 @@ export function AiceApp(props: AiceAppProps) {
         }
 
         setProviderEnv(env)
-        setSessionMeta({model: env.model ?? 'default', providerId: env.providerId})
+        setSessionMeta({ model: env.model ?? 'default', providerId: env.providerId })
         addSystemMessage(`Switched to ${providerId} (${env.model ?? 'default model'}).`)
         break
       }
@@ -360,7 +360,7 @@ export function AiceApp(props: AiceAppProps) {
 
   function startStream(history: Message[], env: ProviderEnv): void {
     const prompt = buildPrompt(history)
-    const controller = new ChatController({env})
+    const controller = new ChatController({ env })
     let stream: SessionStream
 
     try {
@@ -379,7 +379,7 @@ export function AiceApp(props: AiceAppProps) {
     setCurrentResponse('')
     setSessionStatus('running')
     setSessionUsage(undefined)
-    setSessionMeta({model: env.model ?? 'default', providerId: env.providerId})
+    setSessionMeta({ model: env.model ?? 'default', providerId: env.providerId })
 
     let buffer = ''
 
@@ -397,7 +397,7 @@ export function AiceApp(props: AiceAppProps) {
             }
 
             case 'meta': {
-              setSessionMeta({model: chunk.model, providerId: chunk.providerId})
+              setSessionMeta({ model: chunk.model, providerId: chunk.providerId })
               break
             }
 
@@ -441,7 +441,7 @@ export function AiceApp(props: AiceAppProps) {
 
   function createMessage(role: MessageRole, text: string): Message {
     const id = messageId.current++
-    return {id, role, text}
+    return { id, role, text }
   }
 
   const inputLabel = '>'
@@ -466,13 +466,12 @@ export function AiceApp(props: AiceAppProps) {
         ))}
         {streaming ? (
           <Text color="green" wrap="wrap">
-            {`Assistant: ${currentResponse || '...'}${
-              sessionStatus === 'completed' || !cursorVisible ? '  ' : ' ▌'
-            }`}
+            {`Assistant: ${currentResponse || '...'}${sessionStatus === 'completed' || !cursorVisible ? '  ' : ' ▌'
+              }`}
           </Text>
         ) : null}
       </Box>
-      <Box>
+      <Box width="100%">
         <InputPanel
           cursorVisible={showCursor}
           disabled={streaming}
@@ -481,7 +480,7 @@ export function AiceApp(props: AiceAppProps) {
           value={renderedInput}
         />
       </Box>
-      <Box>
+      <Box width="100%">
         <StatusBar meta={providerMeta} status={sessionStatus} usage={sessionUsage} />
       </Box>
     </Box>
@@ -523,7 +522,7 @@ function buildPrompt(history: Message[]): string {
   return exchanges.join('\n')
 }
 
-function createMetaFromEnv(env: ProviderEnv): {model: string; providerId: ProviderId} {
+function createMetaFromEnv(env: ProviderEnv): { model: string; providerId: ProviderId } {
   return {
     model: env.model ?? 'default',
     providerId: env.providerId,
