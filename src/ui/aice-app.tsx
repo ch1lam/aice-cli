@@ -1,22 +1,28 @@
-import { Box, Text, useApp, useInput } from 'ink'
-import { useEffect, useRef, useState } from 'react'
+import {Box, Text, useApp, useInput} from 'ink'
+import {useEffect, useRef, useState} from 'react'
 
-import type { ProviderId, SessionStream, StreamStatus, TokenUsage } from '../core/stream.js'
+import type {ProviderId, SessionStream, StreamStatus, TokenUsage} from '../core/stream.js'
 
-import { ChatController } from '../chat/controller.js'
-import {
-  persistProviderEnv,
-  type ProviderEnv,
-  tryLoadProviderEnv,
-} from '../config/env.js'
-import { InputPanel } from './input-panel.js'
-import { StatusBar } from './status-bar.js'
+import {ChatController} from '../chat/controller.js'
+import {persistProviderEnv, type ProviderEnv, tryLoadProviderEnv} from '../config/env.js'
+import {InputPanel} from './input-panel.js'
+import {SelectInput, type SelectInputItem} from './select-input.js'
+import {StatusBar} from './status-bar.js'
 
 type Mode = 'chat' | 'setup'
 
 type SetupStep = 'apiKey' | 'model' | 'provider'
 
 type MessageRole = 'assistant' | 'system' | 'user'
+
+type ProviderOption = SelectInputItem<ProviderId>
+
+const providerOptions: ProviderOption[] = [
+  {description: 'Responses API (default)', label: 'OpenAI', value: 'openai'},
+  {description: 'Agents API', label: 'OpenAI Agents', value: 'openai-agents'},
+  {description: 'Claude 3.7 and newer', label: 'Anthropic', value: 'anthropic'},
+  {description: 'DeepSeek chat + reasoning', label: 'DeepSeek', value: 'deepseek'},
+]
 
 interface Message {
   id: number
@@ -37,7 +43,8 @@ interface SetupState {
 }
 
 export function AiceApp(props: AiceAppProps) {
-  const { exit } = useApp()
+  const {exit} = useApp()
+  const initialProviderId = props.initialEnv?.providerId ?? 'openai'
 
   const [mode, setMode] = useState<Mode>(props.initialEnv ? 'chat' : 'setup')
   const [input, setInput] = useState('')
@@ -50,9 +57,12 @@ export function AiceApp(props: AiceAppProps) {
   const [streaming, setStreaming] = useState(false)
   const [currentResponse, setCurrentResponse] = useState('')
   const [setupState, setSetupState] = useState<SetupState>({
-    providerId: props.initialEnv?.providerId ?? 'openai',
+    providerId: initialProviderId,
     step: 'provider',
   })
+  const [providerChoiceIndex, setProviderChoiceIndex] = useState(
+    providerOptionIndex(initialProviderId),
+  )
   const [cursorVisible, setCursorVisible] = useState(true)
 
   const messageId = useRef(0)
@@ -67,7 +77,7 @@ export function AiceApp(props: AiceAppProps) {
         `Ready with ${props.initialEnv.providerId} (${props.initialEnv.model ?? 'default model'})`,
       )
     } else {
-      addSystemMessage('No provider configured. Starting setup...')
+      addSystemMessage('No provider configured. Starting setup... Use arrow keys to pick a provider.')
     }
   }, [props.initialEnv, props.initialError])
 
@@ -82,8 +92,30 @@ export function AiceApp(props: AiceAppProps) {
   }, [])
 
   useInput((receivedInput, key) => {
+    const selectingProvider = mode === 'setup' && setupState.step === 'provider'
+
     if (key.ctrl && receivedInput === 'c') {
       exit()
+      return
+    }
+
+    if (selectingProvider) {
+      if (key.upArrow) {
+        setProviderChoiceIndex(current => cycleProviderChoice(current, -1))
+        return
+      }
+
+      if (key.downArrow) {
+        setProviderChoiceIndex(current => cycleProviderChoice(current, 1))
+        return
+      }
+
+      if (key.return) {
+        handleSubmit()
+        return
+      }
+
+      // Ignore typing while provider selection is active; Enter will use the highlighted option.
       return
     }
 
@@ -110,7 +142,10 @@ export function AiceApp(props: AiceAppProps) {
     setInput('')
 
     if (mode === 'setup') {
-      handleSetupInput(trimmed)
+      const setupValue =
+        setupState.step === 'provider' ? selectedProviderId(providerChoiceIndex) : trimmed
+
+      handleSetupInput(setupValue)
       return
     }
 
@@ -121,12 +156,9 @@ export function AiceApp(props: AiceAppProps) {
 
   function handleSetupInput(value: string): void {
     if (setupState.step === 'provider') {
-      const providerId = parseProviderId(value) ?? (value ? undefined : 'openai')
-      if (!providerId) {
-        addSystemMessage('Provider must be one of: openai, openai-agents, anthropic, deepseek')
-        return
-      }
+      const providerId = selectedProviderId(providerChoiceIndex)
 
+      setProviderChoiceIndex(providerOptionIndex(providerId))
       setSetupState(current => ({
         ...current,
         providerId,
@@ -156,6 +188,8 @@ export function AiceApp(props: AiceAppProps) {
     if (!setupState.apiKey) {
       addSystemMessage('Missing API key; restart setup with /login.')
       setMode('setup')
+      setMaskInput(false)
+      setProviderChoiceIndex(providerOptionIndex('openai'))
       setSetupState({
         providerId: 'openai',
         step: 'provider',
@@ -183,6 +217,8 @@ export function AiceApp(props: AiceAppProps) {
         `Failed to load provider config. ${error ? error.message : 'Unknown error.'}`,
       )
       setMode('setup')
+      setMaskInput(false)
+      setProviderChoiceIndex(providerOptionIndex('openai'))
       setSetupState({
         providerId: 'openai',
         step: 'provider',
@@ -193,6 +229,7 @@ export function AiceApp(props: AiceAppProps) {
     setProviderEnv(env)
     setSessionMeta({ model: env.model ?? 'default', providerId: env.providerId })
     setMode('chat')
+    setProviderChoiceIndex(providerOptionIndex(env.providerId))
     setSetupState({
       providerId: env.providerId,
       step: 'provider',
@@ -257,16 +294,18 @@ export function AiceApp(props: AiceAppProps) {
 
       case 'login': {
         setMode('setup')
+        setMaskInput(false)
+        const nextProviderId = providerEnv?.providerId ?? setupState.providerId
+        setProviderChoiceIndex(providerOptionIndex(nextProviderId))
         setSetupState(current => ({
           ...current,
           apiKey: undefined,
           model: undefined,
-          providerId: providerEnv?.providerId ?? current.providerId,
+          providerId: nextProviderId,
           step: 'provider',
         }))
-        setMaskInput(false)
         addSystemMessage(
-          'Restarting setup. Choose provider (openai/openai-agents/anthropic/deepseek).',
+          'Restarting setup. Use arrow keys to choose provider (openai/openai-agents/anthropic/deepseek).',
         )
         break
       }
@@ -447,12 +486,14 @@ export function AiceApp(props: AiceAppProps) {
   const inputLabel = '>'
   const renderedInput = maskInput ? '*'.repeat(input.length) : input
   const providerMeta = sessionMeta ?? (providerEnv ? createMetaFromEnv(providerEnv) : undefined)
+  const providerSelection = selectedProviderId(providerChoiceIndex)
   const hint =
     mode === 'setup'
-      ? setupPrompt(setupState.step)
+      ? setupPrompt(setupState.step, providerSelection)
       : 'Type a prompt or use /help, /login, /provider, /model, /clear'
   const placeholder = streaming ? 'Processing response...' : hint
   const showCursor = !streaming && cursorVisible
+  const showProviderSelect = mode === 'setup' && setupState.step === 'provider'
 
   return (
     <Box flexDirection="column">
@@ -471,19 +512,43 @@ export function AiceApp(props: AiceAppProps) {
         ) : null}
       </Box>
       <Box width="100%">
-        <InputPanel
-          cursorVisible={showCursor}
-          disabled={streaming}
-          label={inputLabel}
-          placeholder={placeholder}
-          value={renderedInput}
-        />
+        {showProviderSelect ? (
+          <SelectInput
+            active
+            items={providerOptions}
+            selectedIndex={providerChoiceIndex}
+            title="Choose a provider"
+          />
+        ) : (
+          <InputPanel
+            cursorVisible={showCursor}
+            disabled={streaming}
+            label={inputLabel}
+            placeholder={placeholder}
+            value={renderedInput}
+          />
+        )}
       </Box>
       <Box width="100%">
         <StatusBar meta={providerMeta} status={sessionStatus} usage={sessionUsage} />
       </Box>
     </Box>
   )
+}
+
+function cycleProviderChoice(current: number, delta: number): number {
+  const total = providerOptions.length
+  if (total === 0) return 0
+  return (current + delta + total) % total
+}
+
+function providerOptionIndex(providerId: ProviderId): number {
+  const index = providerOptions.findIndex(option => option.value === providerId)
+  return index === -1 ? 0 : index
+}
+
+function selectedProviderId(index: number): ProviderId {
+  return providerOptions[index]?.value ?? 'openai'
 }
 
 function parseProviderId(value: string): ProviderId | undefined {
@@ -528,9 +593,9 @@ function createMetaFromEnv(env: ProviderEnv): { model: string; providerId: Provi
   }
 }
 
-function setupPrompt(step: SetupStep): string {
+function setupPrompt(step: SetupStep, providerId: ProviderId = 'openai'): string {
   if (step === 'provider') {
-    return 'Choose provider (openai/openai-agents/anthropic/deepseek). Press Enter for openai.'
+    return `Use arrow keys to choose provider (current: ${providerId}). Press Enter to confirm.`
   }
 
   if (step === 'apiKey') {
