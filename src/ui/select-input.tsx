@@ -1,6 +1,8 @@
 import {Box, Text} from 'ink'
 import {type ReactElement} from 'react'
 
+import {theme} from './theme.js'
+
 export interface SelectInputItem<T extends string> {
   description?: string
   label: string
@@ -16,10 +18,11 @@ export interface SelectInputProps<T extends string> {
 
 export function SelectInput<T extends string>(props: SelectInputProps<T>): ReactElement {
   const safeIndex = clampIndex(props.selectedIndex, props.items.length)
+  const colors = theme.components.selectInput
 
   return (
     <Box
-      borderColor={props.active ? 'cyan' : 'gray'}
+      borderColor={props.active ? colors.activeBorder : colors.border}
       borderStyle="round"
       flexDirection="column"
       paddingX={1}
@@ -28,7 +31,7 @@ export function SelectInput<T extends string>(props: SelectInputProps<T>): React
     >
       {props.title ? (
         <Box marginBottom={1}>
-          <Text color="yellow">{props.title}</Text>
+          <Text color={colors.title}>{props.title}</Text>
         </Box>
       ) : null}
       {props.items.map((item, index) => {
@@ -37,15 +40,19 @@ export function SelectInput<T extends string>(props: SelectInputProps<T>): React
 
         return (
           <Box key={item.value}>
-            <Text color={isSelected ? 'cyan' : undefined}>{`${indicator} ${item.label}`}</Text>
-            <Text color="gray">{` (${item.value})`}</Text>
-            {item.description ? <Text dimColor>{` · ${item.description}`}</Text> : null}
+            <Text color={isSelected ? colors.selected : colors.label}>{`${indicator} ${item.label}`}</Text>
+            <Text color={colors.value}>{` (${item.value})`}</Text>
+            {item.description ? (
+              <Text color={colors.helper} dimColor>{` · ${item.description}`}</Text>
+            ) : null}
           </Box>
         )
       })}
       {props.active ? (
         <Box marginTop={1}>
-          <Text dimColor>Use arrow keys to choose, Enter to confirm.</Text>
+          <Text color={colors.helper} dimColor>
+            Use arrow keys to choose, Enter to confirm.
+          </Text>
         </Box>
       ) : null}
     </Box>

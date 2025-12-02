@@ -8,6 +8,7 @@ import {persistProviderEnv, type ProviderEnv, tryLoadProviderEnv} from '../confi
 import {InputPanel} from './input-panel.js'
 import {SelectInput, type SelectInputItem} from './select-input.js'
 import {StatusBar} from './status-bar.js'
+import {theme} from './theme.js'
 
 type Mode = 'chat' | 'setup'
 
@@ -36,6 +37,8 @@ export interface AiceAppProps {
   initialEnv?: ProviderEnv
   initialError?: Error
 }
+
+const messageColors = theme.components.messages
 
 interface SetupState {
   apiKey?: string
@@ -500,7 +503,7 @@ export function AiceApp(props: AiceAppProps) {
 
   return (
     <Box flexDirection="column">
-      <Text color="cyan">AICE</Text>
+      <Text color={theme.components.app.title}>AICE</Text>
       <Box flexDirection="column" marginBottom={1}>
         {messages.map(message => (
           <Text color={colorForRole(message.role)} key={message.id} wrap="wrap">
@@ -508,7 +511,7 @@ export function AiceApp(props: AiceAppProps) {
           </Text>
         ))}
         {streaming ? (
-          <Text color="green" wrap="wrap">
+          <Text color={messageColors.assistant} wrap="wrap">
             {`Assistant: ${currentResponse || '...'}${sessionStatus === 'completed' || !cursorVisible ? '  ' : ' ▌'
               }`}
           </Text>
@@ -568,9 +571,9 @@ function parseProviderId(value: string): ProviderId | undefined {
 }
 
 function colorForRole(role: MessageRole): string {
-  if (role === 'assistant') return 'green'
-  if (role === 'user') return 'magenta'
-  return 'gray'
+  if (role === 'assistant') return messageColors.assistant
+  if (role === 'user') return messageColors.user
+  return messageColors.system
 }
 
 function labelForRole(role: MessageRole): string {

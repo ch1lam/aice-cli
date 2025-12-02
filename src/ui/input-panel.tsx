@@ -2,6 +2,8 @@ import type {ReactElement} from 'react'
 
 import {Box, Text} from 'ink'
 
+import {theme} from './theme.js'
+
 export interface InputPanelProps {
   cursorVisible?: boolean
   disabled?: boolean
@@ -12,10 +14,12 @@ export interface InputPanelProps {
 
 export function InputPanel(props: InputPanelProps): ReactElement {
   const cursor = props.disabled ? '' : props.cursorVisible ? '▌' : ' '
+  const colors = theme.components.inputPanel
+  const borderColor = props.disabled ? colors.border : colors.activeBorder
 
   return (
     <Box
-      borderColor="cyan"
+      borderColor={borderColor}
       borderStyle="round"
       flexDirection="column"
       paddingX={1}
@@ -23,16 +27,24 @@ export function InputPanel(props: InputPanelProps): ReactElement {
       width="100%"
     >
       <Box>
-        <Text color="yellow">{props.label}</Text>
+        <Text color={colors.label}>{props.label}</Text>
         {props.value ? (
-          <Text>{` ${props.value}${cursor}`}</Text>
+          <Text color={colors.text}>{` ${props.value}${cursor}`}</Text>
         ) : (
           <>
-            <Text>{` ${cursor}`}</Text>
-            {props.placeholder ? <Text dimColor>{props.placeholder}</Text> : null}
+            <Text color={colors.text}>{` ${cursor}`}</Text>
+            {props.placeholder ? (
+              <Text color={colors.placeholder} dimColor>
+                {props.placeholder}
+              </Text>
+            ) : null}
           </>
         )}
-        {props.disabled ? <Text dimColor>{' (busy)'}</Text> : null}
+        {props.disabled ? (
+          <Text color={colors.disabled} dimColor>
+            {' (busy)'}
+          </Text>
+        ) : null}
       </Box>
     </Box>
   )

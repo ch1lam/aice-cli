@@ -3,6 +3,8 @@ import {type ReactElement, useEffect, useState} from 'react'
 
 import type {StreamStatus, TokenUsage} from '../core/stream.js'
 
+import {theme} from './theme.js'
+
 const statusSpinnerFrames = ['-', '\\', '|', '/']
 
 export interface StatusBarProps {
@@ -19,6 +21,7 @@ export function StatusBar(props: StatusBarProps): ReactElement {
     ? `${props.meta.providerId}:${props.meta.model}`
     : 'provider:-'
   const isActive = props.status === 'running' || props.status === 'queued'
+  const colors = theme.components.statusBar
   const [spinnerIndex, setSpinnerIndex] = useState(0)
 
   useEffect(() => {
@@ -37,6 +40,7 @@ export function StatusBar(props: StatusBarProps): ReactElement {
   }, [isActive])
 
   const statusLabel = props.status ? `status:${props.status}` : 'status:pending'
+  const statusColor = props.status === 'failed' ? colors.error : colors.status
   const statusText = isActive
     ? `${statusLabel} ${statusSpinnerFrames[spinnerIndex]}`
     : statusLabel
@@ -44,11 +48,11 @@ export function StatusBar(props: StatusBarProps): ReactElement {
 
   return (
     <Box>
-      <Text color="green">{providerText}</Text>
-      <Text>{' | '}</Text>
-      <Text color="yellow">{statusText}</Text>
-      <Text>{' | '}</Text>
-      <Text color="blue">{usageText}</Text>
+      <Text color={colors.provider}>{providerText}</Text>
+      <Text color={colors.separator}>{' | '}</Text>
+      <Text color={statusColor}>{statusText}</Text>
+      <Text color={colors.separator}>{' | '}</Text>
+      <Text color={colors.usage}>{usageText}</Text>
     </Box>
   )
 }
