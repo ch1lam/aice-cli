@@ -1,5 +1,5 @@
 import {Box, Text, useApp, useInput} from 'ink'
-import {useEffect, useRef, useState} from 'react'
+import {useEffect, useMemo, useRef, useState} from 'react'
 
 import type {ProviderId, SessionStream, StreamStatus, TokenUsage} from '../core/stream.js'
 
@@ -7,6 +7,7 @@ import {ChatController} from '../chat/controller.js'
 import {persistProviderEnv, type ProviderEnv, tryLoadProviderEnv} from '../config/env.js'
 import {InputPanel} from './input-panel.js'
 import {SelectInput, type SelectInputItem} from './select-input.js'
+import {type SlashSuggestion, SlashSuggestions} from './slash-suggestions.js'
 import {StatusBar} from './status-bar.js'
 import {theme} from './theme.js'
 
@@ -26,6 +27,16 @@ const providerOptions: ProviderOption[] = [
   {description: 'Claude 3.7 and newer', label: 'Anthropic', value: 'anthropic'},
   {description: 'DeepSeek chat + reasoning', label: 'DeepSeek', value: 'deepseek'},
 ]
+
+const slashCommandList = [
+  {command: 'help', description: 'Show available commands and usage.', hint: '/help'},
+  {command: 'login', description: 'Restart setup and enter a provider API key.', hint: '/login'},
+  {command: 'provider', description: 'Switch between configured providers.', hint: '/provider openai'},
+  {command: 'model', description: 'Set or change the active model override.', hint: '/model gpt-4o-mini'},
+  {command: 'clear', description: 'Clear the transcript.', hint: '/clear'},
+] as const
+
+type SlashCommandId = (typeof slashCommandList)[number]['command']
 
 interface Message {
   id: number
@@ -68,6 +79,7 @@ export function AiceApp(props: AiceAppProps) {
   const [providerChoiceIndex, setProviderChoiceIndex] = useState(
     providerOptionIndex(initialProviderId),
   )
+  const [slashSuggestionIndex, setSlashSuggestionIndex] = useState(0)
   const [cursorVisible, setCursorVisible] = useState(true)
 
   const messageId = useRef(0)
@@ -96,8 +108,52 @@ export function AiceApp(props: AiceAppProps) {
     }
   }, [])
 
+  const slashCommandActive = mode === 'chat' && input.startsWith('/')
+
+  const slashQuery = useMemo(() => {
+    if (!slashCommandActive) return ''
+    const [commandPart] = input.slice(1).split(' ')
+    return (commandPart ?? '').toLowerCase()
+  }, [input, slashCommandActive])
+
+  const slashSuggestions = useMemo<SlashSuggestion[]>(() => {
+    if (!slashCommandActive) return []
+
+    const search = slashQuery.toLowerCase()
+    return slashCommandList
+      .filter(item => {
+        if (!search) return true
+        return (
+          item.command.toLowerCase().includes(search) ||
+          item.description.toLowerCase().includes(search) ||
+          (item.hint?.toLowerCase() ?? '').includes(search)
+        )
+      })
+      .map<SlashSuggestion>(item => ({
+        command: item.command,
+        description: item.description,
+        hint: item.hint,
+        value: `/${item.command}`,
+      }))
+  }, [input, slashCommandActive, slashQuery])
+
+  useEffect(() => {
+    if (!slashCommandActive || slashSuggestions.length === 0) {
+      setSlashSuggestionIndex(0)
+      return
+    }
+
+    setSlashSuggestionIndex(current => clampIndex(current, slashSuggestions.length))
+  }, [slashCommandActive, slashSuggestions.length])
+
+  useEffect(() => {
+    if (!slashCommandActive) return
+    setSlashSuggestionIndex(0)
+  }, [slashCommandActive, slashQuery])
+
   useInput((receivedInput, key) => {
     const selectingProvider = mode === 'setup' && setupState.step === 'provider'
+    const hasSlashSuggestions = slashCommandActive && slashSuggestions.length > 0 && !streaming
 
     if (key.ctrl && receivedInput === 'c') {
       exit()
@@ -124,6 +180,30 @@ export function AiceApp(props: AiceAppProps) {
       return
     }
 
+    if (key.tab) {
+      if (hasSlashSuggestions) {
+        applySlashSuggestion(slashSuggestionIndex)
+      }
+
+      return
+    }
+
+    if (hasSlashSuggestions) {
+      if (key.downArrow) {
+        setSlashSuggestionIndex(current =>
+          cycleIndex(current, 1, slashSuggestions.length),
+        )
+        return
+      }
+
+      if (key.upArrow) {
+        setSlashSuggestionIndex(current =>
+          cycleIndex(current, -1, slashSuggestions.length),
+        )
+        return
+      }
+    }
+
     if (key.return) {
       handleSubmit()
       return
@@ -146,6 +226,15 @@ export function AiceApp(props: AiceAppProps) {
     const trimmed = value.trim()
     setInput('')
 
+    if (mode === 'chat' && slashCommandActive && slashSuggestions.length > 0 && !streaming) {
+      const submission = buildSlashSubmissionValue(slashSuggestionIndex, value)
+      if (submission.trim()) {
+        handleChatInput(submission)
+      }
+
+      return
+    }
+
     if (mode === 'setup') {
       const setupValue =
         setupState.step === 'provider' ? selectedProviderId(providerChoiceIndex) : trimmed
@@ -157,6 +246,23 @@ export function AiceApp(props: AiceAppProps) {
     if (!trimmed) return
 
     handleChatInput(value)
+  }
+
+  function applySlashSuggestion(targetIndex: number): void {
+    const nextValue = buildSlashSubmissionValue(targetIndex, input)
+    if (!nextValue) return
+    const needsSpace = nextValue.endsWith(' ') ? '' : ' '
+    setInput(`${nextValue}${needsSpace}`)
+  }
+
+  function buildSlashSubmissionValue(targetIndex: number, baseInput: string): string {
+    const suggestion = slashSuggestions[clampIndex(targetIndex, slashSuggestions.length)]
+    if (!suggestion) return baseInput.trim()
+
+    const [, ...args] = baseInput.slice(1).split(' ')
+    const argsText = args.join(' ').trim()
+    const argSegment = argsText ? ` ${argsText}` : ''
+    return `/${suggestion.command}${argSegment}`.trim()
   }
 
   function handleSetupInput(value: string): void {
@@ -269,7 +375,7 @@ export function AiceApp(props: AiceAppProps) {
     })
   }
 
-  const slashHandlers: Record<string, SlashHandler> = {
+  const slashHandlers: Record<SlashCommandId, SlashHandler> = {
     clear: handleClearCommand,
     help: handleHelpCommand,
     login: handleLoginCommand,
@@ -289,13 +395,17 @@ export function AiceApp(props: AiceAppProps) {
       return
     }
 
-    const handler = slashHandlers[command]
-    if (!handler) {
+    if (!isSlashCommand(command)) {
       addSystemMessage(`Unknown command: /${command}`)
       return
     }
 
+    const handler = slashHandlers[command]
     handler(args)
+  }
+
+  function isSlashCommand(value: string): value is SlashCommandId {
+    return slashCommandList.some(command => command.command === value)
   }
 
   function handleClearCommand(): void {
@@ -308,7 +418,8 @@ export function AiceApp(props: AiceAppProps) {
   }
 
   function handleHelpCommand(): void {
-    addSystemMessage('Commands: /help, /login, /provider <id>, /model <name>, /clear')
+    const commands = slashCommandList.map(option => `/${option.command}`).join(', ')
+    addSystemMessage(`Commands: ${commands}. Type / and use Tab to autocomplete.`)
   }
 
   function handleLoginCommand(): void {
@@ -379,7 +490,7 @@ export function AiceApp(props: AiceAppProps) {
       return
     }
 
-    const {env, error} = tryLoadProviderEnv({providerId})
+    const { env, error } = tryLoadProviderEnv({providerId})
     if (!env || error) {
       addSystemMessage(`Provider ${providerId} is not configured. Run /login to set API key first.`)
       return
@@ -500,6 +611,8 @@ export function AiceApp(props: AiceAppProps) {
   const placeholder = streaming ? 'Processing response...' : hint
   const showCursor = !streaming && cursorVisible
   const showProviderSelect = mode === 'setup' && setupState.step === 'provider'
+  const showSlashSuggestions =
+    !streaming && mode === 'chat' && slashCommandActive && slashSuggestions.length > 0
 
   return (
     <Box flexDirection="column">
@@ -517,7 +630,7 @@ export function AiceApp(props: AiceAppProps) {
           </Text>
         ) : null}
       </Box>
-      <Box width="100%">
+      <Box flexDirection="column" width="100%">
         {showProviderSelect ? (
           <SelectInput
             active
@@ -526,13 +639,20 @@ export function AiceApp(props: AiceAppProps) {
             title="Choose a provider"
           />
         ) : (
-          <InputPanel
-            cursorVisible={showCursor}
-            disabled={streaming}
-            label={inputLabel}
-            placeholder={placeholder}
-            value={renderedInput}
-          />
+          <>
+            <InputPanel
+              cursorVisible={showCursor}
+              disabled={streaming}
+              label={inputLabel}
+              placeholder={placeholder}
+              value={renderedInput}
+            />
+            <SlashSuggestions
+              activeIndex={slashSuggestionIndex}
+              items={slashSuggestions}
+              visible={showSlashSuggestions}
+            />
+          </>
         )}
       </Box>
       <Box width="100%">
@@ -546,6 +666,18 @@ function cycleProviderChoice(current: number, delta: number): number {
   const total = providerOptions.length
   if (total === 0) return 0
   return (current + delta + total) % total
+}
+
+function cycleIndex(current: number, delta: number, length: number): number {
+  if (length === 0) return 0
+  return (current + delta + length) % length
+}
+
+function clampIndex(index: number, length: number): number {
+  if (length === 0) return 0
+  if (index < 0) return 0
+  if (index >= length) return length - 1
+  return index
 }
 
 function providerOptionIndex(providerId: ProviderId): number {

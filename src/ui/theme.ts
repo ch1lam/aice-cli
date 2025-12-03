@@ -75,6 +75,14 @@ const components = {
     title: semantic.accentPrimary,
     value: semantic.textMuted,
   },
+  slashSuggestions: {
+    border: semantic.borderMuted,
+    command: semantic.accentSecondary,
+    description: semantic.textMuted,
+    helper: semantic.textMuted,
+    hint: semantic.textSecondary,
+    selected: semantic.accentPrimary,
+  },
   statusBar: {
     error: semantic.accentDanger,
     provider: semantic.accentSecondary,
