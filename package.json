@@ -64,7 +64,7 @@
   },
   "repository": "ch1lam/aice-cli",
   "scripts": {
-    "build": "shx rm -rf dist tsconfig.tsbuildinfo && tsc -b --force",
+    "build": "shx rm -rf dist tsconfig.tsbuildinfo && tsc -b",
     "lint": "eslint",
     "postpack": "shx rm -f oclif.manifest.json",
     "posttest": "yarn lint",
