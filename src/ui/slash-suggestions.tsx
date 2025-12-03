@@ -1,8 +1,8 @@
-import type {ReactElement} from 'react'
+import type { ReactElement } from 'react'
 
-import {Box, Text} from 'ink'
+import { Box, Text } from 'ink'
 
-import {theme} from './theme.js'
+import { theme } from './theme.js'
 
 export interface SlashSuggestion {
   command: string
@@ -24,22 +24,10 @@ export function SlashSuggestions(props: SlashSuggestionsProps): null | ReactElem
   const colors = theme.components.slashSuggestions
 
   return (
-    <Box
-      borderColor={colors.border}
-      borderStyle="round"
-      flexDirection="column"
-      paddingX={1}
-      paddingY={0}
-      width="100%"
-    >
-      <Box marginBottom={1}>
-        <Text color={colors.helper} dimColor>
-          Use ↑/↓ to browse, Tab to autocomplete, Enter to send the highlighted command.
-        </Text>
-      </Box>
+    <Box flexDirection="column" paddingX={1} paddingY={0} width="100%">
       {props.items.map((item, itemIndex) => {
         const isActive = itemIndex === index
-        const indicator = isActive ? '>' : ' '
+        const indicator = isActive ? '❄' : ' '
         const commandText = withLeadingSlash(item.hint ?? item.value)
 
         return (
@@ -53,6 +41,11 @@ export function SlashSuggestions(props: SlashSuggestionsProps): null | ReactElem
           </Box>
         )
       })}
+      <Box>
+        <Text color={colors.helper} dimColor>
+          Use ↑/↓ to browse, Tab to autocomplete, Enter to send the highlighted command.
+        </Text>
+      </Box>
     </Box>
   )
 }
