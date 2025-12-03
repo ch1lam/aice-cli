@@ -40,20 +40,16 @@ export function SlashSuggestions(props: SlashSuggestionsProps): null | ReactElem
       {props.items.map((item, itemIndex) => {
         const isActive = itemIndex === index
         const indicator = isActive ? '>' : ' '
+        const commandText = withLeadingSlash(item.hint ?? item.value)
 
         return (
-          <Box flexDirection="column" key={item.value}>
-            <Box>
-              <Text color={isActive ? colors.selected : colors.command}>{`${indicator} ${withLeadingSlash(item.value)}`}</Text>
-              {item.hint ? (
-                <Text color={colors.hint}>{` ${item.hint}`}</Text>
-              ) : null}
-            </Box>
-            <Box marginLeft={2}>
-              <Text color={colors.description} dimColor>
-                {item.description}
-              </Text>
-            </Box>
+          <Box key={item.value}>
+            <Text color={isActive ? colors.selected : colors.command}>
+              {`${indicator} ${commandText}`}
+            </Text>
+            <Text color={colors.description} dimColor>
+              {`  ${item.description}`}
+            </Text>
           </Box>
         )
       })}
