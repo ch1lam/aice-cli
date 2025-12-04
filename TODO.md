@@ -14,8 +14,11 @@
 - [x] Layer in the OpenAI Agents SDK for high-level orchestration once the core streaming path and TUI shell are stable.
 
 ## Next Up (no new persistence except config)
-- [ ] Surfacing failures in the TUI status bar: when a provider errors, set `sessionStatus=failed` and render the error state in `StatusBar` so users get immediate, visible failure feedback.
-- [ ] First-run connectivity check: after setup writes `.env`, fire a lightweight provider ping/model request to confirm the API key works and surface actionable errors; keep within current config persistence only.
-- [ ] Setup overrides: extend the interactive setup to optionally capture base URL and provider-specific overrides (e.g., Agents instructions/model), passing them through to `persistProviderEnv` without adding other persistence.
-- [ ] Failure-path tests: add stubbed tests for invalid/expired API keys and timeout/error propagation (provider adapters + UI messaging) to cover the above flows.
-- [ ] Prompt orchestration polish (in-memory only): improve `buildPrompt`/context handling (e.g., smarter truncation/role formatting) without adding storage or extra persistence.
+- [ ] TUI failure visibility: on stream `error`, set `sessionStatus=failed` and show error state/message in `StatusBar`; add Ink tests for success/failure cases.
+- [ ] First-run connectivity: after setup writes `.env`, run a lightweight provider ping (minimal per provider). On failure, stay in setup with actionable error; add stubbed tests for the ping.
+- [ ] Setup overrides: collect optional baseURL/model/Agents instructions during setup; pass to `persistProviderEnv` with no extra persistence. Ensure provider switching keeps existing overrides.
+- [ ] Provider event semantics: all `providers/*.ts` should emit `status:running` at start, `status:completed/failed` at end, emit a single `usage`, and surface underlying error code/message. Add unit tests covering the differences.
+- [ ] Slash command routing table: extract command definitions (name/usage/handler), centralize parse/validation, keep Tab/up/down behavior; add tests for unknown/empty commands.
+- [ ] Split TUI logic: extract `useSetupFlow` (provider select/save), `useChatStream` (consume SessionStream), `useSlashCommands` (table-driven). `AiceApp` should only render and wire state.
+- [ ] Prompt builder: add structured `buildPrompt` (role labels, optional truncation, no persistence) and replace the `startStream` string concat; add unit test.
+- [ ] Config I/O abstraction: provide injectable I/O for `.env` read/write (testable), centralize required-field validation, avoid global `process.env` pollution; add tests for I/O failures.
