@@ -77,7 +77,12 @@ function SessionScene(props: SessionSceneProps): ReactElement {
   return (
     <Box flexDirection="column">
       <ChatWindow content={session.content} prompt="Hello?" />
-      <StatusBar meta={session.meta} status={session.status} usage={session.usage} />
+      <StatusBar
+        meta={session.meta}
+        status={session.status}
+        statusMessage={session.statusMessage}
+        usage={session.usage}
+      />
       {session.error ? <Text color="red">{`Error: ${session.error.message}`}</Text> : null}
     </Box>
   )
@@ -98,7 +103,7 @@ describe('Ink session UI', () => {
     )
 
     const {frames, lastFrame} = render(<SessionScene stream={stream} />)
-    await waitFor(() => (lastFrame() ?? '').includes('completed'))
+    await waitFor(() => (lastFrame() ?? '').includes('status:completed'))
 
     const cleanedFrames = frames.map(frame => stripAnsi(frame))
     const partialFrame = cleanedFrames.find(
@@ -111,7 +116,7 @@ describe('Ink session UI', () => {
 
     expect(finalFrame).to.include('Hello world')
     expect(finalFrame).to.include('openai:gpt-4o-mini')
-    expect(finalFrame).to.include('completed')
+    expect(finalFrame).to.include('status:completed')
     expect(finalFrame).to.include('usage in=5 out=7 total=12')
   })
 
@@ -123,9 +128,10 @@ describe('Ink session UI', () => {
     ])
 
     const {lastFrame} = render(<SessionScene stream={stream} />)
-    await waitFor(() => (lastFrame() ?? '').includes('Error: boom'))
+    await waitFor(() => (lastFrame() ?? '').includes('status:failed'))
 
     const finalFrame = stripAnsi(lastFrame() ?? '')
+    expect(finalFrame.replaceAll(/\s+/g, ' ')).to.include('status:failed - boom')
     expect(finalFrame).to.include('Error: boom')
   })
 })

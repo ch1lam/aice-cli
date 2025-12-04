@@ -69,6 +69,7 @@ export function AiceApp(props: AiceAppProps) {
   const [providerEnv, setProviderEnv] = useState<ProviderEnv | undefined>(props.initialEnv)
   const [sessionMeta, setSessionMeta] = useState<{ model: string; providerId: ProviderId }>()
   const [sessionStatus, setSessionStatus] = useState<StreamStatus | undefined>()
+  const [sessionStatusMessage, setSessionStatusMessage] = useState<string | undefined>()
   const [sessionUsage, setSessionUsage] = useState<TokenUsage | undefined>()
   const [streaming, setStreaming] = useState(false)
   const [currentResponse, setCurrentResponse] = useState('')
@@ -412,6 +413,7 @@ export function AiceApp(props: AiceAppProps) {
     setMessages([])
     setSessionMeta(undefined)
     setSessionStatus(undefined)
+    setSessionStatusMessage(undefined)
     setSessionUsage(undefined)
     setCurrentResponse('')
     addSystemMessage('Cleared transcript.')
@@ -534,10 +536,18 @@ export function AiceApp(props: AiceAppProps) {
     setStreaming(true)
     setCurrentResponse('')
     setSessionStatus('running')
+    setSessionStatusMessage(undefined)
     setSessionUsage(undefined)
     setSessionMeta({ model: env.model ?? 'default', providerId: env.providerId })
 
     let buffer = ''
+
+    function handleStreamError(error: unknown) {
+      const message = error instanceof Error ? error.message : String(error)
+      setSessionStatus('failed')
+      setSessionStatusMessage(message)
+      addSystemMessage(`Provider error: ${message}`)
+    }
 
     async function streamChunks() {
       try {
@@ -545,11 +555,13 @@ export function AiceApp(props: AiceAppProps) {
           switch (chunk.type) {
             case 'done': {
               setSessionStatus('completed')
+              setSessionStatusMessage(undefined)
               break
             }
 
             case 'error': {
-              throw chunk.error
+              handleStreamError(chunk.error)
+              return
             }
 
             case 'meta': {
@@ -559,6 +571,7 @@ export function AiceApp(props: AiceAppProps) {
 
             case 'status': {
               setSessionStatus(chunk.status)
+              setSessionStatusMessage(chunk.detail)
               break
             }
 
@@ -580,8 +593,7 @@ export function AiceApp(props: AiceAppProps) {
           setMessages(current => [...current, assistantMessage])
         }
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error)
-        addSystemMessage(`Provider error: ${message}`)
+        handleStreamError(error)
       } finally {
         setStreaming(false)
         setCurrentResponse('')
@@ -656,7 +668,12 @@ export function AiceApp(props: AiceAppProps) {
         )}
       </Box>
       <Box width="100%">
-        <StatusBar meta={providerMeta} status={sessionStatus} usage={sessionUsage} />
+        <StatusBar
+          meta={providerMeta}
+          status={sessionStatus}
+          statusMessage={sessionStatusMessage}
+          usage={sessionUsage}
+        />
       </Box>
     </Box>
   )

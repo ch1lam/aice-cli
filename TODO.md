@@ -14,7 +14,7 @@
 - [x] Layer in the OpenAI Agents SDK for high-level orchestration once the core streaming path and TUI shell are stable.
 
 ## Next Up (no new persistence except config)
-- [ ] TUI failure visibility: on stream `error`, set `sessionStatus=failed` and show error state/message in `StatusBar`; add Ink tests for success/failure cases.
+- [x] TUI failure visibility: on stream `error`, set `sessionStatus=failed` and show error state/message in `StatusBar`; add Ink tests for success/failure cases.
 - [ ] First-run connectivity: after setup writes `.env`, run a lightweight provider ping (minimal per provider). On failure, stay in setup with actionable error; add stubbed tests for the ping.
 - [ ] Setup overrides: collect optional baseURL/model/Agents instructions during setup; pass to `persistProviderEnv` with no extra persistence. Ensure provider switching keeps existing overrides.
 - [ ] Provider event semantics: all `providers/*.ts` should emit `status:running` at start, `status:completed/failed` at end, emit a single `usage`, and surface underlying error code/message. Add unit tests covering the differences.

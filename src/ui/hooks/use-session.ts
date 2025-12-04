@@ -19,6 +19,7 @@ export interface SessionState {
   error?: Error
   meta?: SessionMeta
   status?: StreamStatus
+  statusMessage?: string
   usage?: TokenUsage
 }
 
@@ -47,8 +48,15 @@ export function useSession(options: UseSessionOptions): SessionState {
       } catch (error_: unknown) {
         const error = error_ instanceof Error ? error_ : new Error(String(error_))
         if (!cancelled) {
-          setState(current => ({...current, done: true, error}))
+          setState(current => ({
+            ...current,
+            done: true,
+            error,
+            status: 'failed',
+            statusMessage: error.message,
+          }))
           onError?.(error)
+          onStatusChange?.('failed')
         }
       }
     }
@@ -60,6 +68,7 @@ export function useSession(options: UseSessionOptions): SessionState {
             ...current,
             done: true,
             status: 'completed',
+            statusMessage: undefined,
           }))
           break
         }
@@ -69,8 +78,11 @@ export function useSession(options: UseSessionOptions): SessionState {
             ...current,
             done: true,
             error: chunk.error,
+            status: 'failed',
+            statusMessage: chunk.error.message,
           }))
           onError?.(chunk.error)
+          onStatusChange?.('failed')
           break
         }
 
@@ -86,6 +98,7 @@ export function useSession(options: UseSessionOptions): SessionState {
           setState(current => ({
             ...current,
             status: chunk.status,
+            statusMessage: chunk.detail,
           }))
           onStatusChange?.(chunk.status)
           break

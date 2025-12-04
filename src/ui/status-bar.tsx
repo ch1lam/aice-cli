@@ -13,10 +13,12 @@ export interface StatusBarProps {
     providerId: string
   }
   status?: StreamStatus
+  statusMessage?: string
   usage?: TokenUsage
 }
 
 export function StatusBar(props: StatusBarProps): ReactElement {
+  const {meta, status, statusMessage, usage} = props
   const {stdout} = useStdout()
   const [columns, setColumns] = useState<number | undefined>(stdout?.columns)
   const barWidth =
@@ -35,10 +37,8 @@ export function StatusBar(props: StatusBarProps): ReactElement {
       stdout.off('resize', handleResize)
     }
   }, [stdout])
-  const providerText = props.meta
-    ? `${props.meta.providerId}:${props.meta.model}`
-    : 'provider:-'
-  const isActive = props.status === 'running' || props.status === 'queued'
+  const providerText = meta ? `${meta.providerId}:${meta.model}` : 'provider:-'
+  const isActive = status === 'running' || status === 'queued'
   const colors = theme.components.statusBar
   const [spinnerIndex, setSpinnerIndex] = useState(0)
 
@@ -57,12 +57,12 @@ export function StatusBar(props: StatusBarProps): ReactElement {
     }
   }, [isActive])
 
-  const statusLabel = props.status ? `status:${props.status}` : 'status:pending'
-  const statusColor = props.status === 'failed' ? colors.error : colors.status
+  const statusLabel = status ? `status:${status}` : 'status:pending'
+  const statusColor = status === 'failed' ? colors.error : colors.status
   const statusText = isActive
     ? `${statusLabel} ${statusSpinnerFrames[spinnerIndex]}`
     : statusLabel
-  const usageText = formatUsage(props.usage)
+  const usageText = formatUsage(usage)
 
   return (
     <Box alignItems="center" justifyContent="space-between" paddingX={1} width={barWidth}>
@@ -72,6 +72,11 @@ export function StatusBar(props: StatusBarProps): ReactElement {
         <Text backgroundColor={theme.semantic.active} bold color={statusColor}>
           {` ${statusText} `}
         </Text>
+        {statusMessage ? (
+          <Text color={statusColor} wrap="truncate">
+            {` - ${statusMessage}`}
+          </Text>
+        ) : null}
       </Box>
       <Text color={colors.usage} wrap="truncate">
         {usageText}
