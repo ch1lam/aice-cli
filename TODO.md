@@ -12,3 +12,10 @@
 - [x] Implement a slash-command router in the TUI (`/help`, `/provider`, `/model`, `/login`, `/clear` to start) with status feedback.
 - [x] Support multi-turn sessions in the TUI, keeping history and provider settings across messages.
 - [x] Layer in the OpenAI Agents SDK for high-level orchestration once the core streaming path and TUI shell are stable.
+
+## Next Up (no new persistence except config)
+- [ ] Surfacing failures in the TUI status bar: when a provider errors, set `sessionStatus=failed` and render the error state in `StatusBar` so users get immediate, visible failure feedback.
+- [ ] First-run connectivity check: after setup writes `.env`, fire a lightweight provider ping/model request to confirm the API key works and surface actionable errors; keep within current config persistence only.
+- [ ] Setup overrides: extend the interactive setup to optionally capture base URL and provider-specific overrides (e.g., Agents instructions/model), passing them through to `persistProviderEnv` without adding other persistence.
+- [ ] Failure-path tests: add stubbed tests for invalid/expired API keys and timeout/error propagation (provider adapters + UI messaging) to cover the above flows.
+- [ ] Prompt orchestration polish (in-memory only): improve `buildPrompt`/context handling (e.g., smarter truncation/role formatting) without adding storage or extra persistence.
