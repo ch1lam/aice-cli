@@ -14,9 +14,5 @@
       "@anthropic-ai/sdk/resources/*": ["./node_modules/@anthropic-ai/sdk/resources/*"]
     }
   },
-  "include": ["./src/**/*"],
-  "ts-node": {
-    "esm": true,
-    "experimentalSpecifierResolution": "node"
-  }
+  "include": ["./src/**/*"]
 }
