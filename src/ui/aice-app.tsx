@@ -5,6 +5,7 @@ import type {ProviderId, SessionStream, StreamStatus, TokenUsage} from '../core/
 
 import {ChatController} from '../chat/controller.js'
 import {persistProviderEnv, type ProviderEnv, tryLoadProviderEnv} from '../config/env.js'
+import {pingProvider} from '../providers/ping.js'
 import {InputPanel} from './input-panel.js'
 import {SelectInput, type SelectInputItem} from './select-input.js'
 import {type SlashSuggestion, SlashSuggestions} from './slash-suggestions.js'
@@ -77,6 +78,7 @@ export function AiceApp(props: AiceAppProps) {
     providerId: initialProviderId,
     step: 'provider',
   })
+  const [setupSubmitting, setSetupSubmitting] = useState(false)
   const [providerChoiceIndex, setProviderChoiceIndex] = useState(
     providerOptionIndex(initialProviderId),
   )
@@ -160,6 +162,8 @@ export function AiceApp(props: AiceAppProps) {
       exit()
       return
     }
+
+    if (setupSubmitting) return
 
     if (selectingProvider) {
       if (key.upArrow) {
@@ -266,7 +270,12 @@ export function AiceApp(props: AiceAppProps) {
     return `/${suggestion.command}${argSegment}`.trim()
   }
 
-  function handleSetupInput(value: string): void {
+  async function handleSetupInput(value: string): Promise<void> {
+    if (setupSubmitting) {
+      addSystemMessage('Setup in progress. Please wait.')
+      return
+    }
+
     if (setupState.step === 'provider') {
       const providerId = selectedProviderId(providerChoiceIndex)
 
@@ -336,6 +345,34 @@ export function AiceApp(props: AiceAppProps) {
         step: 'provider',
       })
       return
+    }
+
+    await finalizeSetup(env)
+  }
+
+  async function finalizeSetup(env: ProviderEnv): Promise<void> {
+    setSetupSubmitting(true)
+    addSystemMessage('Checking provider connectivity...')
+
+    try {
+      await pingProvider(env)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      addSystemMessage(
+        `Connectivity check failed for ${env.providerId}: ${message}. Please verify your API key or base URL.`,
+      )
+      setMode('setup')
+      setMaskInput(true)
+      setProviderChoiceIndex(providerOptionIndex(env.providerId))
+      setSetupState({
+        apiKey: undefined,
+        model: undefined,
+        providerId: env.providerId,
+        step: 'apiKey',
+      })
+      return
+    } finally {
+      setSetupSubmitting(false)
     }
 
     setProviderEnv(env)
@@ -620,8 +657,12 @@ export function AiceApp(props: AiceAppProps) {
     mode === 'setup'
       ? setupPrompt(setupState.step, providerSelection)
       : 'Type a prompt or use /help, /login, /provider, /model, /clear'
-  const placeholder = streaming ? 'Processing response...' : hint
-  const showCursor = !streaming && cursorVisible
+  const placeholder = streaming
+    ? 'Processing response...'
+    : setupSubmitting
+      ? 'Validating provider...'
+      : hint
+  const showCursor = !streaming && !setupSubmitting && cursorVisible
   const showProviderSelect = mode === 'setup' && setupState.step === 'provider'
   const showSlashSuggestions =
     !streaming && mode === 'chat' && slashCommandActive && slashSuggestions.length > 0
@@ -654,7 +695,7 @@ export function AiceApp(props: AiceAppProps) {
           <>
             <InputPanel
               cursorVisible={showCursor}
-              disabled={streaming}
+              disabled={streaming || setupSubmitting}
               label={inputLabel}
               placeholder={placeholder}
               value={renderedInput}
