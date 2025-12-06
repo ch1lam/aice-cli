@@ -70,7 +70,7 @@
     "postpack": "shx rm -f oclif.manifest.json",
     "posttest": "yarn lint",
     "prepack": "oclif manifest && oclif readme",
-    "test": "TS_NODE_PROJECT=test/tsconfig.json node --loader ts-node/esm ./node_modules/mocha/bin/mocha --forbid-only \"test/**/*.test.{ts,tsx}\"",
+    "test": "TSX_TSCONFIG_PATH=test/tsconfig.json node --import tsx ./node_modules/mocha/bin/mocha --forbid-only \"test/**/*.test.{ts,tsx}\"",
     "version": "oclif readme && git add README.md"
   },
   "types": "dist/index.d.ts"

@@ -9,6 +9,7 @@ dotenv.config({quiet: true})
 export interface ProviderEnv {
   apiKey: string
   baseURL?: string
+  instructions?: string
   model?: string
   providerId: ProviderId
 }
@@ -76,6 +77,7 @@ export function loadProviderEnv(options?: LoadProviderEnvOptions): ProviderEnv {
       return {
         apiKey,
         baseURL: process.env.AICE_OPENAI_BASE_URL,
+        instructions: process.env.AICE_OPENAI_AGENT_INSTRUCTIONS,
         model:
           process.env.AICE_OPENAI_AGENT_MODEL ??
           process.env.AICE_OPENAI_MODEL ??
@@ -93,6 +95,7 @@ export function loadProviderEnv(options?: LoadProviderEnvOptions): ProviderEnv {
 export interface ProviderCredentials {
   apiKey: string
   baseURL?: string
+  instructions?: string
   model?: string
   providerId: ProviderId
 }
@@ -158,7 +161,6 @@ function buildEnvEntries(options: ProviderCredentials): Record<string, string | 
 
     case 'openai': {
       return {
-        AICE_MODEL: undefined,
         AICE_OPENAI_API_KEY: options.apiKey,
         AICE_OPENAI_BASE_URL: options.baseURL,
         AICE_OPENAI_MODEL: options.model,
@@ -167,11 +169,10 @@ function buildEnvEntries(options: ProviderCredentials): Record<string, string | 
 
     case 'openai-agents': {
       return {
-        AICE_MODEL: undefined,
+        AICE_OPENAI_AGENT_INSTRUCTIONS: options.instructions,
         AICE_OPENAI_AGENT_MODEL: options.model,
         AICE_OPENAI_API_KEY: options.apiKey,
         AICE_OPENAI_BASE_URL: options.baseURL,
-        AICE_OPENAI_MODEL: undefined,
       }
     }
 

@@ -98,6 +98,7 @@ export function createProviderBinding(
       const provider = new OpenAIAgentsProvider({
         apiKey: options.env.apiKey,
         baseURL: options.env.baseURL,
+        instructions: options.env.instructions,
         model: options.env.model,
       })
 

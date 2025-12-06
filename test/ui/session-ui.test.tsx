@@ -1,13 +1,13 @@
-import {expect} from 'chai'
-import {Box, Text, useApp} from 'ink'
-import {render} from 'ink-testing-library'
-import {type ReactElement, useEffect} from 'react'
+import { expect } from 'chai'
+import { Box, Text, useApp } from 'ink'
+import { render } from 'ink-testing-library'
+import { type ReactElement, useEffect } from 'react'
 
-import type {SessionStreamChunk} from '../../src/core/stream.ts'
+import type { SessionStreamChunk } from '../../src/core/stream.ts'
 
-import {ChatWindow} from '../../src/ui/chat-window.js'
-import {useSession} from '../../src/ui/hooks/use-session.js'
-import {StatusBar} from '../../src/ui/status-bar.js'
+import { ChatWindow } from '../../src/ui/chat-window.js'
+import { useSession } from '../../src/ui/hooks/use-session.js'
+import { StatusBar } from '../../src/ui/status-bar.js'
 
 function stripAnsi(value: string): string {
   const escape = '\u001B['

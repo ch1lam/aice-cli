@@ -14,7 +14,7 @@ import {theme} from './theme.js'
 
 type Mode = 'chat' | 'setup'
 
-type SetupStep = 'apiKey' | 'model' | 'provider'
+type SetupStep = 'apiKey' | 'baseURL' | 'instructions' | 'model' | 'provider'
 
 type MessageRole = 'assistant' | 'system' | 'user'
 
@@ -54,6 +54,8 @@ const messageColors = theme.components.messages
 
 interface SetupState {
   apiKey?: string
+  baseURL?: string
+  instructions?: string
   model?: string
   providerId: ProviderId
   step: SetupStep
@@ -276,54 +278,111 @@ export function AiceApp(props: AiceAppProps) {
       return
     }
 
-    if (setupState.step === 'provider') {
-      const providerId = selectedProviderId(providerChoiceIndex)
+    const trimmed = value.trim()
 
-      setProviderChoiceIndex(providerOptionIndex(providerId))
-      setSetupState(current => ({
-        ...current,
-        providerId,
-        step: 'apiKey',
-      }))
-      setMaskInput(true)
-      addSystemMessage(`Using provider ${providerId}. Enter API key:`)
-      return
-    }
+    switch (setupState.step) {
+      case 'apiKey': {
+        if (!trimmed) {
+          addSystemMessage('API key is required.')
+          return
+        }
 
-    if (setupState.step === 'apiKey') {
-      if (!value) {
-        addSystemMessage('API key is required.')
+        setSetupState(current => ({
+          ...current,
+          apiKey: trimmed,
+          step: 'baseURL',
+        }))
+        setMaskInput(false)
+        addSystemMessage(
+          'API key captured. Optional: enter base URL override, or press Enter to skip.',
+        )
         return
       }
 
-      setSetupState(current => ({
-        ...current,
-        apiKey: value,
-        step: 'model',
-      }))
-      setMaskInput(false)
-      addSystemMessage('API key captured. Optional: enter model override, or press Enter to skip.')
+      case 'baseURL': {
+        setSetupState(current => ({
+          ...current,
+          baseURL: trimmed || undefined,
+          step: 'model',
+        }))
+        addSystemMessage('Optional: enter model override, or press Enter to skip.')
+        return
+      }
+
+      case 'instructions': {
+        if (!setupState.apiKey) {
+          handleMissingApiKey()
+          return
+        }
+
+        const instructions = trimmed || undefined
+        setSetupState(current => ({...current, instructions}))
+        await persistSetupEnv({instructions})
+        return
+      }
+
+      case 'model': {
+        if (!setupState.apiKey) {
+          handleMissingApiKey()
+          return
+        }
+
+        const nextModel = trimmed || undefined
+
+        if (setupState.providerId === 'openai-agents') {
+          setSetupState(current => ({
+            ...current,
+            model: nextModel,
+            step: 'instructions',
+          }))
+          addSystemMessage(
+            'Optional: enter default agent instructions, or press Enter to use the default.',
+          )
+          return
+        }
+
+        setSetupState(current => ({ ...current, model: nextModel }))
+        await persistSetupEnv({model: nextModel})
+        return
+      }
+
+      case 'provider': {
+        const providerId = selectedProviderId(providerChoiceIndex)
+
+        setProviderChoiceIndex(providerOptionIndex(providerId))
+        setSetupState({
+          apiKey: undefined,
+          baseURL: undefined,
+          instructions: undefined,
+          model: undefined,
+          providerId,
+          step: 'apiKey',
+        })
+        setMaskInput(true)
+        addSystemMessage(`Using provider ${providerId}. Enter API key:`)
+        break
+      }
+    }
+  }
+
+  function handleMissingApiKey(): void {
+    addSystemMessage('Missing API key; restart setup with /login.')
+    resetSetup(setupState.providerId)
+  }
+
+  async function persistSetupEnv(overrides: {instructions?: string; model?: string}): Promise<void> {
+    const {apiKey} = setupState
+    if (!apiKey) {
+      handleMissingApiKey()
       return
     }
-
-    if (!setupState.apiKey) {
-      addSystemMessage('Missing API key; restart setup with /login.')
-      setMode('setup')
-      setMaskInput(false)
-      setProviderChoiceIndex(providerOptionIndex('openai'))
-      setSetupState({
-        providerId: 'openai',
-        step: 'provider',
-      })
-      return
-    }
-
-    const model = value || undefined
 
     try {
       persistProviderEnv({
-        apiKey: setupState.apiKey,
-        model,
+        apiKey,
+        baseURL: setupState.baseURL,
+        instructions: overrides.instructions ?? setupState.instructions,
+        model: overrides.model ?? setupState.model,
         providerId: setupState.providerId,
       })
     } catch (error) {
@@ -337,17 +396,25 @@ export function AiceApp(props: AiceAppProps) {
       addSystemMessage(
         `Failed to load provider config. ${error ? error.message : 'Unknown error.'}`,
       )
-      setMode('setup')
-      setMaskInput(false)
-      setProviderChoiceIndex(providerOptionIndex('openai'))
-      setSetupState({
-        providerId: 'openai',
-        step: 'provider',
-      })
+      resetSetup(setupState.providerId)
       return
     }
 
     await finalizeSetup(env)
+  }
+
+  function resetSetup(nextProviderId: ProviderId = 'openai'): void {
+    setMode('setup')
+    setMaskInput(false)
+    setProviderChoiceIndex(providerOptionIndex(nextProviderId))
+    setSetupState({
+      apiKey: undefined,
+      baseURL: undefined,
+      instructions: undefined,
+      model: undefined,
+      providerId: nextProviderId,
+      step: 'provider',
+    })
   }
 
   async function finalizeSetup(env: ProviderEnv): Promise<void> {
@@ -366,6 +433,8 @@ export function AiceApp(props: AiceAppProps) {
       setProviderChoiceIndex(providerOptionIndex(env.providerId))
       setSetupState({
         apiKey: undefined,
+        baseURL: undefined,
+        instructions: undefined,
         model: undefined,
         providerId: env.providerId,
         step: 'apiKey',
@@ -380,6 +449,10 @@ export function AiceApp(props: AiceAppProps) {
     setMode('chat')
     setProviderChoiceIndex(providerOptionIndex(env.providerId))
     setSetupState({
+      apiKey: undefined,
+      baseURL: undefined,
+      instructions: undefined,
+      model: undefined,
       providerId: env.providerId,
       step: 'provider',
     })
@@ -462,17 +535,8 @@ export function AiceApp(props: AiceAppProps) {
   }
 
   function handleLoginCommand(): void {
-    setMode('setup')
-    setMaskInput(false)
     const nextProviderId = providerEnv?.providerId ?? setupState.providerId
-    setProviderChoiceIndex(providerOptionIndex(nextProviderId))
-    setSetupState(current => ({
-      ...current,
-      apiKey: undefined,
-      model: undefined,
-      providerId: nextProviderId,
-      step: 'provider',
-    }))
+    resetSetup(nextProviderId)
     addSystemMessage(
       'Restarting setup. Use arrow keys to choose provider (openai/openai-agents/anthropic/deepseek).',
     )
@@ -494,6 +558,7 @@ export function AiceApp(props: AiceAppProps) {
       persistProviderEnv({
         apiKey: providerEnv.apiKey,
         baseURL: providerEnv.baseURL,
+        instructions: providerEnv.instructions,
         model,
         providerId: providerEnv.providerId,
       })
@@ -539,6 +604,7 @@ export function AiceApp(props: AiceAppProps) {
       persistProviderEnv({
         apiKey: env.apiKey,
         baseURL: env.baseURL,
+        instructions: env.instructions,
         model: env.model,
         providerId,
       })
@@ -798,8 +864,16 @@ function setupPrompt(step: SetupStep, providerId: ProviderId = 'openai'): string
     return 'Enter API key (hidden as you type).'
   }
 
+  if (step === 'baseURL') {
+    return 'Optional: enter a base URL override, or press Enter to use the default.'
+  }
+
   if (step === 'model') {
     return 'Optional: enter model override, or press Enter to use the default.'
+  }
+
+  if (step === 'instructions') {
+    return 'Optional: enter default agent instructions, or press Enter to use the default.'
   }
 
   return ''

@@ -1,7 +1,7 @@
-import {expect} from 'chai'
-import {render} from 'ink-testing-library'
+import { expect } from 'chai'
+import { render } from 'ink-testing-library'
 
-import {SelectInput} from '../../src/ui/select-input.js'
+import { SelectInput } from '../../src/ui/select-input.js'
 
 function stripAnsi(value: string): string {
   const escape = '\u001B['
