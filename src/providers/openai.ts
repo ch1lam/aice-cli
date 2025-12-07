@@ -8,7 +8,7 @@ import type {
 import {OpenAI} from 'openai'
 
 import type {LLMProvider, SessionRequest} from '../core/session.js'
-import type {ProviderStream, ProviderStreamChunk, TokenUsage} from '../core/stream.js'
+import type {ProviderStream, TokenUsage} from '../core/stream.js'
 
 
 export interface OpenAIProviderConfig {
@@ -54,49 +54,11 @@ export class OpenAIProvider implements LLMProvider<OpenAISessionRequest> {
     return segments
   }
 
-  #mapEventToChunks(event: ResponseStreamEvent): ProviderStreamChunk[] {
-    const now = Date.now()
-
-    switch (event.type) {
-      case 'error': {
-        return [{error: new Error(event.message), timestamp: now, type: 'error'}]
-      }
-
-      case 'response.completed': {
-        const chunks: ProviderStreamChunk[] = []
-
-        if (event.response.usage) {
-          chunks.push({
-            timestamp: now,
-            type: 'usage',
-            usage: this.#mapUsage(event.response.usage),
-          })
-        }
-
-        chunks.push({status: 'completed', timestamp: now, type: 'status'})
-
-        return chunks
-      }
-
-      case 'response.failed': {
-        return [{error: new Error('OpenAI response failed'), timestamp: now, type: 'error'}]
-      }
-
-      case 'response.in_progress': {
-        return [{status: 'running', timestamp: now, type: 'status'}]
-      }
-
-      case 'response.output_text.delta': {
-        return [{text: event.delta, timestamp: now, type: 'text'}]
-      }
-
-      case 'response.output_text.done': {
-        return []
-      }
-
-      default: {
-        return []
-      }
+  #errorChunk(error: unknown, fallbackMessage: string): {error: Error; timestamp: number; type: 'error'} {
+    return {
+      error: this.#toError(error, fallbackMessage),
+      timestamp: Date.now(),
+      type: 'error',
     }
   }
 
@@ -108,6 +70,10 @@ export class OpenAIProvider implements LLMProvider<OpenAISessionRequest> {
     }
   }
 
+  #status(status: 'completed' | 'failed' | 'running') {
+    return {status, timestamp: Date.now(), type: 'status'} as const
+  }
+
   async *#streamResponses(request: OpenAISessionRequest): ProviderStream {
     const model = request.model ?? this.#defaultModel
 
@@ -115,22 +81,78 @@ export class OpenAIProvider implements LLMProvider<OpenAISessionRequest> {
       throw new Error('OpenAI model is required')
     }
 
-    const response = await this.#client.responses.stream({
-      input: this.#buildInput(request),
-      model,
-      signal: request.signal,
-      temperature: request.temperature,
-    })
+    yield this.#status('running')
+
+    let response: AsyncIterable<ResponseStreamEvent> & {controller?: {abort: () => Promise<void> | void}}
+
+    try {
+      response = await this.#client.responses.stream({
+        input: this.#buildInput(request),
+        model,
+        signal: request.signal,
+        temperature: request.temperature,
+      })
+    } catch (error) {
+      yield this.#status('failed')
+      yield this.#errorChunk(error, 'OpenAI response failed to start')
+      return
+    }
+
+    let latestUsage: TokenUsage | undefined
 
     try {
       for await (const event of response) {
-        const chunks = this.#mapEventToChunks(event)
-        for (const chunk of chunks) {
-          yield chunk
+        const now = Date.now()
+
+        if (event.type === 'response.output_text.delta') {
+          yield {text: event.delta, timestamp: now, type: 'text'}
+          continue
+        }
+
+        if (event.type === 'response.completed') {
+          latestUsage = event.response.usage
+            ? this.#mapUsage(event.response.usage)
+            : latestUsage
+          continue
+        }
+
+        if (event.type === 'response.failed') {
+          yield this.#status('failed')
+          yield this.#errorChunk(event.response.error, 'OpenAI response failed')
+          return
+        }
+
+        if (event.type === 'error') {
+          yield this.#status('failed')
+          yield this.#errorChunk({code: event.code ?? undefined, message: event.message}, 'OpenAI stream error')
+          return
         }
       }
+    } catch (error) {
+      yield this.#status('failed')
+      yield this.#errorChunk(error, 'OpenAI stream failed')
+      return
     } finally {
       await response.controller?.abort()
     }
+
+    if (latestUsage) {
+      yield {timestamp: Date.now(), type: 'usage', usage: latestUsage}
+    }
+
+    yield this.#status('completed')
+  }
+
+  #toError(error: unknown, fallbackMessage: string): Error {
+    if (error instanceof Error) return error
+
+    if (error && typeof error === 'object') {
+      const {code, message} = error as {code?: string; message?: string}
+      return new Error(code ? `${code}: ${message}` : message)
+    }
+
+    if (typeof error === 'string') return new Error(error)
+
+    return new Error(fallbackMessage)
   }
 }

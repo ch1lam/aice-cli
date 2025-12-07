@@ -142,8 +142,12 @@ describe('OpenAIAgentsProvider', () => {
       chunks.push(chunk)
     }
 
+    const statusChunk = chunks.find(chunk => chunk.type === 'status' && chunk.status === 'failed')
+    expect(statusChunk).to.exist
+
     const lastChunk = chunks.at(-1)
     expect(lastChunk?.type).to.equal('error')
     expect(lastChunk).to.have.property('error')
+    expect(lastChunk?.error.message).to.contain('Agents failure')
   })
 })

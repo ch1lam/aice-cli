@@ -107,7 +107,7 @@ describe('AnthropicProvider', () => {
     expect(client.messages.lastArgs).to.have.property('stream', true)
   })
 
-  it('emits error chunks when the stream reports an error', async () => {
+  it('emits failed status and error chunks when the stream reports an error', async () => {
     const events: StreamEvent[] = [
       {type: 'message_start'},
       {delta: {text: 'partial'}, type: 'content_block_delta'},
@@ -133,8 +133,45 @@ describe('AnthropicProvider', () => {
       if (chunk.type === 'error') break
     }
 
-    expect(chunks.some(chunk => chunk.type === 'error')).to.equal(true)
+    expect(chunks.find(chunk => chunk.type === 'status' && chunk.status === 'failed')).to.exist
     const last = chunks.at(-1)
     expect(last?.type).to.equal('error')
+    expect(last?.error.message).to.contain('boom')
+  })
+
+  it('emits a single usage chunk when both delta and final usages are available', async () => {
+    /* eslint-disable camelcase */
+    const events: StreamEvent[] = [
+      {type: 'message_start'},
+      {delta: {usage: {input_tokens: 1, output_tokens: 1, total_tokens: 2}}, type: 'message_delta'},
+      {type: 'message_stop'},
+    ]
+
+    const client = new FakeAnthropic(
+      events,
+      {input_tokens: 3, output_tokens: 4, total_tokens: 7},
+    )
+    /* eslint-enable camelcase */
+    const provider = new AnthropicProvider(
+      {apiKey: 'key', model: 'claude-3-5-sonnet-latest'},
+      client as unknown as AnthropicLikeClient,
+    )
+
+    const request: AnthropicSessionRequest = {
+      model: 'claude-3-5-sonnet-latest',
+      prompt: 'usage',
+      providerId: 'anthropic',
+    }
+
+    const chunks: ProviderStreamChunk[] = []
+    for await (const chunk of provider.stream(request)) {
+      chunks.push(chunk)
+    }
+
+    const usageChunks = chunks.filter(chunk => chunk.type === 'usage')
+    expect(usageChunks).to.have.length(1)
+    expect(usageChunks[0]).to.deep.include({
+      usage: {inputTokens: 3, outputTokens: 4, totalTokens: 7},
+    })
   })
 })

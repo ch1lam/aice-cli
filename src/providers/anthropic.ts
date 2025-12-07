@@ -85,7 +85,6 @@ export class AnthropicProvider implements LLMProvider<AnthropicSessionRequest> {
     }
   }
 
-  // eslint-disable-next-line complexity -- event mapping handles multiple stream cases
   async *#streamMessages(request: AnthropicSessionRequest): ProviderStream {
     const model = request.model ?? this.#defaultModel
 
@@ -93,49 +92,59 @@ export class AnthropicProvider implements LLMProvider<AnthropicSessionRequest> {
       throw new Error('Anthropic model is required')
     }
 
-    const stream = await this.#client.messages.create({
-      /* eslint-disable camelcase */
-      max_tokens: request.maxTokens ?? this.#defaultMaxTokens,
-      /* eslint-enable camelcase */
-      messages: [{content: request.prompt, role: 'user'}],
-      model,
-      stream: true,
-      system: request.systemPrompt,
-      temperature: request.temperature,
-    })
+    yield {status: 'running', timestamp: Date.now(), type: 'status'}
 
-    let sawStop = false
+    let stream: AnthropicMessageStream
 
-    for await (const event of stream as AsyncIterable<AnthropicStreamEvent>) {
-      const now = Date.now()
+    try {
+      stream = await this.#client.messages.create({
+        /* eslint-disable camelcase */
+        max_tokens: request.maxTokens ?? this.#defaultMaxTokens,
+        /* eslint-enable camelcase */
+        messages: [{content: request.prompt, role: 'user'}],
+        model,
+        stream: true,
+        system: request.systemPrompt,
+        temperature: request.temperature,
+      })
+    } catch (error) {
+      yield {status: 'failed', timestamp: Date.now(), type: 'status'}
+      yield {error: this.#toError(error, 'Anthropic stream failed to start'), timestamp: Date.now(), type: 'error'}
+      return
+    }
 
-      if (event.type === 'error') {
-        yield {
-          error: new Error(event.error?.message ?? 'Anthropic stream error'),
-          timestamp: now,
-          type: 'error',
+    let latestUsage: TokenUsage | undefined
+    let failed = false
+
+    try {
+      for await (const event of stream as AsyncIterable<AnthropicStreamEvent>) {
+        const now = Date.now()
+
+        if (event.type === 'error') {
+          failed = true
+          yield {status: 'failed', timestamp: now, type: 'status'}
+          yield {error: this.#toError(event.error, 'Anthropic stream error'), timestamp: now, type: 'error'}
+          break
         }
-        return
-      }
 
-      if (event.type === 'message_start') {
-        yield {status: 'running', timestamp: now, type: 'status'}
-        continue
-      }
+        if (event.type === 'content_block_delta' && event.delta?.text) {
+          yield {text: event.delta.text, timestamp: now, type: 'text'}
+          continue
+        }
 
-      if (event.type === 'content_block_delta' && event.delta?.text) {
-        yield {text: event.delta.text, timestamp: now, type: 'text'}
-        continue
+        if (event.type === 'message_delta' && event.delta?.usage) {
+          latestUsage = this.#mapUsage(event.delta.usage)
+          continue
+        }
       }
+    } catch (error) {
+      failed = true
+      yield {status: 'failed', timestamp: Date.now(), type: 'status'}
+      yield {error: this.#toError(error, 'Anthropic stream failed'), timestamp: Date.now(), type: 'error'}
+    }
 
-      if (event.type === 'message_delta' && event.delta?.usage) {
-        yield {timestamp: now, type: 'usage', usage: this.#mapUsage(event.delta.usage)}
-        continue
-      }
-
-      if (event.type === 'message_stop') {
-        sawStop = true
-      }
+    if (failed) {
+      return
     }
 
     let usage: AnthropicUsage | undefined
@@ -147,12 +156,28 @@ export class AnthropicProvider implements LLMProvider<AnthropicSessionRequest> {
       usage = undefined
     }
 
-    if (usage) {
-      yield {timestamp: Date.now(), type: 'usage', usage: this.#mapUsage(usage)}
+    if (usage) latestUsage = this.#mapUsage(usage)
+
+    if (latestUsage) {
+      yield {timestamp: Date.now(), type: 'usage', usage: latestUsage}
     }
 
-    if (sawStop) {
-      yield {status: 'completed', timestamp: Date.now(), type: 'status'}
+    yield {status: 'completed', timestamp: Date.now(), type: 'status'}
+  }
+
+  #toError(error: unknown, fallbackMessage: string): Error {
+    if (error instanceof Error) return error
+
+    if (error && typeof error === 'object') {
+      const message = (error as {message?: string}).message ?? fallbackMessage
+      const code = (error as {code?: string; type?: string}).code ?? (error as {type?: string}).type
+      return new Error(code ? `${code}: ${message}` : message)
     }
+
+    if (typeof error === 'string') {
+      return new Error(error)
+    }
+
+    return new Error(fallbackMessage)
   }
 }

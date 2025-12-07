@@ -129,7 +129,7 @@ describe('DeepSeekProvider', () => {
     expect(fakeClient.chat.completions.lastStream?.aborted).to.equal(true)
   })
 
-  it('emits error chunks when the stream reports a failure', async () => {
+  it('emits failed status and error chunks when the stream reports a failure', async () => {
     /* eslint-disable camelcase */
     const events: StreamChunk[] = [
       {
@@ -163,5 +163,10 @@ describe('DeepSeekProvider', () => {
     }
 
     expect(chunks.some(chunk => chunk.type === 'error')).to.equal(true)
+    expect(chunks.find(chunk => chunk.type === 'status' && chunk.status === 'failed')).to.exist
+    const last = chunks.at(-1)
+    if (last?.type === 'error') {
+      expect(last.error.message).to.contain('DeepSeek response failed')
+    }
   })
 })

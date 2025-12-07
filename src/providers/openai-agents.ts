@@ -10,7 +10,7 @@ import {
 } from '@openai/agents'
 
 import type {LLMProvider, SessionRequest} from '../core/session.js'
-import type {ProviderStream, ProviderStreamChunk, TokenUsage} from '../core/stream.js'
+import type {ProviderStream, ProviderStreamChunk, ProviderUsageChunk, TokenUsage} from '../core/stream.js'
 
 export interface OpenAIAgentsProviderConfig {
   apiKey: string
@@ -158,43 +158,90 @@ export class OpenAIAgentsProvider implements LLMProvider<OpenAIAgentsSessionRequ
     }
   }
 
+  #status(status: 'completed' | 'failed' | 'running') {
+    return {status, timestamp: Date.now(), type: 'status'} as const
+  }
+
   async *#streamAgent(request: OpenAIAgentsSessionRequest): ProviderStream {
     const agent = this.#buildAgent(request)
+    yield this.#status('running')
+
+    let latestUsage: ProviderUsageChunk | undefined
     let runError: unknown
+    let runResult: AsyncIterable<RunStreamEvent> & {completed?: Promise<void>; error?: unknown}
 
     try {
-      const runResult = await this.#runner.run(agent, request.prompt, {
+      runResult = await this.#runner.run(agent, request.prompt, {
         signal: request.signal,
         stream: true,
       })
+    } catch (error) {
+      yield this.#status('failed')
+      yield {error: this.#toError(error), timestamp: Date.now(), type: 'error'}
+      return
+    }
 
-      try {
-        for await (const event of runResult as AsyncIterable<RunStreamEvent>) {
-          const chunks = this.#mapRunEvent(event)
-          for (const chunk of chunks) {
-            yield chunk
+    try {
+      for await (const event of runResult as AsyncIterable<RunStreamEvent>) {
+        const chunks = this.#mapRunEvent(event)
+        for (const chunk of chunks) {
+          if (chunk.type === 'usage') {
+            latestUsage = chunk
+            continue
           }
-        }
-      } finally {
-        try {
-          await runResult.completed
-        } catch (error) {
-          runError = runError ?? error
-        }
 
-        runError = runError ?? runResult.error
+          if (chunk.type === 'status' && chunk.status === 'completed') {
+            continue
+          }
+
+          if (chunk.type === 'status' && chunk.status === 'running' && !chunk.detail) {
+            continue
+          }
+
+          yield chunk
+        }
       }
     } catch (error) {
       runError = runError ?? error
+    } finally {
+      try {
+        await runResult.completed
+      } catch (error) {
+        runError = runError ?? error
+      }
+
+      runError = runError ?? runResult.error
     }
 
     if (runError) {
+      yield this.#status('failed')
       yield {error: this.#toError(runError), timestamp: Date.now(), type: 'error'}
+      return
     }
+
+    if (latestUsage) {
+      yield latestUsage
+    }
+
+    yield this.#status('completed')
   }
 
   #toError(error: unknown): Error {
-    if (error instanceof Error) return error
+    if (error instanceof Error) {
+      const {code, message} = error as Error & {code?: string}
+      if (code && !message.startsWith(code)) {
+        return new Error(`${code}: ${message}`)
+      }
+
+      return error
+    }
+
+    if (error && typeof error === 'object') {
+      const {code, message} = error as {code?: string; message?: string}
+      const resolvedMessage = message ?? 'Agent run failed'
+      return new Error(code ? `${code}: ${resolvedMessage}` : resolvedMessage)
+    }
+
     return new Error(typeof error === 'string' ? error : 'Agent run failed')
   }
 }

@@ -103,10 +103,11 @@ describe('OpenAIProvider', () => {
     }
 
     const types = chunks.map(chunk => chunk.type)
-    expect(types).to.deep.equal(['text', 'text', 'usage', 'status'])
-    expect(chunks[0]).to.include({text: 'Hello'})
-    expect(chunks[2]).to.deep.include({usage: {inputTokens: 5, outputTokens: 7, totalTokens: 12}})
-    expect(chunks[3]).to.include({status: 'completed'})
+    expect(types).to.deep.equal(['status', 'text', 'text', 'usage', 'status'])
+    expect(chunks[0]).to.include({status: 'running'})
+    expect(chunks[1]).to.include({text: 'Hello'})
+    expect(chunks[3]).to.deep.include({usage: {inputTokens: 5, outputTokens: 7, totalTokens: 12}})
+    expect(chunks[4]).to.include({status: 'completed'})
 
     expect(fakeClient.responses.lastArgs).to.deep.include({
       model: 'gpt-4o-mini',
@@ -115,10 +116,10 @@ describe('OpenAIProvider', () => {
     expect(fakeClient.responses.lastStream?.aborted).to.equal(true)
   })
 
-  it('emits error chunks when the stream reports response.error', async () => {
+  it('emits failed status and error chunks when the stream reports response.error', async () => {
     const events: StreamEvent[] = [
       {delta: 'partial', type: 'response.output_text.delta'} as StreamEvent,
-      {message: 'boom', type: 'error'} as StreamEvent,
+      {code: 'rate_limit_exceeded', message: 'boom', type: 'error'} as StreamEvent,
       {type: 'response.completed'} as StreamEvent,
     ]
 
@@ -141,8 +142,12 @@ describe('OpenAIProvider', () => {
       if (chunk.type === 'error') break
     }
 
+    const statusChunk = chunks.find(chunk => chunk.type === 'status' && chunk.status === 'failed')
+    expect(statusChunk).to.exist
+
     const lastChunk = chunks.at(-1)
     expect(lastChunk?.type).to.equal('error')
     expect(lastChunk).to.have.property('error')
+    expect(lastChunk?.error.message).to.contain('rate_limit_exceeded')
   })
 })

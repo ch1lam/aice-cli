@@ -4,7 +4,7 @@ import type { Stream } from 'openai/streaming'
 import { OpenAI } from 'openai'
 
 import type { LLMProvider, SessionRequest } from '../core/session.js'
-import type { ProviderStream, ProviderStreamChunk, TokenUsage } from '../core/stream.js'
+import type { ProviderStream, ProviderStreamChunk, ProviderUsageChunk, TokenUsage } from '../core/stream.js'
 
 type ChatCompletionStream = Stream<ChatCompletionChunk> & {
   controller?: {
@@ -129,6 +129,8 @@ export class DeepSeekProvider implements LLMProvider<DeepSeekSessionRequest> {
       throw new Error('DeepSeek model is required')
     }
 
+    yield { status: 'running', timestamp: Date.now(), type: 'status' }
+
     let stream: ChatCompletionStream
 
     try {
@@ -140,31 +142,56 @@ export class DeepSeekProvider implements LLMProvider<DeepSeekSessionRequest> {
         temperature: request.temperature,
       })
     } catch (error) {
+      yield { status: 'failed', timestamp: Date.now(), type: 'status' }
       yield { error: this.#toError(error), timestamp: Date.now(), type: 'error' }
       return
     }
 
-    yield { status: 'running', timestamp: Date.now(), type: 'status' }
+    let latestUsage: ProviderUsageChunk | undefined
 
     try {
       for await (const chunk of stream as AsyncIterable<ChatCompletionChunk>) {
         const mapped = this.#mapChunk(chunk)
         for (const item of mapped) {
+          if (item.type === 'usage') {
+            latestUsage = item
+            continue
+          }
+
           yield item
         }
       }
     } catch (error) {
+      yield { status: 'failed', timestamp: Date.now(), type: 'status' }
       yield { error: this.#toError(error), timestamp: Date.now(), type: 'error' }
       return
     } finally {
       await stream.controller?.abort()
     }
 
+    if (latestUsage) {
+      yield latestUsage
+    }
+
     yield { status: 'completed', timestamp: Date.now(), type: 'status' }
   }
 
   #toError(error: unknown): Error {
-    if (error instanceof Error) return error
+    if (error instanceof Error) {
+      const { code, message } = error as Error & { code?: string }
+      if (code && !message.startsWith(code)) {
+        return new Error(`${code}: ${message}`)
+      }
+
+      return error
+    }
+
+    if (error && typeof error === 'object') {
+      const { code, message } = error as { code?: string; message?: string }
+      const resolvedMessage = message ?? 'DeepSeek request failed'
+      return new Error(code ? `${code}: ${resolvedMessage}` : resolvedMessage)
+    }
+
     return new Error(typeof error === 'string' ? error : 'DeepSeek request failed')
   }
 }
