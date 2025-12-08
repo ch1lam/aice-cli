@@ -20,5 +20,5 @@
 - [x] Provider event semantics: all `providers/*.ts` should emit `status:running` at start, `status:completed/failed` at end, emit a single `usage`, and surface underlying error code/message. Add unit tests covering the differences.
 - [x] Slash command routing table: extract command definitions (name/usage/handler), centralize parse/validation, keep Tab/up/down behavior; add tests for unknown/empty commands.
 - [x] Split TUI logic: extract `useSetupFlow` (provider select/save), `useChatStream` (consume SessionStream), `useSlashCommands` (table-driven). `AiceApp` should only render and wire state.
-- [ ] Prompt builder: add structured `buildPrompt` (role labels, optional truncation, no persistence) and replace the `startStream` string concat; add unit test.
+- [x] Prompt builder: add structured `buildPrompt` (role labels, optional truncation, no persistence) and replace the `startStream` string concat; add unit test.
 - [ ] Config I/O abstraction: provide injectable I/O for `.env` read/write (testable), centralize required-field validation, avoid global `process.env` pollution; add tests for I/O failures.

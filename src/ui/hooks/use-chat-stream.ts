@@ -1,18 +1,13 @@
 import {type Dispatch, type SetStateAction, useCallback, useState} from 'react'
 
+import type {ChatMessage} from '../../chat/prompt.js'
 import type {ProviderEnv} from '../../config/env.js'
 import type {ProviderId, SessionStream, StreamStatus, TokenUsage} from '../../core/stream.js'
 import type {SessionMeta} from './use-session.js'
 
 import {ChatController} from '../../chat/controller.js'
 
-export type MessageRole = 'assistant' | 'system' | 'user'
-
-export interface ChatMessage {
-  id: number
-  role: MessageRole
-  text: string
-}
+export type {ChatMessage, MessageRole} from '../../chat/prompt.js'
 
 type ChatControllerFactory = (env: ProviderEnv) => Pick<ChatController, 'createStream'>
 

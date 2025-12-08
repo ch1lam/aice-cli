@@ -1,13 +1,14 @@
 import {Box, Text, useApp, useInput} from 'ink'
 import {useCallback, useEffect, useMemo, useRef, useState} from 'react'
 
+import type {ChatMessage, MessageRole} from '../chat/prompt.js'
 import type {ProviderEnv} from '../config/env.js'
 import type {ProviderId} from '../core/stream.js'
-import type {ChatMessage, MessageRole} from './hooks/use-chat-stream.js'
 import type {AppMode, SetupStep} from './hooks/use-setup-flow.js'
 import type {SlashCommandDefinition} from './slash-commands.js'
 import type {SlashSuggestion} from './slash-suggestions.js'
 
+import {buildPrompt as formatPrompt} from '../chat/prompt.js'
 import {persistProviderEnv, tryLoadProviderEnv} from '../config/env.js'
 import {useChatStream} from './hooks/use-chat-stream.js'
 import {useSetupFlow} from './hooks/use-setup-flow.js'
@@ -48,7 +49,7 @@ export function AiceApp(props: AiceAppProps) {
     [createMessage],
   )
 
-  const buildPrompt = useCallback((history: ChatMessage[]) => buildPromptFromHistory(history), [])
+  const buildPrompt = useCallback((history: ChatMessage[]) => formatPrompt(history), [])
 
   const {
     currentResponse,
@@ -490,16 +491,6 @@ function labelForRole(role: MessageRole): string {
   if (role === 'assistant') return 'Assistant:'
   if (role === 'user') return 'You:'
   return 'System:'
-}
-
-function buildPromptFromHistory(history: ChatMessage[]): string {
-  const exchanges = history
-    .filter(message => message.role !== 'system')
-    .map(message => `${message.role === 'user' ? 'User' : 'Assistant'}: ${message.text}`)
-
-  exchanges.push('Assistant:')
-
-  return exchanges.join('\n')
 }
 
 function createMetaFromEnv(env: ProviderEnv): {model: string; providerId: ProviderId} {
