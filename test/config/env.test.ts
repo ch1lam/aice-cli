@@ -13,6 +13,7 @@ describe('env helpers', () => {
     'AICE_OPENAI_AGENT_INSTRUCTIONS',
     'AICE_OPENAI_AGENT_MODEL',
     'AICE_OPENAI_MODEL',
+    'AICE_MODEL',
   ]
 
   const originalEnv: Record<string, string | undefined> = {}
@@ -34,9 +35,10 @@ describe('env helpers', () => {
     }
   })
 
-  it('persists provider env and updates process.env', () => {
+  it('persists provider env without mutating process.env', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aice-env-'))
     const envPath = path.join(dir, '.env')
+    process.env.AICE_PROVIDER = 'keep-existing'
 
     try {
       persistProviderEnv({
@@ -53,21 +55,23 @@ describe('env helpers', () => {
       expect(content).to.include('AICE_OPENAI_BASE_URL=https://example.com')
       expect(content).to.include('AICE_OPENAI_MODEL=gpt-4o-mini')
 
-      const {env, error} = tryLoadProviderEnv({providerId: 'openai'})
+      const {env, error} = tryLoadProviderEnv({envPath, providerId: 'openai'})
 
       expect(error).to.equal(undefined)
       expect(env?.providerId).to.equal('openai')
       expect(env?.apiKey).to.equal('test-key')
       expect(env?.baseURL).to.equal('https://example.com')
       expect(env?.model).to.equal('gpt-4o-mini')
+      expect(process.env.AICE_PROVIDER).to.equal('keep-existing')
     } finally {
       fs.rmSync(dir, {force: true, recursive: true})
     }
   })
 
-  it('persists OpenAI Agents provider env and updates process.env', () => {
+  it('persists OpenAI Agents provider env without mutating process.env', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aice-agents-'))
     const envPath = path.join(dir, '.env')
+    process.env.AICE_OPENAI_API_KEY = 'keep-me'
 
     try {
       persistProviderEnv({
@@ -86,7 +90,7 @@ describe('env helpers', () => {
       expect(content).to.include('AICE_OPENAI_AGENT_INSTRUCTIONS=Custom instructions')
       expect(content).to.include('AICE_OPENAI_AGENT_MODEL=gpt-4.1')
 
-      const {env, error} = tryLoadProviderEnv({providerId: 'openai-agents'})
+      const {env, error} = tryLoadProviderEnv({envPath, providerId: 'openai-agents'})
 
       expect(error).to.equal(undefined)
       expect(env?.providerId).to.equal('openai-agents')
@@ -94,6 +98,7 @@ describe('env helpers', () => {
       expect(env?.baseURL).to.equal('https://agents.local')
       expect(env?.instructions).to.equal('Custom instructions')
       expect(env?.model).to.equal('gpt-4.1')
+      expect(process.env.AICE_OPENAI_API_KEY).to.equal('keep-me')
     } finally {
       fs.rmSync(dir, {force: true, recursive: true})
     }
@@ -129,14 +134,67 @@ describe('env helpers', () => {
         providerId: 'openai',
       })
 
-      const {env: openaiEnv} = tryLoadProviderEnv({providerId: 'openai'})
-      const {env: agentsEnv} = tryLoadProviderEnv({providerId: 'openai-agents'})
+      const {env: openaiEnv} = tryLoadProviderEnv({envPath, providerId: 'openai'})
+      const {env: agentsEnv} = tryLoadProviderEnv({envPath, providerId: 'openai-agents'})
 
       expect(openaiEnv?.model).to.equal('gpt-4o-mini')
       expect(openaiEnv?.baseURL).to.equal('https://api.openai.com')
       expect(agentsEnv?.model).to.equal('gpt-4.1')
       expect(agentsEnv?.instructions).to.equal('Stay concise')
       expect(agentsEnv?.baseURL).to.equal('https://api.openai.com')
+    } finally {
+      fs.rmSync(dir, {force: true, recursive: true})
+    }
+  })
+
+  it('throws when env write fails', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aice-write-'))
+    const envPath = path.join(dir, '.env')
+    const failingIO = {
+      exists() {
+        return false
+      },
+      readFile() {
+        return ''
+      },
+      writeFile() {
+        throw new Error('write failure')
+      },
+    }
+
+    try {
+      expect(() =>
+        persistProviderEnv({
+          apiKey: 'test-key',
+          envPath,
+          io: failingIO,
+          providerId: 'openai',
+        }),
+      ).to.throw('write failure')
+    } finally {
+      fs.rmSync(dir, {force: true, recursive: true})
+    }
+  })
+
+  it('surfaces env read errors when loading', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aice-read-'))
+    const envPath = path.join(dir, '.env')
+    const failingIO = {
+      exists() {
+        return true
+      },
+      readFile() {
+        throw new Error('read failure')
+      },
+      writeFile() {
+        throw new Error('write should not be called')
+      },
+    }
+
+    try {
+      const {env, error} = tryLoadProviderEnv({envPath, io: failingIO})
+      expect(env).to.equal(undefined)
+      expect(error?.message).to.equal('read failure')
     } finally {
       fs.rmSync(dir, {force: true, recursive: true})
     }

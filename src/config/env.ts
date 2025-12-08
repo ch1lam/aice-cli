@@ -6,6 +6,8 @@ import type {ProviderId} from '../core/stream.js'
 
 dotenv.config({quiet: true})
 
+export type EnvValues = Record<string, string | undefined>
+
 export interface ProviderEnv {
   apiKey: string
   baseURL?: string
@@ -15,81 +17,10 @@ export interface ProviderEnv {
 }
 
 export interface LoadProviderEnvOptions {
+  env?: EnvValues
+  envPath?: string
+  io?: EnvIO
   providerId?: ProviderId
-}
-
-export function loadProviderEnv(options?: LoadProviderEnvOptions): ProviderEnv {
-  const providerId = (options?.providerId ?? process.env.AICE_PROVIDER ?? 'openai') as ProviderId
-
-  switch (providerId) {
-    case 'anthropic': {
-      const apiKey = process.env.AICE_ANTHROPIC_API_KEY
-
-      if (!apiKey) {
-        throw new Error('Missing AICE_ANTHROPIC_API_KEY')
-      }
-
-      return {
-        apiKey,
-        baseURL: process.env.AICE_ANTHROPIC_BASE_URL,
-        model: process.env.AICE_ANTHROPIC_MODEL,
-        providerId,
-      }
-    }
-
-    case 'deepseek': {
-      const apiKey = process.env.AICE_DEEPSEEK_API_KEY
-
-      if (!apiKey) {
-        throw new Error('Missing AICE_DEEPSEEK_API_KEY')
-      }
-
-      return {
-        apiKey,
-        baseURL: process.env.AICE_DEEPSEEK_BASE_URL ?? process.env.AICE_OPENAI_BASE_URL,
-        model: process.env.AICE_DEEPSEEK_MODEL,
-        providerId,
-      }
-    }
-
-    case 'openai': {
-      const apiKey = process.env.AICE_OPENAI_API_KEY
-
-      if (!apiKey) {
-        throw new Error('Missing AICE_OPENAI_API_KEY')
-      }
-
-      return {
-        apiKey,
-        baseURL: process.env.AICE_OPENAI_BASE_URL,
-        model: process.env.AICE_OPENAI_MODEL ?? process.env.AICE_MODEL,
-        providerId,
-      }
-    }
-
-    case 'openai-agents': {
-      const apiKey = process.env.AICE_OPENAI_API_KEY
-
-      if (!apiKey) {
-        throw new Error('Missing AICE_OPENAI_API_KEY')
-      }
-
-      return {
-        apiKey,
-        baseURL: process.env.AICE_OPENAI_BASE_URL,
-        instructions: process.env.AICE_OPENAI_AGENT_INSTRUCTIONS,
-        model:
-          process.env.AICE_OPENAI_AGENT_MODEL ??
-          process.env.AICE_OPENAI_MODEL ??
-          process.env.AICE_MODEL,
-        providerId,
-      }
-    }
-
-    default: {
-      throw new Error(`Unsupported provider: ${providerId}`)
-    }
-  }
 }
 
 export interface ProviderCredentials {
@@ -101,12 +32,55 @@ export interface ProviderCredentials {
 }
 
 export interface PersistEnvOptions extends ProviderCredentials {
+  env?: EnvValues
   envPath?: string
+  io?: EnvIO
 }
 
 export interface TryLoadProviderEnvResult {
   env?: ProviderEnv
   error?: Error
+}
+
+export interface EnvIO {
+  exists(envPath: string): boolean
+  readFile(envPath: string): string
+  writeFile(envPath: string, content: string): void
+}
+
+const DEFAULT_ENV_PATH = path.resolve(process.cwd(), '.env')
+
+const fileEnvIO: EnvIO = {
+  exists: envPath => fs.existsSync(envPath),
+  readFile: envPath => fs.readFileSync(envPath, 'utf8'),
+  writeFile: (envPath, content) => fs.writeFileSync(envPath, content, 'utf8'),
+}
+
+export function loadProviderEnv(options?: LoadProviderEnvOptions): ProviderEnv {
+  const envValues = resolveEnvValues(options)
+  const providerId = resolveProviderId(envValues, options?.providerId)
+
+  switch (providerId) {
+    case 'anthropic': {
+      return buildAnthropicEnv(envValues, providerId)
+    }
+
+    case 'deepseek': {
+      return buildDeepseekEnv(envValues, providerId)
+    }
+
+    case 'openai': {
+      return buildOpenAIEnv(envValues, providerId)
+    }
+
+    case 'openai-agents': {
+      return buildOpenAIAgentsEnv(envValues, providerId)
+    }
+
+    default: {
+      throw new Error(`Unsupported provider: ${providerId}`)
+    }
+  }
 }
 
 export function tryLoadProviderEnv(options?: LoadProviderEnvOptions): TryLoadProviderEnvResult {
@@ -117,28 +91,28 @@ export function tryLoadProviderEnv(options?: LoadProviderEnvOptions): TryLoadPro
   }
 }
 
-export function persistProviderEnv(options: PersistEnvOptions): void {
-  const envPath = options.envPath ?? path.resolve(process.cwd(), '.env')
-  const envMap = readEnvFile(envPath)
+export function persistProviderEnv(options: PersistEnvOptions): EnvValues {
+  const envPath = options.envPath ?? DEFAULT_ENV_PATH
+  const io = options.io ?? fileEnvIO
+  const envMap = mapFromEnvValues(options.env ?? readEnvFile(envPath, io))
   const entries = buildEnvEntries(options)
 
   envMap.set('AICE_PROVIDER', options.providerId)
-  process.env.AICE_PROVIDER = options.providerId
 
   for (const [key, value] of Object.entries(entries)) {
     if (value === undefined) {
       envMap.delete(key)
-      delete process.env[key]
       continue
     }
 
     envMap.set(key, value)
-    process.env[key] = value
   }
 
   const content = [...envMap.entries()].map(([key, value]) => `${key}=${value}`).join('\n')
 
-  fs.writeFileSync(envPath, `${content}\n`, 'utf8')
+  io.writeFile(envPath, `${content}\n`)
+
+  return mapToEnvValues(envMap)
 }
 
 function buildEnvEntries(options: ProviderCredentials): Record<string, string | undefined> {
@@ -182,14 +156,72 @@ function buildEnvEntries(options: ProviderCredentials): Record<string, string | 
   }
 }
 
-function readEnvFile(envPath: string): Map<string, string> {
-  if (!fs.existsSync(envPath)) {
-    return new Map()
+function buildAnthropicEnv(env: EnvValues, providerId: ProviderId): ProviderEnv {
+  return {
+    apiKey: requireEnvValue(env, 'AICE_ANTHROPIC_API_KEY'),
+    baseURL: env.AICE_ANTHROPIC_BASE_URL,
+    model: env.AICE_ANTHROPIC_MODEL,
+    providerId,
+  }
+}
+
+function buildDeepseekEnv(env: EnvValues, providerId: ProviderId): ProviderEnv {
+  return {
+    apiKey: requireEnvValue(env, 'AICE_DEEPSEEK_API_KEY'),
+    baseURL: env.AICE_DEEPSEEK_BASE_URL ?? env.AICE_OPENAI_BASE_URL,
+    model: env.AICE_DEEPSEEK_MODEL,
+    providerId,
+  }
+}
+
+function buildOpenAIEnv(env: EnvValues, providerId: ProviderId): ProviderEnv {
+  return {
+    apiKey: requireEnvValue(env, 'AICE_OPENAI_API_KEY'),
+    baseURL: env.AICE_OPENAI_BASE_URL,
+    model: env.AICE_OPENAI_MODEL ?? env.AICE_MODEL,
+    providerId,
+  }
+}
+
+function buildOpenAIAgentsEnv(env: EnvValues, providerId: ProviderId): ProviderEnv {
+  return {
+    apiKey: requireEnvValue(env, 'AICE_OPENAI_API_KEY'),
+    baseURL: env.AICE_OPENAI_BASE_URL,
+    instructions: env.AICE_OPENAI_AGENT_INSTRUCTIONS,
+    model: env.AICE_OPENAI_AGENT_MODEL ?? env.AICE_OPENAI_MODEL ?? env.AICE_MODEL,
+    providerId,
+  }
+}
+
+function mapFromEnvValues(env: EnvValues): Map<string, string> {
+  const envMap = new Map<string, string>()
+
+  for (const [key, value] of Object.entries(env)) {
+    if (value === undefined) continue
+    envMap.set(key, value)
   }
 
-  const content = fs.readFileSync(envPath, 'utf8')
+  return envMap
+}
+
+function mapToEnvValues(envMap: Map<string, string>): EnvValues {
+  const values: EnvValues = {}
+
+  for (const [key, value] of envMap.entries()) {
+    values[key] = value
+  }
+
+  return values
+}
+
+function readEnvFile(envPath: string, io: EnvIO): EnvValues {
+  if (!io.exists(envPath)) {
+    return {}
+  }
+
+  const content = io.readFile(envPath)
   const lines = content.split('\n')
-  const envMap = new Map<string, string>()
+  const envMap: EnvValues = {}
 
   for (const line of lines) {
     const trimmed = line.trim()
@@ -201,8 +233,34 @@ function readEnvFile(envPath: string): Map<string, string> {
     const key = trimmed.slice(0, separatorIndex)
     const value = trimmed.slice(separatorIndex + 1)
 
-    envMap.set(key, value)
+    envMap[key] = value
   }
 
   return envMap
+}
+
+function resolveEnvValues(options?: LoadProviderEnvOptions): EnvValues {
+  if (options?.env) {
+    return {...options.env}
+  }
+
+  const envPath = options?.envPath ?? DEFAULT_ENV_PATH
+  const io = options?.io ?? fileEnvIO
+  const envFromFile = readEnvFile(envPath, io)
+
+  return {...process.env, ...envFromFile}
+}
+
+function resolveProviderId(env: EnvValues, providerId?: ProviderId): ProviderId {
+  return (providerId ?? env.AICE_PROVIDER ?? 'openai') as ProviderId
+}
+
+function requireEnvValue(env: EnvValues, key: string): string {
+  const value = env[key]
+
+  if (!value) {
+    throw new Error(`Missing ${key}`)
+  }
+
+  return value
 }
