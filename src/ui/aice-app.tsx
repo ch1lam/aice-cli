@@ -8,6 +8,11 @@ import {persistProviderEnv, type ProviderEnv, tryLoadProviderEnv} from '../confi
 import {pingProvider} from '../providers/ping.js'
 import {InputPanel} from './input-panel.js'
 import {SelectInput, type SelectInputItem} from './select-input.js'
+import {
+  createSlashCommandRouter,
+  isSlashCommandInput,
+  type SlashCommandDefinition,
+} from './slash-commands.js'
 import {type SlashSuggestion, SlashSuggestions} from './slash-suggestions.js'
 import {StatusBar} from './status-bar.js'
 import {theme} from './theme.js'
@@ -18,8 +23,6 @@ type SetupStep = 'apiKey' | 'baseURL' | 'instructions' | 'model' | 'provider'
 
 type MessageRole = 'assistant' | 'system' | 'user'
 
-type SlashHandler = (args: string[]) => void
-
 type ProviderOption = SelectInputItem<ProviderId>
 
 const providerOptions: ProviderOption[] = [
@@ -28,16 +31,6 @@ const providerOptions: ProviderOption[] = [
   {description: 'Claude 3.7 and newer', label: 'Anthropic', value: 'anthropic'},
   {description: 'DeepSeek chat + reasoning', label: 'DeepSeek', value: 'deepseek'},
 ]
-
-const slashCommandList = [
-  {command: 'help', description: 'Show available commands and usage.', hint: '/help'},
-  {command: 'login', description: 'Restart setup and enter a provider API key.', hint: '/login'},
-  {command: 'provider', description: 'Switch between configured providers.', hint: '/provider openai'},
-  {command: 'model', description: 'Set or change the active model override.', hint: '/model gpt-4o-mini'},
-  {command: 'clear', description: 'Clear the transcript.', hint: '/clear'},
-] as const
-
-type SlashCommandId = (typeof slashCommandList)[number]['command']
 
 interface Message {
   id: number
@@ -113,7 +106,8 @@ export function AiceApp(props: AiceAppProps) {
     }
   }, [])
 
-  const slashCommandActive = mode === 'chat' && input.startsWith('/')
+  const slashCommandRouter = createSlashCommandRouter(createSlashCommandDefinitions())
+  const slashCommandActive = mode === 'chat' && isSlashCommandInput(input)
 
   const slashQuery = useMemo(() => {
     if (!slashCommandActive) return ''
@@ -121,26 +115,9 @@ export function AiceApp(props: AiceAppProps) {
     return (commandPart ?? '').toLowerCase()
   }, [input, slashCommandActive])
 
-  const slashSuggestions = useMemo<SlashSuggestion[]>(() => {
-    if (!slashCommandActive) return []
-
-    const search = slashQuery.toLowerCase()
-    return slashCommandList
-      .filter(item => {
-        if (!search) return true
-        return (
-          item.command.toLowerCase().includes(search) ||
-          item.description.toLowerCase().includes(search) ||
-          (item.hint?.toLowerCase() ?? '').includes(search)
-        )
-      })
-      .map<SlashSuggestion>(item => ({
-        command: item.command,
-        description: item.description,
-        hint: item.hint,
-        value: `/${item.command}`,
-      }))
-  }, [input, slashCommandActive, slashQuery])
+  const slashSuggestions: SlashSuggestion[] = slashCommandActive
+    ? slashCommandRouter.suggestions(slashQuery)
+    : []
 
   useEffect(() => {
     if (!slashCommandActive || slashSuggestions.length === 0) {
@@ -462,7 +439,7 @@ export function AiceApp(props: AiceAppProps) {
   }
 
   function handleChatInput(value: string): void {
-    if (value.startsWith('/')) {
+    if (isSlashCommandInput(value)) {
       handleSlashCommand(value)
       return
     }
@@ -486,37 +463,17 @@ export function AiceApp(props: AiceAppProps) {
     })
   }
 
-  const slashHandlers: Record<SlashCommandId, SlashHandler> = {
-    clear: handleClearCommand,
-    help: handleHelpCommand,
-    login: handleLoginCommand,
-    model: handleModelCommand,
-    provider: handleProviderCommand,
-  }
-
   function handleSlashCommand(raw: string): void {
-    const [command, ...args] = raw
-      .slice(1)
-      .split(' ')
-      .map(part => part.trim())
-      .filter(Boolean)
+    const result = slashCommandRouter.handle(raw)
 
-    if (!command) {
+    if (result.type === 'empty') {
       addSystemMessage('Empty command. Use /help to see available commands.')
       return
     }
 
-    if (!isSlashCommand(command)) {
-      addSystemMessage(`Unknown command: /${command}`)
-      return
+    if (result.type === 'unknown') {
+      addSystemMessage(`Unknown command: /${result.command ?? ''}`)
     }
-
-    const handler = slashHandlers[command]
-    handler(args)
-  }
-
-  function isSlashCommand(value: string): value is SlashCommandId {
-    return slashCommandList.some(command => command.command === value)
   }
 
   function handleClearCommand(): void {
@@ -529,8 +486,8 @@ export function AiceApp(props: AiceAppProps) {
     addSystemMessage('Cleared transcript.')
   }
 
-  function handleHelpCommand(): void {
-    const commands = slashCommandList.map(option => `/${option.command}`).join(', ')
+  function handleHelpCommand(commandDefinitions: SlashCommandDefinition[]): void {
+    const commands = commandDefinitions.map(option => option.usage).join(', ')
     addSystemMessage(`Commands: ${commands}. Type / and use Tab to autocomplete.`)
   }
 
@@ -617,6 +574,48 @@ export function AiceApp(props: AiceAppProps) {
     setProviderEnv(env)
     setSessionMeta({model: env.model ?? 'default', providerId: env.providerId})
     addSystemMessage(`Switched to ${providerId} (${env.model ?? 'default model'}).`)
+  }
+
+  function createSlashCommandDefinitions(): SlashCommandDefinition[] {
+    const definitions: SlashCommandDefinition[] = [
+      {
+        command: 'help',
+        description: 'Show available commands and usage.',
+        handler: (_args, context) => handleHelpCommand(context.definitions),
+        hint: '/help',
+        usage: '/help',
+      },
+      {
+        command: 'login',
+        description: 'Restart setup and enter a provider API key.',
+        handler: () => handleLoginCommand(),
+        hint: '/login',
+        usage: '/login',
+      },
+      {
+        command: 'provider',
+        description: 'Switch between configured providers.',
+        handler: args => handleProviderCommand(args),
+        hint: '/provider openai',
+        usage: '/provider <openai|openai-agents|anthropic|deepseek>',
+      },
+      {
+        command: 'model',
+        description: 'Set or change the active model override.',
+        handler: args => handleModelCommand(args),
+        hint: '/model gpt-4o-mini',
+        usage: '/model <model-name>',
+      },
+      {
+        command: 'clear',
+        description: 'Clear the transcript.',
+        handler: () => handleClearCommand(),
+        hint: '/clear',
+        usage: '/clear',
+      },
+    ]
+
+    return definitions
   }
 
   function startStream(history: Message[], env: ProviderEnv): void {
