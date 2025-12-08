@@ -24,12 +24,15 @@ Create a `.env` (or export vars) with at least one provider configured:
 # OpenAI
 AICE_PROVIDER=openai
 AICE_OPENAI_API_KEY=sk-...
-AICE_MODEL=gpt-4o-mini           # optional OpenAI override
+AICE_OPENAI_BASE_URL=https://api.openai.com/v1 # optional override
+AICE_MODEL=gpt-4o-mini                 # optional OpenAI override
 
 # OpenAI Agents
 # AICE_PROVIDER=openai-agents
 # AICE_OPENAI_API_KEY=sk-...
-# AICE_OPENAI_AGENT_MODEL=gpt-4.1 # optional override for the Agents SDK
+# AICE_OPENAI_BASE_URL=https://api.openai.com/v1   # optional override (shared with OpenAI)
+# AICE_OPENAI_AGENT_MODEL=gpt-4.1                  # optional override for the Agents SDK
+# AICE_OPENAI_AGENT_INSTRUCTIONS=You are a helpful assistant. # optional default system prompt
 
 # Anthropic
 # AICE_PROVIDER=anthropic
@@ -43,7 +46,7 @@ AICE_MODEL=gpt-4o-mini           # optional OpenAI override
 # AICE_DEEPSEEK_MODEL=deepseek-chat
 ```
 
-`AICE_MODEL` only applies to OpenAI. Set `AICE_ANTHROPIC_MODEL` or `AICE_DEEPSEEK_MODEL` for other providers.
+`AICE_MODEL` is the shared fallback for OpenAI and OpenAI Agents if a provider-specific model is not set. Set `AICE_ANTHROPIC_MODEL` or `AICE_DEEPSEEK_MODEL` for other providers.
 
 ## Usage
 ### TUI
