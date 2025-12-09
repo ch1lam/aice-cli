@@ -69,8 +69,8 @@ describe('ChatController', () => {
       },
     })
 
-    expect(() => controller.createStream({prompt: 'hi', providerId: 'anthropic'})).to.throw(
-      'Configured provider openai does not match requested anthropic',
+    expect(() => controller.createStream({prompt: 'hi', providerId: 'deepseek'})).to.throw(
+      'Configured provider openai does not match requested deepseek',
     )
   })
 })

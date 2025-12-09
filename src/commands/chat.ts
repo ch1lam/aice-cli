@@ -19,7 +19,7 @@ export default class Chat extends Command {
     }),
     provider: Flags.string({
       char: 'p',
-      description: 'Provider ID (openai, anthropic, deepseek)',
+      description: 'Provider ID (openai, deepseek)',
     }),
     system: Flags.string({
       char: 's',

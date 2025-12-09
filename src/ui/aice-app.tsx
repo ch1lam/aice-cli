@@ -104,7 +104,7 @@ export function AiceApp(props: AiceAppProps) {
     const nextProviderId = providerEnv?.providerId ?? providerSelection
     resetSetup(nextProviderId)
     addSystemMessage(
-      'Restarting setup. Use arrow keys to choose provider (openai/anthropic/deepseek).',
+      'Restarting setup. Use arrow keys to choose provider (openai/deepseek).',
     )
   }, [addSystemMessage, providerEnv?.providerId, providerSelection, resetSetup])
 
@@ -145,7 +145,7 @@ export function AiceApp(props: AiceAppProps) {
     (args: string[]) => {
       const providerId = parseProviderId(args[0] ?? '')
       if (!providerId) {
-        addSystemMessage('Usage: /provider <openai|anthropic|deepseek>')
+        addSystemMessage('Usage: /provider <openai|deepseek>')
         return
       }
 
@@ -467,7 +467,7 @@ function clampIndex(index: number, length: number): number {
 }
 
 function parseProviderId(value: string): ProviderId | undefined {
-  if (value === 'openai' || value === 'anthropic' || value === 'deepseek') {
+  if (value === 'openai' || value === 'deepseek') {
     return value
   }
 

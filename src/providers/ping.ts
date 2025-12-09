@@ -1,4 +1,3 @@
-import Anthropic from '@anthropic-ai/sdk'
 import {OpenAI} from 'openai'
 
 import type {ProviderEnv} from '../config/env.js'
@@ -14,16 +13,7 @@ type OpenAIClient = {
   models?: OpenAIModelsClient
 }
 
-type AnthropicModelsClient = {
-  list: (params?: {limit?: number}) => Promise<unknown>
-}
-
-type AnthropicClient = {
-  models?: AnthropicModelsClient
-}
-
 export interface ProviderPingClients {
-  anthropic?: AnthropicClient
   deepseek?: OpenAIClient
   openai?: OpenAIClient
 }
@@ -40,11 +30,6 @@ export async function pingProvider(
   const {clients = {}, timeoutMs = DEFAULT_TIMEOUT_MS} = options
 
   switch (env.providerId) {
-    case 'anthropic': {
-      await pingAnthropic(env, clients.anthropic, timeoutMs)
-      return
-    }
-
     case 'deepseek': {
       await pingOpenAI(
         env,
@@ -92,32 +77,6 @@ async function pingOpenAI(
   )
 }
 
-async function pingAnthropic(
-  env: ProviderEnv,
-  client: AnthropicClient | undefined,
-  timeoutMs = DEFAULT_TIMEOUT_MS,
-): Promise<void> {
-  const {models} = client ?? createAnthropicClient(env)
-
-  if (!models?.list) {
-    throw new Error('Anthropic client is missing models.list')
-  }
-
-  await withTimeout(() => models.list({limit: 1}), timeoutMs)
-}
-
-function createAnthropicClient(env: ProviderEnv): AnthropicClient {
-  const AnthropicCtor = Anthropic as unknown as new (opts: {
-    apiKey: string
-    baseURL?: string
-  }) => AnthropicClient
-
-  return new AnthropicCtor({
-    apiKey: env.apiKey,
-    baseURL: env.baseURL,
-  })
-}
-
 async function withAbortTimeout<T>(
   operation: (signal?: AbortSignal) => Promise<T> | undefined,
   timeoutMs: number,
@@ -148,13 +107,4 @@ async function withAbortTimeout<T>(
         reject(error)
       })
   })
-}
-
-async function withTimeout<T>(operation: () => Promise<T>, timeoutMs: number): Promise<T> {
-  return Promise.race([
-    operation(),
-    new Promise<T>((_resolve, reject) => {
-      setTimeout(() => reject(new Error('Connectivity check timed out')), timeoutMs)
-    }),
-  ])
 }

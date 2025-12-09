@@ -2,7 +2,6 @@ import type {ProviderEnv} from '../config/env.js'
 import type {LLMProvider, SessionRequest} from '../core/session.js'
 import type {ProviderId} from '../core/stream.js'
 
-import {AnthropicProvider, type AnthropicSessionRequest} from './anthropic.js'
 import {DeepSeekProvider, type DeepSeekSessionRequest} from './deepseek.js'
 import {OpenAIProvider} from './openai.js'
 
@@ -29,27 +28,6 @@ export function createProviderBinding(
   options: ProviderBindingFactoryOptions,
 ): ProviderBinding {
   switch (options.providerId) {
-    case 'anthropic': {
-      const provider = new AnthropicProvider({
-        apiKey: options.env.apiKey,
-        baseURL: options.env.baseURL,
-        model: options.env.model,
-      })
-
-      return {
-        createRequest(input) {
-          return {
-            model: input.model ?? options.env.model ?? 'claude-3-5-sonnet-latest',
-            prompt: input.prompt,
-            providerId: provider.id,
-            systemPrompt: input.systemPrompt,
-            temperature: input.temperature,
-          } satisfies AnthropicSessionRequest
-        },
-        provider,
-      }
-    }
-
     case 'deepseek': {
       const baseURL = options.env.baseURL ?? 'https://api.deepseek.com'
       const provider = new DeepSeekProvider({

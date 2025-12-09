@@ -59,10 +59,6 @@ export function loadProviderEnv(options?: LoadProviderEnvOptions): ProviderEnv {
   const providerId = resolveProviderId(envValues, options?.providerId)
 
   switch (providerId) {
-    case 'anthropic': {
-      return buildAnthropicEnv(envValues, providerId)
-    }
-
     case 'deepseek': {
       return buildDeepseekEnv(envValues, providerId)
     }
@@ -111,14 +107,6 @@ export function persistProviderEnv(options: PersistEnvOptions): EnvValues {
 
 function buildEnvEntries(options: ProviderCredentials): Record<string, string | undefined> {
   switch (options.providerId) {
-    case 'anthropic': {
-      return {
-        AICE_ANTHROPIC_API_KEY: options.apiKey,
-        AICE_ANTHROPIC_BASE_URL: options.baseURL,
-        AICE_ANTHROPIC_MODEL: options.model,
-      }
-    }
-
     case 'deepseek': {
       return {
         AICE_DEEPSEEK_API_KEY: options.apiKey,
@@ -138,15 +126,6 @@ function buildEnvEntries(options: ProviderCredentials): Record<string, string | 
     default: {
       throw new Error(`Unsupported provider: ${options.providerId}`)
     }
-  }
-}
-
-function buildAnthropicEnv(env: EnvValues, providerId: ProviderId): ProviderEnv {
-  return {
-    apiKey: requireEnvValue(env, 'AICE_ANTHROPIC_API_KEY'),
-    baseURL: env.AICE_ANTHROPIC_BASE_URL,
-    model: env.AICE_ANTHROPIC_MODEL,
-    providerId,
   }
 }
 

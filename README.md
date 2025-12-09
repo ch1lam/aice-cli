@@ -3,7 +3,7 @@
 Early-stage CLI for experimenting with cloud LLM providers. It defaults to an Ink TUI when you run `aice` with no args and still exposes a scriptable chat command for single-turn calls.
 
 ## Status
-- Ready: streaming chat path (`chat` -> controller -> session/stream -> provider) for OpenAI/Anthropic/DeepSeek; provider adapters follow a shared chunking interface.
+- Ready: streaming chat path (`chat` -> controller -> session/stream -> provider) for OpenAI/DeepSeek; provider adapters follow a shared chunking interface.
 - Ready: TUI-first default command (`aice`) that opens an Ink chat shell with an input bar, streaming transcript, first-run setup for provider/API key, and slash commands (`/help`, `/login`, `/provider`, `/model`, `/clear`).
 - On deck: richer prompt history and provider orchestration polish.
 
@@ -26,11 +26,6 @@ AICE_OPENAI_API_KEY=sk-...
 AICE_OPENAI_BASE_URL=https://api.openai.com/v1 # optional override
 AICE_MODEL=gpt-4o-mini                 # optional OpenAI override
 
-# Anthropic
-# AICE_PROVIDER=anthropic
-# AICE_ANTHROPIC_API_KEY=sk-ant-...
-# AICE_ANTHROPIC_MODEL=claude-3-5-sonnet-latest
-
 # DeepSeek
 # AICE_PROVIDER=deepseek
 # AICE_DEEPSEEK_API_KEY=sk-deep-...
@@ -38,7 +33,7 @@ AICE_MODEL=gpt-4o-mini                 # optional OpenAI override
 # AICE_DEEPSEEK_MODEL=deepseek-chat
 ```
 
-`AICE_MODEL` is the shared fallback for OpenAI if a provider-specific model is not set. Set `AICE_ANTHROPIC_MODEL` or `AICE_DEEPSEEK_MODEL` for other providers.
+`AICE_MODEL` is the shared fallback for OpenAI if a provider-specific model is not set. Set `AICE_DEEPSEEK_MODEL` for other providers.
 
 ## Usage
 ### TUI
@@ -49,7 +44,6 @@ AICE_MODEL=gpt-4o-mini                 # optional OpenAI override
   ```bash
   AICE_OPENAI_API_KEY=sk-test node bin/dev.js chat "Hello there"
   # or pick another provider
-  AICE_ANTHROPIC_API_KEY=sk-ant-test node bin/dev.js chat -p anthropic "Hi Claude"
   ```
 - The MVP shell streams chunks to stdout: `chat.ts` parses flags, `ChatController` delegates to the provider via the session layer, and `chat-runner.ts` renders meta/status/text/usage chunks.
 

@@ -32,7 +32,7 @@ function buildRouter(callLog: string[] = []) {
         callLog.push(`provider:${args.join(',')}`)
       },
       hint: '/provider openai',
-      usage: '/provider <openai|anthropic|deepseek>',
+      usage: '/provider <openai|deepseek>',
     },
     {
       command: 'model',

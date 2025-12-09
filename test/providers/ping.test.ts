@@ -28,22 +28,6 @@ class FakeOpenAIClient {
   }
 }
 
-class FakeAnthropicModelsClient {
-  called = 0
-
-  async list(): Promise<void> {
-    this.called++
-  }
-}
-
-class FakeAnthropicClient {
-  models: FakeAnthropicModelsClient
-
-  constructor(models: FakeAnthropicModelsClient) {
-    this.models = models
-  }
-}
-
 describe('pingProvider', () => {
   it('pings OpenAI using the default model when none is provided', async () => {
     const models = new FakeOpenAIModelsClient()
@@ -61,15 +45,6 @@ describe('pingProvider', () => {
     await pingProvider({apiKey: 'key', providerId: 'deepseek'}, {clients: {deepseek: client}})
 
     expect(models.calls).to.deep.equal(['deepseek-chat'])
-  })
-
-  it('pings Anthropic by listing models', async () => {
-    const models = new FakeAnthropicModelsClient()
-    const client = new FakeAnthropicClient(models)
-
-    await pingProvider({apiKey: 'key', providerId: 'anthropic'}, {clients: {anthropic: client}})
-
-    expect(models.called).to.equal(1)
   })
 
   it('surfaces connectivity failures', async () => {

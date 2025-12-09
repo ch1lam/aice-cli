@@ -1,4 +1,4 @@
-export type ProviderId = 'anthropic' | 'deepseek' | 'openai' | string
+export type ProviderId = 'deepseek' | 'openai' | string
 
 export type StreamStatus = 'completed' | 'failed' | 'queued' | 'running'
 
