@@ -54,15 +54,6 @@ describe('pingProvider', () => {
     expect(models.calls).to.deep.equal(['gpt-4o-mini'])
   })
 
-  it('pings OpenAI Agents using the default agent model', async () => {
-    const models = new FakeOpenAIModelsClient()
-    const client = new FakeOpenAIClient(models)
-
-    await pingProvider({apiKey: 'key', providerId: 'openai-agents'}, {clients: {openai: client}})
-
-    expect(models.calls).to.deep.equal(['gpt-4.1'])
-  })
-
   it('pings DeepSeek using the default model', async () => {
     const models = new FakeOpenAIModelsClient()
     const client = new FakeOpenAIClient(models)

@@ -11,12 +11,12 @@
 - [x] Add a first-run setup flow that guides provider selection and API key entry, writes `.env`, and validates connectivity; expose `/login` to update credentials later.
 - [x] Implement a slash-command router in the TUI (`/help`, `/provider`, `/model`, `/login`, `/clear` to start) with status feedback.
 - [x] Support multi-turn sessions in the TUI, keeping history and provider settings across messages.
-- [x] Layer in the OpenAI Agents SDK for high-level orchestration once the core streaming path and TUI shell are stable.
+- [x] Keep the provider layer focused on OpenAI Responses, Anthropic, and DeepSeek.
 
 ## Next Up (no new persistence except config)
 - [x] TUI failure visibility: on stream `error`, set `sessionStatus=failed` and show error state/message in `StatusBar`; add Ink tests for success/failure cases.
 - [x] First-run connectivity: after setup writes `.env`, run a lightweight provider ping (minimal per provider). On failure, stay in setup with actionable error; add stubbed tests for the ping.
-- [x] Setup overrides: collect optional baseURL/model/Agents instructions during setup; pass to `persistProviderEnv` with no extra persistence. Ensure provider switching keeps existing overrides.
+- [x] Setup overrides: collect optional baseURL/model during setup; pass to `persistProviderEnv` with no extra persistence. Ensure provider switching keeps existing overrides.
 - [x] Provider event semantics: all `providers/*.ts` should emit `status:running` at start, `status:completed/failed` at end, emit a single `usage`, and surface underlying error code/message. Add unit tests covering the differences.
 - [x] Slash command routing table: extract command definitions (name/usage/handler), centralize parse/validation, keep Tab/up/down behavior; add tests for unknown/empty commands.
 - [x] Split TUI logic: extract `useSetupFlow` (provider select/save), `useChatStream` (consume SessionStream), `useSlashCommands` (table-driven). `AiceApp` should only render and wire state.

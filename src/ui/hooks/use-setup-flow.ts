@@ -9,12 +9,11 @@ import {providerIdFromIndex, providerOptionIndex} from '../provider-options.js'
 
 export type AppMode = 'chat' | 'setup'
 
-export type SetupStep = 'apiKey' | 'baseURL' | 'instructions' | 'model' | 'provider'
+export type SetupStep = 'apiKey' | 'baseURL' | 'model' | 'provider'
 
 export interface SetupState {
   apiKey?: string
   baseURL?: string
-  instructions?: string
   model?: string
   providerId: ProviderId
   step: SetupStep
@@ -62,7 +61,6 @@ export function useSetupFlow(options: UseSetupFlowOptions): UseSetupFlowResult {
   const [setupState, setSetupState] = useState<SetupState>({
     apiKey: undefined,
     baseURL: undefined,
-    instructions: undefined,
     model: undefined,
     providerId: initialProviderId,
     step: 'provider',
@@ -80,7 +78,6 @@ export function useSetupFlow(options: UseSetupFlowOptions): UseSetupFlowResult {
     setSetupState({
       apiKey: undefined,
       baseURL: undefined,
-      instructions: undefined,
       model: undefined,
       providerId: nextProviderId,
       step: 'provider',
@@ -93,8 +90,8 @@ export function useSetupFlow(options: UseSetupFlowOptions): UseSetupFlowResult {
   }, [onMessage, resetSetup, setupState.providerId])
 
   const persistSetupEnv = useCallback(
-    (overrides: {instructions?: string; model?: string}): ProviderEnv | undefined => {
-      const {apiKey, baseURL, instructions, model, providerId} = setupState
+    (overrides: {model?: string}): ProviderEnv | undefined => {
+      const {apiKey, baseURL, model, providerId} = setupState
       if (!apiKey) {
         handleMissingApiKey()
         return undefined
@@ -104,7 +101,6 @@ export function useSetupFlow(options: UseSetupFlowOptions): UseSetupFlowResult {
         persistEnv({
           apiKey,
           baseURL,
-          instructions: overrides.instructions ?? instructions,
           model: overrides.model ?? model,
           providerId,
         })
@@ -144,7 +140,6 @@ export function useSetupFlow(options: UseSetupFlowOptions): UseSetupFlowResult {
         setSetupState({
           apiKey: undefined,
           baseURL: undefined,
-          instructions: undefined,
           model: undefined,
           providerId: env.providerId,
           step: 'apiKey',
@@ -160,7 +155,6 @@ export function useSetupFlow(options: UseSetupFlowOptions): UseSetupFlowResult {
       setSetupState({
         apiKey: undefined,
         baseURL: undefined,
-        instructions: undefined,
         model: undefined,
         providerId: env.providerId,
         step: 'provider',
@@ -211,23 +205,6 @@ export function useSetupFlow(options: UseSetupFlowOptions): UseSetupFlowResult {
           return
         }
 
-        case 'instructions': {
-          if (!setupState.apiKey) {
-            handleMissingApiKey()
-            return
-          }
-
-          const instructions = trimmed || undefined
-          setSetupState(current => ({...current, instructions}))
-          const env = persistSetupEnv({instructions})
-
-          if (env) {
-            await finalizeSetup(env)
-          }
-
-          return
-        }
-
         case 'model': {
           if (!setupState.apiKey) {
             handleMissingApiKey()
@@ -235,19 +212,6 @@ export function useSetupFlow(options: UseSetupFlowOptions): UseSetupFlowResult {
           }
 
           const nextModel = trimmed || undefined
-
-          if (setupState.providerId === 'openai-agents') {
-            setSetupState(current => ({
-              ...current,
-              model: nextModel,
-              step: 'instructions',
-            }))
-            onMessage(
-              'Optional: enter default agent instructions, or press Enter to use the default.',
-            )
-            return
-          }
-
           setSetupState(current => ({...current, model: nextModel}))
           const env = persistSetupEnv({model: nextModel})
 
@@ -265,7 +229,6 @@ export function useSetupFlow(options: UseSetupFlowOptions): UseSetupFlowResult {
           setSetupState({
             apiKey: undefined,
             baseURL: undefined,
-            instructions: undefined,
             model: undefined,
             providerId,
             step: 'apiKey',

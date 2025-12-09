@@ -60,11 +60,6 @@ export async function pingProvider(
       return
     }
 
-    case 'openai-agents': {
-      await pingOpenAI(env, clients.openai, env.model ?? 'gpt-4.1', {timeoutMs})
-      return
-    }
-
     default: {
       throw new Error(`Unsupported provider ${env.providerId}`)
     }

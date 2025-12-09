@@ -104,7 +104,7 @@ export function AiceApp(props: AiceAppProps) {
     const nextProviderId = providerEnv?.providerId ?? providerSelection
     resetSetup(nextProviderId)
     addSystemMessage(
-      'Restarting setup. Use arrow keys to choose provider (openai/openai-agents/anthropic/deepseek).',
+      'Restarting setup. Use arrow keys to choose provider (openai/anthropic/deepseek).',
     )
   }, [addSystemMessage, providerEnv?.providerId, providerSelection, resetSetup])
 
@@ -125,7 +125,6 @@ export function AiceApp(props: AiceAppProps) {
         persistProviderEnv({
           apiKey: providerEnv.apiKey,
           baseURL: providerEnv.baseURL,
-          instructions: providerEnv.instructions,
           model,
           providerId: providerEnv.providerId,
         })
@@ -146,7 +145,7 @@ export function AiceApp(props: AiceAppProps) {
     (args: string[]) => {
       const providerId = parseProviderId(args[0] ?? '')
       if (!providerId) {
-        addSystemMessage('Usage: /provider <openai|openai-agents|anthropic|deepseek>')
+        addSystemMessage('Usage: /provider <openai|anthropic|deepseek>')
         return
       }
 
@@ -160,7 +159,6 @@ export function AiceApp(props: AiceAppProps) {
         persistProviderEnv({
           apiKey: env.apiKey,
           baseURL: env.baseURL,
-          instructions: env.instructions,
           model: env.model,
           providerId,
         })
@@ -469,12 +467,7 @@ function clampIndex(index: number, length: number): number {
 }
 
 function parseProviderId(value: string): ProviderId | undefined {
-  if (
-    value === 'openai' ||
-    value === 'openai-agents' ||
-    value === 'anthropic' ||
-    value === 'deepseek'
-  ) {
+  if (value === 'openai' || value === 'anthropic' || value === 'deepseek') {
     return value
   }
 
@@ -515,10 +508,6 @@ function setupPrompt(step: SetupStep, providerId: ProviderId = 'openai'): string
 
   if (step === 'model') {
     return 'Optional: enter model override, or press Enter to use the default.'
-  }
-
-  if (step === 'instructions') {
-    return 'Optional: enter default agent instructions, or press Enter to use the default.'
   }
 
   return ''

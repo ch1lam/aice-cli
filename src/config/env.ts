@@ -11,7 +11,6 @@ export type EnvValues = Record<string, string | undefined>
 export interface ProviderEnv {
   apiKey: string
   baseURL?: string
-  instructions?: string
   model?: string
   providerId: ProviderId
 }
@@ -26,7 +25,6 @@ export interface LoadProviderEnvOptions {
 export interface ProviderCredentials {
   apiKey: string
   baseURL?: string
-  instructions?: string
   model?: string
   providerId: ProviderId
 }
@@ -71,10 +69,6 @@ export function loadProviderEnv(options?: LoadProviderEnvOptions): ProviderEnv {
 
     case 'openai': {
       return buildOpenAIEnv(envValues, providerId)
-    }
-
-    case 'openai-agents': {
-      return buildOpenAIAgentsEnv(envValues, providerId)
     }
 
     default: {
@@ -141,15 +135,6 @@ function buildEnvEntries(options: ProviderCredentials): Record<string, string | 
       }
     }
 
-    case 'openai-agents': {
-      return {
-        AICE_OPENAI_AGENT_INSTRUCTIONS: options.instructions,
-        AICE_OPENAI_AGENT_MODEL: options.model,
-        AICE_OPENAI_API_KEY: options.apiKey,
-        AICE_OPENAI_BASE_URL: options.baseURL,
-      }
-    }
-
     default: {
       throw new Error(`Unsupported provider: ${options.providerId}`)
     }
@@ -179,16 +164,6 @@ function buildOpenAIEnv(env: EnvValues, providerId: ProviderId): ProviderEnv {
     apiKey: requireEnvValue(env, 'AICE_OPENAI_API_KEY'),
     baseURL: env.AICE_OPENAI_BASE_URL,
     model: env.AICE_OPENAI_MODEL ?? env.AICE_MODEL,
-    providerId,
-  }
-}
-
-function buildOpenAIAgentsEnv(env: EnvValues, providerId: ProviderId): ProviderEnv {
-  return {
-    apiKey: requireEnvValue(env, 'AICE_OPENAI_API_KEY'),
-    baseURL: env.AICE_OPENAI_BASE_URL,
-    instructions: env.AICE_OPENAI_AGENT_INSTRUCTIONS,
-    model: env.AICE_OPENAI_AGENT_MODEL ?? env.AICE_OPENAI_MODEL ?? env.AICE_MODEL,
     providerId,
   }
 }

@@ -50,7 +50,7 @@ export function useSlashCommands(options: UseSlashCommandsOptions): UseSlashComm
         description: 'Switch between configured providers.',
         handler: args => onProvider(args),
         hint: '/provider openai',
-        usage: '/provider <openai|openai-agents|anthropic|deepseek>',
+        usage: '/provider <openai|anthropic|deepseek>',
       },
       {
         command: 'model',

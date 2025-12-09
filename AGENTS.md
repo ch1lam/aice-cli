@@ -9,7 +9,7 @@
 ## Architecture & Project Structure
 - TypeScript lives in `src`; commands stay under `src/commands`. The default `aice` (no args) launches the Ink TUI chat shell.
 - `src/commands/chat.ts` is the scriptable single-turn entry; it hands off to `ChatController` + `src/core/session` + `src/core/stream` for orchestration/streaming. The session layer already orders chunks (meta → text → usage → done) and assigns indexes; providers only emit raw tokens/usage.
-- Provider adapters sit in `src/providers/{anthropic,openai,deepseek,openai-agents}.ts`, each wrapping the official SDK behind one interface; `src/providers/factory.ts` builds bindings. `src/providers/openai.ts` is the Responses API reference implementation; `src/providers/openai-agents.ts` wraps the Agents SDK streaming events.
+- Provider adapters sit in `src/providers/{anthropic,openai,deepseek}.ts`, each wrapping the official SDK behind one interface; `src/providers/factory.ts` builds bindings. `src/providers/openai.ts` is the Responses API reference implementation.
 - CLI streaming presentation lives in `src/commands/chat-runner.ts`, which turns session chunks into stdout writes/logs. Ink rendering (ChatWindow, StatusBar, InputPanel) stays in `src/ui` so UIs can swap without touching providers.
 - The TUI shell supports slash commands (e.g., `/help`, `/login`, `/provider`, `/model`, `/clear`), multi-turn history, and a first-run config step before chat input. Configuration helpers (env parsing, provider selection) live in `src/config`. Ink components live in `src/ui`; shared hooks (like `useSession`) go in `src/ui/hooks`.
 - Runtime shims `bin/run.js` / `bin/dev.js` load the compiled `dist` bundle; treat `dist` as read-only. Mirror this layout under `test/`.
@@ -36,8 +36,8 @@
 - Keep tests fast/reliable; they are the safety net for refactors.
 
 ## Provider Configuration & Security
-- Load configuration from `.env`; keep secrets out of Git. Supported providers: `openai`, `openai-agents`, `anthropic`, `deepseek`.
-- Require matching API keys (`AICE_OPENAI_API_KEY`, `AICE_ANTHROPIC_API_KEY`, `AICE_DEEPSEEK_API_KEY`) plus optional overrides (`AICE_OPENAI_BASE_URL`, `AICE_OPENAI_MODEL`, `AICE_OPENAI_AGENT_MODEL`, etc.).
+- Load configuration from `.env`; keep secrets out of Git. Supported providers: `openai`, `anthropic`, `deepseek`.
+- Require matching API keys (`AICE_OPENAI_API_KEY`, `AICE_ANTHROPIC_API_KEY`, `AICE_DEEPSEEK_API_KEY`) plus optional overrides (`AICE_OPENAI_BASE_URL`, `AICE_OPENAI_MODEL`, etc.).
 - Validate inputs before instantiating SDK clients and display actionable errors in the status bar. First-run flow prompts for provider + API key, validates connectivity, and writes `.env` with secrets redacted in logs.
 - Gate verbose HTTP tracing behind `DEBUG` and redact prompt text in logs. When new providers land, add their keys and wire selection through the provider factory.
 
@@ -47,7 +47,7 @@
 - Always note the dev command you ran, confirm `yarn build && yarn test`, and link the relevant issue or follow-up tasks.
 
 ## Planning & Tracking
-- Maintain a living `TODO.md` at the repo root. Every major phase (dependencies, session layer, providers, TUI shell/slash commands, Agents integration) should have a checkbox entry, updated as work progresses.
+- Maintain a living `TODO.md` at the repo root. Every major phase (dependencies, session layer, providers, TUI shell/slash commands) should have a checkbox entry, updated as work progresses.
 - When plans change (e.g., shifting to the TUI-first `aice` entry), edit both `TODO.md` and this guide so contributors know the current roadmap and documentation expectations.
 
 ## Practical Refactor Checklist

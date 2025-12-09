@@ -6,7 +6,6 @@ export type ProviderOption = SelectInputItem<ProviderId>
 
 export const providerOptions: ProviderOption[] = [
   {description: 'Responses API (default)', label: 'OpenAI', value: 'openai'},
-  {description: 'Agents API', label: 'OpenAI Agents', value: 'openai-agents'},
   {description: 'Claude 3.7 and newer', label: 'Anthropic', value: 'anthropic'},
   {description: 'DeepSeek chat + reasoning', label: 'DeepSeek', value: 'deepseek'},
 ]

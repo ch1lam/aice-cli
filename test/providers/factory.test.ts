@@ -38,16 +38,4 @@ describe('createProviderBinding', () => {
     expect(request).to.include({prompt: 'Hi', providerId: 'deepseek'})
     expect(request.model).to.equal('deepseek-chat')
   })
-
-  it('builds an OpenAI Agents binding with a default model fallback', () => {
-    const binding = createProviderBinding({
-      env: {apiKey: 'key', providerId: 'openai-agents'},
-      providerId: 'openai-agents',
-    })
-
-    const request = binding.createRequest({prompt: 'Hi'})
-
-    expect(request).to.include({prompt: 'Hi', providerId: 'openai-agents'})
-    expect(request.model).to.equal('gpt-4.1')
-  })
 })

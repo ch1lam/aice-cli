@@ -5,7 +5,6 @@ Early-stage CLI for experimenting with cloud LLM providers. It defaults to an In
 ## Status
 - Ready: streaming chat path (`chat` -> controller -> session/stream -> provider) for OpenAI/Anthropic/DeepSeek; provider adapters follow a shared chunking interface.
 - Ready: TUI-first default command (`aice`) that opens an Ink chat shell with an input bar, streaming transcript, first-run setup for provider/API key, and slash commands (`/help`, `/login`, `/provider`, `/model`, `/clear`).
-- Ready: OpenAI Agents SDK provider wired into the shared streaming path for higher-level orchestration.
 - On deck: richer prompt history and provider orchestration polish.
 
 ## Requirements
@@ -27,13 +26,6 @@ AICE_OPENAI_API_KEY=sk-...
 AICE_OPENAI_BASE_URL=https://api.openai.com/v1 # optional override
 AICE_MODEL=gpt-4o-mini                 # optional OpenAI override
 
-# OpenAI Agents
-# AICE_PROVIDER=openai-agents
-# AICE_OPENAI_API_KEY=sk-...
-# AICE_OPENAI_BASE_URL=https://api.openai.com/v1   # optional override (shared with OpenAI)
-# AICE_OPENAI_AGENT_MODEL=gpt-4.1                  # optional override for the Agents SDK
-# AICE_OPENAI_AGENT_INSTRUCTIONS=You are a helpful assistant. # optional default system prompt
-
 # Anthropic
 # AICE_PROVIDER=anthropic
 # AICE_ANTHROPIC_API_KEY=sk-ant-...
@@ -46,7 +38,7 @@ AICE_MODEL=gpt-4o-mini                 # optional OpenAI override
 # AICE_DEEPSEEK_MODEL=deepseek-chat
 ```
 
-`AICE_MODEL` is the shared fallback for OpenAI and OpenAI Agents if a provider-specific model is not set. Set `AICE_ANTHROPIC_MODEL` or `AICE_DEEPSEEK_MODEL` for other providers.
+`AICE_MODEL` is the shared fallback for OpenAI if a provider-specific model is not set. Set `AICE_ANTHROPIC_MODEL` or `AICE_DEEPSEEK_MODEL` for other providers.
 
 ## Usage
 ### TUI
