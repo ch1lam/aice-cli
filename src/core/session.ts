@@ -12,7 +12,6 @@ export interface SessionRequest {
   providerId: ProviderId
   signal?: AbortSignal
   systemPrompt?: string
-  user?: string
 }
 
 export interface LLMProvider<Request extends SessionRequest = SessionRequest> {
