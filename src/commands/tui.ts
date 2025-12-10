@@ -29,6 +29,6 @@ export default class Tui extends Command {
 }
 
 function clearTerminal(): void {
-  // Clear screen and scrollback so the TUI starts on a clean surface.
-  process.stdout.write('\u001B[2J\u001B[3J\u001B[H')
+  // Clear the visible screen and jump to top-left, but keep scrollback intact for debugging.
+  process.stdout.write('\u001B[2J\u001B[H')
 }

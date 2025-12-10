@@ -62,7 +62,7 @@
   },
   "repository": "ch1lam/aice-cli",
   "scripts": {
-    "dev": "node bin/run.js",
+    "dev": "DEBUG=* node bin/run.js",
     "build": "shx rm -rf dist tsconfig.tsbuildinfo && tsc -b",
     "lint": "eslint",
     "postpack": "shx rm -f oclif.manifest.json",
