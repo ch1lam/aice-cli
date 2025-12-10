@@ -27,12 +27,12 @@ function stripAnsi(value: string): string {
 
 describe('SelectInput', () => {
   it('highlights the selected item and shows usage instructions', () => {
-    const {lastFrame} = render(
+    const { lastFrame } = render(
       <SelectInput
         active
         items={[
-          {description: 'default', label: 'OpenAI', value: 'openai'},
-          {label: 'DeepSeek', value: 'deepseek'},
+          { description: 'default', label: 'OpenAI', value: 'openai' },
+          { label: 'DeepSeek', value: 'deepseek' },
         ]}
         selectedIndex={1}
         title="Provider"

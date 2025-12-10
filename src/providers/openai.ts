@@ -5,10 +5,10 @@ import type {
   ResponseUsage,
 } from 'openai/resources/responses/responses'
 
-import {OpenAI} from 'openai'
+import { OpenAI } from 'openai'
 
-import type {LLMProvider, SessionRequest} from '../core/session.js'
-import type {ProviderStream, TokenUsage} from '../core/stream.js'
+import type { LLMProvider, SessionRequest } from '../core/session.js'
+import type { ProviderStream, TokenUsage } from '../core/stream.js'
 
 
 export interface OpenAIProviderConfig {
@@ -46,10 +46,10 @@ export class OpenAIProvider implements LLMProvider<OpenAISessionRequest> {
     const segments: EasyInputMessage[] = []
 
     if (request.systemPrompt) {
-      segments.push({content: request.systemPrompt, role: 'system'})
+      segments.push({ content: request.systemPrompt, role: 'system' })
     }
 
-    segments.push({content: request.prompt, role: 'user'})
+    segments.push({ content: request.prompt, role: 'user' })
 
     return segments
   }
@@ -71,7 +71,7 @@ export class OpenAIProvider implements LLMProvider<OpenAISessionRequest> {
   }
 
   #status(status: 'completed' | 'failed' | 'running') {
-    return {status, timestamp: Date.now(), type: 'status'} as const
+    return { status, timestamp: Date.now(), type: 'status' } as const
   }
 
   async *#streamResponses(request: OpenAISessionRequest): ProviderStream {
@@ -105,7 +105,7 @@ export class OpenAIProvider implements LLMProvider<OpenAISessionRequest> {
         const now = Date.now()
 
         if (event.type === 'response.output_text.delta') {
-          yield {text: event.delta, timestamp: now, type: 'text'}
+          yield { text: event.delta, timestamp: now, type: 'text' }
           continue
         }
 
@@ -124,7 +124,7 @@ export class OpenAIProvider implements LLMProvider<OpenAISessionRequest> {
 
         if (event.type === 'error') {
           yield this.#status('failed')
-          yield this.#errorChunk({code: event.code ?? undefined, message: event.message}, 'OpenAI stream error')
+          yield this.#errorChunk({ code: event.code ?? undefined, message: event.message }, 'OpenAI stream error')
           return
         }
       }
@@ -137,7 +137,7 @@ export class OpenAIProvider implements LLMProvider<OpenAISessionRequest> {
     }
 
     if (latestUsage) {
-      yield {timestamp: Date.now(), type: 'usage', usage: latestUsage}
+      yield { timestamp: Date.now(), type: 'usage', usage: latestUsage }
     }
 
     yield this.#status('completed')
@@ -147,7 +147,7 @@ export class OpenAIProvider implements LLMProvider<OpenAISessionRequest> {
     if (error instanceof Error) return error
 
     if (error && typeof error === 'object') {
-      const {code, message} = error as {code?: string; message?: string}
+      const { code, message } = error as {code?: string; message?: string}
       return new Error(code ? `${code}: ${message}` : message)
     }
 

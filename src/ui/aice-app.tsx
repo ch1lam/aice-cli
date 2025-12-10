@@ -1,25 +1,25 @@
-import {Box, Text, useApp, useInput} from 'ink'
-import {useCallback, useEffect, useMemo, useRef, useState} from 'react'
+import { Box, Text, useApp, useInput } from 'ink'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import type {ChatMessage, MessageRole} from '../chat/prompt.js'
-import type {ProviderEnv} from '../config/env.js'
-import type {ProviderId} from '../core/stream.js'
-import type {AppMode, SetupStep} from './hooks/use-setup-flow.js'
-import type {SlashCommandDefinition} from './slash-commands.js'
-import type {SlashSuggestion} from './slash-suggestions.js'
+import type { ChatMessage, MessageRole } from '../chat/prompt.js'
+import type { ProviderEnv } from '../config/env.js'
+import type { ProviderId } from '../core/stream.js'
+import type { AppMode, SetupStep } from './hooks/use-setup-flow.js'
+import type { SlashCommandDefinition } from './slash-commands.js'
+import type { SlashSuggestion } from './slash-suggestions.js'
 
-import {buildPrompt as formatPrompt} from '../chat/prompt.js'
-import {persistProviderEnv, tryLoadProviderEnv} from '../config/env.js'
-import {useChatStream} from './hooks/use-chat-stream.js'
-import {useSetupFlow} from './hooks/use-setup-flow.js'
-import {useSlashCommands} from './hooks/use-slash-commands.js'
-import {InputPanel} from './input-panel.js'
-import {providerOptionIndex, providerOptions} from './provider-options.js'
-import {SelectInput} from './select-input.js'
-import {isSlashCommandInput} from './slash-commands.js'
-import {SlashSuggestions} from './slash-suggestions.js'
-import {StatusBar} from './status-bar.js'
-import {theme} from './theme.js'
+import { buildPrompt as formatPrompt } from '../chat/prompt.js'
+import { persistProviderEnv, tryLoadProviderEnv } from '../config/env.js'
+import { useChatStream } from './hooks/use-chat-stream.js'
+import { useSetupFlow } from './hooks/use-setup-flow.js'
+import { useSlashCommands } from './hooks/use-slash-commands.js'
+import { InputPanel } from './input-panel.js'
+import { providerOptionIndex, providerOptions } from './provider-options.js'
+import { SelectInput } from './select-input.js'
+import { isSlashCommandInput } from './slash-commands.js'
+import { SlashSuggestions } from './slash-suggestions.js'
+import { StatusBar } from './status-bar.js'
+import { theme } from './theme.js'
 
 export interface AiceAppProps {
   initialEnv?: ProviderEnv
@@ -29,7 +29,7 @@ export interface AiceAppProps {
 const messageColors = theme.components.messages
 
 export function AiceApp(props: AiceAppProps) {
-  const {exit} = useApp()
+  const { exit } = useApp()
   const messageId = useRef(0)
 
   const [input, setInput] = useState('')
@@ -39,7 +39,7 @@ export function AiceApp(props: AiceAppProps) {
 
   const createMessage = useCallback((role: MessageRole, text: string): ChatMessage => {
     const id = messageId.current++
-    return {id, role, text}
+    return { id, role, text }
   }, [])
 
   const addSystemMessage = useCallback(
@@ -134,8 +134,8 @@ export function AiceApp(props: AiceAppProps) {
         return
       }
 
-      setProviderEnv(current => (current ? {...current, model} : current))
-      setSessionMeta({model, providerId: providerEnv.providerId})
+      setProviderEnv(current => (current ? { ...current, model } : current))
+      setSessionMeta({ model, providerId: providerEnv.providerId })
       addSystemMessage(`Model set to ${model}.`)
     },
     [addSystemMessage, providerEnv, setProviderEnv, setSessionMeta],
@@ -149,7 +149,7 @@ export function AiceApp(props: AiceAppProps) {
         return
       }
 
-      const {env, error} = tryLoadProviderEnv({providerId})
+      const { env, error } = tryLoadProviderEnv({ providerId })
       if (!env || error) {
         addSystemMessage(`Provider ${providerId} is not configured. Run /login to set API key first.`)
         return
@@ -176,7 +176,7 @@ export function AiceApp(props: AiceAppProps) {
     [addSystemMessage, setProviderChoiceIndex, setProviderEnv, setSessionMeta],
   )
 
-  const {handleSlashCommand, suggestions: slashSuggestionsForQuery} = useSlashCommands({
+  const { handleSlashCommand, suggestions: slashSuggestionsForQuery } = useSlashCommands({
     onClear: handleClearCommand,
     onEmpty: () => addSystemMessage('Empty command. Use /help to see available commands.'),
     onHelp: handleHelpCommand,

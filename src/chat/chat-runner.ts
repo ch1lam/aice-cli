@@ -1,4 +1,4 @@
-import type {SessionStream, SessionStreamChunk} from '../core/stream.js'
+import type { SessionStream, SessionStreamChunk } from '../core/stream.js'
 
 export interface ChatIO {
   error?(error: Error): never | void

@@ -1,6 +1,6 @@
-import {OpenAI} from 'openai'
+import { OpenAI } from 'openai'
 
-import type {ProviderEnv} from '../config/env.js'
+import type { ProviderEnv } from '../config/env.js'
 
 const DEFAULT_TIMEOUT_MS = 8000
 
@@ -27,7 +27,7 @@ export async function pingProvider(
   env: ProviderEnv,
   options: ProviderPingOptions = {},
 ): Promise<void> {
-  const {clients = {}, timeoutMs = DEFAULT_TIMEOUT_MS} = options
+  const { clients = {}, timeoutMs = DEFAULT_TIMEOUT_MS } = options
 
   switch (env.providerId) {
     case 'deepseek': {
@@ -35,13 +35,13 @@ export async function pingProvider(
         env,
         clients.deepseek,
         env.model ?? 'deepseek-chat',
-        {defaultBaseURL: 'https://api.deepseek.com', timeoutMs},
+        { defaultBaseURL: 'https://api.deepseek.com', timeoutMs },
       )
       return
     }
 
     case 'openai': {
-      await pingOpenAI(env, clients.openai, env.model ?? 'gpt-4o-mini', {timeoutMs})
+      await pingOpenAI(env, clients.openai, env.model ?? 'gpt-4o-mini', { timeoutMs })
       return
     }
 
@@ -57,9 +57,9 @@ async function pingOpenAI(
   model: string,
   options?: {defaultBaseURL?: string; timeoutMs?: number},
 ): Promise<void> {
-  const {defaultBaseURL, timeoutMs = DEFAULT_TIMEOUT_MS} = options ?? {}
-  const {models} =
-    client ?? new OpenAI({apiKey: env.apiKey, baseURL: env.baseURL ?? defaultBaseURL})
+  const { defaultBaseURL, timeoutMs = DEFAULT_TIMEOUT_MS } = options ?? {}
+  const { models } =
+    client ?? new OpenAI({ apiKey: env.apiKey, baseURL: env.baseURL ?? defaultBaseURL })
 
   if (!models?.retrieve && !models?.list) {
     throw new Error('OpenAI client is missing model operations')
@@ -68,10 +68,10 @@ async function pingOpenAI(
   await withAbortTimeout(
     signal => {
       if (models?.retrieve) {
-        return models.retrieve(model, {signal})
+        return models.retrieve(model, { signal })
       }
 
-      return models?.list?.({limit: 1, signal})
+      return models?.list?.({ limit: 1, signal })
     },
     timeoutMs,
   )

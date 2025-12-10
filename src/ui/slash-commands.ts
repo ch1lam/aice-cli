@@ -1,4 +1,4 @@
-import type {SlashSuggestion} from './slash-suggestions.js'
+import type { SlashSuggestion } from './slash-suggestions.js'
 
 export type SlashCommandId = 'clear' | 'help' | 'login' | 'model' | 'provider'
 
@@ -42,16 +42,16 @@ export function createSlashCommandRouter(
     const parts = parseCommand(rawInput)
 
     if (!parts.command) {
-      return {args: parts.args, type: 'empty'}
+      return { args: parts.args, type: 'empty' }
     }
 
     const definition = index.get(parts.command)
     if (!definition) {
-      return {args: parts.args, command: parts.command, type: 'unknown'}
+      return { args: parts.args, command: parts.command, type: 'unknown' }
     }
 
-    definition.handler(parts.args, {definitions})
-    return {args: parts.args, command: parts.command, definition, type: 'handled'}
+    definition.handler(parts.args, { definitions })
+    return { args: parts.args, command: parts.command, definition, type: 'handled' }
   }
 
   function suggestions(query: string): SlashSuggestion[] {
@@ -90,7 +90,7 @@ export function isSlashCommandInput(value: string): boolean {
 function parseCommand(rawInput: string): {args: string[]; command?: string} {
   const trimmed = rawInput.trim()
   if (!trimmed) {
-    return {args: []}
+    return { args: [] }
   }
 
   const withoutSlash = trimmed.startsWith('/') ? trimmed.slice(1) : trimmed
@@ -102,7 +102,7 @@ function parseCommand(rawInput: string): {args: string[]; command?: string} {
   const [command, ...args] = parts
 
   if (!command) {
-    return {args: []}
+    return { args: [] }
   }
 
   return {

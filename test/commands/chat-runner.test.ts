@@ -1,8 +1,8 @@
-import {expect} from 'chai'
+import { expect } from 'chai'
 
-import type {SessionStreamChunk} from '../../src/core/stream.ts'
+import type { SessionStreamChunk } from '../../src/core/stream.ts'
 
-import {renderStream} from '../../src/chat/chat-runner.js'
+import { renderStream } from '../../src/chat/chat-runner.js'
 
 async function* chunkStream(chunks: SessionStreamChunk[]) {
   for (const chunk of chunks) {
@@ -13,12 +13,12 @@ async function* chunkStream(chunks: SessionStreamChunk[]) {
 describe('renderStream helper', () => {
   it('renders meta, text, usage, and status chunks to IO', async () => {
     const stream = chunkStream([
-      {model: 'gpt-4o-mini', providerId: 'openai', type: 'meta'},
-      {index: 0, text: 'Hello', type: 'text'},
-      {index: 1, text: ' world', type: 'text'},
-      {type: 'usage', usage: {outputTokens: 2}},
-      {detail: 'finished', status: 'completed', type: 'status'},
-      {type: 'done'},
+      { model: 'gpt-4o-mini', providerId: 'openai', type: 'meta' },
+      { index: 0, text: 'Hello', type: 'text' },
+      { index: 1, text: ' world', type: 'text' },
+      { type: 'usage', usage: { outputTokens: 2 } },
+      { detail: 'finished', status: 'completed', type: 'status' },
+      { type: 'done' },
     ])
 
     const logs: string[] = []
@@ -42,9 +42,9 @@ describe('renderStream helper', () => {
 
   it('delegates error chunks to io.error', async () => {
     const stream = chunkStream([
-      {model: 'gpt-4o-mini', providerId: 'openai', type: 'meta'},
-      {index: 0, text: 'partial', type: 'text'},
-      {error: new Error('boom'), type: 'error'},
+      { model: 'gpt-4o-mini', providerId: 'openai', type: 'meta' },
+      { index: 0, text: 'partial', type: 'text' },
+      { error: new Error('boom'), type: 'error' },
     ])
 
     const errors: string[] = []

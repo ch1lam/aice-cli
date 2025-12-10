@@ -1,11 +1,11 @@
-import {type Dispatch, type SetStateAction, useCallback, useState} from 'react'
+import { type Dispatch, type SetStateAction, useCallback, useState } from 'react'
 
-import type {ProviderEnv} from '../../config/env.js'
-import type {ProviderId} from '../../core/stream.js'
+import type { ProviderEnv } from '../../config/env.js'
+import type { ProviderId } from '../../core/stream.js'
 
-import {persistProviderEnv, tryLoadProviderEnv} from '../../config/env.js'
-import {pingProvider} from '../../providers/ping.js'
-import {providerIdFromIndex, providerOptionIndex} from '../provider-options.js'
+import { persistProviderEnv, tryLoadProviderEnv } from '../../config/env.js'
+import { pingProvider } from '../../providers/ping.js'
+import { providerIdFromIndex, providerOptionIndex } from '../provider-options.js'
 
 export type AppMode = 'chat' | 'setup'
 
@@ -91,7 +91,7 @@ export function useSetupFlow(options: UseSetupFlowOptions): UseSetupFlowResult {
 
   const persistSetupEnv = useCallback(
     (overrides: {model?: string}): ProviderEnv | undefined => {
-      const {apiKey, baseURL, model, providerId} = setupState
+      const { apiKey, baseURL, model, providerId } = setupState
       if (!apiKey) {
         handleMissingApiKey()
         return undefined
@@ -110,7 +110,7 @@ export function useSetupFlow(options: UseSetupFlowOptions): UseSetupFlowResult {
         return undefined
       }
 
-      const {env, error} = tryLoadEnv({providerId})
+      const { env, error } = tryLoadEnv({ providerId })
       if (!env || error) {
         onMessage(`Failed to load provider config. ${error ? error.message : 'Unknown error.'}`)
         resetSetup(providerId)
@@ -212,8 +212,8 @@ export function useSetupFlow(options: UseSetupFlowOptions): UseSetupFlowResult {
           }
 
           const nextModel = trimmed || undefined
-          setSetupState(current => ({...current, model: nextModel}))
-          const env = persistSetupEnv({model: nextModel})
+          setSetupState(current => ({ ...current, model: nextModel }))
+          const env = persistSetupEnv({ model: nextModel })
 
           if (env) {
             await finalizeSetup(env)

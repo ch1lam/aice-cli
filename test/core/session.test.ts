@@ -1,8 +1,8 @@
-import {expect} from 'chai'
+import { expect } from 'chai'
 
-import type {ProviderStreamChunk} from '../../src/core/stream.ts'
+import type { ProviderStreamChunk } from '../../src/core/stream.ts'
 
-import {type LLMProvider, runSession, type SessionRequest} from '../../src/core/session.ts'
+import { type LLMProvider, runSession, type SessionRequest } from '../../src/core/session.ts'
 
 function createProvider(chunks: ProviderStreamChunk[]): LLMProvider {
   return {
@@ -18,10 +18,10 @@ function createProvider(chunks: ProviderStreamChunk[]): LLMProvider {
 describe('runSession', () => {
   it('emits meta first, indexes tokens, and ends with done', async () => {
     const provider = createProvider([
-      {status: 'running', type: 'status'},
-      {text: 'Hello', type: 'text'},
-      {text: ' world', type: 'text'},
-      {type: 'usage', usage: {outputTokens: 2}},
+      { status: 'running', type: 'status' },
+      { text: 'Hello', type: 'text' },
+      { text: ' world', type: 'text' },
+      { type: 'usage', usage: { outputTokens: 2 } },
     ])
 
     const request: SessionRequest = {
@@ -46,9 +46,9 @@ describe('runSession', () => {
 
   it('stops streaming after an error chunk and omits done', async () => {
     const provider = createProvider([
-      {text: 'partial', type: 'text'},
-      {error: new Error('boom'), type: 'error'},
-      {text: 'should not appear', type: 'text'},
+      { text: 'partial', type: 'text' },
+      { error: new Error('boom'), type: 'error' },
+      { text: 'should not appear', type: 'text' },
     ])
 
     const request: SessionRequest = {

@@ -1,7 +1,7 @@
-import type {ProviderEnv} from '../config/env.js'
-import type {ProviderId, SessionStream} from '../core/stream.js'
+import type { ProviderEnv } from '../config/env.js'
+import type { ProviderId, SessionStream } from '../core/stream.js'
 
-import {runSession} from '../core/session.js'
+import { runSession } from '../core/session.js'
 import {
   createProviderBinding,
   type ProviderBinding,
@@ -31,7 +31,7 @@ export class ChatController {
     const providerId = prompt.providerId ?? this.#env.providerId
     this.#assertProvider(providerId)
 
-    const binding = this.#bindingFactory({env: this.#env, providerId}) as ProviderBinding
+    const binding = this.#bindingFactory({ env: this.#env, providerId }) as ProviderBinding
     const request = binding.createRequest(prompt)
 
     return runSession(binding.provider, request)

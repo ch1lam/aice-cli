@@ -2,9 +2,9 @@ import dotenv from 'dotenv'
 import fs from 'node:fs'
 import path from 'node:path'
 
-import type {ProviderId} from '../core/stream.js'
+import type { ProviderId } from '../core/stream.js'
 
-dotenv.config({quiet: true})
+dotenv.config({ quiet: true })
 
 export type EnvValues = Record<string, string | undefined>
 
@@ -75,9 +75,9 @@ export function loadProviderEnv(options?: LoadProviderEnvOptions): ProviderEnv {
 
 export function tryLoadProviderEnv(options?: LoadProviderEnvOptions): TryLoadProviderEnvResult {
   try {
-    return {env: loadProviderEnv(options)}
+    return { env: loadProviderEnv(options) }
   } catch (error) {
-    return {error: error instanceof Error ? error : new Error(String(error))}
+    return { error: error instanceof Error ? error : new Error(String(error)) }
   }
 }
 
@@ -195,14 +195,14 @@ function readEnvFile(envPath: string, io: EnvIO): EnvValues {
 
 function resolveEnvValues(options?: LoadProviderEnvOptions): EnvValues {
   if (options?.env) {
-    return {...options.env}
+    return { ...options.env }
   }
 
   const envPath = options?.envPath ?? DEFAULT_ENV_PATH
   const io = options?.io ?? fileEnvIO
   const envFromFile = readEnvFile(envPath, io)
 
-  return {...process.env, ...envFromFile}
+  return { ...process.env, ...envFromFile }
 }
 
 function resolveProviderId(env: EnvValues, providerId?: ProviderId): ProviderId {

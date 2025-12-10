@@ -1,13 +1,13 @@
-import {type Dispatch, type SetStateAction, useCallback, useState} from 'react'
+import { type Dispatch, type SetStateAction, useCallback, useState } from 'react'
 
-import type {ChatMessage} from '../../chat/prompt.js'
-import type {ProviderEnv} from '../../config/env.js'
-import type {ProviderId, SessionStream, StreamStatus, TokenUsage} from '../../core/stream.js'
-import type {SessionMeta} from './use-session.js'
+import type { ChatMessage } from '../../chat/prompt.js'
+import type { ProviderEnv } from '../../config/env.js'
+import type { ProviderId, SessionStream, StreamStatus, TokenUsage } from '../../core/stream.js'
+import type { SessionMeta } from './use-session.js'
 
-import {ChatController} from '../../chat/controller.js'
+import { ChatController } from '../../chat/controller.js'
 
-export type {ChatMessage, MessageRole} from '../../chat/prompt.js'
+export type { ChatMessage, MessageRole } from '../../chat/prompt.js'
 
 type ChatControllerFactory = (env: ProviderEnv) => Pick<ChatController, 'createStream'>
 
@@ -33,7 +33,7 @@ export interface UseChatStreamResult {
 export function useChatStream(options: UseChatStreamOptions): UseChatStreamResult {
   const {
     buildPrompt,
-    createController = env => new ChatController({env}),
+    createController = env => new ChatController({ env }),
     onAssistantMessage,
     onSystemMessage,
   } = options
@@ -76,7 +76,7 @@ export function useChatStream(options: UseChatStreamOptions): UseChatStreamResul
       setSessionStatus('running')
       setSessionStatusMessage(undefined)
       setSessionUsage(undefined)
-      setSessionMeta({model: env.model ?? 'default', providerId: env.providerId as ProviderId})
+      setSessionMeta({ model: env.model ?? 'default', providerId: env.providerId as ProviderId })
 
       let buffer = ''
 
@@ -103,7 +103,7 @@ export function useChatStream(options: UseChatStreamOptions): UseChatStreamResul
               }
 
               case 'meta': {
-                setSessionMeta({model: chunk.model, providerId: chunk.providerId as ProviderId})
+                setSessionMeta({ model: chunk.model, providerId: chunk.providerId as ProviderId })
                 break
               }
 

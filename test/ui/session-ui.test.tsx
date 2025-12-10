@@ -65,8 +65,8 @@ interface SessionSceneProps {
 }
 
 function SessionScene(props: SessionSceneProps): ReactElement {
-  const session = useSession({stream: props.stream})
-  const {exit} = useApp()
+  const session = useSession({ stream: props.stream })
+  const { exit } = useApp()
 
   useEffect(() => {
     if (session.done || session.error) {
@@ -92,17 +92,17 @@ describe('Ink session UI', () => {
   it('renders streaming content and status updates', async () => {
     const stream = chunkStream(
       [
-        {model: 'gpt-4o-mini', providerId: 'openai', type: 'meta'},
-        {status: 'running', type: 'status'},
-        {index: 0, text: 'Hello', type: 'text'},
-        {index: 1, text: ' world', type: 'text'},
-        {type: 'usage', usage: {inputTokens: 5, outputTokens: 7, totalTokens: 12}},
-        {type: 'done'},
+        { model: 'gpt-4o-mini', providerId: 'openai', type: 'meta' },
+        { status: 'running', type: 'status' },
+        { index: 0, text: 'Hello', type: 'text' },
+        { index: 1, text: ' world', type: 'text' },
+        { type: 'usage', usage: { inputTokens: 5, outputTokens: 7, totalTokens: 12 } },
+        { type: 'done' },
       ],
       5,
     )
 
-    const {frames, lastFrame} = render(<SessionScene stream={stream} />)
+    const { frames, lastFrame } = render(<SessionScene stream={stream} />)
     await waitFor(() => (lastFrame() ?? '').includes('status:completed'))
 
     const cleanedFrames = frames.map(frame => stripAnsi(frame))
@@ -122,12 +122,12 @@ describe('Ink session UI', () => {
 
   it('surfaces error chunks', async () => {
     const stream = chunkStream([
-      {model: 'gpt-4o-mini', providerId: 'openai', type: 'meta'},
-      {index: 0, text: 'partial', type: 'text'},
-      {error: new Error('boom'), type: 'error'},
+      { model: 'gpt-4o-mini', providerId: 'openai', type: 'meta' },
+      { index: 0, text: 'partial', type: 'text' },
+      { error: new Error('boom'), type: 'error' },
     ])
 
-    const {lastFrame} = render(<SessionScene stream={stream} />)
+    const { lastFrame } = render(<SessionScene stream={stream} />)
     await waitFor(() => (lastFrame() ?? '').includes('status:failed'))
 
     const finalFrame = stripAnsi(lastFrame() ?? '')

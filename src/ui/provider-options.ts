@@ -1,12 +1,12 @@
-import type {ProviderId} from '../core/stream.js'
+import type { ProviderId } from '../core/stream.js'
 
-import {type SelectInputItem} from './select-input.js'
+import { type SelectInputItem } from './select-input.js'
 
 export type ProviderOption = SelectInputItem<ProviderId>
 
 export const providerOptions: ProviderOption[] = [
-  {description: 'Responses API (default)', label: 'OpenAI', value: 'openai'},
-  {description: 'DeepSeek chat + reasoning', label: 'DeepSeek', value: 'deepseek'},
+  { description: 'Responses API (default)', label: 'OpenAI', value: 'openai' },
+  { description: 'DeepSeek chat + reasoning', label: 'DeepSeek', value: 'deepseek' },
 ]
 
 export function providerOptionIndex(providerId: ProviderId): number {

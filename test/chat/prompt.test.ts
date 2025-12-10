@@ -1,13 +1,13 @@
-import {expect} from 'chai'
+import { expect } from 'chai'
 
-import {buildPrompt, type PromptMessage} from '../../src/chat/prompt.ts'
+import { buildPrompt, type PromptMessage } from '../../src/chat/prompt.ts'
 
 describe('buildPrompt', () => {
   it('formats history with role labels and ignores system messages', () => {
     const history: PromptMessage[] = [
-      {role: 'system', text: 'ignored'},
-      {role: 'user', text: 'Hello'},
-      {role: 'assistant', text: 'Hi there'},
+      { role: 'system', text: 'ignored' },
+      { role: 'user', text: 'Hello' },
+      { role: 'assistant', text: 'Hi there' },
     ]
 
     const prompt = buildPrompt(history)
@@ -17,13 +17,13 @@ describe('buildPrompt', () => {
 
   it('truncates to the most recent messages when a max is provided', () => {
     const history: PromptMessage[] = [
-      {role: 'user', text: 'First'},
-      {role: 'assistant', text: 'One'},
-      {role: 'user', text: 'Second'},
-      {role: 'assistant', text: 'Two'},
+      { role: 'user', text: 'First' },
+      { role: 'assistant', text: 'One' },
+      { role: 'user', text: 'Second' },
+      { role: 'assistant', text: 'Two' },
     ]
 
-    const prompt = buildPrompt(history, {maxMessages: 2})
+    const prompt = buildPrompt(history, { maxMessages: 2 })
 
     expect(prompt).to.equal('User: Second\nAssistant: Two\nAssistant:')
   })

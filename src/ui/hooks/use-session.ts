@@ -1,4 +1,4 @@
-import {useEffect, useState} from 'react'
+import { useEffect, useState } from 'react'
 
 import type {
   ProviderId,
@@ -30,8 +30,8 @@ export interface UseSessionOptions {
 }
 
 export function useSession(options: UseSessionOptions): SessionState {
-  const [state, setState] = useState<SessionState>({content: '', done: false})
-  const {onError, onStatusChange, stream} = options
+  const [state, setState] = useState<SessionState>({ content: '', done: false })
+  const { onError, onStatusChange, stream } = options
 
   useEffect(() => {
     if (!stream) return
@@ -89,7 +89,7 @@ export function useSession(options: UseSessionOptions): SessionState {
         case 'meta': {
           setState(current => ({
             ...current,
-            meta: {model: chunk.model, providerId: chunk.providerId},
+            meta: { model: chunk.model, providerId: chunk.providerId },
           }))
           break
         }

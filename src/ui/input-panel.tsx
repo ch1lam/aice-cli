@@ -1,8 +1,8 @@
-import type {ReactElement} from 'react'
+import type { ReactElement } from 'react'
 
-import {Box, Text} from 'ink'
+import { Box, Text } from 'ink'
 
-import {theme} from './theme.js'
+import { theme } from './theme.js'
 
 export interface InputPanelProps {
   cursorVisible?: boolean

@@ -1,9 +1,9 @@
-import {expect} from 'chai'
+import { expect } from 'chai'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
-import {persistProviderEnv, tryLoadProviderEnv} from '../../src/config/env.js'
+import { persistProviderEnv, tryLoadProviderEnv } from '../../src/config/env.js'
 
 describe('env helpers', () => {
   const keys = [
@@ -53,7 +53,7 @@ describe('env helpers', () => {
       expect(content).to.include('AICE_OPENAI_BASE_URL=https://example.com')
       expect(content).to.include('AICE_OPENAI_MODEL=gpt-4o-mini')
 
-      const {env, error} = tryLoadProviderEnv({envPath, providerId: 'openai'})
+      const { env, error } = tryLoadProviderEnv({ envPath, providerId: 'openai' })
 
       expect(error).to.equal(undefined)
       expect(env?.providerId).to.equal('openai')
@@ -62,7 +62,7 @@ describe('env helpers', () => {
       expect(env?.model).to.equal('gpt-4o-mini')
       expect(process.env.AICE_PROVIDER).to.equal('keep-existing')
     } finally {
-      fs.rmSync(dir, {force: true, recursive: true})
+      fs.rmSync(dir, { force: true, recursive: true })
     }
   })
 
@@ -91,7 +91,7 @@ describe('env helpers', () => {
         }),
       ).to.throw('write failure')
     } finally {
-      fs.rmSync(dir, {force: true, recursive: true})
+      fs.rmSync(dir, { force: true, recursive: true })
     }
   })
 
@@ -111,11 +111,11 @@ describe('env helpers', () => {
     }
 
     try {
-      const {env, error} = tryLoadProviderEnv({envPath, io: failingIO})
+      const { env, error } = tryLoadProviderEnv({ envPath, io: failingIO })
       expect(env).to.equal(undefined)
       expect(error?.message).to.equal('read failure')
     } finally {
-      fs.rmSync(dir, {force: true, recursive: true})
+      fs.rmSync(dir, { force: true, recursive: true })
     }
   })
 })

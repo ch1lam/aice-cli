@@ -9,7 +9,7 @@ export default class Tui extends Command {
   static description = 'Launch the interactive aice TUI shell.'
 
   async run(): Promise<void> {
-    const {stdin} = process
+    const { stdin } = process
     const supportsRaw = stdin.isTTY && typeof stdin.setRawMode === 'function'
 
     if (!supportsRaw) {
@@ -20,9 +20,9 @@ export default class Tui extends Command {
 
     clearTerminal()
 
-    const {env, error} = tryLoadProviderEnv()
-    const {waitUntilExit} = render(
-      React.createElement(AiceApp, {initialEnv: env, initialError: error}),
+    const { env, error } = tryLoadProviderEnv()
+    const { waitUntilExit } = render(
+      React.createElement(AiceApp, { initialEnv: env, initialError: error }),
     )
     await waitUntilExit()
   }

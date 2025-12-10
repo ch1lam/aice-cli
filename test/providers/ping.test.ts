@@ -1,6 +1,6 @@
-import {expect} from 'chai'
+import { expect } from 'chai'
 
-import {pingProvider} from '../../src/providers/ping.ts'
+import { pingProvider } from '../../src/providers/ping.ts'
 
 class FakeOpenAIModelsClient {
   calls: string[] = []
@@ -33,7 +33,7 @@ describe('pingProvider', () => {
     const models = new FakeOpenAIModelsClient()
     const client = new FakeOpenAIClient(models)
 
-    await pingProvider({apiKey: 'key', providerId: 'openai'}, {clients: {openai: client}})
+    await pingProvider({ apiKey: 'key', providerId: 'openai' }, { clients: { openai: client } })
 
     expect(models.calls).to.deep.equal(['gpt-4o-mini'])
   })
@@ -42,7 +42,7 @@ describe('pingProvider', () => {
     const models = new FakeOpenAIModelsClient()
     const client = new FakeOpenAIClient(models)
 
-    await pingProvider({apiKey: 'key', providerId: 'deepseek'}, {clients: {deepseek: client}})
+    await pingProvider({ apiKey: 'key', providerId: 'deepseek' }, { clients: { deepseek: client } })
 
     expect(models.calls).to.deep.equal(['deepseek-chat'])
   })
@@ -54,7 +54,7 @@ describe('pingProvider', () => {
     let error: unknown
 
     try {
-      await pingProvider({apiKey: 'bad', providerId: 'openai'}, {clients: {openai: client}})
+      await pingProvider({ apiKey: 'bad', providerId: 'openai' }, { clients: { openai: client } })
     } catch (error_) {
       error = error_
     }
@@ -71,8 +71,8 @@ describe('pingProvider', () => {
 
     try {
       await pingProvider(
-        {apiKey: 'key', providerId: 'openai'},
-        {clients: {openai: client}, timeoutMs: 10},
+        { apiKey: 'key', providerId: 'openai' },
+        { clients: { openai: client }, timeoutMs: 10 },
       )
     } catch (error_) {
       error = error_

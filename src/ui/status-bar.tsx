@@ -1,9 +1,9 @@
-import {Box, Text, useStdout} from 'ink'
-import {type ReactElement, useEffect, useState} from 'react'
+import { Box, Text, useStdout } from 'ink'
+import { type ReactElement, useEffect, useState } from 'react'
 
-import type {StreamStatus, TokenUsage} from '../core/stream.js'
+import type { StreamStatus, TokenUsage } from '../core/stream.js'
 
-import {theme} from './theme.js'
+import { theme } from './theme.js'
 
 const statusSpinnerFrames = ['-', '\\', '|', '/']
 
@@ -18,8 +18,8 @@ export interface StatusBarProps {
 }
 
 export function StatusBar(props: StatusBarProps): ReactElement {
-  const {meta, status, statusMessage, usage} = props
-  const {stdout} = useStdout()
+  const { meta, status, statusMessage, usage } = props
+  const { stdout } = useStdout()
   const [columns, setColumns] = useState<number | undefined>(stdout?.columns)
   const barWidth =
     typeof columns === 'number' && Number.isFinite(columns) && columns > 0 ? columns : 80

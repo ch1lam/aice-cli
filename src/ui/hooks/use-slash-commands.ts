@@ -1,6 +1,6 @@
-import {useCallback, useMemo} from 'react'
+import { useCallback, useMemo } from 'react'
 
-import type {SlashSuggestion} from '../slash-suggestions.js'
+import type { SlashSuggestion } from '../slash-suggestions.js'
 
 import {
   createSlashCommandRouter,
@@ -27,7 +27,7 @@ export interface UseSlashCommandsResult {
 }
 
 export function useSlashCommands(options: UseSlashCommandsOptions): UseSlashCommandsResult {
-  const {onClear, onEmpty, onHelp, onLogin, onModel, onProvider, onUnknown} = options
+  const { onClear, onEmpty, onHelp, onLogin, onModel, onProvider, onUnknown } = options
 
   const definitions = useMemo<SlashCommandDefinition[]>(
     () => [

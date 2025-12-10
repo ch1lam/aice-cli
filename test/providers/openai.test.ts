@@ -1,11 +1,11 @@
-import type {OpenAI as OpenAIClient} from 'openai'
-import type {ResponseStreamEvent} from 'openai/resources/responses/responses'
+import type { OpenAI as OpenAIClient } from 'openai'
+import type { ResponseStreamEvent } from 'openai/resources/responses/responses'
 
-import {expect} from 'chai'
+import { expect } from 'chai'
 
-import type {ProviderStreamChunk} from '../../src/core/stream.ts'
+import type { ProviderStreamChunk } from '../../src/core/stream.ts'
 
-import {OpenAIProvider, type OpenAISessionRequest} from '../../src/providers/openai.ts'
+import { OpenAIProvider, type OpenAISessionRequest } from '../../src/providers/openai.ts'
 
 type StreamEvent = ResponseStreamEvent | {[key: string]: unknown; type: string}
 
@@ -65,17 +65,17 @@ class FakeOpenAI {
 
 describe('OpenAIProvider', () => {
   it('requires an API key', () => {
-    expect(() => new OpenAIProvider({apiKey: ''})).to.throw('Missing OpenAI API key')
+    expect(() => new OpenAIProvider({ apiKey: '' })).to.throw('Missing OpenAI API key')
   })
 
   it('streams delta, usage, and completion events in order', async () => {
     const events: StreamEvent[] = [
-      {delta: 'Hello', type: 'response.output_text.delta'} as StreamEvent,
-      {delta: ' world', type: 'response.output_text.delta'} as StreamEvent,
+      { delta: 'Hello', type: 'response.output_text.delta' } as StreamEvent,
+      { delta: ' world', type: 'response.output_text.delta' } as StreamEvent,
       {
         response: {
           /* eslint-disable camelcase */
-          usage: {input_tokens: 5, output_tokens: 7, total_tokens: 12},
+          usage: { input_tokens: 5, output_tokens: 7, total_tokens: 12 },
           /* eslint-enable camelcase */
         },
         'sequence_number': 3,
@@ -85,7 +85,7 @@ describe('OpenAIProvider', () => {
 
     const fakeClient = new FakeOpenAI(events)
     const provider = new OpenAIProvider(
-      {apiKey: 'test-key', model: 'gpt-4o-mini'},
+      { apiKey: 'test-key', model: 'gpt-4o-mini' },
       fakeClient as unknown as OpenAIClient,
     )
 
@@ -104,10 +104,10 @@ describe('OpenAIProvider', () => {
 
     const types = chunks.map(chunk => chunk.type)
     expect(types).to.deep.equal(['status', 'text', 'text', 'usage', 'status'])
-    expect(chunks[0]).to.include({status: 'running'})
-    expect(chunks[1]).to.include({text: 'Hello'})
-    expect(chunks[3]).to.deep.include({usage: {inputTokens: 5, outputTokens: 7, totalTokens: 12}})
-    expect(chunks[4]).to.include({status: 'completed'})
+    expect(chunks[0]).to.include({ status: 'running' })
+    expect(chunks[1]).to.include({ text: 'Hello' })
+    expect(chunks[3]).to.deep.include({ usage: { inputTokens: 5, outputTokens: 7, totalTokens: 12 } })
+    expect(chunks[4]).to.include({ status: 'completed' })
 
     expect(fakeClient.responses.lastArgs).to.deep.include({
       model: 'gpt-4o-mini',
@@ -118,14 +118,14 @@ describe('OpenAIProvider', () => {
 
   it('emits failed status and error chunks when the stream reports response.error', async () => {
     const events: StreamEvent[] = [
-      {delta: 'partial', type: 'response.output_text.delta'} as StreamEvent,
-      {code: 'rate_limit_exceeded', message: 'boom', type: 'error'} as StreamEvent,
-      {type: 'response.completed'} as StreamEvent,
+      { delta: 'partial', type: 'response.output_text.delta' } as StreamEvent,
+      { code: 'rate_limit_exceeded', message: 'boom', type: 'error' } as StreamEvent,
+      { type: 'response.completed' } as StreamEvent,
     ]
 
     const fakeClient = new FakeOpenAI(events)
     const provider = new OpenAIProvider(
-      {apiKey: 'test-key', model: 'gpt-4o-mini'},
+      { apiKey: 'test-key', model: 'gpt-4o-mini' },
       fakeClient as unknown as OpenAIClient,
     )
 

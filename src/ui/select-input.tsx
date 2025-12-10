@@ -1,7 +1,7 @@
-import {Box, Text} from 'ink'
-import {type ReactElement} from 'react'
+import { Box, Text } from 'ink'
+import { type ReactElement } from 'react'
 
-import {theme} from './theme.js'
+import { theme } from './theme.js'
 
 export interface SelectInputItem<T extends string> {
   description?: string

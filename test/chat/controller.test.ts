@@ -1,14 +1,14 @@
-import {expect} from 'chai'
+import { expect } from 'chai'
 
-import type {LLMProvider, SessionRequest} from '../../src/core/session.ts'
+import type { LLMProvider, SessionRequest } from '../../src/core/session.ts'
 
-import {ChatController} from '../../src/chat/controller.ts'
+import { ChatController } from '../../src/chat/controller.ts'
 
 function createProvider(): LLMProvider {
   return {
     id: 'openai',
     async *stream() {
-      yield {text: 'hi', type: 'text'}
+      yield { text: 'hi', type: 'text' }
     },
   }
 }
@@ -53,7 +53,7 @@ describe('ChatController', () => {
     }
 
     expect(inputs).to.have.lengthOf(1)
-    expect(inputs[0]).to.include({prompt: 'Hello', systemPrompt: 'You are helpful', temperature: 1})
+    expect(inputs[0]).to.include({ prompt: 'Hello', systemPrompt: 'You are helpful', temperature: 1 })
     expect(capturedRequest).to.exist
     expect(types).to.deep.equal(['meta', 'text', 'done'])
   })
@@ -69,7 +69,7 @@ describe('ChatController', () => {
       },
     })
 
-    expect(() => controller.createStream({prompt: 'hi', providerId: 'deepseek'})).to.throw(
+    expect(() => controller.createStream({ prompt: 'hi', providerId: 'deepseek' })).to.throw(
       'Configured provider openai does not match requested deepseek',
     )
   })
