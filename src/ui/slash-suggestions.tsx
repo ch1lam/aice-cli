@@ -27,7 +27,7 @@ export function SlashSuggestions(props: SlashSuggestionsProps): null | ReactElem
     <Box flexDirection="column" paddingX={1} paddingY={0} width="100%">
       {props.items.map((item, itemIndex) => {
         const isActive = itemIndex === index
-        const indicator = isActive ? '❄' : ' '
+        const indicator = isActive ? '•' : ' '
         const commandText = withLeadingSlash(item.hint ?? item.value)
 
         return (

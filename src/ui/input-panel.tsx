@@ -15,7 +15,7 @@ export interface InputPanelProps {
 export function InputPanel(props: InputPanelProps): ReactElement {
   const cursor = props.disabled ? '' : props.cursorVisible ? '▌' : ' '
   const colors = theme.components.inputPanel
-  const borderColor = props.disabled ? colors.border : colors.activeBorder
+  const borderColor = props.disabled ? colors.activeBorder : colors.border
 
   return (
     <Box

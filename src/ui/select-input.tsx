@@ -36,7 +36,7 @@ export function SelectInput<T extends string>(props: SelectInputProps<T>): React
       ) : null}
       {props.items.map((item, index) => {
         const isSelected = index === safeIndex
-        const indicator = isSelected ? '>' : ' '
+        const indicator = isSelected ? '•' : ' '
 
         return (
           <Box key={item.value}>

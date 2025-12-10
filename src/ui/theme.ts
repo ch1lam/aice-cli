@@ -4,9 +4,20 @@ const palette = {
     cyan: '#3AA99F',
     green: '#879A39',
     magenta: '#CE5D97',
-    orange: '#BC5215',
+    orange: '#DA702C',
+    purple: '#8B7EC8',
     red: '#D14D41',
     yellow: '#D0A215',
+  },
+  accentsLight: {
+    blue: '#205EA6',
+    cyan: '#24837B',
+    green: '#66800B',
+    magenta: '#A02F6F',
+    orange: '#BC5215',
+    purple: '#5E409D',
+    red: '#AF3029',
+    yellow: '#AD8301',
   },
   base: {
     border: '#343331',
@@ -14,10 +25,10 @@ const palette = {
     surface: '#100F0F',
     surfaceActive: '#282726',
     surfaceRaised: '#1C1B1A',
-    textDisabled: '#6F6E69',
-    textMuted: '#878580',
-    textPrimary: '#CECDC3',
-    textSecondary: '#B7B5AC',
+    textDisabled: '#878580',
+    textMuted: '#CECDC3',
+    textPrimary: '#FFFCF0',
+    textSecondary: '#E6E4D9',
   },
 } as const
 
@@ -25,8 +36,8 @@ const semantic = {
   accentCode: palette.accents.orange,
   accentDanger: palette.accents.red,
   accentInfo: palette.accents.blue,
-  accentPrimary: palette.accents.yellow,
-  accentSecondary: palette.accents.cyan,
+  accentPrimary: palette.accents.cyan,
+  accentSecondary: palette.accents.yellow,
   accentSuccess: palette.accents.green,
   accentUser: palette.accents.magenta,
   accentWarning: palette.accents.yellow,
@@ -43,7 +54,7 @@ const semantic = {
 
 const components = {
   app: {
-    title: semantic.accentSecondary,
+    title: semantic.accentPrimary,
   },
   chatWindow: {
     assistantLabel: semantic.accentSuccess,
@@ -51,20 +62,20 @@ const components = {
     userLabel: semantic.accentUser,
   },
   inputPanel: {
-    activeBorder: semantic.accentPrimary,
-    border: semantic.accentSecondary,
+    activeBorder: semantic.accentSecondary,
+    border: semantic.accentSuccess,
     disabled: semantic.textDisabled,
-    label: semantic.accentPrimary,
+    label: semantic.textPrimary,
     placeholder: semantic.textMuted,
     text: semantic.textPrimary,
   },
   messages: {
-    assistant: semantic.accentSuccess,
+    assistant: semantic.textPrimary,
     caret: semantic.accentPrimary,
     placeholder: semantic.textMuted,
-    system: semantic.textMuted,
+    system: semantic.accentSuccess,
     text: semantic.textPrimary,
-    user: semantic.accentUser,
+    user: semantic.textDisabled,
   },
   selectInput: {
     activeBorder: semantic.accentSecondary,

@@ -381,7 +381,7 @@ export function AiceApp(props: AiceAppProps) {
     })
   }
 
-  const inputLabel = '>'
+  const inputLabel = '✧'
   const renderedInput = maskInput ? '*'.repeat(input.length) : input
   const providerMeta = resolveProviderMeta(sessionMeta, providerEnv)
   const providerPrompt = providerOptions[providerChoiceIndex]?.value ?? providerSelection
@@ -407,7 +407,7 @@ export function AiceApp(props: AiceAppProps) {
         ))}
         {streaming ? (
           <Text color={messageColors.assistant} wrap="wrap">
-            {`Assistant: ${currentResponse || '...'}${sessionStatus === 'completed' || !cursorVisible ? '  ' : ' ▌'}`}
+            {` ♤  ${currentResponse || ''}${sessionStatus === 'completed' || !cursorVisible ? '  ' : ' ▌'}`}
           </Text>
         ) : null}
       </Box>
@@ -481,9 +481,9 @@ function colorForRole(role: MessageRole): string {
 }
 
 function labelForRole(role: MessageRole): string {
-  if (role === 'assistant') return 'Assistant:'
-  if (role === 'user') return 'You:'
-  return 'System:'
+  if (role === 'assistant') return ' ♠ '
+  if (role === 'user') return ' ✧ '
+  return ' • '
 }
 
 function createMetaFromEnv(env: ProviderEnv): {model: string; providerId: ProviderId} {
