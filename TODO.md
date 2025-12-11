@@ -22,3 +22,13 @@
 - [x] Split TUI logic: extract `useSetupFlow` (provider select/save), `useChatStream` (consume SessionStream), `useSlashCommands` (table-driven). `AiceApp` should only render and wire state.
 - [x] Prompt builder: add structured `buildPrompt` (role labels, optional truncation, no persistence) and replace the `startStream` string concat; add unit test.
 - [x] Config I/O abstraction: provide injectable I/O for `.env` read/write (testable), centralize required-field validation, avoid global `process.env` pollution; add tests for I/O failures.
+
+## Architecture cleanup (incremental, low-risk steps)
+- [ ] Move prompt/session types into `src/domain/chat/{message,session}.ts` (re-export temporarily), update imports, and rerun tests.
+- [ ] Introduce `provider-registry` (id → factory) and refactor `providers/factory.ts` to consume it (no behavior change).
+- [ ] Add `application/chat-service.ts`; make `ChatController` delegate to it while preserving the same stream API.
+- [ ] Split env handling into `env-loader` (resolve/validate) and `env-store` (fs I/O) with short-term re-exports for callers.
+- [ ] Create `setup-service` that composes loader/store + `pingProvider`; point `use-setup-flow` to it.
+- [ ] Relocate `chat-runner` under `interface/cli/runner`; keep commands thin wrappers over application services.
+- [ ] Slim `AiceApp`: push input/slash/setup handling into hooks (`use-chat-stream`, `use-setup-flow`, `use-slash-commands`), leave render-only UI.
+- [ ] Remove transition re-exports once callers are migrated; update README/AGENTS to reflect new layout.
