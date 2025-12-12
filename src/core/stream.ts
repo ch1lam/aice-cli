@@ -1,5 +1,18 @@
 export type ProviderId = 'deepseek' | 'openai' | string
 
+export const KNOWN_PROVIDERS = ['openai', 'deepseek'] as const
+export type KnownProviderId = (typeof KNOWN_PROVIDERS)[number]
+
+const knownProviderSet = new Set<string>(KNOWN_PROVIDERS)
+
+export function isProviderId(value: string): value is KnownProviderId {
+  return knownProviderSet.has(value)
+}
+
+export function parseProviderId(value: string): KnownProviderId | undefined {
+  return isProviderId(value) ? value : undefined
+}
+
 export type StreamStatus = 'completed' | 'failed' | 'queued' | 'running'
 
 export type TokenUsage = {

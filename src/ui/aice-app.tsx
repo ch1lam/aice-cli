@@ -10,6 +10,7 @@ import type { SlashSuggestion } from './slash-suggestions.js'
 
 import { buildPrompt as formatPrompt } from '../chat/prompt.js'
 import { persistProviderEnv, tryLoadProviderEnv } from '../config/env.js'
+import { parseProviderId } from '../core/stream.js'
 import { useChatStream } from './hooks/use-chat-stream.js'
 import { useSetupFlow } from './hooks/use-setup-flow.js'
 import { useSlashCommands } from './hooks/use-slash-commands.js'
@@ -451,14 +452,6 @@ export function AiceApp(props: AiceAppProps) {
       </Box>
     </Box>
   )
-}
-
-function parseProviderId(value: string): ProviderId | undefined {
-  if (value === 'openai' || value === 'deepseek') {
-    return value
-  }
-
-  return undefined
 }
 
 function colorForRole(role: MessageRole): string {
