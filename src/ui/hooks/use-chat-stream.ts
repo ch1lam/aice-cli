@@ -2,7 +2,7 @@ import { type Dispatch, type SetStateAction, useCallback, useState } from 'react
 
 import type { ChatMessage } from '../../chat/prompt.js'
 import type { ProviderEnv } from '../../config/env.js'
-import type { ProviderId, SessionStream, StreamStatus, TokenUsage } from '../../core/stream.js'
+import type { SessionStream, StreamStatus, TokenUsage } from '../../core/stream.js'
 import type { SessionMeta } from './use-session.js'
 
 import { ChatController } from '../../chat/controller.js'
@@ -76,7 +76,7 @@ export function useChatStream(options: UseChatStreamOptions): UseChatStreamResul
       setSessionStatus('running')
       setSessionStatusMessage(undefined)
       setSessionUsage(undefined)
-      setSessionMeta({ model: env.model ?? 'default', providerId: env.providerId as ProviderId })
+      setSessionMeta({ model: env.model ?? 'default', providerId: env.providerId })
 
       let buffer = ''
 
@@ -103,7 +103,7 @@ export function useChatStream(options: UseChatStreamOptions): UseChatStreamResul
               }
 
               case 'meta': {
-                setSessionMeta({ model: chunk.model, providerId: chunk.providerId as ProviderId })
+                setSessionMeta({ model: chunk.model, providerId: chunk.providerId })
                 break
               }
 

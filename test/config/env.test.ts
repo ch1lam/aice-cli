@@ -118,4 +118,13 @@ describe('env helpers', () => {
       fs.rmSync(dir, { force: true, recursive: true })
     }
   })
+
+  it('rejects unknown provider ids from env', () => {
+    const { env, error } = tryLoadProviderEnv({
+      env: { AICE_PROVIDER: 'unknown' },
+    })
+
+    expect(env).to.equal(undefined)
+    expect(error?.message).to.include('Unsupported provider: unknown')
+  })
 })

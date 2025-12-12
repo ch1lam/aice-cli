@@ -2,7 +2,7 @@ import dotenv from 'dotenv'
 import fs from 'node:fs'
 import path from 'node:path'
 
-import type { ProviderId } from '../core/stream.js'
+import { KNOWN_PROVIDERS, parseProviderId, type ProviderId } from '../core/stream.js'
 
 dotenv.config({ quiet: true })
 
@@ -206,7 +206,17 @@ function resolveEnvValues(options?: LoadProviderEnvOptions): EnvValues {
 }
 
 function resolveProviderId(env: EnvValues, providerId?: ProviderId): ProviderId {
-  return (providerId ?? env.AICE_PROVIDER ?? 'openai') as ProviderId
+  if (providerId) return providerId
+
+  const rawProviderId = env.AICE_PROVIDER
+  if (!rawProviderId) return 'openai'
+
+  const parsedProviderId = parseProviderId(rawProviderId)
+  if (parsedProviderId) return parsedProviderId
+
+  throw new Error(
+    `Unsupported provider: ${rawProviderId}. Supported providers: ${KNOWN_PROVIDERS.join(', ')}`,
+  )
 }
 
 function requireEnvValue(env: EnvValues, key: string): string {
