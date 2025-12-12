@@ -3,6 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 
 import { KNOWN_PROVIDERS, parseProviderId, type ProviderId } from '../core/stream.js'
+import { DEFAULT_PROVIDER_ID } from './provider-defaults.js'
 
 dotenv.config({ quiet: true })
 
@@ -209,7 +210,7 @@ function resolveProviderId(env: EnvValues, providerId?: ProviderId): ProviderId 
   if (providerId) return providerId
 
   const rawProviderId = env.AICE_PROVIDER
-  if (!rawProviderId) return 'openai'
+  if (!rawProviderId) return DEFAULT_PROVIDER_ID
 
   const parsedProviderId = parseProviderId(rawProviderId)
   if (parsedProviderId) return parsedProviderId

@@ -2,6 +2,7 @@ import type { ProviderEnv } from '../config/env.js'
 import type { LLMProvider, SessionRequest } from '../core/session.js'
 import type { ProviderId } from '../core/stream.js'
 
+import { resolveDefaultBaseURL, resolveDefaultModel } from '../config/provider-defaults.js'
 import { DeepSeekProvider, type DeepSeekSessionRequest } from './deepseek.js'
 import { OpenAIProvider } from './openai.js'
 
@@ -29,7 +30,7 @@ export function createProviderBinding(
 ): ProviderBinding {
   switch (options.providerId) {
     case 'deepseek': {
-      const baseURL = options.env.baseURL ?? 'https://api.deepseek.com'
+      const baseURL = resolveDefaultBaseURL('deepseek', options.env.baseURL)
       const provider = new DeepSeekProvider({
         apiKey: options.env.apiKey,
         baseURL,
@@ -39,7 +40,7 @@ export function createProviderBinding(
       return {
         createRequest(input) {
           return {
-            model: input.model ?? options.env.model ?? 'deepseek-chat',
+            model: resolveDefaultModel('deepseek', input.model ?? options.env.model),
             prompt: input.prompt,
             providerId: provider.id,
             systemPrompt: input.systemPrompt,
@@ -60,7 +61,7 @@ export function createProviderBinding(
       return {
         createRequest(input) {
           return {
-            model: input.model ?? options.env.model ?? 'gpt-4o-mini',
+            model: resolveDefaultModel('openai', input.model ?? options.env.model),
             prompt: input.prompt,
             providerId: provider.id,
             systemPrompt: input.systemPrompt,

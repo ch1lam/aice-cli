@@ -2,6 +2,8 @@ import { OpenAI } from 'openai'
 
 import type { ProviderEnv } from '../config/env.js'
 
+import { getProviderDefaults } from '../config/provider-defaults.js'
+
 const DEFAULT_TIMEOUT_MS = 8000
 
 type OpenAIModelsClient = {
@@ -31,17 +33,19 @@ export async function pingProvider(
 
   switch (env.providerId) {
     case 'deepseek': {
+      const defaults = getProviderDefaults('deepseek')
       await pingOpenAI(
         env,
         clients.deepseek,
-        env.model ?? 'deepseek-chat',
-        { defaultBaseURL: 'https://api.deepseek.com', timeoutMs },
+        env.model ?? defaults.defaultModel,
+        { defaultBaseURL: defaults.defaultBaseURL, timeoutMs },
       )
       return
     }
 
     case 'openai': {
-      await pingOpenAI(env, clients.openai, env.model ?? 'gpt-4o-mini', { timeoutMs })
+      const defaults = getProviderDefaults('openai')
+      await pingOpenAI(env, clients.openai, env.model ?? defaults.defaultModel, { timeoutMs })
       return
     }
 
