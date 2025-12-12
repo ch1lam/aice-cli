@@ -20,6 +20,7 @@ import { isSlashCommandInput } from './slash-commands.js'
 import { SlashSuggestions } from './slash-suggestions.js'
 import { StatusBar } from './status-bar.js'
 import { theme } from './theme.js'
+import { clampIndex, cycleIndex, cycleProviderChoice } from './utils.js'
 
 export interface AiceAppProps {
   initialEnv?: ProviderEnv
@@ -281,12 +282,16 @@ export function AiceApp(props: AiceAppProps) {
 
   function handleProviderChoiceInput(key: {downArrow?: boolean; return?: boolean; upArrow?: boolean}): boolean {
     if (key.upArrow) {
-      setProviderChoiceIndex(current => cycleProviderChoice(current, -1))
+      setProviderChoiceIndex(current =>
+        cycleProviderChoice(current, -1, providerOptions.length),
+      )
       return true
     }
 
     if (key.downArrow) {
-      setProviderChoiceIndex(current => cycleProviderChoice(current, 1))
+      setProviderChoiceIndex(current =>
+        cycleProviderChoice(current, 1, providerOptions.length),
+      )
       return true
     }
 
@@ -446,24 +451,6 @@ export function AiceApp(props: AiceAppProps) {
       </Box>
     </Box>
   )
-}
-
-function cycleProviderChoice(current: number, delta: number): number {
-  const total = providerOptions.length
-  if (total === 0) return 0
-  return (current + delta + total) % total
-}
-
-function cycleIndex(current: number, delta: number, length: number): number {
-  if (length === 0) return 0
-  return (current + delta + length) % length
-}
-
-function clampIndex(index: number, length: number): number {
-  if (length === 0) return 0
-  if (index < 0) return 0
-  if (index >= length) return length - 1
-  return index
 }
 
 function parseProviderId(value: string): ProviderId | undefined {

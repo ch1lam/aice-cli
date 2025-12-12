@@ -24,7 +24,8 @@ Create a `.env` (or export vars) with at least one provider configured:
 AICE_PROVIDER=openai
 AICE_OPENAI_API_KEY=sk-...
 AICE_OPENAI_BASE_URL=https://api.openai.com/v1 # optional override
-AICE_MODEL=gpt-4o-mini                 # optional OpenAI override
+AICE_OPENAI_MODEL=gpt-4o-mini          # optional OpenAI override
+# AICE_MODEL=gpt-4o-mini               # optional shared fallback for OpenAI
 
 # DeepSeek
 # AICE_PROVIDER=deepseek
@@ -33,7 +34,7 @@ AICE_MODEL=gpt-4o-mini                 # optional OpenAI override
 # AICE_DEEPSEEK_MODEL=deepseek-chat
 ```
 
-`AICE_MODEL` is the shared fallback for OpenAI if a provider-specific model is not set. Set `AICE_DEEPSEEK_MODEL` for other providers.
+`AICE_OPENAI_MODEL` is the OpenAI-specific override. `AICE_MODEL` is a shared fallback for OpenAI if a provider-specific model is not set. Set `AICE_DEEPSEEK_MODEL` for DeepSeek.
 
 ## Usage
 - Run `aice` (or `node bin/dev.js`) with no args to open the Ink UI. On first run it prompts for provider + API key, writes `.env`, and validates connectivity. Slash commands (prefixed with `/`) handle help, login, provider/model switching, and clearing the transcript; plain input sends messages.

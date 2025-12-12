@@ -43,7 +43,7 @@ describe('SelectInput', () => {
 
     expect(frame).to.include('Provider')
     expect(frame).to.include('OpenAI (openai)')
-    expect(frame).to.include('> DeepSeek (deepseek)')
+    expect(frame).to.include('• DeepSeek (deepseek)')
     expect(frame).to.include('Use arrow keys to choose, Enter to confirm.')
   })
 })

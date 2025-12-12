@@ -7,17 +7,17 @@
 - Keep side effects contained in command runners/services so providers and UI stay testable.
 
 ## Architecture & Project Structure
-- TypeScript lives in `src`; commands stay under `src/commands`. The default `aice` (no args) launches the Ink TUI chat shell.
-- `src/commands/chat.ts` is the scriptable single-turn entry; it hands off to `ChatController` + `src/core/session` + `src/core/stream` for orchestration/streaming. The session layer already orders chunks (meta → text → usage → done) and assigns indexes; providers only emit raw tokens/usage.
+- TypeScript lives in `src`; oclif commands stay under `src/commands`. The default `aice` (no args) launches the Ink TUI chat shell (`tui`).
+- Scriptable chat orchestration lives in `src/chat/controller.ts` + `src/chat/prompt.ts`; these hand off to `src/core/session.ts` + `src/core/stream.ts` for chunk ordering/streaming. The session layer orders chunks (meta → text → usage → done) and assigns indexes; providers only emit raw tokens/usage.
 - Provider adapters sit in `src/providers/{openai,deepseek}.ts`, each wrapping the official SDK behind one interface; `src/providers/factory.ts` builds bindings. `src/providers/openai.ts` is the Responses API reference implementation.
-- CLI streaming presentation lives in `src/commands/chat-runner.ts`, which turns session chunks into stdout writes/logs. Ink rendering (ChatWindow, StatusBar, InputPanel) stays in `src/ui` so UIs can swap without touching providers.
+- CLI streaming presentation lives in `src/chat/chat-runner.ts`, which turns session chunks into stdout writes/logs. Ink rendering (StatusBar, InputPanel, etc.) stays in `src/ui` so UIs can swap without touching providers; `ChatWindow` is currently a test/legacy helper.
 - The TUI shell supports slash commands (e.g., `/help`, `/login`, `/provider`, `/model`, `/clear`), multi-turn history, and a first-run config step before chat input. Configuration helpers (env parsing, provider selection) live in `src/config`. Ink components live in `src/ui`; shared hooks (like `useSession`) go in `src/ui/hooks`.
 - Runtime shims `bin/run.js` / `bin/dev.js` load the compiled `dist` bundle; treat `dist` as read-only. Mirror this layout under `test/`.
 
 ## Build, Test & Development Commands
 - `yarn build`: removes `dist` and runs `tsc -b`; run when command signatures change.
-- `yarn test`: `TS_NODE_PROJECT=test/tsconfig.json node --loader ts-node/esm ./node_modules/mocha/bin/mocha --forbid-only "test/**/*.test.ts"` then `yarn lint`. You can run `yarn lint` directly to iterate on ESLint issues.
-- Dev: until the TUI default lands, stream the MVP locally with `AICE_PROVIDER=openai node bin/dev.js chat --model gpt-4o-mini`; swap the env var as other adapters ship.
+- `yarn test`: `TSX_TSCONFIG_PATH=test/tsconfig.json node --import tsx ./node_modules/mocha/bin/mocha --forbid-only "test/**/*.test.{ts,tsx}"` then `yarn lint` via `posttest`. Run `yarn lint` directly to iterate on ESLint issues.
+- Dev: run `node bin/dev.js` (tsx dev mode) to launch the TUI; set env like `AICE_PROVIDER=openai DEBUG=* node bin/dev.js` to debug providers.
 - Pre-publish: `yarn prepack` refreshes the manifest and README.
 
 ## Coding Style & Naming Conventions

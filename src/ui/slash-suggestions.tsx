@@ -3,6 +3,7 @@ import type { ReactElement } from 'react'
 import { Box, Text } from 'ink'
 
 import { theme } from './theme.js'
+import { clampIndex } from './utils.js'
 
 export interface SlashSuggestion {
   command: string
@@ -48,13 +49,6 @@ export function SlashSuggestions(props: SlashSuggestionsProps): null | ReactElem
       </Box>
     </Box>
   )
-}
-
-function clampIndex(index: number, length: number): number {
-  if (length === 0) return 0
-  if (index < 0) return 0
-  if (index >= length) return length - 1
-  return index
 }
 
 function withLeadingSlash(value: string): string {
