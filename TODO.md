@@ -21,7 +21,7 @@
 3. [x] **Centralize providerId parsing/guards (no type change yet)**: add `KNOWN_PROVIDERS` + `isProviderId/parseProviderId` in `src/core/stream.ts` or `src/config/env.ts`; replace scattered parsing.
 4. [x] **Tighten `ProviderId` typing**: change to closed union (`'openai' | 'deepseek'`); validate unknown env/provider inputs and remove `as ProviderId` casts across UI/core/config.
 5. [x] **Centralize provider defaults**: introduce `src/config/provider-defaults.ts` for default model/baseURL/shared fallbacks; replace hard-coded defaults in `src/config/env.ts`, `src/providers/factory.ts`, `src/providers/ping.ts`, `src/ui/provider-options.ts`.
-6. [ ] **Unify env credential types**: collapse `ProviderEnv`/`ProviderCredentials` duplication in `src/config/env.ts` (single source of truth), keep public API stable via type alias if needed.
+6. [x] **Unify env credential types**: collapse `ProviderEnv`/`ProviderCredentials` duplication in `src/config/env.ts` (single source of truth), keep public API stable via type alias if needed.
 7. [ ] **Harden OpenAI error fallback**: ensure `OpenAIProvider.#toError` never produces `undefined` messages; add regression tests.
 8. [ ] **Shared `toError` helper**: add `src/core/errors.ts` and make both providers use it for consistent error formatting.
 9. [ ] **Single provider mismatch invariant**: remove redundant mismatch check (`ChatController.#assertProvider` or `runSession`), keep one source of truth; adjust tests.

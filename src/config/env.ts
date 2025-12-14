@@ -16,18 +16,13 @@ export interface ProviderEnv {
   providerId: ProviderId
 }
 
+export type ProviderCredentials = ProviderEnv
+
 export interface LoadProviderEnvOptions {
   env?: EnvValues
   envPath?: string
   io?: EnvIO
   providerId?: ProviderId
-}
-
-export interface ProviderCredentials {
-  apiKey: string
-  baseURL?: string
-  model?: string
-  providerId: ProviderId
 }
 
 export interface PersistEnvOptions extends ProviderCredentials {
