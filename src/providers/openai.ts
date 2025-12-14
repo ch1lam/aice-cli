@@ -144,11 +144,14 @@ export class OpenAIProvider implements LLMProvider<OpenAISessionRequest> {
   }
 
   #toError(error: unknown, fallbackMessage: string): Error {
-    if (error instanceof Error) return error
+    if (error instanceof Error) {
+      return error.message ? error : new Error(fallbackMessage)
+    }
 
     if (error && typeof error === 'object') {
       const { code, message } = error as {code?: string; message?: string}
-      return new Error(code ? `${code}: ${message}` : message)
+      const resolvedMessage = message ?? fallbackMessage
+      return new Error(code ? `${code}: ${resolvedMessage}` : resolvedMessage)
     }
 
     if (typeof error === 'string') return new Error(error)

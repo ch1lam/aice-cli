@@ -150,4 +150,65 @@ describe('OpenAIProvider', () => {
     expect(lastChunk).to.have.property('error')
     expect(lastChunk?.error.message).to.contain('rate_limit_exceeded')
   })
+
+  it('falls back to a default message when response.error has no message', async () => {
+    const events: StreamEvent[] = [
+      {
+        response: { error: {} },
+        type: 'response.failed',
+      } as StreamEvent,
+    ]
+
+    const fakeClient = new FakeOpenAI(events)
+    const provider = new OpenAIProvider(
+      { apiKey: 'test-key', model: 'gpt-4o-mini' },
+      fakeClient as unknown as OpenAIClient,
+    )
+
+    const request: OpenAISessionRequest = {
+      model: 'gpt-4o-mini',
+      prompt: 'trigger',
+      providerId: 'openai',
+    }
+
+    const chunks: ProviderStreamChunk[] = []
+
+    for await (const chunk of provider.stream(request)) {
+      chunks.push(chunk)
+      if (chunk.type === 'error') break
+    }
+
+    const errorChunk = chunks.find(chunk => chunk.type === 'error')
+    expect(errorChunk).to.exist
+    expect(errorChunk?.error.message).to.equal('OpenAI response failed')
+  })
+
+  it('falls back to a default message when stream error has no message', async () => {
+    const events: StreamEvent[] = [
+      { code: 'rate_limit_exceeded', type: 'error' } as StreamEvent,
+    ]
+
+    const fakeClient = new FakeOpenAI(events)
+    const provider = new OpenAIProvider(
+      { apiKey: 'test-key', model: 'gpt-4o-mini' },
+      fakeClient as unknown as OpenAIClient,
+    )
+
+    const request: OpenAISessionRequest = {
+      model: 'gpt-4o-mini',
+      prompt: 'trigger',
+      providerId: 'openai',
+    }
+
+    const chunks: ProviderStreamChunk[] = []
+
+    for await (const chunk of provider.stream(request)) {
+      chunks.push(chunk)
+      if (chunk.type === 'error') break
+    }
+
+    const errorChunk = chunks.find(chunk => chunk.type === 'error')
+    expect(errorChunk).to.exist
+    expect(errorChunk?.error.message).to.equal('rate_limit_exceeded: OpenAI stream error')
+  })
 })
