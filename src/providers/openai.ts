@@ -10,6 +10,7 @@ import { OpenAI } from 'openai'
 import type { LLMProvider, SessionRequest } from '../core/session.js'
 import type { ProviderStream, TokenUsage } from '../core/stream.js'
 
+import { toError } from '../core/errors.js'
 
 export interface OpenAIProviderConfig {
   apiKey: string
@@ -56,7 +57,7 @@ export class OpenAIProvider implements LLMProvider<OpenAISessionRequest> {
 
   #errorChunk(error: unknown, fallbackMessage: string): {error: Error; timestamp: number; type: 'error'} {
     return {
-      error: this.#toError(error, fallbackMessage),
+      error: toError(error, fallbackMessage),
       timestamp: Date.now(),
       type: 'error',
     }
@@ -141,21 +142,5 @@ export class OpenAIProvider implements LLMProvider<OpenAISessionRequest> {
     }
 
     yield this.#status('completed')
-  }
-
-  #toError(error: unknown, fallbackMessage: string): Error {
-    if (error instanceof Error) {
-      return error.message ? error : new Error(fallbackMessage)
-    }
-
-    if (error && typeof error === 'object') {
-      const { code, message } = error as {code?: string; message?: string}
-      const resolvedMessage = message ?? fallbackMessage
-      return new Error(code ? `${code}: ${resolvedMessage}` : resolvedMessage)
-    }
-
-    if (typeof error === 'string') return new Error(error)
-
-    return new Error(fallbackMessage)
   }
 }

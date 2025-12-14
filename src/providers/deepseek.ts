@@ -6,6 +6,8 @@ import { OpenAI } from 'openai'
 import type { LLMProvider, SessionRequest } from '../core/session.js'
 import type { ProviderStream, ProviderStreamChunk, ProviderUsageChunk, TokenUsage } from '../core/stream.js'
 
+import { toError } from '../core/errors.js'
+
 type ChatCompletionStream = Stream<ChatCompletionChunk> & {
   controller?: {
     abort: () => void
@@ -43,6 +45,8 @@ type DeepSeekUsage = {
   prompt_tokens?: number
   total_tokens?: number
 }
+
+const DEFAULT_ERROR_MESSAGE = 'DeepSeek request failed'
 
 export interface DeepSeekProviderConfig {
   apiKey: string
@@ -143,7 +147,7 @@ export class DeepSeekProvider implements LLMProvider<DeepSeekSessionRequest> {
       })
     } catch (error) {
       yield { status: 'failed', timestamp: Date.now(), type: 'status' }
-      yield { error: this.#toError(error), timestamp: Date.now(), type: 'error' }
+      yield { error: toError(error, DEFAULT_ERROR_MESSAGE), timestamp: Date.now(), type: 'error' }
       return
     }
 
@@ -163,7 +167,7 @@ export class DeepSeekProvider implements LLMProvider<DeepSeekSessionRequest> {
       }
     } catch (error) {
       yield { status: 'failed', timestamp: Date.now(), type: 'status' }
-      yield { error: this.#toError(error), timestamp: Date.now(), type: 'error' }
+      yield { error: toError(error, DEFAULT_ERROR_MESSAGE), timestamp: Date.now(), type: 'error' }
       return
     } finally {
       await stream.controller?.abort()
@@ -174,24 +178,5 @@ export class DeepSeekProvider implements LLMProvider<DeepSeekSessionRequest> {
     }
 
     yield { status: 'completed', timestamp: Date.now(), type: 'status' }
-  }
-
-  #toError(error: unknown): Error {
-    if (error instanceof Error) {
-      const { code, message } = error as Error & { code?: string }
-      if (code && !message.startsWith(code)) {
-        return new Error(`${code}: ${message}`)
-      }
-
-      return error
-    }
-
-    if (error && typeof error === 'object') {
-      const { code, message } = error as { code?: string; message?: string }
-      const resolvedMessage = message ?? 'DeepSeek request failed'
-      return new Error(code ? `${code}: ${resolvedMessage}` : resolvedMessage)
-    }
-
-    return new Error(typeof error === 'string' ? error : 'DeepSeek request failed')
   }
 }
