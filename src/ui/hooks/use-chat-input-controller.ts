@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import type { ChatMessage, MessageRole } from '../../chat/prompt.js'
 import type { ProviderEnv } from '../../config/env.js'
 import type { ProviderId, StreamStatus, TokenUsage } from '../../core/stream.js'
+import type { ChatMessage, MessageRole } from '../../domain/chat/index.js'
 import type { SlashCommandDefinition } from '../slash-commands.js'
 
 import { buildPrompt as formatPrompt } from '../../chat/prompt.js'

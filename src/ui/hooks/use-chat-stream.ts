@@ -7,14 +7,14 @@ import {
   useState,
 } from 'react'
 
-import type { ChatMessage } from '../../chat/prompt.js'
 import type { ProviderEnv } from '../../config/env.js'
 import type { SessionStream, StreamStatus, TokenUsage } from '../../core/stream.js'
+import type { ChatMessage } from '../../domain/chat/index.js'
 
 import { ChatController } from '../../chat/controller.js'
 import { type SessionMeta, useSession } from './use-session.js'
 
-export type { ChatMessage, MessageRole } from '../../chat/prompt.js'
+export type { ChatMessage, MessageRole } from '../../domain/chat/index.js'
 
 type ChatControllerFactory = (env: ProviderEnv) => Pick<ChatController, 'createStream'>
 

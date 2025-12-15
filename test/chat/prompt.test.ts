@@ -1,6 +1,8 @@
 import { expect } from 'chai'
 
-import { buildPrompt, type PromptMessage } from '../../src/chat/prompt.ts'
+import type { PromptMessage } from '../../src/domain/chat/index.ts'
+
+import { buildPrompt } from '../../src/chat/prompt.ts'
 
 describe('buildPrompt', () => {
   it('formats history with role labels and ignores system messages', () => {
