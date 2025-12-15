@@ -44,6 +44,28 @@ describe('runSession', () => {
     expect(textIndexes).to.deep.equal([0, 1])
   })
 
+  it('throws when provider IDs mismatch the request', async () => {
+    const provider = createProvider([{ text: 'should not stream', type: 'text' }])
+
+    const request: SessionRequest = {
+      model: 'gpt-4o-mini',
+      prompt: 'Hi',
+      providerId: 'deepseek',
+    }
+
+    const stream = runSession(provider, request)
+    let error: unknown
+
+    try {
+      await stream.next()
+    } catch (error_) {
+      error = error_
+    }
+
+    expect(error).to.be.instanceOf(Error)
+    expect((error as Error).message).to.equal('Provider mismatch: expected deepseek, got openai')
+  })
+
   it('stops streaming after an error chunk and omits done', async () => {
     const provider = createProvider([
       { text: 'partial', type: 'text' },

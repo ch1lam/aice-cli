@@ -18,9 +18,11 @@ describe('ChatController', () => {
     const provider = createProvider()
     const inputs: unknown[] = []
     let capturedRequest: SessionRequest | undefined
+    let capturedProviderId: SessionRequest['providerId'] | undefined
 
     const controller = new ChatController({
-      bindingFactory() {
+      bindingFactory(options) {
+        capturedProviderId = options.providerId
         return {
           createRequest(input) {
             inputs.push(input)
@@ -55,22 +57,7 @@ describe('ChatController', () => {
     expect(inputs).to.have.lengthOf(1)
     expect(inputs[0]).to.include({ prompt: 'Hello', systemPrompt: 'You are helpful', temperature: 1 })
     expect(capturedRequest).to.exist
+    expect(capturedProviderId).to.equal('openai')
     expect(types).to.deep.equal(['meta', 'text', 'done'])
-  })
-
-  it('throws when provider IDs do not match the environment', () => {
-    const controller = new ChatController({
-      bindingFactory() {
-        throw new Error('should not be called')
-      },
-      env: {
-        apiKey: 'key',
-        providerId: 'openai',
-      },
-    })
-
-    expect(() => controller.createStream({ prompt: 'hi', providerId: 'deepseek' })).to.throw(
-      'Configured provider openai does not match requested deepseek',
-    )
   })
 })

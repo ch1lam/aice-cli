@@ -1,17 +1,14 @@
 import type { ProviderEnv } from '../config/env.js'
-import type { ProviderId, SessionStream } from '../core/stream.js'
+import type { SessionStream } from '../core/stream.js'
 
 import { runSession } from '../core/session.js'
 import {
   createProviderBinding,
-  type ProviderBinding,
   type ProviderBindingFactory,
   type ProviderRequestInput,
 } from '../providers/factory.js'
 
-export interface ChatPrompt extends ProviderRequestInput {
-  providerId?: ProviderId
-}
+export type ChatPrompt = ProviderRequestInput
 
 export interface ChatControllerOptions {
   bindingFactory?: ProviderBindingFactory
@@ -28,20 +25,11 @@ export class ChatController {
   }
 
   createStream(prompt: ChatPrompt): SessionStream {
-    const providerId = prompt.providerId ?? this.#env.providerId
-    this.#assertProvider(providerId)
-
-    const binding = this.#bindingFactory({ env: this.#env, providerId }) as ProviderBinding
+    const env = this.#env
+    const { providerId } = env
+    const binding = this.#bindingFactory({ env, providerId })
     const request = binding.createRequest(prompt)
 
     return runSession(binding.provider, request)
-  }
-
-  #assertProvider(requestedId: ProviderId): void {
-    if (requestedId !== this.#env.providerId) {
-      throw new Error(
-        `Configured provider ${this.#env.providerId} does not match requested ${requestedId}`,
-      )
-    }
   }
 }

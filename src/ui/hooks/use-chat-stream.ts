@@ -63,7 +63,6 @@ export function useChatStream(options: UseChatStreamOptions): UseChatStreamResul
         stream = controller.createStream({
           model: env.model,
           prompt,
-          providerId: env.providerId,
         })
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)

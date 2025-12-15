@@ -24,7 +24,7 @@
 6. [x] **Unify env credential types**: collapse `ProviderEnv`/`ProviderCredentials` duplication in `src/config/env.ts` (single source of truth), keep public API stable via type alias if needed.
 7. [x] **Harden OpenAI error fallback**: ensure `OpenAIProvider.#toError` never produces `undefined` messages; add regression tests.
 8. [x] **Shared `toError` helper**: add `src/core/errors.ts` and make both providers use it for consistent error formatting.
-9. [ ] **Single provider mismatch invariant**: remove redundant mismatch check (`ChatController.#assertProvider` or `runSession`), keep one source of truth; adjust tests.
+9. [x] **Single provider mismatch invariant**: remove redundant mismatch check (`ChatController.#assertProvider` or `runSession`), keep one source of truth; adjust tests.
 10. [ ] **Unify stream consumption**: make `useChatStream` reuse `useSession` (or extract a shared consumer), so UI paths share one chunk reader.
 11. [ ] **Split `AiceApp` responsibilities**: extract focused hooks (`useKeybindings`, `useSlashSuggestionsState`, `useChatInputController`); `AiceApp` becomes render + wiring only.
 12. [ ] **Registry-driven provider binding/ping**: replace switches in `src/providers/factory.ts`/`src/providers/ping.ts` with `providerRegistry` (id → class + defaults + request/ping helpers).
