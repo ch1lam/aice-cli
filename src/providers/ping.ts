@@ -1,8 +1,9 @@
 import { OpenAI } from 'openai'
 
 import type { ProviderEnv } from '../config/env.js'
+import type { ProviderId } from '../core/stream.js'
 
-import { getProviderDefaults } from '../config/provider-defaults.js'
+import { providerRegistry } from './registry.js'
 
 const DEFAULT_TIMEOUT_MS = 8000
 
@@ -15,10 +16,7 @@ type OpenAIClient = {
   models?: OpenAIModelsClient
 }
 
-export interface ProviderPingClients {
-  deepseek?: OpenAIClient
-  openai?: OpenAIClient
-}
+export type ProviderPingClients = Partial<Record<ProviderId, OpenAIClient>>
 
 export interface ProviderPingOptions {
   clients?: ProviderPingClients
@@ -30,29 +28,14 @@ export async function pingProvider(
   options: ProviderPingOptions = {},
 ): Promise<void> {
   const { clients = {}, timeoutMs = DEFAULT_TIMEOUT_MS } = options
+  const registration = providerRegistry[env.providerId]
 
-  switch (env.providerId) {
-    case 'deepseek': {
-      const defaults = getProviderDefaults('deepseek')
-      await pingOpenAI(
-        env,
-        clients.deepseek,
-        env.model ?? defaults.defaultModel,
-        { defaultBaseURL: defaults.defaultBaseURL, timeoutMs },
-      )
-      return
-    }
-
-    case 'openai': {
-      const defaults = getProviderDefaults('openai')
-      await pingOpenAI(env, clients.openai, env.model ?? defaults.defaultModel, { timeoutMs })
-      return
-    }
-
-    default: {
-      throw new Error(`Unsupported provider ${env.providerId}`)
-    }
-  }
+  await pingOpenAI(
+    env,
+    clients[env.providerId],
+    registration.getPingModel(env),
+    { defaultBaseURL: registration.defaults.defaultBaseURL, timeoutMs },
+  )
 }
 
 async function pingOpenAI(
