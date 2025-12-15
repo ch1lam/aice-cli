@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import type {
   ProviderId,
@@ -30,21 +30,47 @@ export interface UseSessionOptions {
 }
 
 export function useSession(options: UseSessionOptions): SessionState {
-  const [state, setState] = useState<SessionState>({ content: '', done: false })
   const { onError, onStatusChange, stream } = options
+  const [state, setState] = useState<SessionState>(() => createInitialState(Boolean(stream)))
+  const lastStreamRef = useRef<SessionStream | undefined>(stream)
+  const streamChanged = stream !== lastStreamRef.current
+
+  if (streamChanged) {
+    lastStreamRef.current = stream
+  }
+
+  useEffect(() => {
+    setState(createInitialState(Boolean(stream)))
+  }, [stream])
 
   useEffect(() => {
     if (!stream) return
 
     let cancelled = false
     let content = ''
+    let sawDone = false
+    let sawError = false
 
     async function readStream(stream: SessionStream) {
       try {
         for await (const chunk of stream) {
           if (cancelled) break
           consumeChunk(chunk)
+          if (chunk.type === 'done' || chunk.type === 'error') break
         }
+
+        if (cancelled || sawDone || sawError) return
+
+        setState(current => {
+          if (current.done || current.status === 'failed') return current
+          return {
+            ...current,
+            done: true,
+            status: 'completed',
+            statusMessage: undefined,
+          }
+        })
+        onStatusChange?.('completed')
       } catch (error_: unknown) {
         const error = error_ instanceof Error ? error_ : new Error(String(error_))
         if (!cancelled) {
@@ -64,16 +90,19 @@ export function useSession(options: UseSessionOptions): SessionState {
     function consumeChunk(chunk: SessionStreamChunk) {
       switch (chunk.type) {
         case 'done': {
+          sawDone = true
           setState(current => ({
             ...current,
             done: true,
             status: 'completed',
             statusMessage: undefined,
           }))
+          onStatusChange?.('completed')
           break
         }
 
         case 'error': {
+          sawError = true
           setState(current => ({
             ...current,
             done: true,
@@ -130,5 +159,17 @@ export function useSession(options: UseSessionOptions): SessionState {
     }
   }, [onError, onStatusChange, stream])
 
-  return state
+  return streamChanged ? createInitialState(Boolean(stream)) : state
+}
+
+function createInitialState(active: boolean): SessionState {
+  return {
+    content: '',
+    done: false,
+    error: undefined,
+    meta: undefined,
+    status: active ? 'running' : undefined,
+    statusMessage: undefined,
+    usage: undefined,
+  }
 }

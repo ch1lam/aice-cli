@@ -1,15 +1,24 @@
-import { type Dispatch, type SetStateAction, useCallback, useState } from 'react'
+import {
+  type Dispatch,
+  type SetStateAction,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from 'react'
 
 import type { ChatMessage } from '../../chat/prompt.js'
 import type { ProviderEnv } from '../../config/env.js'
 import type { SessionStream, StreamStatus, TokenUsage } from '../../core/stream.js'
-import type { SessionMeta } from './use-session.js'
 
 import { ChatController } from '../../chat/controller.js'
+import { type SessionMeta, useSession } from './use-session.js'
 
 export type { ChatMessage, MessageRole } from '../../chat/prompt.js'
 
 type ChatControllerFactory = (env: ProviderEnv) => Pick<ChatController, 'createStream'>
+
+const defaultCreateController: ChatControllerFactory = env => new ChatController({ env })
 
 export interface UseChatStreamOptions {
   buildPrompt: (history: ChatMessage[]) => string
@@ -33,24 +42,53 @@ export interface UseChatStreamResult {
 export function useChatStream(options: UseChatStreamOptions): UseChatStreamResult {
   const {
     buildPrompt,
-    createController = env => new ChatController({ env }),
+    createController = defaultCreateController,
     onAssistantMessage,
     onSystemMessage,
   } = options
 
+  const [stream, setStream] = useState<SessionStream | undefined>()
   const [sessionMeta, setSessionMeta] = useState<SessionMeta | undefined>()
-  const [sessionStatus, setSessionStatus] = useState<StreamStatus | undefined>()
-  const [sessionStatusMessage, setSessionStatusMessage] = useState<string | undefined>()
-  const [sessionUsage, setSessionUsage] = useState<TokenUsage | undefined>()
-  const [currentResponse, setCurrentResponse] = useState('')
-  const [streaming, setStreaming] = useState(false)
+  const deliveredStreamRef = useRef<SessionStream | undefined>(undefined)
+
+  const handleSessionError = useCallback(
+    (error: Error) => {
+      onSystemMessage?.(`Provider error: ${error.message}`)
+    },
+    [onSystemMessage],
+  )
+
+  const session = useSession({
+    onError: handleSessionError,
+    stream,
+  })
+
+  const streaming = Boolean(stream) && !session.done
+  const currentResponse = streaming ? session.content : ''
+  const sessionStatus: StreamStatus | undefined = session.status
+  const sessionStatusMessage = session.statusMessage
+  const sessionUsage: TokenUsage | undefined = session.usage
+
+  useEffect(() => {
+    if (session.meta) {
+      setSessionMeta(session.meta)
+    }
+  }, [session.meta])
+
+  useEffect(() => {
+    if (!stream || !session.done) return
+    if (deliveredStreamRef.current === stream) return
+    deliveredStreamRef.current = stream
+
+    if (session.status === 'failed') return
+    if (!session.content) return
+    onAssistantMessage?.(session.content)
+  }, [onAssistantMessage, session.content, session.done, session.status, stream])
 
   const resetSession = useCallback(() => {
-    setCurrentResponse('')
+    setStream(undefined)
+    deliveredStreamRef.current = undefined
     setSessionMeta(undefined)
-    setSessionStatus(undefined)
-    setSessionStatusMessage(undefined)
-    setSessionUsage(undefined)
   }, [])
 
   const startStream = useCallback(
@@ -58,9 +96,9 @@ export function useChatStream(options: UseChatStreamOptions): UseChatStreamResul
       const prompt = buildPrompt(history)
       const controller = createController(env)
 
-      let stream: SessionStream
+      let nextStream: SessionStream
       try {
-        stream = controller.createStream({
+        nextStream = controller.createStream({
           model: env.model,
           prompt,
         })
@@ -70,75 +108,11 @@ export function useChatStream(options: UseChatStreamOptions): UseChatStreamResul
         return
       }
 
-      setStreaming(true)
-      setCurrentResponse('')
-      setSessionStatus('running')
-      setSessionStatusMessage(undefined)
-      setSessionUsage(undefined)
       setSessionMeta({ model: env.model ?? 'default', providerId: env.providerId })
-
-      let buffer = ''
-
-      function handleStreamError(error: unknown) {
-        const message = error instanceof Error ? error.message : String(error)
-        setSessionStatus('failed')
-        setSessionStatusMessage(message)
-        onSystemMessage?.(`Provider error: ${message}`)
-      }
-
-      async function streamChunks() {
-        try {
-          for await (const chunk of stream) {
-            switch (chunk.type) {
-              case 'done': {
-                setSessionStatus('completed')
-                setSessionStatusMessage(undefined)
-                break
-              }
-
-              case 'error': {
-                handleStreamError(chunk.error)
-                return
-              }
-
-              case 'meta': {
-                setSessionMeta({ model: chunk.model, providerId: chunk.providerId })
-                break
-              }
-
-              case 'status': {
-                setSessionStatus(chunk.status)
-                setSessionStatusMessage(chunk.detail)
-                break
-              }
-
-              case 'text': {
-                buffer += chunk.text
-                setCurrentResponse(buffer)
-                break
-              }
-
-              case 'usage': {
-                setSessionUsage(chunk.usage)
-                break
-              }
-            }
-          }
-
-          if (buffer) {
-            onAssistantMessage?.(buffer)
-          }
-        } catch (error) {
-          handleStreamError(error)
-        } finally {
-          setStreaming(false)
-          setCurrentResponse('')
-        }
-      }
-
-      streamChunks()
+      deliveredStreamRef.current = undefined
+      setStream(nextStream)
     },
-    [buildPrompt, createController, onAssistantMessage, onSystemMessage],
+    [buildPrompt, createController, onSystemMessage],
   )
 
   return {
