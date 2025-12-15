@@ -28,7 +28,7 @@
 10. [x] **Unify stream consumption**: make `useChatStream` reuse `useSession` (or extract a shared consumer), so UI paths share one chunk reader.
 11. [x] **Split `AiceApp` responsibilities**: extract focused hooks (`useKeybindings`, `useSlashSuggestionsState`, `useChatInputController`); `AiceApp` becomes render + wiring only.
 12. [x] **Registry-driven provider binding/ping**: replace switches in `src/providers/factory.ts`/`src/providers/ping.ts` with `providerRegistry` (id → class + defaults + request/ping helpers).
-13. [ ] **Shared provider streaming base/helper**: pull common status/usage/abort plumbing out of `OpenAIProvider`/`DeepSeekProvider`; keep provider-specific delta mapping only.
+13. [x] **Shared provider streaming base/helper**: pull common status/usage/abort plumbing out of `OpenAIProvider`/`DeepSeekProvider`; keep provider-specific delta mapping only.
 14. [ ] **Decide `src/domain` fate**: either implement real chat domain types and migrate imports gradually, or remove empty domain layer and update docs.
 15. [ ] **Add application services layer**: introduce `src/application/chat-service.ts` and `src/application/setup-service.ts`; UI hooks call services, `ChatController` becomes thin facade.
 16. [ ] **Interface boundary cleanup**: move oclif/Ink entrypoints into `src/interface/{cli,tui}`; keep core/domain/providers/config free of UI/oclif imports.

@@ -4,9 +4,9 @@ import type { Stream } from 'openai/streaming'
 import { OpenAI } from 'openai'
 
 import type { LLMProvider, SessionRequest } from '../core/session.js'
-import type { ProviderStream, ProviderStreamChunk, ProviderUsageChunk, TokenUsage } from '../core/stream.js'
+import type { ProviderStream, TokenUsage } from '../core/stream.js'
 
-import { toError } from '../core/errors.js'
+import { type ProviderStreamEvent, streamProviderWithLifecycle } from './streaming.js'
 
 type ChatCompletionStream = Stream<ChatCompletionChunk> & {
   controller?: {
@@ -95,9 +95,8 @@ export class DeepSeekProvider implements LLMProvider<DeepSeekSessionRequest> {
     return deltaContent.flatMap(part => (part.text ? [part.text] : []))
   }
 
-  #mapChunk(chunk: ChatCompletionChunk): ProviderStreamChunk[] {
-    const now = Date.now()
-    const chunks: ProviderStreamChunk[] = []
+  #mapChunk(chunk: ChatCompletionChunk): ProviderStreamEvent[] {
+    const chunks: ProviderStreamEvent[] = []
 
     for (const choice of chunk.choices) {
       const delta = choice.delta as DeepSeekDelta | undefined
@@ -107,12 +106,12 @@ export class DeepSeekProvider implements LLMProvider<DeepSeekSessionRequest> {
       ]
 
       for (const delta of deltas) {
-        chunks.push({ text: delta, timestamp: now, type: 'text' })
+        chunks.push({ text: delta, type: 'text' })
       }
     }
 
     if (chunk.usage) {
-      chunks.push({ timestamp: now, type: 'usage', usage: this.#mapUsage(chunk.usage) })
+      chunks.push({ type: 'usage', usage: this.#mapUsage(chunk.usage) })
     }
 
     return chunks
@@ -126,57 +125,24 @@ export class DeepSeekProvider implements LLMProvider<DeepSeekSessionRequest> {
     }
   }
 
-  async *#streamChatCompletions(request: DeepSeekSessionRequest): ProviderStream {
+  #streamChatCompletions(request: DeepSeekSessionRequest): ProviderStream {
     const model = request.model ?? this.#defaultModel
 
     if (!model) {
       throw new Error('DeepSeek model is required')
     }
 
-    yield { status: 'running', timestamp: Date.now(), type: 'status' }
-
-    let stream: ChatCompletionStream
-
-    try {
-      stream = await this.#client.chat.completions.create({
+    return streamProviderWithLifecycle({
+      createStream: () => this.#client.chat.completions.create({
         messages: this.#buildMessages(request),
         model,
         signal: request.signal,
         stream: true,
         temperature: request.temperature,
-      })
-    } catch (error) {
-      yield { status: 'failed', timestamp: Date.now(), type: 'status' }
-      yield { error: toError(error, DEFAULT_ERROR_MESSAGE), timestamp: Date.now(), type: 'error' }
-      return
-    }
-
-    let latestUsage: ProviderUsageChunk | undefined
-
-    try {
-      for await (const chunk of stream as AsyncIterable<ChatCompletionChunk>) {
-        const mapped = this.#mapChunk(chunk)
-        for (const item of mapped) {
-          if (item.type === 'usage') {
-            latestUsage = item
-            continue
-          }
-
-          yield item
-        }
-      }
-    } catch (error) {
-      yield { status: 'failed', timestamp: Date.now(), type: 'status' }
-      yield { error: toError(error, DEFAULT_ERROR_MESSAGE), timestamp: Date.now(), type: 'error' }
-      return
-    } finally {
-      await stream.controller?.abort()
-    }
-
-    if (latestUsage) {
-      yield latestUsage
-    }
-
-    yield { status: 'completed', timestamp: Date.now(), type: 'status' }
+      }),
+      mapEvent: chunk => this.#mapChunk(chunk),
+      startFallbackMessage: DEFAULT_ERROR_MESSAGE,
+      streamFallbackMessage: DEFAULT_ERROR_MESSAGE,
+    })
   }
 }
