@@ -11,18 +11,18 @@ import type { ProviderEnv } from '../../config/env.js'
 import type { SessionStream, StreamStatus, TokenUsage } from '../../core/stream.js'
 import type { ChatMessage } from '../../domain/chat/index.js'
 
-import { ChatController } from '../../chat/controller.js'
+import { ChatService } from '../../application/chat-service.js'
 import { type SessionMeta, useSession } from './use-session.js'
 
 export type { ChatMessage, MessageRole } from '../../domain/chat/index.js'
 
-type ChatControllerFactory = (env: ProviderEnv) => Pick<ChatController, 'createStream'>
+type ChatServiceFactory = () => Pick<ChatService, 'createStream'>
 
-const defaultCreateController: ChatControllerFactory = env => new ChatController({ env })
+const defaultCreateChatService: ChatServiceFactory = () => new ChatService()
 
 export interface UseChatStreamOptions {
   buildPrompt: (history: ChatMessage[]) => string
-  createController?: ChatControllerFactory
+  createChatService?: ChatServiceFactory
   onAssistantMessage?: (message: string) => void
   onSystemMessage?: (message: string) => void
 }
@@ -42,7 +42,7 @@ export interface UseChatStreamResult {
 export function useChatStream(options: UseChatStreamOptions): UseChatStreamResult {
   const {
     buildPrompt,
-    createController = defaultCreateController,
+    createChatService = defaultCreateChatService,
     onAssistantMessage,
     onSystemMessage,
   } = options
@@ -94,11 +94,11 @@ export function useChatStream(options: UseChatStreamOptions): UseChatStreamResul
   const startStream = useCallback(
     (history: ChatMessage[], env: ProviderEnv) => {
       const prompt = buildPrompt(history)
-      const controller = createController(env)
+      const chatService = createChatService()
 
       let nextStream: SessionStream
       try {
-        nextStream = controller.createStream({
+        nextStream = chatService.createStream(env, {
           model: env.model,
           prompt,
         })
@@ -112,7 +112,7 @@ export function useChatStream(options: UseChatStreamOptions): UseChatStreamResul
       deliveredStreamRef.current = undefined
       setStream(nextStream)
     },
-    [buildPrompt, createController, onSystemMessage],
+    [buildPrompt, createChatService, onSystemMessage],
   )
 
   return {

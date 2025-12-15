@@ -3,6 +3,7 @@ import { Box, Text, useApp } from 'ink'
 import { render } from 'ink-testing-library'
 import { type ReactElement, useCallback, useEffect, useRef, useState } from 'react'
 
+import type { ChatPrompt } from '../../src/application/chat-service.ts'
 import type { ProviderEnv } from '../../src/config/env.js'
 import type { SessionStreamChunk } from '../../src/core/stream.ts'
 
@@ -159,8 +160,8 @@ function ChatStreamScene(props: ChatStreamSceneProps): ReactElement {
 
   const { currentResponse, sessionStatus, startStream, streaming } = useChatStream({
     buildPrompt: () => 'prompt',
-    createController: (_env: ProviderEnv) => ({
-      createStream: () => props.stream,
+    createChatService: () => ({
+      createStream: (_env: ProviderEnv, _prompt: ChatPrompt) => props.stream,
     }),
     onAssistantMessage: handleAssistantMessage,
     onSystemMessage: handleSystemMessage,

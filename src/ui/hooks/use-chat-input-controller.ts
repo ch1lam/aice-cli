@@ -5,8 +5,8 @@ import type { ProviderId, StreamStatus, TokenUsage } from '../../core/stream.js'
 import type { ChatMessage, MessageRole } from '../../domain/chat/index.js'
 import type { SlashCommandDefinition } from '../slash-commands.js'
 
+import { ProviderNotConfiguredError, SetupService } from '../../application/setup-service.js'
 import { buildPrompt as formatPrompt } from '../../chat/prompt.js'
-import { persistProviderEnv, tryLoadProviderEnv } from '../../config/env.js'
 import { parseProviderId } from '../../core/stream.js'
 import { providerOptionIndex, providerOptions } from '../provider-options.js'
 import { isSlashCommandInput } from '../slash-commands.js'
@@ -57,6 +57,8 @@ export function useChatInputController(
     },
     [createMessage],
   )
+
+  const setupService = useMemo(() => new SetupService(), [])
 
   const buildPrompt = useCallback((history: ChatMessage[]) => formatPrompt(history), [])
 
@@ -131,23 +133,16 @@ export function useChatInputController(
       }
 
       try {
-        persistProviderEnv({
-          apiKey: providerEnv.apiKey,
-          baseURL: providerEnv.baseURL,
-          model,
-          providerId: providerEnv.providerId,
-        })
+        const updatedEnv = setupService.setModel(providerEnv, model)
+        setProviderEnv(updatedEnv)
+        setSessionMeta({ model, providerId: updatedEnv.providerId })
+        addSystemMessage(`Model set to ${model}.`)
       } catch (persistError) {
         const message = persistError instanceof Error ? persistError.message : String(persistError)
         addSystemMessage(`Failed to save model: ${message}`)
-        return
       }
-
-      setProviderEnv(current => (current ? { ...current, model } : current))
-      setSessionMeta({ model, providerId: providerEnv.providerId })
-      addSystemMessage(`Model set to ${model}.`)
     },
-    [addSystemMessage, providerEnv, setProviderEnv, setSessionMeta],
+    [addSystemMessage, providerEnv, setProviderEnv, setSessionMeta, setupService],
   )
 
   const handleProviderCommand = useCallback(
@@ -158,33 +153,32 @@ export function useChatInputController(
         return
       }
 
-      const { env, error } = tryLoadProviderEnv({ providerId })
-      if (!env || error) {
-        addSystemMessage(
-          `Provider ${providerId} is not configured. Run /login to set API key first.`,
-        )
-        return
-      }
-
       try {
-        persistProviderEnv({
-          apiKey: env.apiKey,
-          baseURL: env.baseURL,
-          model: env.model,
-          providerId,
-        })
+        const env = setupService.switchProvider(providerId)
+
+        setProviderEnv(env)
+        setSessionMeta({ model: env.model ?? 'default', providerId: env.providerId })
+        setProviderChoiceIndex(providerOptionIndex(providerId))
+        addSystemMessage(`Switched to ${providerId} (${env.model ?? 'default model'}).`)
       } catch (persistError) {
+        if (persistError instanceof ProviderNotConfiguredError) {
+          addSystemMessage(
+            `Provider ${providerId} is not configured. Run /login to set API key first.`,
+          )
+          return
+        }
+
         const message = persistError instanceof Error ? persistError.message : String(persistError)
         addSystemMessage(`Failed to switch provider: ${message}`)
-        return
       }
-
-      setProviderEnv(env)
-      setSessionMeta({ model: env.model ?? 'default', providerId: env.providerId })
-      setProviderChoiceIndex(providerOptionIndex(providerId))
-      addSystemMessage(`Switched to ${providerId} (${env.model ?? 'default model'}).`)
     },
-    [addSystemMessage, setProviderChoiceIndex, setProviderEnv, setSessionMeta],
+    [
+      addSystemMessage,
+      setProviderChoiceIndex,
+      setProviderEnv,
+      setSessionMeta,
+      setupService,
+    ],
   )
 
   const { handleSlashCommand, suggestions: slashSuggestionsForQuery } = useSlashCommands({

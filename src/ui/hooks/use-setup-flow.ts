@@ -1,15 +1,22 @@
-import { type Dispatch, type SetStateAction, useCallback, useState } from 'react'
+import { type Dispatch, type SetStateAction, useCallback, useMemo, useState } from 'react'
 
 import type { ProviderEnv } from '../../config/env.js'
 import type { ProviderId } from '../../core/stream.js'
 
-import { persistProviderEnv, tryLoadProviderEnv } from '../../config/env.js'
-import { pingProvider } from '../../providers/ping.js'
+import {
+  ProviderEnvLoadError,
+  ProviderEnvPersistError,
+  SetupService,
+  type SetupServiceOptions,
+} from '../../application/setup-service.js'
 import { providerIdFromIndex, providerOptionIndex } from '../provider-options.js'
 
 export type AppMode = 'chat' | 'setup'
 
 export type SetupStep = 'apiKey' | 'baseURL' | 'model' | 'provider'
+
+const defaultCreateSetupService = (serviceOptions: SetupServiceOptions) =>
+  new SetupService(serviceOptions)
 
 export interface SetupState {
   apiKey?: string
@@ -20,12 +27,13 @@ export interface SetupState {
 }
 
 interface UseSetupFlowOptions {
+  createSetupService?: (options: SetupServiceOptions) => SetupService
   initialEnv?: ProviderEnv
   onEnvReady?: (env: ProviderEnv) => void
   onMessage: (message: string) => void
-  persistEnv?: typeof persistProviderEnv
-  ping?: typeof pingProvider
-  tryLoadEnv?: typeof tryLoadProviderEnv
+  persistEnv?: SetupServiceOptions['persistEnv']
+  ping?: SetupServiceOptions['ping']
+  tryLoadEnv?: SetupServiceOptions['tryLoadEnv']
 }
 
 export interface UseSetupFlowResult {
@@ -44,13 +52,19 @@ export interface UseSetupFlowResult {
 
 export function useSetupFlow(options: UseSetupFlowOptions): UseSetupFlowResult {
   const {
+    createSetupService = defaultCreateSetupService,
     initialEnv,
     onEnvReady,
     onMessage,
-    persistEnv = persistProviderEnv,
-    ping = pingProvider,
-    tryLoadEnv = tryLoadProviderEnv,
+    persistEnv,
+    ping,
+    tryLoadEnv,
   } = options
+
+  const setupService = useMemo(
+    () => createSetupService({ persistEnv, ping, tryLoadEnv }),
+    [createSetupService, persistEnv, ping, tryLoadEnv],
+  )
 
   const initialProviderId = initialEnv?.providerId ?? 'openai'
 
@@ -98,28 +112,30 @@ export function useSetupFlow(options: UseSetupFlowOptions): UseSetupFlowResult {
       }
 
       try {
-        persistEnv({
+        return setupService.persistAndLoad({
           apiKey,
           baseURL,
           model: overrides.model ?? model,
           providerId,
         })
       } catch (error) {
+        if (error instanceof ProviderEnvPersistError) {
+          onMessage(`Failed to write .env: ${error.message}`)
+          return undefined
+        }
+
+        if (error instanceof ProviderEnvLoadError) {
+          onMessage(`Failed to load provider config. ${error.message}`)
+          resetSetup(providerId)
+          return undefined
+        }
+
         const message = error instanceof Error ? error.message : String(error)
         onMessage(`Failed to write .env: ${message}`)
         return undefined
       }
-
-      const { env, error } = tryLoadEnv({ providerId })
-      if (!env || error) {
-        onMessage(`Failed to load provider config. ${error ? error.message : 'Unknown error.'}`)
-        resetSetup(providerId)
-        return undefined
-      }
-
-      return env
     },
-    [handleMissingApiKey, onMessage, persistEnv, resetSetup, setupState, tryLoadEnv],
+    [handleMissingApiKey, onMessage, resetSetup, setupService, setupState],
   )
 
   const finalizeSetup = useCallback(
@@ -128,7 +144,7 @@ export function useSetupFlow(options: UseSetupFlowOptions): UseSetupFlowResult {
       onMessage('Checking provider connectivity...')
 
       try {
-        await ping(env)
+        await setupService.verifyConnectivity(env)
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
         onMessage(
@@ -164,7 +180,7 @@ export function useSetupFlow(options: UseSetupFlowOptions): UseSetupFlowResult {
         `Configured ${env.providerId} (${env.model ?? 'default model'}). Type /help to see commands.`,
       )
     },
-    [onEnvReady, onMessage, ping],
+    [onEnvReady, onMessage, setupService],
   )
 
   const handleSetupInput = useCallback(
