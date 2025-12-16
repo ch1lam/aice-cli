@@ -1,1 +1,1 @@
-export { run } from './interface/cli/index.js'
+export { run } from '@oclif/core'
