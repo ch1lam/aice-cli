@@ -31,5 +31,5 @@
 13. [x] **Shared provider streaming base/helper**: pull common status/usage/abort plumbing out of `OpenAIProvider`/`DeepSeekProvider`; keep provider-specific delta mapping only.
 14. [x] **Decide `src/domain` fate**: implement chat domain types (`MessageRole`, `PromptMessage`, `ChatMessage`) in `src/domain/chat` and migrate UI/tests to import them.
 15. [x] **Add application services layer**: introduce `src/application/chat-service.ts` and `src/application/setup-service.ts`; UI hooks call services, `ChatController` becomes thin facade.
-16. [ ] **Interface boundary cleanup**: move oclif/Ink entrypoints into `src/interface/{cli,tui}`; keep core/domain/providers/config free of UI/oclif imports.
+16. [x] **Interface boundary cleanup**: move oclif/Ink entrypoints into `src/interface/{cli,tui}`; keep core/domain/providers/config free of UI/oclif imports.
 17. [ ] **Optional plugin-style extension points**: model providers + slash commands as registries/plugins to allow third-party extensions without core switches.
