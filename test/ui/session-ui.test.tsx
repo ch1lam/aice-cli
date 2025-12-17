@@ -7,7 +7,6 @@ import type { ProviderEnv } from '../../src/config/env.js'
 import type { SessionStreamChunk } from '../../src/core/stream.ts'
 import type { ChatPrompt } from '../../src/services/chat-service.ts'
 
-import { ChatWindow } from '../../src/ui/chat-window.js'
 import { useChatStream } from '../../src/ui/hooks/use-chat-stream.js'
 import { useSession } from '../../src/ui/hooks/use-session.js'
 import { StatusBar } from '../../src/ui/status-bar.js'
@@ -77,9 +76,11 @@ function SessionScene(props: SessionSceneProps): ReactElement {
     }
   }, [exit, session.done, session.error])
 
+  const content = session.content.trim() ? session.content : 'Waiting for the model...'
+
   return (
     <Box flexDirection="column">
-      <ChatWindow content={session.content} prompt="Hello?" />
+      <Text>{content}</Text>
       <StatusBar
         meta={session.meta}
         status={session.status}

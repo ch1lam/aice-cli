@@ -5,6 +5,7 @@
 - Prefer clarity: readable names, short single-purpose functions, comments only for “why”.
 - Spot smells early (duplication, long functions, god objects, long parameter lists, over-coupling) and fix with targeted refactors instead of big rewrites.
 - Keep side effects contained in command runners/services so providers and UI stay testable.
+- **No backward compatibility** - Break old formats freely
 
 ## Architecture & Project Structure
 - TypeScript lives in `src`; oclif commands stay under `src/commands`. `bin/run.js` defaults to `tui` when `aice` is invoked with no args.
