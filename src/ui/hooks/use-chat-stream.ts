@@ -9,12 +9,12 @@ import {
 
 import type { ProviderEnv } from '../../config/env.js'
 import type { SessionStream, StreamStatus, TokenUsage } from '../../core/stream.js'
-import type { ChatMessage } from '../../domain/chat/index.js'
+import type { ChatMessage } from '../../types/chat/index.js'
 
 import { ChatService } from '../../application/chat-service.js'
 import { type SessionMeta, useSession } from './use-session.js'
 
-export type { ChatMessage, MessageRole } from '../../domain/chat/index.js'
+export type { ChatMessage, MessageRole } from '../../types/chat/index.js'
 
 type ChatServiceFactory = () => Pick<ChatService, 'createStream'>
 
