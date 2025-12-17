@@ -2,9 +2,9 @@ import type { ProviderEnv } from '../config/env.js'
 import type { SessionStream } from '../core/stream.js'
 import type { ProviderBindingFactory } from '../providers/factory.js'
 
-import { type ChatPrompt, ChatService } from '../application/chat-service.js'
+import { type ChatPrompt, ChatService } from '../services/chat-service.js'
 
-export type { ChatPrompt } from '../application/chat-service.js'
+export type { ChatPrompt } from '../services/chat-service.js'
 
 export interface ChatControllerOptions {
   bindingFactory?: ProviderBindingFactory

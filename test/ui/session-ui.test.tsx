@@ -3,9 +3,9 @@ import { Box, Text, useApp } from 'ink'
 import { render } from 'ink-testing-library'
 import { type ReactElement, useCallback, useEffect, useRef, useState } from 'react'
 
-import type { ChatPrompt } from '../../src/application/chat-service.ts'
 import type { ProviderEnv } from '../../src/config/env.js'
 import type { SessionStreamChunk } from '../../src/core/stream.ts'
+import type { ChatPrompt } from '../../src/services/chat-service.ts'
 
 import { ChatWindow } from '../../src/ui/chat-window.js'
 import { useChatStream } from '../../src/ui/hooks/use-chat-stream.js'

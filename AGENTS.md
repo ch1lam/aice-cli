@@ -10,7 +10,7 @@
 - TypeScript lives in `src`; oclif commands stay under `src/commands`. `bin/run.js` defaults to `tui` when `aice` is invoked with no args.
 - Entry points: `bin/run.js` / `bin/dev.js` → oclif → `src/commands/tui.ts` → `src/ui/run-tui.ts` → `src/ui/aice-app.tsx`.
 - UI: Ink components live in `src/ui`; shared hooks (like `useSession`) go in `src/ui/hooks`. `use-chat-input-controller` coordinates setup, slash commands, and streaming.
-- Application services: `src/application/*` owns side effects + orchestration (`ChatService` creates session streams; `SetupService` persists `.env` and pings providers). UI/hooks call services so core/providers stay testable.
+- Services: `src/services/*` owns side effects + orchestration (`ChatService` creates session streams; `SetupService` persists `.env` and pings providers). UI/hooks call services so core/providers stay testable.
 - Chat helpers: `src/chat/prompt.ts` builds prompts from chat history; `src/chat/chat-runner.ts` renders a `SessionStream` to a generic IO (useful for future scripted commands and tests).
 - Core session/streaming: `src/core/stream.ts` defines chunk types + provider id parsing; `src/core/session.ts` orders chunks (meta → text → usage → done) and assigns indexes; `src/core/errors.ts` normalizes provider errors.
 - Providers: `src/providers/*` adapt SDKs behind `LLMProvider` and only emit raw text/status/usage; shared lifecycle lives in `src/providers/streaming.ts`; `src/providers/registry.ts` wires defaults/bindings; `src/providers/ping.ts` performs connectivity checks.
@@ -18,7 +18,7 @@
 - Domain: `src/domain/*` contains shared types (e.g. chat message types) with no side effects.
 - Build output: treat `dist/` as read-only. Tests mirror the layout under `test/`.
 
-Dependency direction: `commands`/`ui` → `application` → (`config`/`providers`/`core`/`domain`). Keep `core`/`domain` free of Ink/oclif imports.
+Dependency direction: `commands`/`ui` → `services` → (`config`/`providers`/`core`/`domain`). Keep `core`/`domain` free of Ink/oclif imports.
 
 ## Build, Test & Development Commands
 - `yarn build`: removes `dist` and runs `tsc -b`; run when command signatures change.

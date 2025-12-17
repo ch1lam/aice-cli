@@ -43,7 +43,7 @@ AICE_OPENAI_MODEL=gpt-4o-mini          # optional OpenAI override
 - `bin/` — runtime shims (`run.js`/`dev.js`); `aice` defaults to `tui` when no args are provided.
 - `src/commands/` — oclif commands (currently `tui`).
 - `src/ui/` — Ink TUI (components + hooks). Entry point is `src/ui/run-tui.ts`.
-- `src/application/` — services that coordinate config + providers (`ChatService`, `SetupService`).
+- `src/services/` — services that coordinate config + providers (`ChatService`, `SetupService`).
 - `src/providers/` — provider adapters + shared streaming lifecycle + registry + connectivity ping.
 - `src/core/` — chunk types, session ordering/indexing, and shared error formatting.
 - `src/config/` — `.env` load/persist and provider defaults.
@@ -51,7 +51,7 @@ AICE_OPENAI_MODEL=gpt-4o-mini          # optional OpenAI override
 - `src/chat/` — prompt building and a non-Ink stream renderer helper (useful for future scripted commands/tests).
 - `test/` — mirrors `src/` using Mocha + Chai.
 
-Dependency rule of thumb: UI/commands → application → (config/providers/core/domain). Keep `core`/`domain` free of Ink/oclif imports.
+Dependency rule of thumb: UI/commands → services → (config/providers/core/domain). Keep `core`/`domain` free of Ink/oclif imports.
 
 ## Development
 - `yarn build` — type-check and compile to `dist/`

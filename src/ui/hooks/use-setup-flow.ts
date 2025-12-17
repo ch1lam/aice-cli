@@ -8,7 +8,7 @@ import {
   ProviderEnvPersistError,
   SetupService,
   type SetupServiceOptions,
-} from '../../application/setup-service.js'
+} from '../../services/setup-service.js'
 import { providerIdFromIndex, providerOptionIndex } from '../provider-options.js'
 
 export type AppMode = 'chat' | 'setup'

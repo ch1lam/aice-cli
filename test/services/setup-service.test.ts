@@ -8,7 +8,7 @@ import {
   ProviderEnvPersistError,
   ProviderNotConfiguredError,
   SetupService,
-} from '../../src/application/setup-service.ts'
+} from '../../src/services/setup-service.ts'
 
 describe('SetupService', () => {
   it('persists and loads provider env', () => {
@@ -119,4 +119,3 @@ describe('SetupService', () => {
     )
   })
 })
-

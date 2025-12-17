@@ -2,7 +2,7 @@ import { expect } from 'chai'
 
 import type { LLMProvider, SessionRequest } from '../../src/core/session.ts'
 
-import { ChatService } from '../../src/application/chat-service.ts'
+import { ChatService } from '../../src/services/chat-service.ts'
 
 function createProvider(): LLMProvider {
   return {
@@ -66,4 +66,3 @@ describe('ChatService', () => {
     expect(types).to.deep.equal(['meta', 'text', 'done'])
   })
 })
-
