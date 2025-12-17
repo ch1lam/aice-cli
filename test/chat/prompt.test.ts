@@ -1,6 +1,6 @@
 import { expect } from 'chai'
 
-import type { PromptMessage } from '../../src/domain/chat/index.ts'
+import type { PromptMessage } from '../../src/types/chat/index.ts'
 
 import { buildPrompt } from '../../src/chat/prompt.ts'
 
