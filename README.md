@@ -39,6 +39,20 @@ AICE_OPENAI_MODEL=gpt-4o-mini          # optional OpenAI override
 ## Usage
 - Run `aice` (or `node bin/dev.js`) with no args to open the Ink UI. On first run it prompts for provider + API key, writes `.env`, and validates connectivity. Slash commands (prefixed with `/`) handle help, login, provider/model switching, and clearing the transcript; plain input sends messages.
 
+## Project structure
+- `bin/` — runtime shims (`run.js`/`dev.js`); `aice` defaults to `tui` when no args are provided.
+- `src/commands/` — oclif commands (currently `tui`).
+- `src/ui/` — Ink TUI (components + hooks). Entry point is `src/ui/run-tui.ts`.
+- `src/application/` — services that coordinate config + providers (`ChatService`, `SetupService`).
+- `src/providers/` — provider adapters + shared streaming lifecycle + registry + connectivity ping.
+- `src/core/` — chunk types, session ordering/indexing, and shared error formatting.
+- `src/config/` — `.env` load/persist and provider defaults.
+- `src/domain/` — shared chat message types (no side effects).
+- `src/chat/` — prompt building and a non-Ink stream renderer helper (useful for future scripted commands/tests).
+- `test/` — mirrors `src/` using Mocha + Chai.
+
+Dependency rule of thumb: UI/commands → application → (config/providers/core/domain). Keep `core`/`domain` free of Ink/oclif imports.
+
 ## Development
 - `yarn build` — type-check and compile to `dist/`
 - `yarn test` — run the Mocha suite (session/provider/chat-runner tests + smoke test)
@@ -51,4 +65,4 @@ AICE_OPENAI_MODEL=gpt-4o-mini          # optional OpenAI override
 3. Run `yarn build && yarn test`.
 4. Open a PR describing the behavior, provider coverage, and attach a short terminal recording if the TUI changes.
 
-See `AGENTS.md` for deeper architectural guidelines and the planned directory topology.
+See `AGENTS.md` for deeper architectural guidelines and directory responsibilities.

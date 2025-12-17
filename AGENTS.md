@@ -7,12 +7,18 @@
 - Keep side effects contained in command runners/services so providers and UI stay testable.
 
 ## Architecture & Project Structure
-- TypeScript lives in `src`; oclif commands stay under `src/commands`. The default `aice` (no args) launches the Ink TUI chat shell (`tui`).
-- Scriptable chat orchestration lives in `src/chat/controller.ts` + `src/chat/prompt.ts`; these hand off to `src/core/session.ts` + `src/core/stream.ts` for chunk ordering/streaming. The session layer orders chunks (meta → text → usage → done) and assigns indexes; providers only emit raw tokens/usage.
-- Provider adapters sit in `src/providers/{openai,deepseek}.ts`, each wrapping the official SDK behind one interface; `src/providers/factory.ts` builds bindings. `src/providers/openai.ts` is the Responses API reference implementation.
-- CLI streaming presentation lives in `src/chat/chat-runner.ts`, which turns session chunks into stdout writes/logs. Ink rendering (StatusBar, InputPanel, etc.) stays in `src/ui` so UIs can swap without touching providers; `ChatWindow` is currently a test/legacy helper.
-- The TUI shell supports slash commands (e.g., `/help`, `/login`, `/provider`, `/model`, `/clear`), multi-turn history, and a first-run config step before chat input. Configuration helpers (env parsing, provider selection) live in `src/config`. Ink components live in `src/ui`; shared hooks (like `useSession`) go in `src/ui/hooks`.
-- Runtime shims `bin/run.js` / `bin/dev.js` load the compiled `dist` bundle; treat `dist` as read-only. Mirror this layout under `test/`.
+- TypeScript lives in `src`; oclif commands stay under `src/commands`. `bin/run.js` defaults to `tui` when `aice` is invoked with no args.
+- Entry points: `bin/run.js` / `bin/dev.js` → oclif → `src/commands/tui.ts` → `src/ui/run-tui.ts` → `src/ui/aice-app.tsx`.
+- UI: Ink components live in `src/ui`; shared hooks (like `useSession`) go in `src/ui/hooks`. `use-chat-input-controller` coordinates setup, slash commands, and streaming.
+- Application services: `src/application/*` owns side effects + orchestration (`ChatService` creates session streams; `SetupService` persists `.env` and pings providers). UI/hooks call services so core/providers stay testable.
+- Chat helpers: `src/chat/prompt.ts` builds prompts from chat history; `src/chat/chat-runner.ts` renders a `SessionStream` to a generic IO (useful for future scripted commands and tests).
+- Core session/streaming: `src/core/stream.ts` defines chunk types + provider id parsing; `src/core/session.ts` orders chunks (meta → text → usage → done) and assigns indexes; `src/core/errors.ts` normalizes provider errors.
+- Providers: `src/providers/*` adapt SDKs behind `LLMProvider` and only emit raw text/status/usage; shared lifecycle lives in `src/providers/streaming.ts`; `src/providers/registry.ts` wires defaults/bindings; `src/providers/ping.ts` performs connectivity checks.
+- Configuration: `src/config/env.ts` loads/persists `.env` (injectable I/O for tests); `src/config/provider-defaults.ts` centralizes default model/baseURL/labels.
+- Domain: `src/domain/*` contains shared types (e.g. chat message types) with no side effects.
+- Build output: treat `dist/` as read-only. Tests mirror the layout under `test/`.
+
+Dependency direction: `commands`/`ui` → `application` → (`config`/`providers`/`core`/`domain`). Keep `core`/`domain` free of Ink/oclif imports.
 
 ## Build, Test & Development Commands
 - `yarn build`: removes `dist` and runs `tsc -b`; run when command signatures change.
