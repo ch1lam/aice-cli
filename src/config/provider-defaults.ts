@@ -1,11 +1,6 @@
-import type { ProviderId } from '../core/stream.js'
+import type { ProviderId } from '../core/stream.ts'
 
-export interface ProviderDefaults {
-  defaultBaseURL?: string
-  defaultModel: string
-  description: string
-  label: string
-}
+import { ProviderDefaults } from '../types/env.js'
 
 export const DEFAULT_PROVIDER_ID: ProviderId = 'openai'
 
@@ -37,4 +32,3 @@ export function resolveDefaultBaseURL(
 ): string | undefined {
   return baseURL ?? PROVIDER_DEFAULTS[providerId].defaultBaseURL
 }
-

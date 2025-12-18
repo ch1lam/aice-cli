@@ -1,5 +1,5 @@
-import type { ProviderEnv } from '../config/env.js'
 import type { SessionStream } from '../core/stream.js'
+import type { ProviderEnv } from '../types/env.js'
 
 import { runSession } from '../core/session.js'
 import {
@@ -28,4 +28,3 @@ export class ChatService {
     return runSession(binding.provider, request)
   }
 }
-

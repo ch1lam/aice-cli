@@ -1,7 +1,7 @@
 import { type Dispatch, type SetStateAction, useCallback, useMemo, useState } from 'react'
 
-import type { ProviderEnv } from '../../config/env.js'
 import type { ProviderId } from '../../core/stream.js'
+import type { ProviderEnv } from '../../types/env.js'
 
 import {
   ProviderEnvLoadError,

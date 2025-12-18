@@ -1,5 +1,6 @@
-import type { PersistEnvOptions, ProviderEnv } from '../config/env.js'
+import type { PersistEnvOptions } from '../config/env.js'
 import type { ProviderId } from '../core/stream.js'
+import type { ProviderEnv } from '../types/env.js'
 
 import { persistProviderEnv, tryLoadProviderEnv } from '../config/env.js'
 import { toError } from '../core/errors.js'
@@ -98,4 +99,3 @@ export class SetupService {
     await this.#ping(env)
   }
 }
-

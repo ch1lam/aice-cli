@@ -3,20 +3,12 @@ import fs from 'node:fs'
 import path from 'node:path'
 
 import { KNOWN_PROVIDERS, parseProviderId, type ProviderId } from '../core/stream.js'
+import { ProviderEnv, TryLoadProviderEnvResult } from '../types/env.js'
 import { DEFAULT_PROVIDER_ID } from './provider-defaults.js'
 
 dotenv.config({ quiet: true })
 
 export type EnvValues = Record<string, string | undefined>
-
-export interface ProviderEnv {
-  apiKey: string
-  baseURL?: string
-  model?: string
-  providerId: ProviderId
-}
-
-export type ProviderCredentials = ProviderEnv
 
 export interface LoadProviderEnvOptions {
   env?: EnvValues
@@ -25,15 +17,10 @@ export interface LoadProviderEnvOptions {
   providerId?: ProviderId
 }
 
-export interface PersistEnvOptions extends ProviderCredentials {
+export interface PersistEnvOptions extends ProviderEnv {
   env?: EnvValues
   envPath?: string
   io?: EnvIO
-}
-
-export interface TryLoadProviderEnvResult {
-  env?: ProviderEnv
-  error?: Error
 }
 
 export interface EnvIO {
@@ -101,7 +88,7 @@ export function persistProviderEnv(options: PersistEnvOptions): EnvValues {
   return mapToEnvValues(envMap)
 }
 
-function buildEnvEntries(options: ProviderCredentials): Record<string, string | undefined> {
+function buildEnvEntries(options: ProviderEnv): Record<string, string | undefined> {
   switch (options.providerId) {
     case 'deepseek': {
       return {

@@ -1,7 +1,7 @@
 import { Box, Text, useStdout } from 'ink'
 import { type ReactElement, useEffect, useState } from 'react'
 
-import type { StreamStatus, TokenUsage } from '../core/stream.js'
+import type { ProviderId, StreamStatus, TokenUsage } from '../core/stream.js'
 
 import { theme } from './theme.js'
 
@@ -10,7 +10,7 @@ const statusSpinnerFrames = ['-', '\\', '|', '/']
 export interface StatusBarProps {
   meta?: {
     model: string
-    providerId: string
+    providerId: ProviderId
   }
   status?: StreamStatus
   statusMessage?: string
