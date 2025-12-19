@@ -1,6 +1,6 @@
-import type { SessionStream } from '../core/stream.js'
 import type { ProviderEnv } from '../types/env.js'
 import type { ProviderBindingFactory, ProviderRequestInput } from '../types/provider.js'
+import type { SessionStream } from '../types/stream.js'
 
 import { runSession } from '../core/session.js'
 import { createProviderBinding } from '../providers/factory.js'

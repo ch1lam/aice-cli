@@ -1,7 +1,7 @@
 import { Box, Text, useStdout } from 'ink'
 import { type ReactElement, useEffect, useState } from 'react'
 
-import type { ProviderId, StreamStatus, TokenUsage } from '../core/stream.js'
+import type { ProviderId, StreamStatus, TokenUsage } from '../types/stream.js'
 
 import { theme } from './theme.js'
 

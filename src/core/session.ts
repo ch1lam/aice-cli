@@ -4,7 +4,7 @@ import type {
   SessionMetaChunk,
   SessionStream,
   SessionTextChunk,
-} from './stream.js'
+} from '../types/stream.js'
 
 export interface SessionRequest {
   model: string

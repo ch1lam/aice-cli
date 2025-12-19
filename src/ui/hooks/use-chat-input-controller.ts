@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import type { ProviderId, StreamStatus, TokenUsage } from '../../core/stream.js'
 import type { ChatMessage, MessageRole } from '../../types/chat.js'
 import type { ProviderEnv } from '../../types/env.js'
 import type { AppMode, SetupStep } from '../../types/setup-flow.js'
 import type { SlashCommandDefinition } from '../../types/slash-commands.js'
 import type { SlashSuggestionsState } from '../../types/slash-suggestions-state.js'
+import type { ProviderId, StreamStatus, TokenUsage } from '../../types/stream.js'
 
 import { buildPrompt as formatPrompt } from '../../chat/prompt.js'
 import { DEFAULT_PROVIDER_ID } from '../../config/provider-defaults.js'

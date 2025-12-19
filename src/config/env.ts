@@ -2,7 +2,7 @@ import dotenv from 'dotenv'
 import fs from 'node:fs'
 import path from 'node:path'
 
-import type { ProviderId } from '../core/stream.js'
+import type { ProviderId } from '../types/stream.js'
 
 import { parseProviderId, providerIds } from '../providers/registry.js'
 import { ProviderEnv, TryLoadProviderEnvResult } from '../types/env.js'

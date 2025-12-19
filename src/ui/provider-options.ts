@@ -1,4 +1,4 @@
-import type { ProviderId } from '../core/stream.js'
+import type { ProviderId } from '../types/stream.js'
 
 import { DEFAULT_PROVIDER_ID, PROVIDER_DEFAULTS } from '../config/provider-defaults.js'
 import { providerIds } from '../providers/registry.js'

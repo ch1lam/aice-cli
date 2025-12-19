@@ -3,7 +3,7 @@ import type { ChatCompletionChunk } from 'openai/resources/chat/completions'
 
 import { expect } from 'chai'
 
-import type { ProviderStreamChunk } from '../../src/core/stream.ts'
+import type { ProviderStreamChunk } from '../../src/types/stream.ts'
 
 import { DeepSeekProvider, type DeepSeekSessionRequest } from '../../src/providers/deepseek.ts'
 

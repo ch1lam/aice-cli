@@ -1,4 +1,4 @@
-import type { ProviderId } from '../core/stream.js'
+import type { ProviderId } from './stream.js'
 
 export interface SessionMeta {
   model: string

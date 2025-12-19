@@ -5,7 +5,7 @@ import type {
   ProviderTextChunk,
   ProviderUsageChunk,
   TokenUsage,
-} from '../core/stream.js'
+} from '../types/stream.js'
 
 import { toError } from '../core/errors.js'
 

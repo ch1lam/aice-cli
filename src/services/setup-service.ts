@@ -1,7 +1,7 @@
 import type { PersistEnvOptions } from '../config/env.js'
-import type { ProviderId } from '../core/stream.js'
 import type { ProviderEnv } from '../types/env.js'
 import type { SetupServiceOptions } from '../types/setup-service.js'
+import type { ProviderId } from '../types/stream.js'
 
 import { persistProviderEnv, tryLoadProviderEnv } from '../config/env.js'
 import { toError } from '../core/errors.js'

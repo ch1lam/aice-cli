@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 
-import type { SessionStream, SessionStreamChunk, StreamStatus, TokenUsage } from '../../core/stream.js'
 import type { SessionMeta } from '../../types/session-meta.js'
+import type { SessionStream, SessionStreamChunk, StreamStatus, TokenUsage } from '../../types/stream.js'
 
 export interface SessionState {
   content: string

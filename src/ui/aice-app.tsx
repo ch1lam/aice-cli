@@ -1,10 +1,10 @@
 import { Box, Text } from 'ink'
 import { useEffect, useState } from 'react'
 
-import type { ProviderId } from '../core/stream.js'
 import type { MessageRole } from '../types/chat.js'
 import type { ProviderEnv } from '../types/env.js'
 import type { AppMode, SetupStep } from '../types/setup-flow.js'
+import type { ProviderId } from '../types/stream.js'
 
 import { DEFAULT_PROVIDER_ID } from '../config/provider-defaults.js'
 import { useChatInputController } from './hooks/use-chat-input-controller.js'

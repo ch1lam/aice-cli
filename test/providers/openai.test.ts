@@ -3,7 +3,7 @@ import type { ResponseStreamEvent } from 'openai/resources/responses/responses'
 
 import { expect } from 'chai'
 
-import type { ProviderStreamChunk } from '../../src/core/stream.ts'
+import type { ProviderStreamChunk } from '../../src/types/stream.ts'
 
 import { OpenAIProvider, type OpenAISessionRequest } from '../../src/providers/openai.ts'
 

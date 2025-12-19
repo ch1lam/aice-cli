@@ -4,8 +4,8 @@ import { render } from 'ink-testing-library'
 import { type ReactElement, useCallback, useEffect, useRef, useState } from 'react'
 
 import type { ProviderEnv } from '../../src/config/env.js'
-import type { SessionStreamChunk } from '../../src/core/stream.ts'
 import type { ChatPrompt } from '../../src/services/chat-service.ts'
+import type { SessionStreamChunk } from '../../src/types/stream.ts'
 
 import { useChatStream } from '../../src/ui/hooks/use-chat-stream.js'
 import { useSession } from '../../src/ui/hooks/use-session.js'

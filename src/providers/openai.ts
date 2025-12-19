@@ -8,7 +8,7 @@ import type {
 import { OpenAI } from 'openai'
 
 import type { LLMProvider, SessionRequest } from '../core/session.js'
-import type { ProviderStream, TokenUsage } from '../core/stream.js'
+import type { ProviderStream, TokenUsage } from '../types/stream.js'
 
 import { type ProviderStreamEvent, streamProviderWithLifecycle } from './streaming.js'
 

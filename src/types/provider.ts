@@ -1,6 +1,6 @@
 import type { LLMProvider, SessionRequest } from '../core/session.js'
-import type { ProviderId } from '../core/stream.js'
 import type { ProviderEnv } from './env.js'
+import type { ProviderId } from './stream.js'
 
 export interface ProviderRequestInput {
   model?: string

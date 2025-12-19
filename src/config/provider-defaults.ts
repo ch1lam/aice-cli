@@ -1,4 +1,4 @@
-import type { ProviderId } from '../core/stream.ts'
+import type { ProviderId } from '../types/stream.ts'
 
 import { ProviderDefaults } from '../types/env.js'
 

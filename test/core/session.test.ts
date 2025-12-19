@@ -1,6 +1,6 @@
 import { expect } from 'chai'
 
-import type { ProviderStreamChunk } from '../../src/core/stream.ts'
+import type { ProviderStreamChunk } from '../../src/types/stream.ts'
 
 import { type LLMProvider, runSession, type SessionRequest } from '../../src/core/session.ts'
 

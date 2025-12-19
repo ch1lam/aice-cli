@@ -1,9 +1,9 @@
 import { type Dispatch, type SetStateAction, useCallback, useMemo, useState } from 'react'
 
-import type { ProviderId } from '../../core/stream.js'
 import type { ProviderEnv } from '../../types/env.js'
 import type { AppMode, SetupState } from '../../types/setup-flow.js'
 import type { SetupServiceOptions } from '../../types/setup-service.js'
+import type { ProviderId } from '../../types/stream.js'
 
 import { DEFAULT_PROVIDER_ID } from '../../config/provider-defaults.js'
 import {

@@ -1,7 +1,7 @@
 import { OpenAI } from 'openai'
 
-import type { ProviderId } from '../core/stream.js'
 import type { ProviderEnv } from '../types/env.js'
+import type { ProviderId } from '../types/stream.js'
 
 import { providerRegistry } from './registry.js'
 

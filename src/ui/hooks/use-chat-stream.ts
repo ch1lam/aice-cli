@@ -7,10 +7,10 @@ import {
   useState,
 } from 'react'
 
-import type { SessionStream, StreamStatus, TokenUsage } from '../../core/stream.js'
 import type { ChatMessage } from '../../types/chat.js'
 import type { ProviderEnv } from '../../types/env.js'
 import type { SessionMeta } from '../../types/session-meta.js'
+import type { SessionStream, StreamStatus, TokenUsage } from '../../types/stream.js'
 
 import { ChatService } from '../../services/chat-service.js'
 import { useSession } from './use-session.js'
