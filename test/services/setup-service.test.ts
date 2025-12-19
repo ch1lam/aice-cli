@@ -1,6 +1,6 @@
 import { expect } from 'chai'
 
-import type { ProviderEnv } from '../../src/config/env.ts'
+import type { ProviderEnv } from '../../src/types/env.ts'
 import type { ProviderId } from '../../src/types/stream.ts'
 
 import {

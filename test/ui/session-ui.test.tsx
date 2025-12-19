@@ -3,8 +3,8 @@ import { Box, Text, useApp } from 'ink'
 import { render } from 'ink-testing-library'
 import { type ReactElement, useCallback, useEffect, useRef, useState } from 'react'
 
-import type { ProviderEnv } from '../../src/config/env.js'
-import type { ChatPrompt } from '../../src/services/chat-service.ts'
+import type { ProviderEnv } from '../../src/types/env.js'
+import type { ProviderRequestInput } from '../../src/types/provider.js'
 import type { SessionStreamChunk } from '../../src/types/stream.ts'
 
 import { useChatStream } from '../../src/ui/hooks/use-chat-stream.js'
@@ -141,115 +141,115 @@ describe('Ink UI', () => {
     })
   })
 
-interface ChatStreamSceneProps {
-  env: ProviderEnv
-  stream: AsyncGenerator<SessionStreamChunk, void, void>
-}
+  interface ChatStreamSceneProps {
+    env: ProviderEnv
+    stream: AsyncGenerator<SessionStreamChunk, void, void>
+  }
 
-function ChatStreamScene(props: ChatStreamSceneProps): ReactElement {
-  const startedRef = useRef(false)
-  const { exit } = useApp()
-  const [messages, setMessages] = useState<string[]>([])
+  function ChatStreamScene(props: ChatStreamSceneProps): ReactElement {
+    const startedRef = useRef(false)
+    const { exit } = useApp()
+    const [messages, setMessages] = useState<string[]>([])
 
-  const handleAssistantMessage = useCallback((message: string) => {
-    setMessages(current => [...current, `assistant:${message}`])
-  }, [])
+    const handleAssistantMessage = useCallback((message: string) => {
+      setMessages(current => [...current, `assistant:${message}`])
+    }, [])
 
-  const handleSystemMessage = useCallback((message: string) => {
-    setMessages(current => [...current, `system:${message}`])
-  }, [])
+    const handleSystemMessage = useCallback((message: string) => {
+      setMessages(current => [...current, `system:${message}`])
+    }, [])
 
-  const { currentResponse, sessionStatus, startStream, streaming } = useChatStream({
-    buildPrompt: () => 'prompt',
-    createChatService: () => ({
-      createStream: (_env: ProviderEnv, _prompt: ChatPrompt) => props.stream,
-    }),
-    onAssistantMessage: handleAssistantMessage,
-    onSystemMessage: handleSystemMessage,
-  })
+    const { currentResponse, sessionStatus, startStream, streaming } = useChatStream({
+      buildPrompt: () => 'prompt',
+      createChatService: () => ({
+        createStream: (_env: ProviderEnv, _prompt: ProviderRequestInput) => props.stream,
+      }),
+      onAssistantMessage: handleAssistantMessage,
+      onSystemMessage: handleSystemMessage,
+    })
 
-  useEffect(() => {
-    if (startedRef.current) return
-    startedRef.current = true
-    startStream([{ id: 0, role: 'user', text: 'Hello?' }], props.env)
-  }, [props.env, startStream])
+    useEffect(() => {
+      if (startedRef.current) return
+      startedRef.current = true
+      startStream([{ id: 0, role: 'user', text: 'Hello?' }], props.env)
+    }, [props.env, startStream])
 
-  useEffect(() => {
-    const hasTerminalMessage = messages.some(message =>
-      message.startsWith('assistant:') || message.startsWith('system:Provider error:'),
+    useEffect(() => {
+      const hasTerminalMessage = messages.some(message =>
+        message.startsWith('assistant:') || message.startsWith('system:Provider error:'),
+      )
+
+      if (hasTerminalMessage) {
+        exit()
+      }
+    }, [exit, messages])
+
+    return (
+      <Box flexDirection="column">
+        {messages.map((message, index) => (
+          <Text key={index}>{message}</Text>
+        ))}
+        <Text>{streaming ? `stream:${currentResponse}` : 'idle'}</Text>
+        <Text>{`status:${sessionStatus ?? 'pending'}`}</Text>
+      </Box>
     )
-
-    if (hasTerminalMessage) {
-      exit()
-    }
-  }, [exit, messages])
-
-  return (
-    <Box flexDirection="column">
-      {messages.map((message, index) => (
-        <Text key={index}>{message}</Text>
-      ))}
-      <Text>{streaming ? `stream:${currentResponse}` : 'idle'}</Text>
-      <Text>{`status:${sessionStatus ?? 'pending'}`}</Text>
-    </Box>
-  )
-}
+  }
 
   describe('useChatStream', () => {
     it('streams text and commits the assistant message on completion', async () => {
-    const stream = chunkStream(
-      [
-        { model: 'gpt-4o-mini', providerId: 'openai', type: 'meta' },
-        { status: 'running', type: 'status' },
-        { index: 0, text: 'Hello', type: 'text' },
-        { index: 1, text: ' world', type: 'text' },
-        { type: 'done' },
-      ],
-      5,
-    )
+      const stream = chunkStream(
+        [
+          { model: 'gpt-4o-mini', providerId: 'openai', type: 'meta' },
+          { status: 'running', type: 'status' },
+          { index: 0, text: 'Hello', type: 'text' },
+          { index: 1, text: ' world', type: 'text' },
+          { type: 'done' },
+        ],
+        5,
+      )
 
-    const env: ProviderEnv = {
-      apiKey: 'test-key',
-      model: 'gpt-4o-mini',
-      providerId: 'openai',
-    }
+      const env: ProviderEnv = {
+        apiKey: 'test-key',
+        model: 'gpt-4o-mini',
+        providerId: 'openai',
+      }
 
-    const { frames, lastFrame } = render(<ChatStreamScene env={env} stream={stream} />)
-    await waitFor(() => stripAnsi(lastFrame() ?? '').includes('assistant:Hello world'))
+      const { frames, lastFrame } = render(<ChatStreamScene env={env} stream={stream} />)
+      await waitFor(() => stripAnsi(lastFrame() ?? '').includes('assistant:Hello world'))
 
-    const cleanedFrames = frames.map(frame => stripAnsi(frame))
-    const partialFrame = cleanedFrames.find(
-      frame => frame.includes('stream:Hello') && !frame.includes('Hello world'),
-    )
+      const cleanedFrames = frames.map(frame => stripAnsi(frame))
+      const partialFrame = cleanedFrames.find(
+        frame => frame.includes('stream:Hello') && !frame.includes('Hello world'),
+      )
 
-    expect(partialFrame).to.not.equal(undefined)
+      expect(partialFrame).to.not.equal(undefined)
 
-    const finalFrame = stripAnsi(lastFrame() ?? '')
-    expect(finalFrame).to.include('assistant:Hello world')
-    expect(finalFrame).to.include('idle')
-    expect(finalFrame).to.include('status:completed')
-  })
+      const finalFrame = stripAnsi(lastFrame() ?? '')
+      expect(finalFrame).to.include('assistant:Hello world')
+      expect(finalFrame).to.include('idle')
+      expect(finalFrame).to.include('status:completed')
+    })
 
     it('surfaces provider errors as system messages and does not commit partial assistant output', async () => {
-    const stream = chunkStream([
-      { model: 'gpt-4o-mini', providerId: 'openai', type: 'meta' },
-      { index: 0, text: 'partial', type: 'text' },
-      { error: new Error('boom'), type: 'error' },
-    ])
+      const stream = chunkStream([
+        { model: 'gpt-4o-mini', providerId: 'openai', type: 'meta' },
+        { index: 0, text: 'partial', type: 'text' },
+        { error: new Error('boom'), type: 'error' },
+      ])
 
-    const env: ProviderEnv = {
-      apiKey: 'test-key',
-      model: 'gpt-4o-mini',
-      providerId: 'openai',
-    }
+      const env: ProviderEnv = {
+        apiKey: 'test-key',
+        model: 'gpt-4o-mini',
+        providerId: 'openai',
+      }
 
-    const { lastFrame } = render(<ChatStreamScene env={env} stream={stream} />)
-    await waitFor(() => stripAnsi(lastFrame() ?? '').includes('system:Provider error: boom'))
+      const { lastFrame } = render(<ChatStreamScene env={env} stream={stream} />)
+      await waitFor(() => stripAnsi(lastFrame() ?? '').includes('system:Provider error: boom'))
 
-    const finalFrame = stripAnsi(lastFrame() ?? '')
-    expect(finalFrame).to.include('system:Provider error: boom')
-    expect(finalFrame).to.not.include('assistant:partial')
-    expect(finalFrame).to.include('status:failed')
+      const finalFrame = stripAnsi(lastFrame() ?? '')
+      expect(finalFrame).to.include('system:Provider error: boom')
+      expect(finalFrame).to.not.include('assistant:partial')
+      expect(finalFrame).to.include('status:failed')
     })
   })
 })
