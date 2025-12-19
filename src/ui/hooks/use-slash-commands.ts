@@ -1,13 +1,13 @@
 import { useCallback, useMemo } from 'react'
 
-import type { SlashSuggestion } from '../slash-suggestions.js'
+import type {
+  SlashCommandDefinition,
+  SlashCommandResult,
+  SlashCommandRouter,
+} from '../../types/slash-commands.js'
+import type { SlashSuggestion } from '../../types/slash-suggestions.js'
 
-import {
-  createSlashCommandRouter,
-  type SlashCommandDefinition,
-  type SlashCommandResult,
-  type SlashCommandRouter,
-} from '../slash-commands.js'
+import { createSlashCommandRouter } from '../slash-commands.js'
 
 interface UseSlashCommandsOptions {
   onClear: () => void

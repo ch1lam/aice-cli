@@ -2,15 +2,10 @@ import type { ReactElement } from 'react'
 
 import { Box, Text } from 'ink'
 
+import type { SlashSuggestion } from '../types/slash-suggestions.js'
+
 import { theme } from './theme.js'
 import { clampIndex } from './utils.js'
-
-export interface SlashSuggestion {
-  command: string
-  description: string
-  hint?: string
-  value: string
-}
 
 export interface SlashSuggestionsProps {
   activeIndex?: number

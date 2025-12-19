@@ -8,13 +8,14 @@ import {
 } from 'react'
 
 import type { SessionStream, StreamStatus, TokenUsage } from '../../core/stream.js'
-import type { ChatMessage } from '../../types/chat/index.js'
+import type { ChatMessage } from '../../types/chat.js'
 import type { ProviderEnv } from '../../types/env.js'
+import type { SessionMeta } from '../../types/session-meta.js'
 
 import { ChatService } from '../../services/chat-service.js'
-import { type SessionMeta, useSession } from './use-session.js'
+import { useSession } from './use-session.js'
 
-export type { ChatMessage, MessageRole } from '../../types/chat/index.js'
+export type { ChatMessage, MessageRole } from '../../types/chat.js'
 
 type ChatServiceFactory = () => Pick<ChatService, 'createStream'>
 

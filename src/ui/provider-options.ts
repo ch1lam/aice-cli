@@ -1,6 +1,6 @@
 import { DEFAULT_PROVIDER_ID, PROVIDER_DEFAULTS } from '../config/provider-defaults.js'
 import { KNOWN_PROVIDERS, type ProviderId } from '../core/stream.js'
-import { type SelectInputItem } from './select-input.js'
+import { type SelectInputItem } from '../types/select-input.js'
 
 export type ProviderOption = SelectInputItem<ProviderId>
 

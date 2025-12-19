@@ -1,7 +1,11 @@
 import type { LLMProvider } from '../core/session.js'
 import type { ProviderId } from '../core/stream.js'
 import type { ProviderDefaults, ProviderEnv } from '../types/env.js'
-import type { ProviderBinding, ProviderBindingFactoryOptions, ProviderRequestInput } from './factory.js'
+import type {
+  ProviderBinding,
+  ProviderBindingFactoryOptions,
+  ProviderRequestInput,
+} from '../types/provider.js'
 
 import { PROVIDER_DEFAULTS, resolveDefaultBaseURL, resolveDefaultModel } from '../config/provider-defaults.js'
 import { DeepSeekProvider } from './deepseek.js'

@@ -1,12 +1,9 @@
 import type { SessionStream } from '../core/stream.js'
 import type { ProviderEnv } from '../types/env.js'
+import type { ProviderBindingFactory, ProviderRequestInput } from '../types/provider.js'
 
 import { runSession } from '../core/session.js'
-import {
-  createProviderBinding,
-  type ProviderBindingFactory,
-  type ProviderRequestInput,
-} from '../providers/factory.js'
+import { createProviderBinding } from '../providers/factory.js'
 
 export type ChatPrompt = ProviderRequestInput
 

@@ -2,8 +2,8 @@ import type { Dispatch, SetStateAction } from 'react'
 
 import { useApp, useInput } from 'ink'
 
-import type { AppMode, SetupState } from './use-setup-flow.js'
-import type { SlashSuggestionsState } from './use-slash-suggestions-state.js'
+import type { AppMode, SetupState } from '../../types/setup-flow.js'
+import type { SlashSuggestionsState } from '../../types/slash-suggestions-state.js'
 
 import { cycleProviderChoice } from '../utils.js'
 

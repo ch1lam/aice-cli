@@ -1,17 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 
-import type {
-  ProviderId,
-  SessionStream,
-  SessionStreamChunk,
-  StreamStatus,
-  TokenUsage,
-} from '../../core/stream.js'
-
-export interface SessionMeta {
-  model: string
-  providerId: ProviderId
-}
+import type { SessionStream, SessionStreamChunk, StreamStatus, TokenUsage } from '../../core/stream.js'
+import type { SessionMeta } from '../../types/session-meta.js'
 
 export interface SessionState {
   content: string

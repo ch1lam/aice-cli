@@ -1,4 +1,4 @@
-import type { PromptMessage } from '../types/chat/index.js'
+import type { PromptMessage } from '../types/chat.js'
 
 export interface BuildPromptOptions {
   maxMessages?: number

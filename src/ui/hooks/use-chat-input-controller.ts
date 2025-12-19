@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import type { ProviderId, StreamStatus, TokenUsage } from '../../core/stream.js'
-import type { ChatMessage, MessageRole } from '../../types/chat/index.js'
+import type { ChatMessage, MessageRole } from '../../types/chat.js'
 import type { ProviderEnv } from '../../types/env.js'
-import type { SlashCommandDefinition } from '../slash-commands.js'
+import type { AppMode, SetupStep } from '../../types/setup-flow.js'
+import type { SlashCommandDefinition } from '../../types/slash-commands.js'
+import type { SlashSuggestionsState } from '../../types/slash-suggestions-state.js'
 
 import { buildPrompt as formatPrompt } from '../../chat/prompt.js'
 import { parseProviderId } from '../../core/stream.js'
@@ -14,21 +16,21 @@ import { useChatStream } from './use-chat-stream.js'
 import { useKeybindings } from './use-keybindings.js'
 import { useSetupFlow } from './use-setup-flow.js'
 import { useSlashCommands } from './use-slash-commands.js'
-import { type SlashSuggestionsState, useSlashSuggestionsState } from './use-slash-suggestions-state.js'
+import { useSlashSuggestionsState } from './use-slash-suggestions-state.js'
 
 export interface ChatInputControllerResult {
   currentResponse: string
   input: string
   maskInput: boolean
   messages: ChatMessage[]
-  mode: 'chat' | 'setup'
+  mode: AppMode
   providerChoiceIndex: number
   providerMeta?: {model: string; providerId: ProviderId}
   providerSelection: ProviderId
   sessionStatus?: StreamStatus
   sessionStatusMessage?: string
   sessionUsage?: TokenUsage
-  setupStateStep: 'apiKey' | 'baseURL' | 'model' | 'provider'
+  setupStateStep: SetupStep
   setupSubmitting: boolean
   slashSuggestions: SlashSuggestionsState
   streaming: boolean

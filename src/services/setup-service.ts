@@ -1,6 +1,7 @@
 import type { PersistEnvOptions } from '../config/env.js'
 import type { ProviderId } from '../core/stream.js'
 import type { ProviderEnv } from '../types/env.js'
+import type { SetupServiceOptions } from '../types/setup-service.js'
 
 import { persistProviderEnv, tryLoadProviderEnv } from '../config/env.js'
 import { toError } from '../core/errors.js'
@@ -8,12 +9,6 @@ import { pingProvider } from '../providers/ping.js'
 
 export interface PersistAndLoadOptions extends Omit<PersistEnvOptions, 'env'> {
   env?: PersistEnvOptions['env']
-}
-
-export interface SetupServiceOptions {
-  persistEnv?: typeof persistProviderEnv
-  ping?: typeof pingProvider
-  tryLoadEnv?: typeof tryLoadProviderEnv
 }
 
 export class ProviderEnvPersistError extends Error {

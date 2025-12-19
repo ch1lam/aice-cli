@@ -2,29 +2,18 @@ import { type Dispatch, type SetStateAction, useCallback, useMemo, useState } fr
 
 import type { ProviderId } from '../../core/stream.js'
 import type { ProviderEnv } from '../../types/env.js'
+import type { AppMode, SetupState } from '../../types/setup-flow.js'
+import type { SetupServiceOptions } from '../../types/setup-service.js'
 
 import {
   ProviderEnvLoadError,
   ProviderEnvPersistError,
   SetupService,
-  type SetupServiceOptions,
 } from '../../services/setup-service.js'
 import { providerIdFromIndex, providerOptionIndex } from '../provider-options.js'
 
-export type AppMode = 'chat' | 'setup'
-
-export type SetupStep = 'apiKey' | 'baseURL' | 'model' | 'provider'
-
 const defaultCreateSetupService = (serviceOptions: SetupServiceOptions) =>
   new SetupService(serviceOptions)
-
-export interface SetupState {
-  apiKey?: string
-  baseURL?: string
-  model?: string
-  providerId: ProviderId
-  step: SetupStep
-}
 
 interface UseSetupFlowOptions {
   createSetupService?: (options: SetupServiceOptions) => SetupService

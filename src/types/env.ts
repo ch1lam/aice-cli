@@ -1,15 +1,18 @@
-import type { ProviderId } from '../core/stream.js';
+import type { ProviderId } from '../core/stream.js'
 
 export interface ProviderEnv {
-  apiKey: string;
-  baseURL?: string;
-  model?: string;
-  providerId: ProviderId;
+  apiKey: string
+  baseURL?: string
+  model?: string
+  providerId: ProviderId
 }
+
 export interface TryLoadProviderEnvResult {
   env?: ProviderEnv
   error?: Error
-}export interface ProviderDefaults {
+}
+
+export interface ProviderDefaults {
   defaultBaseURL?: string
   defaultModel: string
   description: string

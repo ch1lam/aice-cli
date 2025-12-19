@@ -2,9 +2,9 @@ import { Box, Text } from 'ink'
 import { useEffect, useState } from 'react'
 
 import type { ProviderId } from '../core/stream.js'
-import type { MessageRole } from '../types/chat/index.js'
+import type { MessageRole } from '../types/chat.js'
 import type { ProviderEnv } from '../types/env.js'
-import type { AppMode, SetupStep } from './hooks/use-setup-flow.js'
+import type { AppMode, SetupStep } from '../types/setup-flow.js'
 
 import { useChatInputController } from './hooks/use-chat-input-controller.js'
 import { InputPanel } from './input-panel.js'

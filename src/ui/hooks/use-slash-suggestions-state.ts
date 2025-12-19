@@ -1,20 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
-import type { SlashSuggestion } from '../slash-suggestions.js'
-import type { AppMode } from './use-setup-flow.js'
+import type { AppMode } from '../../types/setup-flow.js'
+import type { SlashSuggestionsState } from '../../types/slash-suggestions-state.js'
+import type { SlashSuggestion } from '../../types/slash-suggestions.js'
 
 import { isSlashCommandInput } from '../slash-commands.js'
 import { clampIndex, cycleIndex } from '../utils.js'
-
-export interface SlashSuggestionsState {
-  active: boolean
-  activeIndex: number
-  applyActiveSuggestion(baseInput: string): string | undefined
-  getSubmissionValue(baseInput: string): string
-  selectNext(): void
-  selectPrevious(): void
-  suggestions: SlashSuggestion[]
-}
 
 interface UseSlashSuggestionsStateOptions {
   input: string

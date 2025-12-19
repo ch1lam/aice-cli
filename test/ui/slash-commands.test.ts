@@ -1,9 +1,8 @@
 import { expect } from 'chai'
 
-import {
-  createSlashCommandRouter,
-  type SlashCommandDefinition,
-} from '../../src/ui/slash-commands.js'
+import type { SlashCommandDefinition } from '../../src/types/slash-commands.js'
+
+import { createSlashCommandRouter } from '../../src/ui/slash-commands.js'
 
 function buildRouter(callLog: string[] = []) {
   const definitions: SlashCommandDefinition[] = [

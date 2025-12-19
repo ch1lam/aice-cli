@@ -1,14 +1,10 @@
 import { Box, Text } from 'ink'
 import { type ReactElement } from 'react'
 
+import type { SelectInputItem } from '../types/select-input.js'
+
 import { theme } from './theme.js'
 import { clampIndex } from './utils.js'
-
-export interface SelectInputItem<T extends string> {
-  description?: string
-  label: string
-  value: T
-}
 
 export interface SelectInputProps<T extends string> {
   active?: boolean

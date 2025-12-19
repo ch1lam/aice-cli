@@ -1,35 +1,9 @@
-import type { SlashSuggestion } from './slash-suggestions.js'
-
-export type SlashCommandId = 'clear' | 'help' | 'login' | 'model' | 'provider'
-
-export interface SlashCommandDefinition {
-  command: SlashCommandId
-  description: string
-  handler: SlashCommandHandler
-  hint?: string
-  usage: string
-}
-
-export interface SlashCommandContext {
-  definitions: SlashCommandDefinition[]
-}
-
-export type SlashCommandHandler = (args: string[], context: SlashCommandContext) => void
-
-export type SlashCommandResultType = 'empty' | 'handled' | 'unknown'
-
-export interface SlashCommandResult {
-  args: string[]
-  command?: string
-  definition?: SlashCommandDefinition
-  type: SlashCommandResultType
-}
-
-export interface SlashCommandRouter {
-  definitions: SlashCommandDefinition[]
-  handle(rawInput: string): SlashCommandResult
-  suggestions(query: string): SlashSuggestion[]
-}
+import type {
+  SlashCommandDefinition,
+  SlashCommandResult,
+  SlashCommandRouter,
+} from '../types/slash-commands.js'
+import type { SlashSuggestion } from '../types/slash-suggestions.js'
 
 export function createSlashCommandRouter(
   definitions: SlashCommandDefinition[],
