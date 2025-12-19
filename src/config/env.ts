@@ -2,7 +2,9 @@ import dotenv from 'dotenv'
 import fs from 'node:fs'
 import path from 'node:path'
 
-import { KNOWN_PROVIDERS, parseProviderId, type ProviderId } from '../core/stream.js'
+import type { ProviderId } from '../core/stream.js'
+
+import { parseProviderId, providerIds } from '../providers/registry.js'
 import { ProviderEnv, TryLoadProviderEnvResult } from '../types/env.js'
 import { DEFAULT_PROVIDER_ID } from './provider-defaults.js'
 
@@ -198,7 +200,7 @@ function resolveProviderId(env: EnvValues, providerId?: ProviderId): ProviderId 
   if (parsedProviderId) return parsedProviderId
 
   throw new Error(
-    `Unsupported provider: ${rawProviderId}. Supported providers: ${KNOWN_PROVIDERS.join(', ')}`,
+    `Unsupported provider: ${rawProviderId}. Supported providers: ${providerIds.join(', ')}`,
   )
 }
 

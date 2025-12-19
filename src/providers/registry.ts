@@ -62,7 +62,19 @@ function createProviderRegistryEntry(
   }
 }
 
-export const providerRegistry = {
+export const providerRegistry: Record<ProviderId, ProviderRegistryEntry> = {
   deepseek: createProviderRegistryEntry('deepseek', DeepSeekProvider),
   openai: createProviderRegistryEntry('openai', OpenAIProvider),
-} satisfies Record<ProviderId, ProviderRegistryEntry>
+}
+
+export const providerIds = Object.keys(providerRegistry) as ProviderId[]
+
+const providerIdSet = new Set<ProviderId>(providerIds)
+
+export function isProviderId(value: string): value is ProviderId {
+  return providerIdSet.has(value)
+}
+
+export function parseProviderId(value: string): ProviderId | undefined {
+  return isProviderId(value) ? value : undefined
+}

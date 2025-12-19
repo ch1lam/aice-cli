@@ -8,7 +8,7 @@ import type { SlashCommandDefinition } from '../../types/slash-commands.js'
 import type { SlashSuggestionsState } from '../../types/slash-suggestions-state.js'
 
 import { buildPrompt as formatPrompt } from '../../chat/prompt.js'
-import { parseProviderId } from '../../core/stream.js'
+import { DEFAULT_PROVIDER_ID } from '../../config/provider-defaults.js'
 import { ProviderNotConfiguredError, SetupService } from '../../services/setup-service.js'
 import { providerOptionIndex, providerOptions } from '../provider-options.js'
 import { isSlashCommandInput } from '../slash-commands.js'
@@ -116,8 +116,11 @@ export function useChatInputController(
   const handleLoginCommand = useCallback(() => {
     const nextProviderId = providerEnv?.providerId ?? providerSelection
     resetSetup(nextProviderId)
+    const providerList = providerOptions.length > 0
+      ? providerOptions.map(option => option.value).join('/')
+      : DEFAULT_PROVIDER_ID
     addSystemMessage(
-      'Restarting setup. Use arrow keys to choose provider (openai/deepseek).',
+      `Restarting setup. Use arrow keys to choose provider (${providerList}).`,
     )
   }, [addSystemMessage, providerEnv?.providerId, providerSelection, resetSetup])
 
@@ -149,9 +152,13 @@ export function useChatInputController(
 
   const handleProviderCommand = useCallback(
     (args: string[]) => {
-      const providerId = parseProviderId(args[0] ?? '')
+      const rawProviderId = args[0]?.trim() ?? ''
+      const providerId = providerOptions.find(option => option.value === rawProviderId)?.value
       if (!providerId) {
-        addSystemMessage('Usage: /provider <openai|deepseek>')
+        const usage = providerOptions.length > 0
+          ? providerOptions.map(option => option.value).join('|')
+          : DEFAULT_PROVIDER_ID
+        addSystemMessage(`Usage: /provider <${usage}>`)
         return
       }
 
@@ -271,7 +278,7 @@ export function useChatInputController(
     if (mode === 'setup') {
       const setupValue =
         setupState.step === 'provider'
-          ? providerOptions[providerChoiceIndex]?.value ?? 'openai'
+          ? providerOptions[providerChoiceIndex]?.value ?? DEFAULT_PROVIDER_ID
           : trimmed
 
       handleSetupInput(setupValue)

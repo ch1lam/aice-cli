@@ -5,6 +5,7 @@ import type { ProviderEnv } from '../../types/env.js'
 import type { AppMode, SetupState } from '../../types/setup-flow.js'
 import type { SetupServiceOptions } from '../../types/setup-service.js'
 
+import { DEFAULT_PROVIDER_ID } from '../../config/provider-defaults.js'
 import {
   ProviderEnvLoadError,
   ProviderEnvPersistError,
@@ -55,7 +56,7 @@ export function useSetupFlow(options: UseSetupFlowOptions): UseSetupFlowResult {
     [createSetupService, persistEnv, ping, tryLoadEnv],
   )
 
-  const initialProviderId = initialEnv?.providerId ?? 'openai'
+  const initialProviderId = initialEnv?.providerId ?? DEFAULT_PROVIDER_ID
 
   const [mode, setMode] = useState<AppMode>(initialEnv ? 'chat' : 'setup')
   const [providerEnv, setProviderEnv] = useState<ProviderEnv | undefined>(initialEnv)
@@ -74,7 +75,7 @@ export function useSetupFlow(options: UseSetupFlowOptions): UseSetupFlowResult {
 
   const providerSelection = providerIdFromIndex(providerChoiceIndex)
 
-  const resetSetup = useCallback((nextProviderId: ProviderId = 'openai') => {
+  const resetSetup = useCallback((nextProviderId: ProviderId = DEFAULT_PROVIDER_ID) => {
     setMode('setup')
     setMaskInput(false)
     setProviderChoiceIndex(providerOptionIndex(nextProviderId))

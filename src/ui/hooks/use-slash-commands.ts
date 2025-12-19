@@ -7,6 +7,8 @@ import type {
 } from '../../types/slash-commands.js'
 import type { SlashSuggestion } from '../../types/slash-suggestions.js'
 
+import { DEFAULT_PROVIDER_ID } from '../../config/provider-defaults.js'
+import { providerOptions } from '../provider-options.js'
 import { createSlashCommandRouter } from '../slash-commands.js'
 
 interface UseSlashCommandsOptions {
@@ -29,8 +31,12 @@ export interface UseSlashCommandsResult {
 export function useSlashCommands(options: UseSlashCommandsOptions): UseSlashCommandsResult {
   const { onClear, onEmpty, onHelp, onLogin, onModel, onProvider, onUnknown } = options
 
-  const definitions = useMemo<SlashCommandDefinition[]>(
-    () => [
+  const definitions = useMemo<SlashCommandDefinition[]>(() => {
+    const providerIds = providerOptions.map(option => option.value)
+    const providerHint = providerIds[0] ?? DEFAULT_PROVIDER_ID
+    const providerUsage = providerIds.length > 0 ? providerIds.join('|') : DEFAULT_PROVIDER_ID
+
+    return [
       {
         command: 'help',
         description: 'Show available commands and usage.',
@@ -49,8 +55,8 @@ export function useSlashCommands(options: UseSlashCommandsOptions): UseSlashComm
         command: 'provider',
         description: 'Switch between configured providers.',
         handler: args => onProvider(args),
-        hint: '/provider openai',
-        usage: '/provider <openai|deepseek>',
+        hint: `/provider ${providerHint}`,
+        usage: `/provider <${providerUsage}>`,
       },
       {
         command: 'model',
@@ -66,9 +72,8 @@ export function useSlashCommands(options: UseSlashCommandsOptions): UseSlashComm
         hint: '/clear',
         usage: '/clear',
       },
-    ],
-    [onClear, onHelp, onLogin, onModel, onProvider],
-  )
+    ]
+  }, [onClear, onHelp, onLogin, onModel, onProvider])
 
   const router = useMemo(() => createSlashCommandRouter(definitions), [definitions])
 

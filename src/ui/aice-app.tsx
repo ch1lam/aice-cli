@@ -6,6 +6,7 @@ import type { MessageRole } from '../types/chat.js'
 import type { ProviderEnv } from '../types/env.js'
 import type { AppMode, SetupStep } from '../types/setup-flow.js'
 
+import { DEFAULT_PROVIDER_ID } from '../config/provider-defaults.js'
 import { useChatInputController } from './hooks/use-chat-input-controller.js'
 import { InputPanel } from './input-panel.js'
 import { providerOptions } from './provider-options.js'
@@ -117,7 +118,7 @@ function labelForRole(role: MessageRole): string {
   return ' • '
 }
 
-function setupPrompt(step: SetupStep, providerId: ProviderId = 'openai'): string {
+function setupPrompt(step: SetupStep, providerId: ProviderId = DEFAULT_PROVIDER_ID): string {
   if (step === 'provider') {
     return `Use arrow keys to choose provider (current: ${providerId}). Press Enter to confirm.`
   }

@@ -1,10 +1,10 @@
 import { expect } from 'chai'
 
-import { isProviderId, KNOWN_PROVIDERS, parseProviderId } from '../../src/core/stream.ts'
+import { isProviderId, parseProviderId, providerIds } from '../../src/providers/registry.ts'
 
-describe('provider id helpers', () => {
+describe('provider registry helpers', () => {
   it('recognizes known providers', () => {
-    for (const providerId of KNOWN_PROVIDERS) {
+    for (const providerId of providerIds) {
       expect(isProviderId(providerId)).to.equal(true)
       expect(parseProviderId(providerId)).to.equal(providerId)
     }
@@ -16,4 +16,3 @@ describe('provider id helpers', () => {
     expect(parseProviderId('unknown')).to.equal(undefined)
   })
 })
-
