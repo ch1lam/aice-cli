@@ -34,6 +34,7 @@ export function AiceApp(props: AiceAppProps) {
   const hint = resolveHint(controller.mode, controller.setupStateStep, providerPrompt)
   const placeholder = resolvePlaceholder(controller.streaming, controller.setupSubmitting, hint)
   const showCursor = !controller.streaming && !controller.setupSubmitting
+  const normalizedCurrentResponse = stripAssistantPadding(controller.currentResponse || '')
   const showProviderSelect = isProviderSelectVisible(controller.mode, controller.setupStateStep)
   const showSlashSuggestions = shouldShowSlashSuggestions(
     controller.mode,
@@ -47,16 +48,20 @@ export function AiceApp(props: AiceAppProps) {
       <Text color={theme.components.app.title}>AICE</Text>
       <Box flexDirection="column" marginBottom={1}>
         {controller.messages.map(message => (
-          <Text color={colorForRole(message.role)} key={message.id} wrap="wrap">
-            {`${labelForRole(message.role)} ${message.text}`}
-          </Text>
+          <Box key={message.id}>
+            <Text color={colorForRole(message.role)}>{`${labelForRole(message.role)}`}</Text>
+            <Text color={colorForRole(message.role)} key={message.id} wrap="wrap">
+              {`${message.role === 'assistant' ? stripAssistantPadding(message.text) : message.text}`}
+            </Text>
+          </Box>
         ))}
         {controller.streaming ? (
-          <Text color={messageColors.assistant} wrap="wrap">
-            {` ♤  ${controller.currentResponse || ''}${
-              controller.sessionStatus === 'completed' ? '  ' : ' ▌'
-            }`}
-          </Text>
+          <Box>
+            <Text color={messageColors.assistant}>{` ♤ `}</Text>
+            <Text color={messageColors.assistant} wrap="wrap">
+              {`${normalizedCurrentResponse}${controller.sessionStatus === 'completed' ? '  ' : ' ▌'}`}
+            </Text>
+          </Box>
         ) : null}
       </Box>
       <Box flexDirection="column" width="100%">
@@ -106,6 +111,13 @@ function labelForRole(role: MessageRole): string {
   if (role === 'assistant') return ' ♠ '
   if (role === 'user') return ' ✧ '
   return ' • '
+}
+
+function stripAssistantPadding(text: string): string {
+  if (!text.startsWith(' ')) return text
+  if (text.length === 1) return ''
+
+  return /\s/.test(text[1]) ? text : text.slice(1)
 }
 
 function setupPrompt(step: SetupStep, providerId: ProviderId = DEFAULT_PROVIDER_ID): string {
