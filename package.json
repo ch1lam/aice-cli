@@ -12,7 +12,7 @@
     "@oclif/plugin-help": "^6",
     "@oclif/plugin-plugins": "^5",
     "dotenv": "^17.2.3",
-    "ink": "^6.4.0",
+    "ink": "^6.6.0",
     "openai": "^6.8.1",
     "react": "^19.2.1"
   },

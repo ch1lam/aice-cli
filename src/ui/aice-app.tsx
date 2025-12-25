@@ -1,5 +1,4 @@
 import { Box, Text } from 'ink'
-import { useEffect, useState } from 'react'
 
 import type { MessageRole } from '../types/chat.js'
 import type { ProviderEnv } from '../types/env.js'
@@ -23,21 +22,10 @@ export interface AiceAppProps {
 const messageColors = theme.components.messages
 
 export function AiceApp(props: AiceAppProps) {
-  const [cursorVisible, setCursorVisible] = useState(true)
   const controller = useChatInputController({
     initialEnv: props.initialEnv,
     initialError: props.initialError,
   })
-
-  useEffect(() => {
-    const intervalId = setInterval(() => {
-      setCursorVisible(current => !current)
-    }, 500)
-
-    return () => {
-      clearInterval(intervalId)
-    }
-  }, [])
 
   const inputLabel = '✧'
   const renderedInput = controller.maskInput ? '*'.repeat(controller.input.length) : controller.input
@@ -45,7 +33,7 @@ export function AiceApp(props: AiceAppProps) {
     providerOptions[controller.providerChoiceIndex]?.value ?? controller.providerSelection
   const hint = resolveHint(controller.mode, controller.setupStateStep, providerPrompt)
   const placeholder = resolvePlaceholder(controller.streaming, controller.setupSubmitting, hint)
-  const showCursor = !controller.streaming && !controller.setupSubmitting && cursorVisible
+  const showCursor = !controller.streaming && !controller.setupSubmitting
   const showProviderSelect = isProviderSelectVisible(controller.mode, controller.setupStateStep)
   const showSlashSuggestions = shouldShowSlashSuggestions(
     controller.mode,
@@ -65,7 +53,9 @@ export function AiceApp(props: AiceAppProps) {
         ))}
         {controller.streaming ? (
           <Text color={messageColors.assistant} wrap="wrap">
-            {` ♤  ${controller.currentResponse || ''}${controller.sessionStatus === 'completed' || !cursorVisible ? '  ' : ' ▌'}`}
+            {` ♤  ${controller.currentResponse || ''}${
+              controller.sessionStatus === 'completed' ? '  ' : ' ▌'
+            }`}
           </Text>
         ) : null}
       </Box>
