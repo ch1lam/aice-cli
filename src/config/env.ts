@@ -32,6 +32,21 @@ export interface EnvIO {
 }
 
 const DEFAULT_ENV_PATH = path.resolve(process.cwd(), '.env')
+const ENV_KEYS = {
+  apiKey: 'DEEPSEEK_API_KEY',
+  baseURL: 'DEEPSEEK_BASE_URL',
+  model: 'DEEPSEEK_MODEL',
+} as const
+const LEGACY_ENV_KEYS = [
+  'AICE_PROVIDER',
+  'AICE_DEEPSEEK_API_KEY',
+  'AICE_DEEPSEEK_BASE_URL',
+  'AICE_DEEPSEEK_MODEL',
+  'AICE_OPENAI_API_KEY',
+  'AICE_OPENAI_BASE_URL',
+  'AICE_OPENAI_MODEL',
+  'AICE_MODEL',
+]
 
 const fileEnvIO: EnvIO = {
   exists: envPath => fs.existsSync(envPath),
@@ -41,15 +56,11 @@ const fileEnvIO: EnvIO = {
 
 export function loadProviderEnv(options?: LoadProviderEnvOptions): ProviderEnv {
   const envValues = resolveEnvValues(options)
-  const providerId = resolveProviderId(envValues, options?.providerId)
+  const providerId = resolveProviderId(options?.providerId)
 
   switch (providerId) {
     case 'deepseek': {
       return buildDeepseekEnv(envValues, providerId)
-    }
-
-    case 'openai': {
-      return buildOpenAIEnv(envValues, providerId)
     }
 
     default: {
@@ -70,9 +81,10 @@ export function persistProviderEnv(options: PersistEnvOptions): EnvValues {
   const envPath = options.envPath ?? DEFAULT_ENV_PATH
   const io = options.io ?? fileEnvIO
   const envMap = mapFromEnvValues(options.env ?? readEnvFile(envPath, io))
-  const entries = buildEnvEntries(options)
+  const providerId = resolveProviderId(options.providerId)
+  const entries = buildEnvEntries({ ...options, providerId })
 
-  envMap.set('AICE_PROVIDER', options.providerId)
+  removeLegacyKeys(envMap)
 
   for (const [key, value] of Object.entries(entries)) {
     if (value === undefined) {
@@ -94,17 +106,9 @@ function buildEnvEntries(options: ProviderEnv): Record<string, string | undefine
   switch (options.providerId) {
     case 'deepseek': {
       return {
-        AICE_DEEPSEEK_API_KEY: options.apiKey,
-        AICE_DEEPSEEK_BASE_URL: options.baseURL,
-        AICE_DEEPSEEK_MODEL: options.model,
-      }
-    }
-
-    case 'openai': {
-      return {
-        AICE_OPENAI_API_KEY: options.apiKey,
-        AICE_OPENAI_BASE_URL: options.baseURL,
-        AICE_OPENAI_MODEL: options.model,
+        [ENV_KEYS.apiKey]: options.apiKey,
+        [ENV_KEYS.baseURL]: options.baseURL,
+        [ENV_KEYS.model]: options.model,
       }
     }
 
@@ -116,18 +120,9 @@ function buildEnvEntries(options: ProviderEnv): Record<string, string | undefine
 
 function buildDeepseekEnv(env: EnvValues, providerId: ProviderId): ProviderEnv {
   return {
-    apiKey: requireEnvValue(env, 'AICE_DEEPSEEK_API_KEY'),
-    baseURL: env.AICE_DEEPSEEK_BASE_URL ?? env.AICE_OPENAI_BASE_URL,
-    model: env.AICE_DEEPSEEK_MODEL,
-    providerId,
-  }
-}
-
-function buildOpenAIEnv(env: EnvValues, providerId: ProviderId): ProviderEnv {
-  return {
-    apiKey: requireEnvValue(env, 'AICE_OPENAI_API_KEY'),
-    baseURL: env.AICE_OPENAI_BASE_URL,
-    model: env.AICE_OPENAI_MODEL ?? env.AICE_MODEL,
+    apiKey: requireEnvValue(env, ENV_KEYS.apiKey),
+    baseURL: env[ENV_KEYS.baseURL],
+    model: env[ENV_KEYS.model],
     providerId,
   }
 }
@@ -190,17 +185,14 @@ function resolveEnvValues(options?: LoadProviderEnvOptions): EnvValues {
   return { ...process.env, ...envFromFile }
 }
 
-function resolveProviderId(env: EnvValues, providerId?: ProviderId): ProviderId {
-  if (providerId) return providerId
+function resolveProviderId(providerId?: ProviderId): ProviderId {
+  if (!providerId) return DEFAULT_PROVIDER_ID
 
-  const rawProviderId = env.AICE_PROVIDER
-  if (!rawProviderId) return DEFAULT_PROVIDER_ID
-
-  const parsedProviderId = parseProviderId(rawProviderId)
+  const parsedProviderId = parseProviderId(providerId)
   if (parsedProviderId) return parsedProviderId
 
   throw new Error(
-    `Unsupported provider: ${rawProviderId}. Supported providers: ${providerIds.join(', ')}`,
+    `Unsupported provider: ${providerId}. Supported providers: ${providerIds.join(', ')}`,
   )
 }
 
@@ -212,4 +204,10 @@ function requireEnvValue(env: EnvValues, key: string): string {
   }
 
   return value
+}
+
+function removeLegacyKeys(envMap: Map<string, string>): void {
+  for (const key of LEGACY_ENV_KEYS) {
+    envMap.delete(key)
+  }
 }

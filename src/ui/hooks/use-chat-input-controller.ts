@@ -8,11 +8,9 @@ import type { SlashSuggestionsState } from '../../types/slash-suggestions-state.
 import type { ProviderId, StreamStatus, TokenUsage } from '../../types/stream.js'
 
 import { buildPrompt as formatPrompt } from '../../chat/prompt.js'
-import { DEFAULT_PROVIDER_ID } from '../../config/provider-defaults.js'
-import { ProviderNotConfiguredError, SetupService } from '../../services/setup-service.js'
-import { providerOptionIndex, providerOptions } from '../provider-options.js'
+import { SetupService } from '../../services/setup-service.js'
 import { isSlashCommandInput } from '../slash-commands.js'
-import { useChatStream } from './use-chat-stream.js'
+import { useChatStream, type UseChatStreamOptions } from './use-chat-stream.js'
 import { useKeybindings } from './use-keybindings.js'
 import { useSetupFlow } from './use-setup-flow.js'
 import { useSlashCommands } from './use-slash-commands.js'
@@ -24,9 +22,7 @@ export interface ChatInputControllerResult {
   maskInput: boolean
   messages: ChatMessage[]
   mode: AppMode
-  providerChoiceIndex: number
   providerMeta?: {model: string; providerId: ProviderId}
-  providerSelection: ProviderId
   sessionStatus?: StreamStatus
   sessionStatusMessage?: string
   sessionUsage?: TokenUsage
@@ -37,6 +33,7 @@ export interface ChatInputControllerResult {
 }
 
 interface UseChatInputControllerOptions {
+  createChatService?: UseChatStreamOptions['createChatService']
   initialEnv?: ProviderEnv
   initialError?: Error
 }
@@ -64,6 +61,13 @@ export function useChatInputController(
 
   const buildPrompt = useCallback((history: ChatMessage[]) => formatPrompt(history), [])
 
+  const handleAssistantMessage = useCallback(
+    (message: string) => {
+      setMessages(current => [...current, createMessage('assistant', message)])
+    },
+    [createMessage],
+  )
+
   const {
     currentResponse,
     resetSession,
@@ -76,8 +80,8 @@ export function useChatInputController(
     streaming,
   } = useChatStream({
     buildPrompt,
-    onAssistantMessage: message =>
-      setMessages(current => [...current, createMessage('assistant', message)]),
+    createChatService: options.createChatService,
+    onAssistantMessage: handleAssistantMessage,
     onSystemMessage: addSystemMessage,
   })
 
@@ -85,11 +89,8 @@ export function useChatInputController(
     handleSetupInput,
     maskInput,
     mode,
-    providerChoiceIndex,
     providerEnv,
-    providerSelection,
     resetSetup,
-    setProviderChoiceIndex,
     setProviderEnv,
     setupState,
     setupSubmitting,
@@ -114,15 +115,9 @@ export function useChatInputController(
   )
 
   const handleLoginCommand = useCallback(() => {
-    const nextProviderId = providerEnv?.providerId ?? providerSelection
-    resetSetup(nextProviderId)
-    const providerList = providerOptions.length > 0
-      ? providerOptions.map(option => option.value).join('/')
-      : DEFAULT_PROVIDER_ID
-    addSystemMessage(
-      `Restarting setup. Use arrow keys to choose provider (${providerList}).`,
-    )
-  }, [addSystemMessage, providerEnv?.providerId, providerSelection, resetSetup])
+    resetSetup()
+    addSystemMessage('Restarting setup. Enter API key.')
+  }, [addSystemMessage, resetSetup])
 
   const handleModelCommand = useCallback(
     (args: string[]) => {
@@ -150,53 +145,12 @@ export function useChatInputController(
     [addSystemMessage, providerEnv, setProviderEnv, setSessionMeta, setupService],
   )
 
-  const handleProviderCommand = useCallback(
-    (args: string[]) => {
-      const rawProviderId = args[0]?.trim() ?? ''
-      const providerId = providerOptions.find(option => option.value === rawProviderId)?.value
-      if (!providerId) {
-        const usage = providerOptions.length > 0
-          ? providerOptions.map(option => option.value).join('|')
-          : DEFAULT_PROVIDER_ID
-        addSystemMessage(`Usage: /provider <${usage}>`)
-        return
-      }
-
-      try {
-        const env = setupService.switchProvider(providerId)
-
-        setProviderEnv(env)
-        setSessionMeta({ model: env.model ?? 'default', providerId: env.providerId })
-        setProviderChoiceIndex(providerOptionIndex(providerId))
-        addSystemMessage(`Switched to ${providerId} (${env.model ?? 'default model'}).`)
-      } catch (persistError) {
-        if (persistError instanceof ProviderNotConfiguredError) {
-          addSystemMessage(
-            `Provider ${providerId} is not configured. Run /login to set API key first.`,
-          )
-          return
-        }
-
-        const message = persistError instanceof Error ? persistError.message : String(persistError)
-        addSystemMessage(`Failed to switch provider: ${message}`)
-      }
-    },
-    [
-      addSystemMessage,
-      setProviderChoiceIndex,
-      setProviderEnv,
-      setSessionMeta,
-      setupService,
-    ],
-  )
-
   const { handleSlashCommand, suggestions: slashSuggestionsForQuery } = useSlashCommands({
     onClear: handleClearCommand,
     onEmpty: () => addSystemMessage('Empty command. Use /help to see available commands.'),
     onHelp: handleHelpCommand,
     onLogin: handleLoginCommand,
     onModel: handleModelCommand,
-    onProvider: handleProviderCommand,
     onUnknown: command => addSystemMessage(`Unknown command: /${command ?? ''}`),
   })
 
@@ -210,7 +164,7 @@ export function useChatInputController(
         `Ready with ${options.initialEnv.providerId} (${options.initialEnv.model ?? 'default model'})`,
       )
     } else {
-      addSystemMessage('No provider configured. Starting setup... Use arrow keys to pick a provider.')
+      addSystemMessage('No provider configured. Starting setup... Enter API key.')
     }
   }, [addSystemMessage, options.initialEnv, options.initialError])
 
@@ -239,16 +193,15 @@ export function useChatInputController(
       }
 
       const userMessage = createMessage('user', value)
-      setMessages(current => {
-        const history = [...current, userMessage]
-        startStream(history, providerEnv)
-        return history
-      })
+      const history = [...messages, userMessage]
+      setMessages(history)
+      startStream(history, providerEnv)
     },
     [
       addSystemMessage,
       createMessage,
       handleSlashCommand,
+      messages,
       providerEnv,
       resetSetup,
       startStream,
@@ -276,12 +229,7 @@ export function useChatInputController(
     }
 
     if (mode === 'setup') {
-      const setupValue =
-        setupState.step === 'provider'
-          ? providerOptions[providerChoiceIndex]?.value ?? DEFAULT_PROVIDER_ID
-          : trimmed
-
-      handleSetupInput(setupValue)
+      handleSetupInput(trimmed)
       return
     }
 
@@ -292,20 +240,14 @@ export function useChatInputController(
     handleSetupInput,
     input,
     mode,
-    providerChoiceIndex,
-    setupState.step,
     slashSuggestions,
     streaming,
   ])
 
   useKeybindings({
     input,
-    mode,
     onSubmit: handleSubmit,
-    providerOptionCount: providerOptions.length,
     setInput,
-    setProviderChoiceIndex,
-    setupState,
     setupSubmitting,
     slashSuggestions,
     streaming,
@@ -325,9 +267,7 @@ export function useChatInputController(
     maskInput,
     messages,
     mode,
-    providerChoiceIndex,
     providerMeta,
-    providerSelection,
     sessionStatus,
     sessionStatusMessage,
     sessionUsage,

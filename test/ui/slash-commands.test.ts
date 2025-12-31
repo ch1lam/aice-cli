@@ -25,21 +25,12 @@ function buildRouter(callLog: string[] = []) {
       usage: '/login',
     },
     {
-      command: 'provider',
-      description: 'provider',
-      handler(args) {
-        callLog.push(`provider:${args.join(',')}`)
-      },
-      hint: '/provider openai',
-      usage: '/provider <openai|deepseek>',
-    },
-    {
       command: 'model',
       description: 'model',
       handler(args) {
         callLog.push(`model:${args.join(',')}`)
       },
-      hint: '/model gpt-4o-mini',
+      hint: '/model deepseek-chat',
       usage: '/model <model-name>',
     },
     {
@@ -61,11 +52,11 @@ describe('slash command router', () => {
     const calls: string[] = []
     const router = buildRouter(calls)
 
-    const result = router.handle('/model   gpt-4o-mini  ')
+    const result = router.handle('/model   deepseek-chat  ')
 
     expect(result.type).to.equal('handled')
     expect(result.command).to.equal('model')
-    expect(calls).to.deep.equal(['model:gpt-4o-mini'])
+    expect(calls).to.deep.equal(['model:deepseek-chat'])
   })
 
   it('reports empty commands', () => {

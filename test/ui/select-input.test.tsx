@@ -31,8 +31,8 @@ describe('SelectInput', () => {
       <SelectInput
         active
         items={[
-          { description: 'default', label: 'OpenAI', value: 'openai' },
-          { label: 'DeepSeek', value: 'deepseek' },
+          { description: 'default', label: 'DeepSeek', value: 'deepseek' },
+          { label: 'DeepSeek Chat', value: 'deepseek-chat' },
         ]}
         selectedIndex={1}
         title="Provider"
@@ -42,8 +42,8 @@ describe('SelectInput', () => {
     const frame = stripAnsi(lastFrame() ?? '')
 
     expect(frame).to.include('Provider')
-    expect(frame).to.include('OpenAI (openai)')
-    expect(frame).to.include('• DeepSeek (deepseek)')
+    expect(frame).to.include('DeepSeek (deepseek)')
+    expect(frame).to.include('• DeepSeek Chat (deepseek-chat)')
     expect(frame).to.include('Use arrow keys to choose, Enter to confirm.')
   })
 })

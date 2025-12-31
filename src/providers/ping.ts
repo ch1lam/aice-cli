@@ -1,25 +1,33 @@
-import { OpenAI } from 'openai'
+import { createDeepSeek, type DeepSeekProvider as DeepSeekModelProvider } from '@ai-sdk/deepseek'
+import { type LanguageModel, streamText } from 'ai'
 
 import type { ProviderEnv } from '../types/env.js'
-import type { ProviderId } from '../types/stream.js'
 
 import { providerRegistry } from './registry.js'
 
 const DEFAULT_TIMEOUT_MS = 8000
+const PING_PROMPT = 'ping'
+const PING_MAX_TOKENS = 1
 
-type OpenAIModelsClient = {
-  list?: (params?: {limit?: number; signal?: AbortSignal}) => Promise<unknown>
-  retrieve?: (model: string, options?: {signal?: AbortSignal}) => Promise<unknown>
+type StreamTextResult = {
+  consumeStream: (options?: { onError?: (error: unknown) => void }) => PromiseLike<void>
 }
 
-type OpenAIClient = {
-  models?: OpenAIModelsClient
-}
+type StreamTextFn = (options: {
+  abortSignal?: AbortSignal
+  maxOutputTokens?: number
+  maxRetries?: number
+  model: LanguageModel
+  prompt: string
+}) => StreamTextResult
 
-export type ProviderPingClients = Partial<Record<ProviderId, OpenAIClient>>
+export type ProviderPingClients = {
+  deepseek?: DeepSeekModelProvider
+}
 
 export interface ProviderPingOptions {
   clients?: ProviderPingClients
+  streamText?: StreamTextFn
   timeoutMs?: number
 }
 
@@ -27,41 +35,47 @@ export async function pingProvider(
   env: ProviderEnv,
   options: ProviderPingOptions = {},
 ): Promise<void> {
-  const { clients = {}, timeoutMs = DEFAULT_TIMEOUT_MS } = options
   const registration = providerRegistry[env.providerId]
 
-  await pingOpenAI(
-    env,
-    clients[env.providerId],
-    registration.getPingModel(env),
-    { defaultBaseURL: registration.defaults.defaultBaseURL, timeoutMs },
-  )
-}
-
-async function pingOpenAI(
-  env: ProviderEnv,
-  client: OpenAIClient | undefined,
-  model: string,
-  options?: {defaultBaseURL?: string; timeoutMs?: number},
-): Promise<void> {
-  const { defaultBaseURL, timeoutMs = DEFAULT_TIMEOUT_MS } = options ?? {}
-  const { models } =
-    client ?? new OpenAI({ apiKey: env.apiKey, baseURL: env.baseURL ?? defaultBaseURL })
-
-  if (!models?.retrieve && !models?.list) {
-    throw new Error('OpenAI client is missing model operations')
+  if (!registration) {
+    throw new Error(`Unsupported provider: ${env.providerId}`)
   }
 
-  await withAbortTimeout(
-    signal => {
-      if (models?.retrieve) {
-        return models.retrieve(model, { signal })
-      }
+  const {
+    clients = {},
+    streamText: streamTextFn = streamText,
+    timeoutMs = DEFAULT_TIMEOUT_MS,
+  } = options
+  const modelId = registration.getPingModel(env)
+  const baseURL = env.baseURL ?? registration.defaults.defaultBaseURL
 
-      return models?.list?.({ limit: 1, signal })
-    },
-    timeoutMs,
-  )
+  const provider = resolveProvider(env.providerId, clients, env.apiKey, baseURL)
+  const model = provider(modelId)
+
+  await withAbortTimeout(async signal => {
+    const result = streamTextFn({
+      abortSignal: signal,
+      maxOutputTokens: PING_MAX_TOKENS,
+      maxRetries: 0,
+      model,
+      prompt: PING_PROMPT,
+    })
+
+    await result.consumeStream()
+  }, timeoutMs)
+}
+
+function resolveProvider(
+  providerId: string,
+  clients: ProviderPingClients,
+  apiKey: string,
+  baseURL?: string,
+): DeepSeekModelProvider {
+  if (providerId !== 'deepseek') {
+    throw new Error(`Unsupported provider: ${providerId}`)
+  }
+
+  return clients.deepseek ?? createDeepSeek({ apiKey, baseURL })
 }
 
 async function withAbortTimeout<T>(

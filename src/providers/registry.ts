@@ -9,7 +9,6 @@ import type { ProviderId } from '../types/stream.js'
 
 import { PROVIDER_DEFAULTS, resolveDefaultBaseURL, resolveDefaultModel } from '../config/provider-defaults.js'
 import { DeepSeekProvider } from './deepseek.js'
-import { OpenAIProvider } from './openai.js'
 
 type ProviderConfig = {
   apiKey: string
@@ -64,7 +63,6 @@ function createProviderRegistryEntry(
 
 export const providerRegistry: Record<ProviderId, ProviderRegistryEntry> = {
   deepseek: createProviderRegistryEntry('deepseek', DeepSeekProvider),
-  openai: createProviderRegistryEntry('openai', OpenAIProvider),
 }
 
 export const providerIds = Object.keys(providerRegistry) as ProviderId[]

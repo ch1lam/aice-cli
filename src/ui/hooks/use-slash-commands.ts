@@ -7,8 +7,6 @@ import type {
 } from '../../types/slash-commands.js'
 import type { SlashSuggestion } from '../../types/slash-suggestions.js'
 
-import { DEFAULT_PROVIDER_ID } from '../../config/provider-defaults.js'
-import { providerOptions } from '../provider-options.js'
 import { createSlashCommandRouter } from '../slash-commands.js'
 
 interface UseSlashCommandsOptions {
@@ -17,7 +15,6 @@ interface UseSlashCommandsOptions {
   onHelp: (definitions: SlashCommandDefinition[]) => void
   onLogin: () => void
   onModel: (args: string[]) => void
-  onProvider: (args: string[]) => void
   onUnknown?: (command?: string) => void
 }
 
@@ -29,14 +26,10 @@ export interface UseSlashCommandsResult {
 }
 
 export function useSlashCommands(options: UseSlashCommandsOptions): UseSlashCommandsResult {
-  const { onClear, onEmpty, onHelp, onLogin, onModel, onProvider, onUnknown } = options
+  const { onClear, onEmpty, onHelp, onLogin, onModel, onUnknown } = options
 
-  const definitions = useMemo<SlashCommandDefinition[]>(() => {
-    const providerIds = providerOptions.map(option => option.value)
-    const providerHint = providerIds[0] ?? DEFAULT_PROVIDER_ID
-    const providerUsage = providerIds.length > 0 ? providerIds.join('|') : DEFAULT_PROVIDER_ID
-
-    return [
+  const definitions = useMemo<SlashCommandDefinition[]>(
+    () => [
       {
         command: 'help',
         description: 'Show available commands and usage.',
@@ -46,23 +39,16 @@ export function useSlashCommands(options: UseSlashCommandsOptions): UseSlashComm
       },
       {
         command: 'login',
-        description: 'Restart setup and enter a provider API key.',
+        description: 'Restart setup and enter the API key.',
         handler: () => onLogin(),
         hint: '/login',
         usage: '/login',
       },
       {
-        command: 'provider',
-        description: 'Switch between configured providers.',
-        handler: args => onProvider(args),
-        hint: `/provider ${providerHint}`,
-        usage: `/provider <${providerUsage}>`,
-      },
-      {
         command: 'model',
         description: 'Set or change the active model override.',
         handler: args => onModel(args),
-        hint: '/model gpt-4o-mini',
+        hint: '/model deepseek-chat',
         usage: '/model <model-name>',
       },
       {
@@ -72,8 +58,9 @@ export function useSlashCommands(options: UseSlashCommandsOptions): UseSlashComm
         hint: '/clear',
         usage: '/clear',
       },
-    ]
-  }, [onClear, onHelp, onLogin, onModel, onProvider])
+    ],
+    [onClear, onHelp, onLogin, onModel],
+  )
 
   const router = useMemo(() => createSlashCommandRouter(definitions), [definitions])
 

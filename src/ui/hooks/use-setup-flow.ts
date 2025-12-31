@@ -3,7 +3,6 @@ import { type Dispatch, type SetStateAction, useCallback, useMemo, useState } fr
 import type { ProviderEnv } from '../../types/env.js'
 import type { AppMode, SetupState } from '../../types/setup-flow.js'
 import type { SetupServiceOptions } from '../../types/setup-service.js'
-import type { ProviderId } from '../../types/stream.js'
 
 import { DEFAULT_PROVIDER_ID } from '../../config/provider-defaults.js'
 import {
@@ -11,7 +10,6 @@ import {
   ProviderEnvPersistError,
   SetupService,
 } from '../../services/setup-service.js'
-import { providerIdFromIndex, providerOptionIndex } from '../provider-options.js'
 
 const defaultCreateSetupService = (serviceOptions: SetupServiceOptions) =>
   new SetupService(serviceOptions)
@@ -30,11 +28,8 @@ export interface UseSetupFlowResult {
   handleSetupInput(value: string): Promise<void>
   maskInput: boolean
   mode: AppMode
-  providerChoiceIndex: number
   providerEnv?: ProviderEnv
-  providerSelection: ProviderId
-  resetSetup(nextProviderId?: ProviderId): void
-  setProviderChoiceIndex: Dispatch<SetStateAction<number>>
+  resetSetup(): void
   setProviderEnv: Dispatch<SetStateAction<ProviderEnv | undefined>>
   setupState: SetupState
   setupSubmitting: boolean
@@ -61,37 +56,31 @@ export function useSetupFlow(options: UseSetupFlowOptions): UseSetupFlowResult {
   const [mode, setMode] = useState<AppMode>(initialEnv ? 'chat' : 'setup')
   const [providerEnv, setProviderEnv] = useState<ProviderEnv | undefined>(initialEnv)
   const [setupSubmitting, setSetupSubmitting] = useState(false)
-  const [maskInput, setMaskInput] = useState(false)
+  const [maskInput, setMaskInput] = useState(!initialEnv)
   const [setupState, setSetupState] = useState<SetupState>({
     apiKey: undefined,
     baseURL: undefined,
     model: undefined,
     providerId: initialProviderId,
-    step: 'provider',
+    step: 'apiKey',
   })
-  const [providerChoiceIndex, setProviderChoiceIndex] = useState(
-    providerOptionIndex(initialProviderId),
-  )
 
-  const providerSelection = providerIdFromIndex(providerChoiceIndex)
-
-  const resetSetup = useCallback((nextProviderId: ProviderId = DEFAULT_PROVIDER_ID) => {
+  const resetSetup = useCallback(() => {
     setMode('setup')
-    setMaskInput(false)
-    setProviderChoiceIndex(providerOptionIndex(nextProviderId))
-    setSetupState({
+    setMaskInput(true)
+    setSetupState(current => ({
       apiKey: undefined,
       baseURL: undefined,
       model: undefined,
-      providerId: nextProviderId,
-      step: 'provider',
-    })
+      providerId: current.providerId,
+      step: 'apiKey',
+    }))
   }, [])
 
   const handleMissingApiKey = useCallback(() => {
     onMessage('Missing API key; restart setup with /login.')
-    resetSetup(setupState.providerId)
-  }, [onMessage, resetSetup, setupState.providerId])
+    resetSetup()
+  }, [onMessage, resetSetup])
 
   const persistSetupEnv = useCallback(
     (overrides: {model?: string}): ProviderEnv | undefined => {
@@ -116,7 +105,7 @@ export function useSetupFlow(options: UseSetupFlowOptions): UseSetupFlowResult {
 
         if (error instanceof ProviderEnvLoadError) {
           onMessage(`Failed to load provider config. ${error.message}`)
-          resetSetup(providerId)
+          resetSetup()
           return undefined
         }
 
@@ -142,7 +131,6 @@ export function useSetupFlow(options: UseSetupFlowOptions): UseSetupFlowResult {
         )
         setMode('setup')
         setMaskInput(true)
-        setProviderChoiceIndex(providerOptionIndex(env.providerId))
         setSetupState({
           apiKey: undefined,
           baseURL: undefined,
@@ -157,13 +145,12 @@ export function useSetupFlow(options: UseSetupFlowOptions): UseSetupFlowResult {
 
       setProviderEnv(env)
       setMode('chat')
-      setProviderChoiceIndex(providerOptionIndex(env.providerId))
       setSetupState({
         apiKey: undefined,
         baseURL: undefined,
         model: undefined,
         providerId: env.providerId,
-        step: 'provider',
+        step: 'apiKey',
       })
       onEnvReady?.(env)
       onMessage(
@@ -224,25 +211,6 @@ export function useSetupFlow(options: UseSetupFlowOptions): UseSetupFlowResult {
           if (env) {
             await finalizeSetup(env)
           }
-
-          return
-        }
-
-        case 'provider': {
-          const providerId = providerSelection
-
-          setProviderChoiceIndex(providerOptionIndex(providerId))
-          setSetupState({
-            apiKey: undefined,
-            baseURL: undefined,
-            model: undefined,
-            providerId,
-            step: 'apiKey',
-          })
-          setMaskInput(true)
-          setMode('setup')
-          onMessage(`Using provider ${providerId}. Enter API key:`)
-          break
         }
       }
     },
@@ -251,10 +219,7 @@ export function useSetupFlow(options: UseSetupFlowOptions): UseSetupFlowResult {
       handleMissingApiKey,
       onMessage,
       persistSetupEnv,
-      providerSelection,
-      setProviderChoiceIndex,
       setupState.apiKey,
-      setupState.providerId,
       setupState.step,
       setupSubmitting,
     ],
@@ -264,11 +229,8 @@ export function useSetupFlow(options: UseSetupFlowOptions): UseSetupFlowResult {
     handleSetupInput,
     maskInput,
     mode,
-    providerChoiceIndex,
     providerEnv,
-    providerSelection,
     resetSetup,
-    setProviderChoiceIndex,
     setProviderEnv,
     setupState,
     setupSubmitting,

@@ -1,65 +1,20 @@
+import type { LanguageModelUsage, TextStreamPart, ToolSet } from 'ai'
+
 export type ProviderId = string
 
-export type StreamStatus = 'completed' | 'failed' | 'queued' | 'running'
+export type StreamStatus = 'aborted' | 'completed' | 'failed' | 'running'
 
-export type TokenUsage = {
-  inputTokens?: number
-  outputTokens?: number
-  totalTokens?: number
-}
+export type TokenUsage = LanguageModelUsage
 
-export interface StreamChunkBase {
-  timestamp?: number
-}
-
-export interface ProviderTextChunk extends StreamChunkBase {
-  text: string
-  type: 'text'
-}
-
-export interface ProviderUsageChunk extends StreamChunkBase {
-  type: 'usage'
-  usage: TokenUsage
-}
-
-export interface ProviderStatusChunk extends StreamChunkBase {
-  detail?: string
-  status: StreamStatus
-  type: 'status'
-}
-
-export interface ProviderErrorChunk extends StreamChunkBase {
-  error: Error
-  type: 'error'
-}
-
-export type ProviderStreamChunk =
-  | ProviderErrorChunk
-  | ProviderStatusChunk
-  | ProviderTextChunk
-  | ProviderUsageChunk
-
-export interface SessionMetaChunk extends StreamChunkBase {
+export interface SessionMetaChunk {
   model: string
   providerId: ProviderId
   type: 'meta'
 }
 
-export interface SessionTextChunk extends ProviderTextChunk {
-  index: number
-}
+export type ProviderStreamChunk = TextStreamPart<ToolSet>
 
-export interface SessionDoneChunk extends StreamChunkBase {
-  type: 'done'
-}
+export type SessionStreamChunk = ProviderStreamChunk | SessionMetaChunk
 
-export type SessionStreamChunk =
-  | ProviderErrorChunk
-  | ProviderStatusChunk
-  | ProviderUsageChunk
-  | SessionDoneChunk
-  | SessionMetaChunk
-  | SessionTextChunk
-
-export type ProviderStream = AsyncGenerator<ProviderStreamChunk, void, void>
-export type SessionStream = AsyncGenerator<SessionStreamChunk, void, void>
+export type ProviderStream = AsyncIterable<ProviderStreamChunk>
+export type SessionStream = AsyncIterable<SessionStreamChunk>

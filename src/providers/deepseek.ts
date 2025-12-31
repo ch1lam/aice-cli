@@ -1,52 +1,29 @@
-import type { ChatCompletionChunk, ChatCompletionMessageParam } from 'openai/resources/chat/completions'
-import type { Stream } from 'openai/streaming'
-
-import { OpenAI } from 'openai'
+import { createDeepSeek } from '@ai-sdk/deepseek'
+import {
+  type LanguageModel,
+  streamText,
+  type TextStreamPart,
+  type ToolSet,
+} from 'ai'
 
 import type { LLMProvider, SessionRequest } from '../core/session.js'
-import type { ProviderStream, TokenUsage } from '../types/stream.js'
+import type { ProviderStream } from '../types/stream.js'
 
-import { type ProviderStreamEvent, streamProviderWithLifecycle } from './streaming.js'
+type StreamTextPart = TextStreamPart<ToolSet>
 
-type ChatCompletionStream = Stream<ChatCompletionChunk> & {
-  controller?: {
-    abort: () => void
-  }
+type StreamTextResult = {
+  fullStream: AsyncIterable<StreamTextPart>
 }
 
-type DeepSeekDelta =
-  & ChatCompletionChunk['choices'][number]['delta']
-  & { reasoning_content?: null | string }
+type StreamTextFn = (options: {
+  abortSignal?: AbortSignal
+  model: LanguageModel
+  prompt: string
+  system?: string
+  temperature?: number
+}) => StreamTextResult
 
-type ChatCompletionsClient = {
-  chat: {
-    completions: {
-      create(args: {
-        messages: ChatCompletionMessageParam[]
-        model: string
-        signal?: AbortSignal
-        stream: true
-        temperature?: number
-      }): Promise<ChatCompletionStream>
-    }
-  }
-}
-
-type DeltaContent =
-  | Array<{
-    text?: string
-    type: string
-  }>
-  | null
-  | string
-
-type DeepSeekUsage = {
-  completion_tokens?: number
-  prompt_tokens?: number
-  total_tokens?: number
-}
-
-const DEFAULT_ERROR_MESSAGE = 'DeepSeek request failed'
+type ModelFactory = (modelId: string) => LanguageModel
 
 export interface DeepSeekProviderConfig {
   apiKey: string
@@ -58,91 +35,44 @@ export interface DeepSeekSessionRequest extends SessionRequest {
   temperature?: number
 }
 
+type DeepSeekProviderDependencies = {
+  modelFactory?: ModelFactory
+  streamText?: StreamTextFn
+}
+
 export class DeepSeekProvider implements LLMProvider<DeepSeekSessionRequest> {
   readonly id = 'deepseek' as const
-  #client: ChatCompletionsClient
   #defaultModel?: string
+  #modelFactory: ModelFactory
+  #streamText: StreamTextFn
 
-  constructor(config: DeepSeekProviderConfig, client?: ChatCompletionsClient) {
+  constructor(config: DeepSeekProviderConfig, dependencies: DeepSeekProviderDependencies = {}) {
     if (!config.apiKey) {
       throw new Error('Missing DeepSeek API key')
     }
 
-    this.#client = client ?? new OpenAI({ apiKey: config.apiKey, baseURL: config.baseURL })
     this.#defaultModel = config.model
+    this.#modelFactory =
+      dependencies.modelFactory
+      ?? createDeepSeek({ apiKey: config.apiKey, baseURL: config.baseURL })
+    this.#streamText = dependencies.streamText ?? streamText
   }
 
   stream(request: DeepSeekSessionRequest): ProviderStream {
-    return this.#streamChatCompletions(request)
-  }
+    const modelId = request.model ?? this.#defaultModel
 
-  #buildMessages(request: DeepSeekSessionRequest): ChatCompletionMessageParam[] {
-    const messages: ChatCompletionMessageParam[] = []
-
-    if (request.systemPrompt) {
-      messages.push({ content: request.systemPrompt, role: 'system' })
-    }
-
-    messages.push({ content: request.prompt, role: 'user' })
-
-    return messages
-  }
-
-  #extractContent(deltaContent?: DeltaContent): string[] {
-    if (!deltaContent) return []
-    if (typeof deltaContent === 'string') return [deltaContent]
-
-    return deltaContent.flatMap(part => (part.text ? [part.text] : []))
-  }
-
-  #mapChunk(chunk: ChatCompletionChunk): ProviderStreamEvent[] {
-    const chunks: ProviderStreamEvent[] = []
-
-    for (const choice of chunk.choices) {
-      const delta = choice.delta as DeepSeekDelta | undefined
-      const deltas = [
-        ...this.#extractContent(delta?.content as DeltaContent | undefined),
-        ...(delta?.reasoning_content ? [delta.reasoning_content] : []),
-      ]
-
-      for (const delta of deltas) {
-        chunks.push({ text: delta, type: 'text' })
-      }
-    }
-
-    if (chunk.usage) {
-      chunks.push({ type: 'usage', usage: this.#mapUsage(chunk.usage) })
-    }
-
-    return chunks
-  }
-
-  #mapUsage(usage?: DeepSeekUsage | null): TokenUsage {
-    return {
-      inputTokens: usage?.prompt_tokens ?? undefined,
-      outputTokens: usage?.completion_tokens ?? undefined,
-      totalTokens: usage?.total_tokens ?? undefined,
-    }
-  }
-
-  #streamChatCompletions(request: DeepSeekSessionRequest): ProviderStream {
-    const model = request.model ?? this.#defaultModel
-
-    if (!model) {
+    if (!modelId) {
       throw new Error('DeepSeek model is required')
     }
 
-    return streamProviderWithLifecycle({
-      createStream: () => this.#client.chat.completions.create({
-        messages: this.#buildMessages(request),
-        model,
-        signal: request.signal,
-        stream: true,
-        temperature: request.temperature,
-      }),
-      mapEvent: chunk => this.#mapChunk(chunk),
-      startFallbackMessage: DEFAULT_ERROR_MESSAGE,
-      streamFallbackMessage: DEFAULT_ERROR_MESSAGE,
-    })
+    const model = this.#modelFactory(modelId)
+
+    return this.#streamText({
+      abortSignal: request.signal,
+      model,
+      prompt: request.prompt,
+      system: request.systemPrompt,
+      temperature: request.temperature,
+    }).fullStream
   }
 }

@@ -2,21 +2,14 @@ import type { Dispatch, SetStateAction } from 'react'
 
 import { useApp, useInput } from 'ink'
 
-import type { AppMode, SetupState } from '../../types/setup-flow.js'
 import type { SlashSuggestionsState } from '../../types/slash-suggestions-state.js'
-
-import { cycleProviderChoice } from '../utils.js'
 
 type InkKey = Parameters<Parameters<typeof useInput>[0]>[1]
 
 interface UseKeybindingsOptions {
   input: string
-  mode: AppMode
   onSubmit: () => void
-  providerOptionCount: number
   setInput: Dispatch<SetStateAction<string>>
-  setProviderChoiceIndex: Dispatch<SetStateAction<number>>
-  setupState: SetupState
   setupSubmitting: boolean
   slashSuggestions: SlashSuggestionsState
   streaming: boolean
@@ -26,32 +19,12 @@ export function useKeybindings(options: UseKeybindingsOptions): void {
   const { exit } = useApp()
   const {
     input,
-    mode,
     onSubmit,
-    providerOptionCount,
     setInput,
-    setProviderChoiceIndex,
-    setupState,
     setupSubmitting,
     slashSuggestions,
     streaming,
   } = options
-
-  const handleProviderSelectKey = (key: InkKey): void => {
-    if (key.upArrow) {
-      setProviderChoiceIndex(current => cycleProviderChoice(current, -1, providerOptionCount))
-      return
-    }
-
-    if (key.downArrow) {
-      setProviderChoiceIndex(current => cycleProviderChoice(current, 1, providerOptionCount))
-      return
-    }
-
-    if (key.return) {
-      onSubmit()
-    }
-  }
 
   const handleSlashSuggestionKey = (key: InkKey): boolean => {
     const canUseSlashSuggestions =
@@ -88,11 +61,6 @@ export function useKeybindings(options: UseKeybindingsOptions): void {
     }
 
     if (setupSubmitting) return
-
-    if (mode === 'setup' && setupState.step === 'provider') {
-      handleProviderSelectKey(key)
-      return
-    }
 
     if (handleSlashSuggestionKey(key)) return
 

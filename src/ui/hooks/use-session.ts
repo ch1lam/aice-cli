@@ -46,7 +46,7 @@ export function useSession(options: UseSessionOptions): SessionState {
         for await (const chunk of stream) {
           if (cancelled) break
           consumeChunk(chunk)
-          if (chunk.type === 'done' || chunk.type === 'error') break
+          if (chunk.type === 'finish' || chunk.type === 'error' || chunk.type === 'abort') break
         }
 
         if (cancelled || sawDone || sawError) return
@@ -55,6 +55,7 @@ export function useSession(options: UseSessionOptions): SessionState {
           if (current.done || current.status === 'failed') return current
           return {
             ...current,
+            content,
             done: true,
             status: 'completed',
             statusMessage: undefined,
@@ -62,10 +63,11 @@ export function useSession(options: UseSessionOptions): SessionState {
         })
         onStatusChange?.('completed')
       } catch (error_: unknown) {
-        const error = error_ instanceof Error ? error_ : new Error(String(error_))
+        const error = normalizeError(error_)
         if (!cancelled) {
           setState(current => ({
             ...current,
+            content,
             done: true,
             error,
             status: 'failed',
@@ -77,31 +79,64 @@ export function useSession(options: UseSessionOptions): SessionState {
       }
     }
 
+    function appendText(text: string) {
+      content += text
+      setState(current => ({
+        ...current,
+        content,
+      }))
+    }
+
     function consumeChunk(chunk: SessionStreamChunk) {
       switch (chunk.type) {
-        case 'done': {
+        case 'abort': {
           sawDone = true
           setState(current => ({
             ...current,
+            content,
             done: true,
-            status: 'completed',
-            statusMessage: undefined,
+            status: 'aborted',
+            statusMessage: 'Aborted',
           }))
-          onStatusChange?.('completed')
+          onStatusChange?.('aborted')
           break
         }
 
         case 'error': {
           sawError = true
+          const error = normalizeError(chunk.error)
           setState(current => ({
             ...current,
+            content,
             done: true,
-            error: chunk.error,
+            error,
             status: 'failed',
-            statusMessage: chunk.error.message,
+            statusMessage: error.message,
           }))
-          onError?.(chunk.error)
+          onError?.(error)
           onStatusChange?.('failed')
+          break
+        }
+
+        case 'finish': {
+          sawDone = true
+          setState(current => ({
+            ...current,
+            content,
+            done: true,
+            status: 'completed',
+            statusMessage: chunk.finishReason === 'stop' ? undefined : chunk.finishReason,
+            usage: chunk.totalUsage,
+          }))
+          onStatusChange?.('completed')
+          break
+        }
+
+        case 'finish-step': {
+          setState(current => ({
+            ...current,
+            usage: chunk.usage,
+          }))
           break
         }
 
@@ -113,30 +148,24 @@ export function useSession(options: UseSessionOptions): SessionState {
           break
         }
 
-        case 'status': {
-          setState(current => ({
-            ...current,
-            status: chunk.status,
-            statusMessage: chunk.detail,
-          }))
-          onStatusChange?.(chunk.status)
+        case 'reasoning-delta': {
+          appendText(chunk.text)
           break
         }
 
-        case 'text': {
-          content += chunk.text
+        case 'start':
+        case 'start-step': {
           setState(current => ({
             ...current,
-            content,
+            status: 'running',
+            statusMessage: undefined,
           }))
+          onStatusChange?.('running')
           break
         }
 
-        case 'usage': {
-          setState(current => ({
-            ...current,
-            usage: chunk.usage,
-          }))
+        case 'text-delta': {
+          appendText(chunk.text)
           break
         }
       }
@@ -162,4 +191,10 @@ function createInitialState(active: boolean): SessionState {
     statusMessage: undefined,
     usage: undefined,
   }
+}
+
+function normalizeError(error: unknown): Error {
+  if (error instanceof Error) return error
+  if (typeof error === 'string') return new Error(error)
+  return new Error('Unknown error')
 }

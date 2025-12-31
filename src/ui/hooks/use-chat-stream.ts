@@ -51,6 +51,7 @@ export function useChatStream(options: UseChatStreamOptions): UseChatStreamResul
   const [stream, setStream] = useState<SessionStream | undefined>()
   const [sessionMeta, setSessionMeta] = useState<SessionMeta | undefined>()
   const deliveredStreamRef = useRef<SessionStream | undefined>(undefined)
+  const latestContentRef = useRef('')
 
   const handleSessionError = useCallback(
     (error: Error) => {
@@ -65,10 +66,15 @@ export function useChatStream(options: UseChatStreamOptions): UseChatStreamResul
   })
 
   const streaming = Boolean(stream) && !session.done
-  const currentResponse = streaming ? session.content : ''
+  const currentResponse = session.content || latestContentRef.current
   const sessionStatus: StreamStatus | undefined = session.status
   const sessionStatusMessage = session.statusMessage
   const sessionUsage: TokenUsage | undefined = session.usage
+
+  useEffect(() => {
+    if (session.content === '' && latestContentRef.current) return
+    latestContentRef.current = session.content
+  }, [session.content])
 
   useEffect(() => {
     if (session.meta) {
@@ -82,13 +88,14 @@ export function useChatStream(options: UseChatStreamOptions): UseChatStreamResul
     deliveredStreamRef.current = stream
 
     if (session.status === 'failed') return
-    if (!session.content) return
-    onAssistantMessage?.(session.content)
+    if (!latestContentRef.current) return
+    onAssistantMessage?.(latestContentRef.current)
   }, [onAssistantMessage, session.content, session.done, session.status, stream])
 
   const resetSession = useCallback(() => {
     setStream(undefined)
     deliveredStreamRef.current = undefined
+    latestContentRef.current = ''
     setSessionMeta(undefined)
   }, [])
 
@@ -110,7 +117,7 @@ export function useChatStream(options: UseChatStreamOptions): UseChatStreamResul
       }
 
       setSessionMeta({ model: env.model ?? 'default', providerId: env.providerId })
-      deliveredStreamRef.current = undefined
+      latestContentRef.current = ''
       setStream(nextStream)
     },
     [buildPrompt, createChatService, onSystemMessage],

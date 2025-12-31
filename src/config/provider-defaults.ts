@@ -2,7 +2,7 @@ import type { ProviderId } from '../types/stream.ts'
 
 import { ProviderDefaults } from '../types/env.js'
 
-export const DEFAULT_PROVIDER_ID: ProviderId = 'openai'
+export const DEFAULT_PROVIDER_ID: ProviderId = 'deepseek'
 
 export const PROVIDER_DEFAULTS: Record<ProviderId, ProviderDefaults> = {
   deepseek: {
@@ -10,11 +10,6 @@ export const PROVIDER_DEFAULTS: Record<ProviderId, ProviderDefaults> = {
     defaultModel: 'deepseek-chat',
     description: 'DeepSeek chat + reasoning',
     label: 'DeepSeek',
-  },
-  openai: {
-    defaultModel: 'gpt-4o-mini',
-    description: 'Responses API (default)',
-    label: 'OpenAI',
   },
 }
 

@@ -9,7 +9,3 @@ export function cycleIndex(current: number, delta: number, length: number): numb
   if (length <= 0) return 0
   return (current + delta + length) % length
 }
-
-export function cycleProviderChoice(current: number, delta: number, total: number): number {
-  return cycleIndex(current, delta, total)
-}

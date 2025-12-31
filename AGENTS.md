@@ -1,5 +1,7 @@
 # Repository Guidelines
 
+Current state: the repo uses the Vercel AI SDK with DeepSeek-only support. Follow `TODO.md` for sequencing.
+
 ## Guiding Principles
 - Keep behavior stable: refactor in small steps with fast tests as your safety net.
 - Prefer clarity: readable names, short single-purpose functions, comments only for “why”.
@@ -11,20 +13,20 @@
 - TypeScript lives in `src`; oclif commands stay under `src/commands`. `bin/run.js` defaults to `tui` when `aice` is invoked with no args.
 - Entry points: `bin/run.js` / `bin/dev.js` → oclif → `src/commands/tui.ts` → `src/ui/run-tui.ts` → `src/ui/aice-app.tsx`.
 - UI: Ink components live in `src/ui`; shared hooks (like `useSession`) go in `src/ui/hooks`. `use-chat-input-controller` coordinates setup, slash commands, and streaming.
-- Services: `src/services/*` owns side effects + orchestration (`ChatService` creates session streams; `SetupService` persists `.env` and pings providers). UI/hooks call services so core/providers stay testable.
-- Chat helpers: `src/chat/prompt.ts` builds prompts from chat history; `src/chat/chat-runner.ts` renders a `SessionStream` to a generic IO (useful for future scripted commands and tests).
-- Core session/streaming: `src/core/stream.ts` defines chunk types + provider id parsing; `src/core/session.ts` orders chunks (meta → text → usage → done) and assigns indexes; `src/core/errors.ts` normalizes provider errors.
-- Providers: `src/providers/*` adapt SDKs behind `LLMProvider` and only emit raw text/status/usage; shared lifecycle lives in `src/providers/streaming.ts`; `src/providers/registry.ts` wires defaults/bindings; `src/providers/ping.ts` performs connectivity checks.
+- Services: `src/services/*` owns side effects + orchestration (`ChatService` creates session streams; `SetupService` persists `.env` and pings the provider). UI/hooks call services so core/providers stay testable.
+- Chat helpers: `src/chat/prompt.ts` builds prompts from chat history.
+- Core session/streaming: `src/core/session.ts` orders chunks (meta → text → usage → done) and assigns indexes; `src/core/errors.ts` normalizes provider errors; stream chunk types live in `src/types/stream.ts`.
+- Providers: `src/providers/*` adapt Vercel AI SDK models and emit stream events; shared lifecycle lives in `src/providers/streaming.ts`; `src/providers/registry.ts` wires defaults/bindings; `src/providers/ping.ts` performs connectivity checks.
 - Configuration: `src/config/env.ts` loads/persists `.env` (injectable I/O for tests); `src/config/provider-defaults.ts` centralizes default model/baseURL/labels.
-- Domain: `src/domain/*` contains shared types (e.g. chat message types) with no side effects.
+- Types: `src/types/*` contains shared types (e.g. chat message types) with no side effects.
 - Build output: treat `dist/` as read-only. Tests mirror the layout under `test/`.
 
-Dependency direction: `commands`/`ui` → `services` → (`config`/`providers`/`core`/`domain`). Keep `core`/`domain` free of Ink/oclif imports.
+Dependency direction: `commands`/`ui` → `services` → (`config`/`providers`/`core`/`types`). Keep `core`/`types` free of Ink/oclif imports.
 
 ## Build, Test & Development Commands
 - `yarn build`: removes `dist` and runs `tsc -b`; run when command signatures change.
 - `yarn test`: `TSX_TSCONFIG_PATH=test/tsconfig.json node --import tsx ./node_modules/mocha/bin/mocha --forbid-only "test/**/*.test.{ts,tsx}"` then `yarn lint` via `posttest`. Run `yarn lint` directly to iterate on ESLint issues.
-- Dev: run `node bin/dev.js` (tsx dev mode) to launch the TUI; set env like `AICE_PROVIDER=openai DEBUG=* node bin/dev.js` to debug providers.
+- Dev: run `node bin/dev.js` (tsx dev mode) to launch the TUI; set env like `DEEPSEEK_API_KEY=... DEBUG=* node bin/dev.js` to debug provider calls.
 - Pre-publish: `yarn prepack` refreshes the manifest and README.
 
 ## Coding Style & Naming Conventions
@@ -43,9 +45,9 @@ Dependency direction: `commands`/`ui` → `services` → (`config`/`providers`/`
 - Keep tests fast/reliable; they are the safety net for refactors.
 
 ## Provider Configuration & Security
-- Load configuration from `.env`; keep secrets out of Git. Supported providers: `openai`, `deepseek`.
-- Require matching API keys (`AICE_OPENAI_API_KEY`, `AICE_DEEPSEEK_API_KEY`) plus optional overrides (`AICE_OPENAI_BASE_URL`, `AICE_OPENAI_MODEL`, etc.).
-- Validate inputs before instantiating SDK clients and display actionable errors in the status bar. First-run flow prompts for provider + API key, validates connectivity, and writes `.env` with secrets redacted in logs.
+- Load configuration from `.env`; keep secrets out of Git. Supported provider: `deepseek` (Vercel AI SDK).
+- Require matching API keys (`DEEPSEEK_API_KEY`) plus optional overrides (`DEEPSEEK_BASE_URL`, `DEEPSEEK_MODEL`).
+- Validate inputs before instantiating SDK clients and display actionable errors in the status bar. First-run flow prompts for API key/model, validates connectivity, and writes `.env` with secrets redacted in logs.
 - Gate verbose HTTP tracing behind `DEBUG` and redact prompt text in logs. When new providers land, add their keys and wire selection through the provider factory.
 
 ## Commit & Pull Request Guidelines

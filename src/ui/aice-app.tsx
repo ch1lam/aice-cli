@@ -3,13 +3,9 @@ import { Box, Text } from 'ink'
 import type { MessageRole } from '../types/chat.js'
 import type { ProviderEnv } from '../types/env.js'
 import type { AppMode, SetupStep } from '../types/setup-flow.js'
-import type { ProviderId } from '../types/stream.js'
 
-import { DEFAULT_PROVIDER_ID } from '../config/provider-defaults.js'
 import { useChatInputController } from './hooks/use-chat-input-controller.js'
 import { InputPanel } from './input-panel.js'
-import { providerOptions } from './provider-options.js'
-import { SelectInput } from './select-input.js'
 import { SlashSuggestions } from './slash-suggestions.js'
 import { StatusBar } from './status-bar.js'
 import { theme } from './theme.js'
@@ -29,13 +25,10 @@ export function AiceApp(props: AiceAppProps) {
 
   const inputLabel = '✧'
   const renderedInput = controller.maskInput ? '*'.repeat(controller.input.length) : controller.input
-  const providerPrompt =
-    providerOptions[controller.providerChoiceIndex]?.value ?? controller.providerSelection
-  const hint = resolveHint(controller.mode, controller.setupStateStep, providerPrompt)
+  const hint = resolveHint(controller.mode, controller.setupStateStep)
   const placeholder = resolvePlaceholder(controller.streaming, controller.setupSubmitting, hint)
   const showCursor = !controller.streaming && !controller.setupSubmitting
   const normalizedCurrentResponse = stripAssistantPadding(controller.currentResponse || '')
-  const showProviderSelect = isProviderSelectVisible(controller.mode, controller.setupStateStep)
   const showSlashSuggestions = shouldShowSlashSuggestions(
     controller.mode,
     controller.streaming,
@@ -65,29 +58,18 @@ export function AiceApp(props: AiceAppProps) {
         ) : null}
       </Box>
       <Box flexDirection="column" width="100%">
-        {showProviderSelect ? (
-          <SelectInput
-            active
-            items={providerOptions}
-            selectedIndex={controller.providerChoiceIndex}
-            title="Choose a provider"
-          />
-        ) : (
-          <>
-            <InputPanel
-              cursorVisible={showCursor}
-              disabled={controller.streaming || controller.setupSubmitting}
-              label={inputLabel}
-              placeholder={placeholder}
-              value={renderedInput}
-            />
-            <SlashSuggestions
-              activeIndex={controller.slashSuggestions.activeIndex}
-              items={controller.slashSuggestions.suggestions}
-              visible={showSlashSuggestions}
-            />
-          </>
-        )}
+        <InputPanel
+          cursorVisible={showCursor}
+          disabled={controller.streaming || controller.setupSubmitting}
+          label={inputLabel}
+          placeholder={placeholder}
+          value={renderedInput}
+        />
+        <SlashSuggestions
+          activeIndex={controller.slashSuggestions.activeIndex}
+          items={controller.slashSuggestions.suggestions}
+          visible={showSlashSuggestions}
+        />
       </Box>
       <Box width="100%">
         <StatusBar
@@ -120,11 +102,7 @@ function stripAssistantPadding(text: string): string {
   return /\s/.test(text[1]) ? text : text.slice(1)
 }
 
-function setupPrompt(step: SetupStep, providerId: ProviderId = DEFAULT_PROVIDER_ID): string {
-  if (step === 'provider') {
-    return `Use arrow keys to choose provider (current: ${providerId}). Press Enter to confirm.`
-  }
-
+function setupPrompt(step: SetupStep): string {
   if (step === 'apiKey') {
     return 'Enter API key (hidden as you type).'
   }
@@ -140,22 +118,18 @@ function setupPrompt(step: SetupStep, providerId: ProviderId = DEFAULT_PROVIDER_
   return ''
 }
 
-function resolveHint(mode: AppMode, step: SetupStep, providerId: ProviderId): string {
+function resolveHint(mode: AppMode, step: SetupStep): string {
   if (mode === 'setup') {
-    return setupPrompt(step, providerId)
+    return setupPrompt(step)
   }
 
-  return 'Type a prompt or use /help, /login, /provider, /model, /clear'
+  return 'Type a prompt or use /help, /login, /model, /clear'
 }
 
 function resolvePlaceholder(streaming: boolean, setupSubmitting: boolean, hint: string): string {
   if (streaming) return 'Processing response...'
-  if (setupSubmitting) return 'Validating provider...'
+  if (setupSubmitting) return 'Validating connection...'
   return hint
-}
-
-function isProviderSelectVisible(mode: AppMode, step: SetupStep): boolean {
-  return mode === 'setup' && step === 'provider'
 }
 
 function shouldShowSlashSuggestions(

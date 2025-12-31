@@ -3,12 +3,19 @@ import { expect } from 'chai'
 import type { LLMProvider, SessionRequest } from '../../src/core/session.ts'
 
 import { ChatService } from '../../src/services/chat-service.ts'
+import { createUsage } from '../helpers/usage.ts'
 
 function createProvider(): LLMProvider {
   return {
-    id: 'openai',
+    id: 'deepseek',
     async *stream() {
-      yield { text: 'hi', type: 'text' }
+      yield { id: 'text-0', text: 'hi', type: 'text-delta' }
+      yield {
+        finishReason: 'stop',
+        rawFinishReason: 'stop',
+        totalUsage: createUsage({ inputTokens: 1, outputTokens: 1, totalTokens: 2 }),
+        type: 'finish',
+      }
     },
   }
 }
@@ -23,7 +30,7 @@ describe('ChatService', () => {
 
     const env = {
       apiKey: 'key',
-      providerId: 'openai' as const,
+      providerId: 'deepseek' as const,
     }
 
     const service = new ChatService({
@@ -35,7 +42,7 @@ describe('ChatService', () => {
           createRequest(input) {
             inputs.push(input)
             capturedRequest = {
-              model: 'test-model',
+              model: 'deepseek-chat',
               prompt: input.prompt,
               providerId: provider.id,
               systemPrompt: input.systemPrompt,
@@ -61,8 +68,8 @@ describe('ChatService', () => {
     expect(inputs).to.have.lengthOf(1)
     expect(inputs[0]).to.include({ prompt: 'Hello', systemPrompt: 'You are helpful', temperature: 1 })
     expect(capturedRequest).to.exist
-    expect(capturedEnvProviderId).to.equal('openai')
-    expect(capturedBindingProviderId).to.equal('openai')
-    expect(types).to.deep.equal(['meta', 'text', 'done'])
+    expect(capturedEnvProviderId).to.equal('deepseek')
+    expect(capturedBindingProviderId).to.equal('deepseek')
+    expect(types).to.deep.equal(['meta', 'text-delta', 'finish'])
   })
 })

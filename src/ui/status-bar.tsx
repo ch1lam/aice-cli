@@ -38,7 +38,7 @@ export function StatusBar(props: StatusBarProps): ReactElement {
     }
   }, [stdout])
   const providerText = meta ? `${meta.providerId}:${meta.model}` : 'provider:-'
-  const isActive = status === 'running' || status === 'queued'
+  const isActive = status === 'running'
   const colors = theme.components.statusBar
   const [spinnerIndex, setSpinnerIndex] = useState(0)
 
@@ -58,7 +58,7 @@ export function StatusBar(props: StatusBarProps): ReactElement {
   }, [isActive])
 
   const statusLabel = status ? `status:${status}` : 'status:pending'
-  const statusColor = status === 'failed' ? colors.error : colors.status
+  const statusColor = status === 'failed' || status === 'aborted' ? colors.error : colors.status
   const statusText = isActive
     ? `${statusLabel} ${statusSpinnerFrames[spinnerIndex]}`
     : statusLabel
@@ -86,8 +86,19 @@ export function StatusBar(props: StatusBarProps): ReactElement {
 }
 
 function formatUsage(usage?: TokenUsage): string {
-  const input = usage?.inputTokens ?? '-'
-  const output = usage?.outputTokens ?? '-'
-  const total = usage?.totalTokens ?? '-'
-  return `usage in=${input} out=${output} total=${total}`
+  if (!usage) return 'usage:pending'
+
+  const input = usage.inputTokens
+  const output = usage.outputTokens
+  const total = usage.totalTokens
+  const hasUsage = [input, output, total].some(
+    value => typeof value === 'number' && Number.isFinite(value),
+  )
+
+  if (!hasUsage) return 'usage:pending'
+
+  const inputText = input ?? '-'
+  const outputText = output ?? '-'
+  const totalText = total ?? '-'
+  return `usage in=${inputText} out=${outputText} total=${totalText}`
 }

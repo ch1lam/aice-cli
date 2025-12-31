@@ -3,7 +3,6 @@ import type {
   ProviderStream,
   SessionMetaChunk,
   SessionStream,
-  SessionTextChunk,
 } from '../types/stream.js'
 
 export interface SessionRequest {
@@ -27,41 +26,15 @@ export async function* runSession(
     throw new Error(`Provider mismatch: expected ${request.providerId}, got ${provider.id}`)
   }
 
-  let tokenIndex = 0
-  let encounteredError = false
-
   const metaChunk: SessionMetaChunk = {
     model: request.model,
     providerId: provider.id,
-    timestamp: Date.now(),
     type: 'meta',
   }
 
   yield metaChunk
 
   for await (const chunk of provider.stream(request)) {
-    if (chunk.type === 'text') {
-      const indexedChunk: SessionTextChunk = {
-        ...chunk,
-        index: tokenIndex++,
-      }
-
-      yield indexedChunk
-      continue
-    }
-
     yield chunk
-
-    if (chunk.type === 'error') {
-      encounteredError = true
-      break
-    }
-  }
-
-  if (!encounteredError) {
-    yield {
-      timestamp: Date.now(),
-      type: 'done',
-    }
   }
 }

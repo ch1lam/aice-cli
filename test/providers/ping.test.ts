@@ -1,60 +1,66 @@
+import type { DeepSeekProvider as DeepSeekModelProvider } from '@ai-sdk/deepseek'
+import type { LanguageModel } from 'ai'
+
 import { expect } from 'chai'
 
 import { pingProvider } from '../../src/providers/ping.ts'
 
-class FakeOpenAIModelsClient {
-  calls: string[] = []
-  shouldFail = false
-  shouldHang = false
-
-  async retrieve(model: string): Promise<void> {
-    if (this.shouldHang) {
-      return new Promise(() => {})
-    }
-
-    if (this.shouldFail) {
-      throw new Error('bad auth')
-    }
-
-    this.calls.push(model)
-  }
+type StreamTextResult = {
+  consumeStream: () => PromiseLike<void>
 }
 
-class FakeOpenAIClient {
-  models: FakeOpenAIModelsClient
+function createProvider(calls: string[]): DeepSeekModelProvider {
+  return ((modelId: string) => {
+    calls.push(modelId)
+    return { modelId } as LanguageModel
+  }) as DeepSeekModelProvider
+}
 
-  constructor(models: FakeOpenAIModelsClient) {
-    this.models = models
-  }
+function createStreamText(consumeStream: () => PromiseLike<void>): () => StreamTextResult {
+  return () => ({ consumeStream })
 }
 
 describe('pingProvider', () => {
-  it('pings OpenAI using the default model when none is provided', async () => {
-    const models = new FakeOpenAIModelsClient()
-    const client = new FakeOpenAIClient(models)
+  it('pings DeepSeek using the default model when none is provided', async () => {
+    const calls: string[] = []
+    const provider = createProvider(calls)
 
-    await pingProvider({ apiKey: 'key', providerId: 'openai' }, { clients: { openai: client } })
+    await pingProvider(
+      { apiKey: 'key', providerId: 'deepseek' },
+      { clients: { deepseek: provider }, streamText: createStreamText(async () => {}) },
+    )
 
-    expect(models.calls).to.deep.equal(['gpt-4o-mini'])
+    expect(calls).to.deep.equal(['deepseek-chat'])
   })
 
-  it('pings DeepSeek using the default model', async () => {
-    const models = new FakeOpenAIModelsClient()
-    const client = new FakeOpenAIClient(models)
-
-    await pingProvider({ apiKey: 'key', providerId: 'deepseek' }, { clients: { deepseek: client } })
-
-    expect(models.calls).to.deep.equal(['deepseek-chat'])
-  })
-
-  it('surfaces connectivity failures', async () => {
-    const models = new FakeOpenAIModelsClient()
-    models.shouldFail = true
-    const client = new FakeOpenAIClient(models)
+  it('rejects unsupported providers', async () => {
     let error: unknown
 
     try {
-      await pingProvider({ apiKey: 'bad', providerId: 'openai' }, { clients: { openai: client } })
+      await pingProvider({ apiKey: 'key', providerId: 'unknown' })
+    } catch (error_) {
+      error = error_
+    }
+
+    expect(error).to.be.instanceOf(Error)
+    expect((error as Error).message).to.equal('Unsupported provider: unknown')
+  })
+
+  it('surfaces connectivity failures', async () => {
+    const calls: string[] = []
+    const provider = createProvider(calls)
+    let error: unknown
+
+    try {
+      await pingProvider(
+        { apiKey: 'bad', providerId: 'deepseek' },
+        {
+          clients: { deepseek: provider },
+          streamText: createStreamText(async () => {
+            throw new Error('bad auth')
+          }),
+        },
+      )
     } catch (error_) {
       error = error_
     }
@@ -64,15 +70,18 @@ describe('pingProvider', () => {
   })
 
   it('times out when the provider call hangs', async () => {
-    const models = new FakeOpenAIModelsClient()
-    models.shouldHang = true
-    const client = new FakeOpenAIClient(models)
+    const calls: string[] = []
+    const provider = createProvider(calls)
     let error: unknown
 
     try {
       await pingProvider(
-        { apiKey: 'key', providerId: 'openai' },
-        { clients: { openai: client }, timeoutMs: 10 },
+        { apiKey: 'key', providerId: 'deepseek' },
+        {
+          clients: { deepseek: provider },
+          streamText: createStreamText(() => new Promise(() => {})),
+          timeoutMs: 10,
+        },
       )
     } catch (error_) {
       error = error_

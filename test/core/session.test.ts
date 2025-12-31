@@ -3,10 +3,11 @@ import { expect } from 'chai'
 import type { ProviderStreamChunk } from '../../src/types/stream.ts'
 
 import { type LLMProvider, runSession, type SessionRequest } from '../../src/core/session.ts'
+import { createUsage } from '../helpers/usage.ts'
 
 function createProvider(chunks: ProviderStreamChunk[]): LLMProvider {
   return {
-    id: 'openai',
+    id: 'deepseek',
     async *stream() {
       for (const chunk of chunks) {
         yield chunk
@@ -16,41 +17,43 @@ function createProvider(chunks: ProviderStreamChunk[]): LLMProvider {
 }
 
 describe('runSession', () => {
-  it('emits meta first, indexes tokens, and ends with done', async () => {
+  it('emits meta first and forwards provider chunks', async () => {
     const provider = createProvider([
-      { status: 'running', type: 'status' },
-      { text: 'Hello', type: 'text' },
-      { text: ' world', type: 'text' },
-      { type: 'usage', usage: { outputTokens: 2 } },
+      { type: 'start' },
+      { id: 'text-0', text: 'Hello', type: 'text-delta' },
+      { id: 'text-0', text: ' world', type: 'text-delta' },
+      {
+        finishReason: 'stop',
+        rawFinishReason: 'stop',
+        totalUsage: createUsage({ inputTokens: 1, outputTokens: 2, totalTokens: 3 }),
+        type: 'finish',
+      },
     ])
 
     const request: SessionRequest = {
-      model: 'gpt-4o-mini',
+      model: 'deepseek-chat',
       prompt: 'Hi',
-      providerId: 'openai',
+      providerId: 'deepseek',
     }
 
     const seen: string[] = []
-    const textIndexes: number[] = []
 
     for await (const chunk of runSession(provider, request)) {
       seen.push(chunk.type)
-      if (chunk.type === 'text') {
-        textIndexes.push(chunk.index)
-      }
     }
 
-    expect(seen).to.deep.equal(['meta', 'status', 'text', 'text', 'usage', 'done'])
-    expect(textIndexes).to.deep.equal([0, 1])
+    expect(seen).to.deep.equal(['meta', 'start', 'text-delta', 'text-delta', 'finish'])
   })
 
   it('throws when provider IDs mismatch the request', async () => {
-    const provider = createProvider([{ text: 'should not stream', type: 'text' }])
+    const provider = createProvider([
+      { id: 'text-0', text: 'should not stream', type: 'text-delta' },
+    ])
 
     const request: SessionRequest = {
-      model: 'gpt-4o-mini',
+      model: 'deepseek-chat',
       prompt: 'Hi',
-      providerId: 'deepseek',
+      providerId: 'other',
     }
 
     const stream = runSession(provider, request)
@@ -63,20 +66,20 @@ describe('runSession', () => {
     }
 
     expect(error).to.be.instanceOf(Error)
-    expect((error as Error).message).to.equal('Provider mismatch: expected deepseek, got openai')
+    expect((error as Error).message).to.equal('Provider mismatch: expected other, got deepseek')
   })
 
-  it('stops streaming after an error chunk and omits done', async () => {
+  it('passes through error chunks from the provider', async () => {
     const provider = createProvider([
-      { text: 'partial', type: 'text' },
+      { id: 'text-0', text: 'partial', type: 'text-delta' },
       { error: new Error('boom'), type: 'error' },
-      { text: 'should not appear', type: 'text' },
+      { id: 'text-0', text: 'still-here', type: 'text-delta' },
     ])
 
     const request: SessionRequest = {
-      model: 'gpt-4o-mini',
+      model: 'deepseek-chat',
       prompt: 'trigger error',
-      providerId: 'openai',
+      providerId: 'deepseek',
     }
 
     const seen: string[] = []
@@ -85,6 +88,6 @@ describe('runSession', () => {
       seen.push(chunk.type)
     }
 
-    expect(seen).to.deep.equal(['meta', 'text', 'error'])
+    expect(seen).to.deep.equal(['meta', 'text-delta', 'error', 'text-delta'])
   })
 })

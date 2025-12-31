@@ -7,11 +7,9 @@ import { persistProviderEnv, tryLoadProviderEnv } from '../../src/config/env.js'
 
 describe('env helpers', () => {
   const keys = [
-    'AICE_PROVIDER',
-    'AICE_OPENAI_API_KEY',
-    'AICE_OPENAI_BASE_URL',
-    'AICE_OPENAI_MODEL',
-    'AICE_MODEL',
+    'DEEPSEEK_API_KEY',
+    'DEEPSEEK_BASE_URL',
+    'DEEPSEEK_MODEL',
   ]
 
   const originalEnv: Record<string, string | undefined> = {}
@@ -36,31 +34,38 @@ describe('env helpers', () => {
   it('persists provider env without mutating process.env', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aice-env-'))
     const envPath = path.join(dir, '.env')
-    process.env.AICE_PROVIDER = 'keep-existing'
+    process.env.DEEPSEEK_API_KEY = 'keep-existing'
 
     try {
+      fs.writeFileSync(
+        envPath,
+        ['AICE_PROVIDER=openai', 'AICE_OPENAI_API_KEY=legacy', 'OTHER_VAR=keep'].join('\n'),
+      )
+
       persistProviderEnv({
         apiKey: 'test-key',
         baseURL: 'https://example.com',
         envPath,
-        model: 'gpt-4o-mini',
-        providerId: 'openai',
+        model: 'deepseek-chat',
+        providerId: 'deepseek',
       })
 
       const content = fs.readFileSync(envPath, 'utf8')
-      expect(content).to.include('AICE_PROVIDER=openai')
-      expect(content).to.include('AICE_OPENAI_API_KEY=test-key')
-      expect(content).to.include('AICE_OPENAI_BASE_URL=https://example.com')
-      expect(content).to.include('AICE_OPENAI_MODEL=gpt-4o-mini')
+      expect(content).to.include('DEEPSEEK_API_KEY=test-key')
+      expect(content).to.include('DEEPSEEK_BASE_URL=https://example.com')
+      expect(content).to.include('DEEPSEEK_MODEL=deepseek-chat')
+      expect(content).to.include('OTHER_VAR=keep')
+      expect(content).to.not.include('AICE_PROVIDER=')
+      expect(content).to.not.include('AICE_OPENAI_API_KEY=')
 
-      const { env, error } = tryLoadProviderEnv({ envPath, providerId: 'openai' })
+      const { env, error } = tryLoadProviderEnv({ envPath, providerId: 'deepseek' })
 
       expect(error).to.equal(undefined)
-      expect(env?.providerId).to.equal('openai')
+      expect(env?.providerId).to.equal('deepseek')
       expect(env?.apiKey).to.equal('test-key')
       expect(env?.baseURL).to.equal('https://example.com')
-      expect(env?.model).to.equal('gpt-4o-mini')
-      expect(process.env.AICE_PROVIDER).to.equal('keep-existing')
+      expect(env?.model).to.equal('deepseek-chat')
+      expect(process.env.DEEPSEEK_API_KEY).to.equal('keep-existing')
     } finally {
       fs.rmSync(dir, { force: true, recursive: true })
     }
@@ -87,7 +92,7 @@ describe('env helpers', () => {
           apiKey: 'test-key',
           envPath,
           io: failingIO,
-          providerId: 'openai',
+          providerId: 'deepseek',
         }),
       ).to.throw('write failure')
     } finally {
@@ -119,9 +124,47 @@ describe('env helpers', () => {
     }
   })
 
-  it('rejects unknown provider ids from env', () => {
+  it('errors when required values are missing', () => {
+    const { env, error } = tryLoadProviderEnv({ env: {}, providerId: 'deepseek' })
+
+    expect(env).to.equal(undefined)
+    expect(error?.message).to.equal('Missing DEEPSEEK_API_KEY')
+  })
+
+  it('removes optional keys when clearing values', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aice-clear-'))
+    const envPath = path.join(dir, '.env')
+
+    try {
+      fs.writeFileSync(
+        envPath,
+        [
+          'DEEPSEEK_API_KEY=old-key',
+          'DEEPSEEK_BASE_URL=https://example.com',
+          'DEEPSEEK_MODEL=old-model',
+          'OTHER_VAR=keep',
+        ].join('\n'),
+      )
+
+      persistProviderEnv({
+        apiKey: 'new-key',
+        envPath,
+        providerId: 'deepseek',
+      })
+
+      const content = fs.readFileSync(envPath, 'utf8')
+      expect(content).to.include('DEEPSEEK_API_KEY=new-key')
+      expect(content).to.include('OTHER_VAR=keep')
+      expect(content).to.not.include('DEEPSEEK_BASE_URL=')
+      expect(content).to.not.include('DEEPSEEK_MODEL=')
+    } finally {
+      fs.rmSync(dir, { force: true, recursive: true })
+    }
+  })
+
+  it('rejects unknown provider ids', () => {
     const { env, error } = tryLoadProviderEnv({
-      env: { AICE_PROVIDER: 'unknown' },
+      providerId: 'unknown',
     })
 
     expect(env).to.equal(undefined)

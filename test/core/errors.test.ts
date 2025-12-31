@@ -21,9 +21,9 @@ describe('toError', () => {
   })
 
   it('falls back to the default message when error objects omit message', () => {
-    const resolved = toError({ code: 'rate_limit_exceeded' }, 'OpenAI stream error')
+    const resolved = toError({ code: 'rate_limit_exceeded' }, 'DeepSeek stream error')
 
-    expect(resolved.message).to.equal('rate_limit_exceeded: OpenAI stream error')
+    expect(resolved.message).to.equal('rate_limit_exceeded: DeepSeek stream error')
   })
 
   it('reads nested error shapes', () => {
