@@ -29,15 +29,15 @@ DEEPSEEK_MODEL=deepseek-chat               # optional override
 These names mirror AI SDK conventions. Legacy `AICE_*` provider keys are ignored and removed when `.env` is persisted.
 
 ## Usage
-- Run `aice` (or `node bin/dev.js`) with no args to open the Ink UI. On first run it prompts for API key/model, writes `.env`, and validates connectivity. Slash commands (prefixed with `/`) handle help, login, model switching, and clearing the transcript; plain input sends messages.
+- Run `aice` (or `node bin/dev.js`) with no args to open the Ink UI (requires a real TTY). On first run it prompts for API key/model, writes `.env`, and validates connectivity. Slash commands (prefixed with `/`) handle help, login, model switching, and clearing the transcript; plain input sends messages.
 
 ## Project structure
 - `bin/` — runtime shims (`run.js`/`dev.js`); `aice` defaults to `tui` when no args are provided.
 - `src/commands/` — oclif commands (currently `tui`).
 - `src/ui/` — Ink TUI (components + hooks). Entry point is `src/ui/run-tui.ts`.
 - `src/services/` — services that coordinate config + providers (`ChatService`, `SetupService`).
-- `src/providers/` — provider adapters + shared streaming lifecycle + registry + connectivity ping.
-- `src/core/` — session ordering/indexing and shared error formatting.
+- `src/providers/` — provider adapters + registry + connectivity ping.
+- `src/core/` — session runner (adds meta chunk, validates provider id) and shared error formatting.
 - `src/types/` — shared types (chat messages, stream chunks) with no side effects.
 - `src/config/` — `.env` load/persist and provider defaults.
 - `src/chat/` — prompt building from chat history.

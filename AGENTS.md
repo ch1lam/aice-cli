@@ -15,8 +15,8 @@ Current state: the repo uses the Vercel AI SDK with DeepSeek-only support. Follo
 - UI: Ink components live in `src/ui`; shared hooks (like `useSession`) go in `src/ui/hooks`. `use-chat-input-controller` coordinates setup, slash commands, and streaming.
 - Services: `src/services/*` owns side effects + orchestration (`ChatService` creates session streams; `SetupService` persists `.env` and pings the provider). UI/hooks call services so core/providers stay testable.
 - Chat helpers: `src/chat/prompt.ts` builds prompts from chat history.
-- Core session/streaming: `src/core/session.ts` orders chunks (meta → text → usage → done) and assigns indexes; `src/core/errors.ts` normalizes provider errors; stream chunk types live in `src/types/stream.ts`.
-- Providers: `src/providers/*` adapt Vercel AI SDK models and emit stream events; shared lifecycle lives in `src/providers/streaming.ts`; `src/providers/registry.ts` wires defaults/bindings; `src/providers/ping.ts` performs connectivity checks.
+- Core session/streaming: `src/core/session.ts` prepends the meta chunk and validates provider ids; `src/core/errors.ts` normalizes provider errors; stream chunk types live in `src/types/stream.ts`.
+- Providers: `src/providers/*` adapt Vercel AI SDK models and emit stream events; `src/providers/registry.ts` wires defaults/bindings; `src/providers/ping.ts` performs connectivity checks.
 - Configuration: `src/config/env.ts` loads/persists `.env` (injectable I/O for tests); `src/config/provider-defaults.ts` centralizes default model/baseURL/labels.
 - Types: `src/types/*` contains shared types (e.g. chat message types) with no side effects.
 - Build output: treat `dist/` as read-only. Tests mirror the layout under `test/`.
