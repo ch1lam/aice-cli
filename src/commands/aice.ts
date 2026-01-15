@@ -2,7 +2,7 @@ import { Command } from '@oclif/core'
 
 import { runTui } from '../ui/run-tui.js'
 
-export default class Tui extends Command {
+export default class Aice extends Command {
   static description = 'Launch the interactive aice TUI shell.'
 
   async run(): Promise<void> {

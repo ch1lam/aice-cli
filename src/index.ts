@@ -1,1 +1,1 @@
-export { run } from '@oclif/core'
+export { default } from './commands/aice.js'
