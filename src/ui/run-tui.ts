@@ -1,13 +1,14 @@
 import { render } from 'ink'
 import React from 'react'
 
-import { tryLoadProviderEnv } from '../config/env.js'
+import { SetupService } from '../services/setup-service.js'
 import { AiceApp } from './aice-app.js'
 
 export async function runTui(): Promise<void> {
   clearTerminal()
 
-  const { env, error } = tryLoadProviderEnv()
+  const setupService = new SetupService()
+  const { env, error } = setupService.tryLoadEnv()
   const { waitUntilExit } = render(
     React.createElement(AiceApp, { initialEnv: env, initialError: error }),
   )

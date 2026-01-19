@@ -14,6 +14,7 @@ import type { ProviderEnv } from '../../types/env.js'
 import type { SessionMeta } from '../../types/session-meta.js'
 import type { SessionStream, StreamStatus, TokenUsage } from '../../types/stream.js'
 
+import { resolveDefaultModel } from '../../config/provider-defaults.js'
 import { ChatService } from '../../services/chat-service.js'
 import { useSession } from './use-session.js'
 
@@ -112,7 +113,10 @@ export function useChatStream(options: UseChatStreamOptions): UseChatStreamResul
         return
       }
 
-      setSessionMeta({ model: env.model ?? 'default', providerId: env.providerId })
+      setSessionMeta({
+        model: resolveDefaultModel(env.providerId, env.model),
+        providerId: env.providerId,
+      })
       latestContentRef.current = ''
       setStream(nextStream)
     },

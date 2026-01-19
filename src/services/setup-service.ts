@@ -1,5 +1,5 @@
 import type { PersistEnvOptions } from '../config/env.js'
-import type { ProviderEnv } from '../types/env.js'
+import type { ProviderEnv, TryLoadProviderEnvResult } from '../types/env.js'
 import type { SetupServiceOptions } from '../types/setup-service.js'
 import type { ProviderId } from '../types/stream.js'
 
@@ -41,13 +41,20 @@ export class SetupService {
   }
 
   persistAndLoad(options: PersistAndLoadOptions): ProviderEnv {
-    try {
-      this.#persistEnv(options)
-    } catch (error) {
-      throw new ProviderEnvPersistError(toError(error, 'Failed to write .env').message)
-    }
+    const persistedEnv = (() => {
+      try {
+        return this.#persistEnv(options)
+      } catch (error) {
+        throw new ProviderEnvPersistError(toError(error, 'Failed to write .env').message)
+      }
+    })()
 
-    const { env, error } = this.#tryLoadEnv({ providerId: options.providerId })
+    const { env, error } = this.#tryLoadEnv({
+      env: persistedEnv,
+      envPath: options.envPath,
+      io: options.io,
+      providerId: options.providerId,
+    })
     if (!env || error) {
       throw new ProviderEnvLoadError(toError(error, 'Unknown error.').message)
     }
@@ -88,6 +95,10 @@ export class SetupService {
     }
 
     return env
+  }
+
+  tryLoadEnv(): TryLoadProviderEnvResult {
+    return this.#tryLoadEnv()
   }
 
   async verifyConnectivity(env: ProviderEnv): Promise<void> {

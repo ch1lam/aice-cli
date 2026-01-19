@@ -4,7 +4,7 @@ import type { ProviderEnv } from '../../types/env.js'
 import type { AppMode, SetupState } from '../../types/setup-flow.js'
 import type { SetupServiceOptions } from '../../types/setup-service.js'
 
-import { DEFAULT_PROVIDER_ID } from '../../config/provider-defaults.js'
+import { DEFAULT_PROVIDER_ID, resolveDefaultModel } from '../../config/provider-defaults.js'
 import {
   ProviderEnvLoadError,
   ProviderEnvPersistError,
@@ -21,6 +21,7 @@ interface UseSetupFlowOptions {
   onMessage: (message: string) => void
   persistEnv?: SetupServiceOptions['persistEnv']
   ping?: SetupServiceOptions['ping']
+  setupService?: SetupService
   tryLoadEnv?: SetupServiceOptions['tryLoadEnv']
 }
 
@@ -43,12 +44,13 @@ export function useSetupFlow(options: UseSetupFlowOptions): UseSetupFlowResult {
     onMessage,
     persistEnv,
     ping,
+    setupService: providedSetupService,
     tryLoadEnv,
   } = options
 
   const setupService = useMemo(
-    () => createSetupService({ persistEnv, ping, tryLoadEnv }),
-    [createSetupService, persistEnv, ping, tryLoadEnv],
+    () => providedSetupService ?? createSetupService({ persistEnv, ping, tryLoadEnv }),
+    [createSetupService, persistEnv, ping, providedSetupService, tryLoadEnv],
   )
 
   const initialProviderId = initialEnv?.providerId ?? DEFAULT_PROVIDER_ID
@@ -153,8 +155,9 @@ export function useSetupFlow(options: UseSetupFlowOptions): UseSetupFlowResult {
         step: 'apiKey',
       })
       onEnvReady?.(env)
+      const resolvedModel = resolveDefaultModel(env.providerId, env.model)
       onMessage(
-        `Configured ${env.providerId} (${env.model ?? 'default model'}). Type /help to see commands.`,
+        `Configured ${env.providerId} (${resolvedModel}). Type /help to see commands.`,
       )
     },
     [onEnvReady, onMessage, setupService],

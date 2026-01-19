@@ -8,6 +8,7 @@ import type { SlashSuggestionsState } from '../../types/slash-suggestions-state.
 import type { ProviderId, StreamStatus, TokenUsage } from '../../types/stream.js'
 
 import { buildMessages as formatMessages } from '../../chat/messages.js'
+import { resolveDefaultModel } from '../../config/provider-defaults.js'
 import { SetupService } from '../../services/setup-service.js'
 import { isSlashCommandInput } from '../slash-commands.js'
 import { useChatStream, type UseChatStreamOptions } from './use-chat-stream.js'
@@ -15,6 +16,8 @@ import { useKeybindings } from './use-keybindings.js'
 import { useSetupFlow } from './use-setup-flow.js'
 import { useSlashCommands } from './use-slash-commands.js'
 import { useSlashSuggestionsState } from './use-slash-suggestions-state.js'
+
+const MAX_HISTORY_MESSAGES = 40
 
 export interface ChatInputControllerResult {
   currentResponse: string
@@ -59,7 +62,10 @@ export function useChatInputController(
 
   const setupService = useMemo(() => new SetupService(), [])
 
-  const buildMessages = useCallback((history: ChatMessage[]) => formatMessages(history), [])
+  const buildMessages = useCallback(
+    (history: ChatMessage[]) => formatMessages(history, { maxMessages: MAX_HISTORY_MESSAGES }),
+    [],
+  )
 
   const handleAssistantMessage = useCallback(
     (message: string) => {
@@ -96,8 +102,13 @@ export function useChatInputController(
     setupSubmitting,
   } = useSetupFlow({
     initialEnv: options.initialEnv,
-    onEnvReady: env => setSessionMeta({ model: env.model ?? 'default', providerId: env.providerId }),
+    onEnvReady: env =>
+      setSessionMeta({
+        model: resolveDefaultModel(env.providerId, env.model),
+        providerId: env.providerId,
+      }),
     onMessage: addSystemMessage,
+    setupService,
   })
 
   const handleClearCommand = useCallback(() => {
@@ -160,8 +171,12 @@ export function useChatInputController(
     }
 
     if (options.initialEnv) {
+      const resolvedModel = resolveDefaultModel(
+        options.initialEnv.providerId,
+        options.initialEnv.model,
+      )
       addSystemMessage(
-        `Ready with ${options.initialEnv.providerId} (${options.initialEnv.model ?? 'default model'})`,
+        `Ready with ${options.initialEnv.providerId} (${resolvedModel})`,
       )
     } else {
       addSystemMessage('No provider configured. Starting setup... Enter API key.')
@@ -257,7 +272,10 @@ export function useChatInputController(
     if (sessionMeta) return sessionMeta
 
     return providerEnv
-      ? { model: providerEnv.model ?? 'default', providerId: providerEnv.providerId }
+      ? {
+          model: resolveDefaultModel(providerEnv.providerId, providerEnv.model),
+          providerId: providerEnv.providerId,
+        }
       : undefined
   }, [providerEnv, sessionMeta])
 
