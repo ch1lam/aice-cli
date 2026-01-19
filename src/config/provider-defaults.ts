@@ -13,6 +13,18 @@ export const PROVIDER_DEFAULTS: Record<ProviderId, ProviderDefaults> = {
   },
 }
 
+export const providerIds = Object.keys(PROVIDER_DEFAULTS) as ProviderId[]
+
+const providerIdSet = new Set<ProviderId>(providerIds)
+
+export function isProviderId(value: string): value is ProviderId {
+  return providerIdSet.has(value)
+}
+
+export function parseProviderId(value: string): ProviderId | undefined {
+  return isProviderId(value) ? value : undefined
+}
+
 export function getProviderDefaults(providerId: ProviderId): ProviderDefaults {
   return PROVIDER_DEFAULTS[providerId]
 }

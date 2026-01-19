@@ -1,13 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 
-import type { SessionMeta } from '../../types/session-meta.js'
-import type { SessionStream, SessionStreamChunk, StreamStatus, TokenUsage } from '../../types/stream.js'
+import type { ProviderStreamChunk, SessionStream, StreamStatus, TokenUsage } from '../../types/stream.js'
 
 export interface SessionState {
   content: string
   done: boolean
   error?: Error
-  meta?: SessionMeta
   status?: StreamStatus
   statusMessage?: string
   usage?: TokenUsage
@@ -87,7 +85,7 @@ export function useSession(options: UseSessionOptions): SessionState {
       }))
     }
 
-    function consumeChunk(chunk: SessionStreamChunk) {
+    function consumeChunk(chunk: ProviderStreamChunk) {
       switch (chunk.type) {
         case 'abort': {
           sawDone = true
@@ -140,14 +138,6 @@ export function useSession(options: UseSessionOptions): SessionState {
           break
         }
 
-        case 'meta': {
-          setState(current => ({
-            ...current,
-            meta: { model: chunk.model, providerId: chunk.providerId },
-          }))
-          break
-        }
-
         case 'reasoning-delta': {
           appendText(chunk.text)
           break
@@ -186,7 +176,6 @@ function createInitialState(active: boolean): SessionState {
     content: '',
     done: false,
     error: undefined,
-    meta: undefined,
     status: active ? 'running' : undefined,
     statusMessage: undefined,
     usage: undefined,

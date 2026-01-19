@@ -1,27 +1,52 @@
 import type { ProviderEnv } from '../types/env.js'
-import type { ProviderBindingFactory, ProviderRequestInput } from '../types/provider.js'
+import type { ProviderRequestInput } from '../types/provider.js'
+import type { LLMProvider, SessionRequest } from '../types/session.js'
 import type { SessionStream } from '../types/stream.js'
 
-import { runSession } from '../core/session.js'
-import { createProviderBinding } from '../providers/factory.js'
+import { resolveDefaultBaseURL, resolveDefaultModel } from '../config/provider-defaults.js'
+import { DeepSeekProvider } from '../providers/deepseek.js'
 
 export type ChatPrompt = ProviderRequestInput
 
 export interface ChatServiceOptions {
-  bindingFactory?: ProviderBindingFactory
+  createProvider?: ProviderFactory
 }
 
+type ProviderFactory = (env: ProviderEnv) => LLMProvider<SessionRequest>
+
 export class ChatService {
-  #bindingFactory: ProviderBindingFactory
+  #createProvider: ProviderFactory
 
   constructor(options: ChatServiceOptions = {}) {
-    this.#bindingFactory = options.bindingFactory ?? (opts => createProviderBinding(opts))
+    this.#createProvider = options.createProvider ?? createDefaultProvider
   }
 
-  createStream(env: ProviderEnv, prompt: ChatPrompt): SessionStream {
-    const binding = this.#bindingFactory({ env, providerId: env.providerId })
-    const request = binding.createRequest(prompt)
+  createStream(env: ProviderEnv, input: ChatPrompt): SessionStream {
+    const provider = this.#createProvider(env)
 
-    return runSession(binding.provider, request)
+    if (provider.id !== env.providerId) {
+      throw new Error(`Provider mismatch: expected ${env.providerId}, got ${provider.id}`)
+    }
+
+    const request: SessionRequest = {
+      messages: input.messages,
+      model: resolveDefaultModel(env.providerId, input.model ?? env.model),
+      providerId: env.providerId,
+      temperature: input.temperature,
+    }
+
+    return provider.stream(request)
   }
+}
+
+function createDefaultProvider(env: ProviderEnv): LLMProvider<SessionRequest> {
+  if (env.providerId !== 'deepseek') {
+    throw new Error(`Unsupported provider: ${env.providerId}`)
+  }
+
+  return new DeepSeekProvider({
+    apiKey: env.apiKey,
+    baseURL: resolveDefaultBaseURL(env.providerId, env.baseURL),
+    model: env.model,
+  })
 }

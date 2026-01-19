@@ -1,4 +1,4 @@
-import type { LanguageModel, TextStreamPart, ToolSet } from 'ai'
+import type { LanguageModel, ModelMessage, TextStreamPart, ToolSet } from 'ai'
 
 import { expect } from 'chai'
 
@@ -11,9 +11,8 @@ type StreamPart = TextStreamPart<ToolSet>
 
 type StreamTextOptions = {
   abortSignal?: AbortSignal
+  messages: ModelMessage[]
   model: LanguageModel
-  prompt: string
-  system?: string
   temperature?: number
 }
 
@@ -74,12 +73,15 @@ describe('DeepSeekProvider', () => {
     )
 
     const controller = new AbortController()
+    const messages: ModelMessage[] = [
+      { content: 'You are helpful', role: 'system' },
+      { content: 'Hello?', role: 'user' },
+    ]
     const request: DeepSeekSessionRequest = {
+      messages,
       model: 'deepseek-chat',
-      prompt: 'Hello?',
       providerId: 'deepseek',
       signal: controller.signal,
-      systemPrompt: 'You are helpful',
       temperature: 0.2,
     }
 
@@ -112,8 +114,7 @@ describe('DeepSeekProvider', () => {
     expect(modelCalls).to.deep.equal(['deepseek-chat'])
     expect(capturedOptions).to.include({
       abortSignal: controller.signal,
-      prompt: 'Hello?',
-      system: 'You are helpful',
+      messages,
       temperature: 0.2,
     })
   })
@@ -132,8 +133,8 @@ describe('DeepSeekProvider', () => {
     )
 
     const request: DeepSeekSessionRequest = {
+      messages: [{ content: 'trigger', role: 'user' }],
       model: 'deepseek-chat',
-      prompt: 'trigger',
       providerId: 'deepseek',
     }
 

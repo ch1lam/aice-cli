@@ -5,7 +5,7 @@ import { type ReactElement, useCallback, useEffect, useRef, useState } from 'rea
 
 import type { ProviderEnv } from '../../src/types/env.js'
 import type { ProviderRequestInput } from '../../src/types/provider.js'
-import type { SessionStreamChunk } from '../../src/types/stream.ts'
+import type { ProviderStreamChunk } from '../../src/types/stream.ts'
 
 import { useChatInputController } from '../../src/ui/hooks/use-chat-input-controller.js'
 import { useChatStream } from '../../src/ui/hooks/use-chat-stream.js'
@@ -51,7 +51,7 @@ function countOccurrences(value: string, needle: string): number {
   return count
 }
 
-async function* chunkStream(chunks: SessionStreamChunk[], delayMs = 0) {
+async function* chunkStream(chunks: ProviderStreamChunk[], delayMs = 0) {
   for (const chunk of chunks) {
     if (delayMs > 0) {
       // eslint-disable-next-line no-await-in-loop
@@ -60,6 +60,11 @@ async function* chunkStream(chunks: SessionStreamChunk[], delayMs = 0) {
 
     yield chunk
   }
+}
+
+async function* throwingStream(): AsyncGenerator<ProviderStreamChunk, void, void> {
+  yield { id: 'text-0', text: 'partial', type: 'text-delta' }
+  throw new Error('boom')
 }
 
 function delay(duration: number): Promise<void> {
@@ -89,7 +94,7 @@ async function waitFor(condition: () => boolean, timeoutMs = 1000, intervalMs = 
 }
 
 interface SessionSceneProps {
-  stream: AsyncGenerator<SessionStreamChunk, void, void>
+  stream: AsyncGenerator<ProviderStreamChunk, void, void>
 }
 
 function SessionScene(props: SessionSceneProps): ReactElement {
@@ -108,7 +113,6 @@ function SessionScene(props: SessionSceneProps): ReactElement {
     <Box flexDirection="column">
       <Text>{content}</Text>
       <StatusBar
-        meta={session.meta}
         status={session.status}
         statusMessage={session.statusMessage}
         usage={session.usage}
@@ -123,7 +127,6 @@ describe('Ink UI', () => {
     it('renders streaming content and status updates', async () => {
       const stream = chunkStream(
         [
-          { model: 'deepseek-chat', providerId: 'deepseek', type: 'meta' },
           { type: 'start' },
           { id: 'text-0', text: 'Hello', type: 'text-delta' },
           { id: 'text-0', text: ' world', type: 'text-delta' },
@@ -150,7 +153,7 @@ describe('Ink UI', () => {
       const finalFrame = stripAnsi(lastFrame() ?? '')
 
       expect(finalFrame).to.include('Hello world')
-      expect(finalFrame).to.include('deepseek:deepseek-chat')
+      expect(finalFrame).to.include('provider:-')
       expect(finalFrame).to.include('status:completed')
       expect(finalFrame).to.include('usage in=5 out=7 total=12')
     })
@@ -158,7 +161,6 @@ describe('Ink UI', () => {
     it('marks aborted streams and keeps partial output', async () => {
       const stream = chunkStream(
         [
-          { model: 'deepseek-chat', providerId: 'deepseek', type: 'meta' },
           { type: 'start' },
           { id: 'text-0', text: 'Hello', type: 'text-delta' },
           { type: 'abort' },
@@ -179,7 +181,6 @@ describe('Ink UI', () => {
       const response = { id: 'resp-0', modelId: 'deepseek-chat', timestamp: new Date(0) }
       const stream = chunkStream(
         [
-          { model: 'deepseek-chat', providerId: 'deepseek', type: 'meta' },
           { type: 'start' },
           {
             finishReason: 'stop',
@@ -205,7 +206,6 @@ describe('Ink UI', () => {
     it('appends reasoning deltas to the transcript', async () => {
       const stream = chunkStream(
         [
-          { model: 'deepseek-chat', providerId: 'deepseek', type: 'meta' },
           { type: 'start' },
           { id: 'reason-0', text: 'thinking', type: 'reasoning-delta' },
           {
@@ -228,7 +228,6 @@ describe('Ink UI', () => {
 
     it('surfaces error chunks', async () => {
       const stream = chunkStream([
-        { model: 'deepseek-chat', providerId: 'deepseek', type: 'meta' },
         { id: 'text-0', text: 'partial', type: 'text-delta' },
         { error: new Error('boom'), type: 'error' },
       ])
@@ -240,11 +239,20 @@ describe('Ink UI', () => {
       expect(finalFrame.replaceAll(/\s+/g, ' ')).to.include('status:failed - boom')
       expect(finalFrame).to.include('Error: boom')
     })
+
+    it('surfaces thrown stream errors', async () => {
+      const { lastFrame } = render(<SessionScene stream={throwingStream()} />)
+      await waitFor(() => (lastFrame() ?? '').includes('status:failed'))
+
+      const finalFrame = stripAnsi(lastFrame() ?? '')
+      expect(finalFrame.replaceAll(/\s+/g, ' ')).to.include('status:failed - boom')
+      expect(finalFrame).to.include('Error: boom')
+    })
   })
 
   interface ChatStreamSceneProps {
     env: ProviderEnv
-    stream: AsyncGenerator<SessionStreamChunk, void, void>
+    stream: AsyncGenerator<ProviderStreamChunk, void, void>
   }
 
   function ChatStreamScene(props: ChatStreamSceneProps): ReactElement {
@@ -261,9 +269,9 @@ describe('Ink UI', () => {
     }, [])
 
     const { currentResponse, sessionStatus, startStream, streaming } = useChatStream({
-      buildPrompt: () => 'prompt',
+      buildMessages: () => [{ content: 'prompt', role: 'user' }],
       createChatService: () => ({
-        createStream: (_env: ProviderEnv, _prompt: ProviderRequestInput) => props.stream,
+        createStream: (_env: ProviderEnv, _input: ProviderRequestInput) => props.stream,
       }),
       onAssistantMessage: handleAssistantMessage,
       onSystemMessage: handleSystemMessage,
@@ -302,7 +310,7 @@ describe('Ink UI', () => {
 
   interface ChatInputControllerSceneProps {
     env: ProviderEnv
-    streams: Array<AsyncGenerator<SessionStreamChunk, void, void>>
+    streams: Array<AsyncGenerator<ProviderStreamChunk, void, void>>
   }
 
   function ChatInputControllerScene(props: ChatInputControllerSceneProps): ReactElement {
@@ -349,7 +357,7 @@ describe('Ink UI', () => {
     }, [])
 
     const { startStream, streaming } = useChatStream({
-      buildPrompt: () => 'prompt',
+      buildMessages: () => [{ content: 'prompt', role: 'user' }],
       createChatService: () => ({
         createStream() {
           throw new Error('no stream')
@@ -382,7 +390,7 @@ describe('Ink UI', () => {
 
   interface MultiChatStreamSceneProps {
     env: ProviderEnv
-    streams: Array<AsyncGenerator<SessionStreamChunk, void, void>>
+    streams: Array<AsyncGenerator<ProviderStreamChunk, void, void>>
   }
 
   function MultiChatStreamScene(props: MultiChatStreamSceneProps): ReactElement {
@@ -396,7 +404,7 @@ describe('Ink UI', () => {
     }, [])
 
     const { sessionStatus, startStream, streaming } = useChatStream({
-      buildPrompt: () => 'prompt',
+      buildMessages: () => [{ content: 'prompt', role: 'user' }],
       createChatService: () => ({
         createStream() {
           const nextStream = streamsRef.current.shift()
@@ -448,7 +456,6 @@ describe('Ink UI', () => {
     it('streams text and commits the assistant message on completion', async () => {
       const stream = chunkStream(
         [
-          { model: 'deepseek-chat', providerId: 'deepseek', type: 'meta' },
           { type: 'start' },
           { id: 'text-0', text: 'Hello', type: 'text-delta' },
           { id: 'text-0', text: ' world', type: 'text-delta' },
@@ -487,7 +494,6 @@ describe('Ink UI', () => {
     it('commits distinct responses across sequential streams', async () => {
       const streams = [
         chunkStream([
-          { model: 'deepseek-chat', providerId: 'deepseek', type: 'meta' },
           { type: 'start' },
           { id: 'text-0', text: 'First response', type: 'text-delta' },
           {
@@ -498,7 +504,6 @@ describe('Ink UI', () => {
           },
         ]),
         chunkStream([
-          { model: 'deepseek-chat', providerId: 'deepseek', type: 'meta' },
           { type: 'start' },
           { id: 'text-0', text: 'Second response', type: 'text-delta' },
           {
@@ -544,7 +549,6 @@ describe('Ink UI', () => {
 
     it('surfaces provider errors as system messages and does not commit partial assistant output', async () => {
       const stream = chunkStream([
-        { model: 'deepseek-chat', providerId: 'deepseek', type: 'meta' },
         { id: 'text-0', text: 'partial', type: 'text-delta' },
         { error: new Error('boom'), type: 'error' },
       ])
@@ -569,7 +573,6 @@ describe('Ink UI', () => {
     it('commits sequential responses without duplicating earlier output', async () => {
       const streams = [
         chunkStream([
-          { model: 'deepseek-chat', providerId: 'deepseek', type: 'meta' },
           { type: 'start' },
           { id: 'text-0', text: 'First response', type: 'text-delta' },
           {
@@ -580,7 +583,6 @@ describe('Ink UI', () => {
           },
         ]),
         chunkStream([
-          { model: 'deepseek-chat', providerId: 'deepseek', type: 'meta' },
           { type: 'start' },
           { id: 'text-0', text: 'Second response', type: 'text-delta' },
           {

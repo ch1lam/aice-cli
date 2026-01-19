@@ -4,9 +4,8 @@ import path from 'node:path'
 
 import type { ProviderId } from '../types/stream.js'
 
-import { parseProviderId, providerIds } from '../providers/registry.js'
 import { ProviderEnv, TryLoadProviderEnvResult } from '../types/env.js'
-import { DEFAULT_PROVIDER_ID } from './provider-defaults.js'
+import { DEFAULT_PROVIDER_ID, parseProviderId, providerIds } from './provider-defaults.js'
 
 dotenv.config({ quiet: true })
 

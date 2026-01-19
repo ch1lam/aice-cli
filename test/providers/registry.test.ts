@@ -1,8 +1,8 @@
 import { expect } from 'chai'
 
-import { isProviderId, parseProviderId, providerIds } from '../../src/providers/registry.ts'
+import { isProviderId, parseProviderId, providerIds } from '../../src/config/provider-defaults.ts'
 
-describe('provider registry helpers', () => {
+describe('provider defaults helpers', () => {
   it('recognizes known providers', () => {
     for (const providerId of providerIds) {
       expect(isProviderId(providerId)).to.equal(true)

@@ -7,7 +7,7 @@ import type { SlashCommandDefinition } from '../../types/slash-commands.js'
 import type { SlashSuggestionsState } from '../../types/slash-suggestions-state.js'
 import type { ProviderId, StreamStatus, TokenUsage } from '../../types/stream.js'
 
-import { buildPrompt as formatPrompt } from '../../chat/prompt.js'
+import { buildMessages as formatMessages } from '../../chat/messages.js'
 import { SetupService } from '../../services/setup-service.js'
 import { isSlashCommandInput } from '../slash-commands.js'
 import { useChatStream, type UseChatStreamOptions } from './use-chat-stream.js'
@@ -59,7 +59,7 @@ export function useChatInputController(
 
   const setupService = useMemo(() => new SetupService(), [])
 
-  const buildPrompt = useCallback((history: ChatMessage[]) => formatPrompt(history), [])
+  const buildMessages = useCallback((history: ChatMessage[]) => formatMessages(history), [])
 
   const handleAssistantMessage = useCallback(
     (message: string) => {
@@ -79,7 +79,7 @@ export function useChatInputController(
     startStream,
     streaming,
   } = useChatStream({
-    buildPrompt,
+    buildMessages,
     createChatService: options.createChatService,
     onAssistantMessage: handleAssistantMessage,
     onSystemMessage: addSystemMessage,

@@ -1,3 +1,5 @@
+import type { ModelMessage } from 'ai'
+
 import {
   type Dispatch,
   type SetStateAction,
@@ -22,7 +24,7 @@ type ChatServiceFactory = () => Pick<ChatService, 'createStream'>
 const defaultCreateChatService: ChatServiceFactory = () => new ChatService()
 
 export interface UseChatStreamOptions {
-  buildPrompt: (history: ChatMessage[]) => string
+  buildMessages: (history: ChatMessage[]) => ModelMessage[]
   createChatService?: ChatServiceFactory
   onAssistantMessage?: (message: string) => void
   onSystemMessage?: (message: string) => void
@@ -42,7 +44,7 @@ export interface UseChatStreamResult {
 
 export function useChatStream(options: UseChatStreamOptions): UseChatStreamResult {
   const {
-    buildPrompt,
+    buildMessages,
     createChatService = defaultCreateChatService,
     onAssistantMessage,
     onSystemMessage,
@@ -77,12 +79,6 @@ export function useChatStream(options: UseChatStreamOptions): UseChatStreamResul
   }, [session.content])
 
   useEffect(() => {
-    if (session.meta) {
-      setSessionMeta(session.meta)
-    }
-  }, [session.meta])
-
-  useEffect(() => {
     if (!stream || !session.done) return
     if (deliveredStreamRef.current === stream) return
     deliveredStreamRef.current = stream
@@ -101,14 +97,14 @@ export function useChatStream(options: UseChatStreamOptions): UseChatStreamResul
 
   const startStream = useCallback(
     (history: ChatMessage[], env: ProviderEnv) => {
-      const prompt = buildPrompt(history)
+      const messages = buildMessages(history)
       const chatService = createChatService()
 
       let nextStream: SessionStream
       try {
         nextStream = chatService.createStream(env, {
+          messages,
           model: env.model,
-          prompt,
         })
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
@@ -120,7 +116,7 @@ export function useChatStream(options: UseChatStreamOptions): UseChatStreamResul
       latestContentRef.current = ''
       setStream(nextStream)
     },
-    [buildPrompt, createChatService, onSystemMessage],
+    [buildMessages, createChatService, onSystemMessage],
   )
 
   return {

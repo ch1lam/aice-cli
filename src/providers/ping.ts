@@ -3,7 +3,7 @@ import { type LanguageModel, streamText } from 'ai'
 
 import type { ProviderEnv } from '../types/env.js'
 
-import { providerRegistry } from './registry.js'
+import { isProviderId, resolveDefaultBaseURL, resolveDefaultModel } from '../config/provider-defaults.js'
 
 const DEFAULT_TIMEOUT_MS = 8000
 const PING_PROMPT = 'ping'
@@ -35,9 +35,7 @@ export async function pingProvider(
   env: ProviderEnv,
   options: ProviderPingOptions = {},
 ): Promise<void> {
-  const registration = providerRegistry[env.providerId]
-
-  if (!registration) {
+  if (!isProviderId(env.providerId)) {
     throw new Error(`Unsupported provider: ${env.providerId}`)
   }
 
@@ -46,8 +44,8 @@ export async function pingProvider(
     streamText: streamTextFn = streamText,
     timeoutMs = DEFAULT_TIMEOUT_MS,
   } = options
-  const modelId = registration.getPingModel(env)
-  const baseURL = env.baseURL ?? registration.defaults.defaultBaseURL
+  const modelId = resolveDefaultModel(env.providerId, env.model)
+  const baseURL = resolveDefaultBaseURL(env.providerId, env.baseURL)
 
   const provider = resolveProvider(env.providerId, clients, env.apiKey, baseURL)
   const model = provider(modelId)

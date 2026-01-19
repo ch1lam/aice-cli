@@ -1,12 +1,13 @@
 import { createDeepSeek } from '@ai-sdk/deepseek'
 import {
   type LanguageModel,
+  type ModelMessage,
   streamText,
   type TextStreamPart,
   type ToolSet,
 } from 'ai'
 
-import type { LLMProvider, SessionRequest } from '../core/session.js'
+import type { LLMProvider, SessionRequest } from '../types/session.js'
 import type { ProviderStream } from '../types/stream.js'
 
 type StreamTextPart = TextStreamPart<ToolSet>
@@ -17,9 +18,8 @@ type StreamTextResult = {
 
 type StreamTextFn = (options: {
   abortSignal?: AbortSignal
+  messages: ModelMessage[]
   model: LanguageModel
-  prompt: string
-  system?: string
   temperature?: number
 }) => StreamTextResult
 
@@ -69,9 +69,8 @@ export class DeepSeekProvider implements LLMProvider<DeepSeekSessionRequest> {
 
     return this.#streamText({
       abortSignal: request.signal,
+      messages: request.messages,
       model,
-      prompt: request.prompt,
-      system: request.systemPrompt,
       temperature: request.temperature,
     }).fullStream
   }
