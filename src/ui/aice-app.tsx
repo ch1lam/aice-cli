@@ -53,6 +53,7 @@ export function AiceApp(props: AiceAppProps) {
   const placeholder = resolvePlaceholder(controller.streaming, controller.setupSubmitting, hint)
   const showCursor = !controller.streaming && !controller.setupSubmitting
   const normalizedCurrentResponse = stripAssistantPadding(controller.currentResponse || '')
+  const inputTopMargin = controller.streaming ? 0 : 1
   const showSlashSuggestions = shouldShowSlashSuggestions(
     controller.mode,
     controller.streaming,
@@ -264,7 +265,7 @@ export function AiceApp(props: AiceAppProps) {
           )
         }}
       </Static>
-      <Box flexDirection="column" marginTop={1} width="100%">
+      <Box flexDirection="column" marginTop={inputTopMargin} width="100%">
         {liveStreamLine ? (
           <Box marginBottom={1}>
             <Text color={liveStreamLine.color} wrap="truncate">
