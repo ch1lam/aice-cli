@@ -5,14 +5,46 @@ import { SetupService } from '../services/setup-service.js'
 import { AiceApp } from './aice-app.js'
 
 export async function runTui(): Promise<void> {
-  clearTerminal()
-
   const setupService = new SetupService()
-  const { env, error } = setupService.tryLoadEnv()
-  const { waitUntilExit } = render(
-    React.createElement(AiceApp, { initialEnv: env, initialError: error }),
-  )
-  await waitUntilExit()
+
+  const runOnce = async (): Promise<boolean> => {
+    clearTerminal()
+    const { env, error } = setupService.tryLoadEnv()
+
+    return new Promise<boolean>(resolve => {
+      let resolved = false
+      const settle = (value: boolean) => {
+        if (resolved) return
+        resolved = true
+        resolve(value)
+      }
+
+      const instanceRef: {current?: ReturnType<typeof render>} = {}
+      const handleNewSession = () => {
+        settle(true)
+        instanceRef.current?.unmount()
+      }
+
+      instanceRef.current = render(
+        React.createElement(AiceApp, {
+          initialEnv: env,
+          initialError: error,
+          onNewSession: handleNewSession,
+        }),
+      )
+
+      instanceRef.current.waitUntilExit().then(() => settle(false))
+    })
+  }
+
+  const runLoop = async (): Promise<void> => {
+    const restart = await runOnce()
+    if (restart) {
+      await runLoop()
+    }
+  }
+
+  await runLoop()
 }
 
 function clearTerminal(stdout: NodeJS.WritableStream = process.stdout): void {

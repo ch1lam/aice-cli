@@ -1,6 +1,6 @@
 import type { SlashSuggestion } from './slash-suggestions.js'
 
-export type SlashCommandId = 'clear' | 'help' | 'login' | 'model' | 'provider'
+export type SlashCommandId = 'help' | 'login' | 'model' | 'new' | 'provider'
 
 export interface SlashCommandDefinition {
   command: SlashCommandId

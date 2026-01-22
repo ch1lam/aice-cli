@@ -10,11 +10,11 @@ import type { SlashSuggestion } from '../../types/slash-suggestions.js'
 import { createSlashCommandRouter } from '../slash-commands.js'
 
 interface UseSlashCommandsOptions {
-  onClear: () => void
   onEmpty?: () => void
   onHelp: (definitions: SlashCommandDefinition[]) => void
   onLogin: () => void
   onModel: (args: string[]) => void
+  onNew: () => void
   onUnknown?: (command?: string) => void
 }
 
@@ -26,7 +26,7 @@ export interface UseSlashCommandsResult {
 }
 
 export function useSlashCommands(options: UseSlashCommandsOptions): UseSlashCommandsResult {
-  const { onClear, onEmpty, onHelp, onLogin, onModel, onUnknown } = options
+  const { onEmpty, onHelp, onLogin, onModel, onNew, onUnknown } = options
 
   const definitions = useMemo<SlashCommandDefinition[]>(
     () => [
@@ -52,14 +52,14 @@ export function useSlashCommands(options: UseSlashCommandsOptions): UseSlashComm
         usage: '/model <model-name>',
       },
       {
-        command: 'clear',
-        description: 'Clear the transcript.',
-        handler: () => onClear(),
-        hint: '/clear',
-        usage: '/clear',
+        command: 'new',
+        description: 'Start a new session.',
+        handler: () => onNew(),
+        hint: '/new',
+        usage: '/new',
       },
     ],
-    [onClear, onHelp, onLogin, onModel],
+    [onHelp, onLogin, onModel, onNew],
   )
 
   const router = useMemo(() => createSlashCommandRouter(definitions), [definitions])

@@ -16,6 +16,7 @@ import { wrapByWidth } from './utils.js'
 export interface AiceAppProps {
   initialEnv?: ProviderEnv
   initialError?: Error
+  onNewSession?: () => void
 }
 
 const messageColors = theme.components.messages
@@ -29,6 +30,7 @@ export function AiceApp(props: AiceAppProps) {
   const controller = useChatInputController({
     initialEnv: props.initialEnv,
     initialError: props.initialError,
+    onNewSession: props.onNewSession,
   })
 
   useEffect(() => {
@@ -348,7 +350,7 @@ function resolveHint(mode: AppMode, step: SetupStep): string {
     return setupPrompt(step)
   }
 
-  return 'Type a prompt or use /help, /login, /model, /clear'
+  return 'Type a prompt or use /help, /login, /model, /new'
 }
 
 function resolvePlaceholder(streaming: boolean, setupSubmitting: boolean, hint: string): string {

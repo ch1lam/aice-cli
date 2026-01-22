@@ -39,6 +39,7 @@ interface UseChatInputControllerOptions {
   createChatService?: UseChatStreamOptions['createChatService']
   initialEnv?: ProviderEnv
   initialError?: Error
+  onNewSession?: () => void
 }
 
 export function useChatInputController(
@@ -111,11 +112,11 @@ export function useChatInputController(
     setupService,
   })
 
-  const handleClearCommand = useCallback(() => {
+  const handleNewCommand = useCallback(() => {
     setMessages([])
     resetSession()
-    addSystemMessage('Cleared transcript.')
-  }, [addSystemMessage, resetSession])
+    options.onNewSession?.()
+  }, [options.onNewSession, resetSession])
 
   const handleHelpCommand = useCallback(
     (commandDefinitions: SlashCommandDefinition[]) => {
@@ -157,11 +158,11 @@ export function useChatInputController(
   )
 
   const { handleSlashCommand, suggestions: slashSuggestionsForQuery } = useSlashCommands({
-    onClear: handleClearCommand,
     onEmpty: () => addSystemMessage('Empty command. Use /help to see available commands.'),
     onHelp: handleHelpCommand,
     onLogin: handleLoginCommand,
     onModel: handleModelCommand,
+    onNew: handleNewCommand,
     onUnknown: command => addSystemMessage(`Unknown command: /${command ?? ''}`),
   })
 

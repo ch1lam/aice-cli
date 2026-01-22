@@ -5,7 +5,7 @@ DeepSeek-only CLI for experimenting with the Vercel AI SDK. It defaults to an In
 ## Status
 - DeepSeek-only, no provider picker.
 - TUI-first default command (`aice`) opens an Ink chat shell with an input bar, streaming transcript, and first-run setup for API key/model.
-- Slash commands: `/help`, `/login`, `/model <name>`, `/clear`.
+- Slash commands: `/help`, `/login`, `/model <name>`, `/new`.
 
 ## Requirements
 - Node.js >= 18
@@ -29,7 +29,7 @@ DEEPSEEK_MODEL=deepseek-chat               # optional override
 These names mirror AI SDK conventions. Legacy `AICE_*` provider keys are ignored and removed when `.env` is persisted.
 
 ## Usage
-- Run `aice` (or `node bin/dev.js`) with no args to open the Ink UI (requires a real TTY). On first run it prompts for API key/model, writes `.env`, and validates connectivity. Slash commands (prefixed with `/`) handle help, login, model switching, and clearing the transcript; plain input sends messages.
+- Run `aice` (or `node bin/dev.js`) with no args to open the Ink UI (requires a real TTY). On first run it prompts for API key/model, writes `.env`, and validates connectivity. Slash commands (prefixed with `/`) handle help, login, model switching, and starting a new session; plain input sends messages.
 
 ## Project structure
 - `bin/` — runtime shims (`run.js`/`dev.js`); `aice` defaults to `tui` when no args are provided.
