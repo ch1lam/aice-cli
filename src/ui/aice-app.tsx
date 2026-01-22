@@ -1,6 +1,6 @@
-import { Box, Text } from 'ink'
+import { Box, Static, Text } from 'ink'
 
-import type { MessageRole } from '../types/chat.js'
+import type { ChatMessage, MessageRole } from '../types/chat.js'
 import type { ProviderEnv } from '../types/env.js'
 import type { AppMode, SetupStep } from '../types/setup-flow.js'
 
@@ -16,6 +16,7 @@ export interface AiceAppProps {
 }
 
 const messageColors = theme.components.messages
+const INPUT_MAX_LINES = 6
 
 export function AiceApp(props: AiceAppProps) {
   const controller = useChatInputController({
@@ -35,33 +36,66 @@ export function AiceApp(props: AiceAppProps) {
     controller.slashSuggestions.active,
     controller.slashSuggestions.suggestions.length,
   )
+  const staticItems: StaticItem[] = [
+    { key: 'title', kind: 'title' },
+    ...(controller.messages.length > 0 ? [{ key: 'title-spacer', kind: 'spacer' }] : []),
+    ...controller.messages.map(message => ({
+      key: `message-${message.id}`,
+      kind: 'message',
+      message,
+    })),
+  ]
 
   return (
     <Box flexDirection="column">
-      <Text color={theme.components.app.title}>AICE</Text>
-      <Box flexDirection="column" marginBottom={1}>
-        {controller.messages.map(message => (
-          <Box key={message.id}>
-            <Text color={colorForRole(message.role)}>{`${labelForRole(message.role)}`}</Text>
-            <Text color={colorForRole(message.role)} key={message.id} wrap="wrap">
-              {`${message.role === 'assistant' ? stripAssistantPadding(message.text) : message.text}`}
-            </Text>
-          </Box>
-        ))}
+      <Static items={staticItems}>
+        {item => {
+          if (item.kind === 'title') {
+            return (
+              <Text color={theme.components.app.title} key={item.key}>
+                AICE
+              </Text>
+            )
+          }
+
+          if (item.kind === 'spacer') {
+            return (
+              <Text key={item.key}>
+                {' '}
+              </Text>
+            )
+          }
+
+          return (
+            <Box key={item.key}>
+              <Text color={colorForRole(item.message.role)}>
+                {`${labelForRole(item.message.role)}`}
+              </Text>
+              <Text color={colorForRole(item.message.role)} wrap="wrap">
+                {`${
+                  item.message.role === 'assistant'
+                    ? stripAssistantPadding(item.message.text)
+                    : item.message.text
+                }`}
+              </Text>
+            </Box>
+          )
+        }}
+      </Static>
+      <Box flexDirection="column" marginTop={1} width="100%">
         {controller.streaming ? (
-          <Box>
+          <Box marginBottom={1}>
             <Text color={messageColors.assistant}>{` ♤ `}</Text>
             <Text color={messageColors.assistant} wrap="wrap">
               {`${normalizedCurrentResponse}${controller.sessionStatus === 'completed' ? '  ' : ' ▌'}`}
             </Text>
           </Box>
         ) : null}
-      </Box>
-      <Box flexDirection="column" width="100%">
         <InputPanel
           cursorVisible={showCursor}
           disabled={controller.streaming || controller.setupSubmitting}
           label={inputLabel}
+          maxLines={INPUT_MAX_LINES}
           placeholder={placeholder}
           value={renderedInput}
         />
@@ -94,6 +128,11 @@ function labelForRole(role: MessageRole): string {
   if (role === 'user') return ' ✧ '
   return ' • '
 }
+
+type StaticItem =
+  | { key: 'title'; kind: 'title'; }
+  | { key: string; kind: 'message'; message: ChatMessage }
+  | { key: string; kind: 'spacer'; }
 
 function stripAssistantPadding(text: string): string {
   if (!text.startsWith(' ')) return text
