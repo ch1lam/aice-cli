@@ -1,4 +1,6 @@
-import { Box, Static, Text } from 'ink'
+import { Box, Static, Text, useStdout } from 'ink'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import stringWidth from 'string-width'
 
 import type { ChatMessage, MessageRole } from '../types/chat.js'
 import type { ProviderEnv } from '../types/env.js'
@@ -9,6 +11,7 @@ import { InputPanel } from './input-panel.js'
 import { SlashSuggestions } from './slash-suggestions.js'
 import { StatusBar } from './status-bar.js'
 import { theme } from './theme.js'
+import { wrapByWidth } from './utils.js'
 
 export interface AiceAppProps {
   initialEnv?: ProviderEnv
@@ -17,12 +20,30 @@ export interface AiceAppProps {
 
 const messageColors = theme.components.messages
 const INPUT_MAX_LINES = 6
+const DEFAULT_COLUMNS = 80
+const STREAM_LABEL = ' ♤ '
 
 export function AiceApp(props: AiceAppProps) {
+  const { stdout } = useStdout()
+  const [columns, setColumns] = useState<number | undefined>(stdout?.columns)
   const controller = useChatInputController({
     initialEnv: props.initialEnv,
     initialError: props.initialError,
   })
+
+  useEffect(() => {
+    if (!stdout) return
+
+    const handleResize = () => {
+      setColumns(stdout.columns)
+    }
+
+    handleResize()
+    stdout.on('resize', handleResize)
+    return () => {
+      stdout.off('resize', handleResize)
+    }
+  }, [stdout])
 
   const inputLabel = '✧'
   const renderedInput = controller.maskInput ? '*'.repeat(controller.input.length) : controller.input
@@ -36,15 +57,166 @@ export function AiceApp(props: AiceAppProps) {
     controller.slashSuggestions.active,
     controller.slashSuggestions.suggestions.length,
   )
-  const staticItems: StaticItem[] = [
+  const assistantLabel = labelForRole('assistant')
+  const assistantIndent = ' '.repeat(stringWidth(assistantLabel))
+  const streamIndent = ' '.repeat(stringWidth(STREAM_LABEL))
+  const contentWidth = Math.max(
+    1,
+    (typeof columns === 'number' && Number.isFinite(columns) && columns > 0
+      ? columns
+      : DEFAULT_COLUMNS) - stringWidth(STREAM_LABEL),
+  )
+  const [staticItems, setStaticItems] = useState<StaticItem[]>(() => [
     { key: 'title', kind: 'title' },
-    ...(controller.messages.length > 0 ? [{ key: 'title-spacer', kind: 'spacer' }] : []),
-    ...controller.messages.map(message => ({
-      key: `message-${message.id}`,
-      kind: 'message',
-      message,
-    })),
-  ]
+  ])
+  const [liveStreamLine, setLiveStreamLine] = useState<LiveStreamLine | null>(null)
+  const staticKeyRef = useRef(0)
+  const renderedMessageCount = useRef(0)
+  const hasStaticContent = useRef(false)
+  const skipNextAssistant = useRef(false)
+  const streamCompletedCount = useRef(0)
+  const streamLabelEmitted = useRef(false)
+  const prevStreaming = useRef(false)
+
+  const nextStaticKey = useCallback((prefix: string) => {
+    const key = `${prefix}-${staticKeyRef.current}`
+    staticKeyRef.current += 1
+    return key
+  }, [])
+
+  const appendStaticItems = useCallback((items: StaticItem[]) => {
+    if (items.length === 0) return
+    setStaticItems(current => [...current, ...items])
+  }, [])
+
+  const ensureStaticSpacer = useCallback(
+    (items: StaticItem[]) => {
+      if (hasStaticContent.current) return
+      items.push({ key: nextStaticKey('spacer'), kind: 'spacer' })
+      hasStaticContent.current = true
+    },
+    [nextStaticKey],
+  )
+
+  useEffect(() => {
+    if (controller.messages.length <= renderedMessageCount.current) return
+
+    const newMessages = controller.messages.slice(renderedMessageCount.current)
+    const items: StaticItem[] = []
+
+    if (newMessages.length > 0) {
+      ensureStaticSpacer(items)
+    }
+
+    for (const message of newMessages) {
+      if (skipNextAssistant.current && message.role === 'assistant') {
+        skipNextAssistant.current = false
+        continue
+      }
+
+      items.push({
+        key: `message-${message.id}`,
+        kind: 'message',
+        message,
+      })
+    }
+
+    appendStaticItems(items)
+    renderedMessageCount.current = controller.messages.length
+  }, [appendStaticItems, controller.messages, ensureStaticSpacer])
+
+  useEffect(() => {
+    const isStreaming = controller.streaming
+    const wasStreaming = prevStreaming.current
+
+    if (isStreaming && !wasStreaming) {
+      streamCompletedCount.current = 0
+      streamLabelEmitted.current = false
+      setLiveStreamLine(null)
+    }
+
+    if (isStreaming) {
+      const streamLines = wrapByWidth(normalizedCurrentResponse, contentWidth)
+      const completedLines = streamLines.slice(0, -1)
+      const newCompletedCount = completedLines.length
+
+      if (newCompletedCount > streamCompletedCount.current) {
+        const newLines = completedLines.slice(streamCompletedCount.current)
+        const items: StaticItem[] = []
+        ensureStaticSpacer(items)
+
+        for (const [index, line] of newLines.entries()) {
+          const isFirst = !streamLabelEmitted.current && index === 0
+          const prefix = isFirst ? assistantLabel : assistantIndent
+          items.push({
+            color: messageColors.assistant,
+            key: nextStaticKey('stream-line'),
+            kind: 'line',
+            text: `${prefix}${line}`,
+          })
+        }
+
+        if (items.length > 0) {
+          appendStaticItems(items)
+          streamLabelEmitted.current = true
+        }
+
+        streamCompletedCount.current = newCompletedCount
+      }
+
+      const live = streamLines.at(-1) ?? ''
+      const livePrefix = streamLabelEmitted.current ? streamIndent : STREAM_LABEL
+      const cursor = controller.sessionStatus === 'completed' ? '  ' : ' ▌'
+      setLiveStreamLine({
+        color: messageColors.assistant,
+        key: 'live-stream',
+        text: `${livePrefix}${live}${cursor}`,
+      })
+    }
+
+    if (!isStreaming && wasStreaming) {
+      const streamLines = wrapByWidth(normalizedCurrentResponse, contentWidth)
+      const remainingLines = streamLines.slice(streamCompletedCount.current)
+
+      if (remainingLines.length > 0) {
+        const items: StaticItem[] = []
+        ensureStaticSpacer(items)
+
+        for (const [index, line] of remainingLines.entries()) {
+          const isFirst = !streamLabelEmitted.current && index === 0
+          const prefix = isFirst ? assistantLabel : assistantIndent
+          items.push({
+            color: messageColors.assistant,
+            key: nextStaticKey('stream-line'),
+            kind: 'line',
+            text: `${prefix}${line}`,
+          })
+        }
+
+        appendStaticItems(items)
+      }
+
+      if (normalizedCurrentResponse && controller.sessionStatus === 'completed') {
+        skipNextAssistant.current = true
+      }
+
+      streamCompletedCount.current = 0
+      streamLabelEmitted.current = false
+      setLiveStreamLine(null)
+    }
+
+    prevStreaming.current = isStreaming
+  }, [
+    appendStaticItems,
+    assistantIndent,
+    assistantLabel,
+    contentWidth,
+    controller.sessionStatus,
+    controller.streaming,
+    ensureStaticSpacer,
+    normalizedCurrentResponse,
+    streamIndent,
+  ])
 
   return (
     <Box flexDirection="column">
@@ -66,6 +238,14 @@ export function AiceApp(props: AiceAppProps) {
             )
           }
 
+          if (item.kind === 'line') {
+            return (
+              <Text color={item.color} key={item.key} wrap="truncate">
+                {item.text}
+              </Text>
+            )
+          }
+
           return (
             <Box key={item.key}>
               <Text color={colorForRole(item.message.role)}>
@@ -83,11 +263,10 @@ export function AiceApp(props: AiceAppProps) {
         }}
       </Static>
       <Box flexDirection="column" marginTop={1} width="100%">
-        {controller.streaming ? (
+        {liveStreamLine ? (
           <Box marginBottom={1}>
-            <Text color={messageColors.assistant}>{` ♤ `}</Text>
-            <Text color={messageColors.assistant} wrap="wrap">
-              {`${normalizedCurrentResponse}${controller.sessionStatus === 'completed' ? '  ' : ' ▌'}`}
+            <Text color={liveStreamLine.color} wrap="truncate">
+              {liveStreamLine.text}
             </Text>
           </Box>
         ) : null}
@@ -130,9 +309,16 @@ function labelForRole(role: MessageRole): string {
 }
 
 type StaticItem =
-  | { key: 'title'; kind: 'title'; }
+  | { color: string; key: string; kind: 'line'; text: string }
+  | { key: 'title'; kind: 'title' }
   | { key: string; kind: 'message'; message: ChatMessage }
-  | { key: string; kind: 'spacer'; }
+  | { key: string; kind: 'spacer' }
+
+type LiveStreamLine = {
+  color: string
+  key: 'live-stream'
+  text: string
+}
 
 function stripAssistantPadding(text: string): string {
   if (!text.startsWith(' ')) return text
