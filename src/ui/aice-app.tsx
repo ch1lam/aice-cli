@@ -1,17 +1,20 @@
+import type { ReactNode } from 'react'
+
 import { Box, Static, Text, useStdout } from 'ink'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import stringWidth from 'string-width'
 
-import type { ChatMessage, MessageRole } from '../types/chat.js'
+import type { MessageRole } from '../types/chat.js'
 import type { ProviderEnv } from '../types/env.js'
 import type { AppMode, SetupStep } from '../types/setup-flow.js'
+import type { RenderedLine } from './markdown/render-markdown.js'
 
 import { useChatInputController } from './hooks/use-chat-input-controller.js'
 import { InputPanel } from './input-panel.js'
+import { renderDisplayMarkdownLines, renderStreamMarkdown } from './markdown/render-markdown.js'
 import { SlashSuggestions } from './slash-suggestions.js'
 import { StatusBar } from './status-bar.js'
 import { theme } from './theme.js'
-import { wrapByWidth } from './utils.js'
 
 export interface AiceAppProps {
   initialEnv?: ProviderEnv
@@ -61,8 +64,8 @@ export function AiceApp(props: AiceAppProps) {
     controller.slashSuggestions.suggestions.length,
   )
   const assistantLabel = labelForRole('assistant')
-  const assistantIndent = ' '.repeat(stringWidth(assistantLabel))
-  const streamIndent = ' '.repeat(stringWidth(STREAM_LABEL))
+  const assistantIndent = indentForLabel(assistantLabel)
+  const streamIndent = indentForLabel(STREAM_LABEL)
   const contentWidth = Math.max(
     1,
     (typeof columns === 'number' && Number.isFinite(columns) && columns > 0
@@ -78,7 +81,6 @@ export function AiceApp(props: AiceAppProps) {
   const hasStaticContent = useRef(false)
   const skipNextAssistant = useRef(false)
   const streamCompletedCount = useRef(0)
-  const streamLabelEmitted = useRef(false)
   const prevStreaming = useRef(false)
 
   const nextStaticKey = useCallback((prefix: string) => {
@@ -91,6 +93,30 @@ export function AiceApp(props: AiceAppProps) {
     if (items.length === 0) return
     setStaticItems(current => [...current, ...items])
   }, [])
+
+  const buildMarkdownOptions = useCallback(
+    (baseColor: string) => ({
+      baseColor,
+      codeColor: theme.semantic.accentCode,
+      contentWidth,
+      headingColor: theme.semantic.accentPrimary,
+      linkColor: theme.semantic.accentInfo,
+      mutedColor: theme.semantic.textMuted,
+    }),
+    [contentWidth],
+  )
+
+  const toStaticLine = useCallback(
+    (line: RenderedLine, prefix: string): StaticItem => ({
+      bodyPrefix: line.bodyPrefix,
+      color: line.color,
+      key: nextStaticKey('line'),
+      kind: 'line',
+      parts: line.parts,
+      prefix,
+    }),
+    [nextStaticKey],
+  )
 
   const ensureStaticSpacer = useCallback(
     (items: StaticItem[]) => {
@@ -117,16 +143,19 @@ export function AiceApp(props: AiceAppProps) {
         continue
       }
 
-      items.push({
-        key: `message-${message.id}`,
-        kind: 'message',
-        message,
-      })
+      const label = labelForRole(message.role)
+      const indent = indentForLabel(label)
+      const body = message.role === 'assistant' ? stripAssistantPadding(message.text) : message.text
+      const lines = renderDisplayMarkdownLines(body, buildMarkdownOptions(colorForRole(message.role)))
+
+      for (const [index, line] of lines.entries()) {
+        items.push(toStaticLine(line, index === 0 ? label : indent))
+      }
     }
 
     appendStaticItems(items)
     renderedMessageCount.current = controller.messages.length
-  }, [appendStaticItems, controller.messages, ensureStaticSpacer])
+  }, [appendStaticItems, buildMarkdownOptions, controller.messages, ensureStaticSpacer, toStaticLine])
 
   useEffect(() => {
     const isStreaming = controller.streaming
@@ -134,66 +163,61 @@ export function AiceApp(props: AiceAppProps) {
 
     if (isStreaming && !wasStreaming) {
       streamCompletedCount.current = 0
-      streamLabelEmitted.current = false
       setLiveStreamLine(null)
     }
 
     if (isStreaming) {
-      const streamLines = wrapByWidth(normalizedCurrentResponse, contentWidth)
-      const completedLines = streamLines.slice(0, -1)
-      const newCompletedCount = completedLines.length
+      const { committed, live } = renderStreamMarkdown(
+        normalizedCurrentResponse,
+        buildMarkdownOptions(messageColors.assistant),
+      )
+      const newCompletedLines = committed.slice(streamCompletedCount.current)
 
-      if (newCompletedCount > streamCompletedCount.current) {
-        const newLines = completedLines.slice(streamCompletedCount.current)
+      if (newCompletedLines.length > 0) {
         const items: StaticItem[] = []
         ensureStaticSpacer(items)
 
-        for (const [index, line] of newLines.entries()) {
-          const isFirst = !streamLabelEmitted.current && index === 0
-          const prefix = isFirst ? assistantLabel : assistantIndent
-          items.push({
-            color: messageColors.assistant,
-            key: nextStaticKey('stream-line'),
-            kind: 'line',
-            text: `${prefix}${line}`,
-          })
+        for (const [index, line] of newCompletedLines.entries()) {
+          const lineIndex = streamCompletedCount.current + index
+          const prefix = lineIndex === 0 ? assistantLabel : assistantIndent
+          items.push(toStaticLine(line, prefix))
         }
 
-        if (items.length > 0) {
-          appendStaticItems(items)
-          streamLabelEmitted.current = true
-        }
-
-        streamCompletedCount.current = newCompletedCount
+        appendStaticItems(items)
       }
 
-      const live = streamLines.at(-1) ?? ''
-      const livePrefix = streamLabelEmitted.current ? streamIndent : STREAM_LABEL
-      const cursor = controller.sessionStatus === 'completed' ? '  ' : ' ▌'
-      setLiveStreamLine({
-        color: messageColors.assistant,
-        key: 'live-stream',
-        text: `${livePrefix}${live}${cursor}`,
-      })
+      streamCompletedCount.current = committed.length
+
+      if (live) {
+        const livePrefix = committed.length > 0 ? streamIndent : STREAM_LABEL
+        const cursor = controller.sessionStatus === 'completed' ? '  ' : ' ▌'
+        setLiveStreamLine({
+          bodyPrefix: live.bodyPrefix,
+          color: live.color,
+          key: 'live-stream',
+          parts: [...live.parts, <Text color={messageColors.caret} key="cursor">{cursor}</Text>],
+          prefix: livePrefix,
+        })
+      } else {
+        setLiveStreamLine(null)
+      }
     }
 
     if (!isStreaming && wasStreaming) {
-      const streamLines = wrapByWidth(normalizedCurrentResponse, contentWidth)
-      const remainingLines = streamLines.slice(streamCompletedCount.current)
+      const finalLines = renderDisplayMarkdownLines(
+        normalizedCurrentResponse,
+        buildMarkdownOptions(messageColors.assistant),
+      )
+      const remainingLines = finalLines.slice(streamCompletedCount.current)
 
       if (remainingLines.length > 0) {
         const items: StaticItem[] = []
         ensureStaticSpacer(items)
 
         for (const [index, line] of remainingLines.entries()) {
-          const isFirst = !streamLabelEmitted.current && index === 0
-          const prefix = isFirst ? assistantLabel : assistantIndent
-          items.push({
-            color: messageColors.assistant,
-            key: nextStaticKey('stream-line'),
-            kind: 'line',
-            text: `${prefix}${line}`,
-          })
+          const lineIndex = streamCompletedCount.current + index
+          const prefix = lineIndex === 0 ? assistantLabel : assistantIndent
+          items.push(toStaticLine(line, prefix))
         }
 
         appendStaticItems(items)
@@ -204,7 +228,6 @@ export function AiceApp(props: AiceAppProps) {
       }
 
       streamCompletedCount.current = 0
-      streamLabelEmitted.current = false
       setLiveStreamLine(null)
     }
 
@@ -213,12 +236,13 @@ export function AiceApp(props: AiceAppProps) {
     appendStaticItems,
     assistantIndent,
     assistantLabel,
-    contentWidth,
+    buildMarkdownOptions,
     controller.sessionStatus,
     controller.streaming,
     ensureStaticSpacer,
     normalizedCurrentResponse,
     streamIndent,
+    toStaticLine,
   ])
 
   return (
@@ -244,32 +268,23 @@ export function AiceApp(props: AiceAppProps) {
           if (item.kind === 'line') {
             return (
               <Text color={item.color} key={item.key} wrap="truncate">
-                {item.text}
+                {item.prefix}
+                {item.bodyPrefix}
+                {item.parts}
               </Text>
             )
           }
 
-          return (
-            <Box key={item.key}>
-              <Text color={colorForRole(item.message.role)}>
-                {`${labelForRole(item.message.role)}`}
-              </Text>
-              <Text color={colorForRole(item.message.role)} wrap="wrap">
-                {`${
-                  item.message.role === 'assistant'
-                    ? stripAssistantPadding(item.message.text)
-                    : item.message.text
-                }`}
-              </Text>
-            </Box>
-          )
+          return null
         }}
       </Static>
       <Box flexDirection="column" marginTop={inputTopMargin} width="100%">
         {liveStreamLine ? (
           <Box marginBottom={1}>
             <Text color={liveStreamLine.color} wrap="truncate">
-              {liveStreamLine.text}
+              {liveStreamLine.prefix}
+              {liveStreamLine.bodyPrefix}
+              {liveStreamLine.parts}
             </Text>
           </Box>
         ) : null}
@@ -311,16 +326,21 @@ function labelForRole(role: MessageRole): string {
   return ' • '
 }
 
+function indentForLabel(label: string): string {
+  return ' '.repeat(stringWidth(label))
+}
+
 type StaticItem =
-  | { color: string; key: string; kind: 'line'; text: string }
+  | { bodyPrefix: string; color: string; key: string; kind: 'line'; parts: ReactNode[]; prefix: string; }
   | { key: 'title'; kind: 'title' }
-  | { key: string; kind: 'message'; message: ChatMessage }
   | { key: string; kind: 'spacer' }
 
 type LiveStreamLine = {
+  bodyPrefix: string
   color: string
   key: 'live-stream'
-  text: string
+  parts: ReactNode[]
+  prefix: string
 }
 
 function stripAssistantPadding(text: string): string {

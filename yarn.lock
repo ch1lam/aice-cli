@@ -6085,6 +6085,11 @@ regjsparser@^0.10.0:
   dependencies:
     jsesc "~0.5.0"
 
+remend@^1.1.0:
+  version "1.1.0"
+  resolved "https://registry.npmmirror.com/remend/-/remend-1.1.0.tgz#2a7199b82860f44bfcb7d8a4c88ade596ded7aed"
+  integrity sha512-JENGyuIhTwzUfCarW43X4r9cehoqTo9QyYxfNDZSud2AmqeuWjZ5pfybasTa4q0dxTJAj5m8NB+wR+YueAFpxQ==
+
 require-directory@^2.1.1:
   version "2.1.1"
   resolved "https://registry.npmmirror.com/require-directory/-/require-directory-2.1.1.tgz#8c64ad5fd30dab1c976e2344ffe7f792a6a6df42"
