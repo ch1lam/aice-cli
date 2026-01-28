@@ -62,7 +62,7 @@ export class SetupService {
     return env
   }
 
-  setModel(env: ProviderEnv, model: string): ProviderEnv {
+  setModel(env: ProviderEnv, model?: string): ProviderEnv {
     try {
       this.#persistEnv({
         apiKey: env.apiKey,

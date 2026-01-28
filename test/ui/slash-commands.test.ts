@@ -30,8 +30,8 @@ function buildRouter(callLog: string[] = []) {
       handler(args) {
         callLog.push(`model:${args.join(',')}`)
       },
-      hint: '/model deepseek-chat',
-      usage: '/model <model-name>',
+      hint: '/model',
+      usage: '/model',
     },
     {
       command: 'clear',
@@ -52,11 +52,11 @@ describe('slash command router', () => {
     const calls: string[] = []
     const router = buildRouter(calls)
 
-    const result = router.handle('/model   deepseek-chat  ')
+    const result = router.handle('/model   ')
 
     expect(result.type).to.equal('handled')
     expect(result.command).to.equal('model')
-    expect(calls).to.deep.equal(['model:deepseek-chat'])
+    expect(calls).to.deep.equal(['model:'])
   })
 
   it('reports empty commands', () => {

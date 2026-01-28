@@ -118,6 +118,40 @@ describe('SetupService', () => {
     )
   })
 
+  it('clears the model override when setModel is called without a model', () => {
+    const calls: ProviderEnv[] = []
+    const env: ProviderEnv = {
+      apiKey: 'key',
+      baseURL: 'https://example.com',
+      model: 'old-model',
+      providerId: 'deepseek',
+    }
+
+    const service = new SetupService({
+      persistEnv(options) {
+        calls.push({
+          apiKey: options.apiKey,
+          baseURL: options.baseURL,
+          model: options.model,
+          providerId: options.providerId,
+        })
+        return {}
+      },
+    })
+
+    const updated = service.setModel(env)
+
+    expect(updated).to.deep.equal({ ...env, model: undefined })
+    expect(calls).to.deep.equal([
+      {
+        apiKey: 'key',
+        baseURL: 'https://example.com',
+        model: undefined,
+        providerId: 'deepseek',
+      },
+    ])
+  })
+
   it('verifies connectivity via the ping dependency', async () => {
     const calls: ProviderId[] = []
     const env: ProviderEnv = { apiKey: 'key', providerId: 'deepseek' }

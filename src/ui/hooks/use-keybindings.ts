@@ -8,8 +8,17 @@ type InkKey = Parameters<Parameters<typeof useInput>[0]>[1]
 
 interface UseKeybindingsOptions {
   input: string
+  modelMenu?: {
+    active: boolean
+    cancel: () => void
+    confirm: () => void
+    selectNext: () => void
+    selectPrevious: () => void
+  }
+  onSetupCancel?: () => void
   onSubmit: () => void
   setInput: Dispatch<SetStateAction<string>>
+  setupMode?: boolean
   setupSubmitting: boolean
   slashSuggestions: SlashSuggestionsState
   streaming: boolean
@@ -19,8 +28,11 @@ export function useKeybindings(options: UseKeybindingsOptions): void {
   const { exit } = useApp()
   const {
     input,
+    modelMenu,
+    onSetupCancel,
     onSubmit,
     setInput,
+    setupMode,
     setupSubmitting,
     slashSuggestions,
     streaming,
@@ -62,6 +74,30 @@ export function useKeybindings(options: UseKeybindingsOptions): void {
 
     if (setupSubmitting) return
 
+    if (modelMenu?.active) {
+      if (key.return) {
+        modelMenu.confirm()
+        return
+      }
+
+      if (key.escape) {
+        modelMenu.cancel()
+        return
+      }
+
+      if (key.downArrow) {
+        modelMenu.selectNext()
+        return
+      }
+
+      if (key.upArrow) {
+        modelMenu.selectPrevious()
+        return
+      }
+
+      return
+    }
+
     if (handleSlashSuggestionKey(key)) return
 
     if (key.return) {
@@ -74,7 +110,13 @@ export function useKeybindings(options: UseKeybindingsOptions): void {
       return
     }
 
-    if (key.escape) return
+    if (key.escape) {
+      if (setupMode && onSetupCancel) {
+        onSetupCancel()
+      }
+
+      return
+    }
 
     if (receivedInput) {
       setInput(current => `${current}${receivedInput}`)

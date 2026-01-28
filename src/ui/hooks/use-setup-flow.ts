@@ -26,6 +26,7 @@ interface UseSetupFlowOptions {
 }
 
 export interface UseSetupFlowResult {
+  cancelSetup(): void
   handleSetupInput(value: string): Promise<void>
   maskInput: boolean
   mode: AppMode
@@ -78,6 +79,24 @@ export function useSetupFlow(options: UseSetupFlowOptions): UseSetupFlowResult {
       step: 'apiKey',
     }))
   }, [])
+
+  const cancelSetup = useCallback(() => {
+    if (!providerEnv) {
+      onMessage('Provider not configured. Setup is required.')
+      return
+    }
+
+    setMode('chat')
+    setMaskInput(false)
+    setSetupState(current => ({
+      apiKey: undefined,
+      baseURL: undefined,
+      model: undefined,
+      providerId: current.providerId,
+      step: 'apiKey',
+    }))
+    onMessage('Setup cancelled. Returning to chat.')
+  }, [onMessage, providerEnv])
 
   const handleMissingApiKey = useCallback(() => {
     onMessage('Missing API key; restart setup with /login.')
@@ -229,6 +248,7 @@ export function useSetupFlow(options: UseSetupFlowOptions): UseSetupFlowResult {
   )
 
   return {
+    cancelSetup,
     handleSetupInput,
     maskInput,
     mode,

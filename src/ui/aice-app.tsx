@@ -12,6 +12,7 @@ import type { RenderedLine } from './markdown/render-markdown.js'
 import { useChatInputController } from './hooks/use-chat-input-controller.js'
 import { InputPanel } from './input-panel.js'
 import { renderDisplayMarkdownLines, renderStreamMarkdown } from './markdown/render-markdown.js'
+import { SelectInput } from './select-input.js'
 import { SlashSuggestions } from './slash-suggestions.js'
 import { StatusBar } from './status-bar.js'
 import { theme } from './theme.js'
@@ -52,17 +53,26 @@ export function AiceApp(props: AiceAppProps) {
 
   const inputLabel = '✧'
   const renderedInput = controller.maskInput ? '*'.repeat(controller.input.length) : controller.input
-  const hint = resolveHint(controller.mode, controller.setupStateStep)
-  const placeholder = resolvePlaceholder(controller.streaming, controller.setupSubmitting, hint)
-  const showCursor = !controller.streaming && !controller.setupSubmitting
+  const hint = resolveHint(controller.mode, controller.setupStateStep, controller.modelMenu.active)
+  const placeholder = resolvePlaceholder(
+    controller.streaming,
+    controller.setupSubmitting,
+    controller.modelMenu.active,
+    hint,
+  )
+  const showCursor =
+    !controller.streaming && !controller.setupSubmitting && !controller.modelMenu.active
+  const inputDisabled =
+    controller.streaming || controller.setupSubmitting || controller.modelMenu.active
   const normalizedCurrentResponse = stripAssistantPadding(controller.currentResponse || '')
   const inputTopMargin = controller.streaming ? 0 : 1
-  const showSlashSuggestions = shouldShowSlashSuggestions(
-    controller.mode,
-    controller.streaming,
-    controller.slashSuggestions.active,
-    controller.slashSuggestions.suggestions.length,
-  )
+  const showSlashSuggestions = shouldShowSlashSuggestions({
+    mode: controller.mode,
+    modelMenuActive: controller.modelMenu.active,
+    slashCommandActive: controller.slashSuggestions.active,
+    streaming: controller.streaming,
+    suggestionCount: controller.slashSuggestions.suggestions.length,
+  })
   const assistantLabel = labelForRole('assistant')
   const assistantIndent = indentForLabel(assistantLabel)
   const streamIndent = indentForLabel(STREAM_LABEL)
@@ -288,9 +298,19 @@ export function AiceApp(props: AiceAppProps) {
             </Text>
           </Box>
         ) : null}
+        {controller.modelMenu.active ? (
+          <Box marginBottom={1} width="100%">
+            <SelectInput
+              active
+              items={controller.modelMenu.items}
+              selectedIndex={controller.modelMenu.selectedIndex}
+              title={controller.modelMenu.title}
+            />
+          </Box>
+        ) : null}
         <InputPanel
           cursorVisible={showCursor}
-          disabled={controller.streaming || controller.setupSubmitting}
+          disabled={inputDisabled}
           label={inputLabel}
           maxLines={INPUT_MAX_LINES}
           placeholder={placeholder}
@@ -366,25 +386,44 @@ function setupPrompt(step: SetupStep): string {
   return ''
 }
 
-function resolveHint(mode: AppMode, step: SetupStep): string {
+function resolveHint(mode: AppMode, step: SetupStep, modelMenuActive: boolean): string {
   if (mode === 'setup') {
     return setupPrompt(step)
+  }
+
+  if (modelMenuActive) {
+    return 'Choose a model from the menu above.'
   }
 
   return 'Type a prompt or use /help, /login, /model, /new'
 }
 
-function resolvePlaceholder(streaming: boolean, setupSubmitting: boolean, hint: string): string {
+function resolvePlaceholder(
+  streaming: boolean,
+  setupSubmitting: boolean,
+  modelMenuActive: boolean,
+  hint: string,
+): string {
   if (streaming) return 'Processing response...'
   if (setupSubmitting) return 'Validating connection...'
+  if (modelMenuActive) return 'Model menu open...'
   return hint
 }
 
-function shouldShowSlashSuggestions(
-  mode: AppMode,
-  streaming: boolean,
-  slashCommandActive: boolean,
-  suggestionCount: number,
-): boolean {
-  return !streaming && mode === 'chat' && slashCommandActive && suggestionCount > 0
+type SlashSuggestionVisibility = {
+  mode: AppMode
+  modelMenuActive: boolean
+  slashCommandActive: boolean
+  streaming: boolean
+  suggestionCount: number
+}
+
+function shouldShowSlashSuggestions({
+  mode,
+  modelMenuActive,
+  slashCommandActive,
+  streaming,
+  suggestionCount,
+}: SlashSuggestionVisibility): boolean {
+  return !streaming && !modelMenuActive && mode === 'chat' && slashCommandActive && suggestionCount > 0
 }

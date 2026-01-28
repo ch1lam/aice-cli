@@ -46,10 +46,10 @@ export function useSlashCommands(options: UseSlashCommandsOptions): UseSlashComm
       },
       {
         command: 'model',
-        description: 'Set or change the active model override.',
+        description: 'Open the model menu and switch the active model.',
         handler: args => onModel(args),
-        hint: '/model deepseek-chat',
-        usage: '/model <model-name>',
+        hint: '/model',
+        usage: '/model',
       },
       {
         command: 'new',

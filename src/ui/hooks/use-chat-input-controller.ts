@@ -2,15 +2,18 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import type { ChatMessage, MessageRole } from '../../types/chat.js'
 import type { ProviderEnv } from '../../types/env.js'
+import type { SelectInputItem } from '../../types/select-input.js'
 import type { AppMode, SetupStep } from '../../types/setup-flow.js'
 import type { SlashCommandDefinition } from '../../types/slash-commands.js'
 import type { SlashSuggestionsState } from '../../types/slash-suggestions-state.js'
 import type { ProviderId, StreamStatus, TokenUsage } from '../../types/stream.js'
 
 import { buildMessages as formatMessages } from '../../chat/messages.js'
-import { resolveDefaultModel } from '../../config/provider-defaults.js'
+import { getProviderDefaults, resolveDefaultModel } from '../../config/provider-defaults.js'
+import { getProviderModelOptions } from '../../config/provider-models.js'
 import { SetupService } from '../../services/setup-service.js'
 import { isSlashCommandInput } from '../slash-commands.js'
+import { clampIndex, cycleIndex } from '../utils.js'
 import { useChatStream, type UseChatStreamOptions } from './use-chat-stream.js'
 import { useKeybindings } from './use-keybindings.js'
 import { useSetupFlow } from './use-setup-flow.js'
@@ -25,6 +28,12 @@ export interface ChatInputControllerResult {
   maskInput: boolean
   messages: ChatMessage[]
   mode: AppMode
+  modelMenu: {
+    active: boolean
+    items: Array<SelectInputItem<string>>
+    selectedIndex: number
+    title: string
+  }
   providerMeta?: {model: string; providerId: ProviderId}
   sessionStatus?: StreamStatus
   sessionStatusMessage?: string
@@ -48,6 +57,8 @@ export function useChatInputController(
   const messageId = useRef(0)
   const [input, setInput] = useState('')
   const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [modelMenuActive, setModelMenuActive] = useState(false)
+  const [modelMenuIndex, setModelMenuIndex] = useState(0)
 
   const createMessage = useCallback((role: MessageRole, text: string): ChatMessage => {
     const id = messageId.current++
@@ -93,6 +104,7 @@ export function useChatInputController(
   })
 
   const {
+    cancelSetup,
     handleSetupInput,
     maskInput,
     mode,
@@ -131,6 +143,95 @@ export function useChatInputController(
     addSystemMessage('Restarting setup. Enter API key.')
   }, [addSystemMessage, resetSetup])
 
+  const modelMenuItems = useMemo<Array<SelectInputItem<string>>>(() => {
+    if (!providerEnv) return []
+    const defaults = getProviderDefaults(providerEnv.providerId)
+    const items: Array<SelectInputItem<string>> = [
+      {
+        description: 'Reset model override.',
+        label: 'Default',
+        value: defaults.defaultModel,
+      },
+    ]
+    const options = getProviderModelOptions(providerEnv.providerId)
+
+    for (const option of options) {
+      if (option.id === defaults.defaultModel) continue
+      items.push({
+        description: option.description,
+        label: option.label,
+        value: option.id,
+      })
+    }
+
+    return items
+  }, [providerEnv])
+
+  const modelMenuTitle = useMemo(() => {
+    if (!providerEnv) return 'Select model'
+    const { label } = getProviderDefaults(providerEnv.providerId)
+    return `Select model (${label})`
+  }, [providerEnv])
+
+  const closeModelMenu = useCallback(
+    (message?: string) => {
+      setModelMenuActive(false)
+      if (message) addSystemMessage(message)
+    },
+    [addSystemMessage],
+  )
+
+  const confirmModelSelection = useCallback(() => {
+    if (!providerEnv) {
+      closeModelMenu('Provider not configured. Run /login first.')
+      return
+    }
+
+    if (modelMenuItems.length === 0) {
+      closeModelMenu('No model options available.')
+      return
+    }
+
+    const defaults = getProviderDefaults(providerEnv.providerId)
+    const safeIndex = clampIndex(modelMenuIndex, modelMenuItems.length)
+    const selection = modelMenuItems[safeIndex]
+    const nextModel = selection.value === defaults.defaultModel ? undefined : selection.value
+
+    try {
+      const updatedEnv = setupService.setModel(providerEnv, nextModel)
+      setProviderEnv(updatedEnv)
+      const resolvedModel = resolveDefaultModel(updatedEnv.providerId, updatedEnv.model)
+      setSessionMeta({ model: resolvedModel, providerId: updatedEnv.providerId })
+      if (nextModel) {
+        addSystemMessage(`Model set to ${selection.value}.`)
+      } else {
+        addSystemMessage(`Model reset to default (${resolvedModel}).`)
+      }
+    } catch (persistError) {
+      const message = persistError instanceof Error ? persistError.message : String(persistError)
+      addSystemMessage(`Failed to save model: ${message}`)
+    } finally {
+      setModelMenuActive(false)
+    }
+  }, [
+    addSystemMessage,
+    closeModelMenu,
+    modelMenuIndex,
+    modelMenuItems,
+    providerEnv,
+    setProviderEnv,
+    setSessionMeta,
+    setupService,
+  ])
+
+  const selectNextModel = useCallback(() => {
+    setModelMenuIndex(current => cycleIndex(current, 1, modelMenuItems.length))
+  }, [modelMenuItems.length])
+
+  const selectPreviousModel = useCallback(() => {
+    setModelMenuIndex(current => cycleIndex(current, -1, modelMenuItems.length))
+  }, [modelMenuItems.length])
+
   const handleModelCommand = useCallback(
     (args: string[]) => {
       if (!providerEnv) {
@@ -138,23 +239,26 @@ export function useChatInputController(
         return
       }
 
-      const model = args.join(' ').trim()
-      if (!model) {
-        addSystemMessage('Usage: /model <model-name>')
+      if (streaming) {
+        addSystemMessage('Request already in progress. Please wait.')
         return
       }
 
-      try {
-        const updatedEnv = setupService.setModel(providerEnv, model)
-        setProviderEnv(updatedEnv)
-        setSessionMeta({ model, providerId: updatedEnv.providerId })
-        addSystemMessage(`Model set to ${model}.`)
-      } catch (persistError) {
-        const message = persistError instanceof Error ? persistError.message : String(persistError)
-        addSystemMessage(`Failed to save model: ${message}`)
+      if (args.length > 0) {
+        addSystemMessage('Model menu opened. Arguments are ignored.')
       }
+
+      if (modelMenuItems.length === 0) {
+        addSystemMessage('No model options available.')
+        return
+      }
+
+      const currentModel = resolveDefaultModel(providerEnv.providerId, providerEnv.model)
+      const currentIndex = modelMenuItems.findIndex(item => item.value === currentModel)
+      setModelMenuIndex(Math.max(currentIndex, 0))
+      setModelMenuActive(true)
     },
-    [addSystemMessage, providerEnv, setProviderEnv, setSessionMeta, setupService],
+    [addSystemMessage, modelMenuItems, providerEnv, streaming],
   )
 
   const { handleSlashCommand, suggestions: slashSuggestionsForQuery } = useSlashCommands({
@@ -262,8 +366,20 @@ export function useChatInputController(
 
   useKeybindings({
     input,
+    modelMenu: {
+      active: modelMenuActive,
+      cancel: () => closeModelMenu('Model selection cancelled.'),
+      confirm: confirmModelSelection,
+      selectNext: selectNextModel,
+      selectPrevious: selectPreviousModel,
+    },
+    onSetupCancel() {
+      setInput('')
+      cancelSetup()
+    },
     onSubmit: handleSubmit,
     setInput,
+    setupMode: mode === 'setup',
     setupSubmitting,
     slashSuggestions,
     streaming,
@@ -286,6 +402,12 @@ export function useChatInputController(
     maskInput,
     messages,
     mode,
+    modelMenu: {
+      active: modelMenuActive,
+      items: modelMenuItems,
+      selectedIndex: modelMenuIndex,
+      title: modelMenuTitle,
+    },
     providerMeta,
     sessionStatus,
     sessionStatusMessage,
