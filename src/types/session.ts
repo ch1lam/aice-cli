@@ -6,6 +6,7 @@ export interface SessionRequest {
   messages: ModelMessage[]
   model: string
   providerId: ProviderId
+  temperature?: number
   signal?: AbortSignal
 }
 
