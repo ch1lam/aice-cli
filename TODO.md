@@ -10,3 +10,9 @@
 - [x] Rebuild connectivity checks using AI SDK primitives.
 - [x] Update tests for provider, session, UI, and config behavior.
 - [x] Refresh docs after implementation and verify `yarn build && yarn test`.
+
+## Agent migration (AI SDK 6)
+
+- [x] Replace direct `streamText` provider runtime with `ToolLoopAgent`.
+- [x] Add read-only workspace tools (`read_file`, `list_files`, `search_files`, `get_current_time`).
+- [x] Update provider and tool tests for the agent loop path.

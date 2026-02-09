@@ -1,6 +1,6 @@
 # Repository Guidelines
 
-Current state: the repo uses the Vercel AI SDK with DeepSeek-only support. Follow `TODO.md` for sequencing.
+Current state: the repo uses AI SDK 6 + DeepSeek-only support. Chat responses run through `ToolLoopAgent` with workspace tools. Follow `TODO.md` for sequencing.
 
 ## Guiding Principles
 - Keep behavior stable: refactor in small steps with fast tests as your safety net.

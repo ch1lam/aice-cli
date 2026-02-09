@@ -1,6 +1,13 @@
-import type { LanguageModel, ModelMessage, TextStreamPart, ToolSet } from 'ai'
-
+import {
+  type LanguageModel,
+  type ModelMessage,
+  type TextStreamPart,
+  type ToolLoopAgentSettings,
+  type ToolSet,
+} from 'ai'
+import { tool } from 'ai'
 import { expect } from 'chai'
+import { z } from 'zod'
 
 import type { ProviderStreamChunk } from '../../src/types/stream.ts'
 
@@ -9,14 +16,18 @@ import { createUsage } from '../helpers/usage.ts'
 
 type StreamPart = TextStreamPart<ToolSet>
 
-type StreamTextOptions = {
+type AgentStreamOptions = {
   abortSignal?: AbortSignal
   messages: ModelMessage[]
-  model: LanguageModel
-  temperature?: number
 }
 
-type StreamTextFn = (options: StreamTextOptions) => { fullStream: AsyncIterable<StreamPart> }
+type AgentStreamResult = {
+  fullStream: AsyncIterable<StreamPart>
+}
+
+type AgentLike = {
+  stream: (options: AgentStreamOptions) => PromiseLike<AgentStreamResult>
+}
 
 class FakeStream implements AsyncIterable<StreamPart> {
   private readonly events: Array<Error | StreamPart>
@@ -61,15 +72,32 @@ describe('DeepSeekProvider', () => {
       return { modelId } as LanguageModel
     }
 
-    let capturedOptions: StreamTextOptions | undefined
-    const streamText: StreamTextFn = options => {
-      capturedOptions = options
-      return { fullStream: new FakeStream(events) }
+    const tools = {
+      'mock_tool': tool({
+        description: 'Test tool',
+        async execute() {
+          return 'ok'
+        },
+        inputSchema: z.object({}),
+      }),
+    }
+
+    let capturedAgentSettings: ToolLoopAgentSettings<never, ToolSet> | undefined
+    let capturedStreamOptions: AgentStreamOptions | undefined
+    const agentFactory = (settings: ToolLoopAgentSettings<never, ToolSet>): AgentLike => {
+      capturedAgentSettings = settings
+
+      return {
+        async stream(options) {
+          capturedStreamOptions = options
+          return { fullStream: new FakeStream(events) }
+        },
+      }
     }
 
     const provider = new DeepSeekProvider(
       { apiKey: 'deepseek-key', model: 'deepseek-chat' },
-      { modelFactory, streamText },
+      { agentFactory, modelFactory, toolsFactory: () => tools },
     )
 
     const controller = new AbortController()
@@ -112,10 +140,17 @@ describe('DeepSeekProvider', () => {
     }
 
     expect(modelCalls).to.deep.equal(['deepseek-chat'])
-    expect(capturedOptions).to.include({
+    expect(capturedStreamOptions).to.include({
       abortSignal: controller.signal,
       messages,
+    })
+    expect(capturedAgentSettings).to.include({
       temperature: 0.2,
+      tools,
+    })
+    expect(capturedAgentSettings?.instructions).to.contain('AICE')
+    expect(capturedAgentSettings?.model).to.deep.equal({
+      modelId: 'deepseek-chat',
     })
   })
 
@@ -125,11 +160,15 @@ describe('DeepSeekProvider', () => {
       { error: new Error('DeepSeek response failed'), type: 'error' },
     ]
 
-    const streamText: StreamTextFn = () => ({ fullStream: new FakeStream(events) })
+    const agentFactory = (): AgentLike => ({
+      async stream() {
+        return { fullStream: new FakeStream(events) }
+      },
+    })
 
     const provider = new DeepSeekProvider(
       { apiKey: 'deepseek-key', model: 'deepseek-chat' },
-      { modelFactory: () => ({}) as LanguageModel, streamText },
+      { agentFactory, modelFactory: () => ({}) as LanguageModel },
     )
 
     const request: DeepSeekSessionRequest = {

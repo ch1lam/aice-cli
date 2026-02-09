@@ -5,7 +5,8 @@ DeepSeek-only CLI for experimenting with the Vercel AI SDK. It defaults to an In
 ## Status
 
 - DeepSeek-only, no provider picker.
-- TUI-first default command (`aice`) opens an Ink chat shell with an input bar, streaming transcript, and first-run setup for API key/model.
+- TUI-first default command (`aice`) opens an Ink agent shell with an input bar, streaming transcript, and first-run setup for API key/model.
+- Runtime responses are generated via AI SDK 6 `ToolLoopAgent` with read-only workspace tools (`read_file`, `list_files`, `search_files`, `get_current_time`).
 - Slash commands: `/help`, `/login`, `/model`, `/new`.
 
 ## Requirements

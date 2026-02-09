@@ -373,7 +373,7 @@ describe('Ink UI', () => {
     }, [props.env, startStream])
 
     useEffect(() => {
-      if (messages.some(message => message.startsWith('system:Failed to start chat:'))) {
+      if (messages.some(message => message.startsWith('system:Failed to start agent:'))) {
         exit()
       }
     }, [exit, messages])
@@ -539,11 +539,11 @@ describe('Ink UI', () => {
 
       const { lastFrame } = render(<FailingChatStreamScene env={env} />)
       await waitFor(() =>
-        stripAnsi(lastFrame() ?? '').includes('system:Failed to start chat: no stream'),
+        stripAnsi(lastFrame() ?? '').includes('system:Failed to start agent: no stream'),
       )
 
       const finalFrame = stripAnsi(lastFrame() ?? '')
-      expect(finalFrame).to.include('system:Failed to start chat: no stream')
+      expect(finalFrame).to.include('system:Failed to start agent: no stream')
       expect(finalFrame).to.include('idle')
     })
 

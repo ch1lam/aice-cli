@@ -109,7 +109,7 @@ export function useChatStream(options: UseChatStreamOptions): UseChatStreamResul
         })
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
-        onSystemMessage?.(`Failed to start chat: ${message}`)
+        onSystemMessage?.(`Failed to start agent: ${message}`)
         return
       }
 
