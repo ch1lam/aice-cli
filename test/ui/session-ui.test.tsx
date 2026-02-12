@@ -111,6 +111,12 @@ function SessionScene(props: SessionSceneProps): ReactElement {
 
   return (
     <Box flexDirection="column">
+      {session.streamEvents.map((event, index) => (
+        <Text key={`event-${index}`}>{`event:${event.kind}:${event.text}`}</Text>
+      ))}
+      {session.progressMessages.map((message, index) => (
+        <Text key={index}>{`progress:${message}`}</Text>
+      ))}
       <Text>{content}</Text>
       <StatusBar
         status={session.status}
@@ -224,6 +230,81 @@ describe('Ink UI', () => {
       const finalFrame = stripAnsi(lastFrame() ?? '')
 
       expect(finalFrame).to.include('thinking')
+    })
+
+    it('emits progress messages for tool calls and results', async () => {
+      const stream = chunkStream(
+        [
+          { type: 'start' },
+          { input: { path: 'README.md' }, toolCallId: 'tool-0', toolName: 'read_file', type: 'tool-call' },
+          {
+            input: { path: 'README.md' },
+            output: { content: 'ok' },
+            toolCallId: 'tool-0',
+            toolName: 'read_file',
+            type: 'tool-result',
+          },
+          { id: 'text-0', text: 'Done', type: 'text-delta' },
+          {
+            finishReason: 'stop',
+            rawFinishReason: 'stop',
+            totalUsage: createUsage({ inputTokens: 1, outputTokens: 1, totalTokens: 2 }),
+            type: 'finish',
+          },
+        ],
+        5,
+      )
+
+      const { lastFrame } = render(<SessionScene stream={stream} />)
+      await waitFor(() => (lastFrame() ?? '').includes('status:completed'))
+
+      const finalFrame = stripAnsi(lastFrame() ?? '')
+
+      expect(finalFrame).to.include('progress:Reading file README.md.')
+      expect(finalFrame).to.include('progress:Finished reading README.md.')
+      expect(finalFrame).to.include('Done')
+    })
+
+    it('keeps assistant and tool events in stream order', async () => {
+      const stream = chunkStream(
+        [
+          { type: 'start' },
+          { id: 'text-0', text: 'First step.', type: 'text-delta' },
+          { input: { path: '.' }, toolCallId: 'tool-0', toolName: 'list_files', type: 'tool-call' },
+          {
+            input: { path: '.' },
+            output: { files: ['src/index.ts'] },
+            toolCallId: 'tool-0',
+            toolName: 'list_files',
+            type: 'tool-result',
+          },
+          { id: 'text-0', text: ' Second step.', type: 'text-delta' },
+          {
+            finishReason: 'stop',
+            rawFinishReason: 'stop',
+            totalUsage: createUsage({ inputTokens: 2, outputTokens: 3, totalTokens: 5 }),
+            type: 'finish',
+          },
+        ],
+        5,
+      )
+
+      const { lastFrame } = render(<SessionScene stream={stream} />)
+      await waitFor(() => (lastFrame() ?? '').includes('status:completed'))
+
+      const finalFrame = stripAnsi(lastFrame() ?? '')
+      const first = finalFrame.indexOf('event:assistant:First step.')
+      const call = finalFrame.indexOf('event:progress:Reading directory .')
+      const result = finalFrame.indexOf('event:progress:Finished directory scan for .')
+      const second = finalFrame.indexOf('event:assistant: Second step.')
+
+      expect(first).to.not.equal(-1)
+      expect(call).to.not.equal(-1)
+      expect(result).to.not.equal(-1)
+      expect(second).to.not.equal(-1)
+      expect(first).to.be.lessThan(call)
+      expect(call).to.be.lessThan(result)
+      expect(result).to.be.lessThan(second)
     })
 
     it('surfaces error chunks', async () => {

@@ -16,7 +16,7 @@ import type { SessionStream, StreamStatus, TokenUsage } from '../../types/stream
 
 import { resolveDefaultModel } from '../../config/provider-defaults.js'
 import { ChatService } from '../../services/chat-service.js'
-import { useSession } from './use-session.js'
+import { type SessionStreamEvent, useSession } from './use-session.js'
 
 export type { ChatMessage, MessageRole } from '../../types/chat.js'
 
@@ -33,6 +33,7 @@ export interface UseChatStreamOptions {
 
 export interface UseChatStreamResult {
   currentResponse: string
+  progressMessages: string[]
   resetSession(): void
   sessionMeta?: SessionMeta
   sessionStatus?: StreamStatus
@@ -40,6 +41,7 @@ export interface UseChatStreamResult {
   sessionUsage?: TokenUsage
   setSessionMeta: Dispatch<SetStateAction<SessionMeta | undefined>>
   startStream(history: ChatMessage[], env: ProviderEnv): void
+  streamEvents: SessionStreamEvent[]
   streaming: boolean
 }
 
@@ -70,9 +72,13 @@ export function useChatStream(options: UseChatStreamOptions): UseChatStreamResul
 
   const streaming = Boolean(stream) && !session.done
   const currentResponse = session.content || latestContentRef.current
-  const sessionStatus: StreamStatus | undefined = session.status
-  const sessionStatusMessage = session.statusMessage
-  const sessionUsage: TokenUsage | undefined = session.usage
+  const {
+    progressMessages,
+    status: sessionStatus,
+    statusMessage: sessionStatusMessage,
+    streamEvents,
+    usage: sessionUsage,
+  } = session
 
   useEffect(() => {
     if (session.content === '' && latestContentRef.current) return
@@ -125,6 +131,7 @@ export function useChatStream(options: UseChatStreamOptions): UseChatStreamResul
 
   return {
     currentResponse,
+    progressMessages,
     resetSession,
     sessionMeta,
     sessionStatus,
@@ -132,6 +139,7 @@ export function useChatStream(options: UseChatStreamOptions): UseChatStreamResul
     sessionUsage,
     setSessionMeta,
     startStream,
+    streamEvents,
     streaming,
   }
 }

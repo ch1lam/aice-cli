@@ -1,8 +1,8 @@
 {
-  "name": "aice-cli",
+  "name": "@ch1lam/aice-cli",
   "description": "The AI Ace CLI.",
-  "version": "0.0.1",
-  "author": "chilam",
+  "version": "0.1.0",
+  "author": "chilam <chilam.lee@outlook.com> (https://github.com/ch1lam)",
   "bin": {
     "aice": "./bin/run.js"
   },

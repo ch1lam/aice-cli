@@ -7,6 +7,7 @@ import stringWidth from 'string-width'
 import type { MessageRole } from '../types/chat.js'
 import type { ProviderEnv } from '../types/env.js'
 import type { AppMode, SetupStep } from '../types/setup-flow.js'
+import type { SessionStreamEvent } from './hooks/use-session.js'
 import type { RenderedLine } from './markdown/render-markdown.js'
 
 import { useChatInputController } from './hooks/use-chat-input-controller.js'
@@ -26,7 +27,7 @@ export interface AiceAppProps {
 const messageColors = theme.components.messages
 const INPUT_MAX_LINES = 6
 const DEFAULT_COLUMNS = 80
-const STREAM_LABEL = ' ♤ '
+const PROGRESS_LABEL = ' ◇ '
 
 export function AiceApp(props: AiceAppProps) {
   const { stdout } = useStdout()
@@ -64,7 +65,6 @@ export function AiceApp(props: AiceAppProps) {
     !controller.streaming && !controller.setupSubmitting && !controller.modelMenu.active
   const inputDisabled =
     controller.streaming || controller.setupSubmitting || controller.modelMenu.active
-  const normalizedCurrentResponse = stripAssistantPadding(controller.currentResponse || '')
   const inputTopMargin = controller.streaming ? 0 : 1
   const showSlashSuggestions = shouldShowSlashSuggestions({
     mode: controller.mode,
@@ -75,12 +75,13 @@ export function AiceApp(props: AiceAppProps) {
   })
   const assistantLabel = labelForRole('assistant')
   const assistantIndent = indentForLabel(assistantLabel)
-  const streamIndent = indentForLabel(STREAM_LABEL)
+  const progressIndent = indentForLabel(PROGRESS_LABEL)
+  const labelWidth = Math.max(stringWidth(PROGRESS_LABEL), stringWidth(assistantLabel))
   const contentWidth = Math.max(
     1,
     (typeof columns === 'number' && Number.isFinite(columns) && columns > 0
       ? columns
-      : DEFAULT_COLUMNS) - stringWidth(STREAM_LABEL),
+      : DEFAULT_COLUMNS) - labelWidth,
   )
   const [staticItems, setStaticItems] = useState<StaticItem[]>(() => [
     { key: 'title', kind: 'title' },
@@ -89,8 +90,10 @@ export function AiceApp(props: AiceAppProps) {
   const staticKeyRef = useRef(0)
   const renderedMessageCount = useRef(0)
   const hasStaticContent = useRef(false)
-  const skipNextAssistant = useRef(false)
-  const streamCompletedCount = useRef(0)
+  const skipAssistantText = useRef<string | undefined>(undefined)
+  const timelineFinalizedCount = useRef(0)
+  const timelineTailCommittedCount = useRef(0)
+  const timelineTailEventIndex = useRef<number | undefined>(undefined)
   const prevStreaming = useRef(false)
 
   const nextStaticKey = useCallback((prefix: string) => {
@@ -148,14 +151,15 @@ export function AiceApp(props: AiceAppProps) {
     }
 
     for (const message of newMessages) {
-      if (skipNextAssistant.current && message.role === 'assistant') {
-        skipNextAssistant.current = false
-        continue
-      }
-
       const label = labelForRole(message.role)
       const indent = indentForLabel(label)
       const body = message.role === 'assistant' ? stripAssistantPadding(message.text) : message.text
+
+      if (message.role === 'assistant' && skipAssistantText.current === body) {
+        skipAssistantText.current = undefined
+        continue
+      }
+
       const lines = renderDisplayMarkdownLines(body, buildMarkdownOptions(colorForRole(message.role)))
 
       for (const [index, line] of lines.entries()) {
@@ -170,75 +174,165 @@ export function AiceApp(props: AiceAppProps) {
   useEffect(() => {
     const isStreaming = controller.streaming
     const wasStreaming = prevStreaming.current
+    const events = controller.streamEvents
+    const items: StaticItem[] = []
+
+    const appendEventLines = (event: SessionStreamEvent, startLine = 0) => {
+      const renderedLines = renderEventLines(event, {
+        buildMarkdownOptions,
+      })
+      if (renderedLines.length <= startLine) return
+
+      ensureStaticSpacer(items)
+
+      for (const [index, line] of renderedLines.slice(startLine).entries()) {
+        const lineIndex = startLine + index
+        items.push(
+          toStaticLine(
+            line,
+            timelinePrefix(event.kind, lineIndex, {
+              assistantIndent,
+              assistantLabel,
+              progressIndent,
+            }),
+          ),
+        )
+      }
+    }
+
+    const finalizeTailAssistant = (force: boolean, finalizableCount: number) => {
+      const tailIndex = timelineTailEventIndex.current
+      if (tailIndex === undefined) return
+
+      const tailEvent = events[tailIndex]
+      const shouldFinalize =
+        force
+        || !tailEvent
+        || tailEvent.kind !== 'assistant'
+        || tailIndex < finalizableCount
+
+      if (!shouldFinalize) return
+
+      if (tailEvent?.kind === 'assistant') {
+        appendEventLines(tailEvent, timelineTailCommittedCount.current)
+      }
+
+      timelineFinalizedCount.current = Math.max(timelineFinalizedCount.current, tailIndex + 1)
+      timelineTailEventIndex.current = undefined
+      timelineTailCommittedCount.current = 0
+      setLiveStreamLine(null)
+    }
 
     if (isStreaming && !wasStreaming) {
-      streamCompletedCount.current = 0
+      skipAssistantText.current = undefined
+      timelineFinalizedCount.current = 0
+      timelineTailCommittedCount.current = 0
+      timelineTailEventIndex.current = undefined
       setLiveStreamLine(null)
     }
 
     if (isStreaming) {
-      const { committed, live } = renderStreamMarkdown(
-        normalizedCurrentResponse,
-        buildMarkdownOptions(messageColors.assistant),
-      )
-      const newCompletedLines = committed.slice(streamCompletedCount.current)
+      const tailEvent = events.at(-1)
+      const finalizableCount = tailEvent?.kind === 'assistant' ? events.length - 1 : events.length
 
-      if (newCompletedLines.length > 0) {
-        const items: StaticItem[] = []
-        ensureStaticSpacer(items)
+      finalizeTailAssistant(false, finalizableCount)
 
-        for (const [index, line] of newCompletedLines.entries()) {
-          const lineIndex = streamCompletedCount.current + index
-          const prefix = lineIndex === 0 ? assistantLabel : assistantIndent
-          items.push(toStaticLine(line, prefix))
-        }
-
-        appendStaticItems(items)
+      for (let index = timelineFinalizedCount.current; index < finalizableCount; index += 1) {
+        const event = events[index]
+        if (!event) break
+        appendEventLines(event)
       }
 
-      streamCompletedCount.current = committed.length
+      timelineFinalizedCount.current = finalizableCount
 
-      if (live) {
-        const livePrefix = committed.length > 0 ? streamIndent : STREAM_LABEL
-        const cursor = controller.sessionStatus === 'completed' ? '  ' : ' ▌'
-        setLiveStreamLine({
-          bodyPrefix: live.bodyPrefix,
-          color: live.color,
-          key: 'live-stream',
-          parts: [...live.parts, <Text color={messageColors.caret} key="cursor">{cursor}</Text>],
-          prefix: livePrefix,
-        })
+      if (tailEvent?.kind === 'assistant') {
+        const tailIndex = events.length - 1
+        if (timelineTailEventIndex.current !== tailIndex) {
+          timelineTailEventIndex.current = tailIndex
+          timelineTailCommittedCount.current = 0
+        }
+
+        const { committed, live } = renderStreamMarkdown(
+          stripAssistantPadding(tailEvent.text),
+          buildMarkdownOptions(messageColors.assistant),
+        )
+
+        if (committed.length > timelineTailCommittedCount.current) {
+          ensureStaticSpacer(items)
+
+          for (
+            let lineIndex = timelineTailCommittedCount.current;
+            lineIndex < committed.length;
+            lineIndex += 1
+          ) {
+            items.push(
+              toStaticLine(
+                committed[lineIndex],
+                timelinePrefix('assistant', lineIndex, {
+                  assistantIndent,
+                  assistantLabel,
+                  progressIndent,
+                }),
+              ),
+            )
+          }
+
+          timelineTailCommittedCount.current = committed.length
+        }
+
+        if (live) {
+          setLiveStreamLine({
+            bodyPrefix: live.bodyPrefix,
+            color: live.color,
+            key: 'live-stream',
+            parts: live.parts,
+            prefix: timelinePrefix('assistant', committed.length, {
+              assistantIndent,
+              assistantLabel,
+              progressIndent,
+            }),
+          })
+        } else {
+          setLiveStreamLine(null)
+        }
       } else {
+        timelineTailEventIndex.current = undefined
+        timelineTailCommittedCount.current = 0
         setLiveStreamLine(null)
       }
     }
 
     if (!isStreaming && wasStreaming) {
-      const finalLines = renderDisplayMarkdownLines(
-        normalizedCurrentResponse,
-        buildMarkdownOptions(messageColors.assistant),
-      )
-      const remainingLines = finalLines.slice(streamCompletedCount.current)
+      finalizeTailAssistant(true, events.length)
 
-      if (remainingLines.length > 0) {
-        const items: StaticItem[] = []
-        ensureStaticSpacer(items)
-
-        for (const [index, line] of remainingLines.entries()) {
-          const lineIndex = streamCompletedCount.current + index
-          const prefix = lineIndex === 0 ? assistantLabel : assistantIndent
-          items.push(toStaticLine(line, prefix))
-        }
-
-        appendStaticItems(items)
+      for (let index = timelineFinalizedCount.current; index < events.length; index += 1) {
+        const event = events[index]
+        if (!event) break
+        appendEventLines(event)
       }
 
-      if (normalizedCurrentResponse && controller.sessionStatus === 'completed') {
-        skipNextAssistant.current = true
-      }
-
-      streamCompletedCount.current = 0
+      timelineFinalizedCount.current = events.length
       setLiveStreamLine(null)
+
+      if (controller.sessionStatus === 'completed') {
+        const text = stripAssistantPadding(extractAssistantText(events))
+        skipAssistantText.current = text || undefined
+      }
+    }
+
+    if (!isStreaming && !wasStreaming) {
+      timelineFinalizedCount.current = 0
+      timelineTailCommittedCount.current = 0
+      timelineTailEventIndex.current = undefined
+      setLiveStreamLine(null)
+    }
+
+    appendStaticItems(items)
+
+    if (!isStreaming && events.length === 0) {
+      timelineFinalizedCount.current = 0
+      timelineTailCommittedCount.current = 0
+      timelineTailEventIndex.current = undefined
     }
 
     prevStreaming.current = isStreaming
@@ -248,10 +342,10 @@ export function AiceApp(props: AiceAppProps) {
     assistantLabel,
     buildMarkdownOptions,
     controller.sessionStatus,
+    controller.streamEvents,
     controller.streaming,
     ensureStaticSpacer,
-    normalizedCurrentResponse,
-    streamIndent,
+    progressIndent,
     toStaticLine,
   ])
 
@@ -295,6 +389,7 @@ export function AiceApp(props: AiceAppProps) {
               {liveStreamLine.prefix}
               {liveStreamLine.bodyPrefix}
               {liveStreamLine.parts}
+              <Text color={messageColors.caret}> ▌</Text>
             </Text>
           </Box>
         ) : null}
@@ -363,11 +458,65 @@ type LiveStreamLine = {
   prefix: string
 }
 
+type BuildMarkdownOptions = (baseColor: string) => {
+  baseColor: string
+  codeColor: string
+  contentWidth: number
+  headingColor: string
+  linkColor: string
+  mutedColor: string
+}
+
+type TimelineLabelOptions = {
+  assistantIndent: string
+  assistantLabel: string
+  progressIndent: string
+}
+
+type TimelineRenderOptions = {
+  buildMarkdownOptions: BuildMarkdownOptions
+}
+
 function stripAssistantPadding(text: string): string {
   if (!text.startsWith(' ')) return text
   if (text.length === 1) return ''
 
   return /\s/.test(text[1]) ? text : text.slice(1)
+}
+
+function renderEventLines(
+  event: SessionStreamEvent,
+  options: TimelineRenderOptions,
+): RenderedLine[] {
+  const { buildMarkdownOptions } = options
+  const isAssistant = event.kind === 'assistant'
+  const text = isAssistant ? stripAssistantPadding(event.text) : event.text
+  if (!text) return []
+
+  return renderDisplayMarkdownLines(
+    text,
+    buildMarkdownOptions(isAssistant ? messageColors.assistant : messageColors.system),
+  )
+}
+
+function timelinePrefix(
+  kind: SessionStreamEvent['kind'],
+  lineIndex: number,
+  options: TimelineLabelOptions,
+): string {
+  const { assistantIndent, assistantLabel, progressIndent } = options
+  if (kind === 'assistant') {
+    return lineIndex === 0 ? assistantLabel : assistantIndent
+  }
+
+  return lineIndex === 0 ? PROGRESS_LABEL : progressIndent
+}
+
+function extractAssistantText(events: SessionStreamEvent[]): string {
+  return events
+    .filter(event => event.kind === 'assistant')
+    .map(event => event.text)
+    .join('')
 }
 
 function setupPrompt(step: SetupStep): string {

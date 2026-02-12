@@ -7,6 +7,7 @@ import type { AppMode, SetupStep } from '../../types/setup-flow.js'
 import type { SlashCommandDefinition } from '../../types/slash-commands.js'
 import type { SlashSuggestionsState } from '../../types/slash-suggestions-state.js'
 import type { ProviderId, StreamStatus, TokenUsage } from '../../types/stream.js'
+import type { SessionStreamEvent } from './use-session.js'
 
 import { buildMessages as formatMessages } from '../../chat/messages.js'
 import { getProviderDefaults, resolveDefaultModel } from '../../config/provider-defaults.js'
@@ -34,6 +35,7 @@ export interface ChatInputControllerResult {
     selectedIndex: number
     title: string
   }
+  progressMessages: string[]
   providerMeta?: {model: string; providerId: ProviderId}
   sessionStatus?: StreamStatus
   sessionStatusMessage?: string
@@ -41,6 +43,7 @@ export interface ChatInputControllerResult {
   setupStateStep: SetupStep
   setupSubmitting: boolean
   slashSuggestions: SlashSuggestionsState
+  streamEvents: SessionStreamEvent[]
   streaming: boolean
 }
 
@@ -88,6 +91,7 @@ export function useChatInputController(
 
   const {
     currentResponse,
+    progressMessages,
     resetSession,
     sessionMeta,
     sessionStatus,
@@ -95,6 +99,7 @@ export function useChatInputController(
     sessionUsage,
     setSessionMeta,
     startStream,
+    streamEvents,
     streaming,
   } = useChatStream({
     buildMessages,
@@ -408,6 +413,7 @@ export function useChatInputController(
       selectedIndex: modelMenuIndex,
       title: modelMenuTitle,
     },
+    progressMessages,
     providerMeta,
     sessionStatus,
     sessionStatusMessage,
@@ -415,6 +421,7 @@ export function useChatInputController(
     setupStateStep: setupState.step,
     setupSubmitting,
     slashSuggestions,
+    streamEvents,
     streaming,
   }
 }
