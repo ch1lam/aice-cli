@@ -2,6 +2,9 @@
   "name": "@ch1lam/aice-cli",
   "description": "The AI Ace CLI.",
   "version": "0.1.0",
+  "publishConfig": {
+    "access": "public"
+  },
   "author": "chilam <chilam.lee@outlook.com> (https://github.com/ch1lam)",
   "bin": {
     "aice": "./bin/run.js"
