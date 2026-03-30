@@ -45,6 +45,7 @@ export interface ChatInputControllerResult {
   slashSuggestions: SlashSuggestionsState
   streamEvents: SessionStreamEvent[]
   streaming: boolean
+  thinking: boolean
 }
 
 interface UseChatInputControllerOptions {
@@ -101,6 +102,7 @@ export function useChatInputController(
     startStream,
     streamEvents,
     streaming,
+    thinking,
   } = useChatStream({
     buildMessages,
     createChatService: options.createChatService,
@@ -423,5 +425,6 @@ export function useChatInputController(
     slashSuggestions,
     streamEvents,
     streaming,
+    thinking,
   }
 }

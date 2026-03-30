@@ -43,6 +43,7 @@ export interface UseChatStreamResult {
   startStream(history: ChatMessage[], env: ProviderEnv): void
   streamEvents: SessionStreamEvent[]
   streaming: boolean
+  thinking: boolean
 }
 
 export function useChatStream(options: UseChatStreamOptions): UseChatStreamResult {
@@ -77,6 +78,7 @@ export function useChatStream(options: UseChatStreamOptions): UseChatStreamResul
     status: sessionStatus,
     statusMessage: sessionStatusMessage,
     streamEvents,
+    thinking,
     usage: sessionUsage,
   } = session
 
@@ -141,5 +143,6 @@ export function useChatStream(options: UseChatStreamOptions): UseChatStreamResul
     startStream,
     streamEvents,
     streaming,
+    thinking,
   }
 }

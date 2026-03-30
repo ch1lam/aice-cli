@@ -28,6 +28,7 @@ const messageColors = theme.components.messages
 const INPUT_MAX_LINES = 6
 const DEFAULT_COLUMNS = 80
 const PROGRESS_LABEL = ' ◇ '
+const THINKING_PLACEHOLDER = '思考中...'
 
 export function AiceApp(props: AiceAppProps) {
   const { stdout } = useStdout()
@@ -390,6 +391,13 @@ export function AiceApp(props: AiceAppProps) {
               {liveStreamLine.bodyPrefix}
               {liveStreamLine.parts}
               <Text color={messageColors.caret}> ▌</Text>
+            </Text>
+          </Box>
+        ) : controller.thinking ? (
+          <Box marginBottom={1}>
+            <Text color={theme.semantic.textMuted} wrap="truncate">
+              {assistantLabel}
+              {THINKING_PLACEHOLDER}
             </Text>
           </Box>
         ) : null}

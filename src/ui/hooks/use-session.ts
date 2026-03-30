@@ -14,6 +14,7 @@ export interface SessionState {
   status?: StreamStatus
   statusMessage?: string
   streamEvents: SessionStreamEvent[]
+  thinking: boolean
   usage?: TokenUsage
 }
 
@@ -44,6 +45,7 @@ export function useSession(options: UseSessionOptions): SessionState {
     let content = ''
     let progressMessages: string[] = []
     let streamEvents: SessionStreamEvent[] = []
+    let thinking = false
     let sawDone = false
     let sawError = false
 
@@ -66,6 +68,7 @@ export function useSession(options: UseSessionOptions): SessionState {
             status: 'completed',
             statusMessage: undefined,
             streamEvents,
+            thinking: false,
           }
         })
         onStatusChange?.('completed')
@@ -81,6 +84,7 @@ export function useSession(options: UseSessionOptions): SessionState {
             status: 'failed',
             statusMessage: error.message,
             streamEvents,
+            thinking: false,
           }))
           onError?.(error)
           onStatusChange?.('failed')
@@ -91,10 +95,22 @@ export function useSession(options: UseSessionOptions): SessionState {
     function appendText(text: string) {
       content += text
       streamEvents = appendAssistantEvent(streamEvents, text)
+      thinking = false
       setState(current => ({
         ...current,
         content,
         streamEvents,
+        thinking,
+      }))
+    }
+
+    function showThinkingPlaceholder() {
+      if (thinking || content) return
+
+      thinking = true
+      setState(current => ({
+        ...current,
+        thinking,
       }))
     }
 
@@ -130,6 +146,7 @@ export function useSession(options: UseSessionOptions): SessionState {
             status: 'aborted',
             statusMessage: 'Aborted',
             streamEvents,
+            thinking: false,
           }))
           onStatusChange?.('aborted')
           break
@@ -147,6 +164,7 @@ export function useSession(options: UseSessionOptions): SessionState {
             status: 'failed',
             statusMessage: error.message,
             streamEvents,
+            thinking: false,
           }))
           onError?.(error)
           onStatusChange?.('failed')
@@ -163,6 +181,7 @@ export function useSession(options: UseSessionOptions): SessionState {
             status: 'completed',
             statusMessage: chunk.finishReason === 'stop' ? undefined : chunk.finishReason,
             streamEvents,
+            thinking: false,
             usage: chunk.totalUsage,
           }))
           onStatusChange?.('completed')
@@ -178,7 +197,7 @@ export function useSession(options: UseSessionOptions): SessionState {
         }
 
         case 'reasoning-delta': {
-          appendText(chunk.text)
+          showThinkingPlaceholder()
           break
         }
 
@@ -223,6 +242,7 @@ function createInitialState(active: boolean): SessionState {
     status: active ? 'running' : undefined,
     statusMessage: undefined,
     streamEvents: [],
+    thinking: false,
     usage: undefined,
   }
 }

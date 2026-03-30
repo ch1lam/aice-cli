@@ -117,6 +117,7 @@ function SessionScene(props: SessionSceneProps): ReactElement {
       {session.progressMessages.map((message, index) => (
         <Text key={index}>{`progress:${message}`}</Text>
       ))}
+      {session.thinking ? <Text>thinking:思考中...</Text> : null}
       <Text>{content}</Text>
       <StatusBar
         status={session.status}
@@ -209,27 +210,33 @@ describe('Ink UI', () => {
       expect(finalFrame).to.include('status:completed')
     })
 
-    it('appends reasoning deltas to the transcript', async () => {
+    it('hides reasoning text and shows a transient thinking placeholder', async () => {
       const stream = chunkStream(
         [
           { type: 'start' },
           { id: 'reason-0', text: 'thinking', type: 'reasoning-delta' },
+          { id: 'text-0', text: 'answer', type: 'text-delta' },
           {
             finishReason: 'stop',
             rawFinishReason: 'stop',
-            totalUsage: createUsage({ inputTokens: 1, outputTokens: 1, totalTokens: 2 }),
+            totalUsage: createUsage({ inputTokens: 1, outputTokens: 2, totalTokens: 3 }),
             type: 'finish',
           },
         ],
         5,
       )
 
-      const { lastFrame } = render(<SessionScene stream={stream} />)
+      const { frames, lastFrame } = render(<SessionScene stream={stream} />)
       await waitFor(() => (lastFrame() ?? '').includes('status:completed'))
 
-      const finalFrame = stripAnsi(lastFrame() ?? '')
+      const cleanedFrames = frames.map(frame => stripAnsi(frame))
+      const thinkingFrame = cleanedFrames.find(frame => frame.includes('thinking:思考中...'))
+      expect(thinkingFrame).to.not.equal(undefined)
 
-      expect(finalFrame).to.include('thinking')
+      const finalFrame = stripAnsi(lastFrame() ?? '')
+      expect(finalFrame).to.not.include('thinking:思考中...')
+      expect(finalFrame).to.not.include('event:assistant:thinking')
+      expect(finalFrame).to.include('answer')
     })
 
     it('emits progress messages for tool calls and results', async () => {
@@ -349,7 +356,7 @@ describe('Ink UI', () => {
       setMessages(current => [...current, `system:${message}`])
     }, [])
 
-    const { currentResponse, sessionStatus, startStream, streaming } = useChatStream({
+    const { currentResponse, sessionStatus, startStream, streaming, thinking } = useChatStream({
       buildMessages: () => [{ content: 'prompt', role: 'user' }],
       createChatService: () => ({
         createStream: (_env: ProviderEnv, _input: ProviderRequestInput) => props.stream,
@@ -379,6 +386,7 @@ describe('Ink UI', () => {
         {messages.map((message, index) => (
           <Text key={index}>{message}</Text>
         ))}
+        {thinking ? <Text>thinking:思考中...</Text> : null}
         <Text>{streaming ? `stream:${currentResponse}` : 'idle'}</Text>
         <Text>{`status:${sessionStatus ?? 'pending'}`}</Text>
       </Box>
@@ -423,6 +431,7 @@ describe('Ink UI', () => {
         {controller.messages.map(message => (
           <Text key={message.id}>{`${message.role}:${message.text}`}</Text>
         ))}
+        {controller.thinking ? <Text>thinking:思考中...</Text> : null}
         <Text>{controller.streaming ? `stream:${controller.currentResponse}` : 'idle'}</Text>
       </Box>
     )
@@ -570,6 +579,41 @@ describe('Ink UI', () => {
       expect(finalFrame).to.include('assistant:Hello world')
       expect(finalFrame).to.include('idle')
       expect(finalFrame).to.include('status:completed')
+    })
+
+    it('shows thinking before the first response chunk and does not commit reasoning text', async () => {
+      const stream = chunkStream(
+        [
+          { type: 'start' },
+          { id: 'reason-0', text: 'internal', type: 'reasoning-delta' },
+          { id: 'text-0', text: 'Visible answer', type: 'text-delta' },
+          {
+            finishReason: 'stop',
+            rawFinishReason: 'stop',
+            totalUsage: createUsage({ inputTokens: 2, outputTokens: 2, totalTokens: 4 }),
+            type: 'finish',
+          },
+        ],
+        5,
+      )
+
+      const env: ProviderEnv = {
+        apiKey: 'test-key',
+        model: 'deepseek-chat',
+        providerId: 'deepseek',
+      }
+
+      const { frames, lastFrame } = render(<ChatStreamScene env={env} stream={stream} />)
+      await waitFor(() => stripAnsi(lastFrame() ?? '').includes('assistant:Visible answer'))
+
+      const cleanedFrames = frames.map(frame => stripAnsi(frame))
+      const thinkingFrame = cleanedFrames.find(frame => frame.includes('thinking:思考中...'))
+      expect(thinkingFrame).to.not.equal(undefined)
+
+      const finalFrame = stripAnsi(lastFrame() ?? '')
+      expect(finalFrame).to.include('assistant:Visible answer')
+      expect(finalFrame).to.not.include('assistant:internal')
+      expect(finalFrame).to.not.include('thinking:思考中...')
     })
 
     it('commits distinct responses across sequential streams', async () => {
