@@ -1,7 +1,7 @@
 import type { ReactElement } from 'react'
 
-import { Box, Text, useStdout } from 'ink'
-import { useEffect, useMemo, useState } from 'react'
+import { Box, Text } from 'ink'
+import { useMemo } from 'react'
 import stringWidth from 'string-width'
 
 import { theme } from './theme.js'
@@ -13,6 +13,7 @@ const PADDING_X = 1
 const DEFAULT_MAX_LINES = 6
 
 export interface InputPanelProps {
+  columns?: number
   cursorVisible?: boolean
   disabled?: boolean
   label: string
@@ -22,35 +23,19 @@ export interface InputPanelProps {
 }
 
 export function InputPanel(props: InputPanelProps): ReactElement {
-  const { stdout } = useStdout()
-  const [columns, setColumns] = useState<number | undefined>(stdout?.columns)
   const maxLines = props.maxLines ?? DEFAULT_MAX_LINES
   const cursor = props.disabled ? '' : props.cursorVisible ? '▌' : ' '
   const colors = theme.components.inputPanel
   const borderColor = props.disabled ? colors.activeBorder : colors.border
   const effectiveColumns =
-    typeof columns === 'number' && Number.isFinite(columns) && columns > 0
-      ? columns
+    typeof props.columns === 'number' && Number.isFinite(props.columns) && props.columns > 0
+      ? props.columns
       : DEFAULT_COLUMNS
   const innerWidth = Math.max(1, effectiveColumns - BORDER_WIDTH - PADDING_X * 2)
   const prefix = `${props.label} `
   const prefixWidth = stringWidth(prefix)
   const contentWidth = Math.max(1, innerWidth - prefixWidth)
   const indent = ' '.repeat(prefixWidth)
-
-  useEffect(() => {
-    if (!stdout) return
-
-    const handleResize = () => {
-      setColumns(stdout.columns)
-    }
-
-    handleResize()
-    stdout.on('resize', handleResize)
-    return () => {
-      stdout.off('resize', handleResize)
-    }
-  }, [stdout])
 
   const inputLines = useMemo(() => {
     if (!props.value) return []

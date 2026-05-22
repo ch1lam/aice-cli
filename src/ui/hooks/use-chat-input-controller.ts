@@ -40,6 +40,7 @@ export interface ChatInputControllerResult {
   sessionStatus?: StreamStatus
   sessionStatusMessage?: string
   sessionUsage?: TokenUsage
+  sessionVersion: number
   setupStateStep: SetupStep
   setupSubmitting: boolean
   slashSuggestions: SlashSuggestionsState
@@ -52,7 +53,6 @@ interface UseChatInputControllerOptions {
   createChatService?: UseChatStreamOptions['createChatService']
   initialEnv?: ProviderEnv
   initialError?: Error
-  onNewSession?: () => void
 }
 
 export function useChatInputController(
@@ -63,6 +63,7 @@ export function useChatInputController(
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [modelMenuActive, setModelMenuActive] = useState(false)
   const [modelMenuIndex, setModelMenuIndex] = useState(0)
+  const [sessionVersion, setSessionVersion] = useState(0)
 
   const createMessage = useCallback((role: MessageRole, text: string): ChatMessage => {
     const id = messageId.current++
@@ -134,8 +135,8 @@ export function useChatInputController(
   const handleNewCommand = useCallback(() => {
     setMessages([])
     resetSession()
-    options.onNewSession?.()
-  }, [options.onNewSession, resetSession])
+    setSessionVersion(current => current + 1)
+  }, [resetSession])
 
   const handleHelpCommand = useCallback(
     (commandDefinitions: SlashCommandDefinition[]) => {
@@ -420,6 +421,7 @@ export function useChatInputController(
     sessionStatus,
     sessionStatusMessage,
     sessionUsage,
+    sessionVersion,
     setupStateStep: setupState.step,
     setupSubmitting,
     slashSuggestions,

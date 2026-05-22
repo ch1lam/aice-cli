@@ -1,4 +1,4 @@
-import { Box, Text, useStdout } from 'ink'
+import { Box, Text } from 'ink'
 import { type ReactElement, useEffect, useState } from 'react'
 
 import type { ProviderId, StreamStatus, TokenUsage } from '../types/stream.js'
@@ -8,6 +8,7 @@ import { theme } from './theme.js'
 const statusSpinnerFrames = ['-', '\\', '|', '/']
 
 export interface StatusBarProps {
+  columns?: number
   meta?: {
     model: string
     providerId: ProviderId
@@ -18,25 +19,10 @@ export interface StatusBarProps {
 }
 
 export function StatusBar(props: StatusBarProps): ReactElement {
-  const { meta, status, statusMessage, usage } = props
-  const { stdout } = useStdout()
-  const [columns, setColumns] = useState<number | undefined>(stdout?.columns)
+  const { columns, meta, status, statusMessage, usage } = props
   const barWidth =
-    typeof columns === 'number' && Number.isFinite(columns) && columns > 0 ? columns : 80
+    typeof columns === 'number' && Number.isFinite(columns) && columns > 0 ? columns : '100%'
 
-  useEffect(() => {
-    if (!stdout) return
-
-    const handleResize = () => {
-      setColumns(stdout.columns)
-    }
-
-    handleResize()
-    stdout.on('resize', handleResize)
-    return () => {
-      stdout.off('resize', handleResize)
-    }
-  }, [stdout])
   const providerText = meta ? `${meta.providerId}:${meta.model}` : 'provider:-'
   const isActive = status === 'running'
   const colors = theme.components.statusBar

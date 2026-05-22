@@ -21,7 +21,6 @@ import { theme } from './theme.js'
 export interface AiceAppProps {
   initialEnv?: ProviderEnv
   initialError?: Error
-  onNewSession?: () => void
 }
 
 const messageColors = theme.components.messages
@@ -36,7 +35,6 @@ export function AiceApp(props: AiceAppProps) {
   const controller = useChatInputController({
     initialEnv: props.initialEnv,
     initialError: props.initialError,
-    onNewSession: props.onNewSession,
   })
 
   useEffect(() => {
@@ -96,11 +94,24 @@ export function AiceApp(props: AiceAppProps) {
   const timelineTailCommittedCount = useRef(0)
   const timelineTailEventIndex = useRef<number | undefined>(undefined)
   const prevStreaming = useRef(false)
+  const lastSessionVersion = useRef(controller.sessionVersion)
 
   const nextStaticKey = useCallback((prefix: string) => {
     const key = `${prefix}-${staticKeyRef.current}`
     staticKeyRef.current += 1
     return key
+  }, [])
+
+  const resetTranscript = useCallback(() => {
+    setStaticItems([{ key: 'title', kind: 'title' }])
+    setLiveStreamLine(null)
+    renderedMessageCount.current = 0
+    hasStaticContent.current = false
+    skipAssistantText.current = undefined
+    timelineFinalizedCount.current = 0
+    timelineTailCommittedCount.current = 0
+    timelineTailEventIndex.current = undefined
+    prevStreaming.current = false
   }, [])
 
   const appendStaticItems = useCallback((items: StaticItem[]) => {
@@ -140,6 +151,12 @@ export function AiceApp(props: AiceAppProps) {
     },
     [nextStaticKey],
   )
+
+  useEffect(() => {
+    if (controller.sessionVersion === lastSessionVersion.current) return
+    lastSessionVersion.current = controller.sessionVersion
+    resetTranscript()
+  }, [controller.sessionVersion, resetTranscript])
 
   useEffect(() => {
     if (controller.messages.length <= renderedMessageCount.current) return
@@ -412,6 +429,7 @@ export function AiceApp(props: AiceAppProps) {
           </Box>
         ) : null}
         <InputPanel
+          columns={columns}
           cursorVisible={showCursor}
           disabled={inputDisabled}
           label={inputLabel}
@@ -427,6 +445,7 @@ export function AiceApp(props: AiceAppProps) {
       </Box>
       <Box width="100%">
         <StatusBar
+          columns={columns}
           meta={controller.providerMeta}
           status={controller.sessionStatus}
           statusMessage={controller.sessionStatusMessage}

@@ -744,5 +744,57 @@ describe('Ink UI', () => {
 
       unmount()
     })
+
+    it('clears prior transcript when starting a new session', async () => {
+      const streams = [
+        chunkStream([
+          { type: 'start' },
+          { id: 'text-0', text: 'First response', type: 'text-delta' },
+          {
+            finishReason: 'stop',
+            rawFinishReason: 'stop',
+            totalUsage: createUsage({ inputTokens: 1, outputTokens: 1, totalTokens: 2 }),
+            type: 'finish',
+          },
+        ]),
+        chunkStream([
+          { type: 'start' },
+          { id: 'text-0', text: 'Second response', type: 'text-delta' },
+          {
+            finishReason: 'stop',
+            rawFinishReason: 'stop',
+            totalUsage: createUsage({ inputTokens: 1, outputTokens: 1, totalTokens: 2 }),
+            type: 'finish',
+          },
+        ]),
+      ]
+
+      const env: ProviderEnv = {
+        apiKey: 'test-key',
+        model: 'deepseek-chat',
+        providerId: 'deepseek',
+      }
+
+      const { lastFrame, stdin, unmount } = render(
+        <ChatInputControllerScene env={env} streams={streams} />,
+      )
+
+      await typeText(stdin, 'Hello')
+      stdin.write('\r')
+      await waitFor(() => stripAnsi(lastFrame() ?? '').includes('assistant:First response'))
+
+      await typeText(stdin, '/new')
+      stdin.write('\r')
+
+      await typeText(stdin, 'Hello again')
+      stdin.write('\r')
+      await waitFor(() => stripAnsi(lastFrame() ?? '').includes('assistant:Second response'))
+
+      const finalFrame = stripAnsi(lastFrame() ?? '')
+      expect(finalFrame).to.not.include('assistant:First response')
+      expect(finalFrame).to.include('assistant:Second response')
+
+      unmount()
+    })
   })
 })
