@@ -16,7 +16,7 @@
 
 <p align="center">
   <a href="./LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-blue"></a>
-  <img alt="Node.js >= 18" src="https://img.shields.io/badge/node-%3E%3D18-339933">
+  <img alt="Node.js &gt;= 18" src="https://img.shields.io/badge/node-%3E%3D18-339933">
   <img alt="AI SDK 6" src="https://img.shields.io/badge/AI%20SDK-6-black">
   <img alt="Provider: DeepSeek" src="https://img.shields.io/badge/provider-DeepSeek-4c6fff">
   <img alt="Status: active development" src="https://img.shields.io/badge/status-active%20development-2ea44f">
