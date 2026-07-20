@@ -156,6 +156,11 @@ func TestEventJSONRoundTrip(t *testing.T) {
 	want := llm.Event{
 		Type:         llm.EventTypeDone,
 		ContentIndex: 2,
+		Content: &llm.ContentPart{
+			Type:      llm.ContentTypeThinking,
+			Text:      "reasoning",
+			Signature: "opaque-signature",
+		},
 		Usage: &llm.Usage{
 			InputTokens:      120,
 			OutputTokens:     30,

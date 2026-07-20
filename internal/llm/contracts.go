@@ -145,6 +145,8 @@ const (
 	StopReasonStop    StopReason = "stop"
 	StopReasonLength  StopReason = "length"
 	StopReasonToolUse StopReason = "tool_use"
+	StopReasonPause   StopReason = "pause"
+	StopReasonRefusal StopReason = "refusal"
 	StopReasonError   StopReason = "error"
 	StopReasonAborted StopReason = "aborted"
 )
@@ -196,11 +198,14 @@ type ToolCallDelta struct {
 
 // Event is one tagged provider-neutral item emitted by a model stream.
 // ContentIndex associates content events with their position in the assistant
-// message. ToolCall is populated only when a complete call has been assembled.
+// message. Content is populated on content-end events when an adapter needs to
+// preserve opaque state such as a thinking signature. ToolCall is populated
+// only when a complete call has been assembled.
 type Event struct {
 	Type          EventType      `json:"type"`
 	ContentIndex  int            `json:"content_index,omitempty"`
 	Delta         string         `json:"delta,omitempty"`
+	Content       *ContentPart   `json:"content,omitempty"`
 	ToolCallDelta *ToolCallDelta `json:"tool_call_delta,omitempty"`
 	ToolCall      *ToolCall      `json:"tool_call,omitempty"`
 	Usage         *Usage         `json:"usage,omitempty"`

@@ -16,7 +16,7 @@
 - CLI: Cobra. The command layer owns flags, arguments, help, exit behavior, and dependency assembly.
 - TUI: Bubble Tea v2, Bubbles, Lip Gloss, and Glamour. Bubble Tea owns terminal rendering; channels only bridge asynchronous agent events into `tea.Msg` values.
 - LLM layer: AICE-owned provider-neutral types and streaming contracts, backed by official provider SDKs or the Go standard library.
-- First provider: DeepSeek through an OpenAI-compatible protocol adapter using the official `openai-go` SDK with a configurable base URL.
+- First provider: DeepSeek through an Anthropic Messages protocol adapter using the official `anthropic-sdk-go` SDK with a configurable base URL.
 - Persistence: append-only JSONL sessions. Use standard library packages before adding storage frameworks or databases.
 - Configuration: standard library parsing, `AICE_*` environment variables, and the `.aice` directory. Keep secrets outside the repository.
 - Logging and cancellation: `log/slog`, `context.Context`, and `signal.NotifyContext`.
@@ -37,7 +37,7 @@ internal/
 ├── agent/                      # bounded Agent Loop, lifecycle events, Tool contract
 ├── llm/                        # AICE messages, content, models, usage, stream contract
 ├── api/
-│   └── openai/                 # OpenAI protocol request/stream translation
+│   └── anthropic/              # Anthropic protocol request/stream translation
 ├── provider/
 │   └── deepseek/               # DeepSeek auth, models, defaults, compatibility
 ├── tool/                       # read, search, write, edit, exec implementations
@@ -53,8 +53,8 @@ Dependency rules:
 
 - `cmd/aice` stays minimal and delegates assembly and execution to `internal/app` and `internal/cli`.
 - `agent` depends only on small AICE contracts, primarily `llm`; it must not import Cobra, Bubble Tea, provider SDKs, or concrete tools.
-- `api/openai` translates between SDK/protocol data and `llm` types. Provider SDK types must not leak beyond the adapter.
-- `provider/deepseek` supplies DeepSeek-specific configuration and compatibility behavior while reusing the OpenAI protocol adapter.
+- `api/anthropic` translates between SDK/protocol data and `llm` types. Provider SDK types must not leak beyond the adapter.
+- `provider/deepseek` supplies DeepSeek-specific configuration and compatibility behavior while reusing the Anthropic Messages protocol adapter.
 - Concrete tools implement interfaces defined by their consumer. The Agent Loop must not construct tools itself.
 - `tui` consumes agent events and converts them to `tea.Msg`; the agent must never emit or import Bubble Tea types.
 - Wire dependencies explicitly with constructors in the composition root. Do not use global registries, service locators, `init()` wiring, or a DI framework.
@@ -62,13 +62,13 @@ Dependency rules:
 ## LLM and Agent Contracts
 
 - AICE owns the canonical `Message`, `ContentPart`, `ToolCall`, `ToolResult`, `Model`, `Usage`, `StopReason`, `Event`, and stream abstractions.
-- Keep provider identity/configuration separate from API protocol adapters. OpenAI-compatible providers should reuse the protocol layer instead of duplicating a full client.
+- Keep provider identity/configuration separate from API protocol adapters. Anthropic-compatible providers should reuse the protocol layer instead of duplicating a full client.
 - Normalize text, reasoning, tool-call deltas, usage, finish reasons, errors, and cancellation without losing information.
 - The Agent Loop is responsible for model calls, validated tool execution, tool-result history, continuation, maximum turn/tool-step limits, and terminal lifecycle events.
 - Never execute an incomplete or invalid streamed tool call. Preserve partial assistant output on cancellation or provider failure when it is safe to do so.
 - Execute tools sequentially by default. Parallel execution may be added later only for independent read-only tools with explicit ordering and cancellation tests.
 - Use a faux provider and fake tools as the primary executable specification for event ordering and loop behavior. Unit tests must not require paid APIs or real credentials.
-- A second independent protocol, such as Anthropic, is the eventual validation that the `llm` abstraction is genuinely provider-neutral. Do not generalize for hypothetical providers before that need exists.
+- A second independent protocol, such as OpenAI, is the eventual validation that the `llm` abstraction is genuinely provider-neutral. Do not generalize for hypothetical providers before that need exists.
 
 ## Concurrency and TUI Boundaries
 
@@ -116,7 +116,7 @@ Build vertical, testable slices in this order unless the user changes priorities
 
 1. Establish `go.mod`, the minimal command entry point, and AICE-owned LLM/agent contracts.
 2. Add faux provider and fake tool tests for a text turn and one complete tool loop.
-3. Implement the OpenAI-compatible adapter and DeepSeek provider, including reasoning, streamed tool calls, usage, errors, and cancellation.
+3. Implement the Anthropic Messages adapter and DeepSeek provider, including reasoning, streamed tool calls, usage, errors, and cancellation.
 4. Add safe read/list/search workspace tools.
 5. Add Cobra print/non-interactive mode.
 6. Add the Bubble Tea TUI and agent-event bridge.
