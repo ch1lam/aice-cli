@@ -5,12 +5,15 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/ch1lam/aice-cli/internal/agent"
 	"github.com/ch1lam/aice-cli/internal/llm"
+	"github.com/ch1lam/aice-cli/internal/tool"
 )
 
 func TestNewLoopRejectsInvalidConfiguration(t *testing.T) {
@@ -242,6 +245,57 @@ func TestLoopRunToolTurnThenContinues(t *testing.T) {
 	}
 	if got := eventTypes(events); !reflect.DeepEqual(got, wantEventTypes) {
 		t.Fatalf("event types = %v, want %v", got, wantEventTypes)
+	}
+}
+
+func TestLoopRunWithWorkspaceReadTool(t *testing.T) {
+	t.Parallel()
+
+	workspacePath := t.TempDir()
+	if err := os.WriteFile(filepath.Join(workspacePath, "answer.txt"), []byte("from workspace\n"), 0o640); err != nil {
+		t.Fatalf("os.WriteFile() error = %v", err)
+	}
+	workspace, err := tool.NewWorkspace(workspacePath)
+	if err != nil {
+		t.Fatalf("tool.NewWorkspace() error = %v", err)
+	}
+	t.Cleanup(func() {
+		if err := workspace.Close(); err != nil {
+			t.Errorf("Workspace.Close() error = %v", err)
+		}
+	})
+	read, err := tool.NewRead(workspace)
+	if err != nil {
+		t.Fatalf("tool.NewRead() error = %v", err)
+	}
+
+	modelInfo := testModel()
+	first := assistantMessage(
+		modelInfo,
+		llm.StopReasonToolUse,
+		toolCallPart("read-1", "read", `{"path":"answer.txt"}`),
+	)
+	second := assistantMessage(modelInfo, llm.StopReasonStop, textPart("done"))
+	model := &scriptedModel{scripts: []*streamScript{
+		{events: terminalEvents(first)},
+		{events: terminalEvents(second)},
+	}}
+	loop := mustLoop(t, model, []agent.Tool{read}, agent.Limits{MaxTurns: 3, MaxToolSteps: 3})
+
+	result, err := loop.Run(
+		t.Context(),
+		testInput(modelInfo, mustPrompt(t, "read the answer")),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if len(result.Turns) != 2 || len(result.Turns[0].ToolResults) != 1 {
+		t.Fatalf("Run() result = %#v", result)
+	}
+	content := result.Turns[0].ToolResults[0].Content
+	if len(content) != 1 || content[0].Text != "from workspace\n" {
+		t.Fatalf("read tool result content = %#v", content)
 	}
 }
 

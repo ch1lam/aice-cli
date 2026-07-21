@@ -1,0 +1,97 @@
+package tool
+
+import (
+	"context"
+	"fmt"
+	"os"
+
+	"github.com/ch1lam/aice-cli/internal/llm"
+)
+
+const writeSchema = `{
+  "type": "object",
+  "properties": {
+    "path": {"type": "string", "description": "Path to the file to write (relative or absolute)"},
+    "content": {"type": "string", "description": "Content to write to the file"}
+  },
+  "required": ["path", "content"],
+  "additionalProperties": false
+}`
+
+// Write creates or replaces one workspace file after approval.
+type Write struct {
+	workspace *Workspace
+	approver  Approver
+}
+
+// NewWrite constructs a write tool. A nil approver leaves the tool default-deny.
+func NewWrite(workspace *Workspace, approver Approver) (*Write, error) {
+	if workspace == nil || workspace.root == nil {
+		return nil, fmt.Errorf("tool: workspace is required")
+	}
+	return &Write{workspace: workspace, approver: approver}, nil
+}
+
+// Definition returns the model-facing write contract.
+func (w *Write) Definition() llm.ToolDefinition {
+	return llm.ToolDefinition{
+		Name:        "write",
+		Description: "Write complete content to one workspace file. Requires explicit approval.",
+		InputSchema: jsonSchema(writeSchema),
+	}
+}
+
+// Execute atomically creates or replaces the requested file.
+func (w *Write) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult, error) {
+	type arguments struct {
+		Path    string `json:"path"`
+		Content string `json:"content"`
+	}
+	args, err := decodeArguments[arguments](ctx, call, "write")
+	if err != nil {
+		return llm.ToolResult{}, err
+	}
+	if len(args.Content) > maxMutationBytes {
+		return llm.ToolResult{}, fmt.Errorf("tool \"write\": content exceeds the 4 mib mutation limit")
+	}
+	path, err := w.workspace.resolvePath(args.Path, false)
+	if err != nil {
+		return llm.ToolResult{}, fmt.Errorf("tool \"write\": %w", err)
+	}
+	if info, statErr := w.workspace.root.Lstat(path); statErr == nil && info.Mode()&os.ModeSymlink != 0 {
+		return llm.ToolResult{}, fmt.Errorf("tool \"write\": %q is a symbolic link", args.Path)
+	} else if statErr != nil && !os.IsNotExist(statErr) {
+		return llm.ToolResult{}, fmt.Errorf("tool \"write\": inspect %q: %w", args.Path, statErr)
+	}
+	if err := requestApproval(
+		ctx,
+		w.approver,
+		call,
+		fmt.Sprintf("write %d bytes to %s", len(args.Content), args.Path),
+	); err != nil {
+		return llm.ToolResult{}, fmt.Errorf("tool \"write\": approve operation: %w", err)
+	}
+
+	w.workspace.mutationMu.Lock()
+	defer w.workspace.mutationMu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return llm.ToolResult{}, err
+	}
+
+	mode := os.FileMode(0o644)
+	if info, statErr := w.workspace.root.Lstat(path); statErr == nil {
+		if info.Mode()&os.ModeSymlink != 0 {
+			return llm.ToolResult{}, fmt.Errorf("tool \"write\": %q became a symbolic link", args.Path)
+		}
+		if !info.Mode().IsRegular() {
+			return llm.ToolResult{}, fmt.Errorf("tool \"write\": %q is not a regular file", args.Path)
+		}
+		mode = info.Mode().Perm()
+	} else if !os.IsNotExist(statErr) {
+		return llm.ToolResult{}, fmt.Errorf("tool \"write\": stat %q: %w", args.Path, statErr)
+	}
+	if err := w.workspace.atomicWrite(path, []byte(args.Content), mode); err != nil {
+		return llm.ToolResult{}, fmt.Errorf("tool \"write\": write %q: %w", args.Path, err)
+	}
+	return textResult(call, fmt.Sprintf("Wrote %d bytes to %s.", len(args.Content), args.Path), false), nil
+}

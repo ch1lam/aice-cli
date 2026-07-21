@@ -1,0 +1,88 @@
+package tool_test
+
+import (
+	"context"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/ch1lam/aice-cli/internal/agent"
+	"github.com/ch1lam/aice-cli/internal/llm"
+	"github.com/ch1lam/aice-cli/internal/tool"
+)
+
+func newWorkspace(t *testing.T) (*tool.Workspace, string) {
+	t.Helper()
+	path := t.TempDir()
+	workspace, err := tool.NewWorkspace(path)
+	if err != nil {
+		t.Fatalf("NewWorkspace() error = %v", err)
+	}
+	t.Cleanup(func() {
+		if err := workspace.Close(); err != nil {
+			t.Errorf("Workspace.Close() error = %v", err)
+		}
+	})
+	return workspace, path
+}
+
+func toolCall(t *testing.T, name string, arguments any) llm.ToolCall {
+	t.Helper()
+	data, err := json.Marshal(arguments)
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+	return llm.ToolCall{ID: "call-1", Name: name, Arguments: data}
+}
+
+func resultText(t *testing.T, result llm.ToolResult) string {
+	t.Helper()
+	if len(result.Content) != 1 || result.Content[0].Type != llm.ContentTypeText {
+		t.Fatalf("tool result content = %#v", result.Content)
+	}
+	return result.Content[0].Text
+}
+
+func writeFixture(t *testing.T, root, name, content string) string {
+	t.Helper()
+	path := filepath.Join(root, filepath.FromSlash(name))
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+		t.Fatalf("os.MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o640); err != nil {
+		t.Fatalf("os.WriteFile() error = %v", err)
+	}
+	return path
+}
+
+func allowAll() tool.Approver {
+	return tool.ApproverFunc(func(context.Context, tool.ApprovalRequest) error { return nil })
+}
+
+func TestToolDefinitionsUsePiNamesAndValidSchemas(t *testing.T) {
+	t.Parallel()
+	workspace, _ := newWorkspace(t)
+	read, _ := tool.NewRead(workspace)
+	write, _ := tool.NewWrite(workspace, nil)
+	edit, _ := tool.NewEdit(workspace, nil)
+	bash, err := tool.NewBash(workspace, nil)
+	if err != nil {
+		t.Skipf("tool.NewBash() error = %v", err)
+	}
+	grep, _ := tool.NewGrep(workspace)
+	find, _ := tool.NewFind(workspace)
+	ls, _ := tool.NewLS(workspace)
+
+	tools := []agent.Tool{read, write, edit, bash, grep, find, ls}
+	wantNames := []string{"read", "write", "edit", "bash", "grep", "find", "ls"}
+	for index, currentTool := range tools {
+		definition := currentTool.Definition()
+		if definition.Name != wantNames[index] {
+			t.Fatalf("tool %d name = %q, want %q", index, definition.Name, wantNames[index])
+		}
+		if !json.Valid(definition.InputSchema) {
+			t.Fatalf("tool %q schema is invalid json: %s", definition.Name, definition.InputSchema)
+		}
+	}
+}
