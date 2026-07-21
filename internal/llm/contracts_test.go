@@ -3,7 +3,9 @@ package llm_test
 import (
 	"bytes"
 	"encoding/json"
+	"math"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/ch1lam/aice-cli/internal/llm"
@@ -266,6 +268,170 @@ func TestRequestJSONRoundTrip(t *testing.T) {
 	}
 }
 
+func TestRequestValidate(t *testing.T) {
+	t.Parallel()
+
+	validRequest := func() llm.Request {
+		temperature := 0.2
+		return llm.Request{
+			Model: llm.Model{
+				ID:            "model-1",
+				API:           "custom-chat-api",
+				Provider:      "custom-provider",
+				ContextWindow: 128_000,
+				MaxTokens:     8_192,
+			},
+			Messages: []llm.Message{{
+				Role:    llm.RoleUser,
+				Content: []llm.ContentPart{llm.NewTextContent("hello").Part()},
+			}},
+			Tools: []llm.ToolDefinition{{
+				Name:        "read",
+				Description: "Read a workspace file.",
+				InputSchema: json.RawMessage(`{"type":"object"}`),
+			}},
+			Options: llm.StreamOptions{
+				Temperature: &temperature,
+				MaxTokens:   4_096,
+				Thinking:    llm.ThinkingLevelMedium,
+			},
+		}
+	}
+
+	tests := []struct {
+		name   string
+		mutate func(*llm.Request)
+		want   string
+	}{
+		{name: "valid request"},
+		{
+			name: "missing model id",
+			mutate: func(request *llm.Request) {
+				request.Model.ID = ""
+			},
+			want: "model id is required",
+		},
+		{
+			name: "missing model api",
+			mutate: func(request *llm.Request) {
+				request.Model.API = ""
+			},
+			want: "model api is required",
+		},
+		{
+			name: "missing model provider",
+			mutate: func(request *llm.Request) {
+				request.Model.Provider = ""
+			},
+			want: "model provider is required",
+		},
+		{
+			name: "negative context window",
+			mutate: func(request *llm.Request) {
+				request.Model.ContextWindow = -1
+			},
+			want: "model context window cannot be negative",
+		},
+		{
+			name: "missing max tokens",
+			mutate: func(request *llm.Request) {
+				request.Model.MaxTokens = 0
+				request.Options.MaxTokens = 0
+			},
+			want: "max tokens must be positive",
+		},
+		{
+			name: "negative request max tokens",
+			mutate: func(request *llm.Request) {
+				request.Options.MaxTokens = -1
+			},
+			want: "max tokens cannot be negative",
+		},
+		{
+			name: "non-finite temperature",
+			mutate: func(request *llm.Request) {
+				temperature := math.Inf(1)
+				request.Options.Temperature = &temperature
+			},
+			want: "temperature must be finite",
+		},
+		{
+			name: "unsupported thinking level",
+			mutate: func(request *llm.Request) {
+				request.Options.Thinking = "extreme"
+			},
+			want: "unsupported thinking level",
+		},
+		{
+			name: "missing messages",
+			mutate: func(request *llm.Request) {
+				request.Messages = nil
+			},
+			want: "at least one message is required",
+		},
+		{
+			name: "invalid message",
+			mutate: func(request *llm.Request) {
+				request.Messages[0].Content[0].Image = &llm.ImageContent{
+					Data:     []byte("image"),
+					MIMEType: "image/png",
+				}
+			},
+			want: "message 0",
+		},
+		{
+			name: "missing tool name",
+			mutate: func(request *llm.Request) {
+				request.Tools[0].Name = ""
+			},
+			want: "tool 0: name is required",
+		},
+		{
+			name: "invalid tool schema",
+			mutate: func(request *llm.Request) {
+				request.Tools[0].InputSchema = json.RawMessage(`{"type":`)
+			},
+			want: "input schema must be a json object",
+		},
+		{
+			name: "non-object tool schema",
+			mutate: func(request *llm.Request) {
+				request.Tools[0].InputSchema = json.RawMessage(`[]`)
+			},
+			want: "input schema must be a json object",
+		},
+		{
+			name: "duplicate tool name",
+			mutate: func(request *llm.Request) {
+				request.Tools = append(request.Tools, request.Tools[0])
+			},
+			want: "duplicate tool name",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			request := validRequest()
+			if tt.mutate != nil {
+				tt.mutate(&request)
+			}
+
+			err := request.Validate()
+			if tt.want == "" {
+				if err != nil {
+					t.Fatalf("Validate() error = %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("Validate() error = %v, want text %q", err, tt.want)
+			}
+		})
+	}
+}
+
 func TestEventJSONRoundTrip(t *testing.T) {
 	t.Parallel()
 
@@ -323,5 +489,21 @@ func TestEventJSONRoundTrip(t *testing.T) {
 	}
 	if !bytes.Equal(roundTrip, encoded) {
 		t.Errorf("JSON round trip = %s, want %s", roundTrip, encoded)
+	}
+}
+
+func TestEventJSONPreservesZeroContentIndex(t *testing.T) {
+	t.Parallel()
+
+	event := llm.Event{
+		Type:         llm.EventTypeTextStart,
+		ContentIndex: 0,
+	}
+	encoded, err := json.Marshal(event)
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+	if !bytes.Contains(encoded, []byte(`"content_index":0`)) {
+		t.Fatalf("json.Marshal() = %s, want explicit zero content index", encoded)
 	}
 }

@@ -80,6 +80,9 @@ func (a *Adapter) Stream(ctx context.Context, request llm.Request) (llm.Stream, 
 	if ctx == nil {
 		return nil, errors.New("anthropic: nil context")
 	}
+	if err := request.Validate(); err != nil {
+		return nil, fmt.Errorf("anthropic: validate request: %w", err)
+	}
 
 	params, err := requestParams(request)
 	if err != nil {

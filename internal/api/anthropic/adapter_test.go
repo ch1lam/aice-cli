@@ -405,6 +405,35 @@ func TestAdapterPropagatesCanceledContext(t *testing.T) {
 	}
 }
 
+func TestAdapterRejectsInvalidRequestBeforeHTTP(t *testing.T) {
+	t.Parallel()
+
+	requestSent := false
+	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		requestSent = true
+		return nil, errors.New("unexpected HTTP request")
+	})}
+	adapter, err := anthropicapi.New(anthropicapi.Config{
+		APIKey:     "test-key",
+		BaseURL:    "https://example.test",
+		HTTPClient: client,
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	request := minimalRequest()
+	request.Messages = nil
+	_, err = adapter.Stream(context.Background(), request)
+	if err == nil || !strings.Contains(err.Error(), "validate request") ||
+		!strings.Contains(err.Error(), "at least one message is required") {
+		t.Fatalf("Stream() error = %v, want request validation error", err)
+	}
+	if requestSent {
+		t.Fatal("Stream() sent an HTTP request before validation completed")
+	}
+}
+
 func collectEvents(t *testing.T, stream llm.Stream) []llm.Event {
 	t.Helper()
 
@@ -437,6 +466,12 @@ func minimalRequest() llm.Request {
 			}},
 		}},
 	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
+	return f(request)
 }
 
 func newSSEServer(t *testing.T, chunks []string) *httptest.Server {

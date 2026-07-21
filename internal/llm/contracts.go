@@ -4,7 +4,9 @@ package llm
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"slices"
+	"strings"
 	"time"
 )
 
@@ -460,6 +462,103 @@ type Request struct {
 	Options      StreamOptions    `json:"options"`
 }
 
+// Validate checks provider-neutral request invariants. Protocol adapters and
+// providers remain responsible for their own capability and compatibility
+// restrictions.
+func (r Request) Validate() error {
+	if strings.TrimSpace(r.Model.ID) == "" {
+		return fmt.Errorf("llm: request model id is required")
+	}
+	if strings.TrimSpace(string(r.Model.API)) == "" {
+		return fmt.Errorf("llm: request model api is required")
+	}
+	if strings.TrimSpace(string(r.Model.Provider)) == "" {
+		return fmt.Errorf("llm: request model provider is required")
+	}
+	if r.Model.ContextWindow < 0 {
+		return fmt.Errorf("llm: request model context window cannot be negative")
+	}
+	if r.Model.MaxTokens < 0 {
+		return fmt.Errorf("llm: request model max tokens cannot be negative")
+	}
+	if err := r.Options.validate(r.Model.MaxTokens); err != nil {
+		return err
+	}
+
+	if len(r.Messages) == 0 {
+		return fmt.Errorf("llm: request at least one message is required")
+	}
+	for index, message := range r.Messages {
+		if err := message.Validate(); err != nil {
+			return fmt.Errorf("llm: request message %d: %w", index, err)
+		}
+	}
+
+	toolNames := make(map[string]struct{}, len(r.Tools))
+	for index, tool := range r.Tools {
+		if err := tool.validate(); err != nil {
+			return fmt.Errorf("llm: request tool %d: %w", index, err)
+		}
+		if _, exists := toolNames[tool.Name]; exists {
+			return fmt.Errorf("llm: request duplicate tool name %q", tool.Name)
+		}
+		toolNames[tool.Name] = struct{}{}
+	}
+
+	return nil
+}
+
+func (o StreamOptions) validate(modelMaxTokens int64) error {
+	if o.MaxTokens < 0 {
+		return fmt.Errorf("llm: request max tokens cannot be negative")
+	}
+	maxTokens := o.MaxTokens
+	if maxTokens == 0 {
+		maxTokens = modelMaxTokens
+	}
+	if maxTokens <= 0 {
+		return fmt.Errorf("llm: request max tokens must be positive")
+	}
+
+	if o.Temperature != nil {
+		if math.IsNaN(*o.Temperature) || math.IsInf(*o.Temperature, 0) {
+			return fmt.Errorf("llm: request temperature must be finite")
+		}
+		if *o.Temperature < 0 {
+			return fmt.Errorf("llm: request temperature cannot be negative")
+		}
+	}
+
+	switch o.Thinking {
+	case ThinkingLevelUnknown,
+		ThinkingLevelOff,
+		ThinkingLevelMinimal,
+		ThinkingLevelLow,
+		ThinkingLevelMedium,
+		ThinkingLevelHigh,
+		ThinkingLevelXHigh,
+		ThinkingLevelMax:
+		return nil
+	default:
+		return fmt.Errorf("llm: request unsupported thinking level %q", o.Thinking)
+	}
+}
+
+func (t ToolDefinition) validate() error {
+	if strings.TrimSpace(t.Name) == "" {
+		return fmt.Errorf("name is required")
+	}
+
+	var schema map[string]json.RawMessage
+	if err := json.Unmarshal(t.InputSchema, &schema); err != nil {
+		return fmt.Errorf("tool %q input schema must be a json object: %w", t.Name, err)
+	}
+	if schema == nil {
+		return fmt.Errorf("tool %q input schema must be a json object", t.Name)
+	}
+	return nil
+}
+
 // EventType identifies one normalized streaming event.
 type EventType string
 
@@ -494,7 +593,7 @@ type ToolCallDelta struct {
 // only when a complete call has been assembled.
 type Event struct {
 	Type          EventType         `json:"type"`
-	ContentIndex  int               `json:"content_index,omitempty"`
+	ContentIndex  int               `json:"content_index"`
 	Delta         string            `json:"delta,omitempty"`
 	Content       *ContentPart      `json:"content,omitempty"`
 	ToolCallDelta *ToolCallDelta    `json:"tool_call_delta,omitempty"`
