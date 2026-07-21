@@ -1,6 +1,7 @@
 package llm_test
 
 import (
+	"bytes"
 	"encoding/json"
 	"reflect"
 	"testing"
@@ -91,6 +92,117 @@ func TestContentPartJSONRoundTrip(t *testing.T) {
 	}
 }
 
+func TestCoreMessageConstructors(t *testing.T) {
+	t.Parallel()
+
+	text := llm.NewTextContent("hello")
+	if text.Type != llm.ContentTypeText || text.Text != "hello" {
+		t.Fatalf("NewTextContent() = %#v", text)
+	}
+
+	user, err := llm.NewUserMessage(text.Part())
+	if err != nil {
+		t.Fatalf("NewUserMessage() error = %v", err)
+	}
+	if user.Role != llm.RoleUser || user.Timestamp == 0 {
+		t.Errorf("NewUserMessage() = %#v", user)
+	}
+	if got := user.Message(); got.Role != llm.RoleUser || got.Content[0].Text != "hello" {
+		t.Errorf("UserMessage.Message() = %#v", got)
+	}
+
+	model := llm.Model{
+		ID:       "model-1",
+		API:      "example-api",
+		Provider: "example-provider",
+	}
+	assistant := llm.NewAssistantMessage(model)
+	if assistant.Role != llm.RoleAssistant || assistant.ModelID != model.ID || assistant.Timestamp == 0 {
+		t.Errorf("NewAssistantMessage() = %#v", assistant)
+	}
+	if err := assistant.Validate(); err != nil {
+		t.Errorf("AssistantMessage.Validate() error = %v", err)
+	}
+
+	resultMessage, err := llm.NewToolResultMessage(llm.ToolResult{
+		CallID:  "call-1",
+		Name:    "read",
+		Content: []llm.ContentPart{llm.NewTextContent("file contents").Part()},
+	})
+	if err != nil {
+		t.Fatalf("NewToolResultMessage() error = %v", err)
+	}
+	resultHistory := resultMessage.Message()
+	if resultHistory.Role != llm.RoleTool || resultHistory.Content[0].ToolResult.CallID != "call-1" {
+		t.Errorf("ToolResultMessage.Message() = %#v", resultHistory)
+	}
+}
+
+func TestMessageValidate(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		message llm.Message
+		wantErr bool
+	}{
+		{
+			name: "valid user text",
+			message: llm.Message{
+				Role:    llm.RoleUser,
+				Content: []llm.ContentPart{llm.NewTextContent("hello").Part()},
+			},
+		},
+		{
+			name: "thinking in user message",
+			message: llm.Message{
+				Role: llm.RoleUser,
+				Content: []llm.ContentPart{
+					llm.NewThinkingContent("plan", "signature").Part(),
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "conflicting text payload",
+			message: llm.Message{
+				Role: llm.RoleUser,
+				Content: []llm.ContentPart{{
+					Type:  llm.ContentTypeText,
+					Text:  "hello",
+					Image: &llm.ImageContent{Data: []byte("image"), MIMEType: "image/png"},
+				}},
+			},
+			wantErr: true,
+		},
+		{
+			name: "missing tool call id",
+			message: llm.Message{
+				Role: llm.RoleAssistant,
+				Content: []llm.ContentPart{{
+					Type: llm.ContentTypeToolCall,
+					ToolCall: &llm.ToolCall{
+						Name:      "read",
+						Arguments: json.RawMessage(`{}`),
+					},
+				}},
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := tt.message.Validate()
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Message.Validate() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
 func TestRequestJSONRoundTrip(t *testing.T) {
 	t.Parallel()
 
@@ -145,8 +257,12 @@ func TestRequestJSONRoundTrip(t *testing.T) {
 		t.Fatalf("json.Unmarshal() error = %v", err)
 	}
 
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("JSON round trip = %#v, want %#v", got, want)
+	roundTrip, err := json.Marshal(got)
+	if err != nil {
+		t.Fatalf("json.Marshal(round trip) error = %v", err)
+	}
+	if !bytes.Equal(roundTrip, encoded) {
+		t.Errorf("JSON round trip = %s, want %s", roundTrip, encoded)
 	}
 }
 
@@ -161,22 +277,34 @@ func TestEventJSONRoundTrip(t *testing.T) {
 			Text:      "reasoning",
 			Signature: "opaque-signature",
 		},
-		Usage: &llm.Usage{
-			InputTokens:      120,
-			OutputTokens:     30,
-			ReasoningTokens:  10,
-			CacheReadTokens:  50,
-			CacheWriteTokens: 20,
-			TotalTokens:      150,
-			Cost: &llm.Cost{
-				Input:      0.001,
-				Output:     0.002,
-				CacheRead:  0.0001,
-				CacheWrite: 0.0002,
-				Total:      0.0033,
-			},
-		},
 		StopReason: llm.StopReasonStop,
+		Message: &llm.AssistantMessage{
+			Role: llm.RoleAssistant,
+			Content: []llm.ContentPart{{
+				Type: llm.ContentTypeText,
+				Text: "answer",
+			}},
+			API:      "custom-chat-api",
+			Provider: "custom-provider",
+			ModelID:  "model-1",
+			Usage: llm.Usage{
+				InputTokens:      120,
+				OutputTokens:     30,
+				ReasoningTokens:  10,
+				CacheReadTokens:  50,
+				CacheWriteTokens: 20,
+				TotalTokens:      150,
+				Cost: &llm.Cost{
+					Input:      0.001,
+					Output:     0.002,
+					CacheRead:  0.0001,
+					CacheWrite: 0.0002,
+					Total:      0.0033,
+				},
+			},
+			StopReason: llm.StopReasonStop,
+			Timestamp:  1_721_234_567_890,
+		},
 	}
 
 	encoded, err := json.Marshal(want)
@@ -189,7 +317,11 @@ func TestEventJSONRoundTrip(t *testing.T) {
 		t.Fatalf("json.Unmarshal() error = %v", err)
 	}
 
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("JSON round trip = %#v, want %#v", got, want)
+	roundTrip, err := json.Marshal(got)
+	if err != nil {
+		t.Fatalf("json.Marshal(round trip) error = %v", err)
+	}
+	if !bytes.Equal(roundTrip, encoded) {
+		t.Errorf("JSON round trip = %s, want %s", roundTrip, encoded)
 	}
 }

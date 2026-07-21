@@ -1,7 +1,12 @@
 // Package llm defines provider-neutral language model contracts owned by AICE.
 package llm
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"fmt"
+	"slices"
+	"time"
+)
 
 // API identifies the wire protocol used to call a model.
 // It is intentionally open-ended so adapters can introduce new protocols.
@@ -58,8 +63,25 @@ const (
 
 // Message is one provider-neutral conversation message.
 type Message struct {
-	Role    Role          `json:"role"`
-	Content []ContentPart `json:"content"`
+	Role      Role          `json:"role"`
+	Content   []ContentPart `json:"content"`
+	Timestamp int64         `json:"timestamp,omitempty"`
+}
+
+// TextContent is visible text carried by a user or assistant message.
+// Signature is opaque provider state that may need to be replayed unchanged.
+type TextContent struct {
+	Type      ContentType `json:"type"`
+	Text      string      `json:"text"`
+	Signature string      `json:"signature,omitempty"`
+}
+
+// ThinkingContent is model reasoning carried by an assistant message.
+type ThinkingContent struct {
+	Type      ContentType `json:"type"`
+	Text      string      `json:"text"`
+	Signature string      `json:"signature,omitempty"`
+	Redacted  bool        `json:"redacted,omitempty"`
 }
 
 // ContentPart is a tagged content value. Type selects the relevant payload.
@@ -151,6 +173,274 @@ const (
 	StopReasonAborted StopReason = "aborted"
 )
 
+// UserMessage is a user-authored message before it is placed in model history.
+type UserMessage struct {
+	Role      Role          `json:"role"`
+	Content   []ContentPart `json:"content"`
+	Timestamp int64         `json:"timestamp"`
+}
+
+// AssistantMessage is the complete or partial result of one model request.
+// It is the canonical value stored in history after streaming terminates.
+type AssistantMessage struct {
+	Role         Role          `json:"role"`
+	Content      []ContentPart `json:"content"`
+	API          API           `json:"api"`
+	Provider     ProviderID    `json:"provider"`
+	ModelID      string        `json:"model"`
+	ResponseID   string        `json:"response_id,omitempty"`
+	Usage        Usage         `json:"usage"`
+	StopReason   StopReason    `json:"stop_reason"`
+	ErrorMessage string        `json:"error_message,omitempty"`
+	Timestamp    int64         `json:"timestamp"`
+}
+
+// ToolResultMessage is the history message produced by one tool execution.
+type ToolResultMessage struct {
+	Role       Role          `json:"role"`
+	ToolCallID string        `json:"tool_call_id"`
+	ToolName   string        `json:"tool_name,omitempty"`
+	Content    []ContentPart `json:"content"`
+	IsError    bool          `json:"is_error,omitempty"`
+	Timestamp  int64         `json:"timestamp"`
+}
+
+// NewTextContent constructs visible text content.
+func NewTextContent(text string) TextContent {
+	return TextContent{Type: ContentTypeText, Text: text}
+}
+
+// Part converts text content into the common tagged content representation.
+func (c TextContent) Part() ContentPart {
+	return ContentPart{
+		Type:      c.Type,
+		Text:      c.Text,
+		Signature: c.Signature,
+	}
+}
+
+// NewThinkingContent constructs assistant reasoning content.
+func NewThinkingContent(text, signature string) ThinkingContent {
+	return ThinkingContent{
+		Type:      ContentTypeThinking,
+		Text:      text,
+		Signature: signature,
+	}
+}
+
+// Part converts thinking content into the common tagged content representation.
+func (c ThinkingContent) Part() ContentPart {
+	return ContentPart{
+		Type:      c.Type,
+		Text:      c.Text,
+		Signature: c.Signature,
+		Redacted:  c.Redacted,
+	}
+}
+
+// NewUserMessage constructs and validates a user message.
+func NewUserMessage(content ...ContentPart) (UserMessage, error) {
+	message := UserMessage{
+		Role:      RoleUser,
+		Content:   slices.Clone(content),
+		Timestamp: time.Now().UnixMilli(),
+	}
+	if err := message.Validate(); err != nil {
+		return UserMessage{}, err
+	}
+	return message, nil
+}
+
+// Validate checks that a user message contains only user-supported content.
+func (m UserMessage) Validate() error {
+	return m.Message().Validate()
+}
+
+// Message converts a user message into the common history representation.
+func (m UserMessage) Message() Message {
+	return Message{
+		Role:      m.Role,
+		Content:   slices.Clone(m.Content),
+		Timestamp: m.Timestamp,
+	}
+}
+
+// NewAssistantMessage creates the initial partial result for a model stream.
+func NewAssistantMessage(model Model) AssistantMessage {
+	return AssistantMessage{
+		Role:      RoleAssistant,
+		Content:   []ContentPart{},
+		API:       model.API,
+		Provider:  model.Provider,
+		ModelID:   model.ID,
+		Timestamp: time.Now().UnixMilli(),
+	}
+}
+
+// Validate checks assistant identity, metadata, and content invariants.
+func (m AssistantMessage) Validate() error {
+	if m.Role != RoleAssistant {
+		return fmt.Errorf("llm: assistant message has role %q", m.Role)
+	}
+	if m.API == "" || m.Provider == "" || m.ModelID == "" {
+		return fmt.Errorf("llm: assistant message api, provider, and model are required")
+	}
+	for index, part := range m.Content {
+		if err := part.Validate(); err != nil {
+			return fmt.Errorf("llm: assistant content %d: %w", index, err)
+		}
+		if !contentAllowedForRole(RoleAssistant, part.Type) {
+			return fmt.Errorf("llm: content type %q is not allowed for role %q", part.Type, RoleAssistant)
+		}
+	}
+	return nil
+}
+
+// Message converts an assistant result into replayable model history.
+func (m AssistantMessage) Message() Message {
+	return Message{
+		Role:      m.Role,
+		Content:   slices.Clone(m.Content),
+		Timestamp: m.Timestamp,
+	}
+}
+
+// NewToolResultMessage constructs and validates one tool-result message.
+func NewToolResultMessage(result ToolResult) (ToolResultMessage, error) {
+	message := ToolResultMessage{
+		Role:       RoleTool,
+		ToolCallID: result.CallID,
+		ToolName:   result.Name,
+		Content:    slices.Clone(result.Content),
+		IsError:    result.IsError,
+		Timestamp:  time.Now().UnixMilli(),
+	}
+	if err := message.Validate(); err != nil {
+		return ToolResultMessage{}, err
+	}
+	return message, nil
+}
+
+// Validate checks that a tool-result message can be replayed safely.
+func (m ToolResultMessage) Validate() error {
+	return m.Message().Validate()
+}
+
+// Message converts a tool result into the common history representation.
+func (m ToolResultMessage) Message() Message {
+	result := ToolResult{
+		CallID:  m.ToolCallID,
+		Name:    m.ToolName,
+		Content: slices.Clone(m.Content),
+		IsError: m.IsError,
+	}
+	return Message{
+		Role: m.Role,
+		Content: []ContentPart{{
+			Type:       ContentTypeToolResult,
+			ToolResult: &result,
+		}},
+		Timestamp: m.Timestamp,
+	}
+}
+
+// Validate rejects malformed content and role/content combinations.
+func (m Message) Validate() error {
+	if len(m.Content) == 0 {
+		return fmt.Errorf("llm: %s message content is empty", m.Role)
+	}
+	for index, part := range m.Content {
+		if err := part.Validate(); err != nil {
+			return fmt.Errorf("llm: content %d: %w", index, err)
+		}
+		if !contentAllowedForRole(m.Role, part.Type) {
+			return fmt.Errorf("llm: content type %q is not allowed for role %q", part.Type, m.Role)
+		}
+	}
+	return nil
+}
+
+// Validate rejects missing payloads and conflicting tagged content fields.
+func (p ContentPart) Validate() error {
+	switch p.Type {
+	case ContentTypeText:
+		if p.Redacted || p.Image != nil || p.ToolCall != nil || p.ToolResult != nil {
+			return fmt.Errorf("text content has conflicting payload fields")
+		}
+	case ContentTypeThinking:
+		if p.Image != nil || p.ToolCall != nil || p.ToolResult != nil {
+			return fmt.Errorf("thinking content has conflicting payload fields")
+		}
+	case ContentTypeImage:
+		if p.Image == nil {
+			return fmt.Errorf("image content payload is required")
+		}
+		if p.Text != "" || p.Signature != "" || p.Redacted || p.ToolCall != nil || p.ToolResult != nil {
+			return fmt.Errorf("image content has conflicting payload fields")
+		}
+		if len(p.Image.Data) == 0 || p.Image.MIMEType == "" {
+			return fmt.Errorf("image content data and mime type are required")
+		}
+	case ContentTypeToolCall:
+		if p.ToolCall == nil {
+			return fmt.Errorf("tool call payload is required")
+		}
+		if p.Text != "" || p.Signature != "" || p.Redacted || p.Image != nil || p.ToolResult != nil {
+			return fmt.Errorf("tool call content has conflicting payload fields")
+		}
+		if p.ToolCall.ID == "" || p.ToolCall.Name == "" {
+			return fmt.Errorf("tool call id and name are required")
+		}
+		if !json.Valid(p.ToolCall.Arguments) {
+			return fmt.Errorf("tool call arguments are not valid json")
+		}
+	case ContentTypeToolResult:
+		if p.ToolResult == nil {
+			return fmt.Errorf("tool result payload is required")
+		}
+		if p.Text != "" || p.Signature != "" || p.Redacted || p.Image != nil || p.ToolCall != nil {
+			return fmt.Errorf("tool result content has conflicting payload fields")
+		}
+		if err := p.ToolResult.Validate(); err != nil {
+			return err
+		}
+	default:
+		return fmt.Errorf("unsupported content type %q", p.Type)
+	}
+	return nil
+}
+
+// Validate checks the identity and nested content of a tool result.
+func (r ToolResult) Validate() error {
+	if r.CallID == "" {
+		return fmt.Errorf("tool result call id is required")
+	}
+	for index, part := range r.Content {
+		if err := part.Validate(); err != nil {
+			return fmt.Errorf("tool result content %d: %w", index, err)
+		}
+		if part.Type != ContentTypeText && part.Type != ContentTypeImage {
+			return fmt.Errorf("tool result content %d has unsupported type %q", index, part.Type)
+		}
+	}
+	return nil
+}
+
+func contentAllowedForRole(role Role, contentType ContentType) bool {
+	switch role {
+	case RoleUser:
+		return contentType == ContentTypeText || contentType == ContentTypeImage
+	case RoleAssistant:
+		return contentType == ContentTypeText ||
+			contentType == ContentTypeThinking ||
+			contentType == ContentTypeToolCall
+	case RoleTool:
+		return contentType == ContentTypeToolResult
+	default:
+		return false
+	}
+}
+
 // StreamOptions contains provider-neutral generation controls.
 // A nil Temperature means the provider should use its default.
 type StreamOptions struct {
@@ -187,6 +477,7 @@ const (
 	EventTypeToolCallEnd   EventType = "tool_call_end"
 	EventTypeUsage         EventType = "usage"
 	EventTypeDone          EventType = "done"
+	EventTypeError         EventType = "error"
 )
 
 // ToolCallDelta is one partial update for a streamed tool call.
@@ -202,19 +493,21 @@ type ToolCallDelta struct {
 // preserve opaque state such as a thinking signature. ToolCall is populated
 // only when a complete call has been assembled.
 type Event struct {
-	Type          EventType      `json:"type"`
-	ContentIndex  int            `json:"content_index,omitempty"`
-	Delta         string         `json:"delta,omitempty"`
-	Content       *ContentPart   `json:"content,omitempty"`
-	ToolCallDelta *ToolCallDelta `json:"tool_call_delta,omitempty"`
-	ToolCall      *ToolCall      `json:"tool_call,omitempty"`
-	Usage         *Usage         `json:"usage,omitempty"`
-	StopReason    StopReason     `json:"stop_reason,omitempty"`
+	Type          EventType         `json:"type"`
+	ContentIndex  int               `json:"content_index,omitempty"`
+	Delta         string            `json:"delta,omitempty"`
+	Content       *ContentPart      `json:"content,omitempty"`
+	ToolCallDelta *ToolCallDelta    `json:"tool_call_delta,omitempty"`
+	ToolCall      *ToolCall         `json:"tool_call,omitempty"`
+	Usage         *Usage            `json:"usage,omitempty"`
+	StopReason    StopReason        `json:"stop_reason,omitempty"`
+	Message       *AssistantMessage `json:"message,omitempty"`
+	Err           error             `json:"-"`
 }
 
 // Stream yields model events in order and observes the context used to create it.
-// Next returns io.EOF after the terminal event. Other errors terminate the
-// stream; callers may retain events that were emitted before the failure.
+// Next returns io.EOF after a done or error terminal event. Errors returned
+// directly by Next indicate that no normalized terminal event could be built.
 type Stream interface {
 	Next() (Event, error)
 	Close() error

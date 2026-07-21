@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 
 	anthropicsdk "github.com/anthropics/anthropic-sdk-go"
@@ -91,8 +92,10 @@ func (a *Adapter) Stream(ctx context.Context, request llm.Request) (llm.Stream, 
 	}
 
 	return &stream{
-		source: source,
-		blocks: make(map[int]*blockState),
+		source:   source,
+		blocks:   make(map[int]*blockState),
+		contents: make(map[int]llm.ContentPart),
+		message:  llm.NewAssistantMessage(request.Model),
 	}, nil
 }
 
@@ -106,6 +109,9 @@ func requestParams(request llm.Request) (anthropicsdk.MessageNewParams, error) {
 	}
 	if request.Model.ID == "" {
 		return anthropicsdk.MessageNewParams{}, errors.New("anthropic: model ID is required")
+	}
+	if request.Model.Provider == "" {
+		return anthropicsdk.MessageNewParams{}, errors.New("anthropic: model provider is required")
 	}
 
 	maxTokens := request.Options.MaxTokens
@@ -180,6 +186,10 @@ func applyThinking(params *anthropicsdk.MessageNewParams, level llm.ThinkingLeve
 func messageParams(messages []llm.Message) ([]anthropicsdk.MessageParam, error) {
 	result := make([]anthropicsdk.MessageParam, 0, len(messages))
 	for messageIndex, message := range messages {
+		if err := message.Validate(); err != nil {
+			return nil, fmt.Errorf("anthropic: message %d: %w", messageIndex, err)
+		}
+
 		blocks := make([]anthropicsdk.ContentBlockParamUnion, 0, len(message.Content))
 		for partIndex, part := range message.Content {
 			block, err := contentBlockParam(message.Role, part)
@@ -317,7 +327,9 @@ type blockState struct {
 type stream struct {
 	source   *ssestream.Stream[anthropicsdk.MessageStreamEventUnion]
 	blocks   map[int]*blockState
+	contents map[int]llm.ContentPart
 	pending  []llm.Event
+	message  llm.AssistantMessage
 	usage    llm.Usage
 	stop     llm.StopReason
 	finished bool
@@ -335,7 +347,7 @@ func (s *stream) Next() (llm.Event, error) {
 	for s.source.Next() {
 		events, err := s.translate(s.source.Current())
 		if err != nil {
-			return llm.Event{}, err
+			return s.errorEvent(err, err.Error()), nil
 		}
 		if len(events) == 0 {
 			continue
@@ -345,10 +357,18 @@ func (s *stream) Next() (llm.Event, error) {
 	}
 
 	if err := s.source.Err(); err != nil {
-		return llm.Event{}, fmt.Errorf("anthropic: read message stream: %w", err)
+		wrapped := fmt.Errorf("anthropic: read message stream: %w", err)
+		message := "anthropic: model stream failed"
+		if errors.Is(err, context.Canceled) {
+			message = "anthropic: request canceled"
+		}
+		return s.errorEvent(wrapped, message), nil
 	}
-	s.finished = true
-	return llm.Event{}, fmt.Errorf("anthropic: message stream ended before message_stop: %w", io.ErrUnexpectedEOF)
+	err := fmt.Errorf(
+		"anthropic: message stream ended before message_stop: %w",
+		io.ErrUnexpectedEOF,
+	)
+	return s.errorEvent(err, "anthropic: model stream ended unexpectedly"), nil
 }
 
 func (s *stream) shift() llm.Event {
@@ -371,6 +391,10 @@ func (s *stream) Close() error {
 func (s *stream) translate(event anthropicsdk.MessageStreamEventUnion) ([]llm.Event, error) {
 	switch value := event.AsAny().(type) {
 	case anthropicsdk.MessageStartEvent:
+		s.message.ResponseID = value.Message.ID
+		if value.Message.Model != "" {
+			s.message.ModelID = string(value.Message.Model)
+		}
 		s.mergeUsage(value.Message.Usage)
 		return []llm.Event{{Type: llm.EventTypeStart}}, nil
 	case anthropicsdk.ContentBlockStartEvent:
@@ -389,11 +413,11 @@ func (s *stream) translate(event anthropicsdk.MessageStreamEventUnion) ([]llm.Ev
 			return nil, errors.New("anthropic: message stopped with incomplete content blocks")
 		}
 		s.finished = true
-		usage := s.usage
+		message := s.messageSnapshot(s.stop, "")
 		return []llm.Event{{
 			Type:       llm.EventTypeDone,
-			Usage:      &usage,
 			StopReason: s.stop,
+			Message:    &message,
 		}}, nil
 	default:
 		return nil, fmt.Errorf("anthropic: unsupported stream event %q", event.Type)
@@ -405,6 +429,9 @@ func (s *stream) startBlock(
 	block anthropicsdk.ContentBlockStartEventContentBlockUnion,
 ) ([]llm.Event, error) {
 	if _, exists := s.blocks[index]; exists {
+		return nil, fmt.Errorf("anthropic: content block %d started twice", index)
+	}
+	if _, exists := s.contents[index]; exists {
 		return nil, fmt.Errorf("anthropic: content block %d started twice", index)
 	}
 
@@ -522,19 +549,18 @@ func (s *stream) stopBlock(index int) ([]llm.Event, error) {
 
 	switch state.type_ {
 	case llm.ContentTypeText:
-		content := llm.ContentPart{Type: llm.ContentTypeText, Text: state.text.String()}
+		content := llm.NewTextContent(state.text.String()).Part()
+		s.contents[index] = content
 		return []llm.Event{{
 			Type:         llm.EventTypeTextEnd,
 			ContentIndex: index,
 			Content:      &content,
 		}}, nil
 	case llm.ContentTypeThinking:
-		content := llm.ContentPart{
-			Type:      llm.ContentTypeThinking,
-			Text:      state.text.String(),
-			Signature: state.signature.String(),
-			Redacted:  state.redacted,
-		}
+		thinking := llm.NewThinkingContent(state.text.String(), state.signature.String())
+		thinking.Redacted = state.redacted
+		content := thinking.Part()
+		s.contents[index] = content
 		return []llm.Event{{
 			Type:         llm.EventTypeThinkingEnd,
 			ContentIndex: index,
@@ -549,13 +575,94 @@ func (s *stream) stopBlock(index int) ([]llm.Event, error) {
 			return nil, fmt.Errorf("anthropic: tool call %q ended with invalid JSON", state.toolCall.Name)
 		}
 		state.toolCall.Arguments = append(json.RawMessage(nil), arguments...)
+		content := llm.ContentPart{
+			Type:     llm.ContentTypeToolCall,
+			ToolCall: &state.toolCall,
+		}
+		s.contents[index] = content
 		return []llm.Event{{
 			Type:         llm.EventTypeToolCallEnd,
 			ContentIndex: index,
+			Content:      &content,
 			ToolCall:     &state.toolCall,
 		}}, nil
 	default:
 		return nil, fmt.Errorf("anthropic: content block %d has unknown type %q", index, state.type_)
+	}
+}
+
+func (s *stream) errorEvent(err error, errorMessage string) llm.Event {
+	s.finished = true
+	reason := llm.StopReasonError
+	if errors.Is(err, context.Canceled) {
+		reason = llm.StopReasonAborted
+	}
+	message := s.messageSnapshot(reason, errorMessage)
+	return llm.Event{
+		Type:       llm.EventTypeError,
+		StopReason: reason,
+		Message:    &message,
+		Err:        err,
+	}
+}
+
+func (s *stream) messageSnapshot(reason llm.StopReason, errorMessage string) llm.AssistantMessage {
+	message := s.message
+	message.Content = s.contentSnapshot()
+	message.Usage = s.usage
+	message.StopReason = reason
+	message.ErrorMessage = errorMessage
+	return message
+}
+
+func (s *stream) contentSnapshot() []llm.ContentPart {
+	contents := make(map[int]llm.ContentPart, len(s.contents)+len(s.blocks))
+	for index, content := range s.contents {
+		contents[index] = content
+	}
+	for index, state := range s.blocks {
+		if content, ok := state.partialContent(); ok {
+			contents[index] = content
+		}
+	}
+
+	indexes := make([]int, 0, len(contents))
+	for index := range contents {
+		indexes = append(indexes, index)
+	}
+	sort.Ints(indexes)
+
+	result := make([]llm.ContentPart, 0, len(indexes))
+	for _, index := range indexes {
+		result = append(result, contents[index])
+	}
+	return result
+}
+
+func (s *blockState) partialContent() (llm.ContentPart, bool) {
+	switch s.type_ {
+	case llm.ContentTypeText:
+		return llm.NewTextContent(s.text.String()).Part(), true
+	case llm.ContentTypeThinking:
+		thinking := llm.NewThinkingContent(s.text.String(), s.signature.String())
+		thinking.Redacted = s.redacted
+		return thinking.Part(), true
+	case llm.ContentTypeToolCall:
+		arguments := json.RawMessage(s.text.String())
+		if len(arguments) == 0 {
+			arguments = s.initialArguments
+		}
+		if !json.Valid(arguments) {
+			return llm.ContentPart{}, false
+		}
+		call := s.toolCall
+		call.Arguments = append(json.RawMessage(nil), arguments...)
+		return llm.ContentPart{
+			Type:     llm.ContentTypeToolCall,
+			ToolCall: &call,
+		}, true
+	default:
+		return llm.ContentPart{}, false
 	}
 }
 

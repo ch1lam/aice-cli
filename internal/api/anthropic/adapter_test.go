@@ -203,11 +203,37 @@ func TestAdapterStreamsThinkingToolCallUsageAndDone(t *testing.T) {
 		CacheWriteTokens: 2,
 		TotalTokens:      22,
 	}
-	if events[9].Usage == nil || !reflect.DeepEqual(*events[9].Usage, wantUsage) {
-		t.Errorf("done usage = %#v, want %#v", events[9].Usage, wantUsage)
+	done := events[9]
+	if done.Message == nil {
+		t.Fatal("done message is nil")
 	}
-	if events[9].StopReason != llm.StopReasonToolUse {
-		t.Errorf("done stop reason = %q, want %q", events[9].StopReason, llm.StopReasonToolUse)
+	if !reflect.DeepEqual(done.Message.Usage, wantUsage) {
+		t.Errorf("done message usage = %#v, want %#v", done.Message.Usage, wantUsage)
+	}
+	if done.StopReason != llm.StopReasonToolUse || done.Message.StopReason != llm.StopReasonToolUse {
+		t.Errorf("done stop reasons = %q/%q, want %q", done.StopReason, done.Message.StopReason, llm.StopReasonToolUse)
+	}
+	if done.Message.Role != llm.RoleAssistant ||
+		done.Message.API != anthropicapi.API ||
+		done.Message.Provider != "deepseek" ||
+		done.Message.ModelID != "deepseek-v4-flash" ||
+		done.Message.ResponseID != "msg-1" ||
+		done.Message.Timestamp == 0 {
+		t.Errorf("done message metadata = %#v", done.Message)
+	}
+	wantContent := []llm.ContentPart{
+		llm.NewThinkingContent("plan", "opaque-signature").Part(),
+		{
+			Type: llm.ContentTypeToolCall,
+			ToolCall: &llm.ToolCall{
+				ID:        "call-2",
+				Name:      "read",
+				Arguments: json.RawMessage(`{"path":"README.md"}`),
+			},
+		},
+	}
+	if !reflect.DeepEqual(done.Message.Content, wantContent) {
+		t.Errorf("done message content = %#v, want %#v", done.Message.Content, wantContent)
 	}
 
 	body := <-requests
@@ -239,14 +265,57 @@ func TestAdapterRejectsIncompleteStreamedToolCall(t *testing.T) {
 	}
 	defer modelStream.Close()
 
-	for {
-		_, err = modelStream.Next()
-		if err != nil {
-			break
-		}
+	events := collectEvents(t, modelStream)
+	if len(events) == 0 || events[len(events)-1].Type != llm.EventTypeError {
+		t.Fatalf("last event = %#v, want error event", events)
 	}
-	if !strings.Contains(err.Error(), "invalid JSON") {
-		t.Fatalf("Next() error = %v, want invalid JSON error", err)
+	terminal := events[len(events)-1]
+	if terminal.Message == nil || !strings.Contains(terminal.Message.ErrorMessage, "invalid JSON") {
+		t.Fatalf("error message = %#v, want invalid JSON error", terminal.Message)
+	}
+	if terminal.Err == nil || !strings.Contains(terminal.Err.Error(), "invalid JSON") {
+		t.Fatalf("terminal error = %v, want invalid JSON error", terminal.Err)
+	}
+	if terminal.StopReason != llm.StopReasonError || terminal.Message.StopReason != llm.StopReasonError {
+		t.Errorf("error stop reasons = %q/%q", terminal.StopReason, terminal.Message.StopReason)
+	}
+}
+
+func TestAdapterPreservesPartialTextOnStreamError(t *testing.T) {
+	t.Parallel()
+
+	server := newSSEServer(t, []string{
+		`event: message_start\ndata: {"type":"message_start","message":{"id":"msg-1","type":"message","role":"assistant","model":"deepseek-v4-flash","content":[],"usage":{"input_tokens":1,"output_tokens":0}}}\n\n`,
+		`event: content_block_start\ndata: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}\n\n`,
+		`event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"partial"}}\n\n`,
+	})
+	defer server.Close()
+
+	adapter, err := anthropicapi.New(anthropicapi.Config{
+		APIKey:     "test-key",
+		BaseURL:    server.URL,
+		HTTPClient: server.Client(),
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	modelStream, err := adapter.Stream(context.Background(), minimalRequest())
+	if err != nil {
+		t.Fatalf("Stream() error = %v", err)
+	}
+	defer modelStream.Close()
+
+	events := collectEvents(t, modelStream)
+	terminal := events[len(events)-1]
+	if terminal.Type != llm.EventTypeError || terminal.Message == nil {
+		t.Fatalf("terminal event = %#v", terminal)
+	}
+	if terminal.Err == nil || terminal.Message.ErrorMessage != "anthropic: model stream ended unexpectedly" {
+		t.Errorf("terminal error = %v, message = %q", terminal.Err, terminal.Message.ErrorMessage)
+	}
+	wantContent := []llm.ContentPart{llm.NewTextContent("partial").Part()}
+	if !reflect.DeepEqual(terminal.Message.Content, wantContent) {
+		t.Errorf("partial content = %#v, want %#v", terminal.Message.Content, wantContent)
 	}
 }
 
@@ -301,6 +370,13 @@ func TestAdapterStreamsText(t *testing.T) {
 	}
 	if events[5].StopReason != llm.StopReasonStop {
 		t.Errorf("stop reason = %q, want %q", events[5].StopReason, llm.StopReasonStop)
+	}
+	if events[5].Message == nil {
+		t.Fatal("done message is nil")
+	}
+	wantContent := []llm.ContentPart{llm.NewTextContent("hello").Part()}
+	if !reflect.DeepEqual(events[5].Message.Content, wantContent) {
+		t.Errorf("done message content = %#v, want %#v", events[5].Message.Content, wantContent)
 	}
 }
 
