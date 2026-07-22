@@ -14,7 +14,7 @@ const (
 	separatorHex   = "#332921" // 褐
 	primaryTextHex = "#F2E9D8" // 米白
 	mutedTextHex   = "#8F8477" // 烟灰
-	vermilionHex   = "#C1272D" // 朱红
+	sunsetHex   = "#FF6B6B" // 霞绯
 	goldHex        = "#C9A063" // 金
 	successHex     = "#7A9471" // 竹青
 	warningHex     = "#D98C3D" // 姜黄
@@ -27,7 +27,7 @@ var (
 	panelBlackColor  = lipgloss.Color(panelBlackHex)
 	primaryTextColor = lipgloss.Color(primaryTextHex)
 	mutedTextColor   = lipgloss.Color(mutedTextHex)
-	accentColor      = lipgloss.Color(vermilionHex)
+	accentColor      = lipgloss.Color(sunsetHex)
 	secondaryColor   = lipgloss.Color(goldHex)
 	subtleColor      = lipgloss.Color(separatorHex)
 	successColor     = lipgloss.Color(successHex)
@@ -72,8 +72,8 @@ func inkMarkdownStyle() ansi.StyleConfig {
 	style := glamourstyles.DarkStyleConfig
 	style.Document.Color = stringPointer(primaryTextHex)
 	style.BlockQuote.Color = stringPointer(mutedTextHex)
-	style.Heading.Color = stringPointer(vermilionHex)
-	style.H1.Color = stringPointer(vermilionHex)
+	style.Heading.Color = stringPointer(sunsetHex)
+	style.H1.Color = stringPointer(sunsetHex)
 	style.H1.BackgroundColor = stringPointer(panelBlackHex)
 	style.H6.Color = stringPointer(goldHex)
 	style.HorizontalRule.Color = stringPointer(separatorHex)
@@ -88,7 +88,7 @@ func inkMarkdownStyle() ansi.StyleConfig {
 	style.Code.BackgroundColor = stringPointer(panelBlackHex)
 	style.CodeBlock.Color = stringPointer(primaryTextHex)
 	style.Table.Color = stringPointer(primaryTextHex)
-	style.DefinitionTerm.Color = stringPointer(vermilionHex)
+	style.DefinitionTerm.Color = stringPointer(sunsetHex)
 	style.DefinitionDescription.Color = stringPointer(mutedTextHex)
 
 	if style.CodeBlock.Chroma != nil {
@@ -98,15 +98,15 @@ func inkMarkdownStyle() ansi.StyleConfig {
 		chroma.Error.BackgroundColor = nil
 		chroma.Comment.Color = stringPointer(mutedTextHex)
 		chroma.CommentPreproc.Color = stringPointer(warningHex)
-		chroma.Keyword.Color = stringPointer(vermilionHex)
-		chroma.KeywordReserved.Color = stringPointer(vermilionHex)
-		chroma.KeywordNamespace.Color = stringPointer(vermilionHex)
+		chroma.Keyword.Color = stringPointer(sunsetHex)
+		chroma.KeywordReserved.Color = stringPointer(sunsetHex)
+		chroma.KeywordNamespace.Color = stringPointer(sunsetHex)
 		chroma.KeywordType.Color = stringPointer(informationHex)
 		chroma.Operator.Color = stringPointer(goldHex)
 		chroma.Punctuation.Color = stringPointer(mutedTextHex)
 		chroma.Name.Color = stringPointer(primaryTextHex)
 		chroma.NameBuiltin.Color = stringPointer(informationHex)
-		chroma.NameTag.Color = stringPointer(vermilionHex)
+		chroma.NameTag.Color = stringPointer(sunsetHex)
 		chroma.NameAttribute.Color = stringPointer(goldHex)
 		chroma.NameClass.Color = stringPointer(informationHex)
 		chroma.NameConstant.Color = stringPointer(goldHex)

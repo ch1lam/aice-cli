@@ -20,7 +20,7 @@ func TestInkPalette(t *testing.T) {
 		{name: "separator", got: separatorHex, want: "#332921"},
 		{name: "primary text", got: primaryTextHex, want: "#F2E9D8"},
 		{name: "muted text", got: mutedTextHex, want: "#8F8477"},
-		{name: "vermilion", got: vermilionHex, want: "#C1272D"},
+		{name: "sunset", got: sunsetHex, want: "#FF6B6B"},
 		{name: "gold", got: goldHex, want: "#C9A063"},
 		{name: "success", got: successHex, want: "#7A9471"},
 		{name: "warning", got: warningHex, want: "#D98C3D"},
@@ -47,7 +47,7 @@ func TestThemeMapsSemanticColors(t *testing.T) {
 		style lipgloss.Style
 		want  string
 	}{
-		{name: "brand", style: brandStyle, want: vermilionHex},
+		{name: "brand", style: brandStyle, want: sunsetHex},
 		{name: "primary text", style: bodyStyle, want: primaryTextHex},
 		{name: "secondary detail", style: labelStyle, want: goldHex},
 		{name: "information", style: infoStyle, want: informationHex},
