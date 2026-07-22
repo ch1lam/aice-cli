@@ -6,11 +6,13 @@ import (
 	"errors"
 	"io"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/ch1lam/aice-cli/internal/agent"
 	"github.com/ch1lam/aice-cli/internal/config"
 	"github.com/ch1lam/aice-cli/internal/llm"
+	"github.com/ch1lam/aice-cli/internal/tui"
 )
 
 func TestApplicationPrintRunsReadOnlyAgent(t *testing.T) {
@@ -154,6 +156,58 @@ func TestApplicationPrintSeparatesToolLoopTurns(t *testing.T) {
 	}
 	if got := secondRequest.Messages[2].Role; got != llm.RoleTool {
 		t.Errorf("second request last role = %q, want %q", got, llm.RoleTool)
+	}
+}
+
+func TestApplicationInteractiveKeepsConversationHistory(t *testing.T) {
+	t.Parallel()
+
+	workspace := t.TempDir()
+	model := &recordingModel{response: "inspection complete"}
+	input := strings.NewReader("terminal input")
+	output := new(bytes.Buffer)
+	command, err := newCommand(dependencies{
+		loadConfig: func() (config.Config, error) {
+			return config.Config{DeepSeekAPIKey: "test-key"}, nil
+		},
+		newModel: func(config.Config) (agent.Model, error) {
+			return model, nil
+		},
+		runTUI: func(ctx context.Context, runner tui.Runner, options tui.Options) error {
+			if options.Input != input {
+				t.Error("TUI input does not match command input")
+			}
+			if options.Output != output {
+				t.Error("TUI output does not match command output")
+			}
+			if err := runner.Run(ctx, "first prompt", nil); err != nil {
+				return err
+			}
+			return runner.Run(ctx, "second prompt", nil)
+		},
+	})
+	if err != nil {
+		t.Fatalf("newCommand() error = %v", err)
+	}
+	command.SetIn(input)
+	command.SetOut(output)
+	command.SetArgs([]string{"--workspace", workspace})
+	if err := command.ExecuteContext(t.Context()); err != nil {
+		t.Fatalf("ExecuteContext() error = %v", err)
+	}
+
+	if len(model.requests) != 2 {
+		t.Fatalf("model requests = %d, want 2", len(model.requests))
+	}
+	secondRequest := model.requests[1]
+	if len(secondRequest.Messages) != 3 {
+		t.Fatalf("second request messages = %d, want prior user, prior assistant, and new user", len(secondRequest.Messages))
+	}
+	if got := secondRequest.Messages[0].Content[0].Text; got != "first prompt" {
+		t.Errorf("first history message = %q, want first prompt", got)
+	}
+	if got := secondRequest.Messages[2].Content[0].Text; got != "second prompt" {
+		t.Errorf("current prompt = %q, want second prompt", got)
 	}
 }
 

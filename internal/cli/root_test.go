@@ -21,11 +21,23 @@ func TestNewRootCommandRejectsMissingPrinter(t *testing.T) {
 	}
 }
 
+func TestNewRootCommandRejectsMissingInteractor(t *testing.T) {
+	t.Parallel()
+
+	_, err := cli.NewRootCommand(cli.Dependencies{Printer: &recordingPrinter{}})
+	if err == nil || !strings.Contains(err.Error(), "interactor is required") {
+		t.Fatalf("NewRootCommand() error = %v, want missing interactor error", err)
+	}
+}
+
 func TestRootCommandRunsPrintMode(t *testing.T) {
 	t.Parallel()
 
 	printer := &recordingPrinter{response: "inspection complete\n"}
-	command, err := cli.NewRootCommand(cli.Dependencies{Printer: printer})
+	command, err := cli.NewRootCommand(cli.Dependencies{
+		Printer:    printer,
+		Interactor: &recordingInteractor{},
+	})
 	if err != nil {
 		t.Fatalf("NewRootCommand() error = %v", err)
 	}
@@ -52,6 +64,38 @@ func TestRootCommandRunsPrintMode(t *testing.T) {
 	}
 }
 
+func TestRootCommandRunsInteractiveMode(t *testing.T) {
+	t.Parallel()
+
+	interactor := &recordingInteractor{}
+	command, err := cli.NewRootCommand(cli.Dependencies{
+		Printer:    &recordingPrinter{},
+		Interactor: interactor,
+	})
+	if err != nil {
+		t.Fatalf("NewRootCommand() error = %v", err)
+	}
+
+	input := strings.NewReader("input")
+	output := new(bytes.Buffer)
+	command.SetIn(input)
+	command.SetOut(output)
+	command.SetArgs([]string{"--workspace", "/workspace"})
+	if err := command.ExecuteContext(t.Context()); err != nil {
+		t.Fatalf("ExecuteContext() error = %v", err)
+	}
+
+	if got := interactor.request.Workspace; got != "/workspace" {
+		t.Errorf("Interactive() workspace = %q, want /workspace", got)
+	}
+	if interactor.request.Input != input {
+		t.Error("Interactive() input does not match command input")
+	}
+	if interactor.request.Output != output {
+		t.Error("Interactive() output does not match command output")
+	}
+}
+
 func TestRootCommandRejectsUsageErrors(t *testing.T) {
 	t.Parallel()
 
@@ -61,9 +105,9 @@ func TestRootCommandRejectsUsageErrors(t *testing.T) {
 		want string
 	}{
 		{
-			name: "interactive mode",
+			name: "interactive positional argument",
 			args: []string{"inspect"},
-			want: "use --print",
+			want: "unknown command",
 		},
 		{
 			name: "missing prompt",
@@ -92,7 +136,8 @@ func TestRootCommandRejectsUsageErrors(t *testing.T) {
 			t.Parallel()
 
 			command, err := cli.NewRootCommand(cli.Dependencies{
-				Printer: &recordingPrinter{},
+				Printer:    &recordingPrinter{},
+				Interactor: &recordingInteractor{},
 			})
 			if err != nil {
 				t.Fatalf("NewRootCommand() error = %v", err)
@@ -115,7 +160,8 @@ func TestRootCommandReturnsPrinterError(t *testing.T) {
 
 	wantErr := errors.New("provider unavailable")
 	command, err := cli.NewRootCommand(cli.Dependencies{
-		Printer: &recordingPrinter{err: wantErr},
+		Printer:    &recordingPrinter{err: wantErr},
+		Interactor: &recordingInteractor{},
 	})
 	if err != nil {
 		t.Fatalf("NewRootCommand() error = %v", err)
@@ -131,6 +177,25 @@ func TestRootCommandReturnsPrinterError(t *testing.T) {
 	}
 }
 
+func TestRootCommandReturnsInteractorError(t *testing.T) {
+	t.Parallel()
+
+	wantErr := errors.New("terminal unavailable")
+	command, err := cli.NewRootCommand(cli.Dependencies{
+		Printer:    &recordingPrinter{},
+		Interactor: &recordingInteractor{err: wantErr},
+	})
+	if err != nil {
+		t.Fatalf("NewRootCommand() error = %v", err)
+	}
+	command.SetArgs(nil)
+
+	err = command.ExecuteContext(t.Context())
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("ExecuteContext() error = %v, want %v", err, wantErr)
+	}
+}
+
 func TestExitCodeCanceled(t *testing.T) {
 	t.Parallel()
 
@@ -143,6 +208,19 @@ type recordingPrinter struct {
 	request  cli.PrintRequest
 	response string
 	err      error
+}
+
+type recordingInteractor struct {
+	request cli.InteractiveRequest
+	err     error
+}
+
+func (i *recordingInteractor) Interactive(
+	_ context.Context,
+	request cli.InteractiveRequest,
+) error {
+	i.request = request
+	return i.err
 }
 
 func (p *recordingPrinter) Print(

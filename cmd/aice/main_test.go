@@ -29,11 +29,11 @@ func TestRunUsageError(t *testing.T) {
 
 	output := new(bytes.Buffer)
 	errorOutput := new(bytes.Buffer)
-	if got := run(t.Context(), nil, output, errorOutput); got != 2 {
+	if got := run(t.Context(), []string{"inspect"}, output, errorOutput); got != 2 {
 		t.Fatalf("run() = %d, want 2", got)
 	}
-	if !strings.Contains(errorOutput.String(), "use --print") {
-		t.Errorf("stderr = %q, want print-mode guidance", errorOutput.String())
+	if !strings.Contains(errorOutput.String(), "unknown command") {
+		t.Errorf("stderr = %q, want interactive argument guidance", errorOutput.String())
 	}
 }
 

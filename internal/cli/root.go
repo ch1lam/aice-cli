@@ -17,14 +17,27 @@ type PrintRequest struct {
 	Workspace string
 }
 
+// InteractiveRequest contains one interactive AICE session invocation.
+type InteractiveRequest struct {
+	Workspace string
+	Input     io.Reader
+	Output    io.Writer
+}
+
 // Printer runs one non-interactive agent request.
 type Printer interface {
 	Print(ctx context.Context, request PrintRequest, output io.Writer) error
 }
 
+// Interactor runs one interactive terminal session.
+type Interactor interface {
+	Interactive(ctx context.Context, request InteractiveRequest) error
+}
+
 // Dependencies contains the behavior invoked by CLI commands.
 type Dependencies struct {
-	Printer Printer
+	Printer    Printer
+	Interactor Interactor
 }
 
 // NewRootCommand builds a fresh AICE command tree.
@@ -32,18 +45,25 @@ func NewRootCommand(dependencies Dependencies) (*cobra.Command, error) {
 	if dependencies.Printer == nil {
 		return nil, fmt.Errorf("cli: printer is required")
 	}
+	if dependencies.Interactor == nil {
+		return nil, fmt.Errorf("cli: interactor is required")
+	}
 
 	options := rootOptions{workspace: "."}
 	command := &cobra.Command{
-		Use:           "aice --print <prompt>",
+		Use:           "aice [--print <prompt>]",
 		Short:         "A small, provider-neutral coding agent",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		Args: func(command *cobra.Command, args []string) error {
+			if strings.TrimSpace(options.workspace) == "" {
+				return newUsageError(errors.New("workspace must not be blank"))
+			}
 			if !options.print {
-				return newUsageError(errors.New(
-					"interactive mode is not available yet; use --print",
-				))
+				if err := cobra.NoArgs(command, args); err != nil {
+					return newUsageError(err)
+				}
+				return nil
 			}
 			if err := cobra.ExactArgs(1)(command, args); err != nil {
 				return newUsageError(err)
@@ -51,12 +71,24 @@ func NewRootCommand(dependencies Dependencies) (*cobra.Command, error) {
 			if strings.TrimSpace(args[0]) == "" {
 				return newUsageError(errors.New("prompt must not be blank"))
 			}
-			if strings.TrimSpace(options.workspace) == "" {
-				return newUsageError(errors.New("workspace must not be blank"))
-			}
 			return nil
 		},
 		RunE: func(command *cobra.Command, args []string) error {
+			if !options.print {
+				request := InteractiveRequest{
+					Workspace: options.workspace,
+					Input:     command.InOrStdin(),
+					Output:    command.OutOrStdout(),
+				}
+				if err := dependencies.Interactor.Interactive(
+					command.Context(),
+					request,
+				); err != nil {
+					return fmt.Errorf("interactive session: %w", err)
+				}
+				return nil
+			}
+
 			request := PrintRequest{
 				Prompt:    args[0],
 				Workspace: options.workspace,
