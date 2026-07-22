@@ -14,8 +14,6 @@ import (
 const (
 	// ProviderID is DeepSeek's provider identifier in AICE requests.
 	ProviderID llm.ProviderID = "deepseek"
-	// APIKeyEnv is the environment variable resolved by AICE configuration.
-	APIKeyEnv = "DEEPSEEK_API_KEY"
 	// BaseURL is DeepSeek's Anthropic-compatible API root.
 	BaseURL = "https://api.deepseek.com/anthropic"
 

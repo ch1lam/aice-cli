@@ -3,24 +3,34 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 
 	"github.com/ch1lam/aice-cli/internal/app"
+	"github.com/ch1lam/aice-cli/internal/cli"
 )
 
 func main() {
-	os.Exit(run())
-}
-
-func run() int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
-	if err := app.Run(ctx, os.Stdout); err != nil {
-		_, _ = fmt.Fprintln(os.Stderr, "aice:", err)
-		return 1
+	os.Exit(run(ctx, os.Args[1:], os.Stdout, os.Stderr))
+}
+
+func run(ctx context.Context, args []string, output, errorOutput io.Writer) int {
+	command, err := app.NewCommand()
+	if err != nil {
+		_, _ = fmt.Fprintln(errorOutput, "aice:", err)
+		return cli.ExitCode(err)
 	}
 
+	command.SetArgs(args)
+	command.SetOut(output)
+	command.SetErr(errorOutput)
+	if err := command.ExecuteContext(ctx); err != nil {
+		_, _ = fmt.Fprintln(errorOutput, "aice:", err)
+		return cli.ExitCode(err)
+	}
 	return 0
 }

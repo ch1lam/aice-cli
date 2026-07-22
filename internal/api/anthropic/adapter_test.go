@@ -240,6 +240,96 @@ func TestAdapterStreamsThinkingToolCallUsageAndDone(t *testing.T) {
 	assertRequestBody(t, body)
 }
 
+func TestAdapterGroupsConsecutiveToolResultsInOneUserMessage(t *testing.T) {
+	t.Parallel()
+
+	requests := make(chan map[string]any, 1)
+	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		var body map[string]any
+		if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
+			return nil, err
+		}
+		requests <- body
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Status:     "200 OK",
+			Header: http.Header{
+				"Content-Type": []string{"text/event-stream"},
+			},
+			Body:    io.NopCloser(strings.NewReader("")),
+			Request: request,
+		}, nil
+	})}
+	adapter, err := anthropicapi.New(anthropicapi.Config{
+		APIKey:     "test-key",
+		BaseURL:    "https://example.test",
+		HTTPClient: client,
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	toolCalls := []llm.ToolCall{
+		{ID: "call-1", Name: "read", Arguments: json.RawMessage(`{"path":"a.go"}`)},
+		{ID: "call-2", Name: "read", Arguments: json.RawMessage(`{"path":"b.go"}`)},
+		{ID: "call-3", Name: "ls", Arguments: json.RawMessage(`{}`)},
+	}
+	request := minimalRequest()
+	request.Messages = []llm.Message{
+		request.Messages[0],
+		{
+			Role: llm.RoleAssistant,
+			Content: []llm.ContentPart{
+				{Type: llm.ContentTypeToolCall, ToolCall: &toolCalls[0]},
+				{Type: llm.ContentTypeToolCall, ToolCall: &toolCalls[1]},
+				{Type: llm.ContentTypeToolCall, ToolCall: &toolCalls[2]},
+			},
+		},
+	}
+	for _, call := range toolCalls {
+		result := llm.ToolResult{
+			CallID:  call.ID,
+			Name:    call.Name,
+			Content: []llm.ContentPart{llm.NewTextContent("result:" + call.ID).Part()},
+		}
+		request.Messages = append(request.Messages, llm.Message{
+			Role: llm.RoleTool,
+			Content: []llm.ContentPart{{
+				Type:       llm.ContentTypeToolResult,
+				ToolResult: &result,
+			}},
+		})
+	}
+
+	modelStream, err := adapter.Stream(t.Context(), request)
+	if err != nil {
+		t.Fatalf("Stream() error = %v", err)
+	}
+	if err := modelStream.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+
+	body := <-requests
+	messages, ok := body["messages"].([]any)
+	if !ok || len(messages) != 3 {
+		t.Fatalf("messages = %#v, want user, assistant, and one tool-result user message", body["messages"])
+	}
+	toolMessage, ok := messages[2].(map[string]any)
+	if !ok || toolMessage["role"] != "user" {
+		t.Fatalf("tool message = %#v, want user role", messages[2])
+	}
+	blocks, ok := toolMessage["content"].([]any)
+	if !ok || len(blocks) != len(toolCalls) {
+		t.Fatalf("tool-result blocks = %#v, want %d blocks", toolMessage["content"], len(toolCalls))
+	}
+	for index, blockValue := range blocks {
+		block, ok := blockValue.(map[string]any)
+		if !ok || block["type"] != "tool_result" || block["tool_use_id"] != toolCalls[index].ID {
+			t.Errorf("tool-result block %d = %#v, want id %q", index, blockValue, toolCalls[index].ID)
+		}
+	}
+}
+
 func TestAdapterRejectsIncompleteStreamedToolCall(t *testing.T) {
 	t.Parallel()
 

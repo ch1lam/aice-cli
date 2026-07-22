@@ -207,14 +207,25 @@ func messageParams(messages []llm.Message) ([]anthropicsdk.MessageParam, error) 
 			blocks = append(blocks, block)
 		}
 
+		var converted anthropicsdk.MessageParam
 		switch message.Role {
 		case llm.RoleUser, llm.RoleTool:
-			result = append(result, anthropicsdk.NewUserMessage(blocks...))
+			converted = anthropicsdk.NewUserMessage(blocks...)
 		case llm.RoleAssistant:
-			result = append(result, anthropicsdk.NewAssistantMessage(blocks...))
+			converted = anthropicsdk.NewAssistantMessage(blocks...)
 		default:
 			return nil, fmt.Errorf("anthropic: message %d has unsupported role %q", messageIndex, message.Role)
 		}
+
+		// Anthropic represents tool results as user content blocks and requires all
+		// results for one assistant tool-use turn in the immediately following user
+		// message. The provider-neutral history intentionally stores one RoleTool
+		// message per result, so coalesce adjacent messages after role translation.
+		if len(result) > 0 && result[len(result)-1].Role == converted.Role {
+			result[len(result)-1].Content = append(result[len(result)-1].Content, blocks...)
+			continue
+		}
+		result = append(result, converted)
 	}
 	return result, nil
 }
