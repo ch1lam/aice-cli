@@ -26,44 +26,6 @@ const (
 	inputMaximumHeight = 6
 )
 
-var (
-	accentColor    = lipgloss.Color("#8B7CF6")
-	secondaryColor = lipgloss.Color("#54C7EC")
-	mutedColor     = lipgloss.Color("#7D8296")
-	subtleColor    = lipgloss.Color("#3C4054")
-	successColor   = lipgloss.Color("#55C58A")
-	warningColor   = lipgloss.Color("#E7B75C")
-	errorColor     = lipgloss.Color("#F06C75")
-	whiteColor     = lipgloss.Color("#FFFFFF")
-
-	brandStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(whiteColor).
-			Background(accentColor).
-			Padding(0, 1)
-	headerStyle = lipgloss.NewStyle().Bold(true).Foreground(accentColor)
-	labelStyle  = lipgloss.NewStyle().Bold(true).Foreground(secondaryColor)
-	mutedStyle  = lipgloss.NewStyle().Foreground(mutedColor)
-	userStyle   = lipgloss.NewStyle().
-			BorderLeft(true).
-			BorderStyle(lipgloss.ThickBorder()).
-			BorderForeground(secondaryColor).
-			PaddingLeft(1)
-	thinkingStyle = lipgloss.NewStyle().
-			BorderLeft(true).
-			BorderStyle(lipgloss.NormalBorder()).
-			BorderForeground(subtleColor).
-			Foreground(mutedColor).
-			PaddingLeft(1)
-	composerFocusedStyle = lipgloss.NewStyle().
-				Border(lipgloss.RoundedBorder()).
-				BorderForeground(accentColor).
-				Padding(0, 1)
-	composerBlurredStyle = composerFocusedStyle.BorderForeground(subtleColor)
-	errorStyle           = lipgloss.NewStyle().Foreground(errorColor)
-	noticeStyle          = lipgloss.NewStyle().Foreground(warningColor)
-)
-
 type entryKind uint8
 
 const (
@@ -123,11 +85,29 @@ func newModel(
 	input.SetHeight(1)
 	input.SetWidth(80)
 	inputStyles := textarea.DefaultDarkStyles()
-	inputStyles.Focused.Prompt = lipgloss.NewStyle().Foreground(accentColor)
-	inputStyles.Focused.Placeholder = mutedStyle
-	inputStyles.Blurred.Prompt = lipgloss.NewStyle().Foreground(subtleColor)
-	inputStyles.Blurred.Placeholder = mutedStyle
-	inputStyles.Cursor.Color = accentColor
+	panelBodyStyle := bodyStyle.Background(panelBlackColor)
+	panelMutedStyle := mutedStyle.Background(panelBlackColor)
+	inputStyles.Focused.Base = panelBodyStyle
+	inputStyles.Focused.Text = panelBodyStyle
+	inputStyles.Focused.CursorLine = panelBodyStyle
+	inputStyles.Focused.CursorLineNumber = panelMutedStyle
+	inputStyles.Focused.EndOfBuffer = panelMutedStyle
+	inputStyles.Focused.LineNumber = panelMutedStyle
+	inputStyles.Focused.Prompt = lipgloss.NewStyle().
+		Foreground(accentColor).
+		Background(panelBlackColor)
+	inputStyles.Focused.Placeholder = panelMutedStyle
+	inputStyles.Blurred.Base = panelBodyStyle
+	inputStyles.Blurred.Text = panelBodyStyle
+	inputStyles.Blurred.CursorLine = panelBodyStyle
+	inputStyles.Blurred.CursorLineNumber = panelMutedStyle
+	inputStyles.Blurred.EndOfBuffer = panelMutedStyle
+	inputStyles.Blurred.LineNumber = panelMutedStyle
+	inputStyles.Blurred.Prompt = lipgloss.NewStyle().
+		Foreground(subtleColor).
+		Background(panelBlackColor)
+	inputStyles.Blurred.Placeholder = panelMutedStyle
+	inputStyles.Cursor.Color = secondaryColor
 	input.SetStyles(inputStyles)
 	input.Focus()
 
@@ -141,8 +121,8 @@ func newModel(
 	)
 	helpView := help.New()
 	helpView.ShortSeparator = "  "
-	helpView.Styles.ShortKey = lipgloss.NewStyle().Bold(true).Foreground(mutedColor)
-	helpView.Styles.ShortDesc = lipgloss.NewStyle().Foreground(subtleColor)
+	helpView.Styles.ShortKey = lipgloss.NewStyle().Bold(true).Foreground(secondaryColor)
+	helpView.Styles.ShortDesc = mutedStyle
 	helpView.Styles.ShortSeparator = lipgloss.NewStyle().Foreground(subtleColor)
 	helpView.Styles.FullKey = helpView.Styles.ShortKey
 	helpView.Styles.FullDesc = helpView.Styles.ShortDesc
@@ -228,6 +208,8 @@ func (m model) View() tea.View {
 	)
 
 	view := tea.NewView(content)
+	view.BackgroundColor = inkBlackColor
+	view.ForegroundColor = primaryTextColor
 	view.AltScreen = true
 	view.WindowTitle = "AICE"
 	view.MouseMode = tea.MouseModeCellMotion
@@ -544,13 +526,14 @@ func (m model) welcomeView() string {
 		Width(max(width-6, 1)).
 		Padding(1, 2).
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(subtleColor)
+		BorderForeground(subtleColor).
+		Background(panelBlackColor)
 	title := headerStyle.Render("✦  Work with your codebase")
 	description := mutedStyle.Render(
 		"Ask AICE to trace behavior, explain architecture, or inspect a file.",
 	)
 	toolLabel := mutedStyle.Render("AVAILABLE TOOLS")
-	tools := lipgloss.NewStyle().Bold(true).Foreground(secondaryColor).Render(
+	tools := labelStyle.Render(
 		"read   ls   grep   find",
 	)
 	card := cardStyle.Render(strings.Join(
@@ -587,6 +570,8 @@ func (m model) entryView(entry transcriptEntry) string {
 		body := entry.text
 		if entry.complete && entry.rendered != "" {
 			body = entry.rendered
+		} else if body != "" {
+			body = bodyStyle.Render(body)
 		}
 		if body == "" {
 			body = mutedStyle.Render("Waiting for model output...")
@@ -609,16 +594,16 @@ func (m model) entryView(entry transcriptEntry) string {
 		}
 		return lipgloss.NewStyle().Padding(0, 2).Render(
 			style.Render(icon) + " " +
-				headerStyle.Render(entry.toolName) + "  " +
+				toolNameStyle.Render(entry.toolName) + "  " +
 				mutedStyle.Render(state),
 		)
 	case entryError:
 		return lipgloss.NewStyle().Padding(0, 1).Render(
-			errorStyle.Render("✕ Error  ") + entry.text,
+			errorStyle.Render("✕ Error  " + entry.text),
 		)
 	case entryNotice:
 		return lipgloss.NewStyle().Padding(0, 1).Render(
-			noticeStyle.Render("• ") + mutedStyle.Render(entry.text),
+			noticeStyle.Render("• " + entry.text),
 		)
 	default:
 		return ""
@@ -637,7 +622,7 @@ func (m model) statusLine(width int) string {
 	if m.viewport.AtBottom() {
 		return left
 	}
-	right := mutedStyle.Render(fmt.Sprintf("%3.0f%%", m.viewport.ScrollPercent()*100))
+	right := infoStyle.Render(fmt.Sprintf("%3.0f%%", m.viewport.ScrollPercent()*100))
 	gap := width - lipgloss.Width(left) - lipgloss.Width(right)
 	if gap <= 0 {
 		return left
@@ -667,7 +652,7 @@ func renderMarkdown(markdown string, width int) string {
 		return ""
 	}
 	renderer, err := glamour.NewTermRenderer(
-		glamour.WithStandardStyle("dark"),
+		glamour.WithStyles(inkMarkdownStyle()),
 		glamour.WithWordWrap(max(width, 20)),
 	)
 	if err != nil {
