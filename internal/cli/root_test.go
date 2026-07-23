@@ -46,6 +46,7 @@ func TestRootCommandRunsPrintMode(t *testing.T) {
 	command.SetOut(output)
 	command.SetArgs([]string{
 		"--workspace", "/workspace",
+		"--session", "/sessions/inspection.jsonl",
 		"--print", "inspect this repository",
 	})
 	if err := command.ExecuteContext(t.Context()); err != nil {
@@ -55,6 +56,7 @@ func TestRootCommandRunsPrintMode(t *testing.T) {
 	wantRequest := cli.PrintRequest{
 		Prompt:    "inspect this repository",
 		Workspace: "/workspace",
+		Session:   "/sessions/inspection.jsonl",
 	}
 	if printer.request != wantRequest {
 		t.Errorf("Print() request = %#v, want %#v", printer.request, wantRequest)
@@ -80,13 +82,22 @@ func TestRootCommandRunsInteractiveMode(t *testing.T) {
 	output := new(bytes.Buffer)
 	command.SetIn(input)
 	command.SetOut(output)
-	command.SetArgs([]string{"--workspace", "/workspace"})
+	command.SetArgs([]string{
+		"--workspace", "/workspace",
+		"--session", "/sessions/interactive.jsonl",
+	})
 	if err := command.ExecuteContext(t.Context()); err != nil {
 		t.Fatalf("ExecuteContext() error = %v", err)
 	}
 
 	if got := interactor.request.Workspace; got != "/workspace" {
 		t.Errorf("Interactive() workspace = %q, want /workspace", got)
+	}
+	if got := interactor.request.Session; got != "/sessions/interactive.jsonl" {
+		t.Errorf(
+			"Interactive() session = %q, want /sessions/interactive.jsonl",
+			got,
+		)
 	}
 	if interactor.request.Input != input {
 		t.Error("Interactive() input does not match command input")
@@ -115,6 +126,9 @@ func TestRootCommandDescribesWorkspaceAsWorkingDirectory(t *testing.T) {
 	help := output.String()
 	if !strings.Contains(help, "working directory for agent tools") {
 		t.Fatalf("help = %q, want working-directory description", help)
+	}
+	if !strings.Contains(help, "session JSONL file to create or resume") {
+		t.Fatalf("help = %q, want session-file description", help)
 	}
 	if strings.Contains(help, "root exposed") {
 		t.Fatalf("help = %q, still describes an access boundary", help)
@@ -148,6 +162,11 @@ func TestRootCommandRejectsUsageErrors(t *testing.T) {
 			name: "blank workspace",
 			args: []string{"--workspace", "  ", "--print", "inspect"},
 			want: "workspace must not be blank",
+		},
+		{
+			name: "blank session",
+			args: []string{"--session", "  ", "--print", "inspect"},
+			want: "session must not be blank",
 		},
 		{
 			name: "unknown flag",

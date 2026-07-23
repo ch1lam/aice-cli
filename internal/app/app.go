@@ -14,6 +14,7 @@ import (
 	"github.com/ch1lam/aice-cli/internal/config"
 	"github.com/ch1lam/aice-cli/internal/llm"
 	"github.com/ch1lam/aice-cli/internal/provider/deepseek"
+	"github.com/ch1lam/aice-cli/internal/session"
 	"github.com/ch1lam/aice-cli/internal/tool"
 	"github.com/ch1lam/aice-cli/internal/tui"
 )
@@ -72,7 +73,7 @@ func (a *application) Print(
 	ctx context.Context,
 	request cli.PrintRequest,
 	output io.Writer,
-) error {
+) (returnErr error) {
 	if ctx == nil {
 		return fmt.Errorf("app: context is required")
 	}
@@ -80,9 +81,23 @@ func (a *application) Print(
 		return fmt.Errorf("app: output is required")
 	}
 
-	loop, err := a.newLoop(request.Workspace)
+	loop, workspace, err := a.newLoop(request.Workspace)
 	if err != nil {
 		return err
+	}
+	store, history, err := prepareSession(
+		ctx,
+		workspace,
+		request.Session,
+		false,
+	)
+	if err != nil {
+		return err
+	}
+	if store != nil {
+		defer func() {
+			returnErr = errors.Join(returnErr, store.Close())
+		}()
 	}
 	prompt, err := llm.NewUserMessage(llm.NewTextContent(request.Prompt).Part())
 	if err != nil {
@@ -90,14 +105,19 @@ func (a *application) Print(
 	}
 
 	printer := &streamPrinter{output: output}
-	_, loopErr := loop.Run(ctx, agent.RunInput{
+	result, loopErr := loop.Run(ctx, agent.RunInput{
 		Model:        deepseek.DefaultModel(),
 		SystemPrompt: defaultSystemPrompt,
+		History:      history,
 		Prompt:       prompt,
 	}, printer.Accept)
 	finishErr := printer.Finish()
 	if loopErr != nil {
 		return errors.Join(fmt.Errorf("app: run agent: %w", loopErr), finishErr)
+	}
+	if store != nil {
+		persistErr := appendSessionRun(ctx, store, result.Messages())
+		return errors.Join(finishErr, persistErr)
 	}
 	return finishErr
 }
@@ -117,51 +137,69 @@ func (a *application) Interactive(
 		return fmt.Errorf("app: output is required")
 	}
 
-	loop, err := a.newLoop(request.Workspace)
+	loop, workspace, err := a.newLoop(request.Workspace)
+	if err != nil {
+		return err
+	}
+	store, history, err := prepareSession(
+		ctx,
+		workspace,
+		request.Session,
+		true,
+	)
 	if err != nil {
 		return err
 	}
 
-	session := &interactiveSession{loop: loop}
-	if err := a.dependencies.runTUI(ctx, session, tui.Options{
+	runner := &interactiveSession{
+		loop:    loop,
+		store:   store,
+		history: history,
+	}
+	runErr := a.dependencies.runTUI(ctx, runner, tui.Options{
 		Input:  request.Input,
 		Output: request.Output,
-	}); err != nil {
-		return fmt.Errorf("app: run TUI: %w", err)
+	})
+	closeErr := store.Close()
+	if runErr != nil {
+		return errors.Join(fmt.Errorf("app: run TUI: %w", runErr), closeErr)
 	}
-	return nil
+	return closeErr
 }
 
-func (a *application) newLoop(workingDirectory string) (*agent.Loop, error) {
+func (a *application) newLoop(
+	workingDirectory string,
+) (*agent.Loop, *tool.Workspace, error) {
 	configuration, err := a.dependencies.loadConfig()
 	if err != nil {
-		return nil, fmt.Errorf("app: load configuration: %w", err)
+		return nil, nil, fmt.Errorf("app: load configuration: %w", err)
 	}
 	model, err := a.dependencies.newModel(configuration)
 	if err != nil {
-		return nil, fmt.Errorf("app: create model: %w", err)
+		return nil, nil, fmt.Errorf("app: create model: %w", err)
 	}
 
 	workspace, err := tool.NewWorkspace(workingDirectory)
 	if err != nil {
-		return nil, fmt.Errorf("app: create workspace: %w", err)
+		return nil, nil, fmt.Errorf("app: create workspace: %w", err)
 	}
 	tools, err := newReadOnlyTools(workspace)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	loop, err := agent.NewLoop(model, tools, agent.Limits{
 		MaxTurns:     defaultMaxTurns,
 		MaxToolSteps: defaultMaxToolSteps,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("app: create agent loop: %w", err)
+		return nil, nil, fmt.Errorf("app: create agent loop: %w", err)
 	}
-	return loop, nil
+	return loop, workspace, nil
 }
 
 type interactiveSession struct {
 	loop    *agent.Loop
+	store   *session.Store
 	history []llm.AgentMessage
 }
 
@@ -180,10 +218,14 @@ func (s *interactiveSession) Run(
 		History:      s.history,
 		Prompt:       prompt,
 	}, sink)
-	s.history = append(s.history, result.Messages()...)
 	if runErr != nil {
 		return fmt.Errorf("app: run agent: %w", runErr)
 	}
+	messages := result.Messages()
+	if err := appendSessionRun(ctx, s.store, messages); err != nil {
+		return err
+	}
+	s.history = append(s.history, messages...)
 	return nil
 }
 

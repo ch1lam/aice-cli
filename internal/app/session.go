@@ -1,0 +1,137 @@
+package app
+
+import (
+	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"time"
+
+	"github.com/ch1lam/aice-cli/internal/llm"
+	"github.com/ch1lam/aice-cli/internal/session"
+	"github.com/ch1lam/aice-cli/internal/tool"
+)
+
+func prepareSession(
+	ctx context.Context,
+	workspace *tool.Workspace,
+	requestedPath string,
+	createDefault bool,
+) (*session.Store, []llm.AgentMessage, error) {
+	if workspace == nil {
+		return nil, nil, fmt.Errorf("app: workspace is required")
+	}
+	if requestedPath == "" && !createDefault {
+		return nil, nil, nil
+	}
+
+	if requestedPath == "" {
+		id, err := newSessionID()
+		if err != nil {
+			return nil, nil, err
+		}
+		path := filepath.Join(
+			workspace.Path(),
+			".aice",
+			"sessions",
+			id+".jsonl",
+		)
+		store, err := createSession(ctx, path, id, workspace.Path())
+		return store, nil, err
+	}
+
+	path, err := filepath.Abs(requestedPath)
+	if err != nil {
+		return nil, nil, fmt.Errorf("app: resolve session path: %w", err)
+	}
+	path = filepath.Clean(path)
+	store, err := session.Open(ctx, path)
+	if err == nil {
+		snapshot, snapshotErr := store.Snapshot()
+		if snapshotErr != nil {
+			return nil, nil, errors.Join(
+				fmt.Errorf("app: read session: %w", snapshotErr),
+				store.Close(),
+			)
+		}
+		if filepath.Clean(snapshot.Header.WorkingDirectory) != workspace.Path() {
+			return nil, nil, errors.Join(
+				fmt.Errorf(
+					"app: session working directory is %q, current working directory is %q",
+					snapshot.Header.WorkingDirectory,
+					workspace.Path(),
+				),
+				store.Close(),
+			)
+		}
+		return store, sessionHistory(snapshot), nil
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		return nil, nil, fmt.Errorf("app: open session: %w", err)
+	}
+
+	id, err := newSessionID()
+	if err != nil {
+		return nil, nil, err
+	}
+	store, err = createSession(ctx, path, id, workspace.Path())
+	return store, nil, err
+}
+
+func createSession(
+	ctx context.Context,
+	path string,
+	id string,
+	workingDirectory string,
+) (*session.Store, error) {
+	store, err := session.Create(ctx, path, session.Metadata{
+		ID:               id,
+		CreatedAt:        time.Now().UnixMilli(),
+		WorkingDirectory: workingDirectory,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("app: create session: %w", err)
+	}
+	return store, nil
+}
+
+func newSessionID() (string, error) {
+	var entropy [16]byte
+	if _, err := rand.Read(entropy[:]); err != nil {
+		return "", fmt.Errorf("app: generate session id: %w", err)
+	}
+	return hex.EncodeToString(entropy[:]), nil
+}
+
+func sessionHistory(snapshot session.Snapshot) []llm.AgentMessage {
+	messageCount := 0
+	for _, turn := range snapshot.Turns {
+		messageCount += len(turn.Messages)
+	}
+	history := make([]llm.AgentMessage, 0, messageCount)
+	for _, turn := range snapshot.Turns {
+		history = append(history, turn.Messages...)
+	}
+	return history
+}
+
+func appendSessionRun(
+	ctx context.Context,
+	store *session.Store,
+	messages []llm.AgentMessage,
+) error {
+	if store == nil {
+		return fmt.Errorf("app: session store is required")
+	}
+	turn, err := session.NewTurn(time.Now().UnixMilli(), messages)
+	if err != nil {
+		return fmt.Errorf("app: create session turn: %w", err)
+	}
+	if err := store.AppendTurn(ctx, turn); err != nil {
+		return fmt.Errorf("app: append session turn: %w", err)
+	}
+	return nil
+}

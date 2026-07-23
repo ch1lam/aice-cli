@@ -5,13 +5,17 @@ import (
 	"context"
 	"errors"
 	"io"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 
+	"github.com/spf13/cobra"
+
 	"github.com/ch1lam/aice-cli/internal/agent"
 	"github.com/ch1lam/aice-cli/internal/config"
 	"github.com/ch1lam/aice-cli/internal/llm"
+	"github.com/ch1lam/aice-cli/internal/session"
 	"github.com/ch1lam/aice-cli/internal/tui"
 )
 
@@ -224,6 +228,290 @@ func TestApplicationInteractiveKeepsConversationHistory(t *testing.T) {
 		}
 		t.Errorf("current prompt = %q, want second prompt", got)
 	}
+
+	paths, err := filepath.Glob(filepath.Join(
+		workspace,
+		".aice",
+		"sessions",
+		"*.jsonl",
+	))
+	if err != nil {
+		t.Fatalf("Glob() error = %v", err)
+	}
+	if len(paths) != 1 {
+		t.Fatalf("session files = %v, want one JSONL file", paths)
+	}
+	snapshot := openSessionSnapshot(t, paths[0])
+	if len(snapshot.Turns) != 2 {
+		t.Fatalf("persisted turns = %d, want 2", len(snapshot.Turns))
+	}
+}
+
+func TestApplicationPrintResumesExplicitSession(t *testing.T) {
+	t.Parallel()
+
+	workspace := t.TempDir()
+	sessionPath := filepath.Join(t.TempDir(), "conversation.jsonl")
+
+	firstModel := &recordingModel{response: "first answer"}
+	firstCommand, err := newCommand(dependencies{
+		loadConfig: func() (config.Config, error) {
+			return config.Config{DeepSeekAPIKey: "test-key"}, nil
+		},
+		newModel: func(config.Config) (agent.Model, error) {
+			return firstModel, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("newCommand() first error = %v", err)
+	}
+	firstCommand.SetOut(io.Discard)
+	firstCommand.SetArgs([]string{
+		"--workspace", workspace,
+		"--session", sessionPath,
+		"--print", "first prompt",
+	})
+	if err := firstCommand.ExecuteContext(t.Context()); err != nil {
+		t.Fatalf("first ExecuteContext() error = %v", err)
+	}
+
+	secondModel := &recordingModel{response: "second answer"}
+	secondCommand, err := newCommand(dependencies{
+		loadConfig: func() (config.Config, error) {
+			return config.Config{DeepSeekAPIKey: "test-key"}, nil
+		},
+		newModel: func(config.Config) (agent.Model, error) {
+			return secondModel, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("newCommand() second error = %v", err)
+	}
+	secondCommand.SetOut(io.Discard)
+	secondCommand.SetArgs([]string{
+		"--workspace", workspace,
+		"--session", sessionPath,
+		"--print", "second prompt",
+	})
+	if err := secondCommand.ExecuteContext(t.Context()); err != nil {
+		t.Fatalf("second ExecuteContext() error = %v", err)
+	}
+
+	if len(secondModel.requests) != 1 {
+		t.Fatalf("second model requests = %d, want 1", len(secondModel.requests))
+	}
+	messages := secondModel.requests[0].Messages
+	if len(messages) != 3 {
+		t.Fatalf(
+			"second request messages = %d, want prior user, assistant, and current user",
+			len(messages),
+		)
+	}
+	assertTextMessage(t, messages[0], llm.RoleUser, "first prompt")
+	assertTextMessage(t, messages[1], llm.RoleAssistant, "first answer")
+	assertTextMessage(t, messages[2], llm.RoleUser, "second prompt")
+
+	snapshot := openSessionSnapshot(t, sessionPath)
+	if len(snapshot.Turns) != 2 {
+		t.Fatalf("persisted turns = %d, want 2", len(snapshot.Turns))
+	}
+}
+
+func TestApplicationInteractiveResumesExplicitSession(t *testing.T) {
+	t.Parallel()
+
+	workspace := t.TempDir()
+	sessionPath := filepath.Join(t.TempDir(), "conversation.jsonl")
+	firstModel := &recordingModel{response: "first answer"}
+	firstCommand, err := newCommand(dependencies{
+		loadConfig: func() (config.Config, error) {
+			return config.Config{DeepSeekAPIKey: "test-key"}, nil
+		},
+		newModel: func(config.Config) (agent.Model, error) {
+			return firstModel, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("newCommand() first error = %v", err)
+	}
+	firstCommand.SetOut(io.Discard)
+	firstCommand.SetArgs([]string{
+		"--workspace", workspace,
+		"--session", sessionPath,
+		"--print", "first prompt",
+	})
+	if err := firstCommand.ExecuteContext(t.Context()); err != nil {
+		t.Fatalf("first ExecuteContext() error = %v", err)
+	}
+
+	secondModel := &recordingModel{response: "second answer"}
+	secondCommand, err := newCommand(dependencies{
+		loadConfig: func() (config.Config, error) {
+			return config.Config{DeepSeekAPIKey: "test-key"}, nil
+		},
+		newModel: func(config.Config) (agent.Model, error) {
+			return secondModel, nil
+		},
+		runTUI: func(
+			ctx context.Context,
+			runner tui.Runner,
+			_ tui.Options,
+		) error {
+			return runner.Run(ctx, "second prompt", nil)
+		},
+	})
+	if err != nil {
+		t.Fatalf("newCommand() second error = %v", err)
+	}
+	secondCommand.SetIn(strings.NewReader(""))
+	secondCommand.SetOut(io.Discard)
+	secondCommand.SetArgs([]string{
+		"--workspace", workspace,
+		"--session", sessionPath,
+	})
+	if err := secondCommand.ExecuteContext(t.Context()); err != nil {
+		t.Fatalf("second ExecuteContext() error = %v", err)
+	}
+
+	if len(secondModel.requests) != 1 {
+		t.Fatalf("second model requests = %d, want 1", len(secondModel.requests))
+	}
+	messages := secondModel.requests[0].Messages
+	if len(messages) != 3 {
+		t.Fatalf(
+			"interactive request messages = %d, want restored turn and current user",
+			len(messages),
+		)
+	}
+	assertTextMessage(t, messages[0], llm.RoleUser, "first prompt")
+	assertTextMessage(t, messages[1], llm.RoleAssistant, "first answer")
+	assertTextMessage(t, messages[2], llm.RoleUser, "second prompt")
+}
+
+func TestApplicationDoesNotPersistFailedToolRun(t *testing.T) {
+	t.Parallel()
+
+	workspace := t.TempDir()
+	sessionPath := filepath.Join(t.TempDir(), "conversation.jsonl")
+	wantErr := errors.New("provider disconnected")
+	model := &toolLoopModel{secondErr: wantErr}
+	command, err := newCommand(dependencies{
+		loadConfig: func() (config.Config, error) {
+			return config.Config{DeepSeekAPIKey: "test-key"}, nil
+		},
+		newModel: func(config.Config) (agent.Model, error) {
+			return model, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("newCommand() error = %v", err)
+	}
+	command.SetOut(io.Discard)
+	command.SetArgs([]string{
+		"--workspace", workspace,
+		"--session", sessionPath,
+		"--print", "inspect",
+	})
+
+	err = command.ExecuteContext(t.Context())
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("ExecuteContext() error = %v, want %v", err, wantErr)
+	}
+
+	snapshot := openSessionSnapshot(t, sessionPath)
+	if len(snapshot.Turns) != 0 {
+		t.Fatalf("persisted turns = %#v, want no incomplete run", snapshot.Turns)
+	}
+}
+
+func TestApplicationRejectsSessionWorkingDirectoryChange(t *testing.T) {
+	t.Parallel()
+
+	firstWorkspace := t.TempDir()
+	secondWorkspace := t.TempDir()
+	sessionPath := filepath.Join(t.TempDir(), "conversation.jsonl")
+	model := &recordingModel{response: "answer"}
+
+	newTestCommand := func() *cobra.Command {
+		t.Helper()
+		command, err := newCommand(dependencies{
+			loadConfig: func() (config.Config, error) {
+				return config.Config{DeepSeekAPIKey: "test-key"}, nil
+			},
+			newModel: func(config.Config) (agent.Model, error) {
+				return model, nil
+			},
+		})
+		if err != nil {
+			t.Fatalf("newCommand() error = %v", err)
+		}
+		command.SetOut(io.Discard)
+		return command
+	}
+
+	firstCommand := newTestCommand()
+	firstCommand.SetArgs([]string{
+		"--workspace", firstWorkspace,
+		"--session", sessionPath,
+		"--print", "first",
+	})
+	if err := firstCommand.ExecuteContext(t.Context()); err != nil {
+		t.Fatalf("first ExecuteContext() error = %v", err)
+	}
+
+	secondCommand := newTestCommand()
+	secondCommand.SetArgs([]string{
+		"--workspace", secondWorkspace,
+		"--session", sessionPath,
+		"--print", "second",
+	})
+	err := secondCommand.ExecuteContext(t.Context())
+	if err == nil || !strings.Contains(err.Error(), "working directory") {
+		t.Fatalf("second ExecuteContext() error = %v, want working-directory mismatch", err)
+	}
+}
+
+func openSessionSnapshot(t *testing.T, path string) session.Snapshot {
+	t.Helper()
+
+	store, err := session.Open(t.Context(), path)
+	if err != nil {
+		t.Fatalf("session.Open() error = %v", err)
+	}
+	snapshot, snapshotErr := store.Snapshot()
+	closeErr := store.Close()
+	if snapshotErr != nil || closeErr != nil {
+		t.Fatalf(
+			"session snapshot error = %v, close error = %v",
+			snapshotErr,
+			closeErr,
+		)
+	}
+	return snapshot
+}
+
+func assertTextMessage(
+	t *testing.T,
+	message llm.AgentMessage,
+	role llm.Role,
+	text string,
+) {
+	t.Helper()
+
+	switch role {
+	case llm.RoleUser:
+		value, ok := message.(llm.UserMessage)
+		if !ok || len(value.Content) != 1 || value.Content[0].Text != text {
+			t.Errorf("message = %#v, want user text %q", message, text)
+		}
+	case llm.RoleAssistant:
+		value, ok := message.(llm.AssistantMessage)
+		if !ok || len(value.Content) != 1 || value.Content[0].Text != text {
+			t.Errorf("message = %#v, want assistant text %q", message, text)
+		}
+	default:
+		t.Fatalf("unsupported expected role %q", role)
+	}
 }
 
 type recordingModel struct {
@@ -232,7 +520,8 @@ type recordingModel struct {
 }
 
 type toolLoopModel struct {
-	requests []llm.Request
+	requests  []llm.Request
+	secondErr error
 }
 
 func (m *toolLoopModel) Stream(
@@ -265,6 +554,9 @@ func (m *toolLoopModel) Stream(
 				Message:    &message,
 			},
 		}}, nil
+	}
+	if m.secondErr != nil {
+		return nil, m.secondErr
 	}
 
 	message := llm.NewAssistantMessage(request.Model)

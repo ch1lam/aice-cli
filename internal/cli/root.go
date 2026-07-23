@@ -15,11 +15,13 @@ import (
 type PrintRequest struct {
 	Prompt    string
 	Workspace string
+	Session   string
 }
 
 // InteractiveRequest contains one interactive AICE session invocation.
 type InteractiveRequest struct {
 	Workspace string
+	Session   string
 	Input     io.Reader
 	Output    io.Writer
 }
@@ -59,6 +61,10 @@ func NewRootCommand(dependencies Dependencies) (*cobra.Command, error) {
 			if strings.TrimSpace(options.workspace) == "" {
 				return newUsageError(errors.New("workspace must not be blank"))
 			}
+			if command.Flags().Changed("session") &&
+				strings.TrimSpace(options.session) == "" {
+				return newUsageError(errors.New("session must not be blank"))
+			}
 			if !options.print {
 				if err := cobra.NoArgs(command, args); err != nil {
 					return newUsageError(err)
@@ -77,6 +83,7 @@ func NewRootCommand(dependencies Dependencies) (*cobra.Command, error) {
 			if !options.print {
 				request := InteractiveRequest{
 					Workspace: options.workspace,
+					Session:   options.session,
 					Input:     command.InOrStdin(),
 					Output:    command.OutOrStdout(),
 				}
@@ -92,6 +99,7 @@ func NewRootCommand(dependencies Dependencies) (*cobra.Command, error) {
 			request := PrintRequest{
 				Prompt:    args[0],
 				Workspace: options.workspace,
+				Session:   options.session,
 			}
 			if err := dependencies.Printer.Print(
 				command.Context(),
@@ -119,6 +127,12 @@ func NewRootCommand(dependencies Dependencies) (*cobra.Command, error) {
 		options.workspace,
 		"working directory for agent tools",
 	)
+	command.Flags().StringVar(
+		&options.session,
+		"session",
+		"",
+		"session JSONL file to create or resume",
+	)
 
 	return command, nil
 }
@@ -142,6 +156,7 @@ func ExitCode(err error) int {
 type rootOptions struct {
 	print     bool
 	workspace string
+	session   string
 }
 
 // UsageError marks invalid command-line input.
