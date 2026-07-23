@@ -322,19 +322,19 @@ func (m model) applyRunBatch(batch runBatchMsg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(commands...)
 }
 
-func (m *model) applyAgentEvent(event agent.Event) bool {
+func (m *model) applyAgentEvent(event agent.AgentEvent) bool {
 	switch event.Type {
 	case agent.EventTypeMessageStart:
-		if event.AssistantMessage != nil {
+		if _, ok := event.Message.(llm.AssistantMessage); ok {
 			m.entries = append(m.entries, transcriptEntry{kind: entryAssistant})
 			m.assistantEntry = len(m.entries) - 1
 			return true
 		}
 	case agent.EventTypeMessageUpdate:
-		return m.applyStreamEvent(event.StreamEvent)
+		return m.applyStreamEvent(event.AssistantMessageEvent)
 	case agent.EventTypeMessageEnd:
-		if event.AssistantMessage != nil {
-			m.completeAssistant(*event.AssistantMessage)
+		if message, ok := event.Message.(llm.AssistantMessage); ok {
+			m.completeAssistant(message)
 			return true
 		}
 	case agent.EventTypeToolExecutionStart:
@@ -352,7 +352,7 @@ func (m *model) applyAgentEvent(event agent.Event) bool {
 			m.completeTool(event.ToolCall.ID, event.Err != nil)
 			return true
 		}
-	case agent.EventTypeRunEnd:
+	case agent.EventTypeAgentEnd:
 		if event.Err == nil {
 			m.status = "Response complete"
 		}

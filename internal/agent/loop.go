@@ -65,7 +65,7 @@ func NewLoop(model Model, tools []Tool, limits Limits) (*Loop, error) {
 }
 
 // Run executes one bounded agent run. It does not retain mutable run state.
-func (l *Loop) Run(ctx context.Context, input RunInput, sink EventSink) (Result, error) {
+func (l *Loop) Run(ctx context.Context, input RunInput, sink AgentEventSink) (Result, error) {
 	if ctx == nil {
 		return Result{}, fmt.Errorf("agent: context is required")
 	}
@@ -92,33 +92,33 @@ func (l *Loop) Run(ctx context.Context, input RunInput, sink EventSink) (Result,
 type runExecution struct {
 	loop      *Loop
 	input     RunInput
-	sink      EventSink
+	sink      AgentEventSink
 	history   []llm.AgentMessage
 	result    Result
 	toolSteps int
 }
 
 func (e *runExecution) run(ctx context.Context) (Result, error) {
-	if err := e.emit(ctx, Event{Type: EventTypeRunStart}); err != nil {
+	if err := e.emit(ctx, AgentEvent{Type: EventTypeAgentStart}); err != nil {
 		return e.result, err
 	}
 
 	turnNumber := 1
-	if err := e.emit(ctx, Event{Type: EventTypeTurnStart, TurnNumber: turnNumber}); err != nil {
+	if err := e.emit(ctx, AgentEvent{Type: EventTypeTurnStart, TurnNumber: turnNumber}); err != nil {
 		return e.result, err
 	}
 	prompt := e.input.Prompt
-	if err := e.emit(ctx, Event{
-		Type:        EventTypeMessageStart,
-		TurnNumber:  turnNumber,
-		UserMessage: &prompt,
+	if err := e.emit(ctx, AgentEvent{
+		Type:       EventTypeMessageStart,
+		TurnNumber: turnNumber,
+		Message:    prompt,
 	}); err != nil {
 		return e.result, err
 	}
-	if err := e.emit(ctx, Event{
-		Type:        EventTypeMessageEnd,
-		TurnNumber:  turnNumber,
-		UserMessage: &prompt,
+	if err := e.emit(ctx, AgentEvent{
+		Type:       EventTypeMessageEnd,
+		TurnNumber: turnNumber,
+		Message:    prompt,
 	}); err != nil {
 		return e.result, err
 	}
@@ -132,7 +132,11 @@ func (e *runExecution) run(ctx context.Context) (Result, error) {
 			return e.finishIncompleteTurn(ctx, turnNumber, streamErr)
 		}
 
-		turn := Turn{Number: turnNumber, Assistant: outcome.message}
+		turn := Turn{
+			Number:      turnNumber,
+			Assistant:   outcome.message,
+			ToolResults: []llm.ToolResultMessage{},
+		}
 		e.history = append(e.history, outcome.message)
 
 		runErr := errors.Join(outcome.terminalErr, streamErr)
@@ -153,11 +157,12 @@ func (e *runExecution) run(ctx context.Context) (Result, error) {
 
 		e.result.Turns = append(e.result.Turns, turn)
 		completedTurn := e.result.Turns[len(e.result.Turns)-1]
-		if err := e.emit(ctx, Event{
-			Type:          EventTypeTurnEnd,
-			TurnNumber:    turnNumber,
-			CompletedTurn: &completedTurn,
-			Err:           runErr,
+		if err := e.emit(ctx, AgentEvent{
+			Type:        EventTypeTurnEnd,
+			TurnNumber:  turnNumber,
+			Message:     completedTurn.Assistant,
+			ToolResults: slices.Clone(completedTurn.ToolResults),
+			Err:         runErr,
 		}); err != nil {
 			return e.result, errors.Join(runErr, err)
 		}
@@ -172,7 +177,7 @@ func (e *runExecution) run(ctx context.Context) (Result, error) {
 		}
 
 		turnNumber++
-		if err := e.emit(ctx, Event{Type: EventTypeTurnStart, TurnNumber: turnNumber}); err != nil {
+		if err := e.emit(ctx, AgentEvent{Type: EventTypeTurnStart, TurnNumber: turnNumber}); err != nil {
 			return e.result, err
 		}
 	}
@@ -237,10 +242,10 @@ func (e *runExecution) consumeAssistant(
 			}
 			started = true
 			message := llm.NewAssistantMessage(model)
-			if err := e.emit(ctx, Event{
-				Type:             EventTypeMessageStart,
-				TurnNumber:       turnNumber,
-				AssistantMessage: &message,
+			if err := e.emit(ctx, AgentEvent{
+				Type:       EventTypeMessageStart,
+				TurnNumber: turnNumber,
+				Message:    message,
 			}); err != nil {
 				return assistantOutcome{}, err
 			}
@@ -267,11 +272,11 @@ func (e *runExecution) consumeAssistant(
 				)
 			}
 			terminalErr := terminalError(ctx, event, message)
-			if err := e.emit(ctx, Event{
-				Type:             EventTypeMessageEnd,
-				TurnNumber:       turnNumber,
-				AssistantMessage: &message,
-				Err:              terminalErr,
+			if err := e.emit(ctx, AgentEvent{
+				Type:       EventTypeMessageEnd,
+				TurnNumber: turnNumber,
+				Message:    message,
+				Err:        terminalErr,
 			}); err != nil {
 				return assistantOutcome{}, err
 			}
@@ -298,10 +303,10 @@ func (e *runExecution) consumeAssistant(
 				)
 			}
 			streamEvent := event
-			if err := e.emit(ctx, Event{
-				Type:        EventTypeMessageUpdate,
-				TurnNumber:  turnNumber,
-				StreamEvent: &streamEvent,
+			if err := e.emit(ctx, AgentEvent{
+				Type:                  EventTypeMessageUpdate,
+				TurnNumber:            turnNumber,
+				AssistantMessageEvent: &streamEvent,
 			}); err != nil {
 				return assistantOutcome{}, err
 			}
@@ -345,7 +350,7 @@ func (e *runExecution) executeTools(
 		}
 
 		e.toolSteps++
-		if err := e.emit(ctx, Event{
+		if err := e.emit(ctx, AgentEvent{
 			Type:       EventTypeToolExecutionStart,
 			TurnNumber: turnNumber,
 			ToolCall:   &call,
@@ -354,7 +359,7 @@ func (e *runExecution) executeTools(
 		}
 
 		message, toolErr := e.executeTool(ctx, call)
-		if err := e.emit(ctx, Event{
+		if err := e.emit(ctx, AgentEvent{
 			Type:       EventTypeToolExecutionEnd,
 			TurnNumber: turnNumber,
 			ToolCall:   &call,
@@ -425,11 +430,11 @@ func (e *runExecution) emitToolResultMessage(
 	message llm.ToolResultMessage,
 ) error {
 	for _, eventType := range []EventType{EventTypeMessageStart, EventTypeMessageEnd} {
-		if err := e.emit(ctx, Event{
+		if err := e.emit(ctx, AgentEvent{
 			Type:       eventType,
 			TurnNumber: turnNumber,
 			ToolCall:   &call,
-			ToolResult: &message,
+			Message:    message,
 		}); err != nil {
 			return err
 		}
@@ -460,7 +465,7 @@ func (e *runExecution) finishIncompleteTurn(
 	if runErr == nil {
 		runErr = fmt.Errorf("%w: assistant turn did not complete", ErrProtocol)
 	}
-	if err := e.emit(ctx, Event{
+	if err := e.emit(ctx, AgentEvent{
 		Type:       EventTypeTurnEnd,
 		TurnNumber: turnNumber,
 		Err:        runErr,
@@ -472,17 +477,17 @@ func (e *runExecution) finishIncompleteTurn(
 
 func (e *runExecution) finishRun(ctx context.Context, runErr error) (Result, error) {
 	result := e.result
-	if err := e.emit(ctx, Event{
-		Type:   EventTypeRunEnd,
-		Result: &result,
-		Err:    runErr,
+	if err := e.emit(ctx, AgentEvent{
+		Type:     EventTypeAgentEnd,
+		Messages: result.Messages(),
+		Err:      runErr,
 	}); err != nil {
 		return e.result, errors.Join(runErr, err)
 	}
 	return e.result, runErr
 }
 
-func (e *runExecution) emit(ctx context.Context, event Event) error {
+func (e *runExecution) emit(ctx context.Context, event AgentEvent) error {
 	if e.sink == nil {
 		return nil
 	}

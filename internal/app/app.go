@@ -186,7 +186,7 @@ type interactiveSession struct {
 func (s *interactiveSession) Run(
 	ctx context.Context,
 	promptText string,
-	sink agent.EventSink,
+	sink agent.AgentEventSink,
 ) error {
 	prompt, err := llm.NewUserMessage(llm.NewTextContent(promptText).Part())
 	if err != nil {
@@ -231,21 +231,24 @@ type streamPrinter struct {
 	lastWrittenByte byte
 }
 
-func (p *streamPrinter) Accept(ctx context.Context, event agent.Event) error {
+func (p *streamPrinter) Accept(ctx context.Context, event agent.AgentEvent) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if event.Type == agent.EventTypeMessageEnd && event.AssistantMessage != nil {
-		return p.finishLine()
+	if event.Type == agent.EventTypeMessageEnd {
+		if _, ok := event.Message.(llm.AssistantMessage); ok {
+			return p.finishLine()
+		}
 	}
-	if event.Type != agent.EventTypeMessageUpdate || event.StreamEvent == nil {
+	if event.Type != agent.EventTypeMessageUpdate || event.AssistantMessageEvent == nil {
 		return nil
 	}
-	if event.StreamEvent.Type != llm.EventTypeTextDelta || event.StreamEvent.Delta == "" {
+	if event.AssistantMessageEvent.Type != llm.EventTypeTextDelta ||
+		event.AssistantMessageEvent.Delta == "" {
 		return nil
 	}
 
-	delta := event.StreamEvent.Delta
+	delta := event.AssistantMessageEvent.Delta
 	if _, err := io.WriteString(p.output, delta); err != nil {
 		return fmt.Errorf("app: write streamed response: %w", err)
 	}

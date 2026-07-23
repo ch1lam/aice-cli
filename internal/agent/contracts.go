@@ -80,8 +80,8 @@ type EventType string
 
 const (
 	EventTypeUnknown            EventType = ""
-	EventTypeRunStart           EventType = "run_start"
-	EventTypeRunEnd             EventType = "run_end"
+	EventTypeAgentStart         EventType = "agent_start"
+	EventTypeAgentEnd           EventType = "agent_end"
 	EventTypeTurnStart          EventType = "turn_start"
 	EventTypeTurnEnd            EventType = "turn_end"
 	EventTypeMessageStart       EventType = "message_start"
@@ -91,21 +91,24 @@ const (
 	EventTypeToolExecutionEnd   EventType = "tool_execution_end"
 )
 
-// Event is one synchronous lifecycle update from a run. Fields are populated
-// according to Type; TurnNumber is one-based.
-type Event struct {
-	Type             EventType
-	TurnNumber       int
-	UserMessage      *llm.UserMessage
-	AssistantMessage *llm.AssistantMessage
-	StreamEvent      *llm.Event
-	ToolCall         *llm.ToolCall
-	ToolResult       *llm.ToolResultMessage
-	CompletedTurn    *Turn
-	Result           *Result
-	Err              error
+// AgentEvent is one synchronous lifecycle update from an agent run. Fields are
+// populated according to Type; TurnNumber is one-based.
+type AgentEvent struct {
+	Type       EventType
+	TurnNumber int
+	// Message is populated for message_start, message_end, and turn_end.
+	Message llm.AgentMessage
+	// AssistantMessageEvent is populated only for message_update.
+	AssistantMessageEvent *llm.Event
+	ToolCall              *llm.ToolCall
+	ToolResult            *llm.ToolResultMessage
+	// ToolResults is populated only for turn_end.
+	ToolResults []llm.ToolResultMessage
+	// Messages contains this run's new transcript messages on agent_end.
+	Messages []llm.AgentMessage
+	Err      error
 }
 
-// EventSink receives lifecycle events in order. Returning an error stops the
-// run immediately.
-type EventSink func(ctx context.Context, event Event) error
+// AgentEventSink receives lifecycle events in order. Returning an error stops
+// the run immediately.
+type AgentEventSink func(ctx context.Context, event AgentEvent) error

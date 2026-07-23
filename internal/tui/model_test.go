@@ -48,31 +48,52 @@ func TestModelSubmitsPromptAndConsumesAgentEvents(t *testing.T) {
 	}
 	completedAssistant.StopReason = llm.StopReasonStop
 	call := llm.ToolCall{ID: "call-1", Name: "read", Arguments: []byte(`{"path":"go.mod"}`)}
+	toolResult := llm.ToolResultMessage{
+		Role:       llm.RoleToolResult,
+		ToolCallID: call.ID,
+		ToolName:   call.Name,
+		Content:    []llm.ContentPart{llm.NewTextContent("module contents").Part()},
+	}
 
 	updated = updateModel(t, updated, runBatchMsg{updates: []runUpdate{
 		{cancel: func() {}},
-		{event: agent.Event{
-			Type:             agent.EventTypeMessageStart,
-			AssistantMessage: &startedAssistant,
+		{event: agent.AgentEvent{
+			Type:    agent.EventTypeMessageStart,
+			Message: startedAssistant,
 		}},
-		{event: agent.Event{
+		{event: agent.AgentEvent{
 			Type: agent.EventTypeMessageUpdate,
-			StreamEvent: &llm.Event{
+			AssistantMessageEvent: &llm.Event{
 				Type:  llm.EventTypeTextDelta,
 				Delta: "Inspection",
 			},
 		}},
-		{event: agent.Event{
+		{event: agent.AgentEvent{
+			Type:    agent.EventTypeMessageEnd,
+			Message: completedAssistant,
+		}},
+		{event: agent.AgentEvent{
 			Type:     agent.EventTypeToolExecutionStart,
 			ToolCall: &call,
 		}},
-		{event: agent.Event{
+		{event: agent.AgentEvent{
 			Type:     agent.EventTypeToolExecutionEnd,
 			ToolCall: &call,
 		}},
-		{event: agent.Event{
-			Type:             agent.EventTypeMessageEnd,
-			AssistantMessage: &completedAssistant,
+		{event: agent.AgentEvent{
+			Type:    agent.EventTypeMessageStart,
+			Message: toolResult,
+		}},
+		{event: agent.AgentEvent{
+			Type:    agent.EventTypeMessageEnd,
+			Message: toolResult,
+		}},
+		{event: agent.AgentEvent{
+			Type: agent.EventTypeAgentEnd,
+			Messages: []llm.AgentMessage{
+				completedAssistant,
+				toolResult,
+			},
 		}},
 		{done: true},
 	}})
@@ -85,6 +106,9 @@ func TestModelSubmitsPromptAndConsumesAgentEvents(t *testing.T) {
 	}
 	if updated.cancelRun != nil {
 		t.Fatal("run cancellation function remains after completion")
+	}
+	if len(updated.entries) != 3 {
+		t.Fatalf("transcript entries = %#v, want user, assistant, and tool", updated.entries)
 	}
 	transcript := updated.transcriptView()
 	for _, want := range []string{

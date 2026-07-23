@@ -101,7 +101,7 @@ func TestLoopRunTextTurn(t *testing.T) {
 	loop := mustLoop(t, model, nil, agent.Limits{MaxTurns: 3, MaxToolSteps: 3})
 	prompt := mustPrompt(t, "hi")
 
-	var events []agent.Event
+	var events []agent.AgentEvent
 	result, err := loop.Run(t.Context(), testInput(modelInfo, prompt), collectEvents(&events))
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
@@ -121,7 +121,7 @@ func TestLoopRunTextTurn(t *testing.T) {
 	}
 
 	wantEventTypes := []agent.EventType{
-		agent.EventTypeRunStart,
+		agent.EventTypeAgentStart,
 		agent.EventTypeTurnStart,
 		agent.EventTypeMessageStart,
 		agent.EventTypeMessageEnd,
@@ -132,13 +132,30 @@ func TestLoopRunTextTurn(t *testing.T) {
 		agent.EventTypeMessageUpdate,
 		agent.EventTypeMessageEnd,
 		agent.EventTypeTurnEnd,
-		agent.EventTypeRunEnd,
+		agent.EventTypeAgentEnd,
 	}
 	if got := eventTypes(events); !reflect.DeepEqual(got, wantEventTypes) {
 		t.Fatalf("event types = %v, want %v", got, wantEventTypes)
 	}
-	if events[len(events)-1].Result == nil || events[len(events)-1].Err != nil {
-		t.Fatalf("run_end event = %#v", events[len(events)-1])
+	assertAgentMessage(t, events[2].Message, prompt)
+	assertAgentMessage(t, events[3].Message, prompt)
+	startedAssistant, ok := events[4].Message.(llm.AssistantMessage)
+	if !ok || startedAssistant.Role != llm.RoleAssistant || len(startedAssistant.Content) != 0 {
+		t.Errorf("assistant message_start = %#v", events[4].Message)
+	}
+	for _, event := range events[5:9] {
+		if event.AssistantMessageEvent == nil {
+			t.Errorf("message_update event = %#v, want assistant message event", event)
+		}
+	}
+	assertAgentMessage(t, events[9].Message, answer)
+	assertAgentMessage(t, events[10].Message, answer)
+	if len(events[10].ToolResults) != 0 {
+		t.Errorf("text turn tool results = %#v, want none", events[10].ToolResults)
+	}
+	if !reflect.DeepEqual(events[len(events)-1].Messages, result.Messages()) ||
+		events[len(events)-1].Err != nil {
+		t.Fatalf("agent_end event = %#v", events[len(events)-1])
 	}
 }
 
@@ -176,7 +193,7 @@ func TestLoopRunToolTurnThenContinues(t *testing.T) {
 	})
 	loop := mustLoop(t, model, []agent.Tool{tool}, agent.Limits{MaxTurns: 3, MaxToolSteps: 3})
 
-	var events []agent.Event
+	var events []agent.AgentEvent
 	result, err := loop.Run(
 		t.Context(),
 		testInput(modelInfo, mustPrompt(t, "inspect files")),
@@ -239,7 +256,7 @@ func TestLoopRunToolTurnThenContinues(t *testing.T) {
 		t.Fatalf("tool execution event order = %v, want %v", executionIDs, want)
 	}
 	wantEventTypes := []agent.EventType{
-		agent.EventTypeRunStart,
+		agent.EventTypeAgentStart,
 		agent.EventTypeTurnStart,
 		agent.EventTypeMessageStart,
 		agent.EventTypeMessageEnd,
@@ -258,10 +275,28 @@ func TestLoopRunToolTurnThenContinues(t *testing.T) {
 		agent.EventTypeMessageStart,
 		agent.EventTypeMessageEnd,
 		agent.EventTypeTurnEnd,
-		agent.EventTypeRunEnd,
+		agent.EventTypeAgentEnd,
 	}
 	if got := eventTypes(events); !reflect.DeepEqual(got, wantEventTypes) {
 		t.Fatalf("event types = %v, want %v", got, wantEventTypes)
+	}
+	assertAgentMessage(t, events[5].Message, first)
+	assertAgentMessage(t, events[8].Message, result.Turns[0].ToolResults[0])
+	assertAgentMessage(t, events[9].Message, result.Turns[0].ToolResults[0])
+	assertAgentMessage(t, events[12].Message, result.Turns[0].ToolResults[1])
+	assertAgentMessage(t, events[13].Message, result.Turns[0].ToolResults[1])
+	assertAgentMessage(t, events[14].Message, first)
+	if !reflect.DeepEqual(events[14].ToolResults, result.Turns[0].ToolResults) {
+		t.Errorf(
+			"first turn_end tool results = %#v, want %#v",
+			events[14].ToolResults,
+			result.Turns[0].ToolResults,
+		)
+	}
+	assertAgentMessage(t, events[17].Message, second)
+	assertAgentMessage(t, events[18].Message, second)
+	if !reflect.DeepEqual(events[19].Messages, result.Messages()) {
+		t.Errorf("agent_end messages = %#v, want %#v", events[19].Messages, result.Messages())
 	}
 }
 
@@ -435,7 +470,7 @@ func TestLoopPreservesPartialAssistantOnCancellation(t *testing.T) {
 	}}}
 	loop := mustLoop(t, model, nil, agent.Limits{MaxTurns: 2, MaxToolSteps: 2})
 
-	var events []agent.Event
+	var events []agent.AgentEvent
 	result, err := loop.Run(ctx, testInput(modelInfo, mustPrompt(t, "work")), collectEvents(&events))
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("Run() error = %v, want context.Canceled", err)
@@ -443,9 +478,28 @@ func TestLoopPreservesPartialAssistantOnCancellation(t *testing.T) {
 	if len(result.Turns) != 1 || result.Turns[0].Assistant.Content[0].Text != "partial" {
 		t.Fatalf("Run() result = %#v", result)
 	}
-	if events[len(events)-1].Type != agent.EventTypeRunEnd ||
+	if events[len(events)-1].Type != agent.EventTypeAgentEnd ||
 		!errors.Is(events[len(events)-1].Err, context.Canceled) {
 		t.Fatalf("last event = %#v", events[len(events)-1])
+	}
+	wantEventTypes := []agent.EventType{
+		agent.EventTypeAgentStart,
+		agent.EventTypeTurnStart,
+		agent.EventTypeMessageStart,
+		agent.EventTypeMessageEnd,
+		agent.EventTypeMessageStart,
+		agent.EventTypeMessageUpdate,
+		agent.EventTypeMessageEnd,
+		agent.EventTypeTurnEnd,
+		agent.EventTypeAgentEnd,
+	}
+	if got := eventTypes(events); !reflect.DeepEqual(got, wantEventTypes) {
+		t.Fatalf("event types = %v, want %v", got, wantEventTypes)
+	}
+	assertAgentMessage(t, events[6].Message, partial)
+	assertAgentMessage(t, events[7].Message, partial)
+	if !reflect.DeepEqual(events[8].Messages, result.Messages()) {
+		t.Errorf("agent_end messages = %#v, want %#v", events[8].Messages, result.Messages())
 	}
 }
 
@@ -458,7 +512,7 @@ func TestLoopRejectsStreamEOFBeforeTerminalEvent(t *testing.T) {
 	}}}}
 	loop := mustLoop(t, model, nil, agent.Limits{MaxTurns: 2, MaxToolSteps: 2})
 
-	var events []agent.Event
+	var events []agent.AgentEvent
 	result, err := loop.Run(
 		t.Context(),
 		testInput(modelInfo, mustPrompt(t, "work")),
@@ -473,11 +527,23 @@ func TestLoopRejectsStreamEOFBeforeTerminalEvent(t *testing.T) {
 	if !model.scripts[0].closed {
 		t.Fatal("model stream was not closed")
 	}
-	if got, want := eventTypes(events[len(events)-2:]), []agent.EventType{
+	wantEventTypes := []agent.EventType{
+		agent.EventTypeAgentStart,
+		agent.EventTypeTurnStart,
+		agent.EventTypeMessageStart,
+		agent.EventTypeMessageEnd,
+		agent.EventTypeMessageStart,
 		agent.EventTypeTurnEnd,
-		agent.EventTypeRunEnd,
-	}; !reflect.DeepEqual(got, want) {
-		t.Fatalf("terminal event types = %v, want %v", got, want)
+		agent.EventTypeAgentEnd,
+	}
+	if got := eventTypes(events); !reflect.DeepEqual(got, wantEventTypes) {
+		t.Fatalf("event types = %v, want %v", got, wantEventTypes)
+	}
+	if events[5].Message != nil {
+		t.Errorf("failed turn_end message = %#v, want nil", events[5].Message)
+	}
+	if !reflect.DeepEqual(events[6].Messages, result.Messages()) {
+		t.Errorf("agent_end messages = %#v, want %#v", events[6].Messages, result.Messages())
 	}
 }
 
@@ -512,11 +578,11 @@ func TestLoopStopsImmediatelyWhenEventSinkFails(t *testing.T) {
 	}}}}
 	loop := mustLoop(t, model, nil, agent.Limits{MaxTurns: 2, MaxToolSteps: 2})
 	sinkFailure := errors.New("consumer stopped")
-	var events []agent.Event
+	var events []agent.AgentEvent
 
 	_, err := loop.Run(t.Context(), testInput(modelInfo, mustPrompt(t, "work")), func(
 		_ context.Context,
-		event agent.Event,
+		event agent.AgentEvent,
 	) error {
 		events = append(events, event)
 		if event.Type == agent.EventTypeMessageUpdate {
@@ -531,8 +597,8 @@ func TestLoopStopsImmediatelyWhenEventSinkFails(t *testing.T) {
 		t.Fatal("model stream was not closed")
 	}
 	for _, event := range events {
-		if event.Type == agent.EventTypeRunEnd {
-			t.Fatal("run_end emitted after event sink failure")
+		if event.Type == agent.EventTypeAgentEnd {
+			t.Fatal("agent_end emitted after event sink failure")
 		}
 	}
 }
@@ -613,19 +679,26 @@ func terminalEvents(message llm.AssistantMessage) []llm.Event {
 	}
 }
 
-func collectEvents(events *[]agent.Event) agent.EventSink {
-	return func(_ context.Context, event agent.Event) error {
+func collectEvents(events *[]agent.AgentEvent) agent.AgentEventSink {
+	return func(_ context.Context, event agent.AgentEvent) error {
 		*events = append(*events, event)
 		return nil
 	}
 }
 
-func eventTypes(events []agent.Event) []agent.EventType {
+func eventTypes(events []agent.AgentEvent) []agent.EventType {
 	types := make([]agent.EventType, len(events))
 	for index, event := range events {
 		types[index] = event.Type
 	}
 	return types
+}
+
+func assertAgentMessage(t *testing.T, got, want llm.AgentMessage) {
+	t.Helper()
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("agent event message = %#v, want %#v", got, want)
+	}
 }
 
 func messageRoles(messages []llm.Message) []llm.Role {

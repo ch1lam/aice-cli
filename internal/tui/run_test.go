@@ -32,13 +32,13 @@ func TestRunRejectsInvalidDependencies(t *testing.T) {
 		{
 			name:   "nil input",
 			ctx:    t.Context(),
-			runner: runnerFunc(func(context.Context, string, agent.EventSink) error { return nil }),
+			runner: runnerFunc(func(context.Context, string, agent.AgentEventSink) error { return nil }),
 			want:   "input is required",
 		},
 		{
 			name:   "nil output",
 			ctx:    t.Context(),
-			runner: runnerFunc(func(context.Context, string, agent.EventSink) error { return nil }),
+			runner: runnerFunc(func(context.Context, string, agent.AgentEventSink) error { return nil }),
 			options: Options{
 				Input: emptyReader{},
 			},
@@ -61,11 +61,11 @@ func TestRunRejectsInvalidDependencies(t *testing.T) {
 func TestServeRunsOwnsPerRunEventChannel(t *testing.T) {
 	t.Parallel()
 
-	runner := runnerFunc(func(ctx context.Context, prompt string, sink agent.EventSink) error {
+	runner := runnerFunc(func(ctx context.Context, prompt string, sink agent.AgentEventSink) error {
 		if prompt != "inspect" {
 			return errors.New("unexpected prompt")
 		}
-		return sink(ctx, agent.Event{Type: agent.EventTypeRunStart})
+		return sink(ctx, agent.AgentEvent{Type: agent.EventTypeAgentStart})
 	})
 	ctx, cancel := context.WithCancel(t.Context())
 	requests := make(chan runRequest)
@@ -80,8 +80,8 @@ func TestServeRunsOwnsPerRunEventChannel(t *testing.T) {
 		t.Fatal("first run update has no cancellation function")
 	}
 	event := receiveRunUpdate(t, updates)
-	if event.event.Type != agent.EventTypeRunStart {
-		t.Errorf("event type = %q, want %q", event.event.Type, agent.EventTypeRunStart)
+	if event.event.Type != agent.EventTypeAgentStart {
+		t.Errorf("event type = %q, want %q", event.event.Type, agent.EventTypeAgentStart)
 	}
 	terminal := receiveRunUpdate(t, updates)
 	if !terminal.done || terminal.err != nil {
@@ -113,12 +113,12 @@ func receiveRunUpdate(t *testing.T, updates <-chan runUpdate) runUpdate {
 	}
 }
 
-type runnerFunc func(context.Context, string, agent.EventSink) error
+type runnerFunc func(context.Context, string, agent.AgentEventSink) error
 
 func (f runnerFunc) Run(
 	ctx context.Context,
 	prompt string,
-	sink agent.EventSink,
+	sink agent.AgentEventSink,
 ) error {
 	return f(ctx, prompt, sink)
 }

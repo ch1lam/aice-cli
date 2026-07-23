@@ -17,7 +17,7 @@ const runUpdateBuffer = 32
 // Runner executes one prompt and emits its ordered Agent Loop events.
 // Implementations may retain conversation history between calls.
 type Runner interface {
-	Run(ctx context.Context, prompt string, sink agent.EventSink) error
+	Run(ctx context.Context, prompt string, sink agent.AgentEventSink) error
 }
 
 // Options contains the terminal streams used by the Bubble Tea program.
@@ -75,7 +75,7 @@ type runRequest struct {
 }
 
 type runUpdate struct {
-	event  agent.Event
+	event  agent.AgentEvent
 	cancel context.CancelFunc
 	err    error
 	done   bool
@@ -109,7 +109,7 @@ func runOne(ctx context.Context, runner Runner, request runRequest) {
 
 	err := runner.Run(runCtx, request.prompt, func(
 		eventCtx context.Context,
-		event agent.Event,
+		event agent.AgentEvent,
 	) error {
 		if !sendRunUpdate(eventCtx, request.updates, runUpdate{event: event}) {
 			return eventCtx.Err()
