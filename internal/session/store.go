@@ -49,12 +49,13 @@ func (e *CorruptionError) Unwrap() []error {
 
 // Store owns one append-only session file.
 type Store struct {
-	mu     sync.Mutex
-	file   *os.File
-	path   string
-	header Header
-	turns  []Turn
-	closed bool
+	mu          sync.Mutex
+	file        *os.File
+	path        string
+	header      Header
+	turns       []Turn
+	compactions []Compaction
+	closed      bool
 }
 
 // Create creates a new session file and writes its versioned header.
@@ -106,10 +107,11 @@ func Create(ctx context.Context, path string, metadata Metadata) (*Store, error)
 		return nil, cleanup(fmt.Errorf("session: sync header: %w", err))
 	}
 	return &Store{
-		file:   file,
-		path:   path,
-		header: header,
-		turns:  []Turn{},
+		file:        file,
+		path:        path,
+		header:      header,
+		turns:       []Turn{},
+		compactions: []Compaction{},
 	}, nil
 }
 
@@ -144,10 +146,11 @@ func Open(ctx context.Context, path string) (*Store, error) {
 		}
 	}
 	return &Store{
-		file:   file,
-		path:   path,
-		header: snapshot.Header,
-		turns:  snapshot.Turns,
+		file:        file,
+		path:        path,
+		header:      snapshot.Header,
+		turns:       snapshot.Turns,
+		compactions: snapshot.Compactions,
 	}, nil
 }
 
@@ -161,7 +164,7 @@ func (s *Store) Path() string {
 	return s.path
 }
 
-// Snapshot returns a defensive copy of the loaded header and turns.
+// Snapshot returns a defensive copy of the loaded session records.
 func (s *Store) Snapshot() (Snapshot, error) {
 	if s == nil {
 		return Snapshot{}, fmt.Errorf("session: store is required")
@@ -173,7 +176,11 @@ func (s *Store) Snapshot() (Snapshot, error) {
 	if err != nil {
 		return Snapshot{}, err
 	}
-	return Snapshot{Header: s.header, Turns: turns}, nil
+	return Snapshot{
+		Header:      s.header,
+		Turns:       turns,
+		Compactions: cloneCompactions(s.compactions),
+	}, nil
 }
 
 // AppendTurn durably appends one complete run as one physical JSONL record.
@@ -221,6 +228,68 @@ func (s *Store) AppendTurn(ctx context.Context, turn Turn) error {
 		return rollback(fmt.Errorf("session: retain appended turn: %w", err))
 	}
 	s.turns = append(s.turns, stored)
+	return nil
+}
+
+// AppendCompaction durably appends one derived checkpoint at the current
+// complete-turn boundary.
+func (s *Store) AppendCompaction(
+	ctx context.Context,
+	compaction Compaction,
+) error {
+	if s == nil {
+		return fmt.Errorf("session: store is required")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return ErrClosed
+	}
+	if err := validateContext(ctx); err != nil {
+		return err
+	}
+	if err := validateCompactionBoundary(
+		compaction,
+		len(s.turns),
+		s.compactions,
+	); err != nil {
+		return err
+	}
+
+	data, err := json.Marshal(compaction)
+	if err != nil {
+		return fmt.Errorf("session: encode compaction: %w", err)
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if len(data)+1 > maxRecordBytes {
+		return fmt.Errorf(
+			"session: compaction exceeds %d-byte record limit",
+			maxRecordBytes,
+		)
+	}
+	info, err := s.file.Stat()
+	if err != nil {
+		return fmt.Errorf("session: stat before compaction append: %w", err)
+	}
+	rollback := func(cause error) error {
+		truncateErr := s.file.Truncate(info.Size())
+		syncErr := s.file.Sync()
+		return errors.Join(cause, truncateErr, syncErr)
+	}
+	if err := writeRecord(s.file, data); err != nil {
+		return rollback(fmt.Errorf("session: append compaction: %w", err))
+	}
+	if err := s.file.Sync(); err != nil {
+		return rollback(fmt.Errorf("session: sync compaction: %w", err))
+	}
+
+	var stored Compaction
+	if err := json.Unmarshal(data, &stored); err != nil {
+		return rollback(fmt.Errorf("session: retain appended compaction: %w", err))
+	}
+	s.compactions = append(s.compactions, stored)
 	return nil
 }
 
@@ -299,23 +368,74 @@ func readSnapshot(
 			}
 			continue
 		}
-		if envelope.Type != RecordTypeTurn {
+		switch envelope.Type {
+		case RecordTypeTurn:
+			var turn Turn
+			if err := decodeRecord(line, &turn); err != nil {
+				return Snapshot{}, 0, false, corrupt(lineNumber, recordOffset, err)
+			}
+			snapshot.Turns = append(snapshot.Turns, turn)
+		case RecordTypeCompaction:
+			var compaction Compaction
+			if err := decodeRecord(line, &compaction); err != nil {
+				return Snapshot{}, 0, false, corrupt(lineNumber, recordOffset, err)
+			}
+			if err := validateCompactionBoundary(
+				compaction,
+				len(snapshot.Turns),
+				snapshot.Compactions,
+			); err != nil {
+				return Snapshot{}, 0, false, corrupt(lineNumber, recordOffset, err)
+			}
+			snapshot.Compactions = append(snapshot.Compactions, compaction)
+		default:
 			return Snapshot{}, 0, false, corrupt(
 				lineNumber,
 				recordOffset,
 				fmt.Errorf("record has unsupported type %q", envelope.Type),
 			)
 		}
-		var turn Turn
-		if err := decodeRecord(line, &turn); err != nil {
-			return Snapshot{}, 0, false, corrupt(lineNumber, recordOffset, err)
-		}
-		snapshot.Turns = append(snapshot.Turns, turn)
 	}
 	if lineNumber == 0 {
 		return Snapshot{}, 0, false, corrupt(1, 0, errors.New("missing session header"))
 	}
 	return snapshot, validBytes, false, nil
+}
+
+func validateCompactionBoundary(
+	compaction Compaction,
+	turnCount int,
+	previous []Compaction,
+) error {
+	if err := compaction.Validate(); err != nil {
+		return err
+	}
+	if compaction.TurnCount != turnCount {
+		return fmt.Errorf(
+			"session: compaction turn boundary is %d, current turn count is %d",
+			compaction.TurnCount,
+			turnCount,
+		)
+	}
+	if len(previous) == 0 {
+		return nil
+	}
+	latest := previous[len(previous)-1]
+	if compaction.FirstKeptTurn <= latest.FirstKeptTurn {
+		return fmt.Errorf(
+			"session: compaction first kept turn %d does not advance past %d",
+			compaction.FirstKeptTurn,
+			latest.FirstKeptTurn,
+		)
+	}
+	if compaction.TurnCount <= latest.TurnCount {
+		return fmt.Errorf(
+			"session: compaction turn count %d does not advance past %d",
+			compaction.TurnCount,
+			latest.TurnCount,
+		)
+	}
+	return nil
 }
 
 func readPhysicalLine(reader *bufio.Reader) ([]byte, bool, error) {

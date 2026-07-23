@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/ch1lam/aice-cli/internal/llm"
 )
@@ -19,6 +20,8 @@ const (
 	RecordTypeSession RecordType = "session"
 	// RecordTypeTurn identifies one complete agent run.
 	RecordTypeTurn RecordType = "turn"
+	// RecordTypeCompaction identifies one derived context checkpoint.
+	RecordTypeCompaction RecordType = "compaction"
 )
 
 // CurrentVersion is the session file format written by this build.
@@ -48,10 +51,76 @@ type Turn struct {
 	Usage       llm.Usage          `json:"-"`
 }
 
+// CompactionInput contains caller-owned data for a derived checkpoint.
+type CompactionInput struct {
+	CreatedAt     int64
+	Summary       string
+	TokensBefore  int64
+	FirstKeptTurn int
+	TurnCount     int
+	Usage         llm.Usage
+}
+
+// Compaction is one append-only derived context checkpoint.
+type Compaction struct {
+	Type          RecordType `json:"type"`
+	CreatedAt     int64      `json:"created_at"`
+	Summary       string     `json:"summary"`
+	TokensBefore  int64      `json:"tokens_before"`
+	FirstKeptTurn int        `json:"first_kept_turn"`
+	TurnCount     int        `json:"turn_count"`
+	Usage         llm.Usage  `json:"usage"`
+}
+
 // Snapshot is an independent copy of one loaded session.
 type Snapshot struct {
-	Header Header
-	Turns  []Turn
+	Header      Header
+	Turns       []Turn
+	Compactions []Compaction
+}
+
+// NewCompaction validates and defensively copies one derived checkpoint.
+func NewCompaction(input CompactionInput) (Compaction, error) {
+	compaction := Compaction{
+		Type:          RecordTypeCompaction,
+		CreatedAt:     input.CreatedAt,
+		Summary:       input.Summary,
+		TokensBefore:  input.TokensBefore,
+		FirstKeptTurn: input.FirstKeptTurn,
+		TurnCount:     input.TurnCount,
+		Usage:         cloneUsage(input.Usage),
+	}
+	if err := compaction.Validate(); err != nil {
+		return Compaction{}, err
+	}
+	return compaction, nil
+}
+
+// Validate checks the intrinsic fields of a derived checkpoint.
+func (c Compaction) Validate() error {
+	if c.Type != RecordTypeCompaction {
+		return fmt.Errorf("session: compaction has type %q", c.Type)
+	}
+	if c.CreatedAt <= 0 {
+		return fmt.Errorf("session: compaction creation time must be positive")
+	}
+	if strings.TrimSpace(c.Summary) == "" {
+		return fmt.Errorf("session: compaction summary is required")
+	}
+	if c.TokensBefore <= 0 {
+		return fmt.Errorf("session: compaction tokens before must be positive")
+	}
+	if c.TurnCount <= 0 {
+		return fmt.Errorf("session: compaction turn count must be positive")
+	}
+	if c.FirstKeptTurn <= 0 || c.FirstKeptTurn > c.TurnCount {
+		return fmt.Errorf(
+			"session: compaction first kept turn %d is outside turn count %d",
+			c.FirstKeptTurn,
+			c.TurnCount,
+		)
+	}
+	return nil
 }
 
 type turnJSON struct {
@@ -251,6 +320,24 @@ func cloneTurns(turns []Turn) ([]Turn, error) {
 		}
 	}
 	return cloned, nil
+}
+
+func cloneCompactions(compactions []Compaction) []Compaction {
+	cloned := make([]Compaction, len(compactions))
+	for index, compaction := range compactions {
+		cloned[index] = compaction
+		cloned[index].Usage = cloneUsage(compaction.Usage)
+	}
+	return cloned
+}
+
+func cloneUsage(usage llm.Usage) llm.Usage {
+	cloned := usage
+	if usage.Cost != nil {
+		cost := *usage.Cost
+		cloned.Cost = &cost
+	}
+	return cloned
 }
 
 func aggregateUsage(messages []llm.AgentMessage) llm.Usage {
