@@ -360,6 +360,90 @@ func TestRequestJSONRoundTrip(t *testing.T) {
 	}
 }
 
+func TestAgentMessagesJSONRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	want := []llm.AgentMessage{
+		llm.UserMessage{
+			Role:      llm.RoleUser,
+			Content:   []llm.ContentPart{llm.NewTextContent("inspect").Part()},
+			Timestamp: 1_721_234_567_890,
+		},
+		llm.AssistantMessage{
+			Role: llm.RoleAssistant,
+			Content: []llm.ContentPart{
+				llm.NewThinkingContent("reasoning", "thinking-signature").Part(),
+				{
+					Type: llm.ContentTypeToolCall,
+					ToolCall: &llm.ToolCall{
+						ID:        "call-1",
+						Name:      "read",
+						Arguments: json.RawMessage(`{"path":"README.md"}`),
+						Signature: "tool-signature",
+					},
+				},
+			},
+			API:             "custom-chat-api",
+			Provider:        "custom-provider",
+			ModelID:         "requested-model",
+			ResponseModelID: "resolved-model",
+			ResponseID:      "response-1",
+			Usage: llm.Usage{
+				InputTokens:  100,
+				OutputTokens: 20,
+				TotalTokens:  120,
+				Cost: &llm.Cost{
+					Input: 0.001,
+					Total: 0.001,
+				},
+			},
+			StopReason:   llm.StopReasonToolUse,
+			ErrorMessage: "redacted provider diagnostic",
+			Timestamp:    1_721_234_567_891,
+		},
+		llm.ToolResultMessage{
+			Role:       llm.RoleToolResult,
+			ToolCallID: "call-1",
+			ToolName:   "read",
+			Content:    []llm.ContentPart{llm.NewTextContent("contents").Part()},
+			Timestamp:  1_721_234_567_892,
+		},
+	}
+
+	encoded, err := llm.MarshalAgentMessages(want)
+	if err != nil {
+		t.Fatalf("MarshalAgentMessages() error = %v", err)
+	}
+	got, err := llm.UnmarshalAgentMessages(encoded)
+	if err != nil {
+		t.Fatalf("UnmarshalAgentMessages() error = %v", err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("agent message round trip = %#v, want %#v", got, want)
+	}
+}
+
+func TestAgentMessagesJSONRejectsInvalidMessage(t *testing.T) {
+	t.Parallel()
+
+	_, err := llm.MarshalAgentMessages([]llm.AgentMessage{
+		llm.UserMessage{
+			Role:    llm.RoleUser,
+			Content: nil,
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "message 0") {
+		t.Fatalf("MarshalAgentMessages() error = %v, want validation error", err)
+	}
+
+	_, err = llm.UnmarshalAgentMessages([]byte(
+		`[{"role":"unknown","content":[],"timestamp":1721234567890}]`,
+	))
+	if err == nil || !strings.Contains(err.Error(), "unsupported role") {
+		t.Fatalf("UnmarshalAgentMessages() error = %v, want role error", err)
+	}
+}
+
 func TestRequestValidate(t *testing.T) {
 	t.Parallel()
 

@@ -515,6 +515,41 @@ func unmarshalMessage(data []byte) (Message, error) {
 	}
 }
 
+// MarshalAgentMessages validates and encodes complete transcript messages.
+func MarshalAgentMessages(messages []AgentMessage) ([]byte, error) {
+	for index, message := range messages {
+		if err := validateMessage(message); err != nil {
+			return nil, fmt.Errorf("llm: encode agent message %d: %w", index, err)
+		}
+	}
+	data, err := json.Marshal(messages)
+	if err != nil {
+		return nil, fmt.Errorf("llm: encode agent messages: %w", err)
+	}
+	return data, nil
+}
+
+// UnmarshalAgentMessages restores, validates, and returns concrete transcript messages.
+func UnmarshalAgentMessages(data []byte) ([]AgentMessage, error) {
+	var encoded []json.RawMessage
+	if err := json.Unmarshal(data, &encoded); err != nil {
+		return nil, fmt.Errorf("llm: decode agent messages: %w", err)
+	}
+
+	messages := make([]AgentMessage, len(encoded))
+	for index, item := range encoded {
+		message, err := unmarshalMessage(item)
+		if err != nil {
+			return nil, fmt.Errorf("llm: decode agent message %d: %w", index, err)
+		}
+		if err := validateMessage(message); err != nil {
+			return nil, fmt.Errorf("llm: decode agent message %d: %w", index, err)
+		}
+		messages[index] = message
+	}
+	return messages, nil
+}
+
 // Validate checks provider-neutral request invariants. Protocol adapters and
 // providers remain responsible for their own capability and compatibility
 // restrictions.
