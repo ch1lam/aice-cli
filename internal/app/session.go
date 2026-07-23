@@ -43,35 +43,26 @@ func prepareSession(
 		return store, nil, err
 	}
 
+	store, snapshot, err := openExistingSession(ctx, workspace, requestedPath)
+	if err == nil {
+		history, historyErr := sessionHistory(snapshot)
+		if historyErr != nil {
+			return nil, nil, errors.Join(
+				historyErr,
+				store.Close(),
+			)
+		}
+		return store, history, nil
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		return nil, nil, err
+	}
+
 	path, err := filepath.Abs(requestedPath)
 	if err != nil {
 		return nil, nil, fmt.Errorf("app: resolve session path: %w", err)
 	}
 	path = filepath.Clean(path)
-	store, err := session.Open(ctx, path)
-	if err == nil {
-		snapshot, snapshotErr := store.Snapshot()
-		if snapshotErr != nil {
-			return nil, nil, errors.Join(
-				fmt.Errorf("app: read session: %w", snapshotErr),
-				store.Close(),
-			)
-		}
-		if filepath.Clean(snapshot.Header.WorkingDirectory) != workspace.Path() {
-			return nil, nil, errors.Join(
-				fmt.Errorf(
-					"app: session working directory is %q, current working directory is %q",
-					snapshot.Header.WorkingDirectory,
-					workspace.Path(),
-				),
-				store.Close(),
-			)
-		}
-		return store, sessionHistory(snapshot), nil
-	}
-	if !errors.Is(err, os.ErrNotExist) {
-		return nil, nil, fmt.Errorf("app: open session: %w", err)
-	}
 
 	id, err := newSessionID()
 	if err != nil {
@@ -106,16 +97,52 @@ func newSessionID() (string, error) {
 	return hex.EncodeToString(entropy[:]), nil
 }
 
-func sessionHistory(snapshot session.Snapshot) []llm.AgentMessage {
-	messageCount := 0
-	for _, turn := range snapshot.Turns {
-		messageCount += len(turn.Messages)
+func openExistingSession(
+	ctx context.Context,
+	workspace *tool.Workspace,
+	requestedPath string,
+) (*session.Store, session.Snapshot, error) {
+	if workspace == nil {
+		return nil, session.Snapshot{}, fmt.Errorf("app: workspace is required")
 	}
-	history := make([]llm.AgentMessage, 0, messageCount)
-	for _, turn := range snapshot.Turns {
-		history = append(history, turn.Messages...)
+	path, err := filepath.Abs(requestedPath)
+	if err != nil {
+		return nil, session.Snapshot{}, fmt.Errorf(
+			"app: resolve session path: %w",
+			err,
+		)
 	}
-	return history
+	path = filepath.Clean(path)
+	store, err := session.Open(ctx, path)
+	if err != nil {
+		return nil, session.Snapshot{}, fmt.Errorf("app: open session: %w", err)
+	}
+	snapshot, err := store.Snapshot()
+	if err != nil {
+		return nil, session.Snapshot{}, errors.Join(
+			fmt.Errorf("app: read session: %w", err),
+			store.Close(),
+		)
+	}
+	if filepath.Clean(snapshot.Header.WorkingDirectory) != workspace.Path() {
+		return nil, session.Snapshot{}, errors.Join(
+			fmt.Errorf(
+				"app: session working directory is %q, current working directory is %q",
+				snapshot.Header.WorkingDirectory,
+				workspace.Path(),
+			),
+			store.Close(),
+		)
+	}
+	return store, snapshot, nil
+}
+
+func sessionHistory(snapshot session.Snapshot) ([]llm.AgentMessage, error) {
+	history, err := session.BuildContext(snapshot)
+	if err != nil {
+		return nil, fmt.Errorf("app: build session context: %w", err)
+	}
+	return history, nil
 }
 
 func appendSessionRun(

@@ -40,6 +40,7 @@ type Interactor interface {
 type Dependencies struct {
 	Printer    Printer
 	Interactor Interactor
+	Compactor  Compactor
 }
 
 // NewRootCommand builds a fresh AICE command tree.
@@ -49,6 +50,9 @@ func NewRootCommand(dependencies Dependencies) (*cobra.Command, error) {
 	}
 	if dependencies.Interactor == nil {
 		return nil, fmt.Errorf("cli: interactor is required")
+	}
+	if dependencies.Compactor == nil {
+		return nil, fmt.Errorf("cli: compactor is required")
 	}
 
 	options := rootOptions{workspace: "."}
@@ -133,6 +137,7 @@ func NewRootCommand(dependencies Dependencies) (*cobra.Command, error) {
 		"",
 		"session JSONL file to create or resume",
 	)
+	command.AddCommand(newCompactCommand(dependencies.Compactor))
 
 	return command, nil
 }

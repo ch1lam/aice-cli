@@ -30,6 +30,18 @@ func TestNewRootCommandRejectsMissingInteractor(t *testing.T) {
 	}
 }
 
+func TestNewRootCommandRejectsMissingCompactor(t *testing.T) {
+	t.Parallel()
+
+	_, err := cli.NewRootCommand(cli.Dependencies{
+		Printer:    &recordingPrinter{},
+		Interactor: &recordingInteractor{},
+	})
+	if err == nil || !strings.Contains(err.Error(), "compactor is required") {
+		t.Fatalf("NewRootCommand() error = %v, want missing compactor error", err)
+	}
+}
+
 func TestRootCommandRunsPrintMode(t *testing.T) {
 	t.Parallel()
 
@@ -37,6 +49,7 @@ func TestRootCommandRunsPrintMode(t *testing.T) {
 	command, err := cli.NewRootCommand(cli.Dependencies{
 		Printer:    printer,
 		Interactor: &recordingInteractor{},
+		Compactor:  &recordingCompactor{},
 	})
 	if err != nil {
 		t.Fatalf("NewRootCommand() error = %v", err)
@@ -73,6 +86,7 @@ func TestRootCommandRunsInteractiveMode(t *testing.T) {
 	command, err := cli.NewRootCommand(cli.Dependencies{
 		Printer:    &recordingPrinter{},
 		Interactor: interactor,
+		Compactor:  &recordingCompactor{},
 	})
 	if err != nil {
 		t.Fatalf("NewRootCommand() error = %v", err)
@@ -113,6 +127,7 @@ func TestRootCommandDescribesWorkspaceAsWorkingDirectory(t *testing.T) {
 	command, err := cli.NewRootCommand(cli.Dependencies{
 		Printer:    &recordingPrinter{},
 		Interactor: &recordingInteractor{},
+		Compactor:  &recordingCompactor{},
 	})
 	if err != nil {
 		t.Fatalf("NewRootCommand() error = %v", err)
@@ -182,6 +197,7 @@ func TestRootCommandRejectsUsageErrors(t *testing.T) {
 			command, err := cli.NewRootCommand(cli.Dependencies{
 				Printer:    &recordingPrinter{},
 				Interactor: &recordingInteractor{},
+				Compactor:  &recordingCompactor{},
 			})
 			if err != nil {
 				t.Fatalf("NewRootCommand() error = %v", err)
@@ -206,6 +222,7 @@ func TestRootCommandReturnsPrinterError(t *testing.T) {
 	command, err := cli.NewRootCommand(cli.Dependencies{
 		Printer:    &recordingPrinter{err: wantErr},
 		Interactor: &recordingInteractor{},
+		Compactor:  &recordingCompactor{},
 	})
 	if err != nil {
 		t.Fatalf("NewRootCommand() error = %v", err)
@@ -228,6 +245,7 @@ func TestRootCommandReturnsInteractorError(t *testing.T) {
 	command, err := cli.NewRootCommand(cli.Dependencies{
 		Printer:    &recordingPrinter{},
 		Interactor: &recordingInteractor{err: wantErr},
+		Compactor:  &recordingCompactor{},
 	})
 	if err != nil {
 		t.Fatalf("NewRootCommand() error = %v", err)
@@ -257,6 +275,16 @@ type recordingPrinter struct {
 type recordingInteractor struct {
 	request cli.InteractiveRequest
 	err     error
+}
+
+type recordingCompactor struct{}
+
+func (*recordingCompactor) Compact(
+	context.Context,
+	cli.CompactRequest,
+	io.Writer,
+) error {
+	return nil
 }
 
 func (i *recordingInteractor) Interactive(

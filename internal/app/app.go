@@ -23,8 +23,9 @@ const (
 	defaultSystemPrompt = "You are AICE, a coding agent. Use the available " +
 		"read-only coding tools when repository context is needed. Give concise, " +
 		"evidence-based answers and never claim that you changed files."
-	defaultMaxTurns     = 12
-	defaultMaxToolSteps = 32
+	defaultMaxTurns                  = 12
+	defaultMaxToolSteps              = 32
+	defaultCompactionMaxTokens int64 = 16_000
 )
 
 // NewCommand assembles the production AICE command tree.
@@ -42,9 +43,10 @@ func NewCommand() (*cobra.Command, error) {
 }
 
 type dependencies struct {
-	loadConfig func() (config.Config, error)
-	newModel   func(config.Config) (agent.Model, error)
-	runTUI     func(context.Context, tui.Runner, tui.Options) error
+	loadConfig                 func() (config.Config, error)
+	newModel                   func(config.Config) (agent.Model, error)
+	runTUI                     func(context.Context, tui.Runner, tui.Options) error
+	compactionKeepRecentTokens int64
 }
 
 func newCommand(dependencies dependencies) (*cobra.Command, error) {
@@ -57,11 +59,18 @@ func newCommand(dependencies dependencies) (*cobra.Command, error) {
 	if dependencies.runTUI == nil {
 		dependencies.runTUI = tui.Run
 	}
+	if dependencies.compactionKeepRecentTokens == 0 {
+		dependencies.compactionKeepRecentTokens = session.DefaultKeepRecentTokens
+	}
+	if dependencies.compactionKeepRecentTokens < 0 {
+		return nil, fmt.Errorf("app: compaction keep-recent tokens must be positive")
+	}
 
 	application := &application{dependencies: dependencies}
 	return cli.NewRootCommand(cli.Dependencies{
 		Printer:    application,
 		Interactor: application,
+		Compactor:  application,
 	})
 }
 
@@ -170,13 +179,9 @@ func (a *application) Interactive(
 func (a *application) newLoop(
 	workingDirectory string,
 ) (*agent.Loop, *tool.Workspace, error) {
-	configuration, err := a.dependencies.loadConfig()
+	model, err := a.newModel()
 	if err != nil {
-		return nil, nil, fmt.Errorf("app: load configuration: %w", err)
-	}
-	model, err := a.dependencies.newModel(configuration)
-	if err != nil {
-		return nil, nil, fmt.Errorf("app: create model: %w", err)
+		return nil, nil, err
 	}
 
 	workspace, err := tool.NewWorkspace(workingDirectory)
@@ -195,6 +200,18 @@ func (a *application) newLoop(
 		return nil, nil, fmt.Errorf("app: create agent loop: %w", err)
 	}
 	return loop, workspace, nil
+}
+
+func (a *application) newModel() (agent.Model, error) {
+	configuration, err := a.dependencies.loadConfig()
+	if err != nil {
+		return nil, fmt.Errorf("app: load configuration: %w", err)
+	}
+	model, err := a.dependencies.newModel(configuration)
+	if err != nil {
+		return nil, fmt.Errorf("app: create model: %w", err)
+	}
+	return model, nil
 }
 
 type interactiveSession struct {
