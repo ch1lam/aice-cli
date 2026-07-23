@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"os"
 	"path"
 	"path/filepath"
 	"strings"
@@ -26,14 +27,14 @@ const (
 }`
 )
 
-// Find locates workspace files by glob pattern.
+// Find locates files by glob pattern.
 type Find struct {
 	workspace *Workspace
 }
 
 // NewFind constructs a find tool.
 func NewFind(workspace *Workspace) (*Find, error) {
-	if workspace == nil || workspace.root == nil {
+	if workspace == nil || workspace.path == "" {
 		return nil, fmt.Errorf("tool: workspace is required")
 	}
 	return &Find{workspace: workspace}, nil
@@ -43,12 +44,12 @@ func NewFind(workspace *Workspace) (*Find, error) {
 func (f *Find) Definition() llm.ToolDefinition {
 	return llm.ToolDefinition{
 		Name:        "find",
-		Description: "Find files under a workspace directory using a glob pattern.",
+		Description: "Find files, resolving relative paths from the working directory.",
 		InputSchema: jsonSchema(findSchema),
 	}
 }
 
-// Execute walks the workspace without following directory symlinks.
+// Execute walks the requested directory without following directory symlinks.
 func (f *Find) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult, error) {
 	type arguments struct {
 		Pattern string `json:"pattern"`
@@ -78,11 +79,11 @@ func (f *Find) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult, 
 		args.Limit = defaultFindLimit
 	}
 
-	rootPath, err := f.workspace.resolvePath(args.Path, true)
+	rootPath, err := f.workspace.resolvePath(args.Path)
 	if err != nil {
 		return llm.ToolResult{}, fmt.Errorf("tool \"find\": %w", err)
 	}
-	info, err := f.workspace.root.Stat(rootPath)
+	info, err := os.Stat(rootPath)
 	if err != nil {
 		return llm.ToolResult{}, fmt.Errorf("tool \"find\": stat %q: %w", args.Path, err)
 	}
@@ -93,8 +94,7 @@ func (f *Find) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult, 
 	collector := newTextCollector(maxOutputBytes)
 	count := 0
 	entriesScanned := 0
-	walkRoot := filepath.ToSlash(rootPath)
-	err = fs.WalkDir(f.workspace.root.FS(), walkRoot, func(filePath string, entry fs.DirEntry, walkErr error) error {
+	err = filepath.WalkDir(rootPath, func(filePath string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
@@ -105,7 +105,7 @@ func (f *Find) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult, 
 		if entriesScanned > maxWalkEntries {
 			return errScanLimit
 		}
-		if filePath == walkRoot {
+		if filePath == rootPath {
 			return nil
 		}
 		if entry.IsDir() {
@@ -114,14 +114,9 @@ func (f *Find) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult, 
 			}
 			return nil
 		}
-		if entry.Type()&fs.ModeSymlink != 0 {
-			return nil
-		}
-
-		relativePath := strings.TrimPrefix(filePath, "./")
-		matchPath := relativePath
-		if walkRoot != "." {
-			matchPath = strings.TrimPrefix(strings.TrimPrefix(filePath, walkRoot), "/")
+		matchPath, relativeErr := filepath.Rel(rootPath, filePath)
+		if relativeErr != nil {
+			return relativeErr
 		}
 		matched, matchErr := matchGlob(args.Pattern, matchPath)
 		if matchErr != nil {
@@ -134,7 +129,14 @@ func (f *Find) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult, 
 			return errResultLimit
 		}
 		count++
-		if !collector.WriteString(relativePath + "\n") {
+		resultPath := filePath
+		if !filepath.IsAbs(args.Path) {
+			resultPath, relativeErr = filepath.Rel(f.workspace.Path(), filePath)
+			if relativeErr != nil {
+				return relativeErr
+			}
+		}
+		if !collector.WriteString(filepath.ToSlash(resultPath) + "\n") {
 			return errOutputLimit
 		}
 		return nil

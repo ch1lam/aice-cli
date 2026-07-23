@@ -29,8 +29,35 @@ func TestFindExecuteSupportsDoubleStarAndIgnoresGit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
-	want := "internal/a.go\ninternal/a_test.go\nmain.go"
+	want := "internal/a.go\ninternal/a_test.go\nlinked.go\nmain.go"
 	if got := resultText(t, result); got != want {
+		t.Fatalf("Execute() text = %q, want %q", got, want)
+	}
+}
+
+func TestFindExecuteSearchesParentDirectory(t *testing.T) {
+	t.Parallel()
+
+	parent := t.TempDir()
+	root := filepath.Join(parent, "work")
+	if err := os.Mkdir(root, 0o750); err != nil {
+		t.Fatalf("os.Mkdir() error = %v", err)
+	}
+	writeFixture(t, parent, "outside.go", "package outside")
+	workspace := newWorkspaceAt(t, root)
+	find, err := tool.NewFind(workspace)
+	if err != nil {
+		t.Fatalf("NewFind() error = %v", err)
+	}
+
+	result, err := find.Execute(t.Context(), toolCall(t, "find", map[string]any{
+		"pattern": "*.go",
+		"path":    "..",
+	}))
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if got, want := resultText(t, result), "../outside.go"; got != want {
 		t.Fatalf("Execute() text = %q, want %q", got, want)
 	}
 }

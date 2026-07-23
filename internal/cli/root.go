@@ -117,7 +117,7 @@ func NewRootCommand(dependencies Dependencies) (*cobra.Command, error) {
 		&options.workspace,
 		"workspace",
 		options.workspace,
-		"workspace root exposed to agent tools",
+		"working directory for agent tools",
 	)
 
 	return command, nil

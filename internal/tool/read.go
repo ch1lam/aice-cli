@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 
 	"github.com/ch1lam/aice-cli/internal/llm"
@@ -24,14 +25,14 @@ const (
 }`
 )
 
-// Read reads bounded text content from one workspace file.
+// Read reads bounded text content from one file.
 type Read struct {
 	workspace *Workspace
 }
 
 // NewRead constructs a read tool.
 func NewRead(workspace *Workspace) (*Read, error) {
-	if workspace == nil || workspace.root == nil {
+	if workspace == nil || workspace.path == "" {
 		return nil, fmt.Errorf("tool: workspace is required")
 	}
 	return &Read{workspace: workspace}, nil
@@ -41,12 +42,12 @@ func NewRead(workspace *Workspace) (*Read, error) {
 func (r *Read) Definition() llm.ToolDefinition {
 	return llm.ToolDefinition{
 		Name:        "read",
-		Description: "Read a text file from the workspace, optionally selecting a line range.",
+		Description: "Read a text file, resolving relative paths from the working directory.",
 		InputSchema: jsonSchema(readSchema),
 	}
 }
 
-// Execute reads the requested file without allowing workspace escape.
+// Execute reads the requested file.
 func (r *Read) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult, error) {
 	type arguments struct {
 		Path   string `json:"path"`
@@ -67,11 +68,11 @@ func (r *Read) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult, 
 		args.Limit = defaultReadLines
 	}
 
-	path, err := r.workspace.resolvePath(args.Path, false)
+	path, err := r.workspace.resolvePath(args.Path)
 	if err != nil {
 		return llm.ToolResult{}, fmt.Errorf("tool \"read\": %w", err)
 	}
-	file, err := r.workspace.root.Open(path)
+	file, err := os.Open(path)
 	if err != nil {
 		return llm.ToolResult{}, fmt.Errorf("tool \"read\": open %q: %w", args.Path, err)
 	}

@@ -2,6 +2,8 @@ package tool_test
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -26,6 +28,34 @@ func TestGrepExecuteSearchesWithPiCompatibleArguments(t *testing.T) {
 	}
 	want := "a.go-1-before\na.go:2:Needle value\na.go-3-after"
 	if got := resultText(t, result); got != want {
+		t.Fatalf("Execute() text = %q, want %q", got, want)
+	}
+}
+
+func TestGrepExecuteSearchesParentDirectory(t *testing.T) {
+	t.Parallel()
+
+	parent := t.TempDir()
+	root := filepath.Join(parent, "work")
+	if err := os.Mkdir(root, 0o750); err != nil {
+		t.Fatalf("os.Mkdir() error = %v", err)
+	}
+	writeFixture(t, parent, "outside.go", "needle\n")
+	workspace := newWorkspaceAt(t, root)
+	grep, err := tool.NewGrep(workspace)
+	if err != nil {
+		t.Fatalf("NewGrep() error = %v", err)
+	}
+
+	result, err := grep.Execute(t.Context(), toolCall(t, "grep", map[string]any{
+		"pattern": "needle",
+		"path":    "..",
+		"glob":    "*.go",
+	}))
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if got, want := resultText(t, result), "../outside.go:1:needle"; got != want {
 		t.Fatalf("Execute() text = %q, want %q", got, want)
 	}
 }

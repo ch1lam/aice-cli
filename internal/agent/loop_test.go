@@ -435,11 +435,6 @@ func TestLoopRunWithWorkspaceReadTool(t *testing.T) {
 	if err != nil {
 		t.Fatalf("tool.NewWorkspace() error = %v", err)
 	}
-	t.Cleanup(func() {
-		if err := workspace.Close(); err != nil {
-			t.Errorf("Workspace.Close() error = %v", err)
-		}
-	})
 	read, err := tool.NewRead(workspace)
 	if err != nil {
 		t.Fatalf("tool.NewRead() error = %v", err)

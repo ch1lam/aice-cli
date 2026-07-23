@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -33,14 +34,14 @@ const (
 }`
 )
 
-// Grep searches text files within the workspace.
+// Grep searches text files.
 type Grep struct {
 	workspace *Workspace
 }
 
 // NewGrep constructs a grep tool.
 func NewGrep(workspace *Workspace) (*Grep, error) {
-	if workspace == nil || workspace.root == nil {
+	if workspace == nil || workspace.path == "" {
 		return nil, fmt.Errorf("tool: workspace is required")
 	}
 	return &Grep{workspace: workspace}, nil
@@ -50,7 +51,7 @@ func NewGrep(workspace *Workspace) (*Grep, error) {
 func (g *Grep) Definition() llm.ToolDefinition {
 	return llm.ToolDefinition{
 		Name:        "grep",
-		Description: "Search workspace text files using a regular expression or literal string.",
+		Description: "Search text files, resolving relative paths from the working directory.",
 		InputSchema: jsonSchema(grepSchema),
 	}
 }
@@ -106,11 +107,11 @@ func (g *Grep) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult, 
 		}
 	}
 
-	rootPath, err := g.workspace.resolvePath(args.Path, true)
+	rootPath, err := g.workspace.resolvePath(args.Path)
 	if err != nil {
 		return llm.ToolResult{}, fmt.Errorf("tool \"grep\": %w", err)
 	}
-	info, err := g.workspace.root.Stat(rootPath)
+	info, err := os.Stat(rootPath)
 	if err != nil {
 		return llm.ToolResult{}, fmt.Errorf("tool \"grep\": stat %q: %w", args.Path, err)
 	}
@@ -120,11 +121,21 @@ func (g *Grep) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult, 
 	skipped := 0
 	entriesScanned := 0
 	bytesScanned := int64(0)
+	displayPath := func(filePath string) string {
+		if filepath.IsAbs(args.Path) {
+			return filepath.ToSlash(filePath)
+		}
+		relativePath, relativeErr := filepath.Rel(g.workspace.Path(), filePath)
+		if relativeErr != nil {
+			return filepath.ToSlash(filePath)
+		}
+		return filepath.ToSlash(relativePath)
+	}
 	searchFile := func(filePath string) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		info, err := g.workspace.root.Stat(filepath.FromSlash(filePath))
+		info, err := os.Stat(filePath)
 		if err != nil {
 			return err
 		}
@@ -136,7 +147,15 @@ func (g *Grep) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult, 
 			return errScanLimit
 		}
 		bytesScanned += info.Size()
-		matched, err := g.grepFile(ctx, filePath, matcher, args.Context, args.Limit-matches, collector)
+		matched, err := g.grepFile(
+			ctx,
+			filePath,
+			displayPath(filePath),
+			matcher,
+			args.Context,
+			args.Limit-matches,
+			collector,
+		)
 		if err != nil {
 			if err == errSkipFile {
 				skipped++
@@ -164,10 +183,9 @@ func (g *Grep) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult, 
 				return textResult(call, "", false), nil
 			}
 		}
-		err = searchFile(filepath.ToSlash(rootPath))
+		err = searchFile(rootPath)
 	} else if info.IsDir() {
-		walkRoot := filepath.ToSlash(rootPath)
-		err = fs.WalkDir(g.workspace.root.FS(), walkRoot, func(filePath string, entry fs.DirEntry, walkErr error) error {
+		err = filepath.WalkDir(rootPath, func(filePath string, entry fs.DirEntry, walkErr error) error {
 			if walkErr != nil {
 				return walkErr
 			}
@@ -179,16 +197,16 @@ func (g *Grep) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult, 
 				return errScanLimit
 			}
 			if entry.IsDir() {
-				if filePath != walkRoot && entry.Name() == ".git" {
+				if filePath != rootPath && entry.Name() == ".git" {
 					return fs.SkipDir
 				}
 				return nil
 			}
-			if entry.Type()&fs.ModeSymlink != 0 {
-				return nil
-			}
 			if args.Glob != "" {
-				relativePath := strings.TrimPrefix(strings.TrimPrefix(filePath, walkRoot), "/")
+				relativePath, relativeErr := filepath.Rel(rootPath, filePath)
+				if relativeErr != nil {
+					return relativeErr
+				}
 				matched, matchErr := matchGlob(args.Glob, relativePath)
 				if matchErr != nil {
 					return matchErr
@@ -222,12 +240,13 @@ var errSkipFile = errors.New("skip file")
 func (g *Grep) grepFile(
 	ctx context.Context,
 	filePath string,
+	displayPath string,
 	matcher *regexp.Regexp,
 	contextLines int,
 	limit int,
 	collector *textCollector,
 ) (int, error) {
-	file, err := g.workspace.root.Open(filepath.FromSlash(filePath))
+	file, err := os.Open(filePath)
 	if err != nil {
 		return 0, err
 	}
@@ -269,7 +288,7 @@ func (g *Grep) grepFile(
 			}
 			output := fmt.Sprintf(
 				"%s%s%d%s%s\n",
-				filepath.ToSlash(filePath),
+				displayPath,
 				separator,
 				lineIndex+1,
 				separator,

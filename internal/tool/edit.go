@@ -52,7 +52,7 @@ type positionedReplacement struct {
 
 // NewEdit constructs an edit tool.
 func NewEdit(workspace *Workspace) (*Edit, error) {
-	if workspace == nil || workspace.root == nil {
+	if workspace == nil || workspace.path == "" {
 		return nil, fmt.Errorf("tool: workspace is required")
 	}
 	return &Edit{workspace: workspace}, nil
@@ -62,7 +62,7 @@ func NewEdit(workspace *Workspace) (*Edit, error) {
 func (e *Edit) Definition() llm.ToolDefinition {
 	return llm.ToolDefinition{
 		Name: "edit",
-		Description: "Edit one workspace file using exact text replacements. Each oldText must " +
+		Description: "Edit one file using exact text replacements. Each oldText must " +
 			"match once in the original file and replacements must not overlap.",
 		InputSchema: jsonSchema(editSchema),
 	}
@@ -81,7 +81,7 @@ func (e *Edit) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult, 
 	if len(args.Edits) == 0 {
 		return llm.ToolResult{}, fmt.Errorf("tool \"edit\": edits must contain at least one replacement")
 	}
-	path, err := e.workspace.resolvePath(args.Path, false)
+	path, err := e.workspace.resolvePath(args.Path)
 	if err != nil {
 		return llm.ToolResult{}, fmt.Errorf("tool \"edit\": %w", err)
 	}
@@ -91,15 +91,7 @@ func (e *Edit) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult, 
 	if err := ctx.Err(); err != nil {
 		return llm.ToolResult{}, err
 	}
-	linkInfo, err := e.workspace.root.Lstat(path)
-	if err != nil {
-		return llm.ToolResult{}, fmt.Errorf("tool \"edit\": inspect %q: %w", args.Path, err)
-	}
-	if linkInfo.Mode()&os.ModeSymlink != 0 {
-		return llm.ToolResult{}, fmt.Errorf("tool \"edit\": %q is a symbolic link", args.Path)
-	}
-
-	file, err := e.workspace.root.Open(path)
+	file, err := os.Open(path)
 	if err != nil {
 		return llm.ToolResult{}, fmt.Errorf("tool \"edit\": open %q: %w", args.Path, err)
 	}

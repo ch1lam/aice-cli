@@ -96,6 +96,31 @@ func TestRootCommandRunsInteractiveMode(t *testing.T) {
 	}
 }
 
+func TestRootCommandDescribesWorkspaceAsWorkingDirectory(t *testing.T) {
+	t.Parallel()
+
+	command, err := cli.NewRootCommand(cli.Dependencies{
+		Printer:    &recordingPrinter{},
+		Interactor: &recordingInteractor{},
+	})
+	if err != nil {
+		t.Fatalf("NewRootCommand() error = %v", err)
+	}
+	output := new(bytes.Buffer)
+	command.SetOut(output)
+	command.SetArgs([]string{"--help"})
+	if err := command.ExecuteContext(t.Context()); err != nil {
+		t.Fatalf("ExecuteContext() error = %v", err)
+	}
+	help := output.String()
+	if !strings.Contains(help, "working directory for agent tools") {
+		t.Fatalf("help = %q, want working-directory description", help)
+	}
+	if strings.Contains(help, "root exposed") {
+		t.Fatalf("help = %q, still describes an access boundary", help)
+	}
+}
+
 func TestRootCommandRejectsUsageErrors(t *testing.T) {
 	t.Parallel()
 

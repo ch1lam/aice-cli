@@ -1,4 +1,4 @@
-// Package tool implements AICE's workspace-scoped agent tools.
+// Package tool implements AICE's built-in agent tools.
 package tool
 
 import (
@@ -9,32 +9,37 @@ import (
 	"sync"
 )
 
-// Workspace confines tool file access to one directory tree.
+// Workspace defines the default working directory for agent tools.
 type Workspace struct {
 	path       string
-	root       *os.Root
 	mutationMu sync.Mutex
 }
 
-// NewWorkspace opens path as the root used by all file tools.
+// NewWorkspace resolves and validates the default working directory.
 func NewWorkspace(path string) (*Workspace, error) {
 	if strings.TrimSpace(path) == "" {
 		return nil, fmt.Errorf("tool: workspace path is required")
+	}
+	if strings.IndexByte(path, 0) >= 0 {
+		return nil, fmt.Errorf("tool: workspace path contains a null byte")
 	}
 
 	absolutePath, err := filepath.Abs(path)
 	if err != nil {
 		return nil, fmt.Errorf("tool: resolve workspace path: %w", err)
 	}
-	root, err := os.OpenRoot(absolutePath)
+	info, err := os.Stat(absolutePath)
 	if err != nil {
-		return nil, fmt.Errorf("tool: open workspace root: %w", err)
+		return nil, fmt.Errorf("tool: inspect working directory: %w", err)
+	}
+	if !info.IsDir() {
+		return nil, fmt.Errorf("tool: working directory %q is not a directory", path)
 	}
 
-	return &Workspace{path: absolutePath, root: root}, nil
+	return &Workspace{path: filepath.Clean(absolutePath)}, nil
 }
 
-// Path returns the absolute workspace path used for process working directories.
+// Path returns the absolute default working directory.
 func (w *Workspace) Path() string {
 	if w == nil {
 		return ""
@@ -42,19 +47,8 @@ func (w *Workspace) Path() string {
 	return w.path
 }
 
-// Close releases the workspace root. Callers must wait for active tools first.
-func (w *Workspace) Close() error {
-	if w == nil || w.root == nil {
-		return nil
-	}
-	if err := w.root.Close(); err != nil {
-		return fmt.Errorf("tool: close workspace root: %w", err)
-	}
-	return nil
-}
-
-func (w *Workspace) resolvePath(input string, allowRoot bool) (string, error) {
-	if w == nil || w.root == nil {
+func (w *Workspace) resolvePath(input string) (string, error) {
+	if w == nil || w.path == "" {
 		return "", fmt.Errorf("tool: workspace is required")
 	}
 	if input == "" {
@@ -64,21 +58,13 @@ func (w *Workspace) resolvePath(input string, allowRoot bool) (string, error) {
 		return "", fmt.Errorf("tool: path contains a null byte")
 	}
 
-	path := input
-	if filepath.IsAbs(path) {
-		relativePath, err := filepath.Rel(w.path, filepath.Clean(path))
-		if err != nil {
-			return "", fmt.Errorf("tool: resolve path relative to workspace: %w", err)
-		}
-		path = relativePath
+	if filepath.IsAbs(input) {
+		return input, nil
 	}
-
-	path = filepath.Clean(path)
-	if !filepath.IsLocal(path) {
-		return "", fmt.Errorf("tool: path %q escapes the workspace", input)
+	// Keep relative components for the OS to resolve after symlinks, matching
+	// how the same path behaves from an actual process working directory.
+	if strings.HasSuffix(w.path, string(os.PathSeparator)) {
+		return w.path + input, nil
 	}
-	if path == "." && !allowRoot {
-		return "", fmt.Errorf("tool: path must name a file inside the workspace")
-	}
-	return path, nil
+	return w.path + string(os.PathSeparator) + input, nil
 }

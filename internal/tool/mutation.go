@@ -14,7 +14,7 @@ import (
 func (w *Workspace) atomicWrite(path string, content []byte, mode os.FileMode) (returnErr error) {
 	directory := filepath.Dir(path)
 	if directory != "." {
-		if err := w.root.MkdirAll(directory, 0o750); err != nil {
+		if err := os.MkdirAll(directory, 0o750); err != nil {
 			return fmt.Errorf("create parent directories: %w", err)
 		}
 	}
@@ -23,7 +23,7 @@ func (w *Workspace) atomicWrite(path string, content []byte, mode os.FileMode) (
 	if err != nil {
 		return err
 	}
-	file, err := w.root.OpenFile(temporaryPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, mode.Perm())
+	file, err := os.OpenFile(temporaryPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, mode.Perm())
 	if err != nil {
 		return fmt.Errorf("create temporary file: %w", err)
 	}
@@ -34,7 +34,7 @@ func (w *Workspace) atomicWrite(path string, content []byte, mode os.FileMode) (
 			}
 		}
 		if returnErr != nil {
-			if cleanupErr := w.root.Remove(temporaryPath); cleanupErr != nil && !os.IsNotExist(cleanupErr) {
+			if cleanupErr := os.Remove(temporaryPath); cleanupErr != nil && !os.IsNotExist(cleanupErr) {
 				returnErr = errors.Join(returnErr, fmt.Errorf("remove temporary file: %w", cleanupErr))
 			}
 		}
@@ -51,7 +51,7 @@ func (w *Workspace) atomicWrite(path string, content []byte, mode os.FileMode) (
 		return fmt.Errorf("close temporary file: %w", err)
 	}
 	file = nil
-	if err := w.root.Rename(temporaryPath, path); err != nil {
+	if err := os.Rename(temporaryPath, path); err != nil {
 		return fmt.Errorf("replace target file: %w", err)
 	}
 	return nil

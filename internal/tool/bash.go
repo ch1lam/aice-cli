@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -37,7 +36,7 @@ type Bash struct {
 
 // NewBash constructs a bash tool.
 func NewBash(workspace *Workspace) (*Bash, error) {
-	if workspace == nil || workspace.root == nil {
+	if workspace == nil || workspace.path == "" {
 		return nil, fmt.Errorf("tool: workspace is required")
 	}
 	if !supportsProcessTreeTermination() {
@@ -57,12 +56,12 @@ func NewBash(workspace *Workspace) (*Bash, error) {
 func (b *Bash) Definition() llm.ToolDefinition {
 	return llm.ToolDefinition{
 		Name:        "bash",
-		Description: "Execute a Bash command in the workspace with bounded time and output.",
+		Description: "Execute a Bash command in the working directory with bounded time and output.",
 		InputSchema: jsonSchema(bashSchema),
 	}
 }
 
-// Execute runs one command with a sanitized environment.
+// Execute runs one command with the host process environment.
 func (b *Bash) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult, error) {
 	type arguments struct {
 		Command string  `json:"command"`
@@ -92,7 +91,6 @@ func (b *Bash) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult, 
 	// The command has bounded output and lifetime and runs in its own process group.
 	command := exec.CommandContext(commandCtx, b.shellPath, "--noprofile", "--norc", "-c", args.Command)
 	command.Dir = b.workspace.Path()
-	command.Env = commandEnvironment(b.workspace.Path())
 	output := newBoundedWriter(maxOutputBytes - 256)
 	command.Stdout = output
 	command.Stderr = output
@@ -119,22 +117,6 @@ func (b *Bash) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult, 
 		), nil
 	}
 	return llm.ToolResult{}, fmt.Errorf("tool \"bash\": execute command: %w", runErr)
-}
-
-func commandEnvironment(workspacePath string) []string {
-	environment := []string{
-		"HOME=" + workspacePath,
-		"LANG=C.UTF-8",
-		"LC_ALL=C.UTF-8",
-		"TERM=dumb",
-	}
-	if path := os.Getenv("PATH"); path != "" {
-		environment = append(environment, "PATH="+path)
-	}
-	if temporaryDirectory := os.Getenv("TMPDIR"); temporaryDirectory != "" {
-		environment = append(environment, "TMPDIR="+temporaryDirectory)
-	}
-	return environment
 }
 
 func appendStatus(output, status string) string {

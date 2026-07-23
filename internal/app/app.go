@@ -20,7 +20,7 @@ import (
 
 const (
 	defaultSystemPrompt = "You are AICE, a coding agent. Use the available " +
-		"read-only workspace tools when repository context is needed. Give concise, " +
+		"read-only coding tools when repository context is needed. Give concise, " +
 		"evidence-based answers and never claim that you changed files."
 	defaultMaxTurns     = 12
 	defaultMaxToolSteps = 32
@@ -72,7 +72,7 @@ func (a *application) Print(
 	ctx context.Context,
 	request cli.PrintRequest,
 	output io.Writer,
-) (runErr error) {
+) error {
 	if ctx == nil {
 		return fmt.Errorf("app: context is required")
 	}
@@ -80,20 +80,17 @@ func (a *application) Print(
 		return fmt.Errorf("app: output is required")
 	}
 
-	environment, err := a.openEnvironment(request.Workspace)
+	loop, err := a.newLoop(request.Workspace)
 	if err != nil {
 		return err
 	}
-	defer func() {
-		runErr = errors.Join(runErr, environment.Close())
-	}()
 	prompt, err := llm.NewUserMessage(llm.NewTextContent(request.Prompt).Part())
 	if err != nil {
 		return fmt.Errorf("app: create prompt: %w", err)
 	}
 
 	printer := &streamPrinter{output: output}
-	_, loopErr := environment.loop.Run(ctx, agent.RunInput{
+	_, loopErr := loop.Run(ctx, agent.RunInput{
 		Model:        deepseek.DefaultModel(),
 		SystemPrompt: defaultSystemPrompt,
 		Prompt:       prompt,
@@ -109,7 +106,7 @@ func (a *application) Print(
 func (a *application) Interactive(
 	ctx context.Context,
 	request cli.InteractiveRequest,
-) (runErr error) {
+) error {
 	if ctx == nil {
 		return fmt.Errorf("app: context is required")
 	}
@@ -120,15 +117,12 @@ func (a *application) Interactive(
 		return fmt.Errorf("app: output is required")
 	}
 
-	environment, err := a.openEnvironment(request.Workspace)
+	loop, err := a.newLoop(request.Workspace)
 	if err != nil {
 		return err
 	}
-	defer func() {
-		runErr = errors.Join(runErr, environment.Close())
-	}()
 
-	session := &interactiveSession{loop: environment.loop}
+	session := &interactiveSession{loop: loop}
 	if err := a.dependencies.runTUI(ctx, session, tui.Options{
 		Input:  request.Input,
 		Output: request.Output,
@@ -138,12 +132,7 @@ func (a *application) Interactive(
 	return nil
 }
 
-type environment struct {
-	loop      *agent.Loop
-	workspace *tool.Workspace
-}
-
-func (a *application) openEnvironment(root string) (*environment, error) {
+func (a *application) newLoop(workingDirectory string) (*agent.Loop, error) {
 	configuration, err := a.dependencies.loadConfig()
 	if err != nil {
 		return nil, fmt.Errorf("app: load configuration: %w", err)
@@ -153,29 +142,22 @@ func (a *application) openEnvironment(root string) (*environment, error) {
 		return nil, fmt.Errorf("app: create model: %w", err)
 	}
 
-	workspace, err := tool.NewWorkspace(root)
+	workspace, err := tool.NewWorkspace(workingDirectory)
 	if err != nil {
-		return nil, fmt.Errorf("app: open workspace: %w", err)
+		return nil, fmt.Errorf("app: create workspace: %w", err)
 	}
 	tools, err := newReadOnlyTools(workspace)
 	if err != nil {
-		return nil, errors.Join(err, workspace.Close())
+		return nil, err
 	}
 	loop, err := agent.NewLoop(model, tools, agent.Limits{
 		MaxTurns:     defaultMaxTurns,
 		MaxToolSteps: defaultMaxToolSteps,
 	})
 	if err != nil {
-		return nil, errors.Join(
-			fmt.Errorf("app: create agent loop: %w", err),
-			workspace.Close(),
-		)
+		return nil, fmt.Errorf("app: create agent loop: %w", err)
 	}
-	return &environment{loop: loop, workspace: workspace}, nil
-}
-
-func (e *environment) Close() error {
-	return e.workspace.Close()
+	return loop, nil
 }
 
 type interactiveSession struct {

@@ -33,7 +33,7 @@ func TestLSExecuteListsSortedEntries(t *testing.T) {
 	}
 }
 
-func TestLSExecuteEnforcesLimitAndRoot(t *testing.T) {
+func TestLSExecuteEnforcesLimit(t *testing.T) {
 	t.Parallel()
 	workspace, root := newWorkspace(t)
 	writeFixture(t, root, "a.txt", "a")
@@ -50,8 +50,28 @@ func TestLSExecuteEnforcesLimitAndRoot(t *testing.T) {
 	if got := resultText(t, result); !strings.Contains(got, "entry limit reached") {
 		t.Fatalf("Execute() text = %q, want limit marker", got)
 	}
-	_, err = ls.Execute(t.Context(), toolCall(t, "ls", map[string]any{"path": ".."}))
-	if err == nil {
-		t.Fatal("Execute() error = nil for traversal")
+}
+
+func TestLSExecuteListsParentDirectory(t *testing.T) {
+	t.Parallel()
+
+	parent := t.TempDir()
+	root := filepath.Join(parent, "work")
+	if err := os.Mkdir(root, 0o750); err != nil {
+		t.Fatalf("os.Mkdir() error = %v", err)
+	}
+	writeFixture(t, parent, "outside.txt", "outside")
+	workspace := newWorkspaceAt(t, root)
+	ls, err := tool.NewLS(workspace)
+	if err != nil {
+		t.Fatalf("NewLS() error = %v", err)
+	}
+
+	result, err := ls.Execute(t.Context(), toolCall(t, "ls", map[string]any{"path": ".."}))
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if got, want := resultText(t, result), "outside.txt\nwork/"; got != want {
+		t.Fatalf("Execute() text = %q, want %q", got, want)
 	}
 }

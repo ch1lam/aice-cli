@@ -39,6 +39,34 @@ func TestEditExecuteAppliesDisjointEditsAgainstOriginal(t *testing.T) {
 	}
 }
 
+func TestEditExecuteEditsAbsolutePath(t *testing.T) {
+	t.Parallel()
+
+	workspace, _ := newWorkspace(t)
+	path := writeFixture(t, t.TempDir(), "outside.txt", "before\n")
+	edit, err := tool.NewEdit(workspace)
+	if err != nil {
+		t.Fatalf("NewEdit() error = %v", err)
+	}
+
+	_, err = edit.Execute(t.Context(), toolCall(t, "edit", map[string]any{
+		"path": path,
+		"edits": []map[string]string{
+			{"oldText": "before", "newText": "after"},
+		},
+	}))
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("os.ReadFile() error = %v", err)
+	}
+	if got, want := string(data), "after\n"; got != want {
+		t.Fatalf("file content = %q, want %q", got, want)
+	}
+}
+
 func TestEditExecuteRejectsAmbiguousEditBeforeMutation(t *testing.T) {
 	t.Parallel()
 	workspace, root := newWorkspace(t)

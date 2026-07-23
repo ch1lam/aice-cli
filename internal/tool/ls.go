@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"os"
 	"slices"
 	"strings"
 
@@ -24,14 +25,14 @@ const (
 }`
 )
 
-// LS lists one workspace directory.
+// LS lists one directory.
 type LS struct {
 	workspace *Workspace
 }
 
 // NewLS constructs an ls tool.
 func NewLS(workspace *Workspace) (*LS, error) {
-	if workspace == nil || workspace.root == nil {
+	if workspace == nil || workspace.path == "" {
 		return nil, fmt.Errorf("tool: workspace is required")
 	}
 	return &LS{workspace: workspace}, nil
@@ -41,7 +42,7 @@ func NewLS(workspace *Workspace) (*LS, error) {
 func (l *LS) Definition() llm.ToolDefinition {
 	return llm.ToolDefinition{
 		Name:        "ls",
-		Description: "List files and directories directly inside a workspace directory.",
+		Description: "List files and directories, resolving relative paths from the working directory.",
 		InputSchema: jsonSchema(lsSchema),
 	}
 }
@@ -66,11 +67,11 @@ func (l *LS) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult, er
 		args.Limit = defaultLSLimit
 	}
 
-	path, err := l.workspace.resolvePath(args.Path, true)
+	path, err := l.workspace.resolvePath(args.Path)
 	if err != nil {
 		return llm.ToolResult{}, fmt.Errorf("tool \"ls\": %w", err)
 	}
-	directory, err := l.workspace.root.Open(path)
+	directory, err := os.Open(path)
 	if err != nil {
 		return llm.ToolResult{}, fmt.Errorf("tool \"ls\": open %q: %w", args.Path, err)
 	}

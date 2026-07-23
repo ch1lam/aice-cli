@@ -30,14 +30,20 @@ func TestReadExecuteReturnsSelectedLines(t *testing.T) {
 	}
 }
 
-func TestReadExecuteRejectsWorkspaceEscapes(t *testing.T) {
+func TestReadExecuteUsesHostPaths(t *testing.T) {
 	t.Parallel()
-	workspace, root := newWorkspace(t)
+
+	parent := t.TempDir()
+	root := filepath.Join(parent, "work")
+	if err := os.Mkdir(root, 0o750); err != nil {
+		t.Fatalf("os.Mkdir() error = %v", err)
+	}
+	workspace := newWorkspaceAt(t, root)
 	read, err := tool.NewRead(workspace)
 	if err != nil {
 		t.Fatalf("NewRead() error = %v", err)
 	}
-	outside := writeFixture(t, t.TempDir(), "secret.txt", "secret")
+	outside := writeFixture(t, parent, "secret.txt", "secret")
 	if err := os.Symlink(outside, filepath.Join(root, "escape")); err != nil {
 		t.Skipf("os.Symlink() error = %v", err)
 	}
@@ -48,16 +54,54 @@ func TestReadExecuteRejectsWorkspaceEscapes(t *testing.T) {
 	}{
 		{name: "relative traversal", path: "../secret.txt"},
 		{name: "absolute outside path", path: outside},
-		{name: "symlink outside root", path: "escape"},
+		{name: "symlink", path: "escape"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			_, err := read.Execute(t.Context(), toolCall(t, "read", map[string]any{"path": test.path}))
-			if err == nil {
-				t.Fatal("Execute() error = nil")
+
+			result, err := read.Execute(
+				t.Context(),
+				toolCall(t, "read", map[string]any{"path": test.path}),
+			)
+			if err != nil {
+				t.Fatalf("Execute() error = %v", err)
+			}
+			if got, want := resultText(t, result), "secret"; got != want {
+				t.Fatalf("Execute() text = %q, want %q", got, want)
 			}
 		})
+	}
+}
+
+func TestReadExecuteResolvesParentAfterWorkingDirectorySymlink(t *testing.T) {
+	t.Parallel()
+
+	base := t.TempDir()
+	physicalParent := filepath.Join(base, "physical")
+	physicalWork := filepath.Join(physicalParent, "work")
+	if err := os.MkdirAll(physicalWork, 0o750); err != nil {
+		t.Fatalf("os.MkdirAll() error = %v", err)
+	}
+	writeFixture(t, physicalParent, "sibling.txt", "physical sibling")
+	linkedWork := filepath.Join(base, "linked-work")
+	if err := os.Symlink(physicalWork, linkedWork); err != nil {
+		t.Skipf("os.Symlink() error = %v", err)
+	}
+
+	workspace := newWorkspaceAt(t, linkedWork)
+	read, err := tool.NewRead(workspace)
+	if err != nil {
+		t.Fatalf("NewRead() error = %v", err)
+	}
+	result, err := read.Execute(t.Context(), toolCall(t, "read", map[string]any{
+		"path": "../sibling.txt",
+	}))
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if got, want := resultText(t, result), "physical sibling"; got != want {
+		t.Fatalf("Execute() text = %q, want %q", got, want)
 	}
 }
 

@@ -48,8 +48,9 @@ func TestBashExecuteRejectsInvalidTimeoutBeforeStartingProcess(t *testing.T) {
 	}
 }
 
-func TestBashExecuteUsesWorkspaceAndSanitizedEnvironment(t *testing.T) {
+func TestBashExecuteUsesWorkingDirectoryAndHostEnvironment(t *testing.T) {
 	workspace, root := newWorkspace(t)
+	t.Setenv("AICE_TOOL_TEST_VALUE", "inherited")
 	t.Setenv("AICE_TOOL_TEST_SECRET", "hidden")
 	bash, err := tool.NewBash(workspace)
 	if err != nil {
@@ -57,14 +58,17 @@ func TestBashExecuteUsesWorkspaceAndSanitizedEnvironment(t *testing.T) {
 	}
 
 	result, err := bash.Execute(t.Context(), toolCall(t, "bash", map[string]any{
-		"command": `printf '%s\n%s\n%s' "$PWD" "$HOME" "${AICE_TOOL_TEST_SECRET-unset}"`,
+		"command": `printf '%s\n%s' "$PWD" "$AICE_TOOL_TEST_VALUE"`,
 	}))
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
 	text := resultText(t, result)
-	if !strings.Contains(text, root+"\n"+root+"\nunset") {
+	if !strings.Contains(text, root+"\ninherited") {
 		t.Fatalf("Execute() text = %q", text)
+	}
+	if strings.Contains(text, "hidden") {
+		t.Fatalf("Execute() leaked an environment value it was not asked to print: %q", text)
 	}
 	if result.IsError {
 		t.Fatalf("Execute() result IsError = true, text = %q", text)

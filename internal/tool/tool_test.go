@@ -15,16 +15,16 @@ import (
 func newWorkspace(t *testing.T) (*tool.Workspace, string) {
 	t.Helper()
 	path := t.TempDir()
+	return newWorkspaceAt(t, path), path
+}
+
+func newWorkspaceAt(t *testing.T, path string) *tool.Workspace {
+	t.Helper()
 	workspace, err := tool.NewWorkspace(path)
 	if err != nil {
 		t.Fatalf("NewWorkspace() error = %v", err)
 	}
-	t.Cleanup(func() {
-		if err := workspace.Close(); err != nil {
-			t.Errorf("Workspace.Close() error = %v", err)
-		}
-	})
-	return workspace, path
+	return workspace
 }
 
 func toolCall(t *testing.T, name string, arguments any) llm.ToolCall {
