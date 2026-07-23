@@ -159,6 +159,133 @@ func TestLoopRunTextTurn(t *testing.T) {
 	}
 }
 
+func TestLoopClampsMaxTokensToRemainingContext(t *testing.T) {
+	t.Parallel()
+
+	modelInfo := testModel()
+	modelInfo.ContextWindow = 100_000
+	modelInfo.MaxTokens = 80_000
+	answer := assistantMessage(modelInfo, llm.StopReasonStop, textPart("done"))
+	model := &scriptedModel{scripts: []*streamScript{{
+		events: terminalEvents(answer),
+	}}}
+	loop := mustLoop(t, model, nil, agent.Limits{
+		MaxTurns:     2,
+		MaxToolSteps: 2,
+	})
+	previous := assistantMessage(
+		modelInfo,
+		llm.StopReasonStop,
+		textPart("previous answer"),
+	)
+	previous.Usage = llm.Usage{TotalTokens: 60_000}
+	input := testInput(modelInfo, mustPrompt(t, "continue"))
+	input.Options.MaxTokens = modelInfo.MaxTokens
+	input.History = []llm.AgentMessage{
+		mustPrompt(t, "previous prompt"),
+		previous,
+	}
+
+	if _, err := loop.Run(t.Context(), input, nil); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if len(model.requests) != 1 {
+		t.Fatalf("model requests = %d, want 1", len(model.requests))
+	}
+	request := model.requests[0]
+	estimate := llm.EstimateContextTokens(request)
+	if request.Options.MaxTokens <= 0 ||
+		request.Options.MaxTokens >= modelInfo.MaxTokens {
+		t.Fatalf(
+			"request max tokens = %d, want a positive clamped value below %d",
+			request.Options.MaxTokens,
+			modelInfo.MaxTokens,
+		)
+	}
+	if got, want := request.Options.MaxTokens+estimate.Tokens, modelInfo.ContextWindow-4_096; got != want {
+		t.Fatalf("context plus output tokens = %d, want %d", got, want)
+	}
+}
+
+func TestLoopRejectsContextAboveCompactionThreshold(t *testing.T) {
+	t.Parallel()
+
+	modelInfo := testModel()
+	modelInfo.ContextWindow = 100_000
+	modelInfo.MaxTokens = 20_000
+	model := &scriptedModel{}
+	loop := mustLoop(t, model, nil, agent.Limits{
+		MaxTurns:     2,
+		MaxToolSteps: 2,
+	})
+	previous := assistantMessage(
+		modelInfo,
+		llm.StopReasonStop,
+		textPart("previous answer"),
+	)
+	previous.Usage = llm.Usage{TotalTokens: 90_000}
+	input := testInput(modelInfo, mustPrompt(t, "continue"))
+	input.History = []llm.AgentMessage{
+		mustPrompt(t, "previous prompt"),
+		previous,
+	}
+
+	_, err := loop.Run(t.Context(), input, nil)
+	if !errors.Is(err, agent.ErrContextLimit) {
+		t.Fatalf("Run() error = %v, want ErrContextLimit", err)
+	}
+	if len(model.requests) != 0 {
+		t.Fatalf("model requests = %d, want context rejection before provider", len(model.requests))
+	}
+}
+
+func TestLoopSettlesToolRunAfterCrossingCompactionThreshold(t *testing.T) {
+	t.Parallel()
+
+	modelInfo := testModel()
+	modelInfo.ContextWindow = 100_000
+	modelInfo.MaxTokens = 20_000
+	first := assistantMessage(
+		modelInfo,
+		llm.StopReasonToolUse,
+		toolCallPart("call-1", "read", `{"path":"a.go"}`),
+	)
+	first.Usage = llm.Usage{TotalTokens: 90_000}
+	second := assistantMessage(modelInfo, llm.StopReasonStop, textPart("done"))
+	model := &scriptedModel{scripts: []*streamScript{
+		{events: terminalEvents(first)},
+		{events: terminalEvents(second)},
+	}}
+	loop := mustLoop(
+		t,
+		model,
+		[]agent.Tool{newFakeTool("read", nil)},
+		agent.Limits{MaxTurns: 2, MaxToolSteps: 2},
+	)
+
+	result, err := loop.Run(
+		t.Context(),
+		testInput(modelInfo, mustPrompt(t, "inspect")),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if len(result.Turns) != 2 || len(model.requests) != 2 {
+		t.Fatalf(
+			"result turns = %d, model requests = %d, want settled two-turn run",
+			len(result.Turns),
+			len(model.requests),
+		)
+	}
+	if got := model.requests[1].Options.MaxTokens; got <= 0 || got >= modelInfo.MaxTokens {
+		t.Fatalf(
+			"second request max tokens = %d, want positive clamped continuation",
+			got,
+		)
+	}
+}
+
 func TestLoopRunToolTurnThenContinues(t *testing.T) {
 	t.Parallel()
 

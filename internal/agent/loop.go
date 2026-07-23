@@ -82,7 +82,14 @@ func (l *Loop) Run(ctx context.Context, input RunInput, sink AgentEventSink) (Re
 		history: history,
 		result:  Result{Prompt: input.Prompt},
 	}
-	if err := execution.request().Validate(); err != nil {
+	request, err := execution.request()
+	if err != nil {
+		return Result{}, fmt.Errorf("agent: prepare initial request: %w", err)
+	}
+	if err := checkCompactionThreshold(request); err != nil {
+		return Result{}, fmt.Errorf("agent: protect initial request: %w", err)
+	}
+	if err := request.Validate(); err != nil {
 		return Result{}, fmt.Errorf("agent: validate initial request: %w", err)
 	}
 
@@ -201,7 +208,14 @@ func (e *runExecution) streamAssistant(
 	ctx context.Context,
 	turnNumber int,
 ) (assistantOutcome, error) {
-	request := e.request()
+	request, err := e.request()
+	if err != nil {
+		return assistantOutcome{}, fmt.Errorf(
+			"agent: prepare turn %d request: %w",
+			turnNumber,
+			err,
+		)
+	}
 	if err := request.Validate(); err != nil {
 		return assistantOutcome{}, fmt.Errorf("agent: validate turn %d request: %w", turnNumber, err)
 	}
@@ -491,19 +505,20 @@ func (e *runExecution) emitToolResultMessage(
 	return nil
 }
 
-func (e *runExecution) request() llm.Request {
+func (e *runExecution) request() (llm.Request, error) {
 	definitions := make([]llm.ToolDefinition, len(e.loop.definitions))
 	for index, definition := range e.loop.definitions {
 		definition.InputSchema = slices.Clone(definition.InputSchema)
 		definitions[index] = definition
 	}
-	return llm.Request{
+	request := llm.Request{
 		Model:        e.input.Model,
 		SystemPrompt: e.input.SystemPrompt,
 		Messages:     slices.Clone(e.history),
 		Tools:        definitions,
 		Options:      e.input.Options,
 	}
+	return protectRequestContext(request)
 }
 
 func (e *runExecution) finishIncompleteTurn(

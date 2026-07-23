@@ -15,6 +15,9 @@ var (
 	ErrTurnLimit = errors.New("agent: maximum turns reached")
 	// ErrToolStepLimit indicates that another tool call would exceed MaxToolSteps.
 	ErrToolStepLimit = errors.New("agent: maximum tool steps reached")
+	// ErrContextLimit indicates that another model request would leave too
+	// little room in the model context window.
+	ErrContextLimit = errors.New("agent: context limit reached")
 )
 
 // Model is the language model capability consumed by the agent loop.
