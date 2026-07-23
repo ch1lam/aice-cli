@@ -1,8 +1,6 @@
 package tool_test
 
 import (
-	"context"
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,22 +9,26 @@ import (
 	"github.com/ch1lam/aice-cli/internal/tool"
 )
 
-func TestWriteExecuteDefaultsToDeny(t *testing.T) {
+func TestWriteExecuteCreatesFileWithoutApproval(t *testing.T) {
 	t.Parallel()
 	workspace, root := newWorkspace(t)
-	write, err := tool.NewWrite(workspace, nil)
+	write, err := tool.NewWrite(workspace)
 	if err != nil {
 		t.Fatalf("NewWrite() error = %v", err)
 	}
 
 	_, err = write.Execute(t.Context(), toolCall(t, "write", map[string]any{
-		"path": "denied.txt", "content": "no",
+		"path": "created.txt", "content": "created",
 	}))
-	if !errors.Is(err, tool.ErrApprovalRequired) {
-		t.Fatalf("Execute() error = %v, want ErrApprovalRequired", err)
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
 	}
-	if _, statErr := os.Stat(filepath.Join(root, "denied.txt")); !os.IsNotExist(statErr) {
-		t.Fatalf("os.Stat() error = %v, want not exist", statErr)
+	data, err := os.ReadFile(filepath.Join(root, "created.txt"))
+	if err != nil {
+		t.Fatalf("os.ReadFile() error = %v", err)
+	}
+	if got, want := string(data), "created"; got != want {
+		t.Fatalf("file content = %q, want %q", got, want)
 	}
 }
 
@@ -37,7 +39,7 @@ func TestWriteExecuteCreatesAndAtomicallyReplacesFiles(t *testing.T) {
 	if err := os.Chmod(path, 0o600); err != nil {
 		t.Fatalf("os.Chmod() error = %v", err)
 	}
-	write, err := tool.NewWrite(workspace, allowAll())
+	write, err := tool.NewWrite(workspace)
 	if err != nil {
 		t.Fatalf("NewWrite() error = %v", err)
 	}
@@ -67,14 +69,10 @@ func TestWriteExecuteCreatesAndAtomicallyReplacesFiles(t *testing.T) {
 	}
 }
 
-func TestWriteExecuteRejectsWorkspaceEscapeBeforeApproval(t *testing.T) {
+func TestWriteExecuteRejectsWorkspaceEscapeBeforeMutation(t *testing.T) {
 	t.Parallel()
 	workspace, root := newWorkspace(t)
-	approved := false
-	write, err := tool.NewWrite(workspace, tool.ApproverFunc(func(_ context.Context, _ tool.ApprovalRequest) error {
-		approved = true
-		return nil
-	}))
+	write, err := tool.NewWrite(workspace)
 	if err != nil {
 		t.Fatalf("NewWrite() error = %v", err)
 	}
@@ -84,8 +82,8 @@ func TestWriteExecuteRejectsWorkspaceEscapeBeforeApproval(t *testing.T) {
 	if err == nil {
 		t.Fatal("Execute() error = nil")
 	}
-	if approved {
-		t.Fatal("approver called for an invalid path")
+	if _, statErr := os.Stat(filepath.Join(filepath.Dir(root), "outside.txt")); !os.IsNotExist(statErr) {
+		t.Fatalf("outside file os.Stat() error = %v, want not exist", statErr)
 	}
 
 	outside := writeFixture(t, t.TempDir(), "outside.txt", "outside")
@@ -98,7 +96,11 @@ func TestWriteExecuteRejectsWorkspaceEscapeBeforeApproval(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "symbolic link") {
 		t.Fatalf("Execute() error = %v, want symbolic-link error", err)
 	}
-	if approved {
-		t.Fatal("approver called for a symbolic link")
+	data, readErr := os.ReadFile(outside)
+	if readErr != nil {
+		t.Fatalf("os.ReadFile() error = %v", readErr)
+	}
+	if got, want := string(data), "outside"; got != want {
+		t.Fatalf("symlink target content = %q, want %q", got, want)
 	}
 }

@@ -1,7 +1,6 @@
 package tool_test
 
 import (
-	"errors"
 	"os"
 	"strings"
 	"testing"
@@ -13,7 +12,7 @@ func TestEditExecuteAppliesDisjointEditsAgainstOriginal(t *testing.T) {
 	t.Parallel()
 	workspace, root := newWorkspace(t)
 	path := writeFixture(t, root, "file.txt", "alpha beta gamma\n")
-	edit, err := tool.NewEdit(workspace, allowAll())
+	edit, err := tool.NewEdit(workspace)
 	if err != nil {
 		t.Fatalf("NewEdit() error = %v", err)
 	}
@@ -40,37 +39,27 @@ func TestEditExecuteAppliesDisjointEditsAgainstOriginal(t *testing.T) {
 	}
 }
 
-func TestEditExecuteRejectsAmbiguousAndUnapprovedEdits(t *testing.T) {
+func TestEditExecuteRejectsAmbiguousEditBeforeMutation(t *testing.T) {
 	t.Parallel()
 	workspace, root := newWorkspace(t)
 	path := writeFixture(t, root, "file.txt", "same same\n")
-	approvedEdit, err := tool.NewEdit(workspace, allowAll())
+	edit, err := tool.NewEdit(workspace)
 	if err != nil {
 		t.Fatalf("NewEdit() error = %v", err)
 	}
-	_, err = approvedEdit.Execute(t.Context(), toolCall(t, "edit", map[string]any{
+	_, err = edit.Execute(t.Context(), toolCall(t, "edit", map[string]any{
 		"path": "file.txt", "edits": []map[string]string{{"oldText": "same", "newText": "new"}},
 	}))
 	if err == nil || !strings.Contains(err.Error(), "matched 2 times") {
 		t.Fatalf("Execute() error = %v, want ambiguity error", err)
 	}
 
-	deniedEdit, err := tool.NewEdit(workspace, nil)
-	if err != nil {
-		t.Fatalf("NewEdit() error = %v", err)
-	}
-	_, err = deniedEdit.Execute(t.Context(), toolCall(t, "edit", map[string]any{
-		"path": "file.txt", "edits": []map[string]string{{"oldText": "same same", "newText": "new"}},
-	}))
-	if !errors.Is(err, tool.ErrApprovalRequired) {
-		t.Fatalf("Execute() error = %v, want ErrApprovalRequired", err)
-	}
 	data, readErr := os.ReadFile(path)
 	if readErr != nil {
 		t.Fatalf("os.ReadFile() error = %v", readErr)
 	}
 	if got := string(data); got != "same same\n" {
-		t.Fatalf("file content = %q after denied edit", got)
+		t.Fatalf("file content = %q after invalid edit", got)
 	}
 }
 
@@ -78,7 +67,7 @@ func TestEditExecutePreservesBOMAndCRLF(t *testing.T) {
 	t.Parallel()
 	workspace, root := newWorkspace(t)
 	path := writeFixture(t, root, "windows.txt", "\ufeffone\r\ntwo\r\n")
-	edit, err := tool.NewEdit(workspace, allowAll())
+	edit, err := tool.NewEdit(workspace)
 	if err != nil {
 		t.Fatalf("NewEdit() error = %v", err)
 	}

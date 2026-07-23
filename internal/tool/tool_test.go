@@ -1,10 +1,10 @@
 package tool_test
 
 import (
-	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/ch1lam/aice-cli/internal/agent"
@@ -56,17 +56,13 @@ func writeFixture(t *testing.T, root, name, content string) string {
 	return path
 }
 
-func allowAll() tool.Approver {
-	return tool.ApproverFunc(func(context.Context, tool.ApprovalRequest) error { return nil })
-}
-
 func TestToolDefinitionsUsePiNamesAndValidSchemas(t *testing.T) {
 	t.Parallel()
 	workspace, _ := newWorkspace(t)
 	read, _ := tool.NewRead(workspace)
-	write, _ := tool.NewWrite(workspace, nil)
-	edit, _ := tool.NewEdit(workspace, nil)
-	bash, err := tool.NewBash(workspace, nil)
+	write, _ := tool.NewWrite(workspace)
+	edit, _ := tool.NewEdit(workspace)
+	bash, err := tool.NewBash(workspace)
 	if err != nil {
 		t.Skipf("tool.NewBash() error = %v", err)
 	}
@@ -83,6 +79,9 @@ func TestToolDefinitionsUsePiNamesAndValidSchemas(t *testing.T) {
 		}
 		if !json.Valid(definition.InputSchema) {
 			t.Fatalf("tool %q schema is invalid json: %s", definition.Name, definition.InputSchema)
+		}
+		if strings.Contains(strings.ToLower(definition.Description), "approval") {
+			t.Fatalf("tool %q description still requires approval: %q", definition.Name, definition.Description)
 		}
 	}
 }

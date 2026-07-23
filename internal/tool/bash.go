@@ -29,15 +29,14 @@ const (
 }`
 )
 
-// Bash executes an approved shell command in the workspace.
+// Bash executes a shell command in the workspace.
 type Bash struct {
 	workspace *Workspace
-	approver  Approver
 	shellPath string
 }
 
-// NewBash constructs a bash tool. A nil approver leaves the tool default-deny.
-func NewBash(workspace *Workspace, approver Approver) (*Bash, error) {
+// NewBash constructs a bash tool.
+func NewBash(workspace *Workspace) (*Bash, error) {
 	if workspace == nil || workspace.root == nil {
 		return nil, fmt.Errorf("tool: workspace is required")
 	}
@@ -51,19 +50,19 @@ func NewBash(workspace *Workspace, approver Approver) (*Bash, error) {
 	if !filepath.IsAbs(shellPath) {
 		return nil, fmt.Errorf("tool: bash executable path must be absolute")
 	}
-	return &Bash{workspace: workspace, approver: approver, shellPath: shellPath}, nil
+	return &Bash{workspace: workspace, shellPath: shellPath}, nil
 }
 
 // Definition returns the model-facing bash contract.
 func (b *Bash) Definition() llm.ToolDefinition {
 	return llm.ToolDefinition{
 		Name:        "bash",
-		Description: "Execute a Bash command in the workspace. Requires explicit approval and has bounded time and output.",
+		Description: "Execute a Bash command in the workspace with bounded time and output.",
 		InputSchema: jsonSchema(bashSchema),
 	}
 }
 
-// Execute runs one approved command with a sanitized environment.
+// Execute runs one command with a sanitized environment.
 func (b *Bash) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult, error) {
 	type arguments struct {
 		Command string  `json:"command"`
@@ -86,15 +85,11 @@ func (b *Bash) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult, 
 	if timeout <= 0 || timeout > maxBashTimeout {
 		return llm.ToolResult{}, fmt.Errorf("tool \"bash\": timeout must not exceed 600 seconds")
 	}
-	if err := requestApproval(ctx, b.approver, call, "run bash command in workspace"); err != nil {
-		return llm.ToolResult{}, fmt.Errorf("tool \"bash\": approve operation: %w", err)
-	}
 
 	commandCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	// Security: raw shell text reaches bash only after the exact call has been
-	// approved. The tool is default-deny, uses a sanitized environment, and
-	// gives the command a bounded lifetime and process group.
+	// Raw shell text intentionally reaches bash at this explicit tool boundary.
+	// The command has bounded output and lifetime and runs in its own process group.
 	command := exec.CommandContext(commandCtx, b.shellPath, "--noprofile", "--norc", "-c", args.Command)
 	command.Dir = b.workspace.Path()
 	command.Env = commandEnvironment(b.workspace.Path())

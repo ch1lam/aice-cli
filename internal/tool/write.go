@@ -18,25 +18,24 @@ const writeSchema = `{
   "additionalProperties": false
 }`
 
-// Write creates or replaces one workspace file after approval.
+// Write creates or replaces one workspace file.
 type Write struct {
 	workspace *Workspace
-	approver  Approver
 }
 
-// NewWrite constructs a write tool. A nil approver leaves the tool default-deny.
-func NewWrite(workspace *Workspace, approver Approver) (*Write, error) {
+// NewWrite constructs a write tool.
+func NewWrite(workspace *Workspace) (*Write, error) {
 	if workspace == nil || workspace.root == nil {
 		return nil, fmt.Errorf("tool: workspace is required")
 	}
-	return &Write{workspace: workspace, approver: approver}, nil
+	return &Write{workspace: workspace}, nil
 }
 
 // Definition returns the model-facing write contract.
 func (w *Write) Definition() llm.ToolDefinition {
 	return llm.ToolDefinition{
 		Name:        "write",
-		Description: "Write complete content to one workspace file. Requires explicit approval.",
+		Description: "Write complete content to one workspace file.",
 		InputSchema: jsonSchema(writeSchema),
 	}
 }
@@ -62,14 +61,6 @@ func (w *Write) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult,
 		return llm.ToolResult{}, fmt.Errorf("tool \"write\": %q is a symbolic link", args.Path)
 	} else if statErr != nil && !os.IsNotExist(statErr) {
 		return llm.ToolResult{}, fmt.Errorf("tool \"write\": inspect %q: %w", args.Path, statErr)
-	}
-	if err := requestApproval(
-		ctx,
-		w.approver,
-		call,
-		fmt.Sprintf("write %d bytes to %s", len(args.Content), args.Path),
-	); err != nil {
-		return llm.ToolResult{}, fmt.Errorf("tool \"write\": approve operation: %w", err)
 	}
 
 	w.workspace.mutationMu.Lock()

@@ -34,10 +34,9 @@ const editSchema = `{
   "additionalProperties": false
 }`
 
-// Edit applies exact, non-overlapping replacements after approval.
+// Edit applies exact, non-overlapping replacements.
 type Edit struct {
 	workspace *Workspace
-	approver  Approver
 }
 
 type replacement struct {
@@ -51,12 +50,12 @@ type positionedReplacement struct {
 	newText string
 }
 
-// NewEdit constructs an edit tool. A nil approver leaves the tool default-deny.
-func NewEdit(workspace *Workspace, approver Approver) (*Edit, error) {
+// NewEdit constructs an edit tool.
+func NewEdit(workspace *Workspace) (*Edit, error) {
 	if workspace == nil || workspace.root == nil {
 		return nil, fmt.Errorf("tool: workspace is required")
 	}
-	return &Edit{workspace: workspace, approver: approver}, nil
+	return &Edit{workspace: workspace}, nil
 }
 
 // Definition returns the model-facing edit contract.
@@ -64,7 +63,7 @@ func (e *Edit) Definition() llm.ToolDefinition {
 	return llm.ToolDefinition{
 		Name: "edit",
 		Description: "Edit one workspace file using exact text replacements. Each oldText must " +
-			"match once in the original file and replacements must not overlap. Requires explicit approval.",
+			"match once in the original file and replacements must not overlap.",
 		InputSchema: jsonSchema(editSchema),
 	}
 }
@@ -131,14 +130,6 @@ func (e *Edit) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult, 
 	updated, err := applyReplacements(string(data), args.Edits)
 	if err != nil {
 		return llm.ToolResult{}, fmt.Errorf("tool \"edit\": %w", err)
-	}
-	if err := requestApproval(
-		ctx,
-		e.approver,
-		call,
-		fmt.Sprintf("replace %d block(s) in %s", len(args.Edits), args.Path),
-	); err != nil {
-		return llm.ToolResult{}, fmt.Errorf("tool \"edit\": approve operation: %w", err)
 	}
 	if err := ctx.Err(); err != nil {
 		return llm.ToolResult{}, err

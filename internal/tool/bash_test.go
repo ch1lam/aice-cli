@@ -1,7 +1,6 @@
 package tool_test
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,23 +10,48 @@ import (
 	"github.com/ch1lam/aice-cli/internal/tool"
 )
 
-func TestBashExecuteDefaultsToDeny(t *testing.T) {
+func TestBashExecuteRunsWithoutApproval(t *testing.T) {
 	t.Parallel()
 	workspace, _ := newWorkspace(t)
-	bash, err := tool.NewBash(workspace, nil)
+	bash, err := tool.NewBash(workspace)
 	if err != nil {
 		t.Skipf("NewBash() error = %v", err)
 	}
-	_, err = bash.Execute(t.Context(), toolCall(t, "bash", map[string]any{"command": "printf denied"}))
-	if !errors.Is(err, tool.ErrApprovalRequired) {
-		t.Fatalf("Execute() error = %v, want ErrApprovalRequired", err)
+	result, err := bash.Execute(
+		t.Context(),
+		toolCall(t, "bash", map[string]any{"command": "printf ready"}),
+	)
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if result.IsError || !strings.Contains(resultText(t, result), "ready") {
+		t.Fatalf("Execute() result = %#v", result)
+	}
+}
+
+func TestBashExecuteRejectsInvalidTimeoutBeforeStartingProcess(t *testing.T) {
+	t.Parallel()
+	workspace, root := newWorkspace(t)
+	bash, err := tool.NewBash(workspace)
+	if err != nil {
+		t.Skipf("NewBash() error = %v", err)
+	}
+	_, err = bash.Execute(t.Context(), toolCall(t, "bash", map[string]any{
+		"command": "printf ran > marker.txt",
+		"timeout": -1,
+	}))
+	if err == nil || !strings.Contains(err.Error(), "timeout must be positive") {
+		t.Fatalf("Execute() error = %v, want timeout validation error", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(root, "marker.txt")); !os.IsNotExist(statErr) {
+		t.Fatalf("marker os.Stat() error = %v, want not exist", statErr)
 	}
 }
 
 func TestBashExecuteUsesWorkspaceAndSanitizedEnvironment(t *testing.T) {
 	workspace, root := newWorkspace(t)
 	t.Setenv("AICE_TOOL_TEST_SECRET", "hidden")
-	bash, err := tool.NewBash(workspace, allowAll())
+	bash, err := tool.NewBash(workspace)
 	if err != nil {
 		t.Skipf("NewBash() error = %v", err)
 	}
@@ -50,7 +74,7 @@ func TestBashExecuteUsesWorkspaceAndSanitizedEnvironment(t *testing.T) {
 func TestBashExecuteReportsExitAndTimeout(t *testing.T) {
 	t.Parallel()
 	workspace, root := newWorkspace(t)
-	bash, err := tool.NewBash(workspace, allowAll())
+	bash, err := tool.NewBash(workspace)
 	if err != nil {
 		t.Skipf("NewBash() error = %v", err)
 	}
@@ -85,7 +109,7 @@ func TestBashExecuteReportsExitAndTimeout(t *testing.T) {
 func TestBashExecuteBoundsCombinedOutput(t *testing.T) {
 	t.Parallel()
 	workspace, _ := newWorkspace(t)
-	bash, err := tool.NewBash(workspace, allowAll())
+	bash, err := tool.NewBash(workspace)
 	if err != nil {
 		t.Skipf("NewBash() error = %v", err)
 	}
