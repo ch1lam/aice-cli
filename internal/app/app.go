@@ -21,8 +21,9 @@ import (
 
 const (
 	defaultSystemPrompt = "You are AICE, a coding agent. Use the available " +
-		"read-only coding tools when repository context is needed. Give concise, " +
-		"evidence-based answers and never claim that you changed files."
+		"coding tools to inspect and modify the working environment when needed. " +
+		"Give concise, evidence-based answers and never claim changes you " +
+		"did not make."
 	defaultMaxTurns                  = 12
 	defaultMaxToolSteps              = 32
 	defaultCompactionMaxTokens int64 = 16_000
@@ -188,7 +189,7 @@ func (a *application) newLoop(
 	if err != nil {
 		return nil, nil, fmt.Errorf("app: create workspace: %w", err)
 	}
-	tools, err := newReadOnlyTools(workspace)
+	tools, err := newBuiltInTools(workspace)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -246,14 +247,22 @@ func (s *interactiveSession) Run(
 	return nil
 }
 
-func newReadOnlyTools(workspace *tool.Workspace) ([]agent.Tool, error) {
+func newBuiltInTools(workspace *tool.Workspace) ([]agent.Tool, error) {
 	read, err := tool.NewRead(workspace)
 	if err != nil {
 		return nil, fmt.Errorf("app: create read tool: %w", err)
 	}
-	ls, err := tool.NewLS(workspace)
+	write, err := tool.NewWrite(workspace)
 	if err != nil {
-		return nil, fmt.Errorf("app: create ls tool: %w", err)
+		return nil, fmt.Errorf("app: create write tool: %w", err)
+	}
+	edit, err := tool.NewEdit(workspace)
+	if err != nil {
+		return nil, fmt.Errorf("app: create edit tool: %w", err)
+	}
+	bash, err := tool.NewBash(workspace)
+	if err != nil {
+		return nil, fmt.Errorf("app: create bash tool: %w", err)
 	}
 	grep, err := tool.NewGrep(workspace)
 	if err != nil {
@@ -263,7 +272,11 @@ func newReadOnlyTools(workspace *tool.Workspace) ([]agent.Tool, error) {
 	if err != nil {
 		return nil, fmt.Errorf("app: create find tool: %w", err)
 	}
-	return []agent.Tool{read, ls, grep, find}, nil
+	ls, err := tool.NewLS(workspace)
+	if err != nil {
+		return nil, fmt.Errorf("app: create ls tool: %w", err)
+	}
+	return []agent.Tool{read, write, edit, bash, grep, find, ls}, nil
 }
 
 type streamPrinter struct {

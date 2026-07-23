@@ -19,7 +19,7 @@ import (
 	"github.com/ch1lam/aice-cli/internal/tui"
 )
 
-func TestApplicationPrintRunsReadOnlyAgent(t *testing.T) {
+func TestApplicationPrintRunsBuiltInAgent(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -98,7 +98,8 @@ func TestApplicationPrintRunsReadOnlyAgent(t *testing.T) {
 			for index, definition := range request.Tools {
 				toolNames[index] = definition.Name
 			}
-			if want := []string{"read", "ls", "grep", "find"}; !reflect.DeepEqual(toolNames, want) {
+			want := []string{"read", "write", "edit", "bash", "grep", "find", "ls"}
+			if !reflect.DeepEqual(toolNames, want) {
 				t.Errorf("model tools = %v, want %v", toolNames, want)
 			}
 		})
