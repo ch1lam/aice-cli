@@ -26,6 +26,9 @@ const (
 	RoleUser       Role = "user"
 	RoleAssistant  Role = "assistant"
 	RoleToolResult Role = "toolResult"
+	// RoleCompactionSummary identifies a derived transcript checkpoint. It is
+	// projected to a user message only at the LLM request boundary.
+	RoleCompactionSummary Role = "compactionSummary"
 )
 
 // ContentType identifies the payload carried by a content part.
@@ -63,15 +66,17 @@ const (
 	InputModalityImage   InputModality = "image"
 )
 
+// AgentMessage is the complete transcript-level message union.
+type AgentMessage interface {
+	MessageRole() Role
+}
+
 // Message is the closed set of provider-neutral messages understood by an LLM.
 // Concrete messages retain all metadata needed for replay and persistence.
 type Message interface {
+	AgentMessage
 	message()
 }
-
-// AgentMessage is one complete transcript message. It currently equals Message
-// because AICE does not yet have custom transcript-only message types.
-type AgentMessage = Message
 
 // TextContent is visible text carried by a user or assistant message.
 // Signature is opaque provider state that may need to be replayed unchanged.
@@ -211,6 +216,15 @@ type ToolResultMessage struct {
 	Timestamp  int64         `json:"timestamp"`
 }
 
+// CompactionSummaryMessage is a derived checkpoint stored in transcript
+// context without replacing the original session turns.
+type CompactionSummaryMessage struct {
+	Role         Role   `json:"role"`
+	Summary      string `json:"summary"`
+	TokensBefore int64  `json:"tokens_before"`
+	Timestamp    int64  `json:"timestamp"`
+}
+
 // NewTextContent constructs visible text content.
 func NewTextContent(text string) TextContent {
 	return TextContent{Type: ContentTypeText, Text: text}
@@ -259,6 +273,9 @@ func NewUserMessage(content ...ContentPart) (UserMessage, error) {
 
 func (UserMessage) message() {}
 
+// MessageRole returns the transcript discriminator.
+func (m UserMessage) MessageRole() Role { return m.Role }
+
 // Validate checks that a user message contains only user-supported content.
 func (m UserMessage) Validate() error {
 	if m.Role != RoleUser {
@@ -280,6 +297,9 @@ func NewAssistantMessage(model Model) AssistantMessage {
 }
 
 func (AssistantMessage) message() {}
+
+// MessageRole returns the transcript discriminator.
+func (m AssistantMessage) MessageRole() Role { return m.Role }
 
 // Validate checks assistant identity, metadata, and content invariants.
 func (m AssistantMessage) Validate() error {
@@ -310,6 +330,9 @@ func NewToolResultMessage(result ToolResult) (ToolResultMessage, error) {
 
 func (ToolResultMessage) message() {}
 
+// MessageRole returns the transcript discriminator.
+func (m ToolResultMessage) MessageRole() Role { return m.Role }
+
 // Validate checks that a tool-result message can be replayed safely.
 func (m ToolResultMessage) Validate() error {
 	if m.Role != RoleToolResult {
@@ -321,6 +344,40 @@ func (m ToolResultMessage) Validate() error {
 		Content: m.Content,
 		IsError: m.IsError,
 	}.Validate()
+}
+
+// NewCompactionSummaryMessage constructs one derived transcript checkpoint.
+func NewCompactionSummaryMessage(
+	summary string,
+	tokensBefore int64,
+) (CompactionSummaryMessage, error) {
+	message := CompactionSummaryMessage{
+		Role:         RoleCompactionSummary,
+		Summary:      summary,
+		TokensBefore: tokensBefore,
+		Timestamp:    time.Now().UnixMilli(),
+	}
+	if err := message.Validate(); err != nil {
+		return CompactionSummaryMessage{}, err
+	}
+	return message, nil
+}
+
+// MessageRole returns the transcript discriminator.
+func (m CompactionSummaryMessage) MessageRole() Role { return m.Role }
+
+// Validate checks that a compaction checkpoint contains useful derived state.
+func (m CompactionSummaryMessage) Validate() error {
+	if m.Role != RoleCompactionSummary {
+		return fmt.Errorf("llm: compaction summary has role %q", m.Role)
+	}
+	if strings.TrimSpace(m.Summary) == "" {
+		return fmt.Errorf("llm: compaction summary is required")
+	}
+	if m.TokensBefore <= 0 {
+		return fmt.Errorf("llm: compaction tokens before must be positive")
+	}
+	return nil
 }
 
 func validateMessage(message Message) error {
@@ -335,6 +392,23 @@ func validateMessage(message Message) error {
 		return fmt.Errorf("llm: message is nil")
 	default:
 		return fmt.Errorf("llm: unsupported message type %T", message)
+	}
+}
+
+func validateAgentMessage(message AgentMessage) error {
+	switch value := message.(type) {
+	case UserMessage:
+		return value.Validate()
+	case AssistantMessage:
+		return value.Validate()
+	case ToolResultMessage:
+		return value.Validate()
+	case CompactionSummaryMessage:
+		return value.Validate()
+	case nil:
+		return fmt.Errorf("llm: agent message is nil")
+	default:
+		return fmt.Errorf("llm: unsupported agent message type %T", message)
 	}
 }
 
@@ -515,10 +589,68 @@ func unmarshalMessage(data []byte) (Message, error) {
 	}
 }
 
+func unmarshalAgentMessage(data []byte) (AgentMessage, error) {
+	var envelope struct {
+		Role Role `json:"role"`
+	}
+	if err := json.Unmarshal(data, &envelope); err != nil {
+		return nil, fmt.Errorf("decode role: %w", err)
+	}
+	if envelope.Role != RoleCompactionSummary {
+		return unmarshalMessage(data)
+	}
+
+	var message CompactionSummaryMessage
+	if err := json.Unmarshal(data, &message); err != nil {
+		return nil, err
+	}
+	return message, nil
+}
+
+const (
+	compactionSummaryPrefix = "The conversation history before this point was compacted " +
+		"into the following summary:\n\n<summary>\n"
+	compactionSummarySuffix = "\n</summary>"
+)
+
+// AgentMessagesToMessages projects transcript-only messages into standard LLM
+// messages while preserving standard concrete messages unchanged.
+func AgentMessagesToMessages(messages []AgentMessage) ([]Message, error) {
+	projected := make([]Message, len(messages))
+	for index, message := range messages {
+		if err := validateAgentMessage(message); err != nil {
+			return nil, fmt.Errorf("llm: project agent message %d: %w", index, err)
+		}
+		switch value := message.(type) {
+		case UserMessage:
+			projected[index] = value
+		case AssistantMessage:
+			projected[index] = value
+		case ToolResultMessage:
+			projected[index] = value
+		case CompactionSummaryMessage:
+			projected[index] = UserMessage{
+				Role: RoleUser,
+				Content: []ContentPart{NewTextContent(
+					compactionSummaryPrefix + value.Summary + compactionSummarySuffix,
+				).Part()},
+				Timestamp: value.Timestamp,
+			}
+		default:
+			return nil, fmt.Errorf(
+				"llm: project agent message %d: unsupported type %T",
+				index,
+				message,
+			)
+		}
+	}
+	return projected, nil
+}
+
 // MarshalAgentMessages validates and encodes complete transcript messages.
 func MarshalAgentMessages(messages []AgentMessage) ([]byte, error) {
 	for index, message := range messages {
-		if err := validateMessage(message); err != nil {
+		if err := validateAgentMessage(message); err != nil {
 			return nil, fmt.Errorf("llm: encode agent message %d: %w", index, err)
 		}
 	}
@@ -538,11 +670,11 @@ func UnmarshalAgentMessages(data []byte) ([]AgentMessage, error) {
 
 	messages := make([]AgentMessage, len(encoded))
 	for index, item := range encoded {
-		message, err := unmarshalMessage(item)
+		message, err := unmarshalAgentMessage(item)
 		if err != nil {
 			return nil, fmt.Errorf("llm: decode agent message %d: %w", index, err)
 		}
-		if err := validateMessage(message); err != nil {
+		if err := validateAgentMessage(message); err != nil {
 			return nil, fmt.Errorf("llm: decode agent message %d: %w", index, err)
 		}
 		messages[index] = message

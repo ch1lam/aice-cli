@@ -254,6 +254,24 @@ func TestStoreRejectsIncompleteTurnWithoutChangingFile(t *testing.T) {
 	}
 }
 
+func TestStoreRejectsDerivedMessageInsideTurn(t *testing.T) {
+	t.Parallel()
+
+	_, err := session.NewTurn(1_721_234_567_900, []llm.AgentMessage{
+		textMessages()[0],
+		llm.CompactionSummaryMessage{
+			Role:         llm.RoleCompactionSummary,
+			Summary:      "derived context",
+			TokensBefore: 100,
+			Timestamp:    1_721_234_567_850,
+		},
+		textMessages()[1],
+	})
+	if err == nil || !strings.Contains(err.Error(), "derived message") {
+		t.Fatalf("NewTurn() error = %v, want derived-message rejection", err)
+	}
+}
+
 func TestStoreHonorsCancellationAndClosedState(t *testing.T) {
 	t.Parallel()
 

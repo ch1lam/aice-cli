@@ -511,10 +511,14 @@ func (e *runExecution) request() (llm.Request, error) {
 		definition.InputSchema = slices.Clone(definition.InputSchema)
 		definitions[index] = definition
 	}
+	messages, err := llm.AgentMessagesToMessages(e.history)
+	if err != nil {
+		return llm.Request{}, fmt.Errorf("agent: project history: %w", err)
+	}
 	request := llm.Request{
 		Model:        e.input.Model,
 		SystemPrompt: e.input.SystemPrompt,
-		Messages:     slices.Clone(e.history),
+		Messages:     messages,
 		Tools:        definitions,
 		Options:      e.input.Options,
 	}

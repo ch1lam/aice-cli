@@ -408,6 +408,12 @@ func TestAgentMessagesJSONRoundTrip(t *testing.T) {
 			Content:    []llm.ContentPart{llm.NewTextContent("contents").Part()},
 			Timestamp:  1_721_234_567_892,
 		},
+		llm.CompactionSummaryMessage{
+			Role:         llm.RoleCompactionSummary,
+			Summary:      "Earlier work completed the provider adapter.",
+			TokensBefore: 120_000,
+			Timestamp:    1_721_234_567_893,
+		},
 	}
 
 	encoded, err := llm.MarshalAgentMessages(want)
@@ -420,6 +426,46 @@ func TestAgentMessagesJSONRoundTrip(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("agent message round trip = %#v, want %#v", got, want)
+	}
+}
+
+func TestAgentMessagesToMessagesProjectsCompactionSummary(t *testing.T) {
+	t.Parallel()
+
+	summary := llm.CompactionSummaryMessage{
+		Role:         llm.RoleCompactionSummary,
+		Summary:      "Earlier work completed the provider adapter.",
+		TokensBefore: 120_000,
+		Timestamp:    1_721_234_567_893,
+	}
+	user := llm.UserMessage{
+		Role:      llm.RoleUser,
+		Content:   []llm.ContentPart{llm.NewTextContent("continue").Part()},
+		Timestamp: 1_721_234_567_894,
+	}
+
+	messages, err := llm.AgentMessagesToMessages([]llm.AgentMessage{
+		summary,
+		user,
+	})
+	if err != nil {
+		t.Fatalf("AgentMessagesToMessages() error = %v", err)
+	}
+	if len(messages) != 2 {
+		t.Fatalf("projected messages = %d, want 2", len(messages))
+	}
+	projected, ok := messages[0].(llm.UserMessage)
+	if !ok {
+		t.Fatalf("projected summary type = %T, want UserMessage", messages[0])
+	}
+	if projected.Timestamp != summary.Timestamp ||
+		len(projected.Content) != 1 ||
+		!strings.Contains(projected.Content[0].Text, summary.Summary) ||
+		!strings.Contains(projected.Content[0].Text, "<summary>") {
+		t.Fatalf("projected summary = %#v", projected)
+	}
+	if !reflect.DeepEqual(messages[1], user) {
+		t.Fatalf("projected user = %#v, want %#v", messages[1], user)
 	}
 }
 
@@ -441,6 +487,17 @@ func TestAgentMessagesJSONRejectsInvalidMessage(t *testing.T) {
 	))
 	if err == nil || !strings.Contains(err.Error(), "unsupported role") {
 		t.Fatalf("UnmarshalAgentMessages() error = %v, want role error", err)
+	}
+
+	_, err = llm.MarshalAgentMessages([]llm.AgentMessage{
+		llm.CompactionSummaryMessage{
+			Role:         llm.RoleCompactionSummary,
+			TokensBefore: 100,
+			Timestamp:    1,
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "summary is required") {
+		t.Fatalf("MarshalAgentMessages() error = %v, want summary validation", err)
 	}
 }
 

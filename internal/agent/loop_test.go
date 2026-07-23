@@ -159,6 +159,42 @@ func TestLoopRunTextTurn(t *testing.T) {
 	}
 }
 
+func TestLoopProjectsCompactionSummaryAtRequestBoundary(t *testing.T) {
+	t.Parallel()
+
+	modelInfo := testModel()
+	answer := assistantMessage(modelInfo, llm.StopReasonStop, textPart("done"))
+	model := &scriptedModel{scripts: []*streamScript{{
+		events: terminalEvents(answer),
+	}}}
+	loop := mustLoop(t, model, nil, agent.Limits{
+		MaxTurns:     2,
+		MaxToolSteps: 2,
+	})
+	input := testInput(modelInfo, mustPrompt(t, "continue"))
+	input.History = []llm.AgentMessage{
+		llm.CompactionSummaryMessage{
+			Role:         llm.RoleCompactionSummary,
+			Summary:      "Earlier work completed the provider adapter.",
+			TokensBefore: 120_000,
+			Timestamp:    1_721_234_567_893,
+		},
+	}
+
+	if _, err := loop.Run(t.Context(), input, nil); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if len(model.requests) != 1 || len(model.requests[0].Messages) != 2 {
+		t.Fatalf("model requests = %#v", model.requests)
+	}
+	projected, ok := model.requests[0].Messages[0].(llm.UserMessage)
+	if !ok ||
+		len(projected.Content) != 1 ||
+		!strings.Contains(projected.Content[0].Text, "<summary>") {
+		t.Fatalf("projected summary = %#v", model.requests[0].Messages[0])
+	}
+}
+
 func TestLoopClampsMaxTokensToRemainingContext(t *testing.T) {
 	t.Parallel()
 
@@ -947,15 +983,17 @@ func assertAgentMessage(t *testing.T, got, want llm.AgentMessage) {
 	}
 }
 
-func messageRoles(messages []llm.Message) []llm.Role {
+func messageRoles[T llm.AgentMessage](messages []T) []llm.Role {
 	roles := make([]llm.Role, len(messages))
 	for index, message := range messages {
-		switch value := message.(type) {
+		switch value := any(message).(type) {
 		case llm.UserMessage:
 			roles[index] = value.Role
 		case llm.AssistantMessage:
 			roles[index] = value.Role
 		case llm.ToolResultMessage:
+			roles[index] = value.Role
+		case llm.CompactionSummaryMessage:
 			roles[index] = value.Role
 		default:
 			roles[index] = llm.RoleUnknown

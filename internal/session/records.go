@@ -151,6 +151,11 @@ func (t Turn) Validate() error {
 				)
 			}
 			delete(pending, value.ToolCallID)
+		case llm.CompactionSummaryMessage:
+			return fmt.Errorf(
+				"session: turn message %d is a derived message",
+				index,
+			)
 		}
 	}
 	for _, callID := range pendingOrder {
