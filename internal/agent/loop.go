@@ -146,7 +146,15 @@ func (e *runExecution) run(ctx context.Context) (Result, error) {
 				runErr = err
 			} else if len(calls) > 0 {
 				var toolErr error
-				turn.ToolResults, toolErr = e.executeTools(ctx, turnNumber, calls)
+				if outcome.message.StopReason == llm.StopReasonLength {
+					turn.ToolResults, toolErr = e.failTruncatedToolCalls(
+						ctx,
+						turnNumber,
+						calls,
+					)
+				} else {
+					turn.ToolResults, toolErr = e.executeTools(ctx, turnNumber, calls)
+				}
 				if isEventSinkError(toolErr) {
 					e.result.Turns = append(e.result.Turns, turn)
 					return e.result, toolErr
@@ -318,6 +326,47 @@ func (e *runExecution) consumeAssistant(
 			)
 		}
 	}
+}
+
+func (e *runExecution) failTruncatedToolCalls(
+	ctx context.Context,
+	turnNumber int,
+	calls []llm.ToolCall,
+) ([]llm.ToolResultMessage, error) {
+	results := make([]llm.ToolResultMessage, 0, len(calls))
+	for index := range calls {
+		call := calls[index]
+		callErr := fmt.Errorf(
+			"tool %q was not executed: the assistant response reached the output token limit, "+
+				"so its arguments may be truncated; reissue the tool call with complete arguments",
+			call.Name,
+		)
+		if err := e.emit(ctx, AgentEvent{
+			Type:       EventTypeToolExecutionStart,
+			TurnNumber: turnNumber,
+			ToolCall:   &call,
+		}); err != nil {
+			return results, err
+		}
+
+		message := newErrorToolResult(call, callErr)
+		if err := e.emit(ctx, AgentEvent{
+			Type:       EventTypeToolExecutionEnd,
+			TurnNumber: turnNumber,
+			ToolCall:   &call,
+			ToolResult: &message,
+			Err:        callErr,
+		}); err != nil {
+			return results, err
+		}
+		if err := e.emitToolResultMessage(ctx, turnNumber, call, message); err != nil {
+			return results, err
+		}
+
+		results = append(results, message)
+		e.history = append(e.history, message)
+	}
+	return results, nil
 }
 
 func (e *runExecution) executeTools(

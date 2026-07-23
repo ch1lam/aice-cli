@@ -300,6 +300,130 @@ func TestLoopRunToolTurnThenContinues(t *testing.T) {
 	}
 }
 
+func TestLoopDoesNotExecuteLengthTruncatedToolCalls(t *testing.T) {
+	t.Parallel()
+
+	modelInfo := testModel()
+	truncated := assistantMessage(
+		modelInfo,
+		llm.StopReasonLength,
+		toolCallPart("call-1", "read", `{"path":"a.go"}`),
+		toolCallPart("call-2", "missing", `{"path":"b.go"}`),
+	)
+	recovered := assistantMessage(modelInfo, llm.StopReasonStop, textPart("recovered"))
+	model := &scriptedModel{scripts: []*streamScript{
+		{events: terminalEvents(truncated)},
+		{events: terminalEvents(recovered)},
+	}}
+	read := newFakeTool("read", successfulTool)
+	loop := mustLoop(t, model, []agent.Tool{read}, agent.Limits{
+		MaxTurns:     3,
+		MaxToolSteps: 3,
+	})
+
+	var events []agent.AgentEvent
+	result, err := loop.Run(
+		t.Context(),
+		testInput(modelInfo, mustPrompt(t, "inspect files")),
+		collectEvents(&events),
+	)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	if len(read.calls) != 0 {
+		t.Fatalf("truncated tool execution count = %d, want 0", len(read.calls))
+	}
+	if len(result.Turns) != 2 || len(result.Turns[0].ToolResults) != 2 {
+		t.Fatalf("Run() result = %#v", result)
+	}
+	wantCalls := []struct {
+		id   string
+		name string
+	}{
+		{id: "call-1", name: "read"},
+		{id: "call-2", name: "missing"},
+	}
+	for index, want := range wantCalls {
+		toolResult := result.Turns[0].ToolResults[index]
+		if toolResult.ToolCallID != want.id ||
+			toolResult.ToolName != want.name ||
+			!toolResult.IsError {
+			t.Errorf("truncated tool result %d = %#v, want error for %#v", index, toolResult, want)
+		}
+		if len(toolResult.Content) != 1 ||
+			!strings.Contains(toolResult.Content[0].Text, "output token limit") {
+			t.Errorf("truncated tool result %d content = %#v", index, toolResult.Content)
+		}
+	}
+
+	if len(model.requests) != 2 {
+		t.Fatalf("model request count = %d, want 2", len(model.requests))
+	}
+	if got, want := messageRoles(model.requests[1].Messages), []llm.Role{
+		llm.RoleUser,
+		llm.RoleAssistant,
+		llm.RoleToolResult,
+		llm.RoleToolResult,
+	}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("second request roles = %v, want %v", got, want)
+	}
+	assertAgentMessage(t, model.requests[1].Messages[1], truncated)
+	for index := range result.Turns[0].ToolResults {
+		assertAgentMessage(
+			t,
+			model.requests[1].Messages[index+2],
+			result.Turns[0].ToolResults[index],
+		)
+	}
+
+	wantEventTypes := []agent.EventType{
+		agent.EventTypeAgentStart,
+		agent.EventTypeTurnStart,
+		agent.EventTypeMessageStart,
+		agent.EventTypeMessageEnd,
+		agent.EventTypeMessageStart,
+		agent.EventTypeMessageEnd,
+		agent.EventTypeToolExecutionStart,
+		agent.EventTypeToolExecutionEnd,
+		agent.EventTypeMessageStart,
+		agent.EventTypeMessageEnd,
+		agent.EventTypeToolExecutionStart,
+		agent.EventTypeToolExecutionEnd,
+		agent.EventTypeMessageStart,
+		agent.EventTypeMessageEnd,
+		agent.EventTypeTurnEnd,
+		agent.EventTypeTurnStart,
+		agent.EventTypeMessageStart,
+		agent.EventTypeMessageEnd,
+		agent.EventTypeTurnEnd,
+		agent.EventTypeAgentEnd,
+	}
+	if got := eventTypes(events); !reflect.DeepEqual(got, wantEventTypes) {
+		t.Fatalf("event types = %v, want %v", got, wantEventTypes)
+	}
+	for index, eventIndex := range []int{7, 11} {
+		event := events[eventIndex]
+		if event.ToolCall == nil ||
+			event.ToolCall.ID != wantCalls[index].id ||
+			event.ToolResult == nil ||
+			!event.ToolResult.IsError ||
+			event.Err == nil {
+			t.Errorf("truncated tool_execution_end %d = %#v", index, event)
+		}
+	}
+	if !reflect.DeepEqual(events[14].ToolResults, result.Turns[0].ToolResults) {
+		t.Errorf(
+			"truncated turn_end tool results = %#v, want %#v",
+			events[14].ToolResults,
+			result.Turns[0].ToolResults,
+		)
+	}
+	if !reflect.DeepEqual(events[19].Messages, result.Messages()) {
+		t.Errorf("agent_end messages = %#v, want %#v", events[19].Messages, result.Messages())
+	}
+}
+
 func TestLoopRunWithWorkspaceReadTool(t *testing.T) {
 	t.Parallel()
 
