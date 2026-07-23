@@ -41,7 +41,7 @@ func TestAdapterStreamsThinkingToolCallUsageAndDone(t *testing.T) {
 		}{
 			{
 				name: "message_start",
-				data: `{"type":"message_start","message":{"id":"msg-1","type":"message","role":"assistant","model":"deepseek-v4-flash","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":10,"output_tokens":0,"cache_creation_input_tokens":2,"cache_read_input_tokens":3}}}`,
+				data: `{"type":"message_start","message":{"id":"msg-1","type":"message","role":"assistant","model":"deepseek-v4-flash-202607","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":10,"output_tokens":0,"cache_creation_input_tokens":2,"cache_read_input_tokens":3}}}`,
 			},
 			{
 				name: "content_block_start",
@@ -106,12 +106,15 @@ func TestAdapterStreamsThinkingToolCallUsageAndDone(t *testing.T) {
 		},
 		SystemPrompt: "You are a coding agent.",
 		Messages: []llm.Message{
-			{
+			llm.UserMessage{
 				Role:    llm.RoleUser,
 				Content: []llm.ContentPart{{Type: llm.ContentTypeText, Text: "Read the file."}},
 			},
-			{
-				Role: llm.RoleAssistant,
+			llm.AssistantMessage{
+				Role:     llm.RoleAssistant,
+				API:      anthropicapi.API,
+				Provider: "deepseek",
+				ModelID:  "deepseek-v4-flash",
 				Content: []llm.ContentPart{
 					{
 						Type:      llm.ContentTypeThinking,
@@ -128,17 +131,12 @@ func TestAdapterStreamsThinkingToolCallUsageAndDone(t *testing.T) {
 					},
 				},
 			},
-			{
-				Role: llm.RoleTool,
+			llm.ToolResultMessage{
+				Role:       llm.RoleToolResult,
+				ToolCallID: "call-1",
 				Content: []llm.ContentPart{{
-					Type: llm.ContentTypeToolResult,
-					ToolResult: &llm.ToolResult{
-						CallID: "call-1",
-						Content: []llm.ContentPart{{
-							Type: llm.ContentTypeText,
-							Text: "file contents",
-						}},
-					},
+					Type: llm.ContentTypeText,
+					Text: "file contents",
 				}},
 			},
 		},
@@ -217,6 +215,7 @@ func TestAdapterStreamsThinkingToolCallUsageAndDone(t *testing.T) {
 		done.Message.API != anthropicapi.API ||
 		done.Message.Provider != "deepseek" ||
 		done.Message.ModelID != "deepseek-v4-flash" ||
+		done.Message.ResponseModelID != "deepseek-v4-flash-202607" ||
 		done.Message.ResponseID != "msg-1" ||
 		done.Message.Timestamp == 0 {
 		t.Errorf("done message metadata = %#v", done.Message)
@@ -277,8 +276,11 @@ func TestAdapterGroupsConsecutiveToolResultsInOneUserMessage(t *testing.T) {
 	request := minimalRequest()
 	request.Messages = []llm.Message{
 		request.Messages[0],
-		{
-			Role: llm.RoleAssistant,
+		llm.AssistantMessage{
+			Role:     llm.RoleAssistant,
+			API:      anthropicapi.API,
+			Provider: "deepseek",
+			ModelID:  "deepseek-v4-flash",
 			Content: []llm.ContentPart{
 				{Type: llm.ContentTypeToolCall, ToolCall: &toolCalls[0]},
 				{Type: llm.ContentTypeToolCall, ToolCall: &toolCalls[1]},
@@ -292,13 +294,11 @@ func TestAdapterGroupsConsecutiveToolResultsInOneUserMessage(t *testing.T) {
 			Name:    call.Name,
 			Content: []llm.ContentPart{llm.NewTextContent("result:" + call.ID).Part()},
 		}
-		request.Messages = append(request.Messages, llm.Message{
-			Role: llm.RoleTool,
-			Content: []llm.ContentPart{{
-				Type:       llm.ContentTypeToolResult,
-				ToolResult: &result,
-			}},
-		})
+		message, err := llm.NewToolResultMessage(result)
+		if err != nil {
+			t.Fatalf("NewToolResultMessage() error = %v", err)
+		}
+		request.Messages = append(request.Messages, message)
 	}
 
 	modelStream, err := adapter.Stream(t.Context(), request)
@@ -548,7 +548,7 @@ func minimalRequest() llm.Request {
 			Provider:  "deepseek",
 			MaxTokens: 1_000,
 		},
-		Messages: []llm.Message{{
+		Messages: []llm.Message{llm.UserMessage{
 			Role: llm.RoleUser,
 			Content: []llm.ContentPart{{
 				Type: llm.ContentTypeText,

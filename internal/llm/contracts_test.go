@@ -109,8 +109,8 @@ func TestCoreMessageConstructors(t *testing.T) {
 	if user.Role != llm.RoleUser || user.Timestamp == 0 {
 		t.Errorf("NewUserMessage() = %#v", user)
 	}
-	if got := user.Message(); got.Role != llm.RoleUser || got.Content[0].Text != "hello" {
-		t.Errorf("UserMessage.Message() = %#v", got)
+	if user.Content[0].Text != "hello" {
+		t.Errorf("NewUserMessage() content = %#v", user.Content)
 	}
 
 	model := llm.Model{
@@ -134,60 +134,108 @@ func TestCoreMessageConstructors(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewToolResultMessage() error = %v", err)
 	}
-	resultHistory := resultMessage.Message()
-	if resultHistory.Role != llm.RoleTool || resultHistory.Content[0].ToolResult.CallID != "call-1" {
-		t.Errorf("ToolResultMessage.Message() = %#v", resultHistory)
+	if resultMessage.Role != llm.RoleToolResult || resultMessage.ToolCallID != "call-1" {
+		t.Errorf("NewToolResultMessage() = %#v", resultMessage)
 	}
 }
 
-func TestMessageValidate(t *testing.T) {
+func TestConcreteMessageValidate(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name    string
-		message llm.Message
-		wantErr bool
+		name     string
+		validate func() error
+		wantErr  bool
 	}{
 		{
 			name: "valid user text",
-			message: llm.Message{
-				Role:    llm.RoleUser,
-				Content: []llm.ContentPart{llm.NewTextContent("hello").Part()},
+			validate: func() error {
+				return llm.UserMessage{
+					Role:    llm.RoleUser,
+					Content: []llm.ContentPart{llm.NewTextContent("hello").Part()},
+				}.Validate()
 			},
 		},
 		{
 			name: "thinking in user message",
-			message: llm.Message{
-				Role: llm.RoleUser,
-				Content: []llm.ContentPart{
-					llm.NewThinkingContent("plan", "signature").Part(),
-				},
+			validate: func() error {
+				return llm.UserMessage{
+					Role: llm.RoleUser,
+					Content: []llm.ContentPart{
+						llm.NewThinkingContent("plan", "signature").Part(),
+					},
+				}.Validate()
 			},
 			wantErr: true,
 		},
 		{
 			name: "conflicting text payload",
-			message: llm.Message{
-				Role: llm.RoleUser,
-				Content: []llm.ContentPart{{
-					Type:  llm.ContentTypeText,
-					Text:  "hello",
-					Image: &llm.ImageContent{Data: []byte("image"), MIMEType: "image/png"},
-				}},
+			validate: func() error {
+				return llm.UserMessage{
+					Role: llm.RoleUser,
+					Content: []llm.ContentPart{{
+						Type:  llm.ContentTypeText,
+						Text:  "hello",
+						Image: &llm.ImageContent{Data: []byte("image"), MIMEType: "image/png"},
+					}},
+				}.Validate()
 			},
 			wantErr: true,
 		},
 		{
 			name: "missing tool call id",
-			message: llm.Message{
-				Role: llm.RoleAssistant,
-				Content: []llm.ContentPart{{
-					Type: llm.ContentTypeToolCall,
-					ToolCall: &llm.ToolCall{
-						Name:      "read",
-						Arguments: json.RawMessage(`{}`),
-					},
-				}},
+			validate: func() error {
+				return llm.AssistantMessage{
+					Role:     llm.RoleAssistant,
+					API:      "example-api",
+					Provider: "example-provider",
+					ModelID:  "model-1",
+					Content: []llm.ContentPart{{
+						Type: llm.ContentTypeToolCall,
+						ToolCall: &llm.ToolCall{
+							Name:      "read",
+							Arguments: json.RawMessage(`{}`),
+						},
+					}},
+				}.Validate()
+			},
+			wantErr: true,
+		},
+		{
+			name: "wrong tool result role",
+			validate: func() error {
+				return llm.ToolResultMessage{
+					Role:       llm.RoleUser,
+					ToolCallID: "call-1",
+				}.Validate()
+			},
+			wantErr: true,
+		},
+		{
+			name: "valid empty tool result",
+			validate: func() error {
+				return llm.ToolResultMessage{
+					Role:       llm.RoleToolResult,
+					ToolCallID: "call-1",
+				}.Validate()
+			},
+		},
+		{
+			name: "wrong user role",
+			validate: func() error {
+				return llm.UserMessage{
+					Role:    llm.RoleAssistant,
+					Content: []llm.ContentPart{llm.NewTextContent("hello").Part()},
+				}.Validate()
+			},
+			wantErr: true,
+		},
+		{
+			name: "empty user content",
+			validate: func() error {
+				return llm.UserMessage{
+					Role: llm.RoleUser,
+				}.Validate()
 			},
 			wantErr: true,
 		},
@@ -197,9 +245,9 @@ func TestMessageValidate(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			err := tt.message.Validate()
+			err := tt.validate()
 			if (err != nil) != tt.wantErr {
-				t.Errorf("Message.Validate() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("Validate() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
 	}
@@ -225,7 +273,7 @@ func TestRequestJSONRoundTrip(t *testing.T) {
 		},
 		SystemPrompt: "You are a coding agent.",
 		Messages: []llm.Message{
-			{
+			llm.UserMessage{
 				Role: llm.RoleUser,
 				Content: []llm.ContentPart{
 					{
@@ -233,6 +281,47 @@ func TestRequestJSONRoundTrip(t *testing.T) {
 						Text: "Inspect the repository.",
 					},
 				},
+				Timestamp: 1_721_234_567_890,
+			},
+			llm.AssistantMessage{
+				Role: llm.RoleAssistant,
+				Content: []llm.ContentPart{{
+					Type: llm.ContentTypeToolCall,
+					ToolCall: &llm.ToolCall{
+						ID:        "call-1",
+						Name:      "read",
+						Arguments: json.RawMessage(`{"path":"README.md"}`),
+						Signature: "opaque-tool-state",
+					},
+				}},
+				API:             "custom-chat-api",
+				Provider:        "custom-provider",
+				ModelID:         "model-1",
+				ResponseModelID: "model-1-20260723",
+				ResponseID:      "response-1",
+				Usage: llm.Usage{
+					InputTokens:  120,
+					OutputTokens: 30,
+					TotalTokens:  150,
+					Cost: &llm.Cost{
+						Input: 0.001,
+						Total: 0.001,
+					},
+				},
+				StopReason:   llm.StopReasonToolUse,
+				ErrorMessage: "redacted provider diagnostic",
+				Timestamp:    1_721_234_567_891,
+			},
+			llm.ToolResultMessage{
+				Role:       llm.RoleToolResult,
+				ToolCallID: "call-1",
+				ToolName:   "read",
+				Content: []llm.ContentPart{{
+					Type: llm.ContentTypeText,
+					Text: "file contents",
+				}},
+				IsError:   true,
+				Timestamp: 1_721_234_567_892,
 			},
 		},
 		Tools: []llm.ToolDefinition{
@@ -258,6 +347,9 @@ func TestRequestJSONRoundTrip(t *testing.T) {
 	if err := json.Unmarshal(encoded, &got); err != nil {
 		t.Fatalf("json.Unmarshal() error = %v", err)
 	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("JSON round trip = %#v, want %#v", got, want)
+	}
 
 	roundTrip, err := json.Marshal(got)
 	if err != nil {
@@ -281,7 +373,7 @@ func TestRequestValidate(t *testing.T) {
 				ContextWindow: 128_000,
 				MaxTokens:     8_192,
 			},
-			Messages: []llm.Message{{
+			Messages: []llm.Message{llm.UserMessage{
 				Role:    llm.RoleUser,
 				Content: []llm.ContentPart{llm.NewTextContent("hello").Part()},
 			}},
@@ -372,10 +464,12 @@ func TestRequestValidate(t *testing.T) {
 		{
 			name: "invalid message",
 			mutate: func(request *llm.Request) {
-				request.Messages[0].Content[0].Image = &llm.ImageContent{
+				message := request.Messages[0].(llm.UserMessage)
+				message.Content[0].Image = &llm.ImageContent{
 					Data:     []byte("image"),
 					MIMEType: "image/png",
 				}
+				request.Messages[0] = message
 			},
 			want: "message 0",
 		},

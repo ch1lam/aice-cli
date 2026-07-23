@@ -74,7 +74,7 @@ func (l *Loop) Run(ctx context.Context, input RunInput, sink EventSink) (Result,
 	}
 
 	history := slices.Clone(input.History)
-	history = append(history, input.Prompt.Message())
+	history = append(history, input.Prompt)
 	execution := runExecution{
 		loop:    l,
 		input:   input,
@@ -93,7 +93,7 @@ type runExecution struct {
 	loop      *Loop
 	input     RunInput
 	sink      EventSink
-	history   []llm.Message
+	history   []llm.AgentMessage
 	result    Result
 	toolSteps int
 }
@@ -133,7 +133,7 @@ func (e *runExecution) run(ctx context.Context) (Result, error) {
 		}
 
 		turn := Turn{Number: turnNumber, Assistant: outcome.message}
-		e.history = append(e.history, outcome.message.Message())
+		e.history = append(e.history, outcome.message)
 
 		runErr := errors.Join(outcome.terminalErr, streamErr)
 		if runErr == nil {
@@ -267,15 +267,6 @@ func (e *runExecution) consumeAssistant(
 				)
 			}
 			terminalErr := terminalError(ctx, event, message)
-			if terminalErr == nil {
-				if err := message.Message().Validate(); err != nil {
-					return assistantOutcome{}, fmt.Errorf(
-						"%w: assistant message is not replayable: %v",
-						ErrProtocol,
-						err,
-					)
-				}
-			}
 			if err := e.emit(ctx, Event{
 				Type:             EventTypeMessageEnd,
 				TurnNumber:       turnNumber,
@@ -377,7 +368,7 @@ func (e *runExecution) executeTools(
 		}
 
 		results = append(results, message)
-		e.history = append(e.history, message.Message())
+		e.history = append(e.history, message)
 	}
 	return results, ctx.Err()
 }
@@ -422,7 +413,7 @@ func (e *runExecution) syntheticToolResults(
 			return results, err
 		}
 		results = append(results, message)
-		e.history = append(e.history, message.Message())
+		e.history = append(e.history, message)
 	}
 	return results, nil
 }

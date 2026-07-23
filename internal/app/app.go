@@ -180,7 +180,7 @@ func (e *environment) Close() error {
 
 type interactiveSession struct {
 	loop    *agent.Loop
-	history []llm.Message
+	history []llm.AgentMessage
 }
 
 func (s *interactiveSession) Run(

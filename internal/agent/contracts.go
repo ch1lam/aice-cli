@@ -38,7 +38,7 @@ type Limits struct {
 type RunInput struct {
 	Model        llm.Model
 	SystemPrompt string
-	History      []llm.Message
+	History      []llm.AgentMessage
 	Prompt       llm.UserMessage
 	Options      llm.StreamOptions
 }
@@ -57,19 +57,19 @@ type Result struct {
 	Turns  []Turn
 }
 
-// Messages converts the run result into replayable model history.
-func (r Result) Messages() []llm.Message {
+// Messages returns the complete transcript messages produced by this run.
+func (r Result) Messages() []llm.AgentMessage {
 	count := 1
 	for _, turn := range r.Turns {
 		count += 1 + len(turn.ToolResults)
 	}
 
-	messages := make([]llm.Message, 0, count)
-	messages = append(messages, r.Prompt.Message())
+	messages := make([]llm.AgentMessage, 0, count)
+	messages = append(messages, r.Prompt)
 	for _, turn := range r.Turns {
-		messages = append(messages, turn.Assistant.Message())
+		messages = append(messages, turn.Assistant)
 		for _, toolResult := range turn.ToolResults {
-			messages = append(messages, toolResult.Message())
+			messages = append(messages, toolResult)
 		}
 	}
 	return messages

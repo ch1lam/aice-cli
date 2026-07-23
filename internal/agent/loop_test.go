@@ -152,6 +152,16 @@ func TestLoopRunToolTurnThenContinues(t *testing.T) {
 		toolCallPart("call-1", "read", `{"path":"a.go"}`),
 		toolCallPart("call-2", "read", `{"path":"b.go"}`),
 	)
+	first.ResponseModelID = "resolved-model"
+	first.ResponseID = "response-1"
+	first.Usage = llm.Usage{
+		InputTokens:  120,
+		OutputTokens: 30,
+		TotalTokens:  150,
+		Cost:         &llm.Cost{Input: 0.001, Output: 0.002, Total: 0.003},
+	}
+	first.ErrorMessage = "redacted provider diagnostic"
+	first.Timestamp = 1_721_234_567_890
 	second := assistantMessage(modelInfo, llm.StopReasonStop, textPart("done"))
 	model := &scriptedModel{scripts: []*streamScript{
 		{events: terminalEvents(first)},
@@ -191,8 +201,8 @@ func TestLoopRunToolTurnThenContinues(t *testing.T) {
 	if got, want := messageRoles(result.Messages()), []llm.Role{
 		llm.RoleUser,
 		llm.RoleAssistant,
-		llm.RoleTool,
-		llm.RoleTool,
+		llm.RoleToolResult,
+		llm.RoleToolResult,
 		llm.RoleAssistant,
 	}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("Result.Messages() roles = %v, want %v", got, want)
@@ -203,10 +213,17 @@ func TestLoopRunToolTurnThenContinues(t *testing.T) {
 	if got, want := messageRoles(model.requests[1].Messages), []llm.Role{
 		llm.RoleUser,
 		llm.RoleAssistant,
-		llm.RoleTool,
-		llm.RoleTool,
+		llm.RoleToolResult,
+		llm.RoleToolResult,
 	}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("second request roles = %v, want %v", got, want)
+	}
+	replayedAssistant, ok := model.requests[1].Messages[1].(llm.AssistantMessage)
+	if !ok {
+		t.Fatalf("second request assistant type = %T, want llm.AssistantMessage", model.requests[1].Messages[1])
+	}
+	if !reflect.DeepEqual(replayedAssistant, first) {
+		t.Errorf("second request assistant = %#v, want %#v", replayedAssistant, first)
 	}
 	if len(model.requests[1].Tools) != 1 || model.requests[1].Tools[0].Name != "read" {
 		t.Fatalf("second request tools = %#v", model.requests[1].Tools)
@@ -336,8 +353,8 @@ func TestLoopReturnsToolFailuresToModel(t *testing.T) {
 		t.Fatalf("model request count = %d, want 2", len(model.requests))
 	}
 	for index := 2; index < 4; index++ {
-		toolResult := model.requests[1].Messages[index].Content[0].ToolResult
-		if toolResult == nil || !toolResult.IsError {
+		toolResult, ok := model.requests[1].Messages[index].(llm.ToolResultMessage)
+		if !ok || !toolResult.IsError {
 			t.Fatalf("second request message %d = %#v", index, model.requests[1].Messages[index])
 		}
 	}
@@ -614,7 +631,16 @@ func eventTypes(events []agent.Event) []agent.EventType {
 func messageRoles(messages []llm.Message) []llm.Role {
 	roles := make([]llm.Role, len(messages))
 	for index, message := range messages {
-		roles[index] = message.Role
+		switch value := message.(type) {
+		case llm.UserMessage:
+			roles[index] = value.Role
+		case llm.AssistantMessage:
+			roles[index] = value.Role
+		case llm.ToolResultMessage:
+			roles[index] = value.Role
+		default:
+			roles[index] = llm.RoleUnknown
+		}
 	}
 	return roles
 }

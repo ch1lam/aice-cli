@@ -80,9 +80,13 @@ func TestApplicationPrintRunsReadOnlyAgent(t *testing.T) {
 			if request.SystemPrompt != defaultSystemPrompt {
 				t.Errorf("system prompt = %q, want %q", request.SystemPrompt, defaultSystemPrompt)
 			}
-			if len(request.Messages) != 1 ||
-				len(request.Messages[0].Content) != 1 ||
-				request.Messages[0].Content[0].Text != "inspect this repository" {
+			if len(request.Messages) != 1 {
+				t.Fatalf("model messages = %#v, want one user prompt", request.Messages)
+			}
+			user, ok := request.Messages[0].(llm.UserMessage)
+			if !ok ||
+				len(user.Content) != 1 ||
+				user.Content[0].Text != "inspect this repository" {
 				t.Errorf("model messages = %#v, want one user prompt", request.Messages)
 			}
 
@@ -154,8 +158,9 @@ func TestApplicationPrintSeparatesToolLoopTurns(t *testing.T) {
 	if len(secondRequest.Messages) != 3 {
 		t.Fatalf("second request messages = %d, want user, assistant, and tool result", len(secondRequest.Messages))
 	}
-	if got := secondRequest.Messages[2].Role; got != llm.RoleTool {
-		t.Errorf("second request last role = %q, want %q", got, llm.RoleTool)
+	toolResult, ok := secondRequest.Messages[2].(llm.ToolResultMessage)
+	if !ok || toolResult.Role != llm.RoleToolResult {
+		t.Errorf("second request last message = %#v, want tool result", secondRequest.Messages[2])
 	}
 }
 
@@ -203,10 +208,20 @@ func TestApplicationInteractiveKeepsConversationHistory(t *testing.T) {
 	if len(secondRequest.Messages) != 3 {
 		t.Fatalf("second request messages = %d, want prior user, prior assistant, and new user", len(secondRequest.Messages))
 	}
-	if got := secondRequest.Messages[0].Content[0].Text; got != "first prompt" {
+	firstPrompt, ok := secondRequest.Messages[0].(llm.UserMessage)
+	if !ok || len(firstPrompt.Content) != 1 || firstPrompt.Content[0].Text != "first prompt" {
+		got := ""
+		if ok && len(firstPrompt.Content) > 0 {
+			got = firstPrompt.Content[0].Text
+		}
 		t.Errorf("first history message = %q, want first prompt", got)
 	}
-	if got := secondRequest.Messages[2].Content[0].Text; got != "second prompt" {
+	secondPrompt, ok := secondRequest.Messages[2].(llm.UserMessage)
+	if !ok || len(secondPrompt.Content) != 1 || secondPrompt.Content[0].Text != "second prompt" {
+		got := ""
+		if ok && len(secondPrompt.Content) > 0 {
+			got = secondPrompt.Content[0].Text
+		}
 		t.Errorf("current prompt = %q, want second prompt", got)
 	}
 }

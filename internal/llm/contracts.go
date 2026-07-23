@@ -22,10 +22,10 @@ type ProviderID string
 type Role string
 
 const (
-	RoleUnknown   Role = ""
-	RoleUser      Role = "user"
-	RoleAssistant Role = "assistant"
-	RoleTool      Role = "tool"
+	RoleUnknown    Role = ""
+	RoleUser       Role = "user"
+	RoleAssistant  Role = "assistant"
+	RoleToolResult Role = "toolResult"
 )
 
 // ContentType identifies the payload carried by a content part.
@@ -63,12 +63,15 @@ const (
 	InputModalityImage   InputModality = "image"
 )
 
-// Message is one provider-neutral conversation message.
-type Message struct {
-	Role      Role          `json:"role"`
-	Content   []ContentPart `json:"content"`
-	Timestamp int64         `json:"timestamp,omitempty"`
+// Message is the closed set of provider-neutral messages understood by an LLM.
+// Concrete messages retain all metadata needed for replay and persistence.
+type Message interface {
+	message()
 }
+
+// AgentMessage is one complete transcript message. It currently equals Message
+// because AICE does not yet have custom transcript-only message types.
+type AgentMessage = Message
 
 // TextContent is visible text carried by a user or assistant message.
 // Signature is opaque provider state that may need to be replayed unchanged.
@@ -185,16 +188,17 @@ type UserMessage struct {
 // AssistantMessage is the complete or partial result of one model request.
 // It is the canonical value stored in history after streaming terminates.
 type AssistantMessage struct {
-	Role         Role          `json:"role"`
-	Content      []ContentPart `json:"content"`
-	API          API           `json:"api"`
-	Provider     ProviderID    `json:"provider"`
-	ModelID      string        `json:"model"`
-	ResponseID   string        `json:"response_id,omitempty"`
-	Usage        Usage         `json:"usage"`
-	StopReason   StopReason    `json:"stop_reason"`
-	ErrorMessage string        `json:"error_message,omitempty"`
-	Timestamp    int64         `json:"timestamp"`
+	Role            Role          `json:"role"`
+	Content         []ContentPart `json:"content"`
+	API             API           `json:"api"`
+	Provider        ProviderID    `json:"provider"`
+	ModelID         string        `json:"model"`
+	ResponseModelID string        `json:"response_model,omitempty"`
+	ResponseID      string        `json:"response_id,omitempty"`
+	Usage           Usage         `json:"usage"`
+	StopReason      StopReason    `json:"stop_reason"`
+	ErrorMessage    string        `json:"error_message,omitempty"`
+	Timestamp       int64         `json:"timestamp"`
 }
 
 // ToolResultMessage is the history message produced by one tool execution.
@@ -253,18 +257,14 @@ func NewUserMessage(content ...ContentPart) (UserMessage, error) {
 	return message, nil
 }
 
+func (UserMessage) message() {}
+
 // Validate checks that a user message contains only user-supported content.
 func (m UserMessage) Validate() error {
-	return m.Message().Validate()
-}
-
-// Message converts a user message into the common history representation.
-func (m UserMessage) Message() Message {
-	return Message{
-		Role:      m.Role,
-		Content:   slices.Clone(m.Content),
-		Timestamp: m.Timestamp,
+	if m.Role != RoleUser {
+		return fmt.Errorf("llm: user message has role %q", m.Role)
 	}
+	return validateMessageContent(m.Role, m.Content, false)
 }
 
 // NewAssistantMessage creates the initial partial result for a model stream.
@@ -279,6 +279,8 @@ func NewAssistantMessage(model Model) AssistantMessage {
 	}
 }
 
+func (AssistantMessage) message() {}
+
 // Validate checks assistant identity, metadata, and content invariants.
 func (m AssistantMessage) Validate() error {
 	if m.Role != RoleAssistant {
@@ -287,30 +289,13 @@ func (m AssistantMessage) Validate() error {
 	if m.API == "" || m.Provider == "" || m.ModelID == "" {
 		return fmt.Errorf("llm: assistant message api, provider, and model are required")
 	}
-	for index, part := range m.Content {
-		if err := part.Validate(); err != nil {
-			return fmt.Errorf("llm: assistant content %d: %w", index, err)
-		}
-		if !contentAllowedForRole(RoleAssistant, part.Type) {
-			return fmt.Errorf("llm: content type %q is not allowed for role %q", part.Type, RoleAssistant)
-		}
-	}
-	return nil
-}
-
-// Message converts an assistant result into replayable model history.
-func (m AssistantMessage) Message() Message {
-	return Message{
-		Role:      m.Role,
-		Content:   slices.Clone(m.Content),
-		Timestamp: m.Timestamp,
-	}
+	return validateMessageContent(m.Role, m.Content, true)
 }
 
 // NewToolResultMessage constructs and validates one tool-result message.
 func NewToolResultMessage(result ToolResult) (ToolResultMessage, error) {
 	message := ToolResultMessage{
-		Role:       RoleTool,
+		Role:       RoleToolResult,
 		ToolCallID: result.CallID,
 		ToolName:   result.Name,
 		Content:    slices.Clone(result.Content),
@@ -323,40 +308,46 @@ func NewToolResultMessage(result ToolResult) (ToolResultMessage, error) {
 	return message, nil
 }
 
+func (ToolResultMessage) message() {}
+
 // Validate checks that a tool-result message can be replayed safely.
 func (m ToolResultMessage) Validate() error {
-	return m.Message().Validate()
-}
-
-// Message converts a tool result into the common history representation.
-func (m ToolResultMessage) Message() Message {
-	result := ToolResult{
+	if m.Role != RoleToolResult {
+		return fmt.Errorf("llm: tool result message has role %q", m.Role)
+	}
+	return ToolResult{
 		CallID:  m.ToolCallID,
 		Name:    m.ToolName,
-		Content: slices.Clone(m.Content),
+		Content: m.Content,
 		IsError: m.IsError,
-	}
-	return Message{
-		Role: m.Role,
-		Content: []ContentPart{{
-			Type:       ContentTypeToolResult,
-			ToolResult: &result,
-		}},
-		Timestamp: m.Timestamp,
+	}.Validate()
+}
+
+func validateMessage(message Message) error {
+	switch value := message.(type) {
+	case UserMessage:
+		return value.Validate()
+	case AssistantMessage:
+		return value.Validate()
+	case ToolResultMessage:
+		return value.Validate()
+	case nil:
+		return fmt.Errorf("llm: message is nil")
+	default:
+		return fmt.Errorf("llm: unsupported message type %T", message)
 	}
 }
 
-// Validate rejects malformed content and role/content combinations.
-func (m Message) Validate() error {
-	if len(m.Content) == 0 {
-		return fmt.Errorf("llm: %s message content is empty", m.Role)
+func validateMessageContent(role Role, content []ContentPart, allowEmpty bool) error {
+	if !allowEmpty && len(content) == 0 {
+		return fmt.Errorf("llm: %s message content is empty", role)
 	}
-	for index, part := range m.Content {
+	for index, part := range content {
 		if err := part.Validate(); err != nil {
 			return fmt.Errorf("llm: content %d: %w", index, err)
 		}
-		if !contentAllowedForRole(m.Role, part.Type) {
-			return fmt.Errorf("llm: content type %q is not allowed for role %q", part.Type, m.Role)
+		if !contentAllowedForRole(role, part.Type) {
+			return fmt.Errorf("llm: content type %q is not allowed for role %q", part.Type, role)
 		}
 	}
 	return nil
@@ -436,8 +427,6 @@ func contentAllowedForRole(role Role, contentType ContentType) bool {
 		return contentType == ContentTypeText ||
 			contentType == ContentTypeThinking ||
 			contentType == ContentTypeToolCall
-	case RoleTool:
-		return contentType == ContentTypeToolResult
 	default:
 		return false
 	}
@@ -460,6 +449,70 @@ type Request struct {
 	Messages     []Message        `json:"messages"`
 	Tools        []ToolDefinition `json:"tools,omitempty"`
 	Options      StreamOptions    `json:"options"`
+}
+
+// UnmarshalJSON restores each message's concrete type from its role.
+func (r *Request) UnmarshalJSON(data []byte) error {
+	var raw struct {
+		Model        Model             `json:"model"`
+		SystemPrompt string            `json:"system_prompt,omitempty"`
+		Messages     []json.RawMessage `json:"messages"`
+		Tools        []ToolDefinition  `json:"tools,omitempty"`
+		Options      StreamOptions     `json:"options"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return fmt.Errorf("llm: decode request: %w", err)
+	}
+
+	messages := make([]Message, len(raw.Messages))
+	for index, encoded := range raw.Messages {
+		message, err := unmarshalMessage(encoded)
+		if err != nil {
+			return fmt.Errorf("llm: decode request message %d: %w", index, err)
+		}
+		messages[index] = message
+	}
+
+	*r = Request{
+		Model:        raw.Model,
+		SystemPrompt: raw.SystemPrompt,
+		Messages:     messages,
+		Tools:        raw.Tools,
+		Options:      raw.Options,
+	}
+	return nil
+}
+
+func unmarshalMessage(data []byte) (Message, error) {
+	var envelope struct {
+		Role Role `json:"role"`
+	}
+	if err := json.Unmarshal(data, &envelope); err != nil {
+		return nil, fmt.Errorf("decode role: %w", err)
+	}
+
+	switch envelope.Role {
+	case RoleUser:
+		var message UserMessage
+		if err := json.Unmarshal(data, &message); err != nil {
+			return nil, err
+		}
+		return message, nil
+	case RoleAssistant:
+		var message AssistantMessage
+		if err := json.Unmarshal(data, &message); err != nil {
+			return nil, err
+		}
+		return message, nil
+	case RoleToolResult:
+		var message ToolResultMessage
+		if err := json.Unmarshal(data, &message); err != nil {
+			return nil, err
+		}
+		return message, nil
+	default:
+		return nil, fmt.Errorf("unsupported role %q", envelope.Role)
+	}
 }
 
 // Validate checks provider-neutral request invariants. Protocol adapters and
@@ -489,7 +542,7 @@ func (r Request) Validate() error {
 		return fmt.Errorf("llm: request at least one message is required")
 	}
 	for index, message := range r.Messages {
-		if err := message.Validate(); err != nil {
+		if err := validateMessage(message); err != nil {
 			return fmt.Errorf("llm: request message %d: %w", index, err)
 		}
 	}

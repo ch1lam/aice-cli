@@ -189,13 +189,54 @@ func applyThinking(params *anthropicsdk.MessageNewParams, level llm.ThinkingLeve
 func messageParams(messages []llm.Message) ([]anthropicsdk.MessageParam, error) {
 	result := make([]anthropicsdk.MessageParam, 0, len(messages))
 	for messageIndex, message := range messages {
-		if err := message.Validate(); err != nil {
-			return nil, fmt.Errorf("anthropic: message %d: %w", messageIndex, err)
+		var (
+			role    llm.Role
+			content []llm.ContentPart
+			blocks  []anthropicsdk.ContentBlockParamUnion
+		)
+		switch value := message.(type) {
+		case llm.UserMessage:
+			if err := value.Validate(); err != nil {
+				return nil, fmt.Errorf("anthropic: message %d: %w", messageIndex, err)
+			}
+			role = value.Role
+			content = value.Content
+		case llm.AssistantMessage:
+			if err := value.Validate(); err != nil {
+				return nil, fmt.Errorf("anthropic: message %d: %w", messageIndex, err)
+			}
+			role = value.Role
+			content = value.Content
+		case llm.ToolResultMessage:
+			if err := value.Validate(); err != nil {
+				return nil, fmt.Errorf("anthropic: message %d: %w", messageIndex, err)
+			}
+			role = value.Role
+			block, err := toolResultBlockParam(&llm.ToolResult{
+				CallID:  value.ToolCallID,
+				Name:    value.ToolName,
+				Content: value.Content,
+				IsError: value.IsError,
+			})
+			if err != nil {
+				return nil, fmt.Errorf("anthropic: message %d: %w", messageIndex, err)
+			}
+			blocks = []anthropicsdk.ContentBlockParamUnion{block}
+		case nil:
+			return nil, fmt.Errorf("anthropic: message %d is nil", messageIndex)
+		default:
+			return nil, fmt.Errorf(
+				"anthropic: message %d has unsupported type %T",
+				messageIndex,
+				message,
+			)
 		}
 
-		blocks := make([]anthropicsdk.ContentBlockParamUnion, 0, len(message.Content))
-		for partIndex, part := range message.Content {
-			block, err := contentBlockParam(message.Role, part)
+		if blocks == nil {
+			blocks = make([]anthropicsdk.ContentBlockParamUnion, 0, len(content))
+		}
+		for partIndex, part := range content {
+			block, err := contentBlockParam(role, part)
 			if err != nil {
 				return nil, fmt.Errorf(
 					"anthropic: message %d content %d: %w",
@@ -208,19 +249,19 @@ func messageParams(messages []llm.Message) ([]anthropicsdk.MessageParam, error) 
 		}
 
 		var converted anthropicsdk.MessageParam
-		switch message.Role {
-		case llm.RoleUser, llm.RoleTool:
+		switch role {
+		case llm.RoleUser, llm.RoleToolResult:
 			converted = anthropicsdk.NewUserMessage(blocks...)
 		case llm.RoleAssistant:
 			converted = anthropicsdk.NewAssistantMessage(blocks...)
 		default:
-			return nil, fmt.Errorf("anthropic: message %d has unsupported role %q", messageIndex, message.Role)
+			return nil, fmt.Errorf("anthropic: message %d has unsupported role %q", messageIndex, role)
 		}
 
 		// Anthropic represents tool results as user content blocks and requires all
 		// results for one assistant tool-use turn in the immediately following user
-		// message. The provider-neutral history intentionally stores one RoleTool
-		// message per result, so coalesce adjacent messages after role translation.
+		// message. Provider-neutral history stores one ToolResultMessage per result,
+		// so coalesce adjacent messages after role translation.
 		if len(result) > 0 && result[len(result)-1].Role == converted.Role {
 			result[len(result)-1].Content = append(result[len(result)-1].Content, blocks...)
 			continue
@@ -266,8 +307,8 @@ func contentBlockParam(role llm.Role, part llm.ContentPart) (anthropicsdk.Conten
 			part.ToolCall.Name,
 		), nil
 	case llm.ContentTypeToolResult:
-		if role != llm.RoleUser && role != llm.RoleTool {
-			return anthropicsdk.ContentBlockParamUnion{}, errors.New("tool result requires a user or tool role")
+		if role != llm.RoleUser {
+			return anthropicsdk.ContentBlockParamUnion{}, errors.New("tool result requires a user role")
 		}
 		return toolResultBlockParam(part.ToolResult)
 	default:
@@ -406,8 +447,9 @@ func (s *stream) translate(event anthropicsdk.MessageStreamEventUnion) ([]llm.Ev
 	switch value := event.AsAny().(type) {
 	case anthropicsdk.MessageStartEvent:
 		s.message.ResponseID = value.Message.ID
-		if value.Message.Model != "" {
-			s.message.ModelID = string(value.Message.Model)
+		if responseModel := string(value.Message.Model); responseModel != "" &&
+			responseModel != s.message.ModelID {
+			s.message.ResponseModelID = responseModel
 		}
 		s.mergeUsage(value.Message.Usage)
 		return []llm.Event{{Type: llm.EventTypeStart}}, nil

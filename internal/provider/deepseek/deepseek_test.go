@@ -93,7 +93,7 @@ func TestProviderRejectsUnsupportedDeepSeekContentBeforeHTTP(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			request := llm.Request{
 				Model: deepseek.DefaultModel(),
-				Messages: []llm.Message{{
+				Messages: []llm.Message{llm.UserMessage{
 					Role:    llm.RoleUser,
 					Content: []llm.ContentPart{tt.part},
 				}},

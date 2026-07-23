@@ -107,7 +107,34 @@ func model(id string) llm.Model {
 
 func validateMessages(messages []llm.Message) error {
 	for messageIndex, message := range messages {
-		for partIndex, part := range message.Content {
+		var content []llm.ContentPart
+		switch value := message.(type) {
+		case llm.UserMessage:
+			content = value.Content
+		case llm.AssistantMessage:
+			content = value.Content
+		case llm.ToolResultMessage:
+			for partIndex, part := range value.Content {
+				if part.Type != llm.ContentTypeText {
+					return fmt.Errorf(
+						"deepseek: message %d content %d: non-text tool results "+
+							"are not supported by DeepSeek's Anthropic API",
+						messageIndex,
+						partIndex,
+					)
+				}
+			}
+			continue
+		case nil:
+			return fmt.Errorf("deepseek: message %d is nil", messageIndex)
+		default:
+			return fmt.Errorf(
+				"deepseek: message %d has unsupported type %T",
+				messageIndex,
+				message,
+			)
+		}
+		for partIndex, part := range content {
 			if err := validateContent(part); err != nil {
 				return fmt.Errorf(
 					"deepseek: message %d content %d: %w",
