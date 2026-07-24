@@ -25,44 +25,37 @@ type CompactionSettings struct {
 type CompactionPreparation struct {
 	MessagesToSummarize []llm.AgentMessage
 	TokensBefore        int64
-	FirstKeptTurn       int
-	TurnCount           int
+	FirstKeptTurnID     string
+	ActiveTurnCount     int
+	RetainedTurnCount   int
 }
 
 // BuildContext derives the active model transcript from immutable source turns
-// and the latest append-only compaction checkpoint.
+// and the latest compaction checkpoint on the selected branch.
 func BuildContext(snapshot Snapshot) ([]llm.AgentMessage, error) {
-	if err := validateSnapshotCompactions(snapshot); err != nil {
+	state, err := deriveActiveBranch(snapshot)
+	if err != nil {
 		return nil, err
 	}
-
-	start := 0
 	contextMessages := make([]llm.AgentMessage, 0)
-	if len(snapshot.Compactions) > 0 {
-		latest := snapshot.Compactions[len(snapshot.Compactions)-1]
-		start = latest.FirstKeptTurn
-		summary, err := compactionSummaryMessage(latest, snapshot.Turns[start:])
+	if state.compaction != nil {
+		summary, err := compactionSummaryMessage(
+			*state.compaction,
+			state.turns,
+		)
 		if err != nil {
 			return nil, err
 		}
 		contextMessages = append(contextMessages, summary)
 	}
-	for turnIndex := start; turnIndex < len(snapshot.Turns); turnIndex++ {
-		turn := snapshot.Turns[turnIndex]
-		if err := turn.Validate(); err != nil {
-			return nil, fmt.Errorf(
-				"session: context turn %d: %w",
-				turnIndex,
-				err,
-			)
-		}
+	for _, turn := range state.turns {
 		contextMessages = append(contextMessages, turn.Messages...)
 	}
 	return cloneMessages(contextMessages)
 }
 
-// PrepareCompaction selects a complete-turn cut while retaining approximately
-// KeepRecentTokens of the newest source history.
+// PrepareCompaction selects a complete-turn cut on the active branch while
+// retaining approximately KeepRecentTokens of its newest source history.
 func PrepareCompaction(
 	snapshot Snapshot,
 	settings CompactionSettings,
@@ -72,10 +65,10 @@ func PrepareCompaction(
 			"session: keep recent tokens must be positive",
 		)
 	}
-	if err := validateSnapshotCompactions(snapshot); err != nil {
+	state, err := deriveActiveBranch(snapshot)
+	if err != nil {
 		return CompactionPreparation{}, err
 	}
-
 	activeContext, err := BuildContext(snapshot)
 	if err != nil {
 		return CompactionPreparation{}, err
@@ -88,22 +81,18 @@ func PrepareCompaction(
 		)
 	}
 	estimate := llm.EstimateContextTokens(llm.Request{Messages: projected})
-	if estimate.Tokens <= 0 {
+	if estimate.Tokens <= 0 || len(state.turns) < 2 {
 		return CompactionPreparation{}, ErrNothingToCompact
 	}
 
-	start := 0
-	if len(snapshot.Compactions) > 0 {
-		start = snapshot.Compactions[len(snapshot.Compactions)-1].FirstKeptTurn
-	}
-	firstKept := start
+	firstKept := 0
 	var retainedTokens int64
-	for turnIndex := len(snapshot.Turns) - 1; turnIndex >= start; turnIndex-- {
-		turnTokens, err := estimateTurnTokens(snapshot.Turns[turnIndex])
+	for turnIndex := len(state.turns) - 1; turnIndex >= 0; turnIndex-- {
+		turnTokens, err := estimateTurnTokens(state.turns[turnIndex])
 		if err != nil {
 			return CompactionPreparation{}, fmt.Errorf(
-				"session: estimate turn %d: %w",
-				turnIndex,
+				"session: estimate turn %q: %w",
+				state.turns[turnIndex].ID,
 				err,
 			)
 		}
@@ -113,32 +102,26 @@ func PrepareCompaction(
 			break
 		}
 	}
-	if firstKept <= start {
+	if firstKept <= 0 {
 		return CompactionPreparation{}, ErrNothingToCompact
 	}
 
 	messagesToSummarize := make([]llm.AgentMessage, 0)
-	if len(snapshot.Compactions) > 0 {
-		latest := snapshot.Compactions[len(snapshot.Compactions)-1]
+	if state.compaction != nil {
 		summary, err := compactionSummaryMessage(
-			latest,
-			snapshot.Turns[start:firstKept],
+			*state.compaction,
+			state.turns[:firstKept],
 		)
 		if err != nil {
 			return CompactionPreparation{}, err
 		}
 		messagesToSummarize = append(messagesToSummarize, summary)
 	}
-	for turnIndex := start; turnIndex < firstKept; turnIndex++ {
-		turn := snapshot.Turns[turnIndex]
-		if err := turn.Validate(); err != nil {
-			return CompactionPreparation{}, fmt.Errorf(
-				"session: compact turn %d: %w",
-				turnIndex,
-				err,
-			)
-		}
-		messagesToSummarize = append(messagesToSummarize, turn.Messages...)
+	for turnIndex := 0; turnIndex < firstKept; turnIndex++ {
+		messagesToSummarize = append(
+			messagesToSummarize,
+			state.turns[turnIndex].Messages...,
+		)
 	}
 	cloned, err := cloneMessages(messagesToSummarize)
 	if err != nil {
@@ -147,37 +130,70 @@ func PrepareCompaction(
 	return CompactionPreparation{
 		MessagesToSummarize: cloned,
 		TokensBefore:        estimate.Tokens,
-		FirstKeptTurn:       firstKept,
-		TurnCount:           len(snapshot.Turns),
+		FirstKeptTurnID:     state.turns[firstKept].ID,
+		ActiveTurnCount:     len(state.turns),
+		RetainedTurnCount:   len(state.turns) - firstKept,
 	}, nil
 }
 
-func validateSnapshotCompactions(snapshot Snapshot) error {
-	for index, compaction := range snapshot.Compactions {
-		if err := compaction.Validate(); err != nil {
-			return fmt.Errorf("session: compaction %d: %w", index, err)
+type activeBranchState struct {
+	compaction *Compaction
+	turns      []Turn
+}
+
+func deriveActiveBranch(snapshot Snapshot) (activeBranchState, error) {
+	index, err := indexSnapshot(snapshot)
+	if err != nil {
+		return activeBranchState{}, err
+	}
+	nodes, err := ActiveBranch(snapshot)
+	if err != nil {
+		return activeBranchState{}, err
+	}
+	latestCompaction := -1
+	for position, node := range nodes {
+		if node.Type == RecordTypeCompaction {
+			latestCompaction = position
 		}
-		if compaction.TurnCount > len(snapshot.Turns) {
-			return fmt.Errorf(
-				"session: compaction %d turn count %d exceeds snapshot turn count %d",
-				index,
-				compaction.TurnCount,
-				len(snapshot.Turns),
-			)
+	}
+
+	start := 0
+	var checkpoint *Compaction
+	if latestCompaction >= 0 {
+		compaction := index.compactions[nodes[latestCompaction].ID]
+		checkpoint = &compaction
+		start = -1
+		for position := 0; position < latestCompaction; position++ {
+			if nodes[position].ID == compaction.FirstKeptTurnID {
+				if nodes[position].Type != RecordTypeTurn {
+					return activeBranchState{}, fmt.Errorf(
+						"session: compaction first kept entry %q is not a turn",
+						compaction.FirstKeptTurnID,
+					)
+				}
+				start = position
+				break
+			}
 		}
-		if index == 0 {
-			continue
-		}
-		previous := snapshot.Compactions[index-1]
-		if compaction.FirstKeptTurn <= previous.FirstKeptTurn ||
-			compaction.TurnCount <= previous.TurnCount {
-			return fmt.Errorf(
-				"session: compaction %d does not advance the derived context boundary",
-				index,
+		if start < 0 {
+			return activeBranchState{}, fmt.Errorf(
+				"session: compaction first kept turn %q is not on the active branch",
+				compaction.FirstKeptTurnID,
 			)
 		}
 	}
-	return nil
+
+	turns := make([]Turn, 0)
+	for position, node := range nodes {
+		if position < start || node.Type != RecordTypeTurn {
+			continue
+		}
+		turns = append(turns, index.turns[node.ID])
+	}
+	return activeBranchState{
+		compaction: checkpoint,
+		turns:      turns,
+	}, nil
 }
 
 func compactionSummaryMessage(

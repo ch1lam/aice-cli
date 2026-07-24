@@ -85,13 +85,20 @@ func (a *application) Compact(
 	if err != nil {
 		return err
 	}
+	checkpointID, err := session.NewID()
+	if err != nil {
+		return fmt.Errorf("app: generate compaction id: %w", err)
+	}
 	checkpoint, err := session.NewCompaction(session.CompactionInput{
-		CreatedAt:     time.Now().UnixMilli(),
-		Summary:       summary,
-		TokensBefore:  preparation.TokensBefore,
-		FirstKeptTurn: preparation.FirstKeptTurn,
-		TurnCount:     preparation.TurnCount,
-		Usage:         usage,
+		ID:                checkpointID,
+		ParentID:          snapshot.LeafID,
+		CreatedAt:         time.Now().UnixMilli(),
+		Summary:           summary,
+		TokensBefore:      preparation.TokensBefore,
+		FirstKeptTurnID:   preparation.FirstKeptTurnID,
+		ActiveTurnCount:   preparation.ActiveTurnCount,
+		RetainedTurnCount: preparation.RetainedTurnCount,
+		Usage:             usage,
 	})
 	if err != nil {
 		return fmt.Errorf("app: create session compaction: %w", err)
@@ -100,12 +107,11 @@ func (a *application) Compact(
 		return fmt.Errorf("app: append session compaction: %w", err)
 	}
 
-	retainedTurns := preparation.TurnCount - preparation.FirstKeptTurn
 	if _, err := fmt.Fprintf(
 		output,
 		"Compacted Session at approximately %d tokens; retained %d recent turn(s).\n",
 		preparation.TokensBefore,
-		retainedTurns,
+		preparation.RetainedTurnCount,
 	); err != nil {
 		return fmt.Errorf("app: write compaction result: %w", err)
 	}

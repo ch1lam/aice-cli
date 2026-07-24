@@ -1,8 +1,11 @@
-// Package session persists complete AICE conversation history as append-only JSONL.
+// Package session persists complete AICE conversation history as an
+// append-only JSONL tree.
 package session
 
 import (
 	"bytes"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -22,10 +25,12 @@ const (
 	RecordTypeTurn RecordType = "turn"
 	// RecordTypeCompaction identifies one derived context checkpoint.
 	RecordTypeCompaction RecordType = "compaction"
+	// RecordTypeLeaf identifies an append-only move of the active tree leaf.
+	RecordTypeLeaf RecordType = "leaf"
 )
 
 // CurrentVersion is the session file format written by this build.
-const CurrentVersion = 1
+const CurrentVersion = 2
 
 // Metadata contains caller-owned values for a new session header.
 type Metadata struct {
@@ -43,9 +48,20 @@ type Header struct {
 	WorkingDirectory string     `json:"working_directory"`
 }
 
+// Node is the relationship shared by records that participate in the
+// conversation tree. Leaf records move the active pointer and are not nodes.
+type Node struct {
+	Type      RecordType
+	ID        string
+	ParentID  string
+	Timestamp int64
+}
+
 // Turn is one complete agent run persisted at a stable boundary.
 type Turn struct {
 	Type        RecordType         `json:"-"`
+	ID          string             `json:"-"`
+	ParentID    string             `json:"-"`
 	CompletedAt int64              `json:"-"`
 	Messages    []llm.AgentMessage `json:"-"`
 	Usage       llm.Usage          `json:"-"`
@@ -53,23 +69,39 @@ type Turn struct {
 
 // CompactionInput contains caller-owned data for a derived checkpoint.
 type CompactionInput struct {
-	CreatedAt     int64
-	Summary       string
-	TokensBefore  int64
-	FirstKeptTurn int
-	TurnCount     int
-	Usage         llm.Usage
+	ID                string
+	ParentID          string
+	CreatedAt         int64
+	Summary           string
+	TokensBefore      int64
+	FirstKeptTurnID   string
+	ActiveTurnCount   int
+	RetainedTurnCount int
+	Usage             llm.Usage
 }
 
 // Compaction is one append-only derived context checkpoint.
 type Compaction struct {
-	Type          RecordType `json:"type"`
-	CreatedAt     int64      `json:"created_at"`
-	Summary       string     `json:"summary"`
-	TokensBefore  int64      `json:"tokens_before"`
-	FirstKeptTurn int        `json:"first_kept_turn"`
-	TurnCount     int        `json:"turn_count"`
-	Usage         llm.Usage  `json:"usage"`
+	Type              RecordType `json:"type"`
+	ID                string     `json:"id"`
+	ParentID          string     `json:"parent_id"`
+	CreatedAt         int64      `json:"created_at"`
+	Summary           string     `json:"summary"`
+	TokensBefore      int64      `json:"tokens_before"`
+	FirstKeptTurnID   string     `json:"first_kept_turn_id"`
+	ActiveTurnCount   int        `json:"active_turn_count"`
+	RetainedTurnCount int        `json:"retained_turn_count"`
+	Usage             llm.Usage  `json:"usage"`
+}
+
+// Leaf is an append-only move of the active branch pointer. An empty TargetID
+// represents the tree root.
+type Leaf struct {
+	Type      RecordType `json:"type"`
+	ID        string     `json:"id"`
+	ParentID  string     `json:"parent_id,omitempty"`
+	CreatedAt int64      `json:"created_at"`
+	TargetID  string     `json:"target_id,omitempty"`
 }
 
 // Snapshot is an independent copy of one loaded session.
@@ -77,18 +109,34 @@ type Snapshot struct {
 	Header      Header
 	Turns       []Turn
 	Compactions []Compaction
+	LeafMoves   []Leaf
+	Order       []string
+	LeafID      string
+}
+
+// NewID returns a cryptographically random identifier suitable for sessions
+// and tree records.
+func NewID() (string, error) {
+	var entropy [16]byte
+	if _, err := rand.Read(entropy[:]); err != nil {
+		return "", fmt.Errorf("session: generate id: %w", err)
+	}
+	return hex.EncodeToString(entropy[:]), nil
 }
 
 // NewCompaction validates and defensively copies one derived checkpoint.
 func NewCompaction(input CompactionInput) (Compaction, error) {
 	compaction := Compaction{
-		Type:          RecordTypeCompaction,
-		CreatedAt:     input.CreatedAt,
-		Summary:       input.Summary,
-		TokensBefore:  input.TokensBefore,
-		FirstKeptTurn: input.FirstKeptTurn,
-		TurnCount:     input.TurnCount,
-		Usage:         cloneUsage(input.Usage),
+		Type:              RecordTypeCompaction,
+		ID:                input.ID,
+		ParentID:          input.ParentID,
+		CreatedAt:         input.CreatedAt,
+		Summary:           input.Summary,
+		TokensBefore:      input.TokensBefore,
+		FirstKeptTurnID:   input.FirstKeptTurnID,
+		ActiveTurnCount:   input.ActiveTurnCount,
+		RetainedTurnCount: input.RetainedTurnCount,
+		Usage:             cloneUsage(input.Usage),
 	}
 	if err := compaction.Validate(); err != nil {
 		return Compaction{}, err
@@ -101,6 +149,12 @@ func (c Compaction) Validate() error {
 	if c.Type != RecordTypeCompaction {
 		return fmt.Errorf("session: compaction has type %q", c.Type)
 	}
+	if err := validateRecordID("compaction", c.ID, false); err != nil {
+		return err
+	}
+	if err := validateRecordID("compaction parent", c.ParentID, false); err != nil {
+		return err
+	}
 	if c.CreatedAt <= 0 {
 		return fmt.Errorf("session: compaction creation time must be positive")
 	}
@@ -110,34 +164,91 @@ func (c Compaction) Validate() error {
 	if c.TokensBefore <= 0 {
 		return fmt.Errorf("session: compaction tokens before must be positive")
 	}
-	if c.TurnCount <= 0 {
-		return fmt.Errorf("session: compaction turn count must be positive")
+	if err := validateRecordID(
+		"compaction first kept turn",
+		c.FirstKeptTurnID,
+		false,
+	); err != nil {
+		return err
 	}
-	if c.FirstKeptTurn <= 0 || c.FirstKeptTurn > c.TurnCount {
+	if c.ActiveTurnCount < 2 {
+		return fmt.Errorf("session: compaction active turn count must be at least two")
+	}
+	if c.RetainedTurnCount <= 0 ||
+		c.RetainedTurnCount >= c.ActiveTurnCount {
 		return fmt.Errorf(
-			"session: compaction first kept turn %d is outside turn count %d",
-			c.FirstKeptTurn,
-			c.TurnCount,
+			"session: compaction retained turn count %d is outside active turn count %d",
+			c.RetainedTurnCount,
+			c.ActiveTurnCount,
 		)
+	}
+	return nil
+}
+
+// NewLeaf validates one active-branch move record.
+func NewLeaf(
+	id string,
+	parentID string,
+	targetID string,
+	createdAt int64,
+) (Leaf, error) {
+	leaf := Leaf{
+		Type:      RecordTypeLeaf,
+		ID:        id,
+		ParentID:  parentID,
+		CreatedAt: createdAt,
+		TargetID:  targetID,
+	}
+	if err := leaf.Validate(); err != nil {
+		return Leaf{}, err
+	}
+	return leaf, nil
+}
+
+// Validate checks the intrinsic fields of an active-branch move.
+func (l Leaf) Validate() error {
+	if l.Type != RecordTypeLeaf {
+		return fmt.Errorf("session: leaf has type %q", l.Type)
+	}
+	if err := validateRecordID("leaf", l.ID, false); err != nil {
+		return err
+	}
+	if err := validateRecordID("leaf parent", l.ParentID, true); err != nil {
+		return err
+	}
+	if err := validateRecordID("leaf target", l.TargetID, true); err != nil {
+		return err
+	}
+	if l.CreatedAt <= 0 {
+		return fmt.Errorf("session: leaf creation time must be positive")
 	}
 	return nil
 }
 
 type turnJSON struct {
 	Type        RecordType      `json:"type"`
+	ID          string          `json:"id"`
+	ParentID    string          `json:"parent_id,omitempty"`
 	CompletedAt int64           `json:"completed_at"`
 	Messages    json.RawMessage `json:"messages"`
 	Usage       llm.Usage       `json:"usage"`
 }
 
 // NewTurn validates and defensively copies a complete agent run.
-func NewTurn(completedAt int64, messages []llm.AgentMessage) (Turn, error) {
+func NewTurn(
+	id string,
+	parentID string,
+	completedAt int64,
+	messages []llm.AgentMessage,
+) (Turn, error) {
 	cloned, err := cloneMessages(messages)
 	if err != nil {
 		return Turn{}, err
 	}
 	turn := Turn{
 		Type:        RecordTypeTurn,
+		ID:          id,
+		ParentID:    parentID,
 		CompletedAt: completedAt,
 		Messages:    cloned,
 		Usage:       aggregateUsage(cloned),
@@ -152,6 +263,12 @@ func NewTurn(completedAt int64, messages []llm.AgentMessage) (Turn, error) {
 func (t Turn) Validate() error {
 	if t.Type != RecordTypeTurn {
 		return fmt.Errorf("session: turn has type %q", t.Type)
+	}
+	if err := validateRecordID("turn", t.ID, false); err != nil {
+		return err
+	}
+	if err := validateRecordID("turn parent", t.ParentID, true); err != nil {
+		return err
 	}
 	if t.CompletedAt <= 0 {
 		return fmt.Errorf("session: turn completion time must be positive")
@@ -251,6 +368,8 @@ func (t Turn) MarshalJSON() ([]byte, error) {
 	}
 	data, err := json.Marshal(turnJSON{
 		Type:        t.Type,
+		ID:          t.ID,
+		ParentID:    t.ParentID,
 		CompletedAt: t.CompletedAt,
 		Messages:    messages,
 		Usage:       t.Usage,
@@ -285,6 +404,8 @@ func (t *Turn) UnmarshalJSON(data []byte) error {
 	}
 	decoded := Turn{
 		Type:        raw.Type,
+		ID:          raw.ID,
+		ParentID:    raw.ParentID,
 		CompletedAt: raw.CompletedAt,
 		Messages:    messages,
 		Usage:       raw.Usage,
@@ -293,6 +414,19 @@ func (t *Turn) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	*t = decoded
+	return nil
+}
+
+func validateRecordID(label string, id string, allowEmpty bool) error {
+	if strings.TrimSpace(id) == "" {
+		if allowEmpty && id == "" {
+			return nil
+		}
+		return fmt.Errorf("session: %s id is required", label)
+	}
+	if strings.IndexByte(id, 0) >= 0 {
+		return fmt.Errorf("session: %s id contains a null byte", label)
+	}
 	return nil
 }
 
@@ -329,6 +463,10 @@ func cloneCompactions(compactions []Compaction) []Compaction {
 		cloned[index].Usage = cloneUsage(compaction.Usage)
 	}
 	return cloned
+}
+
+func cloneLeaves(leaves []Leaf) []Leaf {
+	return append([]Leaf(nil), leaves...)
 }
 
 func cloneUsage(usage llm.Usage) llm.Usage {

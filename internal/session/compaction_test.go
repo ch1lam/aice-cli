@@ -20,18 +20,17 @@ func TestStoreAppendsCompactionWithoutReplacingTurns(t *testing.T) {
 	store := mustCreate(t, path)
 	first := mustTurn(
 		t,
+		"turn-1",
+		"",
 		1_721_234_567_900,
 		namedTextMessages("first prompt", "first answer", 10),
 	)
 	second := mustTurn(
 		t,
+		"turn-2",
+		first.ID,
 		1_721_234_568_000,
 		namedTextMessages("second prompt", "second answer", 20),
-	)
-	third := mustTurn(
-		t,
-		1_721_234_568_100,
-		namedTextMessages("third prompt", "third answer", 30),
 	)
 	if err := store.AppendTurn(t.Context(), first); err != nil {
 		t.Fatalf("AppendTurn(first) error = %v", err)
@@ -40,11 +39,14 @@ func TestStoreAppendsCompactionWithoutReplacingTurns(t *testing.T) {
 		t.Fatalf("AppendTurn(second) error = %v", err)
 	}
 	compaction := mustCompaction(t, session.CompactionInput{
-		CreatedAt:     1_721_234_568_050,
-		Summary:       "The first turn established the project goal.",
-		TokensBefore:  20,
-		FirstKeptTurn: 1,
-		TurnCount:     2,
+		ID:                "compaction-1",
+		ParentID:          second.ID,
+		CreatedAt:         1_721_234_568_050,
+		Summary:           "The first turn established the project goal.",
+		TokensBefore:      20,
+		FirstKeptTurnID:   second.ID,
+		ActiveTurnCount:   2,
+		RetainedTurnCount: 1,
 		Usage: llm.Usage{
 			InputTokens:  12,
 			OutputTokens: 4,
@@ -55,6 +57,13 @@ func TestStoreAppendsCompactionWithoutReplacingTurns(t *testing.T) {
 	if err := store.AppendCompaction(t.Context(), compaction); err != nil {
 		t.Fatalf("AppendCompaction() error = %v", err)
 	}
+	third := mustTurn(
+		t,
+		"turn-3",
+		compaction.ID,
+		1_721_234_568_100,
+		namedTextMessages("third prompt", "third answer", 30),
+	)
 	if err := store.AppendTurn(t.Context(), third); err != nil {
 		t.Fatalf("AppendTurn(third) error = %v", err)
 	}
@@ -155,7 +164,7 @@ func TestStoreRejectsCompactionOutsideCurrentBoundary(t *testing.T) {
 	}()
 	if err := store.AppendTurn(
 		t.Context(),
-		mustTurn(t, 1_721_234_567_900, textMessages()),
+		mustTurn(t, "turn-1", "", 1_721_234_567_900, textMessages()),
 	); err != nil {
 		t.Fatalf("AppendTurn() error = %v", err)
 	}
@@ -164,16 +173,19 @@ func TestStoreRejectsCompactionOutsideCurrentBoundary(t *testing.T) {
 		t.Fatalf("os.Stat() error = %v", err)
 	}
 	compaction := mustCompaction(t, session.CompactionInput{
-		CreatedAt:     1_721_234_568_000,
-		Summary:       "summary",
-		TokensBefore:  15,
-		FirstKeptTurn: 1,
-		TurnCount:     2,
+		ID:                "compaction-1",
+		ParentID:          "turn-1",
+		CreatedAt:         1_721_234_568_000,
+		Summary:           "summary",
+		TokensBefore:      15,
+		FirstKeptTurnID:   "turn-1",
+		ActiveTurnCount:   2,
+		RetainedTurnCount: 1,
 	})
 
 	err = store.AppendCompaction(t.Context(), compaction)
-	if err == nil || !strings.Contains(err.Error(), "turn boundary") {
-		t.Fatalf("AppendCompaction() error = %v, want turn-boundary error", err)
+	if err == nil || !strings.Contains(err.Error(), "active turn count") {
+		t.Fatalf("AppendCompaction() error = %v, want branch-boundary error", err)
 	}
 	after, err := os.Stat(path)
 	if err != nil {
@@ -191,7 +203,7 @@ func TestStoreOpenRejectsCompactionOutsideRecordedBoundary(t *testing.T) {
 	store := mustCreate(t, path)
 	if err := store.AppendTurn(
 		t.Context(),
-		mustTurn(t, 1_721_234_567_900, textMessages()),
+		mustTurn(t, "turn-1", "", 1_721_234_567_900, textMessages()),
 	); err != nil {
 		t.Fatalf("AppendTurn() error = %v", err)
 	}
@@ -199,11 +211,14 @@ func TestStoreOpenRejectsCompactionOutsideRecordedBoundary(t *testing.T) {
 		t.Fatalf("Close() error = %v", err)
 	}
 	compaction := mustCompaction(t, session.CompactionInput{
-		CreatedAt:     1_721_234_568_000,
-		Summary:       "summary",
-		TokensBefore:  15,
-		FirstKeptTurn: 1,
-		TurnCount:     2,
+		ID:                "compaction-1",
+		ParentID:          "turn-1",
+		CreatedAt:         1_721_234_568_000,
+		Summary:           "summary",
+		TokensBefore:      15,
+		FirstKeptTurnID:   "turn-1",
+		ActiveTurnCount:   2,
+		RetainedTurnCount: 1,
 	})
 	data, err := json.Marshal(compaction)
 	if err != nil {
@@ -230,12 +245,31 @@ func TestStoreOpenRejectsCompactionOutsideRecordedBoundary(t *testing.T) {
 func TestPrepareCompactionKeepsCompleteRecentTurns(t *testing.T) {
 	t.Parallel()
 
+	first := mustTurn(
+		t,
+		"turn-1",
+		"",
+		100,
+		namedTextMessages("first prompt", "first answer", 10),
+	)
+	second := mustTurn(
+		t,
+		"turn-2",
+		first.ID,
+		200,
+		namedTextMessages("second prompt", "second answer", 20),
+	)
+	third := mustTurn(
+		t,
+		"turn-3",
+		second.ID,
+		300,
+		namedTextMessages("third prompt", "third answer", 30),
+	)
 	snapshot := session.Snapshot{
-		Turns: []session.Turn{
-			mustTurn(t, 100, namedTextMessages("first prompt", "first answer", 10)),
-			mustTurn(t, 200, namedTextMessages("second prompt", "second answer", 20)),
-			mustTurn(t, 300, namedTextMessages("third prompt", "third answer", 30)),
-		},
+		Turns:  []session.Turn{first, second, third},
+		Order:  []string{first.ID, second.ID, third.ID},
+		LeafID: third.ID,
 	}
 	preparation, err := session.PrepareCompaction(snapshot, session.CompactionSettings{
 		KeepRecentTokens: 1,
@@ -243,7 +277,9 @@ func TestPrepareCompactionKeepsCompleteRecentTurns(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PrepareCompaction() error = %v", err)
 	}
-	if preparation.FirstKeptTurn != 2 || preparation.TurnCount != 3 {
+	if preparation.FirstKeptTurnID != third.ID ||
+		preparation.ActiveTurnCount != 3 ||
+		preparation.RetainedTurnCount != 1 {
 		t.Fatalf("preparation boundary = %#v", preparation)
 	}
 	if len(preparation.MessagesToSummarize) != 4 {
@@ -259,27 +295,52 @@ func TestPrepareCompactionKeepsCompleteRecentTurns(t *testing.T) {
 func TestPrepareCompactionUpdatesPreviousSummary(t *testing.T) {
 	t.Parallel()
 
-	turns := []session.Turn{
-		mustTurn(t, 100, namedTextMessages("first prompt", "first answer", 10)),
-		mustTurn(t, 200, namedTextMessages("second prompt", "second answer", 20)),
-		mustTurn(t, 300, namedTextMessages("third prompt", "third answer", 30)),
-	}
+	first := mustTurn(
+		t,
+		"turn-1",
+		"",
+		100,
+		namedTextMessages("first prompt", "first answer", 10),
+	)
+	second := mustTurn(
+		t,
+		"turn-2",
+		first.ID,
+		200,
+		namedTextMessages("second prompt", "second answer", 20),
+	)
 	previous := mustCompaction(t, session.CompactionInput{
-		CreatedAt:     250,
-		Summary:       "The first turn established the project goal.",
-		TokensBefore:  20,
-		FirstKeptTurn: 1,
-		TurnCount:     2,
+		ID:                "compaction-1",
+		ParentID:          second.ID,
+		CreatedAt:         250,
+		Summary:           "The first turn established the project goal.",
+		TokensBefore:      20,
+		FirstKeptTurnID:   second.ID,
+		ActiveTurnCount:   2,
+		RetainedTurnCount: 1,
 	})
+	third := mustTurn(
+		t,
+		"turn-3",
+		previous.ID,
+		300,
+		namedTextMessages("third prompt", "third answer", 30),
+	)
 	preparation, err := session.PrepareCompaction(session.Snapshot{
-		Turns:       turns,
+		Turns:       []session.Turn{first, second, third},
 		Compactions: []session.Compaction{previous},
+		Order:       []string{first.ID, second.ID, previous.ID, third.ID},
+		LeafID:      third.ID,
 	}, session.CompactionSettings{KeepRecentTokens: 1})
 	if err != nil {
 		t.Fatalf("PrepareCompaction() error = %v", err)
 	}
-	if preparation.FirstKeptTurn != 2 {
-		t.Fatalf("FirstKeptTurn = %d, want 2", preparation.FirstKeptTurn)
+	if preparation.FirstKeptTurnID != third.ID {
+		t.Fatalf(
+			"FirstKeptTurnID = %q, want %q",
+			preparation.FirstKeptTurnID,
+			third.ID,
+		)
 	}
 	if len(preparation.MessagesToSummarize) != 3 {
 		t.Fatalf(
@@ -298,10 +359,11 @@ func TestPrepareCompactionUpdatesPreviousSummary(t *testing.T) {
 func TestPrepareCompactionReportsNothingToCompact(t *testing.T) {
 	t.Parallel()
 
+	only := mustTurn(t, "turn-1", "", 100, textMessages())
 	_, err := session.PrepareCompaction(session.Snapshot{
-		Turns: []session.Turn{
-			mustTurn(t, 100, textMessages()),
-		},
+		Turns:  []session.Turn{only},
+		Order:  []string{only.ID},
+		LeafID: only.ID,
 	}, session.CompactionSettings{KeepRecentTokens: 20_000})
 	if !errors.Is(err, session.ErrNothingToCompact) {
 		t.Fatalf("PrepareCompaction() error = %v, want ErrNothingToCompact", err)

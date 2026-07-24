@@ -23,6 +23,8 @@ var (
 	ErrCorrupt = errors.New("session log is corrupt")
 	// ErrUnsupportedVersion indicates a session format newer or older than this build.
 	ErrUnsupportedVersion = errors.New("session version is unsupported")
+	// ErrEntryNotFound indicates that a requested tree node does not exist.
+	ErrEntryNotFound = errors.New("session entry is not found")
 )
 
 // CorruptionError identifies the physical record that made recovery unsafe.
@@ -49,13 +51,20 @@ func (e *CorruptionError) Unwrap() []error {
 
 // Store owns one append-only session file.
 type Store struct {
-	mu          sync.Mutex
-	file        *os.File
-	path        string
-	header      Header
-	turns       []Turn
-	compactions []Compaction
-	closed      bool
+	mu             sync.Mutex
+	file           *os.File
+	path           string
+	header         Header
+	turns          []Turn
+	compactions    []Compaction
+	leafMoves      []Leaf
+	order          []string
+	nodeTypes      map[string]RecordType
+	parents        map[string]string
+	compactionByID map[string]Compaction
+	recordIDs      map[string]struct{}
+	leafID         string
+	closed         bool
 }
 
 // Create creates a new session file and writes its versioned header.
@@ -106,13 +115,7 @@ func Create(ctx context.Context, path string, metadata Metadata) (*Store, error)
 	if err := file.Sync(); err != nil {
 		return nil, cleanup(fmt.Errorf("session: sync header: %w", err))
 	}
-	return &Store{
-		file:        file,
-		path:        path,
-		header:      header,
-		turns:       []Turn{},
-		compactions: []Compaction{},
-	}, nil
+	return newStore(file, path, Snapshot{Header: header}), nil
 }
 
 // Open loads an existing session and truncates only an incomplete final record.
@@ -145,13 +148,39 @@ func Open(ctx context.Context, path string) (*Store, error) {
 			)
 		}
 	}
-	return &Store{
-		file:        file,
-		path:        path,
-		header:      snapshot.Header,
-		turns:       snapshot.Turns,
-		compactions: snapshot.Compactions,
-	}, nil
+	return newStore(file, path, snapshot), nil
+}
+
+func newStore(file *os.File, path string, snapshot Snapshot) *Store {
+	store := &Store{
+		file:           file,
+		path:           path,
+		header:         snapshot.Header,
+		turns:          snapshot.Turns,
+		compactions:    snapshot.Compactions,
+		leafMoves:      snapshot.LeafMoves,
+		order:          snapshot.Order,
+		nodeTypes:      make(map[string]RecordType),
+		parents:        make(map[string]string),
+		compactionByID: make(map[string]Compaction),
+		recordIDs:      make(map[string]struct{}),
+		leafID:         snapshot.LeafID,
+	}
+	for _, turn := range store.turns {
+		store.nodeTypes[turn.ID] = turn.Type
+		store.parents[turn.ID] = turn.ParentID
+		store.recordIDs[turn.ID] = struct{}{}
+	}
+	for _, compaction := range store.compactions {
+		store.nodeTypes[compaction.ID] = compaction.Type
+		store.parents[compaction.ID] = compaction.ParentID
+		store.compactionByID[compaction.ID] = compaction
+		store.recordIDs[compaction.ID] = struct{}{}
+	}
+	for _, leaf := range store.leafMoves {
+		store.recordIDs[leaf.ID] = struct{}{}
+	}
+	return store
 }
 
 // Path returns the session file path supplied by the caller.
@@ -162,6 +191,16 @@ func (s *Store) Path() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.path
+}
+
+// LeafID returns the active tree node. An empty ID represents the root.
+func (s *Store) LeafID() (string, error) {
+	if s == nil {
+		return "", fmt.Errorf("session: store is required")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.leafID, nil
 }
 
 // Snapshot returns a defensive copy of the loaded session records.
@@ -180,20 +219,26 @@ func (s *Store) Snapshot() (Snapshot, error) {
 		Header:      s.header,
 		Turns:       turns,
 		Compactions: cloneCompactions(s.compactions),
+		LeafMoves:   cloneLeaves(s.leafMoves),
+		Order:       append([]string(nil), s.order...),
+		LeafID:      s.leafID,
 	}, nil
 }
 
-// AppendTurn durably appends one complete run as one physical JSONL record.
+// AppendTurn durably appends one complete run as one tree node.
 func (s *Store) AppendTurn(ctx context.Context, turn Turn) error {
 	if s == nil {
 		return fmt.Errorf("session: store is required")
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.closed {
-		return ErrClosed
+	if err := s.validateWritable(ctx); err != nil {
+		return err
 	}
-	if err := validateContext(ctx); err != nil {
+	if err := turn.Validate(); err != nil {
+		return err
+	}
+	if err := s.validateNodeBoundary(turn.ID, turn.ParentID); err != nil {
 		return err
 	}
 
@@ -201,38 +246,19 @@ func (s *Store) AppendTurn(ctx context.Context, turn Turn) error {
 	if err != nil {
 		return fmt.Errorf("session: encode turn: %w", err)
 	}
-	if err := ctx.Err(); err != nil {
+	if err := s.appendData(ctx, "turn", data); err != nil {
 		return err
 	}
-	if len(data)+1 > maxRecordBytes {
-		return fmt.Errorf("session: turn exceeds %d-byte record limit", maxRecordBytes)
-	}
-	info, err := s.file.Stat()
-	if err != nil {
-		return fmt.Errorf("session: stat before append: %w", err)
-	}
-	rollback := func(cause error) error {
-		truncateErr := s.file.Truncate(info.Size())
-		syncErr := s.file.Sync()
-		return errors.Join(cause, truncateErr, syncErr)
-	}
-	if err := writeRecord(s.file, data); err != nil {
-		return rollback(fmt.Errorf("session: append turn: %w", err))
-	}
-	if err := s.file.Sync(); err != nil {
-		return rollback(fmt.Errorf("session: sync turn: %w", err))
-	}
-
 	var stored Turn
 	if err := json.Unmarshal(data, &stored); err != nil {
-		return rollback(fmt.Errorf("session: retain appended turn: %w", err))
+		return fmt.Errorf("session: retain appended turn: %w", err)
 	}
 	s.turns = append(s.turns, stored)
+	s.retainNode(stored.ID, stored.ParentID, stored.Type)
 	return nil
 }
 
-// AppendCompaction durably appends one derived checkpoint at the current
-// complete-turn boundary.
+// AppendCompaction durably appends one derived checkpoint to the active branch.
 func (s *Store) AppendCompaction(
 	ctx context.Context,
 	compaction Compaction,
@@ -242,16 +268,23 @@ func (s *Store) AppendCompaction(
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.closed {
-		return ErrClosed
+	if err := s.validateWritable(ctx); err != nil {
+		return err
 	}
-	if err := validateContext(ctx); err != nil {
+	if err := compaction.Validate(); err != nil {
+		return err
+	}
+	if err := s.validateNodeBoundary(
+		compaction.ID,
+		compaction.ParentID,
+	); err != nil {
 		return err
 	}
 	if err := validateCompactionBoundary(
 		compaction,
-		len(s.turns),
-		s.compactions,
+		s.nodeTypes,
+		s.parents,
+		s.compactionByID,
 	); err != nil {
 		return err
 	}
@@ -260,18 +293,113 @@ func (s *Store) AppendCompaction(
 	if err != nil {
 		return fmt.Errorf("session: encode compaction: %w", err)
 	}
+	if err := s.appendData(ctx, "compaction", data); err != nil {
+		return err
+	}
+	var stored Compaction
+	if err := json.Unmarshal(data, &stored); err != nil {
+		return fmt.Errorf("session: retain appended compaction: %w", err)
+	}
+	s.compactions = append(s.compactions, stored)
+	s.compactionByID[stored.ID] = stored
+	s.retainNode(stored.ID, stored.ParentID, stored.Type)
+	return nil
+}
+
+// AppendLeaf durably moves the active branch pointer without deleting history.
+func (s *Store) AppendLeaf(ctx context.Context, leaf Leaf) error {
+	if s == nil {
+		return fmt.Errorf("session: store is required")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.validateWritable(ctx); err != nil {
+		return err
+	}
+	if err := leaf.Validate(); err != nil {
+		return err
+	}
+	if _, exists := s.recordIDs[leaf.ID]; exists {
+		return fmt.Errorf("session: duplicate record id %q", leaf.ID)
+	}
+	if leaf.ParentID != s.leafID {
+		return fmt.Errorf(
+			"session: leaf parent %q is not current leaf %q",
+			leaf.ParentID,
+			s.leafID,
+		)
+	}
+	if leaf.TargetID != "" {
+		if _, exists := s.nodeTypes[leaf.TargetID]; !exists {
+			return fmt.Errorf("%w: %s", ErrEntryNotFound, leaf.TargetID)
+		}
+	}
+
+	data, err := json.Marshal(leaf)
+	if err != nil {
+		return fmt.Errorf("session: encode leaf: %w", err)
+	}
+	if err := s.appendData(ctx, "leaf", data); err != nil {
+		return err
+	}
+	s.leafMoves = append(s.leafMoves, leaf)
+	s.recordIDs[leaf.ID] = struct{}{}
+	s.leafID = leaf.TargetID
+	return nil
+}
+
+func (s *Store) validateWritable(ctx context.Context) error {
+	if s.closed {
+		return ErrClosed
+	}
+	return validateContext(ctx)
+}
+
+func (s *Store) validateNodeBoundary(id string, parentID string) error {
+	if _, exists := s.recordIDs[id]; exists {
+		return fmt.Errorf("session: duplicate record id %q", id)
+	}
+	if parentID != s.leafID {
+		return fmt.Errorf(
+			"session: node parent %q is not current leaf %q",
+			parentID,
+			s.leafID,
+		)
+	}
+	if parentID != "" {
+		if _, exists := s.nodeTypes[parentID]; !exists {
+			return fmt.Errorf("%w: %s", ErrEntryNotFound, parentID)
+		}
+	}
+	return nil
+}
+
+func (s *Store) retainNode(id string, parentID string, recordType RecordType) {
+	s.nodeTypes[id] = recordType
+	s.parents[id] = parentID
+	s.recordIDs[id] = struct{}{}
+	s.order = append(s.order, id)
+	s.leafID = id
+}
+
+func (s *Store) appendData(
+	ctx context.Context,
+	label string,
+	data []byte,
+) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 	if len(data)+1 > maxRecordBytes {
 		return fmt.Errorf(
-			"session: compaction exceeds %d-byte record limit",
+			"session: %s exceeds %d-byte record limit",
+			label,
 			maxRecordBytes,
 		)
 	}
 	info, err := s.file.Stat()
 	if err != nil {
-		return fmt.Errorf("session: stat before compaction append: %w", err)
+		return fmt.Errorf("session: stat before %s append: %w", label, err)
 	}
 	rollback := func(cause error) error {
 		truncateErr := s.file.Truncate(info.Size())
@@ -279,17 +407,11 @@ func (s *Store) AppendCompaction(
 		return errors.Join(cause, truncateErr, syncErr)
 	}
 	if err := writeRecord(s.file, data); err != nil {
-		return rollback(fmt.Errorf("session: append compaction: %w", err))
+		return rollback(fmt.Errorf("session: append %s: %w", label, err))
 	}
 	if err := s.file.Sync(); err != nil {
-		return rollback(fmt.Errorf("session: sync compaction: %w", err))
+		return rollback(fmt.Errorf("session: sync %s: %w", label, err))
 	}
-
-	var stored Compaction
-	if err := json.Unmarshal(data, &stored); err != nil {
-		return rollback(fmt.Errorf("session: retain appended compaction: %w", err))
-	}
-	s.compactions = append(s.compactions, stored)
 	return nil
 }
 
@@ -319,6 +441,10 @@ func readSnapshot(
 	}
 	reader := bufio.NewReader(file)
 	var snapshot Snapshot
+	nodeTypes := make(map[string]RecordType)
+	parents := make(map[string]string)
+	compactionByID := make(map[string]Compaction)
+	recordIDs := make(map[string]struct{})
 	var validBytes int64
 	lineNumber := 0
 	for {
@@ -374,20 +500,85 @@ func readSnapshot(
 			if err := decodeRecord(line, &turn); err != nil {
 				return Snapshot{}, 0, false, corrupt(lineNumber, recordOffset, err)
 			}
+			if err := validateReplayNode(
+				turn.ID,
+				turn.ParentID,
+				snapshot.LeafID,
+				recordIDs,
+				nodeTypes,
+			); err != nil {
+				return Snapshot{}, 0, false, corrupt(lineNumber, recordOffset, err)
+			}
 			snapshot.Turns = append(snapshot.Turns, turn)
+			retainReplayNode(&snapshot, turn.ID, turn.ParentID, turn.Type, recordIDs, nodeTypes, parents)
 		case RecordTypeCompaction:
 			var compaction Compaction
 			if err := decodeRecord(line, &compaction); err != nil {
 				return Snapshot{}, 0, false, corrupt(lineNumber, recordOffset, err)
 			}
+			if err := validateReplayNode(
+				compaction.ID,
+				compaction.ParentID,
+				snapshot.LeafID,
+				recordIDs,
+				nodeTypes,
+			); err != nil {
+				return Snapshot{}, 0, false, corrupt(lineNumber, recordOffset, err)
+			}
 			if err := validateCompactionBoundary(
 				compaction,
-				len(snapshot.Turns),
-				snapshot.Compactions,
+				nodeTypes,
+				parents,
+				compactionByID,
 			); err != nil {
 				return Snapshot{}, 0, false, corrupt(lineNumber, recordOffset, err)
 			}
 			snapshot.Compactions = append(snapshot.Compactions, compaction)
+			compactionByID[compaction.ID] = compaction
+			retainReplayNode(
+				&snapshot,
+				compaction.ID,
+				compaction.ParentID,
+				compaction.Type,
+				recordIDs,
+				nodeTypes,
+				parents,
+			)
+		case RecordTypeLeaf:
+			var leaf Leaf
+			if err := decodeRecord(line, &leaf); err != nil {
+				return Snapshot{}, 0, false, corrupt(lineNumber, recordOffset, err)
+			}
+			if _, exists := recordIDs[leaf.ID]; exists {
+				return Snapshot{}, 0, false, corrupt(
+					lineNumber,
+					recordOffset,
+					fmt.Errorf("duplicate record id %q", leaf.ID),
+				)
+			}
+			if leaf.ParentID != snapshot.LeafID {
+				return Snapshot{}, 0, false, corrupt(
+					lineNumber,
+					recordOffset,
+					fmt.Errorf(
+						"leaf parent %q is not current leaf %q",
+						leaf.ParentID,
+						snapshot.LeafID,
+					),
+				)
+			}
+			if leaf.TargetID != "" {
+				if _, exists := nodeTypes[leaf.TargetID]; !exists {
+					return Snapshot{}, 0, false, corrupt(
+						lineNumber,
+						recordOffset,
+						fmt.Errorf("%w: %s", ErrEntryNotFound, leaf.TargetID),
+					)
+				}
+			}
+			snapshot.LeafMoves = append(snapshot.LeafMoves, leaf)
+			recordIDs[leaf.ID] = struct{}{}
+			snapshot.LeafID = leaf.TargetID
 		default:
 			return Snapshot{}, 0, false, corrupt(
 				lineNumber,
@@ -402,40 +593,166 @@ func readSnapshot(
 	return snapshot, validBytes, false, nil
 }
 
+func validateReplayNode(
+	id string,
+	parentID string,
+	leafID string,
+	recordIDs map[string]struct{},
+	nodeTypes map[string]RecordType,
+) error {
+	if _, exists := recordIDs[id]; exists {
+		return fmt.Errorf("duplicate record id %q", id)
+	}
+	if parentID != leafID {
+		return fmt.Errorf(
+			"node parent %q is not current leaf %q",
+			parentID,
+			leafID,
+		)
+	}
+	if parentID != "" {
+		if _, exists := nodeTypes[parentID]; !exists {
+			return fmt.Errorf("%w: %s", ErrEntryNotFound, parentID)
+		}
+	}
+	return nil
+}
+
+func retainReplayNode(
+	snapshot *Snapshot,
+	id string,
+	parentID string,
+	recordType RecordType,
+	recordIDs map[string]struct{},
+	nodeTypes map[string]RecordType,
+	parents map[string]string,
+) {
+	recordIDs[id] = struct{}{}
+	nodeTypes[id] = recordType
+	parents[id] = parentID
+	snapshot.Order = append(snapshot.Order, id)
+	snapshot.LeafID = id
+}
+
 func validateCompactionBoundary(
 	compaction Compaction,
-	turnCount int,
-	previous []Compaction,
+	nodeTypes map[string]RecordType,
+	parents map[string]string,
+	compactions map[string]Compaction,
 ) error {
 	if err := compaction.Validate(); err != nil {
 		return err
 	}
-	if compaction.TurnCount != turnCount {
+	path, err := pathToRoot(compaction.ParentID, nodeTypes, parents)
+	if err != nil {
+		return err
+	}
+	activeTurnIDs, err := activeTurnIDs(path, nodeTypes, compactions)
+	if err != nil {
+		return err
+	}
+	if len(activeTurnIDs) != compaction.ActiveTurnCount {
 		return fmt.Errorf(
-			"session: compaction turn boundary is %d, current turn count is %d",
-			compaction.TurnCount,
-			turnCount,
+			"session: compaction active turn count is %d, current branch has %d",
+			compaction.ActiveTurnCount,
+			len(activeTurnIDs),
 		)
 	}
-	if len(previous) == 0 {
-		return nil
+	firstKept := -1
+	for index, turnID := range activeTurnIDs {
+		if turnID == compaction.FirstKeptTurnID {
+			firstKept = index
+			break
+		}
 	}
-	latest := previous[len(previous)-1]
-	if compaction.FirstKeptTurn <= latest.FirstKeptTurn {
+	if firstKept <= 0 {
 		return fmt.Errorf(
-			"session: compaction first kept turn %d does not advance past %d",
-			compaction.FirstKeptTurn,
-			latest.FirstKeptTurn,
+			"session: compaction first kept turn %q does not leave older branch history",
+			compaction.FirstKeptTurnID,
 		)
 	}
-	if compaction.TurnCount <= latest.TurnCount {
+	if retained := len(activeTurnIDs) - firstKept; retained != compaction.RetainedTurnCount {
 		return fmt.Errorf(
-			"session: compaction turn count %d does not advance past %d",
-			compaction.TurnCount,
-			latest.TurnCount,
+			"session: compaction retained turn count is %d, branch boundary retains %d",
+			compaction.RetainedTurnCount,
+			retained,
 		)
 	}
 	return nil
+}
+
+func pathToRoot(
+	leafID string,
+	nodeTypes map[string]RecordType,
+	parents map[string]string,
+) ([]string, error) {
+	if leafID == "" {
+		return nil, nil
+	}
+	path := make([]string, 0)
+	seen := make(map[string]struct{})
+	current := leafID
+	for current != "" {
+		if _, exists := seen[current]; exists {
+			return nil, fmt.Errorf("session: cycle at entry %q", current)
+		}
+		seen[current] = struct{}{}
+		if _, exists := nodeTypes[current]; !exists {
+			return nil, fmt.Errorf("%w: %s", ErrEntryNotFound, current)
+		}
+		path = append(path, current)
+		current = parents[current]
+	}
+	for left, right := 0, len(path)-1; left < right; left, right = left+1, right-1 {
+		path[left], path[right] = path[right], path[left]
+	}
+	return path, nil
+}
+
+func activeTurnIDs(
+	path []string,
+	nodeTypes map[string]RecordType,
+	compactions map[string]Compaction,
+) ([]string, error) {
+	latestCompaction := -1
+	for index, id := range path {
+		if nodeTypes[id] == RecordTypeCompaction {
+			latestCompaction = index
+		}
+	}
+	start := 0
+	if latestCompaction >= 0 {
+		compaction, exists := compactions[path[latestCompaction]]
+		if !exists {
+			return nil, fmt.Errorf(
+				"session: compaction entry %q is missing",
+				path[latestCompaction],
+			)
+		}
+		start = -1
+		for index := 0; index < latestCompaction; index++ {
+			if path[index] == compaction.FirstKeptTurnID {
+				start = index
+				break
+			}
+		}
+		if start < 0 {
+			return nil, fmt.Errorf(
+				"session: compaction first kept turn %q is not an ancestor",
+				compaction.FirstKeptTurnID,
+			)
+		}
+	}
+	turnIDs := make([]string, 0)
+	for index, id := range path {
+		if latestCompaction >= 0 && index < start {
+			continue
+		}
+		if nodeTypes[id] == RecordTypeTurn {
+			turnIDs = append(turnIDs, id)
+		}
+	}
+	return turnIDs, nil
 }
 
 func readPhysicalLine(reader *bufio.Reader) ([]byte, bool, error) {

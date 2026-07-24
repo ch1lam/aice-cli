@@ -2,8 +2,6 @@ package app
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -29,9 +27,9 @@ func prepareSession(
 	}
 
 	if requestedPath == "" {
-		id, err := newSessionID()
+		id, err := session.NewID()
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, fmt.Errorf("app: generate session id: %w", err)
 		}
 		path := filepath.Join(
 			workspace.Path(),
@@ -64,9 +62,9 @@ func prepareSession(
 	}
 	path = filepath.Clean(path)
 
-	id, err := newSessionID()
+	id, err := session.NewID()
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("app: generate session id: %w", err)
 	}
 	store, err = createSession(ctx, path, id, workspace.Path())
 	return store, nil, err
@@ -87,14 +85,6 @@ func createSession(
 		return nil, fmt.Errorf("app: create session: %w", err)
 	}
 	return store, nil
-}
-
-func newSessionID() (string, error) {
-	var entropy [16]byte
-	if _, err := rand.Read(entropy[:]); err != nil {
-		return "", fmt.Errorf("app: generate session id: %w", err)
-	}
-	return hex.EncodeToString(entropy[:]), nil
 }
 
 func openExistingSession(
@@ -153,7 +143,20 @@ func appendSessionRun(
 	if store == nil {
 		return fmt.Errorf("app: session store is required")
 	}
-	turn, err := session.NewTurn(time.Now().UnixMilli(), messages)
+	id, err := session.NewID()
+	if err != nil {
+		return fmt.Errorf("app: generate session turn id: %w", err)
+	}
+	parentID, err := store.LeafID()
+	if err != nil {
+		return fmt.Errorf("app: read session leaf: %w", err)
+	}
+	turn, err := session.NewTurn(
+		id,
+		parentID,
+		time.Now().UnixMilli(),
+		messages,
+	)
 	if err != nil {
 		return fmt.Errorf("app: create session turn: %w", err)
 	}

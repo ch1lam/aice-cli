@@ -3,6 +3,7 @@
 ## Project Direction
 
 - AICE is a batteries-included coding agent implemented in pure Go and inspired by Pi's design philosophy.
+- The current product evolution priority is Session management: an append-only JSONL tree with restart recovery, branch navigation, backtracking, and branch-local manual compaction.
 - Ship useful defaults that satisfy most users without customization, but keep providers, tools, terminal UI, persistence, execution environments, and future extensions replaceable at explicit boundaries.
 - Self-extensibility is a product requirement. Users should eventually be able to adapt AICE without forking or modifying its internals. Preserve the seams needed for that direction, but do not build a speculative plugin framework before the core contracts and sessions are stable.
 - Build a single Go module, a single binary, and a single local process. Keep the architecture small until real requirements justify more layers.
@@ -109,8 +110,11 @@ Dependency rules:
 ## Sessions and Compaction
 
 - Persist the complete original session as append-only JSONL. Do not overwrite source history during compaction.
+- Persist complete turns and compaction checkpoints as tree nodes with stable IDs and parent IDs. Persist backtracking as append-only leaf moves; never delete the abandoned branch.
+- Derive the active transcript from the root-to-leaf path. After moving the leaf to an older node, the next complete turn becomes a new child and therefore creates a branch.
 - Keep session storage, the context sent to the model, and the TUI viewport as separate representations.
 - Run compaction only at a complete turn boundary. Never split an assistant tool call from its tool result or mutate history concurrently with an active run.
+- Compaction applies only to the active branch. Its checkpoint must retain a stable first-kept turn ID so recovery and later branching do not depend on global array indexes.
 - A compacted context is a summary plus recent messages; it is a derived view, not a destructive rewrite.
 - Start with usage accounting, context-limit protection, and manual compaction. Add automatic compaction only after the JSONL and recovery behavior are stable.
 
@@ -138,6 +142,8 @@ Correct the current Go implementation with small, independently verified changes
 4. Add append-only JSONL sessions, recovery, usage accounting, and manual compaction at complete-turn boundaries.
 5. Expose the Pi-compatible mutating tools through the default host environment, then add an optional sandbox integration through the same replaceable execution boundary.
 6. Add extension capabilities only after the core message, event, tool, and session contracts are stable enough to support them without privileged internal coupling.
+
+The architecture-correction sequence above is complete. Continue Session work by extending the same JSONL tree and active-leaf model; do not add a second transcript store or a mutable database representation.
 
 Keep structural changes, behavior changes, and imported upstream code in separate reviewable commits. Do not bulk-copy a Go port and then delete unwanted features in the same change.
 

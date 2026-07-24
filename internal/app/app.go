@@ -72,6 +72,7 @@ func newCommand(dependencies dependencies) (*cobra.Command, error) {
 		Printer:    application,
 		Interactor: application,
 		Compactor:  application,
+		Navigator:  application,
 	})
 }
 

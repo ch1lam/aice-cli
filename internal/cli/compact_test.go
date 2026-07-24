@@ -19,6 +19,7 @@ func TestCompactCommandRunsCompactor(t *testing.T) {
 		Printer:    &recordingPrinter{},
 		Interactor: &recordingInteractor{},
 		Compactor:  compactor,
+		Navigator:  &recordingNavigator{},
 	})
 	if err != nil {
 		t.Fatalf("NewRootCommand() error = %v", err)
@@ -89,6 +90,7 @@ func TestCompactCommandRejectsUsageErrors(t *testing.T) {
 				Printer:    &recordingPrinter{},
 				Interactor: &recordingInteractor{},
 				Compactor:  &compactRecorder{},
+				Navigator:  &recordingNavigator{},
 			})
 			if err != nil {
 				t.Fatalf("NewRootCommand() error = %v", err)
@@ -114,6 +116,7 @@ func TestCompactCommandReturnsCompactorError(t *testing.T) {
 		Printer:    &recordingPrinter{},
 		Interactor: &recordingInteractor{},
 		Compactor:  &compactRecorder{err: wantErr},
+		Navigator:  &recordingNavigator{},
 	})
 	if err != nil {
 		t.Fatalf("NewRootCommand() error = %v", err)

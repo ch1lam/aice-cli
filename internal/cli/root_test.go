@@ -42,6 +42,19 @@ func TestNewRootCommandRejectsMissingCompactor(t *testing.T) {
 	}
 }
 
+func TestNewRootCommandRejectsMissingSessionNavigator(t *testing.T) {
+	t.Parallel()
+
+	_, err := cli.NewRootCommand(cli.Dependencies{
+		Printer:    &recordingPrinter{},
+		Interactor: &recordingInteractor{},
+		Compactor:  &recordingCompactor{},
+	})
+	if err == nil || !strings.Contains(err.Error(), "session navigator is required") {
+		t.Fatalf("NewRootCommand() error = %v, want missing navigator error", err)
+	}
+}
+
 func TestRootCommandRunsPrintMode(t *testing.T) {
 	t.Parallel()
 
@@ -50,6 +63,7 @@ func TestRootCommandRunsPrintMode(t *testing.T) {
 		Printer:    printer,
 		Interactor: &recordingInteractor{},
 		Compactor:  &recordingCompactor{},
+		Navigator:  &recordingNavigator{},
 	})
 	if err != nil {
 		t.Fatalf("NewRootCommand() error = %v", err)
@@ -87,6 +101,7 @@ func TestRootCommandRunsInteractiveMode(t *testing.T) {
 		Printer:    &recordingPrinter{},
 		Interactor: interactor,
 		Compactor:  &recordingCompactor{},
+		Navigator:  &recordingNavigator{},
 	})
 	if err != nil {
 		t.Fatalf("NewRootCommand() error = %v", err)
@@ -128,6 +143,7 @@ func TestRootCommandDescribesWorkspaceAsWorkingDirectory(t *testing.T) {
 		Printer:    &recordingPrinter{},
 		Interactor: &recordingInteractor{},
 		Compactor:  &recordingCompactor{},
+		Navigator:  &recordingNavigator{},
 	})
 	if err != nil {
 		t.Fatalf("NewRootCommand() error = %v", err)
@@ -198,6 +214,7 @@ func TestRootCommandRejectsUsageErrors(t *testing.T) {
 				Printer:    &recordingPrinter{},
 				Interactor: &recordingInteractor{},
 				Compactor:  &recordingCompactor{},
+				Navigator:  &recordingNavigator{},
 			})
 			if err != nil {
 				t.Fatalf("NewRootCommand() error = %v", err)
@@ -223,6 +240,7 @@ func TestRootCommandReturnsPrinterError(t *testing.T) {
 		Printer:    &recordingPrinter{err: wantErr},
 		Interactor: &recordingInteractor{},
 		Compactor:  &recordingCompactor{},
+		Navigator:  &recordingNavigator{},
 	})
 	if err != nil {
 		t.Fatalf("NewRootCommand() error = %v", err)
@@ -246,6 +264,7 @@ func TestRootCommandReturnsInteractorError(t *testing.T) {
 		Printer:    &recordingPrinter{},
 		Interactor: &recordingInteractor{err: wantErr},
 		Compactor:  &recordingCompactor{},
+		Navigator:  &recordingNavigator{},
 	})
 	if err != nil {
 		t.Fatalf("NewRootCommand() error = %v", err)
@@ -279,9 +298,27 @@ type recordingInteractor struct {
 
 type recordingCompactor struct{}
 
+type recordingNavigator struct{}
+
 func (*recordingCompactor) Compact(
 	context.Context,
 	cli.CompactRequest,
+	io.Writer,
+) error {
+	return nil
+}
+
+func (*recordingNavigator) SessionTree(
+	context.Context,
+	cli.SessionTreeRequest,
+	io.Writer,
+) error {
+	return nil
+}
+
+func (*recordingNavigator) CheckoutSession(
+	context.Context,
+	cli.SessionCheckoutRequest,
 	io.Writer,
 ) error {
 	return nil

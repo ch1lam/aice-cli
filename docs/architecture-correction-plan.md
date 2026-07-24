@@ -336,6 +336,20 @@ Pi 是语义和设计哲学参考，不是代码或目录模板。若后续复�
 - `✨ feat: 添加上下文用量保护`
 - `✨ feat: 添加手动 Session 压缩`
 
+#### 4.4 JSONL Session tree 与分支导航
+
+在 4.1-4.3 的线性 Session、恢复和手动压缩稳定后，Session 格式继续演进为 append-only tree：
+
+- 完整 turn 与 compaction checkpoint 都拥有稳定 `id`、`parent_id`，仍只在完整 turn 边界写入。
+- checkout/backtrack 追加 `leaf` 记录，只移动当前分支指针，不删除或改写被离开的分支。
+- 重启时按 JSONL 顺序重放节点和 leaf move，恢复最后活动叶子。
+- 模型上下文只从当前 root-to-leaf 路径派生；回溯后追加的下一轮成为旧节点的新 child。
+- compaction 只作用于当前分支，并以 `first_kept_turn_id` 记录稳定边界，不能依赖全局 turn 数组下标。
+- 会话格式升级为 version 2；不兼容 version 1，符合本项目不保留旧 Session 格式兼容层的约束。
+- 用户入口为 `aice session tree`、`aice session checkout` 和已有的 `aice compact`。
+
+仍不做自动 compaction、数据库和第二套 transcript 真相。
+
 ### 5. 开箱即用的完整内建工具
 
 类型：行为。

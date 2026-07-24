@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -29,8 +30,14 @@ func TestStoreCreateAppendAndReopen(t *testing.T) {
 		t.Fatalf("Create() error = %v", err)
 	}
 
-	textTurn := mustTurn(t, 1_721_234_567_900, textMessages())
-	toolTurn := mustTurn(t, 1_721_234_568_000, toolMessages())
+	textTurn := mustTurn(t, "turn-1", "", 1_721_234_567_900, textMessages())
+	toolTurn := mustTurn(
+		t,
+		"turn-2",
+		textTurn.ID,
+		1_721_234_568_000,
+		toolMessages(),
+	)
 	if err := store.AppendTurn(t.Context(), textTurn); err != nil {
 		t.Fatalf("AppendTurn(text) error = %v", err)
 	}
@@ -107,7 +114,7 @@ func TestStoreOpenTruncatesIncompleteTail(t *testing.T) {
 
 	path := filepath.Join(t.TempDir(), "session.jsonl")
 	store := mustCreate(t, path)
-	first := mustTurn(t, 1_721_234_567_900, textMessages())
+	first := mustTurn(t, "turn-1", "", 1_721_234_567_900, textMessages())
 	if err := store.AppendTurn(t.Context(), first); err != nil {
 		t.Fatalf("AppendTurn() error = %v", err)
 	}
@@ -150,7 +157,13 @@ func TestStoreOpenTruncatesIncompleteTail(t *testing.T) {
 		t.Fatalf("recovered size = %d, want %d", after.Size(), before.Size())
 	}
 
-	second := mustTurn(t, 1_721_234_568_000, textMessages())
+	second := mustTurn(
+		t,
+		"turn-2",
+		first.ID,
+		1_721_234_568_000,
+		textMessages(),
+	)
 	if err := recovered.AppendTurn(t.Context(), second); err != nil {
 		t.Fatalf("AppendTurn() after recovery error = %v", err)
 	}
@@ -204,16 +217,25 @@ func TestStoreOpenRejectsCompleteCorruptRecord(t *testing.T) {
 func TestStoreOpenRejectsUnsupportedVersion(t *testing.T) {
 	t.Parallel()
 
-	path := filepath.Join(t.TempDir(), "session.jsonl")
-	header := `{"type":"session","version":2,"id":"future","created_at":1721234567800,` +
-		`"working_directory":"/tmp"}` + "\n"
-	if err := os.WriteFile(path, []byte(header), 0o600); err != nil {
-		t.Fatalf("os.WriteFile() error = %v", err)
-	}
+	for _, version := range []int{1, 3} {
+		t.Run(fmt.Sprintf("version %d", version), func(t *testing.T) {
+			t.Parallel()
 
-	_, err := session.Open(t.Context(), path)
-	if !errors.Is(err, session.ErrUnsupportedVersion) {
-		t.Fatalf("Open() error = %v, want ErrUnsupportedVersion", err)
+			path := filepath.Join(t.TempDir(), "session.jsonl")
+			header := fmt.Sprintf(
+				`{"type":"session","version":%d,"id":"unsupported",`+
+					`"created_at":1721234567800,"working_directory":"/tmp"}`+"\n",
+				version,
+			)
+			if err := os.WriteFile(path, []byte(header), 0o600); err != nil {
+				t.Fatalf("os.WriteFile() error = %v", err)
+			}
+
+			_, err := session.Open(t.Context(), path)
+			if !errors.Is(err, session.ErrUnsupportedVersion) {
+				t.Fatalf("Open() error = %v, want ErrUnsupportedVersion", err)
+			}
+		})
 	}
 }
 
@@ -233,6 +255,7 @@ func TestStoreRejectsIncompleteTurnWithoutChangingFile(t *testing.T) {
 	}
 	incomplete := session.Turn{
 		Type:        session.RecordTypeTurn,
+		ID:          "turn-1",
 		CompletedAt: 1_721_234_567_900,
 		Messages: []llm.AgentMessage{
 			textMessages()[0],
@@ -257,7 +280,7 @@ func TestStoreRejectsIncompleteTurnWithoutChangingFile(t *testing.T) {
 func TestStoreRejectsDerivedMessageInsideTurn(t *testing.T) {
 	t.Parallel()
 
-	_, err := session.NewTurn(1_721_234_567_900, []llm.AgentMessage{
+	_, err := session.NewTurn("turn-1", "", 1_721_234_567_900, []llm.AgentMessage{
 		textMessages()[0],
 		llm.CompactionSummaryMessage{
 			Role:         llm.RoleCompactionSummary,
@@ -277,7 +300,7 @@ func TestStoreHonorsCancellationAndClosedState(t *testing.T) {
 
 	path := filepath.Join(t.TempDir(), "session.jsonl")
 	store := mustCreate(t, path)
-	turn := mustTurn(t, 1_721_234_567_900, textMessages())
+	turn := mustTurn(t, "turn-1", "", 1_721_234_567_900, textMessages())
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	if err := store.AppendTurn(ctx, turn); !errors.Is(err, context.Canceled) {
@@ -294,6 +317,152 @@ func TestStoreHonorsCancellationAndClosedState(t *testing.T) {
 	}
 }
 
+func TestStoreRestoresLeafMoveAndPreservesBranches(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "session.jsonl")
+	store := mustCreate(t, path)
+	first := mustTurn(
+		t,
+		"turn-1",
+		"",
+		1_721_234_567_900,
+		namedTextMessages("first prompt", "first answer", 10),
+	)
+	abandoned := mustTurn(
+		t,
+		"turn-2",
+		first.ID,
+		1_721_234_568_000,
+		namedTextMessages("old branch", "old answer", 20),
+	)
+	if err := store.AppendTurn(t.Context(), first); err != nil {
+		t.Fatalf("AppendTurn(first) error = %v", err)
+	}
+	if err := store.AppendTurn(t.Context(), abandoned); err != nil {
+		t.Fatalf("AppendTurn(abandoned) error = %v", err)
+	}
+	move, err := session.NewLeaf(
+		"leaf-1",
+		abandoned.ID,
+		first.ID,
+		1_721_234_568_050,
+	)
+	if err != nil {
+		t.Fatalf("NewLeaf() error = %v", err)
+	}
+	if err := store.AppendLeaf(t.Context(), move); err != nil {
+		t.Fatalf("AppendLeaf() error = %v", err)
+	}
+	replacement := mustTurn(
+		t,
+		"turn-3",
+		first.ID,
+		1_721_234_568_100,
+		namedTextMessages("new branch", "new answer", 30),
+	)
+	if err := store.AppendTurn(t.Context(), replacement); err != nil {
+		t.Fatalf("AppendTurn(replacement) error = %v", err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+
+	reopened, err := session.Open(t.Context(), path)
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer func() {
+		if err := reopened.Close(); err != nil {
+			t.Errorf("Close() error = %v", err)
+		}
+	}()
+	snapshot, err := reopened.Snapshot()
+	if err != nil {
+		t.Fatalf("Snapshot() error = %v", err)
+	}
+	if snapshot.LeafID != replacement.ID {
+		t.Fatalf("active leaf = %q, want %q", snapshot.LeafID, replacement.ID)
+	}
+	if want := []string{first.ID, abandoned.ID, replacement.ID}; !reflect.DeepEqual(
+		snapshot.Order,
+		want,
+	) {
+		t.Fatalf("tree order = %v, want %v", snapshot.Order, want)
+	}
+	if want := []session.Leaf{move}; !reflect.DeepEqual(snapshot.LeafMoves, want) {
+		t.Fatalf("leaf moves = %#v, want %#v", snapshot.LeafMoves, want)
+	}
+
+	oldBranch, err := session.Branch(snapshot, abandoned.ID)
+	if err != nil {
+		t.Fatalf("Branch(old) error = %v", err)
+	}
+	if got := nodeIDs(oldBranch); !reflect.DeepEqual(got, []string{first.ID, abandoned.ID}) {
+		t.Fatalf("old branch = %v", got)
+	}
+	activeBranch, err := session.ActiveBranch(snapshot)
+	if err != nil {
+		t.Fatalf("ActiveBranch() error = %v", err)
+	}
+	if got := nodeIDs(activeBranch); !reflect.DeepEqual(got, []string{first.ID, replacement.ID}) {
+		t.Fatalf("active branch = %v", got)
+	}
+
+	contextMessages, err := session.BuildContext(snapshot)
+	if err != nil {
+		t.Fatalf("BuildContext() error = %v", err)
+	}
+	if len(contextMessages) != 4 {
+		t.Fatalf("context messages = %d, want two active turns", len(contextMessages))
+	}
+	assertSessionText(t, contextMessages[0], llm.RoleUser, "first prompt")
+	assertSessionText(t, contextMessages[2], llm.RoleUser, "new branch")
+}
+
+func TestStoreRejectsLeafMoveToMissingEntryWithoutChangingFile(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "session.jsonl")
+	store := mustCreate(t, path)
+	defer func() {
+		if err := store.Close(); err != nil {
+			t.Errorf("Close() error = %v", err)
+		}
+	}()
+	first := mustTurn(t, "turn-1", "", 100, textMessages())
+	if err := store.AppendTurn(t.Context(), first); err != nil {
+		t.Fatalf("AppendTurn() error = %v", err)
+	}
+	before, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("Stat() error = %v", err)
+	}
+	move, err := session.NewLeaf("leaf-1", first.ID, "missing", 200)
+	if err != nil {
+		t.Fatalf("NewLeaf() error = %v", err)
+	}
+	err = store.AppendLeaf(t.Context(), move)
+	if !errors.Is(err, session.ErrEntryNotFound) {
+		t.Fatalf("AppendLeaf() error = %v, want ErrEntryNotFound", err)
+	}
+	after, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("Stat() after rejection error = %v", err)
+	}
+	if after.Size() != before.Size() {
+		t.Fatalf("file size after rejection = %d, want %d", after.Size(), before.Size())
+	}
+}
+
+func nodeIDs(nodes []session.Node) []string {
+	ids := make([]string, len(nodes))
+	for index, node := range nodes {
+		ids[index] = node.ID
+	}
+	return ids
+}
+
 func mustCreate(t *testing.T, path string) *session.Store {
 	t.Helper()
 
@@ -308,10 +477,16 @@ func mustCreate(t *testing.T, path string) *session.Store {
 	return store
 }
 
-func mustTurn(t *testing.T, completedAt int64, messages []llm.AgentMessage) session.Turn {
+func mustTurn(
+	t *testing.T,
+	id string,
+	parentID string,
+	completedAt int64,
+	messages []llm.AgentMessage,
+) session.Turn {
 	t.Helper()
 
-	turn, err := session.NewTurn(completedAt, messages)
+	turn, err := session.NewTurn(id, parentID, completedAt, messages)
 	if err != nil {
 		t.Fatalf("NewTurn() error = %v", err)
 	}

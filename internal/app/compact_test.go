@@ -171,11 +171,12 @@ func TestApplicationCompactAppendsCheckpointAndRestoresDerivedContext(
 		)
 	}
 	latest := snapshot.Compactions[1]
-	if latest.FirstKeptTurn != 2 || latest.TurnCount != 3 {
+	if latest.FirstKeptTurnID != snapshot.Turns[2].ID ||
+		latest.ActiveTurnCount != 2 ||
+		latest.RetainedTurnCount != 1 {
 		t.Errorf(
-			"latest boundary = first %d at %d turns, want first 2 at 3 turns",
-			latest.FirstKeptTurn,
-			latest.TurnCount,
+			"latest boundary = %#v, want third turn retained from two active turns",
+			latest,
 		)
 	}
 }
@@ -318,6 +319,80 @@ func TestApplicationCompactRejectsNothingToCompactBeforeCreatingModel(
 	if len(snapshot.Compactions) != 0 {
 		t.Errorf("compactions = %#v, want none", snapshot.Compactions)
 	}
+}
+
+func TestApplicationCompactUsesOnlyActiveBranch(t *testing.T) {
+	t.Parallel()
+
+	workspace := t.TempDir()
+	sessionPath := filepath.Join(t.TempDir(), "conversation.jsonl")
+	runPrintTurn(t, workspace, sessionPath, "first prompt", "first answer")
+	runPrintTurn(t, workspace, sessionPath, "old branch", "old answer")
+	snapshot := openSessionSnapshot(t, sessionPath)
+
+	checkout := newSessionTestCommand(t)
+	checkout.SetOut(io.Discard)
+	checkout.SetArgs([]string{
+		"session", "checkout",
+		"--workspace", workspace,
+		"--session", sessionPath,
+		"--entry", snapshot.Turns[0].ID,
+	})
+	if err := checkout.ExecuteContext(t.Context()); err != nil {
+		t.Fatalf("checkout ExecuteContext() error = %v", err)
+	}
+	runPrintTurn(t, workspace, sessionPath, "new branch", "new answer")
+
+	summaryModel := &controlledModel{
+		response:   "active branch checkpoint",
+		stopReason: llm.StopReasonStop,
+	}
+	compact := newCompactTestCommand(t, summaryModel, 1)
+	compact.SetOut(io.Discard)
+	compact.SetArgs([]string{
+		"compact",
+		"--workspace", workspace,
+		"--session", sessionPath,
+	})
+	if err := compact.ExecuteContext(t.Context()); err != nil {
+		t.Fatalf("compact ExecuteContext() error = %v", err)
+	}
+	prompt := messageText(t, summaryModel.requests[0].Messages[0])
+	if !strings.Contains(prompt, "first prompt") {
+		t.Fatalf("compaction prompt = %q, want active ancestor", prompt)
+	}
+	if strings.Contains(prompt, "old branch") {
+		t.Fatalf("compaction prompt = %q, contains abandoned branch", prompt)
+	}
+	if strings.Contains(prompt, "new branch") {
+		t.Fatalf("compaction prompt = %q, contains retained active turn", prompt)
+	}
+
+	snapshot = openSessionSnapshot(t, sessionPath)
+	if len(snapshot.Turns) != 3 {
+		t.Fatalf("turns after branch compaction = %d, want all source turns", len(snapshot.Turns))
+	}
+	if len(snapshot.Compactions) != 1 {
+		t.Fatalf("compactions = %d, want 1", len(snapshot.Compactions))
+	}
+	checkpoint := snapshot.Compactions[0]
+	if checkpoint.ParentID != snapshot.Turns[2].ID ||
+		checkpoint.FirstKeptTurnID != snapshot.Turns[2].ID {
+		t.Fatalf("branch checkpoint = %#v, want current branch boundary", checkpoint)
+	}
+	contextMessages, err := session.BuildContext(snapshot)
+	if err != nil {
+		t.Fatalf("BuildContext() error = %v", err)
+	}
+	if len(contextMessages) != 3 {
+		t.Fatalf("context messages = %d, want summary and retained turn", len(contextMessages))
+	}
+	if summary, ok := contextMessages[0].(llm.CompactionSummaryMessage); !ok ||
+		summary.Summary != "active branch checkpoint" {
+		t.Fatalf("context summary = %#v", contextMessages[0])
+	}
+	assertTextMessage(t, contextMessages[1], llm.RoleUser, "new branch")
+	assertTextMessage(t, contextMessages[2], llm.RoleAssistant, "new answer")
 }
 
 func runPrintTurn(
