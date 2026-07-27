@@ -167,9 +167,10 @@ func (a *application) Interactive(
 	}
 
 	runner := &interactiveSession{
-		loop:    loop,
-		store:   store,
-		history: history,
+		application: a,
+		loop:        loop,
+		store:       store,
+		history:     history,
 	}
 	runErr := a.dependencies.runTUI(ctx, runner, tui.Options{
 		Input:  request.Input,
@@ -221,9 +222,10 @@ func (a *application) newModel() (agent.Model, error) {
 }
 
 type interactiveSession struct {
-	loop    *agent.Loop
-	store   *session.Store
-	history []llm.AgentMessage
+	application *application
+	loop        *agent.Loop
+	store       *session.Store
+	history     []llm.AgentMessage
 }
 
 func (s *interactiveSession) Run(

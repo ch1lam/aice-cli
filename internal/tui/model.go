@@ -24,6 +24,7 @@ const (
 	minimumViewport    = 1
 	maximumEventBatch  = 64
 	inputMaximumHeight = 6
+	maximumCommandRows = 6
 )
 
 type entryKind uint8
@@ -34,6 +35,7 @@ const (
 	entryTool
 	entryError
 	entryNotice
+	entryCommand
 )
 
 type transcriptEntry struct {
@@ -60,10 +62,13 @@ type model struct {
 	help     help.Model
 	keys     keyMap
 	entries  []transcriptEntry
+	commands []SlashCommand
 
 	width            int
 	height           int
 	assistantEntry   int
+	commandSelection int
+	commandDismissed bool
 	running          bool
 	cancelRequested  bool
 	controllerClosed bool
@@ -73,6 +78,7 @@ type model struct {
 func newModel(
 	requests chan<- runRequest,
 	controllerDone <-chan struct{},
+	externalCommands ...SlashCommand,
 ) model {
 	input := textarea.New()
 	input.Prompt = "┃ "
@@ -134,6 +140,7 @@ func newModel(
 		spinner:        activity,
 		help:           helpView,
 		keys:           newKeyMap(),
+		commands:       slashCommandCatalog(externalCommands),
 		assistantEntry: -1,
 		status:         "Ready",
 	}
@@ -160,9 +167,7 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			return updated, command
 		}
 		if !m.running {
-			var command tea.Cmd
-			m.input, command = m.input.Update(message)
-			m.resizeLayout()
+			command := m.updateInput(message)
 			return m, command
 		}
 	case runStartedMsg:
@@ -189,10 +194,8 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m.spinner, command = m.spinner.Update(message)
 		commands = append(commands, command)
 	} else {
-		var command tea.Cmd
-		m.input, command = m.input.Update(message)
+		command := m.updateInput(message)
 		commands = append(commands, command)
-		m.resizeLayout()
 	}
 
 	var viewportCommand tea.Cmd
@@ -207,6 +210,7 @@ func (m model) View() tea.View {
 		lipgloss.Left,
 		m.headerView(width),
 		m.viewport.View(),
+		m.slashCommandMenuView(width),
 		m.composerView(width),
 		m.footerView(width),
 	)
@@ -221,6 +225,26 @@ func (m model) View() tea.View {
 }
 
 func (m model) handleKey(message tea.KeyPressMsg) (model, tea.Cmd, bool) {
+	if !m.running && m.slashCommandMenuVisible() {
+		switch message.Code {
+		case tea.KeyUp:
+			m.moveSlashCommandSelection(-1)
+			return m, nil, true
+		case tea.KeyDown:
+			m.moveSlashCommandSelection(1)
+			return m, nil, true
+		case tea.KeyTab:
+			m.completeSelectedSlashCommand()
+			m.resizeLayout()
+			return m, nil, true
+		case tea.KeyEscape:
+			m.commandDismissed = true
+			m.resizeLayout()
+			m.refreshViewport(false)
+			return m, nil, true
+		}
+	}
+
 	switch {
 	case key.Matches(message, m.keys.interrupt):
 		if m.running {
@@ -253,6 +277,11 @@ func (m model) handleKey(message tea.KeyPressMsg) (model, tea.Cmd, bool) {
 		if m.running {
 			return m, nil, true
 		}
+		if m.slashCommandMenuVisible() && !m.hasExactSlashCommand() {
+			m.completeSelectedSlashCommand()
+			m.resizeLayout()
+			return m, nil, true
+		}
 		return m.submit()
 	case key.Matches(message, m.keys.scroll):
 		switch message.Code {
@@ -266,14 +295,34 @@ func (m model) handleKey(message tea.KeyPressMsg) (model, tea.Cmd, bool) {
 	return m, nil, false
 }
 
+func (m *model) updateInput(message tea.Msg) tea.Cmd {
+	previousValue := m.input.Value()
+	var command tea.Cmd
+	m.input, command = m.input.Update(message)
+	if m.input.Value() != previousValue {
+		m.commandSelection = 0
+		m.commandDismissed = false
+	}
+	m.resizeLayout()
+	return command
+}
+
 func (m model) submit() (model, tea.Cmd, bool) {
 	prompt := strings.TrimSpace(m.input.Value())
-	if prompt == "" || m.controllerClosed {
+	if prompt == "" {
+		return m, nil, true
+	}
+	if request, slashCommand := parseSlashCommand(prompt); slashCommand {
+		return m.submitSlashCommand(prompt, request)
+	}
+	if m.controllerClosed {
 		return m, nil, true
 	}
 
 	m.entries = append(m.entries, transcriptEntry{kind: entryUser, text: prompt})
 	m.input.Reset()
+	m.commandSelection = 0
+	m.commandDismissed = false
 	m.input.Blur()
 	m.running = true
 	m.assistantEntry = -1
@@ -281,6 +330,103 @@ func (m model) submit() (model, tea.Cmd, bool) {
 	m.resizeLayout()
 	m.refreshViewport(true)
 	return m, startRun(m.requests, m.controllerDone, prompt), true
+}
+
+func (m model) submitSlashCommand(
+	raw string,
+	request SlashCommandRequest,
+) (model, tea.Cmd, bool) {
+	command, exists := findSlashCommand(m.commands, request.Name)
+	if !exists {
+		return m.commandError(
+			raw,
+			fmt.Sprintf(
+				"Unknown slash command /%s. Use /help to list commands.",
+				request.Name,
+			),
+		)
+	}
+
+	switch command.Name {
+	case "help":
+		if request.Arguments != "" {
+			return m.commandUsageError(raw, command)
+		}
+		m.entries = append(
+			m.entries,
+			transcriptEntry{kind: entryUser, text: raw},
+			transcriptEntry{
+				kind: entryCommand,
+				text: slashCommandHelp(m.commands),
+			},
+		)
+		m.resetCommandInput()
+		m.status = "Slash commands listed"
+		m.resizeLayout()
+		m.refreshViewport(true)
+		return m, nil, true
+	case "clear":
+		if request.Arguments != "" {
+			return m.commandUsageError(raw, command)
+		}
+		m.entries = nil
+		m.resetCommandInput()
+		m.status = "Visible transcript cleared; Session history is unchanged"
+		m.resizeLayout()
+		m.refreshViewport(true)
+		return m, nil, true
+	case "quit":
+		if request.Arguments != "" {
+			return m.commandUsageError(raw, command)
+		}
+		m.resetCommandInput()
+		return m, tea.Quit, true
+	}
+
+	if m.controllerClosed {
+		return m.commandError(raw, "TUI run controller stopped")
+	}
+	m.entries = append(m.entries, transcriptEntry{kind: entryUser, text: raw})
+	m.resetCommandInput()
+	m.input.Blur()
+	m.running = true
+	m.assistantEntry = -1
+	m.status = "Running /" + command.Name + "..."
+	m.resizeLayout()
+	m.refreshViewport(true)
+	return m, startSlashCommand(m.requests, m.controllerDone, request), true
+}
+
+func (m model) commandUsageError(
+	raw string,
+	command SlashCommand,
+) (model, tea.Cmd, bool) {
+	return m.commandError(
+		raw,
+		"Usage: "+slashCommandUsage(command),
+	)
+}
+
+func (m model) commandError(
+	raw string,
+	message string,
+) (model, tea.Cmd, bool) {
+	m.entries = append(
+		m.entries,
+		transcriptEntry{kind: entryUser, text: raw},
+		transcriptEntry{kind: entryError, text: message},
+	)
+	m.resetCommandInput()
+	m.status = message
+	m.resizeLayout()
+	m.refreshViewport(true)
+	return m, nil, true
+}
+
+func (m *model) resetCommandInput() {
+	m.input.Reset()
+	m.commandSelection = 0
+	m.commandDismissed = false
 }
 
 func (m model) applyRunBatch(batch runBatchMsg) (tea.Model, tea.Cmd) {
@@ -298,6 +444,13 @@ func (m model) applyRunBatch(batch runBatchMsg) (tea.Model, tea.Cmd) {
 				m.status = "Thinking..."
 			}
 			continue
+		}
+		if strings.TrimSpace(update.output) != "" {
+			m.entries = append(m.entries, transcriptEntry{
+				kind: entryCommand,
+				text: strings.TrimSpace(update.output),
+			})
+			contentChanged = true
 		}
 		if update.done {
 			commands = append(commands, m.finishRun(update.err))
@@ -443,6 +596,7 @@ func (m *model) resizeLayout() {
 	m.viewport.SetWidth(width)
 	chromeHeight := lipgloss.Height(m.headerView(width)) +
 		lipgloss.Height(m.footerView(width)) +
+		lipgloss.Height(m.slashCommandMenuView(width)) +
 		lipgloss.Height(m.composerView(width))
 	viewportHeight := m.height - chromeHeight
 	m.viewport.SetHeight(max(viewportHeight, minimumViewport))
@@ -515,6 +669,121 @@ func (m model) composerView(width int) string {
 	return style.Width(contentWidth).Render(m.input.View())
 }
 
+func (m model) slashCommandMenuVisible() bool {
+	return !m.running &&
+		!m.commandDismissed &&
+		len(m.matchingSlashCommands()) > 0
+}
+
+func (m model) matchingSlashCommands() []SlashCommand {
+	return matchingSlashCommands(m.commands, m.input.Value())
+}
+
+func (m *model) moveSlashCommandSelection(delta int) {
+	matches := m.matchingSlashCommands()
+	if len(matches) == 0 {
+		m.commandSelection = 0
+		return
+	}
+	m.commandSelection = (m.commandSelection + delta + len(matches)) % len(matches)
+}
+
+func (m model) selectedSlashCommand() (SlashCommand, bool) {
+	matches := m.matchingSlashCommands()
+	if len(matches) == 0 {
+		return SlashCommand{}, false
+	}
+	selection := min(max(m.commandSelection, 0), len(matches)-1)
+	return matches[selection], true
+}
+
+func (m model) hasExactSlashCommand() bool {
+	request, slashCommand := parseSlashCommand(m.input.Value())
+	if !slashCommand || request.Arguments != "" {
+		return false
+	}
+	_, exists := findSlashCommand(m.commands, request.Name)
+	return exists
+}
+
+func (m *model) completeSelectedSlashCommand() {
+	command, exists := m.selectedSlashCommand()
+	if !exists {
+		return
+	}
+	value := "/" + command.Name
+	if command.ArgumentHint != "" {
+		value += " "
+	}
+	m.input.SetValue(value)
+	m.input.CursorEnd()
+	m.commandSelection = 0
+	m.commandDismissed = command.ArgumentHint == ""
+}
+
+func (m model) slashCommandMenuView(width int) string {
+	if !m.slashCommandMenuVisible() {
+		return ""
+	}
+	matches := m.matchingSlashCommands()
+	selection := min(max(m.commandSelection, 0), len(matches)-1)
+	start := max(selection-maximumCommandRows+1, 0)
+	end := min(start+maximumCommandRows, len(matches))
+
+	style := slashCommandMenuStyle
+	innerWidth := max(width-style.GetHorizontalFrameSize(), 1)
+	usageWidth := min(max(innerWidth/2, 12), 28)
+	rows := make([]string, 0, end-start+2)
+	rows = append(
+		rows,
+		labelStyle.Render("SLASH COMMANDS")+"  "+
+			mutedStyle.Render("↑/↓ select · tab complete · esc close"),
+	)
+	for index := start; index < end; index++ {
+		command := matches[index]
+		prefix := "  "
+		rowStyle := slashCommandRowStyle
+		if index == selection {
+			prefix = "› "
+			rowStyle = slashCommandSelectedStyle
+		}
+		usage := truncateTerminalText(
+			slashCommandUsage(command),
+			max(usageWidth-2, 1),
+		)
+		usage += strings.Repeat(" ", max(usageWidth-2-lipgloss.Width(usage), 0))
+		leading := prefix + labelStyle.Render(usage) + "  "
+		descriptionWidth := max(innerWidth-lipgloss.Width(leading), 0)
+		description := truncateTerminalText(
+			command.Description,
+			descriptionWidth,
+		)
+		row := leading
+		if descriptionWidth > 0 {
+			row += mutedStyle.Render(description)
+		}
+		rows = append(rows, rowStyle.Width(innerWidth).Render(row))
+	}
+	return style.Width(width).Render(strings.Join(rows, "\n"))
+}
+
+func truncateTerminalText(value string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	if lipgloss.Width(value) <= width {
+		return value
+	}
+	if width == 1 {
+		return "…"
+	}
+	runes := []rune(value)
+	for len(runes) > 0 && lipgloss.Width(string(runes)) > width-1 {
+		runes = runes[:len(runes)-1]
+	}
+	return string(runes) + "…"
+}
+
 func (m model) transcriptView() string {
 	if len(m.entries) == 0 {
 		return m.welcomeView()
@@ -540,12 +809,13 @@ func (m model) welcomeView() string {
 	description := mutedStyle.Render(
 		"Ask AICE to trace behavior, explain architecture, or inspect a file.",
 	)
+	commandHint := mutedStyle.Render("Type / to browse interactive commands.")
 	toolLabel := mutedStyle.Render("AVAILABLE TOOLS")
 	tools := labelStyle.Render(
 		"read   ls   grep   find",
 	)
 	card := cardStyle.Render(strings.Join(
-		[]string{title, description, "", toolLabel, tools},
+		[]string{title, description, commandHint, "", toolLabel, tools},
 		"\n",
 	))
 	return lipgloss.Place(
@@ -612,6 +882,11 @@ func (m model) entryView(entry transcriptEntry) string {
 	case entryNotice:
 		return lipgloss.NewStyle().Padding(0, 1).Render(
 			noticeStyle.Render("• " + entry.text),
+		)
+	case entryCommand:
+		return lipgloss.NewStyle().Padding(0, 1).Render(
+			headerStyle.Render("✦ COMMAND") + "\n" +
+				commandOutputStyle.Render(entry.text),
 		)
 	default:
 		return ""
@@ -695,6 +970,22 @@ func startRun(
 		case <-controllerDone:
 			return runUnavailableMsg{}
 		case requests <- runRequest{prompt: prompt, updates: updates}:
+			return runStartedMsg{updates: updates}
+		}
+	}
+}
+
+func startSlashCommand(
+	requests chan<- runRequest,
+	controllerDone <-chan struct{},
+	request SlashCommandRequest,
+) tea.Cmd {
+	return func() tea.Msg {
+		updates := make(chan runUpdate, runUpdateBuffer)
+		select {
+		case <-controllerDone:
+			return runUnavailableMsg{}
+		case requests <- runRequest{command: &request, updates: updates}:
 			return runStartedMsg{updates: updates}
 		}
 	}

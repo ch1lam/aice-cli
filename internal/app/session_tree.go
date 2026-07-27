@@ -42,6 +42,13 @@ func (a *application) SessionTree(
 		returnErr = errors.Join(returnErr, store.Close())
 	}()
 
+	return writeSessionTree(output, snapshot)
+}
+
+func writeSessionTree(
+	output io.Writer,
+	snapshot session.Snapshot,
+) error {
 	nodes, err := session.Nodes(snapshot)
 	if err != nil {
 		return fmt.Errorf("app: read session tree: %w", err)
@@ -116,7 +123,7 @@ func (a *application) CheckoutSession(
 	if err != nil {
 		return fmt.Errorf("app: create workspace: %w", err)
 	}
-	store, snapshot, err := openExistingSession(
+	store, _, err := openExistingSession(
 		ctx,
 		workspace,
 		request.Session,
@@ -128,7 +135,23 @@ func (a *application) CheckoutSession(
 		returnErr = errors.Join(returnErr, store.Close())
 	}()
 
-	targetID := strings.TrimSpace(request.Entry)
+	return checkoutSessionStore(ctx, store, request.Entry, output)
+}
+
+func checkoutSessionStore(
+	ctx context.Context,
+	store *session.Store,
+	entry string,
+	output io.Writer,
+) error {
+	if store == nil {
+		return fmt.Errorf("app: session store is required")
+	}
+	snapshot, err := store.Snapshot()
+	if err != nil {
+		return fmt.Errorf("app: read session: %w", err)
+	}
+	targetID := strings.TrimSpace(entry)
 	if targetID == "root" {
 		targetID = ""
 	} else {

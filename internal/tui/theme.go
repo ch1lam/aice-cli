@@ -62,9 +62,24 @@ var (
 				Border(lipgloss.RoundedBorder()).
 				BorderForeground(accentColor).
 				Padding(0, 1)
-	composerBlurredStyle = composerFocusedStyle.BorderForeground(subtleColor)
-	errorStyle           = lipgloss.NewStyle().Foreground(errorColor)
-	noticeStyle          = lipgloss.NewStyle().Foreground(warningColor)
+	composerBlurredStyle  = composerFocusedStyle.BorderForeground(subtleColor)
+	slashCommandMenuStyle = lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(subtleColor).
+				Padding(0, 1)
+	slashCommandRowStyle = lipgloss.NewStyle().
+				Foreground(primaryTextColor)
+	slashCommandSelectedStyle = slashCommandRowStyle.
+					Background(panelBlackColor).
+					Foreground(primaryTextColor)
+	commandOutputStyle = lipgloss.NewStyle().
+				Foreground(primaryTextColor).
+				BorderLeft(true).
+				BorderStyle(lipgloss.NormalBorder()).
+				BorderForeground(informationColor).
+				PaddingLeft(1)
+	errorStyle  = lipgloss.NewStyle().Foreground(errorColor)
+	noticeStyle = lipgloss.NewStyle().Foreground(warningColor)
 )
 
 func inkMarkdownStyle() ansi.StyleConfig {

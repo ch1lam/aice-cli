@@ -57,7 +57,7 @@ func (a *application) Compact(
 	if err != nil {
 		return fmt.Errorf("app: create workspace: %w", err)
 	}
-	store, snapshot, err := openExistingSession(
+	store, _, err := openExistingSession(
 		ctx,
 		workspace,
 		request.Session,
@@ -69,6 +69,27 @@ func (a *application) Compact(
 		returnErr = errors.Join(returnErr, store.Close())
 	}()
 
+	result, err := a.compactSession(ctx, store)
+	if err != nil {
+		return err
+	}
+	if _, err := io.WriteString(output, result); err != nil {
+		return fmt.Errorf("app: write compaction result: %w", err)
+	}
+	return nil
+}
+
+func (a *application) compactSession(
+	ctx context.Context,
+	store *session.Store,
+) (string, error) {
+	if store == nil {
+		return "", fmt.Errorf("app: session store is required")
+	}
+	snapshot, err := store.Snapshot()
+	if err != nil {
+		return "", fmt.Errorf("app: read session: %w", err)
+	}
 	preparation, err := session.PrepareCompaction(
 		snapshot,
 		session.CompactionSettings{
@@ -76,18 +97,18 @@ func (a *application) Compact(
 		},
 	)
 	if err != nil {
-		return fmt.Errorf("app: prepare session compaction: %w", err)
+		return "", fmt.Errorf("app: prepare session compaction: %w", err)
 	}
 	summary, usage, err := a.generateCompactionSummary(
 		ctx,
 		preparation.MessagesToSummarize,
 	)
 	if err != nil {
-		return err
+		return "", err
 	}
 	checkpointID, err := session.NewID()
 	if err != nil {
-		return fmt.Errorf("app: generate compaction id: %w", err)
+		return "", fmt.Errorf("app: generate compaction id: %w", err)
 	}
 	checkpoint, err := session.NewCompaction(session.CompactionInput{
 		ID:                checkpointID,
@@ -101,21 +122,17 @@ func (a *application) Compact(
 		Usage:             usage,
 	})
 	if err != nil {
-		return fmt.Errorf("app: create session compaction: %w", err)
+		return "", fmt.Errorf("app: create session compaction: %w", err)
 	}
 	if err := store.AppendCompaction(ctx, checkpoint); err != nil {
-		return fmt.Errorf("app: append session compaction: %w", err)
+		return "", fmt.Errorf("app: append session compaction: %w", err)
 	}
 
-	if _, err := fmt.Fprintf(
-		output,
+	return fmt.Sprintf(
 		"Compacted Session at approximately %d tokens; retained %d recent turn(s).\n",
 		preparation.TokensBefore,
 		preparation.RetainedTurnCount,
-	); err != nil {
-		return fmt.Errorf("app: write compaction result: %w", err)
-	}
-	return nil
+	), nil
 }
 
 func (a *application) generateCompactionSummary(

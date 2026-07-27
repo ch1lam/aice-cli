@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/ch1lam/aice-cli/internal/agent"
 	"github.com/ch1lam/aice-cli/internal/llm"
@@ -314,6 +315,220 @@ func TestModelPlacesComposerAboveStatusAndHelp(t *testing.T) {
 			statusIndex,
 			helpIndex,
 		)
+	}
+}
+
+func TestModelSlashCommandMenuCompletesAndRunsApplicationCommand(
+	t *testing.T,
+) {
+	t.Parallel()
+
+	requests := make(chan runRequest, 1)
+	current := newModel(
+		requests,
+		make(chan struct{}),
+		SlashCommand{Name: "compact", Description: "Compact Session"},
+	)
+	current = updateModel(t, current, tea.WindowSizeMsg{Width: 80, Height: 24})
+	current.input.SetValue("/co")
+
+	menu := current.View().Content
+	if !strings.Contains(menu, "SLASH COMMANDS") ||
+		!strings.Contains(menu, "/compact") {
+		t.Fatalf("slash command menu = %q, want compact suggestion", menu)
+	}
+
+	completed, command, handled := current.handleKey(tea.KeyPressMsg{
+		Code: tea.KeyTab,
+	})
+	if !handled || command != nil {
+		t.Fatal("tab did not complete the selected slash command")
+	}
+	if got := completed.input.Value(); got != "/compact" {
+		t.Fatalf("completed input = %q, want /compact", got)
+	}
+
+	starting, command, handled := completed.handleKey(tea.KeyPressMsg{
+		Code: tea.KeyEnter,
+	})
+	if !handled || command == nil {
+		t.Fatal("enter did not submit the completed slash command")
+	}
+	rawStartMessage := command()
+	startMessage, ok := rawStartMessage.(runStartedMsg)
+	if !ok {
+		t.Fatalf("start command message = %T, want runStartedMsg", rawStartMessage)
+	}
+	request := <-requests
+	if request.command == nil || *request.command != (SlashCommandRequest{Name: "compact"}) {
+		t.Fatalf("run request command = %#v, want compact", request.command)
+	}
+
+	starting = updateModel(t, starting, startMessage)
+	finished := updateModel(t, starting, runBatchMsg{updates: []runUpdate{
+		{cancel: func() {}},
+		{
+			output: "Compacted Session; retained 1 recent turn.",
+			done:   true,
+		},
+	}})
+	if finished.running {
+		t.Fatal("slash command remains running after terminal update")
+	}
+	if transcript := finished.transcriptView(); !strings.Contains(
+		transcript,
+		"Compacted Session",
+	) {
+		t.Fatalf("command output missing from transcript: %q", transcript)
+	}
+}
+
+func TestModelSlashCommandMenuCompletesArgumentCommand(t *testing.T) {
+	t.Parallel()
+
+	current := newModel(
+		make(chan runRequest),
+		make(chan struct{}),
+		SlashCommand{
+			Name:         "checkout",
+			Description:  "Move active leaf",
+			ArgumentHint: "<entry|root>",
+		},
+	)
+	current.input.SetValue("/check")
+
+	completed, command, handled := current.handleKey(tea.KeyPressMsg{
+		Code: tea.KeyTab,
+	})
+	if !handled || command != nil {
+		t.Fatal("tab did not complete the argument command")
+	}
+	if got := completed.input.Value(); got != "/checkout " {
+		t.Fatalf("completed input = %q, want command and trailing space", got)
+	}
+	if completed.slashCommandMenuVisible() {
+		t.Fatal("slash command menu remains visible while entering arguments")
+	}
+}
+
+func TestModelSlashCommandMenuNavigatesWithArrowKeys(t *testing.T) {
+	t.Parallel()
+
+	current := newModel(make(chan runRequest), make(chan struct{}))
+	current.input.SetValue("/")
+
+	selected, command, handled := current.handleKey(tea.KeyPressMsg{
+		Code: tea.KeyDown,
+	})
+	if !handled || command != nil {
+		t.Fatal("down did not move slash command selection")
+	}
+	completed, command, handled := selected.handleKey(tea.KeyPressMsg{
+		Code: tea.KeyTab,
+	})
+	if !handled || command != nil {
+		t.Fatal("tab did not complete the moved selection")
+	}
+	if got := completed.input.Value(); got != "/clear" {
+		t.Fatalf("completed input = %q, want second command /clear", got)
+	}
+}
+
+func TestModelSlashCommandMenuKeepsSuggestionsToOneLine(t *testing.T) {
+	t.Parallel()
+
+	current := newModel(
+		make(chan runRequest),
+		make(chan struct{}),
+		SlashCommand{Name: "session", Description: "Show current Session information"},
+		SlashCommand{Name: "tree", Description: "Show all Session branches and the active leaf"},
+		SlashCommand{
+			Name:         "checkout",
+			Description:  "Move the active leaf without deleting later branches",
+			ArgumentHint: "<entry|root>",
+		},
+		SlashCommand{Name: "compact", Description: "Compact the active branch"},
+	)
+	current.input.SetValue("/")
+
+	menu := current.slashCommandMenuView(80)
+	wantHeight := maximumCommandRows + 3
+	if got := lipgloss.Height(menu); got != wantHeight {
+		t.Fatalf(
+			"slash command menu height = %d, want %d one-line rows:\n%s",
+			got,
+			wantHeight,
+			menu,
+		)
+	}
+}
+
+func TestModelLocalSlashCommandsDoNotReachAgentRunner(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		command     string
+		initial     []transcriptEntry
+		wantEntries int
+		wantText    string
+	}{
+		{
+			name:        "help",
+			command:     "/help",
+			wantEntries: 2,
+			wantText:    "Available slash commands",
+		},
+		{
+			name:    "clear",
+			command: "/clear",
+			initial: []transcriptEntry{{
+				kind: entryAssistant,
+				text: "visible only",
+			}},
+			wantEntries: 0,
+		},
+		{
+			name:        "unknown",
+			command:     "/missing",
+			wantEntries: 2,
+			wantText:    "Unknown slash command",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			requests := make(chan runRequest, 1)
+			current := newModel(requests, make(chan struct{}))
+			current.entries = tt.initial
+			current.input.SetValue(tt.command)
+
+			updated, command, handled := current.handleKey(tea.KeyPressMsg{
+				Code: tea.KeyEnter,
+			})
+			if !handled || command != nil {
+				t.Fatalf("%s returned handled=%v command=%v", tt.command, handled, command)
+			}
+			if got := len(updated.entries); got != tt.wantEntries {
+				t.Fatalf("%s entries = %d, want %d", tt.command, got, tt.wantEntries)
+			}
+			if tt.wantText != "" &&
+				!strings.Contains(updated.transcriptView(), tt.wantText) {
+				t.Errorf(
+					"%s transcript = %q, want %q",
+					tt.command,
+					updated.transcriptView(),
+					tt.wantText,
+				)
+			}
+			select {
+			case request := <-requests:
+				t.Fatalf("%s unexpectedly reached run controller: %#v", tt.command, request)
+			default:
+			}
+		})
 	}
 }
 

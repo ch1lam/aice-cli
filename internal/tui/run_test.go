@@ -99,6 +99,57 @@ func TestServeRunsOwnsPerRunEventChannel(t *testing.T) {
 	}
 }
 
+func TestServeRunsExecutesSlashCommandsThroughRunner(t *testing.T) {
+	t.Parallel()
+
+	runner := &slashRunner{
+		runnerFunc: func(
+			context.Context,
+			string,
+			agent.AgentEventSink,
+		) error {
+			t.Fatal("slash command executed as an agent prompt")
+			return nil
+		},
+		runCommand: func(
+			_ context.Context,
+			request SlashCommandRequest,
+		) (string, error) {
+			if request != (SlashCommandRequest{Name: "tree"}) {
+				t.Fatalf("slash command request = %#v, want tree", request)
+			}
+			return "Session tree", nil
+		},
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	requests := make(chan runRequest)
+	done := make(chan struct{})
+	go serveRuns(ctx, runner, requests, done)
+
+	updates := make(chan runUpdate, runUpdateBuffer)
+	command := SlashCommandRequest{Name: "tree"}
+	requests <- runRequest{command: &command, updates: updates}
+
+	start := receiveRunUpdate(t, updates)
+	if start.cancel == nil {
+		t.Fatal("first slash command update has no cancellation function")
+	}
+	terminal := receiveRunUpdate(t, updates)
+	if !terminal.done || terminal.err != nil || terminal.output != "Session tree" {
+		t.Fatalf("terminal slash command update = %#v", terminal)
+	}
+	if _, open := <-updates; open {
+		t.Fatal("slash command update channel remains open after completion")
+	}
+
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("run controller did not stop after slash command")
+	}
+}
+
 func receiveRunUpdate(t *testing.T, updates <-chan runUpdate) runUpdate {
 	t.Helper()
 	select {
@@ -121,6 +172,25 @@ func (f runnerFunc) Run(
 	sink agent.AgentEventSink,
 ) error {
 	return f(ctx, prompt, sink)
+}
+
+type slashRunner struct {
+	runnerFunc
+	runCommand func(
+		context.Context,
+		SlashCommandRequest,
+	) (string, error)
+}
+
+func (r *slashRunner) SlashCommands() []SlashCommand {
+	return []SlashCommand{{Name: "tree", Description: "Show Session tree"}}
+}
+
+func (r *slashRunner) RunSlashCommand(
+	ctx context.Context,
+	request SlashCommandRequest,
+) (string, error) {
+	return r.runCommand(ctx, request)
 }
 
 type emptyReader struct{}

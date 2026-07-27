@@ -50,8 +50,12 @@ func Run(ctx context.Context, runner Runner, options Options) error {
 		<-controllerDone
 	}()
 
+	var slashCommands []SlashCommand
+	if commandRunner, ok := runner.(SlashCommandRunner); ok {
+		slashCommands = commandRunner.SlashCommands()
+	}
 	program := tea.NewProgram(
-		newModel(requests, controllerDone),
+		newModel(requests, controllerDone, slashCommands...),
 		tea.WithContext(ctx),
 		tea.WithInput(options.Input),
 		tea.WithOutput(options.Output),
@@ -71,6 +75,7 @@ func Run(ctx context.Context, runner Runner, options Options) error {
 
 type runRequest struct {
 	prompt  string
+	command *SlashCommandRequest
 	updates chan runUpdate
 }
 
@@ -78,6 +83,7 @@ type runUpdate struct {
 	event  agent.AgentEvent
 	cancel context.CancelFunc
 	err    error
+	output string
 	done   bool
 }
 
@@ -107,17 +113,32 @@ func runOne(ctx context.Context, runner Runner, request runRequest) {
 		return
 	}
 
-	err := runner.Run(runCtx, request.prompt, func(
-		eventCtx context.Context,
-		event agent.AgentEvent,
-	) error {
-		if !sendRunUpdate(eventCtx, request.updates, runUpdate{event: event}) {
-			return eventCtx.Err()
+	var output string
+	var err error
+	if request.command != nil {
+		commandRunner, ok := runner.(SlashCommandRunner)
+		if !ok {
+			err = fmt.Errorf("tui: slash command runner is required")
+		} else {
+			output, err = commandRunner.RunSlashCommand(runCtx, *request.command)
 		}
-		return nil
-	})
+	} else {
+		err = runner.Run(runCtx, request.prompt, func(
+			eventCtx context.Context,
+			event agent.AgentEvent,
+		) error {
+			if !sendRunUpdate(eventCtx, request.updates, runUpdate{event: event}) {
+				return eventCtx.Err()
+			}
+			return nil
+		})
+	}
 	cancel()
-	_ = sendRunUpdate(ctx, request.updates, runUpdate{err: err, done: true})
+	_ = sendRunUpdate(ctx, request.updates, runUpdate{
+		err:    err,
+		output: output,
+		done:   true,
+	})
 }
 
 func sendRunUpdate(
