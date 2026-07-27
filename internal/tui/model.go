@@ -107,6 +107,9 @@ func newModel(
 	input.Focus()
 
 	view := viewport.New(viewport.WithWidth(80), viewport.WithHeight(20))
+	// Route keyboard scrolling through AICE's key map so the viewport's hidden
+	// pager bindings cannot consume composer input.
+	view.KeyMap = viewport.KeyMap{}
 	view.SoftWrap = true
 	view.FillHeight = true
 
@@ -155,6 +158,12 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyPressMsg:
 		if updated, command, handled := m.handleKey(message); handled {
 			return updated, command
+		}
+		if !m.running {
+			var command tea.Cmd
+			m.input, command = m.input.Update(message)
+			m.resizeLayout()
+			return m, command
 		}
 	case runStartedMsg:
 		m.updates = message.updates
@@ -246,9 +255,13 @@ func (m model) handleKey(message tea.KeyPressMsg) (model, tea.Cmd, bool) {
 		}
 		return m.submit()
 	case key.Matches(message, m.keys.scroll):
-		var command tea.Cmd
-		m.viewport, command = m.viewport.Update(message)
-		return m, command, true
+		switch message.Code {
+		case tea.KeyPgUp:
+			m.viewport.PageUp()
+		case tea.KeyPgDown:
+			m.viewport.PageDown()
+		}
+		return m, nil, true
 	}
 	return m, nil, false
 }

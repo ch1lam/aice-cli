@@ -123,6 +123,95 @@ func TestModelSubmitsPromptAndConsumesAgentEvents(t *testing.T) {
 	}
 }
 
+func TestModelFocusedInputKeysDoNotScrollTranscript(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		key       tea.KeyPressMsg
+		wantInput string
+	}{
+		{name: "j", key: tea.KeyPressMsg{Code: 'j', Text: "j"}, wantInput: "prefixj"},
+		{name: "k", key: tea.KeyPressMsg{Code: 'k', Text: "k"}, wantInput: "prefixk"},
+		{name: "f", key: tea.KeyPressMsg{Code: 'f', Text: "f"}, wantInput: "prefixf"},
+		{name: "b", key: tea.KeyPressMsg{Code: 'b', Text: "b"}, wantInput: "prefixb"},
+		{name: "u", key: tea.KeyPressMsg{Code: 'u', Text: "u"}, wantInput: "prefixu"},
+		{name: "d", key: tea.KeyPressMsg{Code: 'd', Text: "d"}, wantInput: "prefixd"},
+		{name: "space", key: tea.KeyPressMsg{Code: ' ', Text: " "}, wantInput: "prefix "},
+		{name: "up", key: tea.KeyPressMsg{Code: tea.KeyUp}, wantInput: "prefix"},
+		{name: "down", key: tea.KeyPressMsg{Code: tea.KeyDown}, wantInput: "prefix"},
+		{
+			name:      "control u",
+			key:       tea.KeyPressMsg{Code: 'u', Mod: tea.ModCtrl},
+			wantInput: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			current := newScrollableModel(t)
+			current.input.SetValue("prefix")
+			initialOffset := current.viewport.YOffset()
+
+			updated := updateModel(t, current, tt.key)
+
+			if got := updated.viewport.YOffset(); got != initialOffset {
+				t.Errorf("viewport Y offset = %d, want %d", got, initialOffset)
+			}
+			if got := updated.input.Value(); got != tt.wantInput {
+				t.Errorf("input value = %q, want %q", got, tt.wantInput)
+			}
+		})
+	}
+}
+
+func TestModelViewportAcceptsOnlyPublishedKeyboardScrollKeys(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		key        tea.KeyPressMsg
+		wantScroll bool
+	}{
+		{name: "j", key: tea.KeyPressMsg{Code: 'j', Text: "j"}},
+		{name: "k", key: tea.KeyPressMsg{Code: 'k', Text: "k"}},
+		{name: "f", key: tea.KeyPressMsg{Code: 'f', Text: "f"}},
+		{name: "b", key: tea.KeyPressMsg{Code: 'b', Text: "b"}},
+		{name: "u", key: tea.KeyPressMsg{Code: 'u', Text: "u"}},
+		{name: "d", key: tea.KeyPressMsg{Code: 'd', Text: "d"}},
+		{name: "space", key: tea.KeyPressMsg{Code: ' ', Text: " "}},
+		{name: "up", key: tea.KeyPressMsg{Code: tea.KeyUp}},
+		{name: "down", key: tea.KeyPressMsg{Code: tea.KeyDown}},
+		{name: "page up", key: tea.KeyPressMsg{Code: tea.KeyPgUp}, wantScroll: true},
+		{name: "page down", key: tea.KeyPressMsg{Code: tea.KeyPgDown}, wantScroll: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			current := newScrollableModel(t)
+			current.running = true
+			current.input.Blur()
+			initialOffset := current.viewport.YOffset()
+
+			updated := updateModel(t, current, tt.key)
+
+			scrolled := updated.viewport.YOffset() != initialOffset
+			if scrolled != tt.wantScroll {
+				t.Errorf(
+					"viewport Y offset = %d, initial %d, want scroll %v",
+					updated.viewport.YOffset(),
+					initialOffset,
+					tt.wantScroll,
+				)
+			}
+		})
+	}
+}
+
 func TestModelControlCCancelsOnlyActiveRun(t *testing.T) {
 	t.Parallel()
 
@@ -252,4 +341,14 @@ func updateModel(t *testing.T, current model, message tea.Msg) model {
 		t.Fatalf("Update() model = %T, want tui.model", updated)
 	}
 	return result
+}
+
+func newScrollableModel(t *testing.T) model {
+	t.Helper()
+
+	current := newModel(make(chan runRequest), make(chan struct{}))
+	current = updateModel(t, current, tea.WindowSizeMsg{Width: 80, Height: 24})
+	current.viewport.SetContent(strings.Repeat("line\n", 100))
+	current.viewport.SetYOffset(20)
+	return current
 }
