@@ -66,7 +66,10 @@ func TestToolDefinitionsUsePiNamesAndValidSchemas(t *testing.T) {
 	if err != nil {
 		t.Skipf("tool.NewBash() error = %v", err)
 	}
-	grep, _ := tool.NewGrep(workspace)
+	grep, err := tool.NewGrep(workspace)
+	if err != nil {
+		t.Fatalf("tool.NewGrep() error = %v", err)
+	}
 	find, _ := tool.NewFind(workspace)
 	ls, _ := tool.NewLS(workspace)
 

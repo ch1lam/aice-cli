@@ -1,6 +1,6 @@
 module github.com/ch1lam/aice-cli
 
-go 1.26
+go 1.26.5
 
 require (
 	charm.land/bubbles/v2 v2.1.1

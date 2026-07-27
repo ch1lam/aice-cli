@@ -1,24 +1,25 @@
 package tool
 
 import (
-	"bytes"
+	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strings"
 
 	"github.com/ch1lam/aice-cli/internal/llm"
 )
 
 const (
-	defaultGrepLimit = 100
-	maxGrepContext   = 20
-	grepSchema       = `{
+	defaultGrepLimit  = 100
+	maxGrepLineChars  = 500
+	grepNoticeReserve = 512
+	grepSchema        = `{
   "type": "object",
   "properties": {
     "pattern": {"type": "string", "description": "Search pattern (regex or literal string)"},
@@ -26,17 +27,53 @@ const (
     "glob": {"type": "string", "description": "Filter files by glob pattern, e.g. '*.go' or '**/*_test.go'"},
     "ignoreCase": {"type": "boolean", "description": "Case-insensitive search (default: false)"},
     "literal": {"type": "boolean", "description": "Treat pattern as a literal string instead of regex (default: false)"},
-    "context": {"type": "integer", "minimum": 0, "description": "Number of lines to show before and after each match (default: 0)"},
-    "limit": {"type": "integer", "minimum": 1, "description": "Maximum number of matches to return (default: 100)"}
+    "context": {"type": "integer", "description": "Number of lines to show before and after each match (default: 0)"},
+    "limit": {"type": "integer", "description": "Maximum number of matches to return (default: 100)"}
   },
   "required": ["pattern"],
   "additionalProperties": false
 }`
 )
 
-// Grep searches text files.
+type grepArguments struct {
+	Pattern    string `json:"pattern"`
+	Path       string `json:"path"`
+	Glob       string `json:"glob"`
+	IgnoreCase bool   `json:"ignoreCase"`
+	Literal    bool   `json:"literal"`
+	Context    int    `json:"context"`
+	Limit      *int   `json:"limit"`
+}
+
+type ripgrepText struct {
+	Text string `json:"text"`
+}
+
+type ripgrepEvent struct {
+	Type string `json:"type"`
+	Data struct {
+		Path       ripgrepText `json:"path"`
+		Lines      ripgrepText `json:"lines"`
+		LineNumber int         `json:"line_number"`
+	} `json:"data"`
+}
+
+type grepMatch struct {
+	filePath   string
+	lineNumber int
+	lineText   string
+}
+
+type grepSearchResult struct {
+	matches      []grepMatch
+	matchCount   int
+	limitReached bool
+}
+
+// Grep searches text files with ripgrep.
 type Grep struct {
 	workspace *Workspace
+	rgPath    string
 }
 
 // NewGrep constructs a grep tool.
@@ -44,260 +81,367 @@ func NewGrep(workspace *Workspace) (*Grep, error) {
 	if workspace == nil || workspace.path == "" {
 		return nil, fmt.Errorf("tool: workspace is required")
 	}
-	return &Grep{workspace: workspace}, nil
+	rgPath, err := exec.LookPath("rg")
+	if err != nil {
+		return nil, fmt.Errorf("tool: find ripgrep (rg) executable: %w", err)
+	}
+	if !filepath.IsAbs(rgPath) {
+		return nil, fmt.Errorf("tool: ripgrep (rg) executable path must be absolute")
+	}
+	return &Grep{workspace: workspace, rgPath: rgPath}, nil
 }
 
 // Definition returns the model-facing grep contract.
 func (g *Grep) Definition() llm.ToolDefinition {
 	return llm.ToolDefinition{
-		Name:        "grep",
-		Description: "Search text files, resolving relative paths from the working directory.",
+		Name: "grep",
+		Description: "Search file contents for a pattern. Returns matching lines with file paths and line numbers. " +
+			"Respects .gitignore. Output is truncated to 100 matches or 50KB (whichever is hit first). " +
+			"Long lines are truncated to 500 chars.",
 		InputSchema: jsonSchema(grepSchema),
 	}
 }
 
-// Execute performs a recursive, bounded text search.
+// Execute searches with the host ripgrep executable.
 func (g *Grep) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult, error) {
-	type arguments struct {
-		Pattern    string `json:"pattern"`
-		Path       string `json:"path"`
-		Glob       string `json:"glob"`
-		IgnoreCase bool   `json:"ignoreCase"`
-		Literal    bool   `json:"literal"`
-		Context    int    `json:"context"`
-		Limit      int    `json:"limit"`
-	}
-	args, err := decodeArguments[arguments](ctx, call, "grep")
+	args, err := decodeArguments[grepArguments](ctx, call, "grep")
 	if err != nil {
 		return llm.ToolResult{}, err
-	}
-	if args.Pattern == "" {
-		return llm.ToolResult{}, fmt.Errorf("tool \"grep\": pattern is required")
-	}
-	if len(args.Pattern) > maxPatternBytes || len(args.Glob) > maxPatternBytes {
-		return llm.ToolResult{}, fmt.Errorf("tool \"grep\": pattern and glob must not exceed %d bytes", maxPatternBytes)
 	}
 	if args.Path == "" {
 		args.Path = "."
 	}
-	if args.Context < 0 || args.Context > maxGrepContext {
-		return llm.ToolResult{}, fmt.Errorf("tool \"grep\": context must be between 0 and %d", maxGrepContext)
+	if args.Context < 0 {
+		args.Context = 0
 	}
-	if args.Limit < 0 {
-		return llm.ToolResult{}, fmt.Errorf("tool \"grep\": limit cannot be negative")
-	}
-	if args.Limit == 0 || args.Limit > defaultGrepLimit {
-		args.Limit = defaultGrepLimit
+	limit := defaultGrepLimit
+	if args.Limit != nil {
+		limit = max(1, *args.Limit)
 	}
 
-	pattern := args.Pattern
-	if args.Literal {
-		pattern = regexp.QuoteMeta(pattern)
-	}
-	if args.IgnoreCase {
-		pattern = "(?i:" + pattern + ")"
-	}
-	matcher, err := regexp.Compile(pattern)
-	if err != nil {
-		return llm.ToolResult{}, fmt.Errorf("tool \"grep\": compile pattern: %w", err)
-	}
-	if args.Glob != "" {
-		if _, err := matchGlob(args.Glob, "probe"); err != nil {
-			return llm.ToolResult{}, fmt.Errorf("tool \"grep\": invalid glob: %w", err)
-		}
-	}
-
-	rootPath, err := g.workspace.resolvePath(args.Path)
+	searchPath, err := g.workspace.resolvePath(args.Path)
 	if err != nil {
 		return llm.ToolResult{}, fmt.Errorf("tool \"grep\": %w", err)
 	}
-	info, err := os.Stat(rootPath)
+	searchPath = filepath.Clean(searchPath)
+	info, err := os.Stat(searchPath)
 	if err != nil {
 		return llm.ToolResult{}, fmt.Errorf("tool \"grep\": stat %q: %w", args.Path, err)
 	}
-
-	collector := newTextCollector(maxOutputBytes)
-	matches := 0
-	skipped := 0
-	entriesScanned := 0
-	bytesScanned := int64(0)
-	displayPath := func(filePath string) string {
-		if filepath.IsAbs(args.Path) {
-			return filepath.ToSlash(filePath)
-		}
-		relativePath, relativeErr := filepath.Rel(g.workspace.Path(), filePath)
-		if relativeErr != nil {
-			return filepath.ToSlash(filePath)
-		}
-		return filepath.ToSlash(relativePath)
-	}
-	searchFile := func(filePath string) error {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		info, err := os.Stat(filePath)
-		if err != nil {
-			return err
-		}
-		if !info.Mode().IsRegular() || info.Size() > maxSearchFileBytes {
-			skipped++
-			return nil
-		}
-		if info.Size() > 0 && bytesScanned > maxSearchTotalBytes-info.Size() {
-			return errScanLimit
-		}
-		bytesScanned += info.Size()
-		matched, err := g.grepFile(
-			ctx,
-			filePath,
-			displayPath(filePath),
-			matcher,
-			args.Context,
-			args.Limit-matches,
-			collector,
-		)
-		if err != nil {
-			if err == errSkipFile {
-				skipped++
-				return nil
-			}
-			return err
-		}
-		matches += matched
-		if matches >= args.Limit {
-			return errResultLimit
-		}
-		if collector.truncated {
-			return errOutputLimit
-		}
-		return nil
-	}
-
-	if info.Mode().IsRegular() {
-		if args.Glob != "" {
-			matched, matchErr := matchGlob(args.Glob, filepath.Base(rootPath))
-			if matchErr != nil {
-				return llm.ToolResult{}, matchErr
-			}
-			if !matched {
-				return textResult(call, "", false), nil
-			}
-		}
-		err = searchFile(rootPath)
-	} else if info.IsDir() {
-		err = filepath.WalkDir(rootPath, func(filePath string, entry fs.DirEntry, walkErr error) error {
-			if walkErr != nil {
-				return walkErr
-			}
-			if err := ctx.Err(); err != nil {
-				return err
-			}
-			entriesScanned++
-			if entriesScanned > maxWalkEntries {
-				return errScanLimit
-			}
-			if entry.IsDir() {
-				if filePath != rootPath && entry.Name() == ".git" {
-					return fs.SkipDir
-				}
-				return nil
-			}
-			if args.Glob != "" {
-				relativePath, relativeErr := filepath.Rel(rootPath, filePath)
-				if relativeErr != nil {
-					return relativeErr
-				}
-				matched, matchErr := matchGlob(args.Glob, relativePath)
-				if matchErr != nil {
-					return matchErr
-				}
-				if !matched {
-					return nil
-				}
-			}
-			return searchFile(filePath)
-		})
-	} else {
+	if !info.Mode().IsRegular() && !info.IsDir() {
 		return llm.ToolResult{}, fmt.Errorf("tool \"grep\": %q is not a file or directory", args.Path)
 	}
-	if err != nil && err != errResultLimit && err != errOutputLimit && err != errScanLimit {
-		return llm.ToolResult{}, fmt.Errorf("tool \"grep\": search %q: %w", args.Path, err)
+
+	searchResult, err := g.runRipgrep(
+		ctx,
+		g.rgPath,
+		searchPath,
+		args,
+		limit,
+	)
+	if err != nil {
+		return llm.ToolResult{}, err
 	}
-	if err == errResultLimit && !collector.truncated {
-		collector.WriteString(fmt.Sprintf("[match limit reached: %d]\n", args.Limit))
+	if searchResult.matchCount == 0 {
+		return textResult(call, "No matches found", false), nil
 	}
-	if skipped > 0 && !collector.truncated {
-		collector.WriteString(fmt.Sprintf("[skipped %d binary or oversized file(s)]\n", skipped))
+
+	output, outputTruncated, linesTruncated := formatGrepMatches(
+		searchResult.matches,
+		searchPath,
+		info.IsDir(),
+		args.Context,
+	)
+	notices := make([]string, 0, 3)
+	if searchResult.limitReached {
+		notices = append(
+			notices,
+			fmt.Sprintf(
+				"%d matches limit reached. Use limit=%d for more, or refine pattern",
+				limit,
+				nextGrepLimit(limit),
+			),
+		)
 	}
-	if err == errScanLimit && !collector.truncated {
-		collector.WriteString(fmt.Sprintf("[scan limit reached: %d entries or 100 mib]\n", maxWalkEntries))
+	if outputTruncated {
+		notices = append(notices, "50KB limit reached")
 	}
-	return textResult(call, strings.TrimSuffix(collector.String(), "\n"), false), nil
+	if linesTruncated {
+		notices = append(
+			notices,
+			fmt.Sprintf(
+				"Some lines truncated to %d chars. Use read tool to see full lines",
+				maxGrepLineChars,
+			),
+		)
+	}
+	if len(notices) > 0 {
+		if output != "" {
+			output += "\n\n"
+		}
+		output += "[" + strings.Join(notices, ". ") + "]"
+	}
+	return textResult(call, output, false), nil
 }
 
-var errSkipFile = errors.New("skip file")
-
-func (g *Grep) grepFile(
+func (g *Grep) runRipgrep(
 	ctx context.Context,
-	filePath string,
-	displayPath string,
-	matcher *regexp.Regexp,
-	contextLines int,
+	rgPath string,
+	searchPath string,
+	args grepArguments,
 	limit int,
-	collector *textCollector,
-) (int, error) {
-	file, err := os.Open(filePath)
+) (grepSearchResult, error) {
+	commandArgs := []string{"--json", "--line-number", "--color=never", "--hidden"}
+	if args.IgnoreCase {
+		commandArgs = append(commandArgs, "--ignore-case")
+	}
+	if args.Literal {
+		commandArgs = append(commandArgs, "--fixed-strings")
+	}
+	if args.Glob != "" {
+		commandArgs = append(commandArgs, "--glob", args.Glob)
+	}
+	commandArgs = append(commandArgs, "--", args.Pattern, searchPath)
+
+	command := exec.CommandContext(ctx, rgPath, commandArgs...)
+	command.Dir = g.workspace.Path()
+	stdout, err := command.StdoutPipe()
 	if err != nil {
-		return 0, err
+		return grepSearchResult{}, fmt.Errorf("tool \"grep\": open ripgrep output: %w", err)
 	}
-	defer file.Close()
-	info, err := file.Stat()
-	if err != nil {
-		return 0, err
-	}
-	if !info.Mode().IsRegular() || info.Size() > maxSearchFileBytes {
-		return 0, errSkipFile
-	}
-	data, err := io.ReadAll(io.LimitReader(file, maxSearchFileBytes+1))
-	if err != nil {
-		return 0, err
-	}
-	if len(data) > maxSearchFileBytes || bytes.IndexByte(data, 0) >= 0 {
-		return 0, errSkipFile
+	stderr := newBoundedWriter(maxOutputBytes)
+	command.Stderr = stderr
+	configureProcess(command)
+	if err := command.Start(); err != nil {
+		return grepSearchResult{}, fmt.Errorf("tool \"grep\": start ripgrep: %w", err)
 	}
 
-	lines := strings.Split(strings.ReplaceAll(string(data), "\r\n", "\n"), "\n")
-	matches := 0
-	for index, line := range lines {
-		if err := ctx.Err(); err != nil {
-			return matches, err
-		}
-		if !matcher.MatchString(line) {
+	result := grepSearchResult{
+		matches: make([]grepMatch, 0, min(limit, defaultGrepLimit)),
+	}
+	scanner := bufio.NewScanner(stdout)
+	scanner.Buffer(make([]byte, 64*1024), maxReadBytes)
+	var cancelErr error
+	for scanner.Scan() {
+		var event ripgrepEvent
+		if err := json.Unmarshal(scanner.Bytes(), &event); err != nil || event.Type != "match" {
 			continue
 		}
-		if matches >= limit {
-			return matches, nil
+		result.matchCount++
+		if event.Data.Path.Text != "" && event.Data.LineNumber > 0 {
+			result.matches = append(result.matches, grepMatch{
+				filePath:   event.Data.Path.Text,
+				lineNumber: event.Data.LineNumber,
+				lineText:   event.Data.Lines.Text,
+			})
 		}
-		matches++
-		start := max(0, index-contextLines)
-		end := min(len(lines), index+contextLines+1)
-		for lineIndex := start; lineIndex < end; lineIndex++ {
-			separator := "-"
-			if lineIndex == index {
-				separator = ":"
-			}
-			output := fmt.Sprintf(
-				"%s%s%d%s%s\n",
-				displayPath,
-				separator,
-				lineIndex+1,
-				separator,
-				truncateLine(lines[lineIndex]),
-			)
-			if !collector.WriteString(output) {
-				return matches, nil
-			}
+		if result.matchCount >= limit {
+			result.limitReached = true
+			cancelErr = cancelRipgrep(command)
+			break
 		}
 	}
-	return matches, nil
+	scanErr := scanner.Err()
+	if scanErr != nil && !result.limitReached {
+		cancelErr = cancelRipgrep(command)
+	}
+	waitErr := command.Wait()
+
+	if err := ctx.Err(); err != nil {
+		return grepSearchResult{}, err
+	}
+	if scanErr != nil {
+		return grepSearchResult{}, errors.Join(
+			fmt.Errorf("tool \"grep\": read ripgrep output: %w", scanErr),
+			cancelErr,
+		)
+	}
+	if result.limitReached {
+		return result, nil
+	}
+	if cancelErr != nil {
+		return grepSearchResult{}, fmt.Errorf("tool \"grep\": stop ripgrep: %w", cancelErr)
+	}
+	if waitErr == nil {
+		return result, nil
+	}
+
+	var exitError *exec.ExitError
+	if errors.As(waitErr, &exitError) && exitError.ExitCode() == 1 {
+		return result, nil
+	}
+	errorText := strings.TrimSpace(stderr.String())
+	if errorText != "" {
+		return grepSearchResult{}, fmt.Errorf(
+			"tool \"grep\": ripgrep failed: %s: %w",
+			errorText,
+			waitErr,
+		)
+	}
+	return grepSearchResult{}, fmt.Errorf("tool \"grep\": ripgrep failed: %w", waitErr)
+}
+
+func cancelRipgrep(command *exec.Cmd) error {
+	if command.Cancel != nil {
+		err := command.Cancel()
+		if errors.Is(err, os.ErrProcessDone) {
+			return nil
+		}
+		return err
+	}
+	if command.Process == nil {
+		return nil
+	}
+	err := command.Process.Kill()
+	if errors.Is(err, os.ErrProcessDone) {
+		return nil
+	}
+	return err
+}
+
+func formatGrepMatches(
+	matches []grepMatch,
+	searchPath string,
+	searchingDirectory bool,
+	contextLines int,
+) (string, bool, bool) {
+	collector := newGrepOutputCollector(maxOutputBytes - grepNoticeReserve)
+	linesTruncated := false
+	for _, match := range matches {
+		displayPath := formatGrepPath(searchPath, match.filePath, searchingDirectory)
+		if contextLines == 0 && match.lineText != "" {
+			line := normalizeGrepLine(match.lineText)
+			line, truncated := truncateGrepLine(line)
+			linesTruncated = linesTruncated || truncated
+			if !collector.WriteLine(
+				fmt.Sprintf("%s:%d: %s", displayPath, match.lineNumber, line),
+			) {
+				break
+			}
+			continue
+		}
+
+		lines, err := readGrepLines(match.filePath)
+		if err != nil || len(lines) == 0 {
+			if !collector.WriteLine(
+				fmt.Sprintf("%s:%d: (unable to read file)", displayPath, match.lineNumber),
+			) {
+				break
+			}
+			continue
+		}
+		start := max(1, match.lineNumber-contextLines)
+		end := min(len(lines), match.lineNumber+contextLines)
+		for lineNumber := start; lineNumber <= end; lineNumber++ {
+			line := lines[lineNumber-1]
+			line, truncated := truncateGrepLine(line)
+			linesTruncated = linesTruncated || truncated
+			separator := "-"
+			if lineNumber == match.lineNumber {
+				separator = ":"
+			}
+			if !collector.WriteLine(
+				fmt.Sprintf(
+					"%s%s%d%s %s",
+					displayPath,
+					separator,
+					lineNumber,
+					separator,
+					line,
+				),
+			) {
+				break
+			}
+		}
+		if collector.truncated {
+			break
+		}
+	}
+	return collector.String(), collector.truncated, linesTruncated
+}
+
+type grepOutputCollector struct {
+	builder   strings.Builder
+	limit     int
+	truncated bool
+}
+
+func newGrepOutputCollector(limit int) *grepOutputCollector {
+	return &grepOutputCollector{limit: limit}
+}
+
+func (c *grepOutputCollector) WriteLine(line string) bool {
+	if c.truncated {
+		return false
+	}
+	requiredBytes := len(line)
+	if c.builder.Len() > 0 {
+		requiredBytes++
+	}
+	if requiredBytes > c.limit-c.builder.Len() {
+		c.truncated = true
+		return false
+	}
+	if c.builder.Len() > 0 {
+		_ = c.builder.WriteByte('\n')
+	}
+	_, _ = c.builder.WriteString(line)
+	return true
+}
+
+func (c *grepOutputCollector) String() string {
+	return c.builder.String()
+}
+
+func formatGrepPath(searchPath, filePath string, searchingDirectory bool) string {
+	if searchingDirectory {
+		relativePath, err := filepath.Rel(searchPath, filePath)
+		isInsideSearchPath := err == nil &&
+			relativePath != "." &&
+			relativePath != ".." &&
+			!strings.HasPrefix(relativePath, ".."+string(os.PathSeparator))
+		if isInsideSearchPath {
+			return filepath.ToSlash(relativePath)
+		}
+	}
+	return filepath.Base(filePath)
+}
+
+func normalizeGrepLine(line string) string {
+	line = strings.ReplaceAll(line, "\r\n", "\n")
+	line = strings.ReplaceAll(line, "\r", "")
+	return strings.TrimSuffix(line, "\n")
+}
+
+func truncateGrepLine(line string) (string, bool) {
+	characters := []rune(line)
+	if len(characters) <= maxGrepLineChars {
+		return line, false
+	}
+	return string(characters[:maxGrepLineChars]) + "... [truncated]", true
+}
+
+func readGrepLines(path string) ([]string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	data, err := io.ReadAll(io.LimitReader(file, maxReadBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > maxReadBytes {
+		return nil, fmt.Errorf("file exceeds %d bytes", maxReadBytes)
+	}
+	text := strings.ReplaceAll(string(data), "\r\n", "\n")
+	text = strings.ReplaceAll(text, "\r", "\n")
+	return strings.Split(text, "\n"), nil
+}
+
+func nextGrepLimit(limit int) int {
+	if limit > int(^uint(0)>>1)/2 {
+		return limit
+	}
+	return limit * 2
 }

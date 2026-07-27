@@ -6,7 +6,7 @@
 - The current product evolution priority is Session management: an append-only JSONL tree with restart recovery, branch navigation, backtracking, and branch-local manual compaction.
 - Ship useful defaults that satisfy most users without customization, but keep providers, tools, terminal UI, persistence, execution environments, and future extensions replaceable at explicit boundaries.
 - Self-extensibility is a product requirement. Users should eventually be able to adapt AICE without forking or modifying its internals. Preserve the seams needed for that direction, but do not build a speculative plugin framework before the core contracts and sessions are stable.
-- Build a single Go module, a single binary, and a single local process. Keep the architecture small until real requirements justify more layers.
+- Build a single Go module and a single AICE binary. Built-in tools may spawn explicit host executables such as Bash and ripgrep; do not introduce a daemon or additional AICE service. Keep the architecture small until real requirements justify more layers.
 - The removed TypeScript implementation is not a compatibility target. Do not restore Node.js, npm, Vercel AI SDK, Ink, oclif, or the old session/config formats.
 - Pi is the semantic and philosophical reference, not a directory template. Preserve its small coding-harness philosophy, provider-neutral messages, Agent Loop, tool and event lifecycles, session truth, and extensibility without copying its TypeScript monorepo structure.
 - Match Pi domain names when the semantics are the same and the names remain idiomatic Go. Do not rename established concepts merely to make AICE look different.
@@ -22,11 +22,11 @@
 - LLM layer: AICE-owned provider-neutral types and streaming contracts, backed by official provider SDKs or the Go standard library.
 - First provider: DeepSeek through an Anthropic Messages protocol adapter using the official `anthropic-sdk-go` SDK with a configurable base URL.
 - Persistence: append-only JSONL sessions. Use standard library packages before adding storage frameworks or databases.
-- Execution: built-in tools use the host process environment by default. Containers, sandboxes, or replaceable execution environments may provide stronger isolation.
+- Execution: built-in tools use the host process environment by default. The built-in `grep` tool requires `ripgrep` (`rg`) on `PATH` and has no pure-Go fallback. Containers, sandboxes, or replaceable execution environments may provide stronger isolation.
 - Configuration: standard library parsing, `AICE_*` environment variables, and the `.aice` directory. Keep secrets outside the repository.
 - Logging and cancellation: `log/slog`, `context.Context`, and `signal.NotifyContext`.
 
-Do not add an external dependency when the standard library is sufficient. Before adding an unlisted direct dependency, explain why it is needed, check maintenance and license status, and ask the user for approval.
+Do not add an external dependency when the standard library is sufficient. Before adding an unlisted direct dependency, explain why it is needed, check maintenance and license status, and ask the user for approval. `ripgrep` is an approved runtime dependency for the built-in `grep` tool because its search performance and ignore semantics are part of the intended behavior; do not restore the removed pure-Go search implementation as a fallback.
 
 ## Intended Project Structure
 
@@ -101,7 +101,7 @@ Dependency rules:
 - Do not add approval prompts or authorization policy to the Agent Loop. Isolation and policy belong to an explicitly selected container, sandbox, execution environment, or extension.
 - Keep correctness and resource-safety checks even when no sandbox is active: validate arguments, reject malformed paths and inputs, propagate cancellation, bound time and output, preserve exit status, and pair every tool call with a result.
 - Path handling must be deterministic and must honor the selected execution environment. A workspace helper is not a security sandbox and must not be described as one.
-- Structured command execution should use `exec.CommandContext` with executable and arguments separated. A Pi-compatible `bash` tool may intentionally invoke a shell; make that boundary explicit and apply the same cancellation, process-tree, environment, and output controls.
+- Structured command execution should use `exec.CommandContext` with executable and arguments separated. The `grep` tool invokes `rg` this way and must place `--` before the model-supplied pattern and path. A Pi-compatible `bash` tool may intentionally invoke a shell; make that boundary explicit and apply the same cancellation, process-tree, environment, and output controls.
 - The execution environment owns working-directory, environment-inheritance, filesystem, network, and executable policy. Do not hard-code those policies into the Agent Loop.
 - Bound time, stdout, stderr, and total captured output. Preserve exit status and distinguish a command failure from an internal tool failure.
 - Ensure cancellation terminates the complete spawned process tree and does not leave background processes behind.
@@ -154,6 +154,7 @@ Keep structural changes, behavior changes, and imported upstream code in separat
 - When `.golangci.yml` exists, also run `golangci-lint run ./...` and fix new findings rather than suppressing them.
 - For concurrency, cancellation, channels, or shared-state changes, run `go test -race ./...`.
 - If a test file changes, run the focused test while iterating, then the full unit suite before handoff.
+- Tool and user-facing verification that exercises `grep` requires `rg` on `PATH`.
 - Mark real-provider tests with an integration build tag and run them explicitly. Default tests must use faux providers and must not read provider credentials.
 - Verify CLI/TUI work through the actual user-facing command. Do not treat package tests alone as proof that interactive behavior works.
 - Do not invent build, release, changelog, or publishing commands before the repository defines them.

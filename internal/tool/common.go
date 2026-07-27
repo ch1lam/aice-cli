@@ -13,14 +13,12 @@ import (
 )
 
 const (
-	maxOutputBytes      = 50 * 1024
-	maxReadBytes        = 10 * 1024 * 1024
-	maxSearchFileBytes  = 2 * 1024 * 1024
-	maxSearchTotalBytes = 100 * 1024 * 1024
-	maxMutationBytes    = 4 * 1024 * 1024
-	maxLineBytes        = 1000
-	maxPatternBytes     = 4096
-	maxWalkEntries      = 100000
+	maxOutputBytes   = 50 * 1024
+	maxReadBytes     = 10 * 1024 * 1024
+	maxMutationBytes = 4 * 1024 * 1024
+	maxLineBytes     = 1000
+	maxPatternBytes  = 4096
+	maxWalkEntries   = 100000
 )
 
 func decodeArguments[T any](ctx context.Context, call llm.ToolCall, toolName string) (T, error) {
