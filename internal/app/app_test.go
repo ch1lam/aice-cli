@@ -3,8 +3,10 @@ package app
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -389,13 +391,18 @@ func TestApplicationInteractiveResumesExplicitSession(t *testing.T) {
 	assertTextMessage(t, messages[2], llm.RoleUser, "second prompt")
 }
 
-func TestApplicationDoesNotPersistFailedToolRun(t *testing.T) {
+func TestApplicationPersistsFailedRunAfterToolSideEffect(t *testing.T) {
 	t.Parallel()
 
 	workspace := t.TempDir()
 	sessionPath := filepath.Join(t.TempDir(), "conversation.jsonl")
 	wantErr := errors.New("provider disconnected")
-	model := &toolLoopModel{secondErr: wantErr}
+	call := llm.ToolCall{
+		ID:        "write-1",
+		Name:      "write",
+		Arguments: []byte(`{"path":"changed.txt","content":"changed\n"}`),
+	}
+	model := &toolLoopModel{firstCall: &call, secondErr: wantErr}
 	command, err := newCommand(dependencies{
 		loadConfig: func() (config.Config, error) {
 			return config.Config{DeepSeekAPIKey: "test-key"}, nil
@@ -419,9 +426,209 @@ func TestApplicationDoesNotPersistFailedToolRun(t *testing.T) {
 		t.Fatalf("ExecuteContext() error = %v, want %v", err, wantErr)
 	}
 
+	data, err := os.ReadFile(filepath.Join(workspace, "changed.txt"))
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	if got, want := string(data), "changed\n"; got != want {
+		t.Fatalf("changed.txt = %q, want %q", got, want)
+	}
+
 	snapshot := openSessionSnapshot(t, sessionPath)
-	if len(snapshot.Turns) != 0 {
-		t.Fatalf("persisted turns = %#v, want no incomplete run", snapshot.Turns)
+	if len(snapshot.Turns) != 1 {
+		t.Fatalf("persisted turns = %#v, want one terminal run", snapshot.Turns)
+	}
+	messages := snapshot.Turns[0].Messages
+	if got, want := persistedMessageRoles(messages), []llm.Role{
+		llm.RoleUser,
+		llm.RoleAssistant,
+		llm.RoleToolResult,
+		llm.RoleAssistant,
+	}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("persisted message roles = %v, want %v", got, want)
+	}
+	result, ok := messages[2].(llm.ToolResultMessage)
+	if !ok || result.IsError {
+		t.Fatalf("persisted tool result = %#v, want successful write", messages[2])
+	}
+	terminal, ok := messages[3].(llm.AssistantMessage)
+	if !ok {
+		t.Fatalf("terminal message = %T, want AssistantMessage", messages[3])
+	}
+	assertPersistedTerminalAssistant(t, terminal, llm.StopReasonError)
+	if strings.Contains(terminal.ErrorMessage, wantErr.Error()) {
+		t.Fatalf("terminal error leaked provider detail: %q", terminal.ErrorMessage)
+	}
+
+	resumeModel := &recordingModel{response: "recovered"}
+	resumeCommand, err := newCommand(dependencies{
+		loadConfig: func() (config.Config, error) {
+			return config.Config{DeepSeekAPIKey: "test-key"}, nil
+		},
+		newModel: func(config.Config) (agent.Model, error) {
+			return resumeModel, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("newCommand() resume error = %v", err)
+	}
+	resumeCommand.SetOut(io.Discard)
+	resumeCommand.SetArgs([]string{
+		"--workspace", workspace,
+		"--session", sessionPath,
+		"--print", "continue",
+	})
+	if err := resumeCommand.ExecuteContext(t.Context()); err != nil {
+		t.Fatalf("resume ExecuteContext() error = %v", err)
+	}
+	if len(resumeModel.requests) != 1 {
+		t.Fatalf("resume model requests = %d, want 1", len(resumeModel.requests))
+	}
+	if got, want := persistedMessageRoles(resumeModel.requests[0].Messages), []llm.Role{
+		llm.RoleUser,
+		llm.RoleAssistant,
+		llm.RoleToolResult,
+		llm.RoleAssistant,
+		llm.RoleUser,
+	}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("resumed request roles = %v, want %v", got, want)
+	}
+}
+
+func TestInteractiveSessionPersistsCancellationAfterToolSideEffect(t *testing.T) {
+	t.Parallel()
+
+	workspace := t.TempDir()
+	sessionPath := filepath.Join(t.TempDir(), "conversation.jsonl")
+	ctx, cancel := context.WithCancel(t.Context())
+	tool := newAppTestTool(
+		"mutate",
+		func(_ context.Context, call llm.ToolCall) (llm.ToolResult, error) {
+			if err := os.WriteFile(
+				filepath.Join(workspace, "changed.txt"),
+				[]byte("changed\n"),
+				0o600,
+			); err != nil {
+				return llm.ToolResult{}, err
+			}
+			cancel()
+			return llm.ToolResult{
+				CallID:  call.ID,
+				Name:    call.Name,
+				Content: []llm.ContentPart{llm.NewTextContent("changed").Part()},
+			}, nil
+		},
+	)
+	call := llm.ToolCall{
+		ID:        "mutate-1",
+		Name:      "mutate",
+		Arguments: json.RawMessage(`{}`),
+	}
+	model := &toolLoopModel{firstCall: &call}
+	loop, err := agent.NewLoop(
+		model,
+		[]agent.Tool{tool},
+		agent.Limits{MaxTurns: 3, MaxToolSteps: 3},
+	)
+	if err != nil {
+		t.Fatalf("agent.NewLoop() error = %v", err)
+	}
+	store := createAppTestSession(t, sessionPath, workspace)
+	runner := &interactiveSession{loop: loop, store: store}
+
+	err = runner.Run(ctx, "mutate then continue", nil)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Run() error = %v, want context.Canceled", err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatalf("Store.Close() error = %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(workspace, "changed.txt"))
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	if got, want := string(data), "changed\n"; got != want {
+		t.Fatalf("changed.txt = %q, want %q", got, want)
+	}
+	snapshot := openSessionSnapshot(t, sessionPath)
+	if len(snapshot.Turns) != 1 {
+		t.Fatalf("persisted turns = %#v, want one canceled run", snapshot.Turns)
+	}
+	messages := snapshot.Turns[0].Messages
+	if got, want := persistedMessageRoles(messages), []llm.Role{
+		llm.RoleUser,
+		llm.RoleAssistant,
+		llm.RoleToolResult,
+		llm.RoleAssistant,
+	}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("persisted message roles = %v, want %v", got, want)
+	}
+	terminal, ok := messages[3].(llm.AssistantMessage)
+	if !ok {
+		t.Fatalf("terminal message = %T, want AssistantMessage", messages[3])
+	}
+	assertPersistedTerminalAssistant(t, terminal, llm.StopReasonAborted)
+}
+
+func TestInteractiveSessionPersistsToolErrorAndRecovery(t *testing.T) {
+	t.Parallel()
+
+	workspace := t.TempDir()
+	sessionPath := filepath.Join(t.TempDir(), "conversation.jsonl")
+	toolFailure := errors.New("disk unavailable")
+	tool := newAppTestTool(
+		"mutate",
+		func(context.Context, llm.ToolCall) (llm.ToolResult, error) {
+			return llm.ToolResult{}, toolFailure
+		},
+	)
+	call := llm.ToolCall{
+		ID:        "mutate-1",
+		Name:      "mutate",
+		Arguments: json.RawMessage(`{}`),
+	}
+	model := &toolLoopModel{firstCall: &call}
+	loop, err := agent.NewLoop(
+		model,
+		[]agent.Tool{tool},
+		agent.Limits{MaxTurns: 3, MaxToolSteps: 3},
+	)
+	if err != nil {
+		t.Fatalf("agent.NewLoop() error = %v", err)
+	}
+	store := createAppTestSession(t, sessionPath, workspace)
+	runner := &interactiveSession{loop: loop, store: store}
+
+	if err := runner.Run(t.Context(), "mutate", nil); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatalf("Store.Close() error = %v", err)
+	}
+
+	snapshot := openSessionSnapshot(t, sessionPath)
+	if len(snapshot.Turns) != 1 {
+		t.Fatalf("persisted turns = %#v, want one recovered run", snapshot.Turns)
+	}
+	messages := snapshot.Turns[0].Messages
+	if got, want := persistedMessageRoles(messages), []llm.Role{
+		llm.RoleUser,
+		llm.RoleAssistant,
+		llm.RoleToolResult,
+		llm.RoleAssistant,
+	}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("persisted message roles = %v, want %v", got, want)
+	}
+	toolResult, ok := messages[2].(llm.ToolResultMessage)
+	if !ok || !toolResult.IsError ||
+		len(toolResult.Content) != 1 ||
+		!strings.Contains(toolResult.Content[0].Text, toolFailure.Error()) {
+		t.Fatalf("persisted tool error = %#v", messages[2])
+	}
+	final, ok := messages[3].(llm.AssistantMessage)
+	if !ok || final.StopReason != llm.StopReasonStop {
+		t.Fatalf("final recovered assistant = %#v", messages[3])
 	}
 }
 
@@ -515,6 +722,52 @@ func assertTextMessage(
 	}
 }
 
+func assertPersistedTerminalAssistant(
+	t *testing.T,
+	message llm.AssistantMessage,
+	stopReason llm.StopReason,
+) {
+	t.Helper()
+
+	if message.StopReason != stopReason ||
+		message.ErrorMessage == "" ||
+		len(message.Content) != 1 ||
+		message.Content[0].Type != llm.ContentTypeText ||
+		message.Content[0].Text != message.ErrorMessage {
+		t.Fatalf(
+			"terminal assistant = %#v, want %q with safe text",
+			message,
+			stopReason,
+		)
+	}
+}
+
+func persistedMessageRoles[T llm.AgentMessage](messages []T) []llm.Role {
+	roles := make([]llm.Role, len(messages))
+	for index, message := range messages {
+		roles[index] = message.MessageRole()
+	}
+	return roles
+}
+
+func createAppTestSession(
+	t *testing.T,
+	path string,
+	workingDirectory string,
+) *session.Store {
+	t.Helper()
+
+	store, err := session.Create(t.Context(), path, session.Metadata{
+		ID:               "test-session",
+		CreatedAt:        1,
+		WorkingDirectory: workingDirectory,
+	})
+	if err != nil {
+		t.Fatalf("session.Create() error = %v", err)
+	}
+	return store
+}
+
 type recordingModel struct {
 	response string
 	requests []llm.Request
@@ -522,6 +775,7 @@ type recordingModel struct {
 
 type toolLoopModel struct {
 	requests  []llm.Request
+	firstCall *llm.ToolCall
 	secondErr error
 }
 
@@ -535,6 +789,9 @@ func (m *toolLoopModel) Stream(
 			ID:        "call-1",
 			Name:      "ls",
 			Arguments: []byte(`{}`),
+		}
+		if m.firstCall != nil {
+			call = *m.firstCall
 		}
 		message := llm.NewAssistantMessage(request.Model)
 		message.Content = []llm.ContentPart{
@@ -614,4 +871,34 @@ func (s *eventStream) Next() (llm.Event, error) {
 
 func (s *eventStream) Close() error {
 	return nil
+}
+
+type appTestTool struct {
+	definition llm.ToolDefinition
+	execute    func(context.Context, llm.ToolCall) (llm.ToolResult, error)
+}
+
+func newAppTestTool(
+	name string,
+	execute func(context.Context, llm.ToolCall) (llm.ToolResult, error),
+) *appTestTool {
+	return &appTestTool{
+		definition: llm.ToolDefinition{
+			Name:        name,
+			Description: "test tool",
+			InputSchema: json.RawMessage(`{"type":"object"}`),
+		},
+		execute: execute,
+	}
+}
+
+func (t *appTestTool) Definition() llm.ToolDefinition {
+	return t.definition
+}
+
+func (t *appTestTool) Execute(
+	ctx context.Context,
+	call llm.ToolCall,
+) (llm.ToolResult, error) {
+	return t.execute(ctx, call)
 }

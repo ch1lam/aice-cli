@@ -13,6 +13,8 @@ import (
 	"github.com/ch1lam/aice-cli/internal/tool"
 )
 
+const sessionPersistenceTimeout = 5 * time.Second
+
 func prepareSession(
 	ctx context.Context,
 	workspace *tool.Workspace,
@@ -140,6 +142,9 @@ func appendSessionRun(
 	store *session.Store,
 	messages []llm.AgentMessage,
 ) error {
+	if ctx == nil {
+		return fmt.Errorf("app: context is required")
+	}
 	if store == nil {
 		return fmt.Errorf("app: session store is required")
 	}
@@ -160,7 +165,15 @@ func appendSessionRun(
 	if err != nil {
 		return fmt.Errorf("app: create session turn: %w", err)
 	}
-	if err := store.AppendTurn(ctx, turn); err != nil {
+
+	// A completed run is durable cleanup. Give it a short independent deadline
+	// so cancellation of the model/tool request cannot discard its transcript.
+	persistCtx, cancel := context.WithTimeout(
+		context.WithoutCancel(ctx),
+		sessionPersistenceTimeout,
+	)
+	defer cancel()
+	if err := store.AppendTurn(persistCtx, turn); err != nil {
 		return fmt.Errorf("app: append session turn: %w", err)
 	}
 	return nil

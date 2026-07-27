@@ -123,14 +123,18 @@ func (a *application) Print(
 		Prompt:       prompt,
 	}, printer.Accept)
 	finishErr := printer.Finish()
-	if loopErr != nil {
-		return errors.Join(fmt.Errorf("app: run agent: %w", loopErr), finishErr)
-	}
+	var persistErr error
 	if store != nil {
-		persistErr := appendSessionRun(ctx, store, result.Messages())
-		return errors.Join(finishErr, persistErr)
+		persistErr = appendSessionRun(ctx, store, result.Messages())
 	}
-	return finishErr
+	if loopErr != nil {
+		return errors.Join(
+			fmt.Errorf("app: run agent: %w", loopErr),
+			finishErr,
+			persistErr,
+		)
+	}
+	return errors.Join(finishErr, persistErr)
 }
 
 // Interactive runs one multi-turn terminal session.
@@ -237,15 +241,18 @@ func (s *interactiveSession) Run(
 		History:      s.history,
 		Prompt:       prompt,
 	}, sink)
-	if runErr != nil {
-		return fmt.Errorf("app: run agent: %w", runErr)
-	}
 	messages := result.Messages()
-	if err := appendSessionRun(ctx, s.store, messages); err != nil {
-		return err
+	persistErr := appendSessionRun(ctx, s.store, messages)
+	if persistErr == nil {
+		s.history = append(s.history, messages...)
 	}
-	s.history = append(s.history, messages...)
-	return nil
+	if runErr != nil {
+		return errors.Join(
+			fmt.Errorf("app: run agent: %w", runErr),
+			persistErr,
+		)
+	}
+	return persistErr
 }
 
 func newBuiltInTools(workspace *tool.Workspace) ([]agent.Tool, error) {

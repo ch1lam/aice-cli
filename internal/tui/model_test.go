@@ -198,6 +198,36 @@ func TestModelHelpTogglesAndUsesAvailableHeight(t *testing.T) {
 	}
 }
 
+func TestModelPlacesComposerAboveStatusAndHelp(t *testing.T) {
+	t.Parallel()
+
+	current := newModel(make(chan runRequest), make(chan struct{}))
+	current = updateModel(t, current, tea.WindowSizeMsg{Width: 80, Height: 24})
+	current.input.SetValue("composer marker")
+	current.input.Blur()
+
+	content := current.View().Content
+	composerIndex := strings.Index(content, "composer marker")
+	statusIndex := strings.Index(content, "● "+current.status)
+	helpIndex := strings.Index(content, "enter")
+	if composerIndex < 0 || statusIndex < 0 || helpIndex < 0 {
+		t.Fatalf(
+			"view is missing composer, status, or help: composer=%d status=%d help=%d",
+			composerIndex,
+			statusIndex,
+			helpIndex,
+		)
+	}
+	if composerIndex >= statusIndex || composerIndex >= helpIndex {
+		t.Fatalf(
+			"composer is not above status and help: composer=%d status=%d help=%d",
+			composerIndex,
+			statusIndex,
+			helpIndex,
+		)
+	}
+}
+
 func TestModelCancellationIsRenderedAsNotice(t *testing.T) {
 	t.Parallel()
 

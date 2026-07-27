@@ -266,13 +266,17 @@ func TestLoopRejectsContextAboveCompactionThreshold(t *testing.T) {
 		previous,
 	}
 
-	_, err := loop.Run(t.Context(), input, nil)
+	result, err := loop.Run(t.Context(), input, nil)
 	if !errors.Is(err, agent.ErrContextLimit) {
 		t.Fatalf("Run() error = %v, want ErrContextLimit", err)
 	}
 	if len(model.requests) != 0 {
 		t.Fatalf("model requests = %d, want context rejection before provider", len(model.requests))
 	}
+	if len(result.Turns) != 1 {
+		t.Fatalf("Run() result = %#v, want terminal failure", result)
+	}
+	assertTerminalFailure(t, result.Turns[0].Assistant, llm.StopReasonError)
 }
 
 func TestLoopSettlesToolRunAfterCrossingCompactionThreshold(t *testing.T) {
@@ -694,9 +698,12 @@ func TestLoopEnforcesTurnLimitAfterCompletingToolResults(t *testing.T) {
 	if !errors.Is(err, agent.ErrTurnLimit) {
 		t.Fatalf("Run() error = %v, want ErrTurnLimit", err)
 	}
-	if len(model.requests) != 1 || len(result.Turns) != 1 || len(result.Turns[0].ToolResults) != 1 {
+	if len(model.requests) != 1 ||
+		len(result.Turns) != 2 ||
+		len(result.Turns[0].ToolResults) != 1 {
 		t.Fatalf("Run() requests = %d, result = %#v", len(model.requests), result)
 	}
+	assertTerminalFailure(t, result.Turns[1].Assistant, llm.StopReasonError)
 }
 
 func TestLoopEnforcesToolStepLimitWithPairedResults(t *testing.T) {
@@ -720,7 +727,7 @@ func TestLoopEnforcesToolStepLimitWithPairedResults(t *testing.T) {
 	if len(tool.calls) != 1 {
 		t.Fatalf("tool call count = %d, want 1", len(tool.calls))
 	}
-	if len(result.Turns) != 1 || len(result.Turns[0].ToolResults) != 2 {
+	if len(result.Turns) != 2 || len(result.Turns[0].ToolResults) != 2 {
 		t.Fatalf("Run() result = %#v", result)
 	}
 	if result.Turns[0].ToolResults[0].IsError || !result.Turns[0].ToolResults[1].IsError {
@@ -729,6 +736,7 @@ func TestLoopEnforcesToolStepLimitWithPairedResults(t *testing.T) {
 	if got := result.Turns[0].ToolResults[1].ToolCallID; got != "call-2" {
 		t.Fatalf("synthetic tool result call id = %q, want call-2", got)
 	}
+	assertTerminalFailure(t, result.Turns[1].Assistant, llm.StopReasonError)
 }
 
 func TestLoopPreservesPartialAssistantOnCancellation(t *testing.T) {
@@ -803,9 +811,10 @@ func TestLoopRejectsStreamEOFBeforeTerminalEvent(t *testing.T) {
 	if !errors.Is(err, agent.ErrProtocol) {
 		t.Fatalf("Run() error = %v, want ErrProtocol", err)
 	}
-	if len(result.Turns) != 0 {
-		t.Fatalf("Run() result turns = %#v, want none", result.Turns)
+	if len(result.Turns) != 1 {
+		t.Fatalf("Run() result turns = %#v, want one terminal failure", result.Turns)
 	}
+	assertTerminalFailure(t, result.Turns[0].Assistant, llm.StopReasonError)
 	if !model.scripts[0].closed {
 		t.Fatal("model stream was not closed")
 	}
@@ -883,6 +892,62 @@ func TestLoopStopsImmediatelyWhenEventSinkFails(t *testing.T) {
 			t.Fatal("agent_end emitted after event sink failure")
 		}
 	}
+}
+
+func TestLoopRetainsExecutedToolResultWhenEventSinkFails(t *testing.T) {
+	t.Parallel()
+
+	modelInfo := testModel()
+	answer := assistantMessage(
+		modelInfo,
+		llm.StopReasonToolUse,
+		toolCallPart("call-1", "write", `{}`),
+		toolCallPart("call-2", "write", `{}`),
+	)
+	model := &scriptedModel{scripts: []*streamScript{{
+		events: terminalEvents(answer),
+	}}}
+	tool := newFakeTool("write", successfulTool)
+	loop := mustLoop(
+		t,
+		model,
+		[]agent.Tool{tool},
+		agent.Limits{MaxTurns: 2, MaxToolSteps: 2},
+	)
+	sinkFailure := errors.New("consumer stopped")
+
+	result, err := loop.Run(
+		t.Context(),
+		testInput(modelInfo, mustPrompt(t, "write")),
+		func(_ context.Context, event agent.AgentEvent) error {
+			if event.Type == agent.EventTypeToolExecutionEnd {
+				return sinkFailure
+			}
+			return nil
+		},
+	)
+	if !errors.Is(err, sinkFailure) {
+		t.Fatalf("Run() error = %v, want sink failure", err)
+	}
+	if len(tool.calls) != 1 {
+		t.Fatalf("tool calls = %d, want only the executed first call", len(tool.calls))
+	}
+	if len(result.Turns) != 2 || len(result.Turns[0].ToolResults) != 2 {
+		t.Fatalf("Run() result = %#v", result)
+	}
+	if result.Turns[0].ToolResults[0].IsError {
+		t.Fatalf(
+			"executed tool result = %#v, want success",
+			result.Turns[0].ToolResults[0],
+		)
+	}
+	if !result.Turns[0].ToolResults[1].IsError {
+		t.Fatalf(
+			"unexecuted tool result = %#v, want synthetic error",
+			result.Turns[0].ToolResults[1],
+		)
+	}
+	assertTerminalFailure(t, result.Turns[1].Assistant, llm.StopReasonError)
 }
 
 func testModel() llm.Model {
@@ -980,6 +1045,26 @@ func assertAgentMessage(t *testing.T, got, want llm.AgentMessage) {
 	t.Helper()
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("agent event message = %#v, want %#v", got, want)
+	}
+}
+
+func assertTerminalFailure(
+	t *testing.T,
+	message llm.AssistantMessage,
+	stopReason llm.StopReason,
+) {
+	t.Helper()
+
+	if message.StopReason != stopReason ||
+		message.ErrorMessage == "" ||
+		len(message.Content) != 1 ||
+		message.Content[0].Type != llm.ContentTypeText ||
+		message.Content[0].Text != message.ErrorMessage {
+		t.Fatalf(
+			"terminal assistant = %#v, want %q failure with safe text",
+			message,
+			stopReason,
+		)
 	}
 }
 

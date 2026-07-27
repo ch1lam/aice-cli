@@ -14,7 +14,7 @@ const (
 	separatorHex   = "#332921" // 褐
 	primaryTextHex = "#F2E9D8" // 米白
 	mutedTextHex   = "#8F8477" // 烟灰
-	sunsetHex   = "#FF6B6B" // 霞绯
+	sunsetHex      = "#FF6B6B" // 霞绯
 	goldHex        = "#C9A063" // 金
 	successHex     = "#7A9471" // 竹青
 	warningHex     = "#D98C3D" // 姜黄
@@ -61,7 +61,6 @@ var (
 	composerFocusedStyle = lipgloss.NewStyle().
 				Border(lipgloss.RoundedBorder()).
 				BorderForeground(accentColor).
-				Background(panelBlackColor).
 				Padding(0, 1)
 	composerBlurredStyle = composerFocusedStyle.BorderForeground(subtleColor)
 	errorStyle           = lipgloss.NewStyle().Foreground(errorColor)

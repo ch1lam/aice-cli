@@ -74,8 +74,6 @@ func TestThemeAppliesLayeredBackgrounds(t *testing.T) {
 	}{
 		{name: "user", style: userStyle, want: panelBlackHex},
 		{name: "thinking", style: thinkingStyle, want: panelBlackHex},
-		{name: "focused composer", style: composerFocusedStyle, want: panelBlackHex},
-		{name: "blurred composer", style: composerBlurredStyle, want: panelBlackHex},
 	}
 
 	for _, tt := range styles {
@@ -101,13 +99,44 @@ func TestThemeAppliesLayeredBackgrounds(t *testing.T) {
 	}
 }
 
+func TestComposerUsesScreenBackground(t *testing.T) {
+	t.Parallel()
+
+	current := newModel(make(chan runRequest), make(chan struct{}))
+	inputStyles := current.input.Styles()
+	styles := []struct {
+		name  string
+		style lipgloss.Style
+	}{
+		{name: "focused composer", style: composerFocusedStyle},
+		{name: "blurred composer", style: composerBlurredStyle},
+		{name: "focused base", style: inputStyles.Focused.Base},
+		{name: "focused text", style: inputStyles.Focused.Text},
+		{name: "focused cursor line", style: inputStyles.Focused.CursorLine},
+		{name: "focused prompt", style: inputStyles.Focused.Prompt},
+		{name: "focused placeholder", style: inputStyles.Focused.Placeholder},
+		{name: "blurred base", style: inputStyles.Blurred.Base},
+		{name: "blurred text", style: inputStyles.Blurred.Text},
+		{name: "blurred cursor line", style: inputStyles.Blurred.CursorLine},
+		{name: "blurred prompt", style: inputStyles.Blurred.Prompt},
+		{name: "blurred placeholder", style: inputStyles.Blurred.Placeholder},
+	}
+
+	for _, tt := range styles {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			assertNoColor(t, tt.style.GetBackground())
+		})
+	}
+}
+
 func TestModelUsesGoldCursor(t *testing.T) {
 	t.Parallel()
 
 	current := newModel(make(chan runRequest), make(chan struct{}))
 	styles := current.input.Styles()
 	assertColor(t, styles.Cursor.Color, lipgloss.Color(goldHex))
-	assertColor(t, styles.Focused.CursorLine.GetBackground(), lipgloss.Color(panelBlackHex))
 
 	view := current.View()
 	assertColor(t, view.BackgroundColor, lipgloss.Color(inkBlackHex))
@@ -131,5 +160,13 @@ func assertColor(t *testing.T, got, want color.Color) {
 			wantBlue,
 			wantAlpha,
 		)
+	}
+}
+
+func assertNoColor(t *testing.T, got color.Color) {
+	t.Helper()
+
+	if _, ok := got.(lipgloss.NoColor); !ok {
+		t.Errorf("color = %T(%v), want lipgloss.NoColor", got, got)
 	}
 }

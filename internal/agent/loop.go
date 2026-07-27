@@ -73,6 +73,7 @@ func (l *Loop) Run(ctx context.Context, input RunInput, sink AgentEventSink) (Re
 		return Result{}, fmt.Errorf("agent: validate prompt: %w", err)
 	}
 
+	initialResult := Result{Prompt: input.Prompt}
 	history := slices.Clone(input.History)
 	history = append(history, input.Prompt)
 	execution := runExecution{
@@ -80,20 +81,24 @@ func (l *Loop) Run(ctx context.Context, input RunInput, sink AgentEventSink) (Re
 		input:   input,
 		sink:    sink,
 		history: history,
-		result:  Result{Prompt: input.Prompt},
+		result:  initialResult,
 	}
 	request, err := execution.request()
 	if err != nil {
-		return Result{}, fmt.Errorf("agent: prepare initial request: %w", err)
+		runErr := fmt.Errorf("agent: prepare initial request: %w", err)
+		return finalizeFailedResult(initialResult, input.Model, runErr), runErr
 	}
 	if err := checkCompactionThreshold(request); err != nil {
-		return Result{}, fmt.Errorf("agent: protect initial request: %w", err)
+		runErr := fmt.Errorf("agent: protect initial request: %w", err)
+		return finalizeFailedResult(initialResult, input.Model, runErr), runErr
 	}
 	if err := request.Validate(); err != nil {
-		return Result{}, fmt.Errorf("agent: validate initial request: %w", err)
+		runErr := fmt.Errorf("agent: validate initial request: %w", err)
+		return finalizeFailedResult(initialResult, input.Model, runErr), runErr
 	}
 
-	return execution.run(ctx)
+	result, runErr := execution.run(ctx)
+	return finalizeFailedResult(result, input.Model, runErr), runErr
 }
 
 type runExecution struct {
@@ -422,6 +427,8 @@ func (e *runExecution) executeTools(
 		}
 
 		message, toolErr := e.executeTool(ctx, call)
+		results = append(results, message)
+		e.history = append(e.history, message)
 		if err := e.emit(ctx, AgentEvent{
 			Type:       EventTypeToolExecutionEnd,
 			TurnNumber: turnNumber,
@@ -434,9 +441,6 @@ func (e *runExecution) executeTools(
 		if err := e.emitToolResultMessage(ctx, turnNumber, call, message); err != nil {
 			return results, err
 		}
-
-		results = append(results, message)
-		e.history = append(e.history, message)
 	}
 	return results, ctx.Err()
 }
@@ -477,11 +481,11 @@ func (e *runExecution) syntheticToolResults(
 	for index := range calls {
 		call := calls[index]
 		message := newErrorToolResult(call, errors.New(reason))
+		results = append(results, message)
+		e.history = append(e.history, message)
 		if err := e.emitToolResultMessage(ctx, turnNumber, call, message); err != nil {
 			return results, err
 		}
-		results = append(results, message)
-		e.history = append(e.history, message)
 	}
 	return results, nil
 }
@@ -544,6 +548,7 @@ func (e *runExecution) finishIncompleteTurn(
 }
 
 func (e *runExecution) finishRun(ctx context.Context, runErr error) (Result, error) {
+	e.result = finalizeFailedResult(e.result, e.input.Model, runErr)
 	result := e.result
 	if err := e.emit(ctx, AgentEvent{
 		Type:     EventTypeAgentEnd,
@@ -553,6 +558,110 @@ func (e *runExecution) finishRun(ctx context.Context, runErr error) (Result, err
 		return e.result, errors.Join(runErr, err)
 	}
 	return e.result, runErr
+}
+
+func finalizeFailedResult(
+	result Result,
+	model llm.Model,
+	runErr error,
+) Result {
+	if runErr == nil {
+		return result
+	}
+
+	terminalText, stopReason := terminalFailure(runErr)
+	result = pairUnfinishedToolCalls(result, terminalText)
+	if resultEndsAtAssistant(result) {
+		return result
+	}
+	if err := result.Prompt.Validate(); err != nil {
+		return result
+	}
+
+	message := llm.NewAssistantMessage(model)
+	message.Content = []llm.ContentPart{
+		llm.NewTextContent(terminalText).Part(),
+	}
+	message.StopReason = stopReason
+	message.ErrorMessage = terminalText
+	if err := message.Validate(); err != nil {
+		return result
+	}
+
+	turnNumber := 1
+	if len(result.Turns) > 0 {
+		turnNumber = result.Turns[len(result.Turns)-1].Number + 1
+	}
+	result.Turns = append(result.Turns, Turn{
+		Number:      turnNumber,
+		Assistant:   message,
+		ToolResults: []llm.ToolResultMessage{},
+	})
+	return result
+}
+
+func pairUnfinishedToolCalls(result Result, terminalText string) Result {
+	for turnIndex := range result.Turns {
+		turn := &result.Turns[turnIndex]
+		calls, err := extractToolCalls(turn.Assistant)
+		if err != nil {
+			continue
+		}
+
+		recorded := make(map[string]struct{}, len(turn.ToolResults))
+		for _, toolResult := range turn.ToolResults {
+			recorded[toolResult.ToolCallID] = struct{}{}
+		}
+		for _, call := range calls {
+			if _, exists := recorded[call.ID]; exists {
+				continue
+			}
+			message := newErrorToolResult(
+				call,
+				fmt.Errorf(
+					"tool %q was not executed because the %s",
+					call.Name,
+					terminalText,
+				),
+			)
+			turn.ToolResults = append(turn.ToolResults, message)
+			recorded[call.ID] = struct{}{}
+		}
+	}
+	return result
+}
+
+func resultEndsAtAssistant(result Result) bool {
+	if len(result.Turns) == 0 {
+		return false
+	}
+	last := result.Turns[len(result.Turns)-1]
+	if len(last.ToolResults) != 0 {
+		return false
+	}
+	for _, part := range last.Assistant.Content {
+		if part.Type == llm.ContentTypeToolCall {
+			return false
+		}
+	}
+	return true
+}
+
+func terminalFailure(runErr error) (string, llm.StopReason) {
+	switch {
+	case errors.Is(runErr, context.Canceled):
+		return "agent run canceled before completion", llm.StopReasonAborted
+	case errors.Is(runErr, context.DeadlineExceeded):
+		return "agent run deadline exceeded before completion", llm.StopReasonAborted
+	case errors.Is(runErr, ErrTurnLimit):
+		return "agent run stopped after reaching the turn limit", llm.StopReasonError
+	case errors.Is(runErr, ErrToolStepLimit):
+		return "agent run stopped after reaching the tool step limit", llm.StopReasonError
+	case errors.Is(runErr, ErrContextLimit):
+		return "agent run stopped after reaching the context limit", llm.StopReasonError
+	default:
+		return "agent run failed before completion", llm.StopReasonError
+	}
 }
 
 func (e *runExecution) emit(ctx context.Context, event AgentEvent) error {

@@ -85,28 +85,23 @@ func newModel(
 	input.SetHeight(1)
 	input.SetWidth(80)
 	inputStyles := textarea.DefaultDarkStyles()
-	panelBodyStyle := bodyStyle.Background(panelBlackColor)
-	panelMutedStyle := mutedStyle.Background(panelBlackColor)
-	inputStyles.Focused.Base = panelBodyStyle
-	inputStyles.Focused.Text = panelBodyStyle
-	inputStyles.Focused.CursorLine = panelBodyStyle
-	inputStyles.Focused.CursorLineNumber = panelMutedStyle
-	inputStyles.Focused.EndOfBuffer = panelMutedStyle
-	inputStyles.Focused.LineNumber = panelMutedStyle
+	inputStyles.Focused.Base = bodyStyle
+	inputStyles.Focused.Text = bodyStyle
+	inputStyles.Focused.CursorLine = bodyStyle
+	inputStyles.Focused.CursorLineNumber = mutedStyle
+	inputStyles.Focused.EndOfBuffer = mutedStyle
+	inputStyles.Focused.LineNumber = mutedStyle
 	inputStyles.Focused.Prompt = lipgloss.NewStyle().
-		Foreground(accentColor).
-		Background(panelBlackColor)
-	inputStyles.Focused.Placeholder = panelMutedStyle
-	inputStyles.Blurred.Base = panelBodyStyle
-	inputStyles.Blurred.Text = panelBodyStyle
-	inputStyles.Blurred.CursorLine = panelBodyStyle
-	inputStyles.Blurred.CursorLineNumber = panelMutedStyle
-	inputStyles.Blurred.EndOfBuffer = panelMutedStyle
-	inputStyles.Blurred.LineNumber = panelMutedStyle
-	inputStyles.Blurred.Prompt = lipgloss.NewStyle().
-		Foreground(subtleColor).
-		Background(panelBlackColor)
-	inputStyles.Blurred.Placeholder = panelMutedStyle
+		Foreground(accentColor)
+	inputStyles.Focused.Placeholder = mutedStyle
+	inputStyles.Blurred.Base = bodyStyle
+	inputStyles.Blurred.Text = bodyStyle
+	inputStyles.Blurred.CursorLine = bodyStyle
+	inputStyles.Blurred.CursorLineNumber = mutedStyle
+	inputStyles.Blurred.EndOfBuffer = mutedStyle
+	inputStyles.Blurred.LineNumber = mutedStyle
+	inputStyles.Blurred.Prompt = lipgloss.NewStyle().Foreground(subtleColor)
+	inputStyles.Blurred.Placeholder = mutedStyle
 	inputStyles.Cursor.Color = secondaryColor
 	input.SetStyles(inputStyles)
 	input.Focus()
@@ -203,8 +198,8 @@ func (m model) View() tea.View {
 		lipgloss.Left,
 		m.headerView(width),
 		m.viewport.View(),
-		m.footerView(width),
 		m.composerView(width),
+		m.footerView(width),
 	)
 
 	view := tea.NewView(content)
