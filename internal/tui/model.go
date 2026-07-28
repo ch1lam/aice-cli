@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"charm.land/bubbles/v2/help"
 	"charm.land/bubbles/v2/key"
@@ -30,6 +31,7 @@ const (
 	maximumEventBatch  = 64
 	inputMaximumHeight = 6
 	maximumCommandRows = 6
+	defaultPlaceholder = "Ask about this workspace..."
 )
 
 type entryKind uint8
@@ -55,6 +57,11 @@ type transcriptEntry struct {
 	toolError bool
 }
 
+type secretInput struct {
+	request SlashCommandRequest
+	prompt  string
+}
+
 type model struct {
 	requests       chan<- runRequest
 	controllerDone <-chan struct{}
@@ -68,10 +75,12 @@ type model struct {
 	keys             keyMap
 	currentModel     llm.Model
 	thinking         llm.ThinkingLevel
+	apiKeyConfigured bool
 	sessionUsage     llm.Usage
 	workingDirectory string
 	entries          []transcriptEntry
 	commands         []SlashCommand
+	secretInput      *secretInput
 
 	width            int
 	height           int
@@ -91,7 +100,7 @@ func newModel(
 ) model {
 	input := textarea.New()
 	input.Prompt = "┃ "
-	input.Placeholder = "Ask about this workspace..."
+	input.Placeholder = defaultPlaceholder
 	input.ShowLineNumbers = false
 	input.DynamicHeight = true
 	input.MinHeight = 1
@@ -234,6 +243,18 @@ func (m model) View() tea.View {
 }
 
 func (m model) handleKey(message tea.KeyPressMsg) (model, tea.Cmd, bool) {
+	if !m.running && m.secretInput != nil {
+		switch {
+		case message.Code == tea.KeyEscape,
+			key.Matches(message, m.keys.interrupt),
+			key.Matches(message, m.keys.quit):
+			return m.cancelSecretInput()
+		case key.Matches(message, m.keys.newline):
+			m.status = "API key must be entered on one line"
+			return m, nil, true
+		}
+	}
+
 	if !m.running && m.slashCommandMenuVisible() {
 		switch message.Code {
 		case tea.KeyUp:
@@ -317,6 +338,10 @@ func (m *model) updateInput(message tea.Msg) tea.Cmd {
 }
 
 func (m model) submit() (model, tea.Cmd, bool) {
+	if m.secretInput != nil {
+		return m.submitSecretInput()
+	}
+
 	prompt := strings.TrimSpace(m.input.Value())
 	if prompt == "" {
 		return m, nil, true
@@ -395,6 +420,22 @@ func (m model) submitSlashCommand(
 	if m.controllerClosed {
 		return m.commandError(raw, "TUI run controller stopped")
 	}
+	if command.SecretPrompt != "" {
+		m.entries = append(
+			m.entries,
+			transcriptEntry{kind: entryUser, text: raw},
+		)
+		m.resetCommandInput()
+		m.secretInput = &secretInput{
+			request: request,
+			prompt:  command.SecretPrompt,
+		}
+		m.input.Placeholder = command.SecretPrompt + " (input hidden)"
+		m.status = command.SecretPrompt + " required; Esc cancels"
+		m.resizeLayout()
+		m.refreshViewport(true)
+		return m, m.input.Focus(), true
+	}
 	m.entries = append(m.entries, transcriptEntry{kind: entryUser, text: raw})
 	m.resetCommandInput()
 	m.input.Blur()
@@ -404,6 +445,45 @@ func (m model) submitSlashCommand(
 	m.resizeLayout()
 	m.refreshViewport(true)
 	return m, startSlashCommand(m.requests, m.controllerDone, request), true
+}
+
+func (m model) submitSecretInput() (model, tea.Cmd, bool) {
+	value := strings.TrimSpace(m.input.Value())
+	if value == "" {
+		m.status = m.secretInput.prompt + " must not be blank"
+		return m, nil, true
+	}
+	if strings.ContainsAny(value, "\r\n") {
+		m.status = m.secretInput.prompt + " must be entered on one line"
+		return m, nil, true
+	}
+	if m.controllerClosed {
+		return m.cancelSecretInput()
+	}
+
+	request := m.secretInput.request
+	request.Secret = value
+	m.resetCommandInput()
+	m.input.Blur()
+	m.running = true
+	m.assistantEntry = -1
+	m.status = "Saving credential..."
+	m.resizeLayout()
+	m.refreshViewport(true)
+	return m, startSlashCommand(m.requests, m.controllerDone, request), true
+}
+
+func (m model) cancelSecretInput() (model, tea.Cmd, bool) {
+	prompt := m.secretInput.prompt
+	m.resetCommandInput()
+	m.entries = append(m.entries, transcriptEntry{
+		kind: entryNotice,
+		text: prompt + " entry cancelled",
+	})
+	m.status = prompt + " entry cancelled; run /login to try again"
+	m.resizeLayout()
+	m.refreshViewport(true)
+	return m, m.input.Focus(), true
 }
 
 func (m model) commandUsageError(
@@ -434,6 +514,8 @@ func (m model) commandError(
 
 func (m *model) resetCommandInput() {
 	m.input.Reset()
+	m.input.Placeholder = defaultPlaceholder
+	m.secretInput = nil
 	m.commandSelection = 0
 	m.commandDismissed = false
 }
@@ -460,6 +542,11 @@ func (m model) applyRunBatch(batch runBatchMsg) (tea.Model, tea.Cmd) {
 				text: strings.TrimSpace(update.output),
 			})
 			contentChanged = true
+		}
+		if update.state != nil {
+			m.currentModel = update.state.Model
+			m.thinking = update.state.Thinking
+			m.apiKeyConfigured = update.state.APIKeyConfigured
 		}
 		if update.done {
 			commands = append(commands, m.finishRun(update.err))
@@ -689,11 +776,25 @@ func (m model) composerView(width int) string {
 		style = composerBlurredStyle
 	}
 	contentWidth := max(width-style.GetHorizontalFrameSize(), 1)
+	if m.secretInput != nil {
+		value := mutedStyle.Render(m.input.Placeholder)
+		if count := utf8.RuneCountInString(m.input.Value()); count > 0 {
+			value = bodyStyle.Render(strings.Repeat("•", count))
+		}
+		promptStyle := lipgloss.NewStyle().Foreground(accentColor)
+		if !m.input.Focused() {
+			promptStyle = lipgloss.NewStyle().Foreground(subtleColor)
+		}
+		return style.Width(contentWidth).Render(
+			promptStyle.Render("┃ ") + value,
+		)
+	}
 	return style.Width(contentWidth).Render(m.input.View())
 }
 
 func (m model) slashCommandMenuVisible() bool {
 	return !m.running &&
+		m.secretInput == nil &&
 		!m.commandDismissed &&
 		len(m.matchingSlashCommands()) > 0
 }
@@ -766,16 +867,20 @@ func (m model) slashCommandMenuView(width int) string {
 		command := matches[index]
 		prefix := "  "
 		rowStyle := slashCommandRowStyle
+		usageStyle := labelStyle
+		descriptionStyle := mutedStyle
 		if index == selection {
 			prefix = "› "
 			rowStyle = slashCommandSelectedStyle
+			usageStyle = slashCommandSelectedStyle
+			descriptionStyle = slashCommandSelectedStyle
 		}
 		usage := truncateTerminalText(
 			slashCommandUsage(command),
 			max(usageWidth-2, 1),
 		)
 		usage += strings.Repeat(" ", max(usageWidth-2-lipgloss.Width(usage), 0))
-		leading := prefix + labelStyle.Render(usage) + "  "
+		leading := prefix + usageStyle.Render(usage) + "  "
 		descriptionWidth := max(innerWidth-lipgloss.Width(leading), 0)
 		description := truncateTerminalText(
 			command.Description,
@@ -783,7 +888,7 @@ func (m model) slashCommandMenuView(width int) string {
 		)
 		row := leading
 		if descriptionWidth > 0 {
-			row += mutedStyle.Render(description)
+			row += descriptionStyle.Render(description)
 		}
 		rows = append(rows, rowStyle.Width(innerWidth).Render(row))
 	}
@@ -833,6 +938,15 @@ func (m model) welcomeView() string {
 		"Ask AICE to trace behavior, explain architecture, or inspect a file.",
 	)
 	commandHint := mutedStyle.Render("Type / to browse interactive commands.")
+	if !m.apiKeyConfigured {
+		title = headerStyle.Render("✦  Configure AICE")
+		description = noticeStyle.Render(
+			"No DeepSeek API key is configured.",
+		)
+		commandHint = mutedStyle.Render(
+			"Run /login to add one, or /settings to inspect configuration.",
+		)
+	}
 	toolLabel := mutedStyle.Render("AVAILABLE TOOLS")
 	tools := labelStyle.Render(
 		"read   ls   grep   find",

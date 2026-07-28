@@ -164,7 +164,7 @@ func newSessionTestCommand(t *testing.T) *cobra.Command {
 	t.Helper()
 
 	command, err := newCommand(dependencies{
-		loadConfig: func() (config.Config, error) {
+		loadConfig: func(string) (config.Config, error) {
 			t.Fatal("configuration loaded for Session navigation")
 			return config.Config{}, nil
 		},

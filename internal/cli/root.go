@@ -38,10 +38,11 @@ type Interactor interface {
 
 // Dependencies contains the behavior invoked by CLI commands.
 type Dependencies struct {
-	Printer    Printer
-	Interactor Interactor
-	Compactor  Compactor
-	Navigator  SessionNavigator
+	Printer      Printer
+	Interactor   Interactor
+	Compactor    Compactor
+	Navigator    SessionNavigator
+	Configurator Configurator
 }
 
 // NewRootCommand builds a fresh AICE command tree.
@@ -57,6 +58,9 @@ func NewRootCommand(dependencies Dependencies) (*cobra.Command, error) {
 	}
 	if dependencies.Navigator == nil {
 		return nil, fmt.Errorf("cli: session navigator is required")
+	}
+	if dependencies.Configurator == nil {
+		return nil, fmt.Errorf("cli: configurator is required")
 	}
 
 	options := rootOptions{workspace: "."}
@@ -143,6 +147,7 @@ func NewRootCommand(dependencies Dependencies) (*cobra.Command, error) {
 	)
 	command.AddCommand(newCompactCommand(dependencies.Compactor))
 	command.AddCommand(newSessionCommand(dependencies.Navigator))
+	command.AddCommand(newConfigCommand(dependencies.Configurator))
 
 	return command, nil
 }

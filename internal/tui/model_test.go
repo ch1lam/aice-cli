@@ -126,6 +126,27 @@ func TestModelSubmitsPromptAndConsumesAgentEvents(t *testing.T) {
 	}
 }
 
+func TestModelWelcomeGuidesUnconfiguredLogin(t *testing.T) {
+	t.Parallel()
+
+	current := newModel(make(chan runRequest), make(chan struct{}))
+	current = updateModel(t, current, tea.WindowSizeMsg{
+		Width:  80,
+		Height: 24,
+	})
+
+	welcome := current.welcomeView()
+	for _, want := range []string{
+		"No DeepSeek API key is configured",
+		"/login",
+		"/settings",
+	} {
+		if !strings.Contains(welcome, want) {
+			t.Errorf("welcome = %q, want %q", welcome, want)
+		}
+	}
+}
+
 func TestModelFocusedInputKeysDoNotScrollTranscript(t *testing.T) {
 	t.Parallel()
 
@@ -661,6 +682,120 @@ func TestModelSlashCommandMenuCompletesArgumentCommand(t *testing.T) {
 	}
 	if completed.slashCommandMenuVisible() {
 		t.Fatal("slash command menu remains visible while entering arguments")
+	}
+}
+
+func TestModelSecretSlashCommandHidesAndSubmitsSecret(t *testing.T) {
+	t.Parallel()
+
+	requests := make(chan runRequest, 1)
+	current := newModel(
+		requests,
+		make(chan struct{}),
+		SlashCommand{
+			Name:         "login",
+			Description:  "Store a provider API key",
+			ArgumentHint: "[provider]",
+			SecretPrompt: "DeepSeek API key",
+		},
+	)
+	current = updateModel(t, current, tea.WindowSizeMsg{
+		Width:  80,
+		Height: 24,
+	})
+	current.input.SetValue("/login")
+
+	entering, _, handled := current.handleKey(tea.KeyPressMsg{
+		Code: tea.KeyEnter,
+	})
+	if !handled || entering.secretInput == nil {
+		t.Fatal("/login did not enter secret input mode")
+	}
+
+	const secret = "secret-value"
+	entering.input.SetValue(secret)
+	if view := entering.View().Content; strings.Contains(view, secret) {
+		t.Fatalf("secret input is visible in TUI: %q", view)
+	}
+	if view := entering.composerView(80); !strings.Contains(view, "••••") {
+		t.Fatalf("secret input is not masked: %q", view)
+	}
+
+	starting, command, handled := entering.handleKey(tea.KeyPressMsg{
+		Code: tea.KeyEnter,
+	})
+	if !handled || command == nil {
+		t.Fatal("secret input was not submitted")
+	}
+	rawStartMessage := command()
+	if _, ok := rawStartMessage.(runStartedMsg); !ok {
+		t.Fatalf(
+			"start command message = %T, want runStartedMsg",
+			rawStartMessage,
+		)
+	}
+	request := <-requests
+	if request.command == nil ||
+		request.command.Name != "login" ||
+		request.command.Secret != secret {
+		t.Fatalf("login request = %#v, want hidden secret", request.command)
+	}
+	if starting.secretInput != nil || starting.input.Value() != "" {
+		t.Fatal("secret remains in composer after submission")
+	}
+	if transcript := starting.transcriptView(); strings.Contains(
+		transcript,
+		secret,
+	) {
+		t.Fatalf("secret leaked into transcript: %q", transcript)
+	}
+}
+
+func TestModelSecretSlashCommandCanBeCancelledAndRestarted(t *testing.T) {
+	t.Parallel()
+
+	requests := make(chan runRequest, 1)
+	current := newModel(
+		requests,
+		make(chan struct{}),
+		SlashCommand{
+			Name:         "login",
+			Description:  "Store a provider API key",
+			SecretPrompt: "DeepSeek API key",
+		},
+	)
+	current.input.SetValue("/login")
+	entering, _, _ := current.handleKey(tea.KeyPressMsg{
+		Code: tea.KeyEnter,
+	})
+	entering.input.SetValue("discarded-secret")
+
+	cancelled, _, handled := entering.handleKey(tea.KeyPressMsg{
+		Code: tea.KeyEscape,
+	})
+	if !handled ||
+		cancelled.secretInput != nil ||
+		cancelled.input.Value() != "" {
+		t.Fatal("Esc did not cancel and clear secret input")
+	}
+	if transcript := cancelled.transcriptView(); strings.Contains(
+		transcript,
+		"discarded-secret",
+	) {
+		t.Fatalf("cancelled secret leaked into transcript: %q", transcript)
+	}
+	select {
+	case request := <-requests:
+		t.Fatalf("cancelled login reached run controller: %#v", request)
+	default:
+	}
+
+	cancelled.input.SetValue("/login")
+	restarted, _, handled := cancelled.handleKey(tea.KeyPressMsg{
+		Code: tea.KeyEnter,
+	})
+	if !handled || restarted.secretInput == nil {
+		t.Fatal("/login could not be restarted after cancellation")
 	}
 }
 

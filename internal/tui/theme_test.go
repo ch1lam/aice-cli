@@ -64,6 +64,17 @@ func TestThemeMapsSemanticColors(t *testing.T) {
 	}
 }
 
+func TestSlashCommandSelectionUsesAccentWithoutBackground(t *testing.T) {
+	t.Parallel()
+
+	assertColor(
+		t,
+		slashCommandSelectedStyle.GetForeground(),
+		lipgloss.Color(sunsetHex),
+	)
+	assertNoColor(t, slashCommandSelectedStyle.GetBackground())
+}
+
 func TestThemeAppliesLayeredBackgrounds(t *testing.T) {
 	t.Parallel()
 

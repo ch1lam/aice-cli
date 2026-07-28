@@ -1,13 +1,16 @@
 package app
 
 import (
+	"errors"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/ch1lam/aice-cli/internal/agent"
 	"github.com/ch1lam/aice-cli/internal/config"
 	"github.com/ch1lam/aice-cli/internal/llm"
+	"github.com/ch1lam/aice-cli/internal/provider/deepseek"
 	"github.com/ch1lam/aice-cli/internal/session"
 	"github.com/ch1lam/aice-cli/internal/tool"
 	"github.com/ch1lam/aice-cli/internal/tui"
@@ -120,7 +123,7 @@ func TestInteractiveSessionSlashCommandCompactsAndReloadsHistory(
 		stopReason: llm.StopReasonStop,
 	}
 	application := &application{dependencies: dependencies{
-		loadConfig: func() (config.Config, error) {
+		loadConfig: func(string) (config.Config, error) {
 			return config.Config{DeepSeekAPIKey: "test-key"}, nil
 		},
 		newModel: func(config.Config) (agent.Model, error) {
@@ -195,6 +198,245 @@ func TestInteractiveSessionSlashCommandsRejectInvalidArguments(t *testing.T) {
 				t.Fatalf("RunSlashCommand() error = %v, want %q", err, tt.want)
 			}
 		})
+	}
+}
+
+func TestInteractiveSessionSlashCommandsPersistRuntimeSettings(t *testing.T) {
+	t.Parallel()
+
+	type savedSetting struct {
+		workspace string
+		scope     config.Scope
+		setting   config.Setting
+		value     string
+	}
+	var saved []savedSetting
+	runner := &interactiveSession{
+		application: &application{dependencies: dependencies{
+			saveSetting: func(
+				workspace string,
+				scope config.Scope,
+				setting config.Setting,
+				value string,
+			) error {
+				saved = append(saved, savedSetting{
+					workspace: workspace,
+					scope:     scope,
+					setting:   setting,
+					value:     value,
+				})
+				return nil
+			},
+		}},
+		model: deepseek.DefaultModel(),
+		configuration: config.Config{
+			Provider:       string(deepseek.ProviderID),
+			Model:          deepseek.ModelV4Flash,
+			DeepSeekAPIKey: "secret",
+			Paths: config.Paths{
+				GlobalSettings:  "/global/settings.json",
+				ProjectSettings: "/workspace/.aice/settings.json",
+				GlobalAuth:      "/global/auth.json",
+			},
+		},
+		workspace: "/workspace",
+	}
+
+	settings, err := runner.RunSlashCommand(
+		t.Context(),
+		tui.SlashCommandRequest{Name: "settings"},
+	)
+	if err != nil {
+		t.Fatalf("/settings error = %v", err)
+	}
+	for _, want := range []string{
+		"Provider: deepseek",
+		"Model: " + deepseek.ModelV4Flash,
+		"Thinking: default",
+		"API key: configured",
+		"/workspace/.aice/settings.json",
+	} {
+		if !strings.Contains(settings, want) {
+			t.Errorf("/settings output = %q, want %q", settings, want)
+		}
+	}
+
+	output, err := runner.RunSlashCommand(
+		t.Context(),
+		tui.SlashCommandRequest{
+			Name:      "model",
+			Arguments: "--local " + deepseek.ModelV4Pro,
+		},
+	)
+	if err != nil {
+		t.Fatalf("/model error = %v", err)
+	}
+	if !strings.Contains(output, "project settings") {
+		t.Errorf("/model output = %q, want project scope", output)
+	}
+	state := runner.RuntimeState()
+	if state.Model.ID != deepseek.ModelV4Pro {
+		t.Errorf("runtime model = %q, want V4 Pro", state.Model.ID)
+	}
+
+	_, err = runner.RunSlashCommand(
+		t.Context(),
+		tui.SlashCommandRequest{
+			Name:      "thinking",
+			Arguments: "off",
+		},
+	)
+	if err != nil {
+		t.Fatalf("/thinking error = %v", err)
+	}
+	state = runner.RuntimeState()
+	if state.Thinking != llm.ThinkingLevelOff {
+		t.Errorf("runtime thinking = %q, want off", state.Thinking)
+	}
+
+	wantSaved := []savedSetting{
+		{
+			workspace: "/workspace",
+			scope:     config.ScopeProject,
+			setting:   config.SettingModel,
+			value:     deepseek.ModelV4Pro,
+		},
+		{
+			workspace: "/workspace",
+			scope:     config.ScopeGlobal,
+			setting:   config.SettingThinking,
+			value:     "off",
+		},
+	}
+	if !reflect.DeepEqual(saved, wantSaved) {
+		t.Errorf("saved settings = %#v, want %#v", saved, wantSaved)
+	}
+}
+
+func TestInteractiveSessionConfigurationCommandsRejectUnsupportedValues(
+	t *testing.T,
+) {
+	t.Parallel()
+
+	runner := &interactiveSession{
+		application: &application{dependencies: dependencies{
+			saveSetting: func(
+				string,
+				config.Scope,
+				config.Setting,
+				string,
+			) error {
+				t.Fatal("invalid setting was persisted")
+				return nil
+			},
+		}},
+		model:         deepseek.DefaultModel(),
+		configuration: config.Config{Provider: string(deepseek.ProviderID)},
+		workspace:     "/workspace",
+	}
+	tests := []struct {
+		name    string
+		request tui.SlashCommandRequest
+		want    string
+	}{
+		{
+			name: "provider",
+			request: tui.SlashCommandRequest{
+				Name:      "provider",
+				Arguments: "other",
+			},
+			want: "unsupported provider",
+		},
+		{
+			name: "model",
+			request: tui.SlashCommandRequest{
+				Name:      "model",
+				Arguments: "missing",
+			},
+			want: "unsupported model",
+		},
+		{
+			name: "thinking",
+			request: tui.SlashCommandRequest{
+				Name:      "thinking",
+				Arguments: "extreme",
+			},
+			want: "unsupported thinking level",
+		},
+		{
+			name: "scope",
+			request: tui.SlashCommandRequest{
+				Name:      "model",
+				Arguments: "--global " + deepseek.ModelV4Pro,
+			},
+			want: "usage: /model",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			_, err := runner.RunSlashCommand(t.Context(), tt.request)
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("RunSlashCommand() error = %v, want %q", err, tt.want)
+			}
+		})
+	}
+}
+
+func TestInteractiveSessionLoginCanRetryAfterPersistenceFailure(t *testing.T) {
+	t.Parallel()
+
+	saveAttempts := 0
+	wantErr := errors.New("credential write interrupted")
+	runner := &interactiveSession{
+		application: &application{dependencies: dependencies{
+			saveAPIKey: func(string, string) (string, error) {
+				saveAttempts++
+				if saveAttempts == 1 {
+					return "", wantErr
+				}
+				return "/global/auth.json", nil
+			},
+			newModel: func(config.Config) (agent.Model, error) {
+				return &controlledModel{
+					response:   "ready",
+					stopReason: llm.StopReasonStop,
+				}, nil
+			},
+		}},
+		model: deepseek.DefaultModel(),
+		configuration: config.Config{
+			Provider: string(deepseek.ProviderID),
+			Model:    deepseek.ModelV4Flash,
+		},
+		workspace: "/workspace",
+	}
+	request := tui.SlashCommandRequest{
+		Name:   "login",
+		Secret: "secret-value",
+	}
+
+	if _, err := runner.RunSlashCommand(
+		t.Context(),
+		request,
+	); !errors.Is(err, wantErr) {
+		t.Fatalf("first /login error = %v, want persistence failure", err)
+	}
+	if runner.loop != nil || runner.RuntimeState().APIKeyConfigured {
+		t.Fatal("failed /login changed runtime authentication state")
+	}
+
+	output, err := runner.RunSlashCommand(t.Context(), request)
+	if err != nil {
+		t.Fatalf("second /login error = %v", err)
+	}
+	if runner.loop == nil || !runner.RuntimeState().APIKeyConfigured {
+		t.Fatal("second /login did not enable current Session")
+	}
+	if strings.Contains(output, request.Secret) {
+		t.Fatalf("/login output exposes API key: %q", output)
 	}
 }
 

@@ -49,11 +49,13 @@ func TestApplicationPrintRunsBuiltInAgent(t *testing.T) {
 			workspace := t.TempDir()
 			model := &recordingModel{response: tt.response}
 			wantConfig := config.Config{
+				Provider:        string(deepseek.ProviderID),
+				Model:           deepseek.ModelV4Flash,
 				DeepSeekAPIKey:  "test-key",
 				DeepSeekBaseURL: "https://deepseek.example/anthropic",
 			}
 			command, err := newCommand(dependencies{
-				loadConfig: func() (config.Config, error) {
+				loadConfig: func(string) (config.Config, error) {
 					return wantConfig, nil
 				},
 				newModel: func(got config.Config) (agent.Model, error) {
@@ -109,12 +111,107 @@ func TestApplicationPrintRunsBuiltInAgent(t *testing.T) {
 	}
 }
 
+func TestApplicationPrintUsesConfiguredModelAndThinking(t *testing.T) {
+	t.Parallel()
+
+	workspace := t.TempDir()
+	model := &recordingModel{response: "configured"}
+	command, err := newCommand(dependencies{
+		loadConfig: func(gotWorkspace string) (config.Config, error) {
+			if gotWorkspace != workspace {
+				t.Errorf(
+					"configuration workspace = %q, want %q",
+					gotWorkspace,
+					workspace,
+				)
+			}
+			return config.Config{
+				Provider:       string(deepseek.ProviderID),
+				Model:          deepseek.ModelV4Pro,
+				Thinking:       llm.ThinkingLevelHigh,
+				DeepSeekAPIKey: "test-key",
+			}, nil
+		},
+		newModel: func(config.Config) (agent.Model, error) {
+			return model, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("newCommand() error = %v", err)
+	}
+	command.SetOut(io.Discard)
+	command.SetArgs([]string{
+		"--workspace", workspace,
+		"--print", "inspect",
+	})
+	if err := command.ExecuteContext(t.Context()); err != nil {
+		t.Fatalf("ExecuteContext() error = %v", err)
+	}
+
+	if len(model.requests) != 1 {
+		t.Fatalf("model requests = %d, want one", len(model.requests))
+	}
+	request := model.requests[0]
+	if request.Model.ID != deepseek.ModelV4Pro {
+		t.Errorf(
+			"request model = %q, want %q",
+			request.Model.ID,
+			deepseek.ModelV4Pro,
+		)
+	}
+	if request.Options.Thinking != llm.ThinkingLevelHigh {
+		t.Errorf(
+			"request thinking = %q, want high",
+			request.Options.Thinking,
+		)
+	}
+}
+
+func TestResolveModelSettingsRejectsUnsupportedValues(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		config config.Config
+		want   string
+	}{
+		{
+			name:   "provider",
+			config: config.Config{Provider: "other"},
+			want:   "unsupported provider",
+		},
+		{
+			name:   "model",
+			config: config.Config{Model: "missing"},
+			want:   "unsupported model",
+		},
+		{
+			name: "thinking",
+			config: config.Config{
+				Thinking: llm.ThinkingLevel("extreme"),
+			},
+			want: "unsupported thinking level",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			_, _, err := resolveModelSettings(tt.config)
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("resolveModelSettings() error = %v, want %q", err, tt.want)
+			}
+		})
+	}
+}
+
 func TestApplicationPrintReturnsConfigurationError(t *testing.T) {
 	t.Parallel()
 
 	wantErr := errors.New("configuration unavailable")
 	command, err := newCommand(dependencies{
-		loadConfig: func() (config.Config, error) {
+		loadConfig: func(string) (config.Config, error) {
 			return config.Config{}, wantErr
 		},
 		newModel: func(config.Config) (agent.Model, error) {
@@ -139,7 +236,7 @@ func TestApplicationPrintSeparatesToolLoopTurns(t *testing.T) {
 	workspace := t.TempDir()
 	model := &toolLoopModel{}
 	command, err := newCommand(dependencies{
-		loadConfig: func() (config.Config, error) {
+		loadConfig: func(string) (config.Config, error) {
 			return config.Config{DeepSeekAPIKey: "test-key"}, nil
 		},
 		newModel: func(config.Config) (agent.Model, error) {
@@ -180,7 +277,7 @@ func TestApplicationInteractiveKeepsConversationHistory(t *testing.T) {
 	input := strings.NewReader("terminal input")
 	output := new(bytes.Buffer)
 	command, err := newCommand(dependencies{
-		loadConfig: func() (config.Config, error) {
+		loadConfig: func(string) (config.Config, error) {
 			return config.Config{DeepSeekAPIKey: "test-key"}, nil
 		},
 		newModel: func(config.Config) (agent.Model, error) {
@@ -274,6 +371,179 @@ func TestApplicationInteractiveKeepsConversationHistory(t *testing.T) {
 	}
 }
 
+func TestApplicationInteractiveStartsWithoutCredentials(t *testing.T) {
+	t.Parallel()
+
+	workspace := t.TempDir()
+	command, err := newCommand(dependencies{
+		loadConfig: func(string) (config.Config, error) {
+			return config.Config{}, nil
+		},
+		newModel: func(config.Config) (agent.Model, error) {
+			t.Fatal("model factory called before credentials were configured")
+			return nil, nil
+		},
+		runTUI: func(
+			ctx context.Context,
+			runner tui.Runner,
+			options tui.Options,
+		) error {
+			if options.APIKeyConfigured {
+				t.Error("TUI reports an API key before login")
+			}
+			err := runner.Run(ctx, "inspect", nil)
+			if err == nil || !strings.Contains(err.Error(), "/login") {
+				t.Fatalf("Run() error = %v, want /login guidance", err)
+			}
+			commandRunner, ok := runner.(tui.SlashCommandRunner)
+			if !ok {
+				t.Fatal("interactive runner does not expose slash commands")
+			}
+			settings, err := commandRunner.RunSlashCommand(
+				ctx,
+				tui.SlashCommandRequest{Name: "settings"},
+			)
+			if err != nil {
+				return err
+			}
+			if !strings.Contains(settings, "API key: not configured") {
+				t.Errorf(
+					"/settings output = %q, want unconfigured state",
+					settings,
+				)
+			}
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("newCommand() error = %v", err)
+	}
+	command.SetIn(strings.NewReader(""))
+	command.SetOut(io.Discard)
+	command.SetArgs([]string{"--workspace", workspace})
+
+	if err := command.ExecuteContext(t.Context()); err != nil {
+		t.Fatalf("ExecuteContext() error = %v", err)
+	}
+}
+
+func TestApplicationInteractiveLoginEnablesCurrentSession(t *testing.T) {
+	t.Parallel()
+
+	workspace := t.TempDir()
+	model := &recordingModel{response: "ready"}
+	var savedWorkspace string
+	var savedAPIKey string
+	command, err := newCommand(dependencies{
+		loadConfig: func(string) (config.Config, error) {
+			return config.Config{
+				Paths: config.Paths{
+					GlobalSettings: "/global/settings.json",
+					ProjectSettings: filepath.Join(
+						workspace,
+						".aice",
+						"settings.json",
+					),
+					GlobalAuth: "/global/auth.json",
+				},
+			}, nil
+		},
+		saveAPIKey: func(
+			gotWorkspace string,
+			apiKey string,
+		) (string, error) {
+			savedWorkspace = gotWorkspace
+			savedAPIKey = apiKey
+			return "/global/auth.json", nil
+		},
+		newModel: func(configuration config.Config) (agent.Model, error) {
+			if configuration.DeepSeekAPIKey != "secret-value" {
+				t.Errorf(
+					"model API key = %q, want configured value",
+					configuration.DeepSeekAPIKey,
+				)
+			}
+			return model, nil
+		},
+		runTUI: func(
+			ctx context.Context,
+			runner tui.Runner,
+			options tui.Options,
+		) error {
+			if options.APIKeyConfigured {
+				t.Error("TUI starts authenticated before /login")
+			}
+			commandRunner := runner.(tui.SlashCommandRunner)
+			output, err := commandRunner.RunSlashCommand(
+				ctx,
+				tui.SlashCommandRequest{
+					Name:   "login",
+					Secret: "secret-value",
+				},
+			)
+			if err != nil {
+				return err
+			}
+			if strings.Contains(output, "secret-value") {
+				t.Fatalf("/login output exposes API key: %q", output)
+			}
+			state := runner.(tui.RuntimeStateProvider).RuntimeState()
+			if !state.APIKeyConfigured {
+				t.Error("runtime remains unauthenticated after /login")
+			}
+			return runner.Run(ctx, "inspect", nil)
+		},
+	})
+	if err != nil {
+		t.Fatalf("newCommand() error = %v", err)
+	}
+	command.SetIn(strings.NewReader(""))
+	command.SetOut(io.Discard)
+	command.SetArgs([]string{"--workspace", workspace})
+
+	if err := command.ExecuteContext(t.Context()); err != nil {
+		t.Fatalf("ExecuteContext() error = %v", err)
+	}
+	if savedWorkspace != workspace {
+		t.Errorf(
+			"saved workspace = %q, want %q",
+			savedWorkspace,
+			workspace,
+		)
+	}
+	if savedAPIKey != "secret-value" {
+		t.Errorf("saved API key = %q, want configured value", savedAPIKey)
+	}
+	if len(model.requests) != 1 {
+		t.Fatalf("model requests = %d, want one after login", len(model.requests))
+	}
+}
+
+func TestApplicationPrintStillRequiresCredentials(t *testing.T) {
+	t.Parallel()
+
+	command, err := newCommand(dependencies{
+		loadConfig: func(string) (config.Config, error) {
+			return config.Config{}, nil
+		},
+		newModel: func(config.Config) (agent.Model, error) {
+			t.Fatal("model factory called without credentials")
+			return nil, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("newCommand() error = %v", err)
+	}
+	command.SetOut(io.Discard)
+	command.SetArgs([]string{"--print", "inspect"})
+
+	err = command.ExecuteContext(t.Context())
+	if err == nil ||
+		!strings.Contains(err.Error(), "API key is not configured") {
+		t.Fatalf("ExecuteContext() error = %v, want credential guidance", err)
+	}
+}
+
 func TestApplicationPrintResumesExplicitSession(t *testing.T) {
 	t.Parallel()
 
@@ -282,7 +552,7 @@ func TestApplicationPrintResumesExplicitSession(t *testing.T) {
 
 	firstModel := &recordingModel{response: "first answer"}
 	firstCommand, err := newCommand(dependencies{
-		loadConfig: func() (config.Config, error) {
+		loadConfig: func(string) (config.Config, error) {
 			return config.Config{DeepSeekAPIKey: "test-key"}, nil
 		},
 		newModel: func(config.Config) (agent.Model, error) {
@@ -304,7 +574,7 @@ func TestApplicationPrintResumesExplicitSession(t *testing.T) {
 
 	secondModel := &recordingModel{response: "second answer"}
 	secondCommand, err := newCommand(dependencies{
-		loadConfig: func() (config.Config, error) {
+		loadConfig: func(string) (config.Config, error) {
 			return config.Config{DeepSeekAPIKey: "test-key"}, nil
 		},
 		newModel: func(config.Config) (agent.Model, error) {
@@ -366,7 +636,7 @@ func TestApplicationInteractiveResumesExplicitSession(t *testing.T) {
 		usage:    firstUsage,
 	}
 	firstCommand, err := newCommand(dependencies{
-		loadConfig: func() (config.Config, error) {
+		loadConfig: func(string) (config.Config, error) {
 			return config.Config{DeepSeekAPIKey: "test-key"}, nil
 		},
 		newModel: func(config.Config) (agent.Model, error) {
@@ -388,7 +658,7 @@ func TestApplicationInteractiveResumesExplicitSession(t *testing.T) {
 
 	secondModel := &recordingModel{response: "second answer"}
 	secondCommand, err := newCommand(dependencies{
-		loadConfig: func() (config.Config, error) {
+		loadConfig: func(string) (config.Config, error) {
 			return config.Config{DeepSeekAPIKey: "test-key"}, nil
 		},
 		newModel: func(config.Config) (agent.Model, error) {
@@ -450,7 +720,7 @@ func TestApplicationPersistsFailedRunAfterToolSideEffect(t *testing.T) {
 	}
 	model := &toolLoopModel{firstCall: &call, secondErr: wantErr}
 	command, err := newCommand(dependencies{
-		loadConfig: func() (config.Config, error) {
+		loadConfig: func(string) (config.Config, error) {
 			return config.Config{DeepSeekAPIKey: "test-key"}, nil
 		},
 		newModel: func(config.Config) (agent.Model, error) {
@@ -508,7 +778,7 @@ func TestApplicationPersistsFailedRunAfterToolSideEffect(t *testing.T) {
 
 	resumeModel := &recordingModel{response: "recovered"}
 	resumeCommand, err := newCommand(dependencies{
-		loadConfig: func() (config.Config, error) {
+		loadConfig: func(string) (config.Config, error) {
 			return config.Config{DeepSeekAPIKey: "test-key"}, nil
 		},
 		newModel: func(config.Config) (agent.Model, error) {
@@ -697,7 +967,7 @@ func TestApplicationRejectsSessionWorkingDirectoryChange(t *testing.T) {
 	newTestCommand := func() *cobra.Command {
 		t.Helper()
 		command, err := newCommand(dependencies{
-			loadConfig: func() (config.Config, error) {
+			loadConfig: func(string) (config.Config, error) {
 				return config.Config{DeepSeekAPIKey: "test-key"}, nil
 			},
 			newModel: func(config.Config) (agent.Model, error) {

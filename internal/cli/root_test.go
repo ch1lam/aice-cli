@@ -55,15 +55,30 @@ func TestNewRootCommandRejectsMissingSessionNavigator(t *testing.T) {
 	}
 }
 
+func TestNewRootCommandRejectsMissingConfigurator(t *testing.T) {
+	t.Parallel()
+
+	_, err := cli.NewRootCommand(cli.Dependencies{
+		Printer:    &recordingPrinter{},
+		Interactor: &recordingInteractor{},
+		Compactor:  &recordingCompactor{},
+		Navigator:  &recordingNavigator{},
+	})
+	if err == nil || !strings.Contains(err.Error(), "configurator is required") {
+		t.Fatalf("NewRootCommand() error = %v, want missing configurator error", err)
+	}
+}
+
 func TestRootCommandRunsPrintMode(t *testing.T) {
 	t.Parallel()
 
 	printer := &recordingPrinter{response: "inspection complete\n"}
 	command, err := cli.NewRootCommand(cli.Dependencies{
-		Printer:    printer,
-		Interactor: &recordingInteractor{},
-		Compactor:  &recordingCompactor{},
-		Navigator:  &recordingNavigator{},
+		Printer:      printer,
+		Interactor:   &recordingInteractor{},
+		Compactor:    &recordingCompactor{},
+		Navigator:    &recordingNavigator{},
+		Configurator: &recordingConfigurator{},
 	})
 	if err != nil {
 		t.Fatalf("NewRootCommand() error = %v", err)
@@ -98,10 +113,11 @@ func TestRootCommandRunsInteractiveMode(t *testing.T) {
 
 	interactor := &recordingInteractor{}
 	command, err := cli.NewRootCommand(cli.Dependencies{
-		Printer:    &recordingPrinter{},
-		Interactor: interactor,
-		Compactor:  &recordingCompactor{},
-		Navigator:  &recordingNavigator{},
+		Printer:      &recordingPrinter{},
+		Interactor:   interactor,
+		Compactor:    &recordingCompactor{},
+		Navigator:    &recordingNavigator{},
+		Configurator: &recordingConfigurator{},
 	})
 	if err != nil {
 		t.Fatalf("NewRootCommand() error = %v", err)
@@ -140,10 +156,11 @@ func TestRootCommandDescribesWorkspaceAsWorkingDirectory(t *testing.T) {
 	t.Parallel()
 
 	command, err := cli.NewRootCommand(cli.Dependencies{
-		Printer:    &recordingPrinter{},
-		Interactor: &recordingInteractor{},
-		Compactor:  &recordingCompactor{},
-		Navigator:  &recordingNavigator{},
+		Printer:      &recordingPrinter{},
+		Interactor:   &recordingInteractor{},
+		Compactor:    &recordingCompactor{},
+		Navigator:    &recordingNavigator{},
+		Configurator: &recordingConfigurator{},
 	})
 	if err != nil {
 		t.Fatalf("NewRootCommand() error = %v", err)
@@ -211,10 +228,11 @@ func TestRootCommandRejectsUsageErrors(t *testing.T) {
 			t.Parallel()
 
 			command, err := cli.NewRootCommand(cli.Dependencies{
-				Printer:    &recordingPrinter{},
-				Interactor: &recordingInteractor{},
-				Compactor:  &recordingCompactor{},
-				Navigator:  &recordingNavigator{},
+				Printer:      &recordingPrinter{},
+				Interactor:   &recordingInteractor{},
+				Compactor:    &recordingCompactor{},
+				Navigator:    &recordingNavigator{},
+				Configurator: &recordingConfigurator{},
 			})
 			if err != nil {
 				t.Fatalf("NewRootCommand() error = %v", err)
@@ -237,10 +255,11 @@ func TestRootCommandReturnsPrinterError(t *testing.T) {
 
 	wantErr := errors.New("provider unavailable")
 	command, err := cli.NewRootCommand(cli.Dependencies{
-		Printer:    &recordingPrinter{err: wantErr},
-		Interactor: &recordingInteractor{},
-		Compactor:  &recordingCompactor{},
-		Navigator:  &recordingNavigator{},
+		Printer:      &recordingPrinter{err: wantErr},
+		Interactor:   &recordingInteractor{},
+		Compactor:    &recordingCompactor{},
+		Navigator:    &recordingNavigator{},
+		Configurator: &recordingConfigurator{},
 	})
 	if err != nil {
 		t.Fatalf("NewRootCommand() error = %v", err)
@@ -261,10 +280,11 @@ func TestRootCommandReturnsInteractorError(t *testing.T) {
 
 	wantErr := errors.New("terminal unavailable")
 	command, err := cli.NewRootCommand(cli.Dependencies{
-		Printer:    &recordingPrinter{},
-		Interactor: &recordingInteractor{err: wantErr},
-		Compactor:  &recordingCompactor{},
-		Navigator:  &recordingNavigator{},
+		Printer:      &recordingPrinter{},
+		Interactor:   &recordingInteractor{err: wantErr},
+		Compactor:    &recordingCompactor{},
+		Navigator:    &recordingNavigator{},
+		Configurator: &recordingConfigurator{},
 	})
 	if err != nil {
 		t.Fatalf("NewRootCommand() error = %v", err)
@@ -300,6 +320,8 @@ type recordingCompactor struct{}
 
 type recordingNavigator struct{}
 
+type recordingConfigurator struct{}
+
 func (*recordingCompactor) Compact(
 	context.Context,
 	cli.CompactRequest,
@@ -322,6 +344,13 @@ func (*recordingNavigator) CheckoutSession(
 	io.Writer,
 ) error {
 	return nil
+}
+
+func (*recordingConfigurator) SaveAPIKey(
+	context.Context,
+	cli.APIKeyRequest,
+) (string, error) {
+	return "/global/auth.json", nil
 }
 
 func (i *recordingInteractor) Interactive(

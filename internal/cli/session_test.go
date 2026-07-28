@@ -54,10 +54,11 @@ func TestSessionCommandsRunNavigator(t *testing.T) {
 
 			navigator := &sessionRecorder{response: tt.name + "\n"}
 			command, err := cli.NewRootCommand(cli.Dependencies{
-				Printer:    &recordingPrinter{},
-				Interactor: &recordingInteractor{},
-				Compactor:  &recordingCompactor{},
-				Navigator:  navigator,
+				Printer:      &recordingPrinter{},
+				Interactor:   &recordingInteractor{},
+				Compactor:    &recordingCompactor{},
+				Navigator:    navigator,
+				Configurator: &recordingConfigurator{},
 			})
 			if err != nil {
 				t.Fatalf("NewRootCommand() error = %v", err)
@@ -126,10 +127,11 @@ func TestSessionCommandsRejectUsageErrors(t *testing.T) {
 			t.Parallel()
 
 			command, err := cli.NewRootCommand(cli.Dependencies{
-				Printer:    &recordingPrinter{},
-				Interactor: &recordingInteractor{},
-				Compactor:  &recordingCompactor{},
-				Navigator:  &sessionRecorder{},
+				Printer:      &recordingPrinter{},
+				Interactor:   &recordingInteractor{},
+				Compactor:    &recordingCompactor{},
+				Navigator:    &sessionRecorder{},
+				Configurator: &recordingConfigurator{},
 			})
 			if err != nil {
 				t.Fatalf("NewRootCommand() error = %v", err)
@@ -151,10 +153,11 @@ func TestSessionCommandReturnsNavigatorError(t *testing.T) {
 
 	wantErr := errors.New("session unavailable")
 	command, err := cli.NewRootCommand(cli.Dependencies{
-		Printer:    &recordingPrinter{},
-		Interactor: &recordingInteractor{},
-		Compactor:  &recordingCompactor{},
-		Navigator:  &sessionRecorder{err: wantErr},
+		Printer:      &recordingPrinter{},
+		Interactor:   &recordingInteractor{},
+		Compactor:    &recordingCompactor{},
+		Navigator:    &sessionRecorder{err: wantErr},
+		Configurator: &recordingConfigurator{},
 	})
 	if err != nil {
 		t.Fatalf("NewRootCommand() error = %v", err)

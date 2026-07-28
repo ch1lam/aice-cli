@@ -22,12 +22,25 @@ type Runner interface {
 	Run(ctx context.Context, prompt string, sink agent.AgentEventSink) error
 }
 
+// RuntimeState contains request settings that the TUI presents to the user.
+type RuntimeState struct {
+	Model            llm.Model
+	Thinking         llm.ThinkingLevel
+	APIKeyConfigured bool
+}
+
+// RuntimeStateProvider reports settings changed by an application command.
+type RuntimeStateProvider interface {
+	RuntimeState() RuntimeState
+}
+
 // Options contains the terminal streams and model state shown by the program.
 type Options struct {
 	Input            io.Reader
 	Output           io.Writer
 	Model            llm.Model
 	Thinking         llm.ThinkingLevel
+	APIKeyConfigured bool
 	Usage            llm.Usage
 	WorkingDirectory string
 }
@@ -69,6 +82,7 @@ func Run(ctx context.Context, runner Runner, options Options) error {
 	initialModel := newModel(requests, controllerDone, slashCommands...)
 	initialModel.currentModel = options.Model
 	initialModel.thinking = options.Thinking
+	initialModel.apiKeyConfigured = options.APIKeyConfigured
 	initialModel.sessionUsage = options.Usage
 	initialModel.workingDirectory = options.WorkingDirectory
 	program := tea.NewProgram(
@@ -101,6 +115,7 @@ type runUpdate struct {
 	cancel context.CancelFunc
 	err    error
 	output string
+	state  *RuntimeState
 	done   bool
 }
 
@@ -150,10 +165,18 @@ func runOne(ctx context.Context, runner Runner, request runRequest) {
 			return nil
 		})
 	}
+	var state *RuntimeState
+	if request.command != nil {
+		if provider, ok := runner.(RuntimeStateProvider); ok {
+			snapshot := provider.RuntimeState()
+			state = &snapshot
+		}
+	}
 	cancel()
 	_ = sendRunUpdate(ctx, request.updates, runUpdate{
 		err:    err,
 		output: output,
+		state:  state,
 		done:   true,
 	})
 }

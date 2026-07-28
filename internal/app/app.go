@@ -32,7 +32,9 @@ const (
 // NewCommand assembles the production AICE command tree.
 func NewCommand() (*cobra.Command, error) {
 	return newCommand(dependencies{
-		loadConfig: config.Load,
+		loadConfig:  config.Load,
+		saveSetting: config.SaveSetting,
+		saveAPIKey:  config.SaveDeepSeekAPIKey,
 		newModel: func(config config.Config) (agent.Model, error) {
 			return deepseek.New(deepseek.Config{
 				APIKey:  config.DeepSeekAPIKey,
@@ -44,7 +46,9 @@ func NewCommand() (*cobra.Command, error) {
 }
 
 type dependencies struct {
-	loadConfig                 func() (config.Config, error)
+	loadConfig                 func(string) (config.Config, error)
+	saveSetting                func(string, config.Scope, config.Setting, string) error
+	saveAPIKey                 func(string, string) (string, error)
 	newModel                   func(config.Config) (agent.Model, error)
 	runTUI                     func(context.Context, tui.Runner, tui.Options) error
 	compactionKeepRecentTokens int64
@@ -56,6 +60,9 @@ func newCommand(dependencies dependencies) (*cobra.Command, error) {
 	}
 	if dependencies.newModel == nil {
 		return nil, fmt.Errorf("app: model factory is required")
+	}
+	if dependencies.saveAPIKey == nil {
+		dependencies.saveAPIKey = config.SaveDeepSeekAPIKey
 	}
 	if dependencies.runTUI == nil {
 		dependencies.runTUI = tui.Run
@@ -69,15 +76,34 @@ func newCommand(dependencies dependencies) (*cobra.Command, error) {
 
 	application := &application{dependencies: dependencies}
 	return cli.NewRootCommand(cli.Dependencies{
-		Printer:    application,
-		Interactor: application,
-		Compactor:  application,
-		Navigator:  application,
+		Printer:      application,
+		Interactor:   application,
+		Compactor:    application,
+		Navigator:    application,
+		Configurator: application,
 	})
 }
 
 type application struct {
 	dependencies dependencies
+}
+
+// SaveAPIKey stores one global credential entered through the CLI.
+func (a *application) SaveAPIKey(
+	ctx context.Context,
+	request cli.APIKeyRequest,
+) (string, error) {
+	if ctx == nil {
+		return "", fmt.Errorf("app: context is required")
+	}
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	path, err := a.dependencies.saveAPIKey(".", request.APIKey)
+	if err != nil {
+		return "", fmt.Errorf("app: save DeepSeek API key: %w", err)
+	}
+	return path, nil
 }
 
 func (a *application) Print(
@@ -92,13 +118,16 @@ func (a *application) Print(
 		return fmt.Errorf("app: output is required")
 	}
 
-	loop, workspace, err := a.newLoop(request.Workspace)
+	environment, err := a.newRunEnvironment(request.Workspace)
 	if err != nil {
 		return err
 	}
+	if environment.loop == nil {
+		return credentialNotConfiguredError()
+	}
 	store, history, _, err := prepareSession(
 		ctx,
-		workspace,
+		environment.workspace,
 		request.Session,
 		false,
 	)
@@ -116,11 +145,12 @@ func (a *application) Print(
 	}
 
 	printer := &streamPrinter{output: output}
-	result, loopErr := loop.Run(ctx, agent.RunInput{
-		Model:        deepseek.DefaultModel(),
+	result, loopErr := environment.loop.Run(ctx, agent.RunInput{
+		Model:        environment.model,
 		SystemPrompt: defaultSystemPrompt,
 		History:      history,
 		Prompt:       prompt,
+		Options:      environment.options,
 	}, printer.Accept)
 	finishErr := printer.Finish()
 	var persistErr error
@@ -152,13 +182,13 @@ func (a *application) Interactive(
 		return fmt.Errorf("app: output is required")
 	}
 
-	loop, workspace, err := a.newLoop(request.Workspace)
+	environment, err := a.newRunEnvironment(request.Workspace)
 	if err != nil {
 		return err
 	}
 	store, history, usage, err := prepareSession(
 		ctx,
-		workspace,
+		environment.workspace,
 		request.Session,
 		true,
 	)
@@ -166,23 +196,25 @@ func (a *application) Interactive(
 		return err
 	}
 
-	selectedModel := deepseek.DefaultModel()
-	generationOptions := llm.StreamOptions{}
 	runner := &interactiveSession{
-		application: a,
-		loop:        loop,
-		store:       store,
-		history:     history,
-		model:       selectedModel,
-		options:     generationOptions,
+		application:   a,
+		loop:          environment.loop,
+		store:         store,
+		history:       history,
+		model:         environment.model,
+		options:       environment.options,
+		configuration: environment.configuration,
+		workspace:     environment.workspace.Path(),
+		tools:         environment.tools,
 	}
 	runErr := a.dependencies.runTUI(ctx, runner, tui.Options{
 		Input:            request.Input,
 		Output:           request.Output,
-		Model:            selectedModel,
-		Thinking:         generationOptions.Thinking,
+		Model:            environment.model,
+		Thinking:         environment.options.Thinking,
+		APIKeyConfigured: environment.configuration.DeepSeekAPIKey != "",
 		Usage:            usage,
-		WorkingDirectory: workspace.Path(),
+		WorkingDirectory: environment.workspace.Path(),
 	})
 	closeErr := store.Close()
 	if runErr != nil {
@@ -191,51 +223,191 @@ func (a *application) Interactive(
 	return closeErr
 }
 
-func (a *application) newLoop(
-	workingDirectory string,
-) (*agent.Loop, *tool.Workspace, error) {
-	model, err := a.newModel()
-	if err != nil {
-		return nil, nil, err
-	}
+type runEnvironment struct {
+	loop          *agent.Loop
+	workspace     *tool.Workspace
+	configuration config.Config
+	model         llm.Model
+	options       llm.StreamOptions
+	tools         []agent.Tool
+}
 
+type configuredModel struct {
+	service       agent.Model
+	configuration config.Config
+	model         llm.Model
+	options       llm.StreamOptions
+}
+
+func (a *application) newRunEnvironment(
+	workingDirectory string,
+) (*runEnvironment, error) {
 	workspace, err := tool.NewWorkspace(workingDirectory)
 	if err != nil {
-		return nil, nil, fmt.Errorf("app: create workspace: %w", err)
+		return nil, fmt.Errorf("app: create workspace: %w", err)
+	}
+	configured, err := a.loadConfiguredModel(workspace.Path())
+	if err != nil {
+		return nil, err
 	}
 	tools, err := newBuiltInTools(workspace)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	loop, err := agent.NewLoop(model, tools, agent.Limits{
+	var loop *agent.Loop
+	if configured.configuration.DeepSeekAPIKey != "" {
+		loop, err = a.newAgentLoop(configured.configuration, tools)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return &runEnvironment{
+		loop:          loop,
+		workspace:     workspace,
+		configuration: configured.configuration,
+		model:         configured.model,
+		options:       configured.options,
+		tools:         tools,
+	}, nil
+}
+
+func (a *application) loadConfiguredModel(
+	workspace string,
+) (configuredModel, error) {
+	configuration, err := a.dependencies.loadConfig(workspace)
+	if err != nil {
+		return configuredModel{}, fmt.Errorf(
+			"app: load configuration: %w",
+			err,
+		)
+	}
+	selectedModel, options, err := resolveModelSettings(configuration)
+	if err != nil {
+		return configuredModel{}, err
+	}
+	configuration.Provider = string(selectedModel.Provider)
+	configuration.Model = selectedModel.ID
+	return configuredModel{
+		configuration: configuration,
+		model:         selectedModel,
+		options:       options,
+	}, nil
+}
+
+func (a *application) newConfiguredModel(
+	workspace string,
+) (configuredModel, error) {
+	configured, err := a.loadConfiguredModel(workspace)
+	if err != nil {
+		return configuredModel{}, err
+	}
+	if configured.configuration.DeepSeekAPIKey == "" {
+		return configuredModel{}, credentialNotConfiguredError()
+	}
+	service, err := a.dependencies.newModel(configured.configuration)
+	if err != nil {
+		return configuredModel{}, fmt.Errorf("app: create model: %w", err)
+	}
+	configured.service = service
+	return configured, nil
+}
+
+func (a *application) newAgentLoop(
+	configuration config.Config,
+	tools []agent.Tool,
+) (*agent.Loop, error) {
+	if configuration.DeepSeekAPIKey == "" {
+		return nil, credentialNotConfiguredError()
+	}
+	service, err := a.dependencies.newModel(configuration)
+	if err != nil {
+		return nil, fmt.Errorf("app: create model: %w", err)
+	}
+	loop, err := agent.NewLoop(service, tools, agent.Limits{
 		MaxTurns:     defaultMaxTurns,
 		MaxToolSteps: defaultMaxToolSteps,
 	})
 	if err != nil {
-		return nil, nil, fmt.Errorf("app: create agent loop: %w", err)
+		return nil, fmt.Errorf("app: create agent loop: %w", err)
 	}
-	return loop, workspace, nil
+	return loop, nil
 }
 
-func (a *application) newModel() (agent.Model, error) {
-	configuration, err := a.dependencies.loadConfig()
-	if err != nil {
-		return nil, fmt.Errorf("app: load configuration: %w", err)
+func credentialNotConfiguredError() error {
+	return fmt.Errorf(
+		"DeepSeek API key is not configured; run /login in interactive mode "+
+			"or set %s",
+		config.EnvDeepSeekAPIKey,
+	)
+}
+
+func resolveModelSettings(
+	configuration config.Config,
+) (llm.Model, llm.StreamOptions, error) {
+	switch configuration.Thinking {
+	case llm.ThinkingLevelUnknown,
+		llm.ThinkingLevelOff,
+		llm.ThinkingLevelMinimal,
+		llm.ThinkingLevelLow,
+		llm.ThinkingLevelMedium,
+		llm.ThinkingLevelHigh,
+		llm.ThinkingLevelXHigh,
+		llm.ThinkingLevelMax:
+	default:
+		return llm.Model{}, llm.StreamOptions{}, fmt.Errorf(
+			"app: unsupported thinking level %q",
+			configuration.Thinking,
+		)
 	}
-	model, err := a.dependencies.newModel(configuration)
-	if err != nil {
-		return nil, fmt.Errorf("app: create model: %w", err)
+
+	provider := configuration.Provider
+	if provider == "" {
+		provider = string(deepseek.ProviderID)
 	}
-	return model, nil
+	if provider != string(deepseek.ProviderID) {
+		return llm.Model{}, llm.StreamOptions{}, fmt.Errorf(
+			"app: unsupported provider %q",
+			provider,
+		)
+	}
+
+	modelID := configuration.Model
+	if modelID == "" {
+		modelID = deepseek.DefaultModel().ID
+	}
+	for _, model := range deepseek.Models() {
+		if model.ID != modelID {
+			continue
+		}
+		if !model.SupportsThinking &&
+			configuration.Thinking != llm.ThinkingLevelUnknown &&
+			configuration.Thinking != llm.ThinkingLevelOff {
+			return llm.Model{}, llm.StreamOptions{}, fmt.Errorf(
+				"app: model %q does not support thinking",
+				model.ID,
+			)
+		}
+		return model, llm.StreamOptions{
+			Thinking: configuration.Thinking,
+		}, nil
+	}
+	return llm.Model{}, llm.StreamOptions{}, fmt.Errorf(
+		"app: unsupported model %q for provider %q",
+		modelID,
+		provider,
+	)
 }
 
 type interactiveSession struct {
-	application *application
-	loop        *agent.Loop
-	store       *session.Store
-	history     []llm.AgentMessage
-	model       llm.Model
-	options     llm.StreamOptions
+	application   *application
+	loop          *agent.Loop
+	store         *session.Store
+	history       []llm.AgentMessage
+	model         llm.Model
+	options       llm.StreamOptions
+	configuration config.Config
+	workspace     string
+	tools         []agent.Tool
 }
 
 func (s *interactiveSession) Run(
@@ -243,6 +415,9 @@ func (s *interactiveSession) Run(
 	promptText string,
 	sink agent.AgentEventSink,
 ) error {
+	if s.loop == nil {
+		return credentialNotConfiguredError()
+	}
 	prompt, err := llm.NewUserMessage(llm.NewTextContent(promptText).Part())
 	if err != nil {
 		return fmt.Errorf("app: create prompt: %w", err)

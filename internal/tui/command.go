@@ -11,12 +11,14 @@ type SlashCommand struct {
 	Name         string
 	Description  string
 	ArgumentHint string
+	SecretPrompt string
 }
 
 // SlashCommandRequest is one parsed command invocation.
 type SlashCommandRequest struct {
 	Name      string
 	Arguments string
+	Secret    string
 }
 
 // SlashCommandRunner executes application-owned slash commands.

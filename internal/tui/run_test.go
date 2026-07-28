@@ -143,6 +143,10 @@ func TestServeRunsExecutesSlashCommandsThroughRunner(t *testing.T) {
 			}
 			return "Session tree", nil
 		},
+		state: RuntimeState{
+			Model:    llm.Model{ID: "selected-model"},
+			Thinking: llm.ThinkingLevelHigh,
+		},
 	}
 	ctx, cancel := context.WithCancel(t.Context())
 	requests := make(chan runRequest)
@@ -158,7 +162,12 @@ func TestServeRunsExecutesSlashCommandsThroughRunner(t *testing.T) {
 		t.Fatal("first slash command update has no cancellation function")
 	}
 	terminal := receiveRunUpdate(t, updates)
-	if !terminal.done || terminal.err != nil || terminal.output != "Session tree" {
+	if !terminal.done ||
+		terminal.err != nil ||
+		terminal.output != "Session tree" ||
+		terminal.state == nil ||
+		terminal.state.Model.ID != "selected-model" ||
+		terminal.state.Thinking != llm.ThinkingLevelHigh {
 		t.Fatalf("terminal slash command update = %#v", terminal)
 	}
 	if _, open := <-updates; open {
@@ -203,6 +212,7 @@ type slashRunner struct {
 		context.Context,
 		SlashCommandRequest,
 	) (string, error)
+	state RuntimeState
 }
 
 func (r *slashRunner) SlashCommands() []SlashCommand {
@@ -214,6 +224,10 @@ func (r *slashRunner) RunSlashCommand(
 	request SlashCommandRequest,
 ) (string, error) {
 	return r.runCommand(ctx, request)
+}
+
+func (r *slashRunner) RuntimeState() RuntimeState {
+	return r.state
 }
 
 type emptyReader struct{}

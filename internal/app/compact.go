@@ -11,7 +11,6 @@ import (
 	"github.com/ch1lam/aice-cli/internal/agent"
 	"github.com/ch1lam/aice-cli/internal/cli"
 	"github.com/ch1lam/aice-cli/internal/llm"
-	"github.com/ch1lam/aice-cli/internal/provider/deepseek"
 	"github.com/ch1lam/aice-cli/internal/session"
 	"github.com/ch1lam/aice-cli/internal/tool"
 )
@@ -101,6 +100,7 @@ func (a *application) compactSession(
 	}
 	summary, usage, err := a.generateCompactionSummary(
 		ctx,
+		snapshot.Header.WorkingDirectory,
 		preparation.MessagesToSummarize,
 	)
 	if err != nil {
@@ -137,6 +137,7 @@ func (a *application) compactSession(
 
 func (a *application) generateCompactionSummary(
 	ctx context.Context,
+	workspace string,
 	messages []llm.AgentMessage,
 ) (string, llm.Usage, error) {
 	encoded, err := llm.MarshalAgentMessages(messages)
@@ -155,11 +156,11 @@ func (a *application) generateCompactionSummary(
 			err,
 		)
 	}
-	model, err := a.newModel()
+	configured, err := a.newConfiguredModel(workspace)
 	if err != nil {
 		return "", llm.Usage{}, err
 	}
-	loop, err := agent.NewLoop(model, nil, agent.Limits{
+	loop, err := agent.NewLoop(configured.service, nil, agent.Limits{
 		MaxTurns:     1,
 		MaxToolSteps: 1,
 	})
@@ -169,13 +170,13 @@ func (a *application) generateCompactionSummary(
 			err,
 		)
 	}
+	options := configured.options
+	options.MaxTokens = defaultCompactionMaxTokens
 	result, err := loop.Run(ctx, agent.RunInput{
-		Model:        deepseek.DefaultModel(),
+		Model:        configured.model,
 		SystemPrompt: compactionSystemPrompt,
 		Prompt:       prompt,
-		Options: llm.StreamOptions{
-			MaxTokens: defaultCompactionMaxTokens,
-		},
+		Options:      options,
 	}, nil)
 	if err != nil {
 		return "", llm.Usage{}, fmt.Errorf(
