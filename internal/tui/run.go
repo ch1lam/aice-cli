@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -23,10 +24,11 @@ type Runner interface {
 
 // Options contains the terminal streams and model state shown by the program.
 type Options struct {
-	Input    io.Reader
-	Output   io.Writer
-	Model    llm.Model
-	Thinking llm.ThinkingLevel
+	Input            io.Reader
+	Output           io.Writer
+	Model            llm.Model
+	Thinking         llm.ThinkingLevel
+	WorkingDirectory string
 }
 
 // Run starts an interactive Bubble Tea program and owns its run controller.
@@ -46,6 +48,9 @@ func Run(ctx context.Context, runner Runner, options Options) error {
 	if options.Model.ID == "" {
 		return fmt.Errorf("tui: model ID is required")
 	}
+	if strings.TrimSpace(options.WorkingDirectory) == "" {
+		return fmt.Errorf("tui: working directory is required")
+	}
 
 	controllerCtx, stopController := context.WithCancel(ctx)
 	requests := make(chan runRequest)
@@ -63,6 +68,7 @@ func Run(ctx context.Context, runner Runner, options Options) error {
 	initialModel := newModel(requests, controllerDone, slashCommands...)
 	initialModel.currentModel = options.Model
 	initialModel.thinking = options.Thinking
+	initialModel.workingDirectory = options.WorkingDirectory
 	program := tea.NewProgram(
 		initialModel,
 		tea.WithContext(ctx),

@@ -177,10 +177,11 @@ func (a *application) Interactive(
 		options:     generationOptions,
 	}
 	runErr := a.dependencies.runTUI(ctx, runner, tui.Options{
-		Input:    request.Input,
-		Output:   request.Output,
-		Model:    selectedModel,
-		Thinking: generationOptions.Thinking,
+		Input:            request.Input,
+		Output:           request.Output,
+		Model:            selectedModel,
+		Thinking:         generationOptions.Thinking,
+		WorkingDirectory: workspace.Path(),
 	})
 	closeErr := store.Close()
 	if runErr != nil {

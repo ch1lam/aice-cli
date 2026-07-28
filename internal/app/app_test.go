@@ -206,6 +206,13 @@ func TestApplicationInteractiveKeepsConversationHistory(t *testing.T) {
 					options.Thinking,
 				)
 			}
+			if options.WorkingDirectory != workspace {
+				t.Errorf(
+					"TUI working directory = %q, want %q",
+					options.WorkingDirectory,
+					workspace,
+				)
+			}
 			if err := runner.Run(ctx, "first prompt", nil); err != nil {
 				return err
 			}

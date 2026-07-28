@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/ch1lam/aice-cli/internal/agent"
+	"github.com/ch1lam/aice-cli/internal/llm"
 )
 
 func TestRunRejectsInvalidDependencies(t *testing.T) {
@@ -54,6 +55,17 @@ func TestRunRejectsInvalidDependencies(t *testing.T) {
 				Output: io.Discard,
 			},
 			want: "model ID is required",
+		},
+		{
+			name:   "missing working directory",
+			ctx:    t.Context(),
+			runner: runnerFunc(func(context.Context, string, agent.AgentEventSink) error { return nil }),
+			options: Options{
+				Input:  emptyReader{},
+				Output: io.Discard,
+				Model:  llm.Model{ID: "test"},
+			},
+			want: "working directory is required",
 		},
 	}
 

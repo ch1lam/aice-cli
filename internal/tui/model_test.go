@@ -2,6 +2,8 @@ package tui
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -315,6 +317,73 @@ func TestModelPlacesComposerAboveStatusAndHelp(t *testing.T) {
 			statusIndex,
 			helpIndex,
 		)
+	}
+}
+
+func TestModelHeaderShowsShellWorkingDirectory(t *testing.T) {
+	t.Parallel()
+
+	current := newModel(make(chan runRequest), make(chan struct{}))
+	current = updateModel(t, current, tea.WindowSizeMsg{Width: 80, Height: 24})
+	originalViewportHeight := current.viewport.Height()
+	current.workingDirectory = filepath.Join(
+		string(filepath.Separator),
+		"workspace",
+		"projects",
+		"coding-agents",
+		"aice-cli",
+	)
+	current.resizeLayout()
+
+	fullHeader := current.headerView(80)
+	for _, want := range []string{"AICE", "aice-cli", "READY"} {
+		if !strings.Contains(fullHeader, want) {
+			t.Errorf("header = %q, want %q", fullHeader, want)
+		}
+	}
+	if strings.Contains(current.footerView(80), "aice-cli") {
+		t.Fatalf(
+			"footer still contains working directory: %q",
+			current.footerView(80),
+		)
+	}
+	narrowHeader := current.headerView(32)
+	if got := lipgloss.Width(narrowHeader); got > 32 {
+		t.Errorf("header width = %d, want at most 32", got)
+	}
+	if !strings.Contains(narrowHeader, "…") ||
+		!strings.Contains(narrowHeader, "READY") {
+		t.Errorf(
+			"narrow header = %q, want truncated path and visible state",
+			narrowHeader,
+		)
+	}
+	if got := current.viewport.Height(); got != originalViewportHeight {
+		t.Errorf(
+			"viewport height = %d, want unchanged height %d",
+			got,
+			originalViewportHeight,
+		)
+	}
+}
+
+func TestShellWorkingDirectoryUsesHomeShortcutAndRemovesControls(t *testing.T) {
+	t.Parallel()
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("os.UserHomeDir() error = %v", err)
+	}
+	path := filepath.Join(home, "code", "aice-cli") + "\n\x1b"
+
+	got := shellWorkingDirectory(path)
+
+	wantPrefix := filepath.Join("~", "code", "aice-cli")
+	if !strings.HasPrefix(got, wantPrefix) {
+		t.Errorf("shell working directory = %q, want prefix %q", got, wantPrefix)
+	}
+	if strings.ContainsAny(got, "\n\x1b") {
+		t.Errorf("shell working directory contains terminal controls: %q", got)
 	}
 }
 

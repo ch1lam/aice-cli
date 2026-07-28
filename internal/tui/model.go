@@ -4,7 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
+	"unicode"
 
 	"charm.land/bubbles/v2/help"
 	"charm.land/bubbles/v2/key"
@@ -56,15 +59,16 @@ type model struct {
 	updates        <-chan runUpdate
 	cancelRun      context.CancelFunc
 
-	viewport     viewport.Model
-	input        textarea.Model
-	spinner      spinner.Model
-	help         help.Model
-	keys         keyMap
-	currentModel llm.Model
-	thinking     llm.ThinkingLevel
-	entries      []transcriptEntry
-	commands     []SlashCommand
+	viewport         viewport.Model
+	input            textarea.Model
+	spinner          spinner.Model
+	help             help.Model
+	keys             keyMap
+	currentModel     llm.Model
+	thinking         llm.ThinkingLevel
+	workingDirectory string
+	entries          []transcriptEntry
+	commands         []SlashCommand
 
 	width            int
 	height           int
@@ -623,7 +627,7 @@ func (m *model) refreshViewport(forceBottom bool) {
 
 func (m model) headerView(width int) string {
 	innerWidth := max(width-2, 1)
-	left := brandStyle.Render("AICE") + "  " + mutedStyle.Render("workspace agent")
+	brand := brandStyle.Render("AICE")
 	state := "READY"
 	stateColor := successColor
 	switch {
@@ -635,6 +639,18 @@ func (m model) headerView(width int) string {
 		stateColor = accentColor
 	}
 	right := lipgloss.NewStyle().Bold(true).Foreground(stateColor).Render("● " + state)
+	workspace := "workspace agent"
+	workspaceStyle := mutedStyle
+	if strings.TrimSpace(m.workingDirectory) != "" {
+		workspace = shellWorkingDirectory(m.workingDirectory)
+		workspaceStyle = infoStyle
+	}
+	workspaceWidth := max(
+		innerWidth-lipgloss.Width(brand)-lipgloss.Width(right)-5,
+		1,
+	)
+	workspace = truncateTerminalText(workspace, workspaceWidth)
+	left := brand + "  " + workspaceStyle.Render(workspace)
 	line := left + "  " + right
 	return lipgloss.NewStyle().
 		Width(innerWidth).
@@ -914,6 +930,25 @@ func (m model) statusLine(width int) string {
 		return left
 	}
 	return left + strings.Repeat(" ", gap) + right
+}
+
+func shellWorkingDirectory(path string) string {
+	path = filepath.Clean(path)
+	if home, err := os.UserHomeDir(); err == nil {
+		home = filepath.Clean(home)
+		switch {
+		case path == home:
+			path = "~"
+		case strings.HasPrefix(path, home+string(filepath.Separator)):
+			path = "~" + strings.TrimPrefix(path, home)
+		}
+	}
+	return strings.Map(func(character rune) rune {
+		if unicode.IsControl(character) {
+			return '�'
+		}
+		return character
+	}, path)
 }
 
 func (m model) modelStatus() string {
