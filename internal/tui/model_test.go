@@ -318,6 +318,58 @@ func TestModelPlacesComposerAboveStatusAndHelp(t *testing.T) {
 	}
 }
 
+func TestModelStatusLineShowsModelAndReasoningInsteadOfScrollPercent(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		thinking     llm.ThinkingLevel
+		wantThinking string
+	}{
+		{
+			name:         "provider default reasoning",
+			wantThinking: "reasoning default",
+		},
+		{
+			name:         "explicit high reasoning",
+			thinking:     llm.ThinkingLevelHigh,
+			wantThinking: "reasoning high",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			current := newScrollableModel(t)
+			originalFooterHeight := lipgloss.Height(current.footerView(80))
+			current.currentModel = llm.Model{ID: "deepseek-v4-flash"}
+			current.thinking = tt.thinking
+
+			status := current.statusLine(80)
+			for _, want := range []string{"deepseek-v4-flash", tt.wantThinking} {
+				if !strings.Contains(status, want) {
+					t.Errorf("status line = %q, want %q", status, want)
+				}
+			}
+			if strings.Contains(status, "%") {
+				t.Errorf("status line still contains scroll percentage: %q", status)
+			}
+			if got := lipgloss.Height(current.footerView(80)); got != originalFooterHeight {
+				t.Errorf(
+					"footer height = %d, want unchanged height %d; "+
+						"status width = %d, footer width = %d:\n%s",
+					got,
+					originalFooterHeight,
+					lipgloss.Width(status),
+					lipgloss.Width(current.footerView(80)),
+					current.footerView(80),
+				)
+			}
+		})
+	}
+}
+
 func TestModelSlashCommandMenuCompletesAndRunsApplicationCommand(
 	t *testing.T,
 ) {

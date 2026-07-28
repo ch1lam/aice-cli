@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"errors"
+	"io"
 	"strings"
 	"testing"
 	"time"
@@ -43,6 +44,16 @@ func TestRunRejectsInvalidDependencies(t *testing.T) {
 				Input: emptyReader{},
 			},
 			want: "output is required",
+		},
+		{
+			name:   "missing model",
+			ctx:    t.Context(),
+			runner: runnerFunc(func(context.Context, string, agent.AgentEventSink) error { return nil }),
+			options: Options{
+				Input:  emptyReader{},
+				Output: io.Discard,
+			},
+			want: "model ID is required",
 		},
 	}
 

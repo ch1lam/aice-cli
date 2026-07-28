@@ -17,6 +17,7 @@ import (
 	"github.com/ch1lam/aice-cli/internal/agent"
 	"github.com/ch1lam/aice-cli/internal/config"
 	"github.com/ch1lam/aice-cli/internal/llm"
+	"github.com/ch1lam/aice-cli/internal/provider/deepseek"
 	"github.com/ch1lam/aice-cli/internal/session"
 	"github.com/ch1lam/aice-cli/internal/tui"
 )
@@ -191,6 +192,19 @@ func TestApplicationInteractiveKeepsConversationHistory(t *testing.T) {
 			}
 			if options.Output != output {
 				t.Error("TUI output does not match command output")
+			}
+			if options.Model.ID != deepseek.ModelV4Flash {
+				t.Errorf(
+					"TUI model = %q, want %q",
+					options.Model.ID,
+					deepseek.ModelV4Flash,
+				)
+			}
+			if options.Thinking != llm.ThinkingLevelUnknown {
+				t.Errorf(
+					"TUI thinking = %q, want provider default",
+					options.Thinking,
+				)
 			}
 			if err := runner.Run(ctx, "first prompt", nil); err != nil {
 				return err
@@ -534,7 +548,11 @@ func TestInteractiveSessionPersistsCancellationAfterToolSideEffect(t *testing.T)
 		t.Fatalf("agent.NewLoop() error = %v", err)
 	}
 	store := createAppTestSession(t, sessionPath, workspace)
-	runner := &interactiveSession{loop: loop, store: store}
+	runner := &interactiveSession{
+		loop:  loop,
+		store: store,
+		model: deepseek.DefaultModel(),
+	}
 
 	err = runner.Run(ctx, "mutate then continue", nil)
 	if !errors.Is(err, context.Canceled) {
@@ -598,7 +616,11 @@ func TestInteractiveSessionPersistsToolErrorAndRecovery(t *testing.T) {
 		t.Fatalf("agent.NewLoop() error = %v", err)
 	}
 	store := createAppTestSession(t, sessionPath, workspace)
-	runner := &interactiveSession{loop: loop, store: store}
+	runner := &interactiveSession{
+		loop:  loop,
+		store: store,
+		model: deepseek.DefaultModel(),
+	}
 
 	if err := runner.Run(t.Context(), "mutate", nil); err != nil {
 		t.Fatalf("Run() error = %v", err)

@@ -10,6 +10,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/ch1lam/aice-cli/internal/agent"
+	"github.com/ch1lam/aice-cli/internal/llm"
 )
 
 const runUpdateBuffer = 32
@@ -20,10 +21,12 @@ type Runner interface {
 	Run(ctx context.Context, prompt string, sink agent.AgentEventSink) error
 }
 
-// Options contains the terminal streams used by the Bubble Tea program.
+// Options contains the terminal streams and model state shown by the program.
 type Options struct {
-	Input  io.Reader
-	Output io.Writer
+	Input    io.Reader
+	Output   io.Writer
+	Model    llm.Model
+	Thinking llm.ThinkingLevel
 }
 
 // Run starts an interactive Bubble Tea program and owns its run controller.
@@ -40,6 +43,9 @@ func Run(ctx context.Context, runner Runner, options Options) error {
 	if options.Output == nil {
 		return fmt.Errorf("tui: output is required")
 	}
+	if options.Model.ID == "" {
+		return fmt.Errorf("tui: model ID is required")
+	}
 
 	controllerCtx, stopController := context.WithCancel(ctx)
 	requests := make(chan runRequest)
@@ -54,8 +60,11 @@ func Run(ctx context.Context, runner Runner, options Options) error {
 	if commandRunner, ok := runner.(SlashCommandRunner); ok {
 		slashCommands = commandRunner.SlashCommands()
 	}
+	initialModel := newModel(requests, controllerDone, slashCommands...)
+	initialModel.currentModel = options.Model
+	initialModel.thinking = options.Thinking
 	program := tea.NewProgram(
-		newModel(requests, controllerDone, slashCommands...),
+		initialModel,
 		tea.WithContext(ctx),
 		tea.WithInput(options.Input),
 		tea.WithOutput(options.Output),

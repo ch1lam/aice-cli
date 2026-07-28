@@ -56,13 +56,15 @@ type model struct {
 	updates        <-chan runUpdate
 	cancelRun      context.CancelFunc
 
-	viewport viewport.Model
-	input    textarea.Model
-	spinner  spinner.Model
-	help     help.Model
-	keys     keyMap
-	entries  []transcriptEntry
-	commands []SlashCommand
+	viewport     viewport.Model
+	input        textarea.Model
+	spinner      spinner.Model
+	help         help.Model
+	keys         keyMap
+	currentModel llm.Model
+	thinking     llm.ThinkingLevel
+	entries      []transcriptEntry
+	commands     []SlashCommand
 
 	width            int
 	height           int
@@ -647,17 +649,18 @@ func (m model) footerView(width int) string {
 	innerWidth := max(width-2, 1)
 	keys := m.keys.forState(m.running)
 	helpView := m.help.View(keys)
-	content := m.statusLine(innerWidth)
-	if helpView != "" {
-		content += "\n" + helpView
-	}
-	return lipgloss.NewStyle().
+	style := lipgloss.NewStyle().
 		Width(innerWidth).
 		Padding(0, 1).
 		BorderTop(true).
 		BorderStyle(lipgloss.NormalBorder()).
-		BorderForeground(subtleColor).
-		Render(content)
+		BorderForeground(subtleColor)
+	contentWidth := max(innerWidth-style.GetHorizontalFrameSize(), 1)
+	content := m.statusLine(contentWidth)
+	if helpView != "" {
+		content += "\n" + helpView
+	}
+	return style.Render(content)
 }
 
 func (m model) composerView(width int) string {
@@ -902,15 +905,27 @@ func (m model) statusLine(width int) string {
 	} else if strings.Contains(strings.ToLower(m.status), "cancel") {
 		left = noticeStyle.Render("● ") + mutedStyle.Render(m.status)
 	}
-	if m.viewport.AtBottom() {
+	right := m.modelStatus()
+	if right == "" {
 		return left
 	}
-	right := infoStyle.Render(fmt.Sprintf("%3.0f%%", m.viewport.ScrollPercent()*100))
-	gap := width - lipgloss.Width(left) - lipgloss.Width(right)
+	gap := width - lipgloss.Width(left) - lipgloss.Width(right) - 1
 	if gap <= 0 {
 		return left
 	}
 	return left + strings.Repeat(" ", gap) + right
+}
+
+func (m model) modelStatus() string {
+	if m.currentModel.ID == "" {
+		return ""
+	}
+	thinking := string(m.thinking)
+	if m.thinking == llm.ThinkingLevelUnknown {
+		thinking = "default"
+	}
+	return infoStyle.Render(m.currentModel.ID) +
+		mutedStyle.Render(" · reasoning "+thinking)
 }
 
 func (m model) contentWidth() int {

@@ -166,15 +166,21 @@ func (a *application) Interactive(
 		return err
 	}
 
+	selectedModel := deepseek.DefaultModel()
+	generationOptions := llm.StreamOptions{}
 	runner := &interactiveSession{
 		application: a,
 		loop:        loop,
 		store:       store,
 		history:     history,
+		model:       selectedModel,
+		options:     generationOptions,
 	}
 	runErr := a.dependencies.runTUI(ctx, runner, tui.Options{
-		Input:  request.Input,
-		Output: request.Output,
+		Input:    request.Input,
+		Output:   request.Output,
+		Model:    selectedModel,
+		Thinking: generationOptions.Thinking,
 	})
 	closeErr := store.Close()
 	if runErr != nil {
@@ -226,6 +232,8 @@ type interactiveSession struct {
 	loop        *agent.Loop
 	store       *session.Store
 	history     []llm.AgentMessage
+	model       llm.Model
+	options     llm.StreamOptions
 }
 
 func (s *interactiveSession) Run(
@@ -238,10 +246,11 @@ func (s *interactiveSession) Run(
 		return fmt.Errorf("app: create prompt: %w", err)
 	}
 	result, runErr := s.loop.Run(ctx, agent.RunInput{
-		Model:        deepseek.DefaultModel(),
+		Model:        s.model,
 		SystemPrompt: defaultSystemPrompt,
 		History:      s.history,
 		Prompt:       prompt,
+		Options:      s.options,
 	}, sink)
 	messages := result.Messages()
 	persistErr := appendSessionRun(ctx, s.store, messages)
