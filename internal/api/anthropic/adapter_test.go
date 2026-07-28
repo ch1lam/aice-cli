@@ -103,6 +103,11 @@ func TestAdapterStreamsThinkingToolCallUsageAndDone(t *testing.T) {
 			API:       anthropicapi.API,
 			Provider:  "deepseek",
 			MaxTokens: 384_000,
+			Pricing: llm.Pricing{
+				Input:     0.14,
+				Output:    0.28,
+				CacheRead: 0.0028,
+			},
 		},
 		SystemPrompt: "You are a coding agent.",
 		Messages: []llm.Message{
@@ -200,6 +205,11 @@ func TestAdapterStreamsThinkingToolCallUsageAndDone(t *testing.T) {
 		CacheReadTokens:  3,
 		CacheWriteTokens: 2,
 		TotalTokens:      22,
+	}
+	wantUsage.Cost = llm.EstimateCost(request.Model.Pricing, wantUsage)
+	if events[8].Usage == nil ||
+		!reflect.DeepEqual(*events[8].Usage, wantUsage) {
+		t.Errorf("usage event = %#v, want %#v", events[8].Usage, wantUsage)
 	}
 	done := events[9]
 	if done.Message == nil {

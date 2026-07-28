@@ -114,6 +114,19 @@ type Snapshot struct {
 	LeafID      string
 }
 
+// TotalUsage returns all model usage billed while producing the session,
+// including abandoned branches and compaction summaries.
+func TotalUsage(snapshot Snapshot) llm.Usage {
+	var total llm.Usage
+	for _, turn := range snapshot.Turns {
+		total = llm.AddUsage(total, turn.Usage)
+	}
+	for _, compaction := range snapshot.Compactions {
+		total = llm.AddUsage(total, compaction.Usage)
+	}
+	return total
+}
+
 // NewID returns a cryptographically random identifier suitable for sessions
 // and tree records.
 func NewID() (string, error) {
@@ -485,23 +498,7 @@ func aggregateUsage(messages []llm.AgentMessage) llm.Usage {
 		if !ok {
 			continue
 		}
-		total.InputTokens += assistant.Usage.InputTokens
-		total.OutputTokens += assistant.Usage.OutputTokens
-		total.ReasoningTokens += assistant.Usage.ReasoningTokens
-		total.CacheReadTokens += assistant.Usage.CacheReadTokens
-		total.CacheWriteTokens += assistant.Usage.CacheWriteTokens
-		total.TotalTokens += assistant.Usage.TotalTokens
-		if assistant.Usage.Cost == nil {
-			continue
-		}
-		if total.Cost == nil {
-			total.Cost = &llm.Cost{}
-		}
-		total.Cost.Input += assistant.Usage.Cost.Input
-		total.Cost.Output += assistant.Usage.Cost.Output
-		total.Cost.CacheRead += assistant.Usage.Cost.CacheRead
-		total.Cost.CacheWrite += assistant.Usage.Cost.CacheWrite
-		total.Cost.Total += assistant.Usage.Cost.Total
+		total = llm.AddUsage(total, assistant.Usage)
 	}
 	return total
 }

@@ -96,7 +96,7 @@ func (a *application) Print(
 	if err != nil {
 		return err
 	}
-	store, history, err := prepareSession(
+	store, history, _, err := prepareSession(
 		ctx,
 		workspace,
 		request.Session,
@@ -156,7 +156,7 @@ func (a *application) Interactive(
 	if err != nil {
 		return err
 	}
-	store, history, err := prepareSession(
+	store, history, usage, err := prepareSession(
 		ctx,
 		workspace,
 		request.Session,
@@ -181,6 +181,7 @@ func (a *application) Interactive(
 		Output:           request.Output,
 		Model:            selectedModel,
 		Thinking:         generationOptions.Thinking,
+		Usage:            usage,
 		WorkingDirectory: workspace.Path(),
 	})
 	closeErr := store.Close()

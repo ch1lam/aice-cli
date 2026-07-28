@@ -20,18 +20,21 @@ func prepareSession(
 	workspace *tool.Workspace,
 	requestedPath string,
 	createDefault bool,
-) (*session.Store, []llm.AgentMessage, error) {
+) (*session.Store, []llm.AgentMessage, llm.Usage, error) {
 	if workspace == nil {
-		return nil, nil, fmt.Errorf("app: workspace is required")
+		return nil, nil, llm.Usage{}, fmt.Errorf("app: workspace is required")
 	}
 	if requestedPath == "" && !createDefault {
-		return nil, nil, nil
+		return nil, nil, llm.Usage{}, nil
 	}
 
 	if requestedPath == "" {
 		id, err := session.NewID()
 		if err != nil {
-			return nil, nil, fmt.Errorf("app: generate session id: %w", err)
+			return nil, nil, llm.Usage{}, fmt.Errorf(
+				"app: generate session id: %w",
+				err,
+			)
 		}
 		path := filepath.Join(
 			workspace.Path(),
@@ -40,36 +43,42 @@ func prepareSession(
 			id+".jsonl",
 		)
 		store, err := createSession(ctx, path, id, workspace.Path())
-		return store, nil, err
+		return store, nil, llm.Usage{}, err
 	}
 
 	store, snapshot, err := openExistingSession(ctx, workspace, requestedPath)
 	if err == nil {
 		history, historyErr := sessionHistory(snapshot)
 		if historyErr != nil {
-			return nil, nil, errors.Join(
+			return nil, nil, llm.Usage{}, errors.Join(
 				historyErr,
 				store.Close(),
 			)
 		}
-		return store, history, nil
+		return store, history, session.TotalUsage(snapshot), nil
 	}
 	if !errors.Is(err, os.ErrNotExist) {
-		return nil, nil, err
+		return nil, nil, llm.Usage{}, err
 	}
 
 	path, err := filepath.Abs(requestedPath)
 	if err != nil {
-		return nil, nil, fmt.Errorf("app: resolve session path: %w", err)
+		return nil, nil, llm.Usage{}, fmt.Errorf(
+			"app: resolve session path: %w",
+			err,
+		)
 	}
 	path = filepath.Clean(path)
 
 	id, err := session.NewID()
 	if err != nil {
-		return nil, nil, fmt.Errorf("app: generate session id: %w", err)
+		return nil, nil, llm.Usage{}, fmt.Errorf(
+			"app: generate session id: %w",
+			err,
+		)
 	}
 	store, err = createSession(ctx, path, id, workspace.Path())
-	return store, nil, err
+	return store, nil, llm.Usage{}, err
 }
 
 func createSession(

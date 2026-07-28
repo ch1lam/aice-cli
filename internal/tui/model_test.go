@@ -439,6 +439,138 @@ func TestModelStatusLineShowsModelAndReasoningInsteadOfScrollPercent(t *testing.
 	}
 }
 
+func TestModelStatusLineShowsSessionUsageAndEstimatedCost(t *testing.T) {
+	t.Parallel()
+
+	current := newModel(make(chan runRequest), make(chan struct{}))
+	current.currentModel = llm.Model{ID: "deepseek-v4-flash"}
+	current.sessionUsage = llm.Usage{
+		InputTokens:      1_200,
+		OutputTokens:     456,
+		CacheReadTokens:  100,
+		CacheWriteTokens: 20,
+		Cost:             &llm.Cost{Total: 0.0074},
+	}
+
+	wide := current.statusLine(120)
+	for _, want := range []string{
+		"↑1.2k",
+		"↓456",
+		"R100",
+		"W20",
+		"$0.007",
+		"deepseek-v4-flash",
+	} {
+		if !strings.Contains(wide, want) {
+			t.Errorf("wide status line = %q, want %q", wide, want)
+		}
+	}
+
+	standard := current.statusLine(80)
+	for _, want := range []string{
+		"↑1.2k",
+		"↓456",
+		"R100",
+		"W20",
+		"$0.007",
+		"deepseek-v4-flash",
+	} {
+		if !strings.Contains(standard, want) {
+			t.Errorf("standard status line = %q, want %q", standard, want)
+		}
+	}
+	if lipgloss.Width(standard) > 80 {
+		t.Errorf("standard status width = %d, want at most 80", lipgloss.Width(standard))
+	}
+
+	narrow := current.statusLine(68)
+	for _, want := range []string{
+		"↑1.3k",
+		"↓456",
+		"$0.007",
+		"deepseek-v4-flash",
+	} {
+		if !strings.Contains(narrow, want) {
+			t.Errorf("narrow status line = %q, want %q", narrow, want)
+		}
+	}
+	if strings.Contains(narrow, "R100") || strings.Contains(narrow, "W20") {
+		t.Errorf("narrow status line did not collapse cache detail: %q", narrow)
+	}
+}
+
+func TestModelAccumulatesCompletedAssistantUsage(t *testing.T) {
+	t.Parallel()
+
+	current := newModel(make(chan runRequest), make(chan struct{}))
+	current.sessionUsage = llm.Usage{
+		InputTokens:  100,
+		OutputTokens: 20,
+		TotalTokens:  120,
+		Cost:         &llm.Cost{Input: 0.01, Total: 0.01},
+	}
+	assistant := llm.NewAssistantMessage(llm.Model{
+		ID:       "test",
+		API:      "test",
+		Provider: "test",
+	})
+	assistant.Usage = llm.Usage{
+		InputTokens:     50,
+		OutputTokens:    30,
+		CacheReadTokens: 40,
+		TotalTokens:     120,
+		Cost: &llm.Cost{
+			Output:    0.02,
+			CacheRead: 0.001,
+			Total:     0.021,
+		},
+	}
+
+	current.applyAgentEvent(agent.AgentEvent{
+		Type:    agent.EventTypeMessageEnd,
+		Message: assistant,
+	})
+
+	got := current.sessionUsage
+	if got.InputTokens != 150 ||
+		got.OutputTokens != 50 ||
+		got.CacheReadTokens != 40 ||
+		got.TotalTokens != 240 ||
+		got.Cost == nil ||
+		got.Cost.Input != 0.01 ||
+		got.Cost.Output != 0.02 ||
+		got.Cost.CacheRead != 0.001 ||
+		got.Cost.Total != 0.031 {
+		t.Fatalf("session usage = %#v, want accumulated assistant usage", got)
+	}
+}
+
+func TestFormatTokensMatchesPiFooterThresholds(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		count int64
+		want  string
+	}{
+		{name: "plain", count: 999, want: "999"},
+		{name: "one decimal thousands", count: 1_250, want: "1.3k"},
+		{name: "rounded thousands", count: 12_500, want: "13k"},
+		{name: "one decimal millions", count: 1_250_000, want: "1.3M"},
+		{name: "rounded millions", count: 12_500_000, want: "13M"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := formatTokens(tt.count); got != tt.want {
+				t.Errorf("formatTokens(%d) = %q, want %q", tt.count, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestModelSlashCommandMenuCompletesAndRunsApplicationCommand(
 	t *testing.T,
 ) {

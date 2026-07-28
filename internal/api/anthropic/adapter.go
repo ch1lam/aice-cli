@@ -99,6 +99,7 @@ func (a *Adapter) Stream(ctx context.Context, request llm.Request) (llm.Stream, 
 		blocks:   make(map[int]*blockState),
 		contents: make(map[int]llm.ContentPart),
 		message:  llm.NewAssistantMessage(request.Model),
+		pricing:  request.Model.Pricing,
 	}, nil
 }
 
@@ -385,6 +386,7 @@ type stream struct {
 	contents map[int]llm.ContentPart
 	pending  []llm.Event
 	message  llm.AssistantMessage
+	pricing  llm.Pricing
 	usage    llm.Usage
 	stop     llm.StopReason
 	finished bool
@@ -755,6 +757,7 @@ func (s *stream) updateTotalTokens() {
 		s.usage.OutputTokens +
 		s.usage.CacheReadTokens +
 		s.usage.CacheWriteTokens
+	s.usage.Cost = llm.EstimateCost(s.pricing, s.usage)
 }
 
 func stopReason(reason anthropicsdk.StopReason) llm.StopReason {

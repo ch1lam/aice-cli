@@ -28,6 +28,7 @@ type Options struct {
 	Output           io.Writer
 	Model            llm.Model
 	Thinking         llm.ThinkingLevel
+	Usage            llm.Usage
 	WorkingDirectory string
 }
 
@@ -68,6 +69,7 @@ func Run(ctx context.Context, runner Runner, options Options) error {
 	initialModel := newModel(requests, controllerDone, slashCommands...)
 	initialModel.currentModel = options.Model
 	initialModel.thinking = options.Thinking
+	initialModel.sessionUsage = options.Usage
 	initialModel.workingDirectory = options.WorkingDirectory
 	program := tea.NewProgram(
 		initialModel,

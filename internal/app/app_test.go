@@ -206,6 +206,9 @@ func TestApplicationInteractiveKeepsConversationHistory(t *testing.T) {
 					options.Thinking,
 				)
 			}
+			if options.Usage != (llm.Usage{}) {
+				t.Errorf("TUI usage = %#v, want empty new session usage", options.Usage)
+			}
 			if options.WorkingDirectory != workspace {
 				t.Errorf(
 					"TUI working directory = %q, want %q",
@@ -346,7 +349,22 @@ func TestApplicationInteractiveResumesExplicitSession(t *testing.T) {
 
 	workspace := t.TempDir()
 	sessionPath := filepath.Join(t.TempDir(), "conversation.jsonl")
-	firstModel := &recordingModel{response: "first answer"}
+	firstUsage := llm.Usage{
+		InputTokens:     120,
+		OutputTokens:    30,
+		CacheReadTokens: 40,
+		TotalTokens:     190,
+		Cost: &llm.Cost{
+			Input:     0.001,
+			Output:    0.002,
+			CacheRead: 0.0001,
+			Total:     0.0031,
+		},
+	}
+	firstModel := &recordingModel{
+		response: "first answer",
+		usage:    firstUsage,
+	}
 	firstCommand, err := newCommand(dependencies{
 		loadConfig: func() (config.Config, error) {
 			return config.Config{DeepSeekAPIKey: "test-key"}, nil
@@ -379,8 +397,15 @@ func TestApplicationInteractiveResumesExplicitSession(t *testing.T) {
 		runTUI: func(
 			ctx context.Context,
 			runner tui.Runner,
-			_ tui.Options,
+			options tui.Options,
 		) error {
+			if !reflect.DeepEqual(options.Usage, firstUsage) {
+				t.Errorf(
+					"TUI restored usage = %#v, want %#v",
+					options.Usage,
+					firstUsage,
+				)
+			}
 			return runner.Run(ctx, "second prompt", nil)
 		},
 	})
@@ -799,6 +824,7 @@ func createAppTestSession(
 
 type recordingModel struct {
 	response string
+	usage    llm.Usage
 	requests []llm.Request
 }
 
@@ -869,6 +895,7 @@ func (m *recordingModel) Stream(
 	m.requests = append(m.requests, request)
 	message := llm.NewAssistantMessage(request.Model)
 	message.Content = []llm.ContentPart{llm.NewTextContent(m.response).Part()}
+	message.Usage = m.usage
 	message.StopReason = llm.StopReasonStop
 
 	return &eventStream{events: []llm.Event{

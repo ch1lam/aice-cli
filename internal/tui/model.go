@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"unicode"
 
@@ -66,6 +68,7 @@ type model struct {
 	keys             keyMap
 	currentModel     llm.Model
 	thinking         llm.ThinkingLevel
+	sessionUsage     llm.Usage
 	workingDirectory string
 	entries          []transcriptEntry
 	commands         []SlashCommand
@@ -546,6 +549,7 @@ func (m *model) applyStreamEvent(event *llm.Event) bool {
 }
 
 func (m *model) completeAssistant(message llm.AssistantMessage) {
+	m.sessionUsage = llm.AddUsage(m.sessionUsage, message.Usage)
 	if m.assistantEntry < 0 || m.assistantEntry >= len(m.entries) {
 		m.entries = append(m.entries, transcriptEntry{kind: entryAssistant})
 		m.assistantEntry = len(m.entries) - 1
@@ -913,23 +917,115 @@ func (m model) entryView(entry transcriptEntry) string {
 }
 
 func (m model) statusLine(width int) string {
-	left := mutedStyle.Render("● " + m.status)
+	status := mutedStyle.Render("● " + m.status)
 	if m.running {
-		left = m.spinner.View() + " " + mutedStyle.Render(m.status)
+		status = m.spinner.View() + " " + mutedStyle.Render(m.status)
 	} else if m.controllerClosed {
-		left = errorStyle.Render("● ") + mutedStyle.Render(m.status)
+		status = errorStyle.Render("● ") + mutedStyle.Render(m.status)
 	} else if strings.Contains(strings.ToLower(m.status), "cancel") {
-		left = noticeStyle.Render("● ") + mutedStyle.Render(m.status)
+		status = noticeStyle.Render("● ") + mutedStyle.Render(m.status)
 	}
 	right := m.modelStatus()
+	fullUsage := m.usageStatus(true)
+	compactUsage := m.usageStatus(false)
+
+	leftCandidates := make([]string, 0, 5)
+	if fullUsage != "" {
+		leftCandidates = append(leftCandidates, status+"  "+fullUsage)
+		if compactUsage != fullUsage {
+			leftCandidates = append(
+				leftCandidates,
+				status+"  "+compactUsage,
+			)
+		}
+		leftCandidates = append(leftCandidates, fullUsage)
+		if compactUsage != fullUsage {
+			leftCandidates = append(leftCandidates, compactUsage)
+		}
+	}
+	leftCandidates = append(leftCandidates, status)
+
+	for _, left := range leftCandidates {
+		if line, ok := alignStatusLine(left, right, width); ok {
+			return line
+		}
+	}
+	return status
+}
+
+func alignStatusLine(left, right string, width int) (string, bool) {
+	if lipgloss.Width(left) > width {
+		return "", false
+	}
 	if right == "" {
-		return left
+		return left, true
 	}
-	gap := width - lipgloss.Width(left) - lipgloss.Width(right) - 1
-	if gap <= 0 {
-		return left
+
+	const minimumGap = 2
+	leftWidth := lipgloss.Width(left)
+	rightWidth := lipgloss.Width(right)
+	if leftWidth+minimumGap+rightWidth > width {
+		return "", false
 	}
-	return left + strings.Repeat(" ", gap) + right
+	gap := width - leftWidth - rightWidth
+	return left + strings.Repeat(" ", gap) + right, true
+}
+
+func (m model) usageStatus(includeCache bool) string {
+	inputTokens := m.sessionUsage.InputTokens
+	if !includeCache {
+		inputTokens += m.sessionUsage.CacheReadTokens +
+			m.sessionUsage.CacheWriteTokens
+	}
+
+	parts := make([]string, 0, 5)
+	if inputTokens > 0 {
+		parts = append(parts, "↑"+formatTokens(inputTokens))
+	}
+	if m.sessionUsage.OutputTokens > 0 {
+		parts = append(
+			parts,
+			"↓"+formatTokens(m.sessionUsage.OutputTokens),
+		)
+	}
+	if includeCache && m.sessionUsage.CacheReadTokens > 0 {
+		parts = append(
+			parts,
+			"R"+formatTokens(m.sessionUsage.CacheReadTokens),
+		)
+	}
+	if includeCache && m.sessionUsage.CacheWriteTokens > 0 {
+		parts = append(
+			parts,
+			"W"+formatTokens(m.sessionUsage.CacheWriteTokens),
+		)
+	}
+	if m.sessionUsage.Cost != nil && m.sessionUsage.Cost.Total > 0 {
+		parts = append(
+			parts,
+			fmt.Sprintf("$%.3f", m.sessionUsage.Cost.Total),
+		)
+	}
+	return mutedStyle.Render(strings.Join(parts, " "))
+}
+
+func formatTokens(count int64) string {
+	switch {
+	case count < 1_000:
+		return strconv.FormatInt(count, 10)
+	case count < 10_000:
+		rounded := math.Round(float64(count)/100) / 10
+		return strconv.FormatFloat(rounded, 'f', 1, 64) + "k"
+	case count < 1_000_000:
+		rounded := int64(math.Round(float64(count) / 1_000))
+		return strconv.FormatInt(rounded, 10) + "k"
+	case count < 10_000_000:
+		rounded := math.Round(float64(count)/100_000) / 10
+		return strconv.FormatFloat(rounded, 'f', 1, 64) + "M"
+	default:
+		rounded := int64(math.Round(float64(count) / 1_000_000))
+		return strconv.FormatInt(rounded, 10) + "M"
+	}
 }
 
 func shellWorkingDirectory(path string) string {

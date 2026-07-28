@@ -90,8 +90,19 @@ func (p *Provider) Stream(ctx context.Context, request llm.Request) (llm.Stream,
 
 func model(id string) llm.Model {
 	name := "DeepSeek V4 Flash"
+	// Rates are USD per million tokens from DeepSeek's public model pricing.
+	pricing := llm.Pricing{
+		Input:     0.14,
+		Output:    0.28,
+		CacheRead: 0.0028,
+	}
 	if id == ModelV4Pro {
 		name = "DeepSeek V4 Pro"
+		pricing = llm.Pricing{
+			Input:     0.435,
+			Output:    0.87,
+			CacheRead: 0.003625,
+		}
 	}
 	return llm.Model{
 		ID:               id,
@@ -102,6 +113,7 @@ func model(id string) llm.Model {
 		InputModalities:  []llm.InputModality{llm.InputModalityText},
 		ContextWindow:    1_000_000,
 		MaxTokens:        384_000,
+		Pricing:          pricing,
 	}
 }
 

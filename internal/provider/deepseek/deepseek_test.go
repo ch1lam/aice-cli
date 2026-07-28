@@ -27,6 +27,11 @@ func TestModels(t *testing.T) {
 			InputModalities:  []llm.InputModality{llm.InputModalityText},
 			ContextWindow:    1_000_000,
 			MaxTokens:        384_000,
+			Pricing: llm.Pricing{
+				Input:     0.14,
+				Output:    0.28,
+				CacheRead: 0.0028,
+			},
 		},
 		{
 			ID:               deepseek.ModelV4Pro,
@@ -37,6 +42,11 @@ func TestModels(t *testing.T) {
 			InputModalities:  []llm.InputModality{llm.InputModalityText},
 			ContextWindow:    1_000_000,
 			MaxTokens:        384_000,
+			Pricing: llm.Pricing{
+				Input:     0.435,
+				Output:    0.87,
+				CacheRead: 0.003625,
+			},
 		},
 	}
 	if got := deepseek.Models(); !reflect.DeepEqual(got, want) {

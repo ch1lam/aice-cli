@@ -147,6 +147,7 @@ type Model struct {
 	InputModalities  []InputModality `json:"input_modalities,omitempty"`
 	ContextWindow    int64           `json:"context_window,omitempty"`
 	MaxTokens        int64           `json:"max_tokens,omitempty"`
+	Pricing          Pricing         `json:"pricing"`
 }
 
 // Cost contains normalized request cost amounts in US dollars.
@@ -700,6 +701,9 @@ func (r Request) Validate() error {
 	}
 	if r.Model.MaxTokens < 0 {
 		return fmt.Errorf("llm: request model max tokens cannot be negative")
+	}
+	if err := r.Model.Pricing.validate(); err != nil {
+		return err
 	}
 	if err := r.Options.validate(r.Model.MaxTokens); err != nil {
 		return err
