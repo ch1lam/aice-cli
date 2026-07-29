@@ -201,6 +201,9 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		var command tea.Cmd
 		m.spinner, command = m.spinner.Update(message)
 		if m.running {
+			if m.showsActivitySpinner() {
+				m.refreshViewport(false)
+			}
 			return m, command
 		}
 		return m, nil
@@ -585,6 +588,7 @@ func (m *model) applyAgentEvent(event agent.AgentEvent) bool {
 		if _, ok := event.Message.(llm.AssistantMessage); ok {
 			m.entries = append(m.entries, transcriptEntry{kind: entryAssistant})
 			m.assistantEntry = len(m.entries) - 1
+			m.status = "Thinking..."
 			return true
 		}
 	case agent.EventTypeMessageUpdate:
@@ -607,6 +611,7 @@ func (m *model) applyAgentEvent(event agent.AgentEvent) bool {
 	case agent.EventTypeToolExecutionEnd:
 		if event.ToolCall != nil {
 			m.completeTool(event.ToolCall.ID, event.Err != nil)
+			m.status = "Thinking..."
 			return true
 		}
 	case agent.EventTypeAgentEnd:
@@ -763,11 +768,14 @@ func (m model) footerView(width int) string {
 		BorderStyle(lipgloss.NormalBorder()).
 		BorderForeground(subtleColor)
 	contentWidth := max(innerWidth-style.GetHorizontalFrameSize(), 1)
-	content := m.statusLine(contentWidth)
-	if helpView != "" {
-		content += "\n" + helpView
+	rows := make([]string, 0, 2)
+	if status := m.statusLine(contentWidth); status != "" {
+		rows = append(rows, status)
 	}
-	return style.Render(content)
+	if helpView != "" {
+		rows = append(rows, helpView)
+	}
+	return style.Render(strings.Join(rows, "\n"))
 }
 
 func (m model) composerView(width int) string {
@@ -914,12 +922,21 @@ func truncateTerminalText(value string, width int) string {
 
 func (m model) transcriptView() string {
 	if len(m.entries) == 0 {
+		if activity := m.pendingActivityView(); activity != "" {
+			return activity
+		}
 		return m.welcomeView()
 	}
 
-	parts := make([]string, 0, len(m.entries))
-	for _, entry := range m.entries {
-		parts = append(parts, m.entryView(entry))
+	parts := make([]string, 0, len(m.entries)+1)
+	for index, entry := range m.entries {
+		activeAssistant := m.running &&
+			index == m.assistantEntry &&
+			!entry.complete
+		parts = append(parts, m.entryView(entry, activeAssistant))
+	}
+	if activity := m.pendingActivityView(); activity != "" {
+		parts = append(parts, activity)
 	}
 	return strings.Join(parts, "\n\n")
 }
@@ -964,7 +981,10 @@ func (m model) welcomeView() string {
 	)
 }
 
-func (m model) entryView(entry transcriptEntry) string {
+func (m model) entryView(
+	entry transcriptEntry,
+	activeAssistant bool,
+) string {
 	width := m.contentWidth()
 	switch entry.kind {
 	case entryUser:
@@ -989,7 +1009,11 @@ func (m model) entryView(entry transcriptEntry) string {
 			body = bodyStyle.Render(body)
 		}
 		if body == "" {
-			body = mutedStyle.Render("Waiting for model output...")
+			if activeAssistant {
+				body = m.activityIndicator()
+			} else {
+				body = mutedStyle.Render("Waiting for model output...")
+			}
 		}
 		parts = append(parts, body)
 		return lipgloss.NewStyle().Padding(0, 1).Render(strings.Join(parts, "\n"))
@@ -1030,41 +1054,70 @@ func (m model) entryView(entry transcriptEntry) string {
 	}
 }
 
-func (m model) statusLine(width int) string {
-	status := mutedStyle.Render("● " + m.status)
-	if m.running {
-		status = m.spinner.View() + " " + mutedStyle.Render(m.status)
-	} else if m.controllerClosed {
-		status = errorStyle.Render("● ") + mutedStyle.Render(m.status)
-	} else if strings.Contains(strings.ToLower(m.status), "cancel") {
-		status = noticeStyle.Render("● ") + mutedStyle.Render(m.status)
+func (m model) pendingActivityView() string {
+	if !m.running || m.hasActiveTool() || m.hasActiveAssistant() {
+		return ""
 	}
+	return lipgloss.NewStyle().Padding(0, 1).Render(
+		headerStyle.Render("✦ AICE") + "\n" + m.activityIndicator(),
+	)
+}
+
+func (m model) hasActiveAssistant() bool {
+	if m.assistantEntry < 0 || m.assistantEntry >= len(m.entries) {
+		return false
+	}
+	return !m.entries[m.assistantEntry].complete
+}
+
+func (m model) hasActiveTool() bool {
+	for index := len(m.entries) - 1; index >= 0; index-- {
+		entry := m.entries[index]
+		if entry.kind == entryTool && !entry.toolDone {
+			return true
+		}
+	}
+	return false
+}
+
+func (m model) showsActivitySpinner() bool {
+	if !m.running {
+		return false
+	}
+	if m.hasActiveTool() || !m.hasActiveAssistant() {
+		return true
+	}
+	return m.entries[m.assistantEntry].text == ""
+}
+
+func (m model) activityIndicator() string {
+	status := strings.TrimSpace(m.status)
+	if status == "" {
+		status = "Working..."
+	}
+	return m.spinner.View() + " " + mutedStyle.Render(status)
+}
+
+func (m model) statusLine(width int) string {
 	right := m.modelStatus()
 	fullUsage := m.usageStatus(true)
 	compactUsage := m.usageStatus(false)
 
-	leftCandidates := make([]string, 0, 5)
+	leftCandidates := make([]string, 0, 3)
 	if fullUsage != "" {
-		leftCandidates = append(leftCandidates, status+"  "+fullUsage)
-		if compactUsage != fullUsage {
-			leftCandidates = append(
-				leftCandidates,
-				status+"  "+compactUsage,
-			)
-		}
 		leftCandidates = append(leftCandidates, fullUsage)
 		if compactUsage != fullUsage {
 			leftCandidates = append(leftCandidates, compactUsage)
 		}
 	}
-	leftCandidates = append(leftCandidates, status)
+	leftCandidates = append(leftCandidates, "")
 
 	for _, left := range leftCandidates {
 		if line, ok := alignStatusLine(left, right, width); ok {
 			return line
 		}
 	}
-	return status
+	return ""
 }
 
 func alignStatusLine(left, right string, width int) (string, bool) {
@@ -1075,9 +1128,16 @@ func alignStatusLine(left, right string, width int) (string, bool) {
 		return left, true
 	}
 
-	const minimumGap = 2
 	leftWidth := lipgloss.Width(left)
 	rightWidth := lipgloss.Width(right)
+	if left == "" {
+		if rightWidth > width {
+			return "", false
+		}
+		return strings.Repeat(" ", width-rightWidth) + right, true
+	}
+
+	const minimumGap = 2
 	if leftWidth+minimumGap+rightWidth > width {
 		return "", false
 	}
