@@ -844,7 +844,6 @@ func TestInteractiveSessionPersistsCancellationAfterToolSideEffect(t *testing.T)
 	loop, err := agent.NewLoop(
 		model,
 		[]agent.Tool{tool},
-		agent.Limits{MaxTurns: 3, MaxToolSteps: 3},
 	)
 	if err != nil {
 		t.Fatalf("agent.NewLoop() error = %v", err)
@@ -912,7 +911,6 @@ func TestInteractiveSessionPersistsToolErrorAndRecovery(t *testing.T) {
 	loop, err := agent.NewLoop(
 		model,
 		[]agent.Tool{tool},
-		agent.Limits{MaxTurns: 3, MaxToolSteps: 3},
 	)
 	if err != nil {
 		t.Fatalf("agent.NewLoop() error = %v", err)

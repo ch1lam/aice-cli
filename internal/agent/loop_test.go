@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -20,45 +21,28 @@ func TestNewLoopRejectsInvalidConfiguration(t *testing.T) {
 	t.Parallel()
 
 	model := &scriptedModel{}
-	validLimits := agent.Limits{MaxTurns: 2, MaxToolSteps: 2}
 	validTool := newFakeTool("read", nil)
 
 	tests := []struct {
 		name    string
 		model   agent.Model
 		tools   []agent.Tool
-		limits  agent.Limits
 		wantErr string
 	}{
 		{
 			name:    "missing model",
-			limits:  validLimits,
 			wantErr: "model is required",
-		},
-		{
-			name:    "zero turns",
-			model:   model,
-			limits:  agent.Limits{MaxToolSteps: 1},
-			wantErr: "max turns must be positive",
-		},
-		{
-			name:    "zero tool steps",
-			model:   model,
-			limits:  agent.Limits{MaxTurns: 1},
-			wantErr: "max tool steps must be positive",
 		},
 		{
 			name:    "nil tool",
 			model:   model,
 			tools:   []agent.Tool{nil},
-			limits:  validLimits,
 			wantErr: "tool 0 is nil",
 		},
 		{
 			name:    "duplicate tool",
 			model:   model,
 			tools:   []agent.Tool{validTool, newFakeTool("read", nil)},
-			limits:  validLimits,
 			wantErr: "duplicate tool name",
 		},
 		{
@@ -68,7 +52,6 @@ func TestNewLoopRejectsInvalidConfiguration(t *testing.T) {
 				Name:        "read",
 				InputSchema: json.RawMessage(`[]`),
 			}}},
-			limits:  validLimits,
 			wantErr: "input schema must be a json object",
 		},
 	}
@@ -77,7 +60,7 @@ func TestNewLoopRejectsInvalidConfiguration(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			_, err := agent.NewLoop(test.model, test.tools, test.limits)
+			_, err := agent.NewLoop(test.model, test.tools)
 			if err == nil || !strings.Contains(err.Error(), test.wantErr) {
 				t.Fatalf("NewLoop() error = %v, want substring %q", err, test.wantErr)
 			}
@@ -98,7 +81,7 @@ func TestLoopRunTextTurn(t *testing.T) {
 		{Type: llm.EventTypeUsage, Usage: &llm.Usage{OutputTokens: 1, TotalTokens: 1}},
 		{Type: llm.EventTypeDone, StopReason: llm.StopReasonStop, Message: &answer},
 	}}}}
-	loop := mustLoop(t, model, nil, agent.Limits{MaxTurns: 3, MaxToolSteps: 3})
+	loop := mustLoop(t, model, nil)
 	prompt := mustPrompt(t, "hi")
 
 	var events []agent.AgentEvent
@@ -167,10 +150,7 @@ func TestLoopProjectsCompactionSummaryAtRequestBoundary(t *testing.T) {
 	model := &scriptedModel{scripts: []*streamScript{{
 		events: terminalEvents(answer),
 	}}}
-	loop := mustLoop(t, model, nil, agent.Limits{
-		MaxTurns:     2,
-		MaxToolSteps: 2,
-	})
+	loop := mustLoop(t, model, nil)
 	input := testInput(modelInfo, mustPrompt(t, "continue"))
 	input.History = []llm.AgentMessage{
 		llm.CompactionSummaryMessage{
@@ -205,20 +185,22 @@ func TestLoopClampsMaxTokensToRemainingContext(t *testing.T) {
 	model := &scriptedModel{scripts: []*streamScript{{
 		events: terminalEvents(answer),
 	}}}
-	loop := mustLoop(t, model, nil, agent.Limits{
-		MaxTurns:     2,
-		MaxToolSteps: 2,
-	})
+	loop := mustLoop(t, model, nil)
 	previous := assistantMessage(
 		modelInfo,
 		llm.StopReasonStop,
 		textPart("previous answer"),
 	)
+	previous.Timestamp = 2
 	previous.Usage = llm.Usage{TotalTokens: 60_000}
-	input := testInput(modelInfo, mustPrompt(t, "continue"))
+	previousPrompt := mustPrompt(t, "previous prompt")
+	previousPrompt.Timestamp = 1
+	currentPrompt := mustPrompt(t, "continue")
+	currentPrompt.Timestamp = 3
+	input := testInput(modelInfo, currentPrompt)
 	input.Options.MaxTokens = modelInfo.MaxTokens
 	input.History = []llm.AgentMessage{
-		mustPrompt(t, "previous prompt"),
+		previousPrompt,
 		previous,
 	}
 
@@ -250,19 +232,21 @@ func TestLoopRejectsContextAboveCompactionThreshold(t *testing.T) {
 	modelInfo.ContextWindow = 100_000
 	modelInfo.MaxTokens = 20_000
 	model := &scriptedModel{}
-	loop := mustLoop(t, model, nil, agent.Limits{
-		MaxTurns:     2,
-		MaxToolSteps: 2,
-	})
+	loop := mustLoop(t, model, nil)
 	previous := assistantMessage(
 		modelInfo,
 		llm.StopReasonStop,
 		textPart("previous answer"),
 	)
+	previous.Timestamp = 2
 	previous.Usage = llm.Usage{TotalTokens: 90_000}
-	input := testInput(modelInfo, mustPrompt(t, "continue"))
+	previousPrompt := mustPrompt(t, "previous prompt")
+	previousPrompt.Timestamp = 1
+	currentPrompt := mustPrompt(t, "continue")
+	currentPrompt.Timestamp = 3
+	input := testInput(modelInfo, currentPrompt)
 	input.History = []llm.AgentMessage{
-		mustPrompt(t, "previous prompt"),
+		previousPrompt,
 		previous,
 	}
 
@@ -290,8 +274,10 @@ func TestLoopSettlesToolRunAfterCrossingCompactionThreshold(t *testing.T) {
 		llm.StopReasonToolUse,
 		toolCallPart("call-1", "read", `{"path":"a.go"}`),
 	)
+	first.Timestamp = 2
 	first.Usage = llm.Usage{TotalTokens: 90_000}
 	second := assistantMessage(modelInfo, llm.StopReasonStop, textPart("done"))
+	second.Timestamp = 3
 	model := &scriptedModel{scripts: []*streamScript{
 		{events: terminalEvents(first)},
 		{events: terminalEvents(second)},
@@ -300,12 +286,13 @@ func TestLoopSettlesToolRunAfterCrossingCompactionThreshold(t *testing.T) {
 		t,
 		model,
 		[]agent.Tool{newFakeTool("read", nil)},
-		agent.Limits{MaxTurns: 2, MaxToolSteps: 2},
 	)
 
+	prompt := mustPrompt(t, "inspect")
+	prompt.Timestamp = 1
 	result, err := loop.Run(
 		t.Context(),
-		testInput(modelInfo, mustPrompt(t, "inspect")),
+		testInput(modelInfo, prompt),
 		nil,
 	)
 	if err != nil {
@@ -358,7 +345,7 @@ func TestLoopRunToolTurnThenContinues(t *testing.T) {
 			Content: []llm.ContentPart{textPart("output:" + call.ID)},
 		}, nil
 	})
-	loop := mustLoop(t, model, []agent.Tool{tool}, agent.Limits{MaxTurns: 3, MaxToolSteps: 3})
+	loop := mustLoop(t, model, []agent.Tool{tool})
 
 	var events []agent.AgentEvent
 	result, err := loop.Run(
@@ -483,10 +470,7 @@ func TestLoopDoesNotExecuteLengthTruncatedToolCalls(t *testing.T) {
 		{events: terminalEvents(recovered)},
 	}}
 	read := newFakeTool("read", successfulTool)
-	loop := mustLoop(t, model, []agent.Tool{read}, agent.Limits{
-		MaxTurns:     3,
-		MaxToolSteps: 3,
-	})
+	loop := mustLoop(t, model, []agent.Tool{read})
 
 	var events []agent.AgentEvent
 	result, err := loop.Run(
@@ -618,7 +602,7 @@ func TestLoopRunWithWorkspaceReadTool(t *testing.T) {
 		{events: terminalEvents(first)},
 		{events: terminalEvents(second)},
 	}}
-	loop := mustLoop(t, model, []agent.Tool{read}, agent.Limits{MaxTurns: 3, MaxToolSteps: 3})
+	loop := mustLoop(t, model, []agent.Tool{read})
 
 	result, err := loop.Run(
 		t.Context(),
@@ -656,7 +640,7 @@ func TestLoopReturnsToolFailuresToModel(t *testing.T) {
 	tool := newFakeTool("read", func(context.Context, llm.ToolCall) (llm.ToolResult, error) {
 		return llm.ToolResult{}, toolFailure
 	})
-	loop := mustLoop(t, model, []agent.Tool{tool}, agent.Limits{MaxTurns: 3, MaxToolSteps: 3})
+	loop := mustLoop(t, model, []agent.Tool{tool})
 
 	result, err := loop.Run(t.Context(), testInput(modelInfo, mustPrompt(t, "read")), nil)
 	if err != nil {
@@ -681,62 +665,60 @@ func TestLoopReturnsToolFailuresToModel(t *testing.T) {
 	}
 }
 
-func TestLoopEnforcesTurnLimitAfterCompletingToolResults(t *testing.T) {
+func TestLoopContinuesUntilModelStopsAfterManyToolCalls(t *testing.T) {
 	t.Parallel()
 
+	const toolCallCount = 40
+
 	modelInfo := testModel()
-	answer := assistantMessage(
-		modelInfo,
-		llm.StopReasonToolUse,
-		toolCallPart("call-1", "read", `{}`),
-	)
-	model := &scriptedModel{scripts: []*streamScript{{events: terminalEvents(answer)}}}
+	scripts := make([]*streamScript, 0, toolCallCount+1)
+	for index := 1; index <= toolCallCount; index++ {
+		answer := assistantMessage(
+			modelInfo,
+			llm.StopReasonToolUse,
+			toolCallPart(fmt.Sprintf("call-%d", index), "read", `{}`),
+		)
+		scripts = append(scripts, &streamScript{events: terminalEvents(answer)})
+	}
+	final := assistantMessage(modelInfo, llm.StopReasonStop, textPart("done"))
+	scripts = append(scripts, &streamScript{events: terminalEvents(final)})
+
+	model := &scriptedModel{scripts: scripts}
 	tool := newFakeTool("read", successfulTool)
-	loop := mustLoop(t, model, []agent.Tool{tool}, agent.Limits{MaxTurns: 1, MaxToolSteps: 2})
+	loop := mustLoop(t, model, []agent.Tool{tool})
 
 	result, err := loop.Run(t.Context(), testInput(modelInfo, mustPrompt(t, "read")), nil)
-	if !errors.Is(err, agent.ErrTurnLimit) {
-		t.Fatalf("Run() error = %v, want ErrTurnLimit", err)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
 	}
-	if len(model.requests) != 1 ||
-		len(result.Turns) != 2 ||
-		len(result.Turns[0].ToolResults) != 1 {
-		t.Fatalf("Run() requests = %d, result = %#v", len(model.requests), result)
+	if len(model.requests) != toolCallCount+1 {
+		t.Fatalf(
+			"model requests = %d, want %d",
+			len(model.requests),
+			toolCallCount+1,
+		)
 	}
-	assertTerminalFailure(t, result.Turns[1].Assistant, llm.StopReasonError)
-}
-
-func TestLoopEnforcesToolStepLimitWithPairedResults(t *testing.T) {
-	t.Parallel()
-
-	modelInfo := testModel()
-	answer := assistantMessage(
-		modelInfo,
-		llm.StopReasonToolUse,
-		toolCallPart("call-1", "read", `{}`),
-		toolCallPart("call-2", "read", `{}`),
-	)
-	model := &scriptedModel{scripts: []*streamScript{{events: terminalEvents(answer)}}}
-	tool := newFakeTool("read", successfulTool)
-	loop := mustLoop(t, model, []agent.Tool{tool}, agent.Limits{MaxTurns: 2, MaxToolSteps: 1})
-
-	result, err := loop.Run(t.Context(), testInput(modelInfo, mustPrompt(t, "read twice")), nil)
-	if !errors.Is(err, agent.ErrToolStepLimit) {
-		t.Fatalf("Run() error = %v, want ErrToolStepLimit", err)
+	if len(tool.calls) != toolCallCount {
+		t.Fatalf("tool calls = %d, want %d", len(tool.calls), toolCallCount)
 	}
-	if len(tool.calls) != 1 {
-		t.Fatalf("tool call count = %d, want 1", len(tool.calls))
+	if len(result.Turns) != toolCallCount+1 {
+		t.Fatalf(
+			"result turns = %d, want %d",
+			len(result.Turns),
+			toolCallCount+1,
+		)
 	}
-	if len(result.Turns) != 2 || len(result.Turns[0].ToolResults) != 2 {
-		t.Fatalf("Run() result = %#v", result)
+	for index := 0; index < toolCallCount; index++ {
+		turn := result.Turns[index]
+		if len(turn.ToolResults) != 1 || turn.ToolResults[0].IsError {
+			t.Fatalf("turn %d tool results = %#v", turn.Number, turn.ToolResults)
+		}
 	}
-	if result.Turns[0].ToolResults[0].IsError || !result.Turns[0].ToolResults[1].IsError {
-		t.Fatalf("tool results = %#v", result.Turns[0].ToolResults)
+	last := result.Turns[len(result.Turns)-1]
+	if last.Assistant.StopReason != llm.StopReasonStop ||
+		len(last.ToolResults) != 0 {
+		t.Fatalf("final turn = %#v, want natural model completion", last)
 	}
-	if got := result.Turns[0].ToolResults[1].ToolCallID; got != "call-2" {
-		t.Fatalf("synthetic tool result call id = %q, want call-2", got)
-	}
-	assertTerminalFailure(t, result.Turns[1].Assistant, llm.StopReasonError)
 }
 
 func TestLoopPreservesPartialAssistantOnCancellation(t *testing.T) {
@@ -758,7 +740,7 @@ func TestLoopPreservesPartialAssistantOnCancellation(t *testing.T) {
 			}
 		},
 	}}}
-	loop := mustLoop(t, model, nil, agent.Limits{MaxTurns: 2, MaxToolSteps: 2})
+	loop := mustLoop(t, model, nil)
 
 	var events []agent.AgentEvent
 	result, err := loop.Run(ctx, testInput(modelInfo, mustPrompt(t, "work")), collectEvents(&events))
@@ -800,7 +782,7 @@ func TestLoopRejectsStreamEOFBeforeTerminalEvent(t *testing.T) {
 	model := &scriptedModel{scripts: []*streamScript{{events: []llm.Event{
 		{Type: llm.EventTypeStart},
 	}}}}
-	loop := mustLoop(t, model, nil, agent.Limits{MaxTurns: 2, MaxToolSteps: 2})
+	loop := mustLoop(t, model, nil)
 
 	var events []agent.AgentEvent
 	result, err := loop.Run(
@@ -846,7 +828,7 @@ func TestLoopRejectsUnknownStreamEvent(t *testing.T) {
 		{Type: llm.EventTypeStart},
 		{Type: llm.EventTypeUnknown},
 	}}}}
-	loop := mustLoop(t, model, nil, agent.Limits{MaxTurns: 2, MaxToolSteps: 2})
+	loop := mustLoop(t, model, nil)
 
 	_, err := loop.Run(t.Context(), testInput(modelInfo, mustPrompt(t, "work")), nil)
 	if !errors.Is(err, agent.ErrProtocol) {
@@ -867,7 +849,7 @@ func TestLoopStopsImmediatelyWhenEventSinkFails(t *testing.T) {
 		{Type: llm.EventTypeTextDelta, ContentIndex: 0, Delta: "done"},
 		{Type: llm.EventTypeDone, Message: &answer},
 	}}}}
-	loop := mustLoop(t, model, nil, agent.Limits{MaxTurns: 2, MaxToolSteps: 2})
+	loop := mustLoop(t, model, nil)
 	sinkFailure := errors.New("consumer stopped")
 	var events []agent.AgentEvent
 
@@ -912,7 +894,6 @@ func TestLoopRetainsExecutedToolResultWhenEventSinkFails(t *testing.T) {
 		t,
 		model,
 		[]agent.Tool{tool},
-		agent.Limits{MaxTurns: 2, MaxToolSteps: 2},
 	)
 	sinkFailure := errors.New("consumer stopped")
 
@@ -982,11 +963,10 @@ func mustLoop(
 	t *testing.T,
 	model agent.Model,
 	tools []agent.Tool,
-	limits agent.Limits,
 ) *agent.Loop {
 	t.Helper()
 
-	loop, err := agent.NewLoop(model, tools, limits)
+	loop, err := agent.NewLoop(model, tools)
 	if err != nil {
 		t.Fatalf("NewLoop() error = %v", err)
 	}

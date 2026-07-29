@@ -39,7 +39,7 @@ internal/
 ├── app/                        # composition root and lifecycle
 ├── cli/                        # Cobra commands and non-interactive output
 ├── tui/                        # Bubble Tea model, update, view, event bridge
-├── agent/                      # bounded Agent Loop, lifecycle events, Tool contract
+├── agent/                      # Agent Loop, lifecycle events, Tool contract
 ├── llm/                        # AICE messages, content, models, usage, stream contract
 ├── api/
 │   └── anthropic/              # Anthropic protocol request/stream translation
@@ -78,7 +78,8 @@ Dependency rules:
   - Session storage is lossless source history. Model context is a derived view and may filter or transform messages without rewriting the stored transcript.
 - Keep provider identity/configuration separate from API protocol adapters. Anthropic-compatible providers should reuse the protocol layer instead of duplicating a full client.
 - Normalize text, reasoning, tool-call deltas, usage, finish reasons, errors, and cancellation without losing information.
-- The Agent Loop is responsible for model calls, validated tool execution, tool-result history, continuation, maximum turn/tool-step limits, and terminal lifecycle events.
+- The Agent Loop is responsible for model calls, validated tool execution, tool-result history, natural continuation, and terminal lifecycle events.
+- Do not impose fixed `MaxTurns` or `MaxToolSteps` limits. Continue while a completed assistant turn requests tools and the paired tool results can be returned to the model. Stop when the model completes without tool calls, the caller cancels or reaches its deadline, context protection rejects the next request, or a provider, protocol, runtime, or event-sink failure terminates the run.
 - Never execute an incomplete or invalid streamed tool call. If an assistant response stops for length while containing tool calls, execute none of them; emit paired error tool results so the model can issue complete calls on a later turn.
 - Preserve partial assistant output on cancellation or provider failure when it is safe to do so. Provider and runtime failures should produce a terminal assistant result or an explicit durable operation error rather than silently disappearing from history.
 - Execute tools sequentially by default. Parallel execution may be added later only for independent read-only tools with explicit ordering and cancellation tests.

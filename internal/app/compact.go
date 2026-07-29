@@ -160,10 +160,7 @@ func (a *application) generateCompactionSummary(
 	if err != nil {
 		return "", llm.Usage{}, err
 	}
-	loop, err := agent.NewLoop(configured.service, nil, agent.Limits{
-		MaxTurns:     1,
-		MaxToolSteps: 1,
-	})
+	loop, err := agent.NewLoop(configured.service, nil)
 	if err != nil {
 		return "", llm.Usage{}, fmt.Errorf(
 			"app: create compaction loop: %w",

@@ -24,8 +24,6 @@ const (
 		"coding tools to inspect and modify the working environment when needed. " +
 		"Give concise, evidence-based answers and never claim changes you " +
 		"did not make."
-	defaultMaxTurns                  = 12
-	defaultMaxToolSteps              = 32
 	defaultCompactionMaxTokens int64 = 16_000
 )
 
@@ -323,10 +321,7 @@ func (a *application) newAgentLoop(
 	if err != nil {
 		return nil, fmt.Errorf("app: create model: %w", err)
 	}
-	loop, err := agent.NewLoop(service, tools, agent.Limits{
-		MaxTurns:     defaultMaxTurns,
-		MaxToolSteps: defaultMaxToolSteps,
-	})
+	loop, err := agent.NewLoop(service, tools)
 	if err != nil {
 		return nil, fmt.Errorf("app: create agent loop: %w", err)
 	}

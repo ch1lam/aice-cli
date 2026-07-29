@@ -11,10 +11,6 @@ import (
 var (
 	// ErrProtocol indicates that a model stream violated the llm stream contract.
 	ErrProtocol = errors.New("agent: invalid model stream")
-	// ErrTurnLimit indicates that another model request would exceed MaxTurns.
-	ErrTurnLimit = errors.New("agent: maximum turns reached")
-	// ErrToolStepLimit indicates that another tool call would exceed MaxToolSteps.
-	ErrToolStepLimit = errors.New("agent: maximum tool steps reached")
 	// ErrContextLimit indicates that another model request would leave too
 	// little room in the model context window.
 	ErrContextLimit = errors.New("agent: context limit reached")
@@ -29,12 +25,6 @@ type Model interface {
 type Tool interface {
 	Definition() llm.ToolDefinition
 	Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult, error)
-}
-
-// Limits bounds work performed by one agent run.
-type Limits struct {
-	MaxTurns     int
-	MaxToolSteps int
 }
 
 // RunInput contains the caller-owned state needed for one agent run.

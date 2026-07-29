@@ -18,19 +18,12 @@ type Loop struct {
 	model       Model
 	tools       map[string]Tool
 	definitions []llm.ToolDefinition
-	limits      Limits
 }
 
 // NewLoop constructs an agent loop from immutable dependencies.
-func NewLoop(model Model, tools []Tool, limits Limits) (*Loop, error) {
+func NewLoop(model Model, tools []Tool) (*Loop, error) {
 	if model == nil {
 		return nil, fmt.Errorf("agent: model is required")
-	}
-	if limits.MaxTurns <= 0 {
-		return nil, fmt.Errorf("agent: max turns must be positive")
-	}
-	if limits.MaxToolSteps <= 0 {
-		return nil, fmt.Errorf("agent: max tool steps must be positive")
 	}
 
 	toolIndex := make(map[string]Tool, len(tools))
@@ -60,11 +53,10 @@ func NewLoop(model Model, tools []Tool, limits Limits) (*Loop, error) {
 		model:       model,
 		tools:       toolIndex,
 		definitions: definitions,
-		limits:      limits,
 	}, nil
 }
 
-// Run executes one bounded agent run. It does not retain mutable run state.
+// Run executes one agent run. It does not retain mutable run state.
 func (l *Loop) Run(ctx context.Context, input RunInput, sink AgentEventSink) (Result, error) {
 	if ctx == nil {
 		return Result{}, fmt.Errorf("agent: context is required")
@@ -102,12 +94,11 @@ func (l *Loop) Run(ctx context.Context, input RunInput, sink AgentEventSink) (Re
 }
 
 type runExecution struct {
-	loop      *Loop
-	input     RunInput
-	sink      AgentEventSink
-	history   []llm.AgentMessage
-	result    Result
-	toolSteps int
+	loop    *Loop
+	input   RunInput
+	sink    AgentEventSink
+	history []llm.AgentMessage
+	result  Result
 }
 
 func (e *runExecution) run(ctx context.Context) (Result, error) {
@@ -191,9 +182,6 @@ func (e *runExecution) run(ctx context.Context) (Result, error) {
 		}
 		if len(turn.ToolResults) == 0 {
 			return e.finishRun(ctx, nil)
-		}
-		if turnNumber >= e.loop.limits.MaxTurns {
-			return e.finishRun(ctx, ErrTurnLimit)
 		}
 
 		turnNumber++
@@ -396,16 +384,6 @@ func (e *runExecution) executeTools(
 	results := make([]llm.ToolResultMessage, 0, len(calls))
 	for index := range calls {
 		call := calls[index]
-		if e.toolSteps >= e.loop.limits.MaxToolSteps {
-			remaining, err := e.syntheticToolResults(
-				ctx,
-				turnNumber,
-				calls[index:],
-				"tool step limit reached before execution",
-			)
-			results = append(results, remaining...)
-			return results, errors.Join(ErrToolStepLimit, err)
-		}
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			remaining, err := e.syntheticToolResults(
 				ctx,
@@ -417,7 +395,6 @@ func (e *runExecution) executeTools(
 			return results, errors.Join(ctxErr, err)
 		}
 
-		e.toolSteps++
 		if err := e.emit(ctx, AgentEvent{
 			Type:       EventTypeToolExecutionStart,
 			TurnNumber: turnNumber,
@@ -653,10 +630,6 @@ func terminalFailure(runErr error) (string, llm.StopReason) {
 		return "agent run canceled before completion", llm.StopReasonAborted
 	case errors.Is(runErr, context.DeadlineExceeded):
 		return "agent run deadline exceeded before completion", llm.StopReasonAborted
-	case errors.Is(runErr, ErrTurnLimit):
-		return "agent run stopped after reaching the turn limit", llm.StopReasonError
-	case errors.Is(runErr, ErrToolStepLimit):
-		return "agent run stopped after reaching the tool step limit", llm.StopReasonError
 	case errors.Is(runErr, ErrContextLimit):
 		return "agent run stopped after reaching the context limit", llm.StopReasonError
 	default:
