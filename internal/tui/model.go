@@ -244,7 +244,7 @@ func (m model) View() tea.View {
 	view.ForegroundColor = primaryTextColor
 	view.AltScreen = true
 	view.WindowTitle = "AICE"
-	view.MouseMode = tea.MouseModeCellMotion
+	view.MouseMode = tea.MouseModeNone
 	return view
 }
 

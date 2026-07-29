@@ -147,6 +147,16 @@ func TestModelWelcomeGuidesUnconfiguredLogin(t *testing.T) {
 	}
 }
 
+func TestModelViewAllowsTerminalTextSelection(t *testing.T) {
+	t.Parallel()
+
+	current := newModel(make(chan runRequest), make(chan struct{}))
+
+	if got := current.View().MouseMode; got != tea.MouseModeNone {
+		t.Errorf("view mouse mode = %v, want disabled for terminal text selection", got)
+	}
+}
+
 func TestModelFocusedInputKeysDoNotScrollTranscript(t *testing.T) {
 	t.Parallel()
 
