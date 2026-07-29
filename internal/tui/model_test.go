@@ -527,6 +527,86 @@ func TestModelStatusLineShowsSessionUsageAndEstimatedCost(t *testing.T) {
 	}
 }
 
+func TestModelStatusLineShowsZeroUsageBeforeConversation(t *testing.T) {
+	t.Parallel()
+
+	current := newModel(make(chan runRequest), make(chan struct{}))
+	current.currentModel = llm.Model{ID: "deepseek-v4-flash"}
+
+	standard := current.statusLine(80)
+	for _, want := range []string{
+		"↑0",
+		"↓0",
+		"R0",
+		"W0",
+		"$0.000",
+		"deepseek-v4-flash",
+	} {
+		if !strings.Contains(standard, want) {
+			t.Errorf("zero status line = %q, want %q", standard, want)
+		}
+	}
+
+	narrow := current.statusLine(32)
+	for _, want := range []string{"↑0", "↓0", "$0.000"} {
+		if !strings.Contains(narrow, want) {
+			t.Errorf("narrow zero status line = %q, want %q", narrow, want)
+		}
+	}
+	if strings.Contains(narrow, "R0") || strings.Contains(narrow, "W0") {
+		t.Errorf("narrow zero status did not collapse cache detail: %q", narrow)
+	}
+	if lipgloss.Width(narrow) > 32 {
+		t.Errorf("narrow zero status width = %d, want at most 32", lipgloss.Width(narrow))
+	}
+}
+
+func TestModelAnimatesCompletedAssistantUsage(t *testing.T) {
+	t.Parallel()
+
+	current := newModel(make(chan runRequest), make(chan struct{}))
+	assistant := llm.NewAssistantMessage(llm.Model{
+		ID:       "test",
+		API:      "test",
+		Provider: "test",
+	})
+	assistant.Usage = llm.Usage{
+		InputTokens:  1_200,
+		OutputTokens: 456,
+		TotalTokens:  1_656,
+		Cost:         &llm.Cost{Total: 0.0074},
+	}
+
+	changed, command := current.applyAgentEvent(agent.AgentEvent{
+		Type:    agent.EventTypeMessageEnd,
+		Message: assistant,
+	})
+	if !changed || command == nil {
+		t.Fatal("assistant completion did not start usage animation")
+	}
+	if status := current.usageStatus(true); !strings.Contains(status, "↑0") ||
+		!strings.Contains(status, "↓0") ||
+		!strings.Contains(status, "$0.000") {
+		t.Fatalf("usage animation did not start at zero: %q", status)
+	}
+
+	generation := current.usageAnimation.generation
+	for range usageAnimationFrames {
+		current = updateModel(
+			t,
+			current,
+			usageAnimationTickMsg{generation: generation},
+		)
+	}
+
+	status := current.usageStatus(true)
+	for _, want := range []string{"↑1.2k", "↓456", "$0.007"} {
+		if !strings.Contains(status, want) {
+			t.Errorf("completed usage animation = %q, want %q", status, want)
+		}
+	}
+}
+
 func TestModelRendersRunActivityInTranscriptInsteadOfFooter(t *testing.T) {
 	t.Parallel()
 

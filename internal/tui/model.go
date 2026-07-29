@@ -77,6 +77,7 @@ type model struct {
 	thinking         llm.ThinkingLevel
 	apiKeyConfigured bool
 	sessionUsage     llm.Usage
+	usageAnimation   usageAnimation
 	workingDirectory string
 	entries          []transcriptEntry
 	commands         []SlashCommand
@@ -197,6 +198,8 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		return m, command
 	case runBatchMsg:
 		return m.applyRunBatch(message)
+	case usageAnimationTickMsg:
+		return m, m.usageAnimation.Update(message)
 	case spinner.TickMsg:
 		var command tea.Cmd
 		m.spinner, command = m.spinner.Update(message)
@@ -556,7 +559,11 @@ func (m model) applyRunBatch(batch runBatchMsg) (tea.Model, tea.Cmd) {
 			finished = true
 			continue
 		}
-		contentChanged = m.applyAgentEvent(update.event) || contentChanged
+		changed, command := m.applyAgentEvent(update.event)
+		contentChanged = changed || contentChanged
+		if command != nil {
+			commands = append(commands, command)
+		}
 	}
 
 	if batch.closed {
@@ -582,21 +589,20 @@ func (m model) applyRunBatch(batch runBatchMsg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(commands...)
 }
 
-func (m *model) applyAgentEvent(event agent.AgentEvent) bool {
+func (m *model) applyAgentEvent(event agent.AgentEvent) (bool, tea.Cmd) {
 	switch event.Type {
 	case agent.EventTypeMessageStart:
 		if _, ok := event.Message.(llm.AssistantMessage); ok {
 			m.entries = append(m.entries, transcriptEntry{kind: entryAssistant})
 			m.assistantEntry = len(m.entries) - 1
 			m.status = "Thinking..."
-			return true
+			return true, nil
 		}
 	case agent.EventTypeMessageUpdate:
-		return m.applyStreamEvent(event.AssistantMessageEvent)
+		return m.applyStreamEvent(event.AssistantMessageEvent), nil
 	case agent.EventTypeMessageEnd:
 		if message, ok := event.Message.(llm.AssistantMessage); ok {
-			m.completeAssistant(message)
-			return true
+			return true, m.completeAssistant(message)
 		}
 	case agent.EventTypeToolExecutionStart:
 		if event.ToolCall != nil {
@@ -606,20 +612,20 @@ func (m *model) applyAgentEvent(event agent.AgentEvent) bool {
 				toolName: event.ToolCall.Name,
 			})
 			m.status = "Running " + event.ToolCall.Name + "..."
-			return true
+			return true, nil
 		}
 	case agent.EventTypeToolExecutionEnd:
 		if event.ToolCall != nil {
 			m.completeTool(event.ToolCall.ID, event.Err != nil)
 			m.status = "Thinking..."
-			return true
+			return true, nil
 		}
 	case agent.EventTypeAgentEnd:
 		if event.Err == nil {
 			m.status = "Response complete"
 		}
 	}
-	return false
+	return false, nil
 }
 
 func (m *model) applyStreamEvent(event *llm.Event) bool {
@@ -640,7 +646,8 @@ func (m *model) applyStreamEvent(event *llm.Event) bool {
 	return true
 }
 
-func (m *model) completeAssistant(message llm.AssistantMessage) {
+func (m *model) completeAssistant(message llm.AssistantMessage) tea.Cmd {
+	previousUsage := m.sessionUsage
 	m.sessionUsage = llm.AddUsage(m.sessionUsage, message.Usage)
 	if m.assistantEntry < 0 || m.assistantEntry >= len(m.entries) {
 		m.entries = append(m.entries, transcriptEntry{kind: entryAssistant})
@@ -650,6 +657,7 @@ func (m *model) completeAssistant(message llm.AssistantMessage) {
 	entry.text, entry.thinking = assistantContent(message)
 	entry.complete = true
 	entry.rendered = renderMarkdown(entry.text, m.contentWidth())
+	return m.usageAnimation.Start(previousUsage, m.sessionUsage)
 }
 
 func (m *model) completeTool(callID string, failed bool) {
@@ -1103,19 +1111,21 @@ func (m model) statusLine(width int) string {
 	fullUsage := m.usageStatus(true)
 	compactUsage := m.usageStatus(false)
 
-	leftCandidates := make([]string, 0, 3)
-	if fullUsage != "" {
-		leftCandidates = append(leftCandidates, fullUsage)
-		if compactUsage != fullUsage {
-			leftCandidates = append(leftCandidates, compactUsage)
-		}
+	leftCandidates := []string{fullUsage}
+	if compactUsage != fullUsage {
+		leftCandidates = append(leftCandidates, compactUsage)
 	}
-	leftCandidates = append(leftCandidates, "")
 
 	for _, left := range leftCandidates {
 		if line, ok := alignStatusLine(left, right, width); ok {
 			return line
 		}
+	}
+	if line, ok := alignStatusLine(compactUsage, "", width); ok {
+		return line
+	}
+	if line, ok := alignStatusLine("", right, width); ok {
+		return line
 	}
 	return ""
 }
@@ -1146,40 +1156,27 @@ func alignStatusLine(left, right string, width int) (string, bool) {
 }
 
 func (m model) usageStatus(includeCache bool) string {
-	inputTokens := m.sessionUsage.InputTokens
+	usage := m.usageAnimation.Value(m.sessionUsage)
+	inputTokens := usage.inputTokens
 	if !includeCache {
-		inputTokens += m.sessionUsage.CacheReadTokens +
-			m.sessionUsage.CacheWriteTokens
+		inputTokens += usage.cacheReadTokens + usage.cacheWriteTokens
 	}
 
-	parts := make([]string, 0, 5)
-	if inputTokens > 0 {
-		parts = append(parts, "↑"+formatTokens(inputTokens))
+	parts := []string{
+		"↑" + formatTokens(inputTokens),
+		"↓" + formatTokens(usage.outputTokens),
 	}
-	if m.sessionUsage.OutputTokens > 0 {
+	if includeCache {
 		parts = append(
 			parts,
-			"↓"+formatTokens(m.sessionUsage.OutputTokens),
+			"R"+formatTokens(usage.cacheReadTokens),
 		)
-	}
-	if includeCache && m.sessionUsage.CacheReadTokens > 0 {
 		parts = append(
 			parts,
-			"R"+formatTokens(m.sessionUsage.CacheReadTokens),
+			"W"+formatTokens(usage.cacheWriteTokens),
 		)
 	}
-	if includeCache && m.sessionUsage.CacheWriteTokens > 0 {
-		parts = append(
-			parts,
-			"W"+formatTokens(m.sessionUsage.CacheWriteTokens),
-		)
-	}
-	if m.sessionUsage.Cost != nil && m.sessionUsage.Cost.Total > 0 {
-		parts = append(
-			parts,
-			fmt.Sprintf("$%.3f", m.sessionUsage.Cost.Total),
-		)
-	}
+	parts = append(parts, fmt.Sprintf("$%.3f", usage.totalCost))
 	return mutedStyle.Render(strings.Join(parts, " "))
 }
 
