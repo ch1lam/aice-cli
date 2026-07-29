@@ -1,18 +1,20 @@
 package tool
 
 import (
+	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
-	"strings"
 
 	"github.com/ch1lam/aice-cli/internal/llm"
 )
 
 const (
 	defaultReadLines = 2000
+	readBufferBytes  = 32 * 1024
 	readSchema       = `{
   "type": "object",
   "properties": {
@@ -24,6 +26,8 @@ const (
   "additionalProperties": false
 }`
 )
+
+var errBinaryContent = errors.New("binary content")
 
 // Read reads bounded text content from one file.
 type Read struct {
@@ -42,7 +46,7 @@ func NewRead(workspace *Workspace) (*Read, error) {
 func (r *Read) Definition() llm.ToolDefinition {
 	return llm.ToolDefinition{
 		Name:        "read",
-		Description: "Read a text file, resolving relative paths from the working directory.",
+		Description: "Read a text file, resolving relative paths from the working directory. Output is limited to 2000 complete lines or 50 KiB; use offset and limit, then follow continuation notices for large files.",
 		InputSchema: jsonSchema(readSchema),
 	}
 }
@@ -86,36 +90,224 @@ func (r *Read) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult, 
 		return llm.ToolResult{}, fmt.Errorf("tool \"read\": %q is not a regular file", args.Path)
 	}
 
-	data, err := io.ReadAll(io.LimitReader(file, maxReadBytes+1))
+	text, err := readTextPage(ctx, file, args.Offset, args.Limit)
 	if err != nil {
+		if errors.Is(err, errBinaryContent) {
+			return llm.ToolResult{}, fmt.Errorf(
+				"tool \"read\": %q appears to be a binary file",
+				args.Path,
+			)
+		}
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return llm.ToolResult{}, err
+		}
 		return llm.ToolResult{}, fmt.Errorf("tool \"read\": read %q: %w", args.Path, err)
 	}
-	if len(data) > maxReadBytes {
-		return llm.ToolResult{}, fmt.Errorf("tool \"read\": %q exceeds the 10 mib read limit", args.Path)
-	}
-	if bytes.IndexByte(data, 0) >= 0 {
-		return llm.ToolResult{}, fmt.Errorf("tool \"read\": %q appears to be a binary file", args.Path)
-	}
-	if err := ctx.Err(); err != nil {
-		return llm.ToolResult{}, err
+	return textResult(call, text, false), nil
+}
+
+type boundedLine struct {
+	data  []byte
+	bytes int
+	found bool
+}
+
+type readStopReason uint8
+
+const (
+	readStopNone readStopReason = iota
+	readStopRequestedLines
+	readStopDefaultLines
+	readStopBytes
+)
+
+func readTextPage(ctx context.Context, source io.Reader, offset, limit int) (string, error) {
+	reader := bufio.NewReaderSize(source, readBufferBytes)
+
+	for lineNumber := 1; lineNumber < offset; lineNumber++ {
+		line, err := readBoundedLine(ctx, reader, 0)
+		if err != nil {
+			return "", err
+		}
+		if !line.found {
+			return offsetBeyondEnd(offset), nil
+		}
 	}
 
-	if len(data) == 0 {
-		return textResult(call, "", false), nil
+	content := make([]byte, 0, min(maxOutputBytes, 8*1024))
+	lineEnds := make([]int, 0, limit)
+	stopReason := readStopNone
+
+	for len(lineEnds) < limit {
+		lineNumber := offset + len(lineEnds)
+		line, err := readBoundedLine(ctx, reader, maxOutputBytes+1)
+		if err != nil {
+			return "", err
+		}
+		if !line.found {
+			if len(lineEnds) == 0 && offset > 1 {
+				return offsetBeyondEnd(offset), nil
+			}
+			break
+		}
+		if line.bytes > maxOutputBytes || len(content)+len(line.data) > maxOutputBytes {
+			if len(lineEnds) == 0 {
+				return oversizedLineMessage(lineNumber), nil
+			}
+			stopReason = readStopBytes
+			break
+		}
+
+		content = append(content, line.data...)
+		lineEnds = append(lineEnds, len(content))
 	}
-	lines := strings.SplitAfter(string(data), "\n")
-	if len(lines) > 0 && lines[len(lines)-1] == "" {
-		lines = lines[:len(lines)-1]
+
+	if stopReason == readStopNone && len(lineEnds) == limit {
+		more, err := hasMoreText(ctx, reader)
+		if err != nil {
+			return "", err
+		}
+		if more {
+			if limit == defaultReadLines {
+				stopReason = readStopDefaultLines
+			} else {
+				stopReason = readStopRequestedLines
+			}
+		}
 	}
-	start := args.Offset - 1
-	if start >= len(lines) {
-		return textResult(call, fmt.Sprintf("[offset %d is beyond end of file]", args.Offset), false), nil
+
+	if stopReason == readStopNone {
+		return string(content), nil
 	}
-	end := min(start+args.Limit, len(lines))
-	collector := newTextCollector(maxOutputBytes)
-	collector.WriteString(strings.Join(lines[start:end], ""))
-	if end < len(lines) && !collector.truncated {
-		collector.WriteString(fmt.Sprintf("\n[showing lines %d-%d; more lines available]", start+1, end))
+	return formatReadPage(content, lineEnds, offset, stopReason), nil
+}
+
+func readBoundedLine(
+	ctx context.Context,
+	reader *bufio.Reader,
+	captureLimit int,
+) (boundedLine, error) {
+	var line boundedLine
+	if captureLimit > 0 {
+		line.data = make([]byte, 0, min(captureLimit, readBufferBytes))
 	}
-	return textResult(call, collector.String(), false), nil
+
+	for {
+		if err := ctx.Err(); err != nil {
+			return boundedLine{}, err
+		}
+
+		fragment, err := reader.ReadSlice('\n')
+		if bytes.IndexByte(fragment, 0) >= 0 {
+			return boundedLine{}, errBinaryContent
+		}
+		line.bytes += len(fragment)
+		if remaining := captureLimit - len(line.data); remaining > 0 {
+			line.data = append(line.data, fragment[:min(len(fragment), remaining)]...)
+		}
+		if err := ctx.Err(); err != nil {
+			return boundedLine{}, err
+		}
+
+		switch {
+		case err == nil:
+			line.found = true
+			return line, nil
+		case errors.Is(err, bufio.ErrBufferFull):
+			continue
+		case errors.Is(err, io.EOF):
+			line.found = line.bytes > 0
+			return line, nil
+		default:
+			return boundedLine{}, err
+		}
+	}
+}
+
+func hasMoreText(ctx context.Context, reader *bufio.Reader) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	data, err := reader.Peek(1)
+	if bytes.IndexByte(data, 0) >= 0 {
+		return false, errBinaryContent
+	}
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return false, ctxErr
+	}
+	if err == nil {
+		return true, nil
+	}
+	if errors.Is(err, io.EOF) {
+		return false, nil
+	}
+	return false, err
+}
+
+func formatReadPage(
+	content []byte,
+	lineEnds []int,
+	offset int,
+	reason readStopReason,
+) string {
+	for len(lineEnds) > 0 {
+		endLine := offset + len(lineEnds) - 1
+		nextOffset := endLine + 1
+		notice := readContinuationNotice(offset, endLine, nextOffset, reason)
+		contentEnd := lineEnds[len(lineEnds)-1]
+		page := content[:contentEnd]
+		separator := "\n\n"
+		if len(page) > 0 && page[len(page)-1] == '\n' {
+			separator = "\n"
+		}
+		if len(page)+len(separator)+len(notice) <= maxOutputBytes {
+			result := make([]byte, 0, len(page)+len(separator)+len(notice))
+			result = append(result, page...)
+			result = append(result, separator...)
+			result = append(result, notice...)
+			return string(result)
+		}
+
+		lineEnds = lineEnds[:len(lineEnds)-1]
+		reason = readStopBytes
+	}
+
+	return oversizedLineMessage(offset)
+}
+
+func readContinuationNotice(start, end, next int, reason readStopReason) string {
+	switch reason {
+	case readStopDefaultLines:
+		return fmt.Sprintf(
+			"[Showing lines %d-%d (2000 line limit). Use offset=%d to continue.]",
+			start,
+			end,
+			next,
+		)
+	case readStopBytes:
+		return fmt.Sprintf(
+			"[Showing lines %d-%d (50 KiB limit). Use offset=%d to continue.]",
+			start,
+			end,
+			next,
+		)
+	default:
+		return fmt.Sprintf(
+			"[Showing lines %d-%d. Use offset=%d to continue.]",
+			start,
+			end,
+			next,
+		)
+	}
+}
+
+func oversizedLineMessage(lineNumber int) string {
+	return fmt.Sprintf(
+		"[Line %d cannot be returned as complete content within the 50 KiB output limit. Use a byte-bounded command to inspect it.]",
+		lineNumber,
+	)
+}
+
+func offsetBeyondEnd(offset int) string {
+	return fmt.Sprintf("[offset %d is beyond end of file]", offset)
 }
