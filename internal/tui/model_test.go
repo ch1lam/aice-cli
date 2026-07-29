@@ -311,7 +311,7 @@ func TestModelHelpTogglesAndUsesAvailableHeight(t *testing.T) {
 	}
 }
 
-func TestModelPlacesComposerAboveStatusAndHelp(t *testing.T) {
+func TestModelKeepsReadyInHeaderAndUsesBubblesHelpBelowComposer(t *testing.T) {
 	t.Parallel()
 
 	current := newModel(make(chan runRequest), make(chan struct{}))
@@ -321,23 +321,27 @@ func TestModelPlacesComposerAboveStatusAndHelp(t *testing.T) {
 
 	content := current.View().Content
 	composerIndex := strings.Index(content, "composer marker")
-	statusIndex := strings.Index(content, "● "+current.status)
-	helpIndex := strings.Index(content, "enter")
-	if composerIndex < 0 || statusIndex < 0 || helpIndex < 0 {
+	helpView := current.help.View(current.keys.forState(false))
+	helpIndex := strings.Index(content, helpView)
+	if composerIndex < 0 || helpView == "" || helpIndex < 0 {
 		t.Fatalf(
-			"view is missing composer, status, or help: composer=%d status=%d help=%d",
+			"view is missing composer or Bubbles help: composer=%d help=%d",
 			composerIndex,
-			statusIndex,
 			helpIndex,
 		)
 	}
-	if composerIndex >= statusIndex || composerIndex >= helpIndex {
+	if composerIndex >= helpIndex {
 		t.Fatalf(
-			"composer is not above status and help: composer=%d status=%d help=%d",
+			"composer is not above help: composer=%d help=%d",
 			composerIndex,
-			statusIndex,
 			helpIndex,
 		)
+	}
+	if footer := current.footerView(80); strings.Contains(footer, current.status) {
+		t.Fatalf("footer repeats ready status from header: %q", footer)
+	}
+	if got := strings.Count(content, "READY"); got != 1 {
+		t.Fatalf("READY count = %d, want header only:\n%s", got, content)
 	}
 }
 
@@ -432,9 +436,9 @@ func TestModelStatusLineShowsModelAndReasoningInsteadOfScrollPercent(t *testing.
 			t.Parallel()
 
 			current := newScrollableModel(t)
-			originalFooterHeight := lipgloss.Height(current.footerView(80))
 			current.currentModel = llm.Model{ID: "deepseek-v4-flash"}
 			current.thinking = tt.thinking
+			originalFooterHeight := lipgloss.Height(current.footerView(80))
 
 			status := current.statusLine(80)
 			for _, want := range []string{"deepseek-v4-flash", tt.wantThinking} {
@@ -504,7 +508,7 @@ func TestModelStatusLineShowsSessionUsageAndEstimatedCost(t *testing.T) {
 		t.Errorf("standard status width = %d, want at most 80", lipgloss.Width(standard))
 	}
 
-	narrow := current.statusLine(68)
+	narrow := current.statusLine(60)
 	for _, want := range []string{
 		"↑1.3k",
 		"↓456",
@@ -517,6 +521,108 @@ func TestModelStatusLineShowsSessionUsageAndEstimatedCost(t *testing.T) {
 	}
 	if strings.Contains(narrow, "R100") || strings.Contains(narrow, "W20") {
 		t.Errorf("narrow status line did not collapse cache detail: %q", narrow)
+	}
+	if lipgloss.Width(narrow) > 60 {
+		t.Errorf("narrow status width = %d, want at most 60", lipgloss.Width(narrow))
+	}
+}
+
+func TestModelRendersRunActivityInTranscriptInsteadOfFooter(t *testing.T) {
+	t.Parallel()
+
+	current := newModel(make(chan runRequest), make(chan struct{}))
+	current = updateModel(t, current, tea.WindowSizeMsg{Width: 80, Height: 24})
+	current.entries = []transcriptEntry{{kind: entryUser, text: "inspect"}}
+	current.running = true
+	current.status = "Starting response..."
+
+	assertActivityInTranscript(t, current, "Starting response...")
+	if footer := current.footerView(80); strings.Contains(
+		footer,
+		current.spinner.View(),
+	) || strings.Contains(footer, current.status) {
+		t.Fatalf("run activity remains in footer: %q", footer)
+	}
+
+	assistant := llm.NewAssistantMessage(llm.Model{
+		ID:       "test",
+		API:      "test",
+		Provider: "test",
+	})
+	current.applyAgentEvent(agent.AgentEvent{
+		Type:    agent.EventTypeMessageStart,
+		Message: assistant,
+	})
+	current.applyAgentEvent(agent.AgentEvent{
+		Type: agent.EventTypeMessageUpdate,
+		AssistantMessageEvent: &llm.Event{
+			Type:  llm.EventTypeThinkingDelta,
+			Delta: "checking context",
+		},
+	})
+	assertActivityInTranscript(t, current, "Thinking...")
+
+	current.applyAgentEvent(agent.AgentEvent{
+		Type: agent.EventTypeMessageUpdate,
+		AssistantMessageEvent: &llm.Event{
+			Type:  llm.EventTypeTextDelta,
+			Delta: "Inspection",
+		},
+	})
+	if transcript := current.transcriptView(); strings.Contains(
+		transcript,
+		current.spinner.View(),
+	) {
+		t.Fatalf("spinner remains after model output starts: %q", transcript)
+	}
+
+	completed := assistant
+	completed.Content = []llm.ContentPart{
+		llm.NewTextContent("Inspection complete.").Part(),
+	}
+	current.applyAgentEvent(agent.AgentEvent{
+		Type:    agent.EventTypeMessageEnd,
+		Message: completed,
+	})
+	call := llm.ToolCall{ID: "call-1", Name: "read"}
+	current.applyAgentEvent(agent.AgentEvent{
+		Type:     agent.EventTypeToolExecutionStart,
+		ToolCall: &call,
+	})
+	assertActivityInTranscript(t, current, "read")
+
+	current.applyAgentEvent(agent.AgentEvent{
+		Type:     agent.EventTypeToolExecutionEnd,
+		ToolCall: &call,
+	})
+	assertActivityInTranscript(t, current, "Thinking...")
+}
+
+func TestModelSpinnerTickRefreshesTranscriptViewport(t *testing.T) {
+	t.Parallel()
+
+	current := newModel(make(chan runRequest), make(chan struct{}))
+	current = updateModel(t, current, tea.WindowSizeMsg{Width: 80, Height: 24})
+	current.entries = []transcriptEntry{{kind: entryUser, text: "inspect"}}
+	current.running = true
+	current.status = "Thinking..."
+	current.refreshViewport(true)
+
+	previousFrame := current.spinner.View()
+	updated := updateModel(t, current, current.spinner.Tick())
+	nextFrame := updated.spinner.View()
+	if nextFrame == previousFrame {
+		t.Fatalf("spinner frame did not advance: %q", nextFrame)
+	}
+	if viewportView := updated.viewport.View(); !strings.Contains(
+		viewportView,
+		nextFrame,
+	) {
+		t.Fatalf(
+			"viewport does not contain advanced spinner frame %q: %q",
+			nextFrame,
+			viewportView,
+		)
 	}
 }
 
@@ -944,6 +1050,20 @@ func updateModel(t *testing.T, current model, message tea.Msg) model {
 		t.Fatalf("Update() model = %T, want tui.model", updated)
 	}
 	return result
+}
+
+func assertActivityInTranscript(t *testing.T, current model, want string) {
+	t.Helper()
+
+	transcript := current.transcriptView()
+	if !strings.Contains(transcript, current.spinner.View()) ||
+		!strings.Contains(transcript, want) {
+		t.Fatalf(
+			"transcript activity = %q, want spinner and %q",
+			transcript,
+			want,
+		)
+	}
 }
 
 func newScrollableModel(t *testing.T) model {
