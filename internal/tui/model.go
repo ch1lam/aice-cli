@@ -1183,7 +1183,7 @@ func (m model) processGroupView(start, end int) (string, string) {
 			index == m.assistantEntry &&
 			!entry.complete
 		if entry.kind == entryAssistant && entry.conclusion {
-			if reasoning := m.assistantEntryView(
+			if reasoning := m.assistantProcessEntryView(
 				entry,
 				false,
 				true,
@@ -1191,7 +1191,7 @@ func (m model) processGroupView(start, end int) (string, string) {
 			); reasoning != "" {
 				parts = append(parts, transcriptViewPart{content: reasoning})
 			}
-			conclusion = m.assistantEntryView(
+			conclusion = m.assistantProcessEntryView(
 				entry,
 				activeAssistant,
 				false,
@@ -1201,6 +1201,14 @@ func (m model) processGroupView(start, end int) (string, string) {
 		}
 
 		content := m.entryView(entry, activeAssistant)
+		if entry.kind == entryAssistant {
+			content = m.assistantProcessEntryView(
+				entry,
+				activeAssistant,
+				true,
+				true,
+			)
+		}
 		if entry.kind == entryAssistant &&
 			entry.complete &&
 			strings.TrimSpace(entry.thinking) == "" &&
@@ -1216,9 +1224,13 @@ func (m model) processGroupView(start, end int) (string, string) {
 	}
 
 	if len(parts) == 0 {
-		return "", conclusion
+		if conclusion == "" {
+			return "", ""
+		}
+		return "", m.assistantHeaderView() + "\n\n" + conclusion
 	}
 	header := m.processHeader(start, end, collapsed)
+	process := m.assistantHeaderView() + "\n\n" + header
 	if collapsed {
 		toolParts := make([]transcriptViewPart, 0, len(parts))
 		for _, part := range parts {
@@ -1227,11 +1239,11 @@ func (m model) processGroupView(start, end int) (string, string) {
 			}
 		}
 		if len(toolParts) > 0 {
-			return header + "\n" + joinTranscriptViewParts(toolParts), conclusion
+			return process + "\n" + joinTranscriptViewParts(toolParts), conclusion
 		}
-		return header, conclusion
+		return process, conclusion
 	}
-	return header + "\n" + joinTranscriptViewParts(parts), conclusion
+	return process + "\n" + joinTranscriptViewParts(parts), conclusion
 }
 
 func (m model) processHeader(start, end int, collapsed bool) string {
@@ -1368,7 +1380,12 @@ func (m model) entryView(
 			labelStyle.Render("YOU") + "\n" + body,
 		)
 	case entryAssistant:
-		return m.assistantEntryView(entry, activeAssistant, true, true)
+		return m.assistantEntryView(
+			entry,
+			activeAssistant,
+			true,
+			true,
+		)
 	case entryTool:
 		icon := m.spinner.View()
 		state := "running"
@@ -1445,8 +1462,46 @@ func (m model) assistantEntryView(
 	includeThinking bool,
 	includeText bool,
 ) string {
+	content := m.assistantEntryContentView(
+		entry,
+		activeAssistant,
+		includeThinking,
+		includeText,
+	)
+	if content == "" {
+		return ""
+	}
+	return lipgloss.NewStyle().Padding(0, 1).Render(
+		headerStyle.Render("✦ AICE") + "\n\n" + content,
+	)
+}
+
+func (m model) assistantProcessEntryView(
+	entry transcriptEntry,
+	activeAssistant bool,
+	includeThinking bool,
+	includeText bool,
+) string {
+	content := m.assistantEntryContentView(
+		entry,
+		activeAssistant,
+		includeThinking,
+		includeText,
+	)
+	if content == "" {
+		return ""
+	}
+	return lipgloss.NewStyle().Padding(0, 1).Render(content)
+}
+
+func (m model) assistantEntryContentView(
+	entry transcriptEntry,
+	activeAssistant bool,
+	includeThinking bool,
+	includeText bool,
+) string {
 	width := m.contentWidth()
-	parts := []string{headerStyle.Render("✦ AICE")}
+	parts := make([]string, 0, 2)
 	bodyWidth := max(width-assistantBodyStyle.GetHorizontalFrameSize(), 1)
 	if includeThinking && strings.TrimSpace(entry.thinking) != "" {
 		thinkingWidth := max(
@@ -1470,27 +1525,32 @@ func (m model) assistantEntryView(
 		if body == "" {
 			if activeAssistant {
 				body = m.activityIndicator()
-			} else {
-				body = mutedStyle.Render("Waiting for model output...")
 			}
 		}
-		parts = append(parts, assistantBodyStyle.Render(body))
+		if body != "" {
+			parts = append(parts, assistantBodyStyle.Render(body))
+		}
 	}
-	if len(parts) == 1 {
+	if len(parts) == 0 {
 		return ""
 	}
-	content := parts[0] + "\n\n" + strings.Join(parts[1:], "\n")
-	return lipgloss.NewStyle().Padding(0, 1).Render(content)
+	return strings.Join(parts, "\n")
+}
+
+func (m model) assistantHeaderView() string {
+	return lipgloss.NewStyle().Padding(0, 1).Render(
+		headerStyle.Render("✦ AICE"),
+	)
 }
 
 func (m model) pendingActivityView() string {
 	if !m.running || m.hasActiveTool() || m.hasActiveAssistant() {
 		return ""
 	}
-	return lipgloss.NewStyle().Padding(0, 1).Render(
-		headerStyle.Render("✦ AICE") + "\n\n" +
+	return m.assistantHeaderView() + "\n\n" +
+		lipgloss.NewStyle().Padding(0, 1).Render(
 			assistantBodyStyle.Render(m.activityIndicator()),
-	)
+		)
 }
 
 func (m model) hasActiveAssistant() bool {

@@ -50,8 +50,7 @@ var (
 			BorderLeft(true).
 			BorderStyle(lipgloss.ThickBorder()).
 			BorderForeground(secondaryColor).
-			Background(panelBlackColor).
-			Foreground(primaryTextColor).
+			Foreground(mutedTextColor).
 			PaddingLeft(1)
 	thinkingStyle = lipgloss.NewStyle().
 			BorderLeft(true).

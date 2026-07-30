@@ -78,22 +78,11 @@ func TestSlashCommandSelectionUsesAccentWithoutBackground(t *testing.T) {
 func TestThemeAppliesLayeredBackgrounds(t *testing.T) {
 	t.Parallel()
 
-	styles := []struct {
-		name  string
-		style lipgloss.Style
-		want  string
-	}{
-		{name: "user", style: userStyle, want: panelBlackHex},
-		{name: "thinking", style: thinkingStyle, want: panelBlackHex},
-	}
-
-	for _, tt := range styles {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
-			assertColor(t, tt.style.GetBackground(), lipgloss.Color(tt.want))
-		})
-	}
+	assertColor(
+		t,
+		thinkingStyle.GetBackground(),
+		lipgloss.Color(panelBlackHex),
+	)
 
 	markdown := inkMarkdownStyle()
 	if markdown.CodeBlock.Chroma == nil {
@@ -108,6 +97,25 @@ func TestThemeAppliesLayeredBackgrounds(t *testing.T) {
 			t.Errorf("markdown panel background = %v, want %q", background, panelBlackHex)
 		}
 	}
+}
+
+func TestUserStyleUsesGoldRailAndMutedTextWithoutBackground(t *testing.T) {
+	t.Parallel()
+
+	if !userStyle.GetBorderLeft() {
+		t.Fatal("user style does not render its left rail")
+	}
+	assertColor(
+		t,
+		userStyle.GetBorderLeftForeground(),
+		lipgloss.Color(goldHex),
+	)
+	assertColor(
+		t,
+		userStyle.GetForeground(),
+		lipgloss.Color(mutedTextHex),
+	)
+	assertNoColor(t, userStyle.GetBackground())
 }
 
 func TestComposerUsesScreenBackground(t *testing.T) {
