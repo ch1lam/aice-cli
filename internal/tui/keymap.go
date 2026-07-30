@@ -6,6 +6,7 @@ type keyMap struct {
 	send      key.Binding
 	newline   key.Binding
 	scroll    key.Binding
+	process   key.Binding
 	commands  key.Binding
 	help      key.Binding
 	interrupt key.Binding
@@ -25,6 +26,10 @@ func newKeyMap() keyMap {
 		scroll: key.NewBinding(
 			key.WithKeys("pgup", "pgdown"),
 			key.WithHelp("pgup/pgdn", "scroll"),
+		),
+		process: key.NewBinding(
+			key.WithKeys("ctrl+o"),
+			key.WithHelp("ctrl+o", "process"),
 		),
 		commands: key.NewBinding(
 			key.WithKeys("/"),
@@ -69,7 +74,7 @@ func (k keyMap) ShortHelp() []key.Binding {
 func (k keyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.send, k.newline},
-		{k.commands, k.scroll, k.help},
+		{k.commands, k.scroll, k.process, k.help},
 		{k.interrupt, k.quit},
 	}
 }

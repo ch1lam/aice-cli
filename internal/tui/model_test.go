@@ -126,6 +126,238 @@ func TestModelSubmitsPromptAndConsumesAgentEvents(t *testing.T) {
 	}
 }
 
+func TestModelCollapsesProcessWhenConclusionStartsStreaming(t *testing.T) {
+	t.Parallel()
+
+	current := newModel(make(chan runRequest), make(chan struct{}))
+	current = updateModel(t, current, tea.WindowSizeMsg{Width: 80, Height: 24})
+	current.entries = append(
+		current.entries,
+		transcriptEntry{kind: entryUser, text: "inspect"},
+	)
+	current.running = true
+	processID := current.beginProcess()
+
+	identity := llm.Model{ID: "test", API: "test", Provider: "test"}
+	intermediate := llm.NewAssistantMessage(identity)
+	current.applyAgentEvent(agent.AgentEvent{
+		Type:    agent.EventTypeMessageStart,
+		Message: intermediate,
+	})
+	current.applyAgentEvent(agent.AgentEvent{
+		Type: agent.EventTypeMessageUpdate,
+		AssistantMessageEvent: &llm.Event{
+			Type:  llm.EventTypeThinkingDelta,
+			Delta: "INTERMEDIATE_REASONING",
+		},
+	})
+	current.applyAgentEvent(agent.AgentEvent{
+		Type: agent.EventTypeMessageUpdate,
+		AssistantMessageEvent: &llm.Event{
+			Type:  llm.EventTypeTextDelta,
+			Delta: "MIDDLEOUTPUT",
+		},
+	})
+	if group := current.processGroup(processID); group == nil || !group.collapsed {
+		t.Fatal("text delta did not provisionally collapse the process")
+	}
+
+	call := llm.ToolCall{
+		ID:        "call-1",
+		Name:      "read",
+		Arguments: []byte(`{"path":"go.mod"}`),
+	}
+	current.applyAgentEvent(agent.AgentEvent{
+		Type: agent.EventTypeMessageUpdate,
+		AssistantMessageEvent: &llm.Event{
+			Type: llm.EventTypeToolCallStart,
+		},
+	})
+	if group := current.processGroup(processID); group == nil || group.collapsed {
+		t.Fatal("tool call did not reopen a provisionally collapsed process")
+	}
+	intermediate.Content = []llm.ContentPart{
+		llm.NewThinkingContent("INTERMEDIATE_REASONING", "").Part(),
+		llm.NewTextContent("MIDDLEOUTPUT").Part(),
+		{Type: llm.ContentTypeToolCall, ToolCall: &call},
+	}
+	intermediate.StopReason = llm.StopReasonToolUse
+	current.applyAgentEvent(agent.AgentEvent{
+		Type:    agent.EventTypeMessageEnd,
+		Message: intermediate,
+	})
+	current.applyAgentEvent(agent.AgentEvent{
+		Type:     agent.EventTypeToolExecutionStart,
+		ToolCall: &call,
+	})
+	current.applyAgentEvent(agent.AgentEvent{
+		Type:     agent.EventTypeToolExecutionEnd,
+		ToolCall: &call,
+	})
+
+	conclusion := llm.NewAssistantMessage(identity)
+	current.applyAgentEvent(agent.AgentEvent{
+		Type:    agent.EventTypeMessageStart,
+		Message: conclusion,
+	})
+	current.applyAgentEvent(agent.AgentEvent{
+		Type: agent.EventTypeMessageUpdate,
+		AssistantMessageEvent: &llm.Event{
+			Type:  llm.EventTypeThinkingDelta,
+			Delta: "FINAL_REASONING",
+		},
+	})
+
+	beforeConclusion := current.transcriptView()
+	for _, want := range []string{
+		"INTERMEDIATE_REASONING",
+		"MIDDLEOUTPUT",
+		"read",
+		"FINAL_REASONING",
+	} {
+		if !strings.Contains(beforeConclusion, want) {
+			t.Fatalf(
+				"expanded process before conclusion = %q, want %q",
+				beforeConclusion,
+				want,
+			)
+		}
+	}
+
+	current.applyAgentEvent(agent.AgentEvent{
+		Type: agent.EventTypeMessageUpdate,
+		AssistantMessageEvent: &llm.Event{
+			Type:  llm.EventTypeTextDelta,
+			Delta: " \n",
+		},
+	})
+	if group := current.processGroup(processID); group == nil || group.collapsed {
+		t.Fatal("leading whitespace collapsed the process before final output")
+	}
+	current.applyAgentEvent(agent.AgentEvent{
+		Type: agent.EventTypeMessageUpdate,
+		AssistantMessageEvent: &llm.Event{
+			Type:  llm.EventTypeTextDelta,
+			Delta: "FINAL_ANSWER",
+		},
+	})
+
+	collapsed := current.transcriptView()
+	for _, hidden := range []string{
+		"INTERMEDIATE_REASONING",
+		"MIDDLEOUTPUT",
+		"FINAL_REASONING",
+	} {
+		if strings.Contains(collapsed, hidden) {
+			t.Errorf("collapsed process still contains %q: %q", hidden, collapsed)
+		}
+	}
+	for _, want := range []string{
+		"▶ PROCESS",
+		"1 tool call",
+		"ctrl+o to expand",
+		"FINAL_ANSWER",
+	} {
+		if !strings.Contains(collapsed, want) {
+			t.Errorf("collapsed transcript = %q, want %q", collapsed, want)
+		}
+	}
+
+	expanded, command, handled := current.handleKey(tea.KeyPressMsg(tea.Key{
+		Code: 'o',
+		Mod:  tea.ModCtrl,
+	}))
+	if !handled || command != nil {
+		t.Fatal("ctrl+o did not expand the process")
+	}
+	for _, want := range []string{
+		"▼ PROCESS",
+		"INTERMEDIATE_REASONING",
+		"MIDDLEOUTPUT",
+		"read",
+		"FINAL_REASONING",
+		"FINAL_ANSWER",
+		"ctrl+o to collapse",
+	} {
+		if transcript := expanded.transcriptView(); !strings.Contains(transcript, want) {
+			t.Errorf("expanded transcript = %q, want %q", transcript, want)
+		}
+	}
+}
+
+func TestModelProcessSpacingKeepsToolsTogether(t *testing.T) {
+	t.Parallel()
+
+	current := newModel(make(chan runRequest), make(chan struct{}))
+	current = updateModel(t, current, tea.WindowSizeMsg{Width: 80, Height: 24})
+	processID := current.beginProcess()
+	current.entries = []transcriptEntry{
+		{
+			kind:      entryAssistant,
+			text:      "MIDDLETEXT",
+			complete:  true,
+			processID: processID,
+		},
+		{
+			kind:      entryTool,
+			processID: processID,
+			toolName:  "FIRSTTOOL",
+			toolDone:  true,
+		},
+		{
+			kind:      entryTool,
+			processID: processID,
+			toolName:  "SECONDTOOL",
+			toolDone:  true,
+		},
+		{
+			kind:       entryAssistant,
+			thinking:   "FINALREASON",
+			text:       "FINALANSWER",
+			complete:   true,
+			processID:  processID,
+			conclusion: true,
+		},
+	}
+
+	transcript := current.transcriptView()
+	assertTranscriptGap(
+		t,
+		transcript,
+		"MIDDLETEXT",
+		"FIRSTTOOL",
+		2,
+	)
+	assertTranscriptGap(
+		t,
+		transcript,
+		"FIRSTTOOL",
+		"SECONDTOOL",
+		1,
+	)
+	assertTranscriptGap(
+		t,
+		transcript,
+		"SECONDTOOL",
+		"FINALREASON",
+		2,
+	)
+
+	current.width = minimumWidth
+	narrowHeader := current.processHeader(0, len(current.entries), true)
+	if got := lipgloss.Width(narrowHeader); got > current.contentWidth() {
+		t.Errorf(
+			"narrow process header width = %d, want at most %d: %q",
+			got,
+			current.contentWidth(),
+			narrowHeader,
+		)
+	}
+	if !strings.Contains(narrowHeader, "ctrl+o to expand") {
+		t.Errorf("narrow process header is missing expand hint: %q", narrowHeader)
+	}
+}
+
 func TestModelWelcomeGuidesUnconfiguredLogin(t *testing.T) {
 	t.Parallel()
 
@@ -147,13 +379,28 @@ func TestModelWelcomeGuidesUnconfiguredLogin(t *testing.T) {
 	}
 }
 
-func TestModelViewAllowsTerminalTextSelection(t *testing.T) {
+func TestModelViewEnablesMouseWheelEvents(t *testing.T) {
 	t.Parallel()
 
 	current := newModel(make(chan runRequest), make(chan struct{}))
 
-	if got := current.View().MouseMode; got != tea.MouseModeNone {
-		t.Errorf("view mouse mode = %v, want disabled for terminal text selection", got)
+	if got := current.View().MouseMode; got != tea.MouseModeCellMotion {
+		t.Errorf("view mouse mode = %v, want cell motion for mouse wheel events", got)
+	}
+}
+
+func TestModelMouseWheelScrollsTranscript(t *testing.T) {
+	t.Parallel()
+
+	current := newScrollableModel(t)
+	initialOffset := current.viewport.YOffset()
+
+	updated := updateModel(t, current, tea.MouseWheelMsg(tea.Mouse{
+		Button: tea.MouseWheelDown,
+	}))
+
+	if got, want := updated.viewport.YOffset(), initialOffset+current.viewport.MouseWheelDelta; got != want {
+		t.Errorf("viewport Y offset = %d, want %d after mouse wheel down", got, want)
 	}
 }
 
@@ -1152,6 +1399,54 @@ func assertActivityInTranscript(t *testing.T, current model, want string) {
 			"transcript activity = %q, want spinner and %q",
 			transcript,
 			want,
+		)
+	}
+}
+
+func assertTranscriptGap(
+	t *testing.T,
+	transcript string,
+	before string,
+	after string,
+	wantNewlines int,
+) {
+	t.Helper()
+
+	beforeIndex := strings.Index(transcript, before)
+	afterIndex := strings.Index(transcript, after)
+	if beforeIndex < 0 || afterIndex < 0 || afterIndex <= beforeIndex {
+		t.Fatalf(
+			"transcript markers %q -> %q not found in order: %q",
+			before,
+			after,
+			transcript,
+		)
+	}
+	gap := transcript[beforeIndex+len(before) : afterIndex]
+	firstNewline := strings.IndexByte(gap, '\n')
+	if firstNewline < 0 {
+		t.Fatalf(
+			"transcript gap %q -> %q contains no newline: %q",
+			before,
+			after,
+			gap,
+		)
+	}
+	got := 0
+	for _, character := range gap[firstNewline:] {
+		if character != '\n' {
+			break
+		}
+		got++
+	}
+	if got != wantNewlines {
+		t.Errorf(
+			"transcript gap %q -> %q starts with %d newlines, want %d: %q",
+			before,
+			after,
+			got,
+			wantNewlines,
+			gap,
 		)
 	}
 }

@@ -77,6 +77,9 @@ var (
 				BorderStyle(lipgloss.NormalBorder()).
 				BorderForeground(informationColor).
 				PaddingLeft(1)
+	transcriptSelectionStyle = lipgloss.NewStyle().
+					Foreground(inkBlackColor).
+					Background(secondaryColor)
 	errorStyle  = lipgloss.NewStyle().Foreground(errorColor)
 	noticeStyle = lipgloss.NewStyle().Foreground(warningColor)
 )

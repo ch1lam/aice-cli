@@ -46,15 +46,27 @@ const (
 )
 
 type transcriptEntry struct {
-	kind      entryKind
-	text      string
-	thinking  string
-	rendered  string
-	complete  bool
-	toolID    string
-	toolName  string
-	toolDone  bool
-	toolError bool
+	kind       entryKind
+	text       string
+	thinking   string
+	rendered   string
+	complete   bool
+	processID  int
+	conclusion bool
+	toolID     string
+	toolName   string
+	toolDone   bool
+	toolError  bool
+}
+
+type processGroup struct {
+	id        int
+	collapsed bool
+}
+
+type transcriptViewPart struct {
+	content string
+	tool    bool
 }
 
 type secretInput struct {
@@ -69,6 +81,7 @@ type model struct {
 	cancelRun      context.CancelFunc
 
 	viewport         viewport.Model
+	selection        transcriptSelection
 	input            textarea.Model
 	spinner          spinner.Model
 	help             help.Model
@@ -80,12 +93,15 @@ type model struct {
 	usageAnimation   usageAnimation
 	workingDirectory string
 	entries          []transcriptEntry
+	processGroups    []processGroup
 	commands         []SlashCommand
 	secretInput      *secretInput
 
 	width            int
 	height           int
 	assistantEntry   int
+	activeProcessID  int
+	nextProcessID    int
 	commandSelection int
 	commandDismissed bool
 	running          bool
@@ -172,6 +188,7 @@ func (m model) Init() tea.Cmd {
 func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	switch message := message.(type) {
 	case tea.WindowSizeMsg:
+		m.selection.clear()
 		previousContentWidth := m.contentWidth()
 		m.width = message.Width
 		m.height = message.Height
@@ -182,6 +199,7 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m.refreshViewport(false)
 		return m, nil
 	case tea.KeyPressMsg:
+		m.selection.clear()
 		if updated, command, handled := m.handleKey(message); handled {
 			return updated, command
 		}
@@ -189,6 +207,20 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			command := m.updateInput(message)
 			return m, command
 		}
+	case tea.MouseClickMsg:
+		if updated, command, handled := m.handleTranscriptMouseClick(message); handled {
+			return updated, command
+		}
+	case tea.MouseMotionMsg:
+		if updated, command, handled := m.handleTranscriptMouseMotion(message); handled {
+			return updated, command
+		}
+	case tea.MouseReleaseMsg:
+		if updated, command, handled := m.handleTranscriptMouseRelease(message); handled {
+			return updated, command
+		}
+	case tea.MouseWheelMsg:
+		m.selection.clear()
 	case runStartedMsg:
 		m.updates = message.updates
 		return m, tea.Batch(waitForRunUpdates(message.updates), m.spinner.Tick)
@@ -230,10 +262,21 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m model) View() tea.View {
 	width := max(m.width, minimumWidth)
+	viewportView := m.viewport.View()
+	viewportOffset := m.viewport.YOffset()
+	if m.selection.active {
+		viewportView = m.selection.viewportView
+		viewportOffset = m.selection.viewportOffset
+	}
+	transcript := highlightTranscriptSelection(
+		viewportView,
+		m.selection,
+		viewportOffset,
+	)
 	content := lipgloss.JoinVertical(
 		lipgloss.Left,
 		m.headerView(width),
-		m.viewport.View(),
+		transcript,
 		m.slashCommandMenuView(width),
 		m.composerView(width),
 		m.footerView(width),
@@ -244,7 +287,7 @@ func (m model) View() tea.View {
 	view.ForegroundColor = primaryTextColor
 	view.AltScreen = true
 	view.WindowTitle = "AICE"
-	view.MouseMode = tea.MouseModeNone
+	view.MouseMode = tea.MouseModeCellMotion
 	return view
 }
 
@@ -303,6 +346,11 @@ func (m model) handleKey(message tea.KeyPressMsg) (model, tea.Cmd, bool) {
 		m.resizeLayout()
 		m.refreshViewport(false)
 		return m, nil, true
+	case key.Matches(message, m.keys.process):
+		follow := m.viewport.AtBottom()
+		m.toggleProcessGroups()
+		m.refreshViewport(follow)
+		return m, nil, true
 	case key.Matches(message, m.keys.newline):
 		if !m.running {
 			m.input.InsertString("\n")
@@ -360,6 +408,7 @@ func (m model) submit() (model, tea.Cmd, bool) {
 	}
 
 	m.entries = append(m.entries, transcriptEntry{kind: entryUser, text: prompt})
+	m.beginProcess()
 	m.input.Reset()
 	m.commandSelection = 0
 	m.commandDismissed = false
@@ -410,6 +459,8 @@ func (m model) submitSlashCommand(
 			return m.commandUsageError(raw, command)
 		}
 		m.entries = nil
+		m.processGroups = nil
+		m.activeProcessID = 0
 		m.resetCommandInput()
 		m.status = "Visible transcript cleared; Session history is unchanged"
 		m.resizeLayout()
@@ -526,6 +577,116 @@ func (m *model) resetCommandInput() {
 	m.commandDismissed = false
 }
 
+func (m *model) beginProcess() int {
+	m.nextProcessID++
+	m.activeProcessID = m.nextProcessID
+	m.processGroups = append(m.processGroups, processGroup{id: m.activeProcessID})
+	return m.activeProcessID
+}
+
+func (m *model) ensureActiveProcess() int {
+	if m.activeProcessID == 0 {
+		return m.beginProcess()
+	}
+	return m.activeProcessID
+}
+
+func (m *model) processGroup(processID int) *processGroup {
+	for index := range m.processGroups {
+		if m.processGroups[index].id == processID {
+			return &m.processGroups[index]
+		}
+	}
+	return nil
+}
+
+func (m *model) markConclusion() bool {
+	if m.assistantEntry < 0 || m.assistantEntry >= len(m.entries) {
+		return false
+	}
+	entry := &m.entries[m.assistantEntry]
+	if entry.kind != entryAssistant {
+		return false
+	}
+
+	changed := !entry.conclusion
+	entry.conclusion = true
+	if group := m.processGroup(entry.processID); group != nil {
+		changed = changed || !group.collapsed
+		group.collapsed = true
+	}
+	return changed
+}
+
+func (m *model) revokeConclusion() bool {
+	if m.assistantEntry < 0 || m.assistantEntry >= len(m.entries) {
+		return false
+	}
+	entry := &m.entries[m.assistantEntry]
+	if entry.kind != entryAssistant {
+		return false
+	}
+
+	changed := entry.conclusion
+	entry.conclusion = false
+	if group := m.processGroup(entry.processID); group != nil {
+		changed = changed || group.collapsed
+		group.collapsed = false
+	}
+	return changed
+}
+
+func (m *model) toggleProcessGroups() bool {
+	expand := false
+	found := false
+	for _, group := range m.processGroups {
+		if !m.hasProcessContent(group.id) {
+			continue
+		}
+		found = true
+		if group.collapsed {
+			expand = true
+			break
+		}
+	}
+	if !found {
+		return false
+	}
+
+	for index := range m.processGroups {
+		group := &m.processGroups[index]
+		if m.hasProcessContent(group.id) {
+			group.collapsed = !expand
+		}
+	}
+	return true
+}
+
+func (m model) hasProcessContent(processID int) bool {
+	for index, entry := range m.entries {
+		if entry.processID != processID {
+			continue
+		}
+		switch entry.kind {
+		case entryTool:
+			return true
+		case entryAssistant:
+			if strings.TrimSpace(entry.thinking) != "" {
+				return true
+			}
+			if !entry.conclusion && strings.TrimSpace(entry.text) != "" {
+				return true
+			}
+			if !entry.conclusion &&
+				index == m.assistantEntry &&
+				!entry.complete {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func (m model) applyRunBatch(batch runBatchMsg) (tea.Model, tea.Cmd) {
 	var commands []tea.Cmd
 	follow := m.viewport.AtBottom()
@@ -593,7 +754,10 @@ func (m *model) applyAgentEvent(event agent.AgentEvent) (bool, tea.Cmd) {
 	switch event.Type {
 	case agent.EventTypeMessageStart:
 		if _, ok := event.Message.(llm.AssistantMessage); ok {
-			m.entries = append(m.entries, transcriptEntry{kind: entryAssistant})
+			m.entries = append(m.entries, transcriptEntry{
+				kind:      entryAssistant,
+				processID: m.ensureActiveProcess(),
+			})
 			m.assistantEntry = len(m.entries) - 1
 			m.status = "Thinking..."
 			return true, nil
@@ -606,10 +770,12 @@ func (m *model) applyAgentEvent(event agent.AgentEvent) (bool, tea.Cmd) {
 		}
 	case agent.EventTypeToolExecutionStart:
 		if event.ToolCall != nil {
+			m.revokeConclusion()
 			m.entries = append(m.entries, transcriptEntry{
-				kind:     entryTool,
-				toolID:   event.ToolCall.ID,
-				toolName: event.ToolCall.Name,
+				kind:      entryTool,
+				processID: m.ensureActiveProcess(),
+				toolID:    event.ToolCall.ID,
+				toolName:  event.ToolCall.Name,
 			})
 			m.status = "Running " + event.ToolCall.Name + "..."
 			return true, nil
@@ -636,10 +802,17 @@ func (m *model) applyStreamEvent(event *llm.Event) bool {
 	switch event.Type {
 	case llm.EventTypeTextDelta:
 		entry.text += event.Delta
+		if strings.TrimSpace(entry.text) != "" {
+			m.markConclusion()
+		}
 		m.status = "Responding..."
 	case llm.EventTypeThinkingDelta:
 		entry.thinking += event.Delta
 		m.status = "Thinking..."
+	case llm.EventTypeToolCallStart,
+		llm.EventTypeToolCallDelta,
+		llm.EventTypeToolCallEnd:
+		return m.revokeConclusion()
 	default:
 		return false
 	}
@@ -650,13 +823,21 @@ func (m *model) completeAssistant(message llm.AssistantMessage) tea.Cmd {
 	previousUsage := m.sessionUsage
 	m.sessionUsage = llm.AddUsage(m.sessionUsage, message.Usage)
 	if m.assistantEntry < 0 || m.assistantEntry >= len(m.entries) {
-		m.entries = append(m.entries, transcriptEntry{kind: entryAssistant})
+		m.entries = append(m.entries, transcriptEntry{
+			kind:      entryAssistant,
+			processID: m.ensureActiveProcess(),
+		})
 		m.assistantEntry = len(m.entries) - 1
 	}
 	entry := &m.entries[m.assistantEntry]
 	entry.text, entry.thinking = assistantContent(message)
 	entry.complete = true
 	entry.rendered = renderMarkdown(entry.text, m.contentWidth())
+	if assistantConcludes(message) {
+		m.markConclusion()
+	} else {
+		m.revokeConclusion()
+	}
 	return m.usageAnimation.Start(previousUsage, m.sessionUsage)
 }
 
@@ -672,10 +853,14 @@ func (m *model) completeTool(callID string, failed bool) {
 }
 
 func (m *model) finishRun(err error) tea.Cmd {
+	if err != nil {
+		m.revokeConclusion()
+	}
 	m.running = false
 	m.cancelRun = nil
 	m.cancelRequested = false
 	m.assistantEntry = -1
+	m.activeProcessID = 0
 	focus := m.input.Focus()
 	if err != nil {
 		message := err.Error()
@@ -723,7 +908,11 @@ func (m *model) renderCompletedMarkdown() {
 
 func (m *model) refreshViewport(forceBottom bool) {
 	wasAtBottom := m.viewport.AtBottom()
-	m.viewport.SetContent(m.transcriptView())
+	content := m.transcriptView()
+	if content != m.viewport.GetContent() && !m.selection.active {
+		m.selection.clear()
+	}
+	m.viewport.SetContent(content)
 	if forceBottom || wasAtBottom {
 		m.viewport.GotoBottom()
 	}
@@ -936,17 +1125,182 @@ func (m model) transcriptView() string {
 		return m.welcomeView()
 	}
 
-	parts := make([]string, 0, len(m.entries)+1)
-	for index, entry := range m.entries {
+	parts := make([]transcriptViewPart, 0, len(m.entries)+1)
+	for index := 0; index < len(m.entries); {
+		entry := m.entries[index]
+		if entry.processID != 0 {
+			end := index + 1
+			for end < len(m.entries) &&
+				m.entries[end].processID == entry.processID {
+				end++
+			}
+			process, conclusion := m.processGroupView(index, end)
+			if process != "" {
+				parts = append(parts, transcriptViewPart{content: process})
+			}
+			if conclusion != "" {
+				parts = append(parts, transcriptViewPart{content: conclusion})
+			}
+			index = end
+			continue
+		}
+
 		activeAssistant := m.running &&
 			index == m.assistantEntry &&
 			!entry.complete
-		parts = append(parts, m.entryView(entry, activeAssistant))
+		if content := m.entryView(entry, activeAssistant); content != "" {
+			parts = append(parts, transcriptViewPart{
+				content: content,
+				tool:    entry.kind == entryTool,
+			})
+		}
+		index++
 	}
 	if activity := m.pendingActivityView(); activity != "" {
-		parts = append(parts, activity)
+		parts = append(parts, transcriptViewPart{content: activity})
 	}
-	return strings.Join(parts, "\n\n")
+	return joinTranscriptViewParts(parts)
+}
+
+func (m model) processGroupView(start, end int) (string, string) {
+	processID := m.entries[start].processID
+	collapsed := false
+	for _, group := range m.processGroups {
+		if group.id == processID {
+			collapsed = group.collapsed
+			break
+		}
+	}
+
+	parts := make([]transcriptViewPart, 0, end-start)
+	conclusion := ""
+	for index := start; index < end; index++ {
+		entry := m.entries[index]
+		activeAssistant := m.running &&
+			index == m.assistantEntry &&
+			!entry.complete
+		if entry.kind == entryAssistant && entry.conclusion {
+			if reasoning := m.assistantEntryView(
+				entry,
+				false,
+				true,
+				false,
+			); reasoning != "" {
+				parts = append(parts, transcriptViewPart{content: reasoning})
+			}
+			conclusion = m.assistantEntryView(
+				entry,
+				activeAssistant,
+				false,
+				true,
+			)
+			continue
+		}
+
+		content := m.entryView(entry, activeAssistant)
+		if entry.kind == entryAssistant &&
+			entry.complete &&
+			strings.TrimSpace(entry.thinking) == "" &&
+			strings.TrimSpace(entry.text) == "" {
+			content = ""
+		}
+		if content != "" {
+			parts = append(parts, transcriptViewPart{
+				content: content,
+				tool:    entry.kind == entryTool,
+			})
+		}
+	}
+
+	if len(parts) == 0 {
+		return "", conclusion
+	}
+	header := m.processHeader(start, end, collapsed)
+	if collapsed {
+		return header, conclusion
+	}
+	return header + "\n" + joinTranscriptViewParts(parts), conclusion
+}
+
+func (m model) processHeader(start, end int, collapsed bool) string {
+	icon := "▼"
+	action := "ctrl+o to collapse"
+	if collapsed {
+		icon = "▶"
+		action = "ctrl+o to expand"
+	}
+
+	hasReasoning := false
+	hasIntermediateOutput := false
+	toolCalls := 0
+	for index := start; index < end; index++ {
+		entry := m.entries[index]
+		switch entry.kind {
+		case entryAssistant:
+			hasReasoning = hasReasoning ||
+				strings.TrimSpace(entry.thinking) != ""
+			hasIntermediateOutput = hasIntermediateOutput ||
+				(!entry.conclusion && strings.TrimSpace(entry.text) != "")
+		case entryTool:
+			toolCalls++
+		}
+	}
+
+	details := make([]string, 0, 3)
+	if hasReasoning {
+		details = append(details, "reasoning")
+	}
+	if hasIntermediateOutput {
+		details = append(details, "intermediate output")
+	}
+	if toolCalls == 1 {
+		details = append(details, "1 tool call")
+	} else if toolCalls > 1 {
+		details = append(details, fmt.Sprintf("%d tool calls", toolCalls))
+	}
+	if len(details) == 0 {
+		details = append(details, "working")
+	}
+
+	label := icon + " PROCESS"
+	detail := strings.Join(details, " · ")
+	innerWidth := max(m.contentWidth()-2, 1)
+	detailWidth := innerWidth -
+		lipgloss.Width(label) -
+		lipgloss.Width(action) -
+		4
+	if detailWidth > 0 {
+		detail = truncateTerminalText(detail, detailWidth)
+		return lipgloss.NewStyle().Padding(0, 1).Render(
+			labelStyle.Render(label) +
+				mutedStyle.Render("  "+detail+"  ") +
+				infoStyle.Render(action),
+		)
+	}
+
+	return lipgloss.NewStyle().Padding(0, 1).Render(
+		labelStyle.Render(label) + "\n" +
+			infoStyle.Render("  "+action),
+	)
+}
+
+func joinTranscriptViewParts(parts []transcriptViewPart) string {
+	if len(parts) == 0 {
+		return ""
+	}
+
+	var view strings.Builder
+	for index, part := range parts {
+		if index > 0 {
+			separator := "\n\n"
+			if parts[index-1].tool && part.tool {
+				separator = "\n"
+			}
+			view.WriteString(separator)
+		}
+		view.WriteString(part.content)
+	}
+	return view.String()
 }
 
 func (m model) welcomeView() string {
@@ -1002,29 +1356,7 @@ func (m model) entryView(
 			labelStyle.Render("YOU") + "\n" + body,
 		)
 	case entryAssistant:
-		parts := []string{headerStyle.Render("✦ AICE")}
-		if strings.TrimSpace(entry.thinking) != "" {
-			thinkingWidth := max(width-thinkingStyle.GetHorizontalFrameSize(), 1)
-			thinking := thinkingStyle.Width(thinkingWidth).Render(
-				"REASONING\n" + entry.thinking,
-			)
-			parts = append(parts, thinking)
-		}
-		body := entry.text
-		if entry.complete && entry.rendered != "" {
-			body = entry.rendered
-		} else if body != "" {
-			body = bodyStyle.Render(body)
-		}
-		if body == "" {
-			if activeAssistant {
-				body = m.activityIndicator()
-			} else {
-				body = mutedStyle.Render("Waiting for model output...")
-			}
-		}
-		parts = append(parts, body)
-		return lipgloss.NewStyle().Padding(0, 1).Render(strings.Join(parts, "\n"))
+		return m.assistantEntryView(entry, activeAssistant, true, true)
 	case entryTool:
 		icon := m.spinner.View()
 		state := "running"
@@ -1060,6 +1392,43 @@ func (m model) entryView(
 	default:
 		return ""
 	}
+}
+
+func (m model) assistantEntryView(
+	entry transcriptEntry,
+	activeAssistant bool,
+	includeThinking bool,
+	includeText bool,
+) string {
+	width := m.contentWidth()
+	parts := []string{headerStyle.Render("✦ AICE")}
+	if includeThinking && strings.TrimSpace(entry.thinking) != "" {
+		thinkingWidth := max(width-thinkingStyle.GetHorizontalFrameSize(), 1)
+		thinking := thinkingStyle.Width(thinkingWidth).Render(
+			"REASONING\n" + entry.thinking,
+		)
+		parts = append(parts, thinking)
+	}
+	if includeText {
+		body := entry.text
+		if entry.complete && entry.rendered != "" {
+			body = entry.rendered
+		} else if body != "" {
+			body = bodyStyle.Render(body)
+		}
+		if body == "" {
+			if activeAssistant {
+				body = m.activityIndicator()
+			} else {
+				body = mutedStyle.Render("Waiting for model output...")
+			}
+		}
+		parts = append(parts, body)
+	}
+	if len(parts) == 1 {
+		return ""
+	}
+	return lipgloss.NewStyle().Padding(0, 1).Render(strings.Join(parts, "\n"))
 }
 
 func (m model) pendingActivityView() string {
@@ -1245,6 +1614,20 @@ func assistantContent(message llm.AssistantMessage) (string, string) {
 		}
 	}
 	return text.String(), thinking.String()
+}
+
+func assistantConcludes(message llm.AssistantMessage) bool {
+	if message.StopReason == llm.StopReasonError ||
+		message.StopReason == llm.StopReasonAborted {
+		return false
+	}
+	for _, part := range message.Content {
+		if part.Type == llm.ContentTypeToolCall {
+			return false
+		}
+	}
+	text, _ := assistantContent(message)
+	return strings.TrimSpace(text) != ""
 }
 
 func renderMarkdown(markdown string, width int) string {
