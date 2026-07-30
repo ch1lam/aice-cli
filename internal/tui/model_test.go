@@ -209,7 +209,7 @@ func TestModelCollapsesProcessWhenConclusionStartsStreaming(t *testing.T) {
 		},
 	})
 
-	beforeConclusion := current.transcriptView()
+	beforeConclusion := ansi.Strip(current.transcriptView())
 	for _, want := range []string{
 		"INTERMEDIATE_REASONING",
 		"MIDDLEOUTPUT",
@@ -243,7 +243,7 @@ func TestModelCollapsesProcessWhenConclusionStartsStreaming(t *testing.T) {
 		},
 	})
 
-	collapsed := current.transcriptView()
+	collapsed := ansi.Strip(current.transcriptView())
 	for _, hidden := range []string{
 		"INTERMEDIATE_REASONING",
 		"MIDDLEOUTPUT",
@@ -281,7 +281,10 @@ func TestModelCollapsesProcessWhenConclusionStartsStreaming(t *testing.T) {
 		"FINAL_ANSWER",
 		"ctrl+o to collapse",
 	} {
-		if transcript := expanded.transcriptView(); !strings.Contains(transcript, want) {
+		if transcript := ansi.Strip(expanded.transcriptView()); !strings.Contains(
+			transcript,
+			want,
+		) {
 			t.Errorf("expanded transcript = %q, want %q", transcript, want)
 		}
 	}
@@ -357,6 +360,75 @@ func TestModelProcessSpacingKeepsToolsTogether(t *testing.T) {
 	}
 	if !strings.Contains(narrowHeader, "ctrl+o to expand") {
 		t.Errorf("narrow process header is missing expand hint: %q", narrowHeader)
+	}
+}
+
+func TestModelAssistantBodyIsSeparatedAndUniformlyIndented(t *testing.T) {
+	t.Parallel()
+
+	current := newModel(make(chan runRequest), make(chan struct{}))
+	current = updateModel(t, current, tea.WindowSizeMsg{Width: 48, Height: 24})
+	markdown := "First paragraph wraps onto another line so alignment stays visible.\n\n" +
+		"---\n\n" +
+		"## Heading\n\nSecond paragraph."
+	tests := []struct {
+		name  string
+		entry transcriptEntry
+	}{
+		{
+			name: "streaming markdown",
+			entry: transcriptEntry{
+				kind: entryAssistant,
+				text: markdown,
+			},
+		},
+		{
+			name: "completed markdown",
+			entry: transcriptEntry{
+				kind:     entryAssistant,
+				text:     markdown,
+				rendered: renderMarkdown(markdown, current.contentWidth()),
+				complete: true,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := ansi.Strip(current.entryView(tt.entry, false))
+			lines := strings.Split(got, "\n")
+			for index := range lines {
+				lines[index] = strings.TrimRight(lines[index], " ")
+			}
+			got = strings.Join(lines, "\n")
+			if len(lines) < 3 || lines[0] != " ✦ AICE" || lines[1] != "" {
+				t.Fatalf(
+					"assistant heading is not separated from its body "+
+						"by one blank line:\n%q",
+					got,
+				)
+			}
+
+			for index, line := range lines[2:] {
+				if strings.TrimSpace(line) == "" {
+					continue
+				}
+				if !strings.HasPrefix(line, "   ") {
+					t.Errorf(
+						"assistant body line %d is not uniformly indented: "+
+							"%q\nfull view:\n%q",
+						index+3,
+						line,
+						got,
+					)
+				}
+			}
+			if strings.Contains(got, "\n\n\n") {
+				t.Errorf("assistant body contains excessive blank lines:\n%q", got)
+			}
+		})
 	}
 }
 

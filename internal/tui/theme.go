@@ -35,10 +35,12 @@ var (
 	errorColor       = lipgloss.Color(errorHex)
 	informationColor = lipgloss.Color(informationHex)
 
-	brandStyle    = lipgloss.NewStyle().Bold(true).Foreground(accentColor)
-	headerStyle   = lipgloss.NewStyle().Bold(true).Foreground(accentColor)
-	labelStyle    = lipgloss.NewStyle().Bold(true).Foreground(secondaryColor)
-	bodyStyle     = lipgloss.NewStyle().Foreground(primaryTextColor)
+	brandStyle         = lipgloss.NewStyle().Bold(true).Foreground(accentColor)
+	headerStyle        = lipgloss.NewStyle().Bold(true).Foreground(accentColor)
+	labelStyle         = lipgloss.NewStyle().Bold(true).Foreground(secondaryColor)
+	bodyStyle          = lipgloss.NewStyle().Foreground(primaryTextColor)
+	assistantBodyStyle = lipgloss.NewStyle().
+				PaddingLeft(2)
 	mutedStyle    = lipgloss.NewStyle().Foreground(mutedTextColor)
 	infoStyle     = lipgloss.NewStyle().Foreground(informationColor)
 	toolNameStyle = lipgloss.NewStyle().
@@ -87,6 +89,9 @@ var (
 func inkMarkdownStyle() ansi.StyleConfig {
 	style := glamourstyles.DarkStyleConfig
 	style.Document.Color = stringPointer(primaryTextHex)
+	style.Document.BlockPrefix = ""
+	style.Document.BlockSuffix = ""
+	style.Document.Margin = uintPointer(0)
 	style.BlockQuote.Color = stringPointer(mutedTextHex)
 	style.Heading.Color = stringPointer(sunsetHex)
 	style.H1.Color = stringPointer(sunsetHex)
@@ -145,5 +150,9 @@ func inkMarkdownStyle() ansi.StyleConfig {
 }
 
 func stringPointer(value string) *string {
+	return &value
+}
+
+func uintPointer(value uint) *uint {
 	return &value
 }

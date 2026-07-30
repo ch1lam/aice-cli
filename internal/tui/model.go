@@ -1447,19 +1447,25 @@ func (m model) assistantEntryView(
 ) string {
 	width := m.contentWidth()
 	parts := []string{headerStyle.Render("✦ AICE")}
+	bodyWidth := max(width-assistantBodyStyle.GetHorizontalFrameSize(), 1)
 	if includeThinking && strings.TrimSpace(entry.thinking) != "" {
-		thinkingWidth := max(width-thinkingStyle.GetHorizontalFrameSize(), 1)
-		thinking := thinkingStyle.Width(thinkingWidth).Render(
-			"REASONING\n" + entry.thinking,
+		thinkingWidth := max(
+			bodyWidth-thinkingStyle.GetHorizontalFrameSize(),
+			1,
+		)
+		thinking := assistantBodyStyle.Render(
+			thinkingStyle.Width(thinkingWidth).Render(
+				"REASONING\n" + entry.thinking,
+			),
 		)
 		parts = append(parts, thinking)
 	}
 	if includeText {
-		body := entry.text
-		if entry.complete && entry.rendered != "" {
+		body := ""
+		if entry.rendered != "" {
 			body = entry.rendered
-		} else if body != "" {
-			body = bodyStyle.Render(body)
+		} else if entry.text != "" {
+			body = renderMarkdown(entry.text, width)
 		}
 		if body == "" {
 			if activeAssistant {
@@ -1468,12 +1474,13 @@ func (m model) assistantEntryView(
 				body = mutedStyle.Render("Waiting for model output...")
 			}
 		}
-		parts = append(parts, body)
+		parts = append(parts, assistantBodyStyle.Render(body))
 	}
 	if len(parts) == 1 {
 		return ""
 	}
-	return lipgloss.NewStyle().Padding(0, 1).Render(strings.Join(parts, "\n"))
+	content := parts[0] + "\n\n" + strings.Join(parts[1:], "\n")
+	return lipgloss.NewStyle().Padding(0, 1).Render(content)
 }
 
 func (m model) pendingActivityView() string {
@@ -1481,7 +1488,8 @@ func (m model) pendingActivityView() string {
 		return ""
 	}
 	return lipgloss.NewStyle().Padding(0, 1).Render(
-		headerStyle.Render("✦ AICE") + "\n" + m.activityIndicator(),
+		headerStyle.Render("✦ AICE") + "\n\n" +
+			assistantBodyStyle.Render(m.activityIndicator()),
 	)
 }
 
@@ -1681,7 +1689,10 @@ func renderMarkdown(markdown string, width int) string {
 	}
 	renderer, err := glamour.NewTermRenderer(
 		glamour.WithStyles(inkMarkdownStyle()),
-		glamour.WithWordWrap(max(width, 20)),
+		glamour.WithWordWrap(max(
+			width-assistantBodyStyle.GetHorizontalFrameSize(),
+			20,
+		)),
 	)
 	if err != nil {
 		return markdown
@@ -1690,7 +1701,7 @@ func renderMarkdown(markdown string, width int) string {
 	if err != nil {
 		return markdown
 	}
-	return strings.TrimSpace(rendered)
+	return strings.Trim(rendered, "\r\n")
 }
 
 type runStartedMsg struct {
