@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -55,6 +56,7 @@ type transcriptEntry struct {
 	conclusion bool
 	toolID     string
 	toolName   string
+	toolDetail string
 	toolDone   bool
 	toolError  bool
 }
@@ -772,10 +774,11 @@ func (m *model) applyAgentEvent(event agent.AgentEvent) (bool, tea.Cmd) {
 		if event.ToolCall != nil {
 			m.revokeConclusion()
 			m.entries = append(m.entries, transcriptEntry{
-				kind:      entryTool,
-				processID: m.ensureActiveProcess(),
-				toolID:    event.ToolCall.ID,
-				toolName:  event.ToolCall.Name,
+				kind:       entryTool,
+				processID:  m.ensureActiveProcess(),
+				toolID:     event.ToolCall.ID,
+				toolName:   event.ToolCall.Name,
+				toolDetail: toolCallDetail(*event.ToolCall),
 			})
 			m.status = "Running " + event.ToolCall.Name + "..."
 			return true, nil
@@ -1217,6 +1220,15 @@ func (m model) processGroupView(start, end int) (string, string) {
 	}
 	header := m.processHeader(start, end, collapsed)
 	if collapsed {
+		toolParts := make([]transcriptViewPart, 0, len(parts))
+		for _, part := range parts {
+			if part.tool {
+				toolParts = append(toolParts, part)
+			}
+		}
+		if len(toolParts) > 0 {
+			return header + "\n" + joinTranscriptViewParts(toolParts), conclusion
+		}
 		return header, conclusion
 	}
 	return header + "\n" + joinTranscriptViewParts(parts), conclusion
@@ -1371,10 +1383,17 @@ func (m model) entryView(
 				style = errorStyle
 			}
 		}
+		summary := style.Render(icon) + " " +
+			toolNameStyle.Render(entry.toolName)
+		if entry.toolName != "bash" && entry.toolDetail != "" {
+			summary += "  " + mutedStyle.Render(entry.toolDetail)
+		}
+		summary += "  " + mutedStyle.Render(state)
+		if entry.toolName == "bash" && entry.toolDetail != "" {
+			summary += "\n" + mutedStyle.Render("$ "+entry.toolDetail)
+		}
 		return lipgloss.NewStyle().Padding(0, 2).Render(
-			style.Render(icon) + " " +
-				toolNameStyle.Render(entry.toolName) + "  " +
-				mutedStyle.Render(state),
+			summary,
 		)
 	case entryError:
 		return lipgloss.NewStyle().Padding(0, 1).Render(
@@ -1392,6 +1411,32 @@ func (m model) entryView(
 	default:
 		return ""
 	}
+}
+
+func toolCallDetail(call llm.ToolCall) string {
+	var arguments struct {
+		Command string `json:"command"`
+		Path    string `json:"path"`
+	}
+	if err := json.Unmarshal(call.Arguments, &arguments); err != nil {
+		return ""
+	}
+	if call.Name == "bash" {
+		return sanitizeToolDetail(arguments.Command, true)
+	}
+	return sanitizeToolDetail(arguments.Path, false)
+}
+
+func sanitizeToolDetail(value string, multiline bool) string {
+	return strings.Map(func(character rune) rune {
+		if multiline && (character == '\n' || character == '\t') {
+			return character
+		}
+		if unicode.IsControl(character) {
+			return '�'
+		}
+		return character
+	}, value)
 }
 
 func (m model) assistantEntryView(

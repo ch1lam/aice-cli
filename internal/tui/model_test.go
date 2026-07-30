@@ -9,6 +9,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/ch1lam/aice-cli/internal/agent"
 	"github.com/ch1lam/aice-cli/internal/llm"
@@ -256,6 +257,7 @@ func TestModelCollapsesProcessWhenConclusionStartsStreaming(t *testing.T) {
 		"▶ PROCESS",
 		"1 tool call",
 		"ctrl+o to expand",
+		"go.mod",
 		"FINAL_ANSWER",
 	} {
 		if !strings.Contains(collapsed, want) {
@@ -933,6 +935,186 @@ func TestModelRendersRunActivityInTranscriptInsteadOfFooter(t *testing.T) {
 		ToolCall: &call,
 	})
 	assertActivityInTranscript(t, current, "Thinking...")
+}
+
+func TestModelToolCallsShowRelevantInput(t *testing.T) {
+	t.Parallel()
+
+	const bashCommand = "GOCACHE=/tmp/aice-go-cache go test ./internal/tui " +
+		"-run TestModelToolCallsShowRelevantInput -count=1\n" +
+		"printf 'tool display complete'"
+	tests := []struct {
+		name      string
+		call      llm.ToolCall
+		want      string
+		notWanted []string
+	}{
+		{
+			name: "bash shows the complete command",
+			call: llm.ToolCall{
+				ID:   "bash-call",
+				Name: "bash",
+				Arguments: []byte(
+					`{"command":"GOCACHE=/tmp/aice-go-cache go test ./internal/tui ` +
+						`-run TestModelToolCallsShowRelevantInput -count=1\n` +
+						`printf 'tool display complete'"}`,
+				),
+			},
+			want: "$ " + bashCommand,
+		},
+		{
+			name: "read shows only the path",
+			call: llm.ToolCall{
+				ID:        "read-call",
+				Name:      "read",
+				Arguments: []byte(`{"path":"internal/tui/model.go","offset":10}`),
+			},
+			want:      "internal/tui/model.go",
+			notWanted: []string{"offset"},
+		},
+		{
+			name: "write shows the path without content",
+			call: llm.ToolCall{
+				ID:   "write-call",
+				Name: "write",
+				Arguments: []byte(
+					`{"path":"notes/output.txt","content":"DO_NOT_RENDER_WRITE_CONTENT"}`,
+				),
+			},
+			want:      "notes/output.txt",
+			notWanted: []string{"DO_NOT_RENDER_WRITE_CONTENT"},
+		},
+		{
+			name: "edit shows the path without replacements",
+			call: llm.ToolCall{
+				ID:   "edit-call",
+				Name: "edit",
+				Arguments: []byte(
+					`{"path":"internal/tui/model.go","edits":[` +
+						`{"oldText":"DO_NOT_RENDER_OLD_TEXT",` +
+						`"newText":"DO_NOT_RENDER_NEW_TEXT"}]}`,
+				),
+			},
+			want: "internal/tui/model.go",
+			notWanted: []string{
+				"DO_NOT_RENDER_OLD_TEXT",
+				"DO_NOT_RENDER_NEW_TEXT",
+			},
+		},
+		{
+			name: "path cannot inject terminal controls",
+			call: llm.ToolCall{
+				ID:        "unsafe-path-call",
+				Name:      "read",
+				Arguments: []byte(`{"path":"internal/\u001b[31mmodel.go"}`),
+			},
+			want:      "internal/�[31mmodel.go",
+			notWanted: []string{"\x1b"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			current := newModel(make(chan runRequest), make(chan struct{}))
+			current = updateModel(t, current, tea.WindowSizeMsg{
+				Width:  80,
+				Height: 24,
+			})
+			current.running = true
+			current.applyAgentEvent(agent.AgentEvent{
+				Type:     agent.EventTypeToolExecutionStart,
+				ToolCall: &tt.call,
+			})
+
+			running := ansi.Strip(current.transcriptView())
+			for _, wantLine := range strings.Split(tt.want, "\n") {
+				if !strings.Contains(running, wantLine) {
+					t.Fatalf(
+						"running tool transcript = %q, want line %q",
+						running,
+						wantLine,
+					)
+				}
+			}
+			for _, notWanted := range tt.notWanted {
+				if strings.Contains(running, notWanted) {
+					t.Errorf(
+						"running tool transcript contains %q: %q",
+						notWanted,
+						running,
+					)
+				}
+			}
+
+			current.applyAgentEvent(agent.AgentEvent{
+				Type:     agent.EventTypeToolExecutionEnd,
+				ToolCall: &tt.call,
+			})
+			completed := ansi.Strip(current.transcriptView())
+			for _, wantLine := range strings.Split(tt.want, "\n") {
+				if !strings.Contains(completed, wantLine) {
+					t.Errorf(
+						"completed tool transcript = %q, want line %q",
+						completed,
+						wantLine,
+					)
+				}
+			}
+		})
+	}
+}
+
+func TestModelCollapsedProcessKeepsCompleteToolInputVisible(t *testing.T) {
+	t.Parallel()
+
+	const command = "go test ./internal/tui -run TestModelToolCallsShowRelevantInput\n" +
+		"printf 'still visible after collapse'"
+	current := newModel(make(chan runRequest), make(chan struct{}))
+	current = updateModel(t, current, tea.WindowSizeMsg{
+		Width:  80,
+		Height: 24,
+	})
+	processID := current.beginProcess()
+	current.entries = []transcriptEntry{
+		{
+			kind:      entryAssistant,
+			thinking:  "HIDDEN_REASONING",
+			complete:  true,
+			processID: processID,
+		},
+		{
+			kind:       entryTool,
+			processID:  processID,
+			toolName:   "bash",
+			toolDetail: command,
+			toolDone:   true,
+		},
+		{
+			kind:       entryAssistant,
+			text:       "Final answer",
+			complete:   true,
+			processID:  processID,
+			conclusion: true,
+		},
+	}
+	current.processGroups[0].collapsed = true
+
+	transcript := ansi.Strip(current.transcriptView())
+	for _, want := range []string{
+		"▶ PROCESS",
+		"$ go test ./internal/tui -run TestModelToolCallsShowRelevantInput",
+		"printf 'still visible after collapse'",
+		"Final answer",
+	} {
+		if !strings.Contains(transcript, want) {
+			t.Errorf("collapsed transcript = %q, want %q", transcript, want)
+		}
+	}
+	if strings.Contains(transcript, "HIDDEN_REASONING") {
+		t.Errorf("collapsed transcript still contains reasoning: %q", transcript)
+	}
 }
 
 func TestModelSpinnerTickRefreshesTranscriptViewport(t *testing.T) {
