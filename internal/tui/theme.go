@@ -100,6 +100,8 @@ func inkMarkdownStyle() ansi.StyleConfig {
 	style.Item.Color = stringPointer(goldHex)
 	style.Enumeration.Color = stringPointer(goldHex)
 	style.Task.Color = stringPointer(goldHex)
+	style.Task.Ticked = "✅ "
+	style.Task.Unticked = "⏳ "
 	style.Link.Color = stringPointer(informationHex)
 	style.LinkText.Color = stringPointer(goldHex)
 	style.Image.Color = stringPointer(informationHex)

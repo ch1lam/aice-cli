@@ -2,9 +2,11 @@ package tui
 
 import (
 	"image/color"
+	"strings"
 	"testing"
 
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 )
 
 func TestInkPalette(t *testing.T) {
@@ -95,6 +97,28 @@ func TestThemeAppliesLayeredBackgrounds(t *testing.T) {
 	} {
 		if background == nil || *background != panelBlackHex {
 			t.Errorf("markdown panel background = %v, want %q", background, panelBlackHex)
+		}
+	}
+}
+
+func TestMarkdownTaskListUsesEmojiMarkers(t *testing.T) {
+	t.Parallel()
+
+	style := inkMarkdownStyle()
+	if style.Task.Ticked != "✅ " {
+		t.Errorf("completed task marker = %q, want %q", style.Task.Ticked, "✅ ")
+	}
+	if style.Task.Unticked != "⏳ " {
+		t.Errorf("incomplete task marker = %q, want %q", style.Task.Unticked, "⏳ ")
+	}
+
+	rendered := ansi.Strip(renderMarkdown(
+		"- [x] Finished task\n- [ ] Outstanding task",
+		80,
+	))
+	for _, marker := range []string{"✅ Finished task", "⏳ Outstanding task"} {
+		if !strings.Contains(rendered, marker) {
+			t.Errorf("rendered task list = %q, want marker %q", rendered, marker)
 		}
 	}
 }
