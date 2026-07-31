@@ -247,6 +247,8 @@ func TestModelCollapsesProcessWhenConclusionStartsStreaming(t *testing.T) {
 	for _, hidden := range []string{
 		"INTERMEDIATE_REASONING",
 		"MIDDLEOUTPUT",
+		"read",
+		"go.mod",
 		"FINAL_REASONING",
 	} {
 		if strings.Contains(collapsed, hidden) {
@@ -257,7 +259,6 @@ func TestModelCollapsesProcessWhenConclusionStartsStreaming(t *testing.T) {
 		"▶ PROCESS",
 		"1 tool call",
 		"ctrl+o to expand",
-		"go.mod",
 		"FINAL_ANSWER",
 	} {
 		if !strings.Contains(collapsed, want) {
@@ -1138,7 +1139,7 @@ func TestModelToolCallsShowRelevantInput(t *testing.T) {
 	}
 }
 
-func TestModelCollapsedProcessKeepsCompleteToolInputVisible(t *testing.T) {
+func TestModelCollapsedProcessHidesDetailsUntilExpanded(t *testing.T) {
 	t.Parallel()
 
 	const command = "go test ./internal/tui -run TestModelToolCallsShowRelevantInput\n" +
@@ -1176,16 +1177,41 @@ func TestModelCollapsedProcessKeepsCompleteToolInputVisible(t *testing.T) {
 	transcript := ansi.Strip(current.transcriptView())
 	for _, want := range []string{
 		"▶ PROCESS",
-		"$ go test ./internal/tui -run TestModelToolCallsShowRelevantInput",
-		"printf 'still visible after collapse'",
 		"Final answer",
 	} {
 		if !strings.Contains(transcript, want) {
 			t.Errorf("collapsed transcript = %q, want %q", transcript, want)
 		}
 	}
-	if strings.Contains(transcript, "HIDDEN_REASONING") {
-		t.Errorf("collapsed transcript still contains reasoning: %q", transcript)
+	for _, hidden := range []string{
+		"HIDDEN_REASONING",
+		"bash",
+		"$ go test ./internal/tui -run TestModelToolCallsShowRelevantInput",
+		"printf 'still visible after collapse'",
+	} {
+		if strings.Contains(transcript, hidden) {
+			t.Errorf("collapsed transcript still contains %q: %q", hidden, transcript)
+		}
+	}
+
+	expanded, commandMessage, handled := current.handleKey(tea.KeyPressMsg(tea.Key{
+		Code: 'o',
+		Mod:  tea.ModCtrl,
+	}))
+	if !handled || commandMessage != nil {
+		t.Fatal("ctrl+o did not expand the collapsed process")
+	}
+	expandedTranscript := ansi.Strip(expanded.transcriptView())
+	for _, want := range []string{
+		"HIDDEN_REASONING",
+		"bash",
+		"$ go test ./internal/tui -run TestModelToolCallsShowRelevantInput",
+		"printf 'still visible after collapse'",
+		"Final answer",
+	} {
+		if !strings.Contains(expandedTranscript, want) {
+			t.Errorf("expanded transcript = %q, want %q", expandedTranscript, want)
+		}
 	}
 }
 

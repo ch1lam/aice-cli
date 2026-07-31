@@ -1232,15 +1232,6 @@ func (m model) processGroupView(start, end int) (string, string) {
 	header := m.processHeader(start, end, collapsed)
 	process := m.assistantHeaderView() + "\n\n" + header
 	if collapsed {
-		toolParts := make([]transcriptViewPart, 0, len(parts))
-		for _, part := range parts {
-			if part.tool {
-				toolParts = append(toolParts, part)
-			}
-		}
-		if len(toolParts) > 0 {
-			return process + "\n" + joinTranscriptViewParts(toolParts), conclusion
-		}
 		return process, conclusion
 	}
 	return process + "\n" + joinTranscriptViewParts(parts), conclusion
