@@ -23,10 +23,10 @@
 - First provider: DeepSeek through an Anthropic Messages protocol adapter using the official `anthropic-sdk-go` SDK with a configurable base URL.
 - Persistence: append-only JSONL sessions. Use standard library packages before adding storage frameworks or databases.
 - Execution: built-in tools use the host process environment by default. The built-in `grep` tool requires `ripgrep` (`rg`) on `PATH` and has no pure-Go fallback. Containers, sandboxes, or replaceable execution environments may provide stronger isolation.
-- Configuration: Viper-backed layered settings, `AICE_*` environment variables, and the `.aice` directory. Keep credentials in the global auth file or process environment, never in project settings.
+- Configuration: Viper-backed global settings, `AICE_*` environment variables, and the `.aice` directory. Provider, model, and thinking belong only in `~/.aice/settings.json`; credentials belong only in the global auth file or process environment. Do not read or write model configuration from a project settings file.
 - Logging and cancellation: `log/slog`, `context.Context`, and `signal.NotifyContext`.
 
-Do not add an external dependency when the standard library is sufficient. Before adding an unlisted direct dependency, explain why it is needed, check maintenance and license status, and ask the user for approval. Viper is approved for layered configuration resolution; keep scoped persistence and credential handling in AICE-owned code. `ripgrep` is an approved runtime dependency for the built-in `grep` tool because its search performance and ignore semantics are part of the intended behavior; do not restore the removed pure-Go search implementation as a fallback.
+Do not add an external dependency when the standard library is sufficient. Before adding an unlisted direct dependency, explain why it is needed, check maintenance and license status, and ask the user for approval. Viper is approved for environment-over-global configuration resolution; keep global settings persistence and credential handling in AICE-owned code. `ripgrep` is an approved runtime dependency for the built-in `grep` tool because its search performance and ignore semantics are part of the intended behavior; do not restore the removed pure-Go search implementation as a fallback.
 
 ## Intended Project Structure
 

@@ -44,9 +44,9 @@ func NewCommand() (*cobra.Command, error) {
 }
 
 type dependencies struct {
-	loadConfig                 func(string) (config.Config, error)
-	saveSetting                func(string, config.Scope, config.Setting, string) error
-	saveAPIKey                 func(string, string) (string, error)
+	loadConfig                 func() (config.Config, error)
+	saveSetting                func(config.Setting, string) error
+	saveAPIKey                 func(string) (string, error)
 	newModel                   func(config.Config) (agent.Model, error)
 	runTUI                     func(context.Context, tui.Runner, tui.Options) error
 	compactionKeepRecentTokens int64
@@ -97,7 +97,7 @@ func (a *application) SaveAPIKey(
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
-	path, err := a.dependencies.saveAPIKey(".", request.APIKey)
+	path, err := a.dependencies.saveAPIKey(request.APIKey)
 	if err != nil {
 		return "", fmt.Errorf("app: save DeepSeek API key: %w", err)
 	}
@@ -202,7 +202,6 @@ func (a *application) Interactive(
 		model:         environment.model,
 		options:       environment.options,
 		configuration: environment.configuration,
-		workspace:     environment.workspace.Path(),
 		tools:         environment.tools,
 	}
 	runErr := a.dependencies.runTUI(ctx, runner, tui.Options{
@@ -244,7 +243,7 @@ func (a *application) newRunEnvironment(
 	if err != nil {
 		return nil, fmt.Errorf("app: create workspace: %w", err)
 	}
-	configured, err := a.loadConfiguredModel(workspace.Path())
+	configured, err := a.loadConfiguredModel()
 	if err != nil {
 		return nil, err
 	}
@@ -269,10 +268,8 @@ func (a *application) newRunEnvironment(
 	}, nil
 }
 
-func (a *application) loadConfiguredModel(
-	workspace string,
-) (configuredModel, error) {
-	configuration, err := a.dependencies.loadConfig(workspace)
+func (a *application) loadConfiguredModel() (configuredModel, error) {
+	configuration, err := a.dependencies.loadConfig()
 	if err != nil {
 		return configuredModel{}, fmt.Errorf(
 			"app: load configuration: %w",
@@ -292,10 +289,8 @@ func (a *application) loadConfiguredModel(
 	}, nil
 }
 
-func (a *application) newConfiguredModel(
-	workspace string,
-) (configuredModel, error) {
-	configured, err := a.loadConfiguredModel(workspace)
+func (a *application) newConfiguredModel() (configuredModel, error) {
+	configured, err := a.loadConfiguredModel()
 	if err != nil {
 		return configuredModel{}, err
 	}
@@ -401,7 +396,6 @@ type interactiveSession struct {
 	model         llm.Model
 	options       llm.StreamOptions
 	configuration config.Config
-	workspace     string
 	tools         []agent.Tool
 }
 

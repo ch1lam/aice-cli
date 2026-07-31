@@ -20,7 +20,7 @@ func TestApplicationPrintRunsMutatingBuiltInToolsThroughCommand(t *testing.T) {
 	workspace := t.TempDir()
 	model := &builtInToolModel{}
 	command, err := newCommand(dependencies{
-		loadConfig: func(string) (config.Config, error) {
+		loadConfig: func() (config.Config, error) {
 			return config.Config{DeepSeekAPIKey: "test-key"}, nil
 		},
 		newModel: func(config.Config) (agent.Model, error) {

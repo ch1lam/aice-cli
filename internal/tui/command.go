@@ -12,6 +12,24 @@ type SlashCommand struct {
 	Description  string
 	ArgumentHint string
 	SecretPrompt string
+	Menu         *SlashCommandMenu
+}
+
+// SlashCommandMenu describes one interactive choice level shown after a slash
+// command is submitted.
+type SlashCommandMenu struct {
+	Title   string
+	Options []SlashCommandOption
+}
+
+// SlashCommandOption is one selectable value. A nested menu creates another
+// choice level; a leaf supplies the final arguments to the command runner.
+type SlashCommandOption struct {
+	Label       string
+	Description string
+	Arguments   string
+	Current     bool
+	Menu        *SlashCommandMenu
 }
 
 // SlashCommandRequest is one parsed command invocation.
@@ -60,6 +78,10 @@ func slashCommandCatalog(external []SlashCommand) []SlashCommand {
 			strings.TrimSpace(command.Name),
 			"/",
 		))
+		command.Description = strings.TrimSpace(command.Description)
+		command.ArgumentHint = strings.TrimSpace(command.ArgumentHint)
+		command.SecretPrompt = strings.TrimSpace(command.SecretPrompt)
+		command.Menu = normalizeSlashCommandMenu(command.Menu)
 		if command.Name == "" ||
 			strings.ContainsAny(command.Name, "/ \t\r\n") {
 			return
@@ -77,6 +99,33 @@ func slashCommandCatalog(external []SlashCommand) []SlashCommand {
 		appendCommand(command)
 	}
 	return commands
+}
+
+func normalizeSlashCommandMenu(menu *SlashCommandMenu) *SlashCommandMenu {
+	if menu == nil {
+		return nil
+	}
+
+	normalized := &SlashCommandMenu{
+		Title: strings.TrimSpace(menu.Title),
+	}
+	for _, option := range menu.Options {
+		option.Label = strings.TrimSpace(option.Label)
+		option.Description = strings.TrimSpace(option.Description)
+		option.Arguments = strings.TrimSpace(option.Arguments)
+		option.Menu = normalizeSlashCommandMenu(option.Menu)
+		if option.Label == "" {
+			continue
+		}
+		if option.Menu == nil && option.Arguments == "" {
+			continue
+		}
+		normalized.Options = append(normalized.Options, option)
+	}
+	if normalized.Title == "" || len(normalized.Options) == 0 {
+		return nil
+	}
+	return normalized
 }
 
 func parseSlashCommand(value string) (SlashCommandRequest, bool) {

@@ -4,12 +4,15 @@ AICE resolves non-secret settings in this order, from highest to lowest
 precedence:
 
 1. `AICE_*` environment variables
-2. `<workspace>/.aice/settings.json`
-3. `~/.aice/settings.json`
-4. AICE defaults
+2. `~/.aice/settings.json`
+3. AICE defaults
 
-The project file only needs to contain values that differ from the global
-defaults. For example:
+Provider, model, and thinking are user-level choices shared by every
+workspace. AICE does not read or write them in
+`<workspace>/.aice/settings.json`. If a file remains there from an older
+version, it is ignored.
+
+For example, the global file can contain:
 
 ```json
 {
@@ -35,15 +38,19 @@ The interactive TUI supports:
 
 ```text
 /settings
-/login [provider]
-/provider [--local] deepseek
-/model [--local] deepseek-v4-pro
-/thinking [--local] high
+/login
+/provider
+/model
+/thinking
+/checkout
 ```
 
-Commands write global settings by default. `--local` writes the project
-settings file. Either form updates the current interactive Session after the
-write succeeds.
+`/login` opens a provider menu before hidden credential input. `/provider`,
+`/model`, and `/thinking` open a value menu and save the selected value
+directly to global settings. `/checkout` lists the Session root and current
+tree entries. These interactive commands do not accept typed arguments; choose
+values from their menus instead. Successful setting changes update the current
+interactive Session immediately.
 
 ## Credentials
 

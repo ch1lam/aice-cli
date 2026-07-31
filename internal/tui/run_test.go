@@ -167,7 +167,10 @@ func TestServeRunsExecutesSlashCommandsThroughRunner(t *testing.T) {
 		terminal.output != "Session tree" ||
 		terminal.state == nil ||
 		terminal.state.Model.ID != "selected-model" ||
-		terminal.state.Thinking != llm.ThinkingLevelHigh {
+		terminal.state.Thinking != llm.ThinkingLevelHigh ||
+		terminal.commands == nil ||
+		len(*terminal.commands) != 1 ||
+		(*terminal.commands)[0].Name != "tree" {
 		t.Fatalf("terminal slash command update = %#v", terminal)
 	}
 	if _, open := <-updates; open {
@@ -179,6 +182,49 @@ func TestServeRunsExecutesSlashCommandsThroughRunner(t *testing.T) {
 	case <-done:
 	case <-time.After(time.Second):
 		t.Fatal("run controller did not stop after slash command")
+	}
+}
+
+func TestServeRunsRefreshesSlashCommandMenusAfterPrompt(t *testing.T) {
+	t.Parallel()
+
+	runner := &slashRunner{
+		runnerFunc: func(
+			context.Context,
+			string,
+			agent.AgentEventSink,
+		) error {
+			return nil
+		},
+		runCommand: func(
+			context.Context,
+			SlashCommandRequest,
+		) (string, error) {
+			t.Fatal("prompt executed as a slash command")
+			return "", nil
+		},
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	requests := make(chan runRequest)
+	done := make(chan struct{})
+	go serveRuns(ctx, runner, requests, done)
+
+	updates := make(chan runUpdate, runUpdateBuffer)
+	requests <- runRequest{prompt: "inspect", updates: updates}
+	_ = receiveRunUpdate(t, updates)
+	terminal := receiveRunUpdate(t, updates)
+	if !terminal.done ||
+		terminal.commands == nil ||
+		len(*terminal.commands) != 1 ||
+		(*terminal.commands)[0].Name != "tree" {
+		t.Fatalf("terminal prompt update = %#v, want refreshed commands", terminal)
+	}
+
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("run controller did not stop after prompt")
 	}
 }
 

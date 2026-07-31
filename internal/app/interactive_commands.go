@@ -24,9 +24,9 @@ func (s *interactiveSession) SlashCommands() []tui.SlashCommand {
 			Description: "Show all Session branches and the active leaf",
 		},
 		{
-			Name:         "checkout",
-			Description:  "Move the active leaf without deleting later branches",
-			ArgumentHint: "<entry|root>",
+			Name:        "checkout",
+			Description: "Choose where the next Session branch starts",
+			Menu:        s.checkoutMenu(),
 		},
 		{
 			Name:        "compact",
@@ -38,26 +38,179 @@ func (s *interactiveSession) SlashCommands() []tui.SlashCommand {
 		},
 		{
 			Name:         "login",
-			Description:  "Store a provider API key using hidden input",
-			ArgumentHint: "[provider]",
+			Description:  "Choose a provider and store its API key using hidden input",
 			SecretPrompt: "DeepSeek API key",
+			Menu:         s.loginProviderMenu(),
 		},
 		{
-			Name:         "provider",
-			Description:  "Select the provider and save it to one settings scope",
-			ArgumentHint: "[--local] <provider>",
+			Name:        "provider",
+			Description: "Choose and save the global provider",
+			Menu:        s.providerMenu(),
 		},
 		{
-			Name:         "model",
-			Description:  "Select the model and save it to one settings scope",
-			ArgumentHint: "[--local] <model>",
+			Name:        "model",
+			Description: "Choose and save the global model",
+			Menu:        s.modelMenu(),
 		},
 		{
-			Name:         "thinking",
-			Description:  "Set reasoning level; off disables thinking",
-			ArgumentHint: "[--local] <level>",
+			Name:        "thinking",
+			Description: "Choose and save the global reasoning level",
+			Menu:        s.thinkingMenu(),
 		},
 	}
+}
+
+func (s *interactiveSession) loginProviderMenu() *tui.SlashCommandMenu {
+	return &tui.SlashCommandMenu{
+		Title: "Select provider",
+		Options: []tui.SlashCommandOption{{
+			Label:       "DeepSeek",
+			Description: "Anthropic-compatible DeepSeek API",
+			Arguments:   string(deepseek.ProviderID),
+			Current:     s.configuration.Provider == string(deepseek.ProviderID),
+		}},
+	}
+}
+
+func (s *interactiveSession) providerMenu() *tui.SlashCommandMenu {
+	value := string(deepseek.ProviderID)
+	return &tui.SlashCommandMenu{
+		Title: "Select provider",
+		Options: []tui.SlashCommandOption{{
+			Label:       "DeepSeek",
+			Description: "Anthropic-compatible DeepSeek API",
+			Arguments:   value,
+			Current:     s.configuration.Provider == value,
+		}},
+	}
+}
+
+func (s *interactiveSession) modelMenu() *tui.SlashCommandMenu {
+	models := deepseek.Models()
+	options := make([]tui.SlashCommandOption, 0, len(models))
+	for _, model := range models {
+		options = append(options, tui.SlashCommandOption{
+			Label:       model.Name,
+			Description: model.ID,
+			Arguments:   model.ID,
+			Current:     s.model.ID == model.ID,
+		})
+	}
+	return &tui.SlashCommandMenu{
+		Title:   "Select model",
+		Options: options,
+	}
+}
+
+func (s *interactiveSession) thinkingMenu() *tui.SlashCommandMenu {
+	levels := []struct {
+		level       llm.ThinkingLevel
+		label       string
+		description string
+	}{
+		{
+			level:       llm.ThinkingLevelOff,
+			label:       "Off",
+			description: "Disable reasoning",
+		},
+		{
+			level:       llm.ThinkingLevelMinimal,
+			label:       "Minimal",
+			description: "Use the smallest reasoning budget",
+		},
+		{
+			level:       llm.ThinkingLevelLow,
+			label:       "Low",
+			description: "Use a low reasoning budget",
+		},
+		{
+			level:       llm.ThinkingLevelMedium,
+			label:       "Medium",
+			description: "Balance reasoning depth and speed",
+		},
+		{
+			level:       llm.ThinkingLevelHigh,
+			label:       "High",
+			description: "Use a high reasoning budget",
+		},
+		{
+			level:       llm.ThinkingLevelXHigh,
+			label:       "Extra high",
+			description: "Use a very high reasoning budget",
+		},
+		{
+			level:       llm.ThinkingLevelMax,
+			label:       "Maximum",
+			description: "Use the maximum reasoning budget",
+		},
+	}
+	options := make([]tui.SlashCommandOption, 0, len(levels))
+	for _, option := range levels {
+		value := string(option.level)
+		options = append(options, tui.SlashCommandOption{
+			Label:       option.label,
+			Description: option.description,
+			Arguments:   value,
+			Current:     s.options.Thinking == option.level,
+		})
+	}
+	return &tui.SlashCommandMenu{
+		Title:   "Select reasoning level",
+		Options: options,
+	}
+}
+
+func (s *interactiveSession) checkoutMenu() *tui.SlashCommandMenu {
+	menu := &tui.SlashCommandMenu{
+		Title: "Select Session entry",
+		Options: []tui.SlashCommandOption{{
+			Label:       "Session root",
+			Description: "Start the next branch from the beginning",
+			Arguments:   "root",
+		}},
+	}
+	if s.store == nil {
+		return menu
+	}
+
+	snapshot, err := s.store.Snapshot()
+	if err != nil {
+		return menu
+	}
+	menu.Options[0].Current = snapshot.LeafID == ""
+	nodes, err := session.Nodes(snapshot)
+	if err != nil {
+		return menu
+	}
+	turns := make(map[string]session.Turn, len(snapshot.Turns))
+	for _, turn := range snapshot.Turns {
+		turns[turn.ID] = turn
+	}
+	compactions := make(map[string]session.Compaction, len(snapshot.Compactions))
+	for _, compaction := range snapshot.Compactions {
+		compactions[compaction.ID] = compaction
+	}
+	for _, node := range nodes {
+		description := sessionNodeDescription(node, turns, compactions)
+		if description == "" {
+			description = "Session " + string(node.Type)
+		}
+		menu.Options = append(menu.Options, tui.SlashCommandOption{
+			Label:       string(node.Type) + " " + shortSessionID(node.ID),
+			Description: description,
+			Arguments:   node.ID,
+			Current:     node.ID == snapshot.LeafID,
+		})
+	}
+	return menu
+}
+
+func shortSessionID(id string) string {
+	const visible = 10
+	if len(id) <= visible {
+		return id
+	}
+	return id[:visible]
 }
 
 func (s *interactiveSession) RunSlashCommand(
@@ -138,7 +291,7 @@ func (s *interactiveSession) RunSlashCommand(
 	case "login":
 		return s.login(request)
 	case "provider":
-		scope, value, err := scopedSettingValue(request)
+		value, err := slashCommandSettingValue(request)
 		if err != nil {
 			return "", err
 		}
@@ -149,17 +302,13 @@ func (s *interactiveSession) RunSlashCommand(
 				deepseek.ProviderID,
 			)
 		}
-		if err := s.saveSetting(
-			scope,
-			config.SettingProvider,
-			value,
-		); err != nil {
+		if err := s.saveSetting(config.SettingProvider, value); err != nil {
 			return "", err
 		}
 		s.configuration.Provider = value
-		return savedSettingMessage("provider", value, scope), nil
+		return savedSettingMessage("provider", value), nil
 	case "model":
-		scope, value, err := scopedSettingValue(request)
+		value, err := slashCommandSettingValue(request)
 		if err != nil {
 			return "", err
 		}
@@ -171,18 +320,14 @@ func (s *interactiveSession) RunSlashCommand(
 				strings.Join(deepseekModelIDs(), ", "),
 			)
 		}
-		if err := s.saveSetting(
-			scope,
-			config.SettingModel,
-			value,
-		); err != nil {
+		if err := s.saveSetting(config.SettingModel, value); err != nil {
 			return "", err
 		}
 		s.configuration.Model = value
 		s.model = model
-		return savedSettingMessage("model", value, scope), nil
+		return savedSettingMessage("model", value), nil
 	case "thinking":
-		scope, value, err := scopedSettingValue(request)
+		value, err := slashCommandSettingValue(request)
 		if err != nil {
 			return "", err
 		}
@@ -195,16 +340,12 @@ func (s *interactiveSession) RunSlashCommand(
 		if err != nil {
 			return "", err
 		}
-		if err := s.saveSetting(
-			scope,
-			config.SettingThinking,
-			value,
-		); err != nil {
+		if err := s.saveSetting(config.SettingThinking, value); err != nil {
 			return "", err
 		}
 		s.configuration.Thinking = level
 		s.options.Thinking = options.Thinking
-		return savedSettingMessage("thinking", value, scope), nil
+		return savedSettingMessage("thinking", value), nil
 	default:
 		return "", fmt.Errorf("app: unsupported slash command /%s", request.Name)
 	}
@@ -226,9 +367,6 @@ func (s *interactiveSession) login(
 ) (string, error) {
 	if s.application == nil {
 		return "", fmt.Errorf("app: application is required")
-	}
-	if strings.TrimSpace(s.workspace) == "" {
-		return "", fmt.Errorf("app: configuration workspace is required")
 	}
 
 	fields := strings.Fields(request.Arguments)
@@ -265,10 +403,7 @@ func (s *interactiveSession) login(
 	if err != nil {
 		return "", err
 	}
-	path, err := s.application.dependencies.saveAPIKey(
-		s.workspace,
-		apiKey,
-	)
+	path, err := s.application.dependencies.saveAPIKey(apiKey)
 	if err != nil {
 		return "", fmt.Errorf("app: save DeepSeek API key: %w", err)
 	}
@@ -300,12 +435,6 @@ func (s *interactiveSession) settingsInformation() string {
 			"Global settings: "+s.configuration.Paths.GlobalSettings,
 		)
 	}
-	if s.configuration.Paths.ProjectSettings != "" {
-		lines = append(
-			lines,
-			"Project settings: "+s.configuration.Paths.ProjectSettings,
-		)
-	}
 	if s.configuration.Paths.GlobalAuth != "" {
 		lines = append(
 			lines,
@@ -316,7 +445,6 @@ func (s *interactiveSession) settingsInformation() string {
 }
 
 func (s *interactiveSession) saveSetting(
-	scope config.Scope,
 	setting config.Setting,
 	value string,
 ) error {
@@ -324,12 +452,7 @@ func (s *interactiveSession) saveSetting(
 		s.application.dependencies.saveSetting == nil {
 		return fmt.Errorf("app: configuration persistence is unavailable")
 	}
-	if strings.TrimSpace(s.workspace) == "" {
-		return fmt.Errorf("app: configuration workspace is required")
-	}
 	if err := s.application.dependencies.saveSetting(
-		s.workspace,
-		scope,
 		setting,
 		value,
 	); err != nil {
@@ -342,34 +465,28 @@ func (s *interactiveSession) saveSetting(
 	return nil
 }
 
-func scopedSettingValue(
+func slashCommandSettingValue(
 	request tui.SlashCommandRequest,
-) (config.Scope, string, error) {
+) (string, error) {
 	fields := strings.Fields(request.Arguments)
-	switch {
-	case len(fields) == 1:
-		return config.ScopeGlobal, fields[0], nil
-	case len(fields) == 2 && fields[0] == "--local":
-		return config.ScopeProject, fields[1], nil
-	default:
-		return "", "", fmt.Errorf(
-			"app: usage: /%s [--local] <%s>",
+	if len(fields) != 1 {
+		return "", fmt.Errorf(
+			"app: usage: /%s <%s>",
 			request.Name,
 			request.Name,
 		)
 	}
+	return fields[0], nil
 }
 
 func savedSettingMessage(
 	name string,
 	value string,
-	scope config.Scope,
 ) string {
 	return fmt.Sprintf(
-		"Set %s to %s for the current Session and saved it to %s settings.",
+		"Set %s to %s for the current Session and saved it to global settings.",
 		name,
 		value,
-		scope,
 	)
 }
 

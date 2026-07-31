@@ -76,6 +76,18 @@ type secretInput struct {
 	prompt  string
 }
 
+type commandMenuFrame struct {
+	menu      SlashCommandMenu
+	selection int
+}
+
+type commandMenuState struct {
+	raw     string
+	request SlashCommandRequest
+	command SlashCommand
+	frames  []commandMenuFrame
+}
+
 type model struct {
 	requests       chan<- runRequest
 	controllerDone <-chan struct{}
@@ -98,6 +110,7 @@ type model struct {
 	processGroups    []processGroup
 	commands         []SlashCommand
 	secretInput      *secretInput
+	commandMenu      *commandMenuState
 
 	width            int
 	height           int
@@ -279,7 +292,7 @@ func (m model) View() tea.View {
 		lipgloss.Left,
 		m.headerView(width),
 		transcript,
-		m.slashCommandMenuView(width),
+		m.commandMenuView(width),
 		m.composerView(width),
 		m.footerView(width),
 	)
@@ -302,6 +315,26 @@ func (m model) handleKey(message tea.KeyPressMsg) (model, tea.Cmd, bool) {
 			return m.cancelSecretInput()
 		case key.Matches(message, m.keys.newline):
 			m.status = "API key must be entered on one line"
+			return m, nil, true
+		}
+	}
+
+	if !m.running && m.commandMenu != nil {
+		switch {
+		case message.Code == tea.KeyEscape,
+			key.Matches(message, m.keys.interrupt),
+			key.Matches(message, m.keys.quit):
+			return m.backOrCancelCommandMenu()
+		case message.Code == tea.KeyUp:
+			m.moveCommandMenuSelection(-1)
+			return m, nil, true
+		case message.Code == tea.KeyDown:
+			m.moveCommandMenuSelection(1)
+			return m, nil, true
+		case message.Code == tea.KeyTab,
+			key.Matches(message, m.keys.send):
+			return m.selectCommandMenuOption()
+		default:
 			return m, nil, true
 		}
 	}
@@ -490,6 +523,20 @@ func (m model) submitSlashCommand(
 	if m.controllerClosed {
 		return m.commandError(raw, "TUI run controller stopped")
 	}
+	if command.Menu != nil {
+		if request.Arguments != "" {
+			return m.commandUsageError(raw, command)
+		}
+		return m.openCommandMenu(raw, request, command)
+	}
+	return m.startApplicationSlashCommand(raw, request, command)
+}
+
+func (m model) startApplicationSlashCommand(
+	raw string,
+	request SlashCommandRequest,
+	command SlashCommand,
+) (model, tea.Cmd, bool) {
 	if command.SecretPrompt != "" {
 		m.entries = append(
 			m.entries,
@@ -515,6 +562,109 @@ func (m model) submitSlashCommand(
 	m.resizeLayout()
 	m.refreshViewport(true)
 	return m, startSlashCommand(m.requests, m.controllerDone, request), true
+}
+
+func (m model) openCommandMenu(
+	raw string,
+	request SlashCommandRequest,
+	command SlashCommand,
+) (model, tea.Cmd, bool) {
+	if command.Menu == nil || len(command.Menu.Options) == 0 {
+		return m.commandError(raw, "/"+command.Name+" has no available choices")
+	}
+
+	m.commandMenu = &commandMenuState{
+		raw:     raw,
+		request: request,
+		command: command,
+		frames: []commandMenuFrame{{
+			menu:      *command.Menu,
+			selection: currentSlashCommandOption(command.Menu.Options),
+		}},
+	}
+	m.input.Blur()
+	m.status = command.Menu.Title + "; Esc cancels"
+	m.resizeLayout()
+	m.refreshViewport(false)
+	return m, nil, true
+}
+
+func (m model) selectCommandMenuOption() (model, tea.Cmd, bool) {
+	if m.commandMenu == nil || len(m.commandMenu.frames) == 0 {
+		return m, nil, true
+	}
+	frame := &m.commandMenu.frames[len(m.commandMenu.frames)-1]
+	if len(frame.menu.Options) == 0 {
+		return m.backOrCancelCommandMenu()
+	}
+	frame.selection = min(max(frame.selection, 0), len(frame.menu.Options)-1)
+	option := frame.menu.Options[frame.selection]
+	if option.Menu != nil && len(option.Menu.Options) > 0 {
+		m.commandMenu.frames = append(
+			m.commandMenu.frames,
+			commandMenuFrame{
+				menu:      *option.Menu,
+				selection: currentSlashCommandOption(option.Menu.Options),
+			},
+		)
+		m.status = option.Menu.Title + "; Esc goes back"
+		m.resizeLayout()
+		m.refreshViewport(false)
+		return m, nil, true
+	}
+
+	state := *m.commandMenu
+	state.request.Arguments = option.Arguments
+	m.commandMenu = nil
+	return m.startApplicationSlashCommand(
+		state.raw,
+		state.request,
+		state.command,
+	)
+}
+
+func (m model) backOrCancelCommandMenu() (model, tea.Cmd, bool) {
+	if m.commandMenu == nil {
+		return m, nil, true
+	}
+	if len(m.commandMenu.frames) > 1 {
+		m.commandMenu.frames = m.commandMenu.frames[:len(m.commandMenu.frames)-1]
+		frame := m.commandMenu.frames[len(m.commandMenu.frames)-1]
+		m.status = frame.menu.Title + "; Esc cancels"
+		m.resizeLayout()
+		m.refreshViewport(false)
+		return m, nil, true
+	}
+
+	name := m.commandMenu.command.Name
+	m.commandMenu = nil
+	m.resetCommandInput()
+	m.status = "/" + name + " selection cancelled"
+	m.resizeLayout()
+	m.refreshViewport(false)
+	return m, m.input.Focus(), true
+}
+
+func (m *model) moveCommandMenuSelection(delta int) {
+	if m.commandMenu == nil || len(m.commandMenu.frames) == 0 {
+		return
+	}
+	frame := &m.commandMenu.frames[len(m.commandMenu.frames)-1]
+	if len(frame.menu.Options) == 0 {
+		frame.selection = 0
+		return
+	}
+	frame.selection = (frame.selection + delta + len(frame.menu.Options)) %
+		len(frame.menu.Options)
+}
+
+func currentSlashCommandOption(options []SlashCommandOption) int {
+	for index, option := range options {
+		if option.Current {
+			return index
+		}
+	}
+	return 0
 }
 
 func (m model) submitSecretInput() (model, tea.Cmd, bool) {
@@ -586,6 +736,7 @@ func (m *model) resetCommandInput() {
 	m.input.Reset()
 	m.input.Placeholder = defaultPlaceholder
 	m.secretInput = nil
+	m.commandMenu = nil
 	m.commandSelection = 0
 	m.commandDismissed = false
 }
@@ -727,6 +878,9 @@ func (m model) applyRunBatch(batch runBatchMsg) (tea.Model, tea.Cmd) {
 			m.currentModel = update.state.Model
 			m.thinking = update.state.Thinking
 			m.apiKeyConfigured = update.state.APIKeyConfigured
+		}
+		if update.commands != nil {
+			m.commands = slashCommandCatalog(*update.commands)
 		}
 		if update.done {
 			commands = append(commands, m.finishRun(update.err))
@@ -905,7 +1059,7 @@ func (m *model) resizeLayout() {
 	m.viewport.SetWidth(width)
 	chromeHeight := lipgloss.Height(m.headerView(width)) +
 		lipgloss.Height(m.footerView(width)) +
-		lipgloss.Height(m.slashCommandMenuView(width)) +
+		lipgloss.Height(m.commandMenuView(width)) +
 		lipgloss.Height(m.composerView(width))
 	viewportHeight := m.height - chromeHeight
 	m.viewport.SetHeight(max(viewportHeight, minimumViewport))
@@ -1020,6 +1174,7 @@ func (m model) composerView(width int) string {
 func (m model) slashCommandMenuVisible() bool {
 	return !m.running &&
 		m.secretInput == nil &&
+		m.commandMenu == nil &&
 		!m.commandDismissed &&
 		len(m.matchingSlashCommands()) > 0
 }
@@ -1061,13 +1216,20 @@ func (m *model) completeSelectedSlashCommand() {
 		return
 	}
 	value := "/" + command.Name
-	if command.ArgumentHint != "" {
+	if command.ArgumentHint != "" && command.Menu == nil {
 		value += " "
 	}
 	m.input.SetValue(value)
 	m.input.CursorEnd()
 	m.commandSelection = 0
-	m.commandDismissed = command.ArgumentHint == ""
+	m.commandDismissed = command.ArgumentHint == "" || command.Menu != nil
+}
+
+func (m model) commandMenuView(width int) string {
+	if m.commandMenu != nil {
+		return m.slashCommandSelectionMenuView(width)
+	}
+	return m.slashCommandMenuView(width)
 }
 
 func (m model) slashCommandMenuView(width int) string {
@@ -1109,6 +1271,66 @@ func (m model) slashCommandMenuView(width int) string {
 		descriptionWidth := max(innerWidth-lipgloss.Width(leading), 0)
 		description := truncateTerminalText(
 			command.Description,
+			descriptionWidth,
+		)
+		row := leading
+		if descriptionWidth > 0 {
+			row += descriptionStyle.Render(description)
+		}
+		rows = append(rows, rowStyle.Width(innerWidth).Render(row))
+	}
+	return style.Width(width).Render(strings.Join(rows, "\n"))
+}
+
+func (m model) slashCommandSelectionMenuView(width int) string {
+	if m.commandMenu == nil || len(m.commandMenu.frames) == 0 {
+		return ""
+	}
+	frame := m.commandMenu.frames[len(m.commandMenu.frames)-1]
+	if len(frame.menu.Options) == 0 {
+		return ""
+	}
+
+	selection := min(max(frame.selection, 0), len(frame.menu.Options)-1)
+	start := max(selection-maximumCommandRows+1, 0)
+	end := min(start+maximumCommandRows, len(frame.menu.Options))
+	style := slashCommandMenuStyle
+	innerWidth := max(width-style.GetHorizontalFrameSize(), 1)
+	labelWidth := min(max(innerWidth/2, 12), 28)
+	hint := "↑/↓ select · enter choose · esc cancel"
+	if len(m.commandMenu.frames) > 1 {
+		hint = "↑/↓ select · enter choose · esc back"
+	}
+	rows := make([]string, 0, end-start+2)
+	rows = append(
+		rows,
+		labelStyle.Render(strings.ToUpper(frame.menu.Title))+"  "+
+			mutedStyle.Render(hint),
+	)
+	for index := start; index < end; index++ {
+		option := frame.menu.Options[index]
+		prefix := "  "
+		rowStyle := slashCommandRowStyle
+		optionStyle := labelStyle
+		descriptionStyle := mutedStyle
+		if option.Current {
+			prefix = "• "
+		}
+		if index == selection {
+			prefix = "› "
+			rowStyle = slashCommandSelectedStyle
+			optionStyle = slashCommandSelectedStyle
+			descriptionStyle = slashCommandSelectedStyle
+		}
+		label := truncateTerminalText(
+			sanitizeToolDetail(option.Label, false),
+			max(labelWidth-2, 1),
+		)
+		label += strings.Repeat(" ", max(labelWidth-2-lipgloss.Width(label), 0))
+		leading := prefix + optionStyle.Render(label) + "  "
+		descriptionWidth := max(innerWidth-lipgloss.Width(leading), 0)
+		description := truncateTerminalText(
+			sanitizeToolDetail(option.Description, false),
 			descriptionWidth,
 		)
 		row := leading

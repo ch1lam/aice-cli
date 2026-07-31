@@ -92,6 +92,152 @@ func TestInteractiveSessionSlashCommandsNavigateCurrentStore(t *testing.T) {
 	if updated.LeafID != snapshot.Turns[0].ID || len(updated.LeafMoves) != 1 {
 		t.Fatalf("snapshot after checkout = %#v", updated)
 	}
+	checkout := interactiveSlashCommand(t, runner.SlashCommands(), "checkout")
+	if checkout.Menu == nil {
+		t.Fatal("checkout command has no selection menu")
+	}
+	currentFound := false
+	for _, option := range checkout.Menu.Options {
+		if option.Arguments == snapshot.Turns[0].ID && option.Current {
+			currentFound = true
+			break
+		}
+	}
+	if !currentFound {
+		t.Fatalf(
+			"checkout menu does not mark the new active leaf: %#v",
+			checkout.Menu.Options,
+		)
+	}
+}
+
+func TestInteractiveSessionSlashCommandsExposeSelectionMenus(t *testing.T) {
+	t.Parallel()
+
+	workspacePath := t.TempDir()
+	sessionPath := filepath.Join(t.TempDir(), "conversation.jsonl")
+	runPrintTurn(t, workspacePath, sessionPath, "first prompt", "first answer")
+	runPrintTurn(t, workspacePath, sessionPath, "second prompt", "second answer")
+	store, snapshot := openInteractiveCommandStore(
+		t,
+		workspacePath,
+		sessionPath,
+	)
+	defer func() {
+		if err := store.Close(); err != nil {
+			t.Errorf("Close() error = %v", err)
+		}
+	}()
+	selectedModel, exists := deepseekModel(deepseek.ModelV4Pro)
+	if !exists {
+		t.Fatal("DeepSeek V4 Pro test model is unavailable")
+	}
+	runner := &interactiveSession{
+		store: store,
+		model: selectedModel,
+		options: llm.StreamOptions{
+			Thinking: llm.ThinkingLevelHigh,
+		},
+		configuration: config.Config{
+			Provider: string(deepseek.ProviderID),
+		},
+	}
+
+	commands := runner.SlashCommands()
+	for _, name := range []string{
+		"login",
+		"provider",
+		"model",
+		"thinking",
+		"checkout",
+	} {
+		command := interactiveSlashCommand(t, commands, name)
+		if command.ArgumentHint != "" {
+			t.Errorf("/%s still advertises arguments: %q", name, command.ArgumentHint)
+		}
+		if command.Menu == nil || len(command.Menu.Options) == 0 {
+			t.Errorf("/%s has no selection menu: %#v", name, command)
+		}
+	}
+
+	login := interactiveSlashCommand(t, commands, "login")
+	if got := login.Menu.Options[0].Arguments; got != string(deepseek.ProviderID) {
+		t.Errorf("login provider arguments = %q, want deepseek", got)
+	}
+	if login.Menu.Options[0].Menu != nil {
+		t.Fatal("login provider unexpectedly opens a settings scope menu")
+	}
+
+	provider := interactiveSlashCommand(t, commands, "provider")
+	providerOption := provider.Menu.Options[0]
+	if got := providerOption.Arguments; got != string(deepseek.ProviderID) {
+		t.Errorf("provider arguments = %q, want deepseek", got)
+	}
+	if providerOption.Menu != nil {
+		t.Fatal("provider unexpectedly opens a settings scope menu")
+	}
+
+	model := interactiveSlashCommand(t, commands, "model")
+	if got, want := len(model.Menu.Options), len(deepseek.Models()); got != want {
+		t.Fatalf("model options = %d, want %d", got, want)
+	}
+	proFound := false
+	for _, option := range model.Menu.Options {
+		if option.Description != deepseek.ModelV4Pro {
+			continue
+		}
+		proFound = true
+		if !option.Current {
+			t.Error("current model is not marked in the model menu")
+		}
+		if option.Arguments != deepseek.ModelV4Pro {
+			t.Errorf("model arguments = %q, want V4 Pro", option.Arguments)
+		}
+		if option.Menu != nil {
+			t.Error("model unexpectedly opens a settings scope menu")
+		}
+	}
+	if !proFound {
+		t.Fatalf("model menu = %#v, want V4 Pro", model.Menu.Options)
+	}
+
+	thinking := interactiveSlashCommand(t, commands, "thinking")
+	highFound := false
+	for _, option := range thinking.Menu.Options {
+		if option.Label != "High" {
+			continue
+		}
+		highFound = true
+		if !option.Current {
+			t.Error("current thinking level is not marked")
+		}
+		if option.Arguments != "high" {
+			t.Errorf("thinking arguments = %q, want high", option.Arguments)
+		}
+		if option.Menu != nil {
+			t.Error("thinking unexpectedly opens a settings scope menu")
+		}
+	}
+	if !highFound {
+		t.Fatalf("thinking menu = %#v, want High", thinking.Menu.Options)
+	}
+
+	checkout := interactiveSlashCommand(t, commands, "checkout")
+	if got, want := len(checkout.Menu.Options), len(snapshot.Order)+1; got != want {
+		t.Fatalf("checkout options = %d, want root plus %d nodes", got, len(snapshot.Order))
+	}
+	if checkout.Menu.Options[0].Arguments != "root" {
+		t.Errorf("first checkout option = %#v, want Session root", checkout.Menu.Options[0])
+	}
+	activeFound := false
+	for _, option := range checkout.Menu.Options {
+		if option.Arguments == snapshot.LeafID && option.Current {
+			activeFound = true
+		}
+	}
+	if !activeFound {
+		t.Fatalf("checkout menu does not mark active leaf %q", snapshot.LeafID)
+	}
 }
 
 func TestInteractiveSessionSlashCommandCompactsAndReloadsHistory(
@@ -123,7 +269,7 @@ func TestInteractiveSessionSlashCommandCompactsAndReloadsHistory(
 		stopReason: llm.StopReasonStop,
 	}
 	application := &application{dependencies: dependencies{
-		loadConfig: func(string) (config.Config, error) {
+		loadConfig: func() (config.Config, error) {
 			return config.Config{DeepSeekAPIKey: "test-key"}, nil
 		},
 		newModel: func(config.Config) (agent.Model, error) {
@@ -205,25 +351,19 @@ func TestInteractiveSessionSlashCommandsPersistRuntimeSettings(t *testing.T) {
 	t.Parallel()
 
 	type savedSetting struct {
-		workspace string
-		scope     config.Scope
-		setting   config.Setting
-		value     string
+		setting config.Setting
+		value   string
 	}
 	var saved []savedSetting
 	runner := &interactiveSession{
 		application: &application{dependencies: dependencies{
 			saveSetting: func(
-				workspace string,
-				scope config.Scope,
 				setting config.Setting,
 				value string,
 			) error {
 				saved = append(saved, savedSetting{
-					workspace: workspace,
-					scope:     scope,
-					setting:   setting,
-					value:     value,
+					setting: setting,
+					value:   value,
 				})
 				return nil
 			},
@@ -234,12 +374,10 @@ func TestInteractiveSessionSlashCommandsPersistRuntimeSettings(t *testing.T) {
 			Model:          deepseek.ModelV4Flash,
 			DeepSeekAPIKey: "secret",
 			Paths: config.Paths{
-				GlobalSettings:  "/global/settings.json",
-				ProjectSettings: "/workspace/.aice/settings.json",
-				GlobalAuth:      "/global/auth.json",
+				GlobalSettings: "/global/settings.json",
+				GlobalAuth:     "/global/auth.json",
 			},
 		},
-		workspace: "/workspace",
 	}
 
 	settings, err := runner.RunSlashCommand(
@@ -254,7 +392,7 @@ func TestInteractiveSessionSlashCommandsPersistRuntimeSettings(t *testing.T) {
 		"Model: " + deepseek.ModelV4Flash,
 		"Thinking: default",
 		"API key: configured",
-		"/workspace/.aice/settings.json",
+		"Global settings: /global/settings.json",
 	} {
 		if !strings.Contains(settings, want) {
 			t.Errorf("/settings output = %q, want %q", settings, want)
@@ -265,14 +403,14 @@ func TestInteractiveSessionSlashCommandsPersistRuntimeSettings(t *testing.T) {
 		t.Context(),
 		tui.SlashCommandRequest{
 			Name:      "model",
-			Arguments: "--local " + deepseek.ModelV4Pro,
+			Arguments: deepseek.ModelV4Pro,
 		},
 	)
 	if err != nil {
 		t.Fatalf("/model error = %v", err)
 	}
-	if !strings.Contains(output, "project settings") {
-		t.Errorf("/model output = %q, want project scope", output)
+	if !strings.Contains(output, "global settings") {
+		t.Errorf("/model output = %q, want global settings", output)
 	}
 	state := runner.RuntimeState()
 	if state.Model.ID != deepseek.ModelV4Pro {
@@ -296,16 +434,12 @@ func TestInteractiveSessionSlashCommandsPersistRuntimeSettings(t *testing.T) {
 
 	wantSaved := []savedSetting{
 		{
-			workspace: "/workspace",
-			scope:     config.ScopeProject,
-			setting:   config.SettingModel,
-			value:     deepseek.ModelV4Pro,
+			setting: config.SettingModel,
+			value:   deepseek.ModelV4Pro,
 		},
 		{
-			workspace: "/workspace",
-			scope:     config.ScopeGlobal,
-			setting:   config.SettingThinking,
-			value:     "off",
+			setting: config.SettingThinking,
+			value:   "off",
 		},
 	}
 	if !reflect.DeepEqual(saved, wantSaved) {
@@ -321,8 +455,6 @@ func TestInteractiveSessionConfigurationCommandsRejectUnsupportedValues(
 	runner := &interactiveSession{
 		application: &application{dependencies: dependencies{
 			saveSetting: func(
-				string,
-				config.Scope,
 				config.Setting,
 				string,
 			) error {
@@ -332,7 +464,6 @@ func TestInteractiveSessionConfigurationCommandsRejectUnsupportedValues(
 		}},
 		model:         deepseek.DefaultModel(),
 		configuration: config.Config{Provider: string(deepseek.ProviderID)},
-		workspace:     "/workspace",
 	}
 	tests := []struct {
 		name    string
@@ -364,10 +495,10 @@ func TestInteractiveSessionConfigurationCommandsRejectUnsupportedValues(
 			want: "unsupported thinking level",
 		},
 		{
-			name: "scope",
+			name: "extra value",
 			request: tui.SlashCommandRequest{
 				Name:      "model",
-				Arguments: "--global " + deepseek.ModelV4Pro,
+				Arguments: "extra " + deepseek.ModelV4Pro,
 			},
 			want: "usage: /model",
 		},
@@ -392,7 +523,7 @@ func TestInteractiveSessionLoginCanRetryAfterPersistenceFailure(t *testing.T) {
 	wantErr := errors.New("credential write interrupted")
 	runner := &interactiveSession{
 		application: &application{dependencies: dependencies{
-			saveAPIKey: func(string, string) (string, error) {
+			saveAPIKey: func(string) (string, error) {
 				saveAttempts++
 				if saveAttempts == 1 {
 					return "", wantErr
@@ -411,7 +542,6 @@ func TestInteractiveSessionLoginCanRetryAfterPersistenceFailure(t *testing.T) {
 			Provider: string(deepseek.ProviderID),
 			Model:    deepseek.ModelV4Flash,
 		},
-		workspace: "/workspace",
 	}
 	request := tui.SlashCommandRequest{
 		Name:   "login",
@@ -475,4 +605,19 @@ func assertInteractiveTextMessage(
 		t.Fatalf("message = %T, want standard LLM message", message)
 	}
 	assertTextMessage(t, standard, role, text)
+}
+
+func interactiveSlashCommand(
+	t *testing.T,
+	commands []tui.SlashCommand,
+	name string,
+) tui.SlashCommand {
+	t.Helper()
+	for _, command := range commands {
+		if command.Name == name {
+			return command
+		}
+	}
+	t.Fatalf("slash command /%s not found: %#v", name, commands)
+	return tui.SlashCommand{}
 }

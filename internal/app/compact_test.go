@@ -187,7 +187,7 @@ func TestApplicationCompactDoesNotCreateMissingSession(t *testing.T) {
 	workspace := t.TempDir()
 	sessionPath := filepath.Join(t.TempDir(), "missing.jsonl")
 	command, err := newCommand(dependencies{
-		loadConfig: func(string) (config.Config, error) {
+		loadConfig: func() (config.Config, error) {
 			t.Fatal("configuration loaded for missing Session")
 			return config.Config{}, nil
 		},
@@ -292,7 +292,7 @@ func TestApplicationCompactRejectsNothingToCompactBeforeCreatingModel(
 	runPrintTurn(t, workspace, sessionPath, "only prompt", "only answer")
 
 	command, err := newCommand(dependencies{
-		loadConfig: func(string) (config.Config, error) {
+		loadConfig: func() (config.Config, error) {
 			t.Fatal("configuration loaded with nothing to compact")
 			return config.Config{}, nil
 		},
@@ -406,7 +406,7 @@ func runPrintTurn(
 
 	model := &recordingModel{response: response}
 	command, err := newCommand(dependencies{
-		loadConfig: func(string) (config.Config, error) {
+		loadConfig: func() (config.Config, error) {
 			return config.Config{DeepSeekAPIKey: "test-key"}, nil
 		},
 		newModel: func(config.Config) (agent.Model, error) {
@@ -437,7 +437,7 @@ func newCompactTestCommand(
 	t.Helper()
 
 	command, err := newCommand(dependencies{
-		loadConfig: func(string) (config.Config, error) {
+		loadConfig: func() (config.Config, error) {
 			return config.Config{DeepSeekAPIKey: "test-key"}, nil
 		},
 		newModel: func(config.Config) (agent.Model, error) {

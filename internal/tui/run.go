@@ -111,12 +111,13 @@ type runRequest struct {
 }
 
 type runUpdate struct {
-	event  agent.AgentEvent
-	cancel context.CancelFunc
-	err    error
-	output string
-	state  *RuntimeState
-	done   bool
+	event    agent.AgentEvent
+	cancel   context.CancelFunc
+	err      error
+	output   string
+	state    *RuntimeState
+	commands *[]SlashCommand
+	done     bool
 }
 
 func serveRuns(
@@ -172,12 +173,18 @@ func runOne(ctx context.Context, runner Runner, request runRequest) {
 			state = &snapshot
 		}
 	}
+	var commands *[]SlashCommand
+	if commandRunner, ok := runner.(SlashCommandRunner); ok {
+		snapshot := commandRunner.SlashCommands()
+		commands = &snapshot
+	}
 	cancel()
 	_ = sendRunUpdate(ctx, request.updates, runUpdate{
-		err:    err,
-		output: output,
-		state:  state,
-		done:   true,
+		err:      err,
+		output:   output,
+		state:    state,
+		commands: commands,
+		done:     true,
 	})
 }
 

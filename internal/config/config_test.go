@@ -11,7 +11,7 @@ import (
 	"github.com/ch1lam/aice-cli/internal/llm"
 )
 
-func TestLoadFilesAppliesLayeredPrecedence(t *testing.T) {
+func TestLoadFilesAppliesGlobalAndEnvironmentPrecedence(t *testing.T) {
 	t.Parallel()
 
 	root := t.TempDir()
@@ -21,9 +21,14 @@ func TestLoadFilesAppliesLayeredPrecedence(t *testing.T) {
 		"model":    "global-model",
 		"thinking": "low",
 	})
-	writeJSON(t, paths.ProjectSettings, map[string]any{
+	writeJSON(t, filepath.Join(
+		root,
+		"workspace",
+		".aice",
+		"settings.json",
+	), map[string]any{
+		"provider": "project-provider",
 		"model":    "project-model",
-		"thinking": "medium",
 	})
 	writeJSON(t, paths.GlobalAuth, map[string]any{
 		"deepseek_api_key": "file-key",
@@ -155,7 +160,7 @@ func TestLoadFilesRejectsInvalidFiles(t *testing.T) {
 	}
 }
 
-func TestSaveSettingFileKeepsScopesIndependent(t *testing.T) {
+func TestSaveSettingFileUpdatesGlobalSettings(t *testing.T) {
 	t.Parallel()
 
 	paths := testPaths(t.TempDir())
@@ -167,34 +172,31 @@ func TestSaveSettingFileKeepsScopesIndependent(t *testing.T) {
 
 	if err := config.SaveSettingFile(
 		paths,
-		config.ScopeProject,
 		config.SettingModel,
-		"project-model",
+		"updated-model",
 	); err != nil {
 		t.Fatalf("SaveSettingFile() error = %v", err)
 	}
 
 	var global config.Settings
 	readJSON(t, paths.GlobalSettings, &global)
-	if global.Model != "global-model" ||
-		global.Thinking != llm.ThinkingLevelLow {
-		t.Errorf("global settings = %#v, want unchanged", global)
-	}
-	var project config.Settings
-	readJSON(t, paths.ProjectSettings, &project)
-	if project != (config.Settings{Model: "project-model"}) {
+	if global != (config.Settings{
+		Provider: "deepseek",
+		Model:    "updated-model",
+		Thinking: llm.ThinkingLevelLow,
+	}) {
 		t.Errorf(
-			"project settings = %#v, want only project model",
-			project,
+			"global settings = %#v, want preserved provider and thinking",
+			global,
 		)
 	}
 
-	info, err := os.Stat(paths.ProjectSettings)
+	info, err := os.Stat(paths.GlobalSettings)
 	if err != nil {
 		t.Fatalf("Stat() error = %v", err)
 	}
 	if got := info.Mode().Perm(); got != 0o600 {
-		t.Errorf("project settings mode = %#o, want 0600", got)
+		t.Errorf("global settings mode = %#o, want 0600", got)
 	}
 }
 
@@ -204,28 +206,18 @@ func TestSaveSettingFileValidatesInput(t *testing.T) {
 	paths := testPaths(t.TempDir())
 	tests := []struct {
 		name    string
-		scope   config.Scope
 		setting config.Setting
 		value   string
 		want    string
 	}{
 		{
-			name:    "scope",
-			scope:   "session",
-			setting: config.SettingModel,
-			value:   "model",
-			want:    "unsupported settings scope",
-		},
-		{
 			name:    "setting",
-			scope:   config.ScopeGlobal,
 			setting: "temperature",
 			value:   "1",
 			want:    "unsupported setting",
 		},
 		{
 			name:    "thinking",
-			scope:   config.ScopeGlobal,
 			setting: config.SettingThinking,
 			value:   "extreme",
 			want:    "unsupported thinking level",
@@ -238,7 +230,6 @@ func TestSaveSettingFileValidatesInput(t *testing.T) {
 
 			err := config.SaveSettingFile(
 				paths,
-				tt.scope,
 				tt.setting,
 				tt.value,
 			)
@@ -262,9 +253,9 @@ func TestSaveDeepSeekAPIKeyFileWritesGlobalCredentialOnly(t *testing.T) {
 	if got := auth["deepseek_api_key"]; got != "test-key" {
 		t.Errorf("saved API key = %q, want test-key", got)
 	}
-	if _, err := os.Stat(paths.ProjectSettings); !os.IsNotExist(err) {
+	if _, err := os.Stat(paths.GlobalSettings); !os.IsNotExist(err) {
 		t.Fatalf(
-			"project settings stat error = %v, want not exist",
+			"global settings stat error = %v, want not exist",
 			err,
 		)
 	}
@@ -300,9 +291,8 @@ func TestLoadFilesRejectsNilLookup(t *testing.T) {
 
 func testPaths(root string) config.Paths {
 	return config.Paths{
-		GlobalSettings:  filepath.Join(root, "global", "settings.json"),
-		ProjectSettings: filepath.Join(root, "project", ".aice", "settings.json"),
-		GlobalAuth:      filepath.Join(root, "global", "auth.json"),
+		GlobalSettings: filepath.Join(root, "global", "settings.json"),
+		GlobalAuth:     filepath.Join(root, "global", "auth.json"),
 	}
 }
 

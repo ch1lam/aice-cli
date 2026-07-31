@@ -100,7 +100,6 @@ func (a *application) compactSession(
 	}
 	summary, usage, err := a.generateCompactionSummary(
 		ctx,
-		snapshot.Header.WorkingDirectory,
 		preparation.MessagesToSummarize,
 	)
 	if err != nil {
@@ -137,7 +136,6 @@ func (a *application) compactSession(
 
 func (a *application) generateCompactionSummary(
 	ctx context.Context,
-	workspace string,
 	messages []llm.AgentMessage,
 ) (string, llm.Usage, error) {
 	encoded, err := llm.MarshalAgentMessages(messages)
@@ -156,7 +154,7 @@ func (a *application) generateCompactionSummary(
 			err,
 		)
 	}
-	configured, err := a.newConfiguredModel(workspace)
+	configured, err := a.newConfiguredModel()
 	if err != nil {
 		return "", llm.Usage{}, err
 	}

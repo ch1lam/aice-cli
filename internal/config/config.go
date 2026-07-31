@@ -38,14 +38,6 @@ const (
 	settingsKeyThinking = "thinking"
 )
 
-// Scope identifies one persistent settings layer.
-type Scope string
-
-const (
-	ScopeGlobal  Scope = "global"
-	ScopeProject Scope = "project"
-)
-
 // Setting identifies one setting that can be persisted by a command.
 type Setting string
 
@@ -55,8 +47,7 @@ const (
 	SettingThinking Setting = settingsKeyThinking
 )
 
-// Settings contains non-secret model defaults. Empty fields inherit the next
-// lower-precedence layer.
+// Settings contains non-secret global model defaults.
 type Settings struct {
 	Provider string            `json:"provider,omitempty"`
 	Model    string            `json:"model,omitempty"`
@@ -65,9 +56,8 @@ type Settings struct {
 
 // Paths identifies all files used to resolve configuration.
 type Paths struct {
-	GlobalSettings  string
-	ProjectSettings string
-	GlobalAuth      string
+	GlobalSettings string
+	GlobalAuth     string
 }
 
 // Config contains the effective process settings needed by AICE.
@@ -87,38 +77,30 @@ type authFile struct {
 // LookupEnv resolves one environment variable.
 type LookupEnv func(key string) (string, bool)
 
-// Load resolves configuration for one workspace.
-func Load(workspace string) (Config, error) {
-	paths, err := DefaultPaths(workspace)
+// Load resolves global configuration.
+func Load() (Config, error) {
+	paths, err := DefaultPaths()
 	if err != nil {
 		return Config{}, err
 	}
 	return LoadFiles(paths, os.LookupEnv)
 }
 
-// DefaultPaths returns the Pi-inspired global and project configuration paths.
-func DefaultPaths(workspace string) (Paths, error) {
-	if strings.TrimSpace(workspace) == "" {
-		return Paths{}, fmt.Errorf("config: workspace is required")
-	}
-	workspacePath, err := filepath.Abs(workspace)
-	if err != nil {
-		return Paths{}, fmt.Errorf("config: resolve workspace: %w", err)
-	}
+// DefaultPaths returns AICE's global configuration paths.
+func DefaultPaths() (Paths, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return Paths{}, fmt.Errorf("config: resolve home directory: %w", err)
 	}
 	globalDir := filepath.Join(home, ".aice")
 	return Paths{
-		GlobalSettings:  filepath.Join(globalDir, settingsFileName),
-		ProjectSettings: filepath.Join(workspacePath, ".aice", settingsFileName),
-		GlobalAuth:      filepath.Join(globalDir, authFileName),
+		GlobalSettings: filepath.Join(globalDir, settingsFileName),
+		GlobalAuth:     filepath.Join(globalDir, authFileName),
 	}, nil
 }
 
 // LoadFiles resolves explicit files with the precedence:
-// environment > project settings > global settings.
+// environment > global settings.
 // Credentials are global-only and may be overridden by the environment.
 func LoadFiles(paths Paths, lookup LookupEnv) (Config, error) {
 	if lookup == nil {
@@ -155,24 +137,18 @@ func LoadFiles(paths Paths, lookup LookupEnv) (Config, error) {
 	}, nil
 }
 
-// SaveSetting updates one settings file without copying inherited values into
-// that scope.
-func SaveSetting(
-	workspace string,
-	scope Scope,
-	setting Setting,
-	value string,
-) error {
-	paths, err := DefaultPaths(workspace)
+// SaveSetting updates the global settings file.
+func SaveSetting(setting Setting, value string) error {
+	paths, err := DefaultPaths()
 	if err != nil {
 		return err
 	}
-	return SaveSettingFile(paths, scope, setting, value)
+	return SaveSettingFile(paths, setting, value)
 }
 
 // SaveDeepSeekAPIKey stores the DeepSeek credential in the global auth file.
-func SaveDeepSeekAPIKey(workspace string, apiKey string) (string, error) {
-	paths, err := DefaultPaths(workspace)
+func SaveDeepSeekAPIKey(apiKey string) (string, error) {
+	paths, err := DefaultPaths()
 	if err != nil {
 		return "", err
 	}
@@ -183,7 +159,7 @@ func SaveDeepSeekAPIKey(workspace string, apiKey string) (string, error) {
 }
 
 // SaveDeepSeekAPIKeyFile stores one credential in an explicit global auth
-// file. Project settings never receive credentials.
+// file. Credentials are never stored in settings.
 func SaveDeepSeekAPIKeyFile(paths Paths, apiKey string) error {
 	if err := paths.validate(); err != nil {
 		return err
@@ -203,21 +179,16 @@ func SaveDeepSeekAPIKeyFile(paths Paths, apiKey string) error {
 	return nil
 }
 
-// SaveSettingFile updates one explicit settings layer.
+// SaveSettingFile updates one explicit global settings file.
 func SaveSettingFile(
 	paths Paths,
-	scope Scope,
 	setting Setting,
 	value string,
 ) error {
 	if err := paths.validate(); err != nil {
 		return err
 	}
-	path, err := paths.settingsPath(scope)
-	if err != nil {
-		return err
-	}
-	settings, _, err := readSettings(path)
+	settings, _, err := readSettings(paths.GlobalSettings)
 	if err != nil {
 		return err
 	}
@@ -236,8 +207,8 @@ func SaveSettingFile(
 	if err := settings.validate(); err != nil {
 		return err
 	}
-	if err := writeJSON(path, settings); err != nil {
-		return fmt.Errorf("config: write %s settings: %w", scope, err)
+	if err := writeJSON(paths.GlobalSettings, settings); err != nil {
+		return fmt.Errorf("config: write global settings: %w", err)
 	}
 	return nil
 }
@@ -246,28 +217,15 @@ func loadSettings(paths Paths, lookup LookupEnv) (Settings, error) {
 	registry := viper.New()
 	registry.SetConfigType("json")
 
-	loaded := false
-	for _, path := range []string{
-		paths.GlobalSettings,
-		paths.ProjectSettings,
-	} {
-		_, data, err := readSettings(path)
-		if err != nil {
-			return Settings{}, err
-		}
-		if data == nil {
-			continue
-		}
-		if !loaded {
-			err = registry.ReadConfig(bytes.NewReader(data))
-			loaded = true
-		} else {
-			err = registry.MergeConfig(bytes.NewReader(data))
-		}
-		if err != nil {
+	_, data, err := readSettings(paths.GlobalSettings)
+	if err != nil {
+		return Settings{}, err
+	}
+	if data != nil {
+		if err := registry.ReadConfig(bytes.NewReader(data)); err != nil {
 			return Settings{}, fmt.Errorf(
-				"config: merge settings %s: %w",
-				path,
+				"config: read settings %s: %w",
+				paths.GlobalSettings,
 				err,
 			)
 		}
@@ -391,26 +349,14 @@ func writeJSON(path string, value any) (returnErr error) {
 
 func (p Paths) validate() error {
 	for name, path := range map[string]string{
-		"global settings":  p.GlobalSettings,
-		"project settings": p.ProjectSettings,
-		"global auth":      p.GlobalAuth,
+		"global settings": p.GlobalSettings,
+		"global auth":     p.GlobalAuth,
 	} {
 		if strings.TrimSpace(path) == "" {
 			return fmt.Errorf("config: %s path is required", name)
 		}
 	}
 	return nil
-}
-
-func (p Paths) settingsPath(scope Scope) (string, error) {
-	switch scope {
-	case ScopeGlobal:
-		return p.GlobalSettings, nil
-	case ScopeProject:
-		return p.ProjectSettings, nil
-	default:
-		return "", fmt.Errorf("config: unsupported settings scope %q", scope)
-	}
 }
 
 func (s Settings) validate() error {

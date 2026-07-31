@@ -1649,7 +1649,7 @@ func TestModelSlashCommandMenuCompletesArgumentCommand(t *testing.T) {
 	}
 }
 
-func TestModelSecretSlashCommandHidesAndSubmitsSecret(t *testing.T) {
+func TestModelLoginSelectsProviderThenHidesAndSubmitsSecret(t *testing.T) {
 	t.Parallel()
 
 	requests := make(chan runRequest, 1)
@@ -1659,8 +1659,14 @@ func TestModelSecretSlashCommandHidesAndSubmitsSecret(t *testing.T) {
 		SlashCommand{
 			Name:         "login",
 			Description:  "Store a provider API key",
-			ArgumentHint: "[provider]",
 			SecretPrompt: "DeepSeek API key",
+			Menu: &SlashCommandMenu{
+				Title: "Select provider",
+				Options: []SlashCommandOption{{
+					Label:     "DeepSeek",
+					Arguments: "deepseek",
+				}},
+			},
 		},
 	)
 	current = updateModel(t, current, tea.WindowSizeMsg{
@@ -1669,11 +1675,27 @@ func TestModelSecretSlashCommandHidesAndSubmitsSecret(t *testing.T) {
 	})
 	current.input.SetValue("/login")
 
-	entering, _, handled := current.handleKey(tea.KeyPressMsg{
+	selecting, command, handled := current.handleKey(tea.KeyPressMsg{
 		Code: tea.KeyEnter,
 	})
-	if !handled || entering.secretInput == nil {
-		t.Fatal("/login did not enter secret input mode")
+	if !handled || command != nil || selecting.commandMenu == nil {
+		t.Fatal("/login did not open the provider menu")
+	}
+	if selecting.secretInput != nil {
+		t.Fatal("/login requested the API key before provider selection")
+	}
+	if menu := selecting.commandMenuView(80); !strings.Contains(
+		menu,
+		"SELECT PROVIDER",
+	) || !strings.Contains(menu, "DeepSeek") {
+		t.Fatalf("provider selection menu = %q", menu)
+	}
+
+	entering, command, handled := selecting.handleKey(tea.KeyPressMsg{
+		Code: tea.KeyEnter,
+	})
+	if !handled || command == nil || entering.secretInput == nil {
+		t.Fatal("provider selection did not enter secret input mode")
 	}
 
 	const secret = "secret-value"
@@ -1701,6 +1723,7 @@ func TestModelSecretSlashCommandHidesAndSubmitsSecret(t *testing.T) {
 	request := <-requests
 	if request.command == nil ||
 		request.command.Name != "login" ||
+		request.command.Arguments != "deepseek" ||
 		request.command.Secret != secret {
 		t.Fatalf("login request = %#v, want hidden secret", request.command)
 	}
@@ -1726,10 +1749,20 @@ func TestModelSecretSlashCommandCanBeCancelledAndRestarted(t *testing.T) {
 			Name:         "login",
 			Description:  "Store a provider API key",
 			SecretPrompt: "DeepSeek API key",
+			Menu: &SlashCommandMenu{
+				Title: "Select provider",
+				Options: []SlashCommandOption{{
+					Label:     "DeepSeek",
+					Arguments: "deepseek",
+				}},
+			},
 		},
 	)
 	current.input.SetValue("/login")
-	entering, _, _ := current.handleKey(tea.KeyPressMsg{
+	selecting, _, _ := current.handleKey(tea.KeyPressMsg{
+		Code: tea.KeyEnter,
+	})
+	entering, _, _ := selecting.handleKey(tea.KeyPressMsg{
 		Code: tea.KeyEnter,
 	})
 	entering.input.SetValue("discarded-secret")
@@ -1755,11 +1788,191 @@ func TestModelSecretSlashCommandCanBeCancelledAndRestarted(t *testing.T) {
 	}
 
 	cancelled.input.SetValue("/login")
-	restarted, _, handled := cancelled.handleKey(tea.KeyPressMsg{
+	reselecting, _, handled := cancelled.handleKey(tea.KeyPressMsg{
+		Code: tea.KeyEnter,
+	})
+	if !handled || reselecting.commandMenu == nil {
+		t.Fatal("/login could not reopen provider selection after cancellation")
+	}
+	restarted, _, handled := reselecting.handleKey(tea.KeyPressMsg{
 		Code: tea.KeyEnter,
 	})
 	if !handled || restarted.secretInput == nil {
 		t.Fatal("/login could not be restarted after cancellation")
+	}
+}
+
+func TestModelSlashCommandSelectionMenuRunsSelectedValue(
+	t *testing.T,
+) {
+	t.Parallel()
+
+	requests := make(chan runRequest, 1)
+	current := newModel(
+		requests,
+		make(chan struct{}),
+		SlashCommand{
+			Name:        "model",
+			Description: "Choose a model",
+			Menu: &SlashCommandMenu{
+				Title: "Select model",
+				Options: []SlashCommandOption{
+					{
+						Label:       "DeepSeek V4 Flash",
+						Description: "deepseek-v4-flash",
+						Arguments:   "deepseek-v4-flash",
+					},
+					{
+						Label:       "DeepSeek V4 Pro",
+						Description: "deepseek-v4-pro",
+						Arguments:   "deepseek-v4-pro",
+						Current:     true,
+					},
+				},
+			},
+		},
+	)
+	current = updateModel(t, current, tea.WindowSizeMsg{Width: 80, Height: 24})
+	current.input.SetValue("/model")
+
+	selectingModel, command, handled := current.handleKey(tea.KeyPressMsg{
+		Code: tea.KeyEnter,
+	})
+	if !handled || command != nil || selectingModel.commandMenu == nil {
+		t.Fatal("/model did not open its model menu")
+	}
+	frame := selectingModel.commandMenu.frames[0]
+	if frame.selection != 1 {
+		t.Fatalf("initial model selection = %d, want current model at index 1", frame.selection)
+	}
+	if menu := selectingModel.commandMenuView(80); !strings.Contains(
+		menu,
+		"SELECT MODEL",
+	) || !strings.Contains(menu, "DeepSeek V4 Pro") {
+		t.Fatalf("model selection menu = %q", menu)
+	}
+
+	starting, command, handled := selectingModel.handleKey(
+		tea.KeyPressMsg{Code: tea.KeyEnter},
+	)
+	if !handled || command == nil || !starting.running {
+		t.Fatal("model selection did not run /model")
+	}
+	if message, ok := command().(runStartedMsg); !ok || message.updates == nil {
+		t.Fatalf("start command message = %T, want runStartedMsg", command())
+	}
+	request := <-requests
+	if request.command == nil ||
+		*request.command != (SlashCommandRequest{
+			Name:      "model",
+			Arguments: "deepseek-v4-pro",
+		}) {
+		t.Fatalf("model request = %#v", request.command)
+	}
+	transcript := starting.transcriptView()
+	if !strings.Contains(transcript, "/model") {
+		t.Fatalf("model transcript = %q, want submitted command", transcript)
+	}
+	if strings.Contains(transcript, "deepseek-v4-pro") {
+		t.Fatalf("model transcript exposes internal menu arguments: %q", transcript)
+	}
+}
+
+func TestNestedSlashCommandSelectionMenuEscGoesBackThenCancels(
+	t *testing.T,
+) {
+	t.Parallel()
+
+	requests := make(chan runRequest, 1)
+	current := newModel(
+		requests,
+		make(chan struct{}),
+		SlashCommand{
+			Name: "configure",
+			Menu: &SlashCommandMenu{
+				Title: "Select value",
+				Options: []SlashCommandOption{{
+					Label: "Primary",
+					Menu: &SlashCommandMenu{
+						Title: "Select variant",
+						Options: []SlashCommandOption{{
+							Label:     "Default",
+							Arguments: "primary-default",
+						}},
+					},
+				}},
+			},
+		},
+	)
+	current.input.SetValue("/configure")
+	selectingLevel, _, _ := current.handleKey(tea.KeyPressMsg{
+		Code: tea.KeyEnter,
+	})
+	selectingScope, _, _ := selectingLevel.handleKey(tea.KeyPressMsg{
+		Code: tea.KeyEnter,
+	})
+
+	back, command, handled := selectingScope.handleKey(tea.KeyPressMsg{
+		Code: tea.KeyEscape,
+	})
+	if !handled || command != nil || len(back.commandMenu.frames) != 1 {
+		t.Fatal("first Esc did not return to the parent menu")
+	}
+	cancelled, command, handled := back.handleKey(tea.KeyPressMsg{
+		Code: tea.KeyEscape,
+	})
+	if !handled || command == nil || cancelled.commandMenu != nil {
+		t.Fatal("second Esc did not cancel the command menu")
+	}
+	if cancelled.input.Value() != "" || !cancelled.input.Focused() {
+		t.Fatal("cancelled command menu did not restore the composer")
+	}
+	select {
+	case request := <-requests:
+		t.Fatalf("cancelled menu reached run controller: %#v", request)
+	default:
+	}
+}
+
+func TestModelSlashCommandSelectionMenuRejectsTypedArguments(t *testing.T) {
+	t.Parallel()
+
+	requests := make(chan runRequest, 1)
+	current := newModel(
+		requests,
+		make(chan struct{}),
+		SlashCommand{
+			Name: "model",
+			Menu: &SlashCommandMenu{
+				Title: "Select model",
+				Options: []SlashCommandOption{{
+					Label:     "DeepSeek V4 Pro",
+					Arguments: "deepseek-v4-pro",
+				}},
+			},
+		},
+	)
+	current.input.SetValue("/model deepseek-v4-pro")
+
+	updated, command, handled := current.handleKey(tea.KeyPressMsg{
+		Code: tea.KeyEnter,
+	})
+	if !handled || command != nil {
+		t.Fatal("typed menu arguments should produce a local usage error")
+	}
+	if updated.commandMenu != nil {
+		t.Fatal("typed arguments unexpectedly opened the selection menu")
+	}
+	if transcript := updated.transcriptView(); !strings.Contains(
+		transcript,
+		"Usage: /model",
+	) {
+		t.Fatalf("typed argument error = %q, want menu-only usage", transcript)
+	}
+	select {
+	case request := <-requests:
+		t.Fatalf("typed menu arguments reached run controller: %#v", request)
+	default:
 	}
 }
 
