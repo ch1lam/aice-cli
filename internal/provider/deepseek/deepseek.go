@@ -6,16 +6,20 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/ch1lam/aice-cli/internal/api/anthropic"
+	"github.com/ch1lam/aice-cli/internal/api/openairesponses"
 	"github.com/ch1lam/aice-cli/internal/llm"
 )
 
 const (
 	// ProviderID is DeepSeek's provider identifier in AICE requests.
 	ProviderID llm.ProviderID = "deepseek"
-	// BaseURL is DeepSeek's Anthropic-compatible API root.
-	BaseURL = "https://api.deepseek.com/anthropic"
+	// BaseURL is DeepSeek's OpenAI-compatible API root.
+	BaseURL = "https://api.deepseek.com"
+	// AnthropicBaseURL is DeepSeek's Anthropic-compatible API root.
+	AnthropicBaseURL = BaseURL + "/anthropic"
 
 	ModelV4Flash = "deepseek-v4-flash"
 	ModelV4Pro   = "deepseek-v4-pro"
@@ -28,29 +32,39 @@ type Config struct {
 	HTTPClient *http.Client
 }
 
-// Provider applies DeepSeek compatibility rules before delegating to the
-// shared Anthropic Messages adapter.
+// Provider applies DeepSeek compatibility rules before delegating to the wire
+// protocol selected by the request model.
 type Provider struct {
-	adapter *anthropic.Adapter
+	anthropicAdapter *anthropic.Adapter
+	responsesAdapter *openairesponses.Adapter
 }
 
 // New constructs a DeepSeek provider. An empty BaseURL selects the official
-// Anthropic-compatible endpoint.
+// protocol endpoints. A custom Anthropic endpoint ending in /anthropic is also
+// used to derive the sibling Responses endpoint.
 func New(config Config) (*Provider, error) {
-	baseURL := config.BaseURL
-	if baseURL == "" {
-		baseURL = BaseURL
-	}
+	anthropicBaseURL, responsesBaseURL := protocolBaseURLs(config.BaseURL)
 
-	adapter, err := anthropic.New(anthropic.Config{
+	anthropicAdapter, err := anthropic.New(anthropic.Config{
 		APIKey:     config.APIKey,
-		BaseURL:    baseURL,
+		BaseURL:    anthropicBaseURL,
 		HTTPClient: config.HTTPClient,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("deepseek: configure Anthropic adapter: %w", err)
 	}
-	return &Provider{adapter: adapter}, nil
+	responsesAdapter, err := openairesponses.New(openairesponses.Config{
+		APIKey:     config.APIKey,
+		BaseURL:    responsesBaseURL,
+		HTTPClient: config.HTTPClient,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("deepseek: configure Responses adapter: %w", err)
+	}
+	return &Provider{
+		anthropicAdapter: anthropicAdapter,
+		responsesAdapter: responsesAdapter,
+	}, nil
 }
 
 // Models returns the DeepSeek models supported by this provider.
@@ -72,24 +86,38 @@ func (p *Provider) Stream(ctx context.Context, request llm.Request) (llm.Stream,
 			ProviderID,
 		)
 	}
-	if request.Model.API != anthropic.API {
-		return nil, fmt.Errorf(
-			"deepseek: model API %q does not match %q",
-			request.Model.API,
-			anthropic.API,
-		)
-	}
 	if request.Model.ID != ModelV4Flash && request.Model.ID != ModelV4Pro {
 		return nil, fmt.Errorf("deepseek: unsupported model %q", request.Model.ID)
+	}
+	expectedAPI := model(request.Model.ID).API
+	if request.Model.API != expectedAPI {
+		return nil, fmt.Errorf(
+			"deepseek: model %q API %q does not match %q",
+			request.Model.ID,
+			request.Model.API,
+			expectedAPI,
+		)
 	}
 	if err := validateMessages(request.Messages); err != nil {
 		return nil, err
 	}
-	return p.adapter.Stream(ctx, request)
+	switch request.Model.API {
+	case anthropic.API:
+		return p.anthropicAdapter.Stream(ctx, request)
+	case openairesponses.API:
+		return p.responsesAdapter.Stream(ctx, request)
+	default:
+		return nil, fmt.Errorf(
+			"deepseek: model %q uses unsupported API %q",
+			request.Model.ID,
+			request.Model.API,
+		)
+	}
 }
 
 func model(id string) llm.Model {
 	name := "DeepSeek V4 Flash"
+	api := openairesponses.API
 	// Rates are USD per million tokens from DeepSeek's public model pricing.
 	pricing := llm.Pricing{
 		Input:     0.14,
@@ -98,6 +126,7 @@ func model(id string) llm.Model {
 	}
 	if id == ModelV4Pro {
 		name = "DeepSeek V4 Pro"
+		api = anthropic.API
 		pricing = llm.Pricing{
 			Input:     0.435,
 			Output:    0.87,
@@ -107,7 +136,7 @@ func model(id string) llm.Model {
 	return llm.Model{
 		ID:               id,
 		Name:             name,
-		API:              anthropic.API,
+		API:              api,
 		Provider:         ProviderID,
 		SupportsThinking: true,
 		InputModalities:  []llm.InputModality{llm.InputModalityText},
@@ -115,6 +144,20 @@ func model(id string) llm.Model {
 		MaxTokens:        384_000,
 		Pricing:          pricing,
 	}
+}
+
+func protocolBaseURLs(configured string) (string, string) {
+	configured = strings.TrimRight(strings.TrimSpace(configured), "/")
+	if configured == "" {
+		return AnthropicBaseURL, BaseURL
+	}
+
+	responsesBaseURL := configured
+	if strings.HasSuffix(responsesBaseURL, "/anthropic") {
+		responsesBaseURL = strings.TrimSuffix(responsesBaseURL, "/anthropic")
+		return configured, responsesBaseURL
+	}
+	return configured + "/anthropic", responsesBaseURL
 }
 
 func validateMessages(messages []llm.Message) error {
@@ -130,7 +173,7 @@ func validateMessages(messages []llm.Message) error {
 				if part.Type != llm.ContentTypeText {
 					return fmt.Errorf(
 						"deepseek: message %d content %d: non-text tool results "+
-							"are not supported by DeepSeek's Anthropic API",
+							"are not supported by DeepSeek models",
 						messageIndex,
 						partIndex,
 					)
@@ -163,10 +206,10 @@ func validateMessages(messages []llm.Message) error {
 func validateContent(part llm.ContentPart) error {
 	switch part.Type {
 	case llm.ContentTypeImage:
-		return errors.New("image content is not supported by DeepSeek's Anthropic API")
+		return errors.New("image content is not supported by DeepSeek models")
 	case llm.ContentTypeThinking:
 		if part.Redacted {
-			return errors.New("redacted thinking is not supported by DeepSeek's Anthropic API")
+			return errors.New("redacted thinking is not supported by DeepSeek models")
 		}
 	case llm.ContentTypeToolResult:
 		if part.ToolResult == nil {
@@ -174,7 +217,7 @@ func validateContent(part llm.ContentPart) error {
 		}
 		for _, nested := range part.ToolResult.Content {
 			if nested.Type != llm.ContentTypeText {
-				return errors.New("non-text tool results are not supported by DeepSeek's Anthropic API")
+				return errors.New("non-text tool results are not supported by DeepSeek models")
 			}
 		}
 	}

@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	anthropicapi "github.com/ch1lam/aice-cli/internal/api/anthropic"
+	"github.com/ch1lam/aice-cli/internal/api/openairesponses"
 	"github.com/ch1lam/aice-cli/internal/llm"
 )
 
@@ -247,6 +248,108 @@ func TestAdapterStreamsThinkingToolCallUsageAndDone(t *testing.T) {
 
 	body := <-requests
 	assertRequestBody(t, body)
+}
+
+func TestAdapterDropsProtocolSignaturesForForeignAssistantHistory(t *testing.T) {
+	t.Parallel()
+
+	requests := make(chan map[string]any, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode request body: %v", err)
+			return
+		}
+		requests <- body
+		w.Header().Set("Content-Type", "text/event-stream")
+	}))
+	defer server.Close()
+
+	adapter, err := anthropicapi.New(anthropicapi.Config{
+		APIKey:     "test-key",
+		BaseURL:    server.URL,
+		HTTPClient: server.Client(),
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	request := llm.Request{
+		Model: llm.Model{
+			ID:        "deepseek-v4-pro",
+			API:       anthropicapi.API,
+			Provider:  "deepseek",
+			MaxTokens: 1_000,
+		},
+		Messages: []llm.Message{
+			llm.UserMessage{
+				Role:    llm.RoleUser,
+				Content: []llm.ContentPart{llm.NewTextContent("hello").Part()},
+			},
+			llm.AssistantMessage{
+				Role:     llm.RoleAssistant,
+				API:      openairesponses.API,
+				Provider: "deepseek",
+				ModelID:  "deepseek-v4-flash",
+				Content: []llm.ContentPart{
+					llm.NewThinkingContent(
+						"foreign plan",
+						`{"id":"rs-1","type":"reasoning"}`,
+					).Part(),
+					{
+						Type:      llm.ContentTypeText,
+						Text:      "foreign answer",
+						Signature: "msg-1",
+					},
+					{
+						Type: llm.ContentTypeToolCall,
+						ToolCall: &llm.ToolCall{
+							ID:        "call-1",
+							Name:      "read",
+							Arguments: json.RawMessage(`{"path":"README.md"}`),
+							Signature: "fc-1",
+						},
+					},
+				},
+			},
+			llm.ToolResultMessage{
+				Role:       llm.RoleToolResult,
+				ToolCallID: "call-1",
+				Content:    []llm.ContentPart{llm.NewTextContent("contents").Part()},
+			},
+		},
+	}
+
+	modelStream, err := adapter.Stream(context.Background(), request)
+	if err != nil {
+		t.Fatalf("Stream() error = %v", err)
+	}
+	if err := modelStream.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+
+	body := <-requests
+	messages, ok := body["messages"].([]any)
+	if !ok || len(messages) != 3 {
+		t.Fatalf("messages = %#v, want user, assistant, tool result", body["messages"])
+	}
+	assistant := messages[1].(map[string]any)
+	content, ok := assistant["content"].([]any)
+	if !ok || len(content) != 3 {
+		t.Fatalf(
+			"assistant content = %#v, want two text blocks and tool use",
+			assistant["content"],
+		)
+	}
+	first := content[0].(map[string]any)
+	if first["type"] != "text" || first["text"] != "foreign plan" {
+		t.Errorf("foreign thinking conversion = %#v", first)
+	}
+	for _, block := range content {
+		if block.(map[string]any)["type"] == "thinking" {
+			t.Errorf("foreign thinking retained protocol signature: %#v", content)
+		}
+	}
 }
 
 func TestAdapterGroupsConsecutiveToolResultsInOneUserMessage(t *testing.T) {

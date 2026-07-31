@@ -2,6 +2,7 @@ package deepseek_test
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -10,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/ch1lam/aice-cli/internal/api/anthropic"
+	"github.com/ch1lam/aice-cli/internal/api/openairesponses"
 	"github.com/ch1lam/aice-cli/internal/llm"
 	"github.com/ch1lam/aice-cli/internal/provider/deepseek"
 )
@@ -21,7 +23,7 @@ func TestModels(t *testing.T) {
 		{
 			ID:               deepseek.ModelV4Flash,
 			Name:             "DeepSeek V4 Flash",
-			API:              anthropic.API,
+			API:              openairesponses.API,
 			Provider:         deepseek.ProviderID,
 			SupportsThinking: true,
 			InputModalities:  []llm.InputModality{llm.InputModalityText},
@@ -54,6 +56,87 @@ func TestModels(t *testing.T) {
 	}
 	if got := deepseek.DefaultModel(); !reflect.DeepEqual(got, want[0]) {
 		t.Errorf("DefaultModel() = %#v, want %#v", got, want[0])
+	}
+}
+
+func TestProviderDispatchesEachModelThroughItsConfiguredAPI(t *testing.T) {
+	t.Parallel()
+
+	paths := make(chan string, 2)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths <- r.URL.Path
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "")
+	}))
+	defer server.Close()
+
+	provider, err := deepseek.New(deepseek.Config{
+		APIKey:     "test-key",
+		BaseURL:    server.URL,
+		HTTPClient: server.Client(),
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	for _, model := range deepseek.Models() {
+		request := llm.Request{
+			Model: model,
+			Messages: []llm.Message{llm.UserMessage{
+				Role:    llm.RoleUser,
+				Content: []llm.ContentPart{llm.NewTextContent("hello").Part()},
+			}},
+		}
+		stream, err := provider.Stream(context.Background(), request)
+		if err != nil {
+			t.Fatalf("Stream(%q) error = %v", model.ID, err)
+		}
+		if err := stream.Close(); err != nil {
+			t.Fatalf("Close(%q) error = %v", model.ID, err)
+		}
+	}
+
+	got := []string{<-paths, <-paths}
+	want := []string{"/responses", "/anthropic/v1/messages"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("request paths = %v, want %v", got, want)
+	}
+}
+
+func TestProviderRejectsModelAPIMismatchBeforeHTTP(t *testing.T) {
+	t.Parallel()
+
+	var requests atomic.Int64
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		requests.Add(1)
+	}))
+	defer server.Close()
+
+	provider, err := deepseek.New(deepseek.Config{
+		APIKey:     "test-key",
+		BaseURL:    server.URL,
+		HTTPClient: server.Client(),
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	request := llm.Request{
+		Model: deepseek.DefaultModel(),
+		Messages: []llm.Message{llm.UserMessage{
+			Role:    llm.RoleUser,
+			Content: []llm.ContentPart{llm.NewTextContent("hello").Part()},
+		}},
+	}
+	request.Model.API = anthropic.API
+	_, err = provider.Stream(context.Background(), request)
+	if err == nil ||
+		!strings.Contains(err.Error(), `model "deepseek-v4-flash" API`) ||
+		!strings.Contains(err.Error(), string(openairesponses.API)) {
+		t.Fatalf("Stream() error = %v, want model API mismatch", err)
+	}
+	if got := requests.Load(); got != 0 {
+		t.Errorf("HTTP requests = %d, want 0", got)
 	}
 }
 

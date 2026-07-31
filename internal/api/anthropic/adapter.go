@@ -126,7 +126,7 @@ func requestParams(request llm.Request) (anthropicsdk.MessageNewParams, error) {
 		return anthropicsdk.MessageNewParams{}, errors.New("anthropic: max tokens must be positive")
 	}
 
-	messages, err := messageParams(request.Messages)
+	messages, err := messageParams(request.Messages, request.Model)
 	if err != nil {
 		return anthropicsdk.MessageNewParams{}, err
 	}
@@ -187,7 +187,10 @@ func applyThinking(params *anthropicsdk.MessageNewParams, level llm.ThinkingLeve
 	return nil
 }
 
-func messageParams(messages []llm.Message) ([]anthropicsdk.MessageParam, error) {
+func messageParams(
+	messages []llm.Message,
+	target llm.Model,
+) ([]anthropicsdk.MessageParam, error) {
 	result := make([]anthropicsdk.MessageParam, 0, len(messages))
 	for messageIndex, message := range messages {
 		var (
@@ -207,7 +210,7 @@ func messageParams(messages []llm.Message) ([]anthropicsdk.MessageParam, error) 
 				return nil, fmt.Errorf("anthropic: message %d: %w", messageIndex, err)
 			}
 			role = value.Role
-			content = value.Content
+			content = assistantContentForModel(value, target)
 		case llm.ToolResultMessage:
 			if err := value.Validate(); err != nil {
 				return nil, fmt.Errorf("anthropic: message %d: %w", messageIndex, err)
@@ -270,6 +273,30 @@ func messageParams(messages []llm.Message) ([]anthropicsdk.MessageParam, error) 
 		result = append(result, converted)
 	}
 	return result, nil
+}
+
+func assistantContentForModel(
+	message llm.AssistantMessage,
+	target llm.Model,
+) []llm.ContentPart {
+	if message.Provider == target.Provider &&
+		message.API == target.API &&
+		message.ModelID == target.ID {
+		return message.Content
+	}
+
+	result := make([]llm.ContentPart, 0, len(message.Content))
+	for _, part := range message.Content {
+		if part.Type != llm.ContentTypeThinking {
+			result = append(result, part)
+			continue
+		}
+		if part.Redacted || strings.TrimSpace(part.Text) == "" {
+			continue
+		}
+		result = append(result, llm.NewTextContent(part.Text).Part())
+	}
+	return result
 }
 
 func contentBlockParam(role llm.Role, part llm.ContentPart) (anthropicsdk.ContentBlockParamUnion, error) {
