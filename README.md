@@ -1,6 +1,6 @@
 # AICE
 
-[English](./README.md) | [Chinese](./README-zh.md)
+English | [简体中文](./README-zh.md)
 
 [![Go](https://img.shields.io/github/go-mod/go-version/ch1lam/aice-cli)](https://go.dev/) [![License](https://img.shields.io/github/license/ch1lam/aice-cli)](./LICENSE)
 
