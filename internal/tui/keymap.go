@@ -36,12 +36,12 @@ func newKeyMap() keyMap {
 			key.WithHelp("/", "commands"),
 		),
 		help: key.NewBinding(
-			key.WithKeys("f1"),
-			key.WithHelp("f1", "more"),
+			key.WithKeys("?"),
+			key.WithHelp("?", "shortcuts"),
 		),
 		interrupt: key.NewBinding(
 			key.WithKeys("ctrl+c"),
-			key.WithHelp("ctrl+c", "quit"),
+			key.WithHelp("ctrl+C", "quit"),
 		),
 		quit: key.NewBinding(
 			key.WithKeys("ctrl+d"),
@@ -55,17 +55,13 @@ func (k keyMap) forState(running bool) keyMap {
 	k.newline.SetEnabled(!running)
 	k.quit.SetEnabled(!running)
 	if running {
-		k.interrupt.SetHelp("ctrl+c", "cancel")
+		k.interrupt.SetHelp("ctrl+C", "cancel")
 	}
 	return k
 }
 
 func (k keyMap) ShortHelp() []key.Binding {
 	return []key.Binding{
-		k.send,
-		k.newline,
-		k.commands,
-		k.scroll,
 		k.help,
 		k.interrupt,
 	}

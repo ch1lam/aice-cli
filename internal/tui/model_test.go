@@ -617,19 +617,22 @@ func TestModelControlCBeforeRunStartsDefersCancellation(t *testing.T) {
 	}
 }
 
-func TestModelHelpTogglesAndUsesAvailableHeight(t *testing.T) {
+func TestModelQuestionMarkHelpTogglesAndUsesAvailableHeight(t *testing.T) {
 	t.Parallel()
 
 	current := newModel(make(chan runRequest), make(chan struct{}))
 	current = updateModel(t, current, tea.WindowSizeMsg{Width: 80, Height: 24})
 	collapsedHeight := current.viewport.Height()
 
-	updated, command, handled := current.handleKey(tea.KeyPressMsg(tea.Key{Code: tea.KeyF1}))
+	updated, command, handled := current.handleKey(tea.KeyPressMsg{
+		Code: '?',
+		Text: "?",
+	})
 	if !handled || command != nil {
-		t.Fatal("f1 did not toggle help")
+		t.Fatal("question mark did not toggle help")
 	}
 	if !updated.help.ShowAll {
-		t.Fatal("help remains collapsed after f1")
+		t.Fatal("help remains collapsed after question mark")
 	}
 	if updated.viewport.Height() >= collapsedHeight {
 		t.Errorf(
@@ -640,6 +643,110 @@ func TestModelHelpTogglesAndUsesAvailableHeight(t *testing.T) {
 	}
 	if !updated.viewport.AtBottom() {
 		t.Fatal("expanded help left the empty welcome viewport scrollable")
+	}
+}
+
+func TestModelF1DoesNotToggleHelp(t *testing.T) {
+	t.Parallel()
+
+	current := newModel(make(chan runRequest), make(chan struct{}))
+	updated := updateModel(t, current, tea.KeyPressMsg{
+		Code: tea.KeyF1,
+	})
+
+	if updated.help.ShowAll {
+		t.Fatal("f1 still expands help")
+	}
+}
+
+func TestModelQuestionMarkTogglesHelpWithoutStealingComposerInput(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		value       string
+		secretInput bool
+		message     tea.KeyPressMsg
+		wantHelp    bool
+		wantInput   string
+	}{
+		{
+			name:      "empty composer toggles help",
+			message:   tea.KeyPressMsg{Code: '?', Text: "?"},
+			wantHelp:  true,
+			wantInput: "",
+		},
+		{
+			name:      "ascii question mark continues existing input",
+			value:     "explain",
+			message:   tea.KeyPressMsg{Code: '?', Text: "?"},
+			wantInput: "explain?",
+		},
+		{
+			name:      "full width IME question mark remains input",
+			message:   tea.KeyPressMsg{Code: '？', Text: "？"},
+			wantInput: "？",
+		},
+		{
+			name:      "multi character IME commit remains input",
+			message:   tea.KeyPressMsg{Code: '?', Text: "为什么?"},
+			wantInput: "为什么?",
+		},
+		{
+			name:        "secret input keeps leading question mark",
+			secretInput: true,
+			message:     tea.KeyPressMsg{Code: '?', Text: "?"},
+			wantInput:   "?",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			current := newModel(make(chan runRequest), make(chan struct{}))
+			current = updateModel(t, current, tea.WindowSizeMsg{
+				Width:  80,
+				Height: 24,
+			})
+			current.input.SetValue(tt.value)
+			if tt.secretInput {
+				current.secretInput = &secretInput{prompt: "API key"}
+			}
+
+			updated := updateModel(t, current, tt.message)
+			if updated.help.ShowAll != tt.wantHelp {
+				t.Errorf(
+					"help expanded = %v, want %v",
+					updated.help.ShowAll,
+					tt.wantHelp,
+				)
+			}
+			if got := updated.input.Value(); got != tt.wantInput {
+				t.Errorf("input value = %q, want %q", got, tt.wantInput)
+			}
+
+			if tt.wantHelp {
+				collapsed := updateModel(t, updated, tt.message)
+				if collapsed.help.ShowAll {
+					t.Error("second question mark did not collapse help")
+				}
+			}
+		})
+	}
+}
+
+func TestModelPastedLeadingQuestionMarkRemainsComposerInput(t *testing.T) {
+	t.Parallel()
+
+	current := newModel(make(chan runRequest), make(chan struct{}))
+	current = updateModel(t, current, tea.PasteMsg{Content: "?"})
+
+	if current.help.ShowAll {
+		t.Fatal("pasted question mark expanded help")
+	}
+	if got := current.input.Value(); got != "?" {
+		t.Errorf("pasted input = %q, want literal question mark", got)
 	}
 }
 
@@ -669,8 +776,32 @@ func TestModelKeepsReadyInHeaderAndUsesBubblesHelpBelowComposer(t *testing.T) {
 			helpIndex,
 		)
 	}
-	if footer := current.footerView(80); strings.Contains(footer, current.status) {
+	footer := current.footerView(80)
+	if strings.Contains(footer, current.status) {
 		t.Fatalf("footer repeats ready status from header: %q", footer)
+	}
+	if strings.Contains(ansi.Strip(footer), "─") {
+		t.Fatalf("footer still has a divider below the composer: %q", footer)
+	}
+	footerText := ansi.Strip(footer)
+	for _, want := range []string{"? shortcuts", "ctrl+C quit"} {
+		if !strings.Contains(footerText, want) {
+			t.Errorf("collapsed footer = %q, want %q", footer, want)
+		}
+	}
+	for _, unwanted := range []string{
+		"f1",
+		"enter send",
+		"shift+enter",
+		"/ commands",
+		"pgup/pgdn",
+	} {
+		if strings.Contains(footerText, unwanted) {
+			t.Errorf("collapsed footer still contains %q: %q", unwanted, footer)
+		}
+	}
+	if got := lipgloss.Height(footer); got != 1 {
+		t.Fatalf("collapsed footer height = %d, want one line: %q", got, footer)
 	}
 	if got := strings.Count(content, "READY"); got != 1 {
 		t.Fatalf("READY count = %d, want header only:\n%s", got, content)
@@ -824,20 +955,43 @@ func TestModelStatusLineShowsSessionUsageAndEstimatedCost(t *testing.T) {
 	}
 
 	standard := current.statusLine(80)
+	standardText := ansi.Strip(standard)
 	for _, want := range []string{
-		"↑1.2k",
+		"? shortcuts",
+		"ctrl+C quit",
+		"↑1.3k",
 		"↓456",
-		"R100",
-		"W20",
 		"$0.007",
 		"deepseek-v4-flash",
+		"reasoning default",
 	} {
-		if !strings.Contains(standard, want) {
+		if !strings.Contains(standardText, want) {
 			t.Errorf("standard status line = %q, want %q", standard, want)
 		}
 	}
+	if strings.Contains(standardText, "R100") ||
+		strings.Contains(standardText, "W20") {
+		t.Errorf("standard status line did not compact cache detail: %q", standard)
+	}
 	if lipgloss.Width(standard) > 80 {
 		t.Errorf("standard status width = %d, want at most 80", lipgloss.Width(standard))
+	}
+	assertTextOrder(
+		t,
+		standardText,
+		"? shortcuts",
+		"ctrl+C quit",
+		"↑1.3k",
+		"deepseek-v4-flash",
+		"reasoning default",
+	)
+
+	footer := current.footerView(80)
+	if got := lipgloss.Height(footer); got != 1 {
+		t.Errorf("80-column footer height = %d, want one line: %q", got, footer)
+	}
+	if got := lipgloss.Width(footer); got > 80 {
+		t.Errorf("80-column footer width = %d, want at most 80: %q", got, footer)
 	}
 
 	narrow := current.statusLine(60)
@@ -866,17 +1020,41 @@ func TestModelStatusLineShowsZeroUsageBeforeConversation(t *testing.T) {
 	current.currentModel = llm.Model{ID: "deepseek-v4-flash"}
 
 	standard := current.statusLine(80)
+	standardText := ansi.Strip(standard)
 	for _, want := range []string{
+		"? shortcuts",
+		"ctrl+C quit",
 		"↑0",
 		"↓0",
-		"R0",
-		"W0",
 		"$0.000",
 		"deepseek-v4-flash",
+		"reasoning default",
 	} {
-		if !strings.Contains(standard, want) {
+		if !strings.Contains(standardText, want) {
 			t.Errorf("zero status line = %q, want %q", standard, want)
 		}
+	}
+	footer := current.footerView(80)
+	footerText := ansi.Strip(footer)
+	for _, want := range []string{
+		"? shortcuts",
+		"ctrl+C quit",
+		"↑0",
+		"↓0",
+		"$0.000",
+		"deepseek-v4-flash",
+		"reasoning default",
+	} {
+		if !strings.Contains(footerText, want) {
+			t.Errorf("80-column zero footer = %q, want %q", footer, want)
+		}
+	}
+	if strings.Contains(footerText, "R0") ||
+		strings.Contains(footerText, "W0") {
+		t.Errorf("80-column zero footer did not compact cache detail: %q", footer)
+	}
+	if got := lipgloss.Height(footer); got != 1 {
+		t.Errorf("80-column zero footer height = %d, want one line: %q", got, footer)
 	}
 
 	narrow := current.statusLine(32)
@@ -1134,6 +1312,69 @@ func TestModelToolCallsShowRelevantInput(t *testing.T) {
 						wantLine,
 					)
 				}
+			}
+		})
+	}
+}
+
+func TestModelToolStatusUsesOnlySpinnerOrEmoji(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		entry     transcriptEntry
+		want      string
+		notWanted string
+	}{
+		{
+			name: "running",
+			entry: transcriptEntry{
+				kind:     entryTool,
+				toolName: "read",
+			},
+			notWanted: "running",
+		},
+		{
+			name: "done",
+			entry: transcriptEntry{
+				kind:     entryTool,
+				toolName: "read",
+				toolDone: true,
+			},
+			want:      "✓",
+			notWanted: "done",
+		},
+		{
+			name: "failed",
+			entry: transcriptEntry{
+				kind:      entryTool,
+				toolName:  "read",
+				toolDone:  true,
+				toolError: true,
+			},
+			want:      "✕",
+			notWanted: "failed",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			current := newModel(make(chan runRequest), make(chan struct{}))
+			view := ansi.Strip(current.entryView(tt.entry, false))
+			if !strings.Contains(view, "read") {
+				t.Fatalf("tool name is missing: %q", view)
+			}
+			if tt.want != "" && !strings.Contains(view, tt.want) {
+				t.Errorf("tool status = %q, want icon %q", view, tt.want)
+			}
+			if strings.Contains(view, tt.notWanted) {
+				t.Errorf(
+					"tool status still contains %q: %q",
+					tt.notWanted,
+					view,
+				)
 			}
 		})
 	}
@@ -1728,6 +1969,22 @@ func assertTranscriptGap(
 			wantNewlines,
 			gap,
 		)
+	}
+}
+
+func assertTextOrder(t *testing.T, text string, values ...string) {
+	t.Helper()
+
+	previous := -1
+	for _, value := range values {
+		index := strings.Index(text, value)
+		if index < 0 {
+			t.Fatalf("text %q does not contain %q", text, value)
+		}
+		if index <= previous {
+			t.Fatalf("text %q does not keep %q in order", text, value)
+		}
+		previous = index
 	}
 }
 

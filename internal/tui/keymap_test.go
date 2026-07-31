@@ -44,3 +44,27 @@ func TestKeyMapForState(t *testing.T) {
 		})
 	}
 }
+
+func TestKeyMapShortHelpUsesOnlyQuestionMarkAndInterrupt(t *testing.T) {
+	t.Parallel()
+
+	keys := newKeyMap()
+	binding := keys.help
+	bindingKeys := binding.Keys()
+	if len(bindingKeys) != 1 || bindingKeys[0] != "?" {
+		t.Fatalf("help keys = %#v, want only question mark", bindingKeys)
+	}
+	if got := binding.Help(); got.Key != "?" || got.Desc != "shortcuts" {
+		t.Errorf("help label = %#v, want question mark shortcuts", got)
+	}
+
+	shortHelp := keys.ShortHelp()
+	if len(shortHelp) != 2 ||
+		shortHelp[0].Help().Key != "?" ||
+		shortHelp[1].Help().Key != "ctrl+C" {
+		t.Errorf(
+			"short help = %#v, want only question mark and control-c",
+			shortHelp,
+		)
+	}
+}

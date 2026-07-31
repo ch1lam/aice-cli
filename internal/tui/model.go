@@ -343,7 +343,7 @@ func (m model) handleKey(message tea.KeyPressMsg) (model, tea.Cmd, bool) {
 			return m, tea.Quit, true
 		}
 		return m, nil, true
-	case key.Matches(message, m.keys.help):
+	case m.helpToggleRequested(message):
 		m.help.ShowAll = !m.help.ShowAll
 		m.resizeLayout()
 		m.refreshViewport(false)
@@ -379,6 +379,17 @@ func (m model) handleKey(message tea.KeyPressMsg) (model, tea.Cmd, bool) {
 		return m, nil, true
 	}
 	return m, nil, false
+}
+
+func (m model) helpToggleRequested(message tea.KeyPressMsg) bool {
+	if !key.Matches(message, m.keys.help) {
+		return false
+	}
+
+	// Terminals expose committed printable text but not whether it came from
+	// an IME. Treat ? as help only when the regular composer is empty; once
+	// composition has started, printable text must remain textarea input.
+	return m.secretInput == nil && m.input.Value() == ""
 }
 
 func (m *model) updateInput(message tea.Msg) tea.Cmd {
@@ -959,23 +970,29 @@ func (m model) headerView(width int) string {
 
 func (m model) footerView(width int) string {
 	innerWidth := max(width-2, 1)
-	keys := m.keys.forState(m.running)
-	helpView := m.help.View(keys)
 	style := lipgloss.NewStyle().
 		Width(innerWidth).
-		Padding(0, 1).
-		BorderTop(true).
-		BorderStyle(lipgloss.NormalBorder()).
-		BorderForeground(subtleColor)
+		Padding(0, 1)
 	contentWidth := max(innerWidth-style.GetHorizontalFrameSize(), 1)
 	rows := make([]string, 0, 2)
 	if status := m.statusLine(contentWidth); status != "" {
 		rows = append(rows, status)
 	}
-	if helpView != "" {
-		rows = append(rows, helpView)
+	if m.help.ShowAll {
+		fullHelp := m.help.FullHelpView(m.footerKeys().FullHelp())
+		if fullHelp != "" {
+			rows = append(rows, fullHelp)
+		}
 	}
 	return style.Render(strings.Join(rows, "\n"))
+}
+
+func (m model) footerKeys() keyMap {
+	keys := m.keys.forState(m.running)
+	if m.help.ShowAll {
+		keys.help.SetHelp("?", "close")
+	}
+	return keys
 }
 
 func (m model) composerView(width int) string {
@@ -1379,15 +1396,12 @@ func (m model) entryView(
 		)
 	case entryTool:
 		icon := m.spinner.View()
-		state := "running"
 		style := lipgloss.NewStyle().Foreground(accentColor)
 		if entry.toolDone {
 			icon = "✓"
-			state = "done"
 			style = lipgloss.NewStyle().Foreground(successColor)
 			if entry.toolError {
 				icon = "✕"
-				state = "failed"
 				style = errorStyle
 			}
 		}
@@ -1396,7 +1410,6 @@ func (m model) entryView(
 		if entry.toolName != "bash" && entry.toolDetail != "" {
 			summary += "  " + mutedStyle.Render(entry.toolDetail)
 		}
-		summary += "  " + mutedStyle.Render(state)
 		if entry.toolName == "bash" && entry.toolDetail != "" {
 			summary += "\n" + mutedStyle.Render("$ "+entry.toolDetail)
 		}
@@ -1501,7 +1514,7 @@ func (m model) assistantEntryContentView(
 		)
 		thinking := assistantBodyStyle.Render(
 			thinkingStyle.Width(thinkingWidth).Render(
-				"REASONING\n" + entry.thinking,
+				entry.thinking,
 			),
 		)
 		parts = append(parts, thinking)
@@ -1580,27 +1593,53 @@ func (m model) activityIndicator() string {
 }
 
 func (m model) statusLine(width int) string {
-	right := m.modelStatus()
+	shortcuts := m.help.ShortHelpView(m.footerKeys().ShortHelp())
+	model := m.modelStatus()
 	fullUsage := m.usageStatus(true)
 	compactUsage := m.usageStatus(false)
 
-	leftCandidates := []string{fullUsage}
+	usageCandidates := []string{fullUsage}
 	if compactUsage != fullUsage {
-		leftCandidates = append(leftCandidates, compactUsage)
+		usageCandidates = append(usageCandidates, compactUsage)
 	}
 
-	for _, left := range leftCandidates {
-		if line, ok := alignStatusLine(left, right, width); ok {
+	rightCandidates := make([]string, 0, len(usageCandidates))
+	for _, usage := range usageCandidates {
+		rightCandidates = append(
+			rightCandidates,
+			joinStatusParts(usage, model),
+		)
+	}
+	for _, right := range rightCandidates {
+		if line, ok := alignStatusLine(shortcuts, right, width); ok {
 			return line
 		}
 	}
-	if line, ok := alignStatusLine(compactUsage, "", width); ok {
-		return line
+
+	fallbacks := []string{
+		joinStatusParts(compactUsage, model),
+		model,
+		compactUsage,
 	}
-	if line, ok := alignStatusLine("", right, width); ok {
+	for _, right := range fallbacks {
+		if line, ok := alignStatusLine("", right, width); ok {
+			return line
+		}
+	}
+	if line, ok := alignStatusLine(shortcuts, "", width); ok {
 		return line
 	}
 	return ""
+}
+
+func joinStatusParts(parts ...string) string {
+	nonempty := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if part != "" {
+			nonempty = append(nonempty, part)
+		}
+	}
+	return strings.Join(nonempty, "  ")
 }
 
 func alignStatusLine(left, right string, width int) (string, bool) {

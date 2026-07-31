@@ -60,3 +60,21 @@ func TestModelOmitsEmptyAssistantPlaceholder(t *testing.T) {
 		t.Fatalf("empty assistant placeholder remains visible: %q", transcript)
 	}
 }
+
+func TestModelShowsReasoningWithoutRedundantLabel(t *testing.T) {
+	t.Parallel()
+
+	current := newModel(make(chan runRequest), make(chan struct{}))
+	current.width = 80
+	transcript := ansi.Strip(current.entryView(transcriptEntry{
+		kind:     entryAssistant,
+		thinking: "THOUGHT_CONTENT",
+	}, false))
+
+	if !strings.Contains(transcript, "THOUGHT_CONTENT") {
+		t.Fatalf("reasoning content is missing: %q", transcript)
+	}
+	if strings.Contains(transcript, "REASONING") {
+		t.Fatalf("reasoning label remains visible: %q", transcript)
+	}
+}
