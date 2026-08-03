@@ -615,28 +615,43 @@ const (
 )
 
 // AgentMessagesToMessages projects transcript-only messages into standard LLM
-// messages while preserving standard concrete messages unchanged.
+// messages. Failed assistant attempts and their paired tool results remain in
+// lossless transcript history but are not replayed to a model.
 func AgentMessagesToMessages(messages []AgentMessage) ([]Message, error) {
-	projected := make([]Message, len(messages))
+	projected := make([]Message, 0, len(messages))
+	failedToolCalls := make(map[string]struct{})
 	for index, message := range messages {
 		if err := validateAgentMessage(message); err != nil {
 			return nil, fmt.Errorf("llm: project agent message %d: %w", index, err)
 		}
 		switch value := message.(type) {
 		case UserMessage:
-			projected[index] = value
+			projected = append(projected, value)
 		case AssistantMessage:
-			projected[index] = value
+			if (value.StopReason == StopReasonError || value.StopReason == StopReasonAborted) &&
+				failedAssistantIsRetry(messages, index) {
+				for _, part := range value.Content {
+					if part.Type == ContentTypeToolCall && part.ToolCall != nil {
+						failedToolCalls[part.ToolCall.ID] = struct{}{}
+					}
+				}
+				continue
+			}
+			projected = append(projected, value)
 		case ToolResultMessage:
-			projected[index] = value
+			if _, failed := failedToolCalls[value.ToolCallID]; failed {
+				delete(failedToolCalls, value.ToolCallID)
+				continue
+			}
+			projected = append(projected, value)
 		case CompactionSummaryMessage:
-			projected[index] = UserMessage{
+			projected = append(projected, UserMessage{
 				Role: RoleUser,
 				Content: []ContentPart{NewTextContent(
 					compactionSummaryPrefix + value.Summary + compactionSummarySuffix,
 				).Part()},
 				Timestamp: value.Timestamp,
-			}
+			})
 		default:
 			return nil, fmt.Errorf(
 				"llm: project agent message %d: unsupported type %T",
@@ -646,6 +661,18 @@ func AgentMessagesToMessages(messages []AgentMessage) ([]Message, error) {
 		}
 	}
 	return projected, nil
+}
+
+func failedAssistantIsRetry(messages []AgentMessage, index int) bool {
+	for next := index + 1; next < len(messages); next++ {
+		switch messages[next].(type) {
+		case AssistantMessage:
+			return true
+		case UserMessage, CompactionSummaryMessage:
+			return false
+		}
+	}
+	return false
 }
 
 // MarshalAgentMessages validates and encodes complete transcript messages.

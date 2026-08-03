@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strings"
 
+	openaisdk "github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
 	"github.com/openai/openai-go/v3/packages/param"
 	"github.com/openai/openai-go/v3/packages/ssestream"
@@ -95,7 +96,10 @@ func (a *Adapter) Stream(ctx context.Context, request llm.Request) (llm.Stream, 
 
 	source := a.client.NewStreaming(ctx, params)
 	if err := source.Err(); err != nil {
-		return nil, fmt.Errorf("openai responses: start response stream: %w", err)
+		return nil, fmt.Errorf(
+			"openai responses: start response stream: %w",
+			normalizeProviderError(err),
+		)
 	}
 
 	return &stream{
@@ -512,7 +516,10 @@ func (s *stream) Next() (llm.Event, error) {
 	}
 
 	if err := s.source.Err(); err != nil {
-		wrapped := fmt.Errorf("openai responses: read response stream: %w", err)
+		wrapped := fmt.Errorf(
+			"openai responses: read response stream: %w",
+			normalizeProviderError(err),
+		)
 		message := "openai responses: model stream failed"
 		if errors.Is(err, context.Canceled) {
 			message = "openai responses: request canceled"
@@ -601,20 +608,42 @@ func (s *stream) translate(event responses.ResponseStreamEventUnion) ([]llm.Even
 		if event.Response.Error.Code != "" {
 			message = string(event.Response.Error.Code) + ": " + message
 		}
-		err := errors.New("openai responses: " + message)
+		err := &llm.ProviderError{
+			Code: string(event.Response.Error.Code),
+			Err:  errors.New("openai responses: " + message),
+		}
 		return nil, err
 	case "error":
 		message := event.Message
 		if event.Code != "" {
 			message = event.Code + ": " + message
 		}
-		return nil, errors.New("openai responses: " + message)
+		return nil, &llm.ProviderError{
+			Code: event.Code,
+			Err:  errors.New("openai responses: " + message),
+		}
 	default:
 		return nil, fmt.Errorf(
 			"openai responses: unsupported stream event %q",
 			event.Type,
 		)
 	}
+}
+
+func normalizeProviderError(err error) error {
+	var apiErr *openaisdk.Error
+	if !errors.As(err, &apiErr) {
+		return llm.NewTransportProviderError(err)
+	}
+	var header http.Header
+	if apiErr.Response != nil {
+		header = apiErr.Response.Header
+	}
+	code := apiErr.Code
+	if code == "" {
+		code = apiErr.Type
+	}
+	return llm.NewHTTPProviderError(err, apiErr.StatusCode, code, header)
 }
 
 func (s *stream) startItem(

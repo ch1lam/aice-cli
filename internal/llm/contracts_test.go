@@ -469,6 +469,80 @@ func TestAgentMessagesToMessagesProjectsCompactionSummary(t *testing.T) {
 	}
 }
 
+func TestAgentMessagesToMessagesOmitsFailedAttemptAndPairedToolResults(t *testing.T) {
+	t.Parallel()
+
+	failed := llm.AssistantMessage{
+		Role:       llm.RoleAssistant,
+		API:        "test-api",
+		Provider:   "test-provider",
+		ModelID:    "test-model",
+		StopReason: llm.StopReasonError,
+		Content: []llm.ContentPart{{
+			Type: llm.ContentTypeToolCall,
+			ToolCall: &llm.ToolCall{
+				ID:        "call-failed",
+				Name:      "write",
+				Arguments: json.RawMessage(`{"path":"README.md"}`),
+			},
+		}},
+	}
+	paired := llm.ToolResultMessage{
+		Role:       llm.RoleToolResult,
+		ToolCallID: "call-failed",
+		ToolName:   "write",
+		Content:    []llm.ContentPart{llm.NewTextContent("not executed").Part()},
+		IsError:    true,
+	}
+	user := llm.UserMessage{
+		Role:    llm.RoleUser,
+		Content: []llm.ContentPart{llm.NewTextContent("start").Part()},
+	}
+	succeeded := llm.AssistantMessage{
+		Role:       llm.RoleAssistant,
+		API:        "test-api",
+		Provider:   "test-provider",
+		ModelID:    "test-model",
+		StopReason: llm.StopReasonStop,
+		Content:    []llm.ContentPart{llm.NewTextContent("done").Part()},
+	}
+
+	projected, err := llm.AgentMessagesToMessages([]llm.AgentMessage{user, failed, paired, succeeded})
+	if err != nil {
+		t.Fatalf("AgentMessagesToMessages() error = %v", err)
+	}
+	if len(projected) != 2 ||
+		!reflect.DeepEqual(projected[0], user) ||
+		!reflect.DeepEqual(projected[1], succeeded) {
+		t.Fatalf("projected messages = %#v, want user and successful assistant", projected)
+	}
+}
+
+func TestAgentMessagesToMessagesPreservesTerminalFailure(t *testing.T) {
+	t.Parallel()
+
+	failed := llm.AssistantMessage{
+		Role:         llm.RoleAssistant,
+		API:          "test-api",
+		Provider:     "test-provider",
+		ModelID:      "test-model",
+		StopReason:   llm.StopReasonError,
+		ErrorMessage: "request failed",
+	}
+	user := llm.UserMessage{
+		Role:    llm.RoleUser,
+		Content: []llm.ContentPart{llm.NewTextContent("try something else").Part()},
+	}
+
+	projected, err := llm.AgentMessagesToMessages([]llm.AgentMessage{failed, user})
+	if err != nil {
+		t.Fatalf("AgentMessagesToMessages() error = %v", err)
+	}
+	if len(projected) != 2 || !reflect.DeepEqual(projected[0], failed) {
+		t.Fatalf("projected messages = %#v, want terminal failure preserved", projected)
+	}
+}
+
 func TestAgentMessagesJSONRejectsInvalidMessage(t *testing.T) {
 	t.Parallel()
 

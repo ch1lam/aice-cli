@@ -91,7 +91,10 @@ func (a *Adapter) Stream(ctx context.Context, request llm.Request) (llm.Stream, 
 
 	source := a.client.Messages.NewStreaming(ctx, params)
 	if err := source.Err(); err != nil {
-		return nil, fmt.Errorf("anthropic: start message stream: %w", err)
+		return nil, fmt.Errorf(
+			"anthropic: start message stream: %w",
+			normalizeProviderError(err),
+		)
 	}
 
 	return &stream{
@@ -441,7 +444,10 @@ func (s *stream) Next() (llm.Event, error) {
 	}
 
 	if err := s.source.Err(); err != nil {
-		wrapped := fmt.Errorf("anthropic: read message stream: %w", err)
+		wrapped := fmt.Errorf(
+			"anthropic: read message stream: %w",
+			normalizeProviderError(err),
+		)
 		message := "anthropic: model stream failed"
 		if errors.Is(err, context.Canceled) {
 			message = "anthropic: request canceled"
@@ -453,6 +459,23 @@ func (s *stream) Next() (llm.Event, error) {
 		io.ErrUnexpectedEOF,
 	)
 	return s.errorEvent(err, "anthropic: model stream ended unexpectedly"), nil
+}
+
+func normalizeProviderError(err error) error {
+	var apiErr *anthropicsdk.Error
+	if !errors.As(err, &apiErr) {
+		return llm.NewTransportProviderError(err)
+	}
+	var header http.Header
+	if apiErr.Response != nil {
+		header = apiErr.Response.Header
+	}
+	return llm.NewHTTPProviderError(
+		err,
+		apiErr.StatusCode,
+		string(apiErr.Type()),
+		header,
+	)
 }
 
 func (s *stream) shift() llm.Event {

@@ -954,6 +954,25 @@ func (m *model) applyAgentEvent(event agent.AgentEvent) (bool, tea.Cmd) {
 			m.status = "Thinking..."
 			return true, nil
 		}
+	case agent.EventTypeRetryStart:
+		if event.Retry != nil {
+			m.status = fmt.Sprintf(
+				"Retrying in %s (%d/%d)...",
+				event.Retry.Delay,
+				event.Retry.Attempt,
+				event.Retry.MaxRetries,
+			)
+			return true, nil
+		}
+	case agent.EventTypeRetryEnd:
+		if event.Retry != nil {
+			if event.Retry.Success {
+				m.status = "Retry succeeded"
+			} else {
+				m.status = "Retry stopped"
+			}
+			return true, nil
+		}
 	case agent.EventTypeAgentEnd:
 		if event.Err == nil {
 			m.status = "Response complete"

@@ -8,6 +8,7 @@ import (
 	"io"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/ch1lam/aice-cli/internal/llm"
 )
@@ -18,10 +19,11 @@ type Loop struct {
 	model       Model
 	tools       map[string]Tool
 	definitions []llm.ToolDefinition
+	retry       RetryPolicy
 }
 
 // NewLoop constructs an agent loop from immutable dependencies.
-func NewLoop(model Model, tools []Tool) (*Loop, error) {
+func NewLoop(model Model, tools []Tool, options ...LoopOption) (*Loop, error) {
 	if model == nil {
 		return nil, fmt.Errorf("agent: model is required")
 	}
@@ -49,11 +51,21 @@ func NewLoop(model Model, tools []Tool) (*Loop, error) {
 		definitions = append(definitions, definition)
 	}
 
-	return &Loop{
+	loop := &Loop{
 		model:       model,
 		tools:       toolIndex,
 		definitions: definitions,
-	}, nil
+		retry:       DefaultRetryPolicy(),
+	}
+	for index, option := range options {
+		if option == nil {
+			return nil, fmt.Errorf("agent: loop option %d is nil", index)
+		}
+		if err := option(loop); err != nil {
+			return nil, fmt.Errorf("agent: loop option %d: %w", index, err)
+		}
+	}
+	return loop, nil
 }
 
 // Run executes one agent run. It does not retain mutable run state.
@@ -126,13 +138,51 @@ func (e *runExecution) run(ctx context.Context) (Result, error) {
 		return e.result, err
 	}
 
+	retryAttempt := 0
 	for {
 		outcome, streamErr := e.streamAssistant(ctx, turnNumber)
 		if isEventSinkError(streamErr) {
 			return e.result, streamErr
 		}
 		if !outcome.complete {
-			return e.finishIncompleteTurn(ctx, turnNumber, streamErr)
+			if streamErr == nil {
+				streamErr = fmt.Errorf("%w: assistant turn did not complete", ErrProtocol)
+			}
+			nextAttempt := retryAttempt + 1
+			delay, retry := e.loop.retry.decision(streamErr, nextAttempt)
+			if !retry {
+				if retryAttempt > 0 {
+					if err := e.emitRetryEnd(ctx, retryAttempt, false, streamErr); err != nil {
+						return e.result, errors.Join(streamErr, err)
+					}
+				}
+				return e.finishIncompleteTurn(ctx, turnNumber, streamErr)
+			}
+			if err := e.recordIncompleteAttempt(
+				ctx,
+				turnNumber,
+				outcome.started,
+				streamErr,
+			); err != nil {
+				return e.result, errors.Join(streamErr, err)
+			}
+			retryAttempt = nextAttempt
+			if err := e.startRetry(ctx, retryAttempt, delay, streamErr); err != nil {
+				return e.result, errors.Join(streamErr, err)
+			}
+			if err := waitRetry(ctx, delay); err != nil {
+				waitErr := errors.Join(streamErr, err)
+				_ = e.emitRetryEnd(ctx, retryAttempt, false, waitErr)
+				return e.finishRun(ctx, waitErr)
+			}
+			turnNumber++
+			if err := e.emit(ctx, AgentEvent{
+				Type:       EventTypeTurnStart,
+				TurnNumber: turnNumber,
+			}); err != nil {
+				return e.result, err
+			}
+			continue
 		}
 
 		turn := Turn{
@@ -140,10 +190,33 @@ func (e *runExecution) run(ctx context.Context) (Result, error) {
 			Assistant:   outcome.message,
 			ToolResults: []llm.ToolResultMessage{},
 		}
-		e.history = append(e.history, outcome.message)
-
-		runErr := errors.Join(outcome.terminalErr, streamErr)
-		if runErr == nil {
+		modelErr := errors.Join(outcome.terminalErr, streamErr)
+		runErr := modelErr
+		if modelErr != nil {
+			calls, err := extractToolCalls(outcome.message)
+			if err != nil {
+				runErr = errors.Join(modelErr, err)
+			} else if len(calls) > 0 {
+				turn.ToolResults, err = e.syntheticToolResults(
+					ctx,
+					turnNumber,
+					calls,
+					"model request failed before tool execution",
+					false,
+				)
+				if isEventSinkError(err) {
+					e.result.Turns = append(e.result.Turns, turn)
+					return e.result, err
+				}
+				runErr = errors.Join(runErr, err)
+			}
+		} else {
+			e.history = append(e.history, outcome.message)
+			if retryAttempt > 0 {
+				if err := e.emitRetryEnd(ctx, retryAttempt, true, nil); err != nil {
+					return e.result, err
+				}
+			}
 			calls, err := extractToolCalls(outcome.message)
 			if err != nil {
 				runErr = err
@@ -177,6 +250,36 @@ func (e *runExecution) run(ctx context.Context) (Result, error) {
 		}); err != nil {
 			return e.result, errors.Join(runErr, err)
 		}
+		if modelErr != nil {
+			nextAttempt := retryAttempt + 1
+			delay, retry := e.loop.retry.decision(runErr, nextAttempt)
+			if !retry {
+				if retryAttempt > 0 {
+					if err := e.emitRetryEnd(ctx, retryAttempt, false, runErr); err != nil {
+						return e.result, errors.Join(runErr, err)
+					}
+				}
+				return e.finishRun(ctx, runErr)
+			}
+
+			retryAttempt = nextAttempt
+			if err := e.startRetry(ctx, retryAttempt, delay, runErr); err != nil {
+				return e.result, errors.Join(runErr, err)
+			}
+			if err := waitRetry(ctx, delay); err != nil {
+				waitErr := errors.Join(runErr, err)
+				_ = e.emitRetryEnd(ctx, retryAttempt, false, waitErr)
+				return e.finishRun(ctx, waitErr)
+			}
+			turnNumber++
+			if err := e.emit(ctx, AgentEvent{
+				Type:       EventTypeTurnStart,
+				TurnNumber: turnNumber,
+			}); err != nil {
+				return e.result, err
+			}
+			continue
+		}
 		if runErr != nil {
 			return e.finishRun(ctx, runErr)
 		}
@@ -184,6 +287,7 @@ func (e *runExecution) run(ctx context.Context) (Result, error) {
 			return e.finishRun(ctx, nil)
 		}
 
+		retryAttempt = 0
 		turnNumber++
 		if err := e.emit(ctx, AgentEvent{Type: EventTypeTurnStart, TurnNumber: turnNumber}); err != nil {
 			return e.result, err
@@ -191,10 +295,86 @@ func (e *runExecution) run(ctx context.Context) (Result, error) {
 	}
 }
 
+func (e *runExecution) recordIncompleteAttempt(
+	ctx context.Context,
+	turnNumber int,
+	messageStarted bool,
+	runErr error,
+) error {
+	message := llm.NewAssistantMessage(e.input.Model)
+	message.StopReason = llm.StopReasonError
+	message.ErrorMessage = "model request failed before completion"
+	if !messageStarted {
+		if err := e.emit(ctx, AgentEvent{
+			Type:       EventTypeMessageStart,
+			TurnNumber: turnNumber,
+			Message:    message,
+		}); err != nil {
+			return err
+		}
+	}
+	if err := e.emit(ctx, AgentEvent{
+		Type:       EventTypeMessageEnd,
+		TurnNumber: turnNumber,
+		Message:    message,
+		Err:        runErr,
+	}); err != nil {
+		return err
+	}
+
+	turn := Turn{
+		Number:      turnNumber,
+		Assistant:   message,
+		ToolResults: []llm.ToolResultMessage{},
+	}
+	e.result.Turns = append(e.result.Turns, turn)
+	return e.emit(ctx, AgentEvent{
+		Type:       EventTypeTurnEnd,
+		TurnNumber: turnNumber,
+		Message:    message,
+		Err:        runErr,
+	})
+}
+
+func (e *runExecution) startRetry(
+	ctx context.Context,
+	attempt int,
+	delay time.Duration,
+	runErr error,
+) error {
+	return e.emit(ctx, AgentEvent{
+		Type: EventTypeRetryStart,
+		Retry: &RetryEvent{
+			Attempt:    attempt,
+			MaxRetries: e.loop.retry.MaxRetries,
+			Delay:      delay,
+			Err:        runErr,
+		},
+	})
+}
+
+func (e *runExecution) emitRetryEnd(
+	ctx context.Context,
+	attempt int,
+	success bool,
+	runErr error,
+) error {
+	return e.emit(ctx, AgentEvent{
+		Type: EventTypeRetryEnd,
+		Retry: &RetryEvent{
+			Attempt:    attempt,
+			MaxRetries: e.loop.retry.MaxRetries,
+			Success:    success,
+			Err:        runErr,
+		},
+	})
+}
+
 type assistantOutcome struct {
 	message     llm.AssistantMessage
 	terminalErr error
 	complete    bool
+	started     bool
 }
 
 func (e *runExecution) streamAssistant(
@@ -240,14 +420,17 @@ func (e *runExecution) consumeAssistant(
 		if err != nil {
 			if errors.Is(err, io.EOF) {
 				if ctxErr := ctx.Err(); ctxErr != nil {
-					return assistantOutcome{}, ctxErr
+					return assistantOutcome{started: started}, ctxErr
 				}
-				return assistantOutcome{}, fmt.Errorf(
+				return assistantOutcome{started: started}, fmt.Errorf(
 					"%w: stream ended before a terminal event",
 					ErrProtocol,
 				)
 			}
-			return assistantOutcome{}, fmt.Errorf("agent: read model stream: %w", err)
+			return assistantOutcome{started: started}, fmt.Errorf(
+				"agent: read model stream: %w",
+				err,
+			)
 		}
 
 		switch event.Type {
@@ -299,6 +482,7 @@ func (e *runExecution) consumeAssistant(
 				message:     message,
 				terminalErr: terminalErr,
 				complete:    true,
+				started:     true,
 			}, nil
 		case llm.EventTypeTextStart,
 			llm.EventTypeTextDelta,
@@ -390,6 +574,7 @@ func (e *runExecution) executeTools(
 				turnNumber,
 				calls[index:],
 				ctxErr.Error(),
+				true,
 			)
 			results = append(results, remaining...)
 			return results, errors.Join(ctxErr, err)
@@ -453,13 +638,16 @@ func (e *runExecution) syntheticToolResults(
 	turnNumber int,
 	calls []llm.ToolCall,
 	reason string,
+	recordHistory bool,
 ) ([]llm.ToolResultMessage, error) {
 	results := make([]llm.ToolResultMessage, 0, len(calls))
 	for index := range calls {
 		call := calls[index]
 		message := newErrorToolResult(call, errors.New(reason))
 		results = append(results, message)
-		e.history = append(e.history, message)
+		if recordHistory {
+			e.history = append(e.history, message)
+		}
 		if err := e.emitToolResultMessage(ctx, turnNumber, call, message); err != nil {
 			return results, err
 		}
@@ -548,7 +736,7 @@ func finalizeFailedResult(
 
 	terminalText, stopReason := terminalFailure(runErr)
 	result = pairUnfinishedToolCalls(result, terminalText)
-	if resultEndsAtAssistant(result) {
+	if resultEndsAtAssistant(result) && !needsAbortedTerminal(result, stopReason) {
 		return result
 	}
 	if err := result.Prompt.Validate(); err != nil {
@@ -575,6 +763,13 @@ func finalizeFailedResult(
 		ToolResults: []llm.ToolResultMessage{},
 	})
 	return result
+}
+
+func needsAbortedTerminal(result Result, stopReason llm.StopReason) bool {
+	if stopReason != llm.StopReasonAborted || len(result.Turns) == 0 {
+		return false
+	}
+	return result.Turns[len(result.Turns)-1].Assistant.StopReason != llm.StopReasonAborted
 }
 
 func pairUnfinishedToolCalls(result Result, terminalText string) Result {

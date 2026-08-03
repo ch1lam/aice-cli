@@ -4,6 +4,7 @@ package agent
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/ch1lam/aice-cli/internal/llm"
 )
@@ -82,7 +83,19 @@ const (
 	EventTypeMessageEnd         EventType = "message_end"
 	EventTypeToolExecutionStart EventType = "tool_execution_start"
 	EventTypeToolExecutionEnd   EventType = "tool_execution_end"
+	EventTypeRetryStart         EventType = "retry_start"
+	EventTypeRetryEnd           EventType = "retry_end"
 )
+
+// RetryEvent describes one model-call retry. Attempt is one-based and never
+// exceeds MaxRetries. Success is meaningful only on retry_end.
+type RetryEvent struct {
+	Attempt    int
+	MaxRetries int
+	Delay      time.Duration
+	Success    bool
+	Err        error
+}
 
 // AgentEvent is one synchronous lifecycle update from an agent run. Fields are
 // populated according to Type; TurnNumber is one-based.
@@ -95,6 +108,8 @@ type AgentEvent struct {
 	AssistantMessageEvent *llm.Event
 	ToolCall              *llm.ToolCall
 	ToolResult            *llm.ToolResultMessage
+	// Retry is populated only for retry_start and retry_end.
+	Retry *RetryEvent
 	// ToolResults is populated only for turn_end.
 	ToolResults []llm.ToolResultMessage
 	// Messages contains this run's new transcript messages on agent_end.
