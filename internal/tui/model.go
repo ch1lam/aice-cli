@@ -105,6 +105,7 @@ type model struct {
 	apiKeyConfigured bool
 	sessionUsage     llm.Usage
 	usageAnimation   usageAnimation
+	welcomeAnimation welcomeAnimation
 	workingDirectory string
 	entries          []transcriptEntry
 	processGroups    []processGroup
@@ -193,11 +194,14 @@ func newModel(
 		commands:       slashCommandCatalog(externalCommands),
 		assistantEntry: -1,
 		status:         "Ready",
+		// The welcome animation starts running at construction; Init() emits
+		// its first tick. It pauses once the run starts and resumes on /clear.
+		welcomeAnimation: welcomeAnimation{running: true, generation: 1},
 	}
 }
 
 func (m model) Init() tea.Cmd {
-	return textarea.Blink
+	return tea.Batch(textarea.Blink, m.welcomeAnimation.tick())
 }
 
 func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
@@ -247,6 +251,15 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		return m.applyRunBatch(message)
 	case usageAnimationTickMsg:
 		return m, m.usageAnimation.Update(message)
+	case welcomeTickMsg:
+		active := len(m.entries) == 0 && !m.running
+		command := m.welcomeAnimation.Update(message, active)
+		if active {
+			// The logo lives inside the viewport, so its color sweep needs
+			// the transcript content re-rendered on every tick.
+			m.refreshViewport(false)
+		}
+		return m, command
 	case spinner.TickMsg:
 		var command tea.Cmd
 		m.spinner, command = m.spinner.Update(message)
@@ -511,7 +524,9 @@ func (m model) submitSlashCommand(
 		m.status = "Visible transcript cleared; Session history is unchanged"
 		m.resizeLayout()
 		m.refreshViewport(true)
-		return m, nil, true
+		// Clearing the transcript brings the welcome screen back, so resume
+		// its animated logo.
+		return m, m.welcomeAnimation.Start(), true
 	case "quit":
 		if request.Arguments != "" {
 			return m.commandUsageError(raw, command)
@@ -1574,46 +1589,6 @@ func joinTranscriptViewParts(parts []transcriptViewPart) string {
 		view.WriteString(part.content)
 	}
 	return view.String()
-}
-
-func (m model) welcomeView() string {
-	width := max(m.viewport.Width()-8, 20)
-	width = min(width, 62)
-	cardStyle := lipgloss.NewStyle().
-		Width(max(width-6, 1)).
-		Padding(1, 2).
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(subtleColor).
-		Background(panelBlackColor)
-	title := headerStyle.Render("✦  Work with your codebase")
-	description := mutedStyle.Render(
-		"Ask AICE to trace behavior, explain architecture, or inspect a file.",
-	)
-	commandHint := mutedStyle.Render("Type / to browse interactive commands.")
-	if !m.apiKeyConfigured {
-		title = headerStyle.Render("✦  Configure AICE")
-		description = noticeStyle.Render(
-			"No DeepSeek API key is configured.",
-		)
-		commandHint = mutedStyle.Render(
-			"Run /login to add one, or /settings to inspect configuration.",
-		)
-	}
-	toolLabel := mutedStyle.Render("AVAILABLE TOOLS")
-	tools := labelStyle.Render(
-		"read   ls   grep   find",
-	)
-	card := cardStyle.Render(strings.Join(
-		[]string{title, description, commandHint, "", toolLabel, tools},
-		"\n",
-	))
-	return lipgloss.Place(
-		m.viewport.Width(),
-		m.viewport.Height(),
-		lipgloss.Center,
-		lipgloss.Center,
-		card,
-	)
 }
 
 func (m model) entryView(
