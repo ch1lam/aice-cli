@@ -126,7 +126,10 @@ func Open(ctx context.Context, path string) (*Store, error) {
 	if err := validatePath(path); err != nil {
 		return nil, err
 	}
-	file, err := os.OpenFile(path, os.O_RDWR|os.O_APPEND, 0)
+	// Recover through a non-append handle. On Windows, O_APPEND intentionally
+	// omits FILE_WRITE_DATA, so the same handle cannot truncate an incomplete
+	// tail even when it was opened with O_RDWR.
+	file, err := os.OpenFile(path, os.O_RDWR, 0)
 	if err != nil {
 		return nil, fmt.Errorf("session: open file: %w", err)
 	}
@@ -148,7 +151,14 @@ func Open(ctx context.Context, path string) (*Store, error) {
 			)
 		}
 	}
-	return newStore(file, path, snapshot), nil
+	if err := file.Close(); err != nil {
+		return nil, fmt.Errorf("session: close recovered file: %w", err)
+	}
+	appendFile, err := os.OpenFile(path, os.O_RDWR|os.O_APPEND, 0)
+	if err != nil {
+		return nil, fmt.Errorf("session: reopen file for append: %w", err)
+	}
+	return newStore(appendFile, path, snapshot), nil
 }
 
 func newStore(file *os.File, path string, snapshot Snapshot) *Store {

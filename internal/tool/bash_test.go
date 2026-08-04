@@ -58,14 +58,21 @@ func TestBashExecuteUsesWorkingDirectoryAndHostEnvironment(t *testing.T) {
 	}
 
 	result, err := bash.Execute(t.Context(), toolCall(t, "bash", map[string]any{
-		"command": `printf '%s\n%s' "$PWD" "$AICE_TOOL_TEST_VALUE"`,
+		"command": `printf '%s' "$AICE_TOOL_TEST_VALUE"; printf cwd > working-directory-marker.txt`,
 	}))
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
 	text := resultText(t, result)
-	if !strings.Contains(text, root+"\ninherited") {
+	if !strings.Contains(text, "inherited") {
 		t.Fatalf("Execute() text = %q", text)
+	}
+	marker, err := os.ReadFile(filepath.Join(root, "working-directory-marker.txt"))
+	if err != nil {
+		t.Fatalf("ReadFile(working-directory-marker.txt) error = %v", err)
+	}
+	if got, want := string(marker), "cwd"; got != want {
+		t.Fatalf("working directory marker = %q, want %q", got, want)
 	}
 	if strings.Contains(text, "hidden") {
 		t.Fatalf("Execute() leaked an environment value it was not asked to print: %q", text)

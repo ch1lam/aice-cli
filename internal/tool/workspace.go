@@ -11,8 +11,9 @@ import (
 
 // Workspace defines the default working directory for agent tools.
 type Workspace struct {
-	path       string
-	mutationMu sync.Mutex
+	path         string
+	physicalPath string
+	mutationMu   sync.Mutex
 }
 
 // NewWorkspace resolves and validates the default working directory.
@@ -35,8 +36,15 @@ func NewWorkspace(path string) (*Workspace, error) {
 	if !info.IsDir() {
 		return nil, fmt.Errorf("tool: working directory %q is not a directory", path)
 	}
+	physicalPath, err := filepath.EvalSymlinks(absolutePath)
+	if err != nil {
+		return nil, fmt.Errorf("tool: resolve working directory symlinks: %w", err)
+	}
 
-	return &Workspace{path: filepath.Clean(absolutePath)}, nil
+	return &Workspace{
+		path:         filepath.Clean(absolutePath),
+		physicalPath: filepath.Clean(physicalPath),
+	}, nil
 }
 
 // Path returns the absolute default working directory.
@@ -61,10 +69,10 @@ func (w *Workspace) resolvePath(input string) (string, error) {
 	if filepath.IsAbs(input) {
 		return input, nil
 	}
-	// Keep relative components for the OS to resolve after symlinks, matching
-	// how the same path behaves from an actual process working directory.
-	if strings.HasSuffix(w.path, string(os.PathSeparator)) {
-		return w.path + input, nil
+	// Resolve file operations from the cached physical path so parent traversal
+	// has the same meaning on Windows and Unix when the workspace is a symlink.
+	if strings.HasSuffix(w.physicalPath, string(os.PathSeparator)) {
+		return w.physicalPath + input, nil
 	}
-	return w.path + string(os.PathSeparator) + input, nil
+	return w.physicalPath + string(os.PathSeparator) + input, nil
 }

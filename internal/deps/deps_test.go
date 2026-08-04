@@ -210,9 +210,10 @@ func TestDownloadHonorsDeadline(t *testing.T) {
 }
 
 func TestPrependPath(t *testing.T) {
-	got := prependPath([]string{"/a", "/b", "/a"}, "/usr/bin:/b:/bin")
 	separator := string(os.PathListSeparator)
-	want := "/a" + separator + "/b" + separator + "/usr/bin" + separator + "/bin"
+	current := strings.Join([]string{"/usr/bin", "/b", "/bin"}, separator)
+	got := prependPath([]string{"/a", "/b", "/a"}, current)
+	want := strings.Join([]string{"/a", "/b", "/usr/bin", "/bin"}, separator)
 	if got != want {
 		t.Fatalf("prependPath() = %q, want %q", got, want)
 	}

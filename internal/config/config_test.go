@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -191,12 +192,14 @@ func TestSaveSettingFileUpdatesGlobalSettings(t *testing.T) {
 		)
 	}
 
-	info, err := os.Stat(paths.GlobalSettings)
-	if err != nil {
-		t.Fatalf("Stat() error = %v", err)
-	}
-	if got := info.Mode().Perm(); got != 0o600 {
-		t.Errorf("global settings mode = %#o, want 0600", got)
+	if runtime.GOOS != "windows" {
+		info, err := os.Stat(paths.GlobalSettings)
+		if err != nil {
+			t.Fatalf("Stat() error = %v", err)
+		}
+		if got := info.Mode().Perm(); got != 0o600 {
+			t.Errorf("global settings mode = %#o, want 0600", got)
+		}
 	}
 }
 
@@ -259,12 +262,14 @@ func TestSaveDeepSeekAPIKeyFileWritesGlobalCredentialOnly(t *testing.T) {
 			err,
 		)
 	}
-	info, err := os.Stat(paths.GlobalAuth)
-	if err != nil {
-		t.Fatalf("Stat() error = %v", err)
-	}
-	if got := info.Mode().Perm(); got != 0o600 {
-		t.Errorf("global auth mode = %#o, want 0600", got)
+	if runtime.GOOS != "windows" {
+		info, err := os.Stat(paths.GlobalAuth)
+		if err != nil {
+			t.Fatalf("Stat() error = %v", err)
+		}
+		if got := info.Mode().Perm(); got != 0o600 {
+			t.Errorf("global auth mode = %#o, want 0600", got)
+		}
 	}
 }
 

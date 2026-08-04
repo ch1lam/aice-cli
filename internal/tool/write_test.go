@@ -3,6 +3,7 @@ package tool_test
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -60,12 +61,14 @@ func TestWriteExecuteCreatesAndAtomicallyReplacesFiles(t *testing.T) {
 	if got := string(data); got != "new content" {
 		t.Fatalf("file content = %q", got)
 	}
-	info, err := os.Stat(path)
-	if err != nil {
-		t.Fatalf("os.Stat() error = %v", err)
-	}
-	if got := info.Mode().Perm(); got != 0o600 {
-		t.Fatalf("file mode = %o, want 600", got)
+	if runtime.GOOS != "windows" {
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatalf("os.Stat() error = %v", err)
+		}
+		if got := info.Mode().Perm(); got != 0o600 {
+			t.Fatalf("file mode = %o, want 600", got)
+		}
 	}
 }
 

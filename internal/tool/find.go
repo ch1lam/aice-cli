@@ -131,7 +131,7 @@ func (f *Find) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult, 
 		count++
 		resultPath := filePath
 		if !filepath.IsAbs(args.Path) {
-			resultPath, relativeErr = filepath.Rel(f.workspace.Path(), filePath)
+			resultPath, relativeErr = filepath.Rel(f.workspace.physicalPath, filePath)
 			if relativeErr != nil {
 				return relativeErr
 			}
