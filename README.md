@@ -32,7 +32,7 @@ edges.
 | Area | Current implementation |
 | --- | --- |
 | Interface | Bubble Tea TUI and one-shot `--print` mode |
-| Provider | DeepSeek V4 Flash and Pro through the Anthropic Messages protocol |
+| Provider | DeepSeek V4 Flash (OpenAI Responses protocol) and V4 Pro (Anthropic Messages protocol) |
 | Tools | `read`, `write`, `edit`, `bash`, `grep`, `find`, `ls` |
 | Sessions | restart recovery, branch tree, checkout/backtracking, and manual non-destructive compaction |
 | Input | text only |

@@ -37,20 +37,30 @@ boolean that could conflict with the reasoning level.
 The interactive TUI supports:
 
 ```text
+/help
 /settings
 /login
 /provider
 /model
 /thinking
+/session
+/tree
 /checkout
+/compact
+/clear
+/quit
 ```
 
-`/login` opens a provider menu before hidden credential input. `/provider`,
-`/model`, and `/thinking` open a value menu and save the selected value
-directly to global settings. `/checkout` lists the Session root and current
-tree entries. These interactive commands do not accept typed arguments; choose
-values from their menus instead. Successful setting changes update the current
-interactive Session immediately.
+`/help` lists these commands. `/login` opens a provider menu before hidden
+credential input. `/provider`, `/model`, and `/thinking` open a value menu and
+save the selected value directly to global settings. `/session` shows the
+current Session file, `/tree` lists the Session branch tree and active leaf,
+and `/checkout` chooses where the next Session branch starts. `/compact`
+compacts the active branch at the current turn boundary. `/clear` clears the
+visible transcript without changing Session history, and `/quit` exits AICE.
+Menu-based commands do not accept typed arguments; choose values from their
+menus instead. Successful setting changes update the current interactive
+Session immediately.
 
 ## Credentials
 

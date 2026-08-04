@@ -28,7 +28,7 @@ AICE 是一个受 [Pi](https://github.com/earendil-works/pi) 启发、使用纯 
 | 领域 | 当前实现 |
 | --- | --- |
 | 交互 | Bubble Tea TUI 与一次性 `--print` 模式 |
-| Provider | 通过 Anthropic Messages 协议调用 DeepSeek V4 Flash 与 Pro |
+| Provider | DeepSeek V4 Flash 走 OpenAI Responses 协议,V4 Pro 走 Anthropic Messages 协议 |
 | 工具 | `read`、`write`、`edit`、`bash`、`grep`、`find`、`ls` |
 | Session | 重启恢复、分支树、回退和手动非破坏性压缩 |
 | 输入 | 仅文本 |

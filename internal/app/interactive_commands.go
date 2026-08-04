@@ -65,7 +65,7 @@ func (s *interactiveSession) loginProviderMenu() *tui.SlashCommandMenu {
 		Title: "Select provider",
 		Options: []tui.SlashCommandOption{{
 			Label:       "DeepSeek",
-			Description: "Anthropic-compatible DeepSeek API",
+			Description: "DeepSeek API (V4 Flash via OpenAI Responses, V4 Pro via Anthropic Messages)",
 			Arguments:   string(deepseek.ProviderID),
 			Current:     s.configuration.Provider == string(deepseek.ProviderID),
 		}},
@@ -78,7 +78,7 @@ func (s *interactiveSession) providerMenu() *tui.SlashCommandMenu {
 		Title: "Select provider",
 		Options: []tui.SlashCommandOption{{
 			Label:       "DeepSeek",
-			Description: "Anthropic-compatible DeepSeek API",
+			Description: "DeepSeek API (V4 Flash via OpenAI Responses, V4 Pro via Anthropic Messages)",
 			Arguments:   value,
 			Current:     s.configuration.Provider == value,
 		}},

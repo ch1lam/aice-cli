@@ -941,7 +941,10 @@ func TestModelStatusLineShowsSessionUsageAndEstimatedCost(t *testing.T) {
 	}
 
 	wide := current.statusLine(120)
+	wideText := ansi.Strip(wide)
 	for _, want := range []string{
+		"? shortcuts",
+		"ctrl+C quit",
 		"↑1.2k",
 		"↓456",
 		"R100",
@@ -949,7 +952,7 @@ func TestModelStatusLineShowsSessionUsageAndEstimatedCost(t *testing.T) {
 		"$0.007",
 		"deepseek-v4-flash",
 	} {
-		if !strings.Contains(wide, want) {
+		if !strings.Contains(wideText, want) {
 			t.Errorf("wide status line = %q, want %q", wide, want)
 		}
 	}
@@ -957,8 +960,6 @@ func TestModelStatusLineShowsSessionUsageAndEstimatedCost(t *testing.T) {
 	standard := current.statusLine(80)
 	standardText := ansi.Strip(standard)
 	for _, want := range []string{
-		"? shortcuts",
-		"ctrl+C quit",
 		"↑1.3k",
 		"↓456",
 		"$0.007",
@@ -969,9 +970,15 @@ func TestModelStatusLineShowsSessionUsageAndEstimatedCost(t *testing.T) {
 			t.Errorf("standard status line = %q, want %q", standard, want)
 		}
 	}
-	if strings.Contains(standardText, "R100") ||
-		strings.Contains(standardText, "W20") {
-		t.Errorf("standard status line did not compact cache detail: %q", standard)
+	for _, unwanted := range []string{
+		"? shortcuts",
+		"ctrl+C quit",
+		"R100",
+		"W20",
+	} {
+		if strings.Contains(standardText, unwanted) {
+			t.Errorf("standard status line = %q, did not want %q", standard, unwanted)
+		}
 	}
 	if lipgloss.Width(standard) > 80 {
 		t.Errorf("standard status width = %d, want at most 80", lipgloss.Width(standard))
@@ -979,8 +986,6 @@ func TestModelStatusLineShowsSessionUsageAndEstimatedCost(t *testing.T) {
 	assertTextOrder(
 		t,
 		standardText,
-		"? shortcuts",
-		"ctrl+C quit",
 		"↑1.3k",
 		"deepseek-v4-flash",
 		"reasoning default",
@@ -1037,8 +1042,6 @@ func TestModelStatusLineShowsZeroUsageBeforeConversation(t *testing.T) {
 	footer := current.footerView(80)
 	footerText := ansi.Strip(footer)
 	for _, want := range []string{
-		"? shortcuts",
-		"ctrl+C quit",
 		"↑0",
 		"↓0",
 		"$0.000",
@@ -1049,9 +1052,15 @@ func TestModelStatusLineShowsZeroUsageBeforeConversation(t *testing.T) {
 			t.Errorf("80-column zero footer = %q, want %q", footer, want)
 		}
 	}
-	if strings.Contains(footerText, "R0") ||
-		strings.Contains(footerText, "W0") {
-		t.Errorf("80-column zero footer did not compact cache detail: %q", footer)
+	for _, unwanted := range []string{
+		"? shortcuts",
+		"ctrl+C quit",
+		"R0",
+		"W0",
+	} {
+		if strings.Contains(footerText, unwanted) {
+			t.Errorf("80-column zero footer = %q, did not want %q", footer, unwanted)
+		}
 	}
 	if got := lipgloss.Height(footer); got != 1 {
 		t.Errorf("80-column zero footer height = %d, want one line: %q", got, footer)
