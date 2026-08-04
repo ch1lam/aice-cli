@@ -123,6 +123,7 @@ func NewRootCommand(dependencies Dependencies) (*cobra.Command, error) {
 			return nil
 		},
 	}
+	command.Version = Version
 	command.SetFlagErrorFunc(func(_ *cobra.Command, err error) error {
 		return newUsageError(err)
 	})

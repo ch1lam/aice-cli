@@ -33,13 +33,55 @@ AICE 是一个受 [Pi](https://github.com/earendil-works/pi) 启发、使用纯 
 | Session | 重启恢复、分支树、回退和手动非破坏性压缩 |
 | 输入 | 仅文本 |
 
+## 从 Release 安装
+
+每个 [GitHub Release](https://github.com/ch1lam/aice-cli/releases) 都会附带
+macOS（`arm64`、`amd64`）、Linux（`arm64`、`amd64`）和 Windows（`amd64`）
+的预编译二进制，无需安装 Go 工具链。首次启动时 AICE 会自动检测并下载缺失的
+辅助程序（见下文），无需手动配置。
+
+Apple Silicon（M 系列）Mac：
+
+```sh
+curl -fL -o aice.tar.gz \
+  https://github.com/ch1lam/aice-cli/releases/latest/download/aice_darwin_arm64.tar.gz
+tar -xzf aice.tar.gz
+sudo mv aice /usr/local/bin/
+aice --version
+```
+
+其他机器选择对应压缩包：`aice_darwin_amd64.tar.gz`（Intel Mac）、
+`aice_linux_amd64.tar.gz`、`aice_linux_arm64.tar.gz`、`aice_windows_amd64.zip`。
+`latest/download/` 链接始终指向最新版本；旧版本仍可从对应 tag 的 Release 页面下载。
+
+Windows（`aice_windows_amd64.zip`）：
+
+```powershell
+Expand-Archive -Path aice.zip -DestinationPath .
+.\aice.exe --version
+```
+
+### 辅助程序
+
+AICE 的 `grep` 工具需要 [`ripgrep`](https://github.com/BurntSushi/ripgrep)
+（`rg`），`bash` 工具需要 `bash`（macOS/Linux 自带；Windows 上来自
+[Git for Windows](https://git-scm.com/download/win)）。首次启动时 AICE 检查
+每个辅助程序，缺失时自动下载到 `~/.aice/bin`——ripgrep 是单个小二进制，Windows
+的 Git Bash 会下载约 60 MB 的 [Portable Git](https://git-scm.com/download/win)。
+下载前会按代码内固定的 SHA-256 校验。若下载失败，app 仍能启动，受影响的工具会
+报告 `unavailable`，直到装好辅助程序为止。
+
+设置 `AICE_NO_DEP_INSTALL=1` 可禁用自动下载，改为手动管理。
+
+首次启动后执行 `/login` 保存你的 DeepSeek API Key。
+
 ## 快速开始
 
 环境要求：
 
 - [`go.mod`](./go.mod) 中声明的 Go 版本
-- `PATH` 中存在 `bash` 和
-  [`ripgrep`](https://github.com/BurntSushi/ripgrep)（`rg`）
+- `bash` 和 [`ripgrep`](https://github.com/BurntSushi/ripgrep)（`rg`）——
+  缺失时 app 会在首次启动自动下载
 - DeepSeek API Key
 
 ```sh

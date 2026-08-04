@@ -54,10 +54,12 @@ type Settings struct {
 	Thinking llm.ThinkingLevel `json:"thinking,omitempty"`
 }
 
-// Paths identifies all files used to resolve configuration.
+// Paths identifies all files used to resolve configuration and the directory
+// where AICE installs helper executables.
 type Paths struct {
 	GlobalSettings string
 	GlobalAuth     string
+	BinDir         string
 }
 
 // Config contains the effective process settings needed by AICE.
@@ -96,6 +98,7 @@ func DefaultPaths() (Paths, error) {
 	return Paths{
 		GlobalSettings: filepath.Join(globalDir, settingsFileName),
 		GlobalAuth:     filepath.Join(globalDir, authFileName),
+		BinDir:         filepath.Join(globalDir, "bin"),
 	}, nil
 }
 
@@ -351,6 +354,7 @@ func (p Paths) validate() error {
 	for name, path := range map[string]string{
 		"global settings": p.GlobalSettings,
 		"global auth":     p.GlobalAuth,
+		"bin dir":         p.BinDir,
 	} {
 		if strings.TrimSpace(path) == "" {
 			return fmt.Errorf("config: %s path is required", name)

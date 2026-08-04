@@ -293,6 +293,7 @@ func testPaths(root string) config.Paths {
 	return config.Paths{
 		GlobalSettings: filepath.Join(root, "global", "settings.json"),
 		GlobalAuth:     filepath.Join(root, "global", "auth.json"),
+		BinDir:         filepath.Join(root, "global", "bin"),
 	}
 }
 

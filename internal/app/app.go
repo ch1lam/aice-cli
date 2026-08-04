@@ -6,12 +6,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 
 	"github.com/spf13/cobra"
 
 	"github.com/ch1lam/aice-cli/internal/agent"
 	"github.com/ch1lam/aice-cli/internal/cli"
 	"github.com/ch1lam/aice-cli/internal/config"
+	"github.com/ch1lam/aice-cli/internal/deps"
 	"github.com/ch1lam/aice-cli/internal/llm"
 	"github.com/ch1lam/aice-cli/internal/provider/deepseek"
 	"github.com/ch1lam/aice-cli/internal/session"
@@ -116,7 +118,7 @@ func (a *application) Print(
 		return fmt.Errorf("app: output is required")
 	}
 
-	environment, err := a.newRunEnvironment(request.Workspace)
+	environment, err := a.newRunEnvironment(ctx, request.Workspace)
 	if err != nil {
 		return err
 	}
@@ -180,7 +182,7 @@ func (a *application) Interactive(
 		return fmt.Errorf("app: output is required")
 	}
 
-	environment, err := a.newRunEnvironment(request.Workspace)
+	environment, err := a.newRunEnvironment(ctx, request.Workspace)
 	if err != nil {
 		return err
 	}
@@ -237,6 +239,7 @@ type configuredModel struct {
 }
 
 func (a *application) newRunEnvironment(
+	ctx context.Context,
 	workingDirectory string,
 ) (*runEnvironment, error) {
 	workspace, err := tool.NewWorkspace(workingDirectory)
@@ -246,6 +249,14 @@ func (a *application) newRunEnvironment(
 	configured, err := a.loadConfiguredModel()
 	if err != nil {
 		return nil, err
+	}
+	// Make the external helpers the tools need (ripgrep, Git Bash on Windows)
+	// available before constructing them; a failure is logged, not fatal, and
+	// the affected tools degrade to unavailable stubs.
+	if paths, err := config.DefaultPaths(); err == nil {
+		if err := deps.Ensure(ctx, deps.DefaultOptions().WithBinDir(paths.BinDir)); err != nil {
+			fmt.Fprintf(os.Stderr, "aice: warning: %v\n", err)
+		}
 	}
 	tools, err := newBuiltInTools(workspace)
 	if err != nil {
@@ -433,35 +444,35 @@ func (s *interactiveSession) Run(
 }
 
 func newBuiltInTools(workspace *tool.Workspace) ([]agent.Tool, error) {
+	if workspace == nil {
+		return nil, fmt.Errorf("app: workspace is required")
+	}
+	// A tool whose external executable is missing becomes an unavailable stub
+	// instead of failing the whole tool set, so the app always starts and the
+	// agent can explain the gap to the user.
+	tools := make([]agent.Tool, 0, 7)
+	add := func(name string, current agent.Tool, err error) {
+		if err != nil {
+			current = tool.NewUnavailable(name, err)
+		}
+		tools = append(tools, current)
+	}
+
 	read, err := tool.NewRead(workspace)
-	if err != nil {
-		return nil, fmt.Errorf("app: create read tool: %w", err)
-	}
+	add("read", read, err)
 	write, err := tool.NewWrite(workspace)
-	if err != nil {
-		return nil, fmt.Errorf("app: create write tool: %w", err)
-	}
+	add("write", write, err)
 	edit, err := tool.NewEdit(workspace)
-	if err != nil {
-		return nil, fmt.Errorf("app: create edit tool: %w", err)
-	}
+	add("edit", edit, err)
 	bash, err := tool.NewBash(workspace)
-	if err != nil {
-		return nil, fmt.Errorf("app: create bash tool: %w", err)
-	}
+	add("bash", bash, err)
 	grep, err := tool.NewGrep(workspace)
-	if err != nil {
-		return nil, fmt.Errorf("app: create grep tool: %w", err)
-	}
+	add("grep", grep, err)
 	find, err := tool.NewFind(workspace)
-	if err != nil {
-		return nil, fmt.Errorf("app: create find tool: %w", err)
-	}
+	add("find", find, err)
 	ls, err := tool.NewLS(workspace)
-	if err != nil {
-		return nil, fmt.Errorf("app: create ls tool: %w", err)
-	}
-	return []agent.Tool{read, write, edit, bash, grep, find, ls}, nil
+	add("ls", ls, err)
+	return tools, nil
 }
 
 type streamPrinter struct {

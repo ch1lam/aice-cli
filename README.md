@@ -37,13 +37,61 @@ edges.
 | Sessions | restart recovery, branch tree, checkout/backtracking, and manual non-destructive compaction |
 | Input | text only |
 
+## Install from a release
+
+Prebuilt binaries are attached to each [GitHub
+Release](https://github.com/ch1lam/aice-cli/releases) for macOS (`arm64`,
+`amd64`), Linux (`arm64`, `amd64`), and Windows (`amd64`). No Go toolchain is
+needed. On first launch AICE detects its helper executables and downloads the
+missing ones automatically (see below), so no manual setup is required.
+
+On Apple Silicon (M-series) macOS:
+
+```sh
+curl -fL -o aice.tar.gz \
+  https://github.com/ch1lam/aice-cli/releases/latest/download/aice_darwin_arm64.tar.gz
+tar -xzf aice.tar.gz
+sudo mv aice /usr/local/bin/
+aice --version
+```
+
+Pick the matching archive for other machines: `aice_darwin_amd64.tar.gz`
+(Intel Mac), `aice_linux_amd64.tar.gz`, `aice_linux_arm64.tar.gz`, or
+`aice_windows_amd64.zip`. The `latest/download/` URL always resolves to the
+newest release; older versions remain available from their tagged release
+page.
+
+Windows (`aice_windows_amd64.zip`):
+
+```powershell
+Expand-Archive -Path aice.zip -DestinationPath .
+.\aice.exe --version
+```
+
+### Helper executables
+
+AICE's `grep` tool needs [`ripgrep`](https://github.com/BurntSushi/ripgrep)
+(`rg`), and its `bash` tool needs `bash` (present on macOS/Linux; on Windows
+it comes with [Git for Windows](https://git-scm.com/download/win)). On first
+launch AICE checks for each helper and downloads it to `~/.aice/bin` when
+missing — ripgrep is a small single binary, and Windows Git Bash downloads
+the ~60 MB [Portable
+Git](https://git-scm.com/download/win) build. Downloads are verified against
+a pinned SHA-256 before being used. If a download fails the app still starts,
+and the affected tool reports `unavailable` until the helper is installed.
+
+Set `AICE_NO_DEP_INSTALL=1` to disable the automatic downloads and manage
+helpers yourself.
+
+On first launch, run `/login` to store your DeepSeek API key.
+
 ## Quick start
 
 Requirements:
 
 - the Go version declared in [`go.mod`](./go.mod)
-- `bash` and [`ripgrep`](https://github.com/BurntSushi/ripgrep) (`rg`) on
-  `PATH`
+- `bash` and [`ripgrep`](https://github.com/BurntSushi/ripgrep) (`rg`) — the
+  app downloads them automatically on first launch if they are missing
 - a DeepSeek API key
 
 ```sh

@@ -1,0 +1,121 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+  # Manual trigger for a dry run: builds and bundles every target without
+  # creating a release. Only actual tag pushes publish to GitHub Releases.
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: build (${{ matrix.os }}/${{ matrix.arch }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: darwin
+            arch: amd64
+          - os: darwin
+            arch: arm64
+          - os: linux
+            arch: amd64
+          - os: linux
+            arch: arm64
+          - os: windows
+            arch: amd64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Test
+        run: go test ./...
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Build and bundle
+        env:
+          GOOS: ${{ matrix.os }}
+          GOARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}" # "v0.1.0" -> "0.1.0"; on a manual run this is a branch name
+          mkdir -p dist staging
+          binary="aice"
+          extension="tar.gz"
+          if [ "${GOOS}" = "windows" ]; then
+            binary="aice.exe"
+            extension="zip"
+          fi
+          # Stable, version-free names so releases/latest/download/... keeps
+          # resolving to the newest build; the version is embedded in the binary.
+          bundle="aice_${GOOS}_${GOARCH}.${extension}"
+          CGO_ENABLED=0 go build -trimpath \
+            -ldflags "-s -w -X github.com/ch1lam/aice-cli/internal/cli.Version=${version}" \
+            -o "staging/${binary}" ./cmd/aice
+          cp LICENSE README.md staging/
+          if [ "${GOOS}" = "windows" ]; then
+            (cd staging && zip -q -r "../dist/${bundle}" "${binary}" LICENSE README.md)
+          else
+            tar -czf "dist/${bundle}" -C staging "${binary}" LICENSE README.md
+          fi
+
+      - name: Upload bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: bundle-${{ matrix.os }}-${{ matrix.arch }}
+          path: dist/*
+          if-no-files-found: error
+
+  test-windows:
+    name: test (windows/amd64)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Install ripgrep
+        run: choco install ripgrep --yes --no-progress
+      - name: Test
+        run: go test ./...
+      - name: Vet
+        run: go vet ./...
+
+  release:
+    name: Publish GitHub release
+    needs: [build, test-windows]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download bundles
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Generate checksums
+        run: |
+          cd dist
+          sha256sum * > checksums.txt
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
