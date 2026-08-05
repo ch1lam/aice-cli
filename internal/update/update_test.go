@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -196,8 +197,12 @@ func TestUpdateReplacesExecutable(t *testing.T) {
 	if string(content) != "fake aice binary" {
 		t.Fatalf("executable content = %q, want new binary", content)
 	}
-	if info, err := os.Stat(exe); err != nil || info.Mode()&0o111 == 0 {
-		t.Fatalf("executable mode: %v, %v", err, info.Mode())
+	// Windows has no Unix execute-permission bits; executability is derived
+	// from the file extension instead, so only assert mode on Unix-like OSes.
+	if runtime.GOOS != "windows" {
+		if info, err := os.Stat(exe); err != nil || info.Mode()&0o111 == 0 {
+			t.Fatalf("executable mode: %v, %v", err, info.Mode())
+		}
 	}
 }
 
