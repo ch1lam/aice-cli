@@ -8,6 +8,7 @@ type keyMap struct {
 	scroll    key.Binding
 	process   key.Binding
 	commands  key.Binding
+	history   key.Binding
 	help      key.Binding
 	interrupt key.Binding
 	quit      key.Binding
@@ -35,6 +36,10 @@ func newKeyMap() keyMap {
 			key.WithKeys("/"),
 			key.WithHelp("/", "commands"),
 		),
+		history: key.NewBinding(
+			key.WithKeys("up", "down"),
+			key.WithHelp("up/down", "history"),
+		),
 		help: key.NewBinding(
 			key.WithKeys("?"),
 			key.WithHelp("?", "shortcuts"),
@@ -53,6 +58,7 @@ func newKeyMap() keyMap {
 func (k keyMap) forState(running bool) keyMap {
 	k.send.SetEnabled(!running)
 	k.newline.SetEnabled(!running)
+	k.history.SetEnabled(!running)
 	k.quit.SetEnabled(!running)
 	if running {
 		k.interrupt.SetHelp("ctrl+C", "cancel")
@@ -70,7 +76,7 @@ func (k keyMap) ShortHelp() []key.Binding {
 func (k keyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.send, k.newline},
-		{k.commands, k.scroll, k.process, k.help},
+		{k.commands, k.history, k.scroll, k.process, k.help},
 		{k.interrupt, k.quit},
 	}
 }

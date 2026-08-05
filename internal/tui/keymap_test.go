@@ -68,3 +68,30 @@ func TestKeyMapShortHelpUsesOnlyQuestionMarkAndInterrupt(t *testing.T) {
 		)
 	}
 }
+
+func TestKeyMapHistoryShowsInFullHelpAndDisablesWhileRunning(t *testing.T) {
+	t.Parallel()
+
+	keys := newKeyMap()
+	fullHelp := keys.FullHelp()
+	found := false
+	for _, row := range fullHelp {
+		for _, binding := range row {
+			if binding.Help().Key == "up/down" {
+				found = true
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("full help = %#v, want up/down history binding", fullHelp)
+	}
+
+	idle := newKeyMap().forState(false)
+	if !idle.history.Enabled() {
+		t.Error("history binding disabled while idle")
+	}
+	running := newKeyMap().forState(true)
+	if running.history.Enabled() {
+		t.Error("history binding enabled while running")
+	}
+}
