@@ -36,13 +36,15 @@ type Interactor interface {
 	Interactive(ctx context.Context, request InteractiveRequest) error
 }
 
-// Dependencies contains the behavior invoked by CLI commands.
+// Dependencies contains the behavior invoked by CLI commands. Updater is
+// optional: when set it registers the update command.
 type Dependencies struct {
 	Printer      Printer
 	Interactor   Interactor
 	Compactor    Compactor
 	Navigator    SessionNavigator
 	Configurator Configurator
+	Updater      Updater
 }
 
 // NewRootCommand builds a fresh AICE command tree.
@@ -149,6 +151,9 @@ func NewRootCommand(dependencies Dependencies) (*cobra.Command, error) {
 	command.AddCommand(newCompactCommand(dependencies.Compactor))
 	command.AddCommand(newSessionCommand(dependencies.Navigator))
 	command.AddCommand(newConfigCommand(dependencies.Configurator))
+	if dependencies.Updater != nil {
+		command.AddCommand(newUpdateCommand(dependencies.Updater))
+	}
 
 	return command, nil
 }

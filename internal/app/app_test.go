@@ -1236,3 +1236,26 @@ func (t *appTestTool) Execute(
 ) (llm.ToolResult, error) {
 	return t.execute(ctx, call)
 }
+
+func TestNewCommandRegistersUpdateCommand(t *testing.T) {
+	t.Parallel()
+
+	command, err := newCommand(dependencies{
+		loadConfig: func() (config.Config, error) {
+			return config.Config{}, nil
+		},
+		newModel: func(config.Config) (agent.Model, error) {
+			return &recordingModel{}, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("newCommand() error = %v", err)
+	}
+	update, _, err := command.Find([]string{"update"})
+	if err != nil {
+		t.Fatalf("find update command: %v", err)
+	}
+	if update == nil {
+		t.Fatal("update command not registered")
+	}
+}

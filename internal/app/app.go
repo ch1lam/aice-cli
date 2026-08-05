@@ -21,6 +21,7 @@ import (
 	"github.com/ch1lam/aice-cli/internal/session"
 	"github.com/ch1lam/aice-cli/internal/tool"
 	"github.com/ch1lam/aice-cli/internal/tui"
+	"github.com/ch1lam/aice-cli/internal/update"
 )
 
 const (
@@ -78,6 +79,7 @@ func newCommand(dependencies dependencies) (*cobra.Command, error) {
 		Compactor:    application,
 		Navigator:    application,
 		Configurator: application,
+		Updater:      application,
 	})
 }
 
@@ -103,6 +105,78 @@ func (a *application) SaveAPIKey(
 	return path, nil
 }
 
+// Update runs one aice update invocation against the GitHub release the
+// running binary was distributed through.
+func (a *application) Update(
+	ctx context.Context,
+	request cli.UpdateRequest,
+	output io.Writer,
+) error {
+	if ctx == nil {
+		return fmt.Errorf("app: context is required")
+	}
+	if output == nil {
+		return fmt.Errorf("app: output is required")
+	}
+	opts := update.Options{Current: cli.Version}
+	if request.Check {
+		result, err := update.Check(ctx, opts)
+		if err != nil {
+			return err
+		}
+		return printUpdateCheck(output, result)
+	}
+	result, err := update.Update(ctx, opts, request.Force)
+	if err != nil {
+		return err
+	}
+	return printUpdateResult(output, result)
+}
+
+// notifyUpdate reports an available release before a session starts. It never
+// fails the session: the notifier gates itself on terminal, opt-out, and
+// freshness checks.
+func (a *application) notifyUpdate(ctx context.Context) {
+	update.Notify(ctx, update.Options{Current: cli.Version})
+}
+
+func printUpdateCheck(output io.Writer, result update.CheckResult) error {
+	if result.Available {
+		_, err := fmt.Fprintf(
+			output,
+			"update available: %s -> %s (run `aice update`)\n",
+			result.Current,
+			result.Latest,
+		)
+		return err
+	}
+	if result.Current == result.Latest {
+		_, err := fmt.Fprintf(output, "aice is up to date (%s)\n", result.Latest)
+		return err
+	}
+	// The current version cannot be compared (for example a dev build), so the
+	// latest release is reported without claiming the install is current.
+	_, err := fmt.Fprintf(output, "latest release is %s\n", result.Latest)
+	return err
+}
+
+func printUpdateResult(output io.Writer, result update.UpdateResult) error {
+	if !result.Updated {
+		_, err := fmt.Fprintf(output, "aice is up to date (%s)\n", result.Latest)
+		return err
+	}
+	if _, err := fmt.Fprintf(
+		output,
+		"updated aice %s -> %s\n",
+		result.Current,
+		result.Latest,
+	); err != nil {
+		return err
+	}
+	_, err := fmt.Fprintf(output, "restart aice to use the new version\n")
+	return err
+}
+
 func (a *application) Print(
 	ctx context.Context,
 	request cli.PrintRequest,
@@ -114,6 +188,7 @@ func (a *application) Print(
 	if output == nil {
 		return fmt.Errorf("app: output is required")
 	}
+	a.notifyUpdate(ctx)
 
 	environment, err := a.newRunEnvironment(ctx, request.Workspace)
 	if err != nil {
@@ -178,6 +253,7 @@ func (a *application) Interactive(
 	if request.Output == nil {
 		return fmt.Errorf("app: output is required")
 	}
+	a.notifyUpdate(ctx)
 
 	environment, err := a.newRunEnvironment(ctx, request.Workspace)
 	if err != nil {
