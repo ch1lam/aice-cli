@@ -45,7 +45,14 @@ Release](https://github.com/ch1lam/aice-cli/releases) for macOS (`arm64`,
 needed. On first launch AICE detects its helper executables and downloads the
 missing ones automatically (see below), so no manual setup is required.
 
-On Apple Silicon (M-series) macOS:
+The recommended installer puts AICE in `~/.local/bin` — a user-writable
+directory — so `aice update` can later replace the binary in place:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/ch1lam/aice-cli/main/scripts/install.sh | sh
+```
+
+A manual download also works. On Apple Silicon (M-series) macOS:
 
 ```sh
 curl -fL -o aice.tar.gz \
@@ -67,6 +74,26 @@ Windows (`aice_windows_amd64.zip`):
 Expand-Archive -Path aice.zip -DestinationPath .
 .\aice.exe --version
 ```
+
+### Updating
+
+`aice update` checks GitHub Releases and replaces the running binary when a
+newer version exists; each downloaded asset is verified against the release's
+`checksums.txt` before it replaces the executable.
+
+```sh
+aice update            # install the newest release
+aice update --check    # only report whether an update exists
+aice update --force    # reinstall, or install over a dev build
+```
+
+In interactive terminals AICE silently checks for a new release at most once a
+day and hints `update available: X -> Y (run \`aice update\`)`. Set
+`AICE_NO_UPDATE_CHECK=1` to disable that check.
+
+Installs owned by a package manager cannot self-update: `aice update` reports
+the manager and asks you to upgrade with it (for example `brew upgrade aice`).
+
 
 ### Helper executables
 

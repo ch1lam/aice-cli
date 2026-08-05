@@ -40,7 +40,14 @@ macOS（`arm64`、`amd64`）、Linux（`arm64`、`amd64`）和 Windows（`amd64`
 的预编译二进制，无需安装 Go 工具链。首次启动时 AICE 会自动检测并下载缺失的
 辅助程序（见下文），无需手动配置。
 
-Apple Silicon（M 系列）Mac：
+推荐安装器会把 AICE 装到 `~/.local/bin`（用户可写目录），这样后续
+`aice update` 可以原地替换二进制：
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/ch1lam/aice-cli/main/scripts/install.sh | sh
+```
+
+手动下载也可以。Apple Silicon（M 系列）Mac：
 
 ```sh
 curl -fL -o aice.tar.gz \
@@ -60,6 +67,25 @@ Windows（`aice_windows_amd64.zip`）：
 Expand-Archive -Path aice.zip -DestinationPath .
 .\aice.exe --version
 ```
+
+### 升级
+
+`aice update` 会检查 GitHub Releases，存在新版本时替换当前运行的二进制；
+每次下载的资产都会先对照该 Release 的 `checksums.txt` 校验，再替换可执行文件。
+
+```sh
+aice update            # 安装最新版
+aice update --check    # 只报告是否存在新版
+aice update --force    # 强制重装, 或覆盖 dev 构建
+```
+
+在交互式终端中，AICE 每天最多静默检查一次新版本，若有新版会提示
+`update available: X -> Y (run \`aice update\`)`。设置 `AICE_NO_UPDATE_CHECK=1`
+可关闭该检查。
+
+由包管理器安装的 AICE 无法自更新：`aice update` 会报告所使用的包管理器，
+并提示用其升级（例如 `brew upgrade aice`）。
+
 
 ### 辅助程序
 
