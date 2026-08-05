@@ -1,0 +1,601 @@
+package openaicompletions_test
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"reflect"
+	"testing"
+
+	"github.com/ch1lam/aice-cli/internal/api/openaicompletions"
+	"github.com/ch1lam/aice-cli/internal/llm"
+)
+
+func TestAdapterStreamsTextToolCallUsageAndDone(t *testing.T) {
+	t.Parallel()
+
+	requests := make(chan map[string]any, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/chat/completions" {
+			t.Errorf("request path = %q, want %q", r.URL.Path, "/chat/completions")
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer test-key" {
+			t.Errorf("Authorization = %q, want %q", got, "Bearer test-key")
+		}
+
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode request body: %v", err)
+			return
+		}
+		requests <- body
+
+		w.Header().Set("Content-Type", "text/event-stream")
+		for _, event := range []string{
+			`{"id":"chatcmpl-1","object":"chat.completion.chunk","model":"kimi-k2.6-202608","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}],"usage":null}`,
+			`{"id":"chatcmpl-1","object":"chat.completion.chunk","model":"kimi-k2.6-202608","choices":[{"index":0,"delta":{"content":"Hello"},"finish_reason":null}],"usage":null}`,
+			`{"id":"chatcmpl-1","object":"chat.completion.chunk","model":"kimi-k2.6-202608","choices":[{"index":0,"delta":{"content":" world"},"finish_reason":null}],"usage":null}`,
+			`{"id":"chatcmpl-1","object":"chat.completion.chunk","model":"kimi-k2.6-202608","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call-2","type":"function","function":{"name":"read","arguments":""}}]},"finish_reason":null}],"usage":null}`,
+			`{"id":"chatcmpl-1","object":"chat.completion.chunk","model":"kimi-k2.6-202608","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"path\":"}}]},"finish_reason":null}],"usage":null}`,
+			`{"id":"chatcmpl-1","object":"chat.completion.chunk","model":"kimi-k2.6-202608","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\"README.md\"}"}}]},"finish_reason":"tool_calls"}],"usage":null}`,
+			`{"id":"chatcmpl-1","object":"chat.completion.chunk","model":"kimi-k2.6-202608","choices":[],"usage":{"prompt_tokens":15,"completion_tokens":7,"total_tokens":22,"completion_tokens_details":{"reasoning_tokens":2},"prompt_tokens_details":{"cached_tokens":3,"cache_write_tokens":2}}}`,
+			`[DONE]`,
+		} {
+			_, _ = io.WriteString(w, "data: "+event+"\n\n")
+		}
+	}))
+	defer server.Close()
+
+	adapter, err := openaicompletions.New(openaicompletions.Config{
+		APIKey:     "test-key",
+		BaseURL:    server.URL,
+		HTTPClient: server.Client(),
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	temperature := 0.2
+	request := llm.Request{
+		Model: llm.Model{
+			ID:        "kimi-k2.6",
+			API:       openaicompletions.API,
+			Provider:  "opencode-go",
+			MaxTokens: 4_096,
+			Pricing: llm.Pricing{
+				Input:     0.95,
+				Output:    4,
+				CacheRead: 0.16,
+			},
+		},
+		SystemPrompt: "You are a coding agent.",
+		Messages: []llm.Message{
+			llm.UserMessage{
+				Role:    llm.RoleUser,
+				Content: []llm.ContentPart{llm.NewTextContent("Read the file.").Part()},
+			},
+			llm.AssistantMessage{
+				Role:     llm.RoleAssistant,
+				API:      openaicompletions.API,
+				Provider: "opencode-go",
+				ModelID:  "kimi-k2.6",
+				Content: []llm.ContentPart{
+					{
+						Type:      llm.ContentTypeText,
+						Text:      "I will read it.",
+						Signature: "msg-prev",
+					},
+					{
+						Type: llm.ContentTypeToolCall,
+						ToolCall: &llm.ToolCall{
+							ID:        "call-1",
+							Name:      "read",
+							Arguments: json.RawMessage(`{"path":"AGENTS.md"}`),
+						},
+					},
+				},
+			},
+			llm.ToolResultMessage{
+				Role:       llm.RoleToolResult,
+				ToolCallID: "call-1",
+				Content:    []llm.ContentPart{llm.NewTextContent("file contents").Part()},
+			},
+		},
+		Tools: []llm.ToolDefinition{{
+			Name:        "read",
+			Description: "Read a file.",
+			InputSchema: json.RawMessage(
+				`{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}`,
+			),
+		}},
+		Options: llm.StreamOptions{
+			Temperature: &temperature,
+			MaxTokens:   4_096,
+		},
+	}
+
+	modelStream, err := adapter.Stream(context.Background(), request)
+	if err != nil {
+		t.Fatalf("Stream() error = %v", err)
+	}
+	defer func() {
+		if err := modelStream.Close(); err != nil {
+			t.Errorf("Close() error = %v", err)
+		}
+	}()
+
+	events := collectEvents(t, modelStream)
+	wantTypes := []llm.EventType{
+		llm.EventTypeStart,
+		llm.EventTypeTextStart,
+		llm.EventTypeTextDelta,
+		llm.EventTypeTextDelta,
+		llm.EventTypeToolCallStart,
+		llm.EventTypeToolCallDelta,
+		llm.EventTypeToolCallDelta,
+		llm.EventTypeTextEnd,
+		llm.EventTypeToolCallEnd,
+		llm.EventTypeUsage,
+		llm.EventTypeDone,
+	}
+	gotTypes := make([]llm.EventType, 0, len(events))
+	for _, event := range events {
+		gotTypes = append(gotTypes, event.Type)
+	}
+	if !reflect.DeepEqual(gotTypes, wantTypes) {
+		t.Fatalf("event types = %v, want %v", gotTypes, wantTypes)
+	}
+
+	text := events[7].Content
+	if text == nil || text.Text != "Hello world" {
+		t.Errorf("text end content = %#v", text)
+	}
+	toolCall := events[8].ToolCall
+	if toolCall == nil ||
+		toolCall.ID != "call-2" ||
+		toolCall.Name != "read" ||
+		string(toolCall.Arguments) != `{"path":"README.md"}` {
+		t.Errorf("tool call end = %#v", toolCall)
+	}
+
+	wantUsage := llm.Usage{
+		InputTokens:      10,
+		OutputTokens:     7,
+		ReasoningTokens:  2,
+		CacheReadTokens:  3,
+		CacheWriteTokens: 2,
+		TotalTokens:      22,
+	}
+	wantUsage.Cost = llm.EstimateCost(request.Model.Pricing, wantUsage)
+	if events[9].Usage == nil || !reflect.DeepEqual(*events[9].Usage, wantUsage) {
+		t.Errorf("usage event = %#v, want %#v", events[9].Usage, wantUsage)
+	}
+
+	done := events[10]
+	if done.Message == nil {
+		t.Fatal("done message is nil")
+	}
+	if done.StopReason != llm.StopReasonToolUse ||
+		done.Message.StopReason != llm.StopReasonToolUse {
+		t.Errorf(
+			"done stop reasons = %q/%q, want %q",
+			done.StopReason,
+			done.Message.StopReason,
+			llm.StopReasonToolUse,
+		)
+	}
+	if done.Message.API != openaicompletions.API ||
+		done.Message.Provider != "opencode-go" ||
+		done.Message.ModelID != "kimi-k2.6" ||
+		done.Message.ResponseModelID != "kimi-k2.6-202608" ||
+		done.Message.ResponseID != "chatcmpl-1" ||
+		done.Message.Timestamp == 0 {
+		t.Errorf("done message metadata = %#v", done.Message)
+	}
+	if len(done.Message.Content) != 2 {
+		t.Fatalf("done message content = %#v, want two parts", done.Message.Content)
+	}
+
+	body := <-requests
+	assertRequestBody(t, body)
+}
+
+func TestAdapterStreamsReasoningContentThinking(t *testing.T) {
+	t.Parallel()
+
+	server := newSSEServer(t, []string{
+		`{"id":"chatcmpl-2","object":"chat.completion.chunk","model":"deepseek-v4-flash","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}],"usage":null}`,
+		`{"id":"chatcmpl-2","object":"chat.completion.chunk","model":"deepseek-v4-flash","choices":[{"index":0,"delta":{"reasoning_content":"think"},"finish_reason":null}],"usage":null}`,
+		`{"id":"chatcmpl-2","object":"chat.completion.chunk","model":"deepseek-v4-flash","choices":[{"index":0,"delta":{"reasoning_content":" carefully"},"finish_reason":null}],"usage":null}`,
+		`{"id":"chatcmpl-2","object":"chat.completion.chunk","model":"deepseek-v4-flash","choices":[{"index":0,"delta":{"content":"Answer"},"finish_reason":null}],"usage":null}`,
+		`{"id":"chatcmpl-2","object":"chat.completion.chunk","model":"deepseek-v4-flash","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":null}`,
+		`[DONE]`,
+	})
+	defer server.Close()
+
+	adapter, err := openaicompletions.New(openaicompletions.Config{
+		APIKey:     "test-key",
+		BaseURL:    server.URL,
+		HTTPClient: server.Client(),
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	modelStream, err := adapter.Stream(context.Background(), llm.Request{
+		Model: llm.Model{
+			ID:        "deepseek-v4-flash",
+			API:       openaicompletions.API,
+			Provider:  "opencode-go",
+			MaxTokens: 4_096,
+		},
+		Messages: []llm.Message{
+			llm.UserMessage{
+				Role:    llm.RoleUser,
+				Content: []llm.ContentPart{llm.NewTextContent("Hi").Part()},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Stream() error = %v", err)
+	}
+	defer func() {
+		if err := modelStream.Close(); err != nil {
+			t.Errorf("Close() error = %v", err)
+		}
+	}()
+
+	events := collectEvents(t, modelStream)
+	wantTypes := []llm.EventType{
+		llm.EventTypeStart,
+		llm.EventTypeThinkingStart,
+		llm.EventTypeThinkingDelta,
+		llm.EventTypeThinkingDelta,
+		llm.EventTypeTextStart,
+		llm.EventTypeTextDelta,
+		llm.EventTypeThinkingEnd,
+		llm.EventTypeTextEnd,
+		llm.EventTypeUsage,
+		llm.EventTypeDone,
+	}
+	gotTypes := make([]llm.EventType, 0, len(events))
+	for _, event := range events {
+		gotTypes = append(gotTypes, event.Type)
+	}
+	if !reflect.DeepEqual(gotTypes, wantTypes) {
+		t.Fatalf("event types = %v, want %v", gotTypes, wantTypes)
+	}
+
+	thinking := events[6].Content
+	if thinking == nil || thinking.Text != "think carefully" {
+		t.Errorf("thinking end content = %#v", thinking)
+	}
+	text := events[7].Content
+	if text == nil || text.Text != "Answer" {
+		t.Errorf("text end content = %#v", text)
+	}
+
+	done := events[9]
+	if done.Message == nil || done.StopReason != llm.StopReasonStop {
+		t.Errorf("done = %#v, want stop", done)
+	}
+	if len(done.Message.Content) != 2 {
+		t.Errorf("done message content = %#v, want thinking and text", done.Message.Content)
+	}
+}
+
+func TestAdapterRejectsIncompleteToolCall(t *testing.T) {
+	t.Parallel()
+
+	server := newSSEServer(t, []string{
+		`{"id":"chatcmpl-3","object":"chat.completion.chunk","model":"kimi-k2.6-202608","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}],"usage":null}`,
+		`{"id":"chatcmpl-3","object":"chat.completion.chunk","model":"kimi-k2.6-202608","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call-1","type":"function","function":{"name":"read","arguments":""}}]},"finish_reason":null}],"usage":null}`,
+		`{"id":"chatcmpl-3","object":"chat.completion.chunk","model":"kimi-k2.6-202608","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{"}}]},"finish_reason":"length"}],"usage":null}`,
+		`[DONE]`,
+	})
+	defer server.Close()
+
+	adapter, err := openaicompletions.New(openaicompletions.Config{
+		APIKey:     "test-key",
+		BaseURL:    server.URL,
+		HTTPClient: server.Client(),
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	modelStream, err := adapter.Stream(context.Background(), llm.Request{
+		Model: llm.Model{
+			ID:        "kimi-k2.6",
+			API:       openaicompletions.API,
+			Provider:  "opencode-go",
+			MaxTokens: 4_096,
+		},
+		Messages: []llm.Message{
+			llm.UserMessage{
+				Role:    llm.RoleUser,
+				Content: []llm.ContentPart{llm.NewTextContent("Read the file.").Part()},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Stream() error = %v", err)
+	}
+	defer func() {
+		if err := modelStream.Close(); err != nil {
+			t.Errorf("Close() error = %v", err)
+		}
+	}()
+
+	events := collectEvents(t, modelStream)
+	last := events[len(events)-1]
+	if last.Type != llm.EventTypeError {
+		t.Fatalf("last event type = %q, want error", last.Type)
+	}
+	if last.Err == nil {
+		t.Fatal("error event has nil Err")
+	}
+	if last.StopReason != llm.StopReasonError {
+		t.Errorf("error stop reason = %q, want %q", last.StopReason, llm.StopReasonError)
+	}
+}
+
+func TestAdapterEmptyToolCallArgumentsBecomeEmptyObject(t *testing.T) {
+	t.Parallel()
+
+	server := newSSEServer(t, []string{
+		`{"id":"chatcmpl-4","object":"chat.completion.chunk","model":"kimi-k2.6-202608","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}],"usage":null}`,
+		`{"id":"chatcmpl-4","object":"chat.completion.chunk","model":"kimi-k2.6-202608","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call-1","type":"function","function":{"name":"list"}}]},"finish_reason":null}],"usage":null}`,
+		`{"id":"chatcmpl-4","object":"chat.completion.chunk","model":"kimi-k2.6-202608","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}],"usage":null}`,
+		`[DONE]`,
+	})
+	defer server.Close()
+
+	adapter, err := openaicompletions.New(openaicompletions.Config{
+		APIKey:     "test-key",
+		BaseURL:    server.URL,
+		HTTPClient: server.Client(),
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	modelStream, err := adapter.Stream(context.Background(), llm.Request{
+		Model: llm.Model{
+			ID:        "kimi-k2.6",
+			API:       openaicompletions.API,
+			Provider:  "opencode-go",
+			MaxTokens: 4_096,
+		},
+		Messages: []llm.Message{
+			llm.UserMessage{
+				Role:    llm.RoleUser,
+				Content: []llm.ContentPart{llm.NewTextContent("List the files.").Part()},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Stream() error = %v", err)
+	}
+	defer func() {
+		if err := modelStream.Close(); err != nil {
+			t.Errorf("Close() error = %v", err)
+		}
+	}()
+
+	events := collectEvents(t, modelStream)
+	last := events[len(events)-1]
+	if last.Type != llm.EventTypeDone {
+		t.Fatalf("last event type = %q, want done", last.Type)
+	}
+	if last.Message == nil || len(last.Message.Content) != 1 {
+		t.Fatalf("done message content = %#v, want one tool call", last.Message)
+	}
+	part := last.Message.Content[0]
+	if part.Type != llm.ContentTypeToolCall || part.ToolCall == nil {
+		t.Fatalf("done content = %#v, want tool call", part)
+	}
+	if string(part.ToolCall.Arguments) != "{}" {
+		t.Errorf("tool call arguments = %q, want {}", part.ToolCall.Arguments)
+	}
+}
+
+func TestAdapterSendsReasoningEffort(t *testing.T) {
+	t.Parallel()
+
+	requests := make(chan map[string]any, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		requests <- body
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "data: [DONE]\n\n")
+	}))
+	defer server.Close()
+
+	adapter, err := openaicompletions.New(openaicompletions.Config{
+		APIKey:     "test-key",
+		BaseURL:    server.URL,
+		HTTPClient: server.Client(),
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	modelStream, err := adapter.Stream(context.Background(), llm.Request{
+		Model: llm.Model{
+			ID:        "deepseek-v4-flash",
+			API:       openaicompletions.API,
+			Provider:  "opencode-go",
+			MaxTokens: 4_096,
+		},
+		Messages: []llm.Message{
+			llm.UserMessage{
+				Role:    llm.RoleUser,
+				Content: []llm.ContentPart{llm.NewTextContent("Hi").Part()},
+			},
+		},
+		Options: llm.StreamOptions{
+			Thinking: llm.ThinkingLevelHigh,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Stream() error = %v", err)
+	}
+	defer func() {
+		if err := modelStream.Close(); err != nil {
+			t.Errorf("Close() error = %v", err)
+		}
+	}()
+
+	body := <-requests
+	if got := body["reasoning_effort"]; got != "high" {
+		t.Errorf("reasoning_effort = %#v, want high", got)
+	}
+}
+
+func TestAdapterNormalizesHTTPError(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = io.WriteString(w, `{"error":{"message":"rate limited","type":"rate_limit_error","code":"429"}}`)
+	}))
+	defer server.Close()
+
+	adapter, err := openaicompletions.New(openaicompletions.Config{
+		APIKey:     "test-key",
+		BaseURL:    server.URL,
+		HTTPClient: server.Client(),
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	_, err = adapter.Stream(context.Background(), llm.Request{
+		Model: llm.Model{
+			ID:        "kimi-k2.6",
+			API:       openaicompletions.API,
+			Provider:  "opencode-go",
+			MaxTokens: 4_096,
+		},
+		Messages: []llm.Message{
+			llm.UserMessage{
+				Role:    llm.RoleUser,
+				Content: []llm.ContentPart{llm.NewTextContent("Hi").Part()},
+			},
+		},
+	})
+	if err == nil {
+		t.Fatal("Stream() error = nil, want provider error")
+	}
+	var providerErr *llm.ProviderError
+	if !errors.As(err, &providerErr) {
+		t.Fatalf("Stream() error = %v, want *llm.ProviderError", err)
+	}
+	if providerErr.StatusCode != http.StatusTooManyRequests {
+		t.Errorf("status code = %d, want %d", providerErr.StatusCode, http.StatusTooManyRequests)
+	}
+}
+
+func assertRequestBody(t *testing.T, body map[string]any) {
+	t.Helper()
+
+	if body["model"] != "kimi-k2.6" {
+		t.Errorf("model = %#v", body["model"])
+	}
+	if body["max_tokens"] != float64(4_096) {
+		t.Errorf("max_tokens = %#v", body["max_tokens"])
+	}
+	if body["stream"] != true {
+		t.Errorf("stream = %#v", body["stream"])
+	}
+	if body["temperature"] != 0.2 {
+		t.Errorf("temperature = %#v", body["temperature"])
+	}
+	if streamOptions, ok := body["stream_options"].(map[string]any); !ok ||
+		streamOptions["include_usage"] != true {
+		t.Errorf("stream_options = %#v", body["stream_options"])
+	}
+
+	messages, ok := body["messages"].([]any)
+	if !ok || len(messages) != 4 {
+		t.Fatalf("messages = %#v, want four messages", body["messages"])
+	}
+	if item := messages[0].(map[string]any); item["role"] != "system" ||
+		item["content"] != "You are a coding agent." {
+		t.Errorf("system message = %#v", item)
+	}
+	if item := messages[1].(map[string]any); item["role"] != "user" ||
+		item["content"] != "Read the file." {
+		t.Errorf("user message = %#v", item)
+	}
+	assistant := messages[2].(map[string]any)
+	if assistant["role"] != "assistant" ||
+		assistant["content"] != "I will read it." {
+		t.Errorf("assistant message = %#v", assistant)
+	}
+	toolCalls, ok := assistant["tool_calls"].([]any)
+	if !ok || len(toolCalls) != 1 {
+		t.Fatalf("assistant tool_calls = %#v", assistant["tool_calls"])
+	}
+	toolCall := toolCalls[0].(map[string]any)
+	function := toolCall["function"].(map[string]any)
+	if toolCall["id"] != "call-1" ||
+		function["name"] != "read" ||
+		function["arguments"] != `{"path":"AGENTS.md"}` {
+		t.Errorf("assistant tool call = %#v", toolCall)
+	}
+	if item := messages[3].(map[string]any); item["role"] != "tool" ||
+		item["tool_call_id"] != "call-1" ||
+		item["content"] != "file contents" {
+		t.Errorf("tool message = %#v", item)
+	}
+
+	tools, ok := body["tools"].([]any)
+	if !ok || len(tools) != 1 {
+		t.Fatalf("tools = %#v", body["tools"])
+	}
+	tool := tools[0].(map[string]any)
+	if tool["type"] != "function" {
+		t.Errorf("tool = %#v", tool)
+	}
+	functionDef := tool["function"].(map[string]any)
+	if functionDef["name"] != "read" ||
+		functionDef["description"] != "Read a file." {
+		t.Errorf("tool function = %#v", functionDef)
+	}
+	if _, ok := functionDef["parameters"].(map[string]any); !ok {
+		t.Errorf("tool parameters = %#v", functionDef["parameters"])
+	}
+}
+
+func newSSEServer(t *testing.T, events []string) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		for _, event := range events {
+			_, _ = io.WriteString(w, "data: "+event+"\n\n")
+		}
+	}))
+}
+
+func collectEvents(t *testing.T, stream llm.Stream) []llm.Event {
+	t.Helper()
+
+	var events []llm.Event
+	for {
+		event, err := stream.Next()
+		if errors.Is(err, io.EOF) {
+			return events
+		}
+		if err != nil {
+			t.Fatalf("Next() error = %v", err)
+		}
+		events = append(events, event)
+	}
+}

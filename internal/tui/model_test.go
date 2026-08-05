@@ -444,7 +444,7 @@ func TestModelWelcomeGuidesUnconfiguredLogin(t *testing.T) {
 
 	welcome := current.welcomeView()
 	for _, want := range []string{
-		"No DeepSeek API key is configured",
+		"No provider API key is configured",
 		"/login",
 		"/settings",
 	} {

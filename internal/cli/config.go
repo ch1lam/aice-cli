@@ -12,9 +12,11 @@ import (
 
 const maximumCredentialBytes = 64 * 1024
 
-// APIKeyRequest contains one credential entered through the CLI.
+// APIKeyRequest contains one credential entered through the CLI. Provider
+// selects which provider's credential file entry receives the key.
 type APIKeyRequest struct {
-	APIKey string
+	Provider string
+	APIKey   string
 }
 
 // Configurator persists global credentials without exposing storage details to
@@ -36,9 +38,10 @@ func newConfigCommand(configurator Configurator) *cobra.Command {
 }
 
 func newSetAPIKeyCommand(configurator Configurator) *cobra.Command {
+	provider := "deepseek"
 	command := &cobra.Command{
 		Use:   "set-key",
-		Short: "Read a DeepSeek API key from stdin and store it globally",
+		Short: "Read an API key from stdin and store it globally",
 		Args: func(command *cobra.Command, args []string) error {
 			return newUsageError(cobra.NoArgs(command, args))
 		},
@@ -49,14 +52,18 @@ func newSetAPIKeyCommand(configurator Configurator) *cobra.Command {
 			}
 			path, err := configurator.SaveAPIKey(
 				command.Context(),
-				APIKeyRequest{APIKey: apiKey},
+				APIKeyRequest{
+					Provider: provider,
+					APIKey:   apiKey,
+				},
 			)
 			if err != nil {
 				return fmt.Errorf("save API key: %w", err)
 			}
 			if _, err := fmt.Fprintf(
 				command.OutOrStdout(),
-				"Saved DeepSeek API key to %s.\n",
+				"Saved %s API key to %s.\n",
+				provider,
 				path,
 			); err != nil {
 				return fmt.Errorf("write configuration result: %w", err)
@@ -64,6 +71,12 @@ func newSetAPIKeyCommand(configurator Configurator) *cobra.Command {
 			return nil
 		},
 	}
+	command.Flags().StringVar(
+		&provider,
+		"provider",
+		"deepseek",
+		"provider whose credential to store (deepseek or opencode-go)",
+	)
 	return command
 }
 

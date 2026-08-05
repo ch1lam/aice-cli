@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -16,6 +17,7 @@ import (
 	"github.com/ch1lam/aice-cli/internal/deps"
 	"github.com/ch1lam/aice-cli/internal/llm"
 	"github.com/ch1lam/aice-cli/internal/provider/deepseek"
+	"github.com/ch1lam/aice-cli/internal/provider/opencode"
 	"github.com/ch1lam/aice-cli/internal/session"
 	"github.com/ch1lam/aice-cli/internal/tool"
 	"github.com/ch1lam/aice-cli/internal/tui"
@@ -34,21 +36,16 @@ func NewCommand() (*cobra.Command, error) {
 	return newCommand(dependencies{
 		loadConfig:  config.Load,
 		saveSetting: config.SaveSetting,
-		saveAPIKey:  config.SaveDeepSeekAPIKey,
-		newModel: func(config config.Config) (agent.Model, error) {
-			return deepseek.New(deepseek.Config{
-				APIKey:  config.DeepSeekAPIKey,
-				BaseURL: config.DeepSeekBaseURL,
-			})
-		},
-		runTUI: tui.Run,
+		saveAPIKey:  defaultSaveAPIKey,
+		newModel:    modelForConfiguration,
+		runTUI:      tui.Run,
 	})
 }
 
 type dependencies struct {
 	loadConfig                 func() (config.Config, error)
 	saveSetting                func(config.Setting, string) error
-	saveAPIKey                 func(string) (string, error)
+	saveAPIKey                 func(provider, apiKey string) (string, error)
 	newModel                   func(config.Config) (agent.Model, error)
 	runTUI                     func(context.Context, tui.Runner, tui.Options) error
 	compactionKeepRecentTokens int64
@@ -62,7 +59,7 @@ func newCommand(dependencies dependencies) (*cobra.Command, error) {
 		return nil, fmt.Errorf("app: model factory is required")
 	}
 	if dependencies.saveAPIKey == nil {
-		dependencies.saveAPIKey = config.SaveDeepSeekAPIKey
+		dependencies.saveAPIKey = defaultSaveAPIKey
 	}
 	if dependencies.runTUI == nil {
 		dependencies.runTUI = tui.Run
@@ -99,9 +96,9 @@ func (a *application) SaveAPIKey(
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
-	path, err := a.dependencies.saveAPIKey(request.APIKey)
+	path, err := a.dependencies.saveAPIKey(request.Provider, request.APIKey)
 	if err != nil {
-		return "", fmt.Errorf("app: save DeepSeek API key: %w", err)
+		return "", fmt.Errorf("app: save API key: %w", err)
 	}
 	return path, nil
 }
@@ -123,7 +120,7 @@ func (a *application) Print(
 		return err
 	}
 	if environment.loop == nil {
-		return credentialNotConfiguredError()
+		return credentialNotConfiguredError(environment.configuration)
 	}
 	store, history, _, err := prepareSession(
 		ctx,
@@ -211,7 +208,7 @@ func (a *application) Interactive(
 		Output:           request.Output,
 		Model:            environment.model,
 		Thinking:         environment.options.Thinking,
-		APIKeyConfigured: environment.configuration.DeepSeekAPIKey != "",
+		APIKeyConfigured: providerConfigured(environment.configuration),
 		Usage:            usage,
 		WorkingDirectory: environment.workspace.Path(),
 	})
@@ -263,7 +260,7 @@ func (a *application) newRunEnvironment(
 		return nil, err
 	}
 	var loop *agent.Loop
-	if configured.configuration.DeepSeekAPIKey != "" {
+	if providerConfigured(configured.configuration) {
 		loop, err = a.newAgentLoop(configured.configuration, tools)
 		if err != nil {
 			return nil, err
@@ -305,8 +302,10 @@ func (a *application) newConfiguredModel() (configuredModel, error) {
 	if err != nil {
 		return configuredModel{}, err
 	}
-	if configured.configuration.DeepSeekAPIKey == "" {
-		return configuredModel{}, credentialNotConfiguredError()
+	if !providerConfigured(configured.configuration) {
+		return configuredModel{}, credentialNotConfiguredError(
+			configured.configuration,
+		)
 	}
 	service, err := a.dependencies.newModel(configured.configuration)
 	if err != nil {
@@ -320,8 +319,8 @@ func (a *application) newAgentLoop(
 	configuration config.Config,
 	tools []agent.Tool,
 ) (*agent.Loop, error) {
-	if configuration.DeepSeekAPIKey == "" {
-		return nil, credentialNotConfiguredError()
+	if !providerConfigured(configuration) {
+		return nil, credentialNotConfiguredError(configuration)
 	}
 	service, err := a.dependencies.newModel(configuration)
 	if err != nil {
@@ -334,12 +333,137 @@ func (a *application) newAgentLoop(
 	return loop, nil
 }
 
-func credentialNotConfiguredError() error {
-	return fmt.Errorf(
-		"DeepSeek API key is not configured; run /login in interactive mode "+
-			"or set %s",
-		config.EnvDeepSeekAPIKey,
-	)
+func credentialNotConfiguredError(configuration config.Config) error {
+	switch configuration.Provider {
+	case string(opencode.ProviderID):
+		return fmt.Errorf(
+			"OpenCode Go API key is not configured; run /login in interactive "+
+				"mode or set %s",
+			config.EnvOpenCodeAPIKey,
+		)
+	case string(deepseek.ProviderID):
+		return fmt.Errorf(
+			"DeepSeek API key is not configured; run /login in interactive mode "+
+				"or set %s",
+			config.EnvDeepSeekAPIKey,
+		)
+	default:
+		return fmt.Errorf(
+			"API key for provider %q is not configured; run /login in "+
+				"interactive mode",
+			configuration.Provider,
+		)
+	}
+}
+
+// knownProviders returns the provider identifiers AICE supports.
+func knownProviders() []string {
+	return []string{
+		string(deepseek.ProviderID),
+		string(opencode.ProviderID),
+	}
+}
+
+// supportedProvider reports whether provider is one AICE can serve.
+func supportedProvider(provider string) bool {
+	return provider == string(deepseek.ProviderID) ||
+		provider == string(opencode.ProviderID)
+}
+
+// providerConfigured reports whether the selected provider has a credential.
+func providerConfigured(configuration config.Config) bool {
+	switch configuration.Provider {
+	case string(opencode.ProviderID):
+		return configuration.OpenCodeAPIKey != ""
+	case string(deepseek.ProviderID):
+		return configuration.DeepSeekAPIKey != ""
+	}
+	return false
+}
+
+// providerLabel returns the display name for a provider identifier.
+func providerLabel(provider string) string {
+	switch provider {
+	case string(opencode.ProviderID):
+		return "OpenCode Go"
+	case string(deepseek.ProviderID):
+		return "DeepSeek"
+	}
+	return provider
+}
+
+// modelForConfiguration constructs the model service for the provider selected
+// in the configuration.
+func modelForConfiguration(configuration config.Config) (agent.Model, error) {
+	switch configuration.Provider {
+	case string(opencode.ProviderID):
+		return opencode.New(opencode.Config{
+			APIKey:  configuration.OpenCodeAPIKey,
+			BaseURL: configuration.OpenCodeBaseURL,
+		})
+	case string(deepseek.ProviderID), "":
+		return deepseek.New(deepseek.Config{
+			APIKey:  configuration.DeepSeekAPIKey,
+			BaseURL: configuration.DeepSeekBaseURL,
+		})
+	default:
+		return nil, fmt.Errorf("app: unsupported provider %q", configuration.Provider)
+	}
+}
+
+// defaultSaveAPIKey stores a credential in the auth file of the provider it
+// belongs to, preserving any other provider credentials already present.
+func defaultSaveAPIKey(provider, apiKey string) (string, error) {
+	switch provider {
+	case string(opencode.ProviderID):
+		return config.SaveOpenCodeAPIKey(apiKey)
+	case string(deepseek.ProviderID):
+		return config.SaveDeepSeekAPIKey(apiKey)
+	default:
+		return "", fmt.Errorf("app: unsupported provider %q", provider)
+	}
+}
+
+// modelsForProvider returns the model catalog for a provider. Unknown providers
+// fall back to DeepSeek so callers that already validated the provider can rely
+// on a non-empty catalog.
+func modelsForProvider(provider string) []llm.Model {
+	switch provider {
+	case string(opencode.ProviderID):
+		return opencode.Models()
+	default:
+		return deepseek.Models()
+	}
+}
+
+// providerDefaultModel returns the default model for a provider.
+func providerDefaultModel(provider string) llm.Model {
+	switch provider {
+	case string(opencode.ProviderID):
+		return opencode.DefaultModel()
+	default:
+		return deepseek.DefaultModel()
+	}
+}
+
+// modelForProvider looks a model ID up in one provider's catalog.
+func modelForProvider(provider, id string) (llm.Model, bool) {
+	for _, model := range modelsForProvider(provider) {
+		if model.ID == id {
+			return model, true
+		}
+	}
+	return llm.Model{}, false
+}
+
+// modelIDsForProvider returns the model IDs of one provider's catalog.
+func modelIDsForProvider(provider string) []string {
+	models := modelsForProvider(provider)
+	ids := make([]string, len(models))
+	for index, model := range models {
+		ids[index] = model.ID
+	}
+	return ids
 }
 
 func resolveModelSettings(
@@ -365,18 +489,19 @@ func resolveModelSettings(
 	if provider == "" {
 		provider = string(deepseek.ProviderID)
 	}
-	if provider != string(deepseek.ProviderID) {
+	if !supportedProvider(provider) {
 		return llm.Model{}, llm.StreamOptions{}, fmt.Errorf(
-			"app: unsupported provider %q",
+			"app: unsupported provider %q; available: %s",
 			provider,
+			strings.Join(knownProviders(), ", "),
 		)
 	}
 
 	modelID := configuration.Model
 	if modelID == "" {
-		modelID = deepseek.DefaultModel().ID
+		modelID = providerDefaultModel(provider).ID
 	}
-	for _, model := range deepseek.Models() {
+	for _, model := range modelsForProvider(provider) {
 		if model.ID != modelID {
 			continue
 		}
@@ -416,7 +541,7 @@ func (s *interactiveSession) Run(
 	sink agent.AgentEventSink,
 ) error {
 	if s.loop == nil {
-		return credentialNotConfiguredError()
+		return credentialNotConfiguredError(s.configuration)
 	}
 	prompt, err := llm.NewUserMessage(llm.NewTextContent(promptText).Part())
 	if err != nil {

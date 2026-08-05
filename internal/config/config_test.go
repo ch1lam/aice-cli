@@ -333,3 +333,84 @@ func readJSON(t *testing.T, path string, target any) {
 		t.Fatalf("Unmarshal() error = %v", err)
 	}
 }
+
+func TestLoadFilesResolvesOpenCodeCredentials(t *testing.T) {
+	t.Parallel()
+
+	paths := testPaths(t.TempDir())
+	writeJSON(t, paths.GlobalAuth, map[string]any{
+		"opencode_api_key": "file-key",
+	})
+
+	values := map[string]string{
+		config.EnvOpenCodeAPIKey:  "environment-key",
+		config.EnvOpenCodeBaseURL: " https://opencode.example/zen/go/v1 ",
+	}
+	got, err := config.LoadFiles(paths, mapLookup(values))
+	if err != nil {
+		t.Fatalf("LoadFiles() error = %v", err)
+	}
+	if got.OpenCodeAPIKey != "environment-key" {
+		t.Errorf("OpenCodeAPIKey = %q, want environment-key", got.OpenCodeAPIKey)
+	}
+	if got.OpenCodeBaseURL != "https://opencode.example/zen/go/v1" {
+		t.Errorf(
+			"OpenCodeBaseURL = %q, want trimmed custom URL",
+			got.OpenCodeBaseURL,
+		)
+	}
+}
+
+func TestSaveOpenCodeAPIKeyFilePreservesDeepSeekKey(t *testing.T) {
+	t.Parallel()
+
+	paths := testPaths(t.TempDir())
+	if err := config.SaveDeepSeekAPIKeyFile(paths, "deepseek-key"); err != nil {
+		t.Fatalf("SaveDeepSeekAPIKeyFile() error = %v", err)
+	}
+	if err := config.SaveOpenCodeAPIKeyFile(paths, " opencode-key "); err != nil {
+		t.Fatalf("SaveOpenCodeAPIKeyFile() error = %v", err)
+	}
+
+	var auth map[string]string
+	readJSON(t, paths.GlobalAuth, &auth)
+	if got := auth["deepseek_api_key"]; got != "deepseek-key" {
+		t.Errorf("deepseek_api_key = %q, want deepseek-key", got)
+	}
+	if got := auth["opencode_api_key"]; got != "opencode-key" {
+		t.Errorf("opencode_api_key = %q, want opencode-key", got)
+	}
+}
+
+func TestSaveDeepSeekAPIKeyFilePreservesOpenCodeKey(t *testing.T) {
+	t.Parallel()
+
+	paths := testPaths(t.TempDir())
+	if err := config.SaveOpenCodeAPIKeyFile(paths, "opencode-key"); err != nil {
+		t.Fatalf("SaveOpenCodeAPIKeyFile() error = %v", err)
+	}
+	if err := config.SaveDeepSeekAPIKeyFile(paths, "deepseek-key"); err != nil {
+		t.Fatalf("SaveDeepSeekAPIKeyFile() error = %v", err)
+	}
+
+	var auth map[string]string
+	readJSON(t, paths.GlobalAuth, &auth)
+	if got := auth["deepseek_api_key"]; got != "deepseek-key" {
+		t.Errorf("deepseek_api_key = %q, want deepseek-key", got)
+	}
+	if got := auth["opencode_api_key"]; got != "opencode-key" {
+		t.Errorf("opencode_api_key = %q, want opencode-key", got)
+	}
+}
+
+func TestSaveOpenCodeAPIKeyFileRejectsInvalidValues(t *testing.T) {
+	t.Parallel()
+
+	paths := testPaths(t.TempDir())
+	for _, value := range []string{"", "  ", "line-one\nline-two"} {
+		err := config.SaveOpenCodeAPIKeyFile(paths, value)
+		if err == nil {
+			t.Fatalf("SaveOpenCodeAPIKeyFile(%q) error = nil", value)
+		}
+	}
+}

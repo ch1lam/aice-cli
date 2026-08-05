@@ -27,6 +27,10 @@ const (
 	EnvDeepSeekAPIKey = "AICE_DEEPSEEK_API_KEY"
 	// EnvDeepSeekBaseURL overrides DeepSeek's official API endpoint.
 	EnvDeepSeekBaseURL = "AICE_DEEPSEEK_BASE_URL"
+	// EnvOpenCodeAPIKey authenticates requests to OpenCode Go.
+	EnvOpenCodeAPIKey = "AICE_OPENCODE_API_KEY"
+	// EnvOpenCodeBaseURL overrides OpenCode Go's official API endpoint.
+	EnvOpenCodeBaseURL = "AICE_OPENCODE_BASE_URL"
 
 	settingsFileName = "settings.json"
 	authFileName     = "auth.json"
@@ -69,11 +73,14 @@ type Config struct {
 	Thinking        llm.ThinkingLevel
 	DeepSeekAPIKey  string
 	DeepSeekBaseURL string
+	OpenCodeAPIKey  string
+	OpenCodeBaseURL string
 	Paths           Paths
 }
 
 type authFile struct {
 	DeepSeekAPIKey string `json:"deepseek_api_key,omitempty"`
+	OpenCodeAPIKey string `json:"opencode_api_key,omitempty"`
 }
 
 // LookupEnv resolves one environment variable.
@@ -128,14 +135,24 @@ func LoadFiles(paths Paths, lookup LookupEnv) (Config, error) {
 			apiKey = value
 		}
 	}
-
 	baseURL, _ := lookup(EnvDeepSeekBaseURL)
+
+	openCodeAPIKey := strings.TrimSpace(auth.OpenCodeAPIKey)
+	if value, exists := lookup(EnvOpenCodeAPIKey); exists {
+		if value = strings.TrimSpace(value); value != "" {
+			openCodeAPIKey = value
+		}
+	}
+	openCodeBaseURL, _ := lookup(EnvOpenCodeBaseURL)
+
 	return Config{
 		Provider:        settings.Provider,
 		Model:           settings.Model,
 		Thinking:        settings.Thinking,
 		DeepSeekAPIKey:  apiKey,
 		DeepSeekBaseURL: strings.TrimSpace(baseURL),
+		OpenCodeAPIKey:  openCodeAPIKey,
+		OpenCodeBaseURL: strings.TrimSpace(openCodeBaseURL),
 		Paths:           paths,
 	}, nil
 }
@@ -161,22 +178,64 @@ func SaveDeepSeekAPIKey(apiKey string) (string, error) {
 	return paths.GlobalAuth, nil
 }
 
-// SaveDeepSeekAPIKeyFile stores one credential in an explicit global auth
-// file. Credentials are never stored in settings.
+// SaveDeepSeekAPIKeyFile stores the DeepSeek credential in an explicit global
+// auth file, preserving any other provider credentials already present.
+// Credentials are never stored in settings.
 func SaveDeepSeekAPIKeyFile(paths Paths, apiKey string) error {
+	apiKey = strings.TrimSpace(apiKey)
+	if apiKey == "" {
+		return errors.New("config: DeepSeek API key is required")
+	}
+	return saveAPIKeyFile(paths, "DeepSeek", apiKey, func(auth *authFile) {
+		auth.DeepSeekAPIKey = apiKey
+	})
+}
+
+// SaveOpenCodeAPIKey stores the OpenCode Go credential in the global auth file.
+func SaveOpenCodeAPIKey(apiKey string) (string, error) {
+	paths, err := DefaultPaths()
+	if err != nil {
+		return "", err
+	}
+	if err := SaveOpenCodeAPIKeyFile(paths, apiKey); err != nil {
+		return "", err
+	}
+	return paths.GlobalAuth, nil
+}
+
+// SaveOpenCodeAPIKeyFile stores the OpenCode Go credential in an explicit
+// global auth file, preserving any other provider credentials already present.
+func SaveOpenCodeAPIKeyFile(paths Paths, apiKey string) error {
+	apiKey = strings.TrimSpace(apiKey)
+	if apiKey == "" {
+		return errors.New("config: OpenCode Go API key is required")
+	}
+	return saveAPIKeyFile(paths, "OpenCode Go", apiKey, func(auth *authFile) {
+		auth.OpenCodeAPIKey = apiKey
+	})
+}
+
+// saveAPIKeyFile reads the existing auth file, applies one credential update,
+// and writes the merged result back so different provider credentials are not
+// clobbered. The one-line rule validates the key being written, not credentials
+// belonging to other providers. Credentials are never stored in settings.
+func saveAPIKeyFile(
+	paths Paths,
+	providerName, apiKey string,
+	update func(*authFile),
+) error {
 	if err := paths.validate(); err != nil {
 		return err
 	}
-	apiKey = strings.TrimSpace(apiKey)
-	if apiKey == "" {
-		return fmt.Errorf("config: DeepSeek API key is required")
-	}
 	if strings.ContainsAny(apiKey, "\r\n") {
-		return fmt.Errorf("config: DeepSeek API key must be one line")
+		return fmt.Errorf("config: %s API key must be one line", providerName)
 	}
-	if err := writeJSON(paths.GlobalAuth, authFile{
-		DeepSeekAPIKey: apiKey,
-	}); err != nil {
+	auth, err := loadAuth(paths.GlobalAuth)
+	if err != nil {
+		return err
+	}
+	update(&auth)
+	if err := writeJSON(paths.GlobalAuth, auth); err != nil {
 		return fmt.Errorf("config: write global auth: %w", err)
 	}
 	return nil
@@ -272,6 +331,7 @@ func loadAuth(path string) (authFile, error) {
 		return authFile{}, err
 	}
 	auth.DeepSeekAPIKey = strings.TrimSpace(auth.DeepSeekAPIKey)
+	auth.OpenCodeAPIKey = strings.TrimSpace(auth.OpenCodeAPIKey)
 	return auth, nil
 }
 

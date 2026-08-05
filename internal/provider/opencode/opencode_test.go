@@ -1,0 +1,198 @@
+package opencode_test
+
+import (
+	"context"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"sync/atomic"
+	"testing"
+
+	"github.com/ch1lam/aice-cli/internal/api/openaicompletions"
+	"github.com/ch1lam/aice-cli/internal/llm"
+	"github.com/ch1lam/aice-cli/internal/provider/opencode"
+)
+
+func TestModels(t *testing.T) {
+	t.Parallel()
+
+	models := opencode.Models()
+	if len(models) != 24 {
+		t.Fatalf("Models() has %d entries, want 24", len(models))
+	}
+	for _, model := range models {
+		if model.Provider != opencode.ProviderID {
+			t.Errorf("model %q provider = %q, want %q", model.ID, model.Provider, opencode.ProviderID)
+		}
+		if model.API != openaicompletions.API {
+			t.Errorf("model %q api = %q, want %q", model.ID, model.API, openaicompletions.API)
+		}
+		if !model.SupportsThinking {
+			t.Errorf("model %q does not support thinking", model.ID)
+		}
+	}
+
+	defaultModel := opencode.DefaultModel()
+	if defaultModel.ID != "deepseek-v4-flash" {
+		t.Errorf("DefaultModel() = %q, want %q", defaultModel.ID, "deepseek-v4-flash")
+	}
+
+	var kimi *llm.Model
+	for index := range models {
+		if models[index].ID == "kimi-k2.6" {
+			kimi = &models[index]
+			break
+		}
+	}
+	if kimi == nil {
+		t.Fatal("kimi-k2.6 missing from Models()")
+	}
+	if kimi.ContextWindow != 262_144 || kimi.MaxTokens != 65_536 {
+		t.Errorf("kimi-k2.6 limits = %d/%d, want 262144/65536", kimi.ContextWindow, kimi.MaxTokens)
+	}
+	if kimi.Pricing.Input != 0.95 || kimi.Pricing.Output != 4 || kimi.Pricing.CacheRead != 0.16 {
+		t.Errorf("kimi-k2.6 pricing = %#v", kimi.Pricing)
+	}
+}
+
+func TestModelCatalogHasCompleteSpecs(t *testing.T) {
+	t.Parallel()
+
+	for _, model := range opencode.Models() {
+		if model.Name == "" {
+			t.Errorf("model %q has no display name", model.ID)
+		}
+		if model.ContextWindow <= 0 {
+			t.Errorf("model %q has no context window", model.ID)
+		}
+		if model.MaxTokens <= 0 {
+			t.Errorf("model %q has no max tokens", model.ID)
+		}
+		if model.Pricing.Input <= 0 || model.Pricing.Output <= 0 {
+			t.Errorf("model %q has incomplete pricing", model.ID)
+		}
+	}
+}
+
+func TestProviderDispatchesThroughCompletionsAdapter(t *testing.T) {
+	t.Parallel()
+
+	paths := make(chan string, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths <- r.URL.Path
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: [DONE]\n\n"))
+	}))
+	defer server.Close()
+
+	provider, err := opencode.New(opencode.Config{
+		APIKey:     "test-key",
+		BaseURL:    server.URL,
+		HTTPClient: server.Client(),
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	request := llm.Request{
+		Model: opencode.DefaultModel(),
+		Messages: []llm.Message{llm.UserMessage{
+			Role:    llm.RoleUser,
+			Content: []llm.ContentPart{llm.NewTextContent("hello").Part()},
+		}},
+	}
+	stream, err := provider.Stream(context.Background(), request)
+	if err != nil {
+		t.Fatalf("Stream() error = %v", err)
+	}
+	if err := stream.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+
+	if got := <-paths; got != "/chat/completions" {
+		t.Errorf("request path = %q, want %q", got, "/chat/completions")
+	}
+}
+
+func TestProviderRejectsModelAPIMismatchBeforeHTTP(t *testing.T) {
+	t.Parallel()
+
+	var requests atomic.Int64
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		requests.Add(1)
+	}))
+	defer server.Close()
+
+	provider, err := opencode.New(opencode.Config{
+		APIKey:     "test-key",
+		BaseURL:    server.URL,
+		HTTPClient: server.Client(),
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	request := llm.Request{
+		Model: opencode.DefaultModel(),
+		Messages: []llm.Message{llm.UserMessage{
+			Role:    llm.RoleUser,
+			Content: []llm.ContentPart{llm.NewTextContent("hello").Part()},
+		}},
+	}
+	request.Model.API = "anthropic-messages"
+	_, err = provider.Stream(context.Background(), request)
+	if err == nil ||
+		!strings.Contains(err.Error(), `model "deepseek-v4-flash" API`) ||
+		!strings.Contains(err.Error(), string(openaicompletions.API)) {
+		t.Fatalf("Stream() error = %v, want model API mismatch", err)
+	}
+	if got := requests.Load(); got != 0 {
+		t.Errorf("HTTP requests = %d, want 0", got)
+	}
+}
+
+func TestProviderRejectsUnsupportedContentBeforeHTTP(t *testing.T) {
+	t.Parallel()
+
+	var requests atomic.Int64
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		requests.Add(1)
+	}))
+	defer server.Close()
+
+	provider, err := opencode.New(opencode.Config{
+		APIKey:     "test-key",
+		BaseURL:    server.URL,
+		HTTPClient: server.Client(),
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	request := llm.Request{
+		Model: opencode.DefaultModel(),
+		Messages: []llm.Message{llm.UserMessage{
+			Role: llm.RoleUser,
+			Content: []llm.ContentPart{{
+				Type:  llm.ContentTypeImage,
+				Image: &llm.ImageContent{Data: []byte("image"), MIMEType: "image/png"},
+			}},
+		}},
+	}
+	_, err = provider.Stream(context.Background(), request)
+	if err == nil || !strings.Contains(err.Error(), "image content is not supported") {
+		t.Fatalf("Stream() error = %v, want image rejection", err)
+	}
+	if got := requests.Load(); got != 0 {
+		t.Errorf("HTTP requests = %d, want 0", got)
+	}
+}
+
+func TestNewRequiresAPIKey(t *testing.T) {
+	t.Parallel()
+
+	_, err := opencode.New(opencode.Config{})
+	if err == nil || !strings.Contains(err.Error(), "API key is required") {
+		t.Fatalf("New() error = %v, want missing API key error", err)
+	}
+}

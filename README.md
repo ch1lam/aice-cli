@@ -32,7 +32,7 @@ edges.
 | Area | Current implementation |
 | --- | --- |
 | Interface | Bubble Tea TUI and one-shot `--print` mode |
-| Provider | DeepSeek V4 Flash (OpenAI Responses protocol) and V4 Pro (Anthropic Messages protocol) |
+| Provider | DeepSeek (V4 Flash via OpenAI Responses, V4 Pro via Anthropic Messages) and OpenCode Go (24 models via OpenAI Chat Completions) |
 | Tools | `read`, `write`, `edit`, `bash`, `grep`, `find`, `ls` |
 | Sessions | restart recovery, branch tree, checkout/backtracking, and manual non-destructive compaction |
 | Input | text only |
@@ -92,7 +92,7 @@ Requirements:
 - the Go version declared in [`go.mod`](./go.mod)
 - `bash` and [`ripgrep`](https://github.com/BurntSushi/ripgrep) (`rg`) — the
   app downloads them automatically on first launch if they are missing
-- a DeepSeek API key
+- a provider API key (DeepSeek, or OpenCode Go via `OPENCODE_API_KEY`)
 
 ```sh
 git clone https://github.com/ch1lam/aice-cli.git
@@ -101,9 +101,9 @@ go build -o ./aice ./cmd/aice
 ./aice --workspace /path/to/project
 ```
 
-On first launch, run `/login`. The TUI reads the key through hidden input and
-stores it in `~/.aice/auth.json`. Type `/help` for commands or `?` for
-shortcuts.
+On first launch, run `/login`, pick a provider, and enter its API key through
+hidden input. Keys are stored in `~/.aice/auth.json`. Type `/help` for
+commands or `?` for shortcuts.
 
 Run one non-interactive request:
 
@@ -125,8 +125,8 @@ environment variables and interactive commands.
 
 ## Status
 
-AICE is under active development. The current built-in provider is DeepSeek,
-input is text-only, and Session/config formats may evolve before a stable
+AICE is under active development. Built-in providers are DeepSeek and OpenCode
+Go, input is text-only, and Session/config formats may evolve before a stable
 release. The provider-neutral core describes an architectural boundary, not a
 claim of finished multi-provider support.
 

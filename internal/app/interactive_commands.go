@@ -9,6 +9,7 @@ import (
 	"github.com/ch1lam/aice-cli/internal/config"
 	"github.com/ch1lam/aice-cli/internal/llm"
 	"github.com/ch1lam/aice-cli/internal/provider/deepseek"
+	"github.com/ch1lam/aice-cli/internal/provider/opencode"
 	"github.com/ch1lam/aice-cli/internal/session"
 	"github.com/ch1lam/aice-cli/internal/tui"
 )
@@ -39,7 +40,7 @@ func (s *interactiveSession) SlashCommands() []tui.SlashCommand {
 		{
 			Name:         "login",
 			Description:  "Choose a provider and store its API key using hidden input",
-			SecretPrompt: "DeepSeek API key",
+			SecretPrompt: "API key",
 			Menu:         s.loginProviderMenu(),
 		},
 		{
@@ -62,31 +63,38 @@ func (s *interactiveSession) SlashCommands() []tui.SlashCommand {
 
 func (s *interactiveSession) loginProviderMenu() *tui.SlashCommandMenu {
 	return &tui.SlashCommandMenu{
-		Title: "Select provider",
-		Options: []tui.SlashCommandOption{{
-			Label:       "DeepSeek",
-			Description: "DeepSeek API (V4 Flash via OpenAI Responses, V4 Pro via Anthropic Messages)",
-			Arguments:   string(deepseek.ProviderID),
-			Current:     s.configuration.Provider == string(deepseek.ProviderID),
-		}},
+		Title:   "Select provider",
+		Options: providerOptions(s.configuration.Provider),
 	}
 }
 
 func (s *interactiveSession) providerMenu() *tui.SlashCommandMenu {
-	value := string(deepseek.ProviderID)
 	return &tui.SlashCommandMenu{
-		Title: "Select provider",
-		Options: []tui.SlashCommandOption{{
+		Title:   "Select provider",
+		Options: providerOptions(s.configuration.Provider),
+	}
+}
+
+func providerOptions(current string) []tui.SlashCommandOption {
+	return []tui.SlashCommandOption{
+		{
 			Label:       "DeepSeek",
 			Description: "DeepSeek API (V4 Flash via OpenAI Responses, V4 Pro via Anthropic Messages)",
-			Arguments:   value,
-			Current:     s.configuration.Provider == value,
-		}},
+			Arguments:   string(deepseek.ProviderID),
+			Current:     current == string(deepseek.ProviderID),
+		},
+		{
+			Label:       "OpenCode Go",
+			Description: "OpenCode Go subscription (24 models via OpenAI Chat Completions)",
+			Arguments:   string(opencode.ProviderID),
+			Current:     current == string(opencode.ProviderID),
+		},
 	}
 }
 
 func (s *interactiveSession) modelMenu() *tui.SlashCommandMenu {
-	models := deepseek.Models()
+	provider := s.activeProvider()
+	models := modelsForProvider(provider)
 	options := make([]tui.SlashCommandOption, 0, len(models))
 	for _, model := range models {
 		options = append(options, tui.SlashCommandOption{
@@ -100,6 +108,31 @@ func (s *interactiveSession) modelMenu() *tui.SlashCommandMenu {
 		Title:   "Select model",
 		Options: options,
 	}
+}
+
+// activeProvider returns the provider whose catalog should drive /model and
+// /login, defaulting to DeepSeek when nothing is configured yet.
+func (s *interactiveSession) activeProvider() string {
+	if s.model.Provider != "" {
+		return string(s.model.Provider)
+	}
+	provider := s.configuration.Provider
+	if provider == "" {
+		provider = string(deepseek.ProviderID)
+	}
+	return provider
+}
+
+// providerModel resolves the model the current Session should run after a
+// provider change, preferring the configured model when it belongs to provider
+// and falling back to that provider's default.
+func providerModel(provider, modelID string) llm.Model {
+	if modelID != "" {
+		if candidate, ok := modelForProvider(provider, modelID); ok {
+			return candidate
+		}
+	}
+	return providerDefaultModel(provider)
 }
 
 func (s *interactiveSession) thinkingMenu() *tui.SlashCommandMenu {
@@ -295,29 +328,37 @@ func (s *interactiveSession) RunSlashCommand(
 		if err != nil {
 			return "", err
 		}
-		if value != string(deepseek.ProviderID) {
+		if !supportedProvider(value) {
 			return "", fmt.Errorf(
 				"app: unsupported provider %q; available: %s",
 				value,
-				deepseek.ProviderID,
+				strings.Join(knownProviders(), ", "),
 			)
+		}
+		configuration := s.configuration
+		configuration.Provider = value
+		loop, err := s.application.newAgentLoop(configuration, s.tools)
+		if err != nil {
+			return "", err
 		}
 		if err := s.saveSetting(config.SettingProvider, value); err != nil {
 			return "", err
 		}
-		s.configuration.Provider = value
+		s.configuration = configuration
+		s.loop = loop
+		s.model = providerModel(value, configuration.Model)
 		return savedSettingMessage("provider", value), nil
 	case "model":
 		value, err := slashCommandSettingValue(request)
 		if err != nil {
 			return "", err
 		}
-		model, exists := deepseekModel(value)
+		model, exists := modelForProvider(s.activeProvider(), value)
 		if !exists {
 			return "", fmt.Errorf(
 				"app: unsupported model %q; available: %s",
 				value,
-				strings.Join(deepseekModelIDs(), ", "),
+				strings.Join(modelIDsForProvider(s.activeProvider()), ", "),
 			)
 		}
 		if err := s.saveSetting(config.SettingModel, value); err != nil {
@@ -358,7 +399,7 @@ func (s *interactiveSession) RuntimeState() tui.RuntimeState {
 	return tui.RuntimeState{
 		Model:            s.model,
 		Thinking:         s.options.Thinking,
-		APIKeyConfigured: s.configuration.DeepSeekAPIKey != "",
+		APIKeyConfigured: providerConfigured(s.configuration),
 	}
 }
 
@@ -380,37 +421,51 @@ func (s *interactiveSession) login(
 	if len(fields) == 1 {
 		provider = fields[0]
 	}
-	if provider != string(deepseek.ProviderID) {
+	if !supportedProvider(provider) {
 		return "", fmt.Errorf(
 			"app: unsupported provider %q; available: %s",
 			provider,
-			deepseek.ProviderID,
+			strings.Join(knownProviders(), ", "),
 		)
 	}
 
 	apiKey := strings.TrimSpace(request.Secret)
 	if apiKey == "" {
-		return "", fmt.Errorf("app: DeepSeek API key is required")
+		return "", fmt.Errorf("app: %s API key is required", providerLabel(provider))
 	}
 	if strings.ContainsAny(apiKey, "\r\n") {
-		return "", fmt.Errorf("app: DeepSeek API key must be one line")
+		return "", fmt.Errorf(
+			"app: %s API key must be one line",
+			providerLabel(provider),
+		)
 	}
 
 	configuration := s.configuration
 	configuration.Provider = provider
-	configuration.DeepSeekAPIKey = apiKey
+	switch provider {
+	case string(opencode.ProviderID):
+		configuration.OpenCodeAPIKey = apiKey
+	default:
+		configuration.DeepSeekAPIKey = apiKey
+	}
 	loop, err := s.application.newAgentLoop(configuration, s.tools)
 	if err != nil {
 		return "", err
 	}
-	path, err := s.application.dependencies.saveAPIKey(apiKey)
+	path, err := s.application.dependencies.saveAPIKey(provider, apiKey)
 	if err != nil {
-		return "", fmt.Errorf("app: save DeepSeek API key: %w", err)
+		return "", fmt.Errorf(
+			"app: save %s API key: %w",
+			providerLabel(provider),
+			err,
+		)
 	}
 
 	s.configuration = configuration
 	s.loop = loop
-	return "Saved DeepSeek API key to " + path + ". AICE is ready.", nil
+	s.model = providerModel(provider, configuration.Model)
+	return "Saved " + providerLabel(provider) + " API key to " + path +
+		". AICE is ready.", nil
 }
 
 func (s *interactiveSession) settingsInformation() string {
@@ -419,7 +474,7 @@ func (s *interactiveSession) settingsInformation() string {
 		thinking = "default"
 	}
 	apiKey := "not configured"
-	if s.configuration.DeepSeekAPIKey != "" {
+	if providerConfigured(s.configuration) {
 		apiKey = "configured"
 	}
 	lines := []string{
@@ -488,24 +543,6 @@ func savedSettingMessage(
 		name,
 		value,
 	)
-}
-
-func deepseekModel(id string) (llm.Model, bool) {
-	for _, model := range deepseek.Models() {
-		if model.ID == id {
-			return model, true
-		}
-	}
-	return llm.Model{}, false
-}
-
-func deepseekModelIDs() []string {
-	models := deepseek.Models()
-	ids := make([]string, len(models))
-	for index, model := range models {
-		ids[index] = model.ID
-	}
-	return ids
 }
 
 func (s *interactiveSession) sessionInformation() (string, error) {

@@ -25,8 +25,8 @@ Supported settings are:
 
 | Setting | Environment variable | Values |
 | --- | --- | --- |
-| Provider | `AICE_PROVIDER` | `deepseek` |
-| Model | `AICE_MODEL` | `deepseek-v4-flash`, `deepseek-v4-pro` |
+| Provider | `AICE_PROVIDER` | `deepseek`, `opencode-go` |
+| Model | `AICE_MODEL` | provider models, e.g. `deepseek-v4-flash`, `kimi-k2.6` |
 | Thinking | `AICE_THINKING` | `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` |
 
 `thinking: "off"` disables thinking mode, so AICE does not persist a second
@@ -68,19 +68,30 @@ Missing credentials do not prevent the interactive TUI from starting. Its
 welcome screen suggests `/login`; submitting a normal prompt before login
 returns the same guidance without closing AICE.
 
-`/login` asks for the DeepSeek API key using hidden input. Press `Esc` or
-`Ctrl+C` to cancel the input and run `/login` again at any time. The key is
-never included in slash-command arguments or the visible transcript.
+`/login` opens a provider menu and asks for that provider's API key using
+hidden input. Press `Esc` or `Ctrl+C` to cancel the input and run `/login`
+again at any time. The key is never included in slash-command arguments or the
+visible transcript.
 
 For non-interactive setup, the `config set-key` command reads the key from
-standard input instead of accepting it as a command-line argument. For
-example, persist an already exported key with:
+standard input instead of accepting it as a command-line argument. Use
+`--provider` to select the provider (`deepseek` is the default). For example,
+persist an already exported key with:
 
 ```sh
-printf '%s\n' "$AICE_DEEPSEEK_API_KEY" | go run ./cmd/aice config set-key
+printf '%s\n' "$AICE_OPENCODE_API_KEY" | go run ./cmd/aice config set-key --provider opencode-go
 ```
 
-The command writes `~/.aice/auth.json` with mode `0600`. A process-level
-`AICE_DEEPSEEK_API_KEY` overrides the stored credential.
+The command writes `~/.aice/auth.json` with mode `0600`. Provider credentials
+are stored side by side, so logging in with one provider does not erase the
+other. A process-level environment variable overrides the stored credential.
 
-`AICE_DEEPSEEK_BASE_URL` remains an environment-only connection override.
+Supported credentials:
+
+| Provider | Env variable | Auth file key |
+| --- | --- | --- |
+| DeepSeek | `AICE_DEEPSEEK_API_KEY` | `deepseek_api_key` |
+| OpenCode Go | `AICE_OPENCODE_API_KEY` | `opencode_api_key` |
+
+`AICE_DEEPSEEK_BASE_URL` and `AICE_OPENCODE_BASE_URL` remain environment-only
+connection overrides.

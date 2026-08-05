@@ -11,6 +11,7 @@ import (
 	"github.com/ch1lam/aice-cli/internal/config"
 	"github.com/ch1lam/aice-cli/internal/llm"
 	"github.com/ch1lam/aice-cli/internal/provider/deepseek"
+	"github.com/ch1lam/aice-cli/internal/provider/opencode"
 	"github.com/ch1lam/aice-cli/internal/session"
 	"github.com/ch1lam/aice-cli/internal/tool"
 	"github.com/ch1lam/aice-cli/internal/tui"
@@ -128,7 +129,10 @@ func TestInteractiveSessionSlashCommandsExposeSelectionMenus(t *testing.T) {
 			t.Errorf("Close() error = %v", err)
 		}
 	}()
-	selectedModel, exists := deepseekModel(deepseek.ModelV4Pro)
+	selectedModel, exists := modelForProvider(
+		string(deepseek.ProviderID),
+		deepseek.ModelV4Pro,
+	)
 	if !exists {
 		t.Fatal("DeepSeek V4 Pro test model is unavailable")
 	}
@@ -523,7 +527,7 @@ func TestInteractiveSessionLoginCanRetryAfterPersistenceFailure(t *testing.T) {
 	wantErr := errors.New("credential write interrupted")
 	runner := &interactiveSession{
 		application: &application{dependencies: dependencies{
-			saveAPIKey: func(string) (string, error) {
+			saveAPIKey: func(string, string) (string, error) {
 				saveAttempts++
 				if saveAttempts == 1 {
 					return "", wantErr
@@ -567,6 +571,158 @@ func TestInteractiveSessionLoginCanRetryAfterPersistenceFailure(t *testing.T) {
 	}
 	if strings.Contains(output, request.Secret) {
 		t.Fatalf("/login output exposes API key: %q", output)
+	}
+}
+
+func TestInteractiveSessionOpencodeMenusAndModelSelection(t *testing.T) {
+	t.Parallel()
+
+	runner := &interactiveSession{
+		application: &application{dependencies: dependencies{
+			saveSetting: func(config.Setting, string) error { return nil },
+		}},
+		model: opencode.DefaultModel(),
+		configuration: config.Config{
+			Provider: string(opencode.ProviderID),
+			Model:    opencode.DefaultModel().ID,
+		},
+	}
+
+	commands := runner.SlashCommands()
+	modelCommand := interactiveSlashCommand(t, commands, "model")
+	if len(modelCommand.Menu.Options) != 24 {
+		t.Fatalf("/model options = %d, want 24", len(modelCommand.Menu.Options))
+	}
+	providerCommand := interactiveSlashCommand(t, commands, "provider")
+	if len(providerCommand.Menu.Options) != 2 {
+		t.Fatalf("/provider options = %d, want 2", len(providerCommand.Menu.Options))
+	}
+
+	output, err := runner.RunSlashCommand(t.Context(), tui.SlashCommandRequest{
+		Name:      "model",
+		Arguments: "kimi-k2.6",
+	})
+	if err != nil {
+		t.Fatalf("/model error = %v", err)
+	}
+	if runner.model.ID != "kimi-k2.6" || runner.model.Provider != opencode.ProviderID {
+		t.Errorf("/model selected = %#v, want kimi-k2.6 via opencode-go", runner.model)
+	}
+	if !strings.Contains(output, "kimi-k2.6") {
+		t.Errorf("/model output = %q, want kimi-k2.6", output)
+	}
+}
+
+func TestInteractiveSessionLoginOpencode(t *testing.T) {
+	t.Parallel()
+
+	var savedProvider, savedKey string
+	runner := &interactiveSession{
+		application: &application{dependencies: dependencies{
+			saveAPIKey: func(provider, apiKey string) (string, error) {
+				savedProvider = provider
+				savedKey = apiKey
+				return "/global/auth.json", nil
+			},
+			newModel: func(config.Config) (agent.Model, error) {
+				return &controlledModel{
+					response:   "ready",
+					stopReason: llm.StopReasonStop,
+				}, nil
+			},
+		}},
+		model: opencode.DefaultModel(),
+		configuration: config.Config{
+			Provider: string(opencode.ProviderID),
+			Model:    opencode.DefaultModel().ID,
+		},
+	}
+
+	output, err := runner.RunSlashCommand(t.Context(), tui.SlashCommandRequest{
+		Name:   "login",
+		Secret: "opencode-secret",
+	})
+	if err != nil {
+		t.Fatalf("/login error = %v", err)
+	}
+	if savedProvider != string(opencode.ProviderID) || savedKey != "opencode-secret" {
+		t.Errorf(
+			"saved = %q/%q, want opencode-go/opencode-secret",
+			savedProvider,
+			savedKey,
+		)
+	}
+	if runner.configuration.OpenCodeAPIKey != "opencode-secret" {
+		t.Errorf(
+			"configuration.OpenCodeAPIKey = %q, want opencode-secret",
+			runner.configuration.OpenCodeAPIKey,
+		)
+	}
+	if runner.model.Provider != opencode.ProviderID {
+		t.Errorf(
+			"runner.model.Provider = %q, want opencode-go after login",
+			runner.model.Provider,
+		)
+	}
+	if !runner.RuntimeState().APIKeyConfigured {
+		t.Error("RuntimeState().APIKeyConfigured = false, want true")
+	}
+	if !strings.Contains(output, "OpenCode Go API key") {
+		t.Errorf("/login output = %q, want OpenCode Go mention", output)
+	}
+}
+
+func TestInteractiveSessionProviderSwitchRebuildsLoopAndModel(t *testing.T) {
+	t.Parallel()
+
+	runner := &interactiveSession{
+		application: &application{dependencies: dependencies{
+			saveSetting: func(config.Setting, string) error { return nil },
+			newModel: func(configuration config.Config) (agent.Model, error) {
+				if configuration.OpenCodeAPIKey == "" {
+					t.Error("newModel called without opencode credential")
+				}
+				return &controlledModel{
+					response:   "ready",
+					stopReason: llm.StopReasonStop,
+				}, nil
+			},
+		}},
+		model: deepseek.DefaultModel(),
+		configuration: config.Config{
+			Provider:       string(deepseek.ProviderID),
+			Model:          deepseek.ModelV4Flash,
+			OpenCodeAPIKey: "opencode-key",
+		},
+	}
+
+	output, err := runner.RunSlashCommand(t.Context(), tui.SlashCommandRequest{
+		Name:      "provider",
+		Arguments: string(opencode.ProviderID),
+	})
+	if err != nil {
+		t.Fatalf("/provider error = %v", err)
+	}
+	if runner.configuration.Provider != string(opencode.ProviderID) {
+		t.Errorf(
+			"configuration.Provider = %q, want opencode-go",
+			runner.configuration.Provider,
+		)
+	}
+	if runner.model.Provider != opencode.ProviderID {
+		t.Errorf("model.Provider = %q, want opencode-go", runner.model.Provider)
+	}
+	if runner.model.ID != "deepseek-v4-flash" {
+		t.Errorf(
+			"model.ID = %q, want the opencode default deepseek-v4-flash",
+			runner.model.ID,
+		)
+	}
+	if runner.loop == nil {
+		t.Error("/provider did not rebuild the agent loop")
+	}
+	if !strings.Contains(output, "opencode-go") {
+		t.Errorf("/provider output = %q, want opencode-go", output)
 	}
 }
 

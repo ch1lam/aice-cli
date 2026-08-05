@@ -18,6 +18,7 @@ import (
 	"github.com/ch1lam/aice-cli/internal/config"
 	"github.com/ch1lam/aice-cli/internal/llm"
 	"github.com/ch1lam/aice-cli/internal/provider/deepseek"
+	"github.com/ch1lam/aice-cli/internal/provider/opencode"
 	"github.com/ch1lam/aice-cli/internal/session"
 	"github.com/ch1lam/aice-cli/internal/tui"
 )
@@ -196,6 +197,39 @@ func TestResolveModelSettingsRejectsUnsupportedValues(t *testing.T) {
 				t.Fatalf("resolveModelSettings() error = %v, want %q", err, tt.want)
 			}
 		})
+	}
+}
+
+func TestResolveModelSettingsOpencode(t *testing.T) {
+	t.Parallel()
+
+	model, options, err := resolveModelSettings(config.Config{
+		Provider: string(opencode.ProviderID),
+		Model:    "kimi-k2.6",
+		Thinking: llm.ThinkingLevelMedium,
+	})
+	if err != nil {
+		t.Fatalf("resolveModelSettings() error = %v", err)
+	}
+	if model.Provider != opencode.ProviderID || model.ID != "kimi-k2.6" {
+		t.Errorf("model = %#v, want kimi-k2.6 via opencode-go", model)
+	}
+	if options.Thinking != llm.ThinkingLevelMedium {
+		t.Errorf("options.Thinking = %q, want medium", options.Thinking)
+	}
+}
+
+func TestResolveModelSettingsOpencodeDefaultModel(t *testing.T) {
+	t.Parallel()
+
+	model, _, err := resolveModelSettings(config.Config{
+		Provider: string(opencode.ProviderID),
+	})
+	if err != nil {
+		t.Fatalf("resolveModelSettings() error = %v", err)
+	}
+	if model.ID != "deepseek-v4-flash" {
+		t.Errorf("default model = %q, want deepseek-v4-flash", model.ID)
 	}
 }
 
@@ -435,7 +469,7 @@ func TestApplicationInteractiveLoginEnablesCurrentSession(t *testing.T) {
 				},
 			}, nil
 		},
-		saveAPIKey: func(apiKey string) (string, error) {
+		saveAPIKey: func(_ string, apiKey string) (string, error) {
 			savedAPIKey = apiKey
 			return "/global/auth.json", nil
 		},

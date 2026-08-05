@@ -28,7 +28,7 @@ AICE 是一个受 [Pi](https://github.com/earendil-works/pi) 启发、使用纯 
 | 领域 | 当前实现 |
 | --- | --- |
 | 交互 | Bubble Tea TUI 与一次性 `--print` 模式 |
-| Provider | DeepSeek V4 Flash 走 OpenAI Responses 协议,V4 Pro 走 Anthropic Messages 协议 |
+| Provider | DeepSeek(V4 Flash 走 OpenAI Responses,V4 Pro 走 Anthropic Messages)与 OpenCode Go(24 个模型走 OpenAI Chat Completions) |
 | 工具 | `read`、`write`、`edit`、`bash`、`grep`、`find`、`ls` |
 | Session | 重启恢复、分支树、回退和手动非破坏性压缩 |
 | 输入 | 仅文本 |
@@ -73,7 +73,8 @@ AICE 的 `grep` 工具需要 [`ripgrep`](https://github.com/BurntSushi/ripgrep)
 
 设置 `AICE_NO_DEP_INSTALL=1` 可禁用自动下载，改为手动管理。
 
-首次启动后执行 `/login` 保存你的 DeepSeek API Key。
+首次启动后执行 `/login`，选择 provider 并输入对应 API Key（DeepSeek 或
+OpenCode Go，后者用 `OPENCODE_API_KEY`）。
 
 ## 快速开始
 
@@ -82,7 +83,7 @@ AICE 的 `grep` 工具需要 [`ripgrep`](https://github.com/BurntSushi/ripgrep)
 - [`go.mod`](./go.mod) 中声明的 Go 版本
 - `bash` 和 [`ripgrep`](https://github.com/BurntSushi/ripgrep)（`rg`）——
   缺失时 app 会在首次启动自动下载
-- DeepSeek API Key
+- 一个 provider 的 API Key（DeepSeek，或 OpenCode Go 的 `OPENCODE_API_KEY`）
 
 ```sh
 git clone https://github.com/ch1lam/aice-cli.git
@@ -91,7 +92,7 @@ go build -o ./aice ./cmd/aice
 ./aice --workspace /path/to/project
 ```
 
-首次启动后执行 `/login`。TUI 会隐藏输入 API Key，并保存到
+首次启动后执行 `/login`，选择 provider，TUI 会隐藏输入 API Key，并保存到
 `~/.aice/auth.json`。输入 `/help` 查看命令，输入 `?` 查看快捷键。
 
 执行一次非交互请求：
@@ -112,9 +113,9 @@ go build -o ./aice ./cmd/aice
 
 ## 当前状态
 
-AICE 仍在快速迭代。当前内建 provider 只有 DeepSeek、输入仅支持文本，稳定版本
-发布前 Session 与配置格式仍可能变化。所谓 provider-neutral 指内核边界，
-不代表多 provider 已经完成。
+AICE 仍在快速迭代。当前内建 provider 是 DeepSeek 与 OpenCode Go、输入仅支持
+文本，稳定版本发布前 Session 与配置格式仍可能变化。所谓 provider-neutral
+指内核边界，不代表多 provider 已经完成。
 
 ## 开发
 

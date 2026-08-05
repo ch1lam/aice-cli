@@ -190,7 +190,7 @@ func (m model) welcomeCard() string {
 	if !m.apiKeyConfigured {
 		title = headerStyle.Render("✦  Configure AICE")
 		description = noticeStyle.Render(
-			"No DeepSeek API key is configured.",
+			"No provider API key is configured.",
 		)
 		commandHint = mutedStyle.Render(
 			"Run /login to add one, or /settings to inspect configuration.",

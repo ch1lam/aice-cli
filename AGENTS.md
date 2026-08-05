@@ -20,7 +20,7 @@
 - CLI: Cobra. The command layer owns flags, arguments, help, and exit behavior. The application composition root owns dependency assembly and process lifecycle.
 - TUI: Bubble Tea v2, Bubbles, Lip Gloss, and Glamour. Bubble Tea owns terminal rendering; channels only bridge asynchronous agent events into `tea.Msg` values.
 - LLM layer: AICE-owned provider-neutral types and streaming contracts, backed by official provider SDKs or the Go standard library.
-- First provider: DeepSeek through an Anthropic Messages protocol adapter using the official `anthropic-sdk-go` SDK with a configurable base URL.
+- Providers: DeepSeek through Anthropic Messages and OpenAI Responses adapters, and OpenCode Go through an OpenAI Chat Completions adapter. All three use official provider SDKs with configurable base URLs.
 - Persistence: append-only JSONL sessions. Use standard library packages before adding storage frameworks or databases.
 - Execution: built-in tools use the host process environment by default. The built-in `grep` tool requires `ripgrep` (`rg`) on `PATH` and has no pure-Go fallback. Containers, sandboxes, or replaceable execution environments may provide stronger isolation.
 - Configuration: Viper-backed global settings, `AICE_*` environment variables, and the `.aice` directory. Provider, model, and thinking belong only in `~/.aice/settings.json`; credentials belong only in the global auth file or process environment. Do not read or write model configuration from a project settings file.
@@ -60,8 +60,9 @@ Dependency rules:
 - `internal/app` is the composition root. It owns lifecycle and assembles CLI behavior, models, tools, sessions, execution environments, and the TUI.
 - `internal/cli` owns only the command surface and invokes application capabilities through small consumer-defined interfaces.
 - `agent` depends only on small AICE contracts, primarily `llm`; it must not import Cobra, Bubble Tea, provider SDKs, or concrete tools.
-- `api/anthropic` translates between SDK/protocol data and `llm` types. Provider SDK types must not leak beyond the adapter.
-- `provider/deepseek` supplies DeepSeek-specific configuration and compatibility behavior while reusing the Anthropic Messages protocol adapter.
+- `api/anthropic`, `api/openairesponses`, and `api/openaicompletions` translate between SDK/protocol data and `llm` types. Provider SDK types must not leak beyond the adapter.
+- `provider/deepseek` supplies DeepSeek-specific configuration and compatibility behavior while reusing the Anthropic Messages and OpenAI Responses protocol adapters.
+- `provider/opencode` supplies OpenCode Go configuration and compatibility behavior while reusing the OpenAI Chat Completions protocol adapter.
 - Concrete tools implement interfaces defined by their consumer. The Agent Loop must not construct tools itself.
 - `tui` consumes agent events and converts them to `tea.Msg`; the agent must never emit or import Bubble Tea types.
 - Built-in implementations use the same explicit contracts intended for future replacements and extensions. Do not give built-ins privileged access to core internals.
@@ -76,7 +77,7 @@ Dependency rules:
   - Keep the complete `AssistantMessage` in history and sessions, including API, provider, model, response identifiers, usage, stop reason, error information, content, and timestamp. Never reduce it to a lossy role/content envelope.
   - Transform `[]AgentMessage` into `[]Message` only at the LLM request boundary. Protocol adapters then translate `[]Message` into provider SDK or wire types.
   - Session storage is lossless source history. Model context is a derived view and may filter or transform messages without rewriting the stored transcript.
-- Keep provider identity/configuration separate from API protocol adapters. Anthropic-compatible providers should reuse the protocol layer instead of duplicating a full client.
+- Keep provider identity/configuration separate from API protocol adapters. Compatible providers should reuse the protocol layer instead of duplicating a full client.
 - Normalize text, reasoning, tool-call deltas, usage, finish reasons, errors, and cancellation without losing information.
 - The Agent Loop is responsible for model calls, validated tool execution, tool-result history, natural continuation, and terminal lifecycle events.
 - Do not impose fixed `MaxTurns` or `MaxToolSteps` limits. Continue while a completed assistant turn requests tools and the paired tool results can be returned to the model. Stop when the model completes without tool calls, the caller cancels or reaches its deadline, context protection rejects the next request, or a provider, protocol, runtime, or event-sink failure terminates the run.
@@ -84,7 +85,7 @@ Dependency rules:
 - Preserve partial assistant output on cancellation or provider failure when it is safe to do so. Provider and runtime failures should produce a terminal assistant result or an explicit durable operation error rather than silently disappearing from history.
 - Execute tools sequentially by default. Parallel execution may be added later only for independent read-only tools with explicit ordering and cancellation tests.
 - Use a faux provider and fake tools as the primary executable specification for event ordering and loop behavior. Unit tests must not require paid APIs or real credentials.
-- A second independent protocol, such as OpenAI, is the eventual validation that the `llm` abstraction is genuinely provider-neutral. Do not generalize for hypothetical providers before that need exists.
+- A second independent protocol (OpenAI Chat Completions) validates that the `llm` abstraction is genuinely provider-neutral. Do not generalize for further hypothetical providers before a concrete need exists.
 
 ## Concurrency and TUI Boundaries
 
