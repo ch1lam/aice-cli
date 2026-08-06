@@ -52,6 +52,13 @@ directory — so `aice update` can later replace the binary in place:
 curl -fsSL https://raw.githubusercontent.com/ch1lam/aice-cli/main/scripts/install.sh | sh
 ```
 
+Windows (PowerShell) users can use the equivalent installer, which installs to
+`%USERPROFILE%\.local\bin` and adds it to the per-user PATH:
+
+```powershell
+iwr -useb https://raw.githubusercontent.com/ch1lam/aice-cli/main/scripts/install.ps1 | iex
+```
+
 A manual download also works. On Apple Silicon (M-series) macOS:
 
 ```sh
@@ -71,6 +78,10 @@ page.
 Windows (`aice_windows_amd64.zip`):
 
 ```powershell
+# PowerShell installer (recommended)
+iwr -useb https://raw.githubusercontent.com/ch1lam/aice-cli/main/scripts/install.ps1 | iex
+
+# or a manual download
 Expand-Archive -Path aice.zip -DestinationPath .
 .\aice.exe --version
 ```

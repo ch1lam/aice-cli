@@ -47,6 +47,13 @@ macOS（`arm64`、`amd64`）、Linux（`arm64`、`amd64`）和 Windows（`amd64`
 curl -fsSL https://raw.githubusercontent.com/ch1lam/aice-cli/main/scripts/install.sh | sh
 ```
 
+Windows（PowerShell）用户可以使用等价的安装器，默认装到
+`%USERPROFILE%\.local\bin` 并自动加入用户 PATH：
+
+```powershell
+iwr -useb https://raw.githubusercontent.com/ch1lam/aice-cli/main/scripts/install.ps1 | iex
+```
+
 手动下载也可以。Apple Silicon（M 系列）Mac：
 
 ```sh
@@ -64,6 +71,10 @@ aice --version
 Windows（`aice_windows_amd64.zip`）：
 
 ```powershell
+# PowerShell 安装器（推荐）
+iwr -useb https://raw.githubusercontent.com/ch1lam/aice-cli/main/scripts/install.ps1 | iex
+
+# 或手动下载
 Expand-Archive -Path aice.zip -DestinationPath .
 .\aice.exe --version
 ```

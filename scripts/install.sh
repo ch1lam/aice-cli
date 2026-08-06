@@ -1,7 +1,7 @@
 #!/bin/sh
 # Install AICE into a user-writable directory so `aice update` can later
 # replace the binary in place. Linux and macOS only; Windows users should use
-# a package manager or a manual download.
+# scripts/install.ps1 (PowerShell).
 #
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/ch1lam/aice-cli/main/scripts/install.sh | sh
