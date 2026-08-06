@@ -55,6 +55,16 @@ func (w *Workspace) Path() string {
 	return w.path
 }
 
+// PhysicalPath returns the absolute default working directory with symlinks
+// resolved, so entering the same directory through different links is treated
+// as one location.
+func (w *Workspace) PhysicalPath() string {
+	if w == nil {
+		return ""
+	}
+	return w.physicalPath
+}
+
 func (w *Workspace) resolvePath(input string) (string, error) {
 	if w == nil || w.path == "" {
 		return "", fmt.Errorf("tool: workspace is required")

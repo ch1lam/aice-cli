@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/spf13/cobra"
+
 	"github.com/ch1lam/aice-cli/internal/cli"
 )
 
@@ -150,6 +152,110 @@ func TestRootCommandRunsInteractiveMode(t *testing.T) {
 	if interactor.request.Output != output {
 		t.Error("Interactive() output does not match command output")
 	}
+}
+
+func TestRootCommandPassesTrustApprovalToPrint(t *testing.T) {
+	t.Parallel()
+
+	printer := &recordingPrinter{response: "done\n"}
+	command := testRootCommand(t, printer, &recordingInteractor{})
+	command.SetOut(io.Discard)
+	command.SetArgs([]string{
+		"--workspace", "/workspace",
+		"--print", "inspect",
+		"--approve",
+	})
+	if err := command.ExecuteContext(t.Context()); err != nil {
+		t.Fatalf("ExecuteContext() error = %v", err)
+	}
+	if printer.request.ProjectTrustOverride == nil ||
+		!*printer.request.ProjectTrustOverride {
+		t.Errorf(
+			"Print() override = %v, want true",
+			printer.request.ProjectTrustOverride,
+		)
+	}
+}
+
+func TestRootCommandPassesTrustDenialToInteractive(t *testing.T) {
+	t.Parallel()
+
+	interactor := &recordingInteractor{}
+	command := testRootCommand(t, &recordingPrinter{}, interactor)
+	command.SetOut(io.Discard)
+	command.SetArgs([]string{
+		"--workspace", "/workspace",
+		"--no-approve",
+	})
+	if err := command.ExecuteContext(t.Context()); err != nil {
+		t.Fatalf("ExecuteContext() error = %v", err)
+	}
+	if interactor.request.ProjectTrustOverride == nil ||
+		*interactor.request.ProjectTrustOverride {
+		t.Errorf(
+			"Interactive() override = %v, want false",
+			interactor.request.ProjectTrustOverride,
+		)
+	}
+}
+
+func TestRootCommandLeavesTrustOverrideUnsetByDefault(t *testing.T) {
+	t.Parallel()
+
+	printer := &recordingPrinter{response: "done\n"}
+	command := testRootCommand(t, printer, &recordingInteractor{})
+	command.SetOut(io.Discard)
+	command.SetArgs([]string{
+		"--workspace", "/workspace",
+		"--print", "inspect",
+	})
+	if err := command.ExecuteContext(t.Context()); err != nil {
+		t.Fatalf("ExecuteContext() error = %v", err)
+	}
+	if printer.request.ProjectTrustOverride != nil {
+		t.Errorf(
+			"Print() override = %v, want nil",
+			printer.request.ProjectTrustOverride,
+		)
+	}
+}
+
+func TestRootCommandRejectsConflictingTrustFlags(t *testing.T) {
+	t.Parallel()
+
+	command := testRootCommand(t, &recordingPrinter{}, &recordingInteractor{})
+	command.SetOut(io.Discard)
+	command.SetArgs([]string{
+		"--workspace", "/workspace",
+		"--print", "inspect",
+		"--approve", "--no-approve",
+	})
+	err := command.ExecuteContext(t.Context())
+	if err == nil {
+		t.Fatal("ExecuteContext() error = nil, want conflict error")
+	}
+	if got := cli.ExitCode(err); got != 2 {
+		t.Errorf("ExitCode() = %d, want 2", got)
+	}
+}
+
+func testRootCommand(
+	t *testing.T,
+	printer cli.Printer,
+	interactor cli.Interactor,
+) *cobra.Command {
+	t.Helper()
+	command, err := cli.NewRootCommand(cli.Dependencies{
+		Printer:      printer,
+		Interactor:   interactor,
+		Compactor:    &recordingCompactor{},
+		Navigator:    &recordingNavigator{},
+		Configurator: &recordingConfigurator{},
+	})
+	if err != nil {
+		t.Fatalf("NewRootCommand() error = %v", err)
+	}
+	return command
 }
 
 func TestRootCommandDescribesWorkspaceAsWorkingDirectory(t *testing.T) {

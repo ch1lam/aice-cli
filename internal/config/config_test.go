@@ -10,6 +10,7 @@ import (
 
 	"github.com/ch1lam/aice-cli/internal/config"
 	"github.com/ch1lam/aice-cli/internal/llm"
+	"github.com/ch1lam/aice-cli/internal/trust"
 )
 
 func TestLoadFilesAppliesGlobalAndEnvironmentPrecedence(t *testing.T) {
@@ -103,6 +104,64 @@ func TestLoadFilesAllowsMissingCredentials(t *testing.T) {
 	}
 	if got.Paths != paths {
 		t.Errorf("Paths = %#v, want %#v", got.Paths, paths)
+	}
+}
+
+func TestLoadFilesDefaultProjectTrustDefaultsToAsk(t *testing.T) {
+	t.Parallel()
+
+	paths := testPaths(t.TempDir())
+	writeJSON(t, paths.GlobalSettings, map[string]any{
+		"provider": "deepseek",
+	})
+	got, err := config.LoadFiles(paths, mapLookup(nil))
+	if err != nil {
+		t.Fatalf("LoadFiles() error = %v", err)
+	}
+	if got.DefaultProjectTrust != trust.DefaultAsk {
+		t.Errorf(
+			"DefaultProjectTrust = %q, want ask",
+			got.DefaultProjectTrust,
+		)
+	}
+}
+
+func TestLoadFilesReadsDefaultProjectTrust(t *testing.T) {
+	t.Parallel()
+
+	for _, want := range []trust.Default{
+		trust.DefaultAlways,
+		trust.DefaultNever,
+	} {
+		paths := testPaths(t.TempDir())
+		writeJSON(t, paths.GlobalSettings, map[string]any{
+			"default_project_trust": string(want),
+		})
+		got, err := config.LoadFiles(paths, mapLookup(nil))
+		if err != nil {
+			t.Fatalf("LoadFiles() error = %v", err)
+		}
+		if got.DefaultProjectTrust != want {
+			t.Errorf(
+				"DefaultProjectTrust = %q, want %q",
+				got.DefaultProjectTrust,
+				want,
+			)
+		}
+	}
+}
+
+func TestLoadFilesRejectsInvalidDefaultProjectTrust(t *testing.T) {
+	t.Parallel()
+
+	paths := testPaths(t.TempDir())
+	writeJSON(t, paths.GlobalSettings, map[string]any{
+		"default_project_trust": "sometimes",
+	})
+	_, err := config.LoadFiles(paths, mapLookup(nil))
+	if err == nil ||
+		!strings.Contains(err.Error(), "unsupported default project trust") {
+		t.Fatalf("LoadFiles() error = %v, want unsupported trust error", err)
 	}
 }
 
@@ -298,6 +357,7 @@ func testPaths(root string) config.Paths {
 	return config.Paths{
 		GlobalSettings: filepath.Join(root, "global", "settings.json"),
 		GlobalAuth:     filepath.Join(root, "global", "auth.json"),
+		GlobalTrust:    filepath.Join(root, "global", "trust.json"),
 		BinDir:         filepath.Join(root, "global", "bin"),
 	}
 }

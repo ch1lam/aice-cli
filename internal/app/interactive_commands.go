@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/ch1lam/aice-cli/internal/config"
@@ -11,6 +12,7 @@ import (
 	"github.com/ch1lam/aice-cli/internal/provider/deepseek"
 	"github.com/ch1lam/aice-cli/internal/provider/opencode"
 	"github.com/ch1lam/aice-cli/internal/session"
+	"github.com/ch1lam/aice-cli/internal/trust"
 	"github.com/ch1lam/aice-cli/internal/tui"
 )
 
@@ -36,6 +38,11 @@ func (s *interactiveSession) SlashCommands() []tui.SlashCommand {
 		{
 			Name:        "settings",
 			Description: "Show effective model settings and configuration paths",
+		},
+		{
+			Name:        "trust",
+			Description: "Save a project trust decision for future runs",
+			Menu:        s.trustMenu(),
 		},
 		{
 			Name:         "login",
@@ -66,6 +73,30 @@ func (s *interactiveSession) loginProviderMenu() *tui.SlashCommandMenu {
 		Title:   "Select provider",
 		Options: providerOptions(s.configuration.Provider),
 	}
+}
+
+// trustMenu lists the project trust choices for the active workspace.
+func (s *interactiveSession) trustMenu() *tui.SlashCommandMenu {
+	choices := trust.Choices(s.workspacePath)
+	options := make([]tui.SlashCommandOption, 0, len(choices))
+	for index, choice := range choices {
+		options = append(options, tui.SlashCommandOption{
+			Label:       choice.Label,
+			Description: trustChoiceDescription(choice),
+			Arguments:   strconv.Itoa(index),
+		})
+	}
+	return &tui.SlashCommandMenu{
+		Title:   "Project trust",
+		Options: options,
+	}
+}
+
+func trustChoiceDescription(choice trust.Choice) string {
+	if len(choice.Updates) == 0 {
+		return "Applies to this Session only"
+	}
+	return "Saved to the global trust store"
 }
 
 func (s *interactiveSession) providerMenu() *tui.SlashCommandMenu {
@@ -321,6 +352,24 @@ func (s *interactiveSession) RunSlashCommand(
 			return "", err
 		}
 		return s.settingsInformation(), nil
+	case "trust":
+		if s.trustStore == nil {
+			return "", fmt.Errorf("app: trust store is required")
+		}
+		choice, err := slashCommandTrustChoice(
+			request,
+			trust.Choices(s.workspacePath),
+		)
+		if err != nil {
+			return "", err
+		}
+		if len(choice.Updates) > 0 {
+			if err := s.trustStore.SetMany(choice.Updates); err != nil {
+				return "", fmt.Errorf("app: save project trust: %w", err)
+			}
+			return trustResultMessage(choice, true), nil
+		}
+		return trustResultMessage(choice, false), nil
 	case "login":
 		return s.login(request)
 	case "provider":
@@ -484,6 +533,19 @@ func (s *interactiveSession) settingsInformation() string {
 		"Thinking: " + thinking,
 		"API key: " + apiKey,
 	}
+	if s.configuration.DefaultProjectTrust == "" {
+		lines = append(lines, "Default project trust: ask")
+	} else {
+		lines = append(
+			lines,
+			"Default project trust: "+string(s.configuration.DefaultProjectTrust),
+		)
+	}
+	lines = append(
+		lines,
+		"Project trust: "+trustDecisionLabel(s.trustDecision)+
+			" ("+s.trustSource.String()+")",
+	)
 	if s.configuration.Paths.GlobalSettings != "" {
 		lines = append(
 			lines,
@@ -496,7 +558,49 @@ func (s *interactiveSession) settingsInformation() string {
 			"Global credentials: "+s.configuration.Paths.GlobalAuth,
 		)
 	}
+	if s.trustStore != nil && s.trustStore.Path() != "" {
+		lines = append(lines, "Trust store: "+s.trustStore.Path())
+	}
 	return strings.Join(lines, "\n")
+}
+
+func trustDecisionLabel(decision trust.Decision) string {
+	switch decision {
+	case trust.DecisionTrusted:
+		return "trusted"
+	case trust.DecisionUntrusted:
+		return "not trusted"
+	default:
+		return "unknown"
+	}
+}
+
+// slashCommandTrustChoice resolves the selected trust choice from the menu
+// option's numeric argument.
+func slashCommandTrustChoice(
+	request tui.SlashCommandRequest,
+	choices []trust.Choice,
+) (trust.Choice, error) {
+	fields := strings.Fields(request.Arguments)
+	if len(fields) != 1 {
+		return trust.Choice{}, fmt.Errorf("app: usage: /trust <choice>")
+	}
+	index, err := strconv.Atoi(fields[0])
+	if err != nil || index < 0 || index >= len(choices) {
+		return trust.Choice{}, fmt.Errorf(
+			"app: invalid trust choice %q",
+			fields[0],
+		)
+	}
+	return choices[index], nil
+}
+
+func trustResultMessage(choice trust.Choice, persisted bool) string {
+	suffix := "Restart AICE for the new trust state to affect prompt loading."
+	if !persisted {
+		return "Trust decision applied to this Session only. " + suffix
+	}
+	return "Trust decision saved. " + suffix
 }
 
 func (s *interactiveSession) saveSetting(

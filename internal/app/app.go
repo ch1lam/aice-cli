@@ -20,6 +20,7 @@ import (
 	"github.com/ch1lam/aice-cli/internal/provider/opencode"
 	"github.com/ch1lam/aice-cli/internal/session"
 	"github.com/ch1lam/aice-cli/internal/tool"
+	"github.com/ch1lam/aice-cli/internal/trust"
 	"github.com/ch1lam/aice-cli/internal/tui"
 	"github.com/ch1lam/aice-cli/internal/update"
 )
@@ -49,6 +50,7 @@ type dependencies struct {
 	saveAPIKey                 func(provider, apiKey string) (string, error)
 	newModel                   func(config.Config) (agent.Model, error)
 	runTUI                     func(context.Context, tui.Runner, tui.Options) error
+	runTrustTUI                func(context.Context, tui.TrustPromptOptions) (trust.Choice, error)
 	compactionKeepRecentTokens int64
 }
 
@@ -64,6 +66,9 @@ func newCommand(dependencies dependencies) (*cobra.Command, error) {
 	}
 	if dependencies.runTUI == nil {
 		dependencies.runTUI = tui.Run
+	}
+	if dependencies.runTrustTUI == nil {
+		dependencies.runTrustTUI = tui.RunTrustPrompt
 	}
 	if dependencies.compactionKeepRecentTokens == 0 {
 		dependencies.compactionKeepRecentTokens = session.DefaultKeepRecentTokens
@@ -190,7 +195,12 @@ func (a *application) Print(
 	}
 	a.notifyUpdate(ctx)
 
-	environment, err := a.newRunEnvironment(ctx, request.Workspace)
+	environment, err := a.newRunEnvironment(
+		ctx,
+		request.Workspace,
+		request.ProjectTrustOverride,
+		nil,
+	)
 	if err != nil {
 		return err
 	}
@@ -219,7 +229,7 @@ func (a *application) Print(
 	printer := &streamPrinter{output: output}
 	result, loopErr := environment.loop.Run(ctx, agent.RunInput{
 		Model:        environment.model,
-		SystemPrompt: defaultSystemPrompt,
+		SystemPrompt: environment.systemPrompt,
 		History:      history,
 		Prompt:       prompt,
 		Options:      environment.options,
@@ -255,7 +265,20 @@ func (a *application) Interactive(
 	}
 	a.notifyUpdate(ctx)
 
-	environment, err := a.newRunEnvironment(ctx, request.Workspace)
+	askUI := func(cwd string) (trust.Choice, error) {
+		return a.dependencies.runTrustTUI(ctx, tui.TrustPromptOptions{
+			Input:   request.Input,
+			Output:  request.Output,
+			CWD:     cwd,
+			Choices: trust.Choices(cwd),
+		})
+	}
+	environment, err := a.newRunEnvironment(
+		ctx,
+		request.Workspace,
+		request.ProjectTrustOverride,
+		askUI,
+	)
 	if err != nil {
 		return err
 	}
@@ -278,6 +301,11 @@ func (a *application) Interactive(
 		options:       environment.options,
 		configuration: environment.configuration,
 		tools:         environment.tools,
+		systemPrompt:  environment.systemPrompt,
+		trustStore:    trust.NewStore(environment.configuration.Paths.GlobalTrust),
+		workspacePath: environment.workspace.PhysicalPath(),
+		trustDecision: environment.trust.Decision,
+		trustSource:   environment.trust.Source,
 	}
 	runErr := a.dependencies.runTUI(ctx, runner, tui.Options{
 		Input:            request.Input,
@@ -302,6 +330,8 @@ type runEnvironment struct {
 	model         llm.Model
 	options       llm.StreamOptions
 	tools         []agent.Tool
+	systemPrompt  string
+	trust         trust.Resolution
 }
 
 type configuredModel struct {
@@ -314,6 +344,8 @@ type configuredModel struct {
 func (a *application) newRunEnvironment(
 	ctx context.Context,
 	workingDirectory string,
+	override *bool,
+	askUI trust.AskFunc,
 ) (*runEnvironment, error) {
 	workspace, err := tool.NewWorkspace(workingDirectory)
 	if err != nil {
@@ -335,6 +367,16 @@ func (a *application) newRunEnvironment(
 	if err != nil {
 		return nil, err
 	}
+	project, err := a.resolveProjectContext(
+		ctx,
+		workspace,
+		configured.configuration,
+		override,
+		askUI,
+	)
+	if err != nil {
+		return nil, err
+	}
 	var loop *agent.Loop
 	if providerConfigured(configured.configuration) {
 		loop, err = a.newAgentLoop(configured.configuration, tools)
@@ -349,6 +391,8 @@ func (a *application) newRunEnvironment(
 		model:         configured.model,
 		options:       configured.options,
 		tools:         tools,
+		systemPrompt:  project.systemPrompt,
+		trust:         project.trust,
 	}, nil
 }
 
@@ -609,6 +653,11 @@ type interactiveSession struct {
 	options       llm.StreamOptions
 	configuration config.Config
 	tools         []agent.Tool
+	systemPrompt  string
+	trustStore    *trust.Store
+	workspacePath string
+	trustDecision trust.Decision
+	trustSource   trust.Source
 }
 
 func (s *interactiveSession) Run(
@@ -625,7 +674,7 @@ func (s *interactiveSession) Run(
 	}
 	result, runErr := s.loop.Run(ctx, agent.RunInput{
 		Model:        s.model,
-		SystemPrompt: defaultSystemPrompt,
+		SystemPrompt: s.systemPrompt,
 		History:      s.history,
 		Prompt:       prompt,
 		Options:      s.options,

@@ -14,6 +14,7 @@ import (
 	"github.com/spf13/viper"
 
 	"github.com/ch1lam/aice-cli/internal/llm"
+	"github.com/ch1lam/aice-cli/internal/trust"
 )
 
 const (
@@ -34,12 +35,14 @@ const (
 
 	settingsFileName = "settings.json"
 	authFileName     = "auth.json"
+	trustFileName    = "trust.json"
 )
 
 const (
-	settingsKeyProvider = "provider"
-	settingsKeyModel    = "model"
-	settingsKeyThinking = "thinking"
+	settingsKeyProvider            = "provider"
+	settingsKeyModel               = "model"
+	settingsKeyThinking            = "thinking"
+	settingsKeyDefaultProjectTrust = "default_project_trust"
 )
 
 // Setting identifies one setting that can be persisted by a command.
@@ -53,9 +56,10 @@ const (
 
 // Settings contains non-secret global model defaults.
 type Settings struct {
-	Provider string            `json:"provider,omitempty"`
-	Model    string            `json:"model,omitempty"`
-	Thinking llm.ThinkingLevel `json:"thinking,omitempty"`
+	Provider            string            `json:"provider,omitempty"`
+	Model               string            `json:"model,omitempty"`
+	Thinking            llm.ThinkingLevel `json:"thinking,omitempty"`
+	DefaultProjectTrust trust.Default     `json:"default_project_trust,omitempty"`
 }
 
 // Paths identifies all files used to resolve configuration and the directory
@@ -63,19 +67,21 @@ type Settings struct {
 type Paths struct {
 	GlobalSettings string
 	GlobalAuth     string
+	GlobalTrust    string
 	BinDir         string
 }
 
 // Config contains the effective process settings needed by AICE.
 type Config struct {
-	Provider        string
-	Model           string
-	Thinking        llm.ThinkingLevel
-	DeepSeekAPIKey  string
-	DeepSeekBaseURL string
-	OpenCodeAPIKey  string
-	OpenCodeBaseURL string
-	Paths           Paths
+	Provider            string
+	Model               string
+	Thinking            llm.ThinkingLevel
+	DefaultProjectTrust trust.Default
+	DeepSeekAPIKey      string
+	DeepSeekBaseURL     string
+	OpenCodeAPIKey      string
+	OpenCodeBaseURL     string
+	Paths               Paths
 }
 
 type authFile struct {
@@ -105,6 +111,7 @@ func DefaultPaths() (Paths, error) {
 	return Paths{
 		GlobalSettings: filepath.Join(globalDir, settingsFileName),
 		GlobalAuth:     filepath.Join(globalDir, authFileName),
+		GlobalTrust:    filepath.Join(globalDir, trustFileName),
 		BinDir:         filepath.Join(globalDir, "bin"),
 	}, nil
 }
@@ -146,14 +153,15 @@ func LoadFiles(paths Paths, lookup LookupEnv) (Config, error) {
 	openCodeBaseURL, _ := lookup(EnvOpenCodeBaseURL)
 
 	return Config{
-		Provider:        settings.Provider,
-		Model:           settings.Model,
-		Thinking:        settings.Thinking,
-		DeepSeekAPIKey:  apiKey,
-		DeepSeekBaseURL: strings.TrimSpace(baseURL),
-		OpenCodeAPIKey:  openCodeAPIKey,
-		OpenCodeBaseURL: strings.TrimSpace(openCodeBaseURL),
-		Paths:           paths,
+		Provider:            settings.Provider,
+		Model:               settings.Model,
+		Thinking:            settings.Thinking,
+		DefaultProjectTrust: settings.DefaultProjectTrust,
+		DeepSeekAPIKey:      apiKey,
+		DeepSeekBaseURL:     strings.TrimSpace(baseURL),
+		OpenCodeAPIKey:      openCodeAPIKey,
+		OpenCodeBaseURL:     strings.TrimSpace(openCodeBaseURL),
+		Paths:               paths,
 	}, nil
 }
 
@@ -311,6 +319,12 @@ func loadSettings(paths Paths, lookup LookupEnv) (Settings, error) {
 		Thinking: llm.ThinkingLevel(strings.TrimSpace(
 			registry.GetString(settingsKeyThinking),
 		)),
+		DefaultProjectTrust: trust.Default(strings.TrimSpace(
+			registry.GetString(settingsKeyDefaultProjectTrust),
+		)),
+	}
+	if settings.DefaultProjectTrust == "" {
+		settings.DefaultProjectTrust = trust.DefaultAsk
 	}
 	if err := settings.validate(); err != nil {
 		return Settings{}, err
@@ -414,6 +428,7 @@ func (p Paths) validate() error {
 	for name, path := range map[string]string{
 		"global settings": p.GlobalSettings,
 		"global auth":     p.GlobalAuth,
+		"global trust":    p.GlobalTrust,
 		"bin dir":         p.BinDir,
 	} {
 		if strings.TrimSpace(path) == "" {
@@ -439,8 +454,16 @@ func (s Settings) validate() error {
 		llm.ThinkingLevelHigh,
 		llm.ThinkingLevelXHigh,
 		llm.ThinkingLevelMax:
-		return nil
 	default:
 		return fmt.Errorf("unsupported thinking level %q", s.Thinking)
 	}
+	switch s.DefaultProjectTrust {
+	case "", trust.DefaultAsk, trust.DefaultAlways, trust.DefaultNever:
+	default:
+		return fmt.Errorf(
+			"unsupported default project trust %q",
+			s.DefaultProjectTrust,
+		)
+	}
+	return nil
 }

@@ -13,17 +13,19 @@ import (
 
 // PrintRequest contains one non-interactive AICE invocation.
 type PrintRequest struct {
-	Prompt    string
-	Workspace string
-	Session   string
+	Prompt               string
+	Workspace            string
+	Session              string
+	ProjectTrustOverride *bool
 }
 
 // InteractiveRequest contains one interactive AICE session invocation.
 type InteractiveRequest struct {
-	Workspace string
-	Session   string
-	Input     io.Reader
-	Output    io.Writer
+	Workspace            string
+	Session              string
+	Input                io.Reader
+	Output               io.Writer
+	ProjectTrustOverride *bool
 }
 
 // Printer runs one non-interactive agent request.
@@ -72,6 +74,11 @@ func NewRootCommand(dependencies Dependencies) (*cobra.Command, error) {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		Args: func(command *cobra.Command, args []string) error {
+			if options.approve && options.noApprove {
+				return newUsageError(errors.New(
+					"--approve and --no-approve are mutually exclusive",
+				))
+			}
 			if strings.TrimSpace(options.workspace) == "" {
 				return newUsageError(errors.New("workspace must not be blank"))
 			}
@@ -94,12 +101,14 @@ func NewRootCommand(dependencies Dependencies) (*cobra.Command, error) {
 			return nil
 		},
 		RunE: func(command *cobra.Command, args []string) error {
+			override := projectTrustOverride(options.approve, options.noApprove)
 			if !options.print {
 				request := InteractiveRequest{
-					Workspace: options.workspace,
-					Session:   options.session,
-					Input:     command.InOrStdin(),
-					Output:    command.OutOrStdout(),
+					Workspace:            options.workspace,
+					Session:              options.session,
+					Input:                command.InOrStdin(),
+					Output:               command.OutOrStdout(),
+					ProjectTrustOverride: override,
 				}
 				if err := dependencies.Interactor.Interactive(
 					command.Context(),
@@ -111,9 +120,10 @@ func NewRootCommand(dependencies Dependencies) (*cobra.Command, error) {
 			}
 
 			request := PrintRequest{
-				Prompt:    args[0],
-				Workspace: options.workspace,
-				Session:   options.session,
+				Prompt:               args[0],
+				Workspace:            options.workspace,
+				Session:              options.session,
+				ProjectTrustOverride: override,
 			}
 			if err := dependencies.Printer.Print(
 				command.Context(),
@@ -148,6 +158,19 @@ func NewRootCommand(dependencies Dependencies) (*cobra.Command, error) {
 		"",
 		"session JSONL file to create or resume",
 	)
+	command.Flags().BoolVarP(
+		&options.approve,
+		"approve",
+		"a",
+		false,
+		"trust project-local resources for this run",
+	)
+	command.Flags().BoolVar(
+		&options.noApprove,
+		"no-approve",
+		false,
+		"ignore project-local resources for this run",
+	)
 	command.AddCommand(newCompactCommand(dependencies.Compactor))
 	command.AddCommand(newSessionCommand(dependencies.Navigator))
 	command.AddCommand(newConfigCommand(dependencies.Configurator))
@@ -178,6 +201,22 @@ type rootOptions struct {
 	print     bool
 	workspace string
 	session   string
+	approve   bool
+	noApprove bool
+}
+
+// projectTrustOverride combines the mutually exclusive trust flags into a
+// tri-state override: nil when neither flag is set.
+func projectTrustOverride(approve, noApprove bool) *bool {
+	if approve {
+		value := true
+		return &value
+	}
+	if noApprove {
+		value := false
+		return &value
+	}
+	return nil
 }
 
 // UsageError marks invalid command-line input.
