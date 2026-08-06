@@ -10,6 +10,7 @@ import (
 // project trust. Only resources inside the workspace root are gated; the
 // matching global user files are always trusted.
 var protectedResources = []string{
+	"AGENTS.md",
 	filepath.Join(".aice", "SYSTEM.md"),
 	filepath.Join(".aice", "APPEND_SYSTEM.md"),
 }

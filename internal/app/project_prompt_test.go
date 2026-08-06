@@ -360,6 +360,115 @@ func TestResolveProjectContextAskWithUIPersistsAndLoads(t *testing.T) {
 	}
 }
 
+func TestResolveProjectContextApprovedAppendsAgentsFile(t *testing.T) {
+	t.Parallel()
+
+	workspace := t.TempDir()
+	writeAppFile(t, workspace, "AGENTS.md", "agent guidance")
+	writeAppFile(t, workspace, ".aice/APPEND_SYSTEM.md", "project rules")
+	paths := trustTestPaths(t)
+
+	project, err := newTestApplication().resolveProjectContext(
+		t.Context(),
+		testWorkspace(t, workspace),
+		trustTestConfig(paths),
+		boolPtr(true),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("resolveProjectContext() error = %v", err)
+	}
+	ws := testWorkspace(t, workspace)
+	want := defaultSystemPrompt + "\n\n" +
+		fmt.Sprintf(projectAgentsBoundaryLabel, filepath.Join(ws.PhysicalPath(), "AGENTS.md")) +
+		"agent guidance" + "\n\n" +
+		projectAppendBoundary(ws.PhysicalPath(), ".aice/APPEND_SYSTEM.md") +
+		"project rules"
+	if project.systemPrompt != want {
+		t.Errorf("systemPrompt = %q, want %q", project.systemPrompt, want)
+	}
+}
+
+func TestResolveProjectContextApprovedOrdersAgentsBeforeAppend(t *testing.T) {
+	t.Parallel()
+
+	workspace := t.TempDir()
+	writeAppFile(t, workspace, ".aice/SYSTEM.md", "project base")
+	writeAppFile(t, workspace, "AGENTS.md", "agent guidance")
+	writeAppFile(t, workspace, ".aice/APPEND_SYSTEM.md", "project rules")
+	paths := trustTestPaths(t)
+
+	project, err := newTestApplication().resolveProjectContext(
+		t.Context(),
+		testWorkspace(t, workspace),
+		trustTestConfig(paths),
+		boolPtr(true),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("resolveProjectContext() error = %v", err)
+	}
+	ws := testWorkspace(t, workspace)
+	want := "project base" + "\n\n" +
+		fmt.Sprintf(projectAgentsBoundaryLabel, filepath.Join(ws.PhysicalPath(), "AGENTS.md")) +
+		"agent guidance" + "\n\n" +
+		projectAppendBoundary(ws.PhysicalPath(), ".aice/APPEND_SYSTEM.md") +
+		"project rules"
+	if project.systemPrompt != want {
+		t.Errorf("systemPrompt = %q, want %q", project.systemPrompt, want)
+	}
+}
+
+func TestResolveProjectContextDeniedSkipsAgentsFile(t *testing.T) {
+	t.Parallel()
+
+	workspace := t.TempDir()
+	writeAppFile(t, workspace, "AGENTS.md", "agent guidance")
+	paths := trustTestPaths(t)
+
+	project, err := newTestApplication().resolveProjectContext(
+		t.Context(),
+		testWorkspace(t, workspace),
+		trustTestConfig(paths),
+		boolPtr(false),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("resolveProjectContext() error = %v", err)
+	}
+	if project.systemPrompt != defaultSystemPrompt {
+		t.Errorf(
+			"systemPrompt = %q, want default (denied project)",
+			project.systemPrompt,
+		)
+	}
+}
+
+func TestResolveProjectContextBlankAgentsAddsNothing(t *testing.T) {
+	t.Parallel()
+
+	workspace := t.TempDir()
+	writeAppFile(t, workspace, "AGENTS.md", "   \n  ")
+	paths := trustTestPaths(t)
+
+	project, err := newTestApplication().resolveProjectContext(
+		t.Context(),
+		testWorkspace(t, workspace),
+		trustTestConfig(paths),
+		boolPtr(true),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("resolveProjectContext() error = %v", err)
+	}
+	if project.systemPrompt != defaultSystemPrompt {
+		t.Errorf(
+			"systemPrompt = %q, want default for blank AGENTS.md",
+			project.systemPrompt,
+		)
+	}
+}
+
 func TestResolveProjectContextRejectsOversizedPrompt(t *testing.T) {
 	t.Parallel()
 

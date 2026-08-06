@@ -49,6 +49,7 @@ per call.
 
 Protected resources (workspace root only):
 
+- `AGENTS.md` — appended to the system prompt when trusted
 - `.aice/SYSTEM.md` — replaces the base system prompt when trusted
 - `.aice/APPEND_SYSTEM.md` — appended to the system prompt when trusted
 
@@ -84,14 +85,19 @@ AICE assembles the agent system prompt per run:
 
 - The base comes from the project `.aice/SYSTEM.md` when trusted, then the
   global `~/.aice/SYSTEM.md`, then the built-in default.
-- `APPEND_SYSTEM.md` is appended to the base using the same precedence and is
-  labeled with its source path.
+- The project `AGENTS.md` at the workspace root is appended to the base when
+  trusted.
+- `APPEND_SYSTEM.md` is appended last using the same precedence and is labeled
+  with its source path.
 - Project prompt files are only read through `os.Root` confinement, must be
   regular UTF-8 files under 64 KiB, and never replace the fixed compaction
   prompt.
 
-Context files such as `AGENTS.md` / `CLAUDE.md` are a future seam and are not
-yet loaded or protected by Project Trust.
+The `/init` command creates or improves `AGENTS.md` in the workspace root using
+the current model. When the file did not exist before, `/init` also records a
+trusted decision for the workspace so the freshly generated file does not
+trigger a trust prompt on the next run. The generated file, like any trust
+decision, is loaded on restart, not hot-reloaded.
 
 ## Interactive commands
 
@@ -99,6 +105,7 @@ The interactive TUI supports:
 
 ```text
 /help
+/init
 /settings
 /login
 /provider
@@ -115,8 +122,10 @@ The interactive TUI supports:
 
 `/help` lists these commands. `/login` opens a provider menu before hidden
 credential input. `/provider`, `/model`, and `/thinking` open a value menu and
-save the selected value directly to global settings. `/trust` saves a project
-trust decision for future runs. `/session` shows the
+save the selected value directly to global settings. `/init` asks the current
+model to scan the workspace and create or improve `AGENTS.md`; it requires
+configured credentials and records a trusted decision for the workspace when
+it creates the file. `/trust` saves a project trust decision for future runs. `/session` shows the
 current Session file, `/tree` lists the Session branch tree and active leaf,
 and `/checkout` chooses where the next Session branch starts. `/compact`
 compacts the active branch at the current turn boundary. `/clear` clears the

@@ -303,6 +303,7 @@ func (a *application) Interactive(
 		tools:         environment.tools,
 		systemPrompt:  environment.systemPrompt,
 		trustStore:    trust.NewStore(environment.configuration.Paths.GlobalTrust),
+		workspace:     environment.workspace,
 		workspacePath: environment.workspace.PhysicalPath(),
 		trustDecision: environment.trust.Decision,
 		trustSource:   environment.trust.Source,
@@ -655,6 +656,7 @@ type interactiveSession struct {
 	tools         []agent.Tool
 	systemPrompt  string
 	trustStore    *trust.Store
+	workspace     *tool.Workspace
 	workspacePath string
 	trustDecision trust.Decision
 	trustSource   trust.Source

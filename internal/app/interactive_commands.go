@@ -36,6 +36,10 @@ func (s *interactiveSession) SlashCommands() []tui.SlashCommand {
 			Description: "Compact the active branch at the current turn boundary",
 		},
 		{
+			Name:        "init",
+			Description: "Create or improve AGENTS.md in this workspace",
+		},
+		{
 			Name:        "settings",
 			Description: "Show effective model settings and configuration paths",
 		},
@@ -347,6 +351,11 @@ func (s *interactiveSession) RunSlashCommand(
 			return "", err
 		}
 		return output, nil
+	case "init":
+		if err := requireNoSlashCommandArguments(request); err != nil {
+			return "", err
+		}
+		return s.runInitCommand(ctx)
 	case "settings":
 		if err := requireNoSlashCommandArguments(request); err != nil {
 			return "", err

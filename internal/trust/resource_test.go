@@ -10,6 +10,7 @@ func TestDiscoverFindsProtectedResources(t *testing.T) {
 	t.Parallel()
 
 	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "AGENTS.md"), "agent guidance")
 	writeFile(t, filepath.Join(root, ".aice", "SYSTEM.md"), "base prompt")
 	writeFile(t, filepath.Join(root, ".aice", "APPEND_SYSTEM.md"), "project notes")
 
@@ -25,6 +26,7 @@ func TestDiscoverFindsProtectedResources(t *testing.T) {
 		found[resource.Name] = true
 	}
 	for _, name := range []string{
+		"AGENTS.md",
 		filepath.Join(".aice", "SYSTEM.md"),
 		filepath.Join(".aice", "APPEND_SYSTEM.md"),
 	} {

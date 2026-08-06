@@ -21,16 +21,19 @@ const (
 	// them on Windows.
 	projectSystemPromptFile    = ".aice/SYSTEM.md"
 	projectAppendPromptFile    = ".aice/APPEND_SYSTEM.md"
+	projectAgentsFile          = "AGENTS.md"
 	globalSystemPromptFile     = "SYSTEM.md"
 	globalAppendPromptFile     = "APPEND_SYSTEM.md"
 	projectAppendBoundaryLabel = "Project instructions from %s:\n"
+	projectAgentsBoundaryLabel = "Project guidance from %s:\n"
 )
 
 // assembleSystemPrompt resolves the effective system prompt for one trusted
 // run. The base comes from the project SYSTEM.md when trusted, then the global
-// SYSTEM.md, then the built-in default. APPEND_SYSTEM.md is appended to the
-// base using the same precedence. Project files are only read when the trust
-// decision allows it; global user files are always eligible.
+// SYSTEM.md, then the built-in default. The project AGENTS.md is appended to
+// the base when trusted, then APPEND_SYSTEM.md appends last using the same
+// precedence so explicit instructions win. Project files are only read when
+// the trust decision allows it; global user files are always eligible.
 func assembleSystemPrompt(
 	workspace *tool.Workspace,
 	configuration config.Config,
@@ -40,6 +43,13 @@ func assembleSystemPrompt(
 	base, err := resolvePromptBase(workspace, configuration, trusted)
 	if err != nil {
 		return "", err
+	}
+	agentsContent, agentsPath, _, err := readProjectPromptWithPath(workspace, projectAgentsFile, trusted)
+	if err != nil {
+		return "", err
+	}
+	if agentsContent != "" {
+		base += "\n\n" + fmt.Sprintf(projectAgentsBoundaryLabel, agentsPath) + agentsContent
 	}
 	appendContent, appendPath, err := resolvePromptAppend(workspace, configuration, trusted)
 	if err != nil {
