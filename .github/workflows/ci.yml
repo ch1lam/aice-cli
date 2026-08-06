@@ -38,6 +38,19 @@ jobs:
         if: runner.os == 'Windows'
         run: choco install ripgrep --yes --no-progress
 
+      - name: Validate install.ps1 syntax
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $tokens = $null; $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Join-Path $env:GITHUB_WORKSPACE 'scripts/install.ps1'),
+            [ref]$tokens, [ref]$errors) | Out-Null
+          if ($errors.Count -gt 0) {
+            $errors | ForEach-Object { Write-Error $_ }
+            exit 1
+          }
+
       - name: Test
         run: go test -race ./...
 
