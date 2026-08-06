@@ -14,6 +14,37 @@ func newTestStore(t *testing.T) *Store {
 	return NewStore(filepath.Join(t.TempDir(), "trust.json"))
 }
 
+func TestNormalizeKey(t *testing.T) {
+	t.Parallel()
+
+	got := normalizeKey("/Canonical/Work")
+	if runtime.GOOS == "windows" {
+		if want := `\canonical\work`; got != want {
+			t.Errorf("normalizeKey() = %q, want %q", got, want)
+		}
+	} else if got != "/Canonical/Work" {
+		t.Errorf("normalizeKey() = %q, want /Canonical/Work (case preserved on Unix)", got)
+	}
+}
+
+func TestStoreCaseInsensitiveLookupOnWindows(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows path case is insensitive")
+	}
+
+	store := newTestStore(t)
+	if err := store.Set(`C:\Users\Foo\Project`, DecisionTrusted); err != nil {
+		t.Fatalf("Set() error = %v", err)
+	}
+	entry, found, err := store.Lookup(`c:\users\foo\project`)
+	if err != nil {
+		t.Fatalf("Lookup() error = %v", err)
+	}
+	if !found || entry.Decision != DecisionTrusted {
+		t.Errorf("Lookup() = %#v, want trusted entry for differently-cased path", entry)
+	}
+}
+
 func TestStoreLookupMissingStore(t *testing.T) {
 	t.Parallel()
 

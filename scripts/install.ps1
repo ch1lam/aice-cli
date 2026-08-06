@@ -42,10 +42,17 @@ try {
 	Write-Host "aice: installing to $installDir ..."
 	New-Item -ItemType Directory -Path $installDir -Force | Out-Null
 	Expand-Archive -Path (Join-Path $tmp $bundle) -DestinationPath (Join-Path $tmp 'extract')
-	Copy-Item -Force (Join-Path $tmp "extract\$binary") (Join-Path $installDir $binary)
+	$target = Join-Path $installDir $binary
+	try {
+		Copy-Item -Force (Join-Path $tmp "extract\$binary") $target
+	} catch {
+		throw "aice: could not replace $target - close any running aice.exe and retry: $_"
+	}
 
 	$userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
-	if ($userPath -notlike "*$installDir*") {
+	$alreadyInPath = -not [string]::IsNullOrEmpty($userPath) -and
+		$userPath.IndexOf($installDir, [System.StringComparison]::OrdinalIgnoreCase) -ge 0
+	if (-not $alreadyInPath) {
 		$newPath = if ([string]::IsNullOrEmpty($userPath)) { $installDir } else { "$userPath;$installDir" }
 		[Environment]::SetEnvironmentVariable('Path', $newPath, 'User')
 		Write-Host "aice: added $installDir to your user PATH (new shells only)"
