@@ -137,6 +137,12 @@ go build -o ./aice ./cmd/aice
 模型与 reasoning 配置保存在 `~/.aice/settings.json`，凭据单独存储。环境变量与
 交互命令详见[配置文档](./docs/configuration.md)。
 
+AICE 只有在项目信任决策通过后才加载项目本地 Prompt
+（`<workspace>/.aice/SYSTEM.md` 与 `APPEND_SYSTEM.md`）。首次进入带这类文件的
+项目时会询问是否信任；`--approve` / `--no-approve` 为自动化运行做出选择，
+`/trust` 管理已保存的决定。不信任的项目仍以内建 system prompt 和完整宿主权限
+运行；Project Trust 不是沙箱。
+
 ## 当前状态
 
 AICE 仍在快速迭代。当前内建 provider 是 DeepSeek 与 OpenCode Go、输入仅支持

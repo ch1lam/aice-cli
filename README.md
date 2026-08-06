@@ -150,6 +150,13 @@ Model and reasoning settings live in `~/.aice/settings.json`; credentials are
 stored separately. See the [configuration guide](./docs/configuration.md) for
 environment variables and interactive commands.
 
+AICE loads project-local prompts (`<workspace>/.aice/SYSTEM.md` and
+`APPEND_SYSTEM.md`) only after a project trust decision. The first time you
+enter a project with such files, AICE asks whether to trust it; `--approve`
+and `--no-approve` make that choice for automated runs, and `/trust` manages
+saved decisions. Untrusted projects run with the built-in system prompt and
+full host permissions; Project Trust is not a sandbox.
+
 ## Status
 
 AICE is under active development. Built-in providers are DeepSeek and OpenCode

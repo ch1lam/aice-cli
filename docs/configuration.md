@@ -17,7 +17,8 @@ For example, the global file can contain:
 ```json
 {
   "model": "deepseek-v4-pro",
-  "thinking": "high"
+  "thinking": "high",
+  "default_project_trust": "ask"
 }
 ```
 
@@ -28,9 +29,69 @@ Supported settings are:
 | Provider | `AICE_PROVIDER` | `deepseek`, `opencode-go` |
 | Model | `AICE_MODEL` | provider models, e.g. `deepseek-v4-flash`, `kimi-k2.6` |
 | Thinking | `AICE_THINKING` | `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` |
+| Default project trust | — | `ask`, `always`, `never` (default `ask`) |
 
 `thinking: "off"` disables thinking mode, so AICE does not persist a second
 boolean that could conflict with the reasoning level.
+
+`default_project_trust` is global-only and has no environment variable:
+automated runs use the `--approve` / `--no-approve` flags explicitly instead.
+`always` trusts every project's local resources, `never` ignores them, and
+`ask` (the default) prompts interactively only when a project has protected
+resources.
+
+## Project Trust
+
+Project Trust gates the loading of project-local startup resources before AICE
+reads them. It is an input-loading guard, not a sandbox: untrusted projects
+still run with full host permissions, and tools are never wrapped or approved
+per call.
+
+Protected resources (workspace root only):
+
+- `.aice/SYSTEM.md` — replaces the base system prompt when trusted
+- `.aice/APPEND_SYSTEM.md` — appended to the system prompt when trusted
+
+Decisions are resolved once per startup in this order:
+
+1. `--approve` / `--no-approve` for this run
+2. A saved decision in `~/.aice/trust.json` (nearest ancestor directory)
+3. The global `default_project_trust` policy
+4. An interactive prompt when the policy is `ask`, resources exist, and a UI
+   is available; non-interactive runs fail closed and ignore project resources
+
+The trust store is global and versioned:
+
+```json
+{
+  "version": 1,
+  "projects": {
+    "/canonical/work": true,
+    "/canonical/work/untrusted-repo": false
+  }
+}
+```
+
+Keys are canonical paths (symlinks resolved). The interactive startup prompt
+offers `Trust`, `Trust parent folder`, session-only choices, and denial. The
+`/trust` slash command saves the same decisions for future runs; `/settings`
+shows the effective decision, its source, and the trust store path. `.aice/sessions`
+never triggers Trust, and no decision is ever written into a Session.
+
+## System Prompt
+
+AICE assembles the agent system prompt per run:
+
+- The base comes from the project `.aice/SYSTEM.md` when trusted, then the
+  global `~/.aice/SYSTEM.md`, then the built-in default.
+- `APPEND_SYSTEM.md` is appended to the base using the same precedence and is
+  labeled with its source path.
+- Project prompt files are only read through `os.Root` confinement, must be
+  regular UTF-8 files under 64 KiB, and never replace the fixed compaction
+  prompt.
+
+Context files such as `AGENTS.md` / `CLAUDE.md` are a future seam and are not
+yet loaded or protected by Project Trust.
 
 ## Interactive commands
 
@@ -43,6 +104,7 @@ The interactive TUI supports:
 /provider
 /model
 /thinking
+/trust
 /session
 /tree
 /checkout
@@ -53,14 +115,15 @@ The interactive TUI supports:
 
 `/help` lists these commands. `/login` opens a provider menu before hidden
 credential input. `/provider`, `/model`, and `/thinking` open a value menu and
-save the selected value directly to global settings. `/session` shows the
+save the selected value directly to global settings. `/trust` saves a project
+trust decision for future runs. `/session` shows the
 current Session file, `/tree` lists the Session branch tree and active leaf,
 and `/checkout` chooses where the next Session branch starts. `/compact`
 compacts the active branch at the current turn boundary. `/clear` clears the
 visible transcript without changing Session history, and `/quit` exits AICE.
 Menu-based commands do not accept typed arguments; choose values from their
 menus instead. Successful setting changes update the current interactive
-Session immediately.
+Session immediately. Trust decisions are applied on restart, not hot-reloaded.
 
 ## Credentials
 

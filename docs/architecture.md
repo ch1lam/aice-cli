@@ -47,6 +47,7 @@ internal/
 │   └── deepseek/               # DeepSeek auth, models, defaults, compatibility
 ├── tool/                       # read, search, write, edit, bash implementations
 ├── session/                    # JSONL history, context views, compaction
+├── trust/                      # project trust store, paths, resolution
 └── config/                     # config and credential loading
 
 testdata/                       # fixtures and golden inputs
