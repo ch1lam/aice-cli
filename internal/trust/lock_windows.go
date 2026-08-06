@@ -7,40 +7,45 @@ import (
 	"fmt"
 	"os"
 	"time"
+
+	"golang.org/x/sys/windows"
 )
 
 const (
 	maxLockAttempts = 10
 	lockRetryDelay  = 20 * time.Millisecond
-	staleLockAge    = 30 * time.Second
 )
 
-// acquireLock takes a lock on the lock file by creating it exclusively. The
-// returned function removes the lock file. A lock older than staleLockAge is
-// considered abandoned after a crashed process and is reclaimed.
+// acquireLock takes an exclusive byte-range lock on the lock file. The
+// returned function releases the lock and closes the file. Windows releases
+// byte-range locks automatically when the owning process exits, so a crashed
+// process cannot leave a stale lock behind.
 func acquireLock(path string) (func() error, error) {
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return nil, fmt.Errorf("trust: open lock %s: %w", path, err)
+	}
+	var ol windows.Overlapped
 	for attempt := 1; attempt <= maxLockAttempts; attempt++ {
-		file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+		err = windows.LockFileEx(
+			windows.Handle(file.Fd()),
+			windows.LOCKFILE_EXCLUSIVE_LOCK|windows.LOCKFILE_FAIL_IMMEDIATELY,
+			0, 1, 0, &ol,
+		)
 		if err == nil {
-			file.Close()
 			return func() error {
-				err := os.Remove(path)
-				if errors.Is(err, os.ErrNotExist) {
-					return nil
-				}
-				return err
+				return errors.Join(
+					windows.UnlockFileEx(windows.Handle(file.Fd()), 0, 1, 0, &ol),
+					file.Close(),
+				)
 			}, nil
 		}
-		if !errors.Is(err, os.ErrExist) {
+		if !errors.Is(err, windows.ERROR_LOCK_VIOLATION) {
+			file.Close()
 			return nil, fmt.Errorf("trust: acquire lock %s: %w", path, err)
 		}
-		if info, statErr := os.Stat(path); statErr == nil &&
-			time.Since(info.ModTime()) > staleLockAge {
-			if removeErr := os.Remove(path); removeErr == nil {
-				continue
-			}
-		}
 		if attempt == maxLockAttempts {
+			file.Close()
 			return nil, fmt.Errorf(
 				"trust: acquire lock %s: still locked after %d attempts",
 				path,
@@ -49,5 +54,6 @@ func acquireLock(path string) (func() error, error) {
 		}
 		time.Sleep(lockRetryDelay)
 	}
+	file.Close()
 	return nil, fmt.Errorf("trust: acquire lock %s: too many attempts", path)
 }

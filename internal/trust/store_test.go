@@ -3,6 +3,7 @@ package trust
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"sync"
 	"testing"
@@ -38,7 +39,7 @@ func TestStoreSetAndLookupExact(t *testing.T) {
 	if !found {
 		t.Fatal("Lookup() found = false, want true")
 	}
-	if entry.Path != "/canonical/work" || entry.Decision != DecisionTrusted {
+	if entry.Path != filepath.Clean("/canonical/work") || entry.Decision != DecisionTrusted {
 		t.Errorf("Lookup() = %#v, want trusted entry for /canonical/work", entry)
 	}
 }
@@ -57,7 +58,7 @@ func TestStoreLookupUsesNearestAncestor(t *testing.T) {
 	if !found {
 		t.Fatal("Lookup() found = false, want true")
 	}
-	if entry.Path != "/canonical" {
+	if entry.Path != filepath.Clean("/canonical") {
 		t.Errorf("Lookup() path = %q, want /canonical", entry.Path)
 	}
 }
@@ -76,7 +77,7 @@ func TestStoreExactOverridesAncestor(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Lookup() error = %v", err)
 	}
-	if !found || entry.Decision != DecisionUntrusted || entry.Path != "/canonical/work" {
+	if !found || entry.Decision != DecisionUntrusted || entry.Path != filepath.Clean("/canonical/work") {
 		t.Errorf("Lookup() = %#v, want untrusted exact entry", entry)
 	}
 }
@@ -115,13 +116,16 @@ func TestStoreSetManyRemovesExactForParentChoice(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Lookup() error = %v", err)
 	}
-	if !found || entry.Path != "/canonical" {
+	if !found || entry.Path != filepath.Clean("/canonical") {
 		t.Errorf("Lookup() = %#v, want inherited /canonical entry", entry)
 	}
 }
 
 func TestStoreWritePermissions(t *testing.T) {
 	t.Parallel()
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows does not enforce Unix permission bits")
+	}
 
 	store := newTestStore(t)
 	if err := store.Set("/canonical", DecisionTrusted); err != nil {

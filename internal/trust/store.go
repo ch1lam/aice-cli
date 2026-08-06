@@ -62,6 +62,7 @@ func (s *Store) Lookup(path string) (Entry, bool, error) {
 	if err != nil {
 		return Entry{}, false, err
 	}
+	path = filepath.Clean(path)
 	for {
 		if decision, ok := data[path]; ok {
 			return Entry{Path: path, Decision: decision}, true, nil
@@ -96,11 +97,12 @@ func (s *Store) SetMany(updates []Update) error {
 		return err
 	}
 	for _, update := range updates {
+		key := filepath.Clean(update.Path)
 		if update.Decision == DecisionUnknown {
-			delete(data, update.Path)
+			delete(data, key)
 			continue
 		}
-		data[update.Path] = update.Decision
+		data[key] = update.Decision
 	}
 	return writeStore(s.path, data)
 }
