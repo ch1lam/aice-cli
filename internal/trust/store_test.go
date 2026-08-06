@@ -155,8 +155,8 @@ func TestStoreWritesSortedKeys(t *testing.T) {
 		t.Fatalf("ReadFile() error = %v", err)
 	}
 	text := string(data)
-	aaa := indexOf(t, text, "/aaa")
-	zzz := indexOf(t, text, "/zzz")
+	aaa := indexOf(t, text, filepath.Clean("/aaa"))
+	zzz := indexOf(t, text, filepath.Clean("/zzz"))
 	if aaa > zzz {
 		t.Errorf("store keys not sorted: /aaa at %d, /zzz at %d", aaa, zzz)
 	}

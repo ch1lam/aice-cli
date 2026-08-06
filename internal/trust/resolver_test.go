@@ -1,6 +1,7 @@
 package trust
 
 import (
+	"path/filepath"
 	"testing"
 )
 
@@ -91,7 +92,7 @@ func TestResolveStoredDecisionWinsOverPolicy(t *testing.T) {
 	if resolution.Decision != DecisionUntrusted || resolution.Source != SourceStore {
 		t.Errorf("Resolve() = %#v, want stored untrusted", resolution)
 	}
-	if resolution.Entry.Path != "/workspace" {
+	if resolution.Entry.Path != filepath.Clean("/workspace") {
 		t.Errorf("Resolve().Entry.Path = %q, want /workspace", resolution.Entry.Path)
 	}
 }
