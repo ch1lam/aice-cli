@@ -12,6 +12,7 @@ import (
 
 	"github.com/ch1lam/aice-cli/internal/api/anthropic"
 	"github.com/ch1lam/aice-cli/internal/api/openairesponses"
+	"github.com/ch1lam/aice-cli/internal/config"
 	"github.com/ch1lam/aice-cli/internal/llm"
 	"github.com/ch1lam/aice-cli/internal/provider/deepseek"
 )
@@ -209,5 +210,46 @@ func TestNewRequiresAPIKey(t *testing.T) {
 	_, err := deepseek.New(deepseek.Config{})
 	if err == nil || !strings.Contains(err.Error(), "API key is required") {
 		t.Fatalf("New() error = %v, want missing API key error", err)
+	}
+}
+
+func TestProviderDescriptor(t *testing.T) {
+	t.Parallel()
+
+	descriptor := &deepseek.Provider{}
+	if got := descriptor.ProviderID(); got != deepseek.ProviderID {
+		t.Errorf("ProviderID() = %q, want %q", got, deepseek.ProviderID)
+	}
+	if got := descriptor.Label(); got != "DeepSeek" {
+		t.Errorf("Label() = %q, want DeepSeek", got)
+	}
+	if got := descriptor.MenuDescription(); !strings.Contains(got, "DeepSeek API") {
+		t.Errorf("MenuDescription() = %q, want DeepSeek API", got)
+	}
+	if got := descriptor.DefaultModel(); !reflect.DeepEqual(got, deepseek.DefaultModel()) {
+		t.Errorf("DefaultModel() = %#v, want %#v", got, deepseek.DefaultModel())
+	}
+	if got := descriptor.Models(); !reflect.DeepEqual(got, deepseek.Models()) {
+		t.Errorf("Models() = %#v, want %#v", got, deepseek.Models())
+	}
+
+	configuration := config.Config{}
+	if descriptor.Configured(configuration) {
+		t.Error("Configured() = true, want false without a key")
+	}
+	descriptor.ApplyAPIKey(&configuration, "test-key")
+	if got := configuration.DeepSeekAPIKey; got != "test-key" {
+		t.Errorf("ApplyAPIKey() stored %q, want test-key", got)
+	}
+	if !descriptor.Configured(configuration) {
+		t.Error("Configured() = false, want true with a key")
+	}
+	err := descriptor.CredentialNotConfiguredError()
+	if err == nil || !strings.Contains(err.Error(), "AICE_DEEPSEEK_API_KEY") {
+		t.Errorf("CredentialNotConfiguredError() = %v, want env var mention", err)
+	}
+
+	if _, err := descriptor.New(config.Config{}); err == nil {
+		t.Error("New() error = nil, want missing API key error")
 	}
 }

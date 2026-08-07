@@ -4,11 +4,13 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
 
 	"github.com/ch1lam/aice-cli/internal/api/openaicompletions"
+	"github.com/ch1lam/aice-cli/internal/config"
 	"github.com/ch1lam/aice-cli/internal/llm"
 	"github.com/ch1lam/aice-cli/internal/provider/opencode"
 )
@@ -194,5 +196,46 @@ func TestNewRequiresAPIKey(t *testing.T) {
 	_, err := opencode.New(opencode.Config{})
 	if err == nil || !strings.Contains(err.Error(), "API key is required") {
 		t.Fatalf("New() error = %v, want missing API key error", err)
+	}
+}
+
+func TestProviderDescriptor(t *testing.T) {
+	t.Parallel()
+
+	descriptor := &opencode.Provider{}
+	if got := descriptor.ProviderID(); got != opencode.ProviderID {
+		t.Errorf("ProviderID() = %q, want %q", got, opencode.ProviderID)
+	}
+	if got := descriptor.Label(); got != "OpenCode Go" {
+		t.Errorf("Label() = %q, want OpenCode Go", got)
+	}
+	if got := descriptor.MenuDescription(); !strings.Contains(got, "OpenCode Go subscription") {
+		t.Errorf("MenuDescription() = %q, want OpenCode Go subscription", got)
+	}
+	if got := descriptor.DefaultModel(); !reflect.DeepEqual(got, opencode.DefaultModel()) {
+		t.Errorf("DefaultModel() = %#v, want %#v", got, opencode.DefaultModel())
+	}
+	if got := descriptor.Models(); !reflect.DeepEqual(got, opencode.Models()) {
+		t.Errorf("Models() = %#v, want %#v", got, opencode.Models())
+	}
+
+	configuration := config.Config{}
+	if descriptor.Configured(configuration) {
+		t.Error("Configured() = true, want false without a key")
+	}
+	descriptor.ApplyAPIKey(&configuration, "test-key")
+	if got := configuration.OpenCodeAPIKey; got != "test-key" {
+		t.Errorf("ApplyAPIKey() stored %q, want test-key", got)
+	}
+	if !descriptor.Configured(configuration) {
+		t.Error("Configured() = false, want true with a key")
+	}
+	err := descriptor.CredentialNotConfiguredError()
+	if err == nil || !strings.Contains(err.Error(), "AICE_OPENCODE_API_KEY") {
+		t.Errorf("CredentialNotConfiguredError() = %v, want env var mention", err)
+	}
+
+	if _, err := descriptor.New(config.Config{}); err == nil {
+		t.Error("New() error = nil, want missing API key error")
 	}
 }

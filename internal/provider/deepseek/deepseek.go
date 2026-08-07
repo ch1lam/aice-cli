@@ -3,14 +3,16 @@ package deepseek
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
 	"strings"
 
+	"github.com/ch1lam/aice-cli/internal/agent"
 	"github.com/ch1lam/aice-cli/internal/api/anthropic"
 	"github.com/ch1lam/aice-cli/internal/api/openairesponses"
+	"github.com/ch1lam/aice-cli/internal/config"
 	"github.com/ch1lam/aice-cli/internal/llm"
+	"github.com/ch1lam/aice-cli/internal/provider"
 )
 
 const (
@@ -37,6 +39,11 @@ type Config struct {
 type Provider struct {
 	anthropicAdapter *anthropic.Adapter
 	responsesAdapter *openairesponses.Adapter
+}
+
+// ProviderID reports the provider identity served by this provider.
+func (p *Provider) ProviderID() llm.ProviderID {
+	return ProviderID
 }
 
 // New constructs a DeepSeek provider. An empty BaseURL selects the official
@@ -98,7 +105,7 @@ func (p *Provider) Stream(ctx context.Context, request llm.Request) (llm.Stream,
 			expectedAPI,
 		)
 	}
-	if err := validateMessages(request.Messages); err != nil {
+	if err := provider.ValidateMessages(request.Messages, messageCapabilities); err != nil {
 		return nil, err
 	}
 	switch request.Model.API {
@@ -116,33 +123,31 @@ func (p *Provider) Stream(ctx context.Context, request llm.Request) (llm.Stream,
 }
 
 func model(id string) llm.Model {
-	name := "DeepSeek V4 Flash"
-	api := openairesponses.API
-	// Rates are USD per million tokens from DeepSeek's public model pricing.
-	pricing := llm.Pricing{
-		Input:     0.14,
-		Output:    0.28,
-		CacheRead: 0.0028,
-	}
-	if id == ModelV4Pro {
-		name = "DeepSeek V4 Pro"
-		api = anthropic.API
-		pricing = llm.Pricing{
-			Input:     0.435,
-			Output:    0.87,
-			CacheRead: 0.003625,
+	var spec provider.ModelSpec
+	for _, candidate := range provider.DeepSeekModelSpecs() {
+		if candidate.ID == id {
+			spec = candidate
+			break
 		}
+	}
+	api := openairesponses.API
+	if id == ModelV4Pro {
+		api = anthropic.API
 	}
 	return llm.Model{
 		ID:               id,
-		Name:             name,
+		Name:             spec.Name,
 		API:              api,
 		Provider:         ProviderID,
 		SupportsThinking: true,
 		InputModalities:  []llm.InputModality{llm.InputModalityText},
-		ContextWindow:    1_000_000,
-		MaxTokens:        384_000,
-		Pricing:          pricing,
+		ContextWindow:    spec.ContextWindow,
+		MaxTokens:        spec.MaxTokens,
+		Pricing: llm.Pricing{
+			Input:     spec.Input,
+			Output:    spec.Output,
+			CacheRead: spec.CacheRead,
+		},
 	}
 }
 
@@ -160,66 +165,64 @@ func protocolBaseURLs(configured string) (string, string) {
 	return configured + "/anthropic", responsesBaseURL
 }
 
-func validateMessages(messages []llm.Message) error {
-	for messageIndex, message := range messages {
-		var content []llm.ContentPart
-		switch value := message.(type) {
-		case llm.UserMessage:
-			content = value.Content
-		case llm.AssistantMessage:
-			content = value.Content
-		case llm.ToolResultMessage:
-			for partIndex, part := range value.Content {
-				if part.Type != llm.ContentTypeText {
-					return fmt.Errorf(
-						"deepseek: message %d content %d: non-text tool results "+
-							"are not supported by DeepSeek models",
-						messageIndex,
-						partIndex,
-					)
-				}
-			}
-			continue
-		case nil:
-			return fmt.Errorf("deepseek: message %d is nil", messageIndex)
-		default:
-			return fmt.Errorf(
-				"deepseek: message %d has unsupported type %T",
-				messageIndex,
-				message,
-			)
-		}
-		for partIndex, part := range content {
-			if err := validateContent(part); err != nil {
-				return fmt.Errorf(
-					"deepseek: message %d content %d: %w",
-					messageIndex,
-					partIndex,
-					err,
-				)
-			}
-		}
-	}
-	return nil
+// messageCapabilities declares the message content DeepSeek models accept.
+var messageCapabilities = provider.MessageCapabilities{
+	ID:                       ProviderID,
+	Label:                    "DeepSeek",
+	SupportsImage:            false,
+	SupportsRedactedThinking: false,
+	NestedToolResultTextOnly: true,
 }
 
-func validateContent(part llm.ContentPart) error {
-	switch part.Type {
-	case llm.ContentTypeImage:
-		return errors.New("image content is not supported by DeepSeek models")
-	case llm.ContentTypeThinking:
-		if part.Redacted {
-			return errors.New("redacted thinking is not supported by DeepSeek models")
-		}
-	case llm.ContentTypeToolResult:
-		if part.ToolResult == nil {
-			return nil
-		}
-		for _, nested := range part.ToolResult.Content {
-			if nested.Type != llm.ContentTypeText {
-				return errors.New("non-text tool results are not supported by DeepSeek models")
-			}
-		}
-	}
-	return nil
+// Label returns the DeepSeek display name.
+func (p *Provider) Label() string {
+	return "DeepSeek"
 }
+
+// MenuDescription describes DeepSeek in interactive provider menus.
+func (p *Provider) MenuDescription() string {
+	return "DeepSeek API (V4 Flash via OpenAI Responses, V4 Pro via Anthropic Messages)"
+}
+
+// Models returns the DeepSeek model catalog.
+func (p *Provider) Models() []llm.Model {
+	return Models()
+}
+
+// DefaultModel returns the DeepSeek model used when none is selected.
+func (p *Provider) DefaultModel() llm.Model {
+	return DefaultModel()
+}
+
+// Configured reports whether the configuration carries a DeepSeek credential.
+func (p *Provider) Configured(configuration config.Config) bool {
+	return configuration.DeepSeekAPIKey != ""
+}
+
+// New constructs the credentialed DeepSeek model service.
+func (p *Provider) New(configuration config.Config) (agent.Model, error) {
+	return New(Config{
+		APIKey:  configuration.DeepSeekAPIKey,
+		BaseURL: configuration.DeepSeekBaseURL,
+	})
+}
+
+// SaveAPIKey stores the DeepSeek credential in the global auth file.
+func (p *Provider) SaveAPIKey(apiKey string) (string, error) {
+	return config.SaveDeepSeekAPIKey(apiKey)
+}
+
+// ApplyAPIKey stores the DeepSeek credential in the configuration.
+func (p *Provider) ApplyAPIKey(configuration *config.Config, apiKey string) {
+	configuration.DeepSeekAPIKey = apiKey
+}
+
+// CredentialNotConfiguredError describes the missing DeepSeek credential.
+func (p *Provider) CredentialNotConfiguredError() error {
+	return fmt.Errorf(
+		"DeepSeek API key is not configured; run /login in interactive mode or set %s",
+		config.EnvDeepSeekAPIKey,
+	)
+}
+
+var _ provider.Provider = (*Provider)(nil)

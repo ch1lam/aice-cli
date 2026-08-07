@@ -12,8 +12,11 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/ch1lam/aice-cli/internal/agent"
 	"github.com/ch1lam/aice-cli/internal/api/openaicompletions"
+	"github.com/ch1lam/aice-cli/internal/config"
 	"github.com/ch1lam/aice-cli/internal/llm"
+	"github.com/ch1lam/aice-cli/internal/provider"
 )
 
 const (
@@ -35,6 +38,11 @@ type Config struct {
 // Chat Completions wire protocol.
 type Provider struct {
 	completionsAdapter *openaicompletions.Adapter
+}
+
+// ProviderID reports the provider identity served by this provider.
+func (p *Provider) ProviderID() llm.ProviderID {
+	return ProviderID
 }
 
 // New constructs an OpenCode Go provider. An empty BaseURL selects the official
@@ -85,24 +93,53 @@ func (p *Provider) Stream(ctx context.Context, request llm.Request) (llm.Stream,
 			openaicompletions.API,
 		)
 	}
-	if err := validateMessages(request.Messages); err != nil {
+	if err := provider.ValidateMessages(request.Messages, messageCapabilities); err != nil {
 		return nil, err
 	}
 	return p.completionsAdapter.Stream(ctx, request)
 }
 
 func knownModel(id string) bool {
-	for _, candidate := range catalog {
-		if candidate.ID == id {
-			return true
-		}
-	}
-	return false
+	_, exists := modelSpecs[id]
+	return exists
 }
 
-// catalog mirrors the OpenCode Go model list published by models.dev. Context
-// window, output limits, and pricing are USD per million tokens from that
-// catalog. Regenerate from https://models.dev/api.json instead of hand-editing.
+// modelSpecs is the OpenCode Go catalog; the DeepSeek models share the specs
+// declared in the provider package.
+var modelSpecs = modelSpecCatalog()
+
+func modelSpecCatalog() map[string]provider.ModelSpec {
+	specs := make(map[string]provider.ModelSpec, 24)
+	for _, shared := range provider.DeepSeekModelSpecs() {
+		specs[shared.ID] = shared
+	}
+	specs["kimi-k2.5"] = provider.ModelSpec{ID: "kimi-k2.5", Name: "Kimi K2.5", ContextWindow: 262_144, MaxTokens: 65_536, Input: 0.6, Output: 3, CacheRead: 0.1}
+	specs["kimi-k2.6"] = provider.ModelSpec{ID: "kimi-k2.6", Name: "Kimi K2.6", ContextWindow: 262_144, MaxTokens: 65_536, Input: 0.95, Output: 4, CacheRead: 0.16}
+	specs["kimi-k2.7-code"] = provider.ModelSpec{ID: "kimi-k2.7-code", Name: "Kimi K2.7 Code", ContextWindow: 262_144, MaxTokens: 262_144, Input: 0.95, Output: 4, CacheRead: 0.19}
+	specs["kimi-k3"] = provider.ModelSpec{ID: "kimi-k3", Name: "Kimi K3", ContextWindow: 1_048_576, MaxTokens: 131_072, Input: 3, Output: 15, CacheRead: 0.3}
+	specs["glm-5"] = provider.ModelSpec{ID: "glm-5", Name: "GLM-5", ContextWindow: 202_752, MaxTokens: 32_768, Input: 1, Output: 3.2, CacheRead: 0.2}
+	specs["glm-5.1"] = provider.ModelSpec{ID: "glm-5.1", Name: "GLM-5.1", ContextWindow: 202_752, MaxTokens: 32_768, Input: 1.4, Output: 4.4, CacheRead: 0.26}
+	specs["glm-5.2"] = provider.ModelSpec{ID: "glm-5.2", Name: "GLM-5.2", ContextWindow: 1_000_000, MaxTokens: 131_072, Input: 1.4, Output: 4.4, CacheRead: 0.26}
+	specs["qwen3.5-plus"] = provider.ModelSpec{ID: "qwen3.5-plus", Name: "Qwen 3.5 Plus", ContextWindow: 262_144, MaxTokens: 65_536, Input: 0.2, Output: 1.2, CacheRead: 0.02}
+	specs["qwen3.6-plus"] = provider.ModelSpec{ID: "qwen3.6-plus", Name: "Qwen 3.6 Plus", ContextWindow: 1_000_000, MaxTokens: 65_536, Input: 0.5, Output: 3, CacheRead: 0.05}
+	specs["qwen3.7-plus"] = provider.ModelSpec{ID: "qwen3.7-plus", Name: "Qwen 3.7 Plus", ContextWindow: 1_000_000, MaxTokens: 65_536, Input: 0.4, Output: 1.6, CacheRead: 0.04}
+	specs["qwen3.7-max"] = provider.ModelSpec{ID: "qwen3.7-max", Name: "Qwen 3.7 Max", ContextWindow: 1_000_000, MaxTokens: 65_536, Input: 2.5, Output: 7.5, CacheRead: 0.5}
+	specs["qwen3.8-max"] = provider.ModelSpec{ID: "qwen3.8-max", Name: "Qwen 3.8 Max", ContextWindow: 1_000_000, MaxTokens: 131_072, Input: 2, Output: 6, CacheRead: 0.25}
+	specs["minimax-m2.5"] = provider.ModelSpec{ID: "minimax-m2.5", Name: "MiniMax M2.5", ContextWindow: 204_800, MaxTokens: 65_536, Input: 0.3, Output: 1.2, CacheRead: 0.03}
+	specs["minimax-m2.7"] = provider.ModelSpec{ID: "minimax-m2.7", Name: "MiniMax M2.7", ContextWindow: 204_800, MaxTokens: 131_072, Input: 0.3, Output: 1.2, CacheRead: 0.06}
+	specs["minimax-m3"] = provider.ModelSpec{ID: "minimax-m3", Name: "MiniMax M3", ContextWindow: 1_000_000, MaxTokens: 131_072, Input: 0.3, Output: 1.2, CacheRead: 0.06}
+	specs["mimo-v2-omni"] = provider.ModelSpec{ID: "mimo-v2-omni", Name: "Mimo V2 Omni", ContextWindow: 262_144, MaxTokens: 128_000, Input: 0.4, Output: 2, CacheRead: 0.08}
+	specs["mimo-v2-pro"] = provider.ModelSpec{ID: "mimo-v2-pro", Name: "Mimo V2 Pro", ContextWindow: 1_048_576, MaxTokens: 128_000, Input: 1, Output: 3, CacheRead: 0.2}
+	specs["mimo-v2.5"] = provider.ModelSpec{ID: "mimo-v2.5", Name: "Mimo V2.5", ContextWindow: 1_000_000, MaxTokens: 128_000, Input: 0.14, Output: 0.28, CacheRead: 0.0028}
+	specs["mimo-v2.5-pro"] = provider.ModelSpec{ID: "mimo-v2.5-pro", Name: "Mimo V2.5 Pro", ContextWindow: 1_048_576, MaxTokens: 128_000, Input: 0.435, Output: 0.87, CacheRead: 0.003625}
+	specs["gpt-5.6-luna"] = provider.ModelSpec{ID: "gpt-5.6-luna", Name: "GPT-5.6 Luna", ContextWindow: 1_050_000, MaxTokens: 128_000, Input: 0.1, Output: 0.6, CacheRead: 0.01}
+	specs["grok-4.5"] = provider.ModelSpec{ID: "grok-4.5", Name: "Grok 4.5", ContextWindow: 500_000, MaxTokens: 500_000, Input: 2, Output: 6, CacheRead: 0.5}
+	specs["hy3"] = provider.ModelSpec{ID: "hy3", Name: "Hy3", ContextWindow: 256_000, MaxTokens: 64_000, Input: 0.14, Output: 0.58, CacheRead: 0.035}
+	return specs
+}
+
+// catalog lists the OpenCode Go models in menu order; the DeepSeek models
+// share the specs declared in the provider package.
 var catalog = []llm.Model{
 	model("deepseek-v4-flash"),
 	model("deepseek-v4-pro"),
@@ -134,96 +171,80 @@ func model(id string) llm.Model {
 	spec := modelSpecs[id]
 	return llm.Model{
 		ID:               id,
-		Name:             spec.name,
+		Name:             spec.Name,
 		API:              openaicompletions.API,
 		Provider:         ProviderID,
 		SupportsThinking: true,
 		InputModalities:  []llm.InputModality{llm.InputModalityText},
-		ContextWindow:    spec.contextWindow,
-		MaxTokens:        spec.maxTokens,
+		ContextWindow:    spec.ContextWindow,
+		MaxTokens:        spec.MaxTokens,
 		Pricing: llm.Pricing{
-			Input:     spec.input,
-			Output:    spec.output,
-			CacheRead: spec.cacheRead,
+			Input:     spec.Input,
+			Output:    spec.Output,
+			CacheRead: spec.CacheRead,
 		},
 	}
 }
 
-type modelSpec struct {
-	name          string
-	contextWindow int64
-	maxTokens     int64
-	input         float64
-	output        float64
-	cacheRead     float64
+// messageCapabilities declares the message content OpenCode Go models accept.
+var messageCapabilities = provider.MessageCapabilities{
+	ID:                       ProviderID,
+	Label:                    "OpenCode Go",
+	SupportsImage:            false,
+	SupportsRedactedThinking: true,
+	NestedToolResultTextOnly: false,
 }
 
-var modelSpecs = map[string]modelSpec{
-	"deepseek-v4-flash": {name: "DeepSeek V4 Flash", contextWindow: 1_000_000, maxTokens: 384_000, input: 0.14, output: 0.28, cacheRead: 0.0028},
-	"deepseek-v4-pro":   {name: "DeepSeek V4 Pro", contextWindow: 1_000_000, maxTokens: 384_000, input: 0.435, output: 0.87, cacheRead: 0.003625},
-	"kimi-k2.5":         {name: "Kimi K2.5", contextWindow: 262_144, maxTokens: 65_536, input: 0.6, output: 3, cacheRead: 0.1},
-	"kimi-k2.6":         {name: "Kimi K2.6", contextWindow: 262_144, maxTokens: 65_536, input: 0.95, output: 4, cacheRead: 0.16},
-	"kimi-k2.7-code":    {name: "Kimi K2.7 Code", contextWindow: 262_144, maxTokens: 262_144, input: 0.95, output: 4, cacheRead: 0.19},
-	"kimi-k3":           {name: "Kimi K3", contextWindow: 1_048_576, maxTokens: 131_072, input: 3, output: 15, cacheRead: 0.3},
-	"glm-5":             {name: "GLM-5", contextWindow: 202_752, maxTokens: 32_768, input: 1, output: 3.2, cacheRead: 0.2},
-	"glm-5.1":           {name: "GLM-5.1", contextWindow: 202_752, maxTokens: 32_768, input: 1.4, output: 4.4, cacheRead: 0.26},
-	"glm-5.2":           {name: "GLM-5.2", contextWindow: 1_000_000, maxTokens: 131_072, input: 1.4, output: 4.4, cacheRead: 0.26},
-	"qwen3.5-plus":      {name: "Qwen 3.5 Plus", contextWindow: 262_144, maxTokens: 65_536, input: 0.2, output: 1.2, cacheRead: 0.02},
-	"qwen3.6-plus":      {name: "Qwen 3.6 Plus", contextWindow: 1_000_000, maxTokens: 65_536, input: 0.5, output: 3, cacheRead: 0.05},
-	"qwen3.7-plus":      {name: "Qwen 3.7 Plus", contextWindow: 1_000_000, maxTokens: 65_536, input: 0.4, output: 1.6, cacheRead: 0.04},
-	"qwen3.7-max":       {name: "Qwen 3.7 Max", contextWindow: 1_000_000, maxTokens: 65_536, input: 2.5, output: 7.5, cacheRead: 0.5},
-	"qwen3.8-max":       {name: "Qwen 3.8 Max", contextWindow: 1_000_000, maxTokens: 131_072, input: 2, output: 6, cacheRead: 0.25},
-	"minimax-m2.5":      {name: "MiniMax M2.5", contextWindow: 204_800, maxTokens: 65_536, input: 0.3, output: 1.2, cacheRead: 0.03},
-	"minimax-m2.7":      {name: "MiniMax M2.7", contextWindow: 204_800, maxTokens: 131_072, input: 0.3, output: 1.2, cacheRead: 0.06},
-	"minimax-m3":        {name: "MiniMax M3", contextWindow: 1_000_000, maxTokens: 131_072, input: 0.3, output: 1.2, cacheRead: 0.06},
-	"mimo-v2-omni":      {name: "Mimo V2 Omni", contextWindow: 262_144, maxTokens: 128_000, input: 0.4, output: 2, cacheRead: 0.08},
-	"mimo-v2-pro":       {name: "Mimo V2 Pro", contextWindow: 1_048_576, maxTokens: 128_000, input: 1, output: 3, cacheRead: 0.2},
-	"mimo-v2.5":         {name: "Mimo V2.5", contextWindow: 1_000_000, maxTokens: 128_000, input: 0.14, output: 0.28, cacheRead: 0.0028},
-	"mimo-v2.5-pro":     {name: "Mimo V2.5 Pro", contextWindow: 1_048_576, maxTokens: 128_000, input: 0.435, output: 0.87, cacheRead: 0.003625},
-	"gpt-5.6-luna":      {name: "GPT-5.6 Luna", contextWindow: 1_050_000, maxTokens: 128_000, input: 0.1, output: 0.6, cacheRead: 0.01},
-	"grok-4.5":          {name: "Grok 4.5", contextWindow: 500_000, maxTokens: 500_000, input: 2, output: 6, cacheRead: 0.5},
-	"hy3":               {name: "Hy3", contextWindow: 256_000, maxTokens: 64_000, input: 0.14, output: 0.58, cacheRead: 0.035},
+// Label returns the OpenCode Go display name.
+func (p *Provider) Label() string {
+	return "OpenCode Go"
 }
 
-func validateMessages(messages []llm.Message) error {
-	for messageIndex, message := range messages {
-		var content []llm.ContentPart
-		switch value := message.(type) {
-		case llm.UserMessage:
-			content = value.Content
-		case llm.AssistantMessage:
-			content = value.Content
-		case llm.ToolResultMessage:
-			for partIndex, part := range value.Content {
-				if part.Type != llm.ContentTypeText {
-					return fmt.Errorf(
-						"opencode-go: message %d content %d: non-text tool results "+
-							"are not supported by OpenCode Go models",
-						messageIndex,
-						partIndex,
-					)
-				}
-			}
-			continue
-		case nil:
-			return fmt.Errorf("opencode-go: message %d is nil", messageIndex)
-		default:
-			return fmt.Errorf(
-				"opencode-go: message %d has unsupported type %T",
-				messageIndex,
-				message,
-			)
-		}
-		for partIndex, part := range content {
-			if part.Type == llm.ContentTypeImage {
-				return fmt.Errorf(
-					"opencode-go: message %d content %d: image content is not "+
-						"supported by OpenCode Go models",
-					messageIndex,
-					partIndex,
-				)
-			}
-		}
-	}
-	return nil
+// MenuDescription describes OpenCode Go in interactive provider menus.
+func (p *Provider) MenuDescription() string {
+	return "OpenCode Go subscription (24 models via OpenAI Chat Completions)"
 }
+
+// Models returns the OpenCode Go model catalog.
+func (p *Provider) Models() []llm.Model {
+	return Models()
+}
+
+// DefaultModel returns the OpenCode Go model used when none is selected.
+func (p *Provider) DefaultModel() llm.Model {
+	return DefaultModel()
+}
+
+// Configured reports whether the configuration carries an OpenCode Go
+// credential.
+func (p *Provider) Configured(configuration config.Config) bool {
+	return configuration.OpenCodeAPIKey != ""
+}
+
+// New constructs the credentialed OpenCode Go model service.
+func (p *Provider) New(configuration config.Config) (agent.Model, error) {
+	return New(Config{
+		APIKey:  configuration.OpenCodeAPIKey,
+		BaseURL: configuration.OpenCodeBaseURL,
+	})
+}
+
+// SaveAPIKey stores the OpenCode Go credential in the global auth file.
+func (p *Provider) SaveAPIKey(apiKey string) (string, error) {
+	return config.SaveOpenCodeAPIKey(apiKey)
+}
+
+// ApplyAPIKey stores the OpenCode Go credential in the configuration.
+func (p *Provider) ApplyAPIKey(configuration *config.Config, apiKey string) {
+	configuration.OpenCodeAPIKey = apiKey
+}
+
+// CredentialNotConfiguredError describes the missing OpenCode Go credential.
+func (p *Provider) CredentialNotConfiguredError() error {
+	return fmt.Errorf(
+		"OpenCode Go API key is not configured; run /login in interactive mode or set %s",
+		config.EnvOpenCodeAPIKey,
+	)
+}
+
+var _ provider.Provider = (*Provider)(nil)
