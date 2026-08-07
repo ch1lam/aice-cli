@@ -26,6 +26,30 @@ The user's explicit request overrides this guide. If a request conflicts with an
 - After Go changes: format modified files, then `go test ./...` and `go vet ./...`. Run `go test -race ./...` for concurrency changes.
 - Never commit unless asked. Preserve unrelated changes. Never use `git add .`, `git stash`, `git reset --hard`, `git checkout .`, or force push.
 
+## Go Skills
+
+Before any Go coding, design, review, debugging, troubleshooting, refactoring, or setup task, load the `samber/cc-skills-golang@golang-how-to` skill first — it routes to whichever other Go skills the task needs. This applies to every Go-related task in this project, regardless of whether the user explicitly mentions a skill.
+
+## Required Go skills
+
+The following Go skills from `samber/cc-skills-golang` MUST always be applied when working on this project, for design and coding tasks alike. Load them at the start of every Go-related task, regardless of whether the user explicitly mentions them.
+
+- `samber/cc-skills-golang@golang-code-style`
+- `samber/cc-skills-golang@golang-naming`
+- `samber/cc-skills-golang@golang-error-handling`
+- `samber/cc-skills-golang@golang-structs-interfaces`
+- `samber/cc-skills-golang@golang-design-patterns`
+- `samber/cc-skills-golang@golang-testing`
+- `samber/cc-skills-golang@golang-refactoring`
+- `samber/cc-skills-golang@golang-concurrency`
+- `samber/cc-skills-golang@golang-context`
+- `samber/cc-skills-golang@golang-cli`
+- `samber/cc-skills-golang@golang-spf13-cobra`
+- `samber/cc-skills-golang@golang-spf13-viper`
+- `samber/cc-skills-golang@golang-safety`
+- `samber/cc-skills-golang@golang-security`
+- `samber/cc-skills-golang@golang-troubleshooting`
+
 ## Docs Index
 
 Read the relevant doc for the task; details live here, not in AGENTS.md.
