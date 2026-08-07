@@ -1,14 +1,13 @@
 package tool
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"strings"
 	"unicode/utf8"
 
+	"github.com/ch1lam/aice-cli/internal/jsonutil"
 	"github.com/ch1lam/aice-cli/internal/llm"
 )
 
@@ -33,17 +32,8 @@ func decodeArguments[T any](ctx context.Context, call llm.ToolCall, toolName str
 		return arguments, fmt.Errorf("tool %q: received call for %q", toolName, call.Name)
 	}
 
-	decoder := json.NewDecoder(bytes.NewReader(call.Arguments))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&arguments); err != nil {
+	if err := jsonutil.DecodeStrict(call.Arguments, &arguments); err != nil {
 		return arguments, fmt.Errorf("tool %q: decode arguments: %w", toolName, err)
-	}
-	var extra json.RawMessage
-	if err := decoder.Decode(&extra); err != io.EOF {
-		if err == nil {
-			return arguments, fmt.Errorf("tool %q: arguments contain multiple json values", toolName)
-		}
-		return arguments, fmt.Errorf("tool %q: decode trailing arguments: %w", toolName, err)
 	}
 	return arguments, nil
 }

@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+
+	"github.com/ch1lam/aice-cli/internal/trust"
 )
 
 // Workspace defines the default working directory for agent tools.
@@ -36,14 +38,14 @@ func NewWorkspace(path string) (*Workspace, error) {
 	if !info.IsDir() {
 		return nil, fmt.Errorf("tool: working directory %q is not a directory", path)
 	}
-	physicalPath, err := filepath.EvalSymlinks(absolutePath)
+	physicalPath, err := trust.CanonicalPath(absolutePath)
 	if err != nil {
 		return nil, fmt.Errorf("tool: resolve working directory symlinks: %w", err)
 	}
 
 	return &Workspace{
 		path:         filepath.Clean(absolutePath),
-		physicalPath: filepath.Clean(physicalPath),
+		physicalPath: physicalPath,
 	}, nil
 }
 

@@ -1,16 +1,16 @@
 package trust
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"runtime"
 	"sort"
 	"strings"
+
+	"github.com/ch1lam/aice-cli/internal/jsonutil"
 )
 
 const storeVersion = 1
@@ -138,16 +138,7 @@ func readStore(path string) (map[string]Decision, error) {
 		return nil, fmt.Errorf("trust: read store %s: %w", path, err)
 	}
 	var file storeFile
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&file); err != nil {
-		return nil, fmt.Errorf("trust: decode store %s: %w", path, err)
-	}
-	var trailing json.RawMessage
-	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
-		if err == nil {
-			return nil, fmt.Errorf("trust: decode store %s: multiple JSON values", path)
-		}
+	if err := jsonutil.DecodeStrict(data, &file); err != nil {
 		return nil, fmt.Errorf("trust: decode store %s: %w", path, err)
 	}
 	if file.Version != storeVersion {

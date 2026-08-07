@@ -3,6 +3,7 @@ package trust
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
 )
 
 // CanonicalPath normalizes path for use as a trust key: it resolves symlinks
@@ -11,6 +12,9 @@ import (
 func CanonicalPath(path string) (string, error) {
 	if path == "" {
 		return "", fmt.Errorf("trust: path is required")
+	}
+	if strings.IndexByte(path, 0) >= 0 {
+		return "", fmt.Errorf("trust: path contains a null byte")
 	}
 	absolute, err := filepath.Abs(path)
 	if err != nil {

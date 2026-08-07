@@ -57,6 +57,14 @@ func TestCanonicalPathRejectsBlank(t *testing.T) {
 	}
 }
 
+func TestCanonicalPathRejectsNullByte(t *testing.T) {
+	t.Parallel()
+
+	if _, err := CanonicalPath("bad\x00path"); err == nil {
+		t.Error("CanonicalPath() error = nil, want error")
+	}
+}
+
 func TestParentPath(t *testing.T) {
 	t.Parallel()
 

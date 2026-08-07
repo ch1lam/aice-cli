@@ -6,13 +6,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/spf13/viper"
 
+	"github.com/ch1lam/aice-cli/internal/jsonutil"
 	"github.com/ch1lam/aice-cli/internal/llm"
 	"github.com/ch1lam/aice-cli/internal/trust"
 )
@@ -376,17 +376,8 @@ func readSettings(path string) (Settings, []byte, error) {
 }
 
 func decodeJSON(path string, data []byte, target any) error {
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(target); err != nil {
+	if err := jsonutil.DecodeStrict(data, target); err != nil {
 		return fmt.Errorf("config: decode %s: %w", path, err)
-	}
-	var trailing json.RawMessage
-	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
-		if err == nil {
-			return fmt.Errorf("config: decode %s: multiple JSON values", path)
-		}
-		return fmt.Errorf("config: decode trailing %s: %w", path, err)
 	}
 	return nil
 }

@@ -6,13 +6,26 @@ import (
 	"path/filepath"
 )
 
-// protectedResources are the workspace-local files whose loading is gated by
-// project trust. Only resources inside the workspace root are gated; the
-// matching global user files are always trusted.
+// Protected resource names at the workspace root. Only these files are gated
+// by project trust; the matching global user files are always trusted.
+// Forward-slash names work on every platform; os.Root and os.Open accept
+// them on Windows.
+const (
+	AgentsFile       = "AGENTS.md"
+	SystemFile       = ".aice/SYSTEM.md"
+	AppendSystemFile = ".aice/APPEND_SYSTEM.md"
+)
+
 var protectedResources = []string{
-	"AGENTS.md",
-	filepath.Join(".aice", "SYSTEM.md"),
-	filepath.Join(".aice", "APPEND_SYSTEM.md"),
+	AgentsFile,
+	SystemFile,
+	AppendSystemFile,
+}
+
+// ProtectedResources returns the workspace-local file names whose loading is
+// gated by project trust.
+func ProtectedResources() []string {
+	return append([]string(nil), protectedResources...)
 }
 
 // Resource is one protected project-local file found during discovery.

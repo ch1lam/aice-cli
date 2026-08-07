@@ -26,9 +26,9 @@ func TestDiscoverFindsProtectedResources(t *testing.T) {
 		found[resource.Name] = true
 	}
 	for _, name := range []string{
-		"AGENTS.md",
-		filepath.Join(".aice", "SYSTEM.md"),
-		filepath.Join(".aice", "APPEND_SYSTEM.md"),
+		AgentsFile,
+		SystemFile,
+		AppendSystemFile,
 	} {
 		if !found[name] {
 			t.Errorf("Discover() missing resource %q", name)
