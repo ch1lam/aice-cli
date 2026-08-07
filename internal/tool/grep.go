@@ -212,9 +212,11 @@ func (g *Grep) runRipgrep(
 	stderr := newBoundedWriter(maxOutputBytes)
 	command.Stderr = stderr
 	configureProcess(command)
-	if err := command.Start(); err != nil {
+	cleanup, err := startProcessTree(command)
+	if err != nil {
 		return grepSearchResult{}, fmt.Errorf("tool \"grep\": start ripgrep: %w", err)
 	}
+	defer cleanup()
 
 	result := grepSearchResult{
 		matches: make([]grepMatch, 0, min(limit, defaultGrepLimit)),

@@ -15,10 +15,18 @@ func TestConfigureProcessWindows(t *testing.T) {
 	}
 	command := exec.CommandContext(context.Background(), "cmd", "/c", "echo ok")
 	configureProcess(command)
-	if command.Cancel == nil {
-		t.Fatal("configureProcess did not set Cancel")
-	}
 	if command.WaitDelay != time.Second {
 		t.Fatalf("WaitDelay = %v, want 1s", command.WaitDelay)
+	}
+	cleanup, err := startProcessTree(command)
+	if err != nil {
+		t.Fatalf("startProcessTree() error = %v", err)
+	}
+	defer cleanup()
+	if command.Cancel == nil {
+		t.Fatal("startProcessTree did not set Cancel")
+	}
+	if err := command.Wait(); err != nil {
+		t.Fatalf("Wait() error = %v", err)
 	}
 }

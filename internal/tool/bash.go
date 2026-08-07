@@ -96,7 +96,12 @@ func (b *Bash) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult, 
 	command.Stderr = output
 	configureProcess(command)
 
-	runErr := command.Run()
+	cleanup, err := startProcessTree(command)
+	if err != nil {
+		return llm.ToolResult{}, fmt.Errorf("tool \"bash\": start command: %w", err)
+	}
+	runErr := command.Wait()
+	cleanup()
 	text := output.String()
 	if errors.Is(commandCtx.Err(), context.DeadlineExceeded) && ctx.Err() == nil {
 		text = appendStatus(text, fmt.Sprintf("command timed out after %s", timeout))
