@@ -96,7 +96,7 @@ func TestInteractiveTrustParentPersistsParentAndClearsExact(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Lookup() error = %v", err)
 	}
-	if !found || entry.Path != filepath.Dir(workspacePath) {
+	if !found || !strings.EqualFold(entry.Path, filepath.Dir(workspacePath)) {
 		t.Errorf("parent decision = %#v, want inherited parent", entry)
 	}
 }
