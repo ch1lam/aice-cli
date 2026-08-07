@@ -6,6 +6,8 @@ type snapshotIndex struct {
 	nodes       map[string]Node
 	turns       map[string]Turn
 	compactions map[string]Compaction
+	nodeTypes   map[string]RecordType
+	parents     map[string]string
 }
 
 // Nodes returns all conversation-tree nodes in physical append order.
@@ -33,7 +35,7 @@ func Branch(snapshot Snapshot, leafID string) ([]Node, error) {
 	if err != nil {
 		return nil, err
 	}
-	path, err := pathToRoot(leafID, nodeTypes(index.nodes), parentIDs(index.nodes))
+	path, err := pathToRoot(leafID, index.nodeTypes, index.parents)
 	if err != nil {
 		return nil, err
 	}
@@ -45,11 +47,8 @@ func Branch(snapshot Snapshot, leafID string) ([]Node, error) {
 }
 
 func indexSnapshot(snapshot Snapshot) (snapshotIndex, error) {
-	index := snapshotIndex{
-		nodes:       make(map[string]Node),
-		turns:       make(map[string]Turn),
-		compactions: make(map[string]Compaction),
-	}
+	index := indexRecords(snapshot.Turns, snapshot.Compactions, nil)
+	seen := make(map[string]struct{}, len(snapshot.Turns)+len(snapshot.Compactions))
 	for _, turn := range snapshot.Turns {
 		if err := turn.Validate(); err != nil {
 			return snapshotIndex{}, fmt.Errorf(
@@ -58,19 +57,13 @@ func indexSnapshot(snapshot Snapshot) (snapshotIndex, error) {
 				err,
 			)
 		}
-		if _, exists := index.nodes[turn.ID]; exists {
+		if _, exists := seen[turn.ID]; exists {
 			return snapshotIndex{}, fmt.Errorf(
 				"session: duplicate tree node id %q",
 				turn.ID,
 			)
 		}
-		index.nodes[turn.ID] = Node{
-			Type:      turn.Type,
-			ID:        turn.ID,
-			ParentID:  turn.ParentID,
-			Timestamp: turn.CompletedAt,
-		}
-		index.turns[turn.ID] = turn
+		seen[turn.ID] = struct{}{}
 	}
 	for _, compaction := range snapshot.Compactions {
 		if err := compaction.Validate(); err != nil {
@@ -80,19 +73,13 @@ func indexSnapshot(snapshot Snapshot) (snapshotIndex, error) {
 				err,
 			)
 		}
-		if _, exists := index.nodes[compaction.ID]; exists {
+		if _, exists := seen[compaction.ID]; exists {
 			return snapshotIndex{}, fmt.Errorf(
 				"session: duplicate tree node id %q",
 				compaction.ID,
 			)
 		}
-		index.nodes[compaction.ID] = Node{
-			Type:      compaction.Type,
-			ID:        compaction.ID,
-			ParentID:  compaction.ParentID,
-			Timestamp: compaction.CreatedAt,
-		}
-		index.compactions[compaction.ID] = compaction
+		seen[compaction.ID] = struct{}{}
 	}
 	if len(snapshot.Order) != len(index.nodes) {
 		return snapshotIndex{}, fmt.Errorf(
@@ -101,7 +88,7 @@ func indexSnapshot(snapshot Snapshot) (snapshotIndex, error) {
 			len(index.nodes),
 		)
 	}
-	seen := make(map[string]struct{}, len(snapshot.Order))
+	orderSeen := make(map[string]struct{}, len(snapshot.Order))
 	for position, id := range snapshot.Order {
 		node, exists := index.nodes[id]
 		if !exists {
@@ -110,14 +97,14 @@ func indexSnapshot(snapshot Snapshot) (snapshotIndex, error) {
 				id,
 			)
 		}
-		if _, exists := seen[id]; exists {
+		if _, exists := orderSeen[id]; exists {
 			return snapshotIndex{}, fmt.Errorf(
 				"session: snapshot order repeats node %q",
 				id,
 			)
 		}
 		if node.ParentID != "" {
-			if _, exists := seen[node.ParentID]; !exists {
+			if _, exists := orderSeen[node.ParentID]; !exists {
 				return snapshotIndex{}, fmt.Errorf(
 					"session: snapshot node %q at position %d precedes parent %q",
 					id,
@@ -126,7 +113,7 @@ func indexSnapshot(snapshot Snapshot) (snapshotIndex, error) {
 				)
 			}
 		}
-		seen[id] = struct{}{}
+		orderSeen[id] = struct{}{}
 	}
 	if snapshot.LeafID != "" {
 		if _, exists := index.nodes[snapshot.LeafID]; !exists {
@@ -137,13 +124,11 @@ func indexSnapshot(snapshot Snapshot) (snapshotIndex, error) {
 			)
 		}
 	}
-	types := nodeTypes(index.nodes)
-	parents := parentIDs(index.nodes)
 	for _, compaction := range snapshot.Compactions {
 		if err := validateCompactionBoundary(
 			compaction,
-			types,
-			parents,
+			index.nodeTypes,
+			index.parents,
 			index.compactions,
 		); err != nil {
 			return snapshotIndex{}, fmt.Errorf(
@@ -153,21 +138,11 @@ func indexSnapshot(snapshot Snapshot) (snapshotIndex, error) {
 			)
 		}
 	}
-	return index, nil
-}
-
-func nodeTypes(nodes map[string]Node) map[string]RecordType {
-	types := make(map[string]RecordType, len(nodes))
-	for id, node := range nodes {
-		types[id] = node.Type
-	}
-	return types
-}
-
-func parentIDs(nodes map[string]Node) map[string]string {
-	parents := make(map[string]string, len(nodes))
-	for id, node := range nodes {
-		parents[id] = node.ParentID
-	}
-	return parents
+	return snapshotIndex{
+		nodes:       index.nodes,
+		turns:       index.turns,
+		compactions: index.compactions,
+		nodeTypes:   index.nodeTypes,
+		parents:     index.parents,
+	}, nil
 }

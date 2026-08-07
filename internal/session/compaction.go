@@ -150,45 +150,28 @@ func deriveActiveBranch(snapshot Snapshot) (activeBranchState, error) {
 	if err != nil {
 		return activeBranchState{}, err
 	}
+	ids := make([]string, len(nodes))
+	for position, node := range nodes {
+		ids[position] = node.ID
+	}
+	turnIDs, err := activeTurnIDs(ids, index.nodeTypes, index.compactions)
+	if err != nil {
+		return activeBranchState{}, err
+	}
 	latestCompaction := -1
 	for position, node := range nodes {
 		if node.Type == RecordTypeCompaction {
 			latestCompaction = position
 		}
 	}
-
-	start := 0
 	var checkpoint *Compaction
 	if latestCompaction >= 0 {
 		compaction := index.compactions[nodes[latestCompaction].ID]
 		checkpoint = &compaction
-		start = -1
-		for position := 0; position < latestCompaction; position++ {
-			if nodes[position].ID == compaction.FirstKeptTurnID {
-				if nodes[position].Type != RecordTypeTurn {
-					return activeBranchState{}, fmt.Errorf(
-						"session: compaction first kept entry %q is not a turn",
-						compaction.FirstKeptTurnID,
-					)
-				}
-				start = position
-				break
-			}
-		}
-		if start < 0 {
-			return activeBranchState{}, fmt.Errorf(
-				"session: compaction first kept turn %q is not on the active branch",
-				compaction.FirstKeptTurnID,
-			)
-		}
 	}
-
-	turns := make([]Turn, 0)
-	for position, node := range nodes {
-		if position < start || node.Type != RecordTypeTurn {
-			continue
-		}
-		turns = append(turns, index.turns[node.ID])
+	turns := make([]Turn, 0, len(turnIDs))
+	for _, id := range turnIDs {
+		turns = append(turns, index.turns[id])
 	}
 	return activeBranchState{
 		compaction: checkpoint,

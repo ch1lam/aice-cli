@@ -3,15 +3,13 @@
 package session
 
 import (
-	"bytes"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
 	"strings"
 
+	"github.com/ch1lam/aice-cli/internal/jsonutil"
 	"github.com/ch1lam/aice-cli/internal/llm"
 )
 
@@ -399,17 +397,8 @@ func (t *Turn) UnmarshalJSON(data []byte) error {
 		return fmt.Errorf("session: decode turn into nil receiver")
 	}
 	var raw turnJSON
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&raw); err != nil {
+	if err := jsonutil.DecodeStrict(data, &raw); err != nil {
 		return fmt.Errorf("session: decode turn: %w", err)
-	}
-	var trailing json.RawMessage
-	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
-		if err == nil {
-			return fmt.Errorf("session: decode turn: multiple json values")
-		}
-		return fmt.Errorf("session: decode trailing turn data: %w", err)
 	}
 	messages, err := llm.UnmarshalAgentMessages(raw.Messages)
 	if err != nil {
