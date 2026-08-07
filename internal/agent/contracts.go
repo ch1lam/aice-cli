@@ -22,6 +22,12 @@ type Model interface {
 	Stream(ctx context.Context, request llm.Request) (llm.Stream, error)
 }
 
+// ModelIdentity is the optional capability a Model may expose so the loop can
+// verify that RunInput.Model metadata matches the service that serves it.
+type ModelIdentity interface {
+	ProviderID() llm.ProviderID
+}
+
 // Tool is an executable capability supplied to the agent loop.
 type Tool interface {
 	Definition() llm.ToolDefinition

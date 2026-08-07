@@ -19,6 +19,57 @@ type ProviderError struct {
 	Err        error
 }
 
+// IsPermanent reports whether the failed request should never be retried.
+func (e *ProviderError) IsPermanent() bool {
+	return permanentProviderCode(normalizeErrorCode(e.Code))
+}
+
+// IsTransient reports whether the failed request is safe to retry.
+func (e *ProviderError) IsTransient() bool {
+	if transientProviderCode(normalizeErrorCode(e.Code)) {
+		return true
+	}
+	switch e.StatusCode {
+	case http.StatusRequestTimeout,
+		http.StatusConflict,
+		http.StatusTooManyRequests:
+		return true
+	default:
+		return e.StatusCode >= http.StatusInternalServerError
+	}
+}
+
+func normalizeErrorCode(code string) string {
+	code = strings.ToLower(strings.TrimSpace(code))
+	return strings.NewReplacer("-", "_", " ", "_").Replace(code)
+}
+
+func permanentProviderCode(code string) bool {
+	switch code {
+	case "billing_error", "billing_not_active", "insufficient_quota", "quota_exceeded":
+		return true
+	default:
+		return false
+	}
+}
+
+func transientProviderCode(code string) bool {
+	switch code {
+	case "api_error",
+		"internal_error",
+		"overloaded_error",
+		"rate_limit_error",
+		"rate_limit_exceeded",
+		"server_error",
+		"service_unavailable",
+		"timeout_error",
+		"vector_store_timeout":
+		return true
+	default:
+		return false
+	}
+}
+
 // Error returns the original provider or transport error text.
 func (e *ProviderError) Error() string {
 	if e == nil {

@@ -526,39 +526,7 @@ type Request struct {
 	Options      StreamOptions    `json:"options"`
 }
 
-// UnmarshalJSON restores each message's concrete type from its role.
-func (r *Request) UnmarshalJSON(data []byte) error {
-	var raw struct {
-		Model        Model             `json:"model"`
-		SystemPrompt string            `json:"system_prompt,omitempty"`
-		Messages     []json.RawMessage `json:"messages"`
-		Tools        []ToolDefinition  `json:"tools,omitempty"`
-		Options      StreamOptions     `json:"options"`
-	}
-	if err := json.Unmarshal(data, &raw); err != nil {
-		return fmt.Errorf("llm: decode request: %w", err)
-	}
-
-	messages := make([]Message, len(raw.Messages))
-	for index, encoded := range raw.Messages {
-		message, err := unmarshalMessage(encoded)
-		if err != nil {
-			return fmt.Errorf("llm: decode request message %d: %w", index, err)
-		}
-		messages[index] = message
-	}
-
-	*r = Request{
-		Model:        raw.Model,
-		SystemPrompt: raw.SystemPrompt,
-		Messages:     messages,
-		Tools:        raw.Tools,
-		Options:      raw.Options,
-	}
-	return nil
-}
-
-func unmarshalMessage(data []byte) (Message, error) {
+func unmarshalAgentMessage(data []byte) (AgentMessage, error) {
 	var envelope struct {
 		Role Role `json:"role"`
 	}
@@ -567,6 +535,12 @@ func unmarshalMessage(data []byte) (Message, error) {
 	}
 
 	switch envelope.Role {
+	case RoleCompactionSummary:
+		var message CompactionSummaryMessage
+		if err := json.Unmarshal(data, &message); err != nil {
+			return nil, err
+		}
+		return message, nil
 	case RoleUser:
 		var message UserMessage
 		if err := json.Unmarshal(data, &message); err != nil {
@@ -588,24 +562,6 @@ func unmarshalMessage(data []byte) (Message, error) {
 	default:
 		return nil, fmt.Errorf("unsupported role %q", envelope.Role)
 	}
-}
-
-func unmarshalAgentMessage(data []byte) (AgentMessage, error) {
-	var envelope struct {
-		Role Role `json:"role"`
-	}
-	if err := json.Unmarshal(data, &envelope); err != nil {
-		return nil, fmt.Errorf("decode role: %w", err)
-	}
-	if envelope.Role != RoleCompactionSummary {
-		return unmarshalMessage(data)
-	}
-
-	var message CompactionSummaryMessage
-	if err := json.Unmarshal(data, &message); err != nil {
-		return nil, err
-	}
-	return message, nil
 }
 
 const (
@@ -747,7 +703,7 @@ func (r Request) Validate() error {
 
 	toolNames := make(map[string]struct{}, len(r.Tools))
 	for index, tool := range r.Tools {
-		if err := tool.validate(); err != nil {
+		if err := tool.Validate(); err != nil {
 			return fmt.Errorf("llm: request tool %d: %w", index, err)
 		}
 		if _, exists := toolNames[tool.Name]; exists {
@@ -795,7 +751,8 @@ func (o StreamOptions) validate(modelMaxTokens int64) error {
 	}
 }
 
-func (t ToolDefinition) validate() error {
+// Validate checks tool definition invariants needed for request validation.
+func (t ToolDefinition) Validate() error {
 	if strings.TrimSpace(t.Name) == "" {
 		return fmt.Errorf("name is required")
 	}

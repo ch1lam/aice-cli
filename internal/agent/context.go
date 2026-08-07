@@ -2,6 +2,7 @@ package agent
 
 import (
 	"fmt"
+	"slices"
 
 	"github.com/ch1lam/aice-cli/internal/llm"
 )
@@ -10,6 +11,26 @@ const (
 	contextReserveTokens int64 = 16_384
 	contextSafetyTokens  int64 = 4_096
 )
+
+func (e *runExecution) request() (llm.Request, error) {
+	definitions := make([]llm.ToolDefinition, len(e.loop.definitions))
+	for index, definition := range e.loop.definitions {
+		definition.InputSchema = slices.Clone(definition.InputSchema)
+		definitions[index] = definition
+	}
+	messages, err := llm.AgentMessagesToMessages(e.history)
+	if err != nil {
+		return llm.Request{}, fmt.Errorf("agent: project history: %w", err)
+	}
+	request := llm.Request{
+		Model:        e.input.Model,
+		SystemPrompt: e.input.SystemPrompt,
+		Messages:     messages,
+		Tools:        definitions,
+		Options:      e.input.Options,
+	}
+	return protectRequestContext(request)
+}
 
 func protectRequestContext(request llm.Request) (llm.Request, error) {
 	contextWindow := request.Model.ContextWindow

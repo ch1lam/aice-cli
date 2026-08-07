@@ -2,13 +2,10 @@ package agent
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/ch1lam/aice-cli/internal/llm"
 )
@@ -42,7 +39,7 @@ func NewLoop(model Model, tools []Tool, options ...LoopOption) (*Loop, error) {
 		if _, exists := toolIndex[definition.Name]; exists {
 			return nil, fmt.Errorf("agent: duplicate tool name %q", definition.Name)
 		}
-		if err := validateToolSchema(definition); err != nil {
+		if err := definition.Validate(); err != nil {
 			return nil, fmt.Errorf("agent: tool %d: %w", index, err)
 		}
 
@@ -73,6 +70,9 @@ func (l *Loop) Run(ctx context.Context, input RunInput, sink AgentEventSink) (Re
 	if ctx == nil {
 		return Result{}, fmt.Errorf("agent: context is required")
 	}
+	if err := validateModel(l.model, input.Model); err != nil {
+		return Result{}, fmt.Errorf("agent: validate model: %w", err)
+	}
 	if err := input.Prompt.Validate(); err != nil {
 		return Result{}, fmt.Errorf("agent: validate prompt: %w", err)
 	}
@@ -90,19 +90,34 @@ func (l *Loop) Run(ctx context.Context, input RunInput, sink AgentEventSink) (Re
 	request, err := execution.request()
 	if err != nil {
 		runErr := fmt.Errorf("agent: prepare initial request: %w", err)
-		return finalizeFailedResult(initialResult, input.Model, runErr), runErr
+		return finalizeRunResult(initialResult, input.Model, runErr)
 	}
 	if err := checkCompactionThreshold(request); err != nil {
 		runErr := fmt.Errorf("agent: protect initial request: %w", err)
-		return finalizeFailedResult(initialResult, input.Model, runErr), runErr
+		return finalizeRunResult(initialResult, input.Model, runErr)
 	}
 	if err := request.Validate(); err != nil {
 		runErr := fmt.Errorf("agent: validate initial request: %w", err)
-		return finalizeFailedResult(initialResult, input.Model, runErr), runErr
+		return finalizeRunResult(initialResult, input.Model, runErr)
 	}
 
 	result, runErr := execution.run(ctx)
-	return finalizeFailedResult(result, input.Model, runErr), runErr
+	return finalizeRunResult(result, input.Model, runErr)
+}
+
+func validateModel(service Model, model llm.Model) error {
+	identity, ok := service.(ModelIdentity)
+	if !ok {
+		return nil
+	}
+	if model.Provider != identity.ProviderID() {
+		return fmt.Errorf(
+			"model provider %q does not match the loop model provider %q",
+			model.Provider,
+			identity.ProviderID(),
+		)
+	}
+	return nil
 }
 
 type runExecution struct {
@@ -148,40 +163,25 @@ func (e *runExecution) run(ctx context.Context) (Result, error) {
 			if streamErr == nil {
 				streamErr = fmt.Errorf("%w: assistant turn did not complete", ErrProtocol)
 			}
-			nextAttempt := retryAttempt + 1
-			delay, retry := e.loop.retry.decision(streamErr, nextAttempt)
-			if !retry {
-				if retryAttempt > 0 {
-					if err := e.emitRetryEnd(ctx, retryAttempt, false, streamErr); err != nil {
-						return e.result, errors.Join(streamErr, err)
-					}
-				}
+			outcome := e.retryTurn(
+				ctx,
+				retryAttempt,
+				turnNumber,
+				streamErr,
+				func() error {
+					return e.recordIncompleteAttempt(ctx, turnNumber, outcome.started, streamErr)
+				},
+			)
+			if outcome.waitErr != nil {
+				return e.finishRun(ctx, outcome.waitErr)
+			}
+			if outcome.stopErr != nil {
+				return e.result, outcome.stopErr
+			}
+			if !outcome.retry {
 				return e.finishIncompleteTurn(ctx, turnNumber, streamErr)
 			}
-			if err := e.recordIncompleteAttempt(
-				ctx,
-				turnNumber,
-				outcome.started,
-				streamErr,
-			); err != nil {
-				return e.result, errors.Join(streamErr, err)
-			}
-			retryAttempt = nextAttempt
-			if err := e.startRetry(ctx, retryAttempt, delay, streamErr); err != nil {
-				return e.result, errors.Join(streamErr, err)
-			}
-			if err := waitRetry(ctx, delay); err != nil {
-				waitErr := errors.Join(streamErr, err)
-				_ = e.emitRetryEnd(ctx, retryAttempt, false, waitErr)
-				return e.finishRun(ctx, waitErr)
-			}
-			turnNumber++
-			if err := e.emit(ctx, AgentEvent{
-				Type:       EventTypeTurnStart,
-				TurnNumber: turnNumber,
-			}); err != nil {
-				return e.result, err
-			}
+			retryAttempt, turnNumber = outcome.nextAttempt, outcome.nextTurn
 			continue
 		}
 
@@ -251,33 +251,23 @@ func (e *runExecution) run(ctx context.Context) (Result, error) {
 			return e.result, errors.Join(runErr, err)
 		}
 		if modelErr != nil {
-			nextAttempt := retryAttempt + 1
-			delay, retry := e.loop.retry.decision(runErr, nextAttempt)
-			if !retry {
-				if retryAttempt > 0 {
-					if err := e.emitRetryEnd(ctx, retryAttempt, false, runErr); err != nil {
-						return e.result, errors.Join(runErr, err)
-					}
-				}
+			outcome := e.retryTurn(
+				ctx,
+				retryAttempt,
+				turnNumber,
+				runErr,
+				nil,
+			)
+			if outcome.waitErr != nil {
+				return e.finishRun(ctx, outcome.waitErr)
+			}
+			if outcome.stopErr != nil {
+				return e.result, outcome.stopErr
+			}
+			if !outcome.retry {
 				return e.finishRun(ctx, runErr)
 			}
-
-			retryAttempt = nextAttempt
-			if err := e.startRetry(ctx, retryAttempt, delay, runErr); err != nil {
-				return e.result, errors.Join(runErr, err)
-			}
-			if err := waitRetry(ctx, delay); err != nil {
-				waitErr := errors.Join(runErr, err)
-				_ = e.emitRetryEnd(ctx, retryAttempt, false, waitErr)
-				return e.finishRun(ctx, waitErr)
-			}
-			turnNumber++
-			if err := e.emit(ctx, AgentEvent{
-				Type:       EventTypeTurnStart,
-				TurnNumber: turnNumber,
-			}); err != nil {
-				return e.result, err
-			}
+			retryAttempt, turnNumber = outcome.nextAttempt, outcome.nextTurn
 			continue
 		}
 		if runErr != nil {
@@ -292,543 +282,6 @@ func (e *runExecution) run(ctx context.Context) (Result, error) {
 		if err := e.emit(ctx, AgentEvent{Type: EventTypeTurnStart, TurnNumber: turnNumber}); err != nil {
 			return e.result, err
 		}
-	}
-}
-
-func (e *runExecution) recordIncompleteAttempt(
-	ctx context.Context,
-	turnNumber int,
-	messageStarted bool,
-	runErr error,
-) error {
-	message := llm.NewAssistantMessage(e.input.Model)
-	message.StopReason = llm.StopReasonError
-	message.ErrorMessage = "model request failed before completion"
-	if !messageStarted {
-		if err := e.emit(ctx, AgentEvent{
-			Type:       EventTypeMessageStart,
-			TurnNumber: turnNumber,
-			Message:    message,
-		}); err != nil {
-			return err
-		}
-	}
-	if err := e.emit(ctx, AgentEvent{
-		Type:       EventTypeMessageEnd,
-		TurnNumber: turnNumber,
-		Message:    message,
-		Err:        runErr,
-	}); err != nil {
-		return err
-	}
-
-	turn := Turn{
-		Number:      turnNumber,
-		Assistant:   message,
-		ToolResults: []llm.ToolResultMessage{},
-	}
-	e.result.Turns = append(e.result.Turns, turn)
-	return e.emit(ctx, AgentEvent{
-		Type:       EventTypeTurnEnd,
-		TurnNumber: turnNumber,
-		Message:    message,
-		Err:        runErr,
-	})
-}
-
-func (e *runExecution) startRetry(
-	ctx context.Context,
-	attempt int,
-	delay time.Duration,
-	runErr error,
-) error {
-	return e.emit(ctx, AgentEvent{
-		Type: EventTypeRetryStart,
-		Retry: &RetryEvent{
-			Attempt:    attempt,
-			MaxRetries: e.loop.retry.MaxRetries,
-			Delay:      delay,
-			Err:        runErr,
-		},
-	})
-}
-
-func (e *runExecution) emitRetryEnd(
-	ctx context.Context,
-	attempt int,
-	success bool,
-	runErr error,
-) error {
-	return e.emit(ctx, AgentEvent{
-		Type: EventTypeRetryEnd,
-		Retry: &RetryEvent{
-			Attempt:    attempt,
-			MaxRetries: e.loop.retry.MaxRetries,
-			Success:    success,
-			Err:        runErr,
-		},
-	})
-}
-
-type assistantOutcome struct {
-	message     llm.AssistantMessage
-	terminalErr error
-	complete    bool
-	started     bool
-}
-
-func (e *runExecution) streamAssistant(
-	ctx context.Context,
-	turnNumber int,
-) (assistantOutcome, error) {
-	request, err := e.request()
-	if err != nil {
-		return assistantOutcome{}, fmt.Errorf(
-			"agent: prepare turn %d request: %w",
-			turnNumber,
-			err,
-		)
-	}
-	if err := request.Validate(); err != nil {
-		return assistantOutcome{}, fmt.Errorf("agent: validate turn %d request: %w", turnNumber, err)
-	}
-
-	stream, err := e.loop.model.Stream(ctx, request)
-	if err != nil {
-		return assistantOutcome{}, fmt.Errorf("agent: start model stream: %w", err)
-	}
-	if stream == nil {
-		return assistantOutcome{}, fmt.Errorf("%w: model returned a nil stream", ErrProtocol)
-	}
-
-	outcome, consumeErr := e.consumeAssistant(ctx, turnNumber, request.Model, stream)
-	if closeErr := stream.Close(); closeErr != nil {
-		consumeErr = errors.Join(consumeErr, fmt.Errorf("agent: close model stream: %w", closeErr))
-	}
-	return outcome, consumeErr
-}
-
-func (e *runExecution) consumeAssistant(
-	ctx context.Context,
-	turnNumber int,
-	model llm.Model,
-	stream llm.Stream,
-) (assistantOutcome, error) {
-	started := false
-	for {
-		event, err := stream.Next()
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				if ctxErr := ctx.Err(); ctxErr != nil {
-					return assistantOutcome{started: started}, ctxErr
-				}
-				return assistantOutcome{started: started}, fmt.Errorf(
-					"%w: stream ended before a terminal event",
-					ErrProtocol,
-				)
-			}
-			return assistantOutcome{started: started}, fmt.Errorf(
-				"agent: read model stream: %w",
-				err,
-			)
-		}
-
-		switch event.Type {
-		case llm.EventTypeStart:
-			if started {
-				return assistantOutcome{}, fmt.Errorf("%w: duplicate start event", ErrProtocol)
-			}
-			started = true
-			message := llm.NewAssistantMessage(model)
-			if err := e.emit(ctx, AgentEvent{
-				Type:       EventTypeMessageStart,
-				TurnNumber: turnNumber,
-				Message:    message,
-			}); err != nil {
-				return assistantOutcome{}, err
-			}
-		case llm.EventTypeDone, llm.EventTypeError:
-			if !started {
-				return assistantOutcome{}, fmt.Errorf(
-					"%w: terminal event arrived before start",
-					ErrProtocol,
-				)
-			}
-			if event.Message == nil {
-				return assistantOutcome{}, fmt.Errorf(
-					"%w: terminal event has no assistant message",
-					ErrProtocol,
-				)
-			}
-
-			message := *event.Message
-			if err := message.Validate(); err != nil {
-				return assistantOutcome{}, fmt.Errorf(
-					"%w: validate terminal assistant message: %v",
-					ErrProtocol,
-					err,
-				)
-			}
-			terminalErr := terminalError(ctx, event, message)
-			if err := e.emit(ctx, AgentEvent{
-				Type:       EventTypeMessageEnd,
-				TurnNumber: turnNumber,
-				Message:    message,
-				Err:        terminalErr,
-			}); err != nil {
-				return assistantOutcome{}, err
-			}
-			return assistantOutcome{
-				message:     message,
-				terminalErr: terminalErr,
-				complete:    true,
-				started:     true,
-			}, nil
-		case llm.EventTypeTextStart,
-			llm.EventTypeTextDelta,
-			llm.EventTypeTextEnd,
-			llm.EventTypeThinkingStart,
-			llm.EventTypeThinkingDelta,
-			llm.EventTypeThinkingEnd,
-			llm.EventTypeToolCallStart,
-			llm.EventTypeToolCallDelta,
-			llm.EventTypeToolCallEnd,
-			llm.EventTypeUsage:
-			if !started {
-				return assistantOutcome{}, fmt.Errorf(
-					"%w: %s event arrived before start",
-					ErrProtocol,
-					event.Type,
-				)
-			}
-			streamEvent := event
-			if err := e.emit(ctx, AgentEvent{
-				Type:                  EventTypeMessageUpdate,
-				TurnNumber:            turnNumber,
-				AssistantMessageEvent: &streamEvent,
-			}); err != nil {
-				return assistantOutcome{}, err
-			}
-		default:
-			return assistantOutcome{}, fmt.Errorf(
-				"%w: unsupported stream event type %q",
-				ErrProtocol,
-				event.Type,
-			)
-		}
-	}
-}
-
-func (e *runExecution) failTruncatedToolCalls(
-	ctx context.Context,
-	turnNumber int,
-	calls []llm.ToolCall,
-) ([]llm.ToolResultMessage, error) {
-	results := make([]llm.ToolResultMessage, 0, len(calls))
-	for index := range calls {
-		call := calls[index]
-		callErr := fmt.Errorf(
-			"tool %q was not executed: the assistant response reached the output token limit, "+
-				"so its arguments may be truncated; reissue the tool call with complete arguments",
-			call.Name,
-		)
-		if err := e.emit(ctx, AgentEvent{
-			Type:       EventTypeToolExecutionStart,
-			TurnNumber: turnNumber,
-			ToolCall:   &call,
-		}); err != nil {
-			return results, err
-		}
-
-		message := newErrorToolResult(call, callErr)
-		if err := e.emit(ctx, AgentEvent{
-			Type:       EventTypeToolExecutionEnd,
-			TurnNumber: turnNumber,
-			ToolCall:   &call,
-			ToolResult: &message,
-			Err:        callErr,
-		}); err != nil {
-			return results, err
-		}
-		if err := e.emitToolResultMessage(ctx, turnNumber, call, message); err != nil {
-			return results, err
-		}
-
-		results = append(results, message)
-		e.history = append(e.history, message)
-	}
-	return results, nil
-}
-
-func (e *runExecution) executeTools(
-	ctx context.Context,
-	turnNumber int,
-	calls []llm.ToolCall,
-) ([]llm.ToolResultMessage, error) {
-	results := make([]llm.ToolResultMessage, 0, len(calls))
-	for index := range calls {
-		call := calls[index]
-		if ctxErr := ctx.Err(); ctxErr != nil {
-			remaining, err := e.syntheticToolResults(
-				ctx,
-				turnNumber,
-				calls[index:],
-				ctxErr.Error(),
-				true,
-			)
-			results = append(results, remaining...)
-			return results, errors.Join(ctxErr, err)
-		}
-
-		if err := e.emit(ctx, AgentEvent{
-			Type:       EventTypeToolExecutionStart,
-			TurnNumber: turnNumber,
-			ToolCall:   &call,
-		}); err != nil {
-			return results, err
-		}
-
-		message, toolErr := e.executeTool(ctx, call)
-		results = append(results, message)
-		e.history = append(e.history, message)
-		if err := e.emit(ctx, AgentEvent{
-			Type:       EventTypeToolExecutionEnd,
-			TurnNumber: turnNumber,
-			ToolCall:   &call,
-			ToolResult: &message,
-			Err:        toolErr,
-		}); err != nil {
-			return results, err
-		}
-		if err := e.emitToolResultMessage(ctx, turnNumber, call, message); err != nil {
-			return results, err
-		}
-	}
-	return results, ctx.Err()
-}
-
-func (e *runExecution) executeTool(
-	ctx context.Context,
-	call llm.ToolCall,
-) (llm.ToolResultMessage, error) {
-	tool, exists := e.loop.tools[call.Name]
-	if !exists {
-		err := fmt.Errorf("tool %q is not available", call.Name)
-		return newErrorToolResult(call, err), err
-	}
-
-	result, err := tool.Execute(ctx, call)
-	if err != nil {
-		wrapped := fmt.Errorf("tool %q failed: %w", call.Name, err)
-		return newErrorToolResult(call, wrapped), wrapped
-	}
-
-	result.CallID = call.ID
-	result.Name = call.Name
-	message, err := llm.NewToolResultMessage(result)
-	if err != nil {
-		wrapped := fmt.Errorf("tool %q returned an invalid result: %w", call.Name, err)
-		return newErrorToolResult(call, wrapped), wrapped
-	}
-	return message, nil
-}
-
-func (e *runExecution) syntheticToolResults(
-	ctx context.Context,
-	turnNumber int,
-	calls []llm.ToolCall,
-	reason string,
-	recordHistory bool,
-) ([]llm.ToolResultMessage, error) {
-	results := make([]llm.ToolResultMessage, 0, len(calls))
-	for index := range calls {
-		call := calls[index]
-		message := newErrorToolResult(call, errors.New(reason))
-		results = append(results, message)
-		if recordHistory {
-			e.history = append(e.history, message)
-		}
-		if err := e.emitToolResultMessage(ctx, turnNumber, call, message); err != nil {
-			return results, err
-		}
-	}
-	return results, nil
-}
-
-func (e *runExecution) emitToolResultMessage(
-	ctx context.Context,
-	turnNumber int,
-	call llm.ToolCall,
-	message llm.ToolResultMessage,
-) error {
-	for _, eventType := range []EventType{EventTypeMessageStart, EventTypeMessageEnd} {
-		if err := e.emit(ctx, AgentEvent{
-			Type:       eventType,
-			TurnNumber: turnNumber,
-			ToolCall:   &call,
-			Message:    message,
-		}); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (e *runExecution) request() (llm.Request, error) {
-	definitions := make([]llm.ToolDefinition, len(e.loop.definitions))
-	for index, definition := range e.loop.definitions {
-		definition.InputSchema = slices.Clone(definition.InputSchema)
-		definitions[index] = definition
-	}
-	messages, err := llm.AgentMessagesToMessages(e.history)
-	if err != nil {
-		return llm.Request{}, fmt.Errorf("agent: project history: %w", err)
-	}
-	request := llm.Request{
-		Model:        e.input.Model,
-		SystemPrompt: e.input.SystemPrompt,
-		Messages:     messages,
-		Tools:        definitions,
-		Options:      e.input.Options,
-	}
-	return protectRequestContext(request)
-}
-
-func (e *runExecution) finishIncompleteTurn(
-	ctx context.Context,
-	turnNumber int,
-	runErr error,
-) (Result, error) {
-	if runErr == nil {
-		runErr = fmt.Errorf("%w: assistant turn did not complete", ErrProtocol)
-	}
-	if err := e.emit(ctx, AgentEvent{
-		Type:       EventTypeTurnEnd,
-		TurnNumber: turnNumber,
-		Err:        runErr,
-	}); err != nil {
-		return e.result, errors.Join(runErr, err)
-	}
-	return e.finishRun(ctx, runErr)
-}
-
-func (e *runExecution) finishRun(ctx context.Context, runErr error) (Result, error) {
-	e.result = finalizeFailedResult(e.result, e.input.Model, runErr)
-	result := e.result
-	if err := e.emit(ctx, AgentEvent{
-		Type:     EventTypeAgentEnd,
-		Messages: result.Messages(),
-		Err:      runErr,
-	}); err != nil {
-		return e.result, errors.Join(runErr, err)
-	}
-	return e.result, runErr
-}
-
-func finalizeFailedResult(
-	result Result,
-	model llm.Model,
-	runErr error,
-) Result {
-	if runErr == nil {
-		return result
-	}
-
-	terminalText, stopReason := terminalFailure(runErr)
-	result = pairUnfinishedToolCalls(result, terminalText)
-	if resultEndsAtAssistant(result) && !needsAbortedTerminal(result, stopReason) {
-		return result
-	}
-	if err := result.Prompt.Validate(); err != nil {
-		return result
-	}
-
-	message := llm.NewAssistantMessage(model)
-	message.Content = []llm.ContentPart{
-		llm.NewTextContent(terminalText).Part(),
-	}
-	message.StopReason = stopReason
-	message.ErrorMessage = terminalText
-	if err := message.Validate(); err != nil {
-		return result
-	}
-
-	turnNumber := 1
-	if len(result.Turns) > 0 {
-		turnNumber = result.Turns[len(result.Turns)-1].Number + 1
-	}
-	result.Turns = append(result.Turns, Turn{
-		Number:      turnNumber,
-		Assistant:   message,
-		ToolResults: []llm.ToolResultMessage{},
-	})
-	return result
-}
-
-func needsAbortedTerminal(result Result, stopReason llm.StopReason) bool {
-	if stopReason != llm.StopReasonAborted || len(result.Turns) == 0 {
-		return false
-	}
-	return result.Turns[len(result.Turns)-1].Assistant.StopReason != llm.StopReasonAborted
-}
-
-func pairUnfinishedToolCalls(result Result, terminalText string) Result {
-	for turnIndex := range result.Turns {
-		turn := &result.Turns[turnIndex]
-		calls, err := extractToolCalls(turn.Assistant)
-		if err != nil {
-			continue
-		}
-
-		recorded := make(map[string]struct{}, len(turn.ToolResults))
-		for _, toolResult := range turn.ToolResults {
-			recorded[toolResult.ToolCallID] = struct{}{}
-		}
-		for _, call := range calls {
-			if _, exists := recorded[call.ID]; exists {
-				continue
-			}
-			message := newErrorToolResult(
-				call,
-				fmt.Errorf(
-					"tool %q was not executed because the %s",
-					call.Name,
-					terminalText,
-				),
-			)
-			turn.ToolResults = append(turn.ToolResults, message)
-			recorded[call.ID] = struct{}{}
-		}
-	}
-	return result
-}
-
-func resultEndsAtAssistant(result Result) bool {
-	if len(result.Turns) == 0 {
-		return false
-	}
-	last := result.Turns[len(result.Turns)-1]
-	if len(last.ToolResults) != 0 {
-		return false
-	}
-	for _, part := range last.Assistant.Content {
-		if part.Type == llm.ContentTypeToolCall {
-			return false
-		}
-	}
-	return true
-}
-
-func terminalFailure(runErr error) (string, llm.StopReason) {
-	switch {
-	case errors.Is(runErr, context.Canceled):
-		return "agent run canceled before completion", llm.StopReasonAborted
-	case errors.Is(runErr, context.DeadlineExceeded):
-		return "agent run deadline exceeded before completion", llm.StopReasonAborted
-	case errors.Is(runErr, ErrContextLimit):
-		return "agent run stopped after reaching the context limit", llm.StopReasonError
-	default:
-		return "agent run failed before completion", llm.StopReasonError
 	}
 }
 
@@ -860,17 +313,6 @@ func isEventSinkError(err error) bool {
 	return errors.As(err, &target)
 }
 
-func validateToolSchema(definition llm.ToolDefinition) error {
-	var schema map[string]json.RawMessage
-	if err := json.Unmarshal(definition.InputSchema, &schema); err != nil {
-		return fmt.Errorf("tool %q input schema must be a json object: %w", definition.Name, err)
-	}
-	if schema == nil {
-		return fmt.Errorf("tool %q input schema must be a json object", definition.Name)
-	}
-	return nil
-}
-
 func extractToolCalls(message llm.AssistantMessage) ([]llm.ToolCall, error) {
 	calls := make([]llm.ToolCall, 0)
 	callIDs := make(map[string]struct{})
@@ -890,37 +332,4 @@ func extractToolCalls(message llm.AssistantMessage) ([]llm.ToolCall, error) {
 		calls = append(calls, call)
 	}
 	return calls, nil
-}
-
-func terminalError(ctx context.Context, event llm.Event, message llm.AssistantMessage) error {
-	if event.Type != llm.EventTypeError &&
-		message.StopReason != llm.StopReasonError &&
-		message.StopReason != llm.StopReasonAborted {
-		return nil
-	}
-	if event.Err != nil {
-		return fmt.Errorf("agent: model stream failed: %w", event.Err)
-	}
-	if ctxErr := ctx.Err(); ctxErr != nil {
-		return ctxErr
-	}
-	if message.ErrorMessage != "" {
-		return fmt.Errorf("agent: model stream failed: %s", message.ErrorMessage)
-	}
-	return fmt.Errorf("agent: model stream stopped with reason %q", message.StopReason)
-}
-
-func newErrorToolResult(call llm.ToolCall, err error) llm.ToolResultMessage {
-	message, messageErr := llm.NewToolResultMessage(llm.ToolResult{
-		CallID: call.ID,
-		Name:   call.Name,
-		Content: []llm.ContentPart{
-			llm.NewTextContent(err.Error()).Part(),
-		},
-		IsError: true,
-	})
-	if messageErr != nil {
-		panic(fmt.Sprintf("agent: construct internal tool error result: %v", messageErr))
-	}
-	return message
 }

@@ -38,3 +38,70 @@ func TestNewTransportProviderErrorPreservesCause(t *testing.T) {
 		t.Fatalf("NewTransportProviderError() = %#v", err)
 	}
 }
+
+func TestProviderErrorClassification(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		err           *llm.ProviderError
+		wantPermanent bool
+		wantTransient bool
+	}{
+		{
+			name:          "billing error",
+			err:           &llm.ProviderError{Code: "billing_error"},
+			wantPermanent: true,
+		},
+		{
+			name:          "insufficient quota",
+			err:           &llm.ProviderError{Code: "insufficient_quota"},
+			wantPermanent: true,
+		},
+		{
+			name:          "rate limit code",
+			err:           &llm.ProviderError{Code: "rate-limit-error"},
+			wantTransient: true,
+		},
+		{
+			name:          "overloaded",
+			err:           &llm.ProviderError{Code: "overloaded_error"},
+			wantTransient: true,
+		},
+		{
+			name:          "too many requests",
+			err:           &llm.ProviderError{StatusCode: http.StatusTooManyRequests},
+			wantTransient: true,
+		},
+		{
+			name:          "request timeout",
+			err:           &llm.ProviderError{StatusCode: http.StatusRequestTimeout},
+			wantTransient: true,
+		},
+		{
+			name:          "server error",
+			err:           &llm.ProviderError{StatusCode: http.StatusBadGateway},
+			wantTransient: true,
+		},
+		{
+			name: "unauthorized",
+			err:  &llm.ProviderError{StatusCode: http.StatusUnauthorized},
+		},
+		{
+			name: "transport",
+			err:  &llm.ProviderError{Transport: true},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			if got := test.err.IsPermanent(); got != test.wantPermanent {
+				t.Errorf("IsPermanent() = %v, want %v", got, test.wantPermanent)
+			}
+			if got := test.err.IsTransient(); got != test.wantTransient {
+				t.Errorf("IsTransient() = %v, want %v", got, test.wantTransient)
+			}
+		})
+	}
+}

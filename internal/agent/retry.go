@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"strings"
 	"time"
 
 	"github.com/ch1lam/aice-cli/internal/llm"
@@ -111,20 +110,7 @@ func isRetryable(err error) bool {
 
 	var providerErr *llm.ProviderError
 	if errors.As(err, &providerErr) {
-		code := normalizeErrorCode(providerErr.Code)
-		if permanentProviderCode(code) {
-			return false
-		}
-		if transientProviderCode(code) {
-			return true
-		}
-		if providerErr.StatusCode == 408 ||
-			providerErr.StatusCode == 409 ||
-			providerErr.StatusCode == 429 ||
-			providerErr.StatusCode >= 500 {
-			return true
-		}
-		return providerErr.Transport
+		return !providerErr.IsPermanent() && (providerErr.IsTransient() || providerErr.Transport)
 	}
 
 	if errors.Is(err, io.ErrUnexpectedEOF) {
@@ -132,37 +118,6 @@ func isRetryable(err error) bool {
 	}
 	var networkErr net.Error
 	return errors.As(err, &networkErr) && networkErr.Timeout()
-}
-
-func normalizeErrorCode(code string) string {
-	code = strings.ToLower(strings.TrimSpace(code))
-	return strings.NewReplacer("-", "_", " ", "_").Replace(code)
-}
-
-func permanentProviderCode(code string) bool {
-	switch code {
-	case "billing_error", "billing_not_active", "insufficient_quota", "quota_exceeded":
-		return true
-	default:
-		return false
-	}
-}
-
-func transientProviderCode(code string) bool {
-	switch code {
-	case "api_error",
-		"internal_error",
-		"overloaded_error",
-		"rate_limit_error",
-		"rate_limit_exceeded",
-		"server_error",
-		"service_unavailable",
-		"timeout_error",
-		"vector_store_timeout":
-		return true
-	default:
-		return false
-	}
 }
 
 func waitRetry(ctx context.Context, delay time.Duration) error {
