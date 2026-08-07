@@ -8,16 +8,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
-	"sort"
 	"strings"
 
 	anthropicsdk "github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/anthropics/anthropic-sdk-go/packages/ssestream"
 
+	"github.com/ch1lam/aice-cli/internal/api/streamcore"
 	"github.com/ch1lam/aice-cli/internal/llm"
 )
 
@@ -98,11 +97,9 @@ func (a *Adapter) Stream(ctx context.Context, request llm.Request) (llm.Stream, 
 	}
 
 	return &stream{
-		source:   source,
-		blocks:   make(map[int]*blockState),
-		contents: make(map[int]llm.ContentPart),
-		message:  llm.NewAssistantMessage(request.Model),
-		pricing:  request.Model.Pricing,
+		core:   streamcore.NewStream(request.Model),
+		source: source,
+		blocks: make(map[int]*blockState),
 	}, nil
 }
 
@@ -121,12 +118,12 @@ func requestParams(request llm.Request) (anthropicsdk.MessageNewParams, error) {
 		return anthropicsdk.MessageNewParams{}, errors.New("anthropic: model provider is required")
 	}
 
-	maxTokens := request.Options.MaxTokens
-	if maxTokens == 0 {
-		maxTokens = request.Model.MaxTokens
+	if err := streamcore.ValidateTemperature(request.Options.Temperature); err != nil {
+		return anthropicsdk.MessageNewParams{}, fmt.Errorf("anthropic: %w", err)
 	}
-	if maxTokens <= 0 {
-		return anthropicsdk.MessageNewParams{}, errors.New("anthropic: max tokens must be positive")
+	maxTokens, err := streamcore.ResolveMaxTokens(request)
+	if err != nil {
+		return anthropicsdk.MessageNewParams{}, fmt.Errorf("anthropic: %w", err)
 	}
 
 	messages, err := messageParams(request.Messages, request.Model)
@@ -162,30 +159,25 @@ func requestParams(request llm.Request) (anthropicsdk.MessageNewParams, error) {
 }
 
 func applyThinking(params *anthropicsdk.MessageNewParams, level llm.ThinkingLevel) error {
-	switch level {
-	case llm.ThinkingLevelUnknown:
+	effort, err := streamcore.ThinkingEffort(level)
+	if err != nil {
+		return fmt.Errorf("anthropic: %w", err)
+	}
+	switch effort {
+	case "":
 		return nil
-	case llm.ThinkingLevelOff:
+	case "off":
 		disabled := anthropicsdk.NewThinkingConfigDisabledParam()
 		params.Thinking.OfDisabled = &disabled
 		return nil
-	case llm.ThinkingLevelMinimal, llm.ThinkingLevelLow:
+	case "minimal":
+		// The Anthropic protocol has no minimal effort level; the SDK collapses
+		// it to low.
 		params.Thinking = anthropicsdk.ThinkingConfigParamOfEnabled(1_024)
 		params.OutputConfig.Effort = anthropicsdk.OutputConfigEffortLow
-	case llm.ThinkingLevelMedium:
-		params.Thinking = anthropicsdk.ThinkingConfigParamOfEnabled(1_024)
-		params.OutputConfig.Effort = anthropicsdk.OutputConfigEffortMedium
-	case llm.ThinkingLevelHigh:
-		params.Thinking = anthropicsdk.ThinkingConfigParamOfEnabled(1_024)
-		params.OutputConfig.Effort = anthropicsdk.OutputConfigEffortHigh
-	case llm.ThinkingLevelXHigh:
-		params.Thinking = anthropicsdk.ThinkingConfigParamOfEnabled(1_024)
-		params.OutputConfig.Effort = anthropicsdk.OutputConfigEffortXhigh
-	case llm.ThinkingLevelMax:
-		params.Thinking = anthropicsdk.ThinkingConfigParamOfEnabled(1_024)
-		params.OutputConfig.Effort = anthropicsdk.OutputConfigEffortMax
 	default:
-		return fmt.Errorf("anthropic: unsupported thinking level %q", level)
+		params.Thinking = anthropicsdk.ThinkingConfigParamOfEnabled(1_024)
+		params.OutputConfig.Effort = anthropicsdk.OutputConfigEffort(effort)
 	}
 	return nil
 }
@@ -287,19 +279,7 @@ func assistantContentForModel(
 		message.ModelID == target.ID {
 		return message.Content
 	}
-
-	result := make([]llm.ContentPart, 0, len(message.Content))
-	for _, part := range message.Content {
-		if part.Type != llm.ContentTypeThinking {
-			result = append(result, part)
-			continue
-		}
-		if part.Redacted || strings.TrimSpace(part.Text) == "" {
-			continue
-		}
-		result = append(result, llm.NewTextContent(part.Text).Part())
-	}
-	return result
+	return streamcore.ProjectThinkingToText(message.Content)
 }
 
 func contentBlockParam(role llm.Role, part llm.ContentPart) (anthropicsdk.ContentBlockParamUnion, error) {
@@ -383,8 +363,8 @@ func toolResultBlockParam(result *llm.ToolResult) (anthropicsdk.ContentBlockPara
 func toolParams(tools []llm.ToolDefinition) ([]anthropicsdk.ToolUnionParam, error) {
 	result := make([]anthropicsdk.ToolUnionParam, 0, len(tools))
 	for index, tool := range tools {
-		if tool.Name == "" {
-			return nil, fmt.Errorf("anthropic: tool %d name is required", index)
+		if err := streamcore.ValidateToolName(index, tool); err != nil {
+			return nil, fmt.Errorf("anthropic: %w", err)
 		}
 
 		var schema anthropicsdk.ToolInputSchemaParam
@@ -410,98 +390,75 @@ type blockState struct {
 	initialArguments json.RawMessage
 }
 
+func (s *blockState) PartialContent() (llm.ContentPart, bool) {
+	switch s.type_ {
+	case llm.ContentTypeText:
+		return streamcore.PartialText(s.text.String(), ""), true
+	case llm.ContentTypeThinking:
+		return streamcore.PartialThinking(s.text.String(), s.signature.String(), s.redacted), true
+	case llm.ContentTypeToolCall:
+		return streamcore.PartialToolCall(s.toolCall, s.text.String(), s.initialArguments)
+	default:
+		return llm.ContentPart{}, false
+	}
+}
+
 type stream struct {
-	source   *ssestream.Stream[anthropicsdk.MessageStreamEventUnion]
-	blocks   map[int]*blockState
-	contents map[int]llm.ContentPart
-	pending  []llm.Event
-	message  llm.AssistantMessage
-	pricing  llm.Pricing
-	usage    llm.Usage
-	stop     llm.StopReason
-	finished bool
-	closed   bool
+	core   *streamcore.Stream
+	source *ssestream.Stream[anthropicsdk.MessageStreamEventUnion]
+	blocks map[int]*blockState
+	stop   llm.StopReason
 }
 
 func (s *stream) Next() (llm.Event, error) {
-	if len(s.pending) > 0 {
-		return s.shift(), nil
-	}
-	if s.finished || s.closed {
-		return llm.Event{}, io.EOF
-	}
+	return s.core.Next(s)
+}
 
-	for s.source.Next() {
-		events, err := s.translate(s.source.Current())
-		if err != nil {
-			return s.errorEvent(err, err.Error()), nil
-		}
-		if len(events) == 0 {
-			continue
-		}
-		s.pending = events
-		return s.shift(), nil
-	}
+func (s *stream) Advance() bool {
+	return s.source.Next()
+}
 
+func (s *stream) Translate() ([]llm.Event, error) {
+	return s.translate(s.source.Current())
+}
+
+func (s *stream) Finish() streamcore.Terminal {
 	if err := s.source.Err(); err != nil {
-		wrapped := fmt.Errorf(
-			"anthropic: read message stream: %w",
-			normalizeProviderError(err),
-		)
-		message := "anthropic: model stream failed"
-		if errors.Is(err, context.Canceled) {
-			message = "anthropic: request canceled"
-		}
-		return s.errorEvent(wrapped, message), nil
+		return streamcore.ReadFailure("anthropic", normalizeProviderError(err))
 	}
-	err := fmt.Errorf(
-		"anthropic: message stream ended before message_stop: %w",
-		io.ErrUnexpectedEOF,
-	)
-	return s.errorEvent(err, "anthropic: model stream ended unexpectedly"), nil
+	return streamcore.UnexpectedEOF("anthropic")
+}
+
+func (s *stream) Close() error {
+	if err := s.core.Close(s.source.Close); err != nil {
+		return fmt.Errorf("anthropic: %w", err)
+	}
+	return nil
 }
 
 func normalizeProviderError(err error) error {
 	var apiErr *anthropicsdk.Error
 	if !errors.As(err, &apiErr) {
-		return llm.NewTransportProviderError(err)
+		return streamcore.NormalizeError(err, nil)
 	}
 	var header http.Header
 	if apiErr.Response != nil {
 		header = apiErr.Response.Header
 	}
-	return llm.NewHTTPProviderError(
-		err,
-		apiErr.StatusCode,
-		string(apiErr.Type()),
-		header,
-	)
-}
-
-func (s *stream) shift() llm.Event {
-	event := s.pending[0]
-	s.pending = s.pending[1:]
-	return event
-}
-
-func (s *stream) Close() error {
-	if s.closed {
-		return nil
-	}
-	s.closed = true
-	if err := s.source.Close(); err != nil {
-		return fmt.Errorf("anthropic: close message stream: %w", err)
-	}
-	return nil
+	return streamcore.NormalizeError(err, &streamcore.ErrorInfo{
+		StatusCode: apiErr.StatusCode,
+		Code:       string(apiErr.Type()),
+		Header:     header,
+	})
 }
 
 func (s *stream) translate(event anthropicsdk.MessageStreamEventUnion) ([]llm.Event, error) {
 	switch value := event.AsAny().(type) {
 	case anthropicsdk.MessageStartEvent:
-		s.message.ResponseID = value.Message.ID
+		s.core.Message.ResponseID = value.Message.ID
 		if responseModel := string(value.Message.Model); responseModel != "" &&
-			responseModel != s.message.ModelID {
-			s.message.ResponseModelID = responseModel
+			responseModel != s.core.Message.ModelID {
+			s.core.Message.ResponseModelID = responseModel
 		}
 		s.mergeUsage(value.Message.Usage)
 		return []llm.Event{{Type: llm.EventTypeStart}}, nil
@@ -514,19 +471,12 @@ func (s *stream) translate(event anthropicsdk.MessageStreamEventUnion) ([]llm.Ev
 	case anthropicsdk.MessageDeltaEvent:
 		s.mergeDeltaUsage(value.Usage)
 		s.stop = stopReason(value.Delta.StopReason)
-		usage := s.usage
-		return []llm.Event{{Type: llm.EventTypeUsage, Usage: &usage}}, nil
+		return []llm.Event{s.core.UsageEvent()}, nil
 	case anthropicsdk.MessageStopEvent:
 		if len(s.blocks) != 0 {
 			return nil, errors.New("anthropic: message stopped with incomplete content blocks")
 		}
-		s.finished = true
-		message := s.messageSnapshot(s.stop, "")
-		return []llm.Event{{
-			Type:       llm.EventTypeDone,
-			StopReason: s.stop,
-			Message:    &message,
-		}}, nil
+		return []llm.Event{s.core.Done(s.stop)}, nil
 	default:
 		return nil, fmt.Errorf("anthropic: unsupported stream event %q", event.Type)
 	}
@@ -536,10 +486,7 @@ func (s *stream) startBlock(
 	index int,
 	block anthropicsdk.ContentBlockStartEventContentBlockUnion,
 ) ([]llm.Event, error) {
-	if _, exists := s.blocks[index]; exists {
-		return nil, fmt.Errorf("anthropic: content block %d started twice", index)
-	}
-	if _, exists := s.contents[index]; exists {
+	if s.core.Parts.Has(index) {
 		return nil, fmt.Errorf("anthropic: content block %d started twice", index)
 	}
 
@@ -592,6 +539,7 @@ func (s *stream) startBlock(
 	}
 
 	s.blocks[index] = state
+	s.core.Parts.Partial(index, state)
 	return events, nil
 }
 
@@ -655,159 +603,65 @@ func (s *stream) stopBlock(index int) ([]llm.Event, error) {
 	}
 	delete(s.blocks, index)
 
+	var (
+		content llm.ContentPart
+		event   llm.Event
+	)
 	switch state.type_ {
 	case llm.ContentTypeText:
-		content := llm.NewTextContent(state.text.String()).Part()
-		s.contents[index] = content
-		return []llm.Event{{
-			Type:         llm.EventTypeTextEnd,
-			ContentIndex: index,
-			Content:      &content,
-		}}, nil
+		content = llm.NewTextContent(state.text.String()).Part()
+		event = llm.Event{Type: llm.EventTypeTextEnd, ContentIndex: index}
 	case llm.ContentTypeThinking:
 		thinking := llm.NewThinkingContent(state.text.String(), state.signature.String())
 		thinking.Redacted = state.redacted
-		content := thinking.Part()
-		s.contents[index] = content
-		return []llm.Event{{
-			Type:         llm.EventTypeThinkingEnd,
-			ContentIndex: index,
-			Content:      &content,
-		}}, nil
+		content = thinking.Part()
+		event = llm.Event{Type: llm.EventTypeThinkingEnd, ContentIndex: index}
 	case llm.ContentTypeToolCall:
-		arguments := json.RawMessage(state.text.String())
-		if len(arguments) == 0 {
-			arguments = state.initialArguments
+		call, err := streamcore.FinishToolCall(state.toolCall, state.text.String(), state.initialArguments)
+		if err != nil {
+			return nil, fmt.Errorf("anthropic: %w", err)
 		}
-		if !json.Valid(arguments) {
-			return nil, fmt.Errorf("anthropic: tool call %q ended with invalid JSON", state.toolCall.Name)
-		}
-		state.toolCall.Arguments = append(json.RawMessage(nil), arguments...)
-		content := llm.ContentPart{
-			Type:     llm.ContentTypeToolCall,
-			ToolCall: &state.toolCall,
-		}
-		s.contents[index] = content
-		return []llm.Event{{
+		content = llm.ContentPart{Type: llm.ContentTypeToolCall, ToolCall: &call}
+		event = llm.Event{
 			Type:         llm.EventTypeToolCallEnd,
 			ContentIndex: index,
-			Content:      &content,
-			ToolCall:     &state.toolCall,
-		}}, nil
+			ToolCall:     &call,
+		}
 	default:
 		return nil, fmt.Errorf("anthropic: content block %d has unknown type %q", index, state.type_)
 	}
-}
-
-func (s *stream) errorEvent(err error, errorMessage string) llm.Event {
-	s.finished = true
-	reason := llm.StopReasonError
-	if errors.Is(err, context.Canceled) {
-		reason = llm.StopReasonAborted
-	}
-	message := s.messageSnapshot(reason, errorMessage)
-	return llm.Event{
-		Type:       llm.EventTypeError,
-		StopReason: reason,
-		Message:    &message,
-		Err:        err,
-	}
-}
-
-func (s *stream) messageSnapshot(reason llm.StopReason, errorMessage string) llm.AssistantMessage {
-	message := s.message
-	message.Content = s.contentSnapshot()
-	message.Usage = s.usage
-	message.StopReason = reason
-	message.ErrorMessage = errorMessage
-	return message
-}
-
-func (s *stream) contentSnapshot() []llm.ContentPart {
-	contents := make(map[int]llm.ContentPart, len(s.contents)+len(s.blocks))
-	for index, content := range s.contents {
-		contents[index] = content
-	}
-	for index, state := range s.blocks {
-		if content, ok := state.partialContent(); ok {
-			contents[index] = content
-		}
-	}
-
-	indexes := make([]int, 0, len(contents))
-	for index := range contents {
-		indexes = append(indexes, index)
-	}
-	sort.Ints(indexes)
-
-	result := make([]llm.ContentPart, 0, len(indexes))
-	for _, index := range indexes {
-		result = append(result, contents[index])
-	}
-	return result
-}
-
-func (s *blockState) partialContent() (llm.ContentPart, bool) {
-	switch s.type_ {
-	case llm.ContentTypeText:
-		return llm.NewTextContent(s.text.String()).Part(), true
-	case llm.ContentTypeThinking:
-		thinking := llm.NewThinkingContent(s.text.String(), s.signature.String())
-		thinking.Redacted = s.redacted
-		return thinking.Part(), true
-	case llm.ContentTypeToolCall:
-		arguments := json.RawMessage(s.text.String())
-		if len(arguments) == 0 {
-			arguments = s.initialArguments
-		}
-		if !json.Valid(arguments) {
-			return llm.ContentPart{}, false
-		}
-		call := s.toolCall
-		call.Arguments = append(json.RawMessage(nil), arguments...)
-		return llm.ContentPart{
-			Type:     llm.ContentTypeToolCall,
-			ToolCall: &call,
-		}, true
-	default:
-		return llm.ContentPart{}, false
-	}
+	s.core.Parts.Complete(index, content)
+	event.Content = &content
+	return []llm.Event{event}, nil
 }
 
 func (s *stream) mergeUsage(usage anthropicsdk.Usage) {
-	s.usage.InputTokens = usage.InputTokens
-	s.usage.OutputTokens = usage.OutputTokens
-	s.usage.ReasoningTokens = usage.OutputTokensDetails.ThinkingTokens
-	s.usage.CacheReadTokens = usage.CacheReadInputTokens
-	s.usage.CacheWriteTokens = usage.CacheCreationInputTokens
-	s.updateTotalTokens()
+	s.core.Usage = streamcore.RecomputeTotal(s.core.Pricing, llm.Usage{
+		InputTokens:      usage.InputTokens,
+		OutputTokens:     usage.OutputTokens,
+		ReasoningTokens:  usage.OutputTokensDetails.ThinkingTokens,
+		CacheReadTokens:  usage.CacheReadInputTokens,
+		CacheWriteTokens: usage.CacheCreationInputTokens,
+	})
 }
 
 func (s *stream) mergeDeltaUsage(usage anthropicsdk.MessageDeltaUsage) {
 	if usage.JSON.InputTokens.Valid() {
-		s.usage.InputTokens = usage.InputTokens
+		s.core.Usage.InputTokens = usage.InputTokens
 	}
 	if usage.JSON.OutputTokens.Valid() {
-		s.usage.OutputTokens = usage.OutputTokens
+		s.core.Usage.OutputTokens = usage.OutputTokens
 	}
 	if usage.JSON.OutputTokensDetails.Valid() {
-		s.usage.ReasoningTokens = usage.OutputTokensDetails.ThinkingTokens
+		s.core.Usage.ReasoningTokens = usage.OutputTokensDetails.ThinkingTokens
 	}
 	if usage.JSON.CacheReadInputTokens.Valid() {
-		s.usage.CacheReadTokens = usage.CacheReadInputTokens
+		s.core.Usage.CacheReadTokens = usage.CacheReadInputTokens
 	}
 	if usage.JSON.CacheCreationInputTokens.Valid() {
-		s.usage.CacheWriteTokens = usage.CacheCreationInputTokens
+		s.core.Usage.CacheWriteTokens = usage.CacheCreationInputTokens
 	}
-	s.updateTotalTokens()
-}
-
-func (s *stream) updateTotalTokens() {
-	s.usage.TotalTokens = s.usage.InputTokens +
-		s.usage.OutputTokens +
-		s.usage.CacheReadTokens +
-		s.usage.CacheWriteTokens
-	s.usage.Cost = llm.EstimateCost(s.pricing, s.usage)
+	s.core.Usage = streamcore.RecomputeTotal(s.core.Pricing, s.core.Usage)
 }
 
 func stopReason(reason anthropicsdk.StopReason) llm.StopReason {

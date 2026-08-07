@@ -13,6 +13,7 @@ import (
 
 	anthropicapi "github.com/ch1lam/aice-cli/internal/api/anthropic"
 	"github.com/ch1lam/aice-cli/internal/api/openairesponses"
+	"github.com/ch1lam/aice-cli/internal/apitest"
 	"github.com/ch1lam/aice-cli/internal/llm"
 )
 
@@ -168,7 +169,7 @@ func TestAdapterStreamsThinkingToolCallUsageAndDone(t *testing.T) {
 		}
 	}()
 
-	events := collectEvents(t, modelStream)
+	events := apitest.CollectEvents(t, modelStream)
 	wantTypes := []llm.EventType{
 		llm.EventTypeStart,
 		llm.EventTypeThinkingStart,
@@ -352,11 +353,72 @@ func TestAdapterDropsProtocolSignaturesForForeignAssistantHistory(t *testing.T) 
 	}
 }
 
+func TestAdapterRejectsExcessiveTemperature(t *testing.T) {
+	t.Parallel()
+
+	adapter, err := anthropicapi.New(anthropicapi.Config{
+		APIKey:  "test-key",
+		BaseURL: "https://example.test",
+		HTTPClient: &http.Client{Transport: apitest.RoundTripFunc(func(*http.Request) (*http.Response, error) {
+			return nil, errors.New("unexpected HTTP request")
+		})},
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	request := apitest.MinimalRequest(anthropicapi.API)
+	temperature := 2.5
+	request.Options.Temperature = &temperature
+	_, err = adapter.Stream(context.Background(), request)
+	if err == nil || !strings.Contains(err.Error(), "temperature cannot exceed 2") {
+		t.Fatalf("Stream() error = %v, want temperature rejection", err)
+	}
+}
+
+func TestAdapterEmptyToolCallArgumentsBecomeEmptyObject(t *testing.T) {
+	t.Parallel()
+
+	server := apitest.NewRawSSEServer(t, []string{
+		`event: message_start\ndata: {"type":"message_start","message":{"id":"msg-1","type":"message","role":"assistant","model":"deepseek-v4-flash","content":[],"usage":{"input_tokens":1,"output_tokens":0}}}\n\n`,
+		`event: content_block_start\ndata: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"call-1","name":"list"}}\n\n`,
+		`event: content_block_stop\ndata: {"type":"content_block_stop","index":0}\n\n`,
+		`event: message_delta\ndata: {"type":"message_delta","delta":{"stop_reason":"tool_use","stop_sequence":null},"usage":{"output_tokens":1}}\n\n`,
+		`event: message_stop\ndata: {"type":"message_stop"}\n\n`,
+	})
+	defer server.Close()
+
+	adapter, err := anthropicapi.New(anthropicapi.Config{
+		APIKey:     "test-key",
+		BaseURL:    server.URL,
+		HTTPClient: server.Client(),
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	modelStream, err := adapter.Stream(context.Background(), apitest.MinimalRequest(anthropicapi.API))
+	if err != nil {
+		t.Fatalf("Stream() error = %v", err)
+	}
+	defer modelStream.Close()
+
+	events := apitest.CollectEvents(t, modelStream)
+	last := events[len(events)-1]
+	if last.Type != llm.EventTypeDone || last.Message == nil ||
+		len(last.Message.Content) != 1 {
+		t.Fatalf("last event = %#v, want done with one tool call", last)
+	}
+	call := last.Message.Content[0].ToolCall
+	if call == nil || string(call.Arguments) != "{}" {
+		t.Errorf("tool call arguments = %#v, want {}", call)
+	}
+}
+
 func TestAdapterGroupsConsecutiveToolResultsInOneUserMessage(t *testing.T) {
 	t.Parallel()
 
 	requests := make(chan map[string]any, 1)
-	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+	client := &http.Client{Transport: apitest.RoundTripFunc(func(request *http.Request) (*http.Response, error) {
 		var body map[string]any
 		if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
 			return nil, err
@@ -386,7 +448,7 @@ func TestAdapterGroupsConsecutiveToolResultsInOneUserMessage(t *testing.T) {
 		{ID: "call-2", Name: "read", Arguments: json.RawMessage(`{"path":"b.go"}`)},
 		{ID: "call-3", Name: "ls", Arguments: json.RawMessage(`{}`)},
 	}
-	request := minimalRequest()
+	request := apitest.MinimalRequest(anthropicapi.API)
 	request.Messages = []llm.Message{
 		request.Messages[0],
 		llm.AssistantMessage{
@@ -446,7 +508,7 @@ func TestAdapterGroupsConsecutiveToolResultsInOneUserMessage(t *testing.T) {
 func TestAdapterRejectsIncompleteStreamedToolCall(t *testing.T) {
 	t.Parallel()
 
-	server := newSSEServer(t, []string{
+	server := apitest.NewRawSSEServer(t, []string{
 		`event: message_start\ndata: {"type":"message_start","message":{"id":"msg-1","type":"message","role":"assistant","model":"deepseek-v4-flash","content":[],"usage":{"input_tokens":1,"output_tokens":0}}}\n\n`,
 		`event: content_block_start\ndata: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"call-1","name":"read","input":{}}}\n\n`,
 		`event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{"}}\n\n`,
@@ -462,13 +524,13 @@ func TestAdapterRejectsIncompleteStreamedToolCall(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
-	modelStream, err := adapter.Stream(context.Background(), minimalRequest())
+	modelStream, err := adapter.Stream(context.Background(), apitest.MinimalRequest(anthropicapi.API))
 	if err != nil {
 		t.Fatalf("Stream() error = %v", err)
 	}
 	defer modelStream.Close()
 
-	events := collectEvents(t, modelStream)
+	events := apitest.CollectEvents(t, modelStream)
 	if len(events) == 0 || events[len(events)-1].Type != llm.EventTypeError {
 		t.Fatalf("last event = %#v, want error event", events)
 	}
@@ -487,7 +549,7 @@ func TestAdapterRejectsIncompleteStreamedToolCall(t *testing.T) {
 func TestAdapterPreservesPartialTextOnStreamError(t *testing.T) {
 	t.Parallel()
 
-	server := newSSEServer(t, []string{
+	server := apitest.NewRawSSEServer(t, []string{
 		`event: message_start\ndata: {"type":"message_start","message":{"id":"msg-1","type":"message","role":"assistant","model":"deepseek-v4-flash","content":[],"usage":{"input_tokens":1,"output_tokens":0}}}\n\n`,
 		`event: content_block_start\ndata: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}\n\n`,
 		`event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"partial"}}\n\n`,
@@ -502,13 +564,13 @@ func TestAdapterPreservesPartialTextOnStreamError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
-	modelStream, err := adapter.Stream(context.Background(), minimalRequest())
+	modelStream, err := adapter.Stream(context.Background(), apitest.MinimalRequest(anthropicapi.API))
 	if err != nil {
 		t.Fatalf("Stream() error = %v", err)
 	}
 	defer modelStream.Close()
 
-	events := collectEvents(t, modelStream)
+	events := apitest.CollectEvents(t, modelStream)
 	terminal := events[len(events)-1]
 	if terminal.Type != llm.EventTypeError || terminal.Message == nil {
 		t.Fatalf("terminal event = %#v", terminal)
@@ -525,7 +587,7 @@ func TestAdapterPreservesPartialTextOnStreamError(t *testing.T) {
 func TestAdapterStreamsText(t *testing.T) {
 	t.Parallel()
 
-	server := newSSEServer(t, []string{
+	server := apitest.NewRawSSEServer(t, []string{
 		`event: message_start\ndata: {"type":"message_start","message":{"id":"msg-1","type":"message","role":"assistant","model":"deepseek-v4-flash","content":[],"usage":{"input_tokens":1,"output_tokens":0}}}\n\n`,
 		`event: content_block_start\ndata: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}\n\n`,
 		`event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"hello"}}\n\n`,
@@ -543,13 +605,13 @@ func TestAdapterStreamsText(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
-	modelStream, err := adapter.Stream(context.Background(), minimalRequest())
+	modelStream, err := adapter.Stream(context.Background(), apitest.MinimalRequest(anthropicapi.API))
 	if err != nil {
 		t.Fatalf("Stream() error = %v", err)
 	}
 	defer modelStream.Close()
 
-	events := collectEvents(t, modelStream)
+	events := apitest.CollectEvents(t, modelStream)
 	wantTypes := []llm.EventType{
 		llm.EventTypeStart,
 		llm.EventTypeTextStart,
@@ -602,7 +664,7 @@ func TestAdapterPropagatesCanceledContext(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	_, err = adapter.Stream(ctx, minimalRequest())
+	_, err = adapter.Stream(ctx, apitest.MinimalRequest(anthropicapi.API))
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("Stream() error = %v, want context.Canceled", err)
 	}
@@ -612,7 +674,7 @@ func TestAdapterRejectsInvalidRequestBeforeHTTP(t *testing.T) {
 	t.Parallel()
 
 	requestSent := false
-	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+	client := &http.Client{Transport: apitest.RoundTripFunc(func(*http.Request) (*http.Response, error) {
 		requestSent = true
 		return nil, errors.New("unexpected HTTP request")
 	})}
@@ -625,7 +687,7 @@ func TestAdapterRejectsInvalidRequestBeforeHTTP(t *testing.T) {
 		t.Fatalf("New() error = %v", err)
 	}
 
-	request := minimalRequest()
+	request := apitest.MinimalRequest(anthropicapi.API)
 	request.Messages = nil
 	_, err = adapter.Stream(context.Background(), request)
 	if err == nil || !strings.Contains(err.Error(), "validate request") ||
@@ -635,56 +697,6 @@ func TestAdapterRejectsInvalidRequestBeforeHTTP(t *testing.T) {
 	if requestSent {
 		t.Fatal("Stream() sent an HTTP request before validation completed")
 	}
-}
-
-func collectEvents(t *testing.T, stream llm.Stream) []llm.Event {
-	t.Helper()
-
-	var events []llm.Event
-	for {
-		event, err := stream.Next()
-		if errors.Is(err, io.EOF) {
-			return events
-		}
-		if err != nil {
-			t.Fatalf("Next() error = %v", err)
-		}
-		events = append(events, event)
-	}
-}
-
-func minimalRequest() llm.Request {
-	return llm.Request{
-		Model: llm.Model{
-			ID:        "deepseek-v4-flash",
-			API:       anthropicapi.API,
-			Provider:  "deepseek",
-			MaxTokens: 1_000,
-		},
-		Messages: []llm.Message{llm.UserMessage{
-			Role: llm.RoleUser,
-			Content: []llm.ContentPart{{
-				Type: llm.ContentTypeText,
-				Text: "hello",
-			}},
-		}},
-	}
-}
-
-type roundTripFunc func(*http.Request) (*http.Response, error)
-
-func (f roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
-	return f(request)
-}
-
-func newSSEServer(t *testing.T, chunks []string) *httptest.Server {
-	t.Helper()
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "text/event-stream")
-		for _, chunk := range chunks {
-			_, _ = io.WriteString(w, strings.ReplaceAll(chunk, `\n`, "\n"))
-		}
-	}))
 }
 
 func assertRequestBody(t *testing.T, body map[string]any) {

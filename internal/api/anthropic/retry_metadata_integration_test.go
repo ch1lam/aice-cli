@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/ch1lam/aice-cli/internal/api/anthropic"
+	"github.com/ch1lam/aice-cli/internal/apitest"
 	"github.com/ch1lam/aice-cli/internal/llm"
 )
 
@@ -35,7 +36,7 @@ func TestAdapterNormalizesHTTPRetryMetadataWithoutSDKRetry(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
-	_, err = adapter.Stream(t.Context(), minimalRequest())
+	_, err = adapter.Stream(t.Context(), apitest.MinimalRequest(anthropic.API))
 	var providerErr *llm.ProviderError
 	if !errors.As(err, &providerErr) {
 		t.Fatalf("Stream() error = %v, want *llm.ProviderError", err)

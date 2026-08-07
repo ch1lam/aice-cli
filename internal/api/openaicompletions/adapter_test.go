@@ -8,9 +8,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/ch1lam/aice-cli/internal/api/openaicompletions"
+	"github.com/ch1lam/aice-cli/internal/apitest"
 	"github.com/ch1lam/aice-cli/internal/llm"
 )
 
@@ -127,7 +129,7 @@ func TestAdapterStreamsTextToolCallUsageAndDone(t *testing.T) {
 		}
 	}()
 
-	events := collectEvents(t, modelStream)
+	events := apitest.CollectEvents(t, modelStream)
 	wantTypes := []llm.EventType{
 		llm.EventTypeStart,
 		llm.EventTypeTextStart,
@@ -206,7 +208,7 @@ func TestAdapterStreamsTextToolCallUsageAndDone(t *testing.T) {
 func TestAdapterStreamsReasoningContentThinking(t *testing.T) {
 	t.Parallel()
 
-	server := newSSEServer(t, []string{
+	server := apitest.NewSSEServer(t, []string{
 		`{"id":"chatcmpl-2","object":"chat.completion.chunk","model":"deepseek-v4-flash","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}],"usage":null}`,
 		`{"id":"chatcmpl-2","object":"chat.completion.chunk","model":"deepseek-v4-flash","choices":[{"index":0,"delta":{"reasoning_content":"think"},"finish_reason":null}],"usage":null}`,
 		`{"id":"chatcmpl-2","object":"chat.completion.chunk","model":"deepseek-v4-flash","choices":[{"index":0,"delta":{"reasoning_content":" carefully"},"finish_reason":null}],"usage":null}`,
@@ -248,7 +250,7 @@ func TestAdapterStreamsReasoningContentThinking(t *testing.T) {
 		}
 	}()
 
-	events := collectEvents(t, modelStream)
+	events := apitest.CollectEvents(t, modelStream)
 	wantTypes := []llm.EventType{
 		llm.EventTypeStart,
 		llm.EventTypeThinkingStart,
@@ -290,7 +292,7 @@ func TestAdapterStreamsReasoningContentThinking(t *testing.T) {
 func TestAdapterRejectsIncompleteToolCall(t *testing.T) {
 	t.Parallel()
 
-	server := newSSEServer(t, []string{
+	server := apitest.NewSSEServer(t, []string{
 		`{"id":"chatcmpl-3","object":"chat.completion.chunk","model":"kimi-k2.6-202608","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}],"usage":null}`,
 		`{"id":"chatcmpl-3","object":"chat.completion.chunk","model":"kimi-k2.6-202608","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call-1","type":"function","function":{"name":"read","arguments":""}}]},"finish_reason":null}],"usage":null}`,
 		`{"id":"chatcmpl-3","object":"chat.completion.chunk","model":"kimi-k2.6-202608","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{"}}]},"finish_reason":"length"}],"usage":null}`,
@@ -330,7 +332,7 @@ func TestAdapterRejectsIncompleteToolCall(t *testing.T) {
 		}
 	}()
 
-	events := collectEvents(t, modelStream)
+	events := apitest.CollectEvents(t, modelStream)
 	last := events[len(events)-1]
 	if last.Type != llm.EventTypeError {
 		t.Fatalf("last event type = %q, want error", last.Type)
@@ -346,7 +348,7 @@ func TestAdapterRejectsIncompleteToolCall(t *testing.T) {
 func TestAdapterEmptyToolCallArgumentsBecomeEmptyObject(t *testing.T) {
 	t.Parallel()
 
-	server := newSSEServer(t, []string{
+	server := apitest.NewSSEServer(t, []string{
 		`{"id":"chatcmpl-4","object":"chat.completion.chunk","model":"kimi-k2.6-202608","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}],"usage":null}`,
 		`{"id":"chatcmpl-4","object":"chat.completion.chunk","model":"kimi-k2.6-202608","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call-1","type":"function","function":{"name":"list"}}]},"finish_reason":null}],"usage":null}`,
 		`{"id":"chatcmpl-4","object":"chat.completion.chunk","model":"kimi-k2.6-202608","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}],"usage":null}`,
@@ -386,7 +388,7 @@ func TestAdapterEmptyToolCallArgumentsBecomeEmptyObject(t *testing.T) {
 		}
 	}()
 
-	events := collectEvents(t, modelStream)
+	events := apitest.CollectEvents(t, modelStream)
 	last := events[len(events)-1]
 	if last.Type != llm.EventTypeDone {
 		t.Fatalf("last event type = %q, want done", last.Type)
@@ -502,6 +504,61 @@ func TestAdapterNormalizesHTTPError(t *testing.T) {
 	}
 }
 
+func TestAdapterRejectsExcessiveTemperature(t *testing.T) {
+	t.Parallel()
+
+	adapter, err := openaicompletions.New(openaicompletions.Config{
+		APIKey:  "test-key",
+		BaseURL: "https://example.test",
+		HTTPClient: &http.Client{Transport: apitest.RoundTripFunc(func(*http.Request) (*http.Response, error) {
+			return nil, errors.New("unexpected HTTP request")
+		})},
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	request := apitest.MinimalRequest(openaicompletions.API)
+	temperature := 2.5
+	request.Options.Temperature = &temperature
+	_, err = adapter.Stream(context.Background(), request)
+	if err == nil || !strings.Contains(err.Error(), "temperature cannot exceed 2") {
+		t.Fatalf("Stream() error = %v, want temperature rejection", err)
+	}
+}
+
+func TestAdapterUnknownFinishReasonMapsToUnknownStop(t *testing.T) {
+	t.Parallel()
+
+	server := apitest.NewSSEServer(t, []string{
+		`{"id":"chatcmpl-5","object":"chat.completion.chunk","model":"kimi-k2.6","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}],"usage":null}`,
+		`{"id":"chatcmpl-5","object":"chat.completion.chunk","model":"kimi-k2.6","choices":[{"index":0,"delta":{},"finish_reason":"bogus"}],"usage":null}`,
+		`[DONE]`,
+	})
+	defer server.Close()
+
+	adapter, err := openaicompletions.New(openaicompletions.Config{
+		APIKey:     "test-key",
+		BaseURL:    server.URL,
+		HTTPClient: server.Client(),
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	modelStream, err := adapter.Stream(context.Background(), apitest.MinimalRequest(openaicompletions.API))
+	if err != nil {
+		t.Fatalf("Stream() error = %v", err)
+	}
+	defer modelStream.Close()
+
+	events := apitest.CollectEvents(t, modelStream)
+	last := events[len(events)-1]
+	if last.Type != llm.EventTypeDone || last.StopReason != llm.StopReasonUnknown {
+		t.Errorf("last event = %#v, want done with unknown stop reason", last)
+	}
+}
+
 func assertRequestBody(t *testing.T, body map[string]any) {
 	t.Helper()
 
@@ -571,31 +628,5 @@ func assertRequestBody(t *testing.T, body map[string]any) {
 	}
 	if _, ok := functionDef["parameters"].(map[string]any); !ok {
 		t.Errorf("tool parameters = %#v", functionDef["parameters"])
-	}
-}
-
-func newSSEServer(t *testing.T, events []string) *httptest.Server {
-	t.Helper()
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "text/event-stream")
-		for _, event := range events {
-			_, _ = io.WriteString(w, "data: "+event+"\n\n")
-		}
-	}))
-}
-
-func collectEvents(t *testing.T, stream llm.Stream) []llm.Event {
-	t.Helper()
-
-	var events []llm.Event
-	for {
-		event, err := stream.Next()
-		if errors.Is(err, io.EOF) {
-			return events
-		}
-		if err != nil {
-			t.Fatalf("Next() error = %v", err)
-		}
-		events = append(events, event)
 	}
 }

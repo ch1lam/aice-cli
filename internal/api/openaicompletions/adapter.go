@@ -11,11 +11,9 @@ package openaicompletions
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -26,6 +24,7 @@ import (
 	"github.com/openai/openai-go/v3/packages/ssestream"
 	"github.com/openai/openai-go/v3/shared"
 
+	"github.com/ch1lam/aice-cli/internal/api/streamcore"
 	"github.com/ch1lam/aice-cli/internal/llm"
 )
 
@@ -111,11 +110,9 @@ func (a *Adapter) Stream(ctx context.Context, request llm.Request) (llm.Stream, 
 	}
 
 	return &stream{
+		core:      streamcore.NewStream(request.Model),
 		source:    source,
-		parts:     make([]*partState, 0, 4),
 		toolCalls: make(map[int64]*partState),
-		message:   llm.NewAssistantMessage(request.Model),
-		pricing:   request.Model.Pricing,
 	}, nil
 }
 
@@ -128,19 +125,12 @@ func requestParams(request llm.Request) (openaisdk.ChatCompletionNewParams, erro
 		)
 	}
 
-	maxTokens := request.Options.MaxTokens
-	if maxTokens == 0 {
-		maxTokens = request.Model.MaxTokens
+	if err := streamcore.ValidateTemperature(request.Options.Temperature); err != nil {
+		return openaisdk.ChatCompletionNewParams{}, fmt.Errorf("openai completions: %w", err)
 	}
-	if maxTokens <= 0 {
-		return openaisdk.ChatCompletionNewParams{}, errors.New(
-			"openai completions: max output tokens must be positive",
-		)
-	}
-	if request.Options.Temperature != nil && *request.Options.Temperature > 2 {
-		return openaisdk.ChatCompletionNewParams{}, errors.New(
-			"openai completions: temperature cannot exceed 2",
-		)
+	maxTokens, err := streamcore.ResolveMaxTokens(request)
+	if err != nil {
+		return openaisdk.ChatCompletionNewParams{}, fmt.Errorf("openai completions: %w", err)
 	}
 
 	messages, err := messageParams(request.Messages)
@@ -188,29 +178,11 @@ func requestParams(request llm.Request) (openaisdk.ChatCompletionNewParams, erro
 // reasoning_effort field. The unknown level sends nothing so the gateway keeps
 // its own default.
 func reasoningEffort(level llm.ThinkingLevel) (shared.ReasoningEffort, error) {
-	switch level {
-	case llm.ThinkingLevelUnknown:
-		return "", nil
-	case llm.ThinkingLevelOff:
-		return shared.ReasoningEffortNone, nil
-	case llm.ThinkingLevelMinimal:
-		return shared.ReasoningEffortMinimal, nil
-	case llm.ThinkingLevelLow:
-		return shared.ReasoningEffortLow, nil
-	case llm.ThinkingLevelMedium:
-		return shared.ReasoningEffortMedium, nil
-	case llm.ThinkingLevelHigh:
-		return shared.ReasoningEffortHigh, nil
-	case llm.ThinkingLevelXHigh:
-		return shared.ReasoningEffortXhigh, nil
-	case llm.ThinkingLevelMax:
-		return shared.ReasoningEffortMax, nil
-	default:
-		return "", fmt.Errorf(
-			"openai completions: unsupported thinking level %q",
-			level,
-		)
+	effort, err := streamcore.ThinkingEffort(level)
+	if err != nil {
+		return "", fmt.Errorf("openai completions: %w", err)
 	}
+	return shared.ReasoningEffort(effort), nil
 }
 
 func messageParams(
@@ -290,7 +262,7 @@ func userMessageParam(
 			}
 			parts = append(parts, openaisdk.ImageContentPart(
 				openaisdk.ChatCompletionContentPartImageImageURLParam{
-					URL:    imageDataURL(*part.Image),
+					URL:    streamcore.ImageDataURL(*part.Image),
 					Detail: "auto",
 				},
 			))
@@ -371,17 +343,14 @@ func toolResultMessageParam(
 
 func assistantText(content []llm.ContentPart) string {
 	var builder strings.Builder
-	for _, part := range content {
-		switch part.Type {
-		case llm.ContentTypeText, llm.ContentTypeThinking:
-			if part.Text == "" {
-				continue
-			}
-			if builder.Len() > 0 {
-				builder.WriteString("\n\n")
-			}
-			builder.WriteString(part.Text)
+	for _, part := range streamcore.ProjectThinkingToText(content) {
+		if part.Type != llm.ContentTypeText || part.Text == "" {
+			continue
 		}
+		if builder.Len() > 0 {
+			builder.WriteString("\n\n")
+		}
+		builder.WriteString(part.Text)
 	}
 	return builder.String()
 }
@@ -403,22 +372,15 @@ func joinText(content []llm.ContentPart) string {
 func toolParams(
 	tools []llm.ToolDefinition,
 ) ([]openaisdk.ChatCompletionToolUnionParam, error) {
+	schemas, err := streamcore.DecodeToolSchemas(tools)
+	if err != nil {
+		return nil, fmt.Errorf("openai completions: %w", err)
+	}
 	result := make([]openaisdk.ChatCompletionToolUnionParam, 0, len(tools))
 	for index, tool := range tools {
-		if tool.Name == "" {
-			return nil, fmt.Errorf("openai completions: tool %d name is required", index)
-		}
-		var schema map[string]any
-		if err := json.Unmarshal(tool.InputSchema, &schema); err != nil {
-			return nil, fmt.Errorf(
-				"openai completions: tool %q input schema: %w",
-				tool.Name,
-				err,
-			)
-		}
 		function := shared.FunctionDefinitionParam{
 			Name:       tool.Name,
-			Parameters: schema,
+			Parameters: schemas[index],
 		}
 		if tool.Description != "" {
 			function.Description = param.NewOpt(tool.Description)
@@ -430,11 +392,6 @@ func toolParams(
 		})
 	}
 	return result, nil
-}
-
-func imageDataURL(image llm.ImageContent) string {
-	return "data:" + image.MIMEType + ";base64," +
-		base64.StdEncoding.EncodeToString(image.Data)
 }
 
 // partState accumulates one content part (thinking, text, or one tool call)
@@ -509,81 +466,58 @@ func decodeWireChunk(raw string) (wireChunk, error) {
 	return chunk, nil
 }
 
+func (s *partState) PartialContent() (llm.ContentPart, bool) {
+	switch s.type_ {
+	case llm.ContentTypeText:
+		return streamcore.PartialText(s.text.String(), ""), true
+	case llm.ContentTypeThinking:
+		return streamcore.PartialThinking(s.text.String(), "", false), true
+	case llm.ContentTypeToolCall:
+		return streamcore.PartialToolCall(s.toolCall, s.arguments, nil)
+	default:
+		return llm.ContentPart{}, false
+	}
+}
+
 type stream struct {
+	core         *streamcore.Stream
 	source       *ssestream.Stream[openaisdk.ChatCompletionChunk]
-	parts        []*partState
 	thinking     *partState
 	text         *partState
 	toolCalls    map[int64]*partState
-	pending      []llm.Event
-	message      llm.AssistantMessage
-	pricing      llm.Pricing
-	usage        llm.Usage
 	nextIndex    int
 	finishReason string
 	started      bool
 	sawRefusal   bool
 	sawToolCall  bool
-	finished     bool
-	closed       bool
 }
 
 func (s *stream) Next() (llm.Event, error) {
-	if len(s.pending) > 0 {
-		return s.shift(), nil
-	}
-	if s.finished || s.closed {
-		return llm.Event{}, io.EOF
-	}
-
-	for s.source.Next() {
-		events, err := s.translate(s.source.Current())
-		if err != nil {
-			return s.errorEvent(err, err.Error()), nil
-		}
-		if len(events) == 0 {
-			continue
-		}
-		s.pending = events
-		return s.shift(), nil
-	}
-
-	if err := s.source.Err(); err != nil {
-		wrapped := fmt.Errorf(
-			"openai completions: read response stream: %w",
-			normalizeProviderError(err),
-		)
-		message := "openai completions: model stream failed"
-		if errors.Is(err, context.Canceled) {
-			message = "openai completions: request canceled"
-		}
-		return s.errorEvent(wrapped, message), nil
-	}
-
-	events, err := s.finish()
-	if err != nil {
-		return s.errorEvent(err, err.Error()), nil
-	}
-	if len(events) == 0 {
-		return llm.Event{}, io.EOF
-	}
-	s.pending = events
-	return s.shift(), nil
+	return s.core.Next(s)
 }
 
-func (s *stream) shift() llm.Event {
-	event := s.pending[0]
-	s.pending = s.pending[1:]
-	return event
+func (s *stream) Advance() bool {
+	return s.source.Next()
+}
+
+func (s *stream) Translate() ([]llm.Event, error) {
+	return s.translate(s.source.Current())
+}
+
+func (s *stream) Finish() streamcore.Terminal {
+	if err := s.source.Err(); err != nil {
+		return streamcore.ReadFailure("openai completions", normalizeProviderError(err))
+	}
+	events, err := s.finish()
+	if err != nil {
+		return streamcore.Terminal{Err: err}
+	}
+	return streamcore.Terminal{Events: events}
 }
 
 func (s *stream) Close() error {
-	if s.closed {
-		return nil
-	}
-	s.closed = true
-	if err := s.source.Close(); err != nil {
-		return fmt.Errorf("openai completions: close response stream: %w", err)
+	if err := s.core.Close(s.source.Close); err != nil {
+		return fmt.Errorf("openai completions: %w", err)
 	}
 	return nil
 }
@@ -596,10 +530,10 @@ func (s *stream) translate(chunk openaisdk.ChatCompletionChunk) ([]llm.Event, er
 	}
 
 	if chunk.ID != "" {
-		s.message.ResponseID = chunk.ID
+		s.core.Message.ResponseID = chunk.ID
 	}
-	if chunk.Model != "" && chunk.Model != s.message.ModelID {
-		s.message.ResponseModelID = chunk.Model
+	if chunk.Model != "" && chunk.Model != s.core.Message.ModelID {
+		s.core.Message.ResponseModelID = chunk.Model
 	}
 
 	wire, err := decodeWireChunk(chunk.RawJSON())
@@ -640,7 +574,7 @@ func (s *stream) thinkingDelta(delta string) []llm.Event {
 		state := &partState{type_: llm.ContentTypeThinking, contentIndex: s.nextIndex}
 		s.nextIndex++
 		s.thinking = state
-		s.parts = append(s.parts, state)
+		s.core.Parts.Partial(state.contentIndex, state)
 		state.text.WriteString(delta)
 		return []llm.Event{
 			{Type: llm.EventTypeThinkingStart, ContentIndex: state.contentIndex},
@@ -661,7 +595,7 @@ func (s *stream) textDelta(delta string) []llm.Event {
 		state := &partState{type_: llm.ContentTypeText, contentIndex: s.nextIndex}
 		s.nextIndex++
 		s.text = state
-		s.parts = append(s.parts, state)
+		s.core.Parts.Partial(state.contentIndex, state)
 		state.text.WriteString(delta)
 		return []llm.Event{
 			{Type: llm.EventTypeTextStart, ContentIndex: state.contentIndex},
@@ -690,7 +624,7 @@ func (s *stream) toolCallDelta(call wireToolCall) []llm.Event {
 		state.toolCall.ID = call.ID
 		state.toolCall.Name = call.Function.Name
 		s.toolCalls[index] = state
-		s.parts = append(s.parts, state)
+		s.core.Parts.Partial(state.contentIndex, state)
 		s.sawToolCall = true
 
 		start := llm.Event{
@@ -740,18 +674,15 @@ func (s *stream) mergeUsage(usage *wireUsage) {
 	if usage == nil {
 		return
 	}
-	cacheRead := usage.PromptTokensDetails.CachedTokens
-	cacheWrite := usage.PromptTokensDetails.CacheWriteTokens
-	input := max(usage.PromptTokens-cacheRead-cacheWrite, 0)
-	s.usage = llm.Usage{
-		InputTokens:      input,
-		OutputTokens:     usage.CompletionTokens,
-		ReasoningTokens:  usage.CompletionTokensDetails.ReasoningTokens,
-		CacheReadTokens:  cacheRead,
-		CacheWriteTokens: cacheWrite,
-		TotalTokens:      usage.TotalTokens,
-	}
-	s.usage.Cost = llm.EstimateCost(s.pricing, s.usage)
+	s.core.Usage = streamcore.UsageFromReport(
+		s.core.Pricing,
+		usage.PromptTokens,
+		usage.CompletionTokens,
+		usage.CompletionTokensDetails.ReasoningTokens,
+		usage.PromptTokensDetails.CachedTokens,
+		usage.PromptTokensDetails.CacheWriteTokens,
+		usage.TotalTokens,
+	)
 }
 
 // finish assembles the terminal events once the SSE stream ends. Tool calls
@@ -759,15 +690,11 @@ func (s *stream) mergeUsage(usage *wireUsage) {
 // agent loop will surface it instead of executing a partial call.
 func (s *stream) finish() ([]llm.Event, error) {
 	for _, state := range s.toolCalls {
-		if !json.Valid([]byte(toolCallArguments(state))) {
-			return nil, fmt.Errorf(
-				"openai completions: tool call %q ended with invalid JSON arguments",
-				state.toolCall.Name,
-			)
+		if _, err := streamcore.FinishToolCall(state.toolCall, state.arguments, nil); err != nil {
+			return nil, fmt.Errorf("openai completions: %w", err)
 		}
 	}
 
-	s.finished = true
 	reason := stopReason(s.finishReason)
 	if reason == llm.StopReasonStop {
 		switch {
@@ -778,16 +705,38 @@ func (s *stream) finish() ([]llm.Event, error) {
 		}
 	}
 
-	events := make([]llm.Event, 0, len(s.parts)+3)
-	for _, state := range s.parts {
-		events = append(events, s.endEvent(state))
+	snapshot := s.core.Parts.Snapshot()
+	events := make([]llm.Event, 0, len(snapshot)+3)
+	for index, part := range snapshot {
+		content := part
+		switch part.Type {
+		case llm.ContentTypeText:
+			events = append(events, llm.Event{
+				Type:         llm.EventTypeTextEnd,
+				ContentIndex: index,
+				Content:      &content,
+			})
+		case llm.ContentTypeThinking:
+			events = append(events, llm.Event{
+				Type:         llm.EventTypeThinkingEnd,
+				ContentIndex: index,
+				Content:      &content,
+			})
+		case llm.ContentTypeToolCall:
+			events = append(events, llm.Event{
+				Type:         llm.EventTypeToolCallEnd,
+				ContentIndex: index,
+				Content:      &content,
+				ToolCall:     content.ToolCall,
+			})
+		default:
+			return nil, fmt.Errorf(
+				"openai completions: content part has unknown type %q",
+				part.Type,
+			)
+		}
 	}
-	usage := s.usage
-	message := s.messageSnapshot(reason, "")
-	return append(events,
-		llm.Event{Type: llm.EventTypeUsage, Usage: &usage},
-		llm.Event{Type: llm.EventTypeDone, StopReason: reason, Message: &message},
-	), nil
+	return append(events, s.core.TerminalEvents(reason)...), nil
 }
 
 func stopReason(finishReason string) llm.StopReason {
@@ -801,109 +750,14 @@ func stopReason(finishReason string) llm.StopReason {
 	case "content_filter":
 		return llm.StopReasonRefusal
 	default:
-		return llm.StopReasonStop
+		return llm.StopReasonUnknown
 	}
-}
-
-func (s *stream) endEvent(state *partState) llm.Event {
-	switch state.type_ {
-	case llm.ContentTypeText:
-		content := llm.NewTextContent(state.text.String()).Part()
-		return llm.Event{
-			Type:         llm.EventTypeTextEnd,
-			ContentIndex: state.contentIndex,
-			Content:      &content,
-		}
-	case llm.ContentTypeThinking:
-		content := llm.NewThinkingContent(state.text.String(), "").Part()
-		return llm.Event{
-			Type:         llm.EventTypeThinkingEnd,
-			ContentIndex: state.contentIndex,
-			Content:      &content,
-		}
-	case llm.ContentTypeToolCall:
-		call := state.toolCall
-		call.Arguments = append(json.RawMessage(nil), toolCallArguments(state)...)
-		content := llm.ContentPart{Type: llm.ContentTypeToolCall, ToolCall: &call}
-		return llm.Event{
-			Type:         llm.EventTypeToolCallEnd,
-			ContentIndex: state.contentIndex,
-			Content:      &content,
-			ToolCall:     &call,
-		}
-	default:
-		return llm.Event{Type: llm.EventTypeUnknown, ContentIndex: state.contentIndex}
-	}
-}
-
-// toolCallArguments returns the accumulated arguments for a streamed tool call,
-// normalizing an absent/empty payload to an empty object so a no-argument tool
-// call still produces valid JSON.
-func toolCallArguments(state *partState) string {
-	if strings.TrimSpace(state.arguments) == "" {
-		return "{}"
-	}
-	return state.arguments
-}
-
-func (s *stream) errorEvent(err error, errorMessage string) llm.Event {
-	s.finished = true
-	reason := llm.StopReasonError
-	if errors.Is(err, context.Canceled) {
-		reason = llm.StopReasonAborted
-	}
-	message := s.messageSnapshot(reason, errorMessage)
-	return llm.Event{
-		Type:       llm.EventTypeError,
-		StopReason: reason,
-		Message:    &message,
-		Err:        err,
-	}
-}
-
-func (s *stream) messageSnapshot(
-	reason llm.StopReason,
-	errorMessage string,
-) llm.AssistantMessage {
-	message := s.message
-	message.Content = s.contentSnapshot()
-	message.Usage = s.usage
-	message.StopReason = reason
-	message.ErrorMessage = errorMessage
-	return message
-}
-
-func (s *stream) contentSnapshot() []llm.ContentPart {
-	result := make([]llm.ContentPart, 0, len(s.parts))
-	for _, state := range s.parts {
-		switch state.type_ {
-		case llm.ContentTypeText:
-			result = append(result, llm.NewTextContent(state.text.String()).Part())
-		case llm.ContentTypeThinking:
-			result = append(result, llm.NewThinkingContent(state.text.String(), "").Part())
-		case llm.ContentTypeToolCall:
-			arguments := toolCallArguments(state)
-			if !json.Valid([]byte(arguments)) {
-				// Exclude a truncated call from snapshots so the assembled
-				// assistant message still validates; the stream error already
-				// carries the failure.
-				continue
-			}
-			call := state.toolCall
-			call.Arguments = append(json.RawMessage(nil), arguments...)
-			result = append(result, llm.ContentPart{
-				Type:     llm.ContentTypeToolCall,
-				ToolCall: &call,
-			})
-		}
-	}
-	return result
 }
 
 func normalizeProviderError(err error) error {
 	var apiErr *openaisdk.Error
 	if !errors.As(err, &apiErr) {
-		return llm.NewTransportProviderError(err)
+		return streamcore.NormalizeError(err, nil)
 	}
 	var header http.Header
 	if apiErr.Response != nil {
@@ -913,5 +767,9 @@ func normalizeProviderError(err error) error {
 	if code == "" {
 		code = apiErr.Type
 	}
-	return llm.NewHTTPProviderError(err, apiErr.StatusCode, code, header)
+	return streamcore.NormalizeError(err, &streamcore.ErrorInfo{
+		StatusCode: apiErr.StatusCode,
+		Code:       code,
+		Header:     header,
+	})
 }
