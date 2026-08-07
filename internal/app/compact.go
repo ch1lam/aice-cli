@@ -192,24 +192,11 @@ func (a *application) generateCompactionSummary(
 			assistant.StopReason,
 		)
 	}
-	summary := visibleAssistantText(assistant)
+	summary := visibleText(assistant.Content, "\n\n")
 	if summary == "" {
 		return "", llm.Usage{}, fmt.Errorf(
 			"app: generate compaction summary: model returned no visible text",
 		)
 	}
 	return summary, assistant.Usage, nil
-}
-
-func visibleAssistantText(message llm.AssistantMessage) string {
-	parts := make([]string, 0, len(message.Content))
-	for _, part := range message.Content {
-		if part.Type != llm.ContentTypeText {
-			continue
-		}
-		if text := strings.TrimSpace(part.Text); text != "" {
-			parts = append(parts, text)
-		}
-	}
-	return strings.Join(parts, "\n\n")
 }

@@ -10,9 +10,6 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
-
-	"github.com/ch1lam/aice-cli/internal/agent"
-	"github.com/ch1lam/aice-cli/internal/llm"
 )
 
 func TestModelSubmitsPromptAndConsumesAgentEvents(t *testing.T) {
@@ -43,61 +40,28 @@ func TestModelSubmitsPromptAndConsumesAgentEvents(t *testing.T) {
 	}
 	updated = updateModel(t, updated, startMessage)
 
-	identity := llm.Model{ID: "test", API: "test", Provider: "test"}
-	startedAssistant := llm.NewAssistantMessage(identity)
-	completedAssistant := llm.NewAssistantMessage(identity)
-	completedAssistant.Content = []llm.ContentPart{
-		llm.NewThinkingContent("checking context", "").Part(),
-		llm.NewTextContent("**Inspection complete.**").Part(),
-	}
-	completedAssistant.StopReason = llm.StopReasonStop
-	call := llm.ToolCall{ID: "call-1", Name: "read", Arguments: []byte(`{"path":"go.mod"}`)}
-	toolResult := llm.ToolResultMessage{
-		Role:       llm.RoleToolResult,
-		ToolCallID: call.ID,
-		ToolName:   call.Name,
-		Content:    []llm.ContentPart{llm.NewTextContent("module contents").Part()},
-	}
-
 	updated = updateModel(t, updated, runBatchMsg{updates: []runUpdate{
 		{cancel: func() {}},
-		{event: agent.AgentEvent{
-			Type:    agent.EventTypeMessageStart,
-			Message: startedAssistant,
+		{event: DisplayEvent{Kind: DisplayEventAssistantStart}},
+		{event: DisplayEvent{
+			Kind:  DisplayEventAssistantDelta,
+			Delta: DisplayDelta{Kind: DisplayDeltaText, Delta: "Inspection"},
 		}},
-		{event: agent.AgentEvent{
-			Type: agent.EventTypeMessageUpdate,
-			AssistantMessageEvent: &llm.Event{
-				Type:  llm.EventTypeTextDelta,
-				Delta: "Inspection",
+		{event: DisplayEvent{
+			Kind: DisplayEventAssistantEnd,
+			Assistant: AssistantDisplay{
+				Text:      "**Inspection complete.**",
+				Thinking:  "checking context",
+				Concludes: true,
 			},
 		}},
-		{event: agent.AgentEvent{
-			Type:    agent.EventTypeMessageEnd,
-			Message: completedAssistant,
+		{event: DisplayEvent{
+			Kind: DisplayEventToolStart,
+			Tool: ToolDisplay{ID: "call-1", Name: "read", Detail: "go.mod"},
 		}},
-		{event: agent.AgentEvent{
-			Type:     agent.EventTypeToolExecutionStart,
-			ToolCall: &call,
-		}},
-		{event: agent.AgentEvent{
-			Type:     agent.EventTypeToolExecutionEnd,
-			ToolCall: &call,
-		}},
-		{event: agent.AgentEvent{
-			Type:    agent.EventTypeMessageStart,
-			Message: toolResult,
-		}},
-		{event: agent.AgentEvent{
-			Type:    agent.EventTypeMessageEnd,
-			Message: toolResult,
-		}},
-		{event: agent.AgentEvent{
-			Type: agent.EventTypeAgentEnd,
-			Messages: []llm.AgentMessage{
-				completedAssistant,
-				toolResult,
-			},
+		{event: DisplayEvent{
+			Kind: DisplayEventToolEnd,
+			Tool: ToolDisplay{ID: "call-1"},
 		}},
 		{done: true},
 	}})
@@ -139,74 +103,47 @@ func TestModelCollapsesProcessWhenConclusionStartsStreaming(t *testing.T) {
 	current.running = true
 	processID := current.beginProcess()
 
-	identity := llm.Model{ID: "test", API: "test", Provider: "test"}
-	intermediate := llm.NewAssistantMessage(identity)
-	current.applyAgentEvent(agent.AgentEvent{
-		Type:    agent.EventTypeMessageStart,
-		Message: intermediate,
+	current.applyAgentEvent(DisplayEvent{Kind: DisplayEventAssistantStart})
+	current.applyAgentEvent(DisplayEvent{
+		Kind:  DisplayEventAssistantDelta,
+		Delta: DisplayDelta{Kind: DisplayDeltaThinking, Delta: "INTERMEDIATE_REASONING"},
 	})
-	current.applyAgentEvent(agent.AgentEvent{
-		Type: agent.EventTypeMessageUpdate,
-		AssistantMessageEvent: &llm.Event{
-			Type:  llm.EventTypeThinkingDelta,
-			Delta: "INTERMEDIATE_REASONING",
-		},
-	})
-	current.applyAgentEvent(agent.AgentEvent{
-		Type: agent.EventTypeMessageUpdate,
-		AssistantMessageEvent: &llm.Event{
-			Type:  llm.EventTypeTextDelta,
-			Delta: "MIDDLEOUTPUT",
-		},
+	current.applyAgentEvent(DisplayEvent{
+		Kind:  DisplayEventAssistantDelta,
+		Delta: DisplayDelta{Kind: DisplayDeltaText, Delta: "MIDDLEOUTPUT"},
 	})
 	if group := current.processGroup(processID); group == nil || !group.collapsed {
 		t.Fatal("text delta did not provisionally collapse the process")
 	}
 
-	call := llm.ToolCall{
-		ID:        "call-1",
-		Name:      "read",
-		Arguments: []byte(`{"path":"go.mod"}`),
-	}
-	current.applyAgentEvent(agent.AgentEvent{
-		Type: agent.EventTypeMessageUpdate,
-		AssistantMessageEvent: &llm.Event{
-			Type: llm.EventTypeToolCallStart,
-		},
+	current.applyAgentEvent(DisplayEvent{
+		Kind:  DisplayEventAssistantDelta,
+		Delta: DisplayDelta{Kind: DisplayDeltaToolCall},
 	})
 	if group := current.processGroup(processID); group == nil || group.collapsed {
 		t.Fatal("tool call did not reopen a provisionally collapsed process")
 	}
-	intermediate.Content = []llm.ContentPart{
-		llm.NewThinkingContent("INTERMEDIATE_REASONING", "").Part(),
-		llm.NewTextContent("MIDDLEOUTPUT").Part(),
-		{Type: llm.ContentTypeToolCall, ToolCall: &call},
-	}
-	intermediate.StopReason = llm.StopReasonToolUse
-	current.applyAgentEvent(agent.AgentEvent{
-		Type:    agent.EventTypeMessageEnd,
-		Message: intermediate,
+	current.applyAgentEvent(DisplayEvent{
+		Kind: DisplayEventAssistantEnd,
+		Assistant: AssistantDisplay{
+			Text:      "MIDDLEOUTPUT",
+			Thinking:  "INTERMEDIATE_REASONING",
+			Concludes: false,
+		},
 	})
-	current.applyAgentEvent(agent.AgentEvent{
-		Type:     agent.EventTypeToolExecutionStart,
-		ToolCall: &call,
+	current.applyAgentEvent(DisplayEvent{
+		Kind: DisplayEventToolStart,
+		Tool: ToolDisplay{ID: "call-1", Name: "read", Detail: "go.mod"},
 	})
-	current.applyAgentEvent(agent.AgentEvent{
-		Type:     agent.EventTypeToolExecutionEnd,
-		ToolCall: &call,
+	current.applyAgentEvent(DisplayEvent{
+		Kind: DisplayEventToolEnd,
+		Tool: ToolDisplay{ID: "call-1"},
 	})
 
-	conclusion := llm.NewAssistantMessage(identity)
-	current.applyAgentEvent(agent.AgentEvent{
-		Type:    agent.EventTypeMessageStart,
-		Message: conclusion,
-	})
-	current.applyAgentEvent(agent.AgentEvent{
-		Type: agent.EventTypeMessageUpdate,
-		AssistantMessageEvent: &llm.Event{
-			Type:  llm.EventTypeThinkingDelta,
-			Delta: "FINAL_REASONING",
-		},
+	current.applyAgentEvent(DisplayEvent{Kind: DisplayEventAssistantStart})
+	current.applyAgentEvent(DisplayEvent{
+		Kind:  DisplayEventAssistantDelta,
+		Delta: DisplayDelta{Kind: DisplayDeltaThinking, Delta: "FINAL_REASONING"},
 	})
 
 	beforeConclusion := ansi.Strip(current.transcriptView())
@@ -225,22 +162,16 @@ func TestModelCollapsesProcessWhenConclusionStartsStreaming(t *testing.T) {
 		}
 	}
 
-	current.applyAgentEvent(agent.AgentEvent{
-		Type: agent.EventTypeMessageUpdate,
-		AssistantMessageEvent: &llm.Event{
-			Type:  llm.EventTypeTextDelta,
-			Delta: " \n",
-		},
+	current.applyAgentEvent(DisplayEvent{
+		Kind:  DisplayEventAssistantDelta,
+		Delta: DisplayDelta{Kind: DisplayDeltaText, Delta: " \n"},
 	})
 	if group := current.processGroup(processID); group == nil || group.collapsed {
 		t.Fatal("leading whitespace collapsed the process before final output")
 	}
-	current.applyAgentEvent(agent.AgentEvent{
-		Type: agent.EventTypeMessageUpdate,
-		AssistantMessageEvent: &llm.Event{
-			Type:  llm.EventTypeTextDelta,
-			Delta: "FINAL_ANSWER",
-		},
+	current.applyAgentEvent(DisplayEvent{
+		Kind:  DisplayEventAssistantDelta,
+		Delta: DisplayDelta{Kind: DisplayDeltaText, Delta: "FINAL_ANSWER"},
 	})
 
 	collapsed := ansi.Strip(current.transcriptView())
@@ -880,7 +811,7 @@ func TestModelStatusLineShowsModelAndReasoningInsteadOfScrollPercent(t *testing.
 
 	tests := []struct {
 		name         string
-		thinking     llm.ThinkingLevel
+		thinking     DisplayThinking
 		wantThinking string
 	}{
 		{
@@ -889,7 +820,7 @@ func TestModelStatusLineShowsModelAndReasoningInsteadOfScrollPercent(t *testing.
 		},
 		{
 			name:         "explicit high reasoning",
-			thinking:     llm.ThinkingLevelHigh,
+			thinking:     DisplayThinkingHigh,
 			wantThinking: "reasoning high",
 		},
 	}
@@ -899,7 +830,7 @@ func TestModelStatusLineShowsModelAndReasoningInsteadOfScrollPercent(t *testing.
 			t.Parallel()
 
 			current := newScrollableModel(t)
-			current.currentModel = llm.Model{ID: "deepseek-v4-flash"}
+			current.currentModel = DisplayModel{ID: "deepseek-v4-flash"}
 			current.thinking = tt.thinking
 			originalFooterHeight := lipgloss.Height(current.footerView(80))
 
@@ -931,13 +862,13 @@ func TestModelStatusLineShowsSessionUsageAndEstimatedCost(t *testing.T) {
 	t.Parallel()
 
 	current := newModel(make(chan runRequest), make(chan struct{}))
-	current.currentModel = llm.Model{ID: "deepseek-v4-flash"}
-	current.sessionUsage = llm.Usage{
+	current.currentModel = DisplayModel{ID: "deepseek-v4-flash"}
+	current.sessionUsage = DisplayUsage{
 		InputTokens:      1_200,
 		OutputTokens:     456,
 		CacheReadTokens:  100,
 		CacheWriteTokens: 20,
-		Cost:             &llm.Cost{Total: 0.0074},
+		TotalCost:        0.0074,
 	}
 
 	wide := current.statusLine(120)
@@ -1022,7 +953,7 @@ func TestModelStatusLineShowsZeroUsageBeforeConversation(t *testing.T) {
 	t.Parallel()
 
 	current := newModel(make(chan runRequest), make(chan struct{}))
-	current.currentModel = llm.Model{ID: "deepseek-v4-flash"}
+	current.currentModel = DisplayModel{ID: "deepseek-v4-flash"}
 
 	standard := current.statusLine(80)
 	standardText := ansi.Strip(standard)
@@ -1080,45 +1011,45 @@ func TestModelStatusLineShowsZeroUsageBeforeConversation(t *testing.T) {
 	}
 }
 
-func TestModelAnimatesCompletedAssistantUsage(t *testing.T) {
+func TestModelAnimatesSnapshotUsage(t *testing.T) {
 	t.Parallel()
 
 	current := newModel(make(chan runRequest), make(chan struct{}))
-	assistant := llm.NewAssistantMessage(llm.Model{
-		ID:       "test",
-		API:      "test",
-		Provider: "test",
-	})
-	assistant.Usage = llm.Usage{
+	state := RuntimeState{Usage: DisplayUsage{
 		InputTokens:  1_200,
 		OutputTokens: 456,
-		TotalTokens:  1_656,
-		Cost:         &llm.Cost{Total: 0.0074},
-	}
+		TotalCost:    0.0074,
+	}}
 
-	changed, command := current.applyAgentEvent(agent.AgentEvent{
-		Type:    agent.EventTypeMessageEnd,
-		Message: assistant,
-	})
-	if !changed || command == nil {
-		t.Fatal("assistant completion did not start usage animation")
+	updatedModel, command := current.applyRunBatch(runBatchMsg{updates: []runUpdate{
+		{state: &state},
+	}})
+	if command == nil {
+		t.Fatal("snapshot usage did not start usage animation")
 	}
-	if status := current.usageStatus(true); !strings.Contains(status, "↑0") ||
+	updated, ok := updatedModel.(model)
+	if !ok {
+		t.Fatalf("applyRunBatch() model = %T, want tui.model", updatedModel)
+	}
+	if updated.sessionUsage != state.Usage {
+		t.Fatalf("session usage = %#v, want snapshot %#v", updated.sessionUsage, state.Usage)
+	}
+	if status := updated.usageStatus(true); !strings.Contains(status, "↑0") ||
 		!strings.Contains(status, "↓0") ||
 		!strings.Contains(status, "$0.000") {
 		t.Fatalf("usage animation did not start at zero: %q", status)
 	}
 
-	generation := current.usageAnimation.generation
+	generation := updated.usageAnimation.generation
 	for range usageAnimationFrames {
-		current = updateModel(
+		updated = updateModel(
 			t,
-			current,
+			updated,
 			usageAnimationTickMsg{generation: generation},
 		)
 	}
 
-	status := current.usageStatus(true)
+	status := updated.usageStatus(true)
 	for _, want := range []string{"↑1.2k", "↓456", "$0.007"} {
 		if !strings.Contains(status, want) {
 			t.Errorf("completed usage animation = %q, want %q", status, want)
@@ -1143,30 +1074,16 @@ func TestModelRendersRunActivityInTranscriptInsteadOfFooter(t *testing.T) {
 		t.Fatalf("run activity remains in footer: %q", footer)
 	}
 
-	assistant := llm.NewAssistantMessage(llm.Model{
-		ID:       "test",
-		API:      "test",
-		Provider: "test",
-	})
-	current.applyAgentEvent(agent.AgentEvent{
-		Type:    agent.EventTypeMessageStart,
-		Message: assistant,
-	})
-	current.applyAgentEvent(agent.AgentEvent{
-		Type: agent.EventTypeMessageUpdate,
-		AssistantMessageEvent: &llm.Event{
-			Type:  llm.EventTypeThinkingDelta,
-			Delta: "checking context",
-		},
+	current.applyAgentEvent(DisplayEvent{Kind: DisplayEventAssistantStart})
+	current.applyAgentEvent(DisplayEvent{
+		Kind:  DisplayEventAssistantDelta,
+		Delta: DisplayDelta{Kind: DisplayDeltaThinking, Delta: "checking context"},
 	})
 	assertActivityInTranscript(t, current, "Thinking...")
 
-	current.applyAgentEvent(agent.AgentEvent{
-		Type: agent.EventTypeMessageUpdate,
-		AssistantMessageEvent: &llm.Event{
-			Type:  llm.EventTypeTextDelta,
-			Delta: "Inspection",
-		},
+	current.applyAgentEvent(DisplayEvent{
+		Kind:  DisplayEventAssistantDelta,
+		Delta: DisplayDelta{Kind: DisplayDeltaText, Delta: "Inspection"},
 	})
 	if transcript := current.transcriptView(); strings.Contains(
 		transcript,
@@ -1175,24 +1092,22 @@ func TestModelRendersRunActivityInTranscriptInsteadOfFooter(t *testing.T) {
 		t.Fatalf("spinner remains after model output starts: %q", transcript)
 	}
 
-	completed := assistant
-	completed.Content = []llm.ContentPart{
-		llm.NewTextContent("Inspection complete.").Part(),
-	}
-	current.applyAgentEvent(agent.AgentEvent{
-		Type:    agent.EventTypeMessageEnd,
-		Message: completed,
+	current.applyAgentEvent(DisplayEvent{
+		Kind: DisplayEventAssistantEnd,
+		Assistant: AssistantDisplay{
+			Text:      "Inspection complete.",
+			Concludes: true,
+		},
 	})
-	call := llm.ToolCall{ID: "call-1", Name: "read"}
-	current.applyAgentEvent(agent.AgentEvent{
-		Type:     agent.EventTypeToolExecutionStart,
-		ToolCall: &call,
+	current.applyAgentEvent(DisplayEvent{
+		Kind: DisplayEventToolStart,
+		Tool: ToolDisplay{ID: "call-1", Name: "read"},
 	})
 	assertActivityInTranscript(t, current, "read")
 
-	current.applyAgentEvent(agent.AgentEvent{
-		Type:     agent.EventTypeToolExecutionEnd,
-		ToolCall: &call,
+	current.applyAgentEvent(DisplayEvent{
+		Kind: DisplayEventToolEnd,
+		Tool: ToolDisplay{ID: "call-1"},
 	})
 	assertActivityInTranscript(t, current, "Thinking...")
 }
@@ -1205,55 +1120,45 @@ func TestModelToolCallsShowRelevantInput(t *testing.T) {
 		"printf 'tool display complete'"
 	tests := []struct {
 		name      string
-		call      llm.ToolCall
+		tool      ToolDisplay
 		want      string
 		notWanted []string
 	}{
 		{
 			name: "bash shows the complete command",
-			call: llm.ToolCall{
-				ID:   "bash-call",
-				Name: "bash",
-				Arguments: []byte(
-					`{"command":"GOCACHE=/tmp/aice-go-cache go test ./internal/tui ` +
-						`-run TestModelToolCallsShowRelevantInput -count=1\n` +
-						`printf 'tool display complete'"}`,
-				),
+			tool: ToolDisplay{
+				ID:     "bash-call",
+				Name:   "bash",
+				Detail: bashCommand,
 			},
 			want: "$ " + bashCommand,
 		},
 		{
 			name: "read shows only the path",
-			call: llm.ToolCall{
-				ID:        "read-call",
-				Name:      "read",
-				Arguments: []byte(`{"path":"internal/tui/model.go","offset":10}`),
+			tool: ToolDisplay{
+				ID:     "read-call",
+				Name:   "read",
+				Detail: "internal/tui/model.go",
 			},
 			want:      "internal/tui/model.go",
 			notWanted: []string{"offset"},
 		},
 		{
 			name: "write shows the path without content",
-			call: llm.ToolCall{
-				ID:   "write-call",
-				Name: "write",
-				Arguments: []byte(
-					`{"path":"notes/output.txt","content":"DO_NOT_RENDER_WRITE_CONTENT"}`,
-				),
+			tool: ToolDisplay{
+				ID:     "write-call",
+				Name:   "write",
+				Detail: "notes/output.txt",
 			},
 			want:      "notes/output.txt",
 			notWanted: []string{"DO_NOT_RENDER_WRITE_CONTENT"},
 		},
 		{
 			name: "edit shows the path without replacements",
-			call: llm.ToolCall{
-				ID:   "edit-call",
-				Name: "edit",
-				Arguments: []byte(
-					`{"path":"internal/tui/model.go","edits":[` +
-						`{"oldText":"DO_NOT_RENDER_OLD_TEXT",` +
-						`"newText":"DO_NOT_RENDER_NEW_TEXT"}]}`,
-				),
+			tool: ToolDisplay{
+				ID:     "edit-call",
+				Name:   "edit",
+				Detail: "internal/tui/model.go",
 			},
 			want: "internal/tui/model.go",
 			notWanted: []string{
@@ -1263,13 +1168,13 @@ func TestModelToolCallsShowRelevantInput(t *testing.T) {
 		},
 		{
 			name: "path cannot inject terminal controls",
-			call: llm.ToolCall{
-				ID:        "unsafe-path-call",
-				Name:      "read",
-				Arguments: []byte(`{"path":"internal/\u001b[31mmodel.go"}`),
+			tool: ToolDisplay{
+				ID:     "unsafe-path-call",
+				Name:   "read",
+				Detail: "internal/[31mmodel.go",
 			},
 			want:      "internal/�[31mmodel.go",
-			notWanted: []string{"\x1b"},
+			notWanted: []string{""},
 		},
 	}
 
@@ -1283,9 +1188,9 @@ func TestModelToolCallsShowRelevantInput(t *testing.T) {
 				Height: 24,
 			})
 			current.running = true
-			current.applyAgentEvent(agent.AgentEvent{
-				Type:     agent.EventTypeToolExecutionStart,
-				ToolCall: &tt.call,
+			current.applyAgentEvent(DisplayEvent{
+				Kind: DisplayEventToolStart,
+				Tool: tt.tool,
 			})
 
 			running := ansi.Strip(current.transcriptView())
@@ -1308,9 +1213,9 @@ func TestModelToolCallsShowRelevantInput(t *testing.T) {
 				}
 			}
 
-			current.applyAgentEvent(agent.AgentEvent{
-				Type:     agent.EventTypeToolExecutionEnd,
-				ToolCall: &tt.call,
+			current.applyAgentEvent(DisplayEvent{
+				Kind: DisplayEventToolEnd,
+				Tool: tt.tool,
 			})
 			completed := ansi.Strip(current.transcriptView())
 			for _, wantLine := range strings.Split(tt.want, "\n") {
@@ -1493,49 +1398,50 @@ func TestModelSpinnerTickRefreshesTranscriptViewport(t *testing.T) {
 	}
 }
 
-func TestModelAccumulatesCompletedAssistantUsage(t *testing.T) {
+func TestModelSnapshotUsageReplacesAssistantUsage(t *testing.T) {
 	t.Parallel()
 
 	current := newModel(make(chan runRequest), make(chan struct{}))
-	current.sessionUsage = llm.Usage{
+	current.sessionUsage = DisplayUsage{
 		InputTokens:  100,
 		OutputTokens: 20,
-		TotalTokens:  120,
-		Cost:         &llm.Cost{Input: 0.01, Total: 0.01},
+		TotalCost:    0.01,
 	}
-	assistant := llm.NewAssistantMessage(llm.Model{
-		ID:       "test",
-		API:      "test",
-		Provider: "test",
-	})
-	assistant.Usage = llm.Usage{
-		InputTokens:     50,
-		OutputTokens:    30,
-		CacheReadTokens: 40,
-		TotalTokens:     120,
-		Cost: &llm.Cost{
-			Output:    0.02,
-			CacheRead: 0.001,
-			Total:     0.021,
+
+	current.applyAgentEvent(DisplayEvent{
+		Kind: DisplayEventAssistantEnd,
+		Assistant: AssistantDisplay{
+			Text:      "answer",
+			Concludes: true,
 		},
+	})
+	if current.sessionUsage != (DisplayUsage{
+		InputTokens:  100,
+		OutputTokens: 20,
+		TotalCost:    0.01,
+	}) {
+		t.Fatalf("assistant completion mutated session usage: %#v", current.sessionUsage)
 	}
 
-	current.applyAgentEvent(agent.AgentEvent{
-		Type:    agent.EventTypeMessageEnd,
-		Message: assistant,
-	})
-
-	got := current.sessionUsage
-	if got.InputTokens != 150 ||
-		got.OutputTokens != 50 ||
-		got.CacheReadTokens != 40 ||
-		got.TotalTokens != 240 ||
-		got.Cost == nil ||
-		got.Cost.Input != 0.01 ||
-		got.Cost.Output != 0.02 ||
-		got.Cost.CacheRead != 0.001 ||
-		got.Cost.Total != 0.031 {
-		t.Fatalf("session usage = %#v, want accumulated assistant usage", got)
+	snapshot := RuntimeState{Usage: DisplayUsage{
+		InputTokens:     150,
+		OutputTokens:    50,
+		CacheReadTokens: 40,
+		TotalCost:       0.031,
+	}}
+	updatedModel, _ := current.applyRunBatch(runBatchMsg{updates: []runUpdate{
+		{state: &snapshot},
+	}})
+	updated, ok := updatedModel.(model)
+	if !ok {
+		t.Fatalf("applyRunBatch() model = %T, want tui.model", updatedModel)
+	}
+	if updated.sessionUsage != snapshot.Usage {
+		t.Fatalf(
+			"session usage = %#v, want snapshot %#v",
+			updated.sessionUsage,
+			snapshot.Usage,
+		)
 	}
 }
 
@@ -2119,6 +2025,49 @@ func TestModelCancellationIsRenderedAsNotice(t *testing.T) {
 	}
 	if strings.Contains(transcript, "Error") {
 		t.Fatalf("cancellation was rendered as an error: %q", transcript)
+	}
+}
+
+func TestModelSessionChangeRebuildsBranchTranscript(t *testing.T) {
+	t.Parallel()
+
+	current := newModel(make(chan runRequest), make(chan struct{}))
+	current = updateModel(t, current, tea.WindowSizeMsg{Width: 80, Height: 24})
+	current.entries = []transcriptEntry{
+		{kind: entryUser, text: "first question"},
+		{kind: entryAssistant, text: "OLD_BRANCH_ANSWER", complete: true},
+		{kind: entryTool, toolName: "read", toolDone: true},
+		{kind: entryUser, text: "/checkout turn-1"},
+		{kind: entryCommand, text: "Checked out Session entry turn-1. " +
+			"The next turn will branch from this point."},
+	}
+	state := RuntimeState{SessionChanged: true}
+	updated := updateModel(t, current, runBatchMsg{updates: []runUpdate{
+		{state: &state},
+	}})
+
+	transcript := updated.transcriptView()
+	for _, want := range []string{
+		"/checkout turn-1",
+		"Checked out Session entry turn-1",
+	} {
+		if !strings.Contains(transcript, want) {
+			t.Errorf("rebuilt transcript = %q, want %q", transcript, want)
+		}
+	}
+	for _, stale := range []string{
+		"first question",
+		"OLD_BRANCH_ANSWER",
+		"read",
+	} {
+		if strings.Contains(transcript, stale) {
+			t.Errorf("rebuilt transcript still contains %q: %q", stale, transcript)
+		}
+	}
+	if len(updated.processGroups) != 0 ||
+		updated.activeProcessID != 0 ||
+		updated.assistantEntry != -1 {
+		t.Fatalf("branch state not reset: groups=%#v", updated.processGroups)
 	}
 }
 

@@ -202,6 +202,7 @@ func initTestRunner(t *testing.T, workspace *tool.Workspace, tools []agent.Tool)
 		model:         deepseek.DefaultModel(),
 		configuration: trustTestConfig(paths),
 		trustStore:    trust.NewStore(paths.GlobalTrust),
+		providers:     defaultProviders(),
 		workspace:     workspace,
 		workspacePath: workspace.PhysicalPath(),
 	}

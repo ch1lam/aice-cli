@@ -93,6 +93,13 @@ func TestInteractiveSessionSlashCommandsNavigateCurrentStore(t *testing.T) {
 	if updated.LeafID != snapshot.Turns[0].ID || len(updated.LeafMoves) != 1 {
 		t.Fatalf("snapshot after checkout = %#v", updated)
 	}
+	state := runner.RuntimeState()
+	if !state.SessionChanged {
+		t.Fatal("RuntimeState().SessionChanged = false, want true after /checkout")
+	}
+	if again := runner.RuntimeState(); again.SessionChanged {
+		t.Fatal("RuntimeState().SessionChanged stayed true after the first read")
+	}
 	checkout := interactiveSlashCommand(t, runner.SlashCommands(), "checkout")
 	if checkout.Menu == nil {
 		t.Fatal("checkout command has no selection menu")
@@ -130,6 +137,7 @@ func TestInteractiveSessionSlashCommandsExposeSelectionMenus(t *testing.T) {
 		}
 	}()
 	selectedModel, exists := modelForProvider(
+		defaultProviders(),
 		string(deepseek.ProviderID),
 		deepseek.ModelV4Pro,
 	)
@@ -145,6 +153,7 @@ func TestInteractiveSessionSlashCommandsExposeSelectionMenus(t *testing.T) {
 		configuration: config.Config{
 			Provider: string(deepseek.ProviderID),
 		},
+		providers: defaultProviders(),
 	}
 
 	commands := runner.SlashCommands()
@@ -280,6 +289,7 @@ func TestInteractiveSessionSlashCommandCompactsAndReloadsHistory(
 			return summaryModel, nil
 		},
 		compactionKeepRecentTokens: 1,
+		providers:                  defaultProviders(),
 	}}
 	runner := &interactiveSession{
 		application: application,
@@ -382,6 +392,7 @@ func TestInteractiveSessionSlashCommandsPersistRuntimeSettings(t *testing.T) {
 				GlobalAuth:     "/global/auth.json",
 			},
 		},
+		providers: defaultProviders(),
 	}
 
 	settings, err := runner.RunSlashCommand(
@@ -432,7 +443,7 @@ func TestInteractiveSessionSlashCommandsPersistRuntimeSettings(t *testing.T) {
 		t.Fatalf("/thinking error = %v", err)
 	}
 	state = runner.RuntimeState()
-	if state.Thinking != llm.ThinkingLevelOff {
+	if state.Thinking != tui.DisplayThinkingOff {
 		t.Errorf("runtime thinking = %q, want off", state.Thinking)
 	}
 
@@ -468,6 +479,7 @@ func TestInteractiveSessionConfigurationCommandsRejectUnsupportedValues(
 		}},
 		model:         deepseek.DefaultModel(),
 		configuration: config.Config{Provider: string(deepseek.ProviderID)},
+		providers:     defaultProviders(),
 	}
 	tests := []struct {
 		name    string
@@ -540,12 +552,14 @@ func TestInteractiveSessionLoginCanRetryAfterPersistenceFailure(t *testing.T) {
 					stopReason: llm.StopReasonStop,
 				}, nil
 			},
+			providers: defaultProviders(),
 		}},
 		model: deepseek.DefaultModel(),
 		configuration: config.Config{
 			Provider: string(deepseek.ProviderID),
 			Model:    deepseek.ModelV4Flash,
 		},
+		providers: defaultProviders(),
 	}
 	request := tui.SlashCommandRequest{
 		Name:   "login",
@@ -586,6 +600,7 @@ func TestInteractiveSessionOpencodeMenusAndModelSelection(t *testing.T) {
 			Provider: string(opencode.ProviderID),
 			Model:    opencode.DefaultModel().ID,
 		},
+		providers: defaultProviders(),
 	}
 
 	commands := runner.SlashCommands()
@@ -630,12 +645,14 @@ func TestInteractiveSessionLoginOpencode(t *testing.T) {
 					stopReason: llm.StopReasonStop,
 				}, nil
 			},
+			providers: defaultProviders(),
 		}},
 		model: opencode.DefaultModel(),
 		configuration: config.Config{
 			Provider: string(opencode.ProviderID),
 			Model:    opencode.DefaultModel().ID,
 		},
+		providers: defaultProviders(),
 	}
 
 	output, err := runner.RunSlashCommand(t.Context(), tui.SlashCommandRequest{
@@ -687,6 +704,7 @@ func TestInteractiveSessionProviderSwitchRebuildsLoopAndModel(t *testing.T) {
 					stopReason: llm.StopReasonStop,
 				}, nil
 			},
+			providers: defaultProviders(),
 		}},
 		model: deepseek.DefaultModel(),
 		configuration: config.Config{
@@ -694,6 +712,7 @@ func TestInteractiveSessionProviderSwitchRebuildsLoopAndModel(t *testing.T) {
 			Model:          deepseek.ModelV4Flash,
 			OpenCodeAPIKey: "opencode-key",
 		},
+		providers: defaultProviders(),
 	}
 
 	output, err := runner.RunSlashCommand(t.Context(), tui.SlashCommandRequest{

@@ -12,8 +12,6 @@ import (
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-
-	"github.com/ch1lam/aice-cli/internal/llm"
 )
 
 const (
@@ -91,10 +89,10 @@ type model struct {
 	spinner          spinner.Model
 	help             help.Model
 	keys             keyMap
-	currentModel     llm.Model
-	thinking         llm.ThinkingLevel
+	currentModel     DisplayModel
+	thinking         DisplayThinking
 	apiKeyConfigured bool
-	sessionUsage     llm.Usage
+	sessionUsage     DisplayUsage
 	usageAnimation   usageAnimation
 	welcomeAnimation welcomeAnimation
 	workingDirectory string
@@ -318,9 +316,7 @@ func (m model) View() tea.View {
 func (m model) handleKey(message tea.KeyPressMsg) (model, tea.Cmd, bool) {
 	if !m.running && m.secretInput != nil {
 		switch {
-		case message.Code == tea.KeyEscape,
-			key.Matches(message, m.keys.interrupt),
-			key.Matches(message, m.keys.quit):
+		case cancelKeyPressed(message, m.keys):
 			return m.cancelSecretInput()
 		case key.Matches(message, m.keys.newline):
 			m.status = "API key must be entered on one line"
@@ -330,9 +326,7 @@ func (m model) handleKey(message tea.KeyPressMsg) (model, tea.Cmd, bool) {
 
 	if !m.running && m.commandMenu != nil {
 		switch {
-		case message.Code == tea.KeyEscape,
-			key.Matches(message, m.keys.interrupt),
-			key.Matches(message, m.keys.quit):
+		case cancelKeyPressed(message, m.keys):
 			return m.backOrCancelCommandMenu()
 		case message.Code == tea.KeyUp:
 			m.moveCommandMenuSelection(-1)
@@ -437,6 +431,12 @@ func (m model) handleKey(message tea.KeyPressMsg) (model, tea.Cmd, bool) {
 		return m, nil, true
 	}
 	return m, nil, false
+}
+
+func cancelKeyPressed(message tea.KeyPressMsg, keys keyMap) bool {
+	return message.Code == tea.KeyEscape ||
+		key.Matches(message, keys.interrupt) ||
+		key.Matches(message, keys.quit)
 }
 
 func (m model) helpToggleRequested(message tea.KeyPressMsg) bool {

@@ -192,7 +192,7 @@ func TestResolveModelSettingsRejectsUnsupportedValues(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			_, _, err := resolveModelSettings(tt.config)
+			_, _, err := resolveModelSettings(defaultProviders(), tt.config)
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("resolveModelSettings() error = %v, want %q", err, tt.want)
 			}
@@ -203,7 +203,7 @@ func TestResolveModelSettingsRejectsUnsupportedValues(t *testing.T) {
 func TestResolveModelSettingsOpencode(t *testing.T) {
 	t.Parallel()
 
-	model, options, err := resolveModelSettings(config.Config{
+	model, options, err := resolveModelSettings(defaultProviders(), config.Config{
 		Provider: string(opencode.ProviderID),
 		Model:    "kimi-k2.6",
 		Thinking: llm.ThinkingLevelMedium,
@@ -222,7 +222,7 @@ func TestResolveModelSettingsOpencode(t *testing.T) {
 func TestResolveModelSettingsOpencodeDefaultModel(t *testing.T) {
 	t.Parallel()
 
-	model, _, err := resolveModelSettings(config.Config{
+	model, _, err := resolveModelSettings(defaultProviders(), config.Config{
 		Provider: string(opencode.ProviderID),
 	})
 	if err != nil {
@@ -324,13 +324,13 @@ func TestApplicationInteractiveKeepsConversationHistory(t *testing.T) {
 					deepseek.ModelV4Flash,
 				)
 			}
-			if options.Thinking != llm.ThinkingLevelUnknown {
+			if options.Thinking != tui.DisplayThinkingDefault {
 				t.Errorf(
 					"TUI thinking = %q, want provider default",
 					options.Thinking,
 				)
 			}
-			if options.Usage != (llm.Usage{}) {
+			if options.Usage != (tui.DisplayUsage{}) {
 				t.Errorf("TUI usage = %#v, want empty new session usage", options.Usage)
 			}
 			if options.WorkingDirectory != workspace {
@@ -679,11 +679,11 @@ func TestApplicationInteractiveResumesExplicitSession(t *testing.T) {
 			runner tui.Runner,
 			options tui.Options,
 		) error {
-			if !reflect.DeepEqual(options.Usage, firstUsage) {
+			if !reflect.DeepEqual(options.Usage, newDisplayUsage(firstUsage)) {
 				t.Errorf(
 					"TUI restored usage = %#v, want %#v",
 					options.Usage,
-					firstUsage,
+					newDisplayUsage(firstUsage),
 				)
 			}
 			return runner.Run(ctx, "second prompt", nil)

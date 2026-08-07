@@ -5,8 +5,6 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-
-	"github.com/ch1lam/aice-cli/internal/llm"
 )
 
 const (
@@ -18,33 +16,25 @@ type usageAnimationTickMsg struct {
 	generation uint64
 }
 
-type usageDisplay struct {
-	inputTokens      int64
-	outputTokens     int64
-	cacheReadTokens  int64
-	cacheWriteTokens int64
-	totalCost        float64
-}
-
 type usageAnimation struct {
-	current     usageDisplay
-	start       usageDisplay
-	target      usageDisplay
+	current     DisplayUsage
+	start       DisplayUsage
+	target      DisplayUsage
 	frame       int
 	generation  uint64
 	initialized bool
 	running     bool
 }
 
-func (a *usageAnimation) Start(initial, target llm.Usage) tea.Cmd {
-	initialDisplay := newUsageDisplay(initial)
+func (a *usageAnimation) Start(initial, target DisplayUsage) tea.Cmd {
+	initialDisplay := initial
 	if a.initialized {
 		initialDisplay = a.current
 	}
 
 	a.current = initialDisplay
 	a.start = initialDisplay
-	a.target = newUsageDisplay(target)
+	a.target = target
 	a.frame = 0
 	a.generation++
 	a.initialized = true
@@ -80,9 +70,9 @@ func (a *usageAnimation) Update(message usageAnimationTickMsg) tea.Cmd {
 	return usageAnimationTick(a.generation)
 }
 
-func (a usageAnimation) Value(fallback llm.Usage) usageDisplay {
+func (a usageAnimation) Value(fallback DisplayUsage) DisplayUsage {
 	if !a.initialized {
-		return newUsageDisplay(fallback)
+		return fallback
 	}
 	return a.current
 }
@@ -93,48 +83,35 @@ func usageAnimationTick(generation uint64) tea.Cmd {
 	})
 }
 
-func newUsageDisplay(usage llm.Usage) usageDisplay {
-	display := usageDisplay{
-		inputTokens:      usage.InputTokens,
-		outputTokens:     usage.OutputTokens,
-		cacheReadTokens:  usage.CacheReadTokens,
-		cacheWriteTokens: usage.CacheWriteTokens,
-	}
-	if usage.Cost != nil {
-		display.totalCost = usage.Cost.Total
-	}
-	return display
-}
-
 func interpolateUsageDisplay(
 	start,
-	target usageDisplay,
+	target DisplayUsage,
 	progress float64,
-) usageDisplay {
-	return usageDisplay{
-		inputTokens: interpolateInt64(
-			start.inputTokens,
-			target.inputTokens,
+) DisplayUsage {
+	return DisplayUsage{
+		InputTokens: interpolateInt64(
+			start.InputTokens,
+			target.InputTokens,
 			progress,
 		),
-		outputTokens: interpolateInt64(
-			start.outputTokens,
-			target.outputTokens,
+		OutputTokens: interpolateInt64(
+			start.OutputTokens,
+			target.OutputTokens,
 			progress,
 		),
-		cacheReadTokens: interpolateInt64(
-			start.cacheReadTokens,
-			target.cacheReadTokens,
+		CacheReadTokens: interpolateInt64(
+			start.CacheReadTokens,
+			target.CacheReadTokens,
 			progress,
 		),
-		cacheWriteTokens: interpolateInt64(
-			start.cacheWriteTokens,
-			target.cacheWriteTokens,
+		CacheWriteTokens: interpolateInt64(
+			start.CacheWriteTokens,
+			target.CacheWriteTokens,
 			progress,
 		),
-		totalCost: interpolateFloat(
-			start.totalCost,
-			target.totalCost,
+		TotalCost: interpolateFloat(
+			start.TotalCost,
+			target.TotalCost,
 			progress,
 		),
 	}

@@ -9,24 +9,26 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
-
-	"github.com/ch1lam/aice-cli/internal/agent"
-	"github.com/ch1lam/aice-cli/internal/llm"
 )
 
 const runUpdateBuffer = 32
 
-// Runner executes one prompt and emits its ordered Agent Loop events.
+// Runner executes one prompt and emits its ordered display events.
 // Implementations may retain conversation history between calls.
 type Runner interface {
-	Run(ctx context.Context, prompt string, sink agent.AgentEventSink) error
+	Run(ctx context.Context, prompt string, sink DisplayEventSink) error
 }
 
-// RuntimeState contains request settings that the TUI presents to the user.
+// RuntimeState contains request settings and session snapshots that the TUI
+// presents to the user after an application command or agent run.
 type RuntimeState struct {
-	Model            llm.Model
-	Thinking         llm.ThinkingLevel
+	Model            DisplayModel
+	Thinking         DisplayThinking
 	APIKeyConfigured bool
+	Usage            DisplayUsage
+	// SessionChanged reports that the active session branch changed, so the
+	// TUI must discard its visible branch transcript.
+	SessionChanged bool
 }
 
 // RuntimeStateProvider reports settings changed by an application command.
@@ -38,10 +40,10 @@ type RuntimeStateProvider interface {
 type Options struct {
 	Input            io.Reader
 	Output           io.Writer
-	Model            llm.Model
-	Thinking         llm.ThinkingLevel
+	Model            DisplayModel
+	Thinking         DisplayThinking
 	APIKeyConfigured bool
-	Usage            llm.Usage
+	Usage            DisplayUsage
 	WorkingDirectory string
 }
 
@@ -111,7 +113,7 @@ type runRequest struct {
 }
 
 type runUpdate struct {
-	event    agent.AgentEvent
+	event    DisplayEvent
 	cancel   context.CancelFunc
 	err      error
 	output   string
@@ -158,7 +160,7 @@ func runOne(ctx context.Context, runner Runner, request runRequest) {
 	} else {
 		err = runner.Run(runCtx, request.prompt, func(
 			eventCtx context.Context,
-			event agent.AgentEvent,
+			event DisplayEvent,
 		) error {
 			if !sendRunUpdate(eventCtx, request.updates, runUpdate{event: event}) {
 				return eventCtx.Err()
@@ -167,11 +169,9 @@ func runOne(ctx context.Context, runner Runner, request runRequest) {
 		})
 	}
 	var state *RuntimeState
-	if request.command != nil {
-		if provider, ok := runner.(RuntimeStateProvider); ok {
-			snapshot := provider.RuntimeState()
-			state = &snapshot
-		}
+	if provider, ok := runner.(RuntimeStateProvider); ok {
+		snapshot := provider.RuntimeState()
+		state = &snapshot
 	}
 	var commands *[]SlashCommand
 	if commandRunner, ok := runner.(SlashCommandRunner); ok {

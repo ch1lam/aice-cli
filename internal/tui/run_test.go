@@ -7,9 +7,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/ch1lam/aice-cli/internal/agent"
-	"github.com/ch1lam/aice-cli/internal/llm"
 )
 
 func TestRunRejectsInvalidDependencies(t *testing.T) {
@@ -34,13 +31,13 @@ func TestRunRejectsInvalidDependencies(t *testing.T) {
 		{
 			name:   "nil input",
 			ctx:    t.Context(),
-			runner: runnerFunc(func(context.Context, string, agent.AgentEventSink) error { return nil }),
+			runner: runnerFunc(func(context.Context, string, DisplayEventSink) error { return nil }),
 			want:   "input is required",
 		},
 		{
 			name:   "nil output",
 			ctx:    t.Context(),
-			runner: runnerFunc(func(context.Context, string, agent.AgentEventSink) error { return nil }),
+			runner: runnerFunc(func(context.Context, string, DisplayEventSink) error { return nil }),
 			options: Options{
 				Input: emptyReader{},
 			},
@@ -49,7 +46,7 @@ func TestRunRejectsInvalidDependencies(t *testing.T) {
 		{
 			name:   "missing model",
 			ctx:    t.Context(),
-			runner: runnerFunc(func(context.Context, string, agent.AgentEventSink) error { return nil }),
+			runner: runnerFunc(func(context.Context, string, DisplayEventSink) error { return nil }),
 			options: Options{
 				Input:  emptyReader{},
 				Output: io.Discard,
@@ -59,11 +56,11 @@ func TestRunRejectsInvalidDependencies(t *testing.T) {
 		{
 			name:   "missing working directory",
 			ctx:    t.Context(),
-			runner: runnerFunc(func(context.Context, string, agent.AgentEventSink) error { return nil }),
+			runner: runnerFunc(func(context.Context, string, DisplayEventSink) error { return nil }),
 			options: Options{
 				Input:  emptyReader{},
 				Output: io.Discard,
-				Model:  llm.Model{ID: "test"},
+				Model:  DisplayModel{ID: "test"},
 			},
 			want: "working directory is required",
 		},
@@ -84,11 +81,11 @@ func TestRunRejectsInvalidDependencies(t *testing.T) {
 func TestServeRunsOwnsPerRunEventChannel(t *testing.T) {
 	t.Parallel()
 
-	runner := runnerFunc(func(ctx context.Context, prompt string, sink agent.AgentEventSink) error {
+	runner := runnerFunc(func(ctx context.Context, prompt string, sink DisplayEventSink) error {
 		if prompt != "inspect" {
 			return errors.New("unexpected prompt")
 		}
-		return sink(ctx, agent.AgentEvent{Type: agent.EventTypeAgentStart})
+		return sink(ctx, DisplayEvent{Kind: DisplayEventAgentEnd})
 	})
 	ctx, cancel := context.WithCancel(t.Context())
 	requests := make(chan runRequest)
@@ -103,8 +100,8 @@ func TestServeRunsOwnsPerRunEventChannel(t *testing.T) {
 		t.Fatal("first run update has no cancellation function")
 	}
 	event := receiveRunUpdate(t, updates)
-	if event.event.Type != agent.EventTypeAgentStart {
-		t.Errorf("event type = %q, want %q", event.event.Type, agent.EventTypeAgentStart)
+	if event.event.Kind != DisplayEventAgentEnd {
+		t.Errorf("event kind = %d, want %d", event.event.Kind, DisplayEventAgentEnd)
 	}
 	terminal := receiveRunUpdate(t, updates)
 	if !terminal.done || terminal.err != nil {
@@ -129,7 +126,7 @@ func TestServeRunsExecutesSlashCommandsThroughRunner(t *testing.T) {
 		runnerFunc: func(
 			context.Context,
 			string,
-			agent.AgentEventSink,
+			DisplayEventSink,
 		) error {
 			t.Fatal("slash command executed as an agent prompt")
 			return nil
@@ -144,8 +141,8 @@ func TestServeRunsExecutesSlashCommandsThroughRunner(t *testing.T) {
 			return "Session tree", nil
 		},
 		state: RuntimeState{
-			Model:    llm.Model{ID: "selected-model"},
-			Thinking: llm.ThinkingLevelHigh,
+			Model:    DisplayModel{ID: "selected-model"},
+			Thinking: DisplayThinkingHigh,
 		},
 	}
 	ctx, cancel := context.WithCancel(t.Context())
@@ -167,7 +164,7 @@ func TestServeRunsExecutesSlashCommandsThroughRunner(t *testing.T) {
 		terminal.output != "Session tree" ||
 		terminal.state == nil ||
 		terminal.state.Model.ID != "selected-model" ||
-		terminal.state.Thinking != llm.ThinkingLevelHigh ||
+		terminal.state.Thinking != DisplayThinkingHigh ||
 		terminal.commands == nil ||
 		len(*terminal.commands) != 1 ||
 		(*terminal.commands)[0].Name != "tree" {
@@ -192,7 +189,7 @@ func TestServeRunsRefreshesSlashCommandMenusAfterPrompt(t *testing.T) {
 		runnerFunc: func(
 			context.Context,
 			string,
-			agent.AgentEventSink,
+			DisplayEventSink,
 		) error {
 			return nil
 		},
@@ -242,12 +239,12 @@ func receiveRunUpdate(t *testing.T, updates <-chan runUpdate) runUpdate {
 	}
 }
 
-type runnerFunc func(context.Context, string, agent.AgentEventSink) error
+type runnerFunc func(context.Context, string, DisplayEventSink) error
 
 func (f runnerFunc) Run(
 	ctx context.Context,
 	prompt string,
-	sink agent.AgentEventSink,
+	sink DisplayEventSink,
 ) error {
 	return f(ctx, prompt, sink)
 }

@@ -7,6 +7,12 @@ import (
 	tea "charm.land/bubbletea/v2"
 )
 
+func (m model) settleCommand(forceBottom bool, command tea.Cmd) (model, tea.Cmd, bool) {
+	m.resizeLayout()
+	m.refreshViewport(forceBottom)
+	return m, command, true
+}
+
 func (m model) submit() (model, tea.Cmd, bool) {
 	if m.secretInput != nil {
 		return m.submitSecretInput()
@@ -35,9 +41,10 @@ func (m model) submit() (model, tea.Cmd, bool) {
 	m.running = true
 	m.assistantEntry = -1
 	m.status = "Starting response..."
-	m.resizeLayout()
-	m.refreshViewport(true)
-	return m, startRun(m.requests, m.controllerDone, prompt), true
+	return m.settleCommand(
+		true,
+		startRun(m.requests, m.controllerDone, prompt),
+	)
 }
 
 func (m model) submitSlashCommand(
@@ -70,9 +77,7 @@ func (m model) submitSlashCommand(
 		)
 		m.resetCommandInput()
 		m.status = "Slash commands listed"
-		m.resizeLayout()
-		m.refreshViewport(true)
-		return m, nil, true
+		return m.settleCommand(true, nil)
 	case "clear":
 		if request.Arguments != "" {
 			return m.commandUsageError(raw, command)
@@ -82,11 +87,9 @@ func (m model) submitSlashCommand(
 		m.activeProcessID = 0
 		m.resetCommandInput()
 		m.status = "Visible transcript cleared; Session history is unchanged"
-		m.resizeLayout()
-		m.refreshViewport(true)
 		// Clearing the transcript brings the welcome screen back, so resume
 		// its animated logo.
-		return m, m.welcomeAnimation.Start(), true
+		return m.settleCommand(true, m.welcomeAnimation.Start())
 	case "quit":
 		if request.Arguments != "" {
 			return m.commandUsageError(raw, command)
@@ -124,9 +127,7 @@ func (m model) startApplicationSlashCommand(
 		}
 		m.input.Placeholder = command.SecretPrompt + " (input hidden)"
 		m.status = command.SecretPrompt + " required; Esc cancels"
-		m.resizeLayout()
-		m.refreshViewport(true)
-		return m, m.input.Focus(), true
+		return m.settleCommand(true, m.input.Focus())
 	}
 	m.entries = append(m.entries, transcriptEntry{kind: entryUser, text: raw})
 	m.resetCommandInput()
@@ -134,9 +135,10 @@ func (m model) startApplicationSlashCommand(
 	m.running = true
 	m.assistantEntry = -1
 	m.status = "Running /" + command.Name + "..."
-	m.resizeLayout()
-	m.refreshViewport(true)
-	return m, startSlashCommand(m.requests, m.controllerDone, request), true
+	return m.settleCommand(
+		true,
+		startSlashCommand(m.requests, m.controllerDone, request),
+	)
 }
 
 func (m model) openCommandMenu(
@@ -159,9 +161,7 @@ func (m model) openCommandMenu(
 	}
 	m.input.Blur()
 	m.status = command.Menu.Title + "; Esc cancels"
-	m.resizeLayout()
-	m.refreshViewport(false)
-	return m, nil, true
+	return m.settleCommand(false, nil)
 }
 
 func (m model) selectCommandMenuOption() (model, tea.Cmd, bool) {
@@ -183,9 +183,7 @@ func (m model) selectCommandMenuOption() (model, tea.Cmd, bool) {
 			},
 		)
 		m.status = option.Menu.Title + "; Esc goes back"
-		m.resizeLayout()
-		m.refreshViewport(false)
-		return m, nil, true
+		return m.settleCommand(false, nil)
 	}
 
 	state := *m.commandMenu
@@ -206,18 +204,14 @@ func (m model) backOrCancelCommandMenu() (model, tea.Cmd, bool) {
 		m.commandMenu.frames = m.commandMenu.frames[:len(m.commandMenu.frames)-1]
 		frame := m.commandMenu.frames[len(m.commandMenu.frames)-1]
 		m.status = frame.menu.Title + "; Esc cancels"
-		m.resizeLayout()
-		m.refreshViewport(false)
-		return m, nil, true
+		return m.settleCommand(false, nil)
 	}
 
 	name := m.commandMenu.command.Name
 	m.commandMenu = nil
 	m.resetCommandInput()
 	m.status = "/" + name + " selection cancelled"
-	m.resizeLayout()
-	m.refreshViewport(false)
-	return m, m.input.Focus(), true
+	return m.settleCommand(false, m.input.Focus())
 }
 
 func (m *model) moveCommandMenuSelection(delta int) {
@@ -263,9 +257,10 @@ func (m model) submitSecretInput() (model, tea.Cmd, bool) {
 	m.running = true
 	m.assistantEntry = -1
 	m.status = "Saving credential..."
-	m.resizeLayout()
-	m.refreshViewport(true)
-	return m, startSlashCommand(m.requests, m.controllerDone, request), true
+	return m.settleCommand(
+		true,
+		startSlashCommand(m.requests, m.controllerDone, request),
+	)
 }
 
 func (m model) cancelSecretInput() (model, tea.Cmd, bool) {
@@ -276,9 +271,7 @@ func (m model) cancelSecretInput() (model, tea.Cmd, bool) {
 		text: prompt + " entry cancelled",
 	})
 	m.status = prompt + " entry cancelled; run /login to try again"
-	m.resizeLayout()
-	m.refreshViewport(true)
-	return m, m.input.Focus(), true
+	return m.settleCommand(true, m.input.Focus())
 }
 
 func (m model) commandUsageError(
@@ -302,9 +295,7 @@ func (m model) commandError(
 	)
 	m.resetCommandInput()
 	m.status = message
-	m.resizeLayout()
-	m.refreshViewport(true)
-	return m, nil, true
+	return m.settleCommand(true, nil)
 }
 
 func (m *model) resetCommandInput() {

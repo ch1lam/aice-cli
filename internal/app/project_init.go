@@ -36,7 +36,7 @@ func (s *interactiveSession) runInitCommand(ctx context.Context) (string, error)
 		return "", fmt.Errorf("app: interactive Session is required")
 	}
 	if s.loop == nil {
-		return "", credentialNotConfiguredError(s.configuration)
+		return "", credentialNotConfiguredError(s.providers, s.configuration)
 	}
 	if s.workspace == nil {
 		return "", fmt.Errorf("app: workspace is required")
@@ -74,7 +74,7 @@ func (s *interactiveSession) runInitCommand(ctx context.Context) (string, error)
 			s.workspace.PhysicalPath(),
 		)
 	}
-	path := filepath.Join(s.workspace.PhysicalPath(), "AGENTS.md")
+	path := filepath.Join(s.workspace.PhysicalPath(), trust.AgentsFile)
 	if existedBefore {
 		return fmt.Sprintf(
 			"Updated AGENTS.md at %s (%d bytes). It is loaded on the next restart.",
@@ -103,7 +103,7 @@ func workspaceAgentsFile(workspace *tool.Workspace) (exists bool, size int64, er
 		return false, 0, fmt.Errorf("app: open workspace root: %w", err)
 	}
 	defer root.Close()
-	info, err := root.Stat("AGENTS.md")
+	info, err := root.Stat(trust.AgentsFile)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return false, 0, nil

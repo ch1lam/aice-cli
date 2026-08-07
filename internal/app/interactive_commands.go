@@ -9,8 +9,8 @@ import (
 
 	"github.com/ch1lam/aice-cli/internal/config"
 	"github.com/ch1lam/aice-cli/internal/llm"
+	"github.com/ch1lam/aice-cli/internal/provider"
 	"github.com/ch1lam/aice-cli/internal/provider/deepseek"
-	"github.com/ch1lam/aice-cli/internal/provider/opencode"
 	"github.com/ch1lam/aice-cli/internal/session"
 	"github.com/ch1lam/aice-cli/internal/trust"
 	"github.com/ch1lam/aice-cli/internal/tui"
@@ -75,7 +75,7 @@ func (s *interactiveSession) SlashCommands() []tui.SlashCommand {
 func (s *interactiveSession) loginProviderMenu() *tui.SlashCommandMenu {
 	return &tui.SlashCommandMenu{
 		Title:   "Select provider",
-		Options: providerOptions(s.configuration.Provider),
+		Options: providerOptions(s.providers, s.configuration.Provider),
 	}
 }
 
@@ -106,30 +106,30 @@ func trustChoiceDescription(choice trust.Choice) string {
 func (s *interactiveSession) providerMenu() *tui.SlashCommandMenu {
 	return &tui.SlashCommandMenu{
 		Title:   "Select provider",
-		Options: providerOptions(s.configuration.Provider),
+		Options: providerOptions(s.providers, s.configuration.Provider),
 	}
 }
 
-func providerOptions(current string) []tui.SlashCommandOption {
-	return []tui.SlashCommandOption{
-		{
-			Label:       "DeepSeek",
-			Description: "DeepSeek API (V4 Flash via OpenAI Responses, V4 Pro via Anthropic Messages)",
-			Arguments:   string(deepseek.ProviderID),
-			Current:     current == string(deepseek.ProviderID),
-		},
-		{
-			Label:       "OpenCode Go",
-			Description: "OpenCode Go subscription (24 models via OpenAI Chat Completions)",
-			Arguments:   string(opencode.ProviderID),
-			Current:     current == string(opencode.ProviderID),
-		},
+func providerOptions(
+	providers []provider.Provider,
+	current string,
+) []tui.SlashCommandOption {
+	options := make([]tui.SlashCommandOption, 0, len(providers))
+	for _, candidate := range providers {
+		providerID := string(candidate.ProviderID())
+		options = append(options, tui.SlashCommandOption{
+			Label:       candidate.Label(),
+			Description: candidate.MenuDescription(),
+			Arguments:   providerID,
+			Current:     current == providerID,
+		})
 	}
+	return options
 }
 
 func (s *interactiveSession) modelMenu() *tui.SlashCommandMenu {
 	provider := s.activeProvider()
-	models := modelsForProvider(provider)
+	models := modelsForProvider(s.providers, provider)
 	options := make([]tui.SlashCommandOption, 0, len(models))
 	for _, model := range models {
 		options = append(options, tui.SlashCommandOption{
@@ -161,13 +161,16 @@ func (s *interactiveSession) activeProvider() string {
 // providerModel resolves the model the current Session should run after a
 // provider change, preferring the configured model when it belongs to provider
 // and falling back to that provider's default.
-func providerModel(provider, modelID string) llm.Model {
+func providerModel(
+	providers []provider.Provider,
+	providerID, modelID string,
+) llm.Model {
 	if modelID != "" {
-		if candidate, ok := modelForProvider(provider, modelID); ok {
+		if candidate, ok := modelForProvider(providers, providerID, modelID); ok {
 			return candidate
 		}
 	}
-	return providerDefaultModel(provider)
+	return providerDefaultModel(providers, providerID)
 }
 
 func (s *interactiveSession) thinkingMenu() *tui.SlashCommandMenu {
@@ -326,11 +329,15 @@ func (s *interactiveSession) RunSlashCommand(
 			return "", err
 		}
 		output := new(bytes.Buffer)
-		if err := checkoutSessionStore(ctx, s.store, entry, output); err != nil {
+		changed, err := checkoutSessionStore(ctx, s.store, entry, output)
+		if err != nil {
 			return "", err
 		}
 		if err := s.reloadHistory(); err != nil {
 			return "", err
+		}
+		if changed {
+			s.sessionChanged = true
 		}
 		return output.String(), nil
 	case "compact":
@@ -386,11 +393,11 @@ func (s *interactiveSession) RunSlashCommand(
 		if err != nil {
 			return "", err
 		}
-		if !supportedProvider(value) {
+		if !supportedProvider(s.providers, value) {
 			return "", fmt.Errorf(
 				"app: unsupported provider %q; available: %s",
 				value,
-				strings.Join(knownProviders(), ", "),
+				strings.Join(knownProviders(s.providers), ", "),
 			)
 		}
 		configuration := s.configuration
@@ -404,19 +411,19 @@ func (s *interactiveSession) RunSlashCommand(
 		}
 		s.configuration = configuration
 		s.loop = loop
-		s.model = providerModel(value, configuration.Model)
+		s.model = providerModel(s.providers, value, configuration.Model)
 		return savedSettingMessage("provider", value), nil
 	case "model":
 		value, err := slashCommandSettingValue(request)
 		if err != nil {
 			return "", err
 		}
-		model, exists := modelForProvider(s.activeProvider(), value)
+		model, exists := modelForProvider(s.providers, s.activeProvider(), value)
 		if !exists {
 			return "", fmt.Errorf(
 				"app: unsupported model %q; available: %s",
 				value,
-				strings.Join(modelIDsForProvider(s.activeProvider()), ", "),
+				strings.Join(modelIDsForProvider(s.providers, s.activeProvider()), ", "),
 			)
 		}
 		if err := s.saveSetting(config.SettingModel, value); err != nil {
@@ -431,7 +438,7 @@ func (s *interactiveSession) RunSlashCommand(
 			return "", err
 		}
 		level := llm.ThinkingLevel(value)
-		_, options, err := resolveModelSettings(config.Config{
+		_, options, err := resolveModelSettings(s.providers, config.Config{
 			Provider: s.configuration.Provider,
 			Model:    s.model.ID,
 			Thinking: level,
@@ -454,11 +461,24 @@ func (s *interactiveSession) RuntimeState() tui.RuntimeState {
 	if s == nil {
 		return tui.RuntimeState{}
 	}
-	return tui.RuntimeState{
-		Model:            s.model,
-		Thinking:         s.options.Thinking,
-		APIKeyConfigured: providerConfigured(s.configuration),
+	state := tui.RuntimeState{
+		Model:            tui.DisplayModel{ID: s.model.ID},
+		Thinking:         tui.DisplayThinking(s.options.Thinking),
+		APIKeyConfigured: providerConfigured(s.providers, s.configuration),
+		Usage:            s.usageSnapshot(),
+		SessionChanged:   s.sessionChanged,
 	}
+	s.sessionChanged = false
+	return state
+}
+
+func (s *interactiveSession) usageSnapshot() tui.DisplayUsage {
+	if s.store != nil {
+		if snapshot, err := s.store.Snapshot(); err == nil {
+			s.totalUsage = session.TotalUsage(snapshot)
+		}
+	}
+	return newDisplayUsage(s.totalUsage)
 }
 
 func (s *interactiveSession) login(
@@ -479,33 +499,31 @@ func (s *interactiveSession) login(
 	if len(fields) == 1 {
 		provider = fields[0]
 	}
-	if !supportedProvider(provider) {
+	if !supportedProvider(s.providers, provider) {
 		return "", fmt.Errorf(
 			"app: unsupported provider %q; available: %s",
 			provider,
-			strings.Join(knownProviders(), ", "),
+			strings.Join(knownProviders(s.providers), ", "),
 		)
 	}
 
 	apiKey := strings.TrimSpace(request.Secret)
 	if apiKey == "" {
-		return "", fmt.Errorf("app: %s API key is required", providerLabel(provider))
+		return "", fmt.Errorf(
+			"app: %s API key is required",
+			providerLabel(s.providers, provider),
+		)
 	}
 	if strings.ContainsAny(apiKey, "\r\n") {
 		return "", fmt.Errorf(
 			"app: %s API key must be one line",
-			providerLabel(provider),
+			providerLabel(s.providers, provider),
 		)
 	}
 
 	configuration := s.configuration
 	configuration.Provider = provider
-	switch provider {
-	case string(opencode.ProviderID):
-		configuration.OpenCodeAPIKey = apiKey
-	default:
-		configuration.DeepSeekAPIKey = apiKey
-	}
+	findProvider(s.providers, provider).ApplyAPIKey(&configuration, apiKey)
 	loop, err := s.application.newAgentLoop(configuration, s.tools)
 	if err != nil {
 		return "", err
@@ -514,15 +532,15 @@ func (s *interactiveSession) login(
 	if err != nil {
 		return "", fmt.Errorf(
 			"app: save %s API key: %w",
-			providerLabel(provider),
+			providerLabel(s.providers, provider),
 			err,
 		)
 	}
 
 	s.configuration = configuration
 	s.loop = loop
-	s.model = providerModel(provider, configuration.Model)
-	return "Saved " + providerLabel(provider) + " API key to " + path +
+	s.model = providerModel(s.providers, provider, configuration.Model)
+	return "Saved " + providerLabel(s.providers, provider) + " API key to " + path +
 		". AICE is ready.", nil
 }
 
@@ -532,7 +550,7 @@ func (s *interactiveSession) settingsInformation() string {
 		thinking = "default"
 	}
 	apiKey := "not configured"
-	if providerConfigured(s.configuration) {
+	if providerConfigured(s.providers, s.configuration) {
 		apiKey = "configured"
 	}
 	lines := []string{

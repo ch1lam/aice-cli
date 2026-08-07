@@ -61,14 +61,10 @@ func prepareSession(
 		return nil, nil, llm.Usage{}, err
 	}
 
-	path, err := filepath.Abs(requestedPath)
+	path, err := resolveSessionPath(requestedPath)
 	if err != nil {
-		return nil, nil, llm.Usage{}, fmt.Errorf(
-			"app: resolve session path: %w",
-			err,
-		)
+		return nil, nil, llm.Usage{}, err
 	}
-	path = filepath.Clean(path)
 
 	id, err := session.NewID()
 	if err != nil {
@@ -79,6 +75,14 @@ func prepareSession(
 	}
 	store, err = createSession(ctx, path, id, workspace.Path())
 	return store, nil, llm.Usage{}, err
+}
+
+func resolveSessionPath(requestedPath string) (string, error) {
+	path, err := filepath.Abs(requestedPath)
+	if err != nil {
+		return "", fmt.Errorf("app: resolve session path: %w", err)
+	}
+	return filepath.Clean(path), nil
 }
 
 func createSession(
@@ -106,14 +110,10 @@ func openExistingSession(
 	if workspace == nil {
 		return nil, session.Snapshot{}, fmt.Errorf("app: workspace is required")
 	}
-	path, err := filepath.Abs(requestedPath)
+	path, err := resolveSessionPath(requestedPath)
 	if err != nil {
-		return nil, session.Snapshot{}, fmt.Errorf(
-			"app: resolve session path: %w",
-			err,
-		)
+		return nil, session.Snapshot{}, err
 	}
-	path = filepath.Clean(path)
 	store, err := session.Open(ctx, path)
 	if err != nil {
 		return nil, session.Snapshot{}, fmt.Errorf("app: open session: %w", err)

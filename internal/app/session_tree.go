@@ -135,7 +135,8 @@ func (a *application) CheckoutSession(
 		returnErr = errors.Join(returnErr, store.Close())
 	}()
 
-	return checkoutSessionStore(ctx, store, request.Entry, output)
+	_, err = checkoutSessionStore(ctx, store, request.Entry, output)
+	return err
 }
 
 func checkoutSessionStore(
@@ -143,20 +144,20 @@ func checkoutSessionStore(
 	store *session.Store,
 	entry string,
 	output io.Writer,
-) error {
+) (bool, error) {
 	if store == nil {
-		return fmt.Errorf("app: session store is required")
+		return false, fmt.Errorf("app: session store is required")
 	}
 	snapshot, err := store.Snapshot()
 	if err != nil {
-		return fmt.Errorf("app: read session: %w", err)
+		return false, fmt.Errorf("app: read session: %w", err)
 	}
 	targetID := strings.TrimSpace(entry)
 	if targetID == "root" {
 		targetID = ""
 	} else {
 		if _, err := session.Branch(snapshot, targetID); err != nil {
-			return fmt.Errorf("app: find session entry %q: %w", targetID, err)
+			return false, fmt.Errorf("app: find session entry %q: %w", targetID, err)
 		}
 	}
 	if targetID == snapshot.LeafID {
@@ -165,13 +166,13 @@ func checkoutSessionStore(
 			"Session is already at %s.\n",
 			sessionEntryName(targetID),
 		); err != nil {
-			return fmt.Errorf("app: write checkout result: %w", err)
+			return false, fmt.Errorf("app: write checkout result: %w", err)
 		}
-		return nil
+		return false, nil
 	}
 	leafID, err := session.NewID()
 	if err != nil {
-		return fmt.Errorf("app: generate leaf record id: %w", err)
+		return false, fmt.Errorf("app: generate leaf record id: %w", err)
 	}
 	leaf, err := session.NewLeaf(
 		leafID,
@@ -180,19 +181,19 @@ func checkoutSessionStore(
 		time.Now().UnixMilli(),
 	)
 	if err != nil {
-		return fmt.Errorf("app: create leaf record: %w", err)
+		return false, fmt.Errorf("app: create leaf record: %w", err)
 	}
 	if err := store.AppendLeaf(ctx, leaf); err != nil {
-		return fmt.Errorf("app: append leaf record: %w", err)
+		return false, fmt.Errorf("app: append leaf record: %w", err)
 	}
 	if _, err := fmt.Fprintf(
 		output,
 		"Checked out %s. The next turn will branch from this point.\n",
 		sessionEntryName(targetID),
 	); err != nil {
-		return fmt.Errorf("app: write checkout result: %w", err)
+		return false, fmt.Errorf("app: write checkout result: %w", err)
 	}
-	return nil
+	return true, nil
 }
 
 func writeSessionChildren(
@@ -254,7 +255,7 @@ func sessionNodeDescription(
 		if !ok {
 			return ""
 		}
-		return quoteSessionText(visibleContentText(user.Content))
+		return quoteSessionText(visibleText(user.Content, "\n"))
 	case session.RecordTypeCompaction:
 		compaction, exists := compactions[node.ID]
 		if !exists {
@@ -279,14 +280,18 @@ func quoteSessionText(text string) string {
 	return fmt.Sprintf("%q", text)
 }
 
-func visibleContentText(content []llm.ContentPart) string {
+// visibleText joins the non-blank text parts in content with separator.
+func visibleText(content []llm.ContentPart, separator string) string {
 	parts := make([]string, 0, len(content))
 	for _, part := range content {
-		if part.Type == llm.ContentTypeText && strings.TrimSpace(part.Text) != "" {
-			parts = append(parts, part.Text)
+		if part.Type != llm.ContentTypeText {
+			continue
+		}
+		if text := strings.TrimSpace(part.Text); text != "" {
+			parts = append(parts, text)
 		}
 	}
-	return strings.Join(parts, "\n")
+	return strings.Join(parts, separator)
 }
 
 func sessionEntryName(id string) string {

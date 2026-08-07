@@ -5,8 +5,6 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
-
-	"github.com/ch1lam/aice-cli/internal/llm"
 )
 
 func TestAppendPromptHistoryDeduplicatesConsecutiveEntries(t *testing.T) {
@@ -416,6 +414,6 @@ func submitPrompt(t *testing.T, current model, prompt string) model {
 	if updated.running || !updated.input.Focused() {
 		t.Fatalf("submit of %q did not leave an idle focused composer", prompt)
 	}
-	updated.currentModel = llm.Model{ID: "test", API: "test", Provider: "test"}
+	updated.currentModel = DisplayModel{ID: "test"}
 	return updated
 }

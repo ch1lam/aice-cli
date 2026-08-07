@@ -17,11 +17,6 @@ import (
 const (
 	maxProjectPromptBytes = 64 * 1024
 
-	// Forward-slash names work on every platform; os.Root and os.Open accept
-	// them on Windows.
-	projectSystemPromptFile    = ".aice/SYSTEM.md"
-	projectAppendPromptFile    = ".aice/APPEND_SYSTEM.md"
-	projectAgentsFile          = "AGENTS.md"
 	globalSystemPromptFile     = "SYSTEM.md"
 	globalAppendPromptFile     = "APPEND_SYSTEM.md"
 	projectAppendBoundaryLabel = "Project instructions from %s:\n"
@@ -44,7 +39,7 @@ func assembleSystemPrompt(
 	if err != nil {
 		return "", err
 	}
-	agentsContent, agentsPath, _, err := readProjectPromptWithPath(workspace, projectAgentsFile, trusted)
+	agentsContent, agentsPath, _, err := readProjectPromptWithPath(workspace, trust.AgentsFile, trusted)
 	if err != nil {
 		return "", err
 	}
@@ -68,7 +63,7 @@ func resolvePromptBase(
 	configuration config.Config,
 	trusted bool,
 ) (string, error) {
-	content, ok, err := readProjectPrompt(workspace, projectSystemPromptFile, trusted)
+	content, ok, err := readProjectPrompt(workspace, trust.SystemFile, trusted)
 	if err != nil {
 		return "", err
 	}
@@ -95,7 +90,7 @@ func resolvePromptAppend(
 	configuration config.Config,
 	trusted bool,
 ) (string, string, error) {
-	content, path, ok, err := readProjectPromptWithPath(workspace, projectAppendPromptFile, trusted)
+	content, path, ok, err := readProjectPromptWithPath(workspace, trust.AppendSystemFile, trusted)
 	if err != nil {
 		return "", "", err
 	}

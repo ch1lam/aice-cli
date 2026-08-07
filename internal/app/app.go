@@ -16,6 +16,7 @@ import (
 	"github.com/ch1lam/aice-cli/internal/config"
 	"github.com/ch1lam/aice-cli/internal/deps"
 	"github.com/ch1lam/aice-cli/internal/llm"
+	"github.com/ch1lam/aice-cli/internal/provider"
 	"github.com/ch1lam/aice-cli/internal/provider/deepseek"
 	"github.com/ch1lam/aice-cli/internal/provider/opencode"
 	"github.com/ch1lam/aice-cli/internal/session"
@@ -35,13 +36,27 @@ const (
 
 // NewCommand assembles the production AICE command tree.
 func NewCommand() (*cobra.Command, error) {
+	providers := defaultProviders()
 	return newCommand(dependencies{
 		loadConfig:  config.Load,
 		saveSetting: config.SaveSetting,
-		saveAPIKey:  defaultSaveAPIKey,
-		newModel:    modelForConfiguration,
-		runTUI:      tui.Run,
+		saveAPIKey: func(providerID, apiKey string) (string, error) {
+			return defaultSaveAPIKey(providers, providerID, apiKey)
+		},
+		newModel: func(configuration config.Config) (agent.Model, error) {
+			return modelForConfiguration(providers, configuration)
+		},
+		runTUI:    tui.Run,
+		providers: providers,
 	})
+}
+
+// defaultProviders returns the built-in provider registry in menu order.
+func defaultProviders() []provider.Provider {
+	return []provider.Provider{
+		&deepseek.Provider{},
+		&opencode.Provider{},
+	}
 }
 
 type dependencies struct {
@@ -52,6 +67,7 @@ type dependencies struct {
 	runTUI                     func(context.Context, tui.Runner, tui.Options) error
 	runTrustTUI                func(context.Context, tui.TrustPromptOptions) (trust.Choice, error)
 	compactionKeepRecentTokens int64
+	providers                  []provider.Provider
 }
 
 func newCommand(dependencies dependencies) (*cobra.Command, error) {
@@ -62,7 +78,13 @@ func newCommand(dependencies dependencies) (*cobra.Command, error) {
 		return nil, fmt.Errorf("app: model factory is required")
 	}
 	if dependencies.saveAPIKey == nil {
-		dependencies.saveAPIKey = defaultSaveAPIKey
+		providers := dependencies.providers
+		dependencies.saveAPIKey = func(providerID, apiKey string) (string, error) {
+			return defaultSaveAPIKey(providers, providerID, apiKey)
+		}
+	}
+	if dependencies.providers == nil {
+		dependencies.providers = defaultProviders()
 	}
 	if dependencies.runTUI == nil {
 		dependencies.runTUI = tui.Run
@@ -205,7 +227,10 @@ func (a *application) Print(
 		return err
 	}
 	if environment.loop == nil {
-		return credentialNotConfiguredError(environment.configuration)
+		return credentialNotConfiguredError(
+			a.dependencies.providers,
+			environment.configuration,
+		)
 	}
 	store, history, _, err := prepareSession(
 		ctx,
@@ -307,14 +332,19 @@ func (a *application) Interactive(
 		workspacePath: environment.workspace.PhysicalPath(),
 		trustDecision: environment.trust.Decision,
 		trustSource:   environment.trust.Source,
+		providers:     a.dependencies.providers,
+		totalUsage:    usage,
 	}
 	runErr := a.dependencies.runTUI(ctx, runner, tui.Options{
-		Input:            request.Input,
-		Output:           request.Output,
-		Model:            environment.model,
-		Thinking:         environment.options.Thinking,
-		APIKeyConfigured: providerConfigured(environment.configuration),
-		Usage:            usage,
+		Input:    request.Input,
+		Output:   request.Output,
+		Model:    tui.DisplayModel{ID: environment.model.ID},
+		Thinking: tui.DisplayThinking(environment.options.Thinking),
+		APIKeyConfigured: providerConfigured(
+			a.dependencies.providers,
+			environment.configuration,
+		),
+		Usage:            newDisplayUsage(usage),
 		WorkingDirectory: environment.workspace.Path(),
 	})
 	closeErr := store.Close()
@@ -379,7 +409,7 @@ func (a *application) newRunEnvironment(
 		return nil, err
 	}
 	var loop *agent.Loop
-	if providerConfigured(configured.configuration) {
+	if providerConfigured(a.dependencies.providers, configured.configuration) {
 		loop, err = a.newAgentLoop(configured.configuration, tools)
 		if err != nil {
 			return nil, err
@@ -405,7 +435,10 @@ func (a *application) loadConfiguredModel() (configuredModel, error) {
 			err,
 		)
 	}
-	selectedModel, options, err := resolveModelSettings(configuration)
+	selectedModel, options, err := resolveModelSettings(
+		a.dependencies.providers,
+		configuration,
+	)
 	if err != nil {
 		return configuredModel{}, err
 	}
@@ -423,8 +456,9 @@ func (a *application) newConfiguredModel() (configuredModel, error) {
 	if err != nil {
 		return configuredModel{}, err
 	}
-	if !providerConfigured(configured.configuration) {
+	if !providerConfigured(a.dependencies.providers, configured.configuration) {
 		return configuredModel{}, credentialNotConfiguredError(
+			a.dependencies.providers,
 			configured.configuration,
 		)
 	}
@@ -440,8 +474,11 @@ func (a *application) newAgentLoop(
 	configuration config.Config,
 	tools []agent.Tool,
 ) (*agent.Loop, error) {
-	if !providerConfigured(configuration) {
-		return nil, credentialNotConfiguredError(configuration)
+	if !providerConfigured(a.dependencies.providers, configuration) {
+		return nil, credentialNotConfiguredError(
+			a.dependencies.providers,
+			configuration,
+		)
 	}
 	service, err := a.dependencies.newModel(configuration)
 	if err != nil {
@@ -454,122 +491,121 @@ func (a *application) newAgentLoop(
 	return loop, nil
 }
 
-func credentialNotConfiguredError(configuration config.Config) error {
-	switch configuration.Provider {
-	case string(opencode.ProviderID):
-		return fmt.Errorf(
-			"OpenCode Go API key is not configured; run /login in interactive "+
-				"mode or set %s",
-			config.EnvOpenCodeAPIKey,
-		)
-	case string(deepseek.ProviderID):
-		return fmt.Errorf(
-			"DeepSeek API key is not configured; run /login in interactive mode "+
-				"or set %s",
-			config.EnvDeepSeekAPIKey,
-		)
-	default:
-		return fmt.Errorf(
-			"API key for provider %q is not configured; run /login in "+
-				"interactive mode",
-			configuration.Provider,
-		)
+// findProvider returns the registered provider matching an identifier, or nil.
+func findProvider(providers []provider.Provider, providerID string) provider.Provider {
+	for _, candidate := range providers {
+		if string(candidate.ProviderID()) == providerID {
+			return candidate
+		}
 	}
+	return nil
+}
+
+func credentialNotConfiguredError(
+	providers []provider.Provider,
+	configuration config.Config,
+) error {
+	if candidate := findProvider(providers, configuration.Provider); candidate != nil {
+		return candidate.CredentialNotConfiguredError()
+	}
+	return fmt.Errorf(
+		"API key for provider %q is not configured; run /login in "+
+			"interactive mode",
+		configuration.Provider,
+	)
 }
 
 // knownProviders returns the provider identifiers AICE supports.
-func knownProviders() []string {
-	return []string{
-		string(deepseek.ProviderID),
-		string(opencode.ProviderID),
+func knownProviders(providers []provider.Provider) []string {
+	ids := make([]string, 0, len(providers))
+	for _, candidate := range providers {
+		ids = append(ids, string(candidate.ProviderID()))
 	}
+	return ids
 }
 
 // supportedProvider reports whether provider is one AICE can serve.
-func supportedProvider(provider string) bool {
-	return provider == string(deepseek.ProviderID) ||
-		provider == string(opencode.ProviderID)
+func supportedProvider(providers []provider.Provider, providerID string) bool {
+	return findProvider(providers, providerID) != nil
 }
 
 // providerConfigured reports whether the selected provider has a credential.
-func providerConfigured(configuration config.Config) bool {
-	switch configuration.Provider {
-	case string(opencode.ProviderID):
-		return configuration.OpenCodeAPIKey != ""
-	case string(deepseek.ProviderID):
-		return configuration.DeepSeekAPIKey != ""
-	}
-	return false
+func providerConfigured(
+	providers []provider.Provider,
+	configuration config.Config,
+) bool {
+	candidate := findProvider(providers, configuration.Provider)
+	return candidate != nil && candidate.Configured(configuration)
 }
 
 // providerLabel returns the display name for a provider identifier.
-func providerLabel(provider string) string {
-	switch provider {
-	case string(opencode.ProviderID):
-		return "OpenCode Go"
-	case string(deepseek.ProviderID):
-		return "DeepSeek"
+func providerLabel(providers []provider.Provider, providerID string) string {
+	if candidate := findProvider(providers, providerID); candidate != nil {
+		return candidate.Label()
 	}
-	return provider
+	return providerID
 }
 
 // modelForConfiguration constructs the model service for the provider selected
 // in the configuration.
-func modelForConfiguration(configuration config.Config) (agent.Model, error) {
-	switch configuration.Provider {
-	case string(opencode.ProviderID):
-		return opencode.New(opencode.Config{
-			APIKey:  configuration.OpenCodeAPIKey,
-			BaseURL: configuration.OpenCodeBaseURL,
-		})
-	case string(deepseek.ProviderID), "":
-		return deepseek.New(deepseek.Config{
-			APIKey:  configuration.DeepSeekAPIKey,
-			BaseURL: configuration.DeepSeekBaseURL,
-		})
-	default:
+func modelForConfiguration(
+	providers []provider.Provider,
+	configuration config.Config,
+) (agent.Model, error) {
+	providerID := configuration.Provider
+	if providerID == "" {
+		providerID = string(deepseek.ProviderID)
+	}
+	candidate := findProvider(providers, providerID)
+	if candidate == nil {
 		return nil, fmt.Errorf("app: unsupported provider %q", configuration.Provider)
 	}
+	return candidate.New(configuration)
 }
 
 // defaultSaveAPIKey stores a credential in the auth file of the provider it
 // belongs to, preserving any other provider credentials already present.
-func defaultSaveAPIKey(provider, apiKey string) (string, error) {
-	switch provider {
-	case string(opencode.ProviderID):
-		return config.SaveOpenCodeAPIKey(apiKey)
-	case string(deepseek.ProviderID):
-		return config.SaveDeepSeekAPIKey(apiKey)
-	default:
-		return "", fmt.Errorf("app: unsupported provider %q", provider)
+func defaultSaveAPIKey(
+	providers []provider.Provider,
+	providerID, apiKey string,
+) (string, error) {
+	candidate := findProvider(providers, providerID)
+	if candidate == nil {
+		return "", fmt.Errorf("app: unsupported provider %q", providerID)
 	}
+	return candidate.SaveAPIKey(apiKey)
 }
 
 // modelsForProvider returns the model catalog for a provider. Unknown providers
 // fall back to DeepSeek so callers that already validated the provider can rely
 // on a non-empty catalog.
-func modelsForProvider(provider string) []llm.Model {
-	switch provider {
-	case string(opencode.ProviderID):
-		return opencode.Models()
-	default:
-		return deepseek.Models()
+func modelsForProvider(providers []provider.Provider, providerID string) []llm.Model {
+	if candidate := findProvider(providers, providerID); candidate != nil {
+		return candidate.Models()
 	}
+	if deepSeek := findProvider(providers, string(deepseek.ProviderID)); deepSeek != nil {
+		return deepSeek.Models()
+	}
+	return nil
 }
 
 // providerDefaultModel returns the default model for a provider.
-func providerDefaultModel(provider string) llm.Model {
-	switch provider {
-	case string(opencode.ProviderID):
-		return opencode.DefaultModel()
-	default:
-		return deepseek.DefaultModel()
+func providerDefaultModel(providers []provider.Provider, providerID string) llm.Model {
+	if candidate := findProvider(providers, providerID); candidate != nil {
+		return candidate.DefaultModel()
 	}
+	if deepSeek := findProvider(providers, string(deepseek.ProviderID)); deepSeek != nil {
+		return deepSeek.DefaultModel()
+	}
+	return llm.Model{}
 }
 
 // modelForProvider looks a model ID up in one provider's catalog.
-func modelForProvider(provider, id string) (llm.Model, bool) {
-	for _, model := range modelsForProvider(provider) {
+func modelForProvider(
+	providers []provider.Provider,
+	providerID, id string,
+) (llm.Model, bool) {
+	for _, model := range modelsForProvider(providers, providerID) {
 		if model.ID == id {
 			return model, true
 		}
@@ -578,8 +614,8 @@ func modelForProvider(provider, id string) (llm.Model, bool) {
 }
 
 // modelIDsForProvider returns the model IDs of one provider's catalog.
-func modelIDsForProvider(provider string) []string {
-	models := modelsForProvider(provider)
+func modelIDsForProvider(providers []provider.Provider, providerID string) []string {
+	models := modelsForProvider(providers, providerID)
 	ids := make([]string, len(models))
 	for index, model := range models {
 		ids[index] = model.ID
@@ -588,6 +624,7 @@ func modelIDsForProvider(provider string) []string {
 }
 
 func resolveModelSettings(
+	providers []provider.Provider,
 	configuration config.Config,
 ) (llm.Model, llm.StreamOptions, error) {
 	switch configuration.Thinking {
@@ -606,23 +643,23 @@ func resolveModelSettings(
 		)
 	}
 
-	provider := configuration.Provider
-	if provider == "" {
-		provider = string(deepseek.ProviderID)
+	providerID := configuration.Provider
+	if providerID == "" {
+		providerID = string(deepseek.ProviderID)
 	}
-	if !supportedProvider(provider) {
+	if !supportedProvider(providers, providerID) {
 		return llm.Model{}, llm.StreamOptions{}, fmt.Errorf(
 			"app: unsupported provider %q; available: %s",
-			provider,
-			strings.Join(knownProviders(), ", "),
+			providerID,
+			strings.Join(knownProviders(providers), ", "),
 		)
 	}
 
 	modelID := configuration.Model
 	if modelID == "" {
-		modelID = providerDefaultModel(provider).ID
+		modelID = providerDefaultModel(providers, providerID).ID
 	}
-	for _, model := range modelsForProvider(provider) {
+	for _, model := range modelsForProvider(providers, providerID) {
 		if model.ID != modelID {
 			continue
 		}
@@ -641,34 +678,37 @@ func resolveModelSettings(
 	return llm.Model{}, llm.StreamOptions{}, fmt.Errorf(
 		"app: unsupported model %q for provider %q",
 		modelID,
-		provider,
+		providerID,
 	)
 }
 
 type interactiveSession struct {
-	application   *application
-	loop          *agent.Loop
-	store         *session.Store
-	history       []llm.AgentMessage
-	model         llm.Model
-	options       llm.StreamOptions
-	configuration config.Config
-	tools         []agent.Tool
-	systemPrompt  string
-	trustStore    *trust.Store
-	workspace     *tool.Workspace
-	workspacePath string
-	trustDecision trust.Decision
-	trustSource   trust.Source
+	application    *application
+	loop           *agent.Loop
+	store          *session.Store
+	history        []llm.AgentMessage
+	model          llm.Model
+	options        llm.StreamOptions
+	configuration  config.Config
+	tools          []agent.Tool
+	systemPrompt   string
+	trustStore     *trust.Store
+	workspace      *tool.Workspace
+	workspacePath  string
+	trustDecision  trust.Decision
+	trustSource    trust.Source
+	providers      []provider.Provider
+	totalUsage     llm.Usage
+	sessionChanged bool
 }
 
 func (s *interactiveSession) Run(
 	ctx context.Context,
 	promptText string,
-	sink agent.AgentEventSink,
+	sink tui.DisplayEventSink,
 ) error {
 	if s.loop == nil {
-		return credentialNotConfiguredError(s.configuration)
+		return credentialNotConfiguredError(s.providers, s.configuration)
 	}
 	prompt, err := llm.NewUserMessage(llm.NewTextContent(promptText).Part())
 	if err != nil {
@@ -680,7 +720,16 @@ func (s *interactiveSession) Run(
 		History:      s.history,
 		Prompt:       prompt,
 		Options:      s.options,
-	}, sink)
+	}, func(eventCtx context.Context, event agent.AgentEvent) error {
+		if sink == nil {
+			return nil
+		}
+		display := translateAgentEvent(event)
+		if display == nil {
+			return nil
+		}
+		return sink(eventCtx, *display)
+	})
 	messages := result.Messages()
 	persistErr := appendSessionRun(ctx, s.store, messages)
 	if persistErr == nil {

@@ -7,9 +7,6 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
-
-	"github.com/ch1lam/aice-cli/internal/agent"
-	"github.com/ch1lam/aice-cli/internal/llm"
 )
 
 func (m *model) beginProcess() int {
@@ -149,6 +146,17 @@ func (m model) applyRunBatch(batch runBatchMsg) (tea.Model, tea.Cmd) {
 			m.currentModel = update.state.Model
 			m.thinking = update.state.Thinking
 			m.apiKeyConfigured = update.state.APIKeyConfigured
+			if update.state.Usage != m.sessionUsage {
+				commands = append(
+					commands,
+					m.usageAnimation.Start(m.sessionUsage, update.state.Usage),
+				)
+				m.sessionUsage = update.state.Usage
+			}
+			if update.state.SessionChanged {
+				m.resetBranchTranscript()
+				contentChanged = true
+			}
 		}
 		if update.commands != nil {
 			m.commands = slashCommandCatalog(*update.commands)
@@ -188,63 +196,54 @@ func (m model) applyRunBatch(batch runBatchMsg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(commands...)
 }
 
-func (m *model) applyAgentEvent(event agent.AgentEvent) (bool, tea.Cmd) {
-	switch event.Type {
-	case agent.EventTypeMessageStart:
-		if _, ok := event.Message.(llm.AssistantMessage); ok {
-			m.entries = append(m.entries, transcriptEntry{
-				kind:      entryAssistant,
-				processID: m.ensureActiveProcess(),
-			})
-			m.assistantEntry = len(m.entries) - 1
-			m.status = "Thinking..."
-			return true, nil
+func (m *model) applyAgentEvent(event DisplayEvent) (bool, tea.Cmd) {
+	switch event.Kind {
+	case DisplayEventAssistantStart:
+		m.entries = append(m.entries, transcriptEntry{
+			kind:      entryAssistant,
+			processID: m.ensureActiveProcess(),
+		})
+		m.assistantEntry = len(m.entries) - 1
+		m.status = "Thinking..."
+		return true, nil
+	case DisplayEventAssistantDelta:
+		return m.applyAssistantDelta(event), nil
+	case DisplayEventAssistantEnd:
+		return true, m.completeAssistant(event.Assistant)
+	case DisplayEventToolStart:
+		m.revokeConclusion()
+		m.entries = append(m.entries, transcriptEntry{
+			kind:      entryTool,
+			processID: m.ensureActiveProcess(),
+			toolID:    event.Tool.ID,
+			toolName:  event.Tool.Name,
+			toolDetail: sanitizeToolDetail(
+				event.Tool.Detail,
+				event.Tool.Name == "bash",
+			),
+		})
+		m.status = "Running " + event.Tool.Name + "..."
+		return true, nil
+	case DisplayEventToolEnd:
+		m.completeTool(event.Tool.ID, event.Tool.Failed)
+		m.status = "Thinking..."
+		return true, nil
+	case DisplayEventRetryStart:
+		m.status = fmt.Sprintf(
+			"Retrying in %s (%d/%d)...",
+			event.Retry.Delay,
+			event.Retry.Attempt,
+			event.Retry.MaxRetries,
+		)
+		return true, nil
+	case DisplayEventRetryEnd:
+		if event.Retry.Succeeded {
+			m.status = "Retry succeeded"
+		} else {
+			m.status = "Retry stopped"
 		}
-	case agent.EventTypeMessageUpdate:
-		return m.applyStreamEvent(event.AssistantMessageEvent), nil
-	case agent.EventTypeMessageEnd:
-		if message, ok := event.Message.(llm.AssistantMessage); ok {
-			return true, m.completeAssistant(message)
-		}
-	case agent.EventTypeToolExecutionStart:
-		if event.ToolCall != nil {
-			m.revokeConclusion()
-			m.entries = append(m.entries, transcriptEntry{
-				kind:       entryTool,
-				processID:  m.ensureActiveProcess(),
-				toolID:     event.ToolCall.ID,
-				toolName:   event.ToolCall.Name,
-				toolDetail: toolCallDetail(*event.ToolCall),
-			})
-			m.status = "Running " + event.ToolCall.Name + "..."
-			return true, nil
-		}
-	case agent.EventTypeToolExecutionEnd:
-		if event.ToolCall != nil {
-			m.completeTool(event.ToolCall.ID, event.Err != nil)
-			m.status = "Thinking..."
-			return true, nil
-		}
-	case agent.EventTypeRetryStart:
-		if event.Retry != nil {
-			m.status = fmt.Sprintf(
-				"Retrying in %s (%d/%d)...",
-				event.Retry.Delay,
-				event.Retry.Attempt,
-				event.Retry.MaxRetries,
-			)
-			return true, nil
-		}
-	case agent.EventTypeRetryEnd:
-		if event.Retry != nil {
-			if event.Retry.Success {
-				m.status = "Retry succeeded"
-			} else {
-				m.status = "Retry stopped"
-			}
-			return true, nil
-		}
-	case agent.EventTypeAgentEnd:
+		return true, nil
+	case DisplayEventAgentEnd:
 		if event.Err == nil {
 			m.status = "Response complete"
 		}
@@ -252,24 +251,22 @@ func (m *model) applyAgentEvent(event agent.AgentEvent) (bool, tea.Cmd) {
 	return false, nil
 }
 
-func (m *model) applyStreamEvent(event *llm.Event) bool {
-	if event == nil || m.assistantEntry < 0 || m.assistantEntry >= len(m.entries) {
+func (m *model) applyAssistantDelta(event DisplayEvent) bool {
+	if m.assistantEntry < 0 || m.assistantEntry >= len(m.entries) {
 		return false
 	}
 	entry := &m.entries[m.assistantEntry]
-	switch event.Type {
-	case llm.EventTypeTextDelta:
-		entry.text += event.Delta
+	switch event.Delta.Kind {
+	case DisplayDeltaText:
+		entry.text += event.Delta.Delta
 		if strings.TrimSpace(entry.text) != "" {
 			m.markConclusion()
 		}
 		m.status = "Responding..."
-	case llm.EventTypeThinkingDelta:
-		entry.thinking += event.Delta
+	case DisplayDeltaThinking:
+		entry.thinking += event.Delta.Delta
 		m.status = "Thinking..."
-	case llm.EventTypeToolCallStart,
-		llm.EventTypeToolCallDelta,
-		llm.EventTypeToolCallEnd:
+	case DisplayDeltaToolCall:
 		return m.revokeConclusion()
 	default:
 		return false
@@ -277,9 +274,7 @@ func (m *model) applyStreamEvent(event *llm.Event) bool {
 	return true
 }
 
-func (m *model) completeAssistant(message llm.AssistantMessage) tea.Cmd {
-	previousUsage := m.sessionUsage
-	m.sessionUsage = llm.AddUsage(m.sessionUsage, message.Usage)
+func (m *model) completeAssistant(display AssistantDisplay) tea.Cmd {
 	if m.assistantEntry < 0 || m.assistantEntry >= len(m.entries) {
 		m.entries = append(m.entries, transcriptEntry{
 			kind:      entryAssistant,
@@ -288,15 +283,41 @@ func (m *model) completeAssistant(message llm.AssistantMessage) tea.Cmd {
 		m.assistantEntry = len(m.entries) - 1
 	}
 	entry := &m.entries[m.assistantEntry]
-	entry.text, entry.thinking = assistantContent(message)
+	entry.text = display.Text
+	entry.thinking = display.Thinking
 	entry.complete = true
 	entry.rendered = renderMarkdown(entry.text, m.contentWidth())
-	if assistantConcludes(message) {
+	if display.Concludes {
 		m.markConclusion()
 	} else {
 		m.revokeConclusion()
 	}
-	return m.usageAnimation.Start(previousUsage, m.sessionUsage)
+	return nil
+}
+
+func (m *model) resetBranchTranscript() {
+	kept := make([]transcriptEntry, 0, len(m.entries))
+	for index := len(m.entries) - 1; index >= 0; index-- {
+		entry := m.entries[index]
+		if entry.kind != entryUser &&
+			entry.kind != entryCommand &&
+			entry.kind != entryNotice &&
+			entry.kind != entryError {
+			continue
+		}
+		kept = append(kept, entry)
+		if entry.kind == entryUser {
+			break
+		}
+	}
+	for left, right := 0, len(kept)-1; left < right; left, right = left+1, right-1 {
+		kept[left], kept[right] = kept[right], kept[left]
+	}
+	m.entries = kept
+	m.processGroups = nil
+	m.activeProcessID = 0
+	m.assistantEntry = -1
+	m.refreshViewport(true)
 }
 
 func (m *model) completeTool(callID string, failed bool) {

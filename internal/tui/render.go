@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"encoding/json"
 	"fmt"
 	"math"
 	"os"
@@ -13,8 +12,6 @@ import (
 
 	"charm.land/glamour/v2"
 	"charm.land/lipgloss/v2"
-
-	"github.com/ch1lam/aice-cli/internal/llm"
 )
 
 func (m *model) resizeLayout() {
@@ -207,49 +204,20 @@ func (m model) slashCommandMenuView(width int) string {
 		return ""
 	}
 	matches := m.matchingSlashCommands()
-	selection := min(max(m.commandSelection, 0), len(matches)-1)
-	start := max(selection-maximumCommandRows+1, 0)
-	end := min(start+maximumCommandRows, len(matches))
-
-	style := slashCommandMenuStyle
-	innerWidth := max(width-style.GetHorizontalFrameSize(), 1)
-	usageWidth := min(max(innerWidth/2, 12), 28)
-	rows := make([]string, 0, end-start+2)
-	rows = append(
-		rows,
-		labelStyle.Render("SLASH COMMANDS")+"  "+
-			mutedStyle.Render("↑/↓ select · tab complete · esc close"),
-	)
-	for index := start; index < end; index++ {
-		command := matches[index]
-		prefix := "  "
-		rowStyle := slashCommandRowStyle
-		usageStyle := labelStyle
-		descriptionStyle := mutedStyle
-		if index == selection {
-			prefix = "› "
-			rowStyle = slashCommandSelectedStyle
-			usageStyle = slashCommandSelectedStyle
-			descriptionStyle = slashCommandSelectedStyle
+	rows := make([]slashMenuRow, len(matches))
+	for index, command := range matches {
+		rows[index] = slashMenuRow{
+			label:       slashCommandUsage(command),
+			description: command.Description,
 		}
-		usage := truncateTerminalText(
-			slashCommandUsage(command),
-			max(usageWidth-2, 1),
-		)
-		usage += strings.Repeat(" ", max(usageWidth-2-lipgloss.Width(usage), 0))
-		leading := prefix + usageStyle.Render(usage) + "  "
-		descriptionWidth := max(innerWidth-lipgloss.Width(leading), 0)
-		description := truncateTerminalText(
-			command.Description,
-			descriptionWidth,
-		)
-		row := leading
-		if descriptionWidth > 0 {
-			row += descriptionStyle.Render(description)
-		}
-		rows = append(rows, rowStyle.Width(innerWidth).Render(row))
 	}
-	return style.Width(width).Render(strings.Join(rows, "\n"))
+	return renderSlashMenuRows(
+		width,
+		"SLASH COMMANDS",
+		"↑/↓ select · tab complete · esc close",
+		rows,
+		min(max(m.commandSelection, 0), len(rows)-1),
+	)
 }
 
 func (m model) slashCommandSelectionMenuView(width int) string {
@@ -260,56 +228,88 @@ func (m model) slashCommandSelectionMenuView(width int) string {
 	if len(frame.menu.Options) == 0 {
 		return ""
 	}
-
-	selection := min(max(frame.selection, 0), len(frame.menu.Options)-1)
-	start := max(selection-maximumCommandRows+1, 0)
-	end := min(start+maximumCommandRows, len(frame.menu.Options))
-	style := slashCommandMenuStyle
-	innerWidth := max(width-style.GetHorizontalFrameSize(), 1)
-	labelWidth := min(max(innerWidth/2, 12), 28)
 	hint := "↑/↓ select · enter choose · esc cancel"
 	if len(m.commandMenu.frames) > 1 {
 		hint = "↑/↓ select · enter choose · esc back"
 	}
-	rows := make([]string, 0, end-start+2)
-	rows = append(
+	rows := make([]slashMenuRow, len(frame.menu.Options))
+	for index, option := range frame.menu.Options {
+		rows[index] = slashMenuRow{
+			label:       sanitizeToolDetail(option.Label, false),
+			description: sanitizeToolDetail(option.Description, false),
+			current:     option.Current,
+		}
+	}
+	return renderSlashMenuRows(
+		width,
+		frame.menu.Title,
+		hint,
 		rows,
-		labelStyle.Render(strings.ToUpper(frame.menu.Title))+"  "+
+		min(max(frame.selection, 0), len(rows)-1),
+	)
+}
+
+type slashMenuRow struct {
+	label       string
+	description string
+	current     bool
+}
+
+func renderSlashMenuRows(
+	width int,
+	title string,
+	hint string,
+	rows []slashMenuRow,
+	selection int,
+) string {
+	if len(rows) == 0 {
+		return ""
+	}
+	start := max(selection-maximumCommandRows+1, 0)
+	end := min(start+maximumCommandRows, len(rows))
+
+	style := slashCommandMenuStyle
+	innerWidth := max(width-style.GetHorizontalFrameSize(), 1)
+	labelWidth := min(max(innerWidth/2, 12), 28)
+	rendered := make([]string, 0, end-start+2)
+	rendered = append(
+		rendered,
+		labelStyle.Render(strings.ToUpper(title))+"  "+
 			mutedStyle.Render(hint),
 	)
 	for index := start; index < end; index++ {
-		option := frame.menu.Options[index]
+		row := rows[index]
 		prefix := "  "
 		rowStyle := slashCommandRowStyle
-		optionStyle := labelStyle
+		labelStyle := labelStyle
 		descriptionStyle := mutedStyle
-		if option.Current {
+		if row.current {
 			prefix = "• "
 		}
 		if index == selection {
 			prefix = "› "
 			rowStyle = slashCommandSelectedStyle
-			optionStyle = slashCommandSelectedStyle
+			labelStyle = slashCommandSelectedStyle
 			descriptionStyle = slashCommandSelectedStyle
 		}
 		label := truncateTerminalText(
-			sanitizeToolDetail(option.Label, false),
+			row.label,
 			max(labelWidth-2, 1),
 		)
 		label += strings.Repeat(" ", max(labelWidth-2-lipgloss.Width(label), 0))
-		leading := prefix + optionStyle.Render(label) + "  "
+		leading := prefix + labelStyle.Render(label) + "  "
 		descriptionWidth := max(innerWidth-lipgloss.Width(leading), 0)
 		description := truncateTerminalText(
-			sanitizeToolDetail(option.Description, false),
+			row.description,
 			descriptionWidth,
 		)
-		row := leading
+		line := leading
 		if descriptionWidth > 0 {
-			row += descriptionStyle.Render(description)
+			line += descriptionStyle.Render(description)
 		}
-		rows = append(rows, rowStyle.Width(innerWidth).Render(row))
+		rendered = append(rendered, rowStyle.Width(innerWidth).Render(line))
 	}
-	return style.Width(width).Render(strings.Join(rows, "\n"))
+	return style.Width(width).Render(strings.Join(rendered, "\n"))
 }
 
 func truncateTerminalText(value string, width int) string {
@@ -586,20 +586,6 @@ func (m model) entryView(
 	}
 }
 
-func toolCallDetail(call llm.ToolCall) string {
-	var arguments struct {
-		Command string `json:"command"`
-		Path    string `json:"path"`
-	}
-	if err := json.Unmarshal(call.Arguments, &arguments); err != nil {
-		return ""
-	}
-	if call.Name == "bash" {
-		return sanitizeToolDetail(arguments.Command, true)
-	}
-	return sanitizeToolDetail(arguments.Path, false)
-}
-
 func sanitizeToolDetail(value string, multiline bool) string {
 	return strings.Map(func(character rune) rune {
 		if multiline && (character == '\n' || character == '\t') {
@@ -821,26 +807,26 @@ func alignStatusLine(left, right string, width int) (string, bool) {
 
 func (m model) usageStatus(includeCache bool) string {
 	usage := m.usageAnimation.Value(m.sessionUsage)
-	inputTokens := usage.inputTokens
+	inputTokens := usage.InputTokens
 	if !includeCache {
-		inputTokens += usage.cacheReadTokens + usage.cacheWriteTokens
+		inputTokens += usage.CacheReadTokens + usage.CacheWriteTokens
 	}
 
 	parts := []string{
 		"↑" + formatTokens(inputTokens),
-		"↓" + formatTokens(usage.outputTokens),
+		"↓" + formatTokens(usage.OutputTokens),
 	}
 	if includeCache {
 		parts = append(
 			parts,
-			"R"+formatTokens(usage.cacheReadTokens),
+			"R"+formatTokens(usage.CacheReadTokens),
 		)
 		parts = append(
 			parts,
-			"W"+formatTokens(usage.cacheWriteTokens),
+			"W"+formatTokens(usage.CacheWriteTokens),
 		)
 	}
-	parts = append(parts, fmt.Sprintf("$%.3f", usage.totalCost))
+	parts = append(parts, fmt.Sprintf("$%.3f", usage.TotalCost))
 	return mutedStyle.Render(strings.Join(parts, " "))
 }
 
@@ -887,7 +873,7 @@ func (m model) modelStatus() string {
 		return ""
 	}
 	thinking := string(m.thinking)
-	if m.thinking == llm.ThinkingLevelUnknown {
+	if m.thinking == DisplayThinkingDefault {
 		thinking = "default"
 	}
 	return infoStyle.Render(m.currentModel.ID) +
@@ -896,33 +882,6 @@ func (m model) modelStatus() string {
 
 func (m model) contentWidth() int {
 	return max(max(m.width, minimumWidth)-4, 20)
-}
-
-func assistantContent(message llm.AssistantMessage) (string, string) {
-	var text, thinking strings.Builder
-	for _, part := range message.Content {
-		switch part.Type {
-		case llm.ContentTypeText:
-			text.WriteString(part.Text)
-		case llm.ContentTypeThinking:
-			thinking.WriteString(part.Text)
-		}
-	}
-	return text.String(), thinking.String()
-}
-
-func assistantConcludes(message llm.AssistantMessage) bool {
-	if message.StopReason == llm.StopReasonError ||
-		message.StopReason == llm.StopReasonAborted {
-		return false
-	}
-	for _, part := range message.Content {
-		if part.Type == llm.ContentTypeToolCall {
-			return false
-		}
-	}
-	text, _ := assistantContent(message)
-	return strings.TrimSpace(text) != ""
 }
 
 func renderMarkdown(markdown string, width int) string {
