@@ -41,9 +41,10 @@ func NewLS(workspace *Workspace) (*LS, error) {
 // Definition returns the model-facing ls contract.
 func (l *LS) Definition() llm.ToolDefinition {
 	return llm.ToolDefinition{
-		Name:        "ls",
-		Description: "List files and directories, resolving relative paths from the working directory.",
-		InputSchema: jsonSchema(lsSchema),
+		Name:          "ls",
+		Description:   "List files and directories, resolving relative paths from the working directory.",
+		InputSchema:   jsonSchema(lsSchema),
+		PromptSnippet: "List directory contents",
 	}
 }
 

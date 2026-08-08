@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/ch1lam/aice-cli/internal/agent"
 	"github.com/ch1lam/aice-cli/internal/config"
 	"github.com/ch1lam/aice-cli/internal/tool"
 	"github.com/ch1lam/aice-cli/internal/trust"
@@ -26,6 +27,7 @@ func (a *application) resolveProjectContext(
 	configuration config.Config,
 	override *bool,
 	askUI trust.AskFunc,
+	tools []agent.Tool,
 ) (projectContext, error) {
 	if workspace == nil {
 		return projectContext{}, fmt.Errorf("app: workspace is required")
@@ -61,6 +63,7 @@ func (a *application) resolveProjectContext(
 		workspace,
 		configuration,
 		resolution.Decision,
+		tools,
 	)
 	if err != nil {
 		return projectContext{}, err

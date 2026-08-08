@@ -34,9 +34,13 @@ func NewWrite(workspace *Workspace) (*Write, error) {
 // Definition returns the model-facing write contract.
 func (w *Write) Definition() llm.ToolDefinition {
 	return llm.ToolDefinition{
-		Name:        "write",
-		Description: "Write complete content to a file, resolving relative paths from the working directory.",
-		InputSchema: jsonSchema(writeSchema),
+		Name:          "write",
+		Description:   "Write complete content to a file, resolving relative paths from the working directory.",
+		InputSchema:   jsonSchema(writeSchema),
+		PromptSnippet: "Create or overwrite files",
+		PromptGuidelines: []string{
+			"Use write only for new files or complete rewrites.",
+		},
 	}
 }
 

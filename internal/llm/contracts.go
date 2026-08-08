@@ -57,6 +57,76 @@ const (
 	ThinkingLevelMax     ThinkingLevel = "max"
 )
 
+// DefaultThinkingLevel is the reasoning level used when none is requested,
+// matching Pi's DEFAULT_THINKING_LEVEL. The effective level still clamps to
+// what the selected model supports.
+const DefaultThinkingLevel = ThinkingLevelMedium
+
+// thinkingLevelOrder ranks every thinking level from lowest to highest.
+// Clamping aligns against this order.
+var thinkingLevelOrder = []ThinkingLevel{
+	ThinkingLevelOff,
+	ThinkingLevelMinimal,
+	ThinkingLevelLow,
+	ThinkingLevelMedium,
+	ThinkingLevelHigh,
+	ThinkingLevelXHigh,
+	ThinkingLevelMax,
+}
+
+// defaultThinkingLevels is the reasoning set every model supports unless it
+// declares its own. xhigh and max are opt-in per model because providers only
+// accept them on specific models, matching Pi's getSupportedThinkingLevels.
+var defaultThinkingLevels = []ThinkingLevel{
+	ThinkingLevelOff,
+	ThinkingLevelMinimal,
+	ThinkingLevelLow,
+	ThinkingLevelMedium,
+	ThinkingLevelHigh,
+}
+
+// SupportedThinkingLevels returns the reasoning levels a model supports.
+// Models that declare no set support the default levels; models without
+// thinking support support only off.
+func SupportedThinkingLevels(model Model) []ThinkingLevel {
+	if !model.SupportsThinking {
+		return []ThinkingLevel{ThinkingLevelOff}
+	}
+	if len(model.ThinkingLevels) == 0 {
+		return slices.Clone(defaultThinkingLevels)
+	}
+	return model.ThinkingLevels
+}
+
+// ClampThinkingLevel aligns a requested level to the nearest level a model
+// supports. It prefers the next higher supported level, then the next lower
+// one, and falls back to the lowest supported level, matching Pi's
+// clampThinkingLevel. The unknown level is returned unchanged.
+func ClampThinkingLevel(model Model, level ThinkingLevel) ThinkingLevel {
+	if level == ThinkingLevelUnknown {
+		return ThinkingLevelUnknown
+	}
+	supported := SupportedThinkingLevels(model)
+	if slices.Contains(supported, level) {
+		return level
+	}
+	index := slices.Index(thinkingLevelOrder, level)
+	if index < 0 {
+		return supported[0]
+	}
+	for _, candidate := range thinkingLevelOrder[index:] {
+		if slices.Contains(supported, candidate) {
+			return candidate
+		}
+	}
+	for i := index - 1; i >= 0; i-- {
+		if slices.Contains(supported, thinkingLevelOrder[i]) {
+			return thinkingLevelOrder[i]
+		}
+	}
+	return supported[0]
+}
+
 // InputModality identifies content a model can accept.
 type InputModality string
 
@@ -129,25 +199,33 @@ type ToolResult struct {
 	IsError bool          `json:"is_error,omitempty"`
 }
 
-// ToolDefinition describes a tool exposed to a model.
+// ToolDefinition describes a tool exposed to a model. PromptSnippet and
+// PromptGuidelines are prompt presentation metadata used by the built-in
+// system prompt; they are not part of the wire contract.
 type ToolDefinition struct {
-	Name        string          `json:"name"`
-	Description string          `json:"description"`
-	InputSchema json.RawMessage `json:"input_schema"`
+	Name             string          `json:"name"`
+	Description      string          `json:"description"`
+	InputSchema      json.RawMessage `json:"input_schema"`
+	PromptSnippet    string          `json:"-"`
+	PromptGuidelines []string        `json:"-"`
 }
 
 // Model identifies a provider model and the capabilities relevant to AICE.
 // Connection details and credentials belong to provider configuration, not here.
 type Model struct {
-	ID               string          `json:"id"`
-	Name             string          `json:"name,omitempty"`
-	API              API             `json:"api"`
-	Provider         ProviderID      `json:"provider"`
-	SupportsThinking bool            `json:"supports_thinking,omitempty"`
-	InputModalities  []InputModality `json:"input_modalities,omitempty"`
-	ContextWindow    int64           `json:"context_window,omitempty"`
-	MaxTokens        int64           `json:"max_tokens,omitempty"`
-	Pricing          Pricing         `json:"pricing"`
+	ID               string     `json:"id"`
+	Name             string     `json:"name,omitempty"`
+	API              API        `json:"api"`
+	Provider         ProviderID `json:"provider"`
+	SupportsThinking bool       `json:"supports_thinking,omitempty"`
+	// ThinkingLevels lists the reasoning levels this model supports. The
+	// empty list means the default five levels (off through high) apply;
+	// xhigh and max must be declared explicitly.
+	ThinkingLevels  []ThinkingLevel `json:"thinking_levels,omitempty"`
+	InputModalities []InputModality `json:"input_modalities,omitempty"`
+	ContextWindow   int64           `json:"context_window,omitempty"`
+	MaxTokens       int64           `json:"max_tokens,omitempty"`
+	Pricing         Pricing         `json:"pricing"`
 }
 
 // Cost contains normalized request cost amounts in US dollars.

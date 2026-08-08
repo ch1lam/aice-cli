@@ -64,7 +64,13 @@ func (e *Edit) Definition() llm.ToolDefinition {
 		Name: "edit",
 		Description: "Edit one file using exact text replacements. Each oldText must " +
 			"match once in the original file and replacements must not overlap.",
-		InputSchema: jsonSchema(editSchema),
+		InputSchema:   jsonSchema(editSchema),
+		PromptSnippet: "Make precise file edits with exact text replacement, including multiple disjoint edits in one call",
+		PromptGuidelines: []string{
+			"Use edit for precise changes (oldText must match exactly)",
+			"When changing multiple separate locations in one file, use one edit call with multiple edits instead of multiple edit calls",
+			"Keep each oldText as small as possible while still being unique in the file",
+		},
 	}
 }
 

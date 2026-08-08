@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ch1lam/aice-cli/internal/agent"
 	"github.com/ch1lam/aice-cli/internal/config"
 	"github.com/ch1lam/aice-cli/internal/provider/deepseek"
 	"github.com/ch1lam/aice-cli/internal/tool"
@@ -24,11 +25,12 @@ func TestResolveProjectContextNoResourcesUsesDefaultPrompt(t *testing.T) {
 		trustTestConfig(paths),
 		nil,
 		nil,
+		testBuiltInTools(t, testWorkspace(t, workspace)),
 	)
 	if err != nil {
 		t.Fatalf("resolveProjectContext() error = %v", err)
 	}
-	if project.systemPrompt != defaultSystemPrompt {
+	if project.systemPrompt != defaultPromptFor(t, testWorkspace(t, workspace)) {
 		t.Errorf(
 			"systemPrompt = %q, want default",
 			project.systemPrompt,
@@ -50,11 +52,12 @@ func TestResolveProjectContextIgnoresCorruptStoreWithoutResources(t *testing.T) 
 		trustTestConfig(paths),
 		nil,
 		nil,
+		testBuiltInTools(t, testWorkspace(t, workspace)),
 	)
 	if err != nil {
 		t.Fatalf("resolveProjectContext() error = %v", err)
 	}
-	if project.systemPrompt != defaultSystemPrompt {
+	if project.systemPrompt != defaultPromptFor(t, testWorkspace(t, workspace)) {
 		t.Errorf(
 			"systemPrompt = %q, want default",
 			project.systemPrompt,
@@ -75,11 +78,12 @@ func TestResolveProjectContextDeniedSkipsProjectAppend(t *testing.T) {
 		trustTestConfig(paths),
 		boolPtr(false),
 		nil,
+		testBuiltInTools(t, testWorkspace(t, workspace)),
 	)
 	if err != nil {
 		t.Fatalf("resolveProjectContext() error = %v", err)
 	}
-	if project.systemPrompt != defaultSystemPrompt {
+	if project.systemPrompt != defaultPromptFor(t, testWorkspace(t, workspace)) {
 		t.Errorf(
 			"systemPrompt = %q, want default (denied project)",
 			project.systemPrompt,
@@ -100,11 +104,12 @@ func TestResolveProjectContextAskWithoutUIIsDenied(t *testing.T) {
 		trustTestConfig(paths),
 		nil,
 		nil,
+		testBuiltInTools(t, testWorkspace(t, workspace)),
 	)
 	if err != nil {
 		t.Fatalf("resolveProjectContext() error = %v", err)
 	}
-	if project.systemPrompt != defaultSystemPrompt {
+	if project.systemPrompt != defaultPromptFor(t, testWorkspace(t, workspace)) {
 		t.Errorf(
 			"systemPrompt = %q, want default (ask without UI)",
 			project.systemPrompt,
@@ -125,12 +130,13 @@ func TestResolveProjectContextApprovedAppendsProjectPrompt(t *testing.T) {
 		trustTestConfig(paths),
 		boolPtr(true),
 		nil,
+		testBuiltInTools(t, testWorkspace(t, workspace)),
 	)
 	if err != nil {
 		t.Fatalf("resolveProjectContext() error = %v", err)
 	}
 	ws := testWorkspace(t, workspace)
-	want := defaultSystemPrompt + "\n\n" +
+	want := defaultPromptFor(t, ws) + "\n\n" +
 		projectAppendBoundary(ws.PhysicalPath(), ".aice/APPEND_SYSTEM.md") +
 		"project rules"
 	if project.systemPrompt != want {
@@ -152,6 +158,7 @@ func TestResolveProjectContextApprovedReplacesBaseWithSystemPrompt(t *testing.T)
 		trustTestConfig(paths),
 		boolPtr(true),
 		nil,
+		testBuiltInTools(t, testWorkspace(t, workspace)),
 	)
 	if err != nil {
 		t.Fatalf("resolveProjectContext() error = %v", err)
@@ -178,11 +185,12 @@ func TestResolveProjectContextBlankAppendAddsNothing(t *testing.T) {
 		trustTestConfig(paths),
 		boolPtr(true),
 		nil,
+		testBuiltInTools(t, testWorkspace(t, workspace)),
 	)
 	if err != nil {
 		t.Fatalf("resolveProjectContext() error = %v", err)
 	}
-	if project.systemPrompt != defaultSystemPrompt {
+	if project.systemPrompt != defaultPromptFor(t, testWorkspace(t, workspace)) {
 		t.Errorf(
 			"systemPrompt = %q, want default for blank append",
 			project.systemPrompt,
@@ -205,6 +213,7 @@ func TestResolveProjectContextGlobalPromptsApplyWithoutProjectResources(t *testi
 		trustTestConfig(paths),
 		nil,
 		nil,
+		testBuiltInTools(t, testWorkspace(t, workspace)),
 	)
 	if err != nil {
 		t.Fatalf("resolveProjectContext() error = %v", err)
@@ -232,6 +241,7 @@ func TestResolveProjectContextGlobalPromptFallsBackToDefault(t *testing.T) {
 		trustTestConfig(paths),
 		nil,
 		nil,
+		testBuiltInTools(t, testWorkspace(t, workspace)),
 	)
 	if err != nil {
 		t.Fatalf("resolveProjectContext() error = %v", err)
@@ -263,11 +273,12 @@ func TestResolveProjectContextStoredDenyBeatsAlways(t *testing.T) {
 		configuration,
 		nil,
 		nil,
+		testBuiltInTools(t, testWorkspace(t, workspace)),
 	)
 	if err != nil {
 		t.Fatalf("resolveProjectContext() error = %v", err)
 	}
-	if project.systemPrompt != defaultSystemPrompt {
+	if project.systemPrompt != defaultPromptFor(t, testWorkspace(t, workspace)) {
 		t.Errorf(
 			"systemPrompt = %q, want default (stored deny)",
 			project.systemPrompt,
@@ -295,12 +306,13 @@ func TestResolveProjectContextStoredTrustLoadsPrompt(t *testing.T) {
 		trustTestConfig(paths),
 		nil,
 		nil,
+		testBuiltInTools(t, testWorkspace(t, workspace)),
 	)
 	if err != nil {
 		t.Fatalf("resolveProjectContext() error = %v", err)
 	}
 	ws := testWorkspace(t, workspace)
-	want := defaultSystemPrompt + "\n\n" +
+	want := defaultPromptFor(t, ws) + "\n\n" +
 		projectAppendBoundary(ws.PhysicalPath(), ".aice/APPEND_SYSTEM.md") +
 		"project rules"
 	if project.systemPrompt != want {
@@ -330,6 +342,7 @@ func TestResolveProjectContextAskWithUIPersistsAndLoads(t *testing.T) {
 		trustTestConfig(paths),
 		nil,
 		askUI,
+		testBuiltInTools(t, testWorkspace(t, workspace)),
 	)
 	if err != nil {
 		t.Fatalf("resolveProjectContext() error = %v", err)
@@ -352,7 +365,7 @@ func TestResolveProjectContextAskWithUIPersistsAndLoads(t *testing.T) {
 	if !found || entry.Decision != trust.DecisionTrusted {
 		t.Errorf("stored decision = %#v, want trusted", entry)
 	}
-	want := defaultSystemPrompt + "\n\n" +
+	want := defaultPromptFor(t, ws) + "\n\n" +
 		projectAppendBoundary(ws.PhysicalPath(), ".aice/APPEND_SYSTEM.md") +
 		"project rules"
 	if project.systemPrompt != want {
@@ -374,12 +387,13 @@ func TestResolveProjectContextApprovedAppendsAgentsFile(t *testing.T) {
 		trustTestConfig(paths),
 		boolPtr(true),
 		nil,
+		testBuiltInTools(t, testWorkspace(t, workspace)),
 	)
 	if err != nil {
 		t.Fatalf("resolveProjectContext() error = %v", err)
 	}
 	ws := testWorkspace(t, workspace)
-	want := defaultSystemPrompt + "\n\n" +
+	want := defaultPromptFor(t, ws) + "\n\n" +
 		fmt.Sprintf(projectAgentsBoundaryLabel, filepath.Join(ws.PhysicalPath(), "AGENTS.md")) +
 		"agent guidance" + "\n\n" +
 		projectAppendBoundary(ws.PhysicalPath(), ".aice/APPEND_SYSTEM.md") +
@@ -404,6 +418,7 @@ func TestResolveProjectContextApprovedOrdersAgentsBeforeAppend(t *testing.T) {
 		trustTestConfig(paths),
 		boolPtr(true),
 		nil,
+		testBuiltInTools(t, testWorkspace(t, workspace)),
 	)
 	if err != nil {
 		t.Fatalf("resolveProjectContext() error = %v", err)
@@ -432,11 +447,12 @@ func TestResolveProjectContextDeniedSkipsAgentsFile(t *testing.T) {
 		trustTestConfig(paths),
 		boolPtr(false),
 		nil,
+		testBuiltInTools(t, testWorkspace(t, workspace)),
 	)
 	if err != nil {
 		t.Fatalf("resolveProjectContext() error = %v", err)
 	}
-	if project.systemPrompt != defaultSystemPrompt {
+	if project.systemPrompt != defaultPromptFor(t, testWorkspace(t, workspace)) {
 		t.Errorf(
 			"systemPrompt = %q, want default (denied project)",
 			project.systemPrompt,
@@ -457,11 +473,12 @@ func TestResolveProjectContextBlankAgentsAddsNothing(t *testing.T) {
 		trustTestConfig(paths),
 		boolPtr(true),
 		nil,
+		testBuiltInTools(t, testWorkspace(t, workspace)),
 	)
 	if err != nil {
 		t.Fatalf("resolveProjectContext() error = %v", err)
 	}
-	if project.systemPrompt != defaultSystemPrompt {
+	if project.systemPrompt != defaultPromptFor(t, testWorkspace(t, workspace)) {
 		t.Errorf(
 			"systemPrompt = %q, want default for blank AGENTS.md",
 			project.systemPrompt,
@@ -483,6 +500,7 @@ func TestResolveProjectContextRejectsOversizedPrompt(t *testing.T) {
 		trustTestConfig(paths),
 		boolPtr(true),
 		nil,
+		testBuiltInTools(t, testWorkspace(t, workspace)),
 	)
 	if err == nil || !strings.Contains(err.Error(), "exceeds") {
 		t.Fatalf("resolveProjectContext() error = %v, want size error", err)
@@ -511,6 +529,7 @@ func TestResolveProjectContextRejectsNonUTF8Prompt(t *testing.T) {
 		trustTestConfig(paths),
 		boolPtr(true),
 		nil,
+		testBuiltInTools(t, testWorkspace(t, workspace)),
 	)
 	if err == nil || !strings.Contains(err.Error(), "UTF-8") {
 		t.Fatalf("resolveProjectContext() error = %v, want UTF-8 error", err)
@@ -519,6 +538,24 @@ func TestResolveProjectContextRejectsNonUTF8Prompt(t *testing.T) {
 
 func newTestApplication() *application {
 	return &application{}
+}
+
+// testBuiltInTools builds the real built-in tool set for the workspace so
+// prompt assembly exercises the same snippets and guidelines as production.
+func testBuiltInTools(t *testing.T, workspace *tool.Workspace) []agent.Tool {
+	t.Helper()
+	tools, err := newBuiltInTools(workspace)
+	if err != nil {
+		t.Fatalf("newBuiltInTools() error = %v", err)
+	}
+	return tools
+}
+
+// defaultPromptFor builds the expected built-in default system prompt for the
+// workspace used by resolveProjectContext tests.
+func defaultPromptFor(t *testing.T, workspace *tool.Workspace) string {
+	t.Helper()
+	return buildDefaultSystemPrompt(testBuiltInTools(t, workspace), workspace.Path())
 }
 
 func boolPtr(value bool) *bool {

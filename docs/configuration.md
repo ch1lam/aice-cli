@@ -28,11 +28,22 @@ Supported settings are:
 | --- | --- | --- |
 | Provider | `AICE_PROVIDER` | `deepseek`, `opencode-go` |
 | Model | `AICE_MODEL` | provider models, e.g. `deepseek-v4-flash`, `kimi-k2.6` |
-| Thinking | `AICE_THINKING` | `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` |
+| Thinking | `AICE_THINKING` | `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` (default `medium`) |
 | Default project trust | — | `ask`, `always`, `never` (default `ask`) |
 
 `thinking: "off"` disables thinking mode, so AICE does not persist a second
 boolean that could conflict with the reasoning level.
+
+When `AICE_THINKING` is unset, AICE uses the `medium` default. A model only
+supports a subset of the levels (for example `glm-5.2` always reasons at
+`high` or `max`, and `kimi-k2.6` only supports `off` and `high`); the
+requested level is aligned to the nearest level the model supports, preferring
+the next higher level — `xhigh` and `max` are only available on models that
+declare them (`gpt-5.6-luna`). The requested level stays in settings, so
+switching back to a model that supports it restores the original request;
+`/settings` shows the effective level, and `/thinking` lists only the levels
+the current model supports. Models without thinking support run without
+thinking regardless of the configured level.
 
 `default_project_trust` is global-only and has no environment variable:
 automated runs use the `--approve` / `--no-approve` flags explicitly instead.

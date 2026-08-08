@@ -43,9 +43,10 @@ func NewFind(workspace *Workspace) (*Find, error) {
 // Definition returns the model-facing find contract.
 func (f *Find) Definition() llm.ToolDefinition {
 	return llm.ToolDefinition{
-		Name:        "find",
-		Description: "Find files, resolving relative paths from the working directory.",
-		InputSchema: jsonSchema(findSchema),
+		Name:          "find",
+		Description:   "Find files, resolving relative paths from the working directory.",
+		InputSchema:   jsonSchema(findSchema),
+		PromptSnippet: "Find files by glob pattern (respects .gitignore)",
 	}
 }
 

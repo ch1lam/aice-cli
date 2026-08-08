@@ -1,16 +1,21 @@
 package provider
 
-import "slices"
+import (
+	"slices"
+
+	"github.com/ch1lam/aice-cli/internal/llm"
+)
 
 // ModelSpec is the provider-neutral specification shared by provider catalogs.
 type ModelSpec struct {
-	ID            string
-	Name          string
-	ContextWindow int64
-	MaxTokens     int64
-	Input         float64
-	Output        float64
-	CacheRead     float64
+	ID             string
+	Name           string
+	ContextWindow  int64
+	MaxTokens      int64
+	Input          float64
+	Output         float64
+	CacheRead      float64
+	ThinkingLevels []llm.ThinkingLevel
 }
 
 // deepSeekModelSpecs declares the DeepSeek V4 model specifications once so the

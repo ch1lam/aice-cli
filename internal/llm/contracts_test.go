@@ -709,3 +709,190 @@ func TestEventJSONPreservesZeroContentIndex(t *testing.T) {
 		t.Fatalf("json.Marshal() = %s, want explicit zero content index", encoded)
 	}
 }
+
+func TestSupportedThinkingLevels(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		model llm.Model
+		want  []llm.ThinkingLevel
+	}{
+		{
+			name: "undeclared defaults to off through high",
+			model: llm.Model{
+				SupportsThinking: true,
+			},
+			want: []llm.ThinkingLevel{
+				llm.ThinkingLevelOff,
+				llm.ThinkingLevelMinimal,
+				llm.ThinkingLevelLow,
+				llm.ThinkingLevelMedium,
+				llm.ThinkingLevelHigh,
+			},
+		},
+		{
+			name: "declared set is returned as-is",
+			model: llm.Model{
+				SupportsThinking: true,
+				ThinkingLevels: []llm.ThinkingLevel{
+					llm.ThinkingLevelHigh,
+					llm.ThinkingLevelMax,
+				},
+			},
+			want: []llm.ThinkingLevel{
+				llm.ThinkingLevelHigh,
+				llm.ThinkingLevelMax,
+			},
+		},
+		{
+			name:  "non-thinking model supports only off",
+			model: llm.Model{},
+			want:  []llm.ThinkingLevel{llm.ThinkingLevelOff},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := llm.SupportedThinkingLevels(tt.model); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("SupportedThinkingLevels() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestClampThinkingLevel(t *testing.T) {
+	t.Parallel()
+
+	defaultFive := llm.Model{SupportsThinking: true}
+	alwaysThinking := llm.Model{
+		SupportsThinking: true,
+		ThinkingLevels: []llm.ThinkingLevel{
+			llm.ThinkingLevelHigh,
+			llm.ThinkingLevelMax,
+		},
+	}
+	toggleOnly := llm.Model{
+		SupportsThinking: true,
+		ThinkingLevels: []llm.ThinkingLevel{
+			llm.ThinkingLevelOff,
+			llm.ThinkingLevelHigh,
+		},
+	}
+	allSeven := llm.Model{
+		SupportsThinking: true,
+		ThinkingLevels: []llm.ThinkingLevel{
+			llm.ThinkingLevelOff,
+			llm.ThinkingLevelMinimal,
+			llm.ThinkingLevelLow,
+			llm.ThinkingLevelMedium,
+			llm.ThinkingLevelHigh,
+			llm.ThinkingLevelXHigh,
+			llm.ThinkingLevelMax,
+		},
+	}
+
+	tests := []struct {
+		name  string
+		model llm.Model
+		level llm.ThinkingLevel
+		want  llm.ThinkingLevel
+	}{
+		{
+			name:  "supported level passes through",
+			model: defaultFive,
+			level: llm.ThinkingLevelMedium,
+			want:  llm.ThinkingLevelMedium,
+		},
+		{
+			name:  "xhigh clamps down to high by default",
+			model: defaultFive,
+			level: llm.ThinkingLevelXHigh,
+			want:  llm.ThinkingLevelHigh,
+		},
+		{
+			name:  "max clamps down to high by default",
+			model: defaultFive,
+			level: llm.ThinkingLevelMax,
+			want:  llm.ThinkingLevelHigh,
+		},
+		{
+			name:  "always-thinking model rounds low up to high",
+			model: alwaysThinking,
+			level: llm.ThinkingLevelLow,
+			want:  llm.ThinkingLevelHigh,
+		},
+		{
+			name:  "always-thinking model rounds off up to high",
+			model: alwaysThinking,
+			level: llm.ThinkingLevelOff,
+			want:  llm.ThinkingLevelHigh,
+		},
+		{
+			name:  "always-thinking model keeps max",
+			model: alwaysThinking,
+			level: llm.ThinkingLevelMax,
+			want:  llm.ThinkingLevelMax,
+		},
+		{
+			name:  "always-thinking model clamps xhigh down to max",
+			model: alwaysThinking,
+			level: llm.ThinkingLevelXHigh,
+			want:  llm.ThinkingLevelMax,
+		},
+		{
+			name:  "toggle-only model rounds low up to high",
+			model: toggleOnly,
+			level: llm.ThinkingLevelLow,
+			want:  llm.ThinkingLevelHigh,
+		},
+		{
+			name:  "toggle-only model keeps off",
+			model: toggleOnly,
+			level: llm.ThinkingLevelOff,
+			want:  llm.ThinkingLevelOff,
+		},
+		{
+			name:  "toggle-only model clamps max down to high",
+			model: toggleOnly,
+			level: llm.ThinkingLevelMax,
+			want:  llm.ThinkingLevelHigh,
+		},
+		{
+			name:  "all-levels model passes every level through",
+			model: allSeven,
+			level: llm.ThinkingLevelMax,
+			want:  llm.ThinkingLevelMax,
+		},
+		{
+			name:  "non-thinking model clamps every level to off",
+			model: llm.Model{},
+			level: llm.ThinkingLevelHigh,
+			want:  llm.ThinkingLevelOff,
+		},
+		{
+			name:  "unknown level stays unknown",
+			model: defaultFive,
+			level: llm.ThinkingLevelUnknown,
+			want:  llm.ThinkingLevelUnknown,
+		},
+		{
+			name:  "unrecognized level falls back to the lowest supported",
+			model: defaultFive,
+			level: llm.ThinkingLevel("extreme"),
+			want:  llm.ThinkingLevelOff,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := llm.ClampThinkingLevel(tt.model, tt.level); got != tt.want {
+				t.Errorf("ClampThinkingLevel() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

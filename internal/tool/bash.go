@@ -55,9 +55,10 @@ func NewBash(workspace *Workspace) (*Bash, error) {
 // Definition returns the model-facing bash contract.
 func (b *Bash) Definition() llm.ToolDefinition {
 	return llm.ToolDefinition{
-		Name:        "bash",
-		Description: "Execute a Bash command in the working directory with bounded time and output.",
-		InputSchema: jsonSchema(bashSchema),
+		Name:          "bash",
+		Description:   "Execute a Bash command in the working directory with bounded time and output.",
+		InputSchema:   jsonSchema(bashSchema),
+		PromptSnippet: "Execute bash commands (ls, grep, find, etc.)",
 	}
 }
 

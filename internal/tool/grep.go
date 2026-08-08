@@ -98,7 +98,8 @@ func (g *Grep) Definition() llm.ToolDefinition {
 		Description: "Search file contents for a pattern. Returns matching lines with file paths and line numbers. " +
 			"Respects .gitignore. Output is truncated to 100 matches or 50KB (whichever is hit first). " +
 			"Long lines are truncated to 500 chars.",
-		InputSchema: jsonSchema(grepSchema),
+		InputSchema:   jsonSchema(grepSchema),
+		PromptSnippet: "Search file contents for patterns (respects .gitignore)",
 	}
 }
 

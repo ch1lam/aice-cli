@@ -405,6 +405,7 @@ func (a *application) newRunEnvironment(
 		configured.configuration,
 		override,
 		askUI,
+		tools,
 	)
 	if err != nil {
 		return nil, err
@@ -664,16 +665,12 @@ func resolveModelSettings(
 		if model.ID != modelID {
 			continue
 		}
-		if !model.SupportsThinking &&
-			configuration.Thinking != llm.ThinkingLevelUnknown &&
-			configuration.Thinking != llm.ThinkingLevelOff {
-			return llm.Model{}, llm.StreamOptions{}, fmt.Errorf(
-				"app: model %q does not support thinking",
-				model.ID,
-			)
+		requested := configuration.Thinking
+		if requested == llm.ThinkingLevelUnknown {
+			requested = llm.DefaultThinkingLevel
 		}
 		return model, llm.StreamOptions{
-			Thinking: configuration.Thinking,
+			Thinking: llm.ClampThinkingLevel(model, requested),
 		}, nil
 	}
 	return llm.Model{}, llm.StreamOptions{}, fmt.Errorf(

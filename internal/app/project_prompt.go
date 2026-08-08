@@ -9,6 +9,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/ch1lam/aice-cli/internal/agent"
 	"github.com/ch1lam/aice-cli/internal/config"
 	"github.com/ch1lam/aice-cli/internal/tool"
 	"github.com/ch1lam/aice-cli/internal/trust"
@@ -25,17 +26,19 @@ const (
 
 // assembleSystemPrompt resolves the effective system prompt for one trusted
 // run. The base comes from the project SYSTEM.md when trusted, then the global
-// SYSTEM.md, then the built-in default. The project AGENTS.md is appended to
-// the base when trusted, then APPEND_SYSTEM.md appends last using the same
-// precedence so explicit instructions win. Project files are only read when
-// the trust decision allows it; global user files are always eligible.
+// SYSTEM.md, then the built-in default (which lists the available tools). The
+// project AGENTS.md is appended to the base when trusted, then
+// APPEND_SYSTEM.md appends last using the same precedence so explicit
+// instructions win. Project files are only read when the trust decision allows
+// it; global user files are always eligible.
 func assembleSystemPrompt(
 	workspace *tool.Workspace,
 	configuration config.Config,
 	decision trust.Decision,
+	tools []agent.Tool,
 ) (string, error) {
 	trusted := decision == trust.DecisionTrusted
-	base, err := resolvePromptBase(workspace, configuration, trusted)
+	base, err := resolvePromptBase(workspace, configuration, trusted, tools)
 	if err != nil {
 		return "", err
 	}
@@ -62,6 +65,7 @@ func resolvePromptBase(
 	workspace *tool.Workspace,
 	configuration config.Config,
 	trusted bool,
+	tools []agent.Tool,
 ) (string, error) {
 	content, ok, err := readProjectPrompt(workspace, trust.SystemFile, trusted)
 	if err != nil {
@@ -80,7 +84,7 @@ func resolvePromptBase(
 	if ok {
 		return content, nil
 	}
-	return defaultSystemPrompt, nil
+	return buildDefaultSystemPrompt(tools, workspace.Path()), nil
 }
 
 // resolvePromptAppend picks the appended project instructions following Pi's

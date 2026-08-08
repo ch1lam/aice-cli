@@ -45,9 +45,13 @@ func NewRead(workspace *Workspace) (*Read, error) {
 // Definition returns the model-facing read contract.
 func (r *Read) Definition() llm.ToolDefinition {
 	return llm.ToolDefinition{
-		Name:        "read",
-		Description: "Read a text file, resolving relative paths from the working directory. Output is limited to 2000 complete lines or 50 KiB; use offset and limit, then follow continuation notices for large files.",
-		InputSchema: jsonSchema(readSchema),
+		Name:          "read",
+		Description:   "Read a text file, resolving relative paths from the working directory. Output is limited to 2000 complete lines or 50 KiB; use offset and limit, then follow continuation notices for large files.",
+		InputSchema:   jsonSchema(readSchema),
+		PromptSnippet: "Read file contents",
+		PromptGuidelines: []string{
+			"Use read to examine files instead of cat or sed.",
+		},
 	}
 }
 

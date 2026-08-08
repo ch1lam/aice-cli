@@ -383,6 +383,9 @@ func TestInteractiveSessionSlashCommandsPersistRuntimeSettings(t *testing.T) {
 			},
 		}},
 		model: deepseek.DefaultModel(),
+		options: llm.StreamOptions{
+			Thinking: llm.ThinkingLevelMedium,
+		},
 		configuration: config.Config{
 			Provider:       string(deepseek.ProviderID),
 			Model:          deepseek.ModelV4Flash,
@@ -405,7 +408,7 @@ func TestInteractiveSessionSlashCommandsPersistRuntimeSettings(t *testing.T) {
 	for _, want := range []string{
 		"Provider: deepseek",
 		"Model: " + deepseek.ModelV4Flash,
-		"Thinking: default",
+		"Thinking: medium",
 		"API key: configured",
 		"Global settings: /global/settings.json",
 	} {
@@ -555,6 +558,9 @@ func TestInteractiveSessionLoginCanRetryAfterPersistenceFailure(t *testing.T) {
 			providers: defaultProviders(),
 		}},
 		model: deepseek.DefaultModel(),
+		options: llm.StreamOptions{
+			Thinking: llm.ThinkingLevelMedium,
+		},
 		configuration: config.Config{
 			Provider: string(deepseek.ProviderID),
 			Model:    deepseek.ModelV4Flash,
@@ -628,6 +634,88 @@ func TestInteractiveSessionOpencodeMenusAndModelSelection(t *testing.T) {
 	}
 }
 
+func TestInteractiveSessionThinkingKeepsRequestedLevelAndClampsPerModel(t *testing.T) {
+	t.Parallel()
+
+	type savedSetting struct {
+		setting config.Setting
+		value   string
+	}
+	var saved []savedSetting
+	runner := &interactiveSession{
+		application: &application{dependencies: dependencies{
+			saveSetting: func(setting config.Setting, value string) error {
+				saved = append(saved, savedSetting{setting: setting, value: value})
+				return nil
+			},
+		}},
+		model: opencode.DefaultModel(),
+		configuration: config.Config{
+			Provider: string(opencode.ProviderID),
+			Model:    opencode.DefaultModel().ID,
+		},
+		providers: defaultProviders(),
+	}
+
+	if _, err := runner.RunSlashCommand(t.Context(), tui.SlashCommandRequest{
+		Name:      "thinking",
+		Arguments: "xhigh",
+	}); err != nil {
+		t.Fatalf("/thinking error = %v", err)
+	}
+	if runner.configuration.Thinking != llm.ThinkingLevelXHigh {
+		t.Errorf("stored thinking = %q, want the requested xhigh", runner.configuration.Thinking)
+	}
+	if runner.options.Thinking != llm.ThinkingLevelHigh {
+		t.Errorf(
+			"effective thinking = %q, want high (default model clamps xhigh)",
+			runner.options.Thinking,
+		)
+	}
+	if got, want := saved, []savedSetting{{
+		setting: config.SettingThinking,
+		value:   "xhigh",
+	}}; !reflect.DeepEqual(got, want) {
+		t.Errorf("saved settings = %#v, want %#v", got, want)
+	}
+
+	// Switching to gpt-5.6-luna must restore the requested xhigh without
+	// rewriting the stored setting.
+	saved = nil
+	if _, err := runner.RunSlashCommand(t.Context(), tui.SlashCommandRequest{
+		Name:      "model",
+		Arguments: "gpt-5.6-luna",
+	}); err != nil {
+		t.Fatalf("/model error = %v", err)
+	}
+	if runner.options.Thinking != llm.ThinkingLevelXHigh {
+		t.Errorf(
+			"effective thinking after switch = %q, want xhigh on gpt-5.6-luna",
+			runner.options.Thinking,
+		)
+	}
+	if got, want := saved, []savedSetting{{
+		setting: config.SettingModel,
+		value:   "gpt-5.6-luna",
+	}}; !reflect.DeepEqual(got, want) {
+		t.Errorf("saved settings after switch = %#v, want only the model", got)
+	}
+
+	// A model that always thinks at high or max still clamps the request.
+	if _, err := runner.RunSlashCommand(t.Context(), tui.SlashCommandRequest{
+		Name:      "model",
+		Arguments: "glm-5.2",
+	}); err != nil {
+		t.Fatalf("/model error = %v", err)
+	}
+	if runner.options.Thinking != llm.ThinkingLevelMax {
+		t.Errorf(
+			"effective thinking on glm-5.2 = %q, want max (xhigh clamps up to max)",
+			runner.options.Thinking,
+		)
+	}
+}
+
 func TestInteractiveSessionLoginOpencode(t *testing.T) {
 	t.Parallel()
 
@@ -648,6 +736,9 @@ func TestInteractiveSessionLoginOpencode(t *testing.T) {
 			providers: defaultProviders(),
 		}},
 		model: opencode.DefaultModel(),
+		options: llm.StreamOptions{
+			Thinking: llm.ThinkingLevelMedium,
+		},
 		configuration: config.Config{
 			Provider: string(opencode.ProviderID),
 			Model:    opencode.DefaultModel().ID,

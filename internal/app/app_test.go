@@ -87,8 +87,15 @@ func TestApplicationPrintRunsBuiltInAgent(t *testing.T) {
 				t.Fatalf("model requests = %d, want 1", len(model.requests))
 			}
 			request := model.requests[0]
-			if request.SystemPrompt != defaultSystemPrompt {
-				t.Errorf("system prompt = %q, want %q", request.SystemPrompt, defaultSystemPrompt)
+			if request.SystemPrompt != defaultPromptFor(
+				t,
+				testWorkspace(t, workspace),
+			) {
+				t.Errorf(
+					"system prompt = %q, want %q",
+					request.SystemPrompt,
+					defaultPromptFor(t, testWorkspace(t, workspace)),
+				)
 			}
 			if len(request.Messages) != 1 {
 				t.Fatalf("model messages = %#v, want one user prompt", request.Messages)
@@ -214,8 +221,11 @@ func TestResolveModelSettingsOpencode(t *testing.T) {
 	if model.Provider != opencode.ProviderID || model.ID != "kimi-k2.6" {
 		t.Errorf("model = %#v, want kimi-k2.6 via opencode-go", model)
 	}
-	if options.Thinking != llm.ThinkingLevelMedium {
-		t.Errorf("options.Thinking = %q, want medium", options.Thinking)
+	if options.Thinking != llm.ThinkingLevelHigh {
+		t.Errorf(
+			"options.Thinking = %q, want high (kimi-k2.6 clamps medium to high)",
+			options.Thinking,
+		)
 	}
 }
 
@@ -324,9 +334,9 @@ func TestApplicationInteractiveKeepsConversationHistory(t *testing.T) {
 					deepseek.ModelV4Flash,
 				)
 			}
-			if options.Thinking != tui.DisplayThinkingDefault {
+			if options.Thinking != tui.DisplayThinkingMedium {
 				t.Errorf(
-					"TUI thinking = %q, want provider default",
+					"TUI thinking = %q, want the medium default",
 					options.Thinking,
 				)
 			}

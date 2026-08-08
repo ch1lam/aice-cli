@@ -174,60 +174,41 @@ func providerModel(
 }
 
 func (s *interactiveSession) thinkingMenu() *tui.SlashCommandMenu {
-	levels := []struct {
-		level       llm.ThinkingLevel
-		label       string
-		description string
-	}{
-		{
-			level:       llm.ThinkingLevelOff,
-			label:       "Off",
-			description: "Disable reasoning",
-		},
-		{
-			level:       llm.ThinkingLevelMinimal,
-			label:       "Minimal",
-			description: "Use the smallest reasoning budget",
-		},
-		{
-			level:       llm.ThinkingLevelLow,
-			label:       "Low",
-			description: "Use a low reasoning budget",
-		},
-		{
-			level:       llm.ThinkingLevelMedium,
-			label:       "Medium",
-			description: "Balance reasoning depth and speed",
-		},
-		{
-			level:       llm.ThinkingLevelHigh,
-			label:       "High",
-			description: "Use a high reasoning budget",
-		},
-		{
-			level:       llm.ThinkingLevelXHigh,
-			label:       "Extra high",
-			description: "Use a very high reasoning budget",
-		},
-		{
-			level:       llm.ThinkingLevelMax,
-			label:       "Maximum",
-			description: "Use the maximum reasoning budget",
-		},
-	}
-	options := make([]tui.SlashCommandOption, 0, len(levels))
-	for _, option := range levels {
-		value := string(option.level)
+	options := make([]tui.SlashCommandOption, 0, len(llm.SupportedThinkingLevels(s.model)))
+	for _, level := range llm.SupportedThinkingLevels(s.model) {
+		label, description := thinkingLevelDescription(level)
+		value := string(level)
 		options = append(options, tui.SlashCommandOption{
-			Label:       option.label,
-			Description: option.description,
+			Label:       label,
+			Description: description,
 			Arguments:   value,
-			Current:     s.options.Thinking == option.level,
+			Current:     s.options.Thinking == level,
 		})
 	}
 	return &tui.SlashCommandMenu{
 		Title:   "Select reasoning level",
 		Options: options,
+	}
+}
+
+func thinkingLevelDescription(level llm.ThinkingLevel) (label, description string) {
+	switch level {
+	case llm.ThinkingLevelOff:
+		return "Off", "Disable reasoning"
+	case llm.ThinkingLevelMinimal:
+		return "Minimal", "Use the smallest reasoning budget"
+	case llm.ThinkingLevelLow:
+		return "Low", "Use a low reasoning budget"
+	case llm.ThinkingLevelMedium:
+		return "Medium", "Balance reasoning depth and speed"
+	case llm.ThinkingLevelHigh:
+		return "High", "Use a high reasoning budget"
+	case llm.ThinkingLevelXHigh:
+		return "Extra high", "Use a very high reasoning budget"
+	case llm.ThinkingLevelMax:
+		return "Maximum", "Use the maximum reasoning budget"
+	default:
+		return string(level), ""
 	}
 }
 
@@ -409,9 +390,11 @@ func (s *interactiveSession) RunSlashCommand(
 		if err := s.saveSetting(config.SettingProvider, value); err != nil {
 			return "", err
 		}
+		model := providerModel(s.providers, value, configuration.Model)
 		s.configuration = configuration
 		s.loop = loop
-		s.model = providerModel(s.providers, value, configuration.Model)
+		s.model = model
+		s.options.Thinking = s.clampedThinkingForModel(model)
 		return savedSettingMessage("provider", value), nil
 	case "model":
 		value, err := slashCommandSettingValue(request)
@@ -426,11 +409,13 @@ func (s *interactiveSession) RunSlashCommand(
 				strings.Join(modelIDsForProvider(s.providers, s.activeProvider()), ", "),
 			)
 		}
+		effective := s.clampedThinkingForModel(model)
 		if err := s.saveSetting(config.SettingModel, value); err != nil {
 			return "", err
 		}
 		s.configuration.Model = value
 		s.model = model
+		s.options.Thinking = effective
 		return savedSettingMessage("model", value), nil
 	case "thinking":
 		value, err := slashCommandSettingValue(request)
@@ -540,8 +525,20 @@ func (s *interactiveSession) login(
 	s.configuration = configuration
 	s.loop = loop
 	s.model = providerModel(s.providers, provider, configuration.Model)
+	s.options.Thinking = s.clampedThinkingForModel(s.model)
 	return "Saved " + providerLabel(s.providers, provider) + " API key to " + path +
 		". AICE is ready.", nil
+}
+
+// clampedThinkingForModel re-clamps the requested reasoning level to a
+// model's capabilities. The requested level stays in the configuration so a
+// switch back to a model that supports it restores the original request.
+func (s *interactiveSession) clampedThinkingForModel(model llm.Model) llm.ThinkingLevel {
+	requested := s.configuration.Thinking
+	if requested == llm.ThinkingLevelUnknown {
+		requested = llm.DefaultThinkingLevel
+	}
+	return llm.ClampThinkingLevel(model, requested)
 }
 
 func (s *interactiveSession) settingsInformation() string {

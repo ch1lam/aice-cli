@@ -55,6 +55,42 @@ func TestModels(t *testing.T) {
 	if kimi.Pricing.Input != 0.95 || kimi.Pricing.Output != 4 || kimi.Pricing.CacheRead != 0.16 {
 		t.Errorf("kimi-k2.6 pricing = %#v", kimi.Pricing)
 	}
+
+	wantLevels := map[string][]llm.ThinkingLevel{
+		// OpenCode Go exposes Kimi K2.6 thinking as on/off plus high only.
+		"kimi-k2.6": {llm.ThinkingLevelOff, llm.ThinkingLevelHigh},
+		// GLM-5.2 always reasons at high or max.
+		"glm-5.2": {llm.ThinkingLevelHigh, llm.ThinkingLevelMax},
+		// GPT-5.6 Luna supports every reasoning effort.
+		"gpt-5.6-luna": {
+			llm.ThinkingLevelOff,
+			llm.ThinkingLevelMinimal,
+			llm.ThinkingLevelLow,
+			llm.ThinkingLevelMedium,
+			llm.ThinkingLevelHigh,
+			llm.ThinkingLevelXHigh,
+			llm.ThinkingLevelMax,
+		},
+	}
+	for modelID, want := range wantLevels {
+		candidate, ok := modelForID(models, modelID)
+		if !ok {
+			t.Errorf("model %q missing from Models()", modelID)
+			continue
+		}
+		if !reflect.DeepEqual(candidate.ThinkingLevels, want) {
+			t.Errorf("model %q thinking levels = %v, want %v", modelID, candidate.ThinkingLevels, want)
+		}
+	}
+}
+
+func modelForID(models []llm.Model, id string) (llm.Model, bool) {
+	for _, model := range models {
+		if model.ID == id {
+			return model, true
+		}
+	}
+	return llm.Model{}, false
 }
 
 func TestModelCatalogHasCompleteSpecs(t *testing.T) {
