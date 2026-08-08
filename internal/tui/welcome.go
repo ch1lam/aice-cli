@@ -198,10 +198,11 @@ func (m model) welcomeCard() string {
 	}
 	toolLabel := mutedStyle.Render("AVAILABLE TOOLS")
 	tools := labelStyle.Render("read   ls   grep   find")
-	return cardStyle.Render(strings.Join(
-		[]string{title, description, commandHint, "", toolLabel, tools},
-		"\n",
-	))
+	rows := []string{title, description, commandHint, "", toolLabel, tools}
+	if m.version != "" {
+		rows = append(rows, "", mutedStyle.Render(m.version))
+	}
+	return cardStyle.Render(strings.Join(rows, "\n"))
 }
 
 // parseHexColor converts "#RRGGBB" into normalized RGB components in [0, 255].

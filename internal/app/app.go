@@ -346,6 +346,7 @@ func (a *application) Interactive(
 		),
 		Usage:            newDisplayUsage(usage),
 		WorkingDirectory: environment.workspace.Path(),
+		Version:          cli.Version,
 	})
 	closeErr := store.Close()
 	if runErr != nil {

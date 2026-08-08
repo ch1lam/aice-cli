@@ -96,6 +96,7 @@ type model struct {
 	usageAnimation   usageAnimation
 	welcomeAnimation welcomeAnimation
 	workingDirectory string
+	version          string
 	entries          []transcriptEntry
 	processGroups    []processGroup
 	commands         []SlashCommand

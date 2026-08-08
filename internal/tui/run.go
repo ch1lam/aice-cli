@@ -45,6 +45,9 @@ type Options struct {
 	APIKeyConfigured bool
 	Usage            DisplayUsage
 	WorkingDirectory string
+	// Version is shown on the welcome screen only; it stays off the
+	// transcript while the conversation is in use.
+	Version string
 }
 
 // Run starts an interactive Bubble Tea program and owns its run controller.
@@ -87,6 +90,7 @@ func Run(ctx context.Context, runner Runner, options Options) error {
 	initialModel.apiKeyConfigured = options.APIKeyConfigured
 	initialModel.sessionUsage = options.Usage
 	initialModel.workingDirectory = options.WorkingDirectory
+	initialModel.version = options.Version
 	program := tea.NewProgram(
 		initialModel,
 		tea.WithContext(ctx),

@@ -71,6 +71,33 @@ func TestWelcomeViewOmitsLogoWhenShort(t *testing.T) {
 	}
 }
 
+func TestWelcomeViewShowsVersion(t *testing.T) {
+	t.Parallel()
+
+	current := newModel(make(chan runRequest), make(chan struct{}))
+	current = updateModel(t, current, tea.WindowSizeMsg{Width: 80, Height: 24})
+	current.version = "v0.4.5"
+
+	welcome := current.welcomeView()
+	if !strings.Contains(welcome, "v0.4.5") {
+		t.Errorf("welcome = %q, want the version on the welcome screen", welcome)
+	}
+}
+
+func TestWelcomeViewOmitsVersionWhenUnset(t *testing.T) {
+	t.Parallel()
+
+	current := newModel(make(chan runRequest), make(chan struct{}))
+	current = updateModel(t, current, tea.WindowSizeMsg{Width: 80, Height: 24})
+
+	welcome := current.welcomeView()
+	for _, line := range strings.Split(welcome, "\n") {
+		if strings.Contains(line, "v0.") || strings.Contains(line, "dev") {
+			t.Errorf("welcome = %q, want no version when unset", welcome)
+		}
+	}
+}
+
 func TestWelcomeAnimationAdvancesThenStops(t *testing.T) {
 	t.Parallel()
 
