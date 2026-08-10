@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"time"
 
 	"charm.land/bubbles/v2/help"
 	"charm.land/bubbles/v2/key"
@@ -53,6 +54,8 @@ type transcriptEntry struct {
 type processGroup struct {
 	id        int
 	collapsed bool
+	startedAt time.Time
+	elapsed   time.Duration
 }
 
 type transcriptViewPart struct {
@@ -259,7 +262,8 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		var command tea.Cmd
 		m.spinner, command = m.spinner.Update(message)
 		if m.running {
-			if m.showsActivitySpinner() {
+			durationChanged := m.updateActiveProcessDuration(message.Time)
+			if m.showsActivitySpinner() || durationChanged {
 				m.refreshViewport(false)
 			}
 			return m, command
