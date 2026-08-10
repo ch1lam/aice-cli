@@ -157,6 +157,9 @@ func requestParams(request llm.Request) (responses.ResponseNewParams, error) {
 }
 
 func reasoningParam(level llm.ThinkingLevel) (shared.ReasoningParam, error) {
+	if level == llm.ThinkingLevelOff {
+		return shared.ReasoningParam{Effort: shared.ReasoningEffortNone}, nil
+	}
 	effort, err := streamcore.ThinkingEffort(level)
 	if err != nil {
 		return shared.ReasoningParam{}, fmt.Errorf("openai responses: %w", err)

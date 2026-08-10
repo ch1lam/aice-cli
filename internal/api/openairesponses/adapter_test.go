@@ -232,6 +232,53 @@ func TestAdapterStreamsReasoningTextToolCallUsageAndDone(t *testing.T) {
 	assertRequestBody(t, body)
 }
 
+func TestAdapterMapsOffThinkingToNone(t *testing.T) {
+	t.Parallel()
+
+	requests := make(chan map[string]any, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode request body: %v", err)
+			return
+		}
+		requests <- body
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(
+			w,
+			"data: "+
+				`{"type":"response.completed","sequence_number":0,"response":`+
+				`{"id":"resp-1","model":"deepseek-v4-flash","status":"completed"}}`+
+				"\n\n",
+		)
+	}))
+	defer server.Close()
+
+	adapter, err := openairesponses.New(openairesponses.Config{
+		APIKey:     "test-key",
+		BaseURL:    server.URL,
+		HTTPClient: server.Client(),
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	request := apitest.MinimalRequest(openairesponses.API)
+	request.Options.Thinking = llm.ThinkingLevelOff
+	modelStream, err := adapter.Stream(context.Background(), request)
+	if err != nil {
+		t.Fatalf("Stream() error = %v", err)
+	}
+	defer modelStream.Close()
+	_ = apitest.CollectEvents(t, modelStream)
+
+	body := <-requests
+	reasoning, ok := body["reasoning"].(map[string]any)
+	if !ok || reasoning["effort"] != "none" {
+		t.Errorf("reasoning = %#v, want effort none", body["reasoning"])
+	}
+}
+
 func TestAdapterRejectsIncompleteStreamedToolCall(t *testing.T) {
 	t.Parallel()
 
