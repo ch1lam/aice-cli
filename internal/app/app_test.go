@@ -350,10 +350,10 @@ func TestApplicationInteractiveKeepsConversationHistory(t *testing.T) {
 					workspace,
 				)
 			}
-			if err := runner.Run(ctx, "first prompt", nil); err != nil {
+			if err := runner.Run(ctx, tui.RunInput{Prompt: "first prompt"}, nil); err != nil {
 				return err
 			}
-			return runner.Run(ctx, "second prompt", nil)
+			return runner.Run(ctx, tui.RunInput{Prompt: "second prompt"}, nil)
 		},
 	})
 	if err != nil {
@@ -428,7 +428,7 @@ func TestApplicationInteractiveStartsWithoutCredentials(t *testing.T) {
 			if options.APIKeyConfigured {
 				t.Error("TUI reports an API key before login")
 			}
-			err := runner.Run(ctx, "inspect", nil)
+			err := runner.Run(ctx, tui.RunInput{Prompt: "inspect"}, nil)
 			if err == nil || !strings.Contains(err.Error(), "/login") {
 				t.Fatalf("Run() error = %v, want /login guidance", err)
 			}
@@ -518,7 +518,7 @@ func TestApplicationInteractiveLoginEnablesCurrentSession(t *testing.T) {
 			if !state.APIKeyConfigured {
 				t.Error("runtime remains unauthenticated after /login")
 			}
-			return runner.Run(ctx, "inspect", nil)
+			return runner.Run(ctx, tui.RunInput{Prompt: "inspect"}, nil)
 		},
 	})
 	if err != nil {
@@ -696,7 +696,7 @@ func TestApplicationInteractiveResumesExplicitSession(t *testing.T) {
 					newDisplayUsage(firstUsage),
 				)
 			}
-			return runner.Run(ctx, "second prompt", nil)
+			return runner.Run(ctx, tui.RunInput{Prompt: "second prompt"}, nil)
 		},
 	})
 	if err != nil {
@@ -875,7 +875,7 @@ func TestInteractiveSessionPersistsCancellationAfterToolSideEffect(t *testing.T)
 		model: deepseek.DefaultModel(),
 	}
 
-	err = runner.Run(ctx, "mutate then continue", nil)
+	err = runner.Run(ctx, tui.RunInput{Prompt: "mutate then continue"}, nil)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("Run() error = %v, want context.Canceled", err)
 	}
@@ -942,7 +942,7 @@ func TestInteractiveSessionPersistsToolErrorAndRecovery(t *testing.T) {
 		model: deepseek.DefaultModel(),
 	}
 
-	if err := runner.Run(t.Context(), "mutate", nil); err != nil {
+	if err := runner.Run(t.Context(), tui.RunInput{Prompt: "mutate"}, nil); err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
 	if err := store.Close(); err != nil {
@@ -971,6 +971,73 @@ func TestInteractiveSessionPersistsToolErrorAndRecovery(t *testing.T) {
 	final, ok := messages[3].(llm.AssistantMessage)
 	if !ok || final.StopReason != llm.StopReasonStop {
 		t.Fatalf("final recovered assistant = %#v", messages[3])
+	}
+}
+
+func TestInteractiveSessionPersistsSteerInsideActiveRun(t *testing.T) {
+	t.Parallel()
+
+	workspace := t.TempDir()
+	sessionPath := filepath.Join(t.TempDir(), "conversation.jsonl")
+	model := &recordingModel{response: "complete"}
+	loop, err := agent.NewLoop(model, nil)
+	if err != nil {
+		t.Fatalf("agent.NewLoop() error = %v", err)
+	}
+	store := createAppTestSession(t, sessionPath, workspace)
+	runner := &interactiveSession{
+		loop:  loop,
+		store: store,
+		model: deepseek.DefaultModel(),
+	}
+	steered := false
+	var displays []tui.DisplayEvent
+	err = runner.Run(t.Context(), tui.RunInput{
+		Prompt: "inspect",
+		Steering: func() (tui.SteeringInput, bool) {
+			if steered {
+				return tui.SteeringInput{}, false
+			}
+			steered = true
+			return tui.SteeringInput{
+				ID:   "steer-1",
+				Text: "focus on tests",
+			}, true
+		},
+	}, func(_ context.Context, event tui.DisplayEvent) error {
+		displays = append(displays, event)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatalf("Store.Close() error = %v", err)
+	}
+
+	snapshot := openSessionSnapshot(t, sessionPath)
+	if len(snapshot.Turns) != 1 {
+		t.Fatalf("persisted turns = %#v, want one steered run", snapshot.Turns)
+	}
+	if got, want := persistedMessageRoles(snapshot.Turns[0].Messages), []llm.Role{
+		llm.RoleUser,
+		llm.RoleAssistant,
+		llm.RoleUser,
+		llm.RoleAssistant,
+	}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("persisted message roles = %v, want %v", got, want)
+	}
+	foundSteer := false
+	for _, display := range displays {
+		if display.Kind == tui.DisplayEventSteer &&
+			display.Steering.ID == "steer-1" &&
+			display.Steering.Text == "focus on tests" {
+			foundSteer = true
+			break
+		}
+	}
+	if !foundSteer {
+		t.Fatalf("display events = %#v, want accepted steer", displays)
 	}
 }
 

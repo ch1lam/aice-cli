@@ -37,13 +37,16 @@ func (m model) submit() (model, tea.Cmd, bool) {
 	m.input.Reset()
 	m.commandSelection = 0
 	m.commandDismissed = false
-	m.input.Blur()
+	m.deliveries = newDeliveryMailbox()
+	m.pendingDeliveries = nil
+	m.acceptsDelivery = true
+	m.input.Focus()
 	m.running = true
 	m.assistantEntry = -1
 	m.status = "Starting response..."
 	return m.settleCommand(
 		true,
-		startRun(m.requests, m.controllerDone, prompt),
+		startRun(m.requests, m.controllerDone, prompt, m.deliveries),
 	)
 }
 
@@ -132,6 +135,8 @@ func (m model) startApplicationSlashCommand(
 	m.entries = append(m.entries, transcriptEntry{kind: entryUser, text: raw})
 	m.resetCommandInput()
 	m.input.Blur()
+	m.deliveries = nil
+	m.acceptsDelivery = false
 	m.running = true
 	m.assistantEntry = -1
 	m.status = "Running /" + command.Name + "..."
@@ -160,6 +165,8 @@ func (m model) openCommandMenu(
 		}},
 	}
 	m.input.Blur()
+	m.deliveries = nil
+	m.acceptsDelivery = false
 	m.status = command.Menu.Title + "; Esc cancels"
 	return m.settleCommand(false, nil)
 }

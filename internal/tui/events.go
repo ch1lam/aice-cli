@@ -133,7 +133,17 @@ func (m model) applyRunBatch(batch runBatchMsg) (tea.Model, tea.Cmd) {
 			} else {
 				m.status = "Thinking..."
 			}
-			continue
+		}
+		if m.promotePendingDeliveries(update.promoted) {
+			m.resizeLayout()
+		}
+		if update.continued && update.err != nil {
+			m.appendRunError(update.err)
+			contentChanged = true
+		}
+		if update.started != nil {
+			m.startQueuedDelivery(*update.started)
+			contentChanged = true
 		}
 		if strings.TrimSpace(update.output) != "" {
 			m.entries = append(m.entries, transcriptEntry{
@@ -228,6 +238,8 @@ func (m *model) applyAgentEvent(event DisplayEvent) (bool, tea.Cmd) {
 		m.completeTool(event.Tool.ID, event.Tool.Failed)
 		m.status = "Thinking..."
 		return true, nil
+	case DisplayEventSteer:
+		return m.applySteer(event.Steering), nil
 	case DisplayEventRetryStart:
 		m.status = fmt.Sprintf(
 			"Retrying in %s (%d/%d)...",
@@ -336,6 +348,9 @@ func (m *model) finishRun(err error) tea.Cmd {
 		m.revokeConclusion()
 	}
 	m.running = false
+	m.acceptsDelivery = false
+	m.deliveries = nil
+	m.pendingDeliveries = nil
 	m.cancelRun = nil
 	m.cancelRequested = false
 	m.assistantEntry = -1
@@ -358,6 +373,21 @@ func (m *model) finishRun(err error) tea.Cmd {
 	return focus
 }
 
+func (m *model) appendRunError(err error) {
+	if err == nil {
+		return
+	}
+	m.revokeConclusion()
+	message := err.Error()
+	kind := entryError
+	if errors.Is(err, context.Canceled) {
+		message = "Response cancelled"
+		kind = entryNotice
+	}
+	m.entries = append(m.entries, transcriptEntry{kind: kind, text: message})
+	m.status = message
+}
+
 type runStartedMsg struct {
 	updates <-chan runUpdate
 }
@@ -373,13 +403,18 @@ func startRun(
 	requests chan<- runRequest,
 	controllerDone <-chan struct{},
 	prompt string,
+	deliveries *deliveryMailbox,
 ) tea.Cmd {
 	return func() tea.Msg {
 		updates := make(chan runUpdate, runUpdateBuffer)
 		select {
 		case <-controllerDone:
 			return runUnavailableMsg{}
-		case requests <- runRequest{prompt: prompt, updates: updates}:
+		case requests <- runRequest{
+			prompt:     prompt,
+			deliveries: deliveries,
+			updates:    updates,
+		}:
 			return runStartedMsg{updates: updates}
 		}
 	}

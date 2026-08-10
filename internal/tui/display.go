@@ -41,6 +41,7 @@ const (
 	DisplayEventAssistantEnd
 	DisplayEventToolStart
 	DisplayEventToolEnd
+	DisplayEventSteer
 	DisplayEventRetryStart
 	DisplayEventRetryEnd
 	DisplayEventAgentEnd
@@ -87,6 +88,12 @@ type RetryDisplay struct {
 	Succeeded  bool
 }
 
+// SteeringDisplay identifies one steer accepted by the active Agent Loop.
+type SteeringDisplay struct {
+	ID   string
+	Text string
+}
+
 // DisplayEvent is one agent lifecycle event translated for the interface.
 // Fields are populated according to Kind.
 type DisplayEvent struct {
@@ -94,6 +101,7 @@ type DisplayEvent struct {
 	Delta     DisplayDelta
 	Assistant AssistantDisplay
 	Tool      ToolDisplay
+	Steering  SteeringDisplay
 	Retry     RetryDisplay
 	Err       error
 }

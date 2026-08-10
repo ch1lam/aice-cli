@@ -13,10 +13,26 @@ import (
 
 const runUpdateBuffer = 32
 
+// RunInput contains one prompt and the non-blocking steering source available
+// while that prompt is active.
+type RunInput struct {
+	Prompt   string
+	Steering SteeringSource
+}
+
+// SteeringInput is one caller-owned user message waiting for an active run.
+type SteeringInput struct {
+	ID   string
+	Text string
+}
+
+// SteeringSource returns at most one waiting input without blocking.
+type SteeringSource func() (SteeringInput, bool)
+
 // Runner executes one prompt and emits its ordered display events.
 // Implementations may retain conversation history between calls.
 type Runner interface {
-	Run(ctx context.Context, prompt string, sink DisplayEventSink) error
+	Run(ctx context.Context, input RunInput, sink DisplayEventSink) error
 }
 
 // RuntimeState contains request settings and session snapshots that the TUI
@@ -111,19 +127,23 @@ func Run(ctx context.Context, runner Runner, options Options) error {
 }
 
 type runRequest struct {
-	prompt  string
-	command *SlashCommandRequest
-	updates chan runUpdate
+	prompt     string
+	command    *SlashCommandRequest
+	deliveries *deliveryMailbox
+	updates    chan runUpdate
 }
 
 type runUpdate struct {
-	event    DisplayEvent
-	cancel   context.CancelFunc
-	err      error
-	output   string
-	state    *RuntimeState
-	commands *[]SlashCommand
-	done     bool
+	event     DisplayEvent
+	cancel    context.CancelFunc
+	err       error
+	output    string
+	state     *RuntimeState
+	commands  *[]SlashCommand
+	started   *pendingDelivery
+	promoted  []string
+	continued bool
+	done      bool
 }
 
 func serveRuns(
@@ -146,23 +166,27 @@ func serveRuns(
 func runOne(ctx context.Context, runner Runner, request runRequest) {
 	defer close(request.updates)
 
-	runCtx, cancel := context.WithCancel(ctx)
-	if !sendRunUpdate(ctx, request.updates, runUpdate{cancel: cancel}) {
-		cancel()
+	if request.command != nil {
+		runSlashCommand(ctx, runner, request)
 		return
 	}
 
-	var output string
-	var err error
-	if request.command != nil {
-		commandRunner, ok := runner.(SlashCommandRunner)
-		if !ok {
-			err = fmt.Errorf("tui: slash command runner is required")
-		} else {
-			output, err = commandRunner.RunSlashCommand(runCtx, *request.command)
+	deliveries := request.deliveries
+	if deliveries == nil {
+		deliveries = newDeliveryMailbox()
+	}
+	current := pendingDelivery{text: request.prompt}
+	for {
+		runCtx, cancel := context.WithCancel(ctx)
+		if !sendRunUpdate(ctx, request.updates, runUpdate{cancel: cancel}) {
+			cancel()
+			return
 		}
-	} else {
-		err = runner.Run(runCtx, request.prompt, func(
+
+		err := runner.Run(runCtx, RunInput{
+			Prompt:   current.text,
+			Steering: deliveries.takeSteering,
+		}, func(
 			eventCtx context.Context,
 			event DisplayEvent,
 		) error {
@@ -171,7 +195,72 @@ func runOne(ctx context.Context, runner Runner, request runRequest) {
 			}
 			return nil
 		})
+		cancel()
+
+		state, commands := runnerSnapshots(runner)
+		if ctx.Err() != nil {
+			_ = sendRunUpdate(ctx, request.updates, runUpdate{
+				err:      err,
+				state:    state,
+				commands: commands,
+				done:     true,
+			})
+			return
+		}
+
+		next, promoted, queued := deliveries.nextQueued()
+		if !queued {
+			_ = sendRunUpdate(ctx, request.updates, runUpdate{
+				err:      err,
+				state:    state,
+				commands: commands,
+				promoted: promoted,
+				done:     true,
+			})
+			return
+		}
+		if !sendRunUpdate(ctx, request.updates, runUpdate{
+			err:       err,
+			state:     state,
+			commands:  commands,
+			promoted:  promoted,
+			continued: true,
+		}) {
+			return
+		}
+		if !sendRunUpdate(ctx, request.updates, runUpdate{started: &next}) {
+			return
+		}
+		current = next
 	}
+}
+
+func runSlashCommand(ctx context.Context, runner Runner, request runRequest) {
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	if !sendRunUpdate(ctx, request.updates, runUpdate{cancel: cancel}) {
+		return
+	}
+
+	var output string
+	var err error
+	commandRunner, ok := runner.(SlashCommandRunner)
+	if !ok {
+		err = fmt.Errorf("tui: slash command runner is required")
+	} else {
+		output, err = commandRunner.RunSlashCommand(runCtx, *request.command)
+	}
+	state, commands := runnerSnapshots(runner)
+	_ = sendRunUpdate(ctx, request.updates, runUpdate{
+		err:      err,
+		output:   output,
+		state:    state,
+		commands: commands,
+		done:     true,
+	})
+}
+
+func runnerSnapshots(runner Runner) (*RuntimeState, *[]SlashCommand) {
 	var state *RuntimeState
 	if provider, ok := runner.(RuntimeStateProvider); ok {
 		snapshot := provider.RuntimeState()
@@ -182,14 +271,7 @@ func runOne(ctx context.Context, runner Runner, request runRequest) {
 		snapshot := commandRunner.SlashCommands()
 		commands = &snapshot
 	}
-	cancel()
-	_ = sendRunUpdate(ctx, request.updates, runUpdate{
-		err:      err,
-		output:   output,
-		state:    state,
-		commands: commands,
-		done:     true,
-	})
+	return state, commands
 }
 
 func sendRunUpdate(

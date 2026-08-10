@@ -83,25 +83,27 @@ type model struct {
 	updates        <-chan runUpdate
 	cancelRun      context.CancelFunc
 
-	viewport         viewport.Model
-	selection        transcriptSelection
-	input            textarea.Model
-	spinner          spinner.Model
-	help             help.Model
-	keys             keyMap
-	currentModel     DisplayModel
-	thinking         DisplayThinking
-	apiKeyConfigured bool
-	sessionUsage     DisplayUsage
-	usageAnimation   usageAnimation
-	welcomeAnimation welcomeAnimation
-	workingDirectory string
-	version          string
-	entries          []transcriptEntry
-	processGroups    []processGroup
-	commands         []SlashCommand
-	secretInput      *secretInput
-	commandMenu      *commandMenuState
+	viewport          viewport.Model
+	selection         transcriptSelection
+	input             textarea.Model
+	spinner           spinner.Model
+	help              help.Model
+	keys              keyMap
+	currentModel      DisplayModel
+	thinking          DisplayThinking
+	apiKeyConfigured  bool
+	sessionUsage      DisplayUsage
+	usageAnimation    usageAnimation
+	welcomeAnimation  welcomeAnimation
+	workingDirectory  string
+	version           string
+	entries           []transcriptEntry
+	processGroups     []processGroup
+	commands          []SlashCommand
+	secretInput       *secretInput
+	commandMenu       *commandMenuState
+	deliveries        *deliveryMailbox
+	pendingDeliveries []pendingDelivery
 
 	promptHistory []string
 	historyIndex  int
@@ -115,9 +117,11 @@ type model struct {
 	commandSelection int
 	commandDismissed bool
 	running          bool
+	acceptsDelivery  bool
 	cancelRequested  bool
 	controllerClosed bool
 	status           string
+	nextDeliveryID   uint64
 }
 
 func newModel(
@@ -217,11 +221,14 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		if updated, command, handled := m.handleKey(message); handled {
 			return updated, command
 		}
-		if !m.running {
+		if m.composerInputEnabled() {
 			command := m.updateInput(message)
 			return m, command
 		}
 	case tea.MouseClickMsg:
+		if updated, command, handled := m.handlePendingDeliveryClick(message); handled {
+			return updated, command
+		}
 		if updated, command, handled := m.handleTranscriptMouseClick(message); handled {
 			return updated, command
 		}
@@ -272,7 +279,8 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		var command tea.Cmd
 		m.spinner, command = m.spinner.Update(message)
 		commands = append(commands, command)
-	} else {
+	}
+	if m.composerInputEnabled() {
 		command := m.updateInput(message)
 		commands = append(commands, command)
 	}
@@ -406,14 +414,22 @@ func (m model) handleKey(message tea.KeyPressMsg) (model, tea.Cmd, bool) {
 		m.toggleProcessGroups()
 		m.refreshViewport(follow)
 		return m, nil, true
+	case key.Matches(message, m.keys.queue):
+		if m.running && m.acceptsDelivery {
+			return m.submitDelivery(deliveryQueue)
+		}
+		return m, nil, true
 	case key.Matches(message, m.keys.newline):
-		if !m.running {
+		if m.composerInputEnabled() {
 			m.input.InsertString("\n")
 			m.resizeLayout()
 		}
 		return m, nil, true
 	case key.Matches(message, m.keys.send):
 		if m.running {
+			if m.acceptsDelivery {
+				return m.submitDelivery(deliverySteer)
+			}
 			return m, nil, true
 		}
 		if m.slashCommandMenuVisible() && !m.hasExactSlashCommand() {
@@ -432,6 +448,10 @@ func (m model) handleKey(message tea.KeyPressMsg) (model, tea.Cmd, bool) {
 		return m, nil, true
 	}
 	return m, nil, false
+}
+
+func (m model) composerInputEnabled() bool {
+	return !m.running || m.acceptsDelivery
 }
 
 func cancelKeyPressed(message tea.KeyPressMsg, keys keyMap) bool {

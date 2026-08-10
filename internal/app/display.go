@@ -18,6 +18,19 @@ func translateAgentEvent(event agent.AgentEvent) *tui.DisplayEvent {
 	case agent.EventTypeMessageUpdate:
 		return translateAssistantDelta(event.AssistantMessageEvent)
 	case agent.EventTypeMessageEnd:
+		if event.SteeringID != "" {
+			steering, ok := event.Message.(llm.UserMessage)
+			if !ok {
+				return nil
+			}
+			return &tui.DisplayEvent{
+				Kind: tui.DisplayEventSteer,
+				Steering: tui.SteeringDisplay{
+					ID:   event.SteeringID,
+					Text: userContent(steering),
+				},
+			}
+		}
 		assistant, ok := event.Message.(llm.AssistantMessage)
 		if !ok {
 			return nil
@@ -76,6 +89,16 @@ func translateAgentEvent(event agent.AgentEvent) *tui.DisplayEvent {
 		return &tui.DisplayEvent{Kind: tui.DisplayEventAgentEnd, Err: event.Err}
 	}
 	return nil
+}
+
+func userContent(message llm.UserMessage) string {
+	var text strings.Builder
+	for _, part := range message.Content {
+		if part.Type == llm.ContentTypeText {
+			text.WriteString(part.Text)
+		}
+	}
+	return text.String()
 }
 
 func translateAssistantDelta(event *llm.Event) *tui.DisplayEvent {

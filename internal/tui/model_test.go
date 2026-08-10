@@ -25,8 +25,8 @@ func TestModelSubmitsPromptAndConsumesAgentEvents(t *testing.T) {
 	if !handled || command == nil {
 		t.Fatal("enter did not submit the prompt")
 	}
-	if !updated.running || updated.input.Focused() {
-		t.Fatal("model did not enter running state and blur input")
+	if !updated.running || !updated.acceptsDelivery || !updated.input.Focused() {
+		t.Fatal("model did not enter running state with an active composer")
 	}
 
 	rawStartMessage := command()
@@ -691,7 +691,7 @@ func TestModelKeepsReadyInHeaderAndUsesBubblesHelpBelowComposer(t *testing.T) {
 
 	content := current.View().Content
 	composerIndex := strings.Index(content, "composer marker")
-	helpView := current.help.View(current.keys.forState(false))
+	helpView := current.help.View(current.keys.forState(false, false))
 	helpIndex := strings.Index(content, helpView)
 	if composerIndex < 0 || helpView == "" || helpIndex < 0 {
 		t.Fatalf(

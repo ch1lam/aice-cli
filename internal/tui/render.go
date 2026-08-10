@@ -109,7 +109,7 @@ func (m model) footerView(width int) string {
 }
 
 func (m model) footerKeys() keyMap {
-	keys := m.keys.forState(m.running)
+	keys := m.keys.forState(m.running, m.acceptsDelivery)
 	if m.help.ShowAll {
 		keys.help.SetHelp("?", "close")
 	}
@@ -135,7 +135,54 @@ func (m model) composerView(width int) string {
 			promptStyle.Render("┃ ") + value,
 		)
 	}
-	return style.Width(contentWidth).Render(m.input.View())
+	parts := make([]string, 0, 2)
+	if pending := m.pendingDeliveriesView(contentWidth); pending != "" {
+		parts = append(parts, pending)
+	}
+	parts = append(parts, m.input.View())
+	return style.Width(contentWidth).Render(strings.Join(parts, "\n"))
+}
+
+func (m model) pendingDeliveriesView(width int) string {
+	if len(m.pendingDeliveries) == 0 || width <= 0 {
+		return ""
+	}
+	rows := make([]string, 0, len(m.pendingDeliveries))
+	for _, delivery := range m.pendingDeliveries {
+		action := "[queue]"
+		actionStyle := infoStyle
+		if delivery.mode == deliveryQueue {
+			action = "[queued]"
+			actionStyle = mutedStyle
+		}
+		prefix := mutedStyle.Render("↳ ")
+		actionWidth := lipgloss.Width(action)
+		textWidth := max(width-lipgloss.Width(prefix)-actionWidth-1, 1)
+		preview := truncateTerminalText(
+			pendingDeliveryPreview(delivery.text),
+			textWidth,
+		)
+		padding := max(
+			width-lipgloss.Width(prefix)-lipgloss.Width(preview)-actionWidth,
+			1,
+		)
+		rows = append(rows,
+			prefix+bodyStyle.Render(preview)+
+				strings.Repeat(" ", padding)+actionStyle.Render(action),
+		)
+	}
+	return strings.Join(rows, "\n")
+}
+
+func pendingDeliveryPreview(text string) string {
+	text = strings.ReplaceAll(text, "\r\n", "\n")
+	text = strings.ReplaceAll(text, "\r", "\n")
+	first, rest, multiline := strings.Cut(text, "\n")
+	first = strings.TrimSpace(first)
+	if multiline && strings.TrimSpace(rest) != "" {
+		return first + "..."
+	}
+	return first
 }
 
 func (m model) slashCommandMenuVisible() bool {

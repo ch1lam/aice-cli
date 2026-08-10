@@ -4,6 +4,7 @@ import "charm.land/bubbles/v2/key"
 
 type keyMap struct {
 	send      key.Binding
+	queue     key.Binding
 	newline   key.Binding
 	scroll    key.Binding
 	process   key.Binding
@@ -19,6 +20,10 @@ func newKeyMap() keyMap {
 		send: key.NewBinding(
 			key.WithKeys("enter"),
 			key.WithHelp("enter", "send"),
+		),
+		queue: key.NewBinding(
+			key.WithKeys("ctrl+enter"),
+			key.WithHelp("ctrl+enter", "queue"),
 		),
 		newline: key.NewBinding(
 			key.WithKeys("shift+enter", "alt+enter", "ctrl+j"),
@@ -55,13 +60,18 @@ func newKeyMap() keyMap {
 	}
 }
 
-func (k keyMap) forState(running bool) keyMap {
-	k.send.SetEnabled(!running)
-	k.newline.SetEnabled(!running)
+func (k keyMap) forState(running, acceptsDelivery bool) keyMap {
+	composerEnabled := !running || acceptsDelivery
+	k.send.SetEnabled(composerEnabled)
+	k.newline.SetEnabled(composerEnabled)
+	k.queue.SetEnabled(running && acceptsDelivery)
 	k.history.SetEnabled(!running)
 	k.quit.SetEnabled(!running)
 	if running {
 		k.interrupt.SetHelp("ctrl+C", "cancel")
+	}
+	if running && acceptsDelivery {
+		k.send.SetHelp("enter", "steer")
 	}
 	return k
 }
@@ -75,7 +85,7 @@ func (k keyMap) ShortHelp() []key.Binding {
 
 func (k keyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
-		{k.send, k.newline},
+		{k.send, k.queue, k.newline},
 		{k.commands, k.history, k.scroll, k.process, k.help},
 		{k.interrupt, k.quit},
 	}

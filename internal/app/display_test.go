@@ -159,6 +159,30 @@ func TestTranslateAgentEventCompletesAssistant(t *testing.T) {
 	}
 }
 
+func TestTranslateAgentEventAcceptsSteer(t *testing.T) {
+	t.Parallel()
+
+	steering, err := llm.NewUserMessage(llm.NewTextContent("change direction").Part())
+	if err != nil {
+		t.Fatalf("NewUserMessage() error = %v", err)
+	}
+	display := translateAgentEvent(agent.AgentEvent{
+		Type:       agent.EventTypeMessageEnd,
+		SteeringID: "steer-1",
+		Message:    steering,
+	})
+	want := &tui.DisplayEvent{
+		Kind: tui.DisplayEventSteer,
+		Steering: tui.SteeringDisplay{
+			ID:   "steer-1",
+			Text: "change direction",
+		},
+	}
+	if display == nil || *display != *want {
+		t.Fatalf("steer translation = %#v, want %#v", display, want)
+	}
+}
+
 func TestTranslateAgentEventExtractsToolInput(t *testing.T) {
 	t.Parallel()
 

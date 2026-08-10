@@ -8,13 +8,17 @@ func TestKeyMapForState(t *testing.T) {
 	tests := []struct {
 		name              string
 		running           bool
+		acceptsDelivery   bool
 		wantSendEnabled   bool
+		wantQueueEnabled  bool
+		wantSendHelp      string
 		wantQuitEnabled   bool
 		wantInterruptHelp string
 	}{
 		{
 			name:              "idle",
 			wantSendEnabled:   true,
+			wantSendHelp:      "send",
 			wantQuitEnabled:   true,
 			wantInterruptHelp: "quit",
 		},
@@ -22,6 +26,17 @@ func TestKeyMapForState(t *testing.T) {
 			name:              "running",
 			running:           true,
 			wantSendEnabled:   false,
+			wantSendHelp:      "send",
+			wantQuitEnabled:   false,
+			wantInterruptHelp: "cancel",
+		},
+		{
+			name:              "running agent",
+			running:           true,
+			acceptsDelivery:   true,
+			wantSendEnabled:   true,
+			wantQueueEnabled:  true,
+			wantSendHelp:      "steer",
 			wantQuitEnabled:   false,
 			wantInterruptHelp: "cancel",
 		},
@@ -31,12 +46,18 @@ func TestKeyMapForState(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			keys := newKeyMap().forState(tt.running)
+			keys := newKeyMap().forState(tt.running, tt.acceptsDelivery)
 			if keys.send.Enabled() != tt.wantSendEnabled {
 				t.Errorf("send enabled = %v, want %v", keys.send.Enabled(), tt.wantSendEnabled)
 			}
 			if keys.quit.Enabled() != tt.wantQuitEnabled {
 				t.Errorf("quit enabled = %v, want %v", keys.quit.Enabled(), tt.wantQuitEnabled)
+			}
+			if keys.queue.Enabled() != tt.wantQueueEnabled {
+				t.Errorf("queue enabled = %v, want %v", keys.queue.Enabled(), tt.wantQueueEnabled)
+			}
+			if got := keys.send.Help().Desc; got != tt.wantSendHelp {
+				t.Errorf("send help = %q, want %q", got, tt.wantSendHelp)
 			}
 			if got := keys.interrupt.Help().Desc; got != tt.wantInterruptHelp {
 				t.Errorf("interrupt help = %q, want %q", got, tt.wantInterruptHelp)
@@ -86,11 +107,11 @@ func TestKeyMapHistoryShowsInFullHelpAndDisablesWhileRunning(t *testing.T) {
 		t.Fatalf("full help = %#v, want up/down history binding", fullHelp)
 	}
 
-	idle := newKeyMap().forState(false)
+	idle := newKeyMap().forState(false, false)
 	if !idle.history.Enabled() {
 		t.Error("history binding disabled while idle")
 	}
-	running := newKeyMap().forState(true)
+	running := newKeyMap().forState(true, false)
 	if running.history.Enabled() {
 		t.Error("history binding enabled while running")
 	}

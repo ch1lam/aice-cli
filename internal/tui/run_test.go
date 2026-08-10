@@ -31,13 +31,13 @@ func TestRunRejectsInvalidDependencies(t *testing.T) {
 		{
 			name:   "nil input",
 			ctx:    t.Context(),
-			runner: runnerFunc(func(context.Context, string, DisplayEventSink) error { return nil }),
+			runner: runnerFunc(func(context.Context, RunInput, DisplayEventSink) error { return nil }),
 			want:   "input is required",
 		},
 		{
 			name:   "nil output",
 			ctx:    t.Context(),
-			runner: runnerFunc(func(context.Context, string, DisplayEventSink) error { return nil }),
+			runner: runnerFunc(func(context.Context, RunInput, DisplayEventSink) error { return nil }),
 			options: Options{
 				Input: emptyReader{},
 			},
@@ -46,7 +46,7 @@ func TestRunRejectsInvalidDependencies(t *testing.T) {
 		{
 			name:   "missing model",
 			ctx:    t.Context(),
-			runner: runnerFunc(func(context.Context, string, DisplayEventSink) error { return nil }),
+			runner: runnerFunc(func(context.Context, RunInput, DisplayEventSink) error { return nil }),
 			options: Options{
 				Input:  emptyReader{},
 				Output: io.Discard,
@@ -56,7 +56,7 @@ func TestRunRejectsInvalidDependencies(t *testing.T) {
 		{
 			name:   "missing working directory",
 			ctx:    t.Context(),
-			runner: runnerFunc(func(context.Context, string, DisplayEventSink) error { return nil }),
+			runner: runnerFunc(func(context.Context, RunInput, DisplayEventSink) error { return nil }),
 			options: Options{
 				Input:  emptyReader{},
 				Output: io.Discard,
@@ -81,8 +81,8 @@ func TestRunRejectsInvalidDependencies(t *testing.T) {
 func TestServeRunsOwnsPerRunEventChannel(t *testing.T) {
 	t.Parallel()
 
-	runner := runnerFunc(func(ctx context.Context, prompt string, sink DisplayEventSink) error {
-		if prompt != "inspect" {
+	runner := runnerFunc(func(ctx context.Context, input RunInput, sink DisplayEventSink) error {
+		if input.Prompt != "inspect" {
 			return errors.New("unexpected prompt")
 		}
 		return sink(ctx, DisplayEvent{Kind: DisplayEventAgentEnd})
@@ -125,7 +125,7 @@ func TestServeRunsExecutesSlashCommandsThroughRunner(t *testing.T) {
 	runner := &slashRunner{
 		runnerFunc: func(
 			context.Context,
-			string,
+			RunInput,
 			DisplayEventSink,
 		) error {
 			t.Fatal("slash command executed as an agent prompt")
@@ -188,7 +188,7 @@ func TestServeRunsRefreshesSlashCommandMenusAfterPrompt(t *testing.T) {
 	runner := &slashRunner{
 		runnerFunc: func(
 			context.Context,
-			string,
+			RunInput,
 			DisplayEventSink,
 		) error {
 			return nil
@@ -239,14 +239,14 @@ func receiveRunUpdate(t *testing.T, updates <-chan runUpdate) runUpdate {
 	}
 }
 
-type runnerFunc func(context.Context, string, DisplayEventSink) error
+type runnerFunc func(context.Context, RunInput, DisplayEventSink) error
 
 func (f runnerFunc) Run(
 	ctx context.Context,
-	prompt string,
+	input RunInput,
 	sink DisplayEventSink,
 ) error {
-	return f(ctx, prompt, sink)
+	return f(ctx, input, sink)
 }
 
 type slashRunner struct {

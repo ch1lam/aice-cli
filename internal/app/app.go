@@ -702,13 +702,13 @@ type interactiveSession struct {
 
 func (s *interactiveSession) Run(
 	ctx context.Context,
-	promptText string,
+	input tui.RunInput,
 	sink tui.DisplayEventSink,
 ) error {
 	if s.loop == nil {
 		return credentialNotConfiguredError(s.providers, s.configuration)
 	}
-	prompt, err := llm.NewUserMessage(llm.NewTextContent(promptText).Part())
+	prompt, err := llm.NewUserMessage(llm.NewTextContent(input.Prompt).Part())
 	if err != nil {
 		return fmt.Errorf("app: create prompt: %w", err)
 	}
@@ -718,6 +718,28 @@ func (s *interactiveSession) Run(
 		History:      s.history,
 		Prompt:       prompt,
 		Options:      s.options,
+		Steering: func() (agent.SteeringMessage, bool, error) {
+			if input.Steering == nil {
+				return agent.SteeringMessage{}, false, nil
+			}
+			steering, ok := input.Steering()
+			if !ok {
+				return agent.SteeringMessage{}, false, nil
+			}
+			message, messageErr := llm.NewUserMessage(
+				llm.NewTextContent(steering.Text).Part(),
+			)
+			if messageErr != nil {
+				return agent.SteeringMessage{}, false, fmt.Errorf(
+					"app: create steering message: %w",
+					messageErr,
+				)
+			}
+			return agent.SteeringMessage{
+				ID:      steering.ID,
+				Message: message,
+			}, true, nil
+		},
 	}, func(eventCtx context.Context, event agent.AgentEvent) error {
 		if sink == nil {
 			return nil
