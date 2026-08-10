@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 )
@@ -12,7 +13,10 @@ import (
 func (m *model) beginProcess() int {
 	m.nextProcessID++
 	m.activeProcessID = m.nextProcessID
-	m.processGroups = append(m.processGroups, processGroup{id: m.activeProcessID})
+	m.processGroups = append(m.processGroups, processGroup{
+		id:        m.activeProcessID,
+		startedAt: time.Now(),
+	})
 	return m.activeProcessID
 }
 
@@ -347,6 +351,7 @@ func (m *model) finishRun(err error) tea.Cmd {
 	if err != nil {
 		m.revokeConclusion()
 	}
+	m.updateActiveProcessDuration(time.Now())
 	m.running = false
 	m.acceptsDelivery = false
 	m.deliveries = nil

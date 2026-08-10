@@ -485,10 +485,10 @@ func (m model) processGroupView(start, end int) (string, string) {
 		if conclusion == "" {
 			return "", ""
 		}
-		return "", m.assistantHeaderView() + "\n\n" + conclusion
+		return "", m.assistantHeaderView(processID) + "\n\n" + conclusion
 	}
 	header := m.processHeader(start, end, collapsed)
-	process := m.assistantHeaderView() + "\n\n" + header
+	process := m.assistantHeaderView(processID) + "\n\n" + header
 	if collapsed {
 		return process, conclusion
 	}
@@ -663,7 +663,7 @@ func (m model) assistantEntryView(
 		return ""
 	}
 	return lipgloss.NewStyle().Padding(0, 1).Render(
-		headerStyle.Render("✦ AICE") + "\n\n" + content,
+		m.assistantHeader(entry.processID) + "\n\n" + content,
 	)
 }
 
@@ -728,17 +728,26 @@ func (m model) assistantEntryContentView(
 	return strings.Join(parts, "\n")
 }
 
-func (m model) assistantHeaderView() string {
+func (m model) assistantHeaderView(processID int) string {
 	return lipgloss.NewStyle().Padding(0, 1).Render(
-		headerStyle.Render("✦ AICE"),
+		m.assistantHeader(processID),
 	)
+}
+
+func (m model) assistantHeader(processID int) string {
+	header := headerStyle.Render("✦ AICE")
+	duration, timed := m.processDuration(processID)
+	if !timed {
+		return header
+	}
+	return header + "  " + mutedStyle.Render(formatRunDuration(duration))
 }
 
 func (m model) pendingActivityView() string {
 	if !m.running || m.hasActiveTool() || m.hasActiveAssistant() {
 		return ""
 	}
-	return m.assistantHeaderView() + "\n\n" +
+	return m.assistantHeaderView(m.activeProcessID) + "\n\n" +
 		lipgloss.NewStyle().Padding(0, 1).Render(
 			assistantBodyStyle.Render(m.activityIndicator()),
 		)
