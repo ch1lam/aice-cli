@@ -7,6 +7,7 @@ import (
 	"github.com/ch1lam/aice-cli/internal/llm"
 	"github.com/ch1lam/aice-cli/internal/provider"
 	"github.com/ch1lam/aice-cli/internal/provider/deepseek"
+	"github.com/ch1lam/aice-cli/internal/provider/openai"
 	"github.com/ch1lam/aice-cli/internal/provider/opencode"
 )
 
@@ -242,9 +243,10 @@ func TestProvidersSatisfyRegistrySurface(t *testing.T) {
 	registry := []provider.Provider{
 		&deepseek.Provider{},
 		&opencode.Provider{},
+		&openai.Provider{},
 	}
-	if len(registry) != 2 {
-		t.Fatalf("registry has %d providers, want 2", len(registry))
+	if len(registry) != 3 {
+		t.Fatalf("registry has %d providers, want 3", len(registry))
 	}
 	for _, candidate := range registry {
 		if strings.TrimSpace(candidate.Label()) == "" {
