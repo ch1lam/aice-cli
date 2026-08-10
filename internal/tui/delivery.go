@@ -6,7 +6,6 @@ import (
 	"sync"
 
 	tea "charm.land/bubbletea/v2"
-	"charm.land/lipgloss/v2"
 )
 
 const maximumPendingDeliveries = 8
@@ -26,7 +25,7 @@ type pendingDelivery struct {
 
 // deliveryMailbox is the single synchronization point shared by Bubble Tea,
 // the run controller, and the active Agent Loop. Its bounded slice preserves
-// submission order while allowing a waiting steer to become a queued run.
+// submission order across steer polling and run-boundary queue promotion.
 type deliveryMailbox struct {
 	mu      sync.Mutex
 	entries []pendingDelivery
@@ -50,22 +49,6 @@ func (m *deliveryMailbox) add(delivery pendingDelivery) bool {
 	}
 	m.entries = append(m.entries, delivery)
 	return true
-}
-
-func (m *deliveryMailbox) convertToQueue(id string) bool {
-	if m == nil || id == "" {
-		return false
-	}
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	for index := range m.entries {
-		entry := &m.entries[index]
-		if entry.id == id && entry.mode == deliverySteer {
-			entry.mode = deliveryQueue
-			return true
-		}
-	}
-	return false
 }
 
 func (m *deliveryMailbox) takeSteering() (SteeringInput, bool) {
@@ -183,43 +166,6 @@ func (m *model) promotePendingDeliveries(ids []string) bool {
 		}
 	}
 	return changed
-}
-
-func (m model) convertPendingDelivery(id string) (model, tea.Cmd, bool) {
-	if m.deliveries == nil || !m.deliveries.convertToQueue(id) {
-		m.status = "That steer is already being applied"
-		return m, nil, true
-	}
-	for index := range m.pendingDeliveries {
-		if m.pendingDeliveries[index].id == id {
-			m.pendingDeliveries[index].mode = deliveryQueue
-			break
-		}
-	}
-	m.status = "Steer moved to queue"
-	m.resizeLayout()
-	return m, nil, true
-}
-
-func (m model) handlePendingDeliveryClick(
-	message tea.MouseClickMsg,
-) (model, tea.Cmd, bool) {
-	if message.Button != tea.MouseLeft || len(m.pendingDeliveries) == 0 {
-		return m, nil, false
-	}
-	width := max(m.width, minimumWidth)
-	composerTop := lipgloss.Height(m.headerView(width)) +
-		m.viewport.Height() +
-		lipgloss.Height(m.commandMenuView(width))
-	row := message.Y - composerTop - 1
-	if row < 0 || row >= len(m.pendingDeliveries) {
-		return m, nil, false
-	}
-	delivery := m.pendingDeliveries[row]
-	if delivery.mode != deliverySteer || message.X < width-10 {
-		return m, nil, false
-	}
-	return m.convertPendingDelivery(delivery.id)
 }
 
 func (m *model) startQueuedDelivery(delivery pendingDelivery) {

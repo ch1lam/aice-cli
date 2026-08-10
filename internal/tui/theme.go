@@ -41,8 +41,17 @@ var (
 	bodyStyle          = lipgloss.NewStyle().Foreground(primaryTextColor)
 	assistantBodyStyle = lipgloss.NewStyle().
 				PaddingLeft(2)
-	mutedStyle    = lipgloss.NewStyle().Foreground(mutedTextColor)
-	infoStyle     = lipgloss.NewStyle().Foreground(informationColor)
+	mutedStyle             = lipgloss.NewStyle().Foreground(mutedTextColor)
+	infoStyle              = lipgloss.NewStyle().Foreground(informationColor)
+	pendingSteerLabelStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(informationColor)
+	pendingSteerStyle = lipgloss.NewStyle().
+				BorderLeft(true).
+				BorderStyle(lipgloss.NormalBorder()).
+				BorderForeground(informationColor).
+				Foreground(informationColor).
+				PaddingLeft(1)
 	toolNameStyle = lipgloss.NewStyle().
 			Bold(true).
 			Foreground(informationColor)

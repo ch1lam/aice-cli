@@ -114,11 +114,13 @@ The composer remains active while an Agent run is working:
 | `Shift+Enter`, `Alt+Enter`, or `Ctrl+J` | Insert a newline |
 | `Ctrl+C` | Cancel the active response |
 
-Waiting inputs are shown above the draft inside the composer. Each multi-line
-input is represented by its first line followed by `...`; multiple inputs are
-stacked in submission order. Select a steer's `[queue]` action to turn it into
-a queued follow-up. If a run finishes before it accepts a pending steer, AICE
-promotes that steer to the queue instead of dropping it.
+A waiting steer appears immediately in the transcript as a user message with
+a distinct color and animated dashed rail. Queued prompts stay above the draft
+inside the composer as indented `↳` previews, separated from the draft by a
+blank line. Each multi-line queued prompt shows its first line followed by
+`...`; multiple prompts remain in submission order. If a run finishes before
+it accepts a pending steer, AICE promotes that steer to the queue instead of
+dropping it.
 
 ## Operational environment variables
 

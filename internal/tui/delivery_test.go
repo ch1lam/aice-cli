@@ -7,12 +7,13 @@ import (
 	"testing"
 	"time"
 
+	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 )
 
-func TestDeliveryMailboxConvertsPromotesAndSeals(t *testing.T) {
+func TestDeliveryMailboxOrdersPromotesAndSeals(t *testing.T) {
 	t.Parallel()
 
 	mailbox := newDeliveryMailbox()
@@ -21,20 +22,17 @@ func TestDeliveryMailboxConvertsPromotesAndSeals(t *testing.T) {
 		!mailbox.add(pendingDelivery{id: "third", text: "three", mode: deliverySteer}) {
 		t.Fatal("mailbox rejected valid pending deliveries")
 	}
-	if !mailbox.convertToQueue("first") {
-		t.Fatal("mailbox did not convert waiting steer to queue")
-	}
 	steering, ok := mailbox.takeSteering()
-	if !ok || steering != (SteeringInput{ID: "third", Text: "three"}) {
+	if !ok || steering != (SteeringInput{ID: "first", Text: "one"}) {
 		t.Fatalf("takeSteering() = %#v, %v", steering, ok)
 	}
 
 	first, promoted, ok := mailbox.nextQueued()
-	if !ok || first.id != "first" || len(promoted) != 0 {
+	if !ok || first.id != "second" || !reflect.DeepEqual(promoted, []string{"third"}) {
 		t.Fatalf("first nextQueued() = %#v, %v, promoted %v", first, ok, promoted)
 	}
 	second, promoted, ok := mailbox.nextQueued()
-	if !ok || second.id != "second" || len(promoted) != 0 {
+	if !ok || second.id != "third" || len(promoted) != 0 {
 		t.Fatalf("second nextQueued() = %#v, %v, promoted %v", second, ok, promoted)
 	}
 	if _, _, ok := mailbox.nextQueued(); ok {
@@ -83,13 +81,28 @@ func TestModelEnterSteersAndControlEnterQueues(t *testing.T) {
 		t.Fatal("steer submission did not clear and retain the composer")
 	}
 	view := ansi.Strip(steered.composerView(80))
-	for _, want := range []string{"first line...", "[queue]"} {
-		if !strings.Contains(view, want) {
-			t.Errorf("pending composer = %q, want %q", view, want)
+	if top, _, _ := strings.Cut(view, "\n"); lipgloss.Width(top) != 80 {
+		t.Fatalf("composer width = %d, want 80", lipgloss.Width(top))
+	}
+	if strings.Contains(view, "first line") {
+		t.Fatalf("pending steer remained in composer: %q", view)
+	}
+	transcript := ansi.Strip(steered.transcriptView())
+	for _, want := range []string{"YOU", "first line", "second line"} {
+		if !strings.Contains(transcript, want) {
+			t.Errorf("pending steer transcript = %q, want %q", transcript, want)
 		}
 	}
-	if strings.Contains(view, "second line") {
-		t.Fatalf("pending composer exposed later multiline content: %q", view)
+	if !strings.ContainsAny(transcript, "╎┊┆") {
+		t.Fatalf("pending steer transcript has no dashed rail: %q", transcript)
+	}
+	updated, _ := steered.Update(spinner.TickMsg{Time: time.Now()})
+	animated, ok := updated.(model)
+	if !ok {
+		t.Fatalf("spinner update model = %T, want tui.model", updated)
+	}
+	if next := ansi.Strip(animated.transcriptView()); next == transcript {
+		t.Fatalf("pending steer rail did not animate: %q", next)
 	}
 
 	steered.input.SetValue("run after this")
@@ -104,26 +117,38 @@ func TestModelEnterSteersAndControlEnterQueues(t *testing.T) {
 		queued.pendingDeliveries[1].mode != deliveryQueue {
 		t.Fatalf("pending deliveries = %#v", queued.pendingDeliveries)
 	}
-
-	width := max(queued.width, minimumWidth)
-	composerTop := lipglossHeightForPendingClick(queued, width)
-	clicked := updateModel(t, queued, tea.MouseClickMsg(tea.Mouse{
-		X:      width - 3,
-		Y:      composerTop + 1,
-		Button: tea.MouseLeft,
-	}))
-	if clicked.pendingDeliveries[0].mode != deliveryQueue {
-		t.Fatalf("queue button did not convert steer: %#v", clicked.pendingDeliveries)
+	view = ansi.Strip(queued.composerView(80))
+	for _, unwanted := range []string{"STEER", "QUEUE", "[steer]", "[queue]"} {
+		if strings.Contains(view, unwanted) {
+			t.Errorf("queued composer = %q, unwanted mode text %q", view, unwanted)
+		}
 	}
-	if !strings.Contains(ansi.Strip(clicked.composerView(80)), "[queued]") {
-		t.Fatal("converted steer is not rendered as queued")
+	if !strings.Contains(view, "  ↳ run after this") {
+		t.Fatalf("queued composer = %q, want indented return-arrow preview", view)
 	}
-}
-
-func lipglossHeightForPendingClick(current model, width int) int {
-	return lipgloss.Height(current.headerView(width)) +
-		current.viewport.Height() +
-		lipgloss.Height(current.commandMenuView(width))
+	lines := strings.Split(view, "\n")
+	queueLine := -1
+	inputLine := -1
+	for index, line := range lines {
+		switch {
+		case strings.Contains(line, "↳ run after this"):
+			queueLine = index
+		case strings.Contains(line, "┃ Ask about this workspace"):
+			inputLine = index
+		}
+	}
+	if queueLine < 0 || inputLine != queueLine+2 {
+		t.Fatalf(
+			"queued composer lines = %#v, want one blank line before input",
+			lines,
+		)
+	}
+	if strings.Contains(ansi.Strip(queued.transcriptView()), "run after this") {
+		t.Fatal("queued input appeared in transcript before its run started")
+	}
+	if strings.Contains(view, "first line") || strings.Contains(view, "second line") {
+		t.Fatalf("pending steer leaked back into composer: %q", view)
+	}
 }
 
 func TestModelSteerEventMovesPendingInputIntoTranscript(t *testing.T) {

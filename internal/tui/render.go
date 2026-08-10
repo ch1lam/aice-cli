@@ -133,45 +133,34 @@ func (m model) composerView(width int) string {
 		if !m.input.Focused() {
 			promptStyle = lipgloss.NewStyle().Foreground(subtleColor)
 		}
-		return style.Width(contentWidth).Render(
+		return style.Width(width).Render(
 			promptStyle.Render("┃ ") + value,
 		)
 	}
-	parts := make([]string, 0, 2)
-	if pending := m.pendingDeliveriesView(contentWidth); pending != "" {
-		parts = append(parts, pending)
+	parts := make([]string, 0, 3)
+	if pending := m.pendingQueueView(contentWidth); pending != "" {
+		parts = append(parts, pending, "")
 	}
 	parts = append(parts, m.input.View())
-	return style.Width(contentWidth).Render(strings.Join(parts, "\n"))
+	return style.Width(width).Render(strings.Join(parts, "\n"))
 }
 
-func (m model) pendingDeliveriesView(width int) string {
+func (m model) pendingQueueView(width int) string {
 	if len(m.pendingDeliveries) == 0 || width <= 0 {
 		return ""
 	}
 	rows := make([]string, 0, len(m.pendingDeliveries))
 	for _, delivery := range m.pendingDeliveries {
-		action := "[queue]"
-		actionStyle := infoStyle
-		if delivery.mode == deliveryQueue {
-			action = "[queued]"
-			actionStyle = mutedStyle
+		if delivery.mode != deliveryQueue {
+			continue
 		}
-		prefix := mutedStyle.Render("↳ ")
-		actionWidth := lipgloss.Width(action)
-		textWidth := max(width-lipgloss.Width(prefix)-actionWidth-1, 1)
+		prefix := mutedStyle.Render("  ↳ ")
+		textWidth := max(width-lipgloss.Width(prefix), 1)
 		preview := truncateTerminalText(
 			pendingDeliveryPreview(delivery.text),
 			textWidth,
 		)
-		padding := max(
-			width-lipgloss.Width(prefix)-lipgloss.Width(preview)-actionWidth,
-			1,
-		)
-		rows = append(rows,
-			prefix+bodyStyle.Render(preview)+
-				strings.Repeat(" ", padding)+actionStyle.Render(action),
-		)
+		rows = append(rows, prefix+bodyStyle.Render(preview))
 	}
 	return strings.Join(rows, "\n")
 }
@@ -379,14 +368,7 @@ func truncateTerminalText(value string, width int) string {
 }
 
 func (m model) transcriptView() string {
-	if len(m.entries) == 0 {
-		if activity := m.pendingActivityView(); activity != "" {
-			return activity
-		}
-		return m.welcomeView()
-	}
-
-	parts := make([]transcriptViewPart, 0, len(m.entries)+1)
+	parts := make([]transcriptViewPart, 0, len(m.entries)+2)
 	for index := 0; index < len(m.entries); {
 		entry := m.entries[index]
 		if entry.processID != 0 {
@@ -420,7 +402,53 @@ func (m model) transcriptView() string {
 	if activity := m.pendingActivityView(); activity != "" {
 		parts = append(parts, transcriptViewPart{content: activity})
 	}
+	if steering := m.pendingSteeringView(); steering != "" {
+		parts = append(parts, transcriptViewPart{content: steering})
+	}
+	if len(parts) == 0 {
+		return m.welcomeView()
+	}
 	return joinTranscriptViewParts(parts)
+}
+
+func (m model) hasPendingSteer() bool {
+	for _, delivery := range m.pendingDeliveries {
+		if delivery.mode == deliverySteer {
+			return true
+		}
+	}
+	return false
+}
+
+func (m model) pendingSteeringView() string {
+	parts := make([]transcriptViewPart, 0, len(m.pendingDeliveries))
+	for _, delivery := range m.pendingDeliveries {
+		if delivery.mode != deliverySteer {
+			continue
+		}
+		style := pendingSteerStyle.BorderStyle(lipgloss.Border{
+			Left: pendingSteerRail(m.steerRailFrame),
+		})
+		bodyWidth := max(m.contentWidth()-style.GetHorizontalFrameSize(), 1)
+		body := style.Width(bodyWidth).Render(delivery.text)
+		parts = append(parts, transcriptViewPart{
+			content: lipgloss.NewStyle().Padding(0, 1).Render(
+				pendingSteerLabelStyle.Render("YOU") + "\n" + body,
+			),
+		})
+	}
+	return joinTranscriptViewParts(parts)
+}
+
+func pendingSteerRail(frame uint8) string {
+	switch frame % 4 {
+	case 0:
+		return "╎"
+	case 1, 3:
+		return "┊"
+	default:
+		return "┆"
+	}
 }
 
 func (m model) processGroupView(start, end int) (string, string) {

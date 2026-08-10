@@ -125,6 +125,7 @@ type model struct {
 	controllerClosed bool
 	status           string
 	nextDeliveryID   uint64
+	steerRailFrame   uint8
 }
 
 func newModel(
@@ -229,9 +230,6 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			return m, command
 		}
 	case tea.MouseClickMsg:
-		if updated, command, handled := m.handlePendingDeliveryClick(message); handled {
-			return updated, command
-		}
 		if updated, command, handled := m.handleTranscriptMouseClick(message); handled {
 			return updated, command
 		}
@@ -269,8 +267,12 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		var command tea.Cmd
 		m.spinner, command = m.spinner.Update(message)
 		if m.running {
+			hasPendingSteer := m.hasPendingSteer()
+			if hasPendingSteer {
+				m.steerRailFrame = (m.steerRailFrame + 1) % 4
+			}
 			durationChanged := m.updateActiveProcessDuration(message.Time)
-			if m.showsActivitySpinner() || durationChanged {
+			if m.showsActivitySpinner() || durationChanged || hasPendingSteer {
 				m.refreshViewport(false)
 			}
 			return m, command

@@ -142,6 +142,29 @@ func TestUserStyleUsesGoldRailAndMutedTextWithoutBackground(t *testing.T) {
 	assertNoColor(t, userStyle.GetBackground())
 }
 
+func TestPendingSteerUsesInformationColor(t *testing.T) {
+	t.Parallel()
+
+	for _, style := range []lipgloss.Style{
+		pendingSteerLabelStyle,
+		pendingSteerStyle,
+	} {
+		assertColor(
+			t,
+			style.GetForeground(),
+			lipgloss.Color(informationHex),
+		)
+	}
+	if !pendingSteerStyle.GetBorderLeft() {
+		t.Fatal("pending steer style does not render its left rail")
+	}
+	assertColor(
+		t,
+		pendingSteerStyle.GetBorderLeftForeground(),
+		lipgloss.Color(informationHex),
+	)
+}
+
 func TestComposerUsesScreenBackground(t *testing.T) {
 	t.Parallel()
 

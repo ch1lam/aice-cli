@@ -49,7 +49,9 @@
   chain. Enter adds a steer, Ctrl+Enter adds a queued run, and the terminal
   transition atomically seals an empty mailbox or promotes remaining steers
   before starting queued runs. Accepted input must not disappear in a run-end
-  race.
+  race. Pending steers are presentation-only transcript previews until the
+  Agent accepts them; queued inputs remain composer chrome until their run
+  starts.
 - Only Bubble Tea's update loop mutates UI state. The bridge turns Agent events
   into TUI-owned display messages; the TUI does not depend on `internal/llm`.
 - Session history, model context, and terminal viewport remain separate.
