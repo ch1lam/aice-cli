@@ -18,6 +18,7 @@ import (
 	"github.com/ch1lam/aice-cli/internal/config"
 	"github.com/ch1lam/aice-cli/internal/llm"
 	"github.com/ch1lam/aice-cli/internal/provider/deepseek"
+	"github.com/ch1lam/aice-cli/internal/provider/openai"
 	"github.com/ch1lam/aice-cli/internal/provider/opencode"
 	"github.com/ch1lam/aice-cli/internal/session"
 	"github.com/ch1lam/aice-cli/internal/tui"
@@ -240,6 +241,23 @@ func TestResolveModelSettingsOpencodeDefaultModel(t *testing.T) {
 	}
 	if model.ID != "deepseek-v4-flash" {
 		t.Errorf("default model = %q, want deepseek-v4-flash", model.ID)
+	}
+}
+
+func TestResolveModelSettingsOpenAIDefaultModel(t *testing.T) {
+	t.Parallel()
+
+	model, options, err := resolveModelSettings(defaultProviders(), config.Config{
+		Provider: string(openai.ProviderID),
+	})
+	if err != nil {
+		t.Fatalf("resolveModelSettings() error = %v", err)
+	}
+	if model.ID != openai.ModelGPT56Terra {
+		t.Errorf("default model = %q, want %s", model.ID, openai.ModelGPT56Terra)
+	}
+	if options.Thinking != llm.ThinkingLevelMedium {
+		t.Errorf("default thinking = %q, want medium", options.Thinking)
 	}
 }
 
