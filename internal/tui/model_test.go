@@ -565,6 +565,9 @@ func TestModelQuestionMarkHelpTogglesAndUsesAvailableHeight(t *testing.T) {
 	if !updated.help.ShowAll {
 		t.Fatal("help remains collapsed after question mark")
 	}
+	if help := ansi.Strip(updated.footerView(updated.width)); !strings.Contains(help, "ctrl+enter") || !strings.Contains(help, "queue") {
+		t.Fatalf("expanded help = %q, want ctrl+enter queue shortcut", help)
+	}
 	if updated.viewport.Height() >= collapsedHeight {
 		t.Errorf(
 			"expanded help viewport height = %d, want less than %d",

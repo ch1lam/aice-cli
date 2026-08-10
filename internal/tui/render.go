@@ -112,6 +112,8 @@ func (m model) footerKeys() keyMap {
 	keys := m.keys.forState(m.running, m.acceptsDelivery)
 	if m.help.ShowAll {
 		keys.help.SetHelp("?", "close")
+		// Full help documents contextual shortcuts even while they are inactive.
+		keys.queue.SetEnabled(true)
 	}
 	return keys
 }
