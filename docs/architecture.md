@@ -48,7 +48,7 @@ or provider SDKs. The TUI is display state and never writes Session truth.
 | `internal/llm` | Canonical messages, models, usage, streams, context estimates |
 | `internal/api/{anthropic,openairesponses,openaicompletions}` | Protocol translation around official SDKs |
 | `internal/api/streamcore` | Protocol-neutral streaming mechanics shared by adapters |
-| `internal/provider/{deepseek,opencode}` | Provider catalogs, credentials, defaults, compatibility |
+| `internal/provider/{deepseek,opencode,openai}` | Provider catalogs, credentials, defaults, compatibility |
 | `internal/tool` | `read`, `write`, `edit`, `bash`, `grep`, `find`, `ls` |
 | `internal/session` | Versioned JSONL replay, tree navigation, compaction context |
 | `internal/trust` | Protected-resource discovery and global Trust decisions |

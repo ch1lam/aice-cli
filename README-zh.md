@@ -33,9 +33,9 @@ cd /path/to/project
 aice --workspace .
 ```
 
-首次启动后执行 `/login`，选择 `deepseek` 或 `opencode-go`，再通过隐藏输入
-填写 API Key。输入 `/help` 查看命令，输入 `?` 查看快捷键。AICE 工作期间，
-按 Enter 可调整当前响应，按 Ctrl+Enter 可排队一个独立的后续响应。
+首次启动后执行 `/login`，选择 `deepseek`、`opencode-go` 或 `openai`，再通过
+隐藏输入填写 API Key。输入 `/help` 查看命令，输入 `?` 查看快捷键。AICE
+工作期间，按 Enter 可调整当前响应，按 Ctrl+Enter 可排队一个独立的后续响应。
 
 执行一次非交互请求：
 
@@ -55,7 +55,7 @@ aice --workspace . --session .aice/sessions/<session-id>.jsonl
 | 领域 | 当前实现 |
 | --- | --- |
 | 交互 | Bubble Tea TUI 与一次性 `--print` 模式 |
-| Provider | DeepSeek V4 与 OpenCode Go 的 24 个模型 |
+| Provider | DeepSeek V4、OpenCode Go 的 24 个模型与 OpenAI GPT-5.6 |
 | 协议 | Anthropic Messages、OpenAI Responses、OpenAI Chat Completions |
 | 工具 | `read`、`write`、`edit`、`bash`、`grep`、`find`、`ls` |
 | Session | 重启恢复、分支、回退与手动非破坏性压缩 |
@@ -88,7 +88,7 @@ go vet ./...
 ## 当前状态
 
 AICE 仍在快速迭代，稳定版发布前 Session 与配置格式仍可能变化。内核保持
-provider-neutral；当前内建 provider 为 DeepSeek 与 OpenCode Go。
+provider-neutral；当前内建 provider 为 DeepSeek、OpenCode Go 与 OpenAI。
 
 ## 许可证
 

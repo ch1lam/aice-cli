@@ -34,10 +34,10 @@ cd /path/to/project
 aice --workspace .
 ```
 
-On first launch, run `/login`, select `deepseek` or `opencode-go`, and enter
-the API key through hidden input. Run `/help` for commands or `?` for keyboard
-shortcuts. While AICE is working, Enter steers the active response and
-Ctrl+Enter queues a separate follow-up response.
+On first launch, run `/login`, select `deepseek`, `opencode-go`, or `openai`,
+and enter the API key through hidden input. Run `/help` for commands or `?` for
+keyboard shortcuts. While AICE is working, Enter steers the active response
+and Ctrl+Enter queues a separate follow-up response.
 
 Run one non-interactive request:
 
@@ -57,7 +57,7 @@ aice --workspace . --session .aice/sessions/<session-id>.jsonl
 | Area | Current implementation |
 | --- | --- |
 | Interface | Bubble Tea TUI and one-shot `--print` mode |
-| Providers | DeepSeek V4 and OpenCode Go's 24-model catalog |
+| Providers | DeepSeek V4, OpenCode Go's 24-model catalog, and OpenAI GPT-5.6 |
 | Protocols | Anthropic Messages, OpenAI Responses, OpenAI Chat Completions |
 | Tools | `read`, `write`, `edit`, `bash`, `grep`, `find`, `ls` |
 | Sessions | restart recovery, branches, checkout/backtracking, manual compaction |
@@ -92,7 +92,7 @@ go vet ./...
 
 AICE is under active development. Session and configuration formats may still
 change before a stable release. The core is provider-neutral, while the
-built-in provider set is currently DeepSeek and OpenCode Go.
+built-in provider set is currently DeepSeek, OpenCode Go, and OpenAI.
 
 ## License
 
