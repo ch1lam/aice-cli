@@ -90,19 +90,24 @@ func (l *Loop) Run(ctx context.Context, input RunInput, sink AgentEventSink) (Re
 	request, err := execution.request()
 	if err != nil {
 		runErr := fmt.Errorf("agent: prepare initial request: %w", err)
-		return finalizeRunResult(initialResult, input.Model, runErr)
+		return finalizeRunResult(initialResult, input.Model, runErr, nil)
 	}
 	if err := checkCompactionThreshold(request); err != nil {
 		runErr := fmt.Errorf("agent: protect initial request: %w", err)
-		return finalizeRunResult(initialResult, input.Model, runErr)
+		return finalizeRunResult(initialResult, input.Model, runErr, nil)
 	}
 	if err := request.Validate(); err != nil {
 		runErr := fmt.Errorf("agent: validate initial request: %w", err)
-		return finalizeRunResult(initialResult, input.Model, runErr)
+		return finalizeRunResult(initialResult, input.Model, runErr, nil)
 	}
 
 	result, runErr := execution.run(ctx)
-	return finalizeRunResult(result, input.Model, runErr)
+	return finalizeRunResult(
+		result,
+		input.Model,
+		runErr,
+		execution.takePendingSteering(),
+	)
 }
 
 func validateModel(service Model, model llm.Model) error {
@@ -121,11 +126,12 @@ func validateModel(service Model, model llm.Model) error {
 }
 
 type runExecution struct {
-	loop    *Loop
-	input   RunInput
-	sink    AgentEventSink
-	history []llm.AgentMessage
-	result  Result
+	loop            *Loop
+	input           RunInput
+	sink            AgentEventSink
+	history         []llm.AgentMessage
+	result          Result
+	pendingSteering []llm.UserMessage
 }
 
 func (e *runExecution) run(ctx context.Context) (Result, error) {
@@ -187,6 +193,7 @@ func (e *runExecution) run(ctx context.Context) (Result, error) {
 
 		turn := Turn{
 			Number:      turnNumber,
+			Steering:    e.takePendingSteering(),
 			Assistant:   outcome.message,
 			ToolResults: []llm.ToolResultMessage{},
 		}
@@ -273,6 +280,40 @@ func (e *runExecution) run(ctx context.Context) (Result, error) {
 		if runErr != nil {
 			return e.finishRun(ctx, runErr)
 		}
+
+		steering, steers, steeringErr := e.nextSteering()
+		if steeringErr != nil {
+			return e.finishRun(ctx, steeringErr)
+		}
+		if steers {
+			turnNumber++
+			retryAttempt = 0
+			e.history = append(e.history, steering.Message)
+			e.pendingSteering = append(e.pendingSteering, steering.Message)
+			if err := e.emit(ctx, AgentEvent{
+				Type:       EventTypeTurnStart,
+				TurnNumber: turnNumber,
+			}); err != nil {
+				return e.result, err
+			}
+			if err := e.emit(ctx, AgentEvent{
+				Type:       EventTypeMessageStart,
+				TurnNumber: turnNumber,
+				SteeringID: steering.ID,
+				Message:    steering.Message,
+			}); err != nil {
+				return e.result, err
+			}
+			if err := e.emit(ctx, AgentEvent{
+				Type:       EventTypeMessageEnd,
+				TurnNumber: turnNumber,
+				SteeringID: steering.ID,
+				Message:    steering.Message,
+			}); err != nil {
+				return e.result, err
+			}
+			continue
+		}
 		if len(turn.ToolResults) == 0 {
 			return e.finishRun(ctx, nil)
 		}
@@ -283,6 +324,40 @@ func (e *runExecution) run(ctx context.Context) (Result, error) {
 			return e.result, err
 		}
 	}
+}
+
+func (e *runExecution) nextSteering() (SteeringMessage, bool, error) {
+	if e.input.Steering == nil {
+		return SteeringMessage{}, false, nil
+	}
+	steering, ok, err := e.input.Steering()
+	if err != nil {
+		return SteeringMessage{}, false, fmt.Errorf(
+			"agent: receive steering message: %w",
+			err,
+		)
+	}
+	if !ok {
+		return SteeringMessage{}, false, nil
+	}
+	if strings.TrimSpace(steering.ID) == "" {
+		return SteeringMessage{}, false, fmt.Errorf(
+			"agent: steering message ID is required",
+		)
+	}
+	if err := steering.Message.Validate(); err != nil {
+		return SteeringMessage{}, false, fmt.Errorf(
+			"agent: validate steering message: %w",
+			err,
+		)
+	}
+	return steering, true, nil
+}
+
+func (e *runExecution) takePendingSteering() []llm.UserMessage {
+	steering := e.pendingSteering
+	e.pendingSteering = nil
+	return steering
 }
 
 func (e *runExecution) emit(ctx context.Context, event AgentEvent) error {

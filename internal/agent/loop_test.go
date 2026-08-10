@@ -142,6 +142,123 @@ func TestLoopRunTextTurn(t *testing.T) {
 	}
 }
 
+func TestLoopInjectsOneSteerPerSafeTurnBoundary(t *testing.T) {
+	t.Parallel()
+
+	modelInfo := testModel()
+	call := llm.ToolCall{
+		ID:        "read-1",
+		Name:      "read",
+		Arguments: json.RawMessage(`{"path":"go.mod"}`),
+	}
+	first := assistantMessage(
+		modelInfo,
+		llm.StopReasonToolUse,
+		textPart("checking"),
+		llm.ContentPart{Type: llm.ContentTypeToolCall, ToolCall: &call},
+	)
+	second := assistantMessage(modelInfo, llm.StopReasonStop, textPart("updated"))
+	third := assistantMessage(modelInfo, llm.StopReasonStop, textPart("finished"))
+	model := &scriptedModel{scripts: []*streamScript{
+		{events: terminalEvents(first)},
+		{events: terminalEvents(second)},
+		{events: terminalEvents(third)},
+	}}
+	tool := newFakeTool("read", func(
+		_ context.Context,
+		call llm.ToolCall,
+	) (llm.ToolResult, error) {
+		return llm.ToolResult{
+			CallID:  call.ID,
+			Name:    call.Name,
+			Content: []llm.ContentPart{textPart("module contents")},
+		}, nil
+	})
+	loop := mustLoop(t, model, []agent.Tool{tool})
+	steering := []agent.SteeringMessage{
+		{ID: "steer-1", Message: mustPrompt(t, "focus on tests")},
+		{ID: "steer-2", Message: mustPrompt(t, "also update docs")},
+	}
+	input := testInput(modelInfo, mustPrompt(t, "inspect"))
+	input.Steering = func() (agent.SteeringMessage, bool, error) {
+		if len(steering) == 0 {
+			return agent.SteeringMessage{}, false, nil
+		}
+		next := steering[0]
+		steering = steering[1:]
+		return next, true, nil
+	}
+
+	var events []agent.AgentEvent
+	result, err := loop.Run(t.Context(), input, collectEvents(&events))
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if got, want := messageRoles(result.Messages()), []llm.Role{
+		llm.RoleUser,
+		llm.RoleAssistant,
+		llm.RoleToolResult,
+		llm.RoleUser,
+		llm.RoleAssistant,
+		llm.RoleUser,
+		llm.RoleAssistant,
+	}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("Result.Messages() roles = %v, want %v", got, want)
+	}
+	if len(result.Turns) != 3 ||
+		len(result.Turns[0].Steering) != 0 ||
+		len(result.Turns[1].Steering) != 1 ||
+		len(result.Turns[2].Steering) != 1 {
+		t.Fatalf("steering placement = %#v", result.Turns)
+	}
+	if len(model.requests) != 3 {
+		t.Fatalf("model request count = %d, want 3", len(model.requests))
+	}
+	if got, want := messageRoles(model.requests[1].Messages), []llm.Role{
+		llm.RoleUser,
+		llm.RoleAssistant,
+		llm.RoleToolResult,
+		llm.RoleUser,
+	}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("second request roles = %v, want %v", got, want)
+	}
+	if got, want := messageRoles(model.requests[2].Messages), []llm.Role{
+		llm.RoleUser,
+		llm.RoleAssistant,
+		llm.RoleToolResult,
+		llm.RoleUser,
+		llm.RoleAssistant,
+		llm.RoleUser,
+	}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("third request roles = %v, want %v", got, want)
+	}
+
+	toolEnd := -1
+	firstSteer := -1
+	var steeringIDs []string
+	for index, event := range events {
+		if event.Type == agent.EventTypeToolExecutionEnd {
+			toolEnd = index
+		}
+		if event.Type == agent.EventTypeMessageEnd && event.SteeringID != "" {
+			steeringIDs = append(steeringIDs, event.SteeringID)
+			if firstSteer == -1 {
+				firstSteer = index
+			}
+		}
+	}
+	if toolEnd == -1 || firstSteer <= toolEnd {
+		t.Fatalf(
+			"first steer event index = %d, tool end index = %d",
+			firstSteer,
+			toolEnd,
+		)
+	}
+	if want := []string{"steer-1", "steer-2"}; !reflect.DeepEqual(steeringIDs, want) {
+		t.Fatalf("steering event IDs = %v, want %v", steeringIDs, want)
+	}
+}
+
 func TestLoopProjectsCompactionSummaryAtRequestBoundary(t *testing.T) {
 	t.Parallel()
 

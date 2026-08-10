@@ -34,6 +34,18 @@ type Tool interface {
 	Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult, error)
 }
 
+// SteeringMessage is one user message waiting to be injected into an active
+// run. ID is caller-owned and is echoed on the corresponding message events.
+type SteeringMessage struct {
+	ID      string
+	Message llm.UserMessage
+}
+
+// SteeringSource returns at most one waiting message without blocking. The
+// loop polls it only at safe boundaries after an assistant response and all
+// of that response's tool calls have matching results.
+type SteeringSource func() (SteeringMessage, bool, error)
+
 // RunInput contains the caller-owned state needed for one agent run.
 type RunInput struct {
 	Model        llm.Model
@@ -41,11 +53,14 @@ type RunInput struct {
 	History      []llm.AgentMessage
 	Prompt       llm.UserMessage
 	Options      llm.StreamOptions
+	Steering     SteeringSource
 }
 
-// Turn contains one completed assistant response and its ordered tool results.
+// Turn contains user steering injected immediately before one completed
+// assistant response, followed by that response and its ordered tool results.
 type Turn struct {
 	Number      int
+	Steering    []llm.UserMessage
 	Assistant   llm.AssistantMessage
 	ToolResults []llm.ToolResultMessage
 }
@@ -61,12 +76,15 @@ type Result struct {
 func (r Result) Messages() []llm.AgentMessage {
 	count := 1
 	for _, turn := range r.Turns {
-		count += 1 + len(turn.ToolResults)
+		count += len(turn.Steering) + 1 + len(turn.ToolResults)
 	}
 
 	messages := make([]llm.AgentMessage, 0, count)
 	messages = append(messages, r.Prompt)
 	for _, turn := range r.Turns {
+		for _, steering := range turn.Steering {
+			messages = append(messages, steering)
+		}
 		messages = append(messages, turn.Assistant)
 		for _, toolResult := range turn.ToolResults {
 			messages = append(messages, toolResult)
@@ -108,6 +126,9 @@ type RetryEvent struct {
 type AgentEvent struct {
 	Type       EventType
 	TurnNumber int
+	// SteeringID is populated on message_start and message_end for an injected
+	// steering message. It is empty for the run's initial user prompt.
+	SteeringID string
 	// Message is populated for message_start, message_end, and turn_end.
 	Message llm.AgentMessage
 	// AssistantMessageEvent is populated only for message_update.
