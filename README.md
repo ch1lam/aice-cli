@@ -36,7 +36,8 @@ aice --workspace .
 
 On first launch, run `/login`, select `deepseek` or `opencode-go`, and enter
 the API key through hidden input. Run `/help` for commands or `?` for keyboard
-shortcuts.
+shortcuts. While AICE is working, Enter steers the active response and
+Ctrl+Enter queues a separate follow-up response.
 
 Run one non-interactive request:
 

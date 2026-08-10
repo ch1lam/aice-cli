@@ -29,6 +29,10 @@
 - Preserve safe partial assistant output on cancellation or provider failure.
   Failures must become a terminal assistant result or an explicit durable
   operation error; they must not disappear from history.
+- Poll steering input only after a complete assistant response and all tool
+  calls declared by that response have matching results. Inject at most one
+  user steer before the next model request, then offer the next steer at the
+  following safe boundary.
 - Tests use faux providers and fake tools. Default tests never require paid
   APIs or real credentials.
 
@@ -41,6 +45,11 @@
   and buffers stay bounded.
 - Each run owns its event stream. The sender closes the channel; receivers do
   not. Blocking sends also select on `ctx.Done()`.
+- The TUI owns one bounded, ordered pending-input mailbox per active Agent
+  chain. Enter adds a steer, Ctrl+Enter adds a queued run, and the terminal
+  transition atomically seals an empty mailbox or promotes remaining steers
+  before starting queued runs. Accepted input must not disappear in a run-end
+  race.
 - Only Bubble Tea's update loop mutates UI state. The bridge turns Agent events
   into TUI-owned display messages; the TUI does not depend on `internal/llm`.
 - Session history, model context, and terminal viewport remain separate.

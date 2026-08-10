@@ -34,7 +34,8 @@ aice --workspace .
 ```
 
 首次启动后执行 `/login`，选择 `deepseek` 或 `opencode-go`，再通过隐藏输入
-填写 API Key。输入 `/help` 查看命令，输入 `?` 查看快捷键。
+填写 API Key。输入 `/help` 查看命令，输入 `?` 查看快捷键。AICE 工作期间，
+按 Enter 可调整当前响应，按 Ctrl+Enter 可排队一个独立的后续响应。
 
 执行一次非交互请求：
 

@@ -103,6 +103,23 @@ Menu commands do not accept typed values; select an option from the menu.
 Provider, model, and thinking changes apply to the current Session immediately
 and are also saved globally. Press `?` for keyboard shortcuts.
 
+## Interactive input delivery
+
+The composer remains active while an Agent run is working:
+
+| Input | Effect while an Agent run is active |
+| --- | --- |
+| `Enter` | Send a steer into the active run at its next safe boundary |
+| `Ctrl+Enter` | Queue a separate prompt to run after the active run |
+| `Shift+Enter`, `Alt+Enter`, or `Ctrl+J` | Insert a newline |
+| `Ctrl+C` | Cancel the active response |
+
+Waiting inputs are shown above the draft inside the composer. Each multi-line
+input is represented by its first line followed by `...`; multiple inputs are
+stacked in submission order. Select a steer's `[queue]` action to turn it into
+a queued follow-up. If a run finishes before it accepts a pending steer, AICE
+promotes that steer to the queue instead of dropping it.
+
 ## Operational environment variables
 
 | Variable | Effect |

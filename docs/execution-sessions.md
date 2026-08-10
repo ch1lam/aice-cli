@@ -34,7 +34,7 @@ Each file contains a versioned header followed by append-only records:
 
 | Record | Meaning |
 | --- | --- |
-| `turn` | One complete user/assistant run, including paired tool calls/results and usage |
+| `turn` | One complete Agent run, including in-run steers, paired tool calls/results, and usage |
 | `compaction` | A derived summary checkpoint for the active branch |
 | `leaf` | A move of the active branch pointer; no history is deleted |
 
