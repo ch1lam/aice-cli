@@ -32,6 +32,10 @@ const (
 	EnvOpenCodeAPIKey = "AICE_OPENCODE_API_KEY"
 	// EnvOpenCodeBaseURL overrides OpenCode Go's official API endpoint.
 	EnvOpenCodeBaseURL = "AICE_OPENCODE_BASE_URL"
+	// EnvOpenAIAPIKey authenticates requests to OpenAI.
+	EnvOpenAIAPIKey = "OPENAI_API_KEY"
+	// EnvOpenAIBaseURL overrides OpenAI's official API endpoint.
+	EnvOpenAIBaseURL = "AICE_OPENAI_BASE_URL"
 
 	settingsFileName = "settings.json"
 	authFileName     = "auth.json"
@@ -81,12 +85,15 @@ type Config struct {
 	DeepSeekBaseURL     string
 	OpenCodeAPIKey      string
 	OpenCodeBaseURL     string
+	OpenAIAPIKey        string
+	OpenAIBaseURL       string
 	Paths               Paths
 }
 
 type authFile struct {
 	DeepSeekAPIKey string `json:"deepseek_api_key,omitempty"`
 	OpenCodeAPIKey string `json:"opencode_api_key,omitempty"`
+	OpenAIAPIKey   string `json:"openai_api_key,omitempty"`
 }
 
 // LookupEnv resolves one environment variable.
@@ -152,6 +159,14 @@ func LoadFiles(paths Paths, lookup LookupEnv) (Config, error) {
 	}
 	openCodeBaseURL, _ := lookup(EnvOpenCodeBaseURL)
 
+	openAIAPIKey := strings.TrimSpace(auth.OpenAIAPIKey)
+	if value, exists := lookup(EnvOpenAIAPIKey); exists {
+		if value = strings.TrimSpace(value); value != "" {
+			openAIAPIKey = value
+		}
+	}
+	openAIBaseURL, _ := lookup(EnvOpenAIBaseURL)
+
 	return Config{
 		Provider:            settings.Provider,
 		Model:               settings.Model,
@@ -161,6 +176,8 @@ func LoadFiles(paths Paths, lookup LookupEnv) (Config, error) {
 		DeepSeekBaseURL:     strings.TrimSpace(baseURL),
 		OpenCodeAPIKey:      openCodeAPIKey,
 		OpenCodeBaseURL:     strings.TrimSpace(openCodeBaseURL),
+		OpenAIAPIKey:        openAIAPIKey,
+		OpenAIBaseURL:       strings.TrimSpace(openAIBaseURL),
 		Paths:               paths,
 	}, nil
 }
@@ -220,6 +237,30 @@ func SaveOpenCodeAPIKeyFile(paths Paths, apiKey string) error {
 	}
 	return saveAPIKeyFile(paths, "OpenCode Go", apiKey, func(auth *authFile) {
 		auth.OpenCodeAPIKey = apiKey
+	})
+}
+
+// SaveOpenAIAPIKey stores the OpenAI credential in the global auth file.
+func SaveOpenAIAPIKey(apiKey string) (string, error) {
+	paths, err := DefaultPaths()
+	if err != nil {
+		return "", err
+	}
+	if err := SaveOpenAIAPIKeyFile(paths, apiKey); err != nil {
+		return "", err
+	}
+	return paths.GlobalAuth, nil
+}
+
+// SaveOpenAIAPIKeyFile stores the OpenAI credential in an explicit global
+// auth file, preserving any other provider credentials already present.
+func SaveOpenAIAPIKeyFile(paths Paths, apiKey string) error {
+	apiKey = strings.TrimSpace(apiKey)
+	if apiKey == "" {
+		return errors.New("config: OpenAI API key is required")
+	}
+	return saveAPIKeyFile(paths, "OpenAI", apiKey, func(auth *authFile) {
+		auth.OpenAIAPIKey = apiKey
 	})
 }
 
@@ -346,6 +387,7 @@ func loadAuth(path string) (authFile, error) {
 	}
 	auth.DeepSeekAPIKey = strings.TrimSpace(auth.DeepSeekAPIKey)
 	auth.OpenCodeAPIKey = strings.TrimSpace(auth.OpenCodeAPIKey)
+	auth.OpenAIAPIKey = strings.TrimSpace(auth.OpenAIAPIKey)
 	return auth, nil
 }
 

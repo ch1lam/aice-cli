@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
@@ -471,6 +472,71 @@ func TestSaveOpenCodeAPIKeyFileRejectsInvalidValues(t *testing.T) {
 		err := config.SaveOpenCodeAPIKeyFile(paths, value)
 		if err == nil {
 			t.Fatalf("SaveOpenCodeAPIKeyFile(%q) error = nil", value)
+		}
+	}
+}
+
+func TestLoadFilesResolvesOpenAICredentials(t *testing.T) {
+	t.Parallel()
+
+	paths := testPaths(t.TempDir())
+	writeJSON(t, paths.GlobalAuth, map[string]any{
+		"openai_api_key": "file-key",
+	})
+
+	values := map[string]string{
+		config.EnvOpenAIAPIKey:  "environment-key",
+		config.EnvOpenAIBaseURL: " https://openai.example/v1 ",
+	}
+	got, err := config.LoadFiles(paths, mapLookup(values))
+	if err != nil {
+		t.Fatalf("LoadFiles() error = %v", err)
+	}
+	if got.OpenAIAPIKey != "environment-key" {
+		t.Errorf("OpenAIAPIKey = %q, want environment-key", got.OpenAIAPIKey)
+	}
+	if got.OpenAIBaseURL != "https://openai.example/v1" {
+		t.Errorf(
+			"OpenAIBaseURL = %q, want trimmed custom URL",
+			got.OpenAIBaseURL,
+		)
+	}
+}
+
+func TestSaveOpenAIAPIKeyFilePreservesOtherProviderKeys(t *testing.T) {
+	t.Parallel()
+
+	paths := testPaths(t.TempDir())
+	if err := config.SaveDeepSeekAPIKeyFile(paths, "deepseek-key"); err != nil {
+		t.Fatalf("SaveDeepSeekAPIKeyFile() error = %v", err)
+	}
+	if err := config.SaveOpenCodeAPIKeyFile(paths, "opencode-key"); err != nil {
+		t.Fatalf("SaveOpenCodeAPIKeyFile() error = %v", err)
+	}
+	if err := config.SaveOpenAIAPIKeyFile(paths, " openai-key "); err != nil {
+		t.Fatalf("SaveOpenAIAPIKeyFile() error = %v", err)
+	}
+
+	var auth map[string]string
+	readJSON(t, paths.GlobalAuth, &auth)
+	want := map[string]string{
+		"deepseek_api_key": "deepseek-key",
+		"opencode_api_key": "opencode-key",
+		"openai_api_key":   "openai-key",
+	}
+	if !reflect.DeepEqual(auth, want) {
+		t.Errorf("auth = %#v, want %#v", auth, want)
+	}
+}
+
+func TestSaveOpenAIAPIKeyFileRejectsInvalidValues(t *testing.T) {
+	t.Parallel()
+
+	paths := testPaths(t.TempDir())
+	for _, value := range []string{"", "  ", "line-one\nline-two"} {
+		err := config.SaveOpenAIAPIKeyFile(paths, value)
+		if err == nil {
+			t.Fatalf("SaveOpenAIAPIKeyFile(%q) error = nil", value)
 		}
 	}
 }
