@@ -1,68 +1,99 @@
 # AICE Development Guide
 
-AICE is a batteries-included coding agent implemented in pure Go, inspired by Pi's design philosophy. Current product priority: **Session management** — an append-only JSONL tree with restart recovery, branch navigation, backtracking, and branch-local manual compaction.
+AICE is a batteries-included coding agent implemented as one Go binary. Its
+core is an explicit Agent Loop with replaceable provider, tool, TUI, and
+persistence boundaries. Sessions are append-only JSONL trees with recovery,
+branch navigation, backtracking, and branch-local manual compaction.
 
-The user's explicit request overrides this guide. If a request conflicts with an invariant below, explain the conflict and confirm the intended change, then update this guide before implementing the new direction.
+The user's explicit request overrides this guide. If it changes an invariant
+or architecture decision, explain the conflict, confirm the new direction,
+update this file and the relevant durable document, then implement it.
+
+## Start Here
+
+- Read the relevant document before changing its area; read files in full
+  before editing an uninspected file or making audit-wide conclusions.
+- Keep product behavior in user docs, architecture decisions in `docs/`, and
+  only repository-wide operating rules here.
+- Remove temporary implementation plans after their completed decisions have
+  been absorbed into durable documentation; Git history records how they landed.
+
+## Documentation Map
+
+Use this table to route each task directly to its source of truth:
+
+| Task area | Read |
+| --- | --- |
+| Product overview and quickstart | [`README.md`](README.md) |
+| Installation, helper binaries, source builds, updates | [`docs/installation.md`](docs/installation.md) |
+| Providers, models, reasoning, credentials, CLI/TUI commands | [`docs/configuration.md`](docs/configuration.md) |
+| Project Trust, prompt precedence, protected files, `/init` | [`docs/project-trust.md`](docs/project-trust.md) |
+| Tool permissions, Sessions, branches, recovery, compaction | [`docs/execution-sessions.md`](docs/execution-sessions.md) |
+| Runtime boundaries, package ownership, dependencies | [`docs/architecture.md`](docs/architecture.md) |
+| LLM messages, Agent Loop, events, concurrency, TUI | [`docs/contracts.md`](docs/contracts.md) |
+| Go engineering rules | [`docs/go-quality.md`](docs/go-quality.md) |
+| Verification and git workflow | [`docs/collaboration.md`](docs/collaboration.md) |
 
 ## Non-negotiable Invariants
 
-- Single Go module, single AICE binary. Built-in tools may spawn host executables (Bash, ripgrep); no daemon or extra AICE service.
-- Standard library first. Any new direct dependency requires an explanation, maintenance/license review, and explicit user approval.
-- The removed TypeScript implementation is not a compatibility target. Never restore Node.js/npm, Vercel AI SDK, Ink, oclif, or old session/config formats.
-- Do not add ADK, Eino, LangChainGo, Genkit, Node bridges, multi-agent orchestration, LSP, RPC/ACP, or memory services before a concrete product requirement justifies them.
-- Sessions are append-only JSONL tree nodes with stable IDs and parent IDs. Never overwrite source history, delete branches, or introduce a second transcript store or mutable database representation. Compact only at complete turn boundaries.
-- The Agent Loop never constructs tools; concrete tools implement interfaces defined by their consumers. The agent never imports Bubble Tea; the TUI is presentation state, never session truth.
-- AICE has no intrinsic approval system. Built-in tools run with the process's permissions; isolation and policy belong to an explicitly selected execution environment, never hard-coded into the Agent Loop.
-- Project Trust is an input-loading guard for project-local startup resources, not a sandbox or permission gate. Only `AGENTS.md`, `.aice/SYSTEM.md`, and `.aice/APPEND_SYSTEM.md` in the workspace root are protected. Untrusted projects run with the built-in system prompt and full host permissions; `.aice/sessions` never triggers Trust, and provider, model, thinking, and credentials stay global-only.
-- The base system prompt comes from the project `.aice/SYSTEM.md` (when trusted), then the global `~/.aice/SYSTEM.md`, then the built-in default; the project `AGENTS.md` (when trusted) is appended to it, and `.aice/APPEND_SYSTEM.md` and `~/.aice/APPEND_SYSTEM.md` append last. Project prompt files are read through `os.Root` confinement, validated as regular UTF-8 files under 64 KiB, and excluded from compaction requests.
-- Wire dependencies explicitly with constructors in `internal/app`. No global registries, service locators, or `init()` wiring.
-- No fixed `MaxTurns`/`MaxToolSteps`. Never execute an incomplete or invalid streamed tool call.
+- One Go module and one AICE binary. Built-in tools may spawn host executables
+  such as Bash and ripgrep; do not add a daemon or extra AICE service.
+- Standard library first. Any new direct dependency requires a need,
+  maintenance/license review, and explicit user approval.
+- The removed TypeScript implementation is not a compatibility target. Never
+  restore Node.js/npm, Vercel AI SDK, Ink, oclif, or old session/config formats.
+- Do not add ADK, Eino, LangChainGo, Genkit, Node bridges, multi-agent
+  orchestration, LSP, RPC/ACP, or memory services without a concrete product
+  requirement.
+- Sessions are append-only JSONL tree nodes with stable IDs and parent IDs.
+  Never overwrite source history, delete branches, or add a second transcript
+  store or mutable database. Compact only at complete turn boundaries.
+- The Agent Loop never constructs tools. Concrete tools implement interfaces
+  defined by their consumers. The agent never imports Bubble Tea; the TUI is
+  presentation state, not Session truth.
+- AICE has no intrinsic approval system. Built-in tools inherit process
+  permissions; isolation belongs to an explicitly selected external execution
+  environment, never the Agent Loop.
+- Project Trust gates only workspace-root `AGENTS.md`, `.aice/SYSTEM.md`, and
+  `.aice/APPEND_SYSTEM.md`. It is not a sandbox. `.aice/sessions` never
+  triggers Trust; provider, model, thinking, and credentials remain global.
+- Prompt precedence is: trusted project `.aice/SYSTEM.md`, global
+  `~/.aice/SYSTEM.md`, built-in default; then trusted project `AGENTS.md`;
+  then project or global `APPEND_SYSTEM.md`. Project files use confined
+  `os.Root` reads, must be regular UTF-8 files under 64 KiB, and never enter
+  compaction requests.
+- Wire dependencies explicitly with constructors in `internal/app`. No global
+  registries, service locators, DI frameworks, or `init()` wiring.
+- No fixed `MaxTurns` or `MaxToolSteps`. Never execute an incomplete or invalid
+  streamed tool call.
 
-## Workflow
+## Workflow and Verification
 
-- Read files in full before wide-ranging changes, before editing an uninspected file, and for investigations or audits.
-- Make surgical changes that trace to the request. Keep structural changes, behavior changes, and imported upstream code in separate commits.
-- Karpathy guidelines apply: think before coding, simplicity first, goal-driven execution with per-step verification. See docs/go-quality.md.
-- After Go changes: format modified files, then `go test ./...` and `go vet ./...`. Run `go test -race ./...` for concurrency changes.
-- Never commit unless asked. Preserve unrelated changes. Never use `git add .`, `git stash`, `git reset --hard`, `git checkout .`, or force push.
+- Think before coding, prefer the smallest solution, make surgical changes,
+  and verify each step. See [`docs/go-quality.md`](docs/go-quality.md).
+- Keep structural changes, behavior changes, and imported upstream code in
+  separate commits.
+- Documentation-only changes: run `git diff --check` and verify links.
+- Go changes: format modified files, then run `go test ./...` and
+  `go vet ./...`; add `go test -race ./...` for concurrency changes.
+- Follow the complete command and collaboration matrix in
+  [`docs/collaboration.md`](docs/collaboration.md).
+- Never commit unless asked. Preserve unrelated changes. Never use
+  `git add .`, `git add -A`, `git stash`, `git reset --hard`,
+  `git checkout .`, or force push.
 
 ## Go Skills
 
-Before any Go coding, design, review, debugging, troubleshooting, refactoring, or setup task, load the `samber/cc-skills-golang@golang-how-to` skill first — it routes to whichever other Go skills the task needs. This applies to every Go-related task in this project, regardless of whether the user explicitly mentions a skill.
+Before every Go coding, design, review, debugging, troubleshooting,
+refactoring, or setup task, load
+`samber/cc-skills-golang@golang-how-to` first.
 
-## Required Go skills
+For design and coding tasks in this repository, also always apply:
 
-The following Go skills from `samber/cc-skills-golang` MUST always be applied when working on this project, for design and coding tasks alike. Load them at the start of every Go-related task, regardless of whether the user explicitly mentions them.
+- `golang-code-style`, `golang-naming`, `golang-error-handling`
+- `golang-structs-interfaces`, `golang-design-patterns`, `golang-refactoring`
+- `golang-testing`, `golang-troubleshooting`, `golang-safety`, `golang-security`
+- `golang-concurrency`, `golang-context`
+- `golang-cli`, `golang-spf13-cobra`, `golang-spf13-viper`
 
-- `samber/cc-skills-golang@golang-code-style`
-- `samber/cc-skills-golang@golang-naming`
-- `samber/cc-skills-golang@golang-error-handling`
-- `samber/cc-skills-golang@golang-structs-interfaces`
-- `samber/cc-skills-golang@golang-design-patterns`
-- `samber/cc-skills-golang@golang-testing`
-- `samber/cc-skills-golang@golang-refactoring`
-- `samber/cc-skills-golang@golang-concurrency`
-- `samber/cc-skills-golang@golang-context`
-- `samber/cc-skills-golang@golang-cli`
-- `samber/cc-skills-golang@golang-spf13-cobra`
-- `samber/cc-skills-golang@golang-spf13-viper`
-- `samber/cc-skills-golang@golang-safety`
-- `samber/cc-skills-golang@golang-security`
-- `samber/cc-skills-golang@golang-troubleshooting`
-
-## Docs Index
-
-Read the relevant doc for the task; details live here, not in AGENTS.md.
-
-| Doc | Contents |
-| --- | --- |
-| docs/architecture.md | Project direction, tech stack, intended structure, dependency rules, architecture correction order |
-| docs/contracts.md | LLM and Agent message/tool contracts, Agent Loop rules, concurrency and TUI boundaries |
-| docs/execution-sessions.md | Tool execution and sandbox boundaries, sessions and compaction |
-| docs/go-quality.md | Go code quality standards, Karpathy guidelines |
-| docs/collaboration.md | Verification commands, git and collaboration rules |
-| docs/configuration.md | Settings, environment variables, credentials, interactive slash commands |
-
-## User Direction
-
-The user's explicit request overrides this guide. If a request appears to conflict with an established invariant or architecture decision, explain the conflict and confirm the intended change. Once the user explicitly changes that decision, update this guide before implementing the new direction.
+All short names above belong to `samber/cc-skills-golang`.

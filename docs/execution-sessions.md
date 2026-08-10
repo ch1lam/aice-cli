@@ -1,24 +1,84 @@
 # Tool Execution and Sessions
 
-## Tool Execution and Sandbox Boundaries
+## Tool execution boundary
 
-- AICE does not have an intrinsic permission or approval system. By default, built-in tools run with the filesystem, process, network, and credential permissions of the AICE process, matching Pi's ownership model.
-- Do not add approval prompts or authorization policy to the Agent Loop. Isolation and policy belong to an explicitly selected container, sandbox, execution environment, or extension.
-- Keep correctness and resource-safety checks even when no sandbox is active: validate arguments, reject malformed paths and inputs, propagate cancellation, bound time and output, preserve exit status, and pair every tool call with a result.
-- Path handling must be deterministic and must honor the selected execution environment. A workspace helper is not a security sandbox and must not be described as one.
-- Structured command execution should use `exec.CommandContext` with executable and arguments separated. The `grep` tool invokes `rg` this way and must place `--` before the model-supplied pattern and path. A Pi-compatible `bash` tool may intentionally invoke a shell; make that boundary explicit and apply the same cancellation, process-tree, environment, and output controls.
-- The execution environment owns working-directory, environment-inheritance, filesystem, network, and executable policy. Do not hard-code those policies into the Agent Loop.
-- Bound time, stdout, stderr, and total captured output. Preserve exit status and distinguish a command failure from an internal tool failure.
-- Ensure cancellation terminates the complete spawned process tree and does not leave background processes behind.
-- Redact secrets, credentials, and sensitive prompt content from logs and persisted diagnostic data.
+AICE has no intrinsic approval system. Built-in tools run with the filesystem,
+process, network, environment, and credential permissions of the AICE process.
+`--workspace` sets the default working directory; it is not an access boundary.
 
-## Sessions and Compaction
+The tool layer still enforces correctness and resource safety:
 
-- Persist the complete original session as append-only JSONL. Do not overwrite source history during compaction.
-- Persist complete turns and compaction checkpoints as tree nodes with stable IDs and parent IDs. Persist backtracking as append-only leaf moves; never delete the abandoned branch.
-- Derive the active transcript from the root-to-leaf path. After moving the leaf to an older node, the next complete turn becomes a new child and therefore creates a branch.
-- Keep session storage, the context sent to the model, and the TUI viewport as separate representations.
-- Run compaction only at a complete turn boundary. Never split an assistant tool call from its tool result or mutate history concurrently with an active run.
-- Compaction applies only to the active branch. Its checkpoint must retain a stable first-kept turn ID so recovery and later branching do not depend on global array indexes.
-- A compacted context is a summary plus recent messages; it is a derived view, not a destructive rewrite.
-- Start with usage accounting, context-limit protection, and manual compaction. Add automatic compaction only after the JSONL and recovery behavior are stable.
+- validate arguments and malformed paths before side effects;
+- propagate cancellation and terminate spawned process trees;
+- bound time, stdout, stderr, and captured output;
+- preserve exit status and distinguish command failures from tool failures;
+- pair every tool call with one result;
+- keep credentials and prompt content out of logs.
+
+Structured subprocesses use executable/argument separation. The `grep` tool
+invokes `rg` with `--` before model-controlled pattern/path values. The `bash`
+tool intentionally crosses a shell boundary and applies the same timeout,
+output, cancellation, and process-tree controls.
+
+Use an external container, VM, or OS sandbox when stronger isolation is
+required. Project Trust does not change tool permissions; see [Project Trust
+and prompts](project-trust.md).
+
+## Sessions
+
+Interactive runs automatically create a version 2 JSONL Session under
+`<workspace>/.aice/sessions/`. `--print` creates or resumes a Session only when
+`--session` is supplied.
+
+Each file contains a versioned header followed by append-only records:
+
+| Record | Meaning |
+| --- | --- |
+| `turn` | One complete user/assistant run, including paired tool calls/results and usage |
+| `compaction` | A derived summary checkpoint for the active branch |
+| `leaf` | A move of the active branch pointer; no history is deleted |
+
+Turns and compactions are tree nodes with stable IDs and parent IDs. Model
+context is derived from the active root-to-leaf path. After checkout to an
+older entry, the next complete turn becomes a new child and creates a branch.
+
+## Resume and navigate
+
+```sh
+# Resume in the interactive TUI
+aice --workspace . --session .aice/sessions/<id>.jsonl
+
+# Inspect all branches; * is the active leaf and + is its ancestry
+aice session tree --workspace . --session .aice/sessions/<id>.jsonl
+
+# Move the active leaf without deleting later history
+aice session checkout --workspace . \
+  --session .aice/sessions/<id>.jsonl --entry <entry-id>
+
+# Move back to the tree root
+aice session checkout --workspace . \
+  --session .aice/sessions/<id>.jsonl --entry root
+```
+
+The TUI exposes the same behavior through `/session`, `/tree`, and
+`/checkout`. `/clear` only clears the visible transcript.
+
+## Recovery and compaction
+
+On open, AICE replays every complete record. It truncates only an incomplete
+final JSONL record; malformed complete or middle records fail as corruption.
+A Session can be resumed only with the working directory recorded in its
+header.
+
+Manual compaction summarizes older complete turns on the active branch and
+retains roughly the newest 20,000 tokens. It appends a checkpoint and never
+rewrites source turns or other branches:
+
+```sh
+aice compact --workspace . --session .aice/sessions/<id>.jsonl
+```
+
+`/compact` runs the same operation inside the TUI. Compaction uses the selected
+provider/model, requires credentials and enough older history, and always uses
+an AICE-owned prompt rather than project prompt files. Automatic compaction is
+not implemented.
