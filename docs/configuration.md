@@ -117,7 +117,7 @@ The composer remains active while an Agent run is working:
 | Input | Effect while an Agent run is active |
 | --- | --- |
 | `Enter` | Send a steer into the active run at its next safe boundary |
-| `Ctrl+Enter` | Queue a separate prompt to run after the active run |
+| `Ctrl+Enter` | Queue a follow-up interaction after the current one completes |
 | `Shift+Enter`, `Alt+Enter`, or `Ctrl+J` | Insert a newline |
 | `Ctrl+C` | Cancel the active response |
 
@@ -125,9 +125,11 @@ A waiting steer appears immediately in the transcript as a user message with
 a distinct color and animated dashed rail. Queued prompts stay above the draft
 inside the composer as indented `↳` previews, separated from the draft by a
 blank line. Each multi-line queued prompt shows its first line followed by
-`...`; multiple prompts remain in submission order. If a run finishes before
-it accepts a pending steer, AICE promotes that steer to the queue instead of
-dropping it.
+`...`; multiple prompts remain in submission order. If the current interaction
+reaches its natural stop before accepting a pending steer, AICE promotes that
+steer to the follow-up queue instead of dropping it. Follow-ups stay inside
+the same Agent run; the application persists each completed interaction as its
+own Session turn.
 
 ## Operational environment variables
 
