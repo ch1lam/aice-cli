@@ -37,7 +37,7 @@ func (e *runExecution) recordIncompleteAttempt(
 
 	turn := Turn{
 		Number:      turnNumber,
-		Steering:    e.takePendingSteering(),
+		Inputs:      e.takePendingInputs(),
 		Assistant:   message,
 		ToolResults: []llm.ToolResultMessage{},
 	}

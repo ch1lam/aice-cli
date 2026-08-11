@@ -34,17 +34,23 @@ type Tool interface {
 	Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult, error)
 }
 
-// SteeringMessage is one user message waiting to be injected into an active
-// run. ID is caller-owned and is echoed on the corresponding message events.
-type SteeringMessage struct {
+// InputMessage is one caller-owned user message waiting to be injected into
+// an active run. ID is echoed on the corresponding message events.
+type InputMessage struct {
 	ID      string
 	Message llm.UserMessage
 }
 
-// SteeringSource returns at most one waiting message without blocking. The
-// loop polls it only at safe boundaries after an assistant response and all
-// of that response's tool calls have matching results.
-type SteeringSource func() (SteeringMessage, bool, error)
+// InputSource returns at most one waiting message without blocking.
+type InputSource func() (InputMessage, bool, error)
+
+// SteeringMessage is retained while interactive frontends migrate to the
+// generic active-run input contract.
+type SteeringMessage = InputMessage
+
+// SteeringSource is retained while interactive frontends migrate to the
+// generic active-run input contract.
+type SteeringSource = InputSource
 
 // RunInput contains the caller-owned state needed for one agent run.
 type RunInput struct {
@@ -53,14 +59,18 @@ type RunInput struct {
 	History      []llm.AgentMessage
 	Prompt       llm.UserMessage
 	Options      llm.StreamOptions
-	Steering     SteeringSource
+	// Steering is polled only at safe boundaries after an assistant response
+	// and all of that response's tool calls have matching results.
+	Steering InputSource
+	// FollowUp is polled only when the Agent would otherwise stop naturally.
+	FollowUp InputSource
 }
 
-// Turn contains user steering injected immediately before one completed
-// assistant response, followed by that response and its ordered tool results.
+// Turn contains user input injected immediately before one completed assistant
+// response, followed by that response and its ordered tool results.
 type Turn struct {
 	Number      int
-	Steering    []llm.UserMessage
+	Inputs      []llm.UserMessage
 	Assistant   llm.AssistantMessage
 	ToolResults []llm.ToolResultMessage
 }
@@ -76,14 +86,14 @@ type Result struct {
 func (r Result) Messages() []llm.AgentMessage {
 	count := 1
 	for _, turn := range r.Turns {
-		count += len(turn.Steering) + 1 + len(turn.ToolResults)
+		count += len(turn.Inputs) + 1 + len(turn.ToolResults)
 	}
 
 	messages := make([]llm.AgentMessage, 0, count)
 	messages = append(messages, r.Prompt)
 	for _, turn := range r.Turns {
-		for _, steering := range turn.Steering {
-			messages = append(messages, steering)
+		for _, input := range turn.Inputs {
+			messages = append(messages, input)
 		}
 		messages = append(messages, turn.Assistant)
 		for _, toolResult := range turn.ToolResults {
@@ -100,6 +110,7 @@ const (
 	EventTypeUnknown            EventType = ""
 	EventTypeAgentStart         EventType = "agent_start"
 	EventTypeAgentEnd           EventType = "agent_end"
+	EventTypeInteractionEnd     EventType = "interaction_end"
 	EventTypeTurnStart          EventType = "turn_start"
 	EventTypeTurnEnd            EventType = "turn_end"
 	EventTypeMessageStart       EventType = "message_start"
@@ -109,6 +120,15 @@ const (
 	EventTypeToolExecutionEnd   EventType = "tool_execution_end"
 	EventTypeRetryStart         EventType = "retry_start"
 	EventTypeRetryEnd           EventType = "retry_end"
+)
+
+// InputKind identifies why a user message entered an active run.
+type InputKind uint8
+
+const (
+	InputKindUnknown InputKind = iota
+	InputKindSteering
+	InputKindFollowUp
 )
 
 // RetryEvent describes one model-call retry. Attempt is one-based and never
@@ -126,8 +146,12 @@ type RetryEvent struct {
 type AgentEvent struct {
 	Type       EventType
 	TurnNumber int
-	// SteeringID is populated on message_start and message_end for an injected
-	// steering message. It is empty for the run's initial user prompt.
+	// InputID and InputKind are populated on message_start and message_end for
+	// steering and follow-up input. They are empty for the initial user prompt.
+	InputID   string
+	InputKind InputKind
+	// SteeringID mirrors InputID for steering input while existing frontends
+	// migrate to InputKind.
 	SteeringID string
 	// Message is populated for message_start, message_end, and turn_end.
 	Message llm.AgentMessage
@@ -139,7 +163,8 @@ type AgentEvent struct {
 	Retry *RetryEvent
 	// ToolResults is populated only for turn_end.
 	ToolResults []llm.ToolResultMessage
-	// Messages contains this run's new transcript messages on agent_end.
+	// Messages contains the completed interaction on interaction_end and all
+	// new transcript messages on agent_end.
 	Messages []llm.AgentMessage
 	Err      error
 }

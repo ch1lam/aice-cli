@@ -115,6 +115,7 @@ func TestLoopRunTextTurn(t *testing.T) {
 		agent.EventTypeMessageUpdate,
 		agent.EventTypeMessageEnd,
 		agent.EventTypeTurnEnd,
+		agent.EventTypeInteractionEnd,
 		agent.EventTypeAgentEnd,
 	}
 	if got := eventTypes(events); !reflect.DeepEqual(got, wantEventTypes) {
@@ -175,14 +176,14 @@ func TestLoopInjectsOneSteerPerSafeTurnBoundary(t *testing.T) {
 		}, nil
 	})
 	loop := mustLoop(t, model, []agent.Tool{tool})
-	steering := []agent.SteeringMessage{
+	steering := []agent.InputMessage{
 		{ID: "steer-1", Message: mustPrompt(t, "focus on tests")},
 		{ID: "steer-2", Message: mustPrompt(t, "also update docs")},
 	}
 	input := testInput(modelInfo, mustPrompt(t, "inspect"))
-	input.Steering = func() (agent.SteeringMessage, bool, error) {
+	input.Steering = func() (agent.InputMessage, bool, error) {
 		if len(steering) == 0 {
-			return agent.SteeringMessage{}, false, nil
+			return agent.InputMessage{}, false, nil
 		}
 		next := steering[0]
 		steering = steering[1:]
@@ -206,9 +207,9 @@ func TestLoopInjectsOneSteerPerSafeTurnBoundary(t *testing.T) {
 		t.Fatalf("Result.Messages() roles = %v, want %v", got, want)
 	}
 	if len(result.Turns) != 3 ||
-		len(result.Turns[0].Steering) != 0 ||
-		len(result.Turns[1].Steering) != 1 ||
-		len(result.Turns[2].Steering) != 1 {
+		len(result.Turns[0].Inputs) != 0 ||
+		len(result.Turns[1].Inputs) != 1 ||
+		len(result.Turns[2].Inputs) != 1 {
 		t.Fatalf("steering placement = %#v", result.Turns)
 	}
 	if len(model.requests) != 3 {
@@ -240,8 +241,9 @@ func TestLoopInjectsOneSteerPerSafeTurnBoundary(t *testing.T) {
 		if event.Type == agent.EventTypeToolExecutionEnd {
 			toolEnd = index
 		}
-		if event.Type == agent.EventTypeMessageEnd && event.SteeringID != "" {
-			steeringIDs = append(steeringIDs, event.SteeringID)
+		if event.Type == agent.EventTypeMessageEnd &&
+			event.InputKind == agent.InputKindSteering {
+			steeringIDs = append(steeringIDs, event.InputID)
 			if firstSteer == -1 {
 				firstSteer = index
 			}
@@ -256,6 +258,149 @@ func TestLoopInjectsOneSteerPerSafeTurnBoundary(t *testing.T) {
 	}
 	if want := []string{"steer-1", "steer-2"}; !reflect.DeepEqual(steeringIDs, want) {
 		t.Fatalf("steering event IDs = %v, want %v", steeringIDs, want)
+	}
+}
+
+func TestLoopConsumesFollowUpsInsideOneAgentRun(t *testing.T) {
+	t.Parallel()
+
+	modelInfo := testModel()
+	first := assistantMessage(modelInfo, llm.StopReasonStop, textPart("first answer"))
+	second := assistantMessage(modelInfo, llm.StopReasonStop, textPart("second answer"))
+	model := &scriptedModel{scripts: []*streamScript{
+		{events: terminalEvents(first)},
+		{events: terminalEvents(second)},
+	}}
+	loop := mustLoop(t, model, nil)
+	followUps := []agent.InputMessage{{
+		ID:      "follow-up-1",
+		Message: mustPrompt(t, "continue with tests"),
+	}}
+	input := testInput(modelInfo, mustPrompt(t, "inspect"))
+	input.FollowUp = func() (agent.InputMessage, bool, error) {
+		if len(followUps) == 0 {
+			return agent.InputMessage{}, false, nil
+		}
+		next := followUps[0]
+		followUps = followUps[1:]
+		return next, true, nil
+	}
+
+	var events []agent.AgentEvent
+	result, err := loop.Run(t.Context(), input, collectEvents(&events))
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if len(model.requests) != 2 {
+		t.Fatalf("model requests = %d, want 2", len(model.requests))
+	}
+	if got, want := messageRoles(model.requests[1].Messages), []llm.Role{
+		llm.RoleUser,
+		llm.RoleAssistant,
+		llm.RoleUser,
+	}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("second request roles = %v, want %v", got, want)
+	}
+	if got, want := messageRoles(result.Messages()), []llm.Role{
+		llm.RoleUser,
+		llm.RoleAssistant,
+		llm.RoleUser,
+		llm.RoleAssistant,
+	}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("Result.Messages() roles = %v, want %v", got, want)
+	}
+
+	agentStarts := 0
+	agentEnds := 0
+	interactionEnds := 0
+	followUpEnds := 0
+	for _, event := range events {
+		switch event.Type {
+		case agent.EventTypeAgentStart:
+			agentStarts++
+		case agent.EventTypeAgentEnd:
+			agentEnds++
+		case agent.EventTypeInteractionEnd:
+			interactionEnds++
+			if got, want := messageRoles(event.Messages), []llm.Role{
+				llm.RoleUser,
+				llm.RoleAssistant,
+			}; !reflect.DeepEqual(got, want) {
+				t.Errorf("interaction messages = %v, want %v", got, want)
+			}
+		case agent.EventTypeMessageEnd:
+			if event.InputKind == agent.InputKindFollowUp {
+				followUpEnds++
+				if event.InputID != "follow-up-1" {
+					t.Errorf("follow-up input ID = %q", event.InputID)
+				}
+			}
+		}
+	}
+	if agentStarts != 1 || agentEnds != 1 || interactionEnds != 2 || followUpEnds != 1 {
+		t.Fatalf(
+			"event counts = starts %d, ends %d, interactions %d, follow-ups %d",
+			agentStarts,
+			agentEnds,
+			interactionEnds,
+			followUpEnds,
+		)
+	}
+}
+
+func TestLoopChecksCompactionThresholdAtFollowUpBoundary(t *testing.T) {
+	t.Parallel()
+
+	modelInfo := testModel()
+	modelInfo.ContextWindow = 100_000
+	modelInfo.MaxTokens = 20_000
+	first := assistantMessage(modelInfo, llm.StopReasonStop, textPart("first answer"))
+	first.Usage = llm.Usage{TotalTokens: 90_000}
+	model := &scriptedModel{scripts: []*streamScript{{events: terminalEvents(first)}}}
+	loop := mustLoop(t, model, nil)
+	followUp := agent.InputMessage{
+		ID:      "follow-up-1",
+		Message: mustPrompt(t, "continue"),
+	}
+	input := testInput(modelInfo, mustPrompt(t, "inspect"))
+	input.FollowUp = func() (agent.InputMessage, bool, error) {
+		if followUp.ID == "" {
+			return agent.InputMessage{}, false, nil
+		}
+		next := followUp
+		followUp = agent.InputMessage{}
+		return next, true, nil
+	}
+
+	var events []agent.AgentEvent
+	result, err := loop.Run(t.Context(), input, collectEvents(&events))
+	if !errors.Is(err, agent.ErrContextLimit) {
+		t.Fatalf("Run() error = %v, want ErrContextLimit", err)
+	}
+	if len(model.requests) != 1 {
+		t.Fatalf("model requests = %d, want no follow-up request", len(model.requests))
+	}
+	if got, want := messageRoles(result.Messages()), []llm.Role{
+		llm.RoleUser,
+		llm.RoleAssistant,
+		llm.RoleUser,
+		llm.RoleAssistant,
+	}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("Result.Messages() roles = %v, want %v", got, want)
+	}
+	assertTerminalFailure(
+		t,
+		result.Turns[len(result.Turns)-1].Assistant,
+		llm.StopReasonError,
+	)
+	interactionEnds := 0
+	for _, event := range events {
+		if event.Type == agent.EventTypeInteractionEnd {
+			interactionEnds++
+		}
+	}
+	if interactionEnds != 1 {
+		t.Fatalf("interaction_end count = %d, want only the completed first interaction", interactionEnds)
 	}
 }
 
@@ -546,6 +691,7 @@ func TestLoopRunToolTurnThenContinues(t *testing.T) {
 		agent.EventTypeMessageStart,
 		agent.EventTypeMessageEnd,
 		agent.EventTypeTurnEnd,
+		agent.EventTypeInteractionEnd,
 		agent.EventTypeAgentEnd,
 	}
 	if got := eventTypes(events); !reflect.DeepEqual(got, wantEventTypes) {
@@ -566,8 +712,8 @@ func TestLoopRunToolTurnThenContinues(t *testing.T) {
 	}
 	assertAgentMessage(t, events[17].Message, second)
 	assertAgentMessage(t, events[18].Message, second)
-	if !reflect.DeepEqual(events[19].Messages, result.Messages()) {
-		t.Errorf("agent_end messages = %#v, want %#v", events[19].Messages, result.Messages())
+	if !reflect.DeepEqual(events[20].Messages, result.Messages()) {
+		t.Errorf("agent_end messages = %#v, want %#v", events[20].Messages, result.Messages())
 	}
 }
 
@@ -665,6 +811,7 @@ func TestLoopDoesNotExecuteLengthTruncatedToolCalls(t *testing.T) {
 		agent.EventTypeMessageStart,
 		agent.EventTypeMessageEnd,
 		agent.EventTypeTurnEnd,
+		agent.EventTypeInteractionEnd,
 		agent.EventTypeAgentEnd,
 	}
 	if got := eventTypes(events); !reflect.DeepEqual(got, wantEventTypes) {
@@ -687,8 +834,8 @@ func TestLoopDoesNotExecuteLengthTruncatedToolCalls(t *testing.T) {
 			result.Turns[0].ToolResults,
 		)
 	}
-	if !reflect.DeepEqual(events[19].Messages, result.Messages()) {
-		t.Errorf("agent_end messages = %#v, want %#v", events[19].Messages, result.Messages())
+	if !reflect.DeepEqual(events[20].Messages, result.Messages()) {
+		t.Errorf("agent_end messages = %#v, want %#v", events[20].Messages, result.Messages())
 	}
 }
 

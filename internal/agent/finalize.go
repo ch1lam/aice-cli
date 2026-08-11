@@ -13,7 +13,7 @@ func (e *runExecution) finishRun(ctx context.Context, runErr error) (Result, err
 		e.result,
 		e.input.Model,
 		runErr,
-		e.takePendingSteering(),
+		e.takePendingInputs(),
 	)
 	e.result = result
 	if finalizeErr != nil {
@@ -51,13 +51,13 @@ func finalizeRunResult(
 	result Result,
 	model llm.Model,
 	runErr error,
-	pendingSteering []llm.UserMessage,
+	pendingInputs []llm.UserMessage,
 ) (Result, error) {
 	result, finalizeErr := finalizeFailedResult(
 		result,
 		model,
 		runErr,
-		pendingSteering,
+		pendingInputs,
 	)
 	if finalizeErr != nil {
 		runErr = errors.Join(runErr, finalizeErr)
@@ -69,7 +69,7 @@ func finalizeFailedResult(
 	result Result,
 	model llm.Model,
 	runErr error,
-	pendingSteering []llm.UserMessage,
+	pendingInputs []llm.UserMessage,
 ) (Result, error) {
 	if runErr == nil {
 		return result, nil
@@ -81,7 +81,7 @@ func finalizeFailedResult(
 		return result, fmt.Errorf("agent: pair unfinished tool calls: %w", err)
 	}
 	result = paired
-	if len(pendingSteering) == 0 &&
+	if len(pendingInputs) == 0 &&
 		resultEndsAtAssistant(result) &&
 		!needsAbortedTerminal(result, stopReason) {
 		return result, nil
@@ -106,7 +106,7 @@ func finalizeFailedResult(
 	}
 	result.Turns = append(result.Turns, Turn{
 		Number:      turnNumber,
-		Steering:    pendingSteering,
+		Inputs:      pendingInputs,
 		Assistant:   message,
 		ToolResults: []llm.ToolResultMessage{},
 	})
