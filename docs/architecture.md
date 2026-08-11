@@ -26,6 +26,7 @@ Ink, oclif, Session, and configuration formats are not compatibility targets.
 cmd/aice
   -> internal/app (composition and lifecycle)
      -> internal/cli or internal/tui (user interface)
+     -> internal/interaction (active-run input coordination)
      -> internal/agent -> internal/llm (Agent Loop and contracts)
      -> internal/provider -> internal/api (provider and protocol adapters)
      -> internal/tool (host-executed tools)
@@ -34,16 +35,21 @@ cmd/aice
 ```
 
 The Agent Loop does not know Cobra, Bubble Tea, concrete tools, Session files,
-or provider SDKs. The TUI is display state and never writes Session truth.
+or provider SDKs. The application prepares one active run and connects its
+UI-neutral input mailbox to the Agent Loop's steering and follow-up sources.
+The TUI is display state: it submits inputs to that capability, mirrors pending
+inputs for presentation, and never owns delivery semantics or writes Session
+truth. A future GUI must use the same application-owned active-run boundary.
 
 ## Package map
 
 | Package | Ownership |
 | --- | --- |
 | `cmd/aice` | Minimal process entry point |
-| `internal/app` | Composition root, lifecycle, prompt assembly, Sessions, interactive commands |
+| `internal/app` | Composition root, lifecycle, prompt assembly, Sessions, Agent-event translation, interactive commands |
 | `internal/cli` | Cobra commands, flags, validation, exit behavior |
-| `internal/tui` | Bubble Tea presentation and Agent-event bridge |
+| `internal/tui` | Bubble Tea presentation and interaction-event rendering |
+| `internal/interaction` | Frontend-neutral active-run, event, command, state, and input-mailbox contracts |
 | `internal/agent` | Agent Loop, retries, tool lifecycle, Agent events |
 | `internal/llm` | Canonical messages, models, usage, streams, context estimates |
 | `internal/api/{anthropic,openairesponses,openaicompletions}` | Protocol translation around official SDKs |
@@ -66,6 +72,10 @@ such as `core`, `types`, `services`, `utils`, or `helpers`.
 - `internal/cli` calls application capabilities through small interfaces.
 - `internal/agent` depends on AICE contracts, primarily `internal/llm`; it
   never constructs tools or imports UI/provider packages.
+- `internal/app` owns interactive run lifecycle, translates Agent events for
+  frontends, and persists each completed interaction as one Session turn.
+- Frontends depend on the application-owned active-run capability. They do not
+  decide when an Agent run stops, promote input, or restart a run for follow-up.
 - Provider packages select models and protocol adapters. API packages alone
   translate official SDK or wire types.
 - Interfaces are defined by consumers. Constructors return concrete types.

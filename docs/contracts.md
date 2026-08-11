@@ -20,9 +20,14 @@
 
 - The loop owns model calls, validated sequential tool execution, paired tool
   results, continuation, retries, and terminal Agent events.
-- There is no fixed `MaxTurns` or `MaxToolSteps`. A run ends on a normal model
-  completion, cancellation/deadline, context protection, or an unrecoverable
-  provider, protocol, runtime, or event-sink failure.
+- One run has two explicit levels. The inner loop continues through tool calls
+  and steering. When it would otherwise stop naturally, the outer loop polls
+  one follow-up; if present, it starts another interaction inside the same run.
+  The application and frontend must not reproduce this stopping decision.
+- There is no fixed `MaxTurns` or `MaxToolSteps`. A run ends only when the model
+  completes naturally and no follow-up is waiting, or on cancellation/deadline,
+  context protection, or an unrecoverable provider, protocol, runtime, or
+  event-sink failure.
 - Never execute an incomplete or invalid streamed tool call. If a response
   stops for length with tool calls, execute none of them and return paired
   error results so the model can retry safely.
@@ -33,6 +38,13 @@
   calls declared by that response have matching results. Inject at most one
   user steer before the next model request, then offer the next steer at the
   following safe boundary.
+- Poll follow-up input only at a natural stop boundary after steering has been
+  checked. Emit `interaction_end` for the completed initial/follow-up
+  interaction before polling again. Emit exactly one `agent_start` and one
+  `agent_end` for the whole run, even when it contains multiple interactions.
+- Reapply the compaction threshold before the first model request of every
+  follow-up interaction. Tool and steering continuations may settle the current
+  interaction past that threshold, but a new interaction must not begin there.
 - Tests use faux providers and fake tools. Default tests never require paid
   APIs or real credentials.
 
@@ -45,14 +57,17 @@
   and buffers stay bounded.
 - Each run owns its event stream. The sender closes the channel; receivers do
   not. Blocking sends also select on `ctx.Done()`.
-- The TUI owns one bounded, ordered pending-input mailbox per active Agent
-  chain. Enter adds a steer, Ctrl+Enter adds a queued run, and the terminal
-  transition atomically seals an empty mailbox or promotes remaining steers
-  before starting queued runs. Accepted input must not disappear in a run-end
-  race. Pending steers are presentation-only transcript previews until the
-  Agent accepts them; queued inputs remain composer chrome until their run
-  starts.
-- Only Bubble Tea's update loop mutates UI state. The bridge turns Agent events
-  into TUI-owned display messages; the TUI does not depend on `internal/llm`.
+- `internal/interaction`, wired by `internal/app`, owns one bounded, ordered
+  mailbox per active run. Enter submits a steer and Ctrl+Enter submits a
+  follow-up. At a natural stop boundary the mailbox atomically seals if empty,
+  or promotes remaining steers and returns the oldest input as the next
+  follow-up. Accepted input must not disappear in a run-end race.
+- The TUI keeps only presentation copies. Pending steers are transcript
+  previews until the Agent accepts them; follow-ups remain composer chrome
+  until the Agent starts their interaction. Agent input events, not TUI queue
+  policy, move those copies into the transcript.
+- Only Bubble Tea's update loop mutates UI state. The application bridge turns
+  Agent events into frontend-neutral interaction events; the TUI does not
+  depend on `internal/llm`.
 - Session history, model context, and terminal viewport remain separate.
   Streaming deltas are coalesced before expensive Markdown rendering.

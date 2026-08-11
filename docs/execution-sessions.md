@@ -34,13 +34,20 @@ Each file contains a versioned header followed by append-only records:
 
 | Record | Meaning |
 | --- | --- |
-| `turn` | One complete Agent run, including in-run steers, paired tool calls/results, and usage |
+| `turn` | One complete user interaction, including in-interaction steers, paired tool calls/results, and usage |
 | `compaction` | A derived summary checkpoint for the active branch |
 | `leaf` | A move of the active branch pointer; no history is deleted |
 
 Turns and compactions are tree nodes with stable IDs and parent IDs. Model
 context is derived from the active root-to-leaf path. After checkout to an
 older entry, the next complete turn becomes a new child and creates a branch.
+
+A Session turn is a persistence boundary, not an Agent-run boundary. One
+active Agent run may contain an initial interaction followed by any number of
+queued follow-up interactions. AICE appends each interaction immediately when
+the Agent reaches its natural stop boundary, while the same run remains active
+to poll follow-up input. Cancellation or failure appends the unfinished final
+interaction as a terminal turn so completed work is not lost.
 
 ## Resume and navigate
 

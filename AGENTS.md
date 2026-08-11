@@ -51,6 +51,11 @@ Use this table to route each task directly to its source of truth:
 - The Agent Loop never constructs tools. Concrete tools implement interfaces
   defined by their consumers. The agent never imports Bubble Tea; the TUI is
   presentation state, not Session truth.
+- The Agent Loop owns both loop levels: tools and steering continue the current
+  interaction, while follow-up continues the same Agent run only at a natural
+  stop boundary. Frontends never restart a run to consume follow-up. Persist
+  each completed interaction as one Session turn; Session records do not
+  dictate Agent-run lifecycle.
 - AICE has no intrinsic approval system. Built-in tools inherit process
   permissions; isolation belongs to an explicitly selected external execution
   environment, never the Agent Loop.
