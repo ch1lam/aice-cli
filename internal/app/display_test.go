@@ -167,19 +167,45 @@ func TestTranslateAgentEventAcceptsSteer(t *testing.T) {
 		t.Fatalf("NewUserMessage() error = %v", err)
 	}
 	display := translateAgentEvent(agent.AgentEvent{
-		Type:       agent.EventTypeMessageEnd,
-		SteeringID: "steer-1",
-		Message:    steering,
+		Type:      agent.EventTypeMessageEnd,
+		InputID:   "steer-1",
+		InputKind: agent.InputKindSteering,
+		Message:   steering,
 	})
 	want := &tui.DisplayEvent{
 		Kind: tui.DisplayEventSteer,
-		Steering: tui.SteeringDisplay{
+		Input: tui.InputDisplay{
 			ID:   "steer-1",
 			Text: "change direction",
 		},
 	}
 	if display == nil || *display != *want {
 		t.Fatalf("steer translation = %#v, want %#v", display, want)
+	}
+}
+
+func TestTranslateAgentEventAcceptsFollowUp(t *testing.T) {
+	t.Parallel()
+
+	followUp, err := llm.NewUserMessage(llm.NewTextContent("continue").Part())
+	if err != nil {
+		t.Fatalf("NewUserMessage() error = %v", err)
+	}
+	display := translateAgentEvent(agent.AgentEvent{
+		Type:      agent.EventTypeMessageEnd,
+		InputID:   "follow-up-1",
+		InputKind: agent.InputKindFollowUp,
+		Message:   followUp,
+	})
+	want := &tui.DisplayEvent{
+		Kind: tui.DisplayEventFollowUp,
+		Input: tui.InputDisplay{
+			ID:   "follow-up-1",
+			Text: "continue",
+		},
+	}
+	if display == nil || *display != *want {
+		t.Fatalf("follow-up translation = %#v, want %#v", display, want)
 	}
 }
 

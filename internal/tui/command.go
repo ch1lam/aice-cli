@@ -1,52 +1,17 @@
 package tui
 
 import (
-	"context"
 	"fmt"
 	"strings"
+
+	"github.com/ch1lam/aice-cli/internal/interaction"
 )
 
-// SlashCommand describes one command exposed by the interactive TUI.
-type SlashCommand struct {
-	Name         string
-	Description  string
-	ArgumentHint string
-	SecretPrompt string
-	Menu         *SlashCommandMenu
-}
-
-// SlashCommandMenu describes one interactive choice level shown after a slash
-// command is submitted.
-type SlashCommandMenu struct {
-	Title   string
-	Options []SlashCommandOption
-}
-
-// SlashCommandOption is one selectable value. A nested menu creates another
-// choice level; a leaf supplies the final arguments to the command runner.
-type SlashCommandOption struct {
-	Label       string
-	Description string
-	Arguments   string
-	Current     bool
-	Menu        *SlashCommandMenu
-}
-
-// SlashCommandRequest is one parsed command invocation.
-type SlashCommandRequest struct {
-	Name      string
-	Arguments string
-	Secret    string
-}
-
-// SlashCommandRunner executes application-owned slash commands.
-type SlashCommandRunner interface {
-	SlashCommands() []SlashCommand
-	RunSlashCommand(
-		ctx context.Context,
-		request SlashCommandRequest,
-	) (string, error)
-}
+type SlashCommand = interaction.Command
+type SlashCommandMenu = interaction.CommandMenu
+type SlashCommandOption = interaction.CommandOption
+type SlashCommandRequest = interaction.CommandRequest
+type SlashCommandRunner = interaction.CommandRunner
 
 func localSlashCommands() []SlashCommand {
 	return []SlashCommand{

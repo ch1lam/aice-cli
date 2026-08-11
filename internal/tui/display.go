@@ -1,111 +1,51 @@
 package tui
 
-import "context"
+import "github.com/ch1lam/aice-cli/internal/interaction"
 
-// DisplayModel identifies the model shown in the status line.
-type DisplayModel struct {
-	ID string
-}
-
-// DisplayThinking is the reasoning level shown in the status line. The empty
-// value represents the provider default.
-type DisplayThinking string
+type DisplayModel = interaction.DisplayModel
+type DisplayThinking = interaction.DisplayThinking
 
 const (
-	DisplayThinkingDefault DisplayThinking = ""
-	DisplayThinkingOff     DisplayThinking = "off"
-	DisplayThinkingMinimal DisplayThinking = "minimal"
-	DisplayThinkingLow     DisplayThinking = "low"
-	DisplayThinkingMedium  DisplayThinking = "medium"
-	DisplayThinkingHigh    DisplayThinking = "high"
-	DisplayThinkingXHigh   DisplayThinking = "xhigh"
-	DisplayThinkingMax     DisplayThinking = "max"
+	DisplayThinkingDefault = interaction.DisplayThinkingDefault
+	DisplayThinkingOff     = interaction.DisplayThinkingOff
+	DisplayThinkingMinimal = interaction.DisplayThinkingMinimal
+	DisplayThinkingLow     = interaction.DisplayThinkingLow
+	DisplayThinkingMedium  = interaction.DisplayThinkingMedium
+	DisplayThinkingHigh    = interaction.DisplayThinkingHigh
+	DisplayThinkingXHigh   = interaction.DisplayThinkingXHigh
+	DisplayThinkingMax     = interaction.DisplayThinkingMax
 )
 
-// DisplayUsage is one flattened usage snapshot shown in the status line.
-type DisplayUsage struct {
-	InputTokens      int64
-	OutputTokens     int64
-	CacheReadTokens  int64
-	CacheWriteTokens int64
-	TotalCost        float64
-}
-
-// DisplayEventKind identifies one translated agent lifecycle event.
-type DisplayEventKind uint8
+type DisplayUsage = interaction.DisplayUsage
+type DisplayEventKind = interaction.EventKind
 
 const (
-	DisplayEventUnknown DisplayEventKind = iota
-	DisplayEventAssistantStart
-	DisplayEventAssistantDelta
-	DisplayEventAssistantEnd
-	DisplayEventToolStart
-	DisplayEventToolEnd
-	DisplayEventSteer
-	DisplayEventRetryStart
-	DisplayEventRetryEnd
-	DisplayEventAgentEnd
+	DisplayEventUnknown        = interaction.EventUnknown
+	DisplayEventAssistantStart = interaction.EventAssistantStart
+	DisplayEventAssistantDelta = interaction.EventAssistantDelta
+	DisplayEventAssistantEnd   = interaction.EventAssistantEnd
+	DisplayEventToolStart      = interaction.EventToolStart
+	DisplayEventToolEnd        = interaction.EventToolEnd
+	DisplayEventSteer          = interaction.EventSteer
+	DisplayEventFollowUp       = interaction.EventFollowUp
+	DisplayEventRetryStart     = interaction.EventRetryStart
+	DisplayEventRetryEnd       = interaction.EventRetryEnd
+	DisplayEventAgentEnd       = interaction.EventAgentEnd
 )
 
-// DisplayDeltaKind identifies one streamed assistant content update.
-type DisplayDeltaKind uint8
+type DisplayDeltaKind = interaction.DeltaKind
 
 const (
-	DisplayDeltaUnknown DisplayDeltaKind = iota
-	DisplayDeltaText
-	DisplayDeltaThinking
-	DisplayDeltaToolCall
+	DisplayDeltaUnknown  = interaction.DeltaUnknown
+	DisplayDeltaText     = interaction.DeltaText
+	DisplayDeltaThinking = interaction.DeltaThinking
+	DisplayDeltaToolCall = interaction.DeltaToolCall
 )
 
-// DisplayDelta is one streamed assistant content update.
-type DisplayDelta struct {
-	Kind  DisplayDeltaKind
-	Delta string
-}
-
-// AssistantDisplay is the complete assistant output of one model turn.
-type AssistantDisplay struct {
-	Text      string
-	Thinking  string
-	Concludes bool
-}
-
-// ToolDisplay is one tool execution shown in the transcript. Detail is the
-// raw tool input already extracted for display by the application bridge.
-type ToolDisplay struct {
-	ID     string
-	Name   string
-	Detail string
-	Failed bool
-}
-
-// RetryDisplay is one model-call retry status. Delay is pre-formatted by the
-// application bridge.
-type RetryDisplay struct {
-	Attempt    int
-	MaxRetries int
-	Delay      string
-	Succeeded  bool
-}
-
-// SteeringDisplay identifies one steer accepted by the active Agent Loop.
-type SteeringDisplay struct {
-	ID   string
-	Text string
-}
-
-// DisplayEvent is one agent lifecycle event translated for the interface.
-// Fields are populated according to Kind.
-type DisplayEvent struct {
-	Kind      DisplayEventKind
-	Delta     DisplayDelta
-	Assistant AssistantDisplay
-	Tool      ToolDisplay
-	Steering  SteeringDisplay
-	Retry     RetryDisplay
-	Err       error
-}
-
-// DisplayEventSink receives translated lifecycle events in order. Returning
-// an error stops the agent run immediately.
-type DisplayEventSink func(ctx context.Context, event DisplayEvent) error
+type DisplayDelta = interaction.Delta
+type AssistantDisplay = interaction.AssistantDisplay
+type ToolDisplay = interaction.ToolDisplay
+type RetryDisplay = interaction.RetryDisplay
+type InputDisplay = interaction.InputDisplay
+type DisplayEvent = interaction.Event
+type DisplayEventSink = interaction.EventSink

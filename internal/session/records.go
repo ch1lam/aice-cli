@@ -19,7 +19,7 @@ type RecordType string
 const (
 	// RecordTypeSession identifies the versioned first record.
 	RecordTypeSession RecordType = "session"
-	// RecordTypeTurn identifies one complete agent run.
+	// RecordTypeTurn identifies one complete user interaction.
 	RecordTypeTurn RecordType = "turn"
 	// RecordTypeCompaction identifies one derived context checkpoint.
 	RecordTypeCompaction RecordType = "compaction"
@@ -55,7 +55,7 @@ type Node struct {
 	Timestamp int64
 }
 
-// Turn is one complete agent run persisted at a stable boundary.
+// Turn is one complete user interaction persisted at a stable boundary.
 type Turn struct {
 	Type        RecordType         `json:"-"`
 	ID          string             `json:"-"`
@@ -245,7 +245,7 @@ type turnJSON struct {
 	Usage       llm.Usage       `json:"usage"`
 }
 
-// NewTurn validates and defensively copies a complete agent run.
+// NewTurn validates and defensively copies a complete user interaction.
 func NewTurn(
 	id string,
 	parentID string,

@@ -8,16 +8,16 @@ import (
 	"strings"
 
 	"github.com/ch1lam/aice-cli/internal/config"
+	"github.com/ch1lam/aice-cli/internal/interaction"
 	"github.com/ch1lam/aice-cli/internal/llm"
 	"github.com/ch1lam/aice-cli/internal/provider"
 	"github.com/ch1lam/aice-cli/internal/provider/deepseek"
 	"github.com/ch1lam/aice-cli/internal/session"
 	"github.com/ch1lam/aice-cli/internal/trust"
-	"github.com/ch1lam/aice-cli/internal/tui"
 )
 
-func (s *interactiveSession) SlashCommands() []tui.SlashCommand {
-	return []tui.SlashCommand{
+func (s *interactiveSession) SlashCommands() []interaction.Command {
+	return []interaction.Command{
 		{
 			Name:        "session",
 			Description: "Show current Session information",
@@ -72,25 +72,25 @@ func (s *interactiveSession) SlashCommands() []tui.SlashCommand {
 	}
 }
 
-func (s *interactiveSession) loginProviderMenu() *tui.SlashCommandMenu {
-	return &tui.SlashCommandMenu{
+func (s *interactiveSession) loginProviderMenu() *interaction.CommandMenu {
+	return &interaction.CommandMenu{
 		Title:   "Select provider",
 		Options: providerOptions(s.providers, s.configuration.Provider),
 	}
 }
 
 // trustMenu lists the project trust choices for the active workspace.
-func (s *interactiveSession) trustMenu() *tui.SlashCommandMenu {
+func (s *interactiveSession) trustMenu() *interaction.CommandMenu {
 	choices := trust.Choices(s.workspacePath)
-	options := make([]tui.SlashCommandOption, 0, len(choices))
+	options := make([]interaction.CommandOption, 0, len(choices))
 	for index, choice := range choices {
-		options = append(options, tui.SlashCommandOption{
+		options = append(options, interaction.CommandOption{
 			Label:       choice.Label,
 			Description: trustChoiceDescription(choice),
 			Arguments:   strconv.Itoa(index),
 		})
 	}
-	return &tui.SlashCommandMenu{
+	return &interaction.CommandMenu{
 		Title:   "Project trust",
 		Options: options,
 	}
@@ -103,8 +103,8 @@ func trustChoiceDescription(choice trust.Choice) string {
 	return "Saved to the global trust store"
 }
 
-func (s *interactiveSession) providerMenu() *tui.SlashCommandMenu {
-	return &tui.SlashCommandMenu{
+func (s *interactiveSession) providerMenu() *interaction.CommandMenu {
+	return &interaction.CommandMenu{
 		Title:   "Select provider",
 		Options: providerOptions(s.providers, s.configuration.Provider),
 	}
@@ -113,11 +113,11 @@ func (s *interactiveSession) providerMenu() *tui.SlashCommandMenu {
 func providerOptions(
 	providers []provider.Provider,
 	current string,
-) []tui.SlashCommandOption {
-	options := make([]tui.SlashCommandOption, 0, len(providers))
+) []interaction.CommandOption {
+	options := make([]interaction.CommandOption, 0, len(providers))
 	for _, candidate := range providers {
 		providerID := string(candidate.ProviderID())
-		options = append(options, tui.SlashCommandOption{
+		options = append(options, interaction.CommandOption{
 			Label:       candidate.Label(),
 			Description: candidate.MenuDescription(),
 			Arguments:   providerID,
@@ -127,19 +127,19 @@ func providerOptions(
 	return options
 }
 
-func (s *interactiveSession) modelMenu() *tui.SlashCommandMenu {
+func (s *interactiveSession) modelMenu() *interaction.CommandMenu {
 	provider := s.activeProvider()
 	models := modelsForProvider(s.providers, provider)
-	options := make([]tui.SlashCommandOption, 0, len(models))
+	options := make([]interaction.CommandOption, 0, len(models))
 	for _, model := range models {
-		options = append(options, tui.SlashCommandOption{
+		options = append(options, interaction.CommandOption{
 			Label:       model.Name,
 			Description: model.ID,
 			Arguments:   model.ID,
 			Current:     s.model.ID == model.ID,
 		})
 	}
-	return &tui.SlashCommandMenu{
+	return &interaction.CommandMenu{
 		Title:   "Select model",
 		Options: options,
 	}
@@ -173,19 +173,19 @@ func providerModel(
 	return providerDefaultModel(providers, providerID)
 }
 
-func (s *interactiveSession) thinkingMenu() *tui.SlashCommandMenu {
-	options := make([]tui.SlashCommandOption, 0, len(llm.SupportedThinkingLevels(s.model)))
+func (s *interactiveSession) thinkingMenu() *interaction.CommandMenu {
+	options := make([]interaction.CommandOption, 0, len(llm.SupportedThinkingLevels(s.model)))
 	for _, level := range llm.SupportedThinkingLevels(s.model) {
 		label, description := thinkingLevelDescription(level)
 		value := string(level)
-		options = append(options, tui.SlashCommandOption{
+		options = append(options, interaction.CommandOption{
 			Label:       label,
 			Description: description,
 			Arguments:   value,
 			Current:     s.options.Thinking == level,
 		})
 	}
-	return &tui.SlashCommandMenu{
+	return &interaction.CommandMenu{
 		Title:   "Select reasoning level",
 		Options: options,
 	}
@@ -212,10 +212,10 @@ func thinkingLevelDescription(level llm.ThinkingLevel) (label, description strin
 	}
 }
 
-func (s *interactiveSession) checkoutMenu() *tui.SlashCommandMenu {
-	menu := &tui.SlashCommandMenu{
+func (s *interactiveSession) checkoutMenu() *interaction.CommandMenu {
+	menu := &interaction.CommandMenu{
 		Title: "Select Session entry",
-		Options: []tui.SlashCommandOption{{
+		Options: []interaction.CommandOption{{
 			Label:       "Session root",
 			Description: "Start the next branch from the beginning",
 			Arguments:   "root",
@@ -247,7 +247,7 @@ func (s *interactiveSession) checkoutMenu() *tui.SlashCommandMenu {
 		if description == "" {
 			description = "Session " + string(node.Type)
 		}
-		menu.Options = append(menu.Options, tui.SlashCommandOption{
+		menu.Options = append(menu.Options, interaction.CommandOption{
 			Label:       string(node.Type) + " " + shortSessionID(node.ID),
 			Description: description,
 			Arguments:   node.ID,
@@ -267,7 +267,7 @@ func shortSessionID(id string) string {
 
 func (s *interactiveSession) RunSlashCommand(
 	ctx context.Context,
-	request tui.SlashCommandRequest,
+	request interaction.CommandRequest,
 ) (string, error) {
 	if ctx == nil {
 		return "", fmt.Errorf("app: context is required")
@@ -442,13 +442,13 @@ func (s *interactiveSession) RunSlashCommand(
 	}
 }
 
-func (s *interactiveSession) RuntimeState() tui.RuntimeState {
+func (s *interactiveSession) RuntimeState() interaction.RuntimeState {
 	if s == nil {
-		return tui.RuntimeState{}
+		return interaction.RuntimeState{}
 	}
-	state := tui.RuntimeState{
-		Model:            tui.DisplayModel{ID: s.model.ID},
-		Thinking:         tui.DisplayThinking(s.options.Thinking),
+	state := interaction.RuntimeState{
+		Model:            interaction.DisplayModel{ID: s.model.ID},
+		Thinking:         interaction.DisplayThinking(s.options.Thinking),
 		APIKeyConfigured: providerConfigured(s.providers, s.configuration),
 		Usage:            s.usageSnapshot(),
 		SessionChanged:   s.sessionChanged,
@@ -457,7 +457,7 @@ func (s *interactiveSession) RuntimeState() tui.RuntimeState {
 	return state
 }
 
-func (s *interactiveSession) usageSnapshot() tui.DisplayUsage {
+func (s *interactiveSession) usageSnapshot() interaction.DisplayUsage {
 	if s.store != nil {
 		if snapshot, err := s.store.Snapshot(); err == nil {
 			s.totalUsage = session.TotalUsage(snapshot)
@@ -467,7 +467,7 @@ func (s *interactiveSession) usageSnapshot() tui.DisplayUsage {
 }
 
 func (s *interactiveSession) login(
-	request tui.SlashCommandRequest,
+	request interaction.CommandRequest,
 ) (string, error) {
 	if s.application == nil {
 		return "", fmt.Errorf("app: application is required")
@@ -602,7 +602,7 @@ func trustDecisionLabel(decision trust.Decision) string {
 // slashCommandTrustChoice resolves the selected trust choice from the menu
 // option's numeric argument.
 func slashCommandTrustChoice(
-	request tui.SlashCommandRequest,
+	request interaction.CommandRequest,
 	choices []trust.Choice,
 ) (trust.Choice, error) {
 	fields := strings.Fields(request.Arguments)
@@ -649,7 +649,7 @@ func (s *interactiveSession) saveSetting(
 }
 
 func slashCommandSettingValue(
-	request tui.SlashCommandRequest,
+	request interaction.CommandRequest,
 ) (string, error) {
 	fields := strings.Fields(request.Arguments)
 	if len(fields) != 1 {
@@ -711,7 +711,7 @@ func (s *interactiveSession) reloadHistory() error {
 }
 
 func requireNoSlashCommandArguments(
-	request tui.SlashCommandRequest,
+	request interaction.CommandRequest,
 ) error {
 	if request.Arguments == "" {
 		return nil
@@ -719,7 +719,7 @@ func requireNoSlashCommandArguments(
 	return fmt.Errorf("app: /%s does not accept arguments", request.Name)
 }
 
-func slashCommandEntry(request tui.SlashCommandRequest) (string, error) {
+func slashCommandEntry(request interaction.CommandRequest) (string, error) {
 	fields := strings.Fields(request.Arguments)
 	if len(fields) != 1 {
 		return "", fmt.Errorf("app: usage: /checkout <entry|root>")

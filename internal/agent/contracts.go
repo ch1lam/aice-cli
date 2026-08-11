@@ -44,14 +44,6 @@ type InputMessage struct {
 // InputSource returns at most one waiting message without blocking.
 type InputSource func() (InputMessage, bool, error)
 
-// SteeringMessage is retained while interactive frontends migrate to the
-// generic active-run input contract.
-type SteeringMessage = InputMessage
-
-// SteeringSource is retained while interactive frontends migrate to the
-// generic active-run input contract.
-type SteeringSource = InputSource
-
 // RunInput contains the caller-owned state needed for one agent run.
 type RunInput struct {
 	Model        llm.Model
@@ -150,9 +142,6 @@ type AgentEvent struct {
 	// steering and follow-up input. They are empty for the initial user prompt.
 	InputID   string
 	InputKind InputKind
-	// SteeringID mirrors InputID for steering input while existing frontends
-	// migrate to InputKind.
-	SteeringID string
 	// Message is populated for message_start, message_end, and turn_end.
 	Message llm.AgentMessage
 	// AssistantMessageEvent is populated only for message_update.

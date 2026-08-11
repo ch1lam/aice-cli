@@ -5,29 +5,38 @@ import (
 	"strings"
 
 	"github.com/ch1lam/aice-cli/internal/agent"
+	"github.com/ch1lam/aice-cli/internal/interaction"
 	"github.com/ch1lam/aice-cli/internal/llm"
-	"github.com/ch1lam/aice-cli/internal/tui"
 )
 
-func translateAgentEvent(event agent.AgentEvent) *tui.DisplayEvent {
+func translateAgentEvent(event agent.AgentEvent) *interaction.Event {
 	switch event.Type {
 	case agent.EventTypeMessageStart:
 		if _, ok := event.Message.(llm.AssistantMessage); ok {
-			return &tui.DisplayEvent{Kind: tui.DisplayEventAssistantStart}
+			return &interaction.Event{Kind: interaction.EventAssistantStart}
 		}
 	case agent.EventTypeMessageUpdate:
 		return translateAssistantDelta(event.AssistantMessageEvent)
 	case agent.EventTypeMessageEnd:
-		if event.SteeringID != "" {
-			steering, ok := event.Message.(llm.UserMessage)
+		if event.InputID != "" {
+			input, ok := event.Message.(llm.UserMessage)
 			if !ok {
 				return nil
 			}
-			return &tui.DisplayEvent{
-				Kind: tui.DisplayEventSteer,
-				Steering: tui.SteeringDisplay{
-					ID:   event.SteeringID,
-					Text: userContent(steering),
+			kind := interaction.EventUnknown
+			switch event.InputKind {
+			case agent.InputKindSteering:
+				kind = interaction.EventSteer
+			case agent.InputKindFollowUp:
+				kind = interaction.EventFollowUp
+			default:
+				return nil
+			}
+			return &interaction.Event{
+				Kind: kind,
+				Input: interaction.InputDisplay{
+					ID:   event.InputID,
+					Text: userContent(input),
 				},
 			}
 		}
@@ -36,9 +45,9 @@ func translateAgentEvent(event agent.AgentEvent) *tui.DisplayEvent {
 			return nil
 		}
 		text, thinking := assistantContent(assistant)
-		return &tui.DisplayEvent{
-			Kind: tui.DisplayEventAssistantEnd,
-			Assistant: tui.AssistantDisplay{
+		return &interaction.Event{
+			Kind: interaction.EventAssistantEnd,
+			Assistant: interaction.AssistantDisplay{
 				Text:      text,
 				Thinking:  thinking,
 				Concludes: assistantConcludes(assistant),
@@ -46,9 +55,9 @@ func translateAgentEvent(event agent.AgentEvent) *tui.DisplayEvent {
 		}
 	case agent.EventTypeToolExecutionStart:
 		if event.ToolCall != nil {
-			return &tui.DisplayEvent{
-				Kind: tui.DisplayEventToolStart,
-				Tool: tui.ToolDisplay{
+			return &interaction.Event{
+				Kind: interaction.EventToolStart,
+				Tool: interaction.ToolDisplay{
 					ID:     event.ToolCall.ID,
 					Name:   event.ToolCall.Name,
 					Detail: toolCallDetail(*event.ToolCall),
@@ -57,9 +66,9 @@ func translateAgentEvent(event agent.AgentEvent) *tui.DisplayEvent {
 		}
 	case agent.EventTypeToolExecutionEnd:
 		if event.ToolCall != nil {
-			return &tui.DisplayEvent{
-				Kind: tui.DisplayEventToolEnd,
-				Tool: tui.ToolDisplay{
+			return &interaction.Event{
+				Kind: interaction.EventToolEnd,
+				Tool: interaction.ToolDisplay{
 					ID:     event.ToolCall.ID,
 					Failed: event.Err != nil,
 				},
@@ -67,9 +76,9 @@ func translateAgentEvent(event agent.AgentEvent) *tui.DisplayEvent {
 		}
 	case agent.EventTypeRetryStart:
 		if event.Retry != nil {
-			return &tui.DisplayEvent{
-				Kind: tui.DisplayEventRetryStart,
-				Retry: tui.RetryDisplay{
+			return &interaction.Event{
+				Kind: interaction.EventRetryStart,
+				Retry: interaction.RetryDisplay{
 					Attempt:    event.Retry.Attempt,
 					MaxRetries: event.Retry.MaxRetries,
 					Delay:      event.Retry.Delay.String(),
@@ -78,15 +87,15 @@ func translateAgentEvent(event agent.AgentEvent) *tui.DisplayEvent {
 		}
 	case agent.EventTypeRetryEnd:
 		if event.Retry != nil {
-			return &tui.DisplayEvent{
-				Kind: tui.DisplayEventRetryEnd,
-				Retry: tui.RetryDisplay{
+			return &interaction.Event{
+				Kind: interaction.EventRetryEnd,
+				Retry: interaction.RetryDisplay{
 					Succeeded: event.Retry.Success,
 				},
 			}
 		}
 	case agent.EventTypeAgentEnd:
-		return &tui.DisplayEvent{Kind: tui.DisplayEventAgentEnd, Err: event.Err}
+		return &interaction.Event{Kind: interaction.EventAgentEnd, Err: event.Err}
 	}
 	return nil
 }
@@ -101,34 +110,34 @@ func userContent(message llm.UserMessage) string {
 	return text.String()
 }
 
-func translateAssistantDelta(event *llm.Event) *tui.DisplayEvent {
+func translateAssistantDelta(event *llm.Event) *interaction.Event {
 	if event == nil {
 		return nil
 	}
 	switch event.Type {
 	case llm.EventTypeTextDelta:
-		return &tui.DisplayEvent{
-			Kind: tui.DisplayEventAssistantDelta,
-			Delta: tui.DisplayDelta{
-				Kind:  tui.DisplayDeltaText,
+		return &interaction.Event{
+			Kind: interaction.EventAssistantDelta,
+			Delta: interaction.Delta{
+				Kind:  interaction.DeltaText,
 				Delta: event.Delta,
 			},
 		}
 	case llm.EventTypeThinkingDelta:
-		return &tui.DisplayEvent{
-			Kind: tui.DisplayEventAssistantDelta,
-			Delta: tui.DisplayDelta{
-				Kind:  tui.DisplayDeltaThinking,
+		return &interaction.Event{
+			Kind: interaction.EventAssistantDelta,
+			Delta: interaction.Delta{
+				Kind:  interaction.DeltaThinking,
 				Delta: event.Delta,
 			},
 		}
 	case llm.EventTypeToolCallStart,
 		llm.EventTypeToolCallDelta,
 		llm.EventTypeToolCallEnd:
-		return &tui.DisplayEvent{
-			Kind: tui.DisplayEventAssistantDelta,
-			Delta: tui.DisplayDelta{
-				Kind: tui.DisplayDeltaToolCall,
+		return &interaction.Event{
+			Kind: interaction.EventAssistantDelta,
+			Delta: interaction.Delta{
+				Kind: interaction.DeltaToolCall,
 			},
 		}
 	}
@@ -176,8 +185,8 @@ func toolCallDetail(call llm.ToolCall) string {
 	return arguments.Path
 }
 
-func newDisplayUsage(usage llm.Usage) tui.DisplayUsage {
-	display := tui.DisplayUsage{
+func newDisplayUsage(usage llm.Usage) interaction.DisplayUsage {
+	display := interaction.DisplayUsage{
 		InputTokens:      usage.InputTokens,
 		OutputTokens:     usage.OutputTokens,
 		CacheReadTokens:  usage.CacheReadTokens,

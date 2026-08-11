@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/ch1lam/aice-cli/internal/interaction"
 )
 
 func TestRunRejectsInvalidDependencies(t *testing.T) {
@@ -96,8 +98,8 @@ func TestServeRunsOwnsPerRunEventChannel(t *testing.T) {
 	requests <- runRequest{prompt: "inspect", updates: updates}
 
 	start := receiveRunUpdate(t, updates)
-	if start.cancel == nil {
-		t.Fatal("first run update has no cancellation function")
+	if start.cancel == nil || start.active == nil {
+		t.Fatal("first run update has no active run or cancellation function")
 	}
 	event := receiveRunUpdate(t, updates)
 	if event.event.Kind != DisplayEventAgentEnd {
@@ -241,12 +243,34 @@ func receiveRunUpdate(t *testing.T, updates <-chan runUpdate) runUpdate {
 
 type runnerFunc func(context.Context, RunInput, DisplayEventSink) error
 
-func (f runnerFunc) Run(
-	ctx context.Context,
+func (f runnerFunc) NewRun(
 	input RunInput,
 	sink DisplayEventSink,
-) error {
-	return f(ctx, input, sink)
+) (ActiveRun, error) {
+	return &activeRunFunc{
+		run: func(ctx context.Context) error {
+			return f(ctx, input, sink)
+		},
+	}, nil
+}
+
+type activeRunFunc struct {
+	run     func(context.Context) error
+	deliver func(interaction.Delivery) error
+}
+
+func (r *activeRunFunc) Run(ctx context.Context) error {
+	if r.run == nil {
+		return nil
+	}
+	return r.run(ctx)
+}
+
+func (r *activeRunFunc) Deliver(delivery interaction.Delivery) error {
+	if r.deliver == nil {
+		return nil
+	}
+	return r.deliver(delivery)
 }
 
 type slashRunner struct {

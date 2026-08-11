@@ -84,6 +84,7 @@ type model struct {
 	requests       chan<- runRequest
 	controllerDone <-chan struct{}
 	updates        <-chan runUpdate
+	activeRun      ActiveRun
 	cancelRun      context.CancelFunc
 
 	viewport          viewport.Model
@@ -105,7 +106,6 @@ type model struct {
 	commands          []SlashCommand
 	secretInput       *secretInput
 	commandMenu       *commandMenuState
-	deliveries        *deliveryMailbox
 	pendingDeliveries []pendingDelivery
 
 	promptHistory []string

@@ -129,6 +129,10 @@ func (m model) applyRunBatch(batch runBatchMsg) (tea.Model, tea.Cmd) {
 	contentChanged := false
 	finished := false
 	for _, update := range batch.updates {
+		if update.active != nil {
+			m.activeRun = update.active
+			m.acceptsDelivery = true
+		}
 		if update.cancel != nil {
 			m.cancelRun = update.cancel
 			if m.cancelRequested {
@@ -137,17 +141,6 @@ func (m model) applyRunBatch(batch runBatchMsg) (tea.Model, tea.Cmd) {
 			} else {
 				m.status = "Thinking..."
 			}
-		}
-		if m.promotePendingDeliveries(update.promoted) {
-			m.resizeLayout()
-		}
-		if update.continued && update.err != nil {
-			m.appendRunError(update.err)
-			contentChanged = true
-		}
-		if update.started != nil {
-			m.startQueuedDelivery(*update.started)
-			contentChanged = true
 		}
 		if strings.TrimSpace(update.output) != "" {
 			m.entries = append(m.entries, transcriptEntry{
@@ -243,7 +236,14 @@ func (m *model) applyAgentEvent(event DisplayEvent) (bool, tea.Cmd) {
 		m.status = "Thinking..."
 		return true, nil
 	case DisplayEventSteer:
-		return m.applySteer(event.Steering), nil
+		return m.applySteer(event.Input), nil
+	case DisplayEventFollowUp:
+		m.startQueuedDelivery(pendingDelivery{
+			id:   event.Input.ID,
+			text: event.Input.Text,
+			mode: deliveryQueue,
+		})
+		return true, nil
 	case DisplayEventRetryStart:
 		m.status = fmt.Sprintf(
 			"Retrying in %s (%d/%d)...",
@@ -354,7 +354,7 @@ func (m *model) finishRun(err error) tea.Cmd {
 	m.updateActiveProcessDuration(time.Now())
 	m.running = false
 	m.acceptsDelivery = false
-	m.deliveries = nil
+	m.activeRun = nil
 	m.pendingDeliveries = nil
 	m.cancelRun = nil
 	m.cancelRequested = false
@@ -408,7 +408,6 @@ func startRun(
 	requests chan<- runRequest,
 	controllerDone <-chan struct{},
 	prompt string,
-	deliveries *deliveryMailbox,
 ) tea.Cmd {
 	return func() tea.Msg {
 		updates := make(chan runUpdate, runUpdateBuffer)
@@ -416,9 +415,8 @@ func startRun(
 		case <-controllerDone:
 			return runUnavailableMsg{}
 		case requests <- runRequest{
-			prompt:     prompt,
-			deliveries: deliveries,
-			updates:    updates,
+			prompt:  prompt,
+			updates: updates,
 		}:
 			return runStartedMsg{updates: updates}
 		}

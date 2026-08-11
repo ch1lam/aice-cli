@@ -146,7 +146,7 @@ func sessionHistory(snapshot session.Snapshot) ([]llm.AgentMessage, error) {
 	return history, nil
 }
 
-func appendSessionRun(
+func appendSessionTurn(
 	ctx context.Context,
 	store *session.Store,
 	messages []llm.AgentMessage,
@@ -175,8 +175,9 @@ func appendSessionRun(
 		return fmt.Errorf("app: create session turn: %w", err)
 	}
 
-	// A completed run is durable cleanup. Give it a short independent deadline
-	// so cancellation of the model/tool request cannot discard its transcript.
+	// A completed interaction is durable cleanup. Give it a short independent
+	// deadline so cancellation of the model/tool request cannot discard its
+	// transcript.
 	persistCtx, cancel := context.WithTimeout(
 		context.WithoutCancel(ctx),
 		sessionPersistenceTimeout,

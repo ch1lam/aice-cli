@@ -16,6 +16,7 @@ import (
 
 	"github.com/ch1lam/aice-cli/internal/agent"
 	"github.com/ch1lam/aice-cli/internal/config"
+	"github.com/ch1lam/aice-cli/internal/interaction"
 	"github.com/ch1lam/aice-cli/internal/llm"
 	"github.com/ch1lam/aice-cli/internal/provider/deepseek"
 	"github.com/ch1lam/aice-cli/internal/provider/openai"
@@ -368,10 +369,10 @@ func TestApplicationInteractiveKeepsConversationHistory(t *testing.T) {
 					workspace,
 				)
 			}
-			if err := runner.Run(ctx, tui.RunInput{Prompt: "first prompt"}, nil); err != nil {
+			if err := runInteractive(ctx, runner, "first prompt", nil); err != nil {
 				return err
 			}
-			return runner.Run(ctx, tui.RunInput{Prompt: "second prompt"}, nil)
+			return runInteractive(ctx, runner, "second prompt", nil)
 		},
 	})
 	if err != nil {
@@ -446,7 +447,7 @@ func TestApplicationInteractiveStartsWithoutCredentials(t *testing.T) {
 			if options.APIKeyConfigured {
 				t.Error("TUI reports an API key before login")
 			}
-			err := runner.Run(ctx, tui.RunInput{Prompt: "inspect"}, nil)
+			err := runInteractive(ctx, runner, "inspect", nil)
 			if err == nil || !strings.Contains(err.Error(), "/login") {
 				t.Fatalf("Run() error = %v, want /login guidance", err)
 			}
@@ -536,7 +537,7 @@ func TestApplicationInteractiveLoginEnablesCurrentSession(t *testing.T) {
 			if !state.APIKeyConfigured {
 				t.Error("runtime remains unauthenticated after /login")
 			}
-			return runner.Run(ctx, tui.RunInput{Prompt: "inspect"}, nil)
+			return runInteractive(ctx, runner, "inspect", nil)
 		},
 	})
 	if err != nil {
@@ -714,7 +715,7 @@ func TestApplicationInteractiveResumesExplicitSession(t *testing.T) {
 					newDisplayUsage(firstUsage),
 				)
 			}
-			return runner.Run(ctx, tui.RunInput{Prompt: "second prompt"}, nil)
+			return runInteractive(ctx, runner, "second prompt", nil)
 		},
 	})
 	if err != nil {
@@ -893,7 +894,7 @@ func TestInteractiveSessionPersistsCancellationAfterToolSideEffect(t *testing.T)
 		model: deepseek.DefaultModel(),
 	}
 
-	err = runner.Run(ctx, tui.RunInput{Prompt: "mutate then continue"}, nil)
+	err = runInteractive(ctx, runner, "mutate then continue", nil)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("Run() error = %v, want context.Canceled", err)
 	}
@@ -960,7 +961,7 @@ func TestInteractiveSessionPersistsToolErrorAndRecovery(t *testing.T) {
 		model: deepseek.DefaultModel(),
 	}
 
-	if err := runner.Run(t.Context(), tui.RunInput{Prompt: "mutate"}, nil); err != nil {
+	if err := runInteractive(t.Context(), runner, "mutate", nil); err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
 	if err := store.Close(); err != nil {
@@ -1008,24 +1009,25 @@ func TestInteractiveSessionPersistsSteerInsideActiveRun(t *testing.T) {
 		store: store,
 		model: deepseek.DefaultModel(),
 	}
-	steered := false
 	var displays []tui.DisplayEvent
-	err = runner.Run(t.Context(), tui.RunInput{
-		Prompt: "inspect",
-		Steering: func() (tui.SteeringInput, bool) {
-			if steered {
-				return tui.SteeringInput{}, false
-			}
-			steered = true
-			return tui.SteeringInput{
-				ID:   "steer-1",
-				Text: "focus on tests",
-			}, true
-		},
-	}, func(_ context.Context, event tui.DisplayEvent) error {
+	active, err := runner.NewRun(tui.RunInput{Prompt: "inspect"}, func(
+		_ context.Context,
+		event tui.DisplayEvent,
+	) error {
 		displays = append(displays, event)
 		return nil
 	})
+	if err != nil {
+		t.Fatalf("NewRun() error = %v", err)
+	}
+	if err := active.Deliver(interaction.Delivery{
+		ID:   "steer-1",
+		Text: "focus on tests",
+		Kind: interaction.DeliveryKindSteer,
+	}); err != nil {
+		t.Fatalf("Deliver() error = %v", err)
+	}
+	err = active.Run(t.Context())
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
@@ -1048,14 +1050,84 @@ func TestInteractiveSessionPersistsSteerInsideActiveRun(t *testing.T) {
 	foundSteer := false
 	for _, display := range displays {
 		if display.Kind == tui.DisplayEventSteer &&
-			display.Steering.ID == "steer-1" &&
-			display.Steering.Text == "focus on tests" {
+			display.Input.ID == "steer-1" &&
+			display.Input.Text == "focus on tests" {
 			foundSteer = true
 			break
 		}
 	}
 	if !foundSteer {
 		t.Fatalf("display events = %#v, want accepted steer", displays)
+	}
+}
+
+func TestInteractiveSessionPersistsFollowUpsAsSeparateTurns(t *testing.T) {
+	t.Parallel()
+
+	workspace := t.TempDir()
+	sessionPath := filepath.Join(t.TempDir(), "conversation.jsonl")
+	model := &recordingModel{response: "complete"}
+	loop, err := agent.NewLoop(model, nil)
+	if err != nil {
+		t.Fatalf("agent.NewLoop() error = %v", err)
+	}
+	store := createAppTestSession(t, sessionPath, workspace)
+	runner := &interactiveSession{
+		loop:  loop,
+		store: store,
+		model: deepseek.DefaultModel(),
+	}
+	var displays []tui.DisplayEvent
+	active, err := runner.NewRun(tui.RunInput{Prompt: "inspect"}, func(
+		_ context.Context,
+		event tui.DisplayEvent,
+	) error {
+		displays = append(displays, event)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("NewRun() error = %v", err)
+	}
+	if err := active.Deliver(interaction.Delivery{
+		ID:   "follow-up-1",
+		Text: "continue with tests",
+		Kind: interaction.DeliveryKindFollowUp,
+	}); err != nil {
+		t.Fatalf("Deliver() error = %v", err)
+	}
+	if err := active.Run(t.Context()); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatalf("Store.Close() error = %v", err)
+	}
+
+	snapshot := openSessionSnapshot(t, sessionPath)
+	if len(snapshot.Turns) != 2 {
+		t.Fatalf("persisted turns = %#v, want two interactions", snapshot.Turns)
+	}
+	for index, turn := range snapshot.Turns {
+		if got, want := persistedMessageRoles(turn.Messages), []llm.Role{
+			llm.RoleUser,
+			llm.RoleAssistant,
+		}; !reflect.DeepEqual(got, want) {
+			t.Errorf("turn %d message roles = %v, want %v", index, got, want)
+		}
+	}
+	if len(model.requests) != 2 {
+		t.Fatalf("model requests = %d, want two inside one active run", len(model.requests))
+	}
+	foundFollowUp := false
+	for _, display := range displays {
+		if display.Kind == tui.DisplayEventFollowUp &&
+			display.Input.ID == "follow-up-1" &&
+			display.Input.Text == "continue with tests" {
+			foundFollowUp = true
+			break
+		}
+	}
+	if !foundFollowUp {
+		t.Fatalf("display events = %#v, want accepted follow-up", displays)
 	}
 }
 
@@ -1193,6 +1265,19 @@ func createAppTestSession(
 		t.Fatalf("session.Create() error = %v", err)
 	}
 	return store
+}
+
+func runInteractive(
+	ctx context.Context,
+	runner tui.Runner,
+	prompt string,
+	sink tui.DisplayEventSink,
+) error {
+	active, err := runner.NewRun(tui.RunInput{Prompt: prompt}, sink)
+	if err != nil {
+		return err
+	}
+	return active.Run(ctx)
 }
 
 type recordingModel struct {

@@ -9,48 +9,17 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
+
+	"github.com/ch1lam/aice-cli/internal/interaction"
 )
 
 const runUpdateBuffer = 32
 
-// RunInput contains one prompt and the non-blocking steering source available
-// while that prompt is active.
-type RunInput struct {
-	Prompt   string
-	Steering SteeringSource
-}
-
-// SteeringInput is one caller-owned user message waiting for an active run.
-type SteeringInput struct {
-	ID   string
-	Text string
-}
-
-// SteeringSource returns at most one waiting input without blocking.
-type SteeringSource func() (SteeringInput, bool)
-
-// Runner executes one prompt and emits its ordered display events.
-// Implementations may retain conversation history between calls.
-type Runner interface {
-	Run(ctx context.Context, input RunInput, sink DisplayEventSink) error
-}
-
-// RuntimeState contains request settings and session snapshots that the TUI
-// presents to the user after an application command or agent run.
-type RuntimeState struct {
-	Model            DisplayModel
-	Thinking         DisplayThinking
-	APIKeyConfigured bool
-	Usage            DisplayUsage
-	// SessionChanged reports that the active session branch changed, so the
-	// TUI must discard its visible branch transcript.
-	SessionChanged bool
-}
-
-// RuntimeStateProvider reports settings changed by an application command.
-type RuntimeStateProvider interface {
-	RuntimeState() RuntimeState
-}
+type RunInput = interaction.RunInput
+type ActiveRun = interaction.ActiveRun
+type Runner = interaction.Runner
+type RuntimeState = interaction.RuntimeState
+type RuntimeStateProvider = interaction.RuntimeStateProvider
 
 // Options contains the terminal streams and model state shown by the program.
 type Options struct {
@@ -127,23 +96,20 @@ func Run(ctx context.Context, runner Runner, options Options) error {
 }
 
 type runRequest struct {
-	prompt     string
-	command    *SlashCommandRequest
-	deliveries *deliveryMailbox
-	updates    chan runUpdate
+	prompt  string
+	command *SlashCommandRequest
+	updates chan runUpdate
 }
 
 type runUpdate struct {
-	event     DisplayEvent
-	cancel    context.CancelFunc
-	err       error
-	output    string
-	state     *RuntimeState
-	commands  *[]SlashCommand
-	started   *pendingDelivery
-	promoted  []string
-	continued bool
-	done      bool
+	event    DisplayEvent
+	active   ActiveRun
+	cancel   context.CancelFunc
+	err      error
+	output   string
+	state    *RuntimeState
+	commands *[]SlashCommand
+	done     bool
 }
 
 func serveRuns(
@@ -171,68 +137,44 @@ func runOne(ctx context.Context, runner Runner, request runRequest) {
 		return
 	}
 
-	deliveries := request.deliveries
-	if deliveries == nil {
-		deliveries = newDeliveryMailbox()
-	}
-	current := pendingDelivery{text: request.prompt}
-	for {
-		runCtx, cancel := context.WithCancel(ctx)
-		if !sendRunUpdate(ctx, request.updates, runUpdate{cancel: cancel}) {
-			cancel()
-			return
+	active, err := runner.NewRun(RunInput{Prompt: request.prompt}, func(
+		eventCtx context.Context,
+		event DisplayEvent,
+	) error {
+		if !sendRunUpdate(eventCtx, request.updates, runUpdate{event: event}) {
+			return eventCtx.Err()
 		}
-
-		err := runner.Run(runCtx, RunInput{
-			Prompt:   current.text,
-			Steering: deliveries.takeSteering,
-		}, func(
-			eventCtx context.Context,
-			event DisplayEvent,
-		) error {
-			if !sendRunUpdate(eventCtx, request.updates, runUpdate{event: event}) {
-				return eventCtx.Err()
-			}
-			return nil
-		})
-		cancel()
-
+		return nil
+	})
+	if err != nil {
 		state, commands := runnerSnapshots(runner)
-		if ctx.Err() != nil {
-			_ = sendRunUpdate(ctx, request.updates, runUpdate{
-				err:      err,
-				state:    state,
-				commands: commands,
-				done:     true,
-			})
-			return
-		}
-
-		next, promoted, queued := deliveries.nextQueued()
-		if !queued {
-			_ = sendRunUpdate(ctx, request.updates, runUpdate{
-				err:      err,
-				state:    state,
-				commands: commands,
-				promoted: promoted,
-				done:     true,
-			})
-			return
-		}
-		if !sendRunUpdate(ctx, request.updates, runUpdate{
-			err:       err,
-			state:     state,
-			commands:  commands,
-			promoted:  promoted,
-			continued: true,
-		}) {
-			return
-		}
-		if !sendRunUpdate(ctx, request.updates, runUpdate{started: &next}) {
-			return
-		}
-		current = next
+		_ = sendRunUpdate(ctx, request.updates, runUpdate{
+			err:      err,
+			state:    state,
+			commands: commands,
+			done:     true,
+		})
+		return
 	}
+
+	runCtx, cancel := context.WithCancel(ctx)
+	if !sendRunUpdate(ctx, request.updates, runUpdate{
+		active: active,
+		cancel: cancel,
+	}) {
+		cancel()
+		return
+	}
+	err = active.Run(runCtx)
+	cancel()
+
+	state, commands := runnerSnapshots(runner)
+	_ = sendRunUpdate(ctx, request.updates, runUpdate{
+		err:      err,
+		state:    state,
+		commands: commands,
+		done:     true,
+	})
 }
 
 func runSlashCommand(ctx context.Context, runner Runner, request runRequest) {

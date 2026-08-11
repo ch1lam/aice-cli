@@ -25,8 +25,8 @@ func TestModelSubmitsPromptAndConsumesAgentEvents(t *testing.T) {
 	if !handled || command == nil {
 		t.Fatal("enter did not submit the prompt")
 	}
-	if !updated.running || !updated.acceptsDelivery || !updated.input.Focused() {
-		t.Fatal("model did not enter running state with an active composer")
+	if !updated.running || updated.acceptsDelivery || !updated.input.Focused() {
+		t.Fatal("model did not enter running state while the run was being prepared")
 	}
 
 	rawStartMessage := command()
@@ -41,7 +41,7 @@ func TestModelSubmitsPromptAndConsumesAgentEvents(t *testing.T) {
 	updated = updateModel(t, updated, startMessage)
 
 	updated = updateModel(t, updated, runBatchMsg{updates: []runUpdate{
-		{cancel: func() {}},
+		{active: &activeRunFunc{}, cancel: func() {}},
 		{event: DisplayEvent{Kind: DisplayEventAssistantStart}},
 		{event: DisplayEvent{
 			Kind:  DisplayEventAssistantDelta,

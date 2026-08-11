@@ -362,10 +362,6 @@ func (e *runExecution) startInputTurn(
 	input InputMessage,
 	kind InputKind,
 ) error {
-	steeringID := ""
-	if kind == InputKindSteering {
-		steeringID = input.ID
-	}
 	if err := e.emit(ctx, AgentEvent{
 		Type:       EventTypeTurnStart,
 		TurnNumber: turnNumber,
@@ -377,7 +373,6 @@ func (e *runExecution) startInputTurn(
 		TurnNumber: turnNumber,
 		InputID:    input.ID,
 		InputKind:  kind,
-		SteeringID: steeringID,
 		Message:    input.Message,
 	}); err != nil {
 		return err
@@ -387,7 +382,6 @@ func (e *runExecution) startInputTurn(
 		TurnNumber: turnNumber,
 		InputID:    input.ID,
 		InputKind:  kind,
-		SteeringID: steeringID,
 		Message:    input.Message,
 	})
 }

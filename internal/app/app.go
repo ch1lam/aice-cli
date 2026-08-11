@@ -15,6 +15,7 @@ import (
 	"github.com/ch1lam/aice-cli/internal/cli"
 	"github.com/ch1lam/aice-cli/internal/config"
 	"github.com/ch1lam/aice-cli/internal/deps"
+	"github.com/ch1lam/aice-cli/internal/interaction"
 	"github.com/ch1lam/aice-cli/internal/llm"
 	"github.com/ch1lam/aice-cli/internal/provider"
 	"github.com/ch1lam/aice-cli/internal/provider/deepseek"
@@ -66,7 +67,7 @@ type dependencies struct {
 	saveSetting                func(config.Setting, string) error
 	saveAPIKey                 func(provider, apiKey string) (string, error)
 	newModel                   func(config.Config) (agent.Model, error)
-	runTUI                     func(context.Context, tui.Runner, tui.Options) error
+	runTUI                     func(context.Context, interaction.Runner, tui.Options) error
 	runTrustTUI                func(context.Context, tui.TrustPromptOptions) (trust.Choice, error)
 	compactionKeepRecentTokens int64
 	providers                  []provider.Provider
@@ -264,7 +265,7 @@ func (a *application) Print(
 	finishErr := printer.Finish()
 	var persistErr error
 	if store != nil {
-		persistErr = appendSessionRun(ctx, store, result.Messages())
+		persistErr = appendSessionTurn(ctx, store, result.Messages())
 	}
 	if loopErr != nil {
 		return errors.Join(
@@ -340,8 +341,8 @@ func (a *application) Interactive(
 	runErr := a.dependencies.runTUI(ctx, runner, tui.Options{
 		Input:    request.Input,
 		Output:   request.Output,
-		Model:    tui.DisplayModel{ID: environment.model.ID},
-		Thinking: tui.DisplayThinking(environment.options.Thinking),
+		Model:    interaction.DisplayModel{ID: environment.model.ID},
+		Thinking: interaction.DisplayThinking(environment.options.Thinking),
 		APIKeyConfigured: providerConfigured(
 			a.dependencies.providers,
 			environment.configuration,
@@ -700,70 +701,6 @@ type interactiveSession struct {
 	providers      []provider.Provider
 	totalUsage     llm.Usage
 	sessionChanged bool
-}
-
-func (s *interactiveSession) Run(
-	ctx context.Context,
-	input tui.RunInput,
-	sink tui.DisplayEventSink,
-) error {
-	if s.loop == nil {
-		return credentialNotConfiguredError(s.providers, s.configuration)
-	}
-	prompt, err := llm.NewUserMessage(llm.NewTextContent(input.Prompt).Part())
-	if err != nil {
-		return fmt.Errorf("app: create prompt: %w", err)
-	}
-	result, runErr := s.loop.Run(ctx, agent.RunInput{
-		Model:        s.model,
-		SystemPrompt: s.systemPrompt,
-		History:      s.history,
-		Prompt:       prompt,
-		Options:      s.options,
-		Steering: func() (agent.SteeringMessage, bool, error) {
-			if input.Steering == nil {
-				return agent.SteeringMessage{}, false, nil
-			}
-			steering, ok := input.Steering()
-			if !ok {
-				return agent.SteeringMessage{}, false, nil
-			}
-			message, messageErr := llm.NewUserMessage(
-				llm.NewTextContent(steering.Text).Part(),
-			)
-			if messageErr != nil {
-				return agent.SteeringMessage{}, false, fmt.Errorf(
-					"app: create steering message: %w",
-					messageErr,
-				)
-			}
-			return agent.SteeringMessage{
-				ID:      steering.ID,
-				Message: message,
-			}, true, nil
-		},
-	}, func(eventCtx context.Context, event agent.AgentEvent) error {
-		if sink == nil {
-			return nil
-		}
-		display := translateAgentEvent(event)
-		if display == nil {
-			return nil
-		}
-		return sink(eventCtx, *display)
-	})
-	messages := result.Messages()
-	persistErr := appendSessionRun(ctx, s.store, messages)
-	if persistErr == nil {
-		s.history = append(s.history, messages...)
-	}
-	if runErr != nil {
-		return errors.Join(
-			fmt.Errorf("app: run agent: %w", runErr),
-			persistErr,
-		)
-	}
-	return persistErr
 }
 
 func newBuiltInTools(workspace *tool.Workspace) ([]agent.Tool, error) {

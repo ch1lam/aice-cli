@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"context"
 	"reflect"
 	"strings"
 	"testing"
@@ -11,51 +10,9 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
+
+	"github.com/ch1lam/aice-cli/internal/interaction"
 )
-
-func TestDeliveryMailboxOrdersPromotesAndSeals(t *testing.T) {
-	t.Parallel()
-
-	mailbox := newDeliveryMailbox()
-	if !mailbox.add(pendingDelivery{id: "first", text: "one", mode: deliverySteer}) ||
-		!mailbox.add(pendingDelivery{id: "second", text: "two", mode: deliveryQueue}) ||
-		!mailbox.add(pendingDelivery{id: "third", text: "three", mode: deliverySteer}) {
-		t.Fatal("mailbox rejected valid pending deliveries")
-	}
-	steering, ok := mailbox.takeSteering()
-	if !ok || steering != (SteeringInput{ID: "first", Text: "one"}) {
-		t.Fatalf("takeSteering() = %#v, %v", steering, ok)
-	}
-
-	first, promoted, ok := mailbox.nextQueued()
-	if !ok || first.id != "second" || !reflect.DeepEqual(promoted, []string{"third"}) {
-		t.Fatalf("first nextQueued() = %#v, %v, promoted %v", first, ok, promoted)
-	}
-	second, promoted, ok := mailbox.nextQueued()
-	if !ok || second.id != "third" || len(promoted) != 0 {
-		t.Fatalf("second nextQueued() = %#v, %v, promoted %v", second, ok, promoted)
-	}
-	if _, _, ok := mailbox.nextQueued(); ok {
-		t.Fatal("empty mailbox reported another queued delivery")
-	}
-	if mailbox.add(pendingDelivery{id: "late", text: "late", mode: deliverySteer}) {
-		t.Fatal("sealed mailbox accepted a delivery after terminal decision")
-	}
-}
-
-func TestDeliveryMailboxPromotesUnconsumedSteer(t *testing.T) {
-	t.Parallel()
-
-	mailbox := newDeliveryMailbox()
-	mailbox.add(pendingDelivery{id: "steer", text: "follow up", mode: deliverySteer})
-	next, promoted, ok := mailbox.nextQueued()
-	if !ok || next.id != "steer" || next.mode != deliveryQueue {
-		t.Fatalf("nextQueued() = %#v, %v", next, ok)
-	}
-	if want := []string{"steer"}; !reflect.DeepEqual(promoted, want) {
-		t.Fatalf("promoted IDs = %v, want %v", promoted, want)
-	}
-}
 
 func TestModelEnterSteersAndControlEnterQueues(t *testing.T) {
 	t.Parallel()
@@ -64,7 +21,11 @@ func TestModelEnterSteersAndControlEnterQueues(t *testing.T) {
 	current = updateModel(t, current, tea.WindowSizeMsg{Width: 80, Height: 24})
 	current.running = true
 	current.acceptsDelivery = true
-	current.deliveries = newDeliveryMailbox()
+	var delivered []interaction.Delivery
+	current.activeRun = &activeRunFunc{deliver: func(delivery interaction.Delivery) error {
+		delivered = append(delivered, delivery)
+		return nil
+	}}
 	current.input.SetValue("first line\nsecond line")
 
 	steered, command, handled := current.handleKey(tea.KeyPressMsg{
@@ -76,6 +37,11 @@ func TestModelEnterSteersAndControlEnterQueues(t *testing.T) {
 	if len(steered.pendingDeliveries) != 1 ||
 		steered.pendingDeliveries[0].mode != deliverySteer {
 		t.Fatalf("pending steer = %#v", steered.pendingDeliveries)
+	}
+	if len(delivered) != 1 ||
+		delivered[0].Kind != interaction.DeliveryKindSteer ||
+		delivered[0].Text != "first line\nsecond line" {
+		t.Fatalf("delivered steer = %#v", delivered)
 	}
 	if steered.input.Value() != "" || !steered.input.Focused() {
 		t.Fatal("steer submission did not clear and retain the composer")
@@ -116,6 +82,11 @@ func TestModelEnterSteersAndControlEnterQueues(t *testing.T) {
 	if len(queued.pendingDeliveries) != 2 ||
 		queued.pendingDeliveries[1].mode != deliveryQueue {
 		t.Fatalf("pending deliveries = %#v", queued.pendingDeliveries)
+	}
+	if len(delivered) != 2 ||
+		delivered[1].Kind != interaction.DeliveryKindFollowUp ||
+		delivered[1].Text != "run after this" {
+		t.Fatalf("delivered follow-up = %#v", delivered)
 	}
 	view = ansi.Strip(queued.composerView(80))
 	for _, unwanted := range []string{"STEER", "QUEUE", "[steer]", "[queue]"} {
@@ -166,7 +137,7 @@ func TestModelSteerEventMovesPendingInputIntoTranscript(t *testing.T) {
 
 	changed, _ := current.applyAgentEvent(DisplayEvent{
 		Kind: DisplayEventSteer,
-		Steering: SteeringDisplay{
+		Input: InputDisplay{
 			ID:   "steer-1",
 			Text: "focus on tests",
 		},
@@ -181,74 +152,38 @@ func TestModelSteerEventMovesPendingInputIntoTranscript(t *testing.T) {
 	}
 }
 
-func TestRunControllerExecutesQueuedPromptAsNextRun(t *testing.T) {
+func TestModelFollowUpEventStartsNextInteractionWithoutStartingAnotherRun(t *testing.T) {
 	t.Parallel()
 
-	tests := []struct {
-		name         string
-		mode         deliveryMode
-		wantPromoted []string
-	}{
-		{name: "direct queue", mode: deliveryQueue},
-		{
-			name:         "unconsumed steer",
-			mode:         deliverySteer,
-			wantPromoted: []string{"queued-1"},
-		},
+	current := newModel(make(chan runRequest), make(chan struct{}))
+	current.running = true
+	current.activeRun = &activeRunFunc{}
+	current.pendingDeliveries = []pendingDelivery{
+		{id: "steer-1", text: "late steer", mode: deliverySteer},
+		{id: "follow-up-1", text: "continue", mode: deliveryQueue},
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			var prompts []string
-			runner := runnerFunc(func(
-				_ context.Context,
-				input RunInput,
-				_ DisplayEventSink,
-			) error {
-				prompts = append(prompts, input.Prompt)
-				return nil
-			})
-			ctx, cancel := context.WithCancel(t.Context())
-			requests := make(chan runRequest)
-			done := make(chan struct{})
-			go serveRuns(ctx, runner, requests, done)
 
-			mailbox := newDeliveryMailbox()
-			mailbox.add(pendingDelivery{
-				id:   "queued-1",
-				text: "second prompt",
-				mode: tt.mode,
-			})
-			updates := make(chan runUpdate, runUpdateBuffer)
-			requests <- runRequest{
-				prompt:     "first prompt",
-				deliveries: mailbox,
-				updates:    updates,
-			}
-
-			var started []string
-			var promoted []string
-			for update := range updates {
-				promoted = append(promoted, update.promoted...)
-				if update.started != nil {
-					started = append(started, update.started.text)
-				}
-			}
-			if want := []string{"first prompt", "second prompt"}; !reflect.DeepEqual(prompts, want) {
-				t.Fatalf("runner prompts = %v, want %v", prompts, want)
-			}
-			if want := []string{"second prompt"}; !reflect.DeepEqual(started, want) {
-				t.Fatalf("started queued prompts = %v, want %v", started, want)
-			}
-			if !reflect.DeepEqual(promoted, tt.wantPromoted) {
-				t.Fatalf("promoted IDs = %v, want %v", promoted, tt.wantPromoted)
-			}
-
-			cancel()
-			select {
-			case <-done:
-			case <-time.After(time.Second):
-				t.Fatal("run controller did not stop")
-			}
-		})
+	changed, _ := current.applyAgentEvent(DisplayEvent{
+		Kind: DisplayEventFollowUp,
+		Input: InputDisplay{
+			ID:   "follow-up-1",
+			Text: "continue",
+		},
+	})
+	if !changed {
+		t.Fatal("follow-up event did not change presentation state")
+	}
+	if current.activeRun == nil {
+		t.Fatal("follow-up event discarded the active run")
+	}
+	if len(current.pendingDeliveries) != 1 ||
+		current.pendingDeliveries[0].mode != deliveryQueue {
+		t.Fatalf("pending deliveries = %#v, want promoted late steer", current.pendingDeliveries)
+	}
+	if got, want := current.entries[len(current.entries)-1], (transcriptEntry{
+		kind: entryUser,
+		text: "continue",
+	}); !reflect.DeepEqual(got, want) {
+		t.Fatalf("follow-up transcript entry = %#v, want %#v", got, want)
 	}
 }
