@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/spf13/cobra"
 
@@ -685,9 +686,13 @@ func resolveModelSettings(
 
 type interactiveSession struct {
 	application    *application
+	stateMu        sync.RWMutex
 	loop           *agent.Loop
 	store          *session.Store
+	historySyncMu  sync.Mutex
+	historyMu      sync.RWMutex
 	history        []llm.AgentMessage
+	activeMainRun  *mainRunState
 	model          llm.Model
 	options        llm.StreamOptions
 	configuration  config.Config
@@ -701,6 +706,29 @@ type interactiveSession struct {
 	providers      []provider.Provider
 	totalUsage     llm.Usage
 	sessionChanged bool
+}
+
+type interactiveSettings struct {
+	loop          *agent.Loop
+	configuration config.Config
+	model         llm.Model
+	options       llm.StreamOptions
+	systemPrompt  string
+}
+
+func (s *interactiveSession) settingsSnapshot() interactiveSettings {
+	if s == nil {
+		return interactiveSettings{}
+	}
+	s.stateMu.RLock()
+	defer s.stateMu.RUnlock()
+	return interactiveSettings{
+		loop:          s.loop,
+		configuration: s.configuration,
+		model:         cloneModel(s.model),
+		options:       cloneStreamOptions(s.options),
+		systemPrompt:  s.systemPrompt,
+	}
 }
 
 func newBuiltInTools(workspace *tool.Workspace) ([]agent.Tool, error) {

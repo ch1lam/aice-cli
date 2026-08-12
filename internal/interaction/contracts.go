@@ -19,6 +19,13 @@ type Runner interface {
 	NewRun(input RunInput, sink EventSink) (ActiveRun, error)
 }
 
+// SideThreadFactory creates an independent Runner for one isolated side
+// thread. The returned Runner freezes a private copy of the parent context at
+// creation time and never mutates the parent Session.
+type SideThreadFactory interface {
+	NewSideThread() (Runner, error)
+}
+
 // DisplayModel identifies the model shown by an interactive frontend.
 type DisplayModel struct {
 	ID string

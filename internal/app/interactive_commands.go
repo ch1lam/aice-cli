@@ -73,9 +73,10 @@ func (s *interactiveSession) SlashCommands() []interaction.Command {
 }
 
 func (s *interactiveSession) loginProviderMenu() *interaction.CommandMenu {
+	settings := s.settingsSnapshot()
 	return &interaction.CommandMenu{
 		Title:   "Select provider",
-		Options: providerOptions(s.providers, s.configuration.Provider),
+		Options: providerOptions(s.providers, settings.configuration.Provider),
 	}
 }
 
@@ -104,9 +105,10 @@ func trustChoiceDescription(choice trust.Choice) string {
 }
 
 func (s *interactiveSession) providerMenu() *interaction.CommandMenu {
+	settings := s.settingsSnapshot()
 	return &interaction.CommandMenu{
 		Title:   "Select provider",
-		Options: providerOptions(s.providers, s.configuration.Provider),
+		Options: providerOptions(s.providers, settings.configuration.Provider),
 	}
 }
 
@@ -128,15 +130,16 @@ func providerOptions(
 }
 
 func (s *interactiveSession) modelMenu() *interaction.CommandMenu {
-	provider := s.activeProvider()
-	models := modelsForProvider(s.providers, provider)
+	settings := s.settingsSnapshot()
+	providerID := activeProvider(settings.model, settings.configuration)
+	models := modelsForProvider(s.providers, providerID)
 	options := make([]interaction.CommandOption, 0, len(models))
 	for _, model := range models {
 		options = append(options, interaction.CommandOption{
 			Label:       model.Name,
 			Description: model.ID,
 			Arguments:   model.ID,
-			Current:     s.model.ID == model.ID,
+			Current:     settings.model.ID == model.ID,
 		})
 	}
 	return &interaction.CommandMenu{
@@ -147,15 +150,15 @@ func (s *interactiveSession) modelMenu() *interaction.CommandMenu {
 
 // activeProvider returns the provider whose catalog should drive /model and
 // /login, defaulting to DeepSeek when nothing is configured yet.
-func (s *interactiveSession) activeProvider() string {
-	if s.model.Provider != "" {
-		return string(s.model.Provider)
+func activeProvider(model llm.Model, configuration config.Config) string {
+	if model.Provider != "" {
+		return string(model.Provider)
 	}
-	provider := s.configuration.Provider
-	if provider == "" {
-		provider = string(deepseek.ProviderID)
+	providerID := configuration.Provider
+	if providerID == "" {
+		providerID = string(deepseek.ProviderID)
 	}
-	return provider
+	return providerID
 }
 
 // providerModel resolves the model the current Session should run after a
@@ -174,15 +177,17 @@ func providerModel(
 }
 
 func (s *interactiveSession) thinkingMenu() *interaction.CommandMenu {
-	options := make([]interaction.CommandOption, 0, len(llm.SupportedThinkingLevels(s.model)))
-	for _, level := range llm.SupportedThinkingLevels(s.model) {
+	settings := s.settingsSnapshot()
+	levels := llm.SupportedThinkingLevels(settings.model)
+	options := make([]interaction.CommandOption, 0, len(levels))
+	for _, level := range levels {
 		label, description := thinkingLevelDescription(level)
 		value := string(level)
 		options = append(options, interaction.CommandOption{
 			Label:       label,
 			Description: description,
 			Arguments:   value,
-			Current:     s.options.Thinking == level,
+			Current:     settings.options.Thinking == level,
 		})
 	}
 	return &interaction.CommandMenu{
@@ -318,7 +323,9 @@ func (s *interactiveSession) RunSlashCommand(
 			return "", err
 		}
 		if changed {
+			s.stateMu.Lock()
 			s.sessionChanged = true
+			s.stateMu.Unlock()
 		}
 		return output.String(), nil
 	case "compact":
@@ -381,7 +388,8 @@ func (s *interactiveSession) RunSlashCommand(
 				strings.Join(knownProviders(s.providers), ", "),
 			)
 		}
-		configuration := s.configuration
+		settings := s.settingsSnapshot()
+		configuration := settings.configuration
 		configuration.Provider = value
 		loop, err := s.application.newAgentLoop(configuration, s.tools)
 		if err != nil {
@@ -391,31 +399,45 @@ func (s *interactiveSession) RunSlashCommand(
 			return "", err
 		}
 		model := providerModel(s.providers, value, configuration.Model)
+		effective := clampedThinkingForModel(model, configuration.Thinking)
+		// The settings transition is one critical section so a concurrent side
+		// snapshot freezes a mutually consistent provider/model/thinking tuple.
+		s.stateMu.Lock()
 		s.configuration = configuration
 		s.loop = loop
 		s.model = model
-		s.options.Thinking = s.clampedThinkingForModel(model)
+		s.options.Thinking = effective
+		s.stateMu.Unlock()
 		return savedSettingMessage("provider", value), nil
 	case "model":
 		value, err := slashCommandSettingValue(request)
 		if err != nil {
 			return "", err
 		}
-		model, exists := modelForProvider(s.providers, s.activeProvider(), value)
+		settings := s.settingsSnapshot()
+		providerID := activeProvider(settings.model, settings.configuration)
+		model, exists := modelForProvider(s.providers, providerID, value)
 		if !exists {
 			return "", fmt.Errorf(
 				"app: unsupported model %q; available: %s",
 				value,
-				strings.Join(modelIDsForProvider(s.providers, s.activeProvider()), ", "),
+				strings.Join(modelIDsForProvider(s.providers, providerID), ", "),
 			)
 		}
-		effective := s.clampedThinkingForModel(model)
+		effective := clampedThinkingForModel(
+			model,
+			settings.configuration.Thinking,
+		)
 		if err := s.saveSetting(config.SettingModel, value); err != nil {
 			return "", err
 		}
+		// The settings transition is one critical section so a concurrent side
+		// snapshot freezes a mutually consistent model/thinking pair.
+		s.stateMu.Lock()
 		s.configuration.Model = value
 		s.model = model
 		s.options.Thinking = effective
+		s.stateMu.Unlock()
 		return savedSettingMessage("model", value), nil
 	case "thinking":
 		value, err := slashCommandSettingValue(request)
@@ -423,9 +445,10 @@ func (s *interactiveSession) RunSlashCommand(
 			return "", err
 		}
 		level := llm.ThinkingLevel(value)
+		settings := s.settingsSnapshot()
 		_, options, err := resolveModelSettings(s.providers, config.Config{
-			Provider: s.configuration.Provider,
-			Model:    s.model.ID,
+			Provider: settings.configuration.Provider,
+			Model:    settings.model.ID,
 			Thinking: level,
 		})
 		if err != nil {
@@ -434,8 +457,10 @@ func (s *interactiveSession) RunSlashCommand(
 		if err := s.saveSetting(config.SettingThinking, value); err != nil {
 			return "", err
 		}
+		s.stateMu.Lock()
 		s.configuration.Thinking = level
 		s.options.Thinking = options.Thinking
+		s.stateMu.Unlock()
 		return savedSettingMessage("thinking", value), nil
 	default:
 		return "", fmt.Errorf("app: unsupported slash command /%s", request.Name)
@@ -446,11 +471,14 @@ func (s *interactiveSession) RuntimeState() interaction.RuntimeState {
 	if s == nil {
 		return interaction.RuntimeState{}
 	}
+	usage := s.usageSnapshot()
+	s.stateMu.Lock()
+	defer s.stateMu.Unlock()
 	state := interaction.RuntimeState{
 		Model:            interaction.DisplayModel{ID: s.model.ID},
 		Thinking:         interaction.DisplayThinking(s.options.Thinking),
 		APIKeyConfigured: providerConfigured(s.providers, s.configuration),
-		Usage:            s.usageSnapshot(),
+		Usage:            usage,
 		SessionChanged:   s.sessionChanged,
 	}
 	s.sessionChanged = false
@@ -458,10 +486,17 @@ func (s *interactiveSession) RuntimeState() interaction.RuntimeState {
 }
 
 func (s *interactiveSession) usageSnapshot() interaction.DisplayUsage {
+	var total *llm.Usage
 	if s.store != nil {
 		if snapshot, err := s.store.Snapshot(); err == nil {
-			s.totalUsage = session.TotalUsage(snapshot)
+			usage := session.TotalUsage(snapshot)
+			total = &usage
 		}
+	}
+	s.stateMu.Lock()
+	defer s.stateMu.Unlock()
+	if total != nil {
+		s.totalUsage = *total
 	}
 	return newDisplayUsage(s.totalUsage)
 }
@@ -477,7 +512,8 @@ func (s *interactiveSession) login(
 	if len(fields) > 1 {
 		return "", fmt.Errorf("app: usage: /login [provider]")
 	}
-	provider := s.configuration.Provider
+	settings := s.settingsSnapshot()
+	provider := settings.configuration.Provider
 	if provider == "" {
 		provider = string(deepseek.ProviderID)
 	}
@@ -506,7 +542,7 @@ func (s *interactiveSession) login(
 		)
 	}
 
-	configuration := s.configuration
+	configuration := settings.configuration
 	configuration.Provider = provider
 	findProvider(s.providers, provider).ApplyAPIKey(&configuration, apiKey)
 	loop, err := s.application.newAgentLoop(configuration, s.tools)
@@ -522,10 +558,14 @@ func (s *interactiveSession) login(
 		)
 	}
 
+	model := providerModel(s.providers, provider, configuration.Model)
+	effective := clampedThinkingForModel(model, configuration.Thinking)
+	s.stateMu.Lock()
 	s.configuration = configuration
 	s.loop = loop
-	s.model = providerModel(s.providers, provider, configuration.Model)
-	s.options.Thinking = s.clampedThinkingForModel(s.model)
+	s.model = model
+	s.options.Thinking = effective
+	s.stateMu.Unlock()
 	return "Saved " + providerLabel(s.providers, provider) + " API key to " + path +
 		". AICE is ready.", nil
 }
@@ -533,8 +573,10 @@ func (s *interactiveSession) login(
 // clampedThinkingForModel re-clamps the requested reasoning level to a
 // model's capabilities. The requested level stays in the configuration so a
 // switch back to a model that supports it restores the original request.
-func (s *interactiveSession) clampedThinkingForModel(model llm.Model) llm.ThinkingLevel {
-	requested := s.configuration.Thinking
+func clampedThinkingForModel(
+	model llm.Model,
+	requested llm.ThinkingLevel,
+) llm.ThinkingLevel {
 	if requested == llm.ThinkingLevelUnknown {
 		requested = llm.DefaultThinkingLevel
 	}
@@ -542,27 +584,30 @@ func (s *interactiveSession) clampedThinkingForModel(model llm.Model) llm.Thinki
 }
 
 func (s *interactiveSession) settingsInformation() string {
-	thinking := string(s.options.Thinking)
-	if s.options.Thinking == llm.ThinkingLevelUnknown {
+	settings := s.settingsSnapshot()
+	thinking := string(settings.options.Thinking)
+	if settings.options.Thinking == llm.ThinkingLevelUnknown {
 		thinking = "default"
 	}
 	apiKey := "not configured"
-	if providerConfigured(s.providers, s.configuration) {
+	if providerConfigured(s.providers, settings.configuration) {
 		apiKey = "configured"
 	}
 	lines := []string{
 		"Settings",
-		"Provider: " + string(s.model.Provider),
-		"Model: " + s.model.ID,
+		"Provider: " + string(settings.model.Provider),
+		"Model: " + settings.model.ID,
 		"Thinking: " + thinking,
 		"API key: " + apiKey,
 	}
-	if s.configuration.DefaultProjectTrust == "" {
+	if settings.configuration.DefaultProjectTrust == "" {
 		lines = append(lines, "Default project trust: ask")
 	} else {
 		lines = append(
 			lines,
-			"Default project trust: "+string(s.configuration.DefaultProjectTrust),
+			"Default project trust: "+string(
+				settings.configuration.DefaultProjectTrust,
+			),
 		)
 	}
 	lines = append(
@@ -570,16 +615,16 @@ func (s *interactiveSession) settingsInformation() string {
 		"Project trust: "+trustDecisionLabel(s.trustDecision)+
 			" ("+s.trustSource.String()+")",
 	)
-	if s.configuration.Paths.GlobalSettings != "" {
+	if settings.configuration.Paths.GlobalSettings != "" {
 		lines = append(
 			lines,
-			"Global settings: "+s.configuration.Paths.GlobalSettings,
+			"Global settings: "+settings.configuration.Paths.GlobalSettings,
 		)
 	}
-	if s.configuration.Paths.GlobalAuth != "" {
+	if settings.configuration.Paths.GlobalAuth != "" {
 		lines = append(
 			lines,
-			"Global credentials: "+s.configuration.Paths.GlobalAuth,
+			"Global credentials: "+settings.configuration.Paths.GlobalAuth,
 		)
 	}
 	if s.trustStore != nil && s.trustStore.Path() != "" {
@@ -697,7 +742,12 @@ func (s *interactiveSession) sessionInformation() (string, error) {
 	), nil
 }
 
+// reloadHistory serializes with main interaction commits, rebuilds from the
+// durable store without holding the in-memory lock, then publishes the complete
+// replacement in one short critical section.
 func (s *interactiveSession) reloadHistory() error {
+	s.historySyncMu.Lock()
+	defer s.historySyncMu.Unlock()
 	snapshot, err := s.store.Snapshot()
 	if err != nil {
 		return fmt.Errorf("app: reload Session snapshot: %w", err)
@@ -706,7 +756,9 @@ func (s *interactiveSession) reloadHistory() error {
 	if err != nil {
 		return fmt.Errorf("app: reload Session history: %w", err)
 	}
+	s.historyMu.Lock()
 	s.history = history
+	s.historyMu.Unlock()
 	return nil
 }
 

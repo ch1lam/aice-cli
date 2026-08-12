@@ -35,8 +35,12 @@ func (s *interactiveSession) runInitCommand(ctx context.Context) (string, error)
 	if s == nil {
 		return "", fmt.Errorf("app: interactive Session is required")
 	}
-	if s.loop == nil {
-		return "", credentialNotConfiguredError(s.providers, s.configuration)
+	settings := s.settingsSnapshot()
+	if settings.loop == nil {
+		return "", credentialNotConfiguredError(
+			s.providers,
+			settings.configuration,
+		)
 	}
 	if s.workspace == nil {
 		return "", fmt.Errorf("app: workspace is required")
@@ -54,11 +58,11 @@ func (s *interactiveSession) runInitCommand(ctx context.Context) (string, error)
 	if err != nil {
 		return "", fmt.Errorf("app: create init prompt: %w", err)
 	}
-	_, runErr := s.loop.Run(ctx, agent.RunInput{
-		Model:        s.model,
-		SystemPrompt: s.systemPrompt,
+	_, runErr := settings.loop.Run(ctx, agent.RunInput{
+		Model:        settings.model,
+		SystemPrompt: settings.systemPrompt,
 		Prompt:       prompt,
-		Options:      s.options,
+		Options:      settings.options,
 	}, func(_ context.Context, _ agent.AgentEvent) error { return nil })
 	if runErr != nil {
 		return "", fmt.Errorf("app: run /init agent: %w", runErr)
