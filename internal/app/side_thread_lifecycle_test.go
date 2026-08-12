@@ -88,7 +88,7 @@ func TestSideThreadWritableWindowBoundary(t *testing.T) {
 		t.Fatalf("new thread status = %v, want writable", got)
 	}
 
-	clock.Advance(sideWritableIdle - time.Second)
+	clock.Advance(20*time.Minute - time.Second)
 	if got := harness.session.SideThreads()[0].Status; got != interaction.SideThreadWritable {
 		t.Fatalf("status at 19m59s idle = %v, want writable", got)
 	}
@@ -99,7 +99,7 @@ func TestSideThreadWritableWindowBoundary(t *testing.T) {
 	}
 
 	// Exactly 20 minutes after that termination the thread turns read-only.
-	clock.Advance(sideWritableIdle)
+	clock.Advance(20 * time.Minute)
 	if got := harness.session.SideThreads()[0].Status; got != interaction.SideThreadReadOnly {
 		t.Fatalf("status at exactly 20m idle = %v, want read-only", got)
 	}
@@ -130,7 +130,7 @@ func TestSideThreadExpiryBoundary(t *testing.T) {
 		t.Fatalf("CreateSideThread() error = %v", err)
 	}
 
-	clock.Advance(sideExpiryIdle - time.Second)
+	clock.Advance(120*time.Minute - time.Second)
 	if got := len(harness.session.SideThreads()); got != 1 {
 		t.Fatalf("threads at 119m59s idle = %d, want 1", got)
 	}
@@ -169,7 +169,7 @@ func TestSideThreadRunningSurvivesExpiryThreshold(t *testing.T) {
 	done := startSideRunAsync(t, runner, "question", t.Context())
 	waitFor(t, func() bool { return sideModel.requestCount() >= 1 })
 
-	clock.Advance(sideExpiryIdle + 10*time.Minute)
+	clock.Advance(130 * time.Minute)
 
 	threads := harness.session.SideThreads()
 	if got := len(threads); got != 1 {
@@ -289,8 +289,8 @@ func TestSideThreadLimitReached(t *testing.T) {
 	harness, _ := newSideLifecycleHarness(t, func() (agent.Model, error) {
 		return &recordingModel{response: "side answer"}, nil
 	})
-	created := make([]interaction.SideThread, 0, maximumSideThreads)
-	for index := 0; index < maximumSideThreads; index++ {
+	created := make([]interaction.SideThread, 0, 5)
+	for index := 0; index < 5; index++ {
 		thread, _, err := harness.session.CreateSideThread("question")
 		if err != nil {
 			t.Fatalf("CreateSideThread() %d error = %v", index+1, err)
@@ -441,7 +441,7 @@ func TestSideThreadExpiredThreadsFreeLimitSlots(t *testing.T) {
 	harness, clock := newSideLifecycleHarness(t, func() (agent.Model, error) {
 		return &recordingModel{response: "side answer"}, nil
 	})
-	for index := 0; index < maximumSideThreads; index++ {
+	for index := 0; index < 5; index++ {
 		if _, _, err := harness.session.CreateSideThread("question"); err != nil {
 			t.Fatalf("CreateSideThread() %d error = %v", index+1, err)
 		}
@@ -453,7 +453,7 @@ func TestSideThreadExpiredThreadsFreeLimitSlots(t *testing.T) {
 		t.Fatalf("CreateSideThread() error = %v, want ErrSideThreadLimit", err)
 	}
 
-	clock.Advance(sideExpiryIdle)
+	clock.Advance(120 * time.Minute)
 	if _, _, err := harness.session.CreateSideThread("after expiry"); err != nil {
 		t.Fatalf("CreateSideThread() after expiry error = %v", err)
 	}
@@ -575,7 +575,7 @@ func TestSideThreadRunStartRevalidatesAfterOpen(t *testing.T) {
 		t.Fatalf("CreateSideThread() error = %v", err)
 	}
 
-	clock.Advance(sideWritableIdle)
+	clock.Advance(20 * time.Minute)
 	if _, _, err := harness.session.OpenSideThread(
 		harness.session.SideThreads()[0].ID,
 	); err != nil {
@@ -586,6 +586,200 @@ func TestSideThreadRunStartRevalidatesAfterOpen(t *testing.T) {
 		interaction.ErrSideThreadReadOnly,
 	) {
 		t.Fatalf("run after open error = %v, want ErrSideThreadReadOnly", err)
+	}
+}
+
+// TestSideThreadRunStartRevalidatesExpiryAfterOpen proves the run-start gate
+// also revalidates expiry: a runner opened while the thread was live fails at
+// start with ErrSideThreadNotFound once 120 minutes of idle pass.
+func TestSideThreadRunStartRevalidatesExpiryAfterOpen(t *testing.T) {
+	t.Parallel()
+
+	harness, clock := newSideLifecycleHarness(t, func() (agent.Model, error) {
+		return &recordingModel{response: "side answer"}, nil
+	})
+	thread, runner, err := harness.session.CreateSideThread("question")
+	if err != nil {
+		t.Fatalf("CreateSideThread() error = %v", err)
+	}
+	if _, _, err := harness.session.OpenSideThread(thread.ID); err != nil {
+		t.Fatalf("OpenSideThread() error = %v", err)
+	}
+
+	clock.Advance(120 * time.Minute)
+	if err := runSide(t, runner, "too late"); !errors.Is(
+		err,
+		interaction.ErrSideThreadNotFound,
+	) {
+		t.Fatalf("run after expiry error = %v, want ErrSideThreadNotFound", err)
+	}
+}
+
+// TestSideThreadConcurrencySlotReleasedOnCancellation proves cancelling one
+// of two in-flight answers releases its concurrency slot immediately, so a
+// third thread can start while the second answer is still running.
+func TestSideThreadConcurrencySlotReleasedOnCancellation(t *testing.T) {
+	t.Parallel()
+
+	sideModel := &gatedModel{
+		response: "side answer",
+		gates: map[int]chan struct{}{
+			1: make(chan struct{}),
+			2: make(chan struct{}),
+		},
+	}
+	harness, _ := newSideLifecycleHarness(t, func() (agent.Model, error) {
+		return sideModel, nil
+	})
+	_, first, err := harness.session.CreateSideThread("first")
+	if err != nil {
+		t.Fatalf("CreateSideThread() first error = %v", err)
+	}
+	_, second, err := harness.session.CreateSideThread("second")
+	if err != nil {
+		t.Fatalf("CreateSideThread() second error = %v", err)
+	}
+	_, third, err := harness.session.CreateSideThread("third")
+	if err != nil {
+		t.Fatalf("CreateSideThread() third error = %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(t.Context())
+	firstDone := startSideRunAsync(t, first, "first question", ctx)
+	waitFor(t, func() bool { return sideModel.requestCount() >= 1 })
+	secondDone := startSideRunAsync(t, second, "second question", t.Context())
+	waitFor(t, func() bool { return sideModel.requestCount() >= 2 })
+
+	if err := runSide(t, third, "third question"); !errors.Is(
+		err,
+		interaction.ErrSideThreadConcurrencyLimit,
+	) {
+		t.Fatalf("third concurrent run error = %v, want ErrSideThreadConcurrencyLimit", err)
+	}
+
+	cancel()
+	if err := <-firstDone; !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled first Run() error = %v, want context.Canceled", err)
+	}
+
+	// The freed slot lets the third thread start while the second answer is
+	// still in flight.
+	if err := runSide(t, third, "third question"); err != nil {
+		t.Fatalf("third run after cancellation error = %v", err)
+	}
+
+	close(sideModel.gates[2])
+	if err := <-secondDone; err != nil {
+		t.Fatalf("second Run() error = %v", err)
+	}
+}
+
+// TestSideThreadConcurrencySlotReleasedOnProviderError proves a run that
+// fails with a provider error after starting also releases its concurrency
+// slot, so a third thread can start once the failed answer terminates.
+func TestSideThreadConcurrencySlotReleasedOnProviderError(t *testing.T) {
+	t.Parallel()
+
+	boom := errors.New("provider exploded")
+	sideModel := &gatedModel{
+		response: "side answer",
+		gates: map[int]chan struct{}{
+			1: make(chan struct{}),
+			2: make(chan struct{}),
+		},
+		gateErrs: map[int]error{1: boom},
+	}
+	harness, _ := newSideLifecycleHarness(t, func() (agent.Model, error) {
+		return sideModel, nil
+	})
+	_, first, err := harness.session.CreateSideThread("first")
+	if err != nil {
+		t.Fatalf("CreateSideThread() first error = %v", err)
+	}
+	_, second, err := harness.session.CreateSideThread("second")
+	if err != nil {
+		t.Fatalf("CreateSideThread() second error = %v", err)
+	}
+	_, third, err := harness.session.CreateSideThread("third")
+	if err != nil {
+		t.Fatalf("CreateSideThread() third error = %v", err)
+	}
+
+	firstDone := startSideRunAsync(t, first, "first question", t.Context())
+	waitFor(t, func() bool { return sideModel.requestCount() >= 1 })
+	secondDone := startSideRunAsync(t, second, "second question", t.Context())
+	waitFor(t, func() bool { return sideModel.requestCount() >= 2 })
+
+	if err := runSide(t, third, "third question"); !errors.Is(
+		err,
+		interaction.ErrSideThreadConcurrencyLimit,
+	) {
+		t.Fatalf("third concurrent run error = %v, want ErrSideThreadConcurrencyLimit", err)
+	}
+
+	close(sideModel.gates[1])
+	if err := <-firstDone; err == nil {
+		t.Fatal("first Run() error = nil, want provider error")
+	}
+
+	// The freed slot lets the third thread start while the second answer is
+	// still in flight.
+	if err := runSide(t, third, "third question"); err != nil {
+		t.Fatalf("third run after provider error error = %v", err)
+	}
+
+	close(sideModel.gates[2])
+	if err := <-secondDone; err != nil {
+		t.Fatalf("second Run() error = %v", err)
+	}
+}
+
+// TestSideThreadListTieBreaksByHigherID proves two threads created at the
+// same clock time list in descending id order, the newer id first.
+func TestSideThreadListTieBreaksByHigherID(t *testing.T) {
+	t.Parallel()
+
+	harness, _ := newSideLifecycleHarness(t, func() (agent.Model, error) {
+		return &recordingModel{response: "side answer"}, nil
+	})
+	first, _, err := harness.session.CreateSideThread("first")
+	if err != nil {
+		t.Fatalf("CreateSideThread() first error = %v", err)
+	}
+	second, _, err := harness.session.CreateSideThread("second")
+	if err != nil {
+		t.Fatalf("CreateSideThread() second error = %v", err)
+	}
+
+	// The fake clock does not advance between the two creations, so both
+	// threads share a LastActiveAt and the id tie-break decides the order.
+	threads := harness.session.SideThreads()
+	if got, want := []uint64{
+		threads[0].ID,
+		threads[1].ID,
+	}, []uint64{second.ID, first.ID}; !slices.Equal(got, want) {
+		t.Fatalf("tie-break list order = %v, want %v", got, want)
+	}
+}
+
+// TestSideThreadProductLimitsPinValues pins the approved product limits with
+// literal values so a change to the implementation constants cannot silently
+// move a threshold: 5 live threads, 2 concurrent answers, a 20-minute
+// follow-up window, and a 120-minute expiry.
+func TestSideThreadProductLimitsPinValues(t *testing.T) {
+	t.Parallel()
+
+	if got, want := maximumSideThreads, 5; got != want {
+		t.Fatalf("maximumSideThreads = %d, want %d", got, want)
+	}
+	if got, want := maximumRunningSideThreads, 2; got != want {
+		t.Fatalf("maximumRunningSideThreads = %d, want %d", got, want)
+	}
+	if got, want := sideWritableIdle, 20*time.Minute; got != want {
+		t.Fatalf("sideWritableIdle = %v, want %v", got, want)
+	}
+	if got, want := sideExpiryIdle, 120*time.Minute; got != want {
+		t.Fatalf("sideExpiryIdle = %v, want %v", got, want)
 	}
 }
 
@@ -664,5 +858,8 @@ func TestSideThreadEmptyQuestionRejected(t *testing.T) {
 	})
 	if _, _, err := harness.session.CreateSideThread("   "); err == nil {
 		t.Fatal("CreateSideThread() with an empty question succeeded")
+	}
+	if got := len(harness.session.SideThreads()); got != 0 {
+		t.Fatalf("threads after rejected empty question = %d, want 0", got)
 	}
 }

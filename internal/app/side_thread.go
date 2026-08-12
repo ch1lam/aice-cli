@@ -216,11 +216,14 @@ func (s *interactiveSession) beginSideRun(id uint64) error {
 	if thread.isRunning {
 		return interaction.ErrSideThreadBusy
 	}
-	if s.sideRunning >= maximumRunningSideThreads {
-		return interaction.ErrSideThreadConcurrencyLimit
-	}
+	// The read-only check precedes the global concurrency check so a thread
+	// whose follow-up window closed is reported as read-only even while other
+	// threads are answering.
 	if now.Sub(thread.lastActiveAt) >= sideWritableIdle {
 		return interaction.ErrSideThreadReadOnly
+	}
+	if s.sideRunning >= maximumRunningSideThreads {
+		return interaction.ErrSideThreadConcurrencyLimit
 	}
 	thread.isRunning = true
 	s.sideRunning++
@@ -507,15 +510,25 @@ func (r *sideRunner) commitTurn(messages []llm.AgentMessage) error {
 func (r *sideRunner) beginRun() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	// The registry hook runs first so its sentinel errors (busy, read-only,
-	// concurrency limit) stay authoritative for runners owned by a registry.
+	// The local guard runs first so a registry begin that succeeds can never
+	// strand a running slot: the registry marks the thread running and takes
+	// a concurrency slot before the local flag flips, and once the registry
+	// gate has succeeded there is no path left that can reject the run.
+	if r.isRunning {
+		// Registry-owned runners mirror the local running flag into the
+		// registry before this flag flips and clear it only afterwards, so an
+		// overlapping run is always reported with the registry's busy
+		// sentinel. Standalone runners have no registry and keep the
+		// internal error.
+		if r.begin != nil {
+			return interaction.ErrSideThreadBusy
+		}
+		return fmt.Errorf("app: side run already active")
+	}
 	if r.begin != nil {
 		if err := r.begin(); err != nil {
 			return err
 		}
-	}
-	if r.isRunning {
-		return fmt.Errorf("app: side run already active")
 	}
 	r.isRunning = true
 	return nil

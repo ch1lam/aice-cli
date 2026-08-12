@@ -605,6 +605,83 @@ func TestServeSideRunsCreatesFreshThreadAfterExpiredOpen(t *testing.T) {
 	}
 }
 
+func TestServeSideRunsStartsFreshThreadAfterReadOnlyRun(t *testing.T) {
+	t.Parallel()
+
+	// The first answer succeeds; the second run fails at start with the
+	// read-only sentinel, simulating a thread whose follow-up window closed
+	// between questions. The third run works again because the controller
+	// must forget the read-only thread and create a fresh one.
+	runs := 0
+	manager := &sideManagerRunner{
+		side: runnerFunc(func(
+			ctx context.Context,
+			_ RunInput,
+			sink DisplayEventSink,
+		) error {
+			runs++
+			if runs == 2 {
+				return interaction.ErrSideThreadReadOnly
+			}
+			return sink(ctx, DisplayEvent{Kind: DisplayEventAgentEnd})
+		}),
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	requests := make(chan runRequest)
+	done := make(chan struct{})
+	go serveSideRuns(ctx, manager, requests, done)
+
+	first := make(chan runUpdate, runUpdateBuffer)
+	requests <- runRequest{prompt: "first question", updates: first}
+	if terminal := drainRunUpdate(t, first); !terminal.done || terminal.err != nil {
+		t.Fatalf("first terminal update = %#v", terminal)
+	}
+	if manager.createCalls != 1 || manager.openCalls != 0 {
+		t.Fatalf(
+			"after first question: create=%d open=%d, want 1/0",
+			manager.createCalls,
+			manager.openCalls,
+		)
+	}
+
+	// The open succeeds but the run itself reports read-only at start.
+	second := make(chan runUpdate, runUpdateBuffer)
+	requests <- runRequest{prompt: "second question", updates: second}
+	if terminal := drainRunUpdate(t, second); !terminal.done ||
+		!errors.Is(terminal.err, interaction.ErrSideThreadReadOnly) {
+		t.Fatalf("second terminal update = %#v", terminal)
+	}
+	if manager.createCalls != 1 || manager.openCalls != 1 {
+		t.Fatalf(
+			"after read-only run: create=%d open=%d, want 1/1",
+			manager.createCalls,
+			manager.openCalls,
+		)
+	}
+
+	// The controller forgot the read-only thread, so the next question
+	// starts a fresh thread instead of retrying it.
+	third := make(chan runUpdate, runUpdateBuffer)
+	requests <- runRequest{prompt: "third question", updates: third}
+	if terminal := drainRunUpdate(t, third); !terminal.done || terminal.err != nil {
+		t.Fatalf("third terminal update = %#v", terminal)
+	}
+	if manager.createCalls != 2 || manager.openCalls != 1 {
+		t.Fatalf(
+			"after fresh thread: create=%d open=%d, want 2/1",
+			manager.createCalls,
+			manager.openCalls,
+		)
+	}
+
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("side controller did not stop")
+	}
+}
+
 func TestSideRunCancellationMessage(t *testing.T) {
 	t.Parallel()
 

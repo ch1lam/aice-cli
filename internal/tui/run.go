@@ -147,7 +147,7 @@ func serveRuns(
 		case <-ctx.Done():
 			return
 		case request := <-requests:
-			runOne(ctx, runner, request)
+			_ = runOne(ctx, runner, request)
 		}
 	}
 }
@@ -189,7 +189,17 @@ func serveSideRuns(
 				finishUnstartedRun(ctx, request, err)
 				continue
 			}
-			runOne(ctx, runner, request)
+			// A run can fail at start even though the open succeeded: the
+			// thread may have turned read-only or expired between the open
+			// and the run. Forgetting the id lets the next question create a
+			// fresh thread instead of retrying the unusable one until it
+			// expires.
+			if runErr := runOne(ctx, runner, request); errors.Is(
+				runErr,
+				interaction.ErrSideThreadReadOnly,
+			) || errors.Is(runErr, interaction.ErrSideThreadNotFound) {
+				threadID = 0
+			}
 		}
 	}
 }
@@ -206,12 +216,15 @@ func finishUnstartedRun(
 	})
 }
 
-func runOne(ctx context.Context, runner Runner, request runRequest) {
+// runOne prepares and executes one run request, delivering every lifecycle
+// update on request.updates. It returns the run's terminal error so callers
+// that need to react to a failed run (such as the side controller forgetting
+// an unusable thread id) can do so; the main controller discards it.
+func runOne(ctx context.Context, runner Runner, request runRequest) error {
 	defer close(request.updates)
 
 	if request.command != nil {
-		runSlashCommand(ctx, runner, request)
-		return
+		return runSlashCommand(ctx, runner, request)
 	}
 
 	active, err := runner.NewRun(RunInput{Prompt: request.prompt}, func(
@@ -231,7 +244,7 @@ func runOne(ctx context.Context, runner Runner, request runRequest) {
 			commands: commands,
 			done:     true,
 		})
-		return
+		return err
 	}
 
 	runCtx, cancel := context.WithCancel(ctx)
@@ -240,7 +253,7 @@ func runOne(ctx context.Context, runner Runner, request runRequest) {
 		cancel: cancel,
 	}) {
 		cancel()
-		return
+		return ctx.Err()
 	}
 	err = active.Run(runCtx)
 	cancel()
@@ -252,13 +265,14 @@ func runOne(ctx context.Context, runner Runner, request runRequest) {
 		commands: commands,
 		done:     true,
 	})
+	return err
 }
 
-func runSlashCommand(ctx context.Context, runner Runner, request runRequest) {
+func runSlashCommand(ctx context.Context, runner Runner, request runRequest) error {
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	if !sendRunUpdate(ctx, request.updates, runUpdate{cancel: cancel}) {
-		return
+		return ctx.Err()
 	}
 
 	var output string
@@ -277,6 +291,7 @@ func runSlashCommand(ctx context.Context, runner Runner, request runRequest) {
 		commands: commands,
 		done:     true,
 	})
+	return err
 }
 
 func runnerSnapshots(runner Runner) (*RuntimeState, *[]SlashCommand) {

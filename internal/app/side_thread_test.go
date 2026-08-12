@@ -487,6 +487,10 @@ type gatedModel struct {
 	gates    map[int]chan struct{}
 	preDelta string
 	response string
+	// gateErrs maps a 1-based request index to an error returned after its
+	// gate releases instead of the normal response, so a test can fail a run
+	// that already occupies a registry slot.
+	gateErrs map[int]error
 }
 
 func (m *gatedModel) Stream(ctx context.Context, request llm.Request) (llm.Stream, error) {
@@ -496,6 +500,7 @@ func (m *gatedModel) Stream(ctx context.Context, request llm.Request) (llm.Strea
 	release, gated := m.gates[index]
 	preDelta := m.preDelta
 	response := m.response
+	gateErr := m.gateErrs[index]
 	m.mu.Unlock()
 
 	message := llm.NewAssistantMessage(request.Model)
@@ -522,6 +527,7 @@ func (m *gatedModel) Stream(ctx context.Context, request llm.Request) (llm.Strea
 		prefix:   prefix,
 		post:     post,
 		preDelta: preDelta,
+		gateErr:  gateErr,
 	}, nil
 }
 
@@ -540,15 +546,19 @@ func (m *gatedModel) request(index int) llm.Request {
 
 // gatedStream emits the start prefix, then one optional partial delta, then
 // blocks on the release channel until released or the context is cancelled.
+// When gateErr is set it is returned once after release instead of the
+// remaining events.
 type gatedStream struct {
 	ctx       context.Context
 	release   chan struct{}
 	prefix    []llm.Event
 	post      []llm.Event
 	preDelta  string
+	gateErr   error
 	index     int
 	deltaSent bool
 	released  bool
+	errSent   bool
 }
 
 func (s *gatedStream) Next() (llm.Event, error) {
@@ -568,6 +578,10 @@ func (s *gatedStream) Next() (llm.Event, error) {
 		case <-s.ctx.Done():
 			return llm.Event{}, s.ctx.Err()
 		}
+	}
+	if s.gateErr != nil && !s.errSent {
+		s.errSent = true
+		return llm.Event{}, s.gateErr
 	}
 	if len(s.post) == 0 {
 		return llm.Event{}, io.EOF
