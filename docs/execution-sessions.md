@@ -49,6 +49,13 @@ the Agent reaches its natural stop boundary, while the same run remains active
 to poll follow-up input. Cancellation or failure appends the unfinished final
 interaction as a terminal turn so completed work is not lost.
 
+`/btw` side threads are explicitly outside this persistence model. They use a
+frozen copy of already accepted context plus their own bounded in-memory
+history, run without tools, and never append `turn`, `compaction`, or `leaf`
+records. They also do not contribute to main Session usage totals or compaction
+input. Closing the panel does not cancel an active side answer; exiting AICE
+discards the entire side thread.
+
 ## Resume and navigate
 
 ```sh

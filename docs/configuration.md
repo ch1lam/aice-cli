@@ -92,6 +92,7 @@ in [Tool execution and Sessions](execution-sessions.md#sessions).
 | Command | Effect |
 | --- | --- |
 | `/help` | List commands |
+| `/btw [question]` | Ask or reopen an ephemeral, tool-free side thread |
 | `/init` | Create or improve root `AGENTS.md`; loaded after restart |
 | `/settings` | Show effective model, Trust state, and configuration paths |
 | `/login` | Select a provider and store its key through hidden input |
@@ -109,6 +110,15 @@ in [Tool execution and Sessions](execution-sessions.md#sessions).
 Menu commands do not accept typed values; select an option from the menu.
 Provider, model, and thinking changes apply to the current Session immediately
 and are also saved globally. Press `?` for keyboard shortcuts.
+
+`/btw [question]` opens a side panel and answers from a frozen snapshot of the
+context AICE has already accepted. It runs independently, without tools, so the
+main Agent run can keep working. Side questions and answers are memory-only:
+they do not enter the main transcript, Session JSONL, usage totals, or
+compaction input, and disappear when AICE exits. The side thread retains at
+most 20 question/answer interactions. Use bare `/btw` to reopen it, Enter to
+ask a follow-up, Escape to close the panel without cancelling its answer, and
+Ctrl+C to cancel only the active side answer.
 
 ## Interactive input delivery
 

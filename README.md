@@ -37,7 +37,9 @@ aice --workspace .
 On first launch, run `/login`, select `deepseek`, `opencode-go`, or `openai`,
 and enter the API key through hidden input. Run `/help` for commands or `?` for
 keyboard shortcuts. While AICE is working, Enter steers the active response
-and Ctrl+Enter queues a follow-up interaction in the same Agent run.
+and Ctrl+Enter queues a follow-up interaction in the same Agent run. Use
+`/btw [question]` for a tool-free side question that does not interrupt or
+enter the main Session; use bare `/btw` to reopen its ephemeral panel.
 
 Run one non-interactive request:
 
@@ -61,6 +63,7 @@ aice --workspace . --session .aice/sessions/<session-id>.jsonl
 | Protocols | Anthropic Messages, OpenAI Responses, OpenAI Chat Completions |
 | Tools | `read`, `write`, `edit`, `bash`, `grep`, `find`, `ls` |
 | Sessions | restart recovery, branches, checkout/backtracking, manual compaction |
+| Side questions | ephemeral, tool-free `/btw` thread outside Session history |
 | Input | text only |
 
 The default tools run with the permissions of the AICE process.

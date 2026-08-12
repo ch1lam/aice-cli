@@ -36,6 +36,8 @@ aice --workspace .
 首次启动后执行 `/login`，选择 `deepseek`、`opencode-go` 或 `openai`，再通过
 隐藏输入填写 API Key。输入 `/help` 查看命令，输入 `?` 查看快捷键。AICE
 工作期间，按 Enter 可调整当前响应，按 Ctrl+Enter 可排队一个独立的后续响应。
+使用 `/btw [问题]` 可发起一个无工具、不会打断或写入主 Session 的侧问题；
+输入不带参数的 `/btw` 可重新打开这个临时面板。
 
 执行一次非交互请求：
 
@@ -59,6 +61,7 @@ aice --workspace . --session .aice/sessions/<session-id>.jsonl
 | 协议 | Anthropic Messages、OpenAI Responses、OpenAI Chat Completions |
 | 工具 | `read`、`write`、`edit`、`bash`、`grep`、`find`、`ls` |
 | Session | 重启恢复、分支、回退与手动非破坏性压缩 |
+| 侧问题 | Session 历史之外、无工具的临时 `/btw` 线程 |
 | 输入 | 仅文本 |
 
 内建工具继承 AICE 进程权限；`--workspace` 只是工作目录，不是沙箱。

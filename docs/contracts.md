@@ -55,6 +55,14 @@
   with `context.Background()`.
 - Every goroutine has an owner, cancellation path, and wait/exit path. Queues
   and buffers stay bounded.
+- A `/btw` side thread owns a separate Runner, controller, event stream, and
+  cancellation path. It snapshots the accepted parent context when created,
+  keeps at most 20 private interactions in memory, and constructs a tool-free
+  Agent Loop. Side execution never mutates main history, Session records,
+  usage, settings, or the main run mailbox.
+- A main run snapshots its loop, model, options, and system prompt when it
+  starts. Concurrent settings changes or side-thread creation must not swap
+  those dependencies underneath the active run.
 - Each run owns its event stream. The sender closes the channel; receivers do
   not. Blocking sends also select on `ctx.Done()`.
 - `internal/interaction`, wired by `internal/app`, owns one bounded, ordered
