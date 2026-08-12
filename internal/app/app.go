@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -706,6 +707,15 @@ type interactiveSession struct {
 	providers      []provider.Provider
 	totalUsage     llm.Usage
 	sessionChanged bool
+
+	// sideMu guards the ephemeral /btw thread registry below. sideClock is
+	// the injectable time source used for idle windows and expiry; nil means
+	// wall-clock time.
+	sideMu      sync.Mutex
+	sideThreads map[uint64]*sideThread
+	sideNextID  uint64
+	sideRunning int
+	sideClock   func() time.Time
 }
 
 type interactiveSettings struct {

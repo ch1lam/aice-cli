@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/ch1lam/aice-cli/internal/agent"
 	"github.com/ch1lam/aice-cli/internal/interaction"
@@ -13,17 +15,40 @@ import (
 )
 
 const (
-	maximumSideInteractions = 20
+	maximumSideInteractions   = 20
+	maximumSideThreads        = 5
+	maximumRunningSideThreads = 2
+	// sideWritableIdle is the idle window after an answer terminates during
+	// which the thread accepts follow-up questions. Idle is measured from
+	// the most recent answer termination.
+	sideWritableIdle = 20 * time.Minute
+	// sideExpiryIdle is the lifetime after which a thread is permanently
+	// deleted from the registry. Running answers cross the threshold
+	// unharmed and restart the clock when they terminate.
+	sideExpiryIdle = 120 * time.Minute
+	// maxSideThreadTitleRunes bounds titles derived from the first question.
+	maxSideThreadTitleRunes = 48
 	sideThreadInstruction   = "You are answering an ephemeral side question. " +
 		"Use only the supplied conversation context, do not use tools, and " +
 		"answer concisely. Do not claim to inspect information that is absent " +
 		"from the context."
 )
 
-var _ interaction.SideThreadFactory = (*interactiveSession)(nil)
+var _ interaction.SideThreadManager = (*interactiveSession)(nil)
+
+// sideThread is the registry entry for one ephemeral /btw thread. It owns
+// exactly one runner whose lifecycle hooks report back into the registry, so
+// the registry stays authoritative for running state, limits, and clocks.
+type sideThread struct {
+	id           uint64
+	title        string
+	runner       *sideRunner
+	lastActiveAt time.Time
+	isRunning    bool
+}
 
 // sideRunner is one isolated, tool-free side thread. It owns a frozen
-// snapshot of the parent Session history captured at NewSideThread and a
+// snapshot of the parent Session history captured at creation and a
 // private in-memory history of its own completed interactions. It never
 // writes to the parent Session store, history, transcript, or usage.
 type sideRunner struct {
@@ -36,32 +61,255 @@ type sideRunner struct {
 	mu        sync.Mutex
 	history   [][]llm.AgentMessage
 	isRunning bool
+
+	// begin and end are the registry-side run lifecycle hooks: begin gates
+	// a run against read-only, expiry, and concurrency limits at run start;
+	// end clears the running state and restarts the idle clock. Hooks are
+	// nil only for runners constructed without a registry, which keeps the
+	// runner itself usable in isolation.
+	begin func() error
+	end   func()
 }
 
-// NewSideThread freezes the parent context and constructs a distinct
-// tool-free model service and agent loop for the side thread. A failure to
-// construct the service or loop returns an error and no runner.
-func (s *interactiveSession) NewSideThread() (interaction.Runner, error) {
+// SideThreads lists every live thread, most recently active first, deleting
+// expired threads as part of the listing. The returned slice and its entries
+// are defensive copies.
+func (s *interactiveSession) SideThreads() []interaction.SideThread {
+	if s == nil {
+		return []interaction.SideThread{}
+	}
+	s.sideMu.Lock()
+	defer s.sideMu.Unlock()
+	now := s.sideNow()
+	s.purgeExpiredThreadsLocked(now)
+	threads := s.sideThreadsLocked()
+	list := make([]interaction.SideThread, 0, len(threads))
+	for _, thread := range threads {
+		list = append(list, sideThreadView(thread, now))
+	}
+	sort.Slice(list, func(i, j int) bool {
+		if list[i].LastActiveAt.Equal(list[j].LastActiveAt) {
+			return list[i].ID > list[j].ID
+		}
+		return list[i].LastActiveAt.After(list[j].LastActiveAt)
+	})
+	return list
+}
+
+// CreateSideThread creates a new thread from its first question. It freezes
+// the accepted parent context and settings at this moment, derives a title,
+// and returns metadata plus a runner for the first interaction. The thread
+// count limit is enforced here; run-start limits are enforced when the run
+// actually begins.
+func (s *interactiveSession) CreateSideThread(
+	prompt string,
+) (interaction.SideThread, interaction.Runner, error) {
 	if s == nil || s.application == nil {
-		return nil, fmt.Errorf("app: application is required")
+		return interaction.SideThread{}, nil, fmt.Errorf(
+			"app: application is required",
+		)
+	}
+	if strings.TrimSpace(prompt) == "" {
+		return interaction.SideThread{}, nil, fmt.Errorf(
+			"app: side question is required",
+		)
 	}
 	snapshot, err := s.sideSnapshot()
 	if err != nil {
-		return nil, fmt.Errorf("app: snapshot parent context: %w", err)
+		return interaction.SideThread{}, nil, fmt.Errorf(
+			"app: snapshot parent context: %w",
+			err,
+		)
 	}
 	settings := s.settingsSnapshot()
 	loop, err := s.application.newAgentLoop(settings.configuration, nil)
 	if err != nil {
-		return nil, err
+		return interaction.SideThread{}, nil, err
 	}
-	return &sideRunner{
+
+	s.sideMu.Lock()
+	defer s.sideMu.Unlock()
+	now := s.sideNow()
+	s.purgeExpiredThreadsLocked(now)
+	threads := s.sideThreadsLocked()
+	if len(threads) >= maximumSideThreads {
+		return interaction.SideThread{}, nil, interaction.ErrSideThreadLimit
+	}
+	s.sideNextID++
+	id := s.sideNextID
+	thread := &sideThread{
+		id:           id,
+		title:        sideThreadTitle(prompt),
+		lastActiveAt: now,
+	}
+	thread.runner = &sideRunner{
 		loop:         loop,
 		model:        settings.model,
 		options:      settings.options,
 		systemPrompt: sideThreadSystemPrompt(settings.systemPrompt),
 		snapshot:     snapshot,
 		history:      make([][]llm.AgentMessage, 0, maximumSideInteractions),
-	}, nil
+		begin:        func() error { return s.beginSideRun(id) },
+		end:          func() { s.endSideRun(id) },
+	}
+	threads[id] = thread
+	return sideThreadView(thread, now), thread.runner, nil
+}
+
+// OpenSideThread looks up a live thread and returns its metadata plus the
+// runner used for follow-up interactions. Expired threads have already been
+// deleted and return ErrSideThreadNotFound. Whether a follow-up may actually
+// start is revalidated when the runner begins, so holding a runner never
+// bypasses read-only or concurrency limits.
+func (s *interactiveSession) OpenSideThread(
+	id uint64,
+) (interaction.SideThread, interaction.Runner, error) {
+	if s == nil {
+		return interaction.SideThread{}, nil, interaction.ErrSideThreadNotFound
+	}
+	s.sideMu.Lock()
+	defer s.sideMu.Unlock()
+	now := s.sideNow()
+	s.purgeExpiredThreadsLocked(now)
+	thread, ok := s.sideThreads[id]
+	if !ok {
+		return interaction.SideThread{}, nil, interaction.ErrSideThreadNotFound
+	}
+	return sideThreadView(thread, now), thread.runner, nil
+}
+
+// CloseSideThread permanently deletes a thread. A thread with an answer in
+// flight is refused with ErrSideThreadRunning so a caller never loses a
+// running answer silently.
+func (s *interactiveSession) CloseSideThread(id uint64) error {
+	if s == nil {
+		return interaction.ErrSideThreadNotFound
+	}
+	s.sideMu.Lock()
+	defer s.sideMu.Unlock()
+	now := s.sideNow()
+	s.purgeExpiredThreadsLocked(now)
+	thread, ok := s.sideThreads[id]
+	if !ok {
+		return interaction.ErrSideThreadNotFound
+	}
+	if thread.isRunning {
+		return interaction.ErrSideThreadRunning
+	}
+	delete(s.sideThreads, id)
+	return nil
+}
+
+// beginSideRun is the run-start gate for one side interaction. It runs on
+// the runner's goroutine when a Run starts, so the registry remains the
+// authority for read-only, expiry, and concurrency limits even if a
+// frontend bypasses Create/Open validation.
+func (s *interactiveSession) beginSideRun(id uint64) error {
+	s.sideMu.Lock()
+	defer s.sideMu.Unlock()
+	now := s.sideNow()
+	s.purgeExpiredThreadsLocked(now)
+	thread, ok := s.sideThreads[id]
+	if !ok {
+		return interaction.ErrSideThreadNotFound
+	}
+	if thread.isRunning {
+		return interaction.ErrSideThreadBusy
+	}
+	if s.sideRunning >= maximumRunningSideThreads {
+		return interaction.ErrSideThreadConcurrencyLimit
+	}
+	if now.Sub(thread.lastActiveAt) >= sideWritableIdle {
+		return interaction.ErrSideThreadReadOnly
+	}
+	thread.isRunning = true
+	s.sideRunning++
+	return nil
+}
+
+// endSideRun runs when a side interaction terminates for any reason: success,
+// cancellation, or failure. It clears the running state, releases a
+// concurrency slot, and restarts the idle clock.
+func (s *interactiveSession) endSideRun(id uint64) {
+	s.sideMu.Lock()
+	defer s.sideMu.Unlock()
+	thread, ok := s.sideThreads[id]
+	if !ok {
+		return
+	}
+	thread.isRunning = false
+	if s.sideRunning > 0 {
+		s.sideRunning--
+	}
+	thread.lastActiveAt = s.sideNow()
+}
+
+// purgeExpiredThreadsLocked permanently deletes every non-running thread
+// whose idle time reached the expiry lifetime. Running answers cross the
+// threshold unharmed and reset the clock when they terminate.
+func (s *interactiveSession) purgeExpiredThreadsLocked(now time.Time) {
+	for id, thread := range s.sideThreads {
+		if thread.isRunning {
+			continue
+		}
+		if now.Sub(thread.lastActiveAt) >= sideExpiryIdle {
+			delete(s.sideThreads, id)
+		}
+	}
+}
+
+// sideThreadsLocked lazily initializes the thread registry. Callers hold
+// sideMu.
+func (s *interactiveSession) sideThreadsLocked() map[uint64]*sideThread {
+	if s.sideThreads == nil {
+		s.sideThreads = make(map[uint64]*sideThread)
+	}
+	return s.sideThreads
+}
+
+// sideNow returns the registry time, honoring an injected clock for tests.
+func (s *interactiveSession) sideNow() time.Time {
+	if s.sideClock != nil {
+		return s.sideClock()
+	}
+	return time.Now()
+}
+
+// sideThreadView builds a defensive metadata snapshot. A negative idle
+// (clock moved backwards) is treated as zero, which keeps the thread
+// writable.
+func sideThreadView(
+	thread *sideThread,
+	now time.Time,
+) interaction.SideThread {
+	status := interaction.SideThreadWritable
+	switch {
+	case thread.isRunning:
+		status = interaction.SideThreadRunning
+	case now.Sub(thread.lastActiveAt) >= sideWritableIdle:
+		status = interaction.SideThreadReadOnly
+	}
+	return interaction.SideThread{
+		ID:           thread.id,
+		Title:        thread.title,
+		Status:       status,
+		LastActiveAt: thread.lastActiveAt,
+	}
+}
+
+// sideThreadTitle derives the display title from the first question: the
+// first line, trimmed and truncated to maxSideThreadTitleRunes runes.
+func sideThreadTitle(prompt string) string {
+	title := prompt
+	if line, _, found := strings.Cut(prompt, "\n"); found {
+		title = line
+	}
+	title = strings.TrimSpace(title)
+	runes := []rune(title)
+	if len(runes) > maxSideThreadTitleRunes {
+		return string(runes[:maxSideThreadTitleRunes]) + "…"
+	}
+	return title
 }
 
 func sideThreadSystemPrompt(parent string) string {
@@ -259,6 +507,13 @@ func (r *sideRunner) commitTurn(messages []llm.AgentMessage) error {
 func (r *sideRunner) beginRun() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	// The registry hook runs first so its sentinel errors (busy, read-only,
+	// concurrency limit) stay authoritative for runners owned by a registry.
+	if r.begin != nil {
+		if err := r.begin(); err != nil {
+			return err
+		}
+	}
 	if r.isRunning {
 		return fmt.Errorf("app: side run already active")
 	}
@@ -270,6 +525,9 @@ func (r *sideRunner) endRun() {
 	r.mu.Lock()
 	r.isRunning = false
 	r.mu.Unlock()
+	if r.end != nil {
+		r.end()
+	}
 }
 
 type sideRun struct {

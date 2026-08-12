@@ -1,6 +1,10 @@
 package interaction
 
-import "context"
+import (
+	"context"
+	"errors"
+	"time"
+)
 
 // RunInput contains one initial prompt for an interactive Agent run.
 type RunInput struct {
@@ -19,11 +23,77 @@ type Runner interface {
 	NewRun(input RunInput, sink EventSink) (ActiveRun, error)
 }
 
-// SideThreadFactory creates an independent Runner for one isolated side
-// thread. The returned Runner freezes a private copy of the parent context at
-// creation time and never mutates the parent Session.
-type SideThreadFactory interface {
-	NewSideThread() (Runner, error)
+// SideThreadStatus is the lifecycle state of one ephemeral /btw thread.
+type SideThreadStatus uint8
+
+const (
+	// SideThreadUnknown is the unset state and is never returned by a live
+	// registry.
+	SideThreadUnknown SideThreadStatus = iota
+	// SideThreadRunning means an answer is in flight.
+	SideThreadRunning
+	// SideThreadWritable means a follow-up question may still be asked.
+	SideThreadWritable
+	// SideThreadReadOnly means the follow-up window closed but the thread
+	// remains viewable until it expires.
+	SideThreadReadOnly
+)
+
+// SideThread is a defensive metadata snapshot of one ephemeral side thread.
+// Values are copied at snapshot time; the registry owns the live state.
+type SideThread struct {
+	ID    uint64
+	Title string
+	// Status is computed against the registry clock at snapshot time.
+	Status SideThreadStatus
+	// LastActiveAt is when the thread's most recent answer terminated, or
+	// when the thread was created before its first answer.
+	LastActiveAt time.Time
+}
+
+// Side-thread lifecycle failures. These are expected conditions, so
+// callers must match them with errors.Is rather than string comparison.
+var (
+	// ErrSideThreadNotFound indicates the id does not exist: never created,
+	// already closed, or expired.
+	ErrSideThreadNotFound = errors.New("side thread not found")
+	// ErrSideThreadBusy indicates the thread's previous answer is still
+	// running.
+	ErrSideThreadBusy = errors.New("side thread is already answering")
+	// ErrSideThreadReadOnly indicates the thread's follow-up window closed.
+	ErrSideThreadReadOnly = errors.New("side thread is read-only")
+	// ErrSideThreadLimit indicates the maximum number of live threads.
+	ErrSideThreadLimit = errors.New("side thread limit reached")
+	// ErrSideThreadConcurrencyLimit indicates the maximum number of
+	// simultaneously answering threads is already active.
+	ErrSideThreadConcurrencyLimit = errors.New("too many side answers running")
+	// ErrSideThreadRunning indicates the thread cannot be closed while an
+	// answer is in flight.
+	ErrSideThreadRunning = errors.New("side thread is still answering")
+)
+
+// SideThreadManager owns the in-memory registry of ephemeral /btw threads.
+// The registry is the single authority for thread lifetimes, idle windows,
+// expiry, and limits; frontends only render its snapshots and ask it to
+// create, open, or close threads.
+type SideThreadManager interface {
+	// SideThreads lists every live thread, most recently active first.
+	// Expired threads are permanently deleted as part of the listing. The
+	// returned slice and entries are defensive copies.
+	SideThreads() []SideThread
+	// CreateSideThread creates a new thread from its first question: it
+	// freezes the accepted parent context at this moment and returns a
+	// Runner prepared for the first interaction. The runner gates its
+	// actual start against run-start limits through the registry.
+	CreateSideThread(prompt string) (SideThread, Runner, error)
+	// OpenSideThread looks up a live thread and returns its metadata plus
+	// the Runner used for follow-up interactions. Run-start validation
+	// (read-only, expiry, concurrency) still happens when the runner
+	// actually starts, so a frontend cannot bypass it by holding a runner.
+	OpenSideThread(id uint64) (SideThread, Runner, error)
+	// CloseSideThread permanently deletes a thread. A thread with an answer
+	// in flight is refused with ErrSideThreadRunning.
+	CloseSideThread(id uint64) error
 }
 
 // DisplayModel identifies the model shown by an interactive frontend.

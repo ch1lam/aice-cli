@@ -39,7 +39,7 @@ type sideHarness struct {
 
 // newSideHarness constructs an application and interactiveSession with a
 // counting model factory. newModel is invoked once for the main loop during
-// setup and once per NewSideThread afterwards.
+// setup and once per CreateSideThread afterwards.
 func newSideHarness(
 	t *testing.T,
 	newModel func() (agent.Model, error),
@@ -146,9 +146,9 @@ func TestSideThreadEmptySnapshotStaysFrozenAfterParentCommits(t *testing.T) {
 		return sideModel, nil
 	})
 
-	side, err := harness.session.NewSideThread()
+	_, side, err := harness.session.CreateSideThread("side question")
 	if err != nil {
-		t.Fatalf("NewSideThread() error = %v", err)
+		t.Fatalf("CreateSideThread() error = %v", err)
 	}
 
 	// The parent commits one full interaction after the side thread exists.
@@ -222,14 +222,14 @@ func TestSideThreadFreezesNonemptySnapshotAndSettings(t *testing.T) {
 	harness.session.options.Temperature = &temperature
 
 	factoryCallsAfterMain := harness.factoryCalls.Load()
-	side, err := harness.session.NewSideThread()
+	_, side, err := harness.session.CreateSideThread("side question")
 	if err != nil {
-		t.Fatalf("NewSideThread() error = %v", err)
+		t.Fatalf("CreateSideThread() error = %v", err)
 	}
 	// Exactly one additional model service was constructed, for the side
 	// thread; the main service was not recreated.
 	if got, want := harness.factoryCalls.Load(), factoryCallsAfterMain+1; got != want {
-		t.Fatalf("model factory calls after NewSideThread = %d, want %d", got, want)
+		t.Fatalf("model factory calls after CreateSideThread = %d, want %d", got, want)
 	}
 
 	// Mutate every parent-owned value the side thread must have frozen.
@@ -288,7 +288,7 @@ func TestSideThreadFreezesNonemptySnapshotAndSettings(t *testing.T) {
 	}
 }
 
-// TestSideThreadFactoryErrorPropagates proves NewSideThread returns the model
+// TestSideThreadFactoryErrorPropagates proves CreateSideThread returns the model
 // construction error and no runner when the side service cannot be built.
 func TestSideThreadFactoryErrorPropagates(t *testing.T) {
 	t.Parallel()
@@ -303,12 +303,12 @@ func TestSideThreadFactoryErrorPropagates(t *testing.T) {
 		return nil, boom
 	})
 
-	side, err := harness.session.NewSideThread()
+	_, side, err := harness.session.CreateSideThread("side question")
 	if !errors.Is(err, boom) {
-		t.Fatalf("NewSideThread() error = %v, want %v", err, boom)
+		t.Fatalf("CreateSideThread() error = %v, want %v", err, boom)
 	}
 	if side != nil {
-		t.Fatalf("NewSideThread() runner = %v, want nil", side)
+		t.Fatalf("CreateSideThread() runner = %v, want nil", side)
 	}
 }
 
@@ -320,9 +320,9 @@ func TestSideRunRejectsMainRunDeliveries(t *testing.T) {
 		calls++
 		return &recordingModel{response: "answer"}, nil
 	})
-	side, err := harness.session.NewSideThread()
+	_, side, err := harness.session.CreateSideThread("side question")
 	if err != nil {
-		t.Fatalf("NewSideThread() error = %v", err)
+		t.Fatalf("CreateSideThread() error = %v", err)
 	}
 	active, err := side.NewRun(
 		interaction.RunInput{Prompt: "side question"},
@@ -358,9 +358,9 @@ func TestSideThreadReusesServiceAcrossSequentialRuns(t *testing.T) {
 		return sideModel, nil
 	})
 
-	side, err := harness.session.NewSideThread()
+	_, side, err := harness.session.CreateSideThread("side question")
 	if err != nil {
-		t.Fatalf("NewSideThread() error = %v", err)
+		t.Fatalf("CreateSideThread() error = %v", err)
 	}
 	factoryCalls := harness.factoryCalls.Load()
 	for index := 0; index < 2; index++ {
@@ -397,9 +397,9 @@ func TestSideThreadSequentialRunsFormPrivateMultiTurn(t *testing.T) {
 	if err := runInteractive(t.Context(), harness.session, "main question", nil); err != nil {
 		t.Fatalf("main Run() error = %v", err)
 	}
-	side, err := harness.session.NewSideThread()
+	_, side, err := harness.session.CreateSideThread("side question")
 	if err != nil {
-		t.Fatalf("NewSideThread() error = %v", err)
+		t.Fatalf("CreateSideThread() error = %v", err)
 	}
 	if err := runSide(t, side, "side question 1"); err != nil {
 		t.Fatalf("first side Run() error = %v", err)
@@ -441,9 +441,9 @@ func TestSideThreadBoundsPrivateHistory(t *testing.T) {
 		}
 		return sideModel, nil
 	})
-	side, err := harness.session.NewSideThread()
+	_, side, err := harness.session.CreateSideThread("side question")
 	if err != nil {
-		t.Fatalf("NewSideThread() error = %v", err)
+		t.Fatalf("CreateSideThread() error = %v", err)
 	}
 	for index := 1; index <= maximumSideInteractions+2; index++ {
 		prompt := "side question " + strconv.Itoa(index)
@@ -634,9 +634,9 @@ func TestSideThreadSnapshotIncludesActivePromptBeforeFirstCommit(t *testing.T) {
 		t.Fatalf("session history length = %d, want 0 before first commit", historyLen)
 	}
 
-	side, err := harness.session.NewSideThread()
+	_, side, err := harness.session.CreateSideThread("side question")
 	if err != nil {
-		t.Fatalf("NewSideThread() error = %v", err)
+		t.Fatalf("CreateSideThread() error = %v", err)
 	}
 	if err := runSide(t, side, "side question"); err != nil {
 		t.Fatalf("side Run() error = %v", err)
@@ -713,9 +713,9 @@ func TestSideThreadSnapshotIncludesCurrentFollowUp(t *testing.T) {
 
 	// The main run is now in its follow-up window: the first interaction has
 	// durably committed and the follow-up request is blocked.
-	side, err := harness.session.NewSideThread()
+	_, side, err := harness.session.CreateSideThread("side question")
 	if err != nil {
-		t.Fatalf("NewSideThread() error = %v", err)
+		t.Fatalf("CreateSideThread() error = %v", err)
 	}
 	if err := runSide(t, side, "side question"); err != nil {
 		t.Fatalf("side Run() error = %v", err)
@@ -780,9 +780,9 @@ func TestSideThreadTurnsLeaveParentStateUntouched(t *testing.T) {
 	harness.session.historyMu.Unlock()
 	usageBefore := harness.session.totalUsage
 
-	side, err := harness.session.NewSideThread()
+	_, side, err := harness.session.CreateSideThread("side question")
 	if err != nil {
-		t.Fatalf("NewSideThread() error = %v", err)
+		t.Fatalf("CreateSideThread() error = %v", err)
 	}
 	for index, prompt := range []string{"side question 1", "side question 2"} {
 		if err := runSide(t, side, prompt); err != nil {
@@ -857,9 +857,9 @@ func TestSideThreadCancelDoesNotAffectMainRun(t *testing.T) {
 	go func() { mainDone <- active.Run(ctx) }()
 	waitFor(t, func() bool { return mainModel.requestCount() >= 1 })
 
-	side, err := harness.session.NewSideThread()
+	_, side, err := harness.session.CreateSideThread("side question")
 	if err != nil {
-		t.Fatalf("NewSideThread() error = %v", err)
+		t.Fatalf("CreateSideThread() error = %v", err)
 	}
 	sideCtx, sideCancel := context.WithCancel(t.Context())
 	sideActive, err := side.NewRun(
@@ -930,9 +930,9 @@ func TestMainRunCancelDoesNotAffectSideThread(t *testing.T) {
 		t.Fatalf("main Run() error = %v, want context.Canceled", err)
 	}
 
-	side, err := harness.session.NewSideThread()
+	_, side, err := harness.session.CreateSideThread("side question")
 	if err != nil {
-		t.Fatalf("NewSideThread() error = %v", err)
+		t.Fatalf("CreateSideThread() error = %v", err)
 	}
 	if err := runSide(t, side, "side question"); err != nil {
 		t.Fatalf("side Run() error = %v", err)
@@ -967,9 +967,9 @@ func TestSideRunnerUsableAfterCancelledSideRun(t *testing.T) {
 		return sideModel, nil
 	})
 
-	side, err := harness.session.NewSideThread()
+	_, side, err := harness.session.CreateSideThread("side question")
 	if err != nil {
-		t.Fatalf("NewSideThread() error = %v", err)
+		t.Fatalf("CreateSideThread() error = %v", err)
 	}
 	if err := runSide(t, side, "side question 1"); err != nil {
 		t.Fatalf("first side Run() error = %v", err)
@@ -1080,9 +1080,9 @@ func TestSideThreadDeepCloneIsolationRichNestedFields(t *testing.T) {
 	harness.session.history = history
 	harness.session.historyMu.Unlock()
 
-	side, err := harness.session.NewSideThread()
+	_, side, err := harness.session.CreateSideThread("side question")
 	if err != nil {
-		t.Fatalf("NewSideThread() error = %v", err)
+		t.Fatalf("CreateSideThread() error = %v", err)
 	}
 
 	// Mutate every parent-owned nested field after creation. The tool-call
@@ -1285,9 +1285,9 @@ func TestSideThreadConcurrentSnapshotsConsistent(t *testing.T) {
 	for index := 1; index <= 3; index++ {
 		waitFor(t, func() bool { return mainModel.requestCount() >= index })
 
-		side, err := harness.session.NewSideThread()
+		_, side, err := harness.session.CreateSideThread("side question")
 		if err != nil {
-			t.Fatalf("NewSideThread() error = %v", err)
+			t.Fatalf("CreateSideThread() error = %v", err)
 		}
 		prompt := "side question " + strconv.Itoa(index)
 		if err := runSide(t, side, prompt); err != nil {

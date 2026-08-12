@@ -20,7 +20,8 @@ type ActiveRun = interaction.ActiveRun
 type Runner = interaction.Runner
 type RuntimeState = interaction.RuntimeState
 type RuntimeStateProvider = interaction.RuntimeStateProvider
-type SideThreadFactory = interaction.SideThreadFactory
+type SideThread = interaction.SideThread
+type SideThreadManager = interaction.SideThreadManager
 
 // Options contains the terminal streams and model state shown by the program.
 type Options struct {
@@ -64,12 +65,12 @@ func Run(ctx context.Context, runner Runner, options Options) error {
 
 	var sideRequests chan runRequest
 	var sideControllerDone chan struct{}
-	if factory, ok := runner.(SideThreadFactory); ok {
+	if manager, ok := runner.(SideThreadManager); ok {
 		sideRequests = make(chan runRequest)
 		sideControllerDone = make(chan struct{})
 		go serveSideRuns(
 			controllerCtx,
-			factory,
+			manager,
 			sideRequests,
 			sideControllerDone,
 		)
@@ -151,26 +152,42 @@ func serveRuns(
 	}
 }
 
+// serveSideRuns owns the side controller. This transitional phase keeps the
+// single-thread frontend behavior: the first question creates the thread,
+// every later question opens the same thread. When the thread has expired
+// (ErrSideThreadNotFound), the controller forgets it so the next question
+// starts a fresh thread. The full multi-thread menu arrives in a later
+// phase; the registry already owns all lifecycle rules underneath.
 func serveSideRuns(
 	ctx context.Context,
-	factory SideThreadFactory,
+	manager SideThreadManager,
 	requests <-chan runRequest,
 	done chan<- struct{},
 ) {
 	defer close(done)
-	var runner Runner
+	var threadID uint64
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case request := <-requests:
-			if runner == nil {
-				var err error
-				runner, err = factory.NewSideThread()
-				if err != nil {
-					finishUnstartedRun(ctx, request, err)
-					continue
+			var runner Runner
+			var err error
+			if threadID == 0 {
+				var thread SideThread
+				thread, runner, err = manager.CreateSideThread(request.prompt)
+				threadID = thread.ID
+			} else {
+				var thread SideThread
+				thread, runner, err = manager.OpenSideThread(threadID)
+				threadID = thread.ID
+			}
+			if err != nil {
+				if errors.Is(err, interaction.ErrSideThreadNotFound) {
+					threadID = 0
 				}
+				finishUnstartedRun(ctx, request, err)
+				continue
 			}
 			runOne(ctx, runner, request)
 		}

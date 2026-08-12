@@ -506,7 +506,7 @@ func TestServeSideRunsReportsFactoryFailure(t *testing.T) {
 	t.Parallel()
 
 	boom := errors.New("side factory failed")
-	factory := &sideFactoryRunner{sideErr: boom}
+	factory := &sideManagerRunner{createErr: boom}
 	ctx, cancel := context.WithCancel(t.Context())
 	requests := make(chan runRequest)
 	done := make(chan struct{})
@@ -516,7 +516,7 @@ func TestServeSideRunsReportsFactoryFailure(t *testing.T) {
 	requests <- runRequest{prompt: "question", updates: updates}
 	terminal := receiveRunUpdate(t, updates)
 	if !terminal.done || !errors.Is(terminal.err, boom) {
-		t.Fatalf("side factory terminal update = %#v", terminal)
+		t.Fatalf("side create terminal update = %#v", terminal)
 	}
 	select {
 	case _, open := <-updates:
@@ -525,6 +525,76 @@ func TestServeSideRunsReportsFactoryFailure(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("factory failure update channel did not close")
+	}
+
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("side controller did not stop")
+	}
+}
+
+func TestServeSideRunsCreatesFreshThreadAfterExpiredOpen(t *testing.T) {
+	t.Parallel()
+
+	manager := &sideManagerRunner{
+		side: runnerFunc(func(
+			ctx context.Context,
+			_ RunInput,
+			sink DisplayEventSink,
+		) error {
+			return sink(ctx, DisplayEvent{Kind: DisplayEventAgentEnd})
+		}),
+		openErr: interaction.ErrSideThreadNotFound,
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	requests := make(chan runRequest)
+	done := make(chan struct{})
+	go serveSideRuns(ctx, manager, requests, done)
+
+	first := make(chan runUpdate, runUpdateBuffer)
+	requests <- runRequest{prompt: "first question", updates: first}
+	if terminal := drainRunUpdate(t, first); !terminal.done || terminal.err != nil {
+		t.Fatalf("first terminal update = %#v", terminal)
+	}
+	if manager.createCalls != 1 || manager.openCalls != 0 {
+		t.Fatalf(
+			"after first question: create=%d open=%d, want 1/0",
+			manager.createCalls,
+			manager.openCalls,
+		)
+	}
+
+	// The thread expired between questions: the open fails and the
+	// controller forgets the dead id.
+	second := make(chan runUpdate, runUpdateBuffer)
+	requests <- runRequest{prompt: "second question", updates: second}
+	if terminal := drainRunUpdate(t, second); !terminal.done ||
+		!errors.Is(terminal.err, interaction.ErrSideThreadNotFound) {
+		t.Fatalf("second terminal update = %#v", terminal)
+	}
+	if manager.createCalls != 1 || manager.openCalls != 1 {
+		t.Fatalf(
+			"after expired open: create=%d open=%d, want 1/1",
+			manager.createCalls,
+			manager.openCalls,
+		)
+	}
+
+	// The next question starts a fresh thread instead of reopening the dead
+	// id again.
+	third := make(chan runUpdate, runUpdateBuffer)
+	requests <- runRequest{prompt: "third question", updates: third}
+	if terminal := drainRunUpdate(t, third); !terminal.done || terminal.err != nil {
+		t.Fatalf("third terminal update = %#v", terminal)
+	}
+	if manager.createCalls != 2 || manager.openCalls != 1 {
+		t.Fatalf(
+			"after fresh thread: create=%d open=%d, want 2/1",
+			manager.createCalls,
+			manager.openCalls,
+		)
 	}
 
 	cancel()

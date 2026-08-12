@@ -212,7 +212,7 @@ func TestServeSideRunsWhileMainRunIsBlocked(t *testing.T) {
 		}
 		return sink(ctx, DisplayEvent{Kind: DisplayEventAgentEnd})
 	})
-	factory := &sideFactoryRunner{
+	factory := &sideManagerRunner{
 		runnerFunc: mainRunner,
 		side:       sideRunner,
 	}
@@ -251,8 +251,11 @@ func TestServeSideRunsWhileMainRunIsBlocked(t *testing.T) {
 	if !sideTerminal.done || sideTerminal.err != nil {
 		t.Fatalf("side terminal update = %#v", sideTerminal)
 	}
-	if got := factory.sideFactoryCalls; got != 1 {
-		t.Fatalf("NewSideThread() calls = %d, want 1", got)
+	if got := factory.createCalls; got != 1 {
+		t.Fatalf("CreateSideThread() calls = %d, want 1", got)
+	}
+	if got := factory.openCalls; got != 0 {
+		t.Fatalf("OpenSideThread() calls = %d, want 0", got)
 	}
 
 	select {
@@ -336,6 +339,16 @@ func receiveRunUpdate(t *testing.T, updates <-chan runUpdate) runUpdate {
 	}
 }
 
+// drainRunUpdate receives updates until the terminal one and returns it.
+func drainRunUpdate(t *testing.T, updates <-chan runUpdate) runUpdate {
+	t.Helper()
+	terminal := receiveRunUpdate(t, updates)
+	for !terminal.done {
+		terminal = receiveRunUpdate(t, updates)
+	}
+	return terminal
+}
+
 type runnerFunc func(context.Context, RunInput, DisplayEventSink) error
 
 func (f runnerFunc) NewRun(
@@ -368,16 +381,35 @@ func (r *activeRunFunc) Deliver(delivery interaction.Delivery) error {
 	return r.deliver(delivery)
 }
 
-type sideFactoryRunner struct {
+type sideManagerRunner struct {
 	runnerFunc
-	side             Runner
-	sideErr          error
-	sideFactoryCalls int
+	side        Runner
+	createErr   error
+	openErr     error
+	createCalls int
+	openCalls   int
 }
 
-func (r *sideFactoryRunner) NewSideThread() (Runner, error) {
-	r.sideFactoryCalls++
-	return r.side, r.sideErr
+func (r *sideManagerRunner) SideThreads() []interaction.SideThread {
+	return []interaction.SideThread{}
+}
+
+func (r *sideManagerRunner) CreateSideThread(
+	prompt string,
+) (interaction.SideThread, Runner, error) {
+	r.createCalls++
+	return interaction.SideThread{ID: 1, Title: prompt}, r.side, r.createErr
+}
+
+func (r *sideManagerRunner) OpenSideThread(
+	id uint64,
+) (interaction.SideThread, Runner, error) {
+	r.openCalls++
+	return interaction.SideThread{ID: id}, r.side, r.openErr
+}
+
+func (r *sideManagerRunner) CloseSideThread(id uint64) error {
+	return nil
 }
 
 type slashRunner struct {
