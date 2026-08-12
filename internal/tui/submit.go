@@ -66,6 +66,9 @@ func (m model) submitSlashCommand(
 	}
 
 	switch command.Name {
+	case "btw":
+		m.resetCommandInput()
+		return m.openSideThread(request.Arguments)
 	case "help":
 		if request.Arguments != "" {
 			return m.commandUsageError(raw, command)

@@ -20,6 +20,7 @@ type ActiveRun = interaction.ActiveRun
 type Runner = interaction.Runner
 type RuntimeState = interaction.RuntimeState
 type RuntimeStateProvider = interaction.RuntimeStateProvider
+type SideThreadFactory = interaction.SideThreadFactory
 
 // Options contains the terminal streams and model state shown by the program.
 type Options struct {
@@ -60,16 +61,37 @@ func Run(ctx context.Context, runner Runner, options Options) error {
 	requests := make(chan runRequest)
 	controllerDone := make(chan struct{})
 	go serveRuns(controllerCtx, runner, requests, controllerDone)
+
+	var sideRequests chan runRequest
+	var sideControllerDone chan struct{}
+	if factory, ok := runner.(SideThreadFactory); ok {
+		sideRequests = make(chan runRequest)
+		sideControllerDone = make(chan struct{})
+		go serveSideRuns(
+			controllerCtx,
+			factory,
+			sideRequests,
+			sideControllerDone,
+		)
+	}
 	defer func() {
 		stopController()
 		<-controllerDone
+		if sideControllerDone != nil {
+			<-sideControllerDone
+		}
 	}()
 
 	var slashCommands []SlashCommand
 	if commandRunner, ok := runner.(SlashCommandRunner); ok {
 		slashCommands = commandRunner.SlashCommands()
 	}
+	if sideRequests != nil {
+		slashCommands = append(slashCommands, btwSlashCommand())
+	}
 	initialModel := newModel(requests, controllerDone, slashCommands...)
+	initialModel.sideRequests = sideRequests
+	initialModel.sideControllerDone = sideControllerDone
 	initialModel.currentModel = options.Model
 	initialModel.thinking = options.Thinking
 	initialModel.apiKeyConfigured = options.APIKeyConfigured
@@ -127,6 +149,44 @@ func serveRuns(
 			runOne(ctx, runner, request)
 		}
 	}
+}
+
+func serveSideRuns(
+	ctx context.Context,
+	factory SideThreadFactory,
+	requests <-chan runRequest,
+	done chan<- struct{},
+) {
+	defer close(done)
+	var runner Runner
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case request := <-requests:
+			if runner == nil {
+				var err error
+				runner, err = factory.NewSideThread()
+				if err != nil {
+					finishUnstartedRun(ctx, request, err)
+					continue
+				}
+			}
+			runOne(ctx, runner, request)
+		}
+	}
+}
+
+func finishUnstartedRun(
+	ctx context.Context,
+	request runRequest,
+	err error,
+) {
+	defer close(request.updates)
+	_ = sendRunUpdate(ctx, request.updates, runUpdate{
+		err:  err,
+		done: true,
+	})
 }
 
 func runOne(ctx context.Context, runner Runner, request runRequest) {

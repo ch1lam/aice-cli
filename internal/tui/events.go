@@ -166,7 +166,11 @@ func (m model) applyRunBatch(batch runBatchMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 		if update.commands != nil {
-			m.commands = slashCommandCatalog(*update.commands)
+			commands := *update.commands
+			if m.sideRequests != nil {
+				commands = append(commands, btwSlashCommand())
+			}
+			m.commands = slashCommandCatalog(commands)
 		}
 		if update.done {
 			commands = append(commands, m.finishRun(update.err))
@@ -360,7 +364,12 @@ func (m *model) finishRun(err error) tea.Cmd {
 	m.cancelRequested = false
 	m.assistantEntry = -1
 	m.activeProcessID = 0
-	focus := m.input.Focus()
+	var focus tea.Cmd
+	if !m.side.isVisible || !m.side.isRunning {
+		focus = m.input.Focus()
+	} else {
+		m.input.Blur()
+	}
 	if err != nil {
 		message := err.Error()
 		if errors.Is(err, context.Canceled) {

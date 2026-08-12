@@ -184,6 +184,101 @@ func TestServeRunsExecutesSlashCommandsThroughRunner(t *testing.T) {
 	}
 }
 
+func TestServeSideRunsWhileMainRunIsBlocked(t *testing.T) {
+	t.Parallel()
+
+	mainStarted := make(chan struct{})
+	mainRelease := make(chan struct{})
+	mainRunner := runnerFunc(func(
+		ctx context.Context,
+		_ RunInput,
+		_ DisplayEventSink,
+	) error {
+		close(mainStarted)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-mainRelease:
+			return nil
+		}
+	})
+	sideRunner := runnerFunc(func(
+		ctx context.Context,
+		input RunInput,
+		sink DisplayEventSink,
+	) error {
+		if input.Prompt != "quick question" {
+			t.Fatalf("side prompt = %q, want quick question", input.Prompt)
+		}
+		return sink(ctx, DisplayEvent{Kind: DisplayEventAgentEnd})
+	})
+	factory := &sideFactoryRunner{
+		runnerFunc: mainRunner,
+		side:       sideRunner,
+	}
+
+	ctx, cancel := context.WithCancel(t.Context())
+	mainRequests := make(chan runRequest)
+	sideRequests := make(chan runRequest)
+	mainDone := make(chan struct{})
+	sideDone := make(chan struct{})
+	go serveRuns(ctx, factory, mainRequests, mainDone)
+	go serveSideRuns(ctx, factory, sideRequests, sideDone)
+
+	mainUpdates := make(chan runUpdate, runUpdateBuffer)
+	mainRequests <- runRequest{prompt: "long task", updates: mainUpdates}
+	mainStart := receiveRunUpdate(t, mainUpdates)
+	if mainStart.active == nil || mainStart.cancel == nil {
+		t.Fatalf("main start update = %#v", mainStart)
+	}
+	select {
+	case <-mainStarted:
+	case <-time.After(time.Second):
+		t.Fatal("main run did not start")
+	}
+
+	sideUpdates := make(chan runUpdate, runUpdateBuffer)
+	sideRequests <- runRequest{prompt: "quick question", updates: sideUpdates}
+	sideStart := receiveRunUpdate(t, sideUpdates)
+	if sideStart.active == nil || sideStart.cancel == nil {
+		t.Fatalf("side start update = %#v", sideStart)
+	}
+	sideEvent := receiveRunUpdate(t, sideUpdates)
+	if sideEvent.event.Kind != DisplayEventAgentEnd {
+		t.Fatalf("side event = %#v, want agent end", sideEvent)
+	}
+	sideTerminal := receiveRunUpdate(t, sideUpdates)
+	if !sideTerminal.done || sideTerminal.err != nil {
+		t.Fatalf("side terminal update = %#v", sideTerminal)
+	}
+	if got := factory.sideFactoryCalls; got != 1 {
+		t.Fatalf("NewSideThread() calls = %d, want 1", got)
+	}
+
+	select {
+	case update := <-mainUpdates:
+		t.Fatalf("blocked main run completed during side run: %#v", update)
+	default:
+	}
+	close(mainRelease)
+	mainTerminal := receiveRunUpdate(t, mainUpdates)
+	if !mainTerminal.done || mainTerminal.err != nil {
+		t.Fatalf("main terminal update = %#v", mainTerminal)
+	}
+
+	cancel()
+	for name, done := range map[string]<-chan struct{}{
+		"main": mainDone,
+		"side": sideDone,
+	} {
+		select {
+		case <-done:
+		case <-time.After(time.Second):
+			t.Fatalf("%s controller did not stop", name)
+		}
+	}
+}
+
 func TestServeRunsRefreshesSlashCommandMenusAfterPrompt(t *testing.T) {
 	t.Parallel()
 
@@ -271,6 +366,18 @@ func (r *activeRunFunc) Deliver(delivery interaction.Delivery) error {
 		return nil
 	}
 	return r.deliver(delivery)
+}
+
+type sideFactoryRunner struct {
+	runnerFunc
+	side             Runner
+	sideErr          error
+	sideFactoryCalls int
+}
+
+func (r *sideFactoryRunner) NewSideThread() (Runner, error) {
+	r.sideFactoryCalls++
+	return r.side, r.sideErr
 }
 
 type slashRunner struct {

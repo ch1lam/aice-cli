@@ -58,12 +58,27 @@ func (m model) headerView(width int) string {
 	brand := brandStyle.Render("AICE")
 	state := "READY"
 	stateColor := successColor
+	if m.side.isVisible {
+		brand += mutedStyle.Render(" / ") + infoStyle.Render("BTW")
+		state = "MAIN READY"
+	}
 	switch {
 	case m.controllerClosed:
 		state = "OFFLINE"
 		stateColor = errorColor
+	case m.running && m.side.isVisible:
+		state = "MAIN WORKING"
+		stateColor = accentColor
+	case m.side.isVisible:
+		state = "MAIN READY"
+	case m.running && m.side.isRunning:
+		state = "MAIN + BTW"
+		stateColor = accentColor
 	case m.running:
 		state = "WORKING"
+		stateColor = accentColor
+	case m.side.isRunning:
+		state = "BTW WORKING"
 		stateColor = accentColor
 	}
 	right := lipgloss.NewStyle().Bold(true).Foreground(stateColor).Render("● " + state)
@@ -96,10 +111,14 @@ func (m model) footerView(width int) string {
 		Padding(0, 1)
 	contentWidth := max(innerWidth-style.GetHorizontalFrameSize(), 1)
 	rows := make([]string, 0, 2)
-	if status := m.statusLine(contentWidth); status != "" {
+	status := m.statusLine(contentWidth)
+	if m.side.isVisible {
+		status = m.sideStatusLine(contentWidth)
+	}
+	if status != "" {
 		rows = append(rows, status)
 	}
-	if m.help.ShowAll {
+	if m.help.ShowAll && !m.side.isVisible {
 		fullHelp := m.help.FullHelpView(m.footerKeys().FullHelp())
 		if fullHelp != "" {
 			rows = append(rows, fullHelp)
@@ -138,8 +157,10 @@ func (m model) composerView(width int) string {
 		)
 	}
 	parts := make([]string, 0, 3)
-	if pending := m.pendingQueueView(contentWidth); pending != "" {
-		parts = append(parts, pending, "")
+	if !m.side.isVisible {
+		if pending := m.pendingQueueView(contentWidth); pending != "" {
+			parts = append(parts, pending, "")
+		}
 	}
 	parts = append(parts, m.input.View())
 	return style.Width(width).Render(strings.Join(parts, "\n"))
@@ -177,7 +198,8 @@ func pendingDeliveryPreview(text string) string {
 }
 
 func (m model) slashCommandMenuVisible() bool {
-	return !m.running &&
+	return !m.side.isVisible &&
+		!m.running &&
 		m.secretInput == nil &&
 		m.commandMenu == nil &&
 		!m.commandDismissed &&
@@ -231,6 +253,9 @@ func (m *model) completeSelectedSlashCommand() {
 }
 
 func (m model) commandMenuView(width int) string {
+	if m.side.isVisible {
+		return ""
+	}
 	if m.commandMenu != nil {
 		return m.slashCommandSelectionMenuView(width)
 	}
@@ -368,6 +393,9 @@ func truncateTerminalText(value string, width int) string {
 }
 
 func (m model) transcriptView() string {
+	if m.side.isVisible {
+		return m.sideThreadView()
+	}
 	parts := make([]transcriptViewPart, 0, len(m.entries)+2)
 	for index := 0; index < len(m.entries); {
 		entry := m.entries[index]

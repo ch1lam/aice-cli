@@ -81,11 +81,14 @@ type commandMenuState struct {
 }
 
 type model struct {
-	requests       chan<- runRequest
-	controllerDone <-chan struct{}
-	updates        <-chan runUpdate
-	activeRun      ActiveRun
-	cancelRun      context.CancelFunc
+	requests           chan<- runRequest
+	controllerDone     <-chan struct{}
+	sideRequests       chan<- runRequest
+	sideControllerDone <-chan struct{}
+	updates            <-chan runUpdate
+	activeRun          ActiveRun
+	cancelRun          context.CancelFunc
+	side               sideThreadState
 
 	viewport          viewport.Model
 	selection         transcriptSelection
@@ -196,7 +199,11 @@ func newModel(
 		commands:       slashCommandCatalog(externalCommands),
 		assistantEntry: -1,
 		historyIndex:   -1,
-		status:         "Ready",
+		side: sideThreadState{
+			assistantEntry: -1,
+			entries:        []sideThreadEntry{},
+		},
+		status: "Ready",
 		// The welcome animation starts running at construction; Init() emits
 		// its first tick. It pauses once the run starts and resumes on /clear.
 		welcomeAnimation: welcomeAnimation{running: true, generation: 1},
@@ -252,6 +259,20 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		return m, command
 	case runBatchMsg:
 		return m.applyRunBatch(message)
+	case sideRunStartedMsg:
+		m.side.updates = message.updates
+		return m, tea.Batch(
+			waitForSideRunUpdates(message.updates),
+			m.spinner.Tick,
+		)
+	case sideRunUnavailableMsg:
+		m.side.isClosed = true
+		m.finishSideRun(errors.New("BTW side-thread controller stopped"))
+		m.resizeLayout()
+		m.refreshViewport(true)
+		return m, nil
+	case sideRunBatchMsg:
+		return m.applySideRunBatch(message)
 	case usageAnimationTickMsg:
 		return m, m.usageAnimation.Update(message)
 	case welcomeTickMsg:
@@ -266,13 +287,16 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	case spinner.TickMsg:
 		var command tea.Cmd
 		m.spinner, command = m.spinner.Update(message)
-		if m.running {
+		if m.running || m.side.isRunning {
 			hasPendingSteer := m.hasPendingSteer()
 			if hasPendingSteer {
 				m.steerRailFrame = (m.steerRailFrame + 1) % 4
 			}
 			durationChanged := m.updateActiveProcessDuration(message.Time)
-			if m.showsActivitySpinner() || durationChanged || hasPendingSteer {
+			refreshMain := m.running &&
+				(m.showsActivitySpinner() || durationChanged || hasPendingSteer)
+			refreshSide := m.side.isVisible && m.side.isRunning
+			if refreshMain || refreshSide {
 				m.refreshViewport(false)
 			}
 			return m, command
@@ -281,7 +305,7 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	var commands []tea.Cmd
-	if m.running {
+	if m.running || m.side.isRunning {
 		var command tea.Cmd
 		m.spinner, command = m.spinner.Update(message)
 		commands = append(commands, command)
@@ -329,6 +353,16 @@ func (m model) View() tea.View {
 }
 
 func (m model) handleKey(message tea.KeyPressMsg) (model, tea.Cmd, bool) {
+	if m.side.isVisible {
+		if updated, command, handled := m.handleSideKey(message); handled {
+			return updated, command, true
+		}
+		// The side panel owns all keyboard input while visible. Unhandled keys
+		// fall through to its textarea in Update, never to main-run shortcuts or
+		// prompt-history navigation.
+		return m, nil, false
+	}
+
 	if !m.running && m.secretInput != nil {
 		switch {
 		case cancelKeyPressed(message, m.keys):
@@ -421,8 +455,15 @@ func (m model) handleKey(message tea.KeyPressMsg) (model, tea.Cmd, bool) {
 		m.refreshViewport(follow)
 		return m, nil, true
 	case key.Matches(message, m.keys.queue):
-		if m.running && m.acceptsDelivery {
-			return m.submitDelivery(deliveryQueue)
+		if m.running {
+			if m.isBTWCommandInput() {
+				return m.submit()
+			}
+			if m.acceptsDelivery {
+				return m.submitDelivery(deliveryQueue)
+			}
+			m.status = "Current command is still running"
+			return m, nil, true
 		}
 		return m, nil, true
 	case key.Matches(message, m.keys.newline):
@@ -433,9 +474,13 @@ func (m model) handleKey(message tea.KeyPressMsg) (model, tea.Cmd, bool) {
 		return m, nil, true
 	case key.Matches(message, m.keys.send):
 		if m.running {
+			if m.isBTWCommandInput() {
+				return m.submit()
+			}
 			if m.acceptsDelivery {
 				return m.submitDelivery(deliverySteer)
 			}
+			m.status = "Current command is still running"
 			return m, nil, true
 		}
 		if m.slashCommandMenuVisible() && !m.hasExactSlashCommand() {
@@ -457,6 +502,9 @@ func (m model) handleKey(message tea.KeyPressMsg) (model, tea.Cmd, bool) {
 }
 
 func (m model) composerInputEnabled() bool {
+	if m.side.isVisible {
+		return !m.side.isRunning
+	}
 	return !m.running || m.acceptsDelivery
 }
 
