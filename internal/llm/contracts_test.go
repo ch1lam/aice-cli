@@ -713,6 +713,17 @@ func TestEventJSONPreservesZeroContentIndex(t *testing.T) {
 func TestSupportedThinkingLevels(t *testing.T) {
 	t.Parallel()
 
+	mappedLevels := llm.ThinkingLevelsMap(
+		llm.ThinkingLevelOff,
+		llm.ThinkingLevelLow,
+		llm.ThinkingLevelMedium,
+		llm.ThinkingLevelHigh,
+		llm.ThinkingLevelXHigh,
+		llm.ThinkingLevelMax,
+	)
+	mappedLevels[llm.ThinkingLevelMedium] = llm.ThinkingValue("high")
+	mappedLevels[llm.ThinkingLevelXHigh] = llm.ThinkingValue("high")
+
 	tests := []struct {
 		name  string
 		model llm.Model
@@ -741,6 +752,19 @@ func TestSupportedThinkingLevels(t *testing.T) {
 				),
 			},
 			want: []llm.ThinkingLevel{
+				llm.ThinkingLevelHigh,
+				llm.ThinkingLevelMax,
+			},
+		},
+		{
+			name: "mapped inputs collapse to distinct effective levels",
+			model: llm.Model{
+				SupportsThinking: true,
+				ThinkingLevelMap: mappedLevels,
+			},
+			want: []llm.ThinkingLevel{
+				llm.ThinkingLevelOff,
+				llm.ThinkingLevelLow,
 				llm.ThinkingLevelHigh,
 				llm.ThinkingLevelMax,
 			},
@@ -840,6 +864,27 @@ func TestThinkingLevelMapSemantics(t *testing.T) {
 		}
 	})
 
+	t.Run("canonical wire mapping resolves redundant inputs", func(t *testing.T) {
+		t.Parallel()
+
+		m := llm.ThinkingLevelsMap(
+			llm.ThinkingLevelLow,
+			llm.ThinkingLevelMedium,
+			llm.ThinkingLevelHigh,
+			llm.ThinkingLevelXHigh,
+		)
+		m[llm.ThinkingLevelMedium] = llm.ThinkingValue("high")
+		m[llm.ThinkingLevelXHigh] = llm.ThinkingValue("high")
+		for _, level := range []llm.ThinkingLevel{
+			llm.ThinkingLevelMedium,
+			llm.ThinkingLevelXHigh,
+		} {
+			if value, ok := m.WireValue(level); !ok || value != "high" {
+				t.Errorf("WireValue(%q) = %q/%v, want high/true", level, value, ok)
+			}
+		}
+	})
+
 	t.Run("clone is independent", func(t *testing.T) {
 		t.Parallel()
 
@@ -916,7 +961,20 @@ func TestClampThinkingLevel(t *testing.T) {
 		SupportsThinking: true,
 		ThinkingLevelMap: llm.ThinkingLevelsMap(),
 	}
-
+	mappedLevels := llm.ThinkingLevelsMap(
+		llm.ThinkingLevelOff,
+		llm.ThinkingLevelLow,
+		llm.ThinkingLevelMedium,
+		llm.ThinkingLevelHigh,
+		llm.ThinkingLevelXHigh,
+		llm.ThinkingLevelMax,
+	)
+	mappedLevels[llm.ThinkingLevelMedium] = llm.ThinkingValue("high")
+	mappedLevels[llm.ThinkingLevelXHigh] = llm.ThinkingValue("high")
+	mappedModel := llm.Model{
+		SupportsThinking: true,
+		ThinkingLevelMap: mappedLevels,
+	}
 	tests := []struct {
 		name  string
 		model llm.Model
@@ -988,6 +1046,18 @@ func TestClampThinkingLevel(t *testing.T) {
 			model: allSeven,
 			level: llm.ThinkingLevelMax,
 			want:  llm.ThinkingLevelMax,
+		},
+		{
+			name:  "mapped medium resolves to high",
+			model: mappedModel,
+			level: llm.ThinkingLevelMedium,
+			want:  llm.ThinkingLevelHigh,
+		},
+		{
+			name:  "mapped xhigh resolves to high",
+			model: mappedModel,
+			level: llm.ThinkingLevelXHigh,
+			want:  llm.ThinkingLevelHigh,
 		},
 		{
 			name:  "empty supported set falls back to off",

@@ -93,10 +93,25 @@ func TestDeepSeekModelSpecsReturnsIndependentThinkingMaps(t *testing.T) {
 	); !ok || value != "off" {
 		t.Errorf("second off wire value = %q/%v, want off/true", value, ok)
 	}
-	if value, ok := second[0].ThinkingLevelMap.WireValue(
-		llm.ThinkingLevelHigh,
-	); !ok || value != "high" {
-		t.Errorf("second high wire value = %q/%v, want high/true", value, ok)
+	for _, tt := range []struct {
+		level llm.ThinkingLevel
+		want  string
+	}{
+		{level: llm.ThinkingLevelLow, want: "low"},
+		{level: llm.ThinkingLevelMedium, want: "high"},
+		{level: llm.ThinkingLevelHigh, want: "high"},
+		{level: llm.ThinkingLevelXHigh, want: "high"},
+		{level: llm.ThinkingLevelMax, want: "max"},
+	} {
+		if value, ok := second[0].ThinkingLevelMap.WireValue(tt.level); !ok || value != tt.want {
+			t.Errorf(
+				"second %s wire value = %q/%v, want %s/true",
+				tt.level,
+				value,
+				ok,
+				tt.want,
+			)
+		}
 	}
 }
 

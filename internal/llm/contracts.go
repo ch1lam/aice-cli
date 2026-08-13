@@ -172,26 +172,53 @@ func StandardThinkingLevelMap() ThinkingLevelMap {
 	)
 }
 
-// SupportedThinkingLevels derives the canonical levels a model supports.
-// Models without a declared map use Pi's defaults; models without thinking
-// support support only off.
+// SupportedThinkingLevels derives the distinct canonical effort levels a
+// model exposes. Multiple accepted inputs that map to the same canonical wire
+// token collapse to one choice. Models without a declared map use Pi's
+// defaults; models without thinking support expose only off.
 func SupportedThinkingLevels(model Model) []ThinkingLevel {
 	if !model.SupportsThinking {
 		return []ThinkingLevel{ThinkingLevelOff}
 	}
-	supported := make([]ThinkingLevel, 0, len(thinkingLevelOrder))
+
+	effective := make(map[ThinkingLevel]struct{}, len(thinkingLevelOrder))
 	for _, level := range thinkingLevelOrder {
-		if model.ThinkingLevelMap.Supports(level) {
+		mapped, ok := effectiveThinkingLevel(model.ThinkingLevelMap, level)
+		if ok {
+			effective[mapped] = struct{}{}
+		}
+	}
+
+	supported := make([]ThinkingLevel, 0, len(effective))
+	for _, level := range thinkingLevelOrder {
+		if _, ok := effective[level]; ok {
 			supported = append(supported, level)
 		}
 	}
 	return supported
 }
 
-// ClampThinkingLevel aligns a requested level to the nearest level a model
-// supports. It prefers the next higher supported level, then the next lower
-// one, and falls back to the lowest supported level, matching Pi's
-// clampThinkingLevel. The unknown level is returned unchanged.
+func effectiveThinkingLevel(
+	levelMap ThinkingLevelMap,
+	level ThinkingLevel,
+) (ThinkingLevel, bool) {
+	value, ok := levelMap.WireValue(level)
+	if !ok {
+		return ThinkingLevelUnknown, false
+	}
+	mapped := ThinkingLevel(value)
+	if mapped != level &&
+		slices.Contains(thinkingLevelOrder, mapped) &&
+		levelMap.Supports(mapped) {
+		return mapped, true
+	}
+	return level, true
+}
+
+// ClampThinkingLevel aligns a requested level to an effective level a model
+// exposes. A canonical wire mapping wins first; otherwise clamping prefers the
+// next higher exposed level, then the next lower one, and finally the lowest
+// exposed level. The unknown level is returned unchanged.
 func ClampThinkingLevel(model Model, level ThinkingLevel) ThinkingLevel {
 	if level == ThinkingLevelUnknown {
 		return ThinkingLevelUnknown
@@ -199,6 +226,10 @@ func ClampThinkingLevel(model Model, level ThinkingLevel) ThinkingLevel {
 	supported := SupportedThinkingLevels(model)
 	if slices.Contains(supported, level) {
 		return level
+	}
+	if mapped, ok := effectiveThinkingLevel(model.ThinkingLevelMap, level); ok &&
+		slices.Contains(supported, mapped) {
+		return mapped
 	}
 	if len(supported) == 0 {
 		return ThinkingLevelOff

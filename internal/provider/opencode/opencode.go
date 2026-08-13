@@ -116,17 +116,13 @@ func modelSpecCatalog() map[string]provider.ModelSpec {
 	for _, shared := range provider.DeepSeekModelSpecs() {
 		specs[shared.ID] = shared
 	}
-	// OpenCode Go serves the DeepSeek models with its own thinking
-	// capabilities: DeepSeek-style toggles and only off/high/max levels
-	// (Pi's opencode-go override).
+	// OpenCode Go serves the DeepSeek models through the documented OpenAI
+	// shape: thinking toggles the mode and reasoning_effort selects low, high,
+	// or max. The shared specs own the available choices.
 	for _, id := range []string{"deepseek-v4-flash", "deepseek-v4-pro"} {
 		spec := specs[id]
-		spec.ThinkingLevelMap = llm.ThinkingLevelsMap(
-			llm.ThinkingLevelOff,
-			llm.ThinkingLevelHigh,
-			llm.ThinkingLevelMax,
-		)
 		spec.ThinkingFormat = llm.ThinkingFormatDeepSeek
+		spec.SupportsReasoningEffort = true
 		specs[id] = spec
 	}
 

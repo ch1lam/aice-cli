@@ -57,9 +57,19 @@ func TestModels(t *testing.T) {
 	}
 
 	wantLevels := map[string][]llm.ThinkingLevel{
-		// DeepSeek V4 exposes off, high, and max reasoning effort only.
-		"deepseek-v4-flash": {llm.ThinkingLevelOff, llm.ThinkingLevelHigh, llm.ThinkingLevelMax},
-		"deepseek-v4-pro":   {llm.ThinkingLevelOff, llm.ThinkingLevelHigh, llm.ThinkingLevelMax},
+		// DeepSeek V4 exposes off plus low, high, and max effort.
+		"deepseek-v4-flash": {
+			llm.ThinkingLevelOff,
+			llm.ThinkingLevelLow,
+			llm.ThinkingLevelHigh,
+			llm.ThinkingLevelMax,
+		},
+		"deepseek-v4-pro": {
+			llm.ThinkingLevelOff,
+			llm.ThinkingLevelLow,
+			llm.ThinkingLevelHigh,
+			llm.ThinkingLevelMax,
+		},
 		// OpenCode Go exposes Kimi K2.6 thinking as on/off plus high only.
 		"kimi-k2.6": {llm.ThinkingLevelOff, llm.ThinkingLevelHigh},
 		// Kimi K3 always reasons at max.
@@ -108,6 +118,10 @@ func TestModels(t *testing.T) {
 		request   llm.ThinkingLevel
 		effective llm.ThinkingLevel
 	}{
+		{modelID: "deepseek-v4-flash", request: llm.ThinkingLevelMedium, effective: llm.ThinkingLevelHigh},
+		{modelID: "deepseek-v4-flash", request: llm.ThinkingLevelXHigh, effective: llm.ThinkingLevelHigh},
+		{modelID: "deepseek-v4-pro", request: llm.ThinkingLevelMedium, effective: llm.ThinkingLevelHigh},
+		{modelID: "deepseek-v4-pro", request: llm.ThinkingLevelXHigh, effective: llm.ThinkingLevelHigh},
 		{modelID: "kimi-k3", request: llm.ThinkingLevelMedium, effective: llm.ThinkingLevelMax},
 		{modelID: "gpt-5.6-luna", request: llm.ThinkingLevelOff, effective: llm.ThinkingLevelLow},
 		{modelID: "grok-4.5", request: llm.ThinkingLevelMax, effective: llm.ThinkingLevelHigh},
@@ -140,12 +154,15 @@ func TestModels(t *testing.T) {
 		t.Errorf("hy3 off wire value = %q/%v, want none/true", got, supported)
 	}
 
-	wantFormats := map[string]llm.ThinkingFormat{
-		"deepseek-v4-flash": llm.ThinkingFormatDeepSeek,
-		"deepseek-v4-pro":   llm.ThinkingFormatDeepSeek,
-		"kimi-k2.6":         llm.ThinkingFormatDeepSeek,
-		"qwen3.5-plus":      llm.ThinkingFormatQwen,
-		"qwen3.6-plus":      llm.ThinkingFormatQwen,
+	wantFormats := map[string]struct {
+		format                  llm.ThinkingFormat
+		supportsReasoningEffort bool
+	}{
+		"deepseek-v4-flash": {format: llm.ThinkingFormatDeepSeek, supportsReasoningEffort: true},
+		"deepseek-v4-pro":   {format: llm.ThinkingFormatDeepSeek, supportsReasoningEffort: true},
+		"kimi-k2.6":         {format: llm.ThinkingFormatDeepSeek},
+		"qwen3.5-plus":      {format: llm.ThinkingFormatQwen},
+		"qwen3.6-plus":      {format: llm.ThinkingFormatQwen},
 	}
 	for modelID, want := range wantFormats {
 		candidate, ok := modelForID(models, modelID)
@@ -153,16 +170,16 @@ func TestModels(t *testing.T) {
 			t.Errorf("model %q missing from Models()", modelID)
 			continue
 		}
-		if candidate.ThinkingFormat != want {
+		if candidate.ThinkingFormat != want.format ||
+			candidate.SupportsReasoningEffort != want.supportsReasoningEffort {
 			t.Errorf(
-				"model %q thinking format = %q, want %q",
+				"model %q thinking format = %q/%v, want %q/%v",
 				modelID,
 				candidate.ThinkingFormat,
-				want,
+				candidate.SupportsReasoningEffort,
+				want.format,
+				want.supportsReasoningEffort,
 			)
-		}
-		if candidate.SupportsReasoningEffort {
-			t.Errorf("model %q unexpectedly supports reasoning_effort", modelID)
 		}
 	}
 }

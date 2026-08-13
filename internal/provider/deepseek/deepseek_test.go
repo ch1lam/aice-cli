@@ -27,14 +27,10 @@ func TestModels(t *testing.T) {
 			API:              openairesponses.API,
 			Provider:         deepseek.ProviderID,
 			SupportsThinking: true,
-			ThinkingLevelMap: llm.ThinkingLevelsMap(
-				llm.ThinkingLevelOff,
-				llm.ThinkingLevelHigh,
-				llm.ThinkingLevelMax,
-			),
-			InputModalities: []llm.InputModality{llm.InputModalityText},
-			ContextWindow:   1_000_000,
-			MaxTokens:       384_000,
+			ThinkingLevelMap: deepSeekThinkingLevelMap(),
+			InputModalities:  []llm.InputModality{llm.InputModalityText},
+			ContextWindow:    1_000_000,
+			MaxTokens:        384_000,
 			Pricing: llm.Pricing{
 				Input:     0.14,
 				Output:    0.28,
@@ -47,14 +43,10 @@ func TestModels(t *testing.T) {
 			API:              anthropic.API,
 			Provider:         deepseek.ProviderID,
 			SupportsThinking: true,
-			ThinkingLevelMap: llm.ThinkingLevelsMap(
-				llm.ThinkingLevelOff,
-				llm.ThinkingLevelHigh,
-				llm.ThinkingLevelMax,
-			),
-			InputModalities: []llm.InputModality{llm.InputModalityText},
-			ContextWindow:   1_000_000,
-			MaxTokens:       384_000,
+			ThinkingLevelMap: deepSeekThinkingLevelMap(),
+			InputModalities:  []llm.InputModality{llm.InputModalityText},
+			ContextWindow:    1_000_000,
+			MaxTokens:        384_000,
 			Pricing: llm.Pricing{
 				Input:     0.435,
 				Output:    0.87,
@@ -62,11 +54,35 @@ func TestModels(t *testing.T) {
 			},
 		},
 	}
-	if got := deepseek.Models(); !reflect.DeepEqual(got, want) {
-		t.Errorf("Models() = %#v, want %#v", got, want)
+	models := deepseek.Models()
+	if !reflect.DeepEqual(models, want) {
+		t.Errorf("Models() = %#v, want %#v", models, want)
+	}
+	wantChoices := []llm.ThinkingLevel{
+		llm.ThinkingLevelOff,
+		llm.ThinkingLevelLow,
+		llm.ThinkingLevelHigh,
+		llm.ThinkingLevelMax,
+	}
+	for _, model := range models {
+		if got := llm.SupportedThinkingLevels(model); !reflect.DeepEqual(got, wantChoices) {
+			t.Errorf("model %q thinking choices = %v, want %v", model.ID, got, wantChoices)
+		}
 	}
 	if got := deepseek.DefaultModel(); !reflect.DeepEqual(got, want[0]) {
 		t.Errorf("DefaultModel() = %#v, want %#v", got, want[0])
+	}
+}
+
+func deepSeekThinkingLevelMap() llm.ThinkingLevelMap {
+	return llm.ThinkingLevelMap{
+		llm.ThinkingLevelOff:     llm.ThinkingValue("off"),
+		llm.ThinkingLevelMinimal: nil,
+		llm.ThinkingLevelLow:     llm.ThinkingValue("low"),
+		llm.ThinkingLevelMedium:  llm.ThinkingValue("high"),
+		llm.ThinkingLevelHigh:    llm.ThinkingValue("high"),
+		llm.ThinkingLevelXHigh:   llm.ThinkingValue("high"),
+		llm.ThinkingLevelMax:     llm.ThinkingValue("max"),
 	}
 }
 

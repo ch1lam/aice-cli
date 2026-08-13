@@ -666,9 +666,9 @@ func TestInteractiveSessionThinkingKeepsRequestedLevelAndClampsPerModel(t *testi
 	if runner.configuration.Thinking != llm.ThinkingLevelXHigh {
 		t.Errorf("stored thinking = %q, want the requested xhigh", runner.configuration.Thinking)
 	}
-	if runner.options.Thinking != llm.ThinkingLevelMax {
+	if runner.options.Thinking != llm.ThinkingLevelHigh {
 		t.Errorf(
-			"effective thinking = %q, want max (default model clamps xhigh)",
+			"effective thinking = %q, want high (DeepSeek maps xhigh to high)",
 			runner.options.Thinking,
 		)
 	}

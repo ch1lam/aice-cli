@@ -45,8 +45,8 @@ The default request is `medium`. On DeepSeek V4 Flash and Pro it becomes
 
 | Provider and model | Supported levels |
 | --- | --- |
-| `deepseek/deepseek-v4-flash`, `deepseek/deepseek-v4-pro` | `off`, `high`, `max` |
-| `opencode-go/deepseek-v4-flash`, `opencode-go/deepseek-v4-pro` | `off`, `high`, `max` |
+| `deepseek/deepseek-v4-flash`, `deepseek/deepseek-v4-pro` | `off`, `low`, `high`, `max` |
+| `opencode-go/deepseek-v4-flash`, `opencode-go/deepseek-v4-pro` | `off`, `low`, `high`, `max` |
 | `opencode-go/kimi-k2.6` | `off`, `high` |
 | `opencode-go/kimi-k3` | `max` |
 | `opencode-go/glm-5.2` | `high`, `max` |
@@ -64,6 +64,13 @@ resolve through the selected model's map before encoding. A direct request
 that bypasses application clamping and names an unsupported level is rejected
 rather than sent silently.
 
+DeepSeek has three distinct enabled efforts: `low`, `high`, and `max`.
+`medium` and `xhigh` are not separate choices because the upstream API folds
+both into `high`. Its OpenAI-compatible shape sends `thinking.type` plus
+`reasoning_effort`; the Anthropic shape sends `thinking` plus
+`output_config.effort`; the Responses shape sends `reasoning.effort`, using
+`none` for `off`.
+
 ### Model catalog metadata
 
 Reasoning capabilities live with each model in the built-in provider catalogs,
@@ -74,11 +81,11 @@ for `off` through `high` are supported by default; `xhigh` and `max` require
 explicit entries. Catalog copies deep-clone these maps so a Session or side
 thread cannot mutate shared model data.
 
-The catalogs are compiled into AICE and are never fetched at runtime. For
-overlapping models, capability maps and compatibility formats are aligned with
-Pi AI's provider catalogs, while AICE retains its own supported provider and
-protocol surface. Update the model map, its wire-format metadata, and catalog
-assertions together when upstream capabilities change.
+The catalogs are compiled into AICE and are never fetched at runtime. Pi AI is
+the semantic reference for the tri-state map, while concrete capabilities and
+wire formats follow provider documentation and gateway-specific requirements.
+Update the model map, its wire-format metadata, and catalog assertions together
+when upstream capabilities change.
 
 The built-in OpenAI catalog intentionally stays small: `gpt-5.6`,
 `gpt-5.6-terra`, and `gpt-5.6-luna`. `gpt-5.6-terra` is the default because it

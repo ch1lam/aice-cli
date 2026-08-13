@@ -464,30 +464,56 @@ func TestAdapterThinkingWireControls(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name                    string
-		modelID                 string
-		level                   llm.ThinkingLevel
-		thinkingFormat          llm.ThinkingFormat
-		supportsReasoningEffort bool
-		wantBody                map[string]any
-		wantErr                 string
+		name           string
+		modelID        string
+		level          llm.ThinkingLevel
+		thinkingFormat llm.ThinkingFormat
+		wantBody       map[string]any
+		wantErr        string
 	}{
 		{
-			name:    "opencode deepseek enabled without effort",
+			name:    "opencode deepseek low effort",
 			modelID: "deepseek-v4-flash",
-			level:   llm.ThinkingLevelHigh,
+			level:   llm.ThinkingLevelLow,
 			wantBody: map[string]any{
-				"thinking": map[string]any{"type": "enabled"},
+				"thinking":         map[string]any{"type": "enabled"},
+				"reasoning_effort": "low",
 			},
 		},
 		{
-			name:                    "deepseek format can opt into effort",
-			modelID:                 "deepseek-v4-flash",
-			level:                   llm.ThinkingLevelHigh,
-			supportsReasoningEffort: true,
+			name:    "opencode deepseek maps medium to high",
+			modelID: "deepseek-v4-flash",
+			level:   llm.ThinkingLevelMedium,
 			wantBody: map[string]any{
 				"thinking":         map[string]any{"type": "enabled"},
 				"reasoning_effort": "high",
+			},
+		},
+		{
+			name:    "opencode deepseek high effort",
+			modelID: "deepseek-v4-flash",
+			level:   llm.ThinkingLevelHigh,
+			wantBody: map[string]any{
+				"thinking":         map[string]any{"type": "enabled"},
+				"reasoning_effort": "high",
+			},
+		},
+		{
+			name:    "opencode deepseek maps xhigh to high",
+			modelID: "deepseek-v4-pro",
+			level:   llm.ThinkingLevelXHigh,
+			wantBody: map[string]any{
+				"thinking":         map[string]any{"type": "enabled"},
+				"reasoning_effort": "high",
+			},
+		},
+		{
+			name:    "opencode deepseek max effort",
+			modelID: "deepseek-v4-pro",
+			level:   llm.ThinkingLevelMax,
+			wantBody: map[string]any{
+				"thinking":         map[string]any{"type": "enabled"},
+				"reasoning_effort": "max",
 			},
 		},
 		{
@@ -588,7 +614,6 @@ func TestAdapterThinkingWireControls(t *testing.T) {
 			if tt.thinkingFormat != "" {
 				model.ThinkingFormat = tt.thinkingFormat
 			}
-			model.SupportsReasoningEffort = tt.supportsReasoningEffort
 			modelStream, err := adapter.Stream(context.Background(), llm.Request{
 				Model: model,
 				Messages: []llm.Message{llm.UserMessage{

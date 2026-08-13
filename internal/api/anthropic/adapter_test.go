@@ -658,6 +658,11 @@ func TestAdapterThinkingLevelsFromModelMap(t *testing.T) {
 		wantErr          string
 	}{
 		{
+			name:       "deepseek pro low",
+			level:      llm.ThinkingLevelLow,
+			wantEffort: "low",
+		},
+		{
 			name:       "deepseek pro high",
 			level:      llm.ThinkingLevelHigh,
 			wantEffort: "high",
@@ -687,9 +692,14 @@ func TestAdapterThinkingLevelsFromModelMap(t *testing.T) {
 			wantErr: `model "deepseek-v4-pro" does not support thinking level "off"`,
 		},
 		{
-			name:    "deepseek pro rejects medium",
-			level:   llm.ThinkingLevelMedium,
-			wantErr: `model "deepseek-v4-pro" does not support thinking level "medium"`,
+			name:       "deepseek pro maps medium to high",
+			level:      llm.ThinkingLevelMedium,
+			wantEffort: "high",
+		},
+		{
+			name:       "deepseek pro maps xhigh to high",
+			level:      llm.ThinkingLevelXHigh,
+			wantEffort: "high",
 		},
 	}
 

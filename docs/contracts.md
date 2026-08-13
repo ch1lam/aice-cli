@@ -5,11 +5,11 @@
 - AICE owns `Message`, `AgentMessage`, concrete user/assistant/tool-result
   messages, content parts, tool calls, usage, models, stop reasons, events, and
   stream abstractions.
-- `Model` carries a tri-state map from canonical thinking levels to provider
+- `Model` carries a tri-state map from canonical thinking inputs to provider
   wire tokens, plus any Chat Completions thinking-format metadata. Provider
-  catalogs own those facts. Application code derives menus and effective
-  levels from the map; protocol adapters encode the effective level and reject
-  unsupported direct requests.
+  catalogs own those facts. Application code derives distinct effective menu
+  choices from the map, collapsing inputs that share a canonical token;
+  protocol adapters encode the mapped value and reject unsupported requests.
 - `Message` is the closed set accepted by normal LLM requests.
   `AgentMessage` also includes AICE-derived transcript context such as a
   compaction summary.

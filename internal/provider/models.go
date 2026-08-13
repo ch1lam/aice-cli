@@ -21,7 +21,8 @@ type ModelSpec struct {
 }
 
 // deepSeekModelSpecs declares the DeepSeek V4 model specifications once so the
-// DeepSeek and OpenCode Go catalogs share identical rates and limits.
+// DeepSeek and OpenCode Go catalogs share identical rates, limits, and effort
+// choices.
 var deepSeekModelSpecs = []ModelSpec{
 	{
 		ID:            "deepseek-v4-flash",
@@ -31,29 +32,34 @@ var deepSeekModelSpecs = []ModelSpec{
 		Input:         0.14,
 		Output:        0.28,
 		CacheRead:     0.0028,
-		// DeepSeek V4 exposes reasoning effort as off, high, and max only;
-		// the minimal, low, and medium tiers are rejected (Pi's
-		// deepseek thinkingLevelMap).
-		ThinkingLevelMap: llm.ThinkingLevelsMap(
-			llm.ThinkingLevelOff,
-			llm.ThinkingLevelHigh,
-			llm.ThinkingLevelMax,
-		),
+		// DeepSeek exposes three actual effort values plus off. Medium and
+		// xhigh both map to high, so they are not separate choices.
+		ThinkingLevelMap: deepSeekThinkingLevelMap(),
 	},
 	{
-		ID:            "deepseek-v4-pro",
-		Name:          "DeepSeek V4 Pro",
-		ContextWindow: 1_000_000,
-		MaxTokens:     384_000,
-		Input:         0.435,
-		Output:        0.87,
-		CacheRead:     0.003625,
-		ThinkingLevelMap: llm.ThinkingLevelsMap(
-			llm.ThinkingLevelOff,
-			llm.ThinkingLevelHigh,
-			llm.ThinkingLevelMax,
-		),
+		ID:               "deepseek-v4-pro",
+		Name:             "DeepSeek V4 Pro",
+		ContextWindow:    1_000_000,
+		MaxTokens:        384_000,
+		Input:            0.435,
+		Output:           0.87,
+		CacheRead:        0.003625,
+		ThinkingLevelMap: deepSeekThinkingLevelMap(),
 	},
+}
+
+func deepSeekThinkingLevelMap() llm.ThinkingLevelMap {
+	levels := llm.ThinkingLevelsMap(
+		llm.ThinkingLevelOff,
+		llm.ThinkingLevelLow,
+		llm.ThinkingLevelMedium,
+		llm.ThinkingLevelHigh,
+		llm.ThinkingLevelXHigh,
+		llm.ThinkingLevelMax,
+	)
+	levels[llm.ThinkingLevelMedium] = llm.ThinkingValue("high")
+	levels[llm.ThinkingLevelXHigh] = llm.ThinkingValue("high")
+	return levels
 }
 
 // DeepSeekModelSpecs returns a copy of the shared DeepSeek model

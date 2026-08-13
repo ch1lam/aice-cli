@@ -11,9 +11,10 @@ Durable design rules:
 
 - AICE owns provider-neutral messages, Agent events, usage, tools, and loop
   semantics. Provider SDK types stop at protocol adapters.
-- Provider catalogs own model capability facts. Canonical thinking levels map
-  to provider tokens through model metadata; application code derives choices
-  and clamps requests, while adapters only encode protocol-specific shapes.
+- Provider catalogs own model capability facts. Canonical thinking inputs map
+  to provider tokens through model metadata; application code collapses
+  equivalent mappings into distinct choices and clamps requests, while
+  adapters only encode protocol-specific shapes.
 - Sessions are the append-only source of truth. Model context and the TUI
   viewport are derived views.
 - Built-in tools use the host process environment. Isolation is external.
