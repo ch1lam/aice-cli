@@ -74,28 +74,103 @@ var thinkingLevelOrder = []ThinkingLevel{
 	ThinkingLevelMax,
 }
 
-// defaultThinkingLevels is the reasoning set every model supports unless it
-// declares its own. xhigh and max are opt-in per model because providers only
-// accept them on specific models, matching Pi's getSupportedThinkingLevels.
-var defaultThinkingLevels = []ThinkingLevel{
-	ThinkingLevelOff,
-	ThinkingLevelMinimal,
-	ThinkingLevelLow,
-	ThinkingLevelMedium,
-	ThinkingLevelHigh,
+// ThinkingLevelMap is a model's tri-state reasoning capability map, matching
+// Pi's thinkingLevelMap semantics. A missing key uses the provider default:
+// levels through high are supported with their canonical token, while xhigh
+// and max are opt-in. A non-nil value overrides the provider wire token. An
+// explicit nil value marks the level unsupported.
+type ThinkingLevelMap map[ThinkingLevel]*string
+
+// Supports reports whether the map accepts a canonical thinking level.
+func (m ThinkingLevelMap) Supports(level ThinkingLevel) bool {
+	if !slices.Contains(thinkingLevelOrder, level) {
+		return false
+	}
+	value, exists := m[level]
+	if exists {
+		return value != nil
+	}
+	return level != ThinkingLevelXHigh && level != ThinkingLevelMax
 }
 
-// SupportedThinkingLevels returns the reasoning levels a model supports.
-// Models that declare no set support the default levels; models without
-// thinking support support only off.
+// WireValue resolves the provider wire token for a level. Supported levels
+// without an explicit value use the canonical token. The boolean reports
+// whether the level is supported.
+func (m ThinkingLevelMap) WireValue(level ThinkingLevel) (string, bool) {
+	if !m.Supports(level) {
+		return "", false
+	}
+	if value := m[level]; value != nil {
+		return *value, true
+	}
+	return string(level), true
+}
+
+// Clone returns a deep copy that can be mutated independently.
+func (m ThinkingLevelMap) Clone() ThinkingLevelMap {
+	if m == nil {
+		return nil
+	}
+	cloned := make(ThinkingLevelMap, len(m))
+	for level, value := range m {
+		if value == nil {
+			cloned[level] = nil
+			continue
+		}
+		copied := *value
+		cloned[level] = &copied
+	}
+	return cloned
+}
+
+// ThinkingValue returns a pointer to a provider wire token for use in a
+// ThinkingLevelMap. A nil map value is reserved for unsupported levels.
+func ThinkingValue(value string) *string {
+	return &value
+}
+
+// ThinkingLevelsMap builds an explicit map for exactly the given levels,
+// using canonical wire tokens and marking every other canonical level
+// unsupported.
+func ThinkingLevelsMap(levels ...ThinkingLevel) ThinkingLevelMap {
+	m := make(ThinkingLevelMap, len(thinkingLevelOrder))
+	for _, level := range thinkingLevelOrder {
+		m[level] = nil
+	}
+	for _, level := range levels {
+		if slices.Contains(thinkingLevelOrder, level) {
+			m[level] = ThinkingValue(string(level))
+		}
+	}
+	return m
+}
+
+// StandardThinkingLevelMap returns the default capability map: off through
+// high supported with canonical wire tokens, xhigh and max unsupported.
+func StandardThinkingLevelMap() ThinkingLevelMap {
+	return ThinkingLevelsMap(
+		ThinkingLevelOff,
+		ThinkingLevelMinimal,
+		ThinkingLevelLow,
+		ThinkingLevelMedium,
+		ThinkingLevelHigh,
+	)
+}
+
+// SupportedThinkingLevels derives the canonical levels a model supports.
+// Models without a declared map use Pi's defaults; models without thinking
+// support support only off.
 func SupportedThinkingLevels(model Model) []ThinkingLevel {
 	if !model.SupportsThinking {
 		return []ThinkingLevel{ThinkingLevelOff}
 	}
-	if len(model.ThinkingLevels) == 0 {
-		return slices.Clone(defaultThinkingLevels)
+	supported := make([]ThinkingLevel, 0, len(thinkingLevelOrder))
+	for _, level := range thinkingLevelOrder {
+		if model.ThinkingLevelMap.Supports(level) {
+			supported = append(supported, level)
+		}
 	}
-	return model.ThinkingLevels
+	return supported
 }
 
 // ClampThinkingLevel aligns a requested level to the nearest level a model
@@ -109,6 +184,9 @@ func ClampThinkingLevel(model Model, level ThinkingLevel) ThinkingLevel {
 	supported := SupportedThinkingLevels(model)
 	if slices.Contains(supported, level) {
 		return level
+	}
+	if len(supported) == 0 {
+		return ThinkingLevelOff
 	}
 	index := slices.Index(thinkingLevelOrder, level)
 	if index < 0 {
@@ -218,14 +296,14 @@ type Model struct {
 	API              API        `json:"api"`
 	Provider         ProviderID `json:"provider"`
 	SupportsThinking bool       `json:"supports_thinking,omitempty"`
-	// ThinkingLevels lists the reasoning levels this model supports. The
-	// empty list means the default five levels (off through high) apply;
-	// xhigh and max must be declared explicitly.
-	ThinkingLevels  []ThinkingLevel `json:"thinking_levels,omitempty"`
-	InputModalities []InputModality `json:"input_modalities,omitempty"`
-	ContextWindow   int64           `json:"context_window,omitempty"`
-	MaxTokens       int64           `json:"max_tokens,omitempty"`
-	Pricing         Pricing         `json:"pricing"`
+	// ThinkingLevelMap declares the reasoning levels this model supports and
+	// their provider wire tokens. A nil map means the standard levels off
+	// through high apply.
+	ThinkingLevelMap ThinkingLevelMap `json:"thinking_level_map,omitempty"`
+	InputModalities  []InputModality  `json:"input_modalities,omitempty"`
+	ContextWindow    int64            `json:"context_window,omitempty"`
+	MaxTokens        int64            `json:"max_tokens,omitempty"`
+	Pricing          Pricing          `json:"pricing"`
 }
 
 // Cost contains normalized request cost amounts in US dollars.

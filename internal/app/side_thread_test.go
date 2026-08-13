@@ -67,7 +67,7 @@ func newSideHarness(
 		DeepSeekAPIKey: "test-key",
 	}
 	model := deepseek.DefaultModel()
-	model.ThinkingLevels = slices.Clone(model.ThinkingLevels)
+	model.ThinkingLevelMap = model.ThinkingLevelMap.Clone()
 	model.InputModalities = slices.Clone(model.InputModalities)
 	loop, err := harness.application.newAgentLoop(configuration, nil)
 	if err != nil {
@@ -198,12 +198,12 @@ func TestSideThreadFreezesNonemptySnapshotAndSettings(t *testing.T) {
 		API:              "test-api",
 		Provider:         "test-provider",
 		SupportsThinking: true,
-		ThinkingLevels: []llm.ThinkingLevel{
+		ThinkingLevelMap: llm.ThinkingLevelsMap(
 			llm.ThinkingLevelOff,
 			llm.ThinkingLevelLow,
 			llm.ThinkingLevelMedium,
 			llm.ThinkingLevelHigh,
-		},
+		),
 		InputModalities: []llm.InputModality{
 			llm.InputModalityText,
 			llm.InputModalityImage,
@@ -235,7 +235,7 @@ func TestSideThreadFreezesNonemptySnapshotAndSettings(t *testing.T) {
 	// Mutate every parent-owned value the side thread must have frozen.
 	harness.session.systemPrompt = "changed system prompt"
 	harness.session.configuration.Model = "changed-model"
-	model.ThinkingLevels[0] = llm.ThinkingLevelXHigh
+	model.ThinkingLevelMap[llm.ThinkingLevelOff] = llm.ThinkingValue("xhigh")
 	model.InputModalities[0] = llm.InputModalityUnknown
 	temperature = 0.9
 	harness.session.history[0].(llm.UserMessage).Content[0].Text = "MUTATED MAIN QUESTION"
@@ -263,12 +263,12 @@ func TestSideThreadFreezesNonemptySnapshotAndSettings(t *testing.T) {
 	); got != want {
 		t.Fatalf("side request system prompt = %q, want %q", got, want)
 	}
-	if got, want := request.Model.ThinkingLevels, []llm.ThinkingLevel{
+	if got, want := request.Model.ThinkingLevelMap, llm.ThinkingLevelsMap(
 		llm.ThinkingLevelOff,
 		llm.ThinkingLevelLow,
 		llm.ThinkingLevelMedium,
 		llm.ThinkingLevelHigh,
-	}; !slices.Equal(got, want) {
+	); !reflect.DeepEqual(got, want) {
 		t.Fatalf("side request thinking levels = %v, want %v", got, want)
 	}
 	if got, want := request.Model.InputModalities, []llm.InputModality{

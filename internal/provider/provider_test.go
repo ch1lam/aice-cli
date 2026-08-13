@@ -75,6 +75,31 @@ func TestDeepSeekModelSpecsSharedByCatalogs(t *testing.T) {
 	}
 }
 
+func TestDeepSeekModelSpecsReturnsIndependentThinkingMaps(t *testing.T) {
+	t.Parallel()
+
+	first := provider.DeepSeekModelSpecs()
+	if len(first) == 0 {
+		t.Fatal("DeepSeekModelSpecs() returned no models")
+	}
+	first[0].ThinkingLevelMap[llm.ThinkingLevelOff] = llm.ThinkingValue("mutated")
+	if value := first[0].ThinkingLevelMap[llm.ThinkingLevelHigh]; value != nil {
+		*value = "mutated"
+	}
+
+	second := provider.DeepSeekModelSpecs()
+	if value, ok := second[0].ThinkingLevelMap.WireValue(
+		llm.ThinkingLevelOff,
+	); !ok || value != "off" {
+		t.Errorf("second off wire value = %q/%v, want off/true", value, ok)
+	}
+	if value, ok := second[0].ThinkingLevelMap.WireValue(
+		llm.ThinkingLevelHigh,
+	); !ok || value != "high" {
+		t.Errorf("second high wire value = %q/%v, want high/true", value, ok)
+	}
+}
+
 func findModel(models []llm.Model, id string) (llm.Model, bool) {
 	for _, model := range models {
 		if model.ID == id {

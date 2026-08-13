@@ -118,7 +118,7 @@ func modelSpecCatalog() map[string]provider.ModelSpec {
 		ID: "kimi-k2.6", Name: "Kimi K2.6", ContextWindow: 262_144, MaxTokens: 65_536, Input: 0.95, Output: 4, CacheRead: 0.16,
 		// OpenCode Go exposes Kimi K2.6 thinking as on/off plus high, not
 		// distinct effort tiers (Pi's opencode-go override).
-		ThinkingLevels: []llm.ThinkingLevel{llm.ThinkingLevelOff, llm.ThinkingLevelHigh},
+		ThinkingLevelMap: llm.ThinkingLevelsMap(llm.ThinkingLevelOff, llm.ThinkingLevelHigh),
 	}
 	specs["kimi-k2.7-code"] = provider.ModelSpec{ID: "kimi-k2.7-code", Name: "Kimi K2.7 Code", ContextWindow: 262_144, MaxTokens: 262_144, Input: 0.95, Output: 4, CacheRead: 0.19}
 	specs["kimi-k3"] = provider.ModelSpec{ID: "kimi-k3", Name: "Kimi K3", ContextWindow: 1_048_576, MaxTokens: 131_072, Input: 3, Output: 15, CacheRead: 0.3}
@@ -128,7 +128,7 @@ func modelSpecCatalog() map[string]provider.ModelSpec {
 		ID: "glm-5.2", Name: "GLM-5.2", ContextWindow: 1_000_000, MaxTokens: 131_072, Input: 1.4, Output: 4.4, CacheRead: 0.26,
 		// GLM-5.2 always reasons at high or max; the gateway rejects disabling
 		// thinking and the lower effort tiers (Pi's opencode-go override).
-		ThinkingLevels: []llm.ThinkingLevel{llm.ThinkingLevelHigh, llm.ThinkingLevelMax},
+		ThinkingLevelMap: llm.ThinkingLevelsMap(llm.ThinkingLevelHigh, llm.ThinkingLevelMax),
 	}
 	specs["qwen3.5-plus"] = provider.ModelSpec{ID: "qwen3.5-plus", Name: "Qwen 3.5 Plus", ContextWindow: 262_144, MaxTokens: 65_536, Input: 0.2, Output: 1.2, CacheRead: 0.02}
 	specs["qwen3.6-plus"] = provider.ModelSpec{ID: "qwen3.6-plus", Name: "Qwen 3.6 Plus", ContextWindow: 1_000_000, MaxTokens: 65_536, Input: 0.5, Output: 3, CacheRead: 0.05}
@@ -146,7 +146,7 @@ func modelSpecCatalog() map[string]provider.ModelSpec {
 		ID: "gpt-5.6-luna", Name: "GPT-5.6 Luna", ContextWindow: 1_050_000, MaxTokens: 128_000, Input: 0.1, Output: 0.6, CacheRead: 0.01,
 		// GPT-5.6 is one of the few models where xhigh and max reasoning
 		// efforts are available (Pi's supportsOpenAiXhigh/Max rule).
-		ThinkingLevels: []llm.ThinkingLevel{
+		ThinkingLevelMap: llm.ThinkingLevelsMap(
 			llm.ThinkingLevelOff,
 			llm.ThinkingLevelMinimal,
 			llm.ThinkingLevelLow,
@@ -154,7 +154,7 @@ func modelSpecCatalog() map[string]provider.ModelSpec {
 			llm.ThinkingLevelHigh,
 			llm.ThinkingLevelXHigh,
 			llm.ThinkingLevelMax,
-		},
+		),
 	}
 	specs["grok-4.5"] = provider.ModelSpec{ID: "grok-4.5", Name: "Grok 4.5", ContextWindow: 500_000, MaxTokens: 500_000, Input: 2, Output: 6, CacheRead: 0.5}
 	specs["hy3"] = provider.ModelSpec{ID: "hy3", Name: "Hy3", ContextWindow: 256_000, MaxTokens: 64_000, Input: 0.14, Output: 0.58, CacheRead: 0.035}
@@ -198,7 +198,7 @@ func model(id string) llm.Model {
 		API:              openaicompletions.API,
 		Provider:         ProviderID,
 		SupportsThinking: true,
-		ThinkingLevels:   spec.ThinkingLevels,
+		ThinkingLevelMap: spec.ThinkingLevelMap,
 		InputModalities:  []llm.InputModality{llm.InputModalityText},
 		ContextWindow:    spec.ContextWindow,
 		MaxTokens:        spec.MaxTokens,

@@ -27,11 +27,11 @@ func TestModels(t *testing.T) {
 			API:              openairesponses.API,
 			Provider:         deepseek.ProviderID,
 			SupportsThinking: true,
-			ThinkingLevels: []llm.ThinkingLevel{
+			ThinkingLevelMap: llm.ThinkingLevelsMap(
 				llm.ThinkingLevelOff,
 				llm.ThinkingLevelHigh,
 				llm.ThinkingLevelMax,
-			},
+			),
 			InputModalities: []llm.InputModality{llm.InputModalityText},
 			ContextWindow:   1_000_000,
 			MaxTokens:       384_000,
@@ -47,11 +47,11 @@ func TestModels(t *testing.T) {
 			API:              anthropic.API,
 			Provider:         deepseek.ProviderID,
 			SupportsThinking: true,
-			ThinkingLevels: []llm.ThinkingLevel{
+			ThinkingLevelMap: llm.ThinkingLevelsMap(
 				llm.ThinkingLevelOff,
 				llm.ThinkingLevelHigh,
 				llm.ThinkingLevelMax,
-			},
+			),
 			InputModalities: []llm.InputModality{llm.InputModalityText},
 			ContextWindow:   1_000_000,
 			MaxTokens:       384_000,

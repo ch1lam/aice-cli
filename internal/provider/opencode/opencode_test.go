@@ -81,8 +81,13 @@ func TestModels(t *testing.T) {
 			t.Errorf("model %q missing from Models()", modelID)
 			continue
 		}
-		if !reflect.DeepEqual(candidate.ThinkingLevels, want) {
-			t.Errorf("model %q thinking levels = %v, want %v", modelID, candidate.ThinkingLevels, want)
+		if got := llm.SupportedThinkingLevels(candidate); !reflect.DeepEqual(got, want) {
+			t.Errorf(
+				"model %q supported thinking levels = %v, want %v",
+				modelID,
+				got,
+				want,
+			)
 		}
 	}
 }

@@ -346,7 +346,7 @@ func (s *interactiveSession) sideSnapshot() ([]llm.AgentMessage, error) {
 // thread's request metadata cannot alias the parent's live model state.
 func cloneModel(model llm.Model) llm.Model {
 	cloned := model
-	cloned.ThinkingLevels = slices.Clone(model.ThinkingLevels)
+	cloned.ThinkingLevelMap = model.ThinkingLevelMap.Clone()
 	cloned.InputModalities = slices.Clone(model.InputModalities)
 	return cloned
 }

@@ -19,14 +19,14 @@ import (
 func TestModels(t *testing.T) {
 	t.Parallel()
 
-	thinkingLevels := []llm.ThinkingLevel{
+	thinkingLevels := llm.ThinkingLevelsMap(
 		llm.ThinkingLevelOff,
 		llm.ThinkingLevelLow,
 		llm.ThinkingLevelMedium,
 		llm.ThinkingLevelHigh,
 		llm.ThinkingLevelXHigh,
 		llm.ThinkingLevelMax,
-	}
+	)
 	modalities := []llm.InputModality{
 		llm.InputModalityText,
 		llm.InputModalityImage,
@@ -38,7 +38,7 @@ func TestModels(t *testing.T) {
 			API:              openairesponses.API,
 			Provider:         openai.ProviderID,
 			SupportsThinking: true,
-			ThinkingLevels:   thinkingLevels,
+			ThinkingLevelMap: thinkingLevels,
 			InputModalities:  modalities,
 			ContextWindow:    1_050_000,
 			MaxTokens:        128_000,
@@ -52,7 +52,7 @@ func TestModels(t *testing.T) {
 			API:              openairesponses.API,
 			Provider:         openai.ProviderID,
 			SupportsThinking: true,
-			ThinkingLevels:   thinkingLevels,
+			ThinkingLevelMap: thinkingLevels,
 			InputModalities:  modalities,
 			ContextWindow:    1_050_000,
 			MaxTokens:        128_000,
@@ -66,7 +66,7 @@ func TestModels(t *testing.T) {
 			API:              openairesponses.API,
 			Provider:         openai.ProviderID,
 			SupportsThinking: true,
-			ThinkingLevels:   thinkingLevels,
+			ThinkingLevelMap: thinkingLevels,
 			InputModalities:  modalities,
 			ContextWindow:    1_050_000,
 			MaxTokens:        128_000,

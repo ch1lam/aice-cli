@@ -8,14 +8,14 @@ import (
 
 // ModelSpec is the provider-neutral specification shared by provider catalogs.
 type ModelSpec struct {
-	ID             string
-	Name           string
-	ContextWindow  int64
-	MaxTokens      int64
-	Input          float64
-	Output         float64
-	CacheRead      float64
-	ThinkingLevels []llm.ThinkingLevel
+	ID               string
+	Name             string
+	ContextWindow    int64
+	MaxTokens        int64
+	Input            float64
+	Output           float64
+	CacheRead        float64
+	ThinkingLevelMap llm.ThinkingLevelMap
 }
 
 // deepSeekModelSpecs declares the DeepSeek V4 model specifications once so the
@@ -32,11 +32,11 @@ var deepSeekModelSpecs = []ModelSpec{
 		// DeepSeek V4 exposes reasoning effort as off, high, and max only;
 		// the minimal, low, and medium tiers are rejected (Pi's
 		// deepseek thinkingLevelMap).
-		ThinkingLevels: []llm.ThinkingLevel{
+		ThinkingLevelMap: llm.ThinkingLevelsMap(
 			llm.ThinkingLevelOff,
 			llm.ThinkingLevelHigh,
 			llm.ThinkingLevelMax,
-		},
+		),
 	},
 	{
 		ID:            "deepseek-v4-pro",
@@ -46,16 +46,20 @@ var deepSeekModelSpecs = []ModelSpec{
 		Input:         0.435,
 		Output:        0.87,
 		CacheRead:     0.003625,
-		ThinkingLevels: []llm.ThinkingLevel{
+		ThinkingLevelMap: llm.ThinkingLevelsMap(
 			llm.ThinkingLevelOff,
 			llm.ThinkingLevelHigh,
 			llm.ThinkingLevelMax,
-		},
+		),
 	},
 }
 
 // DeepSeekModelSpecs returns a copy of the shared DeepSeek model
 // specifications.
 func DeepSeekModelSpecs() []ModelSpec {
-	return slices.Clone(deepSeekModelSpecs)
+	specs := slices.Clone(deepSeekModelSpecs)
+	for index := range specs {
+		specs[index].ThinkingLevelMap = specs[index].ThinkingLevelMap.Clone()
+	}
+	return specs
 }

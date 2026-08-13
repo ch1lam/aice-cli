@@ -732,18 +732,26 @@ func TestSupportedThinkingLevels(t *testing.T) {
 			},
 		},
 		{
-			name: "declared set is returned as-is",
+			name: "declared map limits the supported set",
 			model: llm.Model{
 				SupportsThinking: true,
-				ThinkingLevels: []llm.ThinkingLevel{
+				ThinkingLevelMap: llm.ThinkingLevelsMap(
 					llm.ThinkingLevelHigh,
 					llm.ThinkingLevelMax,
-				},
+				),
 			},
 			want: []llm.ThinkingLevel{
 				llm.ThinkingLevelHigh,
 				llm.ThinkingLevelMax,
 			},
+		},
+		{
+			name: "explicitly unsupported map returns no levels",
+			model: llm.Model{
+				SupportsThinking: true,
+				ThinkingLevelMap: llm.ThinkingLevelsMap(),
+			},
+			want: []llm.ThinkingLevel{},
 		},
 		{
 			name:  "non-thinking model supports only off",
@@ -763,27 +771,138 @@ func TestSupportedThinkingLevels(t *testing.T) {
 	}
 }
 
+func TestThinkingLevelMapSemantics(t *testing.T) {
+	t.Parallel()
+
+	t.Run("nil map uses standard defaults", func(t *testing.T) {
+		t.Parallel()
+
+		var m llm.ThinkingLevelMap
+		for _, level := range []llm.ThinkingLevel{
+			llm.ThinkingLevelOff,
+			llm.ThinkingLevelMinimal,
+			llm.ThinkingLevelLow,
+			llm.ThinkingLevelMedium,
+			llm.ThinkingLevelHigh,
+		} {
+			if !m.Supports(level) {
+				t.Errorf("Supports(%q) = false on nil map", level)
+			}
+			if value, ok := m.WireValue(level); !ok || value != string(level) {
+				t.Errorf(
+					"WireValue(%q) = %q/%v, want canonical %q",
+					level,
+					value,
+					ok,
+					level,
+				)
+			}
+		}
+		for _, level := range []llm.ThinkingLevel{
+			llm.ThinkingLevelUnknown,
+			llm.ThinkingLevelXHigh,
+			llm.ThinkingLevelMax,
+			llm.ThinkingLevel("extreme"),
+		} {
+			if m.Supports(level) {
+				t.Errorf("Supports(%q) = true on nil map", level)
+			}
+			if _, ok := m.WireValue(level); ok {
+				t.Errorf("WireValue(%q) reported supported on nil map", level)
+			}
+		}
+	})
+
+	t.Run("missing key and explicit null differ", func(t *testing.T) {
+		t.Parallel()
+
+		m := llm.ThinkingLevelMap{
+			llm.ThinkingLevelHigh: llm.ThinkingValue("high"),
+			llm.ThinkingLevelMax:  nil,
+		}
+		// Missing standard keys stay supported with canonical wire values.
+		if !m.Supports(llm.ThinkingLevelMedium) {
+			t.Error("Supports(medium) = false for a missing standard key")
+		}
+		if value, ok := m.WireValue(llm.ThinkingLevelMedium); !ok || value != "medium" {
+			t.Errorf(
+				"WireValue(medium) = %q/%v, want canonical medium",
+				value,
+				ok,
+			)
+		}
+		// An explicit nil marks the level unsupported.
+		if m.Supports(llm.ThinkingLevelMax) {
+			t.Error("Supports(max) = true for an explicit null")
+		}
+		if _, ok := m.WireValue(llm.ThinkingLevelMax); ok {
+			t.Error("WireValue(max) reported supported for an explicit null")
+		}
+	})
+
+	t.Run("clone is independent", func(t *testing.T) {
+		t.Parallel()
+
+		m := llm.ThinkingLevelsMap(llm.ThinkingLevelOff, llm.ThinkingLevelHigh)
+		cloned := m.Clone()
+		m[llm.ThinkingLevelOff] = llm.ThinkingValue("none")
+		if value, ok := cloned.WireValue(llm.ThinkingLevelOff); !ok || value != "off" {
+			t.Errorf(
+				"cloned WireValue(off) = %q/%v, want canonical off",
+				value,
+				ok,
+			)
+		}
+		if value, _ := m.WireValue(llm.ThinkingLevelOff); value != "none" {
+			t.Errorf("original WireValue(off) = %q, want none", value)
+		}
+	})
+
+	t.Run("json preserves tri-state", func(t *testing.T) {
+		t.Parallel()
+
+		m := llm.ThinkingLevelMap{
+			llm.ThinkingLevelOff: llm.ThinkingValue("none"),
+			llm.ThinkingLevelMax: nil,
+		}
+		data, err := json.Marshal(m)
+		if err != nil {
+			t.Fatalf("json.Marshal() error = %v", err)
+		}
+		var decoded map[string]*string
+		if err := json.Unmarshal(data, &decoded); err != nil {
+			t.Fatalf("json.Unmarshal() error = %v", err)
+		}
+		if decoded["off"] == nil || *decoded["off"] != "none" {
+			t.Errorf("decoded off = %#v, want none", decoded["off"])
+		}
+		if decoded["max"] != nil {
+			t.Errorf("decoded max = %#v, want explicit null", decoded["max"])
+		}
+	})
+}
+
 func TestClampThinkingLevel(t *testing.T) {
 	t.Parallel()
 
 	defaultFive := llm.Model{SupportsThinking: true}
 	alwaysThinking := llm.Model{
 		SupportsThinking: true,
-		ThinkingLevels: []llm.ThinkingLevel{
+		ThinkingLevelMap: llm.ThinkingLevelsMap(
 			llm.ThinkingLevelHigh,
 			llm.ThinkingLevelMax,
-		},
+		),
 	}
 	toggleOnly := llm.Model{
 		SupportsThinking: true,
-		ThinkingLevels: []llm.ThinkingLevel{
+		ThinkingLevelMap: llm.ThinkingLevelsMap(
 			llm.ThinkingLevelOff,
 			llm.ThinkingLevelHigh,
-		},
+		),
 	}
 	allSeven := llm.Model{
 		SupportsThinking: true,
-		ThinkingLevels: []llm.ThinkingLevel{
+		ThinkingLevelMap: llm.ThinkingLevelsMap(
 			llm.ThinkingLevelOff,
 			llm.ThinkingLevelMinimal,
 			llm.ThinkingLevelLow,
@@ -791,7 +910,11 @@ func TestClampThinkingLevel(t *testing.T) {
 			llm.ThinkingLevelHigh,
 			llm.ThinkingLevelXHigh,
 			llm.ThinkingLevelMax,
-		},
+		),
+	}
+	noLevels := llm.Model{
+		SupportsThinking: true,
+		ThinkingLevelMap: llm.ThinkingLevelsMap(),
 	}
 
 	tests := []struct {
@@ -865,6 +988,12 @@ func TestClampThinkingLevel(t *testing.T) {
 			model: allSeven,
 			level: llm.ThinkingLevelMax,
 			want:  llm.ThinkingLevelMax,
+		},
+		{
+			name:  "empty supported set falls back to off",
+			model: noLevels,
+			level: llm.ThinkingLevelHigh,
+			want:  llm.ThinkingLevelOff,
 		},
 		{
 			name:  "non-thinking model clamps every level to off",

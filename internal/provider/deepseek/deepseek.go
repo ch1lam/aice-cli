@@ -140,7 +140,7 @@ func model(id string) llm.Model {
 		API:              api,
 		Provider:         ProviderID,
 		SupportsThinking: true,
-		ThinkingLevels:   spec.ThinkingLevels,
+		ThinkingLevelMap: spec.ThinkingLevelMap,
 		InputModalities:  []llm.InputModality{llm.InputModalityText},
 		ContextWindow:    spec.ContextWindow,
 		MaxTokens:        spec.MaxTokens,

@@ -117,14 +117,14 @@ func model(id, name string, input, output, cacheRead, cacheWrite float64) llm.Mo
 		API:              openairesponses.API,
 		Provider:         ProviderID,
 		SupportsThinking: true,
-		ThinkingLevels: []llm.ThinkingLevel{
+		ThinkingLevelMap: llm.ThinkingLevelsMap(
 			llm.ThinkingLevelOff,
 			llm.ThinkingLevelLow,
 			llm.ThinkingLevelMedium,
 			llm.ThinkingLevelHigh,
 			llm.ThinkingLevelXHigh,
 			llm.ThinkingLevelMax,
-		},
+		),
 		InputModalities: []llm.InputModality{
 			llm.InputModalityText,
 			llm.InputModalityImage,
