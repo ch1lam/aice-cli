@@ -140,15 +140,12 @@ func TestModels(t *testing.T) {
 		t.Errorf("hy3 off wire value = %q/%v, want none/true", got, supported)
 	}
 
-	wantFormats := map[string]struct {
-		format                  llm.ThinkingFormat
-		supportsReasoningEffort bool
-	}{
-		"deepseek-v4-flash": {format: llm.ThinkingFormatDeepSeek},
-		"deepseek-v4-pro":   {format: llm.ThinkingFormatDeepSeek},
-		"kimi-k2.6":         {format: llm.ThinkingFormatDeepSeek},
-		"qwen3.5-plus":      {format: llm.ThinkingFormatQwen},
-		"qwen3.6-plus":      {format: llm.ThinkingFormatQwen},
+	wantFormats := map[string]llm.ThinkingFormat{
+		"deepseek-v4-flash": llm.ThinkingFormatDeepSeek,
+		"deepseek-v4-pro":   llm.ThinkingFormatDeepSeek,
+		"kimi-k2.6":         llm.ThinkingFormatDeepSeek,
+		"qwen3.5-plus":      llm.ThinkingFormatQwen,
+		"qwen3.6-plus":      llm.ThinkingFormatQwen,
 	}
 	for modelID, want := range wantFormats {
 		candidate, ok := modelForID(models, modelID)
@@ -156,16 +153,16 @@ func TestModels(t *testing.T) {
 			t.Errorf("model %q missing from Models()", modelID)
 			continue
 		}
-		if candidate.ThinkingFormat != want.format ||
-			candidate.SupportsReasoningEffort != want.supportsReasoningEffort {
+		if candidate.ThinkingFormat != want {
 			t.Errorf(
-				"model %q thinking format = %q/%v, want %q/%v",
+				"model %q thinking format = %q, want %q",
 				modelID,
 				candidate.ThinkingFormat,
-				candidate.SupportsReasoningEffort,
-				want.format,
-				want.supportsReasoningEffort,
+				want,
 			)
+		}
+		if candidate.SupportsReasoningEffort {
+			t.Errorf("model %q unexpectedly supports reasoning_effort", modelID)
 		}
 	}
 }
