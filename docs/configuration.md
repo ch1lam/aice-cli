@@ -29,11 +29,56 @@ Example global settings:
 | Thinking | `AICE_THINKING` | `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` |
 | Default Project Trust | none | `ask`, `always`, `never` |
 
-The default thinking level is `medium`. AICE aligns it to the nearest level
-supported by the selected model, preferring the next higher level. The
-requested level remains saved so switching models can restore it. `/settings`
-shows the effective level; `/thinking` lists only valid choices for the active
-model. Models without thinking support ignore the setting.
+### Thinking levels
+
+`AICE_THINKING` uses seven canonical levels. Each model supports a subset,
+declared by its provider catalog. AICE aligns an unsupported request to the
+nearest supported level, preferring the next higher one and then the next
+lower one. The effective level therefore always belongs to the selected
+model's subset. The requested level remains saved so switching models can
+restore it; `/settings` shows the effective level and `/thinking` lists only
+valid choices for the active model. Models without thinking support expose
+only `off`.
+
+The default request is `medium`. On DeepSeek V4 Flash and Pro it becomes
+`high`; on Kimi K3 it becomes `max`. Important built-in subsets are:
+
+| Provider and model | Supported levels |
+| --- | --- |
+| `deepseek/deepseek-v4-flash`, `deepseek/deepseek-v4-pro` | `off`, `high`, `max` |
+| `opencode-go/deepseek-v4-flash`, `opencode-go/deepseek-v4-pro` | `off`, `high`, `max` |
+| `opencode-go/kimi-k2.6` | `off`, `high` |
+| `opencode-go/kimi-k3` | `max` |
+| `opencode-go/glm-5.2` | `high`, `max` |
+| `opencode-go/gpt-5.6-luna` | `low`, `medium`, `high`, `xhigh`, `max` |
+| `opencode-go/grok-4.5` | `low`, `medium`, `high` |
+| `opencode-go/hy3` | `off`, `low`, `high` |
+| `openai/gpt-5.6*` | `off`, `low`, `medium`, `high`, `xhigh`, `max` |
+| Other `opencode-go` models | `off`, `minimal`, `low`, `medium`, `high` |
+
+`off` is a canonical switch, not necessarily a literal wire value. The
+protocol adapters translate it to the provider's native form, such as
+`thinking.type: "disabled"`, `enable_thinking: false`,
+`reasoning_effort: "none"`, or an omitted effort field. Enabled levels also
+resolve through the selected model's map before encoding. A direct request
+that bypasses application clamping and names an unsupported level is rejected
+rather than sent silently.
+
+### Model catalog metadata
+
+Reasoning capabilities live with each model in the built-in provider catalogs,
+not in protocol adapters. A model uses a tri-state map from canonical level to
+provider token: a missing key uses the default mapping, a string supplies the
+wire token, and an explicit `null` marks the level unsupported. Missing keys
+for `off` through `high` are supported by default; `xhigh` and `max` require
+explicit entries. Catalog copies deep-clone these maps so a Session or side
+thread cannot mutate shared model data.
+
+The catalogs are compiled into AICE and are never fetched at runtime. For
+overlapping models, capability maps and compatibility formats are aligned with
+Pi AI's provider catalogs, while AICE retains its own supported provider and
+protocol surface. Update the model map, its wire-format metadata, and catalog
+assertions together when upstream capabilities change.
 
 The built-in OpenAI catalog intentionally stays small: `gpt-5.6`,
 `gpt-5.6-terra`, and `gpt-5.6-luna`. `gpt-5.6-terra` is the default because it

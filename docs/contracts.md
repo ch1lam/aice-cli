@@ -5,6 +5,11 @@
 - AICE owns `Message`, `AgentMessage`, concrete user/assistant/tool-result
   messages, content parts, tool calls, usage, models, stop reasons, events, and
   stream abstractions.
+- `Model` carries a tri-state map from canonical thinking levels to provider
+  wire tokens, plus any Chat Completions thinking-format metadata. Provider
+  catalogs own those facts. Application code derives menus and effective
+  levels from the map; protocol adapters encode the effective level and reject
+  unsupported direct requests.
 - `Message` is the closed set accepted by normal LLM requests.
   `AgentMessage` also includes AICE-derived transcript context such as a
   compaction summary.
@@ -14,7 +19,8 @@
 - Conversion from `[]AgentMessage` to `[]Message` happens only at the LLM
   boundary. Protocol adapters then translate into SDK or wire types.
 - Provider identity and model catalogs stay separate from protocol adapters;
-  compatible providers reuse the protocol layer.
+  compatible providers reuse the protocol layer. Thinking translation switches
+  on protocol-format metadata rather than provider or model IDs.
 
 ## Agent Loop
 

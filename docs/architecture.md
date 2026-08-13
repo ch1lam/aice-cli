@@ -11,6 +11,9 @@ Durable design rules:
 
 - AICE owns provider-neutral messages, Agent events, usage, tools, and loop
   semantics. Provider SDK types stop at protocol adapters.
+- Provider catalogs own model capability facts. Canonical thinking levels map
+  to provider tokens through model metadata; application code derives choices
+  and clamps requests, while adapters only encode protocol-specific shapes.
 - Sessions are the append-only source of truth. Model context and the TUI
   viewport are derived views.
 - Built-in tools use the host process environment. Isolation is external.
@@ -76,8 +79,12 @@ such as `core`, `types`, `services`, `utils`, or `helpers`.
   frontends, and persists each completed interaction as one Session turn.
 - Frontends depend on the application-owned active-run capability. They do not
   decide when an Agent run stops, promote input, or restart a run for follow-up.
-- Provider packages select models and protocol adapters. API packages alone
-  translate official SDK or wire types.
+- `internal/llm` defines thinking-map and clamping semantics without embedding
+  provider or model catalogs.
+- Provider packages select models and protocol adapters and own per-model
+  thinking maps and format metadata. API packages alone translate those
+  canonical values into official SDK or wire types; `streamcore` contains no
+  model-specific reasoning policy.
 - Interfaces are defined by consumers. Constructors return concrete types.
 - Use standard library packages when sufficient. A new direct dependency
   requires an explanation, maintenance/license review, and user approval.
