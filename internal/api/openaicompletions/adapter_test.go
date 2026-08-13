@@ -464,13 +464,12 @@ func TestAdapterThinkingWireControls(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name             string
-		modelID          string
-		level            llm.ThinkingLevel
-		thinkingLevelMap llm.ThinkingLevelMap
-		thinkingFormat   llm.ThinkingFormat
-		wantBody         map[string]any
-		wantErr          string
+		name           string
+		modelID        string
+		level          llm.ThinkingLevel
+		thinkingFormat llm.ThinkingFormat
+		wantBody       map[string]any
+		wantErr        string
 	}{
 		{
 			name:    "opencode deepseek enabled with effort",
@@ -518,9 +517,6 @@ func TestAdapterThinkingWireControls(t *testing.T) {
 			name:    "mapped off sends provider token",
 			modelID: "hy3",
 			level:   llm.ThinkingLevelOff,
-			thinkingLevelMap: llm.ThinkingLevelMap{
-				llm.ThinkingLevelOff: llm.ThinkingValue("none"),
-			},
 			wantBody: map[string]any{
 				"reasoning_effort": "none",
 			},
@@ -579,9 +575,6 @@ func TestAdapterThinkingWireControls(t *testing.T) {
 			model, ok := opencodeModelForTest(tt.modelID)
 			if !ok {
 				t.Fatalf("opencode-go model %q missing from catalog", tt.modelID)
-			}
-			if tt.thinkingLevelMap != nil {
-				model.ThinkingLevelMap = tt.thinkingLevelMap
 			}
 			if tt.thinkingFormat != "" {
 				model.ThinkingFormat = tt.thinkingFormat

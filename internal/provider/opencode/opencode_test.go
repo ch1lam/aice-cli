@@ -62,17 +62,29 @@ func TestModels(t *testing.T) {
 		"deepseek-v4-pro":   {llm.ThinkingLevelOff, llm.ThinkingLevelHigh, llm.ThinkingLevelMax},
 		// OpenCode Go exposes Kimi K2.6 thinking as on/off plus high only.
 		"kimi-k2.6": {llm.ThinkingLevelOff, llm.ThinkingLevelHigh},
+		// Kimi K3 always reasons at max.
+		"kimi-k3": {llm.ThinkingLevelMax},
 		// GLM-5.2 always reasons at high or max.
 		"glm-5.2": {llm.ThinkingLevelHigh, llm.ThinkingLevelMax},
-		// GPT-5.6 Luna currently exposes every canonical reasoning level.
+		// GPT-5.6 Luna excludes off and minimal.
 		"gpt-5.6-luna": {
-			llm.ThinkingLevelOff,
-			llm.ThinkingLevelMinimal,
 			llm.ThinkingLevelLow,
 			llm.ThinkingLevelMedium,
 			llm.ThinkingLevelHigh,
 			llm.ThinkingLevelXHigh,
 			llm.ThinkingLevelMax,
+		},
+		// Grok 4.5 exposes low, medium, and high efforts.
+		"grok-4.5": {
+			llm.ThinkingLevelLow,
+			llm.ThinkingLevelMedium,
+			llm.ThinkingLevelHigh,
+		},
+		// Hy3 maps off to none and exposes low and high.
+		"hy3": {
+			llm.ThinkingLevelOff,
+			llm.ThinkingLevelLow,
+			llm.ThinkingLevelHigh,
 		},
 	}
 	for modelID, want := range wantLevels {
@@ -89,6 +101,43 @@ func TestModels(t *testing.T) {
 				want,
 			)
 		}
+	}
+
+	clampTests := []struct {
+		modelID   string
+		request   llm.ThinkingLevel
+		effective llm.ThinkingLevel
+	}{
+		{modelID: "kimi-k3", request: llm.ThinkingLevelMedium, effective: llm.ThinkingLevelMax},
+		{modelID: "gpt-5.6-luna", request: llm.ThinkingLevelOff, effective: llm.ThinkingLevelLow},
+		{modelID: "grok-4.5", request: llm.ThinkingLevelMax, effective: llm.ThinkingLevelHigh},
+		{modelID: "hy3", request: llm.ThinkingLevelMedium, effective: llm.ThinkingLevelHigh},
+	}
+	for _, tt := range clampTests {
+		model, ok := modelForID(models, tt.modelID)
+		if !ok {
+			t.Errorf("model %q missing from Models()", tt.modelID)
+			continue
+		}
+		if got := llm.ClampThinkingLevel(model, tt.request); got != tt.effective {
+			t.Errorf(
+				"model %q clamps %q to %q, want %q",
+				tt.modelID,
+				tt.request,
+				got,
+				tt.effective,
+			)
+		}
+	}
+
+	hy3, ok := modelForID(models, "hy3")
+	if !ok {
+		t.Fatal("hy3 missing from Models()")
+	}
+	if got, supported := hy3.ThinkingLevelMap.WireValue(
+		llm.ThinkingLevelOff,
+	); !supported || got != "none" {
+		t.Errorf("hy3 off wire value = %q/%v, want none/true", got, supported)
 	}
 
 	wantFormats := map[string]struct {

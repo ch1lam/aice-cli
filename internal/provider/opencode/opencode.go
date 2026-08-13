@@ -142,7 +142,17 @@ func modelSpecCatalog() map[string]provider.ModelSpec {
 		ThinkingFormat:   llm.ThinkingFormatDeepSeek,
 	}
 	specs["kimi-k2.7-code"] = standardSpec("kimi-k2.7-code", "Kimi K2.7 Code", 262_144, 262_144, 0.95, 4, 0.19)
-	specs["kimi-k3"] = standardSpec("kimi-k3", "Kimi K3", 1_048_576, 131_072, 3, 15, 0.3)
+	// Kimi K3 always reasons at max (Pi 0.84.1 opencode-go catalog).
+	specs["kimi-k3"] = provider.ModelSpec{
+		ID:               "kimi-k3",
+		Name:             "Kimi K3",
+		ContextWindow:    1_048_576,
+		MaxTokens:        131_072,
+		Input:            3,
+		Output:           15,
+		CacheRead:        0.3,
+		ThinkingLevelMap: llm.ThinkingLevelsMap(llm.ThinkingLevelMax),
+	}
 	specs["glm-5"] = standardSpec("glm-5", "GLM-5", 202_752, 32_768, 1, 3.2, 0.2)
 	specs["glm-5.1"] = standardSpec("glm-5.1", "GLM-5.1", 202_752, 32_768, 1.4, 4.4, 0.26)
 	specs["glm-5.2"] = provider.ModelSpec{
@@ -163,13 +173,17 @@ func modelSpecCatalog() map[string]provider.ModelSpec {
 	specs["mimo-v2-pro"] = standardSpec("mimo-v2-pro", "Mimo V2 Pro", 1_048_576, 128_000, 1, 3, 0.2)
 	specs["mimo-v2.5"] = standardSpec("mimo-v2.5", "Mimo V2.5", 1_000_000, 128_000, 0.14, 0.28, 0.0028)
 	specs["mimo-v2.5-pro"] = standardSpec("mimo-v2.5-pro", "Mimo V2.5 Pro", 1_048_576, 128_000, 0.435, 0.87, 0.003625)
+	// OpenCode Go exposes low through max without off or minimal
+	// (Pi 0.84.1 opencode-go catalog).
 	specs["gpt-5.6-luna"] = provider.ModelSpec{
-		ID: "gpt-5.6-luna", Name: "GPT-5.6 Luna", ContextWindow: 1_050_000, MaxTokens: 128_000, Input: 0.1, Output: 0.6, CacheRead: 0.01,
-		// Preserve the current seven-level catalog until the Pi data-alignment
-		// change lands separately from this structural migration.
+		ID:            "gpt-5.6-luna",
+		Name:          "GPT-5.6 Luna",
+		ContextWindow: 1_050_000,
+		MaxTokens:     128_000,
+		Input:         0.1,
+		Output:        0.6,
+		CacheRead:     0.01,
 		ThinkingLevelMap: llm.ThinkingLevelsMap(
-			llm.ThinkingLevelOff,
-			llm.ThinkingLevelMinimal,
 			llm.ThinkingLevelLow,
 			llm.ThinkingLevelMedium,
 			llm.ThinkingLevelHigh,
@@ -177,8 +191,42 @@ func modelSpecCatalog() map[string]provider.ModelSpec {
 			llm.ThinkingLevelMax,
 		),
 	}
-	specs["grok-4.5"] = standardSpec("grok-4.5", "Grok 4.5", 500_000, 500_000, 2, 6, 0.5)
-	specs["hy3"] = standardSpec("hy3", "Hy3", 256_000, 64_000, 0.14, 0.58, 0.035)
+	// Grok 4.5 exposes low, medium, and high efforts
+	// (Pi 0.84.1 opencode-go catalog).
+	specs["grok-4.5"] = provider.ModelSpec{
+		ID:            "grok-4.5",
+		Name:          "Grok 4.5",
+		ContextWindow: 500_000,
+		MaxTokens:     500_000,
+		Input:         2,
+		Output:        6,
+		CacheRead:     0.5,
+		ThinkingLevelMap: llm.ThinkingLevelsMap(
+			llm.ThinkingLevelLow,
+			llm.ThinkingLevelMedium,
+			llm.ThinkingLevelHigh,
+		),
+	}
+	// Hy3 maps off to none and exposes low and high
+	// (Pi 0.84.1 opencode-go catalog).
+	specs["hy3"] = provider.ModelSpec{
+		ID:            "hy3",
+		Name:          "Hy3",
+		ContextWindow: 256_000,
+		MaxTokens:     64_000,
+		Input:         0.14,
+		Output:        0.58,
+		CacheRead:     0.035,
+		ThinkingLevelMap: llm.ThinkingLevelMap{
+			llm.ThinkingLevelOff:     llm.ThinkingValue("none"),
+			llm.ThinkingLevelMinimal: nil,
+			llm.ThinkingLevelLow:     llm.ThinkingValue("low"),
+			llm.ThinkingLevelMedium:  nil,
+			llm.ThinkingLevelHigh:    llm.ThinkingValue("high"),
+			llm.ThinkingLevelXHigh:   nil,
+			llm.ThinkingLevelMax:     nil,
+		},
+	}
 	return specs
 }
 
