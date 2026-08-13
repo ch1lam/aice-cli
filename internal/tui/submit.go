@@ -22,12 +22,19 @@ func (m model) submit() (model, tea.Cmd, bool) {
 	if prompt == "" {
 		return m, nil, true
 	}
+	if request, slashCommand := parseSlashCommand(prompt); slashCommand {
+		// Side questions never enter the main prompt history, even when
+		// submitted through the main composer while a run is active.
+		if request.Name != "btw" {
+			m.promptHistory = appendPromptHistory(m.promptHistory, prompt)
+			m.historyIndex = -1
+			m.historyDraft = ""
+		}
+		return m.submitSlashCommand(prompt, request)
+	}
 	m.promptHistory = appendPromptHistory(m.promptHistory, prompt)
 	m.historyIndex = -1
 	m.historyDraft = ""
-	if request, slashCommand := parseSlashCommand(prompt); slashCommand {
-		return m.submitSlashCommand(prompt, request)
-	}
 	if m.controllerClosed {
 		return m, nil, true
 	}
@@ -68,7 +75,7 @@ func (m model) submitSlashCommand(
 	switch command.Name {
 	case "btw":
 		m.resetCommandInput()
-		return m.openSideThread(request.Arguments)
+		return m.handleBTWCommand(request, raw, false)
 	case "help":
 		if request.Arguments != "" {
 			return m.commandUsageError(raw, command)

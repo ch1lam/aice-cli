@@ -202,19 +202,18 @@ func TestServeSideRunsWhileMainRunIsBlocked(t *testing.T) {
 			return nil
 		}
 	})
-	sideRunner := runnerFunc(func(
-		ctx context.Context,
-		input RunInput,
-		sink DisplayEventSink,
-	) error {
-		if input.Prompt != "quick question" {
-			t.Fatalf("side prompt = %q, want quick question", input.Prompt)
-		}
-		return sink(ctx, DisplayEvent{Kind: DisplayEventAgentEnd})
-	})
-	factory := &sideManagerRunner{
-		runnerFunc: mainRunner,
-		side:       sideRunner,
+	manager := newFakeSideManager()
+	manager.newRunner = func(_ uint64) Runner {
+		return runnerFunc(func(
+			ctx context.Context,
+			input RunInput,
+			sink DisplayEventSink,
+		) error {
+			if input.Prompt != "quick question" {
+				t.Fatalf("side prompt = %q, want quick question", input.Prompt)
+			}
+			return sink(ctx, DisplayEvent{Kind: DisplayEventAgentEnd})
+		})
 	}
 
 	ctx, cancel := context.WithCancel(t.Context())
@@ -222,8 +221,8 @@ func TestServeSideRunsWhileMainRunIsBlocked(t *testing.T) {
 	sideRequests := make(chan runRequest)
 	mainDone := make(chan struct{})
 	sideDone := make(chan struct{})
-	go serveRuns(ctx, factory, mainRequests, mainDone)
-	go serveSideRuns(ctx, factory, sideRequests, sideDone)
+	go serveRuns(ctx, mainRunner, mainRequests, mainDone)
+	go serveSideRuns(ctx, manager, sideRequests, sideDone)
 
 	mainUpdates := make(chan runUpdate, runUpdateBuffer)
 	mainRequests <- runRequest{prompt: "long task", updates: mainUpdates}
@@ -238,9 +237,14 @@ func TestServeSideRunsWhileMainRunIsBlocked(t *testing.T) {
 	}
 
 	sideUpdates := make(chan runUpdate, runUpdateBuffer)
-	sideRequests <- runRequest{prompt: "quick question", updates: sideUpdates}
+	sideRequests <- runRequest{
+		prompt:     "quick question",
+		updates:    sideUpdates,
+		sideCreate: true,
+	}
 	sideStart := receiveRunUpdate(t, sideUpdates)
-	if sideStart.active == nil || sideStart.cancel == nil {
+	if sideStart.active == nil || sideStart.cancel == nil ||
+		sideStart.sideThread == nil {
 		t.Fatalf("side start update = %#v", sideStart)
 	}
 	sideEvent := receiveRunUpdate(t, sideUpdates)
@@ -251,11 +255,8 @@ func TestServeSideRunsWhileMainRunIsBlocked(t *testing.T) {
 	if !sideTerminal.done || sideTerminal.err != nil {
 		t.Fatalf("side terminal update = %#v", sideTerminal)
 	}
-	if got := factory.createCalls; got != 1 {
+	if got := manager.createCalls; got != 1 {
 		t.Fatalf("CreateSideThread() calls = %d, want 1", got)
-	}
-	if got := factory.openCalls; got != 0 {
-		t.Fatalf("OpenSideThread() calls = %d, want 0", got)
 	}
 
 	select {
@@ -279,6 +280,196 @@ func TestServeSideRunsWhileMainRunIsBlocked(t *testing.T) {
 		case <-time.After(time.Second):
 			t.Fatalf("%s controller did not stop", name)
 		}
+	}
+}
+
+func TestServeSideRunsRunsThreadsConcurrently(t *testing.T) {
+	t.Parallel()
+
+	started := make(chan struct{}, 2)
+	release := make(chan struct{})
+	manager := newFakeSideManager()
+	manager.newRunner = func(_ uint64) Runner {
+		return runnerFunc(func(
+			ctx context.Context,
+			_ RunInput,
+			_ DisplayEventSink,
+		) error {
+			started <- struct{}{}
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-release:
+				return nil
+			}
+		})
+	}
+
+	ctx, cancel := context.WithCancel(t.Context())
+	requests := make(chan runRequest)
+	done := make(chan struct{})
+	go serveSideRuns(ctx, manager, requests, done)
+
+	first := make(chan runUpdate, runUpdateBuffer)
+	second := make(chan runUpdate, runUpdateBuffer)
+	requests <- runRequest{prompt: "one", updates: first, sideCreate: true}
+	requests <- runRequest{prompt: "two", updates: second, sideCreate: true}
+
+	firstStart := receiveRunUpdate(t, first)
+	secondStart := receiveRunUpdate(t, second)
+	if firstStart.sideThread == nil || secondStart.sideThread == nil {
+		t.Fatalf("side runs missing thread metadata: %#v / %#v", firstStart, secondStart)
+	}
+	if firstStart.sideThread.ID == secondStart.sideThread.ID {
+		t.Fatalf("both runs resolved to thread %d", firstStart.sideThread.ID)
+	}
+	// Both runners must actually be in flight before either can finish.
+	for index := 0; index < 2; index++ {
+		select {
+		case <-started:
+		case <-time.After(time.Second):
+			t.Fatal("side runner did not start")
+		}
+	}
+	close(release)
+	if terminal := drainRunUpdate(t, first); !terminal.done || terminal.err != nil {
+		t.Fatalf("first terminal update = %#v", terminal)
+	}
+	if terminal := drainRunUpdate(t, second); !terminal.done || terminal.err != nil {
+		t.Fatalf("second terminal update = %#v", terminal)
+	}
+	if got := manager.createCalls; got != 2 {
+		t.Fatalf("CreateSideThread() calls = %d, want 2", got)
+	}
+
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("side controller did not stop")
+	}
+}
+
+func TestServeSideRunsFollowUpOpensExistingThread(t *testing.T) {
+	t.Parallel()
+
+	manager := newFakeSideManager()
+	manager.newRunner = func(_ uint64) Runner {
+		return runnerFunc(func(
+			ctx context.Context,
+			_ RunInput,
+			sink DisplayEventSink,
+		) error {
+			return sink(ctx, DisplayEvent{Kind: DisplayEventAgentEnd})
+		})
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	requests := make(chan runRequest)
+	done := make(chan struct{})
+	go serveSideRuns(ctx, manager, requests, done)
+
+	first := make(chan runUpdate, runUpdateBuffer)
+	requests <- runRequest{prompt: "first", updates: first, sideCreate: true}
+	if terminal := drainRunUpdate(t, first); !terminal.done || terminal.err != nil {
+		t.Fatalf("create terminal update = %#v", terminal)
+	}
+
+	second := make(chan runUpdate, runUpdateBuffer)
+	requests <- runRequest{
+		prompt:       "second",
+		updates:      second,
+		sideCreate:   false,
+		sideThreadID: 1,
+	}
+	secondStart := receiveRunUpdate(t, second)
+	if secondStart.sideThread == nil || secondStart.sideThread.ID != 1 {
+		t.Fatalf("follow-up start update = %#v, want thread 1", secondStart)
+	}
+	if terminal := drainRunUpdate(t, second); !terminal.done || terminal.err != nil {
+		t.Fatalf("follow-up terminal update = %#v", terminal)
+	}
+	if len(manager.openIDs) != 1 || manager.openIDs[0] != 1 {
+		t.Fatalf("OpenSideThread() ids = %#v, want [1]", manager.openIDs)
+	}
+	if got := manager.createCalls; got != 1 {
+		t.Fatalf("CreateSideThread() calls = %d, want 1", got)
+	}
+
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("side controller did not stop")
+	}
+}
+
+func TestServeSideRunsDeliversRunStartRejection(t *testing.T) {
+	t.Parallel()
+
+	manager := newFakeSideManager()
+	manager.newRunner = func(_ uint64) Runner {
+		return runnerFunc(func(
+			context.Context,
+			RunInput,
+			DisplayEventSink,
+		) error {
+			return interaction.ErrSideThreadConcurrencyLimit
+		})
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	requests := make(chan runRequest)
+	done := make(chan struct{})
+	go serveSideRuns(ctx, manager, requests, done)
+
+	updates := make(chan runUpdate, runUpdateBuffer)
+	requests <- runRequest{prompt: "question", updates: updates, sideCreate: true}
+	terminal := drainRunUpdate(t, updates)
+	if !terminal.done ||
+		!errors.Is(terminal.err, interaction.ErrSideThreadConcurrencyLimit) {
+		t.Fatalf("rejection terminal update = %#v", terminal)
+	}
+
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("side controller did not stop")
+	}
+}
+
+func TestServeSideRunsStopsBlockedRunsOnCancellation(t *testing.T) {
+	t.Parallel()
+
+	manager := newFakeSideManager()
+	manager.newRunner = func(_ uint64) Runner {
+		return runnerFunc(func(
+			ctx context.Context,
+			_ RunInput,
+			_ DisplayEventSink,
+		) error {
+			<-ctx.Done()
+			return ctx.Err()
+		})
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	requests := make(chan runRequest)
+	done := make(chan struct{})
+	go serveSideRuns(ctx, manager, requests, done)
+
+	for index := 0; index < 2; index++ {
+		updates := make(chan runUpdate, runUpdateBuffer)
+		requests <- runRequest{
+			prompt:     "question",
+			updates:    updates,
+			sideCreate: true,
+		}
+		_ = receiveRunUpdate(t, updates)
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("side controller leaked blocked runs on shutdown")
 	}
 }
 
@@ -379,37 +570,6 @@ func (r *activeRunFunc) Deliver(delivery interaction.Delivery) error {
 		return nil
 	}
 	return r.deliver(delivery)
-}
-
-type sideManagerRunner struct {
-	runnerFunc
-	side        Runner
-	createErr   error
-	openErr     error
-	createCalls int
-	openCalls   int
-}
-
-func (r *sideManagerRunner) SideThreads() []interaction.SideThread {
-	return []interaction.SideThread{}
-}
-
-func (r *sideManagerRunner) CreateSideThread(
-	prompt string,
-) (interaction.SideThread, Runner, error) {
-	r.createCalls++
-	return interaction.SideThread{ID: 1, Title: prompt}, r.side, r.createErr
-}
-
-func (r *sideManagerRunner) OpenSideThread(
-	id uint64,
-) (interaction.SideThread, Runner, error) {
-	r.openCalls++
-	return interaction.SideThread{ID: id}, r.side, r.openErr
-}
-
-func (r *sideManagerRunner) CloseSideThread(id uint64) error {
-	return nil
 }
 
 type slashRunner struct {

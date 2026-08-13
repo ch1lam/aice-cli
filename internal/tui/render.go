@@ -58,9 +58,14 @@ func (m model) headerView(width int) string {
 	brand := brandStyle.Render("AICE")
 	state := "READY"
 	stateColor := successColor
+	sideRunning := m.side.anyRunning()
 	if m.side.isVisible {
 		brand += mutedStyle.Render(" / ") + infoStyle.Render("BTW")
 		state = "MAIN READY"
+	} else if unread := m.side.unreadCount(); unread > 0 {
+		brand += mutedStyle.Render(" / ") + infoStyle.Render(
+			fmt.Sprintf("BTW %d new", unread),
+		)
 	}
 	switch {
 	case m.controllerClosed:
@@ -71,13 +76,13 @@ func (m model) headerView(width int) string {
 		stateColor = accentColor
 	case m.side.isVisible:
 		state = "MAIN READY"
-	case m.running && m.side.isRunning:
+	case m.running && sideRunning:
 		state = "MAIN + BTW"
 		stateColor = accentColor
 	case m.running:
 		state = "WORKING"
 		stateColor = accentColor
-	case m.side.isRunning:
+	case sideRunning:
 		state = "BTW WORKING"
 		stateColor = accentColor
 	}
@@ -253,6 +258,12 @@ func (m *model) completeSelectedSlashCommand() {
 }
 
 func (m model) commandMenuView(width int) string {
+	if m.side.menu != nil {
+		return m.sideMenuView(width)
+	}
+	if m.side.confirm != nil {
+		return m.sideConfirmView(width)
+	}
 	if m.side.isVisible {
 		return ""
 	}

@@ -88,7 +88,7 @@ type model struct {
 	updates            <-chan runUpdate
 	activeRun          ActiveRun
 	cancelRun          context.CancelFunc
-	side               sideThreadState
+	side               sidePanelState
 
 	viewport          viewport.Model
 	selection         transcriptSelection
@@ -199,9 +199,8 @@ func newModel(
 		commands:       slashCommandCatalog(externalCommands),
 		assistantEntry: -1,
 		historyIndex:   -1,
-		side: sideThreadState{
-			assistantEntry: -1,
-			entries:        []sideThreadEntry{},
+		side: sidePanelState{
+			threads: map[uint64]*sideThreadState{},
 		},
 		status: "Ready",
 		// The welcome animation starts running at construction; Init() emits
@@ -260,14 +259,39 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	case runBatchMsg:
 		return m.applyRunBatch(message)
 	case sideRunStartedMsg:
-		m.side.updates = message.updates
+		if message.isNew {
+			if pending := m.side.newPending; pending != nil &&
+				pending.question == message.question {
+				pending.ch = message.updates
+			}
+		} else if thread := m.side.thread(message.threadID); thread != nil &&
+			thread.isRunning && thread.updates == nil {
+			thread.updates = message.updates
+		}
 		return m, tea.Batch(
 			waitForSideRunUpdates(message.updates),
 			m.spinner.Tick,
 		)
 	case sideRunUnavailableMsg:
-		m.side.isClosed = true
-		m.finishSideRun(errors.New("BTW side-thread controller stopped"))
+		m.side.closed = true
+		if message.isNew {
+			m.side.newPending = nil
+			m.side.newDraft = message.question
+		} else if thread := m.side.thread(message.threadID); thread != nil {
+			thread.isRunning = false
+			thread.updates = nil
+			thread.draft = message.question
+		}
+		m.side.notice = "The BTW side-thread controller stopped"
+		if m.side.isVisible {
+			m.input.SetValue(message.question)
+			m.input.CursorEnd()
+			if m.composerInputEnabled() {
+				m.input.Focus()
+			} else {
+				m.input.Blur()
+			}
+		}
 		m.resizeLayout()
 		m.refreshViewport(true)
 		return m, nil
@@ -287,7 +311,7 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	case spinner.TickMsg:
 		var command tea.Cmd
 		m.spinner, command = m.spinner.Update(message)
-		if m.running || m.side.isRunning {
+		if m.running || m.side.anyRunning() {
 			hasPendingSteer := m.hasPendingSteer()
 			if hasPendingSteer {
 				m.steerRailFrame = (m.steerRailFrame + 1) % 4
@@ -295,7 +319,12 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			durationChanged := m.updateActiveProcessDuration(message.Time)
 			refreshMain := m.running &&
 				(m.showsActivitySpinner() || durationChanged || hasPendingSteer)
-			refreshSide := m.side.isVisible && m.side.isRunning
+			refreshSide := false
+			if m.side.isVisible {
+				if thread := m.side.activeThread(); thread != nil && thread.isRunning {
+					refreshSide = true
+				}
+			}
 			if refreshMain || refreshSide {
 				m.refreshViewport(false)
 			}
@@ -305,7 +334,7 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	var commands []tea.Cmd
-	if m.running || m.side.isRunning {
+	if m.running || m.side.anyRunning() {
 		var command tea.Cmd
 		m.spinner, command = m.spinner.Update(message)
 		commands = append(commands, command)
@@ -353,6 +382,12 @@ func (m model) View() tea.View {
 }
 
 func (m model) handleKey(message tea.KeyPressMsg) (model, tea.Cmd, bool) {
+	if m.side.menu != nil {
+		return m.handleSideMenuKey(message)
+	}
+	if m.side.confirm != nil {
+		return m.handleSideConfirmKey(message)
+	}
 	if m.side.isVisible {
 		if updated, command, handled := m.handleSideKey(message); handled {
 			return updated, command, true
@@ -503,7 +538,14 @@ func (m model) handleKey(message tea.KeyPressMsg) (model, tea.Cmd, bool) {
 
 func (m model) composerInputEnabled() bool {
 	if m.side.isVisible {
-		return !m.side.isRunning
+		if m.side.activeID == 0 {
+			return m.side.newPending == nil
+		}
+		thread := m.side.activeThread()
+		return thread != nil && !thread.isRunning && !thread.readOnly()
+	}
+	if m.side.menu != nil {
+		return false
 	}
 	return !m.running || m.acceptsDelivery
 }

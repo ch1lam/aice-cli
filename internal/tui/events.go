@@ -365,7 +365,7 @@ func (m *model) finishRun(err error) tea.Cmd {
 	m.assistantEntry = -1
 	m.activeProcessID = 0
 	var focus tea.Cmd
-	if !m.side.isVisible || !m.side.isRunning {
+	if m.composerInputEnabled() {
 		focus = m.input.Focus()
 	} else {
 		m.input.Blur()

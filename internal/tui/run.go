@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"sync"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -93,6 +94,9 @@ func Run(ctx context.Context, runner Runner, options Options) error {
 	initialModel := newModel(requests, controllerDone, slashCommands...)
 	initialModel.sideRequests = sideRequests
 	initialModel.sideControllerDone = sideControllerDone
+	if manager, ok := runner.(SideThreadManager); ok {
+		initialModel.side.manager = manager
+	}
 	initialModel.currentModel = options.Model
 	initialModel.thinking = options.Thinking
 	initialModel.apiKeyConfigured = options.APIKeyConfigured
@@ -122,6 +126,12 @@ type runRequest struct {
 	prompt  string
 	command *SlashCommandRequest
 	updates chan runUpdate
+	// sideCreate requests a brand-new side thread for this prompt;
+	// sideThreadID targets an existing thread for a follow-up. The resolved
+	// metadata is stored back on sideThread before the run starts.
+	sideCreate   bool
+	sideThreadID uint64
+	sideThread   *SideThread
 }
 
 type runUpdate struct {
@@ -132,7 +142,10 @@ type runUpdate struct {
 	output   string
 	state    *RuntimeState
 	commands *[]SlashCommand
-	done     bool
+	// sideThread is set on the first update of a side run and identifies the
+	// registry thread the run belongs to.
+	sideThread *SideThread
+	done       bool
 }
 
 func serveRuns(
@@ -152,12 +165,11 @@ func serveRuns(
 	}
 }
 
-// serveSideRuns owns the side controller. This transitional phase keeps the
-// single-thread frontend behavior: the first question creates the thread,
-// every later question opens the same thread. When the thread has expired
-// (ErrSideThreadNotFound), the controller forgets it so the next question
-// starts a fresh thread. The full multi-thread menu arrives in a later
-// phase; the registry already owns all lifecycle rules underneath.
+// serveSideRuns owns the side-thread controller. Every request is prepared
+// (created or opened through the manager) and then executed on its own
+// goroutine, so independent threads can answer concurrently. The registry in
+// internal/app serializes runs per thread and caps global concurrency; the
+// controller only carries each run to its own event channel.
 func serveSideRuns(
 	ctx context.Context,
 	manager SideThreadManager,
@@ -165,55 +177,49 @@ func serveSideRuns(
 	done chan<- struct{},
 ) {
 	defer close(done)
-	var threadID uint64
+	var wg sync.WaitGroup
+	defer wg.Wait()
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case request := <-requests:
-			var runner Runner
-			var err error
-			if threadID == 0 {
-				var thread SideThread
-				thread, runner, err = manager.CreateSideThread(request.prompt)
-				threadID = thread.ID
-			} else {
-				var thread SideThread
-				thread, runner, err = manager.OpenSideThread(threadID)
-				threadID = thread.ID
-			}
-			if err != nil {
-				if errors.Is(err, interaction.ErrSideThreadNotFound) {
-					threadID = 0
-				}
-				finishUnstartedRun(ctx, request, err)
-				continue
-			}
-			// A run can fail at start even though the open succeeded: the
-			// thread may have turned read-only or expired between the open
-			// and the run. Forgetting the id lets the next question create a
-			// fresh thread instead of retrying the unusable one until it
-			// expires.
-			if runErr := runOne(ctx, runner, request); errors.Is(
-				runErr,
-				interaction.ErrSideThreadReadOnly,
-			) || errors.Is(runErr, interaction.ErrSideThreadNotFound) {
-				threadID = 0
-			}
+			wg.Add(1)
+			go runSideRequest(ctx, manager, request, &wg)
 		}
 	}
 }
 
-func finishUnstartedRun(
+// runSideRequest resolves the thread for one side run, then executes it.
+// Resolution failures are delivered as terminal updates; the model restores
+// drafts and shows the reason. runOne owns and closes the update channel on
+// success.
+func runSideRequest(
 	ctx context.Context,
+	manager SideThreadManager,
 	request runRequest,
-	err error,
+	wg *sync.WaitGroup,
 ) {
-	defer close(request.updates)
-	_ = sendRunUpdate(ctx, request.updates, runUpdate{
-		err:  err,
-		done: true,
-	})
+	defer wg.Done()
+
+	var thread SideThread
+	var runner Runner
+	var err error
+	if request.sideCreate {
+		thread, runner, err = manager.CreateSideThread(request.prompt)
+	} else {
+		thread, runner, err = manager.OpenSideThread(request.sideThreadID)
+	}
+	if err != nil {
+		_ = sendRunUpdate(ctx, request.updates, runUpdate{
+			err:  err,
+			done: true,
+		})
+		close(request.updates)
+		return
+	}
+	request.sideThread = &thread
+	_ = runOne(ctx, runner, request)
 }
 
 // runOne prepares and executes one run request, delivering every lifecycle
@@ -239,18 +245,20 @@ func runOne(ctx context.Context, runner Runner, request runRequest) error {
 	if err != nil {
 		state, commands := runnerSnapshots(runner)
 		_ = sendRunUpdate(ctx, request.updates, runUpdate{
-			err:      err,
-			state:    state,
-			commands: commands,
-			done:     true,
+			err:        err,
+			state:      state,
+			commands:   commands,
+			sideThread: request.sideThread,
+			done:       true,
 		})
 		return err
 	}
 
 	runCtx, cancel := context.WithCancel(ctx)
 	if !sendRunUpdate(ctx, request.updates, runUpdate{
-		active: active,
-		cancel: cancel,
+		active:     active,
+		cancel:     cancel,
+		sideThread: request.sideThread,
 	}) {
 		cancel()
 		return ctx.Err()

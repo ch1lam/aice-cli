@@ -4,37 +4,18 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"time"
 
-	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
-	"charm.land/lipgloss/v2"
+
+	"github.com/ch1lam/aice-cli/internal/interaction"
 )
 
 const (
 	maximumSideEntries = 20
 	sidePlaceholder    = "Ask a side question about this Session..."
+	sideNewTitle       = "New BTW thread"
 )
-
-type sideThreadEntry struct {
-	question string
-	answer   string
-	thinking string
-	err      string
-	complete bool
-}
-
-type sideThreadState struct {
-	updates        <-chan runUpdate
-	cancel         context.CancelFunc
-	entries        []sideThreadEntry
-	assistantEntry int
-	status         string
-	draft          string
-	isVisible      bool
-	isRunning      bool
-	cancelPending  bool
-	isClosed       bool
-}
 
 func btwSlashCommand() SlashCommand {
 	return SlashCommand{
@@ -44,419 +25,202 @@ func btwSlashCommand() SlashCommand {
 	}
 }
 
-func (m model) isBTWCommandInput() bool {
-	request, slash := parseSlashCommand(m.input.Value())
-	return slash && request.Name == "btw"
+type sideThreadEntry struct {
+	question string
+	answer   string
+	thinking string
+	err      string
+	complete bool
 }
 
-func (m model) openSideThread(question string) (model, tea.Cmd, bool) {
-	if m.sideRequests == nil || m.sideControllerDone == nil || m.side.isClosed {
-		return m.commandError(
-			"/btw "+question,
-			"The BTW side-thread controller is unavailable",
-		)
-	}
-
-	question = strings.TrimSpace(question)
-	m.side.isVisible = true
-	m.input.Reset()
-	m.input.Placeholder = sidePlaceholder
-	m.commandSelection = 0
-	m.commandDismissed = false
-	m.historyIndex = -1
-	m.historyDraft = ""
-
-	if m.side.isRunning {
-		if question != "" {
-			m.side.draft = question
-		}
-		m.input.SetValue(m.side.draft)
-		m.input.CursorEnd()
-		m.input.Blur()
-		m.side.status = "Current side answer is still running"
-		return m.settleCommand(true, nil)
-	}
-	if question == "" {
-		m.input.SetValue(m.side.draft)
-		m.input.CursorEnd()
-		m.input.Focus()
-		if len(m.side.entries) == 0 {
-			m.side.status = "Ask a quick question using context AICE already has"
-		} else {
-			m.side.status = "Side thread reopened"
-		}
-		return m.settleCommand(true, nil)
-	}
-	return m.startSideQuestion(question)
+// sideThreadState is the presentation state for one registry thread. The
+// registry in internal/app owns lifecycle truth; this mirrors enough of it
+// to render the panel and route events.
+type sideThreadState struct {
+	id              uint64
+	title           string
+	status          interaction.SideThreadStatus
+	lastActiveAt    time.Time
+	updates         <-chan runUpdate
+	cancel          context.CancelFunc
+	entries         []sideThreadEntry
+	assistantEntry  int
+	draft           string
+	isRunning       bool
+	cancelPending   bool
+	closing         bool
+	hasUnread       bool
+	receivedContent bool
 }
 
-func (m model) submitSideComposer() (model, tea.Cmd, bool) {
-	question := strings.TrimSpace(m.input.Value())
-	if request, slash := parseSlashCommand(question); slash && request.Name == "btw" {
-		question = strings.TrimSpace(request.Arguments)
-	}
-	if question == "" {
-		m.side.status = "A side question is required"
-		return m.settleCommand(false, nil)
-	}
-	return m.startSideQuestion(question)
+// pendingSideRun tracks a brand-new thread whose first question is in flight:
+// the thread only exists in the registry once its first run starts.
+type pendingSideRun struct {
+	question    string
+	ch          <-chan runUpdate
+	fromVisible bool
 }
 
-func (m model) startSideQuestion(question string) (model, tea.Cmd, bool) {
-	if m.sideRequests == nil || m.sideControllerDone == nil || m.side.isClosed {
-		m.side.status = "The BTW side-thread controller is unavailable"
-		return m.settleCommand(false, nil)
-	}
-	if m.side.isRunning {
-		m.side.draft = question
-		m.side.status = "Current side answer is still running"
-		return m.settleCommand(false, nil)
-	}
-
-	m.side.entries = append(m.side.entries, sideThreadEntry{question: question})
-	if len(m.side.entries) > maximumSideEntries {
-		m.side.entries = append(
-			[]sideThreadEntry{},
-			m.side.entries[len(m.side.entries)-maximumSideEntries:]...,
-		)
-	}
-	m.side.assistantEntry = len(m.side.entries) - 1
-	m.side.isVisible = true
-	m.side.isRunning = true
-	m.side.cancelPending = false
-	m.side.status = "Starting side answer..."
-	m.side.draft = ""
-	m.input.Reset()
-	m.input.Placeholder = sidePlaceholder
-	m.input.Blur()
-	return m.settleCommand(
-		true,
-		startSideRun(
-			m.sideRequests,
-			m.sideControllerDone,
-			question,
-		),
-	)
+// sideMenuState is the local /btw thread chooser. Options are a defensive
+// manager snapshot plus the synthetic New entry (ID 0).
+type sideMenuState struct {
+	fromPanel   bool
+	returnDraft string
+	options     []interaction.SideThread
+	selection   int
 }
 
-func (m model) closeSideThread() (model, tea.Cmd, bool) {
-	m.side.draft = m.input.Value()
-	m.side.isVisible = false
-	m.input.Reset()
-	m.input.Placeholder = defaultPlaceholder
-	if m.composerInputEnabled() {
-		m.input.Focus()
-	} else {
-		m.input.Blur()
-	}
-	m.resizeLayout()
-	m.refreshViewport(true)
-	return m, nil, true
+// sideConfirmState is the confirmation prompt for ending a running thread.
+type sideConfirmState struct {
+	threadID uint64
 }
 
-func (m model) handleSideKey(message tea.KeyPressMsg) (model, tea.Cmd, bool) {
-	if !m.side.isVisible {
-		return m, nil, false
-	}
-
-	switch {
-	case message.Code == tea.KeyEscape:
-		return m.closeSideThread()
-	case key.Matches(message, m.keys.interrupt):
-		if !m.side.isRunning {
-			m.side.status = "No side answer is running"
-			return m, nil, true
-		}
-		if m.side.cancel != nil {
-			m.side.cancel()
-		} else {
-			m.side.cancelPending = true
-		}
-		m.side.status = "Cancelling side answer..."
-		m.refreshViewport(false)
-		return m, nil, true
-	case m.helpToggleRequested(message):
-		m.help.ShowAll = !m.help.ShowAll
-		m.resizeLayout()
-		m.refreshViewport(false)
-		return m, nil, true
-	case key.Matches(message, m.keys.newline):
-		if !m.side.isRunning {
-			m.input.InsertString("\n")
-			m.resizeLayout()
-		}
-		return m, nil, true
-	case key.Matches(message, m.keys.send):
-		if m.side.isRunning {
-			return m, nil, true
-		}
-		return m.submitSideComposer()
-	case key.Matches(message, m.keys.queue),
-		key.Matches(message, m.keys.process):
-		return m, nil, true
-	case key.Matches(message, m.keys.scroll):
-		switch message.Code {
-		case tea.KeyPgUp:
-			m.viewport.PageUp()
-		case tea.KeyPgDown:
-			m.viewport.PageDown()
-		}
-		return m, nil, true
-	}
-	return m, nil, false
+// sidePanelState owns every ephemeral BTW thread shown by the TUI. The main
+// run keeps its own transcript and controllers; this state only interacts
+// with the side-thread registry.
+type sidePanelState struct {
+	manager    interaction.SideThreadManager
+	isVisible  bool
+	activeID   uint64
+	newDraft   string
+	newPending *pendingSideRun
+	threads    map[uint64]*sideThreadState
+	menu       *sideMenuState
+	confirm    *sideConfirmState
+	notice     string
+	closed     bool
 }
 
-func (m model) applySideRunBatch(batch sideRunBatchMsg) (tea.Model, tea.Cmd) {
-	if batch.source != m.side.updates {
-		return m, nil
-	}
-	var commands []tea.Cmd
-	follow := m.viewport.AtBottom()
-	changed := false
-	finished := false
-	for _, update := range batch.updates {
-		if update.cancel != nil {
-			m.side.cancel = update.cancel
-			if m.side.cancelPending {
-				m.side.cancel()
-				m.side.status = "Cancelling side answer..."
-			} else {
-				m.side.status = "Thinking..."
-			}
-			changed = true
-		}
-		if update.done {
-			m.finishSideRun(update.err)
-			finished = true
-			changed = true
-			continue
-		}
-		if m.applySideEvent(update.event) {
-			changed = true
-		}
-	}
-
-	if batch.closed {
-		m.side.updates = nil
-		if m.side.isRunning {
-			m.finishSideRun(errors.New(
-				"side run ended without a terminal update",
-			))
-			finished = true
-			changed = true
-		}
-	} else if m.side.updates != nil {
-		commands = append(commands, waitForSideRunUpdates(m.side.updates))
-	}
-	if changed && m.side.isVisible {
-		m.resizeLayout()
-		m.refreshViewport(follow || finished)
-	}
-	return m, tea.Batch(commands...)
-}
-
-func (m *model) applySideEvent(event DisplayEvent) bool {
-	entry := m.activeSideEntry()
-	switch event.Kind {
-	case DisplayEventAssistantStart:
-		if entry == nil {
-			return false
-		}
-		entry.answer = ""
-		entry.thinking = ""
-		entry.err = ""
-		entry.complete = false
-		m.side.status = "Thinking..."
-	case DisplayEventAssistantDelta:
-		if entry == nil {
-			return false
-		}
-		switch event.Delta.Kind {
-		case DisplayDeltaText:
-			entry.answer += event.Delta.Delta
-			m.side.status = "Answering..."
-		case DisplayDeltaThinking:
-			entry.thinking += event.Delta.Delta
-			m.side.status = "Thinking..."
-		case DisplayDeltaToolCall:
-			m.side.status = "Side questions cannot use tools"
-		default:
-			return false
-		}
-	case DisplayEventAssistantEnd:
-		if entry == nil {
-			return false
-		}
-		entry.answer = event.Assistant.Text
-		entry.thinking = event.Assistant.Thinking
-		entry.complete = true
-		m.side.status = "Answer complete"
-	case DisplayEventToolStart, DisplayEventToolEnd:
-		m.side.status = "Side questions cannot use tools"
-	case DisplayEventRetryStart:
-		m.side.status = "Retrying side answer..."
-	case DisplayEventRetryEnd:
-		if event.Retry.Succeeded {
-			m.side.status = "Retry succeeded"
-		} else {
-			m.side.status = "Retry stopped"
-		}
-	case DisplayEventAgentEnd:
-		if event.Err == nil {
-			m.side.status = "Answer complete"
-		}
-	default:
-		return false
-	}
-	return true
-}
-
-func (m *model) activeSideEntry() *sideThreadEntry {
-	if m.side.assistantEntry < 0 ||
-		m.side.assistantEntry >= len(m.side.entries) {
+func (s *sidePanelState) thread(id uint64) *sideThreadState {
+	if s == nil {
 		return nil
 	}
-	return &m.side.entries[m.side.assistantEntry]
+	return s.threads[id]
 }
 
-func (m *model) finishSideRun(err error) {
-	if err != nil {
-		message := err.Error()
-		if errors.Is(err, context.Canceled) {
-			message = "Side answer cancelled"
-		}
-		if entry := m.activeSideEntry(); entry != nil {
-			entry.err = message
-			entry.complete = true
-		}
-		m.side.status = message
-	} else {
-		if entry := m.activeSideEntry(); entry != nil {
-			entry.complete = true
-		}
-		m.side.status = "Ready for another side question"
-	}
-	m.side.isRunning = false
-	m.side.cancel = nil
-	m.side.cancelPending = false
-	m.side.assistantEntry = -1
-	if m.side.isVisible {
-		m.input.SetValue(m.side.draft)
-		m.input.CursorEnd()
-		m.input.Focus()
-	}
+func (s *sidePanelState) activeThread() *sideThreadState {
+	return s.thread(s.activeID)
 }
 
-func (m model) sideThreadView() string {
-	parts := []transcriptViewPart{{content: m.sideThreadIntro()}}
-	for index, entry := range m.side.entries {
-		parts = append(parts, transcriptViewPart{
-			content: m.sideQuestionView(entry.question),
-		})
-		if answer := m.sideAnswerView(
-			entry,
-			m.side.isRunning && index == m.side.assistantEntry,
-		); answer != "" {
-			parts = append(parts, transcriptViewPart{content: answer})
+func (s *sidePanelState) anyRunning() bool {
+	if s.newPending != nil {
+		return true
+	}
+	for _, thread := range s.threads {
+		if thread.isRunning {
+			return true
 		}
 	}
-	return joinTranscriptViewParts(parts)
+	return false
 }
 
-func (m model) sideThreadIntro() string {
-	title := headerStyle.Render("↗ BTW SIDE THREAD")
-	detail := mutedStyle.Render(
-		"Ephemeral · no tools · excluded from the main Session",
-	)
-	if len(m.side.entries) == 0 {
-		detail += "\n\n" + bodyStyle.Render(
-			"Ask about context AICE already gathered while the main task keeps running.",
-		)
+func (s *sidePanelState) unreadCount() int {
+	count := 0
+	for _, thread := range s.threads {
+		if thread.hasUnread {
+			count++
+		}
 	}
-	if strings.TrimSpace(m.side.status) != "" {
-		detail += "\n" + infoStyle.Render(m.side.status)
-	}
-	return lipgloss.NewStyle().Padding(0, 1).Render(title + "\n" + detail)
+	return count
 }
 
-func (m model) sideQuestionView(question string) string {
-	bodyWidth := max(m.contentWidth()-userStyle.GetHorizontalFrameSize(), 1)
-	body := userStyle.Width(bodyWidth).Render(question)
-	return lipgloss.NewStyle().Padding(0, 1).Render(
-		labelStyle.Render("YOU / BTW") + "\n" + body,
-	)
+func (t *sideThreadState) activeEntry() *sideThreadEntry {
+	if t == nil || t.assistantEntry < 0 ||
+		t.assistantEntry >= len(t.entries) {
+		return nil
+	}
+	return &t.entries[t.assistantEntry]
 }
 
-func (m model) sideAnswerView(entry sideThreadEntry, active bool) string {
-	bodyWidth := max(
-		m.contentWidth()-assistantBodyStyle.GetHorizontalFrameSize(),
-		1,
-	)
-	parts := make([]string, 0, 3)
-	if strings.TrimSpace(entry.thinking) != "" {
-		thinkingWidth := max(
-			bodyWidth-thinkingStyle.GetHorizontalFrameSize(),
-			1,
-		)
-		parts = append(parts, assistantBodyStyle.Render(
-			thinkingStyle.Width(thinkingWidth).Render(entry.thinking),
-		))
-	}
-	if strings.TrimSpace(entry.answer) != "" {
-		parts = append(parts, assistantBodyStyle.Render(
-			renderMarkdown(entry.answer, m.contentWidth()),
-		))
-	}
-	if entry.err != "" {
-		parts = append(parts, errorStyle.Render("✕ "+entry.err))
-	}
-	if entry.complete &&
-		strings.TrimSpace(entry.answer) == "" &&
-		strings.TrimSpace(entry.thinking) == "" &&
-		entry.err == "" {
-		parts = append(parts, mutedStyle.Render("No text response"))
-	}
-	if active &&
-		!entry.complete &&
-		strings.TrimSpace(entry.answer) == "" &&
-		entry.err == "" {
-		parts = append(parts, assistantBodyStyle.Render(
-			m.spinner.View()+" "+mutedStyle.Render(m.side.status),
-		))
-	}
-	if len(parts) == 0 {
+func (t *sideThreadState) readOnly() bool {
+	return t != nil && t.status == interaction.SideThreadReadOnly
+}
+
+// sideFriendlyError translates expected registry failures into user-facing
+// messages; unexpected errors pass through as-is.
+func sideFriendlyError(err error) string {
+	if err == nil {
 		return ""
 	}
-	return lipgloss.NewStyle().Padding(0, 1).Render(
-		headerStyle.Render("✦ AICE / BTW") + "\n\n" +
-			strings.Join(parts, "\n"),
-	)
+	switch {
+	case errors.Is(err, context.Canceled):
+		return "Side answer cancelled"
+	case errors.Is(err, interaction.ErrSideThreadReadOnly):
+		return "This thread is read-only; /btw starts a new thread"
+	case errors.Is(err, interaction.ErrSideThreadLimit):
+		return "BTW thread limit reached; end a thread first"
+	case errors.Is(err, interaction.ErrSideThreadConcurrencyLimit):
+		return "Too many side answers running; try again shortly"
+	case errors.Is(err, interaction.ErrSideThreadNotFound):
+		return "BTW thread expired and was deleted"
+	case errors.Is(err, interaction.ErrSideThreadBusy):
+		return "This thread is already answering"
+	case errors.Is(err, interaction.ErrSideThreadRunning):
+		return "This thread is still answering"
+	}
+	return err.Error()
 }
 
-func (m model) sideStatusLine(width int) string {
-	left := mutedStyle.Render("enter ask  shift+enter newline  esc close")
-	if m.side.isRunning {
-		left = mutedStyle.Render("esc close  ctrl+C cancel side answer")
+// reconcileSideThreads aligns local thread state with a manager snapshot:
+// threads the registry no longer knows are pruned, and statuses and
+// timestamps are refreshed for the rest. It reports whether the currently
+// visible thread was pruned.
+func (m *model) reconcileSideThreads(snapshot []interaction.SideThread) bool {
+	alive := make(map[uint64]interaction.SideThread, len(snapshot))
+	for _, info := range snapshot {
+		alive[info.ID] = info
 	}
-	if m.help.ShowAll {
-		left = mutedStyle.Render(
-			"enter ask  shift+enter newline  pgup/pgdn scroll  esc close  ctrl+C cancel",
-		)
+	prunedVisible := false
+	for id, thread := range m.side.threads {
+		info, ok := alive[id]
+		if !ok {
+			delete(m.side.threads, id)
+			if m.side.isVisible && m.side.activeID == id {
+				prunedVisible = true
+			}
+			continue
+		}
+		thread.status = info.Status
+		thread.lastActiveAt = info.LastActiveAt
+		thread.title = info.Title
 	}
-	if line, ok := alignStatusLine(left, m.modelStatus(), width); ok {
-		return line
+	return prunedVisible
+}
+
+// refreshSideThreads reconciles local state against the manager. It returns
+// whether the currently visible thread was pruned.
+func (m *model) refreshSideThreads() bool {
+	if m.side.manager == nil {
+		return false
 	}
-	if line, ok := alignStatusLine("", m.modelStatus(), width); ok {
-		return line
+	return m.reconcileSideThreads(m.side.manager.SideThreads())
+}
+
+// sideThreadAlive reports whether the registry still knows one thread.
+func (m *model) sideThreadAlive(id uint64) bool {
+	if m.side.manager == nil {
+		return false
 	}
-	return ""
+	for _, info := range m.side.manager.SideThreads() {
+		if info.ID == id {
+			return true
+		}
+	}
+	return false
 }
 
 type sideRunStartedMsg struct {
-	updates <-chan runUpdate
+	updates  <-chan runUpdate
+	threadID uint64
+	question string
+	isNew    bool
 }
 
-type sideRunUnavailableMsg struct{}
+type sideRunUnavailableMsg struct {
+	threadID uint64
+	question string
+	isNew    bool
+}
 
 type sideRunBatchMsg struct {
 	source  <-chan runUpdate
@@ -468,14 +232,36 @@ func startSideRun(
 	requests chan<- runRequest,
 	controllerDone <-chan struct{},
 	prompt string,
+	create bool,
+	threadID uint64,
 ) tea.Cmd {
 	return func() tea.Msg {
 		updates := make(chan runUpdate, runUpdateBuffer)
+		unavailable := sideRunUnavailableMsg{
+			threadID: threadID,
+			question: prompt,
+			isNew:    create,
+		}
 		select {
 		case <-controllerDone:
-			return sideRunUnavailableMsg{}
-		case requests <- runRequest{prompt: prompt, updates: updates}:
-			return sideRunStartedMsg{updates: updates}
+			return unavailable
+		default:
+		}
+		select {
+		case <-controllerDone:
+			return unavailable
+		case requests <- runRequest{
+			prompt:       prompt,
+			updates:      updates,
+			sideCreate:   create,
+			sideThreadID: threadID,
+		}:
+			return sideRunStartedMsg{
+				updates:  updates,
+				threadID: threadID,
+				question: prompt,
+				isNew:    create,
+			}
 		}
 	}
 }
@@ -504,4 +290,384 @@ func waitForSideRunUpdates(updates <-chan runUpdate) tea.Cmd {
 		}
 		return batch
 	}
+}
+
+// applySideRunBatch routes one update batch to the thread it belongs to by
+// matching the source channel. Batches from finished or superseded runs are
+// dropped.
+func (m model) applySideRunBatch(batch sideRunBatchMsg) (tea.Model, tea.Cmd) {
+	if pending := m.side.newPending; pending != nil && batch.source == pending.ch {
+		return m.applyNewSideRunBatch(batch)
+	}
+	for _, thread := range m.side.threads {
+		if thread.updates == batch.source {
+			return m.applySideThreadBatch(batch, thread)
+		}
+	}
+	return m, nil
+}
+
+// applyNewSideRunBatch handles the first run of a brand-new thread. The run's
+// first update carries the registry metadata that creates the local thread
+// state. If the run never produced content, the thread is rolled back so the
+// question survives as a draft and no empty thread lingers in the registry.
+func (m model) applyNewSideRunBatch(batch sideRunBatchMsg) (tea.Model, tea.Cmd) {
+	pending := m.side.newPending
+	if pending == nil || batch.source != pending.ch {
+		return m, nil
+	}
+	var commands []tea.Cmd
+	var thread *sideThreadState
+	created := false
+	answered := false
+	terminal := false
+	var terminalErr error
+
+	for _, update := range batch.updates {
+		if update.sideThread != nil {
+			info := *update.sideThread
+			thread = &sideThreadState{
+				id:             info.ID,
+				title:          info.Title,
+				status:         info.Status,
+				lastActiveAt:   info.LastActiveAt,
+				updates:        batch.source,
+				entries:        []sideThreadEntry{{question: pending.question}},
+				assistantEntry: 0,
+				isRunning:      true,
+				cancel:         update.cancel,
+			}
+			// Only claim the panel when the user is still on the new composer:
+			// an Esc or navigation to another thread keeps this thread
+			// answering in the background.
+			claimPanel := pending.fromVisible && m.side.isVisible &&
+				m.side.activeID == 0 &&
+				m.side.menu == nil && m.side.confirm == nil
+			m.side.threads[info.ID] = thread
+			m.side.newPending = nil
+			if claimPanel {
+				m.side.activeID = info.ID
+				m.side.notice = "Starting side answer..."
+			}
+			created = true
+			continue
+		}
+		if update.done {
+			terminal = true
+			terminalErr = update.err
+			continue
+		}
+		if created && m.applySideEvent(thread, update.event) {
+			answered = true
+		}
+	}
+
+	restoreNewDraft := func() {
+		m.side.newDraft = pending.question
+		m.side.notice = sideFriendlyError(terminalErr)
+		if m.side.notice == "" {
+			m.side.notice = "The BTW side-thread controller stopped"
+		}
+		if pending.fromVisible && m.side.isVisible &&
+			m.side.activeID == 0 &&
+			m.side.menu == nil && m.side.confirm == nil {
+			m.input.SetValue(m.side.newDraft)
+			m.input.CursorEnd()
+			m.input.Focus()
+			m.resizeLayout()
+			m.refreshViewport(true)
+		}
+	}
+
+	if !created {
+		// The registry rejected the creation: keep the question as the new
+		// composer draft and explain why.
+		m.side.newPending = nil
+		restoreNewDraft()
+		return m, nil
+	}
+
+	if terminal && terminalErr != nil && !answered {
+		// The first interaction never produced content (for example the
+		// global concurrency limit). Roll the thread back so the question
+		// stays as a draft and the registry does not keep an empty thread.
+		if !m.side.closed && m.side.manager != nil {
+			_ = m.side.manager.CloseSideThread(thread.id)
+		}
+		delete(m.side.threads, thread.id)
+		m.side.activeID = 0
+		m.side.newPending = nil
+		restoreNewDraft()
+		return m, nil
+	}
+
+	if terminal {
+		m.finishSideRun(thread, terminalErr)
+	}
+	if batch.closed {
+		thread.updates = nil
+		if thread.isRunning {
+			m.finishSideRun(thread, errors.New(
+				"side run ended without a terminal update",
+			))
+		}
+	} else if thread.updates != nil {
+		commands = append(commands, waitForSideRunUpdates(thread.updates))
+	}
+	m.resizeLayout()
+	m.refreshViewport(true)
+	return m, tea.Batch(commands...)
+}
+
+// applySideThreadBatch applies updates for one existing thread's run.
+func (m model) applySideThreadBatch(
+	batch sideRunBatchMsg,
+	thread *sideThreadState,
+) (tea.Model, tea.Cmd) {
+	if batch.source != thread.updates {
+		return m, nil
+	}
+	var commands []tea.Cmd
+	follow := m.viewport.AtBottom()
+	changed := false
+	finished := false
+	visible := m.side.isVisible && m.side.activeID == thread.id
+
+	for _, update := range batch.updates {
+		if update.cancel != nil {
+			thread.cancel = update.cancel
+			if thread.cancelPending {
+				thread.cancel()
+				thread.cancelPending = false
+				if visible {
+					m.side.notice = "Cancelling side answer..."
+				}
+			} else if visible {
+				m.side.notice = "Thinking..."
+			}
+			changed = true
+		}
+		if update.done {
+			closing := thread.closing
+			m.finishSideRun(thread, update.err)
+			if closing {
+				return m.endSideThreadNow(thread.id)
+			}
+			finished = true
+			changed = true
+			continue
+		}
+		if m.applySideEvent(thread, update.event) {
+			changed = true
+		}
+	}
+
+	if batch.closed {
+		thread.updates = nil
+		if thread.isRunning {
+			closing := thread.closing
+			m.finishSideRun(thread, errors.New(
+				"side run ended without a terminal update",
+			))
+			if closing {
+				return m.endSideThreadNow(thread.id)
+			}
+			finished = true
+			changed = true
+		}
+	} else if thread.updates != nil {
+		commands = append(commands, waitForSideRunUpdates(thread.updates))
+	}
+
+	if changed {
+		if visible {
+			m.resizeLayout()
+			m.refreshViewport(follow || finished)
+		} else if !m.side.isVisible {
+			// A hidden completion changes the header's unread indicator.
+			m.refreshViewport(false)
+		}
+	}
+	return m, tea.Batch(commands...)
+}
+
+func (m *model) applySideEvent(
+	thread *sideThreadState,
+	event DisplayEvent,
+) bool {
+	entry := thread.activeEntry()
+	switch event.Kind {
+	case DisplayEventAssistantStart:
+		if entry == nil {
+			return false
+		}
+		thread.receivedContent = true
+		entry.answer = ""
+		entry.thinking = ""
+		entry.err = ""
+		entry.complete = false
+		if m.side.isVisible && m.side.activeID == thread.id {
+			m.side.notice = "Thinking..."
+		}
+	case DisplayEventAssistantDelta:
+		if entry == nil {
+			return false
+		}
+		thread.receivedContent = true
+		switch event.Delta.Kind {
+		case DisplayDeltaText:
+			entry.answer += event.Delta.Delta
+			if m.side.isVisible && m.side.activeID == thread.id {
+				m.side.notice = "Answering..."
+			}
+		case DisplayDeltaThinking:
+			entry.thinking += event.Delta.Delta
+			if m.side.isVisible && m.side.activeID == thread.id {
+				m.side.notice = "Thinking..."
+			}
+		case DisplayDeltaToolCall:
+			if m.side.isVisible && m.side.activeID == thread.id {
+				m.side.notice = "Side questions cannot use tools"
+			}
+		default:
+			return false
+		}
+	case DisplayEventAssistantEnd:
+		if entry == nil {
+			return false
+		}
+		thread.receivedContent = true
+		entry.answer = event.Assistant.Text
+		entry.thinking = event.Assistant.Thinking
+		entry.complete = true
+		if m.side.isVisible && m.side.activeID == thread.id {
+			m.side.notice = "Answer complete"
+		}
+	case DisplayEventToolStart, DisplayEventToolEnd:
+		if m.side.isVisible && m.side.activeID == thread.id {
+			m.side.notice = "Side questions cannot use tools"
+		}
+	case DisplayEventRetryStart:
+		if m.side.isVisible && m.side.activeID == thread.id {
+			m.side.notice = "Retrying side answer..."
+		}
+	case DisplayEventRetryEnd:
+		if m.side.isVisible && m.side.activeID == thread.id {
+			if event.Retry.Succeeded {
+				m.side.notice = "Retry succeeded"
+			} else {
+				m.side.notice = "Retry stopped"
+			}
+		}
+	case DisplayEventAgentEnd:
+		if event.Err == nil && m.side.isVisible && m.side.activeID == thread.id {
+			m.side.notice = "Answer complete"
+		}
+	default:
+		return false
+	}
+	return true
+}
+
+// finishSideRun settles one thread after its run terminates for any reason.
+// The registry is refreshed as the lifecycle authority, so a thread that
+// expired or was closed elsewhere is pruned instead of lingering.
+func (m *model) finishSideRun(thread *sideThreadState, err error) {
+	visible := m.side.isVisible && m.side.activeID == thread.id
+	if err != nil {
+		message := sideFriendlyError(err)
+		if entry := thread.activeEntry(); entry != nil {
+			entry.err = message
+			entry.complete = true
+		}
+		// A run rejected before producing any content restores the question
+		// as a draft instead of losing it.
+		if !thread.receivedContent {
+			if entry := thread.activeEntry(); entry != nil {
+				thread.draft = entry.question
+			}
+		}
+		if visible {
+			m.side.notice = message
+		}
+	} else {
+		if entry := thread.activeEntry(); entry != nil {
+			entry.complete = true
+		}
+		if visible {
+			m.side.notice = "Ready for another side question"
+		}
+	}
+	thread.isRunning = false
+	thread.cancel = nil
+	thread.cancelPending = false
+	thread.assistantEntry = -1
+	thread.updates = nil
+
+	if visible {
+		m.input.SetValue(thread.draft)
+		m.input.CursorEnd()
+		if thread.readOnly() || thread.isRunning {
+			m.input.Blur()
+		} else {
+			m.input.Focus()
+		}
+	} else {
+		thread.hasUnread = true
+	}
+
+	if m.refreshSideThreads() && visible {
+		if strings.TrimSpace(thread.draft) != "" {
+			m.side.newDraft = thread.draft
+		}
+		m.status = "BTW thread expired and was deleted"
+		m.closeSidePanelToMain()
+		if m.side.newDraft != "" {
+			m.input.SetValue(m.side.newDraft)
+			m.input.CursorEnd()
+		}
+	}
+}
+
+// endSideThreadNow permanently deletes a thread in the registry and drops all
+// local presentation state for it. If the deleted thread was visible, the
+// panel returns to the main view.
+func (m model) endSideThreadNow(id uint64) (model, tea.Cmd) {
+	if !m.side.closed && m.side.manager != nil {
+		_ = m.side.manager.CloseSideThread(id)
+	}
+	delete(m.side.threads, id)
+	m.side.confirm = nil
+	if m.side.isVisible && m.side.activeID == id {
+		m.status = "BTW thread ended"
+		m.closeSidePanelToMain()
+	} else {
+		m.resizeLayout()
+	}
+	return m, nil
+}
+
+// closeSidePanelToMain hides the side panel and returns focus to whichever
+// composer is enabled.
+func (m *model) closeSidePanelToMain() {
+	m.side.isVisible = false
+	m.side.activeID = 0
+	m.side.menu = nil
+	m.side.confirm = nil
+	m.input.Reset()
+	m.input.Placeholder = defaultPlaceholder
+	if m.composerInputEnabled() {
+		m.input.Focus()
+	} else {
+		m.input.Blur()
+	}
+	m.resizeLayout()
+	m.refreshViewport(true)
+}
+
+func (m model) trimSideEntries(entries []sideThreadEntry) []sideThreadEntry {
+	if len(entries) <= maximumSideEntries {
+		return entries
+	}
+	return append([]sideThreadEntry{}, entries[len(entries)-maximumSideEntries:]...)
 }

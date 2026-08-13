@@ -388,6 +388,21 @@ func TestModelSubmitResetsRecallPosition(t *testing.T) {
 	}
 }
 
+func TestModelBTWDoesNotEnterMainPromptHistory(t *testing.T) {
+	t.Parallel()
+
+	manager := newFakeSideManager()
+	current := sideTestModel(t, manager)
+	current.promptHistory = []string{"main prompt"}
+	updated, message := submitSide(t, current, "/btw side question")
+	if _, ok := message.(sideRunStartedMsg); !ok {
+		t.Fatalf("BTW message = %#v", message)
+	}
+	if got := strings.Join(updated.promptHistory, "|"); got != "main prompt" {
+		t.Fatalf("main prompt history = %q", got)
+	}
+}
+
 func TestModelHistoryIsNotSecretInTranscript(t *testing.T) {
 	t.Parallel()
 
