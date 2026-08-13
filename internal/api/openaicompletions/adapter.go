@@ -161,12 +161,8 @@ func requestParams(request llm.Request) (openaisdk.ChatCompletionNewParams, erro
 	if request.Options.Temperature != nil {
 		params.Temperature = param.NewOpt(*request.Options.Temperature)
 	}
-	effort, err := reasoningEffort(request.Options.Thinking)
-	if err != nil {
+	if err := applyThinking(&params, request.Model, request.Options.Thinking); err != nil {
 		return openaisdk.ChatCompletionNewParams{}, err
-	}
-	if effort != "" {
-		params.ReasoningEffort = effort
 	}
 	if len(tools) > 0 {
 		params.Tools = tools
@@ -174,15 +170,92 @@ func requestParams(request llm.Request) (openaisdk.ChatCompletionNewParams, erro
 	return params, nil
 }
 
-// reasoningEffort maps AICE's thinking level to the Chat Completions
-// reasoning_effort field. The unknown level sends nothing so the gateway keeps
-// its own default.
-func reasoningEffort(level llm.ThinkingLevel) (shared.ReasoningEffort, error) {
-	effort, err := streamcore.ThinkingEffort(level)
+// thinkingControls contains the model-specific Chat Completions fields for a
+// canonical thinking level.
+type thinkingControls struct {
+	reasoningEffort string
+	extraFields     map[string]any
+}
+
+// applyThinking maps the requested thinking level onto the Chat Completions
+// wire controls for the model. The standard format sends reasoning_effort
+// (never the literal "off" token); the DeepSeek format sends a thinking
+// toggle object; the Qwen format sends enable_thinking. Toggle formats only
+// add reasoning_effort when the model declares support for it.
+func applyThinking(
+	params *openaisdk.ChatCompletionNewParams,
+	model llm.Model,
+	level llm.ThinkingLevel,
+) error {
+	controls, err := thinkingControlsFor(model, level)
 	if err != nil {
-		return "", fmt.Errorf("openai completions: %w", err)
+		return fmt.Errorf("openai completions: %w", err)
 	}
-	return shared.ReasoningEffort(effort), nil
+	if controls.reasoningEffort != "" {
+		params.ReasoningEffort = shared.ReasoningEffort(controls.reasoningEffort)
+	}
+	if len(controls.extraFields) > 0 {
+		params.SetExtraFields(controls.extraFields)
+	}
+	return nil
+}
+
+// thinkingControlsFor resolves one canonical thinking level through the
+// model's capability map and then selects the protocol-specific wire shape.
+// The unknown level sends nothing so the gateway keeps its own default.
+func thinkingControlsFor(
+	model llm.Model,
+	level llm.ThinkingLevel,
+) (thinkingControls, error) {
+	if level == llm.ThinkingLevelUnknown {
+		return thinkingControls{}, nil
+	}
+	effort, supported := model.ThinkingLevelMap.WireValue(level)
+	if !supported {
+		return thinkingControls{}, fmt.Errorf(
+			"model %q does not support thinking level %q",
+			model.ID,
+			level,
+		)
+	}
+
+	switch model.ThinkingFormat {
+	case llm.ThinkingFormatDeepSeek:
+		thinkingType := "enabled"
+		if level == llm.ThinkingLevelOff {
+			thinkingType = "disabled"
+		}
+		controls := thinkingControls{extraFields: map[string]any{
+			"thinking": map[string]string{"type": thinkingType},
+		}}
+		if level != llm.ThinkingLevelOff && model.SupportsReasoningEffort {
+			controls.reasoningEffort = effort
+		}
+		return controls, nil
+	case llm.ThinkingFormatQwen:
+		enabled := level != llm.ThinkingLevelOff
+		controls := thinkingControls{extraFields: map[string]any{
+			"enable_thinking": enabled,
+		}}
+		if enabled && model.SupportsReasoningEffort {
+			controls.reasoningEffort = effort
+		}
+		return controls, nil
+	case "":
+		// The Chat Completions protocol has no "off" effort. A model that
+		// maps off to the canonical token disables thinking by omitting the
+		// field; a model that maps off to "none" sends it explicitly.
+		if effort == string(llm.ThinkingLevelOff) {
+			return thinkingControls{}, nil
+		}
+		return thinkingControls{reasoningEffort: effort}, nil
+	default:
+		return thinkingControls{}, fmt.Errorf(
+			"model %q uses unsupported thinking format %q",
+			model.ID,
+			model.ThinkingFormat,
+		)
+	}
 }
 
 func messageParams(

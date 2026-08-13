@@ -15,6 +15,7 @@ import (
 	"github.com/ch1lam/aice-cli/internal/api/openairesponses"
 	"github.com/ch1lam/aice-cli/internal/apitest"
 	"github.com/ch1lam/aice-cli/internal/llm"
+	"github.com/ch1lam/aice-cli/internal/provider/deepseek"
 )
 
 func TestAdapterStreamsThinkingToolCallUsageAndDone(t *testing.T) {
@@ -643,6 +644,136 @@ func TestAdapterStreamsText(t *testing.T) {
 	if !reflect.DeepEqual(events[5].Message.Content, wantContent) {
 		t.Errorf("done message content = %#v, want %#v", events[5].Message.Content, wantContent)
 	}
+}
+
+func TestAdapterThinkingLevelsFromModelMap(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name             string
+		level            llm.ThinkingLevel
+		thinkingLevelMap llm.ThinkingLevelMap
+		wantEffort       string
+		wantDisabled     bool
+		wantErr          string
+	}{
+		{
+			name:       "deepseek pro high",
+			level:      llm.ThinkingLevelHigh,
+			wantEffort: "high",
+		},
+		{
+			name:             "canonical minimal collapses to low",
+			level:            llm.ThinkingLevelMinimal,
+			thinkingLevelMap: llm.ThinkingLevelMap{},
+			wantEffort:       "low",
+		},
+		{
+			name:       "deepseek pro max",
+			level:      llm.ThinkingLevelMax,
+			wantEffort: "max",
+		},
+		{
+			name:         "deepseek pro off disables thinking",
+			level:        llm.ThinkingLevelOff,
+			wantDisabled: true,
+		},
+		{
+			name:  "explicit unsupported off rejected",
+			level: llm.ThinkingLevelOff,
+			thinkingLevelMap: llm.ThinkingLevelMap{
+				llm.ThinkingLevelOff: nil,
+			},
+			wantErr: `model "deepseek-v4-pro" does not support thinking level "off"`,
+		},
+		{
+			name:    "deepseek pro rejects medium",
+			level:   llm.ThinkingLevelMedium,
+			wantErr: `model "deepseek-v4-pro" does not support thinking level "medium"`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			requests := make(chan map[string]any, 1)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var body map[string]any
+				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+					t.Errorf("decode request body: %v", err)
+					return
+				}
+				requests <- body
+				w.Header().Set("Content-Type", "text/event-stream")
+				_, _ = io.WriteString(w, "")
+			}))
+			defer server.Close()
+
+			adapter, err := anthropicapi.New(anthropicapi.Config{
+				APIKey:     "test-key",
+				BaseURL:    server.URL,
+				HTTPClient: server.Client(),
+			})
+			if err != nil {
+				t.Fatalf("New() error = %v", err)
+			}
+
+			request := apitest.MinimalRequest(anthropicapi.API)
+			request.Model = anthropicModelForTest(t, deepseek.ModelV4Pro)
+			if tt.thinkingLevelMap != nil {
+				request.Model.ThinkingLevelMap = tt.thinkingLevelMap
+			}
+			request.Options.Thinking = tt.level
+			modelStream, err := adapter.Stream(context.Background(), request)
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("Stream() error = %v, want text %q", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Stream() error = %v", err)
+			}
+			defer func() {
+				if err := modelStream.Close(); err != nil {
+					t.Errorf("Close() error = %v", err)
+				}
+			}()
+
+			body := <-requests
+			thinking, ok := body["thinking"].(map[string]any)
+			if !ok {
+				t.Fatalf("thinking = %#v, want an object", body["thinking"])
+			}
+			if tt.wantDisabled {
+				if thinking["type"] != "disabled" {
+					t.Errorf("thinking type = %#v, want disabled", thinking["type"])
+				}
+				if _, present := body["output_config"]; present {
+					t.Errorf("output_config unexpectedly present: %#v", body["output_config"])
+				}
+				return
+			}
+			if thinking["type"] != "enabled" {
+				t.Errorf("thinking type = %#v, want enabled", thinking["type"])
+			}
+			outputConfig, ok := body["output_config"].(map[string]any)
+			if !ok || outputConfig["effort"] != tt.wantEffort {
+				t.Errorf("output_config = %#v, want effort %q", body["output_config"], tt.wantEffort)
+			}
+		})
+	}
+}
+
+func anthropicModelForTest(t *testing.T, id string) llm.Model {
+	t.Helper()
+
+	for _, model := range deepseek.Models() {
+		if model.ID == id {
+			return model
+		}
+	}
+	t.Fatalf("deepseek model %q missing from catalog", id)
+	return llm.Model{}
 }
 
 func TestAdapterPropagatesCanceledContext(t *testing.T) {

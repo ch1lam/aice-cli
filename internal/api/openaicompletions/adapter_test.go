@@ -14,6 +14,7 @@ import (
 	"github.com/ch1lam/aice-cli/internal/api/openaicompletions"
 	"github.com/ch1lam/aice-cli/internal/apitest"
 	"github.com/ch1lam/aice-cli/internal/llm"
+	"github.com/ch1lam/aice-cli/internal/provider/opencode"
 )
 
 func TestAdapterStreamsTextToolCallUsageAndDone(t *testing.T) {
@@ -457,6 +458,186 @@ func TestAdapterSendsReasoningEffort(t *testing.T) {
 	if got := body["reasoning_effort"]; got != "high" {
 		t.Errorf("reasoning_effort = %#v, want high", got)
 	}
+}
+
+func TestAdapterThinkingWireControls(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name             string
+		modelID          string
+		level            llm.ThinkingLevel
+		thinkingLevelMap llm.ThinkingLevelMap
+		thinkingFormat   llm.ThinkingFormat
+		wantBody         map[string]any
+		wantErr          string
+	}{
+		{
+			name:    "opencode deepseek enabled with effort",
+			modelID: "deepseek-v4-flash",
+			level:   llm.ThinkingLevelHigh,
+			wantBody: map[string]any{
+				"thinking":         map[string]any{"type": "enabled"},
+				"reasoning_effort": "high",
+			},
+		},
+		{
+			name:    "opencode deepseek disabled",
+			modelID: "deepseek-v4-flash",
+			level:   llm.ThinkingLevelOff,
+			wantBody: map[string]any{
+				"thinking": map[string]any{"type": "disabled"},
+			},
+		},
+		{
+			name:    "kimi toggle without effort",
+			modelID: "kimi-k2.6",
+			level:   llm.ThinkingLevelHigh,
+			wantBody: map[string]any{
+				"thinking": map[string]any{"type": "enabled"},
+			},
+		},
+		{
+			name:    "qwen enable thinking with effort",
+			modelID: "qwen3.5-plus",
+			level:   llm.ThinkingLevelMedium,
+			wantBody: map[string]any{
+				"enable_thinking":  true,
+				"reasoning_effort": "medium",
+			},
+		},
+		{
+			name:    "qwen thinking disabled",
+			modelID: "qwen3.5-plus",
+			level:   llm.ThinkingLevelOff,
+			wantBody: map[string]any{
+				"enable_thinking": false,
+			},
+		},
+		{
+			name:    "mapped off sends provider token",
+			modelID: "hy3",
+			level:   llm.ThinkingLevelOff,
+			thinkingLevelMap: llm.ThinkingLevelMap{
+				llm.ThinkingLevelOff: llm.ThinkingValue("none"),
+			},
+			wantBody: map[string]any{
+				"reasoning_effort": "none",
+			},
+		},
+		{
+			name:     "standard off omits reasoning effort",
+			modelID:  "kimi-k2.5",
+			level:    llm.ThinkingLevelOff,
+			wantBody: map[string]any{},
+		},
+		{
+			name:    "toggle-only model rejects unsupported level",
+			modelID: "kimi-k2.6",
+			level:   llm.ThinkingLevelMedium,
+			wantErr: `model "kimi-k2.6" does not support thinking level "medium"`,
+		},
+		{
+			name:    "standard model rejects unsupported level",
+			modelID: "glm-5.2",
+			level:   llm.ThinkingLevelMedium,
+			wantErr: `model "glm-5.2" does not support thinking level "medium"`,
+		},
+		{
+			name:           "unknown thinking format rejected",
+			modelID:        "kimi-k2.5",
+			level:          llm.ThinkingLevelHigh,
+			thinkingFormat: llm.ThinkingFormat("future-format"),
+			wantErr:        `model "kimi-k2.5" uses unsupported thinking format "future-format"`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			requests := make(chan map[string]any, 1)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var body map[string]any
+				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+					t.Errorf("decode request body: %v", err)
+					return
+				}
+				requests <- body
+				w.Header().Set("Content-Type", "text/event-stream")
+				_, _ = io.WriteString(w, "data: [DONE]\n\n")
+			}))
+			defer server.Close()
+
+			adapter, err := openaicompletions.New(openaicompletions.Config{
+				APIKey:     "test-key",
+				BaseURL:    server.URL,
+				HTTPClient: server.Client(),
+			})
+			if err != nil {
+				t.Fatalf("New() error = %v", err)
+			}
+
+			model, ok := opencodeModelForTest(tt.modelID)
+			if !ok {
+				t.Fatalf("opencode-go model %q missing from catalog", tt.modelID)
+			}
+			if tt.thinkingLevelMap != nil {
+				model.ThinkingLevelMap = tt.thinkingLevelMap
+			}
+			if tt.thinkingFormat != "" {
+				model.ThinkingFormat = tt.thinkingFormat
+			}
+			modelStream, err := adapter.Stream(context.Background(), llm.Request{
+				Model: model,
+				Messages: []llm.Message{llm.UserMessage{
+					Role:    llm.RoleUser,
+					Content: []llm.ContentPart{llm.NewTextContent("Hi").Part()},
+				}},
+				Options: llm.StreamOptions{Thinking: tt.level},
+			})
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("Stream() error = %v, want text %q", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Stream() error = %v", err)
+			}
+			defer func() {
+				if err := modelStream.Close(); err != nil {
+					t.Errorf("Close() error = %v", err)
+				}
+			}()
+
+			body := <-requests
+			for key, want := range tt.wantBody {
+				if got := body[key]; !reflect.DeepEqual(got, want) {
+					t.Errorf("body[%q] = %#v, want %#v", key, got, want)
+				}
+			}
+			for _, absent := range []string{
+				"thinking",
+				"reasoning_effort",
+				"enable_thinking",
+			} {
+				if _, present := tt.wantBody[absent]; present {
+					continue
+				}
+				if _, present := body[absent]; present {
+					t.Errorf("body unexpectedly contains %q: %#v", absent, body[absent])
+				}
+			}
+		})
+	}
+}
+
+func opencodeModelForTest(id string) (llm.Model, bool) {
+	for _, model := range opencode.Models() {
+		if model.ID == id {
+			return model, true
+		}
+	}
+	return llm.Model{}, false
 }
 
 func TestAdapterNormalizesHTTPError(t *testing.T) {

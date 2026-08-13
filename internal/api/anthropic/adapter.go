@@ -151,34 +151,42 @@ func requestParams(request llm.Request) (anthropicsdk.MessageNewParams, error) {
 	if request.Options.Temperature != nil {
 		params.Temperature = anthropicsdk.Float(*request.Options.Temperature)
 	}
-	if err := applyThinking(&params, request.Options.Thinking); err != nil {
+	if err := applyThinking(&params, request.Model, request.Options.Thinking); err != nil {
 		return anthropicsdk.MessageNewParams{}, err
 	}
 
 	return params, nil
 }
 
-func applyThinking(params *anthropicsdk.MessageNewParams, level llm.ThinkingLevel) error {
-	effort, err := streamcore.ThinkingEffort(level)
-	if err != nil {
-		return fmt.Errorf("anthropic: %w", err)
-	}
-	switch effort {
-	case "":
+func applyThinking(
+	params *anthropicsdk.MessageNewParams,
+	model llm.Model,
+	level llm.ThinkingLevel,
+) error {
+	if level == llm.ThinkingLevelUnknown {
 		return nil
-	case "off":
+	}
+	effort, supported := model.ThinkingLevelMap.WireValue(level)
+	if !supported {
+		return fmt.Errorf(
+			"anthropic: model %q does not support thinking level %q",
+			model.ID,
+			level,
+		)
+	}
+	if level == llm.ThinkingLevelOff {
 		disabled := anthropicsdk.NewThinkingConfigDisabledParam()
 		params.Thinking.OfDisabled = &disabled
 		return nil
-	case "minimal":
-		// The Anthropic protocol has no minimal effort level; the SDK collapses
-		// it to low.
-		params.Thinking = anthropicsdk.ThinkingConfigParamOfEnabled(1_024)
-		params.OutputConfig.Effort = anthropicsdk.OutputConfigEffortLow
-	default:
-		params.Thinking = anthropicsdk.ThinkingConfigParamOfEnabled(1_024)
-		params.OutputConfig.Effort = anthropicsdk.OutputConfigEffort(effort)
 	}
+	// The Anthropic protocol has no minimal effort level. An unmapped
+	// canonical minimal level collapses to low; an explicit model mapping
+	// above remains authoritative.
+	if effort == string(llm.ThinkingLevelMinimal) {
+		effort = string(llm.ThinkingLevelLow)
+	}
+	params.Thinking = anthropicsdk.ThinkingConfigParamOfEnabled(1_024)
+	params.OutputConfig.Effort = anthropicsdk.OutputConfigEffort(effort)
 	return nil
 }
 

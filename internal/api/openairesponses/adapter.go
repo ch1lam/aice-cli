@@ -132,7 +132,7 @@ func requestParams(request llm.Request) (responses.ResponseNewParams, error) {
 	if err != nil {
 		return responses.ResponseNewParams{}, err
 	}
-	reasoning, err := reasoningParam(request.Options.Thinking)
+	reasoning, err := reasoningParam(request.Model, request.Options.Thinking)
 	if err != nil {
 		return responses.ResponseNewParams{}, err
 	}
@@ -156,16 +156,21 @@ func requestParams(request llm.Request) (responses.ResponseNewParams, error) {
 	return params, nil
 }
 
-func reasoningParam(level llm.ThinkingLevel) (shared.ReasoningParam, error) {
-	if level == llm.ThinkingLevelOff {
-		return shared.ReasoningParam{Effort: shared.ReasoningEffortNone}, nil
-	}
-	effort, err := streamcore.ThinkingEffort(level)
-	if err != nil {
-		return shared.ReasoningParam{}, fmt.Errorf("openai responses: %w", err)
-	}
-	if effort == "" {
+func reasoningParam(model llm.Model, level llm.ThinkingLevel) (shared.ReasoningParam, error) {
+	if level == llm.ThinkingLevelUnknown {
 		return shared.ReasoningParam{}, nil
+	}
+	effort, supported := model.ThinkingLevelMap.WireValue(level)
+	if !supported {
+		return shared.ReasoningParam{}, fmt.Errorf(
+			"openai responses: model %q does not support thinking level %q",
+			model.ID,
+			level,
+		)
+	}
+	if effort == string(llm.ThinkingLevelOff) {
+		// The Responses protocol names its canonical disabled effort none.
+		effort = string(shared.ReasoningEffortNone)
 	}
 	return shared.ReasoningParam{Effort: shared.ReasoningEffort(effort)}, nil
 }

@@ -14,6 +14,7 @@ import (
 	"github.com/ch1lam/aice-cli/internal/api/openairesponses"
 	"github.com/ch1lam/aice-cli/internal/apitest"
 	"github.com/ch1lam/aice-cli/internal/llm"
+	"github.com/ch1lam/aice-cli/internal/provider/deepseek"
 )
 
 func TestAdapterStreamsReasoningTextToolCallUsageAndDone(t *testing.T) {
@@ -230,6 +231,133 @@ func TestAdapterStreamsReasoningTextToolCallUsageAndDone(t *testing.T) {
 
 	body := <-requests
 	assertRequestBody(t, body)
+}
+
+func TestAdapterThinkingLevelsFromModelMap(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name             string
+		level            llm.ThinkingLevel
+		thinkingLevelMap llm.ThinkingLevelMap
+		wantEffort       string
+		wantErr          string
+	}{
+		{
+			name:    "deepseek flash rejects low",
+			level:   llm.ThinkingLevelLow,
+			wantErr: `model "deepseek-v4-flash" does not support thinking level "low"`,
+		},
+		{
+			name:       "deepseek flash high",
+			level:      llm.ThinkingLevelHigh,
+			wantEffort: "high",
+		},
+		{
+			name:  "explicit provider token overrides canonical high",
+			level: llm.ThinkingLevelHigh,
+			thinkingLevelMap: llm.ThinkingLevelMap{
+				llm.ThinkingLevelHigh: llm.ThinkingValue("provider-high"),
+			},
+			wantEffort: "provider-high",
+		},
+		{
+			name:       "deepseek flash max",
+			level:      llm.ThinkingLevelMax,
+			wantEffort: "max",
+		},
+		{
+			name:       "deepseek flash off maps to none",
+			level:      llm.ThinkingLevelOff,
+			wantEffort: "none",
+		},
+		{
+			name:  "explicit unsupported off rejected",
+			level: llm.ThinkingLevelOff,
+			thinkingLevelMap: llm.ThinkingLevelMap{
+				llm.ThinkingLevelOff: nil,
+			},
+			wantErr: `model "deepseek-v4-flash" does not support thinking level "off"`,
+		},
+		{
+			name:    "deepseek flash rejects medium",
+			level:   llm.ThinkingLevelMedium,
+			wantErr: `model "deepseek-v4-flash" does not support thinking level "medium"`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			requests := make(chan map[string]any, 1)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var body map[string]any
+				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+					t.Errorf("decode request body: %v", err)
+					return
+				}
+				requests <- body
+				w.Header().Set("Content-Type", "text/event-stream")
+				_, _ = io.WriteString(
+					w,
+					"data: "+
+						`{"type":"response.completed","sequence_number":0,"response":`+
+						`{"id":"resp-1","model":"deepseek-v4-flash","status":"completed"}}`+
+						"\n\n",
+				)
+			}))
+			defer server.Close()
+
+			adapter, err := openairesponses.New(openairesponses.Config{
+				APIKey:     "test-key",
+				BaseURL:    server.URL,
+				HTTPClient: server.Client(),
+			})
+			if err != nil {
+				t.Fatalf("New() error = %v", err)
+			}
+
+			request := apitest.MinimalRequest(openairesponses.API)
+			request.Model = deepseekModelForTest(t, deepseek.ModelV4Flash)
+			if tt.thinkingLevelMap != nil {
+				request.Model.ThinkingLevelMap = tt.thinkingLevelMap
+			}
+			request.Options.Thinking = tt.level
+			modelStream, err := adapter.Stream(context.Background(), request)
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("Stream() error = %v, want text %q", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Stream() error = %v", err)
+			}
+			defer func() {
+				if err := modelStream.Close(); err != nil {
+					t.Errorf("Close() error = %v", err)
+				}
+			}()
+			_ = apitest.CollectEvents(t, modelStream)
+
+			body := <-requests
+			reasoning, ok := body["reasoning"].(map[string]any)
+			if !ok || reasoning["effort"] != tt.wantEffort {
+				t.Errorf("reasoning = %#v, want effort %q", body["reasoning"], tt.wantEffort)
+			}
+		})
+	}
+}
+
+func deepseekModelForTest(t *testing.T, id string) llm.Model {
+	t.Helper()
+
+	for _, model := range deepseek.Models() {
+		if model.ID == id {
+			return model
+		}
+	}
+	t.Fatalf("deepseek model %q missing from catalog", id)
+	return llm.Model{}
 }
 
 func TestAdapterMapsOffThinkingToNone(t *testing.T) {
