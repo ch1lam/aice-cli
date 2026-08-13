@@ -49,12 +49,18 @@ the Agent reaches its natural stop boundary, while the same run remains active
 to poll follow-up input. Cancellation or failure appends the unfinished final
 interaction as a terminal turn so completed work is not lost.
 
-`/btw` side threads are explicitly outside this persistence model. They use a
-frozen copy of already accepted context plus their own bounded in-memory
-history, run without tools, and never append `turn`, `compaction`, or `leaf`
-records. They also do not contribute to main Session usage totals or compaction
-input. Closing the panel does not cancel an active side answer; exiting AICE
-discards the entire side thread.
+`/btw` side threads are explicitly outside this persistence model. Each new
+thread freezes the already accepted context at its first question, then uses
+that copy plus its own bounded in-memory history. Side threads run without
+tools and never append `turn`, `compaction`, or `leaf` records. They also do
+not contribute to main Session usage totals or compaction input.
+
+AICE keeps at most five live side threads and 20 interactions per thread. A
+thread becomes read-only after 20 minutes without a completed, cancelled, or
+failed answer and is permanently deleted after 120 minutes of inactivity.
+Closing its panel only hides it; Ctrl+D explicitly ends it. Exiting AICE
+discards every side thread immediately, so none can be recovered by resuming
+the main Session.
 
 ## Resume and navigate
 

@@ -92,7 +92,7 @@ in [Tool execution and Sessions](execution-sessions.md#sessions).
 | Command | Effect |
 | --- | --- |
 | `/help` | List commands |
-| `/btw [question]` | Ask or reopen an ephemeral, tool-free side thread |
+| `/btw [question]` | Create or choose an ephemeral, tool-free side thread |
 | `/init` | Create or improve root `AGENTS.md`; loaded after restart |
 | `/settings` | Show effective model, Trust state, and configuration paths |
 | `/login` | Select a provider and store its key through hidden input |
@@ -111,14 +111,28 @@ Menu commands do not accept typed values; select an option from the menu.
 Provider, model, and thinking changes apply to the current Session immediately
 and are also saved globally. Press `?` for keyboard shortcuts.
 
-`/btw [question]` opens a side panel and answers from a frozen snapshot of the
-context AICE has already accepted. It runs independently, without tools, so the
-main Agent run can keep working. Side questions and answers are memory-only:
-they do not enter the main transcript, Session JSONL, usage totals, or
-compaction input, and disappear when AICE exits. The side thread retains at
-most 20 question/answer interactions. Use bare `/btw` to reopen it, Enter to
-ask a follow-up, Escape to close the panel without cancelling its answer, and
-Ctrl+C to cancel only the active side answer.
+`/btw [question]` always creates a new side thread from a frozen snapshot of
+the context AICE has already accepted. A bare `/btw` opens a chooser whose
+first option creates a new thread and whose remaining options reopen live
+threads; when none exist, it opens a blank composer without creating a thread
+until the first question is submitted. Each thread keeps its own draft and
+question/answer history.
+
+Side threads run independently, without tools, so the main Agent run can keep
+working. AICE retains at most five live threads, permits at most two side
+answers at once, and keeps at most 20 interactions per thread. After an answer
+terminates, its thread accepts follow-ups for 20 minutes. It then becomes
+read-only but remains available for review until 120 minutes of inactivity,
+when AICE permanently removes it from memory. Opening, viewing, hiding, or
+editing an unsent draft does not reset these windows, and an answer already in
+flight is allowed to finish before its idle clock restarts.
+
+Side questions and answers do not enter the main transcript, prompt history,
+Session JSONL, usage totals, or compaction input, and all disappear when AICE
+exits. In a side panel, Enter asks a follow-up, Escape returns to the main view
+without cancelling, Ctrl+C cancels only that side answer, and Ctrl+D ends the
+thread; ending a running thread asks for confirmation and waits for its answer
+to stop before deleting it.
 
 ## Interactive input delivery
 

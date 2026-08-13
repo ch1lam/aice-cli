@@ -55,11 +55,19 @@
   with `context.Background()`.
 - Every goroutine has an owner, cancellation path, and wait/exit path. Queues
   and buffers stay bounded.
-- A `/btw` side thread owns a separate Runner, controller, event stream, and
-  cancellation path. It snapshots the accepted parent context when created,
-  keeps at most 20 private interactions in memory, and constructs a tool-free
-  Agent Loop. Side execution never mutates main history, Session records,
-  usage, settings, or the main run mailbox.
+- Each `/btw` side thread owns a separate Runner, event stream, cancellation
+  path, frozen parent-context snapshot, and bounded private history. An
+  application-owned in-memory registry is authoritative for stable IDs,
+  lifecycle, a five-thread limit, two concurrent side answers, a 20-minute
+  follow-up window, and deletion after 120 minutes of inactivity. Running
+  answers cross those thresholds and restart the idle clock when they
+  terminate.
+- The TUI owns one side-controller goroutine that starts independently
+  cancellable per-thread runs and waits for all of them on shutdown. It keeps
+  only presentation copies, routes batches by their source channel, and never
+  applies one thread's events, draft, cancellation, or unread state to another.
+  Side execution never mutates main history, Session records, usage, settings,
+  or the main run mailbox.
 - A main run snapshots its loop, model, options, and system prompt when it
   starts. Concurrent settings changes or side-thread creation must not swap
   those dependencies underneath the active run.
