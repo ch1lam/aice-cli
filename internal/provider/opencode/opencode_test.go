@@ -57,6 +57,9 @@ func TestModels(t *testing.T) {
 	}
 
 	wantLevels := map[string][]llm.ThinkingLevel{
+		// DeepSeek V4 exposes off, high, and max reasoning effort only.
+		"deepseek-v4-flash": {llm.ThinkingLevelOff, llm.ThinkingLevelHigh, llm.ThinkingLevelMax},
+		"deepseek-v4-pro":   {llm.ThinkingLevelOff, llm.ThinkingLevelHigh, llm.ThinkingLevelMax},
 		// OpenCode Go exposes Kimi K2.6 thinking as on/off plus high only.
 		"kimi-k2.6": {llm.ThinkingLevelOff, llm.ThinkingLevelHigh},
 		// GLM-5.2 always reasons at high or max.

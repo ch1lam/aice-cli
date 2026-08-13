@@ -353,9 +353,9 @@ func TestApplicationInteractiveKeepsConversationHistory(t *testing.T) {
 					deepseek.ModelV4Flash,
 				)
 			}
-			if options.Thinking != tui.DisplayThinkingMedium {
+			if options.Thinking != tui.DisplayThinkingHigh {
 				t.Errorf(
-					"TUI thinking = %q, want the medium default",
+					"TUI thinking = %q, want the medium default clamped to high",
 					options.Thinking,
 				)
 			}

@@ -29,6 +29,14 @@ var deepSeekModelSpecs = []ModelSpec{
 		Input:         0.14,
 		Output:        0.28,
 		CacheRead:     0.0028,
+		// DeepSeek V4 exposes reasoning effort as off, high, and max only;
+		// the minimal, low, and medium tiers are rejected (Pi's
+		// deepseek thinkingLevelMap).
+		ThinkingLevels: []llm.ThinkingLevel{
+			llm.ThinkingLevelOff,
+			llm.ThinkingLevelHigh,
+			llm.ThinkingLevelMax,
+		},
 	},
 	{
 		ID:            "deepseek-v4-pro",
@@ -38,6 +46,11 @@ var deepSeekModelSpecs = []ModelSpec{
 		Input:         0.435,
 		Output:        0.87,
 		CacheRead:     0.003625,
+		ThinkingLevels: []llm.ThinkingLevel{
+			llm.ThinkingLevelOff,
+			llm.ThinkingLevelHigh,
+			llm.ThinkingLevelMax,
+		},
 	},
 }
 
