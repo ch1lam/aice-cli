@@ -9,6 +9,70 @@ import (
 	"charm.land/lipgloss/v2"
 )
 
+func TestKeyPressKeepsWelcomeAnimation(t *testing.T) {
+	t.Parallel()
+
+	requests := make(chan runRequest, 1)
+	controllerDone := make(chan struct{})
+	current := newModel(requests, controllerDone)
+	current = updateModel(t, current, tea.WindowSizeMsg{Width: 80, Height: 24})
+	if !current.welcomeAnimation.running {
+		t.Fatal("welcome animation should run on the startup screen")
+	}
+
+	updated := updateModel(t, current, tea.KeyPressMsg(tea.Key{Code: 'a', Text: "a"}))
+	if !updated.welcomeAnimation.running {
+		t.Fatal("typing must not stop the welcome animation: the composer " +
+			"cursor anchors the IME to the input field")
+	}
+	if got := updated.input.Value(); got != "a" {
+		t.Errorf("composer value = %q, want a", got)
+	}
+}
+
+func TestComposerViewSetsRealCursor(t *testing.T) {
+	t.Parallel()
+
+	requests := make(chan runRequest, 1)
+	controllerDone := make(chan struct{})
+	current := newModel(requests, controllerDone)
+	current = updateModel(t, current, tea.WindowSizeMsg{Width: 80, Height: 24})
+
+	view := current.View()
+	if view.Cursor == nil {
+		t.Fatal("focused composer should expose a real cursor for the IME")
+	}
+	wantY := 24 - lipgloss.Height(current.footerView(80)) -
+		lipgloss.Height(current.composerView(80)) + 1 // border top
+	if view.Cursor.Position.Y != wantY {
+		t.Errorf("cursor Y = %d, want %d (first composer content row)",
+			view.Cursor.Position.Y, wantY)
+	}
+	if view.Cursor.Position.X < 2 {
+		t.Errorf("cursor X = %d, want >= 2 (border + padding left)",
+			view.Cursor.Position.X)
+	}
+
+	// A blurred composer has no caret to anchor.
+	current.input.Blur()
+	if cursor := current.View().Cursor; cursor != nil {
+		t.Errorf("blurred composer cursor = %#v, want nil", cursor)
+	}
+}
+
+func TestSecretInputHidesRealCursor(t *testing.T) {
+	t.Parallel()
+
+	requests := make(chan runRequest, 1)
+	controllerDone := make(chan struct{})
+	current := newModel(requests, controllerDone)
+	current = updateModel(t, current, tea.WindowSizeMsg{Width: 80, Height: 24})
+	current.secretInput = &secretInput{prompt: "API key"}
+	if cursor := current.View().Cursor; cursor != nil {
+		t.Errorf("secret input cursor = %#v, want nil", cursor)
+	}
+}
+
 func TestWelcomeViewShowsAnimatedLogo(t *testing.T) {
 	t.Parallel()
 

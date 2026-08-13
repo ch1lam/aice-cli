@@ -1609,10 +1609,10 @@ func TestModelLoginSelectsProviderThenHidesAndSubmitsSecret(t *testing.T) {
 		t.Fatalf("provider selection menu = %q", menu)
 	}
 
-	entering, command, handled := selecting.handleKey(tea.KeyPressMsg{
+	entering, _, handled := selecting.handleKey(tea.KeyPressMsg{
 		Code: tea.KeyEnter,
 	})
-	if !handled || command == nil || entering.secretInput == nil {
+	if !handled || entering.secretInput == nil {
 		t.Fatal("provider selection did not enter secret input mode")
 	}
 
@@ -1836,10 +1836,10 @@ func TestNestedSlashCommandSelectionMenuEscGoesBackThenCancels(
 	if !handled || command != nil || len(back.commandMenu.frames) != 1 {
 		t.Fatal("first Esc did not return to the parent menu")
 	}
-	cancelled, command, handled := back.handleKey(tea.KeyPressMsg{
+	cancelled, _, handled := back.handleKey(tea.KeyPressMsg{
 		Code: tea.KeyEscape,
 	})
-	if !handled || command == nil || cancelled.commandMenu != nil {
+	if !handled || cancelled.commandMenu != nil {
 		t.Fatal("second Esc did not cancel the command menu")
 	}
 	if cancelled.input.Value() != "" || !cancelled.input.Focused() {

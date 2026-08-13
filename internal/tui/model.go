@@ -167,6 +167,10 @@ func newModel(
 	inputStyles.Cursor.Color = secondaryColor
 	input.SetStyles(inputStyles)
 	input.Focus()
+	// Render the caret with the real terminal cursor instead of a drawn one.
+	// The real cursor is positioned by View() via tea.View.Cursor, and it is
+	// what anchors the IME candidate window to the composer.
+	input.SetVirtualCursor(false)
 
 	view := viewport.New(viewport.WithWidth(80), viewport.WithHeight(20))
 	// Route keyboard scrolling through AICE's key map so the viewport's hidden
@@ -378,7 +382,46 @@ func (m model) View() tea.View {
 	view.AltScreen = true
 	view.WindowTitle = "AICE"
 	view.MouseMode = tea.MouseModeCellMotion
+	if m.secretInput == nil {
+		// Anchor the real terminal cursor on the composer caret. The IME
+		// candidate window follows the terminal cursor, and Bubble Tea's
+		// renderer hides the cursor around every updated frame and restores
+		// it here, so repaints (such as the welcome logo sweep) no longer
+		// drag the input method away from the input field.
+		if cursor := m.input.Cursor(); cursor != nil {
+			m.positionComposerCursor(&cursor.Position, width)
+			view.Cursor = cursor
+		}
+	}
 	return view
+}
+
+// positionComposerCursor translates the input field's internal cursor
+// position into screen coordinates. The composer frame is bottom-aligned
+// (header, transcript, command menu, composer, footer) and may carry a
+// pending-queue notice above the input field, both of which offset the caret.
+func (m model) positionComposerCursor(position *tea.Position, width int) {
+	style := composerFocusedStyle
+	if !m.input.Focused() {
+		style = composerBlurredStyle
+	}
+	contentWidth := max(width-style.GetHorizontalFrameSize(), 1)
+	parts := m.composerParts(contentWidth)
+	// The input field is the last part; earlier parts sit above it.
+	top := 0
+	for index := 0; index < len(parts)-1; index++ {
+		top += lipgloss.Height(parts[index]) + 1
+	}
+	position.X += style.GetMarginLeft() +
+		style.GetPaddingLeft() +
+		style.GetBorderLeftSize()
+	position.Y += top +
+		style.GetMarginTop() +
+		style.GetPaddingTop() +
+		style.GetBorderTopSize()
+	position.Y += m.height -
+		lipgloss.Height(m.composerView(width)) -
+		lipgloss.Height(m.footerView(width))
 }
 
 func (m model) handleKey(message tea.KeyPressMsg) (model, tea.Cmd, bool) {

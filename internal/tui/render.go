@@ -142,6 +142,19 @@ func (m model) footerKeys() keyMap {
 	return keys
 }
 
+// composerParts returns the rows rendered inside the composer frame, in
+// order: an optional pending-queue notice followed by the input field.
+func (m model) composerParts(contentWidth int) []string {
+	parts := make([]string, 0, 3)
+	if !m.side.isVisible {
+		if pending := m.pendingQueueView(contentWidth); pending != "" {
+			parts = append(parts, pending, "")
+		}
+	}
+	parts = append(parts, m.input.View())
+	return parts
+}
+
 func (m model) composerView(width int) string {
 	style := composerFocusedStyle
 	if !m.input.Focused() {
@@ -161,13 +174,7 @@ func (m model) composerView(width int) string {
 			promptStyle.Render("┃ ") + value,
 		)
 	}
-	parts := make([]string, 0, 3)
-	if !m.side.isVisible {
-		if pending := m.pendingQueueView(contentWidth); pending != "" {
-			parts = append(parts, pending, "")
-		}
-	}
-	parts = append(parts, m.input.View())
+	parts := m.composerParts(contentWidth)
 	return style.Width(width).Render(strings.Join(parts, "\n"))
 }
 
