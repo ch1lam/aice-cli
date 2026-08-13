@@ -27,6 +27,7 @@ func TestModels(t *testing.T) {
 		llm.ThinkingLevelXHigh,
 		llm.ThinkingLevelMax,
 	)
+	thinkingLevels[llm.ThinkingLevelOff] = llm.ThinkingValue("none")
 	modalities := []llm.InputModality{
 		llm.InputModalityText,
 		llm.InputModalityImage,

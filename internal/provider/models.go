@@ -8,14 +8,16 @@ import (
 
 // ModelSpec is the provider-neutral specification shared by provider catalogs.
 type ModelSpec struct {
-	ID               string
-	Name             string
-	ContextWindow    int64
-	MaxTokens        int64
-	Input            float64
-	Output           float64
-	CacheRead        float64
-	ThinkingLevelMap llm.ThinkingLevelMap
+	ID                      string
+	Name                    string
+	ContextWindow           int64
+	MaxTokens               int64
+	Input                   float64
+	Output                  float64
+	CacheRead               float64
+	ThinkingLevelMap        llm.ThinkingLevelMap
+	ThinkingFormat          llm.ThinkingFormat
+	SupportsReasoningEffort bool
 }
 
 // deepSeekModelSpecs declares the DeepSeek V4 model specifications once so the

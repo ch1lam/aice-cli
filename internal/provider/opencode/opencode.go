@@ -65,7 +65,11 @@ func New(config Config) (*Provider, error) {
 
 // Models returns the OpenCode Go models supported by this provider.
 func Models() []llm.Model {
-	return catalog
+	models := make([]llm.Model, 0, len(modelIDs))
+	for _, id := range modelIDs {
+		models = append(models, model(id))
+	}
+	return models
 }
 
 // DefaultModel returns the fast model used when no explicit model is selected.
@@ -113,39 +117,56 @@ func modelSpecCatalog() map[string]provider.ModelSpec {
 	for _, shared := range provider.DeepSeekModelSpecs() {
 		specs[shared.ID] = shared
 	}
-	specs["kimi-k2.5"] = provider.ModelSpec{ID: "kimi-k2.5", Name: "Kimi K2.5", ContextWindow: 262_144, MaxTokens: 65_536, Input: 0.6, Output: 3, CacheRead: 0.1}
+	// OpenCode Go serves the DeepSeek models with its own thinking
+	// capabilities: DeepSeek-style toggles and only off/high/max levels
+	// (Pi's opencode-go override).
+	for _, id := range []string{"deepseek-v4-flash", "deepseek-v4-pro"} {
+		spec := specs[id]
+		spec.ThinkingLevelMap = llm.ThinkingLevelsMap(
+			llm.ThinkingLevelOff,
+			llm.ThinkingLevelHigh,
+			llm.ThinkingLevelMax,
+		)
+		spec.ThinkingFormat = llm.ThinkingFormatDeepSeek
+		spec.SupportsReasoningEffort = true
+		specs[id] = spec
+	}
+
+	specs["kimi-k2.5"] = standardSpec("kimi-k2.5", "Kimi K2.5", 262_144, 65_536, 0.6, 3, 0.1)
 	specs["kimi-k2.6"] = provider.ModelSpec{
 		ID: "kimi-k2.6", Name: "Kimi K2.6", ContextWindow: 262_144, MaxTokens: 65_536, Input: 0.95, Output: 4, CacheRead: 0.16,
-		// OpenCode Go exposes Kimi K2.6 thinking as on/off plus high, not
-		// distinct effort tiers (Pi's opencode-go override).
+		// OpenCode Go exposes Kimi K2.6 thinking as a DeepSeek-style toggle
+		// with only on/off plus high; the gateway rejects reasoning_effort
+		// (Pi's opencode-go override).
 		ThinkingLevelMap: llm.ThinkingLevelsMap(llm.ThinkingLevelOff, llm.ThinkingLevelHigh),
+		ThinkingFormat:   llm.ThinkingFormatDeepSeek,
 	}
-	specs["kimi-k2.7-code"] = provider.ModelSpec{ID: "kimi-k2.7-code", Name: "Kimi K2.7 Code", ContextWindow: 262_144, MaxTokens: 262_144, Input: 0.95, Output: 4, CacheRead: 0.19}
-	specs["kimi-k3"] = provider.ModelSpec{ID: "kimi-k3", Name: "Kimi K3", ContextWindow: 1_048_576, MaxTokens: 131_072, Input: 3, Output: 15, CacheRead: 0.3}
-	specs["glm-5"] = provider.ModelSpec{ID: "glm-5", Name: "GLM-5", ContextWindow: 202_752, MaxTokens: 32_768, Input: 1, Output: 3.2, CacheRead: 0.2}
-	specs["glm-5.1"] = provider.ModelSpec{ID: "glm-5.1", Name: "GLM-5.1", ContextWindow: 202_752, MaxTokens: 32_768, Input: 1.4, Output: 4.4, CacheRead: 0.26}
+	specs["kimi-k2.7-code"] = standardSpec("kimi-k2.7-code", "Kimi K2.7 Code", 262_144, 262_144, 0.95, 4, 0.19)
+	specs["kimi-k3"] = standardSpec("kimi-k3", "Kimi K3", 1_048_576, 131_072, 3, 15, 0.3)
+	specs["glm-5"] = standardSpec("glm-5", "GLM-5", 202_752, 32_768, 1, 3.2, 0.2)
+	specs["glm-5.1"] = standardSpec("glm-5.1", "GLM-5.1", 202_752, 32_768, 1.4, 4.4, 0.26)
 	specs["glm-5.2"] = provider.ModelSpec{
 		ID: "glm-5.2", Name: "GLM-5.2", ContextWindow: 1_000_000, MaxTokens: 131_072, Input: 1.4, Output: 4.4, CacheRead: 0.26,
 		// GLM-5.2 always reasons at high or max; the gateway rejects disabling
 		// thinking and the lower effort tiers (Pi's opencode-go override).
 		ThinkingLevelMap: llm.ThinkingLevelsMap(llm.ThinkingLevelHigh, llm.ThinkingLevelMax),
 	}
-	specs["qwen3.5-plus"] = provider.ModelSpec{ID: "qwen3.5-plus", Name: "Qwen 3.5 Plus", ContextWindow: 262_144, MaxTokens: 65_536, Input: 0.2, Output: 1.2, CacheRead: 0.02}
-	specs["qwen3.6-plus"] = provider.ModelSpec{ID: "qwen3.6-plus", Name: "Qwen 3.6 Plus", ContextWindow: 1_000_000, MaxTokens: 65_536, Input: 0.5, Output: 3, CacheRead: 0.05}
-	specs["qwen3.7-plus"] = provider.ModelSpec{ID: "qwen3.7-plus", Name: "Qwen 3.7 Plus", ContextWindow: 1_000_000, MaxTokens: 65_536, Input: 0.4, Output: 1.6, CacheRead: 0.04}
-	specs["qwen3.7-max"] = provider.ModelSpec{ID: "qwen3.7-max", Name: "Qwen 3.7 Max", ContextWindow: 1_000_000, MaxTokens: 65_536, Input: 2.5, Output: 7.5, CacheRead: 0.5}
-	specs["qwen3.8-max"] = provider.ModelSpec{ID: "qwen3.8-max", Name: "Qwen 3.8 Max", ContextWindow: 1_000_000, MaxTokens: 131_072, Input: 2, Output: 6, CacheRead: 0.25}
-	specs["minimax-m2.5"] = provider.ModelSpec{ID: "minimax-m2.5", Name: "MiniMax M2.5", ContextWindow: 204_800, MaxTokens: 65_536, Input: 0.3, Output: 1.2, CacheRead: 0.03}
-	specs["minimax-m2.7"] = provider.ModelSpec{ID: "minimax-m2.7", Name: "MiniMax M2.7", ContextWindow: 204_800, MaxTokens: 131_072, Input: 0.3, Output: 1.2, CacheRead: 0.06}
-	specs["minimax-m3"] = provider.ModelSpec{ID: "minimax-m3", Name: "MiniMax M3", ContextWindow: 1_000_000, MaxTokens: 131_072, Input: 0.3, Output: 1.2, CacheRead: 0.06}
-	specs["mimo-v2-omni"] = provider.ModelSpec{ID: "mimo-v2-omni", Name: "Mimo V2 Omni", ContextWindow: 262_144, MaxTokens: 128_000, Input: 0.4, Output: 2, CacheRead: 0.08}
-	specs["mimo-v2-pro"] = provider.ModelSpec{ID: "mimo-v2-pro", Name: "Mimo V2 Pro", ContextWindow: 1_048_576, MaxTokens: 128_000, Input: 1, Output: 3, CacheRead: 0.2}
-	specs["mimo-v2.5"] = provider.ModelSpec{ID: "mimo-v2.5", Name: "Mimo V2.5", ContextWindow: 1_000_000, MaxTokens: 128_000, Input: 0.14, Output: 0.28, CacheRead: 0.0028}
-	specs["mimo-v2.5-pro"] = provider.ModelSpec{ID: "mimo-v2.5-pro", Name: "Mimo V2.5 Pro", ContextWindow: 1_048_576, MaxTokens: 128_000, Input: 0.435, Output: 0.87, CacheRead: 0.003625}
+	specs["qwen3.5-plus"] = qwenSpec("qwen3.5-plus", "Qwen 3.5 Plus", 262_144, 65_536, 0.2, 1.2, 0.02)
+	specs["qwen3.6-plus"] = qwenSpec("qwen3.6-plus", "Qwen 3.6 Plus", 1_000_000, 65_536, 0.5, 3, 0.05)
+	specs["qwen3.7-plus"] = standardSpec("qwen3.7-plus", "Qwen 3.7 Plus", 1_000_000, 65_536, 0.4, 1.6, 0.04)
+	specs["qwen3.7-max"] = standardSpec("qwen3.7-max", "Qwen 3.7 Max", 1_000_000, 65_536, 2.5, 7.5, 0.5)
+	specs["qwen3.8-max"] = standardSpec("qwen3.8-max", "Qwen 3.8 Max", 1_000_000, 131_072, 2, 6, 0.25)
+	specs["minimax-m2.5"] = standardSpec("minimax-m2.5", "MiniMax M2.5", 204_800, 65_536, 0.3, 1.2, 0.03)
+	specs["minimax-m2.7"] = standardSpec("minimax-m2.7", "MiniMax M2.7", 204_800, 131_072, 0.3, 1.2, 0.06)
+	specs["minimax-m3"] = standardSpec("minimax-m3", "MiniMax M3", 1_000_000, 131_072, 0.3, 1.2, 0.06)
+	specs["mimo-v2-omni"] = standardSpec("mimo-v2-omni", "Mimo V2 Omni", 262_144, 128_000, 0.4, 2, 0.08)
+	specs["mimo-v2-pro"] = standardSpec("mimo-v2-pro", "Mimo V2 Pro", 1_048_576, 128_000, 1, 3, 0.2)
+	specs["mimo-v2.5"] = standardSpec("mimo-v2.5", "Mimo V2.5", 1_000_000, 128_000, 0.14, 0.28, 0.0028)
+	specs["mimo-v2.5-pro"] = standardSpec("mimo-v2.5-pro", "Mimo V2.5 Pro", 1_048_576, 128_000, 0.435, 0.87, 0.003625)
 	specs["gpt-5.6-luna"] = provider.ModelSpec{
 		ID: "gpt-5.6-luna", Name: "GPT-5.6 Luna", ContextWindow: 1_050_000, MaxTokens: 128_000, Input: 0.1, Output: 0.6, CacheRead: 0.01,
-		// GPT-5.6 is one of the few models where xhigh and max reasoning
-		// efforts are available (Pi's supportsOpenAiXhigh/Max rule).
+		// Preserve the current seven-level catalog until the Pi data-alignment
+		// change lands separately from this structural migration.
 		ThinkingLevelMap: llm.ThinkingLevelsMap(
 			llm.ThinkingLevelOff,
 			llm.ThinkingLevelMinimal,
@@ -156,52 +177,82 @@ func modelSpecCatalog() map[string]provider.ModelSpec {
 			llm.ThinkingLevelMax,
 		),
 	}
-	specs["grok-4.5"] = provider.ModelSpec{ID: "grok-4.5", Name: "Grok 4.5", ContextWindow: 500_000, MaxTokens: 500_000, Input: 2, Output: 6, CacheRead: 0.5}
-	specs["hy3"] = provider.ModelSpec{ID: "hy3", Name: "Hy3", ContextWindow: 256_000, MaxTokens: 64_000, Input: 0.14, Output: 0.58, CacheRead: 0.035}
+	specs["grok-4.5"] = standardSpec("grok-4.5", "Grok 4.5", 500_000, 500_000, 2, 6, 0.5)
+	specs["hy3"] = standardSpec("hy3", "Hy3", 256_000, 64_000, 0.14, 0.58, 0.035)
 	return specs
 }
 
-// catalog lists the OpenCode Go models in menu order; the DeepSeek models
-// share the specs declared in the provider package.
-var catalog = []llm.Model{
-	model("deepseek-v4-flash"),
-	model("deepseek-v4-pro"),
-	model("kimi-k2.5"),
-	model("kimi-k2.6"),
-	model("kimi-k2.7-code"),
-	model("kimi-k3"),
-	model("glm-5"),
-	model("glm-5.1"),
-	model("glm-5.2"),
-	model("qwen3.5-plus"),
-	model("qwen3.6-plus"),
-	model("qwen3.7-plus"),
-	model("qwen3.7-max"),
-	model("qwen3.8-max"),
-	model("minimax-m2.5"),
-	model("minimax-m2.7"),
-	model("minimax-m3"),
-	model("mimo-v2-omni"),
-	model("mimo-v2-pro"),
-	model("mimo-v2.5"),
-	model("mimo-v2.5-pro"),
-	model("gpt-5.6-luna"),
-	model("grok-4.5"),
-	model("hy3"),
+// standardSpec builds a spec with the standard five-level capability map
+// (off through high, canonical wire tokens).
+func standardSpec(
+	id, name string,
+	contextWindow, maxTokens int64,
+	input, output, cacheRead float64,
+) provider.ModelSpec {
+	return provider.ModelSpec{
+		ID: id, Name: name, ContextWindow: contextWindow, MaxTokens: maxTokens,
+		Input: input, Output: output, CacheRead: cacheRead,
+		ThinkingLevelMap: llm.StandardThinkingLevelMap(),
+	}
+}
+
+// qwenSpec builds a Qwen model spec: a standard five-level map plus the
+// top-level enable_thinking toggle and reasoning_effort, which the OpenCode
+// Go gateway accepts for these models.
+func qwenSpec(
+	id, name string,
+	contextWindow, maxTokens int64,
+	input, output, cacheRead float64,
+) provider.ModelSpec {
+	spec := standardSpec(id, name, contextWindow, maxTokens, input, output, cacheRead)
+	spec.ThinkingFormat = llm.ThinkingFormatQwen
+	spec.SupportsReasoningEffort = true
+	return spec
+}
+
+// modelIDs lists the OpenCode Go models in menu order; Models constructs
+// fresh values so callers cannot mutate catalog maps shared by later runs.
+var modelIDs = []string{
+	"deepseek-v4-flash",
+	"deepseek-v4-pro",
+	"kimi-k2.5",
+	"kimi-k2.6",
+	"kimi-k2.7-code",
+	"kimi-k3",
+	"glm-5",
+	"glm-5.1",
+	"glm-5.2",
+	"qwen3.5-plus",
+	"qwen3.6-plus",
+	"qwen3.7-plus",
+	"qwen3.7-max",
+	"qwen3.8-max",
+	"minimax-m2.5",
+	"minimax-m2.7",
+	"minimax-m3",
+	"mimo-v2-omni",
+	"mimo-v2-pro",
+	"mimo-v2.5",
+	"mimo-v2.5-pro",
+	"gpt-5.6-luna",
+	"grok-4.5",
+	"hy3",
 }
 
 func model(id string) llm.Model {
 	spec := modelSpecs[id]
 	return llm.Model{
-		ID:               id,
-		Name:             spec.Name,
-		API:              openaicompletions.API,
-		Provider:         ProviderID,
-		SupportsThinking: true,
-		ThinkingLevelMap: spec.ThinkingLevelMap,
-		InputModalities:  []llm.InputModality{llm.InputModalityText},
-		ContextWindow:    spec.ContextWindow,
-		MaxTokens:        spec.MaxTokens,
+		ID:                      id,
+		Name:                    spec.Name,
+		API:                     openaicompletions.API,
+		Provider:                ProviderID,
+		SupportsThinking:        true,
+		ThinkingLevelMap:        spec.ThinkingLevelMap.Clone(),
+		ThinkingFormat:          spec.ThinkingFormat,
+		SupportsReasoningEffort: spec.SupportsReasoningEffort,
+		InputModalities:         []llm.InputModality{llm.InputModalityText},
+		ContextWindow:           spec.ContextWindow,
+		MaxTokens:               spec.MaxTokens,
 		Pricing: llm.Pricing{
 			Input:     spec.Input,
 			Output:    spec.Output,

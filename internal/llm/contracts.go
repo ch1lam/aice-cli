@@ -62,6 +62,21 @@ const (
 // what the selected model supports.
 const DefaultThinkingLevel = ThinkingLevelMedium
 
+// ThinkingFormat selects the wire shape a Chat Completions gateway expects
+// for thinking controls. The empty value is the standard reasoning_effort
+// field.
+type ThinkingFormat string
+
+const (
+	// ThinkingFormatDeepSeek sends a DeepSeek-style thinking toggle object
+	// (thinking: {type: enabled|disabled}) and, when the model declares
+	// reasoning effort support, reasoning_effort.
+	ThinkingFormatDeepSeek ThinkingFormat = "deepseek"
+	// ThinkingFormatQwen sends a top-level enable_thinking boolean and, when
+	// the model declares reasoning effort support, reasoning_effort.
+	ThinkingFormatQwen ThinkingFormat = "qwen"
+)
+
 // thinkingLevelOrder ranks every thinking level from lowest to highest.
 // Clamping aligns against this order.
 var thinkingLevelOrder = []ThinkingLevel{
@@ -300,10 +315,18 @@ type Model struct {
 	// their provider wire tokens. A nil map means the standard levels off
 	// through high apply.
 	ThinkingLevelMap ThinkingLevelMap `json:"thinking_level_map,omitempty"`
-	InputModalities  []InputModality  `json:"input_modalities,omitempty"`
-	ContextWindow    int64            `json:"context_window,omitempty"`
-	MaxTokens        int64            `json:"max_tokens,omitempty"`
-	Pricing          Pricing          `json:"pricing"`
+	// ThinkingFormat is the wire shape for thinking controls on Chat
+	// Completions gateways. The empty value means the standard
+	// reasoning_effort field.
+	ThinkingFormat ThinkingFormat `json:"thinking_format,omitempty"`
+	// SupportsReasoningEffort reports whether the gateway accepts
+	// reasoning_effort alongside a non-standard ThinkingFormat. It has no
+	// effect on the standard format, which always sends the field.
+	SupportsReasoningEffort bool            `json:"supports_reasoning_effort,omitempty"`
+	InputModalities         []InputModality `json:"input_modalities,omitempty"`
+	ContextWindow           int64           `json:"context_window,omitempty"`
+	MaxTokens               int64           `json:"max_tokens,omitempty"`
+	Pricing                 Pricing         `json:"pricing"`
 }
 
 // Cost contains normalized request cost amounts in US dollars.

@@ -117,14 +117,7 @@ func model(id, name string, input, output, cacheRead, cacheWrite float64) llm.Mo
 		API:              openairesponses.API,
 		Provider:         ProviderID,
 		SupportsThinking: true,
-		ThinkingLevelMap: llm.ThinkingLevelsMap(
-			llm.ThinkingLevelOff,
-			llm.ThinkingLevelLow,
-			llm.ThinkingLevelMedium,
-			llm.ThinkingLevelHigh,
-			llm.ThinkingLevelXHigh,
-			llm.ThinkingLevelMax,
-		),
+		ThinkingLevelMap: openAIThinkingLevels(),
 		InputModalities: []llm.InputModality{
 			llm.InputModalityText,
 			llm.InputModalityImage,
@@ -138,6 +131,22 @@ func model(id, name string, input, output, cacheRead, cacheWrite float64) llm.Mo
 			CacheWrite: cacheWrite,
 		},
 	}
+}
+
+// openAIThinkingLevels declares the GPT-5.6 reasoning levels: off maps to the
+// none effort, minimal is not exposed, and low through max use canonical
+// effort tokens (models.dev effort metadata).
+func openAIThinkingLevels() llm.ThinkingLevelMap {
+	m := llm.ThinkingLevelsMap(
+		llm.ThinkingLevelOff,
+		llm.ThinkingLevelLow,
+		llm.ThinkingLevelMedium,
+		llm.ThinkingLevelHigh,
+		llm.ThinkingLevelXHigh,
+		llm.ThinkingLevelMax,
+	)
+	m[llm.ThinkingLevelOff] = llm.ThinkingValue("none")
+	return m
 }
 
 var messageCapabilities = provider.MessageCapabilities{

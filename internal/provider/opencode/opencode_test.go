@@ -64,7 +64,7 @@ func TestModels(t *testing.T) {
 		"kimi-k2.6": {llm.ThinkingLevelOff, llm.ThinkingLevelHigh},
 		// GLM-5.2 always reasons at high or max.
 		"glm-5.2": {llm.ThinkingLevelHigh, llm.ThinkingLevelMax},
-		// GPT-5.6 Luna supports every reasoning effort.
+		// GPT-5.6 Luna currently exposes every canonical reasoning level.
 		"gpt-5.6-luna": {
 			llm.ThinkingLevelOff,
 			llm.ThinkingLevelMinimal,
@@ -89,6 +89,60 @@ func TestModels(t *testing.T) {
 				want,
 			)
 		}
+	}
+
+	wantFormats := map[string]struct {
+		format                  llm.ThinkingFormat
+		supportsReasoningEffort bool
+	}{
+		"deepseek-v4-flash": {format: llm.ThinkingFormatDeepSeek, supportsReasoningEffort: true},
+		"deepseek-v4-pro":   {format: llm.ThinkingFormatDeepSeek, supportsReasoningEffort: true},
+		"kimi-k2.6":         {format: llm.ThinkingFormatDeepSeek},
+		"qwen3.5-plus":      {format: llm.ThinkingFormatQwen, supportsReasoningEffort: true},
+		"qwen3.6-plus":      {format: llm.ThinkingFormatQwen, supportsReasoningEffort: true},
+	}
+	for modelID, want := range wantFormats {
+		candidate, ok := modelForID(models, modelID)
+		if !ok {
+			t.Errorf("model %q missing from Models()", modelID)
+			continue
+		}
+		if candidate.ThinkingFormat != want.format ||
+			candidate.SupportsReasoningEffort != want.supportsReasoningEffort {
+			t.Errorf(
+				"model %q thinking format = %q/%v, want %q/%v",
+				modelID,
+				candidate.ThinkingFormat,
+				candidate.SupportsReasoningEffort,
+				want.format,
+				want.supportsReasoningEffort,
+			)
+		}
+	}
+}
+
+func TestModelsReturnsIndependentThinkingMaps(t *testing.T) {
+	t.Parallel()
+
+	first := opencode.Models()
+	if len(first) == 0 {
+		t.Fatal("Models() returned no models")
+	}
+	first[0].ThinkingLevelMap[llm.ThinkingLevelOff] = llm.ThinkingValue("mutated")
+	if value := first[0].ThinkingLevelMap[llm.ThinkingLevelHigh]; value != nil {
+		*value = "mutated"
+	}
+
+	second := opencode.Models()
+	if value, ok := second[0].ThinkingLevelMap.WireValue(
+		llm.ThinkingLevelOff,
+	); !ok || value != "off" {
+		t.Errorf("second off wire value = %q/%v, want off/true", value, ok)
+	}
+	if value, ok := second[0].ThinkingLevelMap.WireValue(
+		llm.ThinkingLevelHigh,
+	); !ok || value != "high" {
+		t.Errorf("second high wire value = %q/%v, want high/true", value, ok)
 	}
 }
 
