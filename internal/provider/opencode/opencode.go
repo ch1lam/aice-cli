@@ -2,8 +2,7 @@
 //
 // OpenCode Go is the OpenAI-compatible model gateway hosted by opencode.ai at
 // https://opencode.ai/zen/go/v1. All of its models speak the Chat Completions
-// wire protocol, so this provider reuses the openai-completions adapter rather
-// than the Anthropic or Responses adapters that DeepSeek selects between.
+// wire protocol, so this provider reuses the openai-completions adapter.
 package opencode
 
 import (
@@ -128,7 +127,6 @@ func modelSpecCatalog() map[string]provider.ModelSpec {
 			llm.ThinkingLevelMax,
 		)
 		spec.ThinkingFormat = llm.ThinkingFormatDeepSeek
-		spec.SupportsReasoningEffort = true
 		specs[id] = spec
 	}
 
@@ -244,9 +242,8 @@ func standardSpec(
 	}
 }
 
-// qwenSpec builds a Qwen model spec: a standard five-level map plus the
-// top-level enable_thinking toggle and reasoning_effort, which the OpenCode
-// Go gateway accepts for these models.
+// qwenSpec builds a Qwen model spec with a standard five-level map and the
+// top-level enable_thinking toggle used by OpenCode Go.
 func qwenSpec(
 	id, name string,
 	contextWindow, maxTokens int64,
@@ -254,7 +251,6 @@ func qwenSpec(
 ) provider.ModelSpec {
 	spec := standardSpec(id, name, contextWindow, maxTokens, input, output, cacheRead)
 	spec.ThinkingFormat = llm.ThinkingFormatQwen
-	spec.SupportsReasoningEffort = true
 	return spec
 }
 

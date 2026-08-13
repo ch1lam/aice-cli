@@ -472,12 +472,11 @@ func TestAdapterThinkingWireControls(t *testing.T) {
 		wantErr        string
 	}{
 		{
-			name:    "opencode deepseek enabled with effort",
+			name:    "opencode deepseek enabled without effort",
 			modelID: "deepseek-v4-flash",
 			level:   llm.ThinkingLevelHigh,
 			wantBody: map[string]any{
-				"thinking":         map[string]any{"type": "enabled"},
-				"reasoning_effort": "high",
+				"thinking": map[string]any{"type": "enabled"},
 			},
 		},
 		{
@@ -497,12 +496,11 @@ func TestAdapterThinkingWireControls(t *testing.T) {
 			},
 		},
 		{
-			name:    "qwen enable thinking with effort",
+			name:    "qwen enables thinking without effort",
 			modelID: "qwen3.5-plus",
 			level:   llm.ThinkingLevelMedium,
 			wantBody: map[string]any{
-				"enable_thinking":  true,
-				"reasoning_effort": "medium",
+				"enable_thinking": true,
 			},
 		},
 		{

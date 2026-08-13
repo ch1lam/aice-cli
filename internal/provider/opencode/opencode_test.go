@@ -144,11 +144,11 @@ func TestModels(t *testing.T) {
 		format                  llm.ThinkingFormat
 		supportsReasoningEffort bool
 	}{
-		"deepseek-v4-flash": {format: llm.ThinkingFormatDeepSeek, supportsReasoningEffort: true},
-		"deepseek-v4-pro":   {format: llm.ThinkingFormatDeepSeek, supportsReasoningEffort: true},
+		"deepseek-v4-flash": {format: llm.ThinkingFormatDeepSeek},
+		"deepseek-v4-pro":   {format: llm.ThinkingFormatDeepSeek},
 		"kimi-k2.6":         {format: llm.ThinkingFormatDeepSeek},
-		"qwen3.5-plus":      {format: llm.ThinkingFormatQwen, supportsReasoningEffort: true},
-		"qwen3.6-plus":      {format: llm.ThinkingFormatQwen, supportsReasoningEffort: true},
+		"qwen3.5-plus":      {format: llm.ThinkingFormatQwen},
+		"qwen3.6-plus":      {format: llm.ThinkingFormatQwen},
 	}
 	for modelID, want := range wantFormats {
 		candidate, ok := modelForID(models, modelID)
