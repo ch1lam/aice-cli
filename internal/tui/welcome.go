@@ -201,24 +201,19 @@ func (m model) welcomeCard() string {
 		Width(max(width-6, 1)).
 		Padding(1, 2).
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(subtleColor).
-		Background(panelBlackColor)
+		BorderForeground(subtleColor)
 
-	title := headerStyle.Render("✦  Work with your codebase")
-	description := mutedStyle.Render(
-		"Ask AICE to trace behavior, explain architecture, or inspect a file.",
-	)
-	commandHint := mutedStyle.Render("Type / to browse interactive commands.")
+	title := headerStyle.Render("✦  Ask AICE")
+	description := mutedStyle.Render("Understand or change your code.")
+	commandHint := mutedStyle.Render("Type / for commands.")
 	if !m.apiKeyConfigured {
-		title = headerStyle.Render("✦  Configure AICE")
-		description = noticeStyle.Render(
-			"No provider API key is configured.",
-		)
+		title = headerStyle.Render("✦  Set up AICE")
+		description = noticeStyle.Render("Add an API key to start.")
 		commandHint = mutedStyle.Render(
-			"Run /login to add one, or /settings to inspect configuration.",
+			"Use /login. View setup with /settings.",
 		)
 	}
-	toolLabel := mutedStyle.Render("AVAILABLE TOOLS")
+	toolLabel := mutedStyle.Render("TOOLS")
 	tools := labelStyle.Render("read   ls   grep   find")
 	rows := []string{title, description, commandHint, "", toolLabel, tools}
 	versionStatus := make([]string, 0, 2)

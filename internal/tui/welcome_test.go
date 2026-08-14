@@ -84,11 +84,12 @@ func TestWelcomeViewShowsAnimatedLogo(t *testing.T) {
 
 	welcome := current.welcomeView()
 	for _, want := range []string{
-		"█",                       // block logo
-		welcomeTagline,            // product line under the logo
-		"Work with your codebase", // welcome card
-		"AVAILABLE TOOLS",
-		"Type / to browse interactive commands.",
+		"█",            // block logo
+		welcomeTagline, // product line under the logo
+		"Ask AICE",     // welcome card
+		"Understand or change your code.",
+		"TOOLS",
+		"Type / for commands.",
 	} {
 		if !strings.Contains(welcome, want) {
 			t.Errorf("welcome = %q, want %q", welcome, want)
@@ -105,6 +106,20 @@ func TestWelcomeViewShowsAnimatedLogo(t *testing.T) {
 	}
 }
 
+func TestWelcomeCardUsesOutlineWithoutBackground(t *testing.T) {
+	t.Parallel()
+
+	current := newModel(make(chan runRequest), make(chan struct{}))
+	card := current.welcomeCard()
+
+	if !strings.Contains(card, "╭") || !strings.Contains(card, "╯") {
+		t.Fatalf("welcome card = %q, want rounded outline", card)
+	}
+	if strings.Contains(card, "\x1b[48;") {
+		t.Errorf("welcome card = %q, want no background color", card)
+	}
+}
+
 func TestWelcomeViewOmitsLogoWhenNarrow(t *testing.T) {
 	t.Parallel()
 
@@ -117,7 +132,7 @@ func TestWelcomeViewOmitsLogoWhenNarrow(t *testing.T) {
 	}
 	// The card text wraps on a narrow terminal, so assert a fragment that
 	// survives wrapping.
-	if !strings.Contains(welcome, "AVAILABLE") {
+	if !strings.Contains(welcome, "TOOLS") {
 		t.Errorf("welcome = %q, want the welcome card on a narrow terminal", welcome)
 	}
 }
@@ -132,7 +147,7 @@ func TestWelcomeViewOmitsLogoWhenShort(t *testing.T) {
 	if strings.Contains(welcome, "█") {
 		t.Errorf("welcome = %q, want no logo on a short terminal", welcome)
 	}
-	if !strings.Contains(welcome, "AVAILABLE TOOLS") {
+	if !strings.Contains(welcome, "TOOLS") {
 		t.Errorf("welcome = %q, want the welcome card on a short terminal", welcome)
 	}
 }

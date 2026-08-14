@@ -375,7 +375,7 @@ func TestModelWelcomeGuidesUnconfiguredLogin(t *testing.T) {
 
 	welcome := current.welcomeView()
 	for _, want := range []string{
-		"No provider API key is configured",
+		"Add an API key to start.",
 		"/login",
 		"/settings",
 	} {
