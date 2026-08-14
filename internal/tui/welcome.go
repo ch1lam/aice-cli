@@ -54,6 +54,28 @@ type welcomeTickMsg struct {
 	generation uint64
 }
 
+type welcomeUpdateState uint8
+
+const (
+	welcomeUpdateUnknown welcomeUpdateState = iota
+	welcomeUpdateChecking
+	welcomeUpdateDisabled
+	welcomeUpdateDevelopment
+	welcomeUpdateCurrent
+	welcomeUpdateAvailable
+	welcomeUpdateFailed
+)
+
+type welcomeUpdateStatus struct {
+	state  welcomeUpdateState
+	latest string
+}
+
+type updateCheckMsg struct {
+	result UpdateCheckResult
+	err    error
+}
+
 // welcomeAnimation drives the gradient sweep across the startup logo. It ticks
 // only while the welcome screen is actually visible and stops as soon as the
 // first conversation entry appears.
@@ -199,10 +221,41 @@ func (m model) welcomeCard() string {
 	toolLabel := mutedStyle.Render("AVAILABLE TOOLS")
 	tools := labelStyle.Render("read   ls   grep   find")
 	rows := []string{title, description, commandHint, "", toolLabel, tools}
+	versionStatus := make([]string, 0, 2)
 	if m.version != "" {
-		rows = append(rows, "", mutedStyle.Render(m.version))
+		versionStatus = append(versionStatus, mutedStyle.Render(m.version))
+	}
+	if status := m.welcomeUpdateView(); status != "" {
+		versionStatus = append(versionStatus, status)
+	}
+	if len(versionStatus) > 0 {
+		rows = append(rows, "", strings.Join(versionStatus, "  "))
 	}
 	return cardStyle.Render(strings.Join(rows, "\n"))
+}
+
+func (m model) welcomeUpdateView() string {
+	switch m.welcomeUpdate.state {
+	case welcomeUpdateChecking:
+		return infoStyle.Render("◌") + " " + mutedStyle.Render("Checking for updates...")
+	case welcomeUpdateDisabled:
+		return mutedStyle.Render("Update checks disabled")
+	case welcomeUpdateDevelopment:
+		return mutedStyle.Render("Development build · update check skipped")
+	case welcomeUpdateCurrent:
+		return lipgloss.NewStyle().
+			Foreground(successColor).
+			Render("✓ You're on the latest version")
+	case welcomeUpdateAvailable:
+		latest := sanitizeToolDetail(m.welcomeUpdate.latest, false)
+		return noticeStyle.Render(
+			"↑ " + latest + " available · run `aice update`",
+		)
+	case welcomeUpdateFailed:
+		return mutedStyle.Render("Couldn't check for updates")
+	default:
+		return ""
+	}
 }
 
 // parseHexColor converts "#RRGGBB" into normalized RGB components in [0, 255].

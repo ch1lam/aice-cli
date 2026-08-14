@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"context"
 	"crypto/sha256"
 	"errors"
 	"fmt"
@@ -324,27 +325,47 @@ func TestUpdateRejectsPackageManagerInstall(t *testing.T) {
 	}
 }
 
-func TestNotifyPrintsUpdateAvailable(t *testing.T) {
-	server := newReleaseServer(t, releaseFixture{}, nil)
-	var stderr bytes.Buffer
+func TestCheckStartupReportsUpdateAndCachesResult(t *testing.T) {
+	var hits int
+	server := newReleaseServer(t, releaseFixture{}, &hits)
 	opts := testOptions(testUpdater(t, server))
 	opts.Current = "1.1.0"
 	opts.Getenv = func(string) string { return "" }
-	opts.IsTerminal = func() bool { return true }
 	opts.StatePath = filepath.Join(t.TempDir(), "update-state")
-	opts.Stderr = &stderr
 	opts.Now = time.Now
 
-	Notify(t.Context(), opts)
-	if !strings.Contains(stderr.String(), "update available") {
-		t.Fatalf("stderr = %q, want update hint", stderr.String())
+	result, err := CheckStartup(t.Context(), opts)
+	if err != nil {
+		t.Fatalf("CheckStartup() error = %v", err)
+	}
+	want := StartupResult{
+		Status:  StartupStatusAvailable,
+		Current: "1.1.0",
+		Latest:  "1.2.0",
+	}
+	if result != want {
+		t.Fatalf("CheckStartup() = %+v, want %+v", result, want)
+	}
+	if hits != 1 {
+		t.Fatalf("manifest requests = %d after first check, want 1", hits)
 	}
 	if _, err := os.Stat(opts.StatePath); err != nil {
 		t.Fatalf("state file not written: %v", err)
 	}
+
+	cached, err := CheckStartup(t.Context(), opts)
+	if err != nil {
+		t.Fatalf("cached CheckStartup() error = %v", err)
+	}
+	if cached != want {
+		t.Fatalf("cached CheckStartup() = %+v, want %+v", cached, want)
+	}
+	if hits != 1 {
+		t.Fatalf("manifest requests = %d after cached check, want 1", hits)
+	}
 }
 
-func TestNotifySkipsWhenDisabledByEnvironment(t *testing.T) {
+func TestCheckStartupSkipsWhenDisabledByEnvironment(t *testing.T) {
 	var hits int
 	server := newReleaseServer(t, releaseFixture{}, &hits)
 	opts := testOptions(testUpdater(t, server))
@@ -355,29 +376,159 @@ func TestNotifySkipsWhenDisabledByEnvironment(t *testing.T) {
 		}
 		return ""
 	}
-	opts.IsTerminal = func() bool { return true }
 
-	Notify(t.Context(), opts)
+	result, err := CheckStartup(t.Context(), opts)
+	if err != nil {
+		t.Fatalf("CheckStartup() error = %v", err)
+	}
+	if result.Status != StartupStatusDisabled {
+		t.Fatalf("CheckStartup() status = %d, want disabled", result.Status)
+	}
 	if hits != 0 {
 		t.Fatalf("manifest requests = %d, want 0 when disabled", hits)
 	}
 }
 
-func TestNotifySkipsOutsideTerminal(t *testing.T) {
+func TestCheckStartupUsesFreshCache(t *testing.T) {
+	var hits int
+	server := newReleaseServer(t, releaseFixture{}, &hits)
+	now := time.Now()
+	statePath := filepath.Join(t.TempDir(), "update-state")
+	if err := os.WriteFile(
+		statePath,
+		[]byte(fmt.Sprintf(
+			`{"checked_at":%q,"latest":"1.2.0"}`,
+			now.Format(time.RFC3339),
+		)),
+		0o600,
+	); err != nil {
+		t.Fatalf("write state file: %v", err)
+	}
+	opts := testOptions(testUpdater(t, server))
+	opts.Current = "1.2.0"
+	opts.Getenv = func(string) string { return "" }
+	opts.StatePath = statePath
+	opts.Now = func() time.Time { return now }
+
+	result, err := CheckStartup(t.Context(), opts)
+	if err != nil {
+		t.Fatalf("CheckStartup() error = %v", err)
+	}
+	if result.Status != StartupStatusCurrent || result.Latest != "1.2.0" {
+		t.Fatalf("CheckStartup() = %+v, want current 1.2.0", result)
+	}
+	if hits != 0 {
+		t.Fatalf("manifest requests = %d, want 0 within fresh cache", hits)
+	}
+}
+
+func TestCheckStartupRefreshesStaleInvalidOrFutureCache(t *testing.T) {
+	tests := []struct {
+		name    string
+		content func(time.Time) string
+	}{
+		{
+			name: "stale",
+			content: func(now time.Time) string {
+				return fmt.Sprintf(
+					`{"checked_at":%q,"latest":"1.2.0"}`,
+					now.Add(-startupCheckInterval-time.Minute).Format(time.RFC3339),
+				)
+			},
+		},
+		{
+			name: "invalid",
+			content: func(time.Time) string {
+				return `{invalid`
+			},
+		},
+		{
+			name: "future",
+			content: func(now time.Time) string {
+				return fmt.Sprintf(
+					`{"checked_at":%q,"latest":"1.2.0"}`,
+					now.Add(time.Hour).Format(time.RFC3339),
+				)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			var hits int
+			server := newReleaseServer(t, releaseFixture{}, &hits)
+			now := time.Now()
+			statePath := filepath.Join(t.TempDir(), "update-state")
+			if err := os.WriteFile(
+				statePath,
+				[]byte(tt.content(now)),
+				0o600,
+			); err != nil {
+				t.Fatalf("write state file: %v", err)
+			}
+			opts := testOptions(testUpdater(t, server))
+			opts.Current = "1.2.0"
+			opts.Getenv = func(string) string { return "" }
+			opts.StatePath = statePath
+			opts.Now = func() time.Time { return now }
+
+			result, err := CheckStartup(t.Context(), opts)
+			if err != nil {
+				t.Fatalf("CheckStartup() error = %v", err)
+			}
+			if result.Status != StartupStatusCurrent {
+				t.Fatalf("CheckStartup() = %+v, want current", result)
+			}
+			if hits != 1 {
+				t.Fatalf("manifest requests = %d, want cache refresh", hits)
+			}
+		})
+	}
+}
+
+func TestCheckStartupKeepsResultWhenCacheWriteFails(t *testing.T) {
+	var hits int
+	server := newReleaseServer(t, releaseFixture{}, &hits)
+	blockingFile := filepath.Join(t.TempDir(), "not-a-directory")
+	if err := os.WriteFile(blockingFile, []byte("blocked"), 0o600); err != nil {
+		t.Fatalf("write blocking file: %v", err)
+	}
+	opts := testOptions(testUpdater(t, server))
+	opts.Current = "1.1.0"
+	opts.Getenv = func(string) string { return "" }
+	opts.StatePath = filepath.Join(blockingFile, "update-state")
+
+	result, err := CheckStartup(t.Context(), opts)
+	if err != nil {
+		t.Fatalf("CheckStartup() error = %v", err)
+	}
+	if result.Status != StartupStatusAvailable || result.Latest != "1.2.0" {
+		t.Fatalf("CheckStartup() = %+v, want available 1.2.0", result)
+	}
+	if hits != 1 {
+		t.Fatalf("manifest requests = %d, want 1", hits)
+	}
+}
+
+func TestCheckStartupStopsWhenContextIsCanceled(t *testing.T) {
 	var hits int
 	server := newReleaseServer(t, releaseFixture{}, &hits)
 	opts := testOptions(testUpdater(t, server))
 	opts.Current = "1.1.0"
 	opts.Getenv = func(string) string { return "" }
-	opts.IsTerminal = func() bool { return false }
+	opts.StatePath = filepath.Join(t.TempDir(), "update-state")
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
 
-	Notify(t.Context(), opts)
-	if hits != 0 {
-		t.Fatalf("manifest requests = %d, want 0 outside terminal", hits)
+	_, err := CheckStartup(ctx, opts)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("CheckStartup() error = %v, want context canceled", err)
 	}
 }
 
-func TestNotifySkipsWithinFreshCache(t *testing.T) {
+func TestCheckStartupRefreshesLegacyCacheWithoutLatestVersion(t *testing.T) {
 	var hits int
 	server := newReleaseServer(t, releaseFixture{}, &hits)
 	now := time.Now()
@@ -390,59 +541,39 @@ func TestNotifySkipsWithinFreshCache(t *testing.T) {
 		t.Fatalf("write state file: %v", err)
 	}
 	opts := testOptions(testUpdater(t, server))
-	opts.Current = "1.1.0"
+	opts.Current = "1.2.0"
 	opts.Getenv = func(string) string { return "" }
-	opts.IsTerminal = func() bool { return true }
 	opts.StatePath = statePath
 	opts.Now = func() time.Time { return now }
 
-	Notify(t.Context(), opts)
-	if hits != 0 {
-		t.Fatalf("manifest requests = %d, want 0 within fresh cache", hits)
+	result, err := CheckStartup(t.Context(), opts)
+	if err != nil {
+		t.Fatalf("CheckStartup() error = %v", err)
+	}
+	if result.Status != StartupStatusCurrent {
+		t.Fatalf("CheckStartup() = %+v, want current", result)
+	}
+	if hits != 1 {
+		t.Fatalf("manifest requests = %d, want legacy cache refresh", hits)
 	}
 }
 
-// TestNotifyCachesUpToDateResult guards against re-checking on every launch:
-// a completed check must write the state file even when the install is
-// already current.
-func TestNotifyCachesUpToDateResult(t *testing.T) {
+func TestCheckStartupSkipsDevelopmentBuildBeforeNetwork(t *testing.T) {
 	var hits int
 	server := newReleaseServer(t, releaseFixture{}, &hits)
-	var stderr bytes.Buffer
-	opts := testOptions(testUpdater(t, server))
-	opts.Current = "1.2.0"
-	opts.Getenv = func(string) string { return "" }
-	opts.IsTerminal = func() bool { return true }
-	opts.StatePath = filepath.Join(t.TempDir(), "update-state")
-	opts.Stderr = &stderr
-	opts.Now = time.Now
-
-	Notify(t.Context(), opts)
-	if hits != 1 {
-		t.Fatalf("manifest requests = %d after first check, want 1", hits)
-	}
-	if stderr.Len() != 0 {
-		t.Fatalf("stderr = %q, want no output when up to date", stderr.String())
-	}
-	Notify(t.Context(), opts)
-	if hits != 1 {
-		t.Fatalf("manifest requests = %d after second check, want 1 (cached)", hits)
-	}
-}
-
-func TestNotifySilentForDevelopmentBuild(t *testing.T) {
-	server := newReleaseServer(t, releaseFixture{}, nil)
-	var stderr bytes.Buffer
 	opts := testOptions(testUpdater(t, server))
 	opts.Current = "dev"
 	opts.Getenv = func(string) string { return "" }
-	opts.IsTerminal = func() bool { return true }
-	opts.Stderr = &stderr
-	opts.Now = time.Now
 
-	Notify(t.Context(), opts)
-	if stderr.Len() != 0 {
-		t.Fatalf("stderr = %q, want no output for dev build", stderr.String())
+	result, err := CheckStartup(t.Context(), opts)
+	if err != nil {
+		t.Fatalf("CheckStartup() error = %v", err)
+	}
+	if result.Status != StartupStatusDevelopment {
+		t.Fatalf("CheckStartup() status = %d, want development", result.Status)
+	}
+	if hits != 0 {
+		t.Fatalf("manifest requests = %d, want 0 for development build", hits)
 	}
 }
 

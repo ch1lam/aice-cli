@@ -102,6 +102,8 @@ type model struct {
 	sessionUsage      DisplayUsage
 	usageAnimation    usageAnimation
 	welcomeAnimation  welcomeAnimation
+	updateCheck       tea.Cmd
+	welcomeUpdate     welcomeUpdateStatus
 	workingDirectory  string
 	version           string
 	entries           []transcriptEntry
@@ -214,7 +216,11 @@ func newModel(
 }
 
 func (m model) Init() tea.Cmd {
-	return tea.Batch(textarea.Blink, m.welcomeAnimation.tick())
+	commands := []tea.Cmd{textarea.Blink, m.welcomeAnimation.tick()}
+	if m.updateCheck != nil {
+		commands = append(commands, m.updateCheck)
+	}
+	return tea.Batch(commands...)
 }
 
 func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
@@ -301,6 +307,27 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case sideRunBatchMsg:
 		return m.applySideRunBatch(message)
+	case updateCheckMsg:
+		m.updateCheck = nil
+		m.welcomeUpdate = welcomeUpdateStatus{latest: message.result.Latest}
+		if message.err != nil {
+			m.welcomeUpdate.state = welcomeUpdateFailed
+		} else {
+			switch message.result.Status {
+			case UpdateCheckStatusDisabled:
+				m.welcomeUpdate.state = welcomeUpdateDisabled
+			case UpdateCheckStatusDevelopment:
+				m.welcomeUpdate.state = welcomeUpdateDevelopment
+			case UpdateCheckStatusCurrent:
+				m.welcomeUpdate.state = welcomeUpdateCurrent
+			case UpdateCheckStatusAvailable:
+				m.welcomeUpdate.state = welcomeUpdateAvailable
+			default:
+				m.welcomeUpdate.state = welcomeUpdateFailed
+			}
+		}
+		m.refreshViewport(false)
+		return m, nil
 	case usageAnimationTickMsg:
 		return m, m.usageAnimation.Update(message)
 	case welcomeTickMsg:

@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"context"
+	"errors"
 	"math"
 	"strings"
 	"testing"
@@ -159,6 +161,196 @@ func TestWelcomeViewOmitsVersionWhenUnset(t *testing.T) {
 		if strings.Contains(line, "v0.") || strings.Contains(line, "dev") {
 			t.Errorf("welcome = %q, want no version when unset", welcome)
 		}
+	}
+}
+
+func TestWelcomeViewShowsUpdateCheckStates(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		status welcomeUpdateStatus
+		want   string
+	}{
+		{
+			name:   "checking",
+			status: welcomeUpdateStatus{state: welcomeUpdateChecking},
+			want:   "Checking for updates...",
+		},
+		{
+			name:   "disabled",
+			status: welcomeUpdateStatus{state: welcomeUpdateDisabled},
+			want:   "Update checks disabled",
+		},
+		{
+			name:   "development",
+			status: welcomeUpdateStatus{state: welcomeUpdateDevelopment},
+			want:   "Development build · update check skipped",
+		},
+		{
+			name:   "current",
+			status: welcomeUpdateStatus{state: welcomeUpdateCurrent},
+			want:   "You're on the latest version",
+		},
+		{
+			name: "available",
+			status: welcomeUpdateStatus{
+				state:  welcomeUpdateAvailable,
+				latest: "1.2.0",
+			},
+			want: "1.2.0 available · run `aice update`",
+		},
+		{
+			name:   "failed",
+			status: welcomeUpdateStatus{state: welcomeUpdateFailed},
+			want:   "Couldn't check for updates",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			current := newModel(make(chan runRequest), make(chan struct{}))
+			current = updateModel(t, current, tea.WindowSizeMsg{
+				Width:  80,
+				Height: 24,
+			})
+			current.version = "1.1.0"
+			current.welcomeUpdate = tt.status
+
+			welcome := current.welcomeView()
+			for _, want := range []string{"1.1.0", tt.want} {
+				if !strings.Contains(welcome, want) {
+					t.Errorf("welcome = %q, want %q", welcome, want)
+				}
+			}
+		})
+	}
+}
+
+func TestModelAppliesUpdateCheckResultToWelcomeScreen(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		msg   updateCheckMsg
+		state welcomeUpdateState
+		want  string
+	}{
+		{
+			name: "disabled",
+			msg: updateCheckMsg{result: UpdateCheckResult{
+				Status: UpdateCheckStatusDisabled,
+			}},
+			state: welcomeUpdateDisabled,
+		},
+		{
+			name: "development",
+			msg: updateCheckMsg{result: UpdateCheckResult{
+				Status: UpdateCheckStatusDevelopment,
+			}},
+			state: welcomeUpdateDevelopment,
+		},
+		{
+			name: "current",
+			msg: updateCheckMsg{result: UpdateCheckResult{
+				Status: UpdateCheckStatusCurrent,
+			}},
+			state: welcomeUpdateCurrent,
+		},
+		{
+			name: "available",
+			msg: updateCheckMsg{result: UpdateCheckResult{
+				Status: UpdateCheckStatusAvailable,
+				Latest: "1.2.0",
+			}},
+			state: welcomeUpdateAvailable,
+			want:  "1.2.0 available",
+		},
+		{
+			name:  "unknown",
+			msg:   updateCheckMsg{},
+			state: welcomeUpdateFailed,
+		},
+		{
+			name:  "error",
+			msg:   updateCheckMsg{err: errors.New("offline")},
+			state: welcomeUpdateFailed,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			current := newModel(make(chan runRequest), make(chan struct{}))
+			current = updateModel(t, current, tea.WindowSizeMsg{
+				Width:  80,
+				Height: 24,
+			})
+			current.welcomeUpdate.state = welcomeUpdateChecking
+			current.refreshViewport(false)
+
+			updated := updateModel(t, current, tt.msg)
+			if updated.welcomeUpdate.state != tt.state {
+				t.Fatalf(
+					"welcome update state = %d, want %d",
+					updated.welcomeUpdate.state,
+					tt.state,
+				)
+			}
+			if tt.want != "" {
+				if content := updated.viewport.GetContent(); !strings.Contains(
+					content,
+					tt.want,
+				) {
+					t.Fatalf("welcome viewport = %q, want %q", content, tt.want)
+				}
+			}
+		})
+	}
+}
+
+func TestCheckForUpdateCommandUsesCallerContext(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	command := checkForUpdate(ctx, func(got context.Context) (UpdateCheckResult, error) {
+		if got != ctx {
+			t.Error("update checker did not receive the TUI context")
+		}
+		return UpdateCheckResult{Status: UpdateCheckStatusCurrent}, nil
+	})
+	rawMessage := command()
+	message, ok := rawMessage.(updateCheckMsg)
+	if !ok {
+		t.Fatalf("update command message = %T, want updateCheckMsg", rawMessage)
+	}
+	if message.err != nil || message.result.Status != UpdateCheckStatusCurrent {
+		t.Fatalf("update command message = %#v, want current", message)
+	}
+}
+
+func TestModelInitIncludesConfiguredUpdateCheck(t *testing.T) {
+	t.Parallel()
+
+	current := newModel(make(chan runRequest), make(chan struct{}))
+	withoutCheck, ok := current.Init()().(tea.BatchMsg)
+	if !ok {
+		t.Fatalf("Init() message = %T, want tea.BatchMsg", current.Init()())
+	}
+	if len(withoutCheck) != 2 {
+		t.Fatalf("Init() commands without update check = %d, want 2", len(withoutCheck))
+	}
+
+	current.updateCheck = func() tea.Msg { return updateCheckMsg{} }
+	withCheck, ok := current.Init()().(tea.BatchMsg)
+	if !ok {
+		t.Fatalf("Init() message with update check = %T, want tea.BatchMsg", current.Init()())
+	}
+	if len(withCheck) != 3 {
+		t.Fatalf("Init() commands with update check = %d, want 3", len(withCheck))
 	}
 }
 

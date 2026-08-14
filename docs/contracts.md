@@ -91,5 +91,8 @@
 - Only Bubble Tea's update loop mutates UI state. The application bridge turns
   Agent events into frontend-neutral interaction events; the TUI does not
   depend on `internal/llm`.
+- The welcome-screen update check runs as a context-bound Bubble Tea command
+  after the first render. Its result returns through the update loop; it never
+  writes around the renderer or blocks terminal startup.
 - Session history, model context, and terminal viewport remain separate.
   Streaming deltas are coalesced before expensive Markdown rendering.

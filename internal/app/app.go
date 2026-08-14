@@ -50,6 +50,9 @@ func NewCommand() (*cobra.Command, error) {
 		newModel: func(configuration config.Config) (agent.Model, error) {
 			return modelForConfiguration(providers, configuration)
 		},
+		checkUpdate: func(ctx context.Context) (update.StartupResult, error) {
+			return update.CheckStartup(ctx, update.Options{Current: cli.Version})
+		},
 		runTUI:    tui.Run,
 		providers: providers,
 	})
@@ -69,6 +72,7 @@ type dependencies struct {
 	saveSetting                func(config.Setting, string) error
 	saveAPIKey                 func(provider, apiKey string) (string, error)
 	newModel                   func(config.Config) (agent.Model, error)
+	checkUpdate                func(context.Context) (update.StartupResult, error)
 	runTUI                     func(context.Context, interaction.Runner, tui.Options) error
 	runTrustTUI                func(context.Context, tui.TrustPromptOptions) (trust.Choice, error)
 	compactionKeepRecentTokens int64
@@ -165,13 +169,6 @@ func (a *application) Update(
 	return printUpdateResult(output, result)
 }
 
-// notifyUpdate reports an available release before a session starts. It never
-// fails the session: the notifier gates itself on terminal, opt-out, and
-// freshness checks.
-func (a *application) notifyUpdate(ctx context.Context) {
-	update.Notify(ctx, update.Options{Current: cli.Version})
-}
-
 func printUpdateCheck(output io.Writer, result update.CheckResult) error {
 	if result.Available {
 		_, err := fmt.Fprintf(
@@ -220,8 +217,6 @@ func (a *application) Print(
 	if output == nil {
 		return fmt.Errorf("app: output is required")
 	}
-	a.notifyUpdate(ctx)
-
 	environment, err := a.newRunEnvironment(
 		ctx,
 		request.Workspace,
@@ -293,8 +288,6 @@ func (a *application) Interactive(
 	if request.Output == nil {
 		return fmt.Errorf("app: output is required")
 	}
-	a.notifyUpdate(ctx)
-
 	askUI := func(cwd string) (trust.Choice, error) {
 		return a.dependencies.runTrustTUI(ctx, tui.TrustPromptOptions{
 			Input:   request.Input,
@@ -340,11 +333,16 @@ func (a *application) Interactive(
 		providers:     a.dependencies.providers,
 		totalUsage:    usage,
 	}
+	var checkUpdate tui.UpdateChecker
+	if a.dependencies.checkUpdate != nil {
+		checkUpdate = a.checkForUpdate
+	}
 	runErr := a.dependencies.runTUI(ctx, runner, tui.Options{
-		Input:    request.Input,
-		Output:   request.Output,
-		Model:    interaction.DisplayModel{ID: environment.model.ID},
-		Thinking: interaction.DisplayThinking(environment.options.Thinking),
+		Input:       request.Input,
+		Output:      request.Output,
+		Model:       interaction.DisplayModel{ID: environment.model.ID},
+		Thinking:    interaction.DisplayThinking(environment.options.Thinking),
+		CheckUpdate: checkUpdate,
 		APIKeyConfigured: providerConfigured(
 			a.dependencies.providers,
 			environment.configuration,
@@ -358,6 +356,36 @@ func (a *application) Interactive(
 		return errors.Join(fmt.Errorf("app: run TUI: %w", runErr), closeErr)
 	}
 	return closeErr
+}
+
+func (a *application) checkForUpdate(
+	ctx context.Context,
+) (tui.UpdateCheckResult, error) {
+	result, err := a.dependencies.checkUpdate(ctx)
+	if err != nil {
+		return tui.UpdateCheckResult{}, fmt.Errorf("app: check for updates: %w", err)
+	}
+
+	status := tui.UpdateCheckStatusUnknown
+	switch result.Status {
+	case update.StartupStatusDisabled:
+		status = tui.UpdateCheckStatusDisabled
+	case update.StartupStatusDevelopment:
+		status = tui.UpdateCheckStatusDevelopment
+	case update.StartupStatusCurrent:
+		status = tui.UpdateCheckStatusCurrent
+	case update.StartupStatusAvailable:
+		status = tui.UpdateCheckStatusAvailable
+	default:
+		return tui.UpdateCheckResult{}, fmt.Errorf(
+			"app: unsupported startup update status %d",
+			result.Status,
+		)
+	}
+	return tui.UpdateCheckResult{
+		Status: status,
+		Latest: result.Latest,
+	}, nil
 }
 
 type runEnvironment struct {

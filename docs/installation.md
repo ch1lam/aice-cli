@@ -52,8 +52,11 @@ aice update --check    # check without installing
 aice update --force    # replace an unversioned/dev build
 ```
 
-Interactive terminal sessions check for a newer release at most once every 24
-hours. Set `AICE_NO_UPDATE_CHECK=1` to disable this best-effort check.
+The interactive welcome screen checks for a newer release at most once every
+24 hours. The TUI renders immediately, shows the check in progress, then
+updates the welcome card with the current, available, disabled, or unavailable
+state. Development builds skip network access. Set `AICE_NO_UPDATE_CHECK=1` to
+disable the check.
 
 `aice update` refuses package-manager-owned installs and non-writable
 executables. Use the package manager in those cases.

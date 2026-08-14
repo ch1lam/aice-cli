@@ -23,6 +23,7 @@ import (
 	"github.com/ch1lam/aice-cli/internal/provider/opencode"
 	"github.com/ch1lam/aice-cli/internal/session"
 	"github.com/ch1lam/aice-cli/internal/tui"
+	"github.com/ch1lam/aice-cli/internal/update"
 )
 
 func TestApplicationPrintRunsBuiltInAgent(t *testing.T) {
@@ -118,6 +119,35 @@ func TestApplicationPrintRunsBuiltInAgent(t *testing.T) {
 				t.Errorf("model tools = %v, want %v", toolNames, want)
 			}
 		})
+	}
+}
+
+func TestApplicationPrintDoesNotRunWelcomeUpdateCheck(t *testing.T) {
+	t.Parallel()
+
+	workspace := t.TempDir()
+	command, err := newCommand(dependencies{
+		loadConfig: func() (config.Config, error) {
+			return config.Config{DeepSeekAPIKey: "test-key"}, nil
+		},
+		newModel: func(config.Config) (agent.Model, error) {
+			return &recordingModel{response: "done"}, nil
+		},
+		checkUpdate: func(context.Context) (update.StartupResult, error) {
+			t.Fatal("print mode ran the welcome-screen update check")
+			return update.StartupResult{}, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("newCommand() error = %v", err)
+	}
+	command.SetOut(io.Discard)
+	command.SetArgs([]string{
+		"--workspace", workspace,
+		"--print", "inspect",
+	})
+	if err := command.ExecuteContext(t.Context()); err != nil {
+		t.Fatalf("ExecuteContext() error = %v", err)
 	}
 }
 
@@ -424,6 +454,63 @@ func TestApplicationInteractiveKeepsConversationHistory(t *testing.T) {
 	snapshot := openSessionSnapshot(t, paths[0])
 	if len(snapshot.Turns) != 2 {
 		t.Fatalf("persisted turns = %d, want 2", len(snapshot.Turns))
+	}
+}
+
+func TestApplicationInteractiveDefersUpdateCheckToTUI(t *testing.T) {
+	t.Parallel()
+
+	workspace := t.TempDir()
+	checkerCalled := false
+	command, err := newCommand(dependencies{
+		loadConfig: func() (config.Config, error) {
+			return config.Config{DeepSeekAPIKey: "test-key"}, nil
+		},
+		newModel: func(config.Config) (agent.Model, error) {
+			return &recordingModel{}, nil
+		},
+		checkUpdate: func(context.Context) (update.StartupResult, error) {
+			checkerCalled = true
+			return update.StartupResult{
+				Status:  update.StartupStatusCurrent,
+				Current: "1.2.0",
+				Latest:  "1.2.0",
+			}, nil
+		},
+		runTUI: func(
+			ctx context.Context,
+			_ tui.Runner,
+			options tui.Options,
+		) error {
+			if checkerCalled {
+				t.Fatal("update check completed before the TUI started")
+			}
+			if options.CheckUpdate == nil {
+				t.Fatal("TUI did not receive an update checker")
+			}
+			result, err := options.CheckUpdate(ctx)
+			if err != nil {
+				return err
+			}
+			if !checkerCalled {
+				t.Fatal("TUI update checker did not invoke the application check")
+			}
+			if result.Status != tui.UpdateCheckStatusCurrent ||
+				result.Latest != "1.2.0" {
+				t.Fatalf("TUI update result = %+v, want current 1.2.0", result)
+			}
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("newCommand() error = %v", err)
+	}
+	command.SetIn(strings.NewReader(""))
+	command.SetOut(io.Discard)
+	command.SetArgs([]string{"--workspace", workspace})
+
+	if err := command.ExecuteContext(t.Context()); err != nil {
+		t.Fatalf("ExecuteContext() error = %v", err)
 	}
 }
 

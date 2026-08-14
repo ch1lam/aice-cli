@@ -24,6 +24,31 @@ type RuntimeStateProvider = interaction.RuntimeStateProvider
 type SideThread = interaction.SideThread
 type SideThreadManager = interaction.SideThreadManager
 
+// UpdateCheckStatus identifies one welcome-screen update-check result.
+type UpdateCheckStatus uint8
+
+const (
+	// UpdateCheckStatusUnknown is the unset state.
+	UpdateCheckStatusUnknown UpdateCheckStatus = iota
+	// UpdateCheckStatusDisabled means automatic checks are disabled.
+	UpdateCheckStatusDisabled
+	// UpdateCheckStatusDevelopment means this build has no comparable version.
+	UpdateCheckStatusDevelopment
+	// UpdateCheckStatusCurrent means no newer release is available.
+	UpdateCheckStatusCurrent
+	// UpdateCheckStatusAvailable means Latest is newer than this build.
+	UpdateCheckStatusAvailable
+)
+
+// UpdateCheckResult is the frontend-neutral result rendered on the welcome screen.
+type UpdateCheckResult struct {
+	Status UpdateCheckStatus
+	Latest string
+}
+
+// UpdateChecker performs one cache-aware, bounded update check.
+type UpdateChecker func(ctx context.Context) (UpdateCheckResult, error)
+
 // Options contains the terminal streams and model state shown by the program.
 type Options struct {
 	Input            io.Reader
@@ -33,9 +58,10 @@ type Options struct {
 	APIKeyConfigured bool
 	Usage            DisplayUsage
 	WorkingDirectory string
-	// Version is shown on the welcome screen only; it stays off the
-	// transcript while the conversation is in use.
-	Version string
+	// Version and CheckUpdate are shown on the welcome screen only; they stay
+	// off the transcript while the conversation is in use.
+	Version     string
+	CheckUpdate UpdateChecker
 }
 
 // Run starts an interactive Bubble Tea program and owns its run controller.
@@ -103,6 +129,13 @@ func Run(ctx context.Context, runner Runner, options Options) error {
 	initialModel.sessionUsage = options.Usage
 	initialModel.workingDirectory = options.WorkingDirectory
 	initialModel.version = options.Version
+	if options.CheckUpdate != nil {
+		initialModel.updateCheck = checkForUpdate(
+			controllerCtx,
+			options.CheckUpdate,
+		)
+		initialModel.welcomeUpdate.state = welcomeUpdateChecking
+	}
 	program := tea.NewProgram(
 		initialModel,
 		tea.WithContext(ctx),
@@ -120,6 +153,13 @@ func Run(ctx context.Context, runner Runner, options Options) error {
 		return fmt.Errorf("tui: run program: %w", err)
 	}
 	return nil
+}
+
+func checkForUpdate(ctx context.Context, checker UpdateChecker) tea.Cmd {
+	return func() tea.Msg {
+		result, err := checker(ctx)
+		return updateCheckMsg{result: result, err: err}
+	}
 }
 
 type runRequest struct {

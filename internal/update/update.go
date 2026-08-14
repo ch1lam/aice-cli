@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -33,12 +32,12 @@ const (
 	// value. Intended for CI and users who prefer to manage upgrades by hand.
 	noCheckEnv = "AICE_NO_UPDATE_CHECK"
 
-	// notifyInterval bounds how often the startup notifier contacts the API.
-	notifyInterval = 24 * time.Hour
+	// startupCheckInterval bounds how often the welcome screen contacts the API.
+	startupCheckInterval = 24 * time.Hour
 
-	// notifyTimeout bounds one startup check so a stalled connection cannot
-	// delay the terminal session.
-	notifyTimeout = 3 * time.Second
+	// startupCheckTimeout bounds the asynchronous welcome-screen check so a
+	// stalled connection cannot outlive the status it is updating.
+	startupCheckTimeout = 3 * time.Second
 )
 
 // Options controls one update operation. Zero values use process defaults,
@@ -52,9 +51,7 @@ type Options struct {
 	Getenv     func(string) string    // default os.Getenv
 	Now        func() time.Time       // default time.Now
 	Executable func() (string, error) // default selfupdate.ExecutablePath
-	StatePath  string                 // notifier state file, default ~/.aice/update-state
-	Stderr     io.Writer              // notifier output, default os.Stderr
-	IsTerminal func() bool            // default: stdout and stderr are terminals
+	StatePath  string                 // startup-check state file, default ~/.aice/update-state
 }
 
 // CheckResult reports the newest release without installing it.
@@ -62,6 +59,30 @@ type CheckResult struct {
 	Current   string
 	Latest    string
 	Available bool
+}
+
+// StartupStatus identifies the result shown by the interactive welcome screen.
+type StartupStatus uint8
+
+const (
+	// StartupStatusUnknown is the zero value and is never returned after a
+	// completed startup check.
+	StartupStatusUnknown StartupStatus = iota
+	// StartupStatusDisabled means the user disabled automatic checks.
+	StartupStatusDisabled
+	// StartupStatusDevelopment means the current build has no comparable version.
+	StartupStatusDevelopment
+	// StartupStatusCurrent means no newer release is available.
+	StartupStatusCurrent
+	// StartupStatusAvailable means Latest is newer than Current.
+	StartupStatusAvailable
+)
+
+// StartupResult is one cache-aware result for the interactive welcome screen.
+type StartupResult struct {
+	Status  StartupStatus
+	Current string
+	Latest  string
 }
 
 // UpdateResult reports the outcome of an update.
@@ -140,37 +161,41 @@ func Update(ctx context.Context, opts Options, force bool) (UpdateResult, error)
 	return result, nil
 }
 
-// Notify prints an update hint to stderr when a newer release exists. It is
-// best-effort: opt-out, terminal, and freshness gates mean it never fails or
-// blocks a session, and a completed check is cached for notifyInterval so an
-// up-to-date install does not contact the API on every launch.
-func Notify(ctx context.Context, opts Options) {
+// CheckStartup resolves the status shown by the interactive welcome screen.
+// It skips network access for disabled and development builds, reuses a fresh
+// successful result, and bounds a due network check with startupCheckTimeout.
+func CheckStartup(ctx context.Context, opts Options) (StartupResult, error) {
 	opts = normalize(opts)
-	if opts.Getenv(noCheckEnv) != "" || !opts.IsTerminal() {
-		return
+	current := strings.TrimSpace(opts.Current)
+	if opts.Getenv(noCheckEnv) != "" {
+		return StartupResult{
+			Status:  StartupStatusDisabled,
+			Current: current,
+		}, nil
 	}
-	if !dueForCheck(opts.StatePath, opts.Now) {
-		return
+	if !versioned(current) {
+		return StartupResult{
+			Status:  StartupStatusDevelopment,
+			Current: current,
+		}, nil
+	}
+	if result, ok := cachedStartupResult(
+		opts.StatePath,
+		current,
+		opts.Now,
+	); ok {
+		return result, nil
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, notifyTimeout)
+	checkCtx, cancel := context.WithTimeout(ctx, startupCheckTimeout)
 	defer cancel()
-	release, found, err := opts.Client.DetectLatest(ctx, opts.Repository)
-	if err != nil || !found || !versioned(opts.Current) {
-		return
+	result, err := Check(checkCtx, opts)
+	if err != nil {
+		return StartupResult{}, err
 	}
-	if err := markChecked(opts.StatePath, opts.Now); err != nil {
-		return
-	}
-	if !newer(release, opts.Current) {
-		return
-	}
-	fmt.Fprintf(
-		opts.Stderr,
-		"aice: update available: %s -> %s (run `aice update`)\n",
-		strings.TrimSpace(opts.Current),
-		release.Version(),
-	)
+	startup := startupResult(result.Current, result.Latest)
+	cacheStartupCheck(opts.StatePath, result.Latest, opts.Now)
+	return startup, nil
 }
 
 func normalize(opts Options) Options {
@@ -200,12 +225,6 @@ func normalize(opts Options) Options {
 			opts.StatePath = filepath.Join(home, ".aice", "update-state")
 		}
 	}
-	if opts.Stderr == nil {
-		opts.Stderr = os.Stderr
-	}
-	if opts.IsTerminal == nil {
-		opts.IsTerminal = defaultIsTerminal
-	}
 	return opts
 }
 
@@ -219,18 +238,6 @@ func defaultClient() *selfupdate.Updater {
 		panic(fmt.Sprintf("update: create updater: %v", err))
 	}
 	return updater
-}
-
-func defaultIsTerminal() bool {
-	return isTerminal(os.Stdout) && isTerminal(os.Stderr)
-}
-
-func isTerminal(file *os.File) bool {
-	info, err := file.Stat()
-	if err != nil {
-		return false
-	}
-	return info.Mode()&os.ModeCharDevice != 0
 }
 
 // packageManagerInstall reports whether the executable lives under a package
@@ -259,15 +266,19 @@ func versioned(version string) bool {
 // either side cannot be parsed, so a malformed current version degrades to
 // "no update" instead of panicking.
 func newer(release *selfupdate.Release, current string) bool {
-	latest, err := semver.NewVersion(release.Version())
+	return newerVersion(release.Version(), current)
+}
+
+func newerVersion(latest, current string) bool {
+	latestVersion, err := semver.NewVersion(normalizeVersion(latest))
 	if err != nil {
 		return false
 	}
-	version, err := semver.NewVersion(normalizeVersion(current))
+	currentVersion, err := semver.NewVersion(normalizeVersion(current))
 	if err != nil {
 		return false
 	}
-	return latest.GreaterThan(version)
+	return latestVersion.GreaterThan(currentVersion)
 }
 
 func errNoRelease(opts Options) error {
@@ -276,25 +287,58 @@ func errNoRelease(opts Options) error {
 
 type stateFile struct {
 	CheckedAt time.Time `json:"checked_at"`
+	Latest    string    `json:"latest"`
 }
 
-func dueForCheck(path string, now func() time.Time) bool {
+func cachedStartupResult(
+	path string,
+	current string,
+	now func() time.Time,
+) (StartupResult, bool) {
 	content, err := os.ReadFile(path)
 	if err != nil {
-		return true
+		return StartupResult{}, false
 	}
 	var state stateFile
 	if err := json.Unmarshal(content, &state); err != nil {
-		return true
+		return StartupResult{}, false
 	}
-	return now().Sub(state.CheckedAt) >= notifyInterval
+	latest := strings.TrimSpace(state.Latest)
+	age := now().Sub(state.CheckedAt)
+	if !versioned(latest) || age < 0 || age >= startupCheckInterval {
+		return StartupResult{}, false
+	}
+	return startupResult(current, latest), true
 }
 
-func markChecked(path string, now func() time.Time) error {
+func startupResult(current, latest string) StartupResult {
+	status := StartupStatusCurrent
+	if newerVersion(latest, current) {
+		status = StartupStatusAvailable
+	}
+	return StartupResult{
+		Status:  status,
+		Current: strings.TrimSpace(current),
+		Latest:  strings.TrimSpace(latest),
+	}
+}
+
+// cacheStartupCheck is best-effort: a valid network result remains useful even
+// when a read-only home directory prevents caching it for the next launch.
+func cacheStartupCheck(path, latest string, now func() time.Time) {
+	if err := markChecked(path, latest, now); err != nil {
+		return
+	}
+}
+
+func markChecked(path, latest string, now func() time.Time) error {
 	if path == "" {
 		return nil
 	}
-	content, err := json.Marshal(stateFile{CheckedAt: now()})
+	content, err := json.Marshal(stateFile{
+		CheckedAt: now(),
+		Latest:    strings.TrimSpace(latest),
+	})
 	if err != nil {
 		return err
 	}
