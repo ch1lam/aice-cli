@@ -15,7 +15,11 @@ Only these workspace-relative regular files are protected:
 | `.aice/APPEND_SYSTEM.md` | Appended after the base and `AGENTS.md` |
 
 Each file must be valid UTF-8, no larger than 64 KiB, and readable through an
-`os.Root` confined to the workspace. `.aice/sessions` does not trigger Trust.
+`os.Root` confined to the workspace. The `os.Root` constraint is specific to
+these three protected files; general file tools (`read`, `edit`, `bash`, ...)
+are not confined by it and open paths with the full permissions of the AICE
+process, inside or outside the workspace. `.aice/sessions` does not trigger
+Trust.
 
 ## Decision order
 
@@ -62,3 +66,8 @@ An untrusted project still runs with the full permissions of the AICE process.
 Trust does not restrict file access, `..`, absolute paths, subprocesses,
 network access, environment variables, or credentials. Use an external
 container, VM, or OS sandbox when isolation is required.
+
+The `os.Root` confinement of protected prompt files is a loading guard, not a
+general file-access boundary: it exists so untrusted content cannot influence
+the prompt, and it never applies to file tools. File access boundaries belong
+to the externally selected execution environment.
