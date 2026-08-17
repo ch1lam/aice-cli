@@ -76,7 +76,7 @@ func (r *Read) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult, 
 		args.Limit = defaultReadLines
 	}
 
-	path, err := r.workspace.resolvePath(args.Path)
+	path, err := r.resolveReadTarget(args.Path)
 	if err != nil {
 		return llm.ToolResult{}, fmt.Errorf("tool \"read\": %w", err)
 	}

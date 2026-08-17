@@ -31,6 +31,43 @@ func TestReadExecuteReturnsSelectedLines(t *testing.T) {
 	}
 }
 
+func TestReadExecuteStripsAtPrefix(t *testing.T) {
+	t.Parallel()
+	workspace, root := newWorkspace(t)
+	writeFixture(t, root, "notes.txt", "notes content\n")
+	read, err := tool.NewRead(workspace)
+	if err != nil {
+		t.Fatalf("NewRead() error = %v", err)
+	}
+
+	result, err := read.Execute(t.Context(), toolCall(t, "read", map[string]any{"path": "@notes.txt"}))
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if got, want := resultText(t, result), "notes content\n"; got != want {
+		t.Fatalf("Execute() text = %q, want %q", got, want)
+	}
+}
+
+func TestReadExecuteResolvesNFDStoredFilename(t *testing.T) {
+	t.Parallel()
+	workspace, root := newWorkspace(t)
+	// macOS stores accented filenames in NFD; the model may emit NFC.
+	writeFixture(t, root, "cafe\u0301.txt", "decomposed content\n")
+	read, err := tool.NewRead(workspace)
+	if err != nil {
+		t.Fatalf("NewRead() error = %v", err)
+	}
+
+	result, err := read.Execute(t.Context(), toolCall(t, "read", map[string]any{"path": "caf\u00e9.txt"}))
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if got, want := resultText(t, result), "decomposed content\n"; got != want {
+		t.Fatalf("Execute() text = %q, want %q", got, want)
+	}
+}
+
 func TestReadExecuteUsesHostPaths(t *testing.T) {
 	t.Parallel()
 
