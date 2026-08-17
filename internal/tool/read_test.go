@@ -178,9 +178,29 @@ func TestReadExecuteDoesNotReturnPartialLongLine(t *testing.T) {
 	}
 	text := resultText(t, result)
 	if len(text) > 50*1024 || !strings.Contains(text, "Line 1") ||
-		!strings.Contains(text, "byte-bounded command") ||
+		!strings.Contains(text, "sed -n '1p'") ||
+		!strings.Contains(text, "head -c 51200") ||
 		strings.Contains(text, strings.Repeat("a", 32)) {
 		t.Fatalf("Execute() output = %q", text)
+	}
+}
+
+func TestReadExecuteOversizedLineSuggestsEscapedBashCommand(t *testing.T) {
+	t.Parallel()
+	workspace, root := newWorkspace(t)
+	writeFixture(t, root, "it's big.txt", strings.Repeat("a", 60*1024))
+	read, err := tool.NewRead(workspace)
+	if err != nil {
+		t.Fatalf("NewRead() error = %v", err)
+	}
+
+	result, err := read.Execute(t.Context(), toolCall(t, "read", map[string]any{"path": "it's big.txt"}))
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	text := resultText(t, result)
+	if !strings.Contains(text, "sed -n '1p' 'it'\\''s big.txt'") {
+		t.Fatalf("Execute() output = %q, want escaped path in bash hint", text)
 	}
 }
 

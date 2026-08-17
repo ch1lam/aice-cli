@@ -31,8 +31,30 @@ func TestReadTextPageStopsWhenReadCancelsContext(t *testing.T) {
 		data:   []byte("one\ntwo\n"),
 	}
 
-	_, err := readTextPage(ctx, reader, 1, 1)
+	_, err := readTextPage(ctx, reader, 1, 1, "")
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("readTextPage() error = %v, want context.Canceled", err)
+	}
+}
+
+func TestShellQuote(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name  string
+		value string
+		want  string
+	}{
+		{name: "plain", value: "large.txt", want: "'large.txt'"},
+		{name: "apostrophe", value: "it's.txt", want: "'it'\\''s.txt'"},
+		{name: "spaces", value: "my file.txt", want: "'my file.txt'"},
+		{name: "empty", value: "", want: "''"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			if got := shellQuote(test.value); got != test.want {
+				t.Fatalf("shellQuote() = %q, want %q", got, test.want)
+			}
+		})
 	}
 }

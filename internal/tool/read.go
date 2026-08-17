@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/ch1lam/aice-cli/internal/llm"
 )
@@ -94,7 +95,7 @@ func (r *Read) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult, 
 		return llm.ToolResult{}, fmt.Errorf("tool \"read\": %q is not a regular file", args.Path)
 	}
 
-	text, err := readTextPage(ctx, file, args.Offset, args.Limit)
+	text, err := readTextPage(ctx, file, args.Offset, args.Limit, args.Path)
 	if err != nil {
 		if errors.Is(err, errBinaryContent) {
 			return llm.ToolResult{}, fmt.Errorf(
@@ -125,7 +126,14 @@ const (
 	readStopBytes
 )
 
-func readTextPage(ctx context.Context, source io.Reader, offset, limit int) (string, error) {
+// readPageInfo carries the context needed to render a continuation notice:
+// why reading stopped and the path to suggest in fallback commands.
+type readPageInfo struct {
+	reason readStopReason
+	path   string
+}
+
+func readTextPage(ctx context.Context, source io.Reader, offset, limit int, path string) (string, error) {
 	reader := bufio.NewReaderSize(source, readBufferBytes)
 
 	for lineNumber := 1; lineNumber < offset; lineNumber++ {
@@ -156,7 +164,7 @@ func readTextPage(ctx context.Context, source io.Reader, offset, limit int) (str
 		}
 		if line.bytes > maxOutputBytes || len(content)+len(line.data) > maxOutputBytes {
 			if len(lineEnds) == 0 {
-				return oversizedLineMessage(lineNumber), nil
+				return oversizedLineMessage(lineNumber, path), nil
 			}
 			stopReason = readStopBytes
 			break
@@ -183,7 +191,7 @@ func readTextPage(ctx context.Context, source io.Reader, offset, limit int) (str
 	if stopReason == readStopNone {
 		return string(content), nil
 	}
-	return formatReadPage(content, lineEnds, offset, stopReason), nil
+	return formatReadPage(content, lineEnds, offset, readPageInfo{reason: stopReason, path: path}), nil
 }
 
 func readBoundedLine(
@@ -252,12 +260,12 @@ func formatReadPage(
 	content []byte,
 	lineEnds []int,
 	offset int,
-	reason readStopReason,
+	info readPageInfo,
 ) string {
 	for len(lineEnds) > 0 {
 		endLine := offset + len(lineEnds) - 1
 		nextOffset := endLine + 1
-		notice := readContinuationNotice(offset, endLine, nextOffset, reason)
+		notice := readContinuationNotice(offset, endLine, nextOffset, info)
 		contentEnd := lineEnds[len(lineEnds)-1]
 		page := content[:contentEnd]
 		separator := "\n\n"
@@ -273,14 +281,14 @@ func formatReadPage(
 		}
 
 		lineEnds = lineEnds[:len(lineEnds)-1]
-		reason = readStopBytes
+		info.reason = readStopBytes
 	}
 
-	return oversizedLineMessage(offset)
+	return oversizedLineMessage(offset, info.path)
 }
 
-func readContinuationNotice(start, end, next int, reason readStopReason) string {
-	switch reason {
+func readContinuationNotice(start, end, next int, info readPageInfo) string {
+	switch info.reason {
 	case readStopDefaultLines:
 		return fmt.Sprintf(
 			"[Showing lines %d-%d (2000 line limit). Use offset=%d to continue.]",
@@ -305,11 +313,20 @@ func readContinuationNotice(start, end, next int, reason readStopReason) string 
 	}
 }
 
-func oversizedLineMessage(lineNumber int) string {
+func oversizedLineMessage(lineNumber int, path string) string {
 	return fmt.Sprintf(
-		"[Line %d cannot be returned as complete content within the 50 KiB output limit. Use a byte-bounded command to inspect it.]",
+		"[Line %d exceeds the 50 KiB output limit. Read it with bash: sed -n '%dp' %s | head -c %d]",
 		lineNumber,
+		lineNumber,
+		shellQuote(path),
+		maxOutputBytes,
 	)
+}
+
+// shellQuote wraps value in single quotes for use in a bash command, escaping
+// embedded single quotes the way bash expects ('\”).
+func shellQuote(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", `'\''`) + "'"
 }
 
 func offsetBeyondEnd(offset int) string {
