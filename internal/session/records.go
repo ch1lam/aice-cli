@@ -65,7 +65,10 @@ type Turn struct {
 	Usage       llm.Usage          `json:"-"`
 }
 
-// CompactionInput contains caller-owned data for a derived checkpoint.
+// CompactionInput contains caller-owned data for a derived checkpoint. An
+// empty FirstKeptTurnID means the checkpoint summarizes the entire active
+// branch and retains no source turns in the next model context; source turns
+// remain in the append-only Session.
 type CompactionInput struct {
 	ID                string
 	ParentID          string
@@ -175,15 +178,24 @@ func (c Compaction) Validate() error {
 	if c.TokensBefore <= 0 {
 		return fmt.Errorf("session: compaction tokens before must be positive")
 	}
+	if c.ActiveTurnCount <= 0 {
+		return fmt.Errorf("session: compaction active turn count must be positive")
+	}
+	if c.FirstKeptTurnID == "" {
+		if c.RetainedTurnCount != 0 {
+			return fmt.Errorf(
+				"session: full compaction retained turn count must be zero, got %d",
+				c.RetainedTurnCount,
+			)
+		}
+		return nil
+	}
 	if err := validateRecordID(
 		"compaction first kept turn",
 		c.FirstKeptTurnID,
 		false,
 	); err != nil {
 		return err
-	}
-	if c.ActiveTurnCount < 2 {
-		return fmt.Errorf("session: compaction active turn count must be at least two")
 	}
 	if c.RetainedTurnCount <= 0 ||
 		c.RetainedTurnCount >= c.ActiveTurnCount {

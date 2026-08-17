@@ -60,7 +60,7 @@ aice --workspace . --session .aice/sessions/<session-id>.jsonl
 | Provider | DeepSeek V4、OpenCode Go 的 24 个模型与 OpenAI GPT-5.6 |
 | 协议 | Anthropic Messages、OpenAI Responses、OpenAI Chat Completions |
 | 工具 | `read`、`write`、`edit`、`bash`、`grep`、`find`、`ls` |
-| Session | 重启恢复、分支、回退与手动非破坏性压缩 |
+| Session | 重启恢复、分支、回退与自动/手动非破坏性压缩 |
 | 侧问题 | Session 历史之外、无工具的多个临时 `/btw` 线程 |
 | 输入 | 仅文本 |
 

@@ -80,6 +80,12 @@ func validateCompactionBoundary(
 			len(activeTurnIDs),
 		)
 	}
+	if compaction.FirstKeptTurnID == "" {
+		if compaction.RetainedTurnCount != 0 {
+			return fmt.Errorf("session: full compaction must retain no source turns")
+		}
+		return nil
+	}
 	firstKept := -1
 	for index, turnID := range activeTurnIDs {
 		if turnID == compaction.FirstKeptTurnID {
@@ -151,24 +157,30 @@ func activeTurnIDs(
 				path[latestCompaction],
 			)
 		}
-		start = -1
-		for index := 0; index < latestCompaction; index++ {
-			if path[index] == compaction.FirstKeptTurnID {
-				if nodeTypes[path[index]] != RecordTypeTurn {
-					return nil, fmt.Errorf(
-						"session: compaction first kept entry %q is not a turn",
-						compaction.FirstKeptTurnID,
-					)
+		if compaction.FirstKeptTurnID == "" {
+			// The checkpoint summarizes every source turn on the branch. Future
+			// turns appended after the checkpoint remain active.
+			start = latestCompaction
+		} else {
+			start = -1
+			for index := 0; index < latestCompaction; index++ {
+				if path[index] == compaction.FirstKeptTurnID {
+					if nodeTypes[path[index]] != RecordTypeTurn {
+						return nil, fmt.Errorf(
+							"session: compaction first kept entry %q is not a turn",
+							compaction.FirstKeptTurnID,
+						)
+					}
+					start = index
+					break
 				}
-				start = index
-				break
 			}
-		}
-		if start < 0 {
-			return nil, fmt.Errorf(
-				"session: compaction first kept turn %q is not an ancestor",
-				compaction.FirstKeptTurnID,
-			)
+			if start < 0 {
+				return nil, fmt.Errorf(
+					"session: compaction first kept turn %q is not an ancestor",
+					compaction.FirstKeptTurnID,
+				)
+			}
 		}
 	}
 	turnIDs := make([]string, 0)

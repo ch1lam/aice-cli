@@ -78,26 +78,15 @@ func (l *Loop) Run(ctx context.Context, input RunInput, sink AgentEventSink) (Re
 	}
 
 	initialResult := Result{Prompt: input.Prompt}
-	history := slices.Clone(input.History)
-	history = append(history, input.Prompt)
 	execution := runExecution{
 		loop:    l,
 		input:   input,
 		sink:    sink,
-		history: history,
+		history: slices.Clone(input.History),
 		result:  initialResult,
 	}
-	request, err := execution.request()
-	if err != nil {
+	if err := execution.prepareInputContext(ctx, input.Prompt); err != nil {
 		runErr := fmt.Errorf("agent: prepare initial request: %w", err)
-		return finalizeRunResult(initialResult, input.Model, runErr, nil)
-	}
-	if err := checkCompactionThreshold(request); err != nil {
-		runErr := fmt.Errorf("agent: protect initial request: %w", err)
-		return finalizeRunResult(initialResult, input.Model, runErr, nil)
-	}
-	if err := request.Validate(); err != nil {
-		runErr := fmt.Errorf("agent: validate initial request: %w", err)
 		return finalizeRunResult(initialResult, input.Model, runErr, nil)
 	}
 
@@ -325,9 +314,14 @@ func (e *runExecution) run(ctx context.Context) (Result, error) {
 			return e.finishRun(ctx, nil)
 		}
 
-		turnNumber++
-		e.history = append(e.history, followUp.Message)
+		// Keep the follow-up pending before compaction so a failed compaction
+		// still produces a durable terminal interaction for the accepted input.
 		e.pendingInputs = append(e.pendingInputs, followUp.Message)
+		if err := e.prepareInputContext(ctx, followUp.Message); err != nil {
+			return e.finishRun(ctx, err)
+		}
+
+		turnNumber++
 		if err := e.startInputTurn(
 			ctx,
 			turnNumber,
@@ -336,23 +330,49 @@ func (e *runExecution) run(ctx context.Context) (Result, error) {
 		); err != nil {
 			return e.result, err
 		}
-		if err := e.checkInteractionContext(); err != nil {
-			return e.finishRun(ctx, err)
-		}
 	}
 }
 
-func (e *runExecution) checkInteractionContext() error {
-	request, err := e.request()
-	if err != nil {
-		return fmt.Errorf("agent: prepare follow-up request: %w", err)
+func (e *runExecution) prepareInputContext(
+	ctx context.Context,
+	input llm.AgentMessage,
+) error {
+	baseHistory := slices.Clone(e.history)
+	candidate := append(slices.Clone(baseHistory), input)
+	request, err := e.requestForHistory(candidate)
+	if err == nil {
+		err = checkCompactionThreshold(request)
 	}
-	if err := checkCompactionThreshold(request); err != nil {
-		return fmt.Errorf("agent: protect follow-up request: %w", err)
+	if err == nil {
+		if err := request.Validate(); err != nil {
+			return fmt.Errorf("agent: validate input request: %w", err)
+		}
+		e.history = candidate
+		return nil
+	}
+	if !errors.Is(err, ErrContextLimit) || e.input.Compactor == nil {
+		return err
+	}
+
+	compacted, compactErr := e.input.Compactor(ctx, baseHistory)
+	if compactErr != nil {
+		return errors.Join(
+			err,
+			fmt.Errorf("agent: compact complete history: %w", compactErr),
+		)
+	}
+	candidate = append(slices.Clone(compacted), input)
+	request, err = e.requestForHistory(candidate)
+	if err == nil {
+		err = checkCompactionThreshold(request)
+	}
+	if err != nil {
+		return fmt.Errorf("agent: protect request after compaction: %w", err)
 	}
 	if err := request.Validate(); err != nil {
-		return fmt.Errorf("agent: validate follow-up request: %w", err)
+		return fmt.Errorf("agent: validate request after compaction: %w", err)
 	}
+	e.history = candidate
 	return nil
 }
 

@@ -258,6 +258,7 @@ func (a *application) Print(
 		History:      history,
 		Prompt:       prompt,
 		Options:      environment.options,
+		Compactor:    a.sessionCompactor(store),
 	}, printer.Accept)
 	finishErr := printer.Finish()
 	var persistErr error

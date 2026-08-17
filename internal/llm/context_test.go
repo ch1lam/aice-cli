@@ -50,6 +50,44 @@ func TestEstimateContextTokensUsesLastAssistantUsage(t *testing.T) {
 	}
 }
 
+func TestEstimateContextTokensResetsUsageAfterCompaction(t *testing.T) {
+	t.Parallel()
+
+	projected, err := llm.AgentMessagesToMessages([]llm.AgentMessage{
+		llm.CompactionSummaryMessage{
+			Role:         llm.RoleCompactionSummary,
+			Summary:      "older work is summarized",
+			TokensBefore: 50_000,
+			Timestamp:    200,
+		},
+	})
+	if err != nil {
+		t.Fatalf("AgentMessagesToMessages() error = %v", err)
+	}
+	projected = append(projected,
+		llm.AssistantMessage{
+			Role:       llm.RoleAssistant,
+			API:        "test-api",
+			Provider:   "test-provider",
+			ModelID:    "test-model",
+			Content:    []llm.ContentPart{llm.NewTextContent("retained answer").Part()},
+			Usage:      llm.Usage{TotalTokens: 50_000},
+			StopReason: llm.StopReasonStop,
+			Timestamp:  100,
+		},
+		llm.UserMessage{
+			Role:      llm.RoleUser,
+			Content:   []llm.ContentPart{llm.NewTextContent("continue").Part()},
+			Timestamp: 201,
+		},
+	)
+
+	got := llm.EstimateContextTokens(llm.Request{Messages: projected})
+	if got.UsageTokens != 0 || got.LastUsageIndex != -1 {
+		t.Fatalf("EstimateContextTokens() reused pre-compaction usage: %#v", got)
+	}
+}
+
 func TestEstimateContextTokensFallsBackToContent(t *testing.T) {
 	t.Parallel()
 

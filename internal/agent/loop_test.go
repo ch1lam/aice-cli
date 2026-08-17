@@ -355,6 +355,7 @@ func TestLoopChecksCompactionThresholdAtFollowUpBoundary(t *testing.T) {
 	modelInfo.ContextWindow = 100_000
 	modelInfo.MaxTokens = 20_000
 	first := assistantMessage(modelInfo, llm.StopReasonStop, textPart("first answer"))
+	first.Timestamp = 2
 	first.Usage = llm.Usage{TotalTokens: 90_000}
 	model := &scriptedModel{scripts: []*streamScript{{events: terminalEvents(first)}}}
 	loop := mustLoop(t, model, nil)
@@ -362,7 +363,10 @@ func TestLoopChecksCompactionThresholdAtFollowUpBoundary(t *testing.T) {
 		ID:      "follow-up-1",
 		Message: mustPrompt(t, "continue"),
 	}
-	input := testInput(modelInfo, mustPrompt(t, "inspect"))
+	followUp.Message.Timestamp = 3
+	initialPrompt := mustPrompt(t, "inspect")
+	initialPrompt.Timestamp = 1
+	input := testInput(modelInfo, initialPrompt)
 	input.FollowUp = func() (agent.InputMessage, bool, error) {
 		if followUp.ID == "" {
 			return agent.InputMessage{}, false, nil
@@ -401,6 +405,121 @@ func TestLoopChecksCompactionThresholdAtFollowUpBoundary(t *testing.T) {
 	}
 	if interactionEnds != 1 {
 		t.Fatalf("interaction_end count = %d, want only the completed first interaction", interactionEnds)
+	}
+}
+
+func TestLoopCompactsInitialHistoryAtThreshold(t *testing.T) {
+	t.Parallel()
+
+	modelInfo := testModel()
+	modelInfo.ContextWindow = 100_000
+	first := assistantMessage(modelInfo, llm.StopReasonStop, textPart("first answer"))
+	first.Timestamp = 2
+	first.Usage = llm.Usage{TotalTokens: 90_000}
+	previousPrompt := mustPrompt(t, "first prompt")
+	previousPrompt.Timestamp = 1
+	answer := assistantMessage(modelInfo, llm.StopReasonStop, textPart("done"))
+	model := &scriptedModel{scripts: []*streamScript{{events: terminalEvents(answer)}}}
+	loop := mustLoop(t, model, nil)
+	currentPrompt := mustPrompt(t, "continue")
+	currentPrompt.Timestamp = 3
+	input := testInput(modelInfo, currentPrompt)
+	input.History = []llm.AgentMessage{previousPrompt, first}
+
+	var compactedHistory []llm.AgentMessage
+	input.Compactor = func(
+		_ context.Context,
+		history []llm.AgentMessage,
+	) ([]llm.AgentMessage, error) {
+		compactedHistory = history
+		return []llm.AgentMessage{
+			llm.CompactionSummaryMessage{
+				Role:         llm.RoleCompactionSummary,
+				Summary:      "first interaction completed",
+				TokensBefore: 90_000,
+				Timestamp:    3,
+			},
+		}, nil
+	}
+
+	if _, err := loop.Run(t.Context(), input, nil); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if len(compactedHistory) != 2 {
+		t.Fatalf("compactor history = %d, want 2", len(compactedHistory))
+	}
+	if len(model.requests) != 1 || len(model.requests[0].Messages) != 2 {
+		t.Fatalf("model requests = %#v, want compacted history plus prompt", model.requests)
+	}
+	if got := messageText(model.requests[0].Messages[0]); !strings.Contains(got, "first interaction completed") {
+		t.Errorf("compacted request summary = %q", got)
+	}
+	if got := messageText(model.requests[0].Messages[1]); got != "continue" {
+		t.Errorf("compacted request prompt = %q", got)
+	}
+}
+
+func TestLoopCompactsHistoryBeforeFollowUp(t *testing.T) {
+	t.Parallel()
+
+	modelInfo := testModel()
+	modelInfo.ContextWindow = 100_000
+	first := assistantMessage(modelInfo, llm.StopReasonStop, textPart("first answer"))
+	first.Timestamp = 2
+	first.Usage = llm.Usage{TotalTokens: 90_000}
+	second := assistantMessage(modelInfo, llm.StopReasonStop, textPart("second answer"))
+	model := &scriptedModel{scripts: []*streamScript{
+		{events: terminalEvents(first)},
+		{events: terminalEvents(second)},
+	}}
+	loop := mustLoop(t, model, nil)
+	followUp := agent.InputMessage{
+		ID:      "follow-up-1",
+		Message: mustPrompt(t, "continue"),
+	}
+	initialPrompt := mustPrompt(t, "inspect")
+	initialPrompt.Timestamp = 1
+	followUp.Message.Timestamp = 3
+	input := testInput(modelInfo, initialPrompt)
+	input.FollowUp = func() (agent.InputMessage, bool, error) {
+		if followUp.ID == "" {
+			return agent.InputMessage{}, false, nil
+		}
+		next := followUp
+		followUp = agent.InputMessage{}
+		return next, true, nil
+	}
+	input.Compactor = func(
+		_ context.Context,
+		history []llm.AgentMessage,
+	) ([]llm.AgentMessage, error) {
+		if len(history) != 2 {
+			return nil, fmt.Errorf("compactor history = %d, want 2", len(history))
+		}
+		return []llm.AgentMessage{
+			llm.CompactionSummaryMessage{
+				Role:         llm.RoleCompactionSummary,
+				Summary:      "first interaction completed",
+				TokensBefore: 90_000,
+				Timestamp:    3,
+			},
+		}, nil
+	}
+
+	if _, err := loop.Run(t.Context(), input, nil); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if len(model.requests) != 2 {
+		t.Fatalf("model requests = %d, want initial and compacted follow-up", len(model.requests))
+	}
+	if len(model.requests[1].Messages) != 2 {
+		t.Fatalf("follow-up request messages = %d, want summary and prompt", len(model.requests[1].Messages))
+	}
+	if got := messageText(model.requests[1].Messages[0]); !strings.Contains(got, "first interaction completed") {
+		t.Errorf("follow-up summary = %q", got)
+	}
+	if got := messageText(model.requests[1].Messages[1]); got != "continue" {
+		t.Errorf("follow-up prompt = %q", got)
 	}
 }
 
@@ -1239,6 +1358,25 @@ func mustLoop(
 
 func textPart(text string) llm.ContentPart {
 	return llm.NewTextContent(text).Part()
+}
+
+func messageText(message llm.Message) string {
+	var content []llm.ContentPart
+	switch value := message.(type) {
+	case llm.UserMessage:
+		content = value.Content
+	case llm.AssistantMessage:
+		content = value.Content
+	case llm.ToolResultMessage:
+		content = value.Content
+	}
+	var text strings.Builder
+	for _, part := range content {
+		if part.Type == llm.ContentTypeText {
+			text.WriteString(part.Text)
+		}
+	}
+	return text.String()
 }
 
 func toolCallPart(id, name, arguments string) llm.ContentPart {

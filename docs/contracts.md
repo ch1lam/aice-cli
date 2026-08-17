@@ -49,8 +49,11 @@
   interaction before polling again. Emit exactly one `agent_start` and one
   `agent_end` for the whole run, even when it contains multiple interactions.
 - Reapply the compaction threshold before the first model request of every
-  follow-up interaction. Tool and steering continuations may settle the current
-  interaction past that threshold, but a new interaction must not begin there.
+  follow-up interaction. When the threshold is crossed at a complete
+  interaction boundary, the application compacts the active Session and gives
+  the loop the rebuilt provider-neutral history. Tool and steering
+  continuations may settle the current interaction past that threshold, but a
+  new interaction must not begin there.
 - Tests use faux providers and fake tools. Default tests never require paid
   APIs or real credentials.
 

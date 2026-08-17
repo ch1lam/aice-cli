@@ -63,7 +63,7 @@ aice --workspace . --session .aice/sessions/<session-id>.jsonl
 | Providers | DeepSeek V4, OpenCode Go's 24-model catalog, and OpenAI GPT-5.6 |
 | Protocols | Anthropic Messages, OpenAI Responses, OpenAI Chat Completions |
 | Tools | `read`, `write`, `edit`, `bash`, `grep`, `find`, `ls` |
-| Sessions | restart recovery, branches, checkout/backtracking, manual compaction |
+| Sessions | restart recovery, branches, checkout/backtracking, automatic and manual compaction |
 | Side questions | multiple ephemeral, tool-free `/btw` threads outside Session history |
 | Input | text only |
 

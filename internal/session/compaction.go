@@ -8,12 +8,17 @@ import (
 	"github.com/ch1lam/aice-cli/internal/llm"
 )
 
-// DefaultKeepRecentTokens is the approximate recent context retained after a
-// manual compaction.
-const DefaultKeepRecentTokens int64 = 20_000
+const (
+	// DefaultKeepRecentTokens is the approximate recent context retained after a
+	// manual compaction.
+	DefaultKeepRecentTokens int64 = 20_000
+	// minOversizedTurnTokens avoids treating tiny configured budgets as a
+	// reason to discard an otherwise useful complete turn.
+	minOversizedTurnTokens int64 = 8_192
+)
 
-// ErrNothingToCompact indicates that no older complete turn can be summarized
-// while preserving the requested recent context.
+// ErrNothingToCompact indicates that no source history can be safely
+// summarized while preserving the requested recent context.
 var ErrNothingToCompact = errors.New("session has nothing to compact")
 
 // CompactionSettings controls the complete-turn cut selected for a checkpoint.
@@ -55,7 +60,10 @@ func BuildContext(snapshot Snapshot) ([]llm.AgentMessage, error) {
 }
 
 // PrepareCompaction selects a complete-turn cut on the active branch while
-// retaining approximately KeepRecentTokens of its newest source history.
+// retaining approximately KeepRecentTokens of its newest source history. If
+// the newest complete turn is itself larger than that budget, it falls back to
+// summarizing the entire active branch so a long turn cannot permanently block
+// continuation.
 func PrepareCompaction(
 	snapshot Snapshot,
 	settings CompactionSettings,
@@ -81,26 +89,35 @@ func PrepareCompaction(
 		)
 	}
 	estimate := llm.EstimateContextTokens(llm.Request{Messages: projected})
-	if estimate.Tokens <= 0 || len(state.turns) < 2 {
+	if estimate.Tokens <= 0 || len(state.turns) == 0 {
 		return CompactionPreparation{}, ErrNothingToCompact
+	}
+
+	turnTokens := make([]int64, len(state.turns))
+	for turnIndex, turn := range state.turns {
+		tokens, err := estimateTurnTokens(turn)
+		if err != nil {
+			return CompactionPreparation{}, fmt.Errorf(
+				"session: estimate turn %q: %w",
+				turn.ID,
+				err,
+			)
+		}
+		turnTokens[turnIndex] = tokens
 	}
 
 	firstKept := 0
 	var retainedTokens int64
 	for turnIndex := len(state.turns) - 1; turnIndex >= 0; turnIndex-- {
-		turnTokens, err := estimateTurnTokens(state.turns[turnIndex])
-		if err != nil {
-			return CompactionPreparation{}, fmt.Errorf(
-				"session: estimate turn %q: %w",
-				state.turns[turnIndex].ID,
-				err,
-			)
-		}
-		retainedTokens += turnTokens
+		retainedTokens += turnTokens[turnIndex]
 		if retainedTokens >= settings.KeepRecentTokens {
 			firstKept = turnIndex
 			break
 		}
+	}
+	oversizedBudget := max(settings.KeepRecentTokens, minOversizedTurnTokens)
+	if turnTokens[len(turnTokens)-1] >= oversizedBudget {
+		return prepareFullCompaction(state, estimate.Tokens)
 	}
 	if firstKept <= 0 {
 		return CompactionPreparation{}, ErrNothingToCompact
@@ -133,6 +150,33 @@ func PrepareCompaction(
 		FirstKeptTurnID:     state.turns[firstKept].ID,
 		ActiveTurnCount:     len(state.turns),
 		RetainedTurnCount:   len(state.turns) - firstKept,
+	}, nil
+}
+
+func prepareFullCompaction(
+	state activeBranchState,
+	tokensBefore int64,
+) (CompactionPreparation, error) {
+	messagesToSummarize := make([]llm.AgentMessage, 0)
+	if state.compaction != nil {
+		summary, err := compactionSummaryMessage(*state.compaction, state.turns)
+		if err != nil {
+			return CompactionPreparation{}, err
+		}
+		messagesToSummarize = append(messagesToSummarize, summary)
+	}
+	for _, turn := range state.turns {
+		messagesToSummarize = append(messagesToSummarize, turn.Messages...)
+	}
+	cloned, err := cloneMessages(messagesToSummarize)
+	if err != nil {
+		return CompactionPreparation{}, err
+	}
+	return CompactionPreparation{
+		MessagesToSummarize: cloned,
+		TokensBefore:        tokensBefore,
+		ActiveTurnCount:     len(state.turns),
+		RetainedTurnCount:   0,
 	}, nil
 }
 

@@ -15,8 +15,80 @@ import (
 	"github.com/ch1lam/aice-cli/internal/agent"
 	"github.com/ch1lam/aice-cli/internal/config"
 	"github.com/ch1lam/aice-cli/internal/llm"
+	"github.com/ch1lam/aice-cli/internal/provider"
 	"github.com/ch1lam/aice-cli/internal/session"
 )
+
+func TestSerializeCompactionMessagesUsesBoundedTranscriptText(t *testing.T) {
+	t.Parallel()
+
+	user, err := llm.NewUserMessage(llm.NewTextContent("preserve this request").Part())
+	if err != nil {
+		t.Fatalf("NewUserMessage() error = %v", err)
+	}
+	assistant := llm.NewAssistantMessage(llm.Model{
+		ID:       "test-model",
+		API:      "test-api",
+		Provider: "test-provider",
+	})
+	assistant.Content = []llm.ContentPart{{
+		Type: llm.ContentTypeToolCall,
+		ToolCall: &llm.ToolCall{
+			ID:        "call-1",
+			Name:      "read",
+			Arguments: []byte(`{"path":"a.go"}`),
+		},
+	}}
+	toolResult, err := llm.NewToolResultMessage(llm.ToolResult{
+		CallID: "call-1",
+		Name:   "read",
+		Content: []llm.ContentPart{
+			llm.NewTextContent(strings.Repeat("x", compactionToolResultMaxChars+100)).Part(),
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewToolResultMessage() error = %v", err)
+	}
+
+	serialized, err := serializeCompactionMessages([]llm.AgentMessage{
+		user,
+		assistant,
+		toolResult,
+		llm.CompactionSummaryMessage{
+			Role:         llm.RoleCompactionSummary,
+			Summary:      "previous checkpoint",
+			TokensBefore: 100,
+			Timestamp:    1,
+		},
+	})
+	if err != nil {
+		t.Fatalf("serializeCompactionMessages() error = %v", err)
+	}
+	if !strings.Contains(serialized, `[User]
+preserve this request`) {
+		t.Errorf("serialized user message = %q", serialized)
+	}
+	if !strings.Contains(serialized, `[Tool call id="call-1" name="read" arguments={"path":"a.go"}]`) {
+		t.Errorf("serialized tool call = %q", serialized)
+	}
+	if strings.Contains(serialized, strings.Repeat("x", compactionToolResultMaxChars+100)) {
+		t.Errorf("serialized tool result was not bounded")
+	}
+	if !strings.Contains(serialized, "Tool result text truncated") {
+		t.Errorf("serialized tool result has no truncation marker")
+	}
+	if !strings.Contains(serialized, "previous checkpoint") {
+		t.Errorf("serialized previous summary = %q", serialized)
+	}
+
+	truncated := truncateCompactionTranscript(strings.Repeat("x", 20_000), 100)
+	if got := llm.EstimateTextTokens(truncated); got > 100 {
+		t.Errorf("truncated transcript estimate = %d, want at most 100", got)
+	}
+	if !strings.Contains(truncated, "older transcript omitted") {
+		t.Errorf("truncated transcript has no omission marker")
+	}
+}
 
 func TestApplicationCompactAppendsCheckpointAndRestoresDerivedContext(
 	t *testing.T,
@@ -178,6 +250,169 @@ func TestApplicationCompactAppendsCheckpointAndRestoresDerivedContext(
 			"latest boundary = %#v, want third turn retained from two active turns",
 			latest,
 		)
+	}
+}
+
+func TestApplicationPrintAutomaticallyCompactsBeforeRequest(t *testing.T) {
+	t.Parallel()
+
+	workspace := t.TempDir()
+	sessionPath := filepath.Join(t.TempDir(), "conversation.jsonl")
+	modelInfo := llm.Model{
+		ID:            "test-model",
+		Name:          "Test model",
+		API:           llm.API("test-api"),
+		Provider:      llm.ProviderID("test-provider"),
+		ContextWindow: 10_000,
+		MaxTokens:     1_000,
+	}
+	store := createAppTestSession(t, sessionPath, workspace)
+	firstPrompt, err := llm.NewUserMessage(llm.NewTextContent("first prompt").Part())
+	if err != nil {
+		t.Fatalf("NewUserMessage() error = %v", err)
+	}
+	firstPrompt.Timestamp = 1
+	firstAnswer := llm.NewAssistantMessage(modelInfo)
+	firstAnswer.Content = []llm.ContentPart{llm.NewTextContent("first answer").Part()}
+	firstAnswer.StopReason = llm.StopReasonStop
+	firstAnswer.Timestamp = 2
+	firstAnswer.Usage = llm.Usage{TotalTokens: 9_000}
+	if err := appendSessionTurn(t.Context(), store, []llm.AgentMessage{
+		firstPrompt,
+		firstAnswer,
+	}); err != nil {
+		t.Fatalf("append first turn: %v", err)
+	}
+	secondPrompt, err := llm.NewUserMessage(llm.NewTextContent("second prompt").Part())
+	if err != nil {
+		t.Fatalf("NewUserMessage() error = %v", err)
+	}
+	secondPrompt.Timestamp = 3
+	secondAnswer := llm.NewAssistantMessage(modelInfo)
+	secondAnswer.Content = []llm.ContentPart{llm.NewTextContent("second answer").Part()}
+	secondAnswer.StopReason = llm.StopReasonStop
+	secondAnswer.Timestamp = 4
+	secondAnswer.Usage = llm.Usage{TotalTokens: 8_000}
+	if err := appendSessionTurn(t.Context(), store, []llm.AgentMessage{
+		secondPrompt,
+		secondAnswer,
+	}); err != nil {
+		t.Fatalf("append second turn: %v", err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatalf("close session: %v", err)
+	}
+
+	model := &controlledModel{
+		response:   "checkpoint summary",
+		stopReason: llm.StopReasonStop,
+	}
+	candidate := &compactTestProvider{model: modelInfo, service: model}
+	command, err := newCommand(dependencies{
+		loadConfig: func() (config.Config, error) {
+			return config.Config{
+				Provider: string(modelInfo.Provider),
+				Model:    modelInfo.ID,
+			}, nil
+		},
+		newModel: func(config.Config) (agent.Model, error) {
+			return model, nil
+		},
+		providers:                  []provider.Provider{candidate},
+		compactionKeepRecentTokens: 1,
+	})
+	if err != nil {
+		t.Fatalf("newCommand() error = %v", err)
+	}
+	command.SetOut(io.Discard)
+	command.SetArgs([]string{
+		"--workspace", workspace,
+		"--session", sessionPath,
+		"--print", "continue",
+	})
+	if err := command.ExecuteContext(t.Context()); err != nil {
+		t.Fatalf("print ExecuteContext() error = %v", err)
+	}
+	if len(model.requests) != 2 {
+		t.Fatalf("model requests = %d, want compaction and continuation", len(model.requests))
+	}
+	snapshot := openSessionSnapshot(t, sessionPath)
+	if len(snapshot.Compactions) != 1 {
+		t.Fatalf("compactions = %d, want automatic checkpoint", len(snapshot.Compactions))
+	}
+	if got := messageText(t, model.requests[1].Messages[0]); !strings.Contains(got, "checkpoint summary") {
+		t.Errorf("continuation summary = %q", got)
+	}
+}
+
+func TestApplicationPrintCompactsAnOversizedTurn(t *testing.T) {
+	t.Parallel()
+
+	workspace := t.TempDir()
+	sessionPath := filepath.Join(t.TempDir(), "conversation.jsonl")
+	modelInfo := llm.Model{
+		ID:            "test-model",
+		Name:          "Test model",
+		API:           llm.API("test-api"),
+		Provider:      llm.ProviderID("test-provider"),
+		ContextWindow: 10_000,
+		MaxTokens:     1_000,
+	}
+	store := createAppTestSession(t, sessionPath, workspace)
+	prompt, err := llm.NewUserMessage(llm.NewTextContent("inspect the repository").Part())
+	if err != nil {
+		t.Fatalf("NewUserMessage() error = %v", err)
+	}
+	prompt.Timestamp = 1
+	answer := llm.NewAssistantMessage(modelInfo)
+	answer.Content = []llm.ContentPart{
+		llm.NewTextContent(strings.Repeat("large tool transcript ", 8_000)).Part(),
+	}
+	answer.StopReason = llm.StopReasonStop
+	answer.Timestamp = 2
+	if err := appendSessionTurn(t.Context(), store, []llm.AgentMessage{prompt, answer}); err != nil {
+		t.Fatalf("append oversized turn: %v", err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatalf("close session: %v", err)
+	}
+
+	model := &controlledModel{
+		response:   "oversized turn summary",
+		stopReason: llm.StopReasonStop,
+	}
+	candidate := &compactTestProvider{model: modelInfo, service: model}
+	command, err := newCommand(dependencies{
+		loadConfig: func() (config.Config, error) {
+			return config.Config{
+				Provider: string(modelInfo.Provider),
+				Model:    modelInfo.ID,
+			}, nil
+		},
+		newModel: func(config.Config) (agent.Model, error) {
+			return model, nil
+		},
+		providers:                  []provider.Provider{candidate},
+		compactionKeepRecentTokens: 20_000,
+	})
+	if err != nil {
+		t.Fatalf("newCommand() error = %v", err)
+	}
+	command.SetOut(io.Discard)
+	command.SetArgs([]string{
+		"--workspace", workspace,
+		"--session", sessionPath,
+		"--print", "continue",
+	})
+	if err := command.ExecuteContext(t.Context()); err != nil {
+		t.Fatalf("print ExecuteContext() error = %v", err)
+	}
+	if len(model.requests) != 2 {
+		t.Fatalf("model requests = %d, want oversized compaction and continuation", len(model.requests))
+	}
+	snapshot := openSessionSnapshot(t, sessionPath)
+	if len(snapshot.Compactions) != 1 || snapshot.Compactions[0].FirstKeptTurnID != "" {
+		t.Fatalf("compactions = %#v, want full-branch checkpoint", snapshot.Compactions)
 	}
 }
 
@@ -470,6 +705,49 @@ func messageText(t *testing.T, message llm.Message) string {
 		}
 	}
 	return text.String()
+}
+
+type compactTestProvider struct {
+	model   llm.Model
+	service agent.Model
+}
+
+func (p *compactTestProvider) ProviderID() llm.ProviderID {
+	return p.model.Provider
+}
+
+func (p *compactTestProvider) Label() string {
+	return "Test provider"
+}
+
+func (p *compactTestProvider) MenuDescription() string {
+	return "Test provider"
+}
+
+func (p *compactTestProvider) Models() []llm.Model {
+	return []llm.Model{p.model}
+}
+
+func (p *compactTestProvider) DefaultModel() llm.Model {
+	return p.model
+}
+
+func (p *compactTestProvider) Configured(config.Config) bool {
+	return true
+}
+
+func (p *compactTestProvider) New(config.Config) (agent.Model, error) {
+	return p.service, nil
+}
+
+func (p *compactTestProvider) SaveAPIKey(string) (string, error) {
+	return "", nil
+}
+
+func (p *compactTestProvider) ApplyAPIKey(*config.Config, string) {}
+
+func (p *compactTestProvider) CredentialNotConfiguredError() error {
+	return errors.New("test provider credential is not configured")
 }
 
 type controlledModel struct {

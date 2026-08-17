@@ -90,9 +90,15 @@ final JSONL record; malformed complete or middle records fail as corruption.
 A Session can be resumed only with the working directory recorded in its
 header.
 
-Manual compaction summarizes older complete turns on the active branch and
-retains roughly the newest 20,000 tokens. It appends a checkpoint and never
-rewrites source turns or other branches:
+Compaction summarizes older complete turns on the active branch and retains
+roughly the newest 20,000 tokens. It appends a checkpoint and never rewrites
+source turns or other branches. Automatic compaction runs before the first
+model request of a new interaction when the estimated context crosses the
+model's reserved-token threshold; a queued follow-up is compacted only after
+the preceding interaction has reached its complete-turn boundary. If the
+newest complete turn is itself too large to retain, AICE summarizes the entire
+active branch rather than failing solely because that one turn is oversized;
+source turns remain recoverable in the Session.
 
 ```sh
 aice compact --workspace . --session .aice/sessions/<id>.jsonl
@@ -100,5 +106,8 @@ aice compact --workspace . --session .aice/sessions/<id>.jsonl
 
 `/compact` runs the same operation inside the TUI. Compaction uses the selected
 provider/model, requires credentials and enough older history, and always uses
-an AICE-owned prompt rather than project prompt files. Automatic compaction is
-not implemented.
+an AICE-owned prompt rather than project prompt files. Automatic and manual
+compaction share the same provider-neutral, client-generated summary format;
+provider-native compaction protocols are not used. If no complete boundary is
+available or summary generation fails, AICE preserves the source Session and
+returns the error instead of silently dropping history.

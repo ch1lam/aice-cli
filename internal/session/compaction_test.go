@@ -370,6 +370,124 @@ func TestPrepareCompactionReportsNothingToCompact(t *testing.T) {
 	}
 }
 
+func TestPrepareCompactionSummarizesOversizedTurn(t *testing.T) {
+	t.Parallel()
+
+	large := mustTurn(t, "turn-1", "", 100, []llm.AgentMessage{
+		llm.UserMessage{
+			Role:      llm.RoleUser,
+			Content:   []llm.ContentPart{llm.NewTextContent("inspect the repository").Part()},
+			Timestamp: 1,
+		},
+		llm.AssistantMessage{
+			Role:       llm.RoleAssistant,
+			Content:    []llm.ContentPart{llm.NewTextContent(strings.Repeat("large output ", 8_000)).Part()},
+			API:        "custom-chat-api",
+			Provider:   "custom-provider",
+			ModelID:    "requested-model",
+			StopReason: llm.StopReasonStop,
+			Timestamp:  2,
+		},
+	})
+	preparation, err := session.PrepareCompaction(session.Snapshot{
+		Turns:  []session.Turn{large},
+		Order:  []string{large.ID},
+		LeafID: large.ID,
+	}, session.CompactionSettings{KeepRecentTokens: 20_000})
+	if err != nil {
+		t.Fatalf("PrepareCompaction() error = %v", err)
+	}
+	if preparation.FirstKeptTurnID != "" ||
+		preparation.ActiveTurnCount != 1 ||
+		preparation.RetainedTurnCount != 0 {
+		t.Fatalf("full compaction boundary = %#v", preparation)
+	}
+	if len(preparation.MessagesToSummarize) != 2 {
+		t.Fatalf(
+			"messages to summarize = %d, want the complete oversized turn",
+			len(preparation.MessagesToSummarize),
+		)
+	}
+}
+
+func TestStoreAppendsFullCompactionAndBuildsFutureContext(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "session.jsonl")
+	store := mustCreate(t, path)
+	large := mustTurn(t, "turn-1", "", 100, []llm.AgentMessage{
+		llm.UserMessage{
+			Role:      llm.RoleUser,
+			Content:   []llm.ContentPart{llm.NewTextContent("start").Part()},
+			Timestamp: 1,
+		},
+		llm.AssistantMessage{
+			Role:       llm.RoleAssistant,
+			Content:    []llm.ContentPart{llm.NewTextContent("large result").Part()},
+			API:        "custom-chat-api",
+			Provider:   "custom-provider",
+			ModelID:    "requested-model",
+			StopReason: llm.StopReasonStop,
+			Timestamp:  2,
+		},
+	})
+	if err := store.AppendTurn(t.Context(), large); err != nil {
+		t.Fatalf("AppendTurn() error = %v", err)
+	}
+	compaction := mustCompaction(t, session.CompactionInput{
+		ID:                "compaction-1",
+		ParentID:          large.ID,
+		CreatedAt:         200,
+		Summary:           "the large turn completed",
+		TokensBefore:      30_000,
+		ActiveTurnCount:   1,
+		RetainedTurnCount: 0,
+	})
+	if err := store.AppendCompaction(t.Context(), compaction); err != nil {
+		t.Fatalf("AppendCompaction() error = %v", err)
+	}
+	future := mustTurn(
+		t,
+		"turn-2",
+		compaction.ID,
+		300,
+		namedTextMessages("continue", "continued", 0),
+	)
+	if err := store.AppendTurn(t.Context(), future); err != nil {
+		t.Fatalf("AppendTurn(future) error = %v", err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+
+	reopened, err := session.Open(t.Context(), path)
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer func() {
+		if err := reopened.Close(); err != nil {
+			t.Errorf("Close() error = %v", err)
+		}
+	}()
+	snapshot, err := reopened.Snapshot()
+	if err != nil {
+		t.Fatalf("Snapshot() error = %v", err)
+	}
+	contextMessages, err := session.BuildContext(snapshot)
+	if err != nil {
+		t.Fatalf("BuildContext() error = %v", err)
+	}
+	if len(contextMessages) != 3 {
+		t.Fatalf("context messages = %d, want summary and future turn", len(contextMessages))
+	}
+	if summary, ok := contextMessages[0].(llm.CompactionSummaryMessage); !ok ||
+		summary.Summary != compaction.Summary {
+		t.Fatalf("context summary = %#v", contextMessages[0])
+	}
+	assertSessionText(t, contextMessages[1], llm.RoleUser, "continue")
+	assertSessionText(t, contextMessages[2], llm.RoleAssistant, "continued")
+}
+
 func mustCompaction(
 	t *testing.T,
 	input session.CompactionInput,

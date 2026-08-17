@@ -98,6 +98,7 @@ func (r *interactiveRun) Run(ctx context.Context) error {
 		History:      snapshot.history,
 		Prompt:       r.prompt,
 		Options:      snapshot.options,
+		Compactor:    r.session.compactHistory,
 		Steering:     mailboxInputSource(r.mailbox.TakeSteering, "steering"),
 		FollowUp:     mailboxInputSource(r.mailbox.TakeFollowUp, "follow-up"),
 	}, func(eventCtx context.Context, event agent.AgentEvent) error {
@@ -298,6 +299,33 @@ func (s *interactiveSession) commitHistory(
 		state.pendingMessages = []llm.AgentMessage{}
 	}
 	return nil
+}
+
+func (s *interactiveSession) compactHistory(
+	ctx context.Context,
+	_ []llm.AgentMessage,
+) ([]llm.AgentMessage, error) {
+	if s == nil || s.application == nil {
+		return nil, fmt.Errorf("app: interactive Session is not initialized")
+	}
+	if s.store == nil {
+		return nil, fmt.Errorf("app: interactive Session store is required")
+	}
+
+	// Serialize automatic checkpoints with turn commits and explicit checkout.
+	// The model run is already at a complete interaction boundary here, so the
+	// durable store and the callback's history describe the same context.
+	s.historySyncMu.Lock()
+	defer s.historySyncMu.Unlock()
+
+	history, err := s.application.compactHistory(ctx, s.store)
+	if err != nil {
+		return nil, err
+	}
+	s.historyMu.Lock()
+	s.history = history
+	s.historyMu.Unlock()
+	return cloneAgentMessages(history)
 }
 
 func (r *interactiveRun) persistTurn(

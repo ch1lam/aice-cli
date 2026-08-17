@@ -13,12 +13,18 @@ const (
 )
 
 func (e *runExecution) request() (llm.Request, error) {
+	return e.requestForHistory(e.history)
+}
+
+func (e *runExecution) requestForHistory(
+	history []llm.AgentMessage,
+) (llm.Request, error) {
 	definitions := make([]llm.ToolDefinition, len(e.loop.definitions))
 	for index, definition := range e.loop.definitions {
 		definition.InputSchema = slices.Clone(definition.InputSchema)
 		definitions[index] = definition
 	}
-	messages, err := llm.AgentMessagesToMessages(e.history)
+	messages, err := llm.AgentMessagesToMessages(history)
 	if err != nil {
 		return llm.Request{}, fmt.Errorf("agent: project history: %w", err)
 	}

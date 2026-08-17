@@ -3,7 +3,7 @@
 AICE is a batteries-included coding agent implemented as one Go binary. Its
 core is an explicit Agent Loop with replaceable provider, tool, TUI, and
 persistence boundaries. Sessions are append-only JSONL trees with recovery,
-branch navigation, backtracking, and branch-local manual compaction.
+branch navigation, backtracking, and branch-local automatic/manual compaction.
 
 The user's explicit request overrides this guide. If it changes an invariant
 or architecture decision, explain the conflict, confirm the new direction,

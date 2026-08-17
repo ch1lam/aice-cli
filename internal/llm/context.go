@@ -1,6 +1,9 @@
 package llm
 
-import "unicode/utf8"
+import (
+	"strings"
+	"unicode/utf8"
+)
 
 const estimatedImageUnits int64 = 4_800
 
@@ -96,21 +99,48 @@ func lastApplicableUsage(messages []Message) (Usage, int, bool) {
 	latestPrefixTimestamp := int64(-1 << 63)
 	var usage Usage
 	usageIndex := -1
+	usageReset := false
 	for index, message := range messages {
+		// A compaction summary starts a new context window. Usage on retained
+		// assistant messages belongs to the replaced window and must not trigger
+		// another compaction until a newer user prefix begins.
+		if isCompactionSummary(message) {
+			usage = Usage{}
+			usageIndex = -1
+			usageReset = true
+			latestPrefixTimestamp = messageTimestamp(message)
+			continue
+		}
+
 		timestamp := messageTimestamp(message)
-		if assistant, ok := message.(AssistantMessage); ok &&
-			assistant.Timestamp >= latestPrefixTimestamp &&
-			assistant.StopReason != StopReasonAborted &&
-			assistant.StopReason != StopReasonError &&
-			ContextTokens(assistant.Usage) > 0 {
-			usage = assistant.Usage
-			usageIndex = index
+		if usageReset && timestamp > latestPrefixTimestamp {
+			usageReset = false
+		}
+		if !usageReset {
+			if assistant, ok := message.(AssistantMessage); ok &&
+				assistant.Timestamp >= latestPrefixTimestamp &&
+				assistant.StopReason != StopReasonAborted &&
+				assistant.StopReason != StopReasonError &&
+				ContextTokens(assistant.Usage) > 0 {
+				usage = assistant.Usage
+				usageIndex = index
+			}
 		}
 		if timestamp > latestPrefixTimestamp {
 			latestPrefixTimestamp = timestamp
 		}
 	}
 	return usage, usageIndex, usageIndex >= 0
+}
+
+func isCompactionSummary(message Message) bool {
+	user, ok := message.(UserMessage)
+	if !ok || len(user.Content) != 1 {
+		return false
+	}
+	part := user.Content[0]
+	return part.Type == ContentTypeText &&
+		strings.HasPrefix(part.Text, compactionSummaryPrefix)
 }
 
 func messageTimestamp(message Message) int64 {
