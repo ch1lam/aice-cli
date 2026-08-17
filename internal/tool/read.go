@@ -67,6 +67,7 @@ func (r *Read) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult, 
 	if err != nil {
 		return llm.ToolResult{}, err
 	}
+	userLimit := args.Limit
 	if args.Offset < 0 || args.Limit < 0 {
 		return llm.ToolResult{}, fmt.Errorf("tool \"read\": offset and limit cannot be negative")
 	}
@@ -76,6 +77,11 @@ func (r *Read) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult, 
 	if args.Limit == 0 || args.Limit > defaultReadLines {
 		args.Limit = defaultReadLines
 	}
+
+	// An explicit limit smaller than the default page size is a pagination
+	// hint: after the page, count how many lines remain so the notice can say
+	// \"N more lines\" instead of the generic 2000-line hint.
+	userLimited := userLimit > 0 && userLimit < defaultReadLines
 
 	path, err := r.resolveReadTarget(args.Path)
 	if err != nil {
@@ -95,7 +101,7 @@ func (r *Read) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult, 
 		return llm.ToolResult{}, fmt.Errorf("tool \"read\": %q is not a regular file", args.Path)
 	}
 
-	text, err := readTextPage(ctx, file, args.Offset, args.Limit, args.Path)
+	text, err := readTextPage(ctx, file, args.Offset, args.Limit, args.Path, userLimited)
 	if err != nil {
 		if errors.Is(err, errBinaryContent) {
 			return llm.ToolResult{}, fmt.Errorf(
@@ -127,14 +133,24 @@ const (
 )
 
 // readPageInfo carries the context needed to render a continuation notice:
-// why reading stopped and the path to suggest in fallback commands.
+// why reading stopped, the path to suggest in fallback commands, and the
+// remaining-line count for explicitly limited reads.
 type readPageInfo struct {
-	reason readStopReason
-	path   string
+	reason    readStopReason
+	path      string
+	remaining int
+	capped    bool
 }
 
-func readTextPage(ctx context.Context, source io.Reader, offset, limit int, path string) (string, error) {
+func readTextPage(
+	ctx context.Context,
+	source io.Reader,
+	offset, limit int,
+	path string,
+	userLimited bool,
+) (string, error) {
 	reader := bufio.NewReaderSize(source, readBufferBytes)
+	info := readPageInfo{path: path}
 
 	for lineNumber := 1; lineNumber < offset; lineNumber++ {
 		line, err := readBoundedLine(ctx, reader, 0)
@@ -175,15 +191,27 @@ func readTextPage(ctx context.Context, source io.Reader, offset, limit int, path
 	}
 
 	if stopReason == readStopNone && len(lineEnds) == limit {
-		more, err := hasMoreText(ctx, reader)
-		if err != nil {
-			return "", err
-		}
-		if more {
-			if limit == defaultReadLines {
-				stopReason = readStopDefaultLines
-			} else {
+		if userLimited {
+			remaining, capped, err := countRemainingLines(ctx, reader, maxReadBytes)
+			if err != nil {
+				return "", err
+			}
+			if remaining > 0 {
+				info.remaining = remaining
+				info.capped = capped
 				stopReason = readStopRequestedLines
+			}
+		} else {
+			more, err := hasMoreText(ctx, reader)
+			if err != nil {
+				return "", err
+			}
+			if more {
+				if limit == defaultReadLines {
+					stopReason = readStopDefaultLines
+				} else {
+					stopReason = readStopRequestedLines
+				}
 			}
 		}
 	}
@@ -191,7 +219,8 @@ func readTextPage(ctx context.Context, source io.Reader, offset, limit int, path
 	if stopReason == readStopNone {
 		return string(content), nil
 	}
-	return formatReadPage(content, lineEnds, offset, readPageInfo{reason: stopReason, path: path}), nil
+	info.reason = stopReason
+	return formatReadPage(content, lineEnds, offset, info), nil
 }
 
 func readBoundedLine(
@@ -256,6 +285,31 @@ func hasMoreText(ctx context.Context, reader *bufio.Reader) (bool, error) {
 	return false, err
 }
 
+// countRemainingLines counts the complete lines left in reader, stopping once
+// budget bytes have been consumed so an explicit small limit cannot turn into
+// a whole-file scan. It reports whether the count was cut short by the budget.
+func countRemainingLines(
+	ctx context.Context,
+	reader *bufio.Reader,
+	budget int,
+) (count int, capped bool, err error) {
+	for budget > 0 {
+		if err := ctx.Err(); err != nil {
+			return 0, false, err
+		}
+		line, err := readBoundedLine(ctx, reader, 0)
+		if err != nil {
+			return 0, false, err
+		}
+		if !line.found {
+			return count, false, nil
+		}
+		count++
+		budget -= line.bytes
+	}
+	return count, true, nil
+}
+
 func formatReadPage(
 	content []byte,
 	lineEnds []int,
@@ -289,6 +343,25 @@ func formatReadPage(
 
 func readContinuationNotice(start, end, next int, info readPageInfo) string {
 	switch info.reason {
+	case readStopRequestedLines:
+		noun := "lines"
+		if info.remaining == 1 {
+			noun = "line"
+		}
+		if info.capped {
+			return fmt.Sprintf(
+				"[at least %d more %s in file. Use offset=%d to continue.]",
+				info.remaining,
+				noun,
+				next,
+			)
+		}
+		return fmt.Sprintf(
+			"[%d more %s in file. Use offset=%d to continue.]",
+			info.remaining,
+			noun,
+			next,
+		)
 	case readStopDefaultLines:
 		return fmt.Sprintf(
 			"[Showing lines %d-%d (2000 line limit). Use offset=%d to continue.]",

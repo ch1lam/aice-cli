@@ -25,7 +25,7 @@ func TestReadExecuteReturnsSelectedLines(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
-	want := "two\nthree\n\n[Showing lines 2-3. Use offset=4 to continue.]"
+	want := "two\nthree\n\n[1 more line in file. Use offset=4 to continue.]"
 	if got := resultText(t, result); got != want {
 		t.Fatalf("Execute() text = %q, want %q", got, want)
 	}
@@ -254,8 +254,97 @@ func TestReadExecuteBoundsOutputAtCompleteLines(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Execute(next page) error = %v", err)
 	}
-	if nextText := resultText(t, nextResult); !strings.HasPrefix(nextText, line+"\n\n[Showing") {
+	nextText := resultText(t, nextResult)
+	if !strings.HasPrefix(nextText, line+"\n\n[") {
 		t.Fatalf("Execute(next page) text = %q", nextText)
+	}
+	if !strings.HasSuffix(nextText, "[145 more lines in file. Use offset=256 to continue.]") {
+		t.Fatalf("Execute(next page) notice = %q", nextText[max(0, len(nextText)-160):])
+	}
+}
+
+func TestReadExecuteReportsRemainingLinesForUserLimit(t *testing.T) {
+	t.Parallel()
+	workspace, root := newWorkspace(t)
+	writeFixture(t, root, "four-lines.txt", "one\ntwo\nthree\nfour\n")
+	read, err := tool.NewRead(workspace)
+	if err != nil {
+		t.Fatalf("NewRead() error = %v", err)
+	}
+
+	result, err := read.Execute(t.Context(), toolCall(t, "read", map[string]any{
+		"path": "four-lines.txt", "offset": 1, "limit": 2,
+	}))
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if got, want := resultText(t, result), "one\ntwo\n\n[2 more lines in file. Use offset=3 to continue.]"; got != want {
+		t.Fatalf("Execute() text = %q, want %q", got, want)
+	}
+}
+
+func TestReadExecuteNoNoticeWhenUserLimitReachesEOF(t *testing.T) {
+	t.Parallel()
+	workspace, root := newWorkspace(t)
+	writeFixture(t, root, "two-lines.txt", "one\ntwo\n")
+	read, err := tool.NewRead(workspace)
+	if err != nil {
+		t.Fatalf("NewRead() error = %v", err)
+	}
+
+	result, err := read.Execute(t.Context(), toolCall(t, "read", map[string]any{
+		"path": "two-lines.txt", "offset": 1, "limit": 2,
+	}))
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if got, want := resultText(t, result), "one\ntwo\n"; got != want {
+		t.Fatalf("Execute() text = %q, want %q", got, want)
+	}
+}
+
+func TestReadExecuteUserLimitClampedToDefaultStaysDefaultNotice(t *testing.T) {
+	t.Parallel()
+	workspace, root := newWorkspace(t)
+	var content strings.Builder
+	for lineNumber := 1; lineNumber <= 2001; lineNumber++ {
+		fmt.Fprintf(&content, "line-%04d\n", lineNumber)
+	}
+	writeFixture(t, root, "clamped.txt", content.String())
+	read, err := tool.NewRead(workspace)
+	if err != nil {
+		t.Fatalf("NewRead() error = %v", err)
+	}
+
+	result, err := read.Execute(t.Context(), toolCall(t, "read", map[string]any{
+		"path": "clamped.txt", "limit": 5000,
+	}))
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	text := resultText(t, result)
+	if !strings.Contains(text, "[Showing lines 1-2000 (2000 line limit). Use offset=2001 to continue.]") {
+		t.Fatalf("Execute() suffix = %q", text[max(0, len(text)-160):])
+	}
+}
+
+func TestReadExecuteCarriesOffsetThroughUserLimitNotice(t *testing.T) {
+	t.Parallel()
+	workspace, root := newWorkspace(t)
+	writeFixture(t, root, "five-lines.txt", "one\ntwo\nthree\nfour\nfive\n")
+	read, err := tool.NewRead(workspace)
+	if err != nil {
+		t.Fatalf("NewRead() error = %v", err)
+	}
+
+	result, err := read.Execute(t.Context(), toolCall(t, "read", map[string]any{
+		"path": "five-lines.txt", "offset": 3, "limit": 2,
+	}))
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if got, want := resultText(t, result), "three\nfour\n\n[1 more line in file. Use offset=5 to continue.]"; got != want {
+		t.Fatalf("Execute() text = %q, want %q", got, want)
 	}
 }
 
