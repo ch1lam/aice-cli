@@ -397,7 +397,8 @@ func oversizedLineMessage(lineNumber int, path string) string {
 }
 
 // shellQuote wraps value in single quotes for use in a bash command, escaping
-// embedded single quotes the way bash expects ('\”).
+// embedded single quotes the way bash expects (close quote, escaped quote,
+// reopen quote).
 func shellQuote(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", `'\''`) + "'"
 }
