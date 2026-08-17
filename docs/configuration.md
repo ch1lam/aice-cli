@@ -108,9 +108,13 @@ Credentials are stored by provider in `~/.aice/auth.json` with file mode
 | OpenCode Go | `AICE_OPENCODE_API_KEY` | `opencode_api_key` | `AICE_OPENCODE_BASE_URL` |
 | OpenAI | `OPENAI_API_KEY` | `openai_api_key` | `AICE_OPENAI_BASE_URL` |
 
-In the TUI, `/login` opens a provider menu and hidden input. Missing
-credentials do not prevent the TUI from starting, but a normal prompt asks the
-user to log in first.
+In the TUI, `/login` opens a provider menu and hidden input. It stores the
+key in the auth file and also saves the provider (and the effective model when
+the previous one does not belong to that provider) to the global settings
+file, so the login survives a restart. The provider menus mark providers whose
+credential is already stored with "credential saved". Missing credentials do
+not prevent the TUI from starting, but a normal prompt asks the user to log in
+first.
 
 For non-interactive setup, send the key on standard input so it does not appear
 in command-line arguments:

@@ -576,6 +576,7 @@ func TestApplicationInteractiveLoginEnablesCurrentSession(t *testing.T) {
 	workspace := t.TempDir()
 	model := &recordingModel{response: "ready"}
 	var savedAPIKey string
+	var savedSettings []config.Setting
 	command, err := newCommand(dependencies{
 		loadConfig: func() (config.Config, error) {
 			return config.Config{
@@ -584,6 +585,10 @@ func TestApplicationInteractiveLoginEnablesCurrentSession(t *testing.T) {
 					GlobalAuth:     "/global/auth.json",
 				},
 			}, nil
+		},
+		saveSetting: func(setting config.Setting, _ string) error {
+			savedSettings = append(savedSettings, setting)
+			return nil
 		},
 		saveAPIKey: func(_ string, apiKey string) (string, error) {
 			savedAPIKey = apiKey
@@ -639,6 +644,14 @@ func TestApplicationInteractiveLoginEnablesCurrentSession(t *testing.T) {
 	}
 	if savedAPIKey != "secret-value" {
 		t.Errorf("saved API key = %q, want configured value", savedAPIKey)
+	}
+	if got, want := savedSettings, []config.Setting{
+		config.SettingProvider,
+	}; !reflect.DeepEqual(got, want) {
+		t.Errorf(
+			"persisted settings = %v, want provider (default model already resolved)",
+			got,
+		)
 	}
 	if len(model.requests) != 1 {
 		t.Fatalf("model requests = %d, want one after login", len(model.requests))

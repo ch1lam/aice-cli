@@ -540,6 +540,7 @@ func TestInteractiveSessionLoginCanRetryAfterPersistenceFailure(t *testing.T) {
 
 	saveAttempts := 0
 	wantErr := errors.New("credential write interrupted")
+	var savedSettings []config.Setting
 	runner := &interactiveSession{
 		application: &application{dependencies: dependencies{
 			saveAPIKey: func(string, string) (string, error) {
@@ -548,6 +549,10 @@ func TestInteractiveSessionLoginCanRetryAfterPersistenceFailure(t *testing.T) {
 					return "", wantErr
 				}
 				return "/global/auth.json", nil
+			},
+			saveSetting: func(setting config.Setting, _ string) error {
+				savedSettings = append(savedSettings, setting)
+				return nil
 			},
 			newModel: func(config.Config) (agent.Model, error) {
 				return &controlledModel{
@@ -581,6 +586,9 @@ func TestInteractiveSessionLoginCanRetryAfterPersistenceFailure(t *testing.T) {
 	if runner.loop != nil || runner.RuntimeState().APIKeyConfigured {
 		t.Fatal("failed /login changed runtime authentication state")
 	}
+	if len(savedSettings) != 0 {
+		t.Fatalf("failed /login persisted settings: %v", savedSettings)
+	}
 
 	output, err := runner.RunSlashCommand(t.Context(), request)
 	if err != nil {
@@ -588,6 +596,11 @@ func TestInteractiveSessionLoginCanRetryAfterPersistenceFailure(t *testing.T) {
 	}
 	if runner.loop == nil || !runner.RuntimeState().APIKeyConfigured {
 		t.Fatal("second /login did not enable current Session")
+	}
+	if got, want := savedSettings, []config.Setting{
+		config.SettingProvider,
+	}; !reflect.DeepEqual(got, want) {
+		t.Errorf("persisted settings = %v, want %v", got, want)
 	}
 	if strings.Contains(output, request.Secret) {
 		t.Fatalf("/login output exposes API key: %q", output)
@@ -720,12 +733,18 @@ func TestInteractiveSessionLoginOpencode(t *testing.T) {
 	t.Parallel()
 
 	var savedProvider, savedKey string
+	var savedSettings []config.Setting
 	runner := &interactiveSession{
 		application: &application{dependencies: dependencies{
 			saveAPIKey: func(provider, apiKey string) (string, error) {
 				savedProvider = provider
 				savedKey = apiKey
 				return "/global/auth.json", nil
+			},
+			saveSetting: func(setting config.Setting, value string) error {
+				savedSettings = append(savedSettings, setting)
+				_ = value
+				return nil
 			},
 			newModel: func(config.Config) (agent.Model, error) {
 				return &controlledModel{
@@ -775,8 +794,169 @@ func TestInteractiveSessionLoginOpencode(t *testing.T) {
 	if !runner.RuntimeState().APIKeyConfigured {
 		t.Error("RuntimeState().APIKeyConfigured = false, want true")
 	}
+	if got, want := savedSettings, []config.Setting{
+		config.SettingProvider,
+	}; !reflect.DeepEqual(got, want) {
+		t.Errorf(
+			"persisted settings = %v, want provider only (stored model stays valid)",
+			got,
+		)
+	}
 	if !strings.Contains(output, "OpenCode Go API key") {
 		t.Errorf("/login output = %q, want OpenCode Go mention", output)
+	}
+}
+
+func TestInteractiveSessionLoginPersistsProviderAndFallsBackModel(t *testing.T) {
+	t.Parallel()
+
+	var savedSettings []config.Setting
+	var savedValues []string
+	runner := &interactiveSession{
+		application: &application{dependencies: dependencies{
+			saveAPIKey: func(string, string) (string, error) {
+				return "/global/auth.json", nil
+			},
+			saveSetting: func(setting config.Setting, value string) error {
+				savedSettings = append(savedSettings, setting)
+				savedValues = append(savedValues, value)
+				return nil
+			},
+			newModel: func(configuration config.Config) (agent.Model, error) {
+				return &controlledModel{
+					response:   "ready",
+					stopReason: llm.StopReasonStop,
+				}, nil
+			},
+			providers: defaultProviders(),
+		}},
+		// The stored model is OpenAI-only, so logging into
+		// OpenCode Go must persist both the provider and its default model;
+		// otherwise a restart would fail with an unsupported-model error.
+		model: opencode.DefaultModel(),
+		options: llm.StreamOptions{
+			Thinking: llm.ThinkingLevelMedium,
+		},
+		configuration: config.Config{
+			Provider:     string(opencode.ProviderID),
+			Model:        "gpt-5.6-terra",
+			OpenAIAPIKey: "openai-key",
+		},
+		providers: defaultProviders(),
+	}
+
+	output, err := runner.RunSlashCommand(t.Context(), tui.SlashCommandRequest{
+		Name:   "login",
+		Secret: "opencode-secret",
+	})
+	if err != nil {
+		t.Fatalf("/login error = %v", err)
+	}
+	if runner.configuration.Provider != string(opencode.ProviderID) {
+		t.Errorf(
+			"configuration.Provider = %q, want opencode-go",
+			runner.configuration.Provider,
+		)
+	}
+	if runner.configuration.Model != opencode.DefaultModel().ID {
+		t.Errorf(
+			"configuration.Model = %q, want the opencode-go default %q",
+			runner.configuration.Model,
+			opencode.DefaultModel().ID,
+		)
+	}
+	if runner.model.Provider != opencode.ProviderID {
+		t.Errorf(
+			"runner.model.Provider = %q, want opencode-go after login",
+			runner.model.Provider,
+		)
+	}
+	if got, want := savedSettings, []config.Setting{
+		config.SettingProvider,
+		config.SettingModel,
+	}; !reflect.DeepEqual(got, want) {
+		t.Errorf("persisted settings = %v, want provider then model", got)
+	}
+	if len(savedValues) != 2 ||
+		savedValues[0] != string(opencode.ProviderID) ||
+		savedValues[1] != opencode.DefaultModel().ID {
+		t.Errorf(
+			"persisted values = %v, want [%s %s]",
+			savedValues,
+			opencode.ProviderID,
+			opencode.DefaultModel().ID,
+		)
+	}
+	_ = output
+}
+
+func TestInteractiveSessionProviderSwitchPersistsFallenBackModel(t *testing.T) {
+	t.Parallel()
+
+	var savedSettings []config.Setting
+	var savedValues []string
+	runner := &interactiveSession{
+		application: &application{dependencies: dependencies{
+			saveSetting: func(setting config.Setting, value string) error {
+				savedSettings = append(savedSettings, setting)
+				savedValues = append(savedValues, value)
+				return nil
+			},
+			newModel: func(configuration config.Config) (agent.Model, error) {
+				return &controlledModel{
+					response:   "ready",
+					stopReason: llm.StopReasonStop,
+				}, nil
+			},
+			providers: defaultProviders(),
+		}},
+		// The stored model is OpenAI-only, so switching the
+		// provider to OpenCode Go must persist its default model too.
+		model: opencode.DefaultModel(),
+		options: llm.StreamOptions{
+			Thinking: llm.ThinkingLevelMedium,
+		},
+		configuration: config.Config{
+			Provider:       string(opencode.ProviderID),
+			Model:          "gpt-5.6-terra",
+			OpenCodeAPIKey: "opencode-key",
+			OpenAIAPIKey:   "openai-key",
+		},
+		providers: defaultProviders(),
+	}
+
+	output, err := runner.RunSlashCommand(t.Context(), tui.SlashCommandRequest{
+		Name:      "provider",
+		Arguments: string(opencode.ProviderID),
+	})
+	if err != nil {
+		t.Fatalf("/provider error = %v", err)
+	}
+	if got, want := savedSettings, []config.Setting{
+		config.SettingProvider,
+		config.SettingModel,
+	}; !reflect.DeepEqual(got, want) {
+		t.Errorf("persisted settings = %v, want provider then model", got)
+	}
+	if len(savedValues) != 2 ||
+		savedValues[0] != string(opencode.ProviderID) ||
+		savedValues[1] != opencode.DefaultModel().ID {
+		t.Errorf(
+			"persisted values = %v, want [%s %s]",
+			savedValues,
+			opencode.ProviderID,
+			opencode.DefaultModel().ID,
+		)
+	}
+	if runner.configuration.Model != opencode.DefaultModel().ID {
+		t.Errorf(
+			"configuration.Model = %q, want the opencode-go default %q",
+			runner.configuration.Model,
+			opencode.DefaultModel().ID,
+		)
+	}
+	if !strings.Contains(output, "opencode-go") {
+		t.Errorf("/provider output = %q, want opencode-go", output)
 	}
 }
 

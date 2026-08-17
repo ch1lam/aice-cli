@@ -76,7 +76,7 @@ func (s *interactiveSession) loginProviderMenu() *interaction.CommandMenu {
 	settings := s.settingsSnapshot()
 	return &interaction.CommandMenu{
 		Title:   "Select provider",
-		Options: providerOptions(s.providers, settings.configuration.Provider),
+		Options: providerOptions(s.providers, settings.configuration),
 	}
 }
 
@@ -108,22 +108,29 @@ func (s *interactiveSession) providerMenu() *interaction.CommandMenu {
 	settings := s.settingsSnapshot()
 	return &interaction.CommandMenu{
 		Title:   "Select provider",
-		Options: providerOptions(s.providers, settings.configuration.Provider),
+		Options: providerOptions(s.providers, settings.configuration),
 	}
 }
 
+// providerOptions lists every known provider for /login and /provider,
+// marking the active one and annotating providers whose credential is already
+// available so users can tell a saved key apart from a missing one.
 func providerOptions(
 	providers []provider.Provider,
-	current string,
+	configuration config.Config,
 ) []interaction.CommandOption {
 	options := make([]interaction.CommandOption, 0, len(providers))
 	for _, candidate := range providers {
 		providerID := string(candidate.ProviderID())
+		description := candidate.MenuDescription()
+		if candidate.Configured(configuration) {
+			description += " · credential saved"
+		}
 		options = append(options, interaction.CommandOption{
 			Label:       candidate.Label(),
-			Description: candidate.MenuDescription(),
+			Description: description,
 			Arguments:   providerID,
-			Current:     current == providerID,
+			Current:     providerID == configuration.Provider,
 		})
 	}
 	return options
@@ -399,6 +406,16 @@ func (s *interactiveSession) RunSlashCommand(
 			return "", err
 		}
 		model := providerModel(s.providers, value, configuration.Model)
+		// Persist the model when the stored one does not belong to the new
+		// provider's catalog and was replaced by its default, so a later
+		// restart resolves the same model instead of failing with an
+		// unsupported-model error.
+		if model.ID != configuration.Model {
+			if err := s.saveSetting(config.SettingModel, model.ID); err != nil {
+				return "", err
+			}
+		}
+		configuration.Model = model.ID
 		effective := clampedThinkingForModel(model, configuration.Thinking)
 		// The settings transition is one critical section so a concurrent side
 		// snapshot freezes a mutually consistent provider/model/thinking tuple.
@@ -559,6 +576,20 @@ func (s *interactiveSession) login(
 	}
 
 	model := providerModel(s.providers, provider, configuration.Model)
+	// Persist the provider selection so the login state survives a restart;
+	// the credential itself lives in the global auth file. The effective model
+	// is persisted only when the stored one is empty or does not belong to the
+	// selected provider, so a later restart resolves the same model instead of
+	// failing with an unsupported-model error.
+	if err := s.saveSetting(config.SettingProvider, provider); err != nil {
+		return "", err
+	}
+	if model.ID != configuration.Model {
+		if err := s.saveSetting(config.SettingModel, model.ID); err != nil {
+			return "", err
+		}
+	}
+	configuration.Model = model.ID
 	effective := clampedThinkingForModel(model, configuration.Thinking)
 	s.stateMu.Lock()
 	s.configuration = configuration
