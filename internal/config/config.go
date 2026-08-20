@@ -36,6 +36,10 @@ const (
 	EnvOpenAIAPIKey = "OPENAI_API_KEY"
 	// EnvOpenAIBaseURL overrides OpenAI's official API endpoint.
 	EnvOpenAIBaseURL = "AICE_OPENAI_BASE_URL"
+	// EnvCustomAPIKey authenticates requests to a custom OpenAI-compatible endpoint.
+	EnvCustomAPIKey = "AICE_CUSTOM_API_KEY"
+	// EnvCustomBaseURL overrides the custom OpenAI-compatible endpoint.
+	EnvCustomBaseURL = "AICE_CUSTOM_BASE_URL"
 
 	settingsFileName = "settings.json"
 	authFileName     = "auth.json"
@@ -47,15 +51,17 @@ const (
 	settingsKeyModel               = "model"
 	settingsKeyThinking            = "thinking"
 	settingsKeyDefaultProjectTrust = "default_project_trust"
+	settingsKeyCustomBaseURL       = "custom_base_url"
 )
 
 // Setting identifies one setting that can be persisted by a command.
 type Setting string
 
 const (
-	SettingProvider Setting = settingsKeyProvider
-	SettingModel    Setting = settingsKeyModel
-	SettingThinking Setting = settingsKeyThinking
+	SettingProvider      Setting = settingsKeyProvider
+	SettingModel         Setting = settingsKeyModel
+	SettingThinking      Setting = settingsKeyThinking
+	SettingCustomBaseURL Setting = settingsKeyCustomBaseURL
 )
 
 // Settings contains non-secret global model defaults.
@@ -64,6 +70,7 @@ type Settings struct {
 	Model               string            `json:"model,omitempty"`
 	Thinking            llm.ThinkingLevel `json:"thinking,omitempty"`
 	DefaultProjectTrust trust.Default     `json:"default_project_trust,omitempty"`
+	CustomBaseURL       string            `json:"custom_base_url,omitempty"`
 }
 
 // Paths identifies all files used to resolve configuration and the directory
@@ -87,6 +94,8 @@ type Config struct {
 	OpenCodeBaseURL     string
 	OpenAIAPIKey        string
 	OpenAIBaseURL       string
+	CustomAPIKey        string
+	CustomBaseURL       string
 	Paths               Paths
 }
 
@@ -94,6 +103,7 @@ type authFile struct {
 	DeepSeekAPIKey string `json:"deepseek_api_key,omitempty"`
 	OpenCodeAPIKey string `json:"opencode_api_key,omitempty"`
 	OpenAIAPIKey   string `json:"openai_api_key,omitempty"`
+	CustomAPIKey   string `json:"custom_api_key,omitempty"`
 }
 
 // LookupEnv resolves one environment variable.
@@ -167,6 +177,19 @@ func LoadFiles(paths Paths, lookup LookupEnv) (Config, error) {
 	}
 	openAIBaseURL, _ := lookup(EnvOpenAIBaseURL)
 
+	customAPIKey := strings.TrimSpace(auth.CustomAPIKey)
+	if value, exists := lookup(EnvCustomAPIKey); exists {
+		if value = strings.TrimSpace(value); value != "" {
+			customAPIKey = value
+		}
+	}
+	customBaseURL := strings.TrimSpace(settings.CustomBaseURL)
+	if value, exists := lookup(EnvCustomBaseURL); exists {
+		if value = strings.TrimSpace(value); value != "" {
+			customBaseURL = value
+		}
+	}
+
 	return Config{
 		Provider:            settings.Provider,
 		Model:               settings.Model,
@@ -178,6 +201,8 @@ func LoadFiles(paths Paths, lookup LookupEnv) (Config, error) {
 		OpenCodeBaseURL:     strings.TrimSpace(openCodeBaseURL),
 		OpenAIAPIKey:        openAIAPIKey,
 		OpenAIBaseURL:       strings.TrimSpace(openAIBaseURL),
+		CustomAPIKey:        customAPIKey,
+		CustomBaseURL:       customBaseURL,
 		Paths:               paths,
 	}, nil
 }
@@ -264,6 +289,32 @@ func SaveOpenAIAPIKeyFile(paths Paths, apiKey string) error {
 	})
 }
 
+// SaveCustomAPIKey stores the custom OpenAI-compatible credential in the global auth file.
+func SaveCustomAPIKey(apiKey string) (string, error) {
+	paths, err := DefaultPaths()
+	if err != nil {
+		return "", err
+	}
+	if err := SaveCustomAPIKeyFile(paths, apiKey); err != nil {
+		return "", err
+	}
+	return paths.GlobalAuth, nil
+}
+
+// SaveCustomAPIKeyFile stores the custom credential in an explicit global
+// auth file, preserving any other provider credentials already present.
+// An empty key is allowed so keyless local servers (e.g. Ollama) can clear
+// the entry; callers that require auth should validate separately.
+func SaveCustomAPIKeyFile(paths Paths, apiKey string) error {
+	apiKey = strings.TrimSpace(apiKey)
+	if strings.ContainsAny(apiKey, "\r\n") {
+		return fmt.Errorf("config: Custom API key must be one line")
+	}
+	return saveAPIKeyFile(paths, "Custom", apiKey, func(auth *authFile) {
+		auth.CustomAPIKey = apiKey
+	})
+}
+
 // saveAPIKeyFile reads the existing auth file, applies one credential update,
 // and writes the merged result back so different provider credentials are not
 // clobbered. The one-line rule validates the key being written, not credentials
@@ -312,6 +363,13 @@ func SaveSettingFile(
 		settings.Model = value
 	case SettingThinking:
 		settings.Thinking = llm.ThinkingLevel(value)
+	case SettingCustomBaseURL:
+		if value != "" {
+			if err := validateCustomBaseURL(value); err != nil {
+				return err
+			}
+		}
+		settings.CustomBaseURL = value
 	default:
 		return fmt.Errorf("config: unsupported setting %q", setting)
 	}
@@ -363,6 +421,7 @@ func loadSettings(paths Paths, lookup LookupEnv) (Settings, error) {
 		DefaultProjectTrust: trust.Default(strings.TrimSpace(
 			registry.GetString(settingsKeyDefaultProjectTrust),
 		)),
+		CustomBaseURL: strings.TrimSpace(registry.GetString(settingsKeyCustomBaseURL)),
 	}
 	if settings.DefaultProjectTrust == "" {
 		settings.DefaultProjectTrust = trust.DefaultAsk
@@ -388,6 +447,7 @@ func loadAuth(path string) (authFile, error) {
 	auth.DeepSeekAPIKey = strings.TrimSpace(auth.DeepSeekAPIKey)
 	auth.OpenCodeAPIKey = strings.TrimSpace(auth.OpenCodeAPIKey)
 	auth.OpenAIAPIKey = strings.TrimSpace(auth.OpenAIAPIKey)
+	auth.CustomAPIKey = strings.TrimSpace(auth.CustomAPIKey)
 	return auth, nil
 }
 
@@ -497,6 +557,25 @@ func (s Settings) validate() error {
 			"unsupported default project trust %q",
 			s.DefaultProjectTrust,
 		)
+	}
+	if s.CustomBaseURL != "" {
+		if err := validateCustomBaseURL(s.CustomBaseURL); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateCustomBaseURL(raw string) error {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	if strings.ContainsAny(raw, " \t\r\n") {
+		return fmt.Errorf("custom base URL must not contain whitespace")
+	}
+	if !(strings.HasPrefix(raw, "http://") || strings.HasPrefix(raw, "https://")) {
+		return fmt.Errorf("custom base URL must start with http:// or https://")
 	}
 	return nil
 }

@@ -11,6 +11,7 @@ import (
 	"github.com/ch1lam/aice-cli/internal/interaction"
 	"github.com/ch1lam/aice-cli/internal/llm"
 	"github.com/ch1lam/aice-cli/internal/provider"
+	"github.com/ch1lam/aice-cli/internal/provider/custom"
 	"github.com/ch1lam/aice-cli/internal/provider/deepseek"
 	"github.com/ch1lam/aice-cli/internal/session"
 	"github.com/ch1lam/aice-cli/internal/trust"
@@ -526,15 +527,18 @@ func (s *interactiveSession) login(
 	}
 
 	fields := strings.Fields(request.Arguments)
-	if len(fields) > 1 {
-		return "", fmt.Errorf("app: usage: /login [provider]")
+	if len(fields) > 3 {
+		return "", fmt.Errorf("app: usage: /login [provider] [endpoint] [model]")
+	}
+	if len(fields) >= 2 && fields[0] != string(custom.ProviderID) {
+		return "", fmt.Errorf("app: endpoint/model is only supported for provider %q", custom.ProviderID)
 	}
 	settings := s.settingsSnapshot()
 	provider := settings.configuration.Provider
 	if provider == "" {
 		provider = string(deepseek.ProviderID)
 	}
-	if len(fields) == 1 {
+	if len(fields) >= 1 {
 		provider = fields[0]
 	}
 	if !supportedProvider(s.providers, provider) {
@@ -545,8 +549,56 @@ func (s *interactiveSession) login(
 		)
 	}
 
+	// Custom endpoint/model may be supplied as: /login custom [endpoint] [model]
+	// Endpoint "-" is a placeholder meaning "no endpoint, use default" when only model is set.
+	customEndpoint := ""
+	customModel := ""
+	if provider == string(custom.ProviderID) {
+		if len(fields) == 2 {
+			arg := strings.TrimSpace(fields[1])
+			if arg == "-" {
+				customEndpoint = ""
+			} else if strings.HasPrefix(arg, "http://") || strings.HasPrefix(arg, "https://") {
+				customEndpoint = arg
+			} else {
+				customModel = arg
+			}
+			if customEndpoint != "" && !(strings.HasPrefix(customEndpoint, "http://") || strings.HasPrefix(customEndpoint, "https://")) {
+				return "", fmt.Errorf("app: custom endpoint must start with http:// or https://")
+			}
+		} else if len(fields) == 3 {
+			endpointArg := strings.TrimSpace(fields[1])
+			if endpointArg != "-" {
+				customEndpoint = endpointArg
+				if !(strings.HasPrefix(customEndpoint, "http://") || strings.HasPrefix(customEndpoint, "https://")) {
+					return "", fmt.Errorf("app: custom endpoint must start with http:// or https://")
+				}
+			}
+			customModel = strings.TrimSpace(fields[2])
+		}
+	}
+
 	apiKey := strings.TrimSpace(request.Secret)
-	if apiKey == "" {
+	// Allow the hidden input to carry both endpoint and key for the custom
+	// provider: "http://url [apikey]" or just "http://url" . This keeps the
+	// TUI path single-step while staying centralized in /login.
+	if provider == string(custom.ProviderID) && apiKey != "" {
+		secretFields := strings.Fields(apiKey)
+		if len(secretFields) > 0 && (strings.HasPrefix(secretFields[0], "http://") || strings.HasPrefix(secretFields[0], "https://")) {
+			if customEndpoint == "" {
+				customEndpoint = secretFields[0]
+			}
+			if len(secretFields) > 1 {
+				apiKey = strings.Join(secretFields[1:], " ")
+			} else {
+				apiKey = ""
+			}
+		}
+	}
+	// The custom provider is keyless by design (Ollama); an empty key clears
+	// the stored credential and still enables the provider. Other providers
+	// keep the strict requirement.
+	if provider != string(custom.ProviderID) && apiKey == "" {
 		return "", fmt.Errorf(
 			"app: %s API key is required",
 			providerLabel(s.providers, provider),
@@ -561,6 +613,22 @@ func (s *interactiveSession) login(
 
 	configuration := settings.configuration
 	configuration.Provider = provider
+	// Persist custom endpoint/model before building the loop so the new loop dials
+	// the intended URL and the model is immediately available.
+	if provider == string(custom.ProviderID) {
+		if customEndpoint != "" {
+			if err := s.saveSetting(config.SettingCustomBaseURL, customEndpoint); err != nil {
+				return "", err
+			}
+			configuration.CustomBaseURL = customEndpoint
+		}
+		if customModel != "" {
+			if strings.ContainsAny(customModel, " \t\r\n") {
+				return "", fmt.Errorf("app: model must not contain whitespace")
+			}
+			configuration.Model = customModel
+		}
+	}
 	findProvider(s.providers, provider).ApplyAPIKey(&configuration, apiKey)
 	loop, err := s.application.newAgentLoop(configuration, s.tools)
 	if err != nil {
@@ -597,6 +665,16 @@ func (s *interactiveSession) login(
 	s.model = model
 	s.options.Thinking = effective
 	s.stateMu.Unlock()
+	if provider == string(custom.ProviderID) {
+		endpoint := strings.TrimSpace(configuration.CustomBaseURL)
+		if endpoint == "" {
+			endpoint = custom.DefaultBaseURL
+		}
+		if apiKey == "" {
+			return fmt.Sprintf("Configured %s (endpoint %s, no API key). AICE is ready.", providerLabel(s.providers, provider), endpoint), nil
+		}
+		return fmt.Sprintf("Configured %s (endpoint %s) and saved API key to %s. AICE is ready.", providerLabel(s.providers, provider), endpoint, path), nil
+	}
 	return "Saved " + providerLabel(s.providers, provider) + " API key to " + path +
 		". AICE is ready.", nil
 }
@@ -624,12 +702,18 @@ func (s *interactiveSession) settingsInformation() string {
 	if providerConfigured(s.providers, settings.configuration) {
 		apiKey = "configured"
 	}
+	endpoint := strings.TrimSpace(settings.configuration.CustomBaseURL)
+	if endpoint == "" {
+		endpoint = custom.DefaultBaseURL
+	}
 	lines := []string{
 		"Settings",
 		"Provider: " + string(settings.model.Provider),
 		"Model: " + settings.model.ID,
 		"Thinking: " + thinking,
+		"Thinking (requested): " + string(settings.configuration.Thinking),
 		"API key: " + apiKey,
+		"Custom endpoint: " + endpoint,
 	}
 	if settings.configuration.DefaultProjectTrust == "" {
 		lines = append(lines, "Default project trust: ask")

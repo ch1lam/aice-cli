@@ -628,8 +628,8 @@ func TestInteractiveSessionOpencodeMenusAndModelSelection(t *testing.T) {
 		t.Fatalf("/model options = %d, want 24", len(modelCommand.Menu.Options))
 	}
 	providerCommand := interactiveSlashCommand(t, commands, "provider")
-	if len(providerCommand.Menu.Options) != 3 {
-		t.Fatalf("/provider options = %d, want 3", len(providerCommand.Menu.Options))
+	if len(providerCommand.Menu.Options) != 4 {
+		t.Fatalf("/provider options = %d, want 4", len(providerCommand.Menu.Options))
 	}
 
 	output, err := runner.RunSlashCommand(t.Context(), tui.SlashCommandRequest{

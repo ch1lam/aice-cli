@@ -129,6 +129,24 @@ func (m model) startApplicationSlashCommand(
 	command SlashCommand,
 ) (model, tea.Cmd, bool) {
 	if command.SecretPrompt != "" {
+		// Custom provider needs endpoint + API key + model in one centralized
+		// /login flow. Use a 3-step hidden-input sequence instead of a single
+		// API key prompt so the user can configure everything in one place.
+		if command.Name == "login" && request.Arguments == "custom" {
+			m.entries = append(
+				m.entries,
+				transcriptEntry{kind: entryUser, text: raw},
+			)
+			m.resetCommandInput()
+			m.customLogin = &customLoginState{step: 0}
+			m.secretInput = &secretInput{
+				request: request,
+				prompt:  "Custom endpoint URL",
+			}
+			m.input.Placeholder = "Custom endpoint URL (e.g. http://localhost:11434/v1, Enter for default, input hidden)"
+			m.status = "Custom endpoint URL required; Enter for default, Esc cancels"
+			return m.settleCommand(true, m.input.Focus())
+		}
 		m.entries = append(
 			m.entries,
 			transcriptEntry{kind: entryUser, text: raw},
@@ -254,8 +272,11 @@ func currentSlashCommandOption(options []SlashCommandOption) int {
 }
 
 func (m model) submitSecretInput() (model, tea.Cmd, bool) {
+	// Custom login uses a 3-step sequence: endpoint -> API key -> model.
+	// Empty is allowed for all steps (default endpoint / no key / default model).
+	isCustomLogin := m.customLogin != nil && m.secretInput != nil && m.secretInput.request.Name == "login" && m.secretInput.request.Arguments == "custom"
 	value := strings.TrimSpace(m.input.Value())
-	if value == "" {
+	if !isCustomLogin && value == "" {
 		m.status = m.secretInput.prompt + " must not be blank"
 		return m, nil, true
 	}
@@ -265,6 +286,65 @@ func (m model) submitSecretInput() (model, tea.Cmd, bool) {
 	}
 	if m.controllerClosed {
 		return m.cancelSecretInput()
+	}
+
+	if isCustomLogin {
+		switch m.customLogin.step {
+		case 0:
+			// Endpoint URL
+			if value != "" && !(strings.HasPrefix(value, "http://") || strings.HasPrefix(value, "https://")) {
+				m.status = "Endpoint must start with http:// or https:// (or Enter for default)"
+				return m, nil, true
+			}
+			m.customLogin.endpoint = value
+			m.customLogin.step = 1
+			m.secretInput.prompt = "API key"
+			m.input.Reset()
+			m.input.Placeholder = "API key (leave empty for Ollama, input hidden)"
+			m.status = "API key (leave empty for Ollama); Enter to continue, Esc cancels"
+			return m.settleCommand(true, m.input.Focus())
+		case 1:
+			m.customLogin.apiKey = value
+			m.customLogin.step = 2
+			m.secretInput.prompt = "Model name"
+			m.input.Reset()
+			m.input.Placeholder = "Model name (e.g. llama3.1:8b, Enter for default, input hidden)"
+			m.status = "Model name (Enter for default); Esc cancels"
+			return m.settleCommand(true, m.input.Focus())
+		case 2:
+			if value != "" && strings.ContainsAny(value, " \t\r\n") {
+				m.status = "Model name must not contain whitespace"
+				return m, nil, true
+			}
+			endpoint := strings.TrimSpace(m.customLogin.endpoint)
+			apiKey := m.customLogin.apiKey
+			modelName := strings.TrimSpace(value)
+			request := m.secretInput.request
+			// Encode endpoint+model into Arguments so app/login can persist both.
+			args := "custom"
+			if endpoint != "" {
+				args += " " + endpoint
+				if modelName != "" {
+					args += " " + modelName
+				}
+			} else if modelName != "" {
+				// No endpoint but model present: use "-" placeholder so login can
+				// distinguish endpoint omission from model. Login handles "-" as empty.
+				args += " - " + modelName
+			}
+			request.Arguments = args
+			request.Secret = apiKey
+			m.customLogin = nil
+			m.resetCommandInput()
+			m.input.Blur()
+			m.running = true
+			m.assistantEntry = -1
+			m.status = "Saving custom provider..."
+			return m.settleCommand(
+				true,
+				startSlashCommand(m.requests, m.controllerDone, request),
+			)
+		}
 	}
 
 	request := m.secretInput.request
@@ -282,6 +362,7 @@ func (m model) submitSecretInput() (model, tea.Cmd, bool) {
 
 func (m model) cancelSecretInput() (model, tea.Cmd, bool) {
 	prompt := m.secretInput.prompt
+	m.customLogin = nil
 	m.resetCommandInput()
 	m.entries = append(m.entries, transcriptEntry{
 		kind: entryNotice,
@@ -319,6 +400,7 @@ func (m *model) resetCommandInput() {
 	m.input.Reset()
 	m.input.Placeholder = defaultPlaceholder
 	m.secretInput = nil
+	m.customLogin = nil
 	m.commandMenu = nil
 	m.commandSelection = 0
 	m.commandDismissed = false

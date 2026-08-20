@@ -68,6 +68,12 @@ type secretInput struct {
 	prompt  string
 }
 
+type customLoginState struct {
+	endpoint string
+	apiKey   string
+	step     int // 0: endpoint, 1: api key, 2: model
+}
+
 type commandMenuFrame struct {
 	menu      SlashCommandMenu
 	selection int
@@ -111,6 +117,7 @@ type model struct {
 	commands          []SlashCommand
 	secretInput       *secretInput
 	commandMenu       *commandMenuState
+	customLogin       *customLoginState
 	pendingDeliveries []pendingDelivery
 
 	promptHistory []string

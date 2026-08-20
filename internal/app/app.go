@@ -20,6 +20,7 @@ import (
 	"github.com/ch1lam/aice-cli/internal/interaction"
 	"github.com/ch1lam/aice-cli/internal/llm"
 	"github.com/ch1lam/aice-cli/internal/provider"
+	"github.com/ch1lam/aice-cli/internal/provider/custom"
 	"github.com/ch1lam/aice-cli/internal/provider/deepseek"
 	"github.com/ch1lam/aice-cli/internal/provider/openai"
 	"github.com/ch1lam/aice-cli/internal/provider/opencode"
@@ -64,6 +65,7 @@ func defaultProviders() []provider.Provider {
 		&deepseek.Provider{},
 		&opencode.Provider{},
 		&openai.Provider{},
+		&custom.Provider{},
 	}
 }
 
@@ -646,6 +648,9 @@ func modelForProvider(
 			return model, true
 		}
 	}
+	if providerID == string(custom.ProviderID) && strings.TrimSpace(id) != "" {
+		return custom.ModelForID(id), true
+	}
 	return llm.Model{}, false
 }
 
@@ -694,6 +699,18 @@ func resolveModelSettings(
 	modelID := configuration.Model
 	if modelID == "" {
 		modelID = providerDefaultModel(providers, providerID).ID
+	}
+	// The custom provider is the Pi-inspired catch-all: any model ID is
+	// materialized on the fly with safe defaults (only `id` required).
+	if providerID == string(custom.ProviderID) {
+		model := custom.ModelForID(modelID)
+		requested := configuration.Thinking
+		if requested == llm.ThinkingLevelUnknown {
+			requested = llm.DefaultThinkingLevel
+		}
+		return model, llm.StreamOptions{
+			Thinking: llm.ClampThinkingLevel(model, requested),
+		}, nil
 	}
 	for _, model := range modelsForProvider(providers, providerID) {
 		if model.ID != modelID {

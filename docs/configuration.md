@@ -24,7 +24,7 @@ Example global settings:
 
 | Setting | Environment variable | Supported values |
 | --- | --- | --- |
-| Provider | `AICE_PROVIDER` | `deepseek`, `opencode-go`, `openai` |
+| Provider | `AICE_PROVIDER` | `deepseek`, `opencode-go`, `openai`, `custom` |
 | Model | `AICE_MODEL` | A model in the selected provider's catalog |
 | Thinking | `AICE_THINKING` | `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` |
 | Default Project Trust | none | `ask`, `always`, `never` |
@@ -107,6 +107,7 @@ Credentials are stored by provider in `~/.aice/auth.json` with file mode
 | DeepSeek | `AICE_DEEPSEEK_API_KEY` | `deepseek_api_key` | `AICE_DEEPSEEK_BASE_URL` |
 | OpenCode Go | `AICE_OPENCODE_API_KEY` | `opencode_api_key` | `AICE_OPENCODE_BASE_URL` |
 | OpenAI | `OPENAI_API_KEY` | `openai_api_key` | `AICE_OPENAI_BASE_URL` |
+| Custom (Ollama, vLLM, LM Studio, any OpenAI-compatible) | `AICE_CUSTOM_API_KEY` | `custom_api_key` | `AICE_CUSTOM_BASE_URL` (default `http://localhost:11434/v1`) |
 
 In the TUI, `/login` opens a provider menu and hidden input. It stores the
 key in the auth file and also saves the provider (and the effective model when
