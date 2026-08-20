@@ -315,3 +315,88 @@ func TestGuard_PathAccess_SessionAllow(t *testing.T) {
 		t.Fatalf("post dir allow: %v", res.Decision)
 	}
 }
+
+// PR3: structural dangerous variants (vs substring)
+func TestGuard_StructuralDangerousVariants(t *testing.T) {
+	allow := PathAccessAllow
+	cfg := Config{PathAccess: PathAccessConfig{Mode: &allow}}
+	g, _ := NewWithExists(t.TempDir(), cfg, alwaysExists)
+	// rm variants that substring "rm -rf" would miss
+	variants := []string{
+		"rm -R -f /tmp/x",
+		"rm --recursive --force /tmp/x",
+		"rm -r -f /tmp/x",
+		"rm -Rfv /tmp/x",
+		"rm -fr /tmp/x",
+	}
+	for _, cmd := range variants {
+		res, _ := g.Check(context.Background(), toolCall("bash", map[string]any{"command": cmd}))
+		if res.Decision != DecisionDeny {
+				t.Fatalf("structural rm variant %q: %v want deny", cmd, res.Decision)
+			}
+	}
+	// chmod variants: only -R + 777 should deny
+	res, _ := g.Check(context.Background(), toolCall("bash", map[string]any{"command": "chmod -R 777 /tmp"}))
+	if res.Decision != DecisionDeny {
+		t.Fatalf("chmod -R 777: %v want deny", res.Decision)
+	}
+	res, _ = g.Check(context.Background(), toolCall("bash", map[string]any{"command": "chmod -R 755 /tmp"}))
+	if res.Decision != DecisionAllow {
+		t.Fatalf("chmod -R 755: %v want allow", res.Decision)
+	}
+	res, _ = g.Check(context.Background(), toolCall("bash", map[string]any{"command": "chmod 777 /tmp/file"}))
+	if res.Decision != DecisionAllow {
+		t.Fatalf("chmod 777 without -R: %v want allow", res.Decision)
+	}
+	// docker privileged only for run/create
+	res, _ = g.Check(context.Background(), toolCall("bash", map[string]any{"command": "docker run --privileged nginx"}))
+	if res.Decision != DecisionDeny {
+		t.Fatalf("docker privileged run: %v", res.Decision)
+	}
+	res, _ = g.Check(context.Background(), toolCall("bash", map[string]any{"command": "docker build --privileged ."}))
+	if res.Decision != DecisionAllow {
+		t.Fatalf("docker build privileged should allow: %v", res.Decision)
+	}
+}
+
+func TestGuard_StructuralNoFalsePositive(t *testing.T) {
+	allow := PathAccessAllow
+	cfg := Config{PathAccess: PathAccessConfig{Mode: &allow}}
+	g, _ := NewWithExists(t.TempDir(), cfg, alwaysExists)
+	// echo rm -rf should not be flagged (structural: first word is echo)
+	res, _ := g.Check(context.Background(), toolCall("bash", map[string]any{"command": "echo rm -rf /tmp/x"}))
+	if res.Decision != DecisionAllow {
+		t.Fatalf("echo rm -rf false positive: %v", res.Decision)
+	}
+	res, _ = g.Check(context.Background(), toolCall("bash", map[string]any{"command": "echo \"rm -rf\""}))
+	if res.Decision != DecisionAllow {
+		t.Fatalf("echo quoted false positive: %v", res.Decision)
+	}
+}
+
+func TestGuard_PathExtractionAST(t *testing.T) {
+	workspace := t.TempDir()
+	block := PathAccessBlock
+	cfg := Config{PathAccess: PathAccessConfig{Mode: &block}}
+	g, _ := NewWithExists(workspace, cfg, alwaysExists)
+	// AST should extract redirect target as forced path
+	res, _ := g.Check(context.Background(), toolCall("bash", map[string]any{"command": "echo hi > /tmp/aice-ast-redirect.txt"}))
+	if res.Decision != DecisionDeny {
+		t.Fatalf("redirect outside: %v want deny", res.Decision)
+	}
+	// Expansion-aware: $HOME/.env should be unresolved and conservatively denied (if file policy)
+	// but path-access: $HOME expands to home, which is outside workspace, so also deny
+	res, _ = g.Check(context.Background(), toolCall("bash", map[string]any{"command": "cat $HOME/.env"}))
+	// Should be denied either by file policy or path access; allow either
+	if res.Decision != DecisionDeny {
+		t.Fatalf("$HOME expansion: %v want deny", res.Decision)
+	}
+	// Pipeline: cat inside, sudo rm outside – sudo should be caught
+	allow2 := PathAccessAllow
+	cfg2 := Config{PathAccess: PathAccessConfig{Mode: &allow2}}
+	g2, _ := NewWithExists(t.TempDir(), cfg2, alwaysExists)
+	res, _ = g2.Check(context.Background(), toolCall("bash", map[string]any{"command": "cat README.md | sudo rm -rf /tmp/x"}))
+	if res.Decision != DecisionDeny {
+		t.Fatalf("pipeline sudo rm: %v want deny", res.Decision)
+	}
+}

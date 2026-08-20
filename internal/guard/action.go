@@ -41,7 +41,7 @@ var fileTools = map[string]bool{
 
 // extractActions extracts one or more Actions from a ToolCall.
 // For file tools it returns one file Action; for bash it extracts candidate
-// paths via lightweight tokenization (full AST in a later PR).
+// paths via AST parsing (PR3) with heuristic fallback.
 func extractActions(call llm.ToolCall) []Action {
 	if fileTools[call.Name] {
 		p := extractFilePath(call.Arguments)
@@ -55,21 +55,18 @@ func extractActions(call llm.ToolCall) []Action {
 		if strings.TrimSpace(cmd) == "" {
 			return nil
 		}
-		// For PR1 we check bash as file access via its path arguments (lightweight).
-		// Full dangerous-command matching is a follow-up. Here we only extract
-		// path-like tokens so a `bash: cat .env` is still caught.
-		tokens := tokenizeBash(cmd)
+		cands := parsePathCandidates(cmd)
 		var out []Action
-		for _, tok := range tokens {
+		for _, c := range cands {
+			tok := c.token
 			if tok == "" || strings.HasPrefix(tok, "-") {
 				continue
 			}
-			if !maybePathLike(tok) {
+			if !c.forcePath && !maybePathLike(tok) {
 				continue
 			}
-			out = append(out, Action{Kind: "file", Path: tok, ToolName: call.Name, Unresolved: containsExpansion(tok), Command: cmd})
+			out = append(out, Action{Kind: "file", Path: tok, ToolName: call.Name, Unresolved: c.unresolved, Command: cmd})
 		}
-		// If no path-like tokens, still return empty (no file policy applies).
 		return out
 	}
 	return nil

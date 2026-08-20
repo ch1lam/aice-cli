@@ -30,9 +30,10 @@ type Guard struct {
 	// sessionAllowed tracks file-policy paths allowed for this run.
 	sessionAllowed map[string]bool
 	// permission gate
-	dangerousPatterns []compiledCommandPattern
-	allowedCmdPatterns []compiledCommandPattern
-	autoDenyPatterns   []compiledCommandPattern
+	dangerousPatterns    []compiledCommandPattern
+	allowedCmdPatterns   []compiledCommandPattern
+	autoDenyPatterns     []compiledCommandPattern
+	useBuiltinStructural bool
 	// path access
 	pathAccessMode     PathAccessMode
 	allowedPaths       []AllowedPath
@@ -47,6 +48,11 @@ func New(workspace string, cfg Config) (*Guard, error) {
 	}
 	resolved := ResolveConfig(cfg)
 	policies := compilePolicies(resolved.Policies)
+	useBuiltin := len(resolved.PermissionGate.CustomPatterns) == 0
+	// When ApplyBuiltinDefaults is false and no custom, dangerousPatterns will be empty; structural should also be off.
+	if !resolved.ShouldApplyBuiltins() && len(resolved.PermissionGate.CustomPatterns) == 0 && len(resolved.PermissionGate.Patterns) == 0 {
+		useBuiltin = false
+	}
 	return &Guard{
 		workspace:            workspace,
 		enabled:              resolved.EnabledOrDefault(),
@@ -54,6 +60,7 @@ func New(workspace string, cfg Config) (*Guard, error) {
 		dangerousPatterns:    compileCommandPatterns(resolved.PermissionGate.Patterns),
 		allowedCmdPatterns:   compileCommandPatterns(resolved.PermissionGate.AllowedPatterns),
 		autoDenyPatterns:     compileCommandPatterns(resolved.PermissionGate.AutoDenyPatterns),
+		useBuiltinStructural: useBuiltin,
 		pathAccessMode:       resolved.PathAccess.modeOrDefault(),
 		allowedPaths:         resolved.PathAccess.AllowedPaths,
 		exists:               fileExists,
@@ -112,7 +119,7 @@ func (g *Guard) Check(ctx context.Context, call llm.ToolCall) (Result, error) {
 	if err := ctx.Err(); err != nil {
 		return Result{}, err
 	}
-	// 1. Permission gate: bash command shape (autoDeny -> deny, dangerous -> deny unless allowed)
+	// 1. Permission gate: bash command shape (autoDeny -> deny, structural dangerous -> deny unless allowed)
 	if call.Name == "bash" {
 		cmd := extractCommand(call.Arguments)
 		if cmd != "" {
@@ -122,8 +129,17 @@ func (g *Guard) Check(ctx context.Context, call llm.ToolCall) (Result, error) {
 			}
 			// Allowed patterns bypass dangerous check.
 			if matchCommandPattern(cmd, g.allowedCmdPatterns) == nil {
-				if hit := matchCommandPattern(cmd, g.dangerousPatterns); hit != nil {
-					return Result{Decision: DecisionDeny, Reason: formatCommandBlockReason(hit, ""), RuleID: "permissionGate.dangerous", Action: Action{Kind: "command", Command: cmd, ToolName: call.Name}}, nil
+				if g.useBuiltinStructural {
+					if desc, pat := structuralDangerousMatch(cmd); desc != "" {
+						return Result{Decision: DecisionDeny, Reason: "Dangerous command blocked (" + desc + "): " + pat, RuleID: "permissionGate.dangerous", Action: Action{Kind: "command", Command: cmd, ToolName: call.Name}}, nil
+					}
+					// When builtins are active, structural is authoritative; do not fall back to substring builtins
+					// to avoid false positives like `echo rm -rf`.
+				} else {
+					// Custom patterns replace builtins: check substring/regex
+					if hit := matchCommandPattern(cmd, g.dangerousPatterns); hit != nil {
+						return Result{Decision: DecisionDeny, Reason: formatCommandBlockReason(hit, ""), RuleID: "permissionGate.dangerous", Action: Action{Kind: "command", Command: cmd, ToolName: call.Name}}, nil
+					}
 				}
 			}
 		}
