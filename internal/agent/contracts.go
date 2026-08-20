@@ -9,6 +9,29 @@ import (
 	"github.com/ch1lam/aice-cli/internal/llm"
 )
 
+// Guard is the execution gate consulted before each tool execution. It is
+// an intrinsic agent capability, not a plugin. The implementation lives in
+// internal/guard and is injected via a LoopOption so the loop never
+// constructs tools or knows TUI details.
+type Guard interface {
+	Check(ctx context.Context, call llm.ToolCall) (GuardResult, error)
+}
+
+// GuardDecision is the outcome of a guard check.
+type GuardDecision string
+
+const (
+	GuardAllow GuardDecision = "allow"
+	GuardDeny  GuardDecision = "deny"
+)
+
+// GuardResult carries the outcome of a single guard check.
+type GuardResult struct {
+	Decision GuardDecision
+	Reason   string
+	RuleID   string
+}
+
 var (
 	// ErrProtocol indicates that a model stream violated the llm stream contract.
 	ErrProtocol = errors.New("agent: invalid model stream")

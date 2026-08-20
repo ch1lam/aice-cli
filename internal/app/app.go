@@ -14,6 +14,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/ch1lam/aice-cli/internal/agent"
+	"github.com/ch1lam/aice-cli/internal/guard"
 	"github.com/ch1lam/aice-cli/internal/cli"
 	"github.com/ch1lam/aice-cli/internal/config"
 	"github.com/ch1lam/aice-cli/internal/deps"
@@ -448,7 +449,7 @@ func (a *application) newRunEnvironment(
 	}
 	var loop *agent.Loop
 	if providerConfigured(a.dependencies.providers, configured.configuration) {
-		loop, err = a.newAgentLoop(configured.configuration, tools)
+		loop, err = a.newAgentLoopWithWorkspace(configured.configuration, tools, workspace.PhysicalPath())
 		if err != nil {
 			return nil, err
 		}
@@ -512,6 +513,14 @@ func (a *application) newAgentLoop(
 	configuration config.Config,
 	tools []agent.Tool,
 ) (*agent.Loop, error) {
+	return a.newAgentLoopWithWorkspace(configuration, tools, "")
+}
+
+func (a *application) newAgentLoopWithWorkspace(
+	configuration config.Config,
+	tools []agent.Tool,
+	workspace string,
+) (*agent.Loop, error) {
 	if !providerConfigured(a.dependencies.providers, configuration) {
 		return nil, credentialNotConfiguredError(
 			a.dependencies.providers,
@@ -522,11 +531,42 @@ func (a *application) newAgentLoop(
 	if err != nil {
 		return nil, fmt.Errorf("app: create model: %w", err)
 	}
-	loop, err := agent.NewLoop(service, tools)
+	// Built-in guard: intrinsic execution gate, not a plugin. Workspace-scoped
+	// so .env relative to the project is correctly recognized. Disabled only
+	// when explicitly configured off (future: guard config in settings.json).
+	g, err := guard.New(workspace, guard.Config{})
+	if err != nil {
+		return nil, fmt.Errorf("app: create guard: %w", err)
+	}
+	adapter := &guardAdapter{inner: g}
+	loop, err := agent.NewLoop(service, tools, agent.WithGuard(adapter))
 	if err != nil {
 		return nil, fmt.Errorf("app: create agent loop: %w", err)
 	}
 	return loop, nil
+}
+
+// guardAdapter bridges internal/guard.Guard to agent.Guard without making
+// agent import guard directly in its core package. It lives in app which
+// already depends on both, preserving the "consumer defines interface" rule.
+type guardAdapter struct {
+	inner *guard.Guard
+}
+
+func (g *guardAdapter) Check(ctx context.Context, call llm.ToolCall) (agent.GuardResult, error) {
+	if g == nil || g.inner == nil {
+		return agent.GuardResult{Decision: agent.GuardAllow}, nil
+	}
+	res, err := g.inner.Check(ctx, call)
+	if err != nil {
+		return agent.GuardResult{}, err
+	}
+	switch res.Decision {
+	case guard.DecisionDeny:
+		return agent.GuardResult{Decision: agent.GuardDeny, Reason: res.Reason, RuleID: res.RuleID}, nil
+	default:
+		return agent.GuardResult{Decision: agent.GuardAllow}, nil
+	}
 }
 
 // findProvider returns the registered provider matching an identifier, or nil.

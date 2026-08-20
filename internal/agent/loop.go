@@ -17,6 +17,16 @@ type Loop struct {
 	tools       map[string]Tool
 	definitions []llm.ToolDefinition
 	retry       RetryPolicy
+	guard       Guard
+}
+
+// WithGuard installs an execution gate consulted before each tool call.
+// It is the intrinsic guard (internal/guard), not a plugin.
+func WithGuard(g Guard) LoopOption {
+	return func(l *Loop) error {
+		l.guard = g
+		return nil
+	}
 }
 
 // NewLoop constructs an agent loop from immutable dependencies.

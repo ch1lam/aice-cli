@@ -103,6 +103,23 @@ func (e *runExecution) executeTool(
 	ctx context.Context,
 	call llm.ToolCall,
 ) (llm.ToolResultMessage, error) {
+	// Built-in guard: deny before the tool ever starts. This preserves the
+	// "pair every tool call with one result" invariant while preventing the
+	// side effect.
+	if e.loop.guard != nil {
+		res, err := e.loop.guard.Check(ctx, call)
+		if err != nil {
+			return newErrorToolResult(call, fmt.Errorf("guard: %w", err))
+		}
+		if res.Decision == GuardDeny {
+			reason := res.Reason
+			if reason == "" {
+				reason = fmt.Sprintf("tool %q blocked by guard rule %q", call.Name, res.RuleID)
+			}
+			return newErrorToolResult(call, fmt.Errorf("%s", reason))
+		}
+	}
+
 	tool, exists := e.loop.tools[call.Name]
 	if !exists {
 		err := fmt.Errorf("tool %q is not available", call.Name)
