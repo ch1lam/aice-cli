@@ -43,6 +43,7 @@ type Guard struct {
 	allowedCmdPatterns   []compiledCommandPattern
 	autoDenyPatterns     []compiledCommandPattern
 	useBuiltinStructural bool
+	requireConfirmation  bool
 	// path access
 	pathAccessMode      PathAccessMode
 	allowedPaths        []AllowedPath
@@ -53,7 +54,7 @@ type Guard struct {
 // workspace may be empty (uses raw paths without relative conversion).
 func New(workspace string, cfg Config) (*Guard, error) {
 	if cfg.Enabled != nil && !*cfg.Enabled {
-		return &Guard{workspace: workspace, enabled: false, exists: fileExists, sessionAllowed: map[string]bool{}, sessionAllowedPaths: map[string]bool{}}, nil
+		return &Guard{workspace: workspace, enabled: false, requireConfirmation: true, exists: fileExists, sessionAllowed: map[string]bool{}, sessionAllowedPaths: map[string]bool{}}, nil
 	}
 	resolved := ResolveConfig(cfg)
 	policies := compilePolicies(resolved.Policies)
@@ -61,6 +62,10 @@ func New(workspace string, cfg Config) (*Guard, error) {
 	// When ApplyBuiltinDefaults is false and no custom, dangerousPatterns will be empty; structural should also be off.
 	if !resolved.ShouldApplyBuiltins() && len(resolved.PermissionGate.CustomPatterns) == 0 && len(resolved.PermissionGate.Patterns) == 0 {
 		useBuiltin = false
+	}
+	requireConfirm := true
+	if resolved.PermissionGate.RequireConfirmation != nil {
+		requireConfirm = *resolved.PermissionGate.RequireConfirmation
 	}
 	return &Guard{
 		workspace:            workspace,
@@ -70,6 +75,7 @@ func New(workspace string, cfg Config) (*Guard, error) {
 		allowedCmdPatterns:   compileCommandPatterns(resolved.PermissionGate.AllowedPatterns),
 		autoDenyPatterns:     compileCommandPatterns(resolved.PermissionGate.AutoDenyPatterns),
 		useBuiltinStructural: useBuiltin,
+		requireConfirmation:  requireConfirm,
 		pathAccessMode:       resolved.PathAccess.modeOrDefault(),
 		allowedPaths:         resolved.PathAccess.AllowedPaths,
 		exists:               fileExists,
@@ -114,10 +120,29 @@ func (g *Guard) AllowPathSession(absPath string, isDir bool) {
 	}
 }
 
+// AllowCommandSession records that a dangerous command is allowed for the
+// remainder of this run. It appends the command substring as an allowed
+// pattern so future identical commands bypass the dangerous check.
+func (g *Guard) AllowCommandSession(command string) {
+	if g == nil || command == "" {
+		return
+	}
+	g.allowedCmdPatterns = append(g.allowedCmdPatterns, compileCommandPattern(PatternConfig{Pattern: command}))
+}
+
+// ResolveAbsolute exposes resolveAbsolute for callers that need to map a
+// user-granted path to the absolute form stored in session grants.
+func (g *Guard) ResolveAbsolute(p, toolName string) string {
+	return resolveAbsolute(p, g.workspace, toolName)
+}
+
+// Workspace returns the workspace this guard is scoped to.
+func (g *Guard) Workspace() string { return g.workspace }
+
 // Check evaluates one ToolCall against policies, permission gate, and path
-// access. It returns DecisionDeny when blocked. In PR2, Ask is still mapped to
-// Deny with a reason mentioning "requires confirmation (no UI)" so
-// non-interactive runs fail closed; interactive TUI will map Ask to a prompt in PR3.
+// access. It returns DecisionDeny for hard blocks and DecisionAsk when user
+// confirmation is required. Non-interactive callers treat Ask as Deny
+// (fail-closed); the interactive TUI maps Ask to a confirmation prompt.
 func (g *Guard) Check(ctx context.Context, call llm.ToolCall) (Result, error) {
 	if g == nil || !g.enabled {
 		return Result{Decision: DecisionAllow}, nil
@@ -140,14 +165,18 @@ func (g *Guard) Check(ctx context.Context, call llm.ToolCall) (Result, error) {
 			if matchCommandPattern(cmd, g.allowedCmdPatterns) == nil {
 				if g.useBuiltinStructural {
 					if desc, pat := structuralDangerousMatch(cmd); desc != "" {
-						return Result{Decision: DecisionDeny, Reason: "Dangerous command blocked (" + desc + "): " + pat, RuleID: "permissionGate.dangerous", Action: Action{Kind: "command", Command: cmd, ToolName: call.Name}}, nil
+						if g.requireConfirmation {
+							return Result{Decision: DecisionAsk, Reason: "Dangerous command requires confirmation (" + desc + "): " + pat, RuleID: "permissionGate.dangerous", Action: Action{Kind: "command", Command: cmd, ToolName: call.Name}}, nil
+						}
 					}
 					// When builtins are active, structural is authoritative; do not fall back to substring builtins
 					// to avoid false positives like `echo rm -rf`.
 				} else {
 					// Custom patterns replace builtins: check substring/regex
 					if hit := matchCommandPattern(cmd, g.dangerousPatterns); hit != nil {
-						return Result{Decision: DecisionDeny, Reason: formatCommandBlockReason(hit, ""), RuleID: "permissionGate.dangerous", Action: Action{Kind: "command", Command: cmd, ToolName: call.Name}}, nil
+						if g.requireConfirmation {
+							return Result{Decision: DecisionAsk, Reason: formatCommandBlockReason(hit, ""), RuleID: "permissionGate.dangerous", Action: Action{Kind: "command", Command: cmd, ToolName: call.Name}}, nil
+						}
 					}
 				}
 			}
@@ -193,8 +222,7 @@ func (g *Guard) Check(ctx context.Context, call llm.ToolCall) (Result, error) {
 		if g.pathAccessMode == PathAccessBlock {
 			return Result{Decision: DecisionDeny, Reason: fmt.Sprintf("Access to %s is blocked (outside working directory).", resolveForDisplay(abs, g.workspace)), RuleID: "pathAccess.block", Action: act}, nil
 		}
-		// Ask mode without UI in PR2: deny with reason. PR3 will surface a prompt.
-		return Result{Decision: DecisionDeny, Reason: fmt.Sprintf("Access to %s is blocked (outside working directory, requires confirmation).", resolveForDisplay(abs, g.workspace)), RuleID: "pathAccess.ask", Action: act}, nil
+		return Result{Decision: DecisionAsk, Reason: fmt.Sprintf("Access to %s requires confirmation (outside working directory).", resolveForDisplay(abs, g.workspace)), RuleID: "pathAccess.ask", Action: act}, nil
 	}
 	return Result{Decision: DecisionAllow}, nil
 }

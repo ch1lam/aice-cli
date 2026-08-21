@@ -14,10 +14,10 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/ch1lam/aice-cli/internal/agent"
-	"github.com/ch1lam/aice-cli/internal/guard"
 	"github.com/ch1lam/aice-cli/internal/cli"
 	"github.com/ch1lam/aice-cli/internal/config"
 	"github.com/ch1lam/aice-cli/internal/deps"
+	"github.com/ch1lam/aice-cli/internal/guard"
 	"github.com/ch1lam/aice-cli/internal/interaction"
 	"github.com/ch1lam/aice-cli/internal/llm"
 	"github.com/ch1lam/aice-cli/internal/provider"
@@ -322,6 +322,9 @@ func (a *application) Interactive(
 	runner := &interactiveSession{
 		application:   a,
 		loop:          environment.loop,
+		guard:         environment.guard,
+		guardAdapter:  environment.guardAdapter,
+		guardRequests: make(chan interaction.GuardRequest, 4),
 		store:         store,
 		history:       history,
 		model:         environment.model,
@@ -336,6 +339,9 @@ func (a *application) Interactive(
 		trustSource:   environment.trust.Source,
 		providers:     a.dependencies.providers,
 		totalUsage:    usage,
+	}
+	if runner.loop != nil {
+		runner.loop.SetGuardAskHandler(runner.handleGuardAsk)
 	}
 	var checkUpdate tui.UpdateChecker
 	if a.dependencies.checkUpdate != nil {
@@ -401,6 +407,8 @@ type runEnvironment struct {
 	tools         []agent.Tool
 	systemPrompt  string
 	trust         trust.Resolution
+	guard         *guard.Guard
+	guardAdapter  *guardAdapter
 }
 
 type configuredModel struct {
@@ -448,8 +456,10 @@ func (a *application) newRunEnvironment(
 		return nil, err
 	}
 	var loop *agent.Loop
+	var g *guard.Guard
+	var adapter *guardAdapter
 	if providerConfigured(a.dependencies.providers, configured.configuration) {
-		loop, err = a.newAgentLoopWithWorkspace(configured.configuration, tools, workspace.PhysicalPath())
+		loop, g, adapter, err = a.newAgentLoopWithWorkspace(configured.configuration, tools, workspace.PhysicalPath())
 		if err != nil {
 			return nil, err
 		}
@@ -463,6 +473,8 @@ func (a *application) newRunEnvironment(
 		tools:         tools,
 		systemPrompt:  project.systemPrompt,
 		trust:         project.trust,
+		guard:         g,
+		guardAdapter:  adapter,
 	}, nil
 }
 
@@ -513,37 +525,38 @@ func (a *application) newAgentLoop(
 	configuration config.Config,
 	tools []agent.Tool,
 ) (*agent.Loop, error) {
-	return a.newAgentLoopWithWorkspace(configuration, tools, "")
+	loop, _, _, err := a.newAgentLoopWithWorkspace(configuration, tools, "")
+	return loop, err
 }
 
 func (a *application) newAgentLoopWithWorkspace(
 	configuration config.Config,
 	tools []agent.Tool,
 	workspace string,
-) (*agent.Loop, error) {
+) (*agent.Loop, *guard.Guard, *guardAdapter, error) {
 	if !providerConfigured(a.dependencies.providers, configuration) {
-		return nil, credentialNotConfiguredError(
+		return nil, nil, nil, credentialNotConfiguredError(
 			a.dependencies.providers,
 			configuration,
 		)
 	}
 	service, err := a.dependencies.newModel(configuration)
 	if err != nil {
-		return nil, fmt.Errorf("app: create model: %w", err)
+		return nil, nil, nil, fmt.Errorf("app: create model: %w", err)
 	}
 	// Built-in guard: intrinsic execution gate, not a plugin. Workspace-scoped
 	// so .env relative to the project is correctly recognized. Disabled only
 	// when explicitly configured off (future: guard config in settings.json).
 	g, err := guard.New(workspace, guard.Config{})
 	if err != nil {
-		return nil, fmt.Errorf("app: create guard: %w", err)
+		return nil, nil, nil, fmt.Errorf("app: create guard: %w", err)
 	}
 	adapter := &guardAdapter{inner: g}
 	loop, err := agent.NewLoop(service, tools, agent.WithGuard(adapter))
 	if err != nil {
-		return nil, fmt.Errorf("app: create agent loop: %w", err)
+		return nil, nil, nil, fmt.Errorf("app: create agent loop: %w", err)
 	}
-	return loop, nil
+	return loop, g, adapter, nil
 }
 
 // guardAdapter bridges internal/guard.Guard to agent.Guard without making
@@ -563,11 +576,15 @@ func (g *guardAdapter) Check(ctx context.Context, call llm.ToolCall) (agent.Guar
 	}
 	switch res.Decision {
 	case guard.DecisionDeny:
-		return agent.GuardResult{Decision: agent.GuardDeny, Reason: res.Reason, RuleID: res.RuleID}, nil
+		return agent.GuardResult{Decision: agent.GuardDeny, Reason: res.Reason, RuleID: res.RuleID, Action: agent.GuardAction{Kind: string(res.Action.Kind), Path: res.Action.Path, Command: res.Action.Command, ToolName: res.Action.ToolName}}, nil
+	case guard.DecisionAsk:
+		return agent.GuardResult{Decision: agent.GuardAsk, Reason: res.Reason, RuleID: res.RuleID, Action: agent.GuardAction{Kind: string(res.Action.Kind), Path: res.Action.Path, Command: res.Action.Command, ToolName: res.Action.ToolName}}, nil
 	default:
 		return agent.GuardResult{Decision: agent.GuardAllow}, nil
 	}
 }
+
+func (g *guardAdapter) Inner() *guard.Guard { return g.inner }
 
 // findProvider returns the registered provider matching an identifier, or nil.
 func findProvider(providers []provider.Provider, providerID string) provider.Provider {
@@ -793,6 +810,9 @@ type interactiveSession struct {
 	providers      []provider.Provider
 	totalUsage     llm.Usage
 	sessionChanged bool
+	guard          *guard.Guard
+	guardAdapter   *guardAdapter
+	guardRequests  chan interaction.GuardRequest
 
 	// sideMu guards the ephemeral /btw thread registry below. sideClock is
 	// the injectable time source used for idle windows and expiry; nil means
@@ -824,6 +844,72 @@ func (s *interactiveSession) settingsSnapshot() interactiveSettings {
 		model:         cloneModel(s.model),
 		options:       cloneStreamOptions(s.options),
 		systemPrompt:  s.systemPrompt,
+	}
+}
+
+// GuardRequests exposes pending guard confirmations for the TUI.
+func (s *interactiveSession) GuardRequests() <-chan interaction.GuardRequest {
+	if s == nil {
+		return nil
+	}
+	return s.guardRequests
+}
+
+func (s *interactiveSession) handleGuardAsk(ctx context.Context, call llm.ToolCall, result agent.GuardResult) (agent.GuardDecision, error) {
+	if s == nil || s.guardRequests == nil {
+		return agent.GuardDeny, nil
+	}
+	// Use a small ID for display; call.ID is the tool-call ID.
+	reqID := call.ID
+	if reqID == "" {
+		reqID = result.RuleID
+	}
+	reply := make(chan interaction.GuardDecision, 1)
+	req := interaction.GuardRequest{
+		ID:       reqID,
+		ToolName: call.Name,
+		Reason:   result.Reason,
+		RuleID:   result.RuleID,
+		Command:  result.Action.Command,
+		Path:     result.Action.Path,
+		Reply:    reply,
+	}
+	select {
+	case <-ctx.Done():
+		return agent.GuardDeny, ctx.Err()
+	case s.guardRequests <- req:
+	}
+	select {
+	case <-ctx.Done():
+		return agent.GuardDeny, ctx.Err()
+	case decision := <-reply:
+		switch decision {
+		case interaction.GuardDecisionAllowAlways:
+			if s.guard != nil {
+				switch {
+				case result.RuleID == "pathAccess.ask":
+					abs := s.guard.ResolveAbsolute(result.Action.Path, result.Action.ToolName)
+					s.guard.AllowPathSession(abs, false)
+					// Also allow parent directory so sibling files under same granted file are reachable
+					// when the user explicitly chooses "always" for an outside path.
+				case result.RuleID == "permissionGate.dangerous":
+					if result.Action.Command != "" {
+						s.guard.AllowCommandSession(result.Action.Command)
+					} else if result.Action.Path != "" {
+						s.guard.AllowPathSession(result.Action.Path, false)
+					}
+				default:
+					if result.Action.Path != "" {
+						s.guard.AllowSession(result.Action.Path)
+					}
+				}
+			}
+			return agent.GuardAllow, nil
+		case interaction.GuardDecisionAllowOnce:
+			return agent.GuardAllow, nil
+		default:
+			return agent.GuardDeny, nil
+		}
 	}
 }
 

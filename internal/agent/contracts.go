@@ -23,6 +23,7 @@ type GuardDecision string
 const (
 	GuardAllow GuardDecision = "allow"
 	GuardDeny  GuardDecision = "deny"
+	GuardAsk   GuardDecision = "ask"
 )
 
 // GuardResult carries the outcome of a single guard check.
@@ -30,6 +31,15 @@ type GuardResult struct {
 	Decision GuardDecision
 	Reason   string
 	RuleID   string
+	Action   GuardAction
+}
+
+// GuardAction is the normalized action that triggered the guard decision.
+type GuardAction struct {
+	Kind     string
+	Path     string
+	Command  string
+	ToolName string
 }
 
 var (

@@ -123,6 +123,9 @@ func Run(ctx context.Context, runner Runner, options Options) error {
 	if manager, ok := runner.(SideThreadManager); ok {
 		initialModel.side.manager = manager
 	}
+	if guardReq, ok := runner.(interaction.GuardRequester); ok {
+		initialModel.guardRequests = guardReq.GuardRequests()
+	}
 	initialModel.currentModel = options.Model
 	initialModel.thinking = options.Thinking
 	initialModel.apiKeyConfigured = options.APIKeyConfigured

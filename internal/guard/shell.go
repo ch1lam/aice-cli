@@ -125,7 +125,7 @@ func parseCallWords(command string) [][]string {
 func parsePathCandidates(command string) []struct {
 	token      string
 	unresolved bool
-	forcePath bool
+	forcePath  bool
 } {
 	p := syntax.NewParser(syntax.Variant(syntax.LangBash))
 	f, err := p.Parse(strings.NewReader(command), "")
@@ -135,7 +135,7 @@ func parsePathCandidates(command string) []struct {
 		var out []struct {
 			token      string
 			unresolved bool
-			forcePath bool
+			forcePath  bool
 		}
 		for _, t := range toks {
 			if t == "" || strings.HasPrefix(t, "-") {
@@ -144,7 +144,7 @@ func parsePathCandidates(command string) []struct {
 			out = append(out, struct {
 				token      string
 				unresolved bool
-				forcePath bool
+				forcePath  bool
 			}{token: t, unresolved: containsExpansion(t)})
 		}
 		return out
@@ -152,7 +152,7 @@ func parsePathCandidates(command string) []struct {
 	type cand struct {
 		token      string
 		unresolved bool
-		forcePath bool
+		forcePath  bool
 	}
 	var cands []cand
 	syntax.Walk(f, func(node syntax.Node) bool {
@@ -200,13 +200,13 @@ func parsePathCandidates(command string) []struct {
 	var out []struct {
 		token      string
 		unresolved bool
-		forcePath bool
+		forcePath  bool
 	}
 	for _, c := range cands {
 		out = append(out, struct {
 			token      string
 			unresolved bool
-			forcePath bool
+			forcePath  bool
 		}{token: c.token, unresolved: c.unresolved, forcePath: c.forcePath})
 	}
 	return out

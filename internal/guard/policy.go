@@ -101,9 +101,9 @@ func compilePolicies(rules []PolicyRule) []compiledPolicy {
 }
 
 // normalizeTarget mirrors pi-guardrails normalizeTarget but simplified for Go:
-// - "~" and "~/..." are kept as-is with normalization (for pattern matching)
-// - absolute or relative paths are resolved against workspace, then expressed
-//   relative to workspace when inside it, otherwise as normalized absolute or "~/..."
+//   - "~" and "~/..." are kept as-is with normalization (for pattern matching)
+//   - absolute or relative paths are resolved against workspace, then expressed
+//     relative to workspace when inside it, otherwise as normalized absolute or "~/..."
 func normalizeTarget(filePath, workspace string) string {
 	if filePath == "~" || strings.HasPrefix(filePath, "~/") {
 		return normalizeFilePath(filePath)

@@ -265,3 +265,31 @@ type CommandRunner interface {
 	SlashCommands() []Command
 	RunSlashCommand(ctx context.Context, request CommandRequest) (string, error)
 }
+
+// GuardDecision is the outcome of a user confirmation for a guard Ask.
+type GuardDecision uint8
+
+const (
+	GuardDecisionUnknown GuardDecision = iota
+	GuardDecisionAllowOnce
+	GuardDecisionAllowAlways
+	GuardDecisionDeny
+)
+
+// GuardRequest is one interactive guard confirmation sent from the agent loop
+// to the frontend. The frontend must send one GuardDecision on Reply.
+type GuardRequest struct {
+	ID       string
+	ToolName string
+	Reason   string
+	RuleID   string
+	Command  string
+	Path     string
+	Reply    chan GuardDecision
+}
+
+// GuardRequester exposes the channel of pending guard confirmations for the
+// interactive TUI to consume.
+type GuardRequester interface {
+	GuardRequests() <-chan GuardRequest
+}

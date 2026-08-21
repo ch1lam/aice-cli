@@ -103,20 +103,49 @@ func (e *runExecution) executeTool(
 	ctx context.Context,
 	call llm.ToolCall,
 ) (llm.ToolResultMessage, error) {
-	// Built-in guard: deny before the tool ever starts. This preserves the
-	// "pair every tool call with one result" invariant while preventing the
-	// side effect.
+	// Built-in guard: deny or ask before the tool ever starts. This preserves
+	// the "pair every tool call with one result" invariant while preventing
+	// the side effect. Ask is resolved via the injected handler or fails closed.
 	if e.loop.guard != nil {
 		res, err := e.loop.guard.Check(ctx, call)
 		if err != nil {
 			return newErrorToolResult(call, fmt.Errorf("guard: %w", err))
 		}
-		if res.Decision == GuardDeny {
+		switch res.Decision {
+		case GuardDeny:
 			reason := res.Reason
 			if reason == "" {
 				reason = fmt.Sprintf("tool %q blocked by guard rule %q", call.Name, res.RuleID)
 			}
 			return newErrorToolResult(call, fmt.Errorf("%s", reason))
+		case GuardAsk:
+			decision := GuardDeny
+			if e.loop.guardAsk != nil {
+				// Pass full GuardResult so the handler can display reason/rule.
+				askRes := GuardResult{
+					Decision: GuardAsk,
+					Reason:   res.Reason,
+					RuleID:   res.RuleID,
+					Action: GuardAction{
+						Kind:     res.Action.Kind,
+						Path:     res.Action.Path,
+						Command:  res.Action.Command,
+						ToolName: res.Action.ToolName,
+					},
+				}
+				d, err := e.loop.guardAsk(ctx, call, askRes)
+				if err != nil {
+					return newErrorToolResult(call, fmt.Errorf("guard ask: %w", err))
+				}
+				decision = d
+			}
+			if decision != GuardAllow {
+				reason := res.Reason
+				if reason == "" {
+					reason = fmt.Sprintf("tool %q requires confirmation (rule %q)", call.Name, res.RuleID)
+				}
+				return newErrorToolResult(call, fmt.Errorf("%s", reason))
+			}
 		}
 	}
 

@@ -18,7 +18,14 @@ type Loop struct {
 	definitions []llm.ToolDefinition
 	retry       RetryPolicy
 	guard       Guard
+	guardAsk    GuardAskHandler
 }
+
+// GuardAskHandler is called when a guard returns Ask. It decides whether to
+// allow the tool call. Returning GuardAllow proceeds; GuardDeny blocks. The
+// handler may block for user confirmation (e.g. TUI prompt). A nil handler
+// fails closed by denying.
+type GuardAskHandler func(ctx context.Context, call llm.ToolCall, result GuardResult) (GuardDecision, error)
 
 // WithGuard installs an execution gate consulted before each tool call.
 // It is the intrinsic guard (internal/guard), not a plugin.
@@ -26,6 +33,23 @@ func WithGuard(g Guard) LoopOption {
 	return func(l *Loop) error {
 		l.guard = g
 		return nil
+	}
+}
+
+// WithGuardAskHandler installs the interactive Ask resolver. It is called
+// synchronously inside ExecuteTool when Guard returns Ask.
+func WithGuardAskHandler(h GuardAskHandler) LoopOption {
+	return func(l *Loop) error {
+		l.guardAsk = h
+		return nil
+	}
+}
+
+// SetGuardAskHandler updates the Ask resolver after construction. It is used
+// by the interactive session to wire the TUI prompt after the loop is built.
+func (l *Loop) SetGuardAskHandler(h GuardAskHandler) {
+	if l != nil {
+		l.guardAsk = h
 	}
 }
 

@@ -156,6 +156,9 @@ func (m model) composerParts(contentWidth int) []string {
 }
 
 func (m model) composerView(width int) string {
+	if m.guardPending != nil {
+		return m.guardView(width)
+	}
 	style := composerFocusedStyle
 	if !m.input.Focused() {
 		style = composerBlurredStyle

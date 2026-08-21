@@ -13,6 +13,8 @@ import (
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+
+	"github.com/ch1lam/aice-cli/internal/interaction"
 )
 
 const (
@@ -95,6 +97,9 @@ type model struct {
 	activeRun          ActiveRun
 	cancelRun          context.CancelFunc
 	side               sidePanelState
+	guardRequests      <-chan interaction.GuardRequest
+	guardPending       *interaction.GuardRequest
+	guardSelection     int
 
 	viewport          viewport.Model
 	selection         transcriptSelection
@@ -227,11 +232,24 @@ func (m model) Init() tea.Cmd {
 	if m.updateCheck != nil {
 		commands = append(commands, m.updateCheck)
 	}
+	if m.guardRequests != nil {
+		commands = append(commands, waitForGuardRequest(m.guardRequests))
+	}
 	return tea.Batch(commands...)
 }
 
 func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	switch message := message.(type) {
+	case guardRequestMsg:
+		if message.req != nil {
+			m.guardPending = message.req
+			m.guardSelection = 0
+			m.input.Blur()
+			m.resizeLayout()
+			m.refreshViewport(true)
+			return m, nil
+		}
+		return m, nil
 	case tea.WindowSizeMsg:
 		m.selection.clear()
 		previousContentWidth := m.contentWidth()
@@ -459,6 +477,13 @@ func (m model) positionComposerCursor(position *tea.Position, width int) {
 }
 
 func (m model) handleKey(message tea.KeyPressMsg) (model, tea.Cmd, bool) {
+	if m.guardPending != nil {
+		updated, cmd, handled := m.handleGuardKey(message)
+		if handled {
+			return updated, cmd, true
+		}
+		return m, nil, true
+	}
 	if m.side.menu != nil {
 		return m.handleSideMenuKey(message)
 	}
@@ -614,6 +639,9 @@ func (m model) handleKey(message tea.KeyPressMsg) (model, tea.Cmd, bool) {
 }
 
 func (m model) composerInputEnabled() bool {
+	if m.guardPending != nil {
+		return false
+	}
 	if m.side.isVisible {
 		if m.side.activeID == 0 {
 			return m.side.newPending == nil

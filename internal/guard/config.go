@@ -87,7 +87,7 @@ func ResolveConfig(user Config) Config {
 				user.PermissionGate.RequireConfirmation = def.PermissionGate.RequireConfirmation
 			}
 		}
-			return user
+		return user
 	}
 	// Merge policies by ID.
 	byID := make(map[string]PolicyRule, len(def.Policies)+len(user.Policies))

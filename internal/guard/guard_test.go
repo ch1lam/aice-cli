@@ -179,7 +179,7 @@ func TestCompileFilePattern_Regex(t *testing.T) {
 	}
 }
 
-// PR2: permission gate
+// PR2: permission gate — PR4 turns dangerous into Ask
 func TestGuard_DangerousCommandBlocked(t *testing.T) {
 	g, _ := NewWithExists(t.TempDir(), Config{}, alwaysExists)
 	cases := []string{
@@ -192,8 +192,11 @@ func TestGuard_DangerousCommandBlocked(t *testing.T) {
 	}
 	for _, cmd := range cases {
 		res, _ := g.Check(context.Background(), toolCall("bash", map[string]any{"command": cmd}))
-		if res.Decision != DecisionDeny {
-			t.Fatalf("dangerous %q: %v want deny (rule %q)", cmd, res.Decision, res.RuleID)
+		if res.Decision != DecisionAsk {
+			t.Fatalf("dangerous %q: %v want ask (rule %q)", cmd, res.Decision, res.RuleID)
+		}
+		if res.RuleID != "permissionGate.dangerous" {
+			t.Fatalf("dangerous %q rule %q want permissionGate.dangerous", cmd, res.RuleID)
 		}
 	}
 	// safe command
@@ -213,8 +216,8 @@ func TestGuard_DangerousAllowedBypass(t *testing.T) {
 		t.Fatalf("allowed bypass: %v want allow", res.Decision)
 	}
 	res, _ = g.Check(context.Background(), toolCall("bash", map[string]any{"command": "rm -rf /tmp/other"}))
-	if res.Decision != DecisionDeny {
-		t.Fatalf("non-allowed still deny: %v", res.Decision)
+	if res.Decision != DecisionAsk {
+		t.Fatalf("non-allowed still ask: %v", res.Decision)
 	}
 }
 
@@ -239,8 +242,8 @@ func TestGuard_CustomPatternsReplaceBuiltins(t *testing.T) {
 		t.Fatalf("custom replace should allow rm -rf: %v", res.Decision)
 	}
 	res, _ = g.Check(context.Background(), toolCall("bash", map[string]any{"command": "run MY_DANGEROUS here"}))
-	if res.Decision != DecisionDeny {
-		t.Fatalf("custom MY_DANGEROUS: %v want deny", res.Decision)
+	if res.Decision != DecisionAsk {
+		t.Fatalf("custom MY_DANGEROUS: %v want ask", res.Decision)
 	}
 }
 
@@ -263,13 +266,13 @@ func TestGuard_PathAccess(t *testing.T) {
 	if res.RuleID != "pathAccess.block" {
 		t.Fatalf("rule %q want pathAccess.block", res.RuleID)
 	}
-	// ask mode (default) without UI also denies butdifferent rule
+	// ask mode (default) returns Ask
 	allowMode := PathAccessAsk
 	cfg2 := Config{PathAccess: PathAccessConfig{Mode: &allowMode}}
 	g2, _ := NewWithExists(workspace, cfg2, alwaysExists)
 	res, _ = g2.Check(context.Background(), toolCall("read", map[string]any{"file_path": outside}))
-	if res.Decision != DecisionDeny || res.RuleID != "pathAccess.ask" {
-		t.Fatalf("outside ask: %v %q want deny ask", res.Decision, res.RuleID)
+	if res.Decision != DecisionAsk || res.RuleID != "pathAccess.ask" {
+		t.Fatalf("outside ask: %v %q want ask", res.Decision, res.RuleID)
 	}
 	// allow mode
 	allow := PathAccessAllow
@@ -352,14 +355,14 @@ func TestGuard_StructuralDangerousVariants(t *testing.T) {
 	}
 	for _, cmd := range variants {
 		res, _ := g.Check(context.Background(), toolCall("bash", map[string]any{"command": cmd}))
-		if res.Decision != DecisionDeny {
-			t.Fatalf("structural rm variant %q: %v want deny", cmd, res.Decision)
+		if res.Decision != DecisionAsk {
+			t.Fatalf("structural rm variant %q: %v want ask", cmd, res.Decision)
 		}
 	}
-	// chmod variants: only -R + 777 should deny
+	// chmod variants: only -R + 777 should ask
 	res, _ := g.Check(context.Background(), toolCall("bash", map[string]any{"command": "chmod -R 777 /tmp"}))
-	if res.Decision != DecisionDeny {
-		t.Fatalf("chmod -R 777: %v want deny", res.Decision)
+	if res.Decision != DecisionAsk {
+		t.Fatalf("chmod -R 777: %v want ask", res.Decision)
 	}
 	res, _ = g.Check(context.Background(), toolCall("bash", map[string]any{"command": "chmod -R 755 /tmp"}))
 	if res.Decision != DecisionAllow {
@@ -371,7 +374,7 @@ func TestGuard_StructuralDangerousVariants(t *testing.T) {
 	}
 	// docker privileged only for run/create
 	res, _ = g.Check(context.Background(), toolCall("bash", map[string]any{"command": "docker run --privileged nginx"}))
-	if res.Decision != DecisionDeny {
+	if res.Decision != DecisionAsk {
 		t.Fatalf("docker privileged run: %v", res.Decision)
 	}
 	res, _ = g.Check(context.Background(), toolCall("bash", map[string]any{"command": "docker build --privileged ."}))
@@ -412,12 +415,12 @@ func TestGuard_PathExtractionAST(t *testing.T) {
 	if res.Decision != DecisionDeny {
 		t.Fatalf("$HOME expansion: %v want deny", res.Decision)
 	}
-	// Pipeline: cat inside, sudo rm outside – sudo should be caught
+	// Pipeline: cat inside, sudo rm outside – sudo should be ask
 	allow2 := PathAccessAllow
 	cfg2 := Config{PathAccess: PathAccessConfig{Mode: &allow2}}
 	g2, _ := NewWithExists(t.TempDir(), cfg2, alwaysExists)
 	res, _ = g2.Check(context.Background(), toolCall("bash", map[string]any{"command": "cat README.md | sudo rm -rf /tmp/x"}))
-	if res.Decision != DecisionDeny {
-		t.Fatalf("pipeline sudo rm: %v want deny", res.Decision)
+	if res.Decision != DecisionAsk {
+		t.Fatalf("pipeline sudo rm: %v want ask", res.Decision)
 	}
 }
