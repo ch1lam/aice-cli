@@ -51,7 +51,7 @@ func (s *interactiveSession) SlashCommands() []interaction.Command {
 		},
 		{
 			Name:         "login",
-			Description:  "Choose a provider and store its API key using hidden input",
+			Description:  "Choose a provider, reuse its credential, or enter a new API key",
 			SecretPrompt: "API key",
 			Menu:         s.loginProviderMenu(),
 		},
@@ -77,7 +77,7 @@ func (s *interactiveSession) loginProviderMenu() *interaction.CommandMenu {
 	settings := s.settingsSnapshot()
 	return &interaction.CommandMenu{
 		Title:   "Select provider",
-		Options: providerOptions(s.providers, settings.configuration),
+		Options: loginProviderOptions(s.providers, settings.configuration),
 	}
 }
 
@@ -113,9 +113,8 @@ func (s *interactiveSession) providerMenu() *interaction.CommandMenu {
 	}
 }
 
-// providerOptions lists every known provider for /login and /provider,
-// marking the active one and annotating providers whose credential is already
-// available so users can tell a saved key apart from a missing one.
+// providerOptions lists every known provider for /provider, marking the active
+// one and annotating providers whose credential is already available.
 func providerOptions(
 	providers []provider.Provider,
 	configuration config.Config,
@@ -133,6 +132,41 @@ func providerOptions(
 			Arguments:   providerID,
 			Current:     providerID == configuration.Provider,
 		})
+	}
+	return options
+}
+
+// loginProviderOptions lists every known provider for /login. Providers with a
+// configured credential open a second menu so switching and replacing a key
+// remain explicit, separate actions.
+func loginProviderOptions(
+	providers []provider.Provider,
+	configuration config.Config,
+) []interaction.CommandOption {
+	options := providerOptions(providers, configuration)
+	for index, candidate := range providers {
+		if !candidate.Configured(configuration) {
+			continue
+		}
+
+		providerID := string(candidate.ProviderID())
+		label := candidate.Label()
+		options[index].Menu = &interaction.CommandMenu{
+			Title: label + " credential",
+			Options: []interaction.CommandOption{
+				{
+					Label:              "Use saved credential",
+					Description:        "Switch to " + label + " without entering a key",
+					Arguments:          providerID,
+					UseSavedCredential: true,
+				},
+				{
+					Label:       "Enter a new API key",
+					Description: "Replace the saved " + label + " credential",
+					Arguments:   providerID,
+				},
+			},
+		}
 	}
 	return options
 }
@@ -595,24 +629,37 @@ func (s *interactiveSession) login(
 			}
 		}
 	}
-	// The custom provider is keyless by design (Ollama); an empty key clears
-	// the stored credential and still enables the provider. Other providers
-	// keep the strict requirement.
-	if provider != string(custom.ProviderID) && apiKey == "" {
-		return "", fmt.Errorf(
-			"app: %s API key is required",
-			providerLabel(s.providers, provider),
-		)
-	}
-	if strings.ContainsAny(apiKey, "\r\n") {
-		return "", fmt.Errorf(
-			"app: %s API key must be one line",
-			providerLabel(s.providers, provider),
-		)
-	}
-
 	configuration := settings.configuration
 	configuration.Provider = provider
+	if request.UseSavedCredential {
+		if apiKey != "" {
+			return "", fmt.Errorf(
+				"app: saved credential selection cannot include an API key",
+			)
+		}
+		if !providerConfigured(s.providers, configuration) {
+			return "", fmt.Errorf(
+				"app: %s API key is not configured",
+				providerLabel(s.providers, provider),
+			)
+		}
+	} else {
+		// The custom provider is keyless by design (Ollama); an empty key clears
+		// the stored credential and still enables the provider. Other providers
+		// keep the strict requirement.
+		if provider != string(custom.ProviderID) && apiKey == "" {
+			return "", fmt.Errorf(
+				"app: %s API key is required",
+				providerLabel(s.providers, provider),
+			)
+		}
+		if strings.ContainsAny(apiKey, "\r\n") {
+			return "", fmt.Errorf(
+				"app: %s API key must be one line",
+				providerLabel(s.providers, provider),
+			)
+		}
+	}
 	// Persist custom endpoint/model before building the loop so the new loop dials
 	// the intended URL and the model is immediately available.
 	if provider == string(custom.ProviderID) {
@@ -629,18 +676,23 @@ func (s *interactiveSession) login(
 			configuration.Model = customModel
 		}
 	}
-	findProvider(s.providers, provider).ApplyAPIKey(&configuration, apiKey)
+	if !request.UseSavedCredential {
+		findProvider(s.providers, provider).ApplyAPIKey(&configuration, apiKey)
+	}
 	loop, err := s.application.newAgentLoop(configuration, s.tools)
 	if err != nil {
 		return "", err
 	}
-	path, err := s.application.dependencies.saveAPIKey(provider, apiKey)
-	if err != nil {
-		return "", fmt.Errorf(
-			"app: save %s API key: %w",
-			providerLabel(s.providers, provider),
-			err,
-		)
+	path := ""
+	if !request.UseSavedCredential {
+		path, err = s.application.dependencies.saveAPIKey(provider, apiKey)
+		if err != nil {
+			return "", fmt.Errorf(
+				"app: save %s API key: %w",
+				providerLabel(s.providers, provider),
+				err,
+			)
+		}
 	}
 
 	model := providerModel(s.providers, provider, configuration.Model)
@@ -665,6 +717,12 @@ func (s *interactiveSession) login(
 	s.model = model
 	s.options.Thinking = effective
 	s.stateMu.Unlock()
+	if request.UseSavedCredential {
+		return fmt.Sprintf(
+			"Switched to %s using the saved credential. AICE is ready.",
+			providerLabel(s.providers, provider),
+		), nil
+	}
 	if provider == string(custom.ProviderID) {
 		endpoint := strings.TrimSpace(configuration.CustomBaseURL)
 		if endpoint == "" {

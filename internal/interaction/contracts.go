@@ -245,14 +245,19 @@ type CommandOption struct {
 	Description string
 	Arguments   string
 	Current     bool
-	Menu        *CommandMenu
+	// UseSavedCredential executes the selected command without prompting for a
+	// replacement secret. It is intended for menu actions that switch to an
+	// already configured provider.
+	UseSavedCredential bool
+	Menu               *CommandMenu
 }
 
 // CommandRequest is one parsed interactive command invocation.
 type CommandRequest struct {
-	Name      string
-	Arguments string
-	Secret    string
+	Name               string
+	Arguments          string
+	Secret             string
+	UseSavedCredential bool
 }
 
 // CommandRunner executes application-owned interactive commands.

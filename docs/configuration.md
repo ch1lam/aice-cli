@@ -109,13 +109,16 @@ Credentials are stored by provider in `~/.aice/auth.json` with file mode
 | OpenAI | `OPENAI_API_KEY` | `openai_api_key` | `AICE_OPENAI_BASE_URL` |
 | Custom (Ollama, vLLM, LM Studio, any OpenAI-compatible) | `AICE_CUSTOM_API_KEY` | `custom_api_key` | `AICE_CUSTOM_BASE_URL` (default `http://localhost:11434/v1`) |
 
-In the TUI, `/login` opens a provider menu and hidden input. It stores the
-key in the auth file and also saves the provider (and the effective model when
-the previous one does not belong to that provider) to the global settings
-file, so the login survives a restart. The provider menus mark providers whose
-credential is already stored with "credential saved". Missing credentials do
-not prevent the TUI from starting, but a normal prompt asks the user to log in
-first.
+In the TUI, `/login` opens a provider menu. For a provider whose credential is
+already available, the next menu explicitly offers either `Use saved
+credential` (switch without entering a key) or `Enter a new API key` (replace
+the saved key). Providers without a credential go directly to hidden input.
+When a new key is entered, `/login` stores it in the auth file and also saves
+the provider (and the effective model when the previous one does not belong to
+that provider) to the global settings file, so the login survives a restart.
+`/provider` remains the shorter command for switching to an already configured
+provider. Missing credentials do not prevent the TUI from starting, but a
+normal prompt asks the user to log in first.
 
 For non-interactive setup, send the key on standard input so it does not appear
 in command-line arguments:

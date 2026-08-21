@@ -1656,6 +1656,110 @@ func TestModelLoginSelectsProviderThenHidesAndSubmitsSecret(t *testing.T) {
 	}
 }
 
+func TestModelLoginSeparatesSavedCredentialReuseFromReplacement(t *testing.T) {
+	t.Parallel()
+
+	loginCommand := func() SlashCommand {
+		return SlashCommand{
+			Name:         "login",
+			Description:  "Store a provider API key",
+			SecretPrompt: "DeepSeek API key",
+			Menu: &SlashCommandMenu{
+				Title: "Select provider",
+				Options: []SlashCommandOption{{
+					Label: "DeepSeek",
+					Menu: &SlashCommandMenu{
+						Title: "DeepSeek credential",
+						Options: []SlashCommandOption{
+							{
+								Label:              "Use saved credential",
+								Arguments:          "deepseek",
+								UseSavedCredential: true,
+							},
+							{
+								Label:     "Enter a new API key",
+								Arguments: "deepseek",
+							},
+						},
+					},
+				}},
+			},
+		}
+	}
+
+	t.Run("reuse saved credential", func(t *testing.T) {
+		t.Parallel()
+
+		requests := make(chan runRequest, 1)
+		current := newModel(
+			requests,
+			make(chan struct{}),
+			loginCommand(),
+		)
+		current.input.SetValue("/login")
+
+		selectingProvider, _, handled := current.handleKey(tea.KeyPressMsg{
+			Code: tea.KeyEnter,
+		})
+		if !handled || selectingProvider.commandMenu == nil {
+			t.Fatal("/login did not open the provider menu")
+		}
+		selectingCredential, _, handled := selectingProvider.handleKey(
+			tea.KeyPressMsg{Code: tea.KeyEnter},
+		)
+		if !handled || selectingCredential.commandMenu == nil {
+			t.Fatal("configured provider did not open the credential menu")
+		}
+
+		starting, command, handled := selectingCredential.handleKey(
+			tea.KeyPressMsg{Code: tea.KeyEnter},
+		)
+		if !handled || command == nil || starting.secretInput != nil {
+			t.Fatal("saved credential selection unexpectedly requested a new key")
+		}
+		if _, ok := command().(runStartedMsg); !ok {
+			t.Fatal("saved credential selection did not start the command")
+		}
+		request := <-requests
+		if request.command == nil ||
+			request.command.Arguments != "deepseek" ||
+			!request.command.UseSavedCredential ||
+			request.command.Secret != "" {
+			t.Fatalf("saved credential request = %#v", request.command)
+		}
+	})
+
+	t.Run("replace credential", func(t *testing.T) {
+		t.Parallel()
+
+		current := newModel(
+			make(chan runRequest),
+			make(chan struct{}),
+			loginCommand(),
+		)
+		current.input.SetValue("/login")
+
+		selectingProvider, _, _ := current.handleKey(tea.KeyPressMsg{
+			Code: tea.KeyEnter,
+		})
+		selectingCredential, _, _ := selectingProvider.handleKey(
+			tea.KeyPressMsg{Code: tea.KeyEnter},
+		)
+		selectingCredential, _, handled := selectingCredential.handleKey(
+			tea.KeyPressMsg{Code: tea.KeyDown},
+		)
+		if !handled {
+			t.Fatal("down did not select the replacement action")
+		}
+		entering, _, handled := selectingCredential.handleKey(
+			tea.KeyPressMsg{Code: tea.KeyEnter},
+		)
+		if !handled || entering.secretInput == nil {
+			t.Fatal("replacement action did not request a new key")
+		}
+	})
+}
+
 func TestModelSecretSlashCommandCanBeCancelledAndRestarted(t *testing.T) {
 	t.Parallel()
 

@@ -128,7 +128,8 @@ func (m model) startApplicationSlashCommand(
 	request SlashCommandRequest,
 	command SlashCommand,
 ) (model, tea.Cmd, bool) {
-	if command.SecretPrompt != "" {
+	useSavedCredential := command.Name == "login" && request.UseSavedCredential
+	if command.SecretPrompt != "" && !useSavedCredential {
 		// Custom provider needs endpoint + API key + model in one centralized
 		// /login flow. Use a 3-step hidden-input sequence instead of a single
 		// API key prompt so the user can configure everything in one place.
@@ -167,7 +168,11 @@ func (m model) startApplicationSlashCommand(
 	m.acceptsDelivery = false
 	m.running = true
 	m.assistantEntry = -1
-	m.status = "Running /" + command.Name + "..."
+	if useSavedCredential {
+		m.status = "Using saved credential..."
+	} else {
+		m.status = "Running /" + command.Name + "..."
+	}
 	return m.settleCommand(
 		true,
 		startSlashCommand(m.requests, m.controllerDone, request),
@@ -223,6 +228,7 @@ func (m model) selectCommandMenuOption() (model, tea.Cmd, bool) {
 
 	state := *m.commandMenu
 	state.request.Arguments = option.Arguments
+	state.request.UseSavedCredential = option.UseSavedCredential
 	m.commandMenu = nil
 	return m.startApplicationSlashCommand(
 		state.raw,

@@ -253,6 +253,39 @@ func TestInteractiveSessionSlashCommandsExposeSelectionMenus(t *testing.T) {
 	}
 }
 
+func TestInteractiveSessionLoginMenuSeparatesSavedCredentialActions(
+	t *testing.T,
+) {
+	t.Parallel()
+
+	runner := &interactiveSession{
+		configuration: config.Config{
+			Provider:       string(deepseek.ProviderID),
+			DeepSeekAPIKey: "saved-deepseek-key",
+		},
+		providers: defaultProviders(),
+	}
+
+	login := interactiveSlashCommand(t, runner.SlashCommands(), "login")
+	deepSeek := login.Menu.Options[0]
+	if deepSeek.Menu == nil {
+		t.Fatal("configured provider did not open the credential action menu")
+	}
+	if got, want := deepSeek.Menu.Title, "DeepSeek credential"; got != want {
+		t.Errorf("credential menu title = %q, want %q", got, want)
+	}
+	if len(deepSeek.Menu.Options) != 2 {
+		t.Fatalf("credential menu options = %d, want 2", len(deepSeek.Menu.Options))
+	}
+	saved, replace := deepSeek.Menu.Options[0], deepSeek.Menu.Options[1]
+	if !saved.UseSavedCredential || saved.Arguments != string(deepseek.ProviderID) {
+		t.Errorf("saved credential option = %#v", saved)
+	}
+	if replace.UseSavedCredential || replace.Arguments != string(deepseek.ProviderID) {
+		t.Errorf("replacement credential option = %#v", replace)
+	}
+}
+
 func TestInteractiveSessionSlashCommandCompactsAndReloadsHistory(
 	t *testing.T,
 ) {
@@ -804,6 +837,81 @@ func TestInteractiveSessionLoginOpencode(t *testing.T) {
 	}
 	if !strings.Contains(output, "OpenCode Go API key") {
 		t.Errorf("/login output = %q, want OpenCode Go mention", output)
+	}
+}
+
+func TestInteractiveSessionLoginUsesSavedCredentialWithoutSaving(t *testing.T) {
+	t.Parallel()
+
+	var savedSettings []config.Setting
+	var modelConfiguration config.Config
+	saveAttempts := 0
+	runner := &interactiveSession{
+		application: &application{dependencies: dependencies{
+			saveAPIKey: func(string, string) (string, error) {
+				saveAttempts++
+				return "/global/auth.json", nil
+			},
+			saveSetting: func(setting config.Setting, _ string) error {
+				savedSettings = append(savedSettings, setting)
+				return nil
+			},
+			newModel: func(configuration config.Config) (agent.Model, error) {
+				modelConfiguration = configuration
+				return &controlledModel{
+					response:   "ready",
+					stopReason: llm.StopReasonStop,
+				}, nil
+			},
+			providers: defaultProviders(),
+		}},
+		model: opencode.DefaultModel(),
+		options: llm.StreamOptions{
+			Thinking: llm.ThinkingLevelMedium,
+		},
+		configuration: config.Config{
+			Provider:       string(deepseek.ProviderID),
+			Model:          "gpt-5.6-terra",
+			DeepSeekAPIKey: "deepseek-key",
+			OpenCodeAPIKey: "opencode-key",
+		},
+		providers: defaultProviders(),
+	}
+
+	output, err := runner.RunSlashCommand(t.Context(), tui.SlashCommandRequest{
+		Name:               "login",
+		Arguments:          string(opencode.ProviderID),
+		UseSavedCredential: true,
+	})
+	if err != nil {
+		t.Fatalf("/login with saved credential error = %v", err)
+	}
+	if saveAttempts != 0 {
+		t.Fatalf("save API key attempts = %d, want 0", saveAttempts)
+	}
+	if modelConfiguration.OpenCodeAPIKey != "opencode-key" {
+		t.Errorf(
+			"model configuration OpenCodeAPIKey = %q, want saved key",
+			modelConfiguration.OpenCodeAPIKey,
+		)
+	}
+	if runner.configuration.Provider != string(opencode.ProviderID) {
+		t.Errorf(
+			"configuration.Provider = %q, want opencode-go",
+			runner.configuration.Provider,
+		)
+	}
+	if runner.model.Provider != opencode.ProviderID {
+		t.Errorf("runner.model.Provider = %q, want opencode-go", runner.model.Provider)
+	}
+	if got, want := savedSettings, []config.Setting{
+		config.SettingProvider,
+		config.SettingModel,
+	}; !reflect.DeepEqual(got, want) {
+		t.Errorf("persisted settings = %v, want %v", got, want)
+	}
+	if !strings.Contains(output, "saved credential") {
+		t.Errorf("/login output = %q, want saved credential message", output)
 	}
 }
 
