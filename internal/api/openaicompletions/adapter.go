@@ -128,11 +128,6 @@ func requestParams(request llm.Request) (openaisdk.ChatCompletionNewParams, erro
 	if err := streamcore.ValidateTemperature(request.Options.Temperature); err != nil {
 		return openaisdk.ChatCompletionNewParams{}, fmt.Errorf("openai completions: %w", err)
 	}
-	maxTokens, err := streamcore.ResolveMaxTokens(request)
-	if err != nil {
-		return openaisdk.ChatCompletionNewParams{}, fmt.Errorf("openai completions: %w", err)
-	}
-
 	messages, err := messageParams(request.Messages)
 	if err != nil {
 		return openaisdk.ChatCompletionNewParams{}, err
@@ -143,12 +138,18 @@ func requestParams(request llm.Request) (openaisdk.ChatCompletionNewParams, erro
 	}
 
 	params := openaisdk.ChatCompletionNewParams{
-		Messages:  messages,
-		Model:     shared.ChatModel(request.Model.ID),
-		MaxTokens: param.NewOpt(maxTokens),
+		Messages: messages,
+		Model:    shared.ChatModel(request.Model.ID),
 		StreamOptions: openaisdk.ChatCompletionStreamOptionsParam{
 			IncludeUsage: param.NewOpt(true),
 		},
+	}
+	if !request.Model.OmitMaxTokensByDefault || request.Options.MaxTokens > 0 {
+		maxTokens, err := streamcore.ResolveMaxTokens(request)
+		if err != nil {
+			return openaisdk.ChatCompletionNewParams{}, fmt.Errorf("openai completions: %w", err)
+		}
+		params.MaxTokens = param.NewOpt(maxTokens)
 	}
 	if request.SystemPrompt != "" {
 		params.Messages = append(

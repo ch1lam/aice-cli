@@ -460,6 +460,113 @@ func TestAdapterSendsReasoningEffort(t *testing.T) {
 	}
 }
 
+func TestAdapterOmitsDefaultMaxTokensForOpenCodeGo(t *testing.T) {
+	t.Parallel()
+
+	requests := make(chan map[string]any, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode request body: %v", err)
+			return
+		}
+		requests <- body
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "data: [DONE]\n\n")
+	}))
+	defer server.Close()
+
+	adapter, err := openaicompletions.New(openaicompletions.Config{
+		APIKey:     "test-key",
+		BaseURL:    server.URL,
+		HTTPClient: server.Client(),
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	model, ok := opencodeModelForTest("deepseek-v4-flash")
+	if !ok {
+		t.Fatal("opencode-go deepseek-v4-flash missing from catalog")
+	}
+	if !model.OmitMaxTokensByDefault {
+		t.Fatal("OpenCode Go model does not omit default max tokens")
+	}
+	modelStream, err := adapter.Stream(context.Background(), llm.Request{
+		Model: model,
+		Messages: []llm.Message{llm.UserMessage{
+			Role:    llm.RoleUser,
+			Content: []llm.ContentPart{llm.NewTextContent("Hi").Part()},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("Stream() error = %v", err)
+	}
+	defer func() {
+		if err := modelStream.Close(); err != nil {
+			t.Errorf("Close() error = %v", err)
+		}
+	}()
+
+	body := <-requests
+	if _, present := body["max_tokens"]; present {
+		t.Errorf("max_tokens = %#v, want field omitted", body["max_tokens"])
+	}
+}
+
+func TestAdapterSendsDefaultMaxTokensForOtherProviders(t *testing.T) {
+	t.Parallel()
+
+	requests := make(chan map[string]any, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode request body: %v", err)
+			return
+		}
+		requests <- body
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "data: [DONE]\n\n")
+	}))
+	defer server.Close()
+
+	adapter, err := openaicompletions.New(openaicompletions.Config{
+		APIKey:     "test-key",
+		BaseURL:    server.URL,
+		HTTPClient: server.Client(),
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	modelStream, err := adapter.Stream(context.Background(), llm.Request{
+		Model: llm.Model{
+			ID:        "custom-model",
+			API:       openaicompletions.API,
+			Provider:  "custom",
+			MaxTokens: 4_096,
+			Pricing:   llm.Pricing{},
+		},
+		Messages: []llm.Message{llm.UserMessage{
+			Role:    llm.RoleUser,
+			Content: []llm.ContentPart{llm.NewTextContent("Hi").Part()},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("Stream() error = %v", err)
+	}
+	defer func() {
+		if err := modelStream.Close(); err != nil {
+			t.Errorf("Close() error = %v", err)
+		}
+	}()
+
+	body := <-requests
+	if got := body["max_tokens"]; got != float64(4_096) {
+		t.Errorf("max_tokens = %#v, want %d", got, 4_096)
+	}
+}
+
 func TestAdapterThinkingWireControls(t *testing.T) {
 	t.Parallel()
 

@@ -93,6 +93,11 @@ balances model capability and cost. These models use the official Responses
 API and support `off`, `low`, `medium`, `high`, `xhigh`, and `max` reasoning
 levels.
 
+OpenCode Go requests omit `max_tokens` when AICE has no explicit output-token
+cap, allowing the gateway to choose its current default. An explicit
+`MaxTokens` value, including one produced by context protection, is still sent.
+Other providers keep sending their model default.
+
 `default_project_trust` defaults to `ask`. Automation should use `--approve`
 or `--no-approve` rather than a broad environment override. See [Project Trust
 and prompts](project-trust.md) for protected files and decision order.

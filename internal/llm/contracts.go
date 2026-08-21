@@ -353,11 +353,14 @@ type Model struct {
 	// SupportsReasoningEffort reports whether the gateway accepts
 	// reasoning_effort alongside a non-standard ThinkingFormat. It has no
 	// effect on the standard format, which always sends the field.
-	SupportsReasoningEffort bool            `json:"supports_reasoning_effort,omitempty"`
-	InputModalities         []InputModality `json:"input_modalities,omitempty"`
-	ContextWindow           int64           `json:"context_window,omitempty"`
-	MaxTokens               int64           `json:"max_tokens,omitempty"`
-	Pricing                 Pricing         `json:"pricing"`
+	SupportsReasoningEffort bool `json:"supports_reasoning_effort,omitempty"`
+	// OmitMaxTokensByDefault lets the protocol adapter defer the output limit
+	// to the provider when a request has no explicit MaxTokens value.
+	OmitMaxTokensByDefault bool            `json:"omit_max_tokens_by_default,omitempty"`
+	InputModalities        []InputModality `json:"input_modalities,omitempty"`
+	ContextWindow          int64           `json:"context_window,omitempty"`
+	MaxTokens              int64           `json:"max_tokens,omitempty"`
+	Pricing                Pricing         `json:"pricing"`
 }
 
 // Cost contains normalized request cost amounts in US dollars.

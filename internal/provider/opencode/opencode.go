@@ -290,6 +290,7 @@ func model(id string) llm.Model {
 		ThinkingLevelMap:        spec.ThinkingLevelMap.Clone(),
 		ThinkingFormat:          spec.ThinkingFormat,
 		SupportsReasoningEffort: spec.SupportsReasoningEffort,
+		OmitMaxTokensByDefault:  true,
 		InputModalities:         []llm.InputModality{llm.InputModalityText},
 		ContextWindow:           spec.ContextWindow,
 		MaxTokens:               spec.MaxTokens,

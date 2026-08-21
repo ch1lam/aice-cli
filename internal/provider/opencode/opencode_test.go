@@ -29,6 +29,9 @@ func TestModels(t *testing.T) {
 		if model.API != openaicompletions.API {
 			t.Errorf("model %q api = %q, want %q", model.ID, model.API, openaicompletions.API)
 		}
+		if !model.OmitMaxTokensByDefault {
+			t.Errorf("model %q does not omit default max tokens", model.ID)
+		}
 		if !model.SupportsThinking {
 			t.Errorf("model %q does not support thinking", model.ID)
 		}
