@@ -3,6 +3,7 @@ package guard
 import (
 	"context"
 	"encoding/json"
+	"path/filepath"
 	"testing"
 
 	"github.com/ch1lam/aice-cli/internal/llm"
@@ -134,6 +135,26 @@ func TestNormalizeFilePath(t *testing.T) {
 	}
 }
 
+func TestIsBashRootedPath(t *testing.T) {
+	tests := []struct {
+		name     string
+		path     string
+		toolName string
+		want     bool
+	}{
+		{name: "bash root", path: "/tmp/file", toolName: "bash", want: true},
+		{name: "bash relative", path: "tmp/file", toolName: "bash", want: false},
+		{name: "file tool", path: "/tmp/file", toolName: "read", want: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := isBashRootedPath(test.path, test.toolName); got != test.want {
+				t.Fatalf("isBashRootedPath(%q, %q) = %v, want %v", test.path, test.toolName, got, test.want)
+			}
+		})
+	}
+}
+
 func TestCompileFilePattern_BasenameVsFull(t *testing.T) {
 	p := compileFilePattern(PatternConfig{Pattern: ".env"})
 	if !p.test(".env") || !p.test("a/b/.env") {
@@ -172,7 +193,7 @@ func TestGuard_DangerousCommandBlocked(t *testing.T) {
 	for _, cmd := range cases {
 		res, _ := g.Check(context.Background(), toolCall("bash", map[string]any{"command": cmd}))
 		if res.Decision != DecisionDeny {
-				t.Fatalf("dangerous %q: %v want deny (rule %q)", cmd, res.Decision, res.RuleID)
+			t.Fatalf("dangerous %q: %v want deny (rule %q)", cmd, res.Decision, res.RuleID)
 		}
 	}
 	// safe command
@@ -234,7 +255,7 @@ func TestGuard_PathAccess(t *testing.T) {
 		t.Fatalf("inside: %v want allow", res.Decision)
 	}
 	// outside workspace absolute: block
-	outside := "/tmp/aice-guard-outside-file.txt"
+	outside := filepath.Join(t.TempDir(), "aice-guard-outside-file.txt")
 	res, _ = g.Check(context.Background(), toolCall("read", map[string]any{"file_path": outside}))
 	if res.Decision != DecisionDeny {
 		t.Fatalf("outside block: %v want deny", res.Decision)
@@ -267,13 +288,13 @@ func TestGuard_PathAccess_AllowedPaths(t *testing.T) {
 	cfg := Config{PathAccess: PathAccessConfig{Mode: &block, AllowedPaths: []AllowedPath{{Kind: "directory", Path: outsideDir}}}}
 	g, _ := NewWithExists(workspace, cfg, alwaysExists)
 	// file inside allowed directory: allow
-	p := outsideDir + "/sub/file.txt"
+	p := filepath.Join(outsideDir, "sub", "file.txt")
 	res, _ := g.Check(context.Background(), toolCall("read", map[string]any{"file_path": p}))
 	if res.Decision != DecisionAllow {
 		t.Fatalf("allowed dir: %v want allow", res.Decision)
 	}
 	// file as exact allow
-	outsideFile := "/tmp/aice-guard-allowed-exact.txt"
+	outsideFile := filepath.Join(t.TempDir(), "aice-guard-allowed-exact.txt")
 	cfg2 := Config{PathAccess: PathAccessConfig{Mode: &block, AllowedPaths: []AllowedPath{{Kind: "file", Path: outsideFile}}}}
 	g2, _ := NewWithExists(workspace, cfg2, alwaysExists)
 	res, _ = g2.Check(context.Background(), toolCall("read", map[string]any{"file_path": outsideFile}))
@@ -291,7 +312,7 @@ func TestGuard_PathAccess_SessionAllow(t *testing.T) {
 	block := PathAccessBlock
 	cfg := Config{PathAccess: PathAccessConfig{Mode: &block}}
 	g, _ := NewWithExists(workspace, cfg, alwaysExists)
-	outside := "/tmp/aice-guard-session.txt"
+	outside := filepath.Join(t.TempDir(), "aice-guard-session.txt")
 	call := toolCall("read", map[string]any{"file_path": outside})
 	res, _ := g.Check(context.Background(), call)
 	if res.Decision != DecisionDeny {
@@ -303,8 +324,8 @@ func TestGuard_PathAccess_SessionAllow(t *testing.T) {
 		t.Fatalf("post session file allow: %v", res.Decision)
 	}
 	// dir grant
-	outsideDir := "/tmp/aice-guard-session-dir"
-	call2 := toolCall("read", map[string]any{"file_path": outsideDir + "/a/b.txt"})
+	outsideDir := t.TempDir()
+	call2 := toolCall("read", map[string]any{"file_path": filepath.Join(outsideDir, "a", "b.txt")})
 	res, _ = g.Check(context.Background(), call2)
 	if res.Decision != DecisionDeny {
 		t.Fatalf("pre dir: %v", res.Decision)
@@ -332,8 +353,8 @@ func TestGuard_StructuralDangerousVariants(t *testing.T) {
 	for _, cmd := range variants {
 		res, _ := g.Check(context.Background(), toolCall("bash", map[string]any{"command": cmd}))
 		if res.Decision != DecisionDeny {
-				t.Fatalf("structural rm variant %q: %v want deny", cmd, res.Decision)
-			}
+			t.Fatalf("structural rm variant %q: %v want deny", cmd, res.Decision)
+		}
 	}
 	// chmod variants: only -R + 777 should deny
 	res, _ := g.Check(context.Background(), toolCall("bash", map[string]any{"command": "chmod -R 777 /tmp"}))

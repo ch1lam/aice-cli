@@ -4,20 +4,29 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/ch1lam/aice-cli/internal/llm"
 )
 
-func resolveAbsolute(p, workspace string) string {
+func resolveAbsolute(p, workspace, toolName string) string {
 	expanded := expandHome(p)
-	if filepath.IsAbs(expanded) {
+	if filepath.IsAbs(expanded) ||
+		(runtime.GOOS == "windows" && isBashRootedPath(expanded, toolName)) {
 		return filepath.Clean(expanded)
 	}
 	if workspace != "" {
 		return filepath.Clean(filepath.Join(workspace, expanded))
 	}
 	return filepath.Clean(expanded)
+}
+
+// isBashRootedPath reports whether path is rooted in Bash path syntax. On
+// Windows, Git Bash resolves these paths from its filesystem root even though
+// filepath.IsAbs reports false without a drive or UNC volume.
+func isBashRootedPath(path, toolName string) bool {
+	return toolName == "bash" && strings.HasPrefix(path, "/")
 }
 
 // Guard is the built-in execution gate. It is immutable after construction
@@ -35,8 +44,8 @@ type Guard struct {
 	autoDenyPatterns     []compiledCommandPattern
 	useBuiltinStructural bool
 	// path access
-	pathAccessMode     PathAccessMode
-	allowedPaths       []AllowedPath
+	pathAccessMode      PathAccessMode
+	allowedPaths        []AllowedPath
 	sessionAllowedPaths map[string]bool // absolute paths or dir: prefix
 }
 
@@ -174,7 +183,7 @@ func (g *Guard) Check(ctx context.Context, call llm.ToolCall) (Result, error) {
 		if g.pathAccessMode == PathAccessAllow {
 			continue
 		}
-		abs := resolveAbsolute(act.Path, g.workspace)
+		abs := resolveAbsolute(act.Path, g.workspace, act.ToolName)
 		if g.workspace != "" && isWithinBoundary(abs, g.workspace) {
 			continue
 		}
