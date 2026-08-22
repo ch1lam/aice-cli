@@ -28,7 +28,7 @@ Use this table to route each task directly to its source of truth:
 | Installation, helper binaries, source builds, updates | [`docs/installation.md`](docs/installation.md) |
 | Providers, models, reasoning, credentials, CLI/TUI commands | [`docs/configuration.md`](docs/configuration.md) |
 | Project Trust, prompt precedence, protected files, `/init` | [`docs/project-trust.md`](docs/project-trust.md) |
-| Tool permissions, Sessions, branches, recovery, compaction | [`docs/execution-sessions.md`](docs/execution-sessions.md) |
+| Tool permissions, execution gate, Sessions, branches, recovery, compaction | [`docs/execution-sessions.md`](docs/execution-sessions.md) |
 | Runtime boundaries, package ownership, dependencies | [`docs/architecture.md`](docs/architecture.md) |
 | LLM messages, Agent Loop, events, concurrency, TUI | [`docs/contracts.md`](docs/contracts.md) |
 | Go engineering rules | [`docs/go-quality.md`](docs/go-quality.md) |
@@ -56,9 +56,14 @@ Use this table to route each task directly to its source of truth:
   stop boundary. Frontends never restart a run to consume follow-up. Persist
   each completed interaction as one Session turn; Session records do not
   dictate Agent-run lifecycle.
-- AICE has no intrinsic approval system. Built-in tools inherit process
-  permissions; isolation belongs to an explicitly selected external execution
-  environment, never the Agent Loop.
+- Built-in tools inherit process permissions, but every tool call is checked
+  inline by the intrinsic execution gate (`internal/guard`) before it runs.
+  The gate enforces file policies, dangerous-command detection, and
+  outside-workspace path access (`allow`/`ask`/`deny`; non-interactive treats
+  `ask` as `deny`, interactive prompts with session-scoped `Allow once` /
+  `Allow always`). Stronger isolation still belongs to an explicitly selected
+  external container/VM. The Agent Loop never constructs the gate; it checks
+  through a consumer-defined `Guard` interface wired in `internal/app`.
 - Project Trust gates only workspace-root `AGENTS.md`, `.aice/SYSTEM.md`, and
   `.aice/APPEND_SYSTEM.md`. It is not a sandbox. `.aice/sessions` never
   triggers Trust; provider, model, thinking, and credentials remain global.

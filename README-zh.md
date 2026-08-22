@@ -60,13 +60,12 @@ aice --workspace . --session .aice/sessions/<session-id>.jsonl
 | Provider | DeepSeek V4、OpenCode Go 的 24 个模型与 OpenAI GPT-5.6 |
 | 协议 | Anthropic Messages、OpenAI Responses、OpenAI Chat Completions |
 | 工具 | `read`、`write`、`edit`、`bash`、`grep`、`find`、`ls` |
+| Guard | 内置执行门禁：敏感文件策略、危险命令门控、工作区外路径访问（`ask`/`deny`） |
 | Session | 重启恢复、分支、回退与自动/手动非破坏性压缩 |
 | 侧问题 | Session 历史之外、无工具的多个临时 `/btw` 线程 |
 | 输入 | 仅文本 |
 
-内建工具继承 AICE 进程权限；`--workspace` 只是工作目录，不是沙箱。
-Project Trust 只控制根目录 `AGENTS.md`、`.aice/SYSTEM.md` 和
-`.aice/APPEND_SYSTEM.md` 的加载，不可信项目仍拥有完整宿主权限。
+工具继承 AICE 进程权限，但每次调用都会经过内置执行门禁检查（敏感文件 / 危险命令 / 工作区外访问；`--print` 下 `ask` 按 `deny` 处理）。`--workspace` 是工作目录并定义路径访问边界，不是沙箱。Project Trust 只控制根目录 `AGENTS.md`、`.aice/SYSTEM.md` 和 `.aice/APPEND_SYSTEM.md` 的加载；更强隔离请使用外部容器/VM。
 
 ## 文档
 

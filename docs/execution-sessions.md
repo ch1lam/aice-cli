@@ -2,9 +2,33 @@
 
 ## Tool execution boundary
 
-AICE has no intrinsic approval system. Built-in tools run with the filesystem,
-process, network, environment, and credential permissions of the AICE process.
-`--workspace` sets the default working directory; it is not an access boundary.
+Built-in tools run with the filesystem, process, network, environment, and
+credential permissions of the AICE process, but every tool call is checked
+inline by the intrinsic execution gate (`internal/guard`) before it runs.
+`--workspace` sets the default working directory and is the boundary used by
+the path-access gate; it is not a sandbox.
+
+The gate is enabled by default and evaluates three layers in order:
+
+1. **Permission gate (bash)** — structural dangerous-command detection and
+   substring/regex patterns; `autoDeny` is always denied, built-in dangerous
+   commands (`rm -rf`, `sudo`, `dd of=`, `mkfs`, `chmod -R 777`, `chown -R`,
+   `shred`, `wipefs`, `blkdiscard`, `fdisk`/`parted`, `docker --privileged`,
+   `doas`/`pkexec`, …) require confirmation unless allow-listed.
+2. **File policies** — glob-protected paths (default `secret-files`: `.env`,
+   `.env.local`, `.env.*`, `.dev.vars` with `noAccess`; `*.example.env` etc.
+   are allow-listed) with `noAccess`/`readOnly` enforcement; `readOnly` blocks
+   `write`/`edit`/`bash`, `noAccess` blocks all tools. Matching is
+   glob-aware (`/` distinguishes full-path vs basename, `**` supported) with
+   optional `regex` opt-in, and `onlyIfExists` probes.
+3. **Path access** — access outside the workspace (`mode: ask` by default)
+   requires confirmation or is blocked (`allow`/`block`); per-file and
+   per-directory `allowedPaths` and `~` expansion are supported.
+
+Each check returns `allow` / `ask` / `deny`. Non-interactive runs treat `ask`
+as `deny` (fail-closed); the interactive TUI maps `ask` to a confirmation
+prompt (`Allow once` / `Allow always for this run` / `Deny`). `Allow always`
+grants are memory-only for the current run and never persist to disk.
 
 The tool layer still enforces correctness and resource safety:
 
@@ -21,8 +45,9 @@ tool intentionally crosses a shell boundary and applies the same timeout,
 output, cancellation, and process-tree controls.
 
 Use an external container, VM, or OS sandbox when stronger isolation is
-required. Project Trust does not change tool permissions; see [Project Trust
-and prompts](project-trust.md).
+required. Project Trust does not change tool permissions (it only gates prompt
+loading); see [Project Trust and prompts](project-trust.md). For the gate's
+implementation and pattern semantics, see `internal/guard`.
 
 ## Sessions
 

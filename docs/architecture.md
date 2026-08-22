@@ -17,7 +17,9 @@ Durable design rules:
   adapters only encode protocol-specific shapes.
 - Sessions are the append-only source of truth. Model context and the TUI
   viewport are derived views.
-- Built-in tools use the host process environment. Isolation is external.
+- Built-in tools use the host process environment. An intrinsic execution gate
+  (`internal/guard`) checks every tool call inline; stronger isolation is
+  still external (container/VM).
 - Built-ins and future replacements use the same consumer-owned interfaces.
 - Dependencies are assembled explicitly in `internal/app`.
 
@@ -32,6 +34,7 @@ cmd/aice
      -> internal/cli or internal/tui (user interface)
      -> internal/interaction (active-run input coordination)
      -> internal/agent -> internal/llm (Agent Loop and contracts)
+        -> internal/guard (intrinsic execution gate, checked before every tool call)
      -> internal/provider -> internal/api (provider and protocol adapters)
      -> internal/tool (host-executed tools)
      -> internal/session (append-only JSONL tree)
@@ -60,6 +63,7 @@ truth. A future GUI must use the same application-owned active-run boundary.
 | `internal/api/streamcore` | Protocol-neutral streaming mechanics shared by adapters |
 | `internal/provider/{deepseek,opencode,openai}` | Provider catalogs, credentials, defaults, compatibility |
 | `internal/tool` | `read`, `write`, `edit`, `bash`, `grep`, `find`, `ls` |
+| `internal/guard` | Intrinsic execution gate: file policies, permission gate, path access (`allow`/`ask`/`deny`) |
 | `internal/session` | Versioned JSONL replay, tree navigation, compaction context |
 | `internal/trust` | Protected-resource discovery and global Trust decisions |
 | `internal/config` | Global settings, credentials, environment precedence |
@@ -75,9 +79,14 @@ such as `core`, `types`, `services`, `utils`, or `helpers`.
 - `cmd/aice` delegates assembly and execution to `internal/app`.
 - `internal/cli` calls application capabilities through small interfaces.
 - `internal/agent` depends on AICE contracts, primarily `internal/llm`; it
-  never constructs tools or imports UI/provider packages.
+  never constructs tools or imports UI/provider/`guard` packages. It defines
+  the `Guard` interface and consults it before each tool execution; the
+  concrete `internal/guard` implementation is injected from `internal/app`.
 - `internal/app` owns interactive run lifecycle, translates Agent events for
-  frontends, and persists each completed interaction as one Session turn.
+  frontends, persists each completed interaction as one Session turn, and
+  wires the execution gate (`internal/guard`) into the loop with a
+  `GuardAskHandler` that maps `ask` to the TUI confirmation prompt
+  (non-interactive treats `ask` as `deny`).
 - Frontends depend on the application-owned active-run capability. They do not
   decide when an Agent run stops, promote input, or restart a run for follow-up.
 - `internal/llm` defines thinking-map and clamping semantics without embedding
@@ -96,5 +105,6 @@ such as `core`, `types`, `services`, `utils`, or `helpers`.
 
 Do not prebuild plugin frameworks, ADK/Eino/LangChainGo/Genkit integration,
 Node bridges, multi-agent orchestration, LSP, RPC/ACP, memory services,
-databases, or sandbox managers. Add one only after a concrete product need
-defines its smallest useful contract.
+databases, or extra sandbox managers — the intrinsic `internal/guard` gate
+is the in-process approval mechanism. Add another only after a concrete
+product need defines its smallest useful contract.

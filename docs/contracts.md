@@ -34,6 +34,12 @@
   completes naturally and no follow-up is waiting, or on cancellation/deadline,
   context protection, or an unrecoverable provider, protocol, runtime, or
   event-sink failure.
+- Before each tool execution the loop consults the consumer-defined `Guard`
+  interface (`internal/agent` defines it, `internal/guard` implements it,
+  `internal/app` wires it). `deny` blocks with a paired error result, `ask`
+  delegates to the interactive `GuardAskHandler` (non-interactive treats `ask`
+  as `deny` — fail-closed); `allow` proceeds. Session-scoped `Allow once` /
+  `Allow always` grants are memory-only.
 - Never execute an incomplete or invalid streamed tool call. If a response
   stops for length with tool calls, execute none of them and return paired
   error results so the model can retry safely.

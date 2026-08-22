@@ -1,8 +1,9 @@
 # Project Trust and Prompts
 
 Project Trust decides whether AICE may load project-controlled startup
-instructions. It is an input-loading guard, not a sandbox or a per-tool
-approval system.
+instructions. It is an input-loading guard, not a sandbox. Per-tool approval
+is handled by the intrinsic execution gate (`internal/guard`); see
+[Tool execution and Sessions](execution-sessions.md#tool-execution-boundary).
 
 ## Protected project files
 
@@ -62,12 +63,14 @@ also records the workspace as trusted, and it becomes active after restart.
 
 ## What Trust does not do
 
-An untrusted project still runs with the full permissions of the AICE process.
-Trust does not restrict file access, `..`, absolute paths, subprocesses,
-network access, environment variables, or credentials. Use an external
-container, VM, or OS sandbox when isolation is required.
+An untrusted project still runs with the full permissions of the AICE process
+except for the intrinsic execution gate. Trust does not restrict file access,
+`..`, absolute paths, subprocesses, network access, environment variables, or
+credentials — that is the role of `internal/guard` (file policies, permission
+gate, path access) and, for strong isolation, an external container, VM, or OS
+sandbox.
 
 The `os.Root` confinement of protected prompt files is a loading guard, not a
 general file-access boundary: it exists so untrusted content cannot influence
 the prompt, and it never applies to file tools. File access boundaries belong
-to the externally selected execution environment.
+to the execution gate and to the externally selected execution environment.

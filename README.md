@@ -63,14 +63,17 @@ aice --workspace . --session .aice/sessions/<session-id>.jsonl
 | Providers | DeepSeek V4, OpenCode Go's 24-model catalog, and OpenAI GPT-5.6 |
 | Protocols | Anthropic Messages, OpenAI Responses, OpenAI Chat Completions |
 | Tools | `read`, `write`, `edit`, `bash`, `grep`, `find`, `ls` |
+| Guard | intrinsic execution gate: secret-file policies, dangerous-command gate, outside-workspace path access (`ask`/`deny`) |
 | Sessions | restart recovery, branches, checkout/backtracking, automatic and manual compaction |
 | Side questions | multiple ephemeral, tool-free `/btw` threads outside Session history |
 | Input | text only |
 
-The default tools run with the permissions of the AICE process.
-`--workspace` sets their working directory; it is not a sandbox. Project Trust
-only gates root `AGENTS.md`, `.aice/SYSTEM.md`, and
-`.aice/APPEND_SYSTEM.md`; untrusted projects still have full host permissions.
+Tools run with the permissions of the AICE process and every call is checked
+by the intrinsic execution gate (secret files / dangerous commands / outside-
+workspace access; `ask` fails closed in `--print`). `--workspace` sets their
+working directory and defines the path-access boundary; it is not a sandbox.
+Project Trust only gates root `AGENTS.md`, `.aice/SYSTEM.md`, and
+`.aice/APPEND_SYSTEM.md`; for stronger isolation use an external container/VM.
 
 ## Documentation
 
