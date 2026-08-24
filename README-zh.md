@@ -1,5 +1,9 @@
 # AICE
 
+<p align="center">
+  <img src="./assets/aice-header.png" alt="AICE coding agent" width="900">
+</p>
+
 [English](./README.md) | 简体中文
 
 [![Go](https://img.shields.io/github/go-mod/go-version/ch1lam/aice-cli)](https://go.dev/) [![License](https://img.shields.io/github/license/ch1lam/aice-cli)](./LICENSE)
