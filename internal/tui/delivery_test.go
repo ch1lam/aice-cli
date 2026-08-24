@@ -54,7 +54,7 @@ func TestModelEnterSteersAndControlEnterQueues(t *testing.T) {
 		t.Fatalf("pending steer remained in composer: %q", view)
 	}
 	transcript := ansi.Strip(steered.transcriptView())
-	for _, want := range []string{"YOU", "first line", "second line"} {
+	for _, want := range []string{"first line", "second line"} {
 		if !strings.Contains(transcript, want) {
 			t.Errorf("pending steer transcript = %q, want %q", transcript, want)
 		}

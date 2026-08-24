@@ -838,12 +838,13 @@ func TestModelStatusLineShowsModelAndReasoningInsteadOfScrollPercent(t *testing.
 			originalFooterHeight := lipgloss.Height(current.footerView(80))
 
 			status := current.statusLine(80)
+			statusText := ansi.Strip(status)
 			for _, want := range []string{"deepseek-v4-flash", tt.wantThinking} {
-				if !strings.Contains(status, want) {
-					t.Errorf("status line = %q, want %q", status, want)
+				if !strings.Contains(statusText, want) {
+					t.Errorf("status line = %q, want %q", statusText, want)
 				}
 			}
-			if strings.Contains(status, "%") {
+			if strings.Contains(statusText, "%") {
 				t.Errorf("status line still contains scroll percentage: %q", status)
 			}
 			if got := lipgloss.Height(current.footerView(80)); got != originalFooterHeight {

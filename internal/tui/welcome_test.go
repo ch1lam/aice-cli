@@ -84,9 +84,8 @@ func TestWelcomeViewShowsAnimatedLogo(t *testing.T) {
 
 	welcome := current.welcomeView()
 	for _, want := range []string{
-		"█",            // block logo
-		welcomeTagline, // product line under the logo
-		"Ask AICE",     // welcome card
+		"█",        // block logo
+		"Ask AICE", // welcome card
 		"Understand or change your code.",
 		"TOOLS",
 		"Type / for commands.",

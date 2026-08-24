@@ -46,10 +46,6 @@ const welcomeLogo = ` ██████   ████████   ███�
 ██    ██     ██     ██        ██
 ██    ██  ████████   ███████  ████████`
 
-// welcomeTagline reads as a product line beneath the logo, distinct from the
-// welcome card's call to action.
-const welcomeTagline = "your codebase agent"
-
 type welcomeTickMsg struct {
 	generation uint64
 }
@@ -168,18 +164,10 @@ func (m model) welcomeView() string {
 		stacked := lipgloss.JoinVertical(
 			lipgloss.Center,
 			logo,
-			mutedStyle.Render(welcomeTagline),
 			card,
 		)
 		if lipgloss.Height(stacked) <= m.viewport.Height() {
 			content = stacked
-		} else if compact := lipgloss.JoinVertical(
-			lipgloss.Center,
-			logo,
-			card,
-		); lipgloss.Height(compact) <= m.viewport.Height() {
-			// Drop the tagline before the logo on shorter terminals.
-			content = compact
 		}
 	}
 

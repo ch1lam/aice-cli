@@ -481,9 +481,7 @@ func (m model) pendingSteeringView() string {
 		bodyWidth := max(m.contentWidth()-style.GetHorizontalFrameSize(), 1)
 		body := style.Width(bodyWidth).Render(delivery.text)
 		parts = append(parts, transcriptViewPart{
-			content: lipgloss.NewStyle().Padding(0, 1).Render(
-				pendingSteerLabelStyle.Render("YOU") + "\n" + body,
-			),
+			content: lipgloss.NewStyle().Padding(0, 1).Render(body),
 		})
 	}
 	return joinTranscriptViewParts(parts)
@@ -662,9 +660,7 @@ func (m model) entryView(
 	case entryUser:
 		bodyWidth := max(width-userStyle.GetHorizontalFrameSize(), 1)
 		body := userStyle.Width(bodyWidth).Render(entry.text)
-		return lipgloss.NewStyle().Padding(0, 1).Render(
-			labelStyle.Render("YOU") + "\n" + body,
-		)
+		return lipgloss.NewStyle().Padding(0, 1).Render(body)
 	case entryAssistant:
 		return m.assistantEntryView(
 			entry,
@@ -1012,7 +1008,25 @@ func (m model) modelStatus() string {
 		thinking = "default"
 	}
 	return infoStyle.Render(m.currentModel.ID) +
-		mutedStyle.Render(" · reasoning "+thinking)
+		mutedStyle.Render(" · reasoning ") +
+		reasoningLevelStyle(m.thinking).Render(thinking)
+}
+
+func reasoningLevelStyle(level DisplayThinking) lipgloss.Style {
+	switch level {
+	case DisplayThinkingMax:
+		return lipgloss.NewStyle().Foreground(accentColor)
+	case DisplayThinkingXHigh:
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("#F5735F"))
+	case DisplayThinkingHigh:
+		return lipgloss.NewStyle().Foreground(warningColor)
+	case DisplayThinkingMedium:
+		return lipgloss.NewStyle().Foreground(secondaryColor)
+	case DisplayThinkingLow, DisplayThinkingMinimal, DisplayThinkingOff, DisplayThinkingDefault:
+		fallthrough
+	default:
+		return lipgloss.NewStyle().Foreground(mutedTextColor)
+	}
 }
 
 func (m model) contentWidth() int {
