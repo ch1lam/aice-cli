@@ -350,9 +350,10 @@ type Model struct {
 	// Completions gateways. The empty value means the standard
 	// reasoning_effort field.
 	ThinkingFormat ThinkingFormat `json:"thinking_format,omitempty"`
-	// SupportsReasoningEffort reports whether the gateway accepts
-	// reasoning_effort alongside a non-standard ThinkingFormat. It has no
-	// effect on the standard format, which always sends the field.
+	// SupportsReasoningEffort reports whether the gateway accepts an effort
+	// control alongside format-specific thinking controls. Chat Completions
+	// uses reasoning_effort; Anthropic Messages uses output_config.effort.
+	// It has no effect on the standard Chat format, which always sends effort.
 	SupportsReasoningEffort bool `json:"supports_reasoning_effort,omitempty"`
 	// OmitMaxTokensByDefault lets the protocol adapter defer the output limit
 	// to the provider when a request has no explicit MaxTokens value.

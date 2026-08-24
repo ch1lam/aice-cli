@@ -657,8 +657,8 @@ func TestInteractiveSessionOpencodeMenusAndModelSelection(t *testing.T) {
 
 	commands := runner.SlashCommands()
 	modelCommand := interactiveSlashCommand(t, commands, "model")
-	if len(modelCommand.Menu.Options) != 24 {
-		t.Fatalf("/model options = %d, want 24", len(modelCommand.Menu.Options))
+	if got, want := len(modelCommand.Menu.Options), len(opencode.Models()); got != want {
+		t.Fatalf("/model options = %d, want %d", got, want)
 	}
 	providerCommand := interactiveSlashCommand(t, commands, "provider")
 	if len(providerCommand.Menu.Options) != 4 {
@@ -712,9 +712,9 @@ func TestInteractiveSessionThinkingKeepsRequestedLevelAndClampsPerModel(t *testi
 	if runner.configuration.Thinking != llm.ThinkingLevelXHigh {
 		t.Errorf("stored thinking = %q, want the requested xhigh", runner.configuration.Thinking)
 	}
-	if runner.options.Thinking != llm.ThinkingLevelHigh {
+	if runner.options.Thinking != llm.ThinkingLevelMax {
 		t.Errorf(
-			"effective thinking = %q, want high (DeepSeek maps xhigh to high)",
+			"effective thinking = %q, want max (DeepSeek clamps xhigh up to max)",
 			runner.options.Thinking,
 		)
 	}

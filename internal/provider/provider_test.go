@@ -11,7 +11,7 @@ import (
 	"github.com/ch1lam/aice-cli/internal/provider/opencode"
 )
 
-func TestDeepSeekModelSpecsSharedByCatalogs(t *testing.T) {
+func TestDeepSeekModelSpecsSeedCompatibleCatalogs(t *testing.T) {
 	t.Parallel()
 
 	specs := provider.DeepSeekModelSpecs()
@@ -38,16 +38,13 @@ func TestDeepSeekModelSpecsSharedByCatalogs(t *testing.T) {
 				t.Errorf("%s spec = %v, deepseek = %v", name, pair[0], pair[1])
 			}
 		}
-		if opencodeModel.Name != spec.Name ||
-			opencodeModel.ContextWindow != spec.ContextWindow ||
+		if opencodeModel.ContextWindow != spec.ContextWindow ||
 			opencodeModel.MaxTokens != spec.MaxTokens {
 			t.Errorf(
-				"opencode %s limits = %s/%d/%d, want %s/%d/%d",
+				"opencode %s limits = %d/%d, want %d/%d",
 				spec.ID,
-				opencodeModel.Name,
 				opencodeModel.ContextWindow,
 				opencodeModel.MaxTokens,
-				spec.Name,
 				spec.ContextWindow,
 				spec.MaxTokens,
 			)
@@ -63,13 +60,6 @@ func TestDeepSeekModelSpecsSharedByCatalogs(t *testing.T) {
 				"cacheRead": deepSeekModel.Pricing.CacheRead,
 			}; pair[name] != want {
 				t.Errorf("deepseek %s %s pricing = %v, want %v", spec.ID, name, pair[name], want)
-			}
-			if pair := map[string]float64{
-				"input":     opencodeModel.Pricing.Input,
-				"output":    opencodeModel.Pricing.Output,
-				"cacheRead": opencodeModel.Pricing.CacheRead,
-			}; pair[name] != want {
-				t.Errorf("opencode %s %s pricing = %v, want %v", spec.ID, name, pair[name], want)
 			}
 		}
 	}

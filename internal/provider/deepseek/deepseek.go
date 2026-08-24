@@ -135,15 +135,16 @@ func model(id string) llm.Model {
 		api = anthropic.API
 	}
 	return llm.Model{
-		ID:               id,
-		Name:             spec.Name,
-		API:              api,
-		Provider:         ProviderID,
-		SupportsThinking: true,
-		ThinkingLevelMap: spec.ThinkingLevelMap,
-		InputModalities:  []llm.InputModality{llm.InputModalityText},
-		ContextWindow:    spec.ContextWindow,
-		MaxTokens:        spec.MaxTokens,
+		ID:                      id,
+		Name:                    spec.Name,
+		API:                     api,
+		Provider:                ProviderID,
+		SupportsThinking:        true,
+		ThinkingLevelMap:        spec.ThinkingLevelMap,
+		SupportsReasoningEffort: id == ModelV4Pro,
+		InputModalities:         []llm.InputModality{llm.InputModalityText},
+		ContextWindow:           spec.ContextWindow,
+		MaxTokens:               spec.MaxTokens,
 		Pricing: llm.Pricing{
 			Input:     spec.Input,
 			Output:    spec.Output,

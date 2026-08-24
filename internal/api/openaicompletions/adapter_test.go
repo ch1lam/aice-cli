@@ -588,13 +588,10 @@ func TestAdapterThinkingWireControls(t *testing.T) {
 			},
 		},
 		{
-			name:    "opencode deepseek maps medium to high",
+			name:    "opencode deepseek rejects unsupported medium",
 			modelID: "deepseek-v4-flash",
 			level:   llm.ThinkingLevelMedium,
-			wantBody: map[string]any{
-				"thinking":         map[string]any{"type": "enabled"},
-				"reasoning_effort": "high",
-			},
+			wantErr: `model "deepseek-v4-flash" does not support thinking level "medium"`,
 		},
 		{
 			name:    "opencode deepseek high effort",
@@ -606,13 +603,10 @@ func TestAdapterThinkingWireControls(t *testing.T) {
 			},
 		},
 		{
-			name:    "opencode deepseek maps xhigh to high",
+			name:    "opencode deepseek rejects unsupported xhigh",
 			modelID: "deepseek-v4-pro",
 			level:   llm.ThinkingLevelXHigh,
-			wantBody: map[string]any{
-				"thinking":         map[string]any{"type": "enabled"},
-				"reasoning_effort": "high",
-			},
+			wantErr: `model "deepseek-v4-pro" does not support thinking level "xhigh"`,
 		},
 		{
 			name:    "opencode deepseek max effort",
@@ -625,7 +619,7 @@ func TestAdapterThinkingWireControls(t *testing.T) {
 		},
 		{
 			name:    "opencode deepseek disabled",
-			modelID: "deepseek-v4-flash",
+			modelID: "deepseek-v4-flash-vision-exp",
 			level:   llm.ThinkingLevelOff,
 			wantBody: map[string]any{
 				"thinking": map[string]any{"type": "disabled"},
@@ -640,22 +634,6 @@ func TestAdapterThinkingWireControls(t *testing.T) {
 			},
 		},
 		{
-			name:    "qwen enables thinking without effort",
-			modelID: "qwen3.5-plus",
-			level:   llm.ThinkingLevelMedium,
-			wantBody: map[string]any{
-				"enable_thinking": true,
-			},
-		},
-		{
-			name:    "qwen thinking disabled",
-			modelID: "qwen3.5-plus",
-			level:   llm.ThinkingLevelOff,
-			wantBody: map[string]any{
-				"enable_thinking": false,
-			},
-		},
-		{
 			name:    "mapped off sends provider token",
 			modelID: "hy3",
 			level:   llm.ThinkingLevelOff,
@@ -665,7 +643,7 @@ func TestAdapterThinkingWireControls(t *testing.T) {
 		},
 		{
 			name:     "standard off omits reasoning effort",
-			modelID:  "kimi-k2.5",
+			modelID:  "glm-5.1",
 			level:    llm.ThinkingLevelOff,
 			wantBody: map[string]any{},
 		},
@@ -683,10 +661,10 @@ func TestAdapterThinkingWireControls(t *testing.T) {
 		},
 		{
 			name:           "unknown thinking format rejected",
-			modelID:        "kimi-k2.5",
+			modelID:        "glm-5.1",
 			level:          llm.ThinkingLevelHigh,
 			thinkingFormat: llm.ThinkingFormat("future-format"),
-			wantErr:        `model "kimi-k2.5" uses unsupported thinking format "future-format"`,
+			wantErr:        `model "glm-5.1" uses unsupported thinking format "future-format"`,
 		},
 	}
 

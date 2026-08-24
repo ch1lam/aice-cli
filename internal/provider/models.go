@@ -20,9 +20,9 @@ type ModelSpec struct {
 	SupportsReasoningEffort bool
 }
 
-// deepSeekModelSpecs declares the DeepSeek V4 model specifications once so the
-// DeepSeek and OpenCode Go catalogs share identical rates, limits, and effort
-// choices.
+// deepSeekModelSpecs declares the DeepSeek V4 model specifications used by the
+// direct provider. Compatible catalogs may reuse these as a starting point and
+// override provider-specific names, rates, or effort choices.
 var deepSeekModelSpecs = []ModelSpec{
 	{
 		ID:            "deepseek-v4-flash",

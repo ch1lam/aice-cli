@@ -102,10 +102,11 @@ func TestAdapterStreamsThinkingToolCallUsageAndDone(t *testing.T) {
 	temperature := 0.2
 	request := llm.Request{
 		Model: llm.Model{
-			ID:        "deepseek-v4-flash",
-			API:       anthropicapi.API,
-			Provider:  "deepseek",
-			MaxTokens: 384_000,
+			ID:                      "deepseek-v4-flash",
+			API:                     anthropicapi.API,
+			Provider:                "deepseek",
+			SupportsReasoningEffort: true,
+			MaxTokens:               384_000,
 			Pricing: llm.Pricing{
 				Input:     0.14,
 				Output:    0.28,
@@ -655,6 +656,7 @@ func TestAdapterThinkingLevelsFromModelMap(t *testing.T) {
 		thinkingLevelMap llm.ThinkingLevelMap
 		wantEffort       string
 		wantDisabled     bool
+		budgetOnly       bool
 		wantErr          string
 	}{
 		{
@@ -701,6 +703,11 @@ func TestAdapterThinkingLevelsFromModelMap(t *testing.T) {
 			level:      llm.ThinkingLevelXHigh,
 			wantEffort: "high",
 		},
+		{
+			name:       "budget-only model omits effort",
+			level:      llm.ThinkingLevelHigh,
+			budgetOnly: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -729,6 +736,9 @@ func TestAdapterThinkingLevelsFromModelMap(t *testing.T) {
 
 			request := apitest.MinimalRequest(anthropicapi.API)
 			request.Model = anthropicModelForTest(t, deepseek.ModelV4Pro)
+			if tt.budgetOnly {
+				request.Model.SupportsReasoningEffort = false
+			}
 			if tt.thinkingLevelMap != nil {
 				request.Model.ThinkingLevelMap = tt.thinkingLevelMap
 			}
@@ -765,6 +775,12 @@ func TestAdapterThinkingLevelsFromModelMap(t *testing.T) {
 			}
 			if thinking["type"] != "enabled" {
 				t.Errorf("thinking type = %#v, want enabled", thinking["type"])
+			}
+			if tt.budgetOnly {
+				if _, present := body["output_config"]; present {
+					t.Errorf("output_config unexpectedly present: %#v", body["output_config"])
+				}
+				return
 			}
 			outputConfig, ok := body["output_config"].(map[string]any)
 			if !ok || outputConfig["effort"] != tt.wantEffort {
