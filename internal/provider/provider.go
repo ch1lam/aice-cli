@@ -4,7 +4,6 @@
 package provider
 
 import (
-	"github.com/ch1lam/aice-cli/internal/agent"
 	"github.com/ch1lam/aice-cli/internal/config"
 	"github.com/ch1lam/aice-cli/internal/llm"
 )
@@ -26,7 +25,7 @@ type Provider interface {
 	// Configured reports whether the configuration carries a credential.
 	Configured(configuration config.Config) bool
 	// New constructs the credentialed model service for a configuration.
-	New(configuration config.Config) (agent.Model, error)
+	New(configuration config.Config) (llm.Streamer, error)
 	// SaveAPIKey persists a credential in the global auth file.
 	SaveAPIKey(apiKey string) (string, error)
 	// ApplyAPIKey stores a credential in the configuration.

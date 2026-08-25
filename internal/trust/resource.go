@@ -22,12 +22,6 @@ var protectedResources = []string{
 	AppendSystemFile,
 }
 
-// ProtectedResources returns the workspace-local file names whose loading is
-// gated by project trust.
-func ProtectedResources() []string {
-	return append([]string(nil), protectedResources...)
-}
-
 // Resource is one protected project-local file found during discovery.
 type Resource struct {
 	// Name is the workspace-relative path, for example ".aice/SYSTEM.md".

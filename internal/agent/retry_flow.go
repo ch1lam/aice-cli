@@ -35,13 +35,13 @@ func (e *runExecution) recordIncompleteAttempt(
 		return err
 	}
 
-	turn := Turn{
+	turn := ModelRound{
 		Number:      turnNumber,
 		Inputs:      e.takePendingInputs(),
 		Assistant:   message,
 		ToolResults: []llm.ToolResultMessage{},
 	}
-	e.result.Turns = append(e.result.Turns, turn)
+	e.result.ModelRounds = append(e.result.ModelRounds, turn)
 	return e.emit(ctx, AgentEvent{
 		Type:       EventTypeTurnEnd,
 		TurnNumber: turnNumber,

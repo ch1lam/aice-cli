@@ -37,11 +37,12 @@ cd /path/to/project
 aice --workspace .
 ```
 
-首次启动后执行 `/login`，选择 `deepseek`、`opencode-go` 或 `openai`，再通过
-隐藏输入填写 API Key。输入 `/help` 查看命令，输入 `?` 查看快捷键。AICE
-工作期间，按 Enter 可调整当前响应，按 Ctrl+Enter 可排队一个独立的后续响应。
-使用 `/btw [问题]` 可新建一个无工具、不会打断或写入主 Session 的侧线程；
-输入不带参数的 `/btw` 会打开线程选择菜单；没有侧线程时则直接打开空白输入框。
+首次启动后执行 `/login`，选择 `deepseek`、`opencode-go`、`openai` 或
+`custom`，再完成该 provider 的凭据流程。输入 `/help` 查看命令，输入 `?`
+查看快捷键。AICE 工作期间，按 Enter 可调整当前响应，按 Ctrl+Enter 可排队
+一个独立的后续响应。使用 `/btw [问题]` 可新建一个无工具、不会打断或写入
+主 Session 的侧线程；输入不带参数的 `/btw` 会打开线程选择菜单；没有侧线程
+时则直接打开空白输入框。
 
 执行一次非交互请求：
 
@@ -61,15 +62,18 @@ aice --workspace . --session .aice/sessions/<session-id>.jsonl
 | 领域 | 当前实现 |
 | --- | --- |
 | 交互 | Bubble Tea TUI 与一次性 `--print` 模式 |
-| Provider | DeepSeek V4、OpenCode Go 的 22 个模型与 OpenAI GPT-5.6 |
+| Provider | DeepSeek V4、OpenCode Go 的 22 个模型、OpenAI GPT-5.6，以及 Custom（OpenAI 兼容） |
 | 协议 | Anthropic Messages、OpenAI Responses、OpenAI Chat Completions |
 | 工具 | `read`、`write`、`edit`、`bash`、`grep`、`find`、`ls` |
-| Guard | 内置执行门禁：敏感文件策略、危险命令门控、工作区外路径访问（`ask`/`deny`） |
+| Guard | 内置执行门禁（`internal/guard`）：pathAccess mode 为 `allow`/`ask`/`block`；Decision 为 `allow`/`ask`/`deny`；详见[工具执行与 Session](./docs/execution-sessions.md#tool-execution-boundary) |
 | Session | 重启恢复、分支、回退与自动/手动非破坏性压缩 |
 | 侧问题 | Session 历史之外、无工具的多个临时 `/btw` 线程 |
 | 输入 | 仅文本 |
 
-工具继承 AICE 进程权限，但每次调用都会经过内置执行门禁检查（敏感文件 / 危险命令 / 工作区外访问；`--print` 下 `ask` 按 `deny` 处理）。`--workspace` 是工作目录并定义路径访问边界，不是沙箱。Project Trust 只控制根目录 `AGENTS.md`、`.aice/SYSTEM.md` 和 `.aice/APPEND_SYSTEM.md` 的加载；更强隔离请使用外部容器/VM。
+工具继承 AICE 进程权限。每次调用都会经过执行门禁；`--print` 下 `ask` 按
+`deny` 处理。`--workspace` 是工作目录并定义路径访问边界，不是沙箱。
+Project Trust 只控制 prompt 文件加载；详见 [Project Trust 与
+Prompt](./docs/project-trust.md)。更强隔离请使用外部容器/VM。
 
 ## 文档
 
@@ -94,7 +98,8 @@ go vet ./...
 ## 当前状态
 
 AICE 仍在快速迭代，稳定版发布前 Session 与配置格式仍可能变化。内核保持
-provider-neutral；当前内建 provider 为 DeepSeek、OpenCode Go 与 OpenAI。
+provider-neutral；当前内建 provider 为 DeepSeek、OpenCode Go、OpenAI 与
+Custom。
 
 ## 许可证
 

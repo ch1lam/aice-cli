@@ -2,6 +2,7 @@
 package llm
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -1024,6 +1025,12 @@ type Event struct {
 	StopReason    StopReason        `json:"stop_reason,omitempty"`
 	Message       *AssistantMessage `json:"message,omitempty"`
 	Err           error             `json:"-"`
+}
+
+// Streamer opens a provider-neutral model stream for one request.
+// Concrete providers implement this; the agent loop consumes it as agent.Model.
+type Streamer interface {
+	Stream(ctx context.Context, request Request) (Stream, error)
 }
 
 // Stream yields model events in order and observes the context used to create it.

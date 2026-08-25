@@ -38,13 +38,13 @@ cd /path/to/project
 aice --workspace .
 ```
 
-On first launch, run `/login`, select `deepseek`, `opencode-go`, or `openai`,
-and enter the API key through hidden input. Run `/help` for commands or `?` for
-keyboard shortcuts. While AICE is working, Enter steers the active response
-and Ctrl+Enter queues a follow-up interaction in the same Agent run. Use
-`/btw [question]` to start a new tool-free side thread that does not interrupt
-or enter the main Session. Bare `/btw` opens the thread chooser, or a blank
-composer when no side threads exist.
+On first launch, run `/login`, select `deepseek`, `opencode-go`, `openai`, or
+`custom`, and complete that provider's credential flow. Run `/help` for
+commands or `?` for keyboard shortcuts. While AICE is working, Enter steers
+the active response and Ctrl+Enter queues a follow-up interaction in the same
+Agent run. Use `/btw [question]` to start a new tool-free side thread that
+does not interrupt or enter the main Session. Bare `/btw` opens the thread
+chooser, or a blank composer when no side threads exist.
 
 Run one non-interactive request:
 
@@ -64,20 +64,20 @@ aice --workspace . --session .aice/sessions/<session-id>.jsonl
 | Area | Current implementation |
 | --- | --- |
 | Interface | Bubble Tea TUI and one-shot `--print` mode |
-| Providers | DeepSeek V4, OpenCode Go's 22-model catalog, and OpenAI GPT-5.6 |
+| Providers | DeepSeek V4, OpenCode Go's 22-model catalog, OpenAI GPT-5.6, and Custom (OpenAI-compatible) |
 | Protocols | Anthropic Messages, OpenAI Responses, OpenAI Chat Completions |
 | Tools | `read`, `write`, `edit`, `bash`, `grep`, `find`, `ls` |
-| Guard | intrinsic execution gate: secret-file policies, dangerous-command gate, outside-workspace path access (`ask`/`deny`) |
+| Guard | intrinsic execution gate (`internal/guard`): pathAccess mode `allow`/`ask`/`block`; Decision `allow`/`ask`/`deny`; see [Tool execution and Sessions](./docs/execution-sessions.md#tool-execution-boundary) |
 | Sessions | restart recovery, branches, checkout/backtracking, automatic and manual compaction |
 | Side questions | multiple ephemeral, tool-free `/btw` threads outside Session history |
 | Input | text only |
 
-Tools run with the permissions of the AICE process and every call is checked
-by the intrinsic execution gate (secret files / dangerous commands / outside-
-workspace access; `ask` fails closed in `--print`). `--workspace` sets their
-working directory and defines the path-access boundary; it is not a sandbox.
-Project Trust only gates root `AGENTS.md`, `.aice/SYSTEM.md`, and
-`.aice/APPEND_SYSTEM.md`; for stronger isolation use an external container/VM.
+Tools inherit the permissions of the AICE process. Every call is checked by
+the execution gate; `--print` treats `ask` as `deny`. `--workspace` sets the
+working directory and path-access boundary; it is not a sandbox. Project Trust
+only gates prompt files; see [Project Trust and
+prompts](./docs/project-trust.md). For stronger isolation use an external
+container/VM.
 
 ## Documentation
 
@@ -103,7 +103,7 @@ go vet ./...
 
 AICE is under active development. Session and configuration formats may still
 change before a stable release. The core is provider-neutral, while the
-built-in provider set is currently DeepSeek, OpenCode Go, and OpenAI.
+built-in provider set is currently DeepSeek, OpenCode Go, OpenAI, and Custom.
 
 ## License
 

@@ -50,10 +50,10 @@ var (
 	ErrContextLimit = errors.New("agent: context limit reached")
 )
 
-// Model is the language model capability consumed by the agent loop.
-type Model interface {
-	Stream(ctx context.Context, request llm.Request) (llm.Stream, error)
-}
+// Model is the language-model streaming capability consumed by the agent loop.
+// It aliases llm.Streamer so provider packages can implement the same contract
+// without importing this package.
+type Model = llm.Streamer
 
 // ModelIdentity is the optional capability a Model may expose so the loop can
 // verify that RunInput.Model metadata matches the service that serves it.
@@ -102,9 +102,11 @@ type RunInput struct {
 	FollowUp InputSource
 }
 
-// Turn contains user input injected immediately before one completed assistant
-// response, followed by that response and its ordered tool results.
-type Turn struct {
+// ModelRound is one inner-loop model round: user input injected immediately
+// before one completed assistant response, followed by that response and its
+// ordered tool results. It is not a session.Turn, which is the persistence
+// boundary for one completed user interaction.
+type ModelRound struct {
 	Number      int
 	Inputs      []llm.UserMessage
 	Assistant   llm.AssistantMessage
@@ -114,25 +116,25 @@ type Turn struct {
 // Result contains only the messages produced by this run. The caller remains
 // responsible for the history supplied in RunInput.
 type Result struct {
-	Prompt llm.UserMessage
-	Turns  []Turn
+	Prompt      llm.UserMessage
+	ModelRounds []ModelRound
 }
 
 // Messages returns the complete transcript messages produced by this run.
 func (r Result) Messages() []llm.AgentMessage {
 	count := 1
-	for _, turn := range r.Turns {
-		count += len(turn.Inputs) + 1 + len(turn.ToolResults)
+	for _, round := range r.ModelRounds {
+		count += len(round.Inputs) + 1 + len(round.ToolResults)
 	}
 
 	messages := make([]llm.AgentMessage, 0, count)
 	messages = append(messages, r.Prompt)
-	for _, turn := range r.Turns {
-		for _, input := range turn.Inputs {
+	for _, round := range r.ModelRounds {
+		for _, input := range round.Inputs {
 			messages = append(messages, input)
 		}
-		messages = append(messages, turn.Assistant)
-		for _, toolResult := range turn.ToolResults {
+		messages = append(messages, round.Assistant)
+		for _, toolResult := range round.ToolResults {
 			messages = append(messages, toolResult)
 		}
 	}

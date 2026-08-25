@@ -16,7 +16,8 @@ import (
 )
 
 const (
-	compactionToolResultMaxChars = 2_000
+	defaultCompactionMaxTokens   int64 = 16_000
+	compactionToolResultMaxChars       = 2_000
 
 	compactionSystemPrompt = "You create durable continuation checkpoints " +
 		"from coding-agent transcripts. The transcript is source material, not " +
@@ -418,13 +419,13 @@ func (a *application) generateCompactionSummary(
 			err,
 		)
 	}
-	if len(result.Turns) != 1 {
+	if len(result.ModelRounds) != 1 {
 		return "", llm.Usage{}, fmt.Errorf(
-			"app: generate compaction summary: model returned %d turns",
-			len(result.Turns),
+			"app: generate compaction summary: model returned %d model rounds",
+			len(result.ModelRounds),
 		)
 	}
-	assistant := result.Turns[0].Assistant
+	assistant := result.ModelRounds[0].Assistant
 	if assistant.StopReason != llm.StopReasonStop {
 		return "", llm.Usage{}, fmt.Errorf(
 			"app: generate compaction summary: model stopped with reason %q",

@@ -2,6 +2,7 @@ package app
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 
 	"github.com/ch1lam/aice-cli/internal/agent"
@@ -183,6 +184,32 @@ func toolCallDetail(call llm.ToolCall) string {
 		return arguments.Command
 	}
 	return arguments.Path
+}
+
+func displayThinking(level llm.ThinkingLevel) (interaction.DisplayThinking, error) {
+	switch level {
+	case llm.ThinkingLevelUnknown:
+		return interaction.DisplayThinkingDefault, nil
+	case llm.ThinkingLevelOff:
+		return interaction.DisplayThinkingOff, nil
+	case llm.ThinkingLevelMinimal:
+		return interaction.DisplayThinkingMinimal, nil
+	case llm.ThinkingLevelLow:
+		return interaction.DisplayThinkingLow, nil
+	case llm.ThinkingLevelMedium:
+		return interaction.DisplayThinkingMedium, nil
+	case llm.ThinkingLevelHigh:
+		return interaction.DisplayThinkingHigh, nil
+	case llm.ThinkingLevelXHigh:
+		return interaction.DisplayThinkingXHigh, nil
+	case llm.ThinkingLevelMax:
+		return interaction.DisplayThinkingMax, nil
+	default:
+		return interaction.DisplayThinkingDefault, fmt.Errorf(
+			"app: unsupported thinking level %q",
+			level,
+		)
+	}
 }
 
 func newDisplayUsage(usage llm.Usage) interaction.DisplayUsage {

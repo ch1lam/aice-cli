@@ -341,3 +341,36 @@ func TestNewDisplayUsageFlattensCost(t *testing.T) {
 		t.Fatalf("newDisplayUsage(no cost) = %#v, want zero cost", got)
 	}
 }
+
+func TestDisplayThinking(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		level   llm.ThinkingLevel
+		want    tui.DisplayThinking
+		wantErr bool
+	}{
+		{name: "unknown maps to default", level: llm.ThinkingLevelUnknown, want: tui.DisplayThinkingDefault},
+		{name: "off", level: llm.ThinkingLevelOff, want: tui.DisplayThinkingOff},
+		{name: "minimal", level: llm.ThinkingLevelMinimal, want: tui.DisplayThinkingMinimal},
+		{name: "low", level: llm.ThinkingLevelLow, want: tui.DisplayThinkingLow},
+		{name: "medium", level: llm.ThinkingLevelMedium, want: tui.DisplayThinkingMedium},
+		{name: "high", level: llm.ThinkingLevelHigh, want: tui.DisplayThinkingHigh},
+		{name: "xhigh", level: llm.ThinkingLevelXHigh, want: tui.DisplayThinkingXHigh},
+		{name: "max", level: llm.ThinkingLevelMax, want: tui.DisplayThinkingMax},
+		{name: "unsupported", level: llm.ThinkingLevel("nope"), want: tui.DisplayThinkingDefault, wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := displayThinking(tt.level)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("displayThinking(%q) error = %v, wantErr %v", tt.level, err, tt.wantErr)
+			}
+			if got != tt.want {
+				t.Fatalf("displayThinking(%q) = %q, want %q", tt.level, got, tt.want)
+			}
+		})
+	}
+}

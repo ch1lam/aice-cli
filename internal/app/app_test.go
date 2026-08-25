@@ -16,6 +16,7 @@ import (
 
 	"github.com/ch1lam/aice-cli/internal/agent"
 	"github.com/ch1lam/aice-cli/internal/config"
+	"github.com/ch1lam/aice-cli/internal/guard"
 	"github.com/ch1lam/aice-cli/internal/interaction"
 	"github.com/ch1lam/aice-cli/internal/llm"
 	"github.com/ch1lam/aice-cli/internal/provider/deepseek"
@@ -980,13 +981,7 @@ func TestInteractiveSessionPersistsCancellationAfterToolSideEffect(t *testing.T)
 		Arguments: json.RawMessage(`{}`),
 	}
 	model := &toolLoopModel{firstCall: &call}
-	loop, err := agent.NewLoop(
-		model,
-		[]agent.Tool{tool},
-	)
-	if err != nil {
-		t.Fatalf("agent.NewLoop() error = %v", err)
-	}
+	loop := mustAppLoop(t, model, []agent.Tool{tool})
 	store := createAppTestSession(t, sessionPath, workspace)
 	runner := &interactiveSession{
 		loop:  loop,
@@ -994,7 +989,7 @@ func TestInteractiveSessionPersistsCancellationAfterToolSideEffect(t *testing.T)
 		model: deepseek.DefaultModel(),
 	}
 
-	err = runInteractive(ctx, runner, "mutate then continue", nil)
+	err := runInteractive(ctx, runner, "mutate then continue", nil)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("Run() error = %v, want context.Canceled", err)
 	}
@@ -1047,13 +1042,7 @@ func TestInteractiveSessionPersistsToolErrorAndRecovery(t *testing.T) {
 		Arguments: json.RawMessage(`{}`),
 	}
 	model := &toolLoopModel{firstCall: &call}
-	loop, err := agent.NewLoop(
-		model,
-		[]agent.Tool{tool},
-	)
-	if err != nil {
-		t.Fatalf("agent.NewLoop() error = %v", err)
-	}
+	loop := mustAppLoop(t, model, []agent.Tool{tool})
 	store := createAppTestSession(t, sessionPath, workspace)
 	runner := &interactiveSession{
 		loop:  loop,
@@ -1490,6 +1479,126 @@ func (s *eventStream) Close() error {
 type appTestTool struct {
 	definition llm.ToolDefinition
 	execute    func(context.Context, llm.ToolCall) (llm.ToolResult, error)
+}
+
+type allowAllGuard struct{}
+
+func (allowAllGuard) Check(context.Context, llm.ToolCall) (agent.GuardResult, error) {
+	return agent.GuardResult{Decision: agent.GuardAllow}, nil
+}
+
+func mustAppLoop(t *testing.T, model agent.Model, tools []agent.Tool) *agent.Loop {
+	t.Helper()
+
+	loop, err := agent.NewLoop(model, tools, agent.WithGuard(allowAllGuard{}))
+	if err != nil {
+		t.Fatalf("agent.NewLoop() error = %v", err)
+	}
+	return loop
+}
+
+func TestGuardAdapterCheckFailsClosedWhenUnconfigured(t *testing.T) {
+	t.Parallel()
+
+	call := llm.ToolCall{
+		ID:        "call-1",
+		Name:      "read",
+		Arguments: json.RawMessage(`{"path":"a.go"}`),
+	}
+	tests := []struct {
+		name    string
+		adapter *guardAdapter
+	}{
+		{name: "nil adapter", adapter: nil},
+		{name: "nil inner", adapter: &guardAdapter{}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			result, err := test.adapter.Check(t.Context(), call)
+			if err != nil {
+				t.Fatalf("Check() error = %v", err)
+			}
+			if result.Decision != agent.GuardDeny {
+				t.Fatalf("Check() decision = %q, want deny", result.Decision)
+			}
+			if result.Reason == "" {
+				t.Fatal("Check() reason is empty")
+			}
+			if result.RuleID != "guard.unavailable" {
+				t.Fatalf("Check() rule = %q, want guard.unavailable", result.RuleID)
+			}
+		})
+	}
+}
+
+func TestMapGuardResultFailsClosedOnUnknownDecision(t *testing.T) {
+	t.Parallel()
+
+	action := guard.Action{
+		Kind:     "file",
+		Path:     "/tmp/a.go",
+		ToolName: "read",
+	}
+	tests := []struct {
+		name     string
+		decision guard.Decision
+		want     agent.GuardDecision
+		wantRule string
+	}{
+		{
+			name:     "allow",
+			decision: guard.DecisionAllow,
+			want:     agent.GuardAllow,
+			wantRule: "file.ok",
+		},
+		{
+			name:     "deny",
+			decision: guard.DecisionDeny,
+			want:     agent.GuardDeny,
+			wantRule: "file.ok",
+		},
+		{
+			name:     "ask",
+			decision: guard.DecisionAsk,
+			want:     agent.GuardAsk,
+			wantRule: "file.ok",
+		},
+		{
+			name:     "unknown",
+			decision: guard.Decision("mystery"),
+			want:     agent.GuardDeny,
+			wantRule: "guard.unknown_decision",
+		},
+		{
+			name:     "empty",
+			decision: "",
+			want:     agent.GuardDeny,
+			wantRule: "guard.unknown_decision",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := mapGuardResult(guard.Result{
+				Decision: test.decision,
+				Reason:   "mapped",
+				RuleID:   "file.ok",
+				Action:   action,
+			})
+			if got.Decision != test.want {
+				t.Fatalf("mapGuardResult() decision = %q, want %q", got.Decision, test.want)
+			}
+			if got.RuleID != test.wantRule {
+				t.Fatalf("mapGuardResult() rule = %q, want %q", got.RuleID, test.wantRule)
+			}
+			if got.Action.Path != action.Path || got.Action.ToolName != action.ToolName {
+				t.Fatalf("mapGuardResult() action = %#v, want path and tool preserved", got.Action)
+			}
+		})
+	}
 }
 
 func newAppTestTool(

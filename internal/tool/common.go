@@ -15,7 +15,6 @@ const (
 	maxOutputBytes   = 50 * 1024
 	maxReadBytes     = 10 * 1024 * 1024
 	maxMutationBytes = 4 * 1024 * 1024
-	maxLineBytes     = 1000
 	maxPatternBytes  = 4096
 	maxWalkEntries   = 100000
 )
@@ -106,11 +105,4 @@ func validUTF8Prefix(value string, limit int) string {
 		prefix = prefix[:len(prefix)-1]
 	}
 	return prefix
-}
-
-func truncateLine(line string) string {
-	if len(line) <= maxLineBytes {
-		return line
-	}
-	return validUTF8Prefix(line, maxLineBytes) + "..."
 }

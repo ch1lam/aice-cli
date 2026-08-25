@@ -242,18 +242,19 @@ func compactionSummaryMessage(
 			timestamp = messageTime + 1
 		}
 	}
-	message := llm.CompactionSummaryMessage{
-		Role:         llm.RoleCompactionSummary,
-		Summary:      compaction.Summary,
-		TokensBefore: compaction.TokensBefore,
-		Timestamp:    timestamp,
-	}
-	if err := message.Validate(); err != nil {
+	message, err := llm.NewCompactionSummaryMessage(
+		compaction.Summary,
+		compaction.TokensBefore,
+	)
+	if err != nil {
 		return llm.CompactionSummaryMessage{}, fmt.Errorf(
 			"session: build compaction summary: %w",
 			err,
 		)
 	}
+	// Ordering on the derived transcript uses the last retained message,
+	// not wall-clock time from the constructor.
+	message.Timestamp = timestamp
 	return message, nil
 }
 

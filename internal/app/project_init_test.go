@@ -120,13 +120,10 @@ func TestInitCommandPropagatesModelFailure(t *testing.T) {
 	workspace := testWorkspace(t, t.TempDir())
 	runner := initTestRunner(t, workspace, nil)
 	model := &controlledModel{err: modelFailure}
-	loop, err := agent.NewLoop(model, runner.tools)
-	if err != nil {
-		t.Fatalf("agent.NewLoop() error = %v", err)
-	}
+	loop := mustAppLoop(t, model, runner.tools)
 	runner.loop = loop
 
-	_, err = runner.RunSlashCommand(t.Context(), tui.SlashCommandRequest{
+	_, err := runner.RunSlashCommand(t.Context(), tui.SlashCommandRequest{
 		Name: "init",
 	})
 	if err == nil || !strings.Contains(err.Error(), "modelFailure") {
@@ -139,16 +136,13 @@ func TestInitCommandReportsMissingWrite(t *testing.T) {
 
 	workspace := testWorkspace(t, t.TempDir())
 	runner := initTestRunner(t, workspace, nil)
-	loop, err := agent.NewLoop(&controlledModel{
+	loop := mustAppLoop(t, &controlledModel{
 		response:   "done",
 		stopReason: llm.StopReasonStop,
 	}, runner.tools)
-	if err != nil {
-		t.Fatalf("agent.NewLoop() error = %v", err)
-	}
 	runner.loop = loop
 
-	_, err = runner.RunSlashCommand(t.Context(), tui.SlashCommandRequest{
+	_, err := runner.RunSlashCommand(t.Context(), tui.SlashCommandRequest{
 		Name: "init",
 	})
 	if err == nil || !strings.Contains(err.Error(), "without creating AGENTS.md") {
@@ -191,10 +185,7 @@ func initTestRunner(t *testing.T, workspace *tool.Workspace, tools []agent.Tool)
 			`{"path":"AGENTS.md","content":"# Project\n"}`,
 		),
 	}
-	loop, err := agent.NewLoop(&toolLoopModel{firstCall: &call}, tools)
-	if err != nil {
-		t.Fatalf("agent.NewLoop() error = %v", err)
-	}
+	loop := mustAppLoop(t, &toolLoopModel{firstCall: &call}, tools)
 	paths := trustTestPaths(t)
 	return &interactiveSession{
 		application:   &application{dependencies: dependencies{}},

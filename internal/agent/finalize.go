@@ -101,10 +101,10 @@ func finalizeFailedResult(
 	}
 
 	turnNumber := 1
-	if len(result.Turns) > 0 {
-		turnNumber = result.Turns[len(result.Turns)-1].Number + 1
+	if len(result.ModelRounds) > 0 {
+		turnNumber = result.ModelRounds[len(result.ModelRounds)-1].Number + 1
 	}
-	result.Turns = append(result.Turns, Turn{
+	result.ModelRounds = append(result.ModelRounds, ModelRound{
 		Number:      turnNumber,
 		Inputs:      pendingInputs,
 		Assistant:   message,
@@ -114,15 +114,15 @@ func finalizeFailedResult(
 }
 
 func needsAbortedTerminal(result Result, stopReason llm.StopReason) bool {
-	if stopReason != llm.StopReasonAborted || len(result.Turns) == 0 {
+	if stopReason != llm.StopReasonAborted || len(result.ModelRounds) == 0 {
 		return false
 	}
-	return result.Turns[len(result.Turns)-1].Assistant.StopReason != llm.StopReasonAborted
+	return result.ModelRounds[len(result.ModelRounds)-1].Assistant.StopReason != llm.StopReasonAborted
 }
 
 func pairUnfinishedToolCalls(result Result, terminalText string) (Result, error) {
-	for turnIndex := range result.Turns {
-		turn := &result.Turns[turnIndex]
+	for turnIndex := range result.ModelRounds {
+		turn := &result.ModelRounds[turnIndex]
 		calls, err := extractToolCalls(turn.Assistant)
 		if err != nil {
 			return result, err
@@ -155,10 +155,10 @@ func pairUnfinishedToolCalls(result Result, terminalText string) (Result, error)
 }
 
 func resultEndsAtAssistant(result Result) bool {
-	if len(result.Turns) == 0 {
+	if len(result.ModelRounds) == 0 {
 		return false
 	}
-	last := result.Turns[len(result.Turns)-1]
+	last := result.ModelRounds[len(result.ModelRounds)-1]
 	if len(last.ToolResults) != 0 {
 		return false
 	}

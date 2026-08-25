@@ -52,10 +52,10 @@ func TestLoopRetriesTransientModelFailureWithoutReplayingFailedHistory(t *testin
 		model.requests[1].Messages[0].MessageRole() != llm.RoleUser {
 		t.Fatalf("retry request messages = %#v, want only original user prompt", model.requests[1].Messages)
 	}
-	if len(result.Turns) != 2 ||
-		result.Turns[0].Assistant.StopReason != llm.StopReasonError ||
-		result.Turns[1].Assistant.StopReason != llm.StopReasonStop {
-		t.Fatalf("Run() turns = %#v", result.Turns)
+	if len(result.ModelRounds) != 2 ||
+		result.ModelRounds[0].Assistant.StopReason != llm.StopReasonError ||
+		result.ModelRounds[1].Assistant.StopReason != llm.StopReasonStop {
+		t.Fatalf("Run() turns = %#v", result.ModelRounds)
 	}
 	if _, err := session.NewTurn(
 		strings.Repeat("a", 32),
@@ -105,10 +105,10 @@ func TestLoopRetriesProviderFailureBeforeStreamStarts(t *testing.T) {
 	if model.calls != 2 || len(model.requests[1].Messages) != 1 {
 		t.Fatalf("model calls/requests = %d/%#v", model.calls, model.requests)
 	}
-	if len(result.Turns) != 2 ||
-		result.Turns[0].Assistant.StopReason != llm.StopReasonError ||
-		result.Turns[1].Assistant.StopReason != llm.StopReasonStop {
-		t.Fatalf("Run() turns = %#v", result.Turns)
+	if len(result.ModelRounds) != 2 ||
+		result.ModelRounds[0].Assistant.StopReason != llm.StopReasonError ||
+		result.ModelRounds[1].Assistant.StopReason != llm.StopReasonStop {
+		t.Fatalf("Run() turns = %#v", result.ModelRounds)
 	}
 }
 
@@ -132,6 +132,7 @@ func TestLoopDoesNotExecuteToolCallFromFailedRetryAttempt(t *testing.T) {
 	loop, err := agent.NewLoop(
 		model,
 		[]agent.Tool{tool},
+		agent.WithGuard(allowAllGuard{}),
 		agent.WithRetryPolicy(agent.RetryPolicy{MaxRetries: 1, MaxDelay: time.Hour}),
 	)
 	if err != nil {
@@ -149,10 +150,10 @@ func TestLoopDoesNotExecuteToolCallFromFailedRetryAttempt(t *testing.T) {
 	if len(tool.calls) != 0 {
 		t.Fatalf("tool calls = %#v, want none", tool.calls)
 	}
-	if len(result.Turns) != 2 ||
-		len(result.Turns[0].ToolResults) != 1 ||
-		!result.Turns[0].ToolResults[0].IsError {
-		t.Fatalf("failed retry turn = %#v", result.Turns[0])
+	if len(result.ModelRounds) != 2 ||
+		len(result.ModelRounds[0].ToolResults) != 1 ||
+		!result.ModelRounds[0].ToolResults[0].IsError {
+		t.Fatalf("failed retry turn = %#v", result.ModelRounds[0])
 	}
 	if len(model.requests[1].Messages) != 1 ||
 		model.requests[1].Messages[0].MessageRole() != llm.RoleUser {
@@ -276,9 +277,9 @@ func TestLoopCancelsDuringRetryBackoff(t *testing.T) {
 	if len(model.requests) != 1 {
 		t.Fatalf("model requests = %d, want 1", len(model.requests))
 	}
-	if len(result.Turns) != 2 ||
-		result.Turns[len(result.Turns)-1].Assistant.StopReason != llm.StopReasonAborted {
-		t.Fatalf("Run() turns = %#v, want aborted terminal turn", result.Turns)
+	if len(result.ModelRounds) != 2 ||
+		result.ModelRounds[len(result.ModelRounds)-1].Assistant.StopReason != llm.StopReasonAborted {
+		t.Fatalf("Run() turns = %#v, want aborted terminal turn", result.ModelRounds)
 	}
 }
 

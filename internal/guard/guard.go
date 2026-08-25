@@ -109,15 +109,21 @@ func (g *Guard) AllowSession(path string) {
 
 // AllowPathSession records a path-access grant for the remainder of this run.
 // isDir indicates whether the grant is for the directory and its descendants.
+// Grants of the filesystem root or the user's home directory are ignored so
+// Allow always cannot authorize those too-broad scopes; later checks stay ask.
 func (g *Guard) AllowPathSession(absPath string, isDir bool) {
 	if g == nil {
 		return
 	}
-	if isDir {
-		g.sessionAllowedPaths["dir:"+filepath.Clean(absPath)] = true
-	} else {
-		g.sessionAllowedPaths[filepath.Clean(absPath)] = true
+	cleaned := filepath.Clean(absPath)
+	if isGrantTooBroad(cleaned) {
+		return
 	}
+	if isDir {
+		g.sessionAllowedPaths["dir:"+cleaned] = true
+		return
+	}
+	g.sessionAllowedPaths[cleaned] = true
 }
 
 // AllowCommandSession records that a dangerous command is allowed for the
@@ -152,6 +158,16 @@ func (g *Guard) Check(ctx context.Context, call llm.ToolCall) (Result, error) {
 	}
 	if err := ctx.Err(); err != nil {
 		return Result{}, err
+	}
+	// Known tools with no extractable path/command still allow. Completely
+	// unknown names cannot be mapped to actions and must not be silent-allow.
+	if !isKnownTool(call.Name) {
+		return Result{
+			Decision: DecisionAsk,
+			Reason:   fmt.Sprintf("tool %q is not recognized by the execution gate", call.Name),
+			RuleID:   "unknownTool",
+			Action:   Action{ToolName: call.Name},
+		}, nil
 	}
 	// 1. Permission gate: bash command shape (autoDeny -> deny, structural dangerous -> deny unless allowed)
 	if call.Name == "bash" {
@@ -229,8 +245,3 @@ func (g *Guard) Check(ctx context.Context, call llm.ToolCall) (Result, error) {
 
 // IsEnabled reports whether this guard will enforce policies.
 func (g *Guard) IsEnabled() bool { return g != nil && g.enabled }
-
-// String helper for block messages that reference the file.
-func formatBlockMessage(tmpl, file string) string {
-	return strings.ReplaceAll(tmpl, "{file}", file)
-}

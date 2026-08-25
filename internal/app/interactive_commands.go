@@ -312,6 +312,26 @@ func shortSessionID(id string) string {
 	return id[:visible]
 }
 
+type slashCommandHandler func(
+	*interactiveSession,
+	context.Context,
+	interaction.CommandRequest,
+) (string, error)
+
+var slashCommandHandlers = map[string]slashCommandHandler{
+	"session":  (*interactiveSession).slashSession,
+	"tree":     (*interactiveSession).slashTree,
+	"checkout": (*interactiveSession).slashCheckout,
+	"compact":  (*interactiveSession).slashCompact,
+	"init":     (*interactiveSession).slashInit,
+	"settings": (*interactiveSession).slashSettings,
+	"trust":    (*interactiveSession).slashTrust,
+	"login":    (*interactiveSession).slashLogin,
+	"provider": (*interactiveSession).slashProvider,
+	"model":    (*interactiveSession).slashModel,
+	"thinking": (*interactiveSession).slashThinking,
+}
+
 func (s *interactiveSession) RunSlashCommand(
 	ctx context.Context,
 	request interaction.CommandRequest,
@@ -322,201 +342,263 @@ func (s *interactiveSession) RunSlashCommand(
 	if s == nil {
 		return "", fmt.Errorf("app: interactive Session is required")
 	}
-
-	switch request.Name {
-	case "session":
-		if s.store == nil {
-			return "", fmt.Errorf("app: interactive Session store is required")
-		}
-		if err := requireNoSlashCommandArguments(request); err != nil {
-			return "", err
-		}
-		return s.sessionInformation()
-	case "tree":
-		if s.store == nil {
-			return "", fmt.Errorf("app: interactive Session store is required")
-		}
-		if err := requireNoSlashCommandArguments(request); err != nil {
-			return "", err
-		}
-		snapshot, err := s.store.Snapshot()
-		if err != nil {
-			return "", fmt.Errorf("app: read Session tree: %w", err)
-		}
-		output := new(bytes.Buffer)
-		if err := writeSessionTree(output, snapshot); err != nil {
-			return "", err
-		}
-		return output.String(), nil
-	case "checkout":
-		if s.store == nil {
-			return "", fmt.Errorf("app: interactive Session store is required")
-		}
-		entry, err := slashCommandEntry(request)
-		if err != nil {
-			return "", err
-		}
-		output := new(bytes.Buffer)
-		changed, err := checkoutSessionStore(ctx, s.store, entry, output)
-		if err != nil {
-			return "", err
-		}
-		if err := s.reloadHistory(); err != nil {
-			return "", err
-		}
-		if changed {
-			s.stateMu.Lock()
-			s.sessionChanged = true
-			s.stateMu.Unlock()
-		}
-		return output.String(), nil
-	case "compact":
-		if s.store == nil {
-			return "", fmt.Errorf("app: interactive Session store is required")
-		}
-		if err := requireNoSlashCommandArguments(request); err != nil {
-			return "", err
-		}
-		if s.application == nil {
-			return "", fmt.Errorf("app: application is required")
-		}
-		output, err := s.application.compactSession(ctx, s.store)
-		if err != nil {
-			return "", err
-		}
-		if err := s.reloadHistory(); err != nil {
-			return "", err
-		}
-		return output, nil
-	case "init":
-		if err := requireNoSlashCommandArguments(request); err != nil {
-			return "", err
-		}
-		return s.runInitCommand(ctx)
-	case "settings":
-		if err := requireNoSlashCommandArguments(request); err != nil {
-			return "", err
-		}
-		return s.settingsInformation(), nil
-	case "trust":
-		if s.trustStore == nil {
-			return "", fmt.Errorf("app: trust store is required")
-		}
-		choice, err := slashCommandTrustChoice(
-			request,
-			trust.Choices(s.workspacePath),
-		)
-		if err != nil {
-			return "", err
-		}
-		if len(choice.Updates) > 0 {
-			if err := s.trustStore.SetMany(choice.Updates); err != nil {
-				return "", fmt.Errorf("app: save project trust: %w", err)
-			}
-			return trustResultMessage(choice, true), nil
-		}
-		return trustResultMessage(choice, false), nil
-	case "login":
-		return s.login(request)
-	case "provider":
-		value, err := slashCommandSettingValue(request)
-		if err != nil {
-			return "", err
-		}
-		if !supportedProvider(s.providers, value) {
-			return "", fmt.Errorf(
-				"app: unsupported provider %q; available: %s",
-				value,
-				strings.Join(knownProviders(s.providers), ", "),
-			)
-		}
-		settings := s.settingsSnapshot()
-		configuration := settings.configuration
-		configuration.Provider = value
-		loop, err := s.rebuildAgentLoop(configuration)
-		if err != nil {
-			return "", err
-		}
-		if err := s.saveSetting(config.SettingProvider, value); err != nil {
-			return "", err
-		}
-		model := providerModel(s.providers, value, configuration.Model)
-		// Persist the model when the stored one does not belong to the new
-		// provider's catalog and was replaced by its default, so a later
-		// restart resolves the same model instead of failing with an
-		// unsupported-model error.
-		if model.ID != configuration.Model {
-			if err := s.saveSetting(config.SettingModel, model.ID); err != nil {
-				return "", err
-			}
-		}
-		configuration.Model = model.ID
-		effective := clampedThinkingForModel(model, configuration.Thinking)
-		// The settings transition is one critical section so a concurrent side
-		// snapshot freezes a mutually consistent provider/model/thinking tuple.
-		s.stateMu.Lock()
-		s.configuration = configuration
-		s.loop = loop
-		s.model = model
-		s.options.Thinking = effective
-		s.stateMu.Unlock()
-		return savedSettingMessage("provider", value), nil
-	case "model":
-		value, err := slashCommandSettingValue(request)
-		if err != nil {
-			return "", err
-		}
-		settings := s.settingsSnapshot()
-		providerID := activeProvider(settings.model, settings.configuration)
-		model, exists := modelForProvider(s.providers, providerID, value)
-		if !exists {
-			return "", fmt.Errorf(
-				"app: unsupported model %q; available: %s",
-				value,
-				strings.Join(modelIDsForProvider(s.providers, providerID), ", "),
-			)
-		}
-		effective := clampedThinkingForModel(
-			model,
-			settings.configuration.Thinking,
-		)
-		if err := s.saveSetting(config.SettingModel, value); err != nil {
-			return "", err
-		}
-		// The settings transition is one critical section so a concurrent side
-		// snapshot freezes a mutually consistent model/thinking pair.
-		s.stateMu.Lock()
-		s.configuration.Model = value
-		s.model = model
-		s.options.Thinking = effective
-		s.stateMu.Unlock()
-		return savedSettingMessage("model", value), nil
-	case "thinking":
-		value, err := slashCommandSettingValue(request)
-		if err != nil {
-			return "", err
-		}
-		level := llm.ThinkingLevel(value)
-		settings := s.settingsSnapshot()
-		_, options, err := resolveModelSettings(s.providers, config.Config{
-			Provider: settings.configuration.Provider,
-			Model:    settings.model.ID,
-			Thinking: level,
-		})
-		if err != nil {
-			return "", err
-		}
-		if err := s.saveSetting(config.SettingThinking, value); err != nil {
-			return "", err
-		}
-		s.stateMu.Lock()
-		s.configuration.Thinking = level
-		s.options.Thinking = options.Thinking
-		s.stateMu.Unlock()
-		return savedSettingMessage("thinking", value), nil
-	default:
+	handler, ok := slashCommandHandlers[request.Name]
+	if !ok {
 		return "", fmt.Errorf("app: unsupported slash command /%s", request.Name)
 	}
+	return handler(s, ctx, request)
+}
+
+func (s *interactiveSession) requireSessionStore() error {
+	if s.store == nil {
+		return fmt.Errorf("app: interactive Session store is required")
+	}
+	return nil
+}
+
+func (s *interactiveSession) slashSession(
+	_ context.Context,
+	request interaction.CommandRequest,
+) (string, error) {
+	if err := s.requireSessionStore(); err != nil {
+		return "", err
+	}
+	if err := requireNoSlashCommandArguments(request); err != nil {
+		return "", err
+	}
+	return s.sessionInformation()
+}
+
+func (s *interactiveSession) slashTree(
+	_ context.Context,
+	request interaction.CommandRequest,
+) (string, error) {
+	if err := s.requireSessionStore(); err != nil {
+		return "", err
+	}
+	if err := requireNoSlashCommandArguments(request); err != nil {
+		return "", err
+	}
+	snapshot, err := s.store.Snapshot()
+	if err != nil {
+		return "", fmt.Errorf("app: read Session tree: %w", err)
+	}
+	output := new(bytes.Buffer)
+	if err := writeSessionTree(output, snapshot); err != nil {
+		return "", err
+	}
+	return output.String(), nil
+}
+
+func (s *interactiveSession) slashCheckout(
+	ctx context.Context,
+	request interaction.CommandRequest,
+) (string, error) {
+	if err := s.requireSessionStore(); err != nil {
+		return "", err
+	}
+	entry, err := slashCommandEntry(request)
+	if err != nil {
+		return "", err
+	}
+	output := new(bytes.Buffer)
+	changed, err := checkoutSessionStore(ctx, s.store, entry, output)
+	if err != nil {
+		return "", err
+	}
+	if err := s.reloadHistory(); err != nil {
+		return "", err
+	}
+	if changed {
+		s.stateMu.Lock()
+		s.sessionChanged = true
+		s.stateMu.Unlock()
+	}
+	return output.String(), nil
+}
+
+func (s *interactiveSession) slashCompact(
+	ctx context.Context,
+	request interaction.CommandRequest,
+) (string, error) {
+	if err := s.requireSessionStore(); err != nil {
+		return "", err
+	}
+	if err := requireNoSlashCommandArguments(request); err != nil {
+		return "", err
+	}
+	if s.application == nil {
+		return "", fmt.Errorf("app: application is required")
+	}
+	output, err := s.application.compactSession(ctx, s.store)
+	if err != nil {
+		return "", err
+	}
+	if err := s.reloadHistory(); err != nil {
+		return "", err
+	}
+	return output, nil
+}
+
+func (s *interactiveSession) slashInit(
+	ctx context.Context,
+	request interaction.CommandRequest,
+) (string, error) {
+	if err := requireNoSlashCommandArguments(request); err != nil {
+		return "", err
+	}
+	return s.runInitCommand(ctx)
+}
+
+func (s *interactiveSession) slashSettings(
+	_ context.Context,
+	request interaction.CommandRequest,
+) (string, error) {
+	if err := requireNoSlashCommandArguments(request); err != nil {
+		return "", err
+	}
+	return s.settingsInformation(), nil
+}
+
+func (s *interactiveSession) slashTrust(
+	_ context.Context,
+	request interaction.CommandRequest,
+) (string, error) {
+	if s.trustStore == nil {
+		return "", fmt.Errorf("app: trust store is required")
+	}
+	choice, err := slashCommandTrustChoice(
+		request,
+		trust.Choices(s.workspacePath),
+	)
+	if err != nil {
+		return "", err
+	}
+	if len(choice.Updates) > 0 {
+		if err := s.trustStore.SetMany(choice.Updates); err != nil {
+			return "", fmt.Errorf("app: save project trust: %w", err)
+		}
+		return trustResultMessage(choice, true), nil
+	}
+	return trustResultMessage(choice, false), nil
+}
+
+func (s *interactiveSession) slashLogin(
+	_ context.Context,
+	request interaction.CommandRequest,
+) (string, error) {
+	return s.login(request)
+}
+
+func (s *interactiveSession) slashProvider(
+	_ context.Context,
+	request interaction.CommandRequest,
+) (string, error) {
+	value, err := slashCommandSettingValue(request)
+	if err != nil {
+		return "", err
+	}
+	if !supportedProvider(s.providers, value) {
+		return "", fmt.Errorf(
+			"app: unsupported provider %q; available: %s",
+			value,
+			strings.Join(knownProviders(s.providers), ", "),
+		)
+	}
+	settings := s.settingsSnapshot()
+	configuration := settings.configuration
+	configuration.Provider = value
+	loop, err := s.rebuildAgentLoop(configuration)
+	if err != nil {
+		return "", err
+	}
+	if err := s.saveSetting(config.SettingProvider, value); err != nil {
+		return "", err
+	}
+	model := providerModel(s.providers, value, configuration.Model)
+	// Persist the model when the stored one does not belong to the new
+	// provider's catalog and was replaced by its default, so a later
+	// restart resolves the same model instead of failing with an
+	// unsupported-model error.
+	if model.ID != configuration.Model {
+		if err := s.saveSetting(config.SettingModel, model.ID); err != nil {
+			return "", err
+		}
+	}
+	configuration.Model = model.ID
+	effective := clampedThinkingForModel(model, configuration.Thinking)
+	// The settings transition is one critical section so a concurrent side
+	// snapshot freezes a mutually consistent provider/model/thinking tuple.
+	s.stateMu.Lock()
+	s.configuration = configuration
+	s.loop = loop
+	s.model = model
+	s.options.Thinking = effective
+	s.stateMu.Unlock()
+	return savedSettingMessage("provider", value), nil
+}
+
+func (s *interactiveSession) slashModel(
+	_ context.Context,
+	request interaction.CommandRequest,
+) (string, error) {
+	value, err := slashCommandSettingValue(request)
+	if err != nil {
+		return "", err
+	}
+	settings := s.settingsSnapshot()
+	providerID := activeProvider(settings.model, settings.configuration)
+	model, exists := modelForProvider(s.providers, providerID, value)
+	if !exists {
+		return "", fmt.Errorf(
+			"app: unsupported model %q; available: %s",
+			value,
+			strings.Join(modelIDsForProvider(s.providers, providerID), ", "),
+		)
+	}
+	effective := clampedThinkingForModel(
+		model,
+		settings.configuration.Thinking,
+	)
+	if err := s.saveSetting(config.SettingModel, value); err != nil {
+		return "", err
+	}
+	// The settings transition is one critical section so a concurrent side
+	// snapshot freezes a mutually consistent model/thinking pair.
+	s.stateMu.Lock()
+	s.configuration.Model = value
+	s.model = model
+	s.options.Thinking = effective
+	s.stateMu.Unlock()
+	return savedSettingMessage("model", value), nil
+}
+
+func (s *interactiveSession) slashThinking(
+	_ context.Context,
+	request interaction.CommandRequest,
+) (string, error) {
+	value, err := slashCommandSettingValue(request)
+	if err != nil {
+		return "", err
+	}
+	level := llm.ThinkingLevel(value)
+	settings := s.settingsSnapshot()
+	_, options, err := resolveModelSettings(s.providers, config.Config{
+		Provider: settings.configuration.Provider,
+		Model:    settings.model.ID,
+		Thinking: level,
+	})
+	if err != nil {
+		return "", err
+	}
+	if err := s.saveSetting(config.SettingThinking, value); err != nil {
+		return "", err
+	}
+	s.stateMu.Lock()
+	s.configuration.Thinking = level
+	s.options.Thinking = options.Thinking
+	s.stateMu.Unlock()
+	return savedSettingMessage("thinking", value), nil
 }
 
 func (s *interactiveSession) RuntimeState() interaction.RuntimeState {
@@ -526,9 +608,15 @@ func (s *interactiveSession) RuntimeState() interaction.RuntimeState {
 	usage := s.usageSnapshot()
 	s.stateMu.Lock()
 	defer s.stateMu.Unlock()
+	thinking, err := displayThinking(s.options.Thinking)
+	if err != nil {
+		// RuntimeState cannot fail the TUI refresh; fall back to the empty
+		// default rather than inventing a third enum.
+		thinking = interaction.DisplayThinkingDefault
+	}
 	state := interaction.RuntimeState{
 		Model:            interaction.DisplayModel{ID: s.model.ID},
-		Thinking:         interaction.DisplayThinking(s.options.Thinking),
+		Thinking:         thinking,
 		APIKeyConfigured: providerConfigured(s.providers, s.configuration),
 		Usage:            usage,
 		SessionChanged:   s.sessionChanged,

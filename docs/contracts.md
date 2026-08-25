@@ -25,7 +25,11 @@
 ## Agent Loop
 
 - The loop owns model calls, validated sequential tool execution, paired tool
-  results, continuation, retries, and terminal Agent events.
+  results, continuation, retries, and terminal Agent events. Each inner-loop
+  model round is `agent.ModelRound` (injected user inputs, one assistant
+  response, and that response's tool results). That is not a Session turn:
+  `session.Turn` is the persistence boundary for one completed user
+  interaction.
 - One run has two explicit levels. The inner loop continues through tool calls
   and steering. When it would otherwise stop naturally, the outer loop polls
   one follow-up; if present, it starts another interaction inside the same run.
@@ -36,10 +40,13 @@
   event-sink failure.
 - Before each tool execution the loop consults the consumer-defined `Guard`
   interface (`internal/agent` defines it, `internal/guard` implements it,
-  `internal/app` wires it). `deny` blocks with a paired error result, `ask`
-  delegates to the interactive `GuardAskHandler` (non-interactive treats `ask`
-  as `deny` — fail-closed); `allow` proceeds. Session-scoped `Allow once` /
-  `Allow always` grants are memory-only.
+  `internal/app` wires it). `NewLoop` requires a non-nil `Guard` when the
+  tool set is non-empty. `deny` blocks with a paired error result, `ask`
+  delegates to the interactive `GuardAskHandler` (non-interactive treats
+  `ask` as `deny` — fail-closed); `allow` proceeds. Product behavior of the
+  gate, including `Allow once` / `Allow always` (current run, memory-only),
+  is in [Tool execution and
+  Sessions](execution-sessions.md#tool-execution-boundary).
 - Never execute an incomplete or invalid streamed tool call. If a response
   stops for length with tool calls, execute none of them and return paired
   error results so the model can retry safely.
@@ -59,9 +66,50 @@
   interaction boundary, the application compacts the active Session and gives
   the loop the rebuilt provider-neutral history. Tool and steering
   continuations may settle the current interaction past that threshold, but a
-  new interaction must not begin there.
+  new interaction must not begin there. Product behavior of compaction is in
+  [Recovery and compaction](execution-sessions.md#recovery-and-compaction).
 - Tests use faux providers and fake tools. Default tests never require paid
   APIs or real credentials.
+
+## Event enumerations
+
+### `agent.EventType`
+
+Closed string set in `internal/agent`:
+
+| Constant | Value |
+| --- | --- |
+| `EventTypeUnknown` | `""` |
+| `EventTypeAgentStart` | `agent_start` |
+| `EventTypeAgentEnd` | `agent_end` |
+| `EventTypeInteractionEnd` | `interaction_end` |
+| `EventTypeTurnStart` | `turn_start` |
+| `EventTypeTurnEnd` | `turn_end` |
+| `EventTypeMessageStart` | `message_start` |
+| `EventTypeMessageUpdate` | `message_update` |
+| `EventTypeMessageEnd` | `message_end` |
+| `EventTypeToolExecutionStart` | `tool_execution_start` |
+| `EventTypeToolExecutionEnd` | `tool_execution_end` |
+| `EventTypeRetryStart` | `retry_start` |
+| `EventTypeRetryEnd` | `retry_end` |
+
+### `interaction.EventKind`
+
+Closed `uint8` iota set in `internal/interaction` (not JSON strings):
+
+| Constant | Value |
+| --- | --- |
+| `EventUnknown` | 0 |
+| `EventAssistantStart` | 1 |
+| `EventAssistantDelta` | 2 |
+| `EventAssistantEnd` | 3 |
+| `EventToolStart` | 4 |
+| `EventToolEnd` | 5 |
+| `EventSteer` | 6 |
+| `EventFollowUp` | 7 |
+| `EventRetryStart` | 8 |
+| `EventRetryEnd` | 9 |
+| `EventAgentEnd` | 10 |
 
 ## Concurrency and TUI
 
@@ -72,11 +120,8 @@
   and buffers stay bounded.
 - Each `/btw` side thread owns a separate Runner, event stream, cancellation
   path, frozen parent-context snapshot, and bounded private history. An
-  application-owned in-memory registry is authoritative for stable IDs,
-  lifecycle, a five-thread limit, two concurrent side answers, a 20-minute
-  follow-up window, and deletion after 120 minutes of inactivity. Running
-  answers cross those thresholds and restart the idle clock when they
-  terminate.
+  application-owned in-memory registry is authoritative. Limits, idle
+  windows, and TUI controls are in [Configuration](configuration.md#btw).
 - The TUI owns one side-controller goroutine that starts independently
   cancellable per-thread runs and waits for all of them on shutdown. It keeps
   only presentation copies, routes batches by their source channel, and never

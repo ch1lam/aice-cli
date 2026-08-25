@@ -22,12 +22,17 @@ Example global settings:
 }
 ```
 
+When `settings.json` omits `provider` and `model`, AICE uses `deepseek` and
+`deepseek-v4-flash`. The `opencode-go` catalog default is also
+`deepseek-v4-flash`.
+
 | Setting | Environment variable | Supported values |
 | --- | --- | --- |
 | Provider | `AICE_PROVIDER` | `deepseek`, `opencode-go`, `openai`, `custom` |
 | Model | `AICE_MODEL` | A model in the selected provider's catalog |
 | Thinking | `AICE_THINKING` | `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` |
 | Default Project Trust | none | `ask`, `always`, `never` |
+| Custom base URL | `AICE_CUSTOM_BASE_URL` | OpenAI-compatible endpoint persisted as `custom_base_url`; default `http://localhost:11434/v1` |
 
 ### Thinking levels
 
@@ -139,6 +144,13 @@ that provider) to the global settings file, so the login survives a restart.
 provider. Missing credentials do not prevent the TUI from starting, but a
 normal prompt asks the user to log in first.
 
+Selecting `custom` starts a three-step hidden-input sequence: endpoint URL,
+then API key, then model. Enter with an empty endpoint keeps
+`http://localhost:11434/v1` (`custom.DefaultBaseURL`). The API key may be
+empty (Ollama and similar local servers). Enter with an empty model keeps the
+already stored model, or `llama3.1:8b` (`custom.DefaultModel`) when none is
+stored. The endpoint is persisted as `custom_base_url` in `settings.json`.
+
 For non-interactive setup, send the key on standard input so it does not appear
 in command-line arguments:
 
@@ -164,7 +176,8 @@ aice [--print <prompt>] [flags]
 
 `--print` requires exactly one prompt argument. Without `--session` it does
 not persist the run. Session navigation and compaction commands are documented
-in [Tool execution and Sessions](execution-sessions.md#sessions).
+in [Tool execution and Sessions](execution-sessions.md#sessions). `aice
+update` is documented in [Installation and updates](installation.md).
 
 ## Interactive commands
 
@@ -174,7 +187,7 @@ in [Tool execution and Sessions](execution-sessions.md#sessions).
 | `/btw [question]` | Create or choose an ephemeral, tool-free side thread |
 | `/init` | Create or improve root `AGENTS.md`; loaded after restart |
 | `/settings` | Show effective model, Trust state, and configuration paths |
-| `/login` | Select a provider and store its key through hidden input |
+| `/login` | Select a provider and store its key through hidden input; `custom` uses endpoint → key (may be empty) → model |
 | `/provider` | Select and save the global provider |
 | `/model` | Select and save a model from that provider |
 | `/thinking` | Select and save a supported reasoning level |
@@ -188,7 +201,12 @@ in [Tool execution and Sessions](execution-sessions.md#sessions).
 
 Menu commands do not accept typed values; select an option from the menu.
 Provider, model, and thinking changes apply to the current Session immediately
-and are also saved globally. Press `?` for keyboard shortcuts.
+and are also saved globally. Press `?` for keyboard shortcuts. Session
+navigation and compaction commands (`/session`, `/tree`, `/checkout`,
+`/compact`) are detailed in [Tool execution and
+Sessions](execution-sessions.md#resume-and-navigate).
+
+### /btw
 
 `/btw [question]` always creates a new side thread from a frozen snapshot of
 the context AICE has already accepted. A bare `/btw` opens a chooser whose

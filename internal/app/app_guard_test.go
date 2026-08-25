@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"os"
 	"path/filepath"
@@ -10,6 +11,8 @@ import (
 
 	"github.com/ch1lam/aice-cli/internal/agent"
 	"github.com/ch1lam/aice-cli/internal/config"
+	"github.com/ch1lam/aice-cli/internal/guard"
+	"github.com/ch1lam/aice-cli/internal/interaction"
 	"github.com/ch1lam/aice-cli/internal/llm"
 	"github.com/ch1lam/aice-cli/internal/tui"
 )
@@ -90,4 +93,81 @@ func TestApplicationInteractiveFirstLoginKeepsWorkspaceGuard(t *testing.T) {
 			t.Fatalf(".env contents reached model context: %q", part.Text)
 		}
 	}
+}
+
+func TestHandleGuardAskAllowAlwaysGrantsPathNotParent(t *testing.T) {
+	t.Parallel()
+
+	workspace := t.TempDir()
+	outsideDir := t.TempDir()
+	granted := filepath.Join(outsideDir, "granted.txt")
+	sibling := filepath.Join(outsideDir, "sibling.txt")
+
+	gate, err := guard.New(workspace, guard.Config{})
+	if err != nil {
+		t.Fatalf("guard.New() error = %v", err)
+	}
+
+	session := &interactiveSession{
+		guard:         gate,
+		guardRequests: make(chan interaction.GuardRequest, 1),
+	}
+	go func() {
+		request := <-session.guardRequests
+		request.Reply <- interaction.GuardDecisionAllowAlways
+	}()
+
+	call := llm.ToolCall{
+		ID:        "call-1",
+		Name:      "read",
+		Arguments: mustFilePathArgs(t, granted),
+	}
+	decision, err := session.handleGuardAsk(t.Context(), call, agent.GuardResult{
+		Decision: agent.GuardAsk,
+		RuleID:   "pathAccess.ask",
+		Action: agent.GuardAction{
+			Kind:     "file",
+			Path:     granted,
+			ToolName: "read",
+		},
+	})
+	if err != nil {
+		t.Fatalf("handleGuardAsk() error = %v", err)
+	}
+	if decision != agent.GuardAllow {
+		t.Fatalf("handleGuardAsk() decision = %q, want allow", decision)
+	}
+
+	grantedResult, err := gate.Check(t.Context(), llm.ToolCall{
+		ID:        "call-2",
+		Name:      "read",
+		Arguments: mustFilePathArgs(t, granted),
+	})
+	if err != nil {
+		t.Fatalf("Check(granted) error = %v", err)
+	}
+	if grantedResult.Decision != guard.DecisionAllow {
+		t.Fatalf("granted path decision = %q, want allow", grantedResult.Decision)
+	}
+
+	siblingResult, err := gate.Check(t.Context(), llm.ToolCall{
+		ID:        "call-3",
+		Name:      "read",
+		Arguments: mustFilePathArgs(t, sibling),
+	})
+	if err != nil {
+		t.Fatalf("Check(sibling) error = %v", err)
+	}
+	if siblingResult.Decision != guard.DecisionAsk {
+		t.Fatalf("sibling path decision = %q, want ask", siblingResult.Decision)
+	}
+}
+
+func mustFilePathArgs(t *testing.T, path string) json.RawMessage {
+	t.Helper()
+	payload, err := json.Marshal(map[string]string{"file_path": path})
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+	return payload
 }

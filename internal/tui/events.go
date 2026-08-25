@@ -387,21 +387,6 @@ func (m *model) finishRun(err error) tea.Cmd {
 	return focus
 }
 
-func (m *model) appendRunError(err error) {
-	if err == nil {
-		return
-	}
-	m.revokeConclusion()
-	message := err.Error()
-	kind := entryError
-	if errors.Is(err, context.Canceled) {
-		message = "Response cancelled"
-		kind = entryNotice
-	}
-	m.entries = append(m.entries, transcriptEntry{kind: kind, text: message})
-	m.status = message
-}
-
 type runStartedMsg struct {
 	updates <-chan runUpdate
 }

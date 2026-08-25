@@ -13,7 +13,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/ch1lam/aice-cli/internal/agent"
 	"github.com/ch1lam/aice-cli/internal/api/openaicompletions"
 	"github.com/ch1lam/aice-cli/internal/config"
 	"github.com/ch1lam/aice-cli/internal/llm"
@@ -24,7 +23,8 @@ const (
 	// ProviderID is the identifier used in AICE configuration.
 	ProviderID llm.ProviderID = "custom"
 	// DefaultBaseURL is Ollama's default OpenAI-compatible endpoint. It is
-	// used when no custom base URL is configured so `aice --provider custom`
+	// used when no custom base URL is configured so selecting the custom
+	// provider via AICE_PROVIDER, settings.json, or TUI /provider and /login
 	// works out of the box for local Ollama.
 	DefaultBaseURL = "http://localhost:11434/v1"
 )
@@ -102,8 +102,8 @@ func ModelForID(id string) llm.Model {
 
 // Models returns the catalog. The generic provider has no compiled catalog
 // by design: it materializes any ID on the fly. A small set of well-known
-// local tags is returned for menu display, but any `--model` value is
-// accepted via ModelForID.
+// local tags is returned for menu display, but any model ID from AICE_MODEL,
+// settings.json, or TUI /model is accepted via ModelForID.
 func Models() []llm.Model {
 	return []llm.Model{
 		ModelForID("llama3.1:8b"),
@@ -180,7 +180,7 @@ func (p *Provider) Configured(_ config.Config) bool {
 }
 
 // New constructs the credentialed model service from global configuration.
-func (p *Provider) New(configuration config.Config) (agent.Model, error) {
+func (p *Provider) New(configuration config.Config) (llm.Streamer, error) {
 	return New(Config{
 		APIKey:  configuration.CustomAPIKey,
 		BaseURL: configuration.CustomBaseURL,

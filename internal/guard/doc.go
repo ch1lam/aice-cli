@@ -4,12 +4,14 @@
 // inline before every tool execution, as an intrinsic agent capability.
 //
 // Design principles:
-//   - Pure core: Rule.Check is a pure function (no I/O) except for existence
-//     probes which are injected and used only when onlyIfExists is set.
-//   - Two matching semantics: files use glob (with "/"-aware full-path vs
-//     basename), commands use substring; both support regex opt-in.
+//   - Policy matching is pure except for existence probes, which are injected
+//     and used only when onlyIfExists is set.
+//   - Files match with glob (with "/"-aware full-path vs basename) or optional
+//     regex. Bash permission checks use structural AST matching; custom
+//     patterns are substring or regex.
 //   - Single interception point: agent.Loop checks via the Guard interface
 //     defined by the consumer (agent), never by the guard importing agent.
-//   - Session grants are memory-only for now; persistent grants will reuse
-//     config.Settings once GuardConfig is merged there.
+//   - Session grants (Allow always) are current-run and memory-only. Persistent
+//     grants are a planned extension; see docs/architecture.md Planned
+//     extensions and restraint.
 package guard

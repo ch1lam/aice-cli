@@ -10,8 +10,8 @@ import (
 	"github.com/ch1lam/aice-cli/internal/llm"
 )
 
-// Loop runs provider-neutral model and tool turns. It is safe to reuse as long
-// as the supplied Model and Tools are safe for concurrent use.
+// Loop runs provider-neutral model rounds and tool execution. It is safe to
+// reuse as long as the supplied Model and Tools are safe for concurrent use.
 type Loop struct {
 	model       Model
 	tools       map[string]Tool
@@ -28,7 +28,8 @@ type Loop struct {
 type GuardAskHandler func(ctx context.Context, call llm.ToolCall, result GuardResult) (GuardDecision, error)
 
 // WithGuard installs an execution gate consulted before each tool call.
-// It is the intrinsic guard (internal/guard), not a plugin.
+// It is the intrinsic guard (internal/guard), not a plugin. A non-nil
+// Guard is required when the loop has tools.
 func WithGuard(g Guard) LoopOption {
 	return func(l *Loop) error {
 		l.guard = g
@@ -37,7 +38,8 @@ func WithGuard(g Guard) LoopOption {
 }
 
 // WithGuardAskHandler installs the interactive Ask resolver. It is called
-// synchronously inside ExecuteTool when Guard returns Ask.
+// synchronously inside ExecuteTool when Guard returns Ask. A nil handler
+// fails closed by denying.
 func WithGuardAskHandler(h GuardAskHandler) LoopOption {
 	return func(l *Loop) error {
 		l.guardAsk = h
@@ -45,15 +47,9 @@ func WithGuardAskHandler(h GuardAskHandler) LoopOption {
 	}
 }
 
-// SetGuardAskHandler updates the Ask resolver after construction. It is used
-// by the interactive session to wire the TUI prompt after the loop is built.
-func (l *Loop) SetGuardAskHandler(h GuardAskHandler) {
-	if l != nil {
-		l.guardAsk = h
-	}
-}
-
 // NewLoop constructs an agent loop from immutable dependencies.
+// A non-empty tool set requires a non-nil Guard via WithGuard. An empty
+// tool set does not, so compaction can run without tools or a gate.
 func NewLoop(model Model, tools []Tool, options ...LoopOption) (*Loop, error) {
 	if model == nil {
 		return nil, fmt.Errorf("agent: model is required")
@@ -95,6 +91,9 @@ func NewLoop(model Model, tools []Tool, options ...LoopOption) (*Loop, error) {
 		if err := option(loop); err != nil {
 			return nil, fmt.Errorf("agent: loop option %d: %w", index, err)
 		}
+	}
+	if len(tools) > 0 && loop.guard == nil {
+		return nil, fmt.Errorf("agent: tools require a guard")
 	}
 	return loop, nil
 }
@@ -171,200 +170,263 @@ func (e *runExecution) run(ctx context.Context) (Result, error) {
 	}
 
 	for {
-		retryAttempt := 0
-		for {
-			outcome, streamErr := e.streamAssistant(ctx, turnNumber)
-			if isEventSinkError(streamErr) {
-				return e.result, streamErr
-			}
-			if !outcome.complete {
-				if streamErr == nil {
-					streamErr = fmt.Errorf("%w: assistant turn did not complete", ErrProtocol)
-				}
-				retry := e.retryTurn(
-					ctx,
-					retryAttempt,
-					turnNumber,
-					streamErr,
-					func() error {
-						return e.recordIncompleteAttempt(
-							ctx,
-							turnNumber,
-							outcome.started,
-							streamErr,
-						)
-					},
-				)
-				if retry.waitErr != nil {
-					return e.finishRun(ctx, retry.waitErr)
-				}
-				if retry.stopErr != nil {
-					return e.result, retry.stopErr
-				}
-				if !retry.retry {
-					return e.finishIncompleteTurn(ctx, turnNumber, streamErr)
-				}
-				retryAttempt, turnNumber = retry.nextAttempt, retry.nextTurn
-				continue
-			}
-
-			turn := Turn{
-				Number:      turnNumber,
-				Inputs:      e.takePendingInputs(),
-				Assistant:   outcome.message,
-				ToolResults: []llm.ToolResultMessage{},
-			}
-			modelErr := errors.Join(outcome.terminalErr, streamErr)
-			runErr := modelErr
-			if modelErr != nil {
-				calls, err := extractToolCalls(outcome.message)
-				if err != nil {
-					runErr = errors.Join(modelErr, err)
-				} else if len(calls) > 0 {
-					turn.ToolResults, err = e.syntheticToolResults(
-						ctx,
-						turnNumber,
-						calls,
-						"model request failed before tool execution",
-						false,
-					)
-					if isEventSinkError(err) {
-						e.result.Turns = append(e.result.Turns, turn)
-						return e.result, err
-					}
-					runErr = errors.Join(runErr, err)
-				}
-			} else {
-				e.history = append(e.history, outcome.message)
-				if retryAttempt > 0 {
-					if err := e.emitRetryEnd(ctx, retryAttempt, true, nil); err != nil {
-						return e.result, err
-					}
-				}
-				calls, err := extractToolCalls(outcome.message)
-				if err != nil {
-					runErr = err
-				} else if len(calls) > 0 {
-					var toolErr error
-					if outcome.message.StopReason == llm.StopReasonLength {
-						turn.ToolResults, toolErr = e.failTruncatedToolCalls(
-							ctx,
-							turnNumber,
-							calls,
-						)
-					} else {
-						turn.ToolResults, toolErr = e.executeTools(ctx, turnNumber, calls)
-					}
-					if isEventSinkError(toolErr) {
-						e.result.Turns = append(e.result.Turns, turn)
-						return e.result, toolErr
-					}
-					runErr = toolErr
-				}
-			}
-
-			e.result.Turns = append(e.result.Turns, turn)
-			completedTurn := e.result.Turns[len(e.result.Turns)-1]
-			if err := e.emit(ctx, AgentEvent{
-				Type:        EventTypeTurnEnd,
-				TurnNumber:  turnNumber,
-				Message:     completedTurn.Assistant,
-				ToolResults: slices.Clone(completedTurn.ToolResults),
-				Err:         runErr,
-			}); err != nil {
-				return e.result, errors.Join(runErr, err)
-			}
-			if modelErr != nil {
-				retry := e.retryTurn(
-					ctx,
-					retryAttempt,
-					turnNumber,
-					runErr,
-					nil,
-				)
-				if retry.waitErr != nil {
-					return e.finishRun(ctx, retry.waitErr)
-				}
-				if retry.stopErr != nil {
-					return e.result, retry.stopErr
-				}
-				if !retry.retry {
-					return e.finishRun(ctx, runErr)
-				}
-				retryAttempt, turnNumber = retry.nextAttempt, retry.nextTurn
-				continue
-			}
-			if runErr != nil {
-				return e.finishRun(ctx, runErr)
-			}
-
-			steering, steers, steeringErr := e.nextInput(
-				e.input.Steering,
-				"steering",
-			)
-			if steeringErr != nil {
-				return e.finishRun(ctx, steeringErr)
-			}
-			if steers {
-				turnNumber++
-				retryAttempt = 0
-				e.history = append(e.history, steering.Message)
-				e.pendingInputs = append(e.pendingInputs, steering.Message)
-				if err := e.startInputTurn(
-					ctx,
-					turnNumber,
-					steering,
-					InputKindSteering,
-				); err != nil {
-					return e.result, err
-				}
-				continue
-			}
-			if len(turn.ToolResults) == 0 {
-				break
-			}
-
-			retryAttempt = 0
-			turnNumber++
-			if err := e.emit(ctx, AgentEvent{
-				Type:       EventTypeTurnStart,
-				TurnNumber: turnNumber,
-			}); err != nil {
-				return e.result, err
-			}
+		result, err, settled := e.runInteraction(ctx, &turnNumber)
+		if !settled {
+			return result, err
 		}
-
 		if err := e.finishInteraction(ctx); err != nil {
 			return e.result, err
 		}
-		followUp, followsUp, followUpErr := e.nextInput(
-			e.input.FollowUp,
-			"follow-up",
-		)
-		if followUpErr != nil {
-			return e.finishRun(ctx, followUpErr)
-		}
-		if !followsUp {
-			return e.finishRun(ctx, nil)
-		}
-
-		// Keep the follow-up pending before compaction so a failed compaction
-		// still produces a durable terminal interaction for the accepted input.
-		e.pendingInputs = append(e.pendingInputs, followUp.Message)
-		if err := e.prepareInputContext(ctx, followUp.Message); err != nil {
-			return e.finishRun(ctx, err)
-		}
-
-		turnNumber++
-		if err := e.startInputTurn(
-			ctx,
-			turnNumber,
-			followUp,
-			InputKindFollowUp,
-		); err != nil {
-			return e.result, err
+		result, err, follows := e.pollFollowUp(ctx, &turnNumber)
+		if !follows {
+			return result, err
 		}
 	}
+}
+
+func (e *runExecution) runInteraction(
+	ctx context.Context,
+	turnNumber *int,
+) (Result, error, bool) {
+	retryAttempt := 0
+	for {
+		outcome, streamErr := e.streamAssistant(ctx, *turnNumber)
+		if isEventSinkError(streamErr) {
+			return e.result, streamErr, false
+		}
+		if !outcome.complete {
+			if streamErr == nil {
+				streamErr = fmt.Errorf("%w: assistant turn did not complete", ErrProtocol)
+			}
+			currentTurn := *turnNumber
+			retry := e.retryTurn(
+				ctx,
+				retryAttempt,
+				currentTurn,
+				streamErr,
+				func() error {
+					return e.recordIncompleteAttempt(
+						ctx,
+						currentTurn,
+						outcome.started,
+						streamErr,
+					)
+				},
+			)
+			if retry.waitErr != nil {
+				result, err := e.finishRun(ctx, retry.waitErr)
+				return result, err, false
+			}
+			if retry.stopErr != nil {
+				return e.result, retry.stopErr, false
+			}
+			if !retry.retry {
+				result, err := e.finishIncompleteTurn(ctx, currentTurn, streamErr)
+				return result, err, false
+			}
+			retryAttempt, *turnNumber = retry.nextAttempt, retry.nextTurn
+			continue
+		}
+
+		result, err, next := e.settleToolsAndSteering(
+			ctx,
+			turnNumber,
+			&retryAttempt,
+			outcome,
+			streamErr,
+		)
+		switch next {
+		case settleStop:
+			return result, err, false
+		case settleContinue:
+			continue
+		case settleDone:
+			return e.result, nil, true
+		}
+	}
+}
+
+type settleNext int
+
+const (
+	settleStop settleNext = iota
+	settleContinue
+	settleDone
+)
+
+func (e *runExecution) settleToolsAndSteering(
+	ctx context.Context,
+	turnNumber *int,
+	retryAttempt *int,
+	outcome assistantOutcome,
+	streamErr error,
+) (Result, error, settleNext) {
+	turn := ModelRound{
+		Number:      *turnNumber,
+		Inputs:      e.takePendingInputs(),
+		Assistant:   outcome.message,
+		ToolResults: []llm.ToolResultMessage{},
+	}
+	modelErr := errors.Join(outcome.terminalErr, streamErr)
+	runErr := modelErr
+	if modelErr != nil {
+		calls, err := extractToolCalls(outcome.message)
+		if err != nil {
+			runErr = errors.Join(modelErr, err)
+		} else if len(calls) > 0 {
+			turn.ToolResults, err = e.syntheticToolResults(
+				ctx,
+				*turnNumber,
+				calls,
+				"model request failed before tool execution",
+				false,
+			)
+			if isEventSinkError(err) {
+				e.result.ModelRounds = append(e.result.ModelRounds, turn)
+				return e.result, err, settleStop
+			}
+			runErr = errors.Join(runErr, err)
+		}
+	} else {
+		e.history = append(e.history, outcome.message)
+		if *retryAttempt > 0 {
+			if err := e.emitRetryEnd(ctx, *retryAttempt, true, nil); err != nil {
+				return e.result, err, settleStop
+			}
+		}
+		calls, err := extractToolCalls(outcome.message)
+		if err != nil {
+			runErr = err
+		} else if len(calls) > 0 {
+			var toolErr error
+			if outcome.message.StopReason == llm.StopReasonLength {
+				turn.ToolResults, toolErr = e.failTruncatedToolCalls(
+					ctx,
+					*turnNumber,
+					calls,
+				)
+			} else {
+				turn.ToolResults, toolErr = e.executeTools(ctx, *turnNumber, calls)
+			}
+			if isEventSinkError(toolErr) {
+				e.result.ModelRounds = append(e.result.ModelRounds, turn)
+				return e.result, toolErr, settleStop
+			}
+			runErr = toolErr
+		}
+	}
+
+	e.result.ModelRounds = append(e.result.ModelRounds, turn)
+	completedTurn := e.result.ModelRounds[len(e.result.ModelRounds)-1]
+	if err := e.emit(ctx, AgentEvent{
+		Type:        EventTypeTurnEnd,
+		TurnNumber:  *turnNumber,
+		Message:     completedTurn.Assistant,
+		ToolResults: slices.Clone(completedTurn.ToolResults),
+		Err:         runErr,
+	}); err != nil {
+		return e.result, errors.Join(runErr, err), settleStop
+	}
+	if modelErr != nil {
+		retry := e.retryTurn(
+			ctx,
+			*retryAttempt,
+			*turnNumber,
+			runErr,
+			nil,
+		)
+		if retry.waitErr != nil {
+			result, err := e.finishRun(ctx, retry.waitErr)
+			return result, err, settleStop
+		}
+		if retry.stopErr != nil {
+			return e.result, retry.stopErr, settleStop
+		}
+		if !retry.retry {
+			result, err := e.finishRun(ctx, runErr)
+			return result, err, settleStop
+		}
+		*retryAttempt, *turnNumber = retry.nextAttempt, retry.nextTurn
+		return e.result, nil, settleContinue
+	}
+	if runErr != nil {
+		result, err := e.finishRun(ctx, runErr)
+		return result, err, settleStop
+	}
+
+	steering, steers, steeringErr := e.nextInput(
+		e.input.Steering,
+		"steering",
+	)
+	if steeringErr != nil {
+		result, err := e.finishRun(ctx, steeringErr)
+		return result, err, settleStop
+	}
+	if steers {
+		(*turnNumber)++
+		*retryAttempt = 0
+		e.history = append(e.history, steering.Message)
+		e.pendingInputs = append(e.pendingInputs, steering.Message)
+		if err := e.startInputTurn(
+			ctx,
+			*turnNumber,
+			steering,
+			InputKindSteering,
+		); err != nil {
+			return e.result, err, settleStop
+		}
+		return e.result, nil, settleContinue
+	}
+	if len(turn.ToolResults) == 0 {
+		return e.result, nil, settleDone
+	}
+
+	*retryAttempt = 0
+	(*turnNumber)++
+	if err := e.emit(ctx, AgentEvent{
+		Type:       EventTypeTurnStart,
+		TurnNumber: *turnNumber,
+	}); err != nil {
+		return e.result, err, settleStop
+	}
+	return e.result, nil, settleContinue
+}
+
+func (e *runExecution) pollFollowUp(
+	ctx context.Context,
+	turnNumber *int,
+) (Result, error, bool) {
+	followUp, followsUp, followUpErr := e.nextInput(
+		e.input.FollowUp,
+		"follow-up",
+	)
+	if followUpErr != nil {
+		result, err := e.finishRun(ctx, followUpErr)
+		return result, err, false
+	}
+	if !followsUp {
+		result, err := e.finishRun(ctx, nil)
+		return result, err, false
+	}
+
+	// Keep the follow-up pending before compaction so a failed compaction
+	// still produces a durable terminal interaction for the accepted input.
+	e.pendingInputs = append(e.pendingInputs, followUp.Message)
+	if err := e.prepareInputContext(ctx, followUp.Message); err != nil {
+		result, err := e.finishRun(ctx, err)
+		return result, err, false
+	}
+
+	(*turnNumber)++
+	if err := e.startInputTurn(
+		ctx,
+		*turnNumber,
+		followUp,
+		InputKindFollowUp,
+	); err != nil {
+		return e.result, err, false
+	}
+	return e.result, nil, true
 }
 
 func (e *runExecution) prepareInputContext(

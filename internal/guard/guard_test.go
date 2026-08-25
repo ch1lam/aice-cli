@@ -3,7 +3,9 @@ package guard
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/ch1lam/aice-cli/internal/llm"
@@ -24,7 +26,7 @@ func TestGuard_AllowNonSecretFiles(t *testing.T) {
 	}
 	cases := []string{"README.md", "src/main.go", ".envrc", "config.yaml"}
 	for _, p := range cases {
-		res, err := g.Check(context.Background(), toolCall("read", map[string]any{"file_path": p}))
+		res, err := g.Check(context.Background(), toolCall("read", map[string]any{"path": p}))
 		if err != nil {
 			t.Fatalf("Check(%q): %v", p, err)
 		}
@@ -38,7 +40,7 @@ func TestGuard_DenySecretFiles(t *testing.T) {
 	g, _ := NewWithExists(t.TempDir(), Config{}, alwaysExists)
 	secrets := []string{".env", ".env.local", ".env.production", ".env.prod", ".dev.vars", "a/b/.env", "src/.env"}
 	for _, p := range secrets {
-		res, _ := g.Check(context.Background(), toolCall("read", map[string]any{"file_path": p}))
+		res, _ := g.Check(context.Background(), toolCall("read", map[string]any{"path": p}))
 		if res.Decision != DecisionDeny {
 			t.Fatalf("Check(%q) = %v, want deny (rule %q)", p, res.Decision, res.RuleID)
 		}
@@ -52,7 +54,7 @@ func TestGuard_AllowedPatternsBypass(t *testing.T) {
 	g, _ := NewWithExists(t.TempDir(), Config{}, alwaysExists)
 	allowed := []string{".env.example", "foo.example.env", "bar.sample.env", ".env.test"}
 	for _, p := range allowed {
-		res, _ := g.Check(context.Background(), toolCall("read", map[string]any{"file_path": p}))
+		res, _ := g.Check(context.Background(), toolCall("read", map[string]any{"path": p}))
 		if res.Decision != DecisionAllow {
 			t.Fatalf("Check(%q) = %v, want allow (allowed pattern)", p, res.Decision)
 		}
@@ -61,7 +63,7 @@ func TestGuard_AllowedPatternsBypass(t *testing.T) {
 
 func TestGuard_OnlyIfExists_SkipsNonExistent(t *testing.T) {
 	g, _ := NewWithExists(t.TempDir(), Config{}, neverExists)
-	res, _ := g.Check(context.Background(), toolCall("read", map[string]any{"file_path": ".env"}))
+	res, _ := g.Check(context.Background(), toolCall("read", map[string]any{"path": ".env"}))
 	if res.Decision != DecisionAllow {
 		t.Fatalf("Check with neverExists: %v, want allow (file does not exist)", res.Decision)
 	}
@@ -70,7 +72,7 @@ func TestGuard_OnlyIfExists_SkipsNonExistent(t *testing.T) {
 func TestGuard_UnresolvedConservativelyDenies(t *testing.T) {
 	g, _ := NewWithExists(t.TempDir(), Config{}, neverExists)
 	// $VAR expansion: cannot prove absence, so deny
-	res, _ := g.Check(context.Background(), toolCall("read", map[string]any{"file_path": "$HOME/.env"}))
+	res, _ := g.Check(context.Background(), toolCall("read", map[string]any{"path": "$HOME/.env"}))
 	if res.Decision != DecisionDeny {
 		t.Fatalf("Check unresolved: %v, want deny", res.Decision)
 	}
@@ -84,16 +86,16 @@ func TestGuard_ReadOnlyDoesNotBlockRead(t *testing.T) {
 	f := false
 	cfg.ApplyBuiltinDefaults = &f
 	g, _ := NewWithExists(t.TempDir(), cfg, alwaysExists)
-	res, _ := g.Check(context.Background(), toolCall("read", map[string]any{"file_path": "LOCKED.md"}))
+	res, _ := g.Check(context.Background(), toolCall("read", map[string]any{"path": "LOCKED.md"}))
 	if res.Decision != DecisionAllow {
 		t.Fatalf("readOnly should allow read: %v", res.Decision)
 	}
-	res, _ = g.Check(context.Background(), toolCall("write", map[string]any{"file_path": "LOCKED.md"}))
+	res, _ = g.Check(context.Background(), toolCall("write", map[string]any{"path": "LOCKED.md"}))
 	if res.Decision != DecisionDeny {
 		t.Fatalf("readOnly should deny write: %v", res.Decision)
 	}
 	res, _ = g.Check(context.Background(), toolCall("edit", map[string]any{"path": "LOCKED.md"}))
-	// edit uses path key -> extractActions handles file_path/path
+	// edit uses the production "path" argument key
 	if res.Decision != DecisionDeny {
 		t.Fatalf("readOnly should deny edit: %v", res.Decision)
 	}
@@ -114,7 +116,7 @@ func TestGuard_BashPathExtraction(t *testing.T) {
 
 func TestGuard_SessionAllow(t *testing.T) {
 	g, _ := NewWithExists(t.TempDir(), Config{}, alwaysExists)
-	call := toolCall("read", map[string]any{"file_path": ".env"})
+	call := toolCall("read", map[string]any{"path": ".env"})
 	res, _ := g.Check(context.Background(), call)
 	if res.Decision != DecisionDeny {
 		t.Fatalf("pre: %v want deny", res.Decision)
@@ -253,13 +255,13 @@ func TestGuard_PathAccess(t *testing.T) {
 	cfg := Config{PathAccess: PathAccessConfig{Mode: &block}}
 	g, _ := NewWithExists(workspace, cfg, alwaysExists)
 	// within workspace: allow
-	res, _ := g.Check(context.Background(), toolCall("read", map[string]any{"file_path": "inside.txt"}))
+	res, _ := g.Check(context.Background(), toolCall("read", map[string]any{"path": "inside.txt"}))
 	if res.Decision != DecisionAllow {
 		t.Fatalf("inside: %v want allow", res.Decision)
 	}
 	// outside workspace absolute: block
 	outside := filepath.Join(t.TempDir(), "aice-guard-outside-file.txt")
-	res, _ = g.Check(context.Background(), toolCall("read", map[string]any{"file_path": outside}))
+	res, _ = g.Check(context.Background(), toolCall("read", map[string]any{"path": outside}))
 	if res.Decision != DecisionDeny {
 		t.Fatalf("outside block: %v want deny", res.Decision)
 	}
@@ -270,7 +272,7 @@ func TestGuard_PathAccess(t *testing.T) {
 	allowMode := PathAccessAsk
 	cfg2 := Config{PathAccess: PathAccessConfig{Mode: &allowMode}}
 	g2, _ := NewWithExists(workspace, cfg2, alwaysExists)
-	res, _ = g2.Check(context.Background(), toolCall("read", map[string]any{"file_path": outside}))
+	res, _ = g2.Check(context.Background(), toolCall("read", map[string]any{"path": outside}))
 	if res.Decision != DecisionAsk || res.RuleID != "pathAccess.ask" {
 		t.Fatalf("outside ask: %v %q want ask", res.Decision, res.RuleID)
 	}
@@ -278,7 +280,7 @@ func TestGuard_PathAccess(t *testing.T) {
 	allow := PathAccessAllow
 	cfg3 := Config{PathAccess: PathAccessConfig{Mode: &allow}}
 	g3, _ := NewWithExists(workspace, cfg3, alwaysExists)
-	res, _ = g3.Check(context.Background(), toolCall("read", map[string]any{"file_path": outside}))
+	res, _ = g3.Check(context.Background(), toolCall("read", map[string]any{"path": outside}))
 	if res.Decision != DecisionAllow {
 		t.Fatalf("allow mode: %v want allow", res.Decision)
 	}
@@ -292,7 +294,7 @@ func TestGuard_PathAccess_AllowedPaths(t *testing.T) {
 	g, _ := NewWithExists(workspace, cfg, alwaysExists)
 	// file inside allowed directory: allow
 	p := filepath.Join(outsideDir, "sub", "file.txt")
-	res, _ := g.Check(context.Background(), toolCall("read", map[string]any{"file_path": p}))
+	res, _ := g.Check(context.Background(), toolCall("read", map[string]any{"path": p}))
 	if res.Decision != DecisionAllow {
 		t.Fatalf("allowed dir: %v want allow", res.Decision)
 	}
@@ -300,11 +302,11 @@ func TestGuard_PathAccess_AllowedPaths(t *testing.T) {
 	outsideFile := filepath.Join(t.TempDir(), "aice-guard-allowed-exact.txt")
 	cfg2 := Config{PathAccess: PathAccessConfig{Mode: &block, AllowedPaths: []AllowedPath{{Kind: "file", Path: outsideFile}}}}
 	g2, _ := NewWithExists(workspace, cfg2, alwaysExists)
-	res, _ = g2.Check(context.Background(), toolCall("read", map[string]any{"file_path": outsideFile}))
+	res, _ = g2.Check(context.Background(), toolCall("read", map[string]any{"path": outsideFile}))
 	if res.Decision != DecisionAllow {
 		t.Fatalf("allowed file exact: %v", res.Decision)
 	}
-	res, _ = g2.Check(context.Background(), toolCall("read", map[string]any{"file_path": outsideFile + ".other"}))
+	res, _ = g2.Check(context.Background(), toolCall("read", map[string]any{"path": outsideFile + ".other"}))
 	if res.Decision != DecisionDeny {
 		t.Fatalf("allowed file should not cover sibling: %v", res.Decision)
 	}
@@ -316,7 +318,7 @@ func TestGuard_PathAccess_SessionAllow(t *testing.T) {
 	cfg := Config{PathAccess: PathAccessConfig{Mode: &block}}
 	g, _ := NewWithExists(workspace, cfg, alwaysExists)
 	outside := filepath.Join(t.TempDir(), "aice-guard-session.txt")
-	call := toolCall("read", map[string]any{"file_path": outside})
+	call := toolCall("read", map[string]any{"path": outside})
 	res, _ := g.Check(context.Background(), call)
 	if res.Decision != DecisionDeny {
 		t.Fatalf("pre: %v", res.Decision)
@@ -328,7 +330,7 @@ func TestGuard_PathAccess_SessionAllow(t *testing.T) {
 	}
 	// dir grant
 	outsideDir := t.TempDir()
-	call2 := toolCall("read", map[string]any{"file_path": filepath.Join(outsideDir, "a", "b.txt")})
+	call2 := toolCall("read", map[string]any{"path": filepath.Join(outsideDir, "a", "b.txt")})
 	res, _ = g.Check(context.Background(), call2)
 	if res.Decision != DecisionDeny {
 		t.Fatalf("pre dir: %v", res.Decision)
@@ -337,6 +339,84 @@ func TestGuard_PathAccess_SessionAllow(t *testing.T) {
 	res, _ = g.Check(context.Background(), call2)
 	if res.Decision != DecisionAllow {
 		t.Fatalf("post dir allow: %v", res.Decision)
+	}
+}
+
+func TestGuard_PathAccess_SessionAllowFileDoesNotGrantSibling(t *testing.T) {
+	workspace := t.TempDir()
+	ask := PathAccessAsk
+	cfg := Config{PathAccess: PathAccessConfig{Mode: &ask}}
+	g, err := NewWithExists(workspace, cfg, alwaysExists)
+	if err != nil {
+		t.Fatalf("NewWithExists: %v", err)
+	}
+	outsideDir := t.TempDir()
+	granted := filepath.Join(outsideDir, "granted.txt")
+	sibling := filepath.Join(outsideDir, "sibling.txt")
+
+	g.AllowPathSession(granted, false)
+
+	res, err := g.Check(context.Background(), toolCall("read", map[string]any{"path": granted}))
+	if err != nil {
+		t.Fatalf("Check(granted): %v", err)
+	}
+	if res.Decision != DecisionAllow {
+		t.Fatalf("granted file: %v want allow", res.Decision)
+	}
+
+	res, err = g.Check(context.Background(), toolCall("read", map[string]any{"path": sibling}))
+	if err != nil {
+		t.Fatalf("Check(sibling): %v", err)
+	}
+	if res.Decision != DecisionAsk {
+		t.Fatalf("sibling file: %v want ask (Allow always grants the path, not the parent)", res.Decision)
+	}
+}
+
+func TestGuard_PathAccess_RejectsRootAndHomeSessionGrant(t *testing.T) {
+	workspace := t.TempDir()
+	ask := PathAccessAsk
+	g, err := NewWithExists(workspace, Config{PathAccess: PathAccessConfig{Mode: &ask}}, alwaysExists)
+	if err != nil {
+		t.Fatalf("NewWithExists: %v", err)
+	}
+
+	outside := filepath.Join(t.TempDir(), "outside.txt")
+	g.AllowPathSession("/", false)
+	g.AllowPathSession("/", true)
+	res, err := g.Check(context.Background(), toolCall("read", map[string]any{"path": outside}))
+	if err != nil {
+		t.Fatalf("Check after root grant: %v", err)
+	}
+	if res.Decision != DecisionAsk {
+		t.Fatalf("root grant: %v want ask", res.Decision)
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		t.Skip("home directory is unavailable")
+	}
+	homeFile := filepath.Join(home, "aice-guard-too-broad.txt")
+	if isWithinBoundary(homeFile, workspace) {
+		t.Skip("workspace covers home; cannot observe a too-broad home grant")
+	}
+	g.AllowPathSession(home, false)
+	g.AllowPathSession(home, true)
+	res, err = g.Check(context.Background(), toolCall("read", map[string]any{"path": homeFile}))
+	if err != nil {
+		t.Fatalf("Check after home grant: %v", err)
+	}
+	if res.Decision != DecisionAsk {
+		t.Fatalf("home grant: %v want ask", res.Decision)
+	}
+
+	g.AllowPathSession(outside, false)
+	res, err = g.Check(context.Background(), toolCall("read", map[string]any{"path": outside}))
+	if err != nil {
+		t.Fatalf("Check after exact grant: %v", err)
+	}
+	if res.Decision != DecisionAllow {
+		t.Fatalf("exact path grant: %v want allow", res.Decision)
 	}
 }
 
@@ -395,6 +475,55 @@ func TestGuard_StructuralNoFalsePositive(t *testing.T) {
 	res, _ = g.Check(context.Background(), toolCall("bash", map[string]any{"command": "echo \"rm -rf\""}))
 	if res.Decision != DecisionAllow {
 		t.Fatalf("echo quoted false positive: %v", res.Decision)
+	}
+}
+
+func TestGuard_UnknownToolAsks(t *testing.T) {
+	g, err := NewWithExists(t.TempDir(), Config{}, alwaysExists)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	cases := []string{"web_search", "Read", "read_file", "custom"}
+	for _, name := range cases {
+		res, err := g.Check(context.Background(), toolCall(name, map[string]any{"path": "README.md"}))
+		if err != nil {
+			t.Fatalf("Check(%q): %v", name, err)
+		}
+		if res.Decision != DecisionAsk {
+			t.Fatalf("Check(%q) = %v, want ask", name, res.Decision)
+		}
+		if res.RuleID != "unknownTool" {
+			t.Fatalf("Check(%q) rule %q, want unknownTool", name, res.RuleID)
+		}
+		if !strings.Contains(res.Reason, "not recognized") {
+			t.Fatalf("Check(%q) reason %q, want not recognized", name, res.Reason)
+		}
+		if res.Action.ToolName != name {
+			t.Fatalf("Check(%q) action tool %q", name, res.Action.ToolName)
+		}
+	}
+}
+
+func TestGuard_KnownToolWithoutRestrictedActionAllows(t *testing.T) {
+	g, err := NewWithExists(t.TempDir(), Config{}, alwaysExists)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	cases := []llm.ToolCall{
+		toolCall("read", map[string]any{}),
+		toolCall("write", map[string]any{"content": "x"}),
+		toolCall("bash", map[string]any{}),
+		toolCall("bash", map[string]any{"command": ""}),
+		toolCall("bash", map[string]any{"command": "echo hello"}),
+	}
+	for _, call := range cases {
+		res, err := g.Check(context.Background(), call)
+		if err != nil {
+			t.Fatalf("Check(%q): %v", call.Name, err)
+		}
+		if res.Decision != DecisionAllow {
+			t.Fatalf("Check(%q) = %v, want allow", call.Name, res.Decision)
+		}
 	}
 }
 

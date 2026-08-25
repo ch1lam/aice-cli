@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/ch1lam/aice-cli/internal/agent"
 	"github.com/ch1lam/aice-cli/internal/api/openairesponses"
 	"github.com/ch1lam/aice-cli/internal/config"
 	"github.com/ch1lam/aice-cli/internal/llm"
@@ -183,7 +182,7 @@ func (p *Provider) Configured(configuration config.Config) bool {
 }
 
 // New constructs the credentialed OpenAI model service.
-func (p *Provider) New(configuration config.Config) (agent.Model, error) {
+func (p *Provider) New(configuration config.Config) (llm.Streamer, error) {
 	return New(Config{
 		APIKey:  configuration.OpenAIAPIKey,
 		BaseURL: configuration.OpenAIBaseURL,

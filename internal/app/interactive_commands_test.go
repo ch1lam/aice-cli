@@ -1282,10 +1282,10 @@ func TestInteractiveSessionLoopRebuildPreservesGuardContext(t *testing.T) {
 				if executions != 1 {
 					t.Fatalf("read executions = %d, want 1", executions)
 				}
-				if len(outcome.result.Turns) == 0 ||
-					len(outcome.result.Turns[0].ToolResults) != 1 ||
-					outcome.result.Turns[0].ToolResults[0].IsError {
-					t.Fatalf("rebuilt loop tool result = %#v, want success", outcome.result.Turns)
+				if len(outcome.result.ModelRounds) == 0 ||
+					len(outcome.result.ModelRounds[0].ToolResults) != 1 ||
+					outcome.result.ModelRounds[0].ToolResults[0].IsError {
+					t.Fatalf("rebuilt loop tool result = %#v, want success", outcome.result.ModelRounds)
 				}
 			})
 		}

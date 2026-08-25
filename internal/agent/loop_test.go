@@ -6,15 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/ch1lam/aice-cli/internal/agent"
 	"github.com/ch1lam/aice-cli/internal/llm"
-	"github.com/ch1lam/aice-cli/internal/tool"
 )
 
 func TestNewLoopRejectsInvalidConfiguration(t *testing.T) {
@@ -54,6 +51,12 @@ func TestNewLoopRejectsInvalidConfiguration(t *testing.T) {
 			}}},
 			wantErr: "input schema must be a json object",
 		},
+		{
+			name:    "tools without guard",
+			model:   model,
+			tools:   []agent.Tool{validTool},
+			wantErr: "tools require a guard",
+		},
 	}
 
 	for _, test := range tests {
@@ -65,6 +68,53 @@ func TestNewLoopRejectsInvalidConfiguration(t *testing.T) {
 				t.Fatalf("NewLoop() error = %v, want substring %q", err, test.wantErr)
 			}
 		})
+	}
+}
+
+func TestNewLoopAcceptsToolsWithGuard(t *testing.T) {
+	t.Parallel()
+
+	if _, err := agent.NewLoop(
+		&scriptedModel{},
+		[]agent.Tool{newFakeTool("read", nil)},
+		agent.WithGuard(allowAllGuard{}),
+	); err != nil {
+		t.Fatalf("NewLoop() error = %v", err)
+	}
+}
+
+func TestNewLoopAllowsMissingGuardWithoutTools(t *testing.T) {
+	t.Parallel()
+
+	model := &scriptedModel{}
+	tests := []struct {
+		name  string
+		tools []agent.Tool
+	}{
+		{name: "nil tools"},
+		{name: "empty tools", tools: []agent.Tool{}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			if _, err := agent.NewLoop(model, test.tools); err != nil {
+				t.Fatalf("NewLoop() error = %v, want nil", err)
+			}
+		})
+	}
+}
+
+func TestNewLoopRejectsNilGuardWhenToolsPresent(t *testing.T) {
+	t.Parallel()
+
+	_, err := agent.NewLoop(
+		&scriptedModel{},
+		[]agent.Tool{newFakeTool("read", nil)},
+		agent.WithGuard(nil),
+	)
+	if err == nil || !strings.Contains(err.Error(), "tools require a guard") {
+		t.Fatalf("NewLoop() error = %v, want tools require a guard", err)
 	}
 }
 
@@ -90,8 +140,8 @@ func TestLoopRunTextTurn(t *testing.T) {
 		t.Fatalf("Run() error = %v", err)
 	}
 
-	if len(result.Turns) != 1 || result.Turns[0].Assistant.Content[0].Text != "hello" {
-		t.Fatalf("Run() result turns = %#v", result.Turns)
+	if len(result.ModelRounds) != 1 || result.ModelRounds[0].Assistant.Content[0].Text != "hello" {
+		t.Fatalf("Run() result turns = %#v", result.ModelRounds)
 	}
 	if got, want := messageRoles(result.Messages()), []llm.Role{llm.RoleUser, llm.RoleAssistant}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("Result.Messages() roles = %v, want %v", got, want)
@@ -206,11 +256,11 @@ func TestLoopInjectsOneSteerPerSafeTurnBoundary(t *testing.T) {
 	}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("Result.Messages() roles = %v, want %v", got, want)
 	}
-	if len(result.Turns) != 3 ||
-		len(result.Turns[0].Inputs) != 0 ||
-		len(result.Turns[1].Inputs) != 1 ||
-		len(result.Turns[2].Inputs) != 1 {
-		t.Fatalf("steering placement = %#v", result.Turns)
+	if len(result.ModelRounds) != 3 ||
+		len(result.ModelRounds[0].Inputs) != 0 ||
+		len(result.ModelRounds[1].Inputs) != 1 ||
+		len(result.ModelRounds[2].Inputs) != 1 {
+		t.Fatalf("steering placement = %#v", result.ModelRounds)
 	}
 	if len(model.requests) != 3 {
 		t.Fatalf("model request count = %d, want 3", len(model.requests))
@@ -394,7 +444,7 @@ func TestLoopChecksCompactionThresholdAtFollowUpBoundary(t *testing.T) {
 	}
 	assertTerminalFailure(
 		t,
-		result.Turns[len(result.Turns)-1].Assistant,
+		result.ModelRounds[len(result.ModelRounds)-1].Assistant,
 		llm.StopReasonError,
 	)
 	interactionEnds := 0
@@ -638,10 +688,10 @@ func TestLoopRejectsContextAboveCompactionThreshold(t *testing.T) {
 	if len(model.requests) != 0 {
 		t.Fatalf("model requests = %d, want context rejection before provider", len(model.requests))
 	}
-	if len(result.Turns) != 1 {
+	if len(result.ModelRounds) != 1 {
 		t.Fatalf("Run() result = %#v, want terminal failure", result)
 	}
-	assertTerminalFailure(t, result.Turns[0].Assistant, llm.StopReasonError)
+	assertTerminalFailure(t, result.ModelRounds[0].Assistant, llm.StopReasonError)
 }
 
 func TestLoopSettlesToolRunAfterCrossingCompactionThreshold(t *testing.T) {
@@ -679,10 +729,10 @@ func TestLoopSettlesToolRunAfterCrossingCompactionThreshold(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
-	if len(result.Turns) != 2 || len(model.requests) != 2 {
+	if len(result.ModelRounds) != 2 || len(model.requests) != 2 {
 		t.Fatalf(
 			"result turns = %d, model requests = %d, want settled two-turn run",
-			len(result.Turns),
+			len(result.ModelRounds),
 			len(model.requests),
 		)
 	}
@@ -741,10 +791,10 @@ func TestLoopRunToolTurnThenContinues(t *testing.T) {
 	if got, want := callIDs(tool.calls), []string{"call-1", "call-2"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("tool call order = %v, want %v", got, want)
 	}
-	if len(result.Turns) != 2 || len(result.Turns[0].ToolResults) != 2 {
+	if len(result.ModelRounds) != 2 || len(result.ModelRounds[0].ToolResults) != 2 {
 		t.Fatalf("Run() result = %#v", result)
 	}
-	for index, toolResult := range result.Turns[0].ToolResults {
+	for index, toolResult := range result.ModelRounds[0].ToolResults {
 		wantID := "call-" + string(rune('1'+index))
 		if toolResult.ToolCallID != wantID || toolResult.ToolName != "read" || toolResult.IsError {
 			t.Fatalf("tool result %d = %#v", index, toolResult)
@@ -817,16 +867,16 @@ func TestLoopRunToolTurnThenContinues(t *testing.T) {
 		t.Fatalf("event types = %v, want %v", got, wantEventTypes)
 	}
 	assertAgentMessage(t, events[5].Message, first)
-	assertAgentMessage(t, events[8].Message, result.Turns[0].ToolResults[0])
-	assertAgentMessage(t, events[9].Message, result.Turns[0].ToolResults[0])
-	assertAgentMessage(t, events[12].Message, result.Turns[0].ToolResults[1])
-	assertAgentMessage(t, events[13].Message, result.Turns[0].ToolResults[1])
+	assertAgentMessage(t, events[8].Message, result.ModelRounds[0].ToolResults[0])
+	assertAgentMessage(t, events[9].Message, result.ModelRounds[0].ToolResults[0])
+	assertAgentMessage(t, events[12].Message, result.ModelRounds[0].ToolResults[1])
+	assertAgentMessage(t, events[13].Message, result.ModelRounds[0].ToolResults[1])
 	assertAgentMessage(t, events[14].Message, first)
-	if !reflect.DeepEqual(events[14].ToolResults, result.Turns[0].ToolResults) {
+	if !reflect.DeepEqual(events[14].ToolResults, result.ModelRounds[0].ToolResults) {
 		t.Errorf(
 			"first turn_end tool results = %#v, want %#v",
 			events[14].ToolResults,
-			result.Turns[0].ToolResults,
+			result.ModelRounds[0].ToolResults,
 		)
 	}
 	assertAgentMessage(t, events[17].Message, second)
@@ -867,7 +917,7 @@ func TestLoopDoesNotExecuteLengthTruncatedToolCalls(t *testing.T) {
 	if len(read.calls) != 0 {
 		t.Fatalf("truncated tool execution count = %d, want 0", len(read.calls))
 	}
-	if len(result.Turns) != 2 || len(result.Turns[0].ToolResults) != 2 {
+	if len(result.ModelRounds) != 2 || len(result.ModelRounds[0].ToolResults) != 2 {
 		t.Fatalf("Run() result = %#v", result)
 	}
 	wantCalls := []struct {
@@ -878,7 +928,7 @@ func TestLoopDoesNotExecuteLengthTruncatedToolCalls(t *testing.T) {
 		{id: "call-2", name: "missing"},
 	}
 	for index, want := range wantCalls {
-		toolResult := result.Turns[0].ToolResults[index]
+		toolResult := result.ModelRounds[0].ToolResults[index]
 		if toolResult.ToolCallID != want.id ||
 			toolResult.ToolName != want.name ||
 			!toolResult.IsError {
@@ -902,11 +952,11 @@ func TestLoopDoesNotExecuteLengthTruncatedToolCalls(t *testing.T) {
 		t.Fatalf("second request roles = %v, want %v", got, want)
 	}
 	assertAgentMessage(t, model.requests[1].Messages[1], truncated)
-	for index := range result.Turns[0].ToolResults {
+	for index := range result.ModelRounds[0].ToolResults {
 		assertAgentMessage(
 			t,
 			model.requests[1].Messages[index+2],
-			result.Turns[0].ToolResults[index],
+			result.ModelRounds[0].ToolResults[index],
 		)
 	}
 
@@ -946,11 +996,11 @@ func TestLoopDoesNotExecuteLengthTruncatedToolCalls(t *testing.T) {
 			t.Errorf("truncated tool_execution_end %d = %#v", index, event)
 		}
 	}
-	if !reflect.DeepEqual(events[14].ToolResults, result.Turns[0].ToolResults) {
+	if !reflect.DeepEqual(events[14].ToolResults, result.ModelRounds[0].ToolResults) {
 		t.Errorf(
 			"truncated turn_end tool results = %#v, want %#v",
 			events[14].ToolResults,
-			result.Turns[0].ToolResults,
+			result.ModelRounds[0].ToolResults,
 		)
 	}
 	if !reflect.DeepEqual(events[20].Messages, result.Messages()) {
@@ -958,21 +1008,8 @@ func TestLoopDoesNotExecuteLengthTruncatedToolCalls(t *testing.T) {
 	}
 }
 
-func TestLoopRunWithWorkspaceReadTool(t *testing.T) {
+func TestLoopRunWithFakeReadTool(t *testing.T) {
 	t.Parallel()
-
-	workspacePath := t.TempDir()
-	if err := os.WriteFile(filepath.Join(workspacePath, "answer.txt"), []byte("from workspace\n"), 0o640); err != nil {
-		t.Fatalf("os.WriteFile() error = %v", err)
-	}
-	workspace, err := tool.NewWorkspace(workspacePath)
-	if err != nil {
-		t.Fatalf("tool.NewWorkspace() error = %v", err)
-	}
-	read, err := tool.NewRead(workspace)
-	if err != nil {
-		t.Fatalf("tool.NewRead() error = %v", err)
-	}
 
 	modelInfo := testModel()
 	first := assistantMessage(
@@ -985,6 +1022,13 @@ func TestLoopRunWithWorkspaceReadTool(t *testing.T) {
 		{events: terminalEvents(first)},
 		{events: terminalEvents(second)},
 	}}
+	read := newFakeTool("read", func(_ context.Context, call llm.ToolCall) (llm.ToolResult, error) {
+		return llm.ToolResult{
+			CallID:  call.ID,
+			Name:    call.Name,
+			Content: []llm.ContentPart{textPart("from workspace\n")},
+		}, nil
+	})
 	loop := mustLoop(t, model, []agent.Tool{read})
 
 	result, err := loop.Run(
@@ -995,10 +1039,10 @@ func TestLoopRunWithWorkspaceReadTool(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
-	if len(result.Turns) != 2 || len(result.Turns[0].ToolResults) != 1 {
+	if len(result.ModelRounds) != 2 || len(result.ModelRounds[0].ToolResults) != 1 {
 		t.Fatalf("Run() result = %#v", result)
 	}
-	content := result.Turns[0].ToolResults[0].Content
+	content := result.ModelRounds[0].ToolResults[0].Content
 	if len(content) != 1 || content[0].Text != "from workspace\n" {
 		t.Fatalf("read tool result content = %#v", content)
 	}
@@ -1029,10 +1073,10 @@ func TestLoopReturnsToolFailuresToModel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
-	if len(result.Turns) != 2 || len(result.Turns[0].ToolResults) != 2 {
+	if len(result.ModelRounds) != 2 || len(result.ModelRounds[0].ToolResults) != 2 {
 		t.Fatalf("Run() result = %#v", result)
 	}
-	for index, toolResult := range result.Turns[0].ToolResults {
+	for index, toolResult := range result.ModelRounds[0].ToolResults {
 		if !toolResult.IsError {
 			t.Fatalf("tool result %d IsError = false", index)
 		}
@@ -1084,20 +1128,20 @@ func TestLoopContinuesUntilModelStopsAfterManyToolCalls(t *testing.T) {
 	if len(tool.calls) != toolCallCount {
 		t.Fatalf("tool calls = %d, want %d", len(tool.calls), toolCallCount)
 	}
-	if len(result.Turns) != toolCallCount+1 {
+	if len(result.ModelRounds) != toolCallCount+1 {
 		t.Fatalf(
 			"result turns = %d, want %d",
-			len(result.Turns),
+			len(result.ModelRounds),
 			toolCallCount+1,
 		)
 	}
 	for index := 0; index < toolCallCount; index++ {
-		turn := result.Turns[index]
+		turn := result.ModelRounds[index]
 		if len(turn.ToolResults) != 1 || turn.ToolResults[0].IsError {
 			t.Fatalf("turn %d tool results = %#v", turn.Number, turn.ToolResults)
 		}
 	}
-	last := result.Turns[len(result.Turns)-1]
+	last := result.ModelRounds[len(result.ModelRounds)-1]
 	if last.Assistant.StopReason != llm.StopReasonStop ||
 		len(last.ToolResults) != 0 {
 		t.Fatalf("final turn = %#v, want natural model completion", last)
@@ -1130,7 +1174,7 @@ func TestLoopPreservesPartialAssistantOnCancellation(t *testing.T) {
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("Run() error = %v, want context.Canceled", err)
 	}
-	if len(result.Turns) != 1 || result.Turns[0].Assistant.Content[0].Text != "partial" {
+	if len(result.ModelRounds) != 1 || result.ModelRounds[0].Assistant.Content[0].Text != "partial" {
 		t.Fatalf("Run() result = %#v", result)
 	}
 	if events[len(events)-1].Type != agent.EventTypeAgentEnd ||
@@ -1176,10 +1220,10 @@ func TestLoopRejectsStreamEOFBeforeTerminalEvent(t *testing.T) {
 	if !errors.Is(err, agent.ErrProtocol) {
 		t.Fatalf("Run() error = %v, want ErrProtocol", err)
 	}
-	if len(result.Turns) != 1 {
-		t.Fatalf("Run() result turns = %#v, want one terminal failure", result.Turns)
+	if len(result.ModelRounds) != 1 {
+		t.Fatalf("Run() result turns = %#v, want one terminal failure", result.ModelRounds)
 	}
-	assertTerminalFailure(t, result.Turns[0].Assistant, llm.StopReasonError)
+	assertTerminalFailure(t, result.ModelRounds[0].Assistant, llm.StopReasonError)
 	if !model.scripts[0].closed {
 		t.Fatal("model stream was not closed")
 	}
@@ -1296,22 +1340,22 @@ func TestLoopRetainsExecutedToolResultWhenEventSinkFails(t *testing.T) {
 	if len(tool.calls) != 1 {
 		t.Fatalf("tool calls = %d, want only the executed first call", len(tool.calls))
 	}
-	if len(result.Turns) != 2 || len(result.Turns[0].ToolResults) != 2 {
+	if len(result.ModelRounds) != 2 || len(result.ModelRounds[0].ToolResults) != 2 {
 		t.Fatalf("Run() result = %#v", result)
 	}
-	if result.Turns[0].ToolResults[0].IsError {
+	if result.ModelRounds[0].ToolResults[0].IsError {
 		t.Fatalf(
 			"executed tool result = %#v, want success",
-			result.Turns[0].ToolResults[0],
+			result.ModelRounds[0].ToolResults[0],
 		)
 	}
-	if !result.Turns[0].ToolResults[1].IsError {
+	if !result.ModelRounds[0].ToolResults[1].IsError {
 		t.Fatalf(
 			"unexecuted tool result = %#v, want synthetic error",
-			result.Turns[0].ToolResults[1],
+			result.ModelRounds[0].ToolResults[1],
 		)
 	}
-	assertTerminalFailure(t, result.Turns[1].Assistant, llm.StopReasonError)
+	assertTerminalFailure(t, result.ModelRounds[1].Assistant, llm.StopReasonError)
 }
 
 func testModel() llm.Model {
@@ -1346,14 +1390,24 @@ func mustLoop(
 	t *testing.T,
 	model agent.Model,
 	tools []agent.Tool,
+	options ...agent.LoopOption,
 ) *agent.Loop {
 	t.Helper()
 
-	loop, err := agent.NewLoop(model, tools)
+	if len(tools) > 0 {
+		options = append([]agent.LoopOption{agent.WithGuard(allowAllGuard{})}, options...)
+	}
+	loop, err := agent.NewLoop(model, tools, options...)
 	if err != nil {
 		t.Fatalf("NewLoop() error = %v", err)
 	}
 	return loop
+}
+
+type allowAllGuard struct{}
+
+func (allowAllGuard) Check(context.Context, llm.ToolCall) (agent.GuardResult, error) {
+	return agent.GuardResult{Decision: agent.GuardAllow}, nil
 }
 
 func textPart(text string) llm.ContentPart {

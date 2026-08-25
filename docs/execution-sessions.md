@@ -3,32 +3,63 @@
 ## Tool execution boundary
 
 Built-in tools run with the filesystem, process, network, environment, and
-credential permissions of the AICE process, but every tool call is checked
-inline by the intrinsic execution gate (`internal/guard`) before it runs.
+credential permissions of the AICE process. Every tool call is checked inline
+by the intrinsic execution gate (`internal/guard`) before it runs.
+`agent.NewLoop` requires a non-nil `Guard` when the tool set is non-empty
+(compaction loops may omit both). Unknown tool names return Decision `ask`
+(`RuleID` `unknownTool`); non-interactive runs treat `ask` as `deny`.
 `--workspace` sets the default working directory and is the boundary used by
 the path-access gate; it is not a sandbox.
 
-The gate is enabled by default and evaluates three layers in order:
+This section is the source of truth for Guard product behavior. Other
+documents should link here instead of restating these lists.
 
-1. **Permission gate (bash)** — structural dangerous-command detection and
-   substring/regex patterns; `autoDeny` is always denied, built-in dangerous
-   commands (`rm -rf`, `sudo`, `dd of=`, `mkfs`, `chmod -R 777`, `chown -R`,
-   `shred`, `wipefs`, `blkdiscard`, `fdisk`/`parted`, `docker --privileged`,
-   `doas`/`pkexec`, …) require confirmation unless allow-listed.
-2. **File policies** — glob-protected paths (default `secret-files`: `.env`,
-   `.env.local`, `.env.*`, `.dev.vars` with `noAccess`; `*.example.env` etc.
-   are allow-listed) with `noAccess`/`readOnly` enforcement; `readOnly` blocks
-   `write`/`edit`/`bash`, `noAccess` blocks all tools. Matching is
-   glob-aware (`/` distinguishes full-path vs basename, `**` supported) with
-   optional `regex` opt-in, and `onlyIfExists` probes.
-3. **Path access** — access outside the workspace (`mode: ask` by default)
-   requires confirmation or is blocked (`allow`/`block`); per-file and
-   per-directory `allowedPaths` and `~` expansion are supported.
+### Default wired behavior
 
-Each check returns `allow` / `ask` / `deny`. Non-interactive runs treat `ask`
-as `deny` (fail-closed); the interactive TUI maps `ask` to a confirmation
-prompt (`Allow once` / `Allow always for this run` / `Deny`). `Allow always`
-grants are memory-only for the current run and never persist to disk.
+`internal/app` always constructs the gate with `guard.New(workspace,
+guard.Config{})`. An empty `Config` is merged with `DefaultConfig`.
+`config.Settings` has no guard field, so the following is what every current
+build actually enforces.
+
+The gate evaluates three layers in order:
+
+1. **Permission gate (`bash`)** — structural dangerous-command detection.
+   Built-in matchers require confirmation for shapes such as `rm -rf`, `sudo`,
+   `dd of=`, `mkfs.`, `chmod -R 777`, `chown -R`, `shred`, `wipefs`,
+   `blkdiscard`, `fdisk`/`parted`, `doas`/`pkexec`, and container
+   `docker`/`podman` with subcommand `run` or `create` plus `--privileged`
+   (example: `docker run --privileged`). Default `autoDenyPatterns` is empty.
+2. **File policies** — default rule `secret-files` uses Protection
+   `noAccess`. Protected basenames: `.env`, `.env.local`, `.env.production`,
+   `.env.prod`, `.dev.vars`. Allow-listed: `*.example.env`, `*.sample.env`,
+   `*.test.env`, `.env.example`, `.env.sample`, `.env.test`. There is no
+   `.env.*` glob. `noAccess` blocks all tools.
+3. **Path access** — `pathAccess.mode` defaults to `ask` for paths outside
+   the workspace. Mode values are `allow` / `ask` / `block`. Default
+   `allowedPaths` is empty.
+
+Each check returns Decision `allow` / `ask` / `deny`. Non-interactive runs
+treat `ask` as `deny` (fail-closed). The interactive TUI maps `ask` to
+`Allow once` / `Allow always` / `Deny`. `Allow always` is current-run,
+memory-only: grants live in `sessionAllowed` / `sessionAllowedPaths` and
+never persist to disk. Path grants of `/` or the user's home directory are
+ignored, so `Allow always` cannot authorize the entire filesystem or home
+directory. Stronger isolation still belongs to an external
+container, VM, or OS sandbox.
+
+Project Trust does not change tool permissions; see [Project Trust and
+prompts](project-trust.md).
+
+### Engine-only configuration
+
+`guard.Config` can set `enabled`, `applyBuiltinDefaults`, `policies`
+(including Protection `readOnly`/`noAccess`, glob/regex matching, and
+`onlyIfExists`), `permissionGate` (`patterns`, `customPatterns`,
+`allowedPatterns`, `autoDenyPatterns`, `requireConfirmation`), and
+`pathAccess` (`mode`, `allowedPaths` with `~` expansion). `readOnly` blocks
+`write`/`edit`/`bash`; `noAccess` blocks all tools. These fields are
+engine-only, not yet wired to `settings.json`. Do not document them as
+user-facing product settings until `internal/app` loads them.
 
 The tool layer still enforces correctness and resource safety:
 
@@ -43,11 +74,6 @@ Structured subprocesses use executable/argument separation. The `grep` tool
 invokes `rg` with `--` before model-controlled pattern/path values. The `bash`
 tool intentionally crosses a shell boundary and applies the same timeout,
 output, cancellation, and process-tree controls.
-
-Use an external container, VM, or OS sandbox when stronger isolation is
-required. Project Trust does not change tool permissions (it only gates prompt
-loading); see [Project Trust and prompts](project-trust.md). For the gate's
-implementation and pattern semantics, see `internal/guard`.
 
 ## Sessions
 
@@ -74,18 +100,15 @@ the Agent reaches its natural stop boundary, while the same run remains active
 to poll follow-up input. Cancellation or failure appends the unfinished final
 interaction as a terminal turn so completed work is not lost.
 
-`/btw` side threads are explicitly outside this persistence model. Each new
-thread freezes the already accepted context at its first question, then uses
-that copy plus its own bounded in-memory history. Side threads run without
-tools and never append `turn`, `compaction`, or `leaf` records. They also do
-not contribute to main Session usage totals or compaction input.
-
-AICE keeps at most five live side threads and 20 interactions per thread. A
-thread becomes read-only after 20 minutes without a completed, cancelled, or
-failed answer and is permanently deleted after 120 minutes of inactivity.
-Closing its panel only hides it; Ctrl+D explicitly ends it. Exiting AICE
-discards every side thread immediately, so none can be recovered by resuming
-the main Session.
+`/btw` side threads are outside this persistence model. Each new thread
+freezes the already accepted context at its first question, then uses that
+copy plus its own bounded in-memory history. Side threads run without tools
+and never append `turn`, `compaction`, or `leaf` records. They also do not
+contribute to main Session usage totals or compaction input. Limits, idle
+windows, and TUI controls are documented in
+[Configuration](configuration.md#btw). Closing a panel only hides the thread;
+Ctrl+D ends it. Exiting AICE discards every side thread, so none can be
+recovered by resuming the main Session.
 
 ## Resume and navigate
 
@@ -116,14 +139,15 @@ A Session can be resumed only with the working directory recorded in its
 header.
 
 Compaction summarizes older complete turns on the active branch and retains
-roughly the newest 20,000 tokens. It appends a checkpoint and never rewrites
-source turns or other branches. Automatic compaction runs before the first
-model request of a new interaction when the estimated context crosses the
-model's reserved-token threshold; a queued follow-up is compacted only after
-the preceding interaction has reached its complete-turn boundary. If the
-newest complete turn is itself too large to retain, AICE summarizes the entire
-active branch rather than failing solely because that one turn is oversized;
-source turns remain recoverable in the Session.
+roughly the newest 20,000 tokens (`session.DefaultKeepRecentTokens`). It
+appends a checkpoint and never rewrites source turns or other branches.
+Automatic compaction runs before the first model request of a new interaction
+when the estimated context crosses the model's reserved-token threshold; a
+queued follow-up is compacted only after the preceding interaction has
+reached its complete-turn boundary. If the newest complete turn is itself too
+large to retain, AICE summarizes the entire active branch rather than failing
+solely because that one turn is oversized; source turns remain recoverable in
+the Session.
 
 ```sh
 aice compact --workspace . --session .aice/sessions/<id>.jsonl

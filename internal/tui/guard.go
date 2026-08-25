@@ -141,5 +141,3 @@ func (m model) guardView(width int) string {
 		Width(min(innerWidth+4, 60))
 	return style.Render(body)
 }
-
-func (m model) hasGuardPending() bool { return m.guardPending != nil }

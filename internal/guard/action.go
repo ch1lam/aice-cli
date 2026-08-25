@@ -39,9 +39,13 @@ var fileTools = map[string]bool{
 	"read": true, "write": true, "edit": true, "grep": true, "find": true, "ls": true,
 }
 
+func isKnownTool(name string) bool {
+	return fileTools[name] || name == "bash"
+}
+
 // extractActions extracts one or more Actions from a ToolCall.
 // For file tools it returns one file Action; for bash it extracts candidate
-// paths via AST parsing (PR3) with heuristic fallback.
+// paths via AST parsing with heuristic fallback.
 func extractActions(call llm.ToolCall) []Action {
 	if fileTools[call.Name] {
 		p := extractFilePath(call.Arguments)
