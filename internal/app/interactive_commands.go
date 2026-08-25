@@ -433,7 +433,7 @@ func (s *interactiveSession) RunSlashCommand(
 		settings := s.settingsSnapshot()
 		configuration := settings.configuration
 		configuration.Provider = value
-		loop, err := s.application.newAgentLoop(configuration, s.tools)
+		loop, err := s.rebuildAgentLoop(configuration)
 		if err != nil {
 			return "", err
 		}
@@ -679,7 +679,7 @@ func (s *interactiveSession) login(
 	if !request.UseSavedCredential {
 		findProvider(s.providers, provider).ApplyAPIKey(&configuration, apiKey)
 	}
-	loop, err := s.application.newAgentLoop(configuration, s.tools)
+	loop, err := s.rebuildAgentLoop(configuration)
 	if err != nil {
 		return "", err
 	}

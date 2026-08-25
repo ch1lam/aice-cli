@@ -595,11 +595,17 @@ func (a *application) newRunEnvironment(
 	if err != nil {
 		return nil, err
 	}
+	g, adapter, err := newExecutionGuard(workspace.PhysicalPath())
+	if err != nil {
+		return nil, err
+	}
 	var loop *agent.Loop
-	var g *guard.Guard
-	var adapter *guardAdapter
 	if providerConfigured(a.dependencies.providers, configured.configuration) {
-		loop, g, adapter, err = a.newAgentLoopWithWorkspace(configured.configuration, tools, workspace.PhysicalPath())
+		loop, err = a.newAgentLoopWithOptions(
+			configured.configuration,
+			tools,
+			agent.WithGuard(adapter),
+		)
 		if err != nil {
 			return nil, err
 		}
@@ -665,38 +671,54 @@ func (a *application) newAgentLoop(
 	configuration config.Config,
 	tools []agent.Tool,
 ) (*agent.Loop, error) {
-	loop, _, _, err := a.newAgentLoopWithWorkspace(configuration, tools, "")
-	return loop, err
+	_, adapter, err := newExecutionGuard("")
+	if err != nil {
+		return nil, err
+	}
+	return a.newAgentLoopWithOptions(
+		configuration,
+		tools,
+		agent.WithGuard(adapter),
+	)
 }
 
-func (a *application) newAgentLoopWithWorkspace(
+func (a *application) newAgentLoopWithOptions(
 	configuration config.Config,
 	tools []agent.Tool,
-	workspace string,
-) (*agent.Loop, *guard.Guard, *guardAdapter, error) {
+	options ...agent.LoopOption,
+) (*agent.Loop, error) {
 	if !providerConfigured(a.dependencies.providers, configuration) {
-		return nil, nil, nil, credentialNotConfiguredError(
+		return nil, credentialNotConfiguredError(
 			a.dependencies.providers,
 			configuration,
 		)
 	}
 	service, err := a.dependencies.newModel(configuration)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("app: create model: %w", err)
+		return nil, fmt.Errorf("app: create model: %w", err)
 	}
+	loop, err := agent.NewLoop(service, tools, options...)
+	if err != nil {
+		return nil, fmt.Errorf("app: create agent loop: %w", err)
+	}
+	return loop, nil
+}
+
+// newExecutionGuard constructs the intrinsic gate independently of provider
+// credentials so an unauthenticated interactive Session already owns the
+// workspace boundary and can preserve it through the first /login.
+func newExecutionGuard(
+	workspace string,
+) (*guard.Guard, *guardAdapter, error) {
 	// Built-in guard: intrinsic execution gate, not a plugin. Workspace-scoped
 	// so .env relative to the project is correctly recognized. Disabled only
 	// when explicitly configured off (future: guard config in settings.json).
 	g, err := guard.New(workspace, guard.Config{})
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("app: create guard: %w", err)
+		return nil, nil, fmt.Errorf("app: create guard: %w", err)
 	}
 	adapter := &guardAdapter{inner: g}
-	loop, err := agent.NewLoop(service, tools, agent.WithGuard(adapter))
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("app: create agent loop: %w", err)
-	}
-	return loop, g, adapter, nil
+	return g, adapter, nil
 }
 
 // guardAdapter bridges internal/guard.Guard to agent.Guard without making
@@ -985,6 +1007,23 @@ func (s *interactiveSession) settingsSnapshot() interactiveSettings {
 		options:       cloneStreamOptions(s.options),
 		systemPrompt:  s.systemPrompt,
 	}
+}
+
+// rebuildAgentLoop preserves the Session's workspace-scoped guard and its
+// memory-only grants when provider credentials replace the model service.
+// Inject the Ask handler before publishing the replacement loop.
+func (s *interactiveSession) rebuildAgentLoop(
+	configuration config.Config,
+) (*agent.Loop, error) {
+	if s == nil || s.application == nil {
+		return nil, fmt.Errorf("app: application is required")
+	}
+	return s.application.newAgentLoopWithOptions(
+		configuration,
+		s.tools,
+		agent.WithGuard(s.guardAdapter),
+		agent.WithGuardAskHandler(s.handleGuardAsk),
+	)
 }
 
 // GuardRequests exposes pending guard confirmations for the TUI.

@@ -1,14 +1,19 @@
 package app
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ch1lam/aice-cli/internal/agent"
 	"github.com/ch1lam/aice-cli/internal/config"
+	"github.com/ch1lam/aice-cli/internal/guard"
+	"github.com/ch1lam/aice-cli/internal/interaction"
 	"github.com/ch1lam/aice-cli/internal/llm"
 	"github.com/ch1lam/aice-cli/internal/provider/deepseek"
 	"github.com/ch1lam/aice-cli/internal/provider/opencode"
@@ -1121,6 +1126,169 @@ func TestInteractiveSessionProviderSwitchRebuildsLoopAndModel(t *testing.T) {
 	}
 	if !strings.Contains(output, "opencode-go") {
 		t.Errorf("/provider output = %q, want opencode-go", output)
+	}
+}
+
+func TestInteractiveSessionLoopRebuildPreservesGuardContext(t *testing.T) {
+	t.Parallel()
+
+	commands := []struct {
+		name    string
+		request tui.SlashCommandRequest
+	}{
+		{
+			name: "provider",
+			request: tui.SlashCommandRequest{
+				Name:      "provider",
+				Arguments: string(opencode.ProviderID),
+			},
+		},
+		{
+			name: "login",
+			request: tui.SlashCommandRequest{
+				Name:               "login",
+				Arguments:          string(opencode.ProviderID),
+				UseSavedCredential: true,
+			},
+		},
+	}
+	accesses := []struct {
+		name    string
+		outside bool
+		granted bool
+	}{
+		{name: "workspace path"},
+		{
+			name:    "outside path",
+			outside: true,
+		},
+		{
+			name:    "session path grant",
+			outside: true,
+			granted: true,
+		},
+	}
+
+	for _, command := range commands {
+		for _, access := range accesses {
+			t.Run(command.name+" "+access.name, func(t *testing.T) {
+				workspacePath := t.TempDir()
+				readPath := "README.md"
+				if access.outside {
+					readPath = filepath.Join(t.TempDir(), "outside.txt")
+				}
+				arguments, err := json.Marshal(map[string]string{"path": readPath})
+				if err != nil {
+					t.Fatalf("json.Marshal() error = %v", err)
+				}
+				call := llm.ToolCall{
+					ID:        "read-1",
+					Name:      "read",
+					Arguments: arguments,
+				}
+				model := &toolLoopModel{firstCall: &call}
+				executions := 0
+				readTool := newAppTestTool(
+					"read",
+					func(_ context.Context, call llm.ToolCall) (llm.ToolResult, error) {
+						executions++
+						return llm.ToolResult{
+							CallID:  call.ID,
+							Name:    call.Name,
+							Content: []llm.ContentPart{llm.NewTextContent("read").Part()},
+						}, nil
+					},
+				)
+				gate, err := guard.New(workspacePath, guard.Config{})
+				if err != nil {
+					t.Fatalf("guard.New() error = %v", err)
+				}
+				if access.granted {
+					gate.AllowPathSession(readPath, false)
+				}
+				adapter := &guardAdapter{inner: gate}
+				application := &application{dependencies: dependencies{
+					saveSetting: func(config.Setting, string) error { return nil },
+					newModel: func(config.Config) (agent.Model, error) {
+						return model, nil
+					},
+					providers: defaultProviders(),
+				}}
+				runner := &interactiveSession{
+					application: application,
+					model:       deepseek.DefaultModel(),
+					configuration: config.Config{
+						Provider:       string(deepseek.ProviderID),
+						Model:          deepseek.ModelV4Flash,
+						DeepSeekAPIKey: "deepseek-key",
+						OpenCodeAPIKey: "opencode-key",
+					},
+					tools:         []agent.Tool{readTool},
+					providers:     defaultProviders(),
+					guard:         gate,
+					guardAdapter:  adapter,
+					guardRequests: make(chan interaction.GuardRequest, 1),
+				}
+
+				if _, err := runner.RunSlashCommand(t.Context(), command.request); err != nil {
+					t.Fatalf("/%s error = %v", command.request.Name, err)
+				}
+				prompt, err := llm.NewUserMessage(
+					llm.NewTextContent("inspect").Part(),
+				)
+				if err != nil {
+					t.Fatalf("llm.NewUserMessage() error = %v", err)
+				}
+				type runOutcome struct {
+					result agent.Result
+					err    error
+				}
+				runCtx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+				defer cancel()
+				done := make(chan runOutcome, 1)
+				go func() {
+					result, err := runner.loop.Run(runCtx, agent.RunInput{
+						Model:  runner.model,
+						Prompt: prompt,
+					}, nil)
+					done <- runOutcome{result: result, err: err}
+				}()
+
+				var outcome runOutcome
+				if access.outside && !access.granted {
+					select {
+					case request := <-runner.guardRequests:
+						if request.Path != readPath {
+							t.Errorf("guard request path = %q, want %q", request.Path, readPath)
+						}
+						request.Reply <- interaction.GuardDecisionAllowOnce
+					case outcome = <-done:
+						t.Fatalf("rebuilt loop finished without guard confirmation: %v", outcome.err)
+					}
+				}
+				if !access.outside || access.granted {
+					select {
+					case request := <-runner.guardRequests:
+						request.Reply <- interaction.GuardDecisionDeny
+						t.Fatalf("workspace read unexpectedly requested confirmation: %s", request.Reason)
+					case outcome = <-done:
+					}
+				} else {
+					outcome = <-done
+				}
+				if outcome.err != nil {
+					t.Fatalf("rebuilt loop Run() error = %v", outcome.err)
+				}
+				if executions != 1 {
+					t.Fatalf("read executions = %d, want 1", executions)
+				}
+				if len(outcome.result.Turns) == 0 ||
+					len(outcome.result.Turns[0].ToolResults) != 1 ||
+					outcome.result.Turns[0].ToolResults[0].IsError {
+					t.Fatalf("rebuilt loop tool result = %#v, want success", outcome.result.Turns)
+				}
+			})
+		}
 	}
 }
 
