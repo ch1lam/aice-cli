@@ -72,9 +72,9 @@ product details from those documents into this file.
   Unknown tool names default to `ask` (non-interactive: `deny`). A Loop with
   a non-empty tool set must receive a `Guard`. Path-access mode is
   `allow`/`ask`/`block`; check `Decision` is `allow`/`ask`/`deny`.
-  `Allow always` is current-run, memory-only. The loop never constructs the
-  gate; `internal/app` injects it. See [Tool execution and
-  Sessions](docs/execution-sessions.md#tool-execution-boundary).
+  Run-scoped grants (Allow … for this run) are current-run, memory-only.
+  The loop never constructs the gate; `internal/app` injects it. See [Tool
+  execution and Sessions](docs/execution-sessions.md#tool-execution-boundary).
 - Project Trust gates only workspace-root `AGENTS.md`, `.aice/SYSTEM.md`, and
   `.aice/APPEND_SYSTEM.md`. It is not a sandbox. `.aice/sessions` never
   triggers Trust; provider, model, thinking, and credentials remain global.

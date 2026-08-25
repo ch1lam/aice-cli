@@ -1261,7 +1261,7 @@ func TestInteractiveSessionLoopRebuildPreservesGuardContext(t *testing.T) {
 						if request.Path != readPath {
 							t.Errorf("guard request path = %q, want %q", request.Path, readPath)
 						}
-						request.Reply <- interaction.GuardDecisionAllowOnce
+						request.Reply <- interaction.GuardReply{OptionID: guardOptionAllowOnce}
 					case outcome = <-done:
 						t.Fatalf("rebuilt loop finished without guard confirmation: %v", outcome.err)
 					}
@@ -1269,7 +1269,7 @@ func TestInteractiveSessionLoopRebuildPreservesGuardContext(t *testing.T) {
 				if !access.outside || access.granted {
 					select {
 					case request := <-runner.guardRequests:
-						request.Reply <- interaction.GuardDecisionDeny
+						request.Reply <- interaction.GuardReply{OptionID: guardOptionDeny}
 						t.Fatalf("workspace read unexpectedly requested confirmation: %s", request.Reason)
 					case outcome = <-done:
 					}

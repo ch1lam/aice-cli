@@ -224,6 +224,84 @@ var builtinStructuralMatchers = []structuralMatcher{
 	fdiskMatcher, partedMatcher, chmodMatcher, chownMatcher, containerMatcher,
 }
 
+// prefixSuppressedBinaries are commands that must not yield a session-grant
+// prefix; authorizing them would be as broad as skipping the dangerous check.
+var prefixSuppressedBinaries = map[string]bool{
+	"rm": true, "sudo": true, "doas": true, "pkexec": true,
+	"dd": true, "shred": true, "wipefs": true, "blkdiscard": true,
+	"fdisk": true, "sfdisk": true, "cfdisk": true, "parted": true,
+	"sgdisk": true, "chmod": true, "chown": true, "mkfs": true,
+}
+
+func isPrefixSuppressedBinary(cmd string) bool {
+	if prefixSuppressedBinaries[cmd] {
+		return true
+	}
+	return strings.HasPrefix(cmd, "mkfs.")
+}
+
+// CommandPrefix returns a suggested session-grant prefix for command.
+// It returns "" when no safe prefix exists: compound commands, suppressed
+// dangerous binaries, and docker/podman run or create.
+func CommandPrefix(command string) string {
+	calls := parseCallWords(command)
+	if len(calls) != 1 {
+		return ""
+	}
+	words := calls[0]
+	if len(words) == 0 {
+		return ""
+	}
+	if isPrefixSuppressedBinary(words[0]) {
+		return ""
+	}
+	if len(words) >= 2 {
+		isContainer := words[0] == "docker" || words[0] == "podman"
+		isRunOrCreate := words[1] == "run" || words[1] == "create"
+		if isContainer && isRunOrCreate {
+			return ""
+		}
+	}
+	prefix := words[0]
+	if len(words) >= 2 {
+		sub := words[1]
+		isSubcommand := !strings.HasPrefix(sub, "-") && !strings.Contains(sub, "/") && !strings.Contains(sub, "=")
+		if isSubcommand {
+			prefix = words[0] + " " + words[1]
+		}
+	}
+	return prefix
+}
+
+// commandCoveredByPrefixes reports whether every parsed subcommand is covered
+// by a session command-prefix grant. Coverage is exact match or a word-boundary
+// prefix (joined words equal the grant, or start with grant plus a space).
+func commandCoveredByPrefixes(cmd string, prefixes []string) bool {
+	if len(prefixes) == 0 {
+		return false
+	}
+	calls := parseCallWords(cmd)
+	if len(calls) == 0 {
+		return false
+	}
+	for _, words := range calls {
+		joined := strings.Join(words, " ")
+		if !commandMatchesAnyPrefix(joined, prefixes) {
+			return false
+		}
+	}
+	return true
+}
+
+func commandMatchesAnyPrefix(joined string, prefixes []string) bool {
+	for _, prefix := range prefixes {
+		if joined == prefix || strings.HasPrefix(joined, prefix+" ") {
+			return true
+		}
+	}
+	return false
+}
+
 // structuralDangerousMatch checks each parsed command's word list against
 // builtin structural matchers. Returns description and matched pattern when hit.
 func structuralDangerousMatch(command string) (string, string) {

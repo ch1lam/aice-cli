@@ -1092,6 +1092,105 @@ func TestLoopReturnsToolFailuresToModel(t *testing.T) {
 	}
 }
 
+func TestLoopAskHandlerDenyIncludesUserFeedback(t *testing.T) {
+	t.Parallel()
+
+	const denyReason = "dangerous command requires confirmation"
+	askGate := fixedDecisionGuard{result: agent.GuardResult{
+		Decision: agent.GuardAsk,
+		Reason:   denyReason,
+		RuleID:   "permissionGate.dangerous",
+	}}
+
+	tests := []struct {
+		name            string
+		handler         agent.GuardAskHandler
+		wantContains    []string
+		wantNotContains []string
+	}{
+		{
+			name: "deny with feedback",
+			handler: func(context.Context, llm.ToolCall, agent.GuardResult) (agent.GuardAskReply, error) {
+				return agent.GuardAskReply{
+					Decision: agent.GuardDeny,
+					Feedback: "do not touch secrets",
+				}, nil
+			},
+			wantContains: []string{
+				denyReason,
+				"User feedback: do not touch secrets",
+			},
+		},
+		{
+			name: "deny without feedback",
+			handler: func(context.Context, llm.ToolCall, agent.GuardResult) (agent.GuardAskReply, error) {
+				return agent.GuardAskReply{Decision: agent.GuardDeny}, nil
+			},
+			wantContains:    []string{denyReason},
+			wantNotContains: []string{"User feedback:"},
+		},
+		{
+			name:            "nil handler fails closed",
+			wantContains:    []string{denyReason},
+			wantNotContains: []string{"User feedback:"},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			modelInfo := testModel()
+			first := assistantMessage(
+				modelInfo,
+				llm.StopReasonToolUse,
+				toolCallPart("call-1", "bash", `{"command":"rm -rf /"}`),
+			)
+			second := assistantMessage(modelInfo, llm.StopReasonStop, textPart("stopped"))
+			model := &scriptedModel{scripts: []*streamScript{
+				{events: terminalEvents(first)},
+				{events: terminalEvents(second)},
+			}}
+			tool := newFakeTool("bash", successfulTool)
+			options := []agent.LoopOption{agent.WithGuard(askGate)}
+			if test.handler != nil {
+				options = append(options, agent.WithGuardAskHandler(test.handler))
+			}
+			loop := mustLoop(t, model, []agent.Tool{tool}, options...)
+
+			result, err := loop.Run(
+				t.Context(),
+				testInput(modelInfo, mustPrompt(t, "clean")),
+				nil,
+			)
+			if err != nil {
+				t.Fatalf("Run() error = %v", err)
+			}
+			if len(tool.calls) != 0 {
+				t.Fatalf("tool calls = %d, want 0", len(tool.calls))
+			}
+			if len(result.ModelRounds) == 0 || len(result.ModelRounds[0].ToolResults) != 1 {
+				t.Fatalf("Run() result = %#v", result)
+			}
+			got := result.ModelRounds[0].ToolResults[0]
+			if !got.IsError {
+				t.Fatalf("tool result = %#v, want error", got)
+			}
+			text := messageText(got)
+			for _, want := range test.wantContains {
+				if !strings.Contains(text, want) {
+					t.Fatalf("tool result text = %q, want substring %q", text, want)
+				}
+			}
+			for _, unwanted := range test.wantNotContains {
+				if strings.Contains(text, unwanted) {
+					t.Fatalf("tool result text = %q, must not contain %q", text, unwanted)
+				}
+			}
+		})
+	}
+}
+
 func TestLoopContinuesUntilModelStopsAfterManyToolCalls(t *testing.T) {
 	t.Parallel()
 
@@ -1408,6 +1507,14 @@ type allowAllGuard struct{}
 
 func (allowAllGuard) Check(context.Context, llm.ToolCall) (agent.GuardResult, error) {
 	return agent.GuardResult{Decision: agent.GuardAllow}, nil
+}
+
+type fixedDecisionGuard struct {
+	result agent.GuardResult
+}
+
+func (g fixedDecisionGuard) Check(context.Context, llm.ToolCall) (agent.GuardResult, error) {
+	return g.result, nil
 }
 
 func textPart(text string) llm.ContentPart {

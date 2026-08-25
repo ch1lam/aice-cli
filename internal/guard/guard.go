@@ -38,9 +38,12 @@ type Guard struct {
 	exists    func(path, workspace string) bool
 	// sessionAllowed tracks file-policy paths allowed for this run.
 	sessionAllowed map[string]bool
+	// sessionAllowedTools tracks unknown tool names allowed for this run.
+	sessionAllowedTools map[string]bool
 	// permission gate
 	dangerousPatterns    []compiledCommandPattern
 	allowedCmdPatterns   []compiledCommandPattern
+	sessionCmdPrefixes   []string
 	autoDenyPatterns     []compiledCommandPattern
 	useBuiltinStructural bool
 	requireConfirmation  bool
@@ -54,7 +57,15 @@ type Guard struct {
 // workspace may be empty (uses raw paths without relative conversion).
 func New(workspace string, cfg Config) (*Guard, error) {
 	if cfg.Enabled != nil && !*cfg.Enabled {
-		return &Guard{workspace: workspace, enabled: false, requireConfirmation: true, exists: fileExists, sessionAllowed: map[string]bool{}, sessionAllowedPaths: map[string]bool{}}, nil
+		return &Guard{
+			workspace:           workspace,
+			enabled:             false,
+			requireConfirmation: true,
+			exists:              fileExists,
+			sessionAllowed:      map[string]bool{},
+			sessionAllowedPaths: map[string]bool{},
+			sessionAllowedTools: map[string]bool{},
+		}, nil
 	}
 	resolved := ResolveConfig(cfg)
 	policies := compilePolicies(resolved.Policies)
@@ -81,6 +92,7 @@ func New(workspace string, cfg Config) (*Guard, error) {
 		exists:               fileExists,
 		sessionAllowed:       map[string]bool{},
 		sessionAllowedPaths:  map[string]bool{},
+		sessionAllowedTools:  map[string]bool{},
 	}, nil
 }
 
@@ -110,7 +122,8 @@ func (g *Guard) AllowSession(path string) {
 // AllowPathSession records a path-access grant for the remainder of this run.
 // isDir indicates whether the grant is for the directory and its descendants.
 // Grants of the filesystem root or the user's home directory are ignored so
-// Allow always cannot authorize those too-broad scopes; later checks stay ask.
+// a run-scoped grant ("Allow … for this run") cannot authorize those
+// too-broad scopes; later checks stay ask.
 func (g *Guard) AllowPathSession(absPath string, isDir bool) {
 	if g == nil {
 		return
@@ -134,6 +147,29 @@ func (g *Guard) AllowCommandSession(command string) {
 		return
 	}
 	g.allowedCmdPatterns = append(g.allowedCmdPatterns, compileCommandPattern(PatternConfig{Pattern: command}))
+}
+
+// AllowToolSession records that an unknown tool name is allowed for the
+// remainder of this run.
+func (g *Guard) AllowToolSession(name string) {
+	if g == nil || name == "" {
+		return
+	}
+	g.sessionAllowedTools[name] = true
+}
+
+// AllowCommandPrefixSession records a command-prefix grant for the remainder
+// of this run. Future bash commands whose every parsed subcommand matches the
+// prefix (exact or prefix plus a following word) skip the dangerous check.
+func (g *Guard) AllowCommandPrefixSession(prefix string) {
+	if g == nil {
+		return
+	}
+	prefix = strings.TrimSpace(prefix)
+	if prefix == "" {
+		return
+	}
+	g.sessionCmdPrefixes = append(g.sessionCmdPrefixes, prefix)
 }
 
 // ResolveAbsolute exposes resolveAbsolute for callers that need to map a
@@ -160,8 +196,12 @@ func (g *Guard) Check(ctx context.Context, call llm.ToolCall) (Result, error) {
 		return Result{}, err
 	}
 	// Known tools with no extractable path/command still allow. Completely
-	// unknown names cannot be mapped to actions and must not be silent-allow.
+	// unknown names cannot be mapped to actions and must not be silent-allow,
+	// unless the user granted this tool for the remainder of the run.
 	if !isKnownTool(call.Name) {
+		if g.sessionAllowedTools[call.Name] {
+			return Result{Decision: DecisionAllow}, nil
+		}
 		return Result{
 			Decision: DecisionAsk,
 			Reason:   fmt.Sprintf("tool %q is not recognized by the execution gate", call.Name),
@@ -177,12 +217,18 @@ func (g *Guard) Check(ctx context.Context, call llm.ToolCall) (Result, error) {
 			if hit := matchCommandPattern(cmd, g.autoDenyPatterns); hit != nil {
 				return Result{Decision: DecisionDeny, Reason: formatCommandBlockReason(hit, ""), RuleID: "permissionGate.autoDeny", Action: Action{Kind: "command", Command: cmd, ToolName: call.Name}}, nil
 			}
-			// Allowed patterns bypass dangerous check.
-			if matchCommandPattern(cmd, g.allowedCmdPatterns) == nil {
+			// Allowed patterns and session command prefixes bypass the dangerous check.
+			if matchCommandPattern(cmd, g.allowedCmdPatterns) == nil && !commandCoveredByPrefixes(cmd, g.sessionCmdPrefixes) {
 				if g.useBuiltinStructural {
 					if desc, pat := structuralDangerousMatch(cmd); desc != "" {
 						if g.requireConfirmation {
-							return Result{Decision: DecisionAsk, Reason: "Dangerous command requires confirmation (" + desc + "): " + pat, RuleID: "permissionGate.dangerous", Action: Action{Kind: "command", Command: cmd, ToolName: call.Name}}, nil
+							return Result{
+								Decision: DecisionAsk,
+								Reason:   "Dangerous command requires confirmation (" + desc + "): " + pat,
+								RuleID:   "permissionGate.dangerous",
+								Action:   Action{Kind: "command", Command: cmd, ToolName: call.Name},
+								Pattern:  pat,
+							}, nil
 						}
 					}
 					// When builtins are active, structural is authoritative; do not fall back to substring builtins
@@ -191,7 +237,13 @@ func (g *Guard) Check(ctx context.Context, call llm.ToolCall) (Result, error) {
 					// Custom patterns replace builtins: check substring/regex
 					if hit := matchCommandPattern(cmd, g.dangerousPatterns); hit != nil {
 						if g.requireConfirmation {
-							return Result{Decision: DecisionAsk, Reason: formatCommandBlockReason(hit, ""), RuleID: "permissionGate.dangerous", Action: Action{Kind: "command", Command: cmd, ToolName: call.Name}}, nil
+							return Result{
+								Decision: DecisionAsk,
+								Reason:   formatCommandBlockReason(hit, ""),
+								RuleID:   "permissionGate.dangerous",
+								Action:   Action{Kind: "command", Command: cmd, ToolName: call.Name},
+								Pattern:  hit.source.Pattern,
+							}, nil
 						}
 					}
 				}

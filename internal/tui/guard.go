@@ -1,12 +1,19 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
 	"github.com/ch1lam/aice-cli/internal/interaction"
+)
+
+const (
+	guardFeedbackPrompt = "Tell the agent what to do instead (optional):"
+	guardSelectFooter   = "↑/↓ select · 1-9/enter confirm · y first · n/esc deny"
+	guardFeedbackFooter = "enter send · esc back"
 )
 
 type guardRequestMsg struct {
@@ -29,19 +36,8 @@ func (m model) handleGuardKey(msg tea.KeyPressMsg) (model, tea.Cmd, bool) {
 	if m.guardPending == nil {
 		return m, nil, false
 	}
-	switch msg.String() {
-	case "y", "Y":
-		m2 := m
-		m2.resolveGuard(interaction.GuardDecisionAllowOnce)
-		return m2, m2.nextGuardWait(), true
-	case "a", "A":
-		m2 := m
-		m2.resolveGuard(interaction.GuardDecisionAllowAlways)
-		return m2, m2.nextGuardWait(), true
-	case "n", "N", "esc":
-		m2 := m
-		m2.resolveGuard(interaction.GuardDecisionDeny)
-		return m2, m2.nextGuardWait(), true
+	if m.guardFeedback {
+		return m.handleGuardFeedbackKey(msg)
 	}
 	switch msg.Code {
 	case tea.KeyUp:
@@ -50,43 +46,102 @@ func (m model) handleGuardKey(msg tea.KeyPressMsg) (model, tea.Cmd, bool) {
 		}
 		return m, nil, true
 	case tea.KeyDown:
-		if m.guardSelection < 2 {
+		if m.guardSelection+1 < len(m.guardPending.Options) {
 			m.guardSelection++
 		}
 		return m, nil, true
 	case tea.KeyEnter:
-		var decision interaction.GuardDecision
-		switch m.guardSelection {
-		case 0:
-			decision = interaction.GuardDecisionAllowOnce
-		case 1:
-			decision = interaction.GuardDecisionAllowAlways
-		default:
-			decision = interaction.GuardDecisionDeny
-		}
-		m2 := m
-		m2.resolveGuard(decision)
-		return m2, m2.nextGuardWait(), true
+		return m.confirmGuardIndex(m.guardSelection)
 	case tea.KeyEscape:
-		m2 := m
-		m2.resolveGuard(interaction.GuardDecisionDeny)
-		return m2, m2.nextGuardWait(), true
+		return m.confirmGuardIndex(firstDenyGuardOption(m.guardPending.Options))
+	}
+	switch msg.String() {
+	case "y", "Y":
+		return m.confirmGuardIndex(0)
+	case "n", "N":
+		return m.confirmGuardIndex(firstDenyGuardOption(m.guardPending.Options))
+	case "1", "2", "3", "4", "5", "6", "7", "8", "9":
+		return m.confirmGuardIndex(int(msg.String()[0] - '1'))
 	}
 	return m, nil, true
 }
 
-func (m *model) resolveGuard(decision interaction.GuardDecision) {
-	if m.guardPending == nil {
-		return
+func (m model) handleGuardFeedbackKey(msg tea.KeyPressMsg) (model, tea.Cmd, bool) {
+	switch msg.Code {
+	case tea.KeyEnter:
+		return m.submitGuardFeedback()
+	case tea.KeyEscape:
+		m.guardFeedback = false
+		m.guardFeedbackText = ""
+		m.resizeLayout()
+		return m, nil, true
+	case tea.KeyBackspace:
+		runes := []rune(m.guardFeedbackText)
+		if len(runes) > 0 {
+			m.guardFeedbackText = string(runes[:len(runes)-1])
+		}
+		return m, nil, true
 	}
+	if msg.Text != "" {
+		m.guardFeedbackText += msg.Text
+		return m, nil, true
+	}
+	return m, nil, true
+}
+
+func (m model) confirmGuardIndex(index int) (model, tea.Cmd, bool) {
+	if m.guardPending == nil || index < 0 || index >= len(m.guardPending.Options) {
+		return m, nil, true
+	}
+	m.guardSelection = index
+	if m.guardPending.Options[index].Deny {
+		// Deny waits for an optional note instead of sending immediately.
+		m.guardFeedback = true
+		m.guardFeedbackText = ""
+		m.resizeLayout()
+		return m, nil, true
+	}
+	m.sendGuardReply(m.guardPending.Options[index].ID, "")
+	return m, m.nextGuardWait(), true
+}
+
+func (m model) submitGuardFeedback() (model, tea.Cmd, bool) {
+	if m.guardPending == nil || !m.guardFeedback {
+		return m, nil, true
+	}
+	index := m.guardSelection
+	if index < 0 || index >= len(m.guardPending.Options) {
+		return m, nil, true
+	}
+	m.sendGuardReply(
+		m.guardPending.Options[index].ID,
+		strings.TrimSpace(m.guardFeedbackText),
+	)
+	return m, m.nextGuardWait(), true
+}
+
+func firstDenyGuardOption(options []interaction.GuardOption) int {
+	for index, option := range options {
+		if option.Deny {
+			return index
+		}
+	}
+	return -1
+}
+
+func (m *model) sendGuardReply(optionID, feedback string) {
 	req := m.guardPending
 	m.guardPending = nil
 	m.guardSelection = 0
+	m.guardFeedback = false
+	m.guardFeedbackText = ""
 	m.input.Focus()
 	m.resizeLayout()
-	// Non-blocking send; handler has buffer 1 and is waiting.
+	if req == nil {
+		return
+	}
 	select {
-	case req.Reply <- decision:
+	case req.Reply <- interaction.GuardReply{OptionID: optionID, Feedback: feedback}:
 	default:
 	}
 }
@@ -103,41 +158,109 @@ func (m model) guardView(width int) string {
 		return ""
 	}
 	req := m.guardPending
-	innerWidth := max(width-lipgloss.NewStyle().GetHorizontalFrameSize()-4, 20)
-	detail := req.Reason
-	if detail == "" {
-		detail = "This action requires confirmation."
+	style := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(accentColor).
+		Padding(1, 2)
+	innerWidth := max(width-style.GetHorizontalFrameSize(), 20)
+
+	sections := make([]string, 0, 5)
+	sections = append(sections, headerStyle.Render(guardTitle(req)))
+	if key := guardKeyLine(req, innerWidth); key != "" {
+		sections = append(sections, key)
 	}
+	if secondary := guardSecondaryLine(req.Reason, req.RuleID); secondary != "" {
+		sections = append(sections, secondary)
+	}
+	sections = append(sections, m.guardOptionsView())
+	if m.guardFeedback {
+		sections = append(sections, m.guardFeedbackView(innerWidth))
+		sections = append(sections, mutedStyle.Render(guardFeedbackFooter))
+	} else {
+		sections = append(sections, mutedStyle.Render(guardSelectFooter))
+	}
+	return style.Width(width).Render(strings.Join(sections, "\n\n"))
+}
+
+func guardTitle(req *interaction.GuardRequest) string {
 	if req.Command != "" {
-		detail += "\n" + mutedStyle.Render("$ "+req.Command)
+		return "Run this command?"
 	}
-	if req.Path != "" && req.Command == "" {
-		detail += "\n" + mutedStyle.Render(req.Path)
+	if req.Path != "" {
+		return "Allow access outside the workspace?"
 	}
-	if req.RuleID != "" {
-		detail += "\n" + mutedStyle.Render("rule: "+req.RuleID)
+	if req.ToolName == "" {
+		return "Allow this action?"
 	}
-	options := []string{"Allow once (y)", "Allow always (a)", "Deny (n)"}
-	rows := make([]string, len(options))
+	return fmt.Sprintf("Allow tool %q?", req.ToolName)
+}
+
+func guardKeyLine(req *interaction.GuardRequest, width int) string {
+	if req.Command != "" {
+		return renderGuardCommand(req.Command, req.Highlight, width)
+	}
+	if req.Path != "" {
+		return guardEmphasisStyle.Render(
+			truncateTerminalText(shellWorkingDirectory(req.Path), width),
+		)
+	}
+	return ""
+}
+
+func renderGuardCommand(command, highlight string, width int) string {
+	prefix := "$ "
+	display := truncateTerminalText(command, max(width-lipgloss.Width(prefix), 1))
+	if highlight == "" || !strings.Contains(command, highlight) {
+		return guardEmphasisStyle.Render(prefix + display)
+	}
+	index := strings.Index(display, highlight)
+	if index < 0 {
+		return guardEmphasisStyle.Render(prefix + display)
+	}
+	end := index + len(highlight)
+	return guardEmphasisStyle.Render(prefix) +
+		guardEmphasisStyle.Render(display[:index]) +
+		guardHighlightStyle.Render(display[index:end]) +
+		guardEmphasisStyle.Render(display[end:])
+}
+
+func guardSecondaryLine(reason, ruleID string) string {
+	reason = strings.TrimSpace(reason)
+	ruleID = strings.TrimSpace(ruleID)
+	switch {
+	case reason != "" && ruleID != "":
+		return mutedStyle.Render(reason) +
+			mutedStyle.Render("  rule: "+ruleID)
+	case reason != "":
+		return mutedStyle.Render(reason)
+	case ruleID != "":
+		return mutedStyle.Render("rule: " + ruleID)
+	default:
+		return ""
+	}
+}
+
+func (m model) guardOptionsView() string {
+	options := m.guardPending.Options
+	rows := make([]string, 0, len(options))
 	for i, opt := range options {
 		prefix := "  "
 		style := mutedStyle
 		if i == m.guardSelection {
 			prefix = "› "
-			style = lipgloss.NewStyle().Bold(true).Foreground(accentColor)
+			style = guardEmphasisStyle
 		}
-		rows[i] = style.Render(prefix + opt)
+		row := style.Render(prefix + fmt.Sprintf("%d. %s", i+1, opt.Label))
+		if opt.Detail != "" {
+			row += "\n" + mutedStyle.Render("    "+opt.Detail)
+		}
+		rows = append(rows, row)
 	}
-	body := strings.Join([]string{
-		headerStyle.Render("⚠ Guard confirmation required"),
-		bodyStyle.Render(detail),
-		strings.Join(rows, "\n"),
-		mutedStyle.Render("↑/↓ select · enter confirm · y/a/n quick · esc deny"),
-	}, "\n\n")
-	style := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(accentColor).
-		Padding(1, 2).
-		Width(min(innerWidth+4, 60))
-	return style.Render(body)
+	return strings.Join(rows, "\n")
+}
+
+func (m model) guardFeedbackView(width int) string {
+	input := m.guardFeedbackText + guardCursorStyle.Render(" ")
+	return mutedStyle.Render(guardFeedbackPrompt) + "\n" +
+		bodyStyle.Width(max(width, 1)).Render(input)
 }

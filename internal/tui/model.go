@@ -100,6 +100,8 @@ type model struct {
 	guardRequests      <-chan interaction.GuardRequest
 	guardPending       *interaction.GuardRequest
 	guardSelection     int
+	guardFeedback      bool
+	guardFeedbackText  string
 
 	viewport          viewport.Model
 	selection         transcriptSelection
@@ -244,6 +246,8 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		if message.req != nil {
 			m.guardPending = message.req
 			m.guardSelection = 0
+			m.guardFeedback = false
+			m.guardFeedbackText = ""
 			m.input.Blur()
 			m.resizeLayout()
 			m.refreshViewport(true)
@@ -434,12 +438,13 @@ func (m model) View() tea.View {
 	view.AltScreen = true
 	view.WindowTitle = "AICE"
 	view.MouseMode = tea.MouseModeCellMotion
-	if m.secretInput == nil {
+	if m.secretInput == nil && m.guardPending == nil {
 		// Anchor the real terminal cursor on the composer caret. The IME
 		// candidate window follows the terminal cursor, and Bubble Tea's
 		// renderer hides the cursor around every updated frame and restores
 		// it here, so repaints (such as the welcome logo sweep) no longer
-		// drag the input method away from the input field.
+		// drag the input method away from the input field. Guard confirmation
+		// replaces the composer, so its caret must not keep leaking through.
 		if cursor := m.input.Cursor(); cursor != nil {
 			m.positionComposerCursor(&cursor.Position, width)
 			view.Cursor = cursor

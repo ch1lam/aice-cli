@@ -119,13 +119,14 @@ func (e *runExecution) executeTool(
 			}
 			return newErrorToolResult(call, fmt.Errorf("%s", reason))
 		case GuardAsk:
-			decision := GuardDeny
+			reply := GuardAskReply{Decision: GuardDeny}
 			if e.loop.guardAsk != nil {
 				// Pass full GuardResult so the handler can display reason/rule.
 				askRes := GuardResult{
 					Decision: GuardAsk,
 					Reason:   res.Reason,
 					RuleID:   res.RuleID,
+					Pattern:  res.Pattern,
 					Action: GuardAction{
 						Kind:     res.Action.Kind,
 						Path:     res.Action.Path,
@@ -133,16 +134,19 @@ func (e *runExecution) executeTool(
 						ToolName: res.Action.ToolName,
 					},
 				}
-				d, err := e.loop.guardAsk(ctx, call, askRes)
+				askReply, err := e.loop.guardAsk(ctx, call, askRes)
 				if err != nil {
 					return newErrorToolResult(call, fmt.Errorf("guard ask: %w", err))
 				}
-				decision = d
+				reply = askReply
 			}
-			if decision != GuardAllow {
+			if reply.Decision != GuardAllow {
 				reason := res.Reason
 				if reason == "" {
 					reason = fmt.Sprintf("tool %q requires confirmation (rule %q)", call.Name, res.RuleID)
+				}
+				if reply.Feedback != "" {
+					reason = fmt.Sprintf("%s\nUser feedback: %s", reason, reply.Feedback)
 				}
 				return newErrorToolResult(call, fmt.Errorf("%s", reason))
 			}

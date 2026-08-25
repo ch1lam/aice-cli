@@ -38,14 +38,40 @@ The gate evaluates three layers in order:
    the workspace. Mode values are `allow` / `ask` / `block`. Default
    `allowedPaths` is empty.
 
-Each check returns Decision `allow` / `ask` / `deny`. Non-interactive runs
-treat `ask` as `deny` (fail-closed). The interactive TUI maps `ask` to
-`Allow once` / `Allow always` / `Deny`. `Allow always` is current-run,
-memory-only: grants live in `sessionAllowed` / `sessionAllowedPaths` and
-never persist to disk. Path grants of `/` or the user's home directory are
-ignored, so `Allow always` cannot authorize the entire filesystem or home
-directory. Stronger isolation still belongs to an external
-container, VM, or OS sandbox.
+Each check returns Decision `allow` / `ask` / `deny`. Non-interactive
+`--print` runs treat `ask` as `deny` (fail-closed). Interactive `ask`
+prompts generate options from the triggering rule. Every grant is
+current-run and memory-only; none persist to disk.
+
+| Rule | Options |
+| --- | --- |
+| `pathAccess.ask` | Allow once; Allow this file for this run; Allow directory `<dir>/` for this run; Deny |
+| `permissionGate.dangerous` | Allow once; Allow this exact command for this run; Allow `"<prefix> …"` commands for this run; Deny |
+| `unknownTool` | Allow once; Allow tool `"X"` for this run; Deny |
+| Other `ask` rules | Allow once; Deny |
+
+The directory option is omitted when the parent is `/` or `$HOME`. The
+command-prefix option is omitted when `guard.CommandPrefix` returns empty:
+compound commands, dangerous binaries such as `rm`/`sudo`/`dd`/`mkfs`, and
+`docker`/`podman` `run`/`create`.
+
+Grant scope for the remainder of the current run:
+
+- **file** — that absolute path only
+- **directory** — the parent directory and its descendants
+- **exact command** — the identical bash command string
+- **command prefix** — derived by `guard.CommandPrefix`. Compound commands
+  are split with a shell AST (`&&`, `||`, `;`, `|`, and similar). Every
+  subcommand must start with an authorized prefix at a word boundary
+- **tool name** — that unknown tool name (`AllowToolSession`)
+
+`permissionGate.autoDeny` always wins and cannot be bypassed by any grant.
+Path grants of `/` or the user's home directory are ignored, so a
+run-scoped grant cannot authorize the entire filesystem or home
+directory. Deny may include an optional user note; the loop appends it to
+the paired error tool result as `User feedback: ...`. A reply `OptionID`
+that was not offered for that prompt is treated as Deny. Stronger
+isolation still belongs to an external container, VM, or OS sandbox.
 
 Project Trust does not change tool permissions; see [Project Trust and
 prompts](project-trust.md).

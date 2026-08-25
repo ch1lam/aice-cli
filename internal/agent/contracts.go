@@ -31,6 +31,7 @@ type GuardResult struct {
 	Decision GuardDecision
 	Reason   string
 	RuleID   string
+	Pattern  string
 	Action   GuardAction
 }
 

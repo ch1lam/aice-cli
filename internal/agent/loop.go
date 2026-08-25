@@ -21,11 +21,17 @@ type Loop struct {
 	guardAsk    GuardAskHandler
 }
 
-// GuardAskHandler is called when a guard returns Ask. It decides whether to
-// allow the tool call. Returning GuardAllow proceeds; GuardDeny blocks. The
-// handler may block for user confirmation (e.g. TUI prompt). A nil handler
-// fails closed by denying.
-type GuardAskHandler func(ctx context.Context, call llm.ToolCall, result GuardResult) (GuardDecision, error)
+// GuardAskReply is the user's resolution of one guard Ask.
+type GuardAskReply struct {
+	Decision GuardDecision // GuardAllow or GuardDeny
+	Feedback string        // optional user note included in the deny tool result
+}
+
+// GuardAskHandler is called when a guard returns Ask. Returning a reply with
+// GuardAllow proceeds; GuardDeny blocks. Feedback on a deny reply is copied
+// into the error tool result. The handler may block for user confirmation.
+// A nil handler fails closed by denying.
+type GuardAskHandler func(ctx context.Context, call llm.ToolCall, result GuardResult) (GuardAskReply, error)
 
 // WithGuard installs an execution gate consulted before each tool call.
 // It is the intrinsic guard (internal/guard), not a plugin. A non-nil

@@ -138,3 +138,9 @@ func isGrantTooBroad(abs string) bool {
 	}
 	return false
 }
+
+// GrantTooBroad reports whether a path-access grant would cover the
+// filesystem root or the user's home directory.
+func GrantTooBroad(path string) bool {
+	return isGrantTooBroad(path)
+}

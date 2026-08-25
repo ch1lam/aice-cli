@@ -43,8 +43,10 @@
   `internal/app` wires it). `NewLoop` requires a non-nil `Guard` when the
   tool set is non-empty. `deny` blocks with a paired error result, `ask`
   delegates to the interactive `GuardAskHandler` (non-interactive treats
-  `ask` as `deny` — fail-closed); `allow` proceeds. Product behavior of the
-  gate, including `Allow once` / `Allow always` (current run, memory-only),
+  `ask` as `deny` — fail-closed); `allow` proceeds. The handler returns
+  `GuardAskReply` with Decision `allow` or `deny` and optional `Feedback`.
+  Deny feedback is appended to the paired error tool result. A nil handler
+  fails closed. Product behavior of the gate, including run-scoped grants,
   is in [Tool execution and
   Sessions](execution-sessions.md#tool-execution-boundary).
 - Never execute an incomplete or invalid streamed tool call. If a response
@@ -138,6 +140,11 @@ Closed `uint8` iota set in `internal/interaction` (not JSON strings):
   follow-up. At a natural stop boundary the mailbox atomically seals if empty,
   or promotes remaining steers and returns the oldest input as the next
   follow-up. Accepted input must not disappear in a run-end race.
+- Interactive Ask confirmation is frontend-neutral: `internal/app` sends
+  `interaction.GuardRequest` (`Options`, `Highlight`) and the frontend
+  replies once with `GuardReply` (`OptionID`, `Feedback`). Product option
+  generation and grant scope are in [Tool execution and
+  Sessions](execution-sessions.md#tool-execution-boundary).
 - The TUI keeps only presentation copies. Pending steers are transcript
   previews until the Agent accepts them; follow-ups remain composer chrome
   until the Agent starts their interaction. Agent input events, not TUI queue

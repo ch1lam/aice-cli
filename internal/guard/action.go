@@ -32,6 +32,9 @@ type Result struct {
 	Reason   string
 	RuleID   string
 	Action   Action
+	// Pattern is the dangerous fragment that matched, for TUI highlight.
+	// Set only on permissionGate.dangerous Ask; other branches leave it empty.
+	Pattern string
 }
 
 // fileTools are tools that carry a single file path argument.

@@ -90,8 +90,15 @@ var (
 	transcriptSelectionStyle = lipgloss.NewStyle().
 					Foreground(inkBlackColor).
 					Background(secondaryColor)
-	errorStyle  = lipgloss.NewStyle().Foreground(errorColor)
-	noticeStyle = lipgloss.NewStyle().Foreground(warningColor)
+	errorStyle         = lipgloss.NewStyle().Foreground(errorColor)
+	noticeStyle        = lipgloss.NewStyle().Foreground(warningColor)
+	guardEmphasisStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(accentColor)
+	guardHighlightStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(errorColor)
+	guardCursorStyle = lipgloss.NewStyle().Reverse(true)
 )
 
 func inkMarkdownStyle() ansi.StyleConfig {

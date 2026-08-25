@@ -126,7 +126,8 @@ Freedom is released in four places only:
 
 1. concrete `[]agent.Tool` implementations;
 2. linear appends inside `assembleSystemPrompt`;
-3. run-scoped policy on `Guard`;
+3. run-scoped policy on `Guard` (persistent grants are a planned
+   extension and must not be prebuilt);
 4. another `Loop` constructed in `internal/app`.
 
 Restraint stays on Loop control flow, Session record types, the `llm`
@@ -178,7 +179,8 @@ When implementing subagents:
   a summary as `ToolResult` to the parent turn.
 - Defer parallelism. When it is required, either make `executeTools`
   concurrent or contain concurrency inside the tool. Before that change,
-  lock the unexported `sessionAllowed` and `sessionAllowedPaths` maps on
+  lock the unexported `sessionAllowed`, `sessionAllowedPaths`, and
+  `sessionAllowedTools` maps and the `sessionCmdPrefixes` slice on
   `guard.Guard`; they currently have no mutex and are safe only because
   tools run serially.
 

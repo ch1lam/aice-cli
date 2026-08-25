@@ -3,11 +3,28 @@ package app
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/ch1lam/aice-cli/internal/agent"
 	"github.com/ch1lam/aice-cli/internal/guard"
 	"github.com/ch1lam/aice-cli/internal/interaction"
 	"github.com/ch1lam/aice-cli/internal/llm"
+)
+
+const (
+	guardOptionAllowOnce       = "allow-once"
+	guardOptionAllowRunFile    = "allow-run-file"
+	guardOptionAllowRunDir     = "allow-run-dir"
+	guardOptionAllowRunCommand = "allow-run-command"
+	guardOptionAllowRunPrefix  = "allow-run-prefix"
+	guardOptionAllowRunTool    = "allow-run-tool"
+	guardOptionDeny            = "deny"
+
+	guardRulePathAccessAsk = "pathAccess.ask"
+	guardRuleDangerous     = "permissionGate.dangerous"
+	guardRuleUnknownTool   = "unknownTool"
 )
 
 // newExecutionGuard constructs the intrinsic gate independently of provider
@@ -50,42 +67,30 @@ func (g *guardAdapter) Check(ctx context.Context, call llm.ToolCall) (agent.Guar
 }
 
 func mapGuardResult(res guard.Result) agent.GuardResult {
-	action := agent.GuardAction{
-		Kind:     res.Action.Kind,
-		Path:     res.Action.Path,
-		Command:  res.Action.Command,
-		ToolName: res.Action.ToolName,
+	mapped := agent.GuardResult{
+		Reason:  res.Reason,
+		RuleID:  res.RuleID,
+		Pattern: res.Pattern,
+		Action: agent.GuardAction{
+			Kind:     res.Action.Kind,
+			Path:     res.Action.Path,
+			Command:  res.Action.Command,
+			ToolName: res.Action.ToolName,
+		},
 	}
 	switch res.Decision {
 	case guard.DecisionAllow:
-		return agent.GuardResult{
-			Decision: agent.GuardAllow,
-			Reason:   res.Reason,
-			RuleID:   res.RuleID,
-			Action:   action,
-		}
+		mapped.Decision = agent.GuardAllow
 	case guard.DecisionDeny:
-		return agent.GuardResult{
-			Decision: agent.GuardDeny,
-			Reason:   res.Reason,
-			RuleID:   res.RuleID,
-			Action:   action,
-		}
+		mapped.Decision = agent.GuardDeny
 	case guard.DecisionAsk:
-		return agent.GuardResult{
-			Decision: agent.GuardAsk,
-			Reason:   res.Reason,
-			RuleID:   res.RuleID,
-			Action:   action,
-		}
+		mapped.Decision = agent.GuardAsk
 	default:
-		return agent.GuardResult{
-			Decision: agent.GuardDeny,
-			Reason:   "execution gate returned an unknown decision",
-			RuleID:   "guard.unknown_decision",
-			Action:   action,
-		}
+		mapped.Decision = agent.GuardDeny
+		mapped.Reason = "execution gate returned an unknown decision"
+		mapped.RuleID = "guard.unknown_decision"
 	}
+	return mapped
 }
 
 // GuardRequests exposes pending guard confirmations for the TUI.
@@ -96,60 +101,188 @@ func (s *interactiveSession) GuardRequests() <-chan interaction.GuardRequest {
 	return s.guardRequests
 }
 
-func (s *interactiveSession) handleGuardAsk(ctx context.Context, call llm.ToolCall, result agent.GuardResult) (agent.GuardDecision, error) {
+func (s *interactiveSession) handleGuardAsk(ctx context.Context, call llm.ToolCall, result agent.GuardResult) (agent.GuardAskReply, error) {
 	if s == nil || s.guardRequests == nil {
-		return agent.GuardDeny, nil
+		return agent.GuardAskReply{Decision: agent.GuardDeny}, nil
 	}
 	// Use a small ID for display; call.ID is the tool-call ID.
 	reqID := call.ID
 	if reqID == "" {
 		reqID = result.RuleID
 	}
-	reply := make(chan interaction.GuardDecision, 1)
+	toolName := result.Action.ToolName
+	if toolName == "" {
+		toolName = call.Name
+	}
+	options := guardAskOptions(s.guard, toolName, result)
+	reply := make(chan interaction.GuardReply, 1)
 	req := interaction.GuardRequest{
-		ID:       reqID,
-		ToolName: call.Name,
-		Reason:   result.Reason,
-		RuleID:   result.RuleID,
-		Command:  result.Action.Command,
-		Path:     result.Action.Path,
-		Reply:    reply,
+		ID:        reqID,
+		ToolName:  call.Name,
+		Reason:    result.Reason,
+		RuleID:    result.RuleID,
+		Command:   result.Action.Command,
+		Path:      result.Action.Path,
+		Highlight: result.Pattern,
+		Options:   options,
+		Reply:     reply,
 	}
 	select {
 	case <-ctx.Done():
-		return agent.GuardDeny, ctx.Err()
+		return agent.GuardAskReply{Decision: agent.GuardDeny}, ctx.Err()
 	case s.guardRequests <- req:
 	}
 	select {
 	case <-ctx.Done():
-		return agent.GuardDeny, ctx.Err()
-	case decision := <-reply:
-		switch decision {
-		case interaction.GuardDecisionAllowAlways:
-			if s.guard != nil {
-				switch {
-				case result.RuleID == "pathAccess.ask":
-					abs := s.guard.ResolveAbsolute(result.Action.Path, result.Action.ToolName)
-					// Allow always grants this path only (isDir=false). It does
-					// not authorize the parent directory or sibling files.
-					s.guard.AllowPathSession(abs, false)
-				case result.RuleID == "permissionGate.dangerous":
-					if result.Action.Command != "" {
-						s.guard.AllowCommandSession(result.Action.Command)
-					} else if result.Action.Path != "" {
-						s.guard.AllowPathSession(result.Action.Path, false)
-					}
-				default:
-					if result.Action.Path != "" {
-						s.guard.AllowSession(result.Action.Path)
-					}
-				}
-			}
-			return agent.GuardAllow, nil
-		case interaction.GuardDecisionAllowOnce:
-			return agent.GuardAllow, nil
-		default:
-			return agent.GuardDeny, nil
+		return agent.GuardAskReply{Decision: agent.GuardDeny}, ctx.Err()
+	case got := <-reply:
+		// Honor only IDs this prompt actually offered so a reply cannot
+		// escalate to a broader grant than the user was shown.
+		if !guardOptionOffered(options, got.OptionID) || got.OptionID == guardOptionDeny {
+			return agent.GuardAskReply{
+				Decision: agent.GuardDeny,
+				Feedback: got.Feedback,
+			}, nil
+		}
+		s.applyGuardAskGrant(got.OptionID, toolName, result)
+		return agent.GuardAskReply{Decision: agent.GuardAllow}, nil
+	}
+}
+
+func guardAskOptions(g *guard.Guard, toolName string, result agent.GuardResult) []interaction.GuardOption {
+	switch result.RuleID {
+	case guardRulePathAccessAsk:
+		if result.Action.Path == "" {
+			return guardAskOnceOrDeny()
+		}
+		return pathAccessAskOptions(g, toolName, result.Action.Path)
+	case guardRuleDangerous:
+		if result.Action.Command == "" {
+			return guardAskOnceOrDeny()
+		}
+		return dangerousAskOptions(result.Action.Command)
+	case guardRuleUnknownTool:
+		return []interaction.GuardOption{
+			{ID: guardOptionAllowOnce, Label: "Allow once"},
+			{
+				ID:    guardOptionAllowRunTool,
+				Label: fmt.Sprintf("Allow tool %q for this run", toolName),
+			},
+			{ID: guardOptionDeny, Label: "Deny", Deny: true},
+		}
+	default:
+		return guardAskOnceOrDeny()
+	}
+}
+
+func pathAccessAskOptions(g *guard.Guard, toolName, path string) []interaction.GuardOption {
+	abs := resolveGuardAbs(g, path, toolName)
+	options := []interaction.GuardOption{
+		{ID: guardOptionAllowOnce, Label: "Allow once"},
+		{
+			ID:     guardOptionAllowRunFile,
+			Label:  "Allow this file for this run",
+			Detail: shortenHomePath(abs),
+		},
+	}
+	parent := filepath.Dir(abs)
+	if !guard.GrantTooBroad(parent) {
+		options = append(options, interaction.GuardOption{
+			ID:    guardOptionAllowRunDir,
+			Label: "Allow directory " + shortenHomePath(parent) + "/ for this run",
+		})
+	}
+	return append(options, interaction.GuardOption{
+		ID:    guardOptionDeny,
+		Label: "Deny",
+		Deny:  true,
+	})
+}
+
+func dangerousAskOptions(command string) []interaction.GuardOption {
+	options := []interaction.GuardOption{
+		{ID: guardOptionAllowOnce, Label: "Allow once"},
+		{ID: guardOptionAllowRunCommand, Label: "Allow this exact command for this run"},
+	}
+	if prefix := guard.CommandPrefix(command); prefix != "" {
+		options = append(options, interaction.GuardOption{
+			ID:    guardOptionAllowRunPrefix,
+			Label: fmt.Sprintf(`Allow "%s …" commands for this run`, prefix),
+		})
+	}
+	return append(options, interaction.GuardOption{
+		ID:    guardOptionDeny,
+		Label: "Deny",
+		Deny:  true,
+	})
+}
+
+func guardAskOnceOrDeny() []interaction.GuardOption {
+	return []interaction.GuardOption{
+		{ID: guardOptionAllowOnce, Label: "Allow once"},
+		{ID: guardOptionDeny, Label: "Deny", Deny: true},
+	}
+}
+
+func (s *interactiveSession) applyGuardAskGrant(optionID, toolName string, result agent.GuardResult) {
+	if s == nil || s.guard == nil {
+		return
+	}
+	g := s.guard
+	switch optionID {
+	case guardOptionAllowOnce:
+		return
+	case guardOptionAllowRunFile:
+		abs := g.ResolveAbsolute(result.Action.Path, toolName)
+		g.AllowPathSession(abs, false)
+	case guardOptionAllowRunDir:
+		abs := g.ResolveAbsolute(result.Action.Path, toolName)
+		g.AllowPathSession(filepath.Dir(abs), true)
+	case guardOptionAllowRunCommand:
+		g.AllowCommandSession(result.Action.Command)
+	case guardOptionAllowRunPrefix:
+		prefix := guard.CommandPrefix(result.Action.Command)
+		if prefix == "" {
+			g.AllowCommandSession(result.Action.Command)
+			return
+		}
+		g.AllowCommandPrefixSession(prefix)
+	case guardOptionAllowRunTool:
+		g.AllowToolSession(toolName)
+	}
+}
+
+func resolveGuardAbs(g *guard.Guard, path, toolName string) string {
+	if g != nil {
+		return g.ResolveAbsolute(path, toolName)
+	}
+	return filepath.Clean(path)
+}
+
+func guardOptionOffered(options []interaction.GuardOption, id string) bool {
+	for _, option := range options {
+		if option.ID == id {
+			return true
 		}
 	}
+	return false
+}
+
+// shortenHomePath displays an absolute path under the user's home with a
+// "~/" prefix; paths outside home are returned unchanged.
+func shortenHomePath(path string) string {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return path
+	}
+	cleanedHome := filepath.Clean(home)
+	cleaned := filepath.Clean(path)
+	if cleaned == cleanedHome {
+		return "~"
+	}
+	prefix := cleanedHome + string(filepath.Separator)
+	if !strings.HasPrefix(cleaned, prefix) {
+		return path
+	}
+	return "~/" + filepath.ToSlash(strings.TrimPrefix(cleaned, prefix))
 }
