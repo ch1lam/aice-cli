@@ -128,15 +128,28 @@ func isPathAllowed(abs string, allowed []AllowedPath, cwd string, sessionAllowed
 	return false
 }
 
-func isGrantTooBroad(abs string) bool {
-	cleaned := filepath.Clean(abs)
-	if cleaned == "/" {
+func isGrantTooBroad(path string) bool {
+	cleaned := filepath.Clean(path)
+	if isFilesystemRoot(cleaned) {
 		return true
 	}
 	if home, err := os.UserHomeDir(); err == nil && home != "" && filepath.Clean(home) == cleaned {
 		return true
 	}
 	return false
+}
+
+// isFilesystemRoot reports whether cleaned (already filepath.Clean'd) is a
+// filesystem root. After Clean, roots satisfy Dir(p) == p: Unix "/", Windows
+// drive roots ("C:\\"), and UNC share roots ("\\\\server\\share"). "." also
+// satisfies that identity, so relative paths are excluded via IsAbs. On
+// Windows, Clean("/") and Clean("\\") yield "\\", the current-drive root,
+// which filepath.IsAbs reports as false.
+func isFilesystemRoot(cleaned string) bool {
+	if filepath.IsAbs(cleaned) {
+		return filepath.Dir(cleaned) == cleaned
+	}
+	return cleaned == string(filepath.Separator)
 }
 
 // GrantTooBroad reports whether a path-access grant would cover the

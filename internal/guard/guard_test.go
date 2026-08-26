@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -719,23 +720,68 @@ func TestGuard_DangerousResultPattern(t *testing.T) {
 }
 
 func TestGrantTooBroad(t *testing.T) {
-	t.Run("filesystem root", func(t *testing.T) {
-		if !GrantTooBroad("/") {
-			t.Fatal("want true")
+	type testCase struct {
+		name string
+		path string
+		want bool
+	}
+	cases := []testCase{
+		{name: "dot", path: ".", want: false},
+		{name: "relative dir", path: "relative/dir", want: false},
+		{name: "ordinary directory", path: t.TempDir(), want: false},
+	}
+	if runtime.GOOS == "windows" {
+		volRoot := filepath.VolumeName(t.TempDir()) + string(filepath.Separator)
+		cases = append(cases,
+			testCase{name: "filesystem root", path: volRoot, want: true},
+			testCase{name: "windows slash root", path: "/", want: true},
+			testCase{name: "windows backslash root", path: `\`, want: true},
+			testCase{name: "windows drive root", path: `C:\`, want: true},
+			testCase{name: "windows unc share root", path: `\\srv\share`, want: true},
+			testCase{name: "windows unc share child", path: `\\srv\share\dir`, want: false},
+			testCase{name: "windows drive child", path: `C:\Windows`, want: false},
+		)
+	} else {
+		cases = append(cases, testCase{name: "filesystem root", path: "/", want: true})
+	}
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		cases = append(cases,
+			testCase{name: "home directory", path: home, want: true},
+			testCase{name: "home child", path: filepath.Join(home, "subdir"), want: false},
+		)
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := GrantTooBroad(tc.path); got != tc.want {
+				t.Fatalf("GrantTooBroad(%q) = %v, want %v", tc.path, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestFilesystemRootDirIdentity(t *testing.T) {
+	roots := []string{"/"}
+	if runtime.GOOS == "windows" {
+		roots = append(roots,
+			filepath.VolumeName(t.TempDir())+string(filepath.Separator),
+			`\`,
+			`C:\`,
+			`\\srv\share`,
+		)
+	}
+	for _, root := range roots {
+		cleaned := filepath.Clean(root)
+		if got := filepath.Dir(cleaned); got != cleaned {
+			t.Errorf("filepath.Dir(%q) = %q, want identity (filesystem root)", cleaned, got)
 		}
-	})
-	t.Run("home directory", func(t *testing.T) {
-		home, err := os.UserHomeDir()
-		if err != nil || home == "" {
-			t.Skip("home directory is unavailable")
-		}
-		if !GrantTooBroad(home) {
-			t.Fatalf("%q: want true", home)
-		}
-	})
-	t.Run("ordinary directory", func(t *testing.T) {
-		if GrantTooBroad(t.TempDir()) {
-			t.Fatal("want false")
-		}
-	})
+	}
+
+	dot := filepath.Clean(".")
+	if got := filepath.Dir(dot); got != dot {
+		t.Fatalf("filepath.Dir(%q) = %q, want identity", dot, got)
+	}
+	if GrantTooBroad(".") {
+		t.Fatal(`GrantTooBroad(".") = true, want false ("." has Dir identity but is not a root)`)
+	}
 }
