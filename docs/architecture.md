@@ -68,6 +68,7 @@ truth. A future GUI must use the same application-owned active-run boundary.
 | `internal/guard` | Intrinsic execution gate: file policies, permission gate, pathAccess mode (`allow`/`ask`/`block`), check Decision (`allow`/`ask`/`deny`) |
 | `internal/session` | Versioned JSONL replay, tree navigation, compaction context |
 | `internal/trust` | Protected-resource discovery and global Trust decisions |
+| `internal/skill` | Agent Skill discovery, SKILL.md parse, source layering, embedded builtins |
 | `internal/config` | Global settings, credentials, environment precedence |
 | `internal/deps` | Verified ripgrep and Windows Git Bash provisioning |
 | `internal/update` | Checksum-validated GitHub release updates |
@@ -105,7 +106,10 @@ such as `core`, `types`, `services`, `utils`, or `helpers`.
   The guard's bash AST parsing uses `mvdan.cc/sh/v3` (MIT) because dangerous
   command detection needs a real shell syntax tree; the standard library has
   no equivalent, and the hand-written tokenizer is only a fallback when AST
-  parsing fails.
+  parsing fails. Skill frontmatter parsing uses `gopkg.in/yaml.v3` (MIT,
+  user-approved) because Agent Skills `SKILL.md` files use YAML frontmatter
+  and interoperability with that ecosystem requires a YAML 1.2 parser; the
+  standard library has no YAML package.
 - Imported code must record its repository and commit and preserve required
   license notices. AICE remains Apache-2.0.
 
@@ -136,16 +140,31 @@ message union, no global registries, and no second persistence store.
 
 ### Skills
 
-When implementing skills:
+`internal/skill` discovers and parses Agent Skills. A skill is a directory
+with `SKILL.md` (YAML frontmatter plus Markdown). All sources are the same
+resource on one scan/parse/validation path; `Source` is only a metadata
+label for display and same-name conflict ordering.
 
-- Discovery of a project skill directory must go through Trust: add that
-  directory to `protectedResources`.
-- Ship one built-in skill tool that reads `SKILL.md` body into the tool
-  result on demand.
+- Layout (vendor-neutral, matching `npx skills add`): project
+  `<workspace>/.agents/skills/<name>/SKILL.md` and user
+  `~/.agents/skills/<name>/SKILL.md`. Scan is one level of children under a
+  caller-supplied root (`fs.FS`); the package does not choose roots.
+- Sources: `builtin` (go:embed in `internal/skill`), `user`, `project`.
+  Same-name priority is project > user > builtin. Builtin skills get no
+  parse exemption, auto-activation, or display preference.
+- Project `.agents/skills/` is Trust-gated (add that directory to
+  `protectedResources` when wiring discovery). User-global skills are not.
+- Frontmatter is parsed with `gopkg.in/yaml.v3`. Name and description are
+  required; other spec fields are tolerated and ignored. Validation is
+  lenient: format issues warn and still load; missing name/description,
+  missing frontmatter, or unparseable YAML skip that skill with an error
+  diagnostic.
+- Ship one built-in skill tool that reads the already-parsed `SKILL.md`
+  body into the tool result on demand.
 - At startup inject only a `name` + `description` list, not skill bodies.
 
-Do not: create an `internal/skill` package in advance, hot-reload skills,
-add a new message `Role`, or insert Loop middleware.
+Do not: hot-reload skills, add a new message `Role`, or insert Loop
+middleware.
 
 ### MCP
 
