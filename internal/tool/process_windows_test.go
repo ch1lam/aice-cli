@@ -7,6 +7,8 @@ import (
 	"os/exec"
 	"testing"
 	"time"
+
+	"golang.org/x/sys/windows"
 )
 
 func TestConfigureProcessWindows(t *testing.T) {
@@ -25,6 +27,9 @@ func TestConfigureProcessWindows(t *testing.T) {
 	defer cleanup()
 	if command.Cancel == nil {
 		t.Fatal("startProcessTree did not set Cancel")
+	}
+	if command.SysProcAttr == nil || command.SysProcAttr.CreationFlags&windows.CREATE_SUSPENDED == 0 {
+		t.Fatal("startProcessTree did not set CREATE_SUSPENDED")
 	}
 	if err := command.Wait(); err != nil {
 		t.Fatalf("Wait() error = %v", err)
