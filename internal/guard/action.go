@@ -43,7 +43,7 @@ var fileTools = map[string]bool{
 }
 
 func isKnownTool(name string) bool {
-	return fileTools[name] || name == "bash"
+	return fileTools[name] || name == "bash" || name == "skill"
 }
 
 // extractActions extracts one or more Actions from a ToolCall.

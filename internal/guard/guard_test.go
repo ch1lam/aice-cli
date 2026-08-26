@@ -618,6 +618,9 @@ func TestGuard_KnownToolWithoutRestrictedActionAllows(t *testing.T) {
 		toolCall("bash", map[string]any{}),
 		toolCall("bash", map[string]any{"command": ""}),
 		toolCall("bash", map[string]any{"command": "echo hello"}),
+		toolCall("skill", map[string]any{}),
+		toolCall("skill", map[string]any{"name": "pdf"}),
+		toolCall("skill", map[string]any{"name": "/etc/passwd"}),
 	}
 	for _, call := range cases {
 		res, err := g.Check(context.Background(), call)
@@ -627,6 +630,149 @@ func TestGuard_KnownToolWithoutRestrictedActionAllows(t *testing.T) {
 		if res.Decision != DecisionAllow {
 			t.Fatalf("Check(%q) = %v, want allow", call.Name, res.Decision)
 		}
+		if res.RuleID == "unknownTool" {
+			t.Fatalf("Check(%q) treated as unknownTool", call.Name)
+		}
+	}
+}
+
+func TestGuard_SkillToolNotBlockedByFilePolicies(t *testing.T) {
+	apply := false
+	cfg := Config{
+		ApplyBuiltinDefaults: &apply,
+		Policies: []PolicyRule{
+			{ID: "ro", Patterns: []PatternConfig{{Pattern: "*"}}, Protection: ProtectionReadOnly},
+			{ID: "na", Patterns: []PatternConfig{{Pattern: "*"}}, Protection: ProtectionNoAccess},
+		},
+	}
+	g, err := NewWithExists(t.TempDir(), cfg, alwaysExists)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if isBlocked(ProtectionReadOnly, "skill") {
+		t.Fatal("readOnly must not block skill")
+	}
+	if isBlocked(ProtectionNoAccess, "skill") {
+		t.Fatal("noAccess must not block skill")
+	}
+
+	res, err := g.Check(context.Background(), toolCall("skill", map[string]any{"name": "pdf"}))
+	if err != nil {
+		t.Fatalf("Check skill: %v", err)
+	}
+	if res.Decision != DecisionAllow {
+		t.Fatalf("skill under file policies: %v want allow", res.Decision)
+	}
+
+	res, err = g.Check(context.Background(), toolCall("write", map[string]any{"path": "LOCKED.md"}))
+	if err != nil {
+		t.Fatalf("Check write: %v", err)
+	}
+	if res.Decision != DecisionDeny {
+		t.Fatalf("write under readOnly/noAccess: %v want deny", res.Decision)
+	}
+}
+
+func TestGuard_ReadOnlyRoots(t *testing.T) {
+	workspace := t.TempDir()
+	skillDir := t.TempDir()
+	inside := filepath.Join(skillDir, "references", "guide.md")
+	outside := filepath.Join(t.TempDir(), "other.txt")
+	cfg := Config{ReadOnlyRoots: []string{skillDir}}
+	g, err := NewWithExists(workspace, cfg, alwaysExists)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	readTools := []string{"read", "grep", "find", "ls"}
+	for _, name := range readTools {
+		res, err := g.Check(context.Background(), toolCall(name, map[string]any{"path": inside}))
+		if err != nil {
+			t.Fatalf("Check %s inside: %v", name, err)
+		}
+		if res.Decision != DecisionAllow {
+			t.Fatalf("Check %s inside root: %v want allow", name, res.Decision)
+		}
+		res, err = g.Check(context.Background(), toolCall(name, map[string]any{"path": outside}))
+		if err != nil {
+			t.Fatalf("Check %s outside: %v", name, err)
+		}
+		if res.Decision != DecisionAsk || res.RuleID != "pathAccess.ask" {
+			t.Fatalf("Check %s outside root: %v %q want ask", name, res.Decision, res.RuleID)
+		}
+	}
+
+	for _, name := range []string{"write", "edit"} {
+		res, err := g.Check(context.Background(), toolCall(name, map[string]any{"path": inside}))
+		if err != nil {
+			t.Fatalf("Check %s inside: %v", name, err)
+		}
+		if res.Decision != DecisionAsk || res.RuleID != "pathAccess.ask" {
+			t.Fatalf("Check %s inside root: %v %q want ask", name, res.Decision, res.RuleID)
+		}
+	}
+
+	res, err := g.Check(context.Background(), toolCall("read", map[string]any{"path": "inside.txt"}))
+	if err != nil {
+		t.Fatalf("Check workspace read: %v", err)
+	}
+	if res.Decision != DecisionAllow {
+		t.Fatalf("workspace read: %v want allow", res.Decision)
+	}
+
+	secret := filepath.Join(skillDir, ".env")
+	res, err = g.Check(context.Background(), toolCall("read", map[string]any{"path": secret}))
+	if err != nil {
+		t.Fatalf("Check secret in root: %v", err)
+	}
+	if res.Decision != DecisionDeny || res.RuleID != "secret-files" {
+		t.Fatalf("secret in read-only root: %v %q want deny secret-files", res.Decision, res.RuleID)
+	}
+
+	g.AllowPathSession(inside, false)
+	res, err = g.Check(context.Background(), toolCall("write", map[string]any{"path": inside}))
+	if err != nil {
+		t.Fatalf("Check write after grant: %v", err)
+	}
+	if res.Decision != DecisionAllow {
+		t.Fatalf("write after path grant: %v want allow", res.Decision)
+	}
+}
+
+func TestGuard_ReadOnlyRootsBlockMode(t *testing.T) {
+	workspace := t.TempDir()
+	skillDir := t.TempDir()
+	inside := filepath.Join(skillDir, "scripts", "run.sh")
+	outside := filepath.Join(t.TempDir(), "other.txt")
+	block := PathAccessBlock
+	g, err := NewWithExists(workspace, Config{
+		ReadOnlyRoots: []string{skillDir},
+		PathAccess:    PathAccessConfig{Mode: &block},
+	}, alwaysExists)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	res, err := g.Check(context.Background(), toolCall("read", map[string]any{"path": inside}))
+	if err != nil {
+		t.Fatalf("Check read: %v", err)
+	}
+	if res.Decision != DecisionAllow {
+		t.Fatalf("read inside root in block mode: %v want allow", res.Decision)
+	}
+	res, err = g.Check(context.Background(), toolCall("write", map[string]any{"path": inside}))
+	if err != nil {
+		t.Fatalf("Check write: %v", err)
+	}
+	if res.Decision != DecisionDeny || res.RuleID != "pathAccess.block" {
+		t.Fatalf("write inside root in block mode: %v %q want deny", res.Decision, res.RuleID)
+	}
+	res, err = g.Check(context.Background(), toolCall("read", map[string]any{"path": outside}))
+	if err != nil {
+		t.Fatalf("Check outside: %v", err)
+	}
+	if res.Decision != DecisionDeny || res.RuleID != "pathAccess.block" {
+		t.Fatalf("read outside root in block mode: %v %q want deny", res.Decision, res.RuleID)
 	}
 }
 

@@ -7,6 +7,11 @@ type Config struct {
 	Policies             []PolicyRule         `json:"policies,omitempty"`
 	PermissionGate       PermissionGateConfig `json:"permissionGate,omitempty"`
 	PathAccess           PathAccessConfig     `json:"pathAccess,omitempty"`
+	// ReadOnlyRoots are extra directories whose descendants skip path-access
+	// ask/block for read-class tools (read, grep, find, ls). Write-class
+	// tools (write, edit) are not granted. Callers pass discovered skill
+	// directories; this package does not discover them.
+	ReadOnlyRoots []string `json:"readOnlyRoots,omitempty"`
 }
 
 // EnabledOrDefault reports whether guard is enabled.

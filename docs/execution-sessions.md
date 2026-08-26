@@ -8,6 +8,9 @@ by the intrinsic execution gate (`internal/guard`) before it runs.
 `agent.NewLoop` requires a non-nil `Guard` when the tool set is non-empty
 (compaction loops may omit both). Unknown tool names return Decision `ask`
 (`RuleID` `unknownTool`); non-interactive runs treat `ask` as `deny`.
+The `skill` tool is a known tool: it has no path argument and returns
+content already parsed at startup, so Check allows it after the known-tool
+gate. File policies and path access do not apply to it.
 `--workspace` sets the default working directory and is the boundary used by
 the path-access gate; it is not a sandbox.
 
@@ -33,7 +36,7 @@ The gate evaluates three layers in order:
    `noAccess`. Protected basenames: `.env`, `.env.local`, `.env.production`,
    `.env.prod`, `.dev.vars`. Allow-listed: `*.example.env`, `*.sample.env`,
    `*.test.env`, `.env.example`, `.env.sample`, `.env.test`. There is no
-   `.env.*` glob. `noAccess` blocks all tools.
+   `.env.*` glob. `noAccess` blocks all path-bearing tools.
 3. **Path access** — `pathAccess.mode` defaults to `ask` for paths outside
    the workspace. Mode values are `allow` / `ask` / `block`. Default
    `allowedPaths` is empty.
@@ -81,11 +84,17 @@ prompts](project-trust.md).
 `guard.Config` can set `enabled`, `applyBuiltinDefaults`, `policies`
 (including Protection `readOnly`/`noAccess`, glob/regex matching, and
 `onlyIfExists`), `permissionGate` (`patterns`, `customPatterns`,
-`allowedPatterns`, `autoDenyPatterns`, `requireConfirmation`), and
-`pathAccess` (`mode`, `allowedPaths` with `~` expansion). `readOnly` blocks
-`write`/`edit`/`bash`; `noAccess` blocks all tools. These fields are
-engine-only, not yet wired to `settings.json`. Do not document them as
-user-facing product settings until `internal/app` loads them.
+`allowedPatterns`, `autoDenyPatterns`, `requireConfirmation`),
+`pathAccess` (`mode`, `allowedPaths` with `~` expansion), and
+`readOnlyRoots`. `readOnly` blocks `write`/`edit`/`bash`; `noAccess` blocks
+path-bearing tools (`read`/`write`/`edit`/`bash`/`grep`/`find`/`ls`). The
+`skill` tool has no path argument, so file policies do not apply to it.
+`readOnlyRoots` are constructor-configured directories (and descendants)
+that skip path-access ask/block for `read`/`grep`/`find`/`ls`; `write`/`edit`
+are not granted. Callers pass discovered skill directories; see
+[Skills](architecture.md#skills). These fields are engine-only, not yet
+wired to `settings.json`. Do not document them as user-facing product
+settings until `internal/app` loads them.
 
 The tool layer still enforces correctness and resource safety:
 

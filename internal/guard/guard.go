@@ -50,6 +50,7 @@ type Guard struct {
 	pathAccessMode      PathAccessMode
 	allowedPaths        []AllowedPath
 	sessionAllowedPaths map[string]bool // absolute paths or dir: prefix
+	readOnlyRoots       []string
 }
 
 // New constructs a Guard for the given workspace and configuration.
@@ -88,6 +89,7 @@ func New(workspace string, cfg Config) (*Guard, error) {
 		requireConfirmation:  requireConfirm,
 		pathAccessMode:       resolved.PathAccess.modeOrDefault(),
 		allowedPaths:         resolved.PathAccess.AllowedPaths,
+		readOnlyRoots:        resolveReadOnlyRoots(resolved.ReadOnlyRoots, workspace),
 		exists:               fileExists,
 		sessionAllowed:       map[string]bool{},
 		sessionAllowedPaths:  map[string]bool{},
@@ -281,6 +283,9 @@ func (g *Guard) Check(ctx context.Context, call llm.ToolCall) (Result, error) {
 		}
 		abs := resolveAbsolute(act.Path, g.workspace, act.ToolName)
 		if g.workspace != "" && hostpath.Within(g.workspace, abs) {
+			continue
+		}
+		if isPathAccessReadTool(call.Name) && inReadOnlyRoot(abs, g.readOnlyRoots) {
 			continue
 		}
 		if isPathAllowed(abs, g.allowedPaths, g.workspace, g.sessionAllowedPaths) {

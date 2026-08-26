@@ -72,9 +72,10 @@ func TestToolDefinitionsUsePiNamesAndValidSchemas(t *testing.T) {
 	}
 	find, _ := tool.NewFind(workspace)
 	ls, _ := tool.NewLS(workspace)
+	skillTool := tool.NewSkill(nil)
 
-	tools := []agent.Tool{read, write, edit, bash, grep, find, ls}
-	wantNames := []string{"read", "write", "edit", "bash", "grep", "find", "ls"}
+	tools := []agent.Tool{read, write, edit, bash, grep, find, ls, skillTool}
+	wantNames := []string{"read", "write", "edit", "bash", "grep", "find", "ls", "skill"}
 	for index, currentTool := range tools {
 		definition := currentTool.Definition()
 		if definition.Name != wantNames[index] {

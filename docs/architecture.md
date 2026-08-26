@@ -64,7 +64,7 @@ truth. A future GUI must use the same application-owned active-run boundary.
 | `internal/api/streamcore` | Protocol-neutral streaming mechanics shared by adapters |
 | `internal/provider/{deepseek,opencode,openai,custom}` | Provider catalogs, credentials, defaults, compatibility |
 | `internal/provider/custom` | OpenAI-compatible catch-all (`custom`); any model ID; default base URL `http://localhost:11434/v1` |
-| `internal/tool` | `read`, `write`, `edit`, `bash`, `grep`, `find`, `ls` |
+| `internal/tool` | `read`, `write`, `edit`, `bash`, `grep`, `find`, `ls`, `skill` |
 | `internal/guard` | Intrinsic execution gate: file policies, permission gate, pathAccess mode (`allow`/`ask`/`block`), check Decision (`allow`/`ask`/`deny`) |
 | `internal/session` | Versioned JSONL replay, tree navigation, compaction context |
 | `internal/trust` | Protected-resource discovery and global Trust decisions |
@@ -160,9 +160,16 @@ label for display and same-name conflict ordering.
   lenient: format issues warn and still load; missing name/description,
   missing frontmatter, or unparseable YAML skip that skill with an error
   diagnostic.
-- Ship one built-in skill tool that reads the already-parsed `SKILL.md`
-  body into the tool result on demand.
+- Ship one built-in `skill` tool that returns the already-parsed `SKILL.md`
+  body on demand. `internal/tool` does not import `internal/skill`; `internal/app`
+  maps catalog entries into `tool.SkillEntry`.
 - At startup inject only a `name` + `description` list, not skill bodies.
+- Skill directories with a host path (`Dir` non-empty) are passed to
+  `guard.Config.ReadOnlyRoots` so `read`/`grep`/`find`/`ls` can load bundled
+  resources without path-access prompts. `write`/`edit` are not granted.
+  Product behavior of the gate is in [Tool execution and
+  Sessions](execution-sessions.md#tool-execution-boundary). Wiring is in
+  `internal/app`.
 
 Do not: hot-reload skills, add a new message `Role`, or insert Loop
 middleware.

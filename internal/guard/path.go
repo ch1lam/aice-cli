@@ -65,6 +65,40 @@ func resolveAllowedPath(p AllowedPath, cwd string) string {
 	return filepath.Clean(raw)
 }
 
+func resolveReadOnlyRoots(roots []string, cwd string) []string {
+	out := make([]string, 0, len(roots))
+	for _, root := range roots {
+		resolved := resolveAllowedPath(AllowedPath{Kind: "directory", Path: root}, cwd)
+		if resolved == "" {
+			continue
+		}
+		out = append(out, resolved)
+	}
+	return out
+}
+
+func isPathAccessReadTool(name string) bool {
+	switch name {
+	case "read", "grep", "find", "ls":
+		return true
+	default:
+		return false
+	}
+}
+
+func inReadOnlyRoot(abs string, roots []string) bool {
+	if abs == "" {
+		return false
+	}
+	abs = filepath.Clean(abs)
+	for _, root := range roots {
+		if hostpath.Within(root, abs) {
+			return true
+		}
+	}
+	return false
+}
+
 func isPathAllowed(abs string, allowed []AllowedPath, cwd string, sessionAllowed map[string]bool) bool {
 	abs = filepath.Clean(abs)
 	if sessionAllowed[abs] {
