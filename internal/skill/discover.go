@@ -22,6 +22,17 @@ func Scan(fsys fs.FS, source Source, root string) ([]Skill, []Diagnostic, error)
 		root = filepath.Clean(root)
 	}
 
+	rootInfo, err := fs.Stat(fsys, ".")
+	if err == nil && !rootInfo.IsDir() {
+		return nil, nil, errors.New("skill: root is not a directory")
+	}
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return []Skill{}, []Diagnostic{}, nil
+		}
+		return nil, nil, fmt.Errorf("skill: read root: %w", err)
+	}
+
 	entries, err := fs.ReadDir(fsys, ".")
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {

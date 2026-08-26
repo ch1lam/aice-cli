@@ -24,6 +24,24 @@ func TestScanMissingRoot(t *testing.T) {
 	}
 }
 
+func TestScanNonDirectoryRoot(t *testing.T) {
+	t.Parallel()
+
+	root := filepath.Join(t.TempDir(), "not-a-dir")
+	writeFile(t, root, "not a directory")
+
+	skills, diags, err := Scan(os.DirFS(root), SourceUser, root)
+	if err == nil {
+		t.Fatal("Scan() error = nil, want non-directory error")
+	}
+	if !strings.Contains(err.Error(), "not a directory") {
+		t.Fatalf("Scan() error = %v, want non-directory error", err)
+	}
+	if skills != nil || diags != nil {
+		t.Fatalf("Scan() skills=%#v diags=%#v, want nil results", skills, diags)
+	}
+}
+
 func TestScanSkipsNonDirectoryAndNestedAndBareDirs(t *testing.T) {
 	t.Parallel()
 
