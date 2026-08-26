@@ -3,8 +3,6 @@ package tui
 import (
 	"fmt"
 	"math"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"unicode"
@@ -12,6 +10,8 @@ import (
 
 	"charm.land/glamour/v2"
 	"charm.land/lipgloss/v2"
+
+	"github.com/ch1lam/aice-cli/internal/hostpath"
 )
 
 func (m *model) resizeLayout() {
@@ -981,22 +981,12 @@ func formatTokens(count int64) string {
 }
 
 func shellWorkingDirectory(path string) string {
-	path = filepath.Clean(path)
-	if home, err := os.UserHomeDir(); err == nil {
-		home = filepath.Clean(home)
-		switch {
-		case path == home:
-			path = "~"
-		case strings.HasPrefix(path, home+string(filepath.Separator)):
-			path = "~" + strings.TrimPrefix(path, home)
-		}
-	}
 	return strings.Map(func(character rune) rune {
 		if unicode.IsControl(character) {
 			return '�'
 		}
 		return character
-	}, path)
+	}, hostpath.HomeDisplay(path))
 }
 
 func (m model) modelStatus() string {

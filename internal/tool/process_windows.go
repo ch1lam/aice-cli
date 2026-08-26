@@ -15,6 +15,13 @@ import (
 	"golang.org/x/sys/windows"
 )
 
+// NtResumeProcess is not in the public Win32 API. It has been exported from
+// ntdll since Windows XP and resumes every thread in a process, which lets
+// CREATE_SUSPENDED hand-off avoid CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD).
+// That snapshot API ignores its PID argument and enumerates every thread on
+// the machine.
+var procNtResumeProcess = windows.NewLazySystemDLL("ntdll.dll").NewProc("NtResumeProcess")
+
 func configureProcess(command *exec.Cmd) {
 	command.WaitDelay = time.Second
 	command.Cancel = nil
@@ -34,7 +41,7 @@ type treeKill struct {
 
 // cancel returns the Cancel callback. It kills the job object when the
 // process tree was assigned to it, and falls back to taskkill when the job is
-// empty (assignment failed or the process was never placed in the job).
+// empty (assignment has not completed, or TerminateJobObject failed).
 func (k *treeKill) cancel(command *exec.Cmd) func() error {
 	return func() error {
 		if k.assigned.Load() {
@@ -59,10 +66,12 @@ func (k *treeKill) cancel(command *exec.Cmd) func() error {
 // the whole process tree. The returned cleanup closes the job handle once the
 // process has exited.
 //
-// The process is created suspended, assigned to the job, then resumed.
-// AssignProcessToJobObject does not associate children that already exist;
-// a running Start-then-Assign sequence leaves a window where bash can spawn
-// a grandchild that survives TerminateJobObject.
+// The process is created suspended, assigned to the job, then resumed with
+// NtResumeProcess. AssignProcessToJobObject does not associate children that
+// already exist; a running Start-then-Assign sequence leaves a window where
+// bash can spawn a grandchild that survives TerminateJobObject. Assignment
+// failure is fatal: the still-suspended process is killed rather than resumed
+// outside the job.
 func startProcessTree(command *exec.Cmd) (func(), error) {
 	job, err := windows.CreateJobObject(nil, nil)
 	if err != nil {
@@ -96,72 +105,44 @@ func startProcessTree(command *exec.Cmd) (func(), error) {
 		return nil, err
 	}
 
-	process, err := windows.OpenProcess(
-		windows.PROCESS_SET_QUOTA|windows.PROCESS_TERMINATE,
-		false,
-		uint32(command.Process.Pid),
-	)
-	if err == nil {
-		if assignErr := windows.AssignProcessToJobObject(job, process); assignErr == nil {
-			kill.assigned.Store(true)
+	var assignErr, resumeErr error
+	handleErr := command.Process.WithHandle(func(handle uintptr) {
+		process := windows.Handle(handle)
+		assignErr = windows.AssignProcessToJobObject(job, process)
+		if assignErr != nil {
+			return
 		}
-		windows.CloseHandle(process)
+		kill.assigned.Store(true)
+		resumeErr = resumeProcess(process)
+	})
+	if handleErr != nil {
+		return failStartedProcessTree(command, job, fmt.Errorf("tool: process handle: %w", handleErr))
 	}
-
-	if err := resumeCreatedThreads(uint32(command.Process.Pid)); err != nil {
-		_ = command.Process.Kill()
-		_ = command.Wait()
-		windows.CloseHandle(job)
-		return nil, fmt.Errorf("tool: resume process: %w", err)
+	if assignErr != nil {
+		return failStartedProcessTree(command, job, fmt.Errorf("tool: assign process to job object: %w", assignErr))
+	}
+	if resumeErr != nil {
+		return failStartedProcessTree(command, job, fmt.Errorf("tool: resume process: %w", resumeErr))
 	}
 	return func() { windows.CloseHandle(job) }, nil
 }
 
-func resumeCreatedThreads(pid uint32) error {
-	snapshot, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPTHREAD, 0)
-	if err != nil {
-		return err
+func failStartedProcessTree(command *exec.Cmd, job windows.Handle, err error) (func(), error) {
+	if command.Process != nil {
+		_ = command.Process.Kill()
+		_ = command.Wait()
 	}
-	defer windows.CloseHandle(snapshot)
-
-	var entry windows.ThreadEntry32
-	entry.Size = uint32(unsafe.Sizeof(entry))
-	if err := windows.Thread32First(snapshot, &entry); err != nil {
-		return err
-	}
-
-	var resumed int
-	var firstErr error
-	for {
-		if entry.OwnerProcessID == pid {
-			if err := resumeThread(entry.ThreadID); err != nil {
-				if firstErr == nil {
-					firstErr = err
-				}
-			} else {
-				resumed++
-			}
-		}
-		entry.Size = uint32(unsafe.Sizeof(entry))
-		if err := windows.Thread32Next(snapshot, &entry); err != nil {
-			break
-		}
-	}
-	if resumed > 0 {
-		return nil
-	}
-	if firstErr != nil {
-		return firstErr
-	}
-	return fmt.Errorf("no thread found for pid %d", pid)
+	windows.CloseHandle(job)
+	return nil, err
 }
 
-func resumeThread(threadID uint32) error {
-	thread, err := windows.OpenThread(windows.THREAD_SUSPEND_RESUME, false, threadID)
-	if err != nil {
+func resumeProcess(process windows.Handle) error {
+	if err := procNtResumeProcess.Find(); err != nil {
 		return err
 	}
-	defer windows.CloseHandle(thread)
-	_, err = windows.ResumeThread(thread)
-	return err
+	status, _, _ := procNtResumeProcess.Call(uintptr(process))
+	if status != 0 {
+		return windows.NTStatus(status)
+	}
+	return nil
 }

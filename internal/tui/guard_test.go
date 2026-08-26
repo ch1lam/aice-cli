@@ -3,6 +3,7 @@ package tui
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -144,8 +145,35 @@ func TestGuardDisplayPath(t *testing.T) {
 			if got != tt.want {
 				t.Errorf("guardDisplayPath() = %q, want %q", got, tt.want)
 			}
+			if strings.Contains(got, `\`) {
+				t.Errorf("guardDisplayPath() uses backslash: %q", got)
+			}
 		})
 	}
+
+	if runtime.GOOS == "windows" {
+		t.Run("case fold home prefix", func(t *testing.T) {
+			t.Parallel()
+			flipped := flipASCIICase(home)
+			got := guardDisplayPath(filepath.Join(flipped, "outside", "secret.env"))
+			if got != "~/outside/secret.env" {
+				t.Errorf("guardDisplayPath(case-fold) = %q, want ~/outside/secret.env", got)
+			}
+		})
+	}
+}
+
+func flipASCIICase(s string) string {
+	b := []byte(s)
+	for i, c := range b {
+		switch {
+		case c >= 'A' && c <= 'Z':
+			b[i] = c + 32
+		case c >= 'a' && c <= 'z':
+			b[i] = c - 32
+		}
+	}
+	return string(b)
 }
 
 func TestGuardKeysConfirmOptions(t *testing.T) {

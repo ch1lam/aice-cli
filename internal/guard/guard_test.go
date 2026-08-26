@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ch1lam/aice-cli/internal/hostpath"
 	"github.com/ch1lam/aice-cli/internal/llm"
 )
 
@@ -158,6 +159,33 @@ func TestIsBashRootedPath(t *testing.T) {
 	}
 }
 
+func TestMaybePathLike(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want bool
+	}{
+		{name: "windows drive env", in: `C:\Users\x\secret.env`, want: true},
+		{name: "windows drive no dot", in: `C:\Users\x\secret`, want: true},
+		{name: "drive relative", in: `C:secret`, want: true},
+		{name: "unc share", in: `\\server\share\file`, want: true},
+		{name: "backslash components", in: `foo\bar`, want: true},
+		{name: "single escape", in: `\d`, want: false},
+		{name: "tilde", in: `~/x`, want: true},
+		{name: "slash", in: `foo/bar`, want: true},
+		{name: "dotfile", in: `.env`, want: true},
+		{name: "number", in: `3.14`, want: false},
+		{name: "plain", in: `plain`, want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := maybePathLike(tt.in); got != tt.want {
+				t.Fatalf("maybePathLike(%q) = %v, want %v", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestCompileFilePattern_BasenameVsFull(t *testing.T) {
 	p := compileFilePattern(PatternConfig{Pattern: ".env"})
 	if !p.test(".env") || !p.test("a/b/.env") {
@@ -287,6 +315,30 @@ func TestGuard_PathAccess(t *testing.T) {
 	}
 }
 
+func TestGuard_PathAccessReasonUsesSlash(t *testing.T) {
+	workspace := t.TempDir()
+	block := PathAccessBlock
+	g, err := NewWithExists(workspace, Config{PathAccess: PathAccessConfig{Mode: &block}}, alwaysExists)
+	if err != nil {
+		t.Fatalf("NewWithExists: %v", err)
+	}
+	outside := filepath.Join(t.TempDir(), "nested", "secret.txt")
+	res, err := g.Check(context.Background(), toolCall("read", map[string]any{"path": outside}))
+	if err != nil {
+		t.Fatalf("Check: %v", err)
+	}
+	if res.Decision != DecisionDeny {
+		t.Fatalf("outside block: %v want deny", res.Decision)
+	}
+	if strings.Contains(res.Reason, `\`) {
+		t.Fatalf("Reason uses backslash: %q", res.Reason)
+	}
+	display := resolveForDisplay(filepath.Clean(outside), workspace)
+	if !strings.Contains(res.Reason, display) {
+		t.Fatalf("Reason %q does not contain display path %q", res.Reason, display)
+	}
+}
+
 func TestGuard_PathAccess_AllowedPaths(t *testing.T) {
 	workspace := t.TempDir()
 	block := PathAccessBlock
@@ -340,6 +392,56 @@ func TestGuard_PathAccess_SessionAllow(t *testing.T) {
 	res, _ = g.Check(context.Background(), call2)
 	if res.Decision != DecisionAllow {
 		t.Fatalf("post dir allow: %v", res.Decision)
+	}
+}
+
+func TestGuard_PathAccess_SessionAllowCaseFold(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("path grants are case-insensitive only on windows")
+	}
+	workspace := t.TempDir()
+	block := PathAccessBlock
+	g, err := NewWithExists(workspace, Config{PathAccess: PathAccessConfig{Mode: &block}}, alwaysExists)
+	if err != nil {
+		t.Fatalf("NewWithExists: %v", err)
+	}
+	outside := filepath.Join(t.TempDir(), "aice-guard-case.txt")
+	g.AllowPathSession(outside, false)
+	alt := strings.ToUpper(outside)
+	res, err := g.Check(context.Background(), toolCall("read", map[string]any{"path": alt}))
+	if err != nil {
+		t.Fatalf("Check: %v", err)
+	}
+	if res.Decision != DecisionAllow {
+		t.Fatalf("case-folded grant: %v want allow", res.Decision)
+	}
+}
+
+func TestExtractActionsWindowsDrivePath(t *testing.T) {
+	call := toolCall("bash", map[string]any{"command": `cat 'C:\Users\x\secret.env'`})
+	acts := extractActions(call)
+	found := false
+	for _, act := range acts {
+		if act.Path == `C:\Users\x\secret.env` {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("extractActions missing drive path: %#v", acts)
+	}
+
+	call = toolCall("bash", map[string]any{"command": `cat 'C:\Users\x\secret'`})
+	acts = extractActions(call)
+	found = false
+	for _, act := range acts {
+		if act.Path == `C:\Users\x\secret` {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("extractActions missing drive path without dot: %#v", acts)
 	}
 }
 
@@ -398,7 +500,7 @@ func TestGuard_PathAccess_RejectsRootAndHomeSessionGrant(t *testing.T) {
 		t.Skip("home directory is unavailable")
 	}
 	homeFile := filepath.Join(home, "aice-guard-too-broad.txt")
-	if isWithinBoundary(homeFile, workspace) {
+	if hostpath.Within(workspace, homeFile) {
 		t.Skip("workspace covers home; cannot observe a too-broad home grant")
 	}
 	g.AllowPathSession(home, false)
@@ -534,7 +636,8 @@ func TestGuard_PathExtractionAST(t *testing.T) {
 	cfg := Config{PathAccess: PathAccessConfig{Mode: &block}}
 	g, _ := NewWithExists(workspace, cfg, alwaysExists)
 	// AST should extract redirect target as forced path
-	res, _ := g.Check(context.Background(), toolCall("bash", map[string]any{"command": "echo hi > /tmp/aice-ast-redirect.txt"}))
+	outside := filepath.Join(t.TempDir(), "aice-ast-redirect.txt")
+	res, _ := g.Check(context.Background(), toolCall("bash", map[string]any{"command": "echo hi > " + filepath.ToSlash(outside)}))
 	if res.Decision != DecisionDeny {
 		t.Fatalf("redirect outside: %v want deny", res.Decision)
 	}

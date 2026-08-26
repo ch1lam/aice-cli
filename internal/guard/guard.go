@@ -4,16 +4,15 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
-	"runtime"
 	"strings"
 
+	"github.com/ch1lam/aice-cli/internal/hostpath"
 	"github.com/ch1lam/aice-cli/internal/llm"
 )
 
 func resolveAbsolute(p, workspace, toolName string) string {
-	expanded := expandHome(p)
-	if filepath.IsAbs(expanded) ||
-		(runtime.GOOS == "windows" && isBashRootedPath(expanded, toolName)) {
+	expanded := hostpath.ExpandTilde(p)
+	if filepath.IsAbs(expanded) || isBashRootedPath(expanded, toolName) {
 		return filepath.Clean(expanded)
 	}
 	if workspace != "" {
@@ -26,7 +25,7 @@ func resolveAbsolute(p, workspace, toolName string) string {
 // Windows, Git Bash resolves these paths from its filesystem root even though
 // filepath.IsAbs reports false without a drive or UNC volume.
 func isBashRootedPath(path, toolName string) bool {
-	return toolName == "bash" && strings.HasPrefix(path, "/")
+	return toolName == "bash" && hostpath.IsBashRooted(path)
 }
 
 // Guard is the built-in execution gate. It is immutable after construction
@@ -281,7 +280,7 @@ func (g *Guard) Check(ctx context.Context, call llm.ToolCall) (Result, error) {
 			continue
 		}
 		abs := resolveAbsolute(act.Path, g.workspace, act.ToolName)
-		if g.workspace != "" && isWithinBoundary(abs, g.workspace) {
+		if g.workspace != "" && hostpath.Within(g.workspace, abs) {
 			continue
 		}
 		if isPathAllowed(abs, g.allowedPaths, g.workspace, g.sessionAllowedPaths) {

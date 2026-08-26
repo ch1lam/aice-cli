@@ -4,7 +4,7 @@
 
 - Read files in full before wide-ranging changes, before editing a file not already fully inspected, and whenever the user asks for an investigation or audit. Do not base broad conclusions on search snippets alone.
 - Prefer clear, idiomatic Go over patterns copied from TypeScript. Keep functions focused, handle errors early, and avoid premature abstractions.
-- Package names are short, lowercase, singular, and specific. Do not create `util` or `helper` packages. Existing `internal/jsonutil` and `internal/apitest` are approved narrow shared packages; do not add another general-purpose util package.
+- Package names are short, lowercase, singular, and specific. Do not create `util` or `helper` packages. Existing `internal/jsonutil`, `internal/apitest`, and `internal/hostpath` are approved narrow shared packages; do not add another general-purpose util package.
 - Define small interfaces where they are consumed; accept interfaces and return concrete types.
 - Use manual constructor injection. Avoid mutable package globals and side-effectful `init()` functions.
 - Wrap errors with context using `%w`; use errors for expected failures and reserve panics for broken invariants.

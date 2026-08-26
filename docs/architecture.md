@@ -71,6 +71,7 @@ truth. A future GUI must use the same application-owned active-run boundary.
 | `internal/config` | Global settings, credentials, environment precedence |
 | `internal/deps` | Verified ripgrep and Windows Git Bash provisioning |
 | `internal/update` | Checksum-validated GitHub release updates |
+| `internal/hostpath` | Host path membership, tilde expansion, slash-normalized display |
 | `internal/jsonutil`, `internal/apitest` | Focused shared JSON and test infrastructure |
 
 Create a package only when implementation requires it. Avoid vague packages

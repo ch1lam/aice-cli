@@ -116,11 +116,15 @@ func maybePathLike(s string) bool {
 		return false
 	}
 	// Heuristic aligned with pi-guardrails maybePathLike: contains "/" or "."
-	// or starts with "~".
+	// or starts with "~". Also recognizes Windows "\" paths and drive letters
+	// without treating a single escape like "\d" as a path.
 	if strings.HasPrefix(s, "~") {
 		return true
 	}
 	if strings.Contains(s, "/") {
+		return true
+	}
+	if windowsPathLike(s) {
 		return true
 	}
 	if strings.Contains(s, ".") {
@@ -135,6 +139,24 @@ func maybePathLike(s string) bool {
 		return hasAlpha
 	}
 	return false
+}
+
+func windowsPathLike(s string) bool {
+	if len(s) >= 2 && isDriveLetter(s[0]) && s[1] == ':' {
+		return true
+	}
+	if !strings.Contains(s, `\`) {
+		return false
+	}
+	if strings.HasPrefix(s, `\\`) {
+		return true
+	}
+	i := strings.IndexByte(s, '\\')
+	return i > 0 && i < len(s)-1
+}
+
+func isDriveLetter(b byte) bool {
+	return (b >= 'A' && b <= 'Z') || (b >= 'a' && b <= 'z')
 }
 
 // tokenizeBash does minimal shell tokenization: split on whitespace and

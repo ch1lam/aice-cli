@@ -13,6 +13,7 @@ import (
 	"github.com/ch1lam/aice-cli/internal/agent"
 	"github.com/ch1lam/aice-cli/internal/config"
 	"github.com/ch1lam/aice-cli/internal/guard"
+	"github.com/ch1lam/aice-cli/internal/hostpath"
 	"github.com/ch1lam/aice-cli/internal/interaction"
 	"github.com/ch1lam/aice-cli/internal/llm"
 	"github.com/ch1lam/aice-cli/internal/tui"
@@ -270,14 +271,20 @@ func TestGuardAskOptionsPathAccessLabels(t *testing.T) {
 	if file.Label != "Allow this file for this run" {
 		t.Fatalf("allow-run-file Label = %q", file.Label)
 	}
-	if file.Detail != shortenHomePath(abs) {
-		t.Fatalf("allow-run-file Detail = %q, want %q", file.Detail, shortenHomePath(abs))
+	if file.Detail != hostpath.HomeDisplay(abs) {
+		t.Fatalf("allow-run-file Detail = %q, want %q", file.Detail, hostpath.HomeDisplay(abs))
+	}
+	if strings.Contains(file.Detail, `\`) {
+		t.Fatalf("allow-run-file Detail uses backslash: %q", file.Detail)
 	}
 
 	dir := findGuardOption(t, options, guardOptionAllowRunDir)
-	wantDir := "Allow directory " + shortenHomePath(filepath.Dir(abs)) + "/ for this run"
+	wantDir := "Allow directory " + hostpath.HomeDisplay(filepath.Dir(abs)) + "/ for this run"
 	if dir.Label != wantDir {
 		t.Fatalf("allow-run-dir Label = %q, want %q", dir.Label, wantDir)
+	}
+	if strings.Contains(dir.Label, `\`) {
+		t.Fatalf("allow-run-dir Label uses backslash: %q", dir.Label)
 	}
 }
 

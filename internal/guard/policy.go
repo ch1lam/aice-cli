@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/ch1lam/aice-cli/internal/hostpath"
 )
 
 // Protection describes how strictly a rule is enforced.
@@ -105,43 +107,32 @@ func compilePolicies(rules []PolicyRule) []compiledPolicy {
 //   - absolute or relative paths are resolved against workspace, then expressed
 //     relative to workspace when inside it, otherwise as normalized absolute or "~/..."
 func normalizeTarget(filePath, workspace string) string {
-	if filePath == "~" || strings.HasPrefix(filePath, "~/") {
+	if filePath == "~" || strings.HasPrefix(filePath, "~/") || strings.HasPrefix(filePath, `~\`) {
 		return normalizeFilePath(filePath)
 	}
-	expanded := expandHome(filePath)
+	expanded := hostpath.ExpandTilde(filePath)
 	abs := expanded
 	if !filepath.IsAbs(expanded) && workspace != "" {
 		abs = filepath.Join(workspace, expanded)
 	}
 	abs = filepath.Clean(abs)
-	if workspace != "" {
+	if hostpath.Within(workspace, abs) {
 		rel, err := filepath.Rel(workspace, abs)
-		if err == nil && rel != "" && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && rel != ".." {
+		if err == nil && rel != "" {
 			return normalizeFilePath(rel)
 		}
 	}
-	home, _ := os.UserHomeDir()
-	if home != "" {
-		home = filepath.Clean(home)
-		if abs == home || strings.HasPrefix(abs, home+string(filepath.Separator)) {
-			rel, _ := filepath.Rel(home, abs)
-			return normalizeFilePath(filepath.Join("~", rel))
+	if rel, ok := hostpath.UnderHome(abs); ok {
+		if rel == "." {
+			return "~"
 		}
+		return normalizeFilePath("~/" + rel)
 	}
 	return normalizeFilePath(abs)
 }
 
-func expandHome(p string) string {
-	if p == "~" || strings.HasPrefix(p, "~/") {
-		if home, err := os.UserHomeDir(); err == nil && home != "" {
-			return filepath.Join(home, p[1:])
-		}
-	}
-	return p
-}
-
 func fileExists(p, workspace string) bool {
-	expanded := expandHome(p)
+	expanded := hostpath.ExpandTilde(p)
 	abs := expanded
 	if !filepath.IsAbs(expanded) && workspace != "" {
 		abs = filepath.Join(workspace, expanded)

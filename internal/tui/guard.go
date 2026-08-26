@@ -208,9 +208,8 @@ func guardKeyLine(req *interaction.GuardRequest, width int) string {
 	return ""
 }
 
-// guardDisplayPath shortens a path under the user home, then converts
-// separators to "/" so the confirmation card shows "~/foo/bar" on every OS.
-// shellWorkingDirectory itself is left native for status-line cwd.
+// guardDisplayPath shortens a path under the user home and uses "/" so the
+// confirmation card shows "~/foo/bar" on every OS.
 func guardDisplayPath(path string) string {
 	return filepath.ToSlash(shellWorkingDirectory(path))
 }

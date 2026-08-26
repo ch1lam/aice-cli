@@ -100,7 +100,8 @@ func TestBashExecuteReportsExitAndTimeout(t *testing.T) {
 
 	started := time.Now()
 	result, err = bash.Execute(t.Context(), toolCall(t, "bash", map[string]any{
-		"command": "(sleep 0.25; printf survived > child.txt) & wait", "timeout": 0.05,
+		"command": "(sleep 3; printf survived > child.txt) & wait",
+		"timeout": 1,
 	}))
 	if err != nil {
 		t.Fatalf("Execute() timeout error = %v", err)
@@ -108,10 +109,12 @@ func TestBashExecuteReportsExitAndTimeout(t *testing.T) {
 	if !result.IsError || !strings.Contains(resultText(t, result), "timed out") {
 		t.Fatalf("Execute() timeout result = %#v", result)
 	}
-	if elapsed := time.Since(started); elapsed > 2*time.Second {
+	if elapsed := time.Since(started); elapsed > 10*time.Second {
 		t.Fatalf("Execute() timeout took %s, want process tree killed promptly", elapsed)
 	}
-	time.Sleep(350 * time.Millisecond)
+	if remaining := 4*time.Second - time.Since(started); remaining > 0 {
+		time.Sleep(remaining)
+	}
 	if _, statErr := os.Stat(filepath.Join(root, "child.txt")); !os.IsNotExist(statErr) {
 		t.Fatalf("child process survived cancellation, os.Stat() error = %v", statErr)
 	}

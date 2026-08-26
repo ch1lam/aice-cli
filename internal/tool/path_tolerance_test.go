@@ -3,7 +3,6 @@ package tool
 import (
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 )
@@ -271,9 +270,6 @@ func TestResolveReadTargetStripsAtPrefix(t *testing.T) {
 }
 
 func TestResolveReadTargetExpandsTilde(t *testing.T) {
-	if runtime.GOOS == "windows" && os.Getenv("USERPROFILE") != "" {
-		t.Skip("tilde expansion follows the OS home lookup; covered on unix")
-	}
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)

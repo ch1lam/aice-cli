@@ -800,9 +800,12 @@ func TestShellWorkingDirectoryUsesHomeShortcutAndRemovesControls(t *testing.T) {
 
 	got := shellWorkingDirectory(path)
 
-	wantPrefix := filepath.Join("~", "code", "aice-cli")
+	wantPrefix := "~/code/aice-cli"
 	if !strings.HasPrefix(got, wantPrefix) {
 		t.Errorf("shell working directory = %q, want prefix %q", got, wantPrefix)
+	}
+	if strings.Contains(got, `\`) {
+		t.Errorf("shell working directory uses backslash: %q", got)
 	}
 	if strings.ContainsAny(got, "\n\x1b") {
 		t.Errorf("shell working directory contains terminal controls: %q", got)

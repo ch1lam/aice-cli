@@ -3,12 +3,11 @@ package app
 import (
 	"context"
 	"fmt"
-	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/ch1lam/aice-cli/internal/agent"
 	"github.com/ch1lam/aice-cli/internal/guard"
+	"github.com/ch1lam/aice-cli/internal/hostpath"
 	"github.com/ch1lam/aice-cli/internal/interaction"
 	"github.com/ch1lam/aice-cli/internal/llm"
 )
@@ -182,14 +181,14 @@ func pathAccessAskOptions(g *guard.Guard, toolName, path string) []interaction.G
 		{
 			ID:     guardOptionAllowRunFile,
 			Label:  "Allow this file for this run",
-			Detail: shortenHomePath(abs),
+			Detail: hostpath.HomeDisplay(abs),
 		},
 	}
 	parent := filepath.Dir(abs)
 	if !guard.GrantTooBroad(parent) {
 		options = append(options, interaction.GuardOption{
 			ID:    guardOptionAllowRunDir,
-			Label: "Allow directory " + shortenHomePath(parent) + "/ for this run",
+			Label: "Allow directory " + hostpath.HomeDisplay(parent) + "/ for this run",
 		})
 	}
 	return append(options, interaction.GuardOption{
@@ -266,23 +265,4 @@ func guardOptionOffered(options []interaction.GuardOption, id string) bool {
 		}
 	}
 	return false
-}
-
-// shortenHomePath displays an absolute path under the user's home with a
-// "~/" prefix; paths outside home are returned unchanged.
-func shortenHomePath(path string) string {
-	home, err := os.UserHomeDir()
-	if err != nil || home == "" {
-		return path
-	}
-	cleanedHome := filepath.Clean(home)
-	cleaned := filepath.Clean(path)
-	if cleaned == cleanedHome {
-		return "~"
-	}
-	prefix := cleanedHome + string(filepath.Separator)
-	if !strings.HasPrefix(cleaned, prefix) {
-		return path
-	}
-	return "~/" + filepath.ToSlash(strings.TrimPrefix(cleaned, prefix))
 }

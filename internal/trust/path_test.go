@@ -17,7 +17,7 @@ func TestCanonicalPathResolvesSymlinks(t *testing.T) {
 	}
 	link := filepath.Join(root, "link")
 	if err := os.Symlink(real, link); err != nil {
-		t.Fatalf("symlink: %v", err)
+		t.Skipf("symlink: %v", err)
 	}
 
 	got, err := CanonicalPath(link)

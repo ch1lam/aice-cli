@@ -1,9 +1,10 @@
 package guard
 
 import (
-	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/ch1lam/aice-cli/internal/hostpath"
 )
 
 // PathAccessMode controls outside-workspace access.
@@ -39,36 +40,14 @@ func (c PathAccessConfig) modeOrDefault() PathAccessMode {
 	}
 }
 
-// isWithinBoundary reports whether abs is inside cwd (including cwd itself).
-func isWithinBoundary(abs, cwd string) bool {
-	if cwd == "" || abs == "" {
-		return false
-	}
-	abs = filepath.Clean(abs)
-	cwd = filepath.Clean(cwd)
-	if abs == cwd {
-		return true
-	}
-	rel, err := filepath.Rel(cwd, abs)
-	if err != nil {
-		return false
-	}
-	return !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && rel != ".."
-}
-
 func resolveForDisplay(path, cwd string) string {
-	if cwd != "" {
-		if rel, err := filepath.Rel(cwd, path); err == nil && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && rel != ".." {
-			return rel
+	path = filepath.Clean(path)
+	if hostpath.Within(cwd, path) {
+		if rel, err := filepath.Rel(cwd, path); err == nil {
+			return filepath.ToSlash(rel)
 		}
 	}
-	home, _ := os.UserHomeDir()
-	if home != "" && strings.HasPrefix(path, home+string(filepath.Separator)) {
-		if rel, err := filepath.Rel(home, path); err == nil {
-			return filepath.Join("~", rel)
-		}
-	}
-	return path
+	return hostpath.HomeDisplay(path)
 }
 
 func resolveAllowedPath(p AllowedPath, cwd string) string {
@@ -76,11 +55,7 @@ func resolveAllowedPath(p AllowedPath, cwd string) string {
 	if raw == "" {
 		return ""
 	}
-	if raw == "~" || strings.HasPrefix(raw, "~/") {
-		if home, err := os.UserHomeDir(); err == nil && home != "" {
-			raw = filepath.Join(home, raw[1:])
-		}
-	}
+	raw = hostpath.ExpandTilde(raw)
 	if filepath.IsAbs(raw) {
 		return filepath.Clean(raw)
 	}
@@ -92,21 +67,19 @@ func resolveAllowedPath(p AllowedPath, cwd string) string {
 
 func isPathAllowed(abs string, allowed []AllowedPath, cwd string, sessionAllowed map[string]bool) bool {
 	abs = filepath.Clean(abs)
-	// Session grants (in-memory)
 	if sessionAllowed[abs] {
 		return true
 	}
-	// Also check if any session dir grant covers this file
 	for k := range sessionAllowed {
-		// sessionAllowed tracks both file and directory grants via the same map;
-		// for path-access we store directory grants as the directory path itself,
-		// and membership test will catch exact matches only. The directory-cover
-		// check below handles descendant coverage.
 		if strings.HasPrefix(k, "dir:") {
 			dir := strings.TrimPrefix(k, "dir:")
-			if isWithinBoundary(abs, dir) {
+			if hostpath.Within(dir, abs) {
 				return true
 			}
+			continue
+		}
+		if hostpath.Same(k, abs) {
+			return true
 		}
 	}
 	for _, entry := range allowed {
@@ -116,11 +89,11 @@ func isPathAllowed(abs string, allowed []AllowedPath, cwd string, sessionAllowed
 		}
 		switch entry.Kind {
 		case "directory":
-			if isWithinBoundary(abs, resolved) {
+			if hostpath.Within(resolved, abs) {
 				return true
 			}
 		default: // file
-			if abs == resolved {
+			if hostpath.Same(abs, resolved) {
 				return true
 			}
 		}
@@ -133,7 +106,7 @@ func isGrantTooBroad(path string) bool {
 	if isFilesystemRoot(cleaned) {
 		return true
 	}
-	if home, err := os.UserHomeDir(); err == nil && home != "" && filepath.Clean(home) == cleaned {
+	if rel, ok := hostpath.UnderHome(cleaned); ok && rel == "." {
 		return true
 	}
 	return false
