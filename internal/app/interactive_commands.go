@@ -45,6 +45,10 @@ func (s *interactiveSession) SlashCommands() []interaction.Command {
 			Description: "Show effective model settings and configuration paths",
 		},
 		{
+			Name:        "skills",
+			Description: "Show discovered Agent Skills",
+		},
+		{
 			Name:        "trust",
 			Description: "Save a project trust decision for future runs",
 			Menu:        s.trustMenu(),
@@ -325,6 +329,7 @@ var slashCommandHandlers = map[string]slashCommandHandler{
 	"compact":  (*interactiveSession).slashCompact,
 	"init":     (*interactiveSession).slashInit,
 	"settings": (*interactiveSession).slashSettings,
+	"skills":   (*interactiveSession).slashSkills,
 	"trust":    (*interactiveSession).slashTrust,
 	"login":    (*interactiveSession).slashLogin,
 	"provider": (*interactiveSession).slashProvider,
@@ -458,6 +463,16 @@ func (s *interactiveSession) slashSettings(
 		return "", err
 	}
 	return s.settingsInformation(), nil
+}
+
+func (s *interactiveSession) slashSkills(
+	_ context.Context,
+	request interaction.CommandRequest,
+) (string, error) {
+	if err := requireNoSlashCommandArguments(request); err != nil {
+		return "", err
+	}
+	return formatSkillsCommand(s.skills, s.skillDiags, s.workspacePath), nil
 }
 
 func (s *interactiveSession) slashTrust(

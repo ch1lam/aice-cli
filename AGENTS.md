@@ -27,7 +27,7 @@ fact in one document; other files should link rather than restating details.
 | --- | --- |
 | Product overview and quickstart | [`README.md`](README.md) (keep [`README-zh.md`](README-zh.md) in sync) |
 | Installation, helper binaries, source builds, `aice update` | [`docs/installation.md`](docs/installation.md) |
-| Providers, models, reasoning, credentials, CLI flags, TUI commands except Session/compaction | [`docs/configuration.md`](docs/configuration.md) |
+| Providers, models, reasoning, credentials, CLI flags, Agent Skills, TUI commands except Session/compaction | [`docs/configuration.md`](docs/configuration.md) |
 | Project Trust, prompt precedence, protected resources, `/init` | [`docs/project-trust.md`](docs/project-trust.md) |
 | Tool permissions, execution gate, Sessions, branches, recovery, compaction | [`docs/execution-sessions.md`](docs/execution-sessions.md) |
 | Session CLI/TUI commands (`aice session`, `aice compact`, `/session`, `/tree`, `/checkout`, `/compact`) | [`docs/execution-sessions.md`](docs/execution-sessions.md#resume-and-navigate) |

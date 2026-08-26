@@ -66,16 +66,17 @@ aice --workspace . --session .aice/sessions/<session-id>.jsonl
 | Interface | Bubble Tea TUI and one-shot `--print` mode |
 | Providers | DeepSeek V4, OpenCode Go's 22-model catalog, OpenAI GPT-5.6, and Custom (OpenAI-compatible) |
 | Protocols | Anthropic Messages, OpenAI Responses, OpenAI Chat Completions |
-| Tools | `read`, `write`, `edit`, `bash`, `grep`, `find`, `ls` |
+| Tools | `read`, `write`, `edit`, `bash`, `grep`, `find`, `ls`, `skill` |
 | Guard | intrinsic execution gate (`internal/guard`): pathAccess mode `allow`/`ask`/`block`; Decision `allow`/`ask`/`deny`; see [Tool execution and Sessions](./docs/execution-sessions.md#tool-execution-boundary) |
 | Sessions | restart recovery, branches, checkout/backtracking, automatic and manual compaction |
 | Side questions | multiple ephemeral, tool-free `/btw` threads outside Session history |
+| Agent Skills | open-spec `SKILL.md` directories from builtin, `~/.agents/skills`, and project `.agents/skills`; see [Agent Skills](./docs/configuration.md#agent-skills) |
 | Input | text only |
 
 Tools inherit the permissions of the AICE process. Every call is checked by
 the execution gate; `--print` treats `ask` as `deny`. `--workspace` sets the
 working directory and path-access boundary; it is not a sandbox. Project Trust
-only gates prompt files; see [Project Trust and
+gates project prompt files and project `.agents/skills`; see [Project Trust and
 prompts](./docs/project-trust.md). For stronger isolation use an external
 container/VM.
 

@@ -179,6 +179,47 @@ not persist the run. Session navigation and compaction commands are documented
 in [Tool execution and Sessions](execution-sessions.md#sessions). `aice
 update` is documented in [Installation and updates](installation.md).
 
+## Agent Skills
+
+A skill is a directory with a `SKILL.md` file (YAML frontmatter plus Markdown
+instructions) that follows the open [Agent Skills](https://agentskills.io)
+specification.
+
+AICE loads skills from three sources at Session start:
+
+1. **builtin** — embedded in the AICE binary
+2. **user** — `~/.agents/skills/<name>/SKILL.md`
+3. **project** — `<workspace>/.agents/skills/<name>/SKILL.md`
+
+When two skills share a name, project wins over user over builtin. `/skills`
+lists the catalog loaded for this Session; grouping is source information
+only.
+
+Install with:
+
+```sh
+npx skills add <owner/repo>
+npx skills add -g <owner/repo>
+```
+
+`-g` installs into `~/.agents/skills/`. Any installer that writes a skill
+directory under `.agents/skills/` works the same way.
+
+Project-level skills are gated by Project Trust. An untrusted workspace skips
+`<workspace>/.agents/skills/`; user-global and builtin skills are not gated.
+See [Project Trust and prompts](project-trust.md).
+
+At startup AICE injects only each skill's name and description into the
+system prompt. The agent loads the body on demand through the `skill` tool.
+Discovery and wiring are in [Skills](architecture.md#skills).
+
+Skill directories on disk are allowed automatically for read-class tools
+(`read`, `grep`, `find`, `ls`); `write` and `edit` are not granted. See
+[Tool execution and Sessions](execution-sessions.md#tool-execution-boundary).
+
+The `/skills` list is scanned at Session start. Installing or removing skills
+takes effect after restarting AICE or starting a new Session.
+
 ## Interactive commands
 
 | Command | Effect |
@@ -187,6 +228,7 @@ update` is documented in [Installation and updates](installation.md).
 | `/btw [question]` | Create or choose an ephemeral, tool-free side thread |
 | `/init` | Create or improve root `AGENTS.md`; loaded after restart |
 | `/settings` | Show effective model, Trust state, and configuration paths |
+| `/skills` | List Agent Skills loaded for this Session |
 | `/login` | Select a provider and store its key through hidden input; `custom` uses endpoint → key (may be empty) → model |
 | `/provider` | Select and save the global provider |
 | `/model` | Select and save a model from that provider |

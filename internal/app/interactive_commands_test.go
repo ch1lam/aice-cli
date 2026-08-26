@@ -18,6 +18,7 @@ import (
 	"github.com/ch1lam/aice-cli/internal/provider/deepseek"
 	"github.com/ch1lam/aice-cli/internal/provider/opencode"
 	"github.com/ch1lam/aice-cli/internal/session"
+	"github.com/ch1lam/aice-cli/internal/skill"
 	"github.com/ch1lam/aice-cli/internal/tool"
 	"github.com/ch1lam/aice-cli/internal/tui"
 )
@@ -381,6 +382,14 @@ func TestInteractiveSessionSlashCommandsRejectInvalidArguments(t *testing.T) {
 			want: "does not accept arguments",
 		},
 		{
+			name: "skills arguments",
+			request: tui.SlashCommandRequest{
+				Name:      "skills",
+				Arguments: "extra",
+			},
+			want: "does not accept arguments",
+		},
+		{
 			name:    "missing checkout entry",
 			request: tui.SlashCommandRequest{Name: "checkout"},
 			want:    "usage: /checkout",
@@ -396,6 +405,167 @@ func TestInteractiveSessionSlashCommandsRejectInvalidArguments(t *testing.T) {
 				t.Fatalf("RunSlashCommand() error = %v, want %q", err, tt.want)
 			}
 		})
+	}
+}
+
+func TestInteractiveSessionSlashCommandSkills(t *testing.T) {
+	t.Parallel()
+
+	workspace := filepath.FromSlash("/workspace")
+	userDir := filepath.FromSlash("/home/me/.agents/skills/pdf")
+	projectRoot := filepath.Join(workspace, ".agents", "skills")
+	projectDir := filepath.Join(projectRoot, "review")
+	catalog, _ := skill.Merge(
+		[]skill.Skill{{
+			Name:        "create-skill",
+			Description: "Create Agent Skills",
+			Source:      skill.SourceBuiltin,
+		}},
+		[]skill.Skill{{
+			Name:        "pdf",
+			Description: "Read PDF files",
+			Source:      skill.SourceUser,
+			Dir:         userDir,
+		}},
+		[]skill.Skill{{
+			Name:        "review",
+			Description: "Review local changes",
+			Source:      skill.SourceProject,
+			Dir:         projectDir,
+		}},
+	)
+	longDescription := strings.Repeat("a", maxSkillDescriptionRunes+8)
+	longCatalog, _ := skill.Merge([]skill.Skill{{
+		Name:        "long",
+		Description: longDescription,
+		Source:      skill.SourceBuiltin,
+	}})
+
+	tests := []struct {
+		name       string
+		session    *interactiveSession
+		want       []string
+		wantAbsent []string
+	}{
+		{
+			name: "grouped listing",
+			session: &interactiveSession{
+				skills:        catalog,
+				workspacePath: workspace,
+			},
+			want: []string{
+				strings.Join([]string{
+					"Skills",
+					"",
+					"builtin",
+					"create-skill — Create Agent Skills (embedded)",
+					"",
+					"user (~/.agents/skills)",
+					"pdf — Read PDF files (" + userDir + ")",
+					"",
+					"project (" + projectRoot + ")",
+					"review — Review local changes (" + projectDir + ")",
+					"",
+					skillsScanReminder,
+				}, "\n"),
+			},
+		},
+		{
+			name: "diagnostics",
+			session: &interactiveSession{
+				skills: catalog,
+				skillDiags: []skill.Diagnostic{
+					{
+						Level:   skill.LevelWarn,
+						Dir:     filepath.FromSlash("/home/me/.agents/skills/shared"),
+						Message: `skill "shared" from user shadowed by project`,
+					},
+					{
+						Level:   skill.LevelError,
+						Message: "skip user skills: home unavailable",
+					},
+				},
+				workspacePath: workspace,
+			},
+			want: []string{
+				"Diagnostics",
+				`warn ` + filepath.FromSlash("/home/me/.agents/skills/shared") +
+					`: skill "shared" from user shadowed by project`,
+				"error skip user skills: home unavailable",
+				skillsScanReminder,
+			},
+		},
+		{
+			name:    "empty hint",
+			session: &interactiveSession{},
+			want: []string{
+				"No skills found.",
+				"Install with: npx skills add <owner/repo>",
+				skillsScanReminder,
+			},
+			wantAbsent: []string{"Diagnostics"},
+		},
+		{
+			name: "diagnostics without skills",
+			session: &interactiveSession{
+				skillDiags: []skill.Diagnostic{{
+					Level:   skill.LevelError,
+					Message: "skip builtin skills: broken embed",
+				}},
+			},
+			want: []string{
+				"Diagnostics",
+				"error skip builtin skills: broken embed",
+				skillsScanReminder,
+			},
+			wantAbsent: []string{"npx skills add", "No skills found."},
+		},
+		{
+			name: "truncates long description",
+			session: &interactiveSession{
+				skills: longCatalog,
+			},
+			want: []string{
+				"long — " + strings.Repeat("a", maxSkillDescriptionRunes-1) +
+					"… (embedded)",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			output, err := tt.session.RunSlashCommand(
+				t.Context(),
+				tui.SlashCommandRequest{Name: "skills"},
+			)
+			if err != nil {
+				t.Fatalf("/skills error = %v", err)
+			}
+			for _, want := range tt.want {
+				if !strings.Contains(output, want) {
+					t.Errorf("/skills output = %q, want %q", output, want)
+				}
+			}
+			for _, absent := range tt.wantAbsent {
+				if strings.Contains(output, absent) {
+					t.Errorf("/skills output = %q, does not want %q", output, absent)
+				}
+			}
+		})
+	}
+
+	command := interactiveSlashCommand(
+		t,
+		(&interactiveSession{}).SlashCommands(),
+		"skills",
+	)
+	if command.Menu != nil {
+		t.Fatal("/skills unexpectedly has a menu")
+	}
+	if command.Description == "" {
+		t.Fatal("/skills description is empty")
 	}
 }
 

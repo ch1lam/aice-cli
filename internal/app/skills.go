@@ -12,6 +12,11 @@ import (
 	"github.com/ch1lam/aice-cli/internal/trust"
 )
 
+const (
+	maxSkillDescriptionRunes = 80
+	skillsScanReminder       = "Skill list was scanned at Session start. Restart AICE or start a new Session after installing or removing skills."
+)
+
 // skillDiscovery is the merged catalog plus every diagnostic from scanning
 // and same-name shadowing. /skills reads these from the run environment.
 type skillDiscovery struct {
@@ -140,6 +145,116 @@ func appendSkillsPrompt(base string, catalog skill.Catalog) string {
 		return base
 	}
 	return base + "\n\n" + section
+}
+
+func formatSkillsCommand(
+	catalog skill.Catalog,
+	diags []skill.Diagnostic,
+	workspace string,
+) string {
+	skills := catalog.Skills()
+	if len(skills) == 0 && len(diags) == 0 {
+		return strings.Join([]string{
+			"No skills found.",
+			"Install with: npx skills add <owner/repo>",
+			skillsScanReminder,
+		}, "\n")
+	}
+
+	lines := make([]string, 0)
+	if len(skills) > 0 {
+		lines = append(lines, "Skills")
+		grouped := groupSkillsBySource(skills)
+		for _, group := range skillListGroups(workspace) {
+			items := grouped[group.source]
+			if len(items) == 0 {
+				continue
+			}
+			lines = append(lines, "", group.title)
+			for _, item := range items {
+				lines = append(lines, formatSkillLine(item))
+			}
+		}
+	}
+	if len(diags) > 0 {
+		if len(lines) > 0 {
+			lines = append(lines, "")
+		}
+		lines = append(lines, "Diagnostics")
+		for _, diag := range diags {
+			lines = append(lines, formatSkillDiagnosticLine(diag))
+		}
+	}
+	lines = append(lines, "", skillsScanReminder)
+	return strings.Join(lines, "\n")
+}
+
+type skillListGroup struct {
+	source skill.Source
+	title  string
+}
+
+func skillListGroups(workspace string) []skillListGroup {
+	return []skillListGroup{
+		{source: skill.SourceBuiltin, title: "builtin"},
+		{source: skill.SourceUser, title: "user (~/" + trust.SkillsDir + ")"},
+		{
+			source: skill.SourceProject,
+			title:  "project (" + projectSkillsRoot(workspace) + ")",
+		},
+	}
+}
+
+func projectSkillsRoot(workspace string) string {
+	if workspace == "" {
+		return trust.SkillsDir
+	}
+	return filepath.Join(workspace, filepath.FromSlash(trust.SkillsDir))
+}
+
+func groupSkillsBySource(skills []skill.Skill) map[skill.Source][]skill.Skill {
+	grouped := make(map[skill.Source][]skill.Skill, 3)
+	for _, item := range skills {
+		grouped[item.Source] = append(grouped[item.Source], item)
+	}
+	return grouped
+}
+
+func formatSkillLine(item skill.Skill) string {
+	description := truncateSkillDescription(item.Description)
+	location := skillLocationLabel(item)
+	switch {
+	case description != "" && location != "":
+		return item.Name + " — " + description + " (" + location + ")"
+	case description != "":
+		return item.Name + " — " + description
+	case location != "":
+		return item.Name + " (" + location + ")"
+	default:
+		return item.Name
+	}
+}
+
+func skillLocationLabel(item skill.Skill) string {
+	if item.Source == skill.SourceBuiltin {
+		return "embedded"
+	}
+	return item.Dir
+}
+
+func truncateSkillDescription(value string) string {
+	runes := []rune(value)
+	if len(runes) <= maxSkillDescriptionRunes {
+		return value
+	}
+	return string(runes[:maxSkillDescriptionRunes-1]) + "…"
+}
+
+func formatSkillDiagnosticLine(diag skill.Diagnostic) string {
+	if diag.Dir == "" {
+		return string(diag.Level) + " " + diag.Message
+	}
+	return string(diag.Level) + " " + diag.Dir + ": " + diag.Message
 }
 
 func formatSkillsPrompt(catalog skill.Catalog) string {
