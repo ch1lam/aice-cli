@@ -52,6 +52,7 @@ func TestApplicationPrintRunsBuiltInAgent(t *testing.T) {
 			t.Parallel()
 
 			workspace := t.TempDir()
+			home := t.TempDir()
 			model := &recordingModel{response: tt.response}
 			wantConfig := config.Config{
 				Provider:        string(deepseek.ProviderID),
@@ -59,7 +60,7 @@ func TestApplicationPrintRunsBuiltInAgent(t *testing.T) {
 				DeepSeekAPIKey:  "test-key",
 				DeepSeekBaseURL: "https://deepseek.example/anthropic",
 			}
-			command, err := newCommand(dependencies{
+			command, err := newTestCommand(t, dependencies{
 				loadConfig: func() (config.Config, error) {
 					return wantConfig, nil
 				},
@@ -68,6 +69,9 @@ func TestApplicationPrintRunsBuiltInAgent(t *testing.T) {
 						t.Errorf("model config = %#v, want %#v", got, wantConfig)
 					}
 					return model, nil
+				},
+				userHomeDir: func() (string, error) {
+					return home, nil
 				},
 			})
 			if err != nil {
@@ -91,14 +95,14 @@ func TestApplicationPrintRunsBuiltInAgent(t *testing.T) {
 				t.Fatalf("model requests = %d, want 1", len(model.requests))
 			}
 			request := model.requests[0]
-			if request.SystemPrompt != defaultPromptFor(
+			if request.SystemPrompt != defaultPromptWithSkillsFor(
 				t,
 				testWorkspace(t, workspace),
 			) {
 				t.Errorf(
 					"system prompt = %q, want %q",
 					request.SystemPrompt,
-					defaultPromptFor(t, testWorkspace(t, workspace)),
+					defaultPromptWithSkillsFor(t, testWorkspace(t, workspace)),
 				)
 			}
 			if len(request.Messages) != 1 {
@@ -115,7 +119,7 @@ func TestApplicationPrintRunsBuiltInAgent(t *testing.T) {
 			for index, definition := range request.Tools {
 				toolNames[index] = definition.Name
 			}
-			want := []string{"read", "write", "edit", "bash", "grep", "find", "ls"}
+			want := []string{"read", "write", "edit", "bash", "grep", "find", "ls", "skill"}
 			if !reflect.DeepEqual(toolNames, want) {
 				t.Errorf("model tools = %v, want %v", toolNames, want)
 			}
@@ -127,7 +131,7 @@ func TestApplicationPrintDoesNotRunWelcomeUpdateCheck(t *testing.T) {
 	t.Parallel()
 
 	workspace := t.TempDir()
-	command, err := newCommand(dependencies{
+	command, err := newTestCommand(t, dependencies{
 		loadConfig: func() (config.Config, error) {
 			return config.Config{DeepSeekAPIKey: "test-key"}, nil
 		},
@@ -157,7 +161,7 @@ func TestApplicationPrintUsesConfiguredModelAndThinking(t *testing.T) {
 
 	workspace := t.TempDir()
 	model := &recordingModel{response: "configured"}
-	command, err := newCommand(dependencies{
+	command, err := newTestCommand(t, dependencies{
 		loadConfig: func() (config.Config, error) {
 			return config.Config{
 				Provider:       string(deepseek.ProviderID),
@@ -297,7 +301,7 @@ func TestApplicationPrintReturnsConfigurationError(t *testing.T) {
 	t.Parallel()
 
 	wantErr := errors.New("configuration unavailable")
-	command, err := newCommand(dependencies{
+	command, err := newTestCommand(t, dependencies{
 		loadConfig: func() (config.Config, error) {
 			return config.Config{}, wantErr
 		},
@@ -322,7 +326,7 @@ func TestApplicationPrintSeparatesToolLoopTurns(t *testing.T) {
 
 	workspace := t.TempDir()
 	model := &toolLoopModel{}
-	command, err := newCommand(dependencies{
+	command, err := newTestCommand(t, dependencies{
 		loadConfig: func() (config.Config, error) {
 			return config.Config{DeepSeekAPIKey: "test-key"}, nil
 		},
@@ -363,7 +367,7 @@ func TestApplicationInteractiveKeepsConversationHistory(t *testing.T) {
 	model := &recordingModel{response: "inspection complete"}
 	input := strings.NewReader("terminal input")
 	output := new(bytes.Buffer)
-	command, err := newCommand(dependencies{
+	command, err := newTestCommand(t, dependencies{
 		loadConfig: func() (config.Config, error) {
 			return config.Config{DeepSeekAPIKey: "test-key"}, nil
 		},
@@ -463,7 +467,7 @@ func TestApplicationInteractiveDefersUpdateCheckToTUI(t *testing.T) {
 
 	workspace := t.TempDir()
 	checkerCalled := false
-	command, err := newCommand(dependencies{
+	command, err := newTestCommand(t, dependencies{
 		loadConfig: func() (config.Config, error) {
 			return config.Config{DeepSeekAPIKey: "test-key"}, nil
 		},
@@ -519,7 +523,7 @@ func TestApplicationInteractiveStartsWithoutCredentials(t *testing.T) {
 	t.Parallel()
 
 	workspace := t.TempDir()
-	command, err := newCommand(dependencies{
+	command, err := newTestCommand(t, dependencies{
 		loadConfig: func() (config.Config, error) {
 			return config.Config{}, nil
 		},
@@ -578,7 +582,7 @@ func TestApplicationInteractiveLoginEnablesCurrentSession(t *testing.T) {
 	model := &recordingModel{response: "ready"}
 	var savedAPIKey string
 	var savedSettings []config.Setting
-	command, err := newCommand(dependencies{
+	command, err := newTestCommand(t, dependencies{
 		loadConfig: func() (config.Config, error) {
 			return config.Config{
 				Paths: config.Paths{
@@ -662,7 +666,7 @@ func TestApplicationInteractiveLoginEnablesCurrentSession(t *testing.T) {
 func TestApplicationPrintStillRequiresCredentials(t *testing.T) {
 	t.Parallel()
 
-	command, err := newCommand(dependencies{
+	command, err := newTestCommand(t, dependencies{
 		loadConfig: func() (config.Config, error) {
 			return config.Config{}, nil
 		},
@@ -691,7 +695,7 @@ func TestApplicationPrintResumesExplicitSession(t *testing.T) {
 	sessionPath := filepath.Join(t.TempDir(), "conversation.jsonl")
 
 	firstModel := &recordingModel{response: "first answer"}
-	firstCommand, err := newCommand(dependencies{
+	firstCommand, err := newTestCommand(t, dependencies{
 		loadConfig: func() (config.Config, error) {
 			return config.Config{DeepSeekAPIKey: "test-key"}, nil
 		},
@@ -713,7 +717,7 @@ func TestApplicationPrintResumesExplicitSession(t *testing.T) {
 	}
 
 	secondModel := &recordingModel{response: "second answer"}
-	secondCommand, err := newCommand(dependencies{
+	secondCommand, err := newTestCommand(t, dependencies{
 		loadConfig: func() (config.Config, error) {
 			return config.Config{DeepSeekAPIKey: "test-key"}, nil
 		},
@@ -775,7 +779,7 @@ func TestApplicationInteractiveResumesExplicitSession(t *testing.T) {
 		response: "first answer",
 		usage:    firstUsage,
 	}
-	firstCommand, err := newCommand(dependencies{
+	firstCommand, err := newTestCommand(t, dependencies{
 		loadConfig: func() (config.Config, error) {
 			return config.Config{DeepSeekAPIKey: "test-key"}, nil
 		},
@@ -797,7 +801,7 @@ func TestApplicationInteractiveResumesExplicitSession(t *testing.T) {
 	}
 
 	secondModel := &recordingModel{response: "second answer"}
-	secondCommand, err := newCommand(dependencies{
+	secondCommand, err := newTestCommand(t, dependencies{
 		loadConfig: func() (config.Config, error) {
 			return config.Config{DeepSeekAPIKey: "test-key"}, nil
 		},
@@ -859,7 +863,7 @@ func TestApplicationPersistsFailedRunAfterToolSideEffect(t *testing.T) {
 		Arguments: []byte(`{"path":"changed.txt","content":"changed\n"}`),
 	}
 	model := &toolLoopModel{firstCall: &call, secondErr: wantErr}
-	command, err := newCommand(dependencies{
+	command, err := newTestCommand(t, dependencies{
 		loadConfig: func() (config.Config, error) {
 			return config.Config{DeepSeekAPIKey: "test-key"}, nil
 		},
@@ -917,7 +921,7 @@ func TestApplicationPersistsFailedRunAfterToolSideEffect(t *testing.T) {
 	}
 
 	resumeModel := &recordingModel{response: "recovered"}
-	resumeCommand, err := newCommand(dependencies{
+	resumeCommand, err := newTestCommand(t, dependencies{
 		loadConfig: func() (config.Config, error) {
 			return config.Config{DeepSeekAPIKey: "test-key"}, nil
 		},
@@ -1230,7 +1234,7 @@ func TestApplicationRejectsSessionWorkingDirectoryChange(t *testing.T) {
 
 	newTestCommand := func() *cobra.Command {
 		t.Helper()
-		command, err := newCommand(dependencies{
+		command, err := newTestCommand(t, dependencies{
 			loadConfig: func() (config.Config, error) {
 				return config.Config{DeepSeekAPIKey: "test-key"}, nil
 			},
@@ -1629,7 +1633,7 @@ func (t *appTestTool) Execute(
 func TestNewCommandRegistersUpdateCommand(t *testing.T) {
 	t.Parallel()
 
-	command, err := newCommand(dependencies{
+	command, err := newTestCommand(t, dependencies{
 		loadConfig: func() (config.Config, error) {
 			return config.Config{}, nil
 		},

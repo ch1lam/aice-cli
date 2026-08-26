@@ -21,6 +21,7 @@ import (
 	"github.com/ch1lam/aice-cli/internal/llm"
 	"github.com/ch1lam/aice-cli/internal/provider"
 	"github.com/ch1lam/aice-cli/internal/session"
+	"github.com/ch1lam/aice-cli/internal/skill"
 	"github.com/ch1lam/aice-cli/internal/tool"
 	"github.com/ch1lam/aice-cli/internal/trust"
 	"github.com/ch1lam/aice-cli/internal/tui"
@@ -57,6 +58,7 @@ type dependencies struct {
 	runTrustTUI                func(context.Context, tui.TrustPromptOptions) (trust.Choice, error)
 	compactionKeepRecentTokens int64
 	providers                  []provider.Provider
+	userHomeDir                func() (string, error)
 }
 
 func newCommand(dependencies dependencies) (*cobra.Command, error) {
@@ -279,6 +281,8 @@ func (a *application) Interactive(
 		configuration: environment.configuration,
 		tools:         environment.tools,
 		systemPrompt:  environment.systemPrompt,
+		skills:        environment.skills,
+		skillDiags:    environment.skillDiags,
 		trustStore:    trust.NewStore(environment.configuration.Paths.GlobalTrust),
 		workspace:     environment.workspace,
 		workspacePath: environment.workspace.PhysicalPath(),
@@ -365,6 +369,8 @@ type runEnvironment struct {
 	options       llm.StreamOptions
 	tools         []agent.Tool
 	systemPrompt  string
+	skills        skill.Catalog
+	skillDiags    []skill.Diagnostic
 	trust         trust.Resolution
 	guard         *guard.Guard
 	guardAdapter  *guardAdapter
@@ -399,22 +405,39 @@ func (a *application) newRunEnvironment(
 			fmt.Fprintf(os.Stderr, "aice: warning: %v\n", err)
 		}
 	}
-	tools, err := newBuiltInTools(workspace)
-	if err != nil {
-		return nil, err
-	}
-	project, err := a.resolveProjectContext(
+	resolution, err := a.resolveProjectTrust(
 		ctx,
 		workspace,
 		configured.configuration,
 		override,
 		askUI,
-		tools,
 	)
 	if err != nil {
 		return nil, err
 	}
-	g, adapter, err := newExecutionGuard(workspace.PhysicalPath())
+	discovery := a.discoverRunSkills(
+		workspace.PhysicalPath(),
+		resolution.Decision == trust.DecisionTrusted,
+	)
+	tools, err := newBuiltInTools(workspace)
+	if err != nil {
+		return nil, err
+	}
+	tools = appendSkillTool(tools, discovery.catalog)
+	systemPrompt, err := assembleSystemPrompt(
+		workspace,
+		configured.configuration,
+		resolution.Decision,
+		tools,
+		discovery.catalog,
+	)
+	if err != nil {
+		return nil, err
+	}
+	g, adapter, err := newExecutionGuard(
+		workspace.PhysicalPath(),
+		skillReadOnlyRoots(discovery.catalog),
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -424,8 +447,10 @@ func (a *application) newRunEnvironment(
 		model:         configured.model,
 		options:       configured.options,
 		tools:         tools,
-		systemPrompt:  project.systemPrompt,
-		trust:         project.trust,
+		systemPrompt:  systemPrompt,
+		skills:        discovery.catalog,
+		skillDiags:    discovery.diags,
+		trust:         resolution,
 		guard:         g,
 		guardAdapter:  adapter,
 	}, nil
@@ -478,7 +503,7 @@ func (a *application) newAgentLoop(
 	configuration config.Config,
 	tools []agent.Tool,
 ) (*agent.Loop, error) {
-	_, adapter, err := newExecutionGuard("")
+	_, adapter, err := newExecutionGuard("", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -525,6 +550,8 @@ type interactiveSession struct {
 	configuration  config.Config
 	tools          []agent.Tool
 	systemPrompt   string
+	skills         skill.Catalog
+	skillDiags     []skill.Diagnostic
 	trustStore     *trust.Store
 	workspace      *tool.Workspace
 	workspacePath  string

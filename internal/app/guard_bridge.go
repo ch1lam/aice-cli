@@ -31,11 +31,14 @@ const (
 // workspace boundary and can preserve it through the first /login.
 func newExecutionGuard(
 	workspace string,
+	readOnlyRoots []string,
 ) (*guard.Guard, *guardAdapter, error) {
 	// Built-in guard: intrinsic execution gate, not a plugin. Workspace-scoped
 	// so .env relative to the project is correctly recognized. Disabled only
 	// when explicitly configured off (future: guard config in settings.json).
-	g, err := guard.New(workspace, guard.Config{})
+	g, err := guard.New(workspace, guard.Config{
+		ReadOnlyRoots: readOnlyRoots,
+	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("app: create guard: %w", err)
 	}

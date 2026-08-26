@@ -11,6 +11,7 @@ import (
 
 	"github.com/ch1lam/aice-cli/internal/agent"
 	"github.com/ch1lam/aice-cli/internal/config"
+	"github.com/ch1lam/aice-cli/internal/skill"
 	"github.com/ch1lam/aice-cli/internal/tool"
 	"github.com/ch1lam/aice-cli/internal/trust"
 )
@@ -28,14 +29,16 @@ const (
 // run. The base comes from the project SYSTEM.md when trusted, then the global
 // SYSTEM.md, then the built-in default (which lists the available tools). The
 // project AGENTS.md is appended to the base when trusted, then
-// APPEND_SYSTEM.md appends last using the same precedence so explicit
-// instructions win. Project files are only read when the trust decision allows
-// it; global user files are always eligible.
+// APPEND_SYSTEM.md using the same precedence so explicit instructions win.
+// A non-empty skill catalog is appended last as a name+description list so a
+// custom SYSTEM.md still receives it. Project files are only read when the
+// trust decision allows it; global user files are always eligible.
 func assembleSystemPrompt(
 	workspace *tool.Workspace,
 	configuration config.Config,
 	decision trust.Decision,
 	tools []agent.Tool,
+	catalog skill.Catalog,
 ) (string, error) {
 	trusted := decision == trust.DecisionTrusted
 	base, err := resolvePromptBase(workspace, configuration, trusted, tools)
@@ -56,7 +59,7 @@ func assembleSystemPrompt(
 	if appendContent != "" {
 		base += "\n\n" + fmt.Sprintf(projectAppendBoundaryLabel, appendPath) + appendContent
 	}
-	return base, nil
+	return appendSkillsPrompt(base, catalog), nil
 }
 
 // resolvePromptBase picks the base system prompt following Pi's SYSTEM.md

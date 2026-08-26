@@ -163,7 +163,7 @@ func TestApplicationCheckoutRootAndMissingEntry(t *testing.T) {
 func newSessionTestCommand(t *testing.T) *cobra.Command {
 	t.Helper()
 
-	command, err := newCommand(dependencies{
+	command, err := newTestCommand(t, dependencies{
 		loadConfig: func() (config.Config, error) {
 			t.Fatal("configuration loaded for Session navigation")
 			return config.Config{}, nil

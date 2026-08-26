@@ -18,13 +18,17 @@ func TestApplicationPrintRunsMutatingBuiltInToolsThroughCommand(t *testing.T) {
 	t.Parallel()
 
 	workspace := t.TempDir()
+	home := t.TempDir()
 	model := &builtInToolModel{}
-	command, err := newCommand(dependencies{
+	command, err := newTestCommand(t, dependencies{
 		loadConfig: func() (config.Config, error) {
 			return config.Config{DeepSeekAPIKey: "test-key"}, nil
 		},
 		newModel: func(config.Config) (agent.Model, error) {
 			return model, nil
+		},
+		userHomeDir: func() (string, error) {
+			return home, nil
 		},
 	})
 	if err != nil {
@@ -55,7 +59,7 @@ func TestApplicationPrintRunsMutatingBuiltInToolsThroughCommand(t *testing.T) {
 	if len(model.requests) != 5 {
 		t.Fatalf("model requests = %d, want 5", len(model.requests))
 	}
-	wantTools := []string{"read", "write", "edit", "bash", "grep", "find", "ls"}
+	wantTools := []string{"read", "write", "edit", "bash", "grep", "find", "ls", "skill"}
 	for requestIndex, request := range model.requests {
 		names := make([]string, len(request.Tools))
 		for index, definition := range request.Tools {

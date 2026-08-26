@@ -168,8 +168,9 @@ label for display and same-name conflict ordering.
   `guard.Config.ReadOnlyRoots` so `read`/`grep`/`find`/`ls` can load bundled
   resources without path-access prompts. `write`/`edit` are not granted.
   Product behavior of the gate is in [Tool execution and
-  Sessions](execution-sessions.md#tool-execution-boundary). Wiring is in
-  `internal/app`.
+  Sessions](execution-sessions.md#tool-execution-boundary). `internal/app`
+  wires those directories at startup. Assembly order is trust decision, skill
+  discovery, tool construction, prompt assembly, then guard.
 
 Do not: hot-reload skills, add a new message `Role`, or insert Loop
 middleware.

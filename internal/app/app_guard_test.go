@@ -37,7 +37,7 @@ func TestApplicationInteractiveFirstLoginKeepsWorkspaceGuard(t *testing.T) {
 		Arguments: []byte(`{"path":".env"}`),
 	}
 	model := &toolLoopModel{firstCall: &call}
-	command, err := newCommand(dependencies{
+	command, err := newTestCommand(t, dependencies{
 		loadConfig: func() (config.Config, error) {
 			return config.Config{}, nil
 		},

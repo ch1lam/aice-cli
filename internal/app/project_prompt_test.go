@@ -7,9 +7,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/spf13/cobra"
+
 	"github.com/ch1lam/aice-cli/internal/agent"
 	"github.com/ch1lam/aice-cli/internal/config"
 	"github.com/ch1lam/aice-cli/internal/provider/deepseek"
+	"github.com/ch1lam/aice-cli/internal/skill"
 	"github.com/ch1lam/aice-cli/internal/tool"
 	"github.com/ch1lam/aice-cli/internal/trust"
 )
@@ -540,6 +543,26 @@ func newTestApplication() *application {
 	return &application{}
 }
 
+// isolatedUserHome returns a userHomeDir func rooted at a fresh TempDir so
+// tests that start a run environment cannot scan the real ~/.agents/skills.
+func isolatedUserHome(t *testing.T) func() (string, error) {
+	t.Helper()
+	home := t.TempDir()
+	return func() (string, error) {
+		return home, nil
+	}
+}
+
+// newTestCommand wraps newCommand and isolates skill discovery from the
+// developer's home unless the test already injected userHomeDir.
+func newTestCommand(t *testing.T, deps dependencies) (*cobra.Command, error) {
+	t.Helper()
+	if deps.userHomeDir == nil {
+		deps.userHomeDir = isolatedUserHome(t)
+	}
+	return newCommand(deps)
+}
+
 // testBuiltInTools builds the real built-in tool set for the workspace so
 // prompt assembly exercises the same snippets and guidelines as production.
 func testBuiltInTools(t *testing.T, workspace *tool.Workspace) []agent.Tool {
@@ -552,10 +575,26 @@ func testBuiltInTools(t *testing.T, workspace *tool.Workspace) []agent.Tool {
 }
 
 // defaultPromptFor builds the expected built-in default system prompt for the
-// workspace used by resolveProjectContext tests.
+// workspace used by resolveProjectContext tests. It does not include the
+// skill catalog appendix; production startup adds that after discovery.
 func defaultPromptFor(t *testing.T, workspace *tool.Workspace) string {
 	t.Helper()
 	return buildDefaultSystemPrompt(testBuiltInTools(t, workspace), workspace.Path())
+}
+
+func builtinSkillCatalog(t *testing.T) skill.Catalog {
+	t.Helper()
+	return discoverSkills("", "", false).catalog
+}
+
+func defaultPromptWithSkillsFor(t *testing.T, workspace *tool.Workspace) string {
+	t.Helper()
+	catalog := builtinSkillCatalog(t)
+	tools := appendSkillTool(testBuiltInTools(t, workspace), catalog)
+	return appendSkillsPrompt(
+		buildDefaultSystemPrompt(tools, workspace.Path()),
+		catalog,
+	)
 }
 
 func boolPtr(value bool) *bool {

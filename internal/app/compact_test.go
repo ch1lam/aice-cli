@@ -308,18 +308,19 @@ func TestApplicationPrintAutomaticallyCompactsBeforeRequest(t *testing.T) {
 		stopReason: llm.StopReasonStop,
 	}
 	candidate := &compactTestProvider{model: modelInfo, service: model}
-	command, err := newCommand(dependencies{
+	cfg, home := compactPrintConfig(t, modelInfo)
+	command, err := newTestCommand(t, dependencies{
 		loadConfig: func() (config.Config, error) {
-			return config.Config{
-				Provider: string(modelInfo.Provider),
-				Model:    modelInfo.ID,
-			}, nil
+			return cfg, nil
 		},
 		newModel: func(config.Config) (agent.Model, error) {
 			return model, nil
 		},
 		providers:                  []provider.Provider{candidate},
 		compactionKeepRecentTokens: 1,
+		userHomeDir: func() (string, error) {
+			return home, nil
+		},
 	})
 	if err != nil {
 		t.Fatalf("newCommand() error = %v", err)
@@ -382,18 +383,19 @@ func TestApplicationPrintCompactsAnOversizedTurn(t *testing.T) {
 		stopReason: llm.StopReasonStop,
 	}
 	candidate := &compactTestProvider{model: modelInfo, service: model}
-	command, err := newCommand(dependencies{
+	cfg, home := compactPrintConfig(t, modelInfo)
+	command, err := newTestCommand(t, dependencies{
 		loadConfig: func() (config.Config, error) {
-			return config.Config{
-				Provider: string(modelInfo.Provider),
-				Model:    modelInfo.ID,
-			}, nil
+			return cfg, nil
 		},
 		newModel: func(config.Config) (agent.Model, error) {
 			return model, nil
 		},
 		providers:                  []provider.Provider{candidate},
 		compactionKeepRecentTokens: 20_000,
+		userHomeDir: func() (string, error) {
+			return home, nil
+		},
 	})
 	if err != nil {
 		t.Fatalf("newCommand() error = %v", err)
@@ -421,7 +423,7 @@ func TestApplicationCompactDoesNotCreateMissingSession(t *testing.T) {
 
 	workspace := t.TempDir()
 	sessionPath := filepath.Join(t.TempDir(), "missing.jsonl")
-	command, err := newCommand(dependencies{
+	command, err := newTestCommand(t, dependencies{
 		loadConfig: func() (config.Config, error) {
 			t.Fatal("configuration loaded for missing Session")
 			return config.Config{}, nil
@@ -526,7 +528,7 @@ func TestApplicationCompactRejectsNothingToCompactBeforeCreatingModel(
 	sessionPath := filepath.Join(t.TempDir(), "conversation.jsonl")
 	runPrintTurn(t, workspace, sessionPath, "only prompt", "only answer")
 
-	command, err := newCommand(dependencies{
+	command, err := newTestCommand(t, dependencies{
 		loadConfig: func() (config.Config, error) {
 			t.Fatal("configuration loaded with nothing to compact")
 			return config.Config{}, nil
@@ -640,7 +642,7 @@ func runPrintTurn(
 	t.Helper()
 
 	model := &recordingModel{response: response}
-	command, err := newCommand(dependencies{
+	command, err := newTestCommand(t, dependencies{
 		loadConfig: func() (config.Config, error) {
 			return config.Config{DeepSeekAPIKey: "test-key"}, nil
 		},
@@ -664,6 +666,17 @@ func runPrintTurn(
 	return model
 }
 
+func compactPrintConfig(t *testing.T, modelInfo llm.Model) (config.Config, string) {
+	t.Helper()
+	paths := trustTestPaths(t)
+	writeAppFile(t, filepath.Dir(paths.GlobalSettings), "SYSTEM.md", "compact test")
+	return config.Config{
+		Provider: string(modelInfo.Provider),
+		Model:    modelInfo.ID,
+		Paths:    paths,
+	}, t.TempDir()
+}
+
 func newCompactTestCommand(
 	t *testing.T,
 	model agent.Model,
@@ -671,7 +684,7 @@ func newCompactTestCommand(
 ) *cobra.Command {
 	t.Helper()
 
-	command, err := newCommand(dependencies{
+	command, err := newTestCommand(t, dependencies{
 		loadConfig: func() (config.Config, error) {
 			return config.Config{DeepSeekAPIKey: "test-key"}, nil
 		},

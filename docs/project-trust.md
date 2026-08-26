@@ -14,7 +14,7 @@ Only these workspace-relative resources are protected:
 | `AGENTS.md` | regular file | Appended as project guidance |
 | `.aice/SYSTEM.md` | regular file | Replaces the base system prompt |
 | `.aice/APPEND_SYSTEM.md` | regular file | Appended after the base and `AGENTS.md` |
-| `.agents/skills/` | directory | Project-level Agent Skills are discovered and listed in the system prompt. Wiring is in `internal/app`; see [Skills](architecture.md#skills). |
+| `.agents/skills/` | directory | Project-level Agent Skills are discovered and listed in the system prompt. See [Skills](architecture.md#skills). |
 
 The three prompt files must be regular files, valid UTF-8, no larger than
 64 KiB, and readable through an `os.Root` confined to the workspace. Those
@@ -57,7 +57,10 @@ The base prompt is selected from the first available source:
 
 Trusted project `AGENTS.md` is appended next. The append prompt then comes
 from trusted project `.aice/APPEND_SYSTEM.md`, otherwise global
-`~/.aice/APPEND_SYSTEM.md`.
+`~/.aice/APPEND_SYSTEM.md`. When the merged skill catalog is non-empty, a
+list of skill names and descriptions is appended last so a custom `SYSTEM.md`
+still receives it. Skill bodies are not injected; they load on demand through
+the `skill` tool. See [Skills](architecture.md#skills).
 
 Compaction always uses its fixed, AICE-owned prompt; project prompt files are
 not included in compaction requests.
