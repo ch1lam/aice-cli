@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -201,10 +202,17 @@ func guardKeyLine(req *interaction.GuardRequest, width int) string {
 	}
 	if req.Path != "" {
 		return guardEmphasisStyle.Render(
-			truncateTerminalText(shellWorkingDirectory(req.Path), width),
+			truncateTerminalText(guardDisplayPath(req.Path), width),
 		)
 	}
 	return ""
+}
+
+// guardDisplayPath shortens a path under the user home, then converts
+// separators to "/" so the confirmation card shows "~/foo/bar" on every OS.
+// shellWorkingDirectory itself is left native for status-line cwd.
+func guardDisplayPath(path string) string {
+	return filepath.ToSlash(shellWorkingDirectory(path))
 }
 
 func renderGuardCommand(command, highlight string, width int) string {

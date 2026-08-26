@@ -107,6 +107,45 @@ func TestGuardViewShortensHomePath(t *testing.T) {
 	if !strings.Contains(view, want) {
 		t.Errorf("view = %q, want shortened path %q", view, want)
 	}
+	if strings.Contains(view, `~\outside\secret.env`) {
+		t.Errorf("view used native separators, want %q:\n%s", want, view)
+	}
+}
+
+func TestGuardDisplayPath(t *testing.T) {
+	t.Parallel()
+
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		t.Skip("user home directory is unavailable")
+	}
+
+	tests := []struct {
+		name string
+		path string
+		want string
+	}{
+		{
+			name: "nested path under home uses forward slashes",
+			path: filepath.Join(home, "outside", "secret.env"),
+			want: "~/outside/secret.env",
+		},
+		{
+			name: "home itself",
+			path: home,
+			want: "~",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := guardDisplayPath(tt.path)
+			if got != tt.want {
+				t.Errorf("guardDisplayPath() = %q, want %q", got, tt.want)
+			}
+		})
+	}
 }
 
 func TestGuardKeysConfirmOptions(t *testing.T) {
