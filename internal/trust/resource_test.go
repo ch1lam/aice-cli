@@ -91,6 +91,95 @@ func TestDiscoverReportsInspectionError(t *testing.T) {
 	}
 }
 
+func TestDiscoverFindsEmptySkillsDir(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".agents", "skills"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	snapshot, err := Discover(root)
+	if err != nil {
+		t.Fatalf("Discover() error = %v", err)
+	}
+	if !snapshot.HasProtected() {
+		t.Fatal("HasProtected() = false, want true")
+	}
+	if !resourceFound(snapshot, SkillsDir) {
+		t.Errorf("Discover() missing resource %q: %#v", SkillsDir, snapshot.Resources)
+	}
+}
+
+func TestDiscoverIgnoresSkillsRegularFile(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, ".agents", "skills"), "not a directory")
+
+	snapshot, err := Discover(root)
+	if err != nil {
+		t.Fatalf("Discover() error = %v", err)
+	}
+	if snapshot.HasProtected() {
+		t.Fatalf("HasProtected() = true, want false: %#v", snapshot.Resources)
+	}
+}
+
+func TestDiscoverSkillsDirWithProtectedFiles(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "AGENTS.md"), "agent guidance")
+	writeFile(t, filepath.Join(root, ".aice", "SYSTEM.md"), "base prompt")
+	if err := os.MkdirAll(filepath.Join(root, ".agents", "skills"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	snapshot, err := Discover(root)
+	if err != nil {
+		t.Fatalf("Discover() error = %v", err)
+	}
+	if !snapshot.HasProtected() {
+		t.Fatal("HasProtected() = false, want true")
+	}
+	for _, name := range []string{AgentsFile, SystemFile, SkillsDir} {
+		if !resourceFound(snapshot, name) {
+			t.Errorf("Discover() missing resource %q: %#v", name, snapshot.Resources)
+		}
+	}
+	if resourceFound(snapshot, AppendSystemFile) {
+		t.Errorf("Discover() unexpected resource %q: %#v", AppendSystemFile, snapshot.Resources)
+	}
+}
+
+func TestDiscoverIgnoresMissingSkillsDir(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "AGENTS.md"), "agent guidance")
+
+	snapshot, err := Discover(root)
+	if err != nil {
+		t.Fatalf("Discover() error = %v", err)
+	}
+	if resourceFound(snapshot, SkillsDir) {
+		t.Errorf("Discover() unexpected resource %q: %#v", SkillsDir, snapshot.Resources)
+	}
+	if !resourceFound(snapshot, AgentsFile) {
+		t.Errorf("Discover() missing resource %q", AgentsFile)
+	}
+}
+
+func resourceFound(snapshot Snapshot, name string) bool {
+	for _, resource := range snapshot.Resources {
+		if resource.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
 func writeFile(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

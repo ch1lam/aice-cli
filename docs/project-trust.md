@@ -5,26 +5,33 @@ instructions. It is an input-loading guard, not a sandbox. Per-tool approval
 is handled by the intrinsic execution gate (`internal/guard`); see
 [Tool execution and Sessions](execution-sessions.md#tool-execution-boundary).
 
-## Protected project files
+## Protected project resources
 
-Only these workspace-relative regular files are protected:
+Only these workspace-relative resources are protected:
 
-| File | Effect when trusted |
-| --- | --- |
-| `AGENTS.md` | Appended as project guidance |
-| `.aice/SYSTEM.md` | Replaces the base system prompt |
-| `.aice/APPEND_SYSTEM.md` | Appended after the base and `AGENTS.md` |
+| Resource | Type | Effect when trusted |
+| --- | --- | --- |
+| `AGENTS.md` | regular file | Appended as project guidance |
+| `.aice/SYSTEM.md` | regular file | Replaces the base system prompt |
+| `.aice/APPEND_SYSTEM.md` | regular file | Appended after the base and `AGENTS.md` |
+| `.agents/skills/` | directory | Project-level Agent Skills are discovered and listed in the system prompt. Wiring is in `internal/app`; see [Skills](architecture.md#skills). |
 
-Each file must be valid UTF-8, no larger than 64 KiB, and readable through an
-`os.Root` confined to the workspace. The `os.Root` constraint is specific to
-these three protected files; general file tools (`read`, `edit`, `bash`, ...)
-are not confined by it and open paths with the full permissions of the AICE
-process, inside or outside the workspace. `.aice/sessions` does not trigger
-Trust.
+The three prompt files must be regular files, valid UTF-8, no larger than
+64 KiB, and readable through an `os.Root` confined to the workspace. Those
+read constraints are specific to the prompt files; general file tools
+(`read`, `edit`, `bash`, ...) are not confined by `os.Root` and open paths
+with the full permissions of the AICE process, inside or outside the
+workspace. `.aice/sessions` does not trigger Trust.
+
+`.agents/skills/` is gated by existence only: an empty directory still
+triggers Trust, and a regular file of the same name does not. Discovery
+inspects the path through `os.Root`, so a symlink cannot escape the
+workspace. `SKILL.md` parse and size constraints are in
+[Skills](architecture.md#skills).
 
 ## Decision order
 
-When protected files exist, AICE resolves Trust in this order:
+When protected resources exist, AICE resolves Trust in this order:
 
 1. `--approve` or `--no-approve` for the current run.
 2. The nearest saved directory decision in `~/.aice/trust.json`.
@@ -32,7 +39,7 @@ When protected files exist, AICE resolves Trust in this order:
 4. An interactive prompt when the policy is `ask` and a TUI is available.
 
 Non-interactive runs never prompt. With the default `ask` policy and no saved
-decision, they ignore project files and continue with global or built-in
+decision, they ignore project resources and continue with global or built-in
 instructions.
 
 The startup prompt and `/trust` can save a decision for the workspace or its

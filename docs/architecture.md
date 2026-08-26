@@ -152,8 +152,9 @@ label for display and same-name conflict ordering.
 - Sources: `builtin` (go:embed in `internal/skill`), `user`, `project`.
   Same-name priority is project > user > builtin. Builtin skills get no
   parse exemption, auto-activation, or display preference.
-- Project `.agents/skills/` is Trust-gated (add that directory to
-  `protectedResources` when wiring discovery). User-global skills are not.
+- Project `.agents/skills/` is Trust-gated (`trust.SkillsDir`). User-global
+  skills are not. See [Protected project
+  resources](project-trust.md#protected-project-resources).
 - Frontmatter is parsed with `gopkg.in/yaml.v3`. Name and description are
   required; other spec fields are tolerated and ignored. Validation is
   lenient: format issues warn and still load; missing name/description,

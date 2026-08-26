@@ -119,7 +119,7 @@ Other providers keep sending their model default.
 
 `default_project_trust` defaults to `ask`. Automation should use `--approve`
 or `--no-approve` rather than a broad environment override. See [Project Trust
-and prompts](project-trust.md) for protected files and decision order.
+and prompts](project-trust.md) for protected resources and decision order.
 
 ## Credentials and connection overrides
 
