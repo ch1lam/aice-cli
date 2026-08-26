@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -44,6 +45,31 @@ func TestModelRendersOneAICEHeadingPerProcess(t *testing.T) {
 	assertTranscriptGap(t, transcript, "FIRST_OUTPUT", "read", 2)
 	assertTranscriptGap(t, transcript, "read", "FINAL_REASONING", 2)
 	assertTranscriptGap(t, transcript, "FINAL_REASONING", "FINAL_OUTPUT", 2)
+}
+
+func TestModelRendersSkillNameAsMutedToolDetail(t *testing.T) {
+	t.Parallel()
+
+	current := newModel(make(chan runRequest), make(chan struct{}))
+	current.width = 80
+	processID := current.beginProcess()
+	current.entries = []transcriptEntry{
+		{
+			kind:       entryTool,
+			processID:  processID,
+			toolName:   "skill",
+			toolDetail: "samber/cc-skills-golang@golang-how-to",
+			toolDone:   true,
+		},
+	}
+
+	transcript := current.transcriptView()
+	wantSummary := lipgloss.NewStyle().Foreground(successColor).Render("✓") + " " +
+		toolNameStyle.Render("skill") + "  " +
+		mutedStyle.Render("samber/cc-skills-golang@golang-how-to")
+	if !strings.Contains(transcript, wantSummary) {
+		t.Fatalf("skill summary = %q, want muted skill detail %q", transcript, wantSummary)
+	}
 }
 
 func TestModelOmitsEmptyAssistantPlaceholder(t *testing.T) {

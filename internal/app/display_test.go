@@ -248,6 +248,21 @@ func TestTranslateAgentEventExtractsToolInput(t *testing.T) {
 		t.Fatalf("read translation = %#v, want path only", display)
 	}
 
+	skill := llm.ToolCall{
+		ID:        "skill-call",
+		Name:      "skill",
+		Arguments: []byte(`{"name":"samber/cc-skills-golang@golang-how-to"}`),
+	}
+	display = translateAgentEvent(agent.AgentEvent{
+		Type:     agent.EventTypeToolExecutionStart,
+		ToolCall: &skill,
+	})
+	if display == nil ||
+		display.Kind != tui.DisplayEventToolStart ||
+		display.Tool.Detail != "samber/cc-skills-golang@golang-how-to" {
+		t.Fatalf("skill translation = %#v, want skill name only", display)
+	}
+
 	failed := translateAgentEvent(agent.AgentEvent{
 		Type:     agent.EventTypeToolExecutionEnd,
 		ToolCall: &call,

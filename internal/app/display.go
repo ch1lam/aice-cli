@@ -175,15 +175,20 @@ func assistantConcludes(message llm.AssistantMessage) bool {
 func toolCallDetail(call llm.ToolCall) string {
 	var arguments struct {
 		Command string `json:"command"`
+		Name    string `json:"name"`
 		Path    string `json:"path"`
 	}
 	if err := json.Unmarshal(call.Arguments, &arguments); err != nil {
 		return ""
 	}
-	if call.Name == "bash" {
+	switch call.Name {
+	case "bash":
 		return arguments.Command
+	case "skill":
+		return arguments.Name
+	default:
+		return arguments.Path
 	}
-	return arguments.Path
 }
 
 func displayThinking(level llm.ThinkingLevel) (interaction.DisplayThinking, error) {
