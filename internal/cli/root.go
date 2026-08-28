@@ -13,9 +13,11 @@ import (
 
 // PrintRequest contains one non-interactive AICE invocation.
 type PrintRequest struct {
-	Prompt               string
-	Workspace            string
-	Session              string
+	Prompt    string
+	Workspace string
+	Session   string
+	// OutputFormat selects text or NDJSON output. An empty value is treated as text.
+	OutputFormat         string
 	ProjectTrustOverride *bool
 	// Yolo upgrades Guard Decision ask to allow. Deny is unchanged.
 	Yolo bool
@@ -32,9 +34,15 @@ type InteractiveRequest struct {
 	Yolo bool
 }
 
-// Printer runs one non-interactive agent request.
+// Printer streams one non-interactive response to output and operational
+// progress to diagnostics.
 type Printer interface {
-	Print(ctx context.Context, request PrintRequest, output io.Writer) error
+	Print(
+		ctx context.Context,
+		request PrintRequest,
+		output io.Writer,
+		diagnostics io.Writer,
+	) error
 }
 
 // Interactor runs one interactive terminal session.
@@ -71,7 +79,7 @@ func NewRootCommand(dependencies Dependencies) (*cobra.Command, error) {
 		return nil, fmt.Errorf("cli: configurator is required")
 	}
 
-	options := rootOptions{workspace: "."}
+	options := rootOptions{workspace: ".", outputFormat: "text"}
 	command := &cobra.Command{
 		Use:           "aice [--print <prompt>]",
 		Short:         "A small, provider-neutral coding agent",
@@ -89,6 +97,17 @@ func NewRootCommand(dependencies Dependencies) (*cobra.Command, error) {
 			if command.Flags().Changed("session") &&
 				strings.TrimSpace(options.session) == "" {
 				return newUsageError(errors.New("session must not be blank"))
+			}
+			if command.Flags().Changed("output-format") && !options.print {
+				return newUsageError(errors.New(
+					"--output-format is only valid with --print",
+				))
+			}
+			if options.outputFormat != "text" && options.outputFormat != "json" {
+				return newUsageError(fmt.Errorf(
+					"unsupported output format %q; use text or json",
+					options.outputFormat,
+				))
 			}
 			if !options.print {
 				if err := cobra.NoArgs(command, args); err != nil {
@@ -128,6 +147,7 @@ func NewRootCommand(dependencies Dependencies) (*cobra.Command, error) {
 				Prompt:               args[0],
 				Workspace:            options.workspace,
 				Session:              options.session,
+				OutputFormat:         options.outputFormat,
 				ProjectTrustOverride: override,
 				Yolo:                 options.yolo,
 			}
@@ -135,6 +155,7 @@ func NewRootCommand(dependencies Dependencies) (*cobra.Command, error) {
 				command.Context(),
 				request,
 				command.OutOrStdout(),
+				command.ErrOrStderr(),
 			); err != nil {
 				return fmt.Errorf("print response: %w", err)
 			}
@@ -163,6 +184,12 @@ func NewRootCommand(dependencies Dependencies) (*cobra.Command, error) {
 		"session",
 		"",
 		"session JSONL file to create or resume",
+	)
+	command.Flags().StringVar(
+		&options.outputFormat,
+		"output-format",
+		options.outputFormat,
+		"print output format: text or json",
 	)
 	command.Flags().BoolVarP(
 		&options.approve,
@@ -210,12 +237,13 @@ func ExitCode(err error) int {
 }
 
 type rootOptions struct {
-	print     bool
-	workspace string
-	session   string
-	approve   bool
-	noApprove bool
-	yolo      bool
+	print        bool
+	workspace    string
+	session      string
+	outputFormat string
+	approve      bool
+	noApprove    bool
+	yolo         bool
 }
 
 // projectTrustOverride combines the mutually exclusive trust flags into a

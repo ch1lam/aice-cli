@@ -52,6 +52,10 @@ Run one non-interactive request:
 aice --workspace . --print "Explain the architecture of this repository."
 ```
 
+Use `--output-format json` for a machine-readable NDJSON event stream; default
+text mode keeps answer text on stdout and reports progress on stderr. See
+[Configuration and commands](./docs/configuration.md#command-line-options).
+
 `--print` is stateless unless `--session` is supplied. Interactive runs create
 a Session automatically under `<workspace>/.aice/sessions/`; resume one with:
 

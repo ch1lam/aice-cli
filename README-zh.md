@@ -50,6 +50,9 @@ aice --workspace .
 aice --workspace . --print "解释这个仓库的架构。"
 ```
 
+需要机器可读事件流时可加 `--output-format json`；默认 text 模式仍将回答
+写入 stdout，并将执行进度写入 stderr。详见[配置与命令](./docs/configuration.md#command-line-options)。
+
 `--print` 默认不保存 Session；传入 `--session` 才会创建或续接指定文件。
 交互模式会自动在 `<workspace>/.aice/sessions/` 创建 Session，续接方式如下：
 

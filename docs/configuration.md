@@ -169,6 +169,7 @@ aice [--print <prompt>] [flags]
 --workspace <path>   working directory for Agent tools (default .)
 --session <path>     Session JSONL file to create or resume
 --print, -p          print one response and exit
+--output-format      print output format: text or json (default text; requires --print)
 --approve, -a        trust project-local resources for this run
 --no-approve         ignore project-local resources for this run
 --yolo               automatically allow tool calls that would otherwise ask; for isolated containers/CI; dangerous
@@ -179,6 +180,18 @@ aice [--print <prompt>] [flags]
 not persist the run. Session navigation and compaction commands are documented
 in [Tool execution and Sessions](execution-sessions.md#sessions). `aice
 update` is documented in [Installation and updates](installation.md).
+
+The default `--output-format text` keeps answer text on stdout for shell
+pipelines. Operational progress is written to stderr as one line per tool
+start/end, retry start/end, and completed assistant message, followed by total
+token usage. Tool completion status follows the paired tool result, so Guard
+denials and tool failures appear as failures even when the event transport
+itself succeeded.
+
+`--output-format json` writes one NDJSON event per line to stdout and does not
+duplicate progress on stderr. It is intended for integrations that need tool
+arguments, results, durations, retries, stop reasons, and token usage. The
+stable event contract is documented in [Print NDJSON events](contracts.md#print-ndjson-events).
 
 ## Agent Skills
 

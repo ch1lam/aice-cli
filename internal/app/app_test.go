@@ -360,6 +360,64 @@ func TestApplicationPrintSeparatesToolLoopTurns(t *testing.T) {
 	}
 }
 
+func TestApplicationPrintEmitsJSONToolEvents(t *testing.T) {
+	t.Parallel()
+
+	workspace := t.TempDir()
+	model := &toolLoopModel{}
+	command, err := newTestCommand(t, dependencies{
+		loadConfig: func() (config.Config, error) {
+			return config.Config{DeepSeekAPIKey: "test-key"}, nil
+		},
+		newModel: func(config.Config) (agent.Model, error) {
+			return model, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("newCommand() error = %v", err)
+	}
+
+	output := new(bytes.Buffer)
+	diagnostics := new(bytes.Buffer)
+	command.SetOut(output)
+	command.SetErr(diagnostics)
+	command.SetArgs([]string{
+		"--workspace", workspace,
+		"--print", "inspect",
+		"--output-format", "json",
+	})
+	if err := command.ExecuteContext(t.Context()); err != nil {
+		t.Fatalf("ExecuteContext() error = %v", err)
+	}
+	if got := diagnostics.String(); got != "" {
+		t.Errorf("JSON diagnostics = %q, want empty", got)
+	}
+
+	events := decodeJSONLines(t, output.String())
+	wantTypes := []string{
+		"agent_start",
+		"message_end",
+		"tool_execution_start",
+		"tool_execution_end",
+		"message_end",
+		"agent_end",
+	}
+	if len(events) != len(wantTypes) {
+		t.Fatalf("JSON events = %d, want %d: %s", len(events), len(wantTypes), output.String())
+	}
+	for index, want := range wantTypes {
+		if got := events[index]["type"]; got != want {
+			t.Errorf("event %d type = %v, want %q", index, got, want)
+		}
+	}
+	if got := events[2]["name"]; got != "ls" {
+		t.Errorf("tool start name = %v, want ls", got)
+	}
+	if got := events[3]["is_error"]; got != false {
+		t.Errorf("tool end is_error = %v, want false", got)
+	}
+}
+
 func TestApplicationInteractiveKeepsConversationHistory(t *testing.T) {
 	t.Parallel()
 

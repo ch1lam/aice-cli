@@ -87,7 +87,9 @@ func TestRootCommandRunsPrintMode(t *testing.T) {
 	}
 
 	output := new(bytes.Buffer)
+	diagnostics := new(bytes.Buffer)
 	command.SetOut(output)
+	command.SetErr(diagnostics)
 	command.SetArgs([]string{
 		"--workspace", "/workspace",
 		"--session", "/sessions/inspection.jsonl",
@@ -98,15 +100,19 @@ func TestRootCommandRunsPrintMode(t *testing.T) {
 	}
 
 	wantRequest := cli.PrintRequest{
-		Prompt:    "inspect this repository",
-		Workspace: "/workspace",
-		Session:   "/sessions/inspection.jsonl",
+		Prompt:       "inspect this repository",
+		Workspace:    "/workspace",
+		Session:      "/sessions/inspection.jsonl",
+		OutputFormat: "text",
 	}
 	if printer.request != wantRequest {
 		t.Errorf("Print() request = %#v, want %#v", printer.request, wantRequest)
 	}
 	if got := output.String(); got != printer.response {
 		t.Errorf("command output = %q, want %q", got, printer.response)
+	}
+	if printer.diagnostics != diagnostics {
+		t.Error("Print() diagnostics does not match command stderr")
 	}
 }
 
@@ -239,6 +245,26 @@ func TestRootCommandPassesYoloToPrint(t *testing.T) {
 	}
 }
 
+func TestRootCommandPassesJSONOutputFormatToPrint(t *testing.T) {
+	t.Parallel()
+
+	printer := &recordingPrinter{response: "{}\n"}
+	command := testRootCommand(t, printer, &recordingInteractor{})
+	command.SetOut(io.Discard)
+	command.SetErr(io.Discard)
+	command.SetArgs([]string{
+		"--workspace", "/workspace",
+		"--print", "inspect",
+		"--output-format", "json",
+	})
+	if err := command.ExecuteContext(t.Context()); err != nil {
+		t.Fatalf("ExecuteContext() error = %v", err)
+	}
+	if got := printer.request.OutputFormat; got != "json" {
+		t.Errorf("Print() output format = %q, want json", got)
+	}
+}
+
 func TestRootCommandPassesYoloToInteractive(t *testing.T) {
 	t.Parallel()
 
@@ -294,6 +320,23 @@ func TestRootCommandDescribesYoloFlag(t *testing.T) {
 	}
 	if strings.Contains(help, "-y,") {
 		t.Fatalf("help = %q, yolo must not have a short flag", help)
+	}
+}
+
+func TestRootCommandDescribesOutputFormatFlag(t *testing.T) {
+	t.Parallel()
+
+	command := testRootCommand(t, &recordingPrinter{}, &recordingInteractor{})
+	output := new(bytes.Buffer)
+	command.SetOut(output)
+	command.SetArgs([]string{"--help"})
+	if err := command.ExecuteContext(t.Context()); err != nil {
+		t.Fatalf("ExecuteContext() error = %v", err)
+	}
+	help := output.String()
+	if !strings.Contains(help, "--output-format") ||
+		!strings.Contains(help, "text or json") {
+		t.Fatalf("help = %q, want output format contract", help)
 	}
 }
 
@@ -400,6 +443,16 @@ func TestRootCommandRejectsUsageErrors(t *testing.T) {
 			want: "session must not be blank",
 		},
 		{
+			name: "output format without print",
+			args: []string{"--output-format", "json"},
+			want: "only valid with --print",
+		},
+		{
+			name: "unsupported output format",
+			args: []string{"--print", "inspect", "--output-format", "yaml"},
+			want: "unsupported output format",
+		},
+		{
 			name: "unknown flag",
 			args: []string{"--unknown"},
 			want: "unknown flag",
@@ -489,9 +542,10 @@ func TestExitCodeCanceled(t *testing.T) {
 }
 
 type recordingPrinter struct {
-	request  cli.PrintRequest
-	response string
-	err      error
+	request     cli.PrintRequest
+	response    string
+	diagnostics io.Writer
+	err         error
 }
 
 type recordingInteractor struct {
@@ -548,8 +602,10 @@ func (p *recordingPrinter) Print(
 	_ context.Context,
 	request cli.PrintRequest,
 	output io.Writer,
+	diagnostics io.Writer,
 ) error {
 	p.request = request
+	p.diagnostics = diagnostics
 	if p.err != nil {
 		return p.err
 	}

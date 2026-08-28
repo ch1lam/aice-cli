@@ -151,16 +151,26 @@ func (a *application) Update(
 	return printUpdateResult(output, result)
 }
 
+// Print runs one non-interactive interaction and persists it only when the
+// request names a Session file.
 func (a *application) Print(
 	ctx context.Context,
 	request cli.PrintRequest,
 	output io.Writer,
+	diagnostics io.Writer,
 ) (returnErr error) {
 	if ctx == nil {
 		return fmt.Errorf("app: context is required")
 	}
 	if output == nil {
 		return fmt.Errorf("app: output is required")
+	}
+	if diagnostics == nil {
+		return fmt.Errorf("app: diagnostics output is required")
+	}
+	sink, err := newPrintSink(request.OutputFormat, output, diagnostics)
+	if err != nil {
+		return err
 	}
 	environment, err := a.newRunEnvironment(
 		ctx,
@@ -205,7 +215,6 @@ func (a *application) Print(
 		return fmt.Errorf("app: create prompt: %w", err)
 	}
 
-	printer := &streamPrinter{output: output}
 	result, loopErr := loop.Run(ctx, agent.RunInput{
 		Model:        environment.model,
 		SystemPrompt: environment.systemPrompt,
@@ -213,8 +222,8 @@ func (a *application) Print(
 		Prompt:       prompt,
 		Options:      environment.options,
 		Compactor:    a.sessionCompactor(store),
-	}, printer.Accept)
-	finishErr := printer.Finish()
+	}, sink.Accept)
+	finishErr := sink.Finish()
 	var persistErr error
 	if store != nil {
 		persistErr = appendSessionTurn(ctx, store, result.Messages())

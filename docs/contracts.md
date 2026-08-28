@@ -113,6 +113,31 @@ Closed `uint8` iota set in `internal/interaction` (not JSON strings):
 | `EventRetryEnd` | 9 |
 | `EventAgentEnd` | 10 |
 
+## Print NDJSON events
+
+`aice --print --output-format json` writes a stable, additive NDJSON stream to
+stdout. Each line is one JSON object selected by `type`; consumers must ignore
+unknown fields so later releases can add data without changing existing
+fields. The stream deliberately omits token-level `text_delta` events: complete
+assistant text and thinking are emitted once at `message_end`.
+
+| `type` | Fields |
+| --- | --- |
+| `agent_start` | `type` |
+| `message_end` | `role`, `text`, `thinking`, `usage`, `stop_reason`, `model` |
+| `tool_execution_start` | `tool_call_id`, `name`, `arguments` |
+| `tool_execution_end` | `tool_call_id`, `name`, `is_error`, `result`, `duration_ms` |
+| `retry_start` | `attempt`, `max_retries`, `delay_ms` |
+| `retry_end` | `attempt`, `success`, optional `error` |
+| `agent_end` | total `usage`, optional `error` |
+
+Only assistant messages produce `message_end`; tool-result message lifecycle
+events are represented by `tool_execution_end` and are not duplicated. Tool
+result text is limited to 16 KiB per event, including the trailing
+`...[truncated]` marker. Durations and delays are integer milliseconds. The
+`agent_end.usage` value is the sum of every assistant `message_end` observed in
+the run, including failed attempts that report usage.
+
 ## Concurrency and TUI
 
 - Propagate `context.Context` through model calls, Agent runs, tools, and

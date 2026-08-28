@@ -4,7 +4,7 @@ Custom [Harbor](https://github.com/harbor-framework/harbor) installed agent for 
 
 Run Harbor from the AICE repository root so `integrations.harbor.aice_agent:AiceAgent` is importable (`PYTHONPATH=.`).
 
-PyPI `harbor` 0.22.x still uses `SUPPORTS_*` flags (already default-false). Harbor `main` uses `AgentCapabilities()`; this adapter declares that when the module exists.
+PyPI `harbor` 0.22.x still uses `SUPPORTS_*` flags. Harbor `main` uses `AgentCapabilities()`; the adapter declares ATIF support through both compatible forms.
 
 ## Setup
 
@@ -83,24 +83,43 @@ harbor run -d terminal-bench@2.0 \
   --agent integrations.harbor.aice_agent:AiceAgent \
   --model deepseek/deepseek-v4-flash \
   --ae AICE_DEEPSEEK_API_KEY="$AICE_DEEPSEEK_API_KEY" \
-  --ak version=v0.1.0 \
+  --ak version=v0.11.0 \
   -n 4
 ```
 
-`--ak` / `--agent-kwarg` is Harbor's constructor-kwarg flag (`key=value`). Omit it to install the latest GitHub release.
+`--ak` / `--agent-kwarg` is Harbor's constructor-kwarg flag (`key=value`). The
+adapter requires AICE v0.11.0 or later for print NDJSON and explicit print
+Sessions. Omit the kwarg to install the latest GitHub release.
 
 ## Runtime
 
 The adapter installs AICE with `scripts/install.sh` into `/usr/local/bin/aice`, then runs:
 
 ```text
-aice --workspace . --print --yolo --approve -- <instruction>
+aice --workspace . --print --yolo --approve \
+  --output-format json \
+  --session /logs/agent/aice-session.jsonl \
+  -- <instruction> \
+  2>&1 </dev/null | stdbuf -oL tee /logs/agent/aice.txt
 ```
 
-`--yolo` auto-allows Guard `ask` decisions; `--approve` trusts project `AGENTS.md` / `.aice` prompt files for that run. Logs are teed to `/logs/agent/aice.txt`.
+`--yolo` auto-allows Guard `ask` decisions; `--approve` trusts project
+`AGENTS.md` / `.aice` prompt files for that run. The line-buffered NDJSON stream
+is teed to `/logs/agent/aice.txt`, while the native append-only Session is saved
+as `/logs/agent/aice-session.jsonl`. After the run, the adapter converts the
+Session into ATIF-v1.7 `trajectory.json` and fills Harbor's token and cost
+fields.
+
+During a run, follow progress from the host with:
+
+```sh
+tail -f jobs/<job>/<trial>/agent/aice.txt
+```
+
+`aice.txt` can also contain AICE stderr diagnostics because the runtime merges
+both streams. Machine consumers use `aice-session.jsonl` or `trajectory.json`,
+not the tee log.
 
 ## Known limitations
 
-- No ATIF trajectory (`capabilities.atif` is false). Harbor will not convert AICE sessions into ATIF.
-- Token usage and USD cost are not written to `AgentContext` (`n_input_tokens`, `cost_usd`, …). `context.metadata` only records the process exit code (and the error string on failure).
-- No native resume / load / handoff.
+- No native resume, ATIF/native trajectory loading, or handoff.
