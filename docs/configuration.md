@@ -171,6 +171,7 @@ aice [--print <prompt>] [flags]
 --print, -p          print one response and exit
 --approve, -a        trust project-local resources for this run
 --no-approve         ignore project-local resources for this run
+--yolo               automatically allow tool calls that would otherwise ask; for isolated containers/CI; dangerous
 --version, -v        show the version
 ```
 

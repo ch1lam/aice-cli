@@ -72,7 +72,7 @@ aice --workspace . --session .aice/sessions/<session-id>.jsonl
 | 输入 | 仅文本 |
 
 工具继承 AICE 进程权限。每次调用都会经过执行门禁；`--print` 下 `ask` 按
-`deny` 处理。`--workspace` 是工作目录并定义路径访问边界，不是沙箱。
+`deny` 处理，除非加上 `--yolo`。`--workspace` 是工作目录并定义路径访问边界，不是沙箱。
 Project Trust 只控制项目 prompt 文件和项目 `.agents/skills` 的加载；详见
 [Project Trust 与 Prompt](./docs/project-trust.md)。更强隔离请使用外部容器/VM。
 

@@ -17,6 +17,8 @@ type PrintRequest struct {
 	Workspace            string
 	Session              string
 	ProjectTrustOverride *bool
+	// Yolo upgrades Guard Decision ask to allow. Deny is unchanged.
+	Yolo bool
 }
 
 // InteractiveRequest contains one interactive AICE session invocation.
@@ -26,6 +28,8 @@ type InteractiveRequest struct {
 	Input                io.Reader
 	Output               io.Writer
 	ProjectTrustOverride *bool
+	// Yolo upgrades Guard Decision ask to allow. Deny is unchanged.
+	Yolo bool
 }
 
 // Printer runs one non-interactive agent request.
@@ -109,6 +113,7 @@ func NewRootCommand(dependencies Dependencies) (*cobra.Command, error) {
 					Input:                command.InOrStdin(),
 					Output:               command.OutOrStdout(),
 					ProjectTrustOverride: override,
+					Yolo:                 options.yolo,
 				}
 				if err := dependencies.Interactor.Interactive(
 					command.Context(),
@@ -124,6 +129,7 @@ func NewRootCommand(dependencies Dependencies) (*cobra.Command, error) {
 				Workspace:            options.workspace,
 				Session:              options.session,
 				ProjectTrustOverride: override,
+				Yolo:                 options.yolo,
 			}
 			if err := dependencies.Printer.Print(
 				command.Context(),
@@ -171,6 +177,12 @@ func NewRootCommand(dependencies Dependencies) (*cobra.Command, error) {
 		false,
 		"ignore project-local resources for this run",
 	)
+	command.Flags().BoolVar(
+		&options.yolo,
+		"yolo",
+		false,
+		"automatically allow tool calls that would otherwise ask; for isolated containers/CI; dangerous",
+	)
 	command.AddCommand(newCompactCommand(dependencies.Compactor))
 	command.AddCommand(newSessionCommand(dependencies.Navigator))
 	command.AddCommand(newConfigCommand(dependencies.Configurator))
@@ -203,6 +215,7 @@ type rootOptions struct {
 	session   string
 	approve   bool
 	noApprove bool
+	yolo      bool
 }
 
 // projectTrustOverride combines the mutually exclusive trust flags into a

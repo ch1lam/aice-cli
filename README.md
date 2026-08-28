@@ -74,7 +74,7 @@ aice --workspace . --session .aice/sessions/<session-id>.jsonl
 | Input | text only |
 
 Tools inherit the permissions of the AICE process. Every call is checked by
-the execution gate; `--print` treats `ask` as `deny`. `--workspace` sets the
+the execution gate; `--print` treats `ask` as `deny` unless `--yolo`. `--workspace` sets the
 working directory and path-access boundary; it is not a sandbox. Project Trust
 gates project prompt files and project `.agents/skills`; see [Project Trust and
 prompts](./docs/project-trust.md). For stronger isolation use an external

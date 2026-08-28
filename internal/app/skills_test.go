@@ -262,7 +262,7 @@ func TestNewRunEnvironmentCustomGlobalSystemAppendsSkills(t *testing.T) {
 	app, paths := newSkillRunApp(t, home)
 	writeAppFile(t, filepath.Dir(paths.GlobalSettings), "SYSTEM.md", "custom global base")
 
-	env, err := app.newRunEnvironment(t.Context(), workspace, nil, nil)
+	env, err := app.newRunEnvironment(t.Context(), workspace, nil, nil, false)
 	if err != nil {
 		t.Fatalf("newRunEnvironment() error = %v", err)
 	}
@@ -371,7 +371,7 @@ func TestNewRunEnvironmentHomeErrorSkipsUserSkills(t *testing.T) {
 			},
 		},
 	}
-	env, err := app.newRunEnvironment(t.Context(), workspace, nil, nil)
+	env, err := app.newRunEnvironment(t.Context(), workspace, nil, nil, false)
 	if err != nil {
 		t.Fatalf("newRunEnvironment() error = %v", err)
 	}
@@ -402,7 +402,7 @@ func TestSkillReadOnlyRootsSkipEmptyDir(t *testing.T) {
 func startSkillRun(t *testing.T, home, workspace string, override *bool) *runEnvironment {
 	t.Helper()
 	app, _ := newSkillRunApp(t, home)
-	env, err := app.newRunEnvironment(t.Context(), workspace, override, nil)
+	env, err := app.newRunEnvironment(t.Context(), workspace, override, nil, false)
 	if err != nil {
 		t.Fatalf("newRunEnvironment() error = %v", err)
 	}

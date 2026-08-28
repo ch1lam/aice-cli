@@ -69,9 +69,10 @@ product details from those documents into this file.
   Persist each completed interaction as one Session turn. See
   [`docs/contracts.md`](docs/contracts.md).
 - Every tool call is checked inline by `internal/guard` before it runs.
-  Unknown tool names default to `ask` (non-interactive: `deny`). A Loop with
-  a non-empty tool set must receive a `Guard`. Path-access mode is
-  `allow`/`ask`/`block`; check `Decision` is `allow`/`ask`/`deny`.
+  Unknown tool names default to `ask` (non-interactive: `deny`, unless
+  `--yolo`). `--yolo` upgrades `ask` to `allow` and does not lift `deny`.
+  A Loop with a non-empty tool set must receive a `Guard`. Path-access
+  mode is `allow`/`ask`/`block`; check `Decision` is `allow`/`ask`/`deny`.
   Run-scoped grants (Allow … for this run) are current-run, memory-only.
   The loop never constructs the gate; `internal/app` injects it. See [Tool
   execution and Sessions](docs/execution-sessions.md#tool-execution-boundary).

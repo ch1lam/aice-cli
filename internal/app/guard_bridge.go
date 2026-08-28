@@ -32,6 +32,7 @@ const (
 func newExecutionGuard(
 	workspace string,
 	readOnlyRoots []string,
+	yolo bool,
 ) (*guard.Guard, *guardAdapter, error) {
 	// Built-in guard: intrinsic execution gate, not a plugin. Workspace-scoped
 	// so .env relative to the project is correctly recognized. Disabled only
@@ -42,7 +43,7 @@ func newExecutionGuard(
 	if err != nil {
 		return nil, nil, fmt.Errorf("app: create guard: %w", err)
 	}
-	adapter := &guardAdapter{inner: g}
+	adapter := &guardAdapter{inner: g, yolo: yolo}
 	return g, adapter, nil
 }
 
@@ -51,6 +52,8 @@ func newExecutionGuard(
 // already depends on both, preserving the "consumer defines interface" rule.
 type guardAdapter struct {
 	inner *guard.Guard
+	// yolo upgrades Decision ask to allow. It never remaps deny.
+	yolo bool
 }
 
 func (g *guardAdapter) Check(ctx context.Context, call llm.ToolCall) (agent.GuardResult, error) {
@@ -65,7 +68,11 @@ func (g *guardAdapter) Check(ctx context.Context, call llm.ToolCall) (agent.Guar
 	if err != nil {
 		return agent.GuardResult{}, err
 	}
-	return mapGuardResult(res), nil
+	mapped := mapGuardResult(res)
+	if g.yolo && mapped.Decision == agent.GuardAsk {
+		mapped.Decision = agent.GuardAllow
+	}
+	return mapped, nil
 }
 
 func mapGuardResult(res guard.Result) agent.GuardResult {

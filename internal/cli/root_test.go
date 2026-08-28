@@ -220,6 +220,83 @@ func TestRootCommandLeavesTrustOverrideUnsetByDefault(t *testing.T) {
 	}
 }
 
+func TestRootCommandPassesYoloToPrint(t *testing.T) {
+	t.Parallel()
+
+	printer := &recordingPrinter{response: "done\n"}
+	command := testRootCommand(t, printer, &recordingInteractor{})
+	command.SetOut(io.Discard)
+	command.SetArgs([]string{
+		"--workspace", "/workspace",
+		"--print", "inspect",
+		"--yolo",
+	})
+	if err := command.ExecuteContext(t.Context()); err != nil {
+		t.Fatalf("ExecuteContext() error = %v", err)
+	}
+	if !printer.request.Yolo {
+		t.Error("Print() Yolo = false, want true")
+	}
+}
+
+func TestRootCommandPassesYoloToInteractive(t *testing.T) {
+	t.Parallel()
+
+	interactor := &recordingInteractor{}
+	command := testRootCommand(t, &recordingPrinter{}, interactor)
+	command.SetOut(io.Discard)
+	command.SetArgs([]string{
+		"--workspace", "/workspace",
+		"--yolo",
+	})
+	if err := command.ExecuteContext(t.Context()); err != nil {
+		t.Fatalf("ExecuteContext() error = %v", err)
+	}
+	if !interactor.request.Yolo {
+		t.Error("Interactive() Yolo = false, want true")
+	}
+}
+
+func TestRootCommandLeavesYoloOffByDefault(t *testing.T) {
+	t.Parallel()
+
+	printer := &recordingPrinter{response: "done\n"}
+	command := testRootCommand(t, printer, &recordingInteractor{})
+	command.SetOut(io.Discard)
+	command.SetArgs([]string{
+		"--workspace", "/workspace",
+		"--print", "inspect",
+	})
+	if err := command.ExecuteContext(t.Context()); err != nil {
+		t.Fatalf("ExecuteContext() error = %v", err)
+	}
+	if printer.request.Yolo {
+		t.Error("Print() Yolo = true, want false")
+	}
+}
+
+func TestRootCommandDescribesYoloFlag(t *testing.T) {
+	t.Parallel()
+
+	command := testRootCommand(t, &recordingPrinter{}, &recordingInteractor{})
+	output := new(bytes.Buffer)
+	command.SetOut(output)
+	command.SetArgs([]string{"--help"})
+	if err := command.ExecuteContext(t.Context()); err != nil {
+		t.Fatalf("ExecuteContext() error = %v", err)
+	}
+	help := output.String()
+	if !strings.Contains(help, "--yolo") {
+		t.Fatalf("help = %q, want --yolo flag", help)
+	}
+	if !strings.Contains(help, "containers/CI") {
+		t.Fatalf("help = %q, want yolo purpose", help)
+	}
+	if strings.Contains(help, "-y,") {
+		t.Fatalf("help = %q, yolo must not have a short flag", help)
+	}
+}
+
 func TestRootCommandRejectsConflictingTrustFlags(t *testing.T) {
 	t.Parallel()
 

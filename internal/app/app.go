@@ -167,6 +167,7 @@ func (a *application) Print(
 		request.Workspace,
 		request.ProjectTrustOverride,
 		nil,
+		request.Yolo,
 	)
 	if err != nil {
 		return err
@@ -255,6 +256,7 @@ func (a *application) Interactive(
 		request.Workspace,
 		request.ProjectTrustOverride,
 		askUI,
+		request.Yolo,
 	)
 	if err != nil {
 		return err
@@ -388,6 +390,7 @@ func (a *application) newRunEnvironment(
 	workingDirectory string,
 	override *bool,
 	askUI trust.AskFunc,
+	yolo bool,
 ) (*runEnvironment, error) {
 	workspace, err := tool.NewWorkspace(workingDirectory)
 	if err != nil {
@@ -437,6 +440,7 @@ func (a *application) newRunEnvironment(
 	g, adapter, err := newExecutionGuard(
 		workspace.PhysicalPath(),
 		skillReadOnlyRoots(discovery.catalog),
+		yolo,
 	)
 	if err != nil {
 		return nil, err
@@ -503,7 +507,7 @@ func (a *application) newAgentLoop(
 	configuration config.Config,
 	tools []agent.Tool,
 ) (*agent.Loop, error) {
-	_, adapter, err := newExecutionGuard("", nil)
+	_, adapter, err := newExecutionGuard("", nil, false)
 	if err != nil {
 		return nil, err
 	}

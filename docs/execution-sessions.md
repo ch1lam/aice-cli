@@ -7,7 +7,8 @@ credential permissions of the AICE process. Every tool call is checked inline
 by the intrinsic execution gate (`internal/guard`) before it runs.
 `agent.NewLoop` requires a non-nil `Guard` when the tool set is non-empty
 (compaction loops may omit both). Unknown tool names return Decision `ask`
-(`RuleID` `unknownTool`); non-interactive runs treat `ask` as `deny`.
+(`RuleID` `unknownTool`); non-interactive runs treat `ask` as `deny`
+unless `--yolo` is set.
 The `skill` tool is a known tool: it has no path argument and returns
 content already parsed at startup, so Check allows it after the known-tool
 gate. File policies and path access do not apply to it.
@@ -42,9 +43,13 @@ The gate evaluates three layers in order:
    `allowedPaths` is empty.
 
 Each check returns Decision `allow` / `ask` / `deny`. Non-interactive
-`--print` runs treat `ask` as `deny` (fail-closed). Interactive `ask`
-prompts generate options from the triggering rule. Every grant is
-current-run and memory-only; none persist to disk.
+`--print` runs treat `ask` as `deny` (fail-closed) unless `--yolo` is
+set. `--yolo` upgrades every `ask` to `allow` and skips the interactive
+confirmation prompt. It does not lift `deny`: `permissionGate.autoDeny`
+still always wins, and file-policy `noAccess` / `readOnly` denials are
+unchanged. Interactive `ask` prompts generate options from the
+triggering rule. Every grant is current-run and memory-only; none
+persist to disk.
 
 | Rule | Options |
 | --- | --- |
