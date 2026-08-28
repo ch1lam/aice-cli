@@ -83,12 +83,12 @@ harbor run -d terminal-bench@2.0 \
   --agent integrations.harbor.aice_agent:AiceAgent \
   --model deepseek/deepseek-v4-flash \
   --ae AICE_DEEPSEEK_API_KEY="$AICE_DEEPSEEK_API_KEY" \
-  --ak version=v0.11.0 \
+  --ak version=v0.10.1 \
   -n 4
 ```
 
 `--ak` / `--agent-kwarg` is Harbor's constructor-kwarg flag (`key=value`). The
-adapter requires AICE v0.11.0 or later for print NDJSON and explicit print
+adapter requires AICE v0.10.1 or later for print NDJSON and explicit print
 Sessions. Omit the kwarg to install the latest GitHub release.
 
 ## Runtime
