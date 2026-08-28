@@ -6,18 +6,31 @@
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/ch1lam/aice-cli/main/scripts/install.sh | sh
 #   INSTALL_DIR=~/bin sh -c "$(curl -fsSL ...)"   # override install directory
+#   AICE_VERSION=v1.2.3 sh -c "$(curl -fsSL ...)" # pin a release tag
 
 set -eu
 
 repo="ch1lam/aice-cli"
 binary="aice"
 install_dir="${INSTALL_DIR:-$HOME/.local/bin}"
-base="https://github.com/${repo}/releases/latest/download"
 
 log() { printf 'aice: %s\n' "$*" >&2; }
 fail() { printf 'aice: error: %s\n' "$*" >&2; exit 1; }
 
 [ -n "${INSTALL_DIR:-}" ] && log "using INSTALL_DIR=${INSTALL_DIR}"
+
+version="${AICE_VERSION:-}"
+if [ -n "$version" ]; then
+	case "$version" in
+		v*) ;;
+		*) version="v${version}" ;;
+	esac
+	base="https://github.com/${repo}/releases/download/${version}"
+	log "installing ${version}"
+else
+	base="https://github.com/${repo}/releases/latest/download"
+	log "installing latest"
+fi
 
 case "$(uname -s)" in
 	Darwin) goos="darwin" ;;

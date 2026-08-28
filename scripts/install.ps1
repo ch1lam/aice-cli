@@ -6,6 +6,7 @@ so the binary is available from new shells.
 Usage:
   iwr -useb https://raw.githubusercontent.com/ch1lam/aice-cli/main/scripts/install.ps1 | iex
   $env:INSTALL_DIR = "$HOME\aice"; iwr -useb <url> | iex   # override install directory
+  $env:AICE_VERSION = 'v1.2.3'; iwr -useb <url> | iex     # pin a release tag
 #>
 
 $ErrorActionPreference = 'Stop'
@@ -14,7 +15,17 @@ $ProgressPreference = 'SilentlyContinue'
 $repo = 'ch1lam/aice-cli'
 $binary = 'aice.exe'
 $installDir = if ($env:INSTALL_DIR) { $env:INSTALL_DIR } else { Join-Path $HOME '.local\bin' }
-$base = "https://github.com/$repo/releases/latest/download"
+$version = $env:AICE_VERSION
+if ($version) {
+	if (-not $version.StartsWith('v')) {
+		$version = "v$version"
+	}
+	$base = "https://github.com/$repo/releases/download/$version"
+	Write-Host "aice: installing $version"
+} else {
+	$base = "https://github.com/$repo/releases/latest/download"
+	Write-Host "aice: installing latest"
+}
 
 if (($env:PROCESSOR_ARCHITECTURE -ne 'AMD64') -and ($env:PROCESSOR_ARCHITEW6432 -ne 'AMD64')) {
 	throw "unsupported architecture: $env:PROCESSOR_ARCHITECTURE (only amd64 is published)"

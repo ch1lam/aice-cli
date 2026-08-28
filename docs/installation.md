@@ -32,6 +32,10 @@ The scripts install into `~/.local/bin` (or
 user-writable directory. A user-writable install lets `aice update` replace
 the binary later.
 
+Set `AICE_VERSION` to a GitHub release tag (for example `v1.2.3`) to pin the
+download for evaluation or CI. If the value has no `v` prefix, the scripts
+add one. Unset, they install the latest release.
+
 ## Runtime helpers
 
 AICE uses Bash and ripgrep (`rg`). At startup it looks on `PATH` and in
