@@ -92,12 +92,17 @@ func TestThemeAppliesLayeredBackgrounds(t *testing.T) {
 	}
 	for _, background := range []*string{
 		markdown.H1.BackgroundColor,
-		markdown.Code.BackgroundColor,
 		markdown.CodeBlock.Chroma.Background.BackgroundColor,
 	} {
 		if background == nil || *background != panelBlackHex {
 			t.Errorf("markdown panel background = %v, want %q", background, panelBlackHex)
 		}
+	}
+	if markdown.Code.BackgroundColor != nil {
+		t.Errorf("markdown inline code background = %q, want no background", *markdown.Code.BackgroundColor)
+	}
+	if markdown.Code.Color == nil || *markdown.Code.Color != goldHex {
+		t.Errorf("markdown inline code color = %v, want %q", markdown.Code.Color, goldHex)
 	}
 }
 
