@@ -10,6 +10,7 @@ import (
 
 	"charm.land/glamour/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/ch1lam/aice-cli/internal/hostpath"
 )
@@ -1027,19 +1028,192 @@ func renderMarkdown(markdown string, width int) string {
 	if strings.TrimSpace(markdown) == "" {
 		return ""
 	}
+	wordWrap := max(width-assistantBodyStyle.GetHorizontalFrameSize(), 20)
+	// Pad each fenced code block with one empty line at top/bottom.
+	// That empty line is rendered by glamour as a normal code line,
+	// so it naturally gets the same dark background via applyCodeBlockBackground,
+	// reusing the existing markdown rendering path.
+	padded := padFencedCodeBlocks(markdown)
 	renderer, err := glamour.NewTermRenderer(
 		glamour.WithStyles(inkMarkdownStyle()),
-		glamour.WithWordWrap(max(
-			width-assistantBodyStyle.GetHorizontalFrameSize(),
-			20,
-		)),
+		glamour.WithWordWrap(wordWrap),
 	)
 	if err != nil {
 		return markdown
 	}
-	rendered, err := renderer.Render(markdown)
+	rendered, err := renderer.Render(padded)
 	if err != nil {
 		return markdown
 	}
-	return strings.Trim(rendered, "\r\n")
+	trimmed := strings.Trim(rendered, "\r\n")
+	return applyCodeBlockBackground(trimmed, padded, wordWrap)
+}
+
+// padFencedCodeBlocks inserts one blank line after each opening fence and
+// before each closing fence so glamour renders an extra breathing-room line
+// with the same CodeBlock background. This reuses the normal rendering.
+func padFencedCodeBlocks(md string) string {
+	lines := strings.Split(md, "\n")
+	out := make([]string, 0, len(lines)+4)
+	inFence := false
+	var fence string
+	for _, line := range lines {
+		trim := strings.TrimSpace(line)
+		if !inFence && (strings.HasPrefix(trim, "```") || strings.HasPrefix(trim, "~~~")) {
+			if len(trim) >= 3 {
+				fence = trim[:3]
+			} else {
+				fence = trim
+			}
+			inFence = true
+			out = append(out, line)
+			out = append(out, "")
+			continue
+		}
+		if inFence && strings.HasPrefix(trim, fence) {
+			out = append(out, "")
+			out = append(out, line)
+			inFence = false
+			continue
+		}
+		out = append(out, line)
+	}
+	if inFence {
+		out = append(out, "")
+	}
+	return strings.Join(out, "\n")
+}
+
+func extractFencedCodeBlocks(md string) [][]string {
+	var blocks [][]string
+	var current []string
+	inFence := false
+	var fence string
+	lines := strings.Split(md, "\n")
+	for _, line := range lines {
+		trim := strings.TrimSpace(line)
+		if !inFence && (strings.HasPrefix(trim, "```") || strings.HasPrefix(trim, "~~~")) {
+			if len(trim) >= 3 {
+				fence = trim[:3]
+			} else {
+				fence = trim
+			}
+			inFence = true
+			current = nil
+			continue
+		}
+		if inFence && strings.HasPrefix(trim, fence) {
+			blocks = append(blocks, current)
+			inFence = false
+			current = nil
+			continue
+		}
+		if inFence {
+			current = append(current, line)
+		}
+	}
+	if inFence && current != nil {
+		blocks = append(blocks, current)
+	}
+	return blocks
+}
+
+func applyCodeBlockBackground(rendered, original string, wordWrap int) string {
+	blocks := extractFencedCodeBlocks(original)
+	if len(blocks) == 0 {
+		return rendered
+	}
+	lines := strings.Split(rendered, "\n")
+	if len(lines) == 0 {
+		return rendered
+	}
+	stripped := make([]string, len(lines))
+	for i, l := range lines {
+		stripped[i] = ansi.Strip(l)
+	}
+	isCode := make([]bool, len(lines))
+	searchPos := 0
+	for _, block := range blocks {
+		if len(block) == 0 {
+			continue
+		}
+		found := -1
+		for start := searchPos; start+len(block) <= len(stripped); start++ {
+			matched := true
+			for j, codeLine := range block {
+				renderedTrim := strings.TrimRight(stripped[start+j], " ")
+				expected := "  " + codeLine
+				expectedTrim := strings.TrimRight(expected, " ")
+				if renderedTrim == expectedTrim {
+					continue
+				}
+				// Blank line inside code block: rendered may be all spaces (trimmed to "") while expected is "  "
+				if strings.TrimSpace(codeLine) == "" && strings.TrimSpace(renderedTrim) == "" {
+					continue
+				}
+				// Fallback: content match without exact indent (handles tabs or trailing spaces)
+				if strings.TrimSpace(codeLine) != "" && strings.Contains(renderedTrim, strings.TrimSpace(codeLine)) {
+					continue
+				}
+				matched = false
+				break
+			}
+			if matched {
+				found = start
+				break
+			}
+		}
+		if found == -1 {
+			continue
+		}
+		for j := range block {
+			idx := found + j
+			if idx < len(isCode) {
+				isCode[idx] = true
+			}
+		}
+		searchPos = found + len(block)
+	}
+	// If no lines matched via fence extraction (e.g., indented blocks), fallback to heuristic: contiguous "  " blocks
+	hasMarked := false
+	for _, v := range isCode {
+		if v {
+			hasMarked = true
+			break
+		}
+	}
+	if !hasMarked {
+		for i, s := range stripped {
+			if strings.HasPrefix(s, "  ") && strings.TrimSpace(s) != "" {
+				isCode[i] = true
+			}
+		}
+	} else {
+		// Expand marked regions to include internal blank lines that are between code lines (to keep rectangle continuous)
+		for i := 1; i < len(isCode)-1; i++ {
+			if !isCode[i] && isCode[i-1] && isCode[i+1] && strings.TrimSpace(stripped[i]) == "" {
+				isCode[i] = true
+			}
+		}
+	}
+	bgSeq := "\x1b[48;2;27;22;19m"
+	resetSeq := "\x1b[0m"
+	for i, line := range lines {
+		if !isCode[i] {
+			continue
+		}
+		transformed := strings.ReplaceAll(line, "\x1b[m", resetSeq)
+		transformed = strings.ReplaceAll(transformed, resetSeq, resetSeq+bgSeq)
+		transformed = bgSeq + transformed + resetSeq
+		// Ensure the line still spans wordWrap width visually: glamour already padded to wordWrap,
+		// but after adding background we need to keep that padding background-colored (already handled).
+		// If the original line was shorter than wordWrap due to no padding (rare), pad it.
+		visibleWidth := ansi.StringWidth(transformed)
+		if visibleWidth < wordWrap {
+			padding := strings.Repeat(" ", wordWrap-visibleWidth)
+			transformed = bgSeq + transformed[:len(transformed)-len(resetSeq)] + padding + resetSeq
+		}
+		lines[i] = transformed
+	}
+	return strings.Join(lines, "\n")
 }

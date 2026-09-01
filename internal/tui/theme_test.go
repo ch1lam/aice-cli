@@ -92,6 +92,7 @@ func TestThemeAppliesLayeredBackgrounds(t *testing.T) {
 	}
 	for _, background := range []*string{
 		markdown.H1.BackgroundColor,
+		markdown.CodeBlock.BackgroundColor,
 		markdown.CodeBlock.Chroma.Background.BackgroundColor,
 	} {
 		if background == nil || *background != panelBlackHex {

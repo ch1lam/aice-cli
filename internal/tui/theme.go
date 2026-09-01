@@ -125,6 +125,7 @@ func inkMarkdownStyle() ansi.StyleConfig {
 	style.Code.Color = stringPointer(goldHex)
 	style.Code.BackgroundColor = nil
 	style.CodeBlock.Color = stringPointer(primaryTextHex)
+	style.CodeBlock.BackgroundColor = stringPointer(panelBlackHex)
 	style.Table.Color = stringPointer(primaryTextHex)
 	style.DefinitionTerm.Color = stringPointer(sunsetHex)
 	style.DefinitionDescription.Color = stringPointer(mutedTextHex)
