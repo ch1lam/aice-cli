@@ -7,6 +7,8 @@
 // non-standard "reasoning_content" delta field, which the official SDK's typed
 // delta struct does not model. The SDK handles transport and SSE framing; this
 // adapter decodes each chunk payload itself so the thinking field is not lost.
+// Same-model history replay writes that field back on assistant messages;
+// cross-model history projects thinking into visible text.
 package openaicompletions
 
 import (
@@ -30,6 +32,11 @@ import (
 
 // API identifies the OpenAI Chat Completions wire protocol.
 const API llm.API = "openai-completions"
+
+// reasoningContentField is the unofficial Chat Completions extra field for
+// chain-of-thought. Official OpenAI Completions does not model it; gateways
+// that emit it on deltas expect it back on later same-model assistant messages.
+const reasoningContentField = "reasoning_content"
 
 // Config contains transport settings resolved by a provider.
 type Config struct {
@@ -128,7 +135,7 @@ func requestParams(request llm.Request) (openaisdk.ChatCompletionNewParams, erro
 	if err := streamcore.ValidateTemperature(request.Options.Temperature); err != nil {
 		return openaisdk.ChatCompletionNewParams{}, fmt.Errorf("openai completions: %w", err)
 	}
-	messages, err := messageParams(request.Messages)
+	messages, err := messageParams(request.Messages, request.Model)
 	if err != nil {
 		return openaisdk.ChatCompletionNewParams{}, err
 	}
@@ -261,10 +268,11 @@ func thinkingControlsFor(
 
 func messageParams(
 	messages []llm.Message,
+	target llm.Model,
 ) ([]openaisdk.ChatCompletionMessageParamUnion, error) {
 	result := make([]openaisdk.ChatCompletionMessageParamUnion, 0, len(messages))
 	for messageIndex, message := range messages {
-		converted, err := messageParam(message)
+		converted, err := messageParam(message, target)
 		if err != nil {
 			return nil, fmt.Errorf(
 				"openai completions: message %d: %w",
@@ -282,12 +290,13 @@ func messageParams(
 
 func messageParam(
 	message llm.Message,
+	target llm.Model,
 ) (openaisdk.ChatCompletionMessageParamUnion, error) {
 	switch value := message.(type) {
 	case llm.UserMessage:
 		return userMessageParam(value.Content)
 	case llm.AssistantMessage:
-		return assistantMessageParam(value)
+		return assistantMessageParam(value, target)
 	case llm.ToolResultMessage:
 		return toolResultMessageParam(value)
 	case nil:
@@ -353,18 +362,19 @@ func userMessageParam(
 
 func assistantMessageParam(
 	message llm.AssistantMessage,
+	target llm.Model,
 ) (openaisdk.ChatCompletionMessageParamUnion, error) {
-	// Chat Completions has no standard way to replay prior thinking. Fold
-	// thinking into visible text so both same-model and cross-model history
-	// stays readable, matching how the Responses adapter projects thinking for
-	// a different model.
-	text := assistantText(message.Content)
+	sameModel := isSameModel(message, target)
+	text := joinText(message.Content)
+	if !sameModel {
+		text = assistantText(message.Content)
+	}
 
 	var toolCalls []openaisdk.ChatCompletionMessageToolCallUnionParam
 	for index, part := range message.Content {
 		switch part.Type {
 		case llm.ContentTypeText, llm.ContentTypeThinking:
-			// Folded into text above.
+			// Encoded as content and/or reasoning_content above.
 		case llm.ContentTypeToolCall:
 			if part.ToolCall == nil {
 				return openaisdk.ChatCompletionMessageParamUnion{}, fmt.Errorf(
@@ -397,16 +407,60 @@ func assistantMessageParam(
 		}
 	}
 
-	if len(toolCalls) == 0 {
-		return openaisdk.AssistantMessage(text), nil
-	}
-
 	assistant := openaisdk.ChatCompletionAssistantMessageParam{}
 	if text != "" {
 		assistant.Content.OfString = param.NewOpt(text)
 	}
-	assistant.ToolCalls = toolCalls
+	if len(toolCalls) > 0 {
+		assistant.ToolCalls = toolCalls
+	}
+	if sameModel {
+		if extra := reasoningExtraFields(message.Content); extra != nil {
+			assistant.SetExtraFields(extra)
+		}
+	}
 	return openaisdk.ChatCompletionMessageParamUnion{OfAssistant: &assistant}, nil
+}
+
+func isSameModel(message llm.AssistantMessage, target llm.Model) bool {
+	return message.Provider == target.Provider &&
+		message.API == target.API &&
+		message.ModelID == target.ID
+}
+
+func reasoningExtraFields(content []llm.ContentPart) map[string]any {
+	field, text := completionsReasoning(content)
+	if text == "" {
+		return nil
+	}
+	return map[string]any{field: text}
+}
+
+func completionsReasoning(content []llm.ContentPart) (field, text string) {
+	field = reasoningContentField
+	parts := make([]string, 0, len(content))
+	for _, part := range content {
+		if part.Type != llm.ContentTypeThinking {
+			continue
+		}
+		if part.Redacted || strings.TrimSpace(part.Text) == "" {
+			continue
+		}
+		if isCompletionsReasoningField(part.Signature) && field == reasoningContentField {
+			field = part.Signature
+		}
+		parts = append(parts, part.Text)
+	}
+	return field, strings.Join(parts, "\n")
+}
+
+func isCompletionsReasoningField(name string) bool {
+	switch name {
+	case reasoningContentField, "reasoning", "reasoning_text":
+		return true
+	default:
+		return false
+	}
 }
 
 func toolResultMessageParam(
@@ -474,6 +528,7 @@ type partState struct {
 	type_        llm.ContentType
 	contentIndex int
 	text         strings.Builder
+	signature    string
 	toolCall     llm.ToolCall
 	arguments    string
 }
@@ -543,9 +598,9 @@ func decodeWireChunk(raw string) (wireChunk, error) {
 func (s *partState) PartialContent() (llm.ContentPart, bool) {
 	switch s.type_ {
 	case llm.ContentTypeText:
-		return streamcore.PartialText(s.text.String(), ""), true
+		return streamcore.PartialText(s.text.String(), s.signature), true
 	case llm.ContentTypeThinking:
-		return streamcore.PartialThinking(s.text.String(), "", false), true
+		return streamcore.PartialThinking(s.text.String(), s.signature, false), true
 	case llm.ContentTypeToolCall:
 		return streamcore.PartialToolCall(s.toolCall, s.arguments, nil)
 	default:
@@ -650,7 +705,11 @@ func (s *stream) deltaEvents(delta wireDelta) []llm.Event {
 
 func (s *stream) thinkingDelta(delta string) []llm.Event {
 	if s.thinking == nil {
-		state := &partState{type_: llm.ContentTypeThinking, contentIndex: s.nextIndex}
+		state := &partState{
+			type_:        llm.ContentTypeThinking,
+			contentIndex: s.nextIndex,
+			signature:    reasoningContentField,
+		}
 		s.nextIndex++
 		s.thinking = state
 		s.core.Parts.Partial(state.contentIndex, state)

@@ -273,7 +273,9 @@ func TestAdapterStreamsReasoningContentThinking(t *testing.T) {
 	}
 
 	thinking := events[6].Content
-	if thinking == nil || thinking.Text != "think carefully" {
+	if thinking == nil ||
+		thinking.Text != "think carefully" ||
+		thinking.Signature != "reasoning_content" {
 		t.Errorf("thinking end content = %#v", thinking)
 	}
 	text := events[7].Content
@@ -287,6 +289,10 @@ func TestAdapterStreamsReasoningContentThinking(t *testing.T) {
 	}
 	if len(done.Message.Content) != 2 {
 		t.Errorf("done message content = %#v, want thinking and text", done.Message.Content)
+	}
+	if done.Message.Content[0].Type != llm.ContentTypeThinking ||
+		done.Message.Content[0].Signature != "reasoning_content" {
+		t.Errorf("done thinking = %#v, want reasoning_content signature", done.Message.Content)
 	}
 }
 
@@ -331,11 +337,110 @@ func TestAdapterPreservesPartialThinkingOnMissingFinishReason(t *testing.T) {
 		t.Errorf("terminal error = %v, want io.ErrUnexpectedEOF", terminal.Err)
 	}
 	want := []llm.ContentPart{{
-		Type: llm.ContentTypeThinking,
-		Text: "partial reasoning",
+		Type:      llm.ContentTypeThinking,
+		Text:      "partial reasoning",
+		Signature: "reasoning_content",
 	}}
 	if !reflect.DeepEqual(terminal.Message.Content, want) {
 		t.Errorf("partial content = %#v, want %#v", terminal.Message.Content, want)
+	}
+}
+
+func TestAdapterReplaysAssistantThinking(t *testing.T) {
+	t.Parallel()
+
+	flash, ok := opencodeModelForTest("glm-5.3-flash")
+	if !ok {
+		t.Fatal("opencode-go model glm-5.3-flash missing from catalog")
+	}
+	glm, ok := opencodeModelForTest("glm-5.1")
+	if !ok {
+		t.Fatal("opencode-go model glm-5.1 missing from catalog")
+	}
+
+	readTool := []llm.ToolDefinition{{
+		Name:        "read",
+		Description: "Read a file.",
+		InputSchema: json.RawMessage(
+			`{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}`,
+		),
+	}}
+	user := llm.UserMessage{
+		Role:    llm.RoleUser,
+		Content: []llm.ContentPart{llm.NewTextContent("Read the file.").Part()},
+	}
+	toolResult := llm.ToolResultMessage{
+		Role:       llm.RoleToolResult,
+		ToolCallID: "call-1",
+		Content:    []llm.ContentPart{llm.NewTextContent("file contents").Part()},
+	}
+
+	tests := []struct {
+		name            string
+		model           llm.Model
+		assistant       llm.AssistantMessage
+		wantContent     string
+		wantReasoning   any
+		wantReasoningOK bool
+	}{
+		{
+			name:  "same-model thinking stays in reasoning_content",
+			model: flash,
+			assistant: thinkingAssistant(flash, []llm.ContentPart{
+				llm.NewThinkingContent("think", "reasoning_content").Part(),
+				llm.NewThinkingContent("more", "reasoning_content").Part(),
+				llm.NewTextContent("I will read it.").Part(),
+			}, "call-1"),
+			wantContent:     "I will read it.",
+			wantReasoning:   "think\nmore",
+			wantReasoningOK: true,
+		},
+		{
+			name:  "cross-model folds thinking into content",
+			model: glm,
+			assistant: thinkingAssistant(flash, []llm.ContentPart{
+				llm.NewThinkingContent("plan", "reasoning_content").Part(),
+				llm.NewTextContent("I will read it.").Part(),
+			}, "call-1"),
+			wantContent:     "plan\n\nI will read it.",
+			wantReasoningOK: false,
+		},
+		{
+			name:  "same-model without thinking omits the field",
+			model: flash,
+			assistant: thinkingAssistant(flash, []llm.ContentPart{
+				llm.NewTextContent("I will read it.").Part(),
+			}, "call-1"),
+			wantContent:     "I will read it.",
+			wantReasoningOK: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			body := captureCompletionsRequest(t, llm.Request{
+				Model: tt.model,
+				Messages: []llm.Message{
+					user,
+					tt.assistant,
+					toolResult,
+				},
+				Tools: readTool,
+			})
+			assistant := assistantFromBody(t, body)
+			if assistant["content"] != tt.wantContent {
+				t.Errorf("assistant content = %#v, want %#v", assistant["content"], tt.wantContent)
+			}
+			got, ok := assistant["reasoning_content"]
+			if ok != tt.wantReasoningOK {
+				t.Errorf("reasoning_content present = %v, want %v (value %#v)", ok, tt.wantReasoningOK, got)
+			}
+			if tt.wantReasoningOK && got != tt.wantReasoning {
+				t.Errorf("reasoning_content = %#v, want %#v", got, tt.wantReasoning)
+			}
+		})
 	}
 }
 
@@ -800,6 +905,84 @@ func opencodeModelForTest(id string) (llm.Model, bool) {
 		}
 	}
 	return llm.Model{}, false
+}
+
+func thinkingAssistant(
+	model llm.Model,
+	content []llm.ContentPart,
+	toolCallID string,
+) llm.AssistantMessage {
+	if toolCallID != "" {
+		content = append(append([]llm.ContentPart{}, content...), llm.ContentPart{
+			Type: llm.ContentTypeToolCall,
+			ToolCall: &llm.ToolCall{
+				ID:        toolCallID,
+				Name:      "read",
+				Arguments: json.RawMessage(`{"path":"AGENTS.md"}`),
+			},
+		})
+	}
+	return llm.AssistantMessage{
+		Role:     llm.RoleAssistant,
+		API:      model.API,
+		Provider: model.Provider,
+		ModelID:  model.ID,
+		Content:  content,
+	}
+}
+
+func captureCompletionsRequest(t *testing.T, request llm.Request) map[string]any {
+	t.Helper()
+
+	requests := make(chan map[string]any, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode request body: %v", err)
+			return
+		}
+		requests <- body
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "data: [DONE]\n\n")
+	}))
+	t.Cleanup(server.Close)
+
+	adapter, err := openaicompletions.New(openaicompletions.Config{
+		APIKey:     "test-key",
+		BaseURL:    server.URL,
+		HTTPClient: server.Client(),
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	modelStream, err := adapter.Stream(context.Background(), request)
+	if err != nil {
+		t.Fatalf("Stream() error = %v", err)
+	}
+	t.Cleanup(func() {
+		if err := modelStream.Close(); err != nil {
+			t.Errorf("Close() error = %v", err)
+		}
+	})
+
+	return <-requests
+}
+
+func assistantFromBody(t *testing.T, body map[string]any) map[string]any {
+	t.Helper()
+
+	messages, ok := body["messages"].([]any)
+	if !ok {
+		t.Fatalf("messages = %#v", body["messages"])
+	}
+	for _, item := range messages {
+		message, ok := item.(map[string]any)
+		if ok && message["role"] == "assistant" {
+			return message
+		}
+	}
+	t.Fatalf("messages = %#v, want an assistant message", body["messages"])
+	return nil
 }
 
 func TestAdapterNormalizesHTTPError(t *testing.T) {
