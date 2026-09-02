@@ -68,7 +68,7 @@ aice --workspace . --session .aice/sessions/<session-id>.jsonl
 | Area | Current implementation |
 | --- | --- |
 | Interface | Bubble Tea TUI and one-shot `--print` mode |
-| Providers | DeepSeek V4, OpenCode Go's 22-model catalog, OpenAI GPT-5.6, and Custom (OpenAI-compatible) |
+| Providers | DeepSeek V4, OpenCode Go's 26-model catalog, OpenAI GPT-5.6, and Custom (OpenAI-compatible) |
 | Protocols | Anthropic Messages, OpenAI Responses, OpenAI Chat Completions |
 | Tools | `read`, `write`, `edit`, `bash`, `grep`, `find`, `ls`, `skill` |
 | Guard | intrinsic execution gate (`internal/guard`): pathAccess mode `allow`/`ask`/`block`; Decision `allow`/`ask`/`deny`; see [Tool execution and Sessions](./docs/execution-sessions.md#tool-execution-boundary) |

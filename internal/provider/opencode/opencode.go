@@ -154,7 +154,7 @@ func knownModel(id string) bool {
 var modelSpecs = modelSpecCatalog()
 
 func modelSpecCatalog() map[string]provider.ModelSpec {
-	specs := make(map[string]provider.ModelSpec, 22)
+	specs := make(map[string]provider.ModelSpec, 26)
 	for _, shared := range provider.DeepSeekModelSpecs() {
 		specs[shared.ID] = shared
 	}
@@ -236,14 +236,25 @@ func modelSpecCatalog() map[string]provider.ModelSpec {
 			llm.ThinkingLevelMax,
 		),
 	}
+	specs["glm-5.3-flash"] = provider.ModelSpec{
+		ID: "glm-5.3-flash", Name: "GLM-5.3-Flash", ContextWindow: 1_000_000, MaxTokens: 131_072, Input: 0.15, Output: 0.5, CacheRead: 0.03,
+		ThinkingLevelMap: llm.ThinkingLevelsMap(
+			llm.ThinkingLevelLow,
+			llm.ThinkingLevelHigh,
+			llm.ThinkingLevelMax,
+		),
+	}
 	specs["qwen3.6-plus"] = standardSpec("qwen3.6-plus", "Qwen3.6 Plus", 1_000_000, 65_536, 0.5, 3, 0.05)
 	specs["qwen3.7-plus"] = standardSpec("qwen3.7-plus", "Qwen3.7 Plus", 1_000_000, 65_536, 0.4, 1.6, 0.04)
 	specs["qwen3.7-max"] = standardSpec("qwen3.7-max", "Qwen3.7 Max", 1_000_000, 65_536, 2.5, 7.5, 0.5)
 	specs["qwen3.8-max"] = standardSpec("qwen3.8-max", "Qwen3.8 Max", 1_000_000, 131_072, 2, 6, 0.25)
+	specs["qwen3.8-flash"] = standardSpec("qwen3.8-flash", "Qwen3.8 Flash", 1_000_000, 131_072, 0.15, 0.47, 0.016)
+	specs["minimax-m2.5"] = standardSpec("minimax-m2.5", "MiniMax M2.5", 204_800, 65_536, 0.3, 1.2, 0.03)
 	specs["minimax-m2.7"] = standardSpec("minimax-m2.7", "MiniMax M2.7", 204_800, 131_072, 0.3, 1.2, 0.06)
 	specs["minimax-m3"] = standardSpec("minimax-m3", "MiniMax M3", 1_000_000, 131_072, 0.3, 1.2, 0.06)
 	specs["mimo-v2.5"] = standardSpec("mimo-v2.5", "MiMo V2.5", 1_000_000, 128_000, 0.14, 0.28, 0.0028)
 	specs["mimo-v2.5-pro"] = standardSpec("mimo-v2.5-pro", "MiMo V2.5 Pro", 1_048_576, 128_000, 0.435, 0.87, 0.003625)
+	specs["longcat-2.0"] = standardSpec("longcat-2.0", "LongCat-2.0", 1_000_000, 131_072, 0.3, 1.2, 0.006)
 	// OpenCode Go exposes off as none plus low through max.
 	specs["gpt-5.6-luna"] = provider.ModelSpec{
 		ID:            "gpt-5.6-luna",
@@ -263,19 +274,20 @@ func modelSpecCatalog() map[string]provider.ModelSpec {
 			llm.ThinkingLevelMax:     llm.ThinkingValue("max"),
 		},
 	}
-	// Grok 4.5 exposes low, medium, and high efforts.
-	specs["grok-4.5"] = provider.ModelSpec{
-		ID:            "grok-4.5",
-		Name:          "Grok 4.5",
+	// Grok 4.6 exposes low, medium, high, and xhigh efforts.
+	specs["grok-4.6"] = provider.ModelSpec{
+		ID:            "grok-4.6",
+		Name:          "Grok 4.6",
 		ContextWindow: 500_000,
 		MaxTokens:     500_000,
 		Input:         2,
 		Output:        6,
-		CacheRead:     0.3,
+		CacheRead:     0.5,
 		ThinkingLevelMap: llm.ThinkingLevelsMap(
 			llm.ThinkingLevelLow,
 			llm.ThinkingLevelMedium,
 			llm.ThinkingLevelHigh,
+			llm.ThinkingLevelXHigh,
 		),
 	}
 	specs["muse-spark-1.2-contributor"] = provider.ModelSpec{
@@ -294,17 +306,6 @@ func modelSpecCatalog() map[string]provider.ModelSpec {
 			llm.ThinkingLevelXHigh,
 		),
 	}
-	specs["ox-alpha-free"] = provider.ModelSpec{
-		ID:            "ox-alpha-free",
-		Name:          "Ox Alpha Free",
-		ContextWindow: 1_000_000,
-		MaxTokens:     131_072,
-		ThinkingLevelMap: llm.ThinkingLevelsMap(
-			llm.ThinkingLevelLow,
-			llm.ThinkingLevelHigh,
-			llm.ThinkingLevelMax,
-		),
-	}
 	// Hy3 maps off to none and exposes low and high.
 	specs["hy3"] = provider.ModelSpec{
 		ID:            "hy3",
@@ -318,6 +319,25 @@ func modelSpecCatalog() map[string]provider.ModelSpec {
 			llm.ThinkingLevelOff:     llm.ThinkingValue("none"),
 			llm.ThinkingLevelMinimal: nil,
 			llm.ThinkingLevelLow:     llm.ThinkingValue("low"),
+			llm.ThinkingLevelMedium:  nil,
+			llm.ThinkingLevelHigh:    llm.ThinkingValue("high"),
+			llm.ThinkingLevelXHigh:   nil,
+			llm.ThinkingLevelMax:     nil,
+		},
+	}
+	// Hy4 preview maps off to none and exposes high.
+	specs["hy4-preview"] = provider.ModelSpec{
+		ID:            "hy4-preview",
+		Name:          "Hy4 preview",
+		ContextWindow: 1_024_000,
+		MaxTokens:     64_000,
+		Input:         0.834,
+		Output:        2.501,
+		CacheRead:     0.042,
+		ThinkingLevelMap: llm.ThinkingLevelMap{
+			llm.ThinkingLevelOff:     llm.ThinkingValue("none"),
+			llm.ThinkingLevelMinimal: nil,
+			llm.ThinkingLevelLow:     nil,
 			llm.ThinkingLevelMedium:  nil,
 			llm.ThinkingLevelHigh:    llm.ThinkingValue("high"),
 			llm.ThinkingLevelXHigh:   nil,
@@ -344,28 +364,32 @@ func standardSpec(
 // modelIDs lists the OpenCode Go models in menu order; Models constructs
 // fresh values so callers cannot mutate catalog maps shared by later runs.
 var modelIDs = []string{
-	"grok-4.5",
+	"grok-4.6",
+	"gpt-5.6-luna",
+	"glm-5.3-flash",
 	"glm-5.3",
 	"glm-5.2",
 	"glm-5.1",
-	"gpt-5.6-luna",
 	"kimi-k3",
 	"kimi-k2.7-code",
 	"kimi-k2.6",
+	"longcat-2.0",
+	"deepseek-v4-pro",
+	"deepseek-v4-flash",
+	"deepseek-v4-flash-vision-exp",
 	"mimo-v2.5",
 	"mimo-v2.5-pro",
 	"minimax-m3",
 	"minimax-m2.7",
+	"minimax-m2.5",
 	"muse-spark-1.2-contributor",
 	"qwen3.8-max",
+	"qwen3.8-flash",
 	"qwen3.7-max",
 	"qwen3.7-plus",
 	"qwen3.6-plus",
-	"deepseek-v4-pro",
-	"deepseek-v4-flash",
-	"deepseek-v4-flash-vision-exp",
+	"hy4-preview",
 	"hy3",
-	"ox-alpha-free",
 }
 
 func model(id string) llm.Model {
@@ -394,14 +418,16 @@ func model(id string) llm.Model {
 
 func modelAPI(id string) llm.API {
 	switch id {
-	case "gpt-5.6-luna", "grok-4.5", "muse-spark-1.2-contributor":
+	case "gpt-5.6-luna", "grok-4.6", "muse-spark-1.2-contributor":
 		return openairesponses.API
-	case "minimax-m2.7",
+	case "minimax-m2.5",
+		"minimax-m2.7",
 		"minimax-m3",
 		"qwen3.6-plus",
 		"qwen3.7-max",
 		"qwen3.7-plus",
-		"qwen3.8-max":
+		"qwen3.8-max",
+		"qwen3.8-flash":
 		return anthropic.API
 	default:
 		return openaicompletions.API
@@ -419,18 +445,19 @@ func inputModalities(id string) []llm.InputModality {
 func supportsImage(id string) bool {
 	switch id {
 	case "deepseek-v4-flash-vision-exp",
+		"glm-5.3-flash",
 		"gpt-5.6-luna",
-		"grok-4.5",
+		"grok-4.6",
 		"kimi-k2.6",
 		"kimi-k2.7-code",
 		"kimi-k3",
 		"minimax-m3",
 		"mimo-v2.5",
 		"muse-spark-1.2-contributor",
-		"ox-alpha-free",
 		"qwen3.6-plus",
 		"qwen3.7-plus",
-		"qwen3.8-max":
+		"qwen3.8-max",
+		"qwen3.8-flash":
 		return true
 	default:
 		return false
@@ -441,6 +468,8 @@ func cacheWritePrice(id string) float64 {
 	switch id {
 	case "gpt-5.6-luna":
 		return 0.25
+	case "minimax-m2.5":
+		return 0.375
 	case "minimax-m2.7":
 		return 0.375
 	case "qwen3.6-plus":
@@ -451,6 +480,8 @@ func cacheWritePrice(id string) float64 {
 		return 3.125
 	case "qwen3.8-max":
 		return 2.5
+	case "qwen3.8-flash":
+		return 0.2
 	default:
 		return 0
 	}

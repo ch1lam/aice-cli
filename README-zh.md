@@ -65,7 +65,7 @@ aice --workspace . --session .aice/sessions/<session-id>.jsonl
 | 领域 | 当前实现 |
 | --- | --- |
 | 交互 | Bubble Tea TUI 与一次性 `--print` 模式 |
-| Provider | DeepSeek V4、OpenCode Go 的 22 个模型、OpenAI GPT-5.6，以及 Custom（OpenAI 兼容） |
+| Provider | DeepSeek V4、OpenCode Go 的 26 个模型、OpenAI GPT-5.6，以及 Custom（OpenAI 兼容） |
 | 协议 | Anthropic Messages、OpenAI Responses、OpenAI Chat Completions |
 | 工具 | `read`、`write`、`edit`、`bash`、`grep`、`find`、`ls`、`skill` |
 | Guard | 内置执行门禁（`internal/guard`）：pathAccess mode 为 `allow`/`ask`/`block`；Decision 为 `allow`/`ask`/`deny`；详见[工具执行与 Session](./docs/execution-sessions.md#tool-execution-boundary) |

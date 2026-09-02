@@ -22,28 +22,32 @@ func TestModels(t *testing.T) {
 
 	models := opencode.Models()
 	wantIDs := []string{
-		"grok-4.5",
+		"grok-4.6",
+		"gpt-5.6-luna",
+		"glm-5.3-flash",
 		"glm-5.3",
 		"glm-5.2",
 		"glm-5.1",
-		"gpt-5.6-luna",
 		"kimi-k3",
 		"kimi-k2.7-code",
 		"kimi-k2.6",
+		"longcat-2.0",
+		"deepseek-v4-pro",
+		"deepseek-v4-flash",
+		"deepseek-v4-flash-vision-exp",
 		"mimo-v2.5",
 		"mimo-v2.5-pro",
 		"minimax-m3",
 		"minimax-m2.7",
+		"minimax-m2.5",
 		"muse-spark-1.2-contributor",
 		"qwen3.8-max",
+		"qwen3.8-flash",
 		"qwen3.7-max",
 		"qwen3.7-plus",
 		"qwen3.6-plus",
-		"deepseek-v4-pro",
-		"deepseek-v4-flash",
-		"deepseek-v4-flash-vision-exp",
+		"hy4-preview",
 		"hy3",
-		"ox-alpha-free",
 	}
 	gotIDs := make([]string, 0, len(models))
 	for _, model := range models {
@@ -54,16 +58,18 @@ func TestModels(t *testing.T) {
 	}
 	responsesModels := map[string]bool{
 		"gpt-5.6-luna":               true,
-		"grok-4.5":                   true,
+		"grok-4.6":                   true,
 		"muse-spark-1.2-contributor": true,
 	}
 	anthropicModels := map[string]bool{
+		"minimax-m2.5": true,
 		"minimax-m2.7": true,
 		"minimax-m3":   true,
 		"qwen3.6-plus": true,
 		"qwen3.7-max":  true,
 		"qwen3.7-plus": true,
 		"qwen3.8-max":  true,
+		"qwen3.8-flash": true,
 	}
 	for _, model := range models {
 		if model.Provider != opencode.ProviderID {
@@ -160,6 +166,8 @@ func TestModels(t *testing.T) {
 		"glm-5.2": {llm.ThinkingLevelHigh, llm.ThinkingLevelMax},
 		// GLM-5.3 exposes low, high, and max.
 		"glm-5.3": {llm.ThinkingLevelLow, llm.ThinkingLevelHigh, llm.ThinkingLevelMax},
+		// GLM-5.3-Flash exposes low, high, and max.
+		"glm-5.3-flash": {llm.ThinkingLevelLow, llm.ThinkingLevelHigh, llm.ThinkingLevelMax},
 		// GPT-5.6 Luna maps off to none and excludes minimal.
 		"gpt-5.6-luna": {
 			llm.ThinkingLevelOff,
@@ -169,11 +177,12 @@ func TestModels(t *testing.T) {
 			llm.ThinkingLevelXHigh,
 			llm.ThinkingLevelMax,
 		},
-		// Grok 4.5 exposes low, medium, and high efforts.
-		"grok-4.5": {
+		// Grok 4.6 exposes low, medium, high, and xhigh efforts.
+		"grok-4.6": {
 			llm.ThinkingLevelLow,
 			llm.ThinkingLevelMedium,
 			llm.ThinkingLevelHigh,
+			llm.ThinkingLevelXHigh,
 		},
 		// Muse exposes minimal through xhigh.
 		"muse-spark-1.2-contributor": {
@@ -183,16 +192,15 @@ func TestModels(t *testing.T) {
 			llm.ThinkingLevelHigh,
 			llm.ThinkingLevelXHigh,
 		},
-		// Ox Alpha exposes low, high, and max.
-		"ox-alpha-free": {
-			llm.ThinkingLevelLow,
-			llm.ThinkingLevelHigh,
-			llm.ThinkingLevelMax,
-		},
 		// Hy3 maps off to none and exposes low and high.
 		"hy3": {
 			llm.ThinkingLevelOff,
 			llm.ThinkingLevelLow,
+			llm.ThinkingLevelHigh,
+		},
+		// Hy4 preview maps off to none and exposes high.
+		"hy4-preview": {
+			llm.ThinkingLevelOff,
 			llm.ThinkingLevelHigh,
 		},
 	}
@@ -223,8 +231,9 @@ func TestModels(t *testing.T) {
 		{modelID: "deepseek-v4-pro", request: llm.ThinkingLevelXHigh, effective: llm.ThinkingLevelMax},
 		{modelID: "kimi-k3", request: llm.ThinkingLevelMedium, effective: llm.ThinkingLevelMax},
 		{modelID: "gpt-5.6-luna", request: llm.ThinkingLevelMinimal, effective: llm.ThinkingLevelLow},
-		{modelID: "grok-4.5", request: llm.ThinkingLevelMax, effective: llm.ThinkingLevelHigh},
+		{modelID: "grok-4.6", request: llm.ThinkingLevelMax, effective: llm.ThinkingLevelXHigh},
 		{modelID: "hy3", request: llm.ThinkingLevelMedium, effective: llm.ThinkingLevelHigh},
+		{modelID: "hy4-preview", request: llm.ThinkingLevelLow, effective: llm.ThinkingLevelHigh},
 	}
 	for _, tt := range clampTests {
 		model, ok := modelForID(models, tt.modelID)
@@ -341,12 +350,8 @@ func TestModelCatalogHasCompleteSpecs(t *testing.T) {
 		if model.MaxTokens <= 0 {
 			t.Errorf("model %q has no max tokens", model.ID)
 		}
-		if model.ID != "ox-alpha-free" &&
-			(model.Pricing.Input <= 0 || model.Pricing.Output <= 0) {
+		if model.Pricing.Input <= 0 || model.Pricing.Output <= 0 {
 			t.Errorf("model %q has incomplete pricing", model.ID)
-		}
-		if model.ID == "ox-alpha-free" && model.Pricing != (llm.Pricing{}) {
-			t.Errorf("model %q pricing = %#v, want free", model.ID, model.Pricing)
 		}
 	}
 }
@@ -546,8 +551,8 @@ func TestProviderDescriptor(t *testing.T) {
 	if got := descriptor.MenuDescription(); !strings.Contains(got, "OpenCode Go subscription") {
 		t.Errorf("MenuDescription() = %q, want OpenCode Go subscription", got)
 	}
-	if got := descriptor.MenuDescription(); !strings.Contains(got, "22 models") {
-		t.Errorf("MenuDescription() = %q, want 22 models", got)
+	if got := descriptor.MenuDescription(); !strings.Contains(got, "26 models") {
+		t.Errorf("MenuDescription() = %q, want 26 models", got)
 	}
 	if got := descriptor.DefaultModel(); !reflect.DeepEqual(got, opencode.DefaultModel()) {
 		t.Errorf("DefaultModel() = %#v, want %#v", got, opencode.DefaultModel())
