@@ -290,6 +290,55 @@ func TestAdapterStreamsReasoningContentThinking(t *testing.T) {
 	}
 }
 
+func TestAdapterPreservesPartialThinkingOnMissingFinishReason(t *testing.T) {
+	t.Parallel()
+
+	server := apitest.NewSSEServer(t, []string{
+		`{"id":"chatcmpl-truncated","object":"chat.completion.chunk","model":"glm-5.3-flash","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}],"usage":null}`,
+		`{"id":"chatcmpl-truncated","object":"chat.completion.chunk","model":"glm-5.3-flash","choices":[{"index":0,"delta":{"reasoning_content":"partial reasoning"},"finish_reason":null}],"usage":null}`,
+		`[DONE]`,
+	})
+	defer server.Close()
+
+	adapter, err := openaicompletions.New(openaicompletions.Config{
+		APIKey:     "test-key",
+		BaseURL:    server.URL,
+		HTTPClient: server.Client(),
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	modelStream, err := adapter.Stream(
+		context.Background(),
+		apitest.MinimalRequest(openaicompletions.API),
+	)
+	if err != nil {
+		t.Fatalf("Stream() error = %v", err)
+	}
+	defer func() {
+		if err := modelStream.Close(); err != nil {
+			t.Errorf("Close() error = %v", err)
+		}
+	}()
+
+	events := apitest.CollectEvents(t, modelStream)
+	terminal := events[len(events)-1]
+	if terminal.Type != llm.EventTypeError || terminal.Message == nil {
+		t.Fatalf("terminal event = %#v, want error with partial message", terminal)
+	}
+	if !errors.Is(terminal.Err, io.ErrUnexpectedEOF) {
+		t.Errorf("terminal error = %v, want io.ErrUnexpectedEOF", terminal.Err)
+	}
+	want := []llm.ContentPart{{
+		Type: llm.ContentTypeThinking,
+		Text: "partial reasoning",
+	}}
+	if !reflect.DeepEqual(terminal.Message.Content, want) {
+		t.Errorf("partial content = %#v, want %#v", terminal.Message.Content, want)
+	}
+}
+
 func TestAdapterRejectsIncompleteToolCall(t *testing.T) {
 	t.Parallel()
 

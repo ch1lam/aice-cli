@@ -2,6 +2,7 @@ package agent
 
 import (
 	"errors"
+	"io"
 	"net/http"
 	"testing"
 	"time"
@@ -104,6 +105,11 @@ func TestRetryPolicyClassifiesProviderFailures(t *testing.T) {
 		{
 			name: "transport",
 			err:  llm.NewTransportProviderError(errors.New("connection reset")),
+			want: true,
+		},
+		{
+			name: "unexpected eof",
+			err:  io.ErrUnexpectedEOF,
 			want: true,
 		},
 	}

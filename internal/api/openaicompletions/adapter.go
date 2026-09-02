@@ -582,6 +582,11 @@ func (s *stream) Finish() streamcore.Terminal {
 	if err := s.source.Err(); err != nil {
 		return streamcore.ReadFailure("openai completions", normalizeProviderError(err))
 	}
+	// A clean SDK EOF only means that SSE framing ended. Chat Completions
+	// requires a non-empty finish_reason to prove the model response completed.
+	if s.finishReason == "" {
+		return streamcore.UnexpectedEOF("openai completions")
+	}
 	events, err := s.finish()
 	if err != nil {
 		return streamcore.Terminal{Err: err}
@@ -815,7 +820,7 @@ func (s *stream) finish() ([]llm.Event, error) {
 
 func stopReason(finishReason string) llm.StopReason {
 	switch finishReason {
-	case "", "stop":
+	case "stop":
 		return llm.StopReasonStop
 	case "length":
 		return llm.StopReasonLength
