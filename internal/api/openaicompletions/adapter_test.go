@@ -414,6 +414,16 @@ func TestAdapterReplaysAssistantThinking(t *testing.T) {
 			wantContent:     "I will read it.",
 			wantReasoningOK: false,
 		},
+		{
+			name:  "same-model thinking-only tool call sends empty content",
+			model: flash,
+			assistant: thinkingAssistant(flash, []llm.ContentPart{
+				llm.NewThinkingContent("Let me look at...", "reasoning_content").Part(),
+			}, "call-1"),
+			wantContent:     "",
+			wantReasoning:   "Let me look at...",
+			wantReasoningOK: true,
+		},
 	}
 
 	for _, tt := range tests {

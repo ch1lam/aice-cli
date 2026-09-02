@@ -408,7 +408,9 @@ func assistantMessageParam(
 	}
 
 	assistant := openaisdk.ChatCompletionAssistantMessageParam{}
-	if text != "" {
+	// GLM Chat Completions history requires content alongside tool_calls,
+	// even when the original reply had no visible text.
+	if text != "" || len(toolCalls) > 0 {
 		assistant.Content.OfString = param.NewOpt(text)
 	}
 	if len(toolCalls) > 0 {
