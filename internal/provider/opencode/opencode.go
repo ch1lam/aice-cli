@@ -237,7 +237,7 @@ func modelSpecCatalog() map[string]provider.ModelSpec {
 		),
 	}
 	specs["glm-5.3-flash"] = provider.ModelSpec{
-		ID: "glm-5.3-flash", Name: "GLM-5.3-Flash", ContextWindow: 1_000_000, MaxTokens: 131_072, Input: 0.15, Output: 0.5, CacheRead: 0.03,
+		ID: "glm-5.3-flash", Name: "GLM-5.3-Flash", ContextWindow: 1_000_000, MaxTokens: 131_072, Input: 0.075, Output: 0.25, CacheRead: 0.015,
 		ThinkingLevelMap: llm.ThinkingLevelsMap(
 			llm.ThinkingLevelLow,
 			llm.ThinkingLevelHigh,
@@ -249,7 +249,6 @@ func modelSpecCatalog() map[string]provider.ModelSpec {
 	specs["qwen3.7-max"] = standardSpec("qwen3.7-max", "Qwen3.7 Max", 1_000_000, 65_536, 2.5, 7.5, 0.5)
 	specs["qwen3.8-max"] = standardSpec("qwen3.8-max", "Qwen3.8 Max", 1_000_000, 131_072, 2, 6, 0.25)
 	specs["qwen3.8-flash"] = standardSpec("qwen3.8-flash", "Qwen3.8 Flash", 1_000_000, 131_072, 0.15, 0.47, 0.016)
-	specs["minimax-m2.5"] = standardSpec("minimax-m2.5", "MiniMax M2.5", 204_800, 65_536, 0.3, 1.2, 0.03)
 	specs["minimax-m2.7"] = standardSpec("minimax-m2.7", "MiniMax M2.7", 204_800, 131_072, 0.3, 1.2, 0.06)
 	specs["minimax-m3"] = standardSpec("minimax-m3", "MiniMax M3", 1_000_000, 131_072, 0.3, 1.2, 0.06)
 	specs["mimo-v2.5"] = standardSpec("mimo-v2.5", "MiMo V2.5", 1_000_000, 128_000, 0.14, 0.28, 0.0028)
@@ -306,12 +305,28 @@ func modelSpecCatalog() map[string]provider.ModelSpec {
 			llm.ThinkingLevelXHigh,
 		),
 	}
+	specs["muse-spark-1.3-contributor"] = provider.ModelSpec{
+		ID:            "muse-spark-1.3-contributor",
+		Name:          "Muse Spark 1.3 Contributor",
+		ContextWindow: 1_048_576,
+		MaxTokens:     131_072,
+		Input:         0.1,
+		Output:        0.2,
+		CacheRead:     0.002,
+		ThinkingLevelMap: llm.ThinkingLevelsMap(
+			llm.ThinkingLevelMinimal,
+			llm.ThinkingLevelLow,
+			llm.ThinkingLevelMedium,
+			llm.ThinkingLevelHigh,
+			llm.ThinkingLevelXHigh,
+		),
+	}
 	// Hy3 maps off to none and exposes low and high.
 	specs["hy3"] = provider.ModelSpec{
 		ID:            "hy3",
 		Name:          "Hy3",
 		ContextWindow: 256_000,
-		MaxTokens:     64_000,
+		MaxTokens:     128_000,
 		Input:         0.14,
 		Output:        0.58,
 		CacheRead:     0.035,
@@ -381,7 +396,7 @@ var modelIDs = []string{
 	"mimo-v2.5-pro",
 	"minimax-m3",
 	"minimax-m2.7",
-	"minimax-m2.5",
+	"muse-spark-1.3-contributor",
 	"muse-spark-1.2-contributor",
 	"qwen3.8-max",
 	"qwen3.8-flash",
@@ -418,10 +433,9 @@ func model(id string) llm.Model {
 
 func modelAPI(id string) llm.API {
 	switch id {
-	case "gpt-5.6-luna", "grok-4.6", "muse-spark-1.2-contributor":
+	case "gpt-5.6-luna", "grok-4.6", "muse-spark-1.2-contributor", "muse-spark-1.3-contributor":
 		return openairesponses.API
-	case "minimax-m2.5",
-		"minimax-m2.7",
+	case "minimax-m2.7",
 		"minimax-m3",
 		"qwen3.6-plus",
 		"qwen3.7-max",
@@ -454,6 +468,7 @@ func supportsImage(id string) bool {
 		"minimax-m3",
 		"mimo-v2.5",
 		"muse-spark-1.2-contributor",
+		"muse-spark-1.3-contributor",
 		"qwen3.6-plus",
 		"qwen3.7-plus",
 		"qwen3.8-max",
@@ -468,8 +483,6 @@ func cacheWritePrice(id string) float64 {
 	switch id {
 	case "gpt-5.6-luna":
 		return 0.25
-	case "minimax-m2.5":
-		return 0.375
 	case "minimax-m2.7":
 		return 0.375
 	case "qwen3.6-plus":

@@ -39,7 +39,7 @@ func TestModels(t *testing.T) {
 		"mimo-v2.5-pro",
 		"minimax-m3",
 		"minimax-m2.7",
-		"minimax-m2.5",
+		"muse-spark-1.3-contributor",
 		"muse-spark-1.2-contributor",
 		"qwen3.8-max",
 		"qwen3.8-flash",
@@ -60,15 +60,15 @@ func TestModels(t *testing.T) {
 		"gpt-5.6-luna":               true,
 		"grok-4.6":                   true,
 		"muse-spark-1.2-contributor": true,
+		"muse-spark-1.3-contributor": true,
 	}
 	anthropicModels := map[string]bool{
-		"minimax-m2.5": true,
-		"minimax-m2.7": true,
-		"minimax-m3":   true,
-		"qwen3.6-plus": true,
-		"qwen3.7-max":  true,
-		"qwen3.7-plus": true,
-		"qwen3.8-max":  true,
+		"minimax-m2.7":  true,
+		"minimax-m3":    true,
+		"qwen3.6-plus":  true,
+		"qwen3.7-max":   true,
+		"qwen3.7-plus":  true,
+		"qwen3.8-max":   true,
 		"qwen3.8-flash": true,
 	}
 	for _, model := range models {
@@ -186,6 +186,13 @@ func TestModels(t *testing.T) {
 		},
 		// Muse exposes minimal through xhigh.
 		"muse-spark-1.2-contributor": {
+			llm.ThinkingLevelMinimal,
+			llm.ThinkingLevelLow,
+			llm.ThinkingLevelMedium,
+			llm.ThinkingLevelHigh,
+			llm.ThinkingLevelXHigh,
+		},
+		"muse-spark-1.3-contributor": {
 			llm.ThinkingLevelMinimal,
 			llm.ThinkingLevelLow,
 			llm.ThinkingLevelMedium,
