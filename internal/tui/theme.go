@@ -124,6 +124,12 @@ func inkMarkdownStyle() ansi.StyleConfig {
 	style.ImageText.Color = stringPointer(mutedTextHex)
 	style.Code.Color = stringPointer(goldHex)
 	style.Code.BackgroundColor = nil
+	// Glamour defaults Code Prefix/Suffix to U+00A0 (NBSP) to prevent hard
+	// breaks. That renders as visible extra spaces in CJK-mixed text, e.g.
+	// 这是`glamour`官方 -> 这是\u00a0glamour\u00a0官方, so clear it to keep
+	// the original spacing exactly.
+	style.Code.Prefix = ""
+	style.Code.Suffix = ""
 	style.CodeBlock.Color = stringPointer(primaryTextHex)
 	style.CodeBlock.BackgroundColor = stringPointer(panelBlackHex)
 	style.Table.Color = stringPointer(primaryTextHex)

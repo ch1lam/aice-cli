@@ -102,6 +102,13 @@ func TestThemeAppliesLayeredBackgrounds(t *testing.T) {
 	if markdown.Code.BackgroundColor != nil {
 		t.Errorf("markdown inline code background = %q, want no background", *markdown.Code.BackgroundColor)
 	}
+	if markdown.Code.Prefix != "" || markdown.Code.Suffix != "" {
+		t.Errorf(
+			"markdown inline code affix = %q/%q, want no extra spacing",
+			markdown.Code.Prefix,
+			markdown.Code.Suffix,
+		)
+	}
 	if markdown.Code.Color == nil || *markdown.Code.Color != goldHex {
 		t.Errorf("markdown inline code color = %v, want %q", markdown.Code.Color, goldHex)
 	}
