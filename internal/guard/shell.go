@@ -158,6 +158,11 @@ func parsePathCandidates(command string) []struct {
 	syntax.Walk(f, func(node syntax.Node) bool {
 		switch n := node.(type) {
 		case *syntax.CallExpr:
+			// Assignment-only commands (e.g. `VAR=val`) parse as a CallExpr
+			// with no Args; slicing an empty slice panics.
+			if len(n.Args) == 0 {
+				return true
+			}
 			for _, w := range n.Args[1:] {
 				// Skip first word (command name) for path extraction; but we handle it as arg
 				// Actually we want args after command name. The loop above includes command name,
