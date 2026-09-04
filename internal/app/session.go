@@ -29,20 +29,7 @@ func prepareSession(
 	}
 
 	if requestedPath == "" {
-		id, err := session.NewID()
-		if err != nil {
-			return nil, nil, llm.Usage{}, fmt.Errorf(
-				"app: generate session id: %w",
-				err,
-			)
-		}
-		path := filepath.Join(
-			workspace.Path(),
-			".aice",
-			"sessions",
-			id+".jsonl",
-		)
-		store, err := createSession(ctx, path, id, workspace.Path())
+		store, err := createDefaultSession(ctx, workspace)
 		return store, nil, llm.Usage{}, err
 	}
 
@@ -75,6 +62,26 @@ func prepareSession(
 	}
 	store, err = createSession(ctx, path, id, workspace.Path())
 	return store, nil, llm.Usage{}, err
+}
+
+// createDefaultSession creates a fresh session file under the workspace.
+// It runs when the first interaction starts without an explicit --session
+// path, so a process that never interacts leaves no file behind.
+func createDefaultSession(
+	ctx context.Context,
+	workspace *tool.Workspace,
+) (*session.Store, error) {
+	id, err := session.NewID()
+	if err != nil {
+		return nil, fmt.Errorf("app: generate session id: %w", err)
+	}
+	path := filepath.Join(
+		workspace.Path(),
+		".aice",
+		"sessions",
+		id+".jsonl",
+	)
+	return createSession(ctx, path, id, workspace.Path())
 }
 
 func resolveSessionPath(requestedPath string) (string, error) {
@@ -144,6 +151,31 @@ func sessionHistory(snapshot session.Snapshot) ([]llm.AgentMessage, error) {
 		return nil, fmt.Errorf("app: build session context: %w", err)
 	}
 	return history, nil
+}
+
+// closeInteractiveStore closes the interactive Session file, removing it
+// when no turn or compaction was ever recorded. Startup and /new create
+// the file eagerly, but an interaction-free exit should not leave a
+// header-only file behind.
+func closeInteractiveStore(store *session.Store) error {
+	if store == nil {
+		return nil
+	}
+	snapshot, err := store.Snapshot()
+	if err != nil {
+		return errors.Join(err, store.Close())
+	}
+	if len(snapshot.Turns) != 0 || len(snapshot.Compactions) != 0 {
+		return store.Close()
+	}
+	path := store.Path()
+	if err := store.Close(); err != nil {
+		return err
+	}
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("app: remove empty session: %w", err)
+	}
+	return nil
 }
 
 func appendSessionTurn(

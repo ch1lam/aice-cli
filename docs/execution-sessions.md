@@ -117,9 +117,11 @@ output, cancellation, and process-tree controls.
 
 ## Sessions
 
-Interactive runs automatically create a version 2 JSONL Session under
-`<workspace>/.aice/sessions/`. `--print` creates or resumes a Session only when
-`--session` is supplied.
+Interactive runs create a version 2 JSONL Session under
+`<workspace>/.aice/sessions/` when the first prompt is accepted; a process
+that never interacts leaves no file behind. A session that never records a
+turn or compaction is removed on exit. `--print` creates or resumes a
+Session only when `--session` is supplied.
 
 Each file contains a versioned header followed by append-only records:
 
@@ -169,9 +171,10 @@ aice session checkout --workspace . \
 ```
 
 The TUI exposes the same behavior through `/session`, `/tree`, and
-`/checkout`. `/new` starts a fresh Session file; the previous file is left
-untouched and stays resumable with `--session`. `/clear` only clears the
-visible transcript.
+`/checkout`. `/new` detaches from the current Session without creating a
+file; the next accepted prompt starts a fresh one. A previous file that
+recorded turns is left untouched and stays resumable with `--session`.
+`/clear` only clears the visible transcript.
 
 ## Recovery and compaction
 

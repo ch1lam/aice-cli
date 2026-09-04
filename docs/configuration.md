@@ -253,7 +253,7 @@ takes effect after restarting AICE or starting a new Session.
 | `/tree` | Show all Session branches |
 | `/checkout` | Select where the next branch starts |
 | `/compact` | Append a compaction checkpoint for the active branch |
-| `/new` | Start a new Session; previous history stays on disk |
+| `/new` | Detach from the current Session; the next prompt starts fresh |
 | `/clear` | Clear the viewport without changing Session history |
 | `/quit` | Exit AICE |
 

@@ -50,6 +50,9 @@ func (s *interactiveSession) NewRun(
 			settings.configuration,
 		)
 	}
+	if err := s.ensureSessionStore(); err != nil {
+		return nil, err
+	}
 	prompt, err := llm.NewUserMessage(llm.NewTextContent(input.Prompt).Part())
 	if err != nil {
 		return nil, fmt.Errorf("app: create prompt: %w", err)
@@ -62,6 +65,26 @@ func (s *interactiveSession) NewRun(
 	}, nil
 }
 
+// ensureSessionStore lazily creates the session file when the first prompt
+// is accepted. File creation is local disk I/O without a caller context,
+// so it uses a background context; every later turn appends through
+// commitHistory with the run's own context.
+func (s *interactiveSession) ensureSessionStore() error {
+	s.historySyncMu.Lock()
+	defer s.historySyncMu.Unlock()
+	if s.store != nil {
+		return nil
+	}
+	if s.workspace == nil {
+		return fmt.Errorf("app: workspace is required")
+	}
+	store, err := createDefaultSession(context.Background(), s.workspace)
+	if err != nil {
+		return err
+	}
+	s.store = store
+	return nil
+}
 func (r *interactiveRun) Deliver(delivery interaction.Delivery) error {
 	if r == nil || r.mailbox == nil {
 		return interaction.ErrClosed

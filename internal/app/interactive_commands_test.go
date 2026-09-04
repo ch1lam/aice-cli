@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -152,8 +153,10 @@ func TestInteractiveSessionSlashNewStartsFreshSession(t *testing.T) {
 		workspace: workspace,
 	}
 	defer func() {
-		if err := runner.store.Close(); err != nil {
-			t.Errorf("Close() error = %v", err)
+		if runner.store != nil {
+			if err := runner.store.Close(); err != nil {
+				t.Errorf("Close() error = %v", err)
+			}
 		}
 	}()
 	if len(runner.history) == 0 {
@@ -167,12 +170,32 @@ func TestInteractiveSessionSlashNewStartsFreshSession(t *testing.T) {
 		t.Fatalf("/new error = %v", err)
 	}
 	for _, want := range []string{
-		"Started new Session",
+		"Started new session",
 		"Previous session preserved: " + sessionPath,
 	} {
 		if !strings.Contains(output, want) {
 			t.Errorf("/new output = %q, want %q", output, want)
 		}
+	}
+	// Detach is lazy: no file exists until the next prompt is accepted.
+	if runner.store != nil {
+		t.Fatalf("store after /new = %q, want no session file yet", runner.store.Path())
+	}
+	if len(runner.history) != 0 {
+		t.Fatalf("history after /new = %d messages, want none", len(runner.history))
+	}
+	state := runner.RuntimeState()
+	if !state.SessionChanged {
+		t.Fatal("RuntimeState().SessionChanged = false, want true after /new")
+	}
+	if again := runner.RuntimeState(); again.SessionChanged {
+		t.Fatal("RuntimeState().SessionChanged stayed true after the first read")
+	}
+	interactiveSlashCommand(t, runner.SlashCommands(), "new")
+
+	// The next accepted prompt creates the fresh file under the workspace.
+	if err := runner.ensureSessionStore(); err != nil {
+		t.Fatalf("ensureSessionStore() error = %v", err)
 	}
 	freshPath := runner.store.Path()
 	if freshPath == sessionPath {
@@ -180,9 +203,6 @@ func TestInteractiveSessionSlashNewStartsFreshSession(t *testing.T) {
 	}
 	if want := filepath.Join(workspacePath, ".aice", "sessions"); !strings.HasPrefix(freshPath, want) {
 		t.Errorf("store path after /new = %q, want it under %q", freshPath, want)
-	}
-	if len(runner.history) != 0 {
-		t.Fatalf("history after /new = %d messages, want none", len(runner.history))
 	}
 	fresh, err := runner.store.Snapshot()
 	if err != nil {
@@ -198,14 +218,6 @@ func TestInteractiveSessionSlashNewStartsFreshSession(t *testing.T) {
 			workspace.Path(),
 		)
 	}
-	state := runner.RuntimeState()
-	if !state.SessionChanged {
-		t.Fatal("RuntimeState().SessionChanged = false, want true after /new")
-	}
-	if again := runner.RuntimeState(); again.SessionChanged {
-		t.Fatal("RuntimeState().SessionChanged stayed true after the first read")
-	}
-	interactiveSlashCommand(t, runner.SlashCommands(), "new")
 
 	previous, prevSnapshot := openInteractiveCommandStore(
 		t,
@@ -276,6 +288,38 @@ func TestInteractiveSessionSlashNewRejectsArgumentsAndActiveRun(t *testing.T) {
 	}
 	if len(matches) != 0 {
 		t.Fatalf("session files after refused /new = %#v, want none", matches)
+	}
+}
+
+func TestInteractiveSessionSlashNewRemovesEmptyPreviousSession(t *testing.T) {
+	t.Parallel()
+
+	workspacePath := t.TempDir()
+	workspace, err := tool.NewWorkspace(workspacePath)
+	if err != nil {
+		t.Fatalf("NewWorkspace() error = %v", err)
+	}
+	emptyPath := filepath.Join(t.TempDir(), "empty.jsonl")
+	empty := createAppTestSession(t, emptyPath, workspacePath)
+	runner := &interactiveSession{store: empty, workspace: workspace}
+
+	output, err := runner.RunSlashCommand(t.Context(), tui.SlashCommandRequest{
+		Name: "new",
+	})
+	if err != nil {
+		t.Fatalf("/new error = %v", err)
+	}
+	if output != "Started new session" {
+		t.Errorf("/new output = %q, want a plain start without a preserved line", output)
+	}
+	if runner.store != nil {
+		t.Fatalf("store after /new = %q, want no session file yet", runner.store.Path())
+		if err := runner.store.Close(); err != nil {
+			t.Errorf("Close() error = %v", err)
+		}
+	}
+	if _, err := os.Stat(emptyPath); !os.IsNotExist(err) {
+		t.Fatalf("Stat() error = %v, want the empty previous file removed", err)
 	}
 }
 

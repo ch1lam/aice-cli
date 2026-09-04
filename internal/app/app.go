@@ -274,7 +274,7 @@ func (a *application) Interactive(
 		ctx,
 		environment.workspace,
 		request.Session,
-		true,
+		false,
 	)
 	if err != nil {
 		return err
@@ -337,8 +337,10 @@ func (a *application) Interactive(
 		Version:          cli.Version,
 	})
 	// Close the runner's current store: /new may have swapped in a fresh
-	// Session file after startup, and Store.Close is idempotent.
-	closeErr := runner.store.Close()
+	// Session file after startup, and Store.Close is idempotent. A session
+	// that never recorded a turn is removed so bare startups and unused
+	// /new files do not accumulate.
+	closeErr := closeInteractiveStore(runner.store)
 	if runErr != nil {
 		return errors.Join(fmt.Errorf("app: run TUI: %w", runErr), closeErr)
 	}
