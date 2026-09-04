@@ -371,6 +371,7 @@ func (m model) applyNewSideRunBatch(batch sideRunBatchMsg) (tea.Model, tea.Cmd) 
 		if pending.fromVisible && m.side.isVisible &&
 			m.side.activeID == 0 &&
 			m.side.menu == nil && m.side.confirm == nil {
+			m.pastes = nil
 			m.input.SetValue(m.side.newDraft)
 			m.input.CursorEnd()
 			m.input.Focus()
@@ -605,6 +606,7 @@ func (m *model) finishSideRun(thread *sideThreadState, err error) {
 	thread.updates = nil
 
 	if visible {
+		m.pastes = nil
 		m.input.SetValue(thread.draft)
 		m.input.CursorEnd()
 		if thread.readOnly() || thread.isRunning {
@@ -623,6 +625,7 @@ func (m *model) finishSideRun(thread *sideThreadState, err error) {
 		m.status = "BTW thread expired and was deleted"
 		m.closeSidePanelToMain()
 		if m.side.newDraft != "" {
+			m.pastes = nil
 			m.input.SetValue(m.side.newDraft)
 			m.input.CursorEnd()
 		}
@@ -655,6 +658,7 @@ func (m *model) closeSidePanelToMain() {
 	m.side.menu = nil
 	m.side.confirm = nil
 	m.input.Reset()
+	m.pastes = nil
 	m.input.Placeholder = defaultPlaceholder
 	if m.composerInputEnabled() {
 		m.input.Focus()

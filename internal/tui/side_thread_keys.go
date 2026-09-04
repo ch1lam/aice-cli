@@ -10,6 +10,9 @@ import (
 )
 
 func (m model) isBTWCommandInput() bool {
+	if len(m.pastes) > 0 {
+		return false
+	}
 	request, slash := parseSlashCommand(m.input.Value())
 	return slash && request.Name == "btw"
 }
@@ -82,6 +85,7 @@ func (m model) openNewSideComposer() model {
 	m.side.menu = nil
 	m.side.confirm = nil
 	m.input.Reset()
+	m.pastes = nil
 	m.input.Placeholder = sidePlaceholder
 	m.input.SetValue(m.side.newDraft)
 	m.input.CursorEnd()
@@ -107,13 +111,14 @@ func (m model) startNewSideThread(question string) (model, tea.Cmd, bool) {
 		return m, nil, true
 	}
 	// Save the draft of whatever composer is active before switching to the
-	// new-thread composer.
+	// new-thread composer. Drafts keep the expanded text.
 	if m.side.isVisible {
 		if thread := m.side.activeThread(); thread != nil {
-			thread.draft = m.input.Value()
+			thread.draft = m.expandComposerText()
 		} else if m.side.activeID == 0 {
-			m.side.newDraft = m.input.Value()
+			m.side.newDraft = m.expandComposerText()
 		}
+		m.pastes = nil
 	}
 	m.side.isVisible = true
 	m.side.activeID = 0
@@ -124,6 +129,7 @@ func (m model) startNewSideThread(question string) (model, tea.Cmd, bool) {
 	}
 	m.side.notice = "Starting side answer..."
 	m.input.Reset()
+	m.pastes = nil
 	m.input.Placeholder = sidePlaceholder
 	m.input.Blur()
 	return m.settleCommand(
@@ -140,17 +146,19 @@ func (m model) submitSideComposer() (model, tea.Cmd, bool) {
 		if m.side.newPending != nil {
 			return m, nil, true
 		}
-		question := strings.TrimSpace(m.input.Value())
+		question := strings.TrimSpace(m.expandComposerText())
 		if question == "" {
 			m.side.notice = "A side question is required"
 			return m, nil, true
 		}
-		if request, slash := parseSlashCommand(question); slash &&
-			request.Name == "btw" {
-			if strings.TrimSpace(request.Arguments) == "" {
-				return m.openSideMenu(true, question)
+		if len(m.pastes) == 0 {
+			if request, slash := parseSlashCommand(question); slash &&
+				request.Name == "btw" {
+				if strings.TrimSpace(request.Arguments) == "" {
+					return m.openSideMenu(true, question)
+				}
+				return m.startNewSideThread(strings.TrimSpace(request.Arguments))
 			}
-			return m.startNewSideThread(strings.TrimSpace(request.Arguments))
 		}
 		return m.startNewSideThread(question)
 	}
@@ -159,16 +167,18 @@ func (m model) submitSideComposer() (model, tea.Cmd, bool) {
 	if thread == nil || thread.isRunning {
 		return m, nil, true
 	}
-	question := strings.TrimSpace(m.input.Value())
+	question := strings.TrimSpace(m.expandComposerText())
 	if question == "" {
 		return m, nil, true
 	}
-	if request, slash := parseSlashCommand(question); slash &&
-		request.Name == "btw" {
-		if strings.TrimSpace(request.Arguments) == "" {
-			return m.openSideMenu(true, question)
+	if len(m.pastes) == 0 {
+		if request, slash := parseSlashCommand(question); slash &&
+			request.Name == "btw" {
+			if strings.TrimSpace(request.Arguments) == "" {
+				return m.openSideMenu(true, question)
+			}
+			return m.startNewSideThread(strings.TrimSpace(request.Arguments))
 		}
-		return m.startNewSideThread(strings.TrimSpace(request.Arguments))
 	}
 	if thread.readOnly() {
 		m.side.notice = "This thread is read-only; /btw starts a new thread"
@@ -193,6 +203,7 @@ func (m model) submitSideFollowUp(question string) (model, tea.Cmd, bool) {
 	thread.draft = ""
 	m.side.notice = "Starting side answer..."
 	m.input.Reset()
+	m.pastes = nil
 	m.input.Placeholder = sidePlaceholder
 	m.input.Blur()
 	return m.settleCommand(
@@ -255,14 +266,15 @@ func (m model) openSideThreadPanel(info interaction.SideThread) (model, tea.Cmd,
 // touching the registry.
 func (m model) closeSideThread() (model, tea.Cmd, bool) {
 	if m.side.activeID == 0 {
-		m.side.newDraft = m.input.Value()
+		m.side.newDraft = m.expandComposerText()
 	} else if thread := m.side.activeThread(); thread != nil {
-		thread.draft = m.input.Value()
+		thread.draft = m.expandComposerText()
 	}
 	m.side.isVisible = false
 	m.side.activeID = 0
 	m.side.confirm = nil
 	m.input.Reset()
+	m.pastes = nil
 	m.input.Placeholder = defaultPlaceholder
 	if m.composerInputEnabled() {
 		m.input.Focus()
@@ -274,11 +286,35 @@ func (m model) closeSideThread() (model, tea.Cmd, bool) {
 	return m, nil, true
 }
 
+// sideComposerEditable mirrors the newline guards below: the side composer
+// accepts text only for a pending-free new thread or an idle, writable
+// thread.
+func (m model) sideComposerEditable() bool {
+	if m.side.activeID == 0 {
+		return m.side.newPending == nil
+	}
+	thread := m.side.activeThread()
+	return thread != nil && !thread.isRunning && !thread.readOnly()
+}
+
 func (m model) handleSideKey(message tea.KeyPressMsg) (model, tea.Cmd, bool) {
 	if !m.side.isVisible {
 		return m, nil, false
 	}
 	thread := m.side.activeThread()
+
+	if m.sideComposerEditable() {
+		// Ctrl+G edits the composer in the default editor; placeholder
+		// tokens stay atomic for cursor motion and deletion.
+		if key.Matches(message, m.keys.editor) {
+			updated, command := m.openComposerEditor()
+			return updated, command, true
+		}
+		if updated, command, handled := m.handlePasteTokenKey(message); handled {
+			updated.resizeLayout()
+			return updated, command, true
+		}
+	}
 
 	switch {
 	case message.Code == tea.KeyEscape:
@@ -397,6 +433,7 @@ func (m model) cancelSideMenu() (model, tea.Cmd, bool) {
 		return m, nil, true
 	}
 	m.side.notice = "BTW selection cancelled"
+	m.pastes = nil
 	m.input.SetValue(menu.returnDraft)
 	m.input.CursorEnd()
 	if menu.fromPanel {
@@ -412,6 +449,7 @@ func (m model) cancelSideMenu() (model, tea.Cmd, bool) {
 	m.side.isVisible = false
 	m.side.activeID = 0
 	m.input.Reset()
+	m.pastes = nil
 	m.input.Placeholder = defaultPlaceholder
 	m.input.SetValue(menu.returnDraft)
 	m.input.CursorEnd()
