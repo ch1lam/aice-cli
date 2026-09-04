@@ -3,7 +3,9 @@ package app
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -35,6 +37,10 @@ func (s *interactiveSession) SlashCommands() []interaction.Command {
 		{
 			Name:        "compact",
 			Description: "Compact the active branch at the current turn boundary",
+		},
+		{
+			Name:        "new",
+			Description: "Start a new Session; previous history stays on disk",
 		},
 		{
 			Name:        "init",
@@ -327,6 +333,7 @@ var slashCommandHandlers = map[string]slashCommandHandler{
 	"tree":     (*interactiveSession).slashTree,
 	"checkout": (*interactiveSession).slashCheckout,
 	"compact":  (*interactiveSession).slashCompact,
+	"new":      (*interactiveSession).slashNew,
 	"init":     (*interactiveSession).slashInit,
 	"settings": (*interactiveSession).slashSettings,
 	"skills":   (*interactiveSession).slashSkills,
@@ -443,6 +450,74 @@ func (s *interactiveSession) slashCompact(
 		return "", err
 	}
 	return output, nil
+}
+
+// slashNew abandons the current Session file and starts a fresh one. The
+// previous file is left untouched on disk, so its history stays recoverable
+// with --session. The TUI discards the visible transcript through the same
+// sessionChanged channel as /checkout.
+func (s *interactiveSession) slashNew(
+	ctx context.Context,
+	request interaction.CommandRequest,
+) (string, error) {
+	if err := requireNoSlashCommandArguments(request); err != nil {
+		return "", err
+	}
+	if s.workspace == nil {
+		return "", fmt.Errorf("app: workspace is required")
+	}
+	s.historyMu.RLock()
+	active := s.activeMainRun != nil
+	s.historyMu.RUnlock()
+	if active {
+		return "", fmt.Errorf("app: cannot start a new Session while a response is running")
+	}
+	id, err := session.NewID()
+	if err != nil {
+		return "", fmt.Errorf("app: generate session id: %w", err)
+	}
+	path := filepath.Join(
+		s.workspace.Path(),
+		".aice",
+		"sessions",
+		id+".jsonl",
+	)
+	store, err := createSession(ctx, path, id, s.workspace.Path())
+	if err != nil {
+		return "", err
+	}
+	// Serialize with turn commits the same way reloadHistory does. The
+	// active-run check above makes a concurrent commit impossible through
+	// the TUI, which only submits slash commands while idle.
+	s.historySyncMu.Lock()
+	defer s.historySyncMu.Unlock()
+	previous := s.store
+	s.store = store
+	s.historyMu.Lock()
+	s.history = nil
+	s.historyMu.Unlock()
+	s.stateMu.Lock()
+	s.totalUsage = llm.Usage{}
+	s.sessionChanged = true
+	s.stateMu.Unlock()
+	previousPath := ""
+	if previous != nil {
+		previousPath = previous.Path()
+		if err := previous.Close(); err != nil {
+			return "", errors.Join(
+				fmt.Errorf("app: close previous session: %w", err),
+				store.Close(),
+			)
+		}
+	}
+	lines := []string{
+		"Started new Session " + id,
+		"Path: " + path,
+	}
+	if previousPath != "" {
+		lines = append(lines, "Previous session preserved: "+previousPath)
+	}
+	return strings.Join(lines, "\n"), nil
 }
 
 func (s *interactiveSession) slashInit(

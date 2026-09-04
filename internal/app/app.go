@@ -336,7 +336,9 @@ func (a *application) Interactive(
 		WorkingDirectory: environment.workspace.Path(),
 		Version:          cli.Version,
 	})
-	closeErr := store.Close()
+	// Close the runner's current store: /new may have swapped in a fresh
+	// Session file after startup, and Store.Close is idempotent.
+	closeErr := runner.store.Close()
 	if runErr != nil {
 		return errors.Join(fmt.Errorf("app: run TUI: %w", runErr), closeErr)
 	}

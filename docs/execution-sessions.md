@@ -169,7 +169,9 @@ aice session checkout --workspace . \
 ```
 
 The TUI exposes the same behavior through `/session`, `/tree`, and
-`/checkout`. `/clear` only clears the visible transcript.
+`/checkout`. `/new` starts a fresh Session file; the previous file is left
+untouched and stays resumable with `--session`. `/clear` only clears the
+visible transcript.
 
 ## Recovery and compaction
 

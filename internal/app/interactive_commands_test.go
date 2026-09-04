@@ -125,6 +125,160 @@ func TestInteractiveSessionSlashCommandsNavigateCurrentStore(t *testing.T) {
 	}
 }
 
+func TestInteractiveSessionSlashNewStartsFreshSession(t *testing.T) {
+	t.Parallel()
+
+	workspacePath := t.TempDir()
+	sessionPath := filepath.Join(t.TempDir(), "conversation.jsonl")
+	runPrintTurn(t, workspacePath, sessionPath, "first prompt", "first answer")
+	runPrintTurn(t, workspacePath, sessionPath, "second prompt", "second answer")
+
+	workspace, err := tool.NewWorkspace(workspacePath)
+	if err != nil {
+		t.Fatalf("NewWorkspace() error = %v", err)
+	}
+	store, snapshot := openInteractiveCommandStore(
+		t,
+		workspacePath,
+		sessionPath,
+	)
+	history, err := sessionHistory(snapshot)
+	if err != nil {
+		t.Fatalf("sessionHistory() error = %v", err)
+	}
+	runner := &interactiveSession{
+		store:     store,
+		history:   history,
+		workspace: workspace,
+	}
+	defer func() {
+		if err := runner.store.Close(); err != nil {
+			t.Errorf("Close() error = %v", err)
+		}
+	}()
+	if len(runner.history) == 0 {
+		t.Fatal("history before /new is empty, want prior turns")
+	}
+
+	output, err := runner.RunSlashCommand(t.Context(), tui.SlashCommandRequest{
+		Name: "new",
+	})
+	if err != nil {
+		t.Fatalf("/new error = %v", err)
+	}
+	for _, want := range []string{
+		"Started new Session",
+		"Previous session preserved: " + sessionPath,
+	} {
+		if !strings.Contains(output, want) {
+			t.Errorf("/new output = %q, want %q", output, want)
+		}
+	}
+	freshPath := runner.store.Path()
+	if freshPath == sessionPath {
+		t.Fatalf("store path after /new = %q, want a fresh session file", freshPath)
+	}
+	if want := filepath.Join(workspacePath, ".aice", "sessions"); !strings.HasPrefix(freshPath, want) {
+		t.Errorf("store path after /new = %q, want it under %q", freshPath, want)
+	}
+	if len(runner.history) != 0 {
+		t.Fatalf("history after /new = %d messages, want none", len(runner.history))
+	}
+	fresh, err := runner.store.Snapshot()
+	if err != nil {
+		t.Fatalf("Snapshot() error = %v", err)
+	}
+	if len(fresh.Turns) != 0 {
+		t.Fatalf("turns after /new = %d, want a fresh session", len(fresh.Turns))
+	}
+	if fresh.Header.WorkingDirectory != workspace.Path() {
+		t.Errorf(
+			"working directory after /new = %q, want %q",
+			fresh.Header.WorkingDirectory,
+			workspace.Path(),
+		)
+	}
+	state := runner.RuntimeState()
+	if !state.SessionChanged {
+		t.Fatal("RuntimeState().SessionChanged = false, want true after /new")
+	}
+	if again := runner.RuntimeState(); again.SessionChanged {
+		t.Fatal("RuntimeState().SessionChanged stayed true after the first read")
+	}
+	interactiveSlashCommand(t, runner.SlashCommands(), "new")
+
+	previous, prevSnapshot := openInteractiveCommandStore(
+		t,
+		workspacePath,
+		sessionPath,
+	)
+	defer func() {
+		if err := previous.Close(); err != nil {
+			t.Errorf("Close() error = %v", err)
+		}
+	}()
+	if len(prevSnapshot.Turns) != 2 {
+		t.Fatalf("previous session turns = %d, want history preserved", len(prevSnapshot.Turns))
+	}
+}
+
+func TestInteractiveSessionSlashNewRejectsArgumentsAndActiveRun(t *testing.T) {
+	t.Parallel()
+
+	workspacePath := t.TempDir()
+	sessionPath := filepath.Join(t.TempDir(), "conversation.jsonl")
+	runPrintTurn(t, workspacePath, sessionPath, "first prompt", "first answer")
+
+	workspace, err := tool.NewWorkspace(workspacePath)
+	if err != nil {
+		t.Fatalf("NewWorkspace() error = %v", err)
+	}
+	store, snapshot := openInteractiveCommandStore(
+		t,
+		workspacePath,
+		sessionPath,
+	)
+	history, err := sessionHistory(snapshot)
+	if err != nil {
+		t.Fatalf("sessionHistory() error = %v", err)
+	}
+	runner := &interactiveSession{
+		store:     store,
+		history:   history,
+		workspace: workspace,
+	}
+	defer func() {
+		if err := runner.store.Close(); err != nil {
+			t.Errorf("Close() error = %v", err)
+		}
+	}()
+
+	if _, err := runner.RunSlashCommand(t.Context(), tui.SlashCommandRequest{
+		Name:      "new",
+		Arguments: "extra",
+	}); err == nil {
+		t.Fatal("/new with arguments error = nil, want usage error")
+	}
+
+	runner.activeMainRun = &mainRunState{}
+	if _, err := runner.RunSlashCommand(t.Context(), tui.SlashCommandRequest{
+		Name: "new",
+	}); err == nil || !strings.Contains(err.Error(), "while a response is running") {
+		t.Fatalf("/new during a run error = %v, want active-run refusal", err)
+	}
+	runner.activeMainRun = nil
+	if got := runner.store.Path(); got != sessionPath {
+		t.Fatalf("store path after refused /new = %q, want %q", got, sessionPath)
+	}
+	matches, err := filepath.Glob(filepath.Join(workspacePath, ".aice", "sessions", "*.jsonl"))
+	if err != nil {
+		t.Fatalf("Glob() error = %v", err)
+	}
+	if len(matches) != 0 {
+		t.Fatalf("session files after refused /new = %#v, want none", matches)
+	}
+}
+
 func TestInteractiveSessionSlashCommandsExposeSelectionMenus(t *testing.T) {
 	t.Parallel()
 
