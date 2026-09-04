@@ -18,13 +18,21 @@ import (
 )
 
 const (
-	minimumWidth         = 24
-	minimumViewport      = 1
-	maximumEventBatch    = 64
-	inputMaximumHeight   = 6
-	maximumCommandRows   = 6
-	maximumPromptHistory = 100
-	defaultPlaceholder   = "Ask about this workspace..."
+	minimumWidth       = 24
+	minimumViewport    = 1
+	maximumEventBatch  = 64
+	inputMaximumHeight = 6
+	// inputMaximumContentHeight caps composer content in visual rows.
+	// MaxHeight only limits the visible viewport (6 rows with scrolling);
+	// MaxContentHeight is the content gate that silently truncates pastes.
+	// It must stay huge (not 0): 0 falls back to the legacy MaxHeight
+	// logical-line guard and blocks Enter after 6 lines. 10000 matches the
+	// upstream textarea maxLines order so normal pastes are effectively
+	// unlimited while pathological input stays bounded.
+	inputMaximumContentHeight = 10000
+	maximumCommandRows        = 6
+	maximumPromptHistory      = 100
+	defaultPlaceholder        = "Ask about this workspace..."
 )
 
 type entryKind uint8
@@ -159,7 +167,7 @@ func newModel(
 	input.DynamicHeight = true
 	input.MinHeight = 1
 	input.MaxHeight = inputMaximumHeight
-	input.MaxContentHeight = 40
+	input.MaxContentHeight = inputMaximumContentHeight
 	input.SetHeight(1)
 	input.SetWidth(80)
 	inputStyles := textarea.DefaultDarkStyles()

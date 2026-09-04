@@ -684,6 +684,37 @@ func TestModelPastedLeadingQuestionMarkRemainsComposerInput(t *testing.T) {
 	}
 }
 
+func TestModelAcceptsLargePasteBeyondVisibleHeight(t *testing.T) {
+	t.Parallel()
+
+	current := newModel(make(chan runRequest), make(chan struct{}))
+	current = updateModel(t, current, tea.WindowSizeMsg{Width: 80, Height: 24})
+
+	lines := make([]string, 200)
+	for index := range lines {
+		lines[index] = "pasted line content for large paste regression"
+	}
+	paste := strings.Join(lines, "\n")
+	current = updateModel(t, current, tea.PasteMsg{Content: paste})
+
+	if got := current.input.Value(); got != paste {
+		t.Fatalf(
+			"large paste truncated: got %d/%d chars in %d/%d lines",
+			len(got),
+			len(paste),
+			len(strings.Split(got, "\n")),
+			len(lines),
+		)
+	}
+	if current.input.Height() > inputMaximumHeight {
+		t.Fatalf(
+			"composer height = %d, want at most visible %d",
+			current.input.Height(),
+			inputMaximumHeight,
+		)
+	}
+}
+
 func TestModelKeepsReadyInHeaderAndUsesBubblesHelpBelowComposer(t *testing.T) {
 	t.Parallel()
 
