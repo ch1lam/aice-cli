@@ -303,6 +303,8 @@ func TestEditorErrorKeepsDraft(t *testing.T) {
 
 func TestEditorShortcutOpensExternalEditor(t *testing.T) {
 	t.Setenv("TMPDIR", t.TempDir())
+	t.Setenv("VISUAL", "true")
+	t.Setenv("EDITOR", "")
 
 	current := newModel(make(chan runRequest), make(chan struct{}))
 	current = updateModel(t, current, tea.WindowSizeMsg{Width: 80, Height: 24})
@@ -312,6 +314,67 @@ func TestEditorShortcutOpensExternalEditor(t *testing.T) {
 	}
 	if command == nil {
 		t.Fatal("ctrl+g produced no editor command")
+	}
+}
+
+func TestPastePlaceholderStatusNamesEditor(t *testing.T) {
+	t.Setenv("VISUAL", "myeditor --wait")
+	t.Setenv("EDITOR", "")
+
+	current := newModel(make(chan runRequest), make(chan struct{}))
+	current = updateModel(t, current, tea.WindowSizeMsg{Width: 80, Height: 24})
+	current = updateModel(t, current, tea.PasteMsg{Content: largePasteFixture("body", 50)})
+
+	if want := "Ctrl+G edits in myeditor --wait"; !strings.Contains(current.status, want) {
+		t.Errorf("status = %q, want it to contain %q", current.status, want)
+	}
+}
+
+func TestOpenComposerEditorMissingBinary(t *testing.T) {
+	t.Setenv("VISUAL", "aice-missing-editor-xyz")
+	t.Setenv("EDITOR", "")
+
+	current := newModel(make(chan runRequest), make(chan struct{}))
+	updated, command := current.openComposerEditor()
+	if command != nil {
+		t.Fatal("missing editor produced an editor command")
+	}
+	if want := `"aice-missing-editor-xyz"`; !strings.Contains(updated.status, want) {
+		t.Errorf("status = %q, want it to name the missing binary %s", updated.status, want)
+	}
+	if !strings.Contains(updated.status, "VISUAL") {
+		t.Errorf("status = %q, want it to say how to configure the editor", updated.status)
+	}
+}
+
+func TestOpenComposerEditorUsesConfiguredBinary(t *testing.T) {
+	t.Setenv("TMPDIR", t.TempDir())
+	t.Setenv("VISUAL", "true")
+	t.Setenv("EDITOR", "")
+
+	current := newModel(make(chan runRequest), make(chan struct{}))
+	_, command := current.openComposerEditor()
+	if command == nil {
+		t.Fatal("configured editor produced no editor command")
+	}
+}
+
+func TestEditorErrorNamesFailedEditor(t *testing.T) {
+	current := newModel(make(chan runRequest), make(chan struct{}))
+	current = updateModel(t, current, tea.WindowSizeMsg{Width: 80, Height: 24})
+	current = updateModel(t, current, tea.PasteMsg{Content: largePasteFixture("kept body", 20)})
+	before := current.input.Value()
+
+	updated := current.applyEditorResult(editorFinishedMsg{
+		file:   filepath.Join(t.TempDir(), "missing.md"),
+		editor: "myeditor --wait",
+		err:    os.ErrNotExist,
+	})
+	if got := updated.input.Value(); got != before {
+		t.Error("failed editor run changed the draft")
+	}
+	if want := `"myeditor --wait"`; !strings.Contains(updated.status, want) {
+		t.Errorf("status = %q, want it to contain %q", updated.status, want)
 	}
 }
 

@@ -121,10 +121,7 @@ func (m *model) insertPastePlaceholder(content string) {
 	attachment := m.newPasteAttachment(content)
 	m.pastes = append(m.pastes, attachment)
 	m.input.InsertString(attachment.token)
-	m.status = fmt.Sprintf(
-		"Pasted %d lines as placeholder; Ctrl+G edits in editor, Backspace removes as one",
-		attachment.lines,
-	)
+	m.status = pastePlaceholderStatus(attachment.lines)
 }
 
 // expandComposerText replaces every attached token with its full text,
@@ -346,17 +343,15 @@ func (m *model) collapseLargeInsert(before, added, after string) tea.Cmd {
 		m.input, command = m.input.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyLeft}))
 		commands = append(commands, command)
 	}
-	m.status = fmt.Sprintf(
-		"Pasted %d lines as placeholder; Ctrl+G edits in editor, Backspace removes as one",
-		attachment.lines,
-	)
+	m.status = pastePlaceholderStatus(attachment.lines)
 	return tea.Batch(commands...)
 }
 
 // editorFinishedMsg arrives after the external editor exits.
 type editorFinishedMsg struct {
-	file string
-	err  error
+	file   string
+	editor string
+	err    error
 }
 
 // defaultComposerEditor resolves $VISUAL, then $EDITOR, then vi. Arguments
@@ -372,10 +367,33 @@ func defaultComposerEditor() string {
 	return "vi"
 }
 
+// pastePlaceholderStatus names the resolved editor so the first long paste
+// teaches the Ctrl+G target without a separate configuration step.
+func pastePlaceholderStatus(lines int) string {
+	return fmt.Sprintf(
+		"Pasted %d lines as placeholder; Ctrl+G edits in %s, Backspace removes as one",
+		lines,
+		defaultComposerEditor(),
+	)
+}
+
 // openComposerEditor hands the expanded composer text to the user's default
 // editor. The program pauses while the editor runs; on exit the edited file
 // refills the composer as plain text without placeholders.
 func (m model) openComposerEditor() (model, tea.Cmd) {
+	editor := defaultComposerEditor()
+	fields := strings.Fields(editor)
+	if len(fields) == 0 {
+		m.status = "editor unavailable: set VISUAL or EDITOR to an installed editor"
+		return m, nil
+	}
+	if _, err := exec.LookPath(fields[0]); err != nil {
+		m.status = fmt.Sprintf(
+			"editor %q not found; set VISUAL or EDITOR to an installed editor",
+			fields[0],
+		)
+		return m, nil
+	}
 	file, err := os.CreateTemp("", "aice-compose-*.md")
 	if err != nil {
 		m.status = "editor unavailable: could not create a temp file"
@@ -388,10 +406,9 @@ func (m model) openComposerEditor() (model, tea.Cmd) {
 		return m, nil
 	}
 	_ = file.Close()
-	fields := strings.Fields(defaultComposerEditor())
 	command := exec.Command(fields[0], append(fields[1:], file.Name())...)
 	return m, tea.ExecProcess(command, func(err error) tea.Msg {
-		return editorFinishedMsg{file: file.Name(), err: err}
+		return editorFinishedMsg{file: file.Name(), editor: editor, err: err}
 	})
 }
 
@@ -401,7 +418,11 @@ func (m model) openComposerEditor() (model, tea.Cmd) {
 func (m model) applyEditorResult(message editorFinishedMsg) model {
 	defer func() { _ = os.Remove(message.file) }()
 	if message.err != nil {
-		m.status = "editor exited with an error; draft kept"
+		if message.editor != "" {
+			m.status = fmt.Sprintf("editor %q exited with an error; draft kept", message.editor)
+		} else {
+			m.status = "editor exited with an error; draft kept"
+		}
 		return m
 	}
 	data, err := os.ReadFile(message.file)

@@ -314,7 +314,8 @@ A paste larger than the visible composer collapses into an inline placeholder
 as one unit: left/right jump over it and one Backspace or Delete removes the
 whole paste. Surrounding text stays in place, so `AAAA` + paste + `bbb` keeps
 its order. `Ctrl+G` opens the expanded draft in `$VISUAL`/`$EDITOR` (fallback
-`vi`); saving refills the composer as plain text that scrolls normally
+`vi`); GUI editors must block (e.g. `code --wait`). A missing editor binary
+reports which command was tried and how to set `VISUAL`/`EDITOR`; saving refills the composer as plain text that scrolls normally
 instead of collapsing again. `Enter` always sends the expanded text, and
 pasted content is sent literally, never parsed as a slash command. History
 and thread drafts keep the expanded text.
