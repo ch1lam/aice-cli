@@ -697,14 +697,22 @@ func TestModelAcceptsLargePasteBeyondVisibleHeight(t *testing.T) {
 	paste := strings.Join(lines, "\n")
 	current = updateModel(t, current, tea.PasteMsg{Content: paste})
 
-	if got := current.input.Value(); got != paste {
+	// A large paste collapses into one inline placeholder: the composer
+	// stays compact while the expanded text keeps every pasted line.
+	if got := current.expandComposerText(); got != paste {
 		t.Fatalf(
-			"large paste truncated: got %d/%d chars in %d/%d lines",
+			"large paste lost content: expanded %d/%d chars in %d/%d lines",
 			len(got),
 			len(paste),
 			len(strings.Split(got, "\n")),
 			len(lines),
 		)
+	}
+	if len(current.pastes) != 1 {
+		t.Fatalf("paste attachments = %d, want 1", len(current.pastes))
+	}
+	if got := len(strings.Split(current.input.Value(), "\n")); got != 1 {
+		t.Errorf("composer rows = %d, want the single-line placeholder", got)
 	}
 	if current.input.Height() > inputMaximumHeight {
 		t.Fatalf(

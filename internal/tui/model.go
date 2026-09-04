@@ -138,6 +138,10 @@ type model struct {
 	promptHistory []string
 	historyIndex  int
 	historyDraft  string
+	// pastes holds large pastes collapsed into inline placeholder tokens.
+	// The textarea keeps the short tokens in place; submit and history
+	// paths expand them back to the full text via expandComposerText.
+	pastes []pasteAttachment
 
 	width            int
 	height           int
@@ -296,6 +300,10 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case tea.MouseWheelMsg:
 		m.selection.clear()
+	case editorFinishedMsg:
+		m = m.applyEditorResult(message)
+		m.refreshViewport(false)
+		return m, nil
 	case runStartedMsg:
 		m.updates = message.updates
 		return m, tea.Batch(waitForRunUpdates(message.updates), m.spinner.Tick)
@@ -541,6 +549,22 @@ func (m model) handleKey(message tea.KeyPressMsg) (model, tea.Cmd, bool) {
 		}
 	}
 
+	if !m.running &&
+		m.secretInput == nil &&
+		m.commandMenu == nil &&
+		m.composerInputEnabled() {
+		// Ctrl+G edits the composer in the default editor; placeholder
+		// tokens stay atomic for cursor motion and deletion.
+		if key.Matches(message, m.keys.editor) {
+			updated, command := m.openComposerEditor()
+			return updated, command, true
+		}
+		if updated, command, handled := m.handlePasteTokenKey(message); handled {
+			updated.resizeLayout()
+			return updated, command, true
+		}
+	}
+
 	if !m.running && m.slashCommandMenuVisible() {
 		switch message.Code {
 		case tea.KeyUp:
@@ -590,7 +614,7 @@ func (m model) handleKey(message tea.KeyPressMsg) (model, tea.Cmd, bool) {
 		}
 		return m, tea.Quit, true
 	case key.Matches(message, m.keys.quit):
-		if !m.running && strings.TrimSpace(m.input.Value()) == "" {
+		if !m.running && strings.TrimSpace(m.expandComposerText()) == "" {
 			return m, tea.Quit, true
 		}
 		return m, nil, true
@@ -682,14 +706,40 @@ func (m model) helpToggleRequested(message tea.KeyPressMsg) bool {
 	// Terminals expose committed printable text but not whether it came from
 	// an IME. Treat ? as help only when the regular composer is empty; once
 	// composition has started, printable text must remain textarea input.
-	return m.secretInput == nil && m.input.Value() == ""
+	return m.secretInput == nil && strings.TrimSpace(m.expandComposerText()) == ""
 }
 
 func (m *model) updateInput(message tea.Msg) tea.Cmd {
+	// A bracketed paste arrives whole: collapse it before the textarea can
+	// truncate it against the content-height gate, so no pasted line is lost.
+	if paste, ok := message.(tea.PasteMsg); ok && m.secretInput == nil {
+		if exceedsPasteThreshold(paste.Content) {
+			m.insertPastePlaceholder(paste.Content)
+			m.commandSelection = 0
+			m.commandDismissed = false
+			m.historyIndex = -1
+			m.historyDraft = ""
+			m.resizeLayout()
+			return nil
+		}
+	}
 	previousValue := m.input.Value()
+	previousRow, previousCol := m.input.Line(), m.input.Column()
 	var command tea.Cmd
 	m.input, command = m.input.Update(message)
-	if m.input.Value() != previousValue {
+	nextValue := m.input.Value()
+	if nextValue != previousValue {
+		// Clipboard pastes and other large inserts that bypass PasteMsg
+		// still collapse in place, keeping surrounding text in order.
+		if before, added, after := splitInputChange(previousValue, nextValue); m.secretInput == nil &&
+			exceedsPasteThreshold(added) {
+			// The pre-collapse viewport sync no longer matches the
+			// shortened content; the collapse re-syncs below.
+			command = m.collapseLargeInsert(before, added, after)
+		} else {
+			m.snapCursorOutOfPasteToken(previousRow, previousCol)
+		}
+		m.dropOrphanPasteAttachments()
 		m.commandSelection = 0
 		m.commandDismissed = false
 		// Editing recalled text turns it back into a fresh draft: arrow keys

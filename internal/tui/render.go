@@ -145,6 +145,8 @@ func (m model) footerKeys() keyMap {
 
 // composerParts returns the rows rendered inside the composer frame, in
 // order: an optional pending-queue notice followed by the input field.
+// Attached paste placeholders render inline tinted, still occupying exactly
+// their visible width so the terminal cursor stays aligned.
 func (m model) composerParts(contentWidth int) []string {
 	parts := make([]string, 0, 3)
 	if !m.side.isVisible {
@@ -152,7 +154,7 @@ func (m model) composerParts(contentWidth int) []string {
 			parts = append(parts, pending, "")
 		}
 	}
-	parts = append(parts, m.input.View())
+	parts = append(parts, m.highlightPasteTokens(m.input.View()))
 	return parts
 }
 

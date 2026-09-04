@@ -24,7 +24,7 @@ type pendingDelivery struct {
 }
 
 func (m model) submitDelivery(mode deliveryMode) (model, tea.Cmd, bool) {
-	text := strings.TrimSpace(m.input.Value())
+	text := strings.TrimSpace(m.expandComposerText())
 	if text == "" {
 		return m, nil, true
 	}
@@ -61,6 +61,7 @@ func (m model) submitDelivery(mode deliveryMode) (model, tea.Cmd, bool) {
 	m.historyIndex = -1
 	m.historyDraft = ""
 	m.input.Reset()
+	m.pastes = nil
 	m.commandSelection = 0
 	m.commandDismissed = false
 	if mode == deliveryQueue {

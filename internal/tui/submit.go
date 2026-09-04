@@ -18,19 +18,23 @@ func (m model) submit() (model, tea.Cmd, bool) {
 		return m.submitSecretInput()
 	}
 
-	prompt := strings.TrimSpace(m.input.Value())
+	prompt := strings.TrimSpace(m.expandComposerText())
 	if prompt == "" {
 		return m, nil, true
 	}
-	if request, slashCommand := parseSlashCommand(prompt); slashCommand {
-		// Side questions never enter the main prompt history, even when
-		// submitted through the main composer while a run is active.
-		if request.Name != "btw" {
-			m.promptHistory = appendPromptHistory(m.promptHistory, prompt)
-			m.historyIndex = -1
-			m.historyDraft = ""
+	// Pasted placeholders are literal content, never a slash command, even
+	// when the expanded text alone would parse as one.
+	if len(m.pastes) == 0 {
+		if request, slashCommand := parseSlashCommand(prompt); slashCommand {
+			// Side questions never enter the main prompt history, even when
+			// submitted through the main composer while a run is active.
+			if request.Name != "btw" {
+				m.promptHistory = appendPromptHistory(m.promptHistory, prompt)
+				m.historyIndex = -1
+				m.historyDraft = ""
+			}
+			return m.submitSlashCommand(prompt, request)
 		}
-		return m.submitSlashCommand(prompt, request)
 	}
 	m.promptHistory = appendPromptHistory(m.promptHistory, prompt)
 	m.historyIndex = -1
@@ -42,6 +46,7 @@ func (m model) submit() (model, tea.Cmd, bool) {
 	m.entries = append(m.entries, transcriptEntry{kind: entryUser, text: prompt})
 	m.beginProcess()
 	m.input.Reset()
+	m.pastes = nil
 	m.commandSelection = 0
 	m.commandDismissed = false
 	m.pendingDeliveries = nil
@@ -404,6 +409,7 @@ func (m model) commandError(
 
 func (m *model) resetCommandInput() {
 	m.input.Reset()
+	m.pastes = nil
 	m.input.Placeholder = defaultPlaceholder
 	m.secretInput = nil
 	m.customLogin = nil

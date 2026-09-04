@@ -36,7 +36,10 @@ func (m model) recallHistory(delta int) model {
 	}
 	if m.historyIndex < 0 {
 		if delta < 0 {
-			m.historyDraft = m.input.Value()
+			// Drafts keep the expanded text: recalling shows plain content
+			// that scrolls normally instead of re-collapsing.
+			m.historyDraft = m.expandComposerText()
+			m.pastes = nil
 			m.historyIndex = len(m.promptHistory) - 1
 		} else {
 			return m
