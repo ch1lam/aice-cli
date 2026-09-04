@@ -378,6 +378,40 @@ func TestEditorErrorNamesFailedEditor(t *testing.T) {
 	}
 }
 
+func TestEditorEmptyResultKeepsDraft(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+	}{
+		{name: "empty file", content: ""},
+		{name: "blank lines only", content: "\n  \n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			current := newModel(make(chan runRequest), make(chan struct{}))
+			current = updateModel(t, current, tea.WindowSizeMsg{Width: 80, Height: 24})
+			current = updateModel(t, current, tea.PasteMsg{Content: largePasteFixture("kept body", 20)})
+			before := current.input.Value()
+
+			file := filepath.Join(t.TempDir(), "compose.md")
+			if err := os.WriteFile(file, []byte(tt.content), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			updated := current.applyEditorResult(editorFinishedMsg{file: file, editor: "true"})
+
+			if len(updated.pastes) != 1 {
+				t.Error("empty editor result dropped the placeholder attachment")
+			}
+			if got := updated.input.Value(); got != before {
+				t.Error("empty editor result changed the draft")
+			}
+			if !strings.Contains(updated.status, "empty") {
+				t.Errorf("status = %q, want it to report the empty result", updated.status)
+			}
+		})
+	}
+}
+
 func TestKeyMapEditorShowsInFullHelp(t *testing.T) {
 	t.Parallel()
 

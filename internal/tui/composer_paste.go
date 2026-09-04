@@ -430,6 +430,13 @@ func (m model) applyEditorResult(message editorFinishedMsg) model {
 		m.status = "editor result unreadable; draft kept"
 		return m
 	}
+	// Never wipe the draft on an empty result: GUI editors that exit without
+	// blocking (e.g. missing --wait) can come back before anything is saved.
+	// Clearing stays an explicit Backspace in the composer.
+	if strings.TrimSpace(string(data)) == "" {
+		m.status = "editor returned empty result; draft kept"
+		return m
+	}
 	m.pastes = nil
 	m.input.SetValue(strings.TrimRight(string(data), "\r\n"))
 	m.input.CursorEnd()
