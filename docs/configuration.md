@@ -309,6 +309,16 @@ steer to the follow-up queue instead of dropping it. Follow-ups stay inside
 the same Agent run; the application persists each completed interaction as its
 own Session turn.
 
+A paste larger than the visible composer collapses into an inline placeholder
+(`[first words·Nlines]`) that reads like ordinary text. The cursor treats it
+as one unit: left/right jump over it and one Backspace or Delete removes the
+whole paste. Surrounding text stays in place, so `AAAA` + paste + `bbb` keeps
+its order. `Ctrl+G` opens the expanded draft in `$VISUAL`/`$EDITOR` (fallback
+`vi`); saving refills the composer as plain text that scrolls normally
+instead of collapsing again. `Enter` always sends the expanded text, and
+pasted content is sent literally, never parsed as a slash command. History
+and thread drafts keep the expanded text.
+
 ## Operational environment variables
 
 | Variable | Effect |
