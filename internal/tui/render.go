@@ -566,7 +566,7 @@ func (m model) processGroupView(start, end int) (string, string) {
 		return "", m.assistantHeaderView(processID) + "\n\n" + conclusion
 	}
 	header := m.processHeader(start, end, collapsed)
-	process := m.assistantHeaderView(processID) + "\n\n" + header
+	process := header
 	if collapsed {
 		return process, conclusion
 	}
@@ -574,63 +574,58 @@ func (m model) processGroupView(start, end int) (string, string) {
 }
 
 func (m model) processHeader(start, end int, collapsed bool) string {
-	icon := "▼"
+	star := "✧"
 	action := "ctrl+o to collapse"
 	if collapsed {
-		icon = "▶"
+		star = "✦"
 		action = "ctrl+o to expand"
 	}
 
-	hasReasoning := false
-	hasIntermediateOutput := false
 	toolCalls := 0
 	for index := start; index < end; index++ {
-		entry := m.entries[index]
-		switch entry.kind {
-		case entryAssistant:
-			hasReasoning = hasReasoning ||
-				strings.TrimSpace(entry.thinking) != ""
-			hasIntermediateOutput = hasIntermediateOutput ||
-				(!entry.conclusion && strings.TrimSpace(entry.text) != "")
-		case entryTool:
+		if index < 0 || index >= len(m.entries) {
+			continue
+		}
+		if m.entries[index].kind == entryTool {
 			toolCalls++
 		}
 	}
 
-	details := make([]string, 0, 3)
-	if hasReasoning {
-		details = append(details, "reasoning")
-	}
-	if hasIntermediateOutput {
-		details = append(details, "intermediate output")
+	details := make([]string, 0, 2)
+	if start >= 0 && start < len(m.entries) {
+		if duration, timed := m.processDuration(m.entries[start].processID); timed {
+			details = append(details, formatRunDuration(duration))
+		}
 	}
 	if toolCalls == 1 {
 		details = append(details, "1 tool call")
 	} else if toolCalls > 1 {
 		details = append(details, fmt.Sprintf("%d tool calls", toolCalls))
 	}
-	if len(details) == 0 {
-		details = append(details, "working")
-	}
 
-	label := icon + " PROCESS"
 	detail := strings.Join(details, " · ")
 	innerWidth := max(m.contentWidth()-2, 1)
 	detailWidth := innerWidth -
-		lipgloss.Width(label) -
+		lipgloss.Width(star) -
 		lipgloss.Width(action) -
 		4
+	if detail == "" {
+		return lipgloss.NewStyle().Padding(0, 1).Render(
+			headerStyle.Render(star) + "  " +
+				infoStyle.Render(action),
+		)
+	}
 	if detailWidth > 0 {
 		detail = truncateTerminalText(detail, detailWidth)
 		return lipgloss.NewStyle().Padding(0, 1).Render(
-			labelStyle.Render(label) +
+			headerStyle.Render(star) +
 				mutedStyle.Render("  "+detail+"  ") +
 				infoStyle.Render(action),
 		)
 	}
 
 	return lipgloss.NewStyle().Padding(0, 1).Render(
-		labelStyle.Render(label) + "\n" +
+		headerStyle.Render(star) + "\n" +
 			infoStyle.Render("  "+action),
 	)
 }
@@ -811,7 +806,7 @@ func (m model) assistantHeaderView(processID int) string {
 }
 
 func (m model) assistantHeader(processID int) string {
-	header := headerStyle.Render("✦ AICE")
+	header := headerStyle.Render("✦")
 	duration, timed := m.processDuration(processID)
 	if !timed {
 		return header

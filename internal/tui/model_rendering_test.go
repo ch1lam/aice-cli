@@ -8,7 +8,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-func TestModelRendersOneAICEHeadingPerProcess(t *testing.T) {
+func TestModelRendersOneProcessHeadingPerProcess(t *testing.T) {
 	t.Parallel()
 
 	current := newModel(make(chan runRequest), make(chan struct{}))
@@ -39,8 +39,13 @@ func TestModelRendersOneAICEHeadingPerProcess(t *testing.T) {
 	}
 
 	transcript := ansi.Strip(current.transcriptView())
-	if got := strings.Count(transcript, "✦ AICE"); got != 1 {
-		t.Fatalf("AICE headings = %d, want 1:\n%s", got, transcript)
+	if got := strings.Count(transcript, "✧"); got != 1 {
+		t.Fatalf("process headings = %d, want 1:\n%s", got, transcript)
+	}
+	for _, hidden := range []string{"AICE", "PROCESS", "▶", "▼", "✦"} {
+		if strings.Contains(transcript, hidden) {
+			t.Fatalf("expanded transcript contains %q, want merged header only:\n%s", hidden, transcript)
+		}
 	}
 	assertTranscriptGap(t, transcript, "FIRST_OUTPUT", "read", 2)
 	assertTranscriptGap(t, transcript, "read", "FINAL_REASONING", 2)

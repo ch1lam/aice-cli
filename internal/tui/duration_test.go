@@ -71,7 +71,7 @@ func TestModelRunDurationUpdatesAndStops(t *testing.T) {
 		t.Fatal("duration update did not change the displayed unit")
 	}
 	header := ansi.Strip(current.assistantHeaderView(1))
-	if !strings.Contains(header, "✦ AICE  1s") {
+	if !strings.Contains(header, "✦  1s") {
 		t.Fatalf("assistant header = %q, want stopped duration", header)
 	}
 
@@ -115,7 +115,7 @@ func TestModelSpinnerTickRefreshesRunDuration(t *testing.T) {
 		t.Fatalf("Update() model = %T, want tui.model", updatedModel)
 	}
 	transcript := ansi.Strip(updated.viewport.GetContent())
-	if !strings.Contains(transcript, "✦ AICE  1s") {
+	if !strings.Contains(transcript, "✧  1s") {
 		t.Fatalf("updated transcript = %q, want refreshed duration", transcript)
 	}
 }

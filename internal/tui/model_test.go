@@ -187,7 +187,7 @@ func TestModelCollapsesProcessWhenConclusionStartsStreaming(t *testing.T) {
 		}
 	}
 	for _, want := range []string{
-		"▶ PROCESS",
+		"✦",
 		"1 tool call",
 		"ctrl+o to expand",
 		"FINAL_ANSWER",
@@ -205,7 +205,7 @@ func TestModelCollapsesProcessWhenConclusionStartsStreaming(t *testing.T) {
 		t.Fatal("ctrl+o did not expand the process")
 	}
 	for _, want := range []string{
-		"▼ PROCESS",
+		"✧",
 		"INTERMEDIATE_REASONING",
 		"MIDDLEOUTPUT",
 		"read",
@@ -335,7 +335,7 @@ func TestModelAssistantBodyIsSeparatedAndUniformlyIndented(t *testing.T) {
 				lines[index] = strings.TrimRight(lines[index], " ")
 			}
 			got = strings.Join(lines, "\n")
-			if len(lines) < 3 || lines[0] != " ✦ AICE" || lines[1] != "" {
+			if len(lines) < 3 || lines[0] != " ✦" || lines[1] != "" {
 				t.Fatalf(
 					"assistant heading is not separated from its body "+
 						"by one blank line:\n%q",
@@ -1377,7 +1377,7 @@ func TestModelCollapsedProcessHidesDetailsUntilExpanded(t *testing.T) {
 
 	transcript := ansi.Strip(current.transcriptView())
 	for _, want := range []string{
-		"▶ PROCESS",
+		"✦",
 		"Final answer",
 	} {
 		if !strings.Contains(transcript, want) {
