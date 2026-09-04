@@ -57,7 +57,7 @@ aice update --force    # replace an unversioned/dev build
 ```
 
 The interactive welcome screen checks for a newer release at most once every
-24 hours. The TUI renders immediately, shows the check in progress, then
+hour. The TUI renders immediately, shows the check in progress, then
 updates the welcome card with the current, available, disabled, or unavailable
 state. Development builds skip network access. Set `AICE_NO_UPDATE_CHECK=1` to
 disable the check.

@@ -33,7 +33,9 @@ const (
 	noCheckEnv = "AICE_NO_UPDATE_CHECK"
 
 	// startupCheckInterval bounds how often the welcome screen contacts the API.
-	startupCheckInterval = 24 * time.Hour
+	// One hour keeps the "latest version" badge honest without hitting the
+	// API on every launch, no matter how often the welcome screen reopens.
+	startupCheckInterval = 1 * time.Hour
 
 	// startupCheckTimeout bounds the asynchronous welcome-screen check so a
 	// stalled connection cannot outlive the status it is updating.
