@@ -249,3 +249,8 @@ current Session selection. A standalone `aice compact` resolves global settings
 once, after finding enough history to summarize. If no complete boundary is
 available or summary generation fails, AICE preserves the source Session and
 returns the error instead of silently dropping history.
+
+A summary request may use the normal provider retry policy. Only its final
+natural stop with nonempty text becomes a checkpoint; checkpoint usage includes
+all summary attempts that reported usage, including failed attempts. A failed
+summary does not append a checkpoint or change source messages.

@@ -178,6 +178,12 @@ regression checks both sides of that boundary. Full tests, vet, and race passed
 (Session race: 86.247 seconds). Custom endpoint metadata assumptions are now
 explicit in Configuration. Safe-round timing and memory compaction remain open.
 
+Summary generation now accepts a successful final response after a provider
+retry. Its checkpoint includes usage from every summary attempt once. Actual
+503-to-success, terminal failure, and empty-final-response tests verify this
+boundary and byte-preserving failure behavior. Full tests and vet, plus app
+race tests, passed. Print summary accounting remains a separate step.
+
 The Go HTTP evaluation family is in `evals/go-service`. It includes independent
 HTTP acceptance, generated starting points, one reference implementation, and
 an evidence-based maintenance rubric. An independent rerun of `verify.py`

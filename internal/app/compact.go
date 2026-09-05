@@ -458,13 +458,12 @@ func (a *application) generateCompactionSummary(
 			err,
 		)
 	}
-	if len(result.ModelRounds) != 1 {
+	if len(result.ModelRounds) == 0 {
 		return "", llm.Usage{}, fmt.Errorf(
-			"app: generate compaction summary: model returned %d model rounds",
-			len(result.ModelRounds),
+			"app: generate compaction summary: model returned no model rounds",
 		)
 	}
-	assistant := result.ModelRounds[0].Assistant
+	assistant := result.ModelRounds[len(result.ModelRounds)-1].Assistant
 	if assistant.StopReason != llm.StopReasonStop {
 		return "", llm.Usage{}, fmt.Errorf(
 			"app: generate compaction summary: model stopped with reason %q",
@@ -477,5 +476,9 @@ func (a *application) generateCompactionSummary(
 			"app: generate compaction summary: model returned no visible text",
 		)
 	}
-	return summary, assistant.Usage, nil
+	var usage llm.Usage
+	for _, round := range result.ModelRounds {
+		usage = llm.AddUsage(usage, round.Assistant.Usage)
+	}
+	return summary, usage, nil
 }
