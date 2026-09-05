@@ -95,12 +95,15 @@ permission messages. Guard grant scope is defined in
   Preflight failures can return before `agent_start`; an event-sink failure
   stops delivery and may prevent `agent_end`. Callers must handle the returned
   result/error and persistence separately from terminal event delivery.
-- Reapply the compaction threshold before the first model request of every
-  follow-up interaction. When the threshold is crossed at a complete
-  interaction boundary, the application compacts the active Session and gives
-  the loop the rebuilt provider-neutral history. Tool and steering
-  continuations may settle the current interaction past that threshold, but a
-  new interaction must not begin there. Product behavior of compaction is in
+- Check the compaction threshold before every model request, including tool
+  and steering continuations within one interaction. At a complete paired
+  boundary the application may replace the full current context, including
+  accepted user messages, with a summary and retained suffix. Unanswered
+  trailing user messages remain verbatim. The Loop never appends them a second
+  time. Retries reuse prepared context; tools never trigger compaction midway
+  through a group. At most one compaction is attempted before the request is
+  fully checked again; failure or insufficient space stops execution. Product
+  behavior of compaction is in
   [Recovery and compaction](execution-sessions.md#recovery-and-compaction).
 - Context estimates reuse provider usage only when its requested provider/model
   identity matches the current request and it belongs to the current context

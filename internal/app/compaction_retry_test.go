@@ -44,7 +44,7 @@ func TestCompactionRetryUsesFinalSummaryAndAllAttemptUsage(t *testing.T) {
 			model := &retrySummaryModel{text: test.text, finalErr: test.err}
 			application := &application{dependencies: dependencies{compactionKeepRecentTokens: 1}}
 			configured := configuredModel{service: model, model: llm.Model{ID: "summary", API: "test-api", Provider: "test-provider", ContextWindow: 100000, MaxTokens: 1000}}
-			_, err = application.compactSession(t.Context(), store, nil, &configured)
+			_, err = application.compactSession(t.Context(), store, &configured)
 			if model.calls != 2 {
 				t.Fatalf("model calls = %d, want actual retry", model.calls)
 			}

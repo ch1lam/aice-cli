@@ -489,14 +489,15 @@ func TestLoopCompactsInitialHistoryAtThreshold(t *testing.T) {
 				TokensBefore: 90_000,
 				Timestamp:    3,
 			},
+			history[len(history)-1],
 		}, nil
 	}
 
 	if _, err := loop.Run(t.Context(), input, nil); err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
-	if len(compactedHistory) != 2 {
-		t.Fatalf("compactor history = %d, want 2", len(compactedHistory))
+	if len(compactedHistory) != 3 {
+		t.Fatalf("compactor history = %d, want 3", len(compactedHistory))
 	}
 	if len(model.requests) != 1 || len(model.requests[0].Messages) != 2 {
 		t.Fatalf("model requests = %#v, want compacted history plus prompt", model.requests)
@@ -543,8 +544,8 @@ func TestLoopCompactsHistoryBeforeFollowUp(t *testing.T) {
 		_ context.Context,
 		history []llm.AgentMessage,
 	) ([]llm.AgentMessage, error) {
-		if len(history) != 2 {
-			return nil, fmt.Errorf("compactor history = %d, want 2", len(history))
+		if len(history) != 3 {
+			return nil, fmt.Errorf("compactor history = %d, want 3", len(history))
 		}
 		return []llm.AgentMessage{
 			llm.CompactionSummaryMessage{
@@ -553,6 +554,7 @@ func TestLoopCompactsHistoryBeforeFollowUp(t *testing.T) {
 				TokensBefore: 90_000,
 				Timestamp:    3,
 			},
+			history[len(history)-1],
 		}, nil
 	}
 
@@ -721,11 +723,19 @@ func TestLoopSettlesToolRunAfterCrossingCompactionThreshold(t *testing.T) {
 
 	prompt := mustPrompt(t, "inspect")
 	prompt.Timestamp = 1
-	result, err := loop.Run(
-		t.Context(),
-		testInput(modelInfo, prompt),
-		nil,
-	)
+	input := testInput(modelInfo, prompt)
+	compacted := 0
+	input.Compactor = func(_ context.Context, history []llm.AgentMessage) ([]llm.AgentMessage, error) {
+		compacted++
+		if len(history) != 3 {
+			t.Fatalf("context = %#v, want user, call and settled result", history)
+		}
+		if _, ok := history[2].(llm.ToolResultMessage); !ok {
+			t.Fatal("compacted before tool settled")
+		}
+		return []llm.AgentMessage{llm.CompactionSummaryMessage{Role: llm.RoleCompactionSummary, Summary: "read completed", TokensBefore: 90001, Timestamp: 4}}, nil
+	}
+	result, err := loop.Run(t.Context(), input, nil)
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
@@ -736,11 +746,8 @@ func TestLoopSettlesToolRunAfterCrossingCompactionThreshold(t *testing.T) {
 			len(model.requests),
 		)
 	}
-	if got := model.requests[1].Options.MaxTokens; got <= 0 || got >= modelInfo.MaxTokens {
-		t.Fatalf(
-			"second request max tokens = %d, want positive clamped continuation",
-			got,
-		)
+	if compacted != 1 || len(model.requests[1].Messages) != 1 || !strings.Contains(messageText(model.requests[1].Messages[0]), "read completed") {
+		t.Fatalf("compactions=%d, continuation=%#v", compacted, model.requests[1])
 	}
 }
 

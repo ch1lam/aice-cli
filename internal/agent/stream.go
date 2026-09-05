@@ -19,17 +19,15 @@ type assistantOutcome struct {
 func (e *runExecution) streamAssistant(
 	ctx context.Context,
 	turnNumber int,
+	allowCompaction bool,
 ) (assistantOutcome, error) {
-	request, err := e.request()
+	request, err := e.prepareRequest(ctx, allowCompaction)
 	if err != nil {
 		return assistantOutcome{}, fmt.Errorf(
 			"agent: prepare turn %d request: %w",
 			turnNumber,
 			err,
 		)
-	}
-	if err := request.Validate(); err != nil {
-		return assistantOutcome{}, fmt.Errorf("agent: validate turn %d request: %w", turnNumber, err)
 	}
 
 	stream, err := e.loop.model.Stream(ctx, request)

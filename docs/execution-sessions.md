@@ -229,18 +229,26 @@ may have produced effects; inspect the current state before retrying. Existing
 results remain unchanged, recovery is idempotent, and AICE never replays the
 interrupted call itself. Tree inspection does not append recovery messages.
 
-Compaction summarizes older messages on the active branch and retains roughly
-the newest 20,000 tokens (`session.DefaultKeepRecentTokens`). Cuts never split
+Manual compaction summarizes older messages on the active branch and retains
+roughly the newest 20,000 tokens (`session.DefaultKeepRecentTokens`). Cuts never split
 an assistant tool-call/result group. It appends a checkpoint and never rewrites
 source messages or other branches. A single interaction can contain several
 safe cuts. If its newest paired group is oversized, AICE may summarize the
-entire active context while keeping the source messages recoverable.
+completed context while keeping the source messages recoverable. Unanswered
+trailing user messages always remain verbatim.
 
-Automatic compaction currently runs before the first model request of a new
-interaction when the estimated context crosses the model's reserved-token
-threshold. A just-accepted initial or follow-up input is kept outside the older
-history summary and enters the next model request once. Checking the threshold
-within an interaction is a separate pending execution change.
+Automatic compaction checks the estimated context before every model request,
+including consecutive tool rounds in one interaction. It runs only after all
+declared tool results are complete. Initial, steering and follow-up inputs enter
+the next request once. Automatic retention is capped at a quarter of the known
+model window; a completed group exceeding that cap can be summarized whole.
+An oversized unanswered input is preserved and may still prevent continuation.
+
+Stateless `--print` uses the same paired-group selection and summary format in
+memory, without creating a Session file. A request gets at most one compaction
+attempt followed by a complete budget check. If the summary fails, there is no
+safe older history, or the request still does not fit, execution returns an
+error; it does not discard source history or repeatedly compact until it fits.
 
 ```sh
 aice compact --workspace . --session .aice/sessions/<id>.jsonl

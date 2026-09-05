@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"reflect"
 	"strings"
 	"time"
 
@@ -44,16 +43,12 @@ If the transcript contains a prior compaction summary, update it with newer mess
 %s
 </transcript>`
 
-func (a *application) sessionCompactor(
+func (a *application) historyCompactor(
 	store *session.Store,
-	pendingInput llm.UserMessage,
 	configured *configuredModel,
 ) agent.HistoryCompactor {
-	if store == nil {
-		return nil
-	}
-	return func(ctx context.Context, _ []llm.AgentMessage) ([]llm.AgentMessage, error) {
-		return a.compactHistory(ctx, store, pendingInput, configured)
+	return func(ctx context.Context, history []llm.AgentMessage) ([]llm.AgentMessage, error) {
+		return a.compactHistory(ctx, store, history, configured)
 	}
 }
 
@@ -89,7 +84,7 @@ func (a *application) Compact(
 		returnErr = errors.Join(returnErr, store.Close())
 	}()
 
-	result, err := a.compactSession(ctx, store, nil, nil)
+	result, err := a.compactSession(ctx, store, nil)
 	if err != nil {
 		return err
 	}
@@ -102,70 +97,55 @@ func (a *application) Compact(
 func (a *application) compactSession(
 	ctx context.Context,
 	store *session.Store,
-	pendingInput *llm.UserMessage,
 	configured *configuredModel,
 ) (string, error) {
+	_, preparation, err := a.compactStoredHistory(ctx, store, configured, session.CompactionSettings{
+		KeepRecentTokens: a.dependencies.compactionKeepRecentTokens,
+	})
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf(
+		"Compacted Session at approximately %d tokens; retained %d recent message(s).\n",
+		preparation.TokensBefore,
+		preparation.RetainedMessageCount,
+	), nil
+}
+
+func (a *application) compactStoredHistory(
+	ctx context.Context,
+	store *session.Store,
+	configured *configuredModel,
+	settings session.CompactionSettings,
+) ([]llm.AgentMessage, session.CompactionPreparation, error) {
 	if store == nil {
-		return "", fmt.Errorf("app: session store is required")
+		return nil, session.CompactionPreparation{}, fmt.Errorf("app: session store is required")
 	}
 	snapshot, err := store.Snapshot()
 	if err != nil {
-		return "", fmt.Errorf("app: read session: %w", err)
+		return nil, session.CompactionPreparation{}, fmt.Errorf("app: read session: %w", err)
 	}
-	source := snapshot
-	var pendingEntry session.MessageEntry
-	if pendingInput != nil {
-		for _, entry := range snapshot.Messages {
-			if entry.ID == snapshot.LeafID {
-				pendingEntry = entry
-				break
-			}
-		}
-		if !reflect.DeepEqual(pendingEntry.Message, *pendingInput) {
-			return "", fmt.Errorf("app: accepted input does not match Session leaf")
-		}
-		// The recorder runs before the Loop prepares its input request. Keep
-		// that input verbatim and summarize only its already-existing context.
-		source.LeafID = pendingEntry.ParentID
-	}
-	preparation, err := session.PrepareCompaction(
-		source,
-		session.CompactionSettings{
-			KeepRecentTokens: a.dependencies.compactionKeepRecentTokens,
-		},
-	)
+	preparation, err := session.PrepareCompaction(snapshot, settings)
 	if err != nil {
-		return "", fmt.Errorf("app: prepare session compaction: %w", err)
+		return nil, preparation, fmt.Errorf("app: prepare session compaction: %w", err)
 	}
-	// Only the standalone CLI passes nil: load once after proving there is
-	// work to compact, preserving the no-credentials-needed no-op path.
+	// Only standalone CLI supplies nil, after proving there is work to compact.
 	if configured == nil {
 		selected, err := a.newConfiguredModel()
 		if err != nil {
-			return "", err
+			return nil, preparation, err
 		}
 		configured = &selected
 	} else if err := a.initializeConfiguredModel(configured); err != nil {
-		return "", err
+		return nil, preparation, err
 	}
-	summary, usage, err := a.generateCompactionSummary(
-		ctx,
-		preparation.MessagesToSummarize,
-		*configured,
-	)
+	summary, usage, err := a.generateCompactionSummary(ctx, preparation.MessagesToSummarize, *configured)
 	if err != nil {
-		return "", err
-	}
-	if pendingInput != nil {
-		preparation.ActiveMessageCount++
-		preparation.RetainedMessageCount++
-		if preparation.FirstKeptMessageID == "" {
-			preparation.FirstKeptMessageID = pendingEntry.ID
-		}
+		return nil, preparation, err
 	}
 	checkpointID, err := session.NewID()
 	if err != nil {
-		return "", fmt.Errorf("app: generate compaction id: %w", err)
+		return nil, preparation, fmt.Errorf("app: generate compaction id: %w", err)
 	}
 	checkpoint, err := session.NewCompaction(session.CompactionInput{
 		ID:                   checkpointID,
@@ -179,43 +159,55 @@ func (a *application) compactSession(
 		Usage:                usage,
 	})
 	if err != nil {
-		return "", fmt.Errorf("app: create session compaction: %w", err)
+		return nil, preparation, fmt.Errorf("app: create session compaction: %w", err)
 	}
 	if err := store.AppendCompaction(ctx, checkpoint); err != nil {
-		return "", fmt.Errorf("app: append session compaction: %w", err)
+		return nil, preparation, fmt.Errorf("app: append session compaction: %w", err)
 	}
-
-	return fmt.Sprintf(
-		"Compacted Session at approximately %d tokens; retained %d recent message(s).\n",
-		preparation.TokensBefore,
-		preparation.RetainedMessageCount,
-	), nil
+	snapshot, err = store.Snapshot()
+	if err != nil {
+		return nil, preparation, fmt.Errorf("app: read compacted session: %w", err)
+	}
+	history, err := sessionHistory(snapshot)
+	return history, preparation, err
 }
 
 func (a *application) compactHistory(
 	ctx context.Context,
 	store *session.Store,
-	pendingInput llm.UserMessage,
+	history []llm.AgentMessage,
 	configured *configuredModel,
 ) ([]llm.AgentMessage, error) {
-	if store == nil {
-		return nil, fmt.Errorf("app: session store is required for automatic compaction")
+	settings := session.CompactionSettings{KeepRecentTokens: a.dependencies.compactionKeepRecentTokens}
+	if configured.model.ContextWindow > 0 {
+		settings.MaxRetainedTokens = max(configured.model.ContextWindow/4, 1)
+		settings.KeepRecentTokens = min(settings.KeepRecentTokens, settings.MaxRetainedTokens)
 	}
-	if _, err := a.compactSession(ctx, store, &pendingInput, configured); err != nil {
+	if store != nil {
+		compacted, _, err := a.compactStoredHistory(ctx, store, configured, settings)
+		return compacted, err
+	}
+	preparation, err := session.PrepareContextCompaction(history, settings)
+	if err != nil {
+		return nil, fmt.Errorf("app: prepare context compaction: %w", err)
+	}
+	if err := a.initializeConfiguredModel(configured); err != nil {
 		return nil, err
 	}
-	snapshot, err := store.Snapshot()
+	text, _, err := a.generateCompactionSummary(ctx, preparation.MessagesToSummarize, *configured)
 	if err != nil {
-		return nil, fmt.Errorf("app: read compacted session: %w", err)
+		return nil, err
 	}
-	history, err := sessionHistory(snapshot)
+	summary, err := session.NewContextSummary(
+		text,
+		preparation.TokensBefore,
+		time.Now().UnixMilli(),
+		preparation.RetainedMessages,
+	)
 	if err != nil {
-		return nil, fmt.Errorf("app: build compacted session context: %w", err)
+		return nil, err
 	}
-	if len(history) == 0 || !reflect.DeepEqual(history[len(history)-1], pendingInput) {
-		return nil, fmt.Errorf("app: compacted context did not retain accepted input")
-	}
-	return history[:len(history)-1], nil
+	return append([]llm.AgentMessage{summary}, preparation.RetainedMessages...), nil
 }
 
 func serializeCompactionMessages(messages []llm.AgentMessage) (string, error) {

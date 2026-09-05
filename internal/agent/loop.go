@@ -129,10 +129,7 @@ func (l *Loop) Run(ctx context.Context, input RunInput, sink AgentEventSink) (Re
 	if err := execution.recordMessage(ctx, input.Prompt); err != nil {
 		return execution.finalize(ctx, err)
 	}
-	if err := execution.prepareInputContext(ctx, input.Prompt); err != nil {
-		runErr := fmt.Errorf("agent: prepare initial request: %w", err)
-		return execution.finalize(ctx, runErr)
-	}
+	execution.history = append(execution.history, input.Prompt)
 
 	_, runErr := execution.run(ctx)
 	return execution.finalize(ctx, runErr)
@@ -198,7 +195,7 @@ func (e *runExecution) runInteraction(
 ) (Result, error, bool) {
 	retryAttempt := 0
 	for {
-		outcome, streamErr := e.streamAssistant(ctx, *turnNumber)
+		outcome, streamErr := e.streamAssistant(ctx, *turnNumber, retryAttempt == 0)
 		if isEventSinkError(streamErr) {
 			return e.result, streamErr, false
 		}
@@ -435,10 +432,7 @@ func (e *runExecution) pollFollowUp(
 	if err := e.recordMessage(ctx, followUp.Message); err != nil {
 		return e.result, err, false
 	}
-	if err := e.prepareInputContext(ctx, followUp.Message); err != nil {
-		result, err := e.finishRun(ctx, err)
-		return result, err, false
-	}
+	e.history = append(e.history, followUp.Message)
 
 	(*turnNumber)++
 	if err := e.startInputTurn(
@@ -450,49 +444,6 @@ func (e *runExecution) pollFollowUp(
 		return e.result, err, false
 	}
 	return e.result, nil, true
-}
-
-func (e *runExecution) prepareInputContext(
-	ctx context.Context,
-	input llm.AgentMessage,
-) error {
-	baseHistory := slices.Clone(e.history)
-	candidate := append(slices.Clone(baseHistory), input)
-	request, err := e.requestForHistory(candidate)
-	if err == nil {
-		err = checkCompactionThreshold(request)
-	}
-	if err == nil {
-		if err := request.Validate(); err != nil {
-			return fmt.Errorf("agent: validate input request: %w", err)
-		}
-		e.history = candidate
-		return nil
-	}
-	if !errors.Is(err, ErrContextLimit) || e.input.Compactor == nil {
-		return err
-	}
-
-	compacted, compactErr := e.input.Compactor(ctx, baseHistory)
-	if compactErr != nil {
-		return errors.Join(
-			err,
-			fmt.Errorf("agent: compact complete history: %w", compactErr),
-		)
-	}
-	candidate = append(slices.Clone(compacted), input)
-	request, err = e.requestForHistory(candidate)
-	if err == nil {
-		err = checkCompactionThreshold(request)
-	}
-	if err != nil {
-		return fmt.Errorf("agent: protect request after compaction: %w", err)
-	}
-	if err := request.Validate(); err != nil {
-		return fmt.Errorf("agent: validate request after compaction: %w", err)
-	}
-	e.history = candidate
-	return nil
 }
 
 func (e *runExecution) startInputTurn(

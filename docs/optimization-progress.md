@@ -34,7 +34,7 @@ work in an earlier row. Temporary transitions must still build and pass tests.
 | 3b | App: restart-only Skills reminder and effective `/trust` choices | Behavioral | Startup temporary trust preserved; command behavior and documentation agree | Complete |
 | 4a | Session: message entries, tree replay, safe branch boundaries, unknown interrupted results | Behavioral | New format round trips; old bytes untouched; no duplicate recovery/results/usage | Complete |
 | 4b | App/Agent: persist each completed message before later side effects, unified terminal submission | Behavioral | Injected write/UI/provider/cancellation failures; print and TUI share semantics | Complete |
-| 4c | Context: compact at paired model-round boundaries with frozen model configuration; stateless print uses memory | Behavioral | 200 rounds, at least three compactions, steering, repeated compaction and failure cases | Pending |
+| 4c | Context: compact at paired model-round boundaries with frozen model configuration; stateless print uses memory | Behavioral | 200 rounds, at least three compactions, steering, repeated compaction and failure cases | Core complete; summary print usage and long-task audit pending |
 | 4d | Session consumers: navigation, display, usage, Harbor | Behavioral | Real CLI/TUI exercises; conversion fixtures and correct usage accounting | Complete for v3; automatic summary print totals remain in 4c |
 | 5a | Existing prompt and Bash feedback: proportional engineering guidance, bounded head/tail output | Behavioral | Output/error regressions; custom prompt replacement unchanged | Complete |
 | 5b | Offline evaluation: Go HTTP service and Python data CLI lifecycles | Evaluation | Requirements, independent tests, reference implementations, review rubric, recorded runs | Complete |
@@ -201,6 +201,23 @@ tests and default/Skills assembly tests passed. Full tests and vet passed on an
 isolated snapshot of `582c16f` plus only this prompt change, so concurrent context
 implementation was not part of that evidence. No fixed phase scheduler or
 completion mechanism was added; real-model quality remains unmeasured.
+
+The Loop now checks complete current context before every safe model round and
+attempts compaction at most once, then validates again. Retries reuse prepared
+history. Session and stateless print share one pure paired-group cut; automatic
+retention has a model-window cap, and unanswered trailing users remain verbatim.
+The pending-input bridge is removed. Narrow tests cover steering, retries,
+malformed/partial groups, oversized input, no progress and summary errors.
+Full tests, vet and race passed (Session race: 86.133 seconds).
+
+Actual CLI checks used a localhost-only scripted model: persisted and stateless
+print each completed six main model rounds and three summaries from one input.
+The persisted run saved twelve source messages and three checkpoints; the
+stateless run created no Session directory. A separate actual PTY run completed
+the same sequence, and `/session` displayed fifteen nodes, twelve messages and
+three compactions. The TUI exited normally and both servers were stopped.
+These six-round checks supplement, but do not replace, the pending 200-round
+and summary interruption acceptance.
 
 The Go HTTP evaluation family is in `evals/go-service`. It includes independent
 HTTP acceptance, generated starting points, one reference implementation, and

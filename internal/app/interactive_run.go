@@ -111,7 +111,6 @@ func (r *interactiveRun) Run(ctx context.Context) error {
 	}
 	defer r.session.conversation.endMainRun(snapshot.state)
 
-	pendingInput := r.prompt
 	configured := configuredModel{
 		configuration: snapshot.configuration,
 		model:         snapshot.model,
@@ -124,13 +123,10 @@ func (r *interactiveRun) Run(ctx context.Context) error {
 		Prompt:       r.prompt,
 		Options:      snapshot.options,
 		MessageRecorder: func(recordCtx context.Context, message llm.AgentMessage) error {
-			if input, ok := message.(llm.UserMessage); ok {
-				pendingInput = input
-			}
 			return r.session.conversation.recordMessage(recordCtx, snapshot.state, message)
 		},
-		Compactor: func(compactCtx context.Context, _ []llm.AgentMessage) ([]llm.AgentMessage, error) {
-			return r.session.compactHistory(compactCtx, pendingInput, &configured)
+		Compactor: func(compactCtx context.Context, history []llm.AgentMessage) ([]llm.AgentMessage, error) {
+			return r.session.compactHistory(compactCtx, history, &configured)
 		},
 		Steering: mailboxInputSource(r.mailbox.TakeSteering, "steering"),
 		FollowUp: mailboxInputSource(r.mailbox.TakeFollowUp, "follow-up"),
@@ -210,7 +206,7 @@ func (s *interactiveSession) beginMainRun(
 
 func (s *interactiveSession) compactHistory(
 	ctx context.Context,
-	pendingInput llm.UserMessage,
+	currentHistory []llm.AgentMessage,
 	configured *configuredModel,
 ) ([]llm.AgentMessage, error) {
 	if s == nil || s.application == nil {
@@ -221,17 +217,16 @@ func (s *interactiveSession) compactHistory(
 	}
 
 	// Serialize checkpoints with source-message commits and explicit checkout.
-	// The accepted input is durable already; compactHistory retains it but
-	// returns only the prior context because the Loop appends the input itself.
+	// The Loop supplies complete context at a paired model-round boundary.
 	s.conversation.historySyncMu.Lock()
 	defer s.conversation.historySyncMu.Unlock()
 
-	history, err := s.application.compactHistory(ctx, s.conversation.store, pendingInput, configured)
+	history, err := s.application.compactHistory(ctx, s.conversation.store, currentHistory, configured)
 	if err != nil {
 		return nil, err
 	}
 	s.conversation.historyMu.Lock()
-	s.conversation.history = append(history, pendingInput)
+	s.conversation.history = history
 	s.conversation.historyMu.Unlock()
 	return cloneAgentMessages(history)
 }

@@ -1,14 +1,42 @@
 package agent
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"slices"
 
 	"github.com/ch1lam/aice-cli/internal/llm"
 )
 
-func (e *runExecution) request() (llm.Request, error) {
-	return e.requestForHistory(e.history)
+// prepareRequest runs only between paired model rounds. A retry reuses the
+// already prepared history and must not rebuild it from durable failed attempts.
+func (e *runExecution) prepareRequest(ctx context.Context, allowCompaction bool) (llm.Request, error) {
+	request, err := e.checkedRequest(e.history)
+	if err == nil || !errors.Is(err, ErrContextLimit) || e.input.Compactor == nil || !allowCompaction {
+		return request, err
+	}
+	compacted, compactErr := e.input.Compactor(ctx, slices.Clone(e.history))
+	if compactErr != nil {
+		return llm.Request{}, errors.Join(err, fmt.Errorf("agent: compact complete history: %w", compactErr))
+	}
+	request, err = e.checkedRequest(compacted)
+	if err != nil {
+		return llm.Request{}, fmt.Errorf("agent: protect request after compaction: %w", err)
+	}
+	e.history = slices.Clone(compacted)
+	return request, nil
+}
+
+func (e *runExecution) checkedRequest(history []llm.AgentMessage) (llm.Request, error) {
+	request, err := e.requestForHistory(history)
+	if err == nil {
+		err = checkCompactionThreshold(request)
+	}
+	if err == nil {
+		err = request.Validate()
+	}
+	return request, err
 }
 
 func (e *runExecution) requestForHistory(

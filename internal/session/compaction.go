@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"reflect"
 
 	"github.com/ch1lam/aice-cli/internal/llm"
 )
@@ -24,6 +25,8 @@ var ErrNothingToCompact = errors.New("session has nothing to compact")
 // CompactionSettings controls the paired-group cut selected for a checkpoint.
 type CompactionSettings struct {
 	KeepRecentTokens int64
+	// MaxRetainedTokens bounds automatic retention; zero keeps manual policy.
+	MaxRetainedTokens int64
 }
 
 // CompactionPreparation is immutable input for generating a summary.
@@ -59,115 +62,128 @@ func BuildContext(snapshot Snapshot) ([]llm.AgentMessage, error) {
 	return cloneMessages(contextMessages)
 }
 
-// PrepareCompaction selects a paired-group cut on the active branch while
-// retaining approximately KeepRecentTokens of its newest source history. If
-// the newest paired group is itself larger than that budget, it falls back to
-// summarizing the entire active branch so a long interaction cannot permanently block
-// continuation.
-func PrepareCompaction(
-	snapshot Snapshot,
-	settings CompactionSettings,
-) (CompactionPreparation, error) {
-	if settings.KeepRecentTokens <= 0 {
-		return CompactionPreparation{}, fmt.Errorf(
-			"session: keep recent tokens must be positive",
-		)
-	}
-	state, err := deriveActiveBranch(snapshot)
-	if err != nil {
-		return CompactionPreparation{}, err
-	}
-	activeContext, err := BuildContext(snapshot)
-	if err != nil {
-		return CompactionPreparation{}, err
-	}
-	projected, err := llm.AgentMessagesToMessages(activeContext)
-	if err != nil {
-		return CompactionPreparation{}, fmt.Errorf(
-			"session: project context for compaction: %w",
-			err,
-		)
-	}
-	estimate := llm.EstimateContextTokens(llm.Request{Messages: projected})
-	if estimate.Tokens <= 0 || len(state.messages) == 0 {
-		return CompactionPreparation{}, ErrNothingToCompact
-	}
+// ContextCompactionPreparation is a pure cut of a complete current context.
+type ContextCompactionPreparation struct {
+	MessagesToSummarize []llm.AgentMessage
+	RetainedMessages    []llm.AgentMessage
+	FirstKeptIndex      int
+	TokensBefore        int64
+}
 
-	starts, groupTokens, err := pairedGroupTokens(state.messages)
+// PrepareContextCompaction preserves unanswered trailing users and never cuts
+// within a tool-call/result group. It does not read or write a Session.
+func PrepareContextCompaction(
+	messages []llm.AgentMessage,
+	settings CompactionSettings,
+) (ContextCompactionPreparation, error) {
+	if settings.KeepRecentTokens <= 0 || settings.MaxRetainedTokens < 0 {
+		return ContextCompactionPreparation{}, fmt.Errorf("session: keep recent tokens must be positive and maximum nonnegative")
+	}
+	cloned, err := cloneMessages(messages)
 	if err != nil {
-		return CompactionPreparation{}, err
+		return ContextCompactionPreparation{}, err
+	}
+	offset := 0
+	if len(cloned) > 0 {
+		if _, ok := cloned[0].(llm.CompactionSummaryMessage); ok {
+			offset = 1
+		}
+	}
+	source := cloned[offset:]
+	starts, tokens, err := pairedGroupTokens(source)
+	if err != nil {
+		return ContextCompactionPreparation{}, err
+	}
+	completed := len(source)
+	for completed > 0 {
+		if _, ok := source[completed-1].(llm.UserMessage); !ok {
+			break
+		}
+		completed--
+	}
+	if completed == 0 {
+		return ContextCompactionPreparation{}, ErrNothingToCompact
+	}
+	var protectedTokens int64
+	if completed < len(source) {
+		protectedTokens = tokens[len(tokens)-1]
+		starts = starts[:len(starts)-1]
+		tokens = tokens[:len(tokens)-1]
 	}
 	firstKept := 0
 	var retainedTokens int64
 	for group := len(starts) - 1; group >= 0; group-- {
-		retainedTokens += groupTokens[group]
+		retainedTokens += tokens[group]
 		if retainedTokens >= settings.KeepRecentTokens {
 			firstKept = starts[group]
 			break
 		}
 	}
-	oversizedBudget := max(settings.KeepRecentTokens, minOversizedGroupTokens)
-	if groupTokens[len(groupTokens)-1] >= oversizedBudget {
-		return prepareFullCompaction(state, estimate.Tokens)
+	if settings.MaxRetainedTokens > 0 {
+		// Select a suffix within the hard cap, including protected users. If those
+		// users alone exceed it, preserve them and let full request validation fail.
+		firstKept = completed
+		retainedTokens = protectedTokens
+		for group := len(starts) - 1; group >= 0; group-- {
+			if retainedTokens+tokens[group] > settings.MaxRetainedTokens {
+				break
+			}
+			retainedTokens += tokens[group]
+			firstKept = starts[group]
+			if retainedTokens-protectedTokens >= settings.KeepRecentTokens {
+				break
+			}
+		}
+	} else if tokens[len(tokens)-1] >= max(settings.KeepRecentTokens, minOversizedGroupTokens) {
+		firstKept = completed
 	}
 	if firstKept <= 0 {
-		return CompactionPreparation{}, ErrNothingToCompact
+		return ContextCompactionPreparation{}, ErrNothingToCompact
 	}
-
-	messagesToSummarize := make([]llm.AgentMessage, 0)
-	if state.compaction != nil {
-		summary, err := compactionSummaryMessage(
-			*state.compaction,
-			state.messages[:firstKept],
-		)
-		if err != nil {
-			return CompactionPreparation{}, err
-		}
-		messagesToSummarize = append(messagesToSummarize, summary)
-	}
-	for messageIndex := 0; messageIndex < firstKept; messageIndex++ {
-		messagesToSummarize = append(
-			messagesToSummarize,
-			state.messages[messageIndex].Message,
-		)
-	}
-	cloned, err := cloneMessages(messagesToSummarize)
+	projected, err := llm.AgentMessagesToMessages(cloned)
 	if err != nil {
-		return CompactionPreparation{}, err
+		return ContextCompactionPreparation{}, err
 	}
-	return CompactionPreparation{
-		MessagesToSummarize:  cloned,
-		TokensBefore:         estimate.Tokens,
-		FirstKeptMessageID:   state.messages[firstKept].ID,
-		ActiveMessageCount:   len(state.messages),
-		RetainedMessageCount: len(state.messages) - firstKept,
+	cut := offset + firstKept
+	return ContextCompactionPreparation{
+		MessagesToSummarize: cloned[:cut:cut],
+		RetainedMessages:    cloned[cut:],
+		FirstKeptIndex:      cut,
+		TokensBefore:        llm.EstimateContextTokens(llm.Request{Messages: projected}).Tokens,
 	}, nil
 }
 
-func prepareFullCompaction(
-	state activeBranchState,
-	tokensBefore int64,
+// PrepareCompaction maps the pure context cut to immutable source IDs.
+func PrepareCompaction(
+	snapshot Snapshot,
+	settings CompactionSettings,
 ) (CompactionPreparation, error) {
-	messagesToSummarize := make([]llm.AgentMessage, 0)
-	if state.compaction != nil {
-		summary, err := compactionSummaryMessage(*state.compaction, state.messages)
-		if err != nil {
-			return CompactionPreparation{}, err
-		}
-		messagesToSummarize = append(messagesToSummarize, summary)
-	}
-	for _, message := range state.messages {
-		messagesToSummarize = append(messagesToSummarize, message.Message)
-	}
-	cloned, err := cloneMessages(messagesToSummarize)
+	state, err := deriveActiveBranch(snapshot)
 	if err != nil {
 		return CompactionPreparation{}, err
 	}
+	history, err := BuildContext(snapshot)
+	if err != nil {
+		return CompactionPreparation{}, err
+	}
+	cut, err := PrepareContextCompaction(history, settings)
+	if err != nil {
+		return CompactionPreparation{}, err
+	}
+	firstKept := cut.FirstKeptIndex
+	if state.compaction != nil {
+		firstKept--
+	}
+	firstID := ""
+	if firstKept < len(state.messages) {
+		firstID = state.messages[firstKept].ID
+	}
 	return CompactionPreparation{
-		MessagesToSummarize:  cloned,
-		TokensBefore:         tokensBefore,
+		MessagesToSummarize:  cut.MessagesToSummarize,
+		TokensBefore:         cut.TokensBefore,
+		FirstKeptMessageID:   firstID,
 		ActiveMessageCount:   len(state.messages),
-		RetainedMessageCount: 0,
+		RetainedMessageCount: len(state.messages) - firstKept,
 	}, nil
 }
 
@@ -209,10 +225,22 @@ func compactionSummaryMessage(
 	compaction Compaction,
 	retainedMessages []MessageEntry,
 ) (llm.CompactionSummaryMessage, error) {
-	timestamp := compaction.CreatedAt
-	oldRetainedCount := min(compaction.RetainedMessageCount, len(retainedMessages))
-	for _, entry := range retainedMessages[:oldRetainedCount] {
-		messageTime := agentMessageTimestamp(entry.Message)
+	retained := make([]llm.AgentMessage, 0, min(compaction.RetainedMessageCount, len(retainedMessages)))
+	for _, entry := range retainedMessages[:min(compaction.RetainedMessageCount, len(retainedMessages))] {
+		retained = append(retained, entry.Message)
+	}
+	return NewContextSummary(compaction.Summary, compaction.TokensBefore, compaction.CreatedAt, retained)
+}
+
+// NewContextSummary invalidates usage from the retained pre-compaction context.
+// Later source messages may establish fresh usage without rewriting old records.
+func NewContextSummary(
+	summary string,
+	tokensBefore, timestamp int64,
+	retained []llm.AgentMessage,
+) (llm.CompactionSummaryMessage, error) {
+	for _, message := range retained {
+		messageTime := agentMessageTimestamp(message)
 		if messageTime < timestamp {
 			continue
 		}
@@ -223,8 +251,8 @@ func compactionSummaryMessage(
 	}
 
 	message, err := llm.NewCompactionSummaryMessage(
-		compaction.Summary,
-		compaction.TokensBefore,
+		summary,
+		tokensBefore,
 	)
 	if err != nil {
 		return llm.CompactionSummaryMessage{}, fmt.Errorf(
@@ -238,28 +266,30 @@ func compactionSummaryMessage(
 	return message, nil
 }
 
-// pairedGroupTokens allows cuts between source messages except within an
-// assistant's tool-call/result group. A retained suffix may start after a user.
-func pairedGroupTokens(entries []MessageEntry) ([]int, []int64, error) {
+// pairedGroupTokens estimates the full projection once, so failed attempts
+// superseded by a later assistant and their results contribute no model tokens.
+func pairedGroupTokens(messages []llm.AgentMessage) ([]int, []int64, error) {
+	projected, err := llm.AgentMessagesToMessages(messages)
+	if err != nil {
+		return nil, nil, err
+	}
 	var starts []int
 	var tokens []int64
 	sequence := messageSequence{started: true}
 	previousUser := false
-	for position, entry := range entries {
+	projectedIndex := 0
+	for position, message := range messages {
 		if position == 0 || (len(sequence.pending) == 0 && !previousUser) {
 			starts = append(starts, position)
 			tokens = append(tokens, 0)
 		}
-		_, previousUser = entry.Message.(llm.UserMessage)
-		if err := sequence.accept(entry.Message); err != nil {
+		_, previousUser = message.(llm.UserMessage)
+		if err := sequence.accept(message); err != nil {
 			return nil, nil, err
 		}
-		projected, err := llm.AgentMessagesToMessages([]llm.AgentMessage{entry.Message})
-		if err != nil {
-			return nil, nil, err
-		}
-		for _, message := range projected {
-			tokens[len(tokens)-1] += llm.EstimateMessageTokens(message)
+		if projectedIndex < len(projected) && reflect.DeepEqual(message, projected[projectedIndex]) {
+			tokens[len(tokens)-1] += llm.EstimateMessageTokens(projected[projectedIndex])
+			projectedIndex++
 		}
 	}
 	if len(sequence.pending) != 0 {

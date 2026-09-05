@@ -108,9 +108,10 @@ type InputMessage struct {
 // InputSource returns at most one waiting message without blocking.
 type InputSource func() (InputMessage, bool, error)
 
-// HistoryCompactor replaces complete transcript history when the next model
-// request crosses the compaction threshold. The input never includes the next
-// user message; the loop appends that message after compaction succeeds.
+// HistoryCompactor replaces the full current context when a model request
+// crosses the compaction threshold. Input includes all accepted user messages
+// and paired tool results. Return the complete replacement context, preserving
+// unanswered trailing user messages. It is called at most once per model round.
 type HistoryCompactor func(
 	ctx context.Context,
 	history []llm.AgentMessage,
@@ -132,8 +133,8 @@ type RunInput struct {
 	Prompt          llm.UserMessage
 	Options         llm.StreamOptions
 	MessageRecorder MessageRecorder
-	// Compactor is called only at complete interaction boundaries. It is not
-	// used while settling a tool call inside the current interaction.
+	// Compactor runs before model requests at safe paired-round boundaries.
+	// Retries reuse prepared context without invoking it again.
 	Compactor HistoryCompactor
 	// Steering is polled only at safe boundaries after an assistant response
 	// and all of that response's tool calls have matching results.

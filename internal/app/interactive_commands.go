@@ -450,7 +450,7 @@ func (s *interactiveSession) slashCompact(
 		model:         settings.model,
 		options:       settings.options,
 	}
-	output, err := s.application.compactSession(ctx, s.conversation.store, nil, &configured)
+	output, err := s.application.compactSession(ctx, s.conversation.store, &configured)
 	if err != nil {
 		return "", err
 	}
