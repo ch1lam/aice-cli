@@ -13,8 +13,7 @@
 
 Avoid using “run” to mean process lifetime or Session lifetime, especially in
 permission messages. Guard grant scope is defined in
-[Execution](execution-sessions.md#tool-execution-boundary); its current mismatch
-is tracked in [Maintenance](maintenance.md#guard-approval-behavior).
+[Execution](execution-sessions.md#tool-execution-boundary).
 
 ## Messages and model boundary
 
