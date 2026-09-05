@@ -35,9 +35,9 @@ type Guard struct {
 	enabled   bool
 	policies  []compiledPolicy
 	exists    func(path, workspace string) bool
-	// sessionAllowed tracks file-policy paths allowed for this run.
+	// sessionAllowed tracks file-policy paths allowed for this session.
 	sessionAllowed map[string]bool
-	// sessionAllowedTools tracks unknown tool names allowed for this run.
+	// sessionAllowedTools tracks unknown tool names allowed for this session.
 	sessionAllowedTools map[string]bool
 	// permission gate
 	dangerousPatterns    []compiledCommandPattern
@@ -110,7 +110,7 @@ func NewWithExists(workspace string, cfg Config, exists func(string, string) boo
 	return g, nil
 }
 
-// AllowSession records that path is allowed for the remainder of this run.
+// AllowSession records that path is allowed for the remainder of this session.
 // Caller should normalize via normalizeTarget before calling; we do it again
 // for safety.
 func (g *Guard) AllowSession(path string) {
@@ -121,10 +121,10 @@ func (g *Guard) AllowSession(path string) {
 	g.sessionAllowed[key] = true
 }
 
-// AllowPathSession records a path-access grant for the remainder of this run.
+// AllowPathSession records a path-access grant for the remainder of this session.
 // isDir indicates whether the grant is for the directory and its descendants.
 // Grants of the filesystem root or the user's home directory are ignored so
-// a run-scoped grant ("Allow … for this run") cannot authorize those
+// a session-scoped grant ("Allow … for this session") cannot authorize those
 // too-broad scopes; later checks stay ask.
 func (g *Guard) AllowPathSession(absPath string, isDir bool) {
 	if g == nil {
@@ -142,7 +142,7 @@ func (g *Guard) AllowPathSession(absPath string, isDir bool) {
 }
 
 // AllowCommandSession records that a dangerous command is allowed for the
-// remainder of this run. Only an identical raw command bypasses the dangerous
+// remainder of this session. Only an identical raw command bypasses the dangerous
 // check; configured allowed patterns and command-prefix grants stay separate.
 func (g *Guard) AllowCommandSession(command string) {
 	if g == nil || command == "" {
@@ -155,7 +155,7 @@ func (g *Guard) AllowCommandSession(command string) {
 }
 
 // AllowToolSession records that an unknown tool name is allowed for the
-// remainder of this run.
+// remainder of this session.
 func (g *Guard) AllowToolSession(name string) {
 	if g == nil || name == "" {
 		return
@@ -164,7 +164,7 @@ func (g *Guard) AllowToolSession(name string) {
 }
 
 // AllowCommandPrefixSession records a command-prefix grant for the remainder
-// of this run. Future bash commands whose every parsed subcommand matches the
+// of this session. Future bash commands whose every parsed subcommand matches the
 // prefix (exact or prefix plus a following word) skip the dangerous check.
 func (g *Guard) AllowCommandPrefixSession(prefix string) {
 	if g == nil {
@@ -175,6 +175,20 @@ func (g *Guard) AllowCommandPrefixSession(prefix string) {
 		return
 	}
 	g.sessionCmdPrefixes = append(g.sessionCmdPrefixes, prefix)
+}
+
+// ResetSessionGrants removes only in-memory authorizations for the previous
+// Session. Configuration and workspace boundaries remain unchanged. Callers
+// must stop tool execution before resetting, as with other grant mutations.
+func (g *Guard) ResetSessionGrants() {
+	if g == nil {
+		return
+	}
+	clear(g.sessionAllowed)
+	clear(g.sessionAllowedTools)
+	clear(g.sessionAllowedPaths)
+	clear(g.sessionCommands)
+	g.sessionCmdPrefixes = nil
 }
 
 // ResolveAbsolute exposes resolveAbsolute for callers that need to map a
@@ -202,7 +216,7 @@ func (g *Guard) Check(ctx context.Context, call llm.ToolCall) (Result, error) {
 	}
 	// Known tools with no extractable path/command still allow. Completely
 	// unknown names cannot be mapped to actions and must not be silent-allow,
-	// unless the user granted this tool for the remainder of the run.
+	// unless the user granted this tool for the remainder of the session.
 	if !isKnownTool(call.Name) {
 		if g.sessionAllowedTools[call.Name] {
 			return Result{Decision: DecisionAllow}, nil

@@ -74,8 +74,13 @@ Exact command grants now use raw whole-string equality independently of
 configured patterns. `TestGuardExactCommandGrant` and
 `TestGuardExactCommandGrantPreservesOtherChecks` cover changed arguments,
 compound commands, whitespace/quoting, configured patterns, and denial precedence.
-Full tests and vet passed. Session grant reset and aggregate rule evaluation
-remain outstanding.
+Full tests and vet passed. Aggregate rule evaluation remains outstanding.
+
+Session grants now reset when `/new` detaches, while invalid or active-run
+commands leave them intact. Menu labels say "for this session". Guard and app
+lifecycle regressions cover all grant kinds, reuse across runs and Loop rebuilds,
+configured rules/read roots, and yolo preservation. Full tests, vet, and race
+passed. Actual interactive verification remains part of the completion audit.
 
 The Go HTTP evaluation family is in `evals/go-service`. It includes independent
 HTTP acceptance, generated starting points, one reference implementation, and

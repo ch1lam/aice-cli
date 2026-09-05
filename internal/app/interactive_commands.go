@@ -478,6 +478,7 @@ func (s *interactiveSession) slashNew(
 	defer s.conversation.historySyncMu.Unlock()
 	previous := s.conversation.store
 	s.conversation.store = nil
+	s.guard.ResetSessionGrants()
 	s.conversation.historyMu.Lock()
 	s.conversation.history = nil
 	s.conversation.historyMu.Unlock()

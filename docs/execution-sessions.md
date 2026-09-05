@@ -52,18 +52,17 @@ set. `--yolo` upgrades every `ask` to `allow` and skips the interactive
 confirmation prompt. It does not lift `deny`: `permissionGate.autoDeny`
 still always wins, and file-policy `noAccess` / `readOnly` denials are
 unchanged. Interactive `ask` prompts generate options from the
-triggering rule. The intended grant lifetime is the current Session, across
-its Agent runs;
-`/new` must clear grants and none persist to disk. The current menu still says
-“for this run” and the implementation retains grants until process exit.
-This confirmed lifecycle correction is pending; see
-[Maintenance](maintenance.md#guard-approval-behavior).
+triggering rule. Grants last for the current Session, across its Agent runs
+and provider or credential changes. `/new` clears all dynamic grants, including
+when no Session file has been created yet. Configured policies, skill read roots,
+and the invocation's `--yolo` setting remain unchanged. Grants never persist to
+disk, so resuming a Session in another process starts without them.
 
 | Rule | Options |
 | --- | --- |
-| `pathAccess.ask` | Allow once; Allow this file for this run; Allow directory `<dir>/` for this run; Deny |
-| `permissionGate.dangerous` | Allow once; Allow this exact command for this run; Allow `"<prefix> …"` commands for this run; Deny |
-| `unknownTool` | Allow once; Allow tool `"X"` for this run; Deny |
+| `pathAccess.ask` | Allow once; Allow this file for this session; Allow directory `<dir>/` for this session; Deny |
+| `permissionGate.dangerous` | Allow once; Allow this exact command for this session; Allow `"<prefix> …"` commands for this session; Deny |
+| `unknownTool` | Allow once; Allow tool `"X"` for this session; Deny |
 | Other `ask` rules | Allow once; Deny |
 
 The directory option is omitted when the parent is `/` or `$HOME`. The
@@ -71,7 +70,7 @@ command-prefix option is omitted when `guard.CommandPrefix` returns empty:
 compound commands, dangerous binaries such as `rm`/`sudo`/`dd`/`mkfs`, and
 `docker`/`podman` `run`/`create`.
 
-Intended grant scope within the current Session (current menu labels above):
+Grant scope within the current Session:
 
 - **file** — that absolute path only
 - **directory** — the parent directory and its descendants
@@ -190,8 +189,8 @@ The TUI exposes the same behavior through `/session`, `/tree`, and
 file; the next accepted prompt starts a fresh one. A previous file that
 recorded turns is left untouched and stays resumable with `--session`.
 `/clear` only clears the visible transcript. `/new` does not rebuild the
-process environment: prompt files, skill discovery, and Guard grants are
-currently reused. See [known lifecycle discrepancies](maintenance.md#startup-state-and-new).
+process environment: prompt files and skill discovery are reused. Dynamic Guard
+grants are cleared. See [known startup discrepancies](maintenance.md#startup-state-and-new).
 
 ## Recovery and compaction
 

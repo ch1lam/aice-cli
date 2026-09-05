@@ -175,7 +175,7 @@ func guardAskOptions(g *guard.Guard, toolName string, result agent.GuardResult) 
 			{ID: guardOptionAllowOnce, Label: "Allow once"},
 			{
 				ID:    guardOptionAllowRunTool,
-				Label: fmt.Sprintf("Allow tool %q for this run", toolName),
+				Label: fmt.Sprintf("Allow tool %q for this session", toolName),
 			},
 			{ID: guardOptionDeny, Label: "Deny", Deny: true},
 		}
@@ -190,7 +190,7 @@ func pathAccessAskOptions(g *guard.Guard, toolName, path string) []interaction.G
 		{ID: guardOptionAllowOnce, Label: "Allow once"},
 		{
 			ID:     guardOptionAllowRunFile,
-			Label:  "Allow this file for this run",
+			Label:  "Allow this file for this session",
 			Detail: hostpath.HomeDisplay(abs),
 		},
 	}
@@ -198,7 +198,7 @@ func pathAccessAskOptions(g *guard.Guard, toolName, path string) []interaction.G
 	if !guard.GrantTooBroad(parent) {
 		options = append(options, interaction.GuardOption{
 			ID:    guardOptionAllowRunDir,
-			Label: "Allow directory " + hostpath.HomeDisplay(parent) + "/ for this run",
+			Label: "Allow directory " + hostpath.HomeDisplay(parent) + "/ for this session",
 		})
 	}
 	return append(options, interaction.GuardOption{
@@ -211,12 +211,12 @@ func pathAccessAskOptions(g *guard.Guard, toolName, path string) []interaction.G
 func dangerousAskOptions(command string) []interaction.GuardOption {
 	options := []interaction.GuardOption{
 		{ID: guardOptionAllowOnce, Label: "Allow once"},
-		{ID: guardOptionAllowRunCommand, Label: "Allow this exact command for this run"},
+		{ID: guardOptionAllowRunCommand, Label: "Allow this exact command for this session"},
 	}
 	if prefix := guard.CommandPrefix(command); prefix != "" {
 		options = append(options, interaction.GuardOption{
 			ID:    guardOptionAllowRunPrefix,
-			Label: fmt.Sprintf(`Allow "%s …" commands for this run`, prefix),
+			Label: fmt.Sprintf(`Allow "%s …" commands for this session`, prefix),
 		})
 	}
 	return append(options, interaction.GuardOption{

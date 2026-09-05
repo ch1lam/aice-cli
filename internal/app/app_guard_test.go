@@ -446,7 +446,7 @@ func TestGuardAskOptionsPathAccessLabels(t *testing.T) {
 	})
 
 	file := findGuardOption(t, options, guardOptionAllowRunFile)
-	if file.Label != "Allow this file for this run" {
+	if file.Label != "Allow this file for this session" {
 		t.Fatalf("allow-run-file Label = %q", file.Label)
 	}
 	if file.Detail != hostpath.HomeDisplay(abs) {
@@ -457,7 +457,7 @@ func TestGuardAskOptionsPathAccessLabels(t *testing.T) {
 	}
 
 	dir := findGuardOption(t, options, guardOptionAllowRunDir)
-	wantDir := "Allow directory " + hostpath.HomeDisplay(filepath.Dir(abs)) + "/ for this run"
+	wantDir := "Allow directory " + hostpath.HomeDisplay(filepath.Dir(abs)) + "/ for this session"
 	if dir.Label != wantDir {
 		t.Fatalf("allow-run-dir Label = %q, want %q", dir.Label, wantDir)
 	}

@@ -67,20 +67,6 @@ Recheck an entry before changing its code.
 
 ### Guard approval behavior
 
-**Grant lifetime — product decision confirmed, implementation pending.**
-The intended Session lifetime is defined in
-[Execution](execution-sessions.md#default-wired-behavior). Currently
-`newRunEnvironment` creates one Guard, `Interactive` retains it on
-`interactiveSession`, and `rebuildAgentLoop` reuses it. `beginMainRun`,
-`endMainRun`, and `slashNew` do not clear grants. The menu says “for this run”
-although grants survive both later Agent runs and `/new`.
-
-Acceptance: grants survive Agent-run and provider/credential changes within a
-Session; `/new` clears all dynamic grants while preserving configured default
-policies, skill read roots, and the invocation's `--yolo` setting. Resuming a
-Session in another process must not restore grants from disk. Update menu
-labels and tests to use the same Session scope.
-
 **Early ask skips later policies — confirmed implementation mismatch.**
 `Guard.Check` returns immediately for a dangerous command, before checking file
 policies and all extracted paths. With an existence probe reporting a protected
