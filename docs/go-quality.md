@@ -1,24 +1,77 @@
-# Go Code Quality and Karpathy Guidelines
+# Go Engineering
 
-## Go Code Quality
+## Working method
 
-- Read files in full before wide-ranging changes, before editing a file not already fully inspected, and whenever the user asks for an investigation or audit. Do not base broad conclusions on search snippets alone.
-- Prefer clear, idiomatic Go over patterns copied from TypeScript. Keep functions focused, handle errors early, and avoid premature abstractions.
-- Package names are short, lowercase, singular, and specific. Do not create `util` or `helper` packages. Existing `internal/jsonutil`, `internal/apitest`, and `internal/hostpath` are approved narrow shared packages; do not add another general-purpose util package.
-- Define small interfaces where they are consumed; accept interfaces and return concrete types.
-- Use manual constructor injection. Avoid mutable package globals and side-effectful `init()` functions.
-- Wrap errors with context using `%w`; use errors for expected failures and reserve panics for broken invariants.
-- Use concrete types or generics instead of `any` when the data shape is known. Keep raw JSON at protocol/tool boundaries.
-- Propagate timeouts and cancellation to all external calls. Bound retries and check the context between attempts.
-- Comments explain intent, invariants, protocol quirks, and security decisions, not obvious syntax.
-- Never remove or downgrade code or capability to work around type errors caused by outdated dependencies. Upgrade the dependency and adapt the code to its supported API.
-- Do not preserve backward compatibility unless the user explicitly requests it. This includes the abandoned TypeScript implementation and its session/config formats.
+- Define the behavior to preserve or change before coding. Identify the
+  responsible package and the smallest useful verification.
+- Read affected files in full, including relevant callers and tests. For an
+  audit, state which paths were inspected and which remain unverified.
+- Fix the cause with a focused change. Avoid speculative features, single-use
+  frameworks, unrelated cleanup, and abstractions without a concrete consumer.
+- Separate behavior changes, structural refactors, and imported upstream code
+  into independently reviewable steps. Git and verification rules live in
+  [Collaboration](collaboration.md).
+- When evidence conflicts, use [Maintenance](maintenance.md#resolving-discrepancies).
+  Do not turn uncertainty into either an invented design rule or a silent fix.
 
-## Karpathy Guidelines
+## Implementation defaults
 
-Behavioral guidelines to reduce common LLM coding mistakes, adapted from the MIT-licensed `karpathy-guidelines` skill (derived from Andrej Karpathy's observations on LLM coding pitfalls). These bias toward caution over speed; use judgment for trivial tasks.
+- Use the toolchain declared in [go.mod](../go.mod) and the pinned dependencies.
+  Prefer idiomatic Go and the standard library. New dependencies follow
+  [Architecture](architecture.md#dependency-and-ownership-rules).
+- Keep functions focused, handle errors early, and name packages after their
+  responsibility. Avoid vague `core`, `services`, `utils`, or `helpers`
+  packages. Existing narrow shared packages are listed in the
+  [package map](architecture.md#package-map).
+- Define small interfaces at the consumer boundary when substitution or testing
+  needs them. Accept interfaces and normally return concrete types. Wire
+  dependencies through constructors; do not hide them in globals or `init()`.
+- Prefer useful zero values. Initialize maps before writing; use nil versus
+  empty slices according to the API/JSON contract. Clone mutable data when
+  crossing ownership boundaries; do not add blanket copying everywhere.
+- Use concrete types for known shapes. Use generics when a shared algorithm
+  needs them; keep `any` and raw JSON at genuinely open protocol/tool boundaries.
+- Return expected failures as errors. Add actionable operation context with
+  `%w`, inspect chains with `errors.Is`/`errors.As`, and report errors once at
+  the appropriate boundary. Do not discard write, flush, or close failures
+  where durability matters. Reserve panics for broken internal invariants.
+- Pass context explicitly and bound external work. Every goroutine needs an
+  owner, cancellation, and an exit/wait path. Runtime ownership and the bounded
+  persistence-cleanup exception are defined in
+  [Contracts](contracts.md#concurrency-and-tui).
+- Validate untrusted input before side effects. Preserve tool result pairing,
+  resource bounds, and Guard checks. Host tools and project prompt loading have
+  different access boundaries; see [Execution](execution-sessions.md) and
+  [Project Trust](project-trust.md).
+- Comments explain ownership, intent, invariants, and protocol quirks. Avoid
+  implementation-plan labels and claims about future wiring. When behavior
+  changes, inspect nearby comments as well as Markdown documentation.
 
-1. Think before coding: state assumptions explicitly, present alternative interpretations instead of picking silently, push back when a simpler approach exists, and stop to name anything that is unclear. Do not hide confusion.
-2. Simplicity first: ship the minimum code that solves the problem. No speculative features, single-use abstractions, unrequested flexibility, or error handling for impossible scenarios. If 200 lines could be 50, rewrite.
-3. Surgical changes: touch only what the request requires. Do not improve adjacent code, comments, or formatting; do not refactor what is not broken; match existing style. Clean up only orphans created by your own changes, and mention (do not delete) unrelated dead code.
-4. Goal-driven execution: define verifiable success criteria and loop until verified ("write a test for invalid inputs, then make it pass"; "ensure tests pass before and after"). For multi-step tasks, state a brief plan with per-step verification.
+## Tests and compatibility
+
+Use standard `testing`, local fakes, `httptest`, and temporary directories when
+sufficient. Test observable behavior, boundary failures, and regressions;
+avoid assertions that only mirror private implementation structure. Use named
+subtests for distinct cases. Parallelize tests only when they do not share
+mutable state or process environment. Default tests must not need provider
+credentials or paid APIs. Required commands live in
+[Collaboration](collaboration.md#verification-commands).
+
+The removed TypeScript runtime and its formats are not compatibility targets.
+Internal Go APIs may change with their callers; do not retain obsolete shims
+without a current need. This does not waive the current
+[NDJSON contract](contracts.md#print-ndjson-events) or permit silently discarding
+Session history. For a format or user-facing breaking change, identify affected
+readers/integrations and explicitly decide versioning, migration, or rejection
+behavior before implementation. Pre-stable formats may evolve; that is not a
+blanket instruction to break them during unrelated work.
+
+When a dependency API mismatch blocks work, first verify the pinned API and
+local usage. Do not remove a capability to make the build pass, and do not
+blindly upgrade dependencies. Explain and verify any necessary upgrade within
+its own scope.
+
+External skill examples are supplementary. Repository-specific ownership,
+dependency, compatibility, and git rules take precedence over generic patterns
+such as global Cobra registration, mandatory helper libraries, or automatic
+commits.

@@ -24,9 +24,12 @@ with the full permissions of the AICE process, inside or outside the
 workspace. `.aice/sessions` does not trigger Trust.
 
 `.agents/skills/` is gated by existence only: an empty directory still
-triggers Trust, and a regular file of the same name does not. Discovery
-inspects the path through `os.Root`, so a symlink cannot escape the
-workspace. `SKILL.md` parse and size constraints are in
+triggers Trust, and a regular file of the same name does not. Protected-resource
+detection inspects that directory path through `os.Root`,
+so an escaping symlink at that path fails discovery. This is not a guarantee
+that skill bodies are read through `os.Root`: after Trust succeeds, the current
+skill scanner uses `os.DirFS`. Do not extend the prompt-file confinement claim
+to the entire skill tree. `SKILL.md` parse and size constraints are in
 [Skills](architecture.md#skills).
 
 ## Decision order
@@ -42,9 +45,11 @@ Non-interactive runs never prompt. With the default `ask` policy and no saved
 decision, they ignore project resources and continue with global or built-in
 instructions.
 
-The startup prompt and `/trust` can save a decision for the workspace or its
-parent, or apply a session-only choice. `/trust` affects the next restart; it
-does not hot-reload prompt files.
+The startup prompt can save a decision for the workspace or its parent, or
+apply a process-only choice. `/trust` can save a decision for a later restart;
+it does not hot-reload prompt files. Its unsaved choices currently report
+success without changing effective Trust state; see the
+[known discrepancy](maintenance.md#startup-state-and-new).
 
 ## Prompt assembly
 

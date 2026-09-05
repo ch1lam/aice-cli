@@ -29,7 +29,7 @@ When `settings.json` omits `provider` and `model`, AICE uses `deepseek` and
 | Setting | Environment variable | Supported values |
 | --- | --- | --- |
 | Provider | `AICE_PROVIDER` | `deepseek`, `opencode-go`, `openai`, `custom` |
-| Model | `AICE_MODEL` | A model in the selected provider's catalog |
+| Model | `AICE_MODEL` | A catalog model, or any model ID for `custom` |
 | Thinking | `AICE_THINKING` | `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` |
 | Default Project Trust | none | `ask`, `always`, `never` |
 | Custom base URL | `AICE_CUSTOM_BASE_URL` | OpenAI-compatible endpoint persisted as `custom_base_url`; default `http://localhost:11434/v1` |
@@ -200,7 +200,7 @@ A skill is a directory with a `SKILL.md` file (YAML frontmatter plus Markdown
 instructions) that follows the open [Agent Skills](https://agentskills.io)
 specification.
 
-AICE loads skills from three sources at Session start:
+AICE loads skills from three sources when preparing the process's run environment:
 
 1. **builtin** — embedded in the AICE binary
 2. **user** — `~/.agents/skills/<name>/SKILL.md`
@@ -232,8 +232,11 @@ Skill directories on disk are allowed automatically for read-class tools
 (`read`, `grep`, `find`, `ls`); `write` and `edit` are not granted. See
 [Tool execution and Sessions](execution-sessions.md#tool-execution-boundary).
 
-The `/skills` list is scanned at Session start. Installing or removing skills
-takes effect after restarting AICE or starting a new Session.
+Restart AICE after installing or removing skills. `/new` resets Session
+history but currently reuses the startup skill catalog, tools, and prompt; it
+does not rescan skills. The current `/skills` reminder still suggests starting
+a new Session; this wording discrepancy is tracked in
+[Maintenance](maintenance.md#startup-state-and-new).
 
 ## Interactive commands
 
@@ -248,7 +251,7 @@ takes effect after restarting AICE or starting a new Session.
 | `/provider` | Select and save the global provider |
 | `/model` | Select and save a model from that provider |
 | `/thinking` | Select and save a supported reasoning level |
-| `/trust` | Save or apply a Trust choice; prompt loading changes after restart |
+| `/trust` | Save a Trust choice for restart; unsaved choices have a [known limitation](maintenance.md#startup-state-and-new) |
 | `/session` | Show the Session ID, path, active leaf, and counts |
 | `/tree` | Show all Session branches |
 | `/checkout` | Select where the next branch starts |
@@ -326,7 +329,7 @@ and thread drafts keep the expanded text.
 | Variable | Effect |
 | --- | --- |
 | `AICE_NO_DEP_INSTALL=1` | Do not download missing ripgrep or Windows Git Bash helpers |
-| `AICE_NO_UPDATE_CHECK=1` | Disable the daily interactive update check |
+| `AICE_NO_UPDATE_CHECK=1` | Disable the interactive update check |
 
 Installation, helper provisioning, and self-update details live in
 [Installation and updates](installation.md).

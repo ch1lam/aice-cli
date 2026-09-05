@@ -3,9 +3,34 @@
 ## Product boundary
 
 AICE is a small coding harness, not an agent platform. It ships as one Go
-module, binary, and process. Pi is a semantic reference for the Agent Loop,
+module and binary, with one AICE process; host tools may spawn subprocesses.
+Pi is a semantic reference for the Agent Loop,
 messages, tools, events, and Session truth; it is not a source-tree template
 or a compatibility target.
+
+## Design philosophy
+
+Keep the next change understandable. The default is to add behavior in its
+owning package and wire it through an existing boundary. An interface earns
+its place when a real consumer needs substitution or testing; a package earns
+its place when it owns a distinct responsibility. Neither a growing file nor
+an upstream framework is by itself a reason to add another architectural layer.
+
+Preserve these properties because they make failures and changes traceable:
+
+- **Visible control flow:** one place decides what runs next and when it stops.
+- **Explicit ownership:** a maintainer can identify who creates, mutates, cancels,
+  and closes each resource.
+- **Recoverable history:** summaries and presentation can be rebuilt without
+  destroying the original interaction.
+- **Local change:** provider quirks, UI behavior, and host execution remain at
+  their boundaries.
+- **Requirement-led extension:** a product need justifies new machinery; a
+  possible future feature does not justify building it today.
+
+These principles guide tradeoffs, not a frozen directory layout. Use the
+[maintenance procedure](maintenance.md#resolving-discrepancies) when the intended
+boundary and implementation disagree.
 
 Durable design rules:
 
@@ -62,8 +87,7 @@ truth. A future GUI must use the same application-owned active-run boundary.
 | `internal/llm` | Canonical messages, models, usage, streams, context estimates |
 | `internal/api/{anthropic,openairesponses,openaicompletions}` | Protocol translation around official SDKs |
 | `internal/api/streamcore` | Protocol-neutral streaming mechanics shared by adapters |
-| `internal/provider/{deepseek,opencode,openai,custom}` | Provider catalogs, credentials, defaults, compatibility |
-| `internal/provider/custom` | OpenAI-compatible catch-all (`custom`); any model ID; default base URL `http://localhost:11434/v1` |
+| `internal/provider/{deepseek,opencode,openai,custom}` | Provider catalogs, credentials, defaults, compatibility; `custom` accepts arbitrary model IDs |
 | `internal/tool` | `read`, `write`, `edit`, `bash`, `grep`, `find`, `ls`, `skill` |
 | `internal/guard` | Intrinsic execution gate: file policies, permission gate, pathAccess mode (`allow`/`ask`/`block`), check Decision (`allow`/`ask`/`deny`) |
 | `internal/session` | Versioned JSONL replay, tree navigation, compaction context |
@@ -100,7 +124,12 @@ such as `core`, `types`, `services`, `utils`, or `helpers`.
   not import `internal/agent`. API packages alone translate those canonical
   values into official SDK or wire types; `streamcore` contains no
   model-specific reasoning policy.
-- Interfaces are defined by consumers. Constructors return concrete types.
+- Interfaces are defined by consumers. Constructors normally return concrete
+  types; adapter factories may return the consumer capability they select.
+- Do not use mutable global service registries or `init()` wiring. Fixed,
+  package-private dispatch tables are ordinary implementation data, not an
+  extension mechanism; keep dependency construction in `internal/app`. Do not
+  add service locators or DI frameworks.
 - Use standard library packages when sufficient. A new direct dependency
   requires an explanation, maintenance/license review, and user approval.
   The guard's bash AST parsing uses `mvdan.cc/sh/v3` (MIT) because dangerous
@@ -108,37 +137,12 @@ such as `core`, `types`, `services`, `utils`, or `helpers`.
   no equivalent, and the hand-written tokenizer is only a fallback when AST
   parsing fails. Skill frontmatter parsing uses `gopkg.in/yaml.v3` (MIT,
   user-approved) because Agent Skills `SKILL.md` files use YAML frontmatter
-  and interoperability with that ecosystem requires a YAML 1.2 parser; the
-  standard library has no YAML package.
+  and interoperability requires YAML parsing; the standard library has no
+  YAML package.
 - Imported code must record its repository and commit and preserve required
   license notices. AICE remains Apache-2.0.
 
-## Deliberately out of scope
-
-Do not prebuild plugin frameworks, ADK/Eino/LangChainGo/Genkit integration,
-Node bridges, multi-agent orchestration, LSP, RPC/ACP, memory services,
-databases, or extra sandbox managers — the intrinsic `internal/guard` gate
-is the in-process approval mechanism. Add another only after a concrete
-product need defines its smallest useful contract.
-
-## Planned extensions and restraint
-
-These are decided shapes for when a concrete product requirement appears.
-They are executable rules for future maintainers. Do not prebuild the
-packages, frameworks, or persistence types listed as forbidden.
-
-Freedom is released in four places only:
-
-1. concrete `[]agent.Tool` implementations;
-2. linear appends inside `assembleSystemPrompt`;
-3. run-scoped policy on `Guard` (persistent grants are a planned
-   extension and must not be prebuilt);
-4. another `Loop` constructed in `internal/app`.
-
-Restraint stays on Loop control flow, Session record types, the `llm`
-message union, no global registries, and no second persistence store.
-
-### Skills
+## Skills
 
 `internal/skill` discovers and parses Agent Skills. A skill is a directory
 with `SKILL.md` (YAML frontmatter plus Markdown). All sources are the same
@@ -159,7 +163,8 @@ label for display and same-name conflict ordering.
   required; other spec fields are tolerated and ignored. Validation is
   lenient: format issues warn and still load; missing name/description,
   missing frontmatter, or unparseable YAML skip that skill with an error
-  diagnostic.
+  diagnostic. Files must be regular, valid UTF-8, and at most 256 KiB;
+  invalid or oversized files are skipped.
 - Ship one built-in `skill` tool that returns the already-parsed `SKILL.md`
   body on demand. `internal/tool` does not import `internal/skill`; `internal/app`
   maps catalog entries into `tool.SkillEntry`.
@@ -175,55 +180,70 @@ label for display and same-name conflict ordering.
 Do not: hot-reload skills, add a new message `Role`, or insert Loop
 middleware.
 
-### MCP
+## Planned extensions and restraint
 
-When implementing MCP:
+The following status reflects the product direction. A committed feature is
+not an implemented feature or permission to prebuild its infrastructure.
+Confirm unresolved behavior when implementing it, then update its owning user
+guide and runtime contract. Do not treat private function or field names below
+as permanent architecture.
 
-- Client only. Adapt each MCP tool to an ordinary `agent.Tool` and run it
-  through the same `executeTool` path and `Guard`.
-- Wiring must replace `interactiveSession.tools` and call
-  `rebuildAgentLoop`.
+| Capability | Status | Design boundary |
+| --- | --- | --- |
+| Plan mode | Required, not implemented | Enforce allowed actions in Guard; app owns mode transitions and UI commands |
+| Subagents | Required, not implemented | Reuse the Agent Loop through an app-wired tool with explicit child ownership |
+| Memory | Required product capability, strategy undecided; optional use | Project context remains primary; retention, scope, and retrieval need a concrete design |
+| MCP | Optional, no current requirement | If needed, adapt client tools to the existing Tool and Guard boundary |
 
-Do not: run an MCP server, add an ACP/plugin bus, bypass `Guard`, or add a
-new `ContentType` for MCP resources.
-
-### Memory
-
-When implementing memory:
-
-- Store Markdown files in a dedicated directory. Global files live under
-  `~/.aice/memory/`. A project-level memory directory must go through Trust.
-- Inject a truncated index into the prompt; read bodies on demand through a
-  tool.
-
-Do not: write memory into Session JSONL, add a database or vector store, or
-create a second transcript store.
-
-### Subagents
-
-When implementing subagents:
-
-- Expose a `delegate` tool whose implementation nests `Loop.Run`.
-- Give the child a tool whitelist, an independent empty context, and return
-  a summary as `ToolResult` to the parent turn.
-- Defer parallelism. When it is required, either make `executeTools`
-  concurrent or contain concurrency inside the tool. Before that change,
-  lock the unexported `sessionAllowed`, `sessionAllowedPaths`, and
-  `sessionAllowedTools` maps and the `sessionCmdPrefixes` slice on
-  `guard.Guard`; they currently have no mutex and are safe only because
-  tools run serially.
-
-Do not: promote `/btw` or `SideThreadManager` into a subagent runtime, adopt
-a multi-agent orchestration framework, or persist a child JSONL.
+No agent framework, plugin bus, LSP, RPC/ACP layer, Node bridge, database,
+second transcript store, or additional sandbox manager is needed by default.
+A concrete requirement must explain why existing boundaries are insufficient
+before adding one. The in-process Guard and external host isolation remain
+separate concerns.
 
 ### Plan mode
 
-When implementing plan mode:
+Start with application-owned transitions and a Guard-enforced restriction.
+A prompt instruction alone is insufficient to enforce read-only behavior.
+Define entry, permitted tools, user approval to exit, and when the change takes
+effect relative to an active run. The system prompt is frozen during a run.
 
-- Add a run-scoped read-only flag on `Guard` plus a `/plan` command.
-- Switch the mode between runs. `SystemPrompt` is frozen for the duration of
-  a run.
-- Clear the flag after the user approves leaving plan mode.
+The earlier `/plan` plus read-only Guard flag is a starting design, not a
+requirement for a mode framework. Decide how plans are presented and retained
+before implementation; do not invent a new Session record type or Loop
+primitive merely to hold a plan.
 
-Do not: add a Mode state-machine framework, make `ExitPlanMode` a Loop
-primitive, or record plan text in the Session.
+### Subagents
+
+Start with an ordinary delegation tool whose implementation owns a child Loop,
+limited tools, explicit context input, cancellation, and a result returned to
+the parent as a tool result. The main Session remains the durable transcript;
+do not introduce independent child transcripts without revisiting that decision.
+`/btw` is a tool-free side conversation and must not become the delegation runtime.
+
+Resolve permission inheritance, context selection, usage accounting, failure
+propagation, and limits for the first concrete delegation use case. Start
+serially unless that use case requires parallelism. Before sharing a Guard or
+tools across concurrent runs, review all their mutable state and shutdown
+paths; serial tool execution within each Loop does not make shared dependencies
+safe across Loops. See [Concurrency](contracts.md#concurrency-and-tui).
+
+### Memory
+
+Memory is wanted, but project-specific context already supplies much of a
+coding harness's needs. Its use should be optional; scope, storage, retrieval,
+retention, and user control are not yet decided. Do not build a memory service
+or silently persist inferred user/project facts while the strategy is open.
+
+Markdown files with a small prompt index and bodies read on demand remain a
+candidate, not an approved directory layout or retrieval policy. Project-owned
+memory loading must have an explicit Trust decision. Keep memory distinct from
+Session truth and avoid a database/vector store or second transcript store.
+
+### MCP
+
+There is no current requirement to implement MCP. If a future use case needs
+it, begin with a client adapter that presents ordinary tools, participates in
+Guard checks, and is wired by `internal/app`. Re-evaluate lifecycle and resource
+handling against that use case; do not prebuild an MCP server, plugin bus,
+message variant, or hot-reload machinery.

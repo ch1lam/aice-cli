@@ -1,5 +1,21 @@
 # LLM, Agent, Concurrency, and TUI Contracts
 
+## Lifecycle vocabulary
+
+| Term | Meaning and owner |
+| --- | --- |
+| Process | One AICE invocation; `internal/app` prepares its workspace, startup prompt, skills, and dependencies |
+| Session | One durable JSONL tree, potentially resumed by later processes; `/new` detaches it |
+| Agent run | One `Loop.Run` call: the initial interaction plus queued follow-ups, with frozen dependencies |
+| Interaction | Initial/follow-up user input, in-interaction steers, and model/tool rounds until settlement; persisted as one Session turn |
+| Model round | One assistant response and its paired tool results; legacy `turn_start`/`turn_end` event names refer to this level |
+| Side thread | Ephemeral `/btw` context and answers, owned separately from main Session history |
+
+Avoid using “run” to mean process lifetime or Session lifetime, especially in
+permission messages. Guard grant scope is defined in
+[Execution](execution-sessions.md#tool-execution-boundary); its current mismatch
+is tracked in [Maintenance](maintenance.md#guard-approval-behavior).
+
 ## Messages and model boundary
 
 - AICE owns `Message`, `AgentMessage`, concrete user/assistant/tool-result
@@ -46,7 +62,7 @@
   `ask` as `deny` — fail-closed); `allow` proceeds. The handler returns
   `GuardAskReply` with Decision `allow` or `deny` and optional `Feedback`.
   Deny feedback is appended to the paired error tool result. A nil handler
-  fails closed. Product behavior of the gate, including run-scoped grants,
+  fails closed. Product behavior of the gate, including Session-scoped grants,
   is in [Tool execution and
   Sessions](execution-sessions.md#tool-execution-boundary).
 - Never execute an incomplete or invalid streamed tool call. If a response
@@ -61,8 +77,11 @@
   following safe boundary.
 - Poll follow-up input only at a natural stop boundary after steering has been
   checked. Emit `interaction_end` for the completed initial/follow-up
-  interaction before polling again. Emit exactly one `agent_start` and one
-  `agent_end` for the whole run, even when it contains multiple interactions.
+  interaction before polling again. A normally delivered run emits one
+  `agent_start` and one `agent_end`, including runs with multiple interactions.
+  Preflight failures can return before `agent_start`; an event-sink failure
+  stops delivery and may prevent `agent_end`. Callers must handle the returned
+  result/error and persistence separately from terminal event delivery.
 - Reapply the compaction threshold before the first model request of every
   follow-up interaction. When the threshold is crossed at a complete
   interaction boundary, the application compacts the active Session and gives
@@ -73,45 +92,18 @@
 - Tests use faux providers and fake tools. Default tests never require paid
   APIs or real credentials.
 
-## Event enumerations
+## Internal events
 
-### `agent.EventType`
+[agent.EventType](../internal/agent/contracts.go) defines the closed string set
+for Agent lifecycle events. [interaction.EventKind](../internal/interaction/contracts.go)
+defines the frontend's internal numeric enum. Use those declarations when
+changing events; do not treat numeric enum positions as a public wire format.
+`internal/app` translates between them. `interaction_end` is the natural
+persistence boundary; `turn_end` is only a completed model round.
 
-Closed string set in `internal/agent`:
-
-| Constant | Value |
-| --- | --- |
-| `EventTypeUnknown` | `""` |
-| `EventTypeAgentStart` | `agent_start` |
-| `EventTypeAgentEnd` | `agent_end` |
-| `EventTypeInteractionEnd` | `interaction_end` |
-| `EventTypeTurnStart` | `turn_start` |
-| `EventTypeTurnEnd` | `turn_end` |
-| `EventTypeMessageStart` | `message_start` |
-| `EventTypeMessageUpdate` | `message_update` |
-| `EventTypeMessageEnd` | `message_end` |
-| `EventTypeToolExecutionStart` | `tool_execution_start` |
-| `EventTypeToolExecutionEnd` | `tool_execution_end` |
-| `EventTypeRetryStart` | `retry_start` |
-| `EventTypeRetryEnd` | `retry_end` |
-
-### `interaction.EventKind`
-
-Closed `uint8` iota set in `internal/interaction` (not JSON strings):
-
-| Constant | Value |
-| --- | --- |
-| `EventUnknown` | 0 |
-| `EventAssistantStart` | 1 |
-| `EventAssistantDelta` | 2 |
-| `EventAssistantEnd` | 3 |
-| `EventToolStart` | 4 |
-| `EventToolEnd` | 5 |
-| `EventSteer` | 6 |
-| `EventFollowUp` | 7 |
-| `EventRetryStart` | 8 |
-| `EventRetryEnd` | 9 |
-| `EventAgentEnd` | 10 |
+The public print format below is a separate, curated projection. Adding an
+internal event does not automatically expose it in NDJSON or justify serializing
+frontend state.
 
 ## Print NDJSON events
 
@@ -142,7 +134,11 @@ the run, including failed attempts that report usage.
 
 - Propagate `context.Context` through model calls, Agent runs, tools, and
   persistence boundaries. Do not store it in structs or replace it mid-flow
-  with `context.Background()`.
+  with `context.Background()`. Bounded durable cleanup is an explicit exception:
+  `appendSessionTurn` uses `context.WithoutCancel` plus a five-second timeout
+  to preserve the terminal interaction after request cancellation. Initial
+  lazy Session creation currently uses a local background context because
+  `Runner.NewRun` has no context parameter; do not copy that into model/tool I/O.
 - Every goroutine has an owner, cancellation path, and wait/exit path. Queues
   and buffers stay bounded.
 - Each `/btw` side thread owns a separate Runner, event stream, cancellation
@@ -158,6 +154,10 @@ the run, including failed attempts that report usage.
 - A main run snapshots its loop, model, options, and system prompt when it
   starts. Concurrent settings changes or side-thread creation must not swap
   those dependencies underneath the active run.
+- The built-in Guard has mutable grants without locking. Sequential tool
+  execution protects only a single caller; sharing that Guard across concurrent
+  runs is unsupported until its ownership/synchronization is changed. Tool-free
+  side threads do not share this execution path.
 - Each run owns its event stream. The sender closes the channel; receivers do
   not. Blocking sends also select on `ctx.Done()`.
 - `internal/interaction`, wired by `internal/app`, owns one bounded, ordered

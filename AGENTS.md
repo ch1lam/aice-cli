@@ -1,119 +1,86 @@
 # AICE Development Guide
 
-AICE is a batteries-included coding agent implemented as one Go binary. Its
-core is an explicit Agent Loop with replaceable provider, tool, TUI, and
-persistence boundaries. Sessions are append-only JSONL trees with recovery,
-branch navigation, backtracking, and branch-local automatic/manual compaction.
+AICE is a small coding harness: one Go binary, an explicit Agent Loop,
+replaceable provider/tool/UI boundaries, and append-only Session history.
+Maintainability means a maintainer can trace a request, identify who owns its
+state, and change one behavior without rebuilding the surrounding system.
 
-The user's explicit request overrides this guide. If it changes an invariant
-or architecture decision, explain the conflict, confirm the new direction,
-update this file and the relevant durable document, then implement it.
+## Start here
 
-## Start Here
+1. Read [Architecture](docs/architecture.md) for the design philosophy and
+   package boundaries, then use the task map below. Read
+   [Maintenance](docs/maintenance.md) when investigating drift or taking over
+   unfamiliar work; it links code entry points and known discrepancies.
+2. Inspect `git status --short`. Preserve unrelated work. Read affected files
+   in full and trace their callers and tests before editing or concluding that
+   behavior is wrong; search snippets are navigation, not evidence by themselves.
+3. State the intended behavior, its owner, and a focused way to verify it.
+   Prefer a local change through an existing boundary. Broaden only when the
+   evidence requires it.
+4. Update the owning document with the implementation and run the checks in
+   [Verification and collaboration](docs/collaboration.md). Report what changed,
+   what was verified, and any unresolved discrepancy.
 
-- Read the relevant document before changing its area; read files in full
-  before editing an uninspected file or making audit-wide conclusions.
-- Keep product behavior in user docs, architecture decisions in `docs/`, and
-  only repository-wide operating rules here.
-- Remove temporary implementation plans after their completed decisions have
-  been absorbed into durable documentation; Git history records how they landed.
+The user's explicit request overrides this guide. When it changes a durable
+architecture decision, explain the conflict and confirm the intended direction
+if the request has not already settled it. Update the owning document and this
+index where affected. Routine fixes within the existing design need no new
+design approval. Do not silently rewrite a contract to match a suspected bug;
+use the [discrepancy procedure](docs/maintenance.md#resolving-discrepancies).
 
-## Documentation Map
+## Task map
 
-Use this table to route each task directly to its source of truth. State each
-fact in one document; other files should link rather than restating details.
+Each detailed rule has one owning document. This file keeps short guardrails
+and routes; README files may summarize product behavior and link to details.
 
 | Task area | Read |
 | --- | --- |
-| Product overview and quickstart | [`README.md`](README.md) (keep [`README-zh.md`](README-zh.md) in sync) |
-| Installation, helper binaries, source builds, `aice update` | [`docs/installation.md`](docs/installation.md) |
-| Providers, models, reasoning, credentials, CLI flags, Agent Skills, TUI commands except Session/compaction | [`docs/configuration.md`](docs/configuration.md) |
-| Project Trust, prompt precedence, protected resources, `/init` | [`docs/project-trust.md`](docs/project-trust.md) |
-| Tool permissions, execution gate, Sessions, branches, recovery, compaction | [`docs/execution-sessions.md`](docs/execution-sessions.md) |
-| Session CLI/TUI commands (`aice session`, `aice compact`, `/session`, `/tree`, `/checkout`, `/compact`) | [`docs/execution-sessions.md`](docs/execution-sessions.md#resume-and-navigate) |
-| Runtime boundaries, package ownership, dependencies, planned extensions | [`docs/architecture.md`](docs/architecture.md) |
-| LLM messages, Agent Loop, events, concurrency, TUI | [`docs/contracts.md`](docs/contracts.md) |
-| Go engineering rules | [`docs/go-quality.md`](docs/go-quality.md) |
-| Verification commands and git workflow | [`docs/collaboration.md`](docs/collaboration.md) |
+| Product overview and quickstart | [README.md](README.md) and [README-zh.md](README-zh.md); keep both in sync |
+| Installation, helper binaries, source builds, updates | [Installation](docs/installation.md) |
+| Providers, models, reasoning, credentials, flags, Skills, TUI input | [Configuration](docs/configuration.md) |
+| Project Trust, prompt precedence, protected resources, `/init` | [Project Trust](docs/project-trust.md) |
+| Tool permissions, Sessions, `/new`, branches, recovery, compaction | [Execution and Sessions](docs/execution-sessions.md) |
+| Package ownership, dependencies, extension boundaries | [Architecture](docs/architecture.md) |
+| Messages, Agent Loop, events, concurrency, TUI boundaries | [Runtime contracts](docs/contracts.md) |
+| Go implementation and review | [Go quality](docs/go-quality.md) |
+| Verification, CI, git and collaboration | [Collaboration](docs/collaboration.md) |
+| Code entry points, conflicting evidence, known deviations | [Maintenance](docs/maintenance.md) |
+| Harbor evaluation adapter | [Harbor integration](integrations/harbor/README.md) |
 
-## Non-negotiable Invariants
+## Guardrails
 
-Each bullet is one grep-able fact plus its source of truth. Do not copy
-product details from those documents into this file.
+- **Keep the harness small.** One Go module and AICE binary; host helpers are
+  allowed. No extra AICE service, speculative framework, or restored TypeScript
+  runtime. [Architecture](docs/architecture.md#product-boundary)
+- **Make dependencies explicit.** Consumer-owned interfaces, constructor wiring
+  in `internal/app`, no mutable service registries or `init()` wiring. Standard
+  library first; new direct dependencies require a reason, maintenance/license
+  review, and explicit user approval.
+  [Ownership rules](docs/architecture.md#dependency-and-ownership-rules)
+- **Keep control flow in the Agent Loop.** The loop owns tools, steering,
+  follow-up, retries, and stopping. No fixed `MaxTurns`/`MaxToolSteps`; never
+  execute invalid or incomplete streamed tool calls. UI and concrete tool/SDK
+  dependencies stay out of the loop. [Contracts](docs/contracts.md#agent-loop)
+- **Keep history recoverable.** Session JSONL is the only durable transcript;
+  turns have stable IDs and parents. Never rewrite source history or delete
+  branches. Compact only at complete interaction boundaries; context and UI are
+  derived views. [Sessions](docs/execution-sessions.md#sessions)
+- **Keep authority explicit.** Every tool execution goes through the injected
+  Guard; non-empty tool sets require one. Unknown tools ask, non-interactive
+  asks fail closed, and `--yolo` must not lift a deny. Trust controls project
+  instruction loading, not host isolation. Check documented deviations before
+  extending these paths. [Execution boundary](docs/execution-sessions.md#tool-execution-boundary)
+- **Extend only for a concrete need.** Use the existing boundaries; review any
+  change to Loop control flow, message/Session types, permission scope, or state
+  ownership. [Extension constraints](docs/architecture.md#planned-extensions-and-restraint)
 
-- One Go module and one AICE binary. Built-in tools may spawn host
-  executables such as Bash and ripgrep; do not add a daemon or extra AICE
-  service. See [`docs/architecture.md`](docs/architecture.md).
-- Standard library first. Any new direct dependency requires a need,
-  maintenance/license review, and explicit user approval. See
-  [`docs/architecture.md`](docs/architecture.md).
-- The removed TypeScript implementation is not a compatibility target. Never
-  restore Node.js/npm, Vercel AI SDK, Ink, oclif, or old session/config
-  formats. See [`docs/architecture.md`](docs/architecture.md).
-- Do not add ADK, Eino, LangChainGo, Genkit, Node bridges, multi-agent
-  orchestration, LSP, RPC/ACP, or memory services without a concrete product
-  requirement. When that requirement exists, follow [Planned extensions and
-  restraint](docs/architecture.md#planned-extensions-and-restraint).
-- Sessions are append-only JSONL tree nodes with stable IDs and parent IDs.
-  Never overwrite source history, delete branches, or add a second transcript
-  store or mutable database. Compact only at complete turn boundaries. See
-  [`docs/execution-sessions.md`](docs/execution-sessions.md).
-- The Agent Loop never constructs tools. Concrete tools implement interfaces
-  defined by their consumers. The agent never imports Bubble Tea; the TUI is
-  presentation state, not Session truth. See
-  [`docs/contracts.md`](docs/contracts.md) and
-  [`docs/architecture.md`](docs/architecture.md).
-- The Agent Loop owns both loop levels: tools and steering continue the
-  current interaction; follow-up continues the same Agent run only at a
-  natural stop boundary. Frontends never restart a run to consume follow-up.
-  Persist each completed interaction as one Session turn. See
-  [`docs/contracts.md`](docs/contracts.md).
-- Every tool call is checked inline by `internal/guard` before it runs.
-  Unknown tool names default to `ask` (non-interactive: `deny`, unless
-  `--yolo`). `--yolo` upgrades `ask` to `allow` and does not lift `deny`.
-  A Loop with a non-empty tool set must receive a `Guard`. Path-access
-  mode is `allow`/`ask`/`block`; check `Decision` is `allow`/`ask`/`deny`.
-  Run-scoped grants (Allow … for this run) are current-run, memory-only.
-  The loop never constructs the gate; `internal/app` injects it. See [Tool
-  execution and Sessions](docs/execution-sessions.md#tool-execution-boundary).
-- Project Trust gates only workspace-root `AGENTS.md`, `.aice/SYSTEM.md`,
-  `.aice/APPEND_SYSTEM.md`, and the project `.agents/skills` directory. It
-  is not a sandbox. `.aice/sessions` never triggers Trust; provider, model,
-  thinking, and credentials remain global.
-  See [`docs/project-trust.md`](docs/project-trust.md).
-- Prompt precedence is trusted project `.aice/SYSTEM.md`, else global
-  `~/.aice/SYSTEM.md`, else built-in default; then trusted project
-  `AGENTS.md`; then trusted project `.aice/APPEND_SYSTEM.md`, otherwise
-  global `~/.aice/APPEND_SYSTEM.md`. See [Prompt
-  assembly](docs/project-trust.md#prompt-assembly).
-- Wire dependencies explicitly with constructors in `internal/app`. No
-  global registries, service locators, DI frameworks, or `init()` wiring.
-  See [`docs/architecture.md`](docs/architecture.md).
-- No fixed `MaxTurns` or `MaxToolSteps`. Never execute an incomplete or
-  invalid streamed tool call. See
-  [`docs/contracts.md`](docs/contracts.md).
+## Optional Go skills
 
-## Workflow and Verification
+This repository must be maintainable without a particular model, harness,
+plugin, or locally installed skill library. [Go quality](docs/go-quality.md)
+and the documents above are sufficient working instructions.
 
-- Think before coding, prefer the smallest solution, make surgical changes,
-  and verify each step. See [`docs/go-quality.md`](docs/go-quality.md).
-- Keep structural changes, behavior changes, and imported upstream code in
-  separate commits.
-- Verification commands, git safety rules, and collaboration constraints
-  live in [`docs/collaboration.md`](docs/collaboration.md).
-
-## Go Skills
-
-Before every Go coding, design, review, debugging, troubleshooting,
-refactoring, or setup task, load
-`samber/cc-skills-golang@golang-how-to` first.
-
-For design and coding tasks in this repository, also always apply:
-
-- `golang-code-style`, `golang-naming`, `golang-error-handling`
-- `golang-structs-interfaces`, `golang-design-patterns`, `golang-refactoring`
-- `golang-testing`, `golang-troubleshooting`, `golang-safety`, `golang-security`
-- `golang-concurrency`, `golang-context`
-- `golang-cli`, `golang-spf13-cobra`, `golang-spf13-viper`
-
-All short names above belong to `samber/cc-skills-golang`.
+When available, use `samber/cc-skills-golang@golang-how-to` to select relevant
+skills for the task. Load only what helps the affected area. Missing skills
+do not block work and do not require installing tools or dependencies.
+Repository-specific decisions take precedence over generic skill examples.

@@ -2,7 +2,10 @@
 
 ## Verification Commands
 
-- Documentation-only changes: run `git diff --check`.
+- Documentation-only changes: run `git diff --check`, check changed relative
+  links and heading anchors, and verify behavior claims against their code
+  owners. Run focused tests when a disputed claim needs reproduction; a docs
+  edit alone does not require the full Go suite.
 - After Go code changes: format only modified Go files, then run `go test ./...` and `go vet ./...`.
 - When `.golangci.yml` exists, also run `golangci-lint run ./...` and fix new findings rather than suppressing them.
 - For concurrency, cancellation, channels, or shared-state changes, run `go test -race ./...`.
@@ -11,6 +14,12 @@
 - Mark real-provider tests with an integration build tag and run them explicitly. Default tests must use faux providers and must not read provider credentials.
 - Verify CLI/TUI work through the actual user-facing command. Do not treat package tests alone as proof that interactive behavior works.
 - Do not invent build, release, changelog, or publishing commands before the repository defines them.
+
+The [CI workflow](../.github/workflows/ci.yml) runs race tests and vet on
+Linux, macOS, and Windows. A local pass proves only the tested platform; report
+unavailable tooling or platform checks rather than claiming they passed.
+The [release workflow](../.github/workflows/release.yml) owns release build and
+packaging commands. Harbor has its own [integration guide](../integrations/harbor/README.md).
 
 ## Git and Collaboration
 

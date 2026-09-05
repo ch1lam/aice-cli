@@ -68,10 +68,10 @@ aice --workspace . --session .aice/sessions/<session-id>.jsonl
 | Area | Current implementation |
 | --- | --- |
 | Interface | Bubble Tea TUI and one-shot `--print` mode |
-| Providers | DeepSeek V4, OpenCode Go's 26-model catalog, OpenAI GPT-5.6, and Custom (OpenAI-compatible) |
+| Providers | DeepSeek V4, OpenCode Go's built-in catalog, OpenAI GPT-5.6, and Custom (OpenAI-compatible) |
 | Protocols | Anthropic Messages, OpenAI Responses, OpenAI Chat Completions |
 | Tools | `read`, `write`, `edit`, `bash`, `grep`, `find`, `ls`, `skill` |
-| Guard | intrinsic execution gate (`internal/guard`): pathAccess mode `allow`/`ask`/`block`; Decision `allow`/`ask`/`deny`; see [Tool execution and Sessions](./docs/execution-sessions.md#tool-execution-boundary) |
+| Guard | path and dangerous-command checks with interactive approvals; see [Tool execution and Sessions](./docs/execution-sessions.md#tool-execution-boundary) |
 | Sessions | restart recovery, branches, checkout/backtracking, automatic and manual compaction |
 | Side questions | multiple ephemeral, tool-free `/btw` threads outside Session history |
 | Agent Skills | open-spec `SKILL.md` directories from builtin, `~/.agents/skills`, and project `.agents/skills`; see [Agent Skills](./docs/configuration.md#agent-skills) |
@@ -92,7 +92,7 @@ Detailed guides:
 - [Configuration and commands](./docs/configuration.md)
 - [Project Trust and prompts](./docs/project-trust.md)
 - [Tool execution and Sessions](./docs/execution-sessions.md)
-- [Architecture](./docs/architecture.md) and [runtime contracts](./docs/contracts.md)
+- [Architecture](./docs/architecture.md), [runtime contracts](./docs/contracts.md), and [maintenance / known discrepancies](./docs/maintenance.md)
 
 ## Development
 

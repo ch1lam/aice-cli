@@ -20,10 +20,12 @@ documents should link here instead of restating these lists.
 
 ### Default wired behavior
 
-`internal/app` always constructs the gate with `guard.New(workspace,
-guard.Config{})`. An empty `Config` is merged with `DefaultConfig`.
-`config.Settings` has no guard field, so the following is what every current
-build actually enforces.
+`internal/app` constructs the gate through `newExecutionGuard`, passing the
+physical workspace and discovered skill directories as `ReadOnlyRoots`.
+Other fields use `DefaultConfig`; `config.Settings` has no guard field.
+The policies below describe the intended wired behavior. Known implementation
+discrepancies in approval scope and rule evaluation are tracked in
+[Maintenance](maintenance.md#guard-approval-behavior).
 
 The gate evaluates three layers in order:
 
@@ -37,7 +39,9 @@ The gate evaluates three layers in order:
    `noAccess`. Protected basenames: `.env`, `.env.local`, `.env.production`,
    `.env.prod`, `.dev.vars`. Allow-listed: `*.example.env`, `*.sample.env`,
    `*.test.env`, `.env.example`, `.env.sample`, `.env.test`. There is no
-   `.env.*` glob. `noAccess` blocks all path-bearing tools.
+   `.env.*` glob. The default existence check applies the rule to existing
+   paths; unresolved expansions are handled conservatively. `noAccess` blocks
+   path-bearing tools when the rule matches an extracted target.
 3. **Path access** — `pathAccess.mode` defaults to `ask` for paths outside
    the workspace. Mode values are `allow` / `ask` / `block`. Default
    `allowedPaths` is empty.
@@ -48,8 +52,12 @@ set. `--yolo` upgrades every `ask` to `allow` and skips the interactive
 confirmation prompt. It does not lift `deny`: `permissionGate.autoDeny`
 still always wins, and file-policy `noAccess` / `readOnly` denials are
 unchanged. Interactive `ask` prompts generate options from the
-triggering rule. Every grant is current-run and memory-only; none
-persist to disk.
+triggering rule. The intended grant lifetime is the current Session, across
+its Agent runs;
+`/new` must clear grants and none persist to disk. The current menu still says
+“for this run” and the implementation retains grants until process exit.
+This confirmed lifecycle correction is pending; see
+[Maintenance](maintenance.md#guard-approval-behavior).
 
 | Rule | Options |
 | --- | --- |
@@ -63,7 +71,7 @@ command-prefix option is omitted when `guard.CommandPrefix` returns empty:
 compound commands, dangerous binaries such as `rm`/`sudo`/`dd`/`mkfs`, and
 `docker`/`podman` `run`/`create`.
 
-Grant scope for the remainder of the current run:
+Intended grant scope within the current Session (current menu labels above):
 
 - **file** — that absolute path only
 - **directory** — the parent directory and its descendants
@@ -75,7 +83,7 @@ Grant scope for the remainder of the current run:
 
 `permissionGate.autoDeny` always wins and cannot be bypassed by any grant.
 Path grants of `/` or the user's home directory are ignored, so a
-run-scoped grant cannot authorize the entire filesystem or home
+Session-scoped grant cannot authorize the entire filesystem or home
 directory. Deny may include an optional user note; the loop appends it to
 the paired error tool result as `User feedback: ...`. A reply `OptionID`
 that was not offered for that prompt is treated as Deny. Stronger
@@ -119,9 +127,11 @@ output, cancellation, and process-tree controls.
 
 Interactive runs create a version 2 JSONL Session under
 `<workspace>/.aice/sessions/` when the first prompt is accepted; a process
-that never interacts leaves no file behind. A session that never records a
-turn or compaction is removed on exit. `--print` creates or resumes a
-Session only when `--session` is supplied.
+that never interacts leaves no file behind. An interactive Session that never
+records a turn or compaction is removed on exit. `--print` creates or resumes a
+Session only when `--session` is supplied. An explicit `--session` path is
+opened or created during startup, including interactive startup; lazy creation
+applies when the interactive path is omitted.
 
 Each file contains a versioned header followed by append-only records:
 
@@ -174,7 +184,9 @@ The TUI exposes the same behavior through `/session`, `/tree`, and
 `/checkout`. `/new` detaches from the current Session without creating a
 file; the next accepted prompt starts a fresh one. A previous file that
 recorded turns is left untouched and stays resumable with `--session`.
-`/clear` only clears the visible transcript.
+`/clear` only clears the visible transcript. `/new` does not rebuild the
+process environment: prompt files, skill discovery, and Guard grants are
+currently reused. See [known lifecycle discrepancies](maintenance.md#startup-state-and-new).
 
 ## Recovery and compaction
 
