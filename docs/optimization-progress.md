@@ -77,6 +77,13 @@ compound commands, whitespace/quoting, configured patterns, and denial precedenc
 Full tests and vet passed. Session grant reset and aggregate rule evaluation
 remain outstanding.
 
+The Go HTTP evaluation family is in `evals/go-service`. It includes independent
+HTTP acceptance, generated starting points, one reference implementation, and
+an evidence-based maintenance rubric. An independent rerun of `verify.py`
+passed all reference tests under the race detector and detected each intended
+seed failure. Reference vet passed. The sample module is isolated from AICE's
+runtime module; these are fixture checks, not a model-quality result.
+
 ## Completion audit
 
 - [ ] A request can be traced through creation, mutation, cancellation,
