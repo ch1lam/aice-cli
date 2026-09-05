@@ -1,0 +1,87 @@
+# Existing-capability optimization
+
+This is the execution checklist for the architecture plan approved on
+2026-09-05, starting at `f1dd281`. It tracks unfinished work and evidence;
+the owning architecture, runtime, and user guides remain the contracts.
+Remove this checklist after the completion report is consolidated into those
+guides. Do not leave implementation markers in production code.
+
+## Scope and working agreement
+
+- Improve readability, state ownership, existing execution reliability, and
+  engineering feedback. Keep one Go module and binary and the existing
+  Agent/Provider/Tool/Guard/Session/UI boundaries.
+- Do not add Goal, Plan, subagent, Memory, or other product features.
+- Use message-level append-only JSONL with a new version. Reject old versions
+  without modifying or deleting their files; no migration or compatibility
+  reader is required.
+- Use offline models and standard-library evaluation tasks. No paid model
+  calls, new direct dependencies, pushes, releases, or PRs.
+- The user explicitly requested layered local commits. Verify and inspect
+  each single-intent change before committing it. Separate structural changes
+  from behavior fixes and preserve unrelated work.
+
+## Ordered change inventory
+
+Each row can require several small commits; a later row must not hide unfinished
+work in an earlier row. Temporary transitions must still build and pass tests.
+
+| Step | Owner and change | Kind | Required evidence | State |
+| --- | --- | --- | --- | --- |
+| 1 | App/Agent/Session: characterize relevant persistence, cancellation, compaction, and permission boundaries | Tests | Existing invariants covered; known mismatches distinguished from intended behavior | In progress |
+| 2 | App: separate environment, conversation, and active-run ownership; centralize history submission and configuration snapshots | Structural | Same user behavior, explicit lock/resource ownership, full tests and race | Pending |
+| 3a | Guard/app: Session-scoped grants reset at `/new`, exact command matching, deny before all asks, complete approval scope | Behavioral | Combined Guard and app/Loop regression tests, including yolo | Pending |
+| 3b | App: restart-only Skills reminder and effective `/trust` choices | Behavioral | Startup temporary trust preserved; command behavior and documentation agree | Pending |
+| 4a | Session: message entries, tree replay, safe branch boundaries, unknown interrupted results | Behavioral | New format round trips; old bytes untouched; no duplicate recovery/results/usage | Pending |
+| 4b | App/Agent: persist each completed message before later side effects, unified terminal submission | Behavioral | Injected write/UI/provider/cancellation failures; print and TUI share semantics | Pending |
+| 4c | Context: compact at paired model-round boundaries with frozen model configuration; stateless print uses memory | Behavioral | 200 rounds, at least three compactions, steering, repeated compaction and failure cases | Pending |
+| 4d | Session consumers: navigation, display, usage, Harbor | Behavioral | Real CLI/TUI exercises; conversion fixtures and correct usage accounting | Pending |
+| 5a | Existing prompt and Bash feedback: proportional engineering guidance, bounded head/tail output | Behavioral | Output/error regressions; custom prompt replacement unchanged | Pending |
+| 5b | Offline evaluation: Go HTTP service and Python data CLI lifecycles | Evaluation | Requirements, independent tests, reference implementations, review rubric, recorded runs | Pending |
+| 5c | Documentation and completion audit | Documentation | Requirement-by-requirement evidence and honest limitations | Pending |
+
+## Baseline and gaps
+
+The planning review ran `go test ./...`, `go vet ./...`, and
+`go test -race ./...` successfully on macOS at `f1dd281`. The race suite needs
+localhost listeners for `httptest`; the first sandboxed attempt was denied
+that facility, and the permitted rerun passed. These results do not establish
+Linux or Windows execution, or real-model coding quality.
+
+Existing tests already cover natural stop, steering and follow-up ordering,
+invalid streamed calls, graceful cancellation after mutation, provider failure
+after successful tools, append-only branches, corrupt JSONL rejection, and
+compaction at complete-interaction boundaries. The latter boundary is current
+behavior, not the new design: it must change without weakening tool pairing.
+
+Known Guard and startup mismatches are documented in
+[Maintenance](maintenance.md#known-discrepancies). Resolve entries there as
+their fixes land; do not reinterpret mismatches as accepted behavior.
+
+## Completion audit
+
+- [ ] A request can be traced through creation, mutation, cancellation,
+  persistence, and close, with a named state owner at each step.
+- [ ] Session authorization survives runs/model changes but resets at `/new`;
+  exact grants and all hard-deny/ask combinations have regression coverage.
+- [ ] Messages are durable before dependent tool effects; recovery marks unknown
+  outcomes, never replays old calls, and is idempotent.
+- [ ] Old Session files remain byte-for-byte intact when rejected.
+- [ ] Branching and repeated compaction preserve source history and tool pairs.
+- [ ] One request completes 200 simulated model rounds and at least three
+  compactions while preserving an injected user correction.
+- [ ] Interruptions cover assistant persistence, tool execution, tool-result
+  persistence, summary generation, and checkpoint persistence.
+- [ ] Cancellation, provider errors, output errors, persistence errors, malformed
+  streams/calls, oversized outputs, and insufficient context have evidence.
+- [ ] Stateless print creates no Session file; print/TUI/recovery/new/side
+  conversation paths retain their intended behavior.
+- [ ] Usage and Harbor conversion count messages and summary usage exactly once.
+- [ ] Both offline task families cover greenfield, cross-module change,
+  reproducible bug fixing, and refactoring followed by another change.
+- [ ] Reference solutions pass independent acceptance tests; maintainability
+  is reviewed explicitly rather than inferred from simulated model success.
+- [ ] Full test/vet/race and actual affected CLI/TUI flows are verified, and
+  platform/model limitations are reported.
+- [ ] Owning documents match implementation; local commits are single-intent;
+  no task-owned uncommitted changes remain and nothing was pushed.
