@@ -308,8 +308,9 @@ blank line. Each multi-line queued prompt shows its first line followed by
 `...`; multiple prompts remain in submission order. If the current interaction
 reaches its natural stop before accepting a pending steer, AICE promotes that
 steer to the follow-up queue instead of dropping it. Follow-ups stay inside
-the same Agent run; the application persists each completed interaction as its
-own Session turn.
+the same Agent run; the application persists each accepted source message
+individually. See [Sessions](execution-sessions.md#sessions) for failure and
+recovery behavior.
 
 A paste larger than the visible composer collapses into an inline placeholder
 (`[first words·Nlines]`) that reads like ordinary text. The cursor treats it

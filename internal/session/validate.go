@@ -58,10 +58,13 @@ func validateLeaf(
 
 func validateCompactionBoundary(
 	compaction Compaction,
-	nodeTypes map[string]RecordType,
-	parents map[string]string,
-	compactions map[string]Compaction,
+	index recordIndex,
 ) error {
+	nodeTypes, parents, compactions := index.nodeTypes, index.parents, index.compactions
+	if err := completeBoundary(index, compaction.ParentID); err != nil {
+		return err
+	}
+
 	if err := compaction.Validate(); err != nil {
 		return err
 	}
@@ -69,40 +72,45 @@ func validateCompactionBoundary(
 	if err != nil {
 		return err
 	}
-	activeTurnIDs, err := activeTurnIDs(path, nodeTypes, compactions)
+	activeMessageIDs, err := activeMessageIDs(path, nodeTypes, compactions)
 	if err != nil {
 		return err
 	}
-	if len(activeTurnIDs) != compaction.ActiveTurnCount {
+	if len(activeMessageIDs) != compaction.ActiveMessageCount {
 		return fmt.Errorf(
-			"session: compaction active turn count is %d, current branch has %d",
-			compaction.ActiveTurnCount,
-			len(activeTurnIDs),
+			"session: compaction active message count is %d, current branch has %d",
+			compaction.ActiveMessageCount,
+			len(activeMessageIDs),
 		)
 	}
-	if compaction.FirstKeptTurnID == "" {
-		if compaction.RetainedTurnCount != 0 {
-			return fmt.Errorf("session: full compaction must retain no source turns")
+	if compaction.FirstKeptMessageID == "" {
+		if compaction.RetainedMessageCount != 0 {
+			return fmt.Errorf("session: full compaction must retain no source messages")
 		}
 		return nil
 	}
 	firstKept := -1
-	for index, turnID := range activeTurnIDs {
-		if turnID == compaction.FirstKeptTurnID {
+	for index, messageID := range activeMessageIDs {
+		if messageID == compaction.FirstKeptMessageID {
 			firstKept = index
 			break
 		}
 	}
+	if firstKept >= 0 {
+		if err := completeBoundary(index, parents[compaction.FirstKeptMessageID]); err != nil {
+			return fmt.Errorf("session: compaction cuts a tool group: %w", err)
+		}
+	}
 	if firstKept <= 0 {
 		return fmt.Errorf(
-			"session: compaction first kept turn %q does not leave older branch history",
-			compaction.FirstKeptTurnID,
+			"session: compaction first kept message %q does not leave older branch history",
+			compaction.FirstKeptMessageID,
 		)
 	}
-	if retained := len(activeTurnIDs) - firstKept; retained != compaction.RetainedTurnCount {
+	if retained := len(activeMessageIDs) - firstKept; retained != compaction.RetainedMessageCount {
 		return fmt.Errorf(
-			"session: compaction retained turn count is %d, branch boundary retains %d",
-			compaction.RetainedTurnCount,
+			"session: compaction retained message count is %d, branch boundary retains %d",
+			compaction.RetainedMessageCount,
 			retained,
 		)
 	}
@@ -137,7 +145,7 @@ func pathToRoot(
 	return path, nil
 }
 
-func activeTurnIDs(
+func activeMessageIDs(
 	path []string,
 	nodeTypes map[string]RecordType,
 	compactions map[string]Compaction,
@@ -157,18 +165,18 @@ func activeTurnIDs(
 				path[latestCompaction],
 			)
 		}
-		if compaction.FirstKeptTurnID == "" {
-			// The checkpoint summarizes every source turn on the branch. Future
-			// turns appended after the checkpoint remain active.
+		if compaction.FirstKeptMessageID == "" {
+			// The checkpoint summarizes every source message on the branch. Future
+			// messages appended after the checkpoint remain active.
 			start = latestCompaction
 		} else {
 			start = -1
 			for index := 0; index < latestCompaction; index++ {
-				if path[index] == compaction.FirstKeptTurnID {
-					if nodeTypes[path[index]] != RecordTypeTurn {
+				if path[index] == compaction.FirstKeptMessageID {
+					if nodeTypes[path[index]] != RecordTypeMessage {
 						return nil, fmt.Errorf(
-							"session: compaction first kept entry %q is not a turn",
-							compaction.FirstKeptTurnID,
+							"session: compaction first kept entry %q is not a message",
+							compaction.FirstKeptMessageID,
 						)
 					}
 					start = index
@@ -177,22 +185,22 @@ func activeTurnIDs(
 			}
 			if start < 0 {
 				return nil, fmt.Errorf(
-					"session: compaction first kept turn %q is not an ancestor",
-					compaction.FirstKeptTurnID,
+					"session: compaction first kept message %q is not an ancestor",
+					compaction.FirstKeptMessageID,
 				)
 			}
 		}
 	}
-	turnIDs := make([]string, 0)
+	messageIDs := make([]string, 0)
 	for index, id := range path {
 		if latestCompaction >= 0 && index < start {
 			continue
 		}
-		if nodeTypes[id] == RecordTypeTurn {
-			turnIDs = append(turnIDs, id)
+		if nodeTypes[id] == RecordTypeMessage {
+			messageIDs = append(messageIDs, id)
 		}
 	}
-	return turnIDs, nil
+	return messageIDs, nil
 }
 
 func validateContext(ctx context.Context) error {

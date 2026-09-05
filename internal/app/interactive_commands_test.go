@@ -59,7 +59,7 @@ func TestInteractiveSessionSlashCommandsNavigateCurrentStore(t *testing.T) {
 	for _, want := range []string{
 		snapshot.Header.ID,
 		sessionPath,
-		"Active leaf: " + snapshot.Turns[1].ID,
+		"Active leaf: " + snapshot.Messages[3].ID,
 	} {
 		if !strings.Contains(info, want) {
 			t.Errorf("/session output = %q, want %q", info, want)
@@ -72,18 +72,18 @@ func TestInteractiveSessionSlashCommandsNavigateCurrentStore(t *testing.T) {
 	if err != nil {
 		t.Fatalf("/tree error = %v", err)
 	}
-	if !strings.Contains(tree, "* turn "+snapshot.Turns[1].ID) {
+	if !strings.Contains(tree, "* message "+snapshot.Messages[3].ID) {
 		t.Fatalf("/tree output = %q, want active second turn", tree)
 	}
 
 	output, err := runner.RunSlashCommand(t.Context(), tui.SlashCommandRequest{
 		Name:      "checkout",
-		Arguments: snapshot.Turns[0].ID,
+		Arguments: snapshot.Messages[1].ID,
 	})
 	if err != nil {
 		t.Fatalf("/checkout error = %v", err)
 	}
-	if !strings.Contains(output, "next turn will branch") {
+	if !strings.Contains(output, "next message will branch") {
 		t.Errorf("/checkout output = %q, want branch guidance", output)
 	}
 	if len(runner.conversation.history) != 2 {
@@ -96,7 +96,7 @@ func TestInteractiveSessionSlashCommandsNavigateCurrentStore(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Snapshot() error = %v", err)
 	}
-	if updated.LeafID != snapshot.Turns[0].ID || len(updated.LeafMoves) != 1 {
+	if updated.LeafID != snapshot.Messages[1].ID || len(updated.LeafMoves) != 1 {
 		t.Fatalf("snapshot after checkout = %#v", updated)
 	}
 	state := runner.RuntimeState()
@@ -112,7 +112,7 @@ func TestInteractiveSessionSlashCommandsNavigateCurrentStore(t *testing.T) {
 	}
 	currentFound := false
 	for _, option := range checkout.Menu.Options {
-		if option.Arguments == snapshot.Turns[0].ID && option.Current {
+		if option.Arguments == snapshot.Messages[1].ID && option.Current {
 			currentFound = true
 			break
 		}
@@ -206,8 +206,8 @@ func TestInteractiveSessionSlashNewStartsFreshSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Snapshot() error = %v", err)
 	}
-	if len(fresh.Turns) != 0 {
-		t.Fatalf("turns after /new = %d, want a fresh session", len(fresh.Turns))
+	if len(fresh.Messages) != 0 {
+		t.Fatalf("messages after /new = %d, want a fresh session", len(fresh.Messages))
 	}
 	if fresh.Header.WorkingDirectory != workspace.Path() {
 		t.Errorf(
@@ -227,8 +227,8 @@ func TestInteractiveSessionSlashNewStartsFreshSession(t *testing.T) {
 			t.Errorf("Close() error = %v", err)
 		}
 	}()
-	if len(prevSnapshot.Turns) != 2 {
-		t.Fatalf("previous session turns = %d, want history preserved", len(prevSnapshot.Turns))
+	if len(prevSnapshot.Messages) != 4 {
+		t.Fatalf("previous session messages = %d, want history preserved", len(prevSnapshot.Messages))
 	}
 }
 
@@ -536,7 +536,7 @@ func TestInteractiveSessionSlashCommandCompactsAndReloadsHistory(
 	if err != nil {
 		t.Fatalf("/compact error = %v", err)
 	}
-	if !strings.Contains(output, "retained 1 recent turn(s)") {
+	if !strings.Contains(output, "retained 2 recent message(s)") {
 		t.Errorf("/compact output = %q, want retained count", output)
 	}
 	if len(runner.conversation.history) != 3 {

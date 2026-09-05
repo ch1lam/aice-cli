@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"sync"
 
@@ -64,7 +63,7 @@ func (s *interactiveSession) NewRun(
 // ensureSessionStore lazily creates the session file when the first prompt
 // is accepted. File creation is local disk I/O without a caller context,
 // so it uses a background context; every later turn appends through
-// commitHistory with the run's own context.
+// recordMessage with the run's own context.
 func (s *interactiveSession) ensureSessionStore() error {
 	s.conversation.historySyncMu.Lock()
 	defer s.conversation.historySyncMu.Unlock()
@@ -110,55 +109,25 @@ func (r *interactiveRun) Run(ctx context.Context) error {
 	}
 	defer r.session.conversation.endMainRun(snapshot.state)
 
-	persistedMessages := 0
-	result, runErr := snapshot.loop.Run(ctx, agent.RunInput{
+	pendingInput := r.prompt
+	_, runErr := snapshot.loop.Run(ctx, agent.RunInput{
 		Model:        snapshot.model,
 		SystemPrompt: snapshot.systemPrompt,
 		History:      snapshot.history,
 		Prompt:       r.prompt,
 		Options:      snapshot.options,
-		Compactor:    r.session.compactHistory,
-		Steering:     mailboxInputSource(r.mailbox.TakeSteering, "steering"),
-		FollowUp:     mailboxInputSource(r.mailbox.TakeFollowUp, "follow-up"),
+		MessageRecorder: func(recordCtx context.Context, message llm.AgentMessage) error {
+			if input, ok := message.(llm.UserMessage); ok {
+				pendingInput = input
+			}
+			return r.session.conversation.recordMessage(recordCtx, snapshot.state, message)
+		},
+		Compactor: func(compactCtx context.Context, _ []llm.AgentMessage) ([]llm.AgentMessage, error) {
+			return r.session.compactHistory(compactCtx, pendingInput)
+		},
+		Steering: mailboxInputSource(r.mailbox.TakeSteering, "steering"),
+		FollowUp: mailboxInputSource(r.mailbox.TakeFollowUp, "follow-up"),
 	}, func(eventCtx context.Context, event agent.AgentEvent) error {
-		switch {
-		case event.Type == agent.EventTypeMessageStart && event.InputID != "":
-			input, ok := event.Message.(llm.UserMessage)
-			if !ok {
-				return fmt.Errorf(
-					"app: active main input has type %T, want llm.UserMessage",
-					event.Message,
-				)
-			}
-			if err := r.session.conversation.registerMainMessages(
-				snapshot.state,
-				[]llm.AgentMessage{input},
-			); err != nil {
-				return err
-			}
-		case event.Type == agent.EventTypeTurnEnd && event.Message != nil:
-			messages := make(
-				[]llm.AgentMessage,
-				0,
-				1+len(event.ToolResults),
-			)
-			messages = append(messages, event.Message)
-			for _, result := range event.ToolResults {
-				messages = append(messages, result)
-			}
-			if err := r.session.conversation.registerMainMessages(
-				snapshot.state,
-				messages,
-			); err != nil {
-				return err
-			}
-		}
-		if event.Type == agent.EventTypeInteractionEnd {
-			if err := r.persistTurn(eventCtx, event.Messages, snapshot.state); err != nil {
-				return err
-			}
-			persistedMessages += len(event.Messages)
-		}
 		if r.sink == nil {
 			return nil
 		}
@@ -169,28 +138,10 @@ func (r *interactiveRun) Run(ctx context.Context) error {
 		return r.sink(eventCtx, *display)
 	})
 
-	messages := result.Messages()
-	var persistErr error
-	if persistedMessages > len(messages) {
-		persistErr = fmt.Errorf(
-			"app: persisted message count %d exceeds result count %d",
-			persistedMessages,
-			len(messages),
-		)
-	} else if persistedMessages < len(messages) {
-		persistErr = r.persistTurn(
-			ctx,
-			messages[persistedMessages:],
-			snapshot.state,
-		)
-	}
 	if runErr != nil {
-		return errors.Join(
-			fmt.Errorf("app: run agent: %w", runErr),
-			persistErr,
-		)
+		return fmt.Errorf("app: run agent: %w", runErr)
 	}
-	return persistErr
+	return nil
 }
 
 // mailboxInputSource converts one delivery mailbox into an agent input
@@ -251,7 +202,7 @@ func (s *interactiveSession) beginMainRun(
 
 func (s *interactiveSession) compactHistory(
 	ctx context.Context,
-	_ []llm.AgentMessage,
+	pendingInput llm.UserMessage,
 ) ([]llm.AgentMessage, error) {
 	if s == nil || s.application == nil {
 		return nil, fmt.Errorf("app: interactive Session is not initialized")
@@ -260,29 +211,18 @@ func (s *interactiveSession) compactHistory(
 		return nil, fmt.Errorf("app: interactive Session store is required")
 	}
 
-	// Serialize automatic checkpoints with turn commits and explicit checkout.
-	// The model run is already at a complete interaction boundary here, so the
-	// durable store and the callback's history describe the same context.
+	// Serialize checkpoints with source-message commits and explicit checkout.
+	// The accepted input is durable already; compactHistory retains it but
+	// returns only the prior context because the Loop appends the input itself.
 	s.conversation.historySyncMu.Lock()
 	defer s.conversation.historySyncMu.Unlock()
 
-	history, err := s.application.compactHistory(ctx, s.conversation.store)
+	history, err := s.application.compactHistory(ctx, s.conversation.store, pendingInput)
 	if err != nil {
 		return nil, err
 	}
 	s.conversation.historyMu.Lock()
-	s.conversation.history = history
+	s.conversation.history = append(history, pendingInput)
 	s.conversation.historyMu.Unlock()
 	return cloneAgentMessages(history)
-}
-
-func (r *interactiveRun) persistTurn(
-	ctx context.Context,
-	messages []llm.AgentMessage,
-	state *mainRunState,
-) error {
-	if len(messages) == 0 {
-		return nil
-	}
-	return r.session.conversation.commitHistory(ctx, state, messages)
 }

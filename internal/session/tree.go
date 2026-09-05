@@ -1,14 +1,11 @@
 package session
 
-import "fmt"
+import (
+	"fmt"
+	"slices"
+)
 
-type snapshotIndex struct {
-	nodes       map[string]Node
-	turns       map[string]Turn
-	compactions map[string]Compaction
-	nodeTypes   map[string]RecordType
-	parents     map[string]string
-}
+type snapshotIndex = recordIndex
 
 // Nodes returns all conversation-tree nodes in physical append order.
 func Nodes(snapshot Snapshot) ([]Node, error) {
@@ -47,23 +44,23 @@ func Branch(snapshot Snapshot, leafID string) ([]Node, error) {
 }
 
 func indexSnapshot(snapshot Snapshot) (snapshotIndex, error) {
-	index := indexRecords(snapshot.Turns, snapshot.Compactions, nil)
-	seen := make(map[string]struct{}, len(snapshot.Turns)+len(snapshot.Compactions))
-	for _, turn := range snapshot.Turns {
-		if err := turn.Validate(); err != nil {
+	index := indexRecords(snapshot.Messages, snapshot.Compactions, nil)
+	seen := make(map[string]struct{}, len(snapshot.Messages)+len(snapshot.Compactions))
+	for _, message := range snapshot.Messages {
+		if err := message.Validate(); err != nil {
 			return snapshotIndex{}, fmt.Errorf(
-				"session: snapshot turn %q: %w",
-				turn.ID,
+				"session: snapshot message %q: %w",
+				message.ID,
 				err,
 			)
 		}
-		if _, exists := seen[turn.ID]; exists {
+		if _, exists := seen[message.ID]; exists {
 			return snapshotIndex{}, fmt.Errorf(
 				"session: duplicate tree node id %q",
-				turn.ID,
+				message.ID,
 			)
 		}
-		seen[turn.ID] = struct{}{}
+		seen[message.ID] = struct{}{}
 	}
 	for _, compaction := range snapshot.Compactions {
 		if err := compaction.Validate(); err != nil {
@@ -89,6 +86,7 @@ func indexSnapshot(snapshot Snapshot) (snapshotIndex, error) {
 		)
 	}
 	orderSeen := make(map[string]struct{}, len(snapshot.Order))
+	sequences := make(map[string]messageSequence, len(snapshot.Order))
 	for position, id := range snapshot.Order {
 		node, exists := index.nodes[id]
 		if !exists {
@@ -113,6 +111,18 @@ func indexSnapshot(snapshot Snapshot) (snapshotIndex, error) {
 				)
 			}
 		}
+		sequence := sequences[node.ParentID]
+		// Results remove pending calls. Copy the small group so sibling branches
+		// and earlier prefixes retain their own validation state.
+		sequence.pending = slices.Clone(sequence.pending)
+		if node.Type == RecordTypeMessage {
+			if err := sequence.accept(index.messages[id].Message); err != nil {
+				return snapshotIndex{}, err
+			}
+		} else if len(sequence.pending) != 0 {
+			return snapshotIndex{}, ErrIncompleteGroup
+		}
+		sequences[id] = sequence
 		orderSeen[id] = struct{}{}
 	}
 	if snapshot.LeafID != "" {
@@ -127,9 +137,7 @@ func indexSnapshot(snapshot Snapshot) (snapshotIndex, error) {
 	for _, compaction := range snapshot.Compactions {
 		if err := validateCompactionBoundary(
 			compaction,
-			index.nodeTypes,
-			index.parents,
-			index.compactions,
+			index,
 		); err != nil {
 			return snapshotIndex{}, fmt.Errorf(
 				"session: snapshot compaction %q boundary: %w",
@@ -138,11 +146,5 @@ func indexSnapshot(snapshot Snapshot) (snapshotIndex, error) {
 			)
 		}
 	}
-	return snapshotIndex{
-		nodes:       index.nodes,
-		turns:       index.turns,
-		compactions: index.compactions,
-		nodeTypes:   index.nodeTypes,
-		parents:     index.parents,
-	}, nil
+	return index, nil
 }

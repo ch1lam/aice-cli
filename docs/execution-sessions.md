@@ -137,10 +137,10 @@ output, cancellation, and process-tree controls.
 
 ## Sessions
 
-Interactive runs create a version 2 JSONL Session under
+Interactive runs create a version 3 JSONL Session under
 `<workspace>/.aice/sessions/` when the first prompt is accepted; a process
 that never interacts leaves no file behind. An interactive Session that never
-records a turn or compaction is removed on exit. `--print` creates or resumes a
+records a message or compaction is removed on exit. `--print` creates or resumes a
 Session only when `--session` is supplied. An explicit `--session` path is
 opened or created during startup, including interactive startup; lazy creation
 applies when the interactive path is omitted.
@@ -149,25 +149,33 @@ Each file contains a versioned header followed by append-only records:
 
 | Record | Meaning |
 | --- | --- |
-| `turn` | One complete user interaction, including in-interaction steers, paired tool calls/results, and usage |
+| `message` | One accepted user message, ended assistant response, or tool result, with its complete metadata |
 | `compaction` | A derived summary checkpoint for the active branch |
 | `leaf` | A move of the active branch pointer; no history is deleted |
 
-Turns and compactions are tree nodes with stable IDs and parent IDs. Model
-context is derived from the active root-to-leaf path. After checkout to an
-older entry, the next complete turn becomes a new child and creates a branch.
+Messages and compactions are tree nodes with stable IDs and parent IDs. Model
+context is derived from the active root-to-leaf path. After checkout to a safe
+older entry, the next message becomes a new child and creates a branch.
 
-A Session turn is a persistence boundary, not an Agent-run boundary. One
-active Agent run may contain an initial interaction followed by any number of
-queued follow-up interactions. AICE appends each interaction immediately when
-the Agent reaches its natural stop boundary, while the same run remains active
-to poll follow-up input. Cancellation or failure appends the unfinished final
-interaction as a terminal turn so completed work is not lost.
+Each source message is appended and synced before the next dependent action.
+In particular, assistant tool calls are durable before tools execute, and each
+tool result is durable before the next tool runs. Recording failure stops the
+run; AICE does not retry persistence from the final result or UI events. If the
+live Session has an incomplete tool group, reopen it for recovery or use `/new`
+before continuing. Display
+failure still permits already-known results to be saved. Usage is counted from
+assistant messages and summary checkpoints once, including abandoned branches.
+
+A file can end with an incomplete tool group after interruption. This is a valid
+source prefix, but is not usable model context or a checkout target until the
+missing results are recovered. Complete user messages and completed assistant
+responses without pending tools are safe boundaries. A run or interaction is
+not a storage transaction: already saved messages survive later failure.
 
 `/btw` side threads are outside this persistence model. Each new thread
 freezes the already accepted context at its first question, then uses that
 copy plus its own bounded in-memory history. Side threads run without tools
-and never append `turn`, `compaction`, or `leaf` records. They also do not
+and never append `message`, `compaction`, or `leaf` records. They also do not
 contribute to main Session usage totals or compaction input. Limits, idle
 windows, and TUI controls are documented in
 [Configuration](configuration.md#btw). Closing a panel only hides the thread;
@@ -195,7 +203,7 @@ aice session checkout --workspace . \
 The TUI exposes the same behavior through `/session`, `/tree`, and
 `/checkout`. `/new` detaches from the current Session without creating a
 file; the next accepted prompt starts a fresh one. A previous file that
-recorded turns is left untouched and stays resumable with `--session`.
+recorded messages is left untouched and stays resumable with `--session`.
 `/clear` only clears the visible transcript. `/new` does not rebuild the
 process environment: prompt files and skill discovery are reused. Dynamic Guard
 grants are cleared. Restart AICE to reload prompt files or Skills.
@@ -203,20 +211,29 @@ grants are cleared. Restart AICE to reload prompt files or Skills.
 ## Recovery and compaction
 
 On open, AICE replays every complete record. It truncates only an incomplete
-final JSONL record; malformed complete or middle records fail as corruption.
-A Session can be resumed only with the working directory recorded in its
-header.
+final JSONL record in a supported v3 file; malformed complete or middle records
+fail as corruption. Old versions are rejected before any tail repair, and their
+files are neither migrated nor modified. A Session can be resumed only with the
+working directory recorded in its header.
 
-Compaction summarizes older complete turns on the active branch and retains
-roughly the newest 20,000 tokens (`session.DefaultKeepRecentTokens`). It
-appends a checkpoint and never rewrites source turns or other branches.
-Automatic compaction runs before the first model request of a new interaction
-when the estimated context crosses the model's reserved-token threshold; a
-queued follow-up is compacted only after the preceding interaction has
-reached its complete-turn boundary. If the newest complete turn is itself too
-large to retain, AICE summarizes the entire active branch rather than failing
-solely because that one turn is oversized; source turns remain recoverable in
-the Session.
+Before execution resumes, AICE appends an error result for each outstanding tool
+call on the active branch. The result says the outcome is unknown and the tool
+may have produced effects; inspect the current state before retrying. Existing
+results remain unchanged, recovery is idempotent, and AICE never replays the
+interrupted call itself. Tree inspection does not append recovery messages.
+
+Compaction summarizes older messages on the active branch and retains roughly
+the newest 20,000 tokens (`session.DefaultKeepRecentTokens`). Cuts never split
+an assistant tool-call/result group. It appends a checkpoint and never rewrites
+source messages or other branches. A single interaction can contain several
+safe cuts. If its newest paired group is oversized, AICE may summarize the
+entire active context while keeping the source messages recoverable.
+
+Automatic compaction currently runs before the first model request of a new
+interaction when the estimated context crosses the model's reserved-token
+threshold. A just-accepted initial or follow-up input is kept outside the older
+history summary and enters the next model request once. Checking the threshold
+within an interaction is a separate pending execution change.
 
 ```sh
 aice compact --workspace . --session .aice/sessions/<id>.jsonl

@@ -80,9 +80,9 @@ func writeSessionTree(
 	if _, err := fmt.Fprintf(output, "%s root\n", rootMarker); err != nil {
 		return fmt.Errorf("app: write session root: %w", err)
 	}
-	turns := make(map[string]session.Turn, len(snapshot.Turns))
-	for _, turn := range snapshot.Turns {
-		turns[turn.ID] = turn
+	messages := make(map[string]session.MessageEntry, len(snapshot.Messages))
+	for _, entry := range snapshot.Messages {
+		messages[entry.ID] = entry
 	}
 	compactions := make(
 		map[string]session.Compaction,
@@ -94,7 +94,7 @@ func writeSessionTree(
 	if err := writeSessionChildren(
 		output,
 		children,
-		turns,
+		messages,
 		compactions,
 		active,
 		snapshot.LeafID,
@@ -106,7 +106,7 @@ func writeSessionTree(
 	return nil
 }
 
-// CheckoutSession appends a leaf move; the next turn will become a child of
+// CheckoutSession appends a leaf move; the next message will become a child of
 // the selected node and therefore create a branch.
 func (a *application) CheckoutSession(
 	ctx context.Context,
@@ -160,6 +160,11 @@ func checkoutSessionStore(
 			return false, fmt.Errorf("app: find session entry %q: %w", targetID, err)
 		}
 	}
+	target := snapshot
+	target.LeafID = targetID
+	if _, err := session.BuildContext(target); err != nil {
+		return false, fmt.Errorf("app: unsafe checkout boundary: %w", err)
+	}
 	if targetID == snapshot.LeafID {
 		if _, err := fmt.Fprintf(
 			output,
@@ -188,7 +193,7 @@ func checkoutSessionStore(
 	}
 	if _, err := fmt.Fprintf(
 		output,
-		"Checked out %s. The next turn will branch from this point.\n",
+		"Checked out %s. The next message will branch from this point.\n",
 		sessionEntryName(targetID),
 	); err != nil {
 		return false, fmt.Errorf("app: write checkout result: %w", err)
@@ -199,7 +204,7 @@ func checkoutSessionStore(
 func writeSessionChildren(
 	output io.Writer,
 	children map[string][]session.Node,
-	turns map[string]session.Turn,
+	messages map[string]session.MessageEntry,
 	compactions map[string]session.Compaction,
 	active map[string]struct{},
 	leafID string,
@@ -220,14 +225,14 @@ func writeSessionChildren(
 			marker,
 			node.Type,
 			node.ID,
-			sessionNodeDescription(node, turns, compactions),
+			sessionNodeDescription(node, messages, compactions),
 		); err != nil {
 			return fmt.Errorf("app: write session tree node: %w", err)
 		}
 		if err := writeSessionChildren(
 			output,
 			children,
-			turns,
+			messages,
 			compactions,
 			active,
 			leafID,
@@ -242,20 +247,24 @@ func writeSessionChildren(
 
 func sessionNodeDescription(
 	node session.Node,
-	turns map[string]session.Turn,
+	messages map[string]session.MessageEntry,
 	compactions map[string]session.Compaction,
 ) string {
 	switch node.Type {
-	case session.RecordTypeTurn:
-		turn, exists := turns[node.ID]
-		if !exists || len(turn.Messages) == 0 {
+	case session.RecordTypeMessage:
+		entry, exists := messages[node.ID]
+		if !exists {
 			return ""
 		}
-		user, ok := turn.Messages[0].(llm.UserMessage)
-		if !ok {
-			return ""
+		switch message := entry.Message.(type) {
+		case llm.UserMessage:
+			return "user " + quoteSessionText(visibleText(message.Content, "\n"))
+		case llm.AssistantMessage:
+			return "assistant " + quoteSessionText(visibleText(message.Content, "\n"))
+		case llm.ToolResultMessage:
+			return "tool " + message.ToolName + " " + quoteSessionText(visibleText(message.Content, "\n"))
 		}
-		return quoteSessionText(visibleText(user.Content, "\n"))
+		return ""
 	case session.RecordTypeCompaction:
 		compaction, exists := compactions[node.ID]
 		if !exists {

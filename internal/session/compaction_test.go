@@ -3,7 +3,7 @@ package session_test
 import (
 	"encoding/json"
 	"errors"
-	"os"
+	"math"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -13,536 +13,231 @@ import (
 	"github.com/ch1lam/aice-cli/internal/session"
 )
 
-func TestStoreAppendsCompactionWithoutReplacingTurns(t *testing.T) {
+func TestCompactionPreservesSourcesAndRestoresContext(t *testing.T) {
 	t.Parallel()
-
 	path := filepath.Join(t.TempDir(), "session.jsonl")
 	store := mustCreate(t, path)
-	first := mustTurn(
-		t,
-		"turn-1",
-		"",
-		1_721_234_567_900,
-		namedTextMessages("first prompt", "first answer", 10),
-	)
-	second := mustTurn(
-		t,
-		"turn-2",
-		first.ID,
-		1_721_234_568_000,
-		namedTextMessages("second prompt", "second answer", 20),
-	)
-	if err := store.AppendTurn(t.Context(), first); err != nil {
-		t.Fatalf("AppendTurn(first) error = %v", err)
-	}
-	if err := store.AppendTurn(t.Context(), second); err != nil {
-		t.Fatalf("AppendTurn(second) error = %v", err)
-	}
-	compaction := mustCompaction(t, session.CompactionInput{
-		ID:                "compaction-1",
-		ParentID:          second.ID,
-		CreatedAt:         1_721_234_568_050,
-		Summary:           "The first turn established the project goal.",
-		TokensBefore:      20,
-		FirstKeptTurnID:   second.ID,
-		ActiveTurnCount:   2,
-		RetainedTurnCount: 1,
+	first := appendMessages(t, store, "first", namedTextMessages("first prompt", "first answer", 10)...)
+	second := appendMessages(t, store, "second", namedTextMessages("second prompt", "second answer", 20)...)
+	before := fileBytes(t, path)
+	checkpoint := mustCompaction(t, session.CompactionInput{
+		ID:                   "compact",
+		ParentID:             second[1].ID,
+		CreatedAt:            250,
+		Summary:              "first summarized",
+		TokensBefore:         20,
+		FirstKeptMessageID:   second[0].ID,
+		ActiveMessageCount:   4,
+		RetainedMessageCount: 2,
 		Usage: llm.Usage{
-			InputTokens:  12,
-			OutputTokens: 4,
-			TotalTokens:  16,
-			Cost:         &llm.Cost{Total: 0.01},
+			TotalTokens: 16,
+			Cost: &llm.Cost{
+				Total: 0.01,
+			},
 		},
 	})
-	if err := store.AppendCompaction(t.Context(), compaction); err != nil {
-		t.Fatalf("AppendCompaction() error = %v", err)
+	if err := store.AppendCompaction(t.Context(), checkpoint); err != nil {
+		t.Fatal(err)
 	}
-	third := mustTurn(
-		t,
-		"turn-3",
-		compaction.ID,
-		1_721_234_568_100,
-		namedTextMessages("third prompt", "third answer", 30),
-	)
-	if err := store.AppendTurn(t.Context(), third); err != nil {
-		t.Fatalf("AppendTurn(third) error = %v", err)
+	third := appendMessages(t, store, "third", namedTextMessages("third prompt", "third answer", 30)...)
+	if !strings.HasPrefix(string(fileBytes(t, path)), string(before)) {
+		t.Fatal("source bytes replaced")
 	}
-	if err := store.Close(); err != nil {
-		t.Fatalf("Close() error = %v", err)
-	}
-
-	reopened, err := session.Open(t.Context(), path)
+	store.Close()
+	store, err := session.Open(t.Context(), path)
 	if err != nil {
-		t.Fatalf("Open() error = %v", err)
+		t.Fatal(err)
 	}
-	defer func() {
-		if err := reopened.Close(); err != nil {
-			t.Errorf("Close() error = %v", err)
-		}
-	}()
-	snapshot, err := reopened.Snapshot()
-	if err != nil {
-		t.Fatalf("Snapshot() error = %v", err)
+	defer store.Close()
+	snapshot := snapshotOf(t, store)
+	want := append(append(first, second...), third...)
+	if !reflect.DeepEqual(snapshot.Messages, want) {
+		t.Fatal("source records changed")
 	}
-	if want := []session.Turn{first, second, third}; !reflect.DeepEqual(snapshot.Turns, want) {
-		t.Fatalf("original turns = %#v, want %#v", snapshot.Turns, want)
-	}
-	if want := []session.Compaction{compaction}; !reflect.DeepEqual(snapshot.Compactions, want) {
-		t.Fatalf("compactions = %#v, want %#v", snapshot.Compactions, want)
-	}
-	snapshot.Compactions[0].Usage.Cost.Total = 99
-	freshSnapshot, err := reopened.Snapshot()
-	if err != nil {
-		t.Fatalf("second Snapshot() error = %v", err)
-	}
-	if got := freshSnapshot.Compactions[0].Usage.Cost.Total; got != 0.01 {
-		t.Fatalf("stored compaction cost after snapshot mutation = %v, want 0.01", got)
-	}
-
 	contextMessages, err := session.BuildContext(snapshot)
 	if err != nil {
-		t.Fatalf("BuildContext() error = %v", err)
+		t.Fatal(err)
 	}
 	if len(contextMessages) != 5 {
-		t.Fatalf("context messages = %d, want summary plus two complete turns", len(contextMessages))
+		t.Fatalf("context=%v", contextMessages)
 	}
-	summary, ok := contextMessages[0].(llm.CompactionSummaryMessage)
-	if !ok || summary.Summary != compaction.Summary {
-		t.Fatalf("context summary = %#v", contextMessages[0])
+	if summary, ok := contextMessages[0].(llm.CompactionSummaryMessage); !ok || summary.Summary != checkpoint.Summary {
+		t.Fatal("missing summary")
 	}
 	assertSessionText(t, contextMessages[1], llm.RoleUser, "second prompt")
-	assertSessionText(t, contextMessages[2], llm.RoleAssistant, "second answer")
-	assertSessionText(t, contextMessages[3], llm.RoleUser, "third prompt")
 	assertSessionText(t, contextMessages[4], llm.RoleAssistant, "third answer")
 	projected, err := llm.AgentMessagesToMessages(contextMessages)
 	if err != nil {
-		t.Fatalf("AgentMessagesToMessages() error = %v", err)
+		t.Fatal(err)
 	}
-	estimate := llm.EstimateContextTokens(llm.Request{Messages: projected})
-	if estimate.UsageTokens != 0 {
-		t.Fatalf(
-			"compacted context reused pre-compaction usage: %#v",
-			estimate,
-		)
+	if estimate := llm.EstimateContextTokens(llm.Request{Messages: projected}); estimate.UsageTokens != 0 {
+		t.Fatalf("stale usage reused: %#v", estimate)
 	}
-
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("os.ReadFile() error = %v", err)
-	}
-	var recordTypes []session.RecordType
-	for _, line := range strings.Split(strings.TrimSuffix(string(data), "\n"), "\n") {
-		var envelope struct {
-			Type session.RecordType `json:"type"`
-		}
-		if err := json.Unmarshal([]byte(line), &envelope); err != nil {
-			t.Fatalf("decode record type error = %v", err)
-		}
-		recordTypes = append(recordTypes, envelope.Type)
-	}
-	wantTypes := []session.RecordType{
-		session.RecordTypeSession,
-		session.RecordTypeTurn,
-		session.RecordTypeTurn,
-		session.RecordTypeCompaction,
-		session.RecordTypeTurn,
-	}
-	if !reflect.DeepEqual(recordTypes, wantTypes) {
-		t.Fatalf("record types = %v, want %v", recordTypes, wantTypes)
+	snapshot.Compactions[0].Usage.Cost.Total = 99
+	if snapshotOf(t, store).Compactions[0].Usage.Cost.Total != 0.01 {
+		t.Fatal("compaction snapshot aliased")
 	}
 }
 
-func TestStoreRejectsCompactionOutsideCurrentBoundary(t *testing.T) {
+func TestPrepareCompactionKeepsPairedRecentGroups(t *testing.T) {
 	t.Parallel()
-
-	path := filepath.Join(t.TempDir(), "session.jsonl")
-	store := mustCreate(t, path)
-	defer func() {
-		if err := store.Close(); err != nil {
-			t.Errorf("Close() error = %v", err)
-		}
-	}()
-	if err := store.AppendTurn(
-		t.Context(),
-		mustTurn(t, "turn-1", "", 1_721_234_567_900, textMessages()),
-	); err != nil {
-		t.Fatalf("AppendTurn() error = %v", err)
-	}
-	before, err := os.Stat(path)
+	store := mustCreate(t, filepath.Join(t.TempDir(), "session.jsonl"))
+	appendMessages(t, store, "first", textMessages()...)
+	latest := appendMessages(t, store, "latest", toolMessages()[:3]...)
+	prep, err := session.PrepareCompaction(snapshotOf(t, store), session.CompactionSettings{KeepRecentTokens: 1})
 	if err != nil {
-		t.Fatalf("os.Stat() error = %v", err)
+		t.Fatal(err)
 	}
-	compaction := mustCompaction(t, session.CompactionInput{
-		ID:                "compaction-1",
-		ParentID:          "turn-1",
-		CreatedAt:         1_721_234_568_000,
-		Summary:           "summary",
-		TokensBefore:      15,
-		FirstKeptTurnID:   "turn-1",
-		ActiveTurnCount:   2,
-		RetainedTurnCount: 1,
-	})
-
-	err = store.AppendCompaction(t.Context(), compaction)
-	if err == nil || !strings.Contains(err.Error(), "active turn count") {
-		t.Fatalf("AppendCompaction() error = %v, want branch-boundary error", err)
-	}
-	after, err := os.Stat(path)
-	if err != nil {
-		t.Fatalf("os.Stat() after rejection error = %v", err)
-	}
-	if after.Size() != before.Size() {
-		t.Fatalf("file size after rejection = %d, want %d", after.Size(), before.Size())
+	if prep.FirstKeptMessageID != latest[0].ID || prep.ActiveMessageCount != 5 || prep.RetainedMessageCount != 3 || len(prep.MessagesToSummarize) != 2 {
+		t.Fatalf("prep=%#v", prep)
 	}
 }
 
-func TestStoreOpenRejectsCompactionOutsideRecordedBoundary(t *testing.T) {
+func TestPrepareCompactionSplitsOneLongInteractionAndUpdatesSummary(t *testing.T) {
 	t.Parallel()
-
-	path := filepath.Join(t.TempDir(), "session.jsonl")
-	store := mustCreate(t, path)
-	if err := store.AppendTurn(
-		t.Context(),
-		mustTurn(t, "turn-1", "", 1_721_234_567_900, textMessages()),
-	); err != nil {
-		t.Fatalf("AppendTurn() error = %v", err)
+	store := mustCreate(t, filepath.Join(t.TempDir(), "session.jsonl"))
+	messages := toolMessages()
+	appendMessages(t, store, "initial", messages[:3]...)
+	latest := appendMessages(t, store, "next", messages[1:3]...)
+	prep, err := session.PrepareCompaction(snapshotOf(t, store), session.CompactionSettings{KeepRecentTokens: 1})
+	if err != nil {
+		t.Fatal(err)
 	}
-	if err := store.Close(); err != nil {
-		t.Fatalf("Close() error = %v", err)
+	if prep.FirstKeptMessageID != latest[0].ID || prep.ActiveMessageCount != 5 || prep.RetainedMessageCount != 2 {
+		t.Fatalf("prep=%#v", prep)
 	}
-	compaction := mustCompaction(t, session.CompactionInput{
-		ID:                "compaction-1",
-		ParentID:          "turn-1",
-		CreatedAt:         1_721_234_568_000,
-		Summary:           "summary",
-		TokensBefore:      15,
-		FirstKeptTurnID:   "turn-1",
-		ActiveTurnCount:   2,
-		RetainedTurnCount: 1,
+	checkpoint := mustCompaction(t, session.CompactionInput{
+		ID:                   "compact",
+		ParentID:             latest[1].ID,
+		CreatedAt:            400,
+		Summary:              "earlier round",
+		TokensBefore:         prep.TokensBefore,
+		FirstKeptMessageID:   prep.FirstKeptMessageID,
+		ActiveMessageCount:   prep.ActiveMessageCount,
+		RetainedMessageCount: prep.RetainedMessageCount,
 	})
-	data, err := json.Marshal(compaction)
+	if err := store.AppendCompaction(t.Context(), checkpoint); err != nil {
+		t.Fatal(err)
+	}
+	final := appendMessages(t, store, "final", messages[3])
+	prep, err = session.PrepareCompaction(snapshotOf(t, store), session.CompactionSettings{KeepRecentTokens: 1})
 	if err != nil {
-		t.Fatalf("json.Marshal() error = %v", err)
+		t.Fatal(err)
 	}
-	file, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0)
-	if err != nil {
-		t.Fatalf("os.OpenFile() error = %v", err)
+	if prep.FirstKeptMessageID != final[0].ID || prep.ActiveMessageCount != 3 || prep.RetainedMessageCount != 1 || len(prep.MessagesToSummarize) != 3 {
+		t.Fatalf("repeat prep=%#v", prep)
 	}
-	if _, err := file.Write(append(data, '\n')); err != nil {
-		_ = file.Close()
-		t.Fatalf("Write() error = %v", err)
-	}
-	if err := file.Close(); err != nil {
-		t.Fatalf("Close() appended file error = %v", err)
-	}
-
-	_, err = session.Open(t.Context(), path)
-	if !errors.Is(err, session.ErrCorrupt) {
-		t.Fatalf("Open() error = %v, want ErrCorrupt", err)
+	if summary, ok := prep.MessagesToSummarize[0].(llm.CompactionSummaryMessage); !ok || summary.Summary != "earlier round" {
+		t.Fatal("previous summary lost")
 	}
 }
 
-func TestPrepareCompactionKeepsCompleteRecentTurns(t *testing.T) {
+func TestCompactionRejectsInvalidBoundaryOnAppendAndReplay(t *testing.T) {
 	t.Parallel()
-
-	first := mustTurn(
-		t,
-		"turn-1",
-		"",
-		100,
-		namedTextMessages("first prompt", "first answer", 10),
-	)
-	second := mustTurn(
-		t,
-		"turn-2",
-		first.ID,
-		200,
-		namedTextMessages("second prompt", "second answer", 20),
-	)
-	third := mustTurn(
-		t,
-		"turn-3",
-		second.ID,
-		300,
-		namedTextMessages("third prompt", "third answer", 30),
-	)
-	snapshot := session.Snapshot{
-		Turns:  []session.Turn{first, second, third},
-		Order:  []string{first.ID, second.ID, third.ID},
-		LeafID: third.ID,
+	for _, kind := range []string{"pending parent", "inside group", "wrong count", "wrong branch"} {
+		t.Run(kind, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "session.jsonl")
+			store := mustCreate(t, path)
+			messages := toolMessages()
+			entries := appendMessages(t, store, "initial", messages...)
+			input := session.CompactionInput{
+				ID:                   "bad",
+				ParentID:             entries[3].ID,
+				CreatedAt:            400,
+				Summary:              "invalid",
+				TokensBefore:         100,
+				FirstKeptMessageID:   entries[2].ID,
+				ActiveMessageCount:   4,
+				RetainedMessageCount: 2,
+			}
+			switch kind {
+			case "pending parent":
+				pending := appendMessages(t, store, "pending", messages[1])
+				input.ParentID = pending[0].ID
+				input.ActiveMessageCount = 5
+				input.RetainedMessageCount = 3
+			case "wrong count":
+				input.ActiveMessageCount = 6
+			case "wrong branch":
+				input.FirstKeptMessageID = "missing"
+			}
+			checkpoint := mustCompaction(t, input)
+			before := fileBytes(t, path)
+			if err := store.AppendCompaction(t.Context(), checkpoint); err == nil {
+				t.Fatal("invalid compaction accepted")
+			}
+			if !reflect.DeepEqual(fileBytes(t, path), before) {
+				t.Fatal("invalid compaction wrote")
+			}
+			store.Close()
+			data, err := json.Marshal(checkpoint)
+			if err != nil {
+				t.Fatal(err)
+			}
+			appendBytes(t, path, append(data, '\n'))
+			if _, err := session.Open(t.Context(), path); !errors.Is(err, session.ErrCorrupt) {
+				t.Fatalf("replay=%v", err)
+			}
+		})
 	}
-	preparation, err := session.PrepareCompaction(snapshot, session.CompactionSettings{
-		KeepRecentTokens: 1,
-	})
-	if err != nil {
-		t.Fatalf("PrepareCompaction() error = %v", err)
-	}
-	if preparation.FirstKeptTurnID != third.ID ||
-		preparation.ActiveTurnCount != 3 ||
-		preparation.RetainedTurnCount != 1 {
-		t.Fatalf("preparation boundary = %#v", preparation)
-	}
-	if len(preparation.MessagesToSummarize) != 4 {
-		t.Fatalf(
-			"messages to summarize = %d, want two complete turns",
-			len(preparation.MessagesToSummarize),
-		)
-	}
-	assertSessionText(t, preparation.MessagesToSummarize[0], llm.RoleUser, "first prompt")
-	assertSessionText(t, preparation.MessagesToSummarize[3], llm.RoleAssistant, "second answer")
 }
 
-func TestPrepareCompactionUpdatesPreviousSummary(t *testing.T) {
+func TestCompactionFullFallbackAndFutureContext(t *testing.T) {
 	t.Parallel()
-
-	first := mustTurn(
-		t,
-		"turn-1",
-		"",
-		100,
-		namedTextMessages("first prompt", "first answer", 10),
-	)
-	second := mustTurn(
-		t,
-		"turn-2",
-		first.ID,
-		200,
-		namedTextMessages("second prompt", "second answer", 20),
-	)
-	previous := mustCompaction(t, session.CompactionInput{
-		ID:                "compaction-1",
-		ParentID:          second.ID,
-		CreatedAt:         250,
-		Summary:           "The first turn established the project goal.",
-		TokensBefore:      20,
-		FirstKeptTurnID:   second.ID,
-		ActiveTurnCount:   2,
-		RetainedTurnCount: 1,
-	})
-	third := mustTurn(
-		t,
-		"turn-3",
-		previous.ID,
-		300,
-		namedTextMessages("third prompt", "third answer", 30),
-	)
-	preparation, err := session.PrepareCompaction(session.Snapshot{
-		Turns:       []session.Turn{first, second, third},
-		Compactions: []session.Compaction{previous},
-		Order:       []string{first.ID, second.ID, previous.ID, third.ID},
-		LeafID:      third.ID,
-	}, session.CompactionSettings{KeepRecentTokens: 1})
+	store := mustCreate(t, filepath.Join(t.TempDir(), "session.jsonl"))
+	messages := namedTextMessages("inspect", strings.Repeat("large output ", 8000), 0)
+	appendMessages(t, store, "large", messages...)
+	prep, err := session.PrepareCompaction(snapshotOf(t, store), session.CompactionSettings{KeepRecentTokens: 20000})
 	if err != nil {
-		t.Fatalf("PrepareCompaction() error = %v", err)
+		t.Fatal(err)
 	}
-	if preparation.FirstKeptTurnID != third.ID {
-		t.Fatalf(
-			"FirstKeptTurnID = %q, want %q",
-			preparation.FirstKeptTurnID,
-			third.ID,
-		)
+	if prep.FirstKeptMessageID != "" || prep.ActiveMessageCount != 2 || prep.RetainedMessageCount != 0 || len(prep.MessagesToSummarize) != 2 {
+		t.Fatalf("prep=%#v", prep)
 	}
-	if len(preparation.MessagesToSummarize) != 3 {
-		t.Fatalf(
-			"messages to summarize = %d, want prior summary and second turn",
-			len(preparation.MessagesToSummarize),
-		)
+	parent, _ := store.LeafID()
+	checkpoint := mustCompaction(t, session.CompactionInput{
+		ID:                 "compact",
+		ParentID:           parent,
+		CreatedAt:          300,
+		Summary:            "summary",
+		TokensBefore:       prep.TokensBefore,
+		ActiveMessageCount: 2,
+	})
+	if err := store.AppendCompaction(t.Context(), checkpoint); err != nil {
+		t.Fatal(err)
 	}
-	summary, ok := preparation.MessagesToSummarize[0].(llm.CompactionSummaryMessage)
-	if !ok || summary.Summary != previous.Summary {
-		t.Fatalf("previous summary message = %#v", preparation.MessagesToSummarize[0])
+	appendMessages(t, store, "next", textMessages()...)
+	contextMessages, err := session.BuildContext(snapshotOf(t, store))
+	if err != nil || len(contextMessages) != 3 {
+		t.Fatalf("context=%v err=%v", contextMessages, err)
 	}
-	assertSessionText(t, preparation.MessagesToSummarize[1], llm.RoleUser, "second prompt")
-	assertSessionText(t, preparation.MessagesToSummarize[2], llm.RoleAssistant, "second answer")
 }
 
-func TestPrepareCompactionReportsNothingToCompact(t *testing.T) {
+func TestPrepareCompactionNothingAndTimestampOverflow(t *testing.T) {
 	t.Parallel()
-
-	only := mustTurn(t, "turn-1", "", 100, textMessages())
-	_, err := session.PrepareCompaction(session.Snapshot{
-		Turns:  []session.Turn{only},
-		Order:  []string{only.ID},
-		LeafID: only.ID,
-	}, session.CompactionSettings{KeepRecentTokens: 20_000})
-	if !errors.Is(err, session.ErrNothingToCompact) {
-		t.Fatalf("PrepareCompaction() error = %v, want ErrNothingToCompact", err)
+	store := mustCreate(t, filepath.Join(t.TempDir(), "session.jsonl"))
+	appendMessages(t, store, "first", textMessages()...)
+	settings := session.CompactionSettings{KeepRecentTokens: 20000}
+	if _, err := session.PrepareCompaction(snapshotOf(t, store), settings); !errors.Is(err, session.ErrNothingToCompact) {
+		t.Fatal(err)
 	}
-}
-
-func TestPrepareCompactionSummarizesOversizedTurn(t *testing.T) {
-	t.Parallel()
-
-	large := mustTurn(t, "turn-1", "", 100, []llm.AgentMessage{
-		llm.UserMessage{
-			Role:      llm.RoleUser,
-			Content:   []llm.ContentPart{llm.NewTextContent("inspect the repository").Part()},
-			Timestamp: 1,
-		},
-		llm.AssistantMessage{
-			Role:       llm.RoleAssistant,
-			Content:    []llm.ContentPart{llm.NewTextContent(strings.Repeat("large output ", 8_000)).Part()},
-			API:        "custom-chat-api",
-			Provider:   "custom-provider",
-			ModelID:    "requested-model",
-			StopReason: llm.StopReasonStop,
-			Timestamp:  2,
-		},
+	a := textMessages()[1].(llm.AssistantMessage)
+	a.Timestamp = math.MaxInt64
+	retained := appendMessages(t, store, "last", a)
+	checkpoint := mustCompaction(t, session.CompactionInput{
+		ID:                   "compact",
+		ParentID:             retained[0].ID,
+		CreatedAt:            200,
+		Summary:              "summary",
+		TokensBefore:         100,
+		FirstKeptMessageID:   retained[0].ID,
+		ActiveMessageCount:   3,
+		RetainedMessageCount: 1,
 	})
-	preparation, err := session.PrepareCompaction(session.Snapshot{
-		Turns:  []session.Turn{large},
-		Order:  []string{large.ID},
-		LeafID: large.ID,
-	}, session.CompactionSettings{KeepRecentTokens: 20_000})
-	if err != nil {
-		t.Fatalf("PrepareCompaction() error = %v", err)
+	if err := store.AppendCompaction(t.Context(), checkpoint); err != nil {
+		t.Fatal(err)
 	}
-	if preparation.FirstKeptTurnID != "" ||
-		preparation.ActiveTurnCount != 1 ||
-		preparation.RetainedTurnCount != 0 {
-		t.Fatalf("full compaction boundary = %#v", preparation)
-	}
-	if len(preparation.MessagesToSummarize) != 2 {
-		t.Fatalf(
-			"messages to summarize = %d, want the complete oversized turn",
-			len(preparation.MessagesToSummarize),
-		)
-	}
-}
-
-func TestStoreAppendsFullCompactionAndBuildsFutureContext(t *testing.T) {
-	t.Parallel()
-
-	path := filepath.Join(t.TempDir(), "session.jsonl")
-	store := mustCreate(t, path)
-	large := mustTurn(t, "turn-1", "", 100, []llm.AgentMessage{
-		llm.UserMessage{
-			Role:      llm.RoleUser,
-			Content:   []llm.ContentPart{llm.NewTextContent("start").Part()},
-			Timestamp: 1,
-		},
-		llm.AssistantMessage{
-			Role:       llm.RoleAssistant,
-			Content:    []llm.ContentPart{llm.NewTextContent("large result").Part()},
-			API:        "custom-chat-api",
-			Provider:   "custom-provider",
-			ModelID:    "requested-model",
-			StopReason: llm.StopReasonStop,
-			Timestamp:  2,
-		},
-	})
-	if err := store.AppendTurn(t.Context(), large); err != nil {
-		t.Fatalf("AppendTurn() error = %v", err)
-	}
-	compaction := mustCompaction(t, session.CompactionInput{
-		ID:                "compaction-1",
-		ParentID:          large.ID,
-		CreatedAt:         200,
-		Summary:           "the large turn completed",
-		TokensBefore:      30_000,
-		ActiveTurnCount:   1,
-		RetainedTurnCount: 0,
-	})
-	if err := store.AppendCompaction(t.Context(), compaction); err != nil {
-		t.Fatalf("AppendCompaction() error = %v", err)
-	}
-	future := mustTurn(
-		t,
-		"turn-2",
-		compaction.ID,
-		300,
-		namedTextMessages("continue", "continued", 0),
-	)
-	if err := store.AppendTurn(t.Context(), future); err != nil {
-		t.Fatalf("AppendTurn(future) error = %v", err)
-	}
-	if err := store.Close(); err != nil {
-		t.Fatalf("Close() error = %v", err)
-	}
-
-	reopened, err := session.Open(t.Context(), path)
-	if err != nil {
-		t.Fatalf("Open() error = %v", err)
-	}
-	defer func() {
-		if err := reopened.Close(); err != nil {
-			t.Errorf("Close() error = %v", err)
-		}
-	}()
-	snapshot, err := reopened.Snapshot()
-	if err != nil {
-		t.Fatalf("Snapshot() error = %v", err)
-	}
-	contextMessages, err := session.BuildContext(snapshot)
-	if err != nil {
-		t.Fatalf("BuildContext() error = %v", err)
-	}
-	if len(contextMessages) != 3 {
-		t.Fatalf("context messages = %d, want summary and future turn", len(contextMessages))
-	}
-	if summary, ok := contextMessages[0].(llm.CompactionSummaryMessage); !ok ||
-		summary.Summary != compaction.Summary {
-		t.Fatalf("context summary = %#v", contextMessages[0])
-	}
-	assertSessionText(t, contextMessages[1], llm.RoleUser, "continue")
-	assertSessionText(t, contextMessages[2], llm.RoleAssistant, "continued")
-}
-
-func mustCompaction(
-	t *testing.T,
-	input session.CompactionInput,
-) session.Compaction {
-	t.Helper()
-
-	compaction, err := session.NewCompaction(input)
-	if err != nil {
-		t.Fatalf("NewCompaction() error = %v", err)
-	}
-	return compaction
-}
-
-func namedTextMessages(
-	prompt string,
-	answer string,
-	usageTokens int64,
-) []llm.AgentMessage {
-	return []llm.AgentMessage{
-		llm.UserMessage{
-			Role:      llm.RoleUser,
-			Content:   []llm.ContentPart{llm.NewTextContent(prompt).Part()},
-			Timestamp: usageTokens*10 + 1,
-		},
-		llm.AssistantMessage{
-			Role:       llm.RoleAssistant,
-			Content:    []llm.ContentPart{llm.NewTextContent(answer).Part()},
-			API:        "custom-chat-api",
-			Provider:   "custom-provider",
-			ModelID:    "requested-model",
-			Usage:      llm.Usage{TotalTokens: usageTokens},
-			StopReason: llm.StopReasonStop,
-			Timestamp:  usageTokens*10 + 2,
-		},
-	}
-}
-
-func assertSessionText(
-	t *testing.T,
-	message llm.AgentMessage,
-	role llm.Role,
-	text string,
-) {
-	t.Helper()
-
-	switch value := message.(type) {
-	case llm.UserMessage:
-		if role != llm.RoleUser || len(value.Content) != 1 || value.Content[0].Text != text {
-			t.Errorf("message = %#v, want user text %q", message, text)
-		}
-	case llm.AssistantMessage:
-		if role != llm.RoleAssistant || len(value.Content) != 1 || value.Content[0].Text != text {
-			t.Errorf("message = %#v, want assistant text %q", message, text)
-		}
-	default:
-		t.Errorf("message = %#v, want role %q text %q", message, role, text)
+	if _, err := session.BuildContext(snapshotOf(t, store)); err == nil {
+		t.Fatal("timestamp overflow accepted")
 	}
 }

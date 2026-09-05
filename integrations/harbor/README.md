@@ -76,20 +76,26 @@ The adapter also sets `AICE_NO_DEP_INSTALL=1` and `AICE_NO_UPDATE_CHECK=1` (Harb
 
 ## Pin an AICE release
 
-`install.sh` reads `AICE_VERSION` (it adds a `v` prefix when missing). Pass the adapter constructor kwarg:
+`install.sh` reads `AICE_VERSION` (it adds a `v` prefix when missing). Set
+`AICE_SESSION_V3_RELEASE` to an actual release containing the Session v3 writer,
+then pass the adapter constructor kwarg:
 
 ```sh
 harbor run -d terminal-bench@2.0 \
   --agent integrations.harbor.aice_agent:AiceAgent \
   --model deepseek/deepseek-v4-flash \
   --ae AICE_DEEPSEEK_API_KEY="$AICE_DEEPSEEK_API_KEY" \
-  --ak version=v0.10.1 \
+  --ak version="$AICE_SESSION_V3_RELEASE" \
   -n 4
 ```
 
 `--ak` / `--agent-kwarg` is Harbor's constructor-kwarg flag (`key=value`). The
-adapter requires AICE v0.10.1 or later for print NDJSON and explicit print
-Sessions. Omit the kwarg to install the latest GitHub release.
+adapter requires a build that writes **Session format v3**, together with print
+NDJSON and explicit print Sessions. No release number is assumed to include
+that format. Omitting the kwarg installs the latest GitHub release; verify it
+supports v3 first, or use a trial image with a matching source build and an
+installation override. Older Session formats are explicitly rejected during
+conversion and their files are left untouched.
 
 ## Runtime
 
@@ -108,7 +114,15 @@ aice --workspace . --print --yolo --approve \
 is teed to `/logs/agent/aice.txt`, while the native append-only Session is saved
 as `/logs/agent/aice-session.jsonl`. After the run, the adapter converts the
 Session into ATIF-v1.7 `trajectory.json` and fills Harbor's token and cost
-fields.
+fields. Conversion keeps source messages from every recorded branch in physical
+append order and adds labeled compaction steps. Each assistant's usage and each
+compaction's usage contribute once to the totals. Tool results are attached to
+their parent-chain tool group, so repeated model tool-call IDs do not mix rounds
+or branches. Pending calls have no invented observation; recovery results retain
+the source's unknown-outcome text. An incomplete final physical record is ignored
+without truncating the native log; malformed complete JSON records are rejected.
+The converter is a projection, not a replacement for the native Store's complete
+replay validation.
 
 During a run, follow progress from the host with:
 
@@ -123,3 +137,15 @@ not the tee log.
 ## Known limitations
 
 - No native resume, ATIF/native trajectory loading, or handoff.
+
+## Offline converter tests
+
+```sh
+python3 -m unittest integrations.harbor.test_aice_agent -v
+```
+
+These standard-library tests use small Harbor model stand-ins and v3 record
+fixtures. They exercise conversion and accounting without credentials, model
+calls, or installing Harbor. They do not validate a particular Harbor release's
+Pydantic/ATIF schema; run a real Harbor integration check separately when that
+dependency is available.

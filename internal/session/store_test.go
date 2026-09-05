@@ -16,578 +16,385 @@ import (
 	"github.com/ch1lam/aice-cli/internal/session"
 )
 
-func TestStoreCreateAppendAndReopen(t *testing.T) {
-	t.Parallel()
-
-	path := filepath.Join(t.TempDir(), "nested", "session.jsonl")
-	metadata := session.Metadata{
-		ID:               "session-1",
-		CreatedAt:        1_721_234_567_800,
-		WorkingDirectory: t.TempDir(),
-	}
-	store, err := session.Create(t.Context(), path, metadata)
+func mustCreate(t *testing.T, path string) *session.Store {
+	t.Helper()
+	store, err := session.Create(t.Context(), path, session.Metadata{
+		ID: "session-1", CreatedAt: 100, WorkingDirectory: t.TempDir(),
+	})
 	if err != nil {
-		t.Fatalf("Create() error = %v", err)
+		t.Fatal(err)
 	}
-
-	textTurn := mustTurn(t, "turn-1", "", 1_721_234_567_900, textMessages())
-	toolTurn := mustTurn(
-		t,
-		"turn-2",
-		textTurn.ID,
-		1_721_234_568_000,
-		toolMessages(),
-	)
-	if err := store.AppendTurn(t.Context(), textTurn); err != nil {
-		t.Fatalf("AppendTurn(text) error = %v", err)
-	}
-	if err := store.AppendTurn(t.Context(), toolTurn); err != nil {
-		t.Fatalf("AppendTurn(tool) error = %v", err)
-	}
-	if err := store.Close(); err != nil {
-		t.Fatalf("Close() error = %v", err)
-	}
-
-	info, err := os.Stat(path)
-	if err != nil {
-		t.Fatalf("os.Stat() error = %v", err)
-	}
-	if runtime.GOOS != "windows" && info.Mode().Perm()&0o077 != 0 {
-		t.Fatalf("session mode = %o, want no group or other permissions", info.Mode().Perm())
-	}
-
-	reopened, err := session.Open(t.Context(), path)
-	if err != nil {
-		t.Fatalf("Open() error = %v", err)
-	}
-	defer func() {
-		if err := reopened.Close(); err != nil {
-			t.Errorf("Close() error = %v", err)
+	t.Cleanup(func() {
+		if err := store.Close(); err != nil {
+			t.Error(err)
 		}
-	}()
-	snapshot, err := reopened.Snapshot()
-	if err != nil {
-		t.Fatalf("Snapshot() error = %v", err)
-	}
-	wantHeader := session.Header{
-		Type:             session.RecordTypeSession,
-		Version:          session.CurrentVersion,
-		ID:               metadata.ID,
-		CreatedAt:        metadata.CreatedAt,
-		WorkingDirectory: metadata.WorkingDirectory,
-	}
-	if !reflect.DeepEqual(snapshot.Header, wantHeader) {
-		t.Fatalf("snapshot header = %#v, want %#v", snapshot.Header, wantHeader)
-	}
-	if want := []session.Turn{textTurn, toolTurn}; !reflect.DeepEqual(snapshot.Turns, want) {
-		t.Fatalf("snapshot turns = %#v, want %#v", snapshot.Turns, want)
-	}
-	user := snapshot.Turns[0].Messages[0].(llm.UserMessage)
-	user.Content[0].Text = "mutated snapshot"
-	snapshot.Turns[0].Messages[0] = user
-	freshSnapshot, err := reopened.Snapshot()
-	if err != nil {
-		t.Fatalf("second Snapshot() error = %v", err)
-	}
-	freshUser := freshSnapshot.Turns[0].Messages[0].(llm.UserMessage)
-	if got, want := freshUser.Content[0].Text, "hello"; got != want {
-		t.Fatalf("stored message after snapshot mutation = %q, want %q", got, want)
-	}
+	})
+	return store
+}
 
+func appendMessages(t *testing.T, store *session.Store, prefix string, messages ...llm.AgentMessage) []session.MessageEntry {
+	t.Helper()
+	var entries []session.MessageEntry
+	for i, message := range messages {
+		parent, err := store.LeafID()
+		if err != nil {
+			t.Fatal(err)
+		}
+		entry, err := session.NewMessage(fmt.Sprintf("%s-%d", prefix, i), parent, int64(i+100), message)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := store.AppendMessage(t.Context(), entry); err != nil {
+			t.Fatal(err)
+		}
+		entries = append(entries, entry)
+	}
+	return entries
+}
+
+func snapshotOf(t *testing.T, store *session.Store) session.Snapshot {
+	t.Helper()
+	snapshot, err := store.Snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return snapshot
+}
+func fileBytes(t *testing.T, path string) []byte {
+	t.Helper()
 	data, err := os.ReadFile(path)
 	if err != nil {
-		t.Fatalf("os.ReadFile() error = %v", err)
+		t.Fatal(err)
 	}
-	lines := strings.Split(strings.TrimSuffix(string(data), "\n"), "\n")
-	if len(lines) != 3 {
-		t.Fatalf("session line count = %d, want header and two turns", len(lines))
+	return data
+}
+func appendBytes(t *testing.T, path string, data []byte) {
+	t.Helper()
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0)
+	if err != nil {
+		t.Fatal(err)
 	}
-	for index, line := range lines {
-		if !json.Valid([]byte(line)) {
-			t.Fatalf("session line %d is invalid JSON: %q", index+1, line)
-		}
+	if _, err = f.Write(data); err != nil {
+		_ = f.Close()
+		t.Fatal(err)
+	}
+	if err = f.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+func moveTo(t *testing.T, store *session.Store, id, target string) {
+	t.Helper()
+	parent, _ := store.LeafID()
+	leaf, err := session.NewLeaf(id, parent, target, 200)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = store.AppendLeaf(t.Context(), leaf); err != nil {
+		t.Fatal(err)
 	}
 }
 
-func TestStoreOpenTruncatesIncompleteTail(t *testing.T) {
+func TestStoreCreateAppendAndReopen(t *testing.T) {
 	t.Parallel()
-
-	path := filepath.Join(t.TempDir(), "session.jsonl")
+	path := filepath.Join(t.TempDir(), "nested", "session.jsonl")
 	store := mustCreate(t, path)
-	first := mustTurn(t, "turn-1", "", 1_721_234_567_900, textMessages())
-	if err := store.AppendTurn(t.Context(), first); err != nil {
-		t.Fatalf("AppendTurn() error = %v", err)
-	}
+	entries := appendMessages(t, store, "text", textMessages()...)
+	entries = append(entries, appendMessages(t, store, "tool", toolMessages()...)...)
 	if err := store.Close(); err != nil {
-		t.Fatalf("Close() error = %v", err)
+		t.Fatal(err)
 	}
-	before, err := os.Stat(path)
+	info, err := os.Stat(path)
 	if err != nil {
-		t.Fatalf("os.Stat() error = %v", err)
+		t.Fatal(err)
 	}
-
-	file, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0)
-	if err != nil {
-		t.Fatalf("os.OpenFile() error = %v", err)
-	}
-	if _, err := file.WriteString(`{"type":"turn","completed_at":`); err != nil {
-		_ = file.Close()
-		t.Fatalf("WriteString() error = %v", err)
-	}
-	if err := file.Close(); err != nil {
-		t.Fatalf("Close() partial file error = %v", err)
-	}
-
-	recovered, err := session.Open(t.Context(), path)
-	if err != nil {
-		t.Fatalf("Open() error = %v", err)
-	}
-	snapshot, err := recovered.Snapshot()
-	if err != nil {
-		t.Fatalf("Snapshot() error = %v", err)
-	}
-	if want := []session.Turn{first}; !reflect.DeepEqual(snapshot.Turns, want) {
-		t.Fatalf("recovered turns = %#v, want %#v", snapshot.Turns, want)
-	}
-	after, err := os.Stat(path)
-	if err != nil {
-		t.Fatalf("os.Stat() after recovery error = %v", err)
-	}
-	if after.Size() != before.Size() {
-		t.Fatalf("recovered size = %d, want %d", after.Size(), before.Size())
-	}
-
-	second := mustTurn(
-		t,
-		"turn-2",
-		first.ID,
-		1_721_234_568_000,
-		textMessages(),
-	)
-	if err := recovered.AppendTurn(t.Context(), second); err != nil {
-		t.Fatalf("AppendTurn() after recovery error = %v", err)
-	}
-	if err := recovered.Close(); err != nil {
-		t.Fatalf("Close() error = %v", err)
+	if runtime.GOOS != "windows" && info.Mode().Perm()&0077 != 0 {
+		t.Fatalf("mode: %o", info.Mode().Perm())
 	}
 	reopened, err := session.Open(t.Context(), path)
 	if err != nil {
-		t.Fatalf("Open() after append error = %v", err)
+		t.Fatal(err)
 	}
-	defer func() {
-		if err := reopened.Close(); err != nil {
-			t.Errorf("Close() error = %v", err)
+	defer reopened.Close()
+	snapshot := snapshotOf(t, reopened)
+	if snapshot.Header.Version != 3 || !reflect.DeepEqual(snapshot.Messages, entries) {
+		t.Fatalf("snapshot: %#v", snapshot)
+	}
+	user := snapshot.Messages[0].Message.(llm.UserMessage)
+	user.Content[0].Text = "changed"
+	if got := snapshotOf(t, reopened).Messages[0].Message.(llm.UserMessage).Content[0].Text; got != "hello" {
+		t.Fatal("snapshot alias")
+	}
+	lines := strings.Split(strings.TrimSpace(string(fileBytes(t, path))), "\n")
+	if len(lines) != 1+len(entries) {
+		t.Fatalf("lines=%d", len(lines))
+	}
+	for i, line := range lines {
+		if !json.Valid([]byte(line)) {
+			t.Fatal("invalid record")
 		}
-	}()
-	snapshot, err = reopened.Snapshot()
-	if err != nil {
-		t.Fatalf("Snapshot() after append error = %v", err)
-	}
-	if len(snapshot.Turns) != 2 {
-		t.Fatalf("reopened turn count = %d, want 2", len(snapshot.Turns))
+		if i > 0 {
+			var record map[string]json.RawMessage
+			if err := json.Unmarshal([]byte(line), &record); err != nil {
+				t.Fatal(err)
+			}
+			if record["message"] == nil || record["messages"] != nil || record["usage"] != nil {
+				t.Fatal("not a single source message record")
+			}
+		}
 	}
 }
 
-func TestStoreOpenRejectsCompleteCorruptRecord(t *testing.T) {
+func TestStoreOpenTruncatesOnlyV3IncompleteTail(t *testing.T) {
 	t.Parallel()
-
 	path := filepath.Join(t.TempDir(), "session.jsonl")
 	store := mustCreate(t, path)
-	if err := store.Close(); err != nil {
-		t.Fatalf("Close() error = %v", err)
-	}
-	file, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0)
+	entries := appendMessages(t, store, "initial", textMessages()...)
+	store.Close()
+	before := fileBytes(t, path)
+	appendBytes(t, path, []byte(`{"type":"message","created_at":`))
+	reopened, err := session.Open(t.Context(), path)
 	if err != nil {
-		t.Fatalf("os.OpenFile() error = %v", err)
+		t.Fatal(err)
 	}
-	if _, err := file.WriteString("{not-json}\n"); err != nil {
-		_ = file.Close()
-		t.Fatalf("WriteString() error = %v", err)
+	defer reopened.Close()
+	if !reflect.DeepEqual(fileBytes(t, path), before) {
+		t.Fatal("complete source changed")
 	}
-	if err := file.Close(); err != nil {
-		t.Fatalf("Close() corrupt file error = %v", err)
+	if !reflect.DeepEqual(snapshotOf(t, reopened).Messages, entries) {
+		t.Fatal("lost source")
 	}
+	appendMessages(t, reopened, "after", textMessages()...)
+}
 
-	_, err = session.Open(t.Context(), path)
-	if !errors.Is(err, session.ErrCorrupt) {
-		t.Fatalf("Open() error = %v, want ErrCorrupt", err)
+func TestStoreRejectsUnsupportedVersionsWithoutTouchingTail(t *testing.T) {
+	t.Parallel()
+	for _, version := range []int{1, 2, 4} {
+		for _, tail := range []string{"", `{"type":"turn"`, "{bad-json}\n"} {
+			path := filepath.Join(t.TempDir(), "session.jsonl")
+			data := []byte(fmt.Sprintf(`{"type":"session","version":%d,"id":"old","created_at":1,"working_directory":%q}`+"\n%s", version, t.TempDir(), tail))
+			if err := os.WriteFile(path, data, 0600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := session.Open(t.Context(), path); !errors.Is(err, session.ErrUnsupportedVersion) {
+				t.Fatalf("version=%d err=%v", version, err)
+			}
+			if !reflect.DeepEqual(fileBytes(t, path), data) {
+				t.Fatal("unsupported bytes modified")
+			}
+		}
 	}
 }
 
-func TestStoreOpenRejectsUnsupportedVersion(t *testing.T) {
+func TestStoreRejectsCorruptionWithoutChangingFile(t *testing.T) {
 	t.Parallel()
+	for _, tail := range []string{"{bad-json}\n", `{"type":"turn"}` + "\n"} {
+		path := filepath.Join(t.TempDir(), "session.jsonl")
+		store := mustCreate(t, path)
+		store.Close()
+		appendBytes(t, path, []byte(tail))
+		before := fileBytes(t, path)
+		if _, err := session.Open(t.Context(), path); !errors.Is(err, session.ErrCorrupt) {
+			t.Fatalf("err=%v", err)
+		}
+		if !reflect.DeepEqual(fileBytes(t, path), before) {
+			t.Fatal("corrupt complete bytes modified")
+		}
+	}
+}
 
-	for _, version := range []int{1, 3} {
-		t.Run(fmt.Sprintf("version %d", version), func(t *testing.T) {
-			t.Parallel()
-
+func TestStoreRejectsInvalidSourceOrderWithoutWriting(t *testing.T) {
+	t.Parallel()
+	for _, kind := range []string{
+		"orphan", "mismatched result", "duplicate result", "user interrupts",
+		"assistant interrupts", "duplicate call", "duplicate record", "wrong parent",
+	} {
+		t.Run(kind, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "session.jsonl")
-			header := fmt.Sprintf(
-				`{"type":"session","version":%d,"id":"unsupported",`+
-					`"created_at":1721234567800,"working_directory":"/tmp"}`+"\n",
-				version,
-			)
-			if err := os.WriteFile(path, []byte(header), 0o600); err != nil {
-				t.Fatalf("os.WriteFile() error = %v", err)
+			store := mustCreate(t, path)
+			messages := toolMessages()
+			appendMessages(t, store, "user", messages[0])
+			var bad llm.AgentMessage
+			switch kind {
+			case "orphan":
+				bad = messages[2]
+			case "duplicate call":
+				a := messages[1].(llm.AssistantMessage)
+				a.Content = append(a.Content, a.Content[len(a.Content)-1])
+				bad = a
+			default:
+				appendMessages(t, store, "call", messages[1])
+				switch kind {
+				case "mismatched result":
+					r := messages[2].(llm.ToolResultMessage)
+					r.ToolName = "write"
+					bad = r
+				case "duplicate result":
+					appendMessages(t, store, "result", messages[2])
+					bad = messages[2]
+				case "user interrupts":
+					bad = messages[0]
+				case "assistant interrupts":
+					bad = messages[3]
+				default:
+					bad = messages[2]
+				}
 			}
-
-			_, err := session.Open(t.Context(), path)
-			if !errors.Is(err, session.ErrUnsupportedVersion) {
-				t.Fatalf("Open() error = %v, want ErrUnsupportedVersion", err)
+			parent, _ := store.LeafID()
+			id := "invalid"
+			if kind == "duplicate record" {
+				id = "user-0"
+			}
+			if kind == "wrong parent" {
+				parent = "missing"
+			}
+			entry, err := session.NewMessage(id, parent, 300, bad)
+			before := fileBytes(t, path)
+			if err == nil {
+				err = store.AppendMessage(t.Context(), entry)
+			}
+			if err == nil {
+				t.Fatal("invalid prefix accepted")
+			}
+			if !reflect.DeepEqual(fileBytes(t, path), before) {
+				t.Fatal("invalid append wrote bytes")
 			}
 		})
 	}
 }
 
-func TestStoreRejectsIncompleteTurnWithoutChangingFile(t *testing.T) {
+func TestStoreRecoveryOnlyCompletesMissingResults(t *testing.T) {
 	t.Parallel()
-
 	path := filepath.Join(t.TempDir(), "session.jsonl")
 	store := mustCreate(t, path)
-	defer func() {
-		if err := store.Close(); err != nil {
-			t.Errorf("Close() error = %v", err)
-		}
-	}()
-	before, err := os.Stat(path)
-	if err != nil {
-		t.Fatalf("os.Stat() error = %v", err)
-	}
-	incomplete := session.Turn{
-		Type:        session.RecordTypeTurn,
-		ID:          "turn-1",
-		CompletedAt: 1_721_234_567_900,
-		Messages: []llm.AgentMessage{
-			textMessages()[0],
-			toolMessages()[1],
-		},
-		Usage: toolMessages()[1].(llm.AssistantMessage).Usage,
-	}
-
-	err = store.AppendTurn(t.Context(), incomplete)
-	if err == nil || !strings.Contains(err.Error(), "unpaired tool call") {
-		t.Fatalf("AppendTurn() error = %v, want incomplete-turn error", err)
-	}
-	after, err := os.Stat(path)
-	if err != nil {
-		t.Fatalf("os.Stat() after invalid append error = %v", err)
-	}
-	if after.Size() != before.Size() {
-		t.Fatalf("file size after invalid append = %d, want %d", after.Size(), before.Size())
-	}
-}
-
-func TestStoreRejectsDerivedMessageInsideTurn(t *testing.T) {
-	t.Parallel()
-
-	_, err := session.NewTurn("turn-1", "", 1_721_234_567_900, []llm.AgentMessage{
-		textMessages()[0],
-		llm.CompactionSummaryMessage{
-			Role:         llm.RoleCompactionSummary,
-			Summary:      "derived context",
-			TokensBefore: 100,
-			Timestamp:    1_721_234_567_850,
-		},
-		textMessages()[1],
-	})
-	if err == nil || !strings.Contains(err.Error(), "derived message") {
-		t.Fatalf("NewTurn() error = %v, want derived-message rejection", err)
-	}
-}
-
-func TestStoreHonorsCancellationAndClosedState(t *testing.T) {
-	t.Parallel()
-
-	path := filepath.Join(t.TempDir(), "session.jsonl")
-	store := mustCreate(t, path)
-	turn := mustTurn(t, "turn-1", "", 1_721_234_567_900, textMessages())
-	ctx, cancel := context.WithCancel(t.Context())
-	cancel()
-	if err := store.AppendTurn(ctx, turn); !errors.Is(err, context.Canceled) {
-		t.Fatalf("AppendTurn() error = %v, want context.Canceled", err)
-	}
-	if err := store.Close(); err != nil {
-		t.Fatalf("Close() error = %v", err)
-	}
-	if err := store.Close(); err != nil {
-		t.Fatalf("second Close() error = %v", err)
-	}
-	if err := store.AppendTurn(t.Context(), turn); !errors.Is(err, session.ErrClosed) {
-		t.Fatalf("AppendTurn() after close error = %v, want ErrClosed", err)
-	}
-}
-
-func TestStoreRestoresLeafMoveAndPreservesBranches(t *testing.T) {
-	t.Parallel()
-
-	path := filepath.Join(t.TempDir(), "session.jsonl")
-	store := mustCreate(t, path)
-	first := mustTurn(
-		t,
-		"turn-1",
-		"",
-		1_721_234_567_900,
-		namedTextMessages("first prompt", "first answer", 10),
-	)
-	abandoned := mustTurn(
-		t,
-		"turn-2",
-		first.ID,
-		1_721_234_568_000,
-		namedTextMessages("old branch", "old answer", 20),
-	)
-	if err := store.AppendTurn(t.Context(), first); err != nil {
-		t.Fatalf("AppendTurn(first) error = %v", err)
-	}
-	if err := store.AppendTurn(t.Context(), abandoned); err != nil {
-		t.Fatalf("AppendTurn(abandoned) error = %v", err)
-	}
-	move, err := session.NewLeaf(
-		"leaf-1",
-		abandoned.ID,
-		first.ID,
-		1_721_234_568_050,
-	)
-	if err != nil {
-		t.Fatalf("NewLeaf() error = %v", err)
-	}
-	if err := store.AppendLeaf(t.Context(), move); err != nil {
-		t.Fatalf("AppendLeaf() error = %v", err)
-	}
-	replacement := mustTurn(
-		t,
-		"turn-3",
-		first.ID,
-		1_721_234_568_100,
-		namedTextMessages("new branch", "new answer", 30),
-	)
-	if err := store.AppendTurn(t.Context(), replacement); err != nil {
-		t.Fatalf("AppendTurn(replacement) error = %v", err)
-	}
-	if err := store.Close(); err != nil {
-		t.Fatalf("Close() error = %v", err)
-	}
-
+	messages := toolMessages()
+	a := messages[1].(llm.AssistantMessage)
+	second := *a.Content[len(a.Content)-1].ToolCall
+	second.ID = "call-2"
+	a.Content = append(a.Content, llm.ContentPart{Type: llm.ContentTypeToolCall, ToolCall: &second})
+	entries := appendMessages(t, store, "initial", messages[0], a, messages[2])
+	store.Close()
+	before := fileBytes(t, path)
 	reopened, err := session.Open(t.Context(), path)
 	if err != nil {
-		t.Fatalf("Open() error = %v", err)
+		t.Fatal(err)
 	}
-	defer func() {
-		if err := reopened.Close(); err != nil {
-			t.Errorf("Close() error = %v", err)
-		}
-	}()
-	snapshot, err := reopened.Snapshot()
-	if err != nil {
-		t.Fatalf("Snapshot() error = %v", err)
+	defer reopened.Close()
+	if !reflect.DeepEqual(fileBytes(t, path), before) {
+		t.Fatal("Open appended recovery")
 	}
-	if snapshot.LeafID != replacement.ID {
-		t.Fatalf("active leaf = %q, want %q", snapshot.LeafID, replacement.ID)
+	snapshot := snapshotOf(t, reopened)
+	if _, err := session.BuildContext(snapshot); !errors.Is(err, session.ErrIncompleteGroup) {
+		t.Fatalf("BuildContext=%v", err)
 	}
-	if want := []string{first.ID, abandoned.ID, replacement.ID}; !reflect.DeepEqual(
-		snapshot.Order,
-		want,
-	) {
-		t.Fatalf("tree order = %v, want %v", snapshot.Order, want)
+	if _, err := session.PrepareCompaction(snapshot, session.CompactionSettings{KeepRecentTokens: 1}); !errors.Is(err, session.ErrIncompleteGroup) {
+		t.Fatalf("PrepareCompaction=%v", err)
 	}
-	if want := []session.Leaf{move}; !reflect.DeepEqual(snapshot.LeafMoves, want) {
-		t.Fatalf("leaf moves = %#v, want %#v", snapshot.LeafMoves, want)
+	if _, err := session.Nodes(snapshot); err != nil {
+		t.Fatalf("read-only tree=%v", err)
 	}
-
-	oldBranch, err := session.Branch(snapshot, abandoned.ID)
-	if err != nil {
-		t.Fatalf("Branch(old) error = %v", err)
+	if err := reopened.RecoverInterrupted(t.Context()); err != nil {
+		t.Fatal(err)
 	}
-	if got := nodeIDs(oldBranch); !reflect.DeepEqual(got, []string{first.ID, abandoned.ID}) {
-		t.Fatalf("old branch = %v", got)
+	snapshot = snapshotOf(t, reopened)
+	if len(snapshot.Messages) != 4 || !reflect.DeepEqual(snapshot.Messages[:3], entries) {
+		t.Fatal("existing results replaced")
 	}
-	activeBranch, err := session.ActiveBranch(snapshot)
-	if err != nil {
-		t.Fatalf("ActiveBranch() error = %v", err)
+	recovered := snapshot.Messages[3].Message.(llm.ToolResultMessage)
+	if recovered.ToolCallID != "call-2" || !recovered.IsError || !strings.Contains(recovered.Content[0].Text, "may have produced effects") {
+		t.Fatalf("recovery=%#v", recovered)
 	}
-	if got := nodeIDs(activeBranch); !reflect.DeepEqual(got, []string{first.ID, replacement.ID}) {
-		t.Fatalf("active branch = %v", got)
+	after := fileBytes(t, path)
+	if err := reopened.RecoverInterrupted(t.Context()); err != nil {
+		t.Fatal(err)
 	}
-
-	contextMessages, err := session.BuildContext(snapshot)
-	if err != nil {
-		t.Fatalf("BuildContext() error = %v", err)
+	if !reflect.DeepEqual(fileBytes(t, path), after) {
+		t.Fatal("recovery not idempotent")
 	}
-	if len(contextMessages) != 4 {
-		t.Fatalf("context messages = %d, want two active turns", len(contextMessages))
+	if _, err := session.BuildContext(snapshot); err != nil {
+		t.Fatal(err)
 	}
-	assertSessionText(t, contextMessages[0], llm.RoleUser, "first prompt")
-	assertSessionText(t, contextMessages[2], llm.RoleUser, "new branch")
+	// A later group can reuse the provider call ID.
+	appendMessages(t, reopened, "next", messages[1], messages[2], messages[3])
 }
 
-func TestStoreRejectsLeafMoveToMissingEntryWithoutChangingFile(t *testing.T) {
+func TestStoreBranchMovesPreserveSourceAndRejectPendingTargets(t *testing.T) {
 	t.Parallel()
-
 	path := filepath.Join(t.TempDir(), "session.jsonl")
 	store := mustCreate(t, path)
-	defer func() {
-		if err := store.Close(); err != nil {
-			t.Errorf("Close() error = %v", err)
-		}
-	}()
-	first := mustTurn(t, "turn-1", "", 100, textMessages())
-	if err := store.AppendTurn(t.Context(), first); err != nil {
-		t.Fatalf("AppendTurn() error = %v", err)
+	first := appendMessages(t, store, "first", textMessages()...)
+	pending := appendMessages(t, store, "pending", toolMessages()[1])
+	before := fileBytes(t, path)
+	leaf, _ := session.NewLeaf("unsafe", pending[0].ID, pending[0].ID, 300)
+	if err := store.AppendLeaf(t.Context(), leaf); !errors.Is(err, session.ErrIncompleteGroup) {
+		t.Fatalf("same unsafe target=%v", err)
 	}
-	before, err := os.Stat(path)
+	if !reflect.DeepEqual(fileBytes(t, path), before) {
+		t.Fatal("unsafe move changed source")
+	}
+	moveTo(t, store, "abandon", first[1].ID)
+	replacement := appendMessages(t, store, "replacement", textMessages()...)
+	if err := store.RecoverInterrupted(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	snapshot := snapshotOf(t, store)
+	if len(snapshot.Messages) != 5 || snapshot.LeafID != replacement[1].ID {
+		t.Fatalf("snapshot=%#v", snapshot)
+	}
+	old, err := session.Branch(snapshot, pending[0].ID)
+	if err != nil || len(old) != 3 {
+		t.Fatalf("old branch=%v error=%v", old, err)
+	}
+	contextMessages, err := session.BuildContext(snapshot)
+	if err != nil || len(contextMessages) != 4 {
+		t.Fatalf("context=%v err=%v", contextMessages, err)
+	}
+	store.Close()
+	reopened, err := session.Open(t.Context(), path)
 	if err != nil {
-		t.Fatalf("Stat() error = %v", err)
+		t.Fatal(err)
 	}
-	move, err := session.NewLeaf("leaf-1", first.ID, "missing", 200)
-	if err != nil {
-		t.Fatalf("NewLeaf() error = %v", err)
-	}
-	err = store.AppendLeaf(t.Context(), move)
-	if !errors.Is(err, session.ErrEntryNotFound) {
-		t.Fatalf("AppendLeaf() error = %v, want ErrEntryNotFound", err)
-	}
-	after, err := os.Stat(path)
-	if err != nil {
-		t.Fatalf("Stat() after rejection error = %v", err)
-	}
-	if after.Size() != before.Size() {
-		t.Fatalf("file size after rejection = %d, want %d", after.Size(), before.Size())
+	defer reopened.Close()
+	if !reflect.DeepEqual(snapshotOf(t, reopened), snapshot) {
+		t.Fatal("branch changed on replay")
 	}
 }
 
-func nodeIDs(nodes []session.Node) []string {
-	ids := make([]string, len(nodes))
-	for index, node := range nodes {
-		ids[index] = node.ID
+func TestStoreCancellationClosedAndMissingLeaf(t *testing.T) {
+	t.Parallel()
+	store := mustCreate(t, filepath.Join(t.TempDir(), "session.jsonl"))
+	entry, _ := session.NewMessage("m", "", 100, textMessages()[0])
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if _, err := session.Open(ctx, store.Path()); !errors.Is(err, context.Canceled) {
+		t.Fatal(err)
 	}
-	return ids
-}
-
-func mustCreate(t *testing.T, path string) *session.Store {
-	t.Helper()
-
-	store, err := session.Create(t.Context(), path, session.Metadata{
-		ID:               "session-1",
-		CreatedAt:        1_721_234_567_800,
-		WorkingDirectory: t.TempDir(),
-	})
-	if err != nil {
-		t.Fatalf("Create() error = %v", err)
+	newPath := filepath.Join(t.TempDir(), "cancelled.jsonl")
+	if _, err := session.Create(ctx, newPath, session.Metadata{}); !errors.Is(err, context.Canceled) {
+		t.Fatal(err)
 	}
-	return store
-}
-
-func mustTurn(
-	t *testing.T,
-	id string,
-	parentID string,
-	completedAt int64,
-	messages []llm.AgentMessage,
-) session.Turn {
-	t.Helper()
-
-	turn, err := session.NewTurn(id, parentID, completedAt, messages)
-	if err != nil {
-		t.Fatalf("NewTurn() error = %v", err)
+	if _, err := os.Stat(newPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("cancelled create changed filesystem: %v", err)
 	}
-	return turn
-}
-
-func textMessages() []llm.AgentMessage {
-	return []llm.AgentMessage{
-		llm.UserMessage{
-			Role:      llm.RoleUser,
-			Content:   []llm.ContentPart{llm.NewTextContent("hello").Part()},
-			Timestamp: 1_721_234_567_810,
-		},
-		llm.AssistantMessage{
-			Role:       llm.RoleAssistant,
-			Content:    []llm.ContentPart{llm.NewTextContent("hello back").Part()},
-			API:        "custom-chat-api",
-			Provider:   "custom-provider",
-			ModelID:    "requested-model",
-			ResponseID: "response-text",
-			Usage: llm.Usage{
-				InputTokens:  10,
-				OutputTokens: 5,
-				TotalTokens:  15,
-			},
-			StopReason: llm.StopReasonStop,
-			Timestamp:  1_721_234_567_820,
-		},
+	if err := store.AppendMessage(ctx, entry); !errors.Is(err, context.Canceled) {
+		t.Fatal(err)
 	}
-}
-
-func toolMessages() []llm.AgentMessage {
-	call := llm.ToolCall{
-		ID:        "call-1",
-		Name:      "read",
-		Arguments: json.RawMessage(`{"path":"README.md"}`),
-		Signature: "tool-signature",
+	if err := store.RecoverInterrupted(ctx); !errors.Is(err, context.Canceled) {
+		t.Fatal(err)
 	}
-	return []llm.AgentMessage{
-		llm.UserMessage{
-			Role:      llm.RoleUser,
-			Content:   []llm.ContentPart{llm.NewTextContent("inspect").Part()},
-			Timestamp: 1_721_234_567_910,
-		},
-		llm.AssistantMessage{
-			Role: llm.RoleAssistant,
-			Content: []llm.ContentPart{
-				llm.NewThinkingContent("reasoning", "thinking-signature").Part(),
-				{Type: llm.ContentTypeToolCall, ToolCall: &call},
-			},
-			API:             "custom-chat-api",
-			Provider:        "custom-provider",
-			ModelID:         "requested-model",
-			ResponseModelID: "resolved-model",
-			ResponseID:      "response-tool",
-			Usage: llm.Usage{
-				InputTokens:      20,
-				OutputTokens:     10,
-				ReasoningTokens:  4,
-				CacheReadTokens:  3,
-				CacheWriteTokens: 2,
-				TotalTokens:      30,
-				Cost: &llm.Cost{
-					Input:      0.001,
-					Output:     0.002,
-					CacheRead:  0.0001,
-					CacheWrite: 0.0002,
-					Total:      0.0033,
-				},
-			},
-			StopReason:   llm.StopReasonToolUse,
-			ErrorMessage: "redacted provider diagnostic",
-			Timestamp:    1_721_234_567_920,
-		},
-		llm.ToolResultMessage{
-			Role:       llm.RoleToolResult,
-			ToolCallID: "call-1",
-			ToolName:   "read",
-			Content:    []llm.ContentPart{llm.NewTextContent("contents").Part()},
-			Timestamp:  1_721_234_567_930,
-		},
-		llm.AssistantMessage{
-			Role:            llm.RoleAssistant,
-			Content:         []llm.ContentPart{llm.NewTextContent("done").Part()},
-			API:             "custom-chat-api",
-			Provider:        "custom-provider",
-			ModelID:         "requested-model",
-			ResponseModelID: "resolved-model",
-			ResponseID:      "response-final",
-			Usage: llm.Usage{
-				InputTokens:  40,
-				OutputTokens: 8,
-				TotalTokens:  48,
-				Cost: &llm.Cost{
-					Input:  0.004,
-					Output: 0.001,
-					Total:  0.005,
-				},
-			},
-			StopReason: llm.StopReasonStop,
-			Timestamp:  1_721_234_567_940,
-		},
+	leaf, _ := session.NewLeaf("move", "", "missing", 200)
+	before := fileBytes(t, store.Path())
+	if err := store.AppendLeaf(t.Context(), leaf); !errors.Is(err, session.ErrEntryNotFound) {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(fileBytes(t, store.Path()), before) {
+		t.Fatal("missing leaf wrote bytes")
+	}
+	store.Close()
+	store.Close()
+	if err := store.AppendMessage(t.Context(), entry); !errors.Is(err, session.ErrClosed) {
+		t.Fatal(err)
+	}
+	if err := store.RecoverInterrupted(t.Context()); !errors.Is(err, session.ErrClosed) {
+		t.Fatal(err)
 	}
 }

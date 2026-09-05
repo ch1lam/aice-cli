@@ -14,9 +14,11 @@ import (
 
 	"github.com/ch1lam/aice-cli/internal/agent"
 	"github.com/ch1lam/aice-cli/internal/config"
+	"github.com/ch1lam/aice-cli/internal/interaction"
 	"github.com/ch1lam/aice-cli/internal/llm"
 	"github.com/ch1lam/aice-cli/internal/provider"
 	"github.com/ch1lam/aice-cli/internal/session"
+	"github.com/ch1lam/aice-cli/internal/tui"
 )
 
 func TestSerializeCompactionMessagesUsesBoundedTranscriptText(t *testing.T) {
@@ -120,8 +122,8 @@ func TestApplicationCompactAppendsCheckpointAndRestoresDerivedContext(
 	if err := command.ExecuteContext(t.Context()); err != nil {
 		t.Fatalf("compact ExecuteContext() error = %v", err)
 	}
-	if !strings.Contains(output.String(), "retained 1 recent turn(s)") {
-		t.Errorf("compact output = %q, want retained-turn count", output.String())
+	if !strings.Contains(output.String(), "retained 2 recent message(s)") {
+		t.Errorf("compact output = %q, want retained-message count", output.String())
 	}
 
 	if len(summaryModel.requests) != 1 {
@@ -158,8 +160,8 @@ func TestApplicationCompactAppendsCheckpointAndRestoresDerivedContext(
 	}
 
 	snapshot := openSessionSnapshot(t, sessionPath)
-	if len(snapshot.Turns) != 2 {
-		t.Fatalf("turns after compaction = %d, want 2", len(snapshot.Turns))
+	if len(snapshot.Messages) != 4 {
+		t.Fatalf("messages after compaction = %d, want 4", len(snapshot.Messages))
 	}
 	if len(snapshot.Compactions) != 1 {
 		t.Fatalf(
@@ -178,8 +180,8 @@ func TestApplicationCompactAppendsCheckpointAndRestoresDerivedContext(
 	if err != nil {
 		t.Fatalf("ReadFile() error = %v", err)
 	}
-	if got := len(strings.Split(strings.TrimSpace(string(data)), "\n")); got != 4 {
-		t.Errorf("physical JSONL records = %d, want header + 2 turns + compaction", got)
+	if got := len(strings.Split(strings.TrimSpace(string(data)), "\n")); got != 6 {
+		t.Errorf("physical JSONL records = %d, want header + 4 messages + compaction", got)
 	}
 
 	continuationModel := runPrintTurn(
@@ -233,8 +235,8 @@ func TestApplicationCompactAppendsCheckpointAndRestoresDerivedContext(
 	}
 
 	snapshot = openSessionSnapshot(t, sessionPath)
-	if len(snapshot.Turns) != 3 {
-		t.Fatalf("turns after second compaction = %d, want 3", len(snapshot.Turns))
+	if len(snapshot.Messages) != 6 {
+		t.Fatalf("messages after second compaction = %d, want 6", len(snapshot.Messages))
 	}
 	if len(snapshot.Compactions) != 2 {
 		t.Fatalf(
@@ -243,11 +245,11 @@ func TestApplicationCompactAppendsCheckpointAndRestoresDerivedContext(
 		)
 	}
 	latest := snapshot.Compactions[1]
-	if latest.FirstKeptTurnID != snapshot.Turns[2].ID ||
-		latest.ActiveTurnCount != 2 ||
-		latest.RetainedTurnCount != 1 {
+	if latest.FirstKeptMessageID != snapshot.Messages[4].ID ||
+		latest.ActiveMessageCount != 4 ||
+		latest.RetainedMessageCount != 2 {
 		t.Errorf(
-			"latest boundary = %#v, want third turn retained from two active turns",
+			"latest boundary = %#v, want third interaction retained from four active messages",
 			latest,
 		)
 	}
@@ -277,7 +279,7 @@ func TestApplicationPrintAutomaticallyCompactsBeforeRequest(t *testing.T) {
 	firstAnswer.StopReason = llm.StopReasonStop
 	firstAnswer.Timestamp = 2
 	firstAnswer.Usage = llm.Usage{TotalTokens: 9_000}
-	if err := appendSessionTurn(t.Context(), store, []llm.AgentMessage{
+	if err := appendTestSessionMessages(t.Context(), store, []llm.AgentMessage{
 		firstPrompt,
 		firstAnswer,
 	}); err != nil {
@@ -293,7 +295,7 @@ func TestApplicationPrintAutomaticallyCompactsBeforeRequest(t *testing.T) {
 	secondAnswer.StopReason = llm.StopReasonStop
 	secondAnswer.Timestamp = 4
 	secondAnswer.Usage = llm.Usage{TotalTokens: 8_000}
-	if err := appendSessionTurn(t.Context(), store, []llm.AgentMessage{
+	if err := appendTestSessionMessages(t.Context(), store, []llm.AgentMessage{
 		secondPrompt,
 		secondAnswer,
 	}); err != nil {
@@ -337,6 +339,7 @@ func TestApplicationPrintAutomaticallyCompactsBeforeRequest(t *testing.T) {
 	if len(model.requests) != 2 {
 		t.Fatalf("model requests = %d, want compaction and continuation", len(model.requests))
 	}
+	assertPendingInputNotSummarizedOrDuplicated(t, model.requests[0], model.requests[1], "continue")
 	snapshot := openSessionSnapshot(t, sessionPath)
 	if len(snapshot.Compactions) != 1 {
 		t.Fatalf("compactions = %d, want automatic checkpoint", len(snapshot.Compactions))
@@ -371,7 +374,7 @@ func TestApplicationPrintCompactsAnOversizedTurn(t *testing.T) {
 	}
 	answer.StopReason = llm.StopReasonStop
 	answer.Timestamp = 2
-	if err := appendSessionTurn(t.Context(), store, []llm.AgentMessage{prompt, answer}); err != nil {
+	if err := appendTestSessionMessages(t.Context(), store, []llm.AgentMessage{prompt, answer}); err != nil {
 		t.Fatalf("append oversized turn: %v", err)
 	}
 	if err := store.Close(); err != nil {
@@ -412,8 +415,9 @@ func TestApplicationPrintCompactsAnOversizedTurn(t *testing.T) {
 	if len(model.requests) != 2 {
 		t.Fatalf("model requests = %d, want oversized compaction and continuation", len(model.requests))
 	}
+	assertPendingInputNotSummarizedOrDuplicated(t, model.requests[0], model.requests[1], "continue")
 	snapshot := openSessionSnapshot(t, sessionPath)
-	if len(snapshot.Compactions) != 1 || snapshot.Compactions[0].FirstKeptTurnID != "" {
+	if len(snapshot.Compactions) != 1 || snapshot.Compactions[0].FirstKeptMessageID != snapshot.Messages[2].ID {
 		t.Fatalf("compactions = %#v, want full-branch checkpoint", snapshot.Compactions)
 	}
 }
@@ -506,8 +510,8 @@ func TestApplicationCompactRejectsUnsafeSummaryWithoutAppending(t *testing.T) {
 			}
 
 			snapshot := openSessionSnapshot(t, sessionPath)
-			if len(snapshot.Turns) != 2 {
-				t.Errorf("turns after failed compaction = %d, want 2", len(snapshot.Turns))
+			if len(snapshot.Messages) != 4 {
+				t.Errorf("messages after failed compaction = %d, want 4", len(snapshot.Messages))
 			}
 			if len(snapshot.Compactions) != 0 {
 				t.Errorf(
@@ -573,7 +577,7 @@ func TestApplicationCompactUsesOnlyActiveBranch(t *testing.T) {
 		"session", "checkout",
 		"--workspace", workspace,
 		"--session", sessionPath,
-		"--entry", snapshot.Turns[0].ID,
+		"--entry", snapshot.Messages[1].ID,
 	})
 	if err := checkout.ExecuteContext(t.Context()); err != nil {
 		t.Fatalf("checkout ExecuteContext() error = %v", err)
@@ -606,15 +610,15 @@ func TestApplicationCompactUsesOnlyActiveBranch(t *testing.T) {
 	}
 
 	snapshot = openSessionSnapshot(t, sessionPath)
-	if len(snapshot.Turns) != 3 {
-		t.Fatalf("turns after branch compaction = %d, want all source turns", len(snapshot.Turns))
+	if len(snapshot.Messages) != 6 {
+		t.Fatalf("messages after branch compaction = %d, want all source messages", len(snapshot.Messages))
 	}
 	if len(snapshot.Compactions) != 1 {
 		t.Fatalf("compactions = %d, want 1", len(snapshot.Compactions))
 	}
 	checkpoint := snapshot.Compactions[0]
-	if checkpoint.ParentID != snapshot.Turns[2].ID ||
-		checkpoint.FirstKeptTurnID != snapshot.Turns[2].ID {
+	if checkpoint.ParentID != snapshot.Messages[5].ID ||
+		checkpoint.FirstKeptMessageID != snapshot.Messages[4].ID {
 		t.Fatalf("branch checkpoint = %#v, want current branch boundary", checkpoint)
 	}
 	contextMessages, err := session.BuildContext(snapshot)
@@ -801,4 +805,72 @@ func (m *controlledModel) Stream(
 			Message:    &message,
 		},
 	}}, nil
+}
+
+func TestInteractiveFollowUpCompactionRetainsAcceptedInputExactlyOnce(t *testing.T) {
+	t.Parallel()
+	workspace := t.TempDir()
+	path := filepath.Join(t.TempDir(), "conversation.jsonl")
+	runPrintTurn(t, workspace, path, "old question", "old answer")
+	info := llm.Model{ID: "test-model", Name: "Test", API: llm.API("test-api"), Provider: llm.ProviderID("test-provider"), ContextWindow: 10000, MaxTokens: 1000}
+	model := &controlledModel{response: "checkpoint answer", stopReason: llm.StopReasonStop, usage: llm.Usage{TotalTokens: 9000}}
+	cfg, home := compactPrintConfig(t, info)
+	command, err := newTestCommand(t, dependencies{
+		loadConfig:                 func() (config.Config, error) { return cfg, nil },
+		newModel:                   func(config.Config) (agent.Model, error) { return model, nil },
+		providers:                  []provider.Provider{&compactTestProvider{model: info, service: model}},
+		compactionKeepRecentTokens: 1,
+		userHomeDir:                func() (string, error) { return home, nil },
+		runTUI: func(ctx context.Context, runner interaction.Runner, _ tui.Options) error {
+			active, err := runner.NewRun(interaction.RunInput{Prompt: "initial task"}, nil)
+			if err != nil {
+				return err
+			}
+			if err := active.Deliver(interaction.Delivery{ID: "follow", Text: "UNIQUE_FOLLOWUP", Kind: interaction.DeliveryKindFollowUp}); err != nil {
+				return err
+			}
+			return active.Run(ctx)
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	command.SetOut(io.Discard)
+	command.SetArgs([]string{"--workspace", workspace, "--session", path})
+	if err := command.ExecuteContext(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if len(model.requests) != 3 {
+		t.Fatalf("requests = %d, want main,summary,followup", len(model.requests))
+	}
+	assertPendingInputNotSummarizedOrDuplicated(t, model.requests[1], model.requests[2], "UNIQUE_FOLLOWUP")
+	snapshot := openSessionSnapshot(t, path)
+	if len(snapshot.Compactions) != 1 || len(snapshot.Messages) != 6 {
+		t.Fatalf("snapshot = %#v", snapshot)
+	}
+	matches := 0
+	for _, entry := range snapshot.Messages {
+		if user, ok := entry.Message.(llm.UserMessage); ok && visibleText(user.Content, "") == "UNIQUE_FOLLOWUP" {
+			matches++
+		}
+	}
+	if matches != 1 {
+		t.Fatalf("source followup count = %d", matches)
+	}
+}
+
+func assertPendingInputNotSummarizedOrDuplicated(t *testing.T, summary, continuation llm.Request, input string) {
+	t.Helper()
+	if strings.Contains(messageText(t, summary.Messages[0]), "[User]\n"+input+"\n") {
+		t.Fatal("pending input swallowed by summary")
+	}
+	matches := 0
+	for _, message := range continuation.Messages {
+		if user, ok := message.(llm.UserMessage); ok && visibleText(user.Content, "") == input {
+			matches++
+		}
+	}
+	if matches != 1 {
+		t.Fatalf("request input count = %d, want 1", matches)
+	}
 }

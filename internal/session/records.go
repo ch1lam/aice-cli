@@ -1,4 +1,4 @@
-// Package session persists complete AICE conversation history as an
+// Package session persists AICE source messages as an
 // append-only JSONL tree.
 package session
 
@@ -19,8 +19,8 @@ type RecordType string
 const (
 	// RecordTypeSession identifies the versioned first record.
 	RecordTypeSession RecordType = "session"
-	// RecordTypeTurn identifies one complete user interaction.
-	RecordTypeTurn RecordType = "turn"
+	// RecordTypeMessage identifies one ended source message.
+	RecordTypeMessage RecordType = "message"
 	// RecordTypeCompaction identifies one derived context checkpoint.
 	RecordTypeCompaction RecordType = "compaction"
 	// RecordTypeLeaf identifies an append-only move of the active tree leaf.
@@ -28,7 +28,7 @@ const (
 )
 
 // CurrentVersion is the session file format written by this build.
-const CurrentVersion = 2
+const CurrentVersion = 3
 
 // Metadata contains caller-owned values for a new session header.
 type Metadata struct {
@@ -55,44 +55,44 @@ type Node struct {
 	Timestamp int64
 }
 
-// Turn is one complete user interaction persisted at a stable boundary.
-type Turn struct {
-	Type        RecordType         `json:"-"`
-	ID          string             `json:"-"`
-	ParentID    string             `json:"-"`
-	CompletedAt int64              `json:"-"`
-	Messages    []llm.AgentMessage `json:"-"`
-	Usage       llm.Usage          `json:"-"`
+// MessageEntry stores one ended source message. A branch may temporarily end
+// with outstanding tool calls; model context is derived only from paired groups.
+type MessageEntry struct {
+	Type      RecordType       `json:"-"`
+	ID        string           `json:"-"`
+	ParentID  string           `json:"-"`
+	CreatedAt int64            `json:"-"`
+	Message   llm.AgentMessage `json:"-"`
 }
 
 // CompactionInput contains caller-owned data for a derived checkpoint. An
-// empty FirstKeptTurnID means the checkpoint summarizes the entire active
-// branch and retains no source turns in the next model context; source turns
+// empty FirstKeptMessageID means the checkpoint summarizes the entire active
+// branch and retains no source messages in the next model context; source messages
 // remain in the append-only Session.
 type CompactionInput struct {
-	ID                string
-	ParentID          string
-	CreatedAt         int64
-	Summary           string
-	TokensBefore      int64
-	FirstKeptTurnID   string
-	ActiveTurnCount   int
-	RetainedTurnCount int
-	Usage             llm.Usage
+	ID                   string
+	ParentID             string
+	CreatedAt            int64
+	Summary              string
+	TokensBefore         int64
+	FirstKeptMessageID   string
+	ActiveMessageCount   int
+	RetainedMessageCount int
+	Usage                llm.Usage
 }
 
 // Compaction is one append-only derived context checkpoint.
 type Compaction struct {
-	Type              RecordType `json:"type"`
-	ID                string     `json:"id"`
-	ParentID          string     `json:"parent_id"`
-	CreatedAt         int64      `json:"created_at"`
-	Summary           string     `json:"summary"`
-	TokensBefore      int64      `json:"tokens_before"`
-	FirstKeptTurnID   string     `json:"first_kept_turn_id"`
-	ActiveTurnCount   int        `json:"active_turn_count"`
-	RetainedTurnCount int        `json:"retained_turn_count"`
-	Usage             llm.Usage  `json:"usage"`
+	Type                 RecordType `json:"type"`
+	ID                   string     `json:"id"`
+	ParentID             string     `json:"parent_id"`
+	CreatedAt            int64      `json:"created_at"`
+	Summary              string     `json:"summary"`
+	TokensBefore         int64      `json:"tokens_before"`
+	FirstKeptMessageID   string     `json:"first_kept_message_id"`
+	ActiveMessageCount   int        `json:"active_message_count"`
+	RetainedMessageCount int        `json:"retained_message_count"`
+	Usage                llm.Usage  `json:"usage"`
 }
 
 // Leaf is an append-only move of the active branch pointer. An empty TargetID
@@ -108,7 +108,7 @@ type Leaf struct {
 // Snapshot is an independent copy of one loaded session.
 type Snapshot struct {
 	Header      Header
-	Turns       []Turn
+	Messages    []MessageEntry
 	Compactions []Compaction
 	LeafMoves   []Leaf
 	Order       []string
@@ -119,8 +119,10 @@ type Snapshot struct {
 // including abandoned branches and compaction summaries.
 func TotalUsage(snapshot Snapshot) llm.Usage {
 	var total llm.Usage
-	for _, turn := range snapshot.Turns {
-		total = llm.AddUsage(total, turn.Usage)
+	for _, message := range snapshot.Messages {
+		if assistant, ok := message.Message.(llm.AssistantMessage); ok {
+			total = llm.AddUsage(total, assistant.Usage)
+		}
 	}
 	for _, compaction := range snapshot.Compactions {
 		total = llm.AddUsage(total, compaction.Usage)
@@ -141,16 +143,16 @@ func NewID() (string, error) {
 // NewCompaction validates and defensively copies one derived checkpoint.
 func NewCompaction(input CompactionInput) (Compaction, error) {
 	compaction := Compaction{
-		Type:              RecordTypeCompaction,
-		ID:                input.ID,
-		ParentID:          input.ParentID,
-		CreatedAt:         input.CreatedAt,
-		Summary:           input.Summary,
-		TokensBefore:      input.TokensBefore,
-		FirstKeptTurnID:   input.FirstKeptTurnID,
-		ActiveTurnCount:   input.ActiveTurnCount,
-		RetainedTurnCount: input.RetainedTurnCount,
-		Usage:             cloneUsage(input.Usage),
+		Type:                 RecordTypeCompaction,
+		ID:                   input.ID,
+		ParentID:             input.ParentID,
+		CreatedAt:            input.CreatedAt,
+		Summary:              input.Summary,
+		TokensBefore:         input.TokensBefore,
+		FirstKeptMessageID:   input.FirstKeptMessageID,
+		ActiveMessageCount:   input.ActiveMessageCount,
+		RetainedMessageCount: input.RetainedMessageCount,
+		Usage:                cloneUsage(input.Usage),
 	}
 	if err := compaction.Validate(); err != nil {
 		return Compaction{}, err
@@ -178,31 +180,31 @@ func (c Compaction) Validate() error {
 	if c.TokensBefore <= 0 {
 		return fmt.Errorf("session: compaction tokens before must be positive")
 	}
-	if c.ActiveTurnCount <= 0 {
-		return fmt.Errorf("session: compaction active turn count must be positive")
+	if c.ActiveMessageCount <= 0 {
+		return fmt.Errorf("session: compaction active message count must be positive")
 	}
-	if c.FirstKeptTurnID == "" {
-		if c.RetainedTurnCount != 0 {
+	if c.FirstKeptMessageID == "" {
+		if c.RetainedMessageCount != 0 {
 			return fmt.Errorf(
-				"session: full compaction retained turn count must be zero, got %d",
-				c.RetainedTurnCount,
+				"session: full compaction retained message count must be zero, got %d",
+				c.RetainedMessageCount,
 			)
 		}
 		return nil
 	}
 	if err := validateRecordID(
-		"compaction first kept turn",
-		c.FirstKeptTurnID,
+		"compaction first kept message",
+		c.FirstKeptMessageID,
 		false,
 	); err != nil {
 		return err
 	}
-	if c.RetainedTurnCount <= 0 ||
-		c.RetainedTurnCount >= c.ActiveTurnCount {
+	if c.RetainedMessageCount <= 0 ||
+		c.RetainedMessageCount >= c.ActiveMessageCount {
 		return fmt.Errorf(
-			"session: compaction retained turn count %d is outside active turn count %d",
-			c.RetainedTurnCount,
-			c.ActiveTurnCount,
+			"session: compaction retained message count %d is outside active message count %d",
+			c.RetainedMessageCount,
+			c.ActiveMessageCount,
 		)
 	}
 	return nil
@@ -248,186 +250,98 @@ func (l Leaf) Validate() error {
 	return nil
 }
 
-type turnJSON struct {
-	Type        RecordType      `json:"type"`
-	ID          string          `json:"id"`
-	ParentID    string          `json:"parent_id,omitempty"`
-	CompletedAt int64           `json:"completed_at"`
-	Messages    json.RawMessage `json:"messages"`
-	Usage       llm.Usage       `json:"usage"`
+type messageJSON struct {
+	Type      RecordType      `json:"type"`
+	ID        string          `json:"id"`
+	ParentID  string          `json:"parent_id,omitempty"`
+	CreatedAt int64           `json:"created_at"`
+	Message   json.RawMessage `json:"message"`
 }
 
-// NewTurn validates and defensively copies a complete user interaction.
-func NewTurn(
-	id string,
-	parentID string,
-	completedAt int64,
-	messages []llm.AgentMessage,
-) (Turn, error) {
-	cloned, err := cloneMessages(messages)
+// NewMessage validates and defensively copies one source message.
+func NewMessage(id, parentID string, createdAt int64, message llm.AgentMessage) (MessageEntry, error) {
+	cloned, err := cloneMessages([]llm.AgentMessage{message})
 	if err != nil {
-		return Turn{}, err
+		return MessageEntry{}, err
 	}
-	turn := Turn{
-		Type:        RecordTypeTurn,
-		ID:          id,
-		ParentID:    parentID,
-		CompletedAt: completedAt,
-		Messages:    cloned,
-		Usage:       aggregateUsage(cloned),
+	entry := MessageEntry{Type: RecordTypeMessage, ID: id, ParentID: parentID, CreatedAt: createdAt, Message: cloned[0]}
+	if err := entry.Validate(); err != nil {
+		return MessageEntry{}, err
 	}
-	if err := turn.Validate(); err != nil {
-		return Turn{}, err
-	}
-	return turn, nil
+	return entry, nil
 }
 
-// Validate checks that the turn ends at a replay-safe boundary.
-func (t Turn) Validate() error {
-	if t.Type != RecordTypeTurn {
-		return fmt.Errorf("session: turn has type %q", t.Type)
+// Validate checks intrinsic fields; parent/tool pairing is checked by Store.
+func (e MessageEntry) Validate() error {
+	if e.Type != RecordTypeMessage {
+		return fmt.Errorf("session: message has type %q", e.Type)
 	}
-	if err := validateRecordID("turn", t.ID, false); err != nil {
+	if err := validateRecordID("message", e.ID, false); err != nil {
 		return err
 	}
-	if err := validateRecordID("turn parent", t.ParentID, true); err != nil {
+	if err := validateRecordID("message parent", e.ParentID, true); err != nil {
 		return err
 	}
-	if t.CompletedAt <= 0 {
-		return fmt.Errorf("session: turn completion time must be positive")
+	if e.CreatedAt <= 0 {
+		return fmt.Errorf("session: message creation time must be positive")
 	}
-	if len(t.Messages) < 2 {
-		return fmt.Errorf("session: turn must contain at least a user and assistant message")
+	switch e.Message.(type) {
+	case llm.UserMessage, llm.AssistantMessage, llm.ToolResultMessage:
+	default:
+		return fmt.Errorf("session: source message has unsupported or derived type %T", e.Message)
 	}
-	if _, ok := t.Messages[0].(llm.UserMessage); !ok {
-		return fmt.Errorf("session: turn must start with a user message")
-	}
-	if _, ok := t.Messages[len(t.Messages)-1].(llm.AssistantMessage); !ok {
-		return fmt.Errorf("session: turn must end with an assistant message")
-	}
-	if _, err := llm.MarshalAgentMessages(t.Messages); err != nil {
-		return fmt.Errorf("session: validate turn messages: %w", err)
-	}
-
-	type pendingCall struct {
-		name string
-	}
-	pending := make(map[string]pendingCall)
-	pendingOrder := make([]string, 0)
-	seenCalls := make(map[string]struct{})
-	for index, message := range t.Messages {
-		switch value := message.(type) {
-		case llm.UserMessage:
-			if len(pending) > 0 {
-				return fmt.Errorf(
-					"session: turn message %d precedes results for tool calls",
-					index,
-				)
-			}
-		case llm.AssistantMessage:
-			if len(pending) > 0 {
-				return fmt.Errorf(
-					"session: turn message %d precedes results for tool calls",
-					index,
-				)
-			}
-			for _, part := range value.Content {
-				if part.Type != llm.ContentTypeToolCall {
-					continue
-				}
-				call := part.ToolCall
-				if _, exists := seenCalls[call.ID]; exists {
-					return fmt.Errorf("session: duplicate tool call id %q", call.ID)
-				}
-				seenCalls[call.ID] = struct{}{}
-				pending[call.ID] = pendingCall{name: call.Name}
-				pendingOrder = append(pendingOrder, call.ID)
-			}
-		case llm.ToolResultMessage:
-			call, exists := pending[value.ToolCallID]
-			if !exists {
-				return fmt.Errorf(
-					"session: tool result %q has no pending tool call",
-					value.ToolCallID,
-				)
-			}
-			if value.ToolName != "" && value.ToolName != call.name {
-				return fmt.Errorf(
-					"session: tool result %q names %q, want %q",
-					value.ToolCallID,
-					value.ToolName,
-					call.name,
-				)
-			}
-			delete(pending, value.ToolCallID)
-		case llm.CompactionSummaryMessage:
-			return fmt.Errorf(
-				"session: turn message %d is a derived message",
-				index,
-			)
+	if assistant, ok := e.Message.(llm.AssistantMessage); ok {
+		switch assistant.StopReason {
+		case llm.StopReasonStop, llm.StopReasonLength, llm.StopReasonToolUse,
+			llm.StopReasonPause, llm.StopReasonRefusal, llm.StopReasonError, llm.StopReasonAborted:
+		default:
+			return fmt.Errorf("session: source assistant has no valid terminal stop reason %q", assistant.StopReason)
 		}
 	}
-	for _, callID := range pendingOrder {
-		if _, exists := pending[callID]; exists {
-			return fmt.Errorf("session: unpaired tool call %q", callID)
-		}
-	}
-
-	expectedUsage := aggregateUsage(t.Messages)
-	if !equalUsage(t.Usage, expectedUsage) {
-		return fmt.Errorf("session: turn usage does not match assistant messages")
+	if _, err := llm.MarshalAgentMessages([]llm.AgentMessage{e.Message}); err != nil {
+		return fmt.Errorf("session: validate message: %w", err)
 	}
 	return nil
 }
 
-// MarshalJSON preserves concrete message types inside the turn record.
-func (t Turn) MarshalJSON() ([]byte, error) {
-	if err := t.Validate(); err != nil {
+// MarshalJSON preserves the concrete source message as a single JSON object.
+func (e MessageEntry) MarshalJSON() ([]byte, error) {
+	if err := e.Validate(); err != nil {
 		return nil, err
 	}
-	messages, err := llm.MarshalAgentMessages(t.Messages)
+	messages, err := llm.MarshalAgentMessages([]llm.AgentMessage{e.Message})
 	if err != nil {
-		return nil, fmt.Errorf("session: encode turn messages: %w", err)
+		return nil, err
 	}
-	data, err := json.Marshal(turnJSON{
-		Type:        t.Type,
-		ID:          t.ID,
-		ParentID:    t.ParentID,
-		CompletedAt: t.CompletedAt,
-		Messages:    messages,
-		Usage:       t.Usage,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("session: encode turn: %w", err)
+	var raw []json.RawMessage
+	if err := json.Unmarshal(messages, &raw); err != nil {
+		return nil, err
 	}
-	return data, nil
+	return json.Marshal(messageJSON{Type: e.Type, ID: e.ID, ParentID: e.ParentID, CreatedAt: e.CreatedAt, Message: raw[0]})
 }
 
-// UnmarshalJSON restores concrete message types and validates the complete turn.
-func (t *Turn) UnmarshalJSON(data []byte) error {
-	if t == nil {
-		return fmt.Errorf("session: decode turn into nil receiver")
+// UnmarshalJSON restores the source message, rejecting unknown record fields.
+func (e *MessageEntry) UnmarshalJSON(data []byte) error {
+	if e == nil {
+		return fmt.Errorf("session: decode message into nil receiver")
 	}
-	var raw turnJSON
+	var raw messageJSON
 	if err := jsonutil.DecodeStrict(data, &raw); err != nil {
-		return fmt.Errorf("session: decode turn: %w", err)
+		return fmt.Errorf("session: decode message: %w", err)
 	}
-	messages, err := llm.UnmarshalAgentMessages(raw.Messages)
+	array, err := json.Marshal([]json.RawMessage{raw.Message})
 	if err != nil {
-		return fmt.Errorf("session: decode turn messages: %w", err)
+		return err
 	}
-	decoded := Turn{
-		Type:        raw.Type,
-		ID:          raw.ID,
-		ParentID:    raw.ParentID,
-		CompletedAt: raw.CompletedAt,
-		Messages:    messages,
-		Usage:       raw.Usage,
+	messages, err := llm.UnmarshalAgentMessages(array)
+	if err != nil {
+		return fmt.Errorf("session: decode source message: %w", err)
 	}
+	decoded := MessageEntry{Type: raw.Type, ID: raw.ID, ParentID: raw.ParentID, CreatedAt: raw.CreatedAt, Message: messages[0]}
 	if err := decoded.Validate(); err != nil {
 		return err
 	}
-	*t = decoded
+	*e = decoded
 	return nil
 }
 
@@ -456,15 +370,15 @@ func cloneMessages(messages []llm.AgentMessage) ([]llm.AgentMessage, error) {
 	return cloned, nil
 }
 
-func cloneTurns(turns []Turn) ([]Turn, error) {
-	cloned := make([]Turn, len(turns))
-	for index, turn := range turns {
-		data, err := json.Marshal(turn)
+func cloneEntries(messages []MessageEntry) ([]MessageEntry, error) {
+	cloned := make([]MessageEntry, len(messages))
+	for index, message := range messages {
+		data, err := json.Marshal(message)
 		if err != nil {
-			return nil, fmt.Errorf("session: clone turn %d: %w", index, err)
+			return nil, fmt.Errorf("session: clone message %d: %w", index, err)
 		}
 		if err := json.Unmarshal(data, &cloned[index]); err != nil {
-			return nil, fmt.Errorf("session: clone turn %d: %w", index, err)
+			return nil, fmt.Errorf("session: clone message %d: %w", index, err)
 		}
 	}
 	return cloned, nil
@@ -490,31 +404,4 @@ func cloneUsage(usage llm.Usage) llm.Usage {
 		cloned.Cost = &cost
 	}
 	return cloned
-}
-
-func aggregateUsage(messages []llm.AgentMessage) llm.Usage {
-	var total llm.Usage
-	for _, message := range messages {
-		assistant, ok := message.(llm.AssistantMessage)
-		if !ok {
-			continue
-		}
-		total = llm.AddUsage(total, assistant.Usage)
-	}
-	return total
-}
-
-func equalUsage(left, right llm.Usage) bool {
-	if left.InputTokens != right.InputTokens ||
-		left.OutputTokens != right.OutputTokens ||
-		left.ReasoningTokens != right.ReasoningTokens ||
-		left.CacheReadTokens != right.CacheReadTokens ||
-		left.CacheWriteTokens != right.CacheWriteTokens ||
-		left.TotalTokens != right.TotalTokens {
-		return false
-	}
-	if left.Cost == nil || right.Cost == nil {
-		return left.Cost == nil && right.Cost == nil
-	}
-	return *left.Cost == *right.Cost
 }

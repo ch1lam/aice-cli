@@ -2,7 +2,7 @@ package session
 
 type recordIndex struct {
 	nodes       map[string]Node
-	turns       map[string]Turn
+	messages    map[string]MessageEntry
 	compactions map[string]Compaction
 	nodeTypes   map[string]RecordType
 	parents     map[string]string
@@ -10,29 +10,29 @@ type recordIndex struct {
 }
 
 func indexRecords(
-	turns []Turn,
+	messages []MessageEntry,
 	compactions []Compaction,
 	leaves []Leaf,
 ) recordIndex {
 	index := recordIndex{
 		nodes:       make(map[string]Node),
-		turns:       make(map[string]Turn),
+		messages:    make(map[string]MessageEntry),
 		compactions: make(map[string]Compaction),
 		nodeTypes:   make(map[string]RecordType),
 		parents:     make(map[string]string),
 		recordIDs:   make(map[string]struct{}),
 	}
-	for _, turn := range turns {
-		index.nodes[turn.ID] = Node{
-			Type:      turn.Type,
-			ID:        turn.ID,
-			ParentID:  turn.ParentID,
-			Timestamp: turn.CompletedAt,
+	for _, message := range messages {
+		index.nodes[message.ID] = Node{
+			Type:      message.Type,
+			ID:        message.ID,
+			ParentID:  message.ParentID,
+			Timestamp: message.CreatedAt,
 		}
-		index.turns[turn.ID] = turn
-		index.nodeTypes[turn.ID] = turn.Type
-		index.parents[turn.ID] = turn.ParentID
-		index.recordIDs[turn.ID] = struct{}{}
+		index.messages[message.ID] = message
+		index.nodeTypes[message.ID] = message.Type
+		index.parents[message.ID] = message.ParentID
+		index.recordIDs[message.ID] = struct{}{}
 	}
 	for _, compaction := range compactions {
 		index.nodes[compaction.ID] = Node{
@@ -54,7 +54,7 @@ func indexRecords(
 
 type storeState struct {
 	header      Header
-	turns       []Turn
+	messages    []MessageEntry
 	compactions []Compaction
 	leafMoves   []Leaf
 	order       []string
@@ -65,18 +65,20 @@ type storeState struct {
 func newStoreState(snapshot Snapshot) storeState {
 	return storeState{
 		header:      snapshot.Header,
-		turns:       snapshot.Turns,
+		messages:    snapshot.Messages,
 		compactions: snapshot.Compactions,
 		leafMoves:   snapshot.LeafMoves,
 		order:       snapshot.Order,
-		index:       indexRecords(snapshot.Turns, snapshot.Compactions, snapshot.LeafMoves),
+		index:       indexRecords(snapshot.Messages, snapshot.Compactions, snapshot.LeafMoves),
 		leafID:      snapshot.LeafID,
 	}
 }
 
-func (state *storeState) retainTurn(turn Turn) {
-	state.turns = append(state.turns, turn)
-	state.retain(turn.ID, turn.ParentID, turn.Type)
+func (state *storeState) retainMessage(message MessageEntry) {
+	state.messages = append(state.messages, message)
+	state.index.messages[message.ID] = message
+	state.index.nodes[message.ID] = Node{Type: message.Type, ID: message.ID, ParentID: message.ParentID, Timestamp: message.CreatedAt}
+	state.retain(message.ID, message.ParentID, message.Type)
 }
 
 func (state *storeState) retainCompaction(compaction Compaction) {

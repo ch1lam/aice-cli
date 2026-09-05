@@ -215,27 +215,30 @@ func (a *application) Print(
 		return fmt.Errorf("app: create prompt: %w", err)
 	}
 
-	result, loopErr := loop.Run(ctx, agent.RunInput{
-		Model:        environment.model,
-		SystemPrompt: environment.systemPrompt,
-		History:      history,
-		Prompt:       prompt,
-		Options:      environment.options,
-		Compactor:    a.sessionCompactor(store),
+	var recorder agent.MessageRecorder
+	if store != nil {
+		recorder = func(recordCtx context.Context, message llm.AgentMessage) error {
+			return appendSessionMessage(recordCtx, store, message)
+		}
+	}
+
+	_, loopErr := loop.Run(ctx, agent.RunInput{
+		Model:           environment.model,
+		SystemPrompt:    environment.systemPrompt,
+		History:         history,
+		Prompt:          prompt,
+		Options:         environment.options,
+		Compactor:       a.sessionCompactor(store, prompt),
+		MessageRecorder: recorder,
 	}, sink.Accept)
 	finishErr := sink.Finish()
-	var persistErr error
-	if store != nil {
-		persistErr = appendSessionTurn(ctx, store, result.Messages())
-	}
 	if loopErr != nil {
 		return errors.Join(
 			fmt.Errorf("app: run agent: %w", loopErr),
 			finishErr,
-			persistErr,
 		)
 	}
-	return errors.Join(finishErr, persistErr)
+	return finishErr
 }
 
 // Interactive runs one multi-turn terminal session.

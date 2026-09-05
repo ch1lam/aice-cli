@@ -35,6 +35,13 @@ func prepareSession(
 
 	store, snapshot, err := openExistingSession(ctx, workspace, requestedPath)
 	if err == nil {
+		if recoveryErr := store.RecoverInterrupted(ctx); recoveryErr != nil {
+			return nil, nil, llm.Usage{}, errors.Join(recoveryErr, store.Close())
+		}
+		snapshot, err = store.Snapshot()
+		if err != nil {
+			return nil, nil, llm.Usage{}, errors.Join(err, store.Close())
+		}
 		history, historyErr := sessionHistory(snapshot)
 		if historyErr != nil {
 			return nil, nil, llm.Usage{}, errors.Join(
@@ -154,7 +161,7 @@ func sessionHistory(snapshot session.Snapshot) ([]llm.AgentMessage, error) {
 }
 
 // closeInteractiveStore closes the interactive Session file, removing it
-// when no turn or compaction was ever recorded. Explicit Session paths can
+// when no message or compaction was ever recorded. Explicit Session paths can
 // create a file at startup; default paths are created on the first prompt.
 // An interaction-free exit should not leave a header-only file behind.
 func closeInteractiveStore(store *session.Store) error {
@@ -165,7 +172,7 @@ func closeInteractiveStore(store *session.Store) error {
 	if err != nil {
 		return errors.Join(err, store.Close())
 	}
-	if len(snapshot.Turns) != 0 || len(snapshot.Compactions) != 0 {
+	if len(snapshot.Messages) != 0 || len(snapshot.Compactions) != 0 {
 		return store.Close()
 	}
 	path := store.Path()
@@ -178,10 +185,10 @@ func closeInteractiveStore(store *session.Store) error {
 	return nil
 }
 
-func appendSessionTurn(
+func appendSessionMessage(
 	ctx context.Context,
 	store *session.Store,
-	messages []llm.AgentMessage,
+	message llm.AgentMessage,
 ) error {
 	if ctx == nil {
 		return fmt.Errorf("app: context is required")
@@ -191,23 +198,23 @@ func appendSessionTurn(
 	}
 	id, err := session.NewID()
 	if err != nil {
-		return fmt.Errorf("app: generate session turn id: %w", err)
+		return fmt.Errorf("app: generate session message id: %w", err)
 	}
 	parentID, err := store.LeafID()
 	if err != nil {
 		return fmt.Errorf("app: read session leaf: %w", err)
 	}
-	turn, err := session.NewTurn(
+	entry, err := session.NewMessage(
 		id,
 		parentID,
 		time.Now().UnixMilli(),
-		messages,
+		message,
 	)
 	if err != nil {
-		return fmt.Errorf("app: create session turn: %w", err)
+		return fmt.Errorf("app: create session message: %w", err)
 	}
 
-	// A completed interaction is durable cleanup. Give it a short independent
+	// An accepted message is durable progress. Give it a short independent
 	// deadline so cancellation of the model/tool request cannot discard its
 	// transcript.
 	persistCtx, cancel := context.WithTimeout(
@@ -215,8 +222,8 @@ func appendSessionTurn(
 		sessionPersistenceTimeout,
 	)
 	defer cancel()
-	if err := store.AppendTurn(persistCtx, turn); err != nil {
-		return fmt.Errorf("app: append session turn: %w", err)
+	if err := store.AppendMessage(persistCtx, entry); err != nil {
+		return fmt.Errorf("app: append session message: %w", err)
 	}
 	return nil
 }

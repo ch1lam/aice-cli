@@ -32,10 +32,10 @@ work in an earlier row. Temporary transitions must still build and pass tests.
 | 2 | App: separate environment, conversation, and active-run ownership; centralize history submission and configuration snapshots | Structural | Same user behavior, explicit lock/resource ownership, full tests and race | In progress |
 | 3a | Guard/app: Session-scoped grants reset at `/new`, exact command matching, deny before all asks, complete approval scope | Behavioral | Combined Guard and app/Loop regression tests, including yolo | Complete |
 | 3b | App: restart-only Skills reminder and effective `/trust` choices | Behavioral | Startup temporary trust preserved; command behavior and documentation agree | Complete |
-| 4a | Session: message entries, tree replay, safe branch boundaries, unknown interrupted results | Behavioral | New format round trips; old bytes untouched; no duplicate recovery/results/usage | Pending |
-| 4b | App/Agent: persist each completed message before later side effects, unified terminal submission | Behavioral | Injected write/UI/provider/cancellation failures; print and TUI share semantics | Loop boundary ready; app integration pending |
+| 4a | Session: message entries, tree replay, safe branch boundaries, unknown interrupted results | Behavioral | New format round trips; old bytes untouched; no duplicate recovery/results/usage | Complete |
+| 4b | App/Agent: persist each completed message before later side effects, unified terminal submission | Behavioral | Injected write/UI/provider/cancellation failures; print and TUI share semantics | Complete |
 | 4c | Context: compact at paired model-round boundaries with frozen model configuration; stateless print uses memory | Behavioral | 200 rounds, at least three compactions, steering, repeated compaction and failure cases | Pending |
-| 4d | Session consumers: navigation, display, usage, Harbor | Behavioral | Real CLI/TUI exercises; conversion fixtures and correct usage accounting | Pending |
+| 4d | Session consumers: navigation, display, usage, Harbor | Behavioral | Real CLI/TUI exercises; conversion fixtures and correct usage accounting | Complete for v3; automatic summary print totals remain in 4c |
 | 5a | Existing prompt and Bash feedback: proportional engineering guidance, bounded head/tail output | Behavioral | Output/error regressions; custom prompt replacement unchanged | Pending |
 | 5b | Offline evaluation: Go HTTP service and Python data CLI lifecycles | Evaluation | Requirements, independent tests, reference implementations, review rubric, recorded runs | Complete |
 | 5c | Documentation and completion audit | Documentation | Requirement-by-requirement evidence and honest limitations | Pending |
@@ -116,8 +116,48 @@ retries, actual/synthetic tool results, and final cleanup are recorded once;
 the first recording error is sticky and prevents later effects. Regression
 tests independently inject record/display/provider/cancellation failures, check
 callback copies and counts, and compare recorded messages with returned truth.
-Full tests, vet, and race passed. The app does not inject this callback yet and
-still writes v2 interactions; format migration and durable recovery remain open.
+Full tests, vet, and race passed at `6ca7811`; that prerequisite commit retained
+v2 application storage. The following format migration activates the callback.
+
+The v3 migration replaces `Turn` with one `MessageEntry` per ended source
+message. Print and interactive execution now share that submission boundary;
+interaction-end events and final Results no longer retry or duplicate saves.
+Source prefixes can contain pending tool calls, while context, compaction and
+checkout enforce complete pairing. Resuming after workspace verification adds
+only missing unknown-outcome results, each durably; tree inspection does not
+append them. Side snapshots publish only safe history, with validation outside
+the short history lock. An incomplete live Session reports how to reopen or
+start a new Session. No compatibility engine or second durable transcript was
+added. Old versions, including malformed tails, are rejected without changing
+bytes. Usage comes from source assistants and checkpoints once.
+
+A 600-message storage exercise validates repeated call IDs and context safety
+at every prefix. Removing repeated ancestor scans from snapshot validation
+reduced the same local non-race observation from 15.924 to 8.968 seconds. This
+is not a statistical performance benchmark or the pending 200-round Loop
+acceptance. All Go tests, vet, and full race passed; the Session race test took
+85.442 seconds in the integrated run. Final menu-wording corrections passed
+focused app checks. Nine standard-library Harbor projection tests passed;
+actual Harbor/Pydantic execution remains unverified. The converter preserves
+physical source audit order and resolves tool results on their own parent chain.
+
+Actual v3 CLI checks on 2026-09-06 used `/tmp/aice-v3-check` and a localhost-only
+scripted model with dummy credentials. A temporary Bash tool appended one
+character. Stateless print created no Session directory; explicit print wrote
+four message records. A separate fixture copied the prefix ending at the tool
+call after the effect had occurred. Tree inspection and rejected checkout left
+it unchanged; two resumes added one unknown result and did not repeat the effect.
+A v2 header with an incomplete tail retained the same SHA-256 after rejection.
+Actual TUI resume displayed four message nodes, omitted the unpaired call from
+checkout choices, checked out root, and detached with `/new` while preserving
+the old file. The localhost server and TUI were stopped after verification.
+
+Automatic compaction still runs at initial/follow-up boundaries in this commit.
+A narrow explicit pending-input bridge prevents the newly durable input from
+being summarized or appended twice. Step 4c will remove this bridge when Loop
+compaction accepts the entire current context before each safe model request;
+it also owns frozen summary configuration, stateless memory compaction and
+complete print summary usage.
 
 The Go HTTP evaluation family is in `evals/go-service`. It includes independent
 HTTP acceptance, generated starting points, one reference implementation, and

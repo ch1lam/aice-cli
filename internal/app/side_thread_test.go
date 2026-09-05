@@ -593,12 +593,9 @@ func (s *gatedStream) Next() (llm.Event, error) {
 
 func (s *gatedStream) Close() error { return nil }
 
-// TestSideThreadSnapshotIncludesActivePromptBeforeFirstCommit proves that a
-// side snapshot taken while a main run is active before its first
-// interaction commits contains that run's initial prompt exactly once, no
-// partial assistant deltas, and no early persistence to history or the
-// durable store.
-func TestSideThreadSnapshotIncludesActivePromptBeforeFirstCommit(t *testing.T) {
+// TestSideThreadSnapshotIncludesDurablePromptBeforeAssistant proves the accepted
+// input is durable and visible exactly once while streaming output stays private.
+func TestSideThreadSnapshotIncludesDurablePromptBeforeAssistant(t *testing.T) {
 	t.Parallel()
 
 	calls := 0
@@ -633,19 +630,19 @@ func TestSideThreadSnapshotIncludesActivePromptBeforeFirstCommit(t *testing.T) {
 	waitFor(t, func() bool { return mainModel.requestCount() >= 1 })
 
 	// The main run is now blocked mid-stream after emitting one partial
-	// delta. Nothing may be persisted or visible to a side snapshot yet.
+	// delta. The user is durable, but the partial assistant must remain private.
 	storeBefore, err := os.ReadFile(harness.storePath)
 	if err != nil {
 		t.Fatalf("ReadFile() error = %v", err)
 	}
-	if bytes.Contains(storeBefore, []byte("main question")) {
-		t.Fatal("main prompt persisted to the store before its first commit")
+	if !bytes.Contains(storeBefore, []byte("main question")) || bytes.Contains(storeBefore, []byte("main partial")) {
+		t.Fatal("store must contain the accepted user but no streaming assistant fragment")
 	}
 	harness.session.conversation.historyMu.Lock()
 	historyLen := len(harness.session.conversation.history)
 	harness.session.conversation.historyMu.Unlock()
-	if historyLen != 0 {
-		t.Fatalf("session history length = %d, want 0 before first commit", historyLen)
+	if historyLen != 1 {
+		t.Fatalf("session history length = %d, want the durable user only", historyLen)
 	}
 
 	_, side, err := harness.session.CreateSideThread("side question")

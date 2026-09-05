@@ -38,8 +38,8 @@ func TestInteractiveSessionEnsureSessionStoreCreatesOnDemand(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Snapshot() error = %v", err)
 	}
-	if len(snapshot.Turns) != 0 {
-		t.Fatalf("turns = %d, want a fresh session", len(snapshot.Turns))
+	if len(snapshot.Messages) != 0 {
+		t.Fatalf("messages = %d, want a fresh session", len(snapshot.Messages))
 	}
 	if snapshot.Header.WorkingDirectory != workspace.Path() {
 		t.Errorf(

@@ -120,7 +120,7 @@ such as `core`, `types`, `services`, `utils`, or `helpers`.
   `NewLoop` requires a non-nil `Guard` when tools are non-empty. The
   concrete `internal/guard` implementation is injected from `internal/app`.
 - `internal/app` owns interactive run lifecycle, translates Agent events for
-  frontends, persists each completed interaction as one Session turn, and
+  frontends, persists each accepted source message before dependent effects, and
   wires the execution gate into the loop. See [Tool execution and
   Sessions](execution-sessions.md#tool-execution-boundary).
 - Frontends depend on the application-owned active-run capability. They do not

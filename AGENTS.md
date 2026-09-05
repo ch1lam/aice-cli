@@ -62,8 +62,8 @@ and routes; README files may summarize product behavior and link to details.
   execute invalid or incomplete streamed tool calls. UI and concrete tool/SDK
   dependencies stay out of the loop. [Contracts](docs/contracts.md#agent-loop)
 - **Keep history recoverable.** Session JSONL is the only durable transcript;
-  turns have stable IDs and parents. Never rewrite source history or delete
-  branches. Compact only at complete interaction boundaries; context and UI are
+  messages have stable IDs and parents. Never rewrite source history or delete
+  branches. Compact only at complete tool-pair boundaries; context and UI are
   derived views. [Sessions](docs/execution-sessions.md#sessions)
 - **Keep authority explicit.** Every tool execution goes through the injected
   Guard; non-empty tool sets require one. Unknown tools ask, non-interactive

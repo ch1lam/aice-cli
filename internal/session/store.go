@@ -162,13 +162,13 @@ func (s *Store) Snapshot() (Snapshot, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	turns, err := cloneTurns(s.turns)
+	messages, err := cloneEntries(s.messages)
 	if err != nil {
 		return Snapshot{}, err
 	}
 	return Snapshot{
 		Header:      s.header,
-		Turns:       turns,
+		Messages:    messages,
 		Compactions: cloneCompactions(s.compactions),
 		LeafMoves:   cloneLeaves(s.leafMoves),
 		Order:       append([]string(nil), s.order...),
@@ -176,22 +176,27 @@ func (s *Store) Snapshot() (Snapshot, error) {
 	}, nil
 }
 
-// AppendTurn durably appends one completed interaction as one tree node.
-func (s *Store) AppendTurn(ctx context.Context, turn Turn) error {
+// AppendMessage durably appends one ended source message as one tree node.
+func (s *Store) AppendMessage(ctx context.Context, message MessageEntry) error {
 	if s == nil {
 		return fmt.Errorf("session: store is required")
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.appendMessage(ctx, message)
+}
+
+// appendMessage requires the store lock, including throughout recovery.
+func (s *Store) appendMessage(ctx context.Context, message MessageEntry) error {
 	if err := s.validateWritable(ctx); err != nil {
 		return err
 	}
-	if err := turn.Validate(); err != nil {
+	if err := message.Validate(); err != nil {
 		return err
 	}
 	if err := validateNode(
-		turn.ID,
-		turn.ParentID,
+		message.ID,
+		message.ParentID,
 		s.leafID,
 		s.index.recordIDs,
 		s.index.nodeTypes,
@@ -199,18 +204,22 @@ func (s *Store) AppendTurn(ctx context.Context, turn Turn) error {
 		return err
 	}
 
-	data, err := json.Marshal(turn)
-	if err != nil {
-		return fmt.Errorf("session: encode turn: %w", err)
-	}
-	if err := s.appendData(ctx, "turn", data); err != nil {
+	if err := validateMessageAppend(s.index, message); err != nil {
 		return err
 	}
-	var stored Turn
-	if err := json.Unmarshal(data, &stored); err != nil {
-		return fmt.Errorf("session: retain appended turn: %w", err)
+
+	data, err := json.Marshal(message)
+	if err != nil {
+		return fmt.Errorf("session: encode message: %w", err)
 	}
-	s.retainTurn(stored)
+	if err := s.appendData(ctx, "message", data); err != nil {
+		return err
+	}
+	var stored MessageEntry
+	if err := json.Unmarshal(data, &stored); err != nil {
+		return fmt.Errorf("session: retain appended message: %w", err)
+	}
+	s.retainMessage(stored)
 	return nil
 }
 
@@ -241,9 +250,7 @@ func (s *Store) AppendCompaction(
 	}
 	if err := validateCompactionBoundary(
 		compaction,
-		s.index.nodeTypes,
-		s.index.parents,
-		s.index.compactions,
+		s.index,
 	); err != nil {
 		return err
 	}
@@ -282,6 +289,10 @@ func (s *Store) AppendLeaf(ctx context.Context, leaf Leaf) error {
 		s.index.recordIDs,
 		s.index.nodeTypes,
 	); err != nil {
+		return err
+	}
+
+	if err := completeBoundary(s.index, leaf.TargetID); err != nil {
 		return err
 	}
 

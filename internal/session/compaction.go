@@ -12,30 +12,30 @@ const (
 	// DefaultKeepRecentTokens is the approximate recent context retained after a
 	// manual compaction.
 	DefaultKeepRecentTokens int64 = 20_000
-	// minOversizedTurnTokens avoids treating tiny configured budgets as a
-	// reason to discard an otherwise useful complete turn.
-	minOversizedTurnTokens int64 = 8_192
+	// minOversizedGroupTokens avoids treating tiny configured budgets as a
+	// reason to discard an otherwise useful paired group.
+	minOversizedGroupTokens int64 = 8_192
 )
 
 // ErrNothingToCompact indicates that no source history can be safely
 // summarized while preserving the requested recent context.
 var ErrNothingToCompact = errors.New("session has nothing to compact")
 
-// CompactionSettings controls the complete-turn cut selected for a checkpoint.
+// CompactionSettings controls the paired-group cut selected for a checkpoint.
 type CompactionSettings struct {
 	KeepRecentTokens int64
 }
 
 // CompactionPreparation is immutable input for generating a summary.
 type CompactionPreparation struct {
-	MessagesToSummarize []llm.AgentMessage
-	TokensBefore        int64
-	FirstKeptTurnID     string
-	ActiveTurnCount     int
-	RetainedTurnCount   int
+	MessagesToSummarize  []llm.AgentMessage
+	TokensBefore         int64
+	FirstKeptMessageID   string
+	ActiveMessageCount   int
+	RetainedMessageCount int
 }
 
-// BuildContext derives the active model transcript from immutable source turns
+// BuildContext derives the active model transcript from immutable source messages
 // and the latest compaction checkpoint on the selected branch.
 func BuildContext(snapshot Snapshot) ([]llm.AgentMessage, error) {
 	state, err := deriveActiveBranch(snapshot)
@@ -46,23 +46,23 @@ func BuildContext(snapshot Snapshot) ([]llm.AgentMessage, error) {
 	if state.compaction != nil {
 		summary, err := compactionSummaryMessage(
 			*state.compaction,
-			state.turns,
+			state.messages,
 		)
 		if err != nil {
 			return nil, err
 		}
 		contextMessages = append(contextMessages, summary)
 	}
-	for _, turn := range state.turns {
-		contextMessages = append(contextMessages, turn.Messages...)
+	for _, message := range state.messages {
+		contextMessages = append(contextMessages, message.Message)
 	}
 	return cloneMessages(contextMessages)
 }
 
-// PrepareCompaction selects a complete-turn cut on the active branch while
+// PrepareCompaction selects a paired-group cut on the active branch while
 // retaining approximately KeepRecentTokens of its newest source history. If
-// the newest complete turn is itself larger than that budget, it falls back to
-// summarizing the entire active branch so a long turn cannot permanently block
+// the newest paired group is itself larger than that budget, it falls back to
+// summarizing the entire active branch so a long interaction cannot permanently block
 // continuation.
 func PrepareCompaction(
 	snapshot Snapshot,
@@ -89,34 +89,25 @@ func PrepareCompaction(
 		)
 	}
 	estimate := llm.EstimateContextTokens(llm.Request{Messages: projected})
-	if estimate.Tokens <= 0 || len(state.turns) == 0 {
+	if estimate.Tokens <= 0 || len(state.messages) == 0 {
 		return CompactionPreparation{}, ErrNothingToCompact
 	}
 
-	turnTokens := make([]int64, len(state.turns))
-	for turnIndex, turn := range state.turns {
-		tokens, err := estimateTurnTokens(turn)
-		if err != nil {
-			return CompactionPreparation{}, fmt.Errorf(
-				"session: estimate turn %q: %w",
-				turn.ID,
-				err,
-			)
-		}
-		turnTokens[turnIndex] = tokens
+	starts, groupTokens, err := pairedGroupTokens(state.messages)
+	if err != nil {
+		return CompactionPreparation{}, err
 	}
-
 	firstKept := 0
 	var retainedTokens int64
-	for turnIndex := len(state.turns) - 1; turnIndex >= 0; turnIndex-- {
-		retainedTokens += turnTokens[turnIndex]
+	for group := len(starts) - 1; group >= 0; group-- {
+		retainedTokens += groupTokens[group]
 		if retainedTokens >= settings.KeepRecentTokens {
-			firstKept = turnIndex
+			firstKept = starts[group]
 			break
 		}
 	}
-	oversizedBudget := max(settings.KeepRecentTokens, minOversizedTurnTokens)
-	if turnTokens[len(turnTokens)-1] >= oversizedBudget {
+	oversizedBudget := max(settings.KeepRecentTokens, minOversizedGroupTokens)
+	if groupTokens[len(groupTokens)-1] >= oversizedBudget {
 		return prepareFullCompaction(state, estimate.Tokens)
 	}
 	if firstKept <= 0 {
@@ -127,17 +118,17 @@ func PrepareCompaction(
 	if state.compaction != nil {
 		summary, err := compactionSummaryMessage(
 			*state.compaction,
-			state.turns[:firstKept],
+			state.messages[:firstKept],
 		)
 		if err != nil {
 			return CompactionPreparation{}, err
 		}
 		messagesToSummarize = append(messagesToSummarize, summary)
 	}
-	for turnIndex := 0; turnIndex < firstKept; turnIndex++ {
+	for messageIndex := 0; messageIndex < firstKept; messageIndex++ {
 		messagesToSummarize = append(
 			messagesToSummarize,
-			state.turns[turnIndex].Messages...,
+			state.messages[messageIndex].Message,
 		)
 	}
 	cloned, err := cloneMessages(messagesToSummarize)
@@ -145,11 +136,11 @@ func PrepareCompaction(
 		return CompactionPreparation{}, err
 	}
 	return CompactionPreparation{
-		MessagesToSummarize: cloned,
-		TokensBefore:        estimate.Tokens,
-		FirstKeptTurnID:     state.turns[firstKept].ID,
-		ActiveTurnCount:     len(state.turns),
-		RetainedTurnCount:   len(state.turns) - firstKept,
+		MessagesToSummarize:  cloned,
+		TokensBefore:         estimate.Tokens,
+		FirstKeptMessageID:   state.messages[firstKept].ID,
+		ActiveMessageCount:   len(state.messages),
+		RetainedMessageCount: len(state.messages) - firstKept,
 	}, nil
 }
 
@@ -159,30 +150,30 @@ func prepareFullCompaction(
 ) (CompactionPreparation, error) {
 	messagesToSummarize := make([]llm.AgentMessage, 0)
 	if state.compaction != nil {
-		summary, err := compactionSummaryMessage(*state.compaction, state.turns)
+		summary, err := compactionSummaryMessage(*state.compaction, state.messages)
 		if err != nil {
 			return CompactionPreparation{}, err
 		}
 		messagesToSummarize = append(messagesToSummarize, summary)
 	}
-	for _, turn := range state.turns {
-		messagesToSummarize = append(messagesToSummarize, turn.Messages...)
+	for _, message := range state.messages {
+		messagesToSummarize = append(messagesToSummarize, message.Message)
 	}
 	cloned, err := cloneMessages(messagesToSummarize)
 	if err != nil {
 		return CompactionPreparation{}, err
 	}
 	return CompactionPreparation{
-		MessagesToSummarize: cloned,
-		TokensBefore:        tokensBefore,
-		ActiveTurnCount:     len(state.turns),
-		RetainedTurnCount:   0,
+		MessagesToSummarize:  cloned,
+		TokensBefore:         tokensBefore,
+		ActiveMessageCount:   len(state.messages),
+		RetainedMessageCount: 0,
 	}, nil
 }
 
 type activeBranchState struct {
 	compaction *Compaction
-	turns      []Turn
+	messages   []MessageEntry
 }
 
 func deriveActiveBranch(snapshot Snapshot) (activeBranchState, error) {
@@ -190,58 +181,46 @@ func deriveActiveBranch(snapshot Snapshot) (activeBranchState, error) {
 	if err != nil {
 		return activeBranchState{}, err
 	}
-	nodes, err := ActiveBranch(snapshot)
+	if err := completeBoundary(index, snapshot.LeafID); err != nil {
+		return activeBranchState{}, err
+	}
+	path, err := pathToRoot(snapshot.LeafID, index.nodeTypes, index.parents)
 	if err != nil {
 		return activeBranchState{}, err
 	}
-	ids := make([]string, len(nodes))
-	for position, node := range nodes {
-		ids[position] = node.ID
-	}
-	turnIDs, err := activeTurnIDs(ids, index.nodeTypes, index.compactions)
+	ids, err := activeMessageIDs(path, index.nodeTypes, index.compactions)
 	if err != nil {
 		return activeBranchState{}, err
-	}
-	latestCompaction := -1
-	for position, node := range nodes {
-		if node.Type == RecordTypeCompaction {
-			latestCompaction = position
-		}
 	}
 	var checkpoint *Compaction
-	if latestCompaction >= 0 {
-		compaction := index.compactions[nodes[latestCompaction].ID]
-		checkpoint = &compaction
+	for _, id := range path {
+		if value, ok := index.compactions[id]; ok {
+			checkpoint = &value
+		}
 	}
-	turns := make([]Turn, 0, len(turnIDs))
-	for _, id := range turnIDs {
-		turns = append(turns, index.turns[id])
+	messages := make([]MessageEntry, 0, len(ids))
+	for _, id := range ids {
+		messages = append(messages, index.messages[id])
 	}
-	return activeBranchState{
-		compaction: checkpoint,
-		turns:      turns,
-	}, nil
+	return activeBranchState{compaction: checkpoint, messages: messages}, nil
 }
 
 func compactionSummaryMessage(
 	compaction Compaction,
-	retainedTurns []Turn,
+	retainedMessages []MessageEntry,
 ) (llm.CompactionSummaryMessage, error) {
 	timestamp := compaction.CreatedAt
-	for _, turn := range retainedTurns {
-		for _, message := range turn.Messages {
-			messageTime := agentMessageTimestamp(message)
-			if messageTime < timestamp {
-				continue
-			}
-			if messageTime == math.MaxInt64 {
-				return llm.CompactionSummaryMessage{}, fmt.Errorf(
-					"session: cannot order compaction summary after maximum timestamp",
-				)
-			}
-			timestamp = messageTime + 1
+	for _, entry := range retainedMessages {
+		messageTime := agentMessageTimestamp(entry.Message)
+		if messageTime < timestamp {
+			continue
 		}
+		if messageTime == math.MaxInt64 {
+			return llm.CompactionSummaryMessage{}, fmt.Errorf("session: cannot order compaction summary after maximum timestamp")
+		}
+		timestamp = messageTime + 1
 	}
+
 	message, err := llm.NewCompactionSummaryMessage(
 		compaction.Summary,
 		compaction.TokensBefore,
@@ -258,19 +237,34 @@ func compactionSummaryMessage(
 	return message, nil
 }
 
-func estimateTurnTokens(turn Turn) (int64, error) {
-	if err := turn.Validate(); err != nil {
-		return 0, err
+// pairedGroupTokens allows cuts between source messages except within an
+// assistant's tool-call/result group. A retained suffix may start after a user.
+func pairedGroupTokens(entries []MessageEntry) ([]int, []int64, error) {
+	var starts []int
+	var tokens []int64
+	sequence := messageSequence{started: true}
+	previousUser := false
+	for position, entry := range entries {
+		if position == 0 || (len(sequence.pending) == 0 && !previousUser) {
+			starts = append(starts, position)
+			tokens = append(tokens, 0)
+		}
+		_, previousUser = entry.Message.(llm.UserMessage)
+		if err := sequence.accept(entry.Message); err != nil {
+			return nil, nil, err
+		}
+		projected, err := llm.AgentMessagesToMessages([]llm.AgentMessage{entry.Message})
+		if err != nil {
+			return nil, nil, err
+		}
+		for _, message := range projected {
+			tokens[len(tokens)-1] += llm.EstimateMessageTokens(message)
+		}
 	}
-	messages, err := llm.AgentMessagesToMessages(turn.Messages)
-	if err != nil {
-		return 0, err
+	if len(sequence.pending) != 0 {
+		return nil, nil, ErrIncompleteGroup
 	}
-	var tokens int64
-	for _, message := range messages {
-		tokens += llm.EstimateMessageTokens(message)
-	}
-	return tokens, nil
+	return starts, tokens, nil
 }
 
 func agentMessageTimestamp(message llm.AgentMessage) int64 {

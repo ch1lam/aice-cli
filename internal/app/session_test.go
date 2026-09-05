@@ -1,9 +1,13 @@
 package app
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/ch1lam/aice-cli/internal/llm"
+	"github.com/ch1lam/aice-cli/internal/session"
 )
 
 func TestCloseInteractiveStoreRemovesEmptySession(t *testing.T) {
@@ -22,7 +26,7 @@ func TestCloseInteractiveStoreRemovesEmptySession(t *testing.T) {
 	}
 }
 
-func TestCloseInteractiveStoreKeepsSessionWithTurns(t *testing.T) {
+func TestCloseInteractiveStoreKeepsSessionWithMessages(t *testing.T) {
 	t.Parallel()
 
 	workspacePath := t.TempDir()
@@ -34,8 +38,8 @@ func TestCloseInteractiveStoreKeepsSessionWithTurns(t *testing.T) {
 		workspacePath,
 		sessionPath,
 	)
-	if len(snapshot.Turns) != 1 {
-		t.Fatalf("turns before close = %d, want the recorded turn", len(snapshot.Turns))
+	if len(snapshot.Messages) != 2 {
+		t.Fatalf("messages before close = %d, want the recorded turn", len(snapshot.Messages))
 	}
 	if err := closeInteractiveStore(store); err != nil {
 		t.Fatalf("closeInteractiveStore() error = %v", err)
@@ -50,8 +54,8 @@ func TestCloseInteractiveStoreKeepsSessionWithTurns(t *testing.T) {
 			t.Errorf("Close() error = %v", err)
 		}
 	}()
-	if len(keptSnapshot.Turns) != 1 {
-		t.Fatalf("turns after close = %d, want the recorded turn kept", len(keptSnapshot.Turns))
+	if len(keptSnapshot.Messages) != 2 {
+		t.Fatalf("messages after close = %d, want the recorded turn kept", len(keptSnapshot.Messages))
 	}
 }
 
@@ -61,4 +65,23 @@ func TestCloseInteractiveStoreNilSafe(t *testing.T) {
 	if err := closeInteractiveStore(nil); err != nil {
 		t.Fatalf("closeInteractiveStore(nil) error = %v", err)
 	}
+}
+
+// appendTestSessionMessages builds fixture source entries; it is not a production
+// persistence fallback and intentionally exercises the same per-message writer.
+func appendTestSessionMessages(ctx context.Context, store *session.Store, messages []llm.AgentMessage) error {
+	for _, message := range messages {
+		if err := appendSessionMessage(ctx, store, message); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func sessionSourceMessages(snapshot session.Snapshot) []llm.AgentMessage {
+	messages := make([]llm.AgentMessage, len(snapshot.Messages))
+	for i, entry := range snapshot.Messages {
+		messages[i] = entry.Message
+	}
+	return messages
 }

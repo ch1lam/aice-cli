@@ -7,7 +7,7 @@
 | Process | One AICE invocation; `internal/app` prepares its workspace, startup prompt, skills, and dependencies |
 | Session | One durable JSONL tree, potentially resumed by later processes; `/new` detaches it |
 | Agent run | One `Loop.Run` call: the initial interaction plus queued follow-ups, with frozen dependencies |
-| Interaction | Initial/follow-up user input, in-interaction steers, and model/tool rounds until settlement; persisted as one Session turn |
+| Interaction | Initial/follow-up user input, in-interaction steers, and model/tool rounds until settlement; its source messages are persisted individually |
 | Model round | One assistant response and its paired tool results; legacy `turn_start`/`turn_end` event names refer to this level |
 | Side thread | Ephemeral `/btw` context and answers, owned separately from main Session history |
 
@@ -28,7 +28,7 @@ permission messages. Guard grant scope is defined in
 - `Message` is the closed set accepted by normal LLM requests.
   `AgentMessage` also includes AICE-derived transcript context such as a
   compaction summary.
-- History and Session turns retain complete assistant metadata: API, provider,
+- History and Session messages retain complete assistant metadata: API, provider,
   requested and response models, response ID, usage, stop reason, errors,
   content, and timestamp.
 - Conversion from `[]AgentMessage` to `[]Message` happens only at the LLM
@@ -42,9 +42,9 @@ permission messages. Guard grant scope is defined in
 - The loop owns model calls, validated sequential tool execution, paired tool
   results, continuation, retries, and terminal Agent events. Each inner-loop
   model round is `agent.ModelRound` (injected user inputs, one assistant
-  response, and that response's tool results). That is not a Session turn:
-  `session.Turn` is the persistence boundary for one completed user
-  interaction.
+  response, and that response's tool results). A Session `MessageEntry`
+  persists one source message; the complete model round is the safe boundary
+  for deriving context when the assistant declares tool calls.
 - One run has two explicit levels. The inner loop continues through tool calls
   and steering. When it would otherwise stop naturally, the outer loop polls
   one follow-up; if present, it starts another interaction inside the same run.
@@ -81,9 +81,9 @@ permission messages. Guard grant scope is defined in
   cancellation-independent cleanup deadline. The first recording error stops
   later execution and recording, including final cleanup. Display errors alone
   still allow known results and failure cleanup to be recorded once. Supplied
-  history is never recorded again. The current application still writes v2
-  complete interactions; the callback is the boundary for its upcoming
-  message-level persistence change.
+  history is never recorded again. The application injects this callback for
+  message-level Session persistence; event delivery and interaction settlement
+  do not append a second copy.
 - Poll steering input only after a complete assistant response and all tool
   calls declared by that response have matching results. Inject at most one
   user steer before the next model request, then offer the next steer at the
@@ -111,8 +111,9 @@ permission messages. Guard grant scope is defined in
 for Agent lifecycle events. [interaction.EventKind](../internal/interaction/contracts.go)
 defines the frontend's internal numeric enum. Use those declarations when
 changing events; do not treat numeric enum positions as a public wire format.
-`internal/app` translates between them. `interaction_end` is the natural
-persistence boundary; `turn_end` is only a completed model round.
+`internal/app` translates between them. `interaction_end` marks interaction
+settlement and `turn_end` marks a completed model round. Neither event owns
+persistence; the synchronous message recorder does.
 
 The public print format below is a separate, curated projection. Adding an
 internal event does not automatically expose it in NDJSON or justify serializing
@@ -148,8 +149,8 @@ the run, including failed attempts that report usage.
 - Propagate `context.Context` through model calls, Agent runs, tools, and
   persistence boundaries. Do not store it in structs or replace it mid-flow
   with `context.Background()`. Bounded durable cleanup is an explicit exception:
-  `appendSessionTurn` uses `context.WithoutCancel` plus a five-second timeout
-  to preserve the terminal interaction after request cancellation. Initial
+  per-message Session submission uses `context.WithoutCancel` plus a five-second
+  timeout to preserve known results after request cancellation. Initial
   lazy Session creation currently uses a local background context because
   `Runner.NewRun` has no context parameter; do not copy that into model/tool I/O.
 - Every goroutine has an owner, cancellation path, and wait/exit path. Queues

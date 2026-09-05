@@ -144,8 +144,8 @@ type RunInput struct {
 
 // ModelRound is one inner-loop model round: user input injected immediately
 // before one completed assistant response, followed by that response and its
-// ordered tool results. It is not a session.Turn, which is the persistence
-// boundary for one completed user interaction.
+// ordered tool results. Session persistence records each source message
+// individually; a complete model round is safe to project as context.
 type ModelRound struct {
 	Number      int
 	Inputs      []llm.UserMessage

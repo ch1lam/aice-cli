@@ -189,42 +189,38 @@ class AiceAgent(BaseInstalledAgent):
             self.logger.debug("AICE session file does not exist: %s", path)
             return None
 
-        session_id: str | None = None
-        turns: list[dict[str, Any]] = []
-        with path.open("r", encoding="utf-8", errors="replace") as session_file:
-            for line_number, line in enumerate(session_file, start=1):
-                try:
-                    record = json.loads(line)
-                except json.JSONDecodeError:
-                    self.logger.debug(
-                        "Skipping invalid AICE session line %d", line_number
-                    )
-                    continue
-                if not isinstance(record, dict):
-                    continue
-                record_type = record.get("type")
-                if record_type == "session" and isinstance(record.get("id"), str):
-                    session_id = record["id"]
-                elif record_type == "turn":
-                    turns.append(record)
-
-        if not turns:
-            self.logger.debug("AICE session contains no complete turns: %s", path)
-            return None
-
+        records = _read_session_records(path)
+        session_id = records[0]["id"]
         step_records: list[dict[str, Any]] = []
-        tool_steps: dict[str, dict[str, Any]] = {}
+        nodes: dict[str, dict[str, Any]] = {}
+        tool_steps: dict[tuple[str, str], dict[str, Any]] = {}
         total_prompt_tokens = 0
         total_completion_tokens = 0
         total_cached_tokens = 0
         total_cost_usd = 0.0
         has_cost = False
 
-        for turn in turns:
-            turn_usage = turn.get("usage")
-            if isinstance(turn_usage, dict):
+        for record in records[1:]:
+            record_type = record["type"]
+            if record_type == "leaf":
+                continue
+            nodes[record["id"]] = record
+            is_compaction = record_type == "compaction"
+            message = record if is_compaction else record["message"]
+            role = "assistant" if is_compaction else message.get("role")
+            if role == "user":
+                step_records.append({
+                    "step_id": len(step_records) + 1,
+                    "source": "user",
+                    "message": _content_text(message.get("content"), "text"),
+                })
+                continue
+            if role == "assistant":
+                usage = message.get("usage")
+                if not isinstance(usage, dict):
+                    usage = {}
                 prompt_tokens, completion_tokens, cached_tokens, cost_usd = (
-                    _atif_usage(turn_usage)
+                    _atif_usage(usage)
                 )
                 total_prompt_tokens += prompt_tokens
                 total_completion_tokens += completion_tokens
@@ -232,74 +228,45 @@ class AiceAgent(BaseInstalledAgent):
                 if cost_usd is not None:
                     total_cost_usd += cost_usd
                     has_cost = True
-
-            messages = turn.get("messages")
-            if not isinstance(messages, list):
+                tool_calls = [] if is_compaction else _atif_tool_calls(message.get("content"))
+                step_record: dict[str, Any] = {
+                    "step_id": len(step_records) + 1,
+                    "timestamp": _atif_timestamp(
+                        record.get("created_at") if is_compaction else message.get("timestamp")
+                    ),
+                    "source": "agent",
+                    "model_name": message.get("response_model") or message.get("model"),
+                    "message": (
+                        "[Context compaction]\n" + message.get("summary", "")
+                        if is_compaction else _content_text(message.get("content"), "text")
+                    ),
+                    "reasoning_content": _content_text(message.get("content"), "thinking") or None,
+                    "tool_calls": tool_calls or None,
+                    "metrics": Metrics(
+                        prompt_tokens=prompt_tokens,
+                        completion_tokens=completion_tokens,
+                        cached_tokens=cached_tokens,
+                        cost_usd=cost_usd,
+                    ),
+                    "llm_call_count": 1,
+                }
+                step_records.append(step_record)
+                for tool_call in tool_calls:
+                    tool_steps[(record["id"], tool_call.tool_call_id)] = step_record
                 continue
-            for message in messages:
-                if not isinstance(message, dict):
-                    continue
-                role = message.get("role")
-                if role == "user":
-                    step_records.append(
-                        {
-                            "step_id": len(step_records) + 1,
-                            "source": "user",
-                            "message": _content_text(message.get("content"), "text"),
-                        }
-                    )
-                    continue
-                if role == "assistant":
-                    usage = message.get("usage")
-                    if not isinstance(usage, dict):
-                        usage = {}
-                    prompt_tokens, completion_tokens, cached_tokens, cost_usd = (
-                        _atif_usage(usage)
-                    )
-                    tool_calls = _atif_tool_calls(message.get("content"))
-                    step_record: dict[str, Any] = {
-                        "step_id": len(step_records) + 1,
-                        "timestamp": _atif_timestamp(message.get("timestamp")),
-                        "source": "agent",
-                        "model_name": message.get("response_model")
-                        or message.get("model"),
-                        "message": _content_text(message.get("content"), "text"),
-                        "reasoning_content": _content_text(
-                            message.get("content"), "thinking"
-                        )
-                        or None,
-                        "tool_calls": tool_calls or None,
-                        "metrics": Metrics(
-                            prompt_tokens=prompt_tokens,
-                            completion_tokens=completion_tokens,
-                            cached_tokens=cached_tokens,
-                            cost_usd=cost_usd,
-                        ),
-                        "llm_call_count": 1,
-                    }
-                    step_records.append(step_record)
-                    for tool_call in tool_calls:
-                        tool_steps[tool_call.tool_call_id] = step_record
-                    continue
-                if role != "toolResult":
-                    continue
+            if role != "toolResult":
+                raise ValueError(f"Unsupported AICE source message role: {role!r}")
 
-                tool_call_id = message.get("tool_call_id")
-                if not isinstance(tool_call_id, str):
-                    continue
-                step_record = tool_steps.get(tool_call_id)
-                if step_record is None:
-                    self.logger.debug(
-                        "Skipping unmatched AICE tool result %s", tool_call_id
-                    )
-                    continue
-                observation = step_record.setdefault("observation", {"results": []})
-                observation["results"].append(
-                    ObservationResult(
-                        source_call_id=tool_call_id,
-                        content=_content_text(message.get("content"), "text"),
-                    )
-                )
+            tool_call_id = message.get("tool_call_id")
+            group_id = _tool_group(record, nodes, tool_call_id)
+            step_record = tool_steps.get((group_id, tool_call_id))
+            if step_record is None:
+                raise ValueError(f"Unmatched AICE tool result in record {record['id']!r}")
+            observation = step_record.setdefault("observation", {"results": []})
+            observation["results"].append(ObservationResult(
+                source_call_id=tool_call_id,
+                content=_content_text(message.get("content"), "text"),
+            ))
 
         if not step_records:
             self.logger.debug("AICE session produced no ATIF steps: %s", path)
@@ -323,6 +290,63 @@ class AiceAgent(BaseInstalledAgent):
                 total_steps=len(steps),
             ),
         )
+
+
+def _read_session_records(path: Path) -> list[dict[str, Any]]:
+    """Read v3 without rewriting recovery tails or interpreting legacy turns."""
+    records: list[dict[str, Any]] = []
+    ids: set[str] = set()
+    nodes: set[str] = set()
+    with path.open("rb") as source:
+        for line_number, line in enumerate(source, start=1):
+            if not line.endswith(b"\n"):
+                # Store recovery discards an incomplete final physical record.
+                break
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError as exc:
+                raise ValueError(f"Invalid AICE session line {line_number}") from exc
+            if not isinstance(record, dict):
+                raise ValueError(f"Invalid AICE session record on line {line_number}")
+            if not records:
+                if record.get("type") != "session" or type(record.get("version")) is not int or record["version"] != 3:
+                    raise ValueError("AICE Harbor adapter requires Session format v3; older formats are unsupported")
+            elif record.get("type") not in {"message", "compaction", "leaf"}:
+                raise ValueError(f"Unsupported AICE record type on line {line_number}")
+            record_id = record.get("id")
+            if not isinstance(record_id, str) or not record_id or (records and record_id in ids):
+                raise ValueError(f"Invalid or duplicate AICE record ID on line {line_number}")
+            if records:
+                ids.add(record_id)
+                parent = record.get("parent_id", "")
+                if parent and parent not in nodes:
+                    raise ValueError(f"Missing AICE parent on line {line_number}")
+                if record["type"] == "message" and not isinstance(record.get("message"), dict):
+                    raise ValueError(f"Missing AICE message on line {line_number}")
+                if record["type"] != "leaf":
+                    nodes.add(record_id)
+            records.append(record)
+    if not records:
+        raise ValueError("AICE session has no complete v3 header")
+    return records
+
+
+def _tool_group(record: dict[str, Any], nodes: dict[str, dict[str, Any]], call_id: Any) -> str:
+    """Resolve the nearest assistant on this result's own branch, not by raw ID."""
+    if not isinstance(call_id, str):
+        return ""
+    parent = record.get("parent_id", "")
+    while parent:
+        ancestor = nodes[parent]
+        if ancestor["type"] != "message":
+            break
+        message = ancestor["message"]
+        if message.get("role") == "assistant":
+            return parent
+        if message.get("role") != "toolResult" or message.get("tool_call_id") == call_id:
+            break
+        parent = ancestor.get("parent_id", "")
+    return ""
 
 
 def _content_text(content: Any, content_type: str) -> str:

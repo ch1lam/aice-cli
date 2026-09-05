@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"reflect"
 	"strings"
 	"time"
 
@@ -45,12 +46,13 @@ If the transcript contains a prior compaction summary, update it with newer mess
 
 func (a *application) sessionCompactor(
 	store *session.Store,
+	pendingInput llm.UserMessage,
 ) agent.HistoryCompactor {
 	if store == nil {
 		return nil
 	}
 	return func(ctx context.Context, _ []llm.AgentMessage) ([]llm.AgentMessage, error) {
-		return a.compactHistory(ctx, store)
+		return a.compactHistory(ctx, store, pendingInput)
 	}
 }
 
@@ -86,7 +88,7 @@ func (a *application) Compact(
 		returnErr = errors.Join(returnErr, store.Close())
 	}()
 
-	result, err := a.compactSession(ctx, store)
+	result, err := a.compactSession(ctx, store, nil)
 	if err != nil {
 		return err
 	}
@@ -99,6 +101,7 @@ func (a *application) Compact(
 func (a *application) compactSession(
 	ctx context.Context,
 	store *session.Store,
+	pendingInput *llm.UserMessage,
 ) (string, error) {
 	if store == nil {
 		return "", fmt.Errorf("app: session store is required")
@@ -107,8 +110,24 @@ func (a *application) compactSession(
 	if err != nil {
 		return "", fmt.Errorf("app: read session: %w", err)
 	}
+	source := snapshot
+	var pendingEntry session.MessageEntry
+	if pendingInput != nil {
+		for _, entry := range snapshot.Messages {
+			if entry.ID == snapshot.LeafID {
+				pendingEntry = entry
+				break
+			}
+		}
+		if !reflect.DeepEqual(pendingEntry.Message, *pendingInput) {
+			return "", fmt.Errorf("app: accepted input does not match Session leaf")
+		}
+		// The recorder runs before the Loop prepares its input request. Keep
+		// that input verbatim and summarize only its already-existing context.
+		source.LeafID = pendingEntry.ParentID
+	}
 	preparation, err := session.PrepareCompaction(
-		snapshot,
+		source,
 		session.CompactionSettings{
 			KeepRecentTokens: a.dependencies.compactionKeepRecentTokens,
 		},
@@ -123,20 +142,27 @@ func (a *application) compactSession(
 	if err != nil {
 		return "", err
 	}
+	if pendingInput != nil {
+		preparation.ActiveMessageCount++
+		preparation.RetainedMessageCount++
+		if preparation.FirstKeptMessageID == "" {
+			preparation.FirstKeptMessageID = pendingEntry.ID
+		}
+	}
 	checkpointID, err := session.NewID()
 	if err != nil {
 		return "", fmt.Errorf("app: generate compaction id: %w", err)
 	}
 	checkpoint, err := session.NewCompaction(session.CompactionInput{
-		ID:                checkpointID,
-		ParentID:          snapshot.LeafID,
-		CreatedAt:         time.Now().UnixMilli(),
-		Summary:           summary,
-		TokensBefore:      preparation.TokensBefore,
-		FirstKeptTurnID:   preparation.FirstKeptTurnID,
-		ActiveTurnCount:   preparation.ActiveTurnCount,
-		RetainedTurnCount: preparation.RetainedTurnCount,
-		Usage:             usage,
+		ID:                   checkpointID,
+		ParentID:             snapshot.LeafID,
+		CreatedAt:            time.Now().UnixMilli(),
+		Summary:              summary,
+		TokensBefore:         preparation.TokensBefore,
+		FirstKeptMessageID:   preparation.FirstKeptMessageID,
+		ActiveMessageCount:   preparation.ActiveMessageCount,
+		RetainedMessageCount: preparation.RetainedMessageCount,
+		Usage:                usage,
 	})
 	if err != nil {
 		return "", fmt.Errorf("app: create session compaction: %w", err)
@@ -146,20 +172,21 @@ func (a *application) compactSession(
 	}
 
 	return fmt.Sprintf(
-		"Compacted Session at approximately %d tokens; retained %d recent turn(s).\n",
+		"Compacted Session at approximately %d tokens; retained %d recent message(s).\n",
 		preparation.TokensBefore,
-		preparation.RetainedTurnCount,
+		preparation.RetainedMessageCount,
 	), nil
 }
 
 func (a *application) compactHistory(
 	ctx context.Context,
 	store *session.Store,
+	pendingInput llm.UserMessage,
 ) ([]llm.AgentMessage, error) {
 	if store == nil {
 		return nil, fmt.Errorf("app: session store is required for automatic compaction")
 	}
-	if _, err := a.compactSession(ctx, store); err != nil {
+	if _, err := a.compactSession(ctx, store, &pendingInput); err != nil {
 		return nil, err
 	}
 	snapshot, err := store.Snapshot()
@@ -170,7 +197,10 @@ func (a *application) compactHistory(
 	if err != nil {
 		return nil, fmt.Errorf("app: build compacted session context: %w", err)
 	}
-	return history, nil
+	if len(history) == 0 || !reflect.DeepEqual(history[len(history)-1], pendingInput) {
+		return nil, fmt.Errorf("app: compacted context did not retain accepted input")
+	}
+	return history[:len(history)-1], nil
 }
 
 func serializeCompactionMessages(messages []llm.AgentMessage) (string, error) {

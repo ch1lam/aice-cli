@@ -4,8 +4,9 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"path/filepath"
 	"reflect"
-	"strings"
+	"strconv"
 	"testing"
 	"time"
 
@@ -57,13 +58,24 @@ func TestLoopRetriesTransientModelFailureWithoutReplayingFailedHistory(t *testin
 		result.ModelRounds[1].Assistant.StopReason != llm.StopReasonStop {
 		t.Fatalf("Run() turns = %#v", result.ModelRounds)
 	}
-	if _, err := session.NewTurn(
-		strings.Repeat("a", 32),
-		"",
-		time.Now().UnixMilli(),
-		result.Messages(),
-	); err != nil {
-		t.Fatalf("session.NewTurn() error = %v", err)
+	workspace := t.TempDir()
+	store, err := session.Create(t.Context(), filepath.Join(workspace, "session.jsonl"), session.Metadata{
+		ID: "retry-session", CreatedAt: time.Now().UnixMilli(), WorkingDirectory: workspace,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	parentID := ""
+	for index, message := range result.Messages() {
+		entry, err := session.NewMessage(strconv.Itoa(index), parentID, time.Now().UnixMilli(), message)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := store.AppendMessage(t.Context(), entry); err != nil {
+			t.Fatalf("persist retry message %d: %v", index, err)
+		}
+		parentID = entry.ID
 	}
 
 	var retries []*agent.RetryEvent

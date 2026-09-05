@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 
@@ -31,11 +32,28 @@ type mainRunState struct {
 func (c *conversationState) beginMainRun(
 	prompt llm.UserMessage,
 ) (*mainRunState, []llm.AgentMessage, error) {
-	c.historyMu.Lock()
-	defer c.historyMu.Unlock()
-	if c.activeMainRun != nil {
+	c.historySyncMu.Lock()
+	defer c.historySyncMu.Unlock()
+	c.historyMu.RLock()
+	active := c.activeMainRun != nil
+	c.historyMu.RUnlock()
+	if active {
 		return nil, nil, fmt.Errorf("app: another main run is active")
 	}
+	if c.store != nil {
+		snapshot, err := c.store.Snapshot()
+		if err != nil {
+			return nil, nil, err
+		}
+		if _, err := session.BuildContext(snapshot); err != nil {
+			return nil, nil, fmt.Errorf("app: Session cannot continue; reopen it to recover interrupted tool results or use /new: %w", err)
+		}
+	}
+
+	// historySyncMu serializes new owners and transcript changes while the
+	// expensive store validation above runs without blocking side snapshots.
+	c.historyMu.Lock()
+	defer c.historyMu.Unlock()
 	history, err := cloneAgentMessages(c.history)
 	if err != nil {
 		return nil, nil, err
@@ -47,26 +65,6 @@ func (c *conversationState) beginMainRun(
 	state := &mainRunState{pendingMessages: pendingMessages}
 	c.activeMainRun = state
 	return state, history, nil
-}
-
-// registerMainMessages makes accepted user input and complete model/tool turns
-// visible to side snapshots while the current main interaction is still
-// running. Streaming assistant output is never registered.
-func (c *conversationState) registerMainMessages(
-	state *mainRunState,
-	messages []llm.AgentMessage,
-) error {
-	cloned, err := cloneAgentMessages(messages)
-	if err != nil {
-		return err
-	}
-	c.historyMu.Lock()
-	defer c.historyMu.Unlock()
-	if c.activeMainRun != state {
-		return fmt.Errorf("app: main run state is no longer active")
-	}
-	state.pendingMessages = append(state.pendingMessages, cloned...)
-	return nil
 }
 
 // endMainRun removes transient user inputs even when the run or Session
@@ -81,30 +79,30 @@ func (c *conversationState) endMainRun(state *mainRunState) {
 	}
 }
 
-// commitHistory serializes durable Session updates without holding the
-// in-memory history lock across file I/O. After persistence succeeds, one
-// short critical section publishes the complete interaction and clears its
-// transient inputs, so a side snapshot observes one consistent version.
-func (c *conversationState) commitHistory(
-	ctx context.Context,
-	state *mainRunState,
-	messages []llm.AgentMessage,
-) error {
-	cloned, err := cloneAgentMessages(messages)
+// recordMessage publishes only replay-safe history. The store owns tool pairing:
+// a partially completed tool group is durable but remains absent from side views.
+func (c *conversationState) recordMessage(ctx context.Context, state *mainRunState, message llm.AgentMessage) error {
+	c.historySyncMu.Lock()
+	defer c.historySyncMu.Unlock()
+	if err := appendSessionMessage(ctx, c.store, message); err != nil {
+		return err
+	}
+	snapshot, err := c.store.Snapshot()
 	if err != nil {
 		return err
 	}
-	c.historySyncMu.Lock()
-	defer c.historySyncMu.Unlock()
-	if err := appendSessionTurn(ctx, c.store, messages); err != nil {
+	history, err := sessionHistory(snapshot)
+	if errors.Is(err, session.ErrIncompleteGroup) {
+		return nil
+	}
+	if err != nil {
 		return err
 	}
-
 	c.historyMu.Lock()
 	defer c.historyMu.Unlock()
-	c.history = append(c.history, cloned...)
+	c.history = history
 	if c.activeMainRun == state {
-		state.pendingMessages = []llm.AgentMessage{}
+		state.pendingMessages = nil
 	}
 	return nil
 }

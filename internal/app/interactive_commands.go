@@ -36,7 +36,7 @@ func (s *interactiveSession) SlashCommands() []interaction.Command {
 		},
 		{
 			Name:        "compact",
-			Description: "Compact the active branch at the current turn boundary",
+			Description: "Compact older context on the active branch",
 		},
 		{
 			Name:        "new",
@@ -288,16 +288,21 @@ func (s *interactiveSession) checkoutMenu() *interaction.CommandMenu {
 	if err != nil {
 		return menu
 	}
-	turns := make(map[string]session.Turn, len(snapshot.Turns))
-	for _, turn := range snapshot.Turns {
-		turns[turn.ID] = turn
+	messages := make(map[string]session.MessageEntry, len(snapshot.Messages))
+	for _, entry := range snapshot.Messages {
+		messages[entry.ID] = entry
 	}
 	compactions := make(map[string]session.Compaction, len(snapshot.Compactions))
 	for _, compaction := range snapshot.Compactions {
 		compactions[compaction.ID] = compaction
 	}
 	for _, node := range nodes {
-		description := sessionNodeDescription(node, turns, compactions)
+		target := snapshot
+		target.LeafID = node.ID
+		if _, err := session.BuildContext(target); err != nil {
+			continue
+		}
+		description := sessionNodeDescription(node, messages, compactions)
 		if description == "" {
 			description = "Session " + string(node.Type)
 		}
@@ -439,7 +444,7 @@ func (s *interactiveSession) slashCompact(
 	if s.application == nil {
 		return "", fmt.Errorf("app: application is required")
 	}
-	output, err := s.application.compactSession(ctx, s.conversation.store)
+	output, err := s.application.compactSession(ctx, s.conversation.store, nil)
 	if err != nil {
 		return "", err
 	}
@@ -497,7 +502,7 @@ func (s *interactiveSession) slashNew(
 	if err := previous.Close(); err != nil {
 		return "", err
 	}
-	if len(snapshot.Turns) == 0 && len(snapshot.Compactions) == 0 {
+	if len(snapshot.Messages) == 0 && len(snapshot.Compactions) == 0 {
 		if err := os.Remove(previousPath); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return "", fmt.Errorf("app: remove empty session: %w", err)
 		}
@@ -1061,12 +1066,12 @@ func (s *interactiveSession) sessionInformation() (string, error) {
 		leaf = "root"
 	}
 	return fmt.Sprintf(
-		"Session %s\nPath: %s\nActive leaf: %s\nNodes: %d\nTurns: %d\nCompactions: %d",
+		"Session %s\nPath: %s\nActive leaf: %s\nNodes: %d\nMessages: %d\nCompactions: %d",
 		snapshot.Header.ID,
 		s.conversation.store.Path(),
 		leaf,
 		len(nodes),
-		len(snapshot.Turns),
+		len(snapshot.Messages),
 		len(snapshot.Compactions),
 	), nil
 }

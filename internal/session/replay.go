@@ -95,21 +95,24 @@ func readSnapshot(
 			continue
 		}
 		switch envelope.Type {
-		case RecordTypeTurn:
-			var turn Turn
-			if err := decodeRecord(line, &turn); err != nil {
+		case RecordTypeMessage:
+			var message MessageEntry
+			if err := decodeRecord(line, &message); err != nil {
 				return storeState{}, 0, false, corrupt(lineNumber, recordOffset, err)
 			}
 			if err := validateNode(
-				turn.ID,
-				turn.ParentID,
+				message.ID,
+				message.ParentID,
 				state.leafID,
 				state.index.recordIDs,
 				state.index.nodeTypes,
 			); err != nil {
 				return storeState{}, 0, false, corrupt(lineNumber, recordOffset, err)
 			}
-			state.retainTurn(turn)
+			if err := validateMessageAppend(state.index, message); err != nil {
+				return storeState{}, 0, false, corrupt(lineNumber, recordOffset, err)
+			}
+			state.retainMessage(message)
 		case RecordTypeCompaction:
 			var compaction Compaction
 			if err := decodeRecord(line, &compaction); err != nil {
@@ -126,9 +129,7 @@ func readSnapshot(
 			}
 			if err := validateCompactionBoundary(
 				compaction,
-				state.index.nodeTypes,
-				state.index.parents,
-				state.index.compactions,
+				state.index,
 			); err != nil {
 				return storeState{}, 0, false, corrupt(lineNumber, recordOffset, err)
 			}
@@ -144,6 +145,9 @@ func readSnapshot(
 				state.index.recordIDs,
 				state.index.nodeTypes,
 			); err != nil {
+				return storeState{}, 0, false, corrupt(lineNumber, recordOffset, err)
+			}
+			if err := completeBoundary(state.index, leaf.TargetID); err != nil {
 				return storeState{}, 0, false, corrupt(lineNumber, recordOffset, err)
 			}
 			state.retainLeaf(leaf)

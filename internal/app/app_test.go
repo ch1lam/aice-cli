@@ -515,8 +515,8 @@ func TestApplicationInteractiveKeepsConversationHistory(t *testing.T) {
 		t.Fatalf("session files = %v, want one JSONL file", paths)
 	}
 	snapshot := openSessionSnapshot(t, paths[0])
-	if len(snapshot.Turns) != 2 {
-		t.Fatalf("persisted turns = %d, want 2", len(snapshot.Turns))
+	if len(snapshot.Messages) != 4 {
+		t.Fatalf("persisted source messages = %d, want 4", len(snapshot.Messages))
 	}
 }
 
@@ -811,8 +811,8 @@ func TestApplicationPrintResumesExplicitSession(t *testing.T) {
 	assertTextMessage(t, messages[2], llm.RoleUser, "second prompt")
 
 	snapshot := openSessionSnapshot(t, sessionPath)
-	if len(snapshot.Turns) != 2 {
-		t.Fatalf("persisted turns = %d, want 2", len(snapshot.Turns))
+	if len(snapshot.Messages) != 4 {
+		t.Fatalf("persisted source messages = %d, want 4", len(snapshot.Messages))
 	}
 }
 
@@ -953,10 +953,10 @@ func TestApplicationPersistsFailedRunAfterToolSideEffect(t *testing.T) {
 	}
 
 	snapshot := openSessionSnapshot(t, sessionPath)
-	if len(snapshot.Turns) != 1 {
-		t.Fatalf("persisted turns = %#v, want one terminal run", snapshot.Turns)
+	if len(snapshot.Messages) != 4 {
+		t.Fatalf("persisted source messages = %#v, want one terminal run", snapshot.Messages)
 	}
-	messages := snapshot.Turns[0].Messages
+	messages := sessionSourceMessages(snapshot)
 	if got, want := persistedMessageRoles(messages), []llm.Role{
 		llm.RoleUser,
 		llm.RoleAssistant,
@@ -1067,10 +1067,10 @@ func TestInteractiveSessionPersistsCancellationAfterToolSideEffect(t *testing.T)
 		t.Fatalf("changed.txt = %q, want %q", got, want)
 	}
 	snapshot := openSessionSnapshot(t, sessionPath)
-	if len(snapshot.Turns) != 1 {
-		t.Fatalf("persisted turns = %#v, want one canceled run", snapshot.Turns)
+	if len(snapshot.Messages) != 4 {
+		t.Fatalf("persisted source messages = %#v, want one canceled run", snapshot.Messages)
 	}
-	messages := snapshot.Turns[0].Messages
+	messages := sessionSourceMessages(snapshot)
 	if got, want := persistedMessageRoles(messages), []llm.Role{
 		llm.RoleUser,
 		llm.RoleAssistant,
@@ -1120,10 +1120,10 @@ func TestInteractiveSessionPersistsToolErrorAndRecovery(t *testing.T) {
 	}
 
 	snapshot := openSessionSnapshot(t, sessionPath)
-	if len(snapshot.Turns) != 1 {
-		t.Fatalf("persisted turns = %#v, want one recovered run", snapshot.Turns)
+	if len(snapshot.Messages) != 4 {
+		t.Fatalf("persisted source messages = %#v, want one recovered run", snapshot.Messages)
 	}
-	messages := snapshot.Turns[0].Messages
+	messages := sessionSourceMessages(snapshot)
 	if got, want := persistedMessageRoles(messages), []llm.Role{
 		llm.RoleUser,
 		llm.RoleAssistant,
@@ -1187,10 +1187,10 @@ func TestInteractiveSessionPersistsSteerInsideActiveRun(t *testing.T) {
 	}
 
 	snapshot := openSessionSnapshot(t, sessionPath)
-	if len(snapshot.Turns) != 1 {
-		t.Fatalf("persisted turns = %#v, want one steered run", snapshot.Turns)
+	if len(snapshot.Messages) != 4 {
+		t.Fatalf("persisted source messages = %#v, want one steered run", snapshot.Messages)
 	}
-	if got, want := persistedMessageRoles(snapshot.Turns[0].Messages), []llm.Role{
+	if got, want := persistedMessageRoles(sessionSourceMessages(snapshot)), []llm.Role{
 		llm.RoleUser,
 		llm.RoleAssistant,
 		llm.RoleUser,
@@ -1212,7 +1212,7 @@ func TestInteractiveSessionPersistsSteerInsideActiveRun(t *testing.T) {
 	}
 }
 
-func TestInteractiveSessionPersistsFollowUpsAsSeparateTurns(t *testing.T) {
+func TestInteractiveSessionPersistsFollowUpsAsSourceMessages(t *testing.T) {
 	t.Parallel()
 
 	workspace := t.TempDir()
@@ -1254,17 +1254,15 @@ func TestInteractiveSessionPersistsFollowUpsAsSeparateTurns(t *testing.T) {
 	}
 
 	snapshot := openSessionSnapshot(t, sessionPath)
-	if len(snapshot.Turns) != 2 {
-		t.Fatalf("persisted turns = %#v, want two interactions", snapshot.Turns)
+	if len(snapshot.Messages) != 4 {
+		t.Fatalf("persisted source messages = %#v, want two interactions", snapshot.Messages)
 	}
-	for index, turn := range snapshot.Turns {
-		if got, want := persistedMessageRoles(turn.Messages), []llm.Role{
-			llm.RoleUser,
-			llm.RoleAssistant,
-		}; !reflect.DeepEqual(got, want) {
-			t.Errorf("turn %d message roles = %v, want %v", index, got, want)
-		}
+	if got, want := persistedMessageRoles(sessionSourceMessages(snapshot)), []llm.Role{
+		llm.RoleUser, llm.RoleAssistant, llm.RoleUser, llm.RoleAssistant,
+	}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("followup roles = %v, want %v", got, want)
 	}
+
 	if len(model.requests) != 2 {
 		t.Fatalf("model requests = %d, want two inside one active run", len(model.requests))
 	}
