@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/ch1lam/aice-cli/internal/agent"
+	"github.com/ch1lam/aice-cli/internal/config"
 	"github.com/ch1lam/aice-cli/internal/interaction"
 	"github.com/ch1lam/aice-cli/internal/llm"
 )
@@ -21,12 +22,13 @@ type interactiveRun struct {
 }
 
 type mainRunSnapshot struct {
-	state        *mainRunState
-	loop         *agent.Loop
-	history      []llm.AgentMessage
-	model        llm.Model
-	options      llm.StreamOptions
-	systemPrompt string
+	state         *mainRunState
+	loop          *agent.Loop
+	history       []llm.AgentMessage
+	model         llm.Model
+	options       llm.StreamOptions
+	systemPrompt  string
+	configuration config.Config
 }
 
 var _ interaction.ActiveRun = (*interactiveRun)(nil)
@@ -110,6 +112,11 @@ func (r *interactiveRun) Run(ctx context.Context) error {
 	defer r.session.conversation.endMainRun(snapshot.state)
 
 	pendingInput := r.prompt
+	configured := configuredModel{
+		configuration: snapshot.configuration,
+		model:         snapshot.model,
+		options:       snapshot.options,
+	}
 	_, runErr := snapshot.loop.Run(ctx, agent.RunInput{
 		Model:        snapshot.model,
 		SystemPrompt: snapshot.systemPrompt,
@@ -123,7 +130,7 @@ func (r *interactiveRun) Run(ctx context.Context) error {
 			return r.session.conversation.recordMessage(recordCtx, snapshot.state, message)
 		},
 		Compactor: func(compactCtx context.Context, _ []llm.AgentMessage) ([]llm.AgentMessage, error) {
-			return r.session.compactHistory(compactCtx, pendingInput)
+			return r.session.compactHistory(compactCtx, pendingInput, &configured)
 		},
 		Steering: mailboxInputSource(r.mailbox.TakeSteering, "steering"),
 		FollowUp: mailboxInputSource(r.mailbox.TakeFollowUp, "follow-up"),
@@ -191,18 +198,20 @@ func (s *interactiveSession) beginMainRun(
 		return mainRunSnapshot{}, err
 	}
 	return mainRunSnapshot{
-		state:        state,
-		loop:         settings.loop,
-		history:      history,
-		model:        settings.model,
-		options:      settings.options,
-		systemPrompt: settings.systemPrompt,
+		state:         state,
+		loop:          settings.loop,
+		history:       history,
+		model:         settings.model,
+		options:       settings.options,
+		systemPrompt:  settings.systemPrompt,
+		configuration: settings.configuration,
 	}, nil
 }
 
 func (s *interactiveSession) compactHistory(
 	ctx context.Context,
 	pendingInput llm.UserMessage,
+	configured *configuredModel,
 ) ([]llm.AgentMessage, error) {
 	if s == nil || s.application == nil {
 		return nil, fmt.Errorf("app: interactive Session is not initialized")
@@ -217,7 +226,7 @@ func (s *interactiveSession) compactHistory(
 	s.conversation.historySyncMu.Lock()
 	defer s.conversation.historySyncMu.Unlock()
 
-	history, err := s.application.compactHistory(ctx, s.conversation.store, pendingInput)
+	history, err := s.application.compactHistory(ctx, s.conversation.store, pendingInput, configured)
 	if err != nil {
 		return nil, err
 	}

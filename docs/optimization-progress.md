@@ -159,6 +159,16 @@ compaction accepts the entire current context before each safe model request;
 it also owns frozen summary configuration, stateless memory compaction and
 complete print summary usage.
 
+Summary model selection is now frozen independently of compaction timing.
+Print shares its selected model service with summaries; interactive execution
+constructs at most one summary service from that Run's captured configuration.
+Manual TUI compaction uses the current `/model` selection, while standalone
+CLI compaction resolves settings once after establishing there is work to do.
+Tests change external settings during execution, check service construction
+counts across repeated summaries, and exercise a TUI model change. Full tests,
+vet, and race passed. Safe-boundary timing, memory compaction, model-aware
+budget estimates, and summary retry/print accounting remain in step 4c.
+
 The Go HTTP evaluation family is in `evals/go-service`. It includes independent
 HTTP acceptance, generated starting points, one reference implementation, and
 an evidence-based maintenance rubric. An independent rerun of `verify.py`

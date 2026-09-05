@@ -47,12 +47,13 @@ If the transcript contains a prior compaction summary, update it with newer mess
 func (a *application) sessionCompactor(
 	store *session.Store,
 	pendingInput llm.UserMessage,
+	configured *configuredModel,
 ) agent.HistoryCompactor {
 	if store == nil {
 		return nil
 	}
 	return func(ctx context.Context, _ []llm.AgentMessage) ([]llm.AgentMessage, error) {
-		return a.compactHistory(ctx, store, pendingInput)
+		return a.compactHistory(ctx, store, pendingInput, configured)
 	}
 }
 
@@ -88,7 +89,7 @@ func (a *application) Compact(
 		returnErr = errors.Join(returnErr, store.Close())
 	}()
 
-	result, err := a.compactSession(ctx, store, nil)
+	result, err := a.compactSession(ctx, store, nil, nil)
 	if err != nil {
 		return err
 	}
@@ -102,6 +103,7 @@ func (a *application) compactSession(
 	ctx context.Context,
 	store *session.Store,
 	pendingInput *llm.UserMessage,
+	configured *configuredModel,
 ) (string, error) {
 	if store == nil {
 		return "", fmt.Errorf("app: session store is required")
@@ -135,9 +137,21 @@ func (a *application) compactSession(
 	if err != nil {
 		return "", fmt.Errorf("app: prepare session compaction: %w", err)
 	}
+	// Only the standalone CLI passes nil: load once after proving there is
+	// work to compact, preserving the no-credentials-needed no-op path.
+	if configured == nil {
+		selected, err := a.newConfiguredModel()
+		if err != nil {
+			return "", err
+		}
+		configured = &selected
+	} else if err := a.initializeConfiguredModel(configured); err != nil {
+		return "", err
+	}
 	summary, usage, err := a.generateCompactionSummary(
 		ctx,
 		preparation.MessagesToSummarize,
+		*configured,
 	)
 	if err != nil {
 		return "", err
@@ -182,11 +196,12 @@ func (a *application) compactHistory(
 	ctx context.Context,
 	store *session.Store,
 	pendingInput llm.UserMessage,
+	configured *configuredModel,
 ) ([]llm.AgentMessage, error) {
 	if store == nil {
 		return nil, fmt.Errorf("app: session store is required for automatic compaction")
 	}
-	if _, err := a.compactSession(ctx, store, &pendingInput); err != nil {
+	if _, err := a.compactSession(ctx, store, &pendingInput, configured); err != nil {
 		return nil, err
 	}
 	snapshot, err := store.Snapshot()
@@ -403,6 +418,7 @@ func compactionTextSuffix(text string, maxTokens int64) string {
 func (a *application) generateCompactionSummary(
 	ctx context.Context,
 	messages []llm.AgentMessage,
+	configured configuredModel,
 ) (string, llm.Usage, error) {
 	transcript, err := serializeCompactionMessages(messages)
 	if err != nil {
@@ -410,10 +426,6 @@ func (a *application) generateCompactionSummary(
 			"app: serialize compaction input: %w",
 			err,
 		)
-	}
-	configured, err := a.newConfiguredModel()
-	if err != nil {
-		return "", llm.Usage{}, err
 	}
 	transcript = truncateCompactionTranscript(
 		transcript,

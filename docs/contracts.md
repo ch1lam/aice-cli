@@ -165,9 +165,11 @@ the run, including failed attempts that report usage.
   applies one thread's events, draft, cancellation, or unread state to another.
   Side execution never mutates main history, Session records, usage, settings,
   or the main run mailbox.
-- A main run snapshots its loop, model, options, and system prompt when it
-  starts. Concurrent settings changes or side-thread creation must not swap
-  those dependencies underneath the active run.
+- A main run snapshots its loop, model, options, system prompt, and connection
+  configuration when it starts. Automatic summaries use that same frozen
+  configuration; they do not reload global settings midway through the run.
+  Concurrent settings changes or side-thread creation must not swap those
+  dependencies underneath the active run.
 - The built-in Guard has mutable grants without locking. Sequential tool
   execution protects only a single caller; sharing that Guard across concurrent
   runs is unsupported until its ownership/synchronization is changed. Tool-free

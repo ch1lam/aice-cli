@@ -517,17 +517,29 @@ func TestInteractiveSessionSlashCommandCompactsAndReloadsHistory(
 	}
 	application := &application{dependencies: dependencies{
 		loadConfig: func() (config.Config, error) {
-			return config.Config{DeepSeekAPIKey: "test-key"}, nil
+			t.Fatal("manual TUI compaction reloaded global settings")
+			return config.Config{}, nil
 		},
-		newModel: func(config.Config) (agent.Model, error) {
+		newModel: func(configuration config.Config) (agent.Model, error) {
+			if configuration.Model != deepseek.ModelV4Pro || configuration.DeepSeekAPIKey != "session-key" {
+				t.Fatalf("summary service configuration = %#v", configuration)
+			}
 			return summaryModel, nil
 		},
+		saveSetting:                func(config.Setting, string) error { return nil },
 		compactionKeepRecentTokens: 1,
 		providers:                  defaultProviders(),
 	}}
 	runner := &interactiveSession{
-		application:  application,
-		conversation: conversationState{store: store, history: history},
+		application:   application,
+		conversation:  conversationState{store: store, history: history},
+		configuration: config.Config{Provider: string(deepseek.ProviderID), Model: deepseek.ModelV4Flash, DeepSeekAPIKey: "session-key", Thinking: llm.ThinkingLevelHigh},
+		model:         deepseek.DefaultModel(),
+		options:       llm.StreamOptions{Thinking: llm.ThinkingLevelHigh},
+		providers:     defaultProviders(),
+	}
+	if _, err := runner.RunSlashCommand(t.Context(), tui.SlashCommandRequest{Name: "model", Arguments: deepseek.ModelV4Pro}); err != nil {
+		t.Fatal(err)
 	}
 
 	output, err := runner.RunSlashCommand(t.Context(), tui.SlashCommandRequest{
@@ -535,6 +547,9 @@ func TestInteractiveSessionSlashCommandCompactsAndReloadsHistory(
 	})
 	if err != nil {
 		t.Fatalf("/compact error = %v", err)
+	}
+	if len(summaryModel.requests) != 1 || summaryModel.requests[0].Model.ID != deepseek.ModelV4Pro || summaryModel.requests[0].Options.Thinking != llm.ThinkingLevelHigh {
+		t.Fatalf("summary ignored selected model/options: %#v", summaryModel.requests)
 	}
 	if !strings.Contains(output, "retained 2 recent message(s)") {
 		t.Errorf("/compact output = %q, want retained count", output)

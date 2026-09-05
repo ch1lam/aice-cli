@@ -444,7 +444,13 @@ func (s *interactiveSession) slashCompact(
 	if s.application == nil {
 		return "", fmt.Errorf("app: application is required")
 	}
-	output, err := s.application.compactSession(ctx, s.conversation.store, nil)
+	settings := s.settingsSnapshot()
+	configured := configuredModel{
+		configuration: settings.configuration,
+		model:         settings.model,
+		options:       settings.options,
+	}
+	output, err := s.application.compactSession(ctx, s.conversation.store, nil, &configured)
 	if err != nil {
 		return "", err
 	}

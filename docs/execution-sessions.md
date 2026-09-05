@@ -243,6 +243,9 @@ aice compact --workspace . --session .aice/sessions/<id>.jsonl
 provider/model, requires credentials and enough older history, and always uses
 an AICE-owned prompt rather than project prompt files. Automatic and manual
 compaction share the same provider-neutral, client-generated summary format;
-provider-native compaction protocols are not used. If no complete boundary is
+provider-native compaction protocols are not used. Automatic summaries keep the
+active run's frozen model and connection settings; manual TUI compaction uses the
+current Session selection. A standalone `aice compact` resolves global settings
+once, after finding enough history to summarize. If no complete boundary is
 available or summary generation fails, AICE preserves the source Session and
 returns the error instead of silently dropping history.

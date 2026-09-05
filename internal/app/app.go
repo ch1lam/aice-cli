@@ -188,14 +188,19 @@ func (a *application) Print(
 			environment.configuration,
 		)
 	}
-	loop, err := a.newAgentLoopWithOptions(
-		environment.configuration,
-		environment.tools,
-		agent.WithGuard(environment.guardAdapter),
-	)
-	if err != nil {
+	configured := configuredModel{
+		configuration: environment.configuration,
+		model:         environment.model,
+		options:       environment.options,
+	}
+	if err := a.initializeConfiguredModel(&configured); err != nil {
 		return err
 	}
+	loop, err := agent.NewLoop(configured.service, environment.tools, agent.WithGuard(environment.guardAdapter))
+	if err != nil {
+		return fmt.Errorf("app: create agent loop: %w", err)
+	}
+
 	store, history, _, err := prepareSession(
 		ctx,
 		environment.workspace,
@@ -228,7 +233,7 @@ func (a *application) Print(
 		History:         history,
 		Prompt:          prompt,
 		Options:         environment.options,
-		Compactor:       a.sessionCompactor(store, prompt),
+		Compactor:       a.sessionCompactor(store, prompt, &configured),
 		MessageRecorder: recorder,
 	}, sink.Accept)
 	finishErr := sink.Finish()
@@ -503,18 +508,28 @@ func (a *application) newConfiguredModel() (configuredModel, error) {
 	if err != nil {
 		return configuredModel{}, err
 	}
+	if err := a.initializeConfiguredModel(&configured); err != nil {
+		return configuredModel{}, err
+	}
+	return configured, nil
+}
+
+// initializeConfiguredModel lazily creates a service from an already selected
+// configuration. Automatic compaction keeps this value for the entire Run;
+// it never reloads settings or changes the frozen model/options tuple.
+func (a *application) initializeConfiguredModel(configured *configuredModel) error {
+	if configured.service != nil {
+		return nil
+	}
 	if !providerConfigured(a.dependencies.providers, configured.configuration) {
-		return configuredModel{}, credentialNotConfiguredError(
-			a.dependencies.providers,
-			configured.configuration,
-		)
+		return credentialNotConfiguredError(a.dependencies.providers, configured.configuration)
 	}
 	service, err := a.dependencies.newModel(configured.configuration)
 	if err != nil {
-		return configuredModel{}, fmt.Errorf("app: create model: %w", err)
+		return fmt.Errorf("app: create model: %w", err)
 	}
 	configured.service = service
-	return configured, nil
+	return nil
 }
 
 func (a *application) newAgentLoop(
