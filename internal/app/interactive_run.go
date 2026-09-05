@@ -21,10 +21,6 @@ type interactiveRun struct {
 	isStarted bool
 }
 
-type mainRunState struct {
-	pendingMessages []llm.AgentMessage
-}
-
 type mainRunSnapshot struct {
 	state        *mainRunState
 	loop         *agent.Loop
@@ -70,9 +66,9 @@ func (s *interactiveSession) NewRun(
 // so it uses a background context; every later turn appends through
 // commitHistory with the run's own context.
 func (s *interactiveSession) ensureSessionStore() error {
-	s.historySyncMu.Lock()
-	defer s.historySyncMu.Unlock()
-	if s.store != nil {
+	s.conversation.historySyncMu.Lock()
+	defer s.conversation.historySyncMu.Unlock()
+	if s.conversation.store != nil {
 		return nil
 	}
 	if s.workspace == nil {
@@ -82,7 +78,7 @@ func (s *interactiveSession) ensureSessionStore() error {
 	if err != nil {
 		return err
 	}
-	s.store = store
+	s.conversation.store = store
 	return nil
 }
 func (r *interactiveRun) Deliver(delivery interaction.Delivery) error {
@@ -112,7 +108,7 @@ func (r *interactiveRun) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	defer r.session.endMainRun(snapshot.state)
+	defer r.session.conversation.endMainRun(snapshot.state)
 
 	persistedMessages := 0
 	result, runErr := snapshot.loop.Run(ctx, agent.RunInput{
@@ -134,7 +130,7 @@ func (r *interactiveRun) Run(ctx context.Context) error {
 					event.Message,
 				)
 			}
-			if err := r.session.registerMainMessages(
+			if err := r.session.conversation.registerMainMessages(
 				snapshot.state,
 				[]llm.AgentMessage{input},
 			); err != nil {
@@ -150,7 +146,7 @@ func (r *interactiveRun) Run(ctx context.Context) error {
 			for _, result := range event.ToolResults {
 				messages = append(messages, result)
 			}
-			if err := r.session.registerMainMessages(
+			if err := r.session.conversation.registerMainMessages(
 				snapshot.state,
 				messages,
 			); err != nil {
@@ -239,21 +235,10 @@ func (s *interactiveSession) beginMainRun(
 		)
 	}
 
-	s.historyMu.Lock()
-	defer s.historyMu.Unlock()
-	if s.activeMainRun != nil {
-		return mainRunSnapshot{}, fmt.Errorf("app: another main run is active")
-	}
-	history, err := cloneAgentMessages(s.history)
+	state, history, err := s.conversation.beginMainRun(prompt)
 	if err != nil {
 		return mainRunSnapshot{}, err
 	}
-	pendingMessages, err := cloneAgentMessages([]llm.AgentMessage{prompt})
-	if err != nil {
-		return mainRunSnapshot{}, err
-	}
-	state := &mainRunState{pendingMessages: pendingMessages}
-	s.activeMainRun = state
 	return mainRunSnapshot{
 		state:        state,
 		loop:         settings.loop,
@@ -264,66 +249,6 @@ func (s *interactiveSession) beginMainRun(
 	}, nil
 }
 
-// registerMainMessages makes accepted user input and complete model/tool turns
-// visible to side snapshots while the current main interaction is still
-// running. Streaming assistant output is never registered.
-func (s *interactiveSession) registerMainMessages(
-	state *mainRunState,
-	messages []llm.AgentMessage,
-) error {
-	cloned, err := cloneAgentMessages(messages)
-	if err != nil {
-		return err
-	}
-	s.historyMu.Lock()
-	defer s.historyMu.Unlock()
-	if s.activeMainRun != state {
-		return fmt.Errorf("app: main run state is no longer active")
-	}
-	state.pendingMessages = append(state.pendingMessages, cloned...)
-	return nil
-}
-
-// endMainRun removes transient user inputs even when the run or Session
-// persistence fails. The identity check prevents a stale run from clearing a
-// newer owner.
-func (s *interactiveSession) endMainRun(state *mainRunState) {
-	s.historyMu.Lock()
-	defer s.historyMu.Unlock()
-	if s.activeMainRun == state {
-		state.pendingMessages = []llm.AgentMessage{}
-		s.activeMainRun = nil
-	}
-}
-
-// commitHistory serializes durable Session updates without holding the
-// in-memory history lock across file I/O. After persistence succeeds, one
-// short critical section publishes the complete interaction and clears its
-// transient inputs, so a side snapshot observes one consistent version.
-func (s *interactiveSession) commitHistory(
-	ctx context.Context,
-	state *mainRunState,
-	messages []llm.AgentMessage,
-) error {
-	cloned, err := cloneAgentMessages(messages)
-	if err != nil {
-		return err
-	}
-	s.historySyncMu.Lock()
-	defer s.historySyncMu.Unlock()
-	if err := appendSessionTurn(ctx, s.store, messages); err != nil {
-		return err
-	}
-
-	s.historyMu.Lock()
-	defer s.historyMu.Unlock()
-	s.history = append(s.history, cloned...)
-	if s.activeMainRun == state {
-		state.pendingMessages = []llm.AgentMessage{}
-	}
-	return nil
-}
-
 func (s *interactiveSession) compactHistory(
 	ctx context.Context,
 	_ []llm.AgentMessage,
@@ -331,23 +256,23 @@ func (s *interactiveSession) compactHistory(
 	if s == nil || s.application == nil {
 		return nil, fmt.Errorf("app: interactive Session is not initialized")
 	}
-	if s.store == nil {
+	if s.conversation.store == nil {
 		return nil, fmt.Errorf("app: interactive Session store is required")
 	}
 
 	// Serialize automatic checkpoints with turn commits and explicit checkout.
 	// The model run is already at a complete interaction boundary here, so the
 	// durable store and the callback's history describe the same context.
-	s.historySyncMu.Lock()
-	defer s.historySyncMu.Unlock()
+	s.conversation.historySyncMu.Lock()
+	defer s.conversation.historySyncMu.Unlock()
 
-	history, err := s.application.compactHistory(ctx, s.store)
+	history, err := s.application.compactHistory(ctx, s.conversation.store)
 	if err != nil {
 		return nil, err
 	}
-	s.historyMu.Lock()
-	s.history = history
-	s.historyMu.Unlock()
+	s.conversation.historyMu.Lock()
+	s.conversation.history = history
+	s.conversation.historyMu.Unlock()
 	return cloneAgentMessages(history)
 }
 
@@ -359,5 +284,5 @@ func (r *interactiveRun) persistTurn(
 	if len(messages) == 0 {
 		return nil
 	}
-	return r.session.commitHistory(ctx, state, messages)
+	return r.session.conversation.commitHistory(ctx, state, messages)
 }

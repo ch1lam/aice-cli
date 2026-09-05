@@ -40,9 +40,9 @@ func TestInteractiveSessionPersistsToolResultAfterDisplayFailure(t *testing.T) {
 		}
 	})
 	runner := &interactiveSession{
-		loop:  mustAppLoop(t, model, []agent.Tool{tool}),
-		store: store,
-		model: deepseek.DefaultModel(),
+		loop:         mustAppLoop(t, model, []agent.Tool{tool}),
+		conversation: conversationState{store: store},
+		model:        deepseek.DefaultModel(),
 	}
 	displayFailure := errors.New("display disconnected")
 	err := runInteractive(t.Context(), runner, "make the change", func(_ context.Context, event interaction.Event) error {
@@ -82,7 +82,7 @@ func TestInteractiveSessionPersistsToolResultAfterDisplayFailure(t *testing.T) {
 	if results != 1 {
 		t.Fatalf("restored tool results = %d, want exactly one", results)
 	}
-	if !reflect.DeepEqual(runner.history, history) {
+	if !reflect.DeepEqual(runner.conversation.history, history) {
 		t.Fatal("in-memory and restored history differ after display failure")
 	}
 }
@@ -99,9 +99,9 @@ func TestInteractiveSessionDoesNotDuplicateHistoryAfterFinalDisplayFailure(t *te
 		}
 	})
 	runner := &interactiveSession{
-		loop:  mustAppLoop(t, model, nil),
-		store: store,
-		model: deepseek.DefaultModel(),
+		loop:         mustAppLoop(t, model, nil),
+		conversation: conversationState{store: store},
+		model:        deepseek.DefaultModel(),
 	}
 	displayFailure := errors.New("final display failed")
 	err := runInteractive(t.Context(), runner, "question", func(_ context.Context, event interaction.Event) error {
@@ -125,7 +125,7 @@ func TestInteractiveSessionDoesNotDuplicateHistoryAfterFinalDisplayFailure(t *te
 	}
 	assertTextMessage(t, history[0], llm.RoleUser, "question")
 	assertTextMessage(t, history[1], llm.RoleAssistant, "answer")
-	if !reflect.DeepEqual(runner.history, history) {
+	if !reflect.DeepEqual(runner.conversation.history, history) {
 		t.Fatal("in-memory and restored history differ after final display failure")
 	}
 }
@@ -140,9 +140,9 @@ func TestInteractiveSessionPersistenceFailureStopsFollowUp(t *testing.T) {
 		t.Fatal(err)
 	}
 	runner := &interactiveSession{
-		loop:  mustAppLoop(t, model, nil),
-		store: store,
-		model: deepseek.DefaultModel(),
+		loop:         mustAppLoop(t, model, nil),
+		conversation: conversationState{store: store},
+		model:        deepseek.DefaultModel(),
 	}
 	active, err := runner.NewRun(interaction.RunInput{Prompt: "question"}, nil)
 	if err != nil {
@@ -163,10 +163,10 @@ func TestInteractiveSessionPersistenceFailureStopsFollowUp(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(history) != 0 || len(runner.history) != 0 {
-		t.Fatalf("failed save published history: disk = %d, memory = %d", len(history), len(runner.history))
+	if len(history) != 0 || len(runner.conversation.history) != 0 {
+		t.Fatalf("failed save published history: disk = %d, memory = %d", len(history), len(runner.conversation.history))
 	}
-	if runner.activeMainRun != nil {
+	if runner.conversation.activeMainRun != nil {
 		t.Fatal("failed save left the main run active")
 	}
 }

@@ -20,8 +20,8 @@ func TestInteractiveSessionEnsureSessionStoreCreatesOnDemand(t *testing.T) {
 	}
 	runner := &interactiveSession{workspace: workspace}
 	defer func() {
-		if runner.store != nil {
-			if err := runner.store.Close(); err != nil {
+		if runner.conversation.store != nil {
+			if err := runner.conversation.store.Close(); err != nil {
 				t.Errorf("Close() error = %v", err)
 			}
 		}
@@ -30,11 +30,11 @@ func TestInteractiveSessionEnsureSessionStoreCreatesOnDemand(t *testing.T) {
 	if err := runner.ensureSessionStore(); err != nil {
 		t.Fatalf("ensureSessionStore() error = %v", err)
 	}
-	path := runner.store.Path()
+	path := runner.conversation.store.Path()
 	if want := filepath.Join(workspacePath, ".aice", "sessions"); !strings.HasPrefix(path, want) {
 		t.Errorf("store path = %q, want it under %q", path, want)
 	}
-	snapshot, err := runner.store.Snapshot()
+	snapshot, err := runner.conversation.store.Snapshot()
 	if err != nil {
 		t.Fatalf("Snapshot() error = %v", err)
 	}
@@ -51,7 +51,7 @@ func TestInteractiveSessionEnsureSessionStoreCreatesOnDemand(t *testing.T) {
 	if err := runner.ensureSessionStore(); err != nil {
 		t.Fatalf("second ensureSessionStore() error = %v", err)
 	}
-	if got := runner.store.Path(); got != path {
+	if got := runner.conversation.store.Path(); got != path {
 		t.Fatalf("store path after second ensure = %q, want %q", got, path)
 	}
 	matches, err := filepath.Glob(filepath.Join(workspacePath, ".aice", "sessions", "*.jsonl"))
@@ -70,7 +70,7 @@ func TestInteractiveSessionEnsureSessionStoreRequiresWorkspace(t *testing.T) {
 	if err := runner.ensureSessionStore(); err == nil {
 		t.Fatal("ensureSessionStore() error = nil, want workspace error")
 	}
-	if runner.store != nil {
+	if runner.conversation.store != nil {
 		t.Fatal("store created without a workspace")
 	}
 }
@@ -90,13 +90,13 @@ func TestInteractiveSessionNewRunCreatesSessionLazily(t *testing.T) {
 	}
 	runner := &interactiveSession{loop: loop, workspace: workspace}
 	defer func() {
-		if runner.store != nil {
-			if err := runner.store.Close(); err != nil {
+		if runner.conversation.store != nil {
+			if err := runner.conversation.store.Close(); err != nil {
 				t.Errorf("Close() error = %v", err)
 			}
 		}
 	}()
-	if runner.store != nil {
+	if runner.conversation.store != nil {
 		t.Fatal("store exists before the first prompt")
 	}
 
@@ -107,7 +107,7 @@ func TestInteractiveSessionNewRunCreatesSessionLazily(t *testing.T) {
 	if active == nil {
 		t.Fatal("NewRun() run = nil, want an active run")
 	}
-	if runner.store == nil {
+	if runner.conversation.store == nil {
 		t.Fatal("store missing after the first prompt was accepted")
 	}
 }

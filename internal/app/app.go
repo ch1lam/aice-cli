@@ -285,8 +285,7 @@ func (a *application) Interactive(
 		guard:         environment.guard,
 		guardAdapter:  environment.guardAdapter,
 		guardRequests: make(chan interaction.GuardRequest, 4),
-		store:         store,
-		history:       history,
+		conversation:  conversationState{store: store, history: history},
 		model:         environment.model,
 		options:       environment.options,
 		configuration: environment.configuration,
@@ -339,7 +338,7 @@ func (a *application) Interactive(
 	// Close the runner's current store: /new may have detached the startup
 	// store, and a later prompt may have created another. Remove empty
 	// interactive files so unused explicit paths do not accumulate.
-	closeErr := closeInteractiveStore(runner.store)
+	closeErr := closeInteractiveStore(runner.conversation.store)
 	if runErr != nil {
 		return errors.Join(fmt.Errorf("app: run TUI: %w", runErr), closeErr)
 	}
@@ -556,11 +555,7 @@ type interactiveSession struct {
 	application    *application
 	stateMu        sync.RWMutex
 	loop           *agent.Loop
-	store          *session.Store
-	historySyncMu  sync.Mutex
-	historyMu      sync.RWMutex
-	history        []llm.AgentMessage
-	activeMainRun  *mainRunState
+	conversation   conversationState
 	model          llm.Model
 	options        llm.StreamOptions
 	configuration  config.Config

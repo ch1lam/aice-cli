@@ -47,8 +47,7 @@ func TestInteractiveSessionSlashCommandsNavigateCurrentStore(t *testing.T) {
 		t.Fatalf("sessionHistory() error = %v", err)
 	}
 	runner := &interactiveSession{
-		store:   store,
-		history: history,
+		conversation: conversationState{store: store, history: history},
 	}
 
 	info, err := runner.RunSlashCommand(t.Context(), tui.SlashCommandRequest{
@@ -87,11 +86,11 @@ func TestInteractiveSessionSlashCommandsNavigateCurrentStore(t *testing.T) {
 	if !strings.Contains(output, "next turn will branch") {
 		t.Errorf("/checkout output = %q, want branch guidance", output)
 	}
-	if len(runner.history) != 2 {
-		t.Fatalf("history after checkout = %d messages, want first turn", len(runner.history))
+	if len(runner.conversation.history) != 2 {
+		t.Fatalf("history after checkout = %d messages, want first turn", len(runner.conversation.history))
 	}
-	assertInteractiveTextMessage(t, runner.history[0], llm.RoleUser, "first prompt")
-	assertInteractiveTextMessage(t, runner.history[1], llm.RoleAssistant, "first answer")
+	assertInteractiveTextMessage(t, runner.conversation.history[0], llm.RoleUser, "first prompt")
+	assertInteractiveTextMessage(t, runner.conversation.history[1], llm.RoleAssistant, "first answer")
 
 	updated, err := store.Snapshot()
 	if err != nil {
@@ -148,18 +147,17 @@ func TestInteractiveSessionSlashNewStartsFreshSession(t *testing.T) {
 		t.Fatalf("sessionHistory() error = %v", err)
 	}
 	runner := &interactiveSession{
-		store:     store,
-		history:   history,
-		workspace: workspace,
+		conversation: conversationState{store: store, history: history},
+		workspace:    workspace,
 	}
 	defer func() {
-		if runner.store != nil {
-			if err := runner.store.Close(); err != nil {
+		if runner.conversation.store != nil {
+			if err := runner.conversation.store.Close(); err != nil {
 				t.Errorf("Close() error = %v", err)
 			}
 		}
 	}()
-	if len(runner.history) == 0 {
+	if len(runner.conversation.history) == 0 {
 		t.Fatal("history before /new is empty, want prior turns")
 	}
 
@@ -178,11 +176,11 @@ func TestInteractiveSessionSlashNewStartsFreshSession(t *testing.T) {
 		}
 	}
 	// Detach is lazy: no file exists until the next prompt is accepted.
-	if runner.store != nil {
-		t.Fatalf("store after /new = %q, want no session file yet", runner.store.Path())
+	if runner.conversation.store != nil {
+		t.Fatalf("store after /new = %q, want no session file yet", runner.conversation.store.Path())
 	}
-	if len(runner.history) != 0 {
-		t.Fatalf("history after /new = %d messages, want none", len(runner.history))
+	if len(runner.conversation.history) != 0 {
+		t.Fatalf("history after /new = %d messages, want none", len(runner.conversation.history))
 	}
 	state := runner.RuntimeState()
 	if !state.SessionChanged {
@@ -197,14 +195,14 @@ func TestInteractiveSessionSlashNewStartsFreshSession(t *testing.T) {
 	if err := runner.ensureSessionStore(); err != nil {
 		t.Fatalf("ensureSessionStore() error = %v", err)
 	}
-	freshPath := runner.store.Path()
+	freshPath := runner.conversation.store.Path()
 	if freshPath == sessionPath {
 		t.Fatalf("store path after /new = %q, want a fresh session file", freshPath)
 	}
 	if want := filepath.Join(workspacePath, ".aice", "sessions"); !strings.HasPrefix(freshPath, want) {
 		t.Errorf("store path after /new = %q, want it under %q", freshPath, want)
 	}
-	fresh, err := runner.store.Snapshot()
+	fresh, err := runner.conversation.store.Snapshot()
 	if err != nil {
 		t.Fatalf("Snapshot() error = %v", err)
 	}
@@ -255,12 +253,11 @@ func TestInteractiveSessionSlashNewRejectsArgumentsAndActiveRun(t *testing.T) {
 		t.Fatalf("sessionHistory() error = %v", err)
 	}
 	runner := &interactiveSession{
-		store:     store,
-		history:   history,
-		workspace: workspace,
+		conversation: conversationState{store: store, history: history},
+		workspace:    workspace,
 	}
 	defer func() {
-		if err := runner.store.Close(); err != nil {
+		if err := runner.conversation.store.Close(); err != nil {
 			t.Errorf("Close() error = %v", err)
 		}
 	}()
@@ -272,14 +269,14 @@ func TestInteractiveSessionSlashNewRejectsArgumentsAndActiveRun(t *testing.T) {
 		t.Fatal("/new with arguments error = nil, want usage error")
 	}
 
-	runner.activeMainRun = &mainRunState{}
+	runner.conversation.activeMainRun = &mainRunState{}
 	if _, err := runner.RunSlashCommand(t.Context(), tui.SlashCommandRequest{
 		Name: "new",
 	}); err == nil || !strings.Contains(err.Error(), "while a response is running") {
 		t.Fatalf("/new during a run error = %v, want active-run refusal", err)
 	}
-	runner.activeMainRun = nil
-	if got := runner.store.Path(); got != sessionPath {
+	runner.conversation.activeMainRun = nil
+	if got := runner.conversation.store.Path(); got != sessionPath {
 		t.Fatalf("store path after refused /new = %q, want %q", got, sessionPath)
 	}
 	matches, err := filepath.Glob(filepath.Join(workspacePath, ".aice", "sessions", "*.jsonl"))
@@ -301,7 +298,7 @@ func TestInteractiveSessionSlashNewRemovesEmptyPreviousSession(t *testing.T) {
 	}
 	emptyPath := filepath.Join(t.TempDir(), "empty.jsonl")
 	empty := createAppTestSession(t, emptyPath, workspacePath)
-	runner := &interactiveSession{store: empty, workspace: workspace}
+	runner := &interactiveSession{conversation: conversationState{store: empty}, workspace: workspace}
 
 	output, err := runner.RunSlashCommand(t.Context(), tui.SlashCommandRequest{
 		Name: "new",
@@ -312,9 +309,9 @@ func TestInteractiveSessionSlashNewRemovesEmptyPreviousSession(t *testing.T) {
 	if output != "Started new session" {
 		t.Errorf("/new output = %q, want a plain start without a preserved line", output)
 	}
-	if runner.store != nil {
-		t.Fatalf("store after /new = %q, want no session file yet", runner.store.Path())
-		if err := runner.store.Close(); err != nil {
+	if runner.conversation.store != nil {
+		t.Fatalf("store after /new = %q, want no session file yet", runner.conversation.store.Path())
+		if err := runner.conversation.store.Close(); err != nil {
 			t.Errorf("Close() error = %v", err)
 		}
 	}
@@ -349,8 +346,8 @@ func TestInteractiveSessionSlashCommandsExposeSelectionMenus(t *testing.T) {
 		t.Fatal("DeepSeek V4 Pro test model is unavailable")
 	}
 	runner := &interactiveSession{
-		store: store,
-		model: selectedModel,
+		conversation: conversationState{store: store},
+		model:        selectedModel,
 		options: llm.StreamOptions{
 			Thinking: llm.ThinkingLevelHigh,
 		},
@@ -529,9 +526,8 @@ func TestInteractiveSessionSlashCommandCompactsAndReloadsHistory(
 		providers:                  defaultProviders(),
 	}}
 	runner := &interactiveSession{
-		application: application,
-		store:       store,
-		history:     history,
+		application:  application,
+		conversation: conversationState{store: store, history: history},
 	}
 
 	output, err := runner.RunSlashCommand(t.Context(), tui.SlashCommandRequest{
@@ -543,15 +539,15 @@ func TestInteractiveSessionSlashCommandCompactsAndReloadsHistory(
 	if !strings.Contains(output, "retained 1 recent turn(s)") {
 		t.Errorf("/compact output = %q, want retained count", output)
 	}
-	if len(runner.history) != 3 {
-		t.Fatalf("history after compaction = %d, want summary and recent turn", len(runner.history))
+	if len(runner.conversation.history) != 3 {
+		t.Fatalf("history after compaction = %d, want summary and recent turn", len(runner.conversation.history))
 	}
-	summary, ok := runner.history[0].(llm.CompactionSummaryMessage)
+	summary, ok := runner.conversation.history[0].(llm.CompactionSummaryMessage)
 	if !ok || summary.Summary != "interactive checkpoint" {
-		t.Fatalf("compaction summary = %#v", runner.history[0])
+		t.Fatalf("compaction summary = %#v", runner.conversation.history[0])
 	}
-	assertInteractiveTextMessage(t, runner.history[1], llm.RoleUser, "second prompt")
-	assertInteractiveTextMessage(t, runner.history[2], llm.RoleAssistant, "second answer")
+	assertInteractiveTextMessage(t, runner.conversation.history[1], llm.RoleUser, "second prompt")
+	assertInteractiveTextMessage(t, runner.conversation.history[2], llm.RoleAssistant, "second answer")
 
 	updated, err := store.Snapshot()
 	if err != nil {
@@ -565,7 +561,7 @@ func TestInteractiveSessionSlashCommandCompactsAndReloadsHistory(
 func TestInteractiveSessionSlashCommandsRejectInvalidArguments(t *testing.T) {
 	t.Parallel()
 
-	runner := &interactiveSession{store: new(session.Store)}
+	runner := &interactiveSession{conversation: conversationState{store: new(session.Store)}}
 	tests := []struct {
 		name    string
 		request tui.SlashCommandRequest

@@ -76,7 +76,7 @@ func newSideHarness(
 	harness.session = &interactiveSession{
 		application:   harness.application,
 		loop:          loop,
-		store:         harness.store,
+		conversation:  conversationState{store: harness.store},
 		model:         model,
 		options:       llm.StreamOptions{Thinking: llm.ClampThinkingLevel(model, configuration.Thinking)},
 		configuration: configuration,
@@ -238,7 +238,7 @@ func TestSideThreadFreezesNonemptySnapshotAndSettings(t *testing.T) {
 	model.ThinkingLevelMap[llm.ThinkingLevelOff] = llm.ThinkingValue("xhigh")
 	model.InputModalities[0] = llm.InputModalityUnknown
 	temperature = 0.9
-	harness.session.history[0].(llm.UserMessage).Content[0].Text = "MUTATED MAIN QUESTION"
+	harness.session.conversation.history[0].(llm.UserMessage).Content[0].Text = "MUTATED MAIN QUESTION"
 	if err := runInteractive(t.Context(), harness.session, "second main question", nil); err != nil {
 		t.Fatalf("second main Run() error = %v", err)
 	}
@@ -641,9 +641,9 @@ func TestSideThreadSnapshotIncludesActivePromptBeforeFirstCommit(t *testing.T) {
 	if bytes.Contains(storeBefore, []byte("main question")) {
 		t.Fatal("main prompt persisted to the store before its first commit")
 	}
-	harness.session.historyMu.Lock()
-	historyLen := len(harness.session.history)
-	harness.session.historyMu.Unlock()
+	harness.session.conversation.historyMu.Lock()
+	historyLen := len(harness.session.conversation.history)
+	harness.session.conversation.historyMu.Unlock()
 	if historyLen != 0 {
 		t.Fatalf("session history length = %d, want 0 before first commit", historyLen)
 	}
@@ -789,9 +789,9 @@ func TestSideThreadTurnsLeaveParentStateUntouched(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadFile() error = %v", err)
 	}
-	harness.session.historyMu.Lock()
-	historyBefore := slices.Clone(harness.session.history)
-	harness.session.historyMu.Unlock()
+	harness.session.conversation.historyMu.Lock()
+	historyBefore := slices.Clone(harness.session.conversation.history)
+	harness.session.conversation.historyMu.Unlock()
 	usageBefore := harness.session.totalUsage
 
 	_, side, err := harness.session.CreateSideThread("side question")
@@ -811,9 +811,9 @@ func TestSideThreadTurnsLeaveParentStateUntouched(t *testing.T) {
 	if !bytes.Equal(storeBefore, storeAfter) {
 		t.Fatal("side turns changed the durable Session store")
 	}
-	harness.session.historyMu.Lock()
-	historyAfter := slices.Clone(harness.session.history)
-	harness.session.historyMu.Unlock()
+	harness.session.conversation.historyMu.Lock()
+	historyAfter := slices.Clone(harness.session.conversation.history)
+	harness.session.conversation.historyMu.Unlock()
 	if !slices.EqualFunc(historyBefore, historyAfter, func(a, b llm.AgentMessage) bool {
 		return reflect.DeepEqual(a, b)
 	}) {
@@ -1090,9 +1090,9 @@ func TestSideThreadDeepCloneIsolationRichNestedFields(t *testing.T) {
 		}
 		return sideModel, nil
 	})
-	harness.session.historyMu.Lock()
-	harness.session.history = history
-	harness.session.historyMu.Unlock()
+	harness.session.conversation.historyMu.Lock()
+	harness.session.conversation.history = history
+	harness.session.conversation.historyMu.Unlock()
 
 	_, side, err := harness.session.CreateSideThread("side question")
 	if err != nil {
@@ -1277,7 +1277,7 @@ func TestSideThreadConcurrentSnapshotsConsistent(t *testing.T) {
 				return
 			default:
 			}
-			if err := harness.session.reloadHistory(); err != nil {
+			if err := harness.session.conversation.reloadHistory(); err != nil {
 				t.Errorf("reloadHistory() error = %v", err)
 			}
 			time.Sleep(time.Millisecond)

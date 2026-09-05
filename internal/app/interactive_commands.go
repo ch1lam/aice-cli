@@ -278,11 +278,11 @@ func (s *interactiveSession) checkoutMenu() *interaction.CommandMenu {
 			Arguments:   "root",
 		}},
 	}
-	if s.store == nil {
+	if s.conversation.store == nil {
 		return menu
 	}
 
-	snapshot, err := s.store.Snapshot()
+	snapshot, err := s.conversation.store.Snapshot()
 	if err != nil {
 		return menu
 	}
@@ -362,7 +362,7 @@ func (s *interactiveSession) RunSlashCommand(
 }
 
 func (s *interactiveSession) requireSessionStore() error {
-	if s.store == nil {
+	if s.conversation.store == nil {
 		return fmt.Errorf("app: no session started yet; send your first prompt to begin")
 	}
 	return nil
@@ -391,7 +391,7 @@ func (s *interactiveSession) slashTree(
 	if err := requireNoSlashCommandArguments(request); err != nil {
 		return "", err
 	}
-	snapshot, err := s.store.Snapshot()
+	snapshot, err := s.conversation.store.Snapshot()
 	if err != nil {
 		return "", fmt.Errorf("app: read Session tree: %w", err)
 	}
@@ -414,11 +414,11 @@ func (s *interactiveSession) slashCheckout(
 		return "", err
 	}
 	output := new(bytes.Buffer)
-	changed, err := checkoutSessionStore(ctx, s.store, entry, output)
+	changed, err := checkoutSessionStore(ctx, s.conversation.store, entry, output)
 	if err != nil {
 		return "", err
 	}
-	if err := s.reloadHistory(); err != nil {
+	if err := s.conversation.reloadHistory(); err != nil {
 		return "", err
 	}
 	if changed {
@@ -442,11 +442,11 @@ func (s *interactiveSession) slashCompact(
 	if s.application == nil {
 		return "", fmt.Errorf("app: application is required")
 	}
-	output, err := s.application.compactSession(ctx, s.store)
+	output, err := s.application.compactSession(ctx, s.conversation.store)
 	if err != nil {
 		return "", err
 	}
-	if err := s.reloadHistory(); err != nil {
+	if err := s.conversation.reloadHistory(); err != nil {
 		return "", err
 	}
 	return output, nil
@@ -465,22 +465,22 @@ func (s *interactiveSession) slashNew(
 	if err := requireNoSlashCommandArguments(request); err != nil {
 		return "", err
 	}
-	s.historyMu.RLock()
-	active := s.activeMainRun != nil
-	s.historyMu.RUnlock()
+	s.conversation.historyMu.RLock()
+	active := s.conversation.activeMainRun != nil
+	s.conversation.historyMu.RUnlock()
 	if active {
 		return "", fmt.Errorf("app: cannot start a new Session while a response is running")
 	}
 	// Serialize with turn commits the same way reloadHistory does. The
 	// active-run check above makes a concurrent commit impossible through
 	// the TUI, which only submits slash commands while idle.
-	s.historySyncMu.Lock()
-	defer s.historySyncMu.Unlock()
-	previous := s.store
-	s.store = nil
-	s.historyMu.Lock()
-	s.history = nil
-	s.historyMu.Unlock()
+	s.conversation.historySyncMu.Lock()
+	defer s.conversation.historySyncMu.Unlock()
+	previous := s.conversation.store
+	s.conversation.store = nil
+	s.conversation.historyMu.Lock()
+	s.conversation.history = nil
+	s.conversation.historyMu.Unlock()
 	s.stateMu.Lock()
 	s.totalUsage = llm.Usage{}
 	s.sessionChanged = true
@@ -705,8 +705,8 @@ func (s *interactiveSession) RuntimeState() interaction.RuntimeState {
 
 func (s *interactiveSession) usageSnapshot() interaction.DisplayUsage {
 	var total *llm.Usage
-	if s.store != nil {
-		if snapshot, err := s.store.Snapshot(); err == nil {
+	if s.conversation.store != nil {
+		if snapshot, err := s.conversation.store.Snapshot(); err == nil {
 			usage := session.TotalUsage(snapshot)
 			total = &usage
 		}
@@ -1058,7 +1058,7 @@ func savedSettingMessage(
 }
 
 func (s *interactiveSession) sessionInformation() (string, error) {
-	snapshot, err := s.store.Snapshot()
+	snapshot, err := s.conversation.store.Snapshot()
 	if err != nil {
 		return "", fmt.Errorf("app: read Session information: %w", err)
 	}
@@ -1073,32 +1073,12 @@ func (s *interactiveSession) sessionInformation() (string, error) {
 	return fmt.Sprintf(
 		"Session %s\nPath: %s\nActive leaf: %s\nNodes: %d\nTurns: %d\nCompactions: %d",
 		snapshot.Header.ID,
-		s.store.Path(),
+		s.conversation.store.Path(),
 		leaf,
 		len(nodes),
 		len(snapshot.Turns),
 		len(snapshot.Compactions),
 	), nil
-}
-
-// reloadHistory serializes with main interaction commits, rebuilds from the
-// durable store without holding the in-memory lock, then publishes the complete
-// replacement in one short critical section.
-func (s *interactiveSession) reloadHistory() error {
-	s.historySyncMu.Lock()
-	defer s.historySyncMu.Unlock()
-	snapshot, err := s.store.Snapshot()
-	if err != nil {
-		return fmt.Errorf("app: reload Session snapshot: %w", err)
-	}
-	history, err := sessionHistory(snapshot)
-	if err != nil {
-		return fmt.Errorf("app: reload Session history: %w", err)
-	}
-	s.historyMu.Lock()
-	s.history = history
-	s.historyMu.Unlock()
-	return nil
 }
 
 func requireNoSlashCommandArguments(

@@ -74,6 +74,14 @@ The TUI is display state: it submits inputs to that capability, mirrors pending
 inputs for presentation, and never owns delivery semantics or writes Session
 truth. A future GUI must use the same application-owned active-run boundary.
 
+Within the application, conversation state owns the Session store, derived
+history, and accepted messages from the active interaction. It serializes
+durable history updates separately from the short lock used by side-question
+snapshots. The interactive coordinator freezes model settings and handles
+workspace and command lifecycle; an active run owns its input mailbox and
+execution. This keeps transcript publication and copying at one state owner
+without exposing storage concerns to the frontend or Agent Loop.
+
 ## Package map
 
 | Package | Ownership |

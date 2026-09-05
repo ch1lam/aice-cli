@@ -114,7 +114,7 @@ func (s *interactiveSession) CreateSideThread(
 			"app: side question is required",
 		)
 	}
-	snapshot, err := s.sideSnapshot()
+	snapshot, err := s.conversation.sideSnapshot()
 	if err != nil {
 		return interaction.SideThread{}, nil, fmt.Errorf(
 			"app: snapshot parent context: %w",
@@ -320,26 +320,6 @@ func sideThreadSystemPrompt(parent string) string {
 		return sideThreadInstruction
 	}
 	return parent + "\n\n" + sideThreadInstruction
-}
-
-// sideSnapshot returns a deep clone of the committed parent history plus
-// accepted user inputs and complete model/tool turns from the current main
-// interaction. In-progress assistant output remains private to the main run.
-func (s *interactiveSession) sideSnapshot() ([]llm.AgentMessage, error) {
-	s.historyMu.RLock()
-	defer s.historyMu.RUnlock()
-	snapshot, err := cloneAgentMessages(s.history)
-	if err != nil {
-		return nil, err
-	}
-	if s.activeMainRun == nil {
-		return snapshot, nil
-	}
-	pending, err := cloneAgentMessages(s.activeMainRun.pendingMessages)
-	if err != nil {
-		return nil, err
-	}
-	return append(snapshot, pending...), nil
 }
 
 // cloneModel deep-copies every mutable field of a model selection so a side

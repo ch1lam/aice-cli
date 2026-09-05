@@ -1046,9 +1046,9 @@ func TestInteractiveSessionPersistsCancellationAfterToolSideEffect(t *testing.T)
 	loop := mustAppLoop(t, model, []agent.Tool{tool})
 	store := createAppTestSession(t, sessionPath, workspace)
 	runner := &interactiveSession{
-		loop:  loop,
-		store: store,
-		model: deepseek.DefaultModel(),
+		loop:         loop,
+		conversation: conversationState{store: store},
+		model:        deepseek.DefaultModel(),
 	}
 
 	err := runInteractive(ctx, runner, "mutate then continue", nil)
@@ -1107,9 +1107,9 @@ func TestInteractiveSessionPersistsToolErrorAndRecovery(t *testing.T) {
 	loop := mustAppLoop(t, model, []agent.Tool{tool})
 	store := createAppTestSession(t, sessionPath, workspace)
 	runner := &interactiveSession{
-		loop:  loop,
-		store: store,
-		model: deepseek.DefaultModel(),
+		loop:         loop,
+		conversation: conversationState{store: store},
+		model:        deepseek.DefaultModel(),
 	}
 
 	if err := runInteractive(t.Context(), runner, "mutate", nil); err != nil {
@@ -1156,9 +1156,9 @@ func TestInteractiveSessionPersistsSteerInsideActiveRun(t *testing.T) {
 	}
 	store := createAppTestSession(t, sessionPath, workspace)
 	runner := &interactiveSession{
-		loop:  loop,
-		store: store,
-		model: deepseek.DefaultModel(),
+		loop:         loop,
+		conversation: conversationState{store: store},
+		model:        deepseek.DefaultModel(),
 	}
 	var displays []tui.DisplayEvent
 	active, err := runner.NewRun(tui.RunInput{Prompt: "inspect"}, func(
@@ -1224,9 +1224,9 @@ func TestInteractiveSessionPersistsFollowUpsAsSeparateTurns(t *testing.T) {
 	}
 	store := createAppTestSession(t, sessionPath, workspace)
 	runner := &interactiveSession{
-		loop:  loop,
-		store: store,
-		model: deepseek.DefaultModel(),
+		loop:         loop,
+		conversation: conversationState{store: store},
+		model:        deepseek.DefaultModel(),
 	}
 	var displays []tui.DisplayEvent
 	active, err := runner.NewRun(tui.RunInput{Prompt: "inspect"}, func(
