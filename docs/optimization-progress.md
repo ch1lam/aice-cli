@@ -37,7 +37,7 @@ work in an earlier row. Temporary transitions must still build and pass tests.
 | 4c | Context: compact at paired model-round boundaries with frozen model configuration; stateless print uses memory | Behavioral | 200 rounds, at least three compactions, steering, repeated compaction and failure cases | Pending |
 | 4d | Session consumers: navigation, display, usage, Harbor | Behavioral | Real CLI/TUI exercises; conversion fixtures and correct usage accounting | Pending |
 | 5a | Existing prompt and Bash feedback: proportional engineering guidance, bounded head/tail output | Behavioral | Output/error regressions; custom prompt replacement unchanged | Pending |
-| 5b | Offline evaluation: Go HTTP service and Python data CLI lifecycles | Evaluation | Requirements, independent tests, reference implementations, review rubric, recorded runs | Pending |
+| 5b | Offline evaluation: Go HTTP service and Python data CLI lifecycles | Evaluation | Requirements, independent tests, reference implementations, review rubric, recorded runs | Complete |
 | 5c | Documentation and completion audit | Documentation | Requirement-by-requirement evidence and honest limitations | Pending |
 
 ## Baseline and gaps
@@ -83,6 +83,14 @@ an evidence-based maintenance rubric. An independent rerun of `verify.py`
 passed all reference tests under the race detector and detected each intended
 seed failure. Reference vet passed. The sample module is isolated from AICE's
 runtime module; these are fixture checks, not a model-quality result.
+
+The Python CSV evaluation family is in `evals/python-cli`. An independent
+`fixture.py self-check` rerun passed 21/25/29/31 cases across the four stages;
+each generated fault was detected at its expected case, including a CRLF output
+mutation checked as bytes. Its validation record includes a maintenance review
+and limitations. Both families cover creation, extension, defect repair, and
+behavior-preserving refactoring followed by a new requirement; actual model
+runs and their code-quality measurements remain unperformed.
 
 ## Completion audit
 
