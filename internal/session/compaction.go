@@ -210,7 +210,8 @@ func compactionSummaryMessage(
 	retainedMessages []MessageEntry,
 ) (llm.CompactionSummaryMessage, error) {
 	timestamp := compaction.CreatedAt
-	for _, entry := range retainedMessages {
+	oldRetainedCount := min(compaction.RetainedMessageCount, len(retainedMessages))
+	for _, entry := range retainedMessages[:oldRetainedCount] {
 		messageTime := agentMessageTimestamp(entry.Message)
 		if messageTime < timestamp {
 			continue
@@ -231,8 +232,8 @@ func compactionSummaryMessage(
 			err,
 		)
 	}
-	// Ordering on the derived transcript uses the last retained message,
-	// not wall-clock time from the constructor.
+	// Invalidate usage from the checkpoint's retained prefix, while allowing
+	// messages appended after the checkpoint to establish fresh usage.
 	message.Timestamp = timestamp
 	return message, nil
 }

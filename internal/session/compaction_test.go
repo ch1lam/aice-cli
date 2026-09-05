@@ -39,12 +39,24 @@ func TestCompactionPreservesSourcesAndRestoresContext(t *testing.T) {
 	if err := store.AppendCompaction(t.Context(), checkpoint); err != nil {
 		t.Fatal(err)
 	}
+	model := llm.Model{Provider: "custom-provider", ID: "requested-model"}
+	compacted, err := session.BuildContext(snapshotOf(t, store))
+	if err != nil {
+		t.Fatal(err)
+	}
+	compactedProjection, err := llm.AgentMessagesToMessages(compacted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if estimate := llm.EstimateContextTokens(llm.Request{Model: model, Messages: compactedProjection}); estimate.UsageTokens != 0 {
+		t.Fatalf("pre-checkpoint usage reused: %#v", estimate)
+	}
 	third := appendMessages(t, store, "third", namedTextMessages("third prompt", "third answer", 30)...)
 	if !strings.HasPrefix(string(fileBytes(t, path)), string(before)) {
 		t.Fatal("source bytes replaced")
 	}
 	store.Close()
-	store, err := session.Open(t.Context(), path)
+	store, err = session.Open(t.Context(), path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,8 +82,8 @@ func TestCompactionPreservesSourcesAndRestoresContext(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if estimate := llm.EstimateContextTokens(llm.Request{Messages: projected}); estimate.UsageTokens != 0 {
-		t.Fatalf("stale usage reused: %#v", estimate)
+	if estimate := llm.EstimateContextTokens(llm.Request{Model: model, Messages: projected}); estimate.UsageTokens != 30 {
+		t.Fatalf("post-checkpoint usage not restored: %#v", estimate)
 	}
 	snapshot.Compactions[0].Usage.Cost.Total = 99
 	if snapshotOf(t, store).Compactions[0].Usage.Cost.Total != 0.01 {
@@ -239,5 +251,23 @@ func TestPrepareCompactionNothingAndTimestampOverflow(t *testing.T) {
 	}
 	if _, err := session.BuildContext(snapshotOf(t, store)); err == nil {
 		t.Fatal("timestamp overflow accepted")
+	}
+}
+
+func TestPrepareCompactionWithoutModelUsesTextEstimate(t *testing.T) {
+	t.Parallel()
+	store := mustCreate(t, filepath.Join(t.TempDir(), "session.jsonl"))
+	messages := textMessages()
+	assistant := messages[1].(llm.AssistantMessage)
+	assistant.Usage = llm.Usage{TotalTokens: 999999}
+	appendMessages(t, store, "first", messages[0], assistant)
+	appendMessages(t, store, "second", messages[0], assistant)
+	preparation, err := session.PrepareCompaction(snapshotOf(t, store), session.CompactionSettings{KeepRecentTokens: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Two repetitions of "hello" (2 tokens) + "hello back" (3 tokens).
+	if preparation.TokensBefore != 10 {
+		t.Fatalf("preparation reused model-specific usage: %d", preparation.TokensBefore)
 	}
 }

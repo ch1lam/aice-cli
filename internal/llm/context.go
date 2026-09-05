@@ -7,6 +7,17 @@ import (
 
 const estimatedImageUnits int64 = 4_800
 
+// ContextBudgets returns the compaction reserve and request safety allowance.
+// Unknown windows have no budget; small windows scale both allowances down.
+func ContextBudgets(contextWindow int64) (reserve, safety int64) {
+	if contextWindow <= 0 {
+		return 0, 0
+	}
+	reserve = min(int64(16_384), max(contextWindow/4, 1))
+	safety = min(int64(4_096), max(reserve/4, 1))
+	return reserve, safety
+}
+
 // ContextUsageEstimate explains how an estimated context size was derived.
 type ContextUsageEstimate struct {
 	Tokens         int64
@@ -26,11 +37,12 @@ func ContextTokens(usage Usage) int64 {
 		positive(usage.CacheWriteTokens)
 }
 
-// EstimateContextTokens prefers the last applicable provider usage block and
-// estimates only messages added after it. Without usage, it estimates the full
+// EstimateContextTokens prefers the last applicable provider usage block
+// from the requested provider/model and estimates only messages added after it.
+// Without an identified model or applicable usage, it estimates the full
 // request context, including the system prompt and tool definitions.
 func EstimateContextTokens(request Request) ContextUsageEstimate {
-	usage, usageIndex, ok := lastApplicableUsage(request.Messages)
+	usage, usageIndex, ok := lastApplicableUsage(request.Messages, request.Model)
 	if ok {
 		usageTokens := ContextTokens(usage)
 		var trailingTokens int64
@@ -95,7 +107,11 @@ func EstimateMessageTokens(message Message) int64 {
 	}
 }
 
-func lastApplicableUsage(messages []Message) (Usage, int, bool) {
+func lastApplicableUsage(messages []Message, model Model) (Usage, int, bool) {
+	if model.Provider == "" || model.ID == "" {
+		return Usage{}, -1, false
+	}
+
 	latestPrefixTimestamp := int64(-1 << 63)
 	var usage Usage
 	usageIndex := -1
@@ -103,7 +119,7 @@ func lastApplicableUsage(messages []Message) (Usage, int, bool) {
 	for index, message := range messages {
 		// A compaction summary starts a new context window. Usage on retained
 		// assistant messages belongs to the replaced window and must not trigger
-		// another compaction until a newer user prefix begins.
+		// another compaction until newer messages belong to the new window.
 		if isCompactionSummary(message) {
 			usage = Usage{}
 			usageIndex = -1
@@ -118,6 +134,8 @@ func lastApplicableUsage(messages []Message) (Usage, int, bool) {
 		}
 		if !usageReset {
 			if assistant, ok := message.(AssistantMessage); ok &&
+				assistant.Provider == model.Provider &&
+				assistant.ModelID == model.ID &&
 				assistant.Timestamp >= latestPrefixTimestamp &&
 				assistant.StopReason != StopReasonAborted &&
 				assistant.StopReason != StopReasonError &&

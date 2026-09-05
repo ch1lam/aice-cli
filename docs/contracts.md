@@ -102,6 +102,11 @@ permission messages. Guard grant scope is defined in
   continuations may settle the current interaction past that threshold, but a
   new interaction must not begin there. Product behavior of compaction is in
   [Recovery and compaction](execution-sessions.md#recovery-and-compaction).
+- Context estimates reuse provider usage only when its requested provider/model
+  identity matches the current request and it belongs to the current context
+  after compaction. Otherwise they estimate the complete prompt, tools, and
+  messages. Main requests and summary requests share the same reserve/safety
+  budget calculation; this remains an estimate, not a provider tokenizer.
 - Tests use faux providers and fake tools. Default tests never require paid
   APIs or real credentials.
 

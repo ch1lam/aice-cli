@@ -7,11 +7,6 @@ import (
 	"github.com/ch1lam/aice-cli/internal/llm"
 )
 
-const (
-	contextReserveTokens int64 = 16_384
-	contextSafetyTokens  int64 = 4_096
-)
-
 func (e *runExecution) request() (llm.Request, error) {
 	return e.requestForHistory(e.history)
 }
@@ -44,7 +39,7 @@ func protectRequestContext(request llm.Request) (llm.Request, error) {
 		return request, nil
 	}
 
-	_, safetyTokens := contextBudgets(contextWindow)
+	_, safetyTokens := llm.ContextBudgets(contextWindow)
 	estimate := llm.EstimateContextTokens(request)
 	requestedMaxTokens := request.Options.MaxTokens
 	if requestedMaxTokens == 0 {
@@ -70,7 +65,7 @@ func checkCompactionThreshold(request llm.Request) error {
 	if contextWindow <= 0 {
 		return nil
 	}
-	reserveTokens, _ := contextBudgets(contextWindow)
+	reserveTokens, _ := llm.ContextBudgets(contextWindow)
 	estimate := llm.EstimateContextTokens(request)
 	compactionThreshold := contextWindow - reserveTokens
 	if estimate.Tokens <= compactionThreshold {
@@ -84,16 +79,4 @@ func checkCompactionThreshold(request llm.Request) error {
 		compactionThreshold,
 		contextWindow,
 	)
-}
-
-func contextBudgets(contextWindow int64) (int64, int64) {
-	reserveTokens := contextReserveTokens
-	if quarterWindow := contextWindow / 4; quarterWindow < reserveTokens {
-		reserveTokens = max(quarterWindow, 1)
-	}
-	safetyTokens := contextSafetyTokens
-	if quarterReserve := reserveTokens / 4; quarterReserve < safetyTokens {
-		safetyTokens = max(quarterReserve, 1)
-	}
-	return reserveTokens, safetyTokens
 }

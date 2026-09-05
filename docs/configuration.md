@@ -118,6 +118,14 @@ An explicit `MaxTokens` value, including one produced by context protection,
 is still sent. Responses models use that protocol's normal output-token field.
 Other providers keep sending their model default.
 
+For arbitrary `custom` models, AICE currently assumes a 128,000-token context
+window and 16,384-token output limit, text input, and standard thinking levels.
+These are fixed metadata defaults from `custom.ModelForID`, not capabilities
+queried from the endpoint. A server with smaller limits or different reasoning
+support can reject a request despite local budget checks. Automatic capability
+detection is not implemented, and absent custom pricing is not evidence that a
+request is free.
+
 `default_project_trust` defaults to `ask`. Automation should use `--approve`
 or `--no-approve` rather than a broad environment override. See [Project Trust
 and prompts](project-trust.md) for protected resources and decision order.

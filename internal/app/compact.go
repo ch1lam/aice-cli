@@ -359,10 +359,7 @@ func compactionTranscriptBudget(contextWindow int64) int64 {
 		return 0
 	}
 
-	reserveTokens := int64(16_384)
-	if quarterWindow := contextWindow / 4; quarterWindow < reserveTokens {
-		reserveTokens = max(quarterWindow, 1)
-	}
+	reserveTokens, _ := llm.ContextBudgets(contextWindow)
 	const promptOverheadTokens int64 = 2_048
 	budget := contextWindow - reserveTokens - promptOverheadTokens
 	if budget > 0 {

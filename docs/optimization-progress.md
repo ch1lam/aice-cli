@@ -169,6 +169,15 @@ counts across repeated summaries, and exercise a TUI model change. Full tests,
 vet, and race passed. Safe-boundary timing, memory compaction, model-aware
 budget estimates, and summary retry/print accounting remain in step 4c.
 
+Context estimates now reuse provider usage only for the requested provider/model;
+unknown or changed identities fall back to full prompt/tool/message estimates.
+Agent request protection and summary transcript sizing share their existing
+reserve formula. A Session checkpoint invalidates only its old retained prefix,
+so messages appended after it can establish fresh usage. A real Session reopen
+regression checks both sides of that boundary. Full tests, vet, and race passed
+(Session race: 86.247 seconds). Custom endpoint metadata assumptions are now
+explicit in Configuration. Safe-round timing and memory compaction remain open.
+
 The Go HTTP evaluation family is in `evals/go-service`. It includes independent
 HTTP acceptance, generated starting points, one reference implementation, and
 an evidence-based maintenance rubric. An independent rerun of `verify.py`
