@@ -165,7 +165,7 @@ func newModel(
 	externalCommands ...SlashCommand,
 ) model {
 	input := textarea.New()
-	input.Prompt = "┃ "
+	input.Prompt = ""
 	input.Placeholder = defaultPlaceholder
 	input.ShowLineNumbers = false
 	input.DynamicHeight = true
@@ -181,8 +181,6 @@ func newModel(
 	inputStyles.Focused.CursorLineNumber = mutedStyle
 	inputStyles.Focused.EndOfBuffer = mutedStyle
 	inputStyles.Focused.LineNumber = mutedStyle
-	inputStyles.Focused.Prompt = lipgloss.NewStyle().
-		Foreground(accentColor)
 	inputStyles.Focused.Placeholder = mutedStyle
 	inputStyles.Blurred.Base = bodyStyle
 	inputStyles.Blurred.Text = bodyStyle
@@ -190,7 +188,6 @@ func newModel(
 	inputStyles.Blurred.CursorLineNumber = mutedStyle
 	inputStyles.Blurred.EndOfBuffer = mutedStyle
 	inputStyles.Blurred.LineNumber = mutedStyle
-	inputStyles.Blurred.Prompt = lipgloss.NewStyle().Foreground(subtleColor)
 	inputStyles.Blurred.Placeholder = mutedStyle
 	inputStyles.Cursor.Color = secondaryColor
 	input.SetStyles(inputStyles)

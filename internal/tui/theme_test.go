@@ -192,12 +192,10 @@ func TestComposerUsesScreenBackground(t *testing.T) {
 		{name: "focused base", style: inputStyles.Focused.Base},
 		{name: "focused text", style: inputStyles.Focused.Text},
 		{name: "focused cursor line", style: inputStyles.Focused.CursorLine},
-		{name: "focused prompt", style: inputStyles.Focused.Prompt},
 		{name: "focused placeholder", style: inputStyles.Focused.Placeholder},
 		{name: "blurred base", style: inputStyles.Blurred.Base},
 		{name: "blurred text", style: inputStyles.Blurred.Text},
 		{name: "blurred cursor line", style: inputStyles.Blurred.CursorLine},
-		{name: "blurred prompt", style: inputStyles.Blurred.Prompt},
 		{name: "blurred placeholder", style: inputStyles.Blurred.Placeholder},
 	}
 

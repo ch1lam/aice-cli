@@ -172,13 +172,7 @@ func (m model) composerView(width int) string {
 		if count := utf8.RuneCountInString(m.input.Value()); count > 0 {
 			value = bodyStyle.Render(strings.Repeat("•", count))
 		}
-		promptStyle := lipgloss.NewStyle().Foreground(accentColor)
-		if !m.input.Focused() {
-			promptStyle = lipgloss.NewStyle().Foreground(subtleColor)
-		}
-		return style.Width(width).Render(
-			promptStyle.Render("┃ ") + value,
-		)
+		return style.Width(width).Render(value)
 	}
 	parts := m.composerParts(contentWidth)
 	return style.Width(width).Render(strings.Join(parts, "\n"))

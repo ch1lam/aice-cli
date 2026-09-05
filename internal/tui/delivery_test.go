@@ -104,7 +104,7 @@ func TestModelEnterSteersAndControlEnterQueues(t *testing.T) {
 		switch {
 		case strings.Contains(line, "↳ run after this"):
 			queueLine = index
-		case strings.Contains(line, "┃ Ask about this workspace"):
+		case strings.Contains(line, "Ask about this workspace"):
 			inputLine = index
 		}
 	}
