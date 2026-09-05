@@ -64,7 +64,7 @@ func (s *interactiveSession) NewRun(
 
 // ensureSessionStore lazily creates the session file when the first prompt
 // is accepted. File creation is local disk I/O without a caller context,
-// so it uses a background context; every later turn appends through
+// so it uses a background context; every later message appends through
 // recordMessage with the run's own context.
 func (s *interactiveSession) ensureSessionStore() error {
 	s.conversation.historySyncMu.Lock()

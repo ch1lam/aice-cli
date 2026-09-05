@@ -462,7 +462,7 @@ func (s *interactiveSession) slashCompact(
 
 // slashNew detaches from the current Session without creating a file: the
 // next accepted prompt starts a fresh one through ensureSessionStore. The
-// previous file is left untouched when it recorded turns; a previous file
+// previous file is left untouched when it recorded messages; a previous file
 // that never recorded anything is removed instead of lingering as a
 // header-only stub. The TUI discards the visible transcript through the
 // same sessionChanged channel as /checkout.
@@ -479,7 +479,7 @@ func (s *interactiveSession) slashNew(
 	if active {
 		return "", fmt.Errorf("app: cannot start a new Session while a response is running")
 	}
-	// Serialize with turn commits the same way reloadHistory does. The
+	// Serialize with message appends the same way reloadHistory does. The
 	// active-run check above makes a concurrent commit impossible through
 	// the TUI, which only submits slash commands while idle.
 	s.conversation.historySyncMu.Lock()

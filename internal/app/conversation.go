@@ -108,7 +108,7 @@ func (c *conversationState) recordMessage(ctx context.Context, state *mainRunSta
 }
 
 // sideSnapshot returns a deep clone of the committed parent history plus
-// accepted user inputs and complete model/tool turns from the current main
+// accepted user inputs and complete model/tool rounds from the current main
 // interaction. In-progress assistant output remains private to the main run.
 func (c *conversationState) sideSnapshot() ([]llm.AgentMessage, error) {
 	c.historyMu.RLock()

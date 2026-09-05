@@ -15,7 +15,7 @@ tests. Search for the named symbols rather than relying on line numbers.
 | Startup and composition | [app.go](../internal/app/app.go): `NewCommand`, `newRunEnvironment`, `Interactive`, `Print` | [app_test.go](../internal/app/app_test.go), [app_tools_test.go](../internal/app/app_tools_test.go) |
 | Model/tool loop | [loop.go](../internal/agent/loop.go), [tools.go](../internal/agent/tools.go), [finalize.go](../internal/agent/finalize.go) | [loop_test.go](../internal/agent/loop_test.go), [retry_test.go](../internal/agent/retry_test.go) |
 | Steering and follow-up | [interactive_run.go](../internal/app/interactive_run.go), [mailbox.go](../internal/interaction/mailbox.go) | [interactive_run_test.go](../internal/app/interactive_run_test.go), [mailbox_test.go](../internal/interaction/mailbox_test.go) |
-| Durable history and compaction | [app/session.go](../internal/app/session.go), [app/compact.go](../internal/app/compact.go), [session/store.go](../internal/session/store.go), [session/replay.go](../internal/session/replay.go) | [store_test.go](../internal/session/store_test.go), [app/compact_test.go](../internal/app/compact_test.go) |
+| Durable history and compaction | [app/conversation.go](../internal/app/conversation.go), [app/session.go](../internal/app/session.go), [app/compact.go](../internal/app/compact.go), [session/store.go](../internal/session/store.go), [session/replay.go](../internal/session/replay.go) | [store_test.go](../internal/session/store_test.go), [app/compact_test.go](../internal/app/compact_test.go), [long_task_test.go](../internal/app/long_task_test.go) |
 | Permission checks and replies | [guard_bridge.go](../internal/app/guard_bridge.go), [guard.go](../internal/guard/guard.go), [command.go](../internal/guard/command.go) | [app_guard_test.go](../internal/app/app_guard_test.go), [guard_test.go](../internal/guard/guard_test.go) |
 | Trust, prompts, Skills | [project_trust.go](../internal/app/project_trust.go), [project_prompt.go](../internal/app/project_prompt.go), [skills.go](../internal/app/skills.go), [skill/discover.go](../internal/skill/discover.go) | [project_prompt_test.go](../internal/app/project_prompt_test.go), [skills_test.go](../internal/app/skills_test.go), [resource_test.go](../internal/trust/resource_test.go) |
 | Interactive commands and `/new` | [interactive_commands.go](../internal/app/interactive_commands.go), [tui/command.go](../internal/tui/command.go) | [interactive_commands_test.go](../internal/app/interactive_commands_test.go), [command_test.go](../internal/tui/command_test.go) |
@@ -28,6 +28,33 @@ ends, and whether it is durable. Prefer an ordinary tool, application command,
 provider adapter, or UI change when that boundary is sufficient. Changes to
 Loop control flow or persistence need a specific reason and boundary tests;
 adding a framework is not a substitute for identifying the owner.
+
+### Follow one interactive request
+
+`newRunEnvironment` assembles the workspace, startup instructions, tools and
+Guard. `Interactive` owns their process lifetime and closes the conversation's
+current Store after the frontend stops. A model change rebuilds the Loop while
+reusing the Session's Guard; `/new` detaches the Store and clears its grants.
+
+`NewRun` creates an input mailbox and lazily starts storage. `beginMainRun`
+freezes settings and registers one transcript owner. The Loop accepts inputs,
+records ended assistants before tools, and records results before later effects.
+`conversationState.recordMessage` serializes durable appends and publishes only
+paired history; side questions copy that view under its short read lock. Model
+streaming and filesystem I/O do not run while that read lock is held.
+
+The frontend controller creates the cancellation context and owns its update
+channel. Cancellation reaches the Loop, providers and tools; the message recorder
+has a bounded cleanup deadline for known results. `endMainRun` removes transient
+ownership, the mailbox seals, and the controller closes the update channel.
+Frontend shutdown cancels and waits for its controllers before application
+storage closes. See [Runtime contracts](contracts.md#concurrency-and-tui).
+
+These boundaries provide concrete maintenance checks: an authorization lifetime
+change belongs to Session/Guard wiring, Bash output changes stay in the tool,
+and a Session record change reaches storage, app coordination and consumers
+without requiring provider SDK changes. Avoid splitting these owners merely to
+reduce file size; extract a new boundary when a real change needs it.
 
 ## Resolving discrepancies
 

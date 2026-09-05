@@ -50,6 +50,18 @@ For model comparisons, preserve initial/final source and refactor-only diffs,
 record settings and interventions, and review readability, change locality and
 the need for each abstraction. Agree on models and cost before paid evaluation.
 
+The 2026-09-06 macOS verification at `52e4fb9` passed full tests, vet and race.
+Both long-task paths completed 200 main requests and 32 summaries; sixteen
+interactive summaries retained the injected correction. During staged checks,
+actual CLI text/JSON and PTY runs completed six rounds with three summaries, verified
+Session counts and summary usage, and exercised recovery/navigation and `/new`.
+Old-format rejection preserved file bytes. Nine Harbor stand-in conversion
+tests passed; the real Harbor schema/runtime and Linux/Windows execution were
+not tested locally. The fixture reference results are recorded in
+[Go results](../evals/go-service/RESULTS.md) and
+[Python validation](../evals/python-cli/VALIDATION.md). No paid model evaluation
+was performed, and real-model code quality remains unmeasured.
+
 ## Git and Collaboration
 
 - Multiple sessions may share this worktree. Preserve unrelated staged, unstaged, and untracked changes.
