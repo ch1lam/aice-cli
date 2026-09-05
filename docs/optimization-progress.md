@@ -88,14 +88,27 @@ Session grants now reset when `/new` detaches, while invalid or active-run
 commands leave them intact. Menu labels say "for this session". Guard and app
 lifecycle regressions cover all grant kinds, reuse across runs and Loop rebuilds,
 configured rules/read roots, and yolo preservation. Full tests, vet, and race
-passed. Actual interactive verification remains part of the completion audit.
+passed. Actual interactive verification is recorded below.
 
 The Skills reminder now says restart only. `/trust` offers saved choices and
 rejects temporary choice arguments; saved decisions explicitly take effect on
 restart. Regressions verify both saved Trust and unchanged loaded context,
 while startup temporary trust/ignore still changes prompt loading without
-persisting. Full tests, vet, and race passed alongside the approval-scope fix;
-interactive verification remains pending.
+persisting. Full tests, vet, and race passed alongside the approval-scope fix.
+
+On 2026-09-06, a binary built at `f16d590` was exercised through an actual PTY
+with a temporary workspace and localhost-only OpenAI-compatible scripted server.
+The server requested a read of a known temporary text file, then ended its
+response; no paid model was used. The TUI showed the Session grant label,
+performed a second read without asking, and asked again after `/new`. CLI
+`session tree` still showed both prior interactions in the preserved file.
+The `/trust` menu showed only three saved choices, `/skills` said restart,
+and idle `/new` followed by exit left no Session file. Actual `--print` JSON
+reported a paired error for the unapproved external read and created no Session
+file. The first localhost request was blocked by the execution sandbox; the
+permitted rerun passed. The temporary server was stopped after verification.
+This covers the completed lifecycle fixes on macOS, not the pending v3 or
+long-interaction behavior.
 
 The Go HTTP evaluation family is in `evals/go-service`. It includes independent
 HTTP acceptance, generated starting points, one reference implementation, and
