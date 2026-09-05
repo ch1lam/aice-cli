@@ -269,3 +269,10 @@ A summary request may use the normal provider retry policy. Only its final
 natural stop with nonempty text becomes a checkpoint; checkpoint usage includes
 all summary attempts that reported usage, including failed attempts. A failed
 summary does not append a checkpoint or change source messages.
+
+Print totals include known automatic-summary usage even if the summary or
+checkpoint save fails. Durable Session totals, including the TUI and Harbor
+projection, count saved source assistants and successful checkpoints only.
+Without a saved checkpoint, that summary's usage cannot be recovered after
+reopening; AICE does not maintain a separate billing ledger. Missing provider
+usage is unknown, not evidence that a request was free.

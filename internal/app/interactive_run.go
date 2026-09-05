@@ -221,7 +221,7 @@ func (s *interactiveSession) compactHistory(
 	s.conversation.historySyncMu.Lock()
 	defer s.conversation.historySyncMu.Unlock()
 
-	history, err := s.application.compactHistory(ctx, s.conversation.store, currentHistory, configured)
+	history, err := s.application.compactHistory(ctx, s.conversation.store, currentHistory, configured, nil)
 	if err != nil {
 		return nil, err
 	}

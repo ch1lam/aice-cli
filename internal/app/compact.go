@@ -46,9 +46,10 @@ If the transcript contains a prior compaction summary, update it with newer mess
 func (a *application) historyCompactor(
 	store *session.Store,
 	configured *configuredModel,
+	onUsage func(llm.Usage),
 ) agent.HistoryCompactor {
 	return func(ctx context.Context, history []llm.AgentMessage) ([]llm.AgentMessage, error) {
-		return a.compactHistory(ctx, store, history, configured)
+		return a.compactHistory(ctx, store, history, configured, onUsage)
 	}
 }
 
@@ -101,7 +102,7 @@ func (a *application) compactSession(
 ) (string, error) {
 	_, preparation, err := a.compactStoredHistory(ctx, store, configured, session.CompactionSettings{
 		KeepRecentTokens: a.dependencies.compactionKeepRecentTokens,
-	})
+	}, nil)
 	if err != nil {
 		return "", err
 	}
@@ -117,6 +118,7 @@ func (a *application) compactStoredHistory(
 	store *session.Store,
 	configured *configuredModel,
 	settings session.CompactionSettings,
+	onUsage func(llm.Usage),
 ) ([]llm.AgentMessage, session.CompactionPreparation, error) {
 	if store == nil {
 		return nil, session.CompactionPreparation{}, fmt.Errorf("app: session store is required")
@@ -140,6 +142,9 @@ func (a *application) compactStoredHistory(
 		return nil, preparation, err
 	}
 	summary, usage, err := a.generateCompactionSummary(ctx, preparation.MessagesToSummarize, *configured)
+	if onUsage != nil {
+		onUsage(usage)
+	}
 	if err != nil {
 		return nil, preparation, err
 	}
@@ -177,6 +182,7 @@ func (a *application) compactHistory(
 	store *session.Store,
 	history []llm.AgentMessage,
 	configured *configuredModel,
+	onUsage func(llm.Usage),
 ) ([]llm.AgentMessage, error) {
 	settings := session.CompactionSettings{KeepRecentTokens: a.dependencies.compactionKeepRecentTokens}
 	if configured.model.ContextWindow > 0 {
@@ -184,7 +190,7 @@ func (a *application) compactHistory(
 		settings.KeepRecentTokens = min(settings.KeepRecentTokens, settings.MaxRetainedTokens)
 	}
 	if store != nil {
-		compacted, _, err := a.compactStoredHistory(ctx, store, configured, settings)
+		compacted, _, err := a.compactStoredHistory(ctx, store, configured, settings, onUsage)
 		return compacted, err
 	}
 	preparation, err := session.PrepareContextCompaction(history, settings)
@@ -194,7 +200,10 @@ func (a *application) compactHistory(
 	if err := a.initializeConfiguredModel(configured); err != nil {
 		return nil, err
 	}
-	text, _, err := a.generateCompactionSummary(ctx, preparation.MessagesToSummarize, *configured)
+	text, usage, err := a.generateCompactionSummary(ctx, preparation.MessagesToSummarize, *configured)
+	if onUsage != nil {
+		onUsage(usage)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -444,33 +453,34 @@ func (a *application) generateCompactionSummary(
 		Prompt:       prompt,
 		Options:      options,
 	}, nil)
+	var usage llm.Usage
+	for _, round := range result.ModelRounds {
+		usage = llm.AddUsage(usage, round.Assistant.Usage)
+	}
+
 	if err != nil {
-		return "", llm.Usage{}, fmt.Errorf(
+		return "", usage, fmt.Errorf(
 			"app: generate compaction summary: %w",
 			err,
 		)
 	}
 	if len(result.ModelRounds) == 0 {
-		return "", llm.Usage{}, fmt.Errorf(
+		return "", usage, fmt.Errorf(
 			"app: generate compaction summary: model returned no model rounds",
 		)
 	}
 	assistant := result.ModelRounds[len(result.ModelRounds)-1].Assistant
 	if assistant.StopReason != llm.StopReasonStop {
-		return "", llm.Usage{}, fmt.Errorf(
+		return "", usage, fmt.Errorf(
 			"app: generate compaction summary: model stopped with reason %q",
 			assistant.StopReason,
 		)
 	}
 	summary := visibleText(assistant.Content, "\n\n")
 	if summary == "" {
-		return "", llm.Usage{}, fmt.Errorf(
+		return "", usage, fmt.Errorf(
 			"app: generate compaction summary: model returned no visible text",
 		)
-	}
-	var usage llm.Usage
-	for _, round := range result.ModelRounds {
-		usage = llm.AddUsage(usage, round.Assistant.Usage)
 	}
 	return summary, usage, nil
 }

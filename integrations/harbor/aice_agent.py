@@ -406,7 +406,7 @@ def _atif_usage(usage: dict[str, Any]) -> tuple[int, int, int, float | None]:
     cache_write_tokens = _nonnegative_int(usage.get("cache_write_tokens"))
     output_tokens = _nonnegative_int(usage.get("output_tokens"))
     # Harbor defines prompt_tokens as the complete input, including cache
-    # buckets; providers differ on whether AICE's input_tokens includes them.
+    # buckets; AICE input_tokens already excludes both cache buckets.
     prompt_tokens = input_tokens + cache_read_tokens + cache_write_tokens
 
     cost_usd: float | None = None

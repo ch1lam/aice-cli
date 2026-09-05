@@ -149,8 +149,13 @@ Only assistant messages produce `message_end`; tool-result message lifecycle
 events are represented by `tool_execution_end` and are not duplicated. Tool
 result text is limited to 16 KiB per event, including the trailing
 `...[truncated]` marker. Durations and delays are integer milliseconds. The
-`agent_end.usage` value is the sum of every assistant `message_end` observed in
-the run, including failed attempts that report usage.
+`agent_end.usage` value includes every assistant `message_end` observed in the
+run plus automatic summary attempts that report usage. Summary calls do not
+produce main-assistant events. Failed summaries and failed checkpoint writes
+still contribute known usage to the current print total; prior Session usage
+is not added again. The text printer reports the same accounting in its total
+diagnostic. As with other events, cancellation or output failure may prevent
+the final JSON event from being delivered.
 
 ## Concurrency and TUI
 

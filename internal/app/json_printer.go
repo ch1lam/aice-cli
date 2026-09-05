@@ -33,6 +33,10 @@ func newJSONPrinter(output io.Writer) *jsonPrinter {
 	}
 }
 
+func (p *jsonPrinter) AddUsage(usage llm.Usage) {
+	p.totalUsage = llm.AddUsage(p.totalUsage, usage)
+}
+
 func (p *jsonPrinter) Accept(ctx context.Context, event agent.AgentEvent) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -80,7 +84,7 @@ func (p *jsonPrinter) messageEnd(event agent.AgentEvent) any {
 		return nil
 	}
 	text, thinking := assistantContent(message)
-	p.totalUsage = llm.AddUsage(p.totalUsage, message.Usage)
+	p.AddUsage(message.Usage)
 	model := message.ResponseModelID
 	if model == "" {
 		model = message.ModelID

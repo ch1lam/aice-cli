@@ -233,7 +233,7 @@ func (a *application) Print(
 		History:         history,
 		Prompt:          prompt,
 		Options:         environment.options,
-		Compactor:       a.historyCompactor(store, &configured),
+		Compactor:       a.historyCompactor(store, &configured, sink.AddUsage),
 		MessageRecorder: recorder,
 	}, sink.Accept)
 	finishErr := sink.Finish()

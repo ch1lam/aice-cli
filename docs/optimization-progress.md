@@ -219,6 +219,15 @@ three compactions. The TUI exited normally and both servers were stopped.
 These six-round checks supplement, but do not replace, the pending 200-round
 and summary interruption acceptance.
 
+Print now adds automatic summary usage through an explicit callback, once per
+summary operation, without fake main-assistant events. Text/JSON tests cover
+persisted/stateless retry success and terminal summary failure; a write-failure
+test confirms known usage is reported before checkpoint persistence. Full tests
+and vet, plus focused printer/compaction race tests, passed. Actual CLI text and
+JSON runs each verified 480,100 input and 45 output tokens across six main calls
+and three summaries, with only six main `message_end` events. Both storage modes
+passed. Unsaved summary usage remains unavailable after reopening, as documented.
+
 The Go HTTP evaluation family is in `evals/go-service`. It includes independent
 HTTP acceptance, generated starting points, one reference implementation, and
 an evidence-based maintenance rubric. An independent rerun of `verify.py`

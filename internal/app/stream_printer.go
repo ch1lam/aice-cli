@@ -12,6 +12,7 @@ import (
 )
 
 type printSink interface {
+	AddUsage(llm.Usage)
 	Accept(ctx context.Context, event agent.AgentEvent) error
 	Finish() error
 }
@@ -49,6 +50,10 @@ func newStreamPrinter(output, diagnostics io.Writer) *streamPrinter {
 		now:         time.Now,
 		toolStarts:  make(map[string]time.Time),
 	}
+}
+
+func (p *streamPrinter) AddUsage(usage llm.Usage) {
+	p.totalUsage = llm.AddUsage(p.totalUsage, usage)
 }
 
 func (p *streamPrinter) Accept(ctx context.Context, event agent.AgentEvent) error {
@@ -109,7 +114,7 @@ func (p *streamPrinter) finishAssistant(event agent.AgentEvent) error {
 	if err := p.finishLine(); err != nil {
 		return err
 	}
-	p.totalUsage = llm.AddUsage(p.totalUsage, message.Usage)
+	p.AddUsage(message.Usage)
 	return p.writeProgress(
 		"aice: assistant stop_reason=%s %s",
 		message.StopReason,
