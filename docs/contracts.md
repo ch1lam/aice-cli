@@ -57,12 +57,15 @@ is tracked in [Maintenance](maintenance.md#guard-approval-behavior).
 - Before each tool execution the loop consults the consumer-defined `Guard`
   interface (`internal/agent` defines it, `internal/guard` implements it,
   `internal/app` wires it). `NewLoop` requires a non-nil `Guard` when the
-  tool set is non-empty. `deny` blocks with a paired error result, `ask`
-  delegates to the interactive `GuardAskHandler` (non-interactive treats
-  `ask` as `deny` — fail-closed); `allow` proceeds. The handler returns
+  tool set is non-empty. `deny` blocks with a paired error result. An `ask`
+  contains a nonempty list of independent approval scopes after all applicable
+  hard-deny checks. The loop passes each scope to `GuardAskHandler` and executes
+  the tool only after every scope is allowed. Non-interactive asks fail closed;
+  `allow` proceeds. The handler returns
   `GuardAskReply` with Decision `allow` or `deny` and optional `Feedback`.
   Deny feedback is appended to the paired error tool result. A nil handler
-  fails closed. Product behavior of the gate, including Session-scoped grants,
+  fails closed, as do invalid results/replies and canceled approval waits.
+  Product behavior of the gate, including Session-scoped grants,
   is in [Tool execution and
   Sessions](execution-sessions.md#tool-execution-boundary).
 - Never execute an incomplete or invalid streamed tool call. If a response

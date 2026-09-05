@@ -215,7 +215,7 @@ func TestGuardAdapterYoloRemapsAskOnly(t *testing.T) {
 				Arguments: outsideArgs,
 			},
 			want:     agent.GuardAllow,
-			wantRule: "pathAccess.ask",
+			wantRule: "",
 		},
 		{
 			name: "path access ask stays ask without yolo",
@@ -268,7 +268,11 @@ func TestGuardAdapterYoloRemapsAskOnly(t *testing.T) {
 			if got.Decision != test.want {
 				t.Fatalf("Check() decision = %q, want %q", got.Decision, test.want)
 			}
-			if test.wantRule != "" && got.RuleID != test.wantRule {
+			rule := got.RuleID
+			if len(got.Approvals) > 0 {
+				rule = got.Approvals[0].RuleID
+			}
+			if test.wantRule != "" && rule != test.wantRule {
 				t.Fatalf("Check() rule = %q, want %q", got.RuleID, test.wantRule)
 			}
 		})
@@ -277,23 +281,27 @@ func TestGuardAdapterYoloRemapsAskOnly(t *testing.T) {
 
 func TestMapGuardResultPassesPattern(t *testing.T) {
 	t.Parallel()
-
-	got := mapGuardResult(guard.Result{
-		Decision: guard.DecisionAsk,
-		Reason:   "dangerous",
-		RuleID:   guardRuleDangerous,
-		Pattern:  "rm -rf x",
-		Action: guard.Action{
-			Kind:     "command",
-			Command:  "rm -rf x",
-			ToolName: "bash",
-		},
-	})
-	if got.Pattern != "rm -rf x" {
-		t.Fatalf("mapGuardResult() Pattern = %q, want %q", got.Pattern, "rm -rf x")
+	got := mapGuardResult(guard.Result{Decision: guard.DecisionAsk, Approvals: []guard.Approval{{
+		Reason: "dangerous", RuleID: guardRuleDangerous, Pattern: "rm -rf x",
+		Action: guard.Action{Kind: "command", Command: "rm -rf x", ToolName: "bash"},
+	}}})
+	if got.Decision != agent.GuardAsk || len(got.Approvals) != 1 || got.Approvals[0].Pattern != "rm -rf x" {
+		t.Fatalf("mapped approvals = %#v", got)
 	}
-	if got.Decision != agent.GuardAsk {
-		t.Fatalf("mapGuardResult() Decision = %q, want ask", got.Decision)
+}
+
+func TestMapGuardResultRejectsInvalidApprovalLists(t *testing.T) {
+	t.Parallel()
+	for _, result := range []guard.Result{
+		{Decision: guard.DecisionAsk},
+		{Decision: guard.DecisionAsk, Approvals: []guard.Approval{{Reason: "missing rule"}}},
+		{Decision: guard.DecisionAsk, Approvals: []guard.Approval{{RuleID: "missing reason"}}},
+		{Decision: guard.DecisionAllow, Approvals: []guard.Approval{{RuleID: "pending", Reason: "pending"}}},
+	} {
+		mapped := mapGuardResult(result)
+		if mapped.Decision != agent.GuardDeny || !mapped.Valid() || len(mapped.Approvals) != 0 {
+			t.Fatalf("invalid input became eligible for yolo: %#v", mapped)
+		}
 	}
 }
 
@@ -315,13 +323,13 @@ func TestGuardAskOptions(t *testing.T) {
 	tests := []struct {
 		name     string
 		skip     bool
-		result   agent.GuardResult
+		result   agent.GuardApproval
 		toolName string
 		wantIDs  []string
 	}{
 		{
 			name: "path access asks for file and directory",
-			result: agent.GuardResult{
+			result: agent.GuardApproval{
 				RuleID: guardRulePathAccessAsk,
 				Action: agent.GuardAction{Kind: "file", Path: outsideFile, ToolName: "read"},
 			},
@@ -336,7 +344,7 @@ func TestGuardAskOptions(t *testing.T) {
 		{
 			name: "path access omits directory at home",
 			skip: homeFile == "",
-			result: agent.GuardResult{
+			result: agent.GuardApproval{
 				RuleID: guardRulePathAccessAsk,
 				Action: agent.GuardAction{Kind: "file", Path: homeFile, ToolName: "read"},
 			},
@@ -349,7 +357,7 @@ func TestGuardAskOptions(t *testing.T) {
 		},
 		{
 			name: "dangerous command with prefix",
-			result: agent.GuardResult{
+			result: agent.GuardApproval{
 				RuleID: guardRuleDangerous,
 				Action: agent.GuardAction{
 					Kind:     "command",
@@ -367,7 +375,7 @@ func TestGuardAskOptions(t *testing.T) {
 		},
 		{
 			name: "dangerous rm has no prefix",
-			result: agent.GuardResult{
+			result: agent.GuardApproval{
 				RuleID: guardRuleDangerous,
 				Action: agent.GuardAction{
 					Kind:     "command",
@@ -384,7 +392,7 @@ func TestGuardAskOptions(t *testing.T) {
 		},
 		{
 			name: "unknown tool",
-			result: agent.GuardResult{
+			result: agent.GuardApproval{
 				RuleID: guardRuleUnknownTool,
 				Action: agent.GuardAction{ToolName: "web_search"},
 			},
@@ -397,7 +405,7 @@ func TestGuardAskOptions(t *testing.T) {
 		},
 		{
 			name: "unknown rule id",
-			result: agent.GuardResult{
+			result: agent.GuardApproval{
 				RuleID: "policy.secret-files",
 				Action: agent.GuardAction{Kind: "file", Path: outsideFile, ToolName: "read"},
 			},
@@ -440,7 +448,7 @@ func TestGuardAskOptionsPathAccessLabels(t *testing.T) {
 	}
 	path := filepath.Join(t.TempDir(), "nested", "secret.txt")
 	abs := gate.ResolveAbsolute(path, "read")
-	options := guardAskOptions(gate, "read", agent.GuardResult{
+	options := guardAskOptions(gate, "read", agent.GuardApproval{
 		RuleID: guardRulePathAccessAsk,
 		Action: agent.GuardAction{Kind: "file", Path: path, ToolName: "read"},
 	})
@@ -471,10 +479,9 @@ func TestHandleGuardAskHighlightFromPattern(t *testing.T) {
 
 	session := newGuardAskSession(t, t.TempDir(), guard.Config{})
 	call := llm.ToolCall{ID: "call-1", Name: "bash", Arguments: mustCommandArgs(t, "rm -rf x")}
-	_, request := handleGuardAskWithReply(t, session, call, agent.GuardResult{
-		Decision: agent.GuardAsk,
-		RuleID:   guardRuleDangerous,
-		Pattern:  "rm -rf x",
+	_, request := handleGuardAskWithReply(t, session, call, agent.GuardApproval{
+		RuleID:  guardRuleDangerous,
+		Pattern: "rm -rf x",
 		Action: agent.GuardAction{
 			Kind:     "command",
 			Command:  "rm -rf x",
@@ -551,11 +558,11 @@ func TestHandleGuardAskAllowRunToolGrantsUnknownTool(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Check() error = %v", err)
 	}
-	if before.Decision != guard.DecisionAsk || before.RuleID != guardRuleUnknownTool {
-		t.Fatalf("Check() before grant = %q %q, want ask unknownTool", before.Decision, before.RuleID)
+	if before.Decision != guard.DecisionAsk || before.Approvals[0].RuleID != guardRuleUnknownTool {
+		t.Fatalf("Check() before grant = %q %q, want ask unknownTool", before.Decision, before.Approvals[0].RuleID)
 	}
 
-	reply, _ := handleGuardAskWithReply(t, session, call, mapGuardResult(before), interaction.GuardReply{
+	reply, _ := handleGuardAskWithReply(t, session, call, mapGuardApproval(before.Approvals[0]), interaction.GuardReply{
 		OptionID: guardOptionAllowRunTool,
 	})
 	if reply.Decision != agent.GuardAllow {
@@ -600,11 +607,11 @@ func TestHandleGuardAskAllowRunPrefixBypassesDangerous(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Check() error = %v", err)
 	}
-	if before.Decision != guard.DecisionAsk || before.RuleID != guardRuleDangerous {
-		t.Fatalf("Check() before grant = %q %q, want ask dangerous", before.Decision, before.RuleID)
+	if before.Decision != guard.DecisionAsk || before.Approvals[0].RuleID != guardRuleDangerous {
+		t.Fatalf("Check() before grant = %q %q, want ask dangerous", before.Decision, before.Approvals[0].RuleID)
 	}
 
-	reply, request := handleGuardAskWithReply(t, session, call, mapGuardResult(before), interaction.GuardReply{
+	reply, request := handleGuardAskWithReply(t, session, call, mapGuardApproval(before.Approvals[0]), interaction.GuardReply{
 		OptionID: guardOptionAllowRunPrefix,
 	})
 	if !guardOptionOffered(request.Options, guardOptionAllowRunPrefix) {
@@ -670,10 +677,9 @@ func TestHandleGuardAskRejectsUnofferedOption(t *testing.T) {
 			Name:      "web_search",
 			Arguments: json.RawMessage(`{}`),
 		}
-		reply, request := handleGuardAskWithReply(t, session, call, agent.GuardResult{
-			Decision: agent.GuardAsk,
-			RuleID:   "policy.secret-files",
-			Action:   agent.GuardAction{ToolName: "web_search"},
+		reply, request := handleGuardAskWithReply(t, session, call, agent.GuardApproval{
+			RuleID: "policy.secret-files",
+			Action: agent.GuardAction{ToolName: "web_search"},
 		}, interaction.GuardReply{OptionID: guardOptionAllowRunTool})
 		if guardOptionOffered(request.Options, guardOptionAllowRunTool) {
 			t.Fatal("unknown rule unexpectedly offered allow-run-tool")
@@ -773,7 +779,7 @@ func handleGuardAskWithReply(
 	t *testing.T,
 	session *interactiveSession,
 	call llm.ToolCall,
-	result agent.GuardResult,
+	result agent.GuardApproval,
 	reply interaction.GuardReply,
 ) (agent.GuardAskReply, interaction.GuardRequest) {
 	t.Helper()
@@ -790,10 +796,9 @@ func handleGuardAskWithReply(
 	return got, <-requests
 }
 
-func pathAccessAskResult(path string) agent.GuardResult {
-	return agent.GuardResult{
-		Decision: agent.GuardAsk,
-		RuleID:   guardRulePathAccessAsk,
+func pathAccessAskResult(path string) agent.GuardApproval {
+	return agent.GuardApproval{
+		RuleID: guardRulePathAccessAsk,
 		Action: agent.GuardAction{
 			Kind:     "file",
 			Path:     path,

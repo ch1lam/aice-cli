@@ -42,7 +42,7 @@ func TestGuardExactCommandGrant(t *testing.T) {
 			if result.Decision != test.want {
 				t.Fatalf("Check(%q) = %#v, want %s", test.command, result, test.want)
 			}
-			if test.want == DecisionAsk && result.RuleID != "permissionGate.dangerous" {
+			if test.want == DecisionAsk && result.Approvals[0].RuleID != "permissionGate.dangerous" {
 				t.Fatalf("Check(%q) rule = %q, want dangerous-command check", test.command, result.RuleID)
 			}
 		})
@@ -112,7 +112,11 @@ func TestGuardExactCommandGrantPreservesOtherChecks(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if result.Decision != test.want || result.RuleID != test.rule {
+			rule := result.RuleID
+			if len(result.Approvals) > 0 {
+				rule = result.Approvals[0].RuleID
+			}
+			if result.Decision != test.want || rule != test.rule {
 				t.Fatalf("Check(%q) = %#v, want %s with rule %q", test.command, result, test.want, test.rule)
 			}
 		})

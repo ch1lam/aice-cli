@@ -1644,19 +1644,27 @@ func TestMapGuardResultFailsClosedOnUnknownDecision(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			got := mapGuardResult(guard.Result{
+			input := guard.Result{
 				Decision: test.decision,
 				Reason:   "mapped",
 				RuleID:   "file.ok",
 				Action:   action,
-			})
+			}
+			if test.decision == guard.DecisionAsk {
+				input = guard.Result{Decision: guard.DecisionAsk, Approvals: []guard.Approval{{Reason: "mapped", RuleID: "file.ok", Action: action}}}
+			}
+			got := mapGuardResult(input)
+			rule, gotAction := got.RuleID, got.Action
+			if len(got.Approvals) > 0 {
+				rule, gotAction = got.Approvals[0].RuleID, got.Approvals[0].Action
+			}
 			if got.Decision != test.want {
 				t.Fatalf("mapGuardResult() decision = %q, want %q", got.Decision, test.want)
 			}
-			if got.RuleID != test.wantRule {
+			if rule != test.wantRule {
 				t.Fatalf("mapGuardResult() rule = %q, want %q", got.RuleID, test.wantRule)
 			}
-			if got.Action.Path != action.Path || got.Action.ToolName != action.ToolName {
+			if gotAction.Path != action.Path || gotAction.ToolName != action.ToolName {
 				t.Fatalf("mapGuardResult() action = %#v, want path and tool preserved", got.Action)
 			}
 		})

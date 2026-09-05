@@ -26,13 +26,43 @@ const (
 	GuardAsk   GuardDecision = "ask"
 )
 
-// GuardResult carries the outcome of a single guard check.
+// GuardResult is the final decision after checking every applicable policy.
+// GuardAsk requires a nonempty Approvals list; denial diagnostics describe the
+// hard block and never offer an approval that could override it.
 type GuardResult struct {
-	Decision GuardDecision
-	Reason   string
-	RuleID   string
-	Pattern  string
-	Action   GuardAction
+	Decision  GuardDecision
+	Reason    string
+	RuleID    string
+	Action    GuardAction
+	Approvals []GuardApproval
+}
+
+// GuardApproval is one independent permission scope for this tool invocation.
+type GuardApproval struct {
+	Reason  string
+	RuleID  string
+	Pattern string
+	Action  GuardAction
+}
+
+// Valid checks the execution contract before prompting or applying yolo.
+func (r GuardResult) Valid() bool {
+	switch r.Decision {
+	case GuardAllow, GuardDeny:
+		return len(r.Approvals) == 0
+	case GuardAsk:
+		if len(r.Approvals) == 0 {
+			return false
+		}
+		for _, approval := range r.Approvals {
+			if approval.RuleID == "" || approval.Reason == "" {
+				return false
+			}
+		}
+		return true
+	default:
+		return false
+	}
 }
 
 // GuardAction is the normalized action that triggered the guard decision.

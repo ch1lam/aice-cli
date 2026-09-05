@@ -26,15 +26,22 @@ const (
 	DecisionAsk   Decision = "ask"
 )
 
-// Result is the outcome of checking one Action against all policies.
+// Result is the final decision for a tool call. Denial diagnostics are separate
+// from the complete list of independent approvals required by an ask.
 type Result struct {
-	Decision Decision
-	Reason   string
-	RuleID   string
-	Action   Action
-	// Pattern is the dangerous fragment that matched, for TUI highlight.
-	// Set only on permissionGate.dangerous Ask; other branches leave it empty.
-	Pattern string
+	Decision  Decision
+	Reason    string
+	RuleID    string
+	Action    Action
+	Approvals []Approval
+}
+
+// Approval describes one scope requiring confirmation. It cannot override a deny.
+type Approval struct {
+	Reason  string
+	RuleID  string
+	Action  Action
+	Pattern string // dangerous command fragment for display
 }
 
 // fileTools are tools that carry a single file path argument.

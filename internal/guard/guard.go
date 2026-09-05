@@ -203,7 +203,8 @@ func (g *Guard) Workspace() string { return g.workspace }
 // Check evaluates one ToolCall against policies, permission gate, and path
 // access. It returns DecisionDeny for hard blocks and DecisionAsk when user
 // confirmation is required. Non-interactive callers treat Ask as Deny
-// (fail-closed); the interactive TUI maps Ask to a confirmation prompt.
+// (fail-closed); the interactive TUI confirms every approval in an Ask. Pending
+// asks never short-circuit checks that could deny the call.
 func (g *Guard) Check(ctx context.Context, call llm.ToolCall) (Result, error) {
 	if g == nil || !g.enabled {
 		return Result{Decision: DecisionAllow}, nil
@@ -221,14 +222,13 @@ func (g *Guard) Check(ctx context.Context, call llm.ToolCall) (Result, error) {
 		if g.sessionAllowedTools[call.Name] {
 			return Result{Decision: DecisionAllow}, nil
 		}
-		return Result{
-			Decision: DecisionAsk,
-			Reason:   fmt.Sprintf("tool %q is not recognized by the execution gate", call.Name),
-			RuleID:   "unknownTool",
-			Action:   Action{ToolName: call.Name},
-		}, nil
+		return Result{Decision: DecisionAsk, Approvals: []Approval{{
+			Reason: fmt.Sprintf("tool %q is not recognized by the execution gate", call.Name),
+			RuleID: "unknownTool", Action: Action{ToolName: call.Name},
+		}}}, nil
 	}
-	// 1. Permission gate: bash command shape (autoDeny -> deny, structural dangerous -> deny unless allowed)
+	var approvals []Approval
+	// 1. Permission gate: auto-deny blocks; dangerous commands require approval.
 	if call.Name == "bash" {
 		cmd := extractCommand(call.Arguments)
 		if cmd != "" {
@@ -244,13 +244,12 @@ func (g *Guard) Check(ctx context.Context, call llm.ToolCall) (Result, error) {
 				if g.useBuiltinStructural {
 					if desc, pat := structuralDangerousMatch(cmd); desc != "" {
 						if g.requireConfirmation {
-							return Result{
-								Decision: DecisionAsk,
-								Reason:   "Dangerous command requires confirmation (" + desc + "): " + pat,
-								RuleID:   "permissionGate.dangerous",
-								Action:   Action{Kind: "command", Command: cmd, ToolName: call.Name},
-								Pattern:  pat,
-							}, nil
+							approvals = append(approvals, Approval{
+								Reason:  "Dangerous command requires confirmation (" + desc + "): " + pat,
+								RuleID:  "permissionGate.dangerous",
+								Action:  Action{Kind: "command", Command: cmd, ToolName: call.Name},
+								Pattern: pat,
+							})
 						}
 					}
 					// When builtins are active, structural is authoritative; do not fall back to substring builtins
@@ -259,13 +258,12 @@ func (g *Guard) Check(ctx context.Context, call llm.ToolCall) (Result, error) {
 					// Custom patterns replace builtins: check substring/regex
 					if hit := matchCommandPattern(cmd, g.dangerousPatterns); hit != nil {
 						if g.requireConfirmation {
-							return Result{
-								Decision: DecisionAsk,
-								Reason:   formatCommandBlockReason(hit, ""),
-								RuleID:   "permissionGate.dangerous",
-								Action:   Action{Kind: "command", Command: cmd, ToolName: call.Name},
-								Pattern:  hit.source.Pattern,
-							}, nil
+							approvals = append(approvals, Approval{
+								Reason:  formatCommandBlockReason(hit, ""),
+								RuleID:  "permissionGate.dangerous",
+								Action:  Action{Kind: "command", Command: cmd, ToolName: call.Name},
+								Pattern: hit.source.Pattern,
+							})
 						}
 					}
 				}
@@ -274,9 +272,7 @@ func (g *Guard) Check(ctx context.Context, call llm.ToolCall) (Result, error) {
 	}
 	// 2. File policy + path access for extracted file actions
 	actions := extractActions(call)
-	if len(actions) == 0 {
-		return Result{Decision: DecisionAllow}, nil
-	}
+	seenPaths := make(map[string]bool)
 	for _, act := range actions {
 		// Session allow for file policy
 		key := normalizeTarget(act.Path, g.workspace)
@@ -315,7 +311,13 @@ func (g *Guard) Check(ctx context.Context, call llm.ToolCall) (Result, error) {
 		if g.pathAccessMode == PathAccessBlock {
 			return Result{Decision: DecisionDeny, Reason: fmt.Sprintf("Access to %s is blocked (outside working directory).", resolveForDisplay(abs, g.workspace)), RuleID: "pathAccess.block", Action: act}, nil
 		}
-		return Result{Decision: DecisionAsk, Reason: fmt.Sprintf("Access to %s requires confirmation (outside working directory).", resolveForDisplay(abs, g.workspace)), RuleID: "pathAccess.ask", Action: act}, nil
+		if !seenPaths[abs] {
+			seenPaths[abs] = true
+			approvals = append(approvals, Approval{Reason: fmt.Sprintf("Access to %s requires confirmation (outside working directory).", resolveForDisplay(abs, g.workspace)), RuleID: "pathAccess.ask", Action: act})
+		}
+	}
+	if len(approvals) > 0 {
+		return Result{Decision: DecisionAsk, Approvals: approvals}, nil
 	}
 	return Result{Decision: DecisionAllow}, nil
 }

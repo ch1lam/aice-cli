@@ -1097,9 +1097,8 @@ func TestLoopAskHandlerDenyIncludesUserFeedback(t *testing.T) {
 
 	const denyReason = "dangerous command requires confirmation"
 	askGate := fixedDecisionGuard{result: agent.GuardResult{
-		Decision: agent.GuardAsk,
-		Reason:   denyReason,
-		RuleID:   "permissionGate.dangerous",
+		Decision:  agent.GuardAsk,
+		Approvals: []agent.GuardApproval{{Reason: denyReason, RuleID: "permissionGate.dangerous"}},
 	}}
 
 	tests := []struct {
@@ -1110,7 +1109,7 @@ func TestLoopAskHandlerDenyIncludesUserFeedback(t *testing.T) {
 	}{
 		{
 			name: "deny with feedback",
-			handler: func(context.Context, llm.ToolCall, agent.GuardResult) (agent.GuardAskReply, error) {
+			handler: func(context.Context, llm.ToolCall, agent.GuardApproval) (agent.GuardAskReply, error) {
 				return agent.GuardAskReply{
 					Decision: agent.GuardDeny,
 					Feedback: "do not touch secrets",
@@ -1123,7 +1122,7 @@ func TestLoopAskHandlerDenyIncludesUserFeedback(t *testing.T) {
 		},
 		{
 			name: "deny without feedback",
-			handler: func(context.Context, llm.ToolCall, agent.GuardResult) (agent.GuardAskReply, error) {
+			handler: func(context.Context, llm.ToolCall, agent.GuardApproval) (agent.GuardAskReply, error) {
 				return agent.GuardAskReply{Decision: agent.GuardDeny}, nil
 			},
 			wantContains:    []string{denyReason},
@@ -1186,6 +1185,46 @@ func TestLoopAskHandlerDenyIncludesUserFeedback(t *testing.T) {
 				if strings.Contains(text, unwanted) {
 					t.Fatalf("tool result text = %q, must not contain %q", text, unwanted)
 				}
+			}
+		})
+	}
+}
+
+func TestLoopRejectsInvalidGuardResultsAndReplies(t *testing.T) {
+	t.Parallel()
+	validApproval := agent.GuardApproval{RuleID: "test.scope", Reason: "test approval"}
+	for _, test := range []struct {
+		name     string
+		result   agent.GuardResult
+		wantAsks int
+	}{
+		{"unknown decision", agent.GuardResult{Decision: "unknown"}, 0},
+		{"empty decision", agent.GuardResult{}, 0},
+		{"empty ask", agent.GuardResult{Decision: agent.GuardAsk}, 0},
+		{"missing scope", agent.GuardResult{Decision: agent.GuardAsk, Approvals: []agent.GuardApproval{{Reason: "test"}}}, 0},
+		{"allow with pending approval", agent.GuardResult{Decision: agent.GuardAllow, Approvals: []agent.GuardApproval{validApproval}}, 0},
+		{"invalid reply", agent.GuardResult{Decision: agent.GuardAsk, Approvals: []agent.GuardApproval{validApproval}}, 1},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			modelInfo := testModel()
+			first := assistantMessage(modelInfo, llm.StopReasonToolUse, toolCallPart("call-1", "read", `{}`))
+			second := assistantMessage(modelInfo, llm.StopReasonStop, textPart("stopped"))
+			model := &scriptedModel{scripts: []*streamScript{{events: terminalEvents(first)}, {events: terminalEvents(second)}}}
+			tool := newFakeTool("read", successfulTool)
+			asks := 0
+			loop := mustLoop(t, model, []agent.Tool{tool}, agent.WithGuard(fixedDecisionGuard{result: test.result}), agent.WithGuardAskHandler(func(context.Context, llm.ToolCall, agent.GuardApproval) (agent.GuardAskReply, error) {
+				asks++
+				return agent.GuardAskReply{Decision: agent.GuardAsk}, nil
+			}))
+			result, err := loop.Run(t.Context(), testInput(modelInfo, mustPrompt(t, "test gate")), nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(tool.calls) != 0 || asks != test.wantAsks {
+				t.Fatalf("calls=%d asks=%d", len(tool.calls), asks)
+			}
+			if len(result.ModelRounds) == 0 || len(result.ModelRounds[0].ToolResults) != 1 || !result.ModelRounds[0].ToolResults[0].IsError {
+				t.Fatalf("missing paired denial: %#v", result)
 			}
 		})
 	}

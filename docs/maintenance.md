@@ -59,24 +59,8 @@ forget; link to their owner when a copy adds no user value.
 
 ## Known discrepancies
 
-These findings were checked against `2109d2e` during the documentation review
-on 2026-09-05. They are unresolved implementation work, not newly approved
-behavior. This was a review of documentation and selected runtime boundaries,
-not an exhaustive correctness, security, or provider compatibility audit.
-Recheck an entry before changing its code.
-
-### Guard approval behavior
-
-**Early ask skips later policies — confirmed implementation mismatch.**
-`Guard.Check` returns immediately for a dangerous command, before checking file
-policies and all extracted paths. With an existence probe reporting a protected
-`.env`, `cat .env` returns `deny`, but `sudo cat .env` returns `ask`. The app's
-`--yolo` adapter promotes that ask, and the loop also proceeds directly after
-an interactive allow reply; neither completes the remaining checks.
-
-Reproduced at the decision boundary with a fake existence probe; no real secret
-file was read and no command was executed. Acceptance: a matching hard denial
-wins even when another rule asks, including multiple paths in one call.
-Interactive approval and `--yolo` must not bypass later policies. Test the
-combined rules through both Guard and the app/loop bridge, not only isolated
-matchers.
+The Guard and startup discrepancies recorded by the 2026-09-05 documentation
+review have been corrected. No entries from that review remain unresolved.
+That review covered selected runtime boundaries; it was not an exhaustive
+correctness, security, or provider compatibility audit. Record newly confirmed
+discrepancies here using the procedure above.

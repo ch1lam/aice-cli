@@ -23,9 +23,7 @@ documents should link here instead of restating these lists.
 `internal/app` constructs the gate through `newExecutionGuard`, passing the
 physical workspace and discovered skill directories as `ReadOnlyRoots`.
 Other fields use `DefaultConfig`; `config.Settings` has no guard field.
-The policies below describe the intended wired behavior. Known implementation
-discrepancies in approval scope and rule evaluation are tracked in
-[Maintenance](maintenance.md#guard-approval-behavior).
+The policies below describe the wired behavior.
 
 The gate evaluates three layers in order:
 
@@ -57,6 +55,16 @@ and provider or credential changes. `/new` clears all dynamic grants, including
 when no Session file has been created yet. Configured policies, skill read roots,
 and the invocation's `--yolo` setting remain unchanged. Grants never persist to
 disk, so resuming a Session in another process starts without them.
+
+The gate checks all applicable policies and extracted paths before returning
+an approval list. Any hard denial wins before a prompt is shown. When one call
+needs command approval and access to several outside paths, every independent
+scope must be approved before the tool executes. Repeated normalized paths
+appear once. A directory grant may still leave another already-listed path
+to confirm for that call; it applies automatically to later calls. Allow once
+approves only the displayed scope for that call and creates no Session grant.
+Unknown decisions, empty approval lists on `ask`, invalid replies, and canceled
+approval waits fail closed.
 
 | Rule | Options |
 | --- | --- |

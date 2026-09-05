@@ -71,35 +71,46 @@ func (g *guardAdapter) Check(ctx context.Context, call llm.ToolCall) (agent.Guar
 	mapped := mapGuardResult(res)
 	if g.yolo && mapped.Decision == agent.GuardAsk {
 		mapped.Decision = agent.GuardAllow
+		mapped.Approvals = nil
 	}
 	return mapped, nil
 }
 
 func mapGuardResult(res guard.Result) agent.GuardResult {
 	mapped := agent.GuardResult{
-		Reason:  res.Reason,
-		RuleID:  res.RuleID,
-		Pattern: res.Pattern,
-		Action: agent.GuardAction{
-			Kind:     res.Action.Kind,
-			Path:     res.Action.Path,
-			Command:  res.Action.Command,
-			ToolName: res.Action.ToolName,
-		},
+		Decision: agent.GuardDecision(res.Decision),
+		Reason:   res.Reason, RuleID: res.RuleID,
+		Action: mapGuardAction(res.Action),
 	}
-	switch res.Decision {
-	case guard.DecisionAllow:
-		mapped.Decision = agent.GuardAllow
-	case guard.DecisionDeny:
-		mapped.Decision = agent.GuardDeny
-	case guard.DecisionAsk:
-		mapped.Decision = agent.GuardAsk
+	for _, approval := range res.Approvals {
+		mapped.Approvals = append(mapped.Approvals, mapGuardApproval(approval))
+	}
+	switch mapped.Decision {
+	case agent.GuardAllow, agent.GuardAsk, agent.GuardDeny:
 	default:
 		mapped.Decision = agent.GuardDeny
 		mapped.Reason = "execution gate returned an unknown decision"
 		mapped.RuleID = "guard.unknown_decision"
+		mapped.Approvals = nil
+	}
+	if !mapped.Valid() {
+		mapped.Decision = agent.GuardDeny
+		mapped.Reason = "execution gate returned an invalid result"
+		mapped.RuleID = "guard.invalid_result"
+		mapped.Approvals = nil
 	}
 	return mapped
+}
+
+func mapGuardApproval(approval guard.Approval) agent.GuardApproval {
+	return agent.GuardApproval{
+		Reason: approval.Reason, RuleID: approval.RuleID, Pattern: approval.Pattern,
+		Action: mapGuardAction(approval.Action),
+	}
+}
+
+func mapGuardAction(action guard.Action) agent.GuardAction {
+	return agent.GuardAction{Kind: action.Kind, Path: action.Path, Command: action.Command, ToolName: action.ToolName}
 }
 
 // GuardRequests exposes pending guard confirmations for the TUI.
@@ -110,7 +121,7 @@ func (s *interactiveSession) GuardRequests() <-chan interaction.GuardRequest {
 	return s.guardRequests
 }
 
-func (s *interactiveSession) handleGuardAsk(ctx context.Context, call llm.ToolCall, result agent.GuardResult) (agent.GuardAskReply, error) {
+func (s *interactiveSession) handleGuardAsk(ctx context.Context, call llm.ToolCall, result agent.GuardApproval) (agent.GuardAskReply, error) {
 	if s == nil || s.guardRequests == nil {
 		return agent.GuardAskReply{Decision: agent.GuardDeny}, nil
 	}
@@ -158,7 +169,7 @@ func (s *interactiveSession) handleGuardAsk(ctx context.Context, call llm.ToolCa
 	}
 }
 
-func guardAskOptions(g *guard.Guard, toolName string, result agent.GuardResult) []interaction.GuardOption {
+func guardAskOptions(g *guard.Guard, toolName string, result agent.GuardApproval) []interaction.GuardOption {
 	switch result.RuleID {
 	case guardRulePathAccessAsk:
 		if result.Action.Path == "" {
@@ -233,7 +244,7 @@ func guardAskOnceOrDeny() []interaction.GuardOption {
 	}
 }
 
-func (s *interactiveSession) applyGuardAskGrant(optionID, toolName string, result agent.GuardResult) {
+func (s *interactiveSession) applyGuardAskGrant(optionID, toolName string, result agent.GuardApproval) {
 	if s == nil || s.guard == nil {
 		return
 	}

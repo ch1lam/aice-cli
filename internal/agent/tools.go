@@ -111,46 +111,45 @@ func (e *runExecution) executeTool(
 		if err != nil {
 			return newErrorToolResult(call, fmt.Errorf("guard: %w", err))
 		}
+		if !res.Valid() {
+			return newErrorToolResult(call, errors.New("guard returned an invalid result"))
+		}
 		switch res.Decision {
 		case GuardDeny:
 			reason := res.Reason
 			if reason == "" {
 				reason = fmt.Sprintf("tool %q blocked by guard rule %q", call.Name, res.RuleID)
 			}
-			return newErrorToolResult(call, fmt.Errorf("%s", reason))
+			return newErrorToolResult(call, errors.New(reason))
 		case GuardAsk:
-			reply := GuardAskReply{Decision: GuardDeny}
-			if e.loop.guardAsk != nil {
-				// Pass full GuardResult so the handler can display reason/rule.
-				askRes := GuardResult{
-					Decision: GuardAsk,
-					Reason:   res.Reason,
-					RuleID:   res.RuleID,
-					Pattern:  res.Pattern,
-					Action: GuardAction{
-						Kind:     res.Action.Kind,
-						Path:     res.Action.Path,
-						Command:  res.Action.Command,
-						ToolName: res.Action.ToolName,
-					},
+			for _, approval := range res.Approvals {
+				if err := ctx.Err(); err != nil {
+					return newErrorToolResult(call, err)
 				}
-				askReply, err := e.loop.guardAsk(ctx, call, askRes)
-				if err != nil {
-					return newErrorToolResult(call, fmt.Errorf("guard ask: %w", err))
+				reply := GuardAskReply{Decision: GuardDeny}
+				if e.loop.guardAsk != nil {
+					var err error
+					reply, err = e.loop.guardAsk(ctx, call, approval)
+					if err != nil {
+						return newErrorToolResult(call, fmt.Errorf("guard ask: %w", err))
+					}
 				}
-				reply = askReply
-			}
-			if reply.Decision != GuardAllow {
-				reason := res.Reason
-				if reason == "" {
-					reason = fmt.Sprintf("tool %q requires confirmation (rule %q)", call.Name, res.RuleID)
+				if reply.Decision != GuardAllow {
+					reason := approval.Reason
+					if reason == "" {
+						reason = fmt.Sprintf("tool %q requires confirmation (rule %q)", call.Name, approval.RuleID)
+					}
+					if reply.Feedback != "" {
+						reason = fmt.Sprintf("%s\nUser feedback: %s", reason, reply.Feedback)
+					}
+					return newErrorToolResult(call, errors.New(reason))
 				}
-				if reply.Feedback != "" {
-					reason = fmt.Sprintf("%s\nUser feedback: %s", reason, reply.Feedback)
-				}
-				return newErrorToolResult(call, fmt.Errorf("%s", reason))
 			}
 		}
+	}
+	// Cancellation while the last approval was pending must not start a tool.
+	if err := ctx.Err(); err != nil {
+		return newErrorToolResult(call, err)
 	}
 
 	tool, exists := e.loop.tools[call.Name]

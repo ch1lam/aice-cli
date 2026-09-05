@@ -226,7 +226,7 @@ func TestGuard_DangerousCommandBlocked(t *testing.T) {
 		if res.Decision != DecisionAsk {
 			t.Fatalf("dangerous %q: %v want ask (rule %q)", cmd, res.Decision, res.RuleID)
 		}
-		if res.RuleID != "permissionGate.dangerous" {
+		if res.Approvals[0].RuleID != "permissionGate.dangerous" {
 			t.Fatalf("dangerous %q rule %q want permissionGate.dangerous", cmd, res.RuleID)
 		}
 	}
@@ -302,7 +302,7 @@ func TestGuard_PathAccess(t *testing.T) {
 	cfg2 := Config{PathAccess: PathAccessConfig{Mode: &allowMode}}
 	g2, _ := NewWithExists(workspace, cfg2, alwaysExists)
 	res, _ = g2.Check(context.Background(), toolCall("read", map[string]any{"path": outside}))
-	if res.Decision != DecisionAsk || res.RuleID != "pathAccess.ask" {
+	if res.Decision != DecisionAsk || res.Approvals[0].RuleID != "pathAccess.ask" {
 		t.Fatalf("outside ask: %v %q want ask", res.Decision, res.RuleID)
 	}
 	// allow mode
@@ -595,14 +595,14 @@ func TestGuard_UnknownToolAsks(t *testing.T) {
 		if res.Decision != DecisionAsk {
 			t.Fatalf("Check(%q) = %v, want ask", name, res.Decision)
 		}
-		if res.RuleID != "unknownTool" {
+		if res.Approvals[0].RuleID != "unknownTool" {
 			t.Fatalf("Check(%q) rule %q, want unknownTool", name, res.RuleID)
 		}
-		if !strings.Contains(res.Reason, "not recognized") {
+		if !strings.Contains(res.Approvals[0].Reason, "not recognized") {
 			t.Fatalf("Check(%q) reason %q, want not recognized", name, res.Reason)
 		}
-		if res.Action.ToolName != name {
-			t.Fatalf("Check(%q) action tool %q", name, res.Action.ToolName)
+		if res.Approvals[0].Action.ToolName != name {
+			t.Fatalf("Check(%q) action tool %q", name, res.Approvals[0].Action.ToolName)
 		}
 	}
 }
@@ -697,7 +697,7 @@ func TestGuard_ReadOnlyRoots(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Check %s outside: %v", name, err)
 		}
-		if res.Decision != DecisionAsk || res.RuleID != "pathAccess.ask" {
+		if res.Decision != DecisionAsk || res.Approvals[0].RuleID != "pathAccess.ask" {
 			t.Fatalf("Check %s outside root: %v %q want ask", name, res.Decision, res.RuleID)
 		}
 	}
@@ -707,7 +707,7 @@ func TestGuard_ReadOnlyRoots(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Check %s inside: %v", name, err)
 		}
-		if res.Decision != DecisionAsk || res.RuleID != "pathAccess.ask" {
+		if res.Decision != DecisionAsk || res.Approvals[0].RuleID != "pathAccess.ask" {
 			t.Fatalf("Check %s inside root: %v %q want ask", name, res.Decision, res.RuleID)
 		}
 	}
@@ -817,7 +817,7 @@ func TestGuard_AllowToolSession(t *testing.T) {
 	if res.Decision != DecisionAsk {
 		t.Fatalf("unknown tool before grant: %v want ask", res.Decision)
 	}
-	if res.RuleID != "unknownTool" {
+	if res.Approvals[0].RuleID != "unknownTool" {
 		t.Fatalf("rule %q want unknownTool", res.RuleID)
 	}
 
@@ -838,7 +838,7 @@ func TestGuard_AllowToolSession(t *testing.T) {
 	if res.Decision != DecisionAsk {
 		t.Fatalf("ungranted unknown tool: %v want ask", res.Decision)
 	}
-	if res.RuleID != "unknownTool" {
+	if res.Approvals[0].RuleID != "unknownTool" {
 		t.Fatalf("ungranted rule %q want unknownTool", res.RuleID)
 	}
 }
@@ -963,7 +963,7 @@ func TestGuard_DangerousResultPattern(t *testing.T) {
 	if res.Decision != DecisionAsk {
 		t.Fatalf("decision %v want ask", res.Decision)
 	}
-	if res.Pattern == "" {
+	if res.Approvals[0].Pattern == "" {
 		t.Fatal("structural dangerous Ask: Pattern is empty")
 	}
 }

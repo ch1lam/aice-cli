@@ -29,10 +29,11 @@ type GuardAskReply struct {
 }
 
 // GuardAskHandler is called when a guard returns Ask. Returning a reply with
-// GuardAllow proceeds; GuardDeny blocks. Feedback on a deny reply is copied
+// GuardAllow approves that scope; every scope must be allowed before execution.
+// GuardDeny blocks the tool call. Feedback on a deny reply is copied
 // into the error tool result. The handler may block for user confirmation.
 // A nil handler fails closed by denying.
-type GuardAskHandler func(ctx context.Context, call llm.ToolCall, result GuardResult) (GuardAskReply, error)
+type GuardAskHandler func(ctx context.Context, call llm.ToolCall, approval GuardApproval) (GuardAskReply, error)
 
 // WithGuard installs an execution gate consulted before each tool call.
 // It is the intrinsic guard (internal/guard), not a plugin. A non-nil
