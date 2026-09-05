@@ -17,6 +17,17 @@ func (e *runExecution) recordIncompleteAttempt(
 	message := llm.NewAssistantMessage(e.input.Model)
 	message.StopReason = llm.StopReasonError
 	message.ErrorMessage = "model request failed before completion"
+	turn := ModelRound{
+		Number:      turnNumber,
+		Inputs:      e.takePendingInputs(),
+		Assistant:   message,
+		ToolResults: []llm.ToolResultMessage{},
+	}
+	e.result.ModelRounds = append(e.result.ModelRounds, turn)
+	if err := e.recordMessage(ctx, message); err != nil {
+		return err
+	}
+
 	if !messageStarted {
 		if err := e.emit(ctx, AgentEvent{
 			Type:       EventTypeMessageStart,
@@ -35,13 +46,6 @@ func (e *runExecution) recordIncompleteAttempt(
 		return err
 	}
 
-	turn := ModelRound{
-		Number:      turnNumber,
-		Inputs:      e.takePendingInputs(),
-		Assistant:   message,
-		ToolResults: []llm.ToolResultMessage{},
-	}
-	e.result.ModelRounds = append(e.result.ModelRounds, turn)
 	return e.emit(ctx, AgentEvent{
 		Type:       EventTypeTurnEnd,
 		TurnNumber: turnNumber,

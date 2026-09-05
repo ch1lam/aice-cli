@@ -116,13 +116,22 @@ type HistoryCompactor func(
 	history []llm.AgentMessage,
 ) ([]llm.AgentMessage, error)
 
+// MessageRecorder synchronously accepts one completed source message before the
+// loop proceeds to later effects or display events. Messages are defensive copies.
+// The first error stops execution and disables further recording, including
+// cleanup. The supplied context is the original run context, possibly canceled;
+// a durable recorder owns any bounded cancellation-independent cleanup deadline.
+// A nil recorder is allowed. History supplied to Run is not recorded again.
+type MessageRecorder func(context.Context, llm.AgentMessage) error
+
 // RunInput contains the caller-owned state needed for one agent run.
 type RunInput struct {
-	Model        llm.Model
-	SystemPrompt string
-	History      []llm.AgentMessage
-	Prompt       llm.UserMessage
-	Options      llm.StreamOptions
+	Model           llm.Model
+	SystemPrompt    string
+	History         []llm.AgentMessage
+	Prompt          llm.UserMessage
+	Options         llm.StreamOptions
+	MessageRecorder MessageRecorder
 	// Compactor is called only at complete interaction boundaries. It is not
 	// used while settling a tool call inside the current interaction.
 	Compactor HistoryCompactor

@@ -33,7 +33,7 @@ work in an earlier row. Temporary transitions must still build and pass tests.
 | 3a | Guard/app: Session-scoped grants reset at `/new`, exact command matching, deny before all asks, complete approval scope | Behavioral | Combined Guard and app/Loop regression tests, including yolo | Complete |
 | 3b | App: restart-only Skills reminder and effective `/trust` choices | Behavioral | Startup temporary trust preserved; command behavior and documentation agree | Complete |
 | 4a | Session: message entries, tree replay, safe branch boundaries, unknown interrupted results | Behavioral | New format round trips; old bytes untouched; no duplicate recovery/results/usage | Pending |
-| 4b | App/Agent: persist each completed message before later side effects, unified terminal submission | Behavioral | Injected write/UI/provider/cancellation failures; print and TUI share semantics | Pending |
+| 4b | App/Agent: persist each completed message before later side effects, unified terminal submission | Behavioral | Injected write/UI/provider/cancellation failures; print and TUI share semantics | Loop boundary ready; app integration pending |
 | 4c | Context: compact at paired model-round boundaries with frozen model configuration; stateless print uses memory | Behavioral | 200 rounds, at least three compactions, steering, repeated compaction and failure cases | Pending |
 | 4d | Session consumers: navigation, display, usage, Harbor | Behavioral | Real CLI/TUI exercises; conversion fixtures and correct usage accounting | Pending |
 | 5a | Existing prompt and Bash feedback: proportional engineering guidance, bounded head/tail output | Behavioral | Output/error regressions; custom prompt replacement unchanged | Pending |
@@ -109,6 +109,15 @@ file. The first localhost request was blocked by the execution sandbox; the
 permitted rerun passed. The temporary server was stopped after verification.
 This covers the completed lifecycle fixes on macOS, not the pending v3 or
 long-interaction behavior.
+
+The Loop now offers one optional `MessageRecorder` boundary. Result owns terminal
+assistant messages and tool results before callbacks can fail. Source inputs,
+retries, actual/synthetic tool results, and final cleanup are recorded once;
+the first recording error is sticky and prevents later effects. Regression
+tests independently inject record/display/provider/cancellation failures, check
+callback copies and counts, and compare recorded messages with returned truth.
+Full tests, vet, and race passed. The app does not inject this callback yet and
+still writes v2 interactions; format migration and durable recovery remain open.
 
 The Go HTTP evaluation family is in `evals/go-service`. It includes independent
 HTTP acceptance, generated starting points, one reference implementation, and

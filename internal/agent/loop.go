@@ -126,18 +126,16 @@ func (l *Loop) Run(ctx context.Context, input RunInput, sink AgentEventSink) (Re
 		history: slices.Clone(input.History),
 		result:  initialResult,
 	}
+	if err := execution.recordMessage(ctx, input.Prompt); err != nil {
+		return execution.finalize(ctx, err)
+	}
 	if err := execution.prepareInputContext(ctx, input.Prompt); err != nil {
 		runErr := fmt.Errorf("agent: prepare initial request: %w", err)
-		return finalizeRunResult(initialResult, input.Model, runErr, nil)
+		return execution.finalize(ctx, runErr)
 	}
 
-	result, runErr := execution.run(ctx)
-	return finalizeRunResult(
-		result,
-		input.Model,
-		runErr,
-		execution.takePendingInputs(),
-	)
+	_, runErr := execution.run(ctx)
+	return execution.finalize(ctx, runErr)
 }
 
 func validateModel(service Model, model llm.Model) error {
@@ -163,6 +161,8 @@ type runExecution struct {
 	result           Result
 	pendingInputs    []llm.UserMessage
 	interactionStart int
+	recordedMessages int
+	recorderErr      error
 }
 
 func (e *runExecution) run(ctx context.Context) (Result, error) {
@@ -269,11 +269,23 @@ func (e *runExecution) settleToolsAndSteering(
 	outcome assistantOutcome,
 	streamErr error,
 ) (Result, error, settleNext) {
-	turn := ModelRound{
+	e.result.ModelRounds = append(e.result.ModelRounds, ModelRound{
 		Number:      *turnNumber,
 		Inputs:      e.takePendingInputs(),
 		Assistant:   outcome.message,
 		ToolResults: []llm.ToolResultMessage{},
+	})
+	turn := &e.result.ModelRounds[len(e.result.ModelRounds)-1]
+	if err := e.recordMessage(ctx, outcome.message); err != nil {
+		return e.result, errors.Join(err, outcome.terminalErr, streamErr), settleStop
+	}
+	if err := e.emit(ctx, AgentEvent{
+		Type:       EventTypeMessageEnd,
+		TurnNumber: *turnNumber,
+		Message:    outcome.message,
+		Err:        outcome.terminalErr,
+	}); err != nil {
+		return e.result, errors.Join(err, outcome.terminalErr, streamErr), settleStop
 	}
 	modelErr := errors.Join(outcome.terminalErr, streamErr)
 	runErr := modelErr
@@ -282,16 +294,15 @@ func (e *runExecution) settleToolsAndSteering(
 		if err != nil {
 			runErr = errors.Join(modelErr, err)
 		} else if len(calls) > 0 {
-			turn.ToolResults, err = e.syntheticToolResults(
+			err = e.syntheticToolResults(
 				ctx,
 				*turnNumber,
 				calls,
 				"model request failed before tool execution",
 				false,
 			)
-			if isEventSinkError(err) {
-				e.result.ModelRounds = append(e.result.ModelRounds, turn)
-				return e.result, err, settleStop
+			if isEventSinkError(err) || e.recorderErr != nil {
+				return e.result, errors.Join(modelErr, err), settleStop
 			}
 			runErr = errors.Join(runErr, err)
 		}
@@ -308,23 +319,21 @@ func (e *runExecution) settleToolsAndSteering(
 		} else if len(calls) > 0 {
 			var toolErr error
 			if outcome.message.StopReason == llm.StopReasonLength {
-				turn.ToolResults, toolErr = e.failTruncatedToolCalls(
+				toolErr = e.failTruncatedToolCalls(
 					ctx,
 					*turnNumber,
 					calls,
 				)
 			} else {
-				turn.ToolResults, toolErr = e.executeTools(ctx, *turnNumber, calls)
+				toolErr = e.executeTools(ctx, *turnNumber, calls)
 			}
-			if isEventSinkError(toolErr) {
-				e.result.ModelRounds = append(e.result.ModelRounds, turn)
+			if isEventSinkError(toolErr) || e.recorderErr != nil {
 				return e.result, toolErr, settleStop
 			}
 			runErr = toolErr
 		}
 	}
 
-	e.result.ModelRounds = append(e.result.ModelRounds, turn)
 	completedTurn := e.result.ModelRounds[len(e.result.ModelRounds)-1]
 	if err := e.emit(ctx, AgentEvent{
 		Type:        EventTypeTurnEnd,
@@ -375,6 +384,9 @@ func (e *runExecution) settleToolsAndSteering(
 		*retryAttempt = 0
 		e.history = append(e.history, steering.Message)
 		e.pendingInputs = append(e.pendingInputs, steering.Message)
+		if err := e.recordMessage(ctx, steering.Message); err != nil {
+			return e.result, err, settleStop
+		}
 		if err := e.startInputTurn(
 			ctx,
 			*turnNumber,
@@ -420,6 +432,9 @@ func (e *runExecution) pollFollowUp(
 	// Keep the follow-up pending before compaction so a failed compaction
 	// still produces a durable terminal interaction for the accepted input.
 	e.pendingInputs = append(e.pendingInputs, followUp.Message)
+	if err := e.recordMessage(ctx, followUp.Message); err != nil {
+		return e.result, err, false
+	}
 	if err := e.prepareInputContext(ctx, followUp.Message); err != nil {
 		result, err := e.finishRun(ctx, err)
 		return result, err, false

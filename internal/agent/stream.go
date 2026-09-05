@@ -109,14 +109,6 @@ func (e *runExecution) consumeAssistant(
 				)
 			}
 			terminalErr := terminalError(ctx, event, message)
-			if err := e.emit(ctx, AgentEvent{
-				Type:       EventTypeMessageEnd,
-				TurnNumber: turnNumber,
-				Message:    message,
-				Err:        terminalErr,
-			}); err != nil {
-				return assistantOutcome{}, err
-			}
 			return assistantOutcome{
 				message:     message,
 				terminalErr: terminalErr,

@@ -12,8 +12,7 @@ func (e *runExecution) failTruncatedToolCalls(
 	ctx context.Context,
 	turnNumber int,
 	calls []llm.ToolCall,
-) ([]llm.ToolResultMessage, error) {
-	results := make([]llm.ToolResultMessage, 0, len(calls))
+) error {
 	for index := range calls {
 		call := calls[index]
 		callErr := fmt.Errorf(
@@ -26,12 +25,15 @@ func (e *runExecution) failTruncatedToolCalls(
 			TurnNumber: turnNumber,
 			ToolCall:   &call,
 		}); err != nil {
-			return results, err
+			return err
 		}
 
 		message, err := newErrorToolResult(call, callErr)
 		if err != nil {
-			return results, err
+			return err
+		}
+		if err := e.acceptToolResult(ctx, message, true); err != nil {
+			return err
 		}
 		if err := e.emit(ctx, AgentEvent{
 			Type:       EventTypeToolExecutionEnd,
@@ -40,36 +42,31 @@ func (e *runExecution) failTruncatedToolCalls(
 			ToolResult: &message,
 			Err:        callErr,
 		}); err != nil {
-			return results, err
+			return err
 		}
 		if err := e.emitToolResultMessage(ctx, turnNumber, call, message); err != nil {
-			return results, err
+			return err
 		}
-
-		results = append(results, message)
-		e.history = append(e.history, message)
 	}
-	return results, nil
+	return nil
 }
 
 func (e *runExecution) executeTools(
 	ctx context.Context,
 	turnNumber int,
 	calls []llm.ToolCall,
-) ([]llm.ToolResultMessage, error) {
-	results := make([]llm.ToolResultMessage, 0, len(calls))
+) error {
 	for index := range calls {
 		call := calls[index]
 		if ctxErr := ctx.Err(); ctxErr != nil {
-			remaining, err := e.syntheticToolResults(
+			err := e.syntheticToolResults(
 				ctx,
 				turnNumber,
 				calls[index:],
 				ctxErr.Error(),
 				true,
 			)
-			results = append(results, remaining...)
-			return results, errors.Join(ctxErr, err)
+			return errors.Join(ctxErr, err)
 		}
 
 		if err := e.emit(ctx, AgentEvent{
@@ -77,12 +74,13 @@ func (e *runExecution) executeTools(
 			TurnNumber: turnNumber,
 			ToolCall:   &call,
 		}); err != nil {
-			return results, err
+			return err
 		}
 
 		message, toolErr := e.executeTool(ctx, call)
-		results = append(results, message)
-		e.history = append(e.history, message)
+		if err := e.acceptToolResult(ctx, message, true); err != nil {
+			return err
+		}
 		if err := e.emit(ctx, AgentEvent{
 			Type:       EventTypeToolExecutionEnd,
 			TurnNumber: turnNumber,
@@ -90,13 +88,13 @@ func (e *runExecution) executeTools(
 			ToolResult: &message,
 			Err:        toolErr,
 		}); err != nil {
-			return results, err
+			return err
 		}
 		if err := e.emitToolResultMessage(ctx, turnNumber, call, message); err != nil {
-			return results, err
+			return err
 		}
 	}
-	return results, ctx.Err()
+	return ctx.Err()
 }
 
 func (e *runExecution) executeTool(
@@ -180,23 +178,32 @@ func (e *runExecution) syntheticToolResults(
 	calls []llm.ToolCall,
 	reason string,
 	recordHistory bool,
-) ([]llm.ToolResultMessage, error) {
-	results := make([]llm.ToolResultMessage, 0, len(calls))
+) error {
 	for index := range calls {
 		call := calls[index]
 		message, err := newErrorToolResult(call, errors.New(reason))
 		if err != nil {
-			return results, err
+			return err
 		}
-		results = append(results, message)
-		if recordHistory {
-			e.history = append(e.history, message)
+		if err := e.acceptToolResult(ctx, message, recordHistory); err != nil {
+			return err
 		}
 		if err := e.emitToolResultMessage(ctx, turnNumber, call, message); err != nil {
-			return results, err
+			return err
 		}
 	}
-	return results, nil
+	return nil
+}
+
+// acceptToolResult retains the actual outcome before recording or display can
+// fail. The active ModelRound is the sole owner of produced tool results.
+func (e *runExecution) acceptToolResult(ctx context.Context, message llm.ToolResultMessage, recordHistory bool) error {
+	round := &e.result.ModelRounds[len(e.result.ModelRounds)-1]
+	round.ToolResults = append(round.ToolResults, message)
+	if recordHistory {
+		e.history = append(e.history, message)
+	}
+	return e.recordMessage(ctx, message)
 }
 
 func (e *runExecution) emitToolResultMessage(

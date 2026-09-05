@@ -73,6 +73,17 @@ permission messages. Guard grant scope is defined in
 - Preserve safe partial assistant output on cancellation or provider failure.
   Failures must become a terminal assistant result or an explicit durable
   operation error; they must not disappear from history.
+- `RunInput.MessageRecorder` is an optional synchronous boundary for completed
+  source messages. The Loop retains each accepted message before calling it,
+  then displays the message and allows dependent effects. Tool results are
+  retained and recorded before tool-end display. The callback receives a deep
+  copy and the original run context; a durable implementation owns any bounded
+  cancellation-independent cleanup deadline. The first recording error stops
+  later execution and recording, including final cleanup. Display errors alone
+  still allow known results and failure cleanup to be recorded once. Supplied
+  history is never recorded again. The current application still writes v2
+  complete interactions; the callback is the boundary for its upcoming
+  message-level persistence change.
 - Poll steering input only after a complete assistant response and all tool
   calls declared by that response have matching results. Inject at most one
   user steer before the next model request, then offer the next steer at the

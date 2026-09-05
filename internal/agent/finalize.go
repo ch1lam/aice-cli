@@ -9,16 +9,7 @@ import (
 )
 
 func (e *runExecution) finishRun(ctx context.Context, runErr error) (Result, error) {
-	result, finalizeErr := finalizeFailedResult(
-		e.result,
-		e.input.Model,
-		runErr,
-		e.takePendingInputs(),
-	)
-	e.result = result
-	if finalizeErr != nil {
-		runErr = errors.Join(runErr, finalizeErr)
-	}
+	result, runErr := e.finalize(ctx, runErr)
 	if err := e.emit(ctx, AgentEvent{
 		Type:     EventTypeAgentEnd,
 		Messages: result.Messages(),
@@ -47,20 +38,29 @@ func (e *runExecution) finishIncompleteTurn(
 	return e.finishRun(ctx, runErr)
 }
 
-func finalizeRunResult(
-	result Result,
-	model llm.Model,
-	runErr error,
-	pendingInputs []llm.UserMessage,
-) (Result, error) {
-	result, finalizeErr := finalizeFailedResult(
-		result,
-		model,
-		runErr,
-		pendingInputs,
-	)
-	if finalizeErr != nil {
-		runErr = errors.Join(runErr, finalizeErr)
+// finalize flushes only the unrecorded tail produced by failure cleanup. A
+// recorder failure is sticky: never retry it or append later cleanup records.
+func (e *runExecution) finalize(ctx context.Context, runErr error) (Result, error) {
+	result, finalizeErr := finalizeFailedResult(e.result, e.input.Model, runErr, e.takePendingInputs())
+	e.result = result
+	runErr = errors.Join(runErr, finalizeErr)
+	if e.recorderErr != nil {
+		if !errors.Is(runErr, e.recorderErr) {
+			runErr = errors.Join(runErr, e.recorderErr)
+		}
+		return result, runErr
+	}
+	messages := result.Messages()
+	if e.recordedMessages > len(messages) {
+		return result, errors.Join(runErr, fmt.Errorf(
+			"agent: recorded message count %d exceeds finalized result count %d",
+			e.recordedMessages, len(messages),
+		))
+	}
+	for _, message := range messages[e.recordedMessages:] {
+		if err := e.recordMessage(ctx, message); err != nil {
+			return result, errors.Join(runErr, err)
+		}
 	}
 	return result, runErr
 }
