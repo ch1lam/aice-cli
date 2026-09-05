@@ -1,6 +1,8 @@
 package tool_test
 
 import (
+	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -136,5 +138,64 @@ func TestBashExecuteBoundsCombinedOutput(t *testing.T) {
 	text := resultText(t, result)
 	if len(text) > 50*1024 || !strings.Contains(text, "[output truncated]") {
 		t.Fatalf("Execute() output length = %d", len(text))
+	}
+}
+
+func TestBashExecuteRetainsFinalDiagnostic(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name    string
+		ending  string
+		status  string
+		isError bool
+	}{
+		{name: "success", ending: "exit 0", status: "exit code: 0"},
+		{name: "failure", ending: "exit 7", status: "exit code: 7", isError: true},
+		{name: "timeout", ending: "sleep 5", status: "timed out", isError: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			workspace, _ := newWorkspace(t)
+			bash, err := tool.NewBash(workspace)
+			if err != nil {
+				t.Skipf("NewBash() error = %v", err)
+			}
+			result, err := bash.Execute(t.Context(), toolCall(t, "bash", map[string]any{
+				"command": "printf 'HEAD\\n'; printf '%060000d' 0; printf '\\nFINAL DIAGNOSTIC\\n' >&2; " + test.ending,
+				"timeout": 1,
+			}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			text := resultText(t, result)
+			if len(text) > 50*1024 || result.IsError != test.isError ||
+				!strings.HasPrefix(text, "HEAD\n") || !strings.Contains(text, "[output truncated]") ||
+				!strings.Contains(text, "FINAL DIAGNOSTIC") || !strings.Contains(text, test.status) {
+				t.Fatalf("missing bounded head/tail/status: %d bytes, isError=%v, tail=%q", len(text), result.IsError, text[max(0, len(text)-100):])
+			}
+		})
+	}
+}
+
+func TestBashExecuteHonorsCallerCancellation(t *testing.T) {
+	t.Parallel()
+	workspace, _ := newWorkspace(t)
+	bash, err := tool.NewBash(workspace)
+	if err != nil {
+		t.Skipf("NewBash() error = %v", err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	timer := time.AfterFunc(100*time.Millisecond, cancel)
+	defer timer.Stop()
+	started := time.Now()
+	_, err = bash.Execute(ctx, toolCall(t, "bash", map[string]any{
+		"command": "printf '%060000d' 0; sleep 10",
+	}))
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Execute() error = %v, want canceled", err)
+	}
+	if elapsed := time.Since(started); elapsed > 5*time.Second {
+		t.Fatalf("cancellation took %s", elapsed)
 	}
 }

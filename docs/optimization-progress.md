@@ -36,7 +36,7 @@ work in an earlier row. Temporary transitions must still build and pass tests.
 | 4b | App/Agent: persist each completed message before later side effects, unified terminal submission | Behavioral | Injected write/UI/provider/cancellation failures; print and TUI share semantics | Complete |
 | 4c | Context: compact at paired model-round boundaries with frozen model configuration; stateless print uses memory | Behavioral | 200 rounds, at least three compactions, steering, repeated compaction and failure cases | Pending |
 | 4d | Session consumers: navigation, display, usage, Harbor | Behavioral | Real CLI/TUI exercises; conversion fixtures and correct usage accounting | Complete for v3; automatic summary print totals remain in 4c |
-| 5a | Existing prompt and Bash feedback: proportional engineering guidance, bounded head/tail output | Behavioral | Output/error regressions; custom prompt replacement unchanged | Pending |
+| 5a | Existing prompt and Bash feedback: proportional engineering guidance, bounded head/tail output | Behavioral | Output/error regressions; custom prompt replacement unchanged | Bash complete; prompt pending |
 | 5b | Offline evaluation: Go HTTP service and Python data CLI lifecycles | Evaluation | Requirements, independent tests, reference implementations, review rubric, recorded runs | Complete |
 | 5c | Documentation and completion audit | Documentation | Requirement-by-requirement evidence and honest limitations | Pending |
 
@@ -183,6 +183,16 @@ retry. Its checkpoint includes usage from every summary attempt once. Actual
 503-to-success, terminal failure, and empty-final-response tests verify this
 boundary and byte-preserving failure behavior. Full tests and vet, plus app
 race tests, passed. Print summary accounting remains a separate step.
+
+Bash now uses a dedicated fixed-capacity head/ring-tail collector. Grep retains
+its original collector, and Loop control flow and process cleanup are unchanged.
+Regression tests cover large/small writes, caller-buffer isolation, split UTF-8,
+concurrent snapshots, exit 0/7, timeout, and cancellation. Full tests, vet, and
+race passed. An actual CLI run with a localhost-only scripted model produced a
+50,958-byte tool result containing the initial header, truncation marker, final
+diagnostic, and exit code 7 in the next model request; stateless print created
+no Session directory. The temporary server was stopped. This is feedback
+verification, not a real-model coding-quality result.
 
 The Go HTTP evaluation family is in `evals/go-service`. It includes independent
 HTTP acceptance, generated starting points, one reference implementation, and

@@ -135,6 +135,13 @@ invokes `rg` with `--` before model-controlled pattern/path values. The `bash`
 tool intentionally crosses a shell boundary and applies the same timeout,
 output, cancellation, and process-tree controls.
 
+Bash captures combined stdout/stderr within a 50 KiB result limit. Oversized
+output retains its beginning and most recent end with an `[output truncated]`
+marker between them, followed by exit status or the timeout reason. This keeps
+final diagnostics available to the next model request. Capture storage stays
+bounded even for a single large write; rendered output is valid UTF-8. Caller
+cancellation still stops the process tree and returns cancellation.
+
 ## Sessions
 
 Interactive runs create a version 3 JSONL Session under

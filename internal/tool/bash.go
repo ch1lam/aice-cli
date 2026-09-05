@@ -92,7 +92,7 @@ func (b *Bash) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult, 
 	// The command has bounded output and lifetime and runs in its own process group.
 	command := exec.CommandContext(commandCtx, b.shellPath, "--noprofile", "--norc", "-c", args.Command)
 	command.Dir = b.workspace.Path()
-	output := newBoundedWriter(maxOutputBytes - 256)
+	output := newBashOutputWriter(maxOutputBytes - 256)
 	command.Stdout = output
 	command.Stderr = output
 	configureProcess(command)
