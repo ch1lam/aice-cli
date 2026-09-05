@@ -154,9 +154,9 @@ func sessionHistory(snapshot session.Snapshot) ([]llm.AgentMessage, error) {
 }
 
 // closeInteractiveStore closes the interactive Session file, removing it
-// when no turn or compaction was ever recorded. Startup and /new create
-// the file eagerly, but an interaction-free exit should not leave a
-// header-only file behind.
+// when no turn or compaction was ever recorded. Explicit Session paths can
+// create a file at startup; default paths are created on the first prompt.
+// An interaction-free exit should not leave a header-only file behind.
 func closeInteractiveStore(store *session.Store) error {
 	if store == nil {
 		return nil

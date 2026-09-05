@@ -336,10 +336,9 @@ func (a *application) Interactive(
 		WorkingDirectory: environment.workspace.Path(),
 		Version:          cli.Version,
 	})
-	// Close the runner's current store: /new may have swapped in a fresh
-	// Session file after startup, and Store.Close is idempotent. A session
-	// that never recorded a turn is removed so bare startups and unused
-	// /new files do not accumulate.
+	// Close the runner's current store: /new may have detached the startup
+	// store, and a later prompt may have created another. Remove empty
+	// interactive files so unused explicit paths do not accumulate.
 	closeErr := closeInteractiveStore(runner.store)
 	if runErr != nil {
 		return errors.Join(fmt.Errorf("app: run TUI: %w", runErr), closeErr)

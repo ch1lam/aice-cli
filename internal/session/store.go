@@ -176,7 +176,7 @@ func (s *Store) Snapshot() (Snapshot, error) {
 	}, nil
 }
 
-// AppendTurn durably appends one complete run as one tree node.
+// AppendTurn durably appends one completed interaction as one tree node.
 func (s *Store) AppendTurn(ctx context.Context, turn Turn) error {
 	if s == nil {
 		return fmt.Errorf("session: store is required")

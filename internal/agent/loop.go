@@ -11,7 +11,8 @@ import (
 )
 
 // Loop runs provider-neutral model rounds and tool execution. It is safe to
-// reuse as long as the supplied Model and Tools are safe for concurrent use.
+// reuse concurrently only when its supplied Model, Tools, Guard, and ask
+// handler are all safe for concurrent use.
 type Loop struct {
 	model       Model
 	tools       map[string]Tool

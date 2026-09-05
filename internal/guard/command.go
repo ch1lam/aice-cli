@@ -11,7 +11,8 @@ type PermissionGateConfig struct {
 	Patterns []PatternConfig `json:"patterns,omitempty"`
 	// CustomPatterns if non-empty replaces builtin patterns entirely.
 	CustomPatterns []PatternConfig `json:"customPatterns,omitempty"`
-	// RequireConfirmation when false only warns (PR2 always denies, flag reserved).
+	// RequireConfirmation controls dangerous-command asks. When false, these
+	// asks are skipped; auto-deny and file/path checks still apply.
 	RequireConfirmation *bool `json:"requireConfirmation,omitempty"`
 	// AllowedPatterns bypass dangerous checks.
 	AllowedPatterns []PatternConfig `json:"allowedPatterns,omitempty"`

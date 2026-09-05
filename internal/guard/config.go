@@ -1,6 +1,7 @@
 package guard
 
-// Config is the guard configuration owned by config.Settings.
+// Config is constructor-supplied engine configuration. The application wires
+// defaults and skill read roots; settings.json does not expose these fields.
 type Config struct {
 	Enabled              *bool                `json:"enabled,omitempty"`
 	ApplyBuiltinDefaults *bool                `json:"applyBuiltinDefaults,omitempty"`
@@ -72,8 +73,8 @@ func DefaultConfig() Config {
 	}
 }
 
-// ResolveConfig merges built-in defaults with user config, deduplicating by ID
-// (last write wins) so project/global overrides can replace a built-in rule.
+// ResolveConfig merges built-in defaults with caller-supplied configuration,
+// deduplicating policy rules by ID (last write wins).
 func ResolveConfig(user Config) Config {
 	def := DefaultConfig()
 	if !user.ShouldApplyBuiltins() {
