@@ -2,6 +2,7 @@ package app
 
 import (
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -29,7 +30,7 @@ func TestInteractiveTrustSavesDecision(t *testing.T) {
 	if err != nil {
 		t.Fatalf("/trust error = %v", err)
 	}
-	if !strings.Contains(output, "saved") {
+	if !strings.Contains(output, "saved") || !strings.Contains(output, "Restart AICE") {
 		t.Errorf("/trust output = %q, want saved message", output)
 	}
 	entry, found, err := store.Lookup(workspacePath)
@@ -44,31 +45,24 @@ func TestInteractiveTrustSavesDecision(t *testing.T) {
 	}
 }
 
-func TestInteractiveTrustSessionOnlyDoesNotPersist(t *testing.T) {
+func TestInteractiveTrustRejectsTemporaryChoices(t *testing.T) {
 	t.Parallel()
-
 	workspacePath := canonicalTestWorkspace(t)
 	store := trust.NewStore(filepath.Join(t.TempDir(), "trust.json"))
-	runner := &interactiveSession{
-		trustStore:    store,
-		workspacePath: workspacePath,
+	runner := &interactiveSession{trustStore: store, workspacePath: workspacePath}
+	for index, choice := range trust.Choices(workspacePath) {
+		if len(choice.Updates) != 0 {
+			continue
+		}
+		output, err := runner.RunSlashCommand(t.Context(), tui.SlashCommandRequest{
+			Name: "trust", Arguments: strconv.Itoa(index),
+		})
+		if err == nil || output != "" {
+			t.Fatalf("temporary choice %q output = %q, error = %v, want rejection", choice.Label, output, err)
+		}
 	}
-
-	// "Trust (this session only)" is option 2 when the parent option exists.
-	output, err := runner.RunSlashCommand(t.Context(), tui.SlashCommandRequest{
-		Name:      "trust",
-		Arguments: "2",
-	})
-	if err != nil {
-		t.Fatalf("/trust error = %v", err)
-	}
-	if !strings.Contains(output, "this Session only") {
-		t.Errorf("/trust output = %q, want session-only message", output)
-	}
-	if _, found, err := store.Lookup(workspacePath); err != nil {
-		t.Fatalf("Lookup() error = %v", err)
-	} else if found {
-		t.Fatal("session-only choice persisted to the trust store")
+	if _, found, err := store.Lookup(workspacePath); err != nil || found {
+		t.Fatalf("rejected temporary choices changed trust store: found = %v, error = %v", found, err)
 	}
 }
 
@@ -158,7 +152,7 @@ func TestInteractiveSettingsShowsTrust(t *testing.T) {
 	}
 }
 
-func TestTrustMenuExposesFiveChoices(t *testing.T) {
+func TestTrustMenuExposesOnlySavedChoices(t *testing.T) {
 	t.Parallel()
 
 	runner := &interactiveSession{workspacePath: t.TempDir()}
@@ -166,14 +160,14 @@ func TestTrustMenuExposesFiveChoices(t *testing.T) {
 	if menu == nil || menu.Title != "Project trust" {
 		t.Fatalf("trustMenu() = %#v, want project trust menu", menu)
 	}
-	if len(menu.Options) != 5 {
-		t.Fatalf("trust menu options = %d, want 5", len(menu.Options))
+	if len(menu.Options) != 3 {
+		t.Fatalf("trust menu options = %d, want 3", len(menu.Options))
 	}
 	if got := menu.Options[0].Arguments; got != "0" {
 		t.Errorf("first option argument = %q, want 0", got)
 	}
-	if got := menu.Options[4].Arguments; got != "4" {
-		t.Errorf("last option argument = %q, want 4", got)
+	if got := menu.Options[2].Arguments; got != "3" {
+		t.Errorf("last option argument = %q, want 3", got)
 	}
 }
 
@@ -186,4 +180,74 @@ func deepseekModel(t *testing.T, id string) llm.Model {
 	}
 	t.Fatalf("model %q not found", id)
 	return llm.Model{}
+}
+
+func TestStartupTemporaryTrustAffectsPromptWithoutPersisting(t *testing.T) {
+	t.Parallel()
+	for _, decision := range []trust.Decision{trust.DecisionTrusted, trust.DecisionUntrusted} {
+		t.Run(trustDecisionLabel(decision), func(t *testing.T) {
+			workspace := t.TempDir()
+			writeAppFile(t, workspace, "AGENTS.md", "temporary project guidance")
+			paths := trustTestPaths(t)
+			ws := testWorkspace(t, workspace)
+			project, err := newTestApplication().resolveProjectContext(
+				t.Context(), ws, trustTestConfig(paths), nil,
+				func(cwd string) (trust.Choice, error) {
+					for _, choice := range trust.Choices(cwd) {
+						if choice.Decision == decision && len(choice.Updates) == 0 {
+							return choice, nil
+						}
+					}
+					t.Fatal("startup temporary choice missing")
+					return trust.Choice{}, nil
+				}, testBuiltInTools(t, ws),
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if project.trust.Decision != decision || !project.trust.Prompted {
+				t.Fatalf("startup resolution = %#v", project.trust)
+			}
+			if loaded := strings.Contains(project.systemPrompt, "temporary project guidance"); loaded != (decision == trust.DecisionTrusted) {
+				t.Fatalf("guidance loaded = %v for %v", loaded, decision)
+			}
+			if _, found, err := trust.NewStore(paths.GlobalTrust).Lookup(ws.PhysicalPath()); err != nil || found {
+				t.Fatalf("temporary choice persisted: found = %v, error = %v", found, err)
+			}
+		})
+	}
+}
+
+func TestTrustMenuSelectionsPersistWithoutChangingLoadedContext(t *testing.T) {
+	t.Parallel()
+	workspace := canonicalTestWorkspace(t)
+	menu := (&interactiveSession{workspacePath: workspace}).trustMenu()
+	for _, option := range menu.Options {
+		t.Run(option.Label, func(t *testing.T) {
+			store := trust.NewStore(filepath.Join(t.TempDir(), "trust.json"))
+			runner := &interactiveSession{
+				trustStore: store, workspacePath: workspace,
+				trustDecision: trust.DecisionUntrusted, systemPrompt: "loaded prompt",
+			}
+			output, err := runner.RunSlashCommand(t.Context(), tui.SlashCommandRequest{Name: "trust", Arguments: option.Arguments})
+			if err != nil {
+				t.Fatal(err)
+			}
+			index, err := strconv.Atoi(option.Arguments)
+			if err != nil {
+				t.Fatal(err)
+			}
+			choice := trust.Choices(workspace)[index]
+			entry, found, err := store.Lookup(workspace)
+			if err != nil || !found || entry.Decision != choice.Decision {
+				t.Fatalf("saved choice = %#v, found = %v, error = %v, want %v", entry, found, err, choice.Decision)
+			}
+			if !strings.Contains(output, "saved") || !strings.Contains(output, "Restart AICE") {
+				t.Fatalf("misleading save result: %q", output)
+			}
+			if runner.trustDecision != trust.DecisionUntrusted || runner.systemPrompt != "loaded prompt" {
+				t.Fatal("/trust changed already-loaded context")
+			}
+		})
+	}
 }

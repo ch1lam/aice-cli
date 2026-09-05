@@ -190,7 +190,7 @@ file; the next accepted prompt starts a fresh one. A previous file that
 recorded turns is left untouched and stays resumable with `--session`.
 `/clear` only clears the visible transcript. `/new` does not rebuild the
 process environment: prompt files and skill discovery are reused. Dynamic Guard
-grants are cleared. See [known startup discrepancies](maintenance.md#startup-state-and-new).
+grants are cleared. Restart AICE to reload prompt files or Skills.
 
 ## Recovery and compaction
 

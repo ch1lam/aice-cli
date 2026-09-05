@@ -91,14 +91,18 @@ func (s *interactiveSession) loginProviderMenu() *interaction.CommandMenu {
 	}
 }
 
-// trustMenu lists the project trust choices for the active workspace.
+// trustMenu lists saved trust choices. Temporary startup choices cannot
+// change the already-loaded project context, so they are not offered here.
 func (s *interactiveSession) trustMenu() *interaction.CommandMenu {
 	choices := trust.Choices(s.workspacePath)
 	options := make([]interaction.CommandOption, 0, len(choices))
 	for index, choice := range choices {
+		if len(choice.Updates) == 0 {
+			continue
+		}
 		options = append(options, interaction.CommandOption{
 			Label:       choice.Label,
-			Description: trustChoiceDescription(choice),
+			Description: "Saved for future runs; restart AICE to apply",
 			Arguments:   strconv.Itoa(index),
 		})
 	}
@@ -106,13 +110,6 @@ func (s *interactiveSession) trustMenu() *interaction.CommandMenu {
 		Title:   "Project trust",
 		Options: options,
 	}
-}
-
-func trustChoiceDescription(choice trust.Choice) string {
-	if len(choice.Updates) == 0 {
-		return "Applies to this Session only"
-	}
-	return "Saved to the global trust store"
 }
 
 func (s *interactiveSession) providerMenu() *interaction.CommandMenu {
@@ -553,13 +550,13 @@ func (s *interactiveSession) slashTrust(
 	if err != nil {
 		return "", err
 	}
-	if len(choice.Updates) > 0 {
-		if err := s.trustStore.SetMany(choice.Updates); err != nil {
-			return "", fmt.Errorf("app: save project trust: %w", err)
-		}
-		return trustResultMessage(choice, true), nil
+	if len(choice.Updates) == 0 {
+		return "", fmt.Errorf("app: temporary trust choices are available only at startup")
 	}
-	return trustResultMessage(choice, false), nil
+	if err := s.trustStore.SetMany(choice.Updates); err != nil {
+		return "", fmt.Errorf("app: save project trust: %w", err)
+	}
+	return "Trust decision saved. Restart AICE for the new trust state to affect prompt loading.", nil
 }
 
 func (s *interactiveSession) slashLogin(
@@ -1002,14 +999,6 @@ func slashCommandTrustChoice(
 		)
 	}
 	return choices[index], nil
-}
-
-func trustResultMessage(choice trust.Choice, persisted bool) string {
-	suffix := "Restart AICE for the new trust state to affect prompt loading."
-	if !persisted {
-		return "Trust decision applied to this Session only. " + suffix
-	}
-	return "Trust decision saved. " + suffix
 }
 
 func (s *interactiveSession) saveSetting(

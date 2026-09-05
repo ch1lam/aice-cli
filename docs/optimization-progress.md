@@ -31,7 +31,7 @@ work in an earlier row. Temporary transitions must still build and pass tests.
 | 1 | App/Agent/Session: characterize relevant persistence, cancellation, compaction, and permission boundaries | Tests | Existing invariants covered; known mismatches distinguished from intended behavior | Complete |
 | 2 | App: separate environment, conversation, and active-run ownership; centralize history submission and configuration snapshots | Structural | Same user behavior, explicit lock/resource ownership, full tests and race | In progress |
 | 3a | Guard/app: Session-scoped grants reset at `/new`, exact command matching, deny before all asks, complete approval scope | Behavioral | Combined Guard and app/Loop regression tests, including yolo | In progress |
-| 3b | App: restart-only Skills reminder and effective `/trust` choices | Behavioral | Startup temporary trust preserved; command behavior and documentation agree | Pending |
+| 3b | App: restart-only Skills reminder and effective `/trust` choices | Behavioral | Startup temporary trust preserved; command behavior and documentation agree | Complete |
 | 4a | Session: message entries, tree replay, safe branch boundaries, unknown interrupted results | Behavioral | New format round trips; old bytes untouched; no duplicate recovery/results/usage | Pending |
 | 4b | App/Agent: persist each completed message before later side effects, unified terminal submission | Behavioral | Injected write/UI/provider/cancellation failures; print and TUI share semantics | Pending |
 | 4c | Context: compact at paired model-round boundaries with frozen model configuration; stateless print uses memory | Behavioral | 200 rounds, at least three compactions, steering, repeated compaction and failure cases | Pending |
@@ -81,6 +81,13 @@ commands leave them intact. Menu labels say "for this session". Guard and app
 lifecycle regressions cover all grant kinds, reuse across runs and Loop rebuilds,
 configured rules/read roots, and yolo preservation. Full tests, vet, and race
 passed. Actual interactive verification remains part of the completion audit.
+
+The Skills reminder now says restart only. `/trust` offers saved choices and
+rejects temporary choice arguments; saved decisions explicitly take effect on
+restart. Regressions verify both saved Trust and unchanged loaded context,
+while startup temporary trust/ignore still changes prompt loading without
+persisting. Full tests, vet, and race passed alongside the approval-scope fix;
+interactive verification remains pending.
 
 The Go HTTP evaluation family is in `evals/go-service`. It includes independent
 HTTP acceptance, generated starting points, one reference implementation, and

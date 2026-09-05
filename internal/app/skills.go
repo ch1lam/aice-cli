@@ -14,7 +14,7 @@ import (
 
 const (
 	maxSkillDescriptionRunes = 80
-	skillsScanReminder       = "Skill list was scanned at Session start. Restart AICE or start a new Session after installing or removing skills."
+	skillsScanReminder       = "Skill list was scanned at AICE startup. Restart AICE after installing or removing skills."
 )
 
 // skillDiscovery is the merged catalog plus every diagnostic from scanning

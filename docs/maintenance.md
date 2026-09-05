@@ -80,26 +80,3 @@ wins even when another rule asks, including multiple paths in one call.
 Interactive approval and `--yolo` must not bypass later policies. Test the
 combined rules through both Guard and the app/loop bridge, not only isolated
 matchers.
-
-### Startup state and `/new`
-
-**Skill refresh — confirmed wording mismatch.** `slashNew` resets history,
-store, and usage but retains the startup catalog, tools, and prompt. The
-`skillsScanReminder` in [skills.go](../internal/app/skills.go) still says that
-starting a new Session picks up installed/removed skills. The user guide now
-specifies restart, matching the current implementation.
-
-Acceptance: align the reminder with restart-only discovery. If `/new` is later
-meant to refresh startup inputs, decide how Trust, prompts, skill bodies, and
-Guard read roots refresh together; do not rescan only the menu.
-
-**Unsaved `/trust` choice — confirmed no-op; desired UX unresolved.**
-`slashTrust` persists `choice.Updates` when non-empty. Otherwise it returns
-`trustResultMessage` without updating the effective Trust state or prompt.
-The success text claims a Session-only choice was applied and requests a
-restart, but an unsaved choice cannot survive that restart.
-
-Acceptance requires deciding whether to remove those choices from `/trust`,
-apply them at an explicit environment-refresh boundary, or introduce another
-well-defined behavior. Do not silently hot-reload trusted inputs or save a
-choice presented as temporary. Test both the reported and effective state.

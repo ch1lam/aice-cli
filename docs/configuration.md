@@ -233,10 +233,8 @@ Skill directories on disk are allowed automatically for read-class tools
 [Tool execution and Sessions](execution-sessions.md#tool-execution-boundary).
 
 Restart AICE after installing or removing skills. `/new` resets Session
-history but currently reuses the startup skill catalog, tools, and prompt; it
-does not rescan skills. The current `/skills` reminder still suggests starting
-a new Session; this wording discrepancy is tracked in
-[Maintenance](maintenance.md#startup-state-and-new).
+history but reuses the startup skill catalog, tools, and prompt; it does not
+rescan skills. The `/skills` reminder reports that restart requirement.
 
 ## Interactive commands
 
@@ -251,7 +249,7 @@ a new Session; this wording discrepancy is tracked in
 | `/provider` | Select and save the global provider |
 | `/model` | Select and save a model from that provider |
 | `/thinking` | Select and save a supported reasoning level |
-| `/trust` | Save a Trust choice for restart; unsaved choices have a [known limitation](maintenance.md#startup-state-and-new) |
+| `/trust` | Save a Trust choice for restart; temporary choices are available only at startup |
 | `/session` | Show the Session ID, path, active leaf, and counts |
 | `/tree` | Show all Session branches |
 | `/checkout` | Select where the next branch starts |

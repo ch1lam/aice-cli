@@ -46,10 +46,10 @@ decision, they ignore project resources and continue with global or built-in
 instructions.
 
 The startup prompt can save a decision for the workspace or its parent, or
-apply a process-only choice. `/trust` can save a decision for a later restart;
-it does not hot-reload prompt files. Its unsaved choices currently report
-success without changing effective Trust state; see the
-[known discrepancy](maintenance.md#startup-state-and-new).
+apply a process-only choice. `/trust` offers only saved decisions for a later
+restart; it does not change already-loaded prompt files or Skills. Temporary
+choices remain available at startup, where they affect loading immediately
+without being saved.
 
 ## Prompt assembly
 
