@@ -28,7 +28,7 @@ work in an earlier row. Temporary transitions must still build and pass tests.
 
 | Step | Owner and change | Kind | Required evidence | State |
 | --- | --- | --- | --- | --- |
-| 1 | App/Agent/Session: characterize relevant persistence, cancellation, compaction, and permission boundaries | Tests | Existing invariants covered; known mismatches distinguished from intended behavior | In progress |
+| 1 | App/Agent/Session: characterize relevant persistence, cancellation, compaction, and permission boundaries | Tests | Existing invariants covered; known mismatches distinguished from intended behavior | Complete |
 | 2 | App: separate environment, conversation, and active-run ownership; centralize history submission and configuration snapshots | Structural | Same user behavior, explicit lock/resource ownership, full tests and race | Pending |
 | 3a | Guard/app: Session-scoped grants reset at `/new`, exact command matching, deny before all asks, complete approval scope | Behavioral | Combined Guard and app/Loop regression tests, including yolo | Pending |
 | 3b | App: restart-only Skills reminder and effective `/trust` choices | Behavioral | Startup temporary trust preserved; command behavior and documentation agree | Pending |
@@ -57,6 +57,12 @@ behavior, not the new design: it must change without weakening tool pairing.
 Known Guard and startup mismatches are documented in
 [Maintenance](maintenance.md#known-discrepancies). Resolve entries there as
 their fixes land; do not reinterpret mismatches as accepted behavior.
+
+Step 1 adds `internal/app/persistence_boundary_test.go`: actual successful tool
+results survive display failure, final display failure does not duplicate saved
+messages, and persistence failure prevents queued follow-up and publication of
+unsaved history. Assertions use restored context rather than physical turn
+counts. Focused normal/race tests, `go test ./...`, and `go vet ./...` passed.
 
 ## Completion audit
 
