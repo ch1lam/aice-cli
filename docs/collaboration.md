@@ -21,6 +21,35 @@ unavailable tooling or platform checks rather than claiming they passed.
 The [release workflow](../.github/workflows/release.yml) owns release build and
 packaging commands. Harbor has its own [integration guide](../integrations/harbor/README.md).
 
+## Offline capability checks
+
+The default Go suite includes [long-task acceptance](../internal/app/long_task_test.go):
+one interactive input with an in-run correction, and one stateless print input,
+each complete 200 scripted main model requests and at least three real application
+compactions. Tools perform local reads; summary generation uses a scripted model.
+Checks cover request pairing, retained requirements, budget, source counts, usage,
+and reopening after summary cancellation or checkpoint failures. To inspect its
+counts independently:
+
+```sh
+go test ./internal/app -run '200ModelRounds|CompactionFailureBoundaries' -v
+```
+
+The [Go HTTP service](../evals/go-service/README.md) and
+[Python data CLI](../evals/python-cli/README.md) are separate engineering task
+families. Each covers building from zero, extension, a reproducible defect, and
+refactoring followed by another requirement. Their reference implementations and
+independent acceptance are outside AICE's runtime module. Run their documented
+self-checks explicitly; passing the root Go suite does not run these fixtures.
+The guides include review criteria and reference validation records.
+
+Keep three kinds of evidence distinct: scripted models validate execution,
+reference fixtures validate tasks and fault detection, and actual model runs
+measure generated-code quality. Neither of the first two proves the third.
+For model comparisons, preserve initial/final source and refactor-only diffs,
+record settings and interventions, and review readability, change locality and
+the need for each abstraction. Agree on models and cost before paid evaluation.
+
 ## Git and Collaboration
 
 - Multiple sessions may share this worktree. Preserve unrelated staged, unstaged, and untracked changes.

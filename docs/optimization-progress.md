@@ -29,13 +29,13 @@ work in an earlier row. Temporary transitions must still build and pass tests.
 | Step | Owner and change | Kind | Required evidence | State |
 | --- | --- | --- | --- | --- |
 | 1 | App/Agent/Session: characterize relevant persistence, cancellation, compaction, and permission boundaries | Tests | Existing invariants covered; known mismatches distinguished from intended behavior | Complete |
-| 2 | App: separate environment, conversation, and active-run ownership; centralize history submission and configuration snapshots | Structural | Same user behavior, explicit lock/resource ownership, full tests and race | In progress |
+| 2 | App: separate environment, conversation, and active-run ownership; centralize history submission and configuration snapshots | Structural | Same user behavior, explicit lock/resource ownership, full tests and race | Complete |
 | 3a | Guard/app: Session-scoped grants reset at `/new`, exact command matching, deny before all asks, complete approval scope | Behavioral | Combined Guard and app/Loop regression tests, including yolo | Complete |
 | 3b | App: restart-only Skills reminder and effective `/trust` choices | Behavioral | Startup temporary trust preserved; command behavior and documentation agree | Complete |
 | 4a | Session: message entries, tree replay, safe branch boundaries, unknown interrupted results | Behavioral | New format round trips; old bytes untouched; no duplicate recovery/results/usage | Complete |
 | 4b | App/Agent: persist each completed message before later side effects, unified terminal submission | Behavioral | Injected write/UI/provider/cancellation failures; print and TUI share semantics | Complete |
-| 4c | Context: compact at paired model-round boundaries with frozen model configuration; stateless print uses memory | Behavioral | 200 rounds, at least three compactions, steering, repeated compaction and failure cases | Core complete; summary print usage and long-task audit pending |
-| 4d | Session consumers: navigation, display, usage, Harbor | Behavioral | Real CLI/TUI exercises; conversion fixtures and correct usage accounting | Complete for v3; automatic summary print totals remain in 4c |
+| 4c | Context: compact at paired model-round boundaries with frozen model configuration; stateless print uses memory | Behavioral | 200 rounds, at least three compactions, steering, repeated compaction and failure cases | Complete |
+| 4d | Session consumers: navigation, display, usage, Harbor | Behavioral | Real CLI/TUI exercises; conversion fixtures and correct usage accounting | Complete |
 | 5a | Existing prompt and Bash feedback: proportional engineering guidance, bounded head/tail output | Behavioral | Output/error regressions; custom prompt replacement unchanged | Complete |
 | 5b | Offline evaluation: Go HTTP service and Python data CLI lifecycles | Evaluation | Requirements, independent tests, reference implementations, review rubric, recorded runs | Complete |
 | 5c | Documentation and completion audit | Documentation | Requirement-by-requirement evidence and honest limitations | Pending |
@@ -227,6 +227,18 @@ and vet, plus focused printer/compaction race tests, passed. Actual CLI text and
 JSON runs each verified 480,100 input and 45 output tokens across six main calls
 and three summaries, with only six main `message_end` events. Both storage modes
 passed. Unsaved summary usage remains unavailable after reopening, as documented.
+
+The final long-task fixture completed 200 main requests and 32 summaries in both
+interactive and stateless print paths. The interactive correction survived the
+remaining requests and sixteen subsequent summaries; source counts were two
+users, 200 assistants and 199 tool results, with exact checkpoint usage totals.
+Summary cancellation, checkpoint write failure and cancellation after a saved
+checkpoint preserved source prefixes, returned the expected error types and
+reopened twice with valid context and unchanged checkpoint totals. The fixture
+uses an 8k window and 2,080-byte reads to retain all boundaries at practical test
+cost. The earlier larger fixture also passed race, taking 400.342 seconds.
+Final full tests and vet passed; full app race passed in 105.525 seconds. Nine
+Harbor projection tests passed again. Final documentation consolidation remains.
 
 The Go HTTP evaluation family is in `evals/go-service`. It includes independent
 HTTP acceptance, generated starting points, one reference implementation, and
