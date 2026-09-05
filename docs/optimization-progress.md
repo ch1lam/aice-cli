@@ -36,7 +36,7 @@ work in an earlier row. Temporary transitions must still build and pass tests.
 | 4b | App/Agent: persist each completed message before later side effects, unified terminal submission | Behavioral | Injected write/UI/provider/cancellation failures; print and TUI share semantics | Complete |
 | 4c | Context: compact at paired model-round boundaries with frozen model configuration; stateless print uses memory | Behavioral | 200 rounds, at least three compactions, steering, repeated compaction and failure cases | Pending |
 | 4d | Session consumers: navigation, display, usage, Harbor | Behavioral | Real CLI/TUI exercises; conversion fixtures and correct usage accounting | Complete for v3; automatic summary print totals remain in 4c |
-| 5a | Existing prompt and Bash feedback: proportional engineering guidance, bounded head/tail output | Behavioral | Output/error regressions; custom prompt replacement unchanged | Bash complete; prompt pending |
+| 5a | Existing prompt and Bash feedback: proportional engineering guidance, bounded head/tail output | Behavioral | Output/error regressions; custom prompt replacement unchanged | Complete |
 | 5b | Offline evaluation: Go HTTP service and Python data CLI lifecycles | Evaluation | Requirements, independent tests, reference implementations, review rubric, recorded runs | Complete |
 | 5c | Documentation and completion audit | Documentation | Requirement-by-requirement evidence and honest limitations | Pending |
 
@@ -193,6 +193,14 @@ race passed. An actual CLI run with a localhost-only scripted model produced a
 diagnostic, and exit code 7 in the next model request; stateless print created
 no Session directory. The temporary server was stopped. This is feedback
 verification, not a real-model coding-quality result.
+
+Four short default-prompt additions make behavior/constraint tracing, local
+state ownership, demonstrated abstraction needs, and evidence-based completion
+explicit within the existing workflow. Custom project/global SYSTEM replacement
+tests and default/Skills assembly tests passed. Full tests and vet passed on an
+isolated snapshot of `582c16f` plus only this prompt change, so concurrent context
+implementation was not part of that evidence. No fixed phase scheduler or
+completion mechanism was added; real-model quality remains unmeasured.
 
 The Go HTTP evaluation family is in `evals/go-service`. It includes independent
 HTTP acceptance, generated starting points, one reference implementation, and

@@ -60,6 +60,12 @@ The base prompt is selected from the first available source:
 3. The built-in prompt, including the available tool list and working
    directory.
 
+The built-in guidance asks the model to understand behavior and constraints,
+keep control flow and state ownership clear, use abstractions for demonstrated
+changes, and verify proportionally with observable evidence. These are working
+defaults, not a fixed execution schedule or a guarantee of model quality. A
+custom `SYSTEM.md` replaces that base guidance along with the built-in tool list.
+
 Trusted project `AGENTS.md` is appended next. The append prompt then comes
 from trusted project `.aice/APPEND_SYSTEM.md`, otherwise global
 `~/.aice/APPEND_SYSTEM.md`. When the merged skill catalog is non-empty, a

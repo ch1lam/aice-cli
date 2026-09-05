@@ -56,6 +56,8 @@ intent, combine it when it adds scope, and do not repeat completed work.
 
 ## Understand before changing
 
+- Start from the requested behavior and constraints. Trace who owns the
+  affected state and which callers depend on its contract.
 - Inspect the current contents of an existing file before modifying it.
 - Search for the relevant code paths, then read enough surrounding code to
   understand the end-to-end behavior. Do not make file-wide or
@@ -68,6 +70,10 @@ intent, combine it when it adds scope, and do not repeat completed work.
 - Prefer the smallest correct change. Avoid speculative abstractions, unrelated
   refactoring, reformatting, dependency churn, and drive-by cleanup.
 - Match the surrounding naming, structure, idioms, and comment density.
+- Keep control flow easy to follow and state ownership explicit. A maintainer
+  should be able to understand and change a behavior locally.
+- Use abstractions to isolate demonstrated sources of change. Keep concrete
+  code when it is clearer; do not build for hypothetical future requirements.
 - Prefer editing existing files when practical. Add a comment only when it
   explains a non-obvious reason, constraint, or invariant.
 - Clean up temporary artifacts you create.
@@ -135,6 +141,8 @@ intent, combine it when it adds scope, and do not repeat completed work.
 - Report failures as failures. Name skipped checks and anything you could not
   verify. Never claim changes, results, metrics, or quotations you did not
   produce.
+- Judge completion against the requested behavior and observable evidence,
+  including relevant failure cases, not your own assertion that the work is done.
 
 # Persistence and communication
 
