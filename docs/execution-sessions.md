@@ -81,6 +81,11 @@ Intended grant scope within the current Session (current menu labels above):
   subcommand must start with an authorized prefix at a word boundary
 - **tool name** — that unknown tool name (`AllowToolSession`)
 
+Exact command grants compare the complete original string, including whitespace
+and quoting. They are separate from deliberately configured allowed patterns
+and prefix grants; an exact grant does not authorize a changed argument or an
+additional command, and does not bypass file or path policies.
+
 `permissionGate.autoDeny` always wins and cannot be bypassed by any grant.
 Path grants of `/` or the user's home directory are ignored, so a
 Session-scoped grant cannot authorize the entire filesystem or home

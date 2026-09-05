@@ -81,19 +81,6 @@ policies, skill read roots, and the invocation's `--yolo` setting. Resuming a
 Session in another process must not restore grants from disk. Update menu
 labels and tests to use the same Session scope.
 
-**Exact-command grant — confirmed implementation mismatch.**
-`applyGuardAskGrant` calls `AllowCommandSession`, which adds the command to
-`allowedCmdPatterns`. `compileCommandPattern` uses `strings.Contains` for this
-entry. Authorizing `rm -rf ./scratch` therefore also lets
-`rm -rf ./scratch-other` pass the dangerous-command check when no other rule
-blocks it. This is broader than the menu's “exact command” choice.
-
-Reproduced using only `Guard.Check` and `AllowCommandSession`; no shell command
-was executed. Acceptance: exact grants match the whole command string;
-changed arguments and compound commands must be evaluated independently.
-Keep deliberate configured patterns separate from exact interactive grants,
-and preserve auto-deny precedence.
-
 **Early ask skips later policies — confirmed implementation mismatch.**
 `Guard.Check` returns immediately for a dangerous command, before checking file
 policies and all extracted paths. With an existence probe reporting a protected

@@ -42,6 +42,7 @@ type Guard struct {
 	// permission gate
 	dangerousPatterns    []compiledCommandPattern
 	allowedCmdPatterns   []compiledCommandPattern
+	sessionCommands      map[string]bool // raw commands granted by exact equality
 	sessionCmdPrefixes   []string
 	autoDenyPatterns     []compiledCommandPattern
 	useBuiltinStructural bool
@@ -141,13 +142,16 @@ func (g *Guard) AllowPathSession(absPath string, isDir bool) {
 }
 
 // AllowCommandSession records that a dangerous command is allowed for the
-// remainder of this run. It appends the command substring as an allowed
-// pattern so future identical commands bypass the dangerous check.
+// remainder of this run. Only an identical raw command bypasses the dangerous
+// check; configured allowed patterns and command-prefix grants stay separate.
 func (g *Guard) AllowCommandSession(command string) {
 	if g == nil || command == "" {
 		return
 	}
-	g.allowedCmdPatterns = append(g.allowedCmdPatterns, compileCommandPattern(PatternConfig{Pattern: command}))
+	if g.sessionCommands == nil {
+		g.sessionCommands = make(map[string]bool)
+	}
+	g.sessionCommands[command] = true
 }
 
 // AllowToolSession records that an unknown tool name is allowed for the
@@ -218,8 +222,11 @@ func (g *Guard) Check(ctx context.Context, call llm.ToolCall) (Result, error) {
 			if hit := matchCommandPattern(cmd, g.autoDenyPatterns); hit != nil {
 				return Result{Decision: DecisionDeny, Reason: formatCommandBlockReason(hit, ""), RuleID: "permissionGate.autoDeny", Action: Action{Kind: "command", Command: cmd, ToolName: call.Name}}, nil
 			}
-			// Allowed patterns and session command prefixes bypass the dangerous check.
-			if matchCommandPattern(cmd, g.allowedCmdPatterns) == nil && !commandCoveredByPrefixes(cmd, g.sessionCmdPrefixes) {
+			// Exact session grants, configured patterns, and session prefixes
+			// bypass only the dangerous-command check.
+			if !g.sessionCommands[cmd] &&
+				matchCommandPattern(cmd, g.allowedCmdPatterns) == nil &&
+				!commandCoveredByPrefixes(cmd, g.sessionCmdPrefixes) {
 				if g.useBuiltinStructural {
 					if desc, pat := structuralDangerousMatch(cmd); desc != "" {
 						if g.requireConfirmation {

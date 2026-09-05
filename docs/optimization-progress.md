@@ -30,7 +30,7 @@ work in an earlier row. Temporary transitions must still build and pass tests.
 | --- | --- | --- | --- | --- |
 | 1 | App/Agent/Session: characterize relevant persistence, cancellation, compaction, and permission boundaries | Tests | Existing invariants covered; known mismatches distinguished from intended behavior | Complete |
 | 2 | App: separate environment, conversation, and active-run ownership; centralize history submission and configuration snapshots | Structural | Same user behavior, explicit lock/resource ownership, full tests and race | In progress |
-| 3a | Guard/app: Session-scoped grants reset at `/new`, exact command matching, deny before all asks, complete approval scope | Behavioral | Combined Guard and app/Loop regression tests, including yolo | Pending |
+| 3a | Guard/app: Session-scoped grants reset at `/new`, exact command matching, deny before all asks, complete approval scope | Behavioral | Combined Guard and app/Loop regression tests, including yolo | In progress |
 | 3b | App: restart-only Skills reminder and effective `/trust` choices | Behavioral | Startup temporary trust preserved; command behavior and documentation agree | Pending |
 | 4a | Session: message entries, tree replay, safe branch boundaries, unknown interrupted results | Behavioral | New format round trips; old bytes untouched; no duplicate recovery/results/usage | Pending |
 | 4b | App/Agent: persist each completed message before later side effects, unified terminal submission | Behavioral | Injected write/UI/provider/cancellation failures; print and TUI share semantics | Pending |
@@ -69,6 +69,13 @@ end/reload/snapshot operations into a named `conversationState`. The application
 still coordinates settings, lazy creation, commands, and compaction. Lock order
 and version 2 persistence behavior are unchanged. Full tests, vet, and race
 passed; this is groundwork, not completion of the message-level redesign.
+
+Exact command grants now use raw whole-string equality independently of
+configured patterns. `TestGuardExactCommandGrant` and
+`TestGuardExactCommandGrantPreservesOtherChecks` cover changed arguments,
+compound commands, whitespace/quoting, configured patterns, and denial precedence.
+Full tests and vet passed. Session grant reset and aggregate rule evaluation
+remain outstanding.
 
 ## Completion audit
 
