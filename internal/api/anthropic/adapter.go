@@ -372,11 +372,7 @@ func toolResultBlockParam(result *llm.ToolResult) (anthropicsdk.ContentBlockPara
 
 func toolParams(tools []llm.ToolDefinition) ([]anthropicsdk.ToolUnionParam, error) {
 	result := make([]anthropicsdk.ToolUnionParam, 0, len(tools))
-	for index, tool := range tools {
-		if err := streamcore.ValidateToolName(index, tool); err != nil {
-			return nil, fmt.Errorf("anthropic: %w", err)
-		}
-
+	for _, tool := range tools {
 		var schema anthropicsdk.ToolInputSchemaParam
 		if err := json.Unmarshal(tool.InputSchema, &schema); err != nil {
 			return nil, fmt.Errorf("anthropic: tool %q input schema: %w", tool.Name, err)

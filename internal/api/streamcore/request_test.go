@@ -83,11 +83,6 @@ func TestDecodeToolSchemas(t *testing.T) {
 	if len(got) != 1 || got[0]["type"] != "object" {
 		t.Fatalf("DecodeToolSchemas() = %#v", got)
 	}
-
-	_, err = DecodeToolSchemas([]llm.ToolDefinition{{Name: "", InputSchema: schema}})
-	if err == nil || !strings.Contains(err.Error(), "name is required") {
-		t.Fatalf("empty name error = %v", err)
-	}
 }
 
 func TestImageDataURL(t *testing.T) {

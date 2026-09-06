@@ -151,5 +151,5 @@ review scores with evidence; and unfinished requirements. Keep actual result
 snapshots separate from reference solutions. Do not infer elegance from line count,
 test success, or a model's completion message.
 
-See [RESULTS.md](RESULTS.md) for the fixture's measured offline self-check. These
-results validate the task assets and fault detection, **not model coding quality**.
+Run `verify.py` to check the reference and seeded negative controls. A successful
+self-check validates task assets and fault detection, **not model coding quality**.

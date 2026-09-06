@@ -21,8 +21,8 @@ type RetryPolicy struct {
 	MaxDelay   time.Duration
 }
 
-// DefaultRetryPolicy matches Pi's three retries with 2s, 4s, and 8s delays,
-// while bounding provider-requested delays to one minute.
+// DefaultRetryPolicy allows three retries with 2s, 4s, and 8s delays.
+// A provider-requested delay above one minute stops retries.
 func DefaultRetryPolicy() RetryPolicy {
 	return RetryPolicy{
 		MaxRetries: 3,

@@ -31,21 +31,11 @@ func ValidateTemperature(temperature *float64) error {
 	return nil
 }
 
-// ValidateToolName rejects a tool with an empty name.
-func ValidateToolName(index int, tool llm.ToolDefinition) error {
-	if tool.Name == "" {
-		return fmt.Errorf("tool %d name is required", index)
-	}
-	return nil
-}
-
-// DecodeToolSchemas validates tool definitions and decodes their JSON schemas.
+// DecodeToolSchemas decodes JSON schemas from tool definitions already checked
+// by Request.Validate at the adapter entry point.
 func DecodeToolSchemas(tools []llm.ToolDefinition) ([]map[string]any, error) {
 	schemas := make([]map[string]any, 0, len(tools))
-	for index, tool := range tools {
-		if err := ValidateToolName(index, tool); err != nil {
-			return nil, err
-		}
+	for _, tool := range tools {
 		var schema map[string]any
 		if err := json.Unmarshal(tool.InputSchema, &schema); err != nil {
 			return nil, fmt.Errorf("tool %q input schema: %w", tool.Name, err)

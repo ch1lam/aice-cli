@@ -4,9 +4,6 @@
 
 AICE is a small coding harness, not an agent platform. It ships as one Go
 module and binary, with one AICE process; host tools may spawn subprocesses.
-Pi is a semantic reference for the Agent Loop,
-messages, tools, events, and Session truth; it is not a source-tree template
-or a compatibility target.
 
 ## Design philosophy
 
@@ -48,9 +45,6 @@ Durable design rules:
   execution and Sessions](execution-sessions.md#tool-execution-boundary).
 - Built-ins and future replacements use the same consumer-owned interfaces.
 - Dependencies are assembled explicitly in `internal/app`.
-
-The removed TypeScript implementation and its Node.js, npm, Vercel AI SDK,
-Ink, oclif, Session, and configuration formats are not compatibility targets.
 
 ## Runtime flow
 
@@ -190,11 +184,9 @@ middleware.
 
 ## Planned extensions and restraint
 
-The following status reflects the product direction. A committed feature is
-not an implemented feature or permission to prebuild its infrastructure.
-Confirm unresolved behavior when implementing it, then update its owning user
-guide and runtime contract. Do not treat private function or field names below
-as permanent architecture.
+These capabilities are not implemented. Their status records product scope;
+implementation requires a concrete use case and resolution of the open decisions.
+Use existing boundaries and update the owning guide when a capability ships.
 
 | Capability | Status | Design boundary |
 | --- | --- | --- |
@@ -209,49 +201,11 @@ A concrete requirement must explain why existing boundaries are insufficient
 before adding one. The in-process Guard and external host isolation remain
 separate concerns.
 
-### Plan mode
-
-Start with application-owned transitions and a Guard-enforced restriction.
-A prompt instruction alone is insufficient to enforce read-only behavior.
-Define entry, permitted tools, user approval to exit, and when the change takes
-effect relative to an active run. The system prompt is frozen during a run.
-
-The earlier `/plan` plus read-only Guard flag is a starting design, not a
-requirement for a mode framework. Decide how plans are presented and retained
-before implementation; do not invent a new Session record type or Loop
-primitive merely to hold a plan.
-
-### Subagents
-
-Start with an ordinary delegation tool whose implementation owns a child Loop,
-limited tools, explicit context input, cancellation, and a result returned to
-the parent as a tool result. The main Session remains the durable transcript;
-do not introduce independent child transcripts without revisiting that decision.
-`/btw` is a tool-free side conversation and must not become the delegation runtime.
-
-Resolve permission inheritance, context selection, usage accounting, failure
-propagation, and limits for the first concrete delegation use case. Start
-serially unless that use case requires parallelism. Before sharing a Guard or
-tools across concurrent runs, review all their mutable state and shutdown
-paths; serial tool execution within each Loop does not make shared dependencies
-safe across Loops. See [Concurrency](contracts.md#concurrency-and-tui).
-
-### Memory
-
-Memory is wanted, but project-specific context already supplies much of a
-coding harness's needs. Its use should be optional; scope, storage, retrieval,
-retention, and user control are not yet decided. Do not build a memory service
-or silently persist inferred user/project facts while the strategy is open.
-
-Markdown files with a small prompt index and bodies read on demand remain a
-candidate, not an approved directory layout or retrieval policy. Project-owned
-memory loading must have an explicit Trust decision. Keep memory distinct from
-Session truth and avoid a database/vector store or second transcript store.
-
-### MCP
-
-There is no current requirement to implement MCP. If a future use case needs
-it, begin with a client adapter that presents ordinary tools, participates in
-Guard checks, and is wired by `internal/app`. Re-evaluate lifecycle and resource
-handling against that use case; do not prebuild an MCP server, plugin bus,
-message variant, or hot-reload machinery.
+Plan mode must enforce restrictions in Guard and define permitted actions, exit
+approval, and transitions relative to an active run's frozen prompt. Subagents
+need explicit child cancellation, context, permission inheritance, usage and
+failure handling; concurrent children require a review of shared Guard/tool
+state. The main Session remains the transcript, and `/btw` remains tool-free.
+Memory needs user-controlled scope, retention and retrieval, with Trust for
+project-owned loading. None requires a new Loop primitive or transcript store
+by default.

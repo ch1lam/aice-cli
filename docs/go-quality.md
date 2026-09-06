@@ -51,13 +51,15 @@
 
 Use standard `testing`, local fakes, `httptest`, and temporary directories when
 sufficient. Test observable behavior, boundary failures, and regressions;
-avoid assertions that only mirror private implementation structure. Use named
+avoid assertions that only mirror private implementation structure. Remove a
+redundant test only after identifying the retained test that detects the same
+failure, including its boundary and side effects. Similar inputs at different
+ownership boundaries do not by themselves make tests redundant. Use named
 subtests for distinct cases. Parallelize tests only when they do not share
 mutable state or process environment. Default tests must not need provider
 credentials or paid APIs. Required commands live in
 [Collaboration](collaboration.md#verification-commands).
 
-The removed TypeScript runtime and its formats are not compatibility targets.
 Internal Go APIs may change with their callers; do not retain obsolete shims
 without a current need. This does not waive the current
 [NDJSON contract](contracts.md#print-ndjson-events) or permit silently discarding

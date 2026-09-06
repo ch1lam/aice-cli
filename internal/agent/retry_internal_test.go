@@ -10,7 +10,7 @@ import (
 	"github.com/ch1lam/aice-cli/internal/llm"
 )
 
-func TestDefaultRetryPolicyUsesThreePiStyleAttempts(t *testing.T) {
+func TestDefaultRetryPolicyUsesThreeRetries(t *testing.T) {
 	t.Parallel()
 
 	policy := DefaultRetryPolicy()

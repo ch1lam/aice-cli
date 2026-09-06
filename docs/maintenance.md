@@ -84,10 +84,17 @@ that cannot be understood from the code alone. Internal enum lists, private
 field names, provider counts, and build commands are easy to duplicate and
 forget; link to their owner when a copy adds no user value.
 
+## Documentation upkeep
+
+Describe the current design directly, including its rationale, ownership and
+limits. Remove superseded alternatives, transition instructions, completed plans
+and dated verification narratives when the final design is in place. Git history
+retains implementation history; maintained guides are not a change journal.
+Keep reproducible verification commands and evaluation task specifications.
+Session recovery and supported-format rejection are current behavior, not
+historical documentation.
+
 ## Known discrepancies
 
-The Guard and startup discrepancies recorded by the 2026-09-05 documentation
-review have been corrected. No entries from that review remain unresolved.
-That review covered selected runtime boundaries; it was not an exhaustive
-correctness, security, or provider compatibility audit. Record newly confirmed
-discrepancies here using the procedure above.
+No confirmed unresolved entries are recorded. This is not a claim of exhaustive
+correctness or security coverage; add evidence using the procedure above.

@@ -43,7 +43,8 @@ func TestAdapterNormalizesHTTPRetryMetadataWithoutSDKRetry(t *testing.T) {
 	}
 	if providerErr.StatusCode != http.StatusTooManyRequests ||
 		providerErr.Code != "rate_limit_error" ||
-		providerErr.RetryAfter != 1500*time.Millisecond {
+		providerErr.RetryAfter != 1500*time.Millisecond ||
+		providerErr.Transport {
 		t.Fatalf("provider error = %#v", providerErr)
 	}
 	if requests.Load() != 1 {

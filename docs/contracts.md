@@ -8,7 +8,7 @@
 | Session | One durable JSONL tree, potentially resumed by later processes; `/new` detaches it |
 | Agent run | One `Loop.Run` call: the initial interaction plus queued follow-ups, with frozen dependencies |
 | Interaction | Initial/follow-up user input, in-interaction steers, and model/tool rounds until settlement; its source messages are persisted individually |
-| Model round | One assistant response and its paired tool results; legacy `turn_start`/`turn_end` event names refer to this level |
+| Model round | One assistant response and its paired tool results; `turn_start`/`turn_end` events refer to this level |
 | Side thread | Ephemeral `/btw` context and answers, owned separately from main Session history |
 
 Avoid using “run” to mean process lifetime or Session lifetime, especially in
@@ -33,6 +33,9 @@ permission messages. Guard grant scope is defined in
   content, and timestamp.
 - Conversion from `[]AgentMessage` to `[]Message` happens only at the LLM
   boundary. Protocol adapters then translate into SDK or wire types.
+- Protocol adapters validate common request invariants with `Request.Validate`
+  before translation, including message validity and tool definitions. Conversion
+  helpers encode validated data; protocol-specific restrictions stay in adapters.
 - Provider identity and model catalogs stay separate from protocol adapters;
   compatible providers reuse the protocol layer. Thinking translation switches
   on protocol-format metadata rather than provider or model IDs.

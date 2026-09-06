@@ -19,7 +19,8 @@ state, and change one behavior without rebuilding the surrounding system.
    evidence requires it.
 4. Update the owning document with the implementation and run the checks in
    [Verification and collaboration](docs/collaboration.md). Report what changed,
-   what was verified, and any unresolved discrepancy.
+   what was verified, and any unresolved discrepancy. Keep documents about the
+   current design; remove superseded and completed transition content.
 
 The user's explicit request overrides this guide. When it changes a durable
 architecture decision, explain the conflict and confirm the intended direction
@@ -50,8 +51,8 @@ and routes; README files may summarize product behavior and link to details.
 ## Guardrails
 
 - **Keep the harness small.** One Go module and AICE binary; host helpers are
-  allowed. No extra AICE service, speculative framework, or restored TypeScript
-  runtime. [Architecture](docs/architecture.md#product-boundary)
+  allowed. No extra AICE service, speculative framework, or second runtime.
+  [Architecture](docs/architecture.md#product-boundary)
 - **Make dependencies explicit.** Consumer-owned interfaces, constructor wiring
   in `internal/app`, no mutable service registries or `init()` wiring. Standard
   library first; new direct dependencies require a reason, maintenance/license
