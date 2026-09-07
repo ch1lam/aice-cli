@@ -28,7 +28,7 @@ When `settings.json` omits `provider` and `model`, AICE uses `deepseek` and
 
 | Setting | Environment variable | Supported values |
 | --- | --- | --- |
-| Provider | `AICE_PROVIDER` | `deepseek`, `opencode-go`, `kimi-coding`, `moonshot`, `zhipu`, `openai`, `openai-codex`, `custom` |
+| Provider | `AICE_PROVIDER` | `deepseek`, `opencode-go`, `kimi-coding`, `moonshot`, `zhipu`, `zhipu-coding`, `openai`, `openai-codex`, `custom` |
 | Model | `AICE_MODEL` | A catalog model, or any model ID for `custom` |
 | Thinking | `AICE_THINKING` | `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` |
 | Default Project Trust | none | `ask`, `always`, `never` |
@@ -117,6 +117,7 @@ The default request is `medium`. On DeepSeek V4 Flash and Pro it becomes
 | `opencode-go/deepseek-v4-flash-vision-exp` | `off`, `low`, `high`, `max` |
 | `opencode-go/kimi-k2.6` | `off`, `high` |
 | `opencode-go/kimi-k3` | `max` |
+| `zhipu/glm-5.3`, `zhipu-coding/glm-5.3` | `low`, `high`, `max` (thinking enabled) |
 | `moonshot/kimi-k3` | `low`, `high`, `max` |
 | `moonshot/kimi-k2.7-code`, `moonshot/kimi-k2.7-code-highspeed` | `high` (thinking enabled) |
 | `moonshot/kimi-k2.6` | `off`, `high` |
@@ -279,6 +280,7 @@ credentials use a separate file as described below.
 | OpenCode Go | `AICE_OPENCODE_API_KEY` | `opencode_api_key` | `AICE_OPENCODE_BASE_URL` |
 | Kimi Coding Plan | `KIMI_API_KEY` | `kimi_api_key` | `AICE_KIMI_BASE_URL` |
 | Moonshot API (China) | `MOONSHOT_API_KEY` | `moonshot_api_key` | `AICE_MOONSHOT_BASE_URL` |
+| Zhipu Coding Plan | `ZHIPU_CODING_API_KEY` | `zhipu_coding_api_key` | `AICE_ZHIPU_CODING_BASE_URL` |
 | Zhipu API (China) | `ZHIPU_API_KEY` | `zhipu_api_key` | `AICE_ZHIPU_BASE_URL` |
 | OpenAI | `OPENAI_API_KEY` | `openai_api_key` | `AICE_OPENAI_BASE_URL` |
 | Custom (Ollama, vLLM, LM Studio, any OpenAI-compatible) | `AICE_CUSTOM_API_KEY` | `custom_api_key` | `AICE_CUSTOM_BASE_URL` (default `http://localhost:11434/v1`) |
@@ -431,6 +433,38 @@ not mean free usage. The preset retains AICE's own client identity.
 
 Capabilities follow the official [GLM-5.3 model documentation](https://docs.bigmodel.cn/cn/guide/models/text/glm-5.3)
 and [thinking/replay guide](https://docs.bigmodel.cn/cn/guide/capabilities/thinking-mode).
+
+### Zhipu Coding Plan
+
+Select `/login` → `Sign in with an API key` → `Zhipu Coding Plan`, or configure:
+
+```sh
+export ZHIPU_CODING_API_KEY="your-coding-plan-key"
+export AICE_PROVIDER=zhipu-coding
+export AICE_MODEL=glm-5.3
+aice
+```
+
+The preset uses `https://open.bigmodel.cn/api/coding/paas/v4/chat/completions`.
+Its API root override is `AICE_ZHIPU_CODING_BASE_URL`. Store only the credential
+with `printf '%s\n' "$ZHIPU_CODING_API_KEY" | aice config set-key --provider zhipu-coding`.
+The Coding Plan key and endpoint are independent of `zhipu`: neither provider
+falls back to the other's credentials or URL, including when quota is exhausted.
+Team subscriptions require the key from the team plan console.
+
+The catalog currently exposes `glm-5.3` with the same text, context, output,
+thinking and streaming capabilities documented above. AICE does not list
+historical model aliases that the Coding Plan server silently redirects.
+Token usage is recorded with zero per-token estimates; subscription quotas
+still apply. The endpoint controls preserved-thinking defaults, while AICE
+replays same-provider/model reasoning and tool results through the shared adapter.
+
+The official [quick start](https://docs.bigmodel.cn/cn/coding-plan/quick-start)
+and [plan overview](https://docs.bigmodel.cn/cn/coding-plan/overview) restrict
+plan quota to supported tools and product environments. AICE retains its own
+client identity; this compatibility preset does not assert that AICE has been
+approved by Zhipu for subscription quota. Actual access depends on the account
+and platform eligibility and has not been verified with a live credential.
 
 ### Codex subscription (ChatGPT OAuth)
 

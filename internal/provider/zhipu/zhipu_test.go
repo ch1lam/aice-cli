@@ -8,17 +8,29 @@ import (
 	"testing"
 
 	"github.com/ch1lam/aice-cli/internal/apitest"
+	"github.com/ch1lam/aice-cli/internal/config"
 	"github.com/ch1lam/aice-cli/internal/llm"
 	"github.com/ch1lam/aice-cli/internal/provider/zhipu"
 )
 
 func TestStreamAndToolReplay(t *testing.T) {
 	t.Parallel()
+	for _, descriptor := range []*zhipu.Provider{&zhipu.Provider{}, zhipu.CodingPlan()} {
+		t.Run(string(descriptor.ProviderID()), func(t *testing.T) { testStreamAndToolReplay(t, descriptor) })
+	}
+}
+
+func testStreamAndToolReplay(t *testing.T, descriptor *zhipu.Provider) {
+	t.Helper()
+	newService, baseURL := zhipu.New, "https://open.bigmodel.cn/api/paas/v4"
+	if descriptor.ProviderID() == zhipu.CodingProviderID {
+		newService, baseURL = zhipu.NewCoding, "https://open.bigmodel.cn/api/coding/paas/v4"
+	}
 	for _, level := range []llm.ThinkingLevel{llm.ThinkingLevelLow, llm.ThinkingLevelHigh, llm.ThinkingLevelMax} {
 		t.Run(string(level), func(t *testing.T) {
 			var bodies []map[string]any
-			service, err := zhipu.New(zhipu.Config{APIKey: "test-key", HTTPClient: &http.Client{Transport: apitest.RoundTripFunc(func(r *http.Request) (*http.Response, error) {
-				if r.URL.String() != "https://open.bigmodel.cn/api/paas/v4/chat/completions" || r.Header.Get("Authorization") != "Bearer test-key" {
+			service, err := newService(zhipu.Config{APIKey: "test-key", HTTPClient: &http.Client{Transport: apitest.RoundTripFunc(func(r *http.Request) (*http.Response, error) {
+				if r.URL.String() != baseURL+"/chat/completions" || r.Header.Get("Authorization") != "Bearer test-key" {
 					t.Errorf("wrong endpoint or authorization: %s", r.URL)
 				}
 				if !strings.HasPrefix(r.Header.Get("User-Agent"), "aice/") {
@@ -47,8 +59,8 @@ func TestStreamAndToolReplay(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			request := apitest.MinimalRequest(zhipu.DefaultModel().API)
-			request.Model = zhipu.DefaultModel()
+			request := apitest.MinimalRequest(descriptor.DefaultModel().API)
+			request.Model = descriptor.DefaultModel()
 			request.Options.Thinking = level
 			request.Tools = []llm.ToolDefinition{{Name: "read", InputSchema: json.RawMessage(`{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}`)}}
 			stream, err := service.Stream(t.Context(), request)
@@ -63,7 +75,7 @@ func TestStreamAndToolReplay(t *testing.T) {
 			if done.Type != llm.EventTypeDone || done.StopReason != llm.StopReasonToolUse || done.Message == nil {
 				t.Fatalf("done = %#v", done)
 			}
-			if done.Message.Provider != zhipu.ProviderID || done.Message.Usage.TotalTokens != 15 || len(done.Message.Content) != 2 {
+			if done.Message.Provider != descriptor.ProviderID() || done.Message.Usage.TotalTokens != 15 || len(done.Message.Content) != 2 {
 				t.Fatalf("message = %#v", done.Message)
 			}
 			request.Messages = append(request.Messages, *done.Message, llm.ToolResultMessage{Role: llm.RoleToolResult, ToolCallID: "call-1", Content: []llm.ContentPart{llm.NewTextContent("file contents").Part()}})
@@ -126,5 +138,63 @@ func TestConnectionValidation(t *testing.T) {
 	models[0].ThinkingLevelMap[llm.ThinkingLevelHigh] = nil
 	if !zhipu.DefaultModel().ThinkingLevelMap.Supports(llm.ThinkingLevelHigh) {
 		t.Fatal("catalog shares mutable map")
+	}
+}
+
+func TestCodingCredentialsAndIdentityAreIsolated(t *testing.T) {
+	t.Parallel()
+	platform, coding := &zhipu.Provider{}, zhipu.CodingPlan()
+	configuration := config.Config{ZhipuAPIKey: "platform", ZhipuBaseURL: "https://platform.example/v4"}
+	if coding.Configured(configuration) {
+		t.Fatal("Coding Plan used platform key")
+	}
+	if _, err := coding.New(configuration); err == nil {
+		t.Fatal("Coding Plan fell back to platform credential")
+	}
+	coding.ApplyAPIKey(&configuration, "coding")
+	platform.ApplyAPIKey(&configuration, "updated-platform")
+	if configuration.ZhipuAPIKey != "updated-platform" || configuration.ZhipuCodingAPIKey != "coding" {
+		t.Fatal("credentials overwritten")
+	}
+	if platform.Configured(config.Config{ZhipuCodingAPIKey: "coding"}) {
+		t.Fatal("platform used Coding Plan key")
+	}
+	if !strings.Contains(coding.CredentialNotConfiguredError().Error(), config.EnvZhipuCodingAPIKey) {
+		t.Fatal("wrong credential guidance")
+	}
+	service, err := zhipu.NewCoding(zhipu.Config{APIKey: "coding", HTTPClient: &http.Client{Transport: apitest.RoundTripFunc(func(*http.Request) (*http.Response, error) {
+		t.Error("unexpected network request")
+		return nil, io.ErrUnexpectedEOF
+	})}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := apitest.MinimalRequest(platform.DefaultModel().API)
+	request.Model = platform.DefaultModel()
+	if _, err := service.Stream(t.Context(), request); err == nil {
+		t.Fatal("Coding Plan accepted platform model identity")
+	}
+}
+
+func TestCodingQuotaErrorDoesNotFallback(t *testing.T) {
+	t.Parallel()
+	calls := 0
+	service, err := zhipu.NewCoding(zhipu.Config{APIKey: "coding", HTTPClient: &http.Client{Transport: apitest.RoundTripFunc(func(r *http.Request) (*http.Response, error) {
+		calls++
+		if r.URL.String() != "https://open.bigmodel.cn/api/coding/paas/v4/chat/completions" {
+			t.Errorf("unexpected endpoint: %s", r.URL)
+		}
+		return &http.Response{StatusCode: 429, Header: http.Header{"Content-Type": {"application/json"}}, Body: io.NopCloser(strings.NewReader(`{"error":{"code":"1302","message":"quota exceeded"}}`)), Request: r}, nil
+	})}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := apitest.MinimalRequest(zhipu.CodingPlan().DefaultModel().API)
+	request.Model = zhipu.CodingPlan().DefaultModel()
+	if _, err := service.Stream(t.Context(), request); err == nil {
+		t.Fatal("quota error was lost")
+	}
+	if calls != 1 {
+		t.Fatalf("requests = %d, want one attempt without fallback", calls)
 	}
 }

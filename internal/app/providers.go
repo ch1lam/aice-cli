@@ -25,6 +25,7 @@ func defaultProviders() []provider.Provider {
 		&kimi.Provider{},
 		&moonshot.Provider{},
 		&zhipu.Provider{},
+		zhipu.CodingPlan(),
 		&openai.Provider{},
 		&codex.Provider{},
 		&custom.Provider{},
