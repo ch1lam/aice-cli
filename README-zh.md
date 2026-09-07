@@ -70,7 +70,7 @@ aice --workspace . --session .aice/sessions/<session-id>.jsonl
 
 | 领域 | 当前实现 |
 | --- | --- |
-| 交互 | Bubble Tea TUI 与一次性 `--print` 模式 |
+| 交互 | Bubble Tea TUI（按 provider/model 显示[剩余上下文百分比](./docs/configuration.md#context-window-and-status-bar)）与一次性 `--print` 模式 |
 | Provider | DeepSeek V4、OpenCode Go 内建模型目录、OpenAI GPT-5.6 API、Codex/ChatGPT 订阅，以及 Custom（OpenAI 兼容） |
 | 协议 | Anthropic Messages、OpenAI Responses、OpenAI Chat Completions |
 | 工具 | `read`、`write`、`edit`、`bash`、`grep`、`find`、`ls`、`skill` |

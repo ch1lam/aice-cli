@@ -125,6 +125,15 @@ type DisplayUsage struct {
 	TotalCost        float64
 }
 
+// DisplayContext describes current context occupancy, separately from billed usage.
+// Window == 0 means the effective capacity is unknown; Known describes Tokens.
+type DisplayContext struct {
+	Tokens    int64
+	Window    int64
+	Known     bool
+	Estimated bool
+}
+
 // RuntimeState contains request settings and Session snapshots refreshed after
 // an application command or Agent run.
 type RuntimeState struct {
@@ -132,6 +141,7 @@ type RuntimeState struct {
 	Thinking         DisplayThinking
 	APIKeyConfigured bool
 	Usage            DisplayUsage
+	Context          DisplayContext
 	// SessionChanged reports that the active Session branch changed, so a
 	// frontend must discard its visible branch transcript.
 	SessionChanged bool
@@ -210,6 +220,7 @@ type InputDisplay struct {
 // Fields are populated according to Kind.
 type Event struct {
 	Kind      EventKind
+	Context   *DisplayContext
 	Delta     Delta
 	Assistant AssistantDisplay
 	Tool      ToolDisplay

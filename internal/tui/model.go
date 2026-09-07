@@ -121,6 +121,7 @@ type model struct {
 	thinking          DisplayThinking
 	apiKeyConfigured  bool
 	sessionUsage      DisplayUsage
+	contextUsage      DisplayContext
 	usageAnimation    usageAnimation
 	welcomeAnimation  welcomeAnimation
 	updateCheck       tea.Cmd

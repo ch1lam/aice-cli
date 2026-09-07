@@ -57,6 +57,7 @@ type Options struct {
 	Thinking         DisplayThinking
 	APIKeyConfigured bool
 	Usage            DisplayUsage
+	Context          DisplayContext
 	WorkingDirectory string
 	// Version and CheckUpdate are shown on the welcome screen only; they stay
 	// off the transcript while the conversation is in use.
@@ -130,6 +131,7 @@ func Run(ctx context.Context, runner Runner, options Options) error {
 	initialModel.thinking = options.Thinking
 	initialModel.apiKeyConfigured = options.APIKeyConfigured
 	initialModel.sessionUsage = options.Usage
+	initialModel.contextUsage = options.Context
 	initialModel.workingDirectory = options.WorkingDirectory
 	initialModel.version = options.Version
 	if options.CheckUpdate != nil {

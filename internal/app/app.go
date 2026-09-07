@@ -352,6 +352,7 @@ func (a *application) Interactive(
 			environment.configuration,
 		),
 		Usage:            newDisplayUsage(usage),
+		Context:          runner.contextSnapshot(),
 		WorkingDirectory: environment.workspace.Path(),
 		Version:          cli.Version,
 	})

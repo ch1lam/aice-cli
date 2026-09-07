@@ -740,6 +740,7 @@ func (s *interactiveSession) RuntimeState() interaction.RuntimeState {
 		Thinking:         thinking,
 		APIKeyConfigured: providerConfigured(s.providers, s.configuration),
 		Usage:            usage,
+		Context:          s.contextSnapshotFor(s.model, s.configuration, s.systemPrompt),
 		SessionChanged:   s.sessionChanged,
 	}
 	s.sessionChanged = false

@@ -206,6 +206,13 @@ the final JSON event from being delivered.
   previews until the Agent accepts them; follow-ups remain composer chrome
   until the Agent starts their interaction. Agent input events, not TUI queue
   policy, move those copies into the transcript.
+- The application publishes current context occupancy separately from cumulative
+  Session usage. Main runs derive it from their frozen settings and a run-local
+  projection of recorded messages, replaced on successful compaction; completed
+  tool results contribute before the next model request. Non-delta frontend
+  events carry immutable context snapshots. Startup and command completion
+  rebuild from the active conversation. The TUI only formats remaining percent;
+  it does not count tokens or own provider limits.
 - Only Bubble Tea's update loop mutates UI state. The application bridge turns
   Agent events into frontend-neutral interaction events; the TUI does not
   depend on `internal/llm`.

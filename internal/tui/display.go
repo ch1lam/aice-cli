@@ -16,6 +16,8 @@ const (
 	DisplayThinkingMax     = interaction.DisplayThinkingMax
 )
 
+type DisplayContext = interaction.DisplayContext
+
 type DisplayUsage = interaction.DisplayUsage
 type DisplayEventKind = interaction.EventKind
 

@@ -34,9 +34,19 @@ When `settings.json` omits `provider` and `model`, AICE uses `deepseek` and
 | Default Project Trust | none | `ask`, `always`, `never` |
 | Custom base URL | `AICE_CUSTOM_BASE_URL` | OpenAI-compatible endpoint persisted as `custom_base_url`; default `http://localhost:11434/v1` |
 
-### Context window
+### Context window and status bar
 
-Without configuration, the context window uses the selected **provider and model**
+The main TUI status bar shows remaining context as `ctx 82.4% left / 262k`.
+`~` marks an estimate. It uses the latest successful response usage for the
+selected provider/model, including cached input and output, plus estimated
+messages accepted since that response. It does not divide cumulative Session
+usage by the window. Before the first response and after compaction or switching
+models, AICE estimates the active prompt, tool definitions, and projected history.
+Unsent drafts and queued inputs are excluded until accepted. Remaining capacity
+is clamped to 0–100%; at 30% or less it turns amber, and at 10% or less red.
+Narrow terminals drop other details before the remaining percentage.
+
+Without configuration, the denominator uses the selected **provider and model**
 catalog default, including when its base URL is overridden. An explicit
 `context_windows` entry in `~/.aice/settings.json` takes precedence:
 
@@ -74,8 +84,14 @@ Arbitrary `custom` IDs have no universal official default: for example,
 [Ollama defaults depend on VRAM](https://docs.ollama.com/context-length).
 AICE uses its existing 128,000-token fallback for these IDs and labels it
 `custom fallback default` in `/settings`; this is not an official model limit.
+The footer shows a percentage using that fallback so configuration is optional.
 Override it when the deployment's actual limit is known. Check overrides again
 when changing an endpoint or account. AICE does not read another harness's settings.
+
+The separation of Session totals and context occupancy follows
+[pi's footer](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/src/modes/interactive/components/footer.ts)
+and [context calculation](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/src/core/agent-session.ts).
+AICE uses its existing estimator after compaction and marks that value with `~`.
 
 ### Thinking levels
 
@@ -178,7 +194,8 @@ Other providers keep sending their model default.
 
 For arbitrary `custom` models without a context override, AICE uses a
 128,000-token fallback budget and 16,384-token output limit, text input, and
-standard thinking levels. `/settings` identifies it as a fallback.
+standard thinking levels. The footer uses this budget until overridden;
+`/settings` identifies it as a fallback.
 These are fixed metadata defaults from `custom.ModelForID`, not capabilities
 queried from the endpoint. A server with smaller limits or different reasoning
 support can reject a request despite local budget checks. Automatic capability

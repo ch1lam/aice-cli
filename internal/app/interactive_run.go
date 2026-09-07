@@ -116,6 +116,9 @@ func (r *interactiveRun) Run(ctx context.Context) error {
 		model:         snapshot.model,
 		options:       snapshot.options,
 	}
+	// This run-local projection includes completed messages even while a tool
+	// group is not yet replay-safe for the conversation's side snapshots.
+	contextHistory := append([]llm.AgentMessage(nil), snapshot.history...)
 	_, runErr := snapshot.loop.Run(ctx, agent.RunInput{
 		Model:        snapshot.model,
 		SystemPrompt: snapshot.systemPrompt,
@@ -123,10 +126,18 @@ func (r *interactiveRun) Run(ctx context.Context) error {
 		Prompt:       r.prompt,
 		Options:      snapshot.options,
 		MessageRecorder: func(recordCtx context.Context, message llm.AgentMessage) error {
-			return r.session.conversation.recordMessage(recordCtx, snapshot.state, message)
+			if err := r.session.conversation.recordMessage(recordCtx, snapshot.state, message); err != nil {
+				return err
+			}
+			contextHistory = append(contextHistory, message)
+			return nil
 		},
 		Compactor: func(compactCtx context.Context, history []llm.AgentMessage) ([]llm.AgentMessage, error) {
-			return r.session.compactHistory(compactCtx, history, &configured)
+			compacted, err := r.session.compactHistory(compactCtx, history, &configured)
+			if err == nil {
+				contextHistory = append([]llm.AgentMessage(nil), compacted...)
+			}
+			return compacted, err
 		},
 		Steering: mailboxInputSource(r.mailbox.TakeSteering, "steering"),
 		FollowUp: mailboxInputSource(r.mailbox.TakeFollowUp, "follow-up"),
@@ -137,6 +148,11 @@ func (r *interactiveRun) Run(ctx context.Context) error {
 		display := translateAgentEvent(event)
 		if display == nil {
 			return nil
+		}
+		if display.Kind != interaction.EventAssistantDelta {
+			usage := contextDisplay(snapshot.model, snapshot.configuration,
+				snapshot.systemPrompt, r.session.tools, contextHistory)
+			display.Context = &usage
 		}
 		return r.sink(eventCtx, *display)
 	})

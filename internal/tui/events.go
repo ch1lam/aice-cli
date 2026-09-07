@@ -162,6 +162,7 @@ func (m model) applyRunBatch(batch runBatchMsg) (tea.Model, tea.Cmd) {
 			contentChanged = true
 		}
 		if update.state != nil {
+			m.contextUsage = update.state.Context
 			m.currentModel = update.state.Model
 			m.thinking = update.state.Thinking
 			m.apiKeyConfigured = update.state.APIKeyConfigured
@@ -220,6 +221,9 @@ func (m model) applyRunBatch(batch runBatchMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m *model) applyAgentEvent(event DisplayEvent) (bool, tea.Cmd) {
+	if event.Context != nil {
+		m.contextUsage = *event.Context
+	}
 	switch event.Kind {
 	case DisplayEventAssistantStart:
 		m.entries = append(m.entries, transcriptEntry{
