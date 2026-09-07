@@ -221,6 +221,12 @@ the final JSON event from being delivered.
   writes around the renderer or blocks terminal startup.
 - Session history, model context, and terminal viewport remain separate.
   Streaming deltas are coalesced before expensive Markdown rendering.
+- Terminal cell updates remain owned by Bubble Tea and its Ultraviolet
+  renderer. Changed lines containing wide characters are repainted from the
+  line boundary so partial erases cannot split CJK glyphs during streaming.
+  Keep the renderer's wide-line repaint support when changing dependencies;
+  `TestTerminalRepaintsChangedWideText` exercises actual terminal output rather
+  than only checking the text returned by `View`.
 
 ### Interactive authentication
 
