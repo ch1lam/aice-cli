@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/ch1lam/aice-cli/internal/buildinfo"
 	"github.com/ch1lam/aice-cli/internal/llm"
 	"github.com/ch1lam/aice-cli/internal/provider/opencode"
 )
@@ -53,7 +54,7 @@ func TestRoutingIdentityAcrossModelsAndConversations(t *testing.T) {
 			if got == "" || got != want {
 				t.Fatalf("%s: routing ID = %q, want %q", model.ID, got, want)
 			}
-			if header.Get("User-Agent") != "aice" {
+			if header.Get("User-Agent") != "aice/"+buildinfo.Version {
 				t.Fatalf("User-Agent = %q", header.Get("User-Agent"))
 			}
 		}

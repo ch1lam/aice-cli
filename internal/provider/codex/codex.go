@@ -124,8 +124,8 @@ func (p *Provider) Stream(ctx context.Context, request llm.Request) (llm.Stream,
 		APIKey: credential.AccessToken, BaseURL: p.baseURL, HTTPClient: client, Codex: true,
 		Headers: http.Header{
 			"Chatgpt-Account-Id": {credential.AccountID}, "Originator": {"aice"},
-			"Openai-Beta": {"responses=experimental"}, "User-Agent": {"aice"},
-			"Accept": {"text/event-stream"},
+			"Openai-Beta": {"responses=experimental"},
+			"Accept":      {"text/event-stream"},
 		},
 	})
 	if err != nil {

@@ -13,6 +13,7 @@ import (
 
 	"github.com/ch1lam/aice-cli/internal/api/openairesponses"
 	"github.com/ch1lam/aice-cli/internal/apitest"
+	"github.com/ch1lam/aice-cli/internal/buildinfo"
 	"github.com/ch1lam/aice-cli/internal/config"
 	"github.com/ch1lam/aice-cli/internal/llm"
 	"github.com/ch1lam/aice-cli/internal/provider/kimi"
@@ -62,7 +63,7 @@ func TestProviderDispatchesThroughResponsesAPI(t *testing.T) {
 		if r.Header.Get("Authorization") != "Bearer test-key" {
 			t.Error("missing Kimi bearer key")
 		}
-		if r.UserAgent() != "aice" {
+		if r.UserAgent() != "aice/"+buildinfo.Version {
 			t.Errorf("User-Agent = %s", r.UserAgent())
 		}
 		var body struct {

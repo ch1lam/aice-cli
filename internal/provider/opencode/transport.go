@@ -36,6 +36,5 @@ func (t *routingTransport) RoundTrip(request *http.Request) (*http.Response, err
 	}
 	cloned := request.Clone(request.Context())
 	cloned.Header.Set("x-opencode-session", id)
-	cloned.Header.Set("User-Agent", "aice")
 	return t.base.RoundTrip(cloned)
 }

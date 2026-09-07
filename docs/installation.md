@@ -82,3 +82,16 @@ cd aice-cli
 go build -o ./aice ./cmd/aice
 ./aice --version
 ```
+
+Source builds without a version stamp report `dev` and send `aice/dev` in model
+requests. Release builds stamp `internal/buildinfo.Version`; the same value is
+used by the CLI, TUI, update checks, and User-Agent. For a versioned source build,
+set the actual source version through the release workflow's linker target:
+
+```sh
+go build -ldflags "-X github.com/ch1lam/aice-cli/internal/buildinfo.Version=<actual-version>" -o ./aice ./cmd/aice
+```
+
+Replace `<actual-version>` with the version of the source being built, not a
+provider client's name or version. The [release workflow](../.github/workflows/release.yml)
+is the authority for packaged release builds.

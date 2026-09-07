@@ -54,7 +54,6 @@ func New(configuration Config) (*Provider, error) {
 		APIKey:     configuration.APIKey,
 		BaseURL:    baseURL,
 		HTTPClient: configuration.HTTPClient,
-		Headers:    http.Header{"User-Agent": {"aice"}},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("kimi-coding: configure Responses adapter: %w", err)

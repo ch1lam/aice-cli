@@ -193,8 +193,47 @@ Models whose upstream input modalities include images accept image content
 through the programmatic LLM contract; the current TUI input remains
 text-only.
 
+### Client identity and subscription use
+
+All model requests through AICE's three protocol adapters identify the client
+as `User-Agent: aice/<version>`, including custom endpoints. The version is the
+same build value shown by `aice --version`; unstamped source builds send
+`aice/dev`. The release workflow stamps the release version. This header does
+not include an account ID, hostname, workspace path, or prompt. There is no
+user-facing client-identity override. Provider-specific headers cannot replace
+the Responses adapter's AICE identity.
+
+Use the built-in `kimi-coding` and `opencode-go` providers for these subscription
+services. Merely pointing `custom` at OpenCode Go does not enable its dedicated
+Session routing transport. When forwarding through a proxy, preserve the AICE
+User-Agent and conversation header on every request, including retries and
+compaction; verify headers at the upstream side without logging API keys or
+prompt bodies.
+
+The [Kimi documentation](https://www.kimi.com/code/docs/) requires truthful
+client identity and distinguishes subscription coding use from product
+integration through its open platform. The
+[OpenCode Go documentation](https://opencode.ai/docs/go/#where-can-i-use-it)
+requires typical coding-agent traffic, a specific client identity, and stable
+conversation routing. These headers describe the client; they are neither an
+authentication mechanism nor a guarantee of provider approval.
+
+For personal coding, use your own authorized credentials and remain within the
+provider's current plan limits. For shared services, product backends, or large
+batch evaluations, confirm that the intended workload is permitted or choose
+an API plan intended for that use. Do not rotate accounts or identities to
+bypass limits. Check the provider's current terms rather than assuming a fixed
+request count is always safe.
+
+AICE's model-call retry policy allows three retries with exponential backoff,
+respects longer provider retry hints, and stops when a hint exceeds its maximum
+wait. SDK retries are disabled. This is per-call protection, not an
+account-wide rate limiter: multiple processes and concurrent side conversations
+can still add load. Avoid external scripts that immediately restart exhausted
+requests. See [model retries](contracts.md#agent-loop) for runtime ownership.
+
 OpenCode Go requests across all three protocols carry `x-opencode-session`
-and identify the client as `aice`, as required by the
+and identify the client as `aice/<version>`, as required by the
 [Go gateway](https://opencode.ai/docs/go/#where-can-i-use-it).
 The application propagates the stored Session ID as routing metadata through
 the request context, preserving it across turns, retries, model changes,

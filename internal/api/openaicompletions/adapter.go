@@ -27,6 +27,7 @@ import (
 	"github.com/openai/openai-go/v3/shared"
 
 	"github.com/ch1lam/aice-cli/internal/api/streamcore"
+	"github.com/ch1lam/aice-cli/internal/buildinfo"
 	"github.com/ch1lam/aice-cli/internal/llm"
 )
 
@@ -70,6 +71,9 @@ func New(config Config) (*Adapter, error) {
 	if config.HTTPClient != nil {
 		opts = append(opts, option.WithHTTPClient(config.HTTPClient))
 	}
+
+	// Client identity is owned by AICE, not a provider-specific header override.
+	opts = append(opts, option.WithHeader("User-Agent", buildinfo.UserAgent()))
 
 	return &Adapter{
 		service: openaisdk.NewChatService(opts...).Completions,
