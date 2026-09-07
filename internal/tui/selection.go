@@ -2,11 +2,14 @@ package tui
 
 import (
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 )
+
+type copyNoticeExpiredMsg uint64
 
 type transcriptPosition struct {
 	row    int
@@ -147,8 +150,12 @@ func (m model) handleTranscriptMouseRelease(
 		return m, nil, true
 	}
 
-	m.status = "Selected text copied"
-	return m, tea.SetClipboard(selected), true
+	m.copyNotice = true
+	m.copyGeneration++
+	generation := m.copyGeneration
+	return m, tea.Batch(tea.SetClipboard(selected), tea.Tick(time.Second, func(time.Time) tea.Msg {
+		return copyNoticeExpiredMsg(generation)
+	})), true
 }
 
 func (m model) transcriptMousePosition(
@@ -269,4 +276,27 @@ func selectedLineRange(
 	columnStart = min(max(columnStart, 0), lineWidth)
 	columnEnd = min(max(columnEnd, 0), lineWidth)
 	return columnStart, columnEnd, columnEnd > columnStart
+}
+
+// overlayCopyNotice leaves layout and cursor coordinates unchanged. Hide the
+// bubble during another drag so it cannot obscure the text being selected.
+func (m model) overlayCopyNotice(content string, width int) string {
+	if !m.copyNotice || m.selection.active {
+		return content
+	}
+	bubble := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(primaryTextColor).
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(successColor).
+		Padding(0, 2).
+		Render("✓ Copied")
+	x := max((width-lipgloss.Width(bubble))/2, 0)
+	composerTop := lipgloss.Height(content) -
+		lipgloss.Height(m.footerView(width)) - lipgloss.Height(m.composerView(width))
+	y := max(composerTop-lipgloss.Height(bubble), 0)
+	return lipgloss.NewCompositor(
+		lipgloss.NewLayer(content),
+		lipgloss.NewLayer(bubble).X(x).Y(y).Z(1),
+	).Render()
 }

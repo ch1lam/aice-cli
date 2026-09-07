@@ -4,9 +4,12 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"testing/synctest"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 )
 
 func TestTranscriptSelectionSelectedRange(t *testing.T) {
@@ -157,14 +160,17 @@ func TestModelMouseDragSelectsAndCopiesTranscript(t *testing.T) {
 	if command == nil {
 		t.Fatal("mouse release did not return a clipboard command")
 	}
-	if got, want := fmt.Sprint(command()), "alpha"; got != want {
+	if got, want := fmt.Sprint(command().(tea.BatchMsg)[0]()), "alpha"; got != want {
 		t.Errorf("clipboard content = %q, want %q", got, want)
 	}
 	if current.selection.active {
 		t.Fatal("selection remains active after mouse release")
 	}
-	if current.status != "Selected text copied" {
-		t.Errorf("status = %q, want copy confirmation", current.status)
+	if !strings.Contains(ansi.Strip(current.View().Content), "✓ Copied") {
+		t.Fatal("copy confirmation missing from view")
+	}
+	if current.status != "Ready" {
+		t.Errorf("copy changed run status to %q", current.status)
 	}
 
 	initialOffset := current.viewport.YOffset()
@@ -207,4 +213,98 @@ func TestModelMouseClickWithoutDragDoesNotCopy(t *testing.T) {
 	if current.selection.active || current.selection.moved {
 		t.Fatal("click without a drag left a visible selection")
 	}
+}
+
+func TestCopyNoticePreservesActivityAndExpires(t *testing.T) {
+	for _, state := range []string{"idle", "thinking", "side"} {
+		t.Run(state, func(t *testing.T) {
+			current := newModel(make(chan runRequest), make(chan struct{}))
+			current = updateModel(t, current, tea.WindowSizeMsg{Width: 40, Height: 14})
+			current.running = state == "thinking"
+			current.side.isVisible = state == "side"
+			current.status = "Thinking..."
+			current.viewport.SetContent("alpha")
+			top := lipgloss.Height(current.headerView(current.width))
+			copySelection := func() {
+				current = updateModel(t, current, tea.MouseClickMsg(tea.Mouse{X: 0, Y: top, Button: tea.MouseLeft}))
+				updated, _ := current.Update(tea.MouseReleaseMsg(tea.Mouse{X: 4, Y: top, Button: tea.MouseLeft}))
+				current = updated.(model)
+			}
+			beforeHeight := lipgloss.Height(current.View().Content)
+			copySelection()
+			if current.status != "Thinking..." {
+				t.Fatalf("copy replaced activity with %q", current.status)
+			}
+			old := copyNoticeExpiredMsg(current.copyGeneration)
+			copySelection()
+			current = updateModel(t, current, old)
+			current.applyAgentEvent(DisplayEvent{Kind: DisplayEventAssistantStart})
+			current.refreshViewport(false)
+			if !strings.Contains(ansi.Strip(current.View().Content), "✓ Copied") {
+				t.Fatal("copy notice lost after another copy or agent event")
+			}
+			if strings.Contains(current.transcriptView(), "✓ Copied") ||
+				!strings.Contains(current.activityIndicator(), "Thinking...") {
+				t.Fatal("copy notice replaced activity")
+			}
+			if lipgloss.Height(current.View().Content) != beforeHeight {
+				t.Fatal("copy notice changed screen height")
+			}
+			current = updateModel(t, current, copyNoticeExpiredMsg(current.copyGeneration))
+			if strings.Contains(ansi.Strip(current.View().Content), "✓ Copied") {
+				t.Fatal("expired copy notice remains visible")
+			}
+		})
+	}
+}
+
+func TestCopyBubbleKeepsFooterAndCursor(t *testing.T) {
+	for _, width := range []int{24, 40, 80} {
+		t.Run(fmt.Sprint(width), func(t *testing.T) {
+			current := newModel(make(chan runRequest), make(chan struct{}))
+			current = updateModel(t, current, tea.WindowSizeMsg{Width: width, Height: 14})
+			before := current.View()
+			footer := current.footerView(width)
+			current.copyNotice = true
+			after := current.View()
+			if current.footerView(width) != footer || *after.Cursor != *before.Cursor {
+				t.Fatal("bubble changed footer or cursor")
+			}
+			if lipgloss.Width(after.Content) != lipgloss.Width(before.Content) ||
+				lipgloss.Height(after.Content) != lipgloss.Height(before.Content) {
+				t.Fatal("bubble changed screen dimensions")
+			}
+			lines := strings.Split(ansi.Strip(after.Content), "\n")
+			top := len(lines) - lipgloss.Height(current.footerView(width)) -
+				lipgloss.Height(current.composerView(width)) - 3
+			if !strings.Contains(lines[top], "╭") || !strings.Contains(lines[top+1], "✓ Copied") {
+				t.Fatal("bubble missing above composer")
+			}
+			left := ansi.StringWidth(strings.Split(lines[top], "╭")[0])
+			if left != (width-14)/2 {
+				t.Fatalf("bubble left = %d, want centered", left)
+			}
+		})
+	}
+}
+
+func TestCopyNoticeTimerExpiresAfterOneSecond(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		current := newModel(make(chan runRequest), make(chan struct{}))
+		current = updateModel(t, current, tea.WindowSizeMsg{Width: 40, Height: 14})
+		current.viewport.SetContent("alpha")
+		top := lipgloss.Height(current.headerView(40))
+		current = updateModel(t, current, tea.MouseClickMsg(tea.Mouse{X: 0, Y: top, Button: tea.MouseLeft}))
+		updated, cmd := current.Update(tea.MouseReleaseMsg(tea.Mouse{X: 4, Y: top, Button: tea.MouseLeft}))
+		current = updated.(model)
+		started := time.Now()
+		expired := cmd().(tea.BatchMsg)[1]()
+		if elapsed := time.Since(started); elapsed != time.Second {
+			t.Fatalf("notice duration = %s, want 1s", elapsed)
+		}
+		current = updateModel(t, current, expired)
+		if current.copyNotice {
+			t.Fatal("timer did not dismiss bubble")
+		}
+	})
 }

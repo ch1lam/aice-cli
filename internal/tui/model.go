@@ -159,6 +159,8 @@ type model struct {
 	cancelRequested  bool
 	controllerClosed bool
 	status           string
+	copyNotice       bool
+	copyGeneration   uint64
 	nextDeliveryID   uint64
 	steerRailFrame   uint8
 }
@@ -255,6 +257,11 @@ func (m model) Init() tea.Cmd {
 
 func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	switch message := message.(type) {
+	case copyNoticeExpiredMsg:
+		if uint64(message) == m.copyGeneration {
+			m.copyNotice = false
+		}
+		return m, nil
 	case guardRequestMsg:
 		if message.req != nil {
 			m.guardPending = message.req
@@ -469,6 +476,8 @@ func (m model) View() tea.View {
 
 	if m.guardPending != nil {
 		content = m.guardView(max(m.width, 1))
+	} else {
+		content = m.overlayCopyNotice(content, width)
 	}
 	view := tea.NewView(content)
 	view.BackgroundColor = inkBlackColor

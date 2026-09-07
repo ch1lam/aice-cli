@@ -226,6 +226,12 @@ the final JSON event from being delivered.
 - The welcome-screen update check runs as a context-bound Bubble Tea command
   after the first render. Its result returns through the update loop; it never
   writes around the renderer or blocks terminal startup.
+- Dragging transcript text copies the selection on release using the terminal's
+  clipboard support. A bordered confirmation bubble without an explicit
+  background floats centered immediately above the composer for one second
+  in both main and BTW views, independently of Agent activity, footer content,
+  and composer layout. Repeated copies
+  restart the confirmation lifetime; streaming events do not dismiss it.
 - Session history, model context, and terminal viewport remain separate.
   Streaming deltas are coalesced before expensive Markdown rendering.
 - Terminal cell updates remain owned by Bubble Tea and its Ultraviolet
