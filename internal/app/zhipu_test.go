@@ -44,11 +44,14 @@ func TestZhipuModelSelectionAndMenus(t *testing.T) {
 	if !found {
 		t.Fatal("missing Zhipu API-key login option")
 	}
-	if got := len(runner.modelMenu().Options); got != 1 {
+	if got := len(runner.modelMenu().Options); got != 18 {
 		t.Fatalf("model count = %d", got)
 	}
-	if _, err := runner.RunSlashCommand(t.Context(), interaction.CommandRequest{Name: "model", Arguments: "glm-5.3"}); err != nil {
+	if _, err := runner.RunSlashCommand(t.Context(), interaction.CommandRequest{Name: "model", Arguments: "glm-5.3-flash"}); err != nil {
 		t.Fatal(err)
+	}
+	if runner.model.ID != "glm-5.3-flash" {
+		t.Fatal("model selection did not switch to Flash")
 	}
 	if got := len(runner.thinkingMenu().Options); got != 3 {
 		t.Fatalf("GLM-5.3 thinking choices = %d", got)

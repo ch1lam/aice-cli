@@ -24,7 +24,8 @@ const (
 	CodingProviderID llm.ProviderID = "zhipu-coding"
 	CodingBaseURL                   = "https://open.bigmodel.cn/api/coding/paas/v4"
 
-	ModelGLM53 = "glm-5.3"
+	ModelGLM53      = "glm-5.3"
+	ModelGLM53Flash = "glm-5.3-flash"
 )
 
 // Config contains Zhipu connection settings.
@@ -86,10 +87,10 @@ func newProvider(configuration Config, codingPlan bool) (*Provider, error) {
 }
 
 // Models returns the Zhipu models supported by this provider.
-func Models() []llm.Model { return []llm.Model{DefaultModel()} }
+func Models() []llm.Model { return (&Provider{}).Models() }
 
 // DefaultModel returns the GLM-5.3 coding model.
-func DefaultModel() llm.Model { return model() }
+func DefaultModel() llm.Model { return catalogModel(modelSpecs[0], ProviderID) }
 
 // Stream validates Zhipu compatibility before making a request.
 func (p *Provider) Stream(ctx context.Context, request llm.Request) (llm.Stream, error) {
@@ -101,7 +102,8 @@ func (p *Provider) Stream(ctx context.Context, request llm.Request) (llm.Stream,
 			p.ProviderID(),
 		)
 	}
-	if request.Model.ID != ModelGLM53 {
+	spec, known := p.modelSpec(request.Model.ID)
+	if !known {
 		return nil, fmt.Errorf("%s: unsupported model %q", p.ProviderID(), request.Model.ID)
 	}
 	if request.Model.API != openaicompletions.API {
@@ -116,23 +118,11 @@ func (p *Provider) Stream(ctx context.Context, request llm.Request) (llm.Stream,
 	capabilities := messageCapabilities
 	capabilities.ID = p.ProviderID()
 	capabilities.Label = p.Label()
+	capabilities.SupportsImage = spec.image
 	if err := provider.ValidateMessages(request.Messages, capabilities); err != nil {
 		return nil, err
 	}
 	return p.completionsAdapter.Stream(ctx, request)
-}
-
-// Capabilities follow https://docs.bigmodel.cn/cn/guide/models/text/glm-5.3.
-func model() llm.Model {
-	return llm.Model{
-		ID: ModelGLM53, Name: "GLM-5.3", API: openaicompletions.API, Provider: ProviderID,
-		SupportsThinking: true,
-		ThinkingLevelMap: llm.ThinkingLevelsMap(llm.ThinkingLevelLow, llm.ThinkingLevelHigh, llm.ThinkingLevelMax),
-		ThinkingFormat:   llm.ThinkingFormatDeepSeek, SupportsReasoningEffort: true,
-		InputModalities: []llm.InputModality{llm.InputModalityText},
-		ContextWindow:   1_000_000, MaxTokens: 131_072,
-		// CNY platform prices are not represented by AICE's USD cost estimates.
-	}
 }
 
 var messageCapabilities = provider.MessageCapabilities{
@@ -161,7 +151,14 @@ func (p *Provider) MenuDescription() string {
 
 // Models returns the Zhipu model catalog.
 func (p *Provider) Models() []llm.Model {
-	return []llm.Model{p.DefaultModel()}
+	models := make([]llm.Model, 0, len(modelSpecs))
+	for _, spec := range modelSpecs {
+		if p.codingPlan && !codingModel(spec.id) {
+			continue
+		}
+		models = append(models, catalogModel(spec, p.ProviderID()))
+	}
+	return models
 }
 
 // DefaultModel returns the Zhipu model used when none is selected.

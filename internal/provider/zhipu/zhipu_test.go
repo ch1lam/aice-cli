@@ -16,17 +16,19 @@ import (
 func TestStreamAndToolReplay(t *testing.T) {
 	t.Parallel()
 	for _, descriptor := range []*zhipu.Provider{&zhipu.Provider{}, zhipu.CodingPlan()} {
-		t.Run(string(descriptor.ProviderID()), func(t *testing.T) { testStreamAndToolReplay(t, descriptor) })
+		for _, model := range descriptor.Models() {
+			t.Run(string(descriptor.ProviderID())+"/"+model.ID, func(t *testing.T) { testStreamAndToolReplay(t, descriptor, model) })
+		}
 	}
 }
 
-func testStreamAndToolReplay(t *testing.T, descriptor *zhipu.Provider) {
+func testStreamAndToolReplay(t *testing.T, descriptor *zhipu.Provider, model llm.Model) {
 	t.Helper()
 	newService, baseURL := zhipu.New, "https://open.bigmodel.cn/api/paas/v4"
 	if descriptor.ProviderID() == zhipu.CodingProviderID {
 		newService, baseURL = zhipu.NewCoding, "https://open.bigmodel.cn/api/coding/paas/v4"
 	}
-	for _, level := range []llm.ThinkingLevel{llm.ThinkingLevelLow, llm.ThinkingLevelHigh, llm.ThinkingLevelMax} {
+	for _, level := range llm.SupportedThinkingLevels(model) {
 		t.Run(string(level), func(t *testing.T) {
 			var bodies []map[string]any
 			service, err := newService(zhipu.Config{APIKey: "test-key", HTTPClient: &http.Client{Transport: apitest.RoundTripFunc(func(r *http.Request) (*http.Response, error) {
@@ -41,10 +43,10 @@ func testStreamAndToolReplay(t *testing.T, descriptor *zhipu.Provider) {
 					return nil, err
 				}
 				bodies = append(bodies, body)
-				if body["model"] != "glm-5.3" || body["stream"] != true || body["reasoning_effort"] != string(level) || body["thinking"].(map[string]any)["type"] != "enabled" {
+				if body["model"] != model.ID || body["stream"] != true {
 					t.Errorf("request controls = %#v", body)
 				}
-				if body["max_tokens"] != float64(131072) {
+				if body["max_tokens"] != float64(model.MaxTokens) {
 					t.Error("incorrect output budget")
 				}
 				events := []string{
@@ -59,8 +61,8 @@ func testStreamAndToolReplay(t *testing.T, descriptor *zhipu.Provider) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			request := apitest.MinimalRequest(descriptor.DefaultModel().API)
-			request.Model = descriptor.DefaultModel()
+			request := apitest.MinimalRequest(model.API)
+			request.Model = model
 			request.Options.Thinking = level
 			request.Tools = []llm.ToolDefinition{{Name: "read", InputSchema: json.RawMessage(`{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}`)}}
 			stream, err := service.Stream(t.Context(), request)

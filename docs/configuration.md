@@ -117,7 +117,7 @@ The default request is `medium`. On DeepSeek V4 Flash and Pro it becomes
 | `opencode-go/deepseek-v4-flash-vision-exp` | `off`, `low`, `high`, `max` |
 | `opencode-go/kimi-k2.6` | `off`, `high` |
 | `opencode-go/kimi-k3` | `max` |
-| `zhipu/glm-5.3`, `zhipu-coding/glm-5.3` | `low`, `high`, `max` (thinking enabled) |
+| `zhipu/glm-5.3`, `zhipu/glm-5.3-flash`, `zhipu-coding/glm-5.3`, `zhipu-coding/glm-5.3-flash` | `low`, `high`, `max` (thinking enabled) |
 | `moonshot/kimi-k3` | `low`, `high`, `max` |
 | `moonshot/kimi-k2.7-code`, `moonshot/kimi-k2.7-code-highspeed` | `high` (thinking enabled) |
 | `moonshot/kimi-k2.6` | `off`, `high` |
@@ -419,20 +419,57 @@ To store only the key, use `printf '%s\n' "$ZHIPU_API_KEY" | aice config set-key
 `/login` also saves the provider and compatible model. The optional
 `AICE_ZHIPU_BASE_URL` overrides the API root (without `/chat/completions`).
 
-The catalog contains `glm-5.3` (default), with text input, a 1,000,000-token
-context window and a 131,072-token output budget. Thinking is always enabled:
-`low`, `high`, and `max` map to `reasoning_effort` alongside
-`thinking.type: enabled`. AICE's default requested `medium` clamps to `high`;
-`off` clamps to `low`. Streaming text, reasoning, function calls, usage and
-same-model `reasoning_content` replay use the shared Chat Completions adapter.
-Preserved-thinking defaults remain controlled by the endpoint.
+The API Platform catalog includes the following tool-capable chat models.
+GLM-5.3 remains the default; select another model through `/model` or
+`AICE_MODEL`. Availability still depends on the platform account.
+
+| Model IDs | Input | Context / AICE output budget | Thinking choices |
+| --- | --- | --- | --- |
+| `glm-5.3` | Text | 1,000,000 / 131,072 | `low`, `high`, `max` |
+| `glm-5.3-flash` | Text, image | 1,000,000 / 131,072 | `low`, `high`, `max` |
+| `glm-5.2` | Text | 1,000,000 / 131,072 | `off`, `high`, `max` |
+| `glm-5.1`, `glm-5`, `glm-5-turbo` | Text | 200,000 / 131,072 | `off`, `high` |
+| `glm-4.7`, `glm-4.7-flashx`, `glm-4.7-flash`, `glm-4.6` | Text | 200,000 / 131,072 | `off`, `high` |
+| `glm-4.5-air`, `glm-4.5-airx` | Text | 128,000 / 98,304 | `off`, `high` |
+| `glm-4-flashx-250414`, `glm-4-flash-250414` | Text | 128,000 / 16,384 | `off` (no thinking control) |
+| `glm-5v-turbo` | Text, image | 200,000 / 131,072 | `off`, `high` |
+| `glm-4.6v`, `glm-4.6v-flashx`, `glm-4.6v-flash` | Text, image | 128,000 / 32,768 | `off`, `high` |
+
+For GLM-5.3 and Flash, thinking is always enabled. The default request
+`medium` clamps to `high`, while `off` clamps to `low`. GLM-5.2 additionally
+supports disabling thinking; equivalent upstream effort aliases are collapsed
+into the distinct `high` and `max` choices. Only GLM-5.2 and newer send
+`reasoning_effort`. Older reasoning models send only `thinking.type`;
+`high` means enabled without a separate effort parameter. Non-thinking GLM-4
+Flash models omit both controls.
+
+Streaming text, reasoning, function calls, usage and same-model
+`reasoning_content` replay use the shared Chat Completions adapter.
+Preserved-thinking defaults remain controlled by the endpoint. The LLM
+boundary accepts images for the listed visual models; the current composer
+is text-only and AICE does not implement video or file input blocks.
+
+Context defaults conservatively interpret the overview's 200K and 128K as
+200,000 and 128,000 tokens. Output budgets follow the explicit parameter
+limits. For `glm-4-flash-250414`, the model overview says 16K while the
+parameter table permits 32,768; AICE keeps the lower 16,384 budget. Image,
+video, speech, embedding, OCR and other specialized output APIs are outside
+this chat provider. Retired `glm-4.5-flash` (redirected to `glm-4.7-flash`)
+and deprecated GLM-4.5/4.5-X are omitted.
 
 This is the separately billed API platform. Token counts are recorded, but
 CNY prices are not converted into AICE's USD estimates; a zero estimate does
 not mean free usage. The preset retains AICE's own client identity.
 
-Capabilities follow the official [GLM-5.3 model documentation](https://docs.bigmodel.cn/cn/guide/models/text/glm-5.3)
+Catalog facts were checked on 2026-09-07 against the official
+[model overview](https://docs.bigmodel.cn/cn/guide/start/model-overview),
+[parameter limits](https://docs.bigmodel.cn/cn/guide/start/concept-param),
+[GLM-5.3](https://docs.bigmodel.cn/cn/guide/models/text/glm-5.3),
+[GLM-5.3-Flash](https://docs.bigmodel.cn/cn/guide/models/vlm/glm-5.3-flash),
+[GLM-4.5 retirement notice](https://docs.bigmodel.cn/cn/guide/models/text/glm-4.5),
+[GLM-4.5-Flash retirement notice](https://docs.bigmodel.cn/cn/guide/models/free/glm-4.5-flash),
 and [thinking/replay guide](https://docs.bigmodel.cn/cn/guide/capabilities/thinking-mode).
+The model pages linked from the overview own individual input and tool capabilities.
 
 ### Zhipu Coding Plan
 
@@ -452,9 +489,12 @@ The Coding Plan key and endpoint are independent of `zhipu`: neither provider
 falls back to the other's credentials or URL, including when quota is exhausted.
 Team subscriptions require the key from the team plan console.
 
-The catalog currently exposes `glm-5.3` with the same text, context, output,
-thinking and streaming capabilities documented above. AICE does not list
-historical model aliases that the Coding Plan server silently redirects.
+The Coding Plan catalog contains `glm-5.3` (default) and `glm-5.3-flash`,
+with the same model capabilities documented above. Both are available across
+plan tiers according to the official overview. The plan redirects `glm-5.2`
+and `glm-5.1` to `glm-5.3`, and `glm-5-turbo` and `glm-4.7` to
+`glm-5.3-flash`; AICE lists the actual targets rather than these historical
+aliases. Other API Platform models are not accepted by the Coding Plan preset.
 Token usage is recorded with zero per-token estimates; subscription quotas
 still apply. The endpoint controls preserved-thinking defaults, while AICE
 replays same-provider/model reasoning and tool results through the shared adapter.
