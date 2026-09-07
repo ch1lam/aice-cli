@@ -168,11 +168,13 @@ func requestParams(request llm.Request) (responses.ResponseNewParams, error) {
 		Input: responses.ResponseNewParamsInputUnion{
 			OfInputItemList: input,
 		},
-		MaxOutputTokens: param.NewOpt(maxTokens),
-		Model:           shared.ResponsesModel(request.Model.ID),
-		Reasoning:       reasoning,
-		Store:           param.NewOpt(false),
-		Tools:           tools,
+		Model:     shared.ResponsesModel(request.Model.ID),
+		Reasoning: reasoning,
+		Store:     param.NewOpt(false),
+		Tools:     tools,
+	}
+	if !request.Model.OmitMaxTokensByDefault || request.Options.MaxTokens > 0 {
+		params.MaxOutputTokens = param.NewOpt(maxTokens)
 	}
 	if request.SystemPrompt != "" {
 		params.Instructions = param.NewOpt(request.SystemPrompt)

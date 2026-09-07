@@ -235,6 +235,11 @@ requests. See [model retries](contracts.md#agent-loop) for runtime ownership.
 OpenCode Go requests across all three protocols carry `x-opencode-session`
 and identify the client as `aice/<version>`, as required by the
 [Go gateway](https://opencode.ai/docs/go/#where-can-i-use-it).
+For Chat Completions and Responses, requests without an explicit output limit
+omit the output-token parameter, allowing OpenCode to select its default.
+An explicit limit is still sent; model token limits remain available for local
+context budgeting.
+
 The application propagates the stored Session ID as routing metadata through
 the request context, preserving it across turns, retries, model changes,
 compaction, and reopening. `/new` creates a new identity with the next Session.
