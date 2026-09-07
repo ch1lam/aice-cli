@@ -154,7 +154,7 @@ func knownModel(id string) bool {
 var modelSpecs = modelSpecCatalog()
 
 func modelSpecCatalog() map[string]provider.ModelSpec {
-	specs := make(map[string]provider.ModelSpec, 26)
+	specs := make(map[string]provider.ModelSpec, 27)
 	for _, shared := range provider.DeepSeekModelSpecs() {
 		specs[shared.ID] = shared
 	}
@@ -359,6 +359,12 @@ func modelSpecCatalog() map[string]provider.ModelSpec {
 			llm.ThinkingLevelMax:     nil,
 		},
 	}
+	specs["omen-alpha"] = provider.ModelSpec{
+		ID: "omen-alpha", Name: "Omen Alpha",
+		ContextWindow: 500_000, MaxTokens: 128_000,
+		Input: 0.2, Output: 0.66, CacheRead: 0.04,
+		ThinkingLevelMap: llm.ThinkingLevelsMap(llm.ThinkingLevelLow, llm.ThinkingLevelHigh),
+	}
 	return specs
 }
 
@@ -379,6 +385,7 @@ func standardSpec(
 // modelIDs lists the OpenCode Go models in menu order; Models constructs
 // fresh values so callers cannot mutate catalog maps shared by later runs.
 var modelIDs = []string{
+	"omen-alpha",
 	"grok-4.6",
 	"gpt-5.6-luna",
 	"glm-5.3-flash",
@@ -458,7 +465,8 @@ func inputModalities(id string) []llm.InputModality {
 
 func supportsImage(id string) bool {
 	switch id {
-	case "deepseek-v4-flash-vision-exp",
+	case "omen-alpha",
+		"deepseek-v4-flash-vision-exp",
 		"glm-5.3-flash",
 		"gpt-5.6-luna",
 		"grok-4.6",

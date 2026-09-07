@@ -61,6 +61,7 @@ The default request is `medium`. On DeepSeek V4 Flash and Pro it becomes
 | `opencode-go/gpt-5.6-luna` | `off`, `low`, `medium`, `high`, `xhigh`, `max` |
 | `opencode-go/grok-4.6` | `low`, `medium`, `high`, `xhigh` |
 | `opencode-go/muse-spark-1.2-contributor`, `opencode-go/muse-spark-1.3-contributor` | `minimal`, `low`, `medium`, `high`, `xhigh` |
+| `opencode-go/omen-alpha` | `low`, `high` |
 | `opencode-go/hy3` | `off`, `low`, `high` |
 | `opencode-go/hy4-preview` | `off`, `high` |
 | `openai/gpt-5.6*` | `off`, `low`, `medium`, `high`, `xhigh`, `max` |
@@ -104,8 +105,11 @@ balances model capability and cost. These models use the official Responses
 API and support `off`, `low`, `medium`, `high`, `xhigh`, and `max` reasoning
 levels.
 
-The OpenCode Go catalog contains the 26 active upstream models; entries marked
-deprecated upstream are omitted. GPT-5.6 Luna, Grok 4.6, and Muse Spark
+The OpenCode Go catalog contains the 27 active upstream models; entries marked
+deprecated upstream are omitted. The catalog was checked on 2026-09-07 against
+the [gateway model list](https://opencode.ai/zen/go/v1/models) and
+[models.dev metadata](https://models.dev/api.json). Omen Alpha uses Chat
+Completions with text/image input and low/high reasoning. GPT-5.6 Luna, Grok 4.6, and Muse Spark
 1.2/1.3 Contributor use the Responses protocol. Qwen3.6 through Qwen3.8
 (including Qwen3.8 Flash) and MiniMax M2.7/M3 use Anthropic Messages; the
 remaining catalog uses Chat Completions.

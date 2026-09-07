@@ -22,6 +22,7 @@ func TestModels(t *testing.T) {
 
 	models := opencode.Models()
 	wantIDs := []string{
+		"omen-alpha",
 		"grok-4.6",
 		"gpt-5.6-luna",
 		"glm-5.3-flash",
@@ -123,6 +124,13 @@ func TestModels(t *testing.T) {
 		t.Errorf("vision modalities = %v, want %v", vision.InputModalities, wantModalities)
 	}
 
+	omen, ok := modelForID(models, "omen-alpha")
+	if !ok || omen.ContextWindow != 500_000 || omen.MaxTokens != 128_000 ||
+		!reflect.DeepEqual(omen.InputModalities, wantModalities) ||
+		omen.Pricing != (llm.Pricing{Input: 0.2, Output: 0.66, CacheRead: 0.04}) {
+		t.Fatalf("incorrect Omen Alpha metadata: %#v", omen)
+	}
+
 	textOnly, ok := modelForID(models, "glm-5.3")
 	if !ok {
 		t.Fatal("glm-5.3 missing from Models()")
@@ -140,6 +148,7 @@ func TestModels(t *testing.T) {
 	}
 
 	wantLevels := map[string][]llm.ThinkingLevel{
+		"omen-alpha": {llm.ThinkingLevelLow, llm.ThinkingLevelHigh},
 		// DeepSeek V4 Flash exposes low, high, and max effort.
 		"deepseek-v4-flash": {
 			llm.ThinkingLevelLow,
@@ -239,6 +248,7 @@ func TestModels(t *testing.T) {
 		{modelID: "kimi-k3", request: llm.ThinkingLevelMedium, effective: llm.ThinkingLevelMax},
 		{modelID: "gpt-5.6-luna", request: llm.ThinkingLevelMinimal, effective: llm.ThinkingLevelLow},
 		{modelID: "grok-4.6", request: llm.ThinkingLevelMax, effective: llm.ThinkingLevelXHigh},
+		{modelID: "omen-alpha", request: llm.ThinkingLevelMedium, effective: llm.ThinkingLevelHigh},
 		{modelID: "hy3", request: llm.ThinkingLevelMedium, effective: llm.ThinkingLevelHigh},
 		{modelID: "hy4-preview", request: llm.ThinkingLevelLow, effective: llm.ThinkingLevelHigh},
 	}
@@ -558,8 +568,8 @@ func TestProviderDescriptor(t *testing.T) {
 	if got := descriptor.MenuDescription(); !strings.Contains(got, "OpenCode Go subscription") {
 		t.Errorf("MenuDescription() = %q, want OpenCode Go subscription", got)
 	}
-	if got := descriptor.MenuDescription(); !strings.Contains(got, "26 models") {
-		t.Errorf("MenuDescription() = %q, want 26 models", got)
+	if got := descriptor.MenuDescription(); !strings.Contains(got, "27 models") {
+		t.Errorf("MenuDescription() = %q, want 27 models", got)
 	}
 	if got := descriptor.DefaultModel(); !reflect.DeepEqual(got, opencode.DefaultModel()) {
 		t.Errorf("DefaultModel() = %#v, want %#v", got, opencode.DefaultModel())
