@@ -28,7 +28,7 @@ When `settings.json` omits `provider` and `model`, AICE uses `deepseek` and
 
 | Setting | Environment variable | Supported values |
 | --- | --- | --- |
-| Provider | `AICE_PROVIDER` | `deepseek`, `opencode-go`, `kimi-coding`, `moonshot`, `openai`, `openai-codex`, `custom` |
+| Provider | `AICE_PROVIDER` | `deepseek`, `opencode-go`, `kimi-coding`, `moonshot`, `zhipu`, `openai`, `openai-codex`, `custom` |
 | Model | `AICE_MODEL` | A catalog model, or any model ID for `custom` |
 | Thinking | `AICE_THINKING` | `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` |
 | Default Project Trust | none | `ask`, `always`, `never` |
@@ -279,6 +279,7 @@ credentials use a separate file as described below.
 | OpenCode Go | `AICE_OPENCODE_API_KEY` | `opencode_api_key` | `AICE_OPENCODE_BASE_URL` |
 | Kimi Coding Plan | `KIMI_API_KEY` | `kimi_api_key` | `AICE_KIMI_BASE_URL` |
 | Moonshot API (China) | `MOONSHOT_API_KEY` | `moonshot_api_key` | `AICE_MOONSHOT_BASE_URL` |
+| Zhipu API (China) | `ZHIPU_API_KEY` | `zhipu_api_key` | `AICE_ZHIPU_BASE_URL` |
 | OpenAI | `OPENAI_API_KEY` | `openai_api_key` | `AICE_OPENAI_BASE_URL` |
 | Custom (Ollama, vLLM, LM Studio, any OpenAI-compatible) | `AICE_CUSTOM_API_KEY` | `custom_api_key` | `AICE_CUSTOM_BASE_URL` (default `http://localhost:11434/v1`) |
 
@@ -398,6 +399,38 @@ Official references for the catalog and Responses request format:
 [model list](https://platform.kimi.com/docs/models),
 [Responses reference](https://platform.kimi.com/docs/api/responses), and
 [parameter reference](https://platform.kimi.com/docs/api/models-overview).
+
+### Zhipu API Platform
+
+Select `/login` → `Sign in with an API key` → `Zhipu API`, or configure:
+
+```sh
+export ZHIPU_API_KEY="your-platform-key"
+export AICE_PROVIDER=zhipu
+export AICE_MODEL=glm-5.3
+aice
+```
+
+The China BigModel endpoint is built in:
+`https://open.bigmodel.cn/api/paas/v4/chat/completions`.
+To store only the key, use `printf '%s\n' "$ZHIPU_API_KEY" | aice config set-key --provider zhipu`.
+`/login` also saves the provider and compatible model. The optional
+`AICE_ZHIPU_BASE_URL` overrides the API root (without `/chat/completions`).
+
+The catalog contains `glm-5.3` (default), with text input, a 1,000,000-token
+context window and a 131,072-token output budget. Thinking is always enabled:
+`low`, `high`, and `max` map to `reasoning_effort` alongside
+`thinking.type: enabled`. AICE's default requested `medium` clamps to `high`;
+`off` clamps to `low`. Streaming text, reasoning, function calls, usage and
+same-model `reasoning_content` replay use the shared Chat Completions adapter.
+Preserved-thinking defaults remain controlled by the endpoint.
+
+This is the separately billed API platform. Token counts are recorded, but
+CNY prices are not converted into AICE's USD estimates; a zero estimate does
+not mean free usage. The preset retains AICE's own client identity.
+
+Capabilities follow the official [GLM-5.3 model documentation](https://docs.bigmodel.cn/cn/guide/models/text/glm-5.3)
+and [thinking/replay guide](https://docs.bigmodel.cn/cn/guide/capabilities/thinking-mode).
 
 ### Codex subscription (ChatGPT OAuth)
 

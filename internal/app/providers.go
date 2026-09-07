@@ -14,6 +14,7 @@ import (
 	"github.com/ch1lam/aice-cli/internal/provider/moonshot"
 	"github.com/ch1lam/aice-cli/internal/provider/openai"
 	"github.com/ch1lam/aice-cli/internal/provider/opencode"
+	"github.com/ch1lam/aice-cli/internal/provider/zhipu"
 )
 
 // defaultProviders returns the built-in provider registry in menu order.
@@ -23,6 +24,7 @@ func defaultProviders() []provider.Provider {
 		&opencode.Provider{},
 		&kimi.Provider{},
 		&moonshot.Provider{},
+		&zhipu.Provider{},
 		&openai.Provider{},
 		&codex.Provider{},
 		&custom.Provider{},

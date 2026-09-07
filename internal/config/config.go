@@ -40,6 +40,10 @@ const (
 	EnvKimiAPIKey = "KIMI_API_KEY"
 	// EnvKimiBaseURL overrides the Kimi Coding Plan endpoint.
 	EnvKimiBaseURL = "AICE_KIMI_BASE_URL"
+	// EnvZhipuAPIKey authenticates Zhipu API Platform requests.
+	EnvZhipuAPIKey = "ZHIPU_API_KEY"
+	// EnvZhipuBaseURL overrides the Zhipu API Platform endpoint.
+	EnvZhipuBaseURL = "AICE_ZHIPU_BASE_URL"
 	// EnvMoonshotAPIKey authenticates Moonshot API Platform requests.
 	EnvMoonshotAPIKey = "MOONSHOT_API_KEY"
 	// EnvMoonshotBaseURL overrides the Moonshot API Platform endpoint.
@@ -107,6 +111,8 @@ type Config struct {
 	OpenAIBaseURL       string
 	KimiAPIKey          string
 	KimiBaseURL         string
+	ZhipuAPIKey         string
+	ZhipuBaseURL        string
 	MoonshotAPIKey      string
 	MoonshotBaseURL     string
 	CodexCredentials    CodexCredentials
@@ -116,6 +122,7 @@ type Config struct {
 }
 
 type authFile struct {
+	ZhipuAPIKey    string `json:"zhipu_api_key,omitempty"`
 	MoonshotAPIKey string `json:"moonshot_api_key,omitempty"`
 	KimiAPIKey     string `json:"kimi_api_key,omitempty"`
 	DeepSeekAPIKey string `json:"deepseek_api_key,omitempty"`
@@ -207,6 +214,14 @@ func LoadFiles(paths Paths, lookup LookupEnv) (Config, error) {
 	}
 	kimiBaseURL, _ := lookup(EnvKimiBaseURL)
 
+	zhipuAPIKey := strings.TrimSpace(auth.ZhipuAPIKey)
+	if value, exists := lookup(EnvZhipuAPIKey); exists {
+		if value = strings.TrimSpace(value); value != "" {
+			zhipuAPIKey = value
+		}
+	}
+	zhipuBaseURL, _ := lookup(EnvZhipuBaseURL)
+
 	moonshotAPIKey := strings.TrimSpace(auth.MoonshotAPIKey)
 	if value, exists := lookup(EnvMoonshotAPIKey); exists {
 		if value = strings.TrimSpace(value); value != "" {
@@ -242,6 +257,8 @@ func LoadFiles(paths Paths, lookup LookupEnv) (Config, error) {
 		OpenAIBaseURL:       strings.TrimSpace(openAIBaseURL),
 		KimiAPIKey:          kimiAPIKey,
 		KimiBaseURL:         strings.TrimSpace(kimiBaseURL),
+		ZhipuAPIKey:         zhipuAPIKey,
+		ZhipuBaseURL:        strings.TrimSpace(zhipuBaseURL),
 		MoonshotAPIKey:      moonshotAPIKey,
 		MoonshotBaseURL:     strings.TrimSpace(moonshotBaseURL),
 		CodexCredentials:    codex,
@@ -354,6 +371,30 @@ func SaveKimiAPIKeyFile(paths Paths, apiKey string) error {
 	}
 	return saveAPIKeyFile(paths, "Kimi", apiKey, func(auth *authFile) {
 		auth.KimiAPIKey = apiKey
+	})
+}
+
+// SaveZhipuAPIKey stores the Zhipu credential in the global auth file.
+func SaveZhipuAPIKey(apiKey string) (string, error) {
+	paths, err := DefaultPaths()
+	if err != nil {
+		return "", err
+	}
+	if err := SaveZhipuAPIKeyFile(paths, apiKey); err != nil {
+		return "", err
+	}
+	return paths.GlobalAuth, nil
+}
+
+// SaveZhipuAPIKeyFile stores the Zhipu credential in an explicit global
+// auth file, preserving any other provider credentials already present.
+func SaveZhipuAPIKeyFile(paths Paths, apiKey string) error {
+	apiKey = strings.TrimSpace(apiKey)
+	if apiKey == "" {
+		return errors.New("config: Zhipu API key is required")
+	}
+	return saveAPIKeyFile(paths, "Zhipu", apiKey, func(auth *authFile) {
+		auth.ZhipuAPIKey = apiKey
 	})
 }
 
@@ -541,6 +582,7 @@ func loadAuth(path string) (authFile, error) {
 	auth.OpenCodeAPIKey = strings.TrimSpace(auth.OpenCodeAPIKey)
 	auth.OpenAIAPIKey = strings.TrimSpace(auth.OpenAIAPIKey)
 	auth.KimiAPIKey = strings.TrimSpace(auth.KimiAPIKey)
+	auth.ZhipuAPIKey = strings.TrimSpace(auth.ZhipuAPIKey)
 	auth.MoonshotAPIKey = strings.TrimSpace(auth.MoonshotAPIKey)
 	auth.CustomAPIKey = strings.TrimSpace(auth.CustomAPIKey)
 	return auth, nil
