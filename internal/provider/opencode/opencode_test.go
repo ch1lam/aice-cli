@@ -379,6 +379,10 @@ func TestProviderDispatchesModelsThroughConfiguredAPIs(t *testing.T) {
 	paths := make(chan string, 3)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		paths <- r.URL.Path
+		if r.Header.Get("x-opencode-session") == "" {
+			http.Error(w, `{"type":"MissingSessionID"}`, http.StatusBadRequest)
+			return
+		}
 		w.Header().Set("Content-Type", "text/event-stream")
 	}))
 	defer server.Close()

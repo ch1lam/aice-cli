@@ -239,6 +239,11 @@ func (a *application) Print(
 		}
 	}
 
+	ctx, err = modelSessionContext(ctx, store)
+	if err != nil {
+		return err
+	}
+
 	_, loopErr := loop.Run(ctx, agent.RunInput{
 		Model:           environment.model,
 		SystemPrompt:    environment.systemPrompt,

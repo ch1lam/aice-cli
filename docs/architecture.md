@@ -39,6 +39,10 @@ Durable design rules:
   adapters only encode protocol-specific shapes.
 - Sessions are the append-only source of truth. Model context and the TUI
   viewport are derived views.
+- The application owns conversation routing identity and propagates it through
+  context using the provider-neutral LLM metadata helpers. Providers own its
+  HTTP encoding; the Loop and protocol adapters do not select Session identity.
+  See [OpenCode routing behavior](configuration.md).
 - Built-in tools use the host process environment. An intrinsic execution gate
   (`internal/guard`) checks every tool call inline; stronger isolation is
   still external (container/VM). Product behavior of the gate is in [Tool

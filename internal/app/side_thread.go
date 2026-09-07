@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 	"slices"
 	"sort"
@@ -52,6 +53,7 @@ type sideThread struct {
 // private in-memory history of its own completed interactions. It never
 // writes to the parent Session store, history, transcript, or usage.
 type sideRunner struct {
+	sessionID    string
 	loop         *agent.Loop
 	model        llm.Model
 	options      llm.StreamOptions
@@ -143,6 +145,7 @@ func (s *interactiveSession) CreateSideThread(
 		lastActiveAt: now,
 	}
 	thread.runner = &sideRunner{
+		sessionID:    rand.Text(),
 		loop:         loop,
 		model:        settings.model,
 		options:      settings.options,
@@ -562,6 +565,7 @@ func (r *sideRun) Run(ctx context.Context) error {
 		return err
 	}
 	committed := 0
+	ctx = llm.WithSessionID(ctx, r.runner.sessionID)
 	result, runErr := r.runner.loop.Run(ctx, agent.RunInput{
 		Model:        r.runner.model,
 		SystemPrompt: r.runner.systemPrompt,

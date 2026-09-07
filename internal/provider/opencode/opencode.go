@@ -53,10 +53,11 @@ func New(config Config) (*Provider, error) {
 	if strings.TrimSpace(config.BaseURL) != "" {
 		baseURL = strings.TrimRight(strings.TrimSpace(config.BaseURL), "/")
 	}
+	client := routingClient(config.HTTPClient)
 	completionsAdapter, err := openaicompletions.New(openaicompletions.Config{
 		APIKey:     config.APIKey,
 		BaseURL:    baseURL,
-		HTTPClient: config.HTTPClient,
+		HTTPClient: client,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("opencode-go: configure completions adapter: %w", err)
@@ -64,7 +65,7 @@ func New(config Config) (*Provider, error) {
 	responsesAdapter, err := openairesponses.New(openairesponses.Config{
 		APIKey:     config.APIKey,
 		BaseURL:    baseURL,
-		HTTPClient: config.HTTPClient,
+		HTTPClient: client,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("opencode-go: configure Responses adapter: %w", err)
@@ -72,7 +73,7 @@ func New(config Config) (*Provider, error) {
 	anthropicAdapter, err := anthropic.New(anthropic.Config{
 		APIKey:     config.APIKey,
 		BaseURL:    anthropicBaseURL(baseURL),
-		HTTPClient: config.HTTPClient,
+		HTTPClient: client,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("opencode-go: configure Anthropic adapter: %w", err)

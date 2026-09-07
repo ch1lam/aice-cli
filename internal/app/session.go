@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"os"
@@ -226,4 +227,17 @@ func appendSessionMessage(
 		return fmt.Errorf("app: append session message: %w", err)
 	}
 	return nil
+}
+
+// modelSessionContext binds routing metadata to durable Session identity.
+// Stateless print calls get one identity inherited by retries and compaction.
+func modelSessionContext(ctx context.Context, store *session.Store) (context.Context, error) {
+	if store == nil {
+		return llm.WithSessionID(ctx, rand.Text()), nil
+	}
+	snapshot, err := store.Snapshot()
+	if err != nil {
+		return nil, fmt.Errorf("app: read model Session identity: %w", err)
+	}
+	return llm.WithSessionID(ctx, snapshot.Header.ID), nil
 }

@@ -110,6 +110,10 @@ func (r *interactiveRun) Run(ctx context.Context) error {
 		return err
 	}
 	defer r.session.conversation.endMainRun(snapshot.state)
+	ctx, err = modelSessionContext(ctx, r.session.conversation.store)
+	if err != nil {
+		return err
+	}
 
 	configured := configuredModel{
 		configuration: snapshot.configuration,

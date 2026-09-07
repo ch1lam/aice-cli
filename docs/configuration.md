@@ -193,6 +193,16 @@ Models whose upstream input modalities include images accept image content
 through the programmatic LLM contract; the current TUI input remains
 text-only.
 
+OpenCode Go requests across all three protocols carry `x-opencode-session`
+and identify the client as `aice`, as required by the
+[Go gateway](https://opencode.ai/docs/go/#where-can-i-use-it).
+The application propagates the stored Session ID as routing metadata through
+the request context, preserving it across turns, retries, model changes,
+compaction, and reopening. `/new` creates a new identity with the next Session.
+Stateless print runs and individual `/btw` threads have their own ephemeral
+identities. Direct provider callers can supply `llm.WithSessionID`; without it,
+the provider uses a random identity stable for that provider instance.
+
 OpenCode Go Chat Completions requests omit `max_tokens` when AICE has no
 explicit output-token cap, allowing the gateway to choose its current default.
 An explicit `MaxTokens` value, including one produced by context protection,

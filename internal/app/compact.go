@@ -141,6 +141,7 @@ func (a *application) compactStoredHistory(
 	} else if err := a.initializeConfiguredModel(configured); err != nil {
 		return nil, preparation, err
 	}
+	ctx = llm.WithSessionID(ctx, snapshot.Header.ID)
 	summary, usage, err := a.generateCompactionSummary(ctx, preparation.MessagesToSummarize, *configured)
 	if onUsage != nil {
 		onUsage(usage)
