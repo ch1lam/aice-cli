@@ -36,6 +36,8 @@ func (p *Provider) DefaultModel() llm.Model         { return DefaultModel() }
 func (p *Provider) Configured(c config.Config) bool { return c.CodexCredentials.Configured() }
 
 // Models is deliberately independent of API billing prices and credentials.
+// ContextWindow follows the default context_window in OpenAI's bundled
+// codex-rs/models-manager/models.json, not max_context_window or API limits.
 func Models() []llm.Model {
 	var models []llm.Model
 	for _, entry := range []struct{ id, name string }{
@@ -50,7 +52,7 @@ func Models() []llm.Model {
 			ThinkingLevelMap: llm.ThinkingLevelsMap(llm.ThinkingLevelLow, llm.ThinkingLevelMedium,
 				llm.ThinkingLevelHigh, llm.ThinkingLevelXHigh, llm.ThinkingLevelMax),
 			InputModalities: []llm.InputModality{llm.InputModalityText, llm.InputModalityImage},
-			ContextWindow:   1_050_000, MaxTokens: 128_000,
+			ContextWindow:   272_000, MaxTokens: 128_000,
 		})
 	}
 	return models

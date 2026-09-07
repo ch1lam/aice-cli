@@ -25,6 +25,9 @@ func TestModels(t *testing.T) {
 	var ids []string
 	for _, model := range models {
 		ids = append(ids, model.ID)
+		if model.ContextWindow != 272_000 {
+			t.Errorf("%s default context = %d, want 272000", model.ID, model.ContextWindow)
+		}
 	}
 	want := []string{"gpt-6-astra", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"}
 	if !slices.Equal(ids, want) {
@@ -34,7 +37,7 @@ func TestModels(t *testing.T) {
 		t.Fatal("catalog update changed the default model")
 	}
 	astra := models[0]
-	if astra.ContextWindow != 1_050_000 || astra.MaxTokens != 128_000 ||
+	if astra.ContextWindow != 272_000 || astra.MaxTokens != 128_000 ||
 		!slices.Contains(astra.InputModalities, llm.InputModalityImage) {
 		t.Fatalf("incorrect Astra metadata: %#v", astra)
 	}

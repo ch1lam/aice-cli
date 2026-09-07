@@ -233,7 +233,7 @@ checked on 2026-09-07 against
 [OpenAI's Codex model guide](https://learn.chatgpt.com/docs/models); availability
 and usage limits depend on the account. AICE records token usage with zero
 per-token API price estimates for this provider. This does not mean unlimited
-or free usage. Catalog context/output metadata is 1,050,000/128,000 tokens;
+or free usage. Default context/output metadata is 272,000/128,000 tokens;
 the subscription endpoint chooses the actual output limit and AICE omits
 `max_output_tokens`, including explicit local output caps, because that field
 is unsupported. AICE's local context accounting and compaction still apply.
