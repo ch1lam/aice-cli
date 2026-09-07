@@ -116,10 +116,10 @@ func TestProviderDescriptor(t *testing.T) {
 		t.Errorf("ProviderID() = %q, want %q", got, moonshot.ProviderID)
 	}
 	if got := descriptor.Label(); got != "Moonshot API" {
-		t.Errorf("Label() = %q, want Kimi", got)
+		t.Errorf("Label() = %q, want Moonshot API", got)
 	}
 	if got := descriptor.MenuDescription(); !strings.Contains(got, "Moonshot API") {
-		t.Errorf("MenuDescription() = %q, want Kimi API", got)
+		t.Errorf("MenuDescription() = %q, want Moonshot API", got)
 	}
 	if got := descriptor.DefaultModel(); !reflect.DeepEqual(got, moonshot.DefaultModel()) {
 		t.Errorf("DefaultModel() = %#v, want %#v", got, moonshot.DefaultModel())
@@ -151,72 +151,76 @@ func TestProviderDescriptor(t *testing.T) {
 
 func TestResponsesToolRoundTrip(t *testing.T) {
 	t.Parallel()
-	requests := make(chan map[string]any, 2)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var body map[string]any
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			t.Error(err)
-			return
-		}
-		requests <- body
-		w.Header().Set("Content-Type", "text/event-stream")
-		for _, event := range []string{
-			`{"type":"response.output_item.done","output_index":0,"item":{"id":"rs-1","type":"reasoning","summary":[],"content":[{"type":"reasoning_text","text":"Inspect the file"}],"status":"completed"}}`,
-			`{"type":"response.output_item.done","output_index":1,"item":{"id":"fc-1","type":"function_call","call_id":"call-1","name":"read","arguments":"{\"path\":\"README.md\"}","status":"completed"}}`,
-			`{"type":"response.completed","response":{"id":"resp-1","model":"kimi-k3","status":"completed","usage":{"input_tokens":10,"output_tokens":5,"total_tokens":15}}}`,
-		} {
-			_, _ = io.WriteString(w, "data: "+event+"\n\n")
-		}
-	}))
-	defer server.Close()
-	service, err := moonshot.New(moonshot.Config{APIKey: "test-key", BaseURL: server.URL, HTTPClient: server.Client()})
-	if err != nil {
-		t.Fatal(err)
-	}
-	request := llm.Request{
-		Model:    moonshot.DefaultModel(),
-		Messages: []llm.Message{llm.UserMessage{Role: llm.RoleUser, Content: []llm.ContentPart{llm.NewTextContent("Read README.md").Part()}}},
-		Tools:    []llm.ToolDefinition{{Name: "read", InputSchema: json.RawMessage(`{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}`)}},
-		Options:  llm.StreamOptions{Thinking: llm.ThinkingLevelHigh},
-	}
-	stream, err := service.Stream(t.Context(), request)
-	if err != nil {
-		t.Fatal(err)
-	}
-	events := apitest.CollectEvents(t, stream)
-	if err := stream.Close(); err != nil {
-		t.Fatal(err)
-	}
-	done := events[len(events)-1]
-	if done.Type != llm.EventTypeDone || done.StopReason != llm.StopReasonToolUse || done.Message == nil {
-		t.Fatalf("done = %#v", done)
-	}
-	if done.Message.Provider != moonshot.ProviderID || len(done.Message.Content) != 2 || done.Message.Usage.TotalTokens != 15 {
-		t.Fatalf("message = %#v", done.Message)
-	}
-	request.Messages = append(request.Messages, *done.Message, llm.ToolResultMessage{Role: llm.RoleToolResult, ToolCallID: "call-1", Content: []llm.ContentPart{llm.NewTextContent("README contents").Part()}})
-	stream, err = service.Stream(t.Context(), request)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := stream.Close(); err != nil {
-		t.Fatal(err)
-	}
-	<-requests
-	body := <-requests
-	input := body["input"].([]any)
-	reasoning := input[1].(map[string]any)
-	call := input[2].(map[string]any)
-	result := input[3].(map[string]any)
-	if reasoning["id"] != "rs-1" || reasoning["type"] != "reasoning" {
-		t.Errorf("reasoning replay = %#v", reasoning)
-	}
-	if call["call_id"] != "call-1" || result["call_id"] != "call-1" || result["output"] != "README contents" {
-		t.Errorf("call/result = %#v/%#v", call, result)
+	for _, model := range moonshot.Models() {
+		t.Run(model.ID, func(t *testing.T) {
+			requests := make(chan map[string]any, 2)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var body map[string]any
+				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+					t.Error(err)
+					return
+				}
+				requests <- body
+				w.Header().Set("Content-Type", "text/event-stream")
+				for _, event := range []string{
+					`{"type":"response.output_item.done","output_index":0,"item":{"id":"rs-1","type":"reasoning","summary":[],"content":[{"type":"reasoning_text","text":"Inspect the file"}],"status":"completed"}}`,
+					`{"type":"response.output_item.done","output_index":1,"item":{"id":"fc-1","type":"function_call","call_id":"call-1","name":"read","arguments":"{\"path\":\"README.md\"}","status":"completed"}}`,
+					`{"type":"response.completed","response":{"id":"resp-1","model":"kimi-k3","status":"completed","usage":{"input_tokens":10,"output_tokens":5,"total_tokens":15}}}`,
+				} {
+					_, _ = io.WriteString(w, "data: "+event+"\n\n")
+				}
+			}))
+			defer server.Close()
+			service, err := moonshot.New(moonshot.Config{APIKey: "test-key", BaseURL: server.URL, HTTPClient: server.Client()})
+			if err != nil {
+				t.Fatal(err)
+			}
+			request := llm.Request{
+				Model:    model,
+				Messages: []llm.Message{llm.UserMessage{Role: llm.RoleUser, Content: []llm.ContentPart{llm.NewTextContent("Read README.md").Part()}}},
+				Tools:    []llm.ToolDefinition{{Name: "read", InputSchema: json.RawMessage(`{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}`)}},
+				Options:  llm.StreamOptions{Thinking: llm.ThinkingLevelHigh},
+			}
+			stream, err := service.Stream(t.Context(), request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			events := apitest.CollectEvents(t, stream)
+			if err := stream.Close(); err != nil {
+				t.Fatal(err)
+			}
+			done := events[len(events)-1]
+			if done.Type != llm.EventTypeDone || done.StopReason != llm.StopReasonToolUse || done.Message == nil {
+				t.Fatalf("done = %#v", done)
+			}
+			if done.Message.Provider != moonshot.ProviderID || len(done.Message.Content) != 2 || done.Message.Usage.TotalTokens != 15 {
+				t.Fatalf("message = %#v", done.Message)
+			}
+			request.Messages = append(request.Messages, *done.Message, llm.ToolResultMessage{Role: llm.RoleToolResult, ToolCallID: "call-1", Content: []llm.ContentPart{llm.NewTextContent("README contents").Part()}})
+			stream, err = service.Stream(t.Context(), request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := stream.Close(); err != nil {
+				t.Fatal(err)
+			}
+			<-requests
+			body := <-requests
+			input := body["input"].([]any)
+			reasoning := input[1].(map[string]any)
+			call := input[2].(map[string]any)
+			result := input[3].(map[string]any)
+			if reasoning["id"] != "rs-1" || reasoning["type"] != "reasoning" {
+				t.Errorf("reasoning replay = %#v", reasoning)
+			}
+			if call["call_id"] != "call-1" || result["call_id"] != "call-1" || result["output"] != "README contents" {
+				t.Errorf("call/result = %#v/%#v", call, result)
+			}
+		})
 	}
 }
 
-func TestCatalogDispatchAndThinking(t *testing.T) {
+func TestCatalogResponsesAndThinking(t *testing.T) {
 	t.Parallel()
 	models := moonshot.Models()
 	wantIDs := []string{"kimi-k3", "kimi-k2.7-code", "kimi-k2.7-code-highspeed", "kimi-k2.6"}
@@ -234,11 +238,7 @@ func TestCatalogDispatchAndThinking(t *testing.T) {
 					APIKey: "platform-key",
 					HTTPClient: &http.Client{Transport: apitest.RoundTripFunc(func(r *http.Request) (*http.Response, error) {
 						calls++
-						path := "/v1/chat/completions"
-						if model.ID == "kimi-k3" {
-							path = "/v1/responses"
-						}
-						if r.URL.String() != "https://api.moonshot.cn"+path {
+						if r.URL.String() != "https://api.moonshot.cn/v1/responses" {
 							t.Errorf("default endpoint = %s", r.URL)
 						}
 						if r.Header.Get("Authorization") != "Bearer platform-key" {
@@ -251,26 +251,23 @@ func TestCatalogDispatchAndThinking(t *testing.T) {
 						if body["model"] != model.ID || body["stream"] != true {
 							t.Errorf("body = %#v", body)
 						}
-						switch model.ID {
-						case "kimi-k3":
-							if body["reasoning"].(map[string]any)["effort"] != string(level) {
-								t.Error("wrong Responses effort")
-							}
-							if model.ContextWindow != 1048576 || body["max_output_tokens"] != float64(131072) {
-								t.Error("wrong K3 budgets")
-							}
-						case "kimi-k2.6":
-							want := "enabled"
-							if level == llm.ThinkingLevelOff {
-								want = "disabled"
-							}
-							if body["thinking"].(map[string]any)["type"] != want {
-								t.Error("wrong thinking toggle")
-							}
-						default:
-							if _, ok := body["thinking"]; ok {
-								t.Error("K2.7 must omit thinking")
-							}
+						wantEffort := string(level)
+						if level == llm.ThinkingLevelOff {
+							wantEffort = "none"
+						}
+						reasoning, ok := body["reasoning"].(map[string]any)
+						if !ok || reasoning["effort"] != wantEffort {
+							t.Errorf("reasoning = %#v, want effort %q", body["reasoning"], wantEffort)
+						}
+						wantContext, wantOutput := int64(262144), float64(32768)
+						if model.ID == "kimi-k3" {
+							wantContext, wantOutput = 1048576, 131072
+						}
+						if model.ContextWindow != wantContext || body["max_output_tokens"] != wantOutput {
+							t.Error("wrong Responses budgets")
+						}
+						if _, ok := body["thinking"]; ok {
+							t.Error("unexpected Chat Completions thinking toggle")
 						}
 						if _, ok := body["reasoning_effort"]; ok {
 							t.Error("unexpected Chat Completions effort")
@@ -304,65 +301,5 @@ func TestCatalogDispatchAndThinking(t *testing.T) {
 	descriptor := &moonshot.Provider{}
 	if descriptor.Configured(config.Config{KimiAPIKey: "coding-key", OpenAIAPIKey: "openai-key"}) {
 		t.Error("accepted another provider's key")
-	}
-}
-
-func TestChatCompletionsPreservesThinkingForToolReplay(t *testing.T) {
-	t.Parallel()
-	requests := make(chan map[string]any, 2)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var body map[string]any
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			t.Error(err)
-			return
-		}
-		requests <- body
-		w.Header().Set("Content-Type", "text/event-stream")
-		for _, event := range []string{
-			`{"id":"chat-1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"reasoning_content":"Inspect the file"}}]}`,
-			`{"id":"chat-1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call-1","type":"function","function":{"name":"read","arguments":"{}"}}]},"finish_reason":"tool_calls"}]}`,
-			`{"id":"chat-1","object":"chat.completion.chunk","choices":[],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}`,
-			`[DONE]`,
-		} {
-			_, _ = io.WriteString(w, "data: "+event+"\n\n")
-		}
-	}))
-	defer server.Close()
-	descriptor := &moonshot.Provider{}
-	service, err := descriptor.New(config.Config{MoonshotAPIKey: "platform-key", MoonshotBaseURL: server.URL})
-	if err != nil {
-		t.Fatal(err)
-	}
-	model := moonshot.Models()[1]
-	request := apitest.MinimalRequest(model.API)
-	request.Model = model
-	request.Options.Thinking = llm.ThinkingLevelHigh
-	stream, err := service.Stream(t.Context(), request)
-	if err != nil {
-		t.Fatal(err)
-	}
-	events := apitest.CollectEvents(t, stream)
-	if err := stream.Close(); err != nil {
-		t.Fatal(err)
-	}
-	done := events[len(events)-1]
-	if done.Message == nil || done.StopReason != llm.StopReasonToolUse || done.Message.Usage.TotalTokens != 15 {
-		t.Fatalf("done = %#v", done)
-	}
-	request.Messages = append(request.Messages, *done.Message, llm.ToolResultMessage{Role: llm.RoleToolResult, ToolCallID: "call-1", Content: []llm.ContentPart{llm.NewTextContent("file contents").Part()}})
-	stream, err = service.Stream(t.Context(), request)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := stream.Close(); err != nil {
-		t.Fatal(err)
-	}
-	<-requests
-	body := <-requests
-	messages := body["messages"].([]any)
-	assistant := messages[1].(map[string]any)
-	result := messages[2].(map[string]any)
-	if assistant["reasoning_content"] != "Inspect the file" || result["tool_call_id"] != "call-1" {
-		t.Errorf("replay = %#v", messages)
 	}
 }

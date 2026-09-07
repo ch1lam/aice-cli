@@ -118,7 +118,7 @@ The default request is `medium`. On DeepSeek V4 Flash and Pro it becomes
 | `opencode-go/kimi-k2.6` | `off`, `high` |
 | `opencode-go/kimi-k3` | `max` |
 | `moonshot/kimi-k3` | `low`, `high`, `max` |
-| `moonshot/kimi-k2.7-code`, `moonshot/kimi-k2.7-code-highspeed` | `high` (always on; no effort parameter) |
+| `moonshot/kimi-k2.7-code`, `moonshot/kimi-k2.7-code-highspeed` | `high` (thinking enabled) |
 | `moonshot/kimi-k2.6` | `off`, `high` |
 | `kimi-coding/k3`, `kimi-coding/k3-256k` | `low`, `high`, `max` |
 | `kimi-coding/kimi-for-coding`, `kimi-coding/kimi-for-coding-highspeed` | `high` (thinking enabled) |
@@ -321,13 +321,13 @@ selects and saves the provider and a compatible model.
 | Model | Protocol | Context / default output budget | Thinking |
 | --- | --- | --- | --- |
 | `kimi-k3` (default) | Responses | 1,048,576 / 131,072 | `low`, `high`, `max` |
-| `kimi-k2.7-code` | Chat Completions | 262,144 / 32,768 | Always enabled |
-| `kimi-k2.7-code-highspeed` | Chat Completions | 262,144 / 32,768 | Always enabled |
-| `kimi-k2.6` | Chat Completions | 262,144 / 32,768 | `off`, `high` |
+| `kimi-k2.7-code` | Responses | 262,144 / 32,768 | Always enabled |
+| `kimi-k2.7-code-highspeed` | Responses | 262,144 / 32,768 | Always enabled |
+| `kimi-k2.6` | Responses | 262,144 / 32,768 | `off`, `high` |
 
-The protocol is selected automatically from the model catalog. K2.7 omits
-both `thinking` and `reasoning_effort`, preserving its always-on server default;
-K2.6 sends the thinking toggle. K3 uses Responses `reasoning.effort`.
+All catalog models use the shared Responses adapter, as does Kimi Coding Plan.
+Thinking uses `reasoning.effort`; K2.6 `off` maps to `none`. There is no
+model-dependent protocol selection or Chat Completions fallback.
 AICE's default requested `medium` becomes `high` on these models. Text/image
 inputs, streamed reasoning, and tool-result replay use the existing adapters.
 The current composer accepts text only. Retired K2.5 and Moonshot V1 models
@@ -340,7 +340,7 @@ but does not convert China-platform CNY prices into its USD cost estimates;
 a zero displayed estimate does not mean the API call is free. Use the platform
 billing console for charges.
 
-Catalog and protocol details were checked on 2026-09-07 against the official
+Official references for the catalog and Responses request format:
 [model list](https://platform.kimi.com/docs/models),
 [Responses reference](https://platform.kimi.com/docs/api/responses), and
 [parameter reference](https://platform.kimi.com/docs/api/models-overview).
