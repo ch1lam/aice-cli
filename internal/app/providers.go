@@ -11,6 +11,7 @@ import (
 	"github.com/ch1lam/aice-cli/internal/provider/custom"
 	"github.com/ch1lam/aice-cli/internal/provider/deepseek"
 	"github.com/ch1lam/aice-cli/internal/provider/kimi"
+	"github.com/ch1lam/aice-cli/internal/provider/moonshot"
 	"github.com/ch1lam/aice-cli/internal/provider/openai"
 	"github.com/ch1lam/aice-cli/internal/provider/opencode"
 )
@@ -21,6 +22,7 @@ func defaultProviders() []provider.Provider {
 		&deepseek.Provider{},
 		&opencode.Provider{},
 		&kimi.Provider{},
+		&moonshot.Provider{},
 		&openai.Provider{},
 		&codex.Provider{},
 		&custom.Provider{},
