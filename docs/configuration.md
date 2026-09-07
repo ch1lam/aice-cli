@@ -36,15 +36,17 @@ When `settings.json` omits `provider` and `model`, AICE uses `deepseek` and
 
 ### Context window and status bar
 
-The main TUI status bar shows remaining context as `ctx 82.4% left / 262k`.
-`~` marks an estimate. It uses the latest successful response usage for the
-selected provider/model, including cached input and output, plus estimated
-messages accepted since that response. It does not divide cumulative Session
-usage by the window. Before the first response and after compaction or switching
-models, AICE estimates the active prompt, tool definitions, and projected history.
-Unsent drafts and queued inputs are excluded until accepted. Remaining capacity
-is clamped to 0–100%; at 30% or less it turns amber, and at 10% or less red.
-Narrow terminals drop other details before the remaining percentage.
+The main TUI status bar shows only the used context percentage, such as
+`82.40%`, with two decimal places. A new, untouched conversation shows `0.00%`;
+a full window shows `100.00%`. After the first input is accepted, it uses the
+latest successful response usage for the selected provider/model, including
+cached input and output, plus estimated messages accepted since that response.
+It does not divide cumulative Session usage by the window. Before the first
+response and after compaction or switching models, AICE estimates the active
+prompt, tool definitions, and projected history. Estimates use the same compact
+percentage format. Unsent drafts and queued inputs are excluded until accepted.
+Usage is clamped to 0–100%; at 70% or more it turns amber, and at 90% or more red.
+Narrow terminals drop other details before the percentage.
 
 Without configuration, the denominator uses the selected **provider and model**
 catalog default, including when its base URL is overridden. An explicit
@@ -91,7 +93,7 @@ when changing an endpoint or account. AICE does not read another harness's setti
 The separation of Session totals and context occupancy follows
 [pi's footer](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/src/modes/interactive/components/footer.ts)
 and [context calculation](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/src/core/agent-session.ts).
-AICE uses its existing estimator after compaction and marks that value with `~`.
+AICE uses its existing estimator after compaction.
 
 ### Thinking levels
 

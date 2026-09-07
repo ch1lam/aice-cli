@@ -240,7 +240,7 @@ trailing user messages always remain verbatim.
 Automatic compaction uses the selected model's resolved window, including any
 [per-model context override](configuration.md#context-window-and-status-bar).
 The footer percentage uses that same window before subtracting compaction
-reserves, so automatic compaction can occur before the display reaches 0%.
+reserves, so automatic compaction can occur before the display reaches 100%.
 
 Automatic compaction checks the estimated context before every model request,
 including consecutive tool rounds in one interaction. It runs only after all

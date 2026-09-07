@@ -64,6 +64,12 @@ func contextDisplay(
 	history []llm.AgentMessage,
 ) interaction.DisplayContext {
 	display := interaction.DisplayContext{Window: displayContextWindow(model, configuration)}
+	// An untouched conversation displays zero until its first input is accepted.
+	if len(history) == 0 {
+		display.Known = true
+		display.Estimated = true
+		return display
+	}
 	messages, err := llm.AgentMessagesToMessages(history)
 	if err != nil {
 		return display

@@ -866,8 +866,7 @@ func (m model) statusLine(width int) string {
 	model := m.modelStatus()
 	fullUsage := m.usageStatus(true)
 	compactUsage := m.usageStatus(false)
-	context := m.contextStatus(true)
-	compactContext := m.contextStatus(false)
+	context := m.contextStatus()
 
 	usageCandidates := []string{fullUsage}
 	if compactUsage != fullUsage {
@@ -889,10 +888,9 @@ func (m model) statusLine(width int) string {
 
 	fallbacks := []string{
 		joinStatusParts(compactUsage, context, model),
-		joinStatusParts(compactUsage, compactContext, model),
-		joinStatusParts(compactContext, model),
-		joinStatusParts(compactUsage, compactContext),
-		compactContext,
+		joinStatusParts(context, model),
+		joinStatusParts(compactUsage, context),
+		context,
 		model,
 		compactUsage,
 	}
@@ -907,31 +905,24 @@ func (m model) statusLine(width int) string {
 	return ""
 }
 
-func (m model) contextStatus(includeWindow bool) string {
+func (m model) contextStatus() string {
 	usage := m.contextUsage
 	if usage == (DisplayContext{}) {
 		return ""
 	}
 	if usage.Window <= 0 || !usage.Known {
-		return mutedStyle.Render("ctx ?")
+		return mutedStyle.Render("?%")
 	}
 	used := min(max(usage.Tokens, 0), usage.Window)
-	remaining := 100 * float64(usage.Window-used) / float64(usage.Window)
-	approximate := ""
-	if usage.Estimated {
-		approximate = "~"
-	}
-	text := fmt.Sprintf("ctx %s%.1f%% left", approximate, remaining)
-	if includeWindow {
-		text += " / " + formatTokens(usage.Window)
-	}
+	percent := 100 * float64(used) / float64(usage.Window)
 	style := mutedStyle
-	if remaining <= 10 {
+	switch {
+	case percent >= 90:
 		style = errorStyle
-	} else if remaining <= 30 {
+	case percent >= 70:
 		style = noticeStyle
 	}
-	return style.Render(text)
+	return style.Render(fmt.Sprintf("%.2f%%", percent))
 }
 
 func joinStatusParts(parts ...string) string {

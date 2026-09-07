@@ -211,7 +211,7 @@ the final JSON event from being delivered.
   projection of recorded messages, replaced on successful compaction; completed
   tool results contribute before the next model request. Non-delta frontend
   events carry immutable context snapshots. Startup and command completion
-  rebuild from the active conversation. The TUI only formats remaining percent;
+  rebuild from the active conversation. The TUI only formats used percent;
   it does not count tokens or own provider limits.
 - Only Bubble Tea's update loop mutates UI state. The application bridge turns
   Agent events into frontend-neutral interaction events; the TUI does not

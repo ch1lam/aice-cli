@@ -29,7 +29,7 @@ func TestInteractiveContextTracksToolsAndCompactionWithOverride(t *testing.T) {
 		providers:   []provider.Provider{&compactTestProvider{model: info, service: service}},
 		userHomeDir: func() (string, error) { return home, nil },
 		runTUI: func(ctx context.Context, runner interaction.Runner, options tui.Options) error {
-			if options.Context.Window != 10000 || !options.Context.Estimated || options.Context.Tokens <= 0 {
+			if options.Context.Window != 10000 || !options.Context.Estimated || options.Context.Tokens != 0 {
 				t.Fatalf("startup context = %+v", options.Context)
 			}
 			active, err := runner.NewRun(interaction.RunInput{Prompt: "inspect large.txt"}, func(_ context.Context, event interaction.Event) error {
@@ -148,8 +148,8 @@ func TestContextDisplayUsesCurrentWindowNotCumulativeUsage(t *testing.T) {
 		t.Fatalf("stale pre-compaction usage: %+v", got)
 	}
 	got = contextDisplay(model, config.Config{}, "12345678", nil, nil)
-	if got.Tokens != 2 || !got.Estimated {
-		t.Fatalf("fresh context omits system prompt: %+v", got)
+	if got.Tokens != 0 || !got.Known {
+		t.Fatalf("fresh context is not empty: %+v", got)
 	}
 }
 

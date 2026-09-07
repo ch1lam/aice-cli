@@ -74,7 +74,7 @@ aice --workspace . --session .aice/sessions/<session-id>.jsonl
 
 | Area | Current implementation |
 | --- | --- |
-| Interface | Bubble Tea TUI with [remaining context percentage](./docs/configuration.md#context-window-and-status-bar) per provider/model, and one-shot `--print` mode |
+| Interface | Bubble Tea TUI with [context usage percentage](./docs/configuration.md#context-window-and-status-bar) per provider/model, and one-shot `--print` mode |
 | Providers | DeepSeek V4, OpenCode Go's built-in catalog, OpenAI GPT-5.6 API, Codex/ChatGPT subscription, and Custom (OpenAI-compatible) |
 | Protocols | Anthropic Messages, OpenAI Responses, OpenAI Chat Completions |
 | Tools | `read`, `write`, `edit`, `bash`, `grep`, `find`, `ls`, `skill` |
