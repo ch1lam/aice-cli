@@ -94,6 +94,7 @@ type Config struct {
 	OpenCodeBaseURL     string
 	OpenAIAPIKey        string
 	OpenAIBaseURL       string
+	CodexCredentials    CodexCredentials
 	CustomAPIKey        string
 	CustomBaseURL       string
 	Paths               Paths
@@ -152,6 +153,10 @@ func LoadFiles(paths Paths, lookup LookupEnv) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	codex, err := LoadCodexCredentials(paths)
+	if err != nil {
+		return Config{}, err
+	}
 
 	apiKey := strings.TrimSpace(auth.DeepSeekAPIKey)
 	if value, exists := lookup(EnvDeepSeekAPIKey); exists {
@@ -201,6 +206,7 @@ func LoadFiles(paths Paths, lookup LookupEnv) (Config, error) {
 		OpenCodeBaseURL:     strings.TrimSpace(openCodeBaseURL),
 		OpenAIAPIKey:        openAIAPIKey,
 		OpenAIBaseURL:       strings.TrimSpace(openAIBaseURL),
+		CodexCredentials:    codex,
 		CustomAPIKey:        customAPIKey,
 		CustomBaseURL:       customBaseURL,
 		Paths:               paths,

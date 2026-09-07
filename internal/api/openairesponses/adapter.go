@@ -30,6 +30,9 @@ type Config struct {
 	APIKey     string
 	BaseURL    string
 	HTTPClient *http.Client
+	Headers    http.Header
+	// Codex selects the ChatGPT subscription Responses request shape.
+	Codex bool
 }
 
 // Adapter implements AICE's model stream contract with the official OpenAI Go
@@ -37,6 +40,7 @@ type Config struct {
 // environment variables cannot override another provider's explicit settings.
 type Adapter struct {
 	client responses.ResponseService
+	codex  bool
 }
 
 // New constructs an OpenAI Responses adapter.
@@ -56,8 +60,13 @@ func New(config Config) (*Adapter, error) {
 	if config.HTTPClient != nil {
 		opts = append(opts, option.WithHTTPClient(config.HTTPClient))
 	}
+	for name, values := range config.Headers {
+		for _, value := range values {
+			opts = append(opts, option.WithHeader(name, value))
+		}
+	}
 
-	return &Adapter{client: responses.NewResponseService(opts...)}, nil
+	return &Adapter{client: responses.NewResponseService(opts...), codex: config.Codex}, nil
 }
 
 func validateBaseURL(rawURL string) error {
@@ -91,6 +100,19 @@ func (a *Adapter) Stream(ctx context.Context, request llm.Request) (llm.Stream, 
 	if err != nil {
 		return nil, err
 	}
+	if a.codex {
+		// The subscription endpoint rejects max_output_tokens and requires
+		// instructions even for callers without a system prompt.
+		params.MaxOutputTokens = param.Opt[int64]{}
+		if request.SystemPrompt == "" {
+			params.Instructions = param.NewOpt("You are a helpful assistant.")
+		}
+		params.Include = []responses.ResponseIncludable{"reasoning.encrypted_content"}
+		params.ParallelToolCalls = param.NewOpt(true)
+		if request.Options.Thinking != llm.ThinkingLevelUnknown {
+			params.Reasoning.Summary = shared.ReasoningSummaryAuto
+		}
+	}
 
 	source := a.client.NewStreaming(ctx, params)
 	if err := source.Err(); err != nil {
@@ -104,6 +126,7 @@ func (a *Adapter) Stream(ctx context.Context, request llm.Request) (llm.Stream, 
 		core:   streamcore.NewStream(request.Model),
 		source: source,
 		blocks: make(map[int64]*blockState),
+		codex:  a.codex,
 	}, nil
 }
 
@@ -461,6 +484,7 @@ type stream struct {
 	nextIndex   int
 	sawRefusal  bool
 	sawToolCall bool
+	codex       bool
 }
 
 func (s *stream) Next() (llm.Event, error) {
@@ -510,6 +534,18 @@ func normalizeProviderError(err error) error {
 }
 
 func (s *stream) translate(event responses.ResponseStreamEventUnion) ([]llm.Event, error) {
+	if s.codex && event.Type == "response.done" {
+		switch event.Response.Status {
+		case "completed":
+			event.Type = "response.completed"
+		case "incomplete":
+			event.Type = "response.incomplete"
+		case "failed":
+			event.Type = "response.failed"
+		default:
+			return nil, errors.New("openai responses: invalid Codex terminal status")
+		}
+	}
 	switch event.Type {
 	case "response.created":
 		s.mergeResponseMetadata(event.Response)
