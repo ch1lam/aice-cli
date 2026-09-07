@@ -39,6 +39,7 @@ func (p *Provider) Configured(c config.Config) bool { return c.CodexCredentials.
 func Models() []llm.Model {
 	var models []llm.Model
 	for _, entry := range []struct{ id, name string }{
+		{"gpt-6-astra", "GPT-6 Astra"},
 		{"gpt-5.6-sol", "GPT-5.6 Sol"},
 		{"gpt-5.6-terra", "GPT-5.6 Terra"},
 		{"gpt-5.6-luna", "GPT-5.6 Luna"},
@@ -55,7 +56,7 @@ func Models() []llm.Model {
 	return models
 }
 
-func DefaultModel() llm.Model { return Models()[1] }
+func DefaultModel() llm.Model { return Models()[2] }
 
 func (p *Provider) New(c config.Config) (llm.Streamer, error) {
 	if !p.Configured(c) {

@@ -66,7 +66,7 @@ The default request is `medium`. On DeepSeek V4 Flash and Pro it becomes
 | `opencode-go/hy4-preview` | `off`, `high` |
 | `openai/gpt-6-astra` | `low`, `medium`, `high`, `xhigh`, `max` |
 | `openai/gpt-5.6*` | `off`, `low`, `medium`, `high`, `xhigh`, `max` |
-| `openai-codex/gpt-5.6-{sol,terra,luna}` | `low`, `medium`, `high`, `xhigh`, `max` |
+| `openai-codex/gpt-6-astra`, `openai-codex/gpt-5.6-{sol,terra,luna}` | `low`, `medium`, `high`, `xhigh`, `max` |
 | Other `opencode-go` models | `off`, `minimal`, `low`, `medium`, `high` |
 
 `off` is a canonical switch, not necessarily a literal wire value. The
@@ -227,8 +227,9 @@ saves the provider and a compatible model globally; `AICE_PROVIDER` and
 `AICE_MODEL` still take precedence at startup. To reuse a saved login, choose
 `Use saved credential` under the Codex login menu or select Codex in `/provider`.
 
-The compiled catalog contains `gpt-5.6-sol`, `gpt-5.6-terra` (default), and
-`gpt-5.6-luna`. These are subscription models listed in
+The compiled catalog contains `gpt-6-astra`, `gpt-5.6-sol`,
+`gpt-5.6-terra` (default), and `gpt-5.6-luna`. These are subscription models
+checked on 2026-09-07 against
 [OpenAI's Codex model guide](https://learn.chatgpt.com/docs/models); availability
 and usage limits depend on the account. AICE records token usage with zero
 per-token API price estimates for this provider. This does not mean unlimited
