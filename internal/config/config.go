@@ -36,6 +36,10 @@ const (
 	EnvOpenAIAPIKey = "OPENAI_API_KEY"
 	// EnvOpenAIBaseURL overrides OpenAI's official API endpoint.
 	EnvOpenAIBaseURL = "AICE_OPENAI_BASE_URL"
+	// EnvKimiAPIKey authenticates Kimi Coding Plan requests.
+	EnvKimiAPIKey = "KIMI_API_KEY"
+	// EnvKimiBaseURL overrides the Kimi Coding Plan endpoint.
+	EnvKimiBaseURL = "AICE_KIMI_BASE_URL"
 	// EnvCustomAPIKey authenticates requests to a custom OpenAI-compatible endpoint.
 	EnvCustomAPIKey = "AICE_CUSTOM_API_KEY"
 	// EnvCustomBaseURL overrides the custom OpenAI-compatible endpoint.
@@ -97,6 +101,8 @@ type Config struct {
 	OpenCodeBaseURL     string
 	OpenAIAPIKey        string
 	OpenAIBaseURL       string
+	KimiAPIKey          string
+	KimiBaseURL         string
 	CodexCredentials    CodexCredentials
 	CustomAPIKey        string
 	CustomBaseURL       string
@@ -104,6 +110,7 @@ type Config struct {
 }
 
 type authFile struct {
+	KimiAPIKey     string `json:"kimi_api_key,omitempty"`
 	DeepSeekAPIKey string `json:"deepseek_api_key,omitempty"`
 	OpenCodeAPIKey string `json:"opencode_api_key,omitempty"`
 	OpenAIAPIKey   string `json:"openai_api_key,omitempty"`
@@ -185,6 +192,14 @@ func LoadFiles(paths Paths, lookup LookupEnv) (Config, error) {
 	}
 	openAIBaseURL, _ := lookup(EnvOpenAIBaseURL)
 
+	kimiAPIKey := strings.TrimSpace(auth.KimiAPIKey)
+	if value, exists := lookup(EnvKimiAPIKey); exists {
+		if value = strings.TrimSpace(value); value != "" {
+			kimiAPIKey = value
+		}
+	}
+	kimiBaseURL, _ := lookup(EnvKimiBaseURL)
+
 	customAPIKey := strings.TrimSpace(auth.CustomAPIKey)
 	if value, exists := lookup(EnvCustomAPIKey); exists {
 		if value = strings.TrimSpace(value); value != "" {
@@ -210,6 +225,8 @@ func LoadFiles(paths Paths, lookup LookupEnv) (Config, error) {
 		OpenCodeBaseURL:     strings.TrimSpace(openCodeBaseURL),
 		OpenAIAPIKey:        openAIAPIKey,
 		OpenAIBaseURL:       strings.TrimSpace(openAIBaseURL),
+		KimiAPIKey:          kimiAPIKey,
+		KimiBaseURL:         strings.TrimSpace(kimiBaseURL),
 		CodexCredentials:    codex,
 		CustomAPIKey:        customAPIKey,
 		CustomBaseURL:       customBaseURL,
@@ -296,6 +313,30 @@ func SaveOpenAIAPIKeyFile(paths Paths, apiKey string) error {
 	}
 	return saveAPIKeyFile(paths, "OpenAI", apiKey, func(auth *authFile) {
 		auth.OpenAIAPIKey = apiKey
+	})
+}
+
+// SaveKimiAPIKey stores the Kimi credential in the global auth file.
+func SaveKimiAPIKey(apiKey string) (string, error) {
+	paths, err := DefaultPaths()
+	if err != nil {
+		return "", err
+	}
+	if err := SaveKimiAPIKeyFile(paths, apiKey); err != nil {
+		return "", err
+	}
+	return paths.GlobalAuth, nil
+}
+
+// SaveKimiAPIKeyFile stores the Kimi credential in an explicit global
+// auth file, preserving any other provider credentials already present.
+func SaveKimiAPIKeyFile(paths Paths, apiKey string) error {
+	apiKey = strings.TrimSpace(apiKey)
+	if apiKey == "" {
+		return errors.New("config: Kimi API key is required")
+	}
+	return saveAPIKeyFile(paths, "Kimi", apiKey, func(auth *authFile) {
+		auth.KimiAPIKey = apiKey
 	})
 }
 
@@ -458,6 +499,7 @@ func loadAuth(path string) (authFile, error) {
 	auth.DeepSeekAPIKey = strings.TrimSpace(auth.DeepSeekAPIKey)
 	auth.OpenCodeAPIKey = strings.TrimSpace(auth.OpenCodeAPIKey)
 	auth.OpenAIAPIKey = strings.TrimSpace(auth.OpenAIAPIKey)
+	auth.KimiAPIKey = strings.TrimSpace(auth.KimiAPIKey)
 	auth.CustomAPIKey = strings.TrimSpace(auth.CustomAPIKey)
 	return auth, nil
 }

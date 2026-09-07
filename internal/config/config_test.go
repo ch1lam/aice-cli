@@ -579,3 +579,68 @@ func TestContextWindowsRejectInvalidLimits(t *testing.T) {
 		}
 	}
 }
+
+func TestLoadFilesResolvesKimiCredentials(t *testing.T) {
+	t.Parallel()
+
+	paths := testPaths(t.TempDir())
+	writeJSON(t, paths.GlobalAuth, map[string]any{
+		"kimi_api_key": "file-key",
+	})
+
+	values := map[string]string{
+		config.EnvKimiAPIKey:  "environment-key",
+		config.EnvKimiBaseURL: " https://kimi.example/v1 ",
+	}
+	got, err := config.LoadFiles(paths, mapLookup(values))
+	if err != nil {
+		t.Fatalf("LoadFiles() error = %v", err)
+	}
+	if got.KimiAPIKey != "environment-key" {
+		t.Errorf("KimiAPIKey = %q, want environment-key", got.KimiAPIKey)
+	}
+	if got.KimiBaseURL != "https://kimi.example/v1" {
+		t.Errorf(
+			"KimiBaseURL = %q, want trimmed custom URL",
+			got.KimiBaseURL,
+		)
+	}
+}
+
+func TestSaveKimiAPIKeyFilePreservesOtherProviderKeys(t *testing.T) {
+	t.Parallel()
+
+	paths := testPaths(t.TempDir())
+	if err := config.SaveDeepSeekAPIKeyFile(paths, "deepseek-key"); err != nil {
+		t.Fatalf("SaveDeepSeekAPIKeyFile() error = %v", err)
+	}
+	if err := config.SaveOpenCodeAPIKeyFile(paths, "opencode-key"); err != nil {
+		t.Fatalf("SaveOpenCodeAPIKeyFile() error = %v", err)
+	}
+	if err := config.SaveKimiAPIKeyFile(paths, " kimi-key "); err != nil {
+		t.Fatalf("SaveKimiAPIKeyFile() error = %v", err)
+	}
+
+	var auth map[string]string
+	readJSON(t, paths.GlobalAuth, &auth)
+	want := map[string]string{
+		"deepseek_api_key": "deepseek-key",
+		"opencode_api_key": "opencode-key",
+		"kimi_api_key":     "kimi-key",
+	}
+	if !reflect.DeepEqual(auth, want) {
+		t.Errorf("auth = %#v, want %#v", auth, want)
+	}
+}
+
+func TestSaveKimiAPIKeyFileRejectsInvalidValues(t *testing.T) {
+	t.Parallel()
+
+	paths := testPaths(t.TempDir())
+	for _, value := range []string{"", "  ", "line-one\nline-two"} {
+		err := config.SaveKimiAPIKeyFile(paths, value)
+		if err == nil {
+			t.Fatalf("SaveKimiAPIKeyFile(%q) error = nil", value)
+		}
+	}
+}
