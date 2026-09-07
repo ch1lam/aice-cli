@@ -434,6 +434,9 @@ func (r *sideRunner) NewRun(
 	input interaction.RunInput,
 	sink interaction.EventSink,
 ) (interaction.ActiveRun, error) {
+	if len(input.Images) > 0 {
+		return nil, fmt.Errorf("image attachments are supported in the main conversation only")
+	}
 	prompt, err := llm.NewUserMessage(llm.NewTextContent(input.Prompt).Part())
 	if err != nil {
 		return nil, fmt.Errorf("app: create side prompt: %w", err)

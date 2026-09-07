@@ -17,6 +17,14 @@ permission messages. Guard grant scope is defined in
 
 ## Messages and model boundary
 
+Interactive input can carry inline PNG/JPEG images alongside text or alone.
+The application validates the selected model's image capability before accepting
+an initial input or queued delivery. Input validation bounds image count, bytes,
+and decoded dimensions; the mailbox owns a copy of accepted image data.
+Initial inputs, steering, and follow-ups become the same canonical user content
+blocks and persist inline in Session JSONL. Side-thread attachment submissions
+are rejected explicitly. Protocol adapters retain responsibility for wire encoding.
+
 - AICE owns `Message`, `AgentMessage`, concrete user/assistant/tool-result
   messages, content parts, tool calls, usage, models, stop reasons, events, and
   stream abstractions.

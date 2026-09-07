@@ -19,6 +19,7 @@ type interactiveRun struct {
 
 	mu        sync.Mutex
 	isStarted bool
+	model     llm.Model
 }
 
 type mainRunSnapshot struct {
@@ -47,18 +48,19 @@ func (s *interactiveSession) NewRun(
 			settings.configuration,
 		)
 	}
-	if err := s.ensureSessionStore(); err != nil {
-		return nil, err
-	}
-	prompt, err := llm.NewUserMessage(llm.NewTextContent(input.Prompt).Part())
+	prompt, err := newImageInput(input, settings.model)
 	if err != nil {
 		return nil, fmt.Errorf("app: create prompt: %w", err)
+	}
+	if err := s.ensureSessionStore(); err != nil {
+		return nil, err
 	}
 	return &interactiveRun{
 		session: s,
 		prompt:  prompt,
 		sink:    sink,
 		mailbox: interaction.NewMailbox(),
+		model:   settings.model,
 	}, nil
 }
 
@@ -86,6 +88,12 @@ func (r *interactiveRun) Deliver(delivery interaction.Delivery) error {
 	if r == nil || r.mailbox == nil {
 		return interaction.ErrClosed
 	}
+	r.mu.Lock()
+	model := r.model
+	r.mu.Unlock()
+	if err := validateImageModel(model, delivery.Images); err != nil {
+		return err
+	}
 	return r.mailbox.Deliver(delivery)
 }
 
@@ -110,6 +118,9 @@ func (r *interactiveRun) Run(ctx context.Context) error {
 		return err
 	}
 	defer r.session.conversation.endMainRun(snapshot.state)
+	r.mu.Lock()
+	r.model = snapshot.model
+	r.mu.Unlock()
 	ctx, err = modelSessionContext(ctx, r.session.conversation.store)
 	if err != nil {
 		return err
@@ -143,8 +154,8 @@ func (r *interactiveRun) Run(ctx context.Context) error {
 			}
 			return compacted, err
 		},
-		Steering: mailboxInputSource(r.mailbox.TakeSteering, "steering"),
-		FollowUp: mailboxInputSource(r.mailbox.TakeFollowUp, "follow-up"),
+		Steering: mailboxInputSource(r.mailbox.TakeSteering, "steering", snapshot.model),
+		FollowUp: mailboxInputSource(r.mailbox.TakeFollowUp, "follow-up", snapshot.model),
 	}, func(eventCtx context.Context, event agent.AgentEvent) error {
 		if r.sink == nil {
 			return nil
@@ -172,15 +183,16 @@ func (r *interactiveRun) Run(ctx context.Context) error {
 func mailboxInputSource(
 	take func() (interaction.Delivery, bool),
 	label string,
+	model llm.Model,
 ) agent.InputSource {
 	return func() (agent.InputMessage, bool, error) {
 		delivery, ok := take()
 		if !ok {
 			return agent.InputMessage{}, false, nil
 		}
-		message, err := llm.NewUserMessage(
-			llm.NewTextContent(delivery.Text).Part(),
-		)
+		message, err := newImageInput(interaction.RunInput{
+			Prompt: delivery.Text, Images: delivery.Images,
+		}, model)
 		if err != nil {
 			return agent.InputMessage{}, false, fmt.Errorf(
 				"app: create %s message: %w",

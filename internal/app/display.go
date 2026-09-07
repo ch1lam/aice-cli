@@ -106,6 +106,8 @@ func userContent(message llm.UserMessage) string {
 	for _, part := range message.Content {
 		if part.Type == llm.ContentTypeText {
 			text.WriteString(part.Text)
+		} else if part.Type == llm.ContentTypeImage {
+			text.WriteString("\n[Image]")
 		}
 	}
 	return text.String()

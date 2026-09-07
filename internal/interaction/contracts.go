@@ -4,11 +4,14 @@ import (
 	"context"
 	"errors"
 	"time"
+
+	"github.com/ch1lam/aice-cli/internal/llm"
 )
 
 // RunInput contains one initial prompt for an interactive Agent run.
 type RunInput struct {
 	Prompt string
+	Images []llm.ImageContent
 }
 
 // ActiveRun is one prepared Agent run. Its implementation owns accepted input

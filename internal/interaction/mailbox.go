@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+
+	"github.com/ch1lam/aice-cli/internal/llm"
 )
 
 const maximumPendingDeliveries = 8
@@ -31,9 +33,10 @@ const (
 
 // Delivery is one caller-owned user input waiting for an active Agent run.
 type Delivery struct {
-	ID   string
-	Text string
-	Kind DeliveryKind
+	ID     string
+	Text   string
+	Kind   DeliveryKind
+	Images []llm.ImageContent
 }
 
 // Mailbox is the bounded synchronization point between an interactive UI and
@@ -59,13 +62,16 @@ func (m *Mailbox) Deliver(delivery Delivery) error {
 	if strings.TrimSpace(delivery.ID) == "" {
 		return fmt.Errorf("interaction: delivery id is required")
 	}
-	if strings.TrimSpace(delivery.Text) == "" {
+	if strings.TrimSpace(delivery.Text) == "" && len(delivery.Images) == 0 {
 		return fmt.Errorf("interaction: delivery text is required")
 	}
 	switch delivery.Kind {
 	case DeliveryKindSteer, DeliveryKindFollowUp:
 	default:
 		return fmt.Errorf("interaction: delivery kind %d is invalid", delivery.Kind)
+	}
+	if err := ValidateImages(delivery.Images); err != nil {
+		return err
 	}
 
 	m.mu.Lock()
@@ -76,6 +82,7 @@ func (m *Mailbox) Deliver(delivery Delivery) error {
 	if len(m.entries) >= maximumPendingDeliveries {
 		return ErrFull
 	}
+	delivery.Images = CloneImages(delivery.Images)
 	m.entries = append(m.entries, delivery)
 	return nil
 }
