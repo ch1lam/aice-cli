@@ -16,6 +16,7 @@ import (
 )
 
 func (m *model) resizeLayout() {
+	m.resizeGuard()
 	width := max(m.width, minimumWidth)
 	composerStyle := composerFocusedStyle
 	if !m.input.Focused() {
@@ -25,6 +26,9 @@ func (m *model) resizeLayout() {
 	m.input.SetWidth(inputWidth)
 	m.help.SetWidth(max(width-2, 1))
 	m.viewport.SetWidth(width)
+	if m.guardPending != nil {
+		return
+	}
 	chromeHeight := lipgloss.Height(m.headerView(width)) +
 		lipgloss.Height(m.footerView(width)) +
 		lipgloss.Height(m.commandMenuView(width)) +
@@ -159,9 +163,6 @@ func (m model) composerParts(contentWidth int) []string {
 }
 
 func (m model) composerView(width int) string {
-	if m.guardPending != nil {
-		return m.guardView(width)
-	}
 	style := composerFocusedStyle
 	if !m.input.Focused() {
 		style = composerBlurredStyle

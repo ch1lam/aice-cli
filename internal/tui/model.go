@@ -107,6 +107,7 @@ type model struct {
 	side               sidePanelState
 	guardRequests      <-chan interaction.GuardRequest
 	guardPending       *interaction.GuardRequest
+	guardViewport      viewport.Model
 	guardSelection     int
 	guardFeedback      bool
 	guardFeedbackText  string
@@ -257,6 +258,10 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	case guardRequestMsg:
 		if message.req != nil {
 			m.guardPending = message.req
+			m.selection.clear()
+			m.guardViewport = viewport.New()
+			m.guardViewport.KeyMap = viewport.KeyMap{}
+			m.guardViewport.FillHeight = true
 			m.guardSelection = 0
 			m.guardFeedback = false
 			m.guardFeedbackText = ""
@@ -287,19 +292,33 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			return m, command
 		}
 	case tea.MouseClickMsg:
+		if m.guardPending != nil {
+			return m, nil
+		}
 		if updated, command, handled := m.handleTranscriptMouseClick(message); handled {
 			return updated, command
 		}
 	case tea.MouseMotionMsg:
+		if m.guardPending != nil {
+			return m, nil
+		}
 		if updated, command, handled := m.handleTranscriptMouseMotion(message); handled {
 			return updated, command
 		}
 	case tea.MouseReleaseMsg:
+		if m.guardPending != nil {
+			return m, nil
+		}
 		if updated, command, handled := m.handleTranscriptMouseRelease(message); handled {
 			return updated, command
 		}
 	case tea.MouseWheelMsg:
 		m.selection.clear()
+		if m.guardPending != nil {
+			var command tea.Cmd
+			m.guardViewport, command = m.guardViewport.Update(message)
+			return m, command
+		}
 	case editorFinishedMsg:
 		m = m.applyEditorResult(message)
 		m.refreshViewport(false)
@@ -448,6 +467,9 @@ func (m model) View() tea.View {
 		m.footerView(width),
 	)
 
+	if m.guardPending != nil {
+		content = m.guardView(max(m.width, 1))
+	}
 	view := tea.NewView(content)
 	view.BackgroundColor = inkBlackColor
 	view.ForegroundColor = primaryTextColor

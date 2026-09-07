@@ -5,8 +5,10 @@ import (
 	"path/filepath"
 	"strings"
 
+	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/ch1lam/aice-cli/internal/interaction"
 )
@@ -37,9 +39,25 @@ func (m model) handleGuardKey(msg tea.KeyPressMsg) (model, tea.Cmd, bool) {
 	if m.guardPending == nil {
 		return m, nil, false
 	}
-	if m.guardFeedback {
-		return m.handleGuardFeedbackKey(msg)
+	switch msg.Code {
+	case tea.KeyPgUp:
+		m.guardViewport.PageUp()
+	case tea.KeyPgDown:
+		m.guardViewport.PageDown()
+	case tea.KeyHome:
+		m.guardViewport.GotoTop()
+	case tea.KeyEnd:
+		m.guardViewport.GotoBottom()
+	default:
+		if m.guardFeedback {
+			return m.handleGuardFeedbackKey(msg)
+		}
+		return m.handleGuardSelectionKey(msg)
 	}
+	return m, nil, true
+}
+
+func (m model) handleGuardSelectionKey(msg tea.KeyPressMsg) (model, tea.Cmd, bool) {
 	switch msg.Code {
 	case tea.KeyUp:
 		if m.guardSelection > 0 {
@@ -80,11 +98,13 @@ func (m model) handleGuardFeedbackKey(msg tea.KeyPressMsg) (model, tea.Cmd, bool
 		runes := []rune(m.guardFeedbackText)
 		if len(runes) > 0 {
 			m.guardFeedbackText = string(runes[:len(runes)-1])
+			m.resizeGuard()
 		}
 		return m, nil, true
 	}
 	if msg.Text != "" {
 		m.guardFeedbackText += msg.Text
+		m.resizeGuard()
 		return m, nil, true
 	}
 	return m, nil, true
@@ -154,33 +174,88 @@ func (m model) nextGuardWait() tea.Cmd {
 	return waitForGuardRequest(m.guardRequests)
 }
 
+// guardLayout reserves controls before assigning any space to review content.
+// The prompt owns the screen while pending, independent of transcript chrome.
+func (m model) guardLayout(width int) (lipgloss.Style, int) {
+	style := lipgloss.NewStyle()
+	if width >= 60 && m.height >= 18 {
+		style = style.Border(lipgloss.RoundedBorder()).BorderForeground(accentColor).Padding(0, 1)
+	}
+	return style.Width(width), max(width-style.GetHorizontalFrameSize(), 1)
+}
+
+func (m *model) resizeGuard() {
+	if m.guardPending == nil {
+		return
+	}
+	style, width := m.guardLayout(max(m.width, 1))
+	sections := []string{headerStyle.Render(guardTitle(m.guardPending))}
+	if content := guardKeyLine(m.guardPending); content != "" {
+		sections = append(sections, content)
+	}
+	if secondary := guardSecondaryLine(m.guardPending.Reason, m.guardPending.RuleID); secondary != "" {
+		sections = append(sections, secondary)
+	}
+	for i, opt := range m.guardPending.Options {
+		if guardOptionNeedsReview(opt, width) || opt.Detail != "" {
+			sections = append(sections, fmt.Sprintf("Option %d: %s", i+1, opt.Label)+"\n"+opt.Detail)
+		}
+	}
+	m.guardViewport.SetWidth(width)
+	// Hard-wrap once, preserving wide characters at line boundaries. The
+	// viewport then scrolls complete display lines without cutting glyphs.
+	content := ansi.Hardwrap(strings.Join(sections, "\n\n"), width, true)
+	controls := m.guardControlsView(width)
+	m.guardViewport.SetHeight(max(1, m.height-style.GetVerticalFrameSize()-lipgloss.Height(controls)-1))
+	m.guardViewport.SetContent(content)
+	m.guardViewport.SetYOffset(m.guardViewport.YOffset())
+}
+
 func (m model) guardView(width int) string {
 	if m.guardPending == nil {
 		return ""
 	}
-	req := m.guardPending
-	style := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(accentColor).
-		Padding(1, 2)
-	innerWidth := max(width-style.GetHorizontalFrameSize(), 20)
+	style, innerWidth := m.guardLayout(width)
+	hint := ""
+	if !m.guardViewport.AtTop() {
+		hint += "↑ "
+	}
+	if !m.guardViewport.AtBottom() {
+		hint += "↓ "
+	}
+	if hint != "" {
+		hint += "PgUp/PgDn · Home/End · wheel"
+	}
+	// The narrow variant keeps the hidden-content arrows and paging hint visible.
+	if lipgloss.Width(hint) > innerWidth {
+		hint = strings.TrimSpace(strings.TrimSuffix(hint, " · Home/End · wheel"))
+	}
+	return style.Render(strings.Join([]string{
+		m.guardViewport.View(), mutedStyle.Render(hint), m.guardControlsView(innerWidth),
+	}, "\n"))
+}
 
-	sections := make([]string, 0, 5)
-	sections = append(sections, headerStyle.Render(guardTitle(req)))
-	if key := guardKeyLine(req, innerWidth); key != "" {
-		sections = append(sections, key)
+func (m model) guardControlsView(width int) string {
+	footer := guardSelectFooter
+	if width < lipgloss.Width(footer) {
+		footer = "↑/↓ select · enter · n/esc deny"
 	}
-	if secondary := guardSecondaryLine(req.Reason, req.RuleID); secondary != "" {
-		sections = append(sections, secondary)
+	if width < lipgloss.Width(footer) {
+		footer = "↑/↓ · enter · esc"
 	}
-	sections = append(sections, m.guardOptionsView())
 	if m.guardFeedback {
-		sections = append(sections, m.guardFeedbackView(innerWidth))
-		sections = append(sections, mutedStyle.Render(guardFeedbackFooter))
-	} else {
-		sections = append(sections, mutedStyle.Render(guardSelectFooter))
+		// Keep the editing tail visible without allowing a long note to move the
+		// send/back controls off screen. The complete note remains in state.
+		input := viewport.New(viewport.WithWidth(width), viewport.WithHeight(2))
+		input.SetContent(ansi.Hardwrap(m.guardFeedbackText+guardCursorStyle.Render(" "), width, true))
+		input.GotoBottom()
+		return ansi.Hardwrap(mutedStyle.Render(guardFeedbackPrompt), width, true) + "\n" + input.View() + "\n" + mutedStyle.Render(guardFeedbackFooter)
 	}
-	return style.Width(width).Render(strings.Join(sections, "\n\n"))
+	return m.guardOptionsView(width) + "\n" + mutedStyle.Render(footer)
+}
+
+func guardOptionNeedsReview(opt interaction.GuardOption, width int) bool {
+	return strings.ContainsAny(opt.Label, "\n\r\t") || lipgloss.Width(opt.Label)+5 > width
 }
 
 func guardTitle(req *interaction.GuardRequest) string {
@@ -196,13 +271,13 @@ func guardTitle(req *interaction.GuardRequest) string {
 	return fmt.Sprintf("Allow tool %q?", req.ToolName)
 }
 
-func guardKeyLine(req *interaction.GuardRequest, width int) string {
+func guardKeyLine(req *interaction.GuardRequest) string {
 	if req.Command != "" {
-		return renderGuardCommand(req.Command, req.Highlight, width)
+		return renderGuardCommand(req.Command, req.Highlight)
 	}
 	if req.Path != "" {
 		return guardEmphasisStyle.Render(
-			truncateTerminalText(guardDisplayPath(req.Path), width),
+			guardDisplayPath(req.Path),
 		)
 	}
 	return ""
@@ -214,10 +289,10 @@ func guardDisplayPath(path string) string {
 	return filepath.ToSlash(shellWorkingDirectory(path))
 }
 
-func renderGuardCommand(command, highlight string, width int) string {
+func renderGuardCommand(command, highlight string) string {
 	prefix := "$ "
-	display := truncateTerminalText(command, max(width-lipgloss.Width(prefix), 1))
-	if highlight == "" || !strings.Contains(command, highlight) {
+	display := command
+	if highlight == "" {
 		return guardEmphasisStyle.Render(prefix + display)
 	}
 	index := strings.Index(display, highlight)
@@ -247,7 +322,7 @@ func guardSecondaryLine(reason, ruleID string) string {
 	}
 }
 
-func (m model) guardOptionsView() string {
+func (m model) guardOptionsView(width int) string {
 	options := m.guardPending.Options
 	rows := make([]string, 0, len(options))
 	for i, opt := range options {
@@ -257,17 +332,15 @@ func (m model) guardOptionsView() string {
 			prefix = "› "
 			style = guardEmphasisStyle
 		}
-		row := style.Render(prefix + fmt.Sprintf("%d. %s", i+1, opt.Label))
-		if opt.Detail != "" {
-			row += "\n" + mutedStyle.Render("    "+opt.Detail)
+		label := opt.Label
+		if guardOptionNeedsReview(opt, width) {
+			label = fmt.Sprintf("Option %d (review above)", i+1)
+			if width < 30 {
+				label = fmt.Sprintf("Option %d ↑", i+1)
+			}
 		}
+		row := style.Render(prefix + fmt.Sprintf("%d. %s", i+1, label))
 		rows = append(rows, row)
 	}
 	return strings.Join(rows, "\n")
-}
-
-func (m model) guardFeedbackView(width int) string {
-	input := m.guardFeedbackText + guardCursorStyle.Render(" ")
-	return mutedStyle.Render(guardFeedbackPrompt) + "\n" +
-		bodyStyle.Width(max(width, 1)).Render(input)
 }
