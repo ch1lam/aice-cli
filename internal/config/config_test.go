@@ -241,7 +241,7 @@ func TestSaveSettingFileUpdatesGlobalSettings(t *testing.T) {
 
 	var global config.Settings
 	readJSON(t, paths.GlobalSettings, &global)
-	if global != (config.Settings{
+	if !reflect.DeepEqual(global, config.Settings{
 		Provider: "deepseek",
 		Model:    "updated-model",
 		Thinking: llm.ThinkingLevelLow,
@@ -537,6 +537,45 @@ func TestSaveOpenAIAPIKeyFileRejectsInvalidValues(t *testing.T) {
 		err := config.SaveOpenAIAPIKeyFile(paths, value)
 		if err == nil {
 			t.Fatalf("SaveOpenAIAPIKeyFile(%q) error = nil", value)
+		}
+	}
+}
+
+func TestContextWindowsLoadAndSurviveSettingChanges(t *testing.T) {
+	t.Parallel()
+	paths := testPaths(t.TempDir())
+	windows := map[string]int64{"openai-codex/gpt-5.6-terra": 272000, "custom/Org/Model.v1": 32768}
+	writeJSON(t, paths.GlobalSettings, config.Settings{ContextWindows: windows})
+	if err := config.SaveSettingFile(paths, config.SettingModel, "different"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := config.LoadFiles(paths, mapLookup(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got.ContextWindows, windows) {
+		t.Fatalf("windows = %#v", got.ContextWindows)
+	}
+}
+
+func TestContextWindowsRejectInvalidLimits(t *testing.T) {
+	t.Parallel()
+	for _, content := range []string{
+		`{"context_windows":{"model":200000}}`,
+		`{"context_windows":{"custom/":200000}}`,
+		`{"context_windows":{"custom/model":0}}`,
+		`{"context_windows":{"custom/model":-1}}`,
+		`{"context_windows":{"custom/model":1.5}}`,
+	} {
+		paths := testPaths(t.TempDir())
+		if err := os.MkdirAll(filepath.Dir(paths.GlobalSettings), 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(paths.GlobalSettings, []byte(content), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := config.LoadFiles(paths, mapLookup(nil)); err == nil {
+			t.Fatalf("accepted %s", content)
 		}
 	}
 }

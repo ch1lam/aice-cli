@@ -653,7 +653,7 @@ func (s *interactiveSession) slashProvider(
 	s.stateMu.Lock()
 	s.configuration = configuration
 	s.loop = loop
-	s.model = model
+	s.model = applyContextWindow(model, configuration)
 	s.options.Thinking = effective
 	s.stateMu.Unlock()
 	return savedSettingMessage("provider", value), nil
@@ -688,7 +688,7 @@ func (s *interactiveSession) slashModel(
 	// snapshot freezes a mutually consistent model/thinking pair.
 	s.stateMu.Lock()
 	s.configuration.Model = value
-	s.model = model
+	s.model = applyContextWindow(model, settings.configuration)
 	s.options.Thinking = effective
 	s.stateMu.Unlock()
 	return savedSettingMessage("model", value), nil
@@ -930,7 +930,7 @@ func (s *interactiveSession) login(
 	s.stateMu.Lock()
 	s.configuration = configuration
 	s.loop = loop
-	s.model = model
+	s.model = applyContextWindow(model, configuration)
 	s.options.Thinking = effective
 	s.stateMu.Unlock()
 	if request.UseSavedCredential {
@@ -988,6 +988,7 @@ func (s *interactiveSession) settingsInformation() string {
 		"Settings",
 		"Provider: " + string(settings.model.Provider),
 		"Model: " + settings.model.ID,
+		contextWindowInformation(settings.model, settings.configuration),
 		"Thinking: " + thinking,
 		"Thinking (requested): " + string(settings.configuration.Thinking),
 		credentialLabel + ": " + apiKey,

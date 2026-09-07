@@ -65,7 +65,7 @@ func TestApplicationPrintRunsBuiltInAgent(t *testing.T) {
 					return wantConfig, nil
 				},
 				newModel: func(got config.Config) (agent.Model, error) {
-					if got != wantConfig {
+					if !reflect.DeepEqual(got, wantConfig) {
 						t.Errorf("model config = %#v, want %#v", got, wantConfig)
 					}
 					return model, nil

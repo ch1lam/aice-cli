@@ -199,7 +199,7 @@ func resolveModelSettings(
 	// The custom provider is the Pi-inspired catch-all: any model ID is
 	// materialized on the fly with safe defaults (only `id` required).
 	if providerID == string(custom.ProviderID) {
-		model := custom.ModelForID(modelID)
+		model := applyContextWindow(custom.ModelForID(modelID), configuration)
 		requested := configuration.Thinking
 		if requested == llm.ThinkingLevelUnknown {
 			requested = llm.DefaultThinkingLevel
@@ -212,6 +212,7 @@ func resolveModelSettings(
 		if model.ID != modelID {
 			continue
 		}
+		model = applyContextWindow(model, configuration)
 		requested := configuration.Thinking
 		if requested == llm.ThinkingLevelUnknown {
 			requested = llm.DefaultThinkingLevel

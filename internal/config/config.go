@@ -66,6 +66,7 @@ const (
 
 // Settings contains non-secret global model defaults.
 type Settings struct {
+	ContextWindows      map[string]int64  `json:"context_windows,omitempty"`
 	Provider            string            `json:"provider,omitempty"`
 	Model               string            `json:"model,omitempty"`
 	Thinking            llm.ThinkingLevel `json:"thinking,omitempty"`
@@ -84,6 +85,8 @@ type Paths struct {
 
 // Config contains the effective process settings needed by AICE.
 type Config struct {
+	// ContextWindows is immutable after loading; keys are provider/model IDs.
+	ContextWindows      map[string]int64
 	Provider            string
 	Model               string
 	Thinking            llm.ThinkingLevel
@@ -196,6 +199,7 @@ func LoadFiles(paths Paths, lookup LookupEnv) (Config, error) {
 	}
 
 	return Config{
+		ContextWindows:      settings.ContextWindows,
 		Provider:            settings.Provider,
 		Model:               settings.Model,
 		Thinking:            settings.Thinking,
@@ -392,7 +396,7 @@ func loadSettings(paths Paths, lookup LookupEnv) (Settings, error) {
 	registry := viper.New()
 	registry.SetConfigType("json")
 
-	_, data, err := readSettings(paths.GlobalSettings)
+	fileSettings, data, err := readSettings(paths.GlobalSettings)
 	if err != nil {
 		return Settings{}, err
 	}
@@ -419,8 +423,9 @@ func loadSettings(paths Paths, lookup LookupEnv) (Settings, error) {
 	}
 
 	settings := Settings{
-		Provider: strings.TrimSpace(registry.GetString(settingsKeyProvider)),
-		Model:    strings.TrimSpace(registry.GetString(settingsKeyModel)),
+		ContextWindows: fileSettings.ContextWindows,
+		Provider:       strings.TrimSpace(registry.GetString(settingsKeyProvider)),
+		Model:          strings.TrimSpace(registry.GetString(settingsKeyModel)),
 		Thinking: llm.ThinkingLevel(strings.TrimSpace(
 			registry.GetString(settingsKeyThinking),
 		)),
@@ -538,6 +543,12 @@ func (p Paths) validate() error {
 }
 
 func (s Settings) validate() error {
+	for key, window := range s.ContextWindows {
+		provider, model, ok := strings.Cut(key, "/")
+		if !ok || provider == "" || model == "" || strings.ContainsAny(key, " \t\r\n") || window <= 0 {
+			return fmt.Errorf("context_windows entry %q must use provider/model and a positive token count", key)
+		}
+	}
 	if strings.ContainsAny(s.Provider, " \t\r\n") {
 		return fmt.Errorf("provider must not contain whitespace")
 	}

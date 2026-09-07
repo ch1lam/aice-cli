@@ -34,6 +34,49 @@ When `settings.json` omits `provider` and `model`, AICE uses `deepseek` and
 | Default Project Trust | none | `ask`, `always`, `never` |
 | Custom base URL | `AICE_CUSTOM_BASE_URL` | OpenAI-compatible endpoint persisted as `custom_base_url`; default `http://localhost:11434/v1` |
 
+### Context window
+
+Without configuration, the context window uses the selected **provider and model**
+catalog default, including when its base URL is overridden. An explicit
+`context_windows` entry in `~/.aice/settings.json` takes precedence:
+
+```json
+{
+  "context_windows": {
+    "openai-codex/gpt-5.6-terra": 272000,
+    "custom/Org/Model.v1": 32768
+  }
+}
+```
+
+These are configuration examples, not account entitlement claims. Keys match
+exact `provider/model` IDs, including case and any slashes in the model ID;
+values must be positive integer token counts. Overrides apply at startup and
+survive `/model`, `/provider`, and `/login` changes. `/settings` shows the exact
+window and its source. Restart after editing the file. The same resolved window
+controls request protection and automatic compaction, including summary calls.
+
+Set the limit to the context tier actually enabled on your endpoint/account.
+A model's advertised maximum (including 1M) does not prove that every subscription
+or gateway enables it. AICE does not probe account entitlements or enable remote
+long-context tiers by changing this number; required server settings or protocol
+opt-ins must already be supported and enabled. Catalog defaults describe the
+built-in provider route. Codex subscription defaults to 272,000 tokens for
+Astra, Sol, Terra, and Luna, matching OpenAI's
+[official Codex catalog](https://github.com/openai/codex/blob/main/codex-rs/models-manager/models.json)
+(`context_window`, checked 2026-09-07). Its 872,000 `max_context_window` is not
+the default. The separately billed OpenAI API uses 1,050,000 for these models,
+as documented on the [API model pages](https://developers.openai.com/api/docs/models).
+DeepSeek V4 uses the documented
+[1M default](https://api-docs.deepseek.com/quick_start/pricing).
+
+Arbitrary `custom` IDs have no universal official default: for example,
+[Ollama defaults depend on VRAM](https://docs.ollama.com/context-length).
+AICE uses its existing 128,000-token fallback for these IDs and labels it
+`custom fallback default` in `/settings`; this is not an official model limit.
+Override it when the deployment's actual limit is known. Check overrides again
+when changing an endpoint or account. AICE does not read another harness's settings.
+
 ### Thinking levels
 
 `AICE_THINKING` uses seven canonical levels. Each model supports a subset,
@@ -133,8 +176,9 @@ An explicit `MaxTokens` value, including one produced by context protection,
 is still sent. Responses models use that protocol's normal output-token field.
 Other providers keep sending their model default.
 
-For arbitrary `custom` models, AICE currently assumes a 128,000-token context
-window and 16,384-token output limit, text input, and standard thinking levels.
+For arbitrary `custom` models without a context override, AICE uses a
+128,000-token fallback budget and 16,384-token output limit, text input, and
+standard thinking levels. `/settings` identifies it as a fallback.
 These are fixed metadata defaults from `custom.ModelForID`, not capabilities
 queried from the endpoint. A server with smaller limits or different reasoning
 support can reject a request despite local budget checks. Automatic capability
