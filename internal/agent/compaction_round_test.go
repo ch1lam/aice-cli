@@ -49,6 +49,9 @@ func TestLoopCompactsAfterPairedToolsAndSteeringBeforeRetry(t *testing.T) {
 	info := testModel()
 	info.ContextWindow = 4000
 	toolCall := assistantMessage(info, llm.StopReasonToolUse, toolCallPart("read-1", "read", `{}`))
+	// Fixture construction order differs from conversation order. Fixed
+	// timestamps keep the usage applicable even across a wall-clock tick.
+	toolCall.Timestamp = 2
 	toolCall.Usage = llm.Usage{TotalTokens: 3500}
 	failed := assistantMessage(info, llm.StopReasonError, textPart("do not replay retry failure"))
 	failed.ErrorMessage = "temporary"
@@ -64,7 +67,9 @@ func TestLoopCompactsAfterPairedToolsAndSteeringBeforeRetry(t *testing.T) {
 		t.Fatal(err)
 	}
 	input := testInput(info, mustPrompt(t, "inspect"))
+	input.Prompt.Timestamp = 1
 	steering := mustPrompt(t, "preserve this steering")
+	steering.Timestamp = 3
 	delivered := false
 	input.Steering = func() (agent.InputMessage, bool, error) {
 		if delivered {
