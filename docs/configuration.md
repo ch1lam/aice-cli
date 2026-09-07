@@ -64,6 +64,7 @@ The default request is `medium`. On DeepSeek V4 Flash and Pro it becomes
 | `opencode-go/omen-alpha` | `low`, `high` |
 | `opencode-go/hy3` | `off`, `low`, `high` |
 | `opencode-go/hy4-preview` | `off`, `high` |
+| `openai/gpt-6-astra` | `low`, `medium`, `high`, `xhigh`, `max` |
 | `openai/gpt-5.6*` | `off`, `low`, `medium`, `high`, `xhigh`, `max` |
 | `openai-codex/gpt-5.6-{sol,terra,luna}` | `low`, `medium`, `high`, `xhigh`, `max` |
 | Other `opencode-go` models | `off`, `minimal`, `low`, `medium`, `high` |
@@ -99,11 +100,20 @@ wire formats follow provider documentation and gateway-specific requirements.
 Update the model map, its wire-format metadata, and catalog assertions together
 when upstream capabilities change.
 
-The built-in OpenAI catalog intentionally stays small: `gpt-5.6`,
-`gpt-5.6-terra`, and `gpt-5.6-luna`. `gpt-5.6-terra` is the default because it
-balances model capability and cost. These models use the official Responses
-API and support `off`, `low`, `medium`, `high`, `xhigh`, and `max` reasoning
-levels.
+The built-in OpenAI catalog contains `gpt-6-astra`, `gpt-5.6-sol`,
+`gpt-5.6` (the Sol alias), `gpt-5.6-terra`, and `gpt-5.6-luna`.
+`gpt-5.6-terra` remains the default. All use the official Responses API;
+GPT-5.6 supports `off`, `low`, `medium`, `high`, `xhigh`, and `max`, while
+Astra supports `low` through `max` and cannot disable reasoning.
+
+Metadata was checked on 2026-09-07 against the official
+[Astra](https://developers.openai.com/api/docs/models/gpt-6-astra),
+[Sol](https://developers.openai.com/api/docs/models/gpt-5.6-sol), and
+[Luna](https://developers.openai.com/api/docs/models/gpt-5.6-luna) model pages.
+Standard input/output estimates per million tokens are $10/$50 for Astra,
+$4/$20 for Sol and its alias, $2/$12 for Terra, and $0.20/$1.20 for Luna.
+AICE's flat pricing metadata does not model long-context or service-tier
+surcharges; displayed costs are estimates, not billing totals.
 
 The OpenCode Go catalog contains the 27 active upstream models; entries marked
 deprecated upstream are omitted. The catalog was checked on 2026-09-07 against

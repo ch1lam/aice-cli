@@ -44,7 +44,7 @@ func TestModels(t *testing.T) {
 			ContextWindow:    1_050_000,
 			MaxTokens:        128_000,
 			Pricing: llm.Pricing{
-				Input: 5, Output: 30, CacheRead: 0.5, CacheWrite: 6.25,
+				Input: 4, Output: 20, CacheRead: 0.4, CacheWrite: 5,
 			},
 		},
 		{
@@ -72,15 +72,23 @@ func TestModels(t *testing.T) {
 			ContextWindow:    1_050_000,
 			MaxTokens:        128_000,
 			Pricing: llm.Pricing{
-				Input: 1, Output: 6, CacheRead: 0.1, CacheWrite: 1.25,
+				Input: 0.2, Output: 1.2, CacheRead: 0.02, CacheWrite: 0.25,
 			},
 		},
 	}
+	astra := want[0]
+	astra.ID, astra.Name = openai.ModelGPT6Astra, "GPT-6 Astra"
+	astra.ThinkingLevelMap = thinkingLevels.Clone()
+	astra.ThinkingLevelMap[llm.ThinkingLevelOff] = nil
+	astra.Pricing = llm.Pricing{Input: 10, Output: 50, CacheRead: 1, CacheWrite: 12.5}
+	sol := want[0]
+	sol.ID, sol.Name = openai.ModelGPT56Sol, "GPT-5.6 Sol"
+	want = append([]llm.Model{astra, sol}, want...)
 	if got := openai.Models(); !reflect.DeepEqual(got, want) {
 		t.Errorf("Models() = %#v, want %#v", got, want)
 	}
-	if got := openai.DefaultModel(); !reflect.DeepEqual(got, want[1]) {
-		t.Errorf("DefaultModel() = %#v, want %#v", got, want[1])
+	if got := openai.DefaultModel(); !reflect.DeepEqual(got, want[3]) {
+		t.Errorf("DefaultModel() = %#v, want %#v", got, want[3])
 	}
 }
 
@@ -104,23 +112,28 @@ func TestProviderDispatchesThroughResponsesAPI(t *testing.T) {
 		t.Fatalf("New() error = %v", err)
 	}
 
-	request := llm.Request{
-		Model: openai.DefaultModel(),
-		Messages: []llm.Message{llm.UserMessage{
-			Role:    llm.RoleUser,
-			Content: []llm.ContentPart{llm.NewTextContent("hello").Part()},
-		}},
-	}
-	stream, err := modelProvider.Stream(context.Background(), request)
-	if err != nil {
-		t.Fatalf("Stream() error = %v", err)
-	}
-	if err := stream.Close(); err != nil {
-		t.Fatalf("Close() error = %v", err)
-	}
+	for _, candidate := range openai.Models() {
+		t.Run(candidate.ID, func(t *testing.T) {
+			request := llm.Request{
+				Model:   candidate,
+				Options: llm.StreamOptions{Thinking: llm.ClampThinkingLevel(candidate, llm.ThinkingLevelOff)},
+				Messages: []llm.Message{llm.UserMessage{
+					Role:    llm.RoleUser,
+					Content: []llm.ContentPart{llm.NewTextContent("hello").Part()},
+				}},
+			}
+			stream, err := modelProvider.Stream(context.Background(), request)
+			if err != nil {
+				t.Fatalf("Stream() error = %v", err)
+			}
+			if err := stream.Close(); err != nil {
+				t.Fatalf("Close() error = %v", err)
+			}
 
-	if got := <-paths; got != "/responses" {
-		t.Errorf("request path = %q, want /responses", got)
+			if got := <-paths; got != "/responses" {
+				t.Errorf("request path = %q, want /responses", got)
+			}
+		})
 	}
 }
 

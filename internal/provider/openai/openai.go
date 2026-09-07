@@ -19,6 +19,8 @@ const (
 	// BaseURL is OpenAI's official API root.
 	BaseURL = "https://api.openai.com/v1"
 
+	ModelGPT6Astra  = "gpt-6-astra"
+	ModelGPT56Sol   = "gpt-5.6-sol"
 	ModelGPT56      = "gpt-5.6"
 	ModelGPT56Terra = "gpt-5.6-terra"
 	ModelGPT56Luna  = "gpt-5.6-luna"
@@ -63,9 +65,11 @@ func New(configuration Config) (*Provider, error) {
 // Models returns the OpenAI models supported by this provider.
 func Models() []llm.Model {
 	return []llm.Model{
-		model(ModelGPT56, "GPT-5.6", 5, 30, 0.5, 6.25),
+		model(ModelGPT6Astra, "GPT-6 Astra", 10, 50, 1, 12.5),
+		model(ModelGPT56Sol, "GPT-5.6 Sol", 4, 20, 0.4, 5),
+		model(ModelGPT56, "GPT-5.6", 4, 20, 0.4, 5),
 		model(ModelGPT56Terra, "GPT-5.6 Terra", 2, 12, 0.2, 2.5),
-		model(ModelGPT56Luna, "GPT-5.6 Luna", 1, 6, 0.1, 1.25),
+		model(ModelGPT56Luna, "GPT-5.6 Luna", 0.2, 1.2, 0.02, 0.25),
 	}
 }
 
@@ -102,7 +106,7 @@ func (p *Provider) Stream(ctx context.Context, request llm.Request) (llm.Stream,
 
 func knownModel(id string) bool {
 	switch id {
-	case ModelGPT56, ModelGPT56Terra, ModelGPT56Luna:
+	case ModelGPT6Astra, ModelGPT56Sol, ModelGPT56, ModelGPT56Terra, ModelGPT56Luna:
 		return true
 	default:
 		return false
@@ -110,13 +114,17 @@ func knownModel(id string) bool {
 }
 
 func model(id, name string, input, output, cacheRead, cacheWrite float64) llm.Model {
+	levels := openAIThinkingLevels()
+	if id == ModelGPT6Astra {
+		levels[llm.ThinkingLevelOff] = nil
+	}
 	return llm.Model{
 		ID:               id,
 		Name:             name,
 		API:              openairesponses.API,
 		Provider:         ProviderID,
 		SupportsThinking: true,
-		ThinkingLevelMap: openAIThinkingLevels(),
+		ThinkingLevelMap: levels,
 		InputModalities: []llm.InputModality{
 			llm.InputModalityText,
 			llm.InputModalityImage,
@@ -163,7 +171,7 @@ func (p *Provider) Label() string {
 
 // MenuDescription describes OpenAI in interactive provider menus.
 func (p *Provider) MenuDescription() string {
-	return "OpenAI API (GPT-5.6 via Responses)"
+	return "OpenAI API (GPT-6 Astra and GPT-5.6 via Responses)"
 }
 
 // Models returns the OpenAI model catalog.
