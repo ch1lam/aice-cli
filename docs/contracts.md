@@ -202,6 +202,13 @@ the final JSON event from being delivered.
   replies once with `GuardReply` (`OptionID`, `Feedback`). Product option
   generation and grant scope are in [Tool execution and
   Sessions](execution-sessions.md#tool-execution-boundary).
+- Pending TUI permission prompts own the screen. A Bubbles viewport wraps the
+  complete command, path, reason, and option details without ellipses; long
+  option labels are shown there under their option numbers, with matching
+  numbered controls fixed below. PgUp/PgDn, Home/End, and the mouse wheel
+  scroll review content; ↑/↓ markers indicate hidden content. Arrow keys
+  select options independently. Resizing recalculates the review height
+  after reserving controls; closing the prompt restores the conversation.
 - The TUI keeps only presentation copies. Pending steers are transcript
   previews until the Agent accepts them; follow-ups remain composer chrome
   until the Agent starts their interaction. Agent input events, not TUI queue
