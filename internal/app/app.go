@@ -20,6 +20,7 @@ import (
 	"github.com/ch1lam/aice-cli/internal/interaction"
 	"github.com/ch1lam/aice-cli/internal/llm"
 	"github.com/ch1lam/aice-cli/internal/provider"
+	"github.com/ch1lam/aice-cli/internal/provider/codex"
 	"github.com/ch1lam/aice-cli/internal/session"
 	"github.com/ch1lam/aice-cli/internal/skill"
 	"github.com/ch1lam/aice-cli/internal/tool"
@@ -43,8 +44,9 @@ func NewCommand() (*cobra.Command, error) {
 		checkUpdate: func(ctx context.Context) (update.StartupResult, error) {
 			return update.CheckStartup(ctx, update.Options{Current: cli.Version})
 		},
-		runTUI:    tui.Run,
-		providers: providers,
+		runTUI:      tui.Run,
+		providers:   providers,
+		openBrowser: openBrowser,
 	})
 }
 
@@ -59,6 +61,9 @@ type dependencies struct {
 	compactionKeepRecentTokens int64
 	providers                  []provider.Provider
 	userHomeDir                func() (string, error)
+	codexLogin                 func(context.Context, bool, io.Writer) (config.CodexCredentials, error)
+	codexInteractiveLogin      func(context.Context, bool, codex.LoginInteraction) (config.CodexCredentials, error)
+	openBrowser                func(context.Context, string) error
 }
 
 func newCommand(dependencies dependencies) (*cobra.Command, error) {
@@ -80,6 +85,12 @@ func newCommand(dependencies dependencies) (*cobra.Command, error) {
 	if dependencies.runTUI == nil {
 		dependencies.runTUI = tui.Run
 	}
+	if dependencies.codexLogin == nil {
+		dependencies.codexLogin = (codex.AuthClient{}).Login
+	}
+	if dependencies.codexInteractiveLogin == nil {
+		dependencies.codexInteractiveLogin = (codex.AuthClient{}).LoginWithInteraction
+	}
 	if dependencies.runTrustTUI == nil {
 		dependencies.runTrustTUI = tui.RunTrustPrompt
 	}
@@ -92,12 +103,13 @@ func newCommand(dependencies dependencies) (*cobra.Command, error) {
 
 	application := &application{dependencies: dependencies}
 	return cli.NewRootCommand(cli.Dependencies{
-		Printer:      application,
-		Interactor:   application,
-		Compactor:    application,
-		Navigator:    application,
-		Configurator: application,
-		Updater:      application,
+		Printer:       application,
+		Interactor:    application,
+		Compactor:     application,
+		Navigator:     application,
+		Configurator:  application,
+		Updater:       application,
+		Authenticator: application,
 	})
 }
 

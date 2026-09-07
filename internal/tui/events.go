@@ -142,6 +142,18 @@ func (m model) applyRunBatch(batch runBatchMsg) (tea.Model, tea.Cmd) {
 				m.status = "Thinking..."
 			}
 		}
+		if update.auth != nil && m.authInput != nil && !m.cancelRequested {
+			prompt := *update.auth
+			m.authPrompt = &prompt
+			m.input.Placeholder = "Waiting for authentication; Escape or Ctrl+C cancels"
+			if prompt.AllowInput {
+				m.input.Placeholder = "Authorization code / redirect URL (input hidden)"
+				commands = append(commands, m.input.Focus())
+			}
+			m.status = "Waiting for authentication; Escape or Ctrl+C cancels"
+			m.resizeLayout()
+			contentChanged = true
+		}
 		if strings.TrimSpace(update.output) != "" {
 			m.entries = append(m.entries, transcriptEntry{
 				kind: entryCommand,
@@ -352,6 +364,12 @@ func (m *model) completeTool(callID string, failed bool) {
 }
 
 func (m *model) finishRun(err error) tea.Cmd {
+	wasAuth := m.authInput != nil
+	if wasAuth {
+		m.authInput = nil
+		m.authPrompt = nil
+		m.resetCommandInput()
+	}
 	if err != nil {
 		m.revokeConclusion()
 	}
@@ -374,6 +392,9 @@ func (m *model) finishRun(err error) tea.Cmd {
 		message := err.Error()
 		if errors.Is(err, context.Canceled) {
 			message = "Response cancelled"
+			if wasAuth {
+				message = "Login cancelled"
+			}
 			m.entries = append(m.entries, transcriptEntry{kind: entryNotice, text: message})
 		} else {
 			m.entries = append(m.entries, transcriptEntry{kind: entryError, text: message})

@@ -130,6 +130,8 @@ type model struct {
 	entries           []transcriptEntry
 	processGroups     []processGroup
 	commands          []SlashCommand
+	authInput         chan string
+	authPrompt        *interaction.AuthPrompt
 	secretInput       *secretInput
 	commandMenu       *commandMenuState
 	customLogin       *customLoginState
@@ -451,7 +453,7 @@ func (m model) View() tea.View {
 	view.AltScreen = true
 	view.WindowTitle = "AICE"
 	view.MouseMode = tea.MouseModeCellMotion
-	if m.secretInput == nil && m.guardPending == nil {
+	if m.secretInput == nil && m.authInput == nil && m.guardPending == nil {
 		// Anchor the real terminal cursor on the composer caret. The IME
 		// candidate window follows the terminal cursor, and Bubble Tea's
 		// renderer hides the cursor around every updated frame and restores
@@ -501,6 +503,9 @@ func (m model) handleKey(message tea.KeyPressMsg) (model, tea.Cmd, bool) {
 			return updated, cmd, true
 		}
 		return m, nil, true
+	}
+	if m.authInput != nil {
+		return m.handleAuthKey(message)
 	}
 	if m.side.menu != nil {
 		return m.handleSideMenuKey(message)
@@ -673,6 +678,9 @@ func (m model) handleKey(message tea.KeyPressMsg) (model, tea.Cmd, bool) {
 }
 
 func (m model) composerInputEnabled() bool {
+	if m.authInput != nil {
+		return m.authPrompt != nil && m.authPrompt.AllowInput && !m.cancelRequested
+	}
 	if m.guardPending != nil {
 		return false
 	}
@@ -707,6 +715,19 @@ func (m model) helpToggleRequested(message tea.KeyPressMsg) bool {
 }
 
 func (m *model) updateInput(message tea.Msg) tea.Cmd {
+	if m.authInput != nil {
+		if paste, ok := message.(tea.PasteMsg); ok {
+			value := strings.TrimSpace(paste.Content)
+			if len(value)+len(m.input.Value()) <= 65536 {
+				m.input.InsertString(value)
+			}
+			return nil
+		}
+		var command tea.Cmd
+		m.input, command = m.input.Update(message)
+		return command
+	}
+
 	// A bracketed paste arrives whole: collapse it before the textarea can
 	// truncate it against the content-height gate, so no pasted line is lost.
 	if paste, ok := message.(tea.PasteMsg); ok && m.secretInput == nil {

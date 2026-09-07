@@ -167,10 +167,10 @@ func (m model) composerView(width int) string {
 		style = composerBlurredStyle
 	}
 	contentWidth := max(width-style.GetHorizontalFrameSize(), 1)
-	if m.secretInput != nil {
+	if m.secretInput != nil || m.authInput != nil {
 		value := mutedStyle.Render(m.input.Placeholder)
 		if count := utf8.RuneCountInString(m.input.Value()); count > 0 {
-			value = bodyStyle.Render(strings.Repeat("•", count))
+			value = bodyStyle.Render(strings.Repeat("•", min(count, contentWidth)))
 		}
 		return style.Width(width).Render(value)
 	}
@@ -352,6 +352,11 @@ func renderSlashMenuRows(
 	style := slashCommandMenuStyle
 	innerWidth := max(width-style.GetHorizontalFrameSize(), 1)
 	labelWidth := min(max(innerWidth/2, 12), 28)
+	for _, row := range rows {
+		if row.description == "" {
+			labelWidth = min(max(innerWidth-2, 1), max(labelWidth, lipgloss.Width(row.label)+2))
+		}
+	}
 	rendered := make([]string, 0, end-start+2)
 	rendered = append(
 		rendered,
@@ -444,6 +449,9 @@ func (m model) transcriptView() string {
 			})
 		}
 		index++
+	}
+	if m.authPrompt != nil {
+		parts = append(parts, transcriptViewPart{content: m.authView()})
 	}
 	if activity := m.pendingActivityView(); activity != "" {
 		parts = append(parts, transcriptViewPart{content: activity})

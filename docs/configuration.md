@@ -28,7 +28,7 @@ When `settings.json` omits `provider` and `model`, AICE uses `deepseek` and
 
 | Setting | Environment variable | Supported values |
 | --- | --- | --- |
-| Provider | `AICE_PROVIDER` | `deepseek`, `opencode-go`, `openai`, `custom` |
+| Provider | `AICE_PROVIDER` | `deepseek`, `opencode-go`, `openai`, `openai-codex`, `custom` |
 | Model | `AICE_MODEL` | A catalog model, or any model ID for `custom` |
 | Thinking | `AICE_THINKING` | `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` |
 | Default Project Trust | none | `ask`, `always`, `never` |
@@ -64,6 +64,7 @@ The default request is `medium`. On DeepSeek V4 Flash and Pro it becomes
 | `opencode-go/hy3` | `off`, `low`, `high` |
 | `opencode-go/hy4-preview` | `off`, `high` |
 | `openai/gpt-5.6*` | `off`, `low`, `medium`, `high`, `xhigh`, `max` |
+| `openai-codex/gpt-5.6-{sol,terra,luna}` | `low`, `medium`, `high`, `xhigh`, `max` |
 | Other `opencode-go` models | `off`, `minimal`, `low`, `medium`, `high` |
 
 `off` is a canonical switch, not necessarily a literal wire value. The
@@ -132,8 +133,9 @@ and prompts](project-trust.md) for protected resources and decision order.
 
 ## Credentials and connection overrides
 
-Credentials are stored by provider in `~/.aice/auth.json` with file mode
-`0600`. A process environment variable overrides the stored key.
+API keys are stored by provider in `~/.aice/auth.json` with file mode
+`0600`. A process environment variable overrides the stored key. Codex OAuth
+credentials use a separate file as described below.
 
 | Provider | API key environment variable | Auth file key | Base URL override |
 | --- | --- | --- | --- |
@@ -142,7 +144,8 @@ Credentials are stored by provider in `~/.aice/auth.json` with file mode
 | OpenAI | `OPENAI_API_KEY` | `openai_api_key` | `AICE_OPENAI_BASE_URL` |
 | Custom (Ollama, vLLM, LM Studio, any OpenAI-compatible) | `AICE_CUSTOM_API_KEY` | `custom_api_key` | `AICE_CUSTOM_BASE_URL` (default `http://localhost:11434/v1`) |
 
-In the TUI, `/login` opens a provider menu. For a provider whose credential is
+In the TUI, `/login` first offers `Sign in with an account` or
+`Sign in with an API key`, then a provider menu. For an API-key provider whose credential is
 already available, the next menu explicitly offers either `Use saved
 credential` (switch without entering a key) or `Enter a new API key` (replace
 the saved key). Providers without a credential go directly to hidden input.
@@ -169,6 +172,76 @@ printf '%s\n' "$OPENAI_API_KEY" | \
 ```
 
 Provider keys are stored side by side; updating one does not erase another.
+
+### Codex subscription (ChatGPT OAuth)
+
+`openai-codex` uses ChatGPT subscription access, independently of the `openai`
+API-key provider. In the TUI, choose `/login` → `Sign in with an account` →
+`OpenAI Codex` → `Browser login (default)` or `Device code login (headless)`.
+Browser login opens the authorization page and displays its clickable URL.
+Complete login in the browser, or paste the authorization code / redirect URL
+into the hidden input. AICE must acquire callback port 1455 before opening the
+browser. If another login (such as pi or Codex) owns the port, AICE stops and
+asks you to cancel that login and retry, or select device code login. It never
+opens an authorization URL after failing to acquire the callback listener.
+Device login displays the verification URL and code while waiting.
+Escape or Ctrl+C cancels either flow and restores the composer. Authentication
+prompts and pasted codes are transient; they never enter Session or prompt history.
+Successful login saves credentials and activates Codex in the current Session.
+
+The standalone terminal command is also available:
+
+```sh
+aice auth login --provider openai-codex
+```
+
+Open the printed URL in a browser on the same machine. AICE verifies the
+OAuth state and PKCE exchange through a loopback callback on port 1455.
+For SSH/headless machines or an occupied callback port, use:
+
+```sh
+aice auth login --provider openai-codex --device-code
+aice auth status --provider openai-codex
+aice auth logout --provider openai-codex
+```
+
+Device login prints a verification link and one-time code. It must be enabled
+in ChatGPT security settings or workspace permissions; see
+[OpenAI authentication guidance](https://learn.chatgpt.com/docs/auth).
+Both login methods time out after 15 minutes and cancel with Ctrl+C. Login
+saves the provider and a compatible model globally; `AICE_PROVIDER` and
+`AICE_MODEL` still take precedence at startup. To reuse a saved login, choose
+`Use saved credential` under the Codex login menu or select Codex in `/provider`.
+
+The compiled catalog contains `gpt-5.6-sol`, `gpt-5.6-terra` (default), and
+`gpt-5.6-luna`. These are subscription models listed in
+[OpenAI's Codex model guide](https://learn.chatgpt.com/docs/models); availability
+and usage limits depend on the account. AICE records token usage with zero
+per-token API price estimates for this provider. This does not mean unlimited
+or free usage. Catalog context/output metadata is 1,050,000/128,000 tokens;
+the subscription endpoint chooses the actual output limit and AICE omits
+`max_output_tokens`, including explicit local output caps, because that field
+is unsupported. AICE's local context accounting and compaction still apply.
+
+AICE stores access/refresh tokens, account ID, and expiry in
+`~/.aice/codex-auth.json` (mode `0600`, atomic replacement), without reading
+or modifying Codex CLI or pi credentials. It refreshes within one minute of
+expiry and saves rotated tokens before making a model request. Concurrent
+AICE processes serialize refresh/login/logout with `codex-auth.json.lock`.
+Lock waits are cancellable and bounded to one minute. After a crash, remove
+that stale lock directory only when no AICE process is running. Failed refresh
+preserves the prior credential; expired/revoked authorization requires logging
+in again. Logout removes only AICE's Codex credentials: in-flight requests may
+finish, but subsequent requests fail closed. It does not revoke the account's
+server-side sessions or change the selected provider.
+
+Subscription requests use `https://chatgpt.com/backend-api/codex/responses`,
+SSE, `store: false`, and encrypted reasoning replay. `OPENAI_API_KEY` and
+API/custom base URL overrides never apply to this provider. OAuth and wire
+compatibility follow the public
+[pi implementation at commit 9767ba2](https://github.com/badlogic/pi-mono/tree/9767ba275f3e9a5ee0f5c5342249b629ab1b2282/packages/ai/src).
+This is a subscription compatibility endpoint rather than the public API
+billing endpoint; upstream protocol changes may require an AICE update.
 
 ## Command-line options
 
@@ -253,7 +326,7 @@ rescan skills. The `/skills` reminder reports that restart requirement.
 | `/init` | Create or improve root `AGENTS.md`; loaded after restart |
 | `/settings` | Show effective model, Trust state, and configuration paths |
 | `/skills` | List Agent Skills loaded for this Session |
-| `/login` | Select a provider and store its key through hidden input; `custom` uses endpoint → key (may be empty) → model |
+| `/login` | Choose account or API key, then provider; Codex offers browser/device login; `custom` uses endpoint → key (may be empty) → model |
 | `/provider` | Select and save the global provider |
 | `/model` | Select and save a model from that provider |
 | `/thinking` | Select and save a supported reasoning level |

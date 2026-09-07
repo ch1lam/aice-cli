@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/ch1lam/aice-cli/internal/interaction"
 )
 
 func (m model) settleCommand(forceBottom bool, command tea.Cmd) (model, tea.Cmd, bool) {
@@ -134,7 +135,8 @@ func (m model) startApplicationSlashCommand(
 	command SlashCommand,
 ) (model, tea.Cmd, bool) {
 	useSavedCredential := command.Name == "login" && request.UseSavedCredential
-	if command.SecretPrompt != "" && !useSavedCredential {
+	accountLogin := command.Name == "login" && request.LoginMethod != ""
+	if command.SecretPrompt != "" && !useSavedCredential && !accountLogin {
 		// Custom provider needs endpoint + API key + model in one centralized
 		// /login flow. Use a 3-step hidden-input sequence instead of a single
 		// API key prompt so the user can configure everything in one place.
@@ -173,7 +175,12 @@ func (m model) startApplicationSlashCommand(
 	m.acceptsDelivery = false
 	m.running = true
 	m.assistantEntry = -1
-	if useSavedCredential {
+	if accountLogin {
+		m.authInput = make(chan string, 1)
+		request.Auth = &interaction.AuthInteraction{Input: m.authInput}
+		m.input.Placeholder = "Starting login; Escape or Ctrl+C cancels"
+		m.status = "Starting login..."
+	} else if useSavedCredential {
 		m.status = "Using saved credential..."
 	} else {
 		m.status = "Running /" + command.Name + "..."
@@ -234,6 +241,7 @@ func (m model) selectCommandMenuOption() (model, tea.Cmd, bool) {
 	state := *m.commandMenu
 	state.request.Arguments = option.Arguments
 	state.request.UseSavedCredential = option.UseSavedCredential
+	state.request.LoginMethod = option.LoginMethod
 	m.commandMenu = nil
 	return m.startApplicationSlashCommand(
 		state.raw,

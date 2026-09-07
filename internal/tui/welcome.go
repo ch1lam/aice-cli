@@ -196,7 +196,7 @@ func (m model) welcomeCard() string {
 	commandHint := mutedStyle.Render("Type / for commands.")
 	if !m.apiKeyConfigured {
 		title = headerStyle.Render("✦  Set up AICE")
-		description = noticeStyle.Render("Add an API key to start.")
+		description = noticeStyle.Render("Sign in to a provider to start.")
 		commandHint = mutedStyle.Render(
 			"Use /login. View setup with /settings.",
 		)

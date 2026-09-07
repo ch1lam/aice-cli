@@ -249,7 +249,9 @@ type CommandOption struct {
 	// replacement secret. It is intended for menu actions that switch to an
 	// already configured provider.
 	UseSavedCredential bool
-	Menu               *CommandMenu
+	// LoginMethod starts account authorization instead of secret entry.
+	LoginMethod string
+	Menu        *CommandMenu
 }
 
 // CommandRequest is one parsed interactive command invocation.
@@ -258,6 +260,24 @@ type CommandRequest struct {
 	Arguments          string
 	Secret             string
 	UseSavedCredential bool
+	LoginMethod        string
+	Auth               *AuthInteraction
+}
+
+// AuthPrompt is transient account-login UI, never conversation history.
+type AuthPrompt struct {
+	Title        string
+	URL          string
+	Code         string
+	Instructions string
+	AllowInput   bool
+}
+
+// AuthInteraction connects one cancellable command to its frontend. Notify
+// must honor ctx; Input carries manual callback input, never model prompts.
+type AuthInteraction struct {
+	Notify func(context.Context, AuthPrompt) error
+	Input  <-chan string
 }
 
 // CommandRunner executes application-owned interactive commands.

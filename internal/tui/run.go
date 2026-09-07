@@ -178,6 +178,7 @@ type runRequest struct {
 }
 
 type runUpdate struct {
+	auth     *interaction.AuthPrompt
 	event    DisplayEvent
 	active   ActiveRun
 	cancel   context.CancelFunc
@@ -332,7 +333,18 @@ func runSlashCommand(ctx context.Context, runner Runner, request runRequest) err
 	if !ok {
 		err = fmt.Errorf("tui: slash command runner is required")
 	} else {
-		output, err = commandRunner.RunSlashCommand(runCtx, *request.command)
+		command := *request.command
+		if command.Auth != nil {
+			command.Auth = &interaction.AuthInteraction{Input: command.Auth.Input,
+				Notify: func(ctx context.Context, prompt interaction.AuthPrompt) error {
+					if !sendRunUpdate(ctx, request.updates, runUpdate{auth: &prompt}) {
+						return ctx.Err()
+					}
+					return nil
+				},
+			}
+		}
+		output, err = commandRunner.RunSlashCommand(runCtx, command)
 	}
 	state, commands := runnerSnapshots(runner)
 	_ = sendRunUpdate(ctx, request.updates, runUpdate{

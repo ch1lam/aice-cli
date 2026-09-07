@@ -89,7 +89,7 @@ without exposing storage concerns to the frontend or Agent Loop.
 | `internal/llm` | Canonical messages, models, usage, streams, context estimates |
 | `internal/api/{anthropic,openairesponses,openaicompletions}` | Protocol translation around official SDKs |
 | `internal/api/streamcore` | Protocol-neutral streaming mechanics shared by adapters |
-| `internal/provider/{deepseek,opencode,openai,custom}` | Provider catalogs, credentials, defaults, compatibility; `custom` accepts arbitrary model IDs |
+| `internal/provider/{deepseek,opencode,openai,codex,custom}` | Provider catalogs, credentials, defaults, compatibility; `codex` owns ChatGPT OAuth; `custom` accepts arbitrary model IDs |
 | `internal/tool` | `read`, `write`, `edit`, `bash`, `grep`, `find`, `ls`, `skill` |
 | `internal/guard` | Intrinsic execution gate: file policies, permission gate, pathAccess mode (`allow`/`ask`/`block`), check Decision (`allow`/`ask`/`deny`) |
 | `internal/session` | Versioned JSONL replay, tree navigation, compaction context |
@@ -128,6 +128,14 @@ such as `core`, `types`, `services`, `utils`, or `helpers`.
   model-specific reasoning policy.
 - Interfaces are defined by consumers. Constructors normally return concrete
   types; adapter factories may return the consumer capability they select.
+- Codex subscription login is an application command using the provider's
+  OAuth client, shared by terminal auth commands and the TUI’s cancellable
+  account-login flow. The app opens the browser; transient interaction events
+  carry progress and manual authorization input. `internal/config` owns AICE's separate OAuth credential file,
+  atomic replacement, and a bounded cross-process lock. Each model request
+  rereads credentials under that lock and refreshes near expiry before sending.
+  The Responses adapter owns Codex wire differences and encrypted reasoning
+  replay. No external harness, subprocess agent, or additional runtime is used.
 - Do not use mutable global service registries or `init()` wiring. Fixed,
   package-private dispatch tables are ordinary implementation data, not an
   extension mechanism; keep dependency construction in `internal/app`. Do not

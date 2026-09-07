@@ -37,12 +37,18 @@ cd /path/to/project
 aice --workspace .
 ```
 
-首次启动后执行 `/login`，选择 `deepseek`、`opencode-go`、`openai` 或
-`custom`，再完成该 provider 的凭据流程。输入 `/help` 查看命令，输入 `?`
+首次启动后执行 `/login`，先选择账号或 API Key 登录，再选择 provider
+并完成对应的登录流程。输入 `/help` 查看命令，输入 `?`
 查看快捷键。AICE 工作期间，按 Enter 可调整当前响应，按 Ctrl+Enter 可排队
 同一次 Agent run 内的后续交互。使用 `/btw [问题]` 可新建一个无工具、不会打断或写入
 主 Session 的侧线程；输入不带参数的 `/btw` 会打开线程选择菜单；没有侧线程
 时则直接打开空白输入框。
+
+使用 ChatGPT/Codex 订阅时，在 `/login` 选择 `Sign in with an account` →
+`OpenAI Codex`，再选择浏览器或设备代码登录。浏览器登录会自动打开授权页，
+支持回调或粘贴跳转 URL；Escape / Ctrl+C 可取消。也可以在终端执行
+`aice auth login --provider openai-codex`（无界面环境加 `--device-code`）。
+详见 [Codex 订阅配置](./docs/configuration.md#codex-subscription-chatgpt-oauth)。
 
 执行一次非交互请求：
 
@@ -65,7 +71,7 @@ aice --workspace . --session .aice/sessions/<session-id>.jsonl
 | 领域 | 当前实现 |
 | --- | --- |
 | 交互 | Bubble Tea TUI 与一次性 `--print` 模式 |
-| Provider | DeepSeek V4、OpenCode Go 内建模型目录、OpenAI GPT-5.6，以及 Custom（OpenAI 兼容） |
+| Provider | DeepSeek V4、OpenCode Go 内建模型目录、OpenAI GPT-5.6 API、Codex/ChatGPT 订阅，以及 Custom（OpenAI 兼容） |
 | 协议 | Anthropic Messages、OpenAI Responses、OpenAI Chat Completions |
 | 工具 | `read`、`write`、`edit`、`bash`、`grep`、`find`、`ls`、`skill` |
 | Guard | 工具调用前的路径与危险命令检查、交互授权；详见[工具执行与 Session](./docs/execution-sessions.md#tool-execution-boundary) |
@@ -102,7 +108,7 @@ go vet ./...
 ## 当前状态
 
 AICE 仍在快速迭代，稳定版发布前 Session 与配置格式仍可能变化。内核保持
-provider-neutral；当前内建 provider 为 DeepSeek、OpenCode Go、OpenAI 与
+provider-neutral；当前内建 provider 为 DeepSeek、OpenCode Go、OpenAI、Codex 与
 Custom。
 
 ## 许可证

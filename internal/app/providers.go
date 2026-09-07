@@ -7,6 +7,7 @@ import (
 	"github.com/ch1lam/aice-cli/internal/config"
 	"github.com/ch1lam/aice-cli/internal/llm"
 	"github.com/ch1lam/aice-cli/internal/provider"
+	"github.com/ch1lam/aice-cli/internal/provider/codex"
 	"github.com/ch1lam/aice-cli/internal/provider/custom"
 	"github.com/ch1lam/aice-cli/internal/provider/deepseek"
 	"github.com/ch1lam/aice-cli/internal/provider/openai"
@@ -19,6 +20,7 @@ func defaultProviders() []provider.Provider {
 		&deepseek.Provider{},
 		&opencode.Provider{},
 		&openai.Provider{},
+		&codex.Provider{},
 		&custom.Provider{},
 	}
 }

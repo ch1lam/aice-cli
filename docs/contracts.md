@@ -214,3 +214,13 @@ the final JSON event from being delivered.
   writes around the renderer or blocks terminal startup.
 - Session history, model context, and terminal viewport remain separate.
   Streaming deltas are coalesced before expensive Markdown rendering.
+
+### Interactive authentication
+
+Account login uses the existing cancellable slash-command lifetime. The app
+owns OAuth orchestration and credential persistence; the provider owns the
+protocol. `interaction.AuthInteraction` carries transient progress and manual
+input between the command and TUI. The TUI owns menus, browser/device prompts,
+and hidden authorization input; none of these secrets enter transcript entries,
+Session history, prompt history, steering, or queued model input. Completion
+and cancellation discard the transient authentication state.

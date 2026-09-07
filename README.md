@@ -38,13 +38,20 @@ cd /path/to/project
 aice --workspace .
 ```
 
-On first launch, run `/login`, select `deepseek`, `opencode-go`, `openai`, or
-`custom`, and complete that provider's credential flow. Run `/help` for
+On first launch, run `/login`, choose account or API key authentication, then
+select a provider and complete its login flow. Run `/help` for
 commands or `?` for keyboard shortcuts. While AICE is working, Enter steers
 the active response and Ctrl+Enter queues a follow-up interaction in the same
 Agent run. Use `/btw [question]` to start a new tool-free side thread that
 does not interrupt or enter the main Session. Bare `/btw` opens the thread
 chooser, or a blank composer when no side threads exist.
+
+For a ChatGPT/Codex subscription, use `/login` → `Sign in with an account` →
+`OpenAI Codex`, then choose browser or device code login. Browser login opens
+its authorization page and accepts a callback or pasted redirect URL; Escape
+or Ctrl+C cancels. The terminal alternative is `aice auth login --provider
+openai-codex` (add `--device-code` for headless login).
+See [Codex subscription setup](./docs/configuration.md#codex-subscription-chatgpt-oauth).
 
 Run one non-interactive request:
 
@@ -68,7 +75,7 @@ aice --workspace . --session .aice/sessions/<session-id>.jsonl
 | Area | Current implementation |
 | --- | --- |
 | Interface | Bubble Tea TUI and one-shot `--print` mode |
-| Providers | DeepSeek V4, OpenCode Go's built-in catalog, OpenAI GPT-5.6, and Custom (OpenAI-compatible) |
+| Providers | DeepSeek V4, OpenCode Go's built-in catalog, OpenAI GPT-5.6 API, Codex/ChatGPT subscription, and Custom (OpenAI-compatible) |
 | Protocols | Anthropic Messages, OpenAI Responses, OpenAI Chat Completions |
 | Tools | `read`, `write`, `edit`, `bash`, `grep`, `find`, `ls`, `skill` |
 | Guard | path and dangerous-command checks with interactive approvals; see [Tool execution and Sessions](./docs/execution-sessions.md#tool-execution-boundary) |
@@ -108,7 +115,7 @@ go vet ./...
 
 AICE is under active development. Session and configuration formats may still
 change before a stable release. The core is provider-neutral, while the
-built-in provider set is currently DeepSeek, OpenCode Go, OpenAI, and Custom.
+built-in provider set is currently DeepSeek, OpenCode Go, OpenAI, Codex, and Custom.
 
 ## License
 

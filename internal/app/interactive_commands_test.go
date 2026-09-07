@@ -375,10 +375,10 @@ func TestInteractiveSessionSlashCommandsExposeSelectionMenus(t *testing.T) {
 	}
 
 	login := interactiveSlashCommand(t, commands, "login")
-	if got := login.Menu.Options[0].Arguments; got != string(deepseek.ProviderID) {
+	if got := login.Menu.Options[1].Menu.Options[0].Arguments; got != string(deepseek.ProviderID) {
 		t.Errorf("login provider arguments = %q, want deepseek", got)
 	}
-	if login.Menu.Options[0].Menu != nil {
+	if login.Menu.Options[1].Menu.Options[0].Menu != nil {
 		t.Fatal("login provider unexpectedly opens a settings scope menu")
 	}
 
@@ -468,7 +468,7 @@ func TestInteractiveSessionLoginMenuSeparatesSavedCredentialActions(
 	}
 
 	login := interactiveSlashCommand(t, runner.SlashCommands(), "login")
-	deepSeek := login.Menu.Options[0]
+	deepSeek := login.Menu.Options[1].Menu.Options[0]
 	if deepSeek.Menu == nil {
 		t.Fatal("configured provider did not open the credential action menu")
 	}
@@ -1045,8 +1045,8 @@ func TestInteractiveSessionOpencodeMenusAndModelSelection(t *testing.T) {
 		t.Fatalf("/model options = %d, want %d", got, want)
 	}
 	providerCommand := interactiveSlashCommand(t, commands, "provider")
-	if len(providerCommand.Menu.Options) != 4 {
-		t.Fatalf("/provider options = %d, want 4", len(providerCommand.Menu.Options))
+	if len(providerCommand.Menu.Options) != len(runner.providers) {
+		t.Fatalf("/provider options = %d, want %d", len(providerCommand.Menu.Options), len(runner.providers))
 	}
 
 	output, err := runner.RunSlashCommand(t.Context(), tui.SlashCommandRequest{

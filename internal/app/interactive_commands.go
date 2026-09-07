@@ -13,6 +13,7 @@ import (
 	"github.com/ch1lam/aice-cli/internal/interaction"
 	"github.com/ch1lam/aice-cli/internal/llm"
 	"github.com/ch1lam/aice-cli/internal/provider"
+	"github.com/ch1lam/aice-cli/internal/provider/codex"
 	"github.com/ch1lam/aice-cli/internal/provider/custom"
 	"github.com/ch1lam/aice-cli/internal/provider/deepseek"
 	"github.com/ch1lam/aice-cli/internal/session"
@@ -61,7 +62,7 @@ func (s *interactiveSession) SlashCommands() []interaction.Command {
 		},
 		{
 			Name:         "login",
-			Description:  "Choose a provider, reuse its credential, or enter a new API key",
+			Description:  "Choose a provider and configure its credentials",
 			SecretPrompt: "API key",
 			Menu:         s.loginProviderMenu(),
 		},
@@ -85,9 +86,20 @@ func (s *interactiveSession) SlashCommands() []interaction.Command {
 
 func (s *interactiveSession) loginProviderMenu() *interaction.CommandMenu {
 	settings := s.settingsSnapshot()
+	var accounts, keys []interaction.CommandOption
+	for _, option := range loginProviderOptions(s.providers, settings.configuration) {
+		if option.Arguments == string(codex.ProviderID) {
+			accounts = append(accounts, option)
+		} else {
+			keys = append(keys, option)
+		}
+	}
 	return &interaction.CommandMenu{
-		Title:   "Select provider",
-		Options: loginProviderOptions(s.providers, settings.configuration),
+		Title: "Select authentication method",
+		Options: []interaction.CommandOption{
+			{Label: "Sign in with an account", Menu: &interaction.CommandMenu{Title: "Select account provider", Options: accounts}},
+			{Label: "Sign in with an API key", Menu: &interaction.CommandMenu{Title: "Select API key provider", Options: keys}},
+		},
 	}
 }
 
@@ -152,6 +164,19 @@ func loginProviderOptions(
 ) []interaction.CommandOption {
 	options := providerOptions(providers, configuration)
 	for index, candidate := range providers {
+		if candidate.ProviderID() == codex.ProviderID {
+			methods := []interaction.CommandOption{
+				{Label: "Browser login (default)", Arguments: string(codex.ProviderID), LoginMethod: "browser"},
+				{Label: "Device code login (headless)", Arguments: string(codex.ProviderID), LoginMethod: "device-code"},
+			}
+			if candidate.Configured(configuration) {
+				methods = append(methods, interaction.CommandOption{
+					Label: "Use saved credential", Arguments: string(codex.ProviderID), UseSavedCredential: true,
+				})
+			}
+			options[index].Menu = &interaction.CommandMenu{Title: "Select OpenAI Codex login method", Options: methods}
+			continue
+		}
 		if !candidate.Configured(configuration) {
 			continue
 		}
@@ -571,10 +596,13 @@ func (s *interactiveSession) slashTrust(
 }
 
 func (s *interactiveSession) slashLogin(
-	_ context.Context,
+	ctx context.Context,
 	request interaction.CommandRequest,
 ) (string, error) {
-	return s.login(request)
+	if request.LoginMethod != "" {
+		return s.loginAccount(ctx, request)
+	}
+	return s.login(ctx, request)
 }
 
 func (s *interactiveSession) slashProvider(
@@ -595,6 +623,12 @@ func (s *interactiveSession) slashProvider(
 	settings := s.settingsSnapshot()
 	configuration := settings.configuration
 	configuration.Provider = value
+	if value == string(codex.ProviderID) {
+		configuration.CodexCredentials, err = config.LoadCodexCredentials(configuration.Paths)
+		if err != nil {
+			return "", err
+		}
+	}
 	loop, err := s.rebuildAgentLoop(configuration)
 	if err != nil {
 		return "", err
@@ -729,6 +763,7 @@ func (s *interactiveSession) usageSnapshot() interaction.DisplayUsage {
 }
 
 func (s *interactiveSession) login(
+	ctx context.Context,
 	request interaction.CommandRequest,
 ) (string, error) {
 	if s.application == nil {
@@ -756,6 +791,12 @@ func (s *interactiveSession) login(
 			provider,
 			strings.Join(knownProviders(s.providers), ", "),
 		)
+	}
+	if provider == string(codex.ProviderID) {
+		if request.Secret != "" {
+			return "", fmt.Errorf("app: Codex uses OAuth; run aice auth login --provider openai-codex")
+		}
+		return s.slashProvider(ctx, interaction.CommandRequest{Name: "provider", Arguments: provider})
 	}
 
 	// Custom endpoint/model may be supplied as: /login custom [endpoint] [model]
@@ -935,6 +976,10 @@ func (s *interactiveSession) settingsInformation() string {
 	if providerConfigured(s.providers, settings.configuration) {
 		apiKey = "configured"
 	}
+	credentialLabel := "API key"
+	if settings.model.Provider == codex.ProviderID {
+		credentialLabel = "OAuth credential"
+	}
 	endpoint := strings.TrimSpace(settings.configuration.CustomBaseURL)
 	if endpoint == "" {
 		endpoint = custom.DefaultBaseURL
@@ -945,7 +990,7 @@ func (s *interactiveSession) settingsInformation() string {
 		"Model: " + settings.model.ID,
 		"Thinking: " + thinking,
 		"Thinking (requested): " + string(settings.configuration.Thinking),
-		"API key: " + apiKey,
+		credentialLabel + ": " + apiKey,
 		"Custom endpoint: " + endpoint,
 	}
 	if settings.configuration.DefaultProjectTrust == "" {
