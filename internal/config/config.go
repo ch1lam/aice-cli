@@ -40,6 +40,10 @@ const (
 	EnvKimiAPIKey = "KIMI_API_KEY"
 	// EnvKimiBaseURL overrides the Kimi Coding Plan endpoint.
 	EnvKimiBaseURL = "AICE_KIMI_BASE_URL"
+	// EnvMoonshotAPIKey authenticates Moonshot API Platform requests.
+	EnvMoonshotAPIKey = "MOONSHOT_API_KEY"
+	// EnvMoonshotBaseURL overrides the Moonshot API Platform endpoint.
+	EnvMoonshotBaseURL = "AICE_MOONSHOT_BASE_URL"
 	// EnvCustomAPIKey authenticates requests to a custom OpenAI-compatible endpoint.
 	EnvCustomAPIKey = "AICE_CUSTOM_API_KEY"
 	// EnvCustomBaseURL overrides the custom OpenAI-compatible endpoint.
@@ -103,6 +107,8 @@ type Config struct {
 	OpenAIBaseURL       string
 	KimiAPIKey          string
 	KimiBaseURL         string
+	MoonshotAPIKey      string
+	MoonshotBaseURL     string
 	CodexCredentials    CodexCredentials
 	CustomAPIKey        string
 	CustomBaseURL       string
@@ -110,6 +116,7 @@ type Config struct {
 }
 
 type authFile struct {
+	MoonshotAPIKey string `json:"moonshot_api_key,omitempty"`
 	KimiAPIKey     string `json:"kimi_api_key,omitempty"`
 	DeepSeekAPIKey string `json:"deepseek_api_key,omitempty"`
 	OpenCodeAPIKey string `json:"opencode_api_key,omitempty"`
@@ -200,6 +207,14 @@ func LoadFiles(paths Paths, lookup LookupEnv) (Config, error) {
 	}
 	kimiBaseURL, _ := lookup(EnvKimiBaseURL)
 
+	moonshotAPIKey := strings.TrimSpace(auth.MoonshotAPIKey)
+	if value, exists := lookup(EnvMoonshotAPIKey); exists {
+		if value = strings.TrimSpace(value); value != "" {
+			moonshotAPIKey = value
+		}
+	}
+	moonshotBaseURL, _ := lookup(EnvMoonshotBaseURL)
+
 	customAPIKey := strings.TrimSpace(auth.CustomAPIKey)
 	if value, exists := lookup(EnvCustomAPIKey); exists {
 		if value = strings.TrimSpace(value); value != "" {
@@ -227,6 +242,8 @@ func LoadFiles(paths Paths, lookup LookupEnv) (Config, error) {
 		OpenAIBaseURL:       strings.TrimSpace(openAIBaseURL),
 		KimiAPIKey:          kimiAPIKey,
 		KimiBaseURL:         strings.TrimSpace(kimiBaseURL),
+		MoonshotAPIKey:      moonshotAPIKey,
+		MoonshotBaseURL:     strings.TrimSpace(moonshotBaseURL),
 		CodexCredentials:    codex,
 		CustomAPIKey:        customAPIKey,
 		CustomBaseURL:       customBaseURL,
@@ -337,6 +354,30 @@ func SaveKimiAPIKeyFile(paths Paths, apiKey string) error {
 	}
 	return saveAPIKeyFile(paths, "Kimi", apiKey, func(auth *authFile) {
 		auth.KimiAPIKey = apiKey
+	})
+}
+
+// SaveMoonshotAPIKey stores the Moonshot credential in the global auth file.
+func SaveMoonshotAPIKey(apiKey string) (string, error) {
+	paths, err := DefaultPaths()
+	if err != nil {
+		return "", err
+	}
+	if err := SaveMoonshotAPIKeyFile(paths, apiKey); err != nil {
+		return "", err
+	}
+	return paths.GlobalAuth, nil
+}
+
+// SaveMoonshotAPIKeyFile stores the Moonshot credential in an explicit global
+// auth file, preserving any other provider credentials already present.
+func SaveMoonshotAPIKeyFile(paths Paths, apiKey string) error {
+	apiKey = strings.TrimSpace(apiKey)
+	if apiKey == "" {
+		return errors.New("config: Moonshot API key is required")
+	}
+	return saveAPIKeyFile(paths, "Moonshot", apiKey, func(auth *authFile) {
+		auth.MoonshotAPIKey = apiKey
 	})
 }
 
@@ -500,6 +541,7 @@ func loadAuth(path string) (authFile, error) {
 	auth.OpenCodeAPIKey = strings.TrimSpace(auth.OpenCodeAPIKey)
 	auth.OpenAIAPIKey = strings.TrimSpace(auth.OpenAIAPIKey)
 	auth.KimiAPIKey = strings.TrimSpace(auth.KimiAPIKey)
+	auth.MoonshotAPIKey = strings.TrimSpace(auth.MoonshotAPIKey)
 	auth.CustomAPIKey = strings.TrimSpace(auth.CustomAPIKey)
 	return auth, nil
 }

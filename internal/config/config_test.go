@@ -644,3 +644,89 @@ func TestSaveKimiAPIKeyFileRejectsInvalidValues(t *testing.T) {
 		}
 	}
 }
+
+func TestLoadFilesResolvesMoonshotCredentials(t *testing.T) {
+	t.Parallel()
+
+	paths := testPaths(t.TempDir())
+	writeJSON(t, paths.GlobalAuth, map[string]any{
+		"moonshot_api_key": "file-key",
+	})
+
+	values := map[string]string{
+		config.EnvMoonshotAPIKey:  "environment-key",
+		config.EnvMoonshotBaseURL: " https://moonshot.example/v1 ",
+	}
+	got, err := config.LoadFiles(paths, mapLookup(values))
+	if err != nil {
+		t.Fatalf("LoadFiles() error = %v", err)
+	}
+	if got.MoonshotAPIKey != "environment-key" {
+		t.Errorf("MoonshotAPIKey = %q, want environment-key", got.MoonshotAPIKey)
+	}
+	if got.MoonshotBaseURL != "https://moonshot.example/v1" {
+		t.Errorf(
+			"MoonshotBaseURL = %q, want trimmed custom URL",
+			got.MoonshotBaseURL,
+		)
+	}
+}
+
+func TestSaveMoonshotAPIKeyFilePreservesOtherProviderKeys(t *testing.T) {
+	t.Parallel()
+
+	paths := testPaths(t.TempDir())
+	if err := config.SaveDeepSeekAPIKeyFile(paths, "deepseek-key"); err != nil {
+		t.Fatalf("SaveDeepSeekAPIKeyFile() error = %v", err)
+	}
+	if err := config.SaveOpenCodeAPIKeyFile(paths, "opencode-key"); err != nil {
+		t.Fatalf("SaveOpenCodeAPIKeyFile() error = %v", err)
+	}
+	if err := config.SaveMoonshotAPIKeyFile(paths, " moonshot-key "); err != nil {
+		t.Fatalf("SaveMoonshotAPIKeyFile() error = %v", err)
+	}
+
+	var auth map[string]string
+	readJSON(t, paths.GlobalAuth, &auth)
+	want := map[string]string{
+		"deepseek_api_key": "deepseek-key",
+		"opencode_api_key": "opencode-key",
+		"moonshot_api_key": "moonshot-key",
+	}
+	if !reflect.DeepEqual(auth, want) {
+		t.Errorf("auth = %#v, want %#v", auth, want)
+	}
+}
+
+func TestSaveMoonshotAPIKeyFileRejectsInvalidValues(t *testing.T) {
+	t.Parallel()
+
+	paths := testPaths(t.TempDir())
+	for _, value := range []string{"", "  ", "line-one\nline-two"} {
+		err := config.SaveMoonshotAPIKeyFile(paths, value)
+		if err == nil {
+			t.Fatalf("SaveMoonshotAPIKeyFile(%q) error = nil", value)
+		}
+	}
+}
+
+func TestMoonshotAndCodingCredentialsStaySeparate(t *testing.T) {
+	t.Parallel()
+	paths := testPaths(t.TempDir())
+	if err := config.SaveKimiAPIKeyFile(paths, "coding-key"); err != nil {
+		t.Fatal(err)
+	}
+	if err := config.SaveMoonshotAPIKeyFile(paths, "platform-key"); err != nil {
+		t.Fatal(err)
+	}
+	if err := config.SaveOpenAIAPIKeyFile(paths, "openai-key"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := config.LoadFiles(paths, mapLookup(map[string]string{config.EnvKimiAPIKey: "coding-env", config.EnvMoonshotAPIKey: " "}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.KimiAPIKey != "coding-env" || got.MoonshotAPIKey != "platform-key" || got.OpenAIAPIKey != "openai-key" {
+		t.Fatal("provider credentials were mixed or overwritten")
+	}
+}
