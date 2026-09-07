@@ -111,7 +111,7 @@ jobs:
           # the archive by name and ignores the extra files.
           bundle="aice_${GOOS}_${GOARCH}.${extension}"
           CGO_ENABLED=0 go build -trimpath \
-            -ldflags "-s -w -X github.com/ch1lam/aice-cli/internal/cli.Version=${version}" \
+            -ldflags "-s -w -X github.com/ch1lam/aice-cli/internal/buildinfo.Version=${version}" \
             -o "staging/${binary}" ./cmd/aice
           cp LICENSE README.md staging/
           if [ "${GOOS}" = "windows" ]; then

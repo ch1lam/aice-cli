@@ -9,6 +9,8 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+
+	"github.com/ch1lam/aice-cli/internal/buildinfo"
 )
 
 // PrintRequest contains one non-interactive AICE invocation.
@@ -163,7 +165,7 @@ func NewRootCommand(dependencies Dependencies) (*cobra.Command, error) {
 			return nil
 		},
 	}
-	command.Version = Version
+	command.Version = buildinfo.Version
 	command.SetFlagErrorFunc(func(_ *cobra.Command, err error) error {
 		return newUsageError(err)
 	})

@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/ch1lam/aice-cli/internal/agent"
+	"github.com/ch1lam/aice-cli/internal/buildinfo"
 	"github.com/ch1lam/aice-cli/internal/cli"
 	"github.com/ch1lam/aice-cli/internal/config"
 	"github.com/ch1lam/aice-cli/internal/deps"
@@ -42,7 +43,7 @@ func NewCommand() (*cobra.Command, error) {
 			return modelForConfiguration(providers, configuration)
 		},
 		checkUpdate: func(ctx context.Context) (update.StartupResult, error) {
-			return update.CheckStartup(ctx, update.Options{Current: cli.Version})
+			return update.CheckStartup(ctx, update.Options{Current: buildinfo.Version})
 		},
 		runTUI:      tui.Run,
 		providers:   providers,
@@ -148,7 +149,7 @@ func (a *application) Update(
 	if output == nil {
 		return fmt.Errorf("app: output is required")
 	}
-	opts := update.Options{Current: cli.Version}
+	opts := update.Options{Current: buildinfo.Version}
 	if request.Check {
 		result, err := update.Check(ctx, opts)
 		if err != nil {
@@ -359,7 +360,7 @@ func (a *application) Interactive(
 		Usage:            newDisplayUsage(usage),
 		Context:          runner.contextSnapshot(),
 		WorkingDirectory: environment.workspace.Path(),
-		Version:          cli.Version,
+		Version:          buildinfo.Version,
 	})
 	// Close the runner's current store: /new may have detached the startup
 	// store, and a later prompt may have created another. Remove empty

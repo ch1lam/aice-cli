@@ -85,6 +85,7 @@ without exposing storage concerns to the frontend or Agent Loop.
 | Package | Ownership |
 | --- | --- |
 | `cmd/aice` | Minimal process entry point |
+| `internal/buildinfo` | Build-stamped version shared by CLI, updates, and protocol client identity |
 | `internal/app` | Composition root, lifecycle, prompt assembly, Sessions, Agent-event translation, interactive commands |
 | `internal/cli` | Cobra commands, flags, validation, exit behavior |
 | `internal/tui` | Bubble Tea presentation and interaction-event rendering |
