@@ -28,7 +28,7 @@ When `settings.json` omits `provider` and `model`, AICE uses `deepseek` and
 
 | Setting | Environment variable | Supported values |
 | --- | --- | --- |
-| Provider | `AICE_PROVIDER` | `deepseek`, `opencode-go`, `kimi-coding`, `openai`, `openai-codex`, `custom` |
+| Provider | `AICE_PROVIDER` | `deepseek`, `opencode-go`, `kimi-coding`, `moonshot`, `openai`, `openai-codex`, `custom` |
 | Model | `AICE_MODEL` | A catalog model, or any model ID for `custom` |
 | Thinking | `AICE_THINKING` | `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` |
 | Default Project Trust | none | `ask`, `always`, `never` |
@@ -117,6 +117,9 @@ The default request is `medium`. On DeepSeek V4 Flash and Pro it becomes
 | `opencode-go/deepseek-v4-flash-vision-exp` | `off`, `low`, `high`, `max` |
 | `opencode-go/kimi-k2.6` | `off`, `high` |
 | `opencode-go/kimi-k3` | `max` |
+| `moonshot/kimi-k3` | `low`, `high`, `max` |
+| `moonshot/kimi-k2.7-code`, `moonshot/kimi-k2.7-code-highspeed` | `high` (always on; no effort parameter) |
+| `moonshot/kimi-k2.6` | `off`, `high` |
 | `kimi-coding/k3`, `kimi-coding/k3-256k` | `low`, `high`, `max` |
 | `kimi-coding/kimi-for-coding`, `kimi-coding/kimi-for-coding-highspeed` | `high` (thinking enabled) |
 | `opencode-go/glm-5.2` | `high`, `max` |
@@ -221,6 +224,7 @@ credentials use a separate file as described below.
 | DeepSeek | `AICE_DEEPSEEK_API_KEY` | `deepseek_api_key` | `AICE_DEEPSEEK_BASE_URL` |
 | OpenCode Go | `AICE_OPENCODE_API_KEY` | `opencode_api_key` | `AICE_OPENCODE_BASE_URL` |
 | Kimi Coding Plan | `KIMI_API_KEY` | `kimi_api_key` | `AICE_KIMI_BASE_URL` |
+| Moonshot API (China) | `MOONSHOT_API_KEY` | `moonshot_api_key` | `AICE_MOONSHOT_BASE_URL` |
 | OpenAI | `OPENAI_API_KEY` | `openai_api_key` | `AICE_OPENAI_BASE_URL` |
 | Custom (Ollama, vLLM, LM Studio, any OpenAI-compatible) | `AICE_CUSTOM_API_KEY` | `custom_api_key` | `AICE_CUSTOM_BASE_URL` (default `http://localhost:11434/v1`) |
 
@@ -291,6 +295,55 @@ per-token price estimates; subscription quotas still apply.
 Protocol and model capabilities were checked on 2026-09-07 against Kimi's
 [Responses integration guide](https://www.kimi.com/code/docs/en/third-party-tools/codex.html)
 and [model configuration](https://www.kimi.com/code/docs/en/kimi-code/models.html).
+
+### Moonshot API Platform
+
+Select `/login` → `Sign in with an API key` → `Moonshot API`. Enter the
+API key from the China platform at [platform.kimi.com](https://platform.kimi.com).
+The `moonshot` provider includes the official `https://api.moonshot.cn/v1`
+endpoint; no URL configuration is needed. Its credentials are separate from
+`kimi-coding`: platform requests use prepaid, per-token API billing rather
+than Coding Plan quota. `KIMI_API_KEY` never supplies a Moonshot credential.
+
+For environment-based setup:
+
+```sh
+export MOONSHOT_API_KEY="your-platform-key"
+export AICE_PROVIDER=moonshot
+export AICE_MODEL=kimi-k3
+aice
+```
+
+Alternatively, store the key with `printf '%s\n' "$MOONSHOT_API_KEY" | aice config set-key --provider moonshot`.
+As with other providers, this command stores only the key; `/login` also
+selects and saves the provider and a compatible model.
+
+| Model | Protocol | Context / default output budget | Thinking |
+| --- | --- | --- | --- |
+| `kimi-k3` (default) | Responses | 1,048,576 / 131,072 | `low`, `high`, `max` |
+| `kimi-k2.7-code` | Chat Completions | 262,144 / 32,768 | Always enabled |
+| `kimi-k2.7-code-highspeed` | Chat Completions | 262,144 / 32,768 | Always enabled |
+| `kimi-k2.6` | Chat Completions | 262,144 / 32,768 | `off`, `high` |
+
+The protocol is selected automatically from the model catalog. K2.7 omits
+both `thinking` and `reasoning_effort`, preserving its always-on server default;
+K2.6 sends the thinking toggle. K3 uses Responses `reasoning.effort`.
+AICE's default requested `medium` becomes `high` on these models. Text/image
+inputs, streamed reasoning, and tool-result replay use the existing adapters.
+The current composer accepts text only. Retired K2.5 and Moonshot V1 models
+are not included.
+
+This preset targets the China platform. `AICE_MOONSHOT_BASE_URL` is an optional
+advanced override, not a region auto-detection mechanism; keys and model
+availability must match the destination platform. AICE records token usage,
+but does not convert China-platform CNY prices into its USD cost estimates;
+a zero displayed estimate does not mean the API call is free. Use the platform
+billing console for charges.
+
+Catalog and protocol details were checked on 2026-09-07 against the official
+[model list](https://platform.kimi.com/docs/models),
+[Responses reference](https://platform.kimi.com/docs/api/responses), and
+[parameter reference](https://platform.kimi.com/docs/api/models-overview).
 
 ### Codex subscription (ChatGPT OAuth)
 
