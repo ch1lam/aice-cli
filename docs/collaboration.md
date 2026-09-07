@@ -21,6 +21,19 @@ unavailable tooling or platform checks rather than claiming they passed.
 The [release workflow](../.github/workflows/release.yml) owns release build and
 packaging commands. Harbor has its own [integration guide](../integrations/harbor/README.md).
 
+## Installer checks
+
+Installer tests use local release fixtures and simulated network failures; they
+do not download releases or change the user's PATH:
+
+- macOS/Linux: `sh -n scripts/install.sh` and `python3 scripts/test_install.py`.
+- Windows: `powershell -NoProfile -File scripts/test_install.ps1` and
+  `pwsh -NoProfile -File scripts/test_install.ps1`.
+
+The CI matrix runs these on their native platforms, including Windows
+PowerShell 5.1 and PowerShell 7. They cover release pinning, checksum rejection,
+copy/replacement failures, cleanup, and path handling.
+
 ## Offline capability checks
 
 The default Go suite includes [long-task acceptance](../internal/app/long_task_test.go):

@@ -30,11 +30,26 @@ iwr -useb https://raw.githubusercontent.com/ch1lam/aice-cli/main/scripts/install
 The scripts install into `~/.local/bin` (or
 `%USERPROFILE%\.local\bin`) by default. Set `INSTALL_DIR` to use another
 user-writable directory. A user-writable install lets `aice update` replace
-the binary later.
+the binary later. Relative `INSTALL_DIR` values resolve against the current
+working directory; PATH instructions and Windows PATH entries use the absolute
+installation directory. On Windows the script updates both the per-user PATH
+and the current shell's PATH, comparing complete entries without regard to case.
+On macOS and Linux it prints a shell-quoted PATH command when needed.
 
 Set `AICE_VERSION` to a GitHub release tag (for example `v1.2.3`) to pin the
 download for evaluation or CI. If the value has no `v` prefix, the scripts
-add one. Unset, they install the latest release.
+add one. Unset, they resolve the latest release once and download both the
+archive and checksums from that same tag. Downloads have a 180-second timeout
+per attempt and up to two retries for transient failures; Unix also sets a
+15-second connection timeout.
+
+The installers verify and extract the archive before staging the executable in
+the destination directory. They then rename (Unix) or replace (Windows) the
+staged file, rather than copying over the live executable. Download, checksum,
+and staging failures leave the existing executable intact. Windows refuses a
+replacement when the executable is locked; close running AICE processes and
+retry. Temporary download and staging files are cleaned up on normal completion
+and handled failures.
 
 ## Runtime helpers
 

@@ -54,18 +54,21 @@ jobs:
           Expand-Archive -Path $zip -DestinationPath $dest
           Add-Content $env:GITHUB_PATH (Join-Path $dest "ripgrep-$version-x86_64-pc-windows-msvc")
 
-      - name: Validate install.ps1 syntax
+      - name: Test Unix installer offline
+        if: runner.os != 'Windows'
+        run: |
+          sh -n scripts/install.sh
+          python3 scripts/test_install.py
+
+      - name: Test Windows installer offline (Windows PowerShell 5.1)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: ./scripts/test_install.ps1
+
+      - name: Test Windows installer offline (PowerShell 7)
         if: runner.os == 'Windows'
         shell: pwsh
-        run: |
-          $tokens = $null; $errors = $null
-          [System.Management.Automation.Language.Parser]::ParseFile(
-            (Join-Path $env:GITHUB_WORKSPACE 'scripts/install.ps1'),
-            [ref]$tokens, [ref]$errors) | Out-Null
-          if ($errors.Count -gt 0) {
-            $errors | ForEach-Object { Write-Error $_ }
-            exit 1
-          }
+        run: ./scripts/test_install.ps1
 
       - name: Test
         run: go test -race ./...

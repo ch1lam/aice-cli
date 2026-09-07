@@ -19,18 +19,10 @@ fail() { printf 'aice: error: %s\n' "$*" >&2; exit 1; }
 
 [ -n "${INSTALL_DIR:-}" ] && log "using INSTALL_DIR=${INSTALL_DIR}"
 
-version="${AICE_VERSION:-}"
-if [ -n "$version" ]; then
-	case "$version" in
-		v*) ;;
-		*) version="v${version}" ;;
-	esac
-	base="https://github.com/${repo}/releases/download/${version}"
-	log "installing ${version}"
-else
-	base="https://github.com/${repo}/releases/latest/download"
-	log "installing latest"
-fi
+# Bound every request, including redirects, and retry transient failures twice.
+fetch() {
+	curl -fsSL --connect-timeout 15 --max-time 180 --retry 2 --retry-max-time 600 "$@"
+}
 
 case "$(uname -s)" in
 	Darwin) goos="darwin" ;;
@@ -46,11 +38,38 @@ esac
 
 bundle="aice_${goos}_${goarch}.tar.gz"
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/aice-install.XXXXXX")"
-trap 'rm -rf "$tmp"' EXIT
+staging=""
+cleanup() {
+	rm -rf "$tmp"
+	[ -z "$staging" ] || rm -rf "$staging"
+}
+trap cleanup 0
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+version="${AICE_VERSION:-}"
+if [ -n "$version" ]; then
+	case "$version" in v*) ;; *) version="v${version}" ;; esac
+	base="https://github.com/${repo}/releases/download/${version}"
+else
+	# Resolve latest once so a release published between downloads cannot mix assets.
+	latest="$(fetch -o /dev/null -w '%{url_effective}' "https://github.com/${repo}/releases/latest")" ||
+		fail "could not resolve latest release; check your network and retry"
+	case "$latest" in
+		"https://github.com/${repo}/releases/tag/"?*)
+			version="${latest##*/}"
+			base="https://github.com/${repo}/releases/download/${version}"
+			;;
+		*) fail "unexpected latest release URL: ${latest}" ;;
+	esac
+fi
+log "installing ${version}"
 
 log "downloading ${bundle} ..."
-curl -fsSL -o "${tmp}/${bundle}" "${base}/${bundle}"
-curl -fsSL -o "${tmp}/checksums.txt" "${base}/checksums.txt"
+fetch -o "${tmp}/${bundle}" "${base}/${bundle}" ||
+	fail "could not download ${bundle} for ${version}; check the release tag and network"
+fetch -o "${tmp}/checksums.txt" "${base}/checksums.txt" ||
+	fail "could not download checksums.txt for ${version}; check the release assets and network"
 
 want="$(awk -v name="${bundle}" '$2 == name { print $1 }' "${tmp}/checksums.txt")"
 [ -n "$want" ] || fail "checksums.txt has no entry for ${bundle}"
@@ -61,16 +80,24 @@ else
 fi
 [ "$want" = "$got" ] || fail "checksum mismatch for ${bundle}"
 
-log "installing to ${install_dir} ..."
-mkdir -p "$install_dir"
 tar -xzf "${tmp}/${bundle}" -C "${tmp}" "${binary}"
-install -m 0755 "${tmp}/${binary}" "${install_dir}/${binary}"
+[ -f "${tmp}/${binary}" ] && [ ! -L "${tmp}/${binary}" ] || fail "archive must contain a regular ${binary} file"
+mkdir -p -- "$install_dir"
+install_dir="$(CDPATH= cd -- "$install_dir" && pwd -P)"
+log "installing to ${install_dir} ..."
+[ ! -d "${install_dir}/${binary}" ] || fail "${install_dir}/${binary} is a directory"
+# Stage on the destination filesystem; rename only after copying has succeeded.
+staging="$(mktemp -d "${install_dir}/.aice-install.XXXXXX")"
+install -m 0755 "${tmp}/${binary}" "${staging}/${binary}" || fail "could not stage ${binary}; existing installation was not replaced"
+mv -f "${staging}/${binary}" "${install_dir}/${binary}" || fail "could not replace ${binary}; existing installation was not replaced"
 
 case ":$PATH:" in
 	*":${install_dir}:"*) ;;
 	*)
 		log "${install_dir} is not on PATH; add it to your shell profile:"
-		printf '  export PATH="%s:$PATH"\n' "$install_dir" >&2
+		# Single-quote the directory so spaces and shell metacharacters stay literal.
+		quoted_dir="$(printf '%s' "$install_dir" | sed "s/'/'\\\\''/g")"
+		printf "  export PATH='%s':\"\$PATH\"\n" "$quoted_dir" >&2
 		;;
 esac
 
