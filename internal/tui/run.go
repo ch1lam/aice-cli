@@ -12,6 +12,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/ch1lam/aice-cli/internal/interaction"
+	"github.com/ch1lam/aice-cli/internal/llm"
 )
 
 const runUpdateBuffer = 32
@@ -119,6 +120,7 @@ func Run(ctx context.Context, runner Runner, options Options) error {
 		slashCommands = append(slashCommands, btwSlashCommand())
 	}
 	initialModel := newModel(requests, controllerDone, slashCommands...)
+	initialModel.clipboard = pasteClipboard(controllerCtx)
 	initialModel.sideRequests = sideRequests
 	initialModel.sideControllerDone = sideControllerDone
 	if manager, ok := runner.(SideThreadManager); ok {
@@ -169,6 +171,7 @@ func checkForUpdate(ctx context.Context, checker UpdateChecker) tea.Cmd {
 
 type runRequest struct {
 	prompt  string
+	images  []llm.ImageContent
 	command *SlashCommandRequest
 	updates chan runUpdate
 	// sideCreate requests a brand-new side thread for this prompt;
@@ -279,7 +282,7 @@ func runOne(ctx context.Context, runner Runner, request runRequest) error {
 		return runSlashCommand(ctx, runner, request)
 	}
 
-	active, err := runner.NewRun(RunInput{Prompt: request.prompt}, func(
+	active, err := runner.NewRun(RunInput{Prompt: request.prompt, Images: request.images}, func(
 		eventCtx context.Context,
 		event DisplayEvent,
 	) error {

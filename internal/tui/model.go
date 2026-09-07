@@ -15,6 +15,7 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"github.com/ch1lam/aice-cli/internal/interaction"
+	"github.com/ch1lam/aice-cli/internal/llm"
 )
 
 const (
@@ -145,7 +146,15 @@ type model struct {
 	// pastes holds large pastes collapsed into inline placeholder tokens.
 	// The textarea keeps the short tokens in place; submit and history
 	// paths expand them back to the full text via expandComposerText.
-	pastes []pasteAttachment
+	pastes           []pasteAttachment
+	images           []llm.ImageContent
+	clipboard        tea.Cmd
+	clipboardPending bool
+	clipboardInSide  bool
+	clipboardSideID  uint64
+	inputNotice      string
+	// Retained only until NewRun accepts the submission, so rejection restores it.
+	submittedInput *RunInput
 
 	width            int
 	height           int
@@ -257,6 +266,12 @@ func (m model) Init() tea.Cmd {
 
 func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	switch message := message.(type) {
+	case clipboardResult:
+		m.clipboardPending = false
+		if m.side.isVisible != m.clipboardInSide || m.side.activeID != m.clipboardSideID {
+			return m, nil
+		}
+		return m.applyClipboard(message)
 	case copyNoticeExpiredMsg:
 		if uint64(message) == m.copyGeneration {
 			m.copyNotice = false
@@ -335,6 +350,7 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(waitForRunUpdates(message.updates), m.spinner.Tick)
 	case runUnavailableMsg:
 		m.controllerClosed = true
+		m.restoreSubmittedInput()
 		command := m.finishRun(errors.New("TUI run controller stopped"))
 		return m, command
 	case runBatchMsg:
@@ -545,6 +561,32 @@ func (m model) handleKey(message tea.KeyPressMsg) (model, tea.Cmd, bool) {
 	if m.side.confirm != nil {
 		return m.handleSideConfirmKey(message)
 	}
+	if m.clipboardPending && (key.Matches(message, m.keys.paste) ||
+		key.Matches(message, m.keys.send) || key.Matches(message, m.keys.queue) ||
+		key.Matches(message, m.keys.editor)) {
+		m.inputNotice = "Reading clipboard; press Enter again when the attachment appears"
+		if m.side.isVisible {
+			m.side.notice = "Reading clipboard; press Enter again when ready"
+		}
+		return m.settleCommand(false, nil)
+	}
+	if m.composerInputEnabled() && m.secretInput == nil && m.commandMenu == nil {
+		if key.Matches(message, m.keys.paste) && m.clipboard != nil {
+			m.clipboardPending = true
+			m.clipboardInSide = m.side.isVisible
+			m.clipboardSideID = m.side.activeID
+			return m, m.clipboard, true
+		}
+		if !m.side.isVisible && len(m.images) > 0 &&
+			(key.Matches(message, m.keys.removeImage) || (message.Code == tea.KeyBackspace && m.input.Value() == "")) {
+			m.images[len(m.images)-1] = llm.ImageContent{}
+			m.images = m.images[:len(m.images)-1]
+			m.inputNotice = ""
+			m.resizeLayout()
+			m.refreshViewport(false)
+			return m, nil, true
+		}
+	}
 	if m.side.isVisible {
 		if updated, command, handled := m.handleSideKey(message); handled {
 			return updated, command, true
@@ -648,7 +690,7 @@ func (m model) handleKey(message tea.KeyPressMsg) (model, tea.Cmd, bool) {
 		}
 		return m, tea.Quit, true
 	case key.Matches(message, m.keys.quit):
-		if !m.running && strings.TrimSpace(m.expandComposerText()) == "" {
+		if !m.running && strings.TrimSpace(m.expandComposerText()) == "" && len(m.images) == 0 {
 			return m, tea.Quit, true
 		}
 		return m, nil, true
@@ -743,7 +785,7 @@ func (m model) helpToggleRequested(message tea.KeyPressMsg) bool {
 	// Terminals expose committed printable text but not whether it came from
 	// an IME. Treat ? as help only when the regular composer is empty; once
 	// composition has started, printable text must remain textarea input.
-	return m.secretInput == nil && strings.TrimSpace(m.expandComposerText()) == ""
+	return m.secretInput == nil && strings.TrimSpace(m.expandComposerText()) == "" && len(m.images) == 0
 }
 
 func (m *model) updateInput(message tea.Msg) tea.Cmd {

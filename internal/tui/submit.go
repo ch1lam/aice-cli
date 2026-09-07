@@ -20,13 +20,17 @@ func (m model) submit() (model, tea.Cmd, bool) {
 	}
 
 	prompt := strings.TrimSpace(m.expandComposerText())
-	if prompt == "" {
+	if prompt == "" && len(m.images) == 0 {
 		return m, nil, true
 	}
 	// Pasted placeholders are literal content, never a slash command, even
 	// when the expanded text alone would parse as one.
 	if len(m.pastes) == 0 {
 		if request, slashCommand := parseSlashCommand(prompt); slashCommand {
+			if len(m.images) > 0 {
+				m.inputNotice = "Send or remove attached images before running a slash command"
+				return m.settleCommand(false, nil)
+			}
 			// Side questions never enter the main prompt history, even when
 			// submitted through the main composer while a run is active.
 			if request.Name != "btw" {
@@ -44,10 +48,14 @@ func (m model) submit() (model, tea.Cmd, bool) {
 		return m, nil, true
 	}
 
-	m.entries = append(m.entries, transcriptEntry{kind: entryUser, text: prompt})
+	input := RunInput{Prompt: prompt, Images: interaction.CloneImages(m.images)}
+	m.submittedInput = &input
+	m.entries = append(m.entries, transcriptEntry{kind: entryUser, text: imageInputText(prompt, len(input.Images))})
 	m.beginProcess()
 	m.input.Reset()
 	m.pastes = nil
+	m.images = nil
+	m.inputNotice = ""
 	m.commandSelection = 0
 	m.commandDismissed = false
 	m.pendingDeliveries = nil
@@ -59,7 +67,7 @@ func (m model) submit() (model, tea.Cmd, bool) {
 	m.status = "Starting response..."
 	return m.settleCommand(
 		true,
-		startRun(m.requests, m.controllerDone, prompt),
+		startRun(m.requests, m.controllerDone, input),
 	)
 }
 

@@ -191,8 +191,7 @@ Completions with text/image input and low/high reasoning. GPT-5.6 Luna, Grok 4.6
 (including Qwen3.8 Flash) and MiniMax M2.7/M3 use Anthropic Messages; the
 remaining catalog uses Chat Completions.
 Models whose upstream input modalities include images accept image content
-through the programmatic LLM contract; the current TUI input remains
-text-only.
+through the LLM contract and [clipboard image input](#clipboard-images).
 
 ### Client identity and subscription use
 
@@ -338,8 +337,7 @@ global settings, or `/provider`.
 
 The catalog contains `kimi-for-coding` (default, all members),
 `kimi-for-coding-highspeed`, `k3-256k`, and `k3`. Availability depends on the
-membership tier. All accept text and image through the LLM contract; the TUI
-composer remains text-only. K3 offers `low`, `high`, and `max`; K2.7 Code keeps
+membership tier. All accept text and [clipboard images](#clipboard-images). K3 offers `low`, `high`, and `max`; K2.7 Code keeps
 thinking enabled with `high`. Unsupported levels are clamped as usual, so
 `off` does not silently route these model IDs to K2.6.
 
@@ -387,8 +385,8 @@ Thinking uses `reasoning.effort`; K2.6 `off` maps to `none`. There is no
 model-dependent protocol selection or Chat Completions fallback.
 AICE's default requested `medium` becomes `high` on these models. Text/image
 inputs, streamed reasoning, and tool-result replay use the existing adapters.
-The current composer accepts text only. Retired K2.5 and Moonshot V1 models
-are not included.
+The composer supports [clipboard images](#clipboard-images). Retired K2.5 and
+Moonshot V1 models are not included.
 
 This preset targets the China platform. `AICE_MOONSHOT_BASE_URL` is an optional
 advanced override, not a region auto-detection mechanism; keys and model
@@ -446,8 +444,8 @@ Flash models omit both controls.
 Streaming text, reasoning, function calls, usage and same-model
 `reasoning_content` replay use the shared Chat Completions adapter.
 Preserved-thinking defaults remain controlled by the endpoint. The LLM
-boundary accepts images for the listed visual models; the current composer
-is text-only and AICE does not implement video or file input blocks.
+boundary and [clipboard input](#clipboard-images) accept images for the listed
+visual models. AICE does not implement video or file input blocks.
 
 Context defaults conservatively interpret the overview's 200K and 128K as
 200,000 and 128,000 tokens. Output budgets follow the explicit parameter
@@ -737,6 +735,42 @@ reports which command was tried and how to set `VISUAL`/`EDITOR`; saving refills
 instead of collapsing again. `Enter` always sends the expanded text, and
 pasted content is sent literally, never parsed as a slash command. History
 and thread drafts keep the expanded text.
+
+### Clipboard images
+
+In the main composer, `Ctrl+V` or `Alt+V` reads an image from the system
+clipboard, falling back to text when there is no image. `Alt+V` is useful when
+Windows Terminal intercepts `Ctrl+V`. The terminal's normal paste shortcut
+continues to handle text; it does not transport clipboard image bytes.
+
+Images appear above the text as `[Image 1]`, `[Image 2]`, and so on. Use
+`Alt+Backspace` to remove the last image, or `Backspace` when the text field is
+empty. Send images with a caption or alone. `Enter` and `Ctrl+Enter` also carry
+images in steering and follow-up inputs. Rejected submissions preserve the
+text and images and display the reason. Choose a model with image input;
+text-only models do not silently discard attachments.
+
+PNG and JPEG are accepted: at most four images per input, 4 MiB per image,
+8 MiB total, 8000 pixels per side, and 16 megapixels per image. Oversized or
+invalid images are rejected; copy a smaller image to retry. These are AICE
+input limits, not a guarantee that every provider accepts the same request
+size or number of images across the entire conversation.
+
+On macOS the built-in `osascript`/AppKit bridge reads PNG or converts clipboard
+TIFF to PNG. Windows uses Windows PowerShell and the system clipboard to encode
+PNG. Linux uses `wl-paste` on Wayland or `xclip` on X11 (install the relevant
+helper separately). Clipboard commands run on the AICE host, so a remote SSH
+session does not read your local desktop clipboard. No helper is auto-installed.
+
+Image content is saved inline in the existing Session JSONL, so resuming does
+not require the source file or clipboard. The transcript shows attachment
+labels rather than image previews. Prompt-history recall retains text only;
+while a draft has images, arrow keys edit its text. The external editor edits
+the caption and leaves images attached. Send or remove images before running
+slash commands. `/btw` supports ordinary pasted text; image attachments are supported in the
+main conversation only.
+`@` file references, dragged file paths, `read` tool images, and print-mode
+image flags are not implemented.
 
 ## Operational environment variables
 

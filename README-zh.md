@@ -44,6 +44,10 @@ aice --workspace .
 主 Session 的侧线程；输入不带参数的 `/btw` 会打开线程选择菜单；没有侧线程
 时则直接打开空白输入框。
 
+选择支持图片的模型后，用 `Ctrl+V` 或 `Alt+V` 粘贴截图，`Alt+Backspace`
+删除最后一张图片；可配文字或单独发送。平台要求和大小限制见
+[剪贴板图片输入](./docs/configuration.md#clipboard-images)。
+
 使用 ChatGPT/Codex 订阅时，在 `/login` 选择 `Sign in with an account` →
 `OpenAI Codex`，再选择浏览器或设备代码登录。浏览器登录会自动打开授权页，
 支持回调或粘贴跳转 URL；Escape / Ctrl+C 可取消。也可以在终端执行
@@ -86,7 +90,7 @@ aice --workspace . --session .aice/sessions/<session-id>.jsonl
 | Session | 重启恢复、分支、回退与自动/手动非破坏性压缩 |
 | 侧问题 | Session 历史之外、无工具的多个临时 `/btw` 线程 |
 | Agent Skills | 开放规范的 `SKILL.md` 目录：内建、`~/.agents/skills` 与项目 `.agents/skills`；详见 [Agent Skills](./docs/configuration.md#agent-skills) |
-| 输入 | 仅文本 |
+| 输入 | 主 TUI 输入框支持文本与[剪贴板图片](./docs/configuration.md#clipboard-images) |
 
 工具继承 AICE 进程权限。每次调用都会经过执行门禁；`--print` 下 `ask` 按
 `deny` 处理，除非加上 `--yolo`。`--workspace` 是工作目录并定义路径访问边界，不是沙箱。

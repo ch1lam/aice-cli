@@ -130,6 +130,7 @@ func (m model) applyRunBatch(batch runBatchMsg) (tea.Model, tea.Cmd) {
 	finished := false
 	for _, update := range batch.updates {
 		if update.active != nil {
+			m.submittedInput = nil
 			m.activeRun = update.active
 			m.acceptsDelivery = true
 		}
@@ -186,6 +187,9 @@ func (m model) applyRunBatch(batch runBatchMsg) (tea.Model, tea.Cmd) {
 			m.commands = slashCommandCatalog(commands)
 		}
 		if update.done {
+			if update.err != nil {
+				m.restoreSubmittedInput()
+			}
 			commands = append(commands, m.finishRun(update.err))
 			finished = true
 			continue
@@ -200,6 +204,7 @@ func (m model) applyRunBatch(batch runBatchMsg) (tea.Model, tea.Cmd) {
 	if batch.closed {
 		m.updates = nil
 		if m.running {
+			m.restoreSubmittedInput()
 			commands = append(commands, m.finishRun(
 				errors.New("agent run ended without a terminal update"),
 			))
@@ -426,7 +431,7 @@ type runBatchMsg struct {
 func startRun(
 	requests chan<- runRequest,
 	controllerDone <-chan struct{},
-	prompt string,
+	input RunInput,
 ) tea.Cmd {
 	return func() tea.Msg {
 		updates := make(chan runUpdate, runUpdateBuffer)
@@ -434,7 +439,8 @@ func startRun(
 		case <-controllerDone:
 			return runUnavailableMsg{}
 		case requests <- runRequest{
-			prompt:  prompt,
+			prompt:  input.Prompt,
+			images:  input.Images,
 			updates: updates,
 		}:
 			return runStartedMsg{updates: updates}

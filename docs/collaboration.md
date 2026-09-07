@@ -21,6 +21,17 @@ unavailable tooling or platform checks rather than claiming they passed.
 The [release workflow](../.github/workflows/release.yml) owns release build and
 packaging commands. Harbor has its own [integration guide](../integrations/harbor/README.md).
 
+For macOS clipboard changes, run the AppKit bridge check with an isolated
+pasteboard (it never reads or changes the user's general clipboard):
+
+```sh
+go test -tags=integration ./internal/tui -run '^TestMacClipboardNativeFormats$'
+```
+
+The ordinary clipboard tests use synthetic input and bounded helper processes.
+Linux and Windows clipboard behavior still requires verification on a desktop
+of that platform; cross-compilation alone does not verify native helpers.
+
 ## Installer checks
 
 Installer tests use local release fixtures and simulated network failures; they

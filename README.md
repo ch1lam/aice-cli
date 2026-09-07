@@ -46,6 +46,10 @@ Agent run. Use `/btw [question]` to start a new tool-free side thread that
 does not interrupt or enter the main Session. Bare `/btw` opens the thread
 chooser, or a blank composer when no side threads exist.
 
+Paste a screenshot with `Ctrl+V` or `Alt+V` when using a vision model. Remove
+the last attachment with `Alt+Backspace`; send images with text or alone.
+See [clipboard input](./docs/configuration.md#clipboard-images) for platform support and limits.
+
 For a ChatGPT/Codex subscription, use `/login` → `Sign in with an account` →
 `OpenAI Codex`, then choose browser or device code login. Browser login opens
 its authorization page and accepts a callback or pasted redirect URL; Escape
@@ -90,7 +94,7 @@ aice --workspace . --session .aice/sessions/<session-id>.jsonl
 | Sessions | restart recovery, branches, checkout/backtracking, automatic and manual compaction |
 | Side questions | multiple ephemeral, tool-free `/btw` threads outside Session history |
 | Agent Skills | open-spec `SKILL.md` directories from builtin, `~/.agents/skills`, and project `.agents/skills`; see [Agent Skills](./docs/configuration.md#agent-skills) |
-| Input | text only |
+| Input | text and [clipboard images](./docs/configuration.md#clipboard-images) in the main TUI composer |
 
 Tools inherit the permissions of the AICE process. Every call is checked by
 the execution gate; `--print` treats `ask` as `deny` unless `--yolo`. `--workspace` sets the

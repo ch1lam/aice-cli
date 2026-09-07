@@ -3,21 +3,25 @@ package tui
 import "charm.land/bubbles/v2/key"
 
 type keyMap struct {
-	send      key.Binding
-	queue     key.Binding
-	newline   key.Binding
-	scroll    key.Binding
-	process   key.Binding
-	editor    key.Binding
-	commands  key.Binding
-	history   key.Binding
-	help      key.Binding
-	interrupt key.Binding
-	quit      key.Binding
+	send        key.Binding
+	queue       key.Binding
+	newline     key.Binding
+	scroll      key.Binding
+	process     key.Binding
+	editor      key.Binding
+	paste       key.Binding
+	removeImage key.Binding
+	commands    key.Binding
+	history     key.Binding
+	help        key.Binding
+	interrupt   key.Binding
+	quit        key.Binding
 }
 
 func newKeyMap() keyMap {
 	return keyMap{
+		paste:       key.NewBinding(key.WithKeys("ctrl+v", "alt+v"), key.WithHelp("ctrl+v/alt+v", "paste image/text")),
+		removeImage: key.NewBinding(key.WithKeys("alt+backspace"), key.WithHelp("alt+backspace", "remove last image")),
 		send: key.NewBinding(
 			key.WithKeys("enter"),
 			key.WithHelp("enter", "send"),
@@ -90,7 +94,7 @@ func (k keyMap) ShortHelp() []key.Binding {
 
 func (k keyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
-		{k.send, k.queue, k.newline},
+		{k.send, k.queue, k.newline, k.paste, k.removeImage},
 		{k.commands, k.history, k.scroll, k.process, k.editor, k.help},
 		{k.interrupt, k.quit},
 	}

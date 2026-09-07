@@ -157,6 +157,16 @@ func (m model) composerParts(contentWidth int) []string {
 		if pending := m.pendingQueueView(contentWidth); pending != "" {
 			parts = append(parts, pending, "")
 		}
+		if len(m.images) > 0 {
+			labels := make([]string, len(m.images))
+			for index := range m.images {
+				labels[index] = fmt.Sprintf("[Image %d]", index+1)
+			}
+			parts = append(parts, infoStyle.Width(contentWidth).Render(strings.Join(labels, " ")+" · alt+backspace removes last"))
+		}
+		if m.inputNotice != "" {
+			parts = append(parts, noticeStyle.Width(contentWidth).Render(m.inputNotice))
+		}
 	}
 	parts = append(parts, m.highlightPasteTokens(m.input.View()))
 	return parts
