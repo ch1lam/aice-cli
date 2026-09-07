@@ -28,7 +28,7 @@ When `settings.json` omits `provider` and `model`, AICE uses `deepseek` and
 
 | Setting | Environment variable | Supported values |
 | --- | --- | --- |
-| Provider | `AICE_PROVIDER` | `deepseek`, `opencode-go`, `openai`, `openai-codex`, `custom` |
+| Provider | `AICE_PROVIDER` | `deepseek`, `opencode-go`, `kimi-coding`, `openai`, `openai-codex`, `custom` |
 | Model | `AICE_MODEL` | A catalog model, or any model ID for `custom` |
 | Thinking | `AICE_THINKING` | `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` |
 | Default Project Trust | none | `ask`, `always`, `never` |
@@ -107,7 +107,7 @@ valid choices for the active model. Models without thinking support expose
 only `off`.
 
 The default request is `medium`. On DeepSeek V4 Flash and Pro it becomes
-`high`; on Kimi K3 it becomes `max`. Important built-in subsets are:
+`high`; on OpenCode Go Kimi K3 it becomes `max`. Important built-in subsets are:
 
 | Provider and model | Supported levels |
 | --- | --- |
@@ -117,6 +117,8 @@ The default request is `medium`. On DeepSeek V4 Flash and Pro it becomes
 | `opencode-go/deepseek-v4-flash-vision-exp` | `off`, `low`, `high`, `max` |
 | `opencode-go/kimi-k2.6` | `off`, `high` |
 | `opencode-go/kimi-k3` | `max` |
+| `kimi-coding/k3`, `kimi-coding/k3-256k` | `low`, `high`, `max` |
+| `kimi-coding/kimi-for-coding`, `kimi-coding/kimi-for-coding-highspeed` | `high` (thinking enabled) |
 | `opencode-go/glm-5.2` | `high`, `max` |
 | `opencode-go/glm-5.3`, `opencode-go/glm-5.3-flash` | `low`, `high`, `max` |
 | `opencode-go/gpt-5.6-luna` | `off`, `low`, `medium`, `high`, `xhigh`, `max` |
@@ -218,6 +220,7 @@ credentials use a separate file as described below.
 | --- | --- | --- | --- |
 | DeepSeek | `AICE_DEEPSEEK_API_KEY` | `deepseek_api_key` | `AICE_DEEPSEEK_BASE_URL` |
 | OpenCode Go | `AICE_OPENCODE_API_KEY` | `opencode_api_key` | `AICE_OPENCODE_BASE_URL` |
+| Kimi Coding Plan | `KIMI_API_KEY` | `kimi_api_key` | `AICE_KIMI_BASE_URL` |
 | OpenAI | `OPENAI_API_KEY` | `openai_api_key` | `AICE_OPENAI_BASE_URL` |
 | Custom (Ollama, vLLM, LM Studio, any OpenAI-compatible) | `AICE_CUSTOM_API_KEY` | `custom_api_key` | `AICE_CUSTOM_BASE_URL` (default `http://localhost:11434/v1`) |
 
@@ -249,6 +252,45 @@ printf '%s\n' "$OPENAI_API_KEY" | \
 ```
 
 Provider keys are stored side by side; updating one does not erase another.
+
+### Kimi Coding Plan
+
+Select `/login` → `Sign in with an API key` → `Kimi Coding Plan`, using a key
+from the Kimi Code console. The provider ID is `kimi-coding`; it connects
+directly to `https://api.kimi.com/coding/v1/responses` using the shared OpenAI
+Responses adapter, with streaming text, reasoning replay, and function calls.
+The client identifies itself as `aice`. This uses a Coding Plan key, separate
+from Moonshot's pay-as-you-go API credentials.
+
+For environment-based setup:
+
+```sh
+export KIMI_API_KEY="your-coding-plan-key"
+export AICE_PROVIDER=kimi-coding
+export AICE_MODEL=kimi-for-coding
+aice
+```
+
+To store the key instead, run `printf '%s\n' "$KIMI_API_KEY" | aice config set-key --provider kimi-coding`.
+This saves only the credential; select the provider through `AICE_PROVIDER`,
+global settings, or `/provider`.
+
+The catalog contains `kimi-for-coding` (default, all members),
+`kimi-for-coding-highspeed`, `k3-256k`, and `k3`. Availability depends on the
+membership tier. All accept text and image through the LLM contract; the TUI
+composer remains text-only. K3 offers `low`, `high`, and `max`; K2.7 Code keeps
+thinking enabled with `high`. Unsupported levels are clamped as usual, so
+`off` does not silently route these model IDs to K2.6.
+
+All four use a conservative 262,144-token context default and a 32,768-token
+AICE output budget (not a claim about the server's maximum output). If your
+membership enables K3's 1M tier, set `"kimi-coding/k3": 1048576` under
+`context_windows` in global settings. Token usage is recorded with zero
+per-token price estimates; subscription quotas still apply.
+
+Protocol and model capabilities were checked on 2026-09-07 against Kimi's
+[Responses integration guide](https://www.kimi.com/code/docs/en/third-party-tools/codex.html)
+and [model configuration](https://www.kimi.com/code/docs/en/kimi-code/models.html).
 
 ### Codex subscription (ChatGPT OAuth)
 
