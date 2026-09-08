@@ -112,7 +112,7 @@ type model struct {
 	guardFeedback      bool
 	guardFeedbackText  string
 
-	viewport          viewport.Model
+	viewport          transcriptViewport
 	selection         transcriptSelection
 	input             textarea.Model
 	spinner           spinner.Model
@@ -211,12 +211,7 @@ func newModel(
 	// what anchors the IME candidate window to the composer.
 	input.SetVirtualCursor(false)
 
-	view := viewport.New(viewport.WithWidth(80), viewport.WithHeight(20))
-	// Route keyboard scrolling through AICE's key map so the viewport's hidden
-	// pager bindings cannot consume composer input.
-	view.KeyMap = viewport.KeyMap{}
-	view.SoftWrap = true
-	view.FillHeight = true
+	view := newTranscriptViewport()
 
 	activity := spinner.New(
 		spinner.WithSpinner(spinner.MiniDot),

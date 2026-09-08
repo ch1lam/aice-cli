@@ -61,3 +61,34 @@ func BenchmarkGuardWithLongTranscript(b *testing.B) {
 		}
 	})
 }
+
+func BenchmarkLongConversation(b *testing.B) {
+	for _, count := range []int{10, 100, 1000} {
+		b.Run(fmt.Sprint(count), func(b *testing.B) {
+			m := newModel(nil, nil)
+			m.width, m.height, m.running = 120, 40, true
+			m.resizeLayout()
+			id := m.beginProcess()
+			for range count {
+				m.entries = append(m.entries, transcriptEntry{kind: entryAssistant, processID: id, complete: true,
+					thinking: strings.Repeat("Already considered implementation and verification. ", 80), presentation: &assistantPresentation{}})
+			}
+			m.applyAgentEvent(DisplayEvent{Kind: DisplayEventAssistantStart})
+			m.refreshViewport(true)
+			b.Run("draw", func(b *testing.B) {
+				b.ReportAllocs()
+				for b.Loop() {
+					m.View()
+				}
+			})
+			b.Run("stream", func(b *testing.B) {
+				b.ReportAllocs()
+				for b.Loop() {
+					m.applyAssistantDelta(DisplayEvent{Delta: DisplayDelta{Kind: DisplayDeltaThinking, Delta: "."}})
+					m.refreshViewport(true)
+					m.View()
+				}
+			})
+		})
+	}
+}

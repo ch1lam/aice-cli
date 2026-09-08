@@ -44,13 +44,7 @@ func (m *model) refreshViewport(forceBottom bool) {
 		return
 	}
 	wasAtBottom := m.viewport.AtBottom()
-	content := m.transcriptView()
-	if content != m.viewport.GetContent() && !m.selection.active {
-		m.selection.clear()
-	}
-	if content != m.viewport.GetContent() {
-		m.viewport.SetContent(content)
-	}
+	m.viewport.setItems(m.transcriptItems())
 	if forceBottom || wasAtBottom {
 		m.viewport.GotoBottom()
 	}
@@ -424,54 +418,16 @@ func truncateTerminalText(value string, width int) string {
 	return string(runes) + "…"
 }
 
+// transcriptView materializes an explicit snapshot. Live frames use lazy items.
 func (m model) transcriptView() string {
-	if m.side.isVisible {
-		return m.sideThreadView()
-	}
-	parts := make([]transcriptViewPart, 0, len(m.entries)+2)
-	for index := 0; index < len(m.entries); {
-		entry := m.entries[index]
-		if entry.processID != 0 {
-			end := index + 1
-			for end < len(m.entries) &&
-				m.entries[end].processID == entry.processID {
-				end++
-			}
-			process, conclusion := m.processGroupView(index, end)
-			if process != "" {
-				parts = append(parts, transcriptViewPart{content: process})
-			}
-			if conclusion != "" {
-				parts = append(parts, transcriptViewPart{content: conclusion})
-			}
-			index = end
-			continue
+	var result strings.Builder
+	for i, item := range m.transcriptItems() {
+		if i > 0 {
+			result.WriteString(strings.Repeat("\n", item.gap+1))
 		}
-
-		activeAssistant := m.running &&
-			index == m.assistantEntry &&
-			!entry.complete
-		if content := m.entryView(entry, activeAssistant); content != "" {
-			parts = append(parts, transcriptViewPart{
-				content: content,
-				tool:    entry.kind == entryTool,
-			})
-		}
-		index++
+		result.WriteString(item.render())
 	}
-	if m.authPrompt != nil {
-		parts = append(parts, transcriptViewPart{content: m.authView()})
-	}
-	if activity := m.pendingActivityView(); activity != "" {
-		parts = append(parts, transcriptViewPart{content: activity})
-	}
-	if steering := m.pendingSteeringView(); steering != "" {
-		parts = append(parts, transcriptViewPart{content: steering})
-	}
-	if len(parts) == 0 {
-		return m.welcomeView()
-	}
-	return joinTranscriptViewParts(parts)
+	return result.String()
 }
 
 func (m model) hasPendingSteer() bool {
@@ -510,94 +466,6 @@ func pendingSteerRail(frame uint8) string {
 	default:
 		return "┆"
 	}
-}
-
-func (m model) processGroupView(start, end int) (string, string) {
-	processID := m.entries[start].processID
-	collapsed := false
-	for _, group := range m.processGroups {
-		if group.id == processID {
-			collapsed = group.collapsed
-			break
-		}
-	}
-
-	parts := make([]transcriptViewPart, 0, end-start)
-	conclusion := ""
-	hasProcessContent := false
-	for index := start; index < end; index++ {
-		entry := m.entries[index]
-		activeAssistant := m.running &&
-			index == m.assistantEntry &&
-			!entry.complete
-		if entry.kind == entryAssistant && entry.conclusion {
-			if collapsed && strings.TrimSpace(entry.thinking) != "" {
-				hasProcessContent = true
-			}
-			if !collapsed {
-				if reasoning := m.assistantProcessEntryView(
-					entry,
-					false,
-					true,
-					false,
-				); reasoning != "" {
-					parts = append(parts, transcriptViewPart{content: reasoning})
-				}
-			}
-			conclusion = m.assistantProcessEntryView(
-				entry,
-				activeAssistant,
-				false,
-				true,
-			)
-			continue
-		}
-
-		if collapsed {
-			if entry.kind == entryTool || activeAssistant ||
-				strings.TrimSpace(entry.thinking) != "" ||
-				strings.TrimSpace(entry.text) != "" {
-				hasProcessContent = true
-			}
-			continue
-		}
-		var content string
-		if entry.kind == entryAssistant {
-			content = m.assistantProcessEntryView(
-				entry,
-				activeAssistant,
-				true,
-				true,
-			)
-		} else {
-			content = m.entryView(entry, activeAssistant)
-		}
-		if entry.kind == entryAssistant &&
-			entry.complete &&
-			strings.TrimSpace(entry.thinking) == "" &&
-			strings.TrimSpace(entry.text) == "" {
-			content = ""
-		}
-		if content != "" {
-			parts = append(parts, transcriptViewPart{
-				content: content,
-				tool:    entry.kind == entryTool,
-			})
-		}
-	}
-
-	if !hasProcessContent && len(parts) == 0 {
-		if conclusion == "" {
-			return "", ""
-		}
-		return "", m.assistantHeaderView(processID) + "\n\n" + conclusion
-	}
-	header := m.processHeader(start, end, collapsed)
-	process := header
-	if collapsed {
-		return process, conclusion
-	}
-	return process + "\n" + joinTranscriptViewParts(parts), conclusion
 }
 
 func (m model) processHeader(start, end int, collapsed bool) string {

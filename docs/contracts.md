@@ -252,7 +252,18 @@ the final JSON event from being delivered.
   renders only a UTF-8-safe tail of at most 4 KiB plus an omission notice;
   full content remains in the presentation snapshot and becomes available
   on completion. These display limits never truncate Session or model context.
-  Unchanged viewport content is not reparsed on animation ticks.
+  Main and BTW transcripts use an item-anchored viewport: scrolling records a
+  block and a row within it, without measuring all preceding history. Process
+  headers, individual reasoning/answer blocks, tools and questions are separate
+  items, including multiple model rounds within a single process group. Only
+  reached items are formatted and wrapped; unchanged visible items reuse their
+  cached rows. Width changes invalidate wrapping, height changes retain it.
+  Refreshes rebuild lightweight item descriptions but never concatenate the
+  full transcript. Full-content snapshots are explicit operations, not part of
+  animation, scrolling, or streaming frames. Selection freezes visible rows and
+  their local coordinate snapshot while new content continues arriving.
+  Completed content remains available by scrolling; a first visit to a large
+  individual block can still require formatting that whole block.
 - Terminal cell updates remain owned by Bubble Tea and its Ultraviolet
   renderer. Changed lines containing wide characters are repainted from the
   line boundary so partial erases cannot split CJK glyphs during streaming.

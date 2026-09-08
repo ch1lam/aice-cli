@@ -16,24 +16,6 @@ import (
 // the status text.
 const sideDisplayExpiryMinutes = 120
 
-func (m model) sideThreadView() string {
-	parts := []transcriptViewPart{{content: m.sideThreadIntro()}}
-	if thread := m.side.activeThread(); thread != nil {
-		for index, entry := range thread.entries {
-			parts = append(parts, transcriptViewPart{
-				content: m.sideQuestionView(entry.question),
-			})
-			if answer := m.sideAnswerView(
-				entry,
-				thread.isRunning && index == thread.assistantEntry,
-			); answer != "" {
-				parts = append(parts, transcriptViewPart{content: answer})
-			}
-		}
-	}
-	return joinTranscriptViewParts(parts)
-}
-
 func (m model) sideThreadIntro() string {
 	title := headerStyle.Render("↗ BTW SIDE THREAD")
 	detail := mutedStyle.Render(
