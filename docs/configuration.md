@@ -698,10 +698,11 @@ flight is allowed to finish before its idle clock restarts.
 
 Side questions and answers do not enter the main transcript, prompt history,
 Session JSONL, usage totals, or compaction input, and all disappear when AICE
-exits. In a side panel, Enter asks a follow-up, Escape returns to the main view
-without cancelling, Ctrl+C cancels only that side answer, and Ctrl+D ends the
-thread; ending a running thread asks for confirmation and waits for its answer
-to stop before deleting it.
+exits. In a side panel, Enter asks a follow-up, Escape cancels the visible side
+answer (or closes the panel when idle), and Alt+Escape returns to the main
+view without cancelling. Ctrl+C clears the visible editor; a consecutive
+second press exits AICE. Ctrl+D ends the thread; ending a running thread asks
+for confirmation and waits for its answer to stop before deleting it.
 
 ## Interactive input delivery
 
@@ -712,7 +713,19 @@ The composer remains active while an Agent run is working:
 | `Enter` | Send a steer into the active run at its next safe boundary |
 | `Ctrl+Enter` | Queue a follow-up interaction after the current one completes |
 | `Shift+Enter`, `Alt+Enter`, or `Ctrl+J` | Insert a newline |
-| `Ctrl+C` | Cancel the active response |
+| `Esc` | Cancel the active response, preserving the draft |
+| `Ctrl+C` | Clear the editor; press again consecutively to exit AICE |
+
+In the main and side composers, the first `Ctrl+C` clears all unsent text,
+long-paste placeholders, and image attachments, then shows an exit hint. This
+first press never cancels generation or exits, even when the editor is already
+empty. A consecutive second `Ctrl+C` on the empty editor exits; another key or
+text paste resets the sequence. Clearing a draft does not remove queued inputs
+or conversation history. Exiting uses normal shutdown to cancel and wait for
+active runs. `Ctrl+D` also exits from an empty, idle main composer.
+
+Menus, login prompts, and tool approval dialogs keep their contextual cancel
+or deny behavior; they do not count as the first press of this exit sequence.
 
 A waiting steer appears immediately in the transcript as a user message with
 a distinct color and animated dashed rail. Queued prompts stay above the draft

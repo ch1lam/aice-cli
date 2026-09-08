@@ -42,8 +42,9 @@ On first launch, run `/login`, choose account or API key authentication, then
 select a provider and complete its login flow. Run `/help` for
 commands or `?` for keyboard shortcuts. While AICE is working, Enter steers
 the active response and Ctrl+Enter queues a follow-up interaction in the same
-Agent run. Use `/btw [question]` to start a new tool-free side thread that
-does not interrupt or enter the main Session. Bare `/btw` opens the thread
+Agent run. Press `Esc` to cancel the response. `Ctrl+C` clears the editor;
+press it again consecutively to exit. Use `/btw [question]` to start a new
+tool-free side thread that does not interrupt or enter the main Session. Bare `/btw` opens the thread
 chooser, or a blank composer when no side threads exist.
 
 Paste a screenshot with `Ctrl+V` or `Alt+V` when using a vision model. Images appear as inline
