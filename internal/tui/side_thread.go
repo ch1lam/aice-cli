@@ -26,11 +26,12 @@ func btwSlashCommand() SlashCommand {
 }
 
 type sideThreadEntry struct {
-	question string
-	answer   string
-	thinking string
-	err      string
-	complete bool
+	presentation *assistantPresentation
+	question     string
+	answer       string
+	thinking     string
+	err          string
+	complete     bool
 }
 
 // sideThreadState is the presentation state for one registry thread. The
@@ -495,6 +496,7 @@ func (m *model) applySideEvent(
 			return false
 		}
 		thread.receivedContent = true
+		entry.presentation = &assistantPresentation{}
 		entry.answer = ""
 		entry.thinking = ""
 		entry.err = ""
@@ -507,14 +509,17 @@ func (m *model) applySideEvent(
 			return false
 		}
 		thread.receivedContent = true
+		if entry.presentation == nil {
+			entry.presentation = &assistantPresentation{}
+		}
 		switch event.Delta.Kind {
 		case DisplayDeltaText:
-			entry.answer += event.Delta.Delta
+			entry.answer = entry.presentation.appendText(entry.answer, event.Delta.Delta)
 			if m.side.isVisible && m.side.activeID == thread.id {
 				m.side.notice = "Answering..."
 			}
 		case DisplayDeltaThinking:
-			entry.thinking += event.Delta.Delta
+			entry.thinking = entry.presentation.appendThinking(entry.thinking, event.Delta.Delta)
 			if m.side.isVisible && m.side.activeID == thread.id {
 				m.side.notice = "Thinking..."
 			}
@@ -530,6 +535,7 @@ func (m *model) applySideEvent(
 			return false
 		}
 		thread.receivedContent = true
+		entry.presentation = &assistantPresentation{}
 		entry.answer = event.Assistant.Text
 		entry.thinking = event.Assistant.Thinking
 		entry.complete = true

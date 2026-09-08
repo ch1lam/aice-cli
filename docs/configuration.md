@@ -706,6 +706,12 @@ for confirmation and waits for its answer to stop before deleting it.
 
 ## Interactive input delivery
 
+`Ctrl+O` expands or collapses main-task process details. While an assistant
+response is streaming, long thinking shows only its most recent 4 KiB with an
+earlier-content notice, keeping the terminal responsive. This also applies to
+BTW thinking. When the response ends, expanded views show the complete thinking;
+the preview does not remove content from the conversation or main Session.
+
 The composer remains active while an Agent run is working:
 
 | Input | Effect while an Agent run is active |

@@ -320,10 +320,10 @@ func TestModelAssistantBodyIsSeparatedAndUniformlyIndented(t *testing.T) {
 		{
 			name: "completed markdown",
 			entry: transcriptEntry{
-				kind:     entryAssistant,
-				text:     markdown,
-				rendered: renderMarkdown(markdown, current.contentWidth()),
-				complete: true,
+				kind:         entryAssistant,
+				text:         markdown,
+				presentation: &assistantPresentation{},
+				complete:     true,
 			},
 		},
 	}

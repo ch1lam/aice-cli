@@ -61,24 +61,12 @@ func (m model) sideQuestionView(question string) string {
 }
 
 func (m model) sideAnswerView(entry sideThreadEntry, active bool) string {
-	bodyWidth := max(
-		m.contentWidth()-assistantBodyStyle.GetHorizontalFrameSize(),
-		1,
-	)
 	parts := make([]string, 0, 3)
-	if strings.TrimSpace(entry.thinking) != "" {
-		thinkingWidth := max(
-			bodyWidth-thinkingStyle.GetHorizontalFrameSize(),
-			1,
-		)
-		parts = append(parts, assistantBodyStyle.Render(
-			thinkingStyle.Width(thinkingWidth).Render(entry.thinking),
-		))
+	if thinking := entry.presentation.thinkingView(entry.thinking, m.contentWidth(), !entry.complete); thinking != "" {
+		parts = append(parts, thinking)
 	}
-	if strings.TrimSpace(entry.answer) != "" {
-		parts = append(parts, assistantBodyStyle.Render(
-			renderMarkdown(entry.answer, m.contentWidth()),
-		))
+	if answer := entry.presentation.textView(entry.answer, m.contentWidth()); answer != "" {
+		parts = append(parts, answer)
 	}
 	if entry.err != "" {
 		parts = append(parts, errorStyle.Render("✕ "+entry.err))

@@ -47,18 +47,18 @@ const (
 )
 
 type transcriptEntry struct {
-	kind       entryKind
-	text       string
-	thinking   string
-	rendered   string
-	complete   bool
-	processID  int
-	conclusion bool
-	toolID     string
-	toolName   string
-	toolDetail string
-	toolDone   bool
-	toolError  bool
+	kind         entryKind
+	text         string
+	thinking     string
+	presentation *assistantPresentation
+	complete     bool
+	processID    int
+	conclusion   bool
+	toolID       string
+	toolName     string
+	toolDetail   string
+	toolDone     bool
+	toolError    bool
 }
 
 type processGroup struct {
@@ -298,13 +298,9 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case tea.WindowSizeMsg:
 		m.selection.clear()
-		previousContentWidth := m.contentWidth()
 		m.width = message.Width
 		m.height = message.Height
 		m.resizeLayout()
-		if m.contentWidth() != previousContentWidth {
-			m.renderCompletedMarkdown()
-		}
 		m.refreshViewport(false)
 		return m, nil
 	case tea.KeyPressMsg:

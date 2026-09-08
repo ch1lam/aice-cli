@@ -233,8 +233,9 @@ func (m *model) applyAgentEvent(event DisplayEvent) (bool, tea.Cmd) {
 	switch event.Kind {
 	case DisplayEventAssistantStart:
 		m.entries = append(m.entries, transcriptEntry{
-			kind:      entryAssistant,
-			processID: m.ensureActiveProcess(),
+			kind:         entryAssistant,
+			presentation: &assistantPresentation{},
+			processID:    m.ensureActiveProcess(),
 		})
 		m.assistantEntry = len(m.entries) - 1
 		m.status = "Thinking..."
@@ -298,15 +299,18 @@ func (m *model) applyAssistantDelta(event DisplayEvent) bool {
 		return false
 	}
 	entry := &m.entries[m.assistantEntry]
+	if entry.presentation == nil {
+		entry.presentation = &assistantPresentation{}
+	}
 	switch event.Delta.Kind {
 	case DisplayDeltaText:
-		entry.text += event.Delta.Delta
+		entry.text = entry.presentation.appendText(entry.text, event.Delta.Delta)
 		if strings.TrimSpace(entry.text) != "" {
 			m.markConclusion()
 		}
 		m.status = "Responding..."
 	case DisplayDeltaThinking:
-		entry.thinking += event.Delta.Delta
+		entry.thinking = entry.presentation.appendThinking(entry.thinking, event.Delta.Delta)
 		m.status = "Thinking..."
 	case DisplayDeltaToolCall:
 		return m.revokeConclusion()
@@ -319,8 +323,9 @@ func (m *model) applyAssistantDelta(event DisplayEvent) bool {
 func (m *model) completeAssistant(display AssistantDisplay) tea.Cmd {
 	if m.assistantEntry < 0 || m.assistantEntry >= len(m.entries) {
 		m.entries = append(m.entries, transcriptEntry{
-			kind:      entryAssistant,
-			processID: m.ensureActiveProcess(),
+			kind:         entryAssistant,
+			presentation: &assistantPresentation{},
+			processID:    m.ensureActiveProcess(),
 		})
 		m.assistantEntry = len(m.entries) - 1
 	}
@@ -328,7 +333,7 @@ func (m *model) completeAssistant(display AssistantDisplay) tea.Cmd {
 	entry.text = display.Text
 	entry.thinking = display.Thinking
 	entry.complete = true
-	entry.rendered = renderMarkdown(entry.text, m.contentWidth())
+	entry.presentation = &assistantPresentation{}
 	if display.Concludes {
 		m.markConclusion()
 	} else {

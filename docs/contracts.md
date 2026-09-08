@@ -243,7 +243,13 @@ the final JSON event from being delivered.
 - Session history, model context, and terminal viewport remain separate.
   The TUI coalesces streaming deltas for up to 16 ms or 64 events before
   rendering; lifecycle updates flush the batch immediately. Main and side
-  views use the same batching rule.
+  views use the same batching rule. Only the update loop owns assistant
+  accumulation buffers and per-section caches, keyed by source and width.
+  Collapsed process contents are not rendered. During streaming, thinking
+  renders only a UTF-8-safe tail of at most 4 KiB plus an omission notice;
+  full content remains in the presentation snapshot and becomes available
+  on completion. These display limits never truncate Session or model context.
+  Unchanged viewport content is not reparsed on animation ticks.
 - Terminal cell updates remain owned by Bubble Tea and its Ultraviolet
   renderer. Changed lines containing wide characters are repainted from the
   line boundary so partial erases cannot split CJK glyphs during streaming.

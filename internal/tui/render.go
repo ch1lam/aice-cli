@@ -37,22 +37,15 @@ func (m *model) resizeLayout() {
 	m.viewport.SetHeight(max(viewportHeight, minimumViewport))
 }
 
-func (m *model) renderCompletedMarkdown() {
-	for index := range m.entries {
-		entry := &m.entries[index]
-		if entry.kind == entryAssistant && entry.complete {
-			entry.rendered = renderMarkdown(entry.text, m.contentWidth())
-		}
-	}
-}
-
 func (m *model) refreshViewport(forceBottom bool) {
 	wasAtBottom := m.viewport.AtBottom()
 	content := m.transcriptView()
 	if content != m.viewport.GetContent() && !m.selection.active {
 		m.selection.clear()
 	}
-	m.viewport.SetContent(content)
+	if content != m.viewport.GetContent() {
+		m.viewport.SetContent(content)
+	}
 	if forceBottom || wasAtBottom {
 		m.viewport.GotoBottom()
 	}
@@ -526,19 +519,25 @@ func (m model) processGroupView(start, end int) (string, string) {
 
 	parts := make([]transcriptViewPart, 0, end-start)
 	conclusion := ""
+	hasProcessContent := false
 	for index := start; index < end; index++ {
 		entry := m.entries[index]
 		activeAssistant := m.running &&
 			index == m.assistantEntry &&
 			!entry.complete
 		if entry.kind == entryAssistant && entry.conclusion {
-			if reasoning := m.assistantProcessEntryView(
-				entry,
-				false,
-				true,
-				false,
-			); reasoning != "" {
-				parts = append(parts, transcriptViewPart{content: reasoning})
+			if collapsed && strings.TrimSpace(entry.thinking) != "" {
+				hasProcessContent = true
+			}
+			if !collapsed {
+				if reasoning := m.assistantProcessEntryView(
+					entry,
+					false,
+					true,
+					false,
+				); reasoning != "" {
+					parts = append(parts, transcriptViewPart{content: reasoning})
+				}
 			}
 			conclusion = m.assistantProcessEntryView(
 				entry,
@@ -549,7 +548,15 @@ func (m model) processGroupView(start, end int) (string, string) {
 			continue
 		}
 
-		content := m.entryView(entry, activeAssistant)
+		if collapsed {
+			if entry.kind == entryTool || activeAssistant ||
+				strings.TrimSpace(entry.thinking) != "" ||
+				strings.TrimSpace(entry.text) != "" {
+				hasProcessContent = true
+			}
+			continue
+		}
+		var content string
 		if entry.kind == entryAssistant {
 			content = m.assistantProcessEntryView(
 				entry,
@@ -557,6 +564,8 @@ func (m model) processGroupView(start, end int) (string, string) {
 				true,
 				true,
 			)
+		} else {
+			content = m.entryView(entry, activeAssistant)
 		}
 		if entry.kind == entryAssistant &&
 			entry.complete &&
@@ -572,7 +581,7 @@ func (m model) processGroupView(start, end int) (string, string) {
 		}
 	}
 
-	if len(parts) == 0 {
+	if !hasProcessContent && len(parts) == 0 {
 		if conclusion == "" {
 			return "", ""
 		}
@@ -777,33 +786,18 @@ func (m model) assistantEntryContentView(
 ) string {
 	width := m.contentWidth()
 	parts := make([]string, 0, 2)
-	bodyWidth := max(width-assistantBodyStyle.GetHorizontalFrameSize(), 1)
-	if includeThinking && strings.TrimSpace(entry.thinking) != "" {
-		thinkingWidth := max(
-			bodyWidth-thinkingStyle.GetHorizontalFrameSize(),
-			1,
-		)
-		thinking := assistantBodyStyle.Render(
-			thinkingStyle.Width(thinkingWidth).Render(
-				entry.thinking,
-			),
-		)
-		parts = append(parts, thinking)
+	if includeThinking {
+		if thinking := entry.presentation.thinkingView(entry.thinking, width, !entry.complete); thinking != "" {
+			parts = append(parts, thinking)
+		}
 	}
 	if includeText {
-		body := ""
-		if entry.rendered != "" {
-			body = entry.rendered
-		} else if entry.text != "" {
-			body = renderMarkdown(entry.text, width)
-		}
-		if body == "" {
-			if activeAssistant {
-				body = m.activityIndicator()
-			}
+		body := entry.presentation.textView(entry.text, width)
+		if body == "" && activeAssistant {
+			body = assistantBodyStyle.Render(m.activityIndicator())
 		}
 		if body != "" {
-			parts = append(parts, assistantBodyStyle.Render(body))
+			parts = append(parts, body)
 		}
 	}
 	if len(parts) == 0 {
