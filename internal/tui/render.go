@@ -168,9 +168,6 @@ func (m model) composerParts(contentWidth int) []string {
 			parts = append(parts, noticeStyle.Width(contentWidth).Render(m.inputNotice))
 		}
 	}
-	if m.clearQuitPending {
-		parts = append(parts, noticeStyle.Width(contentWidth).Render("Press Ctrl+C again to exit; any other key continues"))
-	}
 	parts = append(parts, m.highlightPasteTokens(m.input.View()))
 	return parts
 }

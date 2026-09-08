@@ -2351,8 +2351,8 @@ func TestModelControlCClearsThenQuits(t *testing.T) {
 				if len(cleared.pendingDeliveries) != 1 || len(cleared.entries) != 1 || len(cleared.promptHistory) != 1 {
 					t.Fatal("clear changed queued input or history")
 				}
-				if !strings.Contains(ansi.Strip(cleared.composerView(80)), "Press Ctrl+C again to exit") {
-					t.Fatal("clear did not render the exit hint")
+				if strings.Contains(ansi.Strip(cleared.composerView(80)), "Press Ctrl+C again to exit") {
+					t.Fatal("clear added an unwanted exit hint")
 				}
 				_, command, handled = cleared.handleKey(ctrlC)
 				if !handled || command == nil {
@@ -2413,6 +2413,41 @@ func TestModelRunningFooterShowsEditingHints(t *testing.T) {
 	for _, hint := range []string{"ctrl+C clear", "esc cancel"} {
 		if !strings.Contains(footer, hint) {
 			t.Fatalf("footer missing %q: %s", hint, footer)
+		}
+	}
+}
+
+func TestModelComposerCursorMatchesRenderedInputAfterClear(t *testing.T) {
+	for _, width := range []int{40, 80, 120} {
+		for _, chrome := range []string{"plain", "notice", "queue"} {
+			t.Run(fmt.Sprintf("%d/%s", width, chrome), func(t *testing.T) {
+				current := newModel(make(chan runRequest), make(chan struct{}))
+				current = updateModel(t, current, tea.WindowSizeMsg{Width: width, Height: 30})
+				current.input.SetValue("first\nsecond\nthird")
+				current.input.CursorEnd()
+				current = updateModel(t, current, tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
+				if chrome == "notice" {
+					current.inputNotice = "A notice that wraps across multiple rows in a narrow terminal"
+				} else if chrome == "queue" {
+					current.pendingDeliveries = []pendingDelivery{{text: "queued prompt", mode: deliveryQueue}}
+				}
+				current.resizeLayout()
+				current.refreshViewport(false)
+				view := current.View()
+				if view.Cursor == nil {
+					t.Fatal("cleared editor has no cursor")
+				}
+				for y, line := range strings.Split(ansi.Strip(view.Content), "\n") {
+					if x := strings.Index(line, defaultPlaceholder); x >= 0 {
+						wantX := lipgloss.Width(line[:x])
+						if view.Cursor.Position.X != wantX || view.Cursor.Position.Y != y {
+							t.Fatalf("cursor = %v; rendered input starts at (%d, %d)", view.Cursor.Position, wantX, y)
+						}
+						return
+					}
+				}
+				t.Fatal("rendered editor placeholder not found")
+			})
 		}
 	}
 }

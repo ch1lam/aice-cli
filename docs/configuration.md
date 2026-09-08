@@ -717,8 +717,8 @@ The composer remains active while an Agent run is working:
 | `Ctrl+C` | Clear the editor; press again consecutively to exit AICE |
 
 In the main and side composers, the first `Ctrl+C` clears all unsent text,
-long-paste placeholders, and image attachments, then shows an exit hint. This
-first press never cancels generation or exits, even when the editor is already
+long-paste placeholders, and image attachments without adding a notice row.
+This first press never cancels generation or exits, even when the editor is already
 empty. A consecutive second `Ctrl+C` on the empty editor exits; another key or
 text paste resets the sequence. Clearing a draft does not remove queued inputs
 or conversation history. Exiting uses normal shutdown to cancel and wait for

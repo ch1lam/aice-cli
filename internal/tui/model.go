@@ -535,7 +535,8 @@ func (m model) positionComposerCursor(position *tea.Position, width int) {
 	// The input field is the last part; earlier parts sit above it.
 	top := 0
 	for index := 0; index < len(parts)-1; index++ {
-		top += lipgloss.Height(parts[index]) + 1
+		// Height already counts the row terminated by the join separator.
+		top += lipgloss.Height(parts[index])
 	}
 	position.X += style.GetMarginLeft() +
 		style.GetPaddingLeft() +
