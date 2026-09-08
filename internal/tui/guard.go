@@ -158,6 +158,7 @@ func (m *model) sendGuardReply(optionID, feedback string) {
 	m.guardFeedbackText = ""
 	m.input.Focus()
 	m.resizeLayout()
+	m.refreshViewport(true)
 	if req == nil {
 		return
 	}

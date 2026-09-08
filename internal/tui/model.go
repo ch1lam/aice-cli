@@ -470,6 +470,9 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) View() tea.View {
+	if m.guardPending != nil {
+		return m.terminalView(m.guardView(max(m.width, 1)))
+	}
 	width := max(m.width, minimumWidth)
 	viewportView := m.viewport.View()
 	viewportOffset := m.viewport.YOffset()
@@ -491,11 +494,11 @@ func (m model) View() tea.View {
 		m.footerView(width),
 	)
 
-	if m.guardPending != nil {
-		content = m.guardView(max(m.width, 1))
-	} else {
-		content = m.overlayCopyNotice(content, width)
-	}
+	content = m.overlayCopyNotice(content, width)
+	return m.terminalView(content)
+}
+
+func (m model) terminalView(content string) tea.View {
 	view := tea.NewView(content)
 	view.BackgroundColor = inkBlackColor
 	view.ForegroundColor = primaryTextColor
@@ -510,7 +513,7 @@ func (m model) View() tea.View {
 		// drag the input method away from the input field. Guard confirmation
 		// replaces the composer, so its caret must not keep leaking through.
 		if cursor := m.input.Cursor(); cursor != nil {
-			m.positionComposerCursor(&cursor.Position, width)
+			m.positionComposerCursor(&cursor.Position, max(m.width, minimumWidth))
 			view.Cursor = cursor
 		}
 	}

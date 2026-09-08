@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/ch1lam/aice-cli/internal/interaction"
 )
 
 func BenchmarkThinkingRefresh(b *testing.B) {
@@ -29,4 +31,33 @@ func BenchmarkThinkingRefresh(b *testing.B) {
 			})
 		}
 	}
+}
+
+func BenchmarkGuardWithLongTranscript(b *testing.B) {
+	m := newModel(nil, nil)
+	m.width, m.height, m.running = 190, 40, true
+	m.resizeLayout()
+	id := m.beginProcess()
+	for range 50 {
+		m.entries = append(m.entries, transcriptEntry{
+			kind: entryAssistant, processID: id, complete: true,
+			thinking:     strings.Repeat("Considering the implementation and verification. ", 100),
+			presentation: &assistantPresentation{},
+		})
+	}
+	m.refreshViewport(true)
+	m.guardPending = &interaction.GuardRequest{Path: "/outside", Options: guardTestOptions()}
+	m.resizeLayout()
+	b.Run("view", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			m.View()
+		}
+	})
+	b.Run("refresh", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			m.refreshViewport(false)
+		}
+	})
 }

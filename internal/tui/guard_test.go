@@ -381,3 +381,43 @@ func assertNoGuardReply(t *testing.T, replies <-chan interaction.GuardReply) {
 	default:
 	}
 }
+
+func TestGuardDefersHiddenTranscriptRendering(t *testing.T) {
+	current := newModel(nil, nil)
+	current = updateModel(t, current, tea.WindowSizeMsg{Width: 80, Height: 24})
+	current.running = true
+	current.applyAgentEvent(DisplayEvent{Kind: DisplayEventAssistantStart})
+	current.applyAgentEvent(DisplayEvent{Kind: DisplayEventAssistantEnd, Assistant: AssistantDisplay{Thinking: "earlier reasoning"}})
+	presentation := current.entries[0].presentation
+	reply := make(chan interaction.GuardReply, 1)
+	request := interaction.GuardRequest{Path: "/outside", Options: guardTestOptions(), Reply: reply}
+	current = updateModel(t, current, guardRequestMsg{req: &request})
+	current = updateModel(t, current, tea.WindowSizeMsg{Width: 60, Height: 20})
+	current = updateModel(t, current, runBatchMsg{updates: []runUpdate{{event: DisplayEvent{
+		Kind: DisplayEventAssistantEnd, Assistant: AssistantDisplay{Thinking: "latest reasoning"},
+	}}}})
+	current.refreshViewport(false)
+	view := guardViewText(current)
+	if !strings.Contains(view, "Allow access outside") || strings.Contains(view, "reasoning") {
+		t.Fatalf("permission prompt does not own the screen: %s", view)
+	}
+	if presentation.thinkingCache.rendered != "" || current.entries[0].presentation.thinkingCache.rendered != "" {
+		t.Fatal("permission prompt rendered hidden transcript content")
+	}
+	current = updateModel(t, current, tea.KeyPressMsg{Code: 'n', Text: "n"})
+	updated, command := current.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	current = updated.(model)
+	if command != nil {
+		t.Fatal("deny unexpectedly returned a command with no guard request channel")
+	}
+	assertGuardReply(t, reply, interaction.GuardReply{OptionID: "deny"})
+	if !current.running || !current.input.Focused() || current.guardPending != nil {
+		t.Fatal("deny did not restore the active conversation")
+	}
+	if !strings.Contains(ansi.Strip(current.viewport.GetContent()), "latest reasoning") {
+		t.Fatal("closing the prompt did not render updates received while hidden")
+	}
+	if current.viewport.Width() != 60 {
+		t.Fatal("closing the prompt lost the terminal resize")
+	}
+}

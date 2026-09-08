@@ -216,7 +216,10 @@ the final JSON event from being delivered.
   numbered controls fixed below. PgUp/PgDn, Home/End, and the mouse wheel
   scroll review content; ↑/↓ markers indicate hidden content. Arrow keys
   select options independently. Resizing recalculates the review height
-  after reserving controls; closing the prompt restores the conversation.
+  after reserving controls. While a prompt is visible, transcript state keeps
+  accepting updates but its rendering is deferred; terminal frames contain
+  only the prompt. Closing it renders the latest conversation at the current
+  terminal size and restores the composer.
 - The TUI keeps only presentation copies. Pending steers are transcript
   previews until the Agent accepts them; follow-ups remain composer chrome
   until the Agent starts their interaction. Agent input events, not TUI queue
