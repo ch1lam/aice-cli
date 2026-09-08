@@ -97,3 +97,24 @@ func TestCodexCredentialLockRereadsAndCancels(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestCodexCredentialLockWaitPreservesOwnerAndCause(t *testing.T) {
+	t.Parallel()
+	paths := Paths{GlobalAuth: filepath.Join(t.TempDir(), "auth.json")}
+	lock := CodexAuthPath(paths) + ".lock"
+	if err := os.Mkdir(lock, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 250*time.Millisecond)
+	defer cancel()
+	_, err := UpdateCodexCredentials(ctx, paths, func(CodexCredentials) (CodexCredentials, error) {
+		t.Error("update ran while another writer owned the lock")
+		return CodexCredentials{}, nil
+	})
+	if !errors.Is(err, context.DeadlineExceeded) || !errors.Is(err, os.ErrExist) {
+		t.Fatalf("lock wait = %v, want deadline and existing lock", err)
+	}
+	if _, err := os.Stat(lock); err != nil {
+		t.Fatalf("waiting writer altered the owner's lock: %v", err)
+	}
+}

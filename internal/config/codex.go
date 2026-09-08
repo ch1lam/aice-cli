@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -64,17 +65,22 @@ func UpdateCodexCredentials(ctx context.Context, paths Paths,
 		return credential, fmt.Errorf("config: create Codex auth directory: %w", err)
 	}
 	lock := path + ".lock"
+	var lastLockErr error
 	for {
 		if err := ctx.Err(); err != nil {
-			return credential, fmt.Errorf("config: wait for %s (if no AICE process is running, remove this stale lock): %w", lock, err)
+			return credential, fmt.Errorf("config: wait for %s (check permissions; remove a stale lock only when no AICE process is running): %w", lock, errors.Join(err, lastLockErr))
 		}
 		err := os.Mkdir(lock, 0o700)
 		if err == nil {
 			break
 		}
-		if !errors.Is(err, os.ErrExist) {
+		// Windows can deny creation while the previous lock directory is
+		// pending deletion. Retry within the same bounded, cancellable wait;
+		// only a successful Mkdir grants ownership of the lock.
+		if !errors.Is(err, os.ErrExist) && !(runtime.GOOS == "windows" && errors.Is(err, os.ErrPermission)) {
 			return credential, fmt.Errorf("config: lock Codex credentials: %w", err)
 		}
+		lastLockErr = err
 		timer := time.NewTimer(50 * time.Millisecond)
 		select {
 		case <-ctx.Done():
