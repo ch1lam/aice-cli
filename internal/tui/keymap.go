@@ -13,6 +13,7 @@ type keyMap struct {
 	commands  key.Binding
 	history   key.Binding
 	help      key.Binding
+	clear     key.Binding
 	interrupt key.Binding
 	quit      key.Binding
 }
@@ -56,9 +57,13 @@ func newKeyMap() keyMap {
 			key.WithKeys("?"),
 			key.WithHelp("?", "shortcuts"),
 		),
-		interrupt: key.NewBinding(
+		clear: key.NewBinding(
 			key.WithKeys("ctrl+c"),
-			key.WithHelp("ctrl+C", "quit"),
+			key.WithHelp("ctrl+C", "clear"),
+		),
+		interrupt: key.NewBinding(
+			key.WithKeys("esc"),
+			key.WithHelp("esc", "cancel"),
 		),
 		quit: key.NewBinding(
 			key.WithKeys("ctrl+d"),
@@ -74,9 +79,7 @@ func (k keyMap) forState(running, acceptsDelivery bool) keyMap {
 	k.queue.SetEnabled(running && acceptsDelivery)
 	k.history.SetEnabled(!running)
 	k.quit.SetEnabled(!running)
-	if running {
-		k.interrupt.SetHelp("ctrl+C", "cancel")
-	}
+	k.interrupt.SetEnabled(running)
 	if running && acceptsDelivery {
 		k.send.SetHelp("enter", "steer")
 	}
@@ -86,6 +89,7 @@ func (k keyMap) forState(running, acceptsDelivery bool) keyMap {
 func (k keyMap) ShortHelp() []key.Binding {
 	return []key.Binding{
 		k.help,
+		k.clear,
 		k.interrupt,
 	}
 }
@@ -94,6 +98,6 @@ func (k keyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.send, k.queue, k.newline, k.paste},
 		{k.commands, k.history, k.scroll, k.process, k.editor, k.help},
-		{k.interrupt, k.quit},
+		{k.clear, k.interrupt, k.quit},
 	}
 }

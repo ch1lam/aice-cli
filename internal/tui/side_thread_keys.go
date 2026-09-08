@@ -317,12 +317,17 @@ func (m model) handleSideKey(message tea.KeyPressMsg) (model, tea.Cmd, bool) {
 	}
 
 	switch {
-	case message.Code == tea.KeyEscape:
+	case message.Code == tea.KeyEscape && message.Mod == tea.ModAlt:
 		return m.closeSideThread()
 	case key.Matches(message, m.keys.interrupt):
-		if thread == nil || !thread.isRunning {
-			m.side.notice = "No side answer is running"
+		if m.side.activeID == 0 && m.side.newPending != nil {
+			m.side.newPending.cancelPending = true
+			m.side.notice = "Cancelling side answer..."
+			m.refreshViewport(false)
 			return m, nil, true
+		}
+		if thread == nil || !thread.isRunning {
+			return m.closeSideThread()
 		}
 		if thread.cancel != nil {
 			thread.cancel()

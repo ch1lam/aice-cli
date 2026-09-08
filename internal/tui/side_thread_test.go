@@ -805,7 +805,7 @@ func TestModelHiddenCompletionSetsUnreadAndReopenClears(t *testing.T) {
 	updated, _, info, ch := createSideThread(t, current, "question")
 
 	// Hide the panel while the answer is still running.
-	updated, _, handled := updated.handleKey(tea.KeyPressMsg{Code: tea.KeyEscape})
+	updated, _, handled := updated.handleKey(tea.KeyPressMsg{Code: tea.KeyEscape, Mod: tea.ModAlt})
 	if !handled || updated.side.isVisible {
 		t.Fatal("escape did not hide the panel")
 	}
@@ -840,7 +840,7 @@ func TestModelHiddenCompletionSetsUnreadAndReopenClears(t *testing.T) {
 	}
 }
 
-func TestModelEscAndCtrlCOnlyAffectVisibleThread(t *testing.T) {
+func TestModelEscapeCancelsOnlyVisibleThread(t *testing.T) {
 	t.Parallel()
 
 	manager := newFakeSideManager()
@@ -864,7 +864,7 @@ func TestModelEscAndCtrlCOnlyAffectVisibleThread(t *testing.T) {
 	})
 
 	// Hide the first thread and start a second, visible one.
-	updated, _, handled := updated.handleKey(tea.KeyPressMsg{Code: tea.KeyEscape})
+	updated, _, handled := updated.handleKey(tea.KeyPressMsg{Code: tea.KeyEscape, Mod: tea.ModAlt})
 	if !handled {
 		t.Fatal("escape was not handled")
 	}
@@ -887,26 +887,25 @@ func TestModelEscAndCtrlCOnlyAffectVisibleThread(t *testing.T) {
 		t.Fatalf("visible thread = %d, want %d", updated.side.activeID, infoB.ID)
 	}
 
-	// Ctrl+C cancels only the visible thread.
+	// Escape cancels only the visible thread.
 	updated, _, handled = updated.handleKey(tea.KeyPressMsg{
-		Code: 'c',
-		Mod:  tea.ModCtrl,
+		Code: tea.KeyEscape,
 	})
 	if !handled {
-		t.Fatal("ctrl+c was not handled")
+		t.Fatal("escape was not handled")
 	}
 	if !cancelledB || cancelledA {
 		t.Fatalf("cancellation: visible=%v hidden=%v", cancelledB, cancelledA)
 	}
 	if !updated.side.thread(infoA.ID).isRunning ||
 		!updated.side.thread(infoB.ID).isRunning {
-		t.Fatal("ctrl+c stopped a running thread")
+		t.Fatal("escape stopped a running thread")
 	}
 
-	// Escape hides without adding another cancellation.
+	// Alt+Escape hides without adding another cancellation.
 	cancelledA = false
 	cancelledB = false
-	updated, _, handled = updated.handleKey(tea.KeyPressMsg{Code: tea.KeyEscape})
+	updated, _, handled = updated.handleKey(tea.KeyPressMsg{Code: tea.KeyEscape, Mod: tea.ModAlt})
 	if !handled || updated.side.isVisible {
 		t.Fatal("escape did not hide the panel")
 	}
@@ -1180,5 +1179,50 @@ func TestSideMenuFitsNarrowTerminal(t *testing.T) {
 	}
 	if view := updated.View().Content; strings.TrimSpace(view) == "" {
 		t.Fatal("narrow menu view is empty")
+	}
+}
+
+func TestModelSideControlCClearsWithoutCancelling(t *testing.T) {
+	manager := newFakeSideManager()
+	current := sideTestModel(t, manager)
+	current, _, info, _ := createSideThread(t, current, "question", runUpdate{done: true})
+	current.input.SetValue("unsent follow-up")
+	current.side.activeThread().draft = "unsent follow-up"
+	current.running = true
+	mainCancelled, sideCancelled := false, false
+	current.cancelRun = func() { mainCancelled = true }
+	current.side.activeThread().cancel = func() { sideCancelled = true }
+	current, cmd, _ := current.handleKey(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
+	if cmd != nil || mainCancelled || sideCancelled || !current.side.isVisible ||
+		current.input.Value() != "" || current.side.thread(info.ID).draft != "" {
+		t.Fatal("Ctrl+C must clear the side draft without cancelling either run or closing the panel")
+	}
+	_, cmd, _ = current.handleKey(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
+	if cmd == nil {
+		t.Fatal("second Ctrl+C did not exit from the side panel")
+	}
+	if _, ok := cmd().(tea.QuitMsg); !ok {
+		t.Fatal("second Ctrl+C did not request normal shutdown")
+	}
+}
+
+func TestModelEscapeBeforeSideRunStartsDefersCancellation(t *testing.T) {
+	manager := newFakeSideManager()
+	current := sideTestModel(t, manager)
+	current, message := submitSide(t, current, "/btw question")
+	current, _, _ = current.handleKey(tea.KeyPressMsg{Code: tea.KeyEscape})
+	if !current.side.isVisible || !current.side.newPending.cancelPending {
+		t.Fatal("Escape did not defer cancellation for a starting side answer")
+	}
+	started := message.(sideRunStartedMsg)
+	current = updateModel(t, current, started)
+	info := manager.fakeCreate("question")
+	cancelled := false
+	current = updateModel(t, current, sideRunBatchMsg{
+		source:  started.updates,
+		updates: []runUpdate{{sideThread: &info, cancel: func() { cancelled = true }}},
+	})
+	if !cancelled || current.side.notice != "Cancelling side answer..." {
+		t.Fatal("deferred Escape did not cancel the started side answer")
 	}
 }

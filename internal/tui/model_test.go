@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,6 +11,8 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
+
+	"github.com/ch1lam/aice-cli/internal/llm"
 )
 
 func TestModelSubmitsPromptAndConsumesAgentEvents(t *testing.T) {
@@ -499,7 +502,7 @@ func TestModelViewportAcceptsOnlyPublishedKeyboardScrollKeys(t *testing.T) {
 	}
 }
 
-func TestModelControlCCancelsOnlyActiveRun(t *testing.T) {
+func TestModelEscapeCancelsOnlyActiveRun(t *testing.T) {
 	t.Parallel()
 
 	cancelled := false
@@ -508,32 +511,30 @@ func TestModelControlCCancelsOnlyActiveRun(t *testing.T) {
 	current.cancelRun = func() { cancelled = true }
 
 	updated, command, handled := current.handleKey(tea.KeyPressMsg(tea.Key{
-		Code: 'c',
-		Mod:  tea.ModCtrl,
+		Code: tea.KeyEscape,
 	}))
 	if !handled || command != nil {
-		t.Fatal("ctrl+c should cancel an active run without quitting")
+		t.Fatal("esc should cancel an active run without quitting")
 	}
 	if !cancelled {
-		t.Fatal("ctrl+c did not invoke active run cancellation")
+		t.Fatal("esc did not invoke active run cancellation")
 	}
 	if updated.status != "Cancelling current response..." {
 		t.Errorf("status = %q, want cancellation status", updated.status)
 	}
 }
 
-func TestModelControlCBeforeRunStartsDefersCancellation(t *testing.T) {
+func TestModelEscapeBeforeRunStartsDefersCancellation(t *testing.T) {
 	t.Parallel()
 
 	current := newModel(make(chan runRequest), make(chan struct{}))
 	current.running = true
 
 	updated, command, handled := current.handleKey(tea.KeyPressMsg(tea.Key{
-		Code: 'c',
-		Mod:  tea.ModCtrl,
+		Code: tea.KeyEscape,
 	}))
 	if !handled || command != nil {
-		t.Fatal("ctrl+c should defer cancellation while a run is starting")
+		t.Fatal("esc should defer cancellation while a run is starting")
 	}
 	if !updated.cancelRequested {
 		t.Fatal("model did not remember cancellation requested before run start")
@@ -757,7 +758,7 @@ func TestModelKeepsReadyInHeaderAndUsesBubblesHelpBelowComposer(t *testing.T) {
 		t.Fatalf("footer still has a divider below the composer: %q", footer)
 	}
 	footerText := ansi.Strip(footer)
-	for _, want := range []string{"? shortcuts", "ctrl+C quit"} {
+	for _, want := range []string{"? shortcuts", "ctrl+C clear"} {
 		if !strings.Contains(footerText, want) {
 			t.Errorf("collapsed footer = %q, want %q", footer, want)
 		}
@@ -921,7 +922,7 @@ func TestModelStatusLineShowsSessionUsageAndEstimatedCost(t *testing.T) {
 	wideText := ansi.Strip(wide)
 	for _, want := range []string{
 		"? shortcuts",
-		"ctrl+C quit",
+		"ctrl+C clear",
 		"↑1.2k",
 		"↓456",
 		"R100",
@@ -949,7 +950,7 @@ func TestModelStatusLineShowsSessionUsageAndEstimatedCost(t *testing.T) {
 	}
 	for _, unwanted := range []string{
 		"? shortcuts",
-		"ctrl+C quit",
+		"ctrl+C clear",
 		"R100",
 		"W20",
 	} {
@@ -1005,7 +1006,7 @@ func TestModelStatusLineShowsZeroUsageBeforeConversation(t *testing.T) {
 	standardText := ansi.Strip(standard)
 	for _, want := range []string{
 		"? shortcuts",
-		"ctrl+C quit",
+		"ctrl+C clear",
 		"↑0",
 		"↓0",
 		"$0.000",
@@ -1031,7 +1032,7 @@ func TestModelStatusLineShowsZeroUsageBeforeConversation(t *testing.T) {
 	}
 	for _, unwanted := range []string{
 		"? shortcuts",
-		"ctrl+C quit",
+		"ctrl+C clear",
 		"R0",
 		"W0",
 	} {
@@ -2317,4 +2318,101 @@ func newScrollableModel(t *testing.T) model {
 	current.viewport.SetContent(strings.Repeat("line\n", 100))
 	current.viewport.SetYOffset(20)
 	return current
+}
+
+func TestModelControlCClearsThenQuits(t *testing.T) {
+	for _, running := range []bool{false, true} {
+		for _, draft := range []string{"", " ", "first\n第二行"} {
+			t.Run(fmt.Sprintf("running=%v/draft=%q", running, draft), func(t *testing.T) {
+				current := newModel(make(chan runRequest), make(chan struct{}))
+				current.running = running
+				current.acceptsDelivery = running
+				cancelled := false
+				current.cancelRun = func() { cancelled = true }
+				current.input.SetValue(draft)
+				current.promptHistory = []string{"previous"}
+				current.historyIndex = 0
+				current.historyDraft = "saved draft"
+				current.pendingDeliveries = []pendingDelivery{{text: "queued", mode: deliveryQueue}}
+				current.entries = []transcriptEntry{{kind: entryUser, text: "submitted"}}
+				if draft != "" {
+					current.insertPastePlaceholder(strings.Repeat("pasted\n", 10))
+					current.insertImagePlaceholder(llm.ImageContent{MIMEType: "image/png", Data: []byte{1}})
+				}
+				ctrlC := tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl}
+				cleared, command, handled := current.handleKey(ctrlC)
+				if !handled || command != nil || cancelled || cleared.cancelRequested {
+					t.Fatal("first Ctrl+C must only clear, without cancelling or quitting")
+				}
+				if cleared.input.Value() != "" || len(cleared.pastes) != 0 ||
+					cleared.historyIndex != -1 || cleared.historyDraft != "" {
+					t.Fatal("draft, attachments, or history navigation survived clear")
+				}
+				if len(cleared.pendingDeliveries) != 1 || len(cleared.entries) != 1 || len(cleared.promptHistory) != 1 {
+					t.Fatal("clear changed queued input or history")
+				}
+				if !strings.Contains(ansi.Strip(cleared.composerView(80)), "Press Ctrl+C again to exit") {
+					t.Fatal("clear did not render the exit hint")
+				}
+				_, command, handled = cleared.handleKey(ctrlC)
+				if !handled || command == nil {
+					t.Fatal("second Ctrl+C did not request exit")
+				}
+				if _, ok := command().(tea.QuitMsg); !ok {
+					t.Fatal("second Ctrl+C did not use normal TUI shutdown")
+				}
+			})
+		}
+	}
+}
+
+func TestModelControlCSequenceResetsOnInput(t *testing.T) {
+	for _, message := range []tea.Msg{
+		tea.KeyPressMsg{Code: 'x', Text: "x"},
+		tea.KeyPressMsg{Code: tea.KeyLeft},
+		tea.PasteMsg{Content: "new paste"},
+	} {
+		t.Run(fmt.Sprintf("%T/%v", message, message), func(t *testing.T) {
+			current := newModel(make(chan runRequest), make(chan struct{}))
+			ctrlC := tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl}
+			current, _, _ = current.handleKey(ctrlC)
+			current = updateModel(t, current, message)
+			if current.clearQuitPending || strings.Contains(ansi.Strip(current.composerView(80)), "again to exit") {
+				t.Fatal("continued input retained exit confirmation")
+			}
+			current, command, _ := current.handleKey(ctrlC)
+			if command != nil || current.input.Value() != "" {
+				t.Fatal("Ctrl+C after other input must clear, not quit")
+			}
+		})
+	}
+}
+
+func TestModelControlCDiscardsPendingClipboard(t *testing.T) {
+	current := newModel(make(chan runRequest), make(chan struct{}))
+	current.clipboard = func() tea.Msg { return clipboardResult{text: "late paste"} }
+	current, read, _ := current.handleKey(tea.KeyPressMsg{Code: 'v', Mod: tea.ModCtrl})
+	current, _, _ = current.handleKey(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
+	current = updateModel(t, current, read())
+	if current.input.Value() != "" || current.clipboardPending {
+		t.Fatal("clipboard result refilled the cleared editor")
+	}
+	current, read, _ = current.handleKey(tea.KeyPressMsg{Code: 'v', Mod: tea.ModCtrl})
+	current = updateModel(t, current, read())
+	if current.input.Value() != "late paste" || current.clearQuitPending {
+		t.Fatal("a fresh paste after clearing did not work")
+	}
+}
+
+func TestModelRunningFooterShowsEditingHints(t *testing.T) {
+	current := newModel(make(chan runRequest), make(chan struct{}))
+	current.running = true
+	current.acceptsDelivery = true
+	current.currentModel = DisplayModel{ID: "deepseek-v4-flash"}
+	footer := ansi.Strip(current.footerView(120))
+	for _, hint := range []string{"ctrl+C clear", "esc cancel"} {
+		if !strings.Contains(footer, hint) {
+			t.Fatalf("footer missing %q: %s", hint, footer)
+		}
+	}
 }

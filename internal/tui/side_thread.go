@@ -56,9 +56,10 @@ type sideThreadState struct {
 // pendingSideRun tracks a brand-new thread whose first question is in flight:
 // the thread only exists in the registry once its first run starts.
 type pendingSideRun struct {
-	question    string
-	ch          <-chan runUpdate
-	fromVisible bool
+	question      string
+	ch            <-chan runUpdate
+	fromVisible   bool
+	cancelPending bool
 }
 
 // sideMenuState is the local /btw thread chooser. Options are a defensive
@@ -338,7 +339,7 @@ func (m model) applyNewSideRunBatch(batch sideRunBatchMsg) (tea.Model, tea.Cmd) 
 				cancel:         update.cancel,
 			}
 			// Only claim the panel when the user is still on the new composer:
-			// an Esc or navigation to another thread keeps this thread
+			// an Alt+Esc or navigation to another thread keeps this thread
 			// answering in the background.
 			claimPanel := pending.fromVisible && m.side.isVisible &&
 				m.side.activeID == 0 &&
@@ -348,6 +349,16 @@ func (m model) applyNewSideRunBatch(batch sideRunBatchMsg) (tea.Model, tea.Cmd) 
 			if claimPanel {
 				m.side.activeID = info.ID
 				m.side.notice = "Starting side answer..."
+			}
+			if pending.cancelPending {
+				if thread.cancel != nil {
+					thread.cancel()
+				} else {
+					thread.cancelPending = true
+				}
+				if claimPanel {
+					m.side.notice = "Cancelling side answer..."
+				}
 			}
 			created = true
 			continue

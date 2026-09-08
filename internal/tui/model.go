@@ -146,6 +146,8 @@ type model struct {
 	pastes           []pasteAttachment
 	clipboard        tea.Cmd
 	clipboardPending bool
+	clipboardDiscard bool
+	clearQuitPending bool
 	clipboardInSide  bool
 	clipboardSideID  uint64
 	inputNotice      string
@@ -265,6 +267,10 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	switch message := message.(type) {
 	case clipboardResult:
 		m.clipboardPending = false
+		if m.clipboardDiscard {
+			m.clipboardDiscard = false
+			return m, nil
+		}
 		if m.side.isVisible != m.clipboardInSide || m.side.activeID != m.clipboardSideID {
 			return m, nil
 		}
@@ -303,8 +309,10 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case tea.KeyPressMsg:
 		m.selection.clear()
-		if updated, command, handled := m.handleKey(message); handled {
-			return updated, command
+		updated, command, handled := m.handleKey(message)
+		m = updated
+		if handled {
+			return m, command
 		}
 		if m.composerInputEnabled() {
 			command := m.updateInput(message)
@@ -542,6 +550,12 @@ func (m model) positionComposerCursor(position *tea.Position, width int) {
 }
 
 func (m model) handleKey(message tea.KeyPressMsg) (model, tea.Cmd, bool) {
+	if m.clearQuitPending && (!key.Matches(message, m.keys.clear) ||
+		m.guardPending != nil || m.authInput != nil || m.secretInput != nil ||
+		m.commandMenu != nil || m.side.menu != nil || m.side.confirm != nil) {
+		m.clearQuitPending = false
+		m.resizeLayout()
+	}
 	if m.guardPending != nil {
 		updated, cmd, handled := m.handleGuardKey(message)
 		if handled {
@@ -574,6 +588,9 @@ func (m model) handleKey(message tea.KeyPressMsg) (model, tea.Cmd, bool) {
 			m.clipboardSideID = m.side.activeID
 			return m, m.clipboard, true
 		}
+	}
+	if m.secretInput == nil && m.commandMenu == nil && key.Matches(message, m.keys.clear) {
+		return m.clearInputOrQuit()
 	}
 	if m.side.isVisible {
 		if updated, command, handled := m.handleSideKey(message); handled {
@@ -675,7 +692,7 @@ func (m model) handleKey(message tea.KeyPressMsg) (model, tea.Cmd, bool) {
 			m.status = "Cancelling current response..."
 			return m, nil, true
 		}
-		return m, tea.Quit, true
+		return m, nil, true
 	case key.Matches(message, m.keys.quit):
 		if !m.running && strings.TrimSpace(m.expandComposerText()) == "" && len(m.composerImages()) == 0 {
 			return m, tea.Quit, true
@@ -738,6 +755,32 @@ func (m model) handleKey(message tea.KeyPressMsg) (model, tea.Cmd, bool) {
 	return m, nil, false
 }
 
+// clearInputOrQuit consumes the first press even when the editor is empty.
+// Only a consecutive press on an empty editor exits; shutdown belongs to Run.
+func (m model) clearInputOrQuit() (model, tea.Cmd, bool) {
+	if m.clearQuitPending && m.input.Value() == "" && len(m.pastes) == 0 {
+		return m, tea.Quit, true
+	}
+	m.input.Reset()
+	m.pastes = nil
+	m.inputNotice = ""
+	m.historyIndex = -1
+	m.historyDraft = ""
+	m.commandSelection = 0
+	m.commandDismissed = false
+	// A clipboard helper already in flight must not refill the cleared draft.
+	m.clipboardDiscard = m.clipboardPending
+	m.clearQuitPending = true
+	if m.side.isVisible {
+		if thread := m.side.activeThread(); thread != nil {
+			thread.draft = ""
+		} else {
+			m.side.newDraft = ""
+		}
+	}
+	return m.settleCommand(false, nil)
+}
+
 func (m model) composerInputEnabled() bool {
 	if m.authInput != nil {
 		return m.authPrompt != nil && m.authPrompt.AllowInput && !m.cancelRequested
@@ -761,6 +804,7 @@ func (m model) composerInputEnabled() bool {
 func cancelKeyPressed(message tea.KeyPressMsg, keys keyMap) bool {
 	return message.Code == tea.KeyEscape ||
 		key.Matches(message, keys.interrupt) ||
+		key.Matches(message, keys.clear) ||
 		key.Matches(message, keys.quit)
 }
 
@@ -776,6 +820,9 @@ func (m model) helpToggleRequested(message tea.KeyPressMsg) bool {
 }
 
 func (m *model) updateInput(message tea.Msg) tea.Cmd {
+	if _, pasted := message.(tea.PasteMsg); pasted {
+		m.clearQuitPending = false
+	}
 	if m.authInput != nil {
 		if paste, ok := message.(tea.PasteMsg); ok {
 			value := strings.TrimSpace(paste.Content)

@@ -20,7 +20,7 @@ func TestKeyMapForState(t *testing.T) {
 			wantSendEnabled:   true,
 			wantSendHelp:      "send",
 			wantQuitEnabled:   true,
-			wantInterruptHelp: "quit",
+			wantInterruptHelp: "cancel",
 		},
 		{
 			name:              "running",
@@ -66,7 +66,7 @@ func TestKeyMapForState(t *testing.T) {
 	}
 }
 
-func TestKeyMapShortHelpUsesOnlyQuestionMarkAndInterrupt(t *testing.T) {
+func TestKeyMapShortHelpIncludesClearAndInterrupt(t *testing.T) {
 	t.Parallel()
 
 	keys := newKeyMap()
@@ -80,11 +80,12 @@ func TestKeyMapShortHelpUsesOnlyQuestionMarkAndInterrupt(t *testing.T) {
 	}
 
 	shortHelp := keys.ShortHelp()
-	if len(shortHelp) != 2 ||
+	if len(shortHelp) != 3 ||
 		shortHelp[0].Help().Key != "?" ||
-		shortHelp[1].Help().Key != "ctrl+C" {
+		shortHelp[1].Help().Key != "ctrl+C" ||
+		shortHelp[2].Help().Key != "esc" {
 		t.Errorf(
-			"short help = %#v, want only question mark and control-c",
+			"short help = %#v, want question mark, control-c and escape",
 			shortHelp,
 		)
 	}

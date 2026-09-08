@@ -139,10 +139,17 @@ func (m model) footerView(width int) string {
 
 func (m model) footerKeys() keyMap {
 	keys := m.keys.forState(m.running, m.acceptsDelivery)
+	if m.clearQuitPending {
+		keys.clear.SetHelp("ctrl+C", "quit")
+	}
 	if m.help.ShowAll {
 		keys.help.SetHelp("?", "close")
+		if !m.clearQuitPending {
+			keys.clear.SetHelp("ctrl+C", "clear, then quit")
+		}
 		// Full help documents contextual shortcuts even while they are inactive.
 		keys.queue.SetEnabled(true)
+		keys.interrupt.SetEnabled(true)
 	}
 	return keys
 }
@@ -160,6 +167,9 @@ func (m model) composerParts(contentWidth int) []string {
 		if m.inputNotice != "" {
 			parts = append(parts, noticeStyle.Width(contentWidth).Render(m.inputNotice))
 		}
+	}
+	if m.clearQuitPending {
+		parts = append(parts, noticeStyle.Width(contentWidth).Render("Press Ctrl+C again to exit; any other key continues"))
 	}
 	parts = append(parts, m.highlightPasteTokens(m.input.View()))
 	return parts

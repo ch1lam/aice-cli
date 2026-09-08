@@ -128,7 +128,7 @@ func (m model) sideStatusLine(width int) string {
 		left = mutedStyle.Render("↑/↓ select · enter open · esc cancel")
 	case m.side.activeID == 0:
 		if m.side.newPending != nil {
-			left = mutedStyle.Render("esc close")
+			left = mutedStyle.Render("esc cancel · alt+esc close")
 		} else {
 			left = mutedStyle.Render("enter ask · esc close")
 		}
@@ -138,7 +138,7 @@ func (m model) sideStatusLine(width int) string {
 		case thread == nil:
 			left = mutedStyle.Render("esc close")
 		case thread.isRunning:
-			left = mutedStyle.Render("esc close · ctrl+C cancel · ctrl+D end thread")
+			left = mutedStyle.Render("esc cancel · alt+esc close · ctrl+D end thread")
 		case thread.readOnly():
 			left = mutedStyle.Render("read-only · esc close · ctrl+D end thread")
 		default:
@@ -147,9 +147,12 @@ func (m model) sideStatusLine(width int) string {
 			)
 		}
 	}
+	if m.side.menu == nil && m.side.confirm == nil {
+		left += mutedStyle.Render(" · ctrl+C clear/quit")
+	}
 	if m.help.ShowAll {
 		left = mutedStyle.Render(
-			"enter ask  shift+enter newline  pgup/pgdn scroll  esc close  ctrl+C cancel  ctrl+D end thread",
+			"enter ask  shift+enter newline  pgup/pgdn scroll  esc cancel/close  alt+esc close  ctrl+C clear/quit  ctrl+D end thread",
 		)
 	}
 	if line, ok := alignStatusLine(left, m.modelStatus(), width); ok {
