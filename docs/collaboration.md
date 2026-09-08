@@ -29,6 +29,10 @@ go test -tags=integration ./internal/tui -run '^TestMacClipboardNativeFormats$'
 ```
 
 The ordinary clipboard tests use synthetic input and bounded helper processes.
+Re-executed test helpers use a generous watchdog to accommodate race runtime
+startup and exit delays on CI; this does not change the TUI clipboard deadline.
+Cancellation is tested explicitly, and watchdog expiry must not count as an
+expected helper failure or output-limit rejection.
 Linux and Windows clipboard behavior still requires verification on a desktop
 of that platform; cross-compilation alone does not verify native helpers.
 

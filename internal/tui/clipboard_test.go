@@ -50,12 +50,17 @@ func TestClipboardOutputBoundsAndCancellation(t *testing.T) {
 	}
 	for _, mode := range []string{"text", "large", "fail", "wait"} {
 		t.Run(mode, func(t *testing.T) {
-			ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+			// The helper re-executes the test binary, including race runtime
+			// startup and exit delays. This is a test watchdog, not the UI deadline.
+			ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 			defer cancel()
 			if mode == "wait" {
 				cancel()
 			}
 			data, err := clipboardOutput(ctx, executable, "-test.run=^TestClipboardHelperProcess$", "--", "clipboard-test", mode)
+			if mode != "wait" && ctx.Err() != nil {
+				t.Fatalf("helper did not finish within the test watchdog: %v", err)
+			}
 			if mode == "text" {
 				if err != nil || string(data) != "hello" {
 					t.Fatalf("output = %q, %v", data, err)
