@@ -561,8 +561,8 @@ or modifying Codex CLI or pi credentials. It refreshes within one minute of
 expiry and saves rotated tokens before making a model request. Concurrent
 AICE processes serialize refresh/login/logout with `codex-auth.json.lock`.
 Lock waits are cancellable and bounded to one minute. On Windows, access-denied
-errors while creating the lock are retried within that bound because a deleted
-directory can remain pending until its last open handle closes. If waiting
+errors while creating the lock are retried within that bound to tolerate
+transient filesystem contention. If waiting
 fails, the error preserves both the cancellation/deadline and the last lock
 error so persistent permission failures remain visible. After a crash, remove
 that stale lock directory only when no AICE process is running. Failed refresh

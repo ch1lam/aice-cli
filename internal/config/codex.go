@@ -65,28 +65,8 @@ func UpdateCodexCredentials(ctx context.Context, paths Paths,
 		return credential, fmt.Errorf("config: create Codex auth directory: %w", err)
 	}
 	lock := path + ".lock"
-	var lastLockErr error
-	for {
-		if err := ctx.Err(); err != nil {
-			return credential, fmt.Errorf("config: wait for %s (check permissions; remove a stale lock only when no AICE process is running): %w", lock, errors.Join(err, lastLockErr))
-		}
-		err := os.Mkdir(lock, 0o700)
-		if err == nil {
-			break
-		}
-		// Windows can deny creation while the previous lock directory is
-		// pending deletion. Retry within the same bounded, cancellable wait;
-		// only a successful Mkdir grants ownership of the lock.
-		if !errors.Is(err, os.ErrExist) && !(runtime.GOOS == "windows" && errors.Is(err, os.ErrPermission)) {
-			return credential, fmt.Errorf("config: lock Codex credentials: %w", err)
-		}
-		lastLockErr = err
-		timer := time.NewTimer(50 * time.Millisecond)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-		case <-timer.C:
-		}
+	if err := acquireCodexCredentialLock(ctx, lock, os.Mkdir, runtime.GOOS == "windows"); err != nil {
+		return credential, err
 	}
 	defer func() { returnErr = errors.Join(returnErr, os.Remove(lock)) }()
 	previous, err := LoadCodexCredentials(paths)
@@ -129,4 +109,35 @@ func UpdateCodexCredentials(ctx context.Context, paths Paths,
 		return CodexCredentials{}, err
 	}
 	return credential, nil
+}
+
+// acquireCodexCredentialLock keeps filesystem attempts injectable so retry
+// behavior can be tested without relying on OS-specific deletion timing.
+// The caller supplies the wait deadline and releases only an acquired lock.
+func acquireCodexCredentialLock(ctx context.Context, lock string,
+	mkdir func(string, os.FileMode) error, retryPermission bool,
+) error {
+	var lastLockErr error
+	for {
+		if err := ctx.Err(); err != nil {
+			return fmt.Errorf("config: wait for %s (check permissions; remove a stale lock only when no AICE process is running): %w", lock, errors.Join(err, lastLockErr))
+		}
+		err := mkdir(lock, 0o700)
+		if err == nil {
+			return nil
+		}
+		// Windows can deny creation while the previous lock directory is
+		// pending deletion. Retry within the same bounded, cancellable wait;
+		// only a successful Mkdir grants ownership of the lock.
+		if !errors.Is(err, os.ErrExist) && !(retryPermission && errors.Is(err, os.ErrPermission)) {
+			return fmt.Errorf("config: lock Codex credentials: %w", err)
+		}
+		lastLockErr = err
+		timer := time.NewTimer(50 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+		case <-timer.C:
+		}
+	}
 }
