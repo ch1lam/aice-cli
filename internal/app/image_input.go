@@ -18,7 +18,18 @@ func validateImageModel(model llm.Model, images []llm.ImageContent) error {
 }
 
 func newImageInput(input interaction.RunInput, model llm.Model) (llm.UserMessage, error) {
-	return newImageInputContext(context.Background(), input, model)
+	if err := validateImageModel(model, input.Images); err != nil {
+		return llm.UserMessage{}, err
+	}
+	parts := make([]llm.ContentPart, 0, 1+len(input.Images))
+	if input.Prompt != "" || len(input.Images) == 0 {
+		parts = append(parts, llm.NewTextContent(input.Prompt).Part())
+	}
+	for _, image := range input.Images {
+		copy := image.Clone()
+		parts = append(parts, llm.ContentPart{Type: llm.ContentTypeImage, Image: &copy})
+	}
+	return llm.NewUserMessage(parts...)
 }
 
 func newImageInputContext(ctx context.Context, input interaction.RunInput, model llm.Model) (llm.UserMessage, error) {

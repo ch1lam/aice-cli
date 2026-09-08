@@ -338,3 +338,17 @@ func TestProvidersSatisfyRegistrySurface(t *testing.T) {
 		}
 	}
 }
+
+func TestVisionCapabilitiesAcceptImageToolResults(t *testing.T) {
+	t.Parallel()
+	image := llm.ContentPart{Type: llm.ContentTypeImage, Image: &llm.ImageContent{Data: []byte("view"), MIMEType: "image/png"}}
+	caps := provider.MessageCapabilities{ID: "test", Label: "Vision", SupportsImage: true, NestedToolResultTextOnly: true}
+	for _, message := range []llm.Message{
+		llm.ToolResultMessage{Role: llm.RoleToolResult, ToolCallID: "read1", Content: []llm.ContentPart{image}},
+		llm.UserMessage{Role: llm.RoleUser, Content: []llm.ContentPart{{Type: llm.ContentTypeToolResult, ToolResult: &llm.ToolResult{CallID: "read1", Content: []llm.ContentPart{image}}}}},
+	} {
+		if err := provider.ValidateMessages([]llm.Message{message}, caps); err != nil {
+			t.Fatal(err)
+		}
+	}
+}

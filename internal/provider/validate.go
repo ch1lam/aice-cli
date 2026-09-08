@@ -31,7 +31,7 @@ func ValidateMessages(
 			content = value.Content
 		case llm.ToolResultMessage:
 			for partIndex, part := range value.Content {
-				if part.Type != llm.ContentTypeText {
+				if part.Type != llm.ContentTypeText && !(part.Type == llm.ContentTypeImage && capabilities.SupportsImage) {
 					return fmt.Errorf(
 						"%s: message %d content %d: non-text tool results "+
 							"are not supported by %s models",
@@ -87,7 +87,7 @@ func validateContent(part llm.ContentPart, capabilities MessageCapabilities) err
 			return nil
 		}
 		for _, nested := range part.ToolResult.Content {
-			if nested.Type != llm.ContentTypeText {
+			if nested.Type != llm.ContentTypeText && !(nested.Type == llm.ContentTypeImage && capabilities.SupportsImage) {
 				return errors.New(
 					"non-text tool results are not supported by " + capabilities.Label + " models",
 				)

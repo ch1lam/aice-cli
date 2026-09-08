@@ -280,6 +280,9 @@ func (m model) commandMenuView(width int) string {
 	if m.commandMenu != nil {
 		return m.slashCommandSelectionMenuView(width)
 	}
+	if m.fileCompletionVisible() {
+		return m.fileCompletionView(width)
+	}
 	return m.slashCommandMenuView(width)
 }
 

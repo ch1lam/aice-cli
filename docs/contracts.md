@@ -208,8 +208,9 @@ the final JSON event from being delivered.
   or promotes remaining steers and returns the oldest input as the next
   follow-up. Accepted input must not disappear in a run-end race.
 - Interactive Ask confirmation is frontend-neutral: `internal/app` sends
-  `interaction.GuardRequest` (`Options`, `Highlight`) and the frontend
-  replies once with `GuardReply` (`OptionID`, `Feedback`). Product option
+  `interaction.GuardRequest` (`Options`, `Highlight`, `Done`) and the frontend
+  replies once with `GuardReply` (`OptionID`, `Feedback`). `Done` removes expired
+  prompts, including attachment preparation cancelled by a finished run. Product option
   generation and grant scope are in [Tool execution and
   Sessions](execution-sessions.md#tool-execution-boundary).
 - Pending TUI permission prompts own the screen. A Bubbles viewport wraps the
@@ -302,3 +303,10 @@ by the frontend before expanding literal paste placeholders. The application
 replaces them with bounded text/image snapshots. The mailbox refuses unresolved
 paths and owns only accepted content; it never reads files at dequeue time.
 Concurrent file preparation and tool execution share a synchronized Guard.
+
+`interaction.FileCompleter` exposes name-only search from app to TUI. The TUI
+owns cursor/token state and stale-result rejection; app owns traversal budgets,
+path resolution, ranking, and permission filtering. Search callbacks carry the
+controller context and never block Update. Provider capability checks accept
+image tool results for vision models through the same `SupportsImage` capability
+used for user images; protocol adapters project the complete tool-call pairing.

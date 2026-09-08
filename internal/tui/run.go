@@ -120,6 +120,9 @@ func Run(ctx context.Context, runner Runner, options Options) error {
 		slashCommands = append(slashCommands, btwSlashCommand())
 	}
 	initialModel := newModel(requests, controllerDone, slashCommands...)
+	if completer, ok := runner.(interaction.FileCompleter); ok {
+		initialModel.completeFiles = fileCompletionCommand(controllerCtx, completer)
+	}
 	initialModel.prepareDelivery = deliveryCommand(controllerCtx)
 	initialModel.clipboard = pasteClipboard(controllerCtx)
 	initialModel.sideRequests = sideRequests

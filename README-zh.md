@@ -48,7 +48,7 @@ aice --workspace .
 选择支持图片的模型后，用 `Ctrl+V` 或 `Alt+V` 粘贴截图，图片会成为输入框内的占位符，
 与长文本一样用 Backspace/Delete 删除；可配文字或单独发送。平台要求和大小限制见
 [剪贴板图片输入](./docs/configuration.md#clipboard-images)。
-用 `@src/main.go` 或 `@"images/screen shot.png"` 主动引入文件，`--print` 同样支持。
+用 `@src/main.go` 或 `@"images/screen shot.png"` 主动引入文件；输入时可模糊查找并用 Tab 补全路径，`--print` 同样支持文件引用。
 `read` 可以读取图片，并从会话找回原图查看细节；详见[文件引用](./docs/configuration.md#file-references)。
 
 使用 ChatGPT/Codex 订阅时，在 `/login` 选择 `Sign in with an account` →

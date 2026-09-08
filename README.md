@@ -49,7 +49,8 @@ chooser, or a blank composer when no side threads exist.
 
 Paste a screenshot with `Ctrl+V` or `Alt+V` when using a vision model. Images appear as inline
 placeholders; delete them with Backspace/Delete, like long text pastes.
-Attach files with `@src/main.go` or `@"images/screen shot.png"`; `read` can also
+Attach files with `@src/main.go` or `@"images/screen shot.png"` (Tab completes paths
+and fuzzy filename matches); `read` can also
 inspect images and recover saved originals. The same references work in `--print`.
 See [file references](./docs/configuration.md#file-references) and [clipboard input](./docs/configuration.md#clipboard-images) for platform support and limits.
 

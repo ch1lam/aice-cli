@@ -345,3 +345,13 @@ func (m model) guardOptionsView(width int) string {
 	}
 	return strings.Join(rows, "\n")
 }
+
+// A cancelled preflight must not leave an orphaned approval overlay behind.
+type guardExpiredMsg struct{ reply chan interaction.GuardReply }
+
+func waitForGuardExpiry(req *interaction.GuardRequest) tea.Cmd {
+	if req.Done == nil {
+		return nil
+	}
+	return func() tea.Msg { <-req.Done; return guardExpiredMsg{reply: req.Reply} }
+}

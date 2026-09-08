@@ -327,6 +327,7 @@ type GuardRequest struct {
 	Path      string
 	Highlight string
 	Options   []GuardOption
+	Done      <-chan struct{} // closed when the request is answered or cancelled
 	Reply     chan GuardReply
 }
 
@@ -334,4 +335,15 @@ type GuardRequest struct {
 // interactive TUI to consume.
 type GuardRequester interface {
 	GuardRequests() <-chan GuardRequest
+}
+
+// FileCompletion is an editable path suggestion; it carries no file contents.
+type FileCompletion struct {
+	Path      string
+	Directory bool
+}
+
+// FileCompleter supplies bounded, permission-aware name search to the frontend.
+type FileCompleter interface {
+	CompleteFiles(context.Context, string) ([]FileCompletion, error)
 }

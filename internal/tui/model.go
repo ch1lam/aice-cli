@@ -97,6 +97,8 @@ type commandMenuState struct {
 }
 
 type model struct {
+	completeFiles      func(uint64, string) (tea.Cmd, context.CancelFunc)
+	fileCompletion     fileCompletionState
 	requests           chan<- runRequest
 	controllerDone     <-chan struct{}
 	sideRequests       chan<- runRequest
@@ -278,8 +280,19 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			m.copyNotice = false
 		}
 		return m, nil
+	case guardExpiredMsg:
+		if m.guardPending != nil && m.guardPending.Reply == message.reply {
+			m.sendGuardReply("", "")
+			return m, m.nextGuardWait()
+		}
+		return m, nil
 	case guardRequestMsg:
 		if message.req != nil {
+			select {
+			case <-message.req.Done:
+				return m, m.nextGuardWait()
+			default:
+			}
 			m.guardPending = message.req
 			m.selection.clear()
 			m.guardViewport = viewport.New()
@@ -291,7 +304,7 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			m.input.Blur()
 			m.resizeLayout()
 			m.refreshViewport(true)
-			return m, nil
+			return m, waitForGuardExpiry(message.req)
 		}
 		return m, nil
 	case tea.WindowSizeMsg:
@@ -343,6 +356,14 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	case editorFinishedMsg:
 		m = m.applyEditorResult(message)
 		m.refreshViewport(false)
+		return m, nil
+	case fileCompletionResult:
+		if message.generation == m.fileCompletion.generation && message.err == nil {
+			m.fileCompletion.items = message.items
+			m.fileCompletion.selection = 0
+			m.resizeLayout()
+			m.refreshViewport(false)
+		}
 		return m, nil
 	case deliveryResult:
 		return m.applyDeliveryResult(message)
@@ -651,6 +672,9 @@ func (m model) handleKey(message tea.KeyPressMsg) (model, tea.Cmd, bool) {
 		}
 	}
 
+	if updated, command, handled := m.handleFileCompletionKey(message); handled {
+		return updated, command, true
+	}
 	if !m.running && m.slashCommandMenuVisible() {
 		switch message.Code {
 		case tea.KeyUp:
@@ -882,6 +906,7 @@ func (m *model) updateInput(message tea.Msg) tea.Cmd {
 		m.historyIndex = -1
 		m.historyDraft = ""
 	}
+	completion := m.requestFileCompletion()
 	m.resizeLayout()
-	return command
+	return tea.Batch(command, completion)
 }

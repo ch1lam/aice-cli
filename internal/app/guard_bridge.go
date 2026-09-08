@@ -171,6 +171,8 @@ func (s *interactiveSession) handleGuardAsk(ctx context.Context, call llm.ToolCa
 		toolName = call.Name
 	}
 	options := guardAskOptions(s.guard, toolName, result)
+	promptCtx, closePrompt := context.WithCancel(ctx)
+	defer closePrompt()
 	reply := make(chan interaction.GuardReply, 1)
 	req := interaction.GuardRequest{
 		ID:        reqID,
@@ -182,6 +184,7 @@ func (s *interactiveSession) handleGuardAsk(ctx context.Context, call llm.ToolCa
 		Highlight: result.Pattern,
 		Options:   options,
 		Reply:     reply,
+		Done:      promptCtx.Done(),
 	}
 	select {
 	case <-ctx.Done():

@@ -825,6 +825,15 @@ for paths with spaces. Relative paths resolve from the workspace; `~` and
 absolute paths are supported. Opaque long-paste placeholders are not scanned.
 An unfinished quoted reference remains text until completed.
 
+While typing `@`, the TUI suggests paths and fuzzy filename matches. Use Up/Down
+to select, Tab to complete, and Escape to close; Enter sends the draft. Selecting
+a directory continues completion inside it. Spaces and quotes are escaped for
+submission. Search is debounced, cancellable, limited to two seconds and 20,000
+entries, and shows at most eight permitted candidates. It skips `.git`, `.aice`,
+`node_modules`, and `vendor`; it does not interpret `.gitignore`. An exact
+reference can still name files outside the search results. Completion never
+opens an approval prompt; explicit submission uses the normal Guard.
+
 At most eight file references are allowed per submission. Each file uses the
 same reader as the `read` tool: text contributes up to 2000 lines / 50 KiB with
 a continuation notice; PNG/JPEG contributes image content; directories contribute
