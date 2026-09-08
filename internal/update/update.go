@@ -40,14 +40,19 @@ const (
 	// startupCheckTimeout bounds the asynchronous welcome-screen check so a
 	// stalled connection cannot outlive the status it is updating.
 	startupCheckTimeout = 3 * time.Second
+	releaseCheckTimeout = 15 * time.Second
+	downloadTimeout     = 3 * time.Minute
 )
 
 // Options controls one update operation. Zero values use process defaults,
 // which keeps update testable with a fake updater and fake environment hooks.
 type Options struct {
-	Goos       string                 // default runtime.GOOS
-	Goarch     string                 // default runtime.GOARCH
-	Client     *selfupdate.Updater    // default GitHub updater with checksum validation
+	// Progress runs synchronously during network work; errors stop the operation.
+	Progress   func(Progress) error
+	Goos       string            // default runtime.GOOS
+	Goarch     string            // default runtime.GOARCH
+	Source     selfupdate.Source // default GitHub release source
+	client     *selfupdate.Updater
 	Repository selfupdate.Repository  // default ParseSlug(repositorySlug)
 	Current    string                 // installed version reported by the binary
 	Getenv     func(string) string    // default os.Getenv
@@ -56,11 +61,45 @@ type Options struct {
 	StatePath  string                 // startup-check state file, default ~/.aice/update-state
 }
 
+// Progress reports release discovery (empty Latest), archive download bytes,
+// and verification (Verifying). Total <= 0 means the asset size is unknown.
+type Progress struct {
+	Current    string
+	Latest     string
+	Downloaded int64
+	Total      int64
+	Verifying  bool
+}
+
+func reportProgress(opts Options, latest string) error {
+	if opts.Progress == nil {
+		return nil
+	}
+	return opts.Progress(Progress{Current: strings.TrimSpace(opts.Current), Latest: latest})
+}
+
+func detectLatest(ctx context.Context, opts Options) (*selfupdate.Release, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, false, err
+	}
+	if err := reportProgress(opts, ""); err != nil {
+		return nil, false, err
+	}
+	ctx, cancel := context.WithTimeout(ctx, releaseCheckTimeout)
+	defer cancel()
+	release, found, err := opts.client.DetectLatest(ctx, opts.Repository)
+	if errors.Is(err, context.DeadlineExceeded) {
+		return nil, false, fmt.Errorf("release check timed out; check your connection and retry `aice update`: %w", err)
+	}
+	return release, found, err
+}
+
 // CheckResult reports the newest release without installing it.
 type CheckResult struct {
-	Current   string
-	Latest    string
-	Available bool
+	Current    string
+	Latest     string
+	Available  bool
+	Comparable bool // current version can be compared with the release
 }
 
 // StartupStatus identifies the result shown by the interactive welcome screen.
@@ -97,7 +136,7 @@ type UpdateResult struct {
 // Check reports whether a newer release exists for the current platform.
 func Check(ctx context.Context, opts Options) (CheckResult, error) {
 	opts = normalize(opts)
-	release, found, err := opts.Client.DetectLatest(ctx, opts.Repository)
+	release, found, err := detectLatest(ctx, opts)
 	if err != nil {
 		return CheckResult{}, fmt.Errorf("update: detect latest release: %w", err)
 	}
@@ -106,9 +145,10 @@ func Check(ctx context.Context, opts Options) (CheckResult, error) {
 	}
 	current := strings.TrimSpace(opts.Current)
 	return CheckResult{
-		Current:   current,
-		Latest:    release.Version(),
-		Available: versioned(current) && newer(release, current),
+		Current:    current,
+		Latest:     release.Version(),
+		Available:  versioned(current) && newer(release, current),
+		Comparable: versioned(current),
 	}, nil
 }
 
@@ -117,6 +157,15 @@ func Check(ctx context.Context, opts Options) (CheckResult, error) {
 // an already-current install can still be replaced.
 func Update(ctx context.Context, opts Options, force bool) (UpdateResult, error) {
 	opts = normalize(opts)
+	if err := ctx.Err(); err != nil {
+		return UpdateResult{}, err
+	}
+	current := strings.TrimSpace(opts.Current)
+	if !force && !versioned(current) {
+		return UpdateResult{Current: current}, fmt.Errorf(
+			"update: cannot compare version %q; run `aice update --force` to install the latest release", current,
+		)
+	}
 	exe, err := opts.Executable()
 	if err != nil {
 		return UpdateResult{}, fmt.Errorf("update: locate executable: %w", err)
@@ -128,7 +177,7 @@ func Update(ctx context.Context, opts Options, force bool) (UpdateResult, error)
 		)
 	}
 
-	release, found, err := opts.Client.DetectLatest(ctx, opts.Repository)
+	release, found, err := detectLatest(ctx, opts)
 	if err != nil {
 		return UpdateResult{}, fmt.Errorf("update: detect latest release: %w", err)
 	}
@@ -136,20 +185,23 @@ func Update(ctx context.Context, opts Options, force bool) (UpdateResult, error)
 		return UpdateResult{}, errNoRelease(opts)
 	}
 
-	current := strings.TrimSpace(opts.Current)
 	result := UpdateResult{Current: current, Latest: release.Version()}
 	if !force {
-		if !versioned(current) {
-			return result, fmt.Errorf(
-				"update: cannot compare version %q; run `aice update --force` to install the latest release",
-				current,
-			)
-		}
 		if !newer(release, current) {
 			return result, nil
 		}
 	}
-	if err := opts.Client.UpdateTo(ctx, release, exe); err != nil {
+	if opts.Progress != nil {
+		if err := opts.Progress(Progress{Current: current, Latest: result.Latest, Total: int64(release.AssetByteSize)}); err != nil {
+			return result, err
+		}
+	}
+	downloadCtx, cancel := context.WithTimeout(ctx, downloadTimeout)
+	defer cancel()
+	if err := opts.client.UpdateTo(downloadCtx, release, exe); err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			return result, fmt.Errorf("update: download timed out; check your connection and retry `aice update`: %w", err)
+		}
 		if errors.Is(err, fs.ErrPermission) {
 			return UpdateResult{}, fmt.Errorf(
 				"update: cannot write %s; the install directory is not writable, so update aice through your package manager or reinstall it to a user directory: %w",
@@ -207,8 +259,8 @@ func normalize(opts Options) Options {
 	if opts.Goarch == "" {
 		opts.Goarch = runtime.GOARCH
 	}
-	if opts.Client == nil {
-		opts.Client = defaultClient()
+	if opts.client == nil {
+		opts.client = newClient(opts)
 	}
 	if opts.Repository == nil {
 		opts.Repository = selfupdate.ParseSlug(repositorySlug)
@@ -230,8 +282,15 @@ func normalize(opts Options) Options {
 	return opts
 }
 
-func defaultClient() *selfupdate.Updater {
+func newClient(opts Options) *selfupdate.Updater {
+	source := opts.Source
+	if source == nil {
+		source, _ = selfupdate.NewGitHubSource(selfupdate.GitHubConfig{})
+	}
 	updater, err := selfupdate.NewUpdater(selfupdate.Config{
+		Source:    progressSource{Source: source, current: strings.TrimSpace(opts.Current), report: opts.Progress},
+		OS:        opts.Goos,
+		Arch:      opts.Goarch,
 		Validator: &selfupdate.ChecksumValidator{UniqueFilename: checksumsFileName},
 	})
 	if err != nil {

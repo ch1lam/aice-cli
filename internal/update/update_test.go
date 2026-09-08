@@ -20,32 +20,23 @@ import (
 	"github.com/creativeprojects/go-selfupdate"
 )
 
-// testUpdater builds a go-selfupdate updater pointed at a local manifest
+// testSource builds a release source pointed at a local manifest
 // server, so tests exercise the real detect/verify/replace pipeline without
 // any network access.
-func testUpdater(t *testing.T, server *httptest.Server) *selfupdate.Updater {
+func testSource(t *testing.T, server *httptest.Server) selfupdate.Source {
 	t.Helper()
 	source, err := selfupdate.NewHttpSource(selfupdate.HttpConfig{BaseURL: server.URL})
 	if err != nil {
 		t.Fatalf("NewHttpSource() error = %v", err)
 	}
-	updater, err := selfupdate.NewUpdater(selfupdate.Config{
-		Source:    source,
-		OS:        "linux",
-		Arch:      "amd64",
-		Validator: &selfupdate.ChecksumValidator{UniqueFilename: checksumsFileName},
-	})
-	if err != nil {
-		t.Fatalf("NewUpdater() error = %v", err)
-	}
-	return updater
+	return source
 }
 
-func testOptions(updater *selfupdate.Updater) Options {
+func testOptions(source selfupdate.Source) Options {
 	return Options{
 		Goos:       "linux",
 		Goarch:     "amd64",
-		Client:     updater,
+		Source:     source,
 		Repository: selfupdate.ParseSlug(repositorySlug),
 	}
 }
@@ -87,11 +78,12 @@ releases:
     assets:
       - id: 1
         name: aice_linux_amd64.tar.gz
+        size: %d
         url: %s/assets/aice_linux_amd64.tar.gz
       - id: 2
         name: checksums.txt
         url: %s/assets/checksums.txt
-`, rel.tag, rel.tag, rel.prerelease, server.URL, server.URL)
+`, rel.tag, rel.tag, rel.prerelease, len(rel.assetData), server.URL, server.URL)
 		case "/assets/aice_linux_amd64.tar.gz":
 			_, _ = w.Write(rel.assetData)
 		case "/assets/checksums.txt":
@@ -106,7 +98,7 @@ releases:
 
 func TestCheckReportsLatest(t *testing.T) {
 	server := newReleaseServer(t, releaseFixture{}, nil)
-	opts := testOptions(testUpdater(t, server))
+	opts := testOptions(testSource(t, server))
 	opts.Current = "1.1.0"
 
 	result, err := Check(t.Context(), opts)
@@ -120,7 +112,7 @@ func TestCheckReportsLatest(t *testing.T) {
 
 func TestCheckSkipsCurrentVersion(t *testing.T) {
 	server := newReleaseServer(t, releaseFixture{}, nil)
-	opts := testOptions(testUpdater(t, server))
+	opts := testOptions(testSource(t, server))
 	opts.Current = "1.2.0"
 
 	result, err := Check(t.Context(), opts)
@@ -134,7 +126,7 @@ func TestCheckSkipsCurrentVersion(t *testing.T) {
 
 func TestCheckIgnoresDevelopmentBuild(t *testing.T) {
 	server := newReleaseServer(t, releaseFixture{}, nil)
-	opts := testOptions(testUpdater(t, server))
+	opts := testOptions(testSource(t, server))
 	opts.Current = "dev"
 
 	result, err := Check(t.Context(), opts)
@@ -151,7 +143,7 @@ func TestCheckIgnoresPrereleaseReleases(t *testing.T) {
 		tag:        "v1.3.0-beta.1",
 		prerelease: true,
 	}, nil)
-	opts := testOptions(testUpdater(t, server))
+	opts := testOptions(testSource(t, server))
 	opts.Current = "1.2.0"
 
 	_, err := Check(t.Context(), opts)
@@ -165,7 +157,7 @@ func TestCheckIgnoresPrereleaseReleases(t *testing.T) {
 // before any comparison runs.
 func TestCheckIgnoresMalformedVersion(t *testing.T) {
 	server := newReleaseServer(t, releaseFixture{}, nil)
-	opts := testOptions(testUpdater(t, server))
+	opts := testOptions(testSource(t, server))
 	opts.Current = "1.2.3-rc.01"
 
 	result, err := Check(t.Context(), opts)
@@ -180,7 +172,7 @@ func TestCheckIgnoresMalformedVersion(t *testing.T) {
 func TestUpdateReplacesExecutable(t *testing.T) {
 	server := newReleaseServer(t, releaseFixture{}, nil)
 	exe := writeExecutable(t, "old binary")
-	opts := testOptions(testUpdater(t, server))
+	opts := testOptions(testSource(t, server))
 	opts.Current = "1.1.0"
 	opts.Executable = func() (string, error) { return exe, nil }
 
@@ -219,7 +211,7 @@ func TestUpdateIgnoresExtraArchiveFiles(t *testing.T) {
 		}),
 	}, nil)
 	exe := writeExecutable(t, "old binary")
-	opts := testOptions(testUpdater(t, server))
+	opts := testOptions(testSource(t, server))
 	opts.Current = "1.1.0"
 	opts.Executable = func() (string, error) { return exe, nil }
 
@@ -238,7 +230,7 @@ func TestUpdateIgnoresExtraArchiveFiles(t *testing.T) {
 func TestUpdateSkipsWhenUpToDate(t *testing.T) {
 	server := newReleaseServer(t, releaseFixture{}, nil)
 	exe := writeExecutable(t, "old binary")
-	opts := testOptions(testUpdater(t, server))
+	opts := testOptions(testSource(t, server))
 	opts.Current = "1.2.0"
 	opts.Executable = func() (string, error) { return exe, nil }
 
@@ -258,7 +250,7 @@ func TestUpdateSkipsWhenUpToDate(t *testing.T) {
 func TestUpdateRequiresForceForUnknownVersion(t *testing.T) {
 	server := newReleaseServer(t, releaseFixture{}, nil)
 	exe := writeExecutable(t, "old binary")
-	opts := testOptions(testUpdater(t, server))
+	opts := testOptions(testSource(t, server))
 	opts.Current = "dev"
 	opts.Executable = func() (string, error) { return exe, nil }
 
@@ -278,7 +270,7 @@ func TestUpdateRequiresForceForUnknownVersion(t *testing.T) {
 func TestUpdateRejectsMalformedVersion(t *testing.T) {
 	server := newReleaseServer(t, releaseFixture{}, nil)
 	exe := writeExecutable(t, "old binary")
-	opts := testOptions(testUpdater(t, server))
+	opts := testOptions(testSource(t, server))
 	opts.Current = "1.2.3-rc.01"
 	opts.Executable = func() (string, error) { return exe, nil }
 
@@ -297,7 +289,7 @@ func TestUpdateRejectsChecksumMismatch(t *testing.T) {
 		checksum: strings.Repeat("0", 64),
 	}, nil)
 	exe := writeExecutable(t, "old binary")
-	opts := testOptions(testUpdater(t, server))
+	opts := testOptions(testSource(t, server))
 	opts.Current = "1.1.0"
 	opts.Executable = func() (string, error) { return exe, nil }
 
@@ -328,7 +320,7 @@ func TestUpdateRejectsPackageManagerInstall(t *testing.T) {
 func TestCheckStartupReportsUpdateAndCachesResult(t *testing.T) {
 	var hits int
 	server := newReleaseServer(t, releaseFixture{}, &hits)
-	opts := testOptions(testUpdater(t, server))
+	opts := testOptions(testSource(t, server))
 	opts.Current = "1.1.0"
 	opts.Getenv = func(string) string { return "" }
 	opts.StatePath = filepath.Join(t.TempDir(), "update-state")
@@ -368,7 +360,7 @@ func TestCheckStartupReportsUpdateAndCachesResult(t *testing.T) {
 func TestCheckStartupSkipsWhenDisabledByEnvironment(t *testing.T) {
 	var hits int
 	server := newReleaseServer(t, releaseFixture{}, &hits)
-	opts := testOptions(testUpdater(t, server))
+	opts := testOptions(testSource(t, server))
 	opts.Current = "1.1.0"
 	opts.Getenv = func(key string) string {
 		if key == noCheckEnv {
@@ -404,7 +396,7 @@ func TestCheckStartupUsesFreshCache(t *testing.T) {
 	); err != nil {
 		t.Fatalf("write state file: %v", err)
 	}
-	opts := testOptions(testUpdater(t, server))
+	opts := testOptions(testSource(t, server))
 	opts.Current = "1.2.0"
 	opts.Getenv = func(string) string { return "" }
 	opts.StatePath = statePath
@@ -468,7 +460,7 @@ func TestCheckStartupRefreshesStaleInvalidOrFutureCache(t *testing.T) {
 			); err != nil {
 				t.Fatalf("write state file: %v", err)
 			}
-			opts := testOptions(testUpdater(t, server))
+			opts := testOptions(testSource(t, server))
 			opts.Current = "1.2.0"
 			opts.Getenv = func(string) string { return "" }
 			opts.StatePath = statePath
@@ -495,7 +487,7 @@ func TestCheckStartupKeepsResultWhenCacheWriteFails(t *testing.T) {
 	if err := os.WriteFile(blockingFile, []byte("blocked"), 0o600); err != nil {
 		t.Fatalf("write blocking file: %v", err)
 	}
-	opts := testOptions(testUpdater(t, server))
+	opts := testOptions(testSource(t, server))
 	opts.Current = "1.1.0"
 	opts.Getenv = func(string) string { return "" }
 	opts.StatePath = filepath.Join(blockingFile, "update-state")
@@ -515,7 +507,7 @@ func TestCheckStartupKeepsResultWhenCacheWriteFails(t *testing.T) {
 func TestCheckStartupStopsWhenContextIsCanceled(t *testing.T) {
 	var hits int
 	server := newReleaseServer(t, releaseFixture{}, &hits)
-	opts := testOptions(testUpdater(t, server))
+	opts := testOptions(testSource(t, server))
 	opts.Current = "1.1.0"
 	opts.Getenv = func(string) string { return "" }
 	opts.StatePath = filepath.Join(t.TempDir(), "update-state")
@@ -540,7 +532,7 @@ func TestCheckStartupRefreshesLegacyCacheWithoutLatestVersion(t *testing.T) {
 	); err != nil {
 		t.Fatalf("write state file: %v", err)
 	}
-	opts := testOptions(testUpdater(t, server))
+	opts := testOptions(testSource(t, server))
 	opts.Current = "1.2.0"
 	opts.Getenv = func(string) string { return "" }
 	opts.StatePath = statePath
@@ -561,7 +553,7 @@ func TestCheckStartupRefreshesLegacyCacheWithoutLatestVersion(t *testing.T) {
 func TestCheckStartupSkipsDevelopmentBuildBeforeNetwork(t *testing.T) {
 	var hits int
 	server := newReleaseServer(t, releaseFixture{}, &hits)
-	opts := testOptions(testUpdater(t, server))
+	opts := testOptions(testSource(t, server))
 	opts.Current = "dev"
 	opts.Getenv = func(string) string { return "" }
 
@@ -613,4 +605,115 @@ func tarGzFiles(t *testing.T, files map[string]string) []byte {
 		t.Fatalf("close gzip: %v", err)
 	}
 	return buffer.Bytes()
+}
+
+func TestUpdateProgressAndOutputFailure(t *testing.T) {
+	for _, fail := range []bool{false, true} {
+		t.Run(fmt.Sprintf("outputFailure=%v", fail), func(t *testing.T) {
+			server := newReleaseServer(t, releaseFixture{}, nil)
+			exe := writeExecutable(t, "old binary")
+			opts := testOptions(testSource(t, server))
+			opts.Current = "1.1.0"
+			opts.Executable = func() (string, error) { return exe, nil }
+			var progress []Progress
+			outputErr := errors.New("output closed")
+			opts.Progress = func(p Progress) error {
+				progress = append(progress, p)
+				if fail && p.Downloaded > 0 {
+					return outputErr
+				}
+				return nil
+			}
+			result, err := Update(t.Context(), opts, false)
+			if fail && !errors.Is(err, outputErr) || !fail && err != nil {
+				t.Fatalf("Update() = %+v, %v", result, err)
+			}
+			if len(progress) < 2 || progress[0].Latest != "" || progress[1].Latest != "1.2.0" {
+				t.Fatalf("progress = %+v", progress)
+			}
+			var downloaded int64
+			for _, event := range progress {
+				if event.Verifying {
+					continue
+				}
+				if event.Downloaded < downloaded {
+					t.Fatalf("progress went backwards: %+v", progress)
+				}
+				downloaded = event.Downloaded
+				if event.Downloaded > 0 && event.Total <= 0 {
+					t.Fatalf("missing asset size: %+v", event)
+				}
+			}
+			if downloaded == 0 {
+				t.Fatal("no download bytes reported")
+			}
+			if !fail && !progress[len(progress)-1].Verifying {
+				t.Fatalf("missing verification stage: %+v", progress)
+			}
+			content, err := os.ReadFile(exe)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := "fake aice binary"
+			if fail {
+				want = "old binary"
+			}
+			if string(content) != want {
+				t.Fatalf("binary = %q, want %q", content, want)
+			}
+		})
+	}
+}
+
+func TestUpdateDevelopmentBuildDoesNotCheckRelease(t *testing.T) {
+	opts := Options{Current: "dev", Progress: func(Progress) error {
+		t.Fatal("unexpected network progress")
+		return nil
+	}}
+	_, err := Update(t.Context(), opts, false)
+	if err == nil || !strings.Contains(err.Error(), "--force") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestUpdateCanceledBeforeDownloadPreservesExecutable(t *testing.T) {
+	server := newReleaseServer(t, releaseFixture{}, nil)
+	exe := writeExecutable(t, "old binary")
+	opts := testOptions(testSource(t, server))
+	opts.Current = "1.1.0"
+	opts.Executable = func() (string, error) { return exe, nil }
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	opts.Progress = func(p Progress) error {
+		if p.Latest != "" {
+			cancel()
+		}
+		return nil
+	}
+	_, err := Update(ctx, opts, false)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("error = %v", err)
+	}
+	content, err := os.ReadFile(exe)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(content) != "old binary" {
+		t.Fatalf("binary = %q", content)
+	}
+}
+
+func TestCheckTimeoutHasRetryHint(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-r.Context().Done()
+	}))
+	defer server.Close()
+	opts := testOptions(testSource(t, server))
+	opts.Current = "1.1.0"
+	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+	defer cancel()
+	_, err := Check(ctx, opts)
+	if !errors.Is(err, context.DeadlineExceeded) || !strings.Contains(err.Error(), "retry") {
+		t.Fatalf("error = %v", err)
+	}
 }

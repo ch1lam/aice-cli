@@ -77,6 +77,21 @@ updates the welcome card with the current, available, disabled, or unavailable
 state. Development builds skip network access. Set `AICE_NO_UPDATE_CHECK=1` to
 disable the check.
 
+The command reports release discovery and download/checksum verification progress
+on stderr, keeping the final result on stdout. In a terminal, a Bubbles progress
+bar displays the archive download percentage based on bytes received and the
+release asset size. Downloads without a known size show received MiB instead.
+The bar reaching 100% means the archive has downloaded; checksum verification
+and installation follow with a separate status. Redirected output uses compact
+plain-text stage messages. Failed or canceled downloads end the progress line
+before the error is printed. Release discovery has a 15-second
+timeout; download and checksum verification have a three-minute timeout. Ctrl+C
+cancels network work. A timeout reports a retry hint. Unversioned builds fail
+before network access unless `--force` is supplied; `--check` can still report
+the latest release and the command needed to replace a development build.
+When the installed version is newer than the latest release, it is retained and
+the result displays the installed version. `--force` bypasses this comparison.
+
 `aice update` refuses package-manager-owned installs and non-writable
 executables. Use the package manager in those cases.
 

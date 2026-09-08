@@ -16,7 +16,7 @@ type UpdateRequest struct {
 
 // Updater installs a newer AICE release over the running executable.
 type Updater interface {
-	Update(ctx context.Context, request UpdateRequest, output io.Writer) error
+	Update(ctx context.Context, request UpdateRequest, output, diagnostics io.Writer) error
 }
 
 func newUpdateCommand(updater Updater) *cobra.Command {
@@ -39,6 +39,7 @@ func newUpdateCommand(updater Updater) *cobra.Command {
 				command.Context(),
 				request,
 				command.OutOrStdout(),
+				command.ErrOrStderr(),
 			); err != nil {
 				return fmt.Errorf("update aice: %w", err)
 			}

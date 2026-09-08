@@ -141,15 +141,20 @@ func (a *application) SaveAPIKey(
 func (a *application) Update(
 	ctx context.Context,
 	request cli.UpdateRequest,
-	output io.Writer,
-) error {
+	output, diagnostics io.Writer,
+) (returnErr error) {
 	if ctx == nil {
 		return fmt.Errorf("app: context is required")
 	}
 	if output == nil {
 		return fmt.Errorf("app: output is required")
 	}
-	opts := update.Options{Current: buildinfo.Version}
+	if diagnostics == nil {
+		return fmt.Errorf("app: diagnostics output is required")
+	}
+	progress := newUpdateProgressPrinter(diagnostics)
+	defer func() { returnErr = errors.Join(returnErr, progress.Close()) }()
+	opts := update.Options{Current: buildinfo.Version, Progress: progress.Report}
 	if request.Check {
 		result, err := update.Check(ctx, opts)
 		if err != nil {

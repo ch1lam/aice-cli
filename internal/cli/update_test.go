@@ -125,6 +125,7 @@ func (u *recordingUpdater) Update(
 	_ context.Context,
 	request cli.UpdateRequest,
 	_ io.Writer,
+	_ io.Writer,
 ) error {
 	u.request = request
 	return u.err
