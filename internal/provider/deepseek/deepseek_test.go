@@ -2,6 +2,7 @@ package deepseek_test
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -55,6 +56,14 @@ func TestModels(t *testing.T) {
 			},
 		},
 	}
+	preview := want[0]
+	preview.ID = deepseek.ModelV41Flash
+	preview.Name = "DeepSeek V4.1 Flash (expires on 0910)"
+	preview.InputModalities = []llm.InputModality{llm.InputModalityText, llm.InputModalityImage}
+	vision := preview
+	vision.ID = deepseek.ModelV4FlashVisionExp
+	vision.Name = "DeepSeek V4 Flash Vision Exp"
+	want = append(want, preview, vision)
 	models := deepseek.Models()
 	if !reflect.DeepEqual(models, want) {
 		t.Errorf("Models() = %#v, want %#v", models, want)
@@ -90,7 +99,7 @@ func deepSeekThinkingLevelMap() llm.ThinkingLevelMap {
 func TestProviderDispatchesEachModelThroughItsConfiguredAPI(t *testing.T) {
 	t.Parallel()
 
-	paths := make(chan string, 2)
+	paths := make(chan string, 4)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		paths <- r.URL.Path
 		w.Header().Set("Content-Type", "text/event-stream")
@@ -124,8 +133,8 @@ func TestProviderDispatchesEachModelThroughItsConfiguredAPI(t *testing.T) {
 		}
 	}
 
-	got := []string{<-paths, <-paths}
-	want := []string{"/responses", "/anthropic/v1/messages"}
+	got := []string{<-paths, <-paths, <-paths, <-paths}
+	want := []string{"/responses", "/anthropic/v1/messages", "/responses", "/responses"}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("request paths = %v, want %v", got, want)
 	}
@@ -278,5 +287,74 @@ func TestProviderDescriptor(t *testing.T) {
 
 	if _, err := descriptor.New(config.Config{}); err == nil {
 		t.Error("New() error = nil, want missing API key error")
+	}
+}
+
+func TestVisionModelsSendImageAndExactModelID(t *testing.T) {
+	t.Parallel()
+	for _, modelID := range []string{deepseek.ModelV41Flash, deepseek.ModelV4FlashVisionExp} {
+		t.Run(modelID, func(t *testing.T) {
+			t.Parallel()
+			bodies := make(chan string, 1)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				body, err := io.ReadAll(r.Body)
+				if err != nil {
+					t.Error(err)
+				}
+				bodies <- string(body)
+				if r.URL.Path != "/responses" {
+					t.Errorf("path = %q", r.URL.Path)
+				}
+				w.Header().Set("Content-Type", "text/event-stream")
+			}))
+			defer server.Close()
+			service, err := deepseek.New(deepseek.Config{APIKey: "test-key", BaseURL: server.URL, HTTPClient: server.Client()})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var selected llm.Model
+			for _, model := range deepseek.Models() {
+				if model.ID == modelID {
+					selected = model
+				}
+			}
+			stream, err := service.Stream(t.Context(), llm.Request{
+				Model:   selected,
+				Options: llm.StreamOptions{Thinking: llm.ThinkingLevelHigh},
+				Messages: []llm.Message{llm.UserMessage{
+					Role: llm.RoleUser,
+					Content: []llm.ContentPart{
+						llm.NewTextContent("Describe this image").Part(),
+						{Type: llm.ContentTypeImage, Image: &llm.ImageContent{Data: []byte("image"), MIMEType: "image/png"}},
+					},
+				}},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := stream.Close(); err != nil {
+				t.Fatal(err)
+			}
+			body := <-bodies
+			var payload struct {
+				Model     string `json:"model"`
+				Reasoning struct {
+					Effort string `json:"effort"`
+				} `json:"reasoning"`
+			}
+			if err := json.Unmarshal([]byte(body), &payload); err != nil {
+				t.Fatal(err)
+			}
+			if payload.Model != modelID {
+				t.Errorf("model = %q", payload.Model)
+			}
+			if payload.Reasoning.Effort != "high" {
+				t.Errorf("effort = %q", payload.Reasoning.Effort)
+			}
+			if !strings.Contains(body, `"type":"input_image"`) || !strings.Contains(body, "data:image/png;base64,aW1hZ2U=") {
+				t.Errorf("image missing from request: %s", body)
+			}
+
+		})
 	}
 }

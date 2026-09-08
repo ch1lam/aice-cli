@@ -22,8 +22,10 @@ const (
 	// AnthropicBaseURL is DeepSeek's Anthropic-compatible API root.
 	AnthropicBaseURL = BaseURL + "/anthropic"
 
-	ModelV4Flash = "deepseek-v4-flash"
-	ModelV4Pro   = "deepseek-v4-pro"
+	ModelV4Flash          = "deepseek-v4-flash"
+	ModelV4Pro            = "deepseek-v4-pro"
+	ModelV4FlashVisionExp = "deepseek-v4-flash-vision-exp"
+	ModelV41Flash         = "deepseek-v4.1-flash-expires-on-0910"
 )
 
 // Config contains DeepSeek connection settings.
@@ -75,7 +77,7 @@ func New(config Config) (*Provider, error) {
 
 // Models returns the DeepSeek models supported by this provider.
 func Models() []llm.Model {
-	return []llm.Model{model(ModelV4Flash), model(ModelV4Pro)}
+	return []llm.Model{model(ModelV4Flash), model(ModelV4Pro), model(ModelV41Flash), model(ModelV4FlashVisionExp)}
 }
 
 // DefaultModel returns the fast model used when no explicit model is selected.
@@ -92,7 +94,9 @@ func (p *Provider) Stream(ctx context.Context, request llm.Request) (llm.Stream,
 			ProviderID,
 		)
 	}
-	if request.Model.ID != ModelV4Flash && request.Model.ID != ModelV4Pro {
+	switch request.Model.ID {
+	case ModelV4Flash, ModelV4Pro, ModelV41Flash, ModelV4FlashVisionExp:
+	default:
 		return nil, fmt.Errorf("deepseek: unsupported model %q", request.Model.ID)
 	}
 	expectedAPI := model(request.Model.ID).API
@@ -104,7 +108,9 @@ func (p *Provider) Stream(ctx context.Context, request llm.Request) (llm.Stream,
 			expectedAPI,
 		)
 	}
-	if err := provider.ValidateMessages(request.Messages, messageCapabilities); err != nil {
+	capabilities := messageCapabilities
+	capabilities.SupportsImage = request.Model.ID == ModelV41Flash || request.Model.ID == ModelV4FlashVisionExp
+	if err := provider.ValidateMessages(request.Messages, capabilities); err != nil {
 		return nil, err
 	}
 	switch request.Model.API {
@@ -122,6 +128,18 @@ func (p *Provider) Stream(ctx context.Context, request llm.Request) (llm.Stream,
 }
 
 func model(id string) llm.Model {
+	if id == ModelV41Flash || id == ModelV4FlashVisionExp {
+		// Vision Exp shares Flash pricing and limits. V4.1 provisionally
+		// inherits those limits and effort choices pending its full API docs.
+		preview := model(ModelV4Flash)
+		preview.ID = id
+		preview.Name = "DeepSeek V4 Flash Vision Exp"
+		if id == ModelV41Flash {
+			preview.Name = "DeepSeek V4.1 Flash (expires on 0910)"
+		}
+		preview.InputModalities = []llm.InputModality{llm.InputModalityText, llm.InputModalityImage}
+		return preview
+	}
 	var spec provider.ModelSpec
 	for _, candidate := range provider.DeepSeekModelSpecs() {
 		if candidate.ID == id {
@@ -182,7 +200,7 @@ func (p *Provider) Label() string {
 
 // MenuDescription describes DeepSeek in interactive provider menus.
 func (p *Provider) MenuDescription() string {
-	return "DeepSeek API (V4 Flash via OpenAI Responses, V4 Pro via Anthropic Messages)"
+	return "DeepSeek API (V4/V4.1 Flash and Vision Exp via Responses, V4 Pro via Anthropic Messages)"
 }
 
 // Models returns the DeepSeek model catalog.

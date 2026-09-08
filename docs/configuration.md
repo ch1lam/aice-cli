@@ -26,6 +26,11 @@ When `settings.json` omits `provider` and `model`, AICE uses `deepseek` and
 `deepseek-v4-flash`. The `opencode-go` catalog default is also
 `deepseek-v4-flash`.
 
+DeepSeek also supports `deepseek-v4-flash-vision-exp` and
+`deepseek-v4.1-flash-expires-on-0910` with text/image input via
+[Responses](https://api-docs.deepseek.com/guides/responses_api/).
+V4.1 provisionally follows Flash's context/output limits and thinking choices.
+
 | Setting | Environment variable | Supported values |
 | --- | --- | --- |
 | Provider | `AICE_PROVIDER` | `deepseek`, `opencode-go`, `kimi-coding`, `moonshot`, `zhipu`, `zhipu-coding`, `openai`, `openai-codex`, `custom` |
