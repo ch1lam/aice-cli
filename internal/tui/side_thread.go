@@ -269,27 +269,8 @@ func startSideRun(
 
 func waitForSideRunUpdates(updates <-chan runUpdate) tea.Cmd {
 	return func() tea.Msg {
-		first, ok := <-updates
-		if !ok {
-			return sideRunBatchMsg{source: updates, closed: true}
-		}
-		batch := sideRunBatchMsg{
-			source:  updates,
-			updates: []runUpdate{first},
-		}
-		for len(batch.updates) < maximumEventBatch {
-			select {
-			case update, open := <-updates:
-				if !open {
-					batch.closed = true
-					return batch
-				}
-				batch.updates = append(batch.updates, update)
-			default:
-				return batch
-			}
-		}
-		return batch
+		batch := collectRunUpdates(updates)
+		return sideRunBatchMsg{source: updates, updates: batch.updates, closed: batch.closed}
 	}
 }
 

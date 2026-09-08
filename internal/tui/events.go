@@ -465,26 +465,40 @@ func startSlashCommand(
 	}
 }
 
-func waitForRunUpdates(updates <-chan runUpdate) tea.Cmd {
-	return func() tea.Msg {
-		first, ok := <-updates
-		if !ok {
-			return runBatchMsg{closed: true}
-		}
+// streamBatchInterval groups token deltas that arrive just after the channel
+// was drained. Lifecycle updates flush immediately; keyboard input never waits
+// on this command.
+const streamBatchInterval = 16 * time.Millisecond
 
-		batch := runBatchMsg{updates: []runUpdate{first}}
-		for len(batch.updates) < maximumEventBatch {
-			select {
-			case update, open := <-updates:
-				if !open {
-					batch.closed = true
-					return batch
-				}
-				batch.updates = append(batch.updates, update)
-			default:
-				return batch
-			}
-		}
+func waitForRunUpdates(updates <-chan runUpdate) tea.Cmd {
+	return func() tea.Msg { return collectRunUpdates(updates) }
+}
+
+func collectRunUpdates(updates <-chan runUpdate) runBatchMsg {
+	first, ok := <-updates
+	if !ok {
+		return runBatchMsg{closed: true}
+	}
+	batch := runBatchMsg{updates: []runUpdate{first}}
+	if first.event.Kind != DisplayEventAssistantDelta {
 		return batch
 	}
+	timer := time.NewTimer(streamBatchInterval)
+	defer timer.Stop()
+	for len(batch.updates) < maximumEventBatch {
+		select {
+		case update, open := <-updates:
+			if !open {
+				batch.closed = true
+				return batch
+			}
+			batch.updates = append(batch.updates, update)
+			if update.event.Kind != DisplayEventAssistantDelta {
+				return batch
+			}
+		case <-timer.C:
+			return batch
+		}
+	}
+	return batch
 }

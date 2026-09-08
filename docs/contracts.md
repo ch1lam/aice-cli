@@ -241,7 +241,9 @@ the final JSON event from being delivered.
   and composer layout. Repeated copies
   restart the confirmation lifetime; streaming events do not dismiss it.
 - Session history, model context, and terminal viewport remain separate.
-  Streaming deltas are coalesced before expensive Markdown rendering.
+  The TUI coalesces streaming deltas for up to 16 ms or 64 events before
+  rendering; lifecycle updates flush the batch immediately. Main and side
+  views use the same batching rule.
 - Terminal cell updates remain owned by Bubble Tea and its Ultraviolet
   renderer. Changed lines containing wide characters are repainted from the
   line boundary so partial erases cannot split CJK glyphs during streaming.
