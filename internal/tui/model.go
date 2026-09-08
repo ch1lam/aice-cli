@@ -102,6 +102,9 @@ type model struct {
 	sideRequests       chan<- runRequest
 	sideControllerDone <-chan struct{}
 	updates            <-chan runUpdate
+	prepareDelivery    func(ActiveRun, interaction.Delivery, composerDraft) (tea.Cmd, context.CancelFunc)
+	deliveryPending    bool
+	cancelDelivery     context.CancelFunc
 	activeRun          ActiveRun
 	cancelRun          context.CancelFunc
 	side               sidePanelState
@@ -341,6 +344,8 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m = m.applyEditorResult(message)
 		m.refreshViewport(false)
 		return m, nil
+	case deliveryResult:
+		return m.applyDeliveryResult(message)
 	case runStartedMsg:
 		m.updates = message.updates
 		return m, tea.Batch(waitForRunUpdates(message.updates), m.spinner.Tick)
@@ -567,6 +572,12 @@ func (m model) handleKey(message tea.KeyPressMsg) (model, tea.Cmd, bool) {
 	if m.side.confirm != nil {
 		return m.handleSideConfirmKey(message)
 	}
+	if m.deliveryPending {
+		if cancelKeyPressed(message, m.keys) && m.cancelDelivery != nil {
+			m.cancelDelivery()
+		}
+		return m, nil, true
+	}
 	if m.clipboardPending && (key.Matches(message, m.keys.paste) ||
 		key.Matches(message, m.keys.send) || key.Matches(message, m.keys.queue) ||
 		key.Matches(message, m.keys.editor)) {
@@ -777,6 +788,9 @@ func (m model) clearInputOrQuit() (model, tea.Cmd, bool) {
 }
 
 func (m model) composerInputEnabled() bool {
+	if m.deliveryPending {
+		return false
+	}
 	if m.authInput != nil {
 		return m.authPrompt != nil && m.authPrompt.AllowInput && !m.cancelRequested
 	}

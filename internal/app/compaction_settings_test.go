@@ -96,7 +96,7 @@ func TestInteractiveCompactionsReuseRunSettingsAfterExternalChange(t *testing.T)
 		compactionKeepRecentTokens: 1,
 		userHomeDir:                func() (string, error) { return home, nil },
 		runTUI: func(ctx context.Context, runner interaction.Runner, _ tui.Options) error {
-			active, err := runner.NewRun(interaction.RunInput{Prompt: "initial"}, func(_ context.Context, event interaction.Event) error {
+			active, err := runner.NewRun(context.Background(), interaction.RunInput{Prompt: "initial"}, func(_ context.Context, event interaction.Event) error {
 				if event.Kind == interaction.EventAssistantEnd {
 					global.Model = "externally-selected-model"
 					global.CustomBaseURL = "https://changed.invalid"
@@ -107,7 +107,7 @@ func TestInteractiveCompactionsReuseRunSettingsAfterExternalChange(t *testing.T)
 				return err
 			}
 			for _, text := range []string{"follow one", "follow two"} {
-				if err := active.Deliver(interaction.Delivery{ID: text, Text: text, Kind: interaction.DeliveryKindFollowUp}); err != nil {
+				if err := active.Deliver(context.Background(), interaction.Delivery{ID: text, Text: text, Kind: interaction.DeliveryKindFollowUp}); err != nil {
 					return err
 				}
 			}

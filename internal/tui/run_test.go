@@ -97,6 +97,10 @@ func TestServeRunsOwnsPerRunEventChannel(t *testing.T) {
 	updates := make(chan runUpdate, runUpdateBuffer)
 	requests <- runRequest{prompt: "inspect", updates: updates}
 
+	preflight := receiveRunUpdate(t, updates)
+	if preflight.cancel == nil {
+		t.Fatal("preflight must be cancellable")
+	}
 	start := receiveRunUpdate(t, updates)
 	if start.cancel == nil || start.active == nil {
 		t.Fatal("first run update has no active run or cancellation function")
@@ -226,6 +230,7 @@ func TestServeSideRunsWhileMainRunIsBlocked(t *testing.T) {
 
 	mainUpdates := make(chan runUpdate, runUpdateBuffer)
 	mainRequests <- runRequest{prompt: "long task", updates: mainUpdates}
+	_ = receiveRunUpdate(t, mainUpdates) // cancellable preflight
 	mainStart := receiveRunUpdate(t, mainUpdates)
 	if mainStart.active == nil || mainStart.cancel == nil {
 		t.Fatalf("main start update = %#v", mainStart)
@@ -242,6 +247,7 @@ func TestServeSideRunsWhileMainRunIsBlocked(t *testing.T) {
 		updates:    sideUpdates,
 		sideCreate: true,
 	}
+	_ = receiveRunUpdate(t, sideUpdates) // cancellable preflight
 	sideStart := receiveRunUpdate(t, sideUpdates)
 	if sideStart.active == nil || sideStart.cancel == nil ||
 		sideStart.sideThread == nil {
@@ -499,6 +505,7 @@ func TestServeRunsRefreshesSlashCommandMenusAfterPrompt(t *testing.T) {
 
 	updates := make(chan runUpdate, runUpdateBuffer)
 	requests <- runRequest{prompt: "inspect", updates: updates}
+	_ = receiveRunUpdate(t, updates) // cancellable preflight
 	_ = receiveRunUpdate(t, updates)
 	terminal := receiveRunUpdate(t, updates)
 	if !terminal.done ||
@@ -543,6 +550,7 @@ func drainRunUpdate(t *testing.T, updates <-chan runUpdate) runUpdate {
 type runnerFunc func(context.Context, RunInput, DisplayEventSink) error
 
 func (f runnerFunc) NewRun(
+	ctx context.Context,
 	input RunInput,
 	sink DisplayEventSink,
 ) (ActiveRun, error) {
@@ -565,7 +573,7 @@ func (r *activeRunFunc) Run(ctx context.Context) error {
 	return r.run(ctx)
 }
 
-func (r *activeRunFunc) Deliver(delivery interaction.Delivery) error {
+func (r *activeRunFunc) Deliver(ctx context.Context, delivery interaction.Delivery) error {
 	if r.deliver == nil {
 		return nil
 	}

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/ch1lam/aice-cli/internal/hostpath"
 	"github.com/ch1lam/aice-cli/internal/llm"
@@ -31,6 +32,7 @@ func isBashRootedPath(path, toolName string) bool {
 // Guard is the built-in execution gate. It is immutable after construction
 // except for session-scoped allows which are stored in the in-memory map.
 type Guard struct {
+	mu        sync.RWMutex
 	workspace string
 	enabled   bool
 	policies  []compiledPolicy
@@ -117,6 +119,8 @@ func (g *Guard) AllowSession(path string) {
 	if g == nil {
 		return
 	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
 	key := normalizeTarget(path, g.workspace)
 	g.sessionAllowed[key] = true
 }
@@ -130,6 +134,8 @@ func (g *Guard) AllowPathSession(absPath string, isDir bool) {
 	if g == nil {
 		return
 	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
 	cleaned := filepath.Clean(absPath)
 	if isGrantTooBroad(cleaned) {
 		return
@@ -148,6 +154,8 @@ func (g *Guard) AllowCommandSession(command string) {
 	if g == nil || command == "" {
 		return
 	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
 	if g.sessionCommands == nil {
 		g.sessionCommands = make(map[string]bool)
 	}
@@ -160,6 +168,8 @@ func (g *Guard) AllowToolSession(name string) {
 	if g == nil || name == "" {
 		return
 	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
 	g.sessionAllowedTools[name] = true
 }
 
@@ -170,6 +180,8 @@ func (g *Guard) AllowCommandPrefixSession(prefix string) {
 	if g == nil {
 		return
 	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
 	prefix = strings.TrimSpace(prefix)
 	if prefix == "" {
 		return
@@ -179,11 +191,13 @@ func (g *Guard) AllowCommandPrefixSession(prefix string) {
 
 // ResetSessionGrants removes only in-memory authorizations for the previous
 // Session. Configuration and workspace boundaries remain unchanged. Callers
-// must stop tool execution before resetting, as with other grant mutations.
+// must stop active work before resetting the Session. Checks and grants are concurrent-safe.
 func (g *Guard) ResetSessionGrants() {
 	if g == nil {
 		return
 	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
 	clear(g.sessionAllowed)
 	clear(g.sessionAllowedTools)
 	clear(g.sessionAllowedPaths)
@@ -209,6 +223,8 @@ func (g *Guard) Check(ctx context.Context, call llm.ToolCall) (Result, error) {
 	if g == nil || !g.enabled {
 		return Result{Decision: DecisionAllow}, nil
 	}
+	g.mu.RLock()
+	defer g.mu.RUnlock()
 	if ctx == nil {
 		return Result{}, fmt.Errorf("guard: context is required")
 	}

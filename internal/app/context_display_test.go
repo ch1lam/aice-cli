@@ -32,7 +32,7 @@ func TestInteractiveContextTracksToolsAndCompactionWithOverride(t *testing.T) {
 			if options.Context.Window != 10000 || !options.Context.Estimated || options.Context.Tokens != 0 {
 				t.Fatalf("startup context = %+v", options.Context)
 			}
-			active, err := runner.NewRun(interaction.RunInput{Prompt: "inspect large.txt"}, func(_ context.Context, event interaction.Event) error {
+			active, err := runner.NewRun(context.Background(), interaction.RunInput{Prompt: "inspect large.txt"}, func(_ context.Context, event interaction.Event) error {
 				if event.Context == nil {
 					return nil
 				}

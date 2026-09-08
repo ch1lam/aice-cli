@@ -379,6 +379,9 @@ func (m *model) completeTool(callID string, failed bool) {
 }
 
 func (m *model) finishRun(err error) tea.Cmd {
+	if m.cancelDelivery != nil {
+		m.cancelDelivery()
+	}
 	wasAuth := m.authInput != nil
 	if wasAuth {
 		m.authInput = nil
@@ -446,6 +449,7 @@ func startRun(
 			return runUnavailableMsg{}
 		case requests <- runRequest{
 			prompt:  input.Prompt,
+			files:   input.Files,
 			images:  input.Images,
 			updates: updates,
 		}:

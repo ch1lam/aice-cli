@@ -2,6 +2,7 @@ package app
 
 import (
 	"bytes"
+	"context"
 	"image"
 	"image/png"
 	"path/filepath"
@@ -35,12 +36,12 @@ func TestImageInputsReachModelAndReopenedSession(t *testing.T) {
 	runner := &interactiveSession{loop: loop, model: openai.DefaultModel(), conversation: conversationState{store: store}}
 	img := inputImage(t)
 	want := bytes.Clone(img.Data)
-	active, err := runner.NewRun(interaction.RunInput{Images: []llm.ImageContent{img}}, nil)
+	active, err := runner.NewRun(context.Background(), interaction.RunInput{Images: []llm.ImageContent{img}}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, kind := range []interaction.DeliveryKind{interaction.DeliveryKindSteer, interaction.DeliveryKindFollowUp} {
-		if err := active.Deliver(interaction.Delivery{ID: string(rune('a' + kind)), Kind: kind, Images: []llm.ImageContent{img}}); err != nil {
+		if err := active.Deliver(context.Background(), interaction.Delivery{ID: string(rune('a' + kind)), Kind: kind, Images: []llm.ImageContent{img}}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -93,14 +94,14 @@ func TestImageInputRejectedBeforeSessionCreation(t *testing.T) {
 		t.Fatal(err)
 	}
 	runner := &interactiveSession{loop: loop, model: llm.Model{ID: "text-only"}}
-	if _, err := runner.NewRun(interaction.RunInput{Images: []llm.ImageContent{inputImage(t)}}, nil); err == nil {
+	if _, err := runner.NewRun(context.Background(), interaction.RunInput{Images: []llm.ImageContent{inputImage(t)}}, nil); err == nil {
 		t.Fatal("text-only model accepted image")
 	}
 	if runner.conversation.store != nil {
 		t.Fatal("rejected input created Session")
 	}
 	run := &interactiveRun{model: runner.model, mailbox: interaction.NewMailbox()}
-	if err := run.Deliver(interaction.Delivery{ID: "image", Kind: interaction.DeliveryKindFollowUp, Images: []llm.ImageContent{inputImage(t)}}); err == nil {
+	if err := run.Deliver(context.Background(), interaction.Delivery{ID: "image", Kind: interaction.DeliveryKindFollowUp, Images: []llm.ImageContent{inputImage(t)}}); err == nil {
 		t.Fatal("text-only model accepted image delivery")
 	}
 	if _, ok := run.mailbox.TakeFollowUp(); ok {

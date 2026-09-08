@@ -31,9 +31,10 @@ func TestModelEnterSteersAndControlEnterQueues(t *testing.T) {
 	steered, command, handled := current.handleKey(tea.KeyPressMsg{
 		Code: tea.KeyEnter,
 	})
-	if !handled || command != nil {
-		t.Fatal("enter did not submit steer synchronously")
+	if !handled || command == nil {
+		t.Fatal("enter did not submit steer asynchronously")
 	}
+	steered = updateModel(t, steered, command())
 	if len(steered.pendingDeliveries) != 1 ||
 		steered.pendingDeliveries[0].mode != deliverySteer {
 		t.Fatalf("pending steer = %#v", steered.pendingDeliveries)
@@ -76,9 +77,10 @@ func TestModelEnterSteersAndControlEnterQueues(t *testing.T) {
 		Code: tea.KeyEnter,
 		Mod:  tea.ModCtrl,
 	})
-	if !handled || command != nil {
-		t.Fatal("ctrl+enter did not queue synchronously")
+	if !handled || command == nil {
+		t.Fatal("ctrl+enter did not queue asynchronously")
 	}
+	queued = updateModel(t, queued, command())
 	if len(queued.pendingDeliveries) != 2 ||
 		queued.pendingDeliveries[1].mode != deliveryQueue {
 		t.Fatalf("pending deliveries = %#v", queued.pendingDeliveries)

@@ -48,7 +48,7 @@ func (m model) submit() (model, tea.Cmd, bool) {
 		return m, nil, true
 	}
 
-	input := RunInput{Prompt: prompt, Images: interaction.CloneImages(m.composerImages())}
+	input := RunInput{Prompt: prompt, Files: interaction.FileReferences(m.input.Value()), Images: interaction.CloneImages(m.composerImages())}
 	m.submittedInput = &input
 	m.submittedDraft = composerDraft{text: m.input.Value(), pastes: m.pastes}
 	m.entries = append(m.entries, transcriptEntry{kind: entryUser, text: imageInputText(prompt, len(input.Images))})

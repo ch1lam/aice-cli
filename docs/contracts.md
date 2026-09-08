@@ -174,9 +174,11 @@ the final JSON event from being delivered.
   persistence boundaries. Do not store it in structs or replace it mid-flow
   with `context.Background()`. Bounded durable cleanup is an explicit exception:
   per-message Session submission uses `context.WithoutCancel` plus a five-second
-  timeout to preserve known results after request cancellation. Initial
-  lazy Session creation currently uses a local background context because
-  `Runner.NewRun` has no context parameter; do not copy that into model/tool I/O.
+  timeout to preserve known results after request cancellation.
+  `Runner.NewRun` and `ActiveRun.Deliver` take caller contexts. The TUI
+  publishes cancellation before preparation starts; delivery preparation runs
+  in a command, never on the Update goroutine. The application resolves explicit
+  file references through Guard and the shared reader before acceptance.
 - Every goroutine has an owner, cancellation path, and wait/exit path. Queues
   and buffers stay bounded.
 - Each `/btw` side thread owns a separate Runner, event stream, cancellation
@@ -194,10 +196,10 @@ the final JSON event from being delivered.
   configuration; they do not reload global settings midway through the run.
   Concurrent settings changes or side-thread creation must not swap those
   dependencies underneath the active run.
-- The built-in Guard has mutable grants without locking. Sequential tool
-  execution protects only a single caller; sharing that Guard across concurrent
-  runs is unsupported until its ownership/synchronization is changed. Tool-free
-  side threads do not share this execution path.
+- The built-in Guard synchronizes checks and mutable grants. Input preparation
+  can check files while the Agent runs tools; approval waits hold no Guard lock.
+  Session reset still requires active work to stop. Tool-free side threads do
+  not share this execution path.
 - Each run owns its event stream. The sender closes the channel; receivers do
   not. Blocking sends also select on `ctx.Done()`.
 - `internal/interaction`, wired by `internal/app`, owns one bounded, ordered
@@ -294,3 +296,9 @@ only the view bytes. Anthropic and Responses encode images inside tool results.
 Chat Completions emits text tool results followed by an image-bearing user
 message after the entire contiguous tool-result group. This is a request
 projection, never an additional user message in Session history.
+
+File references in `interaction.RunInput.Files` and `Delivery.Files` are parsed
+by the frontend before expanding literal paste placeholders. The application
+replaces them with bounded text/image snapshots. The mailbox refuses unresolved
+paths and owns only accepted content; it never reads files at dequeue time.
+Concurrent file preparation and tool execution share a synchronized Guard.

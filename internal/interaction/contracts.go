@@ -12,18 +12,20 @@ import (
 type RunInput struct {
 	Prompt string
 	Images []llm.ImageContent
+	// Files are explicit references parsed by the frontend before expanding literal pastes.
+	Files []string
 }
 
 // ActiveRun is one prepared Agent run. Its implementation owns accepted input
 // and decides when steering and follow-ups enter the Agent Loop.
 type ActiveRun interface {
 	Run(ctx context.Context) error
-	Deliver(delivery Delivery) error
+	Deliver(ctx context.Context, delivery Delivery) error
 }
 
 // Runner prepares one prompt and its ordered frontend-event bridge.
 type Runner interface {
-	NewRun(input RunInput, sink EventSink) (ActiveRun, error)
+	NewRun(ctx context.Context, input RunInput, sink EventSink) (ActiveRun, error)
 }
 
 // SideThreadStatus is the lifecycle state of one ephemeral /btw thread.

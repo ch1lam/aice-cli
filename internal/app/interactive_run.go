@@ -35,6 +35,7 @@ type mainRunSnapshot struct {
 var _ interaction.ActiveRun = (*interactiveRun)(nil)
 
 func (s *interactiveSession) NewRun(
+	ctx context.Context,
 	input interaction.RunInput,
 	sink interaction.EventSink,
 ) (interaction.ActiveRun, error) {
@@ -48,11 +49,15 @@ func (s *interactiveSession) NewRun(
 			settings.configuration,
 		)
 	}
-	prompt, err := newImageInput(input, settings.model)
+	input, err := prepareFileInput(ctx, input, s.workspace, s.guardAdapter, s.handleGuardAsk)
+	if err != nil {
+		return nil, err
+	}
+	prompt, err := newImageInputContext(ctx, input, settings.model)
 	if err != nil {
 		return nil, fmt.Errorf("app: create prompt: %w", err)
 	}
-	if err := s.ensureSessionStore(); err != nil {
+	if err := s.ensureSessionStore(ctx); err != nil {
 		return nil, err
 	}
 	return &interactiveRun{
@@ -65,10 +70,8 @@ func (s *interactiveSession) NewRun(
 }
 
 // ensureSessionStore lazily creates the session file when the first prompt
-// is accepted. File creation is local disk I/O without a caller context,
-// so it uses a background context; every later message appends through
-// recordMessage with the run's own context.
-func (s *interactiveSession) ensureSessionStore() error {
+// is accepted, using the same cancellable preparation context.
+func (s *interactiveSession) ensureSessionStore(ctx context.Context) error {
 	s.conversation.historySyncMu.Lock()
 	defer s.conversation.historySyncMu.Unlock()
 	if s.conversation.store != nil {
@@ -77,14 +80,14 @@ func (s *interactiveSession) ensureSessionStore() error {
 	if s.workspace == nil {
 		return fmt.Errorf("app: workspace is required")
 	}
-	store, err := createDefaultSession(context.Background(), s.workspace)
+	store, err := createDefaultSession(ctx, s.workspace)
 	if err != nil {
 		return err
 	}
 	s.conversation.store = store
 	return nil
 }
-func (r *interactiveRun) Deliver(delivery interaction.Delivery) error {
+func (r *interactiveRun) Deliver(ctx context.Context, delivery interaction.Delivery) error {
 	if r == nil || r.mailbox == nil {
 		return interaction.ErrClosed
 	}
@@ -92,6 +95,28 @@ func (r *interactiveRun) Deliver(delivery interaction.Delivery) error {
 	model := r.model
 	r.mu.Unlock()
 	if err := validateImageModel(model, delivery.Images); err != nil {
+		return err
+	}
+	if r.session == nil {
+		return interaction.ErrClosed
+	}
+	input, err := prepareFileInput(ctx, interaction.RunInput{Prompt: delivery.Text, Images: delivery.Images, Files: delivery.Files}, r.session.workspace, r.session.guardAdapter, r.session.handleGuardAsk)
+	if err != nil {
+		return err
+	}
+	message, err := newImageInputContext(ctx, input, model)
+	if err != nil {
+		return err
+	}
+	delivery.Text = input.Prompt
+	delivery.Images = nil
+	delivery.Files = nil
+	for _, part := range message.Content {
+		if part.Image != nil {
+			delivery.Images = append(delivery.Images, part.Image.Clone())
+		}
+	}
+	if err := ctx.Err(); err != nil {
 		return err
 	}
 	return r.mailbox.Deliver(delivery)

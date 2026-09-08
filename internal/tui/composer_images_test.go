@@ -94,12 +94,15 @@ func TestImageSteeringAndFollowUpPreserveDraftOnRejection(t *testing.T) {
 				}
 				return errors.New("images unsupported")
 			}}
-			m, _, _ = m.submitDelivery(kind)
+			var command tea.Cmd
+			m, command, _ = m.submitDelivery(kind)
+			m = updateModel(t, m, command())
 			if len(m.composerImages()) != 1 || len(m.pendingDeliveries) != 0 || !strings.Contains(m.composerView(80), "images unsupported") {
 				t.Fatal("rejected image delivery was lost")
 			}
 			m.activeRun = &activeRunFunc{}
-			m, _, _ = m.submitDelivery(kind)
+			m, command, _ = m.submitDelivery(kind)
+			m = updateModel(t, m, command())
 			if len(m.composerImages()) != 0 || len(m.pendingDeliveries) != 1 || !strings.Contains(m.pendingDeliveries[0].text, "[Image 1]") {
 				t.Fatal("accepted image delivery not shown")
 			}

@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -27,7 +28,7 @@ func TestInteractiveSessionEnsureSessionStoreCreatesOnDemand(t *testing.T) {
 		}
 	}()
 
-	if err := runner.ensureSessionStore(); err != nil {
+	if err := runner.ensureSessionStore(t.Context()); err != nil {
 		t.Fatalf("ensureSessionStore() error = %v", err)
 	}
 	path := runner.conversation.store.Path()
@@ -48,7 +49,7 @@ func TestInteractiveSessionEnsureSessionStoreCreatesOnDemand(t *testing.T) {
 			workspace.Path(),
 		)
 	}
-	if err := runner.ensureSessionStore(); err != nil {
+	if err := runner.ensureSessionStore(t.Context()); err != nil {
 		t.Fatalf("second ensureSessionStore() error = %v", err)
 	}
 	if got := runner.conversation.store.Path(); got != path {
@@ -67,7 +68,7 @@ func TestInteractiveSessionEnsureSessionStoreRequiresWorkspace(t *testing.T) {
 	t.Parallel()
 
 	runner := &interactiveSession{}
-	if err := runner.ensureSessionStore(); err == nil {
+	if err := runner.ensureSessionStore(t.Context()); err == nil {
 		t.Fatal("ensureSessionStore() error = nil, want workspace error")
 	}
 	if runner.conversation.store != nil {
@@ -100,7 +101,7 @@ func TestInteractiveSessionNewRunCreatesSessionLazily(t *testing.T) {
 		t.Fatal("store exists before the first prompt")
 	}
 
-	active, err := runner.NewRun(interaction.RunInput{Prompt: "hello"}, nil)
+	active, err := runner.NewRun(context.Background(), interaction.RunInput{Prompt: "hello"}, nil)
 	if err != nil {
 		t.Fatalf("NewRun() error = %v", err)
 	}

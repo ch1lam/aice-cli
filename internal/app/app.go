@@ -230,7 +230,11 @@ func (a *application) Print(
 			returnErr = errors.Join(returnErr, store.Close())
 		}()
 	}
-	prompt, err := llm.NewUserMessage(llm.NewTextContent(request.Prompt).Part())
+	input, err := prepareFileInput(ctx, interaction.RunInput{Prompt: request.Prompt, Files: interaction.FileReferences(request.Prompt)}, environment.workspace, environment.guardAdapter, nil)
+	if err != nil {
+		return err
+	}
+	prompt, err := newImageInputContext(ctx, input, environment.model)
 	if err != nil {
 		return fmt.Errorf("app: create prompt: %w", err)
 	}

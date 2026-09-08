@@ -48,6 +48,8 @@ aice --workspace .
 选择支持图片的模型后，用 `Ctrl+V` 或 `Alt+V` 粘贴截图，图片会成为输入框内的占位符，
 与长文本一样用 Backspace/Delete 删除；可配文字或单独发送。平台要求和大小限制见
 [剪贴板图片输入](./docs/configuration.md#clipboard-images)。
+用 `@src/main.go` 或 `@"images/screen shot.png"` 主动引入文件，`--print` 同样支持。
+`read` 可以读取图片，并从会话找回原图查看细节；详见[文件引用](./docs/configuration.md#file-references)。
 
 使用 ChatGPT/Codex 订阅时，在 `/login` 选择 `Sign in with an account` →
 `OpenAI Codex`，再选择浏览器或设备代码登录。浏览器登录会自动打开授权页，
@@ -91,7 +93,7 @@ aice --workspace . --session .aice/sessions/<session-id>.jsonl
 | Session | 重启恢复、分支、回退与自动/手动非破坏性压缩 |
 | 侧问题 | Session 历史之外、无工具的多个临时 `/btw` 线程 |
 | Agent Skills | 开放规范的 `SKILL.md` 目录：内建、`~/.agents/skills` 与项目 `.agents/skills`；详见 [Agent Skills](./docs/configuration.md#agent-skills) |
-| 输入 | 主 TUI 输入框支持文本与[剪贴板图片](./docs/configuration.md#clipboard-images) |
+| 输入 | 文本、`@文件` 与[剪贴板图片](./docs/configuration.md#clipboard-images)，共用图片缩放与原图找回 |
 
 工具继承 AICE 进程权限。每次调用都会经过执行门禁；`--print` 下 `ask` 按
 `deny` 处理，除非加上 `--yolo`。`--workspace` 是工作目录并定义路径访问边界，不是沙箱。

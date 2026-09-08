@@ -49,7 +49,9 @@ chooser, or a blank composer when no side threads exist.
 
 Paste a screenshot with `Ctrl+V` or `Alt+V` when using a vision model. Images appear as inline
 placeholders; delete them with Backspace/Delete, like long text pastes.
-See [clipboard input](./docs/configuration.md#clipboard-images) for platform support and limits.
+Attach files with `@src/main.go` or `@"images/screen shot.png"`; `read` can also
+inspect images and recover saved originals. The same references work in `--print`.
+See [file references](./docs/configuration.md#file-references) and [clipboard input](./docs/configuration.md#clipboard-images) for platform support and limits.
 
 For a ChatGPT/Codex subscription, use `/login` → `Sign in with an account` →
 `OpenAI Codex`, then choose browser or device code login. Browser login opens
@@ -95,7 +97,7 @@ aice --workspace . --session .aice/sessions/<session-id>.jsonl
 | Sessions | restart recovery, branches, checkout/backtracking, automatic and manual compaction |
 | Side questions | multiple ephemeral, tool-free `/btw` threads outside Session history |
 | Agent Skills | open-spec `SKILL.md` directories from builtin, `~/.agents/skills`, and project `.agents/skills`; see [Agent Skills](./docs/configuration.md#agent-skills) |
-| Input | text and [clipboard images](./docs/configuration.md#clipboard-images) in the main TUI composer |
+| Input | text, `@file` attachments, and [clipboard images](./docs/configuration.md#clipboard-images); shared image resizing and original recovery |
 
 Tools inherit the permissions of the AICE process. Every call is checked by
 the execution gate; `--print` treats `ask` as `deny` unless `--yolo`. `--workspace` sets the

@@ -816,7 +816,31 @@ selects original pixels before resizing, allowing detailed inspection. Text
 tool error rather than an omitted image. `read` also supports shallow directory
 listings, bounded by 2000 entries or 50 KiB.
 
-`@` file references, dragged file paths, and print-mode image flags are not implemented.
+### File references
+
+Use `@src/main.go` or `@"images/screen shot.png"` in the main composer or a
+`--print` prompt to attach a file. References start at a whitespace boundary;
+email addresses, `@@literal`, and backtick code remain ordinary text. Use quotes
+for paths with spaces. Relative paths resolve from the workspace; `~` and
+absolute paths are supported. Opaque long-paste placeholders are not scanned.
+An unfinished quoted reference remains text until completed.
+
+At most eight file references are allowed per submission. Each file uses the
+same reader as the `read` tool: text contributes up to 2000 lines / 50 KiB with
+a continuation notice; PNG/JPEG contributes image content; directories contribute
+a shallow listing. Unsupported binary files fail explicitly. Image count and
+byte limits include both file references and pasted images. Repeated paths are
+read once. Contents are frozen before acceptance, including steering and queued
+follow-ups; editing a source afterwards does not change accepted input.
+
+File reads use the existing Guard, checking the requested name and resolved
+physical target. Interactive approvals are cancellable; `--print` fails closed
+on an Ask unless `--yolo`, which still cannot bypass a Deny. A failed attachment
+rejects the complete submission and restores the interactive draft. `/btw`
+remains tool-free and does not accept file or image attachments.
+
+Dragged file paths and separate print-mode image flags are not implemented;
+`--print 'Describe @image.png'` uses the same attachment pipeline.
 
 ## Operational environment variables
 

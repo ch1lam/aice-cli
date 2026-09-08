@@ -147,11 +147,11 @@ func TestInteractiveSessionPersistenceFailureStopsFollowUp(t *testing.T) {
 		conversation: conversationState{store: store},
 		model:        deepseek.DefaultModel(),
 	}
-	active, err := runner.NewRun(interaction.RunInput{Prompt: "question"}, nil)
+	active, err := runner.NewRun(context.Background(), interaction.RunInput{Prompt: "question"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := active.Deliver(interaction.Delivery{
+	if err := active.Deliver(context.Background(), interaction.Delivery{
 		ID: "next", Text: "continue", Kind: interaction.DeliveryKindFollowUp,
 	}); err != nil {
 		t.Fatal(err)

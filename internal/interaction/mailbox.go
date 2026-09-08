@@ -37,6 +37,7 @@ type Delivery struct {
 	Text   string
 	Kind   DeliveryKind
 	Images []llm.ImageContent
+	Files  []string
 }
 
 // Mailbox is the bounded synchronization point between an interactive UI and
@@ -69,6 +70,9 @@ func (m *Mailbox) Deliver(delivery Delivery) error {
 	case DeliveryKindSteer, DeliveryKindFollowUp:
 	default:
 		return fmt.Errorf("interaction: delivery kind %d is invalid", delivery.Kind)
+	}
+	if len(delivery.Files) != 0 {
+		return fmt.Errorf("interaction: file references must be resolved before enqueueing")
 	}
 	if err := ValidateImages(delivery.Images); err != nil {
 		return err

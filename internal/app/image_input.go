@@ -18,6 +18,10 @@ func validateImageModel(model llm.Model, images []llm.ImageContent) error {
 }
 
 func newImageInput(input interaction.RunInput, model llm.Model) (llm.UserMessage, error) {
+	return newImageInputContext(context.Background(), input, model)
+}
+
+func newImageInputContext(ctx context.Context, input interaction.RunInput, model llm.Model) (llm.UserMessage, error) {
 	if err := validateImageModel(model, input.Images); err != nil {
 		return llm.UserMessage{}, err
 	}
@@ -30,7 +34,7 @@ func newImageInput(input interaction.RunInput, model llm.Model) (llm.UserMessage
 	}
 	prepared := make([]llm.ImageContent, 0, len(input.Images))
 	for _, source := range input.Images {
-		img, err := media.Prepare(context.Background(), source, source.Region)
+		img, err := media.Prepare(ctx, source, source.Region)
 		if err != nil {
 			return llm.UserMessage{}, err
 		}

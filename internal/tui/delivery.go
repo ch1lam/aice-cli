@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"errors"
 	"strconv"
 	"strings"
@@ -39,28 +40,18 @@ func (m model) submitDelivery(mode deliveryMode) (model, tea.Cmd, bool) {
 		text: imageInputText(text, len(m.composerImages())),
 		mode: mode,
 	}
-	err := m.activeRun.Deliver(interaction.Delivery{
-		ID:     delivery.id,
-		Text:   text,
-		Kind:   delivery.mode,
-		Images: m.composerImages(),
-	})
-	if err != nil {
-		m.nextDeliveryID--
-		m.status = "Pending input was not accepted"
-		if errors.Is(err, interaction.ErrFull) {
-			m.status = "Pending input is full"
-		}
-		if errors.Is(err, interaction.ErrClosed) {
-			m.status = "Current response just finished"
-		}
-		m.inputNotice = err.Error()
-		m.resizeLayout()
-		return m, nil, true
+	input := interaction.Delivery{ID: delivery.id, Text: text, Kind: mode,
+		Images: m.composerImages(), Files: interaction.FileReferences(m.input.Value())}
+	draft := composerDraft{text: m.input.Value(), pastes: m.pastes}
+	prepare := m.prepareDelivery
+	if prepare == nil {
+		prepare = deliveryCommand(context.Background())
 	}
+	command, cancel := prepare(m.activeRun, input, draft)
+	m.cancelDelivery = cancel
+	m.deliveryPending = true
 
 	m.pendingDeliveries = append(m.pendingDeliveries, delivery)
-	m.promptHistory = appendPromptHistory(m.promptHistory, text)
 	m.historyIndex = -1
 	m.historyDraft = ""
 	m.input.Reset()
@@ -75,7 +66,7 @@ func (m model) submitDelivery(mode deliveryMode) (model, tea.Cmd, bool) {
 	}
 	m.resizeLayout()
 	m.refreshViewport(false)
-	return m, nil, true
+	return m, command, true
 }
 
 func deliveryID(sequence uint64) string {
@@ -140,4 +131,48 @@ func (m *model) applySteer(steering InputDisplay) bool {
 	m.status = "Steering response..."
 	m.resizeLayout()
 	return true
+}
+
+// deliveryResult closes preflight. Failed inputs return to the composer intact.
+type deliveryResult struct {
+	id    string
+	draft composerDraft
+	text  string
+	err   error
+}
+
+func (m model) applyDeliveryResult(result deliveryResult) (tea.Model, tea.Cmd) {
+	m.deliveryPending = false
+	m.cancelDelivery = nil
+	if result.err != nil {
+		m.removePendingDelivery(result.id)
+		m.input.SetValue(result.draft.text)
+		m.pastes = result.draft.pastes
+		m.inputNotice = result.err.Error()
+		m.status = "Pending input was not accepted"
+		if errors.Is(result.err, interaction.ErrFull) {
+			m.status = "Pending input is full"
+		}
+		if errors.Is(result.err, interaction.ErrClosed) {
+			m.status = "Current response just finished"
+		}
+	} else {
+		m.promptHistory = appendPromptHistory(m.promptHistory, result.text)
+	}
+	m.resizeLayout()
+	m.refreshViewport(false)
+	if m.composerInputEnabled() {
+		return m, m.input.Focus()
+	}
+	return m, nil
+}
+
+func deliveryCommand(ctx context.Context) func(ActiveRun, interaction.Delivery, composerDraft) (tea.Cmd, context.CancelFunc) {
+	return func(active ActiveRun, input interaction.Delivery, draft composerDraft) (tea.Cmd, context.CancelFunc) {
+		deliveryCtx, cancel := context.WithCancel(ctx)
+		return func() tea.Msg {
+			defer cancel()
+			return deliveryResult{id: input.ID, draft: draft, text: input.Text, err: active.Deliver(deliveryCtx, input)}
+		}, cancel
+	}
 }

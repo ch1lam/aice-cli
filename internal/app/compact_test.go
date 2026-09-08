@@ -822,11 +822,11 @@ func TestInteractiveFollowUpCompactionRetainsAcceptedInputExactlyOnce(t *testing
 		compactionKeepRecentTokens: 1,
 		userHomeDir:                func() (string, error) { return home, nil },
 		runTUI: func(ctx context.Context, runner interaction.Runner, _ tui.Options) error {
-			active, err := runner.NewRun(interaction.RunInput{Prompt: "initial task"}, nil)
+			active, err := runner.NewRun(context.Background(), interaction.RunInput{Prompt: "initial task"}, nil)
 			if err != nil {
 				return err
 			}
-			if err := active.Deliver(interaction.Delivery{ID: "follow", Text: "UNIQUE_FOLLOWUP", Kind: interaction.DeliveryKindFollowUp}); err != nil {
+			if err := active.Deliver(context.Background(), interaction.Delivery{ID: "follow", Text: "UNIQUE_FOLLOWUP", Kind: interaction.DeliveryKindFollowUp}); err != nil {
 				return err
 			}
 			return active.Run(ctx)

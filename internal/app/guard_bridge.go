@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/ch1lam/aice-cli/internal/hostpath"
 	"github.com/ch1lam/aice-cli/internal/interaction"
 	"github.com/ch1lam/aice-cli/internal/llm"
+	"github.com/ch1lam/aice-cli/internal/tool"
 )
 
 const (
@@ -37,6 +39,9 @@ func newExecutionGuard(
 	// Built-in guard: intrinsic execution gate, not a plugin. Workspace-scoped
 	// so .env relative to the project is correctly recognized. Disabled only
 	// when explicitly configured off (future: guard config in settings.json).
+	if physical, err := filepath.EvalSymlinks(workspace); err == nil {
+		workspace = physical
+	}
 	g, err := guard.New(workspace, guard.Config{
 		ReadOnlyRoots: readOnlyRoots,
 	})
@@ -67,6 +72,37 @@ func (g *guardAdapter) Check(ctx context.Context, call llm.ToolCall) (agent.Guar
 	res, err := g.inner.Check(ctx, call)
 	if err != nil {
 		return agent.GuardResult{}, err
+	}
+	// Read's tolerant path spelling and symlink resolution must not bypass the
+	// gate. Check both the requested name and the physical target before asking.
+	if call.Name == "read" && res.Decision != guard.DecisionDeny {
+		var args tool.ReadRequest
+		if json.Unmarshal(call.Arguments, &args) == nil && args.Path != "" && g.inner.Workspace() != "" {
+			workspace, err := tool.NewWorkspace(g.inner.Workspace())
+			if err != nil {
+				return agent.GuardResult{}, err
+			}
+			reader, err := tool.NewRead(workspace)
+			if err != nil {
+				return agent.GuardResult{}, err
+			}
+			resolved, err := reader.ResolvePath(args.Path)
+			if err == nil && resolved != g.inner.ResolveAbsolute(args.Path, "read") {
+				args.Path = resolved
+				physical := call
+				physical.Arguments, _ = json.Marshal(args)
+				other, err := g.inner.Check(ctx, physical)
+				if err != nil {
+					return agent.GuardResult{}, err
+				}
+				if other.Decision == guard.DecisionDeny {
+					res = other
+				} else if other.Decision == guard.DecisionAsk {
+					res.Decision = guard.DecisionAsk
+					res.Approvals = append(res.Approvals, other.Approvals...)
+				}
+			}
+		}
 	}
 	mapped := mapGuardResult(res)
 	if g.yolo && mapped.Decision == agent.GuardAsk {

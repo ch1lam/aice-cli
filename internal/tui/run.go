@@ -120,6 +120,7 @@ func Run(ctx context.Context, runner Runner, options Options) error {
 		slashCommands = append(slashCommands, btwSlashCommand())
 	}
 	initialModel := newModel(requests, controllerDone, slashCommands...)
+	initialModel.prepareDelivery = deliveryCommand(controllerCtx)
 	initialModel.clipboard = pasteClipboard(controllerCtx)
 	initialModel.sideRequests = sideRequests
 	initialModel.sideControllerDone = sideControllerDone
@@ -171,6 +172,7 @@ func checkForUpdate(ctx context.Context, checker UpdateChecker) tea.Cmd {
 
 type runRequest struct {
 	prompt  string
+	files   []string
 	images  []llm.ImageContent
 	command *SlashCommandRequest
 	updates chan runUpdate
@@ -282,7 +284,12 @@ func runOne(ctx context.Context, runner Runner, request runRequest) error {
 		return runSlashCommand(ctx, runner, request)
 	}
 
-	active, err := runner.NewRun(RunInput{Prompt: request.prompt, Images: request.images}, func(
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	if !sendRunUpdate(ctx, request.updates, runUpdate{cancel: cancel, sideThread: request.sideThread}) {
+		return ctx.Err()
+	}
+	active, err := runner.NewRun(runCtx, RunInput{Prompt: request.prompt, Images: request.images, Files: request.files}, func(
 		eventCtx context.Context,
 		event DisplayEvent,
 	) error {
@@ -303,7 +310,6 @@ func runOne(ctx context.Context, runner Runner, request runRequest) error {
 		return err
 	}
 
-	runCtx, cancel := context.WithCancel(ctx)
 	if !sendRunUpdate(ctx, request.updates, runUpdate{
 		active:     active,
 		cancel:     cancel,

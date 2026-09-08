@@ -62,7 +62,7 @@ func startSideRunAsync(
 ) <-chan error {
 	t.Helper()
 	done := make(chan error, 1)
-	active, err := runner.NewRun(interaction.RunInput{Prompt: prompt}, nil)
+	active, err := runner.NewRun(context.Background(), interaction.RunInput{Prompt: prompt}, nil)
 	if err != nil {
 		t.Fatalf("NewRun() error = %v", err)
 	}

@@ -192,7 +192,7 @@ func TestInteractiveSessionSlashNewStartsFreshSession(t *testing.T) {
 	interactiveSlashCommand(t, runner.SlashCommands(), "new")
 
 	// The next accepted prompt creates the fresh file under the workspace.
-	if err := runner.ensureSessionStore(); err != nil {
+	if err := runner.ensureSessionStore(t.Context()); err != nil {
 		t.Fatalf("ensureSessionStore() error = %v", err)
 	}
 	freshPath := runner.conversation.store.Path()

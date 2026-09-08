@@ -99,7 +99,7 @@ func runSide(
 	prompt string,
 ) error {
 	t.Helper()
-	active, err := runner.NewRun(interaction.RunInput{Prompt: prompt}, nil)
+	active, err := runner.NewRun(context.Background(), interaction.RunInput{Prompt: prompt}, nil)
 	if err != nil {
 		return err
 	}
@@ -324,14 +324,14 @@ func TestSideRunRejectsMainRunDeliveries(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateSideThread() error = %v", err)
 	}
-	active, err := side.NewRun(
+	active, err := side.NewRun(context.Background(),
 		interaction.RunInput{Prompt: "side question"},
 		nil,
 	)
 	if err != nil {
 		t.Fatalf("NewRun() error = %v", err)
 	}
-	err = active.Deliver(interaction.Delivery{
+	err = active.Deliver(context.Background(), interaction.Delivery{
 		ID:   "steer-1",
 		Text: "do not steer",
 		Kind: interaction.DeliveryKindSteer,
@@ -617,7 +617,7 @@ func TestSideThreadSnapshotIncludesDurablePromptBeforeAssistant(t *testing.T) {
 	defer cancel()
 	mainDone := make(chan error, 1)
 	go func() {
-		active, err := harness.session.NewRun(
+		active, err := harness.session.NewRun(context.Background(),
 			interaction.RunInput{Prompt: "main question"},
 			nil,
 		)
@@ -699,7 +699,7 @@ func TestSideThreadSnapshotIncludesCurrentFollowUp(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
-	active, err := harness.session.NewRun(
+	active, err := harness.session.NewRun(context.Background(),
 		interaction.RunInput{Prompt: "main question"},
 		nil,
 	)
@@ -712,7 +712,7 @@ func TestSideThreadSnapshotIncludesCurrentFollowUp(t *testing.T) {
 
 	// Queue the follow-up before releasing the first request so the main run
 	// polls it at its natural stop, then release interaction 1.
-	if err := active.Deliver(interaction.Delivery{
+	if err := active.Deliver(context.Background(), interaction.Delivery{
 		ID:   "follow-1",
 		Text: "follow up text",
 		Kind: interaction.DeliveryKindFollowUp,
@@ -857,7 +857,7 @@ func TestSideThreadCancelDoesNotAffectMainRun(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
-	active, err := harness.session.NewRun(
+	active, err := harness.session.NewRun(context.Background(),
 		interaction.RunInput{Prompt: "main question"},
 		nil,
 	)
@@ -873,7 +873,7 @@ func TestSideThreadCancelDoesNotAffectMainRun(t *testing.T) {
 		t.Fatalf("CreateSideThread() error = %v", err)
 	}
 	sideCtx, sideCancel := context.WithCancel(t.Context())
-	sideActive, err := side.NewRun(
+	sideActive, err := side.NewRun(context.Background(),
 		interaction.RunInput{Prompt: "side question"},
 		nil,
 	)
@@ -925,7 +925,7 @@ func TestMainRunCancelDoesNotAffectSideThread(t *testing.T) {
 	})
 
 	mainCtx, mainCancel := context.WithCancel(t.Context())
-	active, err := harness.session.NewRun(
+	active, err := harness.session.NewRun(context.Background(),
 		interaction.RunInput{Prompt: "main question"},
 		nil,
 	)
@@ -987,7 +987,7 @@ func TestSideRunnerUsableAfterCancelledSideRun(t *testing.T) {
 	}
 
 	sideCtx, sideCancel := context.WithCancel(t.Context())
-	sideActive, err := side.NewRun(
+	sideActive, err := side.NewRun(context.Background(),
 		interaction.RunInput{Prompt: "cancelled side question"},
 		nil,
 	)
@@ -1210,7 +1210,7 @@ func TestSideThreadConcurrentSnapshotsConsistent(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
-	active, err := harness.session.NewRun(
+	active, err := harness.session.NewRun(context.Background(),
 		interaction.RunInput{Prompt: "main question"},
 		nil,
 	)
@@ -1320,7 +1320,7 @@ func TestSideThreadConcurrentSnapshotsConsistent(t *testing.T) {
 		}
 
 		if index < 3 {
-			if err := active.Deliver(interaction.Delivery{
+			if err := active.Deliver(context.Background(), interaction.Delivery{
 				ID:   "follow-" + strconv.Itoa(index),
 				Text: "follow up " + strconv.Itoa(index),
 				Kind: interaction.DeliveryKindFollowUp,

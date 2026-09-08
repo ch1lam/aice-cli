@@ -430,11 +430,12 @@ func cloneContentParts(parts []llm.ContentPart) []llm.ContentPart {
 var _ interaction.Runner = (*sideRunner)(nil)
 
 func (r *sideRunner) NewRun(
+	ctx context.Context,
 	input interaction.RunInput,
 	sink interaction.EventSink,
 ) (interaction.ActiveRun, error) {
-	if len(input.Images) > 0 {
-		return nil, fmt.Errorf("image attachments are supported in the main conversation only")
+	if len(input.Images) > 0 || len(input.Files) > 0 {
+		return nil, fmt.Errorf("file and image attachments are supported in the main conversation only")
 	}
 	prompt, err := llm.NewUserMessage(llm.NewTextContent(input.Prompt).Part())
 	if err != nil {
@@ -539,7 +540,7 @@ type sideRun struct {
 
 var _ interaction.ActiveRun = (*sideRun)(nil)
 
-func (r *sideRun) Deliver(interaction.Delivery) error {
+func (r *sideRun) Deliver(context.Context, interaction.Delivery) error {
 	return interaction.ErrClosed
 }
 

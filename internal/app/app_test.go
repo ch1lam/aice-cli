@@ -1161,7 +1161,7 @@ func TestInteractiveSessionPersistsSteerInsideActiveRun(t *testing.T) {
 		model:        deepseek.DefaultModel(),
 	}
 	var displays []tui.DisplayEvent
-	active, err := runner.NewRun(tui.RunInput{Prompt: "inspect"}, func(
+	active, err := runner.NewRun(context.Background(), tui.RunInput{Prompt: "inspect"}, func(
 		_ context.Context,
 		event tui.DisplayEvent,
 	) error {
@@ -1171,7 +1171,7 @@ func TestInteractiveSessionPersistsSteerInsideActiveRun(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewRun() error = %v", err)
 	}
-	if err := active.Deliver(interaction.Delivery{
+	if err := active.Deliver(context.Background(), interaction.Delivery{
 		ID:   "steer-1",
 		Text: "focus on tests",
 		Kind: interaction.DeliveryKindSteer,
@@ -1229,7 +1229,7 @@ func TestInteractiveSessionPersistsFollowUpsAsSourceMessages(t *testing.T) {
 		model:        deepseek.DefaultModel(),
 	}
 	var displays []tui.DisplayEvent
-	active, err := runner.NewRun(tui.RunInput{Prompt: "inspect"}, func(
+	active, err := runner.NewRun(context.Background(), tui.RunInput{Prompt: "inspect"}, func(
 		_ context.Context,
 		event tui.DisplayEvent,
 	) error {
@@ -1239,7 +1239,7 @@ func TestInteractiveSessionPersistsFollowUpsAsSourceMessages(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewRun() error = %v", err)
 	}
-	if err := active.Deliver(interaction.Delivery{
+	if err := active.Deliver(context.Background(), interaction.Delivery{
 		ID:   "follow-up-1",
 		Text: "continue with tests",
 		Kind: interaction.DeliveryKindFollowUp,
@@ -1422,7 +1422,7 @@ func runInteractive(
 	prompt string,
 	sink tui.DisplayEventSink,
 ) error {
-	active, err := runner.NewRun(tui.RunInput{Prompt: prompt}, sink)
+	active, err := runner.NewRun(context.Background(), tui.RunInput{Prompt: prompt}, sink)
 	if err != nil {
 		return err
 	}
