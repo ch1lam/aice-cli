@@ -30,6 +30,8 @@ DeepSeek also supports `deepseek-v4-flash-vision-exp` and
 `deepseek-v4.1-flash-expires-on-0910` with text/image input via
 [Responses](https://api-docs.deepseek.com/guides/responses_api/).
 V4.1 provisionally follows Flash's context/output limits and thinking choices.
+DeepSeek cost estimates use official [off-peak rates](https://api-docs.deepseek.com/quick_start/pricing/);
+peak billing is twice the estimate.
 
 | Setting | Environment variable | Supported values |
 | --- | --- | --- |

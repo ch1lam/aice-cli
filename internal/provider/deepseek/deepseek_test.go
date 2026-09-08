@@ -33,9 +33,9 @@ func TestModels(t *testing.T) {
 			ContextWindow:    1_000_000,
 			MaxTokens:        384_000,
 			Pricing: llm.Pricing{
-				Input:     0.14,
-				Output:    0.28,
-				CacheRead: 0.0028,
+				Input:     0.22,
+				Output:    0.66,
+				CacheRead: 0.007,
 			},
 		},
 		{
@@ -50,9 +50,9 @@ func TestModels(t *testing.T) {
 			ContextWindow:           1_000_000,
 			MaxTokens:               384_000,
 			Pricing: llm.Pricing{
-				Input:     0.435,
-				Output:    0.87,
-				CacheRead: 0.003625,
+				Input:     0.66,
+				Output:    1.98,
+				CacheRead: 0.022,
 			},
 		},
 	}
