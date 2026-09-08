@@ -20,14 +20,14 @@ func (m model) submit() (model, tea.Cmd, bool) {
 	}
 
 	prompt := strings.TrimSpace(m.expandComposerText())
-	if prompt == "" && len(m.images) == 0 {
+	if prompt == "" && len(m.composerImages()) == 0 {
 		return m, nil, true
 	}
 	// Pasted placeholders are literal content, never a slash command, even
 	// when the expanded text alone would parse as one.
-	if len(m.pastes) == 0 {
+	if len(m.pastes) == len(m.composerImages()) {
 		if request, slashCommand := parseSlashCommand(prompt); slashCommand {
-			if len(m.images) > 0 {
+			if len(m.composerImages()) > 0 {
 				m.inputNotice = "Send or remove attached images before running a slash command"
 				return m.settleCommand(false, nil)
 			}
@@ -48,13 +48,13 @@ func (m model) submit() (model, tea.Cmd, bool) {
 		return m, nil, true
 	}
 
-	input := RunInput{Prompt: prompt, Images: interaction.CloneImages(m.images)}
+	input := RunInput{Prompt: prompt, Images: interaction.CloneImages(m.composerImages())}
 	m.submittedInput = &input
+	m.submittedDraft = composerDraft{text: m.input.Value(), pastes: m.pastes}
 	m.entries = append(m.entries, transcriptEntry{kind: entryUser, text: imageInputText(prompt, len(input.Images))})
 	m.beginProcess()
 	m.input.Reset()
 	m.pastes = nil
-	m.images = nil
 	m.inputNotice = ""
 	m.commandSelection = 0
 	m.commandDismissed = false

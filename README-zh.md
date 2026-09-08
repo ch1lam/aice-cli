@@ -44,8 +44,8 @@ aice --workspace .
 主 Session 的侧线程；输入不带参数的 `/btw` 会打开线程选择菜单；没有侧线程
 时则直接打开空白输入框。
 
-选择支持图片的模型后，用 `Ctrl+V` 或 `Alt+V` 粘贴截图，`Alt+Backspace`
-删除最后一张图片；可配文字或单独发送。平台要求和大小限制见
+选择支持图片的模型后，用 `Ctrl+V` 或 `Alt+V` 粘贴截图，图片会成为输入框内的占位符，
+与长文本一样用 Backspace/Delete 删除；可配文字或单独发送。平台要求和大小限制见
 [剪贴板图片输入](./docs/configuration.md#clipboard-images)。
 
 使用 ChatGPT/Codex 订阅时，在 `/login` 选择 `Sign in with an account` →

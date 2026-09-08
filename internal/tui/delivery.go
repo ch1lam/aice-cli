@@ -25,7 +25,7 @@ type pendingDelivery struct {
 
 func (m model) submitDelivery(mode deliveryMode) (model, tea.Cmd, bool) {
 	text := strings.TrimSpace(m.expandComposerText())
-	if text == "" && len(m.images) == 0 {
+	if text == "" && len(m.composerImages()) == 0 {
 		return m, nil, true
 	}
 	if m.activeRun == nil {
@@ -36,14 +36,14 @@ func (m model) submitDelivery(mode deliveryMode) (model, tea.Cmd, bool) {
 	m.nextDeliveryID++
 	delivery := pendingDelivery{
 		id:   deliveryID(m.nextDeliveryID),
-		text: imageInputText(text, len(m.images)),
+		text: imageInputText(text, len(m.composerImages())),
 		mode: mode,
 	}
 	err := m.activeRun.Deliver(interaction.Delivery{
 		ID:     delivery.id,
 		Text:   text,
 		Kind:   delivery.mode,
-		Images: m.images,
+		Images: m.composerImages(),
 	})
 	if err != nil {
 		m.nextDeliveryID--
@@ -65,7 +65,6 @@ func (m model) submitDelivery(mode deliveryMode) (model, tea.Cmd, bool) {
 	m.historyDraft = ""
 	m.input.Reset()
 	m.pastes = nil
-	m.images = nil
 	m.inputNotice = ""
 	m.commandSelection = 0
 	m.commandDismissed = false

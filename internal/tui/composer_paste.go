@@ -10,6 +10,7 @@ import (
 
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
+	"github.com/ch1lam/aice-cli/internal/llm"
 )
 
 const (
@@ -35,13 +36,12 @@ const (
 	pasteTokenClose = ']'
 )
 
-// pasteAttachment remembers one collapsed long paste. The textarea holds only
-// the short token inline; submit and history paths expand tokens back to the
-// full text in order.
+// pasteAttachment holds text or an image behind an inline editing token.
 type pasteAttachment struct {
 	token string
 	text  string
 	lines int
+	image *llm.ImageContent
 }
 
 // exceedsPasteThreshold reports whether freshly added text is large enough to
@@ -128,6 +128,10 @@ func (m *model) insertPastePlaceholder(content string) {
 // preserving the order everything was pasted or typed in. Unknown bracket
 // spans are left untouched as plain text.
 func (m model) expandComposerText() string {
+	return m.expandPasteText(false)
+}
+
+func (m model) expandPasteText(keepImages bool) string {
 	value := m.input.Value()
 	if len(m.pastes) == 0 {
 		return value
@@ -137,11 +141,15 @@ func (m model) expandComposerText() string {
 	sort.Slice(ordered, func(i, j int) bool {
 		return len(ordered[i].token) > len(ordered[j].token)
 	})
+	replacements := make([]string, 0, 2*len(ordered))
 	for _, attachment := range ordered {
-		if strings.Contains(value, attachment.token) {
-			value = strings.ReplaceAll(value, attachment.token, attachment.text)
+		if keepImages && attachment.image != nil {
+			continue
 		}
+		replacements = append(replacements, attachment.token, attachment.text)
 	}
+	// Replace only original tokens; pasted text may itself mention image labels.
+	value = strings.NewReplacer(replacements...).Replace(value)
 	return value
 }
 
@@ -245,7 +253,17 @@ func (m model) handlePasteTokenKey(message tea.KeyPressMsg) (model, tea.Cmd, boo
 		return m, nil, false
 	}
 	row, col := m.input.Line(), m.input.Column()
-	start, end, atStart, inside, atEnd := pasteTokenBoundary(m.pasteTokenSpansInRow(row), col)
+	spans := m.pasteTokenSpansInRow(row)
+	// At adjacent tokens, forward keys own the right token, backward keys the left.
+	forward := key.Matches(message, m.input.KeyMap.CharacterForward,
+		m.input.KeyMap.DeleteCharacterForward, m.input.KeyMap.DeleteWordForward)
+	for _, span := range spans {
+		if (forward && col == span[0]) || (!forward && col == span[1]) {
+			spans = [][2]int{span}
+			break
+		}
+	}
+	start, end, atStart, inside, atEnd := pasteTokenBoundary(spans, col)
 	switch {
 	case key.Matches(message, m.input.KeyMap.CharacterBackward):
 		if atEnd {
@@ -379,7 +397,7 @@ func pastePlaceholderStatus(lines int) string {
 
 // openComposerEditor hands the expanded composer text to the user's default
 // editor. The program pauses while the editor runs; on exit the edited file
-// refills the composer as plain text without placeholders.
+// refills the composer with expanded text and retained image tokens.
 func (m model) openComposerEditor() (model, tea.Cmd) {
 	editor := defaultComposerEditor()
 	fields := strings.Fields(editor)
@@ -399,7 +417,7 @@ func (m model) openComposerEditor() (model, tea.Cmd) {
 		m.status = "editor unavailable: could not create a temp file"
 		return m, nil
 	}
-	if _, err := file.WriteString(m.expandComposerText()); err != nil {
+	if _, err := file.WriteString(m.expandPasteText(true)); err != nil {
 		_ = file.Close()
 		_ = os.Remove(file.Name())
 		m.status = "editor unavailable: could not write the draft"
@@ -412,9 +430,7 @@ func (m model) openComposerEditor() (model, tea.Cmd) {
 	})
 }
 
-// applyEditorResult refills the composer with the edited file as plain text.
-// Placeholders are intentionally gone afterwards: the edited result scrolls
-// normally instead of collapsing again.
+// applyEditorResult expands text pastes and retains only surviving image tokens.
 func (m model) applyEditorResult(message editorFinishedMsg) model {
 	defer func() { _ = os.Remove(message.file) }()
 	if message.err != nil {
@@ -437,8 +453,15 @@ func (m model) applyEditorResult(message editorFinishedMsg) model {
 		m.status = "editor returned empty result; draft kept"
 		return m
 	}
-	m.pastes = nil
+	images := make([]pasteAttachment, 0)
+	for _, attachment := range m.pastes {
+		if attachment.image != nil {
+			images = append(images, attachment)
+		}
+	}
+	m.pastes = images
 	m.input.SetValue(strings.TrimRight(string(data), "\r\n"))
+	m.dropOrphanPasteAttachments()
 	m.input.CursorEnd()
 	m.historyIndex = -1
 	m.historyDraft = ""

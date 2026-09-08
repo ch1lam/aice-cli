@@ -7,7 +7,7 @@ package tui
 // text exits that mode so arrow keys move the cursor for local changes. A
 // multi-line draft never switches until the user recalls an entry.
 func (m model) historyBackAllowed() bool {
-	if len(m.images) > 0 {
+	if len(m.composerImages()) > 0 {
 		return false
 	}
 	if m.historyIndex >= 0 {
@@ -22,7 +22,7 @@ func (m model) historyBackAllowed() bool {
 // prompt. Its single-line rule mirrors historyBackAllowed; pressing Down while
 // already on the draft is a harmless no-op handled by recallHistory.
 func (m model) historyForwardAllowed() bool {
-	if len(m.images) > 0 {
+	if len(m.composerImages()) > 0 {
 		return false
 	}
 	if m.historyIndex >= 0 {

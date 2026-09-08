@@ -46,8 +46,8 @@ Agent run. Use `/btw [question]` to start a new tool-free side thread that
 does not interrupt or enter the main Session. Bare `/btw` opens the thread
 chooser, or a blank composer when no side threads exist.
 
-Paste a screenshot with `Ctrl+V` or `Alt+V` when using a vision model. Remove
-the last attachment with `Alt+Backspace`; send images with text or alone.
+Paste a screenshot with `Ctrl+V` or `Alt+V` when using a vision model. Images appear as inline
+placeholders; delete them with Backspace/Delete, like long text pastes.
 See [clipboard input](./docs/configuration.md#clipboard-images) for platform support and limits.
 
 For a ChatGPT/Codex subscription, use `/login` → `Sign in with an account` →

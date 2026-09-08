@@ -6,6 +6,7 @@ import (
 	"errors"
 	"image"
 	"image/png"
+	"os"
 	"strings"
 	"testing"
 
@@ -37,7 +38,7 @@ func TestClipboardImagesSubmitThroughController(t *testing.T) {
 				t.Fatal("paste shortcut did not read clipboard")
 			}
 			m = updateModel(t, m, command())
-			if len(m.images) != 1 || !strings.Contains(m.composerView(80), "[Image 1]") {
+			if len(m.composerImages()) != 1 || !strings.Contains(m.composerView(80), "[Image 1]") {
 				t.Fatal("pasted image is not visible")
 			}
 			m, command, _ = m.submit()
@@ -54,7 +55,7 @@ func TestClipboardImagesSubmitThroughController(t *testing.T) {
 			if received.Prompt != text || len(received.Images) != 1 || !bytes.Equal(received.Images[0].Data, img.Data) {
 				t.Fatal("controller lost text or image")
 			}
-			if len(m.images) != 0 || m.input.Value() != "" {
+			if len(m.composerImages()) != 0 || m.input.Value() != "" {
 				t.Fatal("submitted attachments left in composer")
 			}
 		})
@@ -64,12 +65,12 @@ func TestClipboardImagesSubmitThroughController(t *testing.T) {
 func TestImageDraftRestoredWhenModelRejectsInput(t *testing.T) {
 	t.Parallel()
 	m := newModel(make(chan runRequest), make(chan struct{}))
-	m.images = []llm.ImageContent{composerTestImage(t)}
-	m.input.SetValue("keep this draft")
+	m.insertImagePlaceholder(composerTestImage(t))
+	m.input.InsertString("keep this draft")
 	m, _, _ = m.submit()
 	updated, _ := m.applyRunBatch(runBatchMsg{closed: true, updates: []runUpdate{{done: true, err: errors.New("model does not support images")}}})
 	m = updated.(model)
-	if m.running || m.input.Value() != "keep this draft" || len(m.images) != 1 {
+	if m.running || m.input.Value() != "[Image 1]keep this draft" || len(m.composerImages()) != 1 {
 		t.Fatal("rejection lost image draft")
 	}
 	if strings.Contains(m.transcriptView(), "keep this draft") {
@@ -86,7 +87,7 @@ func TestImageSteeringAndFollowUpPreserveDraftOnRejection(t *testing.T) {
 		t.Run(deliveryID(uint64(kind)), func(t *testing.T) {
 			m := newModel(make(chan runRequest), make(chan struct{}))
 			m.running, m.acceptsDelivery = true, true
-			m.images = []llm.ImageContent{composerTestImage(t)}
+			m.insertImagePlaceholder(composerTestImage(t))
 			m.activeRun = &activeRunFunc{deliver: func(input interaction.Delivery) error {
 				if len(input.Images) != 1 || input.Text != "" || input.Kind != kind {
 					t.Fatal("image-only delivery changed")
@@ -94,12 +95,12 @@ func TestImageSteeringAndFollowUpPreserveDraftOnRejection(t *testing.T) {
 				return errors.New("images unsupported")
 			}}
 			m, _, _ = m.submitDelivery(kind)
-			if len(m.images) != 1 || len(m.pendingDeliveries) != 0 || !strings.Contains(m.composerView(80), "images unsupported") {
+			if len(m.composerImages()) != 1 || len(m.pendingDeliveries) != 0 || !strings.Contains(m.composerView(80), "images unsupported") {
 				t.Fatal("rejected image delivery was lost")
 			}
 			m.activeRun = &activeRunFunc{}
 			m, _, _ = m.submitDelivery(kind)
-			if len(m.images) != 0 || len(m.pendingDeliveries) != 1 || !strings.Contains(m.pendingDeliveries[0].text, "[Image 1]") {
+			if len(m.composerImages()) != 0 || len(m.pendingDeliveries) != 1 || !strings.Contains(m.pendingDeliveries[0].text, "[Image 1]") {
 				t.Fatal("accepted image delivery not shown")
 			}
 		})
@@ -112,20 +113,22 @@ func TestImageComposerDeletionCommandsAndTextPaste(t *testing.T) {
 	img := composerTestImage(t)
 	m = updateModel(t, m, clipboardResult{image: &img})
 	m = updateModel(t, m, clipboardResult{image: &img})
-	m.input.SetValue("/btw question")
+	m.input.InsertString("/btw question")
 	m, command, _ := m.submit()
-	if command != nil || len(m.images) != 2 || m.input.Value() != "/btw question" {
+	if command != nil || len(m.composerImages()) != 2 {
 		t.Fatal("slash command discarded images")
 	}
-	m, _, _ = m.handleKey(tea.KeyPressMsg{Code: tea.KeyBackspace, Mod: tea.ModAlt})
-	if len(m.images) != 1 {
-		t.Fatal("alt+backspace did not remove last image")
+	m.input.SetCursorColumn(len("[Image 1]"))
+	m, _, _ = m.handleKey(tea.KeyPressMsg{Code: tea.KeyBackspace})
+	if len(m.composerImages()) != 1 || m.input.Value() != "[Image 2]/btw question" {
+		t.Fatal("backspace did not remove inline image")
+	}
+	m.input.SetCursorColumn(0)
+	m, _, _ = m.handleKey(tea.KeyPressMsg{Code: tea.KeyDelete})
+	if len(m.composerImages()) != 0 || m.input.Value() != "/btw question" {
+		t.Fatal("delete did not remove inline image")
 	}
 	m.input.Reset()
-	m, _, _ = m.handleKey(tea.KeyPressMsg{Code: tea.KeyBackspace})
-	if len(m.images) != 0 {
-		t.Fatal("backspace on empty text did not remove image")
-	}
 	text := strings.Repeat("pasted line\n", 20)
 	m = updateModel(t, m, clipboardResult{text: text})
 	if m.expandComposerText() != text || len(m.pastes) != 1 {
@@ -140,7 +143,7 @@ func TestClipboardResultDoesNotCrossFocusBoundary(t *testing.T) {
 	m.side.isVisible = true
 	m.input.SetValue("side draft")
 	m = updateModel(t, m, clipboardResult{image: new(composerTestImage(t))})
-	if len(m.images) != 0 || m.input.Value() != "side draft" {
+	if len(m.composerImages()) != 0 || m.input.Value() != "side draft" {
 		t.Fatal("late clipboard result crossed into side composer")
 	}
 }
@@ -158,7 +161,64 @@ func TestTypingDuringClipboardReadIsNotDropped(t *testing.T) {
 		t.Fatal("submitted before clipboard completed")
 	}
 	m = updateModel(t, m, clipboardResult{image: new(composerTestImage(t))})
-	if len(m.images) != 1 || m.input.Value() != "x" {
+	if len(m.composerImages()) != 1 || m.input.Value() != "x[Image 1]" {
 		t.Fatal("clipboard completion lost caption")
+	}
+}
+
+func TestImagePlaceholderEditingDuringRun(t *testing.T) {
+	m := newModel(make(chan runRequest), make(chan struct{}))
+	m.running, m.acceptsDelivery = true, true
+	m.input.SetValue("before after")
+	m.input.SetCursorColumn(7)
+	m.insertImagePlaceholder(composerTestImage(t))
+	m, _, _ = m.handleKey(tea.KeyPressMsg{Code: tea.KeyLeft})
+	if m.input.Column() != 7 {
+		t.Fatal("left did not cross image token")
+	}
+	m, _, _ = m.handleKey(tea.KeyPressMsg{Code: tea.KeyDelete})
+	if m.input.Value() != "before after" || len(m.composerImages()) != 0 {
+		t.Fatal("running deletion lost surrounding text or retained image")
+	}
+}
+
+func TestImagePlaceholderExternalEditor(t *testing.T) {
+	m := newModel(make(chan runRequest), make(chan struct{}))
+	m.insertImagePlaceholder(composerTestImage(t))
+	m.insertPastePlaceholder(strings.Repeat("long text\n", 20))
+	if !strings.Contains(m.expandPasteText(true), "[Image 1]long text") {
+		t.Fatal("editor lost image token or text")
+	}
+	file := t.TempDir() + "/draft.md"
+	if err := os.WriteFile(file, []byte("changed [Image 1] caption"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	m = m.applyEditorResult(editorFinishedMsg{file: file})
+	if len(m.composerImages()) != 1 || m.expandComposerText() != "changed  caption" {
+		t.Fatal("editor round trip lost attachment")
+	}
+	if err := os.WriteFile(file, []byte("caption only"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	m = m.applyEditorResult(editorFinishedMsg{file: file})
+	if len(m.composerImages()) != 0 {
+		t.Fatal("editor deletion retained image")
+	}
+}
+
+func TestAdjacentImagePlaceholdersDeleteAtSharedBoundary(t *testing.T) {
+	for _, code := range []rune{tea.KeyBackspace, tea.KeyDelete} {
+		m := newModel(make(chan runRequest), make(chan struct{}))
+		m.insertImagePlaceholder(composerTestImage(t))
+		m.insertImagePlaceholder(composerTestImage(t))
+		m.input.SetCursorColumn(len("[Image 1]"))
+		m, _, _ = m.handleKey(tea.KeyPressMsg{Code: code})
+		want := "[Image 1]"
+		if code == tea.KeyBackspace {
+			want = "[Image 2]"
+		}
+		if m.input.Value() != want || len(m.composerImages()) != 1 {
+			t.Fatalf("key %v: got %q", code, m.input.Value())
+		}
 	}
 }

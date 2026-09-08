@@ -131,6 +131,7 @@ func (m model) applyRunBatch(batch runBatchMsg) (tea.Model, tea.Cmd) {
 	for _, update := range batch.updates {
 		if update.active != nil {
 			m.submittedInput = nil
+			m.submittedDraft = composerDraft{}
 			m.activeRun = update.active
 			m.acceptsDelivery = true
 		}

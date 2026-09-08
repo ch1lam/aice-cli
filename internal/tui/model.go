@@ -15,7 +15,6 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"github.com/ch1lam/aice-cli/internal/interaction"
-	"github.com/ch1lam/aice-cli/internal/llm"
 )
 
 const (
@@ -143,11 +142,8 @@ type model struct {
 	promptHistory []string
 	historyIndex  int
 	historyDraft  string
-	// pastes holds large pastes collapsed into inline placeholder tokens.
-	// The textarea keeps the short tokens in place; submit and history
-	// paths expand them back to the full text via expandComposerText.
+	// pastes owns text and image payloads behind inline placeholder tokens.
 	pastes           []pasteAttachment
-	images           []llm.ImageContent
 	clipboard        tea.Cmd
 	clipboardPending bool
 	clipboardInSide  bool
@@ -155,6 +151,7 @@ type model struct {
 	inputNotice      string
 	// Retained only until NewRun accepts the submission, so rejection restores it.
 	submittedInput *RunInput
+	submittedDraft composerDraft
 
 	width            int
 	height           int
@@ -577,15 +574,6 @@ func (m model) handleKey(message tea.KeyPressMsg) (model, tea.Cmd, bool) {
 			m.clipboardSideID = m.side.activeID
 			return m, m.clipboard, true
 		}
-		if !m.side.isVisible && len(m.images) > 0 &&
-			(key.Matches(message, m.keys.removeImage) || (message.Code == tea.KeyBackspace && m.input.Value() == "")) {
-			m.images[len(m.images)-1] = llm.ImageContent{}
-			m.images = m.images[:len(m.images)-1]
-			m.inputNotice = ""
-			m.resizeLayout()
-			m.refreshViewport(false)
-			return m, nil, true
-		}
 	}
 	if m.side.isVisible {
 		if updated, command, handled := m.handleSideKey(message); handled {
@@ -625,13 +613,12 @@ func (m model) handleKey(message tea.KeyPressMsg) (model, tea.Cmd, bool) {
 		}
 	}
 
-	if !m.running &&
-		m.secretInput == nil &&
+	if m.secretInput == nil &&
 		m.commandMenu == nil &&
 		m.composerInputEnabled() {
 		// Ctrl+G edits the composer in the default editor; placeholder
 		// tokens stay atomic for cursor motion and deletion.
-		if key.Matches(message, m.keys.editor) {
+		if !m.running && key.Matches(message, m.keys.editor) {
 			updated, command := m.openComposerEditor()
 			return updated, command, true
 		}
@@ -690,7 +677,7 @@ func (m model) handleKey(message tea.KeyPressMsg) (model, tea.Cmd, bool) {
 		}
 		return m, tea.Quit, true
 	case key.Matches(message, m.keys.quit):
-		if !m.running && strings.TrimSpace(m.expandComposerText()) == "" && len(m.images) == 0 {
+		if !m.running && strings.TrimSpace(m.expandComposerText()) == "" && len(m.composerImages()) == 0 {
 			return m, tea.Quit, true
 		}
 		return m, nil, true
@@ -785,7 +772,7 @@ func (m model) helpToggleRequested(message tea.KeyPressMsg) bool {
 	// Terminals expose committed printable text but not whether it came from
 	// an IME. Treat ? as help only when the regular composer is empty; once
 	// composition has started, printable text must remain textarea input.
-	return m.secretInput == nil && strings.TrimSpace(m.expandComposerText()) == "" && len(m.images) == 0
+	return m.secretInput == nil && strings.TrimSpace(m.expandComposerText()) == "" && len(m.composerImages()) == 0
 }
 
 func (m *model) updateInput(message tea.Msg) tea.Cmd {

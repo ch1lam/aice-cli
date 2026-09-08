@@ -743,9 +743,9 @@ clipboard, falling back to text when there is no image. `Alt+V` is useful when
 Windows Terminal intercepts `Ctrl+V`. The terminal's normal paste shortcut
 continues to handle text; it does not transport clipboard image bytes.
 
-Images appear above the text as `[Image 1]`, `[Image 2]`, and so on. Use
-`Alt+Backspace` to remove the last image, or `Backspace` when the text field is
-empty. Send images with a caption or alone. `Enter` and `Ctrl+Enter` also carry
+Images appear at the cursor as inline `[Image 1]`, `[Image 2]` placeholders.
+Like long text placeholders, arrow keys cross the whole token and
+Backspace/Delete removes the token and its image together. Send images with a caption or alone. `Enter` and `Ctrl+Enter` also carry
 images in steering and follow-up inputs. Rejected submissions preserve the
 text and images and display the reason. Choose a model with image input;
 text-only models do not silently discard attachments.
@@ -766,7 +766,8 @@ Image content is saved inline in the existing Session JSONL, so resuming does
 not require the source file or clipboard. The transcript shows attachment
 labels rather than image previews. Prompt-history recall retains text only;
 while a draft has images, arrow keys edit its text. The external editor edits
-the caption and leaves images attached. Send or remove images before running
+expanded text with image placeholders preserved; deleting an image placeholder
+in the editor removes that attachment. Send or remove images before running
 slash commands. `/btw` supports ordinary pasted text; image attachments are supported in the
 main conversation only.
 `@` file references, dragged file paths, `read` tool images, and print-mode
