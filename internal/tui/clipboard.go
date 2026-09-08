@@ -15,6 +15,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/ch1lam/aice-cli/internal/interaction"
 	"github.com/ch1lam/aice-cli/internal/llm"
+	"github.com/ch1lam/aice-cli/internal/media"
 )
 
 type clipboardResult struct {
@@ -29,7 +30,12 @@ func pasteClipboard(ctx context.Context) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 		defer cancel()
-		return readClipboard(ctx)
+		result := readClipboard(ctx)
+		if result.err == nil && result.image != nil {
+			prepared, err := media.Prepare(ctx, *result.image, nil)
+			result.image, result.err = &prepared, err
+		}
+		return result
 	}
 }
 
@@ -144,7 +150,7 @@ function run() {
     }
   }
   if (!d.isNil()) {
-    if (Number(d.length) > 4194304) return JSON.stringify({error:'Clipboard image exceeds 4 MiB; copy a smaller image'});
+    if (Number(d.length) > 16777216) return JSON.stringify({error:'Clipboard image exceeds 16 MiB; copy a smaller image'});
     return JSON.stringify({data:ObjC.unwrap(d.base64EncodedStringWithOptions(0))});
   }
   var s = p.stringForType('public.utf8-plain-text');
@@ -163,8 +169,8 @@ if ([System.Windows.Forms.Clipboard]::ContainsImage()) {
       @{error='Clipboard image is too large; copy a smaller image'} | ConvertTo-Json -Compress
     } else {
       $image.Save($stream, [System.Drawing.Imaging.ImageFormat]::Png)
-      if ($stream.Length -gt 4194304) {
-        @{error='Clipboard image exceeds 4 MiB; copy a smaller image'} | ConvertTo-Json -Compress
+      if ($stream.Length -gt 16777216) {
+        @{error='Clipboard image exceeds 16 MiB; copy a smaller image'} | ConvertTo-Json -Compress
       } else {
         @{data=[Convert]::ToBase64String($stream.ToArray())} | ConvertTo-Json -Compress
       }

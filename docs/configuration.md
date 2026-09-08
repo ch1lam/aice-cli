@@ -780,11 +780,17 @@ images in steering and follow-up inputs. Rejected submissions preserve the
 text and images and display the reason. Choose a model with image input;
 text-only models do not silently discard attachments.
 
-PNG and JPEG are accepted: at most four images per input, 4 MiB per image,
-8 MiB total, 8000 pixels per side, and 16 megapixels per image. Oversized or
-invalid images are rejected; copy a smaller image to retry. These are AICE
-input limits, not a guarantee that every provider accepts the same request
-size or number of images across the entire conversation.
+PNG and JPEG are accepted, with at most four images per input. The shared
+`internal/media` processor accepts originals up to 16 MiB, 8000 pixels per
+side, and 16 megapixels. Images are automatically reduced, preserving aspect
+ratio, to at most 2000 pixels per side and 3 MiB encoded bytes. PNG is preferred;
+byte-heavy views may be encoded as JPEG on white. All image bytes in an input,
+including retained originals, are limited to 32 MiB. These are AICE limits;
+providers may impose additional limits across the conversation.
+
+Processed images retain their source bytes when changed and a content-derived
+identifier. The existing Session JSONL stores both the view and its original,
+so restoration does not depend on the clipboard or an unchanged source file.
 
 On macOS the built-in `osascript`/AppKit bridge reads PNG or converts clipboard
 TIFF to PNG. Windows uses Windows PowerShell and the system clipboard to encode

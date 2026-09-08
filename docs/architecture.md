@@ -91,6 +91,7 @@ without exposing storage concerns to the frontend or Agent Loop.
 | `internal/tui` | Bubble Tea presentation and interaction-event rendering |
 | `internal/interaction` | Frontend-neutral active-run, event, command, state, and input-mailbox contracts |
 | `internal/agent` | Agent Loop, retries, tool lifecycle, Agent events |
+| `internal/media` | Shared image validation, resizing, original retention and coordinate descriptions |
 | `internal/llm` | Canonical messages, models, usage, streams, context estimates |
 | `internal/api/{anthropic,openairesponses,openaicompletions}` | Protocol translation around official SDKs |
 | `internal/api/streamcore` | Protocol-neutral streaming mechanics shared by adapters |

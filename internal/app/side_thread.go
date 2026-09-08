@@ -407,8 +407,7 @@ func cloneContentParts(parts []llm.ContentPart) []llm.ContentPart {
 		switch part.Type {
 		case llm.ContentTypeImage:
 			if part.Image != nil {
-				image := *part.Image
-				image.Data = slices.Clone(part.Image.Data)
+				image := part.Image.Clone()
 				cloned[index].Image = &image
 			}
 		case llm.ContentTypeToolCall:

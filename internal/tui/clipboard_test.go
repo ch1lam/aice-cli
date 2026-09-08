@@ -83,7 +83,7 @@ func TestClipboardHelperProcess(t *testing.T) {
 	case "text":
 		fmt.Print("hello")
 	case "large":
-		fmt.Print(strings.Repeat("x", 6*1024*1024))
+		fmt.Print(strings.Repeat("x", 24*1024*1024))
 	case "fail":
 		os.Exit(2)
 	case "wait":

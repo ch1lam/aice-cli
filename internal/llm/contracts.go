@@ -306,6 +306,45 @@ type ContentPart struct {
 type ImageContent struct {
 	Data     []byte `json:"data"`
 	MIMEType string `json:"mime_type"`
+	// Original is present only when Data is a resized or cropped view. It is
+	// Session source data and must never be sent to a provider as metadata.
+	Original *ImageOriginal `json:"original,omitempty"`
+	ID       string         `json:"id,omitempty"`
+	Source   string         `json:"source,omitempty"`
+	Width    int            `json:"width,omitempty"`
+	Height   int            `json:"height,omitempty"`
+	Region   *ImageRegion   `json:"region,omitempty"`
+}
+
+// ImageOriginal preserves the exact bytes received before image processing.
+type ImageOriginal struct {
+	Data     []byte `json:"data"`
+	MIMEType string `json:"mime_type"`
+	Width    int    `json:"width"`
+	Height   int    `json:"height"`
+}
+
+// ImageRegion selects pixels in the original image, before resizing.
+type ImageRegion struct {
+	X      int `json:"x"`
+	Y      int `json:"y"`
+	Width  int `json:"width"`
+	Height int `json:"height"`
+}
+
+// Clone transfers mutable image payloads into independent ownership.
+func (i ImageContent) Clone() ImageContent {
+	i.Data = slices.Clone(i.Data)
+	if i.Original != nil {
+		original := *i.Original
+		original.Data = slices.Clone(original.Data)
+		i.Original = &original
+	}
+	if i.Region != nil {
+		region := *i.Region
+		i.Region = &region
+	}
+	return i
 }
 
 // ToolCall is a complete request to execute a tool.
