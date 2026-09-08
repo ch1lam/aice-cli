@@ -280,3 +280,17 @@ input between the command and TUI. The TUI owns menus, browser/device prompts,
 and hidden authorization input; none of these secrets enter transcript entries,
 Session history, prompt history, steering, or queued model input. Completion
 and cancellation discard the transient authentication state.
+
+## Image content
+
+Images carry model-facing view bytes and optional original bytes plus source
+metadata. Originals are retained only when resizing or cropping changes the
+view. These optional fields extend v3 messages without changing roles or tool
+pairing; old v3 images remain readable. Clone both payloads across ownership
+boundaries. Session JSONL is the durable owner; no sidecar image store is used.
+
+Protocol adapters describe image IDs, sources and coordinate mapping, and send
+only the view bytes. Anthropic and Responses encode images inside tool results.
+Chat Completions emits text tool results followed by an image-bearing user
+message after the entire contiguous tool-result group. This is a request
+projection, never an additional user message in Session history.

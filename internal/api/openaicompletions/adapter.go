@@ -270,21 +270,45 @@ func thinkingControlsFor(
 	}
 }
 
-func messageParams(
-	messages []llm.Message,
-	target llm.Model,
-) ([]openaisdk.ChatCompletionMessageParamUnion, error) {
+func messageParams(messages []llm.Message, target llm.Model) ([]openaisdk.ChatCompletionMessageParamUnion, error) {
 	result := make([]openaisdk.ChatCompletionMessageParamUnion, 0, len(messages))
-	for messageIndex, message := range messages {
-		converted, err := messageParam(message, target)
+	var images []llm.ContentPart
+	flush := func() error {
+		if len(images) == 0 {
+			return nil
+		}
+		converted, err := userMessageParam(images)
 		if err != nil {
-			return nil, fmt.Errorf(
-				"openai completions: message %d: %w",
-				messageIndex,
-				err,
-			)
+			return err
 		}
 		result = append(result, converted)
+		images = nil
+		return nil
+	}
+	for index, message := range messages {
+		toolResult, isTool := message.(llm.ToolResultMessage)
+		if !isTool {
+			if err := flush(); err != nil {
+				return nil, err
+			}
+		}
+		converted, err := messageParam(message, target)
+		if err != nil {
+			return nil, fmt.Errorf("openai completions: message %d: %w", index, err)
+		}
+		result = append(result, converted)
+		if isTool {
+			for _, part := range toolResult.Content {
+				if part.Type == llm.ContentTypeImage {
+					images = append(images, llm.NewTextContent(fmt.Sprintf("Image from tool %s, call %s:", toolResult.ToolName, toolResult.ToolCallID)).Part(), part)
+				}
+			}
+		}
+	}
+	// Chat Completions tool messages accept text only. Append image-bearing user
+	// content after the entire result group, preserving every call/result pair.
+	if err := flush(); err != nil {
+		return nil, err
 	}
 	if len(result) == 0 {
 		return nil, errors.New("openai completions: at least one message is required")
@@ -336,7 +360,7 @@ func userMessageParam(
 	}
 
 	parts := make([]openaisdk.ChatCompletionContentPartUnionParam, 0, len(content))
-	for index, part := range content {
+	for index, part := range streamcore.DescribeImages(content) {
 		switch part.Type {
 		case llm.ContentTypeText:
 			parts = append(parts, openaisdk.TextContentPart(part.Text))
@@ -472,7 +496,13 @@ func isCompletionsReasoningField(name string) bool {
 func toolResultMessageParam(
 	message llm.ToolResultMessage,
 ) (openaisdk.ChatCompletionMessageParamUnion, error) {
-	return openaisdk.ToolMessage(joinText(message.Content), message.ToolCallID), nil
+	text := joinText(message.Content)
+	for _, part := range message.Content {
+		if part.Type == llm.ContentTypeImage {
+			text += "\n[Image attached after tool results.]"
+		}
+	}
+	return openaisdk.ToolMessage(text, message.ToolCallID), nil
 }
 
 func assistantText(content []llm.ContentPart) string {

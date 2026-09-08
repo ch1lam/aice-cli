@@ -7,10 +7,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/ch1lam/aice-cli/internal/llm"
+	"github.com/ch1lam/aice-cli/internal/media"
 )
 
 const (
@@ -19,35 +22,63 @@ const (
 	readSchema       = `{
   "type": "object",
   "properties": {
-    "path": {"type": "string", "description": "Path to the file to read (relative or absolute)"},
+    "path": {"type": "string", "description": "Path to the file or directory to read (relative or absolute)"},
+    "image_id": {"type": "string", "description": "Saved image ID to re-read the original from this conversation instead of a path"},
+    "crop": {"type": "object", "properties": {
+      "x": {"type": "integer", "minimum": 0}, "y": {"type": "integer", "minimum": 0},
+      "width": {"type": "integer", "minimum": 1}, "height": {"type": "integer", "minimum": 1}
+    }, "required": ["x", "y", "width", "height"], "additionalProperties": false},
     "offset": {"type": "integer", "minimum": 1, "description": "Line number to start reading from (1-indexed)"},
     "limit": {"type": "integer", "minimum": 1, "description": "Maximum number of lines to read"}
   },
-  "required": ["path"],
+  "oneOf": [{"required": ["path"]}, {"required": ["image_id"]}],
   "additionalProperties": false
 }`
 )
 
 var errBinaryContent = errors.New("binary content")
 
-// Read reads bounded text content from one file.
+// ReadOptions supplies application-owned image history and model capability.
+type ReadOptions struct {
+	LookupImage   func(context.Context, string) (llm.ImageContent, error)
+	CanReadImages func() bool
+}
+
+// ReadRequest selects file content or an original image already in the conversation.
+type ReadRequest struct {
+	Path    string           `json:"path"`
+	ImageID string           `json:"image_id"`
+	Offset  int              `json:"offset"`
+	Limit   int              `json:"limit"`
+	Crop    *llm.ImageRegion `json:"crop"`
+}
+
+// Read reads bounded text or image content.
 type Read struct {
 	workspace *Workspace
+	options   ReadOptions
 }
 
 // NewRead constructs a read tool.
-func NewRead(workspace *Workspace) (*Read, error) {
+func NewRead(workspace *Workspace, options ...ReadOptions) (*Read, error) {
 	if workspace == nil || workspace.path == "" {
 		return nil, fmt.Errorf("tool: workspace is required")
 	}
-	return &Read{workspace: workspace}, nil
+	if len(options) > 1 {
+		return nil, fmt.Errorf("tool: at most one read options value is allowed")
+	}
+	r := &Read{workspace: workspace}
+	if len(options) == 1 {
+		r.options = options[0]
+	}
+	return r, nil
 }
 
 // Definition returns the model-facing read contract.
 func (r *Read) Definition() llm.ToolDefinition {
 	return llm.ToolDefinition{
 		Name:          "read",
-		Description:   "Read a text file, resolving relative paths from the working directory. Output is limited to 2000 complete lines or 50 KiB; use offset and limit, then follow continuation notices for large files.",
+		Description:   "Read text, PNG/JPEG images, or a shallow directory listing. Text is limited to 2000 complete lines or 50 KiB; use offset/limit to continue. Images are resized automatically. Use image_id to recover a saved original, and crop {x,y,width,height} in original pixels to inspect details. Specify exactly one of path or image_id.",
 		InputSchema:   jsonSchema(readSchema),
 		PromptSnippet: "Read file contents",
 		PromptGuidelines: []string{
@@ -58,18 +89,40 @@ func (r *Read) Definition() llm.ToolDefinition {
 
 // Execute reads the requested file.
 func (r *Read) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult, error) {
-	type arguments struct {
-		Path   string `json:"path"`
-		Offset int    `json:"offset"`
-		Limit  int    `json:"limit"`
-	}
-	args, err := decodeArguments[arguments](ctx, call, "read")
+	args, err := decodeArguments[ReadRequest](ctx, call, "read")
 	if err != nil {
 		return llm.ToolResult{}, err
 	}
+	content, err := r.Content(ctx, args)
+	if err != nil {
+		return llm.ToolResult{}, fmt.Errorf("tool %q: %w", "read", err)
+	}
+	return llm.ToolResult{CallID: call.ID, Name: call.Name, Content: content}, nil
+}
+
+// Content is the shared read implementation. Callers must authorize the resolved
+// path before calling; this function never grants filesystem access.
+func (r *Read) Content(ctx context.Context, args ReadRequest) ([]llm.ContentPart, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if (args.Path == "") == (args.ImageID == "") {
+		return nil, fmt.Errorf("specify exactly one of path or image_id")
+	}
+	if args.ImageID != "" {
+		if r.options.LookupImage == nil {
+			return nil, fmt.Errorf("saved image lookup is unavailable")
+		}
+		img, err := r.options.LookupImage(ctx, args.ImageID)
+		if err != nil {
+			return nil, err
+		}
+		return r.imageContent(ctx, img, args)
+	}
+	originalArgs := args
 	userLimit := args.Limit
 	if args.Offset < 0 || args.Limit < 0 {
-		return llm.ToolResult{}, fmt.Errorf("tool \"read\": offset and limit cannot be negative")
+		return nil, fmt.Errorf("tool \"read\": offset and limit cannot be negative")
 	}
 	if args.Offset == 0 {
 		args.Offset = 1
@@ -83,38 +136,64 @@ func (r *Read) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult, 
 	// \"N more lines\" instead of the generic 2000-line hint.
 	userLimited := userLimit > 0 && userLimit < defaultReadLines
 
-	path, err := r.resolveReadTarget(args.Path)
+	path, err := r.ResolvePath(args.Path)
 	if err != nil {
-		return llm.ToolResult{}, fmt.Errorf("tool \"read\": %w", err)
+		return nil, fmt.Errorf("tool \"read\": %w", err)
 	}
 	file, err := os.Open(path)
 	if err != nil {
-		return llm.ToolResult{}, fmt.Errorf("tool \"read\": open %q: %w", args.Path, err)
+		return nil, fmt.Errorf("tool \"read\": open %q: %w", args.Path, err)
 	}
 	defer file.Close()
 
 	info, err := file.Stat()
 	if err != nil {
-		return llm.ToolResult{}, fmt.Errorf("tool \"read\": stat %q: %w", args.Path, err)
+		return nil, fmt.Errorf("tool \"read\": stat %q: %w", args.Path, err)
+	}
+	if info.IsDir() {
+		return readDirectory(ctx, file, originalArgs)
 	}
 	if !info.Mode().IsRegular() {
-		return llm.ToolResult{}, fmt.Errorf("tool \"read\": %q is not a regular file", args.Path)
+		return nil, fmt.Errorf("tool \"read\": %q is not a regular file", args.Path)
+	}
+
+	sample := make([]byte, 512)
+	n, err := file.Read(sample)
+	if err != nil && !errors.Is(err, io.EOF) {
+		return nil, err
+	}
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		return nil, err
+	}
+	mime := http.DetectContentType(sample[:n])
+	if strings.HasPrefix(mime, "image/") {
+		if info.Size() > media.MaxSourceBytes {
+			return nil, fmt.Errorf("image exceeds 16 MiB source limit")
+		}
+		data, err := io.ReadAll(io.LimitReader(file, media.MaxSourceBytes+1))
+		if err != nil {
+			return nil, err
+		}
+		return r.imageContent(ctx, llm.ImageContent{Data: data, MIMEType: mime, Source: path}, originalArgs)
+	}
+	if args.Crop != nil {
+		return nil, fmt.Errorf("crop is only supported for images")
 	}
 
 	text, err := readTextPage(ctx, file, args.Offset, args.Limit, args.Path, userLimited)
 	if err != nil {
 		if errors.Is(err, errBinaryContent) {
-			return llm.ToolResult{}, fmt.Errorf(
+			return nil, fmt.Errorf(
 				"tool \"read\": %q appears to be a binary file",
 				args.Path,
 			)
 		}
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-			return llm.ToolResult{}, err
+			return nil, err
 		}
-		return llm.ToolResult{}, fmt.Errorf("tool \"read\": read %q: %w", args.Path, err)
+		return nil, fmt.Errorf("tool \"read\": read %q: %w", args.Path, err)
 	}
-	return textResult(call, text, false), nil
+	return []llm.ContentPart{llm.NewTextContent(text).Part()}, nil
 }
 
 type boundedLine struct {
@@ -405,4 +484,57 @@ func shellQuote(value string) string {
 
 func offsetBeyondEnd(offset int) string {
 	return fmt.Sprintf("[offset %d is beyond end of file]", offset)
+}
+
+// ResolvePath returns the physical, normalized read target for permission checks.
+func (r *Read) ResolvePath(input string) (string, error) {
+	path, err := r.resolveReadTarget(input)
+	if err != nil {
+		return "", err
+	}
+	return filepath.EvalSymlinks(path)
+}
+
+func (r *Read) imageContent(ctx context.Context, img llm.ImageContent, args ReadRequest) ([]llm.ContentPart, error) {
+	if args.Offset != 0 || args.Limit != 0 {
+		return nil, fmt.Errorf("offset and limit apply only to text files")
+	}
+	if r.options.CanReadImages != nil && !r.options.CanReadImages() {
+		return nil, fmt.Errorf("current model does not support image input")
+	}
+	prepared, err := media.Prepare(ctx, img, args.Crop)
+	if err != nil {
+		return nil, err
+	}
+	return []llm.ContentPart{{Type: llm.ContentTypeImage, Image: &prepared}}, nil
+}
+
+func readDirectory(ctx context.Context, file *os.File, args ReadRequest) ([]llm.ContentPart, error) {
+	if args.Crop != nil || args.Offset != 0 || args.Limit != 0 {
+		return nil, fmt.Errorf("directory listings do not support crop, offset or limit")
+	}
+	var out strings.Builder
+	for i := 0; i < defaultReadLines; i++ {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		entries, err := file.ReadDir(1)
+		if errors.Is(err, io.EOF) {
+			return []llm.ContentPart{llm.NewTextContent(out.String()).Part()}, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		name := entries[0].Name()
+		if entries[0].IsDir() {
+			name += "/"
+		}
+		if out.Len()+len(name)+1 > maxOutputBytes-80 {
+			break
+		}
+		out.WriteString(name)
+		out.WriteByte('\n')
+	}
+	out.WriteString("[Directory listing truncated; use ls or find to explore further.]\n")
+	return []llm.ContentPart{llm.NewTextContent(out.String()).Part()}, nil
 }

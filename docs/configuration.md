@@ -806,8 +806,17 @@ expanded text with image placeholders preserved; deleting an image placeholder
 in the editor removes that attachment. Send or remove images before running
 slash commands. `/btw` supports ordinary pasted text; image attachments are supported in the
 main conversation only.
-`@` file references, dragged file paths, `read` tool images, and print-mode
-image flags are not implemented.
+The `read` tool accepts PNG/JPEG files through the same image processor. It
+returns an image content block, including a stable `image:<sha256>` identifier
+and original-to-view coordinate mapping in model requests. Use `image_id`
+instead of `path` to re-read that saved original, even after the source file
+changes or disappears. An optional `crop` object (`x`, `y`, `width`, `height`)
+selects original pixels before resizing, allowing detailed inspection. Text
+`offset`/`limit` cannot be combined with an image; non-vision models receive a
+tool error rather than an omitted image. `read` also supports shallow directory
+listings, bounded by 2000 entries or 50 KiB.
+
+`@` file references, dragged file paths, and print-mode image flags are not implemented.
 
 ## Operational environment variables
 

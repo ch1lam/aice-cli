@@ -130,6 +130,13 @@ The tool layer still enforces correctness and resource safety:
 - pair every tool call with one result;
 - keep credentials and prompt content out of logs.
 
+The `read` tool returns text or image content through one bounded reader.
+Its `image_id` input accesses only images already recorded on the active Session
+branch, including sources no longer in compacted context. It performs no host
+file access and has no path-access grant; unknown IDs fail. `path` continues to
+use normal file permissions. A new Session cannot access a previous Session's
+images. Stateless print retains sources only for that invocation.
+
 Structured subprocesses use executable/argument separation. The `grep` tool
 invokes `rg` with `--` before model-controlled pattern/path values. The `bash`
 tool intentionally crosses a shell boundary and applies the same timeout,

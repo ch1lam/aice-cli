@@ -248,7 +248,7 @@ func messageParams(
 		if blocks == nil {
 			blocks = make([]anthropicsdk.ContentBlockParamUnion, 0, len(content))
 		}
-		for partIndex, part := range content {
+		for partIndex, part := range streamcore.DescribeImages(content) {
 			block, err := contentBlockParam(role, part)
 			if err != nil {
 				return nil, fmt.Errorf(
@@ -347,18 +347,21 @@ func toolResultBlockParam(result *llm.ToolResult) (anthropicsdk.ContentBlockPara
 	}
 
 	content := make([]anthropicsdk.ToolResultBlockParamContentUnion, 0, len(result.Content))
-	for index, part := range result.Content {
-		if part.Type != llm.ContentTypeText {
-			return anthropicsdk.ContentBlockParamUnion{}, fmt.Errorf(
-				"tool result content %d has unsupported type %q",
-				index,
-				part.Type,
-			)
+	for index, part := range streamcore.DescribeImages(result.Content) {
+		switch part.Type {
+		case llm.ContentTypeText:
+			content = append(content, anthropicsdk.ToolResultBlockParamContentUnion{OfText: &anthropicsdk.TextBlockParam{Text: part.Text}})
+		case llm.ContentTypeImage:
+			block, err := contentBlockParam(llm.RoleUser, part)
+			if err != nil {
+				return anthropicsdk.ContentBlockParamUnion{}, err
+			}
+			content = append(content, anthropicsdk.ToolResultBlockParamContentUnion{OfImage: block.OfImage})
+		default:
+			return anthropicsdk.ContentBlockParamUnion{}, fmt.Errorf("tool result content %d has unsupported type %q", index, part.Type)
 		}
-		content = append(content, anthropicsdk.ToolResultBlockParamContentUnion{
-			OfText: &anthropicsdk.TextBlockParam{Text: part.Text},
-		})
 	}
+
 	if len(content) == 0 {
 		content = append(content, anthropicsdk.ToolResultBlockParamContentUnion{
 			OfText: &anthropicsdk.TextBlockParam{},

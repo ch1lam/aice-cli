@@ -259,7 +259,7 @@ func inputParams(
 
 func userInputParams(content []llm.ContentPart) ([]responses.ResponseInputItemUnionParam, error) {
 	parts := make(responses.ResponseInputMessageContentListParam, 0, len(content))
-	for index, part := range content {
+	for index, part := range streamcore.DescribeImages(content) {
 		switch part.Type {
 		case llm.ContentTypeText:
 			parts = append(parts, responses.ResponseInputContentParamOfInputText(part.Text))
@@ -303,7 +303,7 @@ func assistantInputParams(
 		content = streamcore.ProjectThinkingToText(content)
 	}
 	result := make([]responses.ResponseInputItemUnionParam, 0, len(content))
-	for index, part := range content {
+	for index, part := range streamcore.DescribeImages(content) {
 		switch part.Type {
 		case llm.ContentTypeText:
 			if !sameModel {
@@ -403,7 +403,7 @@ func toolResultInputParam(
 		texts  []string
 		output responses.ResponseFunctionCallOutputItemListParam
 	)
-	for index, part := range content {
+	for index, part := range streamcore.DescribeImages(content) {
 		switch part.Type {
 		case llm.ContentTypeText:
 			texts = append(texts, part.Text)

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"sync"
 	"time"
 
@@ -214,10 +215,6 @@ func (a *application) Print(
 	if err := a.initializeConfiguredModel(&configured); err != nil {
 		return err
 	}
-	loop, err := agent.NewLoop(configured.service, environment.tools, agent.WithGuard(environment.guardAdapter))
-	if err != nil {
-		return fmt.Errorf("app: create agent loop: %w", err)
-	}
 
 	store, history, _, err := prepareSession(
 		ctx,
@@ -238,11 +235,30 @@ func (a *application) Print(
 		return fmt.Errorf("app: create prompt: %w", err)
 	}
 
-	var recorder agent.MessageRecorder
-	if store != nil {
-		recorder = func(recordCtx context.Context, message llm.AgentMessage) error {
+	sourceMessages := append([]llm.AgentMessage(nil), history...)
+	lookup := func(ctx context.Context, id string) (llm.ImageContent, error) {
+		if store != nil {
+			return store.Image(ctx, id)
+		}
+		return imageFromMessages(sourceMessages, id)
+	}
+	if err := bindImageReader(environment.tools, environment.workspace, tool.ReadOptions{
+		LookupImage:   lookup,
+		CanReadImages: func() bool { return slices.Contains(environment.model.InputModalities, llm.InputModalityImage) },
+	}); err != nil {
+		return err
+	}
+	loop, err := agent.NewLoop(configured.service, environment.tools, agent.WithGuard(environment.guardAdapter))
+	if err != nil {
+		return fmt.Errorf("app: create agent loop: %w", err)
+	}
+
+	recorder := func(recordCtx context.Context, message llm.AgentMessage) error {
+		if store != nil {
 			return appendSessionMessage(recordCtx, store, message)
 		}
+		sourceMessages = append(sourceMessages, message)
+		return nil
 	}
 
 	ctx, err = modelSessionContext(ctx, store)
@@ -331,6 +347,11 @@ func (a *application) Interactive(
 		trustSource:   environment.trust.Source,
 		providers:     a.dependencies.providers,
 		totalUsage:    usage,
+	}
+	if err := bindImageReader(runner.tools, runner.workspace, tool.ReadOptions{
+		LookupImage: runner.lookupImage, CanReadImages: runner.canReadImages,
+	}); err != nil {
+		return errors.Join(err, store.Close())
 	}
 	if providerConfigured(a.dependencies.providers, environment.configuration) {
 		loop, err := a.newAgentLoopWithOptions(
