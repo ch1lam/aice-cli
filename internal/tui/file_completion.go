@@ -15,6 +15,7 @@ type fileCompletionState struct {
 	selection  int
 	generation uint64
 	dismissed  bool
+	pending    bool
 	cancel     context.CancelFunc
 }
 
@@ -81,11 +82,19 @@ func (m *model) requestFileCompletion() tea.Cmd {
 		m.fileCompletion.cancel()
 	}
 	generation := m.fileCompletion.generation + 1
+	previous := m.fileCompletion
 	m.fileCompletion = fileCompletionState{generation: generation}
 	if !ok {
 		return nil
 	}
 	m.fileCompletion.ref = ref
+	// Keep the menu mounted while the same token is being edited. Removing it
+	// during every debounce interval resizes and repaints the transcript twice.
+	if ref.Start == previous.ref.Start && !previous.dismissed {
+		m.fileCompletion.items = previous.items
+		m.fileCompletion.selection = previous.selection
+	}
+	m.fileCompletion.pending = true
 	command, cancel := m.completeFiles(generation, ref.Path)
 	m.fileCompletion.cancel = cancel
 	return command
@@ -119,6 +128,9 @@ func (m model) handleFileCompletionKey(message tea.KeyPressMsg) (model, tea.Cmd,
 	case tea.KeyEscape:
 		m.fileCompletion.dismissed = true
 	case tea.KeyTab:
+		if m.fileCompletion.pending {
+			return m, nil, true
+		}
 		item := m.fileCompletion.items[m.fileCompletion.selection]
 		ref := m.fileCompletion.ref
 		for _, full := range interaction.ScanFileReferences(m.input.Value()) {

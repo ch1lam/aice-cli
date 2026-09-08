@@ -44,6 +44,71 @@ func TestFileCompletionIgnoresStaleResultsAndQuotesSelection(t *testing.T) {
 	}
 }
 
+func TestFileCompletionKeepsLayoutWhileTyping(t *testing.T) {
+	t.Parallel()
+	m := completionTestModel()
+	m = updateModel(t, m, tea.WindowSizeMsg{Width: 100, Height: 40})
+	m.input.SetValue("look @i")
+	m = updateModel(t, m, m.requestFileCompletion()())
+	menuHeight := strings.Count(m.fileCompletionView(m.width), "\n")
+	transcript := m.viewport.View()
+	for _, letter := range "mag" {
+		m = updateModel(t, m, tea.KeyPressMsg{Code: letter, Text: string(letter)})
+		if !m.fileCompletionVisible() || strings.Count(m.fileCompletionView(m.width), "\n") != menuHeight {
+			t.Fatal("completion menu collapsed while waiting for results")
+		}
+		if m.viewport.View() != transcript {
+			t.Fatal("typing a query moved the transcript")
+		}
+		before := m.input.Value()
+		m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyTab})
+		if m.input.Value() != before {
+			t.Fatal("Tab attached an outdated candidate")
+		}
+	}
+	m = updateModel(t, m, fileCompletionResult{
+		generation: m.fileCompletion.generation,
+		items:      []interaction.FileCompletion{{Path: "image.png"}},
+	})
+	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyTab})
+	if m.input.Value() != `look @"image.png"` {
+		t.Fatalf("latest candidate was not attached: %q", m.input.Value())
+	}
+}
+
+func TestFileCompletionPendingResultLifecycle(t *testing.T) {
+	t.Parallel()
+	for _, action := range []string{"empty", "error", "escape", "leave token"} {
+		t.Run(action, func(t *testing.T) {
+			m := completionTestModel()
+			m.input.SetValue("@i")
+			m = updateModel(t, m, m.requestFileCompletion()())
+			m = updateModel(t, m, tea.KeyPressMsg{Code: 'm', Text: "m"})
+			result := fileCompletionResult{generation: m.fileCompletion.generation}
+			// Even failed older searches must not close the retained menu.
+			m = updateModel(t, m, fileCompletionResult{generation: result.generation - 1, err: context.Canceled})
+			if !m.fileCompletionVisible() {
+				t.Fatal("stale failure closed the menu")
+			}
+			switch action {
+			case "error":
+				result.err = context.DeadlineExceeded
+				result.items = []interaction.FileCompletion{{Path: "ignored.png"}}
+			case "escape":
+				m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyEscape})
+				result.items = []interaction.FileCompletion{{Path: "image.png"}}
+			case "leave token":
+				m = updateModel(t, m, tea.KeyPressMsg{Code: ' ', Text: " "})
+				result.items = []interaction.FileCompletion{{Path: "image.png"}}
+			}
+			m = updateModel(t, m, result)
+			if m.fileCompletionVisible() {
+				t.Fatal("completion menu remained visible or reopened")
+			}
+		})
+	}
+}
+
 func TestFileReferencesSkipOpaquePasteAndPreserveDraftOnAsyncFailure(t *testing.T) {
 	t.Parallel()
 	m := completionTestModel()

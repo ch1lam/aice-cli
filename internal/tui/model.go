@@ -358,8 +358,12 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m.refreshViewport(false)
 		return m, nil
 	case fileCompletionResult:
-		if message.generation == m.fileCompletion.generation && message.err == nil {
+		if message.generation == m.fileCompletion.generation {
+			m.fileCompletion.pending = false
 			m.fileCompletion.items = message.items
+			if message.err != nil {
+				m.fileCompletion.items = nil
+			}
 			m.fileCompletion.selection = 0
 			m.resizeLayout()
 			m.refreshViewport(false)

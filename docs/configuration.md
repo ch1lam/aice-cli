@@ -828,7 +828,10 @@ An unfinished quoted reference remains text until completed.
 While typing `@`, the TUI suggests paths and fuzzy filename matches. Use Up/Down
 to select, Tab to complete, and Escape to close; Enter sends the draft. Selecting
 a directory continues completion inside it. Spaces and quotes are escaped for
-submission. Search is debounced, cancellable, limited to two seconds and 20,000
+submission. While a query is being edited, the existing menu stays visible
+until the latest search finishes, avoiding repeated transcript resizing during
+the debounce interval. Tab waits for fresh results; Escape still closes the menu.
+Search is debounced, cancellable, limited to two seconds and 20,000
 entries, and shows at most eight permitted candidates. It skips `.git`, `.aice`,
 `node_modules`, and `vendor`; it does not interpret `.gitignore`. An exact
 reference can still name files outside the search results. Completion never
