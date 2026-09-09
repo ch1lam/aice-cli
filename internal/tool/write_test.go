@@ -145,3 +145,99 @@ func TestWriteExecuteRejectsMalformedPathBeforeMutation(t *testing.T) {
 		t.Fatalf("workspace entries = %v, want none", entries)
 	}
 }
+
+func TestWriteExecuteValidatesContentBeforeMutation(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		content   any
+		missing   bool
+		wantError bool
+	}{
+		{name: "missing", missing: true, wantError: true},
+		{name: "null", content: nil, wantError: true},
+		{name: "number", content: 42, wantError: true},
+		{name: "boolean", content: false, wantError: true},
+		{name: "array", content: []string{}, wantError: true},
+		{name: "object", content: map[string]string{}, wantError: true},
+		{name: "empty string", content: ""},
+		{name: "normal content", content: "hello 世界\n"},
+	}
+	for _, test := range tests {
+		for _, existing := range []bool{false, true} {
+			target := "new"
+			if existing {
+				target = "existing"
+			}
+			t.Run(test.name+"/"+target, func(t *testing.T) {
+				t.Parallel()
+				workspace, root := newWorkspace(t)
+				path := filepath.Join(root, "nested", "file.txt")
+				var before os.FileInfo
+				if existing {
+					writeFixture(t, root, "nested/file.txt", "keep me")
+					var err error
+					before, err = os.Stat(path)
+					if err != nil {
+						t.Fatal(err)
+					}
+				}
+				write, err := tool.NewWrite(workspace)
+				if err != nil {
+					t.Fatal(err)
+				}
+				args := map[string]any{"path": "nested/file.txt"}
+				if !test.missing {
+					args["content"] = test.content
+				}
+				result, err := write.Execute(t.Context(), toolCall(t, "write", args))
+				if (err != nil) != test.wantError {
+					t.Errorf("Execute() error = %v, want error %v", err, test.wantError)
+				}
+				if test.wantError && err != nil && !strings.Contains(err.Error(), "content") {
+					t.Errorf("error = %v, want content diagnostic", err)
+				}
+				if test.wantError && !existing {
+					entries, err := os.ReadDir(root)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if len(entries) != 0 {
+						t.Fatalf("invalid content created entries: %v", entries)
+					}
+					return
+				}
+				data, err := os.ReadFile(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				want := "keep me"
+				if !test.wantError {
+					want = test.content.(string)
+				}
+				if string(data) != want {
+					t.Errorf("file content = %q, want %q", data, want)
+				}
+				if test.wantError {
+					after, err := os.Stat(path)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if !os.SameFile(before, after) || before.Mode() != after.Mode() || !before.ModTime().Equal(after.ModTime()) {
+						t.Error("invalid content modified or replaced the file")
+					}
+					entries, err := os.ReadDir(filepath.Dir(path))
+					if err != nil {
+						t.Fatal(err)
+					}
+					if len(entries) != 1 {
+						t.Errorf("unexpected mutation artifacts: %v", entries)
+					}
+				} else if result.IsError || result.CallID == "" || !strings.Contains(resultText(t, result), "bytes") {
+					t.Errorf("unexpected successful result: %#v", result)
+				}
+			})
+		}
+	}
+}
