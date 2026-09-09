@@ -104,7 +104,61 @@ func (g *guardAdapter) Check(ctx context.Context, call llm.ToolCall) (agent.Guar
 			}
 		}
 	}
+	var revalidate func(context.Context) error
+	// Write keeps literal spelling but follows existing symlinks. Fail closed
+	// on resolution errors and check the destination before any approval.
+	if call.Name == "write" && res.Decision != guard.DecisionDeny {
+		var args map[string]json.RawMessage
+		if err := json.Unmarshal(call.Arguments, &args); err != nil {
+			return agent.GuardResult{}, err
+		}
+		var path string
+		if err := json.Unmarshal(args["path"], &path); err != nil {
+			return agent.GuardResult{}, err
+		}
+		workspace, err := tool.NewWorkspace(g.inner.Workspace())
+		if err != nil {
+			return agent.GuardResult{}, err
+		}
+		writer, err := tool.NewWrite(workspace)
+		if err != nil {
+			return agent.GuardResult{}, err
+		}
+		resolved, err := writer.ResolvePath(path)
+		if err != nil {
+			return agent.GuardResult{}, err
+		}
+		revalidate = func(ctx context.Context) error {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			current, err := writer.ResolvePath(path)
+			if err != nil {
+				return err
+			}
+			if current != resolved {
+				return fmt.Errorf("write target changed after permission check; retry the call")
+			}
+			return nil
+		}
+		if resolved != g.inner.ResolveAbsolute(path, "write") {
+			args["path"], _ = json.Marshal(resolved)
+			physical := call
+			physical.Arguments, _ = json.Marshal(args)
+			other, err := g.inner.Check(ctx, physical)
+			if err != nil {
+				return agent.GuardResult{}, err
+			}
+			if other.Decision == guard.DecisionDeny {
+				res = other
+			} else if other.Decision == guard.DecisionAsk {
+				res.Decision = guard.DecisionAsk
+				res.Approvals = append(res.Approvals, other.Approvals...)
+			}
+		}
+	}
 	mapped := mapGuardResult(res)
+	mapped.Revalidate = revalidate
 	if g.yolo && mapped.Decision == agent.GuardAsk {
 		mapped.Decision = agent.GuardAllow
 		mapped.Approvals = nil

@@ -176,6 +176,34 @@ final diagnostics available to the next model request. Capture storage stays
 bounded even for a single large write; rendered output is valid UTF-8. Caller
 cancellation still stops the process tree and returns cancellation.
 
+### Write paths and atomic replacement
+
+`write` resolves literal relative paths from the physical workspace. It follows
+existing file symlinks and atomically replaces the final regular target file,
+preserving the link itself and the target's permission bits through the existing
+temporary-file/rename path (host umask still applies). Relative link targets,
+link chains, and parent directory links are resolved before processing subsequent
+`..` components. New files and missing parent directories are still created with
+the existing modes. Dangling links, link cycles, inaccessible components,
+non-directory parents, trailing separators, and traversal through missing
+directories fail before creating directories or temporary files.
+
+The application Guard adapter checks both the requested path and the physical
+write destination using `Write.ResolvePath`, so protected targets and paths
+outside the workspace retain their policy and approval requirements, including
+under `--yolo`. File-policy existence checks use the action path, not its
+shortened match/display spelling, so a literal workspace `~` directory cannot
+redirect the existence probe to the home directory. The same resolver runs inside
+write's mutation lock. A call-local Guard revalidation rejects a changed destination after approval waits; the caller
+must retry for a fresh permission check. These checks are not a filesystem
+snapshot: external changes between revalidation, resolution, and rename remain
+subject to host isolation. No file descriptors pin directory identity.
+
+`atomicWrite` is shared with `edit` and does not resolve links itself. `edit`
+retains its existing behavior: it reads through a file link, then replaces that
+link entry with the edited regular file. This write change does not extend edit's
+path resolution or permissions.
+
 ### Read path spelling
 
 `internal/tool` owns read-only spelling tolerance. It strips one leading `@`,

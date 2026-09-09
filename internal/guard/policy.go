@@ -167,7 +167,9 @@ func checkPolicy(ctx context.Context, pol compiledPolicy, act Action, workspace 
 		}
 	}
 	if pol.onlyIfExists && !act.Unresolved {
-		if !exists(path, workspace) {
+		// The normalized match/display spelling may start with a literal ~
+		// directory inside the workspace. Probe the action, not that spelling.
+		if !exists(act.Path, workspace) {
 			return false, ""
 		}
 	}

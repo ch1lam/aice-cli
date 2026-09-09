@@ -97,6 +97,10 @@ this field does not change the curated print NDJSON projection.
   `GuardAskReply` with Decision `allow` or `deny` and optional `Feedback`.
   Deny feedback is appended to the paired error tool result. A nil handler
   fails closed, as do invalid results/replies and canceled approval waits.
+  A Guard result may carry a call-local `Revalidate` check. The loop runs it
+  after all approvals and before tool execution; an error yields a paired
+  tool error without execution. It cannot grant authority or execute tools.
+  The app uses it to reject write targets changed during approval waits.
   Product behavior of the gate, including Session-scoped grants,
   is in [Tool execution and
   Sessions](execution-sessions.md#tool-execution-boundary).

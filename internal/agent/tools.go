@@ -101,6 +101,7 @@ func (e *runExecution) executeTool(
 	ctx context.Context,
 	call llm.ToolCall,
 ) (llm.ToolResultMessage, error) {
+	var revalidate func(context.Context) error
 	// Built-in guard: deny or ask before the tool ever starts. This preserves
 	// the "pair every tool call with one result" invariant while preventing
 	// the side effect. Ask is resolved via the injected handler or fails closed.
@@ -112,6 +113,7 @@ func (e *runExecution) executeTool(
 		if !res.Valid() {
 			return newErrorToolResult(call, errors.New("guard returned an invalid result"))
 		}
+		revalidate = res.Revalidate
 		switch res.Decision {
 		case GuardDeny:
 			reason := res.Reason
@@ -154,6 +156,12 @@ func (e *runExecution) executeTool(
 	if !exists {
 		err := fmt.Errorf("tool %q is not available", call.Name)
 		return newErrorToolResult(call, err)
+	}
+
+	if revalidate != nil {
+		if err := revalidate(ctx); err != nil {
+			return newErrorToolResult(call, fmt.Errorf("guard revalidation: %w", err))
+		}
 	}
 
 	result, err := tool.Execute(ctx, call)
