@@ -83,7 +83,7 @@ func (w *Write) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult,
 	} else if !os.IsNotExist(statErr) {
 		return llm.ToolResult{}, fmt.Errorf("tool \"write\": stat %q: %w", args.Path, statErr)
 	}
-	if err := w.workspace.atomicWrite(path, []byte(content), mode); err != nil {
+	if err := w.workspace.atomicWrite(ctx, path, []byte(content), mode); err != nil {
 		return llm.ToolResult{}, fmt.Errorf("tool \"write\": write %q: %w", args.Path, err)
 	}
 	return textResult(call, fmt.Sprintf("Wrote %d bytes to %s.", len(content), args.Path), false), nil

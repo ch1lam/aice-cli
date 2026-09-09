@@ -2,6 +2,7 @@ package tool
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
@@ -11,7 +12,35 @@ import (
 	"path/filepath"
 )
 
-func (w *Workspace) atomicWrite(path string, content []byte, mode os.FileMode) (returnErr error) {
+// mutationFile is the temporary file owned by one synchronous atomic write.
+type mutationFile interface {
+	io.Writer
+	Sync() error
+	Close() error
+}
+
+// mutationOps keeps fault injection local to the atomic commit boundary.
+type mutationOps struct {
+	open   func(string, int, os.FileMode) (mutationFile, error)
+	rename func(string, string) error
+	remove func(string) error
+}
+
+func defaultMutationOps() mutationOps {
+	return mutationOps{
+		open: func(path string, flags int, mode os.FileMode) (mutationFile, error) {
+			return os.OpenFile(path, flags, mode)
+		},
+		rename: os.Rename,
+		remove: os.Remove,
+	}
+}
+
+// The caller holds mutationMu until all I/O and cleanup have finished.
+func (w *Workspace) atomicWrite(ctx context.Context, path string, content []byte, mode os.FileMode) (returnErr error) {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	directory := filepath.Dir(path)
 	if directory != "." {
 		if err := os.MkdirAll(directory, 0o750); err != nil {
@@ -23,7 +52,7 @@ func (w *Workspace) atomicWrite(path string, content []byte, mode os.FileMode) (
 	if err != nil {
 		return err
 	}
-	file, err := os.OpenFile(temporaryPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, mode.Perm())
+	file, err := w.mutationOps.open(temporaryPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, mode.Perm())
 	if err != nil {
 		return fmt.Errorf("create temporary file: %w", err)
 	}
@@ -34,7 +63,7 @@ func (w *Workspace) atomicWrite(path string, content []byte, mode os.FileMode) (
 			}
 		}
 		if returnErr != nil {
-			if cleanupErr := os.Remove(temporaryPath); cleanupErr != nil && !os.IsNotExist(cleanupErr) {
+			if cleanupErr := w.mutationOps.remove(temporaryPath); cleanupErr != nil && !os.IsNotExist(cleanupErr) {
 				returnErr = errors.Join(returnErr, fmt.Errorf("remove temporary file: %w", cleanupErr))
 			}
 		}
@@ -51,7 +80,12 @@ func (w *Workspace) atomicWrite(path string, content []byte, mode os.FileMode) (
 		return fmt.Errorf("close temporary file: %w", err)
 	}
 	file = nil
-	if err := os.Rename(temporaryPath, path); err != nil {
+	// Rename is the commit point. Host I/O cannot be interrupted safely: wait
+	// for it, and never replace a successful commit with a later cancellation.
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := w.mutationOps.rename(temporaryPath, path); err != nil {
 		return fmt.Errorf("replace target file: %w", err)
 	}
 	return nil

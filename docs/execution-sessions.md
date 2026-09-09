@@ -138,6 +138,19 @@ checks permissions first. Once Guard allows the call, validation errors follow
 the normal Loop path as paired results with `IsError=true`, allowing the model
 to correct the arguments in its next request.
 
+`write` and `edit` serialize mutations within their shared Workspace. They hold
+that lock until synchronous host file operations and temporary-file cleanup
+finish, including after cancellation; cancellation does not leave background
+writes running. Before preparing a temporary file and immediately before Rename,
+they check cancellation. Cancellation observed before commit preserves the original
+target (or leaves a new target absent) and removes the temporary file. Parent
+directories already created may remain. Cleanup errors accompany the original
+error. Rename is the commit point: once it starts, its actual outcome wins over
+later cancellation. A successful commit remains a successful tool result even
+when the Agent run then stops as canceled; the normal bounded Session recorder
+preserves that known result. This does not make checking cancellation and Rename
+one atomic operation or provide crash recovery for an interrupted process.
+
 The `read` tool returns text or image content through one bounded reader.
 Text offsets are 1-indexed. An offset beyond the last content line is a tool
 argument error, returned through the normal Go error path and converted by the
