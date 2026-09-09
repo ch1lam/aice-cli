@@ -120,11 +120,10 @@ func (g *Grep) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult, 
 		limit = max(1, *args.Limit)
 	}
 
-	searchPath, err := g.workspace.resolvePath(args.Path)
+	_, searchPath, err := g.workspace.ResolveGrepPaths(args.Path)
 	if err != nil {
 		return llm.ToolResult{}, fmt.Errorf("tool \"grep\": %w", err)
 	}
-	searchPath = filepath.Clean(searchPath)
 	info, err := os.Stat(searchPath)
 	if err != nil {
 		return llm.ToolResult{}, fmt.Errorf("tool \"grep\": stat %q: %w", args.Path, err)

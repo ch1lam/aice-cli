@@ -105,6 +105,12 @@ func (g *guardAdapter) Check(ctx context.Context, call llm.ToolCall) (agent.Guar
 		}
 	}
 	var revalidate func(context.Context) error
+	if call.Name == "grep" && res.Decision != guard.DecisionDeny {
+		res, revalidate, err = g.checkGrepPaths(ctx, call, res)
+		if err != nil {
+			return agent.GuardResult{}, err
+		}
+	}
 	// Mutations keep literal spelling but follow existing symlinks. Fail closed
 	// on resolution errors and check the destination before any approval.
 	if (call.Name == "write" || call.Name == "edit") && res.Decision != guard.DecisionDeny {

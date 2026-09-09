@@ -271,6 +271,24 @@ Its Guard checks and post-approval revalidation also require that target to rema
 an existing regular file. Atomic commit and cancellation semantics are unchanged.
 `atomicWrite` is shared by both tools and does not resolve links itself.
 
+### Grep path spelling
+
+Grep shares read's basic input normalization: strip one leading `@`, expand `~`
+or `~/`, and fold the same Unicode spaces to ASCII spaces. On Windows native
+separators are accepted. Use `./@name` or `./~/name` for literal workspace names.
+It does not probe read's screenshot, NFD or apostrophe filename variants.
+Relative paths start at the physical workspace, and symlinks resolve before
+parent traversal. Ripgrep receives the physical target; file results use that
+target's basename and directory results use paths relative to that target.
+
+The application Guard adapter checks the original input, normalized absolute
+spelling and physical target before any approval. A denial on any spelling wins,
+including with `--yolo` or existing path grants. Both permission checking and
+execution use `Workspace.ResolveGrepPaths`; a changed target during approval is
+rejected by the existing pre-execution revalidation hook. This checks the search
+root, not each recursively discovered file, and is not an atomic filesystem
+snapshot or a replacement for host isolation. Missing or unresolvable roots fail.
+
 ### Read path spelling
 
 `internal/tool` owns read-only spelling tolerance. It strips one leading `@`,
