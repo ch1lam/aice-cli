@@ -76,16 +76,9 @@ func (e *Edit) Definition() llm.ToolDefinition {
 
 // Execute validates every replacement against the original content, then writes atomically.
 func (e *Edit) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult, error) {
-	type arguments struct {
-		Path  string        `json:"path"`
-		Edits []replacement `json:"edits"`
-	}
-	args, err := decodeArguments[arguments](ctx, call, "edit")
+	args, err := decodeEditArguments(ctx, call)
 	if err != nil {
 		return llm.ToolResult{}, err
-	}
-	if len(args.Edits) == 0 {
-		return llm.ToolResult{}, fmt.Errorf("tool \"edit\": edits must contain at least one replacement")
 	}
 	path, err := e.workspace.resolvePath(args.Path)
 	if err != nil {

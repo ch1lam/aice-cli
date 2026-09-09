@@ -138,6 +138,14 @@ checks permissions first. Once Guard allows the call, validation errors follow
 the normal Loop path as paired results with `IsError=true`, allowing the model
 to correct the arguments in its next request.
 
+The `edit` tool validates all arguments before file access. `edits` must be a
+non-empty array of objects, each with explicit string `oldText` and `newText`.
+Missing, `null`, or non-string text is rejected; `oldText` must also be non-empty.
+An explicit `newText=""` is a valid deletion. Entry errors identify the zero-based
+`edits[index]` and the field when applicable. Any invalid entry leaves the whole
+file unchanged. Unknown fields, stringified arrays, single-object edits, and
+legacy top-level replacement fields are rejected.
+
 `write` and `edit` serialize mutations within their shared Workspace. They hold
 that lock until synchronous host file operations and temporary-file cleanup
 finish, including after cancellation; cancellation does not leave background
