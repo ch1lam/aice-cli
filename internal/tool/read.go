@@ -245,7 +245,7 @@ func readTextPage(
 			return "", llm.ToolTruncation{}, err
 		}
 		if !line.found {
-			return offsetBeyondEnd(offset), llm.ToolTruncation{}, nil
+			return "", llm.ToolTruncation{}, offsetBeyondEnd(offset, lineNumber-1)
 		}
 	}
 
@@ -261,7 +261,7 @@ func readTextPage(
 		}
 		if !line.found {
 			if len(lineEnds) == 0 && offset > 1 {
-				return offsetBeyondEnd(offset), llm.ToolTruncation{}, nil
+				return "", llm.ToolTruncation{}, offsetBeyondEnd(offset, offset-1)
 			}
 			break
 		}
@@ -509,8 +509,9 @@ func shellQuote(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", `'\''`) + "'"
 }
 
-func offsetBeyondEnd(offset int) string {
-	return fmt.Sprintf("[offset %d is beyond end of file]", offset)
+// totalLines is known from reaching EOF during the requested read, not a pre-scan.
+func offsetBeyondEnd(offset, totalLines int) error {
+	return fmt.Errorf("offset %d is beyond end of file (%d lines total)", offset, totalLines)
 }
 
 // ResolvePath returns the physical, normalized read target for permission checks.

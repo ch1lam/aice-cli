@@ -103,6 +103,11 @@ this field does not change the curated print NDJSON projection.
 - Never execute an incomplete or invalid streamed tool call. If a response
   stops for length with tool calls, execute none of them and return paired
   error results so the model can retry safely.
+- Tool execution errors (including invalid read offsets) are converted by the
+  Loop into paired `ToolResultMessage` values with the call ID, tool name,
+  error text, and `IsError=true`. These results follow the same recording,
+  tool-end event, and next-model-request path as successful results. A tool
+  argument error alone does not terminate the run; the model can correct it.
 - Preserve safe partial assistant output on cancellation or provider failure.
   Failures must become a terminal assistant result or an explicit durable
   operation error; they must not disappear from history.

@@ -131,6 +131,17 @@ The tool layer still enforces correctness and resource safety:
 - keep credentials and prompt content out of logs.
 
 The `read` tool returns text or image content through one bounded reader.
+Text offsets are 1-indexed. An offset beyond the last content line is a tool
+argument error, returned through the normal Go error path and converted by the
+Loop into a paired result with `IsError=true`. The error identifies the path,
+requested offset, and actual line count known when the streaming read reaches
+EOF; it does not trigger an extra full-file scan. A terminating newline does
+not create an extra content line. An empty file read with the default offset
+or explicit offset 1 succeeds with empty text; larger offsets fail. Reading
+the last line succeeds with or without a terminating newline, with no
+continuation notice. Legal pages retain their existing output limits and
+continuation hints.
+
 Its `image_id` input accesses only images already recorded on the active Session
 branch, including sources no longer in compacted context. It performs no host
 file access and has no path-access grant; unknown IDs fail. `path` continues to
