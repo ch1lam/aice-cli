@@ -400,14 +400,26 @@ func TestStoreCancellationClosedAndMissingLeaf(t *testing.T) {
 }
 
 func TestTruncationMetadataSurvivesSessionReplay(t *testing.T) {
-	for _, legacy := range []bool{false, true} {
-		t.Run(fmt.Sprintf("legacy=%t", legacy), func(t *testing.T) {
+	for _, kind := range []string{"legacy", "read", "grep"} {
+		legacy := kind == "legacy"
+		t.Run(kind, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "session.jsonl")
 			store := mustCreate(t, path)
 			messages := toolMessages()
 			result := messages[2].(llm.ToolResultMessage)
 			if !legacy {
 				result.Truncation = llm.ToolTruncation{Reason: llm.TruncationByteLimit, OutputLines: 2, OutputBytes: 40000, NextOffset: 3}
+			}
+			if kind == "grep" {
+				assistant := messages[1].(llm.AssistantMessage)
+				for i := range assistant.Content {
+					if assistant.Content[i].ToolCall != nil {
+						assistant.Content[i].ToolCall.Name = "grep"
+					}
+				}
+				messages[1] = assistant
+				result.ToolName = "grep"
+				result.Truncation = llm.ToolTruncation{Reason: llm.TruncationByteLimit, MatchLimitReached: 100, LinesTruncated: true, OutputLines: 33, OutputBytes: 50000}
 			}
 			messages[2] = result
 			appendMessages(t, store, "read", messages...)

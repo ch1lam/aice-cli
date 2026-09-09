@@ -227,6 +227,8 @@ type DiffDisplay struct {
 // TruncationDisplay carries source counts independently of model-facing text.
 // Reason is a display label selected by the application, empty when unreported.
 type TruncationDisplay struct {
+	// Hint supplies tool-specific continuation guidance when source offsets do not apply.
+	Hint            string
 	Reason          string
 	OutputLines     int
 	OutputBytes     int

@@ -7,6 +7,9 @@ import (
 )
 
 func toolTruncationStatus(t interaction.TruncationDisplay) string {
+	if t.Hint != "" {
+		return fmt.Sprintf("Truncated (%s): %d lines, %d bytes; %s", t.Reason, t.OutputLines, t.OutputBytes, t.Hint)
+	}
 	total := "total lines unknown"
 	if t.TotalLinesKnown {
 		total = fmt.Sprintf("%d total lines", t.TotalLines)

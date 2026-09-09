@@ -48,7 +48,7 @@ are rejected explicitly. Protocol adapters retain responsibility for wire encodi
   compatible providers reuse the protocol layer. Thinking translation switches
   on protocol-format metadata rather than provider or model IDs.
 
-### Read truncation metadata
+### Tool truncation metadata
 
 `llm.ToolResult` and `ToolResultMessage` retain optional, value-only
 `truncation` metadata ([type definition](../internal/llm/truncation.go)).
@@ -61,6 +61,15 @@ the 1-based first unreturned line. An oversized line returns zero source lines
 and bytes, leaves that offset unchanged, and retains the bash fallback notice.
 `total_lines_known: false` explicitly means the total is unknown; `total_lines`
 is meaningful only when known. Metadata never triggers additional scanning.
+
+Grep uses the same optional metadata with additive `match_limit_reached` and
+`lines_truncated` fields. Its reason is `byte_limit` when the output budget is
+hit, otherwise `match_limit` or `long_lines`; the extra fields preserve concurrent
+limits. Counts describe formatted grep output (paths, context and inline context
+failure diagnostics included), before final truncation notices. Grep has no
+continuation offset and does not claim a source total. The app supplies search
+refinement, limit adjustment or read guidance instead of read pagination.
+Old records remain readable, and absent new fields decode to zero values.
 
 The Loop carries these values through its existing result message, recorder,
 and tool-end event. The app projects structured counts and a reason label into

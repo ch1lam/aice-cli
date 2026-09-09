@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ch1lam/aice-cli/internal/llm"
 	"github.com/ch1lam/aice-cli/internal/tool"
 )
 
@@ -379,5 +380,52 @@ func TestGrepExecutePreservesMatchWhenContextFileIsTooLarge(t *testing.T) {
 	output := resultText(t, result)
 	if !strings.Contains(output, "large.txt:1: needle") || !strings.Contains(output, "context unavailable: file exceeds") {
 		t.Fatalf("match or explanation missing: %q", output)
+	}
+}
+
+func TestGrepTruncationMetadata(t *testing.T) {
+	t.Parallel()
+	requireRipgrep(t)
+	long := "needle" + strings.Repeat("界", 600) + "\n"
+	for _, tt := range []struct {
+		name, content string
+		limit         int
+		reason        llm.TruncationReason
+		matchLimit    int
+		longLines     bool
+	}{
+		{name: "complete", content: "needle\n", limit: 100},
+		{name: "no matches", content: "none\n", limit: 100},
+		{name: "matches", content: "needle\nneedle\n", limit: 1, reason: llm.TruncationMatchLimit, matchLimit: 1},
+		{name: "long lines", content: long, limit: 100, reason: llm.TruncationLongLines, longLines: true},
+		{name: "bytes and long lines", content: strings.Repeat(long, 100), limit: 200, reason: llm.TruncationByteLimit, longLines: true},
+		{name: "all limits", content: strings.Repeat(long, 100), limit: 100, reason: llm.TruncationByteLimit, matchLimit: 100, longLines: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			workspace, root := newWorkspace(t)
+			writeFixture(t, root, "source.txt", tt.content)
+			grep, err := tool.NewGrep(workspace)
+			if err != nil {
+				t.Fatal(err)
+			}
+			result, err := grep.Execute(t.Context(), toolCall(t, "grep", map[string]any{"pattern": "needle", "limit": tt.limit}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := result.Truncation
+			if got.Reason != tt.reason || got.MatchLimitReached != tt.matchLimit || got.LinesTruncated != tt.longLines {
+				t.Fatalf("metadata=%+v", got)
+			}
+			if tt.reason == "" {
+				if got != (llm.ToolTruncation{}) {
+					t.Fatalf("unexpected metadata: %+v", got)
+				}
+				return
+			}
+			body, _, _ := strings.Cut(resultText(t, result), "\n\n[")
+			if got.OutputBytes != len(body) || got.OutputLines != strings.Count(body, "\n")+1 || got.NextOffset != 0 || got.TotalLinesKnown {
+				t.Fatalf("invalid output counts or pagination: %+v", got)
+			}
+		})
 	}
 }

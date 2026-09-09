@@ -229,6 +229,10 @@ budget; fixed entry overhead is bounded by the file cap. Files that do not fit
 are read without caching. The cache is discarded after the call and does not
 promise a filesystem snapshot. The 10 MiB file cap still applies to uncached
 reads; cache admission does not bound temporary decoding allocations.
+Grep records match-limit, byte-limit and long-line truncation metadata alongside
+its model-facing notices. The TUI shows these reasons beneath the completed tool
+row, including after Session replay, with search/refinement guidance rather than
+read offsets. See [tool truncation metadata](contracts.md#tool-truncation-metadata).
 
 Bash captures combined stdout/stderr within a 50 KiB result limit. Oversized
 output retains its beginning and most recent end with an `[output truncated]`

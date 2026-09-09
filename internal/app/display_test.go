@@ -1,6 +1,7 @@
 package app
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/ch1lam/aice-cli/internal/agent"
@@ -439,5 +440,32 @@ func TestTranslateWriteStreamPreservesOnlyDisplayInputs(t *testing.T) {
 	got = translateAssistantDelta(&llm.Event{Type: llm.EventTypeToolCallEnd, ToolCall: call})
 	if got.Delta.Tool.HasContent {
 		t.Fatal("incomplete JSON became completed content")
+	}
+}
+
+func TestGrepTruncationDisplayFromReplayedResult(t *testing.T) {
+	t.Parallel()
+	result, err := llm.NewToolResultMessage(llm.ToolResult{CallID: "grep-1", Name: "grep", Content: []llm.ContentPart{llm.NewTextContent("no textual hints").Part()}, Truncation: llm.ToolTruncation{Reason: llm.TruncationByteLimit, MatchLimitReached: 100, LinesTruncated: true, OutputLines: 33, OutputBytes: 50000}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := llm.MarshalAgentMessages([]llm.AgentMessage{result})
+	if err != nil {
+		t.Fatal(err)
+	}
+	restored, err := llm.UnmarshalAgentMessages(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replay := restored[0].(llm.ToolResultMessage)
+	event := translateAgentEvent(agent.AgentEvent{Type: agent.EventTypeToolExecutionEnd, ToolCall: &llm.ToolCall{ID: "grep-1", Name: "grep"}, ToolResult: &replay})
+	got := event.Tool.Truncation
+	for _, reason := range []string{"50 KiB limit", "100 matches limit", "some lines truncated"} {
+		if !strings.Contains(got.Reason, reason) {
+			t.Fatalf("reason lost: %+v", got)
+		}
+	}
+	if got.OutputBytes != 50000 || got.OutputLines != 33 || got.NextOffset != 0 || got.TotalLinesKnown || !strings.Contains(got.Hint, "use read") || strings.Contains(got.Hint, "offset") {
+		t.Fatalf("invalid search display: %+v", got)
 	}
 }

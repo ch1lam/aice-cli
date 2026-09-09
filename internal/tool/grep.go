@@ -153,6 +153,25 @@ func (g *Grep) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult, 
 		info.IsDir(),
 		args.Context,
 	)
+	truncation := llm.ToolTruncation{}
+	if linesTruncated {
+		truncation.Reason = llm.TruncationLongLines
+		truncation.LinesTruncated = true
+	}
+	if searchResult.limitReached {
+		truncation.Reason = llm.TruncationMatchLimit
+		truncation.MatchLimitReached = limit
+	}
+	if outputTruncated {
+		truncation.Reason = llm.TruncationByteLimit
+	}
+	if truncation.Reason != "" {
+		truncation.OutputBytes = len(output)
+		if output != "" {
+			truncation.OutputLines = strings.Count(output, "\n") + 1
+		}
+	}
+
 	notices := make([]string, 0, 3)
 	if searchResult.limitReached {
 		notices = append(
@@ -182,7 +201,9 @@ func (g *Grep) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult, 
 		}
 		output += "[" + strings.Join(notices, ". ") + "]"
 	}
-	return textResult(call, output, false), nil
+	result := textResult(call, output, false)
+	result.Truncation = truncation
+	return result, nil
 }
 
 func (g *Grep) runRipgrep(

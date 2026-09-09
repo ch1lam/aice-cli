@@ -239,6 +239,34 @@ func displayToolTruncation(result *llm.ToolResultMessage) interaction.Truncation
 		return interaction.TruncationDisplay{}
 	}
 	t := result.Truncation
+	if result.ToolName == "grep" {
+		reasons := make([]string, 0, 3)
+		hints := make([]string, 0, 3)
+		if t.Reason == llm.TruncationByteLimit {
+			reasons = append(reasons, "50 KiB limit")
+		}
+		if t.MatchLimitReached > 0 {
+			reasons = append(reasons, fmt.Sprintf("%d matches limit", t.MatchLimitReached))
+			hints = append(hints, "increase limit")
+		}
+		if t.Reason == llm.TruncationByteLimit || t.MatchLimitReached > 0 {
+			hints = append(hints, "refine pattern or path")
+		}
+		if t.LinesTruncated {
+			reasons = append(reasons, "some lines truncated")
+			hints = append(hints, "use read for full lines")
+		}
+		if len(reasons) == 0 {
+			reasons = append(reasons, "output limit")
+			hints = append(hints, "refine pattern or path")
+		}
+		return interaction.TruncationDisplay{
+			Reason:      strings.Join(reasons, ", "),
+			OutputLines: t.OutputLines,
+			OutputBytes: t.OutputBytes,
+			Hint:        strings.Join(hints, "; "),
+		}
+	}
 	reason := "output limit"
 	switch t.Reason {
 	case llm.TruncationRequestedLines:
