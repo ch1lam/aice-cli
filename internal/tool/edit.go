@@ -87,16 +87,17 @@ func (e *Edit) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult, 
 	if len(args.Edits) == 0 {
 		return llm.ToolResult{}, fmt.Errorf("tool \"edit\": edits must contain at least one replacement")
 	}
-	path, err := e.workspace.resolvePath(args.Path)
-	if err != nil {
-		return llm.ToolResult{}, fmt.Errorf("tool \"edit\": %w", err)
-	}
 
 	e.workspace.mutationMu.Lock()
 	defer e.workspace.mutationMu.Unlock()
 	if err := ctx.Err(); err != nil {
 		return llm.ToolResult{}, err
 	}
+	path, err := e.ResolvePath(args.Path)
+	if err != nil {
+		return llm.ToolResult{}, fmt.Errorf("tool \"edit\": %w", err)
+	}
+
 	file, err := os.Open(path)
 	if err != nil {
 		return llm.ToolResult{}, fmt.Errorf("tool \"edit\": open %q: %w", args.Path, err)
@@ -188,4 +189,21 @@ func applyReplacements(content string, edits []replacement) (string, error) {
 		updated = strings.ReplaceAll(updated, "\n", "\r\n")
 	}
 	return bom + updated, nil
+}
+
+// ResolvePath returns the existing regular file that edit will replace.
+// Guard uses the same physical destination and existence checks as execution.
+func (e *Edit) ResolvePath(input string) (string, error) {
+	path, err := e.workspace.resolveMutationPath(input)
+	if err != nil {
+		return "", err
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return "", fmt.Errorf("inspect edit target %q: %w", input, err)
+	}
+	if !info.Mode().IsRegular() {
+		return "", fmt.Errorf("edit target %q is not a regular file", input)
+	}
+	return path, nil
 }

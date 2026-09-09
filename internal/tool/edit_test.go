@@ -114,7 +114,7 @@ func TestEditExecutePreservesBOMAndCRLF(t *testing.T) {
 	}
 }
 
-func TestEditExecuteRetainsSymlinkReplacementBehavior(t *testing.T) {
+func TestEditExecutePreservesSymlink(t *testing.T) {
 	t.Parallel()
 	workspace, root := newWorkspace(t)
 	target := writeFixture(t, root, "target", "old")
@@ -130,7 +130,7 @@ func TestEditExecuteRetainsSymlinkReplacementBehavior(t *testing.T) {
 		t.Fatal(err)
 	}
 	info, err := os.Lstat(link)
-	if err != nil || !info.Mode().IsRegular() {
+	if err != nil || info.Mode()&os.ModeSymlink == 0 {
 		t.Fatalf("alias = %v, %v", info, err)
 	}
 	data, err := os.ReadFile(link)
@@ -138,7 +138,7 @@ func TestEditExecuteRetainsSymlinkReplacementBehavior(t *testing.T) {
 		t.Fatalf("alias = %q, %v", data, err)
 	}
 	data, err = os.ReadFile(target)
-	if err != nil || string(data) != "old" {
+	if err != nil || string(data) != "new" {
 		t.Fatalf("target = %q, %v", data, err)
 	}
 }

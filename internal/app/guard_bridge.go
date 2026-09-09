@@ -105,9 +105,9 @@ func (g *guardAdapter) Check(ctx context.Context, call llm.ToolCall) (agent.Guar
 		}
 	}
 	var revalidate func(context.Context) error
-	// Write keeps literal spelling but follows existing symlinks. Fail closed
+	// Mutations keep literal spelling but follow existing symlinks. Fail closed
 	// on resolution errors and check the destination before any approval.
-	if call.Name == "write" && res.Decision != guard.DecisionDeny {
+	if (call.Name == "write" || call.Name == "edit") && res.Decision != guard.DecisionDeny {
 		var args map[string]json.RawMessage
 		if err := json.Unmarshal(call.Arguments, &args); err != nil {
 			return agent.GuardResult{}, err
@@ -120,11 +120,21 @@ func (g *guardAdapter) Check(ctx context.Context, call llm.ToolCall) (agent.Guar
 		if err != nil {
 			return agent.GuardResult{}, err
 		}
-		writer, err := tool.NewWrite(workspace)
-		if err != nil {
-			return agent.GuardResult{}, err
+		var resolvePath func(string) (string, error)
+		if call.Name == "edit" {
+			editor, err := tool.NewEdit(workspace)
+			if err != nil {
+				return agent.GuardResult{}, err
+			}
+			resolvePath = editor.ResolvePath
+		} else {
+			writer, err := tool.NewWrite(workspace)
+			if err != nil {
+				return agent.GuardResult{}, err
+			}
+			resolvePath = writer.ResolvePath
 		}
-		resolved, err := writer.ResolvePath(path)
+		resolved, err := resolvePath(path)
 		if err != nil {
 			return agent.GuardResult{}, err
 		}
@@ -132,16 +142,16 @@ func (g *guardAdapter) Check(ctx context.Context, call llm.ToolCall) (agent.Guar
 			if err := ctx.Err(); err != nil {
 				return err
 			}
-			current, err := writer.ResolvePath(path)
+			current, err := resolvePath(path)
 			if err != nil {
 				return err
 			}
 			if current != resolved {
-				return fmt.Errorf("write target changed after permission check; retry the call")
+				return fmt.Errorf("%s target changed after permission check; retry the call", call.Name)
 			}
 			return nil
 		}
-		if resolved != g.inner.ResolveAbsolute(path, "write") {
+		if resolved != g.inner.ResolveAbsolute(path, call.Name) {
 			args["path"], _ = json.Marshal(resolved)
 			physical := call
 			physical.Arguments, _ = json.Marshal(args)
