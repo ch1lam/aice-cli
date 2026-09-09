@@ -2,8 +2,12 @@ package custom_test
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 
@@ -26,6 +30,81 @@ func TestModelForIDAcceptsAnyID(t *testing.T) {
 		if model.ThinkingLevelMap == nil {
 			t.Errorf("ModelForID(%q) thinking map is nil", id)
 		}
+		if !slices.Contains(model.InputModalities, llm.InputModalityImage) {
+			t.Errorf("ModelForID(%q) does not allow image input", id)
+		}
+	}
+}
+
+func TestProviderPassesImagesToEndpoint(t *testing.T) {
+	t.Parallel()
+	for _, status := range []int{http.StatusOK, http.StatusBadRequest} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			t.Parallel()
+			var body []byte
+			requests := 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests++
+				var err error
+				body, err = io.ReadAll(r.Body)
+				if err != nil {
+					t.Error(err)
+				}
+				if status != http.StatusOK {
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(status)
+					_, _ = io.WriteString(w, `{"error":{"message":"image input unsupported","type":"invalid_request_error"}}`)
+					return
+				}
+				w.Header().Set("Content-Type", "text/event-stream")
+				_, _ = io.WriteString(w, "data: [DONE]\n\n")
+			}))
+			defer server.Close()
+			p, err := custom.New(custom.Config{BaseURL: server.URL})
+			if err != nil {
+				t.Fatal(err)
+			}
+			model := custom.ModelForID("unknown-vision-model")
+			image := llm.ContentPart{Type: llm.ContentTypeImage, Image: &llm.ImageContent{
+				MIMEType: "image/png", Data: []byte("image-payload"),
+			}}
+			user, err := llm.NewUserMessage(image)
+			if err != nil {
+				t.Fatal(err)
+			}
+			assistant := llm.NewAssistantMessage(model)
+			assistant.Content = []llm.ContentPart{{Type: llm.ContentTypeToolCall, ToolCall: &llm.ToolCall{
+				ID: "read-image", Name: "read", Arguments: json.RawMessage(`{"path":"photo.png"}`),
+			}}}
+			assistant.StopReason = llm.StopReasonToolUse
+			result, err := llm.NewToolResultMessage(llm.ToolResult{
+				CallID: "read-image", Name: "read", Content: []llm.ContentPart{image},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			stream, err := p.Stream(t.Context(), llm.Request{
+				Model: model, Messages: []llm.Message{user, assistant, result},
+			})
+			if err == nil {
+				defer stream.Close()
+				_, err = stream.Next()
+			}
+			if status == http.StatusOK {
+				if err != nil && err != io.EOF {
+					t.Fatal(err)
+				}
+			} else if err == nil || !strings.Contains(err.Error(), "image input unsupported") {
+				t.Fatalf("error = %v, want endpoint rejection", err)
+			}
+			payload := base64.StdEncoding.EncodeToString(image.Image.Data)
+			if strings.Count(string(body), "data:image/png;base64,"+payload) != 2 {
+				t.Fatalf("user and tool images did not both reach endpoint: %s", body)
+			}
+			if requests != 1 {
+				t.Fatalf("requests = %d, want one without fallback", requests)
+			}
+		})
 	}
 }
 

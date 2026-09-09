@@ -3,8 +3,8 @@
 // It is the catch-all provider for Ollama, vLLM, LM Studio, or any
 // OpenAI-compatible endpoint. Like Pi's models.json custom providers, the
 // model catalog is not compiled in: any model ID is accepted and materialized
-// on the fly with safe defaults. The wire protocol is always
-// openai-completions (POST {baseURL}/chat/completions streamed via SSE).
+// on the fly with permissive input capabilities and fallback budgets. The wire
+// protocol is always openai-completions (POST {baseURL}/chat/completions streamed via SSE).
 package custom
 
 import (
@@ -76,7 +76,9 @@ func New(cfg Config) (*Provider, error) {
 
 // ModelForID builds a provider-neutral model for an arbitrary ID. This is the
 // Pi-inspired behavior: `models.json` requires only `id`, all other fields
-// fall back to safe defaults. The custom provider never rejects an unknown ID.
+// fall back to defaults. Text and images are passed to the endpoint without
+// capability discovery; unsupported input is reported by the server. The
+// custom provider never rejects an unknown ID.
 //
 // Thinking defaults to the standard off-through-high spectrum so the global
 // `medium` default is respected and `/thinking` can be adjusted live. Servers
@@ -93,7 +95,7 @@ func ModelForID(id string) llm.Model {
 		Provider:         ProviderID,
 		SupportsThinking: true,
 		ThinkingLevelMap: llm.StandardThinkingLevelMap(),
-		InputModalities:  []llm.InputModality{llm.InputModalityText},
+		InputModalities:  []llm.InputModality{llm.InputModalityText, llm.InputModalityImage},
 		ContextWindow:    128_000,
 		MaxTokens:        16_384,
 		Pricing:          llm.Pricing{},
@@ -146,7 +148,7 @@ func (p *Provider) Stream(ctx context.Context, request llm.Request) (llm.Stream,
 var messageCapabilities = provider.MessageCapabilities{
 	ID:                       ProviderID,
 	Label:                    "Custom",
-	SupportsImage:            false,
+	SupportsImage:            true,
 	SupportsRedactedThinking: false,
 	NestedToolResultTextOnly: false,
 }

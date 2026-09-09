@@ -261,14 +261,17 @@ is still sent. Responses models use that protocol's normal output-token field.
 Other providers keep sending their model default.
 
 For arbitrary `custom` models without a context override, AICE uses a
-128,000-token fallback budget and 16,384-token output limit, text input, and
+128,000-token fallback budget and 16,384-token output limit, text/image input, and
 standard thinking levels. The footer uses this budget until overridden;
 `/settings` identifies it as a fallback.
 These are fixed metadata defaults from `custom.ModelForID`, not capabilities
 queried from the endpoint. A server with smaller limits or different reasoning
-support can reject a request despite local budget checks. Automatic capability
-detection is not implemented, and absent custom pricing is not evidence that a
-request is free.
+support can reject a request despite local budget checks. Custom permits image
+attachments and image results from `read` by default; the endpoint decides
+whether it supports them. Unsupported input or parameters surface as server
+errors; AICE does not automatically strip images or parameters and retry.
+Automatic capability detection is not implemented, and absent custom pricing
+is not evidence that a request is free.
 
 `default_project_trust` defaults to `ask`. Automation should use `--approve`
 or `--no-approve` rather than a broad environment override. See [Project Trust
