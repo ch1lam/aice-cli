@@ -167,3 +167,36 @@ func TestLSExecuteLimitGuidance(t *testing.T) {
 		})
 	}
 }
+
+func TestLSExecuteEmptyAndHiddenEntries(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		name     string
+		populate bool
+		want     string
+	}{
+		{name: "empty", want: "(empty directory)"},
+		{name: "hidden entries at exact limit", populate: true, want: ".hidden-dir/\n.hidden-file"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			workspace, root := newWorkspace(t)
+			if tt.populate {
+				writeFixture(t, root, ".hidden-file", "")
+				if err := os.Mkdir(filepath.Join(root, ".hidden-dir"), 0o750); err != nil {
+					t.Fatal(err)
+				}
+			}
+			ls, err := tool.NewLS(workspace)
+			if err != nil {
+				t.Fatal(err)
+			}
+			result, err := ls.Execute(t.Context(), toolCall(t, "ls", map[string]any{"limit": 2}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := resultText(t, result); got != tt.want {
+				t.Fatalf("output = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

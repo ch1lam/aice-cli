@@ -41,8 +41,12 @@ func NewLS(workspace *Workspace) (*LS, error) {
 // Definition returns the model-facing ls contract.
 func (l *LS) Definition() llm.ToolDefinition {
 	return llm.ToolDefinition{
-		Name:          "ls",
-		Description:   "List files and directories, resolving relative paths from the working directory.",
+		Name: "ls",
+		Description: "List one directory, including dotfiles, in case-sensitive name order. " +
+			"Directories have a '/' suffix; symlinks (including dangling links) have '@'. " +
+			"Relative paths resolve from the working directory. Empty directories return '(empty directory)'. " +
+			"Returns complete entries within 500 entries and 50 KiB, including truncation notices. " +
+			"Use find to filter names or bash to inspect larger directories in batches.",
 		InputSchema:   jsonSchema(lsSchema),
 		PromptSnippet: "List directory contents",
 	}
@@ -87,6 +91,9 @@ func (l *LS) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult, er
 	entries, err := directory.ReadDir(args.Limit + 1)
 	if err != nil && !errors.Is(err, io.EOF) {
 		return llm.ToolResult{}, fmt.Errorf("tool \"ls\": list %q: %w", args.Path, err)
+	}
+	if len(entries) == 0 {
+		return textResult(call, "(empty directory)", false), nil
 	}
 	slices.SortFunc(entries, func(left, right fs.DirEntry) int {
 		return strings.Compare(left.Name(), right.Name())

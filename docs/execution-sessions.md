@@ -243,6 +243,11 @@ cancellation still stops the process tree and returns cancellation.
 
 ### Directory listings
 
+`ls` lists one directory, including dotfiles. Directory names end in `/`;
+symlinks, including dangling links, end in `@`. Paths retain literal spelling
+and resolve relative to the physical workspace. An empty directory returns
+`(empty directory)`. These output conventions are included in the tool description.
+
 The `ls` tool keeps complete directory entries within its 50 KiB output budget,
 including truncation notices. It reserves notice space before adding entries;
 filenames, directory suffixes, and symlink suffixes are never partially emitted.
