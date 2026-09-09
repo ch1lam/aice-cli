@@ -93,16 +93,21 @@ func (r *Read) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult, 
 	if err != nil {
 		return llm.ToolResult{}, err
 	}
-	content, err := r.Content(ctx, args)
+	var truncation llm.ToolTruncation
+	content, err := r.content(ctx, args, &truncation)
 	if err != nil {
 		return llm.ToolResult{}, fmt.Errorf("tool %q: %w", "read", err)
 	}
-	return llm.ToolResult{CallID: call.ID, Name: call.Name, Content: content}, nil
+	return llm.ToolResult{CallID: call.ID, Name: call.Name, Content: content, Truncation: truncation}, nil
 }
 
 // Content is the shared read implementation. Callers must authorize the resolved
 // path before calling; this function never grants filesystem access.
 func (r *Read) Content(ctx context.Context, args ReadRequest) ([]llm.ContentPart, error) {
+	return r.content(ctx, args, nil)
+}
+
+func (r *Read) content(ctx context.Context, args ReadRequest, truncation *llm.ToolTruncation) ([]llm.ContentPart, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -180,7 +185,7 @@ func (r *Read) Content(ctx context.Context, args ReadRequest) ([]llm.ContentPart
 		return nil, fmt.Errorf("crop is only supported for images")
 	}
 
-	text, err := readTextPage(ctx, file, args.Offset, args.Limit, args.Path, userLimited)
+	text, details, err := readTextPage(ctx, file, args.Offset, args.Limit, args.Path, userLimited)
 	if err != nil {
 		if errors.Is(err, errBinaryContent) {
 			return nil, fmt.Errorf(
@@ -192,6 +197,9 @@ func (r *Read) Content(ctx context.Context, args ReadRequest) ([]llm.ContentPart
 			return nil, err
 		}
 		return nil, fmt.Errorf("tool \"read\": read %q: %w", args.Path, err)
+	}
+	if truncation != nil {
+		*truncation = details
 	}
 	return []llm.ContentPart{llm.NewTextContent(text).Part()}, nil
 }
@@ -227,17 +235,17 @@ func readTextPage(
 	offset, limit int,
 	path string,
 	userLimited bool,
-) (string, error) {
+) (string, llm.ToolTruncation, error) {
 	reader := bufio.NewReaderSize(source, readBufferBytes)
 	info := readPageInfo{path: path}
 
 	for lineNumber := 1; lineNumber < offset; lineNumber++ {
 		line, err := readBoundedLine(ctx, reader, 0)
 		if err != nil {
-			return "", err
+			return "", llm.ToolTruncation{}, err
 		}
 		if !line.found {
-			return offsetBeyondEnd(offset), nil
+			return offsetBeyondEnd(offset), llm.ToolTruncation{}, nil
 		}
 	}
 
@@ -249,17 +257,17 @@ func readTextPage(
 		lineNumber := offset + len(lineEnds)
 		line, err := readBoundedLine(ctx, reader, maxOutputBytes+1)
 		if err != nil {
-			return "", err
+			return "", llm.ToolTruncation{}, err
 		}
 		if !line.found {
 			if len(lineEnds) == 0 && offset > 1 {
-				return offsetBeyondEnd(offset), nil
+				return offsetBeyondEnd(offset), llm.ToolTruncation{}, nil
 			}
 			break
 		}
 		if line.bytes > maxOutputBytes || len(content)+len(line.data) > maxOutputBytes {
 			if len(lineEnds) == 0 {
-				return oversizedLineMessage(lineNumber, path), nil
+				return oversizedLineMessage(lineNumber, path), llm.ToolTruncation{Reason: llm.TruncationOversizedLine, NextOffset: lineNumber}, nil
 			}
 			stopReason = readStopBytes
 			break
@@ -273,7 +281,7 @@ func readTextPage(
 		if userLimited {
 			remaining, capped, err := countRemainingLines(ctx, reader, maxReadBytes)
 			if err != nil {
-				return "", err
+				return "", llm.ToolTruncation{}, err
 			}
 			if remaining > 0 {
 				info.remaining = remaining
@@ -283,7 +291,7 @@ func readTextPage(
 		} else {
 			more, err := hasMoreText(ctx, reader)
 			if err != nil {
-				return "", err
+				return "", llm.ToolTruncation{}, err
 			}
 			if more {
 				if limit == defaultReadLines {
@@ -296,10 +304,11 @@ func readTextPage(
 	}
 
 	if stopReason == readStopNone {
-		return string(content), nil
+		return string(content), llm.ToolTruncation{}, nil
 	}
 	info.reason = stopReason
-	return formatReadPage(content, lineEnds, offset, info), nil
+	text, details := formatReadPage(content, lineEnds, offset, info)
+	return text, details, nil
 }
 
 func readBoundedLine(
@@ -394,7 +403,12 @@ func formatReadPage(
 	lineEnds []int,
 	offset int,
 	info readPageInfo,
-) string {
+) (string, llm.ToolTruncation) {
+	details := llm.ToolTruncation{}
+	if info.reason == readStopRequestedLines && !info.capped {
+		details.TotalLinesKnown = true
+		details.TotalLines = offset - 1 + len(lineEnds) + info.remaining
+	}
 	for len(lineEnds) > 0 {
 		endLine := offset + len(lineEnds) - 1
 		nextOffset := endLine + 1
@@ -410,14 +424,27 @@ func formatReadPage(
 			result = append(result, page...)
 			result = append(result, separator...)
 			result = append(result, notice...)
-			return string(result)
+			details.OutputLines = len(lineEnds)
+			details.OutputBytes = len(page)
+			details.NextOffset = nextOffset
+			switch info.reason {
+			case readStopRequestedLines:
+				details.Reason = llm.TruncationRequestedLines
+			case readStopDefaultLines:
+				details.Reason = llm.TruncationLineLimit
+			case readStopBytes:
+				details.Reason = llm.TruncationByteLimit
+			}
+			return string(result), details
 		}
 
 		lineEnds = lineEnds[:len(lineEnds)-1]
 		info.reason = readStopBytes
 	}
 
-	return oversizedLineMessage(offset, info.path)
+	details.Reason = llm.TruncationOversizedLine
+	details.NextOffset = offset
+	return oversizedLineMessage(offset, info.path), details
 }
 
 func readContinuationNotice(start, end, next int, info readPageInfo) string {

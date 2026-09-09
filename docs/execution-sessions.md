@@ -137,6 +137,14 @@ file access and has no path-access grant; unknown IDs fail. `path` continues to
 use normal file permissions. A new Session cannot access a previous Session's
 images. Stateless print retains sources only for that invocation.
 
+Text reads preserve complete lines within 2000 lines and 50 KiB, including the
+continuation notice. A smaller explicit limit retains the existing bounded
+remaining-line count; only reaching EOF during that count yields a known total.
+Default and byte-limited pages do not scan the rest of the file for metadata.
+The TUI reports the reason, returned source lines/bytes, known or unknown total,
+and continuation offset. A first line that cannot fit instead calls for bash.
+Images, directories, errors, and untruncated text carry no text truncation data.
+
 Structured subprocesses use executable/argument separation. The `grep` tool
 invokes `rg` with `--` before model-controlled pattern/path values. The `bash`
 tool intentionally crosses a shell boundary and applies the same timeout,
@@ -166,6 +174,15 @@ Each file contains a versioned header followed by append-only records:
 | `message` | One accepted user message, ended assistant response, or tool result, with its complete metadata |
 | `compaction` | A derived summary checkpoint for the active branch |
 | `leaf` | A move of the active branch pointer; no history is deleted |
+
+Tool-result `truncation` is an additive optional field inside v3 source messages.
+It persists in the same JSONL record as the content and survives reopening,
+branch context reconstruction, and ordinary message copies. Old v3 messages
+without it remain valid and do not acquire inferred metadata. Compaction leaves
+source records intact. Replay restores the typed result, which uses the same
+application display projection as a live result; it does not reconstruct metadata
+from continuation prose. This does not add automatic historical transcript
+hydration to the TUI on resume.
 
 Messages and compactions are tree nodes with stable IDs and parent IDs. Model
 context is derived from the active root-to-leaf path. After checkout to a safe

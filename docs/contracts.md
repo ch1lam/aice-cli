@@ -48,6 +48,28 @@ are rejected explicitly. Protocol adapters retain responsibility for wire encodi
   compatible providers reuse the protocol layer. Thinking translation switches
   on protocol-format metadata rather than provider or model IDs.
 
+### Read truncation metadata
+
+`llm.ToolResult` and `ToolResultMessage` retain optional, value-only
+`truncation` metadata ([type definition](../internal/llm/truncation.go)).
+The read tool owns its creation after final complete-line trimming, including
+space reserved for the model-readable continuation notice. Reasons distinguish
+requested pagination, the default line cap, the byte cap, and a line that cannot
+fit. `output_lines` and `output_bytes` count only returned source content (line
+terminators included), excluding the notice and its separator. `next_offset` is
+the 1-based first unreturned line. An oversized line returns zero source lines
+and bytes, leaves that offset unchanged, and retains the bash fallback notice.
+`total_lines_known: false` explicitly means the total is unknown; `total_lines`
+is meaningful only when known. Metadata never triggers additional scanning.
+
+The Loop carries these values through its existing result message, recorder,
+and tool-end event. The app projects structured counts and a reason label into
+`interaction.ToolDisplay`; the TUI displays truncation beneath the completed
+tool row without parsing content text. The value-only projection participates
+in normal viewport cache invalidation. Absent metadata (including old results)
+produces no inferred status. Provider adapters continue sending content only;
+this field does not change the curated print NDJSON projection.
+
 ## Agent Loop
 
 - The loop owns model calls, validated sequential tool execution, paired tool

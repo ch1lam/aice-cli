@@ -259,7 +259,7 @@ func (m *model) applyAgentEvent(event DisplayEvent) (bool, tea.Cmd) {
 		m.status = "Running " + event.Tool.Name + "..."
 		return true, nil
 	case DisplayEventToolEnd:
-		m.completeTool(event.Tool.ID, event.Tool.Failed)
+		m.completeTool(event.Tool)
 		m.status = "Thinking..."
 		return true, nil
 	case DisplayEventSteer:
@@ -367,12 +367,13 @@ func (m *model) resetBranchTranscript() {
 	m.refreshViewport(true)
 }
 
-func (m *model) completeTool(callID string, failed bool) {
+func (m *model) completeTool(tool ToolDisplay) {
 	for index := len(m.entries) - 1; index >= 0; index-- {
 		entry := &m.entries[index]
-		if entry.kind == entryTool && entry.toolID == callID && !entry.toolDone {
+		if entry.kind == entryTool && entry.toolID == tool.ID && !entry.toolDone {
 			entry.toolDone = true
-			entry.toolError = failed
+			entry.toolError = tool.Failed
+			entry.toolTruncation = tool.Truncation
 			return
 		}
 	}

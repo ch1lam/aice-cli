@@ -47,18 +47,19 @@ const (
 )
 
 type transcriptEntry struct {
-	kind         entryKind
-	text         string
-	thinking     string
-	presentation *assistantPresentation
-	complete     bool
-	processID    int
-	conclusion   bool
-	toolID       string
-	toolName     string
-	toolDetail   string
-	toolDone     bool
-	toolError    bool
+	kind           entryKind
+	text           string
+	thinking       string
+	presentation   *assistantPresentation
+	complete       bool
+	processID      int
+	conclusion     bool
+	toolID         string
+	toolName       string
+	toolDetail     string
+	toolDone       bool
+	toolError      bool
+	toolTruncation interaction.TruncationDisplay
 }
 
 type processGroup struct {

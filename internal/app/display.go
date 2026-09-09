@@ -70,8 +70,9 @@ func translateAgentEvent(event agent.AgentEvent) *interaction.Event {
 			return &interaction.Event{
 				Kind: interaction.EventToolEnd,
 				Tool: interaction.ToolDisplay{
-					ID:     event.ToolCall.ID,
-					Failed: event.Err != nil,
+					ID:         event.ToolCall.ID,
+					Failed:     event.Err != nil,
+					Truncation: displayToolTruncation(event.ToolResult),
 				},
 			}
 		}
@@ -230,4 +231,31 @@ func newDisplayUsage(usage llm.Usage) interaction.DisplayUsage {
 		display.TotalCost = usage.Cost.Total
 	}
 	return display
+}
+
+func displayToolTruncation(result *llm.ToolResultMessage) interaction.TruncationDisplay {
+	if result == nil || result.Truncation.Reason == "" {
+		return interaction.TruncationDisplay{}
+	}
+	t := result.Truncation
+	reason := "output limit"
+	switch t.Reason {
+	case llm.TruncationRequestedLines:
+		reason = "requested line limit"
+	case llm.TruncationLineLimit:
+		reason = "2000 line limit"
+	case llm.TruncationByteLimit:
+		reason = "50 KiB limit"
+	case llm.TruncationOversizedLine:
+		reason = "line exceeds output budget"
+	}
+	return interaction.TruncationDisplay{
+		Reason:          reason,
+		OutputLines:     t.OutputLines,
+		OutputBytes:     t.OutputBytes,
+		NextOffset:      t.NextOffset,
+		TotalLines:      t.TotalLines,
+		TotalLinesKnown: t.TotalLinesKnown,
+		RequiresBash:    t.Reason == llm.TruncationOversizedLine,
+	}
 }

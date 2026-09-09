@@ -200,10 +200,23 @@ type AssistantDisplay struct {
 // ToolDisplay is one tool execution shown by a frontend. Detail is the raw
 // tool input already extracted for display by the application bridge.
 type ToolDisplay struct {
-	ID     string
-	Name   string
-	Detail string
-	Failed bool
+	Truncation TruncationDisplay
+	ID         string
+	Name       string
+	Detail     string
+	Failed     bool
+}
+
+// TruncationDisplay carries source counts independently of model-facing text.
+// Reason is a display label selected by the application, empty when unreported.
+type TruncationDisplay struct {
+	Reason          string
+	OutputLines     int
+	OutputBytes     int
+	NextOffset      int
+	TotalLines      int
+	TotalLinesKnown bool
+	RequiresBash    bool
 }
 
 // RetryDisplay is one model-call retry status. Delay is pre-formatted by the

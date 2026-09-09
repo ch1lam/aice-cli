@@ -583,6 +583,9 @@ func (m model) entryView(
 		if entry.toolName == "bash" && entry.toolDetail != "" {
 			summary += "\n" + mutedStyle.Render("$ "+entry.toolDetail)
 		}
+		if entry.toolDone && entry.toolTruncation.Reason != "" {
+			summary += "\n" + noticeStyle.Render(toolTruncationStatus(entry.toolTruncation))
+		}
 		return lipgloss.NewStyle().Padding(0, 2).Render(
 			summary,
 		)

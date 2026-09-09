@@ -389,3 +389,37 @@ func TestDisplayThinking(t *testing.T) {
 		})
 	}
 }
+
+func TestToolTruncationDisplayFromReplayedResult(t *testing.T) {
+	for _, reason := range []llm.TruncationReason{"", llm.TruncationRequestedLines, llm.TruncationLineLimit, llm.TruncationByteLimit, llm.TruncationOversizedLine} {
+		t.Run(string(reason), func(t *testing.T) {
+			result, err := llm.NewToolResultMessage(llm.ToolResult{CallID: "read-1", Name: "read", Content: []llm.ContentPart{llm.NewTextContent("arbitrary text without continuation hints").Part()}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if reason != "" {
+				result.Truncation = llm.ToolTruncation{Reason: reason, OutputLines: 2, OutputBytes: 8, NextOffset: 3}
+			}
+			raw, err := llm.MarshalAgentMessages([]llm.AgentMessage{result})
+			if err != nil {
+				t.Fatal(err)
+			}
+			restored, err := llm.UnmarshalAgentMessages(raw)
+			if err != nil {
+				t.Fatal(err)
+			}
+			replay := restored[0].(llm.ToolResultMessage)
+			event := translateAgentEvent(agent.AgentEvent{Type: agent.EventTypeToolExecutionEnd, ToolCall: &llm.ToolCall{ID: "read-1", Name: "read"}, ToolResult: &replay})
+			got := event.Tool.Truncation
+			if reason == "" {
+				if got.Reason != "" {
+					t.Fatal("legacy result inferred truncation")
+				}
+				return
+			}
+			if got.Reason == "" || got.OutputLines != 2 || got.OutputBytes != 8 || got.NextOffset != 3 || got.TotalLinesKnown || got.RequiresBash != (reason == llm.TruncationOversizedLine) {
+				t.Fatalf("display = %+v", got)
+			}
+		})
+	}
+}

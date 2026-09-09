@@ -385,3 +385,42 @@ func TestMessageRecorderSyntheticFailurePreservesProviderCause(t *testing.T) {
 		t.Fatalf("records/requests/tools = %d/%d/%d", calls, len(model.requests), len(tool.calls))
 	}
 }
+
+func TestToolTruncationReachesRecorderEventsAndNextRequest(t *testing.T) {
+	info := testModel()
+	first := assistantMessage(info, llm.StopReasonToolUse, toolCallPart("read-1", "read", `{}`))
+	last := assistantMessage(info, llm.StopReasonStop, textPart("done"))
+	model := &scriptedModel{scripts: []*streamScript{{events: terminalEvents(first)}, {events: terminalEvents(last)}}}
+	want := llm.ToolTruncation{Reason: llm.TruncationByteLimit, OutputLines: 49, OutputBytes: 50176, NextOffset: 50}
+	tool := newFakeTool("read", func(context.Context, llm.ToolCall) (llm.ToolResult, error) {
+		return llm.ToolResult{Content: []llm.ContentPart{textPart("page")}, Truncation: want}, nil
+	})
+	input := testInput(info, mustPrompt(t, "read"))
+	var recorded llm.ToolResultMessage
+	input.MessageRecorder = func(_ context.Context, message llm.AgentMessage) error {
+		if result, ok := message.(llm.ToolResultMessage); ok {
+			recorded = result
+		}
+		return nil
+	}
+	seen := false
+	_, err := mustLoop(t, model, []agent.Tool{tool}).Run(t.Context(), input, func(_ context.Context, event agent.AgentEvent) error {
+		if event.Type == agent.EventTypeToolExecutionEnd {
+			seen = true
+			if event.ToolResult.Truncation != want || recorded.Truncation != want {
+				t.Fatal("metadata lost before tool-end display")
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !seen {
+		t.Fatal("no tool-end event")
+	}
+	messages := model.requests[1].Messages
+	if messages[len(messages)-1].(llm.ToolResultMessage).Truncation != want {
+		t.Fatal("continuation lost metadata")
+	}
+}

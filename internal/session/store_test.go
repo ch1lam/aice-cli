@@ -398,3 +398,39 @@ func TestStoreCancellationClosedAndMissingLeaf(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestTruncationMetadataSurvivesSessionReplay(t *testing.T) {
+	for _, legacy := range []bool{false, true} {
+		t.Run(fmt.Sprintf("legacy=%t", legacy), func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "session.jsonl")
+			store := mustCreate(t, path)
+			messages := toolMessages()
+			result := messages[2].(llm.ToolResultMessage)
+			if !legacy {
+				result.Truncation = llm.ToolTruncation{Reason: llm.TruncationByteLimit, OutputLines: 2, OutputBytes: 40000, NextOffset: 3}
+			}
+			messages[2] = result
+			appendMessages(t, store, "read", messages...)
+			raw := fileBytes(t, path)
+			if strings.Contains(string(raw), `"truncation"`) == legacy {
+				t.Fatalf("unexpected optional field: %s", raw)
+			}
+			if err := store.Close(); err != nil {
+				t.Fatal(err)
+			}
+			reopened, err := session.Open(t.Context(), path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer reopened.Close()
+			history, err := session.BuildContext(snapshotOf(t, reopened))
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := history[2].(llm.ToolResultMessage)
+			if got.Truncation != result.Truncation {
+				t.Fatalf("replay lost metadata: %+v", got)
+			}
+		})
+	}
+}

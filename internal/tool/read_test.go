@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ch1lam/aice-cli/internal/llm"
 	"github.com/ch1lam/aice-cli/internal/tool"
 )
 
@@ -24,6 +25,10 @@ func TestReadExecuteReturnsSelectedLines(t *testing.T) {
 	}))
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
+	}
+	wantMetadata := llm.ToolTruncation{Reason: llm.TruncationRequestedLines, OutputLines: 2, OutputBytes: 10, NextOffset: 4, TotalLines: 4, TotalLinesKnown: true}
+	if result.Truncation != wantMetadata {
+		t.Fatalf("metadata = %+v", result.Truncation)
 	}
 	want := "two\nthree\n\n[1 more line in file. Use offset=4 to continue.]"
 	if got := resultText(t, result); got != want {
