@@ -130,6 +130,13 @@ The tool layer still enforces correctness and resource safety:
 - pair every tool call with one result;
 - keep credentials and prompt content out of logs.
 
+Tool descriptions and parameter schemas guide the model to use `write` for new
+files or complete rewrites and `edit` for partial changes to existing files.
+`write.content` is the complete final file content: omitted old content is not
+preserved. These are model-facing selection rules, not an additional execution
+gate. Tool-specific guidelines also appear in the default system prompt; the
+descriptions and schemas remain available when a custom system prompt replaces it.
+
 The `write` tool requires an explicit string `content`. Missing, `null`, or
 non-string content returns a tool argument error before creating directories
 or changing files. An explicit `content=""` remains valid and creates an empty
@@ -146,15 +153,21 @@ An explicit `newText=""` is a valid deletion. Entry errors identify the zero-bas
 file unchanged. Unknown fields, stringified arrays, single-object edits, and
 legacy top-level replacement fields are rejected.
 
-`edit` matches every `oldText` against the original file before writing. Matching
-is exact apart from the existing leading UTF-8 BOM preservation and CRLF/LF
+`edit` matches every `oldText` against the same original file before writing;
+later entries cannot depend on the results of earlier entries. The parameter
+schema and default prompt guidelines explain this and require overlapping or
+nested changes to be combined into one entry. Matching is exact apart from the
+existing leading UTF-8 BOM preservation and CRLF/LF
 normalization; Unicode and whitespace are not folded. Each match must be unique
 (including self-overlapping occurrences), and replacement ranges must be disjoint.
 Matching errors include the requested path and zero-based original `edits` indices.
 Missing matches ask for a reread and whitespace/line-ending checks; repeated
 matches report the count and ask for distinguishing context; overlapping edits
-identify both input indices and ask for one combined edit. Any validation failure
-leaves the file unchanged. After all validation and BOM/line-ending restoration,
+identify both input indices and ask for one combined edit. The default prompt
+guidelines and missing/repeated-match errors instruct the model to correct the
+edit and retry rather than use `write` merely to bypass a matching failure.
+Any validation failure leaves the file unchanged. After all validation and
+BOM/line-ending restoration,
 `edit` compares the final bytes with the original. An identical result returns a
 "no changes" tool error without preparing a write or reporting replacement success,
 including when adjacent replacements cancel each other out. Mixed calls containing

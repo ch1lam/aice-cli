@@ -18,12 +18,13 @@ const editSchema = `{
     "path": {"type": "string", "description": "Path to the file to edit (relative or absolute)"},
     "edits": {
       "type": "array",
+      "description": "Replacements matched against the same original file, not the results of earlier entries. Ranges must not overlap or nest; combine overlapping changes into one entry.",
       "minItems": 1,
       "items": {
         "type": "object",
         "properties": {
-          "oldText": {"type": "string", "description": "Exact text for one unique, non-overlapping replacement"},
-          "newText": {"type": "string", "description": "Replacement text"}
+          "oldText": {"type": "string", "description": "Non-empty exact text from the original file. Must match exactly once; include only enough context to make it unique."},
+          "newText": {"type": "string", "description": "Replacement for the matched oldText. An empty string deletes that text."}
         },
         "required": ["oldText", "newText"],
         "additionalProperties": false
@@ -63,14 +64,16 @@ func NewEdit(workspace *Workspace) (*Edit, error) {
 func (e *Edit) Definition() llm.ToolDefinition {
 	return llm.ToolDefinition{
 		Name: "edit",
-		Description: "Edit one file using exact text replacements. Each oldText must " +
-			"match once in the original file and replacements must not overlap.",
+		Description: "Edit an existing file using exact text replacements. " +
+			"Each oldText must match a unique, non-overlapping region of the original file.",
 		InputSchema:   jsonSchema(editSchema),
 		PromptSnippet: "Make precise file edits with exact text replacement, including multiple disjoint edits in one call",
 		PromptGuidelines: []string{
 			"Use edit for precise changes (oldText must match exactly)",
 			"When changing multiple separate locations in one file, use one edit call with multiple edits instead of multiple edit calls",
 			"Keep each oldText as small as possible while still being unique in the file",
+			"Match all edits against the same original file; combine overlapping or nested changes into one entry",
+			"If matching fails, reread the relevant content and correct oldText; add distinguishing context for multiple matches. Do not use write merely to bypass a matching failure.",
 		},
 	}
 }
@@ -160,7 +163,8 @@ func applyReplacements(content string, edits []replacement) (string, error) {
 		}
 		start := strings.Index(normalized, oldText)
 		if start < 0 {
-			return "", fmt.Errorf("edits[%d] oldText not found; reread the file and check whitespace and line endings", index)
+			return "", fmt.Errorf("edits[%d] oldText not found; reread the file and check whitespace and line endings; "+
+				"correct oldText against the original content and retry edit, not write merely to bypass this failure", index)
 		}
 		count := 1
 		for offset := start + 1; offset < len(normalized); {
@@ -172,7 +176,8 @@ func applyReplacements(content string, edits []replacement) (string, error) {
 			offset += next + 1
 		}
 		if count != 1 {
-			return "", fmt.Errorf("edits[%d] oldText matched %d times; add distinguishing context so it matches exactly once", index, count)
+			return "", fmt.Errorf("edits[%d] oldText matched %d times; reread the relevant content and "+
+				"add distinguishing context so it matches exactly once; retry edit, not write merely to bypass this failure", index, count)
 		}
 		positioned = append(positioned, positionedReplacement{
 			index:   index,

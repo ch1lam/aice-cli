@@ -12,7 +12,7 @@ const writeSchema = `{
   "type": "object",
   "properties": {
     "path": {"type": "string", "description": "Path to the file to write (relative or absolute)"},
-    "content": {"type": "string", "description": "Content to write to the file"}
+    "content": {"type": "string", "description": "Complete final content of the file. Replaces all existing content; omitted old content is not preserved. Use edit for partial changes to an existing file."}
   },
   "required": ["path", "content"],
   "additionalProperties": false
@@ -34,8 +34,9 @@ func NewWrite(workspace *Workspace) (*Write, error) {
 // Definition returns the model-facing write contract.
 func (w *Write) Definition() llm.ToolDefinition {
 	return llm.ToolDefinition{
-		Name:          "write",
-		Description:   "Create a new file or overwrite an existing file with complete content. Automatically create missing parent directories. Relative paths resolve from the working directory.",
+		Name: "write",
+		Description: "Write complete content to a file. Creates the file if it doesn't exist, " +
+			"overwrites it if it does, and automatically creates parent directories.",
 		InputSchema:   jsonSchema(writeSchema),
 		PromptSnippet: "Create or overwrite files",
 		PromptGuidelines: []string{
