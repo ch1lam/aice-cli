@@ -132,7 +132,7 @@ func (e *Edit) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult, 
 	if err := ctx.Err(); err != nil {
 		return llm.ToolResult{}, err
 	}
-	if err := e.workspace.atomicWrite(path, []byte(updated), info.Mode().Perm()); err != nil {
+	if err := e.workspace.atomicWrite(ctx, path, []byte(updated), info.Mode().Perm()); err != nil {
 		return llm.ToolResult{}, fmt.Errorf("tool \"edit\": write %q: %w", args.Path, err)
 	}
 	return textResult(

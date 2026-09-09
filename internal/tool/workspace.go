@@ -16,6 +16,7 @@ type Workspace struct {
 	path         string
 	physicalPath string
 	mutationMu   sync.Mutex
+	mutationOps  mutationOps
 }
 
 // NewWorkspace resolves and validates the default working directory.
@@ -45,6 +46,7 @@ func NewWorkspace(path string) (*Workspace, error) {
 
 	return &Workspace{
 		path:         filepath.Clean(absolutePath),
+		mutationOps:  defaultMutationOps(),
 		physicalPath: physicalPath,
 	}, nil
 }
