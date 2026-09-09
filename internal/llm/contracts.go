@@ -357,6 +357,7 @@ type ToolCall struct {
 
 // ToolResult records the output associated with one tool call.
 type ToolResult struct {
+	Diff       ToolDiff       `json:"diff,omitzero"`
 	Truncation ToolTruncation `json:"truncation,omitzero"`
 	CallID     string         `json:"call_id"`
 	Name       string         `json:"name,omitempty"`
@@ -464,6 +465,7 @@ type AssistantMessage struct {
 
 // ToolResultMessage is the history message produced by one tool execution.
 type ToolResultMessage struct {
+	Diff       ToolDiff       `json:"diff,omitzero"`
 	Truncation ToolTruncation `json:"truncation,omitzero"`
 	Role       Role           `json:"role"`
 	ToolCallID string         `json:"tool_call_id"`
@@ -573,6 +575,7 @@ func (m AssistantMessage) Validate() error {
 func NewToolResultMessage(result ToolResult) (ToolResultMessage, error) {
 	message := ToolResultMessage{
 		Role:       RoleToolResult,
+		Diff:       result.Diff,
 		Truncation: result.Truncation,
 		ToolCallID: result.CallID,
 		ToolName:   result.Name,

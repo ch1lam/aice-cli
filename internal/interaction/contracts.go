@@ -207,6 +207,7 @@ type AssistantDisplay struct {
 // tool input already extracted for display by the application bridge. Content
 // is write input; HasContent distinguishes an empty file from absent input.
 type ToolDisplay struct {
+	Diff       DiffDisplay
 	Truncation TruncationDisplay
 	ID         string
 	Name       string
@@ -214,6 +215,13 @@ type ToolDisplay struct {
 	Failed     bool
 	Content    string
 	HasContent bool
+}
+
+// DiffDisplay contains only a tool-produced completed mutation view.
+// Its zero value leaves legacy results unchanged.
+type DiffDisplay struct {
+	Text      string
+	Truncated bool
 }
 
 // TruncationDisplay carries source counts independently of model-facing text.

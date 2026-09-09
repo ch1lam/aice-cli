@@ -133,11 +133,13 @@ func (e *Edit) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult, 
 	if err := e.workspace.atomicWrite(ctx, path, []byte(updated), info.Mode().Perm()); err != nil {
 		return llm.ToolResult{}, fmt.Errorf("tool \"edit\": write %q: %w", args.Path, err)
 	}
-	return textResult(
+	result := textResult(
 		call,
 		fmt.Sprintf("Successfully replaced %d block(s) in %s.", len(args.Edits), args.Path),
 		false,
-	), nil
+	)
+	result.Diff = editDiff(string(data), updated)
+	return result, nil
 }
 
 func applyReplacements(content string, edits []replacement) (string, error) {

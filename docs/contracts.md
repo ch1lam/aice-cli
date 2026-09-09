@@ -70,6 +70,42 @@ in normal viewport cache invalidation. Absent metadata (including old results)
 produces no inferred status. Provider adapters continue sending content only;
 this field does not change the curated print NDJSON projection.
 
+### Completed edit diff metadata
+
+`llm.ToolResult` and `ToolResultMessage` carry optional, value-only `diff`
+metadata ([type definition](../internal/llm/diff.go)). The edit tool compares
+its original read with the final written bytes only after atomic write success.
+It never derives the diff from requested replacement snippets. Model-facing
+content remains the short outcome summary; provider adapters and print text /
+NDJSON continue projecting content only. The Loop retains metadata through its
+normal result-message, recorder, and tool-end event paths.
+
+Session JSONL persists this additive field without a version change. Missing
+fields in older Sessions mean no diff is available; replay must not reconstruct
+one from tool arguments or current files. Immutable strings need no separate
+mutable ownership or transcript store.
+
+The tool emits unified hunks with three context lines and no file headers,
+retaining exact line terminators and explicit missing-final-newline markers.
+Unchanged gaps are omitted using hunk coordinates. Alignment is capped at one
+million LCS cells after common prefix/suffix removal; larger changed spans use
+an exact, potentially non-minimal replacement block. Inputs with 100,000 or more
+newline characters omit the diff entirely. Output retains at most 64 KiB / 2000
+lines, stopping before a source row that cannot fit; `truncated` explicitly marks
+omitted output, including an oversized first row. These presentation limits
+never reject or alter an edit. Failures carry no successful diff.
+
+The app projects successful edit results into `interaction.DiffDisplay`; either
+an execution error or `IsError` suppresses the diff and marks the tool failed.
+The TUI renders the supplied hunks beneath the completed tool row, with colored
+additions/deletions. It never reads files or rematches arguments. Collapsed detail
+shows 12 lines; Ctrl+O exposes up to the stored 64 KiB / 2000 lines. Long rows are
+clipped to terminal width with a notice. Stored omissions remain explicitly
+incomplete after expansion. Control and Unicode format characters are escaped
+(including CR, so CRLF changes remain visible), literal backslashes are doubled,
+and invalid UTF-8 displays as replacement runes. Diff values participate in the
+normal transcript cache key, including replayed result projections.
+
 ## Agent Loop
 
 - The loop owns model calls, validated sequential tool execution, paired tool
