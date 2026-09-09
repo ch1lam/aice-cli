@@ -47,26 +47,33 @@ const (
 )
 
 type transcriptEntry struct {
-	kind           entryKind
-	text           string
-	thinking       string
-	presentation   *assistantPresentation
-	complete       bool
-	processID      int
-	conclusion     bool
-	toolID         string
-	toolName       string
-	toolDetail     string
-	toolDone       bool
-	toolError      bool
-	toolTruncation interaction.TruncationDisplay
+	kind                entryKind
+	text                string
+	thinking            string
+	presentation        *assistantPresentation
+	complete            bool
+	processID           int
+	conclusion          bool
+	toolPreviewRevision uint64
+	writePreview        *writePreview
+	toolIndex           int
+	toolAssistant       int
+	toolPreparing       bool
+	toolExpanded        bool
+	toolID              string
+	toolName            string
+	toolDetail          string
+	toolDone            bool
+	toolError           bool
+	toolTruncation      interaction.TruncationDisplay
 }
 
 type processGroup struct {
-	id        int
-	collapsed bool
-	startedAt time.Time
-	elapsed   time.Duration
+	id              int
+	collapsed       bool
+	detailsExpanded bool
+	startedAt       time.Time
+	elapsed         time.Duration
 }
 
 type transcriptViewPart struct {

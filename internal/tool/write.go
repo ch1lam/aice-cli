@@ -35,7 +35,7 @@ func NewWrite(workspace *Workspace) (*Write, error) {
 func (w *Write) Definition() llm.ToolDefinition {
 	return llm.ToolDefinition{
 		Name:          "write",
-		Description:   "Write complete content to a file, resolving relative paths from the working directory.",
+		Description:   "Create a new file or overwrite an existing file with complete content. Automatically create missing parent directories. Relative paths resolve from the working directory.",
 		InputSchema:   jsonSchema(writeSchema),
 		PromptSnippet: "Create or overwrite files",
 		PromptGuidelines: []string{

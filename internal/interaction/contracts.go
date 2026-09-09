@@ -184,10 +184,16 @@ const (
 	DeltaToolCall
 )
 
-// Delta is one streamed assistant content update.
+// Delta is one streamed assistant content update. ToolIndex is local to one
+// assistant message; Arguments contains raw incremental JSON for display only.
+// ToolEnd replaces the preview with the complete Tool fields, not execution.
 type Delta struct {
-	Kind  DeltaKind
-	Delta string
+	Kind      DeltaKind
+	Delta     string
+	ToolIndex int
+	Tool      ToolDisplay
+	Arguments string
+	ToolEnd   bool
 }
 
 // AssistantDisplay is the complete assistant output of one model turn.
@@ -198,13 +204,16 @@ type AssistantDisplay struct {
 }
 
 // ToolDisplay is one tool execution shown by a frontend. Detail is the raw
-// tool input already extracted for display by the application bridge.
+// tool input already extracted for display by the application bridge. Content
+// is write input; HasContent distinguishes an empty file from absent input.
 type ToolDisplay struct {
 	Truncation TruncationDisplay
 	ID         string
 	Name       string
 	Detail     string
 	Failed     bool
+	Content    string
+	HasContent bool
 }
 
 // TruncationDisplay carries source counts independently of model-facing text.

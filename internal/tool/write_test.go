@@ -19,12 +19,12 @@ func TestWriteExecuteCreatesFileWithoutApproval(t *testing.T) {
 	}
 
 	_, err = write.Execute(t.Context(), toolCall(t, "write", map[string]any{
-		"path": "created.txt", "content": "created",
+		"path": "missing/parents/created.txt", "content": "created",
 	}))
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
-	data, err := os.ReadFile(filepath.Join(root, "created.txt"))
+	data, err := os.ReadFile(filepath.Join(root, "missing/parents/created.txt"))
 	if err != nil {
 		t.Fatalf("os.ReadFile() error = %v", err)
 	}
