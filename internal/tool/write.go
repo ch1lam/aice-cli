@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/ch1lam/aice-cli/internal/llm"
 )
@@ -57,14 +59,15 @@ func (w *Write) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult,
 	if len(args.Content) > maxMutationBytes {
 		return llm.ToolResult{}, fmt.Errorf("tool \"write\": content exceeds the 4 mib mutation limit")
 	}
-	path, err := w.workspace.resolvePath(args.Path)
-	if err != nil {
-		return llm.ToolResult{}, fmt.Errorf("tool \"write\": %w", err)
-	}
 	w.workspace.mutationMu.Lock()
 	defer w.workspace.mutationMu.Unlock()
 	if err := ctx.Err(); err != nil {
 		return llm.ToolResult{}, err
+	}
+
+	path, err := w.ResolvePath(args.Path)
+	if err != nil {
+		return llm.ToolResult{}, fmt.Errorf("tool \"write\": %w", err)
 	}
 
 	mode := os.FileMode(0o644)
@@ -80,4 +83,54 @@ func (w *Write) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult,
 		return llm.ToolResult{}, fmt.Errorf("tool \"write\": write %q: %w", args.Path, err)
 	}
 	return textResult(call, fmt.Sprintf("Wrote %d bytes to %s.", len(args.Content), args.Path), false), nil
+}
+
+// ResolvePath returns the physical write destination without creating anything.
+// Existing symlinks must resolve completely; only genuinely missing components
+// may be appended for a new file. Guard uses the same resolver as execution.
+func (w *Write) ResolvePath(input string) (string, error) {
+	path, err := w.workspace.resolvePath(input)
+	if err != nil {
+		return "", err
+	}
+	if os.IsPathSeparator(path[len(path)-1]) {
+		return "", fmt.Errorf("resolve write path %q: file path ends with a separator", input)
+	}
+	volume := filepath.VolumeName(path)
+	current := volume + string(os.PathSeparator)
+	parts := strings.FieldsFunc(path[len(volume):], func(r rune) bool {
+		return r == '/' || (os.PathSeparator == '\\' && r == '\\')
+	})
+	for index, part := range parts {
+		// Keep traversal until existing symlinks have been resolved. Cleaning the
+		// original path first would give link/../file the wrong destination.
+		candidate := current + string(os.PathSeparator) + part
+		info, err := os.Lstat(candidate)
+		if os.IsNotExist(err) {
+			for _, remaining := range parts[index:] {
+				if remaining == "." || remaining == ".." {
+					return "", fmt.Errorf("resolve write path %q: traversal through a missing directory", input)
+				}
+			}
+			return filepath.Join(append([]string{current}, parts[index:]...)...), nil
+		}
+		if err != nil {
+			return "", fmt.Errorf("resolve write path %q: %w", input, err)
+		}
+		current = candidate
+		if info.Mode()&os.ModeSymlink != 0 {
+			current, err = filepath.EvalSymlinks(candidate)
+			if err != nil {
+				return "", fmt.Errorf("resolve write symlink %q: %w", input, err)
+			}
+			info, err = os.Stat(current)
+			if err != nil {
+				return "", fmt.Errorf("inspect write target %q: %w", input, err)
+			}
+		}
+		if index < len(parts)-1 && !info.IsDir() {
+			return "", fmt.Errorf("resolve write path %q: parent is not a directory", input)
+		}
+	}
+	return filepath.Clean(current), nil
 }

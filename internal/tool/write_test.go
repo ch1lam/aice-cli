@@ -145,3 +145,128 @@ func TestWriteExecuteRejectsMalformedPathBeforeMutation(t *testing.T) {
 		t.Fatalf("workspace entries = %v, want none", entries)
 	}
 }
+
+func TestWriteExecutePreservesSymlinks(t *testing.T) {
+	t.Parallel()
+	for _, kind := range []string{"relative", "absolute", "chain", "parent", "parent traversal", "new through parent"} {
+		t.Run(kind, func(t *testing.T) {
+			t.Parallel()
+			workspace, root := newWorkspace(t)
+			target := writeFixture(t, root, "real/file.txt", "old")
+			if err := os.Chmod(target, 0600); err != nil {
+				t.Fatal(err)
+			}
+			before, err := os.Stat(target)
+			if err != nil {
+				t.Fatal(err)
+			}
+			link := filepath.Join(root, "alias")
+			destination, input := "real/file.txt", "alias"
+			switch kind {
+			case "absolute":
+				destination = target
+			case "chain":
+				if err := os.Symlink("real/file.txt", filepath.Join(root, "middle")); err != nil {
+					t.Skipf("symlink unavailable: %v", err)
+				}
+				destination = "middle"
+			case "parent", "new through parent":
+				destination, input = "real", "alias/file.txt"
+			case "parent traversal":
+				if err := os.Mkdir(filepath.Join(root, "real", "child"), 0750); err != nil {
+					t.Fatal(err)
+				}
+				destination, input = "real/child", "alias/../file.txt"
+			}
+			if kind == "new through parent" {
+				target = filepath.Join(root, "real", "new", "file.txt")
+				input = "alias/new/file.txt"
+			}
+			if err := os.Symlink(destination, link); err != nil {
+				t.Skipf("symlink unavailable: %v", err)
+			}
+			writer, err := tool.NewWrite(workspace)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = writer.Execute(t.Context(), toolCall(t, "write", map[string]any{"path": input, "content": "new"}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			gotLink, err := os.Readlink(link)
+			if err != nil || gotLink != destination {
+				t.Fatalf("link = %q, %v", gotLink, err)
+			}
+			data, err := os.ReadFile(target)
+			if err != nil || string(data) != "new" {
+				t.Fatalf("target = %q, %v", data, err)
+			}
+			after, err := os.Stat(target)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if kind != "new through parent" {
+				if os.SameFile(before, after) {
+					t.Fatal("target was modified in place instead of replaced")
+				}
+				if runtime.GOOS != "windows" && after.Mode().Perm() != 0600 {
+					t.Fatalf("mode = %o", after.Mode().Perm())
+				}
+			}
+			if kind == "chain" {
+				if got, err := os.Readlink(filepath.Join(root, "middle")); err != nil || got != "real/file.txt" {
+					t.Fatalf("middle = %q, %v", got, err)
+				}
+			}
+		})
+	}
+}
+
+func TestWriteExecuteRejectsUnresolvedSymlinks(t *testing.T) {
+	t.Parallel()
+	for _, kind := range []string{"dangling", "dangling parent", "cycle", "cycle parent", "dangling chain"} {
+		t.Run(kind, func(t *testing.T) {
+			t.Parallel()
+			workspace, root := newWorkspace(t)
+			destination, input := "missing/file.txt", "alias"
+			if strings.Contains(kind, "cycle") {
+				destination = "alias"
+			}
+			if strings.Contains(kind, "parent") {
+				input = "alias/new/file.txt"
+			}
+			if kind == "dangling chain" {
+				if err := os.Symlink(destination, filepath.Join(root, "middle")); err != nil {
+					t.Skipf("symlink unavailable: %v", err)
+				}
+				destination = "middle"
+			}
+			link := filepath.Join(root, "alias")
+			if err := os.Symlink(destination, link); err != nil {
+				t.Skipf("symlink unavailable: %v", err)
+			}
+			before, err := os.ReadDir(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			writer, err := tool.NewWrite(workspace)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = writer.Execute(t.Context(), toolCall(t, "write", map[string]any{"path": input, "content": "new"}))
+			if err == nil {
+				t.Fatal("unresolved link accepted")
+			}
+			after, err := os.ReadDir(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(before) != len(after) {
+				t.Fatalf("unexpected side effects: %v", after)
+			}
+			if got, err := os.Readlink(link); err != nil || got != destination {
+				t.Fatalf("link = %q, %v", got, err)
+			}
+		})
+	}
+}

@@ -113,3 +113,32 @@ func TestEditExecutePreservesBOMAndCRLF(t *testing.T) {
 		t.Fatalf("file content = %q, want %q", got, want)
 	}
 }
+
+func TestEditExecuteRetainsSymlinkReplacementBehavior(t *testing.T) {
+	t.Parallel()
+	workspace, root := newWorkspace(t)
+	target := writeFixture(t, root, "target", "old")
+	link := root + string(os.PathSeparator) + "alias"
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+	edit, err := tool.NewEdit(workspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := edit.Execute(t.Context(), toolCall(t, "edit", map[string]any{"path": "alias", "edits": []map[string]string{{"oldText": "old", "newText": "new"}}})); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Lstat(link)
+	if err != nil || !info.Mode().IsRegular() {
+		t.Fatalf("alias = %v, %v", info, err)
+	}
+	data, err := os.ReadFile(link)
+	if err != nil || string(data) != "new" {
+		t.Fatalf("alias = %q, %v", data, err)
+	}
+	data, err = os.ReadFile(target)
+	if err != nil || string(data) != "old" {
+		t.Fatalf("target = %q, %v", data, err)
+	}
+}

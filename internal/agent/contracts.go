@@ -35,6 +35,9 @@ type GuardResult struct {
 	RuleID    string
 	Action    GuardAction
 	Approvals []GuardApproval
+	// Revalidate checks call-local assumptions after approvals, before execution.
+	// It must not grant authority or perform tool side effects; errors fail closed.
+	Revalidate func(context.Context) error
 }
 
 // GuardApproval is one independent permission scope for this tool invocation.
