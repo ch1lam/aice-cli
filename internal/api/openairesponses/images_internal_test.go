@@ -12,7 +12,7 @@ func TestToolImageWireContentAndPairing(t *testing.T) {
 	t.Parallel()
 	model := llm.Model{ID: "vision", Provider: "test", API: API}
 	img := llm.ImageContent{Data: []byte("view"), MIMEType: "image/png", ID: "image:test", Width: 2, Height: 2,
-		Original: &llm.ImageOriginal{Data: []byte("original-secret-bytes"), MIMEType: "image/png", Width: 4, Height: 4}}
+		Original: &llm.ImageOriginal{Data: []byte("original-secret-bytes"), MIMEType: "image/gif", Width: 4, Height: 4}}
 	calls := []llm.ContentPart{
 		{Type: llm.ContentTypeToolCall, ToolCall: &llm.ToolCall{ID: "one", Name: "read", Arguments: json.RawMessage(`{"path":"one.png"}`)}},
 		{Type: llm.ContentTypeToolCall, ToolCall: &llm.ToolCall{ID: "two", Name: "read", Arguments: json.RawMessage(`{"path":"two.txt"}`)}},
@@ -33,6 +33,9 @@ func TestToolImageWireContentAndPairing(t *testing.T) {
 	text := string(wire)
 	if !strings.Contains(text, base64.StdEncoding.EncodeToString(img.Data)) || !strings.Contains(text, "image:test") {
 		t.Fatal("image bytes or identity missing from wire")
+	}
+	if !strings.Contains(text, "converted from image/gif to image/png") || !strings.Contains(text, "first frame only") {
+		t.Fatal("conversion and animation policy missing from wire")
 	}
 	if strings.Contains(text, base64.StdEncoding.EncodeToString(img.Original.Data)) || strings.Contains(text, "original-secret-bytes") {
 		t.Fatal("original bytes leaked into request")
