@@ -78,7 +78,7 @@ func NewRead(workspace *Workspace, options ...ReadOptions) (*Read, error) {
 func (r *Read) Definition() llm.ToolDefinition {
 	return llm.ToolDefinition{
 		Name:          "read",
-		Description:   "Read text, PNG/JPEG images, or a shallow directory listing. Text is limited to 2000 complete lines or 50 KiB; use offset/limit to continue. Images are resized automatically. Use image_id to recover a saved original, and crop {x,y,width,height} in original pixels to inspect details. Specify exactly one of path or image_id.",
+		Description:   "Read text, PNG/JPEG/GIF/WebP/BMP images, or a shallow directory listing. Text is limited to 2000 complete lines or 50 KiB; use offset/limit to continue. Images are resized automatically; GIF uses only the first frame, and animated WebP must be exported as a static frame first. Use image_id to recover a saved original, and crop {x,y,width,height} in original pixels to inspect details. Specify exactly one of path or image_id.",
 		InputSchema:   jsonSchema(readSchema),
 		PromptSnippet: "Read file contents",
 		PromptGuidelines: []string{

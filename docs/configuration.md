@@ -809,7 +809,19 @@ expanded text with image placeholders preserved; deleting an image placeholder
 in the editor removes that attachment. Send or remove images before running
 slash commands. `/btw` supports ordinary pasted text; image attachments are supported in the
 main conversation only.
-The `read` tool accepts PNG/JPEG files through the same image processor. It
+The `read` tool accepts PNG/JPEG/GIF/WebP/BMP files through the same image processor.
+GIF, static WebP (lossy, lossless, and alpha), and supported BMP variants are
+converted to PNG, with the existing JPEG-on-white fallback and byte limit.
+GIF uses only the first frame on the full original canvas; unpainted pixels
+start transparent (white in a JPEG view).
+Later animation frames are not decoded or shown. The model receives an explicit
+conversion note and, for GIF, a first-frame note, including on saved-original
+reads and crops. Animated WebP is rejected because the decoder does not support
+animation: extract the desired frame as PNG and read that file. BMP variants
+unsupported by the decoder, such as RLE compression, report an explicit error.
+Invalid images report the decoder reason and advise re-exporting PNG/JPEG or
+extracting the desired frame before reading again, instead of retrying unchanged
+input. Exact source bytes remain in Session history when converted. The tool
 returns an image content block, including a stable `image:<sha256>` identifier
 and original-to-view coordinate mapping in model requests. Use `image_id`
 instead of `path` to re-read that saved original, even after the source file
@@ -842,8 +854,8 @@ opens an approval prompt; explicit submission uses the normal Guard.
 
 At most eight file references are allowed per submission. Each file uses the
 same reader as the `read` tool: text contributes up to 2000 lines / 50 KiB with
-a continuation notice; PNG/JPEG contributes image content; directories contribute
-a shallow listing. Unsupported binary files fail explicitly. Image count and
+a continuation notice; PNG/JPEG/GIF/WebP/BMP contributes image content;
+directories contribute a shallow listing. Unsupported binary files fail explicitly. Image count and
 byte limits include both file references and pasted images. Repeated paths are
 read once. Contents are frozen before acceptance, including steering and queued
 follow-ups; editing a source afterwards does not change accepted input.
