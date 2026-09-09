@@ -223,6 +223,12 @@ Grep context reads are limited to 10 MiB per file. If a file cannot be read,
 exceeds that limit, or no longer contains the matched line, grep retains the
 matching text already returned by ripgrep and reports why context is unavailable.
 The fallback uses the same line and output limits as ordinary matches.
+Each grep call caches context reads, including failures, for up to 128 files.
+Retained text, line descriptors, paths and error text share a 16 MiB admission
+budget; fixed entry overhead is bounded by the file cap. Files that do not fit
+are read without caching. The cache is discarded after the call and does not
+promise a filesystem snapshot. The 10 MiB file cap still applies to uncached
+reads; cache admission does not bound temporary decoding allocations.
 
 Bash captures combined stdout/stderr within a 50 KiB result limit. Oversized
 output retains its beginning and most recent end with an `[output truncated]`

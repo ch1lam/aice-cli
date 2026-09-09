@@ -309,6 +309,7 @@ func formatGrepMatches(
 	contextLines int,
 ) (string, bool, bool) {
 	collector := newGrepOutputCollector(maxOutputBytes - grepNoticeReserve)
+	cache := newGrepContextCache(maxGrepContextCacheBytes)
 	linesTruncated := false
 	for _, match := range matches {
 		displayPath := formatGrepPath(searchPath, match.filePath, searchingDirectory)
@@ -324,7 +325,7 @@ func formatGrepMatches(
 			continue
 		}
 
-		lines, err := readGrepLines(match.filePath)
+		lines, err := cache.read(match.filePath)
 		if err == nil && (match.lineNumber < 1 || match.lineNumber > len(lines)) {
 			err = fmt.Errorf("matched line no longer exists")
 		}
