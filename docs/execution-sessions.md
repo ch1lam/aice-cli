@@ -220,8 +220,8 @@ tool intentionally crosses a shell boundary and applies the same timeout,
 output, cancellation, and process-tree controls.
 
 Grep context reads are limited to 10 MiB per file. If a file cannot be read,
-exceeds that limit, or no longer contains the matched line, grep retains the
-matching text already returned by ripgrep and reports why context is unavailable.
+exceeds that limit, or the matched line has disappeared or changed, grep retains
+the matching text already returned by ripgrep and reports why context is unavailable.
 The fallback uses the same line and output limits as ordinary matches.
 Each grep call caches context reads, including failures, for up to 128 files.
 Retained text, line descriptors, paths and error text share a 16 MiB admission

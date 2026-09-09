@@ -30,3 +30,24 @@ func TestGrepContextFailurePreservesStreamedMatch(t *testing.T) {
 		})
 	}
 }
+
+func TestGrepContextChangedLinePreservesOriginalMatch(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct{ name, content string }{
+		{name: "rewritten", content: "before\nnew text\nafter\n"},
+		{name: "shortened with trailing newline", content: "before\n"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			path := filepath.Join(root, "changed.txt")
+			if err := os.WriteFile(path, []byte(tt.content), 0600); err != nil {
+				t.Fatal(err)
+			}
+			matches := []grepMatch{{filePath: path, lineNumber: 2, lineText: "needle original\n"}}
+			output, capped, long := formatGrepMatches(matches, root, true, 1)
+			if capped || long || !strings.Contains(output, "changed.txt:2: needle original") || !strings.Contains(output, "context unavailable: matched line changed since search") || strings.Contains(output, "new text") {
+				t.Fatalf("changed content mislabeled as a match: %q", output)
+			}
+		})
+	}
+}

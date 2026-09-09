@@ -349,6 +349,9 @@ func formatGrepMatches(
 		if err == nil && (match.lineNumber < 1 || match.lineNumber > len(lines)) {
 			err = fmt.Errorf("matched line no longer exists")
 		}
+		if err == nil && match.lineText != "" && lines[match.lineNumber-1] != normalizeGrepLine(match.lineText) {
+			err = fmt.Errorf("matched line changed since search")
+		}
 		if err != nil {
 			if match.lineText != "" {
 				line, truncated := truncateGrepLine(normalizeGrepLine(match.lineText))
