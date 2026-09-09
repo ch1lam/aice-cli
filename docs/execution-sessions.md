@@ -146,6 +146,22 @@ An explicit `newText=""` is a valid deletion. Entry errors identify the zero-bas
 file unchanged. Unknown fields, stringified arrays, single-object edits, and
 legacy top-level replacement fields are rejected.
 
+`edit` matches every `oldText` against the original file before writing. Matching
+is exact apart from the existing leading UTF-8 BOM preservation and CRLF/LF
+normalization; Unicode and whitespace are not folded. Each match must be unique
+(including self-overlapping occurrences), and replacement ranges must be disjoint.
+Matching errors include the requested path and zero-based original `edits` indices.
+Missing matches ask for a reread and whitespace/line-ending checks; repeated
+matches report the count and ask for distinguishing context; overlapping edits
+identify both input indices and ask for one combined edit. Any validation failure
+leaves the file unchanged. After all validation and BOM/line-ending restoration,
+`edit` compares the final bytes with the original. An identical result returns a
+"no changes" tool error without preparing a write or reporting replacement success,
+including when adjacent replacements cancel each other out. Mixed calls containing
+changed and unchanged entries are accepted if every entry passes matching and
+overlap validation and the final bytes differ. The existing success block count
+includes all validated input entries.
+
 `write` and `edit` serialize mutations within their shared Workspace. They hold
 that lock until synchronous host file operations and temporary-file cleanup
 finish, including after cancellation; cancellation does not leave background

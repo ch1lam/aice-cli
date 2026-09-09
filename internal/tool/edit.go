@@ -45,6 +45,7 @@ type replacement struct {
 }
 
 type positionedReplacement struct {
+	index   int
 	start   int
 	end     int
 	newText string
@@ -120,10 +121,13 @@ func (e *Edit) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult, 
 
 	updated, err := applyReplacements(string(data), args.Edits)
 	if err != nil {
-		return llm.ToolResult{}, fmt.Errorf("tool \"edit\": %w", err)
+		return llm.ToolResult{}, fmt.Errorf("tool \"edit\": %q: %w", args.Path, err)
 	}
 	if err := ctx.Err(); err != nil {
 		return llm.ToolResult{}, err
+	}
+	if updated == string(data) {
+		return llm.ToolResult{}, fmt.Errorf("tool \"edit\": %q: no changes; replacements leave the file unchanged; provide edits that change the content", args.Path)
 	}
 	if err := e.workspace.atomicWrite(ctx, path, []byte(updated), info.Mode().Perm()); err != nil {
 		return llm.ToolResult{}, fmt.Errorf("tool \"edit\": write %q: %w", args.Path, err)
@@ -151,11 +155,24 @@ func applyReplacements(content string, edits []replacement) (string, error) {
 		if oldText == "" {
 			return "", fmt.Errorf("edit %d oldText is empty", index)
 		}
-		if count := strings.Count(normalized, oldText); count != 1 {
-			return "", fmt.Errorf("edit %d oldText must match exactly once; matched %d times", index, count)
-		}
 		start := strings.Index(normalized, oldText)
+		if start < 0 {
+			return "", fmt.Errorf("edits[%d] oldText not found; reread the file and check whitespace and line endings", index)
+		}
+		count := 1
+		for offset := start + 1; offset < len(normalized); {
+			next := strings.Index(normalized[offset:], oldText)
+			if next < 0 {
+				break
+			}
+			count++
+			offset += next + 1
+		}
+		if count != 1 {
+			return "", fmt.Errorf("edits[%d] oldText matched %d times; add distinguishing context so it matches exactly once", index, count)
+		}
 		positioned = append(positioned, positionedReplacement{
+			index:   index,
 			start:   start,
 			end:     start + len(oldText),
 			newText: newText,
@@ -164,7 +181,7 @@ func applyReplacements(content string, edits []replacement) (string, error) {
 	sort.Slice(positioned, func(i, j int) bool { return positioned[i].start < positioned[j].start })
 	for index := 1; index < len(positioned); index++ {
 		if positioned[index].start < positioned[index-1].end {
-			return "", fmt.Errorf("edits %d and %d overlap", index-1, index)
+			return "", fmt.Errorf("edits[%d] and edits[%d] overlap; combine them into one edit", positioned[index-1].index, positioned[index].index)
 		}
 	}
 
