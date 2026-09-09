@@ -200,3 +200,42 @@ func TestLSExecuteEmptyAndHiddenEntries(t *testing.T) {
 		})
 	}
 }
+
+func TestLSExecuteReturnsGlobalSortedPrefix(t *testing.T) {
+	t.Parallel()
+	workspace, root := newWorkspace(t)
+	for i := 999; i >= 0; i-- {
+		writeFixture(t, root, fmt.Sprintf("f%04d", i), "")
+	}
+	// Distinct names remain portable to case-insensitive filesystems.
+	writeFixture(t, root, "Z-last-created", "")
+	writeFixture(t, root, "a-last-created", "")
+	ls, err := tool.NewLS(workspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, limit := range []int{1, 2, 5, 500} {
+		t.Run(fmt.Sprintf("limit=%d", limit), func(t *testing.T) {
+			result, err := ls.Execute(t.Context(), toolCall(t, "ls", map[string]any{"limit": limit}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			lines := strings.Split(resultText(t, result), "\n")
+			if len(lines) != limit+1 || !strings.Contains(lines[limit], "entry limit reached") {
+				t.Fatalf("want %d entries and an entry-limit notice, got %q", limit, lines)
+			}
+			for i, name := range lines[:limit] {
+				want := fmt.Sprintf("f%04d", i-2)
+				switch i {
+				case 0:
+					want = "Z-last-created"
+				case 1:
+					want = "a-last-created"
+				}
+				if name != want {
+					t.Fatalf("entry %d = %q, want globally sorted %q", i, name, want)
+				}
+			}
+		})
+	}
+}

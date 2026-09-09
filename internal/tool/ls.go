@@ -2,9 +2,7 @@ package tool
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"io"
 	"io/fs"
 	"os"
 	"slices"
@@ -88,9 +86,13 @@ func (l *LS) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult, er
 	}
 	defer directory.Close()
 
-	entries, err := directory.ReadDir(args.Limit + 1)
-	if err != nil && !errors.Is(err, io.EOF) {
+	// Read every entry before sorting so each limit selects a global name prefix.
+	entries, err := directory.ReadDir(-1)
+	if err != nil {
 		return llm.ToolResult{}, fmt.Errorf("tool \"ls\": list %q: %w", args.Path, err)
+	}
+	if err := ctx.Err(); err != nil {
+		return llm.ToolResult{}, err
 	}
 	if len(entries) == 0 {
 		return textResult(call, "(empty directory)", false), nil

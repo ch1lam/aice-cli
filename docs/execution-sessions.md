@@ -248,6 +248,14 @@ symlinks, including dangling links, end in `@`. Paths retain literal spelling
 and resolve relative to the physical workspace. An empty directory returns
 `(empty directory)`. These output conventions are included in the tool description.
 
+All directory entries are read before sorting names in case-sensitive byte order
+and applying the requested limit. Each result contains a prefix of that global
+name order; the number returned also depends on the byte budget and reserved
+notices. The output limits do not bound directory-read memory or sorting work: memory grows with the directory size, and sorting takes
+O(n log n) comparisons. Listing is not an atomic filesystem snapshot. Cancellation
+is checked after the directory read and while formatting entries; the synchronous
+host directory read and sort are not interrupted midway.
+
 The `ls` tool keeps complete directory entries within its 50 KiB output budget,
 including truncation notices. It reserves notice space before adding entries;
 filenames, directory suffixes, and symlink suffixes are never partially emitted.
