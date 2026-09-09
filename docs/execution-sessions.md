@@ -146,7 +146,13 @@ Matching errors include the requested path and zero-based original `edits` indic
 Missing matches ask for a reread and whitespace/line-ending checks; repeated
 matches report the count and ask for distinguishing context; overlapping edits
 identify both input indices and ask for one combined edit. Any validation failure
-leaves the file unchanged.
+leaves the file unchanged. After all validation and BOM/line-ending restoration,
+`edit` compares the final bytes with the original. An identical result returns a
+"no changes" tool error without preparing a write or reporting replacement success,
+including when adjacent replacements cancel each other out. Mixed calls containing
+changed and unchanged entries are accepted if every entry passes matching and
+overlap validation and the final bytes differ. The existing success block count
+includes all validated input entries.
 
 `write` and `edit` serialize mutations within their shared Workspace. They hold
 that lock until synchronous host file operations and temporary-file cleanup

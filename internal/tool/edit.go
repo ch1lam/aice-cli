@@ -133,6 +133,9 @@ func (e *Edit) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult, 
 	if err := ctx.Err(); err != nil {
 		return llm.ToolResult{}, err
 	}
+	if updated == string(data) {
+		return llm.ToolResult{}, fmt.Errorf("tool \"edit\": %q: no changes; replacements leave the file unchanged; provide edits that change the content", args.Path)
+	}
 	if err := e.workspace.atomicWrite(ctx, path, []byte(updated), info.Mode().Perm()); err != nil {
 		return llm.ToolResult{}, fmt.Errorf("tool \"edit\": write %q: %w", args.Path, err)
 	}
