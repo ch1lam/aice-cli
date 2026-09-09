@@ -85,10 +85,16 @@ func (l *LS) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult, er
 	slices.SortFunc(entries, func(left, right fs.DirEntry) int {
 		return strings.Compare(left.Name(), right.Name())
 	})
-	collector := newTextCollector(maxOutputBytes)
+	entryNotice := ""
+	if len(entries) > args.Limit {
+		entryNotice = fmt.Sprintf("[entry limit reached: %d]\n", args.Limit)
+	}
+	const byteNotice = "[output truncated: 50 KiB limit reached]\n"
+	// Reserve notices before adding entries so neither names nor notices are split.
+	entryBudget := maxOutputBytes - len(entryNotice) - len(byteNotice)
+	var output strings.Builder
 	for index, entry := range entries {
 		if index >= args.Limit {
-			collector.WriteString(fmt.Sprintf("[entry limit reached: %d]", args.Limit))
 			break
 		}
 		if err := ctx.Err(); err != nil {
@@ -100,9 +106,12 @@ func (l *LS) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult, er
 		} else if entry.Type()&fs.ModeSymlink != 0 {
 			name += "@"
 		}
-		if !collector.WriteString(name + "\n") {
+		if output.Len()+len(name)+1 > entryBudget {
+			output.WriteString(byteNotice)
 			break
 		}
+		output.WriteString(name + "\n")
 	}
-	return textResult(call, strings.TrimSuffix(collector.String(), "\n"), false), nil
+	output.WriteString(entryNotice)
+	return textResult(call, strings.TrimSuffix(output.String(), "\n"), false), nil
 }

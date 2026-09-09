@@ -130,6 +130,15 @@ The tool layer still enforces correctness and resource safety:
 - pair every tool call with one result;
 - keep credentials and prompt content out of logs.
 
+### Directory listings
+
+The `ls` tool keeps complete directory entries within its 50 KiB output budget,
+including truncation notices. It reserves notice space before adding entries;
+filenames, directory suffixes, and symlink suffixes are never partially emitted.
+Entry-count and byte-limit notices can both appear when both bounds apply.
+
+### File mutations
+
 Tool descriptions and parameter schemas guide the model to use `write` for new
 files or complete rewrites and `edit` for partial changes to existing files.
 `write.content` is the complete final file content: omitted old content is not
