@@ -219,6 +219,11 @@ invokes `rg` with `--` before model-controlled pattern/path values. The `bash`
 tool intentionally crosses a shell boundary and applies the same timeout,
 output, cancellation, and process-tree controls.
 
+Grep context reads are limited to 10 MiB per file. If a file cannot be read,
+exceeds that limit, or no longer contains the matched line, grep retains the
+matching text already returned by ripgrep and reports why context is unavailable.
+The fallback uses the same line and output limits as ordinary matches.
+
 Bash captures combined stdout/stderr within a 50 KiB result limit. Oversized
 output retains its beginning and most recent end with an `[output truncated]`
 marker between them, followed by exit status or the timeout reason. This keeps

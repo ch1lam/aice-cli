@@ -360,3 +360,24 @@ func requireRipgrep(t *testing.T) {
 		t.Fatalf("ripgrep runtime dependency is not available: %v", err)
 	}
 }
+
+func TestGrepExecutePreservesMatchWhenContextFileIsTooLarge(t *testing.T) {
+	t.Parallel()
+	requireRipgrep(t)
+	workspace, root := newWorkspace(t)
+	writeFixture(t, root, "large.txt", "needle\n"+strings.Repeat("padding\n", 1500000))
+	grep, err := tool.NewGrep(workspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := grep.Execute(t.Context(), toolCall(t, "grep", map[string]any{
+		"pattern": "needle", "path": "large.txt", "context": 1,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	output := resultText(t, result)
+	if !strings.Contains(output, "large.txt:1: needle") || !strings.Contains(output, "context unavailable: file exceeds") {
+		t.Fatalf("match or explanation missing: %q", output)
+	}
+}

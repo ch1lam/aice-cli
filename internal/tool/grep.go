@@ -325,9 +325,19 @@ func formatGrepMatches(
 		}
 
 		lines, err := readGrepLines(match.filePath)
-		if err != nil || len(lines) == 0 {
+		if err == nil && (match.lineNumber < 1 || match.lineNumber > len(lines)) {
+			err = fmt.Errorf("matched line no longer exists")
+		}
+		if err != nil {
+			if match.lineText != "" {
+				line, truncated := truncateGrepLine(normalizeGrepLine(match.lineText))
+				linesTruncated = linesTruncated || truncated
+				if !collector.WriteLine(fmt.Sprintf("%s:%d: %s", displayPath, match.lineNumber, line)) {
+					break
+				}
+			}
 			if !collector.WriteLine(
-				fmt.Sprintf("%s:%d: (unable to read file)", displayPath, match.lineNumber),
+				fmt.Sprintf("[%s:%d: context unavailable: %s]", displayPath, match.lineNumber, err),
 			) {
 				break
 			}
