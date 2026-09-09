@@ -130,6 +130,14 @@ The tool layer still enforces correctness and resource safety:
 - pair every tool call with one result;
 - keep credentials and prompt content out of logs.
 
+The `write` tool requires an explicit string `content`. Missing, `null`, or
+non-string content returns a tool argument error before creating directories
+or changing files. An explicit `content=""` remains valid and creates an empty
+file or clears an existing file. Validation belongs to the tool; Guard still
+checks permissions first. Once Guard allows the call, validation errors follow
+the normal Loop path as paired results with `IsError=true`, allowing the model
+to correct the arguments in its next request.
+
 The `read` tool returns text or image content through one bounded reader.
 Text offsets are 1-indexed. An offset beyond the last content line is a tool
 argument error, returned through the normal Go error path and converted by the

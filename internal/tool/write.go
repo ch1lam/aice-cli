@@ -47,14 +47,18 @@ func (w *Write) Definition() llm.ToolDefinition {
 // Execute atomically creates or replaces the requested file.
 func (w *Write) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult, error) {
 	type arguments struct {
-		Path    string `json:"path"`
-		Content string `json:"content"`
+		Path    string  `json:"path"`
+		Content *string `json:"content"`
 	}
 	args, err := decodeArguments[arguments](ctx, call, "write")
 	if err != nil {
 		return llm.ToolResult{}, err
 	}
-	if len(args.Content) > maxMutationBytes {
+	if args.Content == nil {
+		return llm.ToolResult{}, fmt.Errorf("tool \"write\": content is required and must be a string")
+	}
+	content := *args.Content
+	if len(content) > maxMutationBytes {
 		return llm.ToolResult{}, fmt.Errorf("tool \"write\": content exceeds the 4 mib mutation limit")
 	}
 	path, err := w.workspace.resolvePath(args.Path)
@@ -76,8 +80,8 @@ func (w *Write) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult,
 	} else if !os.IsNotExist(statErr) {
 		return llm.ToolResult{}, fmt.Errorf("tool \"write\": stat %q: %w", args.Path, statErr)
 	}
-	if err := w.workspace.atomicWrite(path, []byte(args.Content), mode); err != nil {
+	if err := w.workspace.atomicWrite(path, []byte(content), mode); err != nil {
 		return llm.ToolResult{}, fmt.Errorf("tool \"write\": write %q: %w", args.Path, err)
 	}
-	return textResult(call, fmt.Sprintf("Wrote %d bytes to %s.", len(args.Content), args.Path), false), nil
+	return textResult(call, fmt.Sprintf("Wrote %d bytes to %s.", len(content), args.Path), false), nil
 }
