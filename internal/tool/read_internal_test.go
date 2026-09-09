@@ -113,3 +113,18 @@ func TestShellQuote(t *testing.T) {
 		})
 	}
 }
+
+func TestReadTextPageDoesNotScanToEOFForDefaultPage(t *testing.T) {
+	t.Parallel()
+	source := strings.NewReader(strings.Repeat("line\n", 100000))
+	page, err := readTextPage(t.Context(), source, 1, defaultReadLines, "notes.txt", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if source.Len() == 0 {
+		t.Fatal("default page scanned the entire source")
+	}
+	if !strings.HasSuffix(page, "[Showing lines 1-2000 (2000 line limit). Use offset=2001 to continue.]") {
+		t.Fatal("default page lost its continuation notice")
+	}
+}

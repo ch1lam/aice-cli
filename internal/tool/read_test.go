@@ -400,3 +400,69 @@ func TestReadExecutePaginatesPastTenMiB(t *testing.T) {
 		t.Fatalf("Execute() text = %q, want %q", got, want)
 	}
 }
+
+func TestReadExecuteEOFOffsets(t *testing.T) {
+	t.Parallel()
+	fixtures := []struct {
+		name    string
+		content string
+		lines   int
+		last    string
+	}{
+		{name: "empty"},
+		{name: "single unterminated", content: "one", lines: 1, last: "one"},
+		{name: "single terminated", content: "one\n", lines: 1, last: "one\n"},
+		{name: "multiple unterminated", content: "one\ntwo", lines: 2, last: "two"},
+		{name: "multiple terminated", content: "one\ntwo\n", lines: 2, last: "two\n"},
+		{name: "blank line", content: "\n", lines: 1, last: "\n"},
+		{name: "trailing blank line", content: "one\n\n", lines: 2, last: "\n"},
+	}
+	for _, fixture := range fixtures {
+		t.Run(fixture.name, func(t *testing.T) {
+			t.Parallel()
+			workspace, root := newWorkspace(t)
+			writeFixture(t, root, "notes.txt", fixture.content)
+			read, err := tool.NewRead(workspace)
+			if err != nil {
+				t.Fatal(err)
+			}
+			cases := []struct {
+				name      string
+				offset    int
+				want      string
+				wantError bool
+			}{
+				{name: "default", want: fixture.content},
+				{name: "first", offset: 1, want: fixture.content},
+				{name: "last", offset: max(1, fixture.lines), want: fixture.last},
+				{name: "just beyond", offset: max(2, fixture.lines+1), wantError: true},
+				{name: "far beyond", offset: 1000000, wantError: true},
+			}
+			for _, test := range cases {
+				t.Run(test.name, func(t *testing.T) {
+					args := map[string]any{"path": "notes.txt"}
+					if test.offset != 0 {
+						args["offset"] = test.offset
+					}
+					result, err := read.Execute(t.Context(), toolCall(t, "read", args))
+					if test.wantError {
+						want := fmt.Sprintf("offset %d is beyond end of file (%d lines total)", test.offset, fixture.lines)
+						if err == nil || !strings.Contains(err.Error(), want) || !strings.Contains(err.Error(), "notes.txt") {
+							t.Fatalf("Execute() error = %v, want path and %q", err, want)
+						}
+						if len(result.Content) != 0 {
+							t.Fatalf("Execute() returned successful content with error: %#v", result)
+						}
+						return
+					}
+					if err != nil {
+						t.Fatal(err)
+					}
+					if got := resultText(t, result); got != test.want || result.IsError {
+						t.Fatalf("Execute() = %#v, want successful text %q", result, test.want)
+					}
+				})
+			}
+		})
+	}
+}
