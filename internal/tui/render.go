@@ -592,6 +592,9 @@ func (m model) entryView(
 		if entry.writePreview != nil {
 			summary += "\n" + entry.writePreview.view(max(width-4, 1), entry.toolExpanded)
 		}
+		if entry.toolDone && !entry.toolError && (entry.toolDiff.Text != "" || entry.toolDiff.Truncated) {
+			summary += "\n" + editDiffView(entry.toolDiff, max(width-4, 1), entry.toolExpanded)
+		}
 		if entry.toolDone && entry.toolTruncation.Reason != "" {
 			summary += "\n" + noticeStyle.Render(toolTruncationStatus(entry.toolTruncation))
 		}

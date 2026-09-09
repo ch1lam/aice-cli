@@ -95,6 +95,17 @@ lines, stopping before a source row that cannot fit; `truncated` explicitly mark
 omitted output, including an oversized first row. These presentation limits
 never reject or alter an edit. Failures carry no successful diff.
 
+The app projects successful edit results into `interaction.DiffDisplay`; either
+an execution error or `IsError` suppresses the diff and marks the tool failed.
+The TUI renders the supplied hunks beneath the completed tool row, with colored
+additions/deletions. It never reads files or rematches arguments. Collapsed detail
+shows 12 lines; Ctrl+O exposes up to the stored 64 KiB / 2000 lines. Long rows are
+clipped to terminal width with a notice. Stored omissions remain explicitly
+incomplete after expansion. Control and Unicode format characters are escaped
+(including CR, so CRLF changes remain visible), literal backslashes are doubled,
+and invalid UTF-8 displays as replacement runes. Diff values participate in the
+normal transcript cache key, including replayed result projections.
+
 ## Agent Loop
 
 - The loop owns model calls, validated sequential tool execution, paired tool

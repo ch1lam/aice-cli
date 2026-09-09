@@ -66,6 +66,7 @@ type transcriptEntry struct {
 	toolDone            bool
 	toolError           bool
 	toolTruncation      interaction.TruncationDisplay
+	toolDiff            interaction.DiffDisplay
 }
 
 type processGroup struct {

@@ -67,7 +67,8 @@ func translateAgentEvent(event agent.AgentEvent) *interaction.Event {
 				Kind: interaction.EventToolEnd,
 				Tool: interaction.ToolDisplay{
 					ID:         event.ToolCall.ID,
-					Failed:     event.Err != nil,
+					Failed:     event.Err != nil || (event.ToolResult != nil && event.ToolResult.IsError),
+					Diff:       displayToolDiff(event),
 					Truncation: displayToolTruncation(event.ToolResult),
 				},
 			}
@@ -289,4 +290,12 @@ func streamedToolArguments(event *llm.Event) string {
 		return event.ToolCallDelta.ArgumentsDelta
 	}
 	return ""
+}
+
+func displayToolDiff(event agent.AgentEvent) interaction.DiffDisplay {
+	if event.ToolCall == nil || event.ToolCall.Name != "edit" ||
+		event.Err != nil || event.ToolResult == nil || event.ToolResult.IsError {
+		return interaction.DiffDisplay{}
+	}
+	return interaction.DiffDisplay{Text: event.ToolResult.Diff.Text, Truncated: event.ToolResult.Diff.Truncated}
 }
