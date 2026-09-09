@@ -152,7 +152,7 @@ func (a welcomeAnimation) renderLogo() string {
 	return strings.Join(rendered, "\n")
 }
 
-// welcomeView renders the startup screen: the animated logo and tagline above
+// welcomeView renders the startup screen: the animated logo above
 // the contextual welcome card. On terminals too small for the logo it falls
 // back to the card alone, preserving the pre-logo behavior.
 func (m model) welcomeView() string {
@@ -164,6 +164,7 @@ func (m model) welcomeView() string {
 		stacked := lipgloss.JoinVertical(
 			lipgloss.Center,
 			logo,
+			"",
 			card,
 		)
 		if lipgloss.Height(stacked) <= m.viewport.Height() {
@@ -201,9 +202,7 @@ func (m model) welcomeCard() string {
 			"Use /login. View setup with /settings.",
 		)
 	}
-	toolLabel := mutedStyle.Render("TOOLS")
-	tools := labelStyle.Render("read   ls   grep   find")
-	rows := []string{title, description, commandHint, "", toolLabel, tools}
+	rows := []string{title, description, "", commandHint}
 	versionStatus := make([]string, 0, 2)
 	if m.version != "" {
 		versionStatus = append(versionStatus, mutedStyle.Render(m.version))

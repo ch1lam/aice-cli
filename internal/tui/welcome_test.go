@@ -87,7 +87,6 @@ func TestWelcomeViewShowsAnimatedLogo(t *testing.T) {
 		"█",        // block logo
 		"Ask AICE", // welcome card
 		"Understand or change your code.",
-		"TOOLS",
 		"Type / for commands.",
 	} {
 		if !strings.Contains(welcome, want) {
@@ -131,7 +130,7 @@ func TestWelcomeViewOmitsLogoWhenNarrow(t *testing.T) {
 	}
 	// The card text wraps on a narrow terminal, so assert a fragment that
 	// survives wrapping.
-	if !strings.Contains(welcome, "TOOLS") {
+	if !strings.Contains(welcome, "/login") {
 		t.Errorf("welcome = %q, want the welcome card on a narrow terminal", welcome)
 	}
 }
@@ -146,7 +145,7 @@ func TestWelcomeViewOmitsLogoWhenShort(t *testing.T) {
 	if strings.Contains(welcome, "█") {
 		t.Errorf("welcome = %q, want no logo on a short terminal", welcome)
 	}
-	if !strings.Contains(welcome, "TOOLS") {
+	if !strings.Contains(welcome, "/login") {
 		t.Errorf("welcome = %q, want the welcome card on a short terminal", welcome)
 	}
 }

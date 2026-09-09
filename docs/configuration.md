@@ -665,6 +665,11 @@ rescan skills. The `/skills` reminder reports that restart requirement.
 
 ## Interactive commands
 
+The startup screen centers the animated AICE logo above a compact welcome
+card, with a blank row between them. The card shows the next action, command
+or login hints, and version/update status; it does not list tools. Narrow or
+short terminals show the card alone when the logo does not fit.
+
 | Command | Effect |
 | --- | --- |
 | `/help` | List commands |
