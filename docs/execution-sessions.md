@@ -149,6 +149,42 @@ final diagnostics available to the next model request. Capture storage stays
 bounded even for a single large write; rendered output is valid UTF-8. Caller
 cancellation still stops the process tree and returns cancellation.
 
+### Read path spelling
+
+`internal/tool` owns read-only spelling tolerance. It strips one leading `@`,
+expands `~` or `~/`, and folds U+00A0, U+2000–U+200A, U+202F, U+205F and U+3000
+to ASCII spaces. It does not trim whitespace or apply compatibility normalization.
+Relative paths resolve from the physical workspace; absolute paths and parent
+traversal remain subject to Guard access checks.
+
+The first existing candidate wins, in this order:
+
+1. The resolved path after input normalization (including space folding).
+2. That path with the space before `AM.` or `PM.` replaced by U+202F,
+   case-insensitively.
+3. The normalized base in Unicode NFD (canonical decomposition and combining-mark
+   ordering across scripts).
+4. The normalized base with straight apostrophes replaced by U+2019.
+5. NFD plus the apostrophe replacement.
+
+These are variants of the same base, not an exhaustive combination search.
+Space folding occurs before probing: when both ASCII-space and Unicode-space
+names exist, the ASCII-space name wins. An existing base wins over all fallback
+names, even if opening it fails or its permissions deny access. No lower-priority
+candidate is retried after selection. If none exists, read reports the missing
+normalized base. Normalization-insensitive filesystems can satisfy the base
+lookup with a canonically equivalent name; tests use byte-exact probes to verify
+NFD and candidate conflicts independently of macOS filesystem behavior.
+
+The application Guard adapter checks both the requested name and the selected
+physical target from `Read.ResolvePath`, including symlink targets, before any
+approval. Read execution and file attachments use the same input spelling and
+resolver; attachments use the physical path only for identity and display, without
+normalizing it again as user input. Fallback selection never skips a policy denial.
+This is a path check, not an atomic filesystem snapshot: external filesystem changes between checking and opening remain subject to the
+host isolation boundary. `write` and `edit` keep literal workspace resolution;
+these spelling fallbacks do not grant mutation access.
+
 ## Sessions
 
 Interactive runs create a version 3 JSONL Session under

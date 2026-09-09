@@ -155,6 +155,10 @@ such as `core`, `types`, `services`, `utils`, or `helpers`.
   user-approved) because Agent Skills `SKILL.md` files use YAML frontmatter
   and interoperability requires YAML parsing; the standard library has no
   YAML package.
+  Read path normalization reuses the already-pinned `golang.org/x/text`
+  module's `unicode/norm` package (Go Authors, BSD-3-Clause) as a direct import.
+  The standard library has no Unicode normalization package; maintained Unicode tables replace a partial handwritten
+  decomposition map. Candidate selection remains in `internal/tool`.
 - Imported code must record its repository and commit and preserve required
   license notices. AICE remains Apache-2.0.
 
