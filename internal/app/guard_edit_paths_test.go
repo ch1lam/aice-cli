@@ -207,3 +207,63 @@ func TestGuardEditPhysicalTargetHardPolicies(t *testing.T) {
 		})
 	}
 }
+
+func TestGuardEditRevalidatesExistingTarget(t *testing.T) {
+	t.Parallel()
+	for _, change := range []string{"removed", "directory", "parent retargeted"} {
+		t.Run(change, func(t *testing.T) {
+			t.Parallel()
+			root, outside := t.TempDir(), t.TempDir()
+			first, second := filepath.Join(outside, "first"), filepath.Join(outside, "second")
+			for _, dir := range []string{first, second} {
+				if err := os.Mkdir(dir, 0750); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(dir, "file"), []byte("old"), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			link := filepath.Join(root, "alias")
+			if err := os.Symlink(first, link); err != nil {
+				t.Skipf("symlink unavailable: %v", err)
+			}
+			_, gate, err := newExecutionGuard(root, nil, false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			call := llm.ToolCall{ID: "edit", Name: "edit", Arguments: json.RawMessage(`{"path":"alias/file","edits":[{"oldText":"old","newText":"new"}]}`)}
+			result, err := gate.Check(t.Context(), call)
+			if err != nil || result.Decision != agent.GuardAsk || result.Revalidate == nil {
+				t.Fatalf("check = %+v, %v", result, err)
+			}
+			if err := result.Revalidate(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+			if change == "parent retargeted" {
+				if err := os.Remove(link); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink(second, link); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				path := filepath.Join(first, "file")
+				if err := os.Remove(path); err != nil {
+					t.Fatal(err)
+				}
+				if change == "directory" {
+					if err := os.Mkdir(path, 0750); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			if err := result.Revalidate(t.Context()); err == nil {
+				t.Fatal("changed target accepted after approval")
+			}
+			data, err := os.ReadFile(filepath.Join(second, "file"))
+			if err != nil || string(data) != "old" {
+				t.Fatalf("other target changed: %q, %v", data, err)
+			}
+		})
+	}
+}
