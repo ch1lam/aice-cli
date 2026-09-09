@@ -252,10 +252,6 @@ func TestWriteExecutePreservesSymlinks(t *testing.T) {
 			if err := os.Chmod(target, 0600); err != nil {
 				t.Fatal(err)
 			}
-			before, err := os.Stat(target)
-			if err != nil {
-				t.Fatal(err)
-			}
 			link := filepath.Join(root, "alias")
 			destination, input := "real/file.txt", "alias"
 			switch kind {
@@ -281,6 +277,15 @@ func TestWriteExecutePreservesSymlinks(t *testing.T) {
 			if err := os.Symlink(destination, link); err != nil {
 				t.Skipf("symlink unavailable: %v", err)
 			}
+			// Retain the original file without holding an open handle across rename.
+			// Windows os.SameFile can load identity from a Stat path lazily, after
+			// that path already refers to the replacement.
+			original := filepath.Join(root, "original.txt")
+			if kind != "new through parent" {
+				if err := os.Link(target, original); err != nil {
+					t.Fatal(err)
+				}
+			}
 			writer, err := tool.NewWrite(workspace)
 			if err != nil {
 				t.Fatal(err)
@@ -290,7 +295,7 @@ func TestWriteExecutePreservesSymlinks(t *testing.T) {
 				t.Fatal(err)
 			}
 			gotLink, err := os.Readlink(link)
-			if err != nil || gotLink != destination {
+			if err != nil || gotLink != filepath.FromSlash(destination) {
 				t.Fatalf("link = %q, %v", gotLink, err)
 			}
 			data, err := os.ReadFile(target)
@@ -302,15 +307,19 @@ func TestWriteExecutePreservesSymlinks(t *testing.T) {
 				t.Fatal(err)
 			}
 			if kind != "new through parent" {
-				if os.SameFile(before, after) {
-					t.Fatal("target was modified in place instead of replaced")
+				oldData, err := os.ReadFile(original)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if string(oldData) != "old" {
+					t.Fatalf("target was modified in place instead of replaced: original = %q", oldData)
 				}
 				if runtime.GOOS != "windows" && after.Mode().Perm() != 0600 {
 					t.Fatalf("mode = %o", after.Mode().Perm())
 				}
 			}
 			if kind == "chain" {
-				if got, err := os.Readlink(filepath.Join(root, "middle")); err != nil || got != "real/file.txt" {
+				if got, err := os.Readlink(filepath.Join(root, "middle")); err != nil || got != filepath.FromSlash("real/file.txt") {
 					t.Fatalf("middle = %q, %v", got, err)
 				}
 			}
@@ -360,7 +369,7 @@ func TestWriteExecuteRejectsUnresolvedSymlinks(t *testing.T) {
 			if len(before) != len(after) {
 				t.Fatalf("unexpected side effects: %v", after)
 			}
-			if got, err := os.Readlink(link); err != nil || got != destination {
+			if got, err := os.Readlink(link); err != nil || got != filepath.FromSlash(destination) {
 				t.Fatalf("link = %q, %v", got, err)
 			}
 		})

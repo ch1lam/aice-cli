@@ -20,6 +20,10 @@ Linux, macOS, and Windows. A local pass proves only the tested platform; report
 unavailable tooling or platform checks rather than claiming they passed.
 Path spelling tests normalize accepted host separators before comparison, while
 still checking literal names such as `~`, `@`, and Unicode characters exactly.
+Symlink tests compare link targets using host separators. Replacement tests
+retain the original file through a hard link and verify its content is unchanged;
+they must not infer replacement from pre-write `os.Stat` and post-write
+`os.SameFile`, because Windows can load file identity lazily from the reused path.
 The [release workflow](../.github/workflows/release.yml) owns release build and
 packaging commands. Harbor has its own [integration guide](../integrations/harbor/README.md).
 
