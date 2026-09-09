@@ -66,7 +66,9 @@ func prepareFileInput(ctx context.Context, input interaction.RunInput, workspace
 			continue
 		}
 		seen[resolved] = true
-		content, err := reader.Content(ctx, tool.ReadRequest{Path: resolved})
+		// Use the same input spelling checked by the gate. A physical symlink
+		// target may contain Unicode spaces that must not be folded a second time.
+		content, err := reader.Content(ctx, tool.ReadRequest{Path: path})
 		if err != nil {
 			return interaction.RunInput{}, fmt.Errorf("attach %q: %w", path, err)
 		}

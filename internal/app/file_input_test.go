@@ -131,3 +131,34 @@ func TestFileDeliveryFreezesBeforeMailboxAndDoesNotReparseFileText(t *testing.T)
 		t.Fatal("accepted file snapshot lost")
 	}
 }
+
+func TestFileInputDoesNotNormalizePhysicalTargetAgain(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	workspace, err := tool.NewWorkspace(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, gate, err := newExecutionGuard(root, nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, text := range map[string]string{
+		"a\u3000b.txt": "authorized target",
+		"a b.txt":      "wrong target",
+	} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte(text), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Symlink(filepath.Join(root, "a\u3000b.txt"), filepath.Join(root, "alias.txt")); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+	input, err := prepareFileInput(t.Context(), interaction.RunInput{Files: []string{"alias.txt"}}, workspace, gate, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(input.Prompt, "authorized target") || strings.Contains(input.Prompt, "wrong target") {
+		t.Fatalf("attachment read a different target: %q", input.Prompt)
+	}
+}
