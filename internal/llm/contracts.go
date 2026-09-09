@@ -306,7 +306,7 @@ type ContentPart struct {
 type ImageContent struct {
 	Data     []byte `json:"data"`
 	MIMEType string `json:"mime_type"`
-	// Original is present only when Data is a resized or cropped view. It is
+	// Original is present only when Data is a converted, resized or cropped view. It is
 	// Session source data and must never be sent to a provider as metadata.
 	Original *ImageOriginal `json:"original,omitempty"`
 	ID       string         `json:"id,omitempty"`

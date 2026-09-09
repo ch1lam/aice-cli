@@ -8,9 +8,14 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	"image/draw"
+	"image/gif"
 	"image/jpeg"
 	"image/png"
 	"math"
+
+	"golang.org/x/image/bmp"
+	"golang.org/x/image/webp"
 
 	"github.com/ch1lam/aice-cli/internal/llm"
 )
@@ -39,14 +44,23 @@ func Inspect(data []byte, mime string) (image.Config, string, error) {
 	case bytes.HasPrefix(data, []byte{0xff, 0xd8, 0xff}):
 		actual = "image/jpeg"
 		config, err = jpeg.DecodeConfig(bytes.NewReader(data))
+	case bytes.HasPrefix(data, []byte("GIF87a")), bytes.HasPrefix(data, []byte("GIF89a")):
+		actual = "image/gif"
+		config, err = gif.DecodeConfig(bytes.NewReader(data))
+	case len(data) >= 12 && string(data[:4]) == "RIFF" && string(data[8:12]) == "WEBP":
+		actual = "image/webp"
+		config, err = inspectWebP(data)
+	case bytes.HasPrefix(data, []byte("BM")):
+		actual = "image/bmp"
+		config, err = bmp.DecodeConfig(bytes.NewReader(data))
 	default:
-		return config, "", fmt.Errorf("unsupported image format; use PNG or JPEG")
+		return config, "", fmt.Errorf("unsupported image format; export as PNG or JPEG before reading again; do not retry unchanged input")
 	}
 	if mime != "" && mime != actual {
 		return config, "", fmt.Errorf("image MIME type %q does not match %q", mime, actual)
 	}
 	if err != nil {
-		return config, "", fmt.Errorf("invalid %s image: %w", actual, err)
+		return config, "", imageDecodeError(actual, err)
 	}
 	if config.Width <= 0 || config.Height <= 0 || config.Width > MaxDimension ||
 		config.Height > MaxDimension || int64(config.Width)*int64(config.Height) > MaxPixels {
@@ -57,17 +71,19 @@ func Inspect(data []byte, mime string) (image.Config, string, error) {
 
 // Validate checks both the view and any retained source, including decoding.
 func Validate(img llm.ImageContent) error {
-	if _, _, err := Inspect(img.Data, img.MIMEType); err != nil {
+	_, mime, err := Inspect(img.Data, img.MIMEType)
+	if err != nil {
 		return err
 	}
-	if _, err := decode(img.Data, img.MIMEType); err != nil {
+	if _, err := decode(img.Data, mime); err != nil {
 		return err
 	}
 	if img.Original != nil {
-		if _, _, err := Inspect(img.Original.Data, img.Original.MIMEType); err != nil {
+		_, mime, err := Inspect(img.Original.Data, img.Original.MIMEType)
+		if err != nil {
 			return fmt.Errorf("original image: %w", err)
 		}
-		if _, err := decode(img.Original.Data, img.Original.MIMEType); err != nil {
+		if _, err := decode(img.Original.Data, mime); err != nil {
 			return fmt.Errorf("original image: %w", err)
 		}
 	}
@@ -109,7 +125,8 @@ func Prepare(ctx context.Context, input llm.ImageContent, region *llm.ImageRegio
 		ID: fmt.Sprintf("image:%x", hash), Source: input.Source,
 		Data: bytes.Clone(data), MIMEType: mime, Width: config.Width, Height: config.Height,
 	}
-	if region == nil && config.Width <= MaxViewDimension && config.Height <= MaxViewDimension && len(data) <= MaxViewBytes {
+	if (mime == "image/png" || mime == "image/jpeg") && region == nil &&
+		config.Width <= MaxViewDimension && config.Height <= MaxViewDimension && len(data) <= MaxViewBytes {
 		return result, nil
 	}
 	scale := math.Min(1, float64(MaxViewDimension)/float64(max(area.Dx(), area.Dy())))
@@ -160,10 +177,42 @@ func Prepare(ctx context.Context, input llm.ImageContent, region *llm.ImageRegio
 }
 
 func decode(data []byte, mime string) (image.Image, error) {
-	if mime == "image/png" {
-		return png.Decode(bytes.NewReader(data))
+	var src image.Image
+	var err error
+	switch mime {
+	case "image/png":
+		src, err = png.Decode(bytes.NewReader(data))
+	case "image/jpeg":
+		src, err = jpeg.Decode(bytes.NewReader(data))
+	case "image/bmp":
+		src, err = bmp.Decode(bytes.NewReader(data))
+	case "image/webp":
+		src, err = webp.Decode(bytes.NewReader(data))
+	case "image/gif":
+		// Decode only the first frame, keeping memory independent of frame count.
+		// A frame can occupy a subrectangle of the logical screen; retain the
+		// full canvas so original coordinates do not shift to the frame origin.
+		var config image.Config
+		config, err = gif.DecodeConfig(bytes.NewReader(data))
+		if err == nil {
+			src, err = gif.Decode(bytes.NewReader(data))
+		}
+		if err == nil {
+			canvas := image.NewRGBA(image.Rect(0, 0, config.Width, config.Height))
+			draw.Draw(canvas, src.Bounds(), src, src.Bounds().Min, draw.Src)
+			src = canvas
+		}
+	default:
+		return nil, fmt.Errorf("unsupported image format; export as PNG or JPEG before reading again")
 	}
-	return jpeg.Decode(bytes.NewReader(data))
+	if err != nil {
+		return nil, imageDecodeError(mime, err)
+	}
+	return src, nil
+}
+
+func imageDecodeError(mime string, err error) error {
+	return fmt.Errorf("cannot decode %s image: %w; re-export a valid PNG or JPEG (or extract the desired animation frame) and read that file; do not retry unchanged input", mime, err)
 }
 
 // Area averaging preserves thin lines when reducing screenshots, unlike point sampling.
@@ -203,6 +252,12 @@ func Description(img llm.ImageContent) string {
 		note += fmt.Sprintf("; source %q", img.Source)
 	}
 	if img.Original != nil {
+		if img.Original.MIMEType != img.MIMEType {
+			note += fmt.Sprintf("; converted from %s to %s", img.Original.MIMEType, img.MIMEType)
+		}
+		if img.Original.MIMEType == "image/gif" {
+			note += "; GIF first frame only on the original canvas; unpainted pixels start transparent (white in a JPEG view); later animation frames are not shown"
+		}
 		note += fmt.Sprintf("; original %dx%d", img.Original.Width, img.Original.Height)
 		region := llm.ImageRegion{Width: img.Original.Width, Height: img.Original.Height}
 		if img.Region != nil {

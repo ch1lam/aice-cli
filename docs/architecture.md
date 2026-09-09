@@ -91,7 +91,7 @@ without exposing storage concerns to the frontend or Agent Loop.
 | `internal/tui` | Bubble Tea presentation and interaction-event rendering |
 | `internal/interaction` | Frontend-neutral active-run, event, command, state, and input-mailbox contracts |
 | `internal/agent` | Agent Loop, retries, tool lifecycle, Agent events |
-| `internal/media` | Shared image validation, resizing, original retention and coordinate descriptions |
+| `internal/media` | Shared image decoding, conversion, validation, resizing, original retention and coordinate descriptions |
 | `internal/llm` | Canonical messages, models, usage, streams, context estimates |
 | `internal/api/{anthropic,openairesponses,openaicompletions}` | Protocol translation around official SDKs |
 | `internal/api/streamcore` | Protocol-neutral streaming mechanics shared by adapters |
@@ -155,6 +155,11 @@ such as `core`, `types`, `services`, `utils`, or `helpers`.
   user-approved) because Agent Skills `SKILL.md` files use YAML frontmatter
   and interoperability requires YAML parsing; the standard library has no
   YAML package.
+  Image decoding uses `golang.org/x/image` (Go-maintained supplementary image
+  libraries, BSD-3-Clause, user-approved) for BMP and WebP; the standard library
+  has no decoders for those formats. PNG/JPEG/GIF use the standard library.
+  Conversion and resource limits stay in `internal/media`; no host converter
+  or additional runtime is required.
 - Imported code must record its repository and commit and preserve required
   license notices. AICE remains Apache-2.0.
 
