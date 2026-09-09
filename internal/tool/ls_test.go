@@ -99,7 +99,7 @@ func TestLSExecuteTruncatesWholeEntries(t *testing.T) {
 	if len(output) > 50*1024 || !utf8.ValidString(output) {
 		t.Fatalf("invalid output: %d bytes, UTF-8 valid=%v", len(output), utf8.ValidString(output))
 	}
-	if !strings.Contains(output, "[output truncated: 50 KiB limit reached]") ||
+	if !strings.Contains(output, "[output truncated: 50 KiB limit reached;") ||
 		!strings.Contains(output, "entry limit reached") {
 		t.Fatalf("missing truncation notices: %q", output)
 	}
@@ -115,5 +115,55 @@ func TestLSExecuteTruncatesWholeEntries(t *testing.T) {
 	}
 	if count == 0 || count >= 500 {
 		t.Fatalf("returned %d entries, want a nonempty byte-limited subset", count)
+	}
+}
+
+func TestLSExecuteLimitGuidance(t *testing.T) {
+	t.Parallel()
+	workspace, root := newWorkspace(t)
+	for i := range 501 {
+		writeFixture(t, root, fmt.Sprintf("f%03d", i), "")
+	}
+	ls, err := tool.NewLS(workspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tt := range []struct {
+		name      string
+		limit     int
+		wantCount int
+		want      string
+		wantError bool
+	}{
+		{name: "smaller limit", limit: 1, wantCount: 1, want: "retry with limit=2"},
+		{name: "retry capped", limit: 300, wantCount: 300, want: "retry with limit=500"},
+		{name: "hard maximum", limit: 500, wantCount: 500, want: "hard maximum"},
+		{name: "legacy zero default", limit: 0, wantCount: 500, want: "hard maximum"},
+		{name: "excessive", limit: 501, wantError: true, want: "limit cannot exceed 500"},
+		{name: "negative", limit: -1, wantError: true, want: "limit cannot be negative"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := ls.Execute(t.Context(), toolCall(t, "ls", map[string]any{"limit": tt.limit}))
+			if tt.wantError {
+				if err == nil || !strings.Contains(err.Error(), tt.want) {
+					t.Fatalf("error = %v, want %q", err, tt.want)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			output := resultText(t, result)
+			if !strings.Contains(output, tt.want) {
+				t.Fatalf("missing %q in %q", tt.want, output)
+			}
+			lines := strings.Split(output, "\n")
+			if got := len(lines) - 1; got != tt.wantCount {
+				t.Fatalf("returned %d entries, want %d", got, tt.wantCount)
+			}
+			if tt.wantCount == 500 && (!strings.Contains(output, "find") || !strings.Contains(output, "bash")) {
+				t.Fatal("hard-limit notice must explain how to continue")
+			}
+		})
 	}
 }

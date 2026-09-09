@@ -130,15 +130,6 @@ The tool layer still enforces correctness and resource safety:
 - pair every tool call with one result;
 - keep credentials and prompt content out of logs.
 
-### Directory listings
-
-The `ls` tool keeps complete directory entries within its 50 KiB output budget,
-including truncation notices. It reserves notice space before adding entries;
-filenames, directory suffixes, and symlink suffixes are never partially emitted.
-Entry-count and byte-limit notices can both appear when both bounds apply.
-
-### File mutations
-
 Tool descriptions and parameter schemas guide the model to use `write` for new
 files or complete rewrites and `edit` for partial changes to existing files.
 `write.content` is the complete final file content: omitted old content is not
@@ -249,6 +240,20 @@ marker between them, followed by exit status or the timeout reason. This keeps
 final diagnostics available to the next model request. Capture storage stays
 bounded even for a single large write; rendered output is valid UTF-8. Caller
 cancellation still stops the process tree and returns cancellation.
+
+### Directory listings
+
+The `ls` tool keeps complete directory entries within its 50 KiB output budget,
+including truncation notices. It reserves notice space before adding entries;
+filenames, directory suffixes, and symlink suffixes are never partially emitted.
+Entry-count and byte-limit notices can both appear when both bounds apply.
+
+`limit` defaults to 500 and has a hard maximum of 500. Values above 500 are
+rejected with guidance instead of silently reduced. Negative values are rejected;
+explicit zero retains the default for compatibility, while the model-facing
+schema advertises 1–500. When a smaller entry limit is reached, the result suggests
+a larger limit up to 500. At the hard maximum or byte limit, use `find` to filter
+names or `bash` to inspect the directory in batches; `ls` has no pagination.
 
 ### Write paths and atomic replacement
 

@@ -19,7 +19,7 @@ const (
   "type": "object",
   "properties": {
     "path": {"type": "string", "description": "Directory to list (default: current directory)"},
-    "limit": {"type": "integer", "minimum": 1, "description": "Maximum number of entries to return (default: 500)"}
+    "limit": {"type": "integer", "minimum": 1, "maximum": 500, "description": "Maximum number of entries to return (default and hard maximum: 500). Use find to filter names or bash to inspect larger directories in batches."}
   },
   "additionalProperties": false
 }`
@@ -64,7 +64,13 @@ func (l *LS) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult, er
 	if args.Limit < 0 {
 		return llm.ToolResult{}, fmt.Errorf("tool \"ls\": limit cannot be negative")
 	}
-	if args.Limit == 0 || args.Limit > defaultLSLimit {
+	if args.Limit > defaultLSLimit {
+		return llm.ToolResult{}, fmt.Errorf(
+			"tool \"ls\": limit cannot exceed %d; use find to filter names or bash to inspect the directory in batches",
+			defaultLSLimit,
+		)
+	}
+	if args.Limit == 0 {
 		args.Limit = defaultLSLimit
 	}
 
@@ -87,9 +93,15 @@ func (l *LS) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult, er
 	})
 	entryNotice := ""
 	if len(entries) > args.Limit {
-		entryNotice = fmt.Sprintf("[entry limit reached: %d]\n", args.Limit)
+		if args.Limit < defaultLSLimit {
+			entryNotice = fmt.Sprintf("[entry limit reached: %d; retry with limit=%d (maximum %d)]\n",
+				args.Limit, min(args.Limit*2, defaultLSLimit), defaultLSLimit)
+		} else {
+			entryNotice = fmt.Sprintf("[entry limit reached: %d (hard maximum); use find to filter names or bash to inspect the directory in batches]\n",
+				args.Limit)
+		}
 	}
-	const byteNotice = "[output truncated: 50 KiB limit reached]\n"
+	const byteNotice = "[output truncated: 50 KiB limit reached; use find to filter names or bash to inspect the directory in batches]\n"
 	// Reserve notices before adding entries so neither names nor notices are split.
 	entryBudget := maxOutputBytes - len(entryNotice) - len(byteNotice)
 	var output strings.Builder
