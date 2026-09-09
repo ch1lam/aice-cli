@@ -226,20 +226,22 @@ non-directory parents, trailing separators, and traversal through missing
 directories fail before creating directories or temporary files.
 
 The application Guard adapter checks both the requested path and the physical
-write destination using `Write.ResolvePath`, so protected targets and paths
-outside the workspace retain their policy and approval requirements, including
+mutation destination using `Write.ResolvePath` or `Edit.ResolvePath`, so protected
+targets and paths outside the workspace retain their policy and approval requirements, including
 under `--yolo`. File-policy existence checks use the action path, not its
 shortened match/display spelling, so a literal workspace `~` directory cannot
 redirect the existence probe to the home directory. The same resolver runs inside
-write's mutation lock. A call-local Guard revalidation rejects a changed destination after approval waits; the caller
-must retry for a fresh permission check. These checks are not a filesystem
+each tool's mutation lock. A call-local Guard revalidation rejects a changed
+destination after approval waits; the caller must retry for a fresh permission check. These checks are not a filesystem
 snapshot: external changes between revalidation, resolution, and rename remain
 subject to host isolation. No file descriptors pin directory identity.
 
-`atomicWrite` is shared with `edit` and does not resolve links itself. `edit`
-retains its existing behavior: it reads through a file link, then replaces that
-link entry with the edited regular file. This write change does not extend edit's
-path resolution or permissions.
+`edit` uses the same physical path resolution and atomic replacement boundary,
+preserving file and parent directory links. It requires an existing regular
+target and never creates a missing file or follows a dangling link to create one.
+Its Guard checks and post-approval revalidation also require that target to remain
+an existing regular file. Atomic commit and cancellation semantics are unchanged.
+`atomicWrite` is shared by both tools and does not resolve links itself.
 
 ### Read path spelling
 

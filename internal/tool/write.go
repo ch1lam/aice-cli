@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
-	"strings"
 
 	"github.com/ch1lam/aice-cli/internal/llm"
 )
@@ -93,48 +91,5 @@ func (w *Write) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult,
 // Existing symlinks must resolve completely; only genuinely missing components
 // may be appended for a new file. Guard uses the same resolver as execution.
 func (w *Write) ResolvePath(input string) (string, error) {
-	path, err := w.workspace.resolvePath(input)
-	if err != nil {
-		return "", err
-	}
-	if os.IsPathSeparator(path[len(path)-1]) {
-		return "", fmt.Errorf("resolve write path %q: file path ends with a separator", input)
-	}
-	volume := filepath.VolumeName(path)
-	current := volume + string(os.PathSeparator)
-	parts := strings.FieldsFunc(path[len(volume):], func(r rune) bool {
-		return r == '/' || (os.PathSeparator == '\\' && r == '\\')
-	})
-	for index, part := range parts {
-		// Keep traversal until existing symlinks have been resolved. Cleaning the
-		// original path first would give link/../file the wrong destination.
-		candidate := current + string(os.PathSeparator) + part
-		info, err := os.Lstat(candidate)
-		if os.IsNotExist(err) {
-			for _, remaining := range parts[index:] {
-				if remaining == "." || remaining == ".." {
-					return "", fmt.Errorf("resolve write path %q: traversal through a missing directory", input)
-				}
-			}
-			return filepath.Join(append([]string{current}, parts[index:]...)...), nil
-		}
-		if err != nil {
-			return "", fmt.Errorf("resolve write path %q: %w", input, err)
-		}
-		current = candidate
-		if info.Mode()&os.ModeSymlink != 0 {
-			current, err = filepath.EvalSymlinks(candidate)
-			if err != nil {
-				return "", fmt.Errorf("resolve write symlink %q: %w", input, err)
-			}
-			info, err = os.Stat(current)
-			if err != nil {
-				return "", fmt.Errorf("inspect write target %q: %w", input, err)
-			}
-		}
-		if index < len(parts)-1 && !info.IsDir() {
-			return "", fmt.Errorf("resolve write path %q: parent is not a directory", input)
-		}
-	}
-	return filepath.Clean(current), nil
+	return w.workspace.resolveMutationPath(input)
 }
