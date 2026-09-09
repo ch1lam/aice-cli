@@ -93,6 +93,7 @@ func (m *model) toggleProcessGroups() bool {
 		group := &m.processGroups[index]
 		if m.hasProcessContent(group.id) {
 			group.collapsed = !expand
+			group.detailsExpanded = expand
 		}
 	}
 	return true
@@ -246,16 +247,7 @@ func (m *model) applyAgentEvent(event DisplayEvent) (bool, tea.Cmd) {
 		return true, m.completeAssistant(event.Assistant)
 	case DisplayEventToolStart:
 		m.revokeConclusion()
-		m.entries = append(m.entries, transcriptEntry{
-			kind:      entryTool,
-			processID: m.ensureActiveProcess(),
-			toolID:    event.Tool.ID,
-			toolName:  event.Tool.Name,
-			toolDetail: sanitizeToolDetail(
-				event.Tool.Detail,
-				event.Tool.Name == "bash",
-			),
-		})
+		m.startDisplayedTool(event.Tool)
 		m.status = "Running " + event.Tool.Name + "..."
 		return true, nil
 	case DisplayEventToolEnd:
@@ -313,7 +305,8 @@ func (m *model) applyAssistantDelta(event DisplayEvent) bool {
 		entry.thinking = entry.presentation.appendThinking(entry.thinking, event.Delta.Delta)
 		m.status = "Thinking..."
 	case DisplayDeltaToolCall:
-		return m.revokeConclusion()
+		changed := m.revokeConclusion()
+		return m.applyWriteDelta(event.Delta) || changed
 	default:
 		return false
 	}

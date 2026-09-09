@@ -567,6 +567,9 @@ func (m model) entryView(
 	case entryTool:
 		icon := m.spinner.View()
 		style := lipgloss.NewStyle().Foreground(accentColor)
+		if entry.toolPreparing {
+			icon = "…"
+		}
 		if entry.toolDone {
 			icon = "✓"
 			style = lipgloss.NewStyle().Foreground(successColor)
@@ -582,6 +585,12 @@ func (m model) entryView(
 		}
 		if entry.toolName == "bash" && entry.toolDetail != "" {
 			summary += "\n" + mutedStyle.Render("$ "+entry.toolDetail)
+		}
+		if entry.toolPreparing {
+			summary += mutedStyle.Render("  preview · not executed")
+		}
+		if entry.writePreview != nil {
+			summary += "\n" + entry.writePreview.view(max(width-4, 1), entry.toolExpanded)
 		}
 		if entry.toolDone && entry.toolTruncation.Reason != "" {
 			summary += "\n" + noticeStyle.Render(toolTruncationStatus(entry.toolTruncation))

@@ -253,6 +253,12 @@ This is a path check, not an atomic filesystem snapshot: external filesystem cha
 host isolation boundary. `write` and `edit` keep literal workspace resolution;
 these spelling fallbacks do not grant mutation access.
 
+`write` creates new files or atomically replaces the complete content of an
+existing file, automatically creating missing parent directories. Relative paths
+resolve from the working directory; mutation paths retain literal spelling.
+The TUI shows a bounded [content preview](configuration.md#interactive-input-delivery)
+from tool arguments, independently of execution and its result.
+
 ## Sessions
 
 Interactive runs create a version 3 JSONL Session under

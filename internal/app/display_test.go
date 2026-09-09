@@ -423,3 +423,21 @@ func TestToolTruncationDisplayFromReplayedResult(t *testing.T) {
 		})
 	}
 }
+
+func TestTranslateWriteStreamPreservesOnlyDisplayInputs(t *testing.T) {
+	delta := &llm.Event{Type: llm.EventTypeToolCallDelta, ContentIndex: 3, ToolCallDelta: &llm.ToolCallDelta{ID: "w", Name: "write", ArgumentsDelta: `{"content":"partial`}}
+	got := translateAssistantDelta(delta)
+	if got.Delta.ToolIndex != 3 || got.Delta.Arguments != delta.ToolCallDelta.ArgumentsDelta || got.Delta.Tool.Name != "write" || got.Delta.Tool.HasContent {
+		t.Fatalf("delta projection: %+v", got)
+	}
+	call := &llm.ToolCall{ID: "w", Name: "write", Arguments: []byte(`{"path":"~/@literal.go","content":"package main\n"}`)}
+	got = translateAssistantDelta(&llm.Event{Type: llm.EventTypeToolCallEnd, ContentIndex: 3, ToolCall: call})
+	if !got.Delta.ToolEnd || !got.Delta.Tool.HasContent || got.Delta.Tool.Content != "package main\n" || got.Delta.Tool.Detail != "~/@literal.go" {
+		t.Fatalf("end projection: %+v", got)
+	}
+	call.Arguments = []byte(`{"content":"unfinished`)
+	got = translateAssistantDelta(&llm.Event{Type: llm.EventTypeToolCallEnd, ToolCall: call})
+	if got.Delta.Tool.HasContent {
+		t.Fatal("incomplete JSON became completed content")
+	}
+}

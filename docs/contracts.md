@@ -286,6 +286,15 @@ the final JSON event from being delivered.
   renders only a UTF-8-safe tail of at most 4 KiB plus an omission notice;
   full content remains in the presentation snapshot and becomes available
   on completion. These display limits never truncate Session or model context.
+  Write previews project existing tool-call start/delta/end events through the
+  application bridge. The TUI accumulates at most 64 KiB of raw arguments per
+  call and parses only for presentation when visible, using the existing event
+  batching and item cache. Complete calls replace the partial preview; execution
+  start reconciles the same row by call ID. A preview never authorizes execution.
+  Default rendering bounds source input to 10 lines / 4 KiB; explicit process
+  expansion raises this to 2000 lines / 64 KiB. Lines are clipped before syntax
+  highlighting and terminal control characters are replaced. These limits affect
+  neither tool arguments nor Session history.
   Main and BTW transcripts use an item-anchored viewport: scrolling records a
   block and a row within it, without measuring all preceding history. Process
   headers, individual reasoning/answer blocks, tools and questions are separate

@@ -726,6 +726,16 @@ earlier-content notice, keeping the terminal responsive. This also applies to
 BTW thinking. When the response ends, expanded views show the complete thinking;
 the preview does not remove content from the conversation or main Session.
 
+Write tool rows show a content preview of at most 10 source lines / 4 KiB by
+default. Long lines are clipped to the terminal width. Use the existing
+`Ctrl+O` process toggle to collapse, then expand for a larger preview (up to
+2000 lines / 64 KiB). A completed, automatically collapsed process needs only
+one press to expand. Preview limits are labelled; they do not limit file writes.
+During argument streaming, the row says `preview · not executed`; incomplete
+JSON escapes wait for more input. A stream preview retains only the first
+64 KiB of raw arguments, so later content or a late path may appear only when
+the complete call arrives. Source control characters are replaced for display.
+
 The composer remains active while an Agent run is working:
 
 | Input | Effect while an Agent run is active |

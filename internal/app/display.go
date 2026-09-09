@@ -58,11 +58,7 @@ func translateAgentEvent(event agent.AgentEvent) *interaction.Event {
 		if event.ToolCall != nil {
 			return &interaction.Event{
 				Kind: interaction.EventToolStart,
-				Tool: interaction.ToolDisplay{
-					ID:     event.ToolCall.ID,
-					Name:   event.ToolCall.Name,
-					Detail: toolCallDetail(*event.ToolCall),
-				},
+				Tool: displayToolCall(*event.ToolCall),
 			}
 		}
 	case agent.EventTypeToolExecutionEnd:
@@ -141,7 +137,11 @@ func translateAssistantDelta(event *llm.Event) *interaction.Event {
 		return &interaction.Event{
 			Kind: interaction.EventAssistantDelta,
 			Delta: interaction.Delta{
-				Kind: interaction.DeltaToolCall,
+				Kind:      interaction.DeltaToolCall,
+				ToolIndex: event.ContentIndex,
+				Tool:      streamedToolDisplay(event),
+				Arguments: streamedToolArguments(event),
+				ToolEnd:   event.Type == llm.EventTypeToolCallEnd && event.ToolCall != nil,
 			},
 		}
 	}
@@ -258,4 +258,35 @@ func displayToolTruncation(result *llm.ToolResultMessage) interaction.Truncation
 		TotalLinesKnown: t.TotalLinesKnown,
 		RequiresBash:    t.Reason == llm.TruncationOversizedLine,
 	}
+}
+
+func displayToolCall(call llm.ToolCall) interaction.ToolDisplay {
+	display := interaction.ToolDisplay{ID: call.ID, Name: call.Name, Detail: toolCallDetail(call)}
+	if call.Name == "write" {
+		var args struct {
+			Content *string `json:"content"`
+		}
+		if json.Unmarshal(call.Arguments, &args) == nil && args.Content != nil {
+			display.Content = *args.Content
+			display.HasContent = true
+		}
+	}
+	return display
+}
+
+func streamedToolDisplay(event *llm.Event) interaction.ToolDisplay {
+	if event.ToolCall != nil {
+		return displayToolCall(*event.ToolCall)
+	}
+	if event.ToolCallDelta != nil {
+		return interaction.ToolDisplay{ID: event.ToolCallDelta.ID, Name: event.ToolCallDelta.Name}
+	}
+	return interaction.ToolDisplay{}
+}
+
+func streamedToolArguments(event *llm.Event) string {
+	if event.ToolCallDelta != nil {
+		return event.ToolCallDelta.ArgumentsDelta
+	}
+	return ""
 }

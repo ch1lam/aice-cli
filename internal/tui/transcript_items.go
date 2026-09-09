@@ -66,6 +66,7 @@ func (m model) transcriptItems() []transcriptItem {
 				first, previousTool := true, false
 				for i := start; i < end; i++ {
 					entry := m.entries[i]
+					entry.toolExpanded = g.detailsExpanded
 					live := m.running && i == m.assistantEntry && !entry.complete
 					mode := transcriptProcess
 					if entry.kind == entryAssistant && entry.conclusion {
