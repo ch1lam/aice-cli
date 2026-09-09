@@ -411,7 +411,9 @@ func TestWorkspaceDoesNotApplyReadTolerance(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if want := filepath.Join(workspace.PhysicalPath(), input); got != want {
+			// Windows accepts both separators; compare spelling without requiring
+			// resolvePath to rewrite the input's forward slashes.
+			if want := filepath.Join(workspace.PhysicalPath(), input); filepath.FromSlash(got) != want {
 				t.Fatalf("mutation path = %q, want %q", got, want)
 			}
 		})
