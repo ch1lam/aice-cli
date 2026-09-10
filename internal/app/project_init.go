@@ -36,6 +36,9 @@ func (s *interactiveSession) runInitCommand(ctx context.Context) (string, error)
 		return "", fmt.Errorf("app: interactive Session is required")
 	}
 	settings := s.settingsSnapshot()
+	if settings.modelErr != nil {
+		return "", settings.modelErr
+	}
 	if settings.loop == nil {
 		return "", credentialNotConfiguredError(
 			s.providers,

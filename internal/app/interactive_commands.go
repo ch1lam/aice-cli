@@ -470,6 +470,9 @@ func (s *interactiveSession) slashCompact(
 		return "", fmt.Errorf("app: application is required")
 	}
 	settings := s.settingsSnapshot()
+	if settings.modelErr != nil {
+		return "", settings.modelErr
+	}
 	configured := configuredModel{
 		configuration: settings.configuration,
 		model:         settings.model,
@@ -652,6 +655,7 @@ func (s *interactiveSession) slashProvider(
 	// snapshot freezes a mutually consistent provider/model/thinking tuple.
 	s.stateMu.Lock()
 	s.configuration = configuration
+	s.modelErr = nil
 	s.loop = loop
 	s.model = applyContextWindow(model, configuration)
 	s.options.Thinking = effective
@@ -681,6 +685,15 @@ func (s *interactiveSession) slashModel(
 		model,
 		settings.configuration.Thinking,
 	)
+	configuration := settings.configuration
+	configuration.Model = value
+	loop := settings.loop
+	if settings.modelErr != nil && providerConfigured(s.providers, configuration) {
+		loop, err = s.rebuildAgentLoop(configuration)
+		if err != nil {
+			return "", err
+		}
+	}
 	if err := s.saveSetting(config.SettingModel, value); err != nil {
 		return "", err
 	}
@@ -688,6 +701,8 @@ func (s *interactiveSession) slashModel(
 	// snapshot freezes a mutually consistent model/thinking pair.
 	s.stateMu.Lock()
 	s.configuration.Model = value
+	s.modelErr = nil
+	s.loop = loop
 	s.model = applyContextWindow(model, settings.configuration)
 	s.options.Thinking = effective
 	s.stateMu.Unlock()
@@ -930,6 +945,7 @@ func (s *interactiveSession) login(
 	effective := clampedThinkingForModel(model, configuration.Thinking)
 	s.stateMu.Lock()
 	s.configuration = configuration
+	s.modelErr = nil
 	s.loop = loop
 	s.model = applyContextWindow(model, configuration)
 	s.options.Thinking = effective

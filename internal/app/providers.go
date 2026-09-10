@@ -228,9 +228,21 @@ func resolveModelSettings(
 			Thinking: llm.ClampThinkingLevel(model, requested),
 		}, nil
 	}
-	return llm.Model{}, llm.StreamOptions{}, fmt.Errorf(
-		"app: unsupported model %q for provider %q",
-		modelID,
-		providerID,
-	)
+	return llm.Model{}, llm.StreamOptions{}, &unavailableModelError{
+		provider: providerID, model: modelID,
+		available: modelIDsForProvider(providers, providerID),
+	}
+}
+
+// unavailableModelError is recoverable by selecting a model in the TUI.
+// Invalid providers and malformed settings remain fatal startup errors.
+type unavailableModelError struct {
+	provider  string
+	model     string
+	available []string
+}
+
+func (e *unavailableModelError) Error() string {
+	return fmt.Sprintf("app: unsupported model %q for provider %q; select a model with /model before sending messages; available: %s",
+		e.model, e.provider, strings.Join(e.available, ", "))
 }

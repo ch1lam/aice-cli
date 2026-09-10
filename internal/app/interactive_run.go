@@ -43,6 +43,9 @@ func (s *interactiveSession) NewRun(
 		return nil, fmt.Errorf("app: interactive Session is required")
 	}
 	settings := s.settingsSnapshot()
+	if settings.modelErr != nil {
+		return nil, settings.modelErr
+	}
 	if settings.loop == nil {
 		return nil, credentialNotConfiguredError(
 			s.providers,
@@ -239,6 +242,9 @@ func (s *interactiveSession) beginMainRun(
 	prompt llm.UserMessage,
 ) (mainRunSnapshot, error) {
 	settings := s.settingsSnapshot()
+	if settings.modelErr != nil {
+		return mainRunSnapshot{}, settings.modelErr
+	}
 	if settings.loop == nil {
 		return mainRunSnapshot{}, credentialNotConfiguredError(
 			s.providers,

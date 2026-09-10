@@ -30,7 +30,7 @@ The DeepSeek API catalog contains only `deepseek-flash` and `deepseek-v4-pro`.
 Both accept text/image input. Flash retains Responses; Pro retains Anthropic
 Messages. The OpenCode Go catalog is independent and unchanged.
 Existing DeepSeek settings using removed model IDs must select one of these two
-models; unknown IDs are rejected rather than silently remapped.
+models; old IDs are not remapped.
 DeepSeek cost estimates use official [off-peak rates](https://api-docs.deepseek.com/quick_start/pricing/);
 peak billing is twice the estimate.
 
@@ -41,6 +41,24 @@ peak billing is twice the estimate.
 | Thinking | `AICE_THINKING` | `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` |
 | Default Project Trust | none | `ask`, `always`, `never` |
 | Custom base URL | `AICE_CUSTOM_BASE_URL` | OpenAI-compatible endpoint persisted as `custom_base_url`; default `http://localhost:11434/v1` |
+
+### Unavailable configured models
+
+If a known provider's saved or environment-selected model is absent from its
+catalog, interactive startup opens with a notice asking the user to select a
+model via `/model`. The original ID remains visible; no replacement is selected
+or saved automatically. Sending a message before selection repeats the notice
+and preserves the draft, without reading attachments, calling the model, or
+writing the prompt to Session history. `/btw`, `/init`, and model-based compaction
+also require a valid selection. Selecting a valid model saves it and enables
+requests when credentials are configured; `/provider` and `/login` retain their
+existing provider-switch behavior. An `AICE_MODEL` environment override still
+wins on the next startup and must be updated separately.
+
+Non-interactive `--print` rejects an unavailable model and lists that provider's
+available IDs. Unknown providers and invalid settings remain startup errors.
+Custom providers continue accepting arbitrary IDs; availability is determined
+within the selected provider, not by matching model names across providers.
 
 ### Context window and status bar
 

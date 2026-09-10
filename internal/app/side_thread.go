@@ -124,6 +124,9 @@ func (s *interactiveSession) CreateSideThread(
 		)
 	}
 	settings := s.settingsSnapshot()
+	if settings.modelErr != nil {
+		return interaction.SideThread{}, nil, settings.modelErr
+	}
 	loop, err := s.application.newAgentLoop(settings.configuration, nil)
 	if err != nil {
 		return interaction.SideThread{}, nil, err

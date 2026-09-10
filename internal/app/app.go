@@ -311,12 +311,18 @@ func (a *application) Interactive(
 			Choices: trust.Choices(cwd),
 		})
 	}
-	environment, err := a.newRunEnvironment(
+	configured, err := a.loadConfiguredModel()
+	var unavailable *unavailableModelError
+	if err != nil && !errors.As(err, &unavailable) {
+		return err
+	}
+	environment, err := a.prepareRunEnvironment(
 		ctx,
 		request.Workspace,
 		request.ProjectTrustOverride,
 		askUI,
 		request.Yolo,
+		configured,
 	)
 	if err != nil {
 		return err
@@ -340,6 +346,7 @@ func (a *application) Interactive(
 		model:         environment.model,
 		options:       environment.options,
 		configuration: environment.configuration,
+		modelErr:      environment.modelErr,
 		tools:         environment.tools,
 		systemPrompt:  environment.systemPrompt,
 		skills:        environment.skills,
@@ -357,7 +364,7 @@ func (a *application) Interactive(
 	}); err != nil {
 		return errors.Join(err, store.Close())
 	}
-	if providerConfigured(a.dependencies.providers, environment.configuration) {
+	if environment.modelErr == nil && providerConfigured(a.dependencies.providers, environment.configuration) {
 		loop, err := a.newAgentLoopWithOptions(
 			environment.configuration,
 			environment.tools,
@@ -377,12 +384,17 @@ func (a *application) Interactive(
 	if err != nil {
 		return errors.Join(err, store.Close())
 	}
+	startupNotice := ""
+	if environment.modelErr != nil {
+		startupNotice = environment.modelErr.Error()
+	}
 	runErr := a.dependencies.runTUI(ctx, runner, tui.Options{
-		Input:       request.Input,
-		Output:      request.Output,
-		Model:       interaction.DisplayModel{ID: environment.model.ID},
-		Thinking:    thinking,
-		CheckUpdate: checkUpdate,
+		StartupNotice: startupNotice,
+		Input:         request.Input,
+		Output:        request.Output,
+		Model:         interaction.DisplayModel{ID: environment.model.ID},
+		Thinking:      thinking,
+		CheckUpdate:   checkUpdate,
 		APIKeyConfigured: providerConfigured(
 			a.dependencies.providers,
 			environment.configuration,
@@ -433,6 +445,7 @@ func (a *application) checkForUpdate(
 }
 
 type runEnvironment struct {
+	modelErr      error
 	workspace     *tool.Workspace
 	configuration config.Config
 	model         llm.Model
@@ -447,6 +460,7 @@ type runEnvironment struct {
 }
 
 type configuredModel struct {
+	modelErr      error
 	service       llm.Streamer
 	configuration config.Config
 	model         llm.Model
@@ -460,13 +474,31 @@ func (a *application) newRunEnvironment(
 	askUI trust.AskFunc,
 	yolo bool,
 ) (*runEnvironment, error) {
-	workspace, err := tool.NewWorkspace(workingDirectory)
-	if err != nil {
-		return nil, fmt.Errorf("app: create workspace: %w", err)
-	}
 	configured, err := a.loadConfiguredModel()
 	if err != nil {
 		return nil, err
+	}
+	return a.prepareRunEnvironment(
+		ctx,
+		workingDirectory,
+		override,
+		askUI,
+		yolo,
+		configured,
+	)
+}
+
+func (a *application) prepareRunEnvironment(
+	ctx context.Context,
+	workingDirectory string,
+	override *bool,
+	askUI trust.AskFunc,
+	yolo bool,
+	configured configuredModel,
+) (*runEnvironment, error) {
+	workspace, err := tool.NewWorkspace(workingDirectory)
+	if err != nil {
+		return nil, fmt.Errorf("app: create workspace: %w", err)
 	}
 	// Make the external helpers the tools need (ripgrep, Git Bash on Windows)
 	// available before constructing them; a failure is logged, not fatal, and
@@ -514,6 +546,7 @@ func (a *application) newRunEnvironment(
 		return nil, err
 	}
 	return &runEnvironment{
+		modelErr:      configured.modelErr,
 		workspace:     workspace,
 		configuration: configured.configuration,
 		model:         configured.model,
@@ -528,6 +561,8 @@ func (a *application) newRunEnvironment(
 	}, nil
 }
 
+// loadConfiguredModel retains display-only settings on an unavailable model.
+// Only Interactive may recover from that typed error; other callers fail closed.
 func (a *application) loadConfiguredModel() (configuredModel, error) {
 	configuration, err := a.dependencies.loadConfig()
 	if err != nil {
@@ -541,7 +576,17 @@ func (a *application) loadConfiguredModel() (configuredModel, error) {
 		configuration,
 	)
 	if err != nil {
-		return configuredModel{}, err
+		var unavailable *unavailableModelError
+		if !errors.As(err, &unavailable) {
+			return configuredModel{}, err
+		}
+		configuration.Provider = unavailable.provider
+		return configuredModel{
+			configuration: configuration,
+			model:         llm.Model{ID: unavailable.model, Provider: llm.ProviderID(unavailable.provider)},
+			options:       llm.StreamOptions{Thinking: llm.ThinkingLevelOff},
+			modelErr:      err,
+		}, err
 	}
 	configuration.Provider = string(selectedModel.Provider)
 	configuration.Model = selectedModel.ID
@@ -567,6 +612,9 @@ func (a *application) newConfiguredModel() (configuredModel, error) {
 // configuration. Automatic compaction keeps this value for the entire Run;
 // it never reloads settings or changes the frozen model/options tuple.
 func (a *application) initializeConfiguredModel(configured *configuredModel) error {
+	if configured.modelErr != nil {
+		return configured.modelErr
+	}
 	if configured.service != nil {
 		return nil
 	}
@@ -619,6 +667,7 @@ func (a *application) newAgentLoopWithOptions(
 }
 
 type interactiveSession struct {
+	modelErr       error
 	application    *application
 	stateMu        sync.RWMutex
 	loop           *agent.Loop
@@ -653,6 +702,7 @@ type interactiveSession struct {
 }
 
 type interactiveSettings struct {
+	modelErr      error
 	loop          *agent.Loop
 	configuration config.Config
 	model         llm.Model
@@ -667,6 +717,7 @@ func (s *interactiveSession) settingsSnapshot() interactiveSettings {
 	s.stateMu.RLock()
 	defer s.stateMu.RUnlock()
 	return interactiveSettings{
+		modelErr:      s.modelErr,
 		loop:          s.loop,
 		configuration: s.configuration,
 		model:         cloneModel(s.model),

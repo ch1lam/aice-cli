@@ -52,6 +52,8 @@ type UpdateChecker func(ctx context.Context) (UpdateCheckResult, error)
 
 // Options contains the terminal streams and model state shown by the program.
 type Options struct {
+	// StartupNotice reports a recoverable configuration issue in the transcript.
+	StartupNotice    string
 	Input            io.Reader
 	Output           io.Writer
 	Model            DisplayModel
@@ -132,6 +134,9 @@ func Run(ctx context.Context, runner Runner, options Options) error {
 	}
 	if guardReq, ok := runner.(interaction.GuardRequester); ok {
 		initialModel.guardRequests = guardReq.GuardRequests()
+	}
+	if options.StartupNotice != "" {
+		initialModel.entries = append(initialModel.entries, transcriptEntry{kind: entryNotice, text: options.StartupNotice})
 	}
 	initialModel.currentModel = options.Model
 	initialModel.thinking = options.Thinking
