@@ -277,7 +277,7 @@ func TestAdapterThinkingLevelsFromModelMap(t *testing.T) {
 			thinkingLevelMap: llm.ThinkingLevelMap{
 				llm.ThinkingLevelOff: nil,
 			},
-			wantErr: `model "deepseek-v4-flash" does not support thinking level "off"`,
+			wantErr: `model "deepseek-flash" does not support thinking level "off"`,
 		},
 		{
 			name:       "deepseek flash maps medium to high",

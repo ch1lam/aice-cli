@@ -22,7 +22,7 @@ Terminal-Bench 2.0:
 ```sh
 harbor run -d terminal-bench@2.0 \
   --agent integrations.harbor.aice_agent:AiceAgent \
-  --model deepseek/deepseek-v4-flash \
+  --model deepseek/deepseek-flash \
   --ae AICE_DEEPSEEK_API_KEY="$AICE_DEEPSEEK_API_KEY" \
   -n 4
 ```
@@ -83,7 +83,7 @@ then pass the adapter constructor kwarg:
 ```sh
 harbor run -d terminal-bench@2.0 \
   --agent integrations.harbor.aice_agent:AiceAgent \
-  --model deepseek/deepseek-v4-flash \
+  --model deepseek/deepseek-flash \
   --ae AICE_DEEPSEEK_API_KEY="$AICE_DEEPSEEK_API_KEY" \
   --ak version="$AICE_SESSION_V3_RELEASE" \
   -n 4

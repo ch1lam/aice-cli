@@ -1227,7 +1227,7 @@ func TestSideThreadConcurrentSnapshotsConsistent(t *testing.T) {
 	settingsWG.Add(2)
 	go func() {
 		defer settingsWG.Done()
-		ids := []string{"deepseek-v4-flash", "deepseek-v4-pro"}
+		ids := []string{"deepseek-flash", "deepseek-v4-pro"}
 		for index := 0; ; index++ {
 			select {
 			case <-settingsDone:
@@ -1315,7 +1315,7 @@ func TestSideThreadConcurrentSnapshotsConsistent(t *testing.T) {
 		if count := strings.Count(strings.Join(texts, "\n"), "main question"); count != 1 {
 			t.Fatalf("side request %d contains the initial main prompt %d times, want exactly once", index, count)
 		}
-		if request.Model.ID != "deepseek-v4-flash" && request.Model.ID != "deepseek-v4-pro" {
+		if request.Model.ID != "deepseek-flash" && request.Model.ID != "deepseek-v4-pro" {
 			t.Fatalf("side request %d model id = %q, want a catalog model", index, request.Model.ID)
 		}
 

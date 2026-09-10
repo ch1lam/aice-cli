@@ -23,13 +23,14 @@ Example global settings:
 ```
 
 When `settings.json` omits `provider` and `model`, AICE uses `deepseek` and
-`deepseek-v4-flash`. The `opencode-go` catalog default is also
+`deepseek-flash`. The `opencode-go` catalog default remains
 `deepseek-v4-flash`.
 
-DeepSeek also supports `deepseek-v4-flash-vision-exp` and
-`deepseek-v4.1-flash-expires-on-0910` with text/image input via
-[Responses](https://api-docs.deepseek.com/guides/responses_api/).
-V4.1 provisionally follows Flash's context/output limits and thinking choices.
+The DeepSeek API catalog contains only `deepseek-flash` and `deepseek-v4-pro`.
+Both accept text/image input. Flash retains Responses; Pro retains Anthropic
+Messages. The OpenCode Go catalog is independent and unchanged.
+Existing DeepSeek settings using removed model IDs must select one of these two
+models; unknown IDs are rejected rather than silently remapped.
 DeepSeek cost estimates use official [off-peak rates](https://api-docs.deepseek.com/quick_start/pricing/);
 peak billing is twice the estimate.
 
@@ -113,12 +114,12 @@ restore it; `/settings` shows the effective level and `/thinking` lists only
 valid choices for the active model. Models without thinking support expose
 only `off`.
 
-The default request is `medium`. On DeepSeek V4 Flash and Pro it becomes
+The default request is `medium`. On DeepSeek Flash and V4 Pro it becomes
 `high`; on OpenCode Go Kimi K3 it becomes `max`. Important built-in subsets are:
 
 | Provider and model | Supported levels |
 | --- | --- |
-| `deepseek/deepseek-v4-flash`, `deepseek/deepseek-v4-pro` | `off`, `low`, `high`, `max` |
+| `deepseek/deepseek-flash`, `deepseek/deepseek-v4-pro` | `off`, `low`, `high`, `max` |
 | `opencode-go/deepseek-v4-flash` | `low`, `high`, `max` |
 | `opencode-go/deepseek-v4-pro` | `high`, `max` |
 | `opencode-go/deepseek-v4-flash-vision-exp` | `off`, `low`, `high`, `max` |

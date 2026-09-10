@@ -21,7 +21,11 @@ func TestDeepSeekModelSpecsSeedCompatibleCatalogs(t *testing.T) {
 	deepSeekModels := deepseek.Models()
 	opencodeModels := opencode.Models()
 	for _, spec := range specs {
-		deepSeekModel, ok := findModel(deepSeekModels, spec.ID)
+		deepSeekID, deepSeekName := spec.ID, spec.Name
+		if spec.ID == "deepseek-v4-flash" {
+			deepSeekID, deepSeekName = "deepseek-flash", "DeepSeek Flash"
+		}
+		deepSeekModel, ok := findModel(deepSeekModels, deepSeekID)
 		if !ok {
 			t.Fatalf("DeepSeek catalog missing %q", spec.ID)
 		}
@@ -30,7 +34,7 @@ func TestDeepSeekModelSpecsSeedCompatibleCatalogs(t *testing.T) {
 			t.Fatalf("OpenCode Go catalog missing %q", spec.ID)
 		}
 		for name, pair := range map[string][2]any{
-			"name":      {spec.Name, deepSeekModel.Name},
+			"name":      {deepSeekName, deepSeekModel.Name},
 			"context":   {spec.ContextWindow, deepSeekModel.ContextWindow},
 			"maxTokens": {spec.MaxTokens, deepSeekModel.MaxTokens},
 		} {

@@ -24,12 +24,12 @@ func TestModels(t *testing.T) {
 	want := []llm.Model{
 		{
 			ID:               deepseek.ModelV4Flash,
-			Name:             "DeepSeek V4 Flash",
+			Name:             "DeepSeek Flash",
 			API:              openairesponses.API,
 			Provider:         deepseek.ProviderID,
 			SupportsThinking: true,
 			ThinkingLevelMap: deepSeekThinkingLevelMap(),
-			InputModalities:  []llm.InputModality{llm.InputModalityText},
+			InputModalities:  []llm.InputModality{llm.InputModalityText, llm.InputModalityImage},
 			ContextWindow:    1_000_000,
 			MaxTokens:        384_000,
 			Pricing: llm.Pricing{
@@ -46,7 +46,7 @@ func TestModels(t *testing.T) {
 			SupportsThinking:        true,
 			ThinkingLevelMap:        deepSeekThinkingLevelMap(),
 			SupportsReasoningEffort: true,
-			InputModalities:         []llm.InputModality{llm.InputModalityText},
+			InputModalities:         []llm.InputModality{llm.InputModalityText, llm.InputModalityImage},
 			ContextWindow:           1_000_000,
 			MaxTokens:               384_000,
 			Pricing: llm.Pricing{
@@ -56,14 +56,6 @@ func TestModels(t *testing.T) {
 			},
 		},
 	}
-	preview := want[0]
-	preview.ID = deepseek.ModelV41Flash
-	preview.Name = "DeepSeek V4.1 Flash (expires on 0910)"
-	preview.InputModalities = []llm.InputModality{llm.InputModalityText, llm.InputModalityImage}
-	vision := preview
-	vision.ID = deepseek.ModelV4FlashVisionExp
-	vision.Name = "DeepSeek V4 Flash Vision Exp"
-	want = append(want, preview, vision)
 	models := deepseek.Models()
 	if !reflect.DeepEqual(models, want) {
 		t.Errorf("Models() = %#v, want %#v", models, want)
@@ -99,7 +91,7 @@ func deepSeekThinkingLevelMap() llm.ThinkingLevelMap {
 func TestProviderDispatchesEachModelThroughItsConfiguredAPI(t *testing.T) {
 	t.Parallel()
 
-	paths := make(chan string, 4)
+	paths := make(chan string, 2)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		paths <- r.URL.Path
 		w.Header().Set("Content-Type", "text/event-stream")
@@ -133,8 +125,8 @@ func TestProviderDispatchesEachModelThroughItsConfiguredAPI(t *testing.T) {
 		}
 	}
 
-	got := []string{<-paths, <-paths, <-paths, <-paths}
-	want := []string{"/responses", "/anthropic/v1/messages", "/responses", "/responses"}
+	got := []string{<-paths, <-paths}
+	want := []string{"/responses", "/anthropic/v1/messages"}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("request paths = %v, want %v", got, want)
 	}
@@ -168,7 +160,7 @@ func TestProviderRejectsModelAPIMismatchBeforeHTTP(t *testing.T) {
 	request.Model.API = anthropic.API
 	_, err = provider.Stream(context.Background(), request)
 	if err == nil ||
-		!strings.Contains(err.Error(), `model "deepseek-v4-flash" API`) ||
+		!strings.Contains(err.Error(), `model "deepseek-flash" API`) ||
 		!strings.Contains(err.Error(), string(openairesponses.API)) {
 		t.Fatalf("Stream() error = %v, want model API mismatch", err)
 	}
@@ -200,14 +192,6 @@ func TestProviderRejectsUnsupportedDeepSeekContentBeforeHTTP(t *testing.T) {
 		part llm.ContentPart
 		want string
 	}{
-		{
-			name: "image",
-			part: llm.ContentPart{
-				Type:  llm.ContentTypeImage,
-				Image: &llm.ImageContent{Data: []byte("image"), MIMEType: "image/png"},
-			},
-			want: "image content is not supported",
-		},
 		{
 			name: "redacted thinking",
 			part: llm.ContentPart{
@@ -292,7 +276,7 @@ func TestProviderDescriptor(t *testing.T) {
 
 func TestVisionModelsSendImageAndExactModelID(t *testing.T) {
 	t.Parallel()
-	for _, modelID := range []string{deepseek.ModelV41Flash, deepseek.ModelV4FlashVisionExp} {
+	for _, modelID := range []string{deepseek.ModelV4Flash, deepseek.ModelV4Pro} {
 		t.Run(modelID, func(t *testing.T) {
 			t.Parallel()
 			bodies := make(chan string, 1)
@@ -302,7 +286,11 @@ func TestVisionModelsSendImageAndExactModelID(t *testing.T) {
 					t.Error(err)
 				}
 				bodies <- string(body)
-				if r.URL.Path != "/responses" {
+				wantPath := "/responses"
+				if modelID == deepseek.ModelV4Pro {
+					wantPath = "/anthropic/v1/messages"
+				}
+				if r.URL.Path != wantPath {
 					t.Errorf("path = %q", r.URL.Path)
 				}
 				w.Header().Set("Content-Type", "text/event-stream")
@@ -341,6 +329,9 @@ func TestVisionModelsSendImageAndExactModelID(t *testing.T) {
 				Reasoning struct {
 					Effort string `json:"effort"`
 				} `json:"reasoning"`
+				OutputConfig struct {
+					Effort string `json:"effort"`
+				} `json:"output_config"`
 			}
 			if err := json.Unmarshal([]byte(body), &payload); err != nil {
 				t.Fatal(err)
@@ -348,10 +339,16 @@ func TestVisionModelsSendImageAndExactModelID(t *testing.T) {
 			if payload.Model != modelID {
 				t.Errorf("model = %q", payload.Model)
 			}
-			if payload.Reasoning.Effort != "high" {
-				t.Errorf("effort = %q", payload.Reasoning.Effort)
+			effort := payload.Reasoning.Effort
+			imageType, imageData := `"type":"input_image"`, "data:image/png;base64,aW1hZ2U="
+			if modelID == deepseek.ModelV4Pro {
+				effort = payload.OutputConfig.Effort
+				imageType, imageData = `"type":"image"`, `"data":"aW1hZ2U="`
 			}
-			if !strings.Contains(body, `"type":"input_image"`) || !strings.Contains(body, "data:image/png;base64,aW1hZ2U=") {
+			if effort != "high" {
+				t.Errorf("effort = %q", effort)
+			}
+			if !strings.Contains(body, imageType) || !strings.Contains(body, imageData) {
 				t.Errorf("image missing from request: %s", body)
 			}
 
