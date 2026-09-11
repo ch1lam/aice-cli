@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -69,7 +71,7 @@ func TestEnsureBrowserInstall(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if info.Mode().Perm()&0111 == 0 {
+	if runtime.GOOS != "windows" && info.Mode().Perm()&0111 == 0 {
 		t.Fatal("not executable")
 	}
 	last := progress[len(progress)-1]
@@ -129,12 +131,15 @@ func TestEnsureBrowserConcurrent(t *testing.T) {
 }
 
 func TestEnsureBrowserDisabledAndWindows(t *testing.T) {
-	for _, name := range []string{"disabled", "windows"} {
+	for _, name := range []string{"disabled", "installed offline", "windows"} {
 		t.Run(name, func(t *testing.T) {
 			opts := browserOptions(t, func(http.ResponseWriter, *http.Request) { t.Error("unexpected request") })
 			var output bytes.Buffer
 			opts.Log = &output
-			if name == "disabled" {
+			if name != "windows" {
+				if name == "installed offline" {
+					seedBrowserInstall(t, opts.BinDir)
+				}
 				opts.Getenv = func(key string) string {
 					if key == noInstallEnv {
 						return "1"
@@ -146,6 +151,9 @@ func TestEnsureBrowserDisabledAndWindows(t *testing.T) {
 			}
 			if err := Ensure(t.Context(), opts); err != nil {
 				t.Fatal(err)
+			}
+			if name == "installed offline" && strings.Contains(output.String(), "unavailable") {
+				t.Fatal(output.String())
 			}
 			if name == "disabled" && !strings.Contains(output.String(), "browser automation unavailable") {
 				t.Fatal(output.String())
@@ -198,5 +206,33 @@ func TestBrowserProgressCancellation(t *testing.T) {
 	}
 	if AgentBrowserInstalled(opts.BinDir) {
 		t.Fatal("installed cancelled download")
+	}
+}
+
+func TestBrowserEmbeddedResources(t *testing.T) {
+	count := 0
+	err := fs.WalkDir(browserResources, "agentbrowser/skill-data", func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() || entry.Name() != "SKILL.md" {
+			return nil
+		}
+		data, err := browserResources.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if !strings.Contains(string(data), "name:") || !strings.Contains(string(data), "description:") {
+			t.Errorf("invalid %s", path)
+		}
+		count++
+		return nil
+	})
+	if err != nil || count != 9 {
+		t.Fatalf("resources %d: %v", count, err)
+	}
+	vendor, err := browserResources.ReadFile("agentbrowser/VENDOR.md")
+	if err != nil || !strings.Contains(string(vendor), "v"+AgentBrowserVersion) {
+		t.Fatalf("vendor %v", err)
 	}
 }

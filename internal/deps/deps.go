@@ -102,9 +102,9 @@ func Ensure(ctx context.Context, opts Options) error {
 	}
 
 	if opts.Goos != "windows" {
-		if skip {
+		if skip && !AgentBrowserInstalled(opts.BinDir) {
 			fmt.Fprintln(opts.Log, "aice: browser automation unavailable (AICE_NO_DEP_INSTALL set)")
-		} else if !AgentBrowserInstalled(opts.BinDir) {
+		} else if !skip && !AgentBrowserInstalled(opts.BinDir) {
 			if err := installAgentBrowser(ctx, opts); err != nil {
 				errs = append(errs, fmt.Errorf("install agent-browser: %w", err))
 				fmt.Fprintln(opts.Log, "aice: browser helper installation failed; retry on next startup")

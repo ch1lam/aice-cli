@@ -4,6 +4,9 @@ package deps
 // change. To bump one: update the version/tag below, the asset names, and the
 // pinned SHA-256 (recompute from the upstream published checksum).
 const (
+	// AgentBrowserVersion is shared with browser lifecycle and status display.
+	AgentBrowserVersion = "0.37.1"
+
 	// ripgrepVersion is the pinned ripgrep release (tag name is the bare
 	// version, no "v" prefix).
 	ripgrepVersion = "15.2.0"

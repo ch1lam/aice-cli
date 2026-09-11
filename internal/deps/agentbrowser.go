@@ -13,9 +13,6 @@ import (
 	"time"
 )
 
-// AgentBrowserVersion is shared with the browser lifecycle and status display.
-const AgentBrowserVersion = "0.37.1"
-
 //go:embed agentbrowser/skill-data agentbrowser/LICENSE agentbrowser/VENDOR.md
 var browserResources embed.FS
 
@@ -60,7 +57,13 @@ func installAgentBrowser(ctx context.Context, opts Options) error {
 	if err != nil {
 		return err
 	}
-	defer os.RemoveAll(stage)
+	defer func() {
+		// Failed rollback backups must remain available for manual recovery.
+		backups, _ := filepath.Glob(filepath.Join(stage, "old-*"))
+		if len(backups) == 0 {
+			os.RemoveAll(stage)
+		}
+	}()
 	binary := filepath.Join(stage, "agent-browser")
 	// Stage on the destination filesystem before the atomic rename.
 	if err := moveFile(archive, binary); err != nil {
@@ -110,7 +113,7 @@ func installAgentBrowser(ctx context.Context, opts Options) error {
 	}
 	entries, err := os.ReadDir(root)
 	if err != nil {
-		return err
+		fmt.Fprintf(opts.Log, "aice: warning: list old browser skills: %v\n", err)
 	}
 	for _, entry := range entries {
 		if entry.IsDir() && entry.Name() != AgentBrowserVersion {
@@ -119,6 +122,7 @@ func installAgentBrowser(ctx context.Context, opts Options) error {
 			}
 		}
 	}
+	os.RemoveAll(stage)
 	fmt.Fprintf(opts.Log, "aice: installed agent-browser %s\n", AgentBrowserVersion)
 	return nil
 }

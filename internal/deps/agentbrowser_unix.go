@@ -4,6 +4,7 @@ package deps
 
 import (
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -44,7 +45,7 @@ func reclaimBrowserInstallLock(dir string) (bool, error) {
 	if !os.SameFile(original, current) {
 		return false, nil
 	}
-	data, err := os.ReadFile(path)
+	data, err := io.ReadAll(io.LimitReader(file, 32))
 	if err != nil {
 		return false, err
 	}
