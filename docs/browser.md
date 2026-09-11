@@ -11,7 +11,8 @@ On macOS and Linux (amd64/arm64), startup installs the private helper into
 The binary, version marker and complete upstream skill data must be present.
 A mismatched version triggers installation on the next startup.
 
-Downloads use pinned SHA-256 checksums, a bounded directory lock and staged
+Installation messages and download progress go to stderr; redirected output
+is a compact log. Downloads use pinned SHA-256 checksums, a bounded directory lock and staged
 replacement. Failed replacement restores the previous files. Installation
 failure is a warning, so coding remains available and startup retries later.
 `AICE_NO_DEP_INSTALL` skips installation and reports browser automation

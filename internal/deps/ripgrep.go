@@ -307,8 +307,10 @@ type downloadProgressReader struct {
 func (r *downloadProgressReader) Read(p []byte) (int, error) {
 	n, err := r.Reader.Read(p)
 	r.progress.Downloaded += int64(n)
-	if reportErr := r.report(r.progress); reportErr != nil {
-		return n, reportErr
+	if n > 0 {
+		if reportErr := r.report(r.progress); reportErr != nil {
+			return n, reportErr
+		}
 	}
 	return n, err
 }

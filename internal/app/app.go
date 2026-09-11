@@ -504,7 +504,9 @@ func (a *application) prepareRunEnvironment(
 	// available before constructing them; a failure is logged, not fatal, and
 	// the affected tools degrade to unavailable stubs.
 	if paths, err := config.DefaultPaths(); err == nil {
-		if err := deps.Ensure(ctx, deps.DefaultOptions().WithBinDir(paths.BinDir)); err != nil {
+		printer := newHelperProgressPrinter(os.Stderr)
+		ensureErr := deps.Ensure(ctx, deps.DefaultOptions().WithBinDir(paths.BinDir).WithLog(os.Stderr).WithProgress(printer.Report))
+		if err := errors.Join(ensureErr, printer.Close()); err != nil {
 			fmt.Fprintf(os.Stderr, "aice: warning: %v\n", err)
 		}
 	}
