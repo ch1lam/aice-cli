@@ -18,6 +18,7 @@ import (
 
 func TestEnsureIsNoopWhenRipgrepPresent(t *testing.T) {
 	binDir := t.TempDir()
+	seedBrowserInstall(t, binDir)
 	var setPath string
 	opts := DefaultOptions().WithBinDir(binDir)
 	opts.Goos, opts.Goarch = "darwin", "amd64" // deterministic on every host
@@ -62,6 +63,7 @@ func TestEnsureInstallsRipgrepWhenMissing(t *testing.T) {
 	defer server.Close()
 
 	binDir := t.TempDir()
+	seedBrowserInstall(t, binDir)
 	var setPath string
 	opts := DefaultOptions().WithBinDir(binDir)
 	opts.Goos, opts.Goarch = "darwin", "amd64"

@@ -1,5 +1,5 @@
 // Package deps keeps the external executables AICE relies on (ripgrep for the
-// grep tool, Git Bash for the bash tool on Windows) available on the host. It
+// grep tool, Git Bash on Windows, and agent-browser) available on the host. It
 // checks for each helper on PATH and in the AICE bin directory, downloads and
 // verifies missing ones, and augments PATH for the current process.
 package deps
@@ -33,6 +33,7 @@ type Options struct {
 	Getenv   func(string) string          // default os.Getenv
 	Setenv   func(string, string) error   // default os.Setenv
 	Client   *http.Client
+	Progress func(Progress) error
 	Log      io.Writer
 }
 
@@ -54,6 +55,18 @@ func (o Options) WithBinDir(dir string) Options {
 	o.BinDir = dir
 	return o
 }
+
+// Progress reports bytes received for a pinned helper download.
+type Progress struct {
+	Helper, Version   string
+	Downloaded, Total int64
+}
+
+// WithLog directs helper installation messages to output.
+func (o Options) WithLog(output io.Writer) Options { o.Log = output; return o }
+
+// WithProgress observes downloads and may abort them by returning an error.
+func (o Options) WithProgress(report func(Progress) error) Options { o.Progress = report; return o }
 
 // Ensure makes the required helper executables available. It looks for each
 // helper in the bin directory and on PATH, downloads and installs the missing
@@ -85,6 +98,17 @@ func Ensure(ctx context.Context, opts Options) error {
 				ripgrepGuidance(opts.Goos))
 		} else {
 			fmt.Fprintf(opts.Log, "aice: installed ripgrep %s into %s\n", ripgrepVersion, opts.BinDir)
+		}
+	}
+
+	if opts.Goos != "windows" {
+		if skip {
+			fmt.Fprintln(opts.Log, "aice: browser automation unavailable (AICE_NO_DEP_INSTALL set)")
+		} else if !AgentBrowserInstalled(opts.BinDir) {
+			if err := installAgentBrowser(ctx, opts); err != nil {
+				errs = append(errs, fmt.Errorf("install agent-browser: %w", err))
+				fmt.Fprintln(opts.Log, "aice: browser helper installation failed; retry on next startup")
+			}
 		}
 	}
 

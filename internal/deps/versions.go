@@ -48,3 +48,21 @@ func portableGitDownloadURL(base string) string {
 	return base + "/git-for-windows/git/releases/download/" +
 		gitForWindowsTag + "/" + portableGitAsset
 }
+
+// Checksums verified against the same-version npm binaries; see agentbrowser/VENDOR.md.
+var agentBrowserAsset = map[string]string{
+	"darwin/arm64": "agent-browser-darwin-arm64",
+	"darwin/amd64": "agent-browser-darwin-x64",
+	"linux/amd64":  "agent-browser-linux-x64",
+	"linux/arm64":  "agent-browser-linux-arm64",
+}
+var agentBrowserSHA256 = map[string]string{
+	"darwin/arm64": "e52f06476ea0f1d14357c1924ce1d7f1bf08279f2642d74ccfa7ee935c46aea1",
+	"darwin/amd64": "c79d1e0525c0bf79df9eec355269ae40bcda9c4a3fce3f242c24faecaaaeef84",
+	"linux/amd64":  "f8e5f9294bd0da70dda61854f12004fd61c668cd682bfb600cdf6d0df73dea69",
+	"linux/arm64":  "d54d3e1262dc1aa0906e0677adc6d0cbb40d1274631f4cf77136bf23a0bc20e9",
+}
+
+func agentBrowserDownloadURL(base, asset string) string {
+	return base + "/vercel-labs/agent-browser/releases/download/v" + AgentBrowserVersion + "/" + asset
+}

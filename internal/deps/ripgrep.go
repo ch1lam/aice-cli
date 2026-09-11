@@ -111,10 +111,25 @@ func download(ctx context.Context, opts Options, url, want, suffix string) (stri
 	}
 	defer file.Close()
 
+	var source io.Reader = response.Body
+	if opts.Progress != nil {
+		helper, version := "ripgrep", ripgrepVersion
+		if strings.Contains(url, "/agent-browser/") {
+			helper, version = "agent-browser", AgentBrowserVersion
+		} else if strings.Contains(url, "/git-for-windows/") {
+			helper, version = "Git Bash", gitForWindowsTag
+		}
+		progress := Progress{Helper: helper, Version: version, Total: response.ContentLength}
+		if err := opts.Progress(progress); err != nil {
+			os.Remove(file.Name())
+			return "", err
+		}
+		source = &downloadProgressReader{Reader: response.Body, progress: progress, report: opts.Progress}
+	}
 	hash := sha256.New()
 	written, err := io.Copy(
 		io.MultiWriter(file, hash),
-		io.LimitReader(response.Body, maxDownloadBytes+1),
+		io.LimitReader(source, maxDownloadBytes+1),
 	)
 	if err != nil {
 		os.Remove(file.Name())
@@ -280,4 +295,20 @@ func copyAndRemove(from, to string) error {
 		return err
 	}
 	return os.Remove(from)
+}
+
+// Report after every read so a stalled or cancelled consumer can stop the copy.
+type downloadProgressReader struct {
+	io.Reader
+	progress Progress
+	report   func(Progress) error
+}
+
+func (r *downloadProgressReader) Read(p []byte) (int, error) {
+	n, err := r.Reader.Read(p)
+	r.progress.Downloaded += int64(n)
+	if reportErr := r.report(r.progress); reportErr != nil {
+		return n, reportErr
+	}
+	return n, err
 }
