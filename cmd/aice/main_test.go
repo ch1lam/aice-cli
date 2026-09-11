@@ -22,6 +22,7 @@ func TestMain(m *testing.M) {
 		value string
 	}{
 		{key: "HOME", value: testHome},
+		{key: "AICE_NO_DEP_INSTALL", value: "1"},
 		{key: "USERPROFILE", value: testHome},
 		{key: config.EnvDeepSeekAPIKey, value: ""},
 		{

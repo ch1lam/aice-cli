@@ -22,6 +22,7 @@ import (
 
 func (s *interactiveSession) SlashCommands() []interaction.Command {
 	return []interaction.Command{
+		{Name: "browser", Description: "Manage browser connection and tabs", Menu: browserMenu(), Interactive: true},
 		{
 			Name:        "session",
 			Description: "Show current Session information",
@@ -356,6 +357,7 @@ type slashCommandHandler func(
 ) (string, error)
 
 var slashCommandHandlers = map[string]slashCommandHandler{
+	"browser":  (*interactiveSession).slashBrowser,
 	"session":  (*interactiveSession).slashSession,
 	"tree":     (*interactiveSession).slashTree,
 	"checkout": (*interactiveSession).slashCheckout,
@@ -495,9 +497,9 @@ func (s *interactiveSession) slashCompact(
 // header-only stub. The TUI discards the visible transcript through the
 // same sessionChanged channel as /checkout.
 func (s *interactiveSession) slashNew(
-	_ context.Context,
+	ctx context.Context,
 	request interaction.CommandRequest,
-) (string, error) {
+) (output string, returnErr error) {
 	if err := requireNoSlashCommandArguments(request); err != nil {
 		return "", err
 	}
@@ -515,6 +517,13 @@ func (s *interactiveSession) slashNew(
 	previous := s.conversation.store
 	s.conversation.store = nil
 	s.guard.ResetSessionGrants()
+	if s.browser != nil {
+		browserErr := closeBrowser(ctx, s.browser)
+		browserErr = errors.Join(browserErr, s.browser.Rotate(), applyBrowserEnvironment(s.browser))
+		if browserErr != nil {
+			defer func() { output += "\nBrowser cleanup warning: " + browserErr.Error() }()
+		}
+	}
 	s.conversation.historyMu.Lock()
 	s.conversation.history = nil
 	s.conversation.historyMu.Unlock()

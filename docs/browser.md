@@ -64,3 +64,26 @@ Close is bounded to ten seconds and runs only when that session has a socket
 or pid sidecar. It clears the manager's connection target. Startup sweep only
 closes names with a demonstrably dead AICE owner; live or reused PIDs and
 unrelated names are left alone. Browser state is not Session history.
+
+## Interactive commands and lifetime
+
+`/browser` offers Status, Connect to running browser (auto-detect), Connect to
+port or URL, Choose tab, and Close. Connection prerequisites appear before
+connecting. Port entry and tab selection use the existing cancellable command
+prompt channel; they never enter model input or Session history. New tab is
+the default; existing tabs are selected by CDP target identity. All browser
+mutations reject an active model response.
+
+Startup injects browser environment into the process so ordinary bash calls
+inherit it. `/new` closes the old session, advances the generation and clears
+the connection target. Cleanup errors are reported without preventing a new
+conversation. Close also advances the generation to avoid reusing a daemon
+that is shutting down. Interactive and print exits close the current browser
+session with a bounded cleanup context even when the parent is cancelled.
+The close acknowledgement is followed by waiting for socket/pid removal.
+
+Connection target variables are unset/reset after close. A failed connection
+is reported and retains its intended target until closed/replaced, so a later
+command cannot silently operate the previous browser. `session info` cannot
+prove a live external connection by itself; Status also queries tabs and
+reports connection failure.

@@ -154,3 +154,14 @@ func TestSlashCommandHelpDoesNotExposeInternalMenuArguments(t *testing.T) {
 		}
 	}
 }
+
+func TestBrowserCommandAppearsInHelp(t *testing.T) {
+	commands := slashCommandCatalog([]SlashCommand{{Name: "browser", Description: "Manage browser connection and tabs"}})
+	if !strings.Contains(slashCommandHelp(commands), "/browser") {
+		t.Fatal("browser missing from help")
+	}
+	request, ok := parseSlashCommand("/browser status")
+	if !ok || request.Name != "browser" || request.Arguments != "status" {
+		t.Fatalf("request %+v", request)
+	}
+}

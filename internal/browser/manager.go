@@ -236,7 +236,21 @@ func (m *Manager) closeSession(ctx context.Context, name string) error {
 	if err != nil {
 		return err
 	}
-	return decodeResult(data, nil)
+	if err := decodeResult(data, nil); err != nil {
+		return err
+	}
+	// Upstream acknowledges close before removing its socket/pid. Bound the
+	// wait as part of the same deadline so exit means cleanup has completed.
+	for m.hasSidecar(name) {
+		timer := time.NewTimer(20 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return fmt.Errorf("waiting for browser shutdown: %w", ctx.Err())
+		case <-timer.C:
+		}
+	}
+	return nil
 }
 func decodeResult(data []byte, dest any) error {
 	var result struct {

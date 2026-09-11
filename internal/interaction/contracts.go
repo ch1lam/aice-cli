@@ -273,6 +273,8 @@ type EventSink func(ctx context.Context, event Event) error
 // Command describes one application command exposed by an interactive
 // frontend.
 type Command struct {
+	// Interactive requests transient prompts during command execution.
+	Interactive  bool
 	Name         string
 	Description  string
 	ArgumentHint string
@@ -314,6 +316,9 @@ type CommandRequest struct {
 
 // AuthPrompt is transient account-login UI, never conversation history.
 type AuthPrompt struct {
+	// Menu and InputLabel also serve interactive browser command prompts.
+	Menu         *CommandMenu
+	InputLabel   string
 	Title        string
 	URL          string
 	Code         string

@@ -16,8 +16,29 @@ func (m model) handleAuthKey(message tea.KeyPressMsg) (model, tea.Cmd, bool) {
 		}
 		m.input.Reset()
 		m.input.Blur()
-		m.status = "Cancelling login..."
+		m.status = "Cancelling command..."
 		return m.settleCommand(false, nil)
+	}
+	if m.authPrompt != nil && m.authPrompt.Menu != nil {
+		options := m.authPrompt.Menu.Options
+		if len(options) == 0 {
+			return m, nil, true
+		}
+		switch message.Code {
+		case tea.KeyUp:
+			m.authSelection = (m.authSelection + len(options) - 1) % len(options)
+		case tea.KeyDown:
+			m.authSelection = (m.authSelection + 1) % len(options)
+		case tea.KeyEnter:
+			select {
+			case m.authInput <- options[m.authSelection].Arguments:
+				m.authPrompt = nil
+				m.input.Blur()
+				m.status = "Working..."
+			default:
+			}
+		}
+		return m.settleCommand(true, nil)
 	}
 	if message.Code == tea.KeyPgUp || message.Code == tea.KeyPgDown {
 		var command tea.Cmd
@@ -33,6 +54,11 @@ func (m model) handleAuthKey(message tea.KeyPressMsg) (model, tea.Cmd, bool) {
 			case m.authInput <- value:
 				m.input.Reset()
 				m.status = "Checking authorization..."
+				if m.authCommand == "browser" {
+					m.authPrompt = nil
+					m.input.Blur()
+					m.status = "Connecting browser..."
+				}
 			default:
 				m.status = "Still checking authorization; please wait"
 			}
@@ -54,5 +80,14 @@ func (m model) authView() string {
 		parts = append(parts, "Enter code: "+prompt.Code)
 	}
 	parts = append(parts, prompt.Instructions)
+	if prompt.Menu != nil {
+		for i, option := range prompt.Menu.Options {
+			prefix := "  "
+			if i == m.authSelection {
+				prefix = "› "
+			}
+			parts = append(parts, prefix+ansi.Strip(option.Label))
+		}
+	}
 	return strings.Join(parts, "\n\n")
 }

@@ -128,7 +128,7 @@ func (m model) submitSlashCommand(
 	if m.controllerClosed {
 		return m.commandError(raw, "TUI run controller stopped")
 	}
-	if command.Menu != nil {
+	if command.Menu != nil && (request.Arguments == "" || command.Name != "browser") {
 		if request.Arguments != "" {
 			return m.commandUsageError(raw, command)
 		}
@@ -183,11 +183,12 @@ func (m model) startApplicationSlashCommand(
 	m.acceptsDelivery = false
 	m.running = true
 	m.assistantEntry = -1
-	if accountLogin {
+	if accountLogin || command.Interactive {
 		m.authInput = make(chan string, 1)
+		m.authCommand = command.Name
 		request.Auth = &interaction.AuthInteraction{Input: m.authInput}
-		m.input.Placeholder = "Starting login; Escape or Ctrl+C cancels"
-		m.status = "Starting login..."
+		m.input.Placeholder = "Starting /" + command.Name + "; Escape or Ctrl+C cancels"
+		m.status = "Starting /" + command.Name + "..."
 	} else if useSavedCredential {
 		m.status = "Using saved credential..."
 	} else {

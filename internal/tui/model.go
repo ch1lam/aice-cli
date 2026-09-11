@@ -148,6 +148,8 @@ type model struct {
 	commands          []SlashCommand
 	authInput         chan string
 	authPrompt        *interaction.AuthPrompt
+	authSelection     int
+	authCommand       string
 	secretInput       *secretInput
 	commandMenu       *commandMenuState
 	customLogin       *customLoginState

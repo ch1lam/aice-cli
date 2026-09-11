@@ -148,12 +148,19 @@ func (m model) applyRunBatch(batch runBatchMsg) (tea.Model, tea.Cmd) {
 		if update.auth != nil && m.authInput != nil && !m.cancelRequested {
 			prompt := *update.auth
 			m.authPrompt = &prompt
-			m.input.Placeholder = "Waiting for authentication; Escape or Ctrl+C cancels"
+			m.authSelection = 0
+			m.input.Placeholder = prompt.Title + "; Escape or Ctrl+C cancels"
 			if prompt.AllowInput {
 				m.input.Placeholder = "Authorization code / redirect URL (input hidden)"
 				commands = append(commands, m.input.Focus())
 			}
-			m.status = "Waiting for authentication; Escape or Ctrl+C cancels"
+			if prompt.InputLabel != "" {
+				m.input.Placeholder = prompt.InputLabel
+			}
+			if prompt.Menu != nil {
+				m.input.Blur()
+			}
+			m.status = prompt.Title + "; Escape or Ctrl+C cancels"
 			m.resizeLayout()
 			contentChanged = true
 		}
@@ -380,6 +387,8 @@ func (m *model) finishRun(err error) tea.Cmd {
 		m.cancelDelivery()
 	}
 	wasAuth := m.authInput != nil
+	wasBrowser := m.authCommand == "browser"
+	m.authCommand = ""
 	if wasAuth {
 		m.authInput = nil
 		m.authPrompt = nil
@@ -409,6 +418,9 @@ func (m *model) finishRun(err error) tea.Cmd {
 			message = "Response cancelled"
 			if wasAuth {
 				message = "Login cancelled"
+				if wasBrowser {
+					message = "Browser command cancelled"
+				}
 			}
 			m.entries = append(m.entries, transcriptEntry{kind: entryNotice, text: message})
 		} else {

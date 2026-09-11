@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
+	"runtime"
 	"slices"
 	"sync"
 	"time"
@@ -14,6 +16,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/ch1lam/aice-cli/internal/agent"
+	"github.com/ch1lam/aice-cli/internal/browser"
 	"github.com/ch1lam/aice-cli/internal/buildinfo"
 	"github.com/ch1lam/aice-cli/internal/cli"
 	"github.com/ch1lam/aice-cli/internal/config"
@@ -201,6 +204,7 @@ func (a *application) Print(
 	if err != nil {
 		return err
 	}
+	defer func() { returnErr = errors.Join(returnErr, closeBrowser(ctx, environment.browser)) }()
 	if !providerConfigured(a.dependencies.providers, environment.configuration) {
 		return credentialNotConfiguredError(
 			a.dependencies.providers,
@@ -293,7 +297,7 @@ func (a *application) Print(
 func (a *application) Interactive(
 	ctx context.Context,
 	request cli.InteractiveRequest,
-) error {
+) (returnErr error) {
 	if ctx == nil {
 		return fmt.Errorf("app: context is required")
 	}
@@ -327,6 +331,12 @@ func (a *application) Interactive(
 	if err != nil {
 		return err
 	}
+	browserClosed := false
+	defer func() {
+		if !browserClosed {
+			returnErr = errors.Join(returnErr, closeBrowser(ctx, environment.browser))
+		}
+	}()
 	store, history, usage, err := prepareSession(
 		ctx,
 		environment.workspace,
@@ -338,6 +348,7 @@ func (a *application) Interactive(
 	}
 
 	runner := &interactiveSession{
+		browser:       environment.browser,
 		application:   a,
 		guard:         environment.guard,
 		guardAdapter:  environment.guardAdapter,
@@ -407,7 +418,9 @@ func (a *application) Interactive(
 	// Close the runner's current store: /new may have detached the startup
 	// store, and a later prompt may have created another. Remove empty
 	// interactive files so unused explicit paths do not accumulate.
-	closeErr := closeInteractiveStore(runner.conversation.store)
+	browserErr := closeBrowser(ctx, runner.browser)
+	browserClosed = true
+	closeErr := errors.Join(browserErr, closeInteractiveStore(runner.conversation.store))
 	if runErr != nil {
 		return errors.Join(fmt.Errorf("app: run TUI: %w", runErr), closeErr)
 	}
@@ -445,6 +458,7 @@ func (a *application) checkForUpdate(
 }
 
 type runEnvironment struct {
+	browser       *browser.Manager
 	modelErr      error
 	workspace     *tool.Workspace
 	configuration config.Config
@@ -503,9 +517,10 @@ func (a *application) prepareRunEnvironment(
 	// Make the external helpers the tools need (ripgrep, Git Bash on Windows)
 	// available before constructing them; a failure is logged, not fatal, and
 	// the affected tools degrade to unavailable stubs.
-	if paths, err := config.DefaultPaths(); err == nil {
+	if home, err := a.userHome(); err == nil && home != "" {
+		binDir := filepath.Join(home, ".aice", "bin")
 		printer := newHelperProgressPrinter(os.Stderr)
-		ensureErr := deps.Ensure(ctx, deps.DefaultOptions().WithBinDir(paths.BinDir).WithLog(os.Stderr).WithProgress(printer.Report))
+		ensureErr := deps.Ensure(ctx, deps.DefaultOptions().WithBinDir(binDir).WithLog(os.Stderr).WithProgress(printer.Report))
 		if err := errors.Join(ensureErr, printer.Close()); err != nil {
 			fmt.Fprintf(os.Stderr, "aice: warning: %v\n", err)
 		}
@@ -547,7 +562,26 @@ func (a *application) prepareRunEnvironment(
 	if err != nil {
 		return nil, err
 	}
+	var browserManager *browser.Manager
+	if runtime.GOOS != "windows" {
+		if home, pathErr := a.userHome(); pathErr == nil && home != "" {
+			binDir := filepath.Join(home, ".aice", "bin")
+			browserManager, err = browser.NewManager(os.Getpid(), binDir, workspace.PhysicalPath())
+			if err == nil {
+				err = applyBrowserEnvironment(browserManager)
+			}
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "aice: warning: browser setup: %v\n", err)
+				browserManager = nil
+			} else if _, helperErr := browserManager.Executable(); helperErr == nil {
+				for _, sweepErr := range browserManager.SweepStale(ctx) {
+					fmt.Fprintf(os.Stderr, "aice: warning: %v\n", sweepErr)
+				}
+			}
+		}
+	}
 	return &runEnvironment{
+		browser:       browserManager,
 		modelErr:      configured.modelErr,
 		workspace:     workspace,
 		configuration: configured.configuration,
@@ -669,6 +703,7 @@ func (a *application) newAgentLoopWithOptions(
 }
 
 type interactiveSession struct {
+	browser        *browser.Manager
 	modelErr       error
 	application    *application
 	stateMu        sync.RWMutex

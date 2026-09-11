@@ -113,6 +113,7 @@ func TestManagerCloseAndMissingHelper(t *testing.T) {
 	calls := 0
 	m.exec = func(_ context.Context, args, env []string) ([]byte, error) {
 		calls++
+		os.Remove(filepath.Join(m.runDir, m.Name()+".pid"))
 		for _, v := range env {
 			if strings.HasPrefix(v, "AGENT_BROWSER_CDP=") {
 				t.Fatal("close reconnects")
@@ -135,6 +136,9 @@ func TestManagerCloseAndMissingHelper(t *testing.T) {
 	}
 	if calls != 1 || m.target != (Target{}) {
 		t.Fatal("close did not clear connection")
+	}
+	if err := os.WriteFile(filepath.Join(m.runDir, m.Name()+".pid"), []byte("321"), 0600); err != nil {
+		t.Fatal(err)
 	}
 	m.closeTimeout = time.Millisecond
 	m.exec = func(ctx context.Context, _, _ []string) ([]byte, error) { <-ctx.Done(); return nil, ctx.Err() }
@@ -159,6 +163,7 @@ func TestManagerSweepOnlyDeadOwners(t *testing.T) {
 	var names []string
 	m.exec = func(_ context.Context, args, _ []string) ([]byte, error) {
 		names = append(names, args[1])
+		os.Remove(filepath.Join(m.runDir, args[1]+".pid"))
 		return []byte(`{"success":true,"data":{"closed":true}}`), nil
 	}
 	if errs := m.SweepStale(t.Context()); len(errs) != 0 {

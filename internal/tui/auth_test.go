@@ -117,3 +117,39 @@ func TestControllerStreamsAuthenticationBeforeCompletion(t *testing.T) {
 		t.Fatal("controller mutated UI interaction")
 	}
 }
+
+func TestBrowserCommandPromptsAndTabMenu(t *testing.T) {
+	requests := make(chan runRequest, 1)
+	m := newModel(requests, make(chan struct{}))
+	m = updateModel(t, m, tea.WindowSizeMsg{Width: 80, Height: 24})
+	m, cmd, _ := m.startApplicationSlashCommand("/browser", SlashCommandRequest{Name: "browser", Arguments: "connect"}, SlashCommand{Name: "browser", Interactive: true})
+	cmd()
+	request := <-requests
+	if request.command.Auth == nil {
+		t.Fatal("missing interactive input")
+	}
+	prompt := interaction.AuthPrompt{Title: "Connect browser", InputLabel: "CDP port", AllowInput: true}
+	m = updateModel(t, m, runBatchMsg{updates: []runUpdate{{auth: &prompt}}})
+	m = updateModel(t, m, tea.PasteMsg{Content: "9222"})
+	m, _, _ = m.handleKey(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	if value := <-request.command.Auth.Input; value != "9222" {
+		t.Fatal(value)
+	}
+	menu := interaction.AuthPrompt{Title: "Choose tab", Menu: &interaction.CommandMenu{Title: "Tabs", Options: []interaction.CommandOption{{Label: "New tab (default)", Arguments: "new"}, {Label: "Existing page", Arguments: "ABC"}}}}
+	m = updateModel(t, m, runBatchMsg{updates: []runUpdate{{auth: &menu}}})
+	if !strings.Contains(m.transcriptView(), "New tab (default)") {
+		t.Fatal("menu missing")
+	}
+	m, _, _ = m.handleKey(tea.KeyPressMsg(tea.Key{Code: tea.KeyDown}))
+	m, _, _ = m.handleKey(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	if value := <-request.command.Auth.Input; value != "ABC" {
+		t.Fatal(value)
+	}
+	if len(m.promptHistory) != 0 {
+		t.Fatal("browser input entered model history")
+	}
+	m = updateModel(t, m, runBatchMsg{updates: []runUpdate{{done: true}}})
+	if m.running || m.authInput != nil {
+		t.Fatal("browser UI retained command state")
+	}
+}
