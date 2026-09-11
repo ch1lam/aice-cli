@@ -45,3 +45,22 @@ Cancellation kills the CLI, not an already issued browser action. A cancelled
 long wait can still occupy the daemon, delaying subsequent observation until
 it ends. Re-observe before continuing. Native Linux and interactive
 `chrome://inspect/#remote-debugging` acceptance remain unverified.
+
+## Browser session ownership
+
+`internal/browser.Manager` names sessions `aice-<pid>-<generation>` under
+`~/.aice/browser/run`. It exposes the workspace screenshot directory and
+versioned skill directory as environment values. Socket paths over 103 bytes
+are rejected. Only a complete private pinned helper is executable.
+
+External connections use `--pin-tab` and preserve `AGENT_BROWSER_CDP` or
+`AGENT_BROWSER_AUTO_CONNECT` for subsequent commands. This environment extension
+was approved after native testing showed that omitting the CDP target could
+switch subsequent commands back to a local browser. CDP `targetId` selection
+works when the connection is retained. Reconnecting an already used session
+advances its generation to avoid stale bindings and daemon shutdown races.
+
+Close is bounded to ten seconds and runs only when that session has a socket
+or pid sidecar. It clears the manager's connection target. Startup sweep only
+closes names with a demonstrably dead AICE owner; live or reused PIDs and
+unrelated names are left alone. Browser state is not Session history.
