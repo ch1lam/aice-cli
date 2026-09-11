@@ -520,7 +520,7 @@ func (a *application) prepareRunEnvironment(
 	if home, err := a.userHome(); err == nil && home != "" {
 		binDir := filepath.Join(home, ".aice", "bin")
 		printer := newHelperProgressPrinter(os.Stderr)
-		ensureErr := deps.Ensure(ctx, deps.DefaultOptions().WithBinDir(binDir).WithLog(os.Stderr).WithProgress(printer.Report))
+		ensureErr := deps.Ensure(ctx, deps.DefaultOptions().WithBinDir(binDir).WithLog(printer).WithProgress(printer.Report))
 		if err := errors.Join(ensureErr, printer.Close()); err != nil {
 			fmt.Fprintf(os.Stderr, "aice: warning: %v\n", err)
 		}

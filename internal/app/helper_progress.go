@@ -81,3 +81,10 @@ func (p *helperProgressPrinter) Report(event deps.Progress) error {
 	}
 	return nil
 }
+
+func (p *helperProgressPrinter) Write(data []byte) (int, error) {
+	if err := p.Close(); err != nil {
+		return 0, err
+	}
+	return p.output.Write(data)
+}

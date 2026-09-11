@@ -36,3 +36,18 @@ func TestHelperProgress(t *testing.T) {
 		})
 	}
 }
+
+func TestUnknownSizeProgressEndsBeforeInstallLog(t *testing.T) {
+	var output bytes.Buffer
+	p := newHelperProgressPrinter(&output)
+	p.terminal = true
+	if err := p.Report(deps.Progress{Helper: "agent-browser", Downloaded: 1024}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.Write([]byte("installed\n")); err != nil {
+		t.Fatal(err)
+	}
+	if got := ansi.Strip(output.String()); !strings.Contains(got, "MiB\ninstalled\n") {
+		t.Fatal(got)
+	}
+}
