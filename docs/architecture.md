@@ -102,7 +102,8 @@ without exposing storage concerns to the frontend or Agent Loop.
 | `internal/trust` | Protected-resource discovery and global Trust decisions |
 | `internal/skill` | Agent Skill discovery, SKILL.md parse, source layering, embedded builtins |
 | `internal/config` | Global settings, credentials, environment precedence |
-| `internal/deps` | Verified ripgrep and Windows Git Bash provisioning |
+| `internal/deps` | Verified ripgrep, Windows Git Bash and pinned agent-browser provisioning, including upstream browser skill resources |
+| `internal/browser` | Process-owned browser names, environment, connection and bounded cleanup; app owns wiring, Loop remains unaware |
 | `internal/update` | Checksum-validated GitHub release updates |
 | `internal/hostpath` | Host path membership, tilde expansion, slash-normalized display |
 | `internal/jsonutil`, `internal/apitest` | Focused shared JSON and test infrastructure |
@@ -165,9 +166,16 @@ such as `core`, `types`, `services`, `utils`, or `helpers`.
   Conversion and resource limits stay in `internal/media`; no host converter
   or additional runtime is required.
 - Imported code must record its repository and commit and preserve required
-  license notices. AICE remains Apache-2.0.
+  license notices. AICE remains Apache-2.0. The agent-browser skill-data and
+  license are vendored under `internal/deps/agentbrowser`; its `VENDOR.md` records
+  the pinned upstream commit and release provenance.
 
 ## Skills
+
+The builtin `browser` skill follows the same catalog rules below. Its upstream
+command references are embedded separately by `internal/deps`, extracted into
+the versioned helper skill directory, and read through `agent-browser skills`.
+See [Browser automation](browser.md); they are not separately scanned AICE skills.
 
 `internal/skill` discovers and parses Agent Skills. A skill is a directory
 with `SKILL.md` (YAML frontmatter plus Markdown). All sources are the same

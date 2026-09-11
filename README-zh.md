@@ -30,6 +30,9 @@ iwr -useb https://raw.githubusercontent.com/ch1lam/aice-cli/main/scripts/install
 
 ## 快速开始
 
+使用 `/browser` 连接运行中的浏览器或选择工作标签页；准备步骤见
+[浏览器自动化](./docs/browser.md)。
+
 在项目中启动交互式 Session：
 
 ```sh
@@ -89,6 +92,7 @@ aice --workspace . --session .aice/sessions/<session-id>.jsonl
 | Provider | DeepSeek V4、OpenCode Go 内建模型目录、Kimi Coding Plan（Responses API）、Moonshot 开放平台 API、智谱开放平台 API 与 Coding Plan、OpenAI GPT-5.6 API、Codex/ChatGPT 订阅，以及 Custom（OpenAI 兼容） |
 | 协议 | Anthropic Messages、OpenAI Responses、OpenAI Chat Completions |
 | 工具 | `read`、`write`、`edit`、`bash`、`grep`、`find`、`ls`、`skill` |
+| 浏览器 | 原生 agent-browser，通过 `bash`/`read` 与内置 browser skill 工作；`/browser` 连接与选择标签页，见[浏览器自动化](./docs/browser.md) |
 | Guard | 工具调用前的路径与危险命令检查、交互授权；详见[工具执行与 Session](./docs/execution-sessions.md#tool-execution-boundary) |
 | Session | 重启恢复、分支、回退与自动/手动非破坏性压缩 |
 | 侧问题 | Session 历史之外、无工具的多个临时 `/btw` 线程 |
@@ -99,6 +103,9 @@ aice --workspace . --session .aice/sessions/<session-id>.jsonl
 `deny` 处理，除非加上 `--yolo`。`--workspace` 是工作目录并定义路径访问边界，不是沙箱。
 Project Trust 只控制项目 prompt 文件和项目 `.agents/skills` 的加载；详见
 [Project Trust 与 Prompt](./docs/project-trust.md)。更强隔离请使用外部容器/VM。
+
+浏览器自动化需要已安装的 Chrome/Chromium/Brave；AICE 不会自动下载浏览器。
+Guard 不隔离网页内部操作。
 
 ## 文档
 

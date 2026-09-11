@@ -21,6 +21,7 @@ tests. Search for the named symbols rather than relying on line numbers.
 | Interactive commands and `/new` | [interactive_commands.go](../internal/app/interactive_commands.go), [tui/command.go](../internal/tui/command.go) | [interactive_commands_test.go](../internal/app/interactive_commands_test.go), [command_test.go](../internal/tui/command_test.go) |
 | Side conversations | [app/side_thread.go](../internal/app/side_thread.go), [tui/side_thread.go](../internal/tui/side_thread.go) | [side_thread_lifecycle_test.go](../internal/app/side_thread_lifecycle_test.go), [tui/side_thread_test.go](../internal/tui/side_thread_test.go) |
 | Provider and protocol changes | [providers.go](../internal/app/providers.go), [provider](../internal/provider), [api](../internal/api) | The affected provider and protocol adapter tests; shared fixtures in [apitest](../internal/apitest) |
+| Browser lifecycle | [browser](../internal/browser), [app/browser.go](../internal/app/browser.go), [deps/agentbrowser.go](../internal/deps/agentbrowser.go) | [native_test.go](../internal/browser/native_test.go), [app/browser_test.go](../internal/app/browser_test.go) |
 | Print integrations | [json_printer.go](../internal/app/json_printer.go), [Harbor adapter](../integrations/harbor/aice_agent.py) | [stream_printer_test.go](../internal/app/stream_printer_test.go), [Harbor guide](../integrations/harbor/README.md) |
 
 For a new feature, identify what state it adds, who owns that state, how it
@@ -96,5 +97,19 @@ historical documentation.
 
 ## Known discrepancies
 
-No confirmed unresolved entries are recorded. This is not a claim of exhaustive
-correctness or security coverage; add evidence using the procedure above.
+### Browser acceptance gaps
+
+The [browser acceptance matrix](browser.md#maintenance-and-verification) records
+native macOS/Linux coverage separately from offline fixtures. Full real-model
+browsing/vision and print, inspect auto-detect with Chrome Allow and login state,
+kill/restart, simultaneous external connections, tab/browser loss, and Linux
+external-browser/TUI acceptance remain unverified. Complete these cases on an
+isolated user-approved profile before claiming the entire matrix passes. Release
+bytes match npm for all supported assets, but a second independent network check
+remains outstanding. Windows browser support is deliberately disabled pending
+native lifecycle/Job Object validation: the daemon must survive completion of
+the launching bash command before Windows support can be enabled.
+
+Upstream 0.37.1 cancellation stops the CLI while an already queued browser wait
+can delay later commands. Acceptance must allow eventual recovery and require a
+fresh observation; it must not claim immediate action cancellation or rollback.

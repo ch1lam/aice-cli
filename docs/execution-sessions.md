@@ -15,6 +15,11 @@ gate. File policies and path access do not apply to it.
 `--workspace` sets the default working directory and is the boundary used by
 the path-access gate; it is not a sandbox.
 
+Browser commands pass through the same bash gate. It can check command strings
+and screenshot paths, but does not enforce website action or domain isolation.
+Browser skills provide behavioral guidance rather than a security boundary; see
+[Browser automation](browser.md#screenshots-and-authority).
+
 This section is the source of truth for Guard product behavior. Other
 documents should link here instead of restating these lists.
 
@@ -438,7 +443,10 @@ file; the next accepted prompt starts a fresh one. A previous file that
 recorded messages is left untouched and stays resumable with `--session`.
 `/clear` only clears the visible transcript. `/new` does not rebuild the
 process environment: prompt files and skill discovery are reused. Dynamic Guard
-grants are cleared. Restart AICE to reload prompt files or Skills.
+grants are cleared. The ephemeral browser session is closed, its generation
+advances and its external connection environment is cleared. Browser state is
+never restored from history; see [Browser automation](browser.md). Restart AICE
+to reload prompt files or Skills.
 
 ## Recovery and compaction
 

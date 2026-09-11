@@ -37,6 +37,7 @@ and routes; README files may summarize product behavior and link to details.
 | Task area | Read |
 | --- | --- |
 | Product overview and quickstart | [README.md](README.md) and [README-zh.md](README-zh.md); keep both in sync |
+| Browser automation, connection, tabs and lifecycle | [Browser automation](docs/browser.md) |
 | Installation, helper binaries, source builds, updates | [Installation](docs/installation.md) |
 | Providers, models, reasoning, credentials, flags, Skills, TUI input | [Configuration](docs/configuration.md) |
 | Project Trust, prompt precedence, protected resources, `/init` | [Project Trust](docs/project-trust.md) |

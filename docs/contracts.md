@@ -6,6 +6,7 @@
 | --- | --- |
 | Process | One AICE invocation; `internal/app` prepares its workspace, startup prompt, skills, and dependencies |
 | Session | One durable JSONL tree, potentially resumed by later processes; `/new` detaches it |
+| Browser session | Ephemeral process/generation state owned by `internal/browser`, wired by app; see [Browser automation](browser.md#ownership-and-lifetime) |
 | Agent run | One `Loop.Run` call: the initial interaction plus queued follow-ups, with frozen dependencies |
 | Interaction | Initial/follow-up user input, in-interaction steers, and model/tool rounds until settlement; its source messages are persisted individually |
 | Model round | One assistant response and its paired tool results; `turn_start`/`turn_end` events refer to this level |

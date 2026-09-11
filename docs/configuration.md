@@ -672,6 +672,8 @@ See [Project Trust and prompts](project-trust.md).
 
 At startup AICE injects only each skill's name and description into the
 system prompt. The agent loads the body on demand through the `skill` tool.
+The builtin `browser` skill describes browsing through `bash` and `read`; see
+[Browser automation](browser.md) for installation and connection requirements.
 Discovery and wiring are in [Skills](architecture.md#skills).
 
 Skill directories on disk are allowed automatically for read-class tools
@@ -695,6 +697,7 @@ short terminals show the card alone when the logo does not fit.
 | `/btw [question]` | Create or choose an ephemeral, tool-free side thread |
 | `/init` | Create or improve root `AGENTS.md`; loaded after restart |
 | `/settings` | Show effective model, Trust state, and configuration paths |
+| `/browser` | Browser status, connection, tab selection and close; `/browser status` also works |
 | `/skills` | List Agent Skills loaded for this Session |
 | `/login` | Choose account or API key, then provider; Codex offers browser/device login; `custom` uses endpoint → key (may be empty) → model |
 | `/provider` | Select and save the global provider |
@@ -907,7 +910,8 @@ Dragged file paths and separate print-mode image flags are not implemented;
 
 | Variable | Effect |
 | --- | --- |
-| `AICE_NO_DEP_INSTALL=1` | Do not download missing ripgrep or Windows Git Bash helpers |
+| `AICE_NO_DEP_INSTALL=1` | Disable ripgrep, Windows Git Bash and agent-browser downloads |
+| `AGENT_BROWSER_EXECUTABLE_PATH` | Use an installed browser executable; see [Browser automation](browser.md) |
 | `AICE_NO_UPDATE_CHECK=1` | Disable the interactive update check |
 
 Installation, helper provisioning, and self-update details live in

@@ -60,6 +60,11 @@ AICE uses Bash and ripgrep (`rg`). At startup it looks on `PATH` and in
 - On Windows, missing Git Bash is downloaded as the Bash runtime.
 - On macOS and Linux, Bash must already be available on the host.
 
+On macOS and Linux, AICE also provisions a private, checksum-pinned native
+`agent-browser` helper and its embedded upstream skills. Startup download
+progress goes to stderr. AICE does not download a browser automatically; see
+[Browser automation](browser.md) for supported platforms and connection setup.
+
 Set `AICE_NO_DEP_INSTALL=1` to disable helper downloads. A missing helper only
 disables the tools that require it; AICE reports the degraded capability.
 

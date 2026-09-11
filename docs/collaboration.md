@@ -99,3 +99,20 @@ the need for each abstraction. Agree on models and cost before paid evaluation.
 - When the user asks for incremental commits, make one independently verified commit after each completed small step.
 - When asked to commit, follow the repository's existing short gitmoji/conventional subject style and keep each commit to one intent. Do not use Pi package scopes or release conventions.
 - If a conflict touches a file not modified for the current task, stop and ask the user instead of resolving it speculatively.
+
+## Browser checks
+
+The default browser/dependency tests use fake commands and local HTTP fixtures,
+not downloads or user profiles. The opt-in native test requires the verified
+pinned helper plus installed Chrome/Chromium/Brave:
+
+```sh
+AICE_BROWSER_TEST_HELPER=/absolute/path/to/agent-browser \
+  go test -tags=integration ./internal/browser -run '^TestNativeManagedBrowserLifecycle$' -v
+```
+
+It uses an isolated session, a local data-URL form, snapshots, input actions,
+screenshot PNG decoding, close/sidecar checks and a fresh generation. Never point
+it at the user's live profile. Actual `/browser` TUI, external CDP connection and
+Chrome Allow acceptance need a dedicated profile and a desktop. Keep native,
+scripted-model and actual model evidence separate in the [acceptance matrix](browser.md#maintenance-and-verification).

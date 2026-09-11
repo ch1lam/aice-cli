@@ -31,6 +31,9 @@ runtime helpers, source builds, and `aice update`.
 
 ## Quickstart
 
+Use `/browser` to connect to a running browser or choose its working tab; see
+[Browser automation](./docs/browser.md) for setup.
+
 Start an interactive Session inside a project:
 
 ```sh
@@ -94,6 +97,7 @@ aice --workspace . --session .aice/sessions/<session-id>.jsonl
 | Providers | DeepSeek V4, OpenCode Go's built-in catalog, Kimi Coding Plan (Responses API), Moonshot API Platform, Zhipu API Platform and Coding Plan, OpenAI GPT-5.6 API, Codex/ChatGPT subscription, and Custom (OpenAI-compatible) |
 | Protocols | Anthropic Messages, OpenAI Responses, OpenAI Chat Completions |
 | Tools | `read`, `write`, `edit`, `bash`, `grep`, `find`, `ls`, `skill` |
+| Browser | Native agent-browser through `bash`/`read`, builtin browser skill, `/browser` connection and tab controls; see [Browser automation](./docs/browser.md) |
 | Guard | path and dangerous-command checks with interactive approvals; see [Tool execution and Sessions](./docs/execution-sessions.md#tool-execution-boundary) |
 | Sessions | restart recovery, branches, checkout/backtracking, automatic and manual compaction |
 | Side questions | multiple ephemeral, tool-free `/btw` threads outside Session history |
@@ -106,6 +110,9 @@ working directory and path-access boundary; it is not a sandbox. Project Trust
 gates project prompt files and project `.agents/skills`; see [Project Trust and
 prompts](./docs/project-trust.md). For stronger isolation use an external
 container/VM.
+
+Browser automation requires installed Chrome/Chromium/Brave; AICE does not
+automatically download a browser. Guard does not isolate actions inside websites.
 
 ## Documentation
 
