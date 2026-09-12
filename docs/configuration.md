@@ -758,7 +758,8 @@ and sibling calls. Closing a parent preserves its children's choices.
 Fold state is transient presentation state, cleared with the visible transcript.
 
 Move the mouse over a fold heading to brighten its text without adding a
-background. Tool paths and Skill names stay gold with a dashed underline
+background. Tool paths and Skill names are gray while collapsed and idle;
+hovering or expanding the tool makes them gold with a dashed underline
 (the underline appearance depends on terminal support). Left-click
 (press and release without dragging) toggles that heading. The clicked heading
 stays at its screen position where possible. Dragging text still selects and

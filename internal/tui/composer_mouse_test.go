@@ -50,21 +50,42 @@ func TestComposerBorderInteraction(t *testing.T) {
 	}
 }
 
-func TestToolPathStyleSurvivesHover(t *testing.T) {
-	m := foldTestModel()
-	m.entries[2].toolDetail = "目录/README.md"
-	m.refreshViewport(false)
-	before := m.View().Content
-	m = updateModel(t, m, tea.MouseMotionMsg(paintedMouse(t, m, "✓ read")))
-	after := m.View().Content
-	for _, view := range []string{before, after} {
-		if !strings.Contains(view, "4:5") || !strings.Contains(view, "38;2;201;160;99") {
-			t.Fatal("tool path must keep its gold dashed underline")
-		}
-	}
-	for _, row := range strings.Split(after, "\n") {
-		if strings.Contains(ansi.Strip(row), "README.md") && strings.Contains(row, "48;") {
-			t.Fatal("hover introduced a background color")
-		}
+func TestToolPathStyleFollowsHoverAndExpansion(t *testing.T) {
+	for _, name := range []string{"read", "ls", "find", "grep", "write", "edit", "skill"} {
+		t.Run(name, func(t *testing.T) {
+			m := foldTestModel()
+			m.entries[2].toolName = name
+			m.entries[2].toolDetail = "目录/README.md"
+			m.refreshViewport(false)
+			assertTargetStyle := func(gold bool) {
+				t.Helper()
+				for _, row := range strings.Split(m.View().Content, "\n") {
+					if !strings.Contains(ansi.Strip(row), "✓ "+name+"  目录/README.md") {
+						continue
+					}
+					if strings.Contains(row, "4:5") != gold || strings.Contains(row, "38;2;201;160;99") != gold {
+						t.Fatalf("target gold/underline = %v expected: %q", gold, row)
+					}
+					if strings.Contains(row, "\x1b[48;") || strings.Contains(row, ";48;") {
+						t.Fatal("target introduced a background color")
+					}
+					return
+				}
+				t.Fatal("missing tool heading")
+			}
+			assertTargetStyle(false)
+			heading := "✓ " + name + "  目录/README.md"
+			m = updateModel(t, m, tea.MouseMotionMsg(paintedMouse(t, m, heading)))
+			assertTargetStyle(true)
+			m = updateModel(t, m, tea.MouseMotionMsg{X: 0, Y: 0})
+			assertTargetStyle(false)
+			m = clickPainted(t, m, heading)
+			m = updateModel(t, m, tea.MouseMotionMsg{X: 0, Y: 0})
+			assertTargetStyle(true)
+			m = clickPainted(t, m, heading)
+			assertTargetStyle(true)
+			m = updateModel(t, m, tea.MouseMotionMsg{X: 0, Y: 0})
+			assertTargetStyle(false)
+		})
 	}
 }

@@ -31,7 +31,9 @@ func (m model) toolHeaderStyled(entry transcriptEntry, hovered bool) string {
 	if entry.toolDetail != "" {
 		switch entry.toolName {
 		case "read", "ls", "find", "grep", "write", "edit", "skill":
-			detailStyle = toolTargetStyle
+			if hovered || entry.toolExpanded {
+				detailStyle = toolTargetStyle
+			}
 		}
 		detail := strings.Join(strings.Fields(entry.toolDetail), " ")
 		heading += "  " + detailStyle.Render(ansi.Truncate(detail, max(m.contentWidth()-20, 1), "…"))
