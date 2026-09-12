@@ -76,11 +76,15 @@ func (m *model) expandAllDetails(expanded bool) {
 }
 
 func foldHeading(label string, expanded bool, indent int) string {
+	return foldHeadingStyled(label, expanded, indent, mutedStyle)
+}
+
+func foldHeadingStyled(label string, expanded bool, indent int, style lipgloss.Style) string {
 	arrow := "▸"
 	if expanded {
 		arrow = "▾"
 	}
-	return strings.Repeat(" ", indent) + mutedStyle.Render(arrow) + " " + label
+	return strings.Repeat(" ", indent) + style.Render(arrow) + " " + label
 }
 
 func (m model) processContentItems(start, end int) []transcriptItem {
@@ -145,6 +149,7 @@ func (m model) foldedToolItems(index int) []transcriptItem {
 	heading := foldHeading(m.toolHeaderView(entry), entry.toolExpanded, 4)
 	header := staticTranscriptItem(index*16+9, heading)
 	header.fold = target
+	header.hoverText = foldHeadingStyled(m.toolHeaderStyled(entry, true), entry.toolExpanded, 4, transcriptHoverStyle)
 	items := []transcriptItem{header}
 	if entry.toolExpanded {
 		items = append(items, transcriptItem{key: index*16 + 10, version: entry, render: func() string {

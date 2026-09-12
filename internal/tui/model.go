@@ -131,6 +131,7 @@ type model struct {
 	selection         transcriptSelection
 	folds             map[foldTarget]bool
 	pointer           transcriptPointer
+	composerActive    bool
 	input             textarea.Model
 	spinner           spinner.Model
 	help              help.Model
@@ -330,9 +331,24 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case tea.KeyPressMsg:
 		m.selection.clear()
+		if message.Code == tea.KeyEscape {
+			m.composerActive = false
+		} else if m.composerInputEnabled() && m.input.Focused() {
+			switch message.Code {
+			case tea.KeyBackspace, tea.KeyDelete, tea.KeyLeft, tea.KeyRight, tea.KeyHome, tea.KeyEnd, tea.KeyEnter:
+				m.composerActive = true
+			default:
+				if message.Text != "" {
+					m.composerActive = true
+				}
+			}
+		}
 		updated, command, handled := m.handleKey(message)
 		m = updated
 		if handled {
+			if key.Matches(message, m.keys.send, m.keys.queue) && m.input.Value() == "" {
+				m.composerActive = false
+			}
 			return m, command
 		}
 		if m.composerInputEnabled() {
@@ -341,6 +357,9 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case tea.MouseClickMsg:
 		m.trackPointer(message.Mouse())
+		if message.Button == tea.MouseLeft {
+			m.composerActive = m.composerContains(message.Mouse(), max(m.width, minimumWidth))
+		}
 		if m.guardPending != nil {
 			return m, nil
 		}
@@ -374,6 +393,7 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case tea.BlurMsg:
 		m.pointer = transcriptPointer{}
+		m.composerActive = false
 		m.selection.clear()
 		return m, nil
 	case editorFinishedMsg:
@@ -883,6 +903,7 @@ func (m model) helpToggleRequested(message tea.KeyPressMsg) bool {
 func (m *model) updateInput(message tea.Msg) tea.Cmd {
 	if _, pasted := message.(tea.PasteMsg); pasted {
 		m.clearQuitPending = false
+		m.composerActive = true
 	}
 	if m.authInput != nil {
 		if paste, ok := message.(tea.PasteMsg); ok {

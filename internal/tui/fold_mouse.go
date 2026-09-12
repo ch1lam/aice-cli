@@ -6,7 +6,7 @@ import (
 )
 
 var transcriptHoverStyle = lipgloss.NewStyle().
-	Foreground(primaryTextColor).Background(panelBlackColor)
+	Foreground(primaryTextColor)
 
 type transcriptPointer struct {
 	x, y  int

@@ -8,6 +8,10 @@ import (
 )
 
 func (m model) toolHeaderView(entry transcriptEntry) string {
+	return m.toolHeaderStyled(entry, false)
+}
+
+func (m model) toolHeaderStyled(entry transcriptEntry, hovered bool) string {
 	icon := m.spinner.View()
 	style := lipgloss.NewStyle().Foreground(accentColor)
 	if entry.toolPreparing {
@@ -19,13 +23,25 @@ func (m model) toolHeaderView(entry transcriptEntry) string {
 			icon, style = "✕", errorStyle
 		}
 	}
-	heading := style.Render(icon) + " " + toolNameStyle.Render(entry.toolName)
+	nameStyle, detailStyle := toolNameStyle, mutedStyle
+	if hovered {
+		style, nameStyle, detailStyle = transcriptHoverStyle, transcriptHoverStyle.Bold(true), transcriptHoverStyle
+	}
+	heading := style.Render(icon) + " " + nameStyle.Render(entry.toolName)
 	if entry.toolDetail != "" {
+		switch entry.toolName {
+		case "read", "ls", "find", "grep", "write", "edit", "skill":
+			detailStyle = toolTargetStyle
+		}
 		detail := strings.Join(strings.Fields(entry.toolDetail), " ")
-		heading += "  " + mutedStyle.Render(ansi.Truncate(detail, max(m.contentWidth()-20, 1), "…"))
+		heading += "  " + detailStyle.Render(ansi.Truncate(detail, max(m.contentWidth()-20, 1), "…"))
 	}
 	if entry.toolPreparing {
-		heading += mutedStyle.Render("  preview · not executed")
+		previewStyle := mutedStyle
+		if hovered {
+			previewStyle = transcriptHoverStyle
+		}
+		heading += previewStyle.Render("  preview · not executed")
 	}
 	return heading
 }

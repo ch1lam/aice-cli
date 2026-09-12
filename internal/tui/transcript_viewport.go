@@ -15,9 +15,11 @@ type transcriptItem struct {
 	fold    foldTarget
 	version any
 	render  func() string
-	gap     int
-	lines   []string
-	width   int
+	// Optional styled header variant; it must have identical text and wrapping.
+	hoverText string
+	gap       int
+	lines     []string
+	width     int
 }
 
 // transcriptViewport anchors scrolling to an item and a row inside it. It does
@@ -204,6 +206,7 @@ func (v transcriptViewport) View() string {
 // measuring all preceding history (YOffset deliberately isn't that measure).
 type transcriptRow struct {
 	text string
+	item int
 	key  int
 	line int
 	fold foldTarget
@@ -221,7 +224,7 @@ func (v transcriptViewport) visibleRows() []transcriptRow {
 			continue
 		}
 		for line := skip; line < height && len(rows) < v.height; line++ {
-			row := transcriptRow{key: item.key, line: line}
+			row := transcriptRow{item: i, key: item.key, line: line}
 			if line >= item.gap {
 				row.text, row.fold = lines[line-item.gap], item.fold
 			}
@@ -233,11 +236,20 @@ func (v transcriptViewport) visibleRows() []transcriptRow {
 }
 
 func (v transcriptViewport) viewWithHover(hover foldTarget) string {
+	var hoverLines []string
+	hoverGap := 0
 	lines := make([]string, 0, v.height)
 	for _, row := range v.visibleRows() {
 		text := row.text
 		if hover.kind != foldNone && row.fold == hover {
-			text = transcriptHoverStyle.Width(v.width).Render(ansi.Strip(text))
+			if item := v.items[row.item]; hoverLines == nil && item.hoverText != "" {
+				hoverLines = wrapTranscriptLines(item.hoverText, v.width)
+				hoverGap = item.gap
+			}
+			text = transcriptHoverStyle.Render(ansi.Strip(text))
+			if line := row.line - hoverGap; line >= 0 && line < len(hoverLines) {
+				text = hoverLines[line]
+			}
 		}
 		lines = append(lines, text)
 	}

@@ -54,7 +54,7 @@ func TestModelRendersOneProcessHeadingPerProcess(t *testing.T) {
 	assertTranscriptGap(t, transcript, "FINAL_REASONING", "FINAL_OUTPUT", 2)
 }
 
-func TestModelRendersSkillNameAsMutedToolDetail(t *testing.T) {
+func TestModelRendersSkillNameAsGoldToolTarget(t *testing.T) {
 	t.Parallel()
 
 	current := newModel(make(chan runRequest), make(chan struct{}))
@@ -73,9 +73,9 @@ func TestModelRendersSkillNameAsMutedToolDetail(t *testing.T) {
 	transcript := current.transcriptView()
 	wantSummary := lipgloss.NewStyle().Foreground(successColor).Render("✓") + " " +
 		toolNameStyle.Render("skill") + "  " +
-		mutedStyle.Render("samber/cc-skills-golang@golang-how-to")
+		toolTargetStyle.Render("samber/cc-skills-golang@golang-how-to")
 	if !strings.Contains(transcript, wantSummary) {
-		t.Fatalf("skill summary = %q, want muted skill detail %q", transcript, wantSummary)
+		t.Fatalf("skill summary = %q, want gold skill detail %q", transcript, wantSummary)
 	}
 }
 

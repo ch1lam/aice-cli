@@ -55,6 +55,8 @@ var (
 	toolNameStyle = lipgloss.NewStyle().
 			Bold(true).
 			Foreground(informationColor)
+	toolTargetStyle = lipgloss.NewStyle().Foreground(secondaryColor).
+			UnderlineStyle(lipgloss.UnderlineDashed).UnderlineSpaces(true)
 	userStyle = lipgloss.NewStyle().
 			BorderLeft(true).
 			BorderStyle(lipgloss.ThickBorder()).
@@ -72,7 +74,7 @@ var (
 				Border(lipgloss.RoundedBorder()).
 				BorderForeground(accentColor).
 				Padding(0, 1)
-	composerBlurredStyle  = composerFocusedStyle.BorderForeground(subtleColor)
+	composerBlurredStyle  = composerFocusedStyle.BorderForeground(mutedTextColor)
 	slashCommandMenuStyle = lipgloss.NewStyle().
 				Border(lipgloss.RoundedBorder()).
 				BorderForeground(subtleColor).

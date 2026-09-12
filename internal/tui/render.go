@@ -165,10 +165,14 @@ func (m model) composerParts(contentWidth int) []string {
 }
 
 func (m model) composerView(width int) string {
-	style := composerFocusedStyle
-	if !m.input.Focused() {
-		style = composerBlurredStyle
+	style := composerBlurredStyle
+	if m.input.Focused() && (m.composerActive || m.composerHovered(width)) {
+		style = composerFocusedStyle
 	}
+	return m.composerViewWithStyle(width, style)
+}
+
+func (m model) composerViewWithStyle(width int, style lipgloss.Style) string {
 	contentWidth := max(width-style.GetHorizontalFrameSize(), 1)
 	if m.secretInput != nil || m.authInput != nil {
 		value := mutedStyle.Render(m.input.Placeholder)
