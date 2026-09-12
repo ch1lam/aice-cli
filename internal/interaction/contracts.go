@@ -207,6 +207,7 @@ type AssistantDisplay struct {
 // tool input already extracted for display by the application bridge. Content
 // is write input; HasContent distinguishes an empty file from absent input.
 type ToolDisplay struct {
+	Output     ToolOutputDisplay
 	Diff       DiffDisplay
 	Truncation TruncationDisplay
 	ID         string
@@ -215,6 +216,15 @@ type ToolDisplay struct {
 	Failed     bool
 	Content    string
 	HasContent bool
+}
+
+// ToolOutputDisplay is a bounded, immutable projection of a tool result.
+// Available distinguishes an empty result from a result that was not supplied.
+// Truncated describes this display projection, not the source tool's limits.
+type ToolOutputDisplay struct {
+	Text      string
+	Available bool
+	Truncated bool
 }
 
 // DiffDisplay contains only a tool-produced completed mutation view.

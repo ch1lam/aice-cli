@@ -203,6 +203,13 @@ normal transcript cache key, including replayed result projections.
 
 ## Internal events
 
+Tool-end events include a frontend-only `ToolOutputDisplay`: the first 64 KiB
+of recorded result text, cut at a UTF-8 boundary with explicit display truncation.
+Non-text parts are labelled rather than copying image payloads. An empty result
+is distinguished from unavailable output; execution errors supply text when no
+result text exists. This projection never rereads workspace files or changes
+Session content, provider input, or print output.
+
 [agent.EventType](../internal/agent/contracts.go) defines the closed string set
 for Agent lifecycle events. [interaction.EventKind](../internal/interaction/contracts.go)
 defines the frontend's internal numeric enum. Use those declarations when

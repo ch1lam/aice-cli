@@ -66,6 +66,7 @@ func translateAgentEvent(event agent.AgentEvent) *interaction.Event {
 			return &interaction.Event{
 				Kind: interaction.EventToolEnd,
 				Tool: interaction.ToolDisplay{
+					Output:     displayToolOutput(event),
 					ID:         event.ToolCall.ID,
 					Failed:     event.Err != nil || (event.ToolResult != nil && event.ToolResult.IsError),
 					Diff:       displayToolDiff(event),
