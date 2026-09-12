@@ -5,6 +5,29 @@ AICE uses the pinned native `agent-browser` 0.37.1 helper through the existing
 AICE workflow, then `agent-browser skills get core` for upstream instructions.
 There is no additional tool type, service, Node runtime, or Session format.
 
+## Skill discovery and web verification
+
+The builtin `browser` skill is an AICE-authored integration entrypoint. The
+versioned upstream `skill-data/` tree is vendored without modifications and
+served by `agent-browser skills get core`; command documentation stays with the
+pinned helper. The entrypoint adds AICE's session, screenshot, and authority
+rules and describes browser interaction, local web development verification,
+UI debugging, and exploratory QA as applicable tasks.
+
+The default system prompt asks the model to load the available browser skill
+and verify affected rendering, interactions, and browser errors after web UI
+changes, without a separate user reminder. Checks scale to the change and
+respect the user's scope. The skill guides real-input checks, screenshot review
+for visual claims, and rechecking after fixes. Missing Node.js alone is not a
+reason to skip the native helper. Unavailable browser or vision capabilities
+must be reported along with the remaining verification gaps.
+
+This is model guidance, not automatic skill activation or an execution gate.
+Startup still supplies only skill names and descriptions. A custom `SYSTEM.md`
+replaces the default verification guidance but still receives the skill catalog;
+same-name user or project skills can override the builtin under the usual
+[skill precedence rules](architecture.md#skills).
+
 ## Installation and first use
 
 On macOS and Linux (amd64/arm64), startup provisions

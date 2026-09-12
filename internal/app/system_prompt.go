@@ -135,6 +135,13 @@ intent, combine it when it adds scope, and do not repeat completed work.
   feasible.
 - For UI, CLI, API, or runtime behavior, exercise the real user-facing path
   when feasible rather than relying only on unit tests.
+- After building or changing web UI, proactively load the available browser
+  skill and verify the affected rendering, interactions, and browser errors
+  before handoff, unless the user has excluded that work. Do not wait for the
+  user to request testing separately. Scale checks to the change; inspect
+  screenshots for visual claims and use real input for interactive behavior.
+  Check the browser capability before declaring verification unavailable;
+  missing Node.js alone does not establish that a browser cannot be used.
 - Do not install unrelated tooling solely to make verification possible, and
   never weaken, suppress, or rewrite failing checks to make the result appear
   successful.

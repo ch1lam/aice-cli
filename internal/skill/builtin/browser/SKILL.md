@@ -1,9 +1,12 @@
 ---
 name: browser
-description: Operate web pages through agent-browser using bash and read; navigate, inspect, fill forms, and capture screenshots within AICE's browser session.
+description: Use agent-browser for website interaction, screenshots, and web app testing. Use when building or changing local web UI, games, or visualizations that need browser verification, debugging UI behavior, or performing exploratory QA; also for navigation, forms, and data extraction.
 ---
 
 # Browser use in AICE
+
+This is AICE's integration guide. Load the official, version-matched command
+instructions through the CLI as described below.
 
 Run `agent-browser --version` first. If unavailable, tell the user to restart
 AICE or check their network and `AICE_NO_DEP_INSTALL`. Browser automation is
@@ -28,6 +31,27 @@ examples use different flags or paths.
 Use the loop: `open` → `snapshot -i` → action → `snapshot -i`.
 Only use refs from the latest snapshot. Observe again after navigation,
 form submission, tab switching, and dialogs. Never guess element refs.
+
+## Verify web changes
+
+After building or changing a web interface, use the browser to check the affected
+behavior before handing it off, without waiting for a separate testing request.
+Scale checks to the change and respect the user's requested scope.
+
+Start or reuse the project's local server as needed. Check browser console and
+page errors, exercise the relevant controls with real input, and confirm the
+visible results. For canvas/WebGL, animation, or visual styling, inspect
+screenshots with `read`; DOM state alone does not establish visual correctness.
+Check the initial view and relevant states after interaction. After a fix, reload
+and repeat the affected checks. Use `agent-browser skills get dogfood` for a
+requested broader exploratory QA pass.
+
+The native helper does not require Node.js. Check its actual availability before
+skipping browser verification. If browser access or image inspection is blocked,
+report the specific limitation and distinguish completed checks from unverified
+visual or interactive behavior.
+
+## Screenshots and session boundaries
 
 For a named screenshot, explicitly pass the workspace-relative directory:
 
