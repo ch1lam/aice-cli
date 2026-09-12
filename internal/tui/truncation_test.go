@@ -23,6 +23,7 @@ func TestToolTruncationStatusInTranscript(t *testing.T) {
 			m.width = 160
 			m.height = 30
 			m.applyAgentEvent(DisplayEvent{Kind: DisplayEventToolStart, Tool: ToolDisplay{ID: "read-1", Name: "read", Detail: "file.txt"}})
+			m.expandAllDetails(true)
 			// Populate the viewport cache before tool completion to catch stale status rows.
 			m.refreshViewport(true)
 			m.applyAgentEvent(DisplayEvent{Kind: DisplayEventToolEnd, Tool: ToolDisplay{ID: "read-1", Truncation: tt.details}})

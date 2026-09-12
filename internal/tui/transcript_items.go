@@ -61,28 +61,11 @@ func (m model) transcriptItems() []transcriptItem {
 				Group      processGroup
 				Start, End int
 			}{g, start, end}
-			add(transcriptItem{key: start*8 + 4, version: version, render: func() string { return m.processHeader(start, end, g.collapsed) }}, 1)
+			add(transcriptItem{key: start*16 + 4, version: version, render: func() string { return m.processHeader(start, end, g.collapsed) }}, 1)
+			items[len(items)-1].fold = foldTarget{kind: foldProcess, id: g.id}
 			if !g.collapsed {
-				first, previousTool := true, false
-				for i := start; i < end; i++ {
-					entry := m.entries[i]
-					entry.toolExpanded = g.detailsExpanded
-					live := m.running && i == m.assistantEntry && !entry.complete
-					mode := transcriptProcess
-					if entry.kind == entryAssistant && entry.conclusion {
-						mode = transcriptThinking
-						live = false
-					}
-					if entry.kind == entryAssistant && !assistantHasContent(entry, live, true, mode != transcriptThinking) {
-						continue
-					}
-					gap := 1
-					if first || previousTool && entry.kind == entryTool {
-						gap = 0
-					}
-					add(m.transcriptEntryItem(i, entry, live, mode), gap)
-					first = false
-					previousTool = entry.kind == entryTool
+				for _, item := range m.processContentItems(start, end) {
+					add(item, item.gap)
 				}
 			}
 		}
@@ -92,7 +75,7 @@ func (m model) transcriptItems() []transcriptItem {
 			if assistantHasContent(entry, live, false, true) {
 				if !hasProcess {
 					text := m.assistantHeaderView(entry.processID)
-					add(staticTranscriptItem(start*8+4, text), 1)
+					add(staticTranscriptItem(start*16+4, text), 1)
 				}
 				add(m.transcriptEntryItem(conclusion, entry, live, transcriptConclusion), 1)
 			}
@@ -140,7 +123,7 @@ func (m *model) transcriptEntryItem(index int, e transcriptEntry, active bool, m
 		Mode                transcriptEntryMode
 		Animation, Duration string
 	}{e, active, mode, animation, duration}
-	return transcriptItem{key: index*8 + int(mode), version: version, render: func() string {
+	return transcriptItem{key: index*16 + int(mode), version: version, render: func() string {
 		if mode == transcriptStandalone || e.kind != entryAssistant {
 			return m.entryView(e, active)
 		}

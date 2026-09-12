@@ -36,6 +36,9 @@ func TestLongThinkingPreviewPreservesCompleteMessage(t *testing.T) {
 			prefix := "BEGINNING " + strings.Repeat("中文推理🙂 ", 6000)
 			apply(DisplayEvent{Kind: DisplayEventAssistantDelta, Delta: DisplayDelta{Kind: DisplayDeltaThinking, Delta: prefix}})
 			apply(DisplayEvent{Kind: DisplayEventAssistantDelta, Delta: DisplayDelta{Kind: DisplayDeltaThinking, Delta: " LATEST"}})
+			if !side {
+				m.setFoldExpanded(foldTarget{kind: foldThinking, id: 0}, true)
+			}
 			preview := view()
 			if !utf8.ValidString(preview) || !strings.Contains(preview, "LATEST") ||
 				!strings.Contains(preview, liveThinkingNotice) || strings.Contains(preview, "BEGINNING") {

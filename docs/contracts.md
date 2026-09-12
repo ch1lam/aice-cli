@@ -335,7 +335,10 @@ the final JSON event from being delivered.
   rendering; lifecycle updates flush the batch immediately. Main and side
   views use the same batching rule. Only the update loop owns assistant
   accumulation buffers and per-section caches, keyed by source and width.
-  Collapsed process contents are not rendered. During streaming, thinking
+  Process, contiguous-call-group, thinking and tool folds are independent TUI
+  state; parent folds retain child choices. Manual choices override automatic
+  process folding during streaming. Only visible branch resets clear them.
+  Collapsed contents are not rendered. During streaming, thinking
   renders only a UTF-8-safe tail of at most 4 KiB plus an omission notice;
   full content remains in the presentation snapshot and becomes available
   on completion. These display limits never truncate Session or model context.
@@ -344,8 +347,8 @@ the final JSON event from being delivered.
   call and parses only for presentation when visible, using the existing event
   batching and item cache. Complete calls replace the partial preview; execution
   start reconciles the same row by call ID. A preview never authorizes execution.
-  Default rendering bounds source input to 10 lines / 4 KiB; explicit process
-  expansion raises this to 2000 lines / 64 KiB. Lines are clipped before syntax
+  Tool bodies start folded. Expanded write previews bound source input to
+  2000 lines / 64 KiB. Lines are clipped before syntax
   highlighting and terminal control characters are replaced. These limits affect
   neither tool arguments nor Session history.
   Main and BTW transcripts use an item-anchored viewport: scrolling records a

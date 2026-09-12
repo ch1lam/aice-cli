@@ -565,42 +565,7 @@ func (m model) entryView(
 			true,
 		)
 	case entryTool:
-		icon := m.spinner.View()
-		style := lipgloss.NewStyle().Foreground(accentColor)
-		if entry.toolPreparing {
-			icon = "…"
-		}
-		if entry.toolDone {
-			icon = "✓"
-			style = lipgloss.NewStyle().Foreground(successColor)
-			if entry.toolError {
-				icon = "✕"
-				style = errorStyle
-			}
-		}
-		summary := style.Render(icon) + " " +
-			toolNameStyle.Render(entry.toolName)
-		if entry.toolName != "bash" && entry.toolDetail != "" {
-			summary += "  " + mutedStyle.Render(entry.toolDetail)
-		}
-		if entry.toolName == "bash" && entry.toolDetail != "" {
-			summary += "\n" + mutedStyle.Render("$ "+entry.toolDetail)
-		}
-		if entry.toolPreparing {
-			summary += mutedStyle.Render("  preview · not executed")
-		}
-		if entry.writePreview != nil {
-			summary += "\n" + entry.writePreview.view(max(width-4, 1), entry.toolExpanded)
-		}
-		if entry.toolDone && !entry.toolError && (entry.toolDiff.Text != "" || entry.toolDiff.Truncated) {
-			summary += "\n" + editDiffView(entry.toolDiff, max(width-4, 1), entry.toolExpanded)
-		}
-		if entry.toolDone && entry.toolTruncation.Reason != "" {
-			summary += "\n" + noticeStyle.Render(toolTruncationStatus(entry.toolTruncation))
-		}
-		return lipgloss.NewStyle().Padding(0, 2).Render(
-			summary,
-		)
+		return m.toolHeaderView(entry) + "\n" + m.toolBodyView(entry)
 	case entryError:
 		return lipgloss.NewStyle().Padding(0, 1).Render(
 			errorStyle.Render("✕ Error  " + entry.text),

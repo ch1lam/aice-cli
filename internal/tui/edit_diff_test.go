@@ -29,6 +29,7 @@ func TestCompletedEditDiffInTranscript(t *testing.T) {
 				t.Fatal("premature diff")
 			}
 			m.applyAgentEvent(DisplayEvent{Kind: DisplayEventToolEnd, Tool: ToolDisplay{ID: "edit-1", Failed: tt.failed, Diff: tt.diff}})
+			m.expandAllDetails(true)
 			m.refreshViewport(true)
 			view := ansi.Strip(m.transcriptView())
 			if tt.want != "" && !strings.Contains(view, tt.want) {

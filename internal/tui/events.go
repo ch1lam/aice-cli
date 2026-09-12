@@ -47,7 +47,7 @@ func (m *model) markConclusion() bool {
 
 	changed := !entry.conclusion
 	entry.conclusion = true
-	if group := m.processGroup(entry.processID); group != nil {
+	if group := m.processGroup(entry.processID); group != nil && !group.manual {
 		changed = changed || !group.collapsed
 		group.collapsed = true
 	}
@@ -65,7 +65,7 @@ func (m *model) revokeConclusion() bool {
 
 	changed := entry.conclusion
 	entry.conclusion = false
-	if group := m.processGroup(entry.processID); group != nil {
+	if group := m.processGroup(entry.processID); group != nil && !group.manual {
 		changed = changed || group.collapsed
 		group.collapsed = false
 	}
@@ -93,9 +93,10 @@ func (m *model) toggleProcessGroups() bool {
 		group := &m.processGroups[index]
 		if m.hasProcessContent(group.id) {
 			group.collapsed = !expand
-			group.detailsExpanded = expand
+			group.manual = true
 		}
 	}
+	m.expandAllDetails(expand)
 	return true
 }
 
@@ -362,6 +363,7 @@ func (m *model) resetBranchTranscript() {
 	}
 	m.entries = kept
 	m.processGroups = nil
+	m.folds = nil
 	m.activeProcessID = 0
 	m.assistantEntry = -1
 	m.refreshViewport(true)
@@ -374,6 +376,7 @@ func (m *model) completeTool(tool ToolDisplay) {
 			entry.toolDone = true
 			entry.toolError = tool.Failed
 			entry.toolTruncation = tool.Truncation
+			entry.toolOutput = tool.Output
 			if entry.toolName == "edit" && !tool.Failed {
 				entry.toolDiff = tool.Diff
 			}

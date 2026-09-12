@@ -38,6 +38,8 @@ func TestModelRendersOneProcessHeadingPerProcess(t *testing.T) {
 		},
 	}
 
+	current.setFoldExpanded(foldTarget{kind: foldThinking, id: 0}, true)
+	current.setFoldExpanded(foldTarget{kind: foldThinking, id: 2}, true)
 	transcript := ansi.Strip(current.transcriptView())
 	if got := strings.Count(transcript, "✧"); got != 1 {
 		t.Fatalf("process headings = %d, want 1:\n%s", got, transcript)
@@ -47,8 +49,8 @@ func TestModelRendersOneProcessHeadingPerProcess(t *testing.T) {
 			t.Fatalf("expanded transcript contains %q, want merged header only:\n%s", hidden, transcript)
 		}
 	}
-	assertTranscriptGap(t, transcript, "FIRST_OUTPUT", "read", 2)
-	assertTranscriptGap(t, transcript, "read", "FINAL_REASONING", 2)
+	assertTranscriptGap(t, transcript, "FIRST_OUTPUT", "1 file read", 2)
+	assertTranscriptGap(t, transcript[strings.Index(transcript, "✓ read"):], "✓ read", "Thinking", 2)
 	assertTranscriptGap(t, transcript, "FINAL_REASONING", "FINAL_OUTPUT", 2)
 }
 

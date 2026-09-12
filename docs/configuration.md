@@ -747,21 +747,33 @@ for confirmation and waits for its answer to stop before deleting it.
 
 ## Interactive input delivery
 
-`Ctrl+O` expands or collapses main-task process details. While an assistant
-response is streaming, long thinking shows only its most recent 4 KiB with an
-earlier-content notice, keeping the terminal responsive. This also applies to
-BTW thinking. When the response ends, expanded views show the complete thinking;
-the preview does not remove content from the conversation or main Session.
+The main transcript has independent folds for each process, each contiguous
+batch of tool calls, each thinking block, and each tool's details. Batches show
+counts by operation (including Skill loads); they do not infer that later tools
+belong to a loaded Skill. Process and batch summaries start open, while thinking
+and tool bodies start closed. Final answers remain outside the process fold.
+When final text starts, a process closes automatically unless the user has
+manually changed it or one of its children. Manual choices survive new deltas
+and sibling calls. Closing a parent preserves its children's choices.
+Fold state is transient presentation state, cleared with the visible transcript.
 
-Write tool rows show a content preview of at most 10 source lines / 4 KiB by
-default. Long lines are clipped to the terminal width. Use the existing
-`Ctrl+O` process toggle to collapse, then expand for a larger preview (up to
-2000 lines / 64 KiB). A completed, automatically collapsed process needs only
-one press to expand. Preview limits are labelled; they do not limit file writes.
-During argument streaming, the row says `preview · not executed`; incomplete
-JSON escapes wait for more input. A stream preview retains only the first
-64 KiB of raw arguments, so later content or a late path may appear only when
-the complete call arrives. Source control characters are replaced for display.
+`Ctrl+O` expands or collapses all main-task process details, including children.
+Expanded streaming thinking shows only its most recent 4 KiB with an omission
+notice; completion makes the full thinking available. BTW thinking retains the
+same streaming limit. Display folding never removes Session or model content.
+
+Expanded tools show the recorded result (Read text, command output, Skill body,
+or errors), rather than rereading workspace files. Result previews retain at
+most 64 KiB and display at most 2000 source lines, with an explicit limit notice.
+Non-text results are labelled, and empty output differs from unavailable output.
+Terminal controls are escaped in result text. Long result lines wrap.
+
+Write details retain the bounded live argument preview; `preview · not executed`
+means execution has not started. Expanded write and edit previews display up to
+2000 lines / 64 KiB, clipping long source lines before highlighting. Streamed
+write arguments retain at most 64 KiB; a late path/content may arrive with the
+complete call. None of these display limits limits file writes or changes
+recorded tool results.
 
 The composer remains active while an Agent run is working:
 

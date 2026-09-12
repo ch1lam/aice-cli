@@ -60,6 +60,7 @@ type transcriptEntry struct {
 	toolAssistant       int
 	toolPreparing       bool
 	toolExpanded        bool
+	toolOutput          interaction.ToolOutputDisplay
 	toolID              string
 	toolName            string
 	toolDetail          string
@@ -70,11 +71,11 @@ type transcriptEntry struct {
 }
 
 type processGroup struct {
-	id              int
-	collapsed       bool
-	detailsExpanded bool
-	startedAt       time.Time
-	elapsed         time.Duration
+	id        int
+	collapsed bool
+	manual    bool
+	startedAt time.Time
+	elapsed   time.Duration
 }
 
 type transcriptViewPart struct {
@@ -128,6 +129,7 @@ type model struct {
 
 	viewport          transcriptViewport
 	selection         transcriptSelection
+	folds             map[foldTarget]bool
 	input             textarea.Model
 	spinner           spinner.Model
 	help              help.Model

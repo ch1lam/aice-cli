@@ -12,6 +12,7 @@ import (
 // must be comparable and describe every input to render other than width.
 type transcriptItem struct {
 	key     int
+	fold    foldTarget
 	version any
 	render  func() string
 	gap     int

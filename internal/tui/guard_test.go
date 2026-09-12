@@ -388,6 +388,7 @@ func TestGuardDefersHiddenTranscriptRendering(t *testing.T) {
 	current.running = true
 	current.applyAgentEvent(DisplayEvent{Kind: DisplayEventAssistantStart})
 	current.applyAgentEvent(DisplayEvent{Kind: DisplayEventAssistantEnd, Assistant: AssistantDisplay{Thinking: "earlier reasoning"}})
+	current.setFoldExpanded(foldTarget{kind: foldThinking, id: 0}, true)
 	presentation := current.entries[0].presentation
 	reply := make(chan interaction.GuardReply, 1)
 	request := interaction.GuardRequest{Path: "/outside", Options: guardTestOptions(), Reply: reply}

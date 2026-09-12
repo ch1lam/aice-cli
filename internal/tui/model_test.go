@@ -81,6 +81,7 @@ func TestModelSubmitsPromptAndConsumesAgentEvents(t *testing.T) {
 	if len(updated.entries) != 3 {
 		t.Fatalf("transcript entries = %#v, want user, assistant, and tool", updated.entries)
 	}
+	updated.expandAllDetails(true)
 	transcript := updated.transcriptView()
 	for _, want := range []string{
 		"inspect this repository",
@@ -151,10 +152,9 @@ func TestModelCollapsesProcessWhenConclusionStartsStreaming(t *testing.T) {
 
 	beforeConclusion := ansi.Strip(current.transcriptView())
 	for _, want := range []string{
-		"INTERMEDIATE_REASONING",
+		"Thinking",
 		"MIDDLEOUTPUT",
 		"read",
-		"FINAL_REASONING",
 	} {
 		if !strings.Contains(beforeConclusion, want) {
 			t.Fatalf(
@@ -265,7 +265,7 @@ func TestModelProcessSpacingKeepsToolsTogether(t *testing.T) {
 		t,
 		transcript,
 		"MIDDLETEXT",
-		"FIRSTTOOL",
+		"2 tools",
 		2,
 	)
 	assertTranscriptGap(
@@ -279,7 +279,7 @@ func TestModelProcessSpacingKeepsToolsTogether(t *testing.T) {
 		t,
 		transcript,
 		"SECONDTOOL",
-		"FINALREASON",
+		"Thinking",
 		2,
 	)
 
@@ -1240,6 +1240,7 @@ func TestModelToolCallsShowRelevantInput(t *testing.T) {
 				Tool: tt.tool,
 			})
 
+			current.expandAllDetails(true)
 			running := ansi.Strip(current.transcriptView())
 			for _, wantLine := range strings.Split(tt.want, "\n") {
 				if !strings.Contains(running, wantLine) {

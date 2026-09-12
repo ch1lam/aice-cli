@@ -111,6 +111,7 @@ func (m model) submitSlashCommand(
 		}
 		m.entries = nil
 		m.processGroups = nil
+		m.folds = nil
 		m.activeProcessID = 0
 		m.resetCommandInput()
 		m.status = "Visible transcript cleared; Session history is unchanged"

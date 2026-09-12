@@ -18,6 +18,7 @@ func TestWritePreviewStreamAndExecution(t *testing.T) {
 	for _, fragment := range []string{raw[:20], raw[20:]} {
 		m.applyAgentEvent(DisplayEvent{Kind: DisplayEventAssistantDelta, Delta: DisplayDelta{Kind: DisplayDeltaToolCall, ToolIndex: 2, Arguments: fragment}})
 	}
+	m.setFoldExpanded(foldTarget{kind: foldTool, id: 1}, true)
 	view := ansi.Strip(m.transcriptView())
 	if !strings.Contains(view, "package main") || !strings.Contains(view, "not executed") || !strings.Contains(view, "中文") {
 		t.Fatalf("partial preview: %s", view)
@@ -41,8 +42,12 @@ func TestWritePreviewBoundsAndExpand(t *testing.T) {
 	}
 	m.applyAgentEvent(DisplayEvent{Kind: DisplayEventToolStart, Tool: ToolDisplay{ID: "a", Name: "write", Content: content.String(), HasContent: true}})
 	view := ansi.Strip(m.transcriptView())
-	if !strings.Contains(view, "line10") || strings.Contains(view, "line11") {
-		t.Fatalf("default bound: %s", view)
+	if strings.Contains(view, "line01") {
+		t.Fatalf("tool details should start collapsed: %s", view)
+	}
+	pfx := ansi.Strip(m.entries[0].writePreview.view(80, false))
+	if !strings.Contains(pfx, "line10") || strings.Contains(pfx, "line11") {
+		t.Fatalf("bounded preview: %s", pfx)
 	}
 	for range 2 {
 		updated, _ := m.Update(tea.KeyPressMsg{Code: 'o', Mod: tea.ModCtrl})

@@ -110,6 +110,7 @@ func TestLongTranscriptLeavesUnseenThinkingUnrendered(t *testing.T) {
 		m.entries = append(m.entries, transcriptEntry{kind: entryAssistant, processID: id, complete: true,
 			thinking: fmt.Sprintf("block %d ", i) + strings.Repeat("reasoning ", 100), presentation: &assistantPresentation{}})
 	}
+	m.expandAllDetails(true)
 	m.applyAgentEvent(DisplayEvent{Kind: DisplayEventAssistantStart})
 	m.refreshViewport(true)
 	for range 3 {
