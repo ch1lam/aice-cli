@@ -50,6 +50,10 @@ press it again consecutively to exit. Use `/btw [question]` to start a new
 tool-free side thread that does not interrupt or enter the main Session. Bare `/btw` opens the thread
 chooser, or a blank composer when no side threads exist.
 
+Hover over process, thinking, call-group, or tool headings to highlight them;
+click to expand or collapse. Drag text to copy it. `Ctrl+O` toggles all main
+process details. See [transcript folding](./docs/configuration.md#interactive-input-delivery).
+
 Paste a screenshot with `Ctrl+V` or `Alt+V` when using a vision model. Images appear as inline
 placeholders; delete them with Backspace/Delete, like long text pastes.
 Attach files with `@src/main.go` or `@"images/screen shot.png"` (Tab completes paths

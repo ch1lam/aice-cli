@@ -364,6 +364,7 @@ func (m *model) resetBranchTranscript() {
 	m.entries = kept
 	m.processGroups = nil
 	m.folds = nil
+	m.selection.clear()
 	m.activeProcessID = 0
 	m.assistantEntry = -1
 	m.refreshViewport(true)
@@ -386,6 +387,7 @@ func (m *model) completeTool(tool ToolDisplay) {
 }
 
 func (m *model) finishRun(err error) tea.Cmd {
+	follow := m.viewport.AtBottom()
 	if m.cancelDelivery != nil {
 		m.cancelDelivery()
 	}
@@ -434,7 +436,7 @@ func (m *model) finishRun(err error) tea.Cmd {
 		m.status = "Ready for the next prompt"
 	}
 	m.resizeLayout()
-	m.refreshViewport(true)
+	m.refreshViewport(follow)
 	return focus
 }
 

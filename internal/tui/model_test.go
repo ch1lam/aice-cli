@@ -388,13 +388,13 @@ func TestModelWelcomeGuidesUnconfiguredLogin(t *testing.T) {
 	}
 }
 
-func TestModelViewEnablesMouseWheelEvents(t *testing.T) {
+func TestModelViewEnablesMouseHoverAndWheelEvents(t *testing.T) {
 	t.Parallel()
 
 	current := newModel(make(chan runRequest), make(chan struct{}))
 
-	if got := current.View().MouseMode; got != tea.MouseModeCellMotion {
-		t.Errorf("view mouse mode = %v, want cell motion for mouse wheel events", got)
+	if got := current.View().MouseMode; got != tea.MouseModeAllMotion {
+		t.Errorf("view mouse mode = %v, want all motion for hover and wheel events", got)
 	}
 }
 

@@ -48,6 +48,9 @@ aice --workspace .
 主 Session 的侧线程；输入不带参数的 `/btw` 会打开线程选择菜单；没有侧线程
 时则直接打开空白输入框。
 
+鼠标移到过程、思考、调用分组或工具标题上会高亮，单击可展开或折叠；拖选文字仍可复制。
+`Ctrl+O` 可统一展开或折叠主任务详情。详见[对话折叠交互](./docs/configuration.md#interactive-input-delivery)。
+
 选择支持图片的模型后，用 `Ctrl+V` 或 `Alt+V` 粘贴截图，图片会成为输入框内的占位符，
 与长文本一样用 Backspace/Delete 删除；可配文字或单独发送。平台要求和大小限制见
 [剪贴板图片输入](./docs/configuration.md#clipboard-images)。

@@ -196,28 +196,62 @@ func (v transcriptViewport) Update(msg tea.Msg) (transcriptViewport, tea.Cmd) {
 }
 
 func (v transcriptViewport) View() string {
-	lines := make([]string, 0, v.height)
+	return v.viewWithHover(foldTarget{})
+}
+
+// Rendering and hit-testing walk exactly the same wrapped, clipped rows.
+// A row carries the item-local position needed to anchor a fold without
+// measuring all preceding history (YOffset deliberately isn't that measure).
+type transcriptRow struct {
+	text string
+	key  int
+	line int
+	fold foldTarget
+}
+
+func (v transcriptViewport) visibleRows() []transcriptRow {
+	rows := make([]transcriptRow, 0, v.height)
 	skip := v.line
-	for i := v.index; i < len(v.items) && len(lines) < v.height; i++ {
-		rows := v.itemLines(i)
-		for j := 0; j < v.items[i].gap; j++ {
-			if skip > 0 {
-				skip--
-				continue
-			}
-			if len(lines) < v.height {
-				lines = append(lines, "")
-			}
-		}
-		if skip >= len(rows) {
-			skip -= len(rows)
+	for i := v.index; i < len(v.items) && len(rows) < v.height; i++ {
+		item := v.items[i]
+		lines := v.itemLines(i)
+		height := item.gap + len(lines)
+		if skip >= height {
+			skip -= height
 			continue
 		}
-		count := min(len(rows)-skip, v.height-len(lines))
-		lines = append(lines, rows[skip:skip+count]...)
+		for line := skip; line < height && len(rows) < v.height; line++ {
+			row := transcriptRow{key: item.key, line: line}
+			if line >= item.gap {
+				row.text, row.fold = lines[line-item.gap], item.fold
+			}
+			rows = append(rows, row)
+		}
 		skip = 0
 	}
+	return rows
+}
+
+func (v transcriptViewport) viewWithHover(hover foldTarget) string {
+	lines := make([]string, 0, v.height)
+	for _, row := range v.visibleRows() {
+		text := row.text
+		if hover.kind != foldNone && row.fold == hover {
+			text = transcriptHoverStyle.Width(v.width).Render(ansi.Strip(text))
+		}
+		lines = append(lines, text)
+	}
 	return lipgloss.NewStyle().Width(v.width).Height(v.height).Render(strings.Join(lines, "\n"))
+}
+
+func (v *transcriptViewport) anchorRow(key, line, screenRow int) {
+	for index, item := range v.items {
+		if item.key == key {
+			v.index, v.line = index, min(line, v.itemHeight(index)-1)
+			v.scroll(-screenRow)
+			return
+		}
+	}
 }
 
 // Full-content access is for explicit snapshots/tests, never a frame or scroll.

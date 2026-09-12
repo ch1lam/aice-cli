@@ -757,6 +757,15 @@ manually changed it or one of its children. Manual choices survive new deltas
 and sibling calls. Closing a parent preserves its children's choices.
 Fold state is transient presentation state, cleared with the visible transcript.
 
+Move the mouse over a fold heading to highlight its entire row; left-click
+(press and release without dragging) toggles that heading. The clicked heading
+stays at its screen position where possible. Dragging text still selects and
+copies on release, including a drag started on a heading. Scrolling, resizing,
+or losing terminal focus cancels a pending click. Hover follows the current
+layout even while the pointer is stationary. Run completion preserves historical
+reading positions; only readers already at the bottom follow the final output.
+These controls require terminal mouse reporting; `Ctrl+O` remains available when it is unsupported.
+
 `Ctrl+O` expands or collapses all main-task process details, including children.
 Expanded streaming thinking shows only its most recent 4 KiB with an omission
 notice; completion makes the full thinking available. BTW thinking retains the

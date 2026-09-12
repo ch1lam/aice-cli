@@ -23,6 +23,7 @@ type transcriptSelection struct {
 	viewportView   string
 	active         bool
 	moved          bool
+	fold           foldHit
 }
 
 func (s *transcriptSelection) begin(
@@ -101,6 +102,7 @@ func (m model) handleTranscriptMouseClick(
 	}
 
 	m.selection.begin(position, viewportOffset, m.viewport.View())
+	m.selection.fold = m.foldHitAt(message.Mouse())
 	return m, nil, true
 }
 
@@ -136,6 +138,14 @@ func (m model) handleTranscriptMouseRelease(
 	)
 	if !m.selection.update(position) {
 		m.selection.clear()
+		return m, nil, true
+	}
+	if !m.selection.moved && m.selection.fold.target.kind != foldNone {
+		pressed := m.selection.fold
+		m.selection.clear()
+		if hit := m.foldHitAt(message.Mouse()); hit.target == pressed.target && hit.key == pressed.key {
+			m.toggleFoldAt(hit)
+		}
 		return m, nil, true
 	}
 	m.selection.finish()

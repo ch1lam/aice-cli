@@ -130,6 +130,7 @@ type model struct {
 	viewport          transcriptViewport
 	selection         transcriptSelection
 	folds             map[foldTarget]bool
+	pointer           transcriptPointer
 	input             textarea.Model
 	spinner           spinner.Model
 	help              help.Model
@@ -339,6 +340,7 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			return m, command
 		}
 	case tea.MouseClickMsg:
+		m.trackPointer(message.Mouse())
 		if m.guardPending != nil {
 			return m, nil
 		}
@@ -346,13 +348,16 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			return updated, command
 		}
 	case tea.MouseMotionMsg:
+		m.trackPointer(message.Mouse())
 		if m.guardPending != nil {
 			return m, nil
 		}
 		if updated, command, handled := m.handleTranscriptMouseMotion(message); handled {
 			return updated, command
 		}
+		return m, nil
 	case tea.MouseReleaseMsg:
+		m.trackPointer(message.Mouse())
 		if m.guardPending != nil {
 			return m, nil
 		}
@@ -360,12 +365,17 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			return updated, command
 		}
 	case tea.MouseWheelMsg:
+		m.trackPointer(message.Mouse())
 		m.selection.clear()
 		if m.guardPending != nil {
 			var command tea.Cmd
 			m.guardViewport, command = m.guardViewport.Update(message)
 			return m, command
 		}
+	case tea.BlurMsg:
+		m.pointer = transcriptPointer{}
+		m.selection.clear()
+		return m, nil
 	case editorFinishedMsg:
 		m = m.applyEditorResult(message)
 		m.refreshViewport(false)
@@ -512,7 +522,7 @@ func (m model) View() tea.View {
 		return m.terminalView(m.guardView(max(m.width, 1)))
 	}
 	width := max(m.width, minimumWidth)
-	viewportView := m.viewport.View()
+	viewportView := m.viewport.viewWithHover(m.hoveredFold())
 	viewportOffset := m.viewport.YOffset()
 	if m.selection.active {
 		viewportView = m.selection.viewportView
@@ -542,7 +552,8 @@ func (m model) terminalView(content string) tea.View {
 	view.ForegroundColor = primaryTextColor
 	view.AltScreen = true
 	view.WindowTitle = "AICE"
-	view.MouseMode = tea.MouseModeCellMotion
+	view.MouseMode = tea.MouseModeAllMotion
+	view.ReportFocus = true
 	if m.secretInput == nil && m.authInput == nil && m.guardPending == nil {
 		// Anchor the real terminal cursor on the composer caret. The IME
 		// candidate window follows the terminal cursor, and Bubble Tea's

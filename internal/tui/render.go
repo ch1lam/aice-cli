@@ -472,10 +472,10 @@ func pendingSteerRail(frame uint8) string {
 }
 
 func (m model) processHeader(start, end int, collapsed bool) string {
-	star := "✧"
+	star := "▾ ✧"
 	action := "ctrl+o to collapse"
 	if collapsed {
-		star = "✦"
+		star = "▸ ✦"
 		action = "ctrl+o to expand"
 	}
 

@@ -108,9 +108,9 @@ never reject or alter an edit. Failures carry no successful diff.
 The app projects successful edit results into `interaction.DiffDisplay`; either
 an execution error or `IsError` suppresses the diff and marks the tool failed.
 The TUI renders the supplied hunks beneath the completed tool row, with colored
-additions/deletions. It never reads files or rematches arguments. Collapsed detail
-shows 12 lines; Ctrl+O exposes up to the stored 64 KiB / 2000 lines. Long rows are
-clipped to terminal width with a notice. Stored omissions remain explicitly
+additions/deletions. It never reads files or rematches arguments. Collapsed tools
+hide their bodies; expanding a tool exposes up to the stored 64 KiB / 2000 lines.
+Long rows are clipped to terminal width with a notice. Stored omissions remain explicitly
 incomplete after expansion. Control and Unicode format characters are escaped
 (including CR, so CRLF changes remain visible), literal backslashes are doubled,
 and invalid UTF-8 displays as replacement runes. Diff values participate in the
@@ -324,6 +324,13 @@ the final JSON event from being delivered.
 - The welcome-screen update check runs as a context-bound Bubble Tea command
   after the first render. Its result returns through the update loop; it never
   writes around the renderer or blocks terminal startup.
+- Transcript folding uses all-motion mouse reporting. Rendering and hit testing
+  share visible wrapped rows tagged with stable fold targets; never infer a
+  click from the approximate selection Y offset. Hover is derived from the
+  pointer and current layout without reformatting hidden history. A click
+  commits on left release only when no drag occurred and its target still
+  matches. Fold changes anchor the clicked item/row instead of following the
+  bottom. Permission screens and side views cannot activate main fold targets.
 - Dragging transcript text copies the selection on release using the terminal's
   clipboard support. A bordered confirmation bubble without an explicit
   background floats centered immediately above the composer for one second
