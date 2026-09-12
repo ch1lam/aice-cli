@@ -18,6 +18,11 @@
 The [CI workflow](../.github/workflows/ci.yml) runs race tests and vet on
 Linux, macOS, and Windows. A local pass proves only the tested platform; report
 unavailable tooling or platform checks rather than claiming they passed.
+Windows runs `go test -race -p 1 -parallel 2 ./...` to limit concurrent test
+processes and parallel cases after intermittent ripgrep `STATUS_NO_MEMORY`
+(`0xc0000017`) exits on hosted runners. This retains every test and race
+detection; goroutines within each test still run concurrently. Linux and macOS
+use the default test parallelism.
 Path spelling tests normalize accepted host separators before comparison, while
 still checking literal names such as `~`, `@`, and Unicode characters exactly.
 Symlink tests compare link targets using host separators. Replacement tests

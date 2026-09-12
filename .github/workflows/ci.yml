@@ -71,7 +71,14 @@ jobs:
         run: ./scripts/test_install.ps1
 
       - name: Test
+        if: runner.os != 'Windows'
         run: go test -race ./...
+
+      # Bound race-test process pressure: Windows runners have intermittently
+      # failed to start ripgrep with STATUS_NO_MEMORY (0xc0000017).
+      - name: Test (Windows)
+        if: runner.os == 'Windows'
+        run: go test -race -p 1 -parallel 2 ./...
 
       - name: Vet
         run: go vet ./...
