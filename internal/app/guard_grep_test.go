@@ -23,10 +23,10 @@ func grepPathCall(t *testing.T, path string) llm.ToolCall {
 }
 
 func TestGuardGrepChecksNormalizedAndPhysicalTargets(t *testing.T) {
-	t.Parallel()
+	// Keep real ripgrep processes out of the parallel application-test batch:
+	// Windows race runs can exhaust host memory even with -parallel 2.
 	for _, kind := range []string{"outside file", "outside directory", "protected target", "protected normalized alias", "protected original alias", "space normalization", "parent traversal", "read-only root"} {
 		t.Run(kind, func(t *testing.T) {
-			t.Parallel()
 			root, outside := t.TempDir(), t.TempDir()
 			input, alias := "@alias\u3000file.txt", "alias file.txt"
 			target := filepath.Join(outside, "target.txt")

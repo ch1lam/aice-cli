@@ -23,6 +23,10 @@ processes and parallel cases after intermittent ripgrep `STATUS_NO_MEMORY`
 (`0xc0000017`) exits on hosted runners. This retains every test and race
 detection; goroutines within each test still run concurrently. Linux and macOS
 use the default test parallelism.
+The Guard-to-grep path acceptance test and its subtests run sequentially, outside
+the parallel application-test batch. These cases launch real ripgrep processes;
+the Windows race runner has also reported `STATUS_NO_MEMORY` with two parallel
+cases. Keep the real execution assertions and all path cases in this test.
 Path spelling tests normalize accepted host separators before comparison, while
 still checking literal names such as `~`, `@`, and Unicode characters exactly.
 Symlink tests compare link targets using host separators. Replacement tests
