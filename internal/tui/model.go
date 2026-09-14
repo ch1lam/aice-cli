@@ -133,7 +133,7 @@ type model struct {
 	folds                 map[foldTarget]bool
 	pointer               transcriptPointer
 	composerActive        bool
-	input                 textarea.Model
+	input                 composerInput
 	spinner               spinner.Model
 	help                  help.Model
 	keys                  keyMap
@@ -256,7 +256,7 @@ func newModel(
 		requests:       requests,
 		controllerDone: controllerDone,
 		viewport:       view,
-		input:          input,
+		input:          composerInput{Model: input},
 		spinner:        activity,
 		help:           helpView,
 		keys:           newKeyMap(),
@@ -1007,8 +1007,6 @@ func (m *model) updateInput(message tea.Msg) tea.Cmd {
 			// The pre-collapse viewport sync no longer matches the
 			// shortened content; the collapse re-syncs below.
 			command = m.collapseLargeInsert(before, added, after)
-		} else {
-			m.snapCursorOutOfPasteToken(previousRow, previousCol)
 		}
 		m.dropOrphanPasteAttachments()
 		m.commandSelection = 0
@@ -1018,6 +1016,7 @@ func (m *model) updateInput(message tea.Msg) tea.Cmd {
 		m.historyIndex = -1
 		m.historyDraft = ""
 	}
+	m.snapCursorOutOfPasteToken(previousRow, previousCol)
 	m.syncCommandCompletion()
 	if nextValue != previousValue && m.commandMenu != nil {
 		m.resetCommandOptionSelection()

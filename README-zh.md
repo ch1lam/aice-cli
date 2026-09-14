@@ -55,6 +55,7 @@ aice --workspace .
 与长文本一样用 Backspace/Delete 删除；可配文字或单独发送。平台要求和大小限制见
 [剪贴板图片输入](./docs/configuration.md#clipboard-images)。
 用 `@src/main.go` 或 `@"images/screen shot.png"` 主动引入文件或目录；输入时可模糊查找，↑/↓ 选择候选，→ 带入路径继续匹配，Tab/Enter 确认引用而不发送草稿。`--print` 同样支持文件引用。
+确认后的路径不显示双引号，`@` 为深棕色、路径为主题金黄色，并像图片附件一样整块删除；手动输入或用 → 带入的路径仍可逐字编辑。
 `read` 可以读取图片，并从会话找回原图查看细节；详见[文件引用](./docs/configuration.md#file-references)。
 
 使用 ChatGPT/Codex 订阅时，在 `/login` 选择 `Sign in with an account` →

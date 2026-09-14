@@ -57,8 +57,13 @@ func (m model) fileReferenceAtCursor() (interaction.FileReference, bool) {
 	for i := 0; i < row; i++ {
 		cursor += len([]rune(rows[i])) + 1
 	}
-	runes := []rune(m.input.Value())
+	runes := []rune(m.input.editableReferenceText())
 	cursor = min(cursor, len(runes))
+	for _, file := range m.input.files {
+		if cursor > file.start && cursor <= file.end {
+			return interaction.FileReference{}, false
+		}
+	}
 	refs := interaction.ScanFileReferences(string(runes[:cursor]))
 	if len(refs) == 0 {
 		return interaction.FileReference{}, false
@@ -148,7 +153,7 @@ func (m model) handleFileCompletionKey(message tea.KeyPressMsg) (model, tea.Cmd,
 		m.fileCompletion.dismissed = true
 	case tea.KeyTab, tea.KeyEnter, tea.KeyRight:
 		item := m.fileCompletion.items[m.fileCompletion.selection]
-		for _, full := range interaction.ScanFileReferences(m.input.Value()) {
+		for _, full := range interaction.ScanFileReferences(m.input.editableReferenceText()) {
 			if full.Start == ref.Start {
 				ref.End = full.End
 				break
@@ -156,6 +161,11 @@ func (m model) handleFileCompletionKey(message tea.KeyPressMsg) (model, tea.Cmd,
 		}
 		runes := []rune(m.input.Value())
 		replacement := interaction.QuoteFileReference(item.Path)
+		path := ""
+		if message.Code != tea.KeyRight {
+			path = item.Path
+			replacement = fileReferenceLabel(path)
+		}
 		tail := string(runes[ref.End:])
 		back := len([]rune(tail))
 		if message.Code == tea.KeyRight {
@@ -165,7 +175,7 @@ func (m model) handleFileCompletionKey(message tea.KeyPressMsg) (model, tea.Cmd,
 		} else if tail == "" || !unicode.IsSpace(runes[ref.End]) {
 			replacement += " "
 		}
-		m.input.SetValue(string(runes[:ref.Start]) + replacement + tail)
+		m.input.replaceReference(ref.Start, ref.End, replacement, path)
 		for range back {
 			m.input, _ = m.input.Update(tea.KeyPressMsg{Code: tea.KeyLeft})
 		}

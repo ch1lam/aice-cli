@@ -58,7 +58,9 @@ Paste a screenshot with `Ctrl+V` or `Alt+V` when using a vision model. Images ap
 placeholders; delete them with Backspace/Delete, like long text pastes.
 Attach files or directories with `@src/main.go` or `@"images/screen shot.png"`.
 Fuzzy search supports Up/Down to select, Right to continue into a path, and
-Tab/Enter to confirm the reference without sending the draft; `read` can also
+Tab/Enter to confirm the reference without sending the draft. Confirmed paths
+appear without quotes, with a brown `@` and gold path, and delete as one unit;
+typed references remain editable character by character. `read` can also
 inspect images and recover saved originals. The same references work in `--print`.
 See [file references](./docs/configuration.md#file-references) and [clipboard input](./docs/configuration.md#clipboard-images) for platform support and limits.
 

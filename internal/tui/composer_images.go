@@ -63,6 +63,7 @@ func (m *model) restoreSubmittedInput() {
 	input := *m.submittedInput
 	m.submittedInput = nil
 	m.input.SetValue(m.submittedDraft.text)
+	m.input.files = m.submittedDraft.files
 	m.pastes = m.submittedDraft.pastes
 	m.submittedDraft = composerDraft{}
 	m.input.CursorEnd()
@@ -107,4 +108,5 @@ func (m model) composerImages() []llm.ImageContent {
 type composerDraft struct {
 	text   string
 	pastes []pasteAttachment
+	files  []composerFile
 }

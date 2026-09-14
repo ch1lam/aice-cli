@@ -13,7 +13,7 @@ import (
 // levels retain their explicit selection path until the command name changes.
 func (m *model) syncCommandCompletion() {
 	if m.running || m.side.isVisible || m.secretInput != nil || m.authInput != nil ||
-		m.guardPending != nil || m.commandDismissed || len(m.pastes) > 0 {
+		m.guardPending != nil || m.commandDismissed || len(m.pastes) > 0 || len(m.input.files) > 0 {
 		m.commandMenu = nil
 		return
 	}

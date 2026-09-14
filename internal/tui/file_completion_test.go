@@ -32,7 +32,7 @@ func TestFileCompletionConfirmDoesNotSubmit(t *testing.T) {
 				m.requestFileCompletion()
 				m = updateModel(t, m, fileCompletionResult{generation: m.fileCompletion.generation, items: []interaction.FileCompletion{item}})
 				m = updateModel(t, m, tea.KeyPressMsg{Code: code})
-				if want := "look " + interaction.QuoteFileReference(item.Path) + " "; m.input.Value() != want {
+				if want := "look @" + item.Path + " "; m.input.Value() != want {
 					t.Fatalf("draft = %q, want %q", m.input.Value(), want)
 				}
 				if m.running || m.submittedInput != nil || m.fileCompletionVisible() {
@@ -75,7 +75,7 @@ func TestFileCompletionRightContinuesMatchingAndPreservesTail(t *testing.T) {
 	}
 	m = updateModel(t, m, fileCompletionResult{generation: m.fileCompletion.generation, items: []interaction.FileCompletion{{Path: "中文 目录/config.go"}}})
 	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
-	if want := `看 @"中文 目录/config.go" 后续 @README.md`; m.input.Value() != want || m.running || m.fileCompletionVisible() {
+	if want := `看 @中文 目录/config.go 后续 @README.md`; m.input.Value() != want || m.running || m.fileCompletionVisible() {
 		t.Fatalf("confirmed draft = %q", m.input.Value())
 	}
 }
@@ -117,7 +117,7 @@ func TestFileCompletionScrollsBeyondFirstPage(t *testing.T) {
 		t.Fatalf("scrolled menu = %q", view)
 	}
 	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
-	if m.input.Value() != `@"file12.go" ` || m.running {
+	if m.input.Value() != `@file12.go ` || m.running {
 		t.Fatalf("scrolled selection = %q", m.input.Value())
 	}
 	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
@@ -137,7 +137,7 @@ func TestFileCompletionModifiedEnterStillInsertsNewline(t *testing.T) {
 	}
 }
 
-func TestFileCompletionIgnoresStaleResultsAndQuotesSelection(t *testing.T) {
+func TestFileCompletionIgnoresStaleResultsAndAttachesSelection(t *testing.T) {
 	t.Parallel()
 	m := completionTestModel()
 	m.input.SetValue("look @im")
@@ -153,10 +153,10 @@ func TestFileCompletionIgnoresStaleResultsAndQuotesSelection(t *testing.T) {
 		t.Fatal("suggestions missing")
 	}
 	m, _, handled := m.handleFileCompletionKey(tea.KeyPressMsg{Code: tea.KeyTab})
-	if !handled || m.input.Value() != `look @"new file.png" ` || m.fileCompletionVisible() {
+	if !handled || m.input.Value() != `look @new file.png ` || m.fileCompletionVisible() {
 		t.Fatalf("selection = %q", m.input.Value())
 	}
-	refs := interaction.FileReferences(m.input.Value())
+	refs := m.composerFiles()
 	if len(refs) != 1 || refs[0] != "new file.png" {
 		t.Fatal("selected path did not roundtrip")
 	}
@@ -189,7 +189,7 @@ func TestFileCompletionKeepsLayoutWhileTyping(t *testing.T) {
 		items:      []interaction.FileCompletion{{Path: "image.png"}},
 	})
 	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyTab})
-	if m.input.Value() != `look @"image.png" ` {
+	if m.input.Value() != `look @image.png ` {
 		t.Fatalf("latest candidate was not attached: %q", m.input.Value())
 	}
 }

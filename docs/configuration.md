@@ -963,9 +963,18 @@ Exact parent paths scope matching to that directory's children.
 Use Up/Down to scroll through candidates, Right to insert the selected path and
 keep matching (directories continue at the next level), Tab or Enter to confirm
 a file or directory reference, and Escape to close. Confirmation closes the menu
-without sending the draft; a subsequent Enter sends it. Right also keeps file
-paths editable. Spaces and quotes are escaped, and surrounding draft text is
-preserved. While a query is being edited, the existing menu stays visible
+without sending the draft; a subsequent Enter sends it. Confirmed references
+display as unquoted `@path` attachments: the `@` is dark brown and the entire
+path uses the theme's gold, including wrapped lines. Left/Right cross a confirmed
+attachment as one unit; Backspace/Delete remove it as one unit, like an image
+placeholder. Only confirmed occurrences are atomic; manually typed references
+and paths inserted with Right remain editable character by character and keep
+matching. Paths with spaces or quotes retain their exact spelling in attachment
+state and use escaped quotes when serialized for submission, history or the
+external editor. Rejected submissions and deliveries restore the attachment
+state; recalling history or returning from the external editor yields editable
+text. Surrounding draft text is preserved. While a query is being edited, the
+existing menu stays visible
 until the latest search finishes, avoiding repeated transcript resizing during
 the debounce interval. Tab, Enter and Right wait for fresh results, including
 the initial search before the menu appears; Escape still closes the menu.

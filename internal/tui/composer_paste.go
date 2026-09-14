@@ -132,7 +132,7 @@ func (m model) expandComposerText() string {
 }
 
 func (m model) expandPasteText(keepImages bool) string {
-	value := m.input.Value()
+	value := m.input.referenceText()
 	if len(m.pastes) == 0 {
 		return value
 	}
@@ -174,16 +174,16 @@ func (m model) composerRows() []string {
 	return strings.Split(m.input.Value(), "\n")
 }
 
-// pasteTokenSpansInRow returns [start, end) rune spans of attached tokens on
+// pasteTokenSpansInRow returns [start, end) rune spans of pasted and file tokens on
 // one logical row. Tokens never contain newlines, so every span stays on a
 // single row.
 func (m model) pasteTokenSpansInRow(row int) [][2]int {
 	rows := m.composerRows()
-	if row < 0 || row >= len(rows) || len(m.pastes) == 0 {
+	if row < 0 || row >= len(rows) {
 		return nil
 	}
 	runes := []rune(rows[row])
-	var spans [][2]int
+	spans := m.input.fileSpansInRow(row)
 	for _, attachment := range m.pastes {
 		token := []rune(attachment.token)
 		if len(token) == 0 || len(token) > len(runes) {
@@ -236,7 +236,7 @@ func (m *model) deletePasteTokenForward(start, end int) tea.Cmd {
 		commands = append(commands, command)
 	}
 	m.dropOrphanPasteAttachments()
-	m.status = "Removed pasted placeholder"
+	m.status = "Removed attachment"
 	return tea.Batch(commands...)
 }
 
@@ -249,7 +249,7 @@ func forwardDeleteKeyMsg() tea.KeyPressMsg {
 // normally; updateInput's post-pass still corrects stray landings inside a
 // token and drops orphaned attachments.
 func (m model) handlePasteTokenKey(message tea.KeyPressMsg) (model, tea.Cmd, bool) {
-	if len(m.pastes) == 0 {
+	if len(m.pastes) == 0 && len(m.input.files) == 0 {
 		return m, nil, false
 	}
 	row, col := m.input.Line(), m.input.Column()
@@ -300,7 +300,7 @@ func (m model) handlePasteTokenKey(message tea.KeyPressMsg) (model, tea.Cmd, boo
 // corrections follow the travel direction; cross-row landings take the
 // nearer edge.
 func (m *model) snapCursorOutOfPasteToken(previousRow, previousCol int) {
-	if len(m.pastes) == 0 {
+	if len(m.pastes) == 0 && len(m.input.files) == 0 {
 		return
 	}
 	row, col := m.input.Line(), m.input.Column()
@@ -351,7 +351,9 @@ func splitInputChange(previous, next string) (before, added, after string) {
 func (m *model) collapseLargeInsert(before, added, after string) tea.Cmd {
 	attachment := m.newPasteAttachment(added)
 	m.pastes = append(m.pastes, attachment)
-	m.input.SetValue(before + attachment.token + after)
+	previous := m.input.Value()
+	m.input.Model.SetValue(before + attachment.token + after)
+	m.input.rebaseFiles(previous, utf8.RuneCountInString(before))
 	// SetValue parks the cursor at the end; step back over the tail so the
 	// cursor rests right after the token. Backward steps are logical line
 	// moves, unaffected by soft wrapping.
