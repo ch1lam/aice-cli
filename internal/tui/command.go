@@ -2,8 +2,8 @@ package tui
 
 import (
 	"fmt"
+	"slices"
 	"strings"
-	"unicode"
 
 	"github.com/ch1lam/aice-cli/internal/interaction"
 )
@@ -138,27 +138,22 @@ func matchingSlashCommands(
 	}
 	query = strings.ToLower(query)
 
-	matches := make([]SlashCommand, 0, len(commands))
+	type match struct {
+		command SlashCommand
+		score   int
+	}
+	var ranked []match
 	for _, command := range commands {
-		if fuzzyMatch(command.Name, query) {
-			matches = append(matches, command)
+		if score, _ := fuzzyMatch(command.Name, query); score >= 0 {
+			ranked = append(ranked, match{command: command, score: score})
 		}
+	}
+	slices.SortStableFunc(ranked, func(a, b match) int { return b.score - a.score })
+	matches := make([]SlashCommand, len(ranked))
+	for index, hit := range ranked {
+		matches[index] = hit.command
 	}
 	return matches
-}
-
-// fuzzyMatch accepts an ordered, case-insensitive subsequence, including gaps.
-func fuzzyMatch(value, query string) bool {
-	remaining := []rune(strings.ToLower(query))
-	for _, character := range value {
-		if len(remaining) == 0 {
-			return true
-		}
-		if unicode.ToLower(character) == remaining[0] {
-			remaining = remaining[1:]
-		}
-	}
-	return len(remaining) == 0
 }
 
 func slashCommandUsage(command SlashCommand) string {

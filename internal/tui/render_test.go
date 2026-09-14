@@ -61,3 +61,28 @@ func TestRenderMarkdownPreservesCJKCodeSpanSpacing(t *testing.T) {
 		})
 	}
 }
+
+func TestSlashMenuHighlightsMatchesWithoutBoldingDescriptions(t *testing.T) {
+	t.Parallel()
+	view := renderSlashMenuRows(80, "Choices", "", []slashMenuRow{
+		{label: "Low", description: "SELECTED_DESCRIPTION", query: "lw", current: true},
+		{label: "Lower", description: "OTHER_DESCRIPTION", query: "lw"},
+	}, 0)
+	selectedStyle := slashCommandRowStyle.Background(panelBlackColor).Bold(true)
+	for _, matched := range []string{"L", "w"} {
+		if !strings.Contains(view, selectedStyle.Foreground(informationColor).Render(matched)) {
+			t.Fatalf("selected match %q is not tinted and bold", matched)
+		}
+	}
+	if !strings.Contains(view, mutedStyle.Background(panelBlackColor).Render("SELECTED_DESCRIPTION")) {
+		t.Fatal("selected description is not muted at normal weight")
+	}
+	for _, line := range strings.Split(view, "\n") {
+		if strings.Contains(ansi.Strip(line), "Lower") && strings.Contains(line, "\x1b[1;") {
+			t.Fatal("unselected fuzzy match became bold")
+		}
+	}
+	if !strings.Contains(ansi.Strip(view), "Low (active)") {
+		t.Fatal("selected current value lost its independent active marker")
+	}
+}

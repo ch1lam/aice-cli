@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"slices"
 	"strings"
 	"unicode/utf8"
 
@@ -54,18 +55,24 @@ func (m model) matchingCommandOptions() []SlashCommandOption {
 	}
 	request, _ := parseSlashCommand(m.input.Value())
 	frame := m.commandMenu.frames[len(m.commandMenu.frames)-1]
-	var exact, matches []SlashCommandOption
+	type match struct {
+		option SlashCommandOption
+		score  int
+	}
+	var ranked []match
 	for _, option := range frame.menu.Options {
-		if request.Arguments != "" && (strings.EqualFold(option.Label, request.Arguments) ||
-			strings.EqualFold(option.Arguments, request.Arguments)) {
-			exact = append(exact, option)
-			continue
-		}
-		if fuzzyMatch(option.Label, request.Arguments) || fuzzyMatch(option.Arguments, request.Arguments) {
-			matches = append(matches, option)
+		labelScore, _ := fuzzyMatch(option.Label, request.Arguments)
+		valueScore, _ := fuzzyMatch(option.Arguments, request.Arguments)
+		if score := max(labelScore, valueScore); score >= 0 {
+			ranked = append(ranked, match{option: option, score: score})
 		}
 	}
-	return append(exact, matches...)
+	slices.SortStableFunc(ranked, func(a, b match) int { return b.score - a.score })
+	matches := make([]SlashCommandOption, len(ranked))
+	for index, hit := range ranked {
+		matches[index] = hit.option
+	}
+	return matches
 }
 
 func (m model) completeCommandMenuOption() (model, tea.Cmd, bool) {

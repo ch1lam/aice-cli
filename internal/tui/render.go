@@ -327,6 +327,7 @@ func (m model) slashCommandMenuView(width int) string {
 		rows[index] = slashMenuRow{
 			label:       slashCommandUsage(command),
 			description: command.Description,
+			query:       strings.TrimPrefix(strings.TrimSpace(m.input.Value()), "/"),
 		}
 	}
 	return renderSlashMenuRows(
@@ -353,11 +354,13 @@ func (m model) slashCommandSelectionMenuView(width int) string {
 			[]slashMenuRow{{label: "No matching options"}}, -1)
 	}
 	rows := make([]slashMenuRow, len(options))
+	request, _ := parseSlashCommand(m.input.Value())
 	for index, option := range options {
 		rows[index] = slashMenuRow{
 			label:       sanitizeToolDetail(option.Label, false),
 			description: sanitizeToolDetail(option.Description, false),
 			current:     option.Current,
+			query:       request.Arguments,
 		}
 	}
 	return renderSlashMenuRows(
@@ -373,6 +376,7 @@ type slashMenuRow struct {
 	label       string
 	description string
 	current     bool
+	query       string
 }
 
 func renderSlashMenuRows(
@@ -406,21 +410,29 @@ func renderSlashMenuRows(
 		rowStyle := slashCommandRowStyle
 		labelStyle := slashCommandRowStyle
 		descriptionStyle := mutedStyle
+		_, indices := fuzzyMatch(row.label, row.query)
 		if row.current {
-			prefix = "• "
+			row.label += " (active)"
 		}
 		if index == selection {
 			prefix = "› "
-			rowStyle = slashCommandSelectedStyle
-			labelStyle = slashCommandSelectedStyle
-			descriptionStyle = slashCommandSelectedStyle
+			rowStyle = slashCommandRowStyle.Background(panelBlackColor)
+			labelStyle = rowStyle.Bold(true)
+			descriptionStyle = mutedStyle.Background(panelBlackColor)
 		}
 		label := truncateTerminalText(
 			row.label,
 			max(labelWidth-2, 1),
 		)
+		visible := utf8.RuneCountInString(label)
+		if label != row.label {
+			visible-- // The ellipsis is not a character from the matching label.
+		}
+		for len(indices) > 0 && indices[len(indices)-1] >= visible {
+			indices = indices[:len(indices)-1]
+		}
 		label += strings.Repeat(" ", max(labelWidth-2-lipgloss.Width(label), 0))
-		leading := prefix + labelStyle.Render(label) + "  "
+		leading := labelStyle.Render(prefix) + renderFuzzyLabel(label, indices, labelStyle) + rowStyle.Render("  ")
 		descriptionWidth := max(innerWidth-lipgloss.Width(leading), 0)
 		description := truncateTerminalText(
 			row.description,
@@ -433,6 +445,30 @@ func renderSlashMenuRows(
 		rendered = append(rendered, rowStyle.Width(innerWidth).Render(line))
 	}
 	return style.Width(width).Render(strings.Join(rendered, "\n"))
+}
+
+func renderFuzzyLabel(label string, indices []int, style lipgloss.Style) string {
+	if len(indices) == 0 {
+		return style.Render(label)
+	}
+	matchedStyle := style.Foreground(informationColor)
+	var rendered strings.Builder
+	runes := []rune(label)
+	start := 0
+	for len(indices) > 0 && indices[0] < len(runes) {
+		index := indices[0]
+		rendered.WriteString(style.Render(string(runes[start:index])))
+		end := index + 1
+		indices = indices[1:]
+		for len(indices) > 0 && indices[0] == end && end < len(runes) {
+			end++
+			indices = indices[1:]
+		}
+		rendered.WriteString(matchedStyle.Render(string(runes[index:end])))
+		start = end
+	}
+	rendered.WriteString(style.Render(string(runes[start:])))
+	return rendered.String()
 }
 
 func truncateTerminalText(value string, width int) string {

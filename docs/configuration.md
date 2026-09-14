@@ -722,8 +722,11 @@ short terminals show the card alone when the logo does not fit.
 
 Typing `/` opens command suggestions. Names match case-insensitive characters
 in order, with gaps allowed: `/cpt` matches `/compact`. Up/Down selects and Tab
-completes the highlighted command; Escape closes suggestions. Only the selected
-menu row is bold; unselected names and descriptions use normal weight.
+completes the highlighted command; Escape closes suggestions. Matches are ranked
+by relevance, favoring exact names, consecutive letters, and word starts. Matching
+letters are tinted blue. Only the selected option's label and arrow are bold;
+descriptions always stay muted with normal weight. `(active)` marks the current
+value independently of the highlighted selection.
 
 After a full menu command and a space (for example `/thinking `), suggestions
 switch immediately to its options and the composer shows a dim argument hint.

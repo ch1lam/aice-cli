@@ -1411,7 +1411,7 @@ func TestModelSlashCommandMenuCompletesAndRunsApplicationCommand(
 	current = updateModel(t, current, tea.WindowSizeMsg{Width: 80, Height: 24})
 	current.input.SetValue("/co")
 
-	menu := current.View().Content
+	menu := ansi.Strip(current.View().Content)
 	if !strings.Contains(menu, "SLASH COMMANDS") ||
 		!strings.Contains(menu, "/compact") {
 		t.Fatalf("slash command menu = %q, want compact suggestion", menu)
