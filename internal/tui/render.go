@@ -921,17 +921,17 @@ func (m model) modelStatus(width int) string {
 func reasoningLevelStyle(level DisplayThinking) lipgloss.Style {
 	switch level {
 	case DisplayThinkingMax:
-		return infoStyle.Bold(true)
+		return lipgloss.NewStyle().Foreground(accentColor)
 	case DisplayThinkingXHigh:
-		return infoStyle.Bold(true)
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("#F5735F"))
 	case DisplayThinkingHigh:
-		return infoStyle
+		return lipgloss.NewStyle().Foreground(warningColor)
 	case DisplayThinkingMedium:
-		return pathStyle
+		return lipgloss.NewStyle().Foreground(secondaryColor)
 	case DisplayThinkingLow, DisplayThinkingMinimal, DisplayThinkingOff, DisplayThinkingDefault:
 		fallthrough
 	default:
-		return mutedStyle
+		return lipgloss.NewStyle().Foreground(mutedTextColor)
 	}
 }
 

@@ -719,8 +719,9 @@ consistent across the transcript, composer, menus, and permission prompts:
 
 Headings use the brand accent with weight and spacing for hierarchy; Markdown
 level-six headings use gold. Thinking panels and command output use quiet brown rails.
-High reasoning levels use stone blue (bold at xhigh/max), without warning or
-error colors. Level names remain visible. The welcome logo's animated palette
+Reasoning levels use muted gray for default/off/minimal/low, gold for medium,
+ginger yellow for high, orange-red (`#F5735F`) for xhigh, and sunset red for max,
+all at normal weight. Level names remain visible. The welcome logo's animated palette
 sweep and code syntax highlighting use the theme colors decoratively: code
 keywords and tags are sunset red, operators gold, and functions and strings
 bamboo green. Status text, icons, diff signs, and focus weight remain meaningful
