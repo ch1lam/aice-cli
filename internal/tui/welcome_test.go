@@ -44,8 +44,7 @@ func TestComposerViewSetsRealCursor(t *testing.T) {
 	if view.Cursor == nil {
 		t.Fatal("focused composer should expose a real cursor for the IME")
 	}
-	wantY := 24 - lipgloss.Height(current.footerView(80)) -
-		lipgloss.Height(current.composerView(80)) + 1 // border top
+	wantY := paintedMouse(t, current, defaultPlaceholder).Y
 	if view.Cursor.Position.Y != wantY {
 		t.Errorf("cursor Y = %d, want %d (first composer content row)",
 			view.Cursor.Position.Y, wantY)

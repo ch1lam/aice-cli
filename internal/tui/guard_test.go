@@ -418,7 +418,7 @@ func TestGuardDefersHiddenTranscriptRendering(t *testing.T) {
 	if !strings.Contains(ansi.Strip(current.viewport.GetContent()), "latest reasoning") {
 		t.Fatal("closing the prompt did not render updates received while hidden")
 	}
-	if current.viewport.Width() != 60 {
+	if current.width != 60 || current.viewport.Width() != 56 {
 		t.Fatal("closing the prompt lost the terminal resize")
 	}
 }

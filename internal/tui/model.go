@@ -358,7 +358,7 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.MouseClickMsg:
 		m.trackPointer(message.Mouse())
 		if message.Button == tea.MouseLeft {
-			m.composerActive = m.composerContains(message.Mouse(), max(m.width, minimumWidth))
+			m.composerActive = m.composerContains(message.Mouse(), m.layoutWidth())
 		}
 		if m.guardPending != nil {
 			return m, nil
@@ -539,9 +539,9 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m model) View() tea.View {
 	if m.guardPending != nil {
-		return m.terminalView(m.guardView(max(m.width, 1)))
+		return m.terminalView(m.guardView(max(m.width-2*m.horizontalPadding(), 1)))
 	}
-	width := max(m.width, minimumWidth)
+	width := m.layoutWidth()
 	viewportView := m.viewport.viewWithHover(m.hoveredFold())
 	viewportOffset := m.viewport.YOffset()
 	if m.selection.active {
@@ -567,6 +567,7 @@ func (m model) View() tea.View {
 }
 
 func (m model) terminalView(content string) tea.View {
+	content = lipgloss.NewStyle().Padding(m.verticalPadding(), m.horizontalPadding()).Render(content)
 	view := tea.NewView(content)
 	view.BackgroundColor = inkBlackColor
 	view.ForegroundColor = primaryTextColor
@@ -582,7 +583,7 @@ func (m model) terminalView(content string) tea.View {
 		// drag the input method away from the input field. Guard confirmation
 		// replaces the composer, so its caret must not keep leaking through.
 		if cursor := m.input.Cursor(); cursor != nil {
-			m.positionComposerCursor(&cursor.Position, max(m.width, minimumWidth))
+			m.positionComposerCursor(&cursor.Position, m.layoutWidth())
 			view.Cursor = cursor
 		}
 	}
@@ -606,14 +607,14 @@ func (m model) positionComposerCursor(position *tea.Position, width int) {
 		// Height already counts the row terminated by the join separator.
 		top += lipgloss.Height(parts[index])
 	}
-	position.X += style.GetMarginLeft() +
+	position.X += m.horizontalPadding() + style.GetMarginLeft() +
 		style.GetPaddingLeft() +
 		style.GetBorderLeftSize()
 	position.Y += top +
 		style.GetMarginTop() +
 		style.GetPaddingTop() +
 		style.GetBorderTopSize()
-	position.Y += m.height -
+	position.Y += m.height - m.verticalPadding() -
 		lipgloss.Height(m.composerView(width)) -
 		lipgloss.Height(m.footerView(width))
 }

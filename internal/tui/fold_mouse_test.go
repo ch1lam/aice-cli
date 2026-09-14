@@ -19,7 +19,7 @@ func paintedMouse(t *testing.T, m model, text string) tea.Mouse {
 	t.Helper()
 	for y, row := range strings.Split(ansi.Strip(m.View().Content), "\n") {
 		if strings.Contains(row, text) {
-			return tea.Mouse{X: m.viewport.Width() - 1, Y: y, Button: tea.MouseLeft}
+			return tea.Mouse{X: m.horizontalPadding() + m.viewport.Width() - 1, Y: y, Button: tea.MouseLeft}
 		}
 	}
 	t.Fatalf("no painted row %q in:\n%s", text, ansi.Strip(m.View().Content))
@@ -182,7 +182,7 @@ func TestMouseHitsWrappedUnicodeHeadingsButNotTheirBody(t *testing.T) {
 	m := foldTestModel()
 	m.entries[2].toolDetail = "中文🙂文件.md"
 	m.entries[2].toolOutput.Text = strings.Repeat("中文🙂输出内容\n", 15)
-	m = updateModel(t, m, tea.WindowSizeMsg{Width: 28, Height: 20})
+	m = updateModel(t, m, tea.WindowSizeMsg{Width: 28, Height: 24})
 	m.viewport.GotoTop()
 	m = clickPainted(t, m, "✓ read")
 	body := paintedMouse(t, m, "中文🙂输出内容")

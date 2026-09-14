@@ -111,10 +111,10 @@ func TestModelMouseDragSelectsAndCopiesTranscript(t *testing.T) {
 		"alpha bravo\n" + strings.Repeat("line\n", 30),
 	)
 	current.viewport.GotoTop()
-	viewportTop := lipgloss.Height(current.headerView(current.width))
+	viewportTop := current.verticalPadding() + lipgloss.Height(current.headerView(current.layoutWidth()))
 
 	current = updateModel(t, current, tea.MouseClickMsg(tea.Mouse{
-		X:      0,
+		X:      current.horizontalPadding(),
 		Y:      viewportTop,
 		Button: tea.MouseLeft,
 	}))
@@ -123,7 +123,7 @@ func TestModelMouseDragSelectsAndCopiesTranscript(t *testing.T) {
 	}
 
 	current = updateModel(t, current, tea.MouseMotionMsg(tea.Mouse{
-		X:      4,
+		X:      current.horizontalPadding() + 4,
 		Y:      viewportTop,
 		Button: tea.MouseLeft,
 	}))
@@ -149,7 +149,7 @@ func TestModelMouseDragSelectsAndCopiesTranscript(t *testing.T) {
 	}
 
 	updated, command := current.Update(tea.MouseReleaseMsg(tea.Mouse{
-		X:      4,
+		X:      current.horizontalPadding() + 4,
 		Y:      viewportTop,
 		Button: tea.MouseLeft,
 	}))
@@ -191,15 +191,15 @@ func TestModelMouseClickWithoutDragDoesNotCopy(t *testing.T) {
 	current := newModel(make(chan runRequest), make(chan struct{}))
 	current = updateModel(t, current, tea.WindowSizeMsg{Width: 40, Height: 14})
 	current.viewport.SetContent("alpha")
-	viewportTop := lipgloss.Height(current.headerView(current.width))
+	viewportTop := current.verticalPadding() + lipgloss.Height(current.headerView(current.layoutWidth()))
 
 	current = updateModel(t, current, tea.MouseClickMsg(tea.Mouse{
-		X:      1,
+		X:      current.horizontalPadding() + 1,
 		Y:      viewportTop,
 		Button: tea.MouseLeft,
 	}))
 	updated, command := current.Update(tea.MouseReleaseMsg(tea.Mouse{
-		X:      1,
+		X:      current.horizontalPadding() + 1,
 		Y:      viewportTop,
 		Button: tea.MouseLeft,
 	}))
@@ -224,10 +224,10 @@ func TestCopyNoticePreservesActivityAndExpires(t *testing.T) {
 			current.side.isVisible = state == "side"
 			current.status = "Thinking..."
 			current.viewport.SetContent("alpha")
-			top := lipgloss.Height(current.headerView(current.width))
+			top := current.verticalPadding() + lipgloss.Height(current.headerView(current.layoutWidth()))
 			copySelection := func() {
-				current = updateModel(t, current, tea.MouseClickMsg(tea.Mouse{X: 0, Y: top, Button: tea.MouseLeft}))
-				updated, _ := current.Update(tea.MouseReleaseMsg(tea.Mouse{X: 4, Y: top, Button: tea.MouseLeft}))
+				current = updateModel(t, current, tea.MouseClickMsg(tea.Mouse{X: current.horizontalPadding(), Y: top, Button: tea.MouseLeft}))
+				updated, _ := current.Update(tea.MouseReleaseMsg(tea.Mouse{X: current.horizontalPadding() + 4, Y: top, Button: tea.MouseLeft}))
 				current = updated.(model)
 			}
 			beforeHeight := lipgloss.Height(current.View().Content)
@@ -275,8 +275,8 @@ func TestCopyBubbleKeepsFooterAndCursor(t *testing.T) {
 				t.Fatal("bubble changed screen dimensions")
 			}
 			lines := strings.Split(ansi.Strip(after.Content), "\n")
-			top := len(lines) - lipgloss.Height(current.footerView(width)) -
-				lipgloss.Height(current.composerView(width)) - 3
+			top := len(lines) - current.verticalPadding() - lipgloss.Height(current.footerView(current.layoutWidth())) -
+				lipgloss.Height(current.composerView(current.layoutWidth())) - 3
 			if !strings.Contains(lines[top], "╭") || !strings.Contains(lines[top+1], "✓ Copied") {
 				t.Fatal("bubble missing above composer")
 			}
@@ -293,9 +293,9 @@ func TestCopyNoticeTimerExpiresAfterOneSecond(t *testing.T) {
 		current := newModel(make(chan runRequest), make(chan struct{}))
 		current = updateModel(t, current, tea.WindowSizeMsg{Width: 40, Height: 14})
 		current.viewport.SetContent("alpha")
-		top := lipgloss.Height(current.headerView(40))
-		current = updateModel(t, current, tea.MouseClickMsg(tea.Mouse{X: 0, Y: top, Button: tea.MouseLeft}))
-		updated, cmd := current.Update(tea.MouseReleaseMsg(tea.Mouse{X: 4, Y: top, Button: tea.MouseLeft}))
+		top := current.verticalPadding() + lipgloss.Height(current.headerView(current.layoutWidth()))
+		current = updateModel(t, current, tea.MouseClickMsg(tea.Mouse{X: current.horizontalPadding(), Y: top, Button: tea.MouseLeft}))
+		updated, cmd := current.Update(tea.MouseReleaseMsg(tea.Mouse{X: current.horizontalPadding() + 4, Y: top, Button: tea.MouseLeft}))
 		current = updated.(model)
 		started := time.Now()
 		expired := cmd().(tea.BatchMsg)[1]()

@@ -17,7 +17,7 @@ import (
 
 func (m *model) resizeLayout() {
 	m.resizeGuard()
-	width := max(m.width, minimumWidth)
+	width := m.layoutWidth()
 	composerStyle := composerFocusedStyle
 	if !m.input.Focused() {
 		composerStyle = composerBlurredStyle
@@ -33,7 +33,7 @@ func (m *model) resizeLayout() {
 		lipgloss.Height(m.footerView(width)) +
 		lipgloss.Height(m.commandMenuView(width)) +
 		lipgloss.Height(m.composerView(width))
-	viewportHeight := m.height - chromeHeight
+	viewportHeight := m.layoutHeight() - chromeHeight
 	m.viewport.SetHeight(max(viewportHeight, minimumViewport))
 }
 
@@ -100,9 +100,6 @@ func (m model) headerView(width int) string {
 	return lipgloss.NewStyle().
 		Width(innerWidth).
 		Padding(0, 1).
-		BorderBottom(true).
-		BorderStyle(lipgloss.NormalBorder()).
-		BorderForeground(subtleColor).
 		Render(line)
 }
 
@@ -909,7 +906,7 @@ func reasoningLevelStyle(level DisplayThinking) lipgloss.Style {
 }
 
 func (m model) contentWidth() int {
-	return max(max(m.width, minimumWidth)-4, 20)
+	return max(m.layoutWidth()-4, 20)
 }
 
 func renderMarkdown(markdown string, width int) string {

@@ -6,10 +6,12 @@ import (
 )
 
 func (m model) composerContains(mouse tea.Mouse, width int) bool {
-	if m.guardPending != nil || !m.composerInputEnabled() || mouse.X < 0 || mouse.X >= width {
+	outside := mouse.X < m.horizontalPadding() || mouse.X >= m.horizontalPadding()+width
+	if m.guardPending != nil || !m.composerInputEnabled() || outside {
 		return false
 	}
-	top := lipgloss.Height(m.headerView(width)) + m.viewport.Height() + lipgloss.Height(m.commandMenuView(width))
+	top := m.verticalPadding() + lipgloss.Height(m.headerView(width)) +
+		m.viewport.Height() + lipgloss.Height(m.commandMenuView(width))
 	height := lipgloss.Height(m.composerViewWithStyle(width, composerBlurredStyle))
 	return mouse.Y >= top && mouse.Y < top+height
 }

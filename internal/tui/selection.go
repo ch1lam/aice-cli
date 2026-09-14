@@ -179,8 +179,8 @@ func (m model) transcriptMousePosition(
 		return transcriptPosition{}, false
 	}
 
-	viewportTop := lipgloss.Height(m.headerView(max(m.width, minimumWidth)))
-	x := mouse.X
+	viewportTop := m.verticalPadding() + lipgloss.Height(m.headerView(m.layoutWidth()))
+	x := mouse.X - m.horizontalPadding()
 	y := mouse.Y - viewportTop
 	inside := x >= 0 && x < width && y >= 0 && y < height
 	if !inside && !clampToViewport {

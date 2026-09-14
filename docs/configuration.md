@@ -769,6 +769,11 @@ layout even while the pointer is stationary. Run completion preserves historical
 reading positions; only readers already at the bottom follow the final output.
 These controls require terminal mouse reporting; `Ctrl+O` remains available when it is unsupported.
 
+The interface reserves one blank row above and below, and two columns on each
+side, including on permission screens. Horizontal padding shrinks below 28
+columns to preserve the minimum content width; vertical padding disappears
+below 12 rows. The top bar has no separator line.
+
 The composer border is theme gray at rest. Hovering anywhere inside its frame
 temporarily turns it red; clicking it or editing a draft keeps it red until
 submission, Escape, an outside click, or loss of terminal focus. This visual

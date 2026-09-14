@@ -179,7 +179,7 @@ func (m model) nextGuardWait() tea.Cmd {
 // The prompt owns the screen while pending, independent of transcript chrome.
 func (m model) guardLayout(width int) (lipgloss.Style, int) {
 	style := lipgloss.NewStyle()
-	if width >= 60 && m.height >= 18 {
+	if width >= 60 && m.layoutHeight() >= 18 {
 		style = style.Border(lipgloss.RoundedBorder()).BorderForeground(accentColor).Padding(0, 1)
 	}
 	return style.Width(width), max(width-style.GetHorizontalFrameSize(), 1)
@@ -189,7 +189,7 @@ func (m *model) resizeGuard() {
 	if m.guardPending == nil {
 		return
 	}
-	style, width := m.guardLayout(max(m.width, 1))
+	style, width := m.guardLayout(max(m.width-2*m.horizontalPadding(), 1))
 	sections := []string{headerStyle.Render(guardTitle(m.guardPending))}
 	if content := guardKeyLine(m.guardPending); content != "" {
 		sections = append(sections, content)
@@ -207,7 +207,7 @@ func (m *model) resizeGuard() {
 	// viewport then scrolls complete display lines without cutting glyphs.
 	content := ansi.Hardwrap(strings.Join(sections, "\n\n"), width, true)
 	controls := m.guardControlsView(width)
-	m.guardViewport.SetHeight(max(1, m.height-style.GetVerticalFrameSize()-lipgloss.Height(controls)-1))
+	m.guardViewport.SetHeight(max(1, m.layoutHeight()-style.GetVerticalFrameSize()-lipgloss.Height(controls)-1))
 	m.guardViewport.SetContent(content)
 	m.guardViewport.SetYOffset(m.guardViewport.YOffset())
 }

@@ -21,10 +21,10 @@ type foldHit struct {
 func (m model) foldHitAt(mouse tea.Mouse) foldHit {
 	blocked := m.side.isVisible || m.guardPending != nil || m.authInput != nil ||
 		m.secretInput != nil || m.side.menu != nil || m.side.confirm != nil || m.commandMenu != nil
-	if blocked || mouse.X < 0 || mouse.X >= m.viewport.Width() {
+	if blocked || mouse.X < m.horizontalPadding() || mouse.X >= m.horizontalPadding()+m.viewport.Width() {
 		return foldHit{}
 	}
-	y := mouse.Y - lipgloss.Height(m.headerView(max(m.width, minimumWidth)))
+	y := mouse.Y - m.verticalPadding() - lipgloss.Height(m.headerView(m.layoutWidth()))
 	if y < 0 || y >= m.viewport.Height() {
 		return foldHit{}
 	}
