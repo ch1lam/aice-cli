@@ -53,7 +53,7 @@ func (m composerInput) View() string {
 				style := lipgloss.NewStyle().Foreground(secondaryColor)
 				if start == file.start-offset {
 					end = start + 1
-					style = lipgloss.NewStyle().Foreground(subtleColor)
+					style = lipgloss.NewStyle().Foreground(mutedTextColor)
 				}
 				if end <= start {
 					break

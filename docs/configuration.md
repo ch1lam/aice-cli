@@ -964,7 +964,7 @@ Use Up/Down to scroll through candidates, Right to insert the selected path and
 keep matching (directories continue at the next level), Tab or Enter to confirm
 a file or directory reference, and Escape to close. Confirmation closes the menu
 without sending the draft; a subsequent Enter sends it. Confirmed references
-display as unquoted `@path` attachments: the `@` is dark brown and the entire
+display as unquoted `@path` attachments: the `@` is gray and the entire
 path uses the theme's gold, including wrapped lines. Left/Right cross a confirmed
 attachment as one unit; Backspace/Delete remove it as one unit, like an image
 placeholder. Only confirmed occurrences are atomic; manually typed references

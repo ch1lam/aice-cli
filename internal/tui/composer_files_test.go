@@ -139,7 +139,7 @@ func TestComposerFileColorsWrapWithoutChangingTextOrCursor(t *testing.T) {
 		if ansi.Strip(view) != ansi.Strip(plain) || !reflect.DeepEqual(before, m.input.Cursor()) {
 			t.Fatalf("width %d: styling changed layout/cursor", width)
 		}
-		if !strings.Contains(view, "38;2;51;41;33m") || !strings.Contains(view, "38;2;201;160;99m") {
+		if !strings.Contains(view, "38;2;143;132;119m") || !strings.Contains(view, "38;2;201;160;99m") {
 			t.Fatalf("width %d: attachment colors missing: %q", width, view)
 		}
 		for _, line := range strings.Split(view, "\n") {
@@ -181,7 +181,7 @@ func TestComposerFileColorSurvivesViewportScroll(t *testing.T) {
 	m = attachTestFile(t, m, "internal/config.go")
 	m = updateModel(t, m, tea.KeyPressMsg{Code: 'x', Text: "x"})
 	view := m.input.View()
-	if !strings.Contains(view, "38;2;51;41;33m") || !strings.Contains(view, "38;2;201;160;99m") {
+	if !strings.Contains(view, "38;2;143;132;119m") || !strings.Contains(view, "38;2;201;160;99m") {
 		t.Fatalf("scrolled attachment lost color: %q", view)
 	}
 }
