@@ -68,13 +68,19 @@ func TestSlashMenuHighlightsMatchesWithoutBoldingDescriptions(t *testing.T) {
 		{label: "Low", description: "SELECTED_DESCRIPTION", query: "lw", current: true},
 		{label: "Lower", description: "OTHER_DESCRIPTION", query: "lw"},
 	}, 0)
-	selectedStyle := slashCommandRowStyle.Background(panelBlackColor).Bold(true)
+	selectedStyle := slashCommandSelectedStyle
+	if !strings.Contains(view, selectedStyle.Render("› ")) {
+		t.Fatal("selected arrow does not use the AICE accent style")
+	}
+	if strings.Contains(view, ";48;") || strings.Contains(view, "\x1b[48;") {
+		t.Fatal("slash menu introduced a selection background")
+	}
 	for _, matched := range []string{"L", "w"} {
-		if !strings.Contains(view, selectedStyle.Foreground(informationColor).Render(matched)) {
+		if !strings.Contains(view, selectedStyle.Foreground(secondaryColor).Render(matched)) {
 			t.Fatalf("selected match %q is not tinted and bold", matched)
 		}
 	}
-	if !strings.Contains(view, mutedStyle.Background(panelBlackColor).Render("SELECTED_DESCRIPTION")) {
+	if !strings.Contains(view, mutedStyle.Render("SELECTED_DESCRIPTION")) {
 		t.Fatal("selected description is not muted at normal weight")
 	}
 	for _, line := range strings.Split(view, "\n") {

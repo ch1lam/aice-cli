@@ -416,9 +416,7 @@ func renderSlashMenuRows(
 		}
 		if index == selection {
 			prefix = "› "
-			rowStyle = slashCommandRowStyle.Background(panelBlackColor)
-			labelStyle = rowStyle.Bold(true)
-			descriptionStyle = mutedStyle.Background(panelBlackColor)
+			labelStyle = slashCommandSelectedStyle
 		}
 		label := truncateTerminalText(
 			row.label,
@@ -451,7 +449,7 @@ func renderFuzzyLabel(label string, indices []int, style lipgloss.Style) string 
 	if len(indices) == 0 {
 		return style.Render(label)
 	}
-	matchedStyle := style.Foreground(informationColor)
+	matchedStyle := style.Foreground(secondaryColor)
 	var rendered strings.Builder
 	runes := []rune(label)
 	start := 0

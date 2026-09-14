@@ -724,7 +724,8 @@ Typing `/` opens command suggestions. Names match case-insensitive characters
 in order, with gaps allowed: `/cpt` matches `/compact`. Up/Down selects and Tab
 completes the highlighted command; Escape closes suggestions. Matches are ranked
 by relevance, favoring exact names, consecutive letters, and word starts. Matching
-letters are tinted blue. Only the selected option's label and arrow are bold;
+letters use AICE's gold secondary color; selection uses its sunset accent without
+adding a background. Only the selected option's label and arrow are bold;
 descriptions always stay muted with normal weight. `(active)` marks the current
 value independently of the highlighted selection.
 
