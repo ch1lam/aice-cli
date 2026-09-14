@@ -32,7 +32,12 @@ func (s *interactiveSession) CompleteFiles(ctx context.Context, query string) ([
 	// Browsing an empty query lists the current level; descendants must not
 	// crowd out its directories before the user starts filtering.
 	recursive := query != ""
-	if cut := strings.LastIndex(query, "/"); cut >= 0 {
+	explicitRoot := filepath.IsAbs(filepath.FromSlash(query)) || strings.HasPrefix(query, "~") ||
+		strings.HasPrefix(query, "../") || strings.HasPrefix(query, "./")
+	// A relative fuzzy query matches the whole workspace path, even when its
+	// first component names a real directory (cmd/m can match cmd/aice/main.go).
+	// Only a trailing slash browses one level; explicit roots stay anchored.
+	if cut := strings.LastIndex(query, "/"); cut >= 0 && (explicitRoot || cut == len(query)-1) {
 		candidate := hostpath.ExpandTilde(filepath.FromSlash(query[:cut+1]))
 		if !filepath.IsAbs(candidate) {
 			candidate = filepath.Join(root, candidate)
@@ -41,8 +46,8 @@ func (s *interactiveSession) CompleteFiles(ctx context.Context, query string) ([
 			root = candidate
 			prefix = query[:cut+1]
 			needle = query[cut+1:]
-			recursive = false
-		} else if filepath.IsAbs(filepath.FromSlash(query)) || strings.HasPrefix(query, "~") || strings.HasPrefix(query, "../") {
+			recursive = needle != ""
+		} else if explicitRoot {
 			return nil, nil
 		}
 	}

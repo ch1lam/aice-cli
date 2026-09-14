@@ -109,3 +109,62 @@ func TestFileCompletionListsCurrentLevelBeyondEightResults(t *testing.T) {
 		}
 	}
 }
+
+func TestFileCompletionMatchesAcrossDirectoryLevels(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	workspace, err := tool.NewWorkspace(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir = workspace.PhysicalPath()
+	_, gate, err := newExecutionGuard(dir, nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths := []string{
+		"cmd/aice/main.go", "cmd/aice/main_test.go",
+		"evals/go-service/reference/cmd/server/main.go",
+		"internal/config/settings.go", "中文/目录/配置.go",
+		"cmd/aice/.env", "node_modules/cmd/main.go",
+	}
+	for _, name := range paths {
+		path := filepath.Join(dir, name)
+		if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, nil, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s := &interactiveSession{workspace: workspace, guardAdapter: gate}
+	for _, test := range []struct {
+		query string
+		want  []string
+	}{
+		{"cmd/m", paths[:3]},
+		{"CMD/M", paths[:3]},
+		{"cm/mn", paths[:3]},
+		{"internal/stg", []string{"internal/config/settings.go"}},
+		{"中文/配", []string{"中文/目录/配置.go"}},
+		{"cmd/", []string{"cmd/aice/"}},
+		{"./cmd/m", []string{"./cmd/aice/main.go", "./cmd/aice/main_test.go"}},
+		{filepath.ToSlash(dir) + "/cmd/m", []string{filepath.ToSlash(dir) + "/cmd/aice/main.go", filepath.ToSlash(dir) + "/cmd/aice/main_test.go"}},
+		{"cmd/env", nil},
+	} {
+		t.Run(test.query, func(t *testing.T) {
+			items, err := s.CompleteFiles(t.Context(), test.query)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(items) != len(test.want) {
+				t.Fatalf("got %#v, want %v", items, test.want)
+			}
+			for i, item := range items {
+				if item.Path != test.want[i] {
+					t.Fatalf("candidate %d = %q, want %q", i, item.Path, test.want[i])
+				}
+			}
+		})
+	}
+}

@@ -990,7 +990,12 @@ While typing `@`, the TUI suggests files and directories. Bare `@` lists the
 workspace's direct children, with directories first; a directory followed by `/`
 lists its direct children. Nonempty queries use case-insensitive fuzzy matching
 (ordered subsequences), including partial directory names such as `itnl/cfg`.
-Exact parent paths scope matching to that directory's children.
+Relative queries match the whole workspace path across directory levels:
+`cmd/m` finds both `cmd/aice/main.go` and `evals/go-service/reference/cmd/server/main.go`,
+even though `cmd/` is an existing directory. A trailing `/` on an existing
+directory browses only its direct children. Explicit `./`, `../`, `~/`, and
+absolute parent paths anchor the search there; a nonempty suffix also searches
+their descendants.
 Use Up/Down to scroll through candidates, Right to insert the selected path and
 keep matching (directories continue at the next level), Tab or Enter to confirm
 a file or directory reference, and Escape to close. Confirmation closes the menu
