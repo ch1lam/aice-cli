@@ -127,6 +127,9 @@ func Run(ctx context.Context, runner Runner, options Options) error {
 	}
 	initialModel.prepareDelivery = deliveryCommand(controllerCtx)
 	initialModel.clipboard = pasteClipboard(controllerCtx)
+	initialModel.openDirectory = func(path string) tea.Cmd {
+		return openDirectoryCommand(controllerCtx, path)
+	}
 	initialModel.sideRequests = sideRequests
 	initialModel.sideControllerDone = sideControllerDone
 	if manager, ok := runner.(SideThreadManager); ok {

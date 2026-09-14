@@ -142,6 +142,8 @@ type model struct {
 	sessionUsage          DisplayUsage
 	contextShowFraction   bool
 	contextPressed        bool
+	workspacePress        *tea.Mouse
+	openDirectory         func(string) tea.Cmd
 	contextHoverConfirmed bool
 	contextUsage          DisplayContext
 	usageAnimation        usageAnimation
@@ -283,6 +285,13 @@ func (m model) Init() tea.Cmd {
 
 func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	switch message := message.(type) {
+	case directoryOpenedMsg:
+		if message.err != nil {
+			m.inputNotice = message.err.Error()
+			m.resizeLayout()
+			m.refreshViewport(false)
+		}
+		return m, nil
 	case clipboardResult:
 		m.clipboardPending = false
 		if m.clipboardDiscard {
@@ -305,6 +314,7 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case guardRequestMsg:
+		m.workspacePress = nil
 		if message.req != nil {
 			select {
 			case <-message.req.Done:
@@ -326,6 +336,7 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case tea.WindowSizeMsg:
+		m.workspacePress = nil
 		m.contextPressed = false
 		m.selection.clear()
 		m.width = message.Width
@@ -361,6 +372,14 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case tea.MouseClickMsg:
 		m.trackPointer(message.Mouse())
+		m.workspacePress = nil
+		if message.Button == tea.MouseLeft && m.workspaceContains(message.Mouse()) {
+			mouse := message.Mouse()
+			m.workspacePress = &mouse
+			m.selection.clear()
+			m.composerActive = false
+			return m, nil
+		}
 		if message.Button == tea.MouseLeft {
 			m.contextPressed = m.contextContains(message.Mouse())
 			if m.contextPressed {
@@ -380,6 +399,9 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case tea.MouseMotionMsg:
 		m.trackPointer(message.Mouse())
+		if press := m.workspacePress; press != nil && (press.X != message.X || press.Y != message.Y) {
+			m.workspacePress = nil
+		}
 		m.contextPressed = false
 		if m.guardPending != nil {
 			return m, nil
@@ -390,6 +412,14 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case tea.MouseReleaseMsg:
 		m.trackPointer(message.Mouse())
+		if press := m.workspacePress; press != nil && message.Button == tea.MouseLeft {
+			m.workspacePress = nil
+			if press.X == message.X && press.Y == message.Y && m.workspaceContains(message.Mouse()) {
+				command := m.activateWorkspace(press.Mod)
+				return m, command
+			}
+			return m, nil
+		}
 		if m.contextPressed && message.Button == tea.MouseLeft {
 			m.contextPressed = false
 			if m.contextContains(message.Mouse()) {
@@ -405,6 +435,7 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			return updated, command
 		}
 	case tea.MouseWheelMsg:
+		m.workspacePress = nil
 		m.contextPressed = false
 		m.trackPointer(message.Mouse())
 		m.selection.clear()
@@ -414,6 +445,7 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			return m, command
 		}
 	case tea.BlurMsg:
+		m.workspacePress = nil
 		m.contextPressed = false
 		m.contextHoverConfirmed = false
 		m.pointer = transcriptPointer{}

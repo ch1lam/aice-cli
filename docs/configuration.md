@@ -785,6 +785,20 @@ sit in the composer’s bottom-right border as `model-name (low)`, without label
 Long model names shorten to fit while retaining the thinking level. The footer
 keeps shortcuts, cumulative Session token usage, and cost.
 
+The top-bar working-directory path highlights on hover by changing text color,
+without an underline or terminal hyperlink (which terminals may underline).
+A left click copies its
+absolute path, even when the display uses `~` or an ellipsis. Command-click on
+macOS, or Ctrl-click on Windows/Linux, opens the directory in the system file
+manager when the terminal forwards the modified mouse event to AICE. Modified
+clicks intercepted by the terminal cannot be handled by AICE. A terminal may
+still detect the plain path and underline/open it while its link modifier is
+held; AICE does not disable this native behavior.
+Dragging or a cancelled press does neither;
+only the visible path text is clickable. Copy uses the same terminal clipboard
+support and confirmation as transcript selection. File-manager launch errors
+appear above the input field.
+
 The composer border is theme gray at rest. Hovering anywhere inside its frame
 temporarily turns it red; clicking it or editing a draft keeps it red until
 submission, Escape, an outside click, or loss of terminal focus. This visual

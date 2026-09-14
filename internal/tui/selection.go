@@ -160,12 +160,17 @@ func (m model) handleTranscriptMouseRelease(
 		return m, nil, true
 	}
 
+	command := m.copyText(selected)
+	return m, command, true
+}
+
+func (m *model) copyText(text string) tea.Cmd {
 	m.copyNotice = true
 	m.copyGeneration++
 	generation := m.copyGeneration
-	return m, tea.Batch(tea.SetClipboard(selected), tea.Tick(time.Second, func(time.Time) tea.Msg {
+	return tea.Batch(tea.SetClipboard(text), tea.Tick(time.Second, func(time.Time) tea.Msg {
 		return copyNoticeExpiredMsg(generation)
-	})), true
+	}))
 }
 
 func (m model) transcriptMousePosition(

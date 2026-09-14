@@ -50,7 +50,12 @@ func (m *model) refreshViewport(forceBottom bool) {
 	}
 }
 
-func (m model) headerView(width int) string {
+type headerLayout struct {
+	brand, activity, workspace string
+	workspaceX, leftWidth      int
+}
+
+func (m model) headerLayout(width int) headerLayout {
 	innerWidth := max(width-2, 1)
 	brand := brandStyle.Render("AICE")
 	state := "READY"
@@ -85,10 +90,8 @@ func (m model) headerView(width int) string {
 	}
 	activity := lipgloss.NewStyle().Bold(true).Foreground(stateColor).Render("● " + state)
 	workspace := "workspace agent"
-	workspaceStyle := mutedStyle
 	if strings.TrimSpace(m.workingDirectory) != "" {
 		workspace = shellWorkingDirectory(m.workingDirectory)
-		workspaceStyle = infoStyle
 	}
 	contextWidth := m.contextHeaderWidth()
 	leftWidth := innerWidth
@@ -96,15 +99,25 @@ func (m model) headerView(width int) string {
 		leftWidth = max(leftWidth-contextWidth-2, 0)
 	}
 	workspaceWidth := max(leftWidth-lipgloss.Width(brand)-lipgloss.Width(activity)-4, 0)
-	left := brand
-	if workspaceWidth > 0 {
-		left += "  " + workspaceStyle.Render(truncateTerminalText(workspace, workspaceWidth))
+	return headerLayout{
+		brand: brand, activity: activity,
+		workspace:  truncateTerminalText(workspace, workspaceWidth),
+		workspaceX: 1 + lipgloss.Width(brand) + 2,
+		leftWidth:  leftWidth,
 	}
-	left += "  " + activity
-	line := ansi.Truncate(left, leftWidth, "…")
-	if contextWidth > 0 {
+}
+
+func (m model) headerView(width int) string {
+	layout := m.headerLayout(width)
+	left := layout.brand
+	if layout.workspace != "" {
+		left += "  " + m.workspaceHeaderView(layout)
+	}
+	left += "  " + layout.activity
+	line := ansi.Truncate(left, layout.leftWidth, "…")
+	if m.contextHeaderWidth() > 0 {
 		right := m.contextHeaderView()
-		line += strings.Repeat(" ", max(innerWidth-lipgloss.Width(line)-lipgloss.Width(right), 0)) + right
+		line += strings.Repeat(" ", max(width-2-lipgloss.Width(line)-lipgloss.Width(right), 0)) + right
 	}
 	return lipgloss.NewStyle().Width(width).Padding(0, 1).Render(line)
 }
