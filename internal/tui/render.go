@@ -75,18 +75,18 @@ func (m model) headerLayout(width int) headerLayout {
 		stateColor = errorColor
 	case m.running && m.side.isVisible:
 		state = "MAIN WORKING"
-		stateColor = accentColor
+		stateColor = informationColor
 	case m.side.isVisible:
 		state = "MAIN READY"
 	case m.running && sideRunning:
 		state = "MAIN + BTW"
-		stateColor = accentColor
+		stateColor = informationColor
 	case m.running:
 		state = "WORKING"
-		stateColor = accentColor
+		stateColor = informationColor
 	case sideRunning:
 		state = "BTW WORKING"
-		stateColor = accentColor
+		stateColor = informationColor
 	}
 	activity := lipgloss.NewStyle().Bold(true).Foreground(stateColor).Render("● " + state)
 	workspace := "workspace agent"
@@ -537,10 +537,10 @@ func pendingSteerRail(frame uint8) string {
 }
 
 func (m model) processHeader(start, end int, collapsed bool) string {
-	star := "▾ ✧"
+	star := "✧"
 	action := "ctrl+o to collapse"
 	if collapsed {
-		star = "▸ ✦"
+		star = "✦"
 		action = "ctrl+o to expand"
 	}
 
@@ -574,22 +574,22 @@ func (m model) processHeader(start, end int, collapsed bool) string {
 		4
 	if detail == "" {
 		return lipgloss.NewStyle().Padding(0, 1).Render(
-			headerStyle.Render(star) + "  " +
-				infoStyle.Render(action),
+			brandStyle.Render(star) + "  " +
+				mutedStyle.Render(action),
 		)
 	}
 	if detailWidth > 0 {
 		detail = truncateTerminalText(detail, detailWidth)
 		return lipgloss.NewStyle().Padding(0, 1).Render(
-			headerStyle.Render(star) +
+			brandStyle.Render(star) +
 				mutedStyle.Render("  "+detail+"  ") +
-				infoStyle.Render(action),
+				mutedStyle.Render(action),
 		)
 	}
 
 	return lipgloss.NewStyle().Padding(0, 1).Render(
-		headerStyle.Render(star) + "\n" +
-			infoStyle.Render("  "+action),
+		brandStyle.Render(star) + "\n" +
+			mutedStyle.Render("  "+action),
 	)
 }
 
@@ -734,7 +734,7 @@ func (m model) assistantHeaderView(processID int) string {
 }
 
 func (m model) assistantHeader(processID int) string {
-	header := headerStyle.Render("✦")
+	header := brandStyle.Render("✦")
 	duration, timed := m.processDuration(processID)
 	if !timed {
 		return header
@@ -921,17 +921,17 @@ func (m model) modelStatus(width int) string {
 func reasoningLevelStyle(level DisplayThinking) lipgloss.Style {
 	switch level {
 	case DisplayThinkingMax:
-		return lipgloss.NewStyle().Foreground(accentColor)
+		return infoStyle.Bold(true)
 	case DisplayThinkingXHigh:
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("#F5735F"))
+		return infoStyle.Bold(true)
 	case DisplayThinkingHigh:
-		return lipgloss.NewStyle().Foreground(warningColor)
+		return infoStyle
 	case DisplayThinkingMedium:
-		return lipgloss.NewStyle().Foreground(secondaryColor)
+		return pathStyle
 	case DisplayThinkingLow, DisplayThinkingMinimal, DisplayThinkingOff, DisplayThinkingDefault:
 		fallthrough
 	default:
-		return lipgloss.NewStyle().Foreground(mutedTextColor)
+		return mutedStyle
 	}
 }
 
@@ -1111,7 +1111,7 @@ func applyCodeBlockBackground(rendered, original string, wordWrap int) string {
 			}
 		}
 	}
-	bgSeq := "\x1b[48;2;27;22;19m"
+	bgSeq := ansi.Style{}.BackgroundColor(panelBlackColor).String()
 	resetSeq := "\x1b[0m"
 	for i, line := range lines {
 		if !isCode[i] {

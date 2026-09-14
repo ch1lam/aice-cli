@@ -241,7 +241,7 @@ func newModel(
 
 	activity := spinner.New(
 		spinner.WithSpinner(spinner.MiniDot),
-		spinner.WithStyle(lipgloss.NewStyle().Foreground(accentColor)),
+		spinner.WithStyle(infoStyle),
 	)
 	helpView := help.New()
 	helpView.ShortSeparator = "  "

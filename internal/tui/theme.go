@@ -7,7 +7,8 @@ import (
 )
 
 // The ink palette uses three dark layers: ink for the screen, xuan for panels,
-// and brown for borders and separators.
+// and brown for borders and separators. Accent marks AICE identity and headings;
+// gold marks focus and paths, while semantic colors mark activity and outcomes.
 const (
 	inkBlackHex    = "#0D0B0A" // 墨黑
 	panelBlackHex  = "#1B1613" // 玄
@@ -39,6 +40,7 @@ var (
 	headerStyle        = lipgloss.NewStyle().Bold(true).Foreground(accentColor)
 	labelStyle         = lipgloss.NewStyle().Bold(true).Foreground(secondaryColor)
 	bodyStyle          = lipgloss.NewStyle().Foreground(primaryTextColor)
+	pathStyle          = lipgloss.NewStyle().Foreground(secondaryColor)
 	assistantBodyStyle = lipgloss.NewStyle().
 				PaddingLeft(2)
 	mutedStyle             = lipgloss.NewStyle().Foreground(mutedTextColor)
@@ -55,7 +57,7 @@ var (
 	toolNameStyle = lipgloss.NewStyle().
 			Bold(true).
 			Foreground(informationColor)
-	toolTargetStyle = lipgloss.NewStyle().Foreground(secondaryColor).
+	toolTargetStyle = pathStyle.
 			UnderlineStyle(lipgloss.UnderlineDashed).UnderlineSpaces(true)
 	userStyle = lipgloss.NewStyle().
 			BorderLeft(true).
@@ -66,13 +68,13 @@ var (
 	thinkingStyle = lipgloss.NewStyle().
 			BorderLeft(true).
 			BorderStyle(lipgloss.NormalBorder()).
-			BorderForeground(informationColor).
+			BorderForeground(subtleColor).
 			Background(panelBlackColor).
 			Foreground(mutedTextColor).
 			PaddingLeft(1)
 	composerFocusedStyle = lipgloss.NewStyle().
 				Border(lipgloss.RoundedBorder()).
-				BorderForeground(accentColor).
+				BorderForeground(secondaryColor).
 				Padding(0, 1)
 	composerBlurredStyle  = composerFocusedStyle.BorderForeground(subtleColor)
 	slashCommandMenuStyle = lipgloss.NewStyle().
@@ -86,7 +88,7 @@ var (
 					Foreground(primaryTextColor).
 					BorderLeft(true).
 					BorderStyle(lipgloss.NormalBorder()).
-					BorderForeground(informationColor).
+					BorderForeground(subtleColor).
 					PaddingLeft(1)
 	transcriptSelectionStyle = lipgloss.NewStyle().
 					Foreground(inkBlackColor).
@@ -95,7 +97,7 @@ var (
 	noticeStyle        = lipgloss.NewStyle().Foreground(warningColor)
 	guardEmphasisStyle = lipgloss.NewStyle().
 				Bold(true).
-				Foreground(accentColor)
+				Foreground(secondaryColor)
 	guardHighlightStyle = lipgloss.NewStyle().
 				Bold(true).
 				Foreground(errorColor)
@@ -114,8 +116,8 @@ func inkMarkdownStyle() ansi.StyleConfig {
 	style.H1.BackgroundColor = stringPointer(panelBlackHex)
 	style.H6.Color = stringPointer(goldHex)
 	style.HorizontalRule.Color = stringPointer(separatorHex)
-	style.Item.Color = stringPointer(goldHex)
-	style.Enumeration.Color = stringPointer(goldHex)
+	style.Item.Color = stringPointer(mutedTextHex)
+	style.Enumeration.Color = stringPointer(mutedTextHex)
 	style.Task.Color = stringPointer(goldHex)
 	style.Task.Ticked = "✅ "
 	style.Task.Unticked = "⏳ "

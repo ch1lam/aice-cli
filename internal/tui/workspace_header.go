@@ -29,10 +29,10 @@ func (m model) workspaceHeaderView(layout headerLayout) string {
 	if strings.TrimSpace(m.workingDirectory) == "" {
 		return mutedStyle.Render(layout.workspace)
 	}
-	style := infoStyle
+	style := mutedStyle
 	if m.pointer.known && !m.selection.active &&
 		m.workspaceContains(tea.Mouse{X: m.pointer.x, Y: m.pointer.y}) {
-		style = bodyStyle
+		style = pathStyle
 	}
 	// Keep the path plain: OSC 8 can add an always-visible terminal underline.
 	// Terminals can still detect paths themselves when their link modifier is held.

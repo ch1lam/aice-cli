@@ -699,6 +699,35 @@ card, with a blank row between them. The card shows the next action, command
 or login hints, and version/update status; it does not list tools. Narrow or
 short terminals show the card alone when the logo does not fit.
 
+### Visual theme
+
+The built-in ink theme is owned by [theme.go](../internal/tui/theme.go). Its three dark
+layers separate the ink screen (`#0D0B0A`), thinking/code panels
+(`#1B1613`), and quiet brown borders (`#332921`) by brightness. Color roles stay
+consistent across the transcript, composer, menus, and permission prompts:
+
+| Role | Color | Use |
+| --- | --- | --- |
+| Brand and headings | 霞绯 `#FF6B6B` | Brand name, headings, and assistant/process markers |
+| Primary text | 米白 `#F2E9D8` | Body text |
+| Secondary text | 烟灰 `#8F8477` | Metadata, folded details, hints, and thinking |
+| Focus and references | 金 `#C9A063` | Cursor, active composer border, highlighted paths, inline code, and fuzzy matches |
+| Success | 竹青 `#7A9471` | Ready state, completed tools, and inserted diff lines |
+| Warning | 姜黄 `#D98C3D` | Permission attention, output limits, and context pressure |
+| Error | 绛 `#A8383D` | Failed tools, error messages, and deleted diff lines |
+| Information | 石青 `#5B8A9E` | Tool names, working state, spinners, pending steering, and side-thread indicators |
+
+Headings use the brand accent with weight and spacing for hierarchy; Markdown
+level-six headings use gold. Thinking panels and command output use quiet brown rails.
+High reasoning levels use stone blue (bold at xhigh/max), without warning or
+error colors. Level names remain visible. The welcome logo's animated palette
+sweep and code syntax highlighting use the theme colors decoratively: code
+keywords and tags are sunset red, operators gold, and functions and strings
+bamboo green. Status text, icons, diff signs, and focus weight remain meaningful
+without color.
+
+### Commands
+
 | Command | Effect |
 | --- | --- |
 | `/help` | List commands |
@@ -804,7 +833,7 @@ sit in the composer’s bottom-right border as `model-name (low)`, without label
 Long model names shorten to fit while retaining the thinking level. The footer
 keeps shortcuts, cumulative Session token usage, and cost.
 
-The top-bar working-directory path highlights on hover by changing text color,
+The top-bar working-directory path changes from muted gray to gold on hover,
 without an underline or terminal hyperlink (which terminals may underline).
 A left click copies its
 absolute path, even when the display uses `~` or an ellipsis. Command-click on
@@ -818,11 +847,13 @@ only the visible path text is clickable. Copy uses the same terminal clipboard
 support and confirmation as transcript selection. File-manager launch errors
 appear above the input field.
 
-The composer border is theme gray at rest. Hovering anywhere inside its frame
-temporarily turns it red; clicking it or editing a draft keeps it red until
+The composer border is dark brown at rest. Hovering anywhere inside its frame
+temporarily turns it gold; clicking it or editing a draft keeps it gold until
 submission, Escape, an outside click, or loss of terminal focus. This visual
 state does not prevent typing directly into the composer.
 
+Process headings use `✧` when expanded and `✦` when collapsed, without a
+separate triangle. Clicking the heading toggles that process;
 `Ctrl+O` expands or collapses all main-task process details, including children.
 Expanded streaming thinking shows only its most recent 4 KiB with an omission
 notice; completion makes the full thinking available. BTW thinking retains the

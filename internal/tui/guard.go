@@ -180,7 +180,7 @@ func (m model) nextGuardWait() tea.Cmd {
 func (m model) guardLayout(width int) (lipgloss.Style, int) {
 	style := lipgloss.NewStyle()
 	if width >= 60 && m.layoutHeight() >= 18 {
-		style = style.Border(lipgloss.RoundedBorder()).BorderForeground(accentColor).Padding(0, 1)
+		style = style.Border(lipgloss.RoundedBorder()).BorderForeground(warningColor).Padding(0, 1)
 	}
 	return style.Width(width), max(width-style.GetHorizontalFrameSize(), 1)
 }

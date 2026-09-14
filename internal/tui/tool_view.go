@@ -13,7 +13,7 @@ func (m model) toolHeaderView(entry transcriptEntry) string {
 
 func (m model) toolHeaderStyled(entry transcriptEntry, hovered bool) string {
 	icon := m.spinner.View()
-	style := lipgloss.NewStyle().Foreground(accentColor)
+	style := infoStyle
 	if entry.toolPreparing {
 		icon = "…"
 	}
