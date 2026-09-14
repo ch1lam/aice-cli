@@ -724,10 +724,11 @@ Typing `/` opens command suggestions. Names match case-insensitive characters
 in order, with gaps allowed: `/cpt` matches `/compact`. Up/Down selects and Tab
 completes the highlighted command; Escape closes suggestions. Matches are ranked
 by relevance, favoring exact names, consecutive letters, and word starts. Matching
-letters use AICE's gold secondary color; selection uses its sunset accent without
-adding a background. Only the selected option's label and arrow are bold;
+letters use AICE's gold secondary color. Selection only makes the option's label
+and arrow bold, without changing their colors or adding a background;
 descriptions always stay muted with normal weight. `(active)` marks the current
-value independently of the highlighted selection.
+value independently of the highlighted selection. The inactive composer border
+uses the same dark brown separator color as the slash menu border.
 
 After a full menu command and a space (for example `/thinking `), suggestions
 switch immediately to its options and the composer shows a dim argument hint.

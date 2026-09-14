@@ -70,7 +70,7 @@ func TestSlashMenuHighlightsMatchesWithoutBoldingDescriptions(t *testing.T) {
 	}, 0)
 	selectedStyle := slashCommandSelectedStyle
 	if !strings.Contains(view, selectedStyle.Render("› ")) {
-		t.Fatal("selected arrow does not use the AICE accent style")
+		t.Fatal("selected arrow does not use the bold option style")
 	}
 	if strings.Contains(view, ";48;") || strings.Contains(view, "\x1b[48;") {
 		t.Fatal("slash menu introduced a selection background")

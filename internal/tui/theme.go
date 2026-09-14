@@ -74,22 +74,20 @@ var (
 				Border(lipgloss.RoundedBorder()).
 				BorderForeground(accentColor).
 				Padding(0, 1)
-	composerBlurredStyle  = composerFocusedStyle.BorderForeground(mutedTextColor)
+	composerBlurredStyle  = composerFocusedStyle.BorderForeground(subtleColor)
 	slashCommandMenuStyle = lipgloss.NewStyle().
 				Border(lipgloss.RoundedBorder()).
 				BorderForeground(subtleColor).
 				Padding(0, 1)
 	slashCommandRowStyle = lipgloss.NewStyle().
 				Foreground(primaryTextColor)
-	slashCommandSelectedStyle = slashCommandRowStyle.
-					Bold(true).
-					Foreground(accentColor)
-	commandOutputStyle = lipgloss.NewStyle().
-				Foreground(primaryTextColor).
-				BorderLeft(true).
-				BorderStyle(lipgloss.NormalBorder()).
-				BorderForeground(informationColor).
-				PaddingLeft(1)
+	slashCommandSelectedStyle = slashCommandRowStyle.Bold(true)
+	commandOutputStyle        = lipgloss.NewStyle().
+					Foreground(primaryTextColor).
+					BorderLeft(true).
+					BorderStyle(lipgloss.NormalBorder()).
+					BorderForeground(informationColor).
+					PaddingLeft(1)
 	transcriptSelectionStyle = lipgloss.NewStyle().
 					Foreground(inkBlackColor).
 					Background(secondaryColor)

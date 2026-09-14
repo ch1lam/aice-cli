@@ -66,15 +66,20 @@ func TestThemeMapsSemanticColors(t *testing.T) {
 	}
 }
 
-func TestSlashCommandSelectionUsesAccentWithoutBackground(t *testing.T) {
+func TestCompletionUsesThemeWithoutSelectionRecoloring(t *testing.T) {
 	t.Parallel()
 
 	assertColor(
 		t,
 		slashCommandSelectedStyle.GetForeground(),
-		lipgloss.Color(sunsetHex),
+		slashCommandRowStyle.GetForeground(),
 	)
+	if !slashCommandSelectedStyle.GetBold() {
+		t.Fatal("selected option is not bold")
+	}
 	assertNoColor(t, slashCommandSelectedStyle.GetBackground())
+	assertColor(t, composerBlurredStyle.GetBorderTopForeground(), lipgloss.Color(separatorHex))
+	assertColor(t, composerBlurredStyle.GetBorderTopForeground(), slashCommandMenuStyle.GetBorderTopForeground())
 }
 
 func TestThemeAppliesLayeredBackgrounds(t *testing.T) {
