@@ -396,14 +396,14 @@ func renderSlashMenuRows(
 	rendered := make([]string, 0, end-start+2)
 	rendered = append(
 		rendered,
-		labelStyle.Render(strings.ToUpper(title))+"  "+
+		mutedStyle.Render(strings.ToUpper(title))+"  "+
 			mutedStyle.Render(hint),
 	)
 	for index := start; index < end; index++ {
 		row := rows[index]
 		prefix := "  "
 		rowStyle := slashCommandRowStyle
-		labelStyle := labelStyle
+		labelStyle := slashCommandRowStyle
 		descriptionStyle := mutedStyle
 		if row.current {
 			prefix = "• "

@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"strings"
+	"unicode"
 
 	"github.com/ch1lam/aice-cli/internal/interaction"
 )
@@ -139,11 +140,25 @@ func matchingSlashCommands(
 
 	matches := make([]SlashCommand, 0, len(commands))
 	for _, command := range commands {
-		if strings.HasPrefix(command.Name, query) {
+		if fuzzyMatch(command.Name, query) {
 			matches = append(matches, command)
 		}
 	}
 	return matches
+}
+
+// fuzzyMatch accepts an ordered, case-insensitive subsequence, including gaps.
+func fuzzyMatch(value, query string) bool {
+	remaining := []rune(strings.ToLower(query))
+	for _, character := range value {
+		if len(remaining) == 0 {
+			return true
+		}
+		if unicode.ToLower(character) == remaining[0] {
+			remaining = remaining[1:]
+		}
+	}
+	return len(remaining) == 0
 }
 
 func slashCommandUsage(command SlashCommand) string {

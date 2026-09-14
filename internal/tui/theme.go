@@ -82,6 +82,7 @@ var (
 	slashCommandRowStyle = lipgloss.NewStyle().
 				Foreground(primaryTextColor)
 	slashCommandSelectedStyle = slashCommandRowStyle.
+					Bold(true).
 					Foreground(accentColor)
 	commandOutputStyle = lipgloss.NewStyle().
 				Foreground(primaryTextColor).

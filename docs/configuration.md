@@ -720,6 +720,11 @@ short terminals show the card alone when the logo does not fit.
 | `/clear` | Clear the viewport without changing Session history |
 | `/quit` | Exit AICE |
 
+Typing `/` opens command suggestions. Names match case-insensitive characters
+in order, with gaps allowed: `/cpt` matches `/compact`. Up/Down selects and Tab
+completes the highlighted command; Escape closes suggestions. Only the selected
+menu row is bold; unselected names and descriptions use normal weight.
+
 Menu commands do not accept typed values; select an option from the menu.
 Provider, model, and thinking changes apply to the current Session immediately
 and are also saved globally. Press `?` for keyboard shortcuts. Session

@@ -96,7 +96,7 @@ func TestParseSlashCommand(t *testing.T) {
 	}
 }
 
-func TestMatchingSlashCommandsUsesCommandPrefixOnly(t *testing.T) {
+func TestMatchingSlashCommandsUsesFuzzyNames(t *testing.T) {
 	t.Parallel()
 
 	commands := slashCommandCatalog([]SlashCommand{
@@ -105,8 +105,19 @@ func TestMatchingSlashCommandsUsesCommandPrefixOnly(t *testing.T) {
 	})
 
 	matches := matchingSlashCommands(commands, "/co")
-	if len(matches) != 1 || matches[0].Name != "compact" {
-		t.Fatalf("matchingSlashCommands() = %#v, want compact", matches)
+	if len(matches) != 2 || matches[0].Name != "compact" || matches[1].Name != "checkout" {
+		t.Fatalf("matchingSlashCommands() = %#v, want compact and checkout", matches)
+	}
+	for _, query := range []string{"/cpt", "/PACT", "  /cMt"} {
+		matches := matchingSlashCommands(commands, query)
+		if len(matches) != 1 || matches[0].Name != "compact" {
+			t.Errorf("matchingSlashCommands(%q) = %#v, want compact", query, matches)
+		}
+	}
+	for _, query := range []string{"/tc", "/session", "compact", "/compact\n"} {
+		if matches := matchingSlashCommands(commands, query); len(matches) != 0 {
+			t.Errorf("matchingSlashCommands(%q) = %#v, want none", query, matches)
+		}
 	}
 	if matches := matchingSlashCommands(commands, "/checkout "); len(matches) != 0 {
 		t.Fatalf("argument input matches = %#v, want none", matches)
