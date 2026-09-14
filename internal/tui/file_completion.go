@@ -61,6 +61,12 @@ func (m model) fileReferenceAtCursor() (interaction.FileReference, bool) {
 	cursor = min(cursor, len(runes))
 	for _, file := range m.input.files {
 		if cursor > file.start && cursor <= file.end {
+			if file.editing {
+				text := []rune(m.input.Value())
+				return interaction.FileReference{
+					Path: string(text[file.start+1 : cursor]), Start: file.start, End: cursor, Complete: true,
+				}, true
+			}
 			return interaction.FileReference{}, false
 		}
 	}
@@ -159,23 +165,20 @@ func (m model) handleFileCompletionKey(message tea.KeyPressMsg) (model, tea.Cmd,
 				break
 			}
 		}
-		runes := []rune(m.input.Value())
-		replacement := interaction.QuoteFileReference(item.Path)
-		path := ""
-		if message.Code != tea.KeyRight {
-			path = item.Path
-			replacement = fileReferenceLabel(path)
+		for _, file := range m.input.files {
+			if file.start == ref.Start && file.editing {
+				ref.End = file.end
+				break
+			}
 		}
+		runes := []rune(m.input.Value())
+		replacement := fileReferenceLabel(item.Path)
 		tail := string(runes[ref.End:])
 		back := len([]rune(tail))
-		if message.Code == tea.KeyRight {
-			// Keep the cursor inside the balanced quote so matching continues
-			// without letting a whitespace path swallow the rest of the draft.
-			back++
-		} else if tail == "" || !unicode.IsSpace(runes[ref.End]) {
+		if message.Code != tea.KeyRight && (tail == "" || !unicode.IsSpace(runes[ref.End])) {
 			replacement += " "
 		}
-		m.input.replaceReference(ref.Start, ref.End, replacement, path)
+		m.input.replaceReference(ref.Start, ref.End, replacement, item.Path, message.Code == tea.KeyRight)
 		for range back {
 			m.input, _ = m.input.Update(tea.KeyPressMsg{Code: tea.KeyLeft})
 		}

@@ -57,7 +57,7 @@ func TestFileCompletionRightContinuesMatchingAndPreservesTail(t *testing.T) {
 	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyDown})
 	updated, command := m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
 	m = updated.(model)
-	if want := `看 @"中文 目录/" 后续 @README.md`; m.input.Value() != want || command == nil || m.running {
+	if want := `看 @中文 目录/ 后续 @README.md`; m.input.Value() != want || command == nil || m.running {
 		t.Fatalf("drilled draft = %q, command missing = %v", m.input.Value(), command == nil)
 	}
 	ref, ok := m.fileReferenceAtCursor()
@@ -77,6 +77,58 @@ func TestFileCompletionRightContinuesMatchingAndPreservesTail(t *testing.T) {
 	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if want := `看 @中文 目录/config.go 后续 @README.md`; m.input.Value() != want || m.running || m.fileCompletionVisible() {
 		t.Fatalf("confirmed draft = %q", m.input.Value())
+	}
+}
+
+func TestFileCompletionRightIsUnquotedAndEditable(t *testing.T) {
+	t.Parallel()
+	for _, path := range []string{"internal/", "中文 目录/config.go", `folder/"quoted" file.go`} {
+		t.Run(path, func(t *testing.T) {
+			m := completionTestModel()
+			m.input.SetValue("look @i")
+			m.requestFileCompletion()
+			for range 2 {
+				m = updateModel(t, m, fileCompletionResult{generation: m.fileCompletion.generation, items: []interaction.FileCompletion{{Path: path}}})
+				m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyRight})
+			}
+			if m.input.Value() != "look @"+path || len(m.input.files) != 1 || !m.input.files[0].editing {
+				t.Fatalf("expanded path = %q, spans = %#v", m.input.Value(), m.input.files)
+			}
+			if len(m.input.fileSpansInRow(0)) != 0 {
+				t.Fatal("unconfirmed expansion became atomic")
+			}
+			m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyBackspace})
+			runes := []rune(path)
+			want := string(runes[:len(runes)-1])
+			if ref, ok := m.fileReferenceAtCursor(); !ok || ref.Path != want || m.input.Value() != "look @"+want {
+				t.Fatalf("backspace lost editable query: %q / %#v", m.input.Value(), ref)
+			}
+			m = updateModel(t, m, tea.KeyPressMsg{Code: ' ', Text: " "})
+			if _, ok := m.fileReferenceAtCursor(); ok {
+				t.Fatal("typed separator did not finish the query")
+			}
+			files := m.composerFiles()
+			if len(files) != 1 || files[0] != want {
+				t.Fatalf("space in expanded path was split during submission: %#v", files)
+			}
+		})
+	}
+}
+
+func TestFileCompletionRightReplacesWholeEditedPathInMiddle(t *testing.T) {
+	t.Parallel()
+	m := completionTestModel()
+	m.input.SetValue("@i tail @README.md")
+	m.input.SetCursorColumn(2)
+	m.requestFileCompletion()
+	m = updateModel(t, m, fileCompletionResult{generation: m.fileCompletion.generation, items: []interaction.FileCompletion{{Path: "my folder/config.go"}}})
+	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyRight})
+	m.input.SetCursorColumn(len("@my folder/cfg"))
+	m.requestFileCompletion()
+	m = updateModel(t, m, fileCompletionResult{generation: m.fileCompletion.generation, items: []interaction.FileCompletion{{Path: "my folder/config_test.go"}}})
+	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	if m.input.Value() != "@my folder/config_test.go tail @README.md" || len(m.input.files) != 1 || m.input.files[0].editing {
+		t.Fatalf("confirming mid-path damaged the draft: %q", m.input.Value())
 	}
 }
 

@@ -969,7 +969,9 @@ path uses the theme's gold, including wrapped lines. Left/Right cross a confirme
 attachment as one unit; Backspace/Delete remove it as one unit, like an image
 placeholder. Only confirmed occurrences are atomic; manually typed references
 and paths inserted with Right remain editable character by character and keep
-matching. Paths with spaces or quotes retain their exact spelling in attachment
+matching. Right also inserts paths without surrounding quotes, including names
+with spaces; typing a separator after the expanded path ends that query.
+Paths with spaces or quotes retain their exact spelling in reference
 state and use escaped quotes when serialized for submission, history or the
 external editor. Rejected submissions and deliveries restore the attachment
 state; recalling history or returning from the external editor yields editable

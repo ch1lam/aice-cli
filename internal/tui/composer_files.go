@@ -11,7 +11,7 @@ import (
 	"github.com/ch1lam/aice-cli/internal/interaction"
 )
 
-// composerInput owns confirmed file spans alongside the editable textarea.
+// composerInput owns file-reference spans alongside the editable textarea.
 // Positions distinguish an attached path from identical text typed elsewhere.
 // Replacing a draft clears its spans; ordinary edits rebase surviving spans.
 type composerInput struct {
@@ -22,6 +22,7 @@ type composerInput struct {
 type composerFile struct {
 	start, end int // rune offsets in Value
 	path       string
+	editing    bool // Right-expanded references remain plain, editable text.
 }
 
 func (m *composerInput) SetValue(value string) {
@@ -74,6 +75,23 @@ func (m *composerInput) rebaseFiles(before string, cursor int) {
 	kept := make([]composerFile, 0, len(m.files))
 	for _, file := range m.files {
 		switch {
+		case file.editing && start > file.start && start <= file.end && oldEnd <= file.end:
+			end := file.end + newEnd - oldEnd
+			// A delimiter typed after the path ends the reference; whitespace
+			// already inside a selected path remains part of its name.
+			if start == file.end {
+				for i := start; i < newEnd; i++ {
+					if unicode.IsSpace(next[i]) {
+						end = i
+						break
+					}
+				}
+			}
+			file.end = end
+			file.path = string(next[file.start+1 : end])
+			if !strings.ContainsAny(file.path, "\r\n") {
+				kept = append(kept, file)
+			}
 		case file.end <= start:
 			kept = append(kept, file)
 		case file.start >= oldEnd:
@@ -85,13 +103,20 @@ func (m *composerInput) rebaseFiles(before string, cursor int) {
 	m.files = kept
 }
 
-func (m *composerInput) replaceReference(start, end int, replacement string, path string) {
+func (m *composerInput) replaceReference(start, end int, replacement string, path string, editing bool) {
 	before := m.Value()
 	runes := []rune(before)
+	// Re-expanding the same path still replaces its editing state, even when
+	// the visible text does not change.
+	m.files = slices.DeleteFunc(slices.Clone(m.files), func(file composerFile) bool {
+		return file.start == start
+	})
 	m.Model.SetValue(string(runes[:start]) + replacement + string(runes[end:]))
 	m.rebaseFiles(before, start)
 	if path != "" {
-		m.files = append(slices.Clone(m.files), composerFile{start: start, end: start + utf8.RuneCountInString(fileReferenceLabel(path)), path: path})
+		m.files = append(slices.Clone(m.files), composerFile{
+			start: start, end: start + utf8.RuneCountInString(fileReferenceLabel(path)), path: path, editing: editing,
+		})
 		slices.SortFunc(m.files, func(a, b composerFile) int { return a.start - b.start })
 	}
 }
@@ -105,7 +130,7 @@ func fileReferenceLabel(path string) string {
 	}, path)
 }
 
-// referenceText serializes confirmed spans using the shared quoting syntax.
+// referenceText serializes known spans using the shared quoting syntax.
 // UI labels remain unquoted even for spaces, quotes and literal @ characters.
 func (m composerInput) referenceText() string {
 	runes := []rune(m.Value())
@@ -158,7 +183,7 @@ func (m composerInput) fileSpansInRow(row int) [][2]int {
 	}
 	var spans [][2]int
 	for _, file := range m.files {
-		if file.start >= start && file.end <= start+utf8.RuneCountInString(rows[row]) {
+		if !file.editing && file.start >= start && file.end <= start+utf8.RuneCountInString(rows[row]) {
 			spans = append(spans, [2]int{file.start - start, file.end - start})
 		}
 	}

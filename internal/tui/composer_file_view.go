@@ -43,7 +43,7 @@ func (m composerInput) View() string {
 		rowRunes := []rune(row)
 		probe.SetValue(row)
 		for _, file := range m.files {
-			if file.start < offset || file.end > offset+len(rowRunes) {
+			if file.editing || file.start < offset || file.end > offset+len(rowRunes) {
 				continue
 			}
 			for start := file.start - offset; start < file.end-offset; {
