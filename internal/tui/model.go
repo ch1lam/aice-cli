@@ -97,6 +97,7 @@ type customLoginState struct {
 type commandMenuFrame struct {
 	menu      SlashCommandMenu
 	selection int
+	draft     string
 }
 
 type commandMenuState struct {
@@ -676,6 +677,9 @@ func (m model) positionComposerCursor(position *tea.Position, width int) {
 }
 
 func (m model) handleKey(message tea.KeyPressMsg) (model, tea.Cmd, bool) {
+	if m.commandMenu == nil {
+		m.syncCommandCompletion()
+	}
 	if m.clearQuitPending && (!key.Matches(message, m.keys.clear) ||
 		m.guardPending != nil || m.authInput != nil || m.secretInput != nil ||
 		m.commandMenu != nil || m.side.menu != nil || m.side.confirm != nil) {
@@ -754,11 +758,12 @@ func (m model) handleKey(message tea.KeyPressMsg) (model, tea.Cmd, bool) {
 		case message.Code == tea.KeyDown:
 			m.moveCommandMenuSelection(1)
 			return m, nil, true
-		case message.Code == tea.KeyTab,
-			key.Matches(message, m.keys.send):
+		case message.Code == tea.KeyTab:
+			return m.completeCommandMenuOption()
+		case key.Matches(message, m.keys.send):
 			return m.selectCommandMenuOption()
 		default:
-			return m, nil, true
+			return m, nil, false
 		}
 	}
 
@@ -984,6 +989,7 @@ func (m *model) updateInput(message tea.Msg) tea.Cmd {
 			m.commandDismissed = false
 			m.historyIndex = -1
 			m.historyDraft = ""
+			m.syncCommandCompletion()
 			m.resizeLayout()
 			return nil
 		}
@@ -1011,6 +1017,10 @@ func (m *model) updateInput(message tea.Msg) tea.Cmd {
 		// move the cursor for local changes instead of switching history.
 		m.historyIndex = -1
 		m.historyDraft = ""
+	}
+	m.syncCommandCompletion()
+	if nextValue != previousValue && m.commandMenu != nil {
+		m.resetCommandOptionSelection()
 	}
 	completion := m.requestFileCompletion()
 	m.resizeLayout()

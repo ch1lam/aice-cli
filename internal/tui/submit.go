@@ -130,10 +130,14 @@ func (m model) submitSlashCommand(
 		return m.commandError(raw, "TUI run controller stopped")
 	}
 	if command.Menu != nil && (request.Arguments == "" || command.Name != "browser") {
+		m, _, _ = m.openCommandMenu(raw, request, command)
 		if request.Arguments != "" {
-			return m.commandUsageError(raw, command)
+			m.input.SetValue(raw)
+			m.input.CursorEnd()
+			m.resetCommandOptionSelection()
+			return m.selectCommandMenuOption()
 		}
-		return m.openCommandMenu(raw, request, command)
+		return m, nil, true
 	}
 	return m.startApplicationSlashCommand(raw, request, command)
 }
@@ -219,7 +223,10 @@ func (m model) openCommandMenu(
 			selection: currentSlashCommandOption(command.Menu.Options),
 		}},
 	}
-	m.input.Blur()
+	m.input.SetValue("/" + command.Name + " ")
+	m.input.CursorEnd()
+	m.input.Focus()
+	m.commandDismissed = false
 	m.activeRun = nil
 	m.acceptsDelivery = false
 	m.status = command.Menu.Title + "; Esc cancels"
@@ -230,13 +237,18 @@ func (m model) selectCommandMenuOption() (model, tea.Cmd, bool) {
 	if m.commandMenu == nil || len(m.commandMenu.frames) == 0 {
 		return m, nil, true
 	}
-	frame := &m.commandMenu.frames[len(m.commandMenu.frames)-1]
-	if len(frame.menu.Options) == 0 {
-		return m.backOrCancelCommandMenu()
+	if m.controllerClosed {
+		return m.commandError(m.commandMenu.raw, "TUI run controller stopped")
 	}
-	frame.selection = min(max(frame.selection, 0), len(frame.menu.Options)-1)
-	option := frame.menu.Options[frame.selection]
+	frame := &m.commandMenu.frames[len(m.commandMenu.frames)-1]
+	options := m.matchingCommandOptions()
+	if len(options) == 0 {
+		return m.settleCommand(false, nil)
+	}
+	frame.selection = min(max(frame.selection, 0), len(options)-1)
+	option := options[frame.selection]
 	if option.Menu != nil && len(option.Menu.Options) > 0 {
+		frame.draft = m.input.Value()
 		m.commandMenu.frames = append(
 			m.commandMenu.frames,
 			commandMenuFrame{
@@ -244,6 +256,8 @@ func (m model) selectCommandMenuOption() (model, tea.Cmd, bool) {
 				selection: currentSlashCommandOption(option.Menu.Options),
 			},
 		)
+		m.input.SetValue("/" + m.commandMenu.command.Name + " ")
+		m.input.CursorEnd()
 		m.status = option.Menu.Title + "; Esc goes back"
 		return m.settleCommand(false, nil)
 	}
@@ -253,6 +267,7 @@ func (m model) selectCommandMenuOption() (model, tea.Cmd, bool) {
 	state.request.UseSavedCredential = option.UseSavedCredential
 	state.request.LoginMethod = option.LoginMethod
 	m.commandMenu = nil
+	m.promptHistory = appendPromptHistory(m.promptHistory, state.raw)
 	return m.startApplicationSlashCommand(
 		state.raw,
 		state.request,
@@ -267,13 +282,15 @@ func (m model) backOrCancelCommandMenu() (model, tea.Cmd, bool) {
 	if len(m.commandMenu.frames) > 1 {
 		m.commandMenu.frames = m.commandMenu.frames[:len(m.commandMenu.frames)-1]
 		frame := m.commandMenu.frames[len(m.commandMenu.frames)-1]
+		m.input.SetValue(frame.draft)
+		m.input.CursorEnd()
 		m.status = frame.menu.Title + "; Esc cancels"
 		return m.settleCommand(false, nil)
 	}
 
 	name := m.commandMenu.command.Name
 	m.commandMenu = nil
-	m.resetCommandInput()
+	m.commandDismissed = true
 	m.status = "/" + name + " selection cancelled"
 	return m.settleCommand(false, m.input.Focus())
 }
@@ -283,12 +300,12 @@ func (m *model) moveCommandMenuSelection(delta int) {
 		return
 	}
 	frame := &m.commandMenu.frames[len(m.commandMenu.frames)-1]
-	if len(frame.menu.Options) == 0 {
+	options := m.matchingCommandOptions()
+	if len(options) == 0 {
 		frame.selection = 0
 		return
 	}
-	frame.selection = (frame.selection + delta + len(frame.menu.Options)) %
-		len(frame.menu.Options)
+	frame.selection = (frame.selection + delta + len(options)) % len(options)
 }
 
 func currentSlashCommandOption(options []SlashCommandOption) int {

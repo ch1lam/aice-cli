@@ -725,7 +725,16 @@ in order, with gaps allowed: `/cpt` matches `/compact`. Up/Down selects and Tab
 completes the highlighted command; Escape closes suggestions. Only the selected
 menu row is bold; unselected names and descriptions use normal weight.
 
-Menu commands do not accept typed values; select an option from the menu.
+After a full menu command and a space (for example `/thinking `), suggestions
+switch immediately to its options and the composer shows a dim argument hint.
+Typing filters option labels and values with the same fuzzy matching; exact
+values appear first. Tab fills the selected value without running it; Enter
+chooses it. No matches keeps the draft editable and runs nothing. Removing the
+space returns to command suggestions. Escape closes the menu without discarding
+the draft; editing reopens it. Enter on a bare menu command also opens its options.
+Nested choices open the next menu, whose hint and filter update together; Escape
+returns to the parent and restores its draft. Hints are display-only and are
+never submitted. Only options supplied by the active command catalog are offered.
 Provider, model, and thinking changes apply to the current Session immediately
 and are also saved globally. Press `?` for keyboard shortcuts. Session
 navigation and compaction commands (`/session`, `/tree`, `/checkout`,

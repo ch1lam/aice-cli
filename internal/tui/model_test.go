@@ -1869,7 +1869,7 @@ func TestNestedSlashCommandSelectionMenuEscGoesBackThenCancels(
 	if !handled || cancelled.commandMenu != nil {
 		t.Fatal("second Esc did not cancel the command menu")
 	}
-	if cancelled.input.Value() != "" || !cancelled.input.Focused() {
+	if cancelled.input.Value() != "/configure " || !cancelled.input.Focused() {
 		t.Fatal("cancelled command menu did not restore the composer")
 	}
 	select {
@@ -1879,7 +1879,7 @@ func TestNestedSlashCommandSelectionMenuEscGoesBackThenCancels(
 	}
 }
 
-func TestModelSlashCommandSelectionMenuRejectsTypedArguments(t *testing.T) {
+func TestModelSlashCommandSelectionMenuAcceptsTypedArguments(t *testing.T) {
 	t.Parallel()
 
 	requests := make(chan runRequest, 1)
@@ -1902,22 +1902,18 @@ func TestModelSlashCommandSelectionMenuRejectsTypedArguments(t *testing.T) {
 	updated, command, handled := current.handleKey(tea.KeyPressMsg{
 		Code: tea.KeyEnter,
 	})
-	if !handled || command != nil {
-		t.Fatal("typed menu arguments should produce a local usage error")
+	if !handled || command == nil || !updated.running {
+		t.Fatal("typed menu arguments did not run the selected option")
 	}
 	if updated.commandMenu != nil {
 		t.Fatal("typed arguments unexpectedly opened the selection menu")
 	}
-	if transcript := updated.transcriptView(); !strings.Contains(
-		transcript,
-		"Usage: /model",
-	) {
-		t.Fatalf("typed argument error = %q, want menu-only usage", transcript)
+	if _, ok := command().(runStartedMsg); !ok {
+		t.Fatal("typed option did not start the command")
 	}
-	select {
-	case request := <-requests:
-		t.Fatalf("typed menu arguments reached run controller: %#v", request)
-	default:
+	request := <-requests
+	if request.command == nil || request.command.Name != "model" || request.command.Arguments != "deepseek-v4-pro" {
+		t.Fatalf("typed model option = %#v", request.command)
 	}
 }
 

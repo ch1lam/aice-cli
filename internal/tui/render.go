@@ -176,7 +176,7 @@ func (m model) composerParts(contentWidth int) []string {
 			parts = append(parts, noticeStyle.Width(contentWidth).Render(m.inputNotice))
 		}
 	}
-	parts = append(parts, m.highlightPasteTokens(m.input.View()))
+	parts = append(parts, m.highlightPasteTokens(m.commandInputView(contentWidth)))
 	return parts
 }
 
@@ -288,13 +288,14 @@ func (m *model) completeSelectedSlashCommand() {
 		return
 	}
 	value := "/" + command.Name
-	if command.ArgumentHint != "" && command.Menu == nil {
+	if command.ArgumentHint != "" || command.Menu != nil {
 		value += " "
 	}
 	m.input.SetValue(value)
 	m.input.CursorEnd()
 	m.commandSelection = 0
-	m.commandDismissed = command.ArgumentHint == "" || command.Menu != nil
+	m.commandDismissed = command.ArgumentHint == "" && command.Menu == nil
+	m.syncCommandCompletion()
 }
 
 func (m model) commandMenuView(width int) string {
@@ -342,15 +343,17 @@ func (m model) slashCommandSelectionMenuView(width int) string {
 		return ""
 	}
 	frame := m.commandMenu.frames[len(m.commandMenu.frames)-1]
-	if len(frame.menu.Options) == 0 {
-		return ""
-	}
-	hint := "↑/↓ select · enter choose · esc cancel"
+	hint := "↑/↓ select · tab complete · enter choose · esc close"
 	if len(m.commandMenu.frames) > 1 {
-		hint = "↑/↓ select · enter choose · esc back"
+		hint = "↑/↓ select · tab complete · enter choose · esc back"
 	}
-	rows := make([]slashMenuRow, len(frame.menu.Options))
-	for index, option := range frame.menu.Options {
+	options := m.matchingCommandOptions()
+	if len(options) == 0 {
+		return renderSlashMenuRows(width, frame.menu.Title, hint,
+			[]slashMenuRow{{label: "No matching options"}}, -1)
+	}
+	rows := make([]slashMenuRow, len(options))
+	for index, option := range options {
 		rows[index] = slashMenuRow{
 			label:       sanitizeToolDetail(option.Label, false),
 			description: sanitizeToolDetail(option.Description, false),
@@ -394,11 +397,9 @@ func renderSlashMenuRows(
 		}
 	}
 	rendered := make([]string, 0, end-start+2)
-	rendered = append(
-		rendered,
-		mutedStyle.Render(strings.ToUpper(title))+"  "+
-			mutedStyle.Render(hint),
-	)
+	rendered = append(rendered, mutedStyle.Render(
+		truncateTerminalText(strings.ToUpper(title)+"  "+hint, innerWidth),
+	))
 	for index := start; index < end; index++ {
 		row := rows[index]
 		prefix := "  "
