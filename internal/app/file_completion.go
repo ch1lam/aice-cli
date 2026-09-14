@@ -15,7 +15,10 @@ import (
 	"github.com/ch1lam/aice-cli/internal/llm"
 )
 
-const maximumSearchEntries = 20000
+const (
+	maximumSearchEntries   = 20000
+	maximumFileCompletions = 1000
+)
 
 // CompleteFiles searches names only. Completion never prompts for or grants
 // access, follows no directory symlinks, and stops at a fixed traversal budget.
@@ -26,7 +29,9 @@ func (s *interactiveSession) CompleteFiles(ctx context.Context, query string) ([
 	root := s.workspace.PhysicalPath()
 	query = filepath.ToSlash(query)
 	prefix, needle := "", query
-	recursive := true
+	// Browsing an empty query lists the current level; descendants must not
+	// crowd out its directories before the user starts filtering.
+	recursive := query != ""
 	if cut := strings.LastIndex(query, "/"); cut >= 0 {
 		candidate := hostpath.ExpandTilde(filepath.FromSlash(query[:cut+1]))
 		if !filepath.IsAbs(candidate) {
@@ -91,6 +96,12 @@ func (s *interactiveSession) CompleteFiles(ctx context.Context, query string) ([
 		return nil, err
 	}
 	sort.Slice(matches, func(i, j int) bool {
+		if needle == "" {
+			if matches[i].item.Directory != matches[j].item.Directory {
+				return matches[i].item.Directory
+			}
+			return matches[i].item.Path < matches[j].item.Path
+		}
 		if matches[i].score != matches[j].score {
 			return matches[i].score < matches[j].score
 		}
@@ -107,7 +118,7 @@ func (s *interactiveSession) CompleteFiles(ctx context.Context, query string) ([
 		}
 		if s.completionPathAllowed(ctx, full) {
 			result = append(result, m.item)
-			if len(result) == 8 {
+			if len(result) == maximumFileCompletions {
 				break
 			}
 		}

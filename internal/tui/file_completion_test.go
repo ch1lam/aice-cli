@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -17,6 +18,123 @@ func completionTestModel() model {
 		}, func() {}
 	}
 	return m
+}
+
+func TestFileCompletionConfirmDoesNotSubmit(t *testing.T) {
+	t.Parallel()
+	for _, code := range []rune{tea.KeyTab, tea.KeyEnter} {
+		for _, item := range []interaction.FileCompletion{
+			{Path: "internal/", Directory: true}, {Path: "images/中文 图.png"},
+		} {
+			t.Run(fmt.Sprintf("%d/%s", code, item.Path), func(t *testing.T) {
+				m := completionTestModel()
+				m.input.SetValue("look @i")
+				m.requestFileCompletion()
+				m = updateModel(t, m, fileCompletionResult{generation: m.fileCompletion.generation, items: []interaction.FileCompletion{item}})
+				m = updateModel(t, m, tea.KeyPressMsg{Code: code})
+				if want := "look " + interaction.QuoteFileReference(item.Path) + " "; m.input.Value() != want {
+					t.Fatalf("draft = %q, want %q", m.input.Value(), want)
+				}
+				if m.running || m.submittedInput != nil || m.fileCompletionVisible() {
+					t.Fatal("confirmation sent the draft or kept completion open")
+				}
+			})
+		}
+	}
+}
+
+func TestFileCompletionRightContinuesMatchingAndPreservesTail(t *testing.T) {
+	t.Parallel()
+	m := completionTestModel()
+	m.input.SetValue("看 @i 后续 @README.md")
+	for range []rune(" 后续 @README.md") {
+		m.input, _ = m.input.Update(tea.KeyPressMsg{Code: tea.KeyLeft})
+	}
+	m.requestFileCompletion()
+	m = updateModel(t, m, fileCompletionResult{generation: m.fileCompletion.generation, items: []interaction.FileCompletion{
+		{Path: "internal/", Directory: true}, {Path: "中文 目录/", Directory: true},
+	}})
+	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyDown})
+	updated, command := m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
+	m = updated.(model)
+	if want := `看 @"中文 目录/" 后续 @README.md`; m.input.Value() != want || command == nil || m.running {
+		t.Fatalf("drilled draft = %q, command missing = %v", m.input.Value(), command == nil)
+	}
+	ref, ok := m.fileReferenceAtCursor()
+	if !ok || ref.Path != "中文 目录/" || !m.fileCompletion.pending {
+		t.Fatalf("drill lost completion context: %#v", ref)
+	}
+	m = updateModel(t, m, tea.KeyPressMsg{Code: 'c', Text: "cfg"})
+	if m.fileCompletion.ref.Path != "中文 目录/cfg" {
+		t.Fatalf("nested query = %q", m.fileCompletion.ref.Path)
+	}
+	m = updateModel(t, m, fileCompletionResult{generation: m.fileCompletion.generation, items: []interaction.FileCompletion{{Path: "中文 目录/config.go"}}})
+	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyRight})
+	if ref, ok := m.fileReferenceAtCursor(); !ok || ref.Path != "中文 目录/config.go" {
+		t.Fatalf("Right on file ended matching: %#v", ref)
+	}
+	m = updateModel(t, m, fileCompletionResult{generation: m.fileCompletion.generation, items: []interaction.FileCompletion{{Path: "中文 目录/config.go"}}})
+	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	if want := `看 @"中文 目录/config.go" 后续 @README.md`; m.input.Value() != want || m.running || m.fileCompletionVisible() {
+		t.Fatalf("confirmed draft = %q", m.input.Value())
+	}
+}
+
+func TestFileCompletionPendingKeysNeverSubmitOrUseStaleResults(t *testing.T) {
+	t.Parallel()
+	for _, retained := range []bool{false, true} {
+		for _, code := range []rune{tea.KeyTab, tea.KeyEnter, tea.KeyRight} {
+			m := completionTestModel()
+			m.input.SetValue("@i")
+			m.requestFileCompletion()
+			if retained {
+				m.fileCompletion.items = []interaction.FileCompletion{{Path: "old.go"}}
+			}
+			m = updateModel(t, m, tea.KeyPressMsg{Code: code})
+			if m.input.Value() != "@i" || m.running || m.submittedInput != nil {
+				t.Fatalf("pending key %d (retained %v) changed/submitted draft: %q", code, retained, m.input.Value())
+			}
+		}
+	}
+}
+
+func TestFileCompletionScrollsBeyondFirstPage(t *testing.T) {
+	t.Parallel()
+	m := completionTestModel()
+	m = updateModel(t, m, tea.WindowSizeMsg{Width: 120, Height: 40})
+	m.input.SetValue("@")
+	m.requestFileCompletion()
+	items := make([]interaction.FileCompletion, 15)
+	for i := range items {
+		items[i].Path = fmt.Sprintf("file%02d.go", i)
+	}
+	m = updateModel(t, m, fileCompletionResult{generation: m.fileCompletion.generation, items: items})
+	for range 12 {
+		m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyDown})
+	}
+	view := m.fileCompletionView(m.width)
+	if !strings.Contains(view, "file12.go") || !strings.Contains(view, "13/15") || strings.Contains(view, "file00.go") {
+		t.Fatalf("scrolled menu = %q", view)
+	}
+	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	if m.input.Value() != `@"file12.go" ` || m.running {
+		t.Fatalf("scrolled selection = %q", m.input.Value())
+	}
+	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	if m.submittedInput == nil || len(m.submittedInput.Files) != 1 || m.submittedInput.Files[0] != "file12.go" {
+		t.Fatal("second Enter did not submit confirmed reference")
+	}
+}
+
+func TestFileCompletionModifiedEnterStillInsertsNewline(t *testing.T) {
+	t.Parallel()
+	m := completionTestModel()
+	m.input.SetValue("@i")
+	m = updateModel(t, m, m.requestFileCompletion()())
+	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyEnter, Mod: tea.ModShift})
+	if m.input.Value() != "@i\n" || m.running {
+		t.Fatalf("Shift+Enter = %q", m.input.Value())
+	}
 }
 
 func TestFileCompletionIgnoresStaleResultsAndQuotesSelection(t *testing.T) {
@@ -35,7 +153,7 @@ func TestFileCompletionIgnoresStaleResultsAndQuotesSelection(t *testing.T) {
 		t.Fatal("suggestions missing")
 	}
 	m, _, handled := m.handleFileCompletionKey(tea.KeyPressMsg{Code: tea.KeyTab})
-	if !handled || m.input.Value() != `look @"new file.png"` || m.fileCompletionVisible() {
+	if !handled || m.input.Value() != `look @"new file.png" ` || m.fileCompletionVisible() {
 		t.Fatalf("selection = %q", m.input.Value())
 	}
 	refs := interaction.FileReferences(m.input.Value())
@@ -71,7 +189,7 @@ func TestFileCompletionKeepsLayoutWhileTyping(t *testing.T) {
 		items:      []interaction.FileCompletion{{Path: "image.png"}},
 	})
 	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyTab})
-	if m.input.Value() != `look @"image.png"` {
+	if m.input.Value() != `look @"image.png" ` {
 		t.Fatalf("latest candidate was not attached: %q", m.input.Value())
 	}
 }

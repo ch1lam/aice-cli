@@ -56,8 +56,9 @@ process details. See [transcript folding](./docs/configuration.md#interactive-in
 
 Paste a screenshot with `Ctrl+V` or `Alt+V` when using a vision model. Images appear as inline
 placeholders; delete them with Backspace/Delete, like long text pastes.
-Attach files with `@src/main.go` or `@"images/screen shot.png"` (Tab completes paths
-and fuzzy filename matches); `read` can also
+Attach files or directories with `@src/main.go` or `@"images/screen shot.png"`.
+Fuzzy search supports Up/Down to select, Right to continue into a path, and
+Tab/Enter to confirm the reference without sending the draft; `read` can also
 inspect images and recover saved originals. The same references work in `--print`.
 See [file references](./docs/configuration.md#file-references) and [clipboard input](./docs/configuration.md#clipboard-images) for platform support and limits.
 

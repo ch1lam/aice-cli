@@ -955,14 +955,23 @@ for paths with spaces. Relative paths resolve from the workspace; `~` and
 absolute paths are supported. Opaque long-paste placeholders are not scanned.
 An unfinished quoted reference remains text until completed.
 
-While typing `@`, the TUI suggests paths and fuzzy filename matches. Use Up/Down
-to select, Tab to complete, and Escape to close; Enter sends the draft. Selecting
-a directory continues completion inside it. Spaces and quotes are escaped for
-submission. While a query is being edited, the existing menu stays visible
+While typing `@`, the TUI suggests files and directories. Bare `@` lists the
+workspace's direct children, with directories first; a directory followed by `/`
+lists its direct children. Nonempty queries use case-insensitive fuzzy matching
+(ordered subsequences), including partial directory names such as `itnl/cfg`.
+Exact parent paths scope matching to that directory's children.
+Use Up/Down to scroll through candidates, Right to insert the selected path and
+keep matching (directories continue at the next level), Tab or Enter to confirm
+a file or directory reference, and Escape to close. Confirmation closes the menu
+without sending the draft; a subsequent Enter sends it. Right also keeps file
+paths editable. Spaces and quotes are escaped, and surrounding draft text is
+preserved. While a query is being edited, the existing menu stays visible
 until the latest search finishes, avoiding repeated transcript resizing during
-the debounce interval. Tab waits for fresh results; Escape still closes the menu.
+the debounce interval. Tab, Enter and Right wait for fresh results, including
+the initial search before the menu appears; Escape still closes the menu.
 Search is debounced, cancellable, limited to two seconds and 20,000
-entries, and shows at most eight permitted candidates. It skips `.git`, `.aice`,
+entries, and keeps up to 1,000 permitted candidates in a scrolling menu. The
+menu shows the selected position and candidate count. It skips `.git`, `.aice`,
 `node_modules`, and `vendor`; it does not interpret `.gitignore`. An exact
 reference can still name files outside the search results. Completion never
 opens an approval prompt; explicit submission uses the normal Guard.

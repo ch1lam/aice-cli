@@ -2,8 +2,9 @@ package tui
 
 import (
 	"context"
-	"strings"
+	"fmt"
 	"time"
+	"unicode"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/ch1lam/aice-cli/internal/interaction"
@@ -111,12 +112,30 @@ func (m model) fileCompletionView(width int) string {
 	}
 	rows := make([]slashMenuRow, len(m.fileCompletion.items))
 	for i, item := range m.fileCompletion.items {
-		rows[i] = slashMenuRow{label: sanitizeToolDetail(item.Path, false)}
+		rows[i] = slashMenuRow{label: sanitizeToolDetail(item.Path, false), query: m.fileCompletion.ref.Path}
 	}
-	return renderSlashMenuRows(width, "FILES", "↑/↓ select · tab attach · esc close", rows, m.fileCompletion.selection)
+	title := fmt.Sprintf("FILES %d/%d", m.fileCompletion.selection+1, len(rows))
+	return renderSlashMenuRows(width, title, "↑/↓ select · → expand · tab/enter attach · esc close", rows, m.fileCompletion.selection)
 }
 
 func (m model) handleFileCompletionKey(message tea.KeyPressMsg) (model, tea.Cmd, bool) {
+	ref, ok := m.fileReferenceAtCursor()
+	if message.Mod != 0 || !ok || ref != m.fileCompletion.ref || m.fileCompletion.dismissed {
+		return m, nil, false
+	}
+	// The first search has no menu yet. Do not let Enter send a partial
+	// reference, or let retained results attach a path from the previous query.
+	if m.fileCompletion.pending {
+		switch message.Code {
+		case tea.KeyTab, tea.KeyEnter, tea.KeyRight, tea.KeyUp, tea.KeyDown:
+			return m, nil, true
+		case tea.KeyEscape:
+			m.fileCompletion.dismissed = true
+			m.resizeLayout()
+			m.refreshViewport(false)
+			return m, nil, true
+		}
+	}
 	if !m.fileCompletionVisible() {
 		return m, nil, false
 	}
@@ -127,12 +146,8 @@ func (m model) handleFileCompletionKey(message tea.KeyPressMsg) (model, tea.Cmd,
 		m.fileCompletion.selection = (m.fileCompletion.selection + 1) % len(m.fileCompletion.items)
 	case tea.KeyEscape:
 		m.fileCompletion.dismissed = true
-	case tea.KeyTab:
-		if m.fileCompletion.pending {
-			return m, nil, true
-		}
+	case tea.KeyTab, tea.KeyEnter, tea.KeyRight:
 		item := m.fileCompletion.items[m.fileCompletion.selection]
-		ref := m.fileCompletion.ref
 		for _, full := range interaction.ScanFileReferences(m.input.Value()) {
 			if full.Start == ref.Start {
 				ref.End = full.End
@@ -141,15 +156,20 @@ func (m model) handleFileCompletionKey(message tea.KeyPressMsg) (model, tea.Cmd,
 		}
 		runes := []rune(m.input.Value())
 		replacement := interaction.QuoteFileReference(item.Path)
-		if item.Directory {
-			replacement = strings.TrimSuffix(replacement, "\"")
-		}
 		tail := string(runes[ref.End:])
+		back := len([]rune(tail))
+		if message.Code == tea.KeyRight {
+			// Keep the cursor inside the balanced quote so matching continues
+			// without letting a whitespace path swallow the rest of the draft.
+			back++
+		} else if tail == "" || !unicode.IsSpace(runes[ref.End]) {
+			replacement += " "
+		}
 		m.input.SetValue(string(runes[:ref.Start]) + replacement + tail)
-		for range []rune(tail) {
+		for range back {
 			m.input, _ = m.input.Update(tea.KeyPressMsg{Code: tea.KeyLeft})
 		}
-		m.fileCompletion.dismissed = true
+		m.fileCompletion.dismissed = message.Code != tea.KeyRight
 		command := m.requestFileCompletion()
 		m.resizeLayout()
 		m.refreshViewport(false)
