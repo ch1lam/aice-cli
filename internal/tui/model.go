@@ -127,37 +127,40 @@ type model struct {
 	guardFeedback      bool
 	guardFeedbackText  string
 
-	viewport          transcriptViewport
-	selection         transcriptSelection
-	folds             map[foldTarget]bool
-	pointer           transcriptPointer
-	composerActive    bool
-	input             textarea.Model
-	spinner           spinner.Model
-	help              help.Model
-	keys              keyMap
-	currentModel      DisplayModel
-	thinking          DisplayThinking
-	apiKeyConfigured  bool
-	sessionUsage      DisplayUsage
-	contextUsage      DisplayContext
-	usageAnimation    usageAnimation
-	welcomeAnimation  welcomeAnimation
-	updateCheck       tea.Cmd
-	welcomeUpdate     welcomeUpdateStatus
-	workingDirectory  string
-	version           string
-	entries           []transcriptEntry
-	processGroups     []processGroup
-	commands          []SlashCommand
-	authInput         chan string
-	authPrompt        *interaction.AuthPrompt
-	authSelection     int
-	authCommand       string
-	secretInput       *secretInput
-	commandMenu       *commandMenuState
-	customLogin       *customLoginState
-	pendingDeliveries []pendingDelivery
+	viewport              transcriptViewport
+	selection             transcriptSelection
+	folds                 map[foldTarget]bool
+	pointer               transcriptPointer
+	composerActive        bool
+	input                 textarea.Model
+	spinner               spinner.Model
+	help                  help.Model
+	keys                  keyMap
+	currentModel          DisplayModel
+	thinking              DisplayThinking
+	apiKeyConfigured      bool
+	sessionUsage          DisplayUsage
+	contextShowFraction   bool
+	contextPressed        bool
+	contextHoverConfirmed bool
+	contextUsage          DisplayContext
+	usageAnimation        usageAnimation
+	welcomeAnimation      welcomeAnimation
+	updateCheck           tea.Cmd
+	welcomeUpdate         welcomeUpdateStatus
+	workingDirectory      string
+	version               string
+	entries               []transcriptEntry
+	processGroups         []processGroup
+	commands              []SlashCommand
+	authInput             chan string
+	authPrompt            *interaction.AuthPrompt
+	authSelection         int
+	authCommand           string
+	secretInput           *secretInput
+	commandMenu           *commandMenuState
+	customLogin           *customLoginState
+	pendingDeliveries     []pendingDelivery
 
 	promptHistory []string
 	historyIndex  int
@@ -323,6 +326,7 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case tea.WindowSizeMsg:
+		m.contextPressed = false
 		m.selection.clear()
 		m.width = message.Width
 		m.height = message.Height
@@ -358,6 +362,14 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.MouseClickMsg:
 		m.trackPointer(message.Mouse())
 		if message.Button == tea.MouseLeft {
+			m.contextPressed = m.contextContains(message.Mouse())
+			if m.contextPressed {
+				m.selection.clear()
+				m.composerActive = false
+				return m, nil
+			}
+		}
+		if message.Button == tea.MouseLeft {
 			m.composerActive = m.composerContains(message.Mouse(), m.layoutWidth())
 		}
 		if m.guardPending != nil {
@@ -368,6 +380,7 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case tea.MouseMotionMsg:
 		m.trackPointer(message.Mouse())
+		m.contextPressed = false
 		if m.guardPending != nil {
 			return m, nil
 		}
@@ -377,6 +390,14 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case tea.MouseReleaseMsg:
 		m.trackPointer(message.Mouse())
+		if m.contextPressed && message.Button == tea.MouseLeft {
+			m.contextPressed = false
+			if m.contextContains(message.Mouse()) {
+				m.contextShowFraction = m.contextFractionVisible()
+				m.contextHoverConfirmed = true
+			}
+			return m, nil
+		}
 		if m.guardPending != nil {
 			return m, nil
 		}
@@ -384,6 +405,7 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			return updated, command
 		}
 	case tea.MouseWheelMsg:
+		m.contextPressed = false
 		m.trackPointer(message.Mouse())
 		m.selection.clear()
 		if m.guardPending != nil {
@@ -392,6 +414,8 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			return m, command
 		}
 	case tea.BlurMsg:
+		m.contextPressed = false
+		m.contextHoverConfirmed = false
 		m.pointer = transcriptPointer{}
 		m.composerActive = false
 		m.selection.clear()

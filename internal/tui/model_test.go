@@ -852,209 +852,87 @@ func TestShellWorkingDirectoryUsesHomeShortcutAndRemovesControls(t *testing.T) {
 	}
 }
 
-func TestModelStatusLineShowsModelAndReasoningInsteadOfScrollPercent(t *testing.T) {
+func TestComposerBorderShowsModelAndThinking(t *testing.T) {
 	t.Parallel()
-
-	tests := []struct {
-		name         string
-		thinking     DisplayThinking
-		wantThinking string
-	}{
-		{
-			name:         "provider default reasoning",
-			wantThinking: "reasoning default",
-		},
-		{
-			name:         "explicit high reasoning",
-			thinking:     DisplayThinkingHigh,
-			wantThinking: "reasoning high",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
-			current := newScrollableModel(t)
+	for _, thinking := range []DisplayThinking{DisplayThinkingDefault, DisplayThinkingLow, DisplayThinkingHigh} {
+		for _, width := range []int{24, 80} {
+			current := newModel(nil, nil)
+			current = updateModel(t, current, tea.WindowSizeMsg{Width: width, Height: 24})
+			current.thinking = thinking
+			before := current.View()
 			current.currentModel = DisplayModel{ID: "deepseek-v4-flash"}
-			current.thinking = tt.thinking
-			originalFooterHeight := lipgloss.Height(current.footerView(80))
-
-			status := current.statusLine(80)
-			statusText := ansi.Strip(status)
-			for _, want := range []string{"deepseek-v4-flash", tt.wantThinking} {
-				if !strings.Contains(statusText, want) {
-					t.Errorf("status line = %q, want %q", statusText, want)
-				}
+			after := current.View()
+			if *before.Cursor != *after.Cursor || lipgloss.Height(before.Content) != lipgloss.Height(after.Content) {
+				t.Fatal("model label moved the composer caret or changed screen height")
 			}
-			if strings.Contains(statusText, "%") {
-				t.Errorf("status line still contains scroll percentage: %q", status)
+			frame := ansi.Strip(current.composerView(current.layoutWidth()))
+			lines := strings.Split(frame, "\n")
+			level := string(thinking)
+			if level == "" {
+				level = "default"
 			}
-			if got := lipgloss.Height(current.footerView(80)); got != originalFooterHeight {
-				t.Errorf(
-					"footer height = %d, want unchanged height %d; "+
-						"status width = %d, footer width = %d:\n%s",
-					got,
-					originalFooterHeight,
-					lipgloss.Width(status),
-					lipgloss.Width(current.footerView(80)),
-					current.footerView(80),
-				)
+			if !strings.HasSuffix(lines[len(lines)-1], "("+level+") ─╯") {
+				t.Fatalf("model label is not on the bottom right border: %s", frame)
 			}
-		})
+			if width == 80 && !strings.Contains(frame, "deepseek-v4-flash") {
+				t.Fatal("model name missing")
+			}
+			if strings.Contains(frame, "reasoning") || lipgloss.Width(frame) > current.layoutWidth() {
+				t.Fatalf("model label overflowed or kept its old label: %s", frame)
+			}
+			if footer := current.footerView(width); strings.Contains(footer, "deepseek") || strings.Contains(footer, "reasoning") {
+				t.Fatal("model label still appears in the footer")
+			}
+		}
 	}
 }
 
 func TestModelStatusLineShowsSessionUsageAndEstimatedCost(t *testing.T) {
 	t.Parallel()
-
-	current := newModel(make(chan runRequest), make(chan struct{}))
+	current := newModel(nil, nil)
 	current.currentModel = DisplayModel{ID: "deepseek-v4-flash"}
 	current.sessionUsage = DisplayUsage{
-		InputTokens:      1_200,
-		OutputTokens:     456,
-		CacheReadTokens:  100,
-		CacheWriteTokens: 20,
-		TotalCost:        0.0074,
+		InputTokens: 1200, OutputTokens: 456,
+		CacheReadTokens: 100, CacheWriteTokens: 20, TotalCost: 0.0074,
 	}
-
-	wide := current.statusLine(120)
-	wideText := ansi.Strip(wide)
-	for _, want := range []string{
-		"? shortcuts",
-		"ctrl+C clear",
-		"↑1.2k",
-		"↓456",
-		"R100",
-		"W20",
-		"$0.007",
-		"deepseek-v4-flash",
-	} {
-		if !strings.Contains(wideText, want) {
-			t.Errorf("wide status line = %q, want %q", wide, want)
+	for _, width := range []int{120, 80, 60, 20} {
+		line := ansi.Strip(current.statusLine(width))
+		wants := []string{"↑1.2k", "↓456", "R100", "W20", "$0.007"}
+		if width == 20 {
+			wants = []string{"↑1.3k", "↓456", "$0.007"}
+			if strings.Contains(line, "R100") || strings.Contains(line, "W20") {
+				t.Fatal("narrow footer did not collapse cache detail")
+			}
+		} else {
+			wants = append(wants, "? shortcuts", "ctrl+C clear")
 		}
-	}
-
-	standard := current.statusLine(80)
-	standardText := ansi.Strip(standard)
-	for _, want := range []string{
-		"↑1.3k",
-		"↓456",
-		"$0.007",
-		"deepseek-v4-flash",
-		"reasoning default",
-	} {
-		if !strings.Contains(standardText, want) {
-			t.Errorf("standard status line = %q, want %q", standard, want)
+		for _, want := range wants {
+			if !strings.Contains(line, want) {
+				t.Fatalf("width %d: missing %q in %q", width, want, line)
+			}
 		}
-	}
-	for _, unwanted := range []string{
-		"? shortcuts",
-		"ctrl+C clear",
-		"R100",
-		"W20",
-	} {
-		if strings.Contains(standardText, unwanted) {
-			t.Errorf("standard status line = %q, did not want %q", standard, unwanted)
+		if strings.Contains(line, "deepseek") || lipgloss.Width(line) > width || lipgloss.Height(line) != 1 {
+			t.Fatalf("invalid footer: %q", line)
 		}
-	}
-	if lipgloss.Width(standard) > 80 {
-		t.Errorf("standard status width = %d, want at most 80", lipgloss.Width(standard))
-	}
-	assertTextOrder(
-		t,
-		standardText,
-		"↑1.3k",
-		"deepseek-v4-flash",
-		"reasoning default",
-	)
-
-	footer := current.footerView(80)
-	if got := lipgloss.Height(footer); got != 1 {
-		t.Errorf("80-column footer height = %d, want one line: %q", got, footer)
-	}
-	if got := lipgloss.Width(footer); got > 80 {
-		t.Errorf("80-column footer width = %d, want at most 80: %q", got, footer)
-	}
-
-	narrow := current.statusLine(60)
-	for _, want := range []string{
-		"↑1.3k",
-		"↓456",
-		"$0.007",
-		"deepseek-v4-flash",
-	} {
-		if !strings.Contains(narrow, want) {
-			t.Errorf("narrow status line = %q, want %q", narrow, want)
-		}
-	}
-	if strings.Contains(narrow, "R100") || strings.Contains(narrow, "W20") {
-		t.Errorf("narrow status line did not collapse cache detail: %q", narrow)
-	}
-	if lipgloss.Width(narrow) > 60 {
-		t.Errorf("narrow status width = %d, want at most 60", lipgloss.Width(narrow))
 	}
 }
 
 func TestModelStatusLineShowsZeroUsageBeforeConversation(t *testing.T) {
 	t.Parallel()
-
-	current := newModel(make(chan runRequest), make(chan struct{}))
-	current.currentModel = DisplayModel{ID: "deepseek-v4-flash"}
-
-	standard := current.statusLine(80)
-	standardText := ansi.Strip(standard)
-	for _, want := range []string{
-		"? shortcuts",
-		"ctrl+C clear",
-		"↑0",
-		"↓0",
-		"$0.000",
-		"deepseek-v4-flash",
-		"reasoning default",
-	} {
-		if !strings.Contains(standardText, want) {
-			t.Errorf("zero status line = %q, want %q", standard, want)
+	current := newModel(nil, nil)
+	for _, width := range []int{80, 32, 15} {
+		line := ansi.Strip(current.statusLine(width))
+		for _, want := range []string{"↑0", "↓0", "$0.000"} {
+			if !strings.Contains(line, want) {
+				t.Fatalf("width %d: missing %q in %q", width, want, line)
+			}
 		}
-	}
-	footer := current.footerView(80)
-	footerText := ansi.Strip(footer)
-	for _, want := range []string{
-		"↑0",
-		"↓0",
-		"$0.000",
-		"deepseek-v4-flash",
-		"reasoning default",
-	} {
-		if !strings.Contains(footerText, want) {
-			t.Errorf("80-column zero footer = %q, want %q", footer, want)
+		if width == 15 && (strings.Contains(line, "R0") || strings.Contains(line, "W0")) {
+			t.Fatal("narrow footer did not collapse cache detail")
 		}
-	}
-	for _, unwanted := range []string{
-		"? shortcuts",
-		"ctrl+C clear",
-		"R0",
-		"W0",
-	} {
-		if strings.Contains(footerText, unwanted) {
-			t.Errorf("80-column zero footer = %q, did not want %q", footer, unwanted)
+		if lipgloss.Width(line) > width || lipgloss.Height(line) != 1 {
+			t.Fatalf("footer overflow: %q", line)
 		}
-	}
-	if got := lipgloss.Height(footer); got != 1 {
-		t.Errorf("80-column zero footer height = %d, want one line: %q", got, footer)
-	}
-
-	narrow := current.statusLine(32)
-	for _, want := range []string{"↑0", "↓0", "$0.000"} {
-		if !strings.Contains(narrow, want) {
-			t.Errorf("narrow zero status line = %q, want %q", narrow, want)
-		}
-	}
-	if strings.Contains(narrow, "R0") || strings.Contains(narrow, "W0") {
-		t.Errorf("narrow zero status did not collapse cache detail: %q", narrow)
-	}
-	if lipgloss.Width(narrow) > 32 {
-		t.Errorf("narrow zero status width = %d, want at most 32", lipgloss.Width(narrow))
 	}
 }
 

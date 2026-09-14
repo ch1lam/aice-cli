@@ -83,24 +83,30 @@ func (m model) headerView(width int) string {
 		state = "BTW WORKING"
 		stateColor = accentColor
 	}
-	right := lipgloss.NewStyle().Bold(true).Foreground(stateColor).Render("● " + state)
+	activity := lipgloss.NewStyle().Bold(true).Foreground(stateColor).Render("● " + state)
 	workspace := "workspace agent"
 	workspaceStyle := mutedStyle
 	if strings.TrimSpace(m.workingDirectory) != "" {
 		workspace = shellWorkingDirectory(m.workingDirectory)
 		workspaceStyle = infoStyle
 	}
-	workspaceWidth := max(
-		innerWidth-lipgloss.Width(brand)-lipgloss.Width(right)-5,
-		1,
-	)
-	workspace = truncateTerminalText(workspace, workspaceWidth)
-	left := brand + "  " + workspaceStyle.Render(workspace)
-	line := left + "  " + right
-	return lipgloss.NewStyle().
-		Width(innerWidth).
-		Padding(0, 1).
-		Render(line)
+	contextWidth := m.contextHeaderWidth()
+	leftWidth := innerWidth
+	if contextWidth > 0 {
+		leftWidth = max(leftWidth-contextWidth-2, 0)
+	}
+	workspaceWidth := max(leftWidth-lipgloss.Width(brand)-lipgloss.Width(activity)-4, 0)
+	left := brand
+	if workspaceWidth > 0 {
+		left += "  " + workspaceStyle.Render(truncateTerminalText(workspace, workspaceWidth))
+	}
+	left += "  " + activity
+	line := ansi.Truncate(left, leftWidth, "…")
+	if contextWidth > 0 {
+		right := m.contextHeaderView()
+		line += strings.Repeat(" ", max(innerWidth-lipgloss.Width(line)-lipgloss.Width(right), 0)) + right
+	}
+	return lipgloss.NewStyle().Width(width).Padding(0, 1).Render(line)
 }
 
 func (m model) footerView(width int) string {
@@ -179,7 +185,17 @@ func (m model) composerViewWithStyle(width int, style lipgloss.Style) string {
 		return style.Width(width).Render(value)
 	}
 	parts := m.composerParts(contentWidth)
-	return style.Width(width).Render(strings.Join(parts, "\n"))
+	frame := style.Width(width).Render(strings.Join(parts, "\n"))
+	label := m.modelStatus(max(width-6, 1))
+	if label == "" {
+		return frame
+	}
+	label = " " + label + " "
+	lines := strings.Split(frame, "\n")
+	last := len(lines) - 1
+	x := width - lipgloss.Width(label) - 2
+	lines[last] = ansi.Cut(lines[last], 0, x) + label + ansi.Cut(lines[last], width-2, width)
+	return strings.Join(lines, "\n")
 }
 
 func (m model) pendingQueueView(width int) string {
@@ -725,39 +741,15 @@ func (m model) activityIndicator() string {
 
 func (m model) statusLine(width int) string {
 	shortcuts := m.help.ShortHelpView(m.footerKeys().ShortHelp())
-	model := m.modelStatus()
 	fullUsage := m.usageStatus(true)
 	compactUsage := m.usageStatus(false)
-	context := m.contextStatus()
-
-	usageCandidates := []string{fullUsage}
-	if compactUsage != fullUsage {
-		usageCandidates = append(usageCandidates, compactUsage)
-	}
-
-	rightCandidates := make([]string, 0, len(usageCandidates))
-	for _, usage := range usageCandidates {
-		rightCandidates = append(
-			rightCandidates,
-			joinStatusParts(usage, context, model),
-		)
-	}
-	for _, right := range rightCandidates {
-		if line, ok := alignStatusLine(shortcuts, right, width); ok {
+	for _, usage := range []string{fullUsage, compactUsage} {
+		if line, ok := alignStatusLine(shortcuts, usage, width); ok {
 			return line
 		}
 	}
-
-	fallbacks := []string{
-		joinStatusParts(compactUsage, context, model),
-		joinStatusParts(context, model),
-		joinStatusParts(compactUsage, context),
-		context,
-		model,
-		compactUsage,
-	}
-	for _, right := range fallbacks {
-		if line, ok := alignStatusLine("", right, width); ok {
+	for _, usage := range []string{fullUsage, compactUsage} {
+		if line, ok := alignStatusLine("", usage, width); ok {
 			return line
 		}
 	}
@@ -785,16 +777,6 @@ func (m model) contextStatus() string {
 		style = noticeStyle
 	}
 	return style.Render(fmt.Sprintf("%.2f%%", percent))
-}
-
-func joinStatusParts(parts ...string) string {
-	nonempty := make([]string, 0, len(parts))
-	for _, part := range parts {
-		if part != "" {
-			nonempty = append(nonempty, part)
-		}
-	}
-	return strings.Join(nonempty, "  ")
 }
 
 func alignStatusLine(left, right string, width int) (string, bool) {
@@ -875,7 +857,7 @@ func shellWorkingDirectory(path string) string {
 	}, hostpath.HomeDisplay(path))
 }
 
-func (m model) modelStatus() string {
+func (m model) modelStatus(width int) string {
 	if m.currentModel.ID == "" {
 		return ""
 	}
@@ -883,9 +865,9 @@ func (m model) modelStatus() string {
 	if m.thinking == DisplayThinkingDefault {
 		thinking = "default"
 	}
-	return infoStyle.Render(m.currentModel.ID) +
-		mutedStyle.Render(" · reasoning ") +
-		reasoningLevelStyle(m.thinking).Render(thinking)
+	suffix := " (" + thinking + ")"
+	name := truncateTerminalText(sanitizeToolDetail(m.currentModel.ID, false), max(width-lipgloss.Width(suffix), 1))
+	return mutedStyle.Render(name) + reasoningLevelStyle(m.thinking).Render(suffix)
 }
 
 func reasoningLevelStyle(level DisplayThinking) lipgloss.Style {

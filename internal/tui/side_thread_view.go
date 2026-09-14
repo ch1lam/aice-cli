@@ -125,13 +125,7 @@ func (m model) sideStatusLine(width int) string {
 			"enter ask  shift+enter newline  pgup/pgdn scroll  esc cancel/close  alt+esc close  ctrl+C clear/quit  ctrl+D end thread",
 		)
 	}
-	if line, ok := alignStatusLine(left, m.modelStatus(), width); ok {
-		return line
-	}
-	if line, ok := alignStatusLine("", m.modelStatus(), width); ok {
-		return line
-	}
-	return ""
+	return ansi.Truncate(left, width, "…")
 }
 
 func (m model) sideMenuView(width int) string {

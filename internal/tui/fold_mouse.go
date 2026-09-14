@@ -45,6 +45,9 @@ func (m model) hoveredFold() foldTarget {
 
 func (m *model) trackPointer(mouse tea.Mouse) {
 	m.pointer = transcriptPointer{x: mouse.X, y: mouse.Y, known: true}
+	if !m.contextContains(mouse) {
+		m.contextHoverConfirmed = false
+	}
 }
 
 func (m *model) toggleFoldAt(hit foldHit) {

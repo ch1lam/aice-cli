@@ -62,8 +62,16 @@ within the selected provider, not by matching model names across providers.
 
 ### Context window and status bar
 
-The main TUI status bar shows only the used context percentage, such as
-`82.40%`, with two decimal places. A new, untouched conversation shows `0.00%`;
+The top-right corner of the TUI header shows the used context percentage, such
+as `82.40%`, with two decimal places. Hover previews the other format: percentage
+or used tokens / window capacity (e.g. `168K / 1M` or `1.5K / 500K`). Clicking
+accepts the format currently visible, without flipping it again. It stays visible
+while the pointer remains over the indicator and after the pointer leaves.
+Clicking elsewhere or losing terminal focus preserves that choice for the current
+TUI instance. The next hover previews the opposite format; moving away without
+clicking restores the selected format. Unknown values display `?`. Both formats reserve the same
+space so interaction never shifts the transcript. A new, untouched conversation
+shows `0.00%` in percentage mode;
 a full window shows `100.00%`. After the first input is accepted, it uses the
 latest successful response usage for the selected provider/model, including
 cached input and output, plus estimated messages accepted since that response.
@@ -772,7 +780,10 @@ These controls require terminal mouse reporting; `Ctrl+O` remains available when
 The interface reserves one blank row above and below, and two columns on each
 side, including on permission screens. Horizontal padding shrinks below 28
 columns to preserve the minimum content width; vertical padding disappears
-below 12 rows. The top bar has no separator line.
+below 12 rows. The top bar has no separator line. The model and thinking level
+sit in the composer’s bottom-right border as `model-name (low)`, without labels.
+Long model names shorten to fit while retaining the thinking level. The footer
+keeps shortcuts, cumulative Session token usage, and cost.
 
 The composer border is theme gray at rest. Hovering anywhere inside its frame
 temporarily turns it red; clicking it or editing a draft keeps it red until
