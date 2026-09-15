@@ -2,12 +2,10 @@ package tui
 
 import (
 	"encoding/json"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"unicode/utf8"
 
-	"charm.land/glamour/v2"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -263,25 +261,7 @@ func (p *writePreview) codeView(source, path string, width int) string {
 	if p.codeSource == source && p.codePath == path && p.codeWidth == width {
 		return p.codeRendered
 	}
-	// Use the existing theme/highlighter, with a fence that content cannot close.
-	fence := "```"
-	for strings.Contains(source, fence) {
-		fence += "`"
-	}
-	language := strings.TrimPrefix(filepath.Ext(path), ".")
-	for _, r := range language {
-		if r < 'a' || r > 'z' {
-			language = ""
-			break
-		}
-	}
-	renderer, err := glamour.NewTermRenderer(glamour.WithStyles(inkMarkdownStyle()), glamour.WithWordWrap(width))
-	result := source
-	if err == nil {
-		if rendered, err := renderer.Render(fence + language + "\n" + source + "\n" + fence); err == nil {
-			result = strings.Trim(rendered, "\r\n")
-		}
-	}
+	result := toolCodeView(source, toolCodeLanguage(path), width)
 	p.codeSource, p.codePath, p.codeWidth, p.codeRendered = source, path, width, result
 	return result
 }

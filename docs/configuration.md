@@ -815,7 +815,10 @@ and sibling calls. Closing a parent preserves its children's choices.
 Fold state is transient presentation state, cleared with the visible transcript.
 
 Move the mouse over a fold heading to brighten its text without adding a
-background. Tool paths and Skill names are gray while collapsed and idle;
+background. Collapsed file tools show only the final filename or directory name;
+expanding restores the full supplied path in the same heading, wrapping when
+needed. Hovering does not expand the path. Tool paths and Skill names are gray
+while collapsed and idle;
 hovering or expanding the tool makes them gold with a dashed underline
 (the underline appearance depends on terminal support). Left-click
 (press and release without dragging) toggles that heading. The clicked heading
@@ -864,9 +867,22 @@ Expanded tools show the recorded result (Read text, command output, Skill body,
 or errors), rather than rereading workspace files. Result previews retain at
 most 64 KiB and display at most 2000 source lines, with an explicit limit notice.
 Non-text results are labelled, and empty output differs from unavailable output.
-Terminal controls are escaped in result text. Long result lines wrap.
+Outputs use a borderless, full-width code block with the same dark background and syntax
+palette as Markdown code blocks. Read output is highlighted by filename or
+extension; other results use plain text. Terminal controls are escaped while
+code punctuation is retained and tabs display as spaces. Long result lines wrap.
+The background covers blank lines and trailing space after highlighting and wrapping.
 
-Write details retain the bounded live argument preview; `preview · not executed`
+Successful write and edit headings show green `+added` and red `-removed` line
+counts. Expanded results show a unified diff block with red/green line backgrounds,
+hunk coordinates, and old/new line numbers (hidden in narrow panels). Counts
+cover the full generated alignment even if the stored diff is clipped. Unavailable
+counts are labelled as incomplete, never inferred from requested arguments.
+Older complete diffs can supply counts; old results without diffs retain their
+recorded output. The display does not depend on a Git repository.
+
+Write details retain the bounded live argument preview until a completed diff
+replaces it; `preview · not executed`
 means execution has not started. Expanded write and edit previews display up to
 2000 lines / 64 KiB, clipping long source lines before highlighting. Streamed
 write arguments retain at most 64 KiB; a late path/content may arrive with the

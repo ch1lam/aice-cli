@@ -115,8 +115,10 @@ unknown. Counts describe the bounded alignment, which may be non-minimal.
 
 The app projects successful edit and write results into `interaction.DiffDisplay`;
 either an execution error or `IsError` suppresses the diff and marks the tool failed.
-The TUI renders the supplied hunks beneath the completed tool row, with colored
-additions/deletions. It never reads files or rematches arguments. Collapsed tools
+The TUI shows known counts in the completed tool heading and renders supplied
+hunks in a borderless block with addition/deletion backgrounds and old/new line
+numbers. Complete legacy hunks can provide counts; incomplete legacy hunks cannot.
+It never reads files or rematches arguments. Collapsed tools
 hide their bodies; expanding a tool exposes up to the stored 64 KiB / 2000 lines.
 Long rows are clipped to terminal width with a notice. Stored omissions remain explicitly
 incomplete after expansion. Control and Unicode format characters are escaped
@@ -362,7 +364,12 @@ the final JSON event from being delivered.
   call and parses only for presentation when visible, using the existing event
   batching and item cache. Complete calls replace the partial preview; execution
   start reconciles the same row by call ID. A preview never authorizes execution.
-  Tool bodies start folded. Expanded write previews bound source input to
+  Tool bodies start folded; path headings show the final filename/directory until
+  expanded, then show the complete supplied path at the same position. Expanded
+  output uses bounded, borderless code blocks with continuous full-row backgrounds;
+  Read selects syntax highlighting from the
+  filename, without interpreting source as Markdown. Expanded write previews bound
+  source input to
   2000 lines / 64 KiB. Lines are clipped before syntax
   highlighting and terminal control characters are replaced. These limits affect
   neither tool arguments nor Session history.

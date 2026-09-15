@@ -45,6 +45,46 @@ func TestCompletedEditDiffInTranscript(t *testing.T) {
 	}
 }
 
+func TestCompletedWriteDiffReplacesStreamedPreview(t *testing.T) {
+	m := newModel(nil, nil)
+	m.width, m.height = 100, 40
+	m.applyAgentEvent(DisplayEvent{Kind: DisplayEventAssistantStart})
+	m.applyAgentEvent(DisplayEvent{Kind: DisplayEventAssistantDelta, Delta: DisplayDelta{
+		Kind: DisplayDeltaToolCall, Tool: ToolDisplay{ID: "w1", Name: "write"},
+		Arguments: `{"path":"src/main.go","content":"PREVIEW"}`,
+	}})
+	m.applyAgentEvent(DisplayEvent{Kind: DisplayEventToolStart, Tool: ToolDisplay{
+		ID: "w1", Name: "write", Detail: "src/main.go", Content: "PREVIEW", HasContent: true,
+	}})
+	m.applyAgentEvent(DisplayEvent{Kind: DisplayEventToolEnd, Tool: ToolDisplay{
+		ID: "w1", Diff: interaction.DiffDisplay{Text: "@@ -0,0 +1,1 @@\n+PREVIEW\n", Added: 1, StatsKnown: true},
+		Output: interaction.ToolOutputDisplay{Text: "Wrote 7 bytes", Available: true},
+	}})
+	if view := ansi.Strip(m.transcriptView()); !strings.Contains(view, "main.go  +1 -0") || strings.Contains(view, "PREVIEW") {
+		t.Fatalf("collapsed write did not retain completed stats: %s", view)
+	}
+	m.expandAllDetails(true)
+	m.refreshViewport(true)
+	view := ansi.Strip(m.transcriptView())
+	if !strings.Contains(view, "src/main.go  +1 -0") || !strings.Contains(view, "+PREVIEW") || strings.Count(view, "PREVIEW") != 1 {
+		t.Fatalf("completed write failed to replace preview with diff: %s", view)
+	}
+}
+
+func TestDiffPanelLineNumbers(t *testing.T) {
+	diff := interaction.DiffDisplay{Text: "@@ -10,2 +20,3 @@\n-old\n+new\n+extra\n same\n"}
+	view := ansi.Strip(editDiffView(diff, 80, true))
+	for _, want := range []string{"    10        │ -old", "           20 │ +new", "           21 │ +extra", "    11     22 │  same"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("missing %q in %s", want, view)
+		}
+	}
+	narrow := ansi.Strip(editDiffView(diff, 24, true))
+	if !strings.Contains(narrow, "+extra") || strings.Contains(narrow, "20 │") {
+		t.Fatalf("narrow diff should retain changes without line gutter: %s", narrow)
+	}
+}
+
 func TestEditDiffDisplayLimitsAndSafety(t *testing.T) {
 	diff := interaction.DiffDisplay{Text: "@@ -1 +1 @@\n-old\r\n+\x1b]52;c;evil\a\u202e\\r\t\n" + strings.Repeat(" context\n", 20)}
 	view := ansi.Strip(editDiffView(diff, 100, false))

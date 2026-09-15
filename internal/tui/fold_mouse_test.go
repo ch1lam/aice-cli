@@ -41,6 +41,7 @@ func TestMouseFoldsAtPaintedRowsAndRetainsAnchor(t *testing.T) {
 	for _, width := range []int{24, 40, 100} {
 		t.Run(fmt.Sprint(width), func(t *testing.T) {
 			m := foldTestModel()
+			m.entries[2].toolOutput.Text = "READ_OK"
 			m = updateModel(t, m, tea.WindowSizeMsg{Width: width, Height: 36})
 			m.viewport.GotoTop()
 			mouse := paintedMouse(t, m, "✓ read")
@@ -54,26 +55,26 @@ func TestMouseFoldsAtPaintedRowsAndRetainsAnchor(t *testing.T) {
 				t.Fatal("hover expanded the tool")
 			}
 			m = updateModel(t, m, tea.MouseClickMsg(mouse))
-			if strings.Contains(ansi.Strip(m.View().Content), "README_BODY") {
+			if strings.Contains(ansi.Strip(m.View().Content), "READ_OK") {
 				t.Fatal("press activated before release")
 			}
 			m = updateModel(t, m, tea.MouseReleaseMsg(mouse))
-			if !strings.Contains(ansi.Strip(m.View().Content), "README_BODY") {
+			if !strings.Contains(ansi.Strip(m.View().Content), "READ_OK") {
 				t.Fatal("click did not expand recorded output")
 			}
 			if now := paintedMouse(t, m, "✓ read"); now.Y != mouse.Y {
 				t.Fatal("clicked header jumped")
 			}
 			m = clickPainted(t, m, "1 skill")
-			if strings.Contains(ansi.Strip(m.View().Content), "README_BODY") {
+			if strings.Contains(ansi.Strip(m.View().Content), "READ_OK") {
 				t.Fatal("group did not collapse")
 			}
 			m = clickPainted(t, m, "1 skill")
-			if !strings.Contains(ansi.Strip(m.View().Content), "README_BODY") || strings.Contains(ansi.Strip(m.View().Content), "SKILL_BODY") {
+			if !strings.Contains(ansi.Strip(m.View().Content), "READ_OK") || strings.Contains(ansi.Strip(m.View().Content), "SKILL_BODY") {
 				t.Fatal("parent reset children")
 			}
 			m = clickPainted(t, m, "ctrl+o")
-			if !strings.Contains(ansi.Strip(m.View().Content), "FINAL_ANSWER") || strings.Contains(ansi.Strip(m.View().Content), "README_BODY") {
+			if !strings.Contains(ansi.Strip(m.View().Content), "FINAL_ANSWER") || strings.Contains(ansi.Strip(m.View().Content), "READ_OK") {
 				t.Fatalf("process fold swallowed answer or leaked details: expanded=%v\n%s", m.foldExpanded(foldTarget{kind: foldProcess, id: 1}), ansi.Strip(m.View().Content))
 			}
 			m = clickPainted(t, m, "ctrl+o")
@@ -185,7 +186,7 @@ func TestMouseHitsWrappedUnicodeHeadingsButNotTheirBody(t *testing.T) {
 	m = updateModel(t, m, tea.WindowSizeMsg{Width: 28, Height: 24})
 	m.viewport.GotoTop()
 	m = clickPainted(t, m, "✓ read")
-	body := paintedMouse(t, m, "中文🙂输出内容")
+	body := paintedMouse(t, m, "中文🙂输")
 	if m.foldHitAt(body).target.kind != foldNone {
 		t.Fatal("body became a fold heading")
 	}

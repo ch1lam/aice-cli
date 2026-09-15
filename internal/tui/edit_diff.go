@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 	"unicode"
@@ -12,6 +13,9 @@ import (
 )
 
 func editDiffView(diff interaction.DiffDisplay, width int, expanded bool) string {
+	if diff.StatsKnown && diff.Text == "" && !diff.Truncated {
+		return toolPanel(mutedStyle.Render("No changes"), width)
+	}
 	limit := 12
 	if expanded {
 		limit = 2000
@@ -26,21 +30,48 @@ func editDiffView(diff interaction.DiffDisplay, width int, expanded bool) string
 		limited = limited || expanded
 	}
 	clipped := false
+	inner := max(width-4, 1)
+	oldLine, newLine := 0, 0
+	showNumbers := inner >= 36
 	for i, row := range rows {
-		style := mutedStyle
-		if strings.HasPrefix(row, "+") {
-			style = lipgloss.NewStyle().Foreground(successColor)
-		} else if strings.HasPrefix(row, "-") {
-			style = errorStyle
+		style := bodyStyle.Background(panelBlackColor)
+		oldNumber, newNumber := "", ""
+		switch {
+		case strings.HasPrefix(row, "@@ "):
+			oldLine, newLine = diffHunkStart(row)
+			style = infoStyle.Background(panelBlackColor)
+		case strings.HasPrefix(row, "+"):
+			style = lipgloss.NewStyle().Foreground(successColor).Background(lipgloss.Color("#202D20"))
+			if newLine > 0 {
+				newNumber = strconv.Itoa(newLine)
+				newLine++
+			}
+		case strings.HasPrefix(row, "-"):
+			style = errorStyle.Background(lipgloss.Color("#341B1C"))
+			if oldLine > 0 {
+				oldNumber = strconv.Itoa(oldLine)
+				oldLine++
+			}
+		case strings.HasPrefix(row, " "):
+			if oldLine > 0 && newLine > 0 {
+				oldNumber, newNumber = strconv.Itoa(oldLine), strconv.Itoa(newLine)
+				oldLine++
+				newLine++
+			}
 		}
 		row = escapeDiffRow(row)
-		if ansi.StringWidth(row) > width {
-			clipped = true
-			row = ansi.Truncate(row, width, "…")
+		gutter := ""
+		if showNumbers {
+			gutter = fmt.Sprintf("%6s %6s │ ", oldNumber, newNumber)
 		}
-		rows[i] = style.Render(row)
+		available := max(inner-ansi.StringWidth(gutter), 1)
+		if ansi.StringWidth(row) > available {
+			clipped = true
+			row = ansi.Truncate(row, available, "…")
+		}
+		rows[i] = style.Width(inner).Render(gutter + row)
 	}
-	result := strings.Join(rows, "\n")
+	result := toolPanel(strings.Join(rows, "\n"), width)
 	if folded && !expanded {
 		result += "\n" + mutedStyle.Render("… more diff · ctrl+o expand")
 	}
@@ -51,6 +82,21 @@ func editDiffView(diff interaction.DiffDisplay, width int, expanded bool) string
 		result += "\n" + noticeStyle.Render("… diff incomplete · display limit reached")
 	}
 	return strings.TrimPrefix(result, "\n")
+}
+
+func diffHunkStart(row string) (int, int) {
+	fields := strings.Fields(row)
+	if len(fields) < 4 {
+		return 0, 0
+	}
+	oldStart, _, _ := strings.Cut(strings.TrimPrefix(fields[1], "-"), ",")
+	newStart, _, _ := strings.Cut(strings.TrimPrefix(fields[2], "+"), ",")
+	oldLine, oldErr := strconv.Atoi(oldStart)
+	newLine, newErr := strconv.Atoi(newStart)
+	if oldErr != nil || newErr != nil || oldLine < 0 || newLine < 0 || oldLine > 1000000 || newLine > 1000000 {
+		return 0, 0
+	}
+	return oldLine, newLine
 }
 
 // Escape controls instead of applying them, retaining visible CRLF differences,

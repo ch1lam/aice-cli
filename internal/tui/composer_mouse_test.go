@@ -57,10 +57,16 @@ func TestToolPathStyleFollowsHoverAndExpansion(t *testing.T) {
 			m.entries[2].toolName = name
 			m.entries[2].toolDetail = "目录/README.md"
 			m.refreshViewport(false)
+			target := func() string {
+				if name == "skill" || m.foldExpanded(foldTarget{kind: foldTool, id: 2}) {
+					return "目录/README.md"
+				}
+				return "README.md"
+			}
 			assertTargetStyle := func(gold bool) {
 				t.Helper()
 				for _, row := range strings.Split(m.View().Content, "\n") {
-					if !strings.Contains(ansi.Strip(row), "✓ "+name+"  目录/README.md") {
+					if !strings.Contains(ansi.Strip(row), "✓ "+name+"  "+target()) {
 						continue
 					}
 					if strings.Contains(row, "4:5") != gold || strings.Contains(row, "38;2;201;160;99") != gold {
@@ -74,15 +80,15 @@ func TestToolPathStyleFollowsHoverAndExpansion(t *testing.T) {
 				t.Fatal("missing tool heading")
 			}
 			assertTargetStyle(false)
-			heading := "✓ " + name + "  目录/README.md"
-			m = updateModel(t, m, tea.MouseMotionMsg(paintedMouse(t, m, heading)))
+			heading := func() string { return "✓ " + name + "  " + target() }
+			m = updateModel(t, m, tea.MouseMotionMsg(paintedMouse(t, m, heading())))
 			assertTargetStyle(true)
 			m = updateModel(t, m, tea.MouseMotionMsg{X: 0, Y: 0})
 			assertTargetStyle(false)
-			m = clickPainted(t, m, heading)
+			m = clickPainted(t, m, heading())
 			m = updateModel(t, m, tea.MouseMotionMsg{X: 0, Y: 0})
 			assertTargetStyle(true)
-			m = clickPainted(t, m, heading)
+			m = clickPainted(t, m, heading())
 			assertTargetStyle(true)
 			m = updateModel(t, m, tea.MouseMotionMsg{X: 0, Y: 0})
 			assertTargetStyle(false)
