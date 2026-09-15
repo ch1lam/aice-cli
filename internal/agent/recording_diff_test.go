@@ -13,7 +13,7 @@ func TestToolDiffReachesRecorderEventsAndNextRequest(t *testing.T) {
 	first := assistantMessage(info, llm.StopReasonToolUse, toolCallPart("edit-1", "edit", `{}`))
 	last := assistantMessage(info, llm.StopReasonStop, textPart("done"))
 	model := &scriptedModel{scripts: []*streamScript{{events: terminalEvents(first)}, {events: terminalEvents(last)}}}
-	want := llm.ToolDiff{Text: "@@ -1 +1 @@\n-old\n+new\n", Truncated: true}
+	want := llm.ToolDiff{Text: "@@ -1 +1 @@\n-old\n+new\n", Truncated: true, Added: 99, Removed: 33, StatsKnown: true}
 	tool := newFakeTool("edit", func(context.Context, llm.ToolCall) (llm.ToolResult, error) {
 		return llm.ToolResult{Content: []llm.ContentPart{textPart("Edited.")}, Diff: want}, nil
 	})

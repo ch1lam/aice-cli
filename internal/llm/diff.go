@@ -7,4 +7,8 @@ package llm
 type ToolDiff struct {
 	Text      string `json:"text,omitempty"`
 	Truncated bool   `json:"truncated,omitempty"`
+	// Counts cover the full alignment, even when Text is truncated.
+	Added      int  `json:"added,omitempty"`
+	Removed    int  `json:"removed,omitempty"`
+	StatsKnown bool `json:"stats_known,omitempty"`
 }

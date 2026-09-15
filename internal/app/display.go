@@ -322,9 +322,13 @@ func streamedToolArguments(event *llm.Event) string {
 }
 
 func displayToolDiff(event agent.AgentEvent) interaction.DiffDisplay {
-	if event.ToolCall == nil || event.ToolCall.Name != "edit" ||
+	if event.ToolCall == nil || (event.ToolCall.Name != "edit" && event.ToolCall.Name != "write") ||
 		event.Err != nil || event.ToolResult == nil || event.ToolResult.IsError {
 		return interaction.DiffDisplay{}
 	}
-	return interaction.DiffDisplay{Text: event.ToolResult.Diff.Text, Truncated: event.ToolResult.Diff.Truncated}
+	diff := event.ToolResult.Diff
+	return interaction.DiffDisplay{
+		Text: diff.Text, Truncated: diff.Truncated,
+		Added: diff.Added, Removed: diff.Removed, StatsKnown: diff.StatsKnown,
+	}
 }

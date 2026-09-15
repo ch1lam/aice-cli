@@ -80,12 +80,16 @@ in normal viewport cache invalidation. Absent metadata (including old results)
 produces no inferred status. Provider adapters continue sending content only;
 this field does not change the curated print NDJSON projection.
 
-### Completed edit diff metadata
+### Completed mutation diff metadata
 
 `llm.ToolResult` and `ToolResultMessage` carry optional, value-only `diff`
-metadata ([type definition](../internal/llm/diff.go)). The edit tool compares
-its original read with the final written bytes only after atomic write success.
-It never derives the diff from requested replacement snippets. Model-facing
+metadata ([type definition](../internal/llm/diff.go)). Edit and write compare
+their original read with the final written bytes only after atomic write success.
+For new files, write compares against empty content. Write reads at most 4 MiB
+of original content for display; an unreadable, oversized or binary original
+(or binary replacement) omits the diff and marks it incomplete, without rejecting
+the permitted write. Unchanged writes record known zero counts.
+Neither tool derives the diff from requested replacement snippets. Model-facing
 content remains the short outcome summary; provider adapters and print text /
 NDJSON continue projecting content only. The Loop retains metadata through its
 normal result-message, recorder, and tool-end event paths.
@@ -103,10 +107,14 @@ an exact, potentially non-minimal replacement block. Inputs with 100,000 or more
 newline characters omit the diff entirely. Output retains at most 64 KiB / 2000
 lines, stopping before a source row that cannot fit; `truncated` explicitly marks
 omitted output, including an oversized first row. These presentation limits
-never reject or alter an edit. Failures carry no successful diff.
+never reject or alter a mutation. Failures carry no successful diff.
+Optional `added`, `removed`, and `stats_known` fields retain full alignment counts
+before output limits apply. They are additive Session metadata; absent fields in
+older records mean counts are unknown. The input-line cap also leaves counts
+unknown. Counts describe the bounded alignment, which may be non-minimal.
 
-The app projects successful edit results into `interaction.DiffDisplay`; either
-an execution error or `IsError` suppresses the diff and marks the tool failed.
+The app projects successful edit and write results into `interaction.DiffDisplay`;
+either an execution error or `IsError` suppresses the diff and marks the tool failed.
 The TUI renders the supplied hunks beneath the completed tool row, with colored
 additions/deletions. It never reads files or rematches arguments. Collapsed tools
 hide their bodies; expanding a tool exposes up to the stored 64 KiB / 2000 lines.

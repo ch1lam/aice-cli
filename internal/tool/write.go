@@ -3,7 +3,9 @@ package tool
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
+	"strings"
 
 	"github.com/ch1lam/aice-cli/internal/llm"
 )
@@ -74,18 +76,44 @@ func (w *Write) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult,
 	}
 
 	mode := os.FileMode(0o644)
+	before, beforeKnown := "", true
 	if info, statErr := os.Stat(path); statErr == nil {
 		if !info.Mode().IsRegular() {
 			return llm.ToolResult{}, fmt.Errorf("tool \"write\": %q is not a regular file", args.Path)
 		}
 		mode = info.Mode().Perm()
+		before, beforeKnown = writeDiffSource(path, info)
 	} else if !os.IsNotExist(statErr) {
 		return llm.ToolResult{}, fmt.Errorf("tool \"write\": stat %q: %w", args.Path, statErr)
 	}
 	if err := w.workspace.atomicWrite(ctx, path, []byte(content), mode); err != nil {
 		return llm.ToolResult{}, fmt.Errorf("tool \"write\": write %q: %w", args.Path, err)
 	}
-	return textResult(call, fmt.Sprintf("Wrote %d bytes to %s.", len(content), args.Path), false), nil
+	result := textResult(call, fmt.Sprintf("Wrote %d bytes to %s.", len(content), args.Path), false)
+	if beforeKnown && !strings.ContainsRune(content, 0) {
+		result.Diff = editDiff(before, content)
+	} else {
+		result.Diff = llm.ToolDiff{Truncated: true}
+	}
+	return result, nil
+}
+
+// Reading the old file is best-effort display work: it must not prevent a
+// permitted replacement of an unreadable, binary, or oversized file.
+func writeDiffSource(path string, info os.FileInfo) (string, bool) {
+	if info.Size() > maxMutationBytes {
+		return "", false
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return "", false
+	}
+	data, readErr := io.ReadAll(io.LimitReader(file, maxMutationBytes+1))
+	closeErr := file.Close()
+	if readErr != nil || closeErr != nil || len(data) > maxMutationBytes || strings.ContainsRune(string(data), 0) {
+		return "", false
+	}
+	return string(data), true
 }
 
 // ResolvePath returns the physical write destination without creating anything.

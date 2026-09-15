@@ -14,17 +14,22 @@ func TestEditDiffProjectionAfterReplayAndPrintContract(t *testing.T) {
 	for _, tt := range []struct {
 		name            string
 		legacy, isError bool
+		toolName        string
 		err             error
 	}{
-		{name: "success"}, {name: "legacy", legacy: true}, {name: "result failure", isError: true}, {name: "execution failure", err: errors.New("failed")},
+		{name: "success"}, {name: "write", toolName: "write"}, {name: "legacy", legacy: true}, {name: "result failure", isError: true}, {name: "execution failure", err: errors.New("failed")},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := llm.NewToolResultMessage(llm.ToolResult{CallID: "edit-1", Name: "edit", Content: []llm.ContentPart{llm.NewTextContent("summary").Part()}, IsError: tt.isError})
+			toolName := tt.toolName
+			if toolName == "" {
+				toolName = "edit"
+			}
+			result, err := llm.NewToolResultMessage(llm.ToolResult{CallID: "edit-1", Name: toolName, Content: []llm.ContentPart{llm.NewTextContent("summary").Part()}, IsError: tt.isError})
 			if err != nil {
 				t.Fatal(err)
 			}
 			if !tt.legacy {
-				result.Diff = llm.ToolDiff{Text: "@@ -1 +1 @@\n-old\n+new\n", Truncated: true}
+				result.Diff = llm.ToolDiff{Text: "@@ -1 +1 @@\n-old\n+new\n", Truncated: true, Added: 99, Removed: 33, StatsKnown: true}
 			}
 			raw, err := llm.MarshalAgentMessages([]llm.AgentMessage{result})
 			if err != nil {
@@ -35,7 +40,7 @@ func TestEditDiffProjectionAfterReplayAndPrintContract(t *testing.T) {
 				t.Fatal(err)
 			}
 			replay := restored[0].(llm.ToolResultMessage)
-			event := agent.AgentEvent{Type: agent.EventTypeToolExecutionEnd, ToolCall: &llm.ToolCall{ID: "edit-1", Name: "edit"}, ToolResult: &replay, Err: tt.err}
+			event := agent.AgentEvent{Type: agent.EventTypeToolExecutionEnd, ToolCall: &llm.ToolCall{ID: "edit-1", Name: toolName}, ToolResult: &replay, Err: tt.err}
 			display := translateAgentEvent(event)
 			if display.Tool.Failed != (tt.isError || tt.err != nil) {
 				t.Fatal(display)
@@ -44,7 +49,7 @@ func TestEditDiffProjectionAfterReplayAndPrintContract(t *testing.T) {
 				if display.Tool.Diff.Text != "" || display.Tool.Diff.Truncated {
 					t.Fatal(display)
 				}
-			} else if display.Tool.Diff.Text != result.Diff.Text || !display.Tool.Diff.Truncated {
+			} else if display.Tool.Diff.Text != result.Diff.Text || !display.Tool.Diff.Truncated || !display.Tool.Diff.StatsKnown || display.Tool.Diff.Added != 99 || display.Tool.Diff.Removed != 33 {
 				t.Fatal(display)
 			}
 			for _, format := range []string{"text", "json"} {

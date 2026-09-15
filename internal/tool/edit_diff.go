@@ -23,7 +23,7 @@ type diffLine struct {
 // Bound both alignment work and retained output independently of mutation size.
 func editDiff(before, after string) llm.ToolDiff {
 	if before == after {
-		return llm.ToolDiff{}
+		return llm.ToolDiff{StatsKnown: true}
 	}
 	if strings.Count(before, "\n") >= editDiffInputLines || strings.Count(after, "\n") >= editDiffInputLines {
 		return llm.ToolDiff{Truncated: true}
@@ -46,7 +46,17 @@ func editDiff(before, after string) llm.ToolDiff {
 	for _, line := range a[endA:min(len(a), endA+3)] {
 		lines = append(lines, diffLine{' ', line})
 	}
-	return renderEditDiff(lines, max(0, prefix-3)+1)
+	diff := renderEditDiff(lines, max(0, prefix-3)+1)
+	diff.StatsKnown = true
+	for _, line := range lines {
+		switch line.kind {
+		case '+':
+			diff.Added++
+		case '-':
+			diff.Removed++
+		}
+	}
+	return diff
 }
 
 func diffLines(text string) []string {

@@ -230,8 +230,11 @@ type ToolOutputDisplay struct {
 // DiffDisplay contains only a tool-produced completed mutation view.
 // Its zero value leaves legacy results unchanged.
 type DiffDisplay struct {
-	Text      string
-	Truncated bool
+	Text       string
+	Truncated  bool
+	Added      int
+	Removed    int
+	StatsKnown bool
 }
 
 // TruncationDisplay carries source counts independently of model-facing text.

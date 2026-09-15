@@ -18,7 +18,7 @@ func TestDiffMetadataSurvivesSessionReplay(t *testing.T) {
 			messages := toolMessages()
 			result := messages[2].(llm.ToolResultMessage)
 			if !legacy {
-				result.Diff = llm.ToolDiff{Text: "@@ -1 +1 @@\n-old\n+new\n", Truncated: true}
+				result.Diff = llm.ToolDiff{Text: "@@ -1 +1 @@\n-old\n+new\n", Truncated: true, Added: 99, Removed: 33, StatsKnown: true}
 			}
 			messages[2] = result
 			appendMessages(t, store, "read", messages...)
