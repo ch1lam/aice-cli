@@ -27,7 +27,7 @@ func (m model) toolHeaderStyled(entry transcriptEntry, hovered bool) string {
 	}
 	nameStyle, detailStyle := toolNameStyle, mutedStyle
 	if hovered {
-		style, nameStyle, detailStyle = transcriptHoverStyle, transcriptHoverStyle.Bold(true), transcriptHoverStyle
+		style, nameStyle, detailStyle = transcriptHoverStyle, transcriptHoverStyle, transcriptHoverStyle
 	}
 	heading := style.Render(icon) + " " + nameStyle.Render(entry.toolName)
 	stats := toolDiffStats(entry)

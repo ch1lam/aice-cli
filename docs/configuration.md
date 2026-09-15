@@ -718,7 +718,8 @@ consistent across the transcript, composer, menus, and permission prompts:
 | Information | 石青 `#5B8A9E` | Tool names, working state, spinners, pending steering, and side-thread indicators |
 
 Headings use the brand accent with weight and spacing for hierarchy; Markdown
-level-six headings use gold. Thinking panels and command output use quiet brown rails.
+headings omit hash prefixes, and level-six headings use gold. Tool names use
+normal weight, including on hover. Thinking panels and command output use quiet brown rails.
 Reasoning levels use muted gray for default/off/minimal/low, gold for medium,
 ginger yellow for high, orange-red (`#F5735F`) for xhigh, and sunset red for max,
 all at normal weight. Level names remain visible. The welcome logo's animated palette

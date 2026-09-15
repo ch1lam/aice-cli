@@ -55,7 +55,6 @@ var (
 				Foreground(informationColor).
 				PaddingLeft(1)
 	toolNameStyle = lipgloss.NewStyle().
-			Bold(true).
 			Foreground(informationColor)
 	toolTargetStyle = pathStyle.
 			UnderlineStyle(lipgloss.UnderlineDashed).UnderlineSpaces(true)
@@ -112,6 +111,11 @@ func inkMarkdownStyle() ansi.StyleConfig {
 	style.Heading.Color = stringPointer(sunsetHex)
 	style.H1.Color = stringPointer(sunsetHex)
 	style.H1.BackgroundColor = stringPointer(panelBlackHex)
+	style.H2.Prefix = ""
+	style.H3.Prefix = ""
+	style.H4.Prefix = ""
+	style.H5.Prefix = ""
+	style.H6.Prefix = ""
 	style.H6.Color = stringPointer(goldHex)
 	style.HorizontalRule.Color = stringPointer(separatorHex)
 	style.Item.Color = stringPointer(mutedTextHex)
