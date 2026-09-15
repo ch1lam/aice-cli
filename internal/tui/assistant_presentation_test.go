@@ -94,6 +94,25 @@ func TestAssistantPresentationInvalidation(t *testing.T) {
 	}
 }
 
+func TestAssistantCodeGeometryTracksSourceAndWidth(t *testing.T) {
+	p := &assistantPresentation{}
+	source := "```text\n" + strings.Repeat("source ", 30) + "\n```"
+	p.textView(source, 80)
+	if len(p.textCache.blocks) != 1 {
+		t.Fatal("missing code geometry")
+	}
+	before := p.textCache.blocks[0].layout
+	p.textView(source, 24)
+	after := p.textCache.blocks[0].layout
+	if len(after.rows) <= len(before.rows) || after.block.source != before.block.source {
+		t.Fatal("resize failed to update geometry independently of source")
+	}
+	p.textView("replacement", 24)
+	if len(p.textCache.blocks) != 0 {
+		t.Fatal("replacement retained obsolete code geometry")
+	}
+}
+
 func TestCollapsedProcessSkipsAssistantRendering(t *testing.T) {
 	m := newModel(nil, nil)
 	id := m.beginProcess()

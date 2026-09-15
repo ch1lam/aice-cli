@@ -130,10 +130,10 @@ func TestMarkdownTaskListUsesEmojiMarkers(t *testing.T) {
 		t.Errorf("incomplete task marker = %q, want %q", style.Task.Unticked, "⏳ ")
 	}
 
-	rendered := ansi.Strip(renderMarkdown(
+	rendered := ansi.Strip(layoutMarkdown(
 		"- [x] Finished task\n- [ ] Outstanding task",
 		80,
-	))
+	).view)
 	for _, marker := range []string{"✅ Finished task", "⏳ Outstanding task"} {
 		if !strings.Contains(rendered, marker) {
 			t.Errorf("rendered task list = %q, want marker %q", rendered, marker)

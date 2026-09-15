@@ -25,6 +25,7 @@ type assistantSection struct {
 	source   string
 	width    int
 	rendered string
+	blocks   []markdownCodeBlock
 }
 
 func (p *assistantPresentation) appendText(current, delta string) string {
@@ -48,11 +49,13 @@ func (p *assistantPresentation) textView(source string, width int) string {
 		return p.textCache.rendered
 	}
 	rendered := ""
+	var document markdownLayout
 	if strings.TrimSpace(source) != "" {
-		rendered = assistantBodyStyle.Render(renderMarkdown(source, width))
+		document = layoutMarkdown(source, width)
+		rendered = assistantBodyStyle.Render(document.view)
 	}
 	if p != nil {
-		p.textCache = assistantSection{source: source, width: width, rendered: rendered}
+		p.textCache = assistantSection{source: source, width: width, rendered: rendered, blocks: document.blocks}
 	}
 	return rendered
 }

@@ -886,11 +886,14 @@ Expanded tools show the recorded result (Read text, command output, Skill body,
 or errors), rather than rereading workspace files. Result previews retain at
 most 64 KiB and display at most 2000 source lines, with an explicit limit notice.
 Non-text results are labelled, and empty output differs from unavailable output.
-Outputs use a borderless, full-width code block with the same dark background and syntax
-palette as Markdown code blocks. Read output is highlighted by filename or
+Outputs and Markdown code blocks share a borderless panel with the same padding,
+dark background, syntax palette and long-line wrapping. Read output is highlighted by filename or
 extension; other results use plain text. Terminal controls are escaped while
 code punctuation is retained and tabs display as spaces. Long result lines wrap.
 The background covers blank lines and trailing space after highlighting and wrapping.
+Markdown fences (including unfinished streamed fences) and indented code blocks
+remain literal inside lists and quotations. Code source is retained separately
+from its display escaping and wrapping.
 
 Successful write and edit headings show green `+added` and red `-removed` line
 counts. Expanded results show a unified diff block with red/green line backgrounds,

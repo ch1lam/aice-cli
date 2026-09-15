@@ -14,6 +14,7 @@ require (
 	github.com/openai/openai-go/v3 v3.50.0
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/viper v1.21.0
+	github.com/yuin/goldmark v1.8.5
 	golang.org/x/image v0.43.0
 	golang.org/x/sys v0.47.0
 	golang.org/x/text v0.40.0
@@ -70,7 +71,6 @@ require (
 	github.com/tidwall/sjson v1.2.5 // indirect
 	github.com/ulikunitz/xz v0.5.15 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
-	github.com/yuin/goldmark v1.8.5 // indirect
 	github.com/yuin/goldmark-emoji v1.0.6 // indirect
 	gitlab.com/gitlab-org/api/client-go v1.46.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect

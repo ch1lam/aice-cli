@@ -165,6 +165,11 @@ such as `core`, `types`, `services`, `utils`, or `helpers`.
   has no decoders for those formats. PNG/JPEG/GIF use the standard library.
   Conversion and resource limits stay in `internal/media`; no host converter
   or additional runtime is required.
+- Markdown code-block recognition uses the already-pinned Goldmark parser
+  (MIT, user-approved direct dependency), also used by Glamour. The standard
+  library has no Markdown parser; reusing this maintained parser preserves
+  nested containers and streaming fence semantics without a second handwritten
+  parser. Glamour still owns prose formatting and syntax highlighting.
 - Imported code must record its repository and commit and preserve required
   license notices. AICE remains Apache-2.0. The agent-browser skill-data and
   license are vendored under `internal/deps/agentbrowser`; its `VENDOR.md` records

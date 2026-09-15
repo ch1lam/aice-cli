@@ -14,7 +14,7 @@ import (
 
 func editDiffView(diff interaction.DiffDisplay, width int, expanded bool) string {
 	if diff.StatsKnown && diff.Text == "" && !diff.Truncated {
-		return toolPanel(mutedStyle.Render("No changes"), width)
+		return blockPanel(mutedStyle.Render("No changes"), width)
 	}
 	limit := 12
 	if expanded {
@@ -71,7 +71,7 @@ func editDiffView(diff interaction.DiffDisplay, width int, expanded bool) string
 		}
 		rows[i] = style.Width(inner).Render(gutter + row)
 	}
-	result := toolPanel(strings.Join(rows, "\n"), width)
+	result := blockPanel(strings.Join(rows, "\n"), width)
 	if folded && !expanded {
 		result += "\n" + mutedStyle.Render("… more diff · ctrl+o expand")
 	}

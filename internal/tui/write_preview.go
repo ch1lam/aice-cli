@@ -5,8 +5,6 @@ import (
 	"strconv"
 	"strings"
 	"unicode/utf8"
-
-	"github.com/charmbracelet/x/ansi"
 )
 
 const maximumWritePreviewBytes = 64 * 1024
@@ -228,17 +226,8 @@ func (p *writePreview) view(width int, expanded bool) string {
 		}
 		source := writePrefix(content, limit)
 		omitted := len(source) < len(content) || p.truncated
-		rows := strings.SplitN(source, "\n", lines+1)
-		if len(rows) > lines {
-			rows = rows[:lines]
-			omitted = true
-		}
-		for i, row := range rows {
-			row = sanitizeToolDetail(strings.TrimSuffix(row, "\r"), true)
-			row = strings.ReplaceAll(row, "\t", "    ")
-			rows[i] = ansi.Truncate(row, max(width-4, 1), "…")
-		}
-		source = strings.Join(rows, "\n")
+		source, linesOmitted := codeLinePrefix(source, lines)
+		omitted = omitted || linesOmitted
 		result = mutedStyle.Render("(empty file)")
 		if content != "" {
 			result = p.codeView(source, path, width)
@@ -261,7 +250,7 @@ func (p *writePreview) codeView(source, path string, width int) string {
 	if p.codeSource == source && p.codePath == path && p.codeWidth == width {
 		return p.codeRendered
 	}
-	result := toolCodeView(source, toolCodeLanguage(path), width)
+	result := newCodeBlock(source, toolCodeLanguage(path)).layout(codeBlockOptions{width: width, clip: true}).view()
 	p.codeSource, p.codePath, p.codeWidth, p.codeRendered = source, path, width, result
 	return result
 }

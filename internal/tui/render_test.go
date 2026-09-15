@@ -51,7 +51,7 @@ func TestRenderMarkdownPreservesCJKCodeSpanSpacing(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			rendered := ansi.Strip(renderMarkdown(tt.source, 80))
+			rendered := ansi.Strip(layoutMarkdown(tt.source, 80).view)
 			if strings.ContainsRune(rendered, '\u00a0') {
 				t.Fatalf("rendered %q contains NBSP: %q", tt.source, rendered)
 			}

@@ -76,7 +76,7 @@ func TestReadOutputCodePanel(t *testing.T) {
 
 func TestToolCodeBackgroundCoversMarkdownAndWrappedRows(t *testing.T) {
 	source := "# AICE\n\n<p align=\"center\">\n  ![badge](https://example.com/" + strings.Repeat("long/", 30) + ")\n</p>\n\n```sh\nprintf hello\n```"
-	view := toolCodeView(source, "md", 48)
+	view := newCodeBlock(source, "md").layout(codeBlockOptions{width: 48}).view()
 	assertToolBackground(t, view)
 	for _, row := range strings.Split(view, "\n") {
 		if ansi.StringWidth(row) != 48 {

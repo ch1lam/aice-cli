@@ -371,8 +371,26 @@ the final JSON event from being delivered.
   filename, without interpreting source as Markdown. Expanded write previews bound
   source input to
   2000 lines / 64 KiB. Lines are clipped before syntax
-  highlighting and terminal control characters are replaced. These limits affect
+  highlighting and terminal control characters are escaped. These limits affect
   neither tool arguments nor Session history.
+  Assistant Markdown code (fenced or indented), tool text and write previews
+  use the same `internal/tui/code_block.go` component. It retains literal source
+  and line terminators separately from escaped/highlighted rows. Layout maps
+  every wrapped row to its zero-based source line; padding and empty-output
+  labels have no source line. A final newline does not add a phantom line.
+  Callers own source limits and completeness; component line counts describe
+  supplied source, never an inferred complete file. Result text wraps and write
+  previews clip using the same layout boundary. Diff keeps its own hunk/line
+  rendering and shares only the panel decoration.
+  `markdown.go` parses the whole document with Goldmark and replaces code AST
+  nodes with collision-checked render slots, since Glamour's nested buffers
+  do not expose a custom code rendering hook. The shared component fills those
+  slots after prose layout, retaining document-local block coordinates and
+  source-row mappings in the assistant cache. Renderer failure falls back to
+  literal escaped source, never internal markers or partial content. Width and
+  source changes invalidate text and block geometry together. These data are
+  presentation-only; copying buttons, line-number gutters, and code hover/click
+  actions are not yet wired into the viewport's mouse handling.
   Main and BTW transcripts use an item-anchored viewport: scrolling records a
   block and a row within it, without measuring all preceding history. Process
   headers, individual reasoning/answer blocks, tools and questions are separate

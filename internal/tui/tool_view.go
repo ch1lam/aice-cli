@@ -115,26 +115,23 @@ func (m model) toolBodyView(entry transcriptEntry) string {
 	if entry.toolOutput.Available {
 		text := writePrefix(entry.toolOutput.Text, 64*1024)
 		limited := entry.toolOutput.Truncated || len(text) < len(entry.toolOutput.Text)
-		rows := strings.SplitN(strings.TrimSuffix(text, "\n"), "\n", 2001)
-		if len(rows) > 2000 {
-			rows, limited = rows[:2000], true
-		}
-		for i, row := range rows {
-			rows[i] = escapeToolOutputRow(row)
-		}
-		body := strings.Join(rows, "\n")
-		if body == "" {
-			body = "(empty output)"
-		}
+		body, linesLimited := codeLinePrefix(text, 2000)
+		limited = limited || linesLimited
 		language := "text"
 		if entry.toolName == "read" && !entry.toolError {
 			language = toolCodeLanguage(entry.toolDetail)
 		}
 		// A mutation's short outcome belongs below its diff, not in a second panel.
 		if hasDiff {
-			parts = append(parts, mutedStyle.Render(body))
+			rows := strings.Split(strings.TrimSuffix(body, "\n"), "\n")
+			for i, row := range rows {
+				rows[i] = escapeCodeRow(row)
+			}
+			parts = append(parts, mutedStyle.Render(strings.Join(rows, "\n")))
 		} else {
-			parts = append(parts, toolCodeView(body, language, width))
+			parts = append(parts, newCodeBlock(body, language).layout(codeBlockOptions{
+				width: width, emptyText: "(empty output)",
+			}).view())
 		}
 		if limited {
 			parts = append(parts, noticeStyle.Render("… output display limit reached (64 KiB / 2000 lines)"))
