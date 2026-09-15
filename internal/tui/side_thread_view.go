@@ -37,9 +37,7 @@ func (m model) sideThreadIntro() string {
 }
 
 func (m model) sideQuestionView(question string) string {
-	bodyWidth := max(m.contentWidth()-userStyle.GetHorizontalFrameSize(), 1)
-	body := userStyle.Width(bodyWidth).Render(question)
-	return lipgloss.NewStyle().Padding(0, 1).Render(body)
+	return m.userMessageView(question)
 }
 
 func (m model) sideAnswerView(entry sideThreadEntry, active bool) string {

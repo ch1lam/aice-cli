@@ -702,7 +702,7 @@ short terminals show the card alone when the logo does not fit.
 ### Visual theme
 
 The built-in ink theme is owned by [theme.go](../internal/tui/theme.go). Its three dark
-layers separate the ink screen (`#0D0B0A`), thinking/code panels
+layers separate the ink screen (`#0D0B0A`), user-message/thinking/code panels
 (`#1B1613`), and quiet brown borders (`#332921`) by brightness. Color roles stay
 consistent across the transcript, composer, menus, and permission prompts:
 
@@ -816,8 +816,12 @@ Fold state is transient presentation state, cleared with the visible transcript.
 
 Message text, process markers, fold arrows, and tool panels share one left
 alignment. Expanding a process, batch, thinking block, or tool does not add
-nested indentation. Wrapped headings retain the same left edge; user and
-thinking rails sit in the gutter, while code keeps its internal indentation.
+nested indentation. Wrapped headings retain the same left edge; thinking rails
+sit in the gutter, while code keeps its internal indentation. Submitted user
+messages in both main and BTW views use a borderless dark background spanning
+the layout width, aligned with the top bar and composer frame. Each message has
+one blank background row above and below its text; wrapped text retains the
+same left alignment as tool calls and answers.
 
 Move the mouse over a fold heading to brighten its text without adding a
 background. Collapsed file tools show only the final filename or directory name;
@@ -837,7 +841,8 @@ These controls require terminal mouse reporting; `Ctrl+O` remains available when
 The interface reserves one blank row above and below, and two columns on each
 side, including on permission screens. Horizontal padding shrinks below 28
 columns to preserve the minimum content width; vertical padding disappears
-below 12 rows. The top bar has no separator line. The model and thinking level
+below 12 rows. The top bar has no separator line and leaves one blank row below
+its status text. The model and thinking level
 sit in the composer’s bottom-right border as `model-name (low)`, without labels.
 Long model names shorten to fit while retaining the thinking level. The footer
 keeps shortcuts, cumulative Session token usage, and cost.

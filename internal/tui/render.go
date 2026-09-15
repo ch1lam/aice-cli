@@ -119,7 +119,7 @@ func (m model) headerView(width int) string {
 		right := m.contextHeaderView()
 		line += strings.Repeat(" ", max(width-2-lipgloss.Width(line)-lipgloss.Width(right), 0)) + right
 	}
-	return lipgloss.NewStyle().Width(width).Padding(0, 1).Render(line)
+	return lipgloss.NewStyle().Width(width).Padding(0, 1, 1).Render(line)
 }
 
 func (m model) footerView(width int) string {
@@ -619,9 +619,7 @@ func (m model) entryView(
 	width := m.contentWidth()
 	switch entry.kind {
 	case entryUser:
-		bodyWidth := max(width-userStyle.GetHorizontalFrameSize(), 1)
-		body := userStyle.Width(bodyWidth).Render(entry.text)
-		return lipgloss.NewStyle().Padding(0, 1).Render(body)
+		return m.userMessageView(entry.text)
 	case entryAssistant:
 		return m.assistantEntryView(
 			entry,

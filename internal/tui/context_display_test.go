@@ -47,8 +47,11 @@ func TestContextStatusSurvivesNarrowTerminalsAndUpdates(t *testing.T) {
 		if !strings.Contains(ansi.Strip(line), "25.00%") {
 			t.Fatalf("width %d: %q", width, line)
 		}
-		if lipgloss.Width(line) > width || lipgloss.Height(line) != 1 {
+		if lipgloss.Width(line) > width || lipgloss.Height(line) != 2 {
 			t.Fatalf("wrapped at %d: %q", width, line)
+		}
+		if rows := strings.Split(ansi.Strip(line), "\n"); strings.TrimSpace(rows[1]) != "" {
+			t.Fatalf("status bar has no blank row below it: %q", line)
 		}
 	}
 	updated, _ := current.applyRunBatch(runBatchMsg{updates: []runUpdate{{state: &RuntimeState{

@@ -9,6 +9,10 @@ import (
 // never the left edge; wrap before padding so continuation rows align too.
 const transcriptContentIndent = 3
 
+func (m model) userMessageView(text string) string {
+	return userStyle.Width(m.layoutWidth()).Render(text)
+}
+
 func (m model) transcriptContentView(content string) string {
 	return lipgloss.NewStyle().PaddingLeft(transcriptContentIndent).PaddingRight(1).
 		Render(ansi.Wrap(content, m.contentWidth(), ""))

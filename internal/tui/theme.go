@@ -60,11 +60,9 @@ var (
 	toolTargetStyle = pathStyle.
 			UnderlineStyle(lipgloss.UnderlineDashed).UnderlineSpaces(true)
 	userStyle = lipgloss.NewStyle().
-			BorderLeft(true).
-			BorderStyle(lipgloss.ThickBorder()).
-			BorderForeground(secondaryColor).
+			Background(panelBlackColor).
 			Foreground(mutedTextColor).
-			PaddingLeft(1)
+			Padding(1, 1, 1, transcriptContentIndent)
 	thinkingStyle = lipgloss.NewStyle().
 			BorderLeft(true).
 			BorderStyle(lipgloss.NormalBorder()).

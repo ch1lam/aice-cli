@@ -141,23 +141,22 @@ func TestMarkdownTaskListUsesEmojiMarkers(t *testing.T) {
 	}
 }
 
-func TestUserStyleUsesGoldRailAndMutedTextWithoutBackground(t *testing.T) {
+func TestUserStyleUsesPanelBackgroundAndMutedText(t *testing.T) {
 	t.Parallel()
 
-	if !userStyle.GetBorderLeft() {
-		t.Fatal("user style does not render its left rail")
+	if userStyle.GetBorderLeft() {
+		t.Fatal("user style still renders a left rail")
 	}
 	assertColor(
 		t,
-		userStyle.GetBorderLeftForeground(),
-		lipgloss.Color(goldHex),
+		userStyle.GetBackground(),
+		lipgloss.Color(panelBlackHex),
 	)
 	assertColor(
 		t,
 		userStyle.GetForeground(),
 		lipgloss.Color(mutedTextHex),
 	)
-	assertNoColor(t, userStyle.GetBackground())
 }
 
 func TestPendingSteerUsesInformationColor(t *testing.T) {
