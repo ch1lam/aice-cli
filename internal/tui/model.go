@@ -620,7 +620,6 @@ func (m model) View() tea.View {
 		m.footerView(width),
 	)
 
-	content = m.overlayCopyNotice(content, width)
 	return m.terminalView(content)
 }
 
@@ -646,6 +645,9 @@ func (m model) terminalView(content string) tea.View {
 		"\x1b[49m", ansi.Style{}.BackgroundColor(inkBlackColor).String(),
 	)
 	content = restore.Replace(content) + "\x1b[0m"
+	// Resolve canvas colors before composition: the compositor merges SGR
+	// resets with other attributes, so textual reset restoration must run first.
+	content = m.overlayCopyNotice(content, m.width)
 	view := tea.NewView(content)
 	view.AltScreen = true
 	view.WindowTitle = "AICE"

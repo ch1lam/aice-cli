@@ -342,11 +342,14 @@ the final JSON event from being delivered.
   matches. Fold changes anchor the clicked item/row instead of following the
   bottom. Permission screens and side views cannot activate main fold targets.
 - Dragging transcript text copies the selection on release using the terminal's
-  clipboard support. A bordered confirmation bubble without an explicit
-  background floats centered immediately above the composer for one second
+  clipboard support. A bordered confirmation bubble uses the screen background
+  and floats centered immediately above the composer for one second
   in both main and BTW views, independently of Agent activity, footer content,
   and composer layout. Repeated copies
   restart the confirmation lifetime; streaming events do not dismiss it.
+  The TUI resolves canvas colors before composing the bubble, preserving
+  foregrounds, backgrounds and padding outside its bounds, including Markdown
+  heading rows.
 - Session history, model context, and terminal viewport remain separate.
   The TUI coalesces streaming deltas for up to 16 ms or 64 events before
   rendering; lifecycle updates flush the batch immediately. Main and side

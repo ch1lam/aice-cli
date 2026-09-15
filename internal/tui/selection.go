@@ -307,19 +307,21 @@ func selectedLineRange(
 // overlayCopyNotice leaves layout and cursor coordinates unchanged. Hide the
 // bubble during another drag so it cannot obscure the text being selected.
 func (m model) overlayCopyNotice(content string, width int) string {
-	if !m.copyNotice || m.selection.active {
+	if !m.copyNotice || m.selection.active || m.guardPending != nil {
 		return content
 	}
 	bubble := lipgloss.NewStyle().
 		Bold(true).
 		Foreground(primaryTextColor).
+		Background(inkBlackColor).
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(successColor).
+		BorderBackground(inkBlackColor).
 		Padding(0, 2).
 		Render("✓ Copied")
 	x := max((width-lipgloss.Width(bubble))/2, 0)
-	composerTop := lipgloss.Height(content) -
-		lipgloss.Height(m.footerView(width)) - lipgloss.Height(m.composerView(width))
+	composerTop := lipgloss.Height(content) - m.verticalPadding() -
+		lipgloss.Height(m.footerView(m.layoutWidth())) - lipgloss.Height(m.composerView(m.layoutWidth()))
 	y := max(composerTop-lipgloss.Height(bubble), 0)
 	return lipgloss.NewCompositor(
 		lipgloss.NewLayer(content),

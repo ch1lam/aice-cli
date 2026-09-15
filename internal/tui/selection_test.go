@@ -308,3 +308,46 @@ func TestCopyNoticeTimerExpiresAfterOneSecond(t *testing.T) {
 		}
 	})
 }
+
+func TestCopyNoticePreservesHeadingBackground(t *testing.T) {
+	t.Parallel()
+	for _, width := range []int{40, 80, 120} {
+		t.Run(fmt.Sprint(width), func(t *testing.T) {
+			t.Parallel()
+			current := newModel(make(chan runRequest), make(chan struct{}))
+			current = updateModel(t, current, tea.WindowSizeMsg{Width: width, Height: 24})
+			current.entries = []transcriptEntry{{kind: entryAssistant,
+				text: "# AICE 项目介绍\n\n正文\n\n## 现在能做什么\n\n更多内容", complete: true}}
+			current.refreshViewport(true)
+			before := current.View()
+			baseline := lipgloss.NewCanvas(width, current.height).Compose(lipgloss.NewLayer(before.Content))
+			for _, state := range []string{"before", "copied", "expired"} {
+				switch state {
+				case "copied":
+					current.copyText("正文")
+				case "expired":
+					current = updateModel(t, current, copyNoticeExpiredMsg(current.copyGeneration))
+				}
+				view := current.View()
+				assertCanvasBackground(t, view.Content, nil)
+				canvas := lipgloss.NewCanvas(width, current.height).Compose(lipgloss.NewLayer(view.Content))
+				found := false
+				for y, row := range strings.Split(view.Content, "\n") {
+					if !strings.Contains(ansi.Strip(row), "AICE 项目介绍") {
+						continue
+					}
+					found = true
+					assertCanvasBackground(t, ansi.Cut(row, 30, width-2), inkBlackColor)
+					for x := range width {
+						if !baseline.CellAt(x, y).Equal(canvas.CellAt(x, y)) {
+							t.Fatalf("%s changed heading cell (%d, %d)", state, x, y)
+						}
+					}
+				}
+				if !found {
+					t.Fatal("heading missing")
+				}
+			}
+		})
+	}
+}
