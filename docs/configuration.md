@@ -894,6 +894,11 @@ The background covers blank lines and trailing space after highlighting and wrap
 Markdown fences (including unfinished streamed fences) and indented code blocks
 remain literal inside lists and quotations. Code source is retained separately
 from its display escaping and wrapping.
+Code panels show the supplied source line count and number each original line
+from 1, including blank lines. Wrapped continuations leave the number gutter
+blank. Narrow panels hide the gutter to preserve room for code. Limited tool
+output and incomplete write previews label the count `partial` (or `+L` in a
+compact header); this is a count of supplied lines, not the complete file size.
 
 Successful write and edit headings show green `+added` and red `-removed` line
 counts. Expanded results show a unified diff block with red/green line backgrounds,

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"bytes"
+	"strconv"
 	"strings"
 	"unicode"
 
@@ -31,8 +32,9 @@ func newCodeBlock(source, language string) codeBlock {
 }
 
 type codeBlockOptions struct {
-	width     int
-	emptyText string
+	width      int
+	emptyText  string
+	incomplete bool
 	// Previews clip before highlighting to bound work on oversized source rows.
 	clip bool
 }
@@ -44,13 +46,19 @@ type codeBlockRow struct {
 }
 
 type codeBlockLayout struct {
-	block codeBlock
-	rows  []codeBlockRow
+	block                codeBlock
+	rows                 []codeBlockRow
+	width, contentColumn int
 }
 
 func (b codeBlock) layout(options codeBlockOptions) codeBlockLayout {
 	width := max(options.width, 6)
 	inner := width - 4
+	gutter := len(strconv.Itoa(max(len(b.lines), 1))) + 2
+	if inner-gutter < 8 {
+		gutter = 0
+	}
+	inner -= gutter
 	display := make([]string, len(b.lines))
 	for i, line := range b.lines {
 		display[i] = escapeCodeRow(strings.TrimSuffix(line, "\n"))
@@ -62,24 +70,52 @@ func (b codeBlock) layout(options codeBlockOptions) codeBlockLayout {
 	var body []string
 	indices := []int{-1}
 	for i, line := range highlighted {
-		for _, part := range wrapCodeRow(line, inner) {
-			body = append(body, part)
+		for j, part := range wrapCodeRow(line, inner) {
+			prefix := strings.Repeat(" ", gutter)
+			if gutter > 0 && j == 0 {
+				number := strconv.Itoa(i + 1)
+				prefix = mutedStyle.Render(strings.Repeat(" ", gutter-2-len(number)) + number + "  ")
+			}
+			body = append(body, prefix+part)
 			indices = append(indices, i)
 		}
 	}
 	if len(body) == 0 {
-		for _, part := range wrapCodeRow(escapeCodeRow(options.emptyText), inner) {
+		for _, part := range wrapCodeRow(escapeCodeRow(options.emptyText), width-4) {
 			body = append(body, part)
 			indices = append(indices, -1)
 		}
 	}
 	indices = append(indices, -1)
 	panel := strings.Split(blockPanel(strings.Join(body, "\n"), width), "\n")
-	result := codeBlockLayout{block: b, rows: make([]codeBlockRow, len(panel))}
+	panel[0] = strings.Split(blockPanel(mutedStyle.Render(b.lineSummary(options.incomplete, width-4)), width), "\n")[1]
+	result := codeBlockLayout{block: b, rows: make([]codeBlockRow, len(panel)), width: width, contentColumn: 2 + gutter}
 	for i, row := range panel {
 		result.rows[i] = codeBlockRow{text: row, sourceLine: indices[i]}
 	}
 	return result
+}
+
+func (b codeBlock) lineSummary(incomplete bool, width int) string {
+	count := strconv.Itoa(len(b.lines))
+	label := count + " lines"
+	if len(b.lines) == 1 {
+		label = count + " line"
+	}
+	if incomplete {
+		label += " · partial"
+	}
+	language := escapeCodeRow(b.language)
+	if language != "" && language != "text" && ansi.StringWidth(label+" · "+language) <= width {
+		label += " · " + language
+	}
+	if ansi.StringWidth(label) > width {
+		label = count + "L"
+		if incomplete {
+			label = count + "+L"
+		}
+	}
+	return ansi.Truncate(label, width, "…")
 }
 
 // Input is escaped text plus terminal16m's generated SGR, never raw terminal

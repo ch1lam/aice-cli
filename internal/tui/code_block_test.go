@@ -28,7 +28,7 @@ func TestCodeBlockRetainsSourceAndLineMapping(t *testing.T) {
 					}
 					// The display may have right padding. Each original line's
 					// escaped prefix must survive every narrow-width wrap.
-					plain := ansi.Strip(ansi.Cut(row.text, 2, width-2))
+					plain := ansi.Strip(ansi.Cut(row.text, layout.contentColumn, width-2))
 					recovered[row.sourceLine] += strings.TrimRight(plain, " ")
 				}
 				for i, line := range block.lines {
@@ -56,6 +56,39 @@ func TestCodeBlockClipRetainsUnclippedSource(t *testing.T) {
 		t.Fatal("padding points at source")
 	}
 	assertToolBackground(t, layout.view())
+}
+
+func TestCodeBlockNumbersSourceLinesAndCounts(t *testing.T) {
+	block := newCodeBlock(strings.Repeat("x", 40)+"\n\nlast\n", "go")
+	layout := block.layout(codeBlockOptions{width: 24})
+	if !strings.Contains(ansi.Strip(layout.rows[0].text), "3 lines") {
+		t.Fatal("header must count source lines, not wrapped rows")
+	}
+	seen := make(map[int]bool)
+	for _, row := range layout.rows {
+		if row.sourceLine < 0 {
+			continue
+		}
+		gutter := strings.TrimSpace(ansi.Strip(ansi.Cut(row.text, 2, layout.contentColumn)))
+		want := fmt.Sprint(row.sourceLine + 1)
+		if seen[row.sourceLine] {
+			want = ""
+		}
+		if gutter != want {
+			t.Fatalf("line %d gutter = %q, want %q", row.sourceLine, gutter, want)
+		}
+		seen[row.sourceLine] = true
+	}
+	if len(seen) != 3 {
+		t.Fatal("blank source line was not numbered")
+	}
+	partial := block.layout(codeBlockOptions{width: 40, incomplete: true})
+	if !strings.Contains(ansi.Strip(partial.rows[0].text), "3 lines · partial") {
+		t.Fatal("partial input claimed a complete total")
+	}
+	if narrow := block.layout(codeBlockOptions{width: 9}); narrow.contentColumn != 2 {
+		t.Fatal("narrow panel must prioritize source over numbers")
+	}
 }
 
 func TestCodeBlockHighlightingPreservesLiteralMarkdown(t *testing.T) {

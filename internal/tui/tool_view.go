@@ -130,7 +130,7 @@ func (m model) toolBodyView(entry transcriptEntry) string {
 			parts = append(parts, mutedStyle.Render(strings.Join(rows, "\n")))
 		} else {
 			parts = append(parts, newCodeBlock(body, language).layout(codeBlockOptions{
-				width: width, emptyText: "(empty output)",
+				width: width, emptyText: "(empty output)", incomplete: limited || entry.toolTruncation.Reason != "",
 			}).view())
 		}
 		if limited {

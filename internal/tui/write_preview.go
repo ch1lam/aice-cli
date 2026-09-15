@@ -11,20 +11,21 @@ const maximumWritePreviewBytes = 64 * 1024
 
 // This state belongs only to the update loop. No recovered JSON is executable.
 type writePreview struct {
-	raw           strings.Builder
-	content       string
-	path          string
-	known         bool
-	truncated     bool
-	revision      uint64
-	cacheRevision uint64
-	cacheWidth    int
-	cacheExpanded bool
-	rendered      string
-	codeSource    string
-	codePath      string
-	codeWidth     int
-	codeRendered  string
+	raw            strings.Builder
+	content        string
+	path           string
+	known          bool
+	truncated      bool
+	revision       uint64
+	cacheRevision  uint64
+	cacheWidth     int
+	cacheExpanded  bool
+	rendered       string
+	codeSource     string
+	codePath       string
+	codeWidth      int
+	codeIncomplete bool
+	codeRendered   string
 }
 
 func (m *model) applyWriteDelta(delta DisplayDelta) bool {
@@ -230,7 +231,7 @@ func (p *writePreview) view(width int, expanded bool) string {
 		omitted = omitted || linesOmitted
 		result = mutedStyle.Render("(empty file)")
 		if content != "" {
-			result = p.codeView(source, path, width)
+			result = p.codeView(source, path, width, omitted || !p.known)
 		}
 		if omitted {
 			notice := "… preview limited · ctrl+o collapse/expand for more"
@@ -246,11 +247,12 @@ func (p *writePreview) view(width int, expanded bool) string {
 
 // Reuse highlighted rows once the visible prefix stops changing, even while
 // later argument bytes continue arriving in the same bounded stream.
-func (p *writePreview) codeView(source, path string, width int) string {
-	if p.codeSource == source && p.codePath == path && p.codeWidth == width {
+func (p *writePreview) codeView(source, path string, width int, incomplete bool) string {
+	if p.codeSource == source && p.codePath == path && p.codeWidth == width && p.codeIncomplete == incomplete {
 		return p.codeRendered
 	}
-	result := newCodeBlock(source, toolCodeLanguage(path)).layout(codeBlockOptions{width: width, clip: true}).view()
+	result := newCodeBlock(source, toolCodeLanguage(path)).layout(codeBlockOptions{width: width, clip: true, incomplete: incomplete}).view()
+	p.codeIncomplete = incomplete
 	p.codeSource, p.codePath, p.codeWidth, p.codeRendered = source, path, width, result
 	return result
 }

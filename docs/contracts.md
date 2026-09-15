@@ -389,8 +389,12 @@ the final JSON event from being delivered.
   source-row mappings in the assistant cache. Renderer failure falls back to
   literal escaped source, never internal markers or partial content. Width and
   source changes invalidate text and block geometry together. These data are
-  presentation-only; copying buttons, line-number gutters, and code hover/click
+  presentation-only; copying buttons and code hover/click
   actions are not yet wired into the viewport's mouse handling.
+  The panel header counts supplied source lines, and the number gutter labels
+  only the first visual row of each source line. Narrow layouts omit the gutter.
+  Tool truncation and incomplete write previews mark their header count partial;
+  preview cache keys include this flag so completion refreshes the label.
   Main and BTW transcripts use an item-anchored viewport: scrolling records a
   block and a row within it, without measuring all preceding history. Process
   headers, individual reasoning/answer blocks, tools and questions are separate
