@@ -72,9 +72,7 @@ func TestToolPathStyleFollowsHoverAndExpansion(t *testing.T) {
 					if strings.Contains(row, "4:5") != gold || strings.Contains(row, "38;2;201;160;99") != gold {
 						t.Fatalf("target gold/underline = %v expected: %q", gold, row)
 					}
-					if strings.Contains(row, "\x1b[48;") || strings.Contains(row, ";48;") {
-						t.Fatal("target introduced a background color")
-					}
+					assertCanvasBackground(t, row, inkBlackColor)
 					return
 				}
 				t.Fatal("missing tool heading")

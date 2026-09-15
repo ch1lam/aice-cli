@@ -732,9 +732,9 @@ func TestModelKeepsReadyInHeaderAndUsesBubblesHelpBelowComposer(t *testing.T) {
 	current.input.SetValue("composer marker")
 	current.input.Blur()
 
-	content := current.View().Content
+	content := ansi.Strip(current.View().Content)
 	composerIndex := strings.Index(content, "composer marker")
-	helpView := current.help.View(current.keys.forState(false, false))
+	helpView := ansi.Strip(current.help.View(current.keys.forState(false, false)))
 	helpIndex := strings.Index(content, helpView)
 	if composerIndex < 0 || helpView == "" || helpIndex < 0 {
 		t.Fatalf(

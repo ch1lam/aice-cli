@@ -220,8 +220,9 @@ func TestModelUsesGoldCursor(t *testing.T) {
 	assertColor(t, styles.Cursor.Color, lipgloss.Color(goldHex))
 
 	view := current.View()
-	assertColor(t, view.BackgroundColor, lipgloss.Color(inkBlackHex))
-	assertColor(t, view.ForegroundColor, lipgloss.Color(primaryTextHex))
+	if view.BackgroundColor != nil || view.ForegroundColor != nil {
+		t.Fatal("the theme must not change the terminal's global palette")
+	}
 }
 
 func assertColor(t *testing.T, got, want color.Color) {

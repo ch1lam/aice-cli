@@ -717,6 +717,14 @@ consistent across the transcript, composer, menus, and permission prompts:
 | Error | 绛 `#A8383D` | Failed tools, error messages, and deleted diff lines |
 | Information | 石青 `#5B8A9E` | Tool names, working state, spinners, pending steering, and side-thread indicators |
 
+The theme paints the full AICE canvas, including blank cells and outer padding,
+with explicit text and background colors. It leaves the terminal's default
+foreground and background palette unchanged. Hover changes only the target
+heading's text styling; the surrounding canvas keeps its colors. The composer
+uses the same canvas background and retains the real terminal cursor as the
+anchor for IME composition and its candidate window. Transparency and blur
+remain controlled by the terminal.
+
 Headings use the brand accent with weight and spacing for hierarchy; Markdown
 headings omit hash prefixes, and level-six headings use gold. Tool names use
 normal weight, including on hover. Thinking panels and command output use quiet brown rails.

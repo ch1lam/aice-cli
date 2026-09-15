@@ -13,6 +13,7 @@ import (
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/ch1lam/aice-cli/internal/interaction"
 )
@@ -624,10 +625,28 @@ func (m model) View() tea.View {
 }
 
 func (m model) terminalView(content string) tea.View {
-	content = lipgloss.NewStyle().Padding(m.verticalPadding(), m.horizontalPadding()).Render(content)
+	// Paint the canvas, including empty cells, instead of changing the host's
+	// default colors with OSC 10/11. Terminal-owned overlays such as IME
+	// composition must not share mutable palette state with the app theme.
+	content = lipgloss.NewStyle().
+		Foreground(primaryTextColor).
+		Background(inkBlackColor).
+		Width(m.width).
+		Height(m.height).
+		Padding(m.verticalPadding(), m.horizontalPadding()).
+		Render(content)
+	// Nested styles reset SGR without restoring their parent's colors. Reapply
+	// the canvas defaults after resets; explicit panel/selection colors follow
+	// those resets and still take precedence.
+	colors := ansi.Style{}.ForegroundColor(primaryTextColor).BackgroundColor(inkBlackColor).String()
+	restore := strings.NewReplacer(
+		"\x1b[m", "\x1b[m"+colors,
+		"\x1b[0m", "\x1b[0m"+colors,
+		"\x1b[39m", ansi.Style{}.ForegroundColor(primaryTextColor).String(),
+		"\x1b[49m", ansi.Style{}.BackgroundColor(inkBlackColor).String(),
+	)
+	content = restore.Replace(content) + "\x1b[0m"
 	view := tea.NewView(content)
-	view.BackgroundColor = inkBlackColor
-	view.ForegroundColor = primaryTextColor
 	view.AltScreen = true
 	view.WindowTitle = "AICE"
 	view.MouseMode = tea.MouseModeAllMotion
