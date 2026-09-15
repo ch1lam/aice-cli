@@ -338,7 +338,7 @@ func TestModelAssistantBodyIsSeparatedAndUniformlyIndented(t *testing.T) {
 				lines[index] = strings.TrimRight(lines[index], " ")
 			}
 			got = strings.Join(lines, "\n")
-			if len(lines) < 3 || lines[0] != " ✦" || lines[1] != "" {
+			if len(lines) < 3 || lines[0] != "   ✦" || lines[1] != "" {
 				t.Fatalf(
 					"assistant heading is not separated from its body "+
 						"by one blank line:\n%q",
@@ -1121,7 +1121,7 @@ func TestModelToolCallsShowRelevantInput(t *testing.T) {
 			current.expandAllDetails(true)
 			running := ansi.Strip(current.transcriptView())
 			for _, wantLine := range strings.Split(tt.want, "\n") {
-				if !strings.Contains(running, wantLine) {
+				if !strings.Contains(strings.Join(strings.Fields(running), " "), wantLine) {
 					t.Fatalf(
 						"running tool transcript = %q, want line %q",
 						running,
@@ -1145,7 +1145,7 @@ func TestModelToolCallsShowRelevantInput(t *testing.T) {
 			})
 			completed := ansi.Strip(current.transcriptView())
 			for _, wantLine := range strings.Split(tt.want, "\n") {
-				if !strings.Contains(completed, wantLine) {
+				if !strings.Contains(strings.Join(strings.Fields(completed), " "), wantLine) {
 					t.Errorf(
 						"completed tool transcript = %q, want line %q",
 						completed,
@@ -2008,6 +2008,7 @@ func TestModelLocalSlashCommandsDoNotReachAgentRunner(t *testing.T) {
 
 			requests := make(chan runRequest, 1)
 			current := newModel(requests, make(chan struct{}))
+			current = updateModel(t, current, tea.WindowSizeMsg{Width: 80, Height: 24})
 			current.entries = tt.initial
 			current.input.SetValue(tt.command)
 

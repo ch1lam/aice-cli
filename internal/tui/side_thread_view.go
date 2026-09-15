@@ -33,7 +33,7 @@ func (m model) sideThreadIntro() string {
 	if strings.TrimSpace(m.side.notice) != "" {
 		detail += "\n" + infoStyle.Render(m.side.notice)
 	}
-	return lipgloss.NewStyle().Padding(0, 1).Render(title + "\n" + detail)
+	return m.transcriptContentView(title + "\n" + detail)
 }
 
 func (m model) sideQuestionView(question string) string {
@@ -51,13 +51,13 @@ func (m model) sideAnswerView(entry sideThreadEntry, active bool) string {
 		parts = append(parts, answer)
 	}
 	if entry.err != "" {
-		parts = append(parts, errorStyle.Render("✕ "+entry.err))
+		parts = append(parts, assistantBodyStyle.Render(errorStyle.Render("✕ "+entry.err)))
 	}
 	if entry.complete &&
 		strings.TrimSpace(entry.answer) == "" &&
 		strings.TrimSpace(entry.thinking) == "" &&
 		entry.err == "" {
-		parts = append(parts, mutedStyle.Render("No text response"))
+		parts = append(parts, assistantBodyStyle.Render(mutedStyle.Render("No text response")))
 	}
 	if active &&
 		!entry.complete &&
@@ -71,7 +71,7 @@ func (m model) sideAnswerView(entry sideThreadEntry, active bool) string {
 		return ""
 	}
 	return lipgloss.NewStyle().Padding(0, 1).Render(
-		headerStyle.Render("✦ AICE / BTW") + "\n\n" +
+		assistantBodyStyle.Render(headerStyle.Render("✦ AICE / BTW")) + "\n\n" +
 			strings.Join(parts, "\n"),
 	)
 }

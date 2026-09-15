@@ -573,23 +573,23 @@ func (m model) processHeader(start, end int, collapsed bool) string {
 		lipgloss.Width(action) -
 		4
 	if detail == "" {
-		return lipgloss.NewStyle().Padding(0, 1).Render(
+		return m.transcriptContentView(
 			brandStyle.Render(star) + "  " +
 				mutedStyle.Render(action),
 		)
 	}
 	if detailWidth > 0 {
 		detail = truncateTerminalText(detail, detailWidth)
-		return lipgloss.NewStyle().Padding(0, 1).Render(
+		return m.transcriptContentView(
 			brandStyle.Render(star) +
 				mutedStyle.Render("  "+detail+"  ") +
 				mutedStyle.Render(action),
 		)
 	}
 
-	return lipgloss.NewStyle().Padding(0, 1).Render(
+	return m.transcriptContentView(
 		brandStyle.Render(star) + "\n" +
-			mutedStyle.Render("  "+action),
+			mutedStyle.Render(action),
 	)
 }
 
@@ -630,19 +630,19 @@ func (m model) entryView(
 			true,
 		)
 	case entryTool:
-		return m.toolHeaderView(entry) + "\n" + m.toolBodyView(entry)
+		return m.transcriptContentView(m.toolHeaderView(entry) + "\n" + m.toolBodyView(entry))
 	case entryError:
-		return lipgloss.NewStyle().Padding(0, 1).Render(
+		return m.transcriptContentView(
 			errorStyle.Render("✕ Error  " + entry.text),
 		)
 	case entryNotice:
-		return lipgloss.NewStyle().Padding(0, 1).Render(
+		return m.transcriptContentView(
 			noticeStyle.Render("• " + entry.text),
 		)
 	case entryCommand:
 		return lipgloss.NewStyle().Padding(0, 1).Render(
-			headerStyle.Render("✦ COMMAND") + "\n" +
-				commandOutputStyle.Render(entry.text),
+			assistantBodyStyle.Render(headerStyle.Render("✦ COMMAND")) + "\n" +
+				commandOutputStyle.Width(width).Render(entry.text),
 		)
 	default:
 		return ""
@@ -677,7 +677,7 @@ func (m model) assistantEntryView(
 		return ""
 	}
 	return lipgloss.NewStyle().Padding(0, 1).Render(
-		m.assistantHeader(entry.processID) + "\n\n" + content,
+		assistantBodyStyle.Render(m.assistantHeader(entry.processID)) + "\n\n" + content,
 	)
 }
 
@@ -728,7 +728,7 @@ func (m model) assistantEntryContentView(
 }
 
 func (m model) assistantHeaderView(processID int) string {
-	return lipgloss.NewStyle().Padding(0, 1).Render(
+	return m.transcriptContentView(
 		m.assistantHeader(processID),
 	)
 }

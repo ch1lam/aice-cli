@@ -814,6 +814,11 @@ manually changed it or one of its children. Manual choices survive new deltas
 and sibling calls. Closing a parent preserves its children's choices.
 Fold state is transient presentation state, cleared with the visible transcript.
 
+Message text, process markers, fold arrows, and tool panels share one left
+alignment. Expanding a process, batch, thinking block, or tool does not add
+nested indentation. Wrapped headings retain the same left edge; user and
+thinking rails sit in the gutter, while code keeps its internal indentation.
+
 Move the mouse over a fold heading to brighten its text without adding a
 background. Collapsed file tools show only the final filename or directory name;
 expanding restores the full supplied path in the same heading, wrapping when

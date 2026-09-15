@@ -56,7 +56,7 @@ func TestReadOutputCodePanel(t *testing.T) {
 				t.Fatalf("missing code panel: %s", plain)
 			}
 			for _, row := range strings.Split(view, "\n") {
-				if ansi.StringWidth(row) != m.contentWidth()-8 {
+				if ansi.StringWidth(row) != m.contentWidth() {
 					t.Fatalf("panel overflows at width %d: %q", width, row)
 				}
 			}

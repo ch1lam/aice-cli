@@ -46,7 +46,7 @@ func (m model) toolHeaderStyled(entry transcriptEntry, hovered bool) string {
 			heading += "  " + detailStyle.Render(detail)
 		} else {
 			detail = strings.Join(strings.Fields(detail), " ")
-			available := m.contentWidth() - 6 - ansi.StringWidth(heading) - ansi.StringWidth(stats) - 2
+			available := m.contentWidth() - 2 - ansi.StringWidth(heading) - ansi.StringWidth(stats) - 2
 			heading += "  " + detailStyle.Render(ansi.Truncate(detail, max(available, 1), "…"))
 		}
 	}
@@ -96,7 +96,7 @@ func toolDiffStats(entry transcriptEntry) string {
 }
 
 func (m model) toolBodyView(entry transcriptEntry) string {
-	width := max(m.contentWidth()-8, 1)
+	width := m.contentWidth()
 	var parts []string
 	if entry.toolDetail != "" && !toolHasPath(entry.toolName) {
 		prefix := ""

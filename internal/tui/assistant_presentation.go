@@ -66,9 +66,7 @@ func (p *assistantPresentation) thinkingView(source string, width int, live bool
 	}
 	rendered := ""
 	if strings.TrimSpace(source) != "" {
-		bodyWidth := max(width-assistantBodyStyle.GetHorizontalFrameSize(), 1)
-		thinkingWidth := max(bodyWidth-thinkingStyle.GetHorizontalFrameSize(), 1)
-		rendered = assistantBodyStyle.Render(thinkingStyle.Width(thinkingWidth).Render(source))
+		rendered = thinkingStyle.Width(width).Render(source)
 	}
 	if p != nil {
 		p.thinkingCache = assistantSection{source: source, width: width, rendered: rendered}

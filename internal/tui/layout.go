@@ -1,5 +1,19 @@
 package tui
 
+import (
+	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
+)
+
+// Match the user and assistant text column. Fold depth changes visibility,
+// never the left edge; wrap before padding so continuation rows align too.
+const transcriptContentIndent = 3
+
+func (m model) transcriptContentView(content string) string {
+	return lipgloss.NewStyle().PaddingLeft(transcriptContentIndent).PaddingRight(1).
+		Render(ansi.Wrap(content, m.contentWidth(), ""))
+}
+
 // Reserve breathing room around the entire interface. Small terminals reclaim
 // it so the existing minimum content width and compact controls still fit.
 func (m model) horizontalPadding() int {

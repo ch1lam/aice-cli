@@ -75,16 +75,16 @@ func (m *model) expandAllDetails(expanded bool) {
 	}
 }
 
-func foldHeading(label string, expanded bool, indent int) string {
-	return foldHeadingStyled(label, expanded, indent, mutedStyle)
+func (m model) foldHeading(label string, expanded bool) string {
+	return m.foldHeadingStyled(label, expanded, mutedStyle)
 }
 
-func foldHeadingStyled(label string, expanded bool, indent int, style lipgloss.Style) string {
+func (m model) foldHeadingStyled(label string, expanded bool, style lipgloss.Style) string {
 	arrow := "▸"
 	if expanded {
 		arrow = "▾"
 	}
-	return strings.Repeat(" ", indent) + style.Render(arrow) + " " + label
+	return m.transcriptContentView(style.Render(arrow) + " " + label)
 }
 
 func (m model) processContentItems(start, end int) []transcriptItem {
@@ -97,7 +97,7 @@ func (m model) processContentItems(start, end int) []transcriptItem {
 				last++
 			}
 			target := foldTarget{kind: foldCalls, id: index}
-			heading := foldHeading(toolGroupSummary(m.entries[index:last]), m.foldExpanded(target), 2)
+			heading := m.foldHeading(toolGroupSummary(m.entries[index:last]), m.foldExpanded(target))
 			item := staticTranscriptItem(index*16+8, heading)
 			item.fold, item.gap = target, 1
 			items = append(items, item)
@@ -117,7 +117,7 @@ func (m model) processContentItems(start, end int) []transcriptItem {
 				if live {
 					label += " · " + m.activityIndicator()
 				}
-				item := staticTranscriptItem(index*16+5, foldHeading(mutedStyle.Render(label), m.foldExpanded(target), 2))
+				item := staticTranscriptItem(index*16+5, m.foldHeading(mutedStyle.Render(label), m.foldExpanded(target)))
 				item.fold, item.gap = target, 1
 				items = append(items, item)
 				if m.foldExpanded(target) {
@@ -146,14 +146,14 @@ func (m model) foldedToolItems(index int) []transcriptItem {
 	entry := m.entries[index]
 	target := foldTarget{kind: foldTool, id: index}
 	entry.toolExpanded = m.foldExpanded(target)
-	heading := foldHeading(m.toolHeaderView(entry), entry.toolExpanded, 4)
+	heading := m.foldHeading(m.toolHeaderView(entry), entry.toolExpanded)
 	header := staticTranscriptItem(index*16+9, heading)
 	header.fold = target
-	header.hoverText = foldHeadingStyled(m.toolHeaderStyled(entry, true), entry.toolExpanded, 4, transcriptHoverStyle)
+	header.hoverText = m.foldHeadingStyled(m.toolHeaderStyled(entry, true), entry.toolExpanded, transcriptHoverStyle)
 	items := []transcriptItem{header}
 	if entry.toolExpanded {
 		items = append(items, transcriptItem{key: index*16 + 10, version: entry, render: func() string {
-			return lipgloss.NewStyle().PaddingLeft(6).Render(m.toolBodyView(entry))
+			return m.transcriptContentView(m.toolBodyView(entry))
 		}})
 	}
 	return items

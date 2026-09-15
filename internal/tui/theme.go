@@ -42,7 +42,7 @@ var (
 	bodyStyle          = lipgloss.NewStyle().Foreground(primaryTextColor)
 	pathStyle          = lipgloss.NewStyle().Foreground(secondaryColor)
 	assistantBodyStyle = lipgloss.NewStyle().
-				PaddingLeft(2)
+				PaddingLeft(transcriptContentIndent - 1)
 	mutedStyle             = lipgloss.NewStyle().Foreground(mutedTextColor)
 	infoStyle              = lipgloss.NewStyle().Foreground(informationColor)
 	pendingSteerLabelStyle = lipgloss.NewStyle().

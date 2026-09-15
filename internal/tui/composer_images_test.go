@@ -65,6 +65,7 @@ func TestClipboardImagesSubmitThroughController(t *testing.T) {
 func TestImageDraftRestoredWhenModelRejectsInput(t *testing.T) {
 	t.Parallel()
 	m := newModel(make(chan runRequest), make(chan struct{}))
+	m = updateModel(t, m, tea.WindowSizeMsg{Width: 80, Height: 24})
 	m.insertImagePlaceholder(composerTestImage(t))
 	m.input.InsertString("keep this draft")
 	m, _, _ = m.submit()
