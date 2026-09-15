@@ -49,6 +49,7 @@ type codeBlockLayout struct {
 	block                codeBlock
 	rows                 []codeBlockRow
 	width, contentColumn int
+	copyColumn           int
 }
 
 func (b codeBlock) layout(options codeBlockOptions) codeBlockLayout {
@@ -88,8 +89,19 @@ func (b codeBlock) layout(options codeBlockOptions) codeBlockLayout {
 	}
 	indices = append(indices, -1)
 	panel := strings.Split(blockPanel(strings.Join(body, "\n"), width), "\n")
-	panel[0] = strings.Split(blockPanel(mutedStyle.Render(b.lineSummary(options.incomplete, width-4)), width), "\n")[1]
 	result := codeBlockLayout{block: b, rows: make([]codeBlockRow, len(panel)), width: width, contentColumn: 2 + gutter}
+	labelWidth := width - 4
+	button := ""
+	if b.source != "" && labelWidth >= 10 {
+		button = "[Copy]"
+		result.copyColumn = width - 2 - len(button)
+		labelWidth -= len(button) + 1
+	}
+	header := b.lineSummary(options.incomplete, labelWidth)
+	if button != "" {
+		header += strings.Repeat(" ", width-4-ansi.StringWidth(header)-len(button)) + button
+	}
+	panel[0] = strings.Split(blockPanel(mutedStyle.Render(header), width), "\n")[1]
 	for i, row := range panel {
 		result.rows[i] = codeBlockRow{text: row, sourceLine: indices[i]}
 	}

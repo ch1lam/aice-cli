@@ -24,6 +24,7 @@ type transcriptSelection struct {
 	active         bool
 	moved          bool
 	fold           foldHit
+	code           codeHit
 }
 
 func (s *transcriptSelection) begin(
@@ -103,6 +104,7 @@ func (m model) handleTranscriptMouseClick(
 
 	m.selection.begin(position, viewportOffset, m.viewport.View())
 	m.selection.fold = m.foldHitAt(message.Mouse())
+	m.selection.code = m.codeHitAt(message.Mouse())
 	return m, nil, true
 }
 
@@ -145,6 +147,15 @@ func (m model) handleTranscriptMouseRelease(
 		m.selection.clear()
 		if hit := m.foldHitAt(message.Mouse()); hit.target == pressed.target && hit.key == pressed.key {
 			m.toggleFoldAt(hit)
+		}
+		return m, nil, true
+	}
+	if !m.selection.moved && m.selection.code.valid {
+		pressed := m.selection.code
+		m.selection.clear()
+		if hit := m.codeHitAt(message.Mouse()); hit == pressed {
+			command := m.copyText(hit.source)
+			return m, command, true
 		}
 		return m, nil, true
 	}

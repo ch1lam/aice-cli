@@ -25,7 +25,7 @@ type assistantSection struct {
 	source   string
 	width    int
 	rendered string
-	blocks   []markdownCodeBlock
+	blocks   []codeBlockPlacement
 }
 
 func (p *assistantPresentation) appendText(current, delta string) string {
@@ -44,20 +44,18 @@ func appendAssistantText(buffer *strings.Builder, current, delta string) string 
 	return buffer.String()
 }
 
-func (p *assistantPresentation) textView(source string, width int) string {
+func (p *assistantPresentation) textContent(source string, width int) transcriptContent {
 	if p != nil && p.textCache.source == source && p.textCache.width == width {
-		return p.textCache.rendered
+		return transcriptContent{view: p.textCache.rendered, blocks: p.textCache.blocks}
 	}
-	rendered := ""
-	var document markdownLayout
+	var content transcriptContent
 	if strings.TrimSpace(source) != "" {
-		document = layoutMarkdown(source, width)
-		rendered = assistantBodyStyle.Render(document.view)
+		content = layoutMarkdown(source, width).pad(assistantBodyStyle.GetPaddingLeft(), assistantBodyStyle.GetPaddingRight())
 	}
 	if p != nil {
-		p.textCache = assistantSection{source: source, width: width, rendered: rendered, blocks: document.blocks}
+		p.textCache = assistantSection{source: source, width: width, rendered: content.view, blocks: content.blocks}
 	}
-	return rendered
+	return content
 }
 
 func (p *assistantPresentation) thinkingView(source string, width int, live bool) string {

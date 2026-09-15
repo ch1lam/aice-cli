@@ -389,8 +389,13 @@ the final JSON event from being delivered.
   source-row mappings in the assistant cache. Renderer failure falls back to
   literal escaped source, never internal markers or partial content. Width and
   source changes invalidate text and block geometry together. These data are
-  presentation-only; copying buttons and code hover/click
-  actions are not yet wired into the viewport's mouse handling.
+  presentation-only. `transcriptContent` carries text and block placements through
+  composition, indentation and the viewport's lazy cache. Hit testing uses the
+  same visible rows as painting, including main and BTW answers, tool output and
+  write previews. Copy buttons use original supplied source and validate both
+  source and geometry at release; scrolling, reflow and replaced content cannot
+  reuse a stale press. Drag selection retains its frozen display snapshot.
+  Code-row hover and single-click line copying are not yet wired.
   The panel header counts supplied source lines, and the number gutter labels
   only the first visual row of each source line. Narrow layouts omit the gutter.
   Tool truncation and incomplete write previews mark their header count partial;

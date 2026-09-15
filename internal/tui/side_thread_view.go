@@ -5,7 +5,6 @@ import (
 	"strings"
 	"time"
 
-	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/ch1lam/aice-cli/internal/interaction"
@@ -40,38 +39,37 @@ func (m model) sideQuestionView(question string) string {
 	return m.userMessageView(question)
 }
 
-func (m model) sideAnswerView(entry sideThreadEntry, active bool) string {
-	parts := make([]string, 0, 3)
+func (m model) sideAnswerContent(entry sideThreadEntry, active bool) transcriptContent {
+	var content transcriptContent
 	if thinking := entry.presentation.thinkingView(entry.thinking, m.contentWidth(), !entry.complete); thinking != "" {
-		parts = append(parts, thinking)
+		content.appendText(thinking)
 	}
-	if answer := entry.presentation.textView(entry.answer, m.contentWidth()); answer != "" {
-		parts = append(parts, answer)
+	if answer := entry.presentation.textContent(entry.answer, m.contentWidth()); answer.view != "" {
+		content.append(answer, "\n")
 	}
 	if entry.err != "" {
-		parts = append(parts, assistantBodyStyle.Render(errorStyle.Render("✕ "+entry.err)))
+		content.appendText(assistantBodyStyle.Render(errorStyle.Render("✕ " + entry.err)))
 	}
 	if entry.complete &&
 		strings.TrimSpace(entry.answer) == "" &&
 		strings.TrimSpace(entry.thinking) == "" &&
 		entry.err == "" {
-		parts = append(parts, assistantBodyStyle.Render(mutedStyle.Render("No text response")))
+		content.appendText(assistantBodyStyle.Render(mutedStyle.Render("No text response")))
 	}
 	if active &&
 		!entry.complete &&
 		strings.TrimSpace(entry.answer) == "" &&
 		entry.err == "" {
-		parts = append(parts, assistantBodyStyle.Render(
-			m.spinner.View()+" "+mutedStyle.Render(m.side.notice),
+		content.appendText(assistantBodyStyle.Render(
+			m.spinner.View() + " " + mutedStyle.Render(m.side.notice),
 		))
 	}
-	if len(parts) == 0 {
-		return ""
+	if content.view == "" {
+		return content
 	}
-	return lipgloss.NewStyle().Padding(0, 1).Render(
-		assistantBodyStyle.Render(headerStyle.Render("✦ AICE / BTW")) + "\n\n" +
-			strings.Join(parts, "\n"),
-	)
+	heading := transcriptContent{view: assistantBodyStyle.Render(headerStyle.Render("✦ AICE / BTW"))}
+	heading.append(content, "\n\n")
+	return heading.pad(1, 1)
 }
 
 // sanitizeSideTitle strips control characters and ANSI escapes from a thread

@@ -899,6 +899,13 @@ from 1, including blank lines. Wrapped continuations leave the number gutter
 blank. Narrow panels hide the gutter to preserve room for code. Limited tool
 output and incomplete write previews label the count `partial` (or `+L` in a
 compact header); this is a count of supplied lines, not the complete file size.
+The panel's `[Copy]` button copies its supplied source, preserving tabs, trailing
+spaces and original line endings, without line numbers or display escaping.
+For limited output/previews it copies only the supplied portion; clipped preview
+rows still copy their full supplied source. Empty or very narrow panels omit the
+button. Copy uses the same terminal clipboard and confirmation as drag selection.
+A drag continues to select visible text. Content changes, scrolling or resizing
+between press and release cancel a pending button click.
 
 Successful write and edit headings show green `+added` and red `-removed` line
 counts. Expanded results show a unified diff block with red/green line backgrounds,

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"image/color"
 	"strings"
@@ -140,6 +141,37 @@ func TestTerminalDoesNotSetGlobalThemeColors(t *testing.T) {
 			case <-ctx.Done():
 				t.Fatalf("terminal never rendered %s", step.name)
 			}
+		}
+	}
+}
+
+func TestTerminalCodeButtonWritesOriginalClipboardPayload(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	m := codeTestModel(t, 60)
+	source := "\tclipboard  \r\n\n中文\n"
+	m.entries = []transcriptEntry{{kind: entryAssistant, text: "```text\n" + source + "```", complete: true}}
+	m.refreshViewport(true)
+	mouse := codeButtonMouse(t, m, source)
+	output := make(terminalFrameWriter, 256)
+	program := tea.NewProgram(m, tea.WithContext(ctx), tea.WithInput(nil), tea.WithOutput(output),
+		tea.WithEnvironment([]string{"TERM=xterm-256color", "COLORTERM=truecolor"}),
+		tea.WithWindowSize(m.width, m.height), tea.WithoutSignalHandler())
+	done := make(chan error, 1)
+	go func() { _, err := program.Run(); done <- err }()
+	t.Cleanup(func() { cancel(); <-done })
+	waitForTerminalText(t, ctx, output, "[Copy]")
+	program.Send(tea.MouseClickMsg(mouse))
+	program.Send(tea.MouseReleaseMsg(mouse))
+	payload := "\x1b]52;c;" + base64.StdEncoding.EncodeToString([]byte(source))
+	for {
+		select {
+		case frame := <-output:
+			if strings.Contains(frame, payload) {
+				return
+			}
+		case <-ctx.Done():
+			t.Fatal("terminal never emitted the original clipboard payload")
 		}
 	}
 }

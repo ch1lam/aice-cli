@@ -45,7 +45,7 @@ func TestWritePreviewBoundsAndExpand(t *testing.T) {
 	if strings.Contains(view, "line01") {
 		t.Fatalf("tool details should start collapsed: %s", view)
 	}
-	pfx := ansi.Strip(m.entries[0].writePreview.view(80, false))
+	pfx := ansi.Strip(m.entries[0].writePreview.contentView(80, false).view)
 	if !strings.Contains(pfx, "line10") || strings.Contains(pfx, "line11") {
 		t.Fatalf("bounded preview: %s", pfx)
 	}
@@ -62,7 +62,7 @@ func TestWritePreviewBoundsAndExpand(t *testing.T) {
 	if len(p.content) > maximumWritePreviewBytes || !p.truncated {
 		t.Fatal("unbounded stored content")
 	}
-	view = ansi.Strip(p.view(35, false))
+	view = ansi.Strip(p.contentView(35, false).view)
 	if len(view) > 1000 {
 		t.Fatal("long source line was not clipped")
 	}
@@ -84,7 +84,7 @@ func TestWritePreviewEscapesAndControls(t *testing.T) {
 	}
 	p := &writePreview{}
 	p.setContent(ToolDisplay{Content: "```\n\x1b]52;c;PAYLOAD\a\x9b\x00\n```", HasContent: true})
-	view := p.view(80, false)
+	view := p.contentView(80, false).view
 	if strings.Contains(view, "\x1b]52") || strings.ContainsAny(ansi.Strip(view), "\a\x00\u009b") {
 		t.Fatalf("terminal control escaped: %q", view)
 	}
@@ -133,7 +133,7 @@ func TestWritePreviewCallsRemainIndependent(t *testing.T) {
 		if !e.toolPreparing || e.toolDone {
 			t.Fatal("preview claimed execution without execution events")
 		}
-		if !strings.Contains(ansi.Strip(e.writePreview.view(80, false)), e.toolID) {
+		if !strings.Contains(ansi.Strip(e.writePreview.contentView(80, false).view), e.toolID) {
 			t.Fatal("stream crossed tool or round boundary")
 		}
 	}
@@ -144,12 +144,12 @@ func BenchmarkWritePreviewVisiblePrefix(b *testing.B) {
 		b.Run(fmt.Sprint(size), func(b *testing.B) {
 			p := &writePreview{}
 			p.setContent(ToolDisplay{Content: strings.Repeat("package main\n", size/13), Detail: "file.go", HasContent: true})
-			p.view(80, false)
+			p.contentView(80, false)
 			b.ReportAllocs()
 			b.ResetTimer()
 			for b.Loop() {
 				p.revision++
-				p.view(80, false)
+				p.contentView(80, false)
 			}
 		})
 	}

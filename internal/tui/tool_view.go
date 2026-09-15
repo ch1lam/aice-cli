@@ -96,21 +96,25 @@ func toolDiffStats(entry transcriptEntry) string {
 }
 
 func (m model) toolBodyView(entry transcriptEntry) string {
+	return m.toolBodyContent(entry).view
+}
+
+func (m model) toolBodyContent(entry transcriptEntry) transcriptContent {
 	width := m.contentWidth()
-	var parts []string
+	var content transcriptContent
 	if entry.toolDetail != "" && !toolHasPath(entry.toolName) {
 		prefix := ""
 		if entry.toolName == "bash" {
 			prefix = "$ "
 		}
-		parts = append(parts, mutedStyle.Render(prefix+entry.toolDetail))
+		content.appendText(mutedStyle.Render(prefix + entry.toolDetail))
 	}
 	hasDiff := entry.toolDone && !entry.toolError && (entry.toolDiff.Text != "" || entry.toolDiff.Truncated || entry.toolDiff.StatsKnown)
 	if entry.writePreview != nil && !hasDiff {
-		parts = append(parts, entry.writePreview.view(width, entry.toolExpanded))
+		content.append(entry.writePreview.contentView(width, entry.toolExpanded), "\n")
 	}
 	if hasDiff {
-		parts = append(parts, editDiffView(entry.toolDiff, width, entry.toolExpanded))
+		content.appendText(editDiffView(entry.toolDiff, width, entry.toolExpanded))
 	}
 	if entry.toolOutput.Available {
 		text := writePrefix(entry.toolOutput.Text, 64*1024)
@@ -127,23 +131,23 @@ func (m model) toolBodyView(entry transcriptEntry) string {
 			for i, row := range rows {
 				rows[i] = escapeCodeRow(row)
 			}
-			parts = append(parts, mutedStyle.Render(strings.Join(rows, "\n")))
+			content.appendText(mutedStyle.Render(strings.Join(rows, "\n")))
 		} else {
-			parts = append(parts, newCodeBlock(body, language).layout(codeBlockOptions{
+			content.append(newCodeBlock(body, language).layout(codeBlockOptions{
 				width: width, emptyText: "(empty output)", incomplete: limited || entry.toolTruncation.Reason != "",
-			}).view())
+			}).content(), "\n")
 		}
 		if limited {
-			parts = append(parts, noticeStyle.Render("… output display limit reached (64 KiB / 2000 lines)"))
+			content.appendText(noticeStyle.Render("… output display limit reached (64 KiB / 2000 lines)"))
 		}
-	} else if entry.toolDone && len(parts) == 0 {
-		parts = append(parts, mutedStyle.Render("(output unavailable)"))
+	} else if entry.toolDone && content.view == "" {
+		content.appendText(mutedStyle.Render("(output unavailable)"))
 	}
 	if entry.toolDone && entry.toolTruncation.Reason != "" {
-		parts = append(parts, noticeStyle.Render(toolTruncationStatus(entry.toolTruncation)))
+		content.appendText(noticeStyle.Render(toolTruncationStatus(entry.toolTruncation)))
 	}
-	if len(parts) == 0 {
-		parts = append(parts, mutedStyle.Render("Waiting for result…"))
+	if content.view == "" {
+		content.appendText(mutedStyle.Render("Waiting for result…"))
 	}
-	return strings.Join(parts, "\n")
+	return content
 }

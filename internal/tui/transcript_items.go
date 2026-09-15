@@ -123,11 +123,16 @@ func (m *model) transcriptEntryItem(index int, e transcriptEntry, active bool, m
 		Mode                transcriptEntryMode
 		Animation, Duration string
 	}{e, active, mode, animation, duration}
-	return transcriptItem{key: index*16 + int(mode), version: version, render: func() string {
-		if mode == transcriptStandalone || e.kind != entryAssistant {
-			return m.entryView(e, active)
+	return transcriptItem{key: index*16 + int(mode), version: version, renderContent: func() transcriptContent {
+		if e.kind == entryAssistant {
+			return m.assistantEntryContent(e, active, mode != transcriptConclusion, mode != transcriptThinking, mode == transcriptStandalone)
 		}
-		return m.assistantProcessEntryView(e, active, mode != transcriptConclusion, mode != transcriptThinking)
+		if e.kind == entryTool {
+			content := transcriptContent{view: m.toolHeaderView(e)}
+			content.append(m.toolBodyContent(e), "\n")
+			return m.indentTranscript(content)
+		}
+		return transcriptContent{view: m.entryView(e, active)}
 	}}
 }
 
@@ -151,7 +156,7 @@ func (m model) sideTranscriptItems() []transcriptItem {
 				Active    bool
 				Animation string
 			}{entry, active, animation}
-			items = append(items, transcriptItem{key: i*2 + 1, version: version, gap: 1, render: func() string { return m.sideAnswerView(entry, active) }})
+			items = append(items, transcriptItem{key: i*2 + 1, version: version, gap: 1, renderContent: func() transcriptContent { return m.sideAnswerContent(entry, active) }})
 		}
 	}
 	return items

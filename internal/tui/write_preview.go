@@ -20,12 +20,12 @@ type writePreview struct {
 	cacheRevision  uint64
 	cacheWidth     int
 	cacheExpanded  bool
-	rendered       string
+	rendered       transcriptContent
 	codeSource     string
 	codePath       string
 	codeWidth      int
 	codeIncomplete bool
-	codeRendered   string
+	codeRendered   transcriptContent
 }
 
 func (m *model) applyWriteDelta(delta DisplayDelta) bool {
@@ -211,7 +211,7 @@ func partialJSONString(raw string) (string, bool) {
 	return value, err == nil
 }
 
-func (p *writePreview) view(width int, expanded bool) string {
+func (p *writePreview) contentView(width int, expanded bool) transcriptContent {
 	if p.cacheWidth == width && p.cacheExpanded == expanded && p.cacheRevision == p.revision {
 		return p.rendered
 	}
@@ -219,7 +219,7 @@ func (p *writePreview) view(width int, expanded bool) string {
 	if !known {
 		path, content, known = partialWriteFields(p.raw.String())
 	}
-	result := mutedStyle.Render("Waiting for content…")
+	result := transcriptContent{view: mutedStyle.Render("Waiting for content…")}
 	if known {
 		limit, lines := 4096, 10
 		if expanded {
@@ -229,7 +229,7 @@ func (p *writePreview) view(width int, expanded bool) string {
 		omitted := len(source) < len(content) || p.truncated
 		source, linesOmitted := codeLinePrefix(source, lines)
 		omitted = omitted || linesOmitted
-		result = mutedStyle.Render("(empty file)")
+		result = transcriptContent{view: mutedStyle.Render("(empty file)")}
 		if content != "" {
 			result = p.codeView(source, path, width, omitted || !p.known)
 		}
@@ -238,7 +238,7 @@ func (p *writePreview) view(width int, expanded bool) string {
 			if expanded {
 				notice = "… preview limit reached (64 KiB / 2000 lines)"
 			}
-			result += "\n" + mutedStyle.Render(notice)
+			result.appendText(mutedStyle.Render(notice))
 		}
 	}
 	p.cacheWidth, p.cacheExpanded, p.cacheRevision, p.rendered = width, expanded, p.revision, result
@@ -247,11 +247,11 @@ func (p *writePreview) view(width int, expanded bool) string {
 
 // Reuse highlighted rows once the visible prefix stops changing, even while
 // later argument bytes continue arriving in the same bounded stream.
-func (p *writePreview) codeView(source, path string, width int, incomplete bool) string {
+func (p *writePreview) codeView(source, path string, width int, incomplete bool) transcriptContent {
 	if p.codeSource == source && p.codePath == path && p.codeWidth == width && p.codeIncomplete == incomplete {
 		return p.codeRendered
 	}
-	result := newCodeBlock(source, toolCodeLanguage(path)).layout(codeBlockOptions{width: width, clip: true, incomplete: incomplete}).view()
+	result := newCodeBlock(source, toolCodeLanguage(path)).layout(codeBlockOptions{width: width, clip: true, incomplete: incomplete}).content()
 	p.codeIncomplete = incomplete
 	p.codeSource, p.codePath, p.codeWidth, p.codeRendered = source, path, width, result
 	return result

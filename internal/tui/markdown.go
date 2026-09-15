@@ -17,26 +17,15 @@ import (
 	"github.com/yuin/goldmark/util"
 )
 
-type markdownCodeBlock struct {
-	layout codeBlockLayout
-	// Coordinates relative to this Markdown document, before transcript indent.
-	row, column int
-}
-
-type markdownLayout struct {
-	view   string
-	blocks []markdownCodeBlock
-}
-
-func layoutMarkdown(markdown string, width int) markdownLayout {
+func layoutMarkdown(markdown string, width int) transcriptContent {
 	if strings.TrimSpace(markdown) == "" {
-		return markdownLayout{}
+		return transcriptContent{}
 	}
 	width = max(width-assistantBodyStyle.GetHorizontalFrameSize(), 20)
 	result, err := renderMarkdownBlocks(markdown, width)
 	if err != nil {
 		// A renderer failure must not lose content or leak internal placeholders.
-		return markdownLayout{view: newCodeBlock(markdown, "text").layout(codeBlockOptions{width: width}).view()}
+		return newCodeBlock(markdown, "text").layout(codeBlockOptions{width: width}).content()
 	}
 	return result
 }
@@ -46,7 +35,7 @@ func layoutMarkdown(markdown string, width int) markdownLayout {
 // Glamour lay out the complete tree (including lists, quotes and references),
 // then insert the shared component at those explicit slots. Never locate code
 // by matching its content against prose or by guessing indentation.
-func renderMarkdownBlocks(markdown string, width int) (markdownLayout, error) {
+func renderMarkdownBlocks(markdown string, width int) (transcriptContent, error) {
 	source := []byte(markdown)
 	md := goldmark.New(goldmark.WithExtensions(extension.GFM, extension.DefinitionList),
 		goldmark.WithParserOptions(parser.WithAutoHeadingID()))
@@ -58,7 +47,7 @@ func renderMarkdownBlocks(markdown string, width int) (markdownLayout, error) {
 		}
 		return ast.WalkContinue, nil
 	}); err != nil {
-		return markdownLayout{}, err
+		return transcriptContent{}, err
 	}
 
 	marker := ""
@@ -66,7 +55,7 @@ func renderMarkdownBlocks(markdown string, width int) (markdownLayout, error) {
 		var err error
 		marker, err = markdownMarker(markdown)
 		if err != nil {
-			return markdownLayout{}, err
+			return transcriptContent{}, err
 		}
 	}
 	blocks := make([]codeBlock, 0, len(nodes))
@@ -97,11 +86,11 @@ func renderMarkdownBlocks(markdown string, width int) (markdownLayout, error) {
 		glamouransi.NewRenderer(glamouransi.Options{Styles: style, WordWrap: width}), 1000))))
 	var out bytes.Buffer
 	if err := md.Renderer().Render(&out, source, document); err != nil {
-		return markdownLayout{}, err
+		return transcriptContent{}, err
 	}
 	rendered := strings.Trim(out.String(), "\r\n")
 	if len(blocks) == 0 {
-		return markdownLayout{view: rendered}, nil
+		return transcriptContent{view: rendered}, nil
 	}
 	return insertMarkdownBlocks(rendered, marker, blocks, width)
 }
@@ -120,9 +109,9 @@ func markdownMarker(source string) (string, error) {
 	return "", fmt.Errorf("markdown code marker alphabet exhausted")
 }
 
-func insertMarkdownBlocks(rendered, marker string, blocks []codeBlock, width int) (markdownLayout, error) {
+func insertMarkdownBlocks(rendered, marker string, blocks []codeBlock, width int) (transcriptContent, error) {
 	var rows []string
-	result := markdownLayout{}
+	result := transcriptContent{}
 	next := 0
 	for line := range strings.SplitSeq(rendered, "\n") {
 		before, after, found := strings.Cut(line, marker)
@@ -131,7 +120,7 @@ func insertMarkdownBlocks(rendered, marker string, blocks []codeBlock, width int
 			continue
 		}
 		if next >= len(blocks) || strings.TrimSpace(ansi.Strip(after)) != "" {
-			return markdownLayout{}, fmt.Errorf("invalid markdown code slot")
+			return transcriptContent{}, fmt.Errorf("invalid markdown code slot")
 		}
 		column := ansi.StringWidth(before)
 		// Deep containers can consume the whole terminal. Clip their decorative
@@ -141,14 +130,14 @@ func insertMarkdownBlocks(rendered, marker string, blocks []codeBlock, width int
 			column = ansi.StringWidth(before)
 		}
 		layout := blocks[next].layout(codeBlockOptions{width: max(width-column, 6)})
-		result.blocks = append(result.blocks, markdownCodeBlock{layout: layout, row: len(rows), column: column})
+		result.blocks = append(result.blocks, codeBlockPlacement{layout: layout, row: len(rows), column: column})
 		for _, row := range layout.rows {
 			rows = append(rows, before+row.text)
 		}
 		next++
 	}
 	if next != len(blocks) {
-		return markdownLayout{}, fmt.Errorf("missing markdown code slots")
+		return transcriptContent{}, fmt.Errorf("missing markdown code slots")
 	}
 	result.view = strings.Join(rows, "\n")
 	return result, nil

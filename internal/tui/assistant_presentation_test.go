@@ -28,7 +28,7 @@ func TestLongThinkingPreviewPreservesCompleteMessage(t *testing.T) {
 			}
 			view := func() string {
 				if side {
-					return ansi.Strip(m.sideAnswerView(thread.entries[0], true))
+					return ansi.Strip(m.sideAnswerContent(thread.entries[0], true).view)
 				}
 				return ansi.Strip(m.transcriptView())
 			}
@@ -69,18 +69,18 @@ func TestLongThinkingPreviewPreservesCompleteMessage(t *testing.T) {
 func TestAssistantPresentationInvalidation(t *testing.T) {
 	p := &assistantPresentation{}
 	text := p.appendText("", "first")
-	before := p.textView(text, 80)
+	before := p.textContent(text, 80).view
 	text = p.appendText(text, " second")
-	if got := p.textView(text, 80); got == before || !strings.Contains(ansi.Strip(got), "second") {
+	if got := p.textContent(text, 80).view; got == before || !strings.Contains(ansi.Strip(got), "second") {
 		t.Fatal("new text did not invalidate cached content")
 	}
 	text = p.appendText(text, strings.Repeat(" word", 30))
-	wide := p.textView(text, 80)
-	narrow := p.textView(text, 30)
+	wide := p.textContent(text, 80).view
+	narrow := p.textContent(text, 30).view
 	if strings.Count(narrow, "\n") <= strings.Count(wide, "\n") {
 		t.Fatal("resize did not rewrap cached content")
 	}
-	if p.textView("", 30) != "" {
+	if p.textContent("", 30).view != "" {
 		t.Fatal("empty replacement retained old content")
 	}
 	// An appended delta must not mutate an earlier immutable snapshot.
@@ -97,17 +97,17 @@ func TestAssistantPresentationInvalidation(t *testing.T) {
 func TestAssistantCodeGeometryTracksSourceAndWidth(t *testing.T) {
 	p := &assistantPresentation{}
 	source := "```text\n" + strings.Repeat("source ", 30) + "\n```"
-	p.textView(source, 80)
+	p.textContent(source, 80)
 	if len(p.textCache.blocks) != 1 {
 		t.Fatal("missing code geometry")
 	}
 	before := p.textCache.blocks[0].layout
-	p.textView(source, 24)
+	p.textContent(source, 24)
 	after := p.textCache.blocks[0].layout
 	if len(after.rows) <= len(before.rows) || after.block.source != before.block.source {
 		t.Fatal("resize failed to update geometry independently of source")
 	}
-	p.textView("replacement", 24)
+	p.textContent("replacement", 24)
 	if len(p.textCache.blocks) != 0 {
 		t.Fatal("replacement retained obsolete code geometry")
 	}

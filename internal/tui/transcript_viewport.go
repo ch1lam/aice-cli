@@ -11,15 +11,29 @@ import (
 // transcriptItem delays formatting until scrolling reaches this block. Version
 // must be comparable and describe every input to render other than width.
 type transcriptItem struct {
-	key     int
-	fold    foldTarget
-	version any
-	render  func() string
+	key           int
+	fold          foldTarget
+	version       any
+	render        func() string
+	renderContent func() transcriptContent
 	// Optional styled header variant; it must have identical text and wrapping.
 	hoverText string
 	gap       int
 	lines     []string
 	width     int
+	codeRows  map[int]transcriptCodeRow
+}
+
+func (item transcriptItem) content() transcriptContent {
+	if item.renderContent != nil {
+		return item.renderContent()
+	}
+	return transcriptContent{view: item.render()}
+}
+
+type transcriptCodeRow struct {
+	placement  *codeBlockPlacement
+	block, row int
 }
 
 // transcriptViewport anchors scrolling to an item and a row inside it. It does
@@ -54,6 +68,7 @@ func (v *transcriptViewport) setItems(items []transcriptItem) {
 			old := v.items[i]
 			if old.key == items[i].key && old.version == items[i].version {
 				items[i].lines, items[i].width = old.lines, old.width
+				items[i].codeRows = old.codeRows
 			}
 		}
 	}
@@ -92,7 +107,8 @@ func (v *transcriptViewport) beginResize() {
 func (v transcriptViewport) itemLines(index int) []string {
 	item := &v.items[index]
 	if item.lines == nil || item.width != v.width {
-		item.lines = wrapTranscriptLines(item.render(), v.width)
+		content := item.content()
+		item.lines, item.codeRows = wrapTranscriptContent(content, v.width)
 		item.width = v.width
 	}
 	return item.lines
@@ -210,14 +226,15 @@ type transcriptRow struct {
 	key  int
 	line int
 	fold foldTarget
+	code transcriptCodeRow
 }
 
 func (v transcriptViewport) visibleRows() []transcriptRow {
 	rows := make([]transcriptRow, 0, v.height)
 	skip := v.line
 	for i := v.index; i < len(v.items) && len(rows) < v.height; i++ {
-		item := v.items[i]
 		lines := v.itemLines(i)
+		item := v.items[i]
 		height := item.gap + len(lines)
 		if skip >= height {
 			skip -= height
@@ -227,6 +244,7 @@ func (v transcriptViewport) visibleRows() []transcriptRow {
 			row := transcriptRow{item: i, key: item.key, line: line}
 			if line >= item.gap {
 				row.text, row.fold = lines[line-item.gap], item.fold
+				row.code = item.codeRows[line-item.gap]
 			}
 			rows = append(rows, row)
 		}
@@ -304,4 +322,28 @@ func wrapTranscriptLines(content string, width int) []string {
 		}
 	}
 	return lines
+}
+
+func wrapTranscriptContent(content transcriptContent, width int) ([]string, map[int]transcriptCodeRow) {
+	if len(content.blocks) == 0 {
+		return wrapTranscriptLines(content.view, width), nil
+	}
+	var lines []string
+	var offsets []int
+	for row := range strings.SplitSeq(content.view, "\n") {
+		offsets = append(offsets, len(lines))
+		lines = append(lines, wrapTranscriptLines(row, width)...)
+	}
+	codeRows := make(map[int]transcriptCodeRow)
+	for i := range content.blocks {
+		block := &content.blocks[i]
+		// Very small terminal clipping must never leave an invisible target.
+		if block.column < 0 || block.column+block.layout.width > width {
+			continue
+		}
+		for row := range block.layout.rows {
+			codeRows[offsets[block.row+row]] = transcriptCodeRow{placement: block, block: i, row: row}
+		}
+	}
+	return lines, codeRows
 }

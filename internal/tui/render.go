@@ -492,7 +492,7 @@ func (m model) transcriptView() string {
 		if i > 0 {
 			result.WriteString(strings.Repeat("\n", item.gap+1))
 		}
-		result.WriteString(item.render())
+		result.WriteString(item.content().view)
 	}
 	return result.String()
 }
@@ -620,12 +620,7 @@ func (m model) entryView(
 	case entryUser:
 		return m.userMessageView(entry.text)
 	case entryAssistant:
-		return m.assistantEntryView(
-			entry,
-			activeAssistant,
-			true,
-			true,
-		)
+		return m.assistantEntryContent(entry, activeAssistant, true, true, true).view
 	case entryTool:
 		return m.transcriptContentView(m.toolHeaderView(entry) + "\n" + m.toolBodyView(entry))
 	case entryError:
@@ -658,70 +653,28 @@ func sanitizeToolDetail(value string, multiline bool) string {
 	}, value)
 }
 
-func (m model) assistantEntryView(
-	entry transcriptEntry,
-	activeAssistant bool,
-	includeThinking bool,
-	includeText bool,
-) string {
-	content := m.assistantEntryContentView(
-		entry,
-		activeAssistant,
-		includeThinking,
-		includeText,
-	)
-	if content == "" {
-		return ""
-	}
-	return lipgloss.NewStyle().Padding(0, 1).Render(
-		assistantBodyStyle.Render(m.assistantHeader(entry.processID)) + "\n\n" + content,
-	)
-}
-
-func (m model) assistantProcessEntryView(
-	entry transcriptEntry,
-	activeAssistant bool,
-	includeThinking bool,
-	includeText bool,
-) string {
-	content := m.assistantEntryContentView(
-		entry,
-		activeAssistant,
-		includeThinking,
-		includeText,
-	)
-	if content == "" {
-		return ""
-	}
-	return lipgloss.NewStyle().Padding(0, 1).Render(content)
-}
-
-func (m model) assistantEntryContentView(
-	entry transcriptEntry,
-	activeAssistant bool,
-	includeThinking bool,
-	includeText bool,
-) string {
+func (m model) assistantEntryContent(entry transcriptEntry, active, thinking, text, header bool) transcriptContent {
+	var content transcriptContent
 	width := m.contentWidth()
-	parts := make([]string, 0, 2)
-	if includeThinking {
-		if thinking := entry.presentation.thinkingView(entry.thinking, width, !entry.complete); thinking != "" {
-			parts = append(parts, thinking)
-		}
+	if thinking {
+		content.appendText(entry.presentation.thinkingView(entry.thinking, width, !entry.complete))
 	}
-	if includeText {
-		body := entry.presentation.textView(entry.text, width)
-		if body == "" && activeAssistant {
-			body = assistantBodyStyle.Render(m.activityIndicator())
+	if text {
+		body := entry.presentation.textContent(entry.text, width)
+		if body.view == "" && active {
+			body.view = assistantBodyStyle.Render(m.activityIndicator())
 		}
-		if body != "" {
-			parts = append(parts, body)
-		}
+		content.append(body, "\n")
 	}
-	if len(parts) == 0 {
-		return ""
+	if content.view == "" {
+		return content
 	}
-	return strings.Join(parts, "\n")
+	if header {
+		heading := transcriptContent{view: assistantBodyStyle.Render(m.assistantHeader(entry.processID))}
+		heading.append(content, "\n\n")
+		content = heading
+	}
+	return content.pad(1, 1)
 }
 
 func (m model) assistantHeaderView(processID int) string {
