@@ -254,11 +254,15 @@ func (v transcriptViewport) visibleRows() []transcriptRow {
 }
 
 func (v transcriptViewport) viewWithHover(hover foldTarget) string {
+	return v.viewWithCodeHover(hover, codeHit{})
+}
+
+func (v transcriptViewport) viewWithCodeHover(hover foldTarget, codeHover codeHit) string {
 	var hoverLines []string
 	hoverGap := 0
 	lines := make([]string, 0, v.height)
 	for _, row := range v.visibleRows() {
-		text := row.text
+		text := row.withCodeHover(codeHover)
 		if hover.kind != foldNone && row.fold == hover {
 			if item := v.items[row.item]; hoverLines == nil && item.hoverText != "" {
 				hoverLines = wrapTranscriptLines(item.hoverText, v.width)

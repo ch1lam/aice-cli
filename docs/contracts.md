@@ -395,7 +395,12 @@ the final JSON event from being delivered.
   write previews. Copy buttons use original supplied source and validate both
   source and geometry at release; scrolling, reflow and replaced content cannot
   reuse a stale press. Drag selection retains its frozen display snapshot.
-  Code-row hover and single-click line copying are not yet wired.
+  Single-click line copying uses the same source-row mapping, removes only the
+  final LF/CRLF, and preserves all other characters. Wrapped and clipped rows
+  resolve to their original logical line. Hover repaints only visible target
+  cells, preserves syntax foregrounds and cached geometry, and is suppressed
+  during selection and modal input. Diff rows retain their separate rendering
+  and selection semantics.
   The panel header counts supplied source lines, and the number gutter labels
   only the first visual row of each source line. Narrow layouts omit the gutter.
   Tool truncation and incomplete write previews mark their header count partial;

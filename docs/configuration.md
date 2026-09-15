@@ -905,7 +905,13 @@ For limited output/previews it copies only the supplied portion; clipped preview
 rows still copy their full supplied source. Empty or very narrow panels omit the
 button. Copy uses the same terminal clipboard and confirmation as drag selection.
 A drag continues to select visible text. Content changes, scrolling or resizing
-between press and release cancel a pending button click.
+between press and release cancel a pending click.
+Hover highlights a copy button or the original code line, including its wrapped
+continuations, while preserving syntax colors. Single-clicking a code line or
+its number copies the full original line without its final LF/CRLF; indentation
+and trailing spaces remain intact. A blank source line copies an empty string.
+Panel padding and non-code text do not trigger line copying. Hover is hidden
+while dragging and does not change layout or enter the selection snapshot.
 
 Successful write and edit headings show green `+added` and red `-removed` line
 counts. Expanded results show a unified diff block with red/green line backgrounds,

@@ -145,7 +145,7 @@ func TestTerminalDoesNotSetGlobalThemeColors(t *testing.T) {
 	}
 }
 
-func TestTerminalCodeButtonWritesOriginalClipboardPayload(t *testing.T) {
+func TestTerminalCodeClicksWriteOriginalClipboardPayload(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 	m := codeTestModel(t, 60)
@@ -161,17 +161,24 @@ func TestTerminalCodeButtonWritesOriginalClipboardPayload(t *testing.T) {
 	go func() { _, err := program.Run(); done <- err }()
 	t.Cleanup(func() { cancel(); <-done })
 	waitForTerminalText(t, ctx, output, "[Copy]")
-	program.Send(tea.MouseClickMsg(mouse))
-	program.Send(tea.MouseReleaseMsg(mouse))
-	payload := "\x1b]52;c;" + base64.StdEncoding.EncodeToString([]byte(source))
-	for {
-		select {
-		case frame := <-output:
-			if strings.Contains(frame, payload) {
-				return
+	for _, action := range []struct {
+		mouse  tea.Mouse
+		source string
+	}{
+		{mouse, source}, {codeLineMouse(t, m, 0, false), "\tclipboard  "},
+	} {
+		program.Send(tea.MouseMotionMsg(action.mouse))
+		program.Send(tea.MouseClickMsg(action.mouse))
+		program.Send(tea.MouseReleaseMsg(action.mouse))
+		payload := "\x1b]52;c;" + base64.StdEncoding.EncodeToString([]byte(action.source))
+		copied := false
+		for !copied {
+			select {
+			case frame := <-output:
+				copied = strings.Contains(frame, payload)
+			case <-ctx.Done():
+				t.Fatal("terminal never emitted the original clipboard payload")
 			}
-		case <-ctx.Done():
-			t.Fatal("terminal never emitted the original clipboard payload")
 		}
 	}
 }

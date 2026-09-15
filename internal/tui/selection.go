@@ -154,7 +154,7 @@ func (m model) handleTranscriptMouseRelease(
 		pressed := m.selection.code
 		m.selection.clear()
 		if hit := m.codeHitAt(message.Mouse()); hit == pressed {
-			command := m.copyText(hit.source)
+			command := m.copyText(hit.text)
 			return m, command, true
 		}
 		return m, nil, true

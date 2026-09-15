@@ -600,7 +600,7 @@ func (m model) View() tea.View {
 		return m.terminalView(m.guardView(max(m.width-2*m.horizontalPadding(), 1)))
 	}
 	width := m.layoutWidth()
-	viewportView := m.viewport.viewWithHover(m.hoveredFold())
+	viewportView := m.viewport.viewWithCodeHover(m.hoveredFold(), m.hoveredCode())
 	viewportOffset := m.viewport.YOffset()
 	if m.selection.active {
 		viewportView = m.selection.viewportView
