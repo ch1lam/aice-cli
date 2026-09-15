@@ -83,26 +83,6 @@ func (row transcriptRow) withCodeHover(hover codeHit) string {
 		}
 		start = block.column + layout.copyColumn
 	}
-	return ansi.Cut(row.text, 0, start) + hoverCodeCells(ansi.Cut(row.text, start, end)) +
+	return ansi.Cut(row.text, 0, start) + paintCodeBackground(ansi.Cut(row.text, start, end), subtleColor) +
 		ansi.Cut(row.text, end, ansi.StringWidth(row.text))
-}
-
-// Repaint only the background of visible cells. Reapply it after SGR changes
-// so highlighted tokens and their resets cannot punch holes in the hover row.
-// This never re-highlights source or changes the cached layout on mouse motion.
-func hoverCodeCells(text string) string {
-	background := ansi.Style{}.BackgroundColor(subtleColor).String()
-	var out strings.Builder
-	out.WriteString(background)
-	var state byte
-	for len(text) > 0 {
-		sequence, _, n, next := ansi.DecodeSequence(text, state, nil)
-		text, state = text[n:], next
-		out.WriteString(sequence)
-		if strings.HasPrefix(sequence, "\x1b[") && strings.HasSuffix(sequence, "m") {
-			out.WriteString(background)
-		}
-	}
-	out.WriteString("\x1b[0m")
-	return out.String()
 }

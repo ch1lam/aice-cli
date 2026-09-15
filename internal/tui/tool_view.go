@@ -30,7 +30,7 @@ func (m model) toolHeaderStyled(entry transcriptEntry, hovered bool) string {
 		style, nameStyle, detailStyle = transcriptHoverStyle, transcriptHoverStyle, transcriptHoverStyle
 	}
 	heading := style.Render(icon) + " " + nameStyle.Render(entry.toolName)
-	stats := toolDiffStats(entry)
+	stats := toolDiffStats(entry) + toolLineStats(entry)
 	if entry.toolDetail != "" {
 		switch entry.toolName {
 		case "read", "ls", "find", "grep", "write", "edit", "skill":
@@ -109,7 +109,7 @@ func (m model) toolBodyContent(entry transcriptEntry) transcriptContent {
 		}
 		content.appendText(mutedStyle.Render(prefix + entry.toolDetail))
 	}
-	hasDiff := entry.toolDone && !entry.toolError && (entry.toolDiff.Text != "" || entry.toolDiff.Truncated || entry.toolDiff.StatsKnown)
+	hasDiff := toolHasDiff(entry)
 	if entry.writePreview != nil && !hasDiff {
 		content.append(entry.writePreview.contentView(width, entry.toolExpanded), "\n")
 	}
@@ -117,10 +117,7 @@ func (m model) toolBodyContent(entry transcriptEntry) transcriptContent {
 		content.appendText(editDiffView(entry.toolDiff, width, entry.toolExpanded))
 	}
 	if entry.toolOutput.Available {
-		text := writePrefix(entry.toolOutput.Text, 64*1024)
-		limited := entry.toolOutput.Truncated || len(text) < len(entry.toolOutput.Text)
-		body, linesLimited := codeLinePrefix(text, 2000)
-		limited = limited || linesLimited
+		body, limited := toolOutputSource(entry)
 		language := "text"
 		if entry.toolName == "read" && !entry.toolError {
 			language = toolCodeLanguage(entry.toolDetail)
@@ -135,6 +132,7 @@ func (m model) toolBodyContent(entry transcriptEntry) transcriptContent {
 		} else {
 			content.append(newCodeBlock(body, language).layout(codeBlockOptions{
 				width: width, emptyText: "(empty output)", incomplete: limited || entry.toolTruncation.Reason != "",
+				hideSummary: true,
 			}).content(), "\n")
 		}
 		if limited {
@@ -150,4 +148,50 @@ func (m model) toolBodyContent(entry transcriptEntry) transcriptContent {
 		content.appendText(mutedStyle.Render("Waiting for result…"))
 	}
 	return content
+}
+
+func toolHasDiff(entry transcriptEntry) bool {
+	return entry.toolDone && !entry.toolError && (entry.toolDiff.Text != "" || entry.toolDiff.Truncated || entry.toolDiff.StatsKnown)
+}
+
+func toolOutputSource(entry transcriptEntry) (string, bool) {
+	source := writePrefix(entry.toolOutput.Text, 64*1024)
+	limited := entry.toolOutput.Truncated || len(source) < len(entry.toolOutput.Text)
+	source, linesLimited := codeLinePrefix(source, 2000)
+	return source, limited || linesLimited
+}
+
+// Header counts share the same bounded source as the panel, without rendering
+// hidden tool bodies merely to measure their line count.
+func toolLineStats(entry transcriptEntry) string {
+	if toolHasDiff(entry) {
+		return ""
+	}
+	var source string
+	var incomplete bool
+	if entry.writePreview != nil {
+		var known, omitted bool
+		source, _, known, omitted = entry.writePreview.visibleSource(entry.toolExpanded)
+		if !known {
+			return ""
+		}
+		incomplete = omitted || !entry.writePreview.known
+	} else if entry.toolOutput.Available {
+		source, incomplete = toolOutputSource(entry)
+		incomplete = incomplete || entry.toolTruncation.Reason != ""
+	} else {
+		return ""
+	}
+	count := strings.Count(source, "\n")
+	if source != "" && !strings.HasSuffix(source, "\n") {
+		count++
+	}
+	label := fmt.Sprintf("%d lines", count)
+	if count == 1 {
+		label = "1 line"
+	}
+	if incomplete {
+		label += " · partial"
+	}
+	return mutedStyle.Render("  (" + label + ")")
 }

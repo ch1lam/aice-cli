@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/ch1lam/aice-cli/internal/interaction"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -166,5 +167,51 @@ func TestToolBodyShowsOutputLimitsAndEscapesControls(t *testing.T) {
 	entry.toolOutput.Available = false
 	if !strings.Contains(m.toolBodyView(entry), "output unavailable") {
 		t.Fatal("missing output not distinguished")
+	}
+}
+
+func TestToolLineCountLivesInHeadingAboveSpacedCopyRow(t *testing.T) {
+	m := codeTestModel(t, 80)
+	source := "first\n\nlast\n"
+	m.entries = []transcriptEntry{{kind: entryTool, toolName: "read", toolDetail: "file.txt", toolDone: true,
+		toolOutput: interaction.ToolOutputDisplay{Available: true, Text: source}}}
+	m.setFoldExpanded(foldTarget{kind: foldTool, id: 0}, true)
+	m.viewport.setItems(m.foldedToolItems(0))
+	m.viewport.GotoTop()
+	rows := strings.Split(ansi.Strip(m.viewport.View()), "\n")
+	if !strings.Contains(rows[0], "file.txt  (3 lines)") || strings.TrimSpace(rows[1]) != "" ||
+		!strings.HasPrefix(strings.TrimSpace(rows[2]), "txt") || !strings.HasSuffix(strings.TrimSpace(rows[2]), "[Copy]") || !strings.Contains(rows[3], "first") {
+		t.Fatalf("expected heading, blank gap, Copy row, then source: %q", rows[:4])
+	}
+	mouse := codeButtonMouse(t, m, source)
+	m = updateModel(t, m, tea.MouseClickMsg(mouse))
+	_, command := m.Update(tea.MouseReleaseMsg(mouse))
+	assertClipboard(t, command, source)
+	// Standalone tool entries follow the same spacing contract.
+	entry := m.entries[0]
+	entry.toolExpanded = true
+	view := ansi.Strip(m.transcriptEntryItem(0, entry, false, transcriptStandalone).content().view)
+	if !strings.HasSuffix(strings.TrimSpace(strings.Split(view, "\n")[0]), "(3 lines)") || strings.Contains(view, "3 lines ·") {
+		t.Fatalf("unexpected standalone summary: %s", view)
+	}
+}
+
+func TestToolLineCountUsesBoundedSource(t *testing.T) {
+	entry := transcriptEntry{toolOutput: interaction.ToolOutputDisplay{Available: true, Text: strings.Repeat("row\n", 2100)}}
+	if got := ansi.Strip(toolLineStats(entry)); got != "  (2000 lines · partial)" {
+		t.Fatalf("bounded count = %q", got)
+	}
+	p := &writePreview{content: strings.Repeat("row\n", 20), known: true}
+	entry = transcriptEntry{writePreview: p}
+	if got := ansi.Strip(toolLineStats(entry)); got != "  (10 lines · partial)" {
+		t.Fatalf("preview count = %q", got)
+	}
+	entry.toolExpanded = true
+	if got := ansi.Strip(toolLineStats(entry)); got != "  (20 lines)" {
+		t.Fatalf("expanded preview count = %q", got)
+	}
+	panel := ansi.Strip(p.contentView(80, true).view)
+	if strings.Contains(panel, "lines") || !strings.Contains(strings.Split(panel, "\n")[0], "[Copy]") {
+		t.Fatal("preview duplicated the title count or removed the Copy row")
 	}
 }

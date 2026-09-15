@@ -401,10 +401,15 @@ the final JSON event from being delivered.
   cells, preserves syntax foregrounds and cached geometry, and is suppressed
   during selection and modal input. Diff rows retain their separate rendering
   and selection semantics.
-  The panel header counts supplied source lines, and the number gutter labels
-  only the first visual row of each source line. Narrow layouts omit the gutter.
-  Tool truncation and incomplete write previews mark their header count partial;
-  preview cache keys include this flag so completion refreshes the label.
+  Tool headings count supplied source lines in parentheses using the same bounded
+  source selection as their bodies, without rendering collapsed panels. Expanded
+  bodies have a one-row gap below the heading. Their panels suppress the summary
+  while retaining the status row with language and Copy; Markdown panels retain
+  their own summary. The status row has a distinct background and no source-line
+  mapping. Numbering starts on the following body row.
+  The number gutter labels only the first visual row of each source line; narrow
+  layouts omit it. Tool truncation and incomplete write previews mark the heading
+  count partial, and completed previews refresh the label.
   Main and BTW transcripts use an item-anchored viewport: scrolling records a
   block and a row within it, without measuring all preceding history. Process
   headers, individual reasoning/answer blocks, tools and questions are separate

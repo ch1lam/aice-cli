@@ -186,6 +186,8 @@ func TestMouseHitsWrappedUnicodeHeadingsButNotTheirBody(t *testing.T) {
 	m = updateModel(t, m, tea.WindowSizeMsg{Width: 28, Height: 24})
 	m.viewport.GotoTop()
 	m = clickPainted(t, m, "✓ read")
+	// The wrapped title, explicit gap and Copy row precede the source.
+	m.viewport.scroll(3)
 	body := paintedMouse(t, m, "中文🙂输")
 	if m.foldHitAt(body).target.kind != foldNone {
 		t.Fatal("body became a fold heading")

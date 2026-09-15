@@ -129,7 +129,7 @@ func (m *model) transcriptEntryItem(index int, e transcriptEntry, active bool, m
 		}
 		if e.kind == entryTool {
 			content := transcriptContent{view: m.toolHeaderView(e)}
-			content.append(m.toolBodyContent(e), "\n")
+			content.append(m.toolBodyContent(e), "\n\n")
 			return m.indentTranscript(content)
 		}
 		return transcriptContent{view: m.entryView(e, active)}

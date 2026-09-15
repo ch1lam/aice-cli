@@ -152,7 +152,7 @@ func (m model) foldedToolItems(index int) []transcriptItem {
 	header.hoverText = m.foldHeadingStyled(m.toolHeaderStyled(entry, true), entry.toolExpanded, transcriptHoverStyle)
 	items := []transcriptItem{header}
 	if entry.toolExpanded {
-		items = append(items, transcriptItem{key: index*16 + 10, version: entry, renderContent: func() transcriptContent {
+		items = append(items, transcriptItem{key: index*16 + 10, gap: 1, version: entry, renderContent: func() transcriptContent {
 			return m.indentTranscript(m.toolBodyContent(entry))
 		}})
 	}

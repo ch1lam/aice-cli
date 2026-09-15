@@ -215,22 +215,11 @@ func (p *writePreview) contentView(width int, expanded bool) transcriptContent {
 	if p.cacheWidth == width && p.cacheExpanded == expanded && p.cacheRevision == p.revision {
 		return p.rendered
 	}
-	content, path, known := p.content, p.path, p.known
-	if !known {
-		path, content, known = partialWriteFields(p.raw.String())
-	}
+	source, path, known, omitted := p.visibleSource(expanded)
 	result := transcriptContent{view: mutedStyle.Render("Waiting for content…")}
 	if known {
-		limit, lines := 4096, 10
-		if expanded {
-			limit, lines = maximumWritePreviewBytes, 2000
-		}
-		source := writePrefix(content, limit)
-		omitted := len(source) < len(content) || p.truncated
-		source, linesOmitted := codeLinePrefix(source, lines)
-		omitted = omitted || linesOmitted
 		result = transcriptContent{view: mutedStyle.Render("(empty file)")}
-		if content != "" {
+		if source != "" {
 			result = p.codeView(source, path, width, omitted || !p.known)
 		}
 		if omitted {
@@ -251,8 +240,25 @@ func (p *writePreview) codeView(source, path string, width int, incomplete bool)
 	if p.codeSource == source && p.codePath == path && p.codeWidth == width && p.codeIncomplete == incomplete {
 		return p.codeRendered
 	}
-	result := newCodeBlock(source, toolCodeLanguage(path)).layout(codeBlockOptions{width: width, clip: true, incomplete: incomplete}).content()
+	result := newCodeBlock(source, toolCodeLanguage(path)).layout(codeBlockOptions{
+		width: width, clip: true, incomplete: incomplete, hideSummary: true,
+	}).content()
 	p.codeIncomplete = incomplete
 	p.codeSource, p.codePath, p.codeWidth, p.codeRendered = source, path, width, result
 	return result
+}
+
+func (p *writePreview) visibleSource(expanded bool) (source, path string, known, omitted bool) {
+	content, path, known := p.content, p.path, p.known
+	if !known {
+		path, content, known = partialWriteFields(p.raw.String())
+	}
+	limit, lines := 4096, 10
+	if expanded {
+		limit, lines = maximumWritePreviewBytes, 2000
+	}
+	source = writePrefix(content, limit)
+	omitted = len(source) < len(content) || p.truncated
+	source, linesOmitted := codeLinePrefix(source, lines)
+	return source, path, known, omitted || linesOmitted
 }

@@ -622,7 +622,7 @@ func (m model) entryView(
 	case entryAssistant:
 		return m.assistantEntryContent(entry, activeAssistant, true, true, true).view
 	case entryTool:
-		return m.transcriptContentView(m.toolHeaderView(entry) + "\n" + m.toolBodyView(entry))
+		return m.transcriptContentView(m.toolHeaderView(entry) + "\n\n" + m.toolBodyView(entry))
 	case entryError:
 		return m.transcriptContentView(
 			errorStyle.Render("✕ Error  " + entry.text),

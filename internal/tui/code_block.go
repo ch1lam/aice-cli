@@ -2,6 +2,7 @@ package tui
 
 import (
 	"bytes"
+	"image/color"
 	"strconv"
 	"strings"
 	"unicode"
@@ -35,6 +36,8 @@ type codeBlockOptions struct {
 	width      int
 	emptyText  string
 	incomplete bool
+	// Tool titles own their line summary; keep the panel's Copy row available.
+	hideSummary bool
 	// Previews clip before highlighting to bound work on oversized source rows.
 	clip bool
 }
@@ -97,11 +100,23 @@ func (b codeBlock) layout(options codeBlockOptions) codeBlockLayout {
 		result.copyColumn = width - 2 - len(button)
 		labelWidth -= len(button) + 1
 	}
-	header := b.lineSummary(options.incomplete, labelWidth)
-	if button != "" {
-		header += strings.Repeat(" ", width-4-ansi.StringWidth(header)-len(button)) + button
+	header := ""
+	if !options.hideSummary {
+		header = mutedStyle.Render(b.lineSummary(options.incomplete, labelWidth))
 	}
-	panel[0] = strings.Split(blockPanel(mutedStyle.Render(header), width), "\n")[1]
+	language := escapeCodeRow(b.language)
+	if language == "" {
+		language = "text"
+	}
+	if header == "" {
+		header = infoStyle.Render(ansi.Truncate(language, labelWidth, "…"))
+	} else if ansi.StringWidth(language+" · "+header) <= labelWidth {
+		header = infoStyle.Render(language) + mutedStyle.Render(" · ") + header
+	}
+	if button != "" {
+		header += strings.Repeat(" ", width-4-ansi.StringWidth(header)-len(button)) + mutedStyle.Render(button)
+	}
+	panel[0] = paintCodeBackground(strings.Split(blockPanel(header, width), "\n")[1], codeStatusColor)
 	for i, row := range panel {
 		result.rows[i] = codeBlockRow{text: row, sourceLine: indices[i]}
 	}
@@ -116,10 +131,6 @@ func (b codeBlock) lineSummary(incomplete bool, width int) string {
 	}
 	if incomplete {
 		label += " · partial"
-	}
-	language := escapeCodeRow(b.language)
-	if language != "" && language != "text" && ansi.StringWidth(label+" · "+language) <= width {
-		label += " · " + language
 	}
 	if ansi.StringWidth(label) > width {
 		label = count + "L"
@@ -244,4 +255,24 @@ func blockPanel(body string, width int) string {
 		rows[i] = background + restore.Replace(row) + reset
 	}
 	return strings.Join(rows, "\n")
+}
+
+// Repaint only the background of a rendered row. Reapply it after SGR changes
+// so highlighted tokens and their resets cannot punch holes in the hover row.
+// This never re-highlights source or changes the cached layout on mouse motion.
+func paintCodeBackground(text string, backgroundColor color.Color) string {
+	background := ansi.Style{}.BackgroundColor(backgroundColor).String()
+	var out strings.Builder
+	out.WriteString(background)
+	var state byte
+	for len(text) > 0 {
+		sequence, _, n, next := ansi.DecodeSequence(text, state, nil)
+		text, state = text[n:], next
+		out.WriteString(sequence)
+		if strings.HasPrefix(sequence, "\x1b[") && strings.HasSuffix(sequence, "m") {
+			out.WriteString(background)
+		}
+	}
+	out.WriteString("\x1b[0m")
+	return out.String()
 }

@@ -91,6 +91,22 @@ func TestCodeBlockNumbersSourceLinesAndCounts(t *testing.T) {
 	}
 }
 
+func TestCodeStatusRowKeepsLanguageSeparateFromNumberedSource(t *testing.T) {
+	for _, language := range []string{"sh", "java", "python"} {
+		layout := newCodeBlock("first\nsecond\n", language).layout(codeBlockOptions{width: 60, hideSummary: true})
+		header := ansi.Strip(layout.rows[0].text)
+		if !strings.HasPrefix(strings.TrimSpace(header), language) || !strings.Contains(header, "[Copy]") || strings.Contains(header, "lines") {
+			t.Fatalf("unexpected status row: %q", header)
+		}
+		if layout.rows[0].sourceLine != -1 || layout.rows[1].sourceLine != 0 ||
+			!strings.HasPrefix(strings.TrimSpace(ansi.Strip(layout.rows[1].text)), "1  first") {
+			t.Fatal("status row counted as source or displaced the first line number")
+		}
+		assertCanvasBackground(t, layout.rows[0].text, codeStatusColor)
+		assertCanvasBackground(t, layout.rows[1].text, panelBlackColor)
+	}
+}
+
 func TestCodeBlockHighlightingPreservesLiteralMarkdown(t *testing.T) {
 	for _, language := range []string{"md", "text", "unrecognized-language"} {
 		source := "# title\n\n```go\nvar text = `raw`\n```\n"

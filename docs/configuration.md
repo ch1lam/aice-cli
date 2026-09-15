@@ -894,11 +894,16 @@ The background covers blank lines and trailing space after highlighting and wrap
 Markdown fences (including unfinished streamed fences) and indented code blocks
 remain literal inside lists and quotations. Code source is retained separately
 from its display escaping and wrapping.
-Code panels show the supplied source line count and number each original line
-from 1, including blank lines. Wrapped continuations leave the number gutter
-blank. Narrow panels hide the gutter to preserve room for code. Limited tool
-output and incomplete write previews label the count `partial` (or `+L` in a
-compact header); this is a count of supplied lines, not the complete file size.
+Tool headings show their supplied source line count in parentheses, such as
+`read file.go (24 lines)`. One blank row separates a tool heading from its expanded
+content. Code panels retain a separate, subtly lighter status row: language on
+the left (such as `sh`, `java`, or `python`), `[Copy]` on the right. Source line
+numbers begin on the row below it. Tool panels do not repeat the heading count;
+Markdown code blocks keep their count in their own status row.
+Code panels number each original line from 1, including blank lines. Wrapped
+continuations leave the number gutter blank. Narrow panels hide the gutter to preserve room for code. Limited tool
+output and incomplete write previews label the heading count `partial`; this is
+a count of supplied lines, not the complete file size.
 The panel's `[Copy]` button copies its supplied source, preserving tabs, trailing
 spaces and original line endings, without line numbers or display escaping.
 For limited output/previews it copies only the supplied portion; clipped preview

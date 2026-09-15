@@ -6,12 +6,14 @@ import (
 	"charm.land/lipgloss/v2"
 )
 
-// The ink palette uses three dark layers: ink for the screen, xuan for panels,
-// and brown for borders and separators. Accent marks AICE identity and headings;
-// gold marks focus and paths, while semantic colors mark activity and outcomes.
+// The ink palette uses dark layers: ink for the screen, xuan for panels,
+// a lighter code status strip, and brown for borders and separators. Accent
+// marks AICE identity and headings; gold marks focus and paths, while semantic
+// colors mark activity and outcomes.
 const (
 	inkBlackHex    = "#0D0B0A" // 墨黑
 	panelBlackHex  = "#1B1613" // 玄
+	codeStatusHex  = "#241E19" // Code panel status strip
 	separatorHex   = "#332921" // 褐
 	primaryTextHex = "#F2E9D8" // 米白
 	mutedTextHex   = "#8F8477" // 烟灰
@@ -26,6 +28,7 @@ const (
 var (
 	inkBlackColor    = lipgloss.Color(inkBlackHex)
 	panelBlackColor  = lipgloss.Color(panelBlackHex)
+	codeStatusColor  = lipgloss.Color(codeStatusHex)
 	primaryTextColor = lipgloss.Color(primaryTextHex)
 	mutedTextColor   = lipgloss.Color(mutedTextHex)
 	accentColor      = lipgloss.Color(sunsetHex)
