@@ -15,8 +15,8 @@ import (
 
 const (
 	guardFeedbackPrompt = "Tell the agent what to do instead (optional):"
-	guardSelectFooter   = "↑/↓ select · 1-9/enter confirm · y first · n/esc deny"
-	guardFeedbackFooter = "enter send · esc back"
+	guardSelectFooter   = "↑/↓ select · 1-9/Enter confirm · y first · n/Esc deny"
+	guardFeedbackFooter = "Enter send · Esc back"
 )
 
 type guardRequestMsg struct {
@@ -239,10 +239,10 @@ func (m model) guardView(width int) string {
 func (m model) guardControlsView(width int) string {
 	footer := guardSelectFooter
 	if width < lipgloss.Width(footer) {
-		footer = "↑/↓ select · enter · n/esc deny"
+		footer = "↑/↓ select · Enter · n/Esc deny"
 	}
 	if width < lipgloss.Width(footer) {
-		footer = "↑/↓ · enter · esc"
+		footer = "↑/↓ · Enter · Esc"
 	}
 	if m.guardFeedback {
 		// Keep the editing tail visible without allowing a long note to move the

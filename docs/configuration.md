@@ -854,7 +854,9 @@ below 12 rows. The top bar has no separator line and leaves one blank row below
 its status text. The model and thinking level
 sit in the composer’s bottom-right border as `model-name (low)`, without labels.
 Long model names shorten to fit while retaining the thinking level. The footer
-keeps shortcuts, cumulative Session token usage, and cost.
+keeps shortcuts, cumulative Session token usage, and cost. Shortcut hints capitalize
+named keys (`Tab`, `Ctrl`, `Alt`, `Shift`, `Enter`, `Esc`) and keep letter keys
+lowercase, for example `Ctrl+c` and `Ctrl+o`.
 
 The top-bar working-directory path changes from muted gray to gold on hover,
 without an underline or terminal hyperlink (which terminals may underline).

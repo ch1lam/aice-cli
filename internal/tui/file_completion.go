@@ -126,7 +126,7 @@ func (m model) fileCompletionView(width int) string {
 		rows[i] = slashMenuRow{label: sanitizeToolDetail(item.Path, false), query: m.fileCompletion.ref.Path}
 	}
 	title := fmt.Sprintf("FILES %d/%d", m.fileCompletion.selection+1, len(rows))
-	return renderSlashMenuRows(width, title, "↑/↓ select · → expand · tab/enter attach · esc close", rows, m.fileCompletion.selection)
+	return renderSlashMenuRows(width, title, "↑/↓ select · → expand · Tab/Enter attach · Esc close", rows, m.fileCompletion.selection)
 }
 
 func (m model) handleFileCompletionKey(message tea.KeyPressMsg) (model, tea.Cmd, bool) {

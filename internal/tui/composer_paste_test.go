@@ -325,7 +325,7 @@ func TestPastePlaceholderStatusNamesEditor(t *testing.T) {
 	current = updateModel(t, current, tea.WindowSizeMsg{Width: 80, Height: 24})
 	current = updateModel(t, current, tea.PasteMsg{Content: largePasteFixture("body", 50)})
 
-	if want := "Ctrl+G edits in myeditor --wait"; !strings.Contains(current.status, want) {
+	if want := "Ctrl+g edits in myeditor --wait"; !strings.Contains(current.status, want) {
 		t.Errorf("status = %q, want it to contain %q", current.status, want)
 	}
 }
@@ -416,13 +416,13 @@ func TestKeyMapEditorShowsInFullHelp(t *testing.T) {
 	t.Parallel()
 
 	keys := newKeyMap()
-	if got := keys.editor.Help(); got.Key != "ctrl+g" || got.Desc != "editor" {
+	if got := keys.editor.Help(); got.Key != "Ctrl+g" || got.Desc != "editor" {
 		t.Errorf("editor label = %#v, want ctrl+g editor", got)
 	}
 	found := false
 	for _, row := range keys.FullHelp() {
 		for _, binding := range row {
-			if binding.Help().Key == "ctrl+g" {
+			if binding.Help().Key == "Ctrl+g" {
 				found = true
 			}
 		}

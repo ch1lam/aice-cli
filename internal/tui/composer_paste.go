@@ -391,7 +391,7 @@ func defaultComposerEditor() string {
 // teaches the Ctrl+G target without a separate configuration step.
 func pastePlaceholderStatus(lines int) string {
 	return fmt.Sprintf(
-		"Pasted %d lines as placeholder; Ctrl+G edits in %s, Backspace removes as one",
+		"Pasted %d lines as placeholder; Ctrl+g edits in %s, Backspace removes as one",
 		lines,
 		defaultComposerEditor(),
 	)

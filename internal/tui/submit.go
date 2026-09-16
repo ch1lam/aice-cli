@@ -192,7 +192,7 @@ func (m model) startApplicationSlashCommand(
 		m.authInput = make(chan string, 1)
 		m.authCommand = command.Name
 		request.Auth = &interaction.AuthInteraction{Input: m.authInput}
-		m.input.Placeholder = "Starting /" + command.Name + "; Escape or Ctrl+C cancels"
+		m.input.Placeholder = "Starting /" + command.Name + "; Escape or Ctrl+c cancels"
 		m.status = "Starting /" + command.Name + "..."
 	} else if useSavedCredential {
 		m.status = "Using saved credential..."

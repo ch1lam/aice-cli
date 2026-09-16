@@ -101,7 +101,7 @@ func TestGuardLongOptionsAndScrollIsolation(t *testing.T) {
 	}
 	current = updateModel(t, current, tea.KeyPressMsg{Code: 'n', Text: "n"})
 	current = typeGuardText(t, current, strings.Repeat("反馈", 100))
-	if view := guardViewText(current); lipgloss.Height(view) > 12 || !strings.Contains(view, "enter send") {
+	if view := guardViewText(current); lipgloss.Height(view) > 12 || !strings.Contains(view, "Enter send") {
 		t.Fatalf("feedback controls escaped screen:\n%s", view)
 	}
 	current = updateModel(t, current, tea.KeyPressMsg{Code: tea.KeyEscape})

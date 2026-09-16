@@ -150,7 +150,7 @@ func (m model) applyRunBatch(batch runBatchMsg) (tea.Model, tea.Cmd) {
 			prompt := *update.auth
 			m.authPrompt = &prompt
 			m.authSelection = 0
-			m.input.Placeholder = prompt.Title + "; Escape or Ctrl+C cancels"
+			m.input.Placeholder = prompt.Title + "; Escape or Ctrl+c cancels"
 			if prompt.AllowInput {
 				m.input.Placeholder = "Authorization code / redirect URL (input hidden)"
 				commands = append(commands, m.input.Focus())
@@ -161,7 +161,7 @@ func (m model) applyRunBatch(batch runBatchMsg) (tea.Model, tea.Cmd) {
 			if prompt.Menu != nil {
 				m.input.Blur()
 			}
-			m.status = prompt.Title + "; Escape or Ctrl+C cancels"
+			m.status = prompt.Title + "; Escape or Ctrl+c cancels"
 			m.resizeLayout()
 			contentChanged = true
 		}

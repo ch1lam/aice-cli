@@ -223,7 +223,7 @@ func (p *writePreview) contentView(width int, expanded bool) transcriptContent {
 			result = p.codeView(source, path, width, omitted || !p.known)
 		}
 		if omitted {
-			notice := "… preview limited · ctrl+o collapse/expand for more"
+			notice := "… preview limited · Ctrl+o collapse/expand for more"
 			if expanded {
 				notice = "… preview limit reached (64 KiB / 2000 lines)"
 			}

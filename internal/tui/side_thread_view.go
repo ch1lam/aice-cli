@@ -89,36 +89,36 @@ func (m model) sideStatusLine(width int) string {
 	left := ""
 	switch {
 	case m.side.confirm != nil:
-		left = mutedStyle.Render("y/enter end thread · n/esc keep")
+		left = mutedStyle.Render("y/Enter end thread · n/Esc keep")
 	case m.side.menu != nil:
-		left = mutedStyle.Render("↑/↓ select · enter open · esc cancel")
+		left = mutedStyle.Render("↑/↓ select · Enter open · Esc cancel")
 	case m.side.activeID == 0:
 		if m.side.newPending != nil {
-			left = mutedStyle.Render("esc cancel · alt+esc close")
+			left = mutedStyle.Render("Esc cancel · Alt+Esc close")
 		} else {
-			left = mutedStyle.Render("enter ask · esc close")
+			left = mutedStyle.Render("Enter ask · Esc close")
 		}
 	default:
 		thread := m.side.activeThread()
 		switch {
 		case thread == nil:
-			left = mutedStyle.Render("esc close")
+			left = mutedStyle.Render("Esc close")
 		case thread.isRunning:
-			left = mutedStyle.Render("esc cancel · alt+esc close · ctrl+D end thread")
+			left = mutedStyle.Render("Esc cancel · Alt+Esc close · Ctrl+d end thread")
 		case thread.readOnly():
-			left = mutedStyle.Render("read-only · esc close · ctrl+D end thread")
+			left = mutedStyle.Render("read-only · Esc close · Ctrl+d end thread")
 		default:
 			left = mutedStyle.Render(
-				"enter ask · shift+enter newline · ctrl+D end thread · esc close",
+				"Enter ask · Shift+Enter newline · Ctrl+d end thread · Esc close",
 			)
 		}
 	}
 	if m.side.menu == nil && m.side.confirm == nil {
-		left += mutedStyle.Render(" · ctrl+C clear/quit")
+		left += mutedStyle.Render(" · Ctrl+c clear/quit")
 	}
 	if m.help.ShowAll {
 		left = mutedStyle.Render(
-			"enter ask  shift+enter newline  pgup/pgdn scroll  esc cancel/close  alt+esc close  ctrl+C clear/quit  ctrl+D end thread",
+			"Enter ask  Shift+Enter newline  PgUp/PgDn scroll  Esc cancel/close  Alt+Esc close  Ctrl+c clear/quit  Ctrl+d end thread",
 		)
 	}
 	return ansi.Truncate(left, width, "…")
@@ -150,7 +150,7 @@ func (m model) sideMenuView(width int) string {
 	return renderSlashMenuRows(
 		width,
 		"BTW THREADS",
-		"↑/↓ select · enter open · esc cancel",
+		"↑/↓ select · Enter open · Esc cancel",
 		rows,
 		min(max(menu.selection, 0), len(rows)-1),
 	)
@@ -206,7 +206,7 @@ func (m model) sideConfirmView(width int) string {
 	return renderSlashMenuRows(
 		width,
 		"END BTW THREAD?",
-		"y/enter confirm · n/esc keep",
+		"y/Enter confirm · n/Esc keep",
 		rows,
 		0,
 	)

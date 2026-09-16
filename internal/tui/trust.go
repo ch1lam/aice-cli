@@ -22,7 +22,7 @@ type TrustPromptOptions struct {
 
 var trustInterruptKeys = key.NewBinding(
 	key.WithKeys("ctrl+c"),
-	key.WithHelp("ctrl+C", "cancel"),
+	key.WithHelp("Ctrl+c", "cancel"),
 )
 
 // RunTrustPrompt shows the project trust choices before the main TUI starts.

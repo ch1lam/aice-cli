@@ -192,7 +192,7 @@ func TestModelCollapsesProcessWhenConclusionStartsStreaming(t *testing.T) {
 	for _, want := range []string{
 		"✦",
 		"1 tool call",
-		"ctrl+o to expand",
+		"Ctrl+o to expand",
 		"FINAL_ANSWER",
 	} {
 		if !strings.Contains(collapsed, want) {
@@ -214,7 +214,7 @@ func TestModelCollapsesProcessWhenConclusionStartsStreaming(t *testing.T) {
 		"read",
 		"FINAL_REASONING",
 		"FINAL_ANSWER",
-		"ctrl+o to collapse",
+		"Ctrl+o to collapse",
 	} {
 		if transcript := ansi.Strip(expanded.transcriptView()); !strings.Contains(
 			transcript,
@@ -293,7 +293,7 @@ func TestModelProcessSpacingKeepsToolsTogether(t *testing.T) {
 			narrowHeader,
 		)
 	}
-	if !strings.Contains(narrowHeader, "ctrl+o to expand") {
+	if !strings.Contains(narrowHeader, "Ctrl+o to expand") {
 		t.Errorf("narrow process header is missing expand hint: %q", narrowHeader)
 	}
 }
@@ -566,7 +566,7 @@ func TestModelQuestionMarkHelpTogglesAndUsesAvailableHeight(t *testing.T) {
 	if !updated.help.ShowAll {
 		t.Fatal("help remains collapsed after question mark")
 	}
-	if help := ansi.Strip(updated.footerView(updated.width)); !strings.Contains(help, "ctrl+enter") || !strings.Contains(help, "queue") {
+	if help := ansi.Strip(updated.footerView(updated.width)); !strings.Contains(help, "Ctrl+Enter") || !strings.Contains(help, "queue") {
 		t.Fatalf("expanded help = %q, want ctrl+enter queue shortcut", help)
 	}
 	if updated.viewport.Height() >= collapsedHeight {
@@ -758,17 +758,17 @@ func TestModelKeepsReadyInHeaderAndUsesBubblesHelpBelowComposer(t *testing.T) {
 		t.Fatalf("footer still has a divider below the composer: %q", footer)
 	}
 	footerText := ansi.Strip(footer)
-	for _, want := range []string{"? shortcuts", "ctrl+C clear"} {
+	for _, want := range []string{"? shortcuts", "Ctrl+c clear"} {
 		if !strings.Contains(footerText, want) {
 			t.Errorf("collapsed footer = %q, want %q", footer, want)
 		}
 	}
 	for _, unwanted := range []string{
 		"f1",
-		"enter send",
-		"shift+enter",
+		"Enter send",
+		"Shift+Enter",
 		"/ commands",
-		"pgup/pgdn",
+		"PgUp/PgDn",
 	} {
 		if strings.Contains(footerText, unwanted) {
 			t.Errorf("collapsed footer still contains %q: %q", unwanted, footer)
@@ -904,7 +904,7 @@ func TestModelStatusLineShowsSessionUsageAndEstimatedCost(t *testing.T) {
 				t.Fatal("narrow footer did not collapse cache detail")
 			}
 		} else {
-			wants = append(wants, "? shortcuts", "ctrl+C clear")
+			wants = append(wants, "? shortcuts", "Ctrl+c clear")
 		}
 		for _, want := range wants {
 			if !strings.Contains(line, want) {
@@ -2286,7 +2286,7 @@ func TestModelRunningFooterShowsEditingHints(t *testing.T) {
 	current.acceptsDelivery = true
 	current.currentModel = DisplayModel{ID: "deepseek-v4-flash"}
 	footer := ansi.Strip(current.footerView(120))
-	for _, hint := range []string{"ctrl+C clear", "esc cancel"} {
+	for _, hint := range []string{"Ctrl+c clear", "Esc cancel"} {
 		if !strings.Contains(footer, hint) {
 			t.Fatalf("footer missing %q: %s", hint, footer)
 		}

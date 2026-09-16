@@ -147,12 +147,12 @@ func (m model) footerView(width int) string {
 func (m model) footerKeys() keyMap {
 	keys := m.keys.forState(m.running, m.acceptsDelivery)
 	if m.clearQuitPending {
-		keys.clear.SetHelp("ctrl+C", "quit")
+		keys.clear.SetHelp("Ctrl+c", "quit")
 	}
 	if m.help.ShowAll {
 		keys.help.SetHelp("?", "close")
 		if !m.clearQuitPending {
-			keys.clear.SetHelp("ctrl+C", "clear, then quit")
+			keys.clear.SetHelp("Ctrl+c", "clear, then quit")
 		}
 		// Full help documents contextual shortcuts even while they are inactive.
 		keys.queue.SetEnabled(true)
@@ -332,7 +332,7 @@ func (m model) slashCommandMenuView(width int) string {
 	return renderSlashMenuRows(
 		width,
 		"SLASH COMMANDS",
-		"↑/↓ select · tab complete · esc close",
+		"↑/↓ select · Tab complete · Esc close",
 		rows,
 		min(max(m.commandSelection, 0), len(rows)-1),
 	)
@@ -343,9 +343,9 @@ func (m model) slashCommandSelectionMenuView(width int) string {
 		return ""
 	}
 	frame := m.commandMenu.frames[len(m.commandMenu.frames)-1]
-	hint := "↑/↓ select · tab complete · enter choose · esc close"
+	hint := "↑/↓ select · Tab complete · Enter choose · Esc close"
 	if len(m.commandMenu.frames) > 1 {
-		hint = "↑/↓ select · tab complete · enter choose · esc back"
+		hint = "↑/↓ select · Tab complete · Enter choose · Esc back"
 	}
 	options := m.matchingCommandOptions()
 	if len(options) == 0 {
@@ -537,10 +537,10 @@ func pendingSteerRail(frame uint8) string {
 
 func (m model) processHeader(start, end int, collapsed bool) string {
 	star := "✧"
-	action := "ctrl+o to collapse"
+	action := "Ctrl+o to collapse"
 	if collapsed {
 		star = "✦"
-		action = "ctrl+o to expand"
+		action = "Ctrl+o to expand"
 	}
 
 	toolCalls := 0

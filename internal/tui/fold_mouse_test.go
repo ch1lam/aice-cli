@@ -73,11 +73,11 @@ func TestMouseFoldsAtPaintedRowsAndRetainsAnchor(t *testing.T) {
 			if !strings.Contains(ansi.Strip(m.View().Content), "READ_OK") || strings.Contains(ansi.Strip(m.View().Content), "SKILL_BODY") {
 				t.Fatal("parent reset children")
 			}
-			m = clickPainted(t, m, "ctrl+o")
+			m = clickPainted(t, m, "Ctrl+o")
 			if !strings.Contains(ansi.Strip(m.View().Content), "FINAL_ANSWER") || strings.Contains(ansi.Strip(m.View().Content), "READ_OK") {
 				t.Fatalf("process fold swallowed answer or leaked details: expanded=%v\n%s", m.foldExpanded(foldTarget{kind: foldProcess, id: 1}), ansi.Strip(m.View().Content))
 			}
-			m = clickPainted(t, m, "ctrl+o")
+			m = clickPainted(t, m, "Ctrl+o")
 			m = clickPainted(t, m, "Thinking")
 			if !strings.Contains(ansi.Strip(m.View().Content), "REASONING_BODY") {
 				t.Fatal("thinking click failed")

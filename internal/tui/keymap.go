@@ -20,30 +20,30 @@ type keyMap struct {
 
 func newKeyMap() keyMap {
 	return keyMap{
-		paste: key.NewBinding(key.WithKeys("ctrl+v", "alt+v"), key.WithHelp("ctrl+v/alt+v", "paste image/text")),
+		paste: key.NewBinding(key.WithKeys("ctrl+v", "alt+v"), key.WithHelp("Ctrl+v/Alt+v", "paste image/text")),
 		send: key.NewBinding(
 			key.WithKeys("enter"),
-			key.WithHelp("enter", "send"),
+			key.WithHelp("Enter", "send"),
 		),
 		queue: key.NewBinding(
 			key.WithKeys("ctrl+enter"),
-			key.WithHelp("ctrl+enter", "queue"),
+			key.WithHelp("Ctrl+Enter", "queue"),
 		),
 		newline: key.NewBinding(
 			key.WithKeys("shift+enter", "alt+enter", "ctrl+j"),
-			key.WithHelp("shift+enter", "newline"),
+			key.WithHelp("Shift+Enter", "newline"),
 		),
 		scroll: key.NewBinding(
 			key.WithKeys("pgup", "pgdown"),
-			key.WithHelp("pgup/pgdn", "scroll"),
+			key.WithHelp("PgUp/PgDn", "scroll"),
 		),
 		process: key.NewBinding(
 			key.WithKeys("ctrl+o"),
-			key.WithHelp("ctrl+o", "process"),
+			key.WithHelp("Ctrl+o", "process"),
 		),
 		editor: key.NewBinding(
 			key.WithKeys("ctrl+g"),
-			key.WithHelp("ctrl+g", "editor"),
+			key.WithHelp("Ctrl+g", "editor"),
 		),
 		commands: key.NewBinding(
 			key.WithKeys("/"),
@@ -51,7 +51,7 @@ func newKeyMap() keyMap {
 		),
 		history: key.NewBinding(
 			key.WithKeys("up", "down"),
-			key.WithHelp("up/down", "history"),
+			key.WithHelp("Up/Down", "history"),
 		),
 		help: key.NewBinding(
 			key.WithKeys("?"),
@@ -59,15 +59,15 @@ func newKeyMap() keyMap {
 		),
 		clear: key.NewBinding(
 			key.WithKeys("ctrl+c"),
-			key.WithHelp("ctrl+C", "clear"),
+			key.WithHelp("Ctrl+c", "clear"),
 		),
 		interrupt: key.NewBinding(
 			key.WithKeys("esc"),
-			key.WithHelp("esc", "cancel"),
+			key.WithHelp("Esc", "cancel"),
 		),
 		quit: key.NewBinding(
 			key.WithKeys("ctrl+d"),
-			key.WithHelp("ctrl+d", "quit"),
+			key.WithHelp("Ctrl+d", "quit"),
 		),
 	}
 }
@@ -81,7 +81,7 @@ func (k keyMap) forState(running, acceptsDelivery bool) keyMap {
 	k.quit.SetEnabled(!running)
 	k.interrupt.SetEnabled(running)
 	if running && acceptsDelivery {
-		k.send.SetHelp("enter", "steer")
+		k.send.SetHelp("Enter", "steer")
 	}
 	return k
 }

@@ -82,8 +82,8 @@ func TestKeyMapShortHelpIncludesClearAndInterrupt(t *testing.T) {
 	shortHelp := keys.ShortHelp()
 	if len(shortHelp) != 3 ||
 		shortHelp[0].Help().Key != "?" ||
-		shortHelp[1].Help().Key != "ctrl+C" ||
-		shortHelp[2].Help().Key != "esc" {
+		shortHelp[1].Help().Key != "Ctrl+c" ||
+		shortHelp[2].Help().Key != "Esc" {
 		t.Errorf(
 			"short help = %#v, want question mark, control-c and escape",
 			shortHelp,
@@ -99,7 +99,7 @@ func TestKeyMapHistoryShowsInFullHelpAndDisablesWhileRunning(t *testing.T) {
 	found := false
 	for _, row := range fullHelp {
 		for _, binding := range row {
-			if binding.Help().Key == "up/down" {
+			if binding.Help().Key == "Up/Down" {
 				found = true
 			}
 		}
