@@ -694,11 +694,14 @@ rescan skills. The `/skills` reminder reports that restart requirement.
 
 ## Interactive commands
 
-The startup screen centers the animated AICE logo above a compact welcome
-card, with a blank row between them. The card shows the next action, command
-or login hints, and version/update status; it does not list tools. Narrow or
-short terminals show the card alone when the logo does not fit.
-
+The startup screen horizontally centers the animated Braille AICE artwork at the
+top of the transcript area, with two blank rows above it and no border. The artwork keeps its 127-column by
+12-row canvas. Background dots (`⡀`) are replaced with spaces, whitespace-only
+rows are removed, and internal spacing is preserved. Only the version and update
+status appear beneath the logo, separated by one blank row and aligned to its
+right edge. There is no welcome title, description, or command/login guidance.
+Narrow or short terminals show only the version information when the artwork
+and status cannot fit; the logo no longer reserves a text column beside it.
 The logo uses a slowly moving ink-theme gradient with brief, unevenly spaced signal
 glitches: one or two rows shift sideways with sunset-red/gold fringes and sparse
 rice-white scan-line dropouts, then snap back. Each burst lasts about 300 ms, separated by

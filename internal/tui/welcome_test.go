@@ -9,6 +9,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 )
 
 func TestKeyPressKeepsWelcomeAnimation(t *testing.T) {
@@ -78,39 +79,63 @@ func TestWelcomeViewShowsAnimatedLogo(t *testing.T) {
 	t.Parallel()
 
 	current := newModel(make(chan runRequest), make(chan struct{}))
-	current = updateModel(t, current, tea.WindowSizeMsg{Width: 80, Height: 24})
+	current = updateModel(t, current, tea.WindowSizeMsg{Width: 150, Height: 30})
 	current.apiKeyConfigured = true
+	current.version = "v0.4.5"
+	current.welcomeUpdate.state = welcomeUpdateCurrent
 
-	welcome := current.welcomeView()
-	for _, want := range []string{
-		"█",        // block logo
-		"Ask AICE", // welcome card
-		"Understand or change your code.",
-		"Type / for commands.",
-	} {
-		if !strings.Contains(welcome, want) {
-			t.Errorf("welcome = %q, want %q", welcome, want)
+	welcome := ansi.Strip(current.welcomeView())
+	lines := strings.Split(welcome, "\n")
+	for _, line := range lines[:2] {
+		if strings.TrimSpace(line) != "" {
+			t.Error("logo should have two blank rows above it")
 		}
 	}
-	logoRows := 0
-	for _, line := range strings.Split(welcome, "\n") {
-		if strings.Contains(line, "█") {
-			logoRows++
+	lines = lines[2:]
+	artwork := strings.Split(welcomeLogo, "\n")
+	left := strings.Index(lines[0], "⣤⣶⣾") - strings.Index(artwork[0], "⣤⣶⣾")
+	right := current.viewport.Width() - welcomeLogoWidth - left
+	if left < 0 || left-right < -1 || left-right > 1 {
+		t.Fatalf("logo margins = %d/%d, want horizontal centering", left, right)
+	}
+	for row, line := range artwork {
+		if !strings.HasPrefix(lines[row], strings.Repeat(" ", left)+line) {
+			t.Errorf("welcome screen is missing aligned artwork row %d", row)
 		}
 	}
-	if logoRows != welcomeLogoHeight {
-		t.Errorf("welcome logo rows = %d, want %d", logoRows, welcomeLogoHeight)
+	if strings.ContainsAny(welcome, "╭╮╰╯│─") {
+		t.Error("welcome header should have no border")
+	}
+	if strings.TrimSpace(lines[welcomeLogoHeight]) != "" {
+		t.Error("logo and version information should be separated by one blank row")
+	}
+	version := lines[welcomeLogoHeight+1]
+	if strings.TrimSpace(version) != "v0.4.5  ✓ You're on the latest version" {
+		t.Errorf("version line = %q, want version and update status below the logo", version)
+	}
+	if lipgloss.Width(strings.TrimRight(version, " ")) != left+welcomeLogoWidth {
+		t.Error("version information should align with the logo's right edge")
+	}
+	for _, removed := range []string{"Ask AICE", "Understand or change", "Type /"} {
+		if strings.Contains(welcome, removed) {
+			t.Errorf("welcome still contains removed description %q", removed)
+		}
+	}
+	if lipgloss.Width(welcome) > current.viewport.Width() ||
+		lipgloss.Height(welcome) > current.viewport.Height() {
+		t.Error("welcome header overflows the viewport")
 	}
 }
 
-func TestWelcomeCardUsesOutlineWithoutBackground(t *testing.T) {
+func TestWelcomeHeaderHasNoBorderOrBackground(t *testing.T) {
 	t.Parallel()
 
 	current := newModel(make(chan runRequest), make(chan struct{}))
-	card := current.welcomeCard()
+	current.version = "v0.4.5"
+	card := current.welcomeHeader()
 
-	if !strings.Contains(card, "╭") || !strings.Contains(card, "╯") {
-		t.Fatalf("welcome card = %q, want rounded outline", card)
+	if strings.ContainsAny(card, "╭╮╰╯│─") {
+		t.Fatalf("welcome header = %q, want no border", card)
 	}
 	if strings.Contains(card, "\x1b[48;") {
 		t.Errorf("welcome card = %q, want no background color", card)
@@ -121,16 +146,15 @@ func TestWelcomeViewOmitsLogoWhenNarrow(t *testing.T) {
 	t.Parallel()
 
 	current := newModel(make(chan runRequest), make(chan struct{}))
-	current = updateModel(t, current, tea.WindowSizeMsg{Width: 30, Height: 24})
+	current = updateModel(t, current, tea.WindowSizeMsg{Width: 30, Height: 50})
 
+	current.version = "v0.4.5"
 	welcome := current.welcomeView()
-	if strings.Contains(welcome, "█") {
+	if strings.Contains(ansi.Strip(welcome), "⣤⣶⣾") {
 		t.Errorf("welcome = %q, want no logo on a narrow terminal", welcome)
 	}
-	// The card text wraps on a narrow terminal, so assert a fragment that
-	// survives wrapping.
-	if !strings.Contains(welcome, "/login") {
-		t.Errorf("welcome = %q, want the welcome card on a narrow terminal", welcome)
+	if !strings.Contains(welcome, "v0.4.5") {
+		t.Errorf("welcome = %q, want the version on a narrow terminal", welcome)
 	}
 }
 
@@ -138,14 +162,15 @@ func TestWelcomeViewOmitsLogoWhenShort(t *testing.T) {
 	t.Parallel()
 
 	current := newModel(make(chan runRequest), make(chan struct{}))
-	current = updateModel(t, current, tea.WindowSizeMsg{Width: 80, Height: 10})
+	current = updateModel(t, current, tea.WindowSizeMsg{Width: 210, Height: 10})
 
+	current.version = "v0.4.5"
 	welcome := current.welcomeView()
-	if strings.Contains(welcome, "█") {
+	if strings.Contains(ansi.Strip(welcome), "⣤⣶⣾") {
 		t.Errorf("welcome = %q, want no logo on a short terminal", welcome)
 	}
-	if !strings.Contains(welcome, "/login") {
-		t.Errorf("welcome = %q, want the welcome card on a short terminal", welcome)
+	if !strings.Contains(welcome, "v0.4.5") {
+		t.Errorf("welcome = %q, want the version on a short terminal", welcome)
 	}
 }
 
@@ -450,6 +475,7 @@ func TestModelInitEmitsWelcomeTick(t *testing.T) {
 	t.Parallel()
 
 	current := newModel(make(chan runRequest), make(chan struct{}))
+	current = updateModel(t, current, tea.WindowSizeMsg{Width: 210, Height: 30})
 	if command := current.Init(); command == nil {
 		t.Error("Init() returned no command")
 	}
@@ -465,7 +491,7 @@ func TestModelInitEmitsWelcomeTick(t *testing.T) {
 	if frame := after.welcomeAnimation.frame; frame != 1 {
 		t.Errorf("welcome frame = %d, want 1", frame)
 	}
-	if !strings.Contains(after.viewport.GetContent(), "█") {
+	if !strings.Contains(ansi.Strip(after.viewport.GetContent()), "⣤⣶⣾") {
 		t.Error("welcome tick did not re-render the logo into the viewport")
 	}
 }

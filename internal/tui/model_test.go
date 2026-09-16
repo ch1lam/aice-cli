@@ -367,7 +367,7 @@ func TestModelAssistantBodyIsSeparatedAndUniformlyIndented(t *testing.T) {
 	}
 }
 
-func TestModelWelcomeGuidesUnconfiguredLogin(t *testing.T) {
+func TestModelWelcomeShowsOnlyVersionWithoutCredentials(t *testing.T) {
 	t.Parallel()
 
 	current := newModel(make(chan runRequest), make(chan struct{}))
@@ -375,16 +375,12 @@ func TestModelWelcomeGuidesUnconfiguredLogin(t *testing.T) {
 		Width:  80,
 		Height: 24,
 	})
+	current.version = "dev"
+	current.welcomeUpdate.state = welcomeUpdateDevelopment
 
-	welcome := current.welcomeView()
-	for _, want := range []string{
-		"Sign in to a provider to start.",
-		"/login",
-		"/settings",
-	} {
-		if !strings.Contains(welcome, want) {
-			t.Errorf("welcome = %q, want %q", welcome, want)
-		}
+	welcome := strings.TrimSpace(ansi.Strip(current.welcomeView()))
+	if want := "dev  Development build · update check skipped"; welcome != want {
+		t.Errorf("welcome = %q, want only %q", welcome, want)
 	}
 }
 

@@ -16,8 +16,8 @@ const (
 	// welcomeAnimationPhase is how far the logo gradient sweeps each frame,
 	// expressed as a fraction of one pass over the palette loop.
 	welcomeAnimationPhase = 0.008
-	welcomeLogoWidth      = 38
-	welcomeLogoHeight     = 5
+	welcomeLogoWidth      = 127
+	welcomeLogoHeight     = 12
 )
 
 // The logo shares the ink theme palette. Closing the loop avoids a hard seam
@@ -38,13 +38,21 @@ var welcomeRampRGB = func() [][3]float64 {
 	return colors
 }()
 
-// welcomeLogo is a five-row block rendering of the AICE name. Every character
-// is a single terminal cell wide, so per-cell color positions line up.
-const welcomeLogo = ` ██████   ████████   ███████  ████████
-██    ██     ██     ██        ██
-████████     ██     ██        ███████
-██    ██     ██     ██        ██
-██    ██  ████████   ███████  ████████`
+// welcomeLogo preserves the Braille artwork's spacing, with background dots
+// replaced by spaces and blank rows removed.
+// Every character occupies one terminal cell; trailing padding is added at render time.
+const welcomeLogo = `                                                  ⣤⣶⣾
+                                             ⣄⣶⣶⣶⣾                                                               ⣄⣶⣶⣄
+                                       ⣶⣶⣶⣶⣶⣶⣶⣶⣄            ⣶⣶⣶                                      ⣄⣤⣶⣶⣶⣶⣶⣶⣶⣶⣾⣄
+                                 ⣤⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶         ⣄⣶⣶⣶⣶⣾⣄    ⣄⣤⣤⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣾   ⣤⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣾⣾⣾⣾
+                           ⣄⣶⣶⣶⣶⣶⣶⣶⣾⣾⣄   ⣾⣶⣶⣶⣶⣶⣾      ⣄⣶⣶⣶⣶⣶⣾  ⣤⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣾⣾⣾⣶⣶⣶⣶⣶⣾⣄   ⣶⣶⣶⣶⣶⣾⣾⣶⣤
+                     ⣄⣶⣶⣶⣶⣶⣶⣶⣾⣾⣤        ⣄⣤⣶⣶⣶⣶⣶⣶⣤⣄  ⣄⣶⣶⣶⣶⣶⣾  ⣶⣶⣶⣶⣶⣶⣾                  ⣤⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣾⣄
+                ⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣾ ⣄⣶⣶⣶⣶⣶⣶ ⣄⣶⣶⣶⣶⣶⣾                  ⣾⣶⣶⣶⣶⣶⣶⣾⣾⣾⣶⣄
+             ⣶⣶⣶⣶⣶⣶⣶⣶⣾⣾⣤                  ⣤⣶⣶⣶⣾ ⣤⣶⣶⣶⣶⣾⣄ ⣤⣶⣶⣶⣶⣶⣾ ⣄⣄⣤⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶ ⣶⣶⣶⣶⣶⣾     ⣄⣤⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣄
+         ⣶⣶⣶⣶⣾⣾⣾⣄                           ⣾ ⣶⣶⣶⣶⣶⣾    ⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣾⣾⣾⣾⣾⣾⣶⣤⣄     ⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣾⣾⣾⣾⣶⣶⣄    ⣤⣾⣾⣾⣶⣶⣶⣶⣶⣤
+   ⣄⣶⣶⣾⣾⣶                                   ⣶⣶⣶⣶⣶⣾                              ⣾⣶⣶⣶⣶⣾⣾⣾⣶                                  ⣤⣾⣶⣤
+                                           ⣶⣶⣾
+                                         ⣶⣶`
 
 type welcomeTickMsg struct {
 	generation uint64
@@ -202,68 +210,48 @@ func welcomeCell(cells []rune, column int) rune {
 	return cells[column]
 }
 
-// welcomeView renders the startup screen: the animated logo above
-// the contextual welcome card. On terminals too small for the logo it falls
-// back to the card alone, preserving the pre-logo behavior.
+// welcomeView keeps the startup header at the top of the transcript area.
 func (m model) welcomeView() string {
-	card := m.welcomeCard()
-
-	content := card
-	logo := m.welcomeAnimation.renderLogo()
-	if lipgloss.Width(logo) <= m.viewport.Width() {
-		stacked := lipgloss.JoinVertical(
-			lipgloss.Center,
-			logo,
-			"",
-			card,
-		)
-		if lipgloss.Height(stacked) <= m.viewport.Height() {
-			content = stacked
-		}
-	}
-
 	return lipgloss.Place(
 		m.viewport.Width(),
 		m.viewport.Height(),
 		lipgloss.Center,
-		lipgloss.Center,
-		content,
+		lipgloss.Top,
+		m.welcomeHeader(),
 	)
 }
 
-// welcomeCard is the contextual panel: what to do next, or how to configure
-// AICE when no provider credential is set.
-func (m model) welcomeCard() string {
-	width := max(m.viewport.Width()-8, 20)
-	width = min(width, 62)
-	cardStyle := lipgloss.NewStyle().
-		Width(max(width-6, 1)).
-		Padding(1, 2).
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(subtleColor)
-
-	title := headerStyle.Render("✦  Ask AICE")
-	description := mutedStyle.Render("Understand or change your code.")
-	commandHint := mutedStyle.Render("Type / for commands.")
-	if !m.apiKeyConfigured {
-		title = headerStyle.Render("✦  Set up AICE")
-		description = noticeStyle.Render("Sign in to a provider to start.")
-		commandHint = mutedStyle.Render(
-			"Use /login. View setup with /settings.",
-		)
+// welcomeHeader keeps the logo centered independently of its version information.
+// The version line sits below the artwork, aligned to its right edge.
+func (m model) welcomeHeader() string {
+	width := max(min(m.viewport.Width(), welcomeLogoWidth), 1)
+	info := m.welcomeVersionView()
+	if info != "" {
+		info = lipgloss.NewStyle().Width(width).Align(lipgloss.Right).Render(info)
 	}
-	rows := []string{title, description, "", commandHint}
-	versionStatus := make([]string, 0, 2)
+	if m.viewport.Width() < welcomeLogoWidth {
+		return info
+	}
+
+	content := "\n\n" + m.welcomeAnimation.renderLogo()
+	if info != "" {
+		content = lipgloss.JoinVertical(lipgloss.Right, content, "", info)
+	}
+	if lipgloss.Height(content) > m.viewport.Height() {
+		return info
+	}
+	return content
+}
+
+func (m model) welcomeVersionView() string {
+	parts := make([]string, 0, 2)
 	if m.version != "" {
-		versionStatus = append(versionStatus, mutedStyle.Render(m.version))
+		parts = append(parts, mutedStyle.Render(m.version))
 	}
 	if status := m.welcomeUpdateView(); status != "" {
-		versionStatus = append(versionStatus, status)
+		parts = append(parts, status)
 	}
-	if len(versionStatus) > 0 {
-		rows = append(rows, "", strings.Join(versionStatus, "  "))
-	}
-	return cardStyle.Render(strings.Join(rows, "\n"))
+	return strings.Join(parts, "  ")
 }
 
 func (m model) welcomeUpdateView() string {
