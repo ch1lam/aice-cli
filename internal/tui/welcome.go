@@ -20,8 +20,8 @@ const (
 	welcomeLogoHeight     = 5
 )
 
-// welcomeRamp is a closed loop through the ink palette, warm red to cool blue
-// and back, so the animated logo cycles without a hard seam where it wraps.
+// The logo shares the ink theme palette. Closing the loop avoids a hard seam
+// when the gradient wraps from cool stone blue back to warm sunset red.
 var welcomeRamp = []string{
 	sunsetHex,
 	warningHex,
@@ -72,9 +72,8 @@ type updateCheckMsg struct {
 	err    error
 }
 
-// welcomeAnimation drives the gradient sweep across the startup logo. It ticks
-// only while the welcome screen is actually visible and stops as soon as the
-// first conversation entry appears.
+// welcomeAnimation drives the gradient and brief signal glitches on the startup
+// logo. It stops when a run starts or the first conversation entry appears.
 type welcomeAnimation struct {
 	frame      int
 	generation uint64
@@ -114,24 +113,23 @@ func welcomeTick(generation uint64) tea.Cmd {
 	})
 }
 
-// renderLogo colors every block of the logo from the animated ramp: columns
-// are spread across the palette and the whole sweep advances with the frame,
-// producing a slow moving gradient.
+// renderLogo keeps a fixed canvas even during tearing, so the version line and composer
+// never move. Frames are pure projections: extra repaints cannot trigger glitches.
 func (a welcomeAnimation) renderLogo() string {
 	lines := strings.Split(welcomeLogo, "\n")
 	rendered := make([]string, 0, len(lines))
-	for _, line := range lines {
-		// Pad each row so the block letters stay aligned even if the source
-		// literal lost trailing whitespace.
-		if width := lipgloss.Width(line); width < welcomeLogoWidth {
-			line += strings.Repeat(" ", welcomeLogoWidth-width)
-		}
+	for row, line := range lines {
+		cells := []rune(line)
+		shift := a.glitchShift(row)
 		var builder strings.Builder
-		column := 0
-		for _, character := range line {
+		for column := range welcomeLogoWidth {
+			character := welcomeCell(cells, column)
+			accent := ""
+			if shift != 0 {
+				character, accent = a.glitchCell(cells, column, shift)
+			}
 			if character == ' ' {
 				builder.WriteRune(character)
-				column++
 				continue
 			}
 			position := math.Mod(
@@ -139,17 +137,69 @@ func (a welcomeAnimation) renderLogo() string {
 					float64(a.frame)*welcomeAnimationPhase,
 				1.0,
 			)
-			color := sampleWelcomeRamp(position)
+			if accent == "" {
+				accent = formatHexColor(sampleWelcomeRamp(position))
+			}
 			builder.WriteString(
 				lipgloss.NewStyle().
-					Foreground(lipgloss.Color(formatHexColor(color))).
+					Foreground(lipgloss.Color(accent)).
 					Render(string(character)),
 			)
-			column++
 		}
 		rendered = append(rendered, builder.String())
 	}
 	return strings.Join(rendered, "\n")
+}
+
+// Unevenly spaced 300 ms bursts contain a clean frame between two jolts.
+// Only one or two rows tear at a time, keeping the artwork recognizable.
+func (a welcomeAnimation) glitchShift(row int) int {
+	const cycle = 480 // 24 seconds at the existing 20 fps cadence.
+	for burst, start := range [...]int{48, 137, 253, 391} {
+		phase := a.frame%cycle - start
+		if phase < 0 || phase >= 6 || phase == 2 {
+			continue
+		}
+		band := (burst + a.frame/cycle) % welcomeLogoHeight
+		if row != band && (phase < 3 || row != (band+1)%welcomeLogoHeight) {
+			return 0
+		}
+		shift := 1 + (burst+phase)%3
+		if (phase+row)%2 == 0 {
+			shift = -shift
+		}
+		return shift
+	}
+	return 0
+}
+
+func (a welcomeAnimation) glitchCell(cells []rune, column, shift int) (rune, string) {
+	character := welcomeCell(cells, column-shift)
+	if character == ' ' {
+		// Split channels leave a faint fringe on either side of the displaced row.
+		if welcomeCell(cells, column-shift-1) != ' ' {
+			return '░', sunsetHex
+		}
+		if welcomeCell(cells, column-shift+1) != ' ' {
+			return '░', goldHex
+		}
+		return character, ""
+	}
+	// Sparse half-block dropouts suggest scan lines without blanking the logo.
+	if (column+a.frame)%11 == 0 {
+		return '▀', primaryTextHex
+	}
+	if (column/4+a.frame)%2 == 0 {
+		return character, goldHex
+	}
+	return character, sunsetHex
+}
+
+func welcomeCell(cells []rune, column int) rune {
+	if column < 0 || column >= len(cells) {
+		return ' '
+	}
+	return cells[column]
 }
 
 // welcomeView renders the startup screen: the animated logo above

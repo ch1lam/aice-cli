@@ -699,6 +699,14 @@ card, with a blank row between them. The card shows the next action, command
 or login hints, and version/update status; it does not list tools. Narrow or
 short terminals show the card alone when the logo does not fit.
 
+The logo uses a slowly moving ink-theme gradient with brief, unevenly spaced signal
+glitches: one or two rows shift sideways with sunset-red/gold fringes and sparse
+rice-white scan-line dropouts, then snap back. Each burst lasts about 300 ms, separated by
+several quiet seconds. The fixed logo canvas keeps the version line and composer still.
+Animation belongs to `internal/tui/welcome.go`, uses the existing Bubble Tea
+ticks, stops when a run starts or transcript entries appear, and resumes on
+`/clear`.
+
 ### Visual theme
 
 The built-in ink theme is owned by [theme.go](../internal/tui/theme.go). Its three dark
@@ -730,8 +738,9 @@ headings omit hash prefixes, and level-six headings use gold. Tool names use
 normal weight, including on hover. Thinking panels and command output use quiet brown rails.
 Reasoning levels use muted gray for default/off/minimal/low, gold for medium,
 ginger yellow for high, orange-red (`#F5735F`) for xhigh, and sunset red for max,
-all at normal weight. Level names remain visible. The welcome logo's animated palette
-sweep and code syntax highlighting use the theme colors decoratively: code
+all at normal weight. Level names remain visible. The welcome logo shares the
+theme's sunset red, ginger yellow, gold, bamboo green, and stone blue palette.
+Code syntax highlighting uses the theme colors: code
 keywords and tags are sunset red, operators gold, and functions and strings
 bamboo green. Status text, icons, diff signs, and focus weight remain meaningful
 without color.
