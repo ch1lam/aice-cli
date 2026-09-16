@@ -312,7 +312,7 @@ func TestApplicationPrintAutomaticallyCompactsBeforeRequest(t *testing.T) {
 	candidate := &compactTestProvider{model: modelInfo, service: model}
 	cfg, home := compactPrintConfig(t, modelInfo)
 	command, err := newTestCommand(t, dependencies{
-		loadConfig: func() (config.Config, error) {
+		loadConfig: func(config.LoadOptions) (config.Config, error) {
 			return cfg, nil
 		},
 		newModel: func(config.Config) (agent.Model, error) {
@@ -388,7 +388,7 @@ func TestApplicationPrintCompactsAnOversizedTurn(t *testing.T) {
 	candidate := &compactTestProvider{model: modelInfo, service: model}
 	cfg, home := compactPrintConfig(t, modelInfo)
 	command, err := newTestCommand(t, dependencies{
-		loadConfig: func() (config.Config, error) {
+		loadConfig: func(config.LoadOptions) (config.Config, error) {
 			return cfg, nil
 		},
 		newModel: func(config.Config) (agent.Model, error) {
@@ -428,7 +428,7 @@ func TestApplicationCompactDoesNotCreateMissingSession(t *testing.T) {
 	workspace := t.TempDir()
 	sessionPath := filepath.Join(t.TempDir(), "missing.jsonl")
 	command, err := newTestCommand(t, dependencies{
-		loadConfig: func() (config.Config, error) {
+		loadConfig: func(config.LoadOptions) (config.Config, error) {
 			t.Fatal("configuration loaded for missing Session")
 			return config.Config{}, nil
 		},
@@ -533,7 +533,7 @@ func TestApplicationCompactRejectsNothingToCompactBeforeCreatingModel(
 	runPrintTurn(t, workspace, sessionPath, "only prompt", "only answer")
 
 	command, err := newTestCommand(t, dependencies{
-		loadConfig: func() (config.Config, error) {
+		loadConfig: func(config.LoadOptions) (config.Config, error) {
 			t.Fatal("configuration loaded with nothing to compact")
 			return config.Config{}, nil
 		},
@@ -647,7 +647,7 @@ func runPrintTurn(
 
 	model := &recordingModel{response: response}
 	command, err := newTestCommand(t, dependencies{
-		loadConfig: func() (config.Config, error) {
+		loadConfig: func(config.LoadOptions) (config.Config, error) {
 			return config.Config{DeepSeekAPIKey: "test-key"}, nil
 		},
 		newModel: func(config.Config) (agent.Model, error) {
@@ -689,7 +689,7 @@ func newCompactTestCommand(
 	t.Helper()
 
 	command, err := newTestCommand(t, dependencies{
-		loadConfig: func() (config.Config, error) {
+		loadConfig: func(config.LoadOptions) (config.Config, error) {
 			return config.Config{DeepSeekAPIKey: "test-key"}, nil
 		},
 		newModel: func(config.Config) (agent.Model, error) {
@@ -816,7 +816,7 @@ func TestInteractiveFollowUpCompactionRetainsAcceptedInputExactlyOnce(t *testing
 	model := &controlledModel{response: "checkpoint answer", stopReason: llm.StopReasonStop, usage: llm.Usage{TotalTokens: 9000}}
 	cfg, home := compactPrintConfig(t, info)
 	command, err := newTestCommand(t, dependencies{
-		loadConfig:                 func() (config.Config, error) { return cfg, nil },
+		loadConfig:                 func(config.LoadOptions) (config.Config, error) { return cfg, nil },
 		newModel:                   func(config.Config) (agent.Model, error) { return model, nil },
 		providers:                  []provider.Provider{&compactTestProvider{model: info, service: model}},
 		compactionKeepRecentTokens: 1,

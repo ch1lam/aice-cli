@@ -165,8 +165,8 @@ func (s *interactiveSession) chooseBrowserTab(ctx context.Context, ui *interacti
 func (s *interactiveSession) browserStatus(ctx context.Context) (string, error) {
 	executable, err := s.browser.Executable()
 	lines := []string{"Browser helper: " + executable, "Pinned version: " + deps.AgentBrowserVersion, "Session: " + s.browser.Name(), "Run directory: " + s.browser.RunDir(), fmt.Sprintf("Sidecar present: %v", s.browser.HasSidecar())}
-	if os.Getenv("AICE_NO_DEP_INSTALL") != "" {
-		lines = append(lines, "Automatic installation disabled (AICE_NO_DEP_INSTALL)")
+	if s.settingsSnapshot().configuration.NoDepInstall {
+		lines = append(lines, "Automatic installation disabled (no_dep_install)")
 	}
 	if err != nil {
 		return strings.Join(append(lines, err.Error()), "\n"), nil

@@ -57,8 +57,8 @@ func newSideHarness(
 			harness.factoryCalls.Add(1)
 			return newModel()
 		},
-		saveSetting: func(config.Setting, string) error { return nil },
-		providers:   defaultProviders(),
+		saveSettings: recordSettings(func(config.Setting, string) error { return nil }),
+		providers:    defaultProviders(),
 	}}
 	configuration := config.Config{
 		Provider:       string(deepseek.ProviderID),

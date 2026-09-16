@@ -6,8 +6,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/viper"
@@ -80,28 +84,53 @@ const (
 	SettingCustomBaseURL Setting = settingsKeyCustomBaseURL
 )
 
-// Settings contains non-secret global model defaults.
+// ContextWindow identifies a model without treating its identifier as a Viper key.
+type ContextWindow struct {
+	Provider string `json:"provider"`
+	Model    string `json:"model"`
+	Tokens   int64  `json:"tokens"`
+}
+
+// Settings is the file schema shared by user and project configuration.
+// API keys normally live in auth.json, with the same keys and precedence.
 type Settings struct {
-	ContextWindows      map[string]int64  `json:"context_windows,omitempty"`
+	ContextWindows      []ContextWindow   `json:"context_windows,omitempty"`
 	Provider            string            `json:"provider,omitempty"`
 	Model               string            `json:"model,omitempty"`
 	Thinking            llm.ThinkingLevel `json:"thinking,omitempty"`
 	DefaultProjectTrust trust.Default     `json:"default_project_trust,omitempty"`
+	DeepSeekAPIKey      string            `json:"deepseek_api_key,omitempty"`
+	DeepSeekBaseURL     string            `json:"deepseek_base_url,omitempty"`
+	OpenCodeAPIKey      string            `json:"opencode_api_key,omitempty"`
+	OpenCodeBaseURL     string            `json:"opencode_base_url,omitempty"`
+	OpenAIAPIKey        string            `json:"openai_api_key,omitempty"`
+	OpenAIBaseURL       string            `json:"openai_base_url,omitempty"`
+	KimiAPIKey          string            `json:"kimi_api_key,omitempty"`
+	KimiBaseURL         string            `json:"kimi_base_url,omitempty"`
+	ZhipuCodingAPIKey   string            `json:"zhipu_coding_api_key,omitempty"`
+	ZhipuCodingBaseURL  string            `json:"zhipu_coding_base_url,omitempty"`
+	ZhipuAPIKey         string            `json:"zhipu_api_key,omitempty"`
+	ZhipuBaseURL        string            `json:"zhipu_base_url,omitempty"`
+	MoonshotAPIKey      string            `json:"moonshot_api_key,omitempty"`
+	MoonshotBaseURL     string            `json:"moonshot_base_url,omitempty"`
+	CustomAPIKey        string            `json:"custom_api_key,omitempty"`
 	CustomBaseURL       string            `json:"custom_base_url,omitempty"`
+	NoDepInstall        bool              `json:"no_dep_install,omitempty"`
+	NoUpdateCheck       bool              `json:"no_update_check,omitempty"`
 }
 
-// Paths identifies all files used to resolve configuration and the directory
-// where AICE installs helper executables.
+// Paths identifies configuration sources and helper storage.
 type Paths struct {
-	GlobalSettings string
-	GlobalAuth     string
-	GlobalTrust    string
-	BinDir         string
+	GlobalSettings  string
+	ProjectSettings string
+	GlobalAuth      string
+	GlobalTrust     string
+	BinDir          string
 }
 
-// Config contains the effective process settings needed by AICE.
+// Config is an immutable effective snapshot owned by one application instance.
+// Interactive changes create another snapshot; they never reload file layers.
 type Config struct {
-	// ContextWindows is immutable after loading; keys are provider/model IDs.
 	ContextWindows      map[string]int64
 	Provider            string
 	Model               string
@@ -121,177 +150,385 @@ type Config struct {
 	ZhipuBaseURL        string
 	MoonshotAPIKey      string
 	MoonshotBaseURL     string
-	CodexCredentials    CodexCredentials
 	CustomAPIKey        string
 	CustomBaseURL       string
+	NoDepInstall        bool
+	NoUpdateCheck       bool
+	CodexCredentials    CodexCredentials
 	Paths               Paths
+	Diagnostics         []string
+	startupOverrides    map[string]bool
 }
 
-type authFile struct {
-	ZhipuCodingAPIKey string `json:"zhipu_coding_api_key,omitempty"`
-	ZhipuAPIKey       string `json:"zhipu_api_key,omitempty"`
-	MoonshotAPIKey    string `json:"moonshot_api_key,omitempty"`
-	KimiAPIKey        string `json:"kimi_api_key,omitempty"`
-	DeepSeekAPIKey    string `json:"deepseek_api_key,omitempty"`
-	OpenCodeAPIKey    string `json:"opencode_api_key,omitempty"`
-	OpenAIAPIKey      string `json:"openai_api_key,omitempty"`
-	CustomAPIKey      string `json:"custom_api_key,omitempty"`
+// LoadOptions supplies invocation-specific configuration inputs. Files and
+// flags are read once. Environment is opt-in for isolated callers and tests.
+type LoadOptions struct {
+	Workspace   string
+	Environment bool
+	BindFlags   func(*viper.Viper) error
+	// TrustProject decides whether to load project-controlled values using
+	// only the already composed user/env/flag policy. Nil allows explicit
+	// LoadFiles callers to supply trusted files; production must provide it.
+	TrustProject func(Paths, trust.Default) (bool, error)
 }
 
-// LookupEnv resolves one environment variable.
-type LookupEnv func(key string) (string, bool)
-
-// Load resolves global configuration.
-func Load() (Config, error) {
+// Load resolves the process environment and optional workspace configuration.
+func Load(options LoadOptions) (Config, error) {
 	paths, err := DefaultPaths()
 	if err != nil {
 		return Config{}, err
 	}
-	return LoadFiles(paths, os.LookupEnv)
+	if options.Workspace != "" {
+		if options.TrustProject == nil {
+			return Config{}, errors.New("config: project trust resolver is required")
+		}
+		root, err := filepath.Abs(options.Workspace)
+		if err != nil {
+			return Config{}, fmt.Errorf("config: resolve workspace: %w", err)
+		}
+		paths.ProjectSettings = filepath.Join(root, ".aice", settingsFileName)
+	}
+	options.Environment = true
+	return LoadFiles(paths, options)
 }
 
-// DefaultPaths returns AICE's global configuration paths.
+// DefaultPaths returns AICE's user configuration paths.
 func DefaultPaths() (Paths, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return Paths{}, fmt.Errorf("config: resolve home directory: %w", err)
 	}
-	globalDir := filepath.Join(home, ".aice")
-	return Paths{
-		GlobalSettings: filepath.Join(globalDir, settingsFileName),
-		GlobalAuth:     filepath.Join(globalDir, authFileName),
-		GlobalTrust:    filepath.Join(globalDir, trustFileName),
-		BinDir:         filepath.Join(globalDir, "bin"),
-	}, nil
+	root := filepath.Join(home, ".aice")
+	return Paths{GlobalSettings: filepath.Join(root, settingsFileName), GlobalAuth: filepath.Join(root, authFileName), GlobalTrust: filepath.Join(root, trustFileName), BinDir: filepath.Join(root, "bin")}, nil
 }
 
-// LoadFiles resolves explicit files with the precedence:
-// environment > global settings.
-// Credentials are global-only and may be overridden by the environment.
-func LoadFiles(paths Paths, lookup LookupEnv) (Config, error) {
-	if lookup == nil {
-		return Config{}, fmt.Errorf("config: environment lookup is required")
+// EnvironmentVariables lists the explicitly supported inputs. Registering
+// every key also makes env-only values visible to Viper's AllSettings.
+func EnvironmentVariables() map[string]string {
+	return map[string]string{
+		"provider": EnvProvider, "model": EnvModel, "thinking": EnvThinking,
+		"default_project_trust": "AICE_DEFAULT_PROJECT_TRUST",
+		"context_windows":       "AICE_CONTEXT_WINDOWS",
+		"no_dep_install":        "AICE_NO_DEP_INSTALL", "no_update_check": "AICE_NO_UPDATE_CHECK",
+		"deepseek_api_key":      EnvDeepSeekAPIKey,
+		"deepseek_base_url":     EnvDeepSeekBaseURL,
+		"opencode_api_key":      EnvOpenCodeAPIKey,
+		"opencode_base_url":     EnvOpenCodeBaseURL,
+		"openai_api_key":        EnvOpenAIAPIKey,
+		"openai_base_url":       EnvOpenAIBaseURL,
+		"kimi_api_key":          EnvKimiAPIKey,
+		"kimi_base_url":         EnvKimiBaseURL,
+		"zhipu_coding_api_key":  EnvZhipuCodingAPIKey,
+		"zhipu_coding_base_url": EnvZhipuCodingBaseURL,
+		"zhipu_api_key":         EnvZhipuAPIKey,
+		"zhipu_base_url":        EnvZhipuBaseURL,
+		"moonshot_api_key":      EnvMoonshotAPIKey,
+		"moonshot_base_url":     EnvMoonshotBaseURL,
+		"custom_api_key":        EnvCustomAPIKey,
+		"custom_base_url":       EnvCustomBaseURL,
 	}
+}
+
+func newRegistry(options LoadOptions) (*viper.Viper, error) {
+	v := viper.New()
+	v.SetConfigType("json")
+	if options.Environment {
+		for key, env := range EnvironmentVariables() {
+			if err := v.BindEnv(key, env); err != nil {
+				return nil, err
+			}
+		}
+	}
+	if options.BindFlags != nil {
+		if err := options.BindFlags(v); err != nil {
+			return nil, err
+		}
+	}
+	return v, nil
+}
+
+// LoadFiles composes flags > env > project > user > defaults, then validates
+// only the result. An unparseable source contributes no values.
+func LoadFiles(paths Paths, options LoadOptions) (Config, error) {
 	if err := paths.validate(); err != nil {
 		return Config{}, err
 	}
-
-	settings, err := loadSettings(paths, lookup)
+	v, err := newRegistry(options)
 	if err != nil {
 		return Config{}, err
 	}
-	auth, err := loadAuth(paths.GlobalAuth)
+	high, err := newRegistry(options)
 	if err != nil {
 		return Config{}, err
 	}
-	codex, err := LoadCodexCredentials(paths)
+	v.SetDefault("default_project_trust", string(trust.DefaultAsk))
+	v.SetDefault("thinking", string(llm.DefaultThinkingLevel))
+	v.SetDefault("no_dep_install", false)
+	v.SetDefault("no_update_check", false)
+	var diagnostics []string
+	fileValues := make(map[string]any)
+	for _, path := range []string{paths.GlobalSettings, paths.GlobalAuth, paths.ProjectSettings} {
+		if path == "" {
+			continue
+		}
+		if path == paths.ProjectSettings && options.TrustProject != nil {
+			// Invalid bootstrap policy asks rather than granting trust. The
+			// complete effective configuration is still validated after merging.
+			policy := trust.DefaultAsk
+			if value, ok := v.Get("default_project_trust").(string); ok {
+				switch trust.Default(strings.TrimSpace(value)) {
+				case trust.DefaultAlways:
+					policy = trust.DefaultAlways
+				case trust.DefaultNever:
+					policy = trust.DefaultNever
+				}
+			}
+			allowed, err := options.TrustProject(paths, policy)
+			if err != nil {
+				return Config{}, err
+			}
+			if !allowed {
+				continue
+			}
+		}
+		values, err := readValues(path)
+		if err != nil {
+			var syntax *sourceSyntaxError
+			if !errors.As(err, &syntax) {
+				return Config{}, err
+			}
+			diagnostics = append(diagnostics, fmt.Sprintf("Ignored unparseable configuration %s", path))
+			continue
+		}
+		// Every schema field is a scalar or a complete array. Replace fields
+		// before handing the file layer to Viper: MergeConfigMap otherwise
+		// retains an invalid lower-layer object when a scalar replaces it.
+		for key, value := range values {
+			fileValues[strings.ToLower(key)] = value
+		}
+		if err := v.ReadConfig(strings.NewReader("{}")); err != nil {
+			return Config{}, err
+		}
+		if err := v.MergeConfigMap(fileValues); err != nil {
+			return Config{}, err
+		}
+		if path == paths.ProjectSettings {
+			if err := high.MergeConfigMap(values); err != nil {
+				return Config{}, err
+			}
+		}
+	}
+	c, err := decodeEffective(v)
 	if err != nil {
 		return Config{}, err
 	}
-
-	apiKey := strings.TrimSpace(auth.DeepSeekAPIKey)
-	if value, exists := lookup(EnvDeepSeekAPIKey); exists {
-		if value = strings.TrimSpace(value); value != "" {
-			apiKey = value
-		}
+	c.Paths, c.Diagnostics = paths, diagnostics
+	c.startupOverrides = make(map[string]bool)
+	for key := range high.AllSettings() {
+		c.startupOverrides[key] = true
 	}
-	baseURL, _ := lookup(EnvDeepSeekBaseURL)
-
-	openCodeAPIKey := strings.TrimSpace(auth.OpenCodeAPIKey)
-	if value, exists := lookup(EnvOpenCodeAPIKey); exists {
-		if value = strings.TrimSpace(value); value != "" {
-			openCodeAPIKey = value
+	c.CodexCredentials, err = LoadCodexCredentials(paths)
+	if err != nil {
+		var syntax *sourceSyntaxError
+		if !errors.As(err, &syntax) {
+			return Config{}, err
 		}
+		c.Diagnostics = append(c.Diagnostics, fmt.Sprintf("Ignored unparseable credentials %s", CodexAuthPath(paths)))
 	}
-	openCodeBaseURL, _ := lookup(EnvOpenCodeBaseURL)
-
-	openAIAPIKey := strings.TrimSpace(auth.OpenAIAPIKey)
-	if value, exists := lookup(EnvOpenAIAPIKey); exists {
-		if value = strings.TrimSpace(value); value != "" {
-			openAIAPIKey = value
-		}
-	}
-	openAIBaseURL, _ := lookup(EnvOpenAIBaseURL)
-
-	kimiAPIKey := strings.TrimSpace(auth.KimiAPIKey)
-	if value, exists := lookup(EnvKimiAPIKey); exists {
-		if value = strings.TrimSpace(value); value != "" {
-			kimiAPIKey = value
-		}
-	}
-	kimiBaseURL, _ := lookup(EnvKimiBaseURL)
-
-	zhipuCodingAPIKey := strings.TrimSpace(auth.ZhipuCodingAPIKey)
-	if value, exists := lookup(EnvZhipuCodingAPIKey); exists {
-		if value = strings.TrimSpace(value); value != "" {
-			zhipuCodingAPIKey = value
-		}
-	}
-	zhipuCodingBaseURL, _ := lookup(EnvZhipuCodingBaseURL)
-
-	zhipuAPIKey := strings.TrimSpace(auth.ZhipuAPIKey)
-	if value, exists := lookup(EnvZhipuAPIKey); exists {
-		if value = strings.TrimSpace(value); value != "" {
-			zhipuAPIKey = value
-		}
-	}
-	zhipuBaseURL, _ := lookup(EnvZhipuBaseURL)
-
-	moonshotAPIKey := strings.TrimSpace(auth.MoonshotAPIKey)
-	if value, exists := lookup(EnvMoonshotAPIKey); exists {
-		if value = strings.TrimSpace(value); value != "" {
-			moonshotAPIKey = value
-		}
-	}
-	moonshotBaseURL, _ := lookup(EnvMoonshotBaseURL)
-
-	customAPIKey := strings.TrimSpace(auth.CustomAPIKey)
-	if value, exists := lookup(EnvCustomAPIKey); exists {
-		if value = strings.TrimSpace(value); value != "" {
-			customAPIKey = value
-		}
-	}
-	customBaseURL := strings.TrimSpace(settings.CustomBaseURL)
-	if value, exists := lookup(EnvCustomBaseURL); exists {
-		if value = strings.TrimSpace(value); value != "" {
-			customBaseURL = value
-		}
-	}
-
-	return Config{
-		ContextWindows:      settings.ContextWindows,
-		Provider:            settings.Provider,
-		Model:               settings.Model,
-		Thinking:            settings.Thinking,
-		DefaultProjectTrust: settings.DefaultProjectTrust,
-		DeepSeekAPIKey:      apiKey,
-		DeepSeekBaseURL:     strings.TrimSpace(baseURL),
-		OpenCodeAPIKey:      openCodeAPIKey,
-		OpenCodeBaseURL:     strings.TrimSpace(openCodeBaseURL),
-		OpenAIAPIKey:        openAIAPIKey,
-		OpenAIBaseURL:       strings.TrimSpace(openAIBaseURL),
-		KimiAPIKey:          kimiAPIKey,
-		KimiBaseURL:         strings.TrimSpace(kimiBaseURL),
-		ZhipuCodingAPIKey:   zhipuCodingAPIKey,
-		ZhipuCodingBaseURL:  strings.TrimSpace(zhipuCodingBaseURL),
-		ZhipuAPIKey:         zhipuAPIKey,
-		ZhipuBaseURL:        strings.TrimSpace(zhipuBaseURL),
-		MoonshotAPIKey:      moonshotAPIKey,
-		MoonshotBaseURL:     strings.TrimSpace(moonshotBaseURL),
-		CodexCredentials:    codex,
-		CustomAPIKey:        customAPIKey,
-		CustomBaseURL:       customBaseURL,
-		Paths:               paths,
-	}, nil
+	return c, nil
 }
 
-// SaveSetting updates the global settings file.
-func SaveSetting(setting Setting, value string) error {
-	paths, err := DefaultPaths()
+// WithSettings applies explicit runtime values to this snapshot using Viper's
+// highest-priority Set layer. No file or environment is reread.
+func (c Config) WithSettings(changes map[Setting]string) (Config, error) {
+	values, err := settingsValues(c.settings())
 	if err != nil {
+		return Config{}, err
+	}
+	v := viper.New()
+	if err := v.MergeConfigMap(values); err != nil {
+		return Config{}, err
+	}
+	for key, value := range changes {
+		if !mutableSetting(key) {
+			return Config{}, fmt.Errorf("config: unsupported setting %q", key)
+		}
+		v.Set(string(key), strings.TrimSpace(value))
+	}
+	next, err := decodeEffective(v)
+	if err != nil {
+		return Config{}, err
+	}
+	next.Paths, next.CodexCredentials = c.Paths, c.CodexCredentials
+	next.Diagnostics, next.startupOverrides = c.Diagnostics, c.startupOverrides
+	return next, nil
+}
+
+// SavedValuesOverridden reports whether a startup layer above the user file
+// supplies any changed key. It never exposes credential values.
+func (c Config) SavedValuesOverridden(changes map[Setting]string) bool {
+	for key := range changes {
+		if _, ok := c.startupOverrides[string(key)]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+func (c Config) settings() Settings {
+	s := Settings{
+		Provider:            c.Provider,
+		Model:               c.Model,
+		Thinking:            c.Thinking,
+		DefaultProjectTrust: c.DefaultProjectTrust,
+		DeepSeekAPIKey:      c.DeepSeekAPIKey,
+		DeepSeekBaseURL:     c.DeepSeekBaseURL,
+		OpenCodeAPIKey:      c.OpenCodeAPIKey,
+		OpenCodeBaseURL:     c.OpenCodeBaseURL,
+		OpenAIAPIKey:        c.OpenAIAPIKey,
+		OpenAIBaseURL:       c.OpenAIBaseURL,
+		KimiAPIKey:          c.KimiAPIKey,
+		KimiBaseURL:         c.KimiBaseURL,
+		ZhipuCodingAPIKey:   c.ZhipuCodingAPIKey,
+		ZhipuCodingBaseURL:  c.ZhipuCodingBaseURL,
+		ZhipuAPIKey:         c.ZhipuAPIKey,
+		ZhipuBaseURL:        c.ZhipuBaseURL,
+		MoonshotAPIKey:      c.MoonshotAPIKey,
+		MoonshotBaseURL:     c.MoonshotBaseURL,
+		CustomAPIKey:        c.CustomAPIKey,
+		CustomBaseURL:       c.CustomBaseURL,
+		NoDepInstall:        c.NoDepInstall,
+		NoUpdateCheck:       c.NoUpdateCheck,
+	}
+	for key, tokens := range c.ContextWindows {
+		provider, model, _ := strings.Cut(key, "/")
+		s.ContextWindows = append(s.ContextWindows, ContextWindow{Provider: provider, Model: model, Tokens: tokens})
+	}
+	slices.SortFunc(s.ContextWindows, func(a, b ContextWindow) int { return strings.Compare(a.Provider+"/"+a.Model, b.Provider+"/"+b.Model) })
+	return s
+}
+
+func decodeEffective(v *viper.Viper) (Config, error) {
+	values := v.AllSettings()
+	// AllSettings omits empty maps when flattening. Get each schema field
+	// explicitly so an invalid winning object cannot disappear as "missing".
+	for key := range EnvironmentVariables() {
+		if value := v.Get(key); value != nil {
+			values[key] = value
+		}
+	}
+	for key, value := range values {
+		text, ok := value.(string)
+		if !ok {
+			continue
+		}
+		text = strings.TrimSpace(text)
+		switch key {
+		case "no_dep_install", "no_update_check":
+			parsed, err := strconv.ParseBool(text)
+			if err != nil {
+				return Config{}, fmt.Errorf("config: %s must be a boolean", key)
+			}
+			values[key] = parsed
+		case "context_windows":
+			var parsed []any
+			if err := decodeValues([]byte(text), &parsed); err != nil {
+				return Config{}, errors.New("config: context_windows must be a JSON array")
+			}
+			values[key] = parsed
+		default:
+			values[key] = text
+		}
+	}
+	data, err := json.Marshal(values)
+	if err != nil {
+		return Config{}, fmt.Errorf("config: encode effective values: %w", err)
+	}
+	var s Settings
+	if err := jsonutil.DecodeStrict(data, &s); err != nil {
+		// Decoder errors can quote secrets in invalid fields; report only schema context.
+		var field *json.UnmarshalTypeError
+		if errors.As(err, &field) {
+			return Config{}, fmt.Errorf("config: invalid type for %s (expected %s)", field.Field, field.Type)
+		}
+		return Config{}, fmt.Errorf("config: invalid effective configuration: %w", err)
+	}
+	if err := s.validate(); err != nil {
+		return Config{}, err
+	}
+	c := Config{
+		Provider:            s.Provider,
+		Model:               s.Model,
+		Thinking:            s.Thinking,
+		DefaultProjectTrust: s.DefaultProjectTrust,
+		DeepSeekAPIKey:      s.DeepSeekAPIKey,
+		DeepSeekBaseURL:     s.DeepSeekBaseURL,
+		OpenCodeAPIKey:      s.OpenCodeAPIKey,
+		OpenCodeBaseURL:     s.OpenCodeBaseURL,
+		OpenAIAPIKey:        s.OpenAIAPIKey,
+		OpenAIBaseURL:       s.OpenAIBaseURL,
+		KimiAPIKey:          s.KimiAPIKey,
+		KimiBaseURL:         s.KimiBaseURL,
+		ZhipuCodingAPIKey:   s.ZhipuCodingAPIKey,
+		ZhipuCodingBaseURL:  s.ZhipuCodingBaseURL,
+		ZhipuAPIKey:         s.ZhipuAPIKey,
+		ZhipuBaseURL:        s.ZhipuBaseURL,
+		MoonshotAPIKey:      s.MoonshotAPIKey,
+		MoonshotBaseURL:     s.MoonshotBaseURL,
+		CustomAPIKey:        s.CustomAPIKey,
+		CustomBaseURL:       s.CustomBaseURL,
+		NoDepInstall:        s.NoDepInstall,
+		NoUpdateCheck:       s.NoUpdateCheck,
+	}
+	if len(s.ContextWindows) != 0 {
+		c.ContextWindows = make(map[string]int64, len(s.ContextWindows))
+	}
+	for _, entry := range s.ContextWindows {
+		c.ContextWindows[entry.Provider+"/"+entry.Model] = entry.Tokens
+	}
+	return c, nil
+}
+
+func settingsValues(s Settings) (map[string]any, error) {
+	data, err := json.Marshal(s)
+	if err != nil {
+		return nil, err
+	}
+	var values map[string]any
+	err = decodeValues(data, &values)
+	return values, err
+}
+
+func decodeValues(data []byte, target any) error {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	if err := decoder.Decode(target); err != nil {
 		return err
 	}
-	return SaveSettingFile(paths, setting, value)
+	var extra any
+	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
+		return errors.New("expected one JSON value")
+	}
+	return nil
+}
+
+type sourceSyntaxError struct{ path string }
+
+func (e *sourceSyntaxError) Error() string { return "config: invalid JSON object in " + e.path }
+
+func readValues(path string) (map[string]any, error) {
+	data, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return map[string]any{}, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("config: read %s: %w", path, err)
+	}
+	var values map[string]any
+	if err := decodeValues(data, &values); err != nil || values == nil {
+		return nil, &sourceSyntaxError{path: path}
+	}
+	return values, nil
 }
 
 // SaveDeepSeekAPIKey stores the DeepSeek credential in the global auth file.
@@ -314,9 +551,7 @@ func SaveDeepSeekAPIKeyFile(paths Paths, apiKey string) error {
 	if apiKey == "" {
 		return errors.New("config: DeepSeek API key is required")
 	}
-	return saveAPIKeyFile(paths, "DeepSeek", apiKey, func(auth *authFile) {
-		auth.DeepSeekAPIKey = apiKey
-	})
+	return saveAPIKeyFile(paths, "DeepSeek", "deepseek_api_key", apiKey)
 }
 
 // SaveOpenCodeAPIKey stores the OpenCode Go credential in the global auth file.
@@ -338,9 +573,7 @@ func SaveOpenCodeAPIKeyFile(paths Paths, apiKey string) error {
 	if apiKey == "" {
 		return errors.New("config: OpenCode Go API key is required")
 	}
-	return saveAPIKeyFile(paths, "OpenCode Go", apiKey, func(auth *authFile) {
-		auth.OpenCodeAPIKey = apiKey
-	})
+	return saveAPIKeyFile(paths, "OpenCode Go", "opencode_api_key", apiKey)
 }
 
 // SaveOpenAIAPIKey stores the OpenAI credential in the global auth file.
@@ -362,9 +595,7 @@ func SaveOpenAIAPIKeyFile(paths Paths, apiKey string) error {
 	if apiKey == "" {
 		return errors.New("config: OpenAI API key is required")
 	}
-	return saveAPIKeyFile(paths, "OpenAI", apiKey, func(auth *authFile) {
-		auth.OpenAIAPIKey = apiKey
-	})
+	return saveAPIKeyFile(paths, "OpenAI", "openai_api_key", apiKey)
 }
 
 // SaveKimiAPIKey stores the Kimi credential in the global auth file.
@@ -386,9 +617,7 @@ func SaveKimiAPIKeyFile(paths Paths, apiKey string) error {
 	if apiKey == "" {
 		return errors.New("config: Kimi API key is required")
 	}
-	return saveAPIKeyFile(paths, "Kimi", apiKey, func(auth *authFile) {
-		auth.KimiAPIKey = apiKey
-	})
+	return saveAPIKeyFile(paths, "Kimi", "kimi_api_key", apiKey)
 }
 
 // SaveZhipuCodingAPIKey stores the Zhipu Coding Plan credential in the global auth file.
@@ -410,9 +639,7 @@ func SaveZhipuCodingAPIKeyFile(paths Paths, apiKey string) error {
 	if apiKey == "" {
 		return errors.New("config: Zhipu Coding Plan API key is required")
 	}
-	return saveAPIKeyFile(paths, "Zhipu Coding Plan", apiKey, func(auth *authFile) {
-		auth.ZhipuCodingAPIKey = apiKey
-	})
+	return saveAPIKeyFile(paths, "Zhipu Coding Plan", "zhipu_coding_api_key", apiKey)
 }
 
 // SaveZhipuAPIKey stores the Zhipu credential in the global auth file.
@@ -434,9 +661,7 @@ func SaveZhipuAPIKeyFile(paths Paths, apiKey string) error {
 	if apiKey == "" {
 		return errors.New("config: Zhipu API key is required")
 	}
-	return saveAPIKeyFile(paths, "Zhipu", apiKey, func(auth *authFile) {
-		auth.ZhipuAPIKey = apiKey
-	})
+	return saveAPIKeyFile(paths, "Zhipu", "zhipu_api_key", apiKey)
 }
 
 // SaveMoonshotAPIKey stores the Moonshot credential in the global auth file.
@@ -458,9 +683,7 @@ func SaveMoonshotAPIKeyFile(paths Paths, apiKey string) error {
 	if apiKey == "" {
 		return errors.New("config: Moonshot API key is required")
 	}
-	return saveAPIKeyFile(paths, "Moonshot", apiKey, func(auth *authFile) {
-		auth.MoonshotAPIKey = apiKey
-	})
+	return saveAPIKeyFile(paths, "Moonshot", "moonshot_api_key", apiKey)
 }
 
 // SaveCustomAPIKey stores the custom OpenAI-compatible credential in the global auth file.
@@ -484,216 +707,7 @@ func SaveCustomAPIKeyFile(paths Paths, apiKey string) error {
 	if strings.ContainsAny(apiKey, "\r\n") {
 		return fmt.Errorf("config: Custom API key must be one line")
 	}
-	return saveAPIKeyFile(paths, "Custom", apiKey, func(auth *authFile) {
-		auth.CustomAPIKey = apiKey
-	})
-}
-
-// saveAPIKeyFile reads the existing auth file, applies one credential update,
-// and writes the merged result back so different provider credentials are not
-// clobbered. The one-line rule validates the key being written, not credentials
-// belonging to other providers. Credentials are never stored in settings.
-func saveAPIKeyFile(
-	paths Paths,
-	providerName, apiKey string,
-	update func(*authFile),
-) error {
-	if err := paths.validate(); err != nil {
-		return err
-	}
-	if strings.ContainsAny(apiKey, "\r\n") {
-		return fmt.Errorf("config: %s API key must be one line", providerName)
-	}
-	auth, err := loadAuth(paths.GlobalAuth)
-	if err != nil {
-		return err
-	}
-	update(&auth)
-	if err := writeJSON(paths.GlobalAuth, auth); err != nil {
-		return fmt.Errorf("config: write global auth: %w", err)
-	}
-	return nil
-}
-
-// SaveSettingFile updates one explicit global settings file.
-func SaveSettingFile(
-	paths Paths,
-	setting Setting,
-	value string,
-) error {
-	if err := paths.validate(); err != nil {
-		return err
-	}
-	settings, _, err := readSettings(paths.GlobalSettings)
-	if err != nil {
-		return err
-	}
-
-	value = strings.TrimSpace(value)
-	switch setting {
-	case SettingProvider:
-		settings.Provider = value
-	case SettingModel:
-		settings.Model = value
-	case SettingThinking:
-		settings.Thinking = llm.ThinkingLevel(value)
-	case SettingCustomBaseURL:
-		if value != "" {
-			if err := validateCustomBaseURL(value); err != nil {
-				return err
-			}
-		}
-		settings.CustomBaseURL = value
-	default:
-		return fmt.Errorf("config: unsupported setting %q", setting)
-	}
-	if err := settings.validate(); err != nil {
-		return err
-	}
-	if err := writeJSON(paths.GlobalSettings, settings); err != nil {
-		return fmt.Errorf("config: write global settings: %w", err)
-	}
-	return nil
-}
-
-func loadSettings(paths Paths, lookup LookupEnv) (Settings, error) {
-	registry := viper.New()
-	registry.SetConfigType("json")
-
-	fileSettings, data, err := readSettings(paths.GlobalSettings)
-	if err != nil {
-		return Settings{}, err
-	}
-	if data != nil {
-		if err := registry.ReadConfig(bytes.NewReader(data)); err != nil {
-			return Settings{}, fmt.Errorf(
-				"config: read settings %s: %w",
-				paths.GlobalSettings,
-				err,
-			)
-		}
-	}
-
-	for key, environment := range map[string]string{
-		settingsKeyProvider: EnvProvider,
-		settingsKeyModel:    EnvModel,
-		settingsKeyThinking: EnvThinking,
-	} {
-		if value, exists := lookup(environment); exists {
-			if value = strings.TrimSpace(value); value != "" {
-				registry.Set(key, value)
-			}
-		}
-	}
-
-	settings := Settings{
-		ContextWindows: fileSettings.ContextWindows,
-		Provider:       strings.TrimSpace(registry.GetString(settingsKeyProvider)),
-		Model:          strings.TrimSpace(registry.GetString(settingsKeyModel)),
-		Thinking: llm.ThinkingLevel(strings.TrimSpace(
-			registry.GetString(settingsKeyThinking),
-		)),
-		DefaultProjectTrust: trust.Default(strings.TrimSpace(
-			registry.GetString(settingsKeyDefaultProjectTrust),
-		)),
-		CustomBaseURL: strings.TrimSpace(registry.GetString(settingsKeyCustomBaseURL)),
-	}
-	if settings.DefaultProjectTrust == "" {
-		settings.DefaultProjectTrust = trust.DefaultAsk
-	}
-	if err := settings.validate(); err != nil {
-		return Settings{}, err
-	}
-	return settings, nil
-}
-
-func loadAuth(path string) (authFile, error) {
-	data, err := os.ReadFile(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return authFile{}, nil
-	}
-	if err != nil {
-		return authFile{}, fmt.Errorf("config: read auth %s: %w", path, err)
-	}
-	var auth authFile
-	if err := decodeJSON(path, data, &auth); err != nil {
-		return authFile{}, err
-	}
-	auth.DeepSeekAPIKey = strings.TrimSpace(auth.DeepSeekAPIKey)
-	auth.OpenCodeAPIKey = strings.TrimSpace(auth.OpenCodeAPIKey)
-	auth.OpenAIAPIKey = strings.TrimSpace(auth.OpenAIAPIKey)
-	auth.KimiAPIKey = strings.TrimSpace(auth.KimiAPIKey)
-	auth.ZhipuCodingAPIKey = strings.TrimSpace(auth.ZhipuCodingAPIKey)
-	auth.ZhipuAPIKey = strings.TrimSpace(auth.ZhipuAPIKey)
-	auth.MoonshotAPIKey = strings.TrimSpace(auth.MoonshotAPIKey)
-	auth.CustomAPIKey = strings.TrimSpace(auth.CustomAPIKey)
-	return auth, nil
-}
-
-func readSettings(path string) (Settings, []byte, error) {
-	data, err := os.ReadFile(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return Settings{}, nil, nil
-	}
-	if err != nil {
-		return Settings{}, nil, fmt.Errorf(
-			"config: read settings %s: %w",
-			path,
-			err,
-		)
-	}
-	var settings Settings
-	if err := decodeJSON(path, data, &settings); err != nil {
-		return Settings{}, nil, err
-	}
-	if err := settings.validate(); err != nil {
-		return Settings{}, nil, fmt.Errorf(
-			"config: validate settings %s: %w",
-			path,
-			err,
-		)
-	}
-	return settings, data, nil
-}
-
-func decodeJSON(path string, data []byte, target any) error {
-	if err := jsonutil.DecodeStrict(data, target); err != nil {
-		return fmt.Errorf("config: decode %s: %w", path, err)
-	}
-	return nil
-}
-
-func writeJSON(path string, value any) (returnErr error) {
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return fmt.Errorf("create directory: %w", err)
-	}
-	data, err := json.MarshalIndent(value, "", "  ")
-	if err != nil {
-		return fmt.Errorf("encode JSON: %w", err)
-	}
-	data = append(data, '\n')
-
-	file, err := os.OpenFile(
-		path,
-		os.O_CREATE|os.O_WRONLY|os.O_TRUNC,
-		0o600,
-	)
-	if err != nil {
-		return fmt.Errorf("open file: %w", err)
-	}
-	defer func() {
-		returnErr = errors.Join(returnErr, file.Close())
-	}()
-	if err := file.Chmod(0o600); err != nil {
-		return fmt.Errorf("set file permissions: %w", err)
-	}
-	if _, err := file.Write(data); err != nil {
-		return fmt.Errorf("write file: %w", err)
-	}
-	if err := file.Sync(); err != nil {
-		return fmt.Errorf("sync file: %w", err)
-	}
-	return nil
+	return saveAPIKeyFile(paths, "Custom", "custom_api_key", apiKey)
 }
 
 func (p Paths) validate() error {
@@ -711,11 +725,13 @@ func (p Paths) validate() error {
 }
 
 func (s Settings) validate() error {
-	for key, window := range s.ContextWindows {
-		provider, model, ok := strings.Cut(key, "/")
-		if !ok || provider == "" || model == "" || strings.ContainsAny(key, " \t\r\n") || window <= 0 {
-			return fmt.Errorf("context_windows entry %q must use provider/model and a positive token count", key)
+	seen := make(map[string]bool)
+	for _, entry := range s.ContextWindows {
+		key := entry.Provider + "/" + entry.Model
+		if entry.Provider == "" || strings.Contains(entry.Provider, "/") || entry.Model == "" || strings.ContainsAny(key, " \t\r\n") || entry.Tokens <= 0 || seen[key] {
+			return fmt.Errorf("context_windows entry %q must identify a unique provider/model and a positive token count", key)
 		}
+		seen[key] = true
 	}
 	if strings.ContainsAny(s.Provider, " \t\r\n") {
 		return fmt.Errorf("provider must not contain whitespace")
@@ -743,9 +759,32 @@ func (s Settings) validate() error {
 			s.DefaultProjectTrust,
 		)
 	}
-	if s.CustomBaseURL != "" {
-		if err := validateCustomBaseURL(s.CustomBaseURL); err != nil {
-			return err
+	for key, endpoint := range map[string]string{
+		"deepseek_base_url":     s.DeepSeekBaseURL,
+		"opencode_base_url":     s.OpenCodeBaseURL,
+		"openai_base_url":       s.OpenAIBaseURL,
+		"kimi_base_url":         s.KimiBaseURL,
+		"zhipu_coding_base_url": s.ZhipuCodingBaseURL,
+		"zhipu_base_url":        s.ZhipuBaseURL,
+		"moonshot_base_url":     s.MoonshotBaseURL,
+		"custom_base_url":       s.CustomBaseURL,
+	} {
+		if err := validateCustomBaseURL(endpoint); err != nil {
+			return fmt.Errorf("config: %s: %w", key, err)
+		}
+	}
+	for key, credential := range map[string]string{
+		"deepseek_api_key":     s.DeepSeekAPIKey,
+		"opencode_api_key":     s.OpenCodeAPIKey,
+		"openai_api_key":       s.OpenAIAPIKey,
+		"kimi_api_key":         s.KimiAPIKey,
+		"zhipu_coding_api_key": s.ZhipuCodingAPIKey,
+		"zhipu_api_key":        s.ZhipuAPIKey,
+		"moonshot_api_key":     s.MoonshotAPIKey,
+		"custom_api_key":       s.CustomAPIKey,
+	} {
+		if strings.ContainsAny(credential, "\r\n") {
+			return fmt.Errorf("config: %s must be one line", key)
 		}
 	}
 	return nil
@@ -761,6 +800,10 @@ func validateCustomBaseURL(raw string) error {
 	}
 	if !(strings.HasPrefix(raw, "http://") || strings.HasPrefix(raw, "https://")) {
 		return fmt.Errorf("custom base URL must start with http:// or https://")
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.Hostname() == "" {
+		return errors.New("base URL must have a valid host")
 	}
 	return nil
 }

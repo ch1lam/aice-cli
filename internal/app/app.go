@@ -10,10 +10,12 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 
 	"github.com/ch1lam/aice-cli/internal/agent"
 	"github.com/ch1lam/aice-cli/internal/browser"
@@ -38,8 +40,8 @@ import (
 func NewCommand() (*cobra.Command, error) {
 	providers := defaultProviders()
 	return newCommand(dependencies{
-		loadConfig:  config.Load,
-		saveSetting: config.SaveSetting,
+		loadConfig:   config.Load,
+		saveSettings: config.SaveSettingsFile,
 		saveAPIKey: func(providerID, apiKey string) (string, error) {
 			return defaultSaveAPIKey(providers, providerID, apiKey)
 		},
@@ -56,8 +58,8 @@ func NewCommand() (*cobra.Command, error) {
 }
 
 type dependencies struct {
-	loadConfig                 func() (config.Config, error)
-	saveSetting                func(config.Setting, string) error
+	loadConfig                 func(config.LoadOptions) (config.Config, error)
+	saveSettings               func(context.Context, config.Paths, map[config.Setting]string) error
 	saveAPIKey                 func(provider, apiKey string) (string, error)
 	newModel                   func(config.Config) (llm.Streamer, error)
 	checkUpdate                func(context.Context) (update.StartupResult, error)
@@ -69,6 +71,7 @@ type dependencies struct {
 	codexLogin                 func(context.Context, bool, io.Writer) (config.CodexCredentials, error)
 	codexInteractiveLogin      func(context.Context, bool, codex.LoginInteraction) (config.CodexCredentials, error)
 	openBrowser                func(context.Context, string) error
+	ensureHelpers              func(context.Context, deps.Options) error
 }
 
 func newCommand(dependencies dependencies) (*cobra.Command, error) {
@@ -99,6 +102,9 @@ func newCommand(dependencies dependencies) (*cobra.Command, error) {
 	if dependencies.runTrustTUI == nil {
 		dependencies.runTrustTUI = tui.RunTrustPrompt
 	}
+	if dependencies.ensureHelpers == nil {
+		dependencies.ensureHelpers = deps.Ensure
+	}
 	if dependencies.compactionKeepRecentTokens == 0 {
 		dependencies.compactionKeepRecentTokens = session.DefaultKeepRecentTokens
 	}
@@ -107,7 +113,7 @@ func newCommand(dependencies dependencies) (*cobra.Command, error) {
 	}
 
 	application := &application{dependencies: dependencies}
-	return cli.NewRootCommand(cli.Dependencies{
+	command, err := cli.NewRootCommand(cli.Dependencies{
 		Printer:       application,
 		Interactor:    application,
 		Compactor:     application,
@@ -116,10 +122,26 @@ func newCommand(dependencies dependencies) (*cobra.Command, error) {
 		Updater:       application,
 		Authenticator: application,
 	})
+	if err != nil {
+		return nil, err
+	}
+	application.bindFlags = func(v *viper.Viper) error {
+		for key, name := range map[string]string{"provider": "provider", "model": "model", "thinking": "thinking", "no_dep_install": "no-dep-install", "no_update_check": "no-update-check"} {
+			if !command.Flags().Changed(name) {
+				continue
+			}
+			if err := v.BindPFlag(key, command.Flags().Lookup(name)); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	return command, nil
 }
 
 type application struct {
 	dependencies dependencies
+	bindFlags    func(*viper.Viper) error
 }
 
 // SaveAPIKey stores one global credential entered through the CLI.
@@ -205,6 +227,9 @@ func (a *application) Print(
 		return err
 	}
 	defer func() { returnErr = errors.Join(returnErr, closeBrowser(ctx, environment.browser)) }()
+	for _, diagnostic := range environment.configuration.Diagnostics {
+		fmt.Fprintln(diagnostics, "aice: "+diagnostic)
+	}
 	if !providerConfigured(a.dependencies.providers, environment.configuration) {
 		return credentialNotConfiguredError(
 			a.dependencies.providers,
@@ -315,7 +340,7 @@ func (a *application) Interactive(
 			Choices: trust.Choices(cwd),
 		})
 	}
-	configured, err := a.loadConfiguredModel()
+	configured, err := a.loadRunModel(ctx, request.Workspace, request.ProjectTrustOverride, askUI)
 	var unavailable *unavailableModelError
 	if err != nil && !errors.As(err, &unavailable) {
 		return err
@@ -390,14 +415,19 @@ func (a *application) Interactive(
 	var checkUpdate tui.UpdateChecker
 	if a.dependencies.checkUpdate != nil {
 		checkUpdate = a.checkForUpdate
+		if environment.configuration.NoUpdateCheck {
+			checkUpdate = func(context.Context) (tui.UpdateCheckResult, error) {
+				return tui.UpdateCheckResult{Status: tui.UpdateCheckStatusDisabled}, nil
+			}
+		}
 	}
 	thinking, err := displayThinking(environment.options.Thinking)
 	if err != nil {
 		return errors.Join(err, store.Close())
 	}
-	startupNotice := ""
+	startupNotice := strings.Join(environment.configuration.Diagnostics, "\n")
 	if environment.modelErr != nil {
-		startupNotice = environment.modelErr.Error()
+		startupNotice = strings.TrimSpace(startupNotice + "\n" + environment.modelErr.Error())
 	}
 	runErr := a.dependencies.runTUI(ctx, runner, tui.Options{
 		StartupNotice: startupNotice,
@@ -474,6 +504,7 @@ type runEnvironment struct {
 }
 
 type configuredModel struct {
+	projectTrust  *trust.Resolution
 	modelErr      error
 	service       llm.Streamer
 	configuration config.Config
@@ -488,7 +519,7 @@ func (a *application) newRunEnvironment(
 	askUI trust.AskFunc,
 	yolo bool,
 ) (*runEnvironment, error) {
-	configured, err := a.loadConfiguredModel()
+	configured, err := a.loadRunModel(ctx, workingDirectory, override, askUI)
 	if err != nil {
 		return nil, err
 	}
@@ -514,26 +545,30 @@ func (a *application) prepareRunEnvironment(
 	if err != nil {
 		return nil, fmt.Errorf("app: create workspace: %w", err)
 	}
+	var resolution trust.Resolution
+	if configured.projectTrust != nil {
+		resolution = *configured.projectTrust
+		err = persistProjectTrust(configured.configuration.Paths, resolution)
+	} else {
+		resolution, err = a.resolveProjectTrust(ctx, workspace, configured.configuration, override, askUI)
+	}
+	if err != nil {
+		return nil, err
+	}
 	// Make the external helpers the tools need (ripgrep, Git Bash on Windows)
 	// available before constructing them; a failure is logged, not fatal, and
 	// the affected tools degrade to unavailable stubs.
 	if home, err := a.userHome(); err == nil && home != "" {
 		binDir := filepath.Join(home, ".aice", "bin")
 		printer := newHelperProgressPrinter(os.Stderr)
-		ensureErr := deps.Ensure(ctx, deps.DefaultOptions().WithBinDir(binDir).WithLog(printer).WithProgress(printer.Report))
+		ensureHelpers := a.dependencies.ensureHelpers
+		if ensureHelpers == nil {
+			ensureHelpers = deps.Ensure
+		}
+		ensureErr := ensureHelpers(ctx, deps.DefaultOptions().WithBinDir(binDir).WithNoInstall(configured.configuration.NoDepInstall).WithLog(printer).WithProgress(printer.Report))
 		if err := errors.Join(ensureErr, printer.Close()); err != nil {
 			fmt.Fprintf(os.Stderr, "aice: warning: %v\n", err)
 		}
-	}
-	resolution, err := a.resolveProjectTrust(
-		ctx,
-		workspace,
-		configured.configuration,
-		override,
-		askUI,
-	)
-	if err != nil {
-		return nil, err
 	}
 	discovery := a.discoverRunSkills(
 		workspace.PhysicalPath(),
@@ -599,8 +634,9 @@ func (a *application) prepareRunEnvironment(
 
 // loadConfiguredModel retains display-only settings on an unavailable model.
 // Only Interactive may recover from that typed error; other callers fail closed.
-func (a *application) loadConfiguredModel() (configuredModel, error) {
-	configuration, err := a.dependencies.loadConfig()
+func (a *application) loadConfiguredModel(inputs config.LoadOptions) (configuredModel, error) {
+	inputs.BindFlags = a.bindFlags
+	configuration, err := a.dependencies.loadConfig(inputs)
 	if err != nil {
 		return configuredModel{}, fmt.Errorf(
 			"app: load configuration: %w",
@@ -633,8 +669,8 @@ func (a *application) loadConfiguredModel() (configuredModel, error) {
 	}, nil
 }
 
-func (a *application) newConfiguredModel() (configuredModel, error) {
-	configured, err := a.loadConfiguredModel()
+func (a *application) newConfiguredModel(ctx context.Context, workspace string) (configuredModel, error) {
+	configured, err := a.loadRunModel(ctx, workspace, nil, nil)
 	if err != nil {
 		return configuredModel{}, err
 	}

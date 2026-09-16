@@ -8,7 +8,6 @@ import (
 )
 
 func TestLoadFilesResolvesZhipuCredentials(t *testing.T) {
-	t.Parallel()
 
 	paths := testPaths(t.TempDir())
 	writeJSON(t, paths.GlobalAuth, map[string]any{
@@ -19,7 +18,7 @@ func TestLoadFilesResolvesZhipuCredentials(t *testing.T) {
 		config.EnvZhipuAPIKey:  "environment-key",
 		config.EnvZhipuBaseURL: " https://zhipu.example/v1 ",
 	}
-	got, err := config.LoadFiles(paths, mapLookup(values))
+	got, err := config.LoadFiles(paths, environmentOptions(t, values))
 	if err != nil {
 		t.Fatalf("LoadFiles() error = %v", err)
 	}
@@ -35,7 +34,6 @@ func TestLoadFilesResolvesZhipuCredentials(t *testing.T) {
 }
 
 func TestSaveZhipuAPIKeyFilePreservesOtherProviderKeys(t *testing.T) {
-	t.Parallel()
 
 	paths := testPaths(t.TempDir())
 	if err := config.SaveDeepSeekAPIKeyFile(paths, "deepseek-key"); err != nil {
@@ -61,7 +59,6 @@ func TestSaveZhipuAPIKeyFilePreservesOtherProviderKeys(t *testing.T) {
 }
 
 func TestSaveZhipuAPIKeyFileRejectsInvalidValues(t *testing.T) {
-	t.Parallel()
 
 	paths := testPaths(t.TempDir())
 	for _, value := range []string{"", "  ", "line-one\nline-two"} {

@@ -41,6 +41,11 @@ cd /path/to/project
 aice --workspace .
 ```
 
+Configuration follows runtime selection → flags → environment → trusted project
+settings → user settings → defaults. Interactive selections save immediately;
+other running instances keep their loaded configuration. See
+[configuration and persistence](./docs/configuration.md#settings-and-precedence).
+
 On first launch, run `/login`, choose account or API key authentication, then
 select a provider and complete its login flow. Run `/help` for
 commands or `?` for keyboard shortcuts. While AICE is working, Enter steers

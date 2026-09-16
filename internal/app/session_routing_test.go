@@ -151,7 +151,7 @@ func TestPrintCommandSendsOpenCodeSessionHeader(t *testing.T) {
 	var got []string
 	for _, sessionPath := range []string{path, path, "", ""} {
 		command, err := newTestCommand(t, dependencies{
-			loadConfig: func() (config.Config, error) {
+			loadConfig: func(config.LoadOptions) (config.Config, error) {
 				return config.Config{
 					Provider:        string(opencode.ProviderID),
 					Model:           opencode.DefaultModel().ID,

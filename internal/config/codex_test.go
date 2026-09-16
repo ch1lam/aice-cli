@@ -22,7 +22,7 @@ func TestCodexCredentialsRotateAtomicallyAndPreserveKeys(t *testing.T) {
 	if _, err := UpdateCodexCredentials(t.Context(), paths, func(CodexCredentials) (CodexCredentials, error) { return credential, nil }); err != nil {
 		t.Fatal(err)
 	}
-	loaded, err := LoadFiles(paths, func(string) (string, bool) { return "", false })
+	loaded, err := LoadFiles(paths, LoadOptions{})
 	if err != nil || !loaded.CodexCredentials.Configured() || loaded.OpenAIAPIKey != "api-key" {
 		t.Fatalf("load credentials: %v", err)
 	}
@@ -54,7 +54,7 @@ func TestCodexCredentialsRotateAtomicallyAndPreserveKeys(t *testing.T) {
 	if _, err := UpdateCodexCredentials(t.Context(), paths, func(CodexCredentials) (CodexCredentials, error) { return CodexCredentials{}, nil }); err != nil {
 		t.Fatal(err)
 	}
-	loaded, err = LoadFiles(paths, func(string) (string, bool) { return "", false })
+	loaded, err = LoadFiles(paths, LoadOptions{})
 	if err != nil || loaded.CodexCredentials.Configured() || loaded.OpenAIAPIKey != "api-key" || loaded.CustomAPIKey != "other-key" {
 		t.Fatalf("logout did not preserve API credentials: %v", err)
 	}

@@ -498,8 +498,10 @@ an AICE-owned prompt rather than project prompt files. Automatic and manual
 compaction share the same provider-neutral, client-generated summary format;
 provider-native compaction protocols are not used. Automatic summaries keep the
 active run's frozen model and connection settings; manual TUI compaction uses the
-current Session selection. A standalone `aice compact` resolves global settings
-once, after finding enough history to summarize. If no complete boundary is
+current Session selection. A standalone `aice compact` resolves configuration
+once for the Session's workspace, after finding enough history to summarize.
+Project settings require saved trust or a user-level trust policy; compaction
+does not prompt for trust. Environment overrides still apply. If no complete boundary is
 available or summary generation fails, AICE preserves the source Session and
 returns the error instead of silently dropping history.
 

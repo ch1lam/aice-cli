@@ -1,7 +1,7 @@
 # Project Trust and Prompts
 
 Project Trust decides whether AICE may load project-controlled startup
-instructions. It is an input-loading guard, not a sandbox. Per-tool approval
+configuration and instructions. It is an input-loading guard, not a sandbox. Per-tool approval
 is handled by the intrinsic execution gate (`internal/guard`); see
 [Tool execution and Sessions](execution-sessions.md#tool-execution-boundary).
 
@@ -14,6 +14,7 @@ Only these workspace-relative resources are protected:
 | `AGENTS.md` | regular file | Appended as project guidance |
 | `.aice/SYSTEM.md` | regular file | Replaces the base system prompt |
 | `.aice/APPEND_SYSTEM.md` | regular file | Appended after the base and `AGENTS.md` |
+| `.aice/settings.json` | regular file | Overrides user configuration, including endpoints and API keys, below environment variables and flags |
 | `.agents/skills/` | directory | Project-level Agent Skills are discovered and listed in the system prompt. See [Skills](architecture.md#skills). |
 
 The three prompt files must be regular files, valid UTF-8, no larger than
@@ -38,16 +39,24 @@ When protected resources exist, AICE resolves Trust in this order:
 
 1. `--approve` or `--no-approve` for the current run.
 2. The nearest saved directory decision in `~/.aice/trust.json`.
-3. `default_project_trust` from `~/.aice/settings.json`.
+3. `default_project_trust` composed from user files and `AICE_DEFAULT_PROJECT_TRUST`.
 4. An interactive prompt when the policy is `ask` and a TUI is available.
 
 Non-interactive runs never prompt. With the default `ask` policy and no saved
 decision, they ignore project resources and continue with global or built-in
-instructions.
+configuration and instructions.
+
+Project settings are merged only after this decision. A project's own
+`default_project_trust` cannot grant it trust. An invalid bootstrap policy asks
+instead of granting trust; validation of the full configuration still happens
+after any permitted project merge. Saved interactive trust decisions are written
+only after the effective configuration passes validation. Settings discovery
+uses the same confined inspection as other protected resources; after approval,
+configuration reads use the normal filesystem, not the prompt-file reader.
 
 The startup prompt can save a decision for the workspace or its parent, or
 apply a process-only choice. `/trust` offers only saved decisions for a later
-restart; it does not change already-loaded prompt files or Skills. Temporary
+restart; it does not change already-loaded configuration, prompt files, or Skills. Temporary
 choices remain available at startup, where they affect loading immediately
 without being saved.
 

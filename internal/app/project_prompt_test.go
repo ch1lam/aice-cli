@@ -557,6 +557,9 @@ func isolatedUserHome(t *testing.T) func() (string, error) {
 // developer's home unless the test already injected userHomeDir.
 func newTestCommand(t *testing.T, deps dependencies) (*cobra.Command, error) {
 	t.Helper()
+	if deps.ensureHelpers == nil {
+		deps.ensureHelpers = skipTestHelperDownloads
+	}
 	if deps.userHomeDir == nil {
 		deps.userHomeDir = isolatedUserHome(t)
 	}

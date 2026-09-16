@@ -28,10 +28,6 @@ const (
 	// workflow; go-selfupdate validates each asset against it.
 	checksumsFileName = "checksums.txt"
 
-	// noCheckEnv disables the startup update notifier when set to a non-empty
-	// value. Intended for CI and users who prefer to manage upgrades by hand.
-	noCheckEnv = "AICE_NO_UPDATE_CHECK"
-
 	// startupCheckInterval bounds how often the welcome screen contacts the API.
 	// One hour keeps the "latest version" badge honest without hitting the
 	// API on every launch, no matter how often the welcome screen reopens.
@@ -55,7 +51,7 @@ type Options struct {
 	client     *selfupdate.Updater
 	Repository selfupdate.Repository  // default ParseSlug(repositorySlug)
 	Current    string                 // installed version reported by the binary
-	Getenv     func(string) string    // default os.Getenv
+	Disabled   bool                   // startup checks disabled by resolved configuration
 	Now        func() time.Time       // default time.Now
 	Executable func() (string, error) // default selfupdate.ExecutablePath
 	StatePath  string                 // startup-check state file, default ~/.aice/update-state
@@ -221,7 +217,7 @@ func Update(ctx context.Context, opts Options, force bool) (UpdateResult, error)
 func CheckStartup(ctx context.Context, opts Options) (StartupResult, error) {
 	opts = normalize(opts)
 	current := strings.TrimSpace(opts.Current)
-	if opts.Getenv(noCheckEnv) != "" {
+	if opts.Disabled {
 		return StartupResult{
 			Status:  StartupStatusDisabled,
 			Current: current,
@@ -264,9 +260,6 @@ func normalize(opts Options) Options {
 	}
 	if opts.Repository == nil {
 		opts.Repository = selfupdate.ParseSlug(repositorySlug)
-	}
-	if opts.Getenv == nil {
-		opts.Getenv = os.Getenv
 	}
 	if opts.Now == nil {
 		opts.Now = time.Now

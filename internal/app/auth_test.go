@@ -29,8 +29,8 @@ func TestAuthCommandsLoginStatusLogout(t *testing.T) {
 	if err := config.SaveOpenAIAPIKeyFile(paths, "existing-api-key"); err != nil {
 		t.Fatal(err)
 	}
-	load := func() (config.Config, error) {
-		return config.LoadFiles(paths, func(string) (string, bool) { return "", false })
+	load := func(config.LoadOptions) (config.Config, error) {
+		return config.LoadFiles(paths, config.LoadOptions{})
 	}
 	loginCalls := 0
 	deps := dependencies{
@@ -62,7 +62,7 @@ func TestAuthCommandsLoginStatusLogout(t *testing.T) {
 		if strings.Contains(output.String(), "secret-") || strings.Contains(output.String(), "existing-api-key") {
 			t.Fatal("auth output leaked credential")
 		}
-		loaded, err := load()
+		loaded, err := load(config.LoadOptions{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -88,8 +88,8 @@ func TestAuthCancelledLoginLeavesSettingsAndCredentialsUnchanged(t *testing.T) {
 		t.Fatal(err)
 	}
 	command, err := newCommand(dependencies{
-		loadConfig: func() (config.Config, error) {
-			return config.LoadFiles(paths, func(string) (string, bool) { return "", false })
+		loadConfig: func(config.LoadOptions) (config.Config, error) {
+			return config.LoadFiles(paths, config.LoadOptions{})
 		},
 		newModel: func(config.Config) (llm.Streamer, error) { return nil, nil },
 		codexLogin: func(context.Context, bool, io.Writer) (config.CodexCredentials, error) {
@@ -103,7 +103,7 @@ func TestAuthCancelledLoginLeavesSettingsAndCredentialsUnchanged(t *testing.T) {
 	if err := command.ExecuteContext(t.Context()); !errors.Is(err, context.Canceled) {
 		t.Fatalf("error = %v", err)
 	}
-	loaded, err := config.LoadFiles(paths, func(string) (string, bool) { return "", false })
+	loaded, err := config.LoadFiles(paths, config.LoadOptions{})
 	if err != nil || loaded.Provider != "openai" || loaded.CodexCredentials.Configured() {
 		t.Fatalf("cancelled login altered configuration: %v", err)
 	}
@@ -115,7 +115,7 @@ func TestCodexLoginMenuSkipsAPIKeyAndReloadsSavedCredential(t *testing.T) {
 	runner := &interactiveSession{
 		configuration: config.Config{Provider: "deepseek", Paths: paths}, model: deepseek.DefaultModel(), providers: defaultProviders(),
 		application: &application{dependencies: dependencies{
-			providers: defaultProviders(), saveSetting: func(config.Setting, string) error { return nil },
+			providers: defaultProviders(), saveSettings: recordSettings(func(config.Setting, string) error { return nil }),
 			newModel: func(c config.Config) (llm.Streamer, error) {
 				if !c.CodexCredentials.Configured() {
 					t.Error("did not load newly saved OAuth credential")

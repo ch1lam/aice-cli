@@ -39,7 +39,7 @@ func TestPrintCompactionSharesFrozenServiceWithoutReloadingSettings(t *testing.T
 	initial := global
 	loads, factories := 0, 0
 	command, err := newTestCommand(t, dependencies{
-		loadConfig: func() (config.Config, error) { loads++; return global, nil },
+		loadConfig: func(config.LoadOptions) (config.Config, error) { loads++; return global, nil },
 		newModel: func(configuration config.Config) (agent.Model, error) {
 			factories++
 			if configuration.Model != initial.Model {
@@ -84,7 +84,7 @@ func TestInteractiveCompactionsReuseRunSettingsAfterExternalChange(t *testing.T)
 	initial := global
 	loads, factories := 0, 0
 	command, err := newTestCommand(t, dependencies{
-		loadConfig: func() (config.Config, error) { loads++; return global, nil },
+		loadConfig: func(config.LoadOptions) (config.Config, error) { loads++; return global, nil },
 		newModel: func(configuration config.Config) (agent.Model, error) {
 			factories++
 			if configuration.Model != initial.Model || configuration.CustomBaseURL != initial.CustomBaseURL {

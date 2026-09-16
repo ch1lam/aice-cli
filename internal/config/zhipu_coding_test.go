@@ -8,7 +8,6 @@ import (
 )
 
 func TestLoadFilesResolvesZhipuCodingCredentials(t *testing.T) {
-	t.Parallel()
 
 	paths := testPaths(t.TempDir())
 	writeJSON(t, paths.GlobalAuth, map[string]any{
@@ -19,7 +18,7 @@ func TestLoadFilesResolvesZhipuCodingCredentials(t *testing.T) {
 		config.EnvZhipuCodingAPIKey:  "environment-key",
 		config.EnvZhipuCodingBaseURL: " https://zhipu_coding.example/v1 ",
 	}
-	got, err := config.LoadFiles(paths, mapLookup(values))
+	got, err := config.LoadFiles(paths, environmentOptions(t, values))
 	if err != nil {
 		t.Fatalf("LoadFiles() error = %v", err)
 	}
@@ -35,7 +34,6 @@ func TestLoadFilesResolvesZhipuCodingCredentials(t *testing.T) {
 }
 
 func TestSaveZhipuCodingAPIKeyFilePreservesOtherProviderKeys(t *testing.T) {
-	t.Parallel()
 
 	paths := testPaths(t.TempDir())
 	if err := config.SaveDeepSeekAPIKeyFile(paths, "deepseek-key"); err != nil {
@@ -61,7 +59,6 @@ func TestSaveZhipuCodingAPIKeyFilePreservesOtherProviderKeys(t *testing.T) {
 }
 
 func TestSaveZhipuCodingAPIKeyFileRejectsInvalidValues(t *testing.T) {
-	t.Parallel()
 
 	paths := testPaths(t.TempDir())
 	for _, value := range []string{"", "  ", "line-one\nline-two"} {
@@ -73,7 +70,7 @@ func TestSaveZhipuCodingAPIKeyFileRejectsInvalidValues(t *testing.T) {
 }
 
 func TestZhipuPlatformAndCodingCredentialsStaySeparate(t *testing.T) {
-	t.Parallel()
+
 	paths := testPaths(t.TempDir())
 	if err := config.SaveZhipuAPIKeyFile(paths, "platform-key"); err != nil {
 		t.Fatal(err)
@@ -84,7 +81,7 @@ func TestZhipuPlatformAndCodingCredentialsStaySeparate(t *testing.T) {
 	if err := config.SaveOpenAIAPIKeyFile(paths, "other-key"); err != nil {
 		t.Fatal(err)
 	}
-	got, err := config.LoadFiles(paths, mapLookup(map[string]string{
+	got, err := config.LoadFiles(paths, environmentOptions(t, map[string]string{
 		config.EnvZhipuAPIKey: " ", config.EnvZhipuCodingAPIKey: " coding-env ",
 		config.EnvZhipuBaseURL: " https://platform.example/v4 ", config.EnvZhipuCodingBaseURL: " https://coding.example/v4 ",
 	}))

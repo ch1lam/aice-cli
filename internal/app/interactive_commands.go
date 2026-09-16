@@ -604,7 +604,7 @@ func (s *interactiveSession) slashTrust(
 	if err := s.trustStore.SetMany(choice.Updates); err != nil {
 		return "", fmt.Errorf("app: save project trust: %w", err)
 	}
-	return "Trust decision saved. Restart AICE for the new trust state to affect prompt loading.", nil
+	return "Trust decision saved. Restart AICE for the new trust state to affect project configuration, prompts, and Skills.", nil
 }
 
 func (s *interactiveSession) slashLogin(
@@ -618,7 +618,7 @@ func (s *interactiveSession) slashLogin(
 }
 
 func (s *interactiveSession) slashProvider(
-	_ context.Context,
+	ctx context.Context,
 	request interaction.CommandRequest,
 ) (string, error) {
 	value, err := slashCommandSettingValue(request)
@@ -641,22 +641,19 @@ func (s *interactiveSession) slashProvider(
 			return "", err
 		}
 	}
+	model := providerModel(s.providers, value, configuration.Model)
+	changes := map[config.Setting]string{config.SettingProvider: value}
+	if model.ID != configuration.Model {
+		changes[config.SettingModel] = model.ID
+	}
+	configuration.Model = model.ID
 	loop, err := s.rebuildAgentLoop(configuration)
 	if err != nil {
 		return "", err
 	}
-	if err := s.saveSetting(config.SettingProvider, value); err != nil {
+	configuration, err = s.persistSettings(ctx, configuration, changes)
+	if err != nil {
 		return "", err
-	}
-	model := providerModel(s.providers, value, configuration.Model)
-	// Persist the model when the stored one does not belong to the new
-	// provider's catalog and was replaced by its default, so a later
-	// restart resolves the same model instead of failing with an
-	// unsupported-model error.
-	if model.ID != configuration.Model {
-		if err := s.saveSetting(config.SettingModel, model.ID); err != nil {
-			return "", err
-		}
 	}
 	configuration.Model = model.ID
 	effective := clampedThinkingForModel(model, configuration.Thinking)
@@ -669,11 +666,11 @@ func (s *interactiveSession) slashProvider(
 	s.model = applyContextWindow(model, configuration)
 	s.options.Thinking = effective
 	s.stateMu.Unlock()
-	return savedSettingMessage("provider", value), nil
+	return savedSettingMessage("provider", value) + savedOverrideNotice(configuration, changes), nil
 }
 
 func (s *interactiveSession) slashModel(
-	_ context.Context,
+	ctx context.Context,
 	request interaction.CommandRequest,
 ) (string, error) {
 	value, err := slashCommandSettingValue(request)
@@ -703,23 +700,25 @@ func (s *interactiveSession) slashModel(
 			return "", err
 		}
 	}
-	if err := s.saveSetting(config.SettingModel, value); err != nil {
+	changes := map[config.Setting]string{config.SettingModel: value}
+	configuration, err = s.persistSettings(ctx, configuration, changes)
+	if err != nil {
 		return "", err
 	}
 	// The settings transition is one critical section so a concurrent side
 	// snapshot freezes a mutually consistent model/thinking pair.
 	s.stateMu.Lock()
-	s.configuration.Model = value
+	s.configuration = configuration
 	s.modelErr = nil
 	s.loop = loop
 	s.model = applyContextWindow(model, settings.configuration)
 	s.options.Thinking = effective
 	s.stateMu.Unlock()
-	return savedSettingMessage("model", value), nil
+	return savedSettingMessage("model", value) + savedOverrideNotice(configuration, changes), nil
 }
 
 func (s *interactiveSession) slashThinking(
-	_ context.Context,
+	ctx context.Context,
 	request interaction.CommandRequest,
 ) (string, error) {
 	value, err := slashCommandSettingValue(request)
@@ -736,14 +735,16 @@ func (s *interactiveSession) slashThinking(
 	if err != nil {
 		return "", err
 	}
-	if err := s.saveSetting(config.SettingThinking, value); err != nil {
+	changes := map[config.Setting]string{config.SettingThinking: value}
+	configuration, err := s.persistSettings(ctx, settings.configuration, changes)
+	if err != nil {
 		return "", err
 	}
 	s.stateMu.Lock()
-	s.configuration.Thinking = level
+	s.configuration = configuration
 	s.options.Thinking = options.Thinking
 	s.stateMu.Unlock()
-	return savedSettingMessage("thinking", value), nil
+	return savedSettingMessage("thinking", value) + savedOverrideNotice(configuration, changes), nil
 }
 
 func (s *interactiveSession) RuntimeState() interaction.RuntimeState {
@@ -790,7 +791,7 @@ func (s *interactiveSession) usageSnapshot() interaction.DisplayUsage {
 func (s *interactiveSession) login(
 	ctx context.Context,
 	request interaction.CommandRequest,
-) (string, error) {
+) (message string, returnErr error) {
 	if s.application == nil {
 		return "", fmt.Errorf("app: application is required")
 	}
@@ -901,13 +902,9 @@ func (s *interactiveSession) login(
 			)
 		}
 	}
-	// Persist custom endpoint/model before building the loop so the new loop dials
-	// the intended URL and the model is immediately available.
+	// Prepare and validate the whole preference change before writing it.
 	if provider == string(custom.ProviderID) {
 		if customEndpoint != "" {
-			if err := s.saveSetting(config.SettingCustomBaseURL, customEndpoint); err != nil {
-				return "", err
-			}
 			configuration.CustomBaseURL = customEndpoint
 		}
 		if customModel != "" {
@@ -920,6 +917,19 @@ func (s *interactiveSession) login(
 	if !request.UseSavedCredential {
 		findProvider(s.providers, provider).ApplyAPIKey(&configuration, apiKey)
 	}
+	model := providerModel(s.providers, provider, configuration.Model)
+	changes := map[config.Setting]string{config.SettingProvider: provider}
+	if model.ID != settings.configuration.Model {
+		changes[config.SettingModel] = model.ID
+	}
+	if customEndpoint != "" {
+		changes[config.SettingCustomBaseURL] = customEndpoint
+	}
+	configuration, err := configuration.WithSettings(changes)
+	if err != nil {
+		return "", err
+	}
+	configuration.Model = model.ID
 	loop, err := s.rebuildAgentLoop(configuration)
 	if err != nil {
 		return "", err
@@ -936,21 +946,18 @@ func (s *interactiveSession) login(
 		}
 	}
 
-	model := providerModel(s.providers, provider, configuration.Model)
-	// Persist the provider selection so the login state survives a restart;
-	// the credential itself lives in the global auth file. The effective model
-	// is persisted only when the stored one is empty or does not belong to the
-	// selected provider, so a later restart resolves the same model instead of
-	// failing with an unsupported-model error.
-	if err := s.saveSetting(config.SettingProvider, provider); err != nil {
+	configuration, err = s.persistSettings(ctx, configuration, changes)
+	if err != nil {
+		if !request.UseSavedCredential {
+			return "", fmt.Errorf("credential saved to %s, but preferences and current Session were not changed: %w", path, err)
+		}
 		return "", err
 	}
-	if model.ID != configuration.Model {
-		if err := s.saveSetting(config.SettingModel, model.ID); err != nil {
-			return "", err
+	defer func() {
+		if returnErr == nil {
+			message += savedOverrideNotice(configuration, changes)
 		}
-	}
-	configuration.Model = model.ID
+	}()
 	effective := clampedThinkingForModel(model, configuration.Thinking)
 	s.stateMu.Lock()
 	s.configuration = configuration
@@ -1041,6 +1048,13 @@ func (s *interactiveSession) settingsInformation() string {
 			"Global settings: "+settings.configuration.Paths.GlobalSettings,
 		)
 	}
+	if settings.configuration.Paths.ProjectSettings != "" {
+		lines = append(lines, "Project settings: "+settings.configuration.Paths.ProjectSettings)
+	}
+	lines = append(lines,
+		fmt.Sprintf("Automatic helper downloads disabled: %v", settings.configuration.NoDepInstall),
+		fmt.Sprintf("Startup update check disabled: %v", settings.configuration.NoUpdateCheck),
+	)
 	if settings.configuration.Paths.GlobalAuth != "" {
 		lines = append(
 			lines,
@@ -1084,25 +1098,30 @@ func slashCommandTrustChoice(
 	return choices[index], nil
 }
 
-func (s *interactiveSession) saveSetting(
-	setting config.Setting,
-	value string,
-) error {
+func (s *interactiveSession) persistSettings(
+	ctx context.Context,
+	current config.Config,
+	changes map[config.Setting]string,
+) (config.Config, error) {
+	next, err := current.WithSettings(changes)
+	if err != nil {
+		return config.Config{}, err
+	}
 	if s.application == nil ||
-		s.application.dependencies.saveSetting == nil {
-		return fmt.Errorf("app: configuration persistence is unavailable")
+		s.application.dependencies.saveSettings == nil {
+		return config.Config{}, fmt.Errorf("app: configuration persistence is unavailable")
 	}
-	if err := s.application.dependencies.saveSetting(
-		setting,
-		value,
-	); err != nil {
-		return fmt.Errorf(
-			"app: save %s setting: %w",
-			setting,
-			err,
-		)
+	if err := s.application.dependencies.saveSettings(ctx, current.Paths, changes); err != nil {
+		return config.Config{}, fmt.Errorf("app: save settings; current Session unchanged: %w", err)
 	}
-	return nil
+	return next, nil
+}
+
+func savedOverrideNotice(configuration config.Config, changes map[config.Setting]string) string {
+	if !configuration.SavedValuesOverridden(changes) {
+		return ""
+	}
+	return "\nA flag, environment variable, or project setting overrides the saved defaults on the next startup. This Session uses your selection."
 }
 
 func slashCommandSettingValue(

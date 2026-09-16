@@ -213,6 +213,11 @@ func NewRootCommand(dependencies Dependencies) (*cobra.Command, error) {
 		false,
 		"automatically allow tool calls that would otherwise ask; for isolated containers/CI; dangerous",
 	)
+	command.Flags().String("provider", "", "provider for this invocation")
+	command.Flags().String("model", "", "model for this invocation")
+	command.Flags().String("thinking", "", "requested thinking level for this invocation")
+	command.Flags().Bool("no-dep-install", false, "disable automatic helper downloads")
+	command.Flags().Bool("no-update-check", false, "disable the startup update check")
 	command.AddCommand(newCompactCommand(dependencies.Compactor))
 	command.AddCommand(newSessionCommand(dependencies.Navigator))
 	command.AddCommand(newConfigCommand(dependencies.Configurator))

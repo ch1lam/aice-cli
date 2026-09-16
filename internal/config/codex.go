@@ -44,7 +44,7 @@ func LoadCodexCredentials(paths Paths) (CodexCredentials, error) {
 	}
 	var credential CodexCredentials
 	if json.Unmarshal(data, &credential) != nil {
-		return CodexCredentials{}, fmt.Errorf("config: invalid Codex credential file; remove %s and run aice auth login", CodexAuthPath(paths))
+		return CodexCredentials{}, &sourceSyntaxError{path: CodexAuthPath(paths)}
 	}
 	return credential, nil
 }
@@ -65,7 +65,7 @@ func UpdateCodexCredentials(ctx context.Context, paths Paths,
 		return credential, fmt.Errorf("config: create Codex auth directory: %w", err)
 	}
 	lock := path + ".lock"
-	if err := acquireCodexCredentialLock(ctx, lock, os.Mkdir, runtime.GOOS == "windows"); err != nil {
+	if err := acquireConfigLock(ctx, lock, os.Mkdir, runtime.GOOS == "windows"); err != nil {
 		return credential, err
 	}
 	defer func() { returnErr = errors.Join(returnErr, os.Remove(lock)) }()
@@ -111,10 +111,10 @@ func UpdateCodexCredentials(ctx context.Context, paths Paths,
 	return credential, nil
 }
 
-// acquireCodexCredentialLock keeps filesystem attempts injectable so retry
+// acquireConfigLock keeps filesystem attempts injectable so retry
 // behavior can be tested without relying on OS-specific deletion timing.
 // The caller supplies the wait deadline and releases only an acquired lock.
-func acquireCodexCredentialLock(ctx context.Context, lock string,
+func acquireConfigLock(ctx context.Context, lock string,
 	mkdir func(string, os.FileMode) error, retryPermission bool,
 ) error {
 	var lastLockErr error
@@ -130,7 +130,7 @@ func acquireCodexCredentialLock(ctx context.Context, lock string,
 		// pending deletion. Retry within the same bounded, cancellable wait;
 		// only a successful Mkdir grants ownership of the lock.
 		if !errors.Is(err, os.ErrExist) && !(retryPermission && errors.Is(err, os.ErrPermission)) {
-			return fmt.Errorf("config: lock Codex credentials: %w", err)
+			return fmt.Errorf("config: lock configuration: %w", err)
 		}
 		lastLockErr = err
 		timer := time.NewTimer(50 * time.Millisecond)

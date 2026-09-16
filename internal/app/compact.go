@@ -133,7 +133,7 @@ func (a *application) compactStoredHistory(
 	}
 	// Only standalone CLI supplies nil, after proving there is work to compact.
 	if configured == nil {
-		selected, err := a.newConfiguredModel()
+		selected, err := a.newConfiguredModel(ctx, snapshot.Header.WorkingDirectory)
 		if err != nil {
 			return nil, preparation, err
 		}

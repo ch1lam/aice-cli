@@ -37,7 +37,7 @@ func TestCodexCredentialLockRetry(t *testing.T) {
 				ctx, cancel := context.WithCancel(t.Context())
 				defer cancel()
 				attempts := 0
-				err := acquireCodexCredentialLock(ctx, "auth.lock", func(path string, mode os.FileMode) error {
+				err := acquireConfigLock(ctx, "auth.lock", func(path string, mode os.FileMode) error {
 					if path != "auth.lock" || mode != 0o700 {
 						t.Fatalf("mkdir arguments = %q, %v", path, mode)
 					}
@@ -68,7 +68,7 @@ func TestCodexCredentialLockPersistentAccessDenied(t *testing.T) {
 		defer cancel()
 		attempts := 0
 		start := time.Now()
-		err := acquireCodexCredentialLock(ctx, "auth.lock", func(path string, _ os.FileMode) error {
+		err := acquireConfigLock(ctx, "auth.lock", func(path string, _ os.FileMode) error {
 			attempts++
 			return &os.PathError{Op: "mkdir", Path: path, Err: os.ErrPermission}
 		}, true)

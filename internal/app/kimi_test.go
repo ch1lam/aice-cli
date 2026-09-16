@@ -28,7 +28,7 @@ func TestKimiModelSelectionAndMenus(t *testing.T) {
 		t.Fatalf("service = %T", service)
 	}
 	runner := &interactiveSession{
-		application: &application{dependencies: dependencies{saveSetting: func(config.Setting, string) error { return nil }}},
+		application: &application{dependencies: dependencies{saveSettings: recordSettings(func(config.Setting, string) error { return nil })}},
 		model:       model, options: options, configuration: configuration, providers: providers,
 	}
 	login := runner.loginProviderMenu()

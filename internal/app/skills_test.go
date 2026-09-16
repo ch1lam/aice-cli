@@ -362,7 +362,7 @@ func TestNewRunEnvironmentHomeErrorSkipsUserSkills(t *testing.T) {
 	paths := trustTestPaths(t)
 	app := &application{
 		dependencies: dependencies{
-			loadConfig: func() (config.Config, error) {
+			loadConfig: func(config.LoadOptions) (config.Config, error) {
 				return trustTestConfig(paths), nil
 			},
 			providers: defaultProviders(),
@@ -414,7 +414,8 @@ func newSkillRunApp(t *testing.T, home string) (*application, config.Paths) {
 	paths := trustTestPaths(t)
 	return &application{
 		dependencies: dependencies{
-			loadConfig: func() (config.Config, error) {
+			ensureHelpers: skipTestHelperDownloads,
+			loadConfig: func(config.LoadOptions) (config.Config, error) {
 				return trustTestConfig(paths), nil
 			},
 			providers: defaultProviders(),

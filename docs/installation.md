@@ -65,7 +65,8 @@ On macOS and Linux, AICE also provisions a private, checksum-pinned native
 progress goes to stderr. AICE does not download a browser automatically; see
 [Browser automation](browser.md) for supported platforms and connection setup.
 
-Set `AICE_NO_DEP_INSTALL=1` to disable helper downloads. A missing helper only
+Set `AICE_NO_DEP_INSTALL=1`, pass `--no-dep-install`, or set
+`"no_dep_install": true` in settings to disable helper downloads. A missing helper only
 disables the tools that require it; AICE reports the degraded capability.
 
 ## Update
@@ -80,7 +81,9 @@ The interactive welcome screen checks for a newer release at most once every
 hour. The TUI renders immediately, shows the check in progress, then
 updates the welcome status line with the current, available, disabled, or unavailable
 state. Development builds skip network access. Set `AICE_NO_UPDATE_CHECK=1` to
-disable the check.
+disable the check, or use `--no-update-check` / `"no_update_check": true`.
+Both switches follow [configuration precedence](configuration.md#settings-and-precedence);
+explicit `false` or `0` environment values override a lower-layer disable setting.
 
 The command reports release discovery and download/checksum verification progress
 on stderr, keeping the final result on stdout. In a terminal, a Bubbles progress

@@ -15,7 +15,6 @@ import (
 )
 
 func TestLoadFilesAppliesGlobalAndEnvironmentPrecedence(t *testing.T) {
-	t.Parallel()
 
 	root := t.TempDir()
 	paths := testPaths(root)
@@ -43,7 +42,7 @@ func TestLoadFilesAppliesGlobalAndEnvironmentPrecedence(t *testing.T) {
 		config.EnvDeepSeekAPIKey:  "environment-key",
 		config.EnvDeepSeekBaseURL: " https://deepseek.example/anthropic ",
 	}
-	got, err := config.LoadFiles(paths, mapLookup(values))
+	got, err := config.LoadFiles(paths, environmentOptions(t, values))
 	if err != nil {
 		t.Fatalf("LoadFiles() error = %v", err)
 	}
@@ -71,14 +70,13 @@ func TestLoadFilesAppliesGlobalAndEnvironmentPrecedence(t *testing.T) {
 }
 
 func TestLoadFilesUsesGlobalAuthAndOptionalSettings(t *testing.T) {
-	t.Parallel()
 
 	paths := testPaths(t.TempDir())
 	writeJSON(t, paths.GlobalAuth, map[string]any{
 		"deepseek_api_key": " file-key ",
 	})
 
-	got, err := config.LoadFiles(paths, mapLookup(nil))
+	got, err := config.LoadFiles(paths, environmentOptions(t, nil))
 	if err != nil {
 		t.Fatalf("LoadFiles() error = %v", err)
 	}
@@ -87,16 +85,15 @@ func TestLoadFilesUsesGlobalAuthAndOptionalSettings(t *testing.T) {
 	}
 	if got.Provider != "" ||
 		got.Model != "" ||
-		got.Thinking != llm.ThinkingLevelUnknown {
+		got.Thinking != llm.ThinkingLevelMedium {
 		t.Errorf("settings = %#v, want inherited defaults", got)
 	}
 }
 
 func TestLoadFilesAllowsMissingCredentials(t *testing.T) {
-	t.Parallel()
 
 	paths := testPaths(t.TempDir())
-	got, err := config.LoadFiles(paths, mapLookup(nil))
+	got, err := config.LoadFiles(paths, environmentOptions(t, nil))
 	if err != nil {
 		t.Fatalf("LoadFiles() error = %v", err)
 	}
@@ -109,13 +106,12 @@ func TestLoadFilesAllowsMissingCredentials(t *testing.T) {
 }
 
 func TestLoadFilesDefaultProjectTrustDefaultsToAsk(t *testing.T) {
-	t.Parallel()
 
 	paths := testPaths(t.TempDir())
 	writeJSON(t, paths.GlobalSettings, map[string]any{
 		"provider": "deepseek",
 	})
-	got, err := config.LoadFiles(paths, mapLookup(nil))
+	got, err := config.LoadFiles(paths, environmentOptions(t, nil))
 	if err != nil {
 		t.Fatalf("LoadFiles() error = %v", err)
 	}
@@ -128,7 +124,6 @@ func TestLoadFilesDefaultProjectTrustDefaultsToAsk(t *testing.T) {
 }
 
 func TestLoadFilesReadsDefaultProjectTrust(t *testing.T) {
-	t.Parallel()
 
 	for _, want := range []trust.Default{
 		trust.DefaultAlways,
@@ -138,7 +133,7 @@ func TestLoadFilesReadsDefaultProjectTrust(t *testing.T) {
 		writeJSON(t, paths.GlobalSettings, map[string]any{
 			"default_project_trust": string(want),
 		})
-		got, err := config.LoadFiles(paths, mapLookup(nil))
+		got, err := config.LoadFiles(paths, environmentOptions(t, nil))
 		if err != nil {
 			t.Fatalf("LoadFiles() error = %v", err)
 		}
@@ -153,13 +148,12 @@ func TestLoadFilesReadsDefaultProjectTrust(t *testing.T) {
 }
 
 func TestLoadFilesRejectsInvalidDefaultProjectTrust(t *testing.T) {
-	t.Parallel()
 
 	paths := testPaths(t.TempDir())
 	writeJSON(t, paths.GlobalSettings, map[string]any{
 		"default_project_trust": "sometimes",
 	})
-	_, err := config.LoadFiles(paths, mapLookup(nil))
+	_, err := config.LoadFiles(paths, environmentOptions(t, nil))
 	if err == nil ||
 		!strings.Contains(err.Error(), "unsupported default project trust") {
 		t.Fatalf("LoadFiles() error = %v, want unsupported trust error", err)
@@ -167,7 +161,6 @@ func TestLoadFilesRejectsInvalidDefaultProjectTrust(t *testing.T) {
 }
 
 func TestLoadFilesRejectsInvalidFiles(t *testing.T) {
-	t.Parallel()
 
 	tests := []struct {
 		name    string
@@ -197,7 +190,6 @@ func TestLoadFilesRejectsInvalidFiles(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
 
 			paths := testPaths(t.TempDir())
 			path := paths.GlobalSettings
@@ -211,7 +203,7 @@ func TestLoadFilesRejectsInvalidFiles(t *testing.T) {
 				t.Fatalf("WriteFile() error = %v", err)
 			}
 
-			_, err := config.LoadFiles(paths, mapLookup(map[string]string{
+			_, err := config.LoadFiles(paths, environmentOptions(t, map[string]string{
 				config.EnvDeepSeekAPIKey: "test-key",
 			}))
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
@@ -222,7 +214,6 @@ func TestLoadFilesRejectsInvalidFiles(t *testing.T) {
 }
 
 func TestSaveSettingFileUpdatesGlobalSettings(t *testing.T) {
-	t.Parallel()
 
 	paths := testPaths(t.TempDir())
 	writeJSON(t, paths.GlobalSettings, map[string]any{
@@ -264,7 +255,6 @@ func TestSaveSettingFileUpdatesGlobalSettings(t *testing.T) {
 }
 
 func TestSaveSettingFileValidatesInput(t *testing.T) {
-	t.Parallel()
 
 	paths := testPaths(t.TempDir())
 	tests := []struct {
@@ -289,7 +279,6 @@ func TestSaveSettingFileValidatesInput(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
 
 			err := config.SaveSettingFile(
 				paths,
@@ -304,7 +293,6 @@ func TestSaveSettingFileValidatesInput(t *testing.T) {
 }
 
 func TestSaveDeepSeekAPIKeyFileWritesGlobalCredentialOnly(t *testing.T) {
-	t.Parallel()
 
 	paths := testPaths(t.TempDir())
 	if err := config.SaveDeepSeekAPIKeyFile(paths, " test-key "); err != nil {
@@ -334,7 +322,6 @@ func TestSaveDeepSeekAPIKeyFileWritesGlobalCredentialOnly(t *testing.T) {
 }
 
 func TestSaveDeepSeekAPIKeyFileRejectsInvalidValues(t *testing.T) {
-	t.Parallel()
 
 	paths := testPaths(t.TempDir())
 	for _, value := range []string{"", "  ", "line-one\nline-two"} {
@@ -342,15 +329,6 @@ func TestSaveDeepSeekAPIKeyFileRejectsInvalidValues(t *testing.T) {
 		if err == nil {
 			t.Fatalf("SaveDeepSeekAPIKeyFile(%q) error = nil", value)
 		}
-	}
-}
-
-func TestLoadFilesRejectsNilLookup(t *testing.T) {
-	t.Parallel()
-
-	_, err := config.LoadFiles(testPaths(t.TempDir()), nil)
-	if err == nil || !strings.Contains(err.Error(), "lookup is required") {
-		t.Fatalf("LoadFiles() error = %v, want missing lookup error", err)
 	}
 }
 
@@ -363,11 +341,15 @@ func testPaths(root string) config.Paths {
 	}
 }
 
-func mapLookup(values map[string]string) config.LookupEnv {
-	return func(key string) (string, bool) {
-		value, exists := values[key]
-		return value, exists
+func environmentOptions(t *testing.T, values map[string]string) config.LoadOptions {
+	t.Helper()
+	for _, env := range config.EnvironmentVariables() {
+		t.Setenv(env, "")
 	}
+	for key, value := range values {
+		t.Setenv(key, strings.TrimSpace(value))
+	}
+	return config.LoadOptions{Environment: true}
 }
 
 func writeJSON(t *testing.T, path string, value any) {
@@ -396,7 +378,6 @@ func readJSON(t *testing.T, path string, target any) {
 }
 
 func TestLoadFilesResolvesOpenCodeCredentials(t *testing.T) {
-	t.Parallel()
 
 	paths := testPaths(t.TempDir())
 	writeJSON(t, paths.GlobalAuth, map[string]any{
@@ -407,7 +388,7 @@ func TestLoadFilesResolvesOpenCodeCredentials(t *testing.T) {
 		config.EnvOpenCodeAPIKey:  "environment-key",
 		config.EnvOpenCodeBaseURL: " https://opencode.example/zen/go/v1 ",
 	}
-	got, err := config.LoadFiles(paths, mapLookup(values))
+	got, err := config.LoadFiles(paths, environmentOptions(t, values))
 	if err != nil {
 		t.Fatalf("LoadFiles() error = %v", err)
 	}
@@ -423,7 +404,6 @@ func TestLoadFilesResolvesOpenCodeCredentials(t *testing.T) {
 }
 
 func TestSaveOpenCodeAPIKeyFilePreservesDeepSeekKey(t *testing.T) {
-	t.Parallel()
 
 	paths := testPaths(t.TempDir())
 	if err := config.SaveDeepSeekAPIKeyFile(paths, "deepseek-key"); err != nil {
@@ -444,7 +424,6 @@ func TestSaveOpenCodeAPIKeyFilePreservesDeepSeekKey(t *testing.T) {
 }
 
 func TestSaveDeepSeekAPIKeyFilePreservesOpenCodeKey(t *testing.T) {
-	t.Parallel()
 
 	paths := testPaths(t.TempDir())
 	if err := config.SaveOpenCodeAPIKeyFile(paths, "opencode-key"); err != nil {
@@ -465,7 +444,6 @@ func TestSaveDeepSeekAPIKeyFilePreservesOpenCodeKey(t *testing.T) {
 }
 
 func TestSaveOpenCodeAPIKeyFileRejectsInvalidValues(t *testing.T) {
-	t.Parallel()
 
 	paths := testPaths(t.TempDir())
 	for _, value := range []string{"", "  ", "line-one\nline-two"} {
@@ -477,7 +455,6 @@ func TestSaveOpenCodeAPIKeyFileRejectsInvalidValues(t *testing.T) {
 }
 
 func TestLoadFilesResolvesOpenAICredentials(t *testing.T) {
-	t.Parallel()
 
 	paths := testPaths(t.TempDir())
 	writeJSON(t, paths.GlobalAuth, map[string]any{
@@ -488,7 +465,7 @@ func TestLoadFilesResolvesOpenAICredentials(t *testing.T) {
 		config.EnvOpenAIAPIKey:  "environment-key",
 		config.EnvOpenAIBaseURL: " https://openai.example/v1 ",
 	}
-	got, err := config.LoadFiles(paths, mapLookup(values))
+	got, err := config.LoadFiles(paths, environmentOptions(t, values))
 	if err != nil {
 		t.Fatalf("LoadFiles() error = %v", err)
 	}
@@ -504,7 +481,6 @@ func TestLoadFilesResolvesOpenAICredentials(t *testing.T) {
 }
 
 func TestSaveOpenAIAPIKeyFilePreservesOtherProviderKeys(t *testing.T) {
-	t.Parallel()
 
 	paths := testPaths(t.TempDir())
 	if err := config.SaveDeepSeekAPIKeyFile(paths, "deepseek-key"); err != nil {
@@ -530,7 +506,6 @@ func TestSaveOpenAIAPIKeyFilePreservesOtherProviderKeys(t *testing.T) {
 }
 
 func TestSaveOpenAIAPIKeyFileRejectsInvalidValues(t *testing.T) {
-	t.Parallel()
 
 	paths := testPaths(t.TempDir())
 	for _, value := range []string{"", "  ", "line-one\nline-two"} {
@@ -542,14 +517,14 @@ func TestSaveOpenAIAPIKeyFileRejectsInvalidValues(t *testing.T) {
 }
 
 func TestContextWindowsLoadAndSurviveSettingChanges(t *testing.T) {
-	t.Parallel()
+
 	paths := testPaths(t.TempDir())
 	windows := map[string]int64{"openai-codex/gpt-5.6-terra": 272000, "custom/Org/Model.v1": 32768}
-	writeJSON(t, paths.GlobalSettings, config.Settings{ContextWindows: windows})
+	writeJSON(t, paths.GlobalSettings, config.Settings{ContextWindows: []config.ContextWindow{{Provider: "openai-codex", Model: "gpt-5.6-terra", Tokens: 272000}, {Provider: "custom", Model: "Org/Model.v1", Tokens: 32768}}})
 	if err := config.SaveSettingFile(paths, config.SettingModel, "different"); err != nil {
 		t.Fatal(err)
 	}
-	got, err := config.LoadFiles(paths, mapLookup(nil))
+	got, err := config.LoadFiles(paths, environmentOptions(t, nil))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -559,13 +534,13 @@ func TestContextWindowsLoadAndSurviveSettingChanges(t *testing.T) {
 }
 
 func TestContextWindowsRejectInvalidLimits(t *testing.T) {
-	t.Parallel()
+
 	for _, content := range []string{
-		`{"context_windows":{"model":200000}}`,
-		`{"context_windows":{"custom/":200000}}`,
-		`{"context_windows":{"custom/model":0}}`,
-		`{"context_windows":{"custom/model":-1}}`,
-		`{"context_windows":{"custom/model":1.5}}`,
+		`{"context_windows":[{"model":"model","tokens":200000}]}`,
+		`{"context_windows":[{"provider":"custom","tokens":200000}]}`,
+		`{"context_windows":[{"provider":"custom","model":"model","tokens":0}]}`,
+		`{"context_windows":[{"provider":"custom","model":"model","tokens":-1}]}`,
+		`{"context_windows":[{"provider":"custom","model":"model","tokens":1.5}]}`,
 	} {
 		paths := testPaths(t.TempDir())
 		if err := os.MkdirAll(filepath.Dir(paths.GlobalSettings), 0700); err != nil {
@@ -574,14 +549,13 @@ func TestContextWindowsRejectInvalidLimits(t *testing.T) {
 		if err := os.WriteFile(paths.GlobalSettings, []byte(content), 0600); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := config.LoadFiles(paths, mapLookup(nil)); err == nil {
+		if _, err := config.LoadFiles(paths, environmentOptions(t, nil)); err == nil {
 			t.Fatalf("accepted %s", content)
 		}
 	}
 }
 
 func TestLoadFilesResolvesKimiCredentials(t *testing.T) {
-	t.Parallel()
 
 	paths := testPaths(t.TempDir())
 	writeJSON(t, paths.GlobalAuth, map[string]any{
@@ -592,7 +566,7 @@ func TestLoadFilesResolvesKimiCredentials(t *testing.T) {
 		config.EnvKimiAPIKey:  "environment-key",
 		config.EnvKimiBaseURL: " https://kimi.example/v1 ",
 	}
-	got, err := config.LoadFiles(paths, mapLookup(values))
+	got, err := config.LoadFiles(paths, environmentOptions(t, values))
 	if err != nil {
 		t.Fatalf("LoadFiles() error = %v", err)
 	}
@@ -608,7 +582,6 @@ func TestLoadFilesResolvesKimiCredentials(t *testing.T) {
 }
 
 func TestSaveKimiAPIKeyFilePreservesOtherProviderKeys(t *testing.T) {
-	t.Parallel()
 
 	paths := testPaths(t.TempDir())
 	if err := config.SaveDeepSeekAPIKeyFile(paths, "deepseek-key"); err != nil {
@@ -634,7 +607,6 @@ func TestSaveKimiAPIKeyFilePreservesOtherProviderKeys(t *testing.T) {
 }
 
 func TestSaveKimiAPIKeyFileRejectsInvalidValues(t *testing.T) {
-	t.Parallel()
 
 	paths := testPaths(t.TempDir())
 	for _, value := range []string{"", "  ", "line-one\nline-two"} {
@@ -646,7 +618,6 @@ func TestSaveKimiAPIKeyFileRejectsInvalidValues(t *testing.T) {
 }
 
 func TestLoadFilesResolvesMoonshotCredentials(t *testing.T) {
-	t.Parallel()
 
 	paths := testPaths(t.TempDir())
 	writeJSON(t, paths.GlobalAuth, map[string]any{
@@ -657,7 +628,7 @@ func TestLoadFilesResolvesMoonshotCredentials(t *testing.T) {
 		config.EnvMoonshotAPIKey:  "environment-key",
 		config.EnvMoonshotBaseURL: " https://moonshot.example/v1 ",
 	}
-	got, err := config.LoadFiles(paths, mapLookup(values))
+	got, err := config.LoadFiles(paths, environmentOptions(t, values))
 	if err != nil {
 		t.Fatalf("LoadFiles() error = %v", err)
 	}
@@ -673,7 +644,6 @@ func TestLoadFilesResolvesMoonshotCredentials(t *testing.T) {
 }
 
 func TestSaveMoonshotAPIKeyFilePreservesOtherProviderKeys(t *testing.T) {
-	t.Parallel()
 
 	paths := testPaths(t.TempDir())
 	if err := config.SaveDeepSeekAPIKeyFile(paths, "deepseek-key"); err != nil {
@@ -699,7 +669,6 @@ func TestSaveMoonshotAPIKeyFilePreservesOtherProviderKeys(t *testing.T) {
 }
 
 func TestSaveMoonshotAPIKeyFileRejectsInvalidValues(t *testing.T) {
-	t.Parallel()
 
 	paths := testPaths(t.TempDir())
 	for _, value := range []string{"", "  ", "line-one\nline-two"} {
@@ -711,7 +680,7 @@ func TestSaveMoonshotAPIKeyFileRejectsInvalidValues(t *testing.T) {
 }
 
 func TestMoonshotAndCodingCredentialsStaySeparate(t *testing.T) {
-	t.Parallel()
+
 	paths := testPaths(t.TempDir())
 	if err := config.SaveKimiAPIKeyFile(paths, "coding-key"); err != nil {
 		t.Fatal(err)
@@ -722,7 +691,7 @@ func TestMoonshotAndCodingCredentialsStaySeparate(t *testing.T) {
 	if err := config.SaveOpenAIAPIKeyFile(paths, "openai-key"); err != nil {
 		t.Fatal(err)
 	}
-	got, err := config.LoadFiles(paths, mapLookup(map[string]string{config.EnvKimiAPIKey: "coding-env", config.EnvMoonshotAPIKey: " "}))
+	got, err := config.LoadFiles(paths, environmentOptions(t, map[string]string{config.EnvKimiAPIKey: "coding-env", config.EnvMoonshotAPIKey: " "}))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -22,7 +22,7 @@ func TestInteractiveAccountLogin(t *testing.T) {
 			input := make(chan string, 1)
 			input <- "manual-code"
 			runner := &interactiveSession{configuration: config.Config{Provider: "deepseek", Paths: paths}, model: deepseek.DefaultModel(), providers: defaultProviders(), application: &application{dependencies: dependencies{
-				providers: defaultProviders(), saveSetting: func(setting config.Setting, value string) error { return config.SaveSettingFile(paths, setting, value) },
+				providers: defaultProviders(), saveSettings: config.SaveSettingsFile,
 				newModel:    func(c config.Config) (llm.Streamer, error) { return &recordingModel{response: "ready"}, nil },
 				openBrowser: func(context.Context, string) error { opened++; return errors.New("no browser") },
 				codexInteractiveLogin: func(ctx context.Context, device bool, auth codex.LoginInteraction) (config.CodexCredentials, error) {
@@ -46,7 +46,7 @@ func TestInteractiveAccountLogin(t *testing.T) {
 				loginMethod = "browser"
 			}
 			output, err := runner.RunSlashCommand(t.Context(), interaction.CommandRequest{Name: "login", Arguments: "openai-codex", LoginMethod: loginMethod, Auth: &interaction.AuthInteraction{Input: input, Notify: func(ctx context.Context, prompt interaction.AuthPrompt) error { notified++; return nil }}})
-			loaded, loadErr := config.LoadFiles(paths, func(string) (string, bool) { return "", false })
+			loaded, loadErr := config.LoadFiles(paths, config.LoadOptions{})
 			if loadErr != nil {
 				t.Fatal(loadErr)
 			}

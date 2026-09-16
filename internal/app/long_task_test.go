@@ -131,7 +131,7 @@ func longTaskDependencies(t *testing.T, workspace string) (*longTaskModel, depen
 	model := &longTaskModel{t: t}
 	cfg, home := compactPrintConfig(t, info)
 	return model, dependencies{
-		loadConfig:  func() (config.Config, error) { return cfg, nil },
+		loadConfig:  func(config.LoadOptions) (config.Config, error) { return cfg, nil },
 		newModel:    func(config.Config) (agent.Model, error) { return model, nil },
 		providers:   []provider.Provider{&compactTestProvider{model: info, service: model}},
 		userHomeDir: func() (string, error) { return home, nil },
@@ -264,7 +264,7 @@ func TestInteractiveCompactionFailureBoundaries(t *testing.T) {
 			workspace := t.TempDir()
 			path := filepath.Join(t.TempDir(), "fault.jsonl")
 			_, deps := longTaskDependencies(t, workspace)
-			cfg, err := deps.loadConfig()
+			cfg, err := deps.loadConfig(config.LoadOptions{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -287,7 +287,7 @@ func TestInteractiveCompactionFailureBoundaries(t *testing.T) {
 			model := &longTaskFaultModel{summary: controlledModel{response: longTaskGoal, stopReason: llm.StopReasonStop, usage: usage}}
 			deps.newModel = func(config.Config) (agent.Model, error) { return model, nil }
 			deps.providers = []provider.Provider{&compactTestProvider{model: info, service: model}}
-			deps.loadConfig = func() (config.Config, error) { return cfg, nil }
+			deps.loadConfig = func(config.LoadOptions) (config.Config, error) { return cfg, nil }
 			var beforeSummary []byte
 			var runErr error
 			deps.runTUI = func(ctx context.Context, runner tui.Runner, _ tui.Options) error {

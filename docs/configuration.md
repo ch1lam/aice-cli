@@ -2,14 +2,36 @@
 
 ## Settings and precedence
 
-Non-secret settings resolve from highest to lowest priority:
+All settings resolve through an instance-local Viper registry, from highest
+to lowest priority:
 
-1. `AICE_*` environment variables.
-2. Global `~/.aice/settings.json`.
-3. AICE defaults.
+1. Explicit runtime selections (`Set`), including interactive changes.
+2. Explicitly supplied command-line flags.
+3. Supported environment variables.
+4. Trusted project `.aice/settings.json`.
+5. User files: `~/.aice/auth.json`, then `~/.aice/settings.json`.
+6. AICE defaults.
 
-AICE ignores project `.aice/settings.json`. Provider, model, reasoning, and
-credentials are user-level choices shared by every workspace.
+This order covers provider, model, reasoning, endpoints, API keys, context
+windows, default trust policy, and operational switches. Flags currently expose
+`--provider`, `--model`, `--thinking`, `--no-dep-install`, and
+`--no-update-check`; an omitted flag does not override another source.
+Invocation controls such as `--workspace`, `--session`, `--approve`, and
+`--yolo` retain their separate command semantics. No remote key/value store is used.
+
+Project settings are protected by [Project Trust](project-trust.md).
+Until trusted, the project contributes no configuration values. The initial
+trust decision uses only user files, environment variables, explicit trust
+flags, and saved trust decisions; a project's own policy cannot authorize it.
+
+Each file must be one JSON object. An unparseable file is skipped as a whole,
+with a diagnostic, and lower layers remain available. Other read failures
+remain errors. Types and business rules are checked after composition: a
+valid higher-priority value masks an invalid lower-priority value; an invalid
+winning value is an error, without falling back. Unknown effective fields
+are errors. Missing and empty environment variables contribute no value;
+present strings are trimmed. Boolean environment values accept Go's boolean
+forms (`true`/`false`, `1`/`0`, `t`/`f` and their supported case variants).
 
 Example global settings:
 
@@ -39,8 +61,39 @@ peak billing is twice the estimate.
 | Provider | `AICE_PROVIDER` | `deepseek`, `opencode-go`, `kimi-coding`, `moonshot`, `zhipu`, `zhipu-coding`, `openai`, `openai-codex`, `custom` |
 | Model | `AICE_MODEL` | A catalog model, or any model ID for `custom` |
 | Thinking | `AICE_THINKING` | `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` |
-| Default Project Trust | none | `ask`, `always`, `never` |
+| Default Project Trust | `AICE_DEFAULT_PROJECT_TRUST` | `ask`, `always`, `never`; project values cannot grant startup trust |
 | Custom base URL | `AICE_CUSTOM_BASE_URL` | OpenAI-compatible endpoint persisted as `custom_base_url`; default `http://localhost:11434/v1` |
+| Context windows | `AICE_CONTEXT_WINDOWS` | JSON array of provider/model/token entries described below |
+| Disable helper downloads | `AICE_NO_DEP_INSTALL` | Boolean; file key `no_dep_install` |
+| Disable startup update check | `AICE_NO_UPDATE_CHECK` | Boolean; file key `no_update_check` |
+
+### Interactive persistence and multiple instances
+
+`/model`, `/provider`, `/thinking`, and `/login` immediately save the explicit
+preference changes to `~/.aice/settings.json`. A custom login saves its selected
+endpoint and model in the same preference operation. API keys go to
+`~/.aice/auth.json`; OAuth has its own credential store. Project settings are
+never edited by these commands, and merged environment/project values are never
+copied into the user file.
+
+After a successful save, the current instance publishes a new in-memory
+snapshot with runtime priority. Already running requests and other AICE
+instances keep their existing snapshots. AICE neither watches configuration
+files nor saves an entire snapshot on exit. A newly started instance resolves
+the normal precedence again: a flag, environment variable, or project setting
+can still win over the saved preference. Interactive commands report when such
+a higher layer is present. OAuth credential refresh/reread is a separate
+credential lifecycle, not general configuration reload.
+
+Writers lock the target file, reread its latest contents, patch only the changed
+keys, and atomically replace it. Independent field changes from multiple
+processes are preserved; for the same key the last successful writer wins.
+Lock acquisition is cancellable and bounded to five seconds. A lock left by a
+crashed writer is not stolen automatically. A malformed target is preserved
+and saving fails until it is repaired. A failed preference save leaves the
+current selection unchanged. If login already saved a credential before that
+failure, the error explicitly reports the credential-only success; preference
+and credential files are not one transaction.
 
 ### Unavailable configured models
 
@@ -84,20 +137,22 @@ Narrow terminals drop other details before the percentage.
 
 Without configuration, the denominator uses the selected **provider and model**
 catalog default, including when its base URL is overridden. An explicit
-`context_windows` entry in `~/.aice/settings.json` takes precedence:
+`context_windows` entry in the effective configuration takes precedence:
 
 ```json
 {
-  "context_windows": {
-    "openai-codex/gpt-5.6-terra": 272000,
-    "custom/Org/Model.v1": 32768
-  }
+  "context_windows": [
+    {"provider": "openai-codex", "model": "gpt-5.6-terra", "tokens": 272000},
+    {"provider": "custom", "model": "Org/Model.v1", "tokens": 32768}
+  ]
 }
 ```
 
-These are configuration examples, not account entitlement claims. Keys match
-exact `provider/model` IDs, including case and any slashes in the model ID;
-values must be positive integer token counts. Overrides apply at startup and
+These are configuration examples, not account entitlement claims. Entries match
+exact provider/model IDs, preserving case, dots, and slashes in the model ID;
+token counts must be positive integers and provider/model pairs must be unique.
+The winning layer replaces the entire array; entries are not merged by model.
+An empty array clears lower-layer overrides. Overrides apply at startup and
 survive `/model`, `/provider`, and `/login` changes. `/settings` shows the exact
 window and its source. Restart after editing the file. The same resolved window
 controls request protection and automatic compaction, including summary calls.
@@ -307,7 +362,10 @@ and prompts](project-trust.md) for protected resources and decision order.
 ## Credentials and connection overrides
 
 API keys are stored by provider in `~/.aice/auth.json` with file mode
-`0600`. A process environment variable overrides the stored key. Codex OAuth
+`0600`. Keys and endpoints follow the same precedence as other settings.
+The auth file normally holds credentials, but both JSON files share the full
+schema. For each row below, the file endpoint key replaces `_api_key` in the
+auth key with `_base_url`, for example `openai_base_url`. Codex OAuth
 credentials use a separate file as described below.
 
 | Provider | API key environment variable | Auth file key | Base URL override |
@@ -625,6 +683,11 @@ aice [--print <prompt>] [flags]
 --session <path>     Session JSONL file to create or resume
 --print, -p          print one response and exit
 --output-format      print output format: text or json (default text; requires --print)
+--provider <id>      override the provider for this invocation
+--model <id>         override the model for this invocation
+--thinking <level>   override the requested thinking level
+--no-dep-install    disable automatic helper downloads
+--no-update-check   disable the interactive startup update check
 --approve, -a        trust project-local resources for this run
 --no-approve         ignore project-local resources for this run
 --yolo               automatically allow tool calls that would otherwise ask; for isolated containers/CI; dangerous
@@ -1141,6 +1204,12 @@ Dragged file paths and separate print-mode image flags are not implemented;
 | `AICE_NO_DEP_INSTALL=1` | Disable ripgrep, Windows Git Bash and agent-browser downloads |
 | `AGENT_BROWSER_EXECUTABLE_PATH` | Use an installed browser executable; see [Browser automation](browser.md) |
 | `AICE_NO_UPDATE_CHECK=1` | Disable the interactive update check |
+
+The two `AICE_NO_*` switches also support `true` and can be set to `false` or
+`0` to override a lower-layer disable setting. They resolve once through the
+configuration snapshot; consumers do not reread these environment variables.
+`AGENT_BROWSER_EXECUTABLE_PATH` is a helper-owned executable input rather than
+an AICE preference.
 
 Installation, helper provisioning, and self-update details live in
 [Installation and updates](installation.md).

@@ -27,7 +27,7 @@ func TestInteractiveUnavailableModelRequiresSelection(t *testing.T) {
 			constructions, saves := 0, 0
 			failSave := true
 			command, err := newTestCommand(t, dependencies{
-				loadConfig: func() (config.Config, error) { return configuration, nil },
+				loadConfig: func(config.LoadOptions) (config.Config, error) { return configuration, nil },
 				newModel: func(c config.Config) (llm.Streamer, error) {
 					constructions++
 					if c.Model != "deepseek-flash" {
@@ -35,7 +35,7 @@ func TestInteractiveUnavailableModelRequiresSelection(t *testing.T) {
 					}
 					return service, nil
 				},
-				saveSetting: func(setting config.Setting, value string) error {
+				saveSettings: recordSettings(func(setting config.Setting, value string) error {
 					if failSave {
 						return errors.New("save failed")
 					}
@@ -45,7 +45,7 @@ func TestInteractiveUnavailableModelRequiresSelection(t *testing.T) {
 					configuration.Model = value
 					saves++
 					return nil
-				},
+				}),
 				runTUI: func(ctx context.Context, runner tui.Runner, options tui.Options) error {
 					if options.Model.ID != "removed-model" || !strings.Contains(options.StartupNotice, "/model") {
 						t.Fatalf("startup model/notice = %q/%q", options.Model.ID, options.StartupNotice)
@@ -120,9 +120,11 @@ func TestInteractiveUnavailableModelRequiresSelection(t *testing.T) {
 func TestPrintUnavailableModelListsProviderChoices(t *testing.T) {
 	t.Parallel()
 	command, err := newTestCommand(t, dependencies{
-		loadConfig: func() (config.Config, error) { return config.Config{Provider: "deepseek", Model: "removed-model"}, nil },
-		newModel:   func(config.Config) (llm.Streamer, error) { t.Fatal("constructed unavailable model"); return nil, nil },
-		runTUI:     func(context.Context, tui.Runner, tui.Options) error { t.Fatal("print opened TUI"); return nil },
+		loadConfig: func(config.LoadOptions) (config.Config, error) {
+			return config.Config{Provider: "deepseek", Model: "removed-model"}, nil
+		},
+		newModel: func(config.Config) (llm.Streamer, error) { t.Fatal("constructed unavailable model"); return nil, nil },
+		runTUI:   func(context.Context, tui.Runner, tui.Options) error { t.Fatal("print opened TUI"); return nil },
 	})
 	if err != nil {
 		t.Fatal(err)

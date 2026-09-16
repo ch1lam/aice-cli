@@ -133,12 +133,8 @@ func TestEnsureSkipsInstallWhenDisabled(t *testing.T) {
 	opts.Goos, opts.Goarch = "darwin", "amd64"
 	opts.BaseURL = server.URL
 	opts.LookPath = func(string) (string, error) { return "", errors.New("not found") }
-	opts.Getenv = func(key string) string {
-		if key == noInstallEnv {
-			return "1"
-		}
-		return "/usr/bin"
-	}
+	opts.NoInstall = true
+	opts.Getenv = func(string) string { return "/usr/bin" }
 	opts.Setenv = func(string, string) error { return nil }
 
 	if err := Ensure(t.Context(), opts); err != nil {

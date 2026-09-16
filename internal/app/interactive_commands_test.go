@@ -24,6 +24,20 @@ import (
 	"github.com/ch1lam/aice-cli/internal/tui"
 )
 
+// recordSettings keeps field-level assertions behind the batch persistence seam.
+func recordSettings(save func(config.Setting, string) error) func(context.Context, config.Paths, map[config.Setting]string) error {
+	return func(_ context.Context, _ config.Paths, changes map[config.Setting]string) error {
+		for _, key := range []config.Setting{config.SettingProvider, config.SettingModel, config.SettingThinking, config.SettingCustomBaseURL} {
+			if value, ok := changes[key]; ok {
+				if err := save(key, value); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	}
+}
+
 func TestInteractiveSessionSlashCommandsNavigateCurrentStore(t *testing.T) {
 	t.Parallel()
 
@@ -516,7 +530,7 @@ func TestInteractiveSessionSlashCommandCompactsAndReloadsHistory(
 		stopReason: llm.StopReasonStop,
 	}
 	application := &application{dependencies: dependencies{
-		loadConfig: func() (config.Config, error) {
+		loadConfig: func(config.LoadOptions) (config.Config, error) {
 			t.Fatal("manual TUI compaction reloaded global settings")
 			return config.Config{}, nil
 		},
@@ -526,7 +540,7 @@ func TestInteractiveSessionSlashCommandCompactsAndReloadsHistory(
 			}
 			return summaryModel, nil
 		},
-		saveSetting:                func(config.Setting, string) error { return nil },
+		saveSettings:               recordSettings(func(config.Setting, string) error { return nil }),
 		compactionKeepRecentTokens: 1,
 		providers:                  defaultProviders(),
 	}}
@@ -788,7 +802,7 @@ func TestInteractiveSessionSlashCommandsPersistRuntimeSettings(t *testing.T) {
 	var saved []savedSetting
 	runner := &interactiveSession{
 		application: &application{dependencies: dependencies{
-			saveSetting: func(
+			saveSettings: recordSettings(func(
 				setting config.Setting,
 				value string,
 			) error {
@@ -797,7 +811,7 @@ func TestInteractiveSessionSlashCommandsPersistRuntimeSettings(t *testing.T) {
 					value:   value,
 				})
 				return nil
-			},
+			}),
 		}},
 		model: deepseek.DefaultModel(),
 		options: llm.StreamOptions{
@@ -889,13 +903,13 @@ func TestInteractiveSessionConfigurationCommandsRejectUnsupportedValues(
 
 	runner := &interactiveSession{
 		application: &application{dependencies: dependencies{
-			saveSetting: func(
+			saveSettings: recordSettings(func(
 				config.Setting,
 				string,
 			) error {
 				t.Fatal("invalid setting was persisted")
 				return nil
-			},
+			}),
 		}},
 		model:         deepseek.DefaultModel(),
 		configuration: config.Config{Provider: string(deepseek.ProviderID)},
@@ -967,10 +981,10 @@ func TestInteractiveSessionLoginCanRetryAfterPersistenceFailure(t *testing.T) {
 				}
 				return "/global/auth.json", nil
 			},
-			saveSetting: func(setting config.Setting, _ string) error {
+			saveSettings: recordSettings(func(setting config.Setting, _ string) error {
 				savedSettings = append(savedSettings, setting)
 				return nil
-			},
+			}),
 			newModel: func(config.Config) (agent.Model, error) {
 				return &controlledModel{
 					response:   "ready",
@@ -1029,7 +1043,7 @@ func TestInteractiveSessionOpencodeMenusAndModelSelection(t *testing.T) {
 
 	runner := &interactiveSession{
 		application: &application{dependencies: dependencies{
-			saveSetting: func(config.Setting, string) error { return nil },
+			saveSettings: recordSettings(func(config.Setting, string) error { return nil }),
 		}},
 		model: opencode.DefaultModel(),
 		configuration: config.Config{
@@ -1074,10 +1088,10 @@ func TestInteractiveSessionThinkingKeepsRequestedLevelAndClampsPerModel(t *testi
 	var saved []savedSetting
 	runner := &interactiveSession{
 		application: &application{dependencies: dependencies{
-			saveSetting: func(setting config.Setting, value string) error {
+			saveSettings: recordSettings(func(setting config.Setting, value string) error {
 				saved = append(saved, savedSetting{setting: setting, value: value})
 				return nil
-			},
+			}),
 		}},
 		model: opencode.DefaultModel(),
 		configuration: config.Config{
@@ -1158,11 +1172,11 @@ func TestInteractiveSessionLoginOpencode(t *testing.T) {
 				savedKey = apiKey
 				return "/global/auth.json", nil
 			},
-			saveSetting: func(setting config.Setting, value string) error {
+			saveSettings: recordSettings(func(setting config.Setting, value string) error {
 				savedSettings = append(savedSettings, setting)
 				_ = value
 				return nil
-			},
+			}),
 			newModel: func(config.Config) (agent.Model, error) {
 				return &controlledModel{
 					response:   "ready",
@@ -1236,10 +1250,10 @@ func TestInteractiveSessionLoginUsesSavedCredentialWithoutSaving(t *testing.T) {
 				saveAttempts++
 				return "/global/auth.json", nil
 			},
-			saveSetting: func(setting config.Setting, _ string) error {
+			saveSettings: recordSettings(func(setting config.Setting, _ string) error {
 				savedSettings = append(savedSettings, setting)
 				return nil
-			},
+			}),
 			newModel: func(configuration config.Config) (agent.Model, error) {
 				modelConfiguration = configuration
 				return &controlledModel{
@@ -1309,11 +1323,11 @@ func TestInteractiveSessionLoginPersistsProviderAndFallsBackModel(t *testing.T) 
 			saveAPIKey: func(string, string) (string, error) {
 				return "/global/auth.json", nil
 			},
-			saveSetting: func(setting config.Setting, value string) error {
+			saveSettings: recordSettings(func(setting config.Setting, value string) error {
 				savedSettings = append(savedSettings, setting)
 				savedValues = append(savedValues, value)
 				return nil
-			},
+			}),
 			newModel: func(configuration config.Config) (agent.Model, error) {
 				return &controlledModel{
 					response:   "ready",
@@ -1389,11 +1403,11 @@ func TestInteractiveSessionProviderSwitchPersistsFallenBackModel(t *testing.T) {
 	var savedValues []string
 	runner := &interactiveSession{
 		application: &application{dependencies: dependencies{
-			saveSetting: func(setting config.Setting, value string) error {
+			saveSettings: recordSettings(func(setting config.Setting, value string) error {
 				savedSettings = append(savedSettings, setting)
 				savedValues = append(savedValues, value)
 				return nil
-			},
+			}),
 			newModel: func(configuration config.Config) (agent.Model, error) {
 				return &controlledModel{
 					response:   "ready",
@@ -1457,7 +1471,7 @@ func TestInteractiveSessionProviderSwitchRebuildsLoopAndModel(t *testing.T) {
 
 	runner := &interactiveSession{
 		application: &application{dependencies: dependencies{
-			saveSetting: func(config.Setting, string) error { return nil },
+			saveSettings: recordSettings(func(config.Setting, string) error { return nil }),
 			newModel: func(configuration config.Config) (agent.Model, error) {
 				if configuration.OpenCodeAPIKey == "" {
 					t.Error("newModel called without opencode credential")
@@ -1587,7 +1601,7 @@ func TestInteractiveSessionLoopRebuildPreservesGuardContext(t *testing.T) {
 				}
 				adapter := &guardAdapter{inner: gate}
 				application := &application{dependencies: dependencies{
-					saveSetting: func(config.Setting, string) error { return nil },
+					saveSettings: recordSettings(func(config.Setting, string) error { return nil }),
 					newModel: func(config.Config) (agent.Model, error) {
 						return model, nil
 					},

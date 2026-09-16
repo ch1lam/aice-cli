@@ -1,16 +1,11 @@
 package app
 
 import (
-	"fmt"
-	"os"
-	"testing"
+	"context"
+
+	"github.com/ch1lam/aice-cli/internal/deps"
 )
 
-// Default application tests use local providers and helpers, never downloads.
-func TestMain(m *testing.M) {
-	if err := os.Setenv("AICE_NO_DEP_INSTALL", "1"); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
-	os.Exit(m.Run())
-}
+// Default application fixtures never download helpers. Tests of provisioning
+// inject an observer or use deps' isolated HTTP fixtures instead.
+func skipTestHelperDownloads(context.Context, deps.Options) error { return nil }

@@ -29,6 +29,24 @@ func (a *application) resolveProjectTrust(
 	override *bool,
 	askUI trust.AskFunc,
 ) (trust.Resolution, error) {
+	resolution, err := a.chooseProjectTrust(workspace, configuration, override, askUI)
+	if err != nil {
+		return trust.Resolution{}, err
+	}
+	if err := persistProjectTrust(configuration.Paths, resolution); err != nil {
+		return trust.Resolution{}, err
+	}
+	return resolution, nil
+}
+
+// chooseProjectTrust does not persist the choice until effective configuration
+// has been validated. Project settings cannot authorize their own loading.
+func (a *application) chooseProjectTrust(
+	workspace *tool.Workspace,
+	configuration config.Config,
+	override *bool,
+	askUI trust.AskFunc,
+) (trust.Resolution, error) {
 	if workspace == nil {
 		return trust.Resolution{}, fmt.Errorf("app: workspace is required")
 	}
@@ -49,16 +67,44 @@ func (a *application) resolveProjectTrust(
 	if err != nil {
 		return trust.Resolution{}, fmt.Errorf("app: resolve project trust: %w", err)
 	}
+	return resolution, nil
+}
+
+func persistProjectTrust(paths config.Paths, resolution trust.Resolution) error {
 	if resolution.Source == trust.SourceInteractive &&
 		len(resolution.Choice.Updates) > 0 {
-		if err := store.SetMany(resolution.Choice.Updates); err != nil {
-			return trust.Resolution{}, fmt.Errorf(
+		if err := trust.NewStore(paths.GlobalTrust).SetMany(resolution.Choice.Updates); err != nil {
+			return fmt.Errorf(
 				"app: persist project trust: %w",
 				err,
 			)
 		}
 	}
-	return resolution, nil
+	return nil
+}
+
+func (a *application) loadRunModel(ctx context.Context, directory string, override *bool, askUI trust.AskFunc) (configuredModel, error) {
+	if err := ctx.Err(); err != nil {
+		return configuredModel{}, err
+	}
+	workspace, err := tool.NewWorkspace(directory)
+	if err != nil {
+		return configuredModel{}, fmt.Errorf("app: create workspace: %w", err)
+	}
+	var resolution *trust.Resolution
+	configured, err := a.loadConfiguredModel(config.LoadOptions{
+		Workspace: workspace.PhysicalPath(),
+		TrustProject: func(paths config.Paths, policy trust.Default) (bool, error) {
+			choice, err := a.chooseProjectTrust(workspace, config.Config{Paths: paths, DefaultProjectTrust: policy}, override, askUI)
+			if err != nil {
+				return false, err
+			}
+			resolution = &choice
+			return choice.Decision == trust.DecisionTrusted, nil
+		},
+	})
+	configured.projectTrust = resolution
+	return configured, err
 }
 
 // resolveProjectContext resolves trust and assembles the prompt-file view of

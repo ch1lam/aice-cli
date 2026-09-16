@@ -21,7 +21,7 @@ func (a *application) Auth(ctx context.Context, request cli.AuthRequest, output 
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	configuration, err := a.dependencies.loadConfig()
+	configuration, err := a.dependencies.loadConfig(config.LoadOptions{})
 	if err != nil {
 		return err
 	}
@@ -34,14 +34,12 @@ func (a *application) Auth(ctx context.Context, request cli.AuthRequest, output 
 		if _, err := config.UpdateCodexCredentials(ctx, configuration.Paths, func(config.CodexCredentials) (config.CodexCredentials, error) { return credential, nil }); err != nil {
 			return err
 		}
-		// Save the compatible model first. Provider selection is the final step.
+		// Provider and compatible model form one persisted preference change.
 		model := providerModel(a.dependencies.providers, string(codex.ProviderID), configuration.Model)
-		if err := config.SaveSettingFile(configuration.Paths, config.SettingModel, model.ID); err != nil {
-			return err
+		if err := config.SaveSettingsFile(ctx, configuration.Paths, map[config.Setting]string{config.SettingModel: model.ID, config.SettingProvider: string(codex.ProviderID)}); err != nil {
+			return fmt.Errorf("credentials saved, but defaults were not changed: %w", err)
 		}
-		if err := config.SaveSettingFile(configuration.Paths, config.SettingProvider, string(codex.ProviderID)); err != nil {
-			return err
-		}
+
 		_, err = fmt.Fprintf(output, "Signed in to OpenAI Codex. Saved credentials to %s.\nDefault provider: openai-codex; model: %s.\n", config.CodexAuthPath(configuration.Paths), model.ID)
 		return err
 	case "status":

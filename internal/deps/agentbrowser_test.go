@@ -140,12 +140,7 @@ func TestEnsureBrowserDisabledAndWindows(t *testing.T) {
 				if name == "installed offline" {
 					seedBrowserInstall(t, opts.BinDir)
 				}
-				opts.Getenv = func(key string) string {
-					if key == noInstallEnv {
-						return "1"
-					}
-					return ""
-				}
+				opts.NoInstall = true
 			} else {
 				opts.Goos = "windows"
 			}

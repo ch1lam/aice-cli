@@ -46,7 +46,7 @@ func checkPrintSummaryUsage(t *testing.T, format string, persistent, fail bool) 
 	model := &compactionUsageModel{summary: summary}
 	configuration, home := compactPrintConfig(t, info)
 	command, err := newTestCommand(t, dependencies{
-		loadConfig:  func() (config.Config, error) { return configuration, nil },
+		loadConfig:  func(config.LoadOptions) (config.Config, error) { return configuration, nil },
 		newModel:    func(config.Config) (agent.Model, error) { return model, nil },
 		providers:   []provider.Provider{&compactTestProvider{model: info, service: model}},
 		userHomeDir: func() (string, error) { return home, nil },

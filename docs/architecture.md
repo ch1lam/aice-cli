@@ -101,7 +101,7 @@ without exposing storage concerns to the frontend or Agent Loop.
 | `internal/session` | Versioned JSONL replay, tree navigation, compaction context |
 | `internal/trust` | Protected-resource discovery and global Trust decisions |
 | `internal/skill` | Agent Skill discovery, SKILL.md parse, source layering, embedded builtins |
-| `internal/config` | Global settings, credentials, environment precedence |
+| `internal/config` | Instance-local Viper precedence, effective snapshots, and locked atomic preference/credential persistence |
 | `internal/deps` | Verified ripgrep, Windows Git Bash and pinned agent-browser provisioning, including upstream browser skill resources |
 | `internal/browser` | Process-owned browser names, environment, connection and bounded cleanup; app owns wiring, Loop remains unaware |
 | `internal/update` | Checksum-validated GitHub release updates |

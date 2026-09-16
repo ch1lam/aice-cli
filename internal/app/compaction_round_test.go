@@ -31,7 +31,7 @@ func TestPrintCompactsToolRoundsWithAndWithoutSession(t *testing.T) {
 			service := &roundCompactionModel{}
 			configuration, home := compactPrintConfig(t, info)
 			command, err := newTestCommand(t, dependencies{
-				loadConfig:  func() (config.Config, error) { return configuration, nil },
+				loadConfig:  func(config.LoadOptions) (config.Config, error) { return configuration, nil },
 				newModel:    func(config.Config) (agent.Model, error) { return service, nil },
 				providers:   []provider.Provider{&compactTestProvider{model: info, service: service}},
 				userHomeDir: func() (string, error) { return home, nil },

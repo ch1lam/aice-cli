@@ -17,24 +17,21 @@ import (
 	"strings"
 )
 
-// noInstallEnv skips downloading missing dependencies when set to a non-empty
-// value. Intended for CI and for users who prefer to manage helpers by hand.
-const noInstallEnv = "AICE_NO_DEP_INSTALL"
-
 // Options controls dependency resolution. Every field may be left zero to use
 // the process default, which keeps Ensure testable with a fake client and
 // fake environment hooks.
 type Options struct {
-	BinDir   string                       // directory where helpers are installed, default ~/.aice/bin
-	Goos     string                       // default runtime.GOOS
-	Goarch   string                       // default runtime.GOARCH
-	BaseURL  string                       // upstream host for downloads, default https://github.com
-	LookPath func(string) (string, error) // default exec.LookPath
-	Getenv   func(string) string          // default os.Getenv
-	Setenv   func(string, string) error   // default os.Setenv
-	Client   *http.Client
-	Progress func(Progress) error
-	Log      io.Writer
+	NoInstall bool                         // resolved by the application configuration loader
+	BinDir    string                       // directory where helpers are installed, default ~/.aice/bin
+	Goos      string                       // default runtime.GOOS
+	Goarch    string                       // default runtime.GOARCH
+	BaseURL   string                       // upstream host for downloads, default https://github.com
+	LookPath  func(string) (string, error) // default exec.LookPath
+	Getenv    func(string) string          // default os.Getenv
+	Setenv    func(string, string) error   // default os.Setenv
+	Client    *http.Client
+	Progress  func(Progress) error
+	Log       io.Writer
 }
 
 // DefaultOptions returns Options wired to the current process.
@@ -75,9 +72,9 @@ func (o Options) WithProgress(report func(Progress) error) Options { o.Progress 
 // degrade gracefully.
 func Ensure(ctx context.Context, opts Options) error {
 	opts = normalize(opts)
-	skip := opts.Getenv(noInstallEnv) != ""
+	skip := opts.NoInstall
 	if skip {
-		fmt.Fprintln(opts.Log, "aice: skipping dependency install (AICE_NO_DEP_INSTALL set)")
+		fmt.Fprintln(opts.Log, "aice: skipping dependency install (no_dep_install enabled)")
 	}
 
 	// Directories that may hold helpers, in lookup order. On Windows the Git
@@ -103,7 +100,7 @@ func Ensure(ctx context.Context, opts Options) error {
 
 	if opts.Goos != "windows" {
 		if skip && !AgentBrowserInstalled(opts.BinDir) {
-			fmt.Fprintln(opts.Log, "aice: browser automation unavailable (AICE_NO_DEP_INSTALL set)")
+			fmt.Fprintln(opts.Log, "aice: browser automation unavailable (no_dep_install enabled)")
 		} else if !skip && !AgentBrowserInstalled(opts.BinDir) {
 			if err := installAgentBrowser(ctx, opts); err != nil {
 				errs = append(errs, fmt.Errorf("install agent-browser: %w", err))
@@ -210,3 +207,6 @@ func ripgrepGuidance(goos string) string {
 	}
 	return "brew install ripgrep"
 }
+
+// WithNoInstall controls downloads while still resolving installed helpers.
+func (o Options) WithNoInstall(disabled bool) Options { o.NoInstall = disabled; return o }

@@ -38,10 +38,10 @@ func TestApplicationInteractiveFirstLoginKeepsWorkspaceGuard(t *testing.T) {
 	}
 	model := &toolLoopModel{firstCall: &call}
 	command, err := newTestCommand(t, dependencies{
-		loadConfig: func() (config.Config, error) {
+		loadConfig: func(config.LoadOptions) (config.Config, error) {
 			return config.Config{}, nil
 		},
-		saveSetting: func(config.Setting, string) error { return nil },
+		saveSettings: recordSettings(func(config.Setting, string) error { return nil }),
 		saveAPIKey: func(string, string) (string, error) {
 			return "/global/auth.json", nil
 		},
@@ -730,7 +730,7 @@ func runPrintToolCall(
 
 	model := &toolLoopModel{firstCall: &call}
 	command, err := newTestCommand(t, dependencies{
-		loadConfig: func() (config.Config, error) {
+		loadConfig: func(config.LoadOptions) (config.Config, error) {
 			return config.Config{DeepSeekAPIKey: "test-key"}, nil
 		},
 		newModel: func(config.Config) (agent.Model, error) {
