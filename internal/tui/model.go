@@ -150,6 +150,7 @@ type model struct {
 	contextUsage          DisplayContext
 	usageAnimation        usageAnimation
 	welcomeAnimation      welcomeAnimation
+	welcomeTip            welcomeTip
 	updateCheck           tea.Cmd
 	welcomeUpdate         welcomeUpdateStatus
 	workingDirectory      string
@@ -547,6 +548,11 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	case welcomeTickMsg:
 		active := len(m.entries) == 0 && !m.running
 		command := m.welcomeAnimation.Update(message, active)
+		if command != nil && m.welcomeTipsVisible() && m.guardPending == nil {
+			m.welcomeTip.advance(message.at)
+		} else if message.generation == m.welcomeAnimation.generation {
+			m.welcomeTip.nextAt = time.Time{}
+		}
 		if active {
 			// The logo lives inside the viewport, so its color sweep needs
 			// the transcript content re-rendered on every tick.

@@ -56,6 +56,7 @@ const welcomeLogo = `                                                  ⣤⣶⣾
 
 type welcomeTickMsg struct {
 	generation uint64
+	at         time.Time
 }
 
 type welcomeUpdateState uint8
@@ -116,8 +117,8 @@ func (a welcomeAnimation) tick() tea.Cmd {
 }
 
 func welcomeTick(generation uint64) tea.Cmd {
-	return tea.Tick(welcomeAnimationInterval, func(time.Time) tea.Msg {
-		return welcomeTickMsg{generation: generation}
+	return tea.Tick(welcomeAnimationInterval, func(now time.Time) tea.Msg {
+		return welcomeTickMsg{generation: generation, at: now}
 	})
 }
 
@@ -212,33 +213,44 @@ func welcomeCell(cells []rune, column int) rune {
 
 // welcomeView keeps the startup header at the top of the transcript area.
 func (m model) welcomeView() string {
+	header := m.welcomeHeader()
+	content := lipgloss.PlaceHorizontal(m.viewport.Width(), lipgloss.Center, header)
+	if tip := m.welcomeTipsView(); tip != "" {
+		gap := max(m.viewport.Height()-lipgloss.Height(header)-lipgloss.Height(tip)-1, 1)
+		content += strings.Repeat("\n", gap+1) + tip + "\n"
+	}
 	return lipgloss.Place(
 		m.viewport.Width(),
 		m.viewport.Height(),
 		lipgloss.Center,
 		lipgloss.Top,
-		m.welcomeHeader(),
+		content,
 	)
 }
 
 // welcomeHeader keeps the logo centered independently of its version information.
 // The version line sits below the artwork, aligned to its right edge.
+// When the artwork cannot fit, only horizontally centered information is rendered.
 func (m model) welcomeHeader() string {
 	width := max(min(m.viewport.Width(), welcomeLogoWidth), 1)
 	info := m.welcomeVersionView()
+	height := 2 + welcomeLogoHeight
 	if info != "" {
 		info = lipgloss.NewStyle().Width(width).Align(lipgloss.Right).Render(info)
+		height += 1 + lipgloss.Height(info)
 	}
-	if m.viewport.Width() < welcomeLogoWidth {
-		return info
+	availableHeight := m.viewport.Height()
+	if tip := m.welcomeTipsView(); tip != "" {
+		availableHeight -= lipgloss.Height(tip) + 2
+	}
+	if m.viewport.Width() < welcomeLogoWidth || height > availableHeight {
+		return lipgloss.NewStyle().Width(width).Align(lipgloss.Center).
+			Render(m.welcomeVersionView())
 	}
 
 	content := "\n\n" + m.welcomeAnimation.renderLogo()
 	if info != "" {
 		content = lipgloss.JoinVertical(lipgloss.Right, content, "", info)
-	}
-	if lipgloss.Height(content) > m.viewport.Height() {
-		return info
 	}
 	return content
 }

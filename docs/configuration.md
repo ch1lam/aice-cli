@@ -699,9 +699,10 @@ top of the transcript area, with two blank rows above it and no border. The artw
 12-row canvas. Background dots (`⡀`) are replaced with spaces, whitespace-only
 rows are removed, and internal spacing is preserved. Only the version and update
 status appear beneath the logo, separated by one blank row and aligned to its
-right edge. There is no welcome title, description, or command/login guidance.
-Narrow or short terminals show only the version information when the artwork
-and status cannot fit; the logo no longer reserves a text column beside it.
+right edge. There is no welcome title or description beside the artwork.
+Narrow or short terminals skip rendering the artwork when it and the status
+cannot fit. Only the version and update status remain, horizontally centered;
+wrapped text lines are centered as well.
 The logo uses a slowly moving ink-theme gradient with brief, unevenly spaced signal
 glitches: one or two rows shift sideways with sunset-red/gold fringes and sparse
 rice-white scan-line dropouts, then snap back. Each burst lasts about 300 ms, separated by
@@ -709,6 +710,23 @@ several quiet seconds. The fixed logo canvas keeps the version line and composer
 Animation belongs to `internal/tui/welcome.go`, uses the existing Bubble Tea
 ticks, stops when a run starts or transcript entries appear, and resumes on
 `/clear`.
+
+Between the logo and composer, the welcome screen shows a rotating, one-sentence
+English usage tip without a label or prefix. Slash commands and keyboard shortcuts
+use the theme's gold accent; surrounding text stays muted gray, including during
+typing, erasing, and line wrapping. Tips type and erase one
+Unicode character every 50 ms, with a fixed seven-second hold after the last
+character appears. The next tip is chosen randomly from all other entries, so
+consecutive tips never repeat. A drawn caret follows the animated text without
+moving the composer's real cursor. Each complete sentence is centered using its
+own width; wrapped lines are centered individually. Typing reveals text in place
+at those positions. Tips sit above the composer inside the welcome viewport,
+with blank space separating them from the input; the input and footer stay still. Terminals below 16 rows or with insufficient viewport
+space hide tips.
+Tips appear only on the empty, idle main screen, including after `/clear`.
+The catalog and animation state live in
+[welcome_tips.go](../internal/tui/welcome_tips.go), driven by the existing welcome
+tick in the TUI update loop; they never enter conversation history.
 
 ### Visual theme
 

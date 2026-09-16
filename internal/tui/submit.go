@@ -115,8 +115,8 @@ func (m model) submitSlashCommand(
 		m.activeProcessID = 0
 		m.resetCommandInput()
 		m.status = "Visible transcript cleared; Session history is unchanged"
-		// Clearing the transcript brings the welcome screen back, so resume
-		// its animated logo.
+		// Clearing the transcript brings back the logo and a fresh tip.
+		m.welcomeTip.selectNext()
 		return m.settleCommand(true, m.welcomeAnimation.Start())
 	case "quit":
 		if request.Arguments != "" {
