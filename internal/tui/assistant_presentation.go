@@ -19,6 +19,7 @@ type assistantPresentation struct {
 	thinkingBuffer strings.Builder
 	textCache      assistantSection
 	thinkingCache  assistantSection
+	markdown       markdownCache
 }
 
 type assistantSection struct {
@@ -26,6 +27,7 @@ type assistantSection struct {
 	width    int
 	rendered string
 	blocks   []codeBlockPlacement
+	live     bool
 }
 
 func (p *assistantPresentation) appendText(current, delta string) string {
@@ -44,16 +46,24 @@ func appendAssistantText(buffer *strings.Builder, current, delta string) string 
 	return buffer.String()
 }
 
-func (p *assistantPresentation) textContent(source string, width int) transcriptContent {
-	if p != nil && p.textCache.source == source && p.textCache.width == width {
+func (p *assistantPresentation) textContent(source string, width int, live bool) transcriptContent {
+	if p != nil && (!live || strings.TrimSpace(source) == "") {
+		p.markdown = markdownCache{}
+	}
+	if p != nil && p.textCache.source == source && p.textCache.width == width && p.textCache.live == live {
 		return transcriptContent{view: p.textCache.rendered, blocks: p.textCache.blocks}
 	}
 	var content transcriptContent
 	if strings.TrimSpace(source) != "" {
-		content = layoutMarkdown(source, width).pad(assistantBodyStyle.GetPaddingLeft(), assistantBodyStyle.GetPaddingRight())
+		if p == nil || !live {
+			content = layoutMarkdown(source, width)
+		} else {
+			content = p.markdown.layout(source, width)
+		}
+		content = content.pad(assistantBodyStyle.GetPaddingLeft(), assistantBodyStyle.GetPaddingRight())
 	}
 	if p != nil {
-		p.textCache = assistantSection{source: source, width: width, rendered: content.view, blocks: content.blocks}
+		p.textCache = assistantSection{source: source, width: width, rendered: content.view, blocks: content.blocks, live: live}
 	}
 	return content
 }

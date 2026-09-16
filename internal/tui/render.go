@@ -660,7 +660,7 @@ func (m model) assistantEntryContent(entry transcriptEntry, active, thinking, te
 		content.appendText(entry.presentation.thinkingView(entry.thinking, width, !entry.complete))
 	}
 	if text {
-		body := entry.presentation.textContent(entry.text, width)
+		body := entry.presentation.textContent(entry.text, width, !entry.complete)
 		if body.view == "" && active {
 			body.view = assistantBodyStyle.Render(m.activityIndicator())
 		}

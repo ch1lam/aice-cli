@@ -44,7 +44,7 @@ func (m model) sideAnswerContent(entry sideThreadEntry, active bool) transcriptC
 	if thinking := entry.presentation.thinkingView(entry.thinking, m.contentWidth(), !entry.complete); thinking != "" {
 		content.appendText(thinking)
 	}
-	if answer := entry.presentation.textContent(entry.answer, m.contentWidth()); answer.view != "" {
+	if answer := entry.presentation.textContent(entry.answer, m.contentWidth(), !entry.complete); answer.view != "" {
 		content.append(answer, "\n")
 	}
 	if entry.err != "" {

@@ -3,7 +3,6 @@ package tui
 import (
 	"strings"
 
-	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -49,8 +48,39 @@ func (c transcriptContent) pad(left, right int) transcriptContent {
 		blocks[i] = block
 	}
 	c.blocks = blocks
-	c.view = lipgloss.NewStyle().PaddingLeft(left).PaddingRight(right).Render(c.view)
+	c.view = padTranscript(c.view, left, right)
 	return c
+}
+
+// Content is already styled. Add unstyled padding in one pass after measuring
+// each row once, retaining the rectangular alignment of a padding-only style.
+func padTranscript(view string, left, right int) string {
+	view = strings.ReplaceAll(view, "\t", "    ")
+	view = strings.ReplaceAll(view, "\r\n", "\n")
+	rows := strings.Split(view, "\n")
+	widths := make([]int, len(rows))
+	widest := 0
+	for i, row := range rows {
+		widths[i] = ansi.StringWidth(row)
+		widest = max(widest, widths[i])
+	}
+	left, right = max(left, 0), max(right, 0)
+	spaces := strings.Repeat(" ", left+widest+right)
+	size := len(view) + (left+right)*len(rows)
+	for _, width := range widths {
+		size += widest - width
+	}
+	var out strings.Builder
+	out.Grow(size)
+	for i, row := range rows {
+		if i > 0 {
+			out.WriteByte('\n')
+		}
+		out.WriteString(spaces[:left])
+		out.WriteString(row)
+		out.WriteString(spaces[:right+widest-widths[i]])
+	}
+	return out.String()
 }
 
 // Code panels already wrap at their own width. Wrap only surrounding text;

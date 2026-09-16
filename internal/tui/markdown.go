@@ -36,10 +36,33 @@ func layoutMarkdown(markdown string, width int) transcriptContent {
 // then insert the shared component at those explicit slots. Never locate code
 // by matching its content against prose or by guessing indentation.
 func renderMarkdownBlocks(markdown string, width int) (transcriptContent, error) {
+	md, document, source, blocks, marker, err := prepareMarkdown(markdown, nil)
+	if err != nil {
+		return transcriptContent{}, err
+	}
+	style := inkMarkdownStyle()
+	style.CodeBlock = glamouransi.StyleCodeBlock{}
+	md.SetRenderer(renderer.NewRenderer(renderer.WithNodeRenderers(util.Prioritized(
+		glamouransi.NewRenderer(glamouransi.Options{Styles: style, WordWrap: width}), 1000))))
+	var out bytes.Buffer
+	if err := md.Renderer().Render(&out, source, document); err != nil {
+		return transcriptContent{}, err
+	}
+	rendered := strings.Trim(out.String(), "\r\n")
+	if len(blocks) == 0 {
+		return transcriptContent{view: rendered}, nil
+	}
+	return insertMarkdownBlocks(rendered, marker, blocks, width)
+}
+
+func prepareMarkdown(markdown string, context parser.Context) (goldmark.Markdown, ast.Node, []byte, []codeBlock, string, error) {
 	source := []byte(markdown)
 	md := goldmark.New(goldmark.WithExtensions(extension.GFM, extension.DefinitionList),
 		goldmark.WithParserOptions(parser.WithAutoHeadingID()))
-	document := md.Parser().Parse(text.NewReader(source))
+	if context == nil {
+		context = parser.NewContext()
+	}
+	document := md.Parser().Parse(text.NewReader(source), parser.WithContext(context))
 	var nodes []ast.Node
 	if err := ast.Walk(document, func(node ast.Node, entering bool) (ast.WalkStatus, error) {
 		if entering && (node.Kind() == ast.KindFencedCodeBlock || node.Kind() == ast.KindCodeBlock) {
@@ -47,7 +70,7 @@ func renderMarkdownBlocks(markdown string, width int) (transcriptContent, error)
 		}
 		return ast.WalkContinue, nil
 	}); err != nil {
-		return transcriptContent{}, err
+		return nil, nil, nil, nil, "", err
 	}
 
 	marker := ""
@@ -55,7 +78,7 @@ func renderMarkdownBlocks(markdown string, width int) (transcriptContent, error)
 		var err error
 		marker, err = markdownMarker(markdown)
 		if err != nil {
-			return transcriptContent{}, err
+			return nil, nil, nil, nil, "", err
 		}
 	}
 	blocks := make([]codeBlock, 0, len(nodes))
@@ -80,19 +103,7 @@ func renderMarkdownBlocks(markdown string, width int) (transcriptContent, error)
 		placeholder.Lines().Append(text.NewSegment(start, len(source)))
 		node.Parent().ReplaceChild(node.Parent(), node, placeholder)
 	}
-	style := inkMarkdownStyle()
-	style.CodeBlock = glamouransi.StyleCodeBlock{}
-	md.SetRenderer(renderer.NewRenderer(renderer.WithNodeRenderers(util.Prioritized(
-		glamouransi.NewRenderer(glamouransi.Options{Styles: style, WordWrap: width}), 1000))))
-	var out bytes.Buffer
-	if err := md.Renderer().Render(&out, source, document); err != nil {
-		return transcriptContent{}, err
-	}
-	rendered := strings.Trim(out.String(), "\r\n")
-	if len(blocks) == 0 {
-		return transcriptContent{view: rendered}, nil
-	}
-	return insertMarkdownBlocks(rendered, marker, blocks, width)
+	return md, document, source, blocks, marker, nil
 }
 
 func markdownMarker(source string) (string, error) {

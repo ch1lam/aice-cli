@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -8,6 +9,68 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 )
+
+func TestStreamingMarkdownCompletion(t *testing.T) {
+	for _, side := range []bool{false, true} {
+		name := "main"
+		if side {
+			name = "side"
+		}
+		t.Run(name, func(t *testing.T) {
+			m := newModel(nil, nil)
+			m.width, m.height, m.running = 80, 24, true
+			m.resizeLayout()
+			thread := &sideThreadState{entries: []sideThreadEntry{{}}, assistantEntry: 0, isRunning: true}
+			apply := func(event DisplayEvent) {
+				if side {
+					m.applySideEvent(thread, event)
+				} else {
+					m.applyAgentEvent(event)
+					m.refreshViewport(false)
+				}
+			}
+			view := func() transcriptContent {
+				if side {
+					return m.sideAnswerContent(thread.entries[0], true)
+				}
+				return m.assistantEntryContent(m.entries[0], true, false, true, false)
+			}
+			presentation := func() *assistantPresentation {
+				if side {
+					return thread.entries[0].presentation
+				}
+				return m.entries[0].presentation
+			}
+			apply(DisplayEvent{Kind: DisplayEventAssistantStart})
+			source := strings.Repeat("stable paragraph\n\n", 30) + "```go\nvar answer = 42\n```\n\ntail"
+			apply(DisplayEvent{Kind: DisplayEventAssistantDelta, Delta: DisplayDelta{Kind: DisplayDeltaText, Delta: source}})
+			view()
+			m.viewport.GotoTop()
+			anchorIndex, anchorLine := m.viewport.index, m.viewport.line
+			for _, delta := range []string{" grows", "\n\n[target]: https://example.com", "\n\n[label][target]"} {
+				source += delta
+				apply(DisplayEvent{Kind: DisplayEventAssistantDelta, Delta: DisplayDelta{Kind: DisplayDeltaText, Delta: delta}})
+				view()
+				want := layoutMarkdown(source, m.contentWidth()).pad(assistantBodyStyle.GetPaddingLeft(), assistantBodyStyle.GetPaddingRight())
+				cache := presentation().textCache
+				if cache.rendered != want.view || !reflect.DeepEqual(cache.blocks, want.blocks) {
+					t.Fatal("stream event produced stale text or code geometry")
+				}
+			}
+			if !side && (m.viewport.index != anchorIndex || m.viewport.line != anchorLine) {
+				t.Fatal("streaming moved the scrolled-up viewport")
+			}
+			apply(DisplayEvent{Kind: DisplayEventAssistantEnd, Assistant: AssistantDisplay{Text: source, Concludes: true}})
+			final := view()
+			if !strings.Contains(ansi.Strip(final.view), "https://example.com") || len(final.blocks) != 1 {
+				t.Fatal("completion lost the resolved link or code block")
+			}
+			if len(presentation().markdown.parts) != 0 {
+				t.Fatal("completed answer retained the streaming cache")
+			}
+		})
+	}
+}
 
 func TestLongThinkingPreviewPreservesCompleteMessage(t *testing.T) {
 	for _, side := range []bool{false, true} {
@@ -69,18 +132,18 @@ func TestLongThinkingPreviewPreservesCompleteMessage(t *testing.T) {
 func TestAssistantPresentationInvalidation(t *testing.T) {
 	p := &assistantPresentation{}
 	text := p.appendText("", "first")
-	before := p.textContent(text, 80).view
+	before := p.textContent(text, 80, true).view
 	text = p.appendText(text, " second")
-	if got := p.textContent(text, 80).view; got == before || !strings.Contains(ansi.Strip(got), "second") {
+	if got := p.textContent(text, 80, true).view; got == before || !strings.Contains(ansi.Strip(got), "second") {
 		t.Fatal("new text did not invalidate cached content")
 	}
 	text = p.appendText(text, strings.Repeat(" word", 30))
-	wide := p.textContent(text, 80).view
-	narrow := p.textContent(text, 30).view
+	wide := p.textContent(text, 80, true).view
+	narrow := p.textContent(text, 30, true).view
 	if strings.Count(narrow, "\n") <= strings.Count(wide, "\n") {
 		t.Fatal("resize did not rewrap cached content")
 	}
-	if p.textContent("", 30).view != "" {
+	if p.textContent("", 30, true).view != "" {
 		t.Fatal("empty replacement retained old content")
 	}
 	// An appended delta must not mutate an earlier immutable snapshot.
@@ -97,17 +160,17 @@ func TestAssistantPresentationInvalidation(t *testing.T) {
 func TestAssistantCodeGeometryTracksSourceAndWidth(t *testing.T) {
 	p := &assistantPresentation{}
 	source := "```text\n" + strings.Repeat("source ", 30) + "\n```"
-	p.textContent(source, 80)
+	p.textContent(source, 80, true)
 	if len(p.textCache.blocks) != 1 {
 		t.Fatal("missing code geometry")
 	}
 	before := p.textCache.blocks[0].layout
-	p.textContent(source, 24)
+	p.textContent(source, 24, true)
 	after := p.textCache.blocks[0].layout
 	if len(after.rows) <= len(before.rows) || after.block.source != before.block.source {
 		t.Fatal("resize failed to update geometry independently of source")
 	}
-	p.textContent("replacement", 24)
+	p.textContent("replacement", 24, true)
 	if len(p.textCache.blocks) != 0 {
 		t.Fatal("replacement retained obsolete code geometry")
 	}

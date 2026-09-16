@@ -392,7 +392,19 @@ the final JSON event from being delivered.
   source-row mappings in the assistant cache. Renderer failure falls back to
   literal escaped source, never internal markers or partial content. Width and
   source changes invalidate text and block geometry together. These data are
-  presentation-only. `transcriptContent` carries text and block placements through
+  presentation-only. During streaming, `assistantPresentation` owns a
+  `markdownCache` for both main and BTW answers. It still parses the complete
+  source, but reuses unchanged groups of top-level nodes at the same width.
+  Checkpoints precede a source-positioned paragraph or heading after a
+  line-ending block; lists and quotes are never split internally. Rendering
+  keeps the original AST parents, siblings and boundary newlines. Changed
+  reference definitions invalidate all groups so earlier links resolve correctly.
+  Cached code layouts retain literal source; composition rebases their row
+  coordinates without modifying cached placements. Completion uses a full render
+  and releases the streaming groups. Whole-source parsing and composition remain
+  linear in answer size; a growing single paragraph, list or code block still
+  needs its group's full layout. This is not an incremental syntax highlighter.
+  `transcriptContent` carries text and block placements through
   composition, indentation and the viewport's lazy cache. Hit testing uses the
   same visible rows as painting, including main and BTW answers, tool output and
   write previews. Copy buttons use original supplied source and validate both
