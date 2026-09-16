@@ -421,6 +421,8 @@ func TestReadExecuteEOFOffsets(t *testing.T) {
 		{name: "multiple terminated", content: "one\ntwo\n", lines: 2, last: "two\n"},
 		{name: "blank line", content: "\n", lines: 1, last: "\n"},
 		{name: "trailing blank line", content: "one\n\n", lines: 2, last: "\n"},
+		{name: "long unterminated", content: strings.Repeat("x", 40*1024), lines: 1, last: strings.Repeat("x", 40*1024)},
+		{name: "long terminated then short", content: strings.Repeat("x", 40*1024) + "\nend\n", lines: 2, last: "end\n"},
 	}
 	for _, fixture := range fixtures {
 		t.Run(fixture.name, func(t *testing.T) {

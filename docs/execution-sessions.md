@@ -218,6 +218,8 @@ Default and byte-limited pages do not scan the rest of the file for metadata.
 The TUI reports the reason, returned source lines/bytes, known or unknown total,
 and continuation offset. A first line that cannot fit instead calls for bash.
 Images, directories, errors, and untruncated text carry no text truncation data.
+Captured line content grows on demand within the existing byte bound; skipping
+and counting lines do not allocate content buffers.
 
 Structured subprocesses use executable/argument separation. The `grep` tool
 invokes `rg` with `--` before model-controlled pattern/path values. The `bash`

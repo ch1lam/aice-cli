@@ -316,10 +316,9 @@ func readBoundedLine(
 	reader *bufio.Reader,
 	captureLimit int,
 ) (boundedLine, error) {
+	// Grow capture storage on demand: reserving a reader-sized buffer here
+	// would allocate 32 KiB even for a short line or an empty EOF read.
 	var line boundedLine
-	if captureLimit > 0 {
-		line.data = make([]byte, 0, min(captureLimit, readBufferBytes))
-	}
 
 	for {
 		if err := ctx.Err(); err != nil {
