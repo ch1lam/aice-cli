@@ -110,7 +110,7 @@ func Ensure(ctx context.Context, opts Options) error {
 	}
 
 	if opts.Goos == "windows" {
-		if _, err := lookupIn(opts.Goos, opts.LookPath, dirs, "bash"); err != nil {
+		if _, err := FindNativeBash(opts); err != nil {
 			if skip {
 				// Leave bash missing and degrade.
 			} else if err := installGitBash(ctx, opts); err != nil {
