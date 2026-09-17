@@ -125,6 +125,7 @@ func indexSnapshot(snapshot Snapshot) (snapshotIndex, error) {
 		sequences[id] = sequence
 		orderSeen[id] = struct{}{}
 	}
+	index.sequences = sequences
 	if snapshot.LeafID != "" {
 		if _, exists := index.nodes[snapshot.LeafID]; !exists {
 			return snapshotIndex{}, fmt.Errorf(

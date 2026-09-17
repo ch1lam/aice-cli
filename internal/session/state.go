@@ -7,6 +7,7 @@ type recordIndex struct {
 	nodeTypes   map[string]RecordType
 	parents     map[string]string
 	recordIDs   map[string]struct{}
+	sequences   map[string]messageSequence
 }
 
 func indexRecords(
@@ -21,6 +22,7 @@ func indexRecords(
 		nodeTypes:   make(map[string]RecordType),
 		parents:     make(map[string]string),
 		recordIDs:   make(map[string]struct{}),
+		sequences:   make(map[string]messageSequence),
 	}
 	for _, message := range messages {
 		index.nodes[message.ID] = Node{
@@ -74,9 +76,10 @@ func newStoreState(snapshot Snapshot) storeState {
 	}
 }
 
-func (state *storeState) retainMessage(message MessageEntry) {
+func (state *storeState) retainMessage(message MessageEntry, sequence messageSequence) {
 	state.messages = append(state.messages, message)
 	state.index.messages[message.ID] = message
+	state.index.sequences[message.ID] = sequence
 	state.index.nodes[message.ID] = Node{Type: message.Type, ID: message.ID, ParentID: message.ParentID, Timestamp: message.CreatedAt}
 	state.retain(message.ID, message.ParentID, message.Type)
 }
@@ -84,6 +87,9 @@ func (state *storeState) retainMessage(message MessageEntry) {
 func (state *storeState) retainCompaction(compaction Compaction) {
 	state.compactions = append(state.compactions, compaction)
 	state.index.compactions[compaction.ID] = compaction
+	if sequence, ok := state.index.sequences[compaction.ParentID]; ok {
+		state.index.sequences[compaction.ID] = sequence
+	}
 	state.retain(compaction.ID, compaction.ParentID, compaction.Type)
 }
 

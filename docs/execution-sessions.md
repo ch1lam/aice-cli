@@ -411,6 +411,13 @@ missing results are recovered. Complete user messages and completed assistant
 responses without pending tools are safe boundaries. A run or interaction is
 not a storage transaction: already saved messages survive later failure.
 
+The Store retains a per-node tool-pairing state during append and replay. It
+validates each new message against its parent's state without walking the whole
+branch; pending call identities are copied before consumption so earlier
+prefixes and sibling branches remain independent. Records and cached state
+become visible only after a successful sync. This cache is derived in memory
+and adds no JSONL record or durable format change.
+
 Message copies use the typed clone helpers in `internal/llm`, sharing immutable
 strings while copying content slices, image payloads, tool arguments and cost
 metadata. The write boundary still normalizes each new record through its JSON

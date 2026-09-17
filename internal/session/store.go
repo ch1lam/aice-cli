@@ -194,9 +194,17 @@ func (s *Store) appendMessage(ctx context.Context, message MessageEntry) error {
 	if err := message.Validate(); err != nil {
 		return err
 	}
+	data, err := json.Marshal(message)
+	if err != nil {
+		return fmt.Errorf("session: encode message: %w", err)
+	}
+	var stored MessageEntry
+	if err := json.Unmarshal(data, &stored); err != nil {
+		return fmt.Errorf("session: retain appended message: %w", err)
+	}
 	if err := validateNode(
-		message.ID,
-		message.ParentID,
+		stored.ID,
+		stored.ParentID,
 		s.leafID,
 		s.index.recordIDs,
 		s.index.nodeTypes,
@@ -204,22 +212,18 @@ func (s *Store) appendMessage(ctx context.Context, message MessageEntry) error {
 		return err
 	}
 
-	if err := validateMessageAppend(s.index, message); err != nil {
+	// Cache the same identities replay will read, including JSON's UTF-8
+	// normalization when a caller constructs MessageEntry directly.
+	sequence, err := validateMessageAppend(s.index, stored)
+	if err != nil {
 		return err
 	}
 
-	data, err := json.Marshal(message)
-	if err != nil {
-		return fmt.Errorf("session: encode message: %w", err)
-	}
 	if err := s.appendData(ctx, "message", data); err != nil {
 		return err
 	}
-	var stored MessageEntry
-	if err := json.Unmarshal(data, &stored); err != nil {
-		return fmt.Errorf("session: retain appended message: %w", err)
-	}
-	s.retainMessage(stored)
+	// Publish both the record and its validation state only after fsync.
+	s.retainMessage(stored, sequence)
 	return nil
 }
 

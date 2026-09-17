@@ -15,8 +15,11 @@ var ErrIncompleteGroup = errors.New("session has an incomplete tool group")
 // response, so providers can reuse them in later completed model rounds.
 type messageSequence struct {
 	started bool
-	pending []llm.ToolCall
+	pending []pendingCall
 }
+
+// Validation and recovery need identity only, not argument/image payloads.
+type pendingCall struct{ ID, Name string }
 
 func (s *messageSequence) accept(message llm.AgentMessage) error {
 	if !s.started {
@@ -44,10 +47,10 @@ func (s *messageSequence) accept(message llm.AgentMessage) error {
 				return fmt.Errorf("session: duplicate tool call id %q in one group", call.ID)
 			}
 			seen[call.ID] = true
-			s.pending = append(s.pending, call)
+			s.pending = append(s.pending, pendingCall{ID: call.ID, Name: call.Name})
 		}
 	case llm.ToolResultMessage:
-		position := slices.IndexFunc(s.pending, func(call llm.ToolCall) bool { return call.ID == value.ToolCallID })
+		position := slices.IndexFunc(s.pending, func(call pendingCall) bool { return call.ID == value.ToolCallID })
 		if position < 0 {
 			return fmt.Errorf("session: tool result %q has no pending call", value.ToolCallID)
 		}
@@ -62,6 +65,14 @@ func (s *messageSequence) accept(message llm.AgentMessage) error {
 }
 
 func sequenceAt(index recordIndex, leafID string) (messageSequence, error) {
+	if leafID == "" {
+		return messageSequence{}, nil
+	}
+	if sequence, ok := index.sequences[leafID]; ok {
+		// accept removes pending calls; never mutate a parent or sibling state.
+		sequence.pending = slices.Clone(sequence.pending)
+		return sequence, nil
+	}
 	path, err := pathToRoot(leafID, index.nodeTypes, index.parents)
 	if err != nil {
 		return messageSequence{}, err
@@ -81,12 +92,15 @@ func sequenceAt(index recordIndex, leafID string) (messageSequence, error) {
 	return sequence, nil
 }
 
-func validateMessageAppend(index recordIndex, entry MessageEntry) error {
+func validateMessageAppend(index recordIndex, entry MessageEntry) (messageSequence, error) {
 	sequence, err := sequenceAt(index, entry.ParentID)
 	if err != nil {
-		return err
+		return messageSequence{}, err
 	}
-	return sequence.accept(entry.Message)
+	if err := sequence.accept(entry.Message); err != nil {
+		return messageSequence{}, err
+	}
+	return sequence, nil
 }
 
 func completeBoundary(index recordIndex, leafID string) error {

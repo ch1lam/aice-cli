@@ -109,10 +109,11 @@ func readSnapshot(
 			); err != nil {
 				return storeState{}, 0, false, corrupt(lineNumber, recordOffset, err)
 			}
-			if err := validateMessageAppend(state.index, message); err != nil {
+			sequence, err := validateMessageAppend(state.index, message)
+			if err != nil {
 				return storeState{}, 0, false, corrupt(lineNumber, recordOffset, err)
 			}
-			state.retainMessage(message)
+			state.retainMessage(message, sequence)
 		case RecordTypeCompaction:
 			var compaction Compaction
 			if err := decodeRecord(line, &compaction); err != nil {
