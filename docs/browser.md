@@ -190,4 +190,14 @@ acceptance record distinguishes tests from full interactive/model acceptance.
 | V18 inspect auto-detect | Actual Chrome Allow/login-state acceptance not exercised | Not exercised |
 | V19 Guard | Existing screenshot-path/open-command semantics covered by unit tests | Same portable tests; not run natively |
 
-Unverified acceptance items are tracked in [Maintenance](maintenance.md#browser-acceptance-gaps).
+The matrix remains incomplete: native helper tests and offline fixtures do not
+prove actual-model browsing/vision or print behavior. Complete the outstanding
+cases on an isolated user-approved profile before claiming full acceptance.
+Cancellation acceptance must allow eventual recovery and require a fresh
+observation; it must not claim immediate action cancellation or rollback.
+
+Windows support remains disabled pending native lifecycle/Job Object validation:
+the daemon must survive completion of the launching bash command before support
+can be enabled. The second independent download-network check also remains
+outstanding. [Maintenance](maintenance.md#browser-acceptance-gaps) links here for
+the authoritative acceptance record.

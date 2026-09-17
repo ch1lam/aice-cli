@@ -100,20 +100,12 @@ historical documentation.
 
 ### Browser acceptance gaps
 
-The [browser acceptance matrix](browser.md#maintenance-and-verification) records
-native macOS/Linux coverage separately from offline fixtures. Full real-model
-browsing/vision and print, inspect auto-detect with Chrome Allow and login state,
-kill/restart, simultaneous external connections, tab/browser loss, and Linux
-external-browser/TUI acceptance remain unverified. Complete these cases on an
-isolated user-approved profile before claiming the entire matrix passes. Release
-bytes match npm for all supported assets, but a second independent network check
-remains outstanding. Windows browser support is deliberately disabled pending
-native lifecycle/Job Object validation: the daemon must survive completion of
-the launching bash command before Windows support can be enabled.
-
-Upstream 0.37.1 cancellation stops the CLI while an already queued browser wait
-can delay later commands. Acceptance must allow eventual recovery and require a
-fresh observation; it must not claim immediate action cancellation or rollback.
+The [browser acceptance record](browser.md#maintenance-and-verification) owns
+platform coverage, outstanding cases, and acceptance conditions. Offline fixtures
+and native macOS/Linux helper tests do not establish full TUI or actual-model
+acceptance. That acceptance remains incomplete, and Windows browser support
+remains disabled pending native lifecycle validation. Consult the record before
+claiming support or extending browser lifecycle behavior.
 
 ### Custom login text shortcut
 
