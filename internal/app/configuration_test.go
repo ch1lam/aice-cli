@@ -160,7 +160,7 @@ func TestCustomLoginPersistsOnePreferenceBatchAndReportsFailure(t *testing.T) {
 					return config.SaveSettingsFile(ctx, p, changes)
 				},
 			}}}
-			message, err := runner.RunSlashCommand(t.Context(), interaction.CommandRequest{Name: "login", Arguments: "custom https://new.example Org/Model.v1", Secret: "test-private-key"})
+			message, err := runner.RunSlashCommand(t.Context(), interaction.CommandRequest{Name: "login", Arguments: "custom", CustomEndpoint: "https://new.example", CustomModel: "Org/Model.v1", Secret: "test-private-key"})
 			if calls != 1 {
 				t.Fatalf("save calls = %d: %v", calls, err)
 			}
@@ -216,5 +216,71 @@ func TestInteractiveSelectionOverridesEnvironmentOnlyForThisInstance(t *testing.
 	}
 	if saved["model"] != "selected-model" || bytes.Contains(data, []byte("environment-model")) {
 		t.Fatal("wrong persisted source")
+	}
+}
+
+func TestLoginRejectsInlineConfiguration(t *testing.T) {
+	t.Parallel()
+	runner := &interactiveSession{application: &application{}, providers: defaultProviders()}
+	for _, arguments := range []string{"", "custom https://new.example", "custom - model", "custom model", "custom https://new.example model"} {
+		t.Run(arguments, func(t *testing.T) {
+			_, err := runner.RunSlashCommand(t.Context(), interaction.CommandRequest{
+				Name: "login", Arguments: arguments, Secret: "private-key",
+			})
+			if err == nil || !strings.Contains(err.Error(), "select a provider through the /login menus") {
+				t.Fatalf("inline login error = %v", err)
+			}
+		})
+	}
+}
+
+func TestCustomLoginFormKeepsDefaultsAndTreatsKeyLiterally(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name, key, model string
+		reuse            bool
+	}{
+		{name: "clear key"},
+		{name: "model only", model: "selected-model"},
+		{name: "URL shaped key", key: "https://key.example literal-key"},
+		{name: "reuse key", reuse: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			initial := config.Config{Provider: "custom", Model: "old-model", CustomBaseURL: "https://old.example", CustomAPIKey: "saved-key"}
+			model, options, err := resolveModelSettings(defaultProviders(), initial)
+			if err != nil {
+				t.Fatal(err)
+			}
+			saves := 0
+			runner := &interactiveSession{configuration: initial, model: model, options: options, providers: defaultProviders(), application: &application{dependencies: dependencies{
+				providers: defaultProviders(),
+				newModel:  func(config.Config) (llm.Streamer, error) { return &recordingModel{}, nil },
+				saveAPIKey: func(provider, key string) (string, error) {
+					saves++
+					if provider != "custom" || key != tc.key {
+						t.Fatal("key was parsed as configuration")
+					}
+					return "/fake/auth.json", nil
+				},
+				saveSettings: func(context.Context, config.Paths, map[config.Setting]string) error { return nil },
+			}}}
+			_, err = runner.RunSlashCommand(t.Context(), interaction.CommandRequest{
+				Name: "login", Arguments: "custom", Secret: tc.key, CustomModel: tc.model, UseSavedCredential: tc.reuse,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			wantModel, wantKey, wantSaves := "old-model", tc.key, 1
+			if tc.model != "" {
+				wantModel = tc.model
+			}
+			if tc.reuse {
+				wantKey, wantSaves = "saved-key", 0
+			}
+			if runner.configuration.CustomBaseURL != initial.CustomBaseURL || runner.configuration.Model != wantModel ||
+				runner.configuration.CustomAPIKey != wantKey || saves != wantSaves {
+				t.Fatal("form changed defaults or mishandled the credential action")
+			}
+		})
 	}
 }

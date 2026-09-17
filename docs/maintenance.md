@@ -106,23 +106,3 @@ and native macOS/Linux helper tests do not establish full TUI or actual-model
 acceptance. That acceptance remains incomplete, and Windows browser support
 remains disabled pending native lifecycle validation. Consult the record before
 claiming support or extending browser lifecycle behavior.
-
-### Custom login text shortcut
-
-The Custom provider's [menu description](../internal/provider/custom/custom.go)
-advertises `/login custom [endpoint]`, and the application's
-[login handler](../internal/app/interactive_commands.go) accepts endpoint/model
-text in `CommandRequest.Arguments`. The current TUI first filters the active
-menu via [command completion](../internal/tui/command_completion.go) and
-[submission](../internal/tui/submit.go): the initial login menu offers account
-or API-key authentication, so `custom` does not match and the text shortcut
-does not reach that handler. The working menu flow is documented in
-[Credentials](configuration.md#credentials-and-connection-overrides).
-
-The decision to restore direct text syntax or remove the advertised shortcut is
-pending review. Existing
-`TestCommandCompletionExactValueWinsAndNoMatchDoesNotRun` and
-`TestCommandCompletionNestedFilterPreservesAction` cover filtering and nested
-actions, but not this real login catalog end to end. Acceptance should exercise
-the chosen syntax with that catalog and preserve hidden credentials, saved-key
-reuse, empty-key login, and cancellation.

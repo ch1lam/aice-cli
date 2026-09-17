@@ -1004,8 +1004,9 @@ func TestInteractiveSessionLoginCanRetryAfterPersistenceFailure(t *testing.T) {
 		providers: defaultProviders(),
 	}
 	request := tui.SlashCommandRequest{
-		Name:   "login",
-		Secret: "secret-value",
+		Name:      "login",
+		Arguments: "deepseek",
+		Secret:    "secret-value",
 	}
 
 	if _, err := runner.RunSlashCommand(
@@ -1197,8 +1198,9 @@ func TestInteractiveSessionLoginOpencode(t *testing.T) {
 	}
 
 	output, err := runner.RunSlashCommand(t.Context(), tui.SlashCommandRequest{
-		Name:   "login",
-		Secret: "opencode-secret",
+		Name:      "login",
+		Arguments: "opencode-go",
+		Secret:    "opencode-secret",
 	})
 	if err != nil {
 		t.Fatalf("/login error = %v", err)
@@ -1352,8 +1354,9 @@ func TestInteractiveSessionLoginPersistsProviderAndFallsBackModel(t *testing.T) 
 	}
 
 	output, err := runner.RunSlashCommand(t.Context(), tui.SlashCommandRequest{
-		Name:   "login",
-		Secret: "opencode-secret",
+		Name:      "login",
+		Arguments: "opencode-go",
+		Secret:    "opencode-secret",
 	})
 	if err != nil {
 		t.Fatalf("/login error = %v", err)

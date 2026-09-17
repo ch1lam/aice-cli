@@ -797,21 +797,11 @@ func (s *interactiveSession) login(
 		return "", fmt.Errorf("app: application is required")
 	}
 
-	fields := strings.Fields(request.Arguments)
-	if len(fields) > 3 {
-		return "", fmt.Errorf("app: usage: /login [provider] [endpoint] [model]")
-	}
-	if len(fields) >= 2 && fields[0] != string(custom.ProviderID) {
-		return "", fmt.Errorf("app: endpoint/model is only supported for provider %q", custom.ProviderID)
+	provider := strings.TrimSpace(request.Arguments)
+	if provider == "" || strings.ContainsAny(provider, " \t\r\n") {
+		return "", fmt.Errorf("app: select a provider through the /login menus")
 	}
 	settings := s.settingsSnapshot()
-	provider := settings.configuration.Provider
-	if provider == "" {
-		provider = string(deepseek.ProviderID)
-	}
-	if len(fields) >= 1 {
-		provider = fields[0]
-	}
 	if !supportedProvider(s.providers, provider) {
 		return "", fmt.Errorf(
 			"app: unsupported provider %q; available: %s",
@@ -826,52 +816,17 @@ func (s *interactiveSession) login(
 		return s.slashProvider(ctx, interaction.CommandRequest{Name: "provider", Arguments: provider})
 	}
 
-	// Custom endpoint/model may be supplied as: /login custom [endpoint] [model]
-	// Endpoint "-" is a placeholder meaning "no endpoint, use default" when only model is set.
-	customEndpoint := ""
-	customModel := ""
-	if provider == string(custom.ProviderID) {
-		if len(fields) == 2 {
-			arg := strings.TrimSpace(fields[1])
-			if arg == "-" {
-				customEndpoint = ""
-			} else if strings.HasPrefix(arg, "http://") || strings.HasPrefix(arg, "https://") {
-				customEndpoint = arg
-			} else {
-				customModel = arg
-			}
-			if customEndpoint != "" && !(strings.HasPrefix(customEndpoint, "http://") || strings.HasPrefix(customEndpoint, "https://")) {
-				return "", fmt.Errorf("app: custom endpoint must start with http:// or https://")
-			}
-		} else if len(fields) == 3 {
-			endpointArg := strings.TrimSpace(fields[1])
-			if endpointArg != "-" {
-				customEndpoint = endpointArg
-				if !(strings.HasPrefix(customEndpoint, "http://") || strings.HasPrefix(customEndpoint, "https://")) {
-					return "", fmt.Errorf("app: custom endpoint must start with http:// or https://")
-				}
-			}
-			customModel = strings.TrimSpace(fields[2])
+	customEndpoint := strings.TrimSpace(request.CustomEndpoint)
+	customModel := strings.TrimSpace(request.CustomModel)
+	if customEndpoint != "" || customModel != "" {
+		if provider != string(custom.ProviderID) || request.UseSavedCredential {
+			return "", fmt.Errorf("app: endpoint/model require the Custom login form")
+		}
+		if customEndpoint != "" && !(strings.HasPrefix(customEndpoint, "http://") || strings.HasPrefix(customEndpoint, "https://")) {
+			return "", fmt.Errorf("app: custom endpoint must start with http:// or https://")
 		}
 	}
-
 	apiKey := strings.TrimSpace(request.Secret)
-	// Allow the hidden input to carry both endpoint and key for the custom
-	// provider: "http://url [apikey]" or just "http://url" . This keeps the
-	// TUI path single-step while staying centralized in /login.
-	if provider == string(custom.ProviderID) && apiKey != "" {
-		secretFields := strings.Fields(apiKey)
-		if len(secretFields) > 0 && (strings.HasPrefix(secretFields[0], "http://") || strings.HasPrefix(secretFields[0], "https://")) {
-			if customEndpoint == "" {
-				customEndpoint = secretFields[0]
-			}
-			if len(secretFields) > 1 {
-				apiKey = strings.Join(secretFields[1:], " ")
-			} else {
-				apiKey = ""
-			}
-		}
-	}
 	configuration := settings.configuration
 	configuration.Provider = provider
 	if request.UseSavedCredential {

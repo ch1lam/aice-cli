@@ -384,7 +384,9 @@ credentials use a separate file as described below.
 | Custom (Ollama, vLLM, LM Studio, any OpenAI-compatible) | `AICE_CUSTOM_API_KEY` | `custom_api_key` | `AICE_CUSTOM_BASE_URL` (default `http://localhost:11434/v1`) |
 
 In the TUI, `/login` first offers `Sign in with an account` or
-`Sign in with an API key`, then a provider menu. For an API-key provider whose credential is
+`Sign in with an API key`, then a provider menu. Confirm each menu level before
+proceeding; text filters only the current menu. `/login` does not accept inline
+provider/endpoint/model configuration. For an API-key provider whose credential is
 already available, the next menu explicitly offers either `Use saved
 credential` (switch without entering a key) or `Enter a new API key` (replace
 the saved key). Providers without a credential go directly to hidden input.

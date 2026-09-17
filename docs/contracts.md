@@ -448,6 +448,12 @@ consistency for those behaviors.
 
 ### Interactive authentication
 
+Login menus supply the selected provider and credential action. Custom login
+collects endpoint, API key and model in separate hidden form steps, then sends
+endpoint/model as dedicated `CommandRequest` fields and the key as `Secret`.
+The application validates and persists these values; it does not parse endpoint
+or model configuration from command arguments or the secret.
+
 Account login uses the existing cancellable slash-command lifetime. The app
 owns OAuth orchestration and credential persistence; the provider owns the
 protocol. `interaction.AuthInteraction` carries transient progress and manual

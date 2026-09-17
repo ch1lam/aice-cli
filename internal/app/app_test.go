@@ -678,8 +678,9 @@ func TestApplicationInteractiveLoginEnablesCurrentSession(t *testing.T) {
 			output, err := commandRunner.RunSlashCommand(
 				ctx,
 				tui.SlashCommandRequest{
-					Name:   "login",
-					Secret: "secret-value",
+					Name:      "login",
+					Arguments: "deepseek",
+					Secret:    "secret-value",
 				},
 			)
 			if err != nil {

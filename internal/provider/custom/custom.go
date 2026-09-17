@@ -160,7 +160,7 @@ func (p *Provider) Label() string {
 
 // MenuDescription describes the provider in interactive menus.
 func (p *Provider) MenuDescription() string {
-	return "Custom OpenAI-compatible API (Ollama, vLLM, LM Studio) · /login custom [endpoint] or " + config.EnvCustomBaseURL
+	return "Custom OpenAI-compatible API (Ollama, vLLM, LM Studio) · " + config.EnvCustomBaseURL
 }
 
 // Models returns the provider's model catalog.

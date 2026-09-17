@@ -57,8 +57,9 @@ func TestApplicationInteractiveFirstLoginKeepsWorkspaceGuard(t *testing.T) {
 			if _, err := commandRunner.RunSlashCommand(
 				ctx,
 				tui.SlashCommandRequest{
-					Name:   "login",
-					Secret: "test-key",
+					Name:      "login",
+					Arguments: "deepseek",
+					Secret:    "test-key",
 				},
 			); err != nil {
 				return err

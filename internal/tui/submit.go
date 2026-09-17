@@ -362,24 +362,10 @@ func (m model) submitSecretInput() (model, tea.Cmd, bool) {
 				m.status = "Model name must not contain whitespace"
 				return m, nil, true
 			}
-			endpoint := strings.TrimSpace(m.customLogin.endpoint)
-			apiKey := m.customLogin.apiKey
-			modelName := strings.TrimSpace(value)
 			request := m.secretInput.request
-			// Encode endpoint+model into Arguments so app/login can persist both.
-			args := "custom"
-			if endpoint != "" {
-				args += " " + endpoint
-				if modelName != "" {
-					args += " " + modelName
-				}
-			} else if modelName != "" {
-				// No endpoint but model present: use "-" placeholder so login can
-				// distinguish endpoint omission from model. Login handles "-" as empty.
-				args += " - " + modelName
-			}
-			request.Arguments = args
-			request.Secret = apiKey
+			request.CustomEndpoint = m.customLogin.endpoint
+			request.CustomModel = value
+			request.Secret = m.customLogin.apiKey
 			m.customLogin = nil
 			m.resetCommandInput()
 			m.input.Blur()

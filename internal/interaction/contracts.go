@@ -317,7 +317,7 @@ type CommandOption struct {
 	Menu        *CommandMenu
 }
 
-// CommandRequest is one parsed interactive command invocation.
+// CommandRequest is one interactive command invocation, including menu selections.
 type CommandRequest struct {
 	Name               string
 	Arguments          string
@@ -325,6 +325,11 @@ type CommandRequest struct {
 	UseSavedCredential bool
 	LoginMethod        string
 	Auth               *AuthInteraction
+	// CustomEndpoint and CustomModel are collected by the Custom login form,
+	// never parsed from command arguments or the API key. Empty keeps the
+	// current effective value.
+	CustomEndpoint string
+	CustomModel    string
 }
 
 // AuthPrompt is transient account-login UI, never conversation history.
