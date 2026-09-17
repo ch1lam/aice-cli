@@ -918,6 +918,10 @@ for confirmation and waits for its answer to stop before deleting it.
 
 ## Interactive input delivery
 
+User controls and display limits are described below. Rendering ownership,
+cache invalidation, and shared paint/hit-test coordinates are defined in
+[Concurrency and TUI](contracts.md#concurrency-and-tui).
+
 The main transcript has independent folds for each process, each contiguous
 batch of tool calls, each thinking block, and each tool's details. Batches show
 counts by operation (including Skill loads); they do not infer that later tools
@@ -989,6 +993,8 @@ Expanded streaming thinking shows only its most recent 4 KiB with an omission
 notice; completion makes the full thinking available. BTW thinking retains the
 same streaming limit. Display folding never removes Session or model content.
 
+### Tool output and code panels
+
 Expanded tools show the recorded result (Read text, command output, Skill body,
 or errors), rather than rereading workspace files. Result previews retain at
 most 64 KiB and display at most 2000 source lines, with an explicit limit notice.
@@ -999,8 +1005,7 @@ extension; other results use plain text. Terminal controls are escaped while
 code punctuation is retained and tabs display as spaces. Long result lines wrap.
 The background covers blank lines and trailing space after highlighting and wrapping.
 Markdown fences (including unfinished streamed fences) and indented code blocks
-remain literal inside lists and quotations. Code source is retained separately
-from its display escaping and wrapping.
+remain literal inside lists and quotations.
 Tool headings show their supplied source line count in parentheses, such as
 `read file.go (24 lines)`. One blank row separates a tool heading from its expanded
 content. Code panels retain a separate, subtly lighter status row: language on
@@ -1040,6 +1045,8 @@ means execution has not started. Expanded write and edit previews display up to
 write arguments retain at most 64 KiB; a late path/content may arrive with the
 complete call. None of these display limits limits file writes or changes
 recorded tool results.
+
+### Sending input while working
 
 The composer remains active while an Agent run is working:
 

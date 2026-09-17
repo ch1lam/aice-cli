@@ -264,6 +264,12 @@ the final JSON event from being delivered.
 
 ## Concurrency and TUI
 
+User-facing fold controls, panel appearance, and copy gestures are documented
+in [Interactive input delivery](configuration.md#interactive-input-delivery)
+and [Tool output and code panels](configuration.md#tool-output-and-code-panels).
+The contracts below define state ownership, bounded rendering, and coordinate
+consistency for those behaviors.
+
 - Propagate `context.Context` through model calls, Agent runs, tools, and
   persistence boundaries. Do not store it in structs or replace it mid-flow
   with `context.Background()`. Bounded durable cleanup is an explicit exception:
@@ -367,12 +373,8 @@ the final JSON event from being delivered.
   call and parses only for presentation when visible, using the existing event
   batching and item cache. Complete calls replace the partial preview; execution
   start reconciles the same row by call ID. A preview never authorizes execution.
-  Tool bodies start folded; path headings show the final filename/directory until
-  expanded, then show the complete supplied path at the same position. Expanded
-  output uses bounded, borderless code blocks with continuous full-row backgrounds;
-  Read selects syntax highlighting from the
-  filename, without interpreting source as Markdown. Expanded write previews bound
-  source input to
+  Read selects syntax highlighting from the filename without interpreting source
+  as Markdown. Expanded write previews bound source input to
   2000 lines / 64 KiB. Lines are clipped before syntax
   highlighting and terminal control characters are escaped. These limits affect
   neither tool arguments nor Session history.
@@ -417,14 +419,9 @@ the final JSON event from being delivered.
   during selection and modal input. Diff rows retain their separate rendering
   and selection semantics.
   Tool headings count supplied source lines in parentheses using the same bounded
-  source selection as their bodies, without rendering collapsed panels. Expanded
-  bodies have a one-row gap below the heading. Their panels suppress the summary
-  while retaining the status row with language and Copy; Markdown panels retain
-  their own summary. The status row has a distinct background and no source-line
-  mapping. Numbering starts on the following body row.
-  The number gutter labels only the first visual row of each source line; narrow
-  layouts omit it. Tool truncation and incomplete write previews mark the heading
-  count partial, and completed previews refresh the label.
+  source selection as their bodies, without rendering collapsed panels. Panel
+  status rows have no source-line mapping. Tool truncation and incomplete write
+  previews mark the heading count partial, and completed previews refresh the label.
   Main and BTW transcripts use an item-anchored viewport: scrolling records a
   block and a row within it, without measuring all preceding history. Process
   headers, individual reasoning/answer blocks, tools and questions are separate
