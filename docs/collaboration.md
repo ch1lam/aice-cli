@@ -103,6 +103,11 @@ and temporary file. Lock tests do not require an open directory handle to
 prevent recreation; that behavior varies across Windows filesystems and versions.
 Real temporary directory tests still cover lock ownership and concurrent token refresh with
 a local fake OAuth server, without accessing user credentials or remote APIs.
+The concurrent settings-process test retries only Windows sharing violations
+from its polling reader while writers are active, within the test deadline.
+Every successful read must contain valid JSON; other read errors fail immediately,
+and a final read after writers finish verifies that all field updates survived.
+Every exit path cancels and waits for the writer processes before test teardown.
 
 The default Go suite includes [long-task acceptance](../internal/app/long_task_test.go):
 one interactive input with an in-run correction, and one stateless print input,

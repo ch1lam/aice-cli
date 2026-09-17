@@ -8,8 +8,10 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -231,7 +233,6 @@ func TestConcurrentProcessesPatchWithoutLostUpdates(t *testing.T) {
 	paths := testPaths(root)
 	writeJSON(t, paths.GlobalSettings, map[string]any{"untouched": "kept"})
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
-	defer cancel()
 	values := map[config.Setting]string{config.SettingProvider: "custom", config.SettingModel: "Org/Model.v1", config.SettingThinking: "high", config.SettingCustomBaseURL: "https://local.example"}
 	var wg sync.WaitGroup
 	for key, value := range values {
@@ -245,6 +246,12 @@ func TestConcurrentProcessesPatchWithoutLostUpdates(t *testing.T) {
 	}
 	done := make(chan struct{})
 	go func() { wg.Wait(); close(done) }()
+	defer func() {
+		// Fatal reader errors must still stop and join every writer before the
+		// test returns and TempDir cleanup starts.
+		cancel()
+		<-done
+	}()
 	for {
 		select {
 		case <-done:
@@ -263,8 +270,17 @@ func TestConcurrentProcessesPatchWithoutLostUpdates(t *testing.T) {
 			t.Fatal(ctx.Err())
 		case <-time.After(5 * time.Millisecond):
 			data, err := os.ReadFile(paths.GlobalSettings)
-			if err != nil || !json.Valid(data) {
-				t.Fatalf("reader saw partial file: %v", err)
+			// Windows can reject opening the file while a rename holds delete
+			// access. Retry on the next poll within the existing test deadline.
+			const sharingViolation syscall.Errno = 32 // ERROR_SHARING_VIOLATION
+			if runtime.GOOS == "windows" && errors.Is(err, sharingViolation) {
+				continue
+			}
+			if err != nil {
+				t.Fatalf("reader failed: %v", err)
+			}
+			if !json.Valid(data) {
+				t.Fatal("reader saw partial JSON file")
 			}
 		}
 	}
