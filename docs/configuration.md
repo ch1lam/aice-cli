@@ -934,6 +934,8 @@ When final text starts, a process closes automatically unless the user has
 manually changed it or one of its children. Manual choices survive new deltas
 and sibling calls. Closing a parent preserves its children's choices.
 Fold state is transient presentation state, cleared with the visible transcript.
+Expanded processes leave one blank line before their first child heading;
+expanded thinking also leaves one blank line between its heading and body.
 
 Message text, process markers, fold arrows, and tool panels share one left
 alignment. Expanding a process, batch, thinking block, or tool does not add
