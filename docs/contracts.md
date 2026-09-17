@@ -430,7 +430,9 @@ the final JSON event from being delivered.
   headers, individual reasoning/answer blocks, tools and questions are separate
   items, including multiple model rounds within a single process group. Only
   reached items are formatted and wrapped; unchanged visible items reuse their
-  cached rows. Width changes invalidate wrapping, height changes retain it.
+  cached rows. Header hover variants are generated only on hover and reuse
+  their wrapped rows until content or width changes. Width changes invalidate
+  wrapping, height changes retain it.
   Refreshes rebuild lightweight item descriptions but never concatenate the
   full transcript. Full-content snapshots are explicit operations, not part of
   animation, scrolling, or streaming frames. Selection freezes visible rows and

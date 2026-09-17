@@ -142,14 +142,17 @@ func (m model) processContentItems(start, end int) []transcriptItem {
 	return items
 }
 
-func (m model) foldedToolItems(index int) []transcriptItem {
+// Capture the enclosing item builder's model snapshot for deferred rendering.
+func (m *model) foldedToolItems(index int) []transcriptItem {
 	entry := m.entries[index]
 	target := foldTarget{kind: foldTool, id: index}
 	entry.toolExpanded = m.foldExpanded(target)
 	heading := m.foldHeading(m.toolHeaderView(entry), entry.toolExpanded)
 	header := staticTranscriptItem(index*16+9, heading)
 	header.fold = target
-	header.hoverText = m.foldHeadingStyled(m.toolHeaderStyled(entry, true), entry.toolExpanded, transcriptHoverStyle)
+	header.renderHover = func() string {
+		return m.foldHeadingStyled(m.toolHeaderStyled(entry, true), entry.toolExpanded, transcriptHoverStyle)
+	}
 	items := []transcriptItem{header}
 	if entry.toolExpanded {
 		items = append(items, transcriptItem{key: index*16 + 10, gap: 1, version: entry, renderContent: func() transcriptContent {

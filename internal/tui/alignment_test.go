@@ -73,7 +73,7 @@ func TestExpandedPathContinuationKeepsAlignmentAndHover(t *testing.T) {
 		m = updateModel(t, m, tea.WindowSizeMsg{Width: width, Height: 60})
 		header := m.foldedToolItems(2)[0]
 		view := header.render()
-		if ansi.Strip(view) != ansi.Strip(header.hoverText) {
+		if ansi.Strip(view) != ansi.Strip(header.renderHover()) {
 			t.Fatal("hover changed expanded path wrapping")
 		}
 		rows := strings.Split(view, "\n")

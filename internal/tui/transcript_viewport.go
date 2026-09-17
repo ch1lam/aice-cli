@@ -17,11 +17,12 @@ type transcriptItem struct {
 	render        func() string
 	renderContent func() transcriptContent
 	// Optional styled header variant; it must have identical text and wrapping.
-	hoverText string
-	gap       int
-	lines     []string
-	width     int
-	codeRows  map[int]transcriptCodeRow
+	renderHover func() string
+	hoverLines  []string
+	gap         int
+	lines       []string
+	width       int
+	codeRows    map[int]transcriptCodeRow
 }
 
 func (item transcriptItem) content() transcriptContent {
@@ -69,6 +70,7 @@ func (v *transcriptViewport) setItems(items []transcriptItem) {
 			if old.key == items[i].key && old.version == items[i].version {
 				items[i].lines, items[i].width = old.lines, old.width
 				items[i].codeRows = old.codeRows
+				items[i].hoverLines = old.hoverLines
 			}
 		}
 	}
@@ -107,6 +109,7 @@ func (v *transcriptViewport) beginResize() {
 func (v transcriptViewport) itemLines(index int) []string {
 	item := &v.items[index]
 	if item.lines == nil || item.width != v.width {
+		item.hoverLines = nil
 		content := item.content()
 		item.lines, item.codeRows = wrapTranscriptContent(content, v.width)
 		item.width = v.width
@@ -264,9 +267,11 @@ func (v transcriptViewport) viewWithCodeHover(hover foldTarget, codeHover codeHi
 	for _, row := range v.visibleRows() {
 		text := row.withCodeHover(codeHover)
 		if hover.kind != foldNone && row.fold == hover {
-			if item := v.items[row.item]; hoverLines == nil && item.hoverText != "" {
-				hoverLines = wrapTranscriptLines(item.hoverText, v.width)
-				hoverGap = item.gap
+			if item := &v.items[row.item]; hoverLines == nil && item.renderHover != nil {
+				if item.hoverLines == nil {
+					item.hoverLines = wrapTranscriptLines(item.renderHover(), v.width)
+				}
+				hoverLines, hoverGap = item.hoverLines, item.gap
 			}
 			text = transcriptHoverStyle.Render(ansi.Strip(text))
 			if line := row.line - hoverGap; line >= 0 && line < len(hoverLines) {
