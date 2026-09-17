@@ -66,11 +66,13 @@ copy/replacement failures, cleanup, and path handling.
 
 ## Offline capability checks
 
-Credential-lock retry tests inject filesystem errors and use a virtual clock
-to cover Windows access denial, contention, cancellation, and timeout on every
-platform. They do not require an open directory handle to prevent recreation;
-that behavior varies across Windows filesystems and versions. Real temporary
-directory tests still cover lock ownership and concurrent token refresh with
+Configuration-lock and replacement retry tests inject filesystem errors and use
+a virtual clock to cover Windows access denial, sharing violations, cancellation,
+and timeout on every platform. A native Windows test holds a settings reader open
+to verify failed replacement preserves the original file and cleans up the lock
+and temporary file. Lock tests do not require an open directory handle to
+prevent recreation; that behavior varies across Windows filesystems and versions.
+Real temporary directory tests still cover lock ownership and concurrent token refresh with
 a local fake OAuth server, without accessing user credentials or remote APIs.
 
 The default Go suite includes [long-task acceptance](../internal/app/long_task_test.go):

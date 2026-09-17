@@ -88,11 +88,15 @@ credential lifecycle, not general configuration reload.
 Writers lock the target file, reread its latest contents, patch only the changed
 keys, and atomically replace it. Independent field changes from multiple
 processes are preserved; for the same key the last successful writer wins.
-Lock acquisition is cancellable and bounded to five seconds. A lock left by a
-crashed writer is not stolen automatically. A malformed target is preserved
-and saving fails until it is repaired. A failed preference save leaves the
-current selection unchanged. If login already saved a credential before that
-failure, the error explicitly reports the credential-only success; preference
+Lock acquisition and replacement retries share a cancellable five-second bound.
+On Windows, replacement retries access-denied and sharing-violation errors
+while retaining the write lock and temporary file, so brief reader activity
+does not abort a save. It never deletes the target before replacement; persistent
+conflicts report both the context error and the last filesystem error.
+A lock left by a crashed writer is not stolen automatically. A malformed target
+is preserved and saving fails until it is repaired. A failed preference save
+leaves the current selection unchanged. If login already saved a credential
+before that failure, the error explicitly reports the credential-only success; preference
 and credential files are not one transaction.
 
 ### Unavailable configured models
@@ -657,10 +661,11 @@ expiry and saves rotated tokens before making a model request. Concurrent
 AICE processes serialize refresh/login/logout with `codex-auth.json.lock`.
 Lock waits are cancellable and bounded to one minute. On Windows, access-denied
 errors while creating the lock are retried within that bound to tolerate
-transient filesystem contention. If waiting
-fails, the error preserves both the cancellation/deadline and the last lock
-error so persistent permission failures remain visible. After a crash, remove
-that stale lock directory only when no AICE process is running. Failed refresh
+transient filesystem contention. Credential replacement also retries access-denied
+and sharing-violation errors while holding the lock, within the same deadline.
+If waiting fails, the error preserves both the cancellation/deadline and the last
+filesystem error so persistent permission failures remain visible. After a crash,
+remove that stale lock directory only when no AICE process is running. Failed refresh
 preserves the prior credential; expired/revoked authorization requires logging
 in again. Logout removes only AICE's Codex credentials: in-flight requests may
 finish, but subsequent requests fail closed. It does not revoke the account's

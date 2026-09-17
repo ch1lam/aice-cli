@@ -105,7 +105,7 @@ func UpdateCodexCredentials(ctx context.Context, paths Paths,
 	if err := errors.Join(writeErr, syncErr, closeErr); err != nil {
 		return CodexCredentials{}, err
 	}
-	if err := os.Rename(file.Name(), path); err != nil {
+	if err := renameConfigFile(ctx, file.Name(), path, os.Rename, runtime.GOOS == "windows"); err != nil {
 		return CodexCredentials{}, err
 	}
 	return credential, nil

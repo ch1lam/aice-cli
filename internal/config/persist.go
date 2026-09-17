@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -78,7 +79,7 @@ func patchFile(ctx context.Context, path string, patch map[string]any) (returnEr
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if err := writeJSON(path, values); err != nil {
+	if err := writeJSON(ctx, path, values); err != nil {
 		return fmt.Errorf("config: save %s: %w", path, err)
 	}
 	return nil
@@ -86,7 +87,7 @@ func patchFile(ctx context.Context, path string, patch map[string]any) (returnEr
 
 // writeJSON replaces a complete document; readers see either old or new bytes.
 // Writers must hold the relevant lock across their read/modify/write operation.
-func writeJSON(path string, value any) error {
+func writeJSON(ctx context.Context, path string, value any) error {
 	data, err := json.MarshalIndent(value, "", "  ")
 	if err != nil {
 		return fmt.Errorf("encode JSON: %w", err)
@@ -102,5 +103,39 @@ func writeJSON(path string, value any) error {
 	if err := errors.Join(writeErr, syncErr, closeErr); err != nil {
 		return err
 	}
-	return os.Rename(file.Name(), path)
+	return renameConfigFile(ctx, file.Name(), path, os.Rename, runtime.GOOS == "windows")
+}
+
+// renameConfigFile retries Windows sharing conflicts while the caller retains
+// the write lock and temporary file. The caller must supply a bounded context.
+// Never remove the destination first: readers must still see a complete file.
+func renameConfigFile(ctx context.Context, source, target string,
+	rename func(string, string) error, windows bool,
+) error {
+	// Win32 error codes are defined here so retry behavior can be exercised on
+	// every test host, without importing a Windows-only package.
+	const (
+		accessDenied     syscall.Errno = 5  // ERROR_ACCESS_DENIED
+		sharingViolation syscall.Errno = 32 // ERROR_SHARING_VIOLATION
+	)
+	var lastErr error
+	for {
+		if err := ctx.Err(); err != nil {
+			return errors.Join(err, lastErr)
+		}
+		err := rename(source, target)
+		if err == nil {
+			return nil
+		}
+		if !windows || (!errors.Is(err, accessDenied) && !errors.Is(err, sharingViolation)) {
+			return err
+		}
+		lastErr = err
+		timer := time.NewTimer(50 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+		case <-timer.C:
+		}
+	}
 }
