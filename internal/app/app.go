@@ -574,7 +574,7 @@ func (a *application) prepareRunEnvironment(
 		workspace.PhysicalPath(),
 		resolution.Decision == trust.DecisionTrusted,
 	)
-	tools, err := newBuiltInTools(workspace)
+	tools, err := newBuiltInTools(ctx, workspace)
 	if err != nil {
 		return nil, err
 	}

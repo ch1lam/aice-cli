@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ch1lam/aice-cli/internal/deps"
 	"github.com/ch1lam/aice-cli/internal/llm"
 )
 
@@ -32,19 +33,24 @@ const (
 type Bash struct {
 	workspace *Workspace
 	shellPath string
+	wsl       bool
 }
 
 // NewBash constructs a bash tool.
-func NewBash(workspace *Workspace) (*Bash, error) {
+func NewBash(ctx context.Context, workspace *Workspace) (*Bash, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if workspace == nil || workspace.path == "" {
 		return nil, fmt.Errorf("tool: workspace is required")
 	}
 	if !supportsProcessTreeTermination() {
 		return nil, fmt.Errorf("tool: bash is unsupported because process-tree termination is unavailable")
 	}
-	shellPath, err := exec.LookPath("bash")
+	opts := deps.DefaultOptions()
+	shellPath, err := deps.FindNativeBash(opts)
 	if err != nil {
-		return nil, fmt.Errorf("tool: find bash executable: %w", err)
+		return newWSLBash(ctx, workspace, deps.WSLBashPaths(opts), err)
 	}
 	if !filepath.IsAbs(shellPath) {
 		return nil, fmt.Errorf("tool: bash executable path must be absolute")
@@ -54,9 +60,13 @@ func NewBash(workspace *Workspace) (*Bash, error) {
 
 // Definition returns the model-facing bash contract.
 func (b *Bash) Definition() llm.ToolDefinition {
+	description := "Execute a Bash command in the working directory with bounded time and output."
+	if b.wsl {
+		description += " Runs in WSL with the Windows workspace mapped as the working directory; use WSL paths for command arguments."
+	}
 	return llm.ToolDefinition{
 		Name:          "bash",
-		Description:   "Execute a Bash command in the working directory with bounded time and output.",
+		Description:   description,
 		InputSchema:   jsonSchema(bashSchema),
 		PromptSnippet: "Execute bash commands (ls, grep, find, etc.)",
 	}
@@ -88,21 +98,25 @@ func (b *Bash) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult, 
 
 	commandCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	// Raw shell text intentionally reaches bash at this explicit tool boundary.
-	// The command has bounded output and lifetime and runs in its own process group.
-	command := exec.CommandContext(commandCtx, b.shellPath, "--noprofile", "--norc", "-c", args.Command)
-	command.Dir = b.workspace.Path()
 	output := newBashOutputWriter(maxOutputBytes - 256)
-	command.Stdout = output
-	command.Stderr = output
-	configureProcess(command)
-
-	cleanup, err := startProcessTree(command)
-	if err != nil {
-		return llm.ToolResult{}, fmt.Errorf("tool \"bash\": start command: %w", err)
+	var runErr error
+	if b.wsl {
+		script := wslWorkingDirectory(b.workspace.Path()) + args.Command
+		runErr = runWSLCommand(commandCtx, b.shellPath, b.workspace.Path(), script, output)
+	} else {
+		// Raw shell text intentionally reaches bash at this tool boundary.
+		command := exec.CommandContext(commandCtx, b.shellPath, "--noprofile", "--norc", "-c", args.Command)
+		command.Dir = b.workspace.Path()
+		command.Stdout = output
+		command.Stderr = output
+		configureProcess(command)
+		cleanup, err := startProcessTree(command)
+		if err != nil {
+			return llm.ToolResult{}, fmt.Errorf("tool \"bash\": start command: %w", err)
+		}
+		runErr = command.Wait()
+		cleanup()
 	}
-	runErr := command.Wait()
-	cleanup()
 	text := output.String()
 	if errors.Is(commandCtx.Err(), context.DeadlineExceeded) && ctx.Err() == nil {
 		text = appendStatus(text, fmt.Sprintf("command timed out after %s", timeout))

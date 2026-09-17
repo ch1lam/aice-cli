@@ -256,3 +256,63 @@ func sha256HexBytes(data []byte) string {
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:])
 }
+
+func TestEnsureWindowsDoesNotTreatWSLAsBash(t *testing.T) {
+	for _, test := range []struct {
+		name        string
+		noInstall   bool
+		native      bool
+		wantInstall bool
+	}{
+		{name: "WSL triggers provisioning", wantInstall: true},
+		{name: "downloads disabled", noInstall: true},
+		{name: "native Bash after WSL", native: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			// Provisioning must fail locally; never download or run PortableGit.
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				http.Error(w, "offline fixture", http.StatusForbidden)
+			}))
+			defer server.Close()
+			root := t.TempDir()
+			windows := filepath.Join(root, "Windows")
+			wsl := filepath.Join(windows, "System32", "bash.exe")
+			native := filepath.Join(root, "Git", "bin", "bash.exe")
+			opts := Options{
+				Goos: "windows", Goarch: "amd64", BinDir: filepath.Join(root, "bin"),
+				NoInstall: test.noInstall, BaseURL: server.URL,
+				Setenv: func(string, string) error { return nil },
+				Getenv: func(key string) string {
+					switch key {
+					case "SystemRoot":
+						return windows
+					case "PATH":
+						return filepath.Dir(wsl) + ";" + filepath.Dir(native)
+					default:
+						return ""
+					}
+				},
+				LookPath: func(name string) (string, error) {
+					switch {
+					case name == "rg":
+						return filepath.Join(root, "rg.exe"), nil
+					case name == "bash" || name == wsl:
+						return wsl, nil
+					case name == native && test.native:
+						return native, nil
+					default:
+						return "", errors.New("not found")
+					}
+				},
+			}
+			err := Ensure(t.Context(), opts)
+			if test.wantInstall {
+				if err == nil || !strings.Contains(err.Error(), "install Git Bash") {
+					t.Fatalf("Ensure() = %v, want Git Bash provisioning attempted", err)
+				}
+			} else if err != nil {
+				t.Fatalf("Ensure() = %v", err)
+			}
+		})
+	}
+}

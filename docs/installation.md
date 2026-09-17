@@ -60,6 +60,23 @@ AICE uses Bash and ripgrep (`rg`). At startup it looks on `PATH` and in
 - On Windows, missing Git Bash is downloaded as the Bash runtime.
 - On macOS and Linux, Bash must already be available on the host.
 
+On Windows, AICE prefers its managed Git Bash, then Git Bash beside the `git.exe`
+found on `PATH`, then standard Git for Windows installation directories. Other
+native Bash executables in AICE's helper directory and absolute `PATH` entries
+are fallbacks. If none is found, AICE downloads Git Bash unless helper downloads
+are disabled. The mere presence of a WSL launcher does not prevent provisioning.
+
+If native Bash is still unavailable (downloads were disabled or failed), the
+`bash` tool tries WSL `bash.exe` launchers on `PATH`, including Windows system
+directories and WindowsApps. A cancellable probe, with a five-second total
+budget, checks that Bash runs and `wslpath` can map the workspace to an accessible
+Linux directory. Broken WSL installations and missing distributions are rejected;
+the tool reports the probe failure and Git for Windows installation guidance
+(`winget install Git.Git`) if no usable shell remains. WSL commands use `-s` and
+stdin transport rather than native Bash command-line arguments. WSL uses the
+default distribution's tools and Linux paths; native file tools still use
+Windows paths. See [execution and cancellation](execution-sessions.md#tool-execution-boundary).
+
 On macOS and Linux, AICE also provisions a private, checksum-pinned native
 `agent-browser` helper and its embedded upstream skills. Startup download
 progress goes to stderr. AICE does not download a browser automatically; see

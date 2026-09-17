@@ -1,13 +1,14 @@
 package app
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/ch1lam/aice-cli/internal/agent"
 	"github.com/ch1lam/aice-cli/internal/tool"
 )
 
-func newBuiltInTools(workspace *tool.Workspace) ([]agent.Tool, error) {
+func newBuiltInTools(ctx context.Context, workspace *tool.Workspace) ([]agent.Tool, error) {
 	if workspace == nil {
 		return nil, fmt.Errorf("app: workspace is required")
 	}
@@ -28,7 +29,7 @@ func newBuiltInTools(workspace *tool.Workspace) ([]agent.Tool, error) {
 	add("write", write, err)
 	edit, err := tool.NewEdit(workspace)
 	add("edit", edit, err)
-	bash, err := tool.NewBash(workspace)
+	bash, err := tool.NewBash(ctx, workspace)
 	add("bash", bash, err)
 	grep, err := tool.NewGrep(workspace)
 	add("grep", grep, err)

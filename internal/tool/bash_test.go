@@ -15,7 +15,7 @@ import (
 func TestBashExecuteRunsWithoutApproval(t *testing.T) {
 	t.Parallel()
 	workspace, _ := newWorkspace(t)
-	bash, err := tool.NewBash(workspace)
+	bash, err := tool.NewBash(t.Context(), workspace)
 	if err != nil {
 		t.Skipf("NewBash() error = %v", err)
 	}
@@ -34,7 +34,7 @@ func TestBashExecuteRunsWithoutApproval(t *testing.T) {
 func TestBashExecuteRejectsInvalidTimeoutBeforeStartingProcess(t *testing.T) {
 	t.Parallel()
 	workspace, root := newWorkspace(t)
-	bash, err := tool.NewBash(workspace)
+	bash, err := tool.NewBash(t.Context(), workspace)
 	if err != nil {
 		t.Skipf("NewBash() error = %v", err)
 	}
@@ -54,7 +54,7 @@ func TestBashExecuteUsesWorkingDirectoryAndHostEnvironment(t *testing.T) {
 	workspace, root := newWorkspace(t)
 	t.Setenv("AICE_TOOL_TEST_VALUE", "inherited")
 	t.Setenv("AICE_TOOL_TEST_SECRET", "hidden")
-	bash, err := tool.NewBash(workspace)
+	bash, err := tool.NewBash(t.Context(), workspace)
 	if err != nil {
 		t.Skipf("NewBash() error = %v", err)
 	}
@@ -87,7 +87,7 @@ func TestBashExecuteUsesWorkingDirectoryAndHostEnvironment(t *testing.T) {
 func TestBashExecuteReportsExitAndTimeout(t *testing.T) {
 	t.Parallel()
 	workspace, root := newWorkspace(t)
-	bash, err := tool.NewBash(workspace)
+	bash, err := tool.NewBash(t.Context(), workspace)
 	if err != nil {
 		t.Skipf("NewBash() error = %v", err)
 	}
@@ -125,7 +125,7 @@ func TestBashExecuteReportsExitAndTimeout(t *testing.T) {
 func TestBashExecuteBoundsCombinedOutput(t *testing.T) {
 	t.Parallel()
 	workspace, _ := newWorkspace(t)
-	bash, err := tool.NewBash(workspace)
+	bash, err := tool.NewBash(t.Context(), workspace)
 	if err != nil {
 		t.Skipf("NewBash() error = %v", err)
 	}
@@ -156,7 +156,7 @@ func TestBashExecuteRetainsFinalDiagnostic(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			workspace, _ := newWorkspace(t)
-			bash, err := tool.NewBash(workspace)
+			bash, err := tool.NewBash(t.Context(), workspace)
 			if err != nil {
 				t.Skipf("NewBash() error = %v", err)
 			}
@@ -180,7 +180,7 @@ func TestBashExecuteRetainsFinalDiagnostic(t *testing.T) {
 func TestBashExecuteHonorsCallerCancellation(t *testing.T) {
 	t.Parallel()
 	workspace, _ := newWorkspace(t)
-	bash, err := tool.NewBash(workspace)
+	bash, err := tool.NewBash(t.Context(), workspace)
 	if err != nil {
 		t.Skipf("NewBash() error = %v", err)
 	}

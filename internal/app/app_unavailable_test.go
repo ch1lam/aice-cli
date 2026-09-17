@@ -19,8 +19,13 @@ func TestNewBuiltInToolsDegradesGracefully(t *testing.T) {
 	}
 	// Not parallel: hides bash and ripgrep from PATH for this test only.
 	t.Setenv("PATH", t.TempDir())
+	// Windows discovery also checks managed and standard Git installations.
+	t.Setenv("USERPROFILE", t.TempDir())
+	t.Setenv("ProgramFiles", "")
+	t.Setenv("ProgramFiles(x86)", "")
+	t.Setenv("LocalAppData", "")
 
-	tools, err := newBuiltInTools(workspace)
+	tools, err := newBuiltInTools(t.Context(), workspace)
 	if err != nil {
 		t.Fatalf("newBuiltInTools() error = %v", err)
 	}
