@@ -13,6 +13,8 @@ import (
 const maxRecordBytes = 64 * 1024 * 1024
 
 var (
+	// ErrBusy means another Store or process owns this Session for writing.
+	ErrBusy = errors.New("session is open in another writer; close it before resuming")
 	// ErrClosed indicates that a store no longer accepts writes.
 	ErrClosed = errors.New("session store is closed")
 	// ErrCorrupt indicates a malformed complete record or invalid file structure.
@@ -27,7 +29,9 @@ var (
 type Store struct {
 	mu   sync.Mutex
 	file *os.File
-	path string
+	// Open retains its locked repair handle while writes use an append handle.
+	lockFile *os.File
+	path     string
 	storeState
 	closed bool
 }
@@ -69,6 +73,9 @@ func Create(ctx context.Context, path string, metadata Metadata) (*Store, error)
 		}
 		return errors.Join(cause, closeErr, removeErr)
 	}
+	if err := lockWriter(file); err != nil {
+		return nil, cleanup(err)
+	}
 
 	data, err := json.Marshal(header)
 	if err != nil {
@@ -98,6 +105,9 @@ func Open(ctx context.Context, path string) (*Store, error) {
 	if err != nil {
 		return nil, fmt.Errorf("session: open file: %w", err)
 	}
+	if err := lockWriter(file); err != nil {
+		return nil, errors.Join(err, file.Close())
+	}
 	state, validBytes, incompleteTail, err := readSnapshot(ctx, file)
 	if err != nil {
 		return nil, errors.Join(err, file.Close())
@@ -116,14 +126,13 @@ func Open(ctx context.Context, path string) (*Store, error) {
 			)
 		}
 	}
-	if err := file.Close(); err != nil {
-		return nil, fmt.Errorf("session: close recovered file: %w", err)
-	}
 	appendFile, err := os.OpenFile(path, os.O_RDWR|os.O_APPEND, 0)
 	if err != nil {
-		return nil, fmt.Errorf("session: reopen file for append: %w", err)
+		return nil, errors.Join(fmt.Errorf("session: reopen file for append: %w", err), file.Close())
 	}
-	return newStore(appendFile, path, state), nil
+	store := newStore(appendFile, path, state)
+	store.lockFile = file
+	return store, nil
 }
 
 func newStore(file *os.File, path string, state storeState) *Store {
@@ -378,7 +387,11 @@ func (s *Store) Close() error {
 		return nil
 	}
 	s.closed = true
-	if err := s.file.Close(); err != nil {
+	err := s.file.Close()
+	if s.lockFile != nil {
+		err = errors.Join(err, s.lockFile.Close())
+	}
+	if err != nil {
 		return fmt.Errorf("session: close file: %w", err)
 	}
 	return nil

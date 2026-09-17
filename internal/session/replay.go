@@ -41,7 +41,11 @@ func readSnapshot(
 	if _, err := file.Seek(0, io.SeekStart); err != nil {
 		return storeState{}, 0, false, fmt.Errorf("session: seek file: %w", err)
 	}
-	reader := bufio.NewReader(file)
+	return replayRecords(ctx, file)
+}
+
+func replayRecords(ctx context.Context, source io.Reader) (storeState, int64, bool, error) {
+	reader := bufio.NewReader(source)
 	state := storeState{
 		index: indexRecords(nil, nil, nil),
 	}
