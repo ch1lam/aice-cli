@@ -24,6 +24,9 @@ or passed secrets and requires only `contents: read`. Both callers use a local
 workflow reference so verification comes from the same commit as the caller.
 Release builds run alongside verification; publishing requires both `test` and
 `build` to succeed, and only the publishing job has `contents: write`.
+The publishing job runs only for pushes of `v*` tags. Manual
+`workflow_dispatch` runs verify, build, and upload bundles but skip publishing,
+even when dispatched against a tag.
 A local pass proves only the tested platform; report
 unavailable tooling or platform checks rather than claiming they passed.
 Windows runs `go test -race -p 1 -parallel 2 ./...` to limit concurrent test
