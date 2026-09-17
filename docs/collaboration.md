@@ -151,7 +151,10 @@ the need for each abstraction. Agree on models and cost before paid evaluation.
 ## Browser checks
 
 The default browser/dependency tests use fake commands and local HTTP fixtures,
-not downloads or user profiles. The opt-in native test requires the verified
+not downloads or user profiles. Fake executable lookups must return host-absolute
+paths for installed helpers, including Git Bash, so Windows discovery does not
+trigger unrelated provisioning during browser tests.
+The opt-in native test requires the verified
 pinned helper plus installed Chrome/Chromium/Brave:
 
 ```sh

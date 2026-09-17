@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -41,7 +42,19 @@ func browserOptions(t *testing.T, handler http.HandlerFunc) Options {
 	opts := DefaultOptions().WithBinDir(t.TempDir())
 	opts.Goos, opts.Goarch = "darwin", "arm64"
 	opts.BaseURL = server.URL
-	opts.LookPath = func(string) (string, error) { return "/system/rg", nil }
+	// Browser tests assume the other helpers are installed. Return host-absolute
+	// paths so Windows discovery does not mistake the fixture for missing Bash.
+	bashPath := filepath.Join(opts.BinDir, "git", "bin", "bash.exe")
+	opts.LookPath = func(name string) (string, error) {
+		switch name {
+		case "rg":
+			return filepath.Join(opts.BinDir, "rg"), nil
+		case bashPath:
+			return bashPath, nil
+		default:
+			return "", exec.ErrNotFound
+		}
+	}
 	opts.Getenv = func(string) string { return "" }
 	opts.Setenv = func(string, string) error { return nil }
 	old := agentBrowserSHA256["darwin/arm64"]
