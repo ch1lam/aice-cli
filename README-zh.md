@@ -97,7 +97,7 @@ aice --workspace . --session .aice/sessions/<session-id>.jsonl
 | 领域 | 当前实现 |
 | --- | --- |
 | 交互 | Bubble Tea TUI（按 provider/model 显示[上下文使用百分比](./docs/configuration.md#context-window-and-status-bar)）与一次性 `--print` 模式 |
-| Provider | DeepSeek V4、OpenCode Go 内建模型目录、Kimi Coding Plan（Responses API）、Moonshot 开放平台 API、智谱开放平台 API 与 Coding Plan、OpenAI GPT-5.6 API、Codex/ChatGPT 订阅，以及 Custom（OpenAI 兼容） |
+| Provider | DeepSeek V4、OpenCode Go 内建模型目录、Kimi Coding Plan（Responses API）、Moonshot 开放平台 API、智谱开放平台 API 与 Coding Plan、OpenAI API（GPT-6 Astra 与 GPT-5.6）、Codex/ChatGPT 订阅，以及 Custom（OpenAI 兼容） |
 | 协议 | Anthropic Messages、OpenAI Responses、OpenAI Chat Completions |
 | 工具 | `read`、`write`、`edit`、`bash`、`grep`、`find`、`ls`、`skill` |
 | 浏览器 | 原生 agent-browser，通过 `bash`/`read` 与内置 browser skill 工作；`/browser` 连接与选择标签页，见[浏览器自动化](./docs/browser.md) |

@@ -395,12 +395,17 @@ that provider) to the global settings file, so the login survives a restart.
 provider. Missing credentials do not prevent the TUI from starting, but a
 normal prompt asks the user to log in first.
 
-Selecting `custom` starts a three-step hidden-input sequence: endpoint URL,
-then API key, then model. Enter with an empty endpoint keeps
-`http://localhost:11434/v1` (`custom.DefaultBaseURL`). The API key may be
-empty (Ollama and similar local servers). Enter with an empty model keeps the
-already stored model, or `llama3.1:8b` (`custom.DefaultModel`) when none is
-stored. The endpoint is persisted as `custom_base_url` in `settings.json`.
+Custom supports keyless servers, so its credential menu appears even without
+a saved key. Choose `/login` → `Sign in with an API key` → `Custom` →
+`Enter a new API key` to start three hidden inputs: endpoint URL, API key,
+then model. `Use saved credential` switches without these inputs.
+An empty endpoint keeps the current effective custom URL, falling back to
+`http://localhost:11434/v1` only when none is configured. An empty API key
+clears the saved custom key for keyless servers such as Ollama. An empty model
+keeps the current effective model ID, even when switching from another provider;
+when no model is configured, it uses `llama3.1:8b`. Enter the intended local
+model explicitly when switching providers. A supplied endpoint is persisted as
+`custom_base_url` in `settings.json`.
 
 For non-interactive setup, send the key on standard input so it does not appear
 in command-line arguments:
@@ -442,9 +447,11 @@ thinking enabled with `high`. Unsupported levels are clamped as usual, so
 
 All four use a conservative 262,144-token context default and a 32,768-token
 AICE output budget (not a claim about the server's maximum output). If your
-membership enables K3's 1M tier, set `"kimi-coding/k3": 1048576` under
-`context_windows` in global settings. Token usage is recorded with zero
-per-token price estimates; subscription quotas still apply.
+membership enables K3's 1M tier, add
+`{"provider":"kimi-coding","model":"k3","tokens":1048576}` to the
+`context_windows` array in global settings; see
+[context window configuration](#context-window-and-status-bar). Token usage is
+recorded with zero per-token price estimates; subscription quotas still apply.
 
 Protocol and model capabilities were checked on 2026-09-07 against Kimi's
 [Responses integration guide](https://www.kimi.com/code/docs/en/third-party-tools/codex.html)
@@ -844,7 +851,7 @@ without color.
 | `/settings` | Show effective model, Trust state, and configuration paths |
 | `/browser` | Browser status, connection, tab selection and close; `/browser status` also works |
 | `/skills` | List Agent Skills loaded for this Session |
-| `/login` | Choose account or API key, then provider; Codex offers browser/device login; `custom` uses endpoint → key (may be empty) → model |
+| `/login` | Choose account or API key, then provider and credential action; see [login flows](#credentials-and-connection-overrides) |
 | `/provider` | Select and save the global provider |
 | `/model` | Select and save a model from that provider |
 | `/thinking` | Select and save a supported reasoning level |

@@ -106,7 +106,7 @@ aice --workspace . --session .aice/sessions/<session-id>.jsonl
 | Area | Current implementation |
 | --- | --- |
 | Interface | Bubble Tea TUI with [context usage percentage](./docs/configuration.md#context-window-and-status-bar) per provider/model, and one-shot `--print` mode |
-| Providers | DeepSeek V4, OpenCode Go's built-in catalog, Kimi Coding Plan (Responses API), Moonshot API Platform, Zhipu API Platform and Coding Plan, OpenAI GPT-5.6 API, Codex/ChatGPT subscription, and Custom (OpenAI-compatible) |
+| Providers | DeepSeek V4, OpenCode Go's built-in catalog, Kimi Coding Plan (Responses API), Moonshot API Platform, Zhipu API Platform and Coding Plan, OpenAI API (GPT-6 Astra and GPT-5.6), Codex/ChatGPT subscription, and Custom (OpenAI-compatible) |
 | Protocols | Anthropic Messages, OpenAI Responses, OpenAI Chat Completions |
 | Tools | `read`, `write`, `edit`, `bash`, `grep`, `find`, `ls`, `skill` |
 | Browser | Native agent-browser through `bash`/`read`, builtin browser skill, `/browser` connection and tab controls; see [Browser automation](./docs/browser.md) |
