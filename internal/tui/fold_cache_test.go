@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	"charm.land/bubbles/v2/spinner"
+	"github.com/ch1lam/aice-cli/internal/interaction"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -81,4 +83,64 @@ func TestFoldHeadingsReuseReachedRowsAndLazyHover(t *testing.T) {
 	if calls[key] != 3 || hovers[key] != 3 {
 		t.Fatal("resize retained stale wrapped headings")
 	}
+}
+
+func TestFoldCachedHeadingsMatchFreshRenderingAfterUpdates(t *testing.T) {
+	m := foldTestModel()
+	check := func() string {
+		t.Helper()
+		m.refreshViewport(false)
+		got := m.viewport.GetContent()
+		want := strings.Join(wrapTranscriptLines(m.transcriptView(), m.viewport.Width()), "\n")
+		if got != want {
+			t.Fatalf("cached transcript differs from fresh rendering:\n%s\nwant:\n%s", got, want)
+		}
+		return got
+	}
+	check()
+	m.entries[2].toolDone = false
+	m.spinner.Spinner = spinner.Spinner{Frames: []string{"SPIN_A", "SPIN_B"}}
+	before := check()
+	m.spinner, _ = m.spinner.Update(spinner.TickMsg{})
+	if after := check(); before == after {
+		t.Fatal("running tool spinner did not advance")
+	}
+	m.completeTool(ToolDisplay{ID: "read-1", Failed: true,
+		Output: interaction.ToolOutputDisplay{Available: true, Text: "failure\nsecond line"}})
+	check()
+	m.entries[1].toolName = "read"
+	if !strings.Contains(check(), "2 file reads") {
+		t.Fatal("tool group counts stayed stale")
+	}
+	m.entries[1].toolName, m.entries[2].toolName = "bash", "read"
+	check()
+	m.entries[1].toolName, m.entries[2].toolName = "read", "bash"
+	check()
+	m.setFoldExpanded(foldTarget{kind: foldCalls, id: 1}, false)
+	check()
+	m.setFoldExpanded(foldTarget{kind: foldCalls, id: 1}, true)
+	check()
+	m.entries[2] = transcriptEntry{kind: entryTool, processID: 1, toolName: "write", toolPreparing: true, writePreview: &writePreview{}}
+	m.entries[2].writePreview.setContent(ToolDisplay{Content: "one\n", HasContent: true})
+	m.entries[2].toolPreviewRevision = m.entries[2].writePreview.revision
+	check()
+	m.entries[2].writePreview.setContent(ToolDisplay{Content: "one\ntwo\n", HasContent: true})
+	m.entries[2].toolPreviewRevision = m.entries[2].writePreview.revision
+	if !strings.Contains(check(), "2 lines") {
+		t.Fatal("preview line count stayed stale")
+	}
+	m.setFoldExpanded(foldTarget{kind: foldTool, id: 2}, true)
+	check()
+	m.entries[0].complete, m.running, m.assistantEntry = false, true, 0
+	m.status = "FIRST_STATUS"
+	check()
+	m.status = "SECOND_STATUS"
+	if !strings.Contains(check(), "SECOND_STATUS") {
+		t.Fatal("thinking activity stayed stale")
+	}
+	m.width = 40
+	m.resizeLayout()
+	check()
+	m.resetBranchTranscript()
+	check()
 }

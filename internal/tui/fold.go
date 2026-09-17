@@ -97,8 +97,14 @@ func (m model) processContentItems(start, end int) []transcriptItem {
 				last++
 			}
 			target := foldTarget{kind: foldCalls, id: index}
-			heading := m.foldHeading(toolGroupSummary(m.entries[index:last]), m.foldExpanded(target))
-			item := staticTranscriptItem(index*16+8, heading)
+			summary, expanded := toolGroupSummary(m.entries[index:last]), m.foldExpanded(target)
+			version := struct {
+				Summary  toolSummary
+				Expanded bool
+			}{summary, expanded}
+			item := transcriptItem{key: index*16 + 8, version: version, render: func() string {
+				return m.foldHeading(summary.view(), expanded)
+			}}
 			item.fold, item.gap = target, 1
 			items = append(items, item)
 			if m.foldExpanded(target) {
@@ -117,7 +123,14 @@ func (m model) processContentItems(start, end int) []transcriptItem {
 				if live {
 					label += " · " + m.activityIndicator()
 				}
-				item := staticTranscriptItem(index*16+5, m.foldHeading(mutedStyle.Render(label), m.foldExpanded(target)))
+				expanded := m.foldExpanded(target)
+				version := struct {
+					Label    string
+					Expanded bool
+				}{label, expanded}
+				item := transcriptItem{key: index*16 + 5, version: version, render: func() string {
+					return m.foldHeading(mutedStyle.Render(label), expanded)
+				}}
 				item.fold, item.gap = target, 1
 				items = append(items, item)
 				if m.foldExpanded(target) {
@@ -142,16 +155,29 @@ func (m model) processContentItems(start, end int) []transcriptItem {
 	return items
 }
 
-// Capture the enclosing item builder's model snapshot for deferred rendering.
+// Capture the enclosing item builder's model snapshot, as transcriptEntryItem
+// does, instead of allocating a full model copy for every tool heading.
 func (m *model) foldedToolItems(index int) []transcriptItem {
 	entry := m.entries[index]
 	target := foldTarget{kind: foldTool, id: index}
 	entry.toolExpanded = m.foldExpanded(target)
-	heading := m.foldHeading(m.toolHeaderView(entry), entry.toolExpanded)
-	header := staticTranscriptItem(index*16+9, heading)
-	header.fold = target
-	header.renderHover = func() string {
-		return m.foldHeadingStyled(m.toolHeaderStyled(entry, true), entry.toolExpanded, transcriptHoverStyle)
+	animation := ""
+	if !entry.toolDone && !entry.toolPreparing {
+		animation = m.spinner.View()
+	}
+	version := struct {
+		Entry     transcriptEntry
+		Animation string
+	}{entry, animation}
+	// The viewport formats reached headings once per version/width. In
+	// particular, historical output counts and hover styles are not frame work.
+	header := transcriptItem{key: index*16 + 9, fold: target, version: version,
+		render: func() string {
+			return m.foldHeading(m.toolHeaderView(entry), entry.toolExpanded)
+		},
+		renderHover: func() string {
+			return m.foldHeadingStyled(m.toolHeaderStyled(entry, true), entry.toolExpanded, transcriptHoverStyle)
+		},
 	}
 	items := []transcriptItem{header}
 	if entry.toolExpanded {
@@ -162,9 +188,15 @@ func (m *model) foldedToolItems(index int) []transcriptItem {
 	return items
 }
 
-func toolGroupSummary(entries []transcriptEntry) string {
-	counts := make(map[string]int)
-	var order []string
+// Six display categories bound the summary's comparable, allocation-free
+// version. First-seen order remains part of the key, including unknown tools.
+type toolSummary [6]struct {
+	label string
+	count int
+}
+
+func toolGroupSummary(entries []transcriptEntry) toolSummary {
+	var summary toolSummary
 	for _, entry := range entries {
 		label := "tool"
 		switch entry.toolName {
@@ -179,18 +211,28 @@ func toolGroupSummary(entries []transcriptEntry) string {
 		case "write":
 			label = "write"
 		}
-		if counts[label] == 0 {
-			order = append(order, label)
+		for i := range summary {
+			if summary[i].count == 0 || summary[i].label == label {
+				summary[i].label = label
+				summary[i].count++
+				break
+			}
 		}
-		counts[label]++
 	}
-	parts := make([]string, 0, len(order))
-	for _, label := range order {
+	return summary
+}
+
+func (summary toolSummary) view() string {
+	parts := make([]string, 0, len(summary))
+	for _, group := range summary {
+		if group.count == 0 {
+			break
+		}
 		plural := ""
-		if counts[label] != 1 {
+		if group.count != 1 {
 			plural = "s"
 		}
-		parts = append(parts, fmt.Sprintf("%d %s%s", counts[label], label, plural))
+		parts = append(parts, fmt.Sprintf("%d %s%s", group.count, group.label, plural))
 	}
 	return mutedStyle.Render(strings.Join(parts, " · "))
 }

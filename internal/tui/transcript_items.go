@@ -74,8 +74,9 @@ func (m model) transcriptItems() []transcriptItem {
 			live := m.running && conclusion == m.assistantEntry && !entry.complete
 			if assistantHasContent(entry, live, false, true) {
 				if !hasProcess {
-					text := m.assistantHeaderView(entry.processID)
-					add(staticTranscriptItem(start*16+4, text), 1)
+					add(transcriptItem{key: start*16 + 4, version: g, render: func() string {
+						return m.assistantHeaderView(entry.processID)
+					}}, 1)
 				}
 				add(m.transcriptEntryItem(conclusion, entry, live, transcriptConclusion), 1)
 			}
