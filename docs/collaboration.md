@@ -22,6 +22,9 @@ macOS, and Windows matrix, Go setup from `go.mod`, ripgrep installation, race
 tests, vet, and offline installer checks. It uses `workflow_call` without inputs
 or passed secrets and requires only `contents: read`. Both callers use a local
 workflow reference so verification comes from the same commit as the caller.
+CI runs on pushes to `main` and on pull request creation, updates, and reopening.
+Each run checks all three platforms. Other branch pushes do not trigger CI;
+open a pull request to verify a development branch before merging.
 Release builds run alongside verification; publishing requires both `test` and
 `build` to succeed, and only the publishing job has `contents: write`.
 The publishing job runs only for pushes of `v*` tags. Manual
