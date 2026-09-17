@@ -6,6 +6,7 @@ import (
 	"math"
 	"strings"
 	"testing"
+	"testing/synctest"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -373,21 +374,39 @@ func TestModelInitIncludesConfiguredUpdateCheck(t *testing.T) {
 	t.Parallel()
 
 	current := newModel(make(chan runRequest), make(chan struct{}))
-	withoutCheck, ok := current.Init()().(tea.BatchMsg)
-	if !ok {
-		t.Fatalf("Init() message = %T, want tea.BatchMsg", current.Init()())
+	current = updateModel(t, current, tea.WindowSizeMsg{Width: 80, Height: 24})
+	current.welcomeUpdate.state = welcomeUpdateChecking
+	calls := 0
+	current.updateCheck = checkForUpdate(t.Context(), func(ctx context.Context) (UpdateCheckResult, error) {
+		calls++
+		if ctx != t.Context() {
+			t.Error("Init update checker lost its caller context")
+		}
+		return UpdateCheckResult{Status: UpdateCheckStatusAvailable, Latest: "9.8.7"}, nil
+	})
+	found := false
+	for _, message := range welcomeInitMessages(t, current) {
+		if update, ok := message.(updateCheckMsg); ok {
+			if update.err != nil || update.result.Latest != "9.8.7" {
+				t.Fatalf("Init update message = %#v", update)
+			}
+			current = updateModel(t, current, update)
+			found = true
+		}
 	}
-	if len(withoutCheck) != 2 {
-		t.Fatalf("Init() commands without update check = %d, want 2", len(withoutCheck))
+	if !found || calls != 1 {
+		t.Fatalf("Init update messages found=%v, checker calls=%d", found, calls)
 	}
-
-	current.updateCheck = func() tea.Msg { return updateCheckMsg{} }
-	withCheck, ok := current.Init()().(tea.BatchMsg)
-	if !ok {
-		t.Fatalf("Init() message with update check = %T, want tea.BatchMsg", current.Init()())
+	if !strings.Contains(ansi.Strip(current.viewport.GetContent()), "9.8.7 available") {
+		t.Fatal("Init update result did not reach the welcome viewport")
 	}
-	if len(withCheck) != 3 {
-		t.Fatalf("Init() commands with update check = %d, want 3", len(withCheck))
+	for _, message := range welcomeInitMessages(t, current) {
+		if _, ok := message.(updateCheckMsg); ok {
+			t.Fatal("completed update check was scheduled again")
+		}
+	}
+	if calls != 1 {
+		t.Fatalf("completed checker called %d times", calls)
 	}
 }
 
@@ -476,14 +495,18 @@ func TestModelInitEmitsWelcomeTick(t *testing.T) {
 
 	current := newModel(make(chan runRequest), make(chan struct{}))
 	current = updateModel(t, current, tea.WindowSizeMsg{Width: 210, Height: 30})
-	if command := current.Init(); command == nil {
-		t.Error("Init() returned no command")
+	var tick welcomeTickMsg
+	found := false
+	for _, message := range welcomeInitMessages(t, current) {
+		if message, ok := message.(welcomeTickMsg); ok {
+			tick, found = message, true
+		}
 	}
-	// newModel seeds the animation as already running, so a matching tick
-	// advances the logo and re-renders the viewport with the new frame.
-	updated, command := current.Update(
-		welcomeTickMsg{generation: current.welcomeAnimation.generation},
-	)
+	if !found || tick.at.IsZero() {
+		t.Fatal("Init did not emit a timed welcome tick")
+	}
+	before := current.viewport.GetContent()
+	updated, command := current.Update(tick)
 	if command == nil {
 		t.Error("welcome tick did not schedule the next frame")
 	}
@@ -494,6 +517,31 @@ func TestModelInitEmitsWelcomeTick(t *testing.T) {
 	if !strings.Contains(ansi.Strip(after.viewport.GetContent()), "⣤⣶⣾") {
 		t.Error("welcome tick did not re-render the logo into the viewport")
 	}
+	if after.viewport.GetContent() == before {
+		t.Fatal("Init tick did not change the rendered logo frame")
+	}
+}
+
+// Only execute the finite startup batch. No guard channel is installed here,
+// and follow-up animation commands are not drained into an endless tick loop.
+func welcomeInitMessages(t *testing.T, current model) []tea.Msg {
+	t.Helper()
+	var messages []tea.Msg
+	synctest.Test(t, func(t *testing.T) {
+		command := current.Init()
+		if command == nil {
+			t.Fatal("Init returned no command")
+		}
+		raw := command()
+		batch, ok := raw.(tea.BatchMsg)
+		if !ok {
+			t.Fatalf("Init message = %T, want tea.BatchMsg", raw)
+		}
+		for _, command := range batch {
+			messages = append(messages, command())
+		}
+	})
+	return messages
 }
 
 func TestWelcomeRenderLogoIsUniformAndAnimated(t *testing.T) {

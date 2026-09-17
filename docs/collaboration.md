@@ -78,6 +78,23 @@ path handling.
 
 ## Offline capability checks
 
+The default suite's [binary print acceptance](../cmd/aice/main_process_test.go)
+builds AICE once into a temporary directory and invokes `--print` against local
+HTTP fixtures. It checks stdout/stderr separation, process exit codes, and
+`--yolo` preserving the secret-file deny while ordinary reads still succeed.
+Each invocation uses a temporary home and workspace, an environment allowlist,
+disabled helper downloads and update checks, and explicit project distrust.
+The build reuses the Go test toolchain and caches with module downloads disabled.
+
+[Stream failure tests](../internal/agent/stream_failure_test.go) distinguish
+unaccepted tool deltas from valid calls retained in a terminal assistant:
+neither executes on failure, while only retained calls receive paired results.
+[Welcome initialization](../internal/tui/welcome_test.go) executes its finite
+startup commands with virtual time. [Terminal rendering
+tests](../internal/tui/terminal_rendering_test.go) run Bubble Tea with captured
+output, including permission and side-panel transitions. These tests exercise
+the renderer but do not replace native terminal, desktop clipboard or IME checks.
+
 Configuration-lock and replacement retry tests inject filesystem errors and use
 a virtual clock to cover Windows access denial, sharing violations, cancellation,
 and timeout on every platform. A native Windows test holds a settings reader open
