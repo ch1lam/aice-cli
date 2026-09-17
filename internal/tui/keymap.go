@@ -3,6 +3,7 @@ package tui
 import "charm.land/bubbles/v2/key"
 
 type keyMap struct {
+	sessions  key.Binding
 	send      key.Binding
 	queue     key.Binding
 	newline   key.Binding
@@ -20,7 +21,8 @@ type keyMap struct {
 
 func newKeyMap() keyMap {
 	return keyMap{
-		paste: key.NewBinding(key.WithKeys("ctrl+v", "alt+v"), key.WithHelp("Ctrl+v/Alt+v", "paste image/text")),
+		sessions: key.NewBinding(key.WithKeys("ctrl+r"), key.WithHelp("Ctrl+r", "sessions")),
+		paste:    key.NewBinding(key.WithKeys("ctrl+v", "alt+v"), key.WithHelp("Ctrl+v/Alt+v", "paste image/text")),
 		send: key.NewBinding(
 			key.WithKeys("enter"),
 			key.WithHelp("Enter", "send"),
@@ -78,6 +80,7 @@ func (k keyMap) forState(running, acceptsDelivery bool) keyMap {
 	k.newline.SetEnabled(composerEnabled)
 	k.queue.SetEnabled(running && acceptsDelivery)
 	k.history.SetEnabled(!running)
+	k.sessions.SetEnabled(!running)
 	k.quit.SetEnabled(!running)
 	k.interrupt.SetEnabled(running)
 	if running && acceptsDelivery {
@@ -97,7 +100,7 @@ func (k keyMap) ShortHelp() []key.Binding {
 func (k keyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.send, k.queue, k.newline, k.paste},
-		{k.commands, k.history, k.scroll, k.process, k.editor, k.help},
+		{k.commands, k.sessions, k.history, k.scroll, k.process, k.editor, k.help},
 		{k.clear, k.interrupt, k.quit},
 	}
 }

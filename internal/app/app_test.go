@@ -879,6 +879,10 @@ func TestApplicationInteractiveResumesExplicitSession(t *testing.T) {
 					newDisplayUsage(firstUsage),
 				)
 			}
+			if options.Transcript == nil || len(options.Transcript.Entries) != 2 ||
+				options.Transcript.Entries[0].Text != "first prompt" || options.Transcript.Entries[1].Assistant.Text != "first answer" {
+				t.Fatalf("startup did not restore visible history: %#v", options.Transcript)
+			}
 			return runInteractive(ctx, runner, "second prompt", nil)
 		},
 	})

@@ -26,6 +26,12 @@ type pendingDelivery struct {
 
 func (m model) submitDelivery(mode deliveryMode) (model, tea.Cmd, bool) {
 	text := strings.TrimSpace(m.expandComposerText())
+	if len(m.pastes) == 0 && len(m.input.files) == 0 && m.searchSessions != nil {
+		if request, ok := parseSlashCommand(text); ok && request.Name == "history" {
+			m.inputNotice = "Stop the current response before resuming a session"
+			return m.settleCommand(false, nil)
+		}
+	}
 	if text == "" && len(m.composerImages()) == 0 {
 		return m, nil, true
 	}

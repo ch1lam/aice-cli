@@ -87,6 +87,11 @@ func (m model) submitSlashCommand(
 	}
 
 	switch command.Name {
+	case "history":
+		if request.Arguments == "" && m.searchSessions != nil {
+			m.resetCommandInput()
+			return m.openSessionPicker()
+		}
 	case "btw":
 		m.resetCommandInput()
 		return m.handleBTWCommand(request, raw, false)

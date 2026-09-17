@@ -142,6 +142,7 @@ type DisplayContext struct {
 // RuntimeState contains request settings and Session snapshots refreshed after
 // an application command or Agent run.
 type RuntimeState struct {
+	SessionID        string
 	Model            DisplayModel
 	Thinking         DisplayThinking
 	APIKeyConfigured bool
@@ -150,6 +151,9 @@ type RuntimeState struct {
 	// SessionChanged reports that the active Session branch changed, so a
 	// frontend must discard its visible branch transcript.
 	SessionChanged bool
+	// Transcript replaces the visible branch when non-nil. Ownership transfers
+	// to the frontend; it is not repeated on ordinary run updates.
+	Transcript *Transcript
 }
 
 // RuntimeStateProvider reports settings changed by an application command.

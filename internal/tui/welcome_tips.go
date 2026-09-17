@@ -18,6 +18,7 @@ const (
 
 // Keep tips to one sentence and describe only shipped AICE behavior.
 var welcomeTips = [...]string{
+	"Use /history or Ctrl+r to find and resume a session in this project.",
 	"Run /login to connect your model provider.",
 	"Use /model to switch models for the current provider.",
 	"Use /thinking to adjust the reasoning level.",

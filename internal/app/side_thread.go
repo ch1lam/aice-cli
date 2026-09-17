@@ -116,6 +116,10 @@ func (s *interactiveSession) CreateSideThread(
 			"app: side question is required",
 		)
 	}
+	// Session switching and side creation share this boundary, so a new
+	// registry entry can never carry the previous Session's snapshot.
+	s.conversation.historySyncMu.Lock()
+	defer s.conversation.historySyncMu.Unlock()
 	snapshot, err := s.conversation.sideSnapshot()
 	if err != nil {
 		return interaction.SideThread{}, nil, fmt.Errorf(

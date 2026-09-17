@@ -48,6 +48,7 @@ const (
 )
 
 type transcriptEntry struct {
+	sourceID            string
 	kind                entryKind
 	text                string
 	thinking            string
@@ -109,25 +110,31 @@ type commandMenuState struct {
 }
 
 type model struct {
-	completeFiles      func(uint64, string) (tea.Cmd, context.CancelFunc)
-	fileCompletion     fileCompletionState
-	requests           chan<- runRequest
-	controllerDone     <-chan struct{}
-	sideRequests       chan<- runRequest
-	sideControllerDone <-chan struct{}
-	updates            <-chan runUpdate
-	prepareDelivery    func(ActiveRun, interaction.Delivery, composerDraft) (tea.Cmd, context.CancelFunc)
-	deliveryPending    bool
-	cancelDelivery     context.CancelFunc
-	activeRun          ActiveRun
-	cancelRun          context.CancelFunc
-	side               sidePanelState
-	guardRequests      <-chan interaction.GuardRequest
-	guardPending       *interaction.GuardRequest
-	guardViewport      viewport.Model
-	guardSelection     int
-	guardFeedback      bool
-	guardFeedbackText  string
+	sessionID                string
+	sessionPicker            *sessionPicker
+	sessionQueryGeneration   uint64
+	sessionPreviewGeneration uint64
+	searchSessions           func(uint64, string) (tea.Cmd, context.CancelFunc)
+	previewSession           func(uint64, string, string) (tea.Cmd, context.CancelFunc)
+	completeFiles            func(uint64, string) (tea.Cmd, context.CancelFunc)
+	fileCompletion           fileCompletionState
+	requests                 chan<- runRequest
+	controllerDone           <-chan struct{}
+	sideRequests             chan<- runRequest
+	sideControllerDone       <-chan struct{}
+	updates                  <-chan runUpdate
+	prepareDelivery          func(ActiveRun, interaction.Delivery, composerDraft) (tea.Cmd, context.CancelFunc)
+	deliveryPending          bool
+	cancelDelivery           context.CancelFunc
+	activeRun                ActiveRun
+	cancelRun                context.CancelFunc
+	side                     sidePanelState
+	guardRequests            <-chan interaction.GuardRequest
+	guardPending             *interaction.GuardRequest
+	guardViewport            viewport.Model
+	guardSelection           int
+	guardFeedback            bool
+	guardFeedbackText        string
 
 	viewport              transcriptViewport
 	selection             transcriptSelection
@@ -287,7 +294,17 @@ func (m model) Init() tea.Cmd {
 }
 
 func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
+	if m.sessionPicker != nil {
+		switch message.(type) {
+		case tea.KeyPressMsg, tea.PasteMsg, tea.MouseClickMsg, tea.MouseReleaseMsg, tea.MouseMotionMsg, tea.MouseWheelMsg:
+			return m.handleSessionPicker(message)
+		}
+	}
 	switch message := message.(type) {
+	case sessionSearchResult:
+		return m.applySessionSearch(message)
+	case sessionPreviewResult:
+		return m.applySessionPreview(message)
 	case directoryOpenedMsg:
 		if message.err != nil {
 			m.inputNotice = message.err.Error()
@@ -344,6 +361,7 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m.selection.clear()
 		m.width = message.Width
 		m.height = message.Height
+		m.resizeSessionPicker()
 		m.resizeLayout()
 		m.refreshViewport(false)
 		return m, nil
@@ -584,6 +602,9 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	if m.sessionPicker != nil {
+		return m.handleSessionPicker(message)
+	}
 	var commands []tea.Cmd
 	if m.running || m.side.anyRunning() {
 		var command tea.Cmd
@@ -643,23 +664,19 @@ func (m model) terminalView(content string) tea.View {
 	// Nested styles reset SGR without restoring their parent's colors. Reapply
 	// the canvas defaults after resets; explicit panel/selection colors follow
 	// those resets and still take precedence.
-	colors := ansi.Style{}.ForegroundColor(primaryTextColor).BackgroundColor(inkBlackColor).String()
-	restore := strings.NewReplacer(
-		"\x1b[m", "\x1b[m"+colors,
-		"\x1b[0m", "\x1b[0m"+colors,
-		"\x1b[39m", ansi.Style{}.ForegroundColor(primaryTextColor).String(),
-		"\x1b[49m", ansi.Style{}.BackgroundColor(inkBlackColor).String(),
-	)
-	content = restore.Replace(content) + "\x1b[0m"
+	content = restoreCanvasColors(content)
 	// Resolve canvas colors before composition: the compositor merges SGR
 	// resets with other attributes, so textual reset restoration must run first.
 	content = m.overlayCopyNotice(content, m.width)
+	content, pickerCursor := m.overlaySessionPicker(content)
 	view := tea.NewView(content)
 	view.AltScreen = true
 	view.WindowTitle = "AICE"
 	view.MouseMode = tea.MouseModeAllMotion
 	view.ReportFocus = true
-	if m.secretInput == nil && m.authInput == nil && m.guardPending == nil {
+	if m.sessionPicker != nil {
+		view.Cursor = pickerCursor
+	} else if m.secretInput == nil && m.authInput == nil && m.guardPending == nil {
 		// Anchor the real terminal cursor on the composer caret. The IME
 		// candidate window follows the terminal cursor, and Bubble Tea's
 		// renderer hides the cursor around every updated frame and restores
@@ -672,6 +689,19 @@ func (m model) terminalView(content string) tea.View {
 		}
 	}
 	return view
+}
+
+// Resolve defaults before layers become cells; nested styled spans can reset
+// their parent background as well as foreground.
+func restoreCanvasColors(content string) string {
+	colors := ansi.Style{}.ForegroundColor(primaryTextColor).BackgroundColor(inkBlackColor).String()
+	restore := strings.NewReplacer(
+		"\x1b[m", "\x1b[m"+colors,
+		"\x1b[0m", "\x1b[0m"+colors,
+		"\x1b[39m", ansi.Style{}.ForegroundColor(primaryTextColor).String(),
+		"\x1b[49m", ansi.Style{}.BackgroundColor(inkBlackColor).String(),
+	)
+	return colors + restore.Replace(content) + "\x1b[0m"
 }
 
 // positionComposerCursor translates the input field's internal cursor
@@ -704,6 +734,11 @@ func (m model) positionComposerCursor(position *tea.Position, width int) {
 }
 
 func (m model) handleKey(message tea.KeyPressMsg) (model, tea.Cmd, bool) {
+	if message.String() == "ctrl+r" && m.searchSessions != nil && !m.side.isVisible &&
+		m.guardPending == nil && m.authInput == nil && m.secretInput == nil && m.commandMenu == nil &&
+		m.side.menu == nil && m.side.confirm == nil && !m.clipboardPending && !m.deliveryPending {
+		return m.openSessionPicker()
+	}
 	if m.commandMenu == nil {
 		m.syncCommandCompletion()
 	}
@@ -949,6 +984,9 @@ func (m model) clearInputOrQuit() (model, tea.Cmd, bool) {
 }
 
 func (m model) composerInputEnabled() bool {
+	if m.sessionPicker != nil {
+		return false
+	}
 	if m.deliveryPending {
 		return false
 	}

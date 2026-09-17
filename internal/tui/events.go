@@ -165,7 +165,7 @@ func (m model) applyRunBatch(batch runBatchMsg) (tea.Model, tea.Cmd) {
 			m.resizeLayout()
 			contentChanged = true
 		}
-		if strings.TrimSpace(update.output) != "" {
+		if strings.TrimSpace(update.output) != "" && (update.state == nil || update.state.Transcript == nil) {
 			m.entries = append(m.entries, transcriptEntry{
 				kind: entryCommand,
 				text: strings.TrimSpace(update.output),
@@ -173,6 +173,7 @@ func (m model) applyRunBatch(batch runBatchMsg) (tea.Model, tea.Cmd) {
 			contentChanged = true
 		}
 		if update.state != nil {
+			m.sessionID = update.state.SessionID
 			m.contextUsage = update.state.Context
 			m.currentModel = update.state.Model
 			m.thinking = update.state.Thinking
@@ -184,7 +185,14 @@ func (m model) applyRunBatch(batch runBatchMsg) (tea.Model, tea.Cmd) {
 				)
 				m.sessionUsage = update.state.Usage
 			}
-			if update.state.SessionChanged {
+			if update.state.Transcript != nil {
+				m.replaceTranscript(update.state.Transcript)
+				if strings.TrimSpace(update.output) != "" {
+					m.entries = append(m.entries, transcriptEntry{kind: entryCommand, text: strings.TrimSpace(update.output)})
+				}
+				follow = true
+				contentChanged = true
+			} else if update.state.SessionChanged {
 				m.resetBranchTranscript()
 				contentChanged = true
 			}
@@ -197,6 +205,17 @@ func (m model) applyRunBatch(batch runBatchMsg) (tea.Model, tea.Cmd) {
 			m.commands = slashCommandCatalog(commands)
 		}
 		if update.done {
+			if p := m.sessionPicker; p != nil && p.restoring {
+				p.restoring = false
+				if update.err != nil {
+					p.notice = update.err.Error()
+					p.input.Focus()
+					update.err = nil // The picker owns this error; preserve the old transcript.
+				} else {
+					m.resetCommandInput()
+					commands = append(commands, m.closeSessionPicker())
+				}
+			}
 			if update.err != nil {
 				m.restoreSubmittedInput()
 			}

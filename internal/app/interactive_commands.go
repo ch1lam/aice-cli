@@ -22,6 +22,7 @@ import (
 
 func (s *interactiveSession) SlashCommands() []interaction.Command {
 	return []interaction.Command{
+		{Name: "history", Description: "Find and resume a session in this project", ArgumentHint: "[id]"},
 		{Name: "browser", Description: "Manage browser connection and tabs", Menu: browserMenu(), Interactive: true},
 		{
 			Name:        "session",
@@ -357,6 +358,7 @@ type slashCommandHandler func(
 ) (string, error)
 
 var slashCommandHandlers = map[string]slashCommandHandler{
+	"history":  (*interactiveSession).slashResume,
 	"browser":  (*interactiveSession).slashBrowser,
 	"session":  (*interactiveSession).slashSession,
 	"tree":     (*interactiveSession).slashTree,
@@ -451,9 +453,15 @@ func (s *interactiveSession) slashCheckout(
 		return "", err
 	}
 	if changed {
-		s.stateMu.Lock()
-		s.sessionChanged = true
-		s.stateMu.Unlock()
+		snapshot, err := s.conversation.store.Snapshot()
+		if err != nil {
+			return "", err
+		}
+		view, err := sessionTranscript(snapshot)
+		if err != nil {
+			return "", err
+		}
+		s.publishTranscript(view)
 	}
 	return output.String(), nil
 }
@@ -753,6 +761,12 @@ func (s *interactiveSession) RuntimeState() interaction.RuntimeState {
 		return interaction.RuntimeState{}
 	}
 	usage := s.usageSnapshot()
+	sessionID := ""
+	if s.conversation.store != nil {
+		if info, err := s.conversation.store.Info(); err == nil {
+			sessionID = info.Header.ID
+		}
+	}
 	s.stateMu.Lock()
 	defer s.stateMu.Unlock()
 	thinking, err := displayThinking(s.options.Thinking)
@@ -762,14 +776,17 @@ func (s *interactiveSession) RuntimeState() interaction.RuntimeState {
 		thinking = interaction.DisplayThinkingDefault
 	}
 	state := interaction.RuntimeState{
+		SessionID:        sessionID,
 		Model:            interaction.DisplayModel{ID: s.model.ID},
 		Thinking:         thinking,
 		APIKeyConfigured: providerConfigured(s.providers, s.configuration),
 		Usage:            usage,
 		Context:          s.contextSnapshotFor(s.model, s.configuration, s.systemPrompt),
 		SessionChanged:   s.sessionChanged,
+		Transcript:       s.transcript,
 	}
 	s.sessionChanged = false
+	s.transcript = nil
 	return state
 }
 

@@ -429,7 +429,19 @@ func (a *application) Interactive(
 	if environment.modelErr != nil {
 		startupNotice = strings.TrimSpace(startupNotice + "\n" + environment.modelErr.Error())
 	}
+	var transcript *interaction.Transcript
+	if store != nil {
+		snapshot, err := store.Snapshot()
+		if err != nil {
+			return errors.Join(err, store.Close())
+		}
+		transcript, err = sessionTranscript(snapshot)
+		if err != nil {
+			return errors.Join(err, store.Close())
+		}
+	}
 	runErr := a.dependencies.runTUI(ctx, runner, tui.Options{
+		Transcript:    transcript,
 		StartupNotice: startupNotice,
 		Input:         request.Input,
 		Output:        request.Output,
@@ -760,6 +772,7 @@ type interactiveSession struct {
 	providers      []provider.Provider
 	totalUsage     llm.Usage
 	sessionChanged bool
+	transcript     *interaction.Transcript
 	guard          *guard.Guard
 	guardAdapter   *guardAdapter
 	guardRequests  chan interaction.GuardRequest

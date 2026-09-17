@@ -52,6 +52,7 @@ type UpdateChecker func(ctx context.Context) (UpdateCheckResult, error)
 
 // Options contains the terminal streams and model state shown by the program.
 type Options struct {
+	Transcript *interaction.Transcript
 	// StartupNotice reports a recoverable configuration issue in the transcript.
 	StartupNotice    string
 	Input            io.Reader
@@ -122,6 +123,14 @@ func Run(ctx context.Context, runner Runner, options Options) error {
 		slashCommands = append(slashCommands, btwSlashCommand())
 	}
 	initialModel := newModel(requests, controllerDone, slashCommands...)
+	if browser, ok := runner.(interaction.SessionBrowser); ok {
+		var closeQueries func()
+		initialModel.searchSessions, initialModel.previewSession, closeQueries = sessionBrowserCommands(controllerCtx, browser)
+		defer closeQueries()
+	}
+	if options.Transcript != nil {
+		initialModel.replaceTranscript(options.Transcript)
+	}
 	if completer, ok := runner.(interaction.FileCompleter); ok {
 		initialModel.completeFiles = fileCompletionCommand(controllerCtx, completer)
 	}
