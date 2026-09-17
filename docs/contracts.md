@@ -361,6 +361,12 @@ consistency for those behaviors.
   foregrounds, backgrounds and padding outside its bounds, including Markdown
   heading rows.
 - Session history, model context, and terminal viewport remain separate.
+- History restoration transfers a source-derived display snapshot through
+  `internal/interaction` once, creating completed entries without replaying live
+  events or usage. The session picker owns input and IME focus while open.
+  Search/preview commands inherit cancellation, reject stale generations, and
+  are cancelled and joined when the TUI exits. Switching requires idle main and
+  side responses; side-thread creation is serialized with the history switch.
   The TUI coalesces streaming deltas for up to 16 ms or 64 events before
   rendering; lifecycle updates flush the batch immediately. Main and side
   views use the same batching rule. Only the update loop owns assistant

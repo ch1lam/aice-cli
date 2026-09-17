@@ -860,6 +860,7 @@ without color.
 | `/thinking` | Select and save a supported reasoning level |
 | `/trust` | Save a Trust choice for restart; temporary choices are available only at startup |
 | `/session` | Show the Session ID, path, active leaf, and counts |
+| `/history [id]` | Open the current-project history picker (also Ctrl+R), or restore an existing local session by filename stem |
 | `/tree` | Show all Session branches |
 | `/checkout` | Select where the next branch starts |
 | `/compact` | Append a compaction checkpoint for the active branch |
@@ -889,7 +890,7 @@ returns to the parent and restores its draft. Hints are display-only and are
 never submitted. Only options supplied by the active command catalog are offered.
 Provider, model, and thinking changes apply to the current Session immediately
 and are also saved globally. Press `?` for keyboard shortcuts. Session
-navigation and compaction commands (`/session`, `/tree`, `/checkout`,
+navigation and compaction commands (`/session`, `/history`, `/tree`, `/checkout`,
 `/compact`) are detailed in [Tool execution and
 Sessions](execution-sessions.md#resume-and-navigate).
 

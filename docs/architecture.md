@@ -85,6 +85,12 @@ workspace and command lifecycle; an active run owns its input mailbox and
 execution. This keeps transcript publication and copying at one state owner
 without exposing storage concerns to the frontend or Agent Loop.
 
+The application owns the project session catalog and session switching.
+`internal/session` supplies read-only replay and exclusive writer ownership;
+`internal/interaction` carries catalog queries and a one-time immutable display
+snapshot to the TUI. That snapshot derives from original branch records, while
+model context remains independently derived through compaction checkpoints.
+
 ## Package map
 
 | Package | Ownership |

@@ -86,7 +86,9 @@ aice --workspace . --print "解释这个仓库的架构。"
 写入 stdout，并将执行进度写入 stderr。详见[配置与命令](./docs/configuration.md#command-line-options)。
 
 `--print` 默认不保存 Session；传入 `--session` 才会创建或续接指定文件。
-交互模式会自动在 `<workspace>/.aice/sessions/` 创建 Session，续接方式如下：
+交互模式会自动在 `<workspace>/.aice/sessions/` 创建 Session。使用 `/history`
+或 Ctrl+R 可以查找、预览并恢复当前项目的历史会话，显示原始对话并从其活动分支继续。
+也可以在启动时指定历史文件：
 
 ```sh
 aice --workspace . --session .aice/sessions/<session-id>.jsonl
@@ -102,7 +104,7 @@ aice --workspace . --session .aice/sessions/<session-id>.jsonl
 | 工具 | `read`、`write`、`edit`、`bash`、`grep`、`find`、`ls`、`skill` |
 | 浏览器 | 原生 agent-browser，通过 `bash`/`read` 与内置 browser skill 工作；`/browser` 连接与选择标签页，见[浏览器自动化](./docs/browser.md) |
 | Guard | 工具调用前的路径与危险命令检查、交互授权；详见[工具执行与 Session](./docs/execution-sessions.md#tool-execution-boundary) |
-| Session | 重启恢复、分支、回退与自动/手动非破坏性压缩 |
+| Session | 当前项目历史选择器、搜索与预览、原始对话恢复、分支、回退与自动/手动非破坏性压缩 |
 | 侧问题 | Session 历史之外、无工具的多个临时 `/btw` 线程 |
 | Agent Skills | 开放规范的 `SKILL.md` 目录：内建、`~/.agents/skills` 与项目 `.agents/skills`；详见 [Agent Skills](./docs/configuration.md#agent-skills) |
 | 输入 | 文本、`@文件` 与[剪贴板图片](./docs/configuration.md#clipboard-images)，共用图片缩放与原图找回 |

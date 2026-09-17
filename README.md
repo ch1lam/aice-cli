@@ -95,7 +95,10 @@ text mode keeps answer text on stdout and reports progress on stderr. See
 [Configuration and commands](./docs/configuration.md#command-line-options).
 
 `--print` is stateless unless `--session` is supplied. Interactive runs create
-a Session automatically under `<workspace>/.aice/sessions/`; resume one with:
+a Session automatically under `<workspace>/.aice/sessions/`. Use `/history` or
+Ctrl+R to search, preview, and resume this project's sessions. Restoring shows
+the original conversation and continues its active branch. You can also resume
+an explicit file at startup:
 
 ```sh
 aice --workspace . --session .aice/sessions/<session-id>.jsonl
@@ -111,7 +114,7 @@ aice --workspace . --session .aice/sessions/<session-id>.jsonl
 | Tools | `read`, `write`, `edit`, `bash`, `grep`, `find`, `ls`, `skill` |
 | Browser | Native agent-browser through `bash`/`read`, builtin browser skill, `/browser` connection and tab controls; see [Browser automation](./docs/browser.md) |
 | Guard | path and dangerous-command checks with interactive approvals; see [Tool execution and Sessions](./docs/execution-sessions.md#tool-execution-boundary) |
-| Sessions | restart recovery, branches, checkout/backtracking, automatic and manual compaction |
+| Sessions | project history picker with search and preview, transcript recovery, branches, checkout/backtracking, automatic and manual compaction |
 | Side questions | multiple ephemeral, tool-free `/btw` threads outside Session history |
 | Agent Skills | open-spec `SKILL.md` directories from builtin, `~/.agents/skills`, and project `.agents/skills`; see [Agent Skills](./docs/configuration.md#agent-skills) |
 | Input | text, `@file` attachments, and [clipboard images](./docs/configuration.md#clipboard-images); shared image resizing and original recovery |

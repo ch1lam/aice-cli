@@ -397,8 +397,8 @@ branch context reconstruction, and ordinary message copies. Old v3 messages
 without it remain valid and do not acquire inferred metadata. Compaction leaves
 source records intact. Replay restores the typed result, which uses the same
 application display projection as a live result; it does not reconstruct metadata
-from continuation prose. This does not add automatic historical transcript
-hydration to the TUI on resume.
+from continuation prose. Startup and interactive resume hydrate the TUI from
+the original active branch, including recorded tool outputs and diffs.
 
 Messages and compactions are tree nodes with stable IDs and parent IDs. Model
 context is derived from the active root-to-leaf path. After checkout to a safe
@@ -452,6 +452,47 @@ Ctrl+D ends it. Exiting AICE discards every side thread, so none can be
 recovered by resuming the main Session.
 
 ## Resume and navigate
+
+Use `/history` or Ctrl+R in the idle TUI to open the current-project history
+picker. It discovers regular `.jsonl` files under `<workspace>/.aice/sessions/`,
+validates their workspace, hides empty sessions, and sorts by last recorded
+activity. Each row shows the first user prompt as its title, a timestamp, and
+a current-session marker where applicable. Malformed or unsupported files are
+shown as unavailable rather than repaired. Sessions outside this directory
+remain accessible through an explicit startup `--session` path.
+
+Search matches titles, filename stems, and user/assistant prose across all
+branches, case-insensitively. Cached titles filter immediately; cancellable
+body searches start after a 180 ms debounce. Tool payloads, reasoning, and image
+bytes are not search targets. The catalog reads one session at a time without
+a durable index. Preview shows up to six recent active-branch messages or
+matching excerpts, each limited to 1,200 runes. Other-branch matches are labeled;
+selecting a result still resumes the saved active branch without checking out
+the matching message.
+
+Arrows or a mouse click select a session, Enter restores it, and Tab switches
+between the search/list and scrollable preview. Wide terminals show both panes;
+narrow terminals show one at a time. Escape closes the picker and preserves
+the current draft and transcript position. `/history <id>` restores an existing
+local file by filename stem; it never creates a missing session.
+
+Switching requires the main response and every BTW response to be idle. The
+application validates and prepares the target before replacing the current
+session. A failed switch preserves the old session and draft. A successful
+switch clears old BTW threads and temporary Guard grants, closes and rotates
+the browser session, and keeps the current provider/model/thinking settings.
+It does not roll back workspace files or restore browser state. The visible
+conversation uses original source records with completed tool/reasoning details
+folded and the viewport at the end; model context still uses compaction
+checkpoints. `/checkout` uses the same original-history display projection.
+
+Listing and preview use read-only replay bounded by the file's initial size;
+they never truncate incomplete tails or synthesize interrupted tool results.
+Writable opens acquire a nonblocking OS lock before replay or recovery and
+hold it until close. A second writer fails with a busy-session message while
+read-only browsing remains available. The OS releases the lock when the process
+exits; no sidecar lock file is used. Platforms without a supported OS lock fail
+closed when opening a writer.
 
 ```sh
 # Resume in the interactive TUI
