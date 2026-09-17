@@ -1,0 +1,82 @@
+name: verify
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install ripgrep (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install --yes ripgrep
+
+      - name: Install ripgrep (macOS)
+        if: runner.os == 'macOS'
+        run: brew install ripgrep
+
+      # Chocolatey-installed binaries do not land on PATH for later steps, so
+      # download the release zip directly. The version and SHA-256 mirror the
+      # pin in internal/deps/versions.go.
+      - name: Install ripgrep (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $version = "15.2.0"
+          $sha256 = "71b2fef860abe467217a538ff31de02f5258807c0129f771846f87bd029aafc5"
+          $asset = "ripgrep-$version-x86_64-pc-windows-msvc.zip"
+          $zip = Join-Path $env:RUNNER_TEMP $asset
+          Invoke-WebRequest -Uri "https://github.com/BurntSushi/ripgrep/releases/download/$version/$asset" -OutFile $zip
+          if ((Get-FileHash -Algorithm SHA256 $zip).Hash.ToLowerInvariant() -ne $sha256) {
+            throw "ripgrep download checksum mismatch"
+          }
+          $dest = Join-Path $env:RUNNER_TEMP "ripgrep-$version"
+          Expand-Archive -Path $zip -DestinationPath $dest
+          Add-Content $env:GITHUB_PATH (Join-Path $dest "ripgrep-$version-x86_64-pc-windows-msvc")
+
+      - name: Test Unix installer offline
+        if: runner.os != 'Windows'
+        run: |
+          sh -n scripts/install.sh
+          python3 scripts/test_install.py
+
+      - name: Test Windows installer offline (Windows PowerShell 5.1)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: ./scripts/test_install.ps1
+
+      - name: Test Windows installer offline (PowerShell 7)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/test_install.ps1
+
+      - name: Test
+        if: runner.os != 'Windows'
+        run: go test -race ./...
+
+      # Bound race-test process pressure: Windows runners have intermittently
+      # failed to start ripgrep with STATUS_NO_MEMORY (0xc0000017).
+      - name: Test (Windows)
+        if: runner.os == 'Windows'
+        run: go test -race -p 1 -parallel 2 ./...
+
+      - name: Vet
+        run: go vet ./...

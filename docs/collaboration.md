@@ -15,8 +15,16 @@
 - Verify CLI/TUI work through the actual user-facing command. Do not treat package tests alone as proof that interactive behavior works.
 - Do not invent build, release, changelog, or publishing commands before the repository defines them.
 
-The [CI workflow](../.github/workflows/ci.yml) runs race tests and vet on
-Linux, macOS, and Windows. A local pass proves only the tested platform; report
+The [CI workflow](../.github/workflows/ci.yml) and
+[release workflow](../.github/workflows/release.yml) call the same
+[verification workflow](../.github/workflows/verify.yml), which owns the Linux,
+macOS, and Windows matrix, Go setup from `go.mod`, ripgrep installation, race
+tests, vet, and offline installer checks. It uses `workflow_call` without inputs
+or passed secrets and requires only `contents: read`. Both callers use a local
+workflow reference so verification comes from the same commit as the caller.
+Release builds run alongside verification; publishing requires both `test` and
+`build` to succeed, and only the publishing job has `contents: write`.
+A local pass proves only the tested platform; report
 unavailable tooling or platform checks rather than claiming they passed.
 Windows runs `go test -race -p 1 -parallel 2 ./...` to limit concurrent test
 processes and parallel cases after intermittent ripgrep `STATUS_NO_MEMORY`
@@ -60,9 +68,10 @@ do not download releases or change the user's PATH:
 - Windows: `powershell -NoProfile -File scripts/test_install.ps1` and
   `pwsh -NoProfile -File scripts/test_install.ps1`.
 
-The CI matrix runs these on their native platforms, including Windows
-PowerShell 5.1 and PowerShell 7. They cover release pinning, checksum rejection,
-copy/replacement failures, cleanup, and path handling.
+The shared verification matrix runs these for both CI and release on their
+native platforms, including Windows PowerShell 5.1 and PowerShell 7. They cover
+release pinning, checksum rejection, copy/replacement failures, cleanup, and
+path handling.
 
 ## Offline capability checks
 
