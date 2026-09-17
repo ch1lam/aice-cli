@@ -154,6 +154,22 @@ func (s *Store) LeafID() (string, error) {
 	return s.leafID, nil
 }
 
+// StoreInfo is immutable metadata; reading it does not copy transcript payloads.
+type StoreInfo struct {
+	Header     Header
+	HasRecords bool
+}
+
+// Info returns the header and whether any message or compaction was recorded.
+func (s *Store) Info() (StoreInfo, error) {
+	if s == nil {
+		return StoreInfo{}, fmt.Errorf("session: store is required")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return StoreInfo{Header: s.header, HasRecords: len(s.messages) != 0 || len(s.compactions) != 0}, nil
+}
+
 // Snapshot returns a defensive copy of the loaded session records.
 func (s *Store) Snapshot() (Snapshot, error) {
 	if s == nil {

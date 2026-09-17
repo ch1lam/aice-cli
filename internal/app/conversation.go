@@ -21,6 +21,9 @@ type conversationState struct {
 	historySyncMu sync.Mutex
 	historyMu     sync.RWMutex
 	history       []llm.AgentMessage
+	// The cursor is protected by historySyncMu, alongside store mutations.
+	historyLeaf   string
+	historyReady  bool
 	activeMainRun *mainRunState
 }
 
@@ -41,17 +44,13 @@ func (c *conversationState) beginMainRun(
 		return nil, nil, fmt.Errorf("app: another main run is active")
 	}
 	if c.store != nil {
-		snapshot, err := c.store.Snapshot()
-		if err != nil {
-			return nil, nil, err
-		}
-		if _, err := session.BuildContext(snapshot); err != nil {
+		if err := c.syncHistory(nil); err != nil {
 			return nil, nil, fmt.Errorf("app: Session cannot continue; reopen it to recover interrupted tool results or use /new: %w", err)
 		}
 	}
 
 	// historySyncMu serializes new owners and transcript changes while the
-	// expensive store validation above runs without blocking side snapshots.
+	// store validation above runs without blocking side snapshots.
 	c.historyMu.Lock()
 	defer c.historyMu.Unlock()
 	history, err := llm.CloneAgentMessages(c.history)
@@ -87,22 +86,12 @@ func (c *conversationState) recordMessage(ctx context.Context, state *mainRunSta
 	if err := appendSessionMessage(ctx, c.store, message); err != nil {
 		return err
 	}
-	snapshot, err := c.store.Snapshot()
-	if err != nil {
-		return err
-	}
-	history, err := sessionHistory(snapshot)
+	err := c.syncHistory(state)
 	if errors.Is(err, session.ErrIncompleteGroup) {
 		return nil
 	}
 	if err != nil {
 		return err
-	}
-	c.historyMu.Lock()
-	defer c.historyMu.Unlock()
-	c.history = history
-	if c.activeMainRun == state {
-		state.pendingMessages = nil
 	}
 	return nil
 }
@@ -133,16 +122,31 @@ func (c *conversationState) sideSnapshot() ([]llm.AgentMessage, error) {
 func (c *conversationState) reloadHistory() error {
 	c.historySyncMu.Lock()
 	defer c.historySyncMu.Unlock()
-	snapshot, err := c.store.Snapshot()
-	if err != nil {
-		return fmt.Errorf("app: reload Session snapshot: %w", err)
+	c.historyReady = false
+	return c.syncHistory(nil)
+}
+
+// syncHistory requires historySyncMu. The Store owns pairing and branch
+// selection; publication and side-snapshot isolation remain conversation-owned.
+func (c *conversationState) syncHistory(committing *mainRunState) error {
+	after := c.historyLeaf
+	if !c.historyReady {
+		after = ""
 	}
-	history, err := sessionHistory(snapshot)
+	update, err := c.store.ContextSince(after)
 	if err != nil {
-		return fmt.Errorf("app: reload Session history: %w", err)
+		return fmt.Errorf("app: sync Session history: %w", err)
 	}
 	c.historyMu.Lock()
-	c.history = history
+	if !c.historyReady || update.Replace {
+		c.history = update.Messages
+	} else {
+		c.history = append(c.history, update.Messages...)
+	}
+	if committing != nil && c.activeMainRun == committing {
+		committing.pendingMessages = nil
+	}
 	c.historyMu.Unlock()
+	c.historyLeaf, c.historyReady = update.LeafID, true
 	return nil
 }

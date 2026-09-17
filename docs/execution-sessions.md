@@ -418,11 +418,20 @@ prefixes and sibling branches remain independent. Records and cached state
 become visible only after a successful sync. This cache is derived in memory
 and adds no JSONL record or durable format change.
 
+The application tracks the last published leaf through `Store.ContextSince`.
+Ordinary appends copy only the newly completed message group; an incomplete
+group stays private until all results arrive. Checkout outside that ancestry
+or a new compaction returns a complete replacement using `BuildContext`.
+Initial loading also reconstructs the active context. Publishing committed
+history and removing the matching pending input happen under the same
+conversation lock, keeping side snapshots consistent. `Store.Info` answers
+metadata-only queries without copying the transcript.
+
 Message copies use the typed clone helpers in `internal/llm`, sharing immutable
 strings while copying content slices, image payloads, tool arguments and cost
 metadata. The write boundary still normalizes each new record through its JSON
 representation. Full snapshots and contexts remain available for navigation,
-compaction and isolated model runs.
+compaction and isolated model runs; routine appends do not rebuild them.
 
 `/btw` side threads are outside this persistence model. Each new thread
 freezes the already accepted context at its first question, then uses that

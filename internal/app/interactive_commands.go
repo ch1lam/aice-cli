@@ -516,6 +516,7 @@ func (s *interactiveSession) slashNew(
 	defer s.conversation.historySyncMu.Unlock()
 	previous := s.conversation.store
 	s.conversation.store = nil
+	s.conversation.historyLeaf, s.conversation.historyReady = "", false
 	s.guard.ResetSessionGrants()
 	if s.browser != nil {
 		browserErr := closeBrowser(ctx, s.browser)
@@ -535,7 +536,7 @@ func (s *interactiveSession) slashNew(
 		return "Started new session", nil
 	}
 	previousPath := previous.Path()
-	snapshot, err := previous.Snapshot()
+	info, err := previous.Info()
 	if err != nil {
 		return "", errors.Join(
 			fmt.Errorf("app: read previous session: %w", err),
@@ -545,7 +546,7 @@ func (s *interactiveSession) slashNew(
 	if err := previous.Close(); err != nil {
 		return "", err
 	}
-	if len(snapshot.Messages) == 0 && len(snapshot.Compactions) == 0 {
+	if !info.HasRecords {
 		if err := os.Remove(previousPath); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return "", fmt.Errorf("app: remove empty session: %w", err)
 		}

@@ -169,11 +169,11 @@ func closeInteractiveStore(store *session.Store) error {
 	if store == nil {
 		return nil
 	}
-	snapshot, err := store.Snapshot()
+	info, err := store.Info()
 	if err != nil {
 		return errors.Join(err, store.Close())
 	}
-	if len(snapshot.Messages) != 0 || len(snapshot.Compactions) != 0 {
+	if info.HasRecords {
 		return store.Close()
 	}
 	path := store.Path()
@@ -235,9 +235,9 @@ func modelSessionContext(ctx context.Context, store *session.Store) (context.Con
 	if store == nil {
 		return llm.WithSessionID(ctx, rand.Text()), nil
 	}
-	snapshot, err := store.Snapshot()
+	info, err := store.Info()
 	if err != nil {
 		return nil, fmt.Errorf("app: read model Session identity: %w", err)
 	}
-	return llm.WithSessionID(ctx, snapshot.Header.ID), nil
+	return llm.WithSessionID(ctx, info.Header.ID), nil
 }
