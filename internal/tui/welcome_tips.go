@@ -11,9 +11,9 @@ import (
 )
 
 const (
-	welcomeTipTypeInterval  = 50 * time.Millisecond
+	welcomeTipTypeInterval  = 30 * time.Millisecond
 	welcomeTipHoldDuration  = 7 * time.Second
-	welcomeTipEraseInterval = 50 * time.Millisecond
+	welcomeTipEraseInterval = 30 * time.Millisecond
 )
 
 // Keep tips to one sentence and describe only shipped AICE behavior.
@@ -91,10 +91,15 @@ func (tip *welcomeTip) advance(now time.Time) {
 	if now.Before(tip.nextAt) {
 		return
 	}
+	if tip.nextAt.IsZero() {
+		tip.nextAt = now
+	}
 	switch tip.phase {
 	case welcomeTipTyping:
-		tip.visible++
-		tip.nextAt = now.Add(welcomeTipTypeInterval)
+		// Advance by elapsed time because the shared logo tick is slower.
+		steps := int(now.Sub(tip.nextAt)/welcomeTipTypeInterval) + 1
+		tip.visible = min(tip.visible+steps, len(tip.text))
+		tip.nextAt = tip.nextAt.Add(time.Duration(steps) * welcomeTipTypeInterval)
 		if tip.visible == len(tip.text) {
 			tip.phase = welcomeTipHolding
 			tip.nextAt = now.Add(welcomeTipHoldDuration)
@@ -105,8 +110,9 @@ func (tip *welcomeTip) advance(now time.Time) {
 		tip.nextAt = now.Add(welcomeTipEraseInterval)
 	case welcomeTipErasing:
 		if tip.visible > 0 {
-			tip.visible--
-			tip.nextAt = now.Add(welcomeTipEraseInterval)
+			steps := int(now.Sub(tip.nextAt)/welcomeTipEraseInterval) + 1
+			tip.visible = max(tip.visible-steps, 0)
+			tip.nextAt = tip.nextAt.Add(time.Duration(steps) * welcomeTipEraseInterval)
 			return
 		}
 		tip.selectNext()

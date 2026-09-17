@@ -791,8 +791,9 @@ ticks, stops when a run starts or transcript entries appear, and resumes on
 Between the logo and composer, the welcome screen shows a rotating, one-sentence
 English usage tip without a label or prefix. Slash commands and keyboard shortcuts
 use the theme's gold accent; surrounding text stays muted gray, including during
-typing, erasing, and line wrapping. Tips type and erase one
-Unicode character every 50 ms, with a fixed seven-second hold after the last
+typing, erasing, and line wrapping. Tips type and erase at a pace of one
+Unicode character every 30 ms, advancing by elapsed time on the shared 50 ms
+welcome tick, with a fixed seven-second hold after the last
 character appears. The next tip is chosen randomly from all other entries, so
 consecutive tips never repeat. A drawn caret follows the animated text without
 moving the composer's real cursor. Each complete sentence is centered using its

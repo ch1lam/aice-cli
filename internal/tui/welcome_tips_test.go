@@ -58,6 +58,27 @@ func TestWelcomeTipTypesHoldsAndErases(t *testing.T) {
 	}
 }
 
+func TestWelcomeTipPaceOnSharedTicks(t *testing.T) {
+	t.Parallel()
+
+	for _, phase := range []welcomeTipPhase{welcomeTipTyping, welcomeTipErasing} {
+		tip := welcomeTip{text: []rune("0123456789"), phase: phase}
+		if phase == welcomeTipErasing {
+			tip.visible = len(tip.text)
+		}
+		start := time.Unix(100, 0)
+		for tick, want := range []int{1, 2, 4, 6} {
+			tip.advance(start.Add(time.Duration(tick) * welcomeAnimationInterval))
+			if phase == welcomeTipErasing {
+				want = len(tip.text) - want
+			}
+			if tip.visible != want {
+				t.Fatalf("phase %d, tick %d: visible = %d, want %d", phase, tick, tip.visible, want)
+			}
+		}
+	}
+}
+
 func TestWelcomeTipsNeverRepeatConsecutively(t *testing.T) {
 	t.Parallel()
 
