@@ -11,10 +11,11 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/ch1lam/aice-cli/internal/interaction"
 	"github.com/charmbracelet/x/ansi"
 )
 
-func TestTerminalCanvasKeepsHoverAndInputLocal(t *testing.T) {
+func TestViewCanvasKeepsHoverAndInputLocal(t *testing.T) {
 	for _, width := range []int{24, 40, 100} {
 		t.Run(fmt.Sprint(width), func(t *testing.T) {
 			m := foldTestModel()
@@ -179,6 +180,117 @@ func TestTerminalCodeClicksWriteOriginalClipboardPayload(t *testing.T) {
 			case <-ctx.Done():
 				t.Fatal("terminal never emitted the original clipboard payload")
 			}
+		}
+	}
+}
+
+func TestTerminalGuardRestoresHiddenUpdatesAndComposer(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	m := newModel(nil, nil)
+	m = updateModel(t, m, tea.WindowSizeMsg{Width: 80, Height: 24})
+	m.entries = []transcriptEntry{{kind: entryUser, text: "MAIN TRANSCRIPT"}}
+	m.input.SetValue("draft")
+	m.input.CursorEnd()
+	m.refreshViewport(true)
+	output := make(terminalFrameWriter, 256)
+	program := tea.NewProgram(m, tea.WithContext(ctx), tea.WithInput(nil), tea.WithOutput(output),
+		tea.WithEnvironment([]string{"TERM=xterm-256color", "COLORTERM=truecolor"}),
+		tea.WithWindowSize(m.width, m.height), tea.WithoutSignalHandler())
+	done := make(chan error, 1)
+	go func() { _, err := program.Run(); done <- err }()
+	t.Cleanup(func() { cancel(); <-done })
+	waitForTerminalText(t, ctx, output, "MAIN TRANSCRIPT")
+	reply := make(chan interaction.GuardReply, 1)
+	program.Send(guardRequestMsg{req: &interaction.GuardRequest{
+		Command: "review-command", Options: guardTestOptions(), Reply: reply,
+	}})
+	frame := waitForTerminalText(t, ctx, output, "Run this command?")
+	if strings.Contains(frame, ansi.ShowCursor) {
+		t.Fatal("permission renderer exposed the composer cursor")
+	}
+	if strings.Contains(ansi.Strip(frame), "MAIN TRANSCRIPT") || strings.Contains(ansi.Strip(frame), "draft") {
+		t.Fatal("permission frame rendered the obscured conversation")
+	}
+	// Deliver a real run update while the guard owns the screen, then force a
+	// resize repaint. Hidden content must wait until the reply restores it.
+	program.Send(runBatchMsg{updates: []runUpdate{{output: "ARRIVED WHILE HIDDEN"}}})
+	program.Send(tea.WindowSizeMsg{Width: 72, Height: 22})
+	frame = waitForTerminalText(t, ctx, output, "Run this command?")
+	if strings.Contains(ansi.Strip(frame), "ARRIVED WHILE HIDDEN") {
+		t.Fatal("hidden update leaked through permission prompt")
+	}
+	program.Send(tea.KeyPressMsg{Code: 'n', Text: "n"})
+	waitForTerminalText(t, ctx, output, "Tell the agent")
+	program.Send(tea.KeyPressMsg{Code: 'u', Text: "use public data"})
+	waitForTerminalText(t, ctx, output, "use public data")
+	program.Send(tea.KeyPressMsg{Code: tea.KeyEnter})
+	waitForTerminalText(t, ctx, output, "ARRIVED WHILE HIDDEN")
+	select {
+	case got := <-reply:
+		if got.OptionID != "deny" || got.Feedback != "use public data" {
+			t.Fatalf("guard reply = %#v", got)
+		}
+	case <-ctx.Done():
+		t.Fatal("guard did not receive its reply")
+	}
+	// Permission selection and feedback must never enter the composer, whose
+	// focus must be restored even after the terminal was resized behind it.
+	program.Send(tea.KeyPressMsg{Code: '!', Text: "!"})
+	frame = waitForTerminalText(t, ctx, output, "draft!")
+	if !strings.Contains(frame, ansi.ShowCursor) {
+		t.Fatal("restored composer lost its terminal cursor")
+	}
+	if strings.Contains(ansi.Strip(frame), "use public data") {
+		t.Fatal("permission feedback leaked into the restored composer")
+	}
+}
+
+func TestTerminalSidePanelSwitchKeepsDraftAndMainUpdatesSeparate(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	m := sideTestModel(t, newFakeSideManager())
+	m.entries = []transcriptEntry{{kind: entryUser, text: "MAIN CONVERSATION"}}
+	m.promptHistory = []string{"MAIN HISTORY MUST STAY LOCAL"}
+	m.refreshViewport(true)
+	output := make(terminalFrameWriter, 256)
+	program := tea.NewProgram(m, tea.WithContext(ctx), tea.WithInput(nil), tea.WithOutput(output),
+		tea.WithEnvironment([]string{"TERM=xterm-256color", "COLORTERM=truecolor"}),
+		tea.WithWindowSize(m.width, m.height), tea.WithoutSignalHandler())
+	done := make(chan error, 1)
+	go func() { _, err := program.Run(); done <- err }()
+	t.Cleanup(func() { cancel(); <-done })
+	waitForTerminalText(t, ctx, output, "MAIN CONVERSATION")
+	program.Send(tea.KeyPressMsg{Code: '/', Text: "/btw"})
+	program.Send(tea.KeyPressMsg{Code: tea.KeyEnter})
+	frame := waitForTerminalText(t, ctx, output, "BTW SIDE THREAD")
+	if strings.Contains(ansi.Strip(frame), "MAIN CONVERSATION") {
+		t.Fatal("side panel rendered the main transcript")
+	}
+	program.Send(tea.KeyPressMsg{Code: tea.KeyUp})
+	program.Send(tea.KeyPressMsg{Code: 's', Text: "side draft"})
+	waitForTerminalText(t, ctx, output, "side draft")
+	program.Send(runBatchMsg{updates: []runUpdate{{output: "MAIN BACKGROUND UPDATE"}}})
+	program.Send(tea.WindowSizeMsg{Width: 72, Height: 22})
+	frame = waitForTerminalText(t, ctx, output, "BTW SIDE THREAD")
+	for _, hidden := range []string{"MAIN BACKGROUND UPDATE", "MAIN HISTORY MUST STAY LOCAL"} {
+		if strings.Contains(ansi.Strip(frame), hidden) {
+			t.Fatalf("side panel exposed %q", hidden)
+		}
+	}
+	program.Send(tea.KeyPressMsg{Code: tea.KeyEscape, Mod: tea.ModAlt})
+	frame = waitForTerminalText(t, ctx, output, "MAIN BACKGROUND UPDATE")
+	if strings.Contains(ansi.Strip(frame), "side draft") {
+		t.Fatal("side draft leaked to main composer")
+	}
+	// Reopening through the user command restores the side draft. If Up had
+	// recalled main history, this composer would contain that history as well.
+	program.Send(tea.KeyPressMsg{Code: '/', Text: "/btw"})
+	program.Send(tea.KeyPressMsg{Code: tea.KeyEnter})
+	frame = waitForTerminalText(t, ctx, output, "side draft")
+	for _, hidden := range []string{"MAIN BACKGROUND UPDATE", "MAIN HISTORY MUST STAY LOCAL"} {
+		if strings.Contains(ansi.Strip(frame), hidden) {
+			t.Fatalf("reopened side composer exposed %q", hidden)
 		}
 	}
 }
