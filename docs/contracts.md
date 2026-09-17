@@ -275,6 +275,10 @@ consistency for those behaviors.
   with `context.Background()`. Bounded durable cleanup is an explicit exception:
   per-message Session submission uses `context.WithoutCancel` plus a five-second
   timeout to preserve known results after request cancellation.
+  WSL Bash forwards cancellation by closing its stdin lifetime channel first;
+  its host launcher gets up to two seconds for Linux process-group cleanup
+  before forced termination. The tool waits for both cancellation and input
+  writing to finish before releasing the process handles.
   `Runner.NewRun` and `ActiveRun.Deliver` take caller contexts. The TUI
   publishes cancellation before preparation starts; delivery preparation runs
   in a command, never on the Update goroutine. The application resolves explicit

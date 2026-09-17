@@ -92,7 +92,7 @@ func TestBrowserCommandsAndSessionRotation(t *testing.T) {
 		t.Fatalf("commands %s", data)
 	}
 	before := s.browser.Name()
-	bash, err := tool.NewBash(s.workspace)
+	bash, err := tool.NewBash(t.Context(), s.workspace)
 	if err != nil {
 		t.Fatal(err)
 	}

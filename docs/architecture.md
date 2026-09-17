@@ -43,7 +43,10 @@ Durable design rules:
   context using the provider-neutral LLM metadata helpers. Providers own its
   HTTP encoding; the Loop and protocol adapters do not select Session identity.
   See [OpenCode routing behavior](configuration.md).
-- Built-in tools use the host process environment. An intrinsic execution gate
+- Built-in tools execute through the host process. Native commands inherit its
+  environment; the optional Windows WSL Bash fallback uses the default Linux
+  distribution and maps the workspace as described in
+  [Installation](installation.md#runtime-helpers). An intrinsic execution gate
   (`internal/guard`) checks every tool call inline; stronger isolation is
   still external (container/VM). Product behavior of the gate is in [Tool
   execution and Sessions](execution-sessions.md#tool-execution-boundary).

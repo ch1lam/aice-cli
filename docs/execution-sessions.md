@@ -248,6 +248,14 @@ final diagnostics available to the next model request. Capture storage stays
 bounded even for a single large write; rendered output is valid UTF-8. Caller
 cancellation still stops the process tree and returns cancellation.
 
+On Windows, native Bash runs under a Windows Job Object. The optional WSL
+fallback uses a Linux process group and a stdin lifetime channel: cancellation
+closes the channel so a Linux-side watcher kills that command group. A bounded
+host cleanup handles an unresponsive launcher; it never shuts down the whole
+distribution. The workspace is mapped with `wslpath` before commands run.
+Shell discovery, provisioning and WSL availability checks are described in
+[Installation](installation.md#runtime-helpers).
+
 ### Directory listings
 
 `ls` lists one directory, including dotfiles. Directory names end in `/`;
