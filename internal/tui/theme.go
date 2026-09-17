@@ -68,8 +68,7 @@ var (
 	thinkingStyle = lipgloss.NewStyle().
 			BorderLeft(true).
 			BorderStyle(lipgloss.NormalBorder()).
-			BorderForeground(subtleColor).
-			Background(panelBlackColor).
+			BorderForeground(informationColor).
 			Foreground(mutedTextColor).
 			PaddingLeft(1)
 	composerFocusedStyle = lipgloss.NewStyle().

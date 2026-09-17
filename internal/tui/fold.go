@@ -134,7 +134,9 @@ func (m model) processContentItems(start, end int) []transcriptItem {
 				item.fold, item.gap = target, 1
 				items = append(items, item)
 				if m.foldExpanded(target) {
-					items = append(items, m.transcriptEntryItem(index, entry, live, transcriptThinking))
+					body := m.transcriptEntryItem(index, entry, live, transcriptThinking)
+					body.gap = 1
+					items = append(items, body)
 				}
 			}
 			if !entry.conclusion && assistantHasContent(entry, live && strings.TrimSpace(entry.thinking) == "", false, true) {
@@ -148,9 +150,6 @@ func (m model) processContentItems(start, end int) []transcriptItem {
 			items = append(items, item)
 		}
 		index++
-	}
-	if len(items) > 0 {
-		items[0].gap = 0
 	}
 	return items
 }

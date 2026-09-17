@@ -85,11 +85,7 @@ func TestCompletionUsesThemeWithoutSelectionRecoloring(t *testing.T) {
 func TestThemeAppliesLayeredBackgrounds(t *testing.T) {
 	t.Parallel()
 
-	assertColor(
-		t,
-		thinkingStyle.GetBackground(),
-		lipgloss.Color(panelBlackHex),
-	)
+	assertNoColor(t, thinkingStyle.GetBackground())
 
 	markdown := inkMarkdownStyle()
 	if markdown.CodeBlock.Chroma == nil {

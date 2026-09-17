@@ -809,7 +809,7 @@ tick in the TUI update loop; they never enter conversation history.
 ### Visual theme
 
 The built-in ink theme is owned by [theme.go](../internal/tui/theme.go). Its three dark
-layers separate the ink screen (`#0D0B0A`), user-message/thinking/code panels
+layers separate the ink screen (`#0D0B0A`), user-message/code panels
 (`#1B1613`), and quiet brown borders (`#332921`) by brightness. Color roles stay
 consistent across the transcript, composer, menus, and permission prompts:
 
@@ -834,7 +834,9 @@ remain controlled by the terminal.
 
 Headings use the brand accent with weight and spacing for hierarchy; Markdown
 headings omit hash prefixes, and level-six headings use gold. Tool names use
-normal weight, including on hover. Thinking panels and command output use quiet brown rails.
+normal weight, including on hover. Thinking uses muted text and a stone blue
+left rail on the screen background, distinct from code panels; command output
+uses quiet brown rails.
 Reasoning levels use muted gray for default/off/minimal/low, gold for medium,
 ginger yellow for high, orange-red (`#F5735F`) for xhigh, and sunset red for max,
 all at normal weight. Level names remain visible. The welcome logo shares the
@@ -935,6 +937,8 @@ When final text starts, a process closes automatically unless the user has
 manually changed it or one of its children. Manual choices survive new deltas
 and sibling calls. Closing a parent preserves its children's choices.
 Fold state is transient presentation state, cleared with the visible transcript.
+Expanded processes leave one blank line before their first child heading;
+expanded thinking also leaves one blank line between its heading and body.
 
 Message text, process markers, fold arrows, and tool panels share one left
 alignment. Expanding a process, batch, thinking block, or tool does not add

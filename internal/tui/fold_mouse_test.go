@@ -113,7 +113,7 @@ func TestMouseDragAndCancelledPressNeverToggleFold(t *testing.T) {
 
 func TestMouseHoverRecomputesAfterScrollAndBlocksOtherSurfaces(t *testing.T) {
 	m := foldTestModel()
-	m = updateModel(t, m, tea.WindowSizeMsg{Width: 60, Height: 17})
+	m = updateModel(t, m, tea.WindowSizeMsg{Width: 60, Height: 18})
 	m.viewport.GotoTop()
 	mouse := paintedMouse(t, m, "✓ read")
 	m = updateModel(t, m, tea.MouseMotionMsg(mouse))
