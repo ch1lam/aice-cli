@@ -66,7 +66,7 @@ func Create(ctx context.Context, path string, metadata Metadata) (*Store, error)
 		return nil, fmt.Errorf("session: create file: %w", err)
 	}
 	cleanup := func(cause error) error {
-		closeErr := file.Close()
+		closeErr := closeWriter(file)
 		removeErr := os.Remove(path)
 		if removeErr != nil && os.IsNotExist(removeErr) {
 			removeErr = nil
@@ -110,25 +110,25 @@ func Open(ctx context.Context, path string) (*Store, error) {
 	}
 	state, validBytes, incompleteTail, err := readSnapshot(ctx, file)
 	if err != nil {
-		return nil, errors.Join(err, file.Close())
+		return nil, errors.Join(err, closeWriter(file))
 	}
 	if incompleteTail {
 		if err := file.Truncate(validBytes); err != nil {
 			return nil, errors.Join(
 				fmt.Errorf("session: truncate incomplete tail: %w", err),
-				file.Close(),
+				closeWriter(file),
 			)
 		}
 		if err := file.Sync(); err != nil {
 			return nil, errors.Join(
 				fmt.Errorf("session: sync recovered file: %w", err),
-				file.Close(),
+				closeWriter(file),
 			)
 		}
 	}
 	appendFile, err := os.OpenFile(path, os.O_RDWR|os.O_APPEND, 0)
 	if err != nil {
-		return nil, errors.Join(fmt.Errorf("session: reopen file for append: %w", err), file.Close())
+		return nil, errors.Join(fmt.Errorf("session: reopen file for append: %w", err), closeWriter(file))
 	}
 	store := newStore(appendFile, path, state)
 	store.lockFile = file
@@ -387,9 +387,11 @@ func (s *Store) Close() error {
 		return nil
 	}
 	s.closed = true
-	err := s.file.Close()
+	var err error
 	if s.lockFile != nil {
-		err = errors.Join(err, s.lockFile.Close())
+		err = errors.Join(s.file.Close(), closeWriter(s.lockFile))
+	} else {
+		err = closeWriter(s.file)
 	}
 	if err != nil {
 		return fmt.Errorf("session: close file: %w", err)

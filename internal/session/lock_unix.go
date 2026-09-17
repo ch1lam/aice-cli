@@ -9,7 +9,7 @@ import (
 	"syscall"
 )
 
-// The descriptor owns the lock until Close; reads remain available to browsers.
+// The open file description owns the lock; reads remain available to browsers.
 func lockWriter(file *os.File) error {
 	err := syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
 	if errors.Is(err, syscall.EWOULDBLOCK) {
@@ -19,4 +19,14 @@ func lockWriter(file *os.File) error {
 		return fmt.Errorf("session: lock writer: %w", err)
 	}
 	return nil
+}
+
+func closeWriter(file *os.File) error {
+	// A concurrently forked child can retain this description until exec,
+	// despite close-on-exec. Unlock explicitly so Close releases ownership now.
+	err := syscall.Flock(int(file.Fd()), syscall.LOCK_UN)
+	if err != nil {
+		err = fmt.Errorf("session: unlock writer: %w", err)
+	}
+	return errors.Join(err, file.Close())
 }

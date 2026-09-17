@@ -489,7 +489,9 @@ checkpoints. `/checkout` uses the same original-history display projection.
 Listing and preview use read-only replay bounded by the file's initial size;
 they never truncate incomplete tails or synthesize interrupted tool results.
 Writable opens acquire a nonblocking OS lock before replay or recovery and
-hold it until close. A second writer fails with a busy-session message while
+hold it until close. Unix writers explicitly unlock before closing the owning
+descriptor, so a concurrently forked child cannot delay release until exec.
+A second writer fails with a busy-session message while
 read-only browsing remains available. The OS releases the lock when the process
 exits; no sidecar lock file is used. Platforms without a supported OS lock fail
 closed when opening a writer.

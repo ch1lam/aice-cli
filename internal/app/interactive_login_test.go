@@ -28,7 +28,9 @@ func TestLoginTUI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
+	// This bounds the entire multi-step flow, including per-key rendering.
+	// Race-instrumented CI runners can still be typing when 15 seconds elapse.
+	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
 	defer cancel()
 	reader, input := io.Pipe()
 	defer reader.Close()

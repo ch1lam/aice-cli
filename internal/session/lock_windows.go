@@ -24,3 +24,7 @@ func lockWriter(file *os.File) error {
 	}
 	return nil
 }
+
+func closeWriter(file *os.File) error {
+	return file.Close()
+}

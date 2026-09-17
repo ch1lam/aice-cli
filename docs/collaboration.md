@@ -65,6 +65,10 @@ expected helper failure or output-limit rejection.
 Linux and Windows clipboard behavior still requires verification on a desktop
 of that platform; cross-compilation alone does not verify native helpers.
 
+The CLI-driven login test gives the complete multi-step flow a one-minute
+watchdog, including per-key rendering under race instrumentation. Each menu and
+prompt must still appear before the test sends the next input.
+
 ## Installer checks
 
 Installer tests use local release fixtures and simulated network failures; they
