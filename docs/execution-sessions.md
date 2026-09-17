@@ -411,6 +411,12 @@ missing results are recovered. Complete user messages and completed assistant
 responses without pending tools are safe boundaries. A run or interaction is
 not a storage transaction: already saved messages survive later failure.
 
+Message copies use the typed clone helpers in `internal/llm`, sharing immutable
+strings while copying content slices, image payloads, tool arguments and cost
+metadata. The write boundary still normalizes each new record through its JSON
+representation. Full snapshots and contexts remain available for navigation,
+compaction and isolated model runs.
+
 `/btw` side threads are outside this persistence model. Each new thread
 freezes the already accepted context at its first question, then uses that
 copy plus its own bounded in-memory history. Side threads run without tools

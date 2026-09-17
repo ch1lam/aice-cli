@@ -260,7 +260,13 @@ type messageJSON struct {
 
 // NewMessage validates and defensively copies one source message.
 func NewMessage(id, parentID string, createdAt int64, message llm.AgentMessage) (MessageEntry, error) {
-	cloned, err := cloneMessages([]llm.AgentMessage{message})
+	// At the write boundary, keep the returned entry identical to its JSONL
+	// representation (including UTF-8 replacement and RawMessage whitespace).
+	encoded, err := llm.MarshalAgentMessages([]llm.AgentMessage{message})
+	if err != nil {
+		return MessageEntry{}, err
+	}
+	cloned, err := llm.UnmarshalAgentMessages(encoded)
 	if err != nil {
 		return MessageEntry{}, err
 	}
@@ -358,28 +364,15 @@ func validateRecordID(label string, id string, allowEmpty bool) error {
 	return nil
 }
 
-func cloneMessages(messages []llm.AgentMessage) ([]llm.AgentMessage, error) {
-	encoded, err := llm.MarshalAgentMessages(messages)
-	if err != nil {
-		return nil, fmt.Errorf("session: clone messages: %w", err)
-	}
-	cloned, err := llm.UnmarshalAgentMessages(encoded)
-	if err != nil {
-		return nil, fmt.Errorf("session: clone messages: %w", err)
-	}
-	return cloned, nil
-}
-
 func cloneEntries(messages []MessageEntry) ([]MessageEntry, error) {
 	cloned := make([]MessageEntry, len(messages))
-	for index, message := range messages {
-		data, err := json.Marshal(message)
+	for i, entry := range messages {
+		message, err := llm.CloneAgentMessage(entry.Message)
 		if err != nil {
-			return nil, fmt.Errorf("session: clone message %d: %w", index, err)
+			return nil, fmt.Errorf("session: clone message %d: %w", i, err)
 		}
-		if err := json.Unmarshal(data, &cloned[index]); err != nil {
-			return nil, fmt.Errorf("session: clone message %d: %w", index, err)
-		}
+		cloned[i] = entry
+		cloned[i].Message = message
 	}
 	return cloned, nil
 }

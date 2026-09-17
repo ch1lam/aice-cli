@@ -54,11 +54,11 @@ func (c *conversationState) beginMainRun(
 	// expensive store validation above runs without blocking side snapshots.
 	c.historyMu.Lock()
 	defer c.historyMu.Unlock()
-	history, err := cloneAgentMessages(c.history)
+	history, err := llm.CloneAgentMessages(c.history)
 	if err != nil {
 		return nil, nil, err
 	}
-	pendingMessages, err := cloneAgentMessages([]llm.AgentMessage{prompt})
+	pendingMessages, err := llm.CloneAgentMessages([]llm.AgentMessage{prompt})
 	if err != nil {
 		return nil, nil, err
 	}
@@ -113,14 +113,14 @@ func (c *conversationState) recordMessage(ctx context.Context, state *mainRunSta
 func (c *conversationState) sideSnapshot() ([]llm.AgentMessage, error) {
 	c.historyMu.RLock()
 	defer c.historyMu.RUnlock()
-	snapshot, err := cloneAgentMessages(c.history)
+	snapshot, err := llm.CloneAgentMessages(c.history)
 	if err != nil {
 		return nil, err
 	}
 	if c.activeMainRun == nil {
 		return snapshot, nil
 	}
-	pending, err := cloneAgentMessages(c.activeMainRun.pendingMessages)
+	pending, err := llm.CloneAgentMessages(c.activeMainRun.pendingMessages)
 	if err != nil {
 		return nil, err
 	}

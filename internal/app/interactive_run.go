@@ -291,5 +291,5 @@ func (s *interactiveSession) compactHistory(
 	s.conversation.historyMu.Lock()
 	s.conversation.history = history
 	s.conversation.historyMu.Unlock()
-	return cloneAgentMessages(history)
+	return llm.CloneAgentMessages(history)
 }

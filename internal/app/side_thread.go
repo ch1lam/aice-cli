@@ -348,88 +348,6 @@ func cloneStreamOptions(options llm.StreamOptions) llm.StreamOptions {
 	return cloned
 }
 
-// cloneAgentMessages deep-copies a transcript slice so neither side can
-// mutate the other's message values. Unknown message types fail closed.
-func cloneAgentMessages(messages []llm.AgentMessage) ([]llm.AgentMessage, error) {
-	if messages == nil {
-		return nil, nil
-	}
-	cloned := make([]llm.AgentMessage, len(messages))
-	for index, message := range messages {
-		copied, err := cloneAgentMessage(message)
-		if err != nil {
-			return nil, fmt.Errorf("app: clone agent message %d: %w", index, err)
-		}
-		cloned[index] = copied
-	}
-	return cloned, nil
-}
-
-// cloneAgentMessage deep-copies one transcript message. All known variants
-// are copied structurally; an unknown variant fails closed instead of
-// aliasing.
-func cloneAgentMessage(message llm.AgentMessage) (llm.AgentMessage, error) {
-	switch value := message.(type) {
-	case llm.UserMessage:
-		return llm.UserMessage{
-			Role:      value.Role,
-			Content:   cloneContentParts(value.Content),
-			Timestamp: value.Timestamp,
-		}, nil
-	case llm.AssistantMessage:
-		copied := value
-		copied.Content = cloneContentParts(value.Content)
-		if value.Usage.Cost != nil {
-			cost := *value.Usage.Cost
-			copied.Usage.Cost = &cost
-		}
-		return copied, nil
-	case llm.ToolResultMessage:
-		copied := value
-		copied.Content = cloneContentParts(value.Content)
-		return copied, nil
-	case llm.CompactionSummaryMessage:
-		return value, nil
-	case nil:
-		return nil, fmt.Errorf("app: clone agent message: message is nil")
-	default:
-		return nil, fmt.Errorf("app: clone agent message: unsupported type %T", message)
-	}
-}
-
-// cloneContentParts deep-copies one message's content slice, including image
-// bytes, tool-call raw arguments, and recursively nested tool-result content,
-// so no mutable field can alias between a frozen snapshot and the parent.
-func cloneContentParts(parts []llm.ContentPart) []llm.ContentPart {
-	if parts == nil {
-		return nil
-	}
-	cloned := make([]llm.ContentPart, len(parts))
-	for index, part := range parts {
-		cloned[index] = part
-		switch part.Type {
-		case llm.ContentTypeImage:
-			if part.Image != nil {
-				image := part.Image.Clone()
-				cloned[index].Image = &image
-			}
-		case llm.ContentTypeToolCall:
-			if part.ToolCall != nil {
-				call := *part.ToolCall
-				call.Arguments = slices.Clone(part.ToolCall.Arguments)
-				cloned[index].ToolCall = &call
-			}
-		case llm.ContentTypeToolResult:
-			if part.ToolResult != nil {
-				result := *part.ToolResult
-				result.Content = cloneContentParts(part.ToolResult.Content)
-				cloned[index].ToolResult = &result
-			}
-		}
-	}
-	return cloned
-}
-
 var _ interaction.Runner = (*sideRunner)(nil)
 
 func (r *sideRunner) NewRun(
@@ -457,7 +375,7 @@ func (r *sideRunner) NewRun(
 func (r *sideRunner) requestHistory() ([]llm.AgentMessage, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	snapshot, err := cloneAgentMessages(r.snapshot)
+	snapshot, err := llm.CloneAgentMessages(r.snapshot)
 	if err != nil {
 		return nil, fmt.Errorf("app: clone side snapshot: %w", err)
 	}
@@ -468,7 +386,7 @@ func (r *sideRunner) requestHistory() ([]llm.AgentMessage, error) {
 	history := make([]llm.AgentMessage, 0, count)
 	history = append(history, snapshot...)
 	for index, interaction := range r.history {
-		cloned, err := cloneAgentMessages(interaction)
+		cloned, err := llm.CloneAgentMessages(interaction)
 		if err != nil {
 			return nil, fmt.Errorf("app: clone side interaction %d: %w", index, err)
 		}
@@ -483,7 +401,7 @@ func (r *sideRunner) commitTurn(messages []llm.AgentMessage) error {
 	if len(messages) == 0 {
 		return nil
 	}
-	cloned, err := cloneAgentMessages(messages)
+	cloned, err := llm.CloneAgentMessages(messages)
 	if err != nil {
 		return fmt.Errorf("app: clone side turn: %w", err)
 	}

@@ -59,7 +59,7 @@ func BuildContext(snapshot Snapshot) ([]llm.AgentMessage, error) {
 	for _, message := range state.messages {
 		contextMessages = append(contextMessages, message.Message)
 	}
-	return cloneMessages(contextMessages)
+	return llm.CloneAgentMessages(contextMessages)
 }
 
 // ContextCompactionPreparation is a pure cut of a complete current context.
@@ -79,7 +79,7 @@ func PrepareContextCompaction(
 	if settings.KeepRecentTokens <= 0 || settings.MaxRetainedTokens < 0 {
 		return ContextCompactionPreparation{}, fmt.Errorf("session: keep recent tokens must be positive and maximum nonnegative")
 	}
-	cloned, err := cloneMessages(messages)
+	cloned, err := llm.CloneAgentMessages(messages)
 	if err != nil {
 		return ContextCompactionPreparation{}, err
 	}
