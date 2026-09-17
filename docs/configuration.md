@@ -834,9 +834,9 @@ remain controlled by the terminal.
 
 Headings use the brand accent with weight and spacing for hierarchy; Markdown
 headings omit hash prefixes, and level-six headings use gold. Tool names use
-normal weight, including on hover. Thinking uses muted text and a quiet brown
+normal weight, including on hover. Thinking uses muted text and a stone blue
 left rail on the screen background, distinct from code panels; command output
-also uses quiet brown rails.
+uses quiet brown rails.
 Reasoning levels use muted gray for default/off/minimal/low, gold for medium,
 ginger yellow for high, orange-red (`#F5735F`) for xhigh, and sunset red for max,
 all at normal weight. Level names remain visible. The welcome logo shares the
