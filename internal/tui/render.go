@@ -351,8 +351,8 @@ func (m model) slashCommandMenuView(width int) string {
 	}
 	return renderSlashMenuRows(
 		width,
-		"SLASH COMMANDS",
-		"↑/↓ select · Tab complete · Esc close",
+		"",
+		"",
 		rows,
 		min(max(m.commandSelection, 0), len(rows)-1),
 	)
@@ -362,16 +362,12 @@ func (m model) slashCommandSelectionMenuView(width int) string {
 	if m.commandMenu == nil || len(m.commandMenu.frames) == 0 {
 		return ""
 	}
-	frame := m.commandMenu.frames[len(m.commandMenu.frames)-1]
-	hint := "↑/↓ select · Tab complete · Enter choose · Esc close"
-	if len(m.commandMenu.frames) > 1 {
-		hint = "↑/↓ select · Tab complete · Enter choose · Esc back"
-	}
 	options := m.matchingCommandOptions()
 	if len(options) == 0 {
-		return renderSlashMenuRows(width, frame.menu.Title, hint,
+		return renderSlashMenuRows(width, "", "",
 			[]slashMenuRow{{label: "No matching options"}}, -1)
 	}
+	frame := m.commandMenu.frames[len(m.commandMenu.frames)-1]
 	rows := make([]slashMenuRow, len(options))
 	request, _ := parseSlashCommand(m.input.Value())
 	for index, option := range options {
@@ -384,8 +380,8 @@ func (m model) slashCommandSelectionMenuView(width int) string {
 	}
 	return renderSlashMenuRows(
 		width,
-		frame.menu.Title,
-		hint,
+		"",
+		"",
 		rows,
 		min(max(frame.selection, 0), len(rows)-1),
 	)
@@ -420,9 +416,11 @@ func renderSlashMenuRows(
 		}
 	}
 	rendered := make([]string, 0, end-start+2)
-	rendered = append(rendered, mutedStyle.Render(
-		truncateTerminalText(strings.ToUpper(title)+"  "+hint, innerWidth),
-	))
+	if title != "" || hint != "" {
+		rendered = append(rendered, mutedStyle.Render(
+			truncateTerminalText(strings.ToUpper(title)+"  "+hint, innerWidth),
+		))
+	}
 	for index := start; index < end; index++ {
 		row := rows[index]
 		prefix := "  "
@@ -758,13 +756,18 @@ func (m model) activityIndicator() string {
 }
 
 func (m model) statusLine(width int) string {
-	shortcuts := m.help.ShortHelpView(m.footerKeys().ShortHelp())
+	menuKeys := m.slashMenuShortHelp()
+	shortcuts := m.help.ShortHelpView(append(menuKeys, m.footerKeys().ShortHelp()...))
 	fullUsage := m.usageStatus(true)
 	compactUsage := m.usageStatus(false)
 	for _, usage := range []string{fullUsage, compactUsage} {
 		if line, ok := alignStatusLine(shortcuts, usage, width); ok {
 			return line
 		}
+	}
+	// Menu actions stay discoverable when usage and shortcuts cannot share a row.
+	if len(menuKeys) > 0 {
+		return ansi.Truncate(shortcuts, width, "…")
 	}
 	for _, usage := range []string{fullUsage, compactUsage} {
 		if line, ok := alignStatusLine("", usage, width); ok {

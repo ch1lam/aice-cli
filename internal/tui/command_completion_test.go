@@ -128,10 +128,14 @@ func TestCommandCompletionNestedFilterPreservesAction(t *testing.T) {
 			}},
 		}}},
 	})
+	m = updateModel(t, m, tea.WindowSizeMsg{Width: 120, Height: 24})
 	m = updateModel(t, m, tea.PasteMsg{Content: "/login xmp"})
 	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyTab})
 	if len(m.commandMenu.frames) != 2 || !strings.Contains(m.commandArgumentHint(), "<action>") {
 		t.Fatal("nested menu did not update its options and hint")
+	}
+	if footer := ansi.Strip(m.footerView(120)); !strings.Contains(footer, "Esc back") {
+		t.Fatalf("nested menu footer missing back action: %q", footer)
 	}
 	m = updateModel(t, m, tea.PasteMsg{Content: "rsk"})
 	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyEscape})
@@ -151,6 +155,44 @@ func TestCommandCompletionNestedFilterPreservesAction(t *testing.T) {
 	cmd()
 	if request := <-requests; request.command == nil || !request.command.UseSavedCredential {
 		t.Fatalf("nested action metadata lost: %#v", request.command)
+	}
+}
+
+func TestSlashMenuShortcutsAppearOnlyInFooterWhileVisible(t *testing.T) {
+	t.Parallel()
+	for _, width := range []int{24, 80, 120} {
+		for _, draft := range []string{"/tkg", "/thinking "} {
+			m := reasoningCompletionModel()
+			m = updateModel(t, m, tea.WindowSizeMsg{Width: width, Height: 24})
+			m = updateModel(t, m, tea.PasteMsg{Content: draft})
+			menu := ansi.Strip(m.commandMenuView(m.layoutWidth()))
+			for _, removed := range []string{"SLASH COMMANDS", "SELECT REASONING", "select", "Tab complete", "Esc close"} {
+				if strings.Contains(menu, removed) {
+					t.Fatalf("menu retained header %q: %q", removed, menu)
+				}
+			}
+			footer := ansi.Strip(m.footerView(m.layoutWidth()))
+			if lipgloss.Width(footer) > m.layoutWidth() || lipgloss.Height(footer) != 1 {
+				t.Fatalf("footer overflow at %d columns: %q", width, footer)
+			}
+			if width >= 80 {
+				for _, hint := range []string{"↑/↓ select", "Tab complete", "Esc close"} {
+					if !strings.Contains(footer, hint) {
+						t.Fatalf("footer missing %q: %q", hint, footer)
+					}
+				}
+				if draft == "/thinking " && !strings.Contains(footer, "Enter choose") {
+					t.Fatalf("option footer missing choose action: %q", footer)
+				}
+			}
+			m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyEscape})
+			if m.commandMenuView(m.layoutWidth()) != "" || strings.Contains(ansi.Strip(m.footerView(m.layoutWidth())), "select") {
+				t.Fatal("dismissed slash menu retained its suggestions or contextual shortcuts")
+			}
+			if m.input.Value() != draft {
+				t.Fatal("dismissing suggestions changed the draft")
+			}
+		}
 	}
 }
 

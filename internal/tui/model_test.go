@@ -1408,7 +1408,7 @@ func TestModelSlashCommandMenuCompletesAndRunsApplicationCommand(
 	current.input.SetValue("/co")
 
 	menu := ansi.Strip(current.View().Content)
-	if !strings.Contains(menu, "SLASH COMMANDS") ||
+	if strings.Contains(menu, "SLASH COMMANDS") ||
 		!strings.Contains(menu, "/compact") {
 		t.Fatalf("slash command menu = %q, want compact suggestion", menu)
 	}
@@ -1521,7 +1521,7 @@ func TestModelLoginSelectsProviderThenHidesAndSubmitsSecret(t *testing.T) {
 	if selecting.secretInput != nil {
 		t.Fatal("/login requested the API key before provider selection")
 	}
-	if menu := selecting.commandMenuView(80); !strings.Contains(
+	if menu := selecting.commandMenuView(80); strings.Contains(
 		menu,
 		"SELECT PROVIDER",
 	) || !strings.Contains(menu, "DeepSeek") {
@@ -1786,7 +1786,7 @@ func TestModelSlashCommandSelectionMenuRunsSelectedValue(
 	if frame.selection != 1 {
 		t.Fatalf("initial model selection = %d, want current model at index 1", frame.selection)
 	}
-	if menu := selectingModel.commandMenuView(80); !strings.Contains(
+	if menu := selectingModel.commandMenuView(80); strings.Contains(
 		menu,
 		"SELECT MODEL",
 	) || !strings.Contains(menu, "DeepSeek V4 Pro") {
@@ -1954,7 +1954,7 @@ func TestModelSlashCommandMenuKeepsSuggestionsToOneLine(t *testing.T) {
 	current.input.SetValue("/")
 
 	menu := current.slashCommandMenuView(80)
-	wantHeight := maximumCommandRows + 3
+	wantHeight := maximumCommandRows + 2
 	if got := lipgloss.Height(menu); got != wantHeight {
 		t.Fatalf(
 			"slash command menu height = %d, want %d one-line rows:\n%s",

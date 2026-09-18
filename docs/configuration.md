@@ -872,7 +872,11 @@ without color.
 
 Typing `/` opens command suggestions. Names match case-insensitive characters
 in order, with gaps allowed: `/cpt` matches `/compact`. Up/Down selects and Tab
-completes the highlighted command; Escape closes suggestions. Matches are ranked
+completes the highlighted command; Escape closes suggestions. Command and option
+menus show rows without a title or shortcut header. Their shortcuts appear in
+the bottom shortcut bar only while the menu is visible; option menus also show
+Enter to choose and nested menus show Escape to go back. When space is limited,
+these contextual shortcuts take priority over usage figures. Matches are ranked
 by relevance, favoring exact names, consecutive letters, and word starts. Matching
 letters use AICE's gold secondary color. Selection only makes the option's label
 and arrow bold, without changing their colors or adding a background;
