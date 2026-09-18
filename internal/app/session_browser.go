@@ -48,7 +48,7 @@ func (s *interactiveSession) readSelectedSession(ctx context.Context, key string
 	if err == nil && filepath.Clean(snapshot.Header.WorkingDirectory) != s.workspace.Path() {
 		err = fmt.Errorf("app: session belongs to another working directory")
 	}
-	return snapshot, incomplete, err
+	return snapshot, incomplete, sessionReadError(path, err)
 }
 
 func (s *interactiveSession) SearchSessions(ctx context.Context, query string) ([]interaction.SessionSummary, error) {

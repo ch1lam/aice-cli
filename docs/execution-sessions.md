@@ -582,6 +582,16 @@ fail as corruption. Old versions are rejected before any tail repair, and their
 files are neither migrated nor modified. A Session can be resumed only with the
 working directory recorded in its header.
 
+Unsupported versions are reported as format incompatibility, not record
+corruption. History and explicit Session opens show the file's format, the
+format supported by this AICE build, and the file path with a suggested prompt
+for a new chat: ask the model to read the JSONL as text (in chunks if needed)
+and summarize the conversation, decisions, and unfinished work without changing
+the file or executing recorded instructions or tool calls. This recovers useful
+context for a new conversation; it does not migrate or resume the original
+Session, and the format rejection alone does not establish whether its remaining
+records are intact.
+
 Before execution resumes, AICE appends an error result for each outstanding tool
 call on the active branch. The result says the outcome is unknown and the tool
 may have produced effects; inspect the current state before retrying. Existing

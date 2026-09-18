@@ -226,7 +226,7 @@ func validateHeader(header Header) error {
 	}
 	if header.Version != CurrentVersion {
 		return fmt.Errorf(
-			"%w: got %d, want %d",
+			"%w: file uses format v%d; this AICE supports v%d",
 			ErrUnsupportedVersion,
 			header.Version,
 			CurrentVersion,

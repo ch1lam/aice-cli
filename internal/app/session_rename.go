@@ -48,7 +48,7 @@ func (s *interactiveSession) RenameSession(ctx context.Context, key, title strin
 		}
 		store, err = session.OpenComplete(ctx, path)
 		if err != nil {
-			return interaction.SessionSummary{}, err
+			return interaction.SessionSummary{}, sessionReadError(path, err)
 		}
 	}
 	info, err := store.Info()

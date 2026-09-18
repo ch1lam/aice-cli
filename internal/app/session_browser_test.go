@@ -133,6 +133,55 @@ func TestSessionBrowserSearchPreviewAndIsolation(t *testing.T) {
 	newer.Close()
 }
 
+func TestUnsupportedSessionGuidancePreservesHistory(t *testing.T) {
+	t.Parallel()
+	for _, version := range []int{2, 4} {
+		t.Run(fmt.Sprint(version), func(t *testing.T) {
+			s := browserHarness(t)
+			current := browserFixture(t, s, "current", "Keep this", "Answer", 100)
+			s.conversation.store = current
+			path := filepath.Join(s.sessionDirectory(), "unsupported.jsonl")
+			data := []byte(fmt.Sprintf(`{"type":"session","version":%d,"id":"unsupported","created_at":1,"working_directory":%q}`+"\n"+`{"type":"turn"`, version, s.workspace.Path()))
+			if err := os.WriteFile(path, data, 0600); err != nil {
+				t.Fatal(err)
+			}
+			checkGuidance := func(message string) {
+				t.Helper()
+				for _, want := range []string{fmt.Sprintf("format v%d", version), "supports v3", fmt.Sprintf("%q", path),
+					"has not been modified", "start a new chat", "Read the session file", "in chunks", "Do not modify", "does not resume"} {
+					if !strings.Contains(message, want) {
+						t.Fatalf("missing %q in %q", want, message)
+					}
+				}
+				if strings.Contains(message, "corrupt") {
+					t.Fatalf("compatibility reported as corruption: %s", message)
+				}
+			}
+			items, err := s.SearchSessions(t.Context(), "unsupported")
+			if err != nil || len(items) != 1 {
+				t.Fatalf("items=%v, error=%v", items, err)
+			}
+			checkGuidance(items[0].Problem)
+			_, previewErr := s.PreviewSession(t.Context(), "unsupported", "")
+			_, resumeErr := s.slashResume(t.Context(), interaction.CommandRequest{Arguments: "unsupported"})
+			_, _, _, startupErr := prepareSession(t.Context(), s.workspace, path, false)
+			for _, err := range []error{previewErr, resumeErr, startupErr} {
+				if !errors.Is(err, session.ErrUnsupportedVersion) || errors.Is(err, session.ErrCorrupt) {
+					t.Fatalf("misclassified error: %v", err)
+				}
+				checkGuidance(err.Error())
+			}
+			if s.conversation.store != current {
+				t.Fatal("unsupported session replaced the current conversation")
+			}
+			after, err := os.ReadFile(path)
+			if err != nil || !bytes.Equal(data, after) {
+				t.Fatalf("unsupported file changed: %v", err)
+			}
+		})
+	}
+}
+
 func TestSessionResumePreservesCurrentOnFailureAndRestoresSources(t *testing.T) {
 	t.Parallel()
 	s := browserHarness(t)

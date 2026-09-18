@@ -94,6 +94,9 @@ func replayRecords(ctx context.Context, source io.Reader) (storeState, int64, bo
 				return storeState{}, 0, false, corrupt(lineNumber, recordOffset, err)
 			}
 			if err := validateHeader(state.header); err != nil {
+				if errors.Is(err, ErrUnsupportedVersion) {
+					return storeState{}, 0, false, err
+				}
 				return storeState{}, 0, false, corrupt(lineNumber, recordOffset, err)
 			}
 			continue

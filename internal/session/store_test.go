@@ -175,8 +175,16 @@ func TestStoreRejectsUnsupportedVersionsWithoutTouchingTail(t *testing.T) {
 			if err := os.WriteFile(path, data, 0600); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := session.Open(t.Context(), path); !errors.Is(err, session.ErrUnsupportedVersion) {
-				t.Fatalf("version=%d err=%v", version, err)
+			_, _, readErr := session.Read(t.Context(), path)
+			_, openErr := session.Open(t.Context(), path)
+			_, completeErr := session.OpenComplete(t.Context(), path)
+			for _, err := range []error{readErr, openErr, completeErr} {
+				if !errors.Is(err, session.ErrUnsupportedVersion) || errors.Is(err, session.ErrCorrupt) {
+					t.Fatalf("version=%d misclassified error=%v", version, err)
+				}
+				if strings.Contains(err.Error(), "corrupt") || !strings.Contains(err.Error(), fmt.Sprintf("format v%d", version)) {
+					t.Fatalf("version=%d misleading diagnostic=%v", version, err)
+				}
 			}
 			if !reflect.DeepEqual(fileBytes(t, path), data) {
 				t.Fatal("unsupported bytes modified")
