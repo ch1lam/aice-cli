@@ -231,8 +231,8 @@ func (m model) sessionPickerPreviewView(l sessionPickerLayout) string {
 		button = buttonStyle.Render(sessionPickerCopyLabel)
 	}
 	heading := ansi.Truncate(sanitizeToolDetail(header, false), headerWidth, "…")
-	heading += strings.Repeat(" ", max(0, headerWidth-ansi.StringWidth(heading)))
-	return style.Render(heading) + button + "\n\n" + p.preview.View()
+	padding := strings.Repeat(" ", max(0, headerWidth-ansi.StringWidth(heading)))
+	return style.Render(heading) + button + padding + "\n\n" + p.preview.View()
 }
 
 func (m model) overlaySessionPicker(content string) (string, *tea.Cursor) {

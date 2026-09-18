@@ -550,9 +550,10 @@ list has focus; it returns to its normal text color when focus leaves. The
 preview activity-date line stays fixed above the scrolling conversation, turning
 gold with preview focus and returning to white otherwise. Clicking a pane also
 focuses it; focusing search removes both pane highlights. The activity header
-has a `⧉` button for copying the displayed session ID. Hover highlights the
-character and shows “Copy session ID”; a left press and release inside copies
-the ID and briefly confirms it. The button follows the displayed preview while
+has a `⧉` button immediately after the time for copying the displayed session
+ID. Hover highlights the character and shows “Copy session ID”; a left press
+and release inside copies the ID and briefly confirms it. The button follows
+the displayed preview while
 a newly selected session loads, and is absent for groups, errors or missing IDs.
 Escape hides an open preview and restores the full-width list, regardless of
 which pane has focus. With preview hidden, Escape closes the picker. The top-right

@@ -26,7 +26,9 @@ func (m model) sessionPickerCopyHovered() bool {
 	if l.wide {
 		x += l.listWidth + 3
 	}
-	x += l.previewWidth - ansi.StringWidth(sessionPickerCopyLabel)
+	header, _ := sessionPreviewParts(p.previewText)
+	heading := ansi.Truncate(sanitizeToolDetail(header, false), l.previewWidth-ansi.StringWidth(sessionPickerCopyLabel), "…")
+	x += ansi.StringWidth(heading)
 	return p.pointer.Y == l.y+3 && p.pointer.X >= x && p.pointer.X < x+ansi.StringWidth(sessionPickerCopyLabel)
 }
 
