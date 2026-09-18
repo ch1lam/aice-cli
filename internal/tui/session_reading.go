@@ -107,13 +107,20 @@ func (m *model) jumpReadingEntry(index int, query string) {
 	m.viewport.setItems(m.transcriptItems())
 	for i, item := range m.viewport.items {
 		if item.key/16 == index && item.key >= 0 && item.key%16 <= int(transcriptConclusion) {
-			m.viewport.index, m.viewport.line = i, item.gap
+			m.viewport.index, m.viewport.part, m.viewport.line = i, 0, item.gap
 			if query = strings.ToLower(strings.TrimSpace(query)); query != "" {
-				for row, line := range m.viewport.itemLines(i) {
-					if strings.Contains(strings.ToLower(ansi.Strip(line)), query) {
-						m.viewport.line = item.gap + max(0, row-2)
-						break
+				for part, piece := range m.viewport.itemParts(i) {
+					if piece.source != "" && !strings.Contains(strings.ToLower(piece.source), query) {
+						continue
 					}
+					m.viewport.part, m.viewport.line = part, piece.gap
+					for row, line := range m.viewport.partLines(i, part) {
+						if strings.Contains(strings.ToLower(ansi.Strip(line)), query) {
+							m.viewport.line = piece.gap + max(0, row-2)
+							break
+						}
+					}
+					break
 				}
 			}
 			m.selection.clear()
@@ -152,13 +159,16 @@ func (m *model) showTurnDirectory() {
 		items = append(items, staticTranscriptItem(-1, "No user questions in this view"))
 	}
 	m.viewport.setItems(items)
+	if len(items) <= m.viewport.Height() {
+		m.viewport.GotoTop()
+	}
 	if r.selected < m.viewport.index {
 		m.viewport.index = r.selected
 	}
 	if r.selected >= m.viewport.index+m.viewport.Height() {
 		m.viewport.index = r.selected - m.viewport.Height() + 1
 	}
-	m.viewport.line = 0
+	m.viewport.part, m.viewport.line = 0, 0
 }
 
 func (m model) closeReading() model {

@@ -20,6 +20,7 @@ type assistantPresentation struct {
 	textCache      assistantSection
 	thinkingCache  assistantSection
 	markdown       markdownCache
+	history        *historyMarkdown
 }
 
 type assistantSection struct {

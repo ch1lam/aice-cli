@@ -507,7 +507,10 @@ the browser session, and keeps the current provider/model/thinking settings.
 It does not roll back workspace files or restore browser state. The visible
 conversation uses original source records with completed tool/reasoning details
 folded and the viewport at the end; model context still uses compaction
-checkpoints. `/checkout` uses the same original-history display projection.
+checkpoints. Long completed answers parse once and format only reached Markdown
+sections, preserving lists, quotes, tables, reference links and original code
+copy targets. A single large Markdown construct still requires its whole layout.
+`/checkout` uses the same original-history display projection.
 
 Listing and preview use read-only replay bounded by the file's initial size;
 they never truncate incomplete tails or synthesize interrupted tool results.

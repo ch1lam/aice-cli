@@ -16,6 +16,10 @@ type transcriptItem struct {
 	version       any
 	render        func() string
 	renderContent func() transcriptContent
+	// Split immutable Markdown only when this item is reached.
+	split  func() []transcriptItem
+	parts  []transcriptItem
+	source string
 	// Optional styled header variant; it must have identical text and wrapping.
 	renderHover func() string
 	hoverLines  []string
@@ -43,7 +47,7 @@ type transcriptCodeRow struct {
 type transcriptViewport struct {
 	items                  []transcriptItem
 	width, height          int
-	index, line            int
+	index, part, line      int
 	MouseWheelDelta        int
 	itemsWidth             int
 	resizing, resizeFollow bool
@@ -71,15 +75,19 @@ func (v *transcriptViewport) setItems(items []transcriptItem) {
 				items[i].lines, items[i].width = old.lines, old.width
 				items[i].codeRows = old.codeRows
 				items[i].hoverLines = old.hoverLines
+				items[i].parts = old.parts
 			}
 		}
 	}
 	v.items, v.itemsWidth, v.index, v.resizing = items, v.width, nextIndex, false
 	if !anchorFound {
-		v.line = 0
+		v.part, v.line = 0, 0
+	}
+	if len(items) > 0 && v.part > 0 {
+		v.part = min(v.part, len(v.itemParts(v.index))-1)
 	}
 	if len(items) > 0 && v.line > 0 {
-		v.line = min(v.line, v.itemHeight(v.index)-1)
+		v.line = min(v.line, v.partHeight(v.index, v.part)-1)
 	}
 }
 
@@ -106,19 +114,33 @@ func (v *transcriptViewport) beginResize() {
 	}
 }
 
-func (v transcriptViewport) itemLines(index int) []string {
+func (v transcriptViewport) itemParts(index int) []transcriptItem {
 	item := &v.items[index]
+	if item.split == nil {
+		return v.items[index : index+1]
+	}
+	if item.parts == nil {
+		item.parts = item.split()
+		if len(item.parts) == 0 {
+			item.parts = []transcriptItem{staticTranscriptItem(item.key, "")}
+		}
+		item.parts[0].gap += item.gap
+	}
+	return item.parts
+}
+
+func (v transcriptViewport) partLines(index, part int) []string {
+	item := &v.itemParts(index)[part]
 	if item.lines == nil || item.width != v.width {
 		item.hoverLines = nil
-		content := item.content()
-		item.lines, item.codeRows = wrapTranscriptContent(content, v.width)
+		item.lines, item.codeRows = wrapTranscriptContent(item.content(), v.width)
 		item.width = v.width
 	}
 	return item.lines
 }
 
-func (v transcriptViewport) itemHeight(index int) int {
-	return len(v.itemLines(index)) + v.items[index].gap
+func (v transcriptViewport) partHeight(index, part int) int {
+	return len(v.partLines(index, part)) + v.itemParts(index)[part].gap
 }
 
 func (v transcriptViewport) AtBottom() bool {
@@ -127,35 +149,55 @@ func (v transcriptViewport) AtBottom() bool {
 	}
 	remaining := -v.line
 	for i := v.index; i < len(v.items); i++ {
-		remaining += v.itemHeight(i)
-		if remaining > v.height {
-			return false
+		start := 0
+		if i == v.index {
+			start = v.part
+		}
+		for part := start; part < len(v.itemParts(i)); part++ {
+			remaining += v.partHeight(i, part)
+			if remaining > v.height {
+				return false
+			}
 		}
 	}
 	return true
 }
 
-func (v *transcriptViewport) GotoTop() { v.index, v.line = 0, 0 }
+func (v *transcriptViewport) GotoTop() { v.index, v.part, v.line = 0, 0, 0 }
 func (v *transcriptViewport) GotoBottom() {
 	remaining := v.height
-	v.index, v.line = 0, 0
+	v.GotoTop()
 	for i := len(v.items) - 1; i >= 0; i-- {
-		height := v.itemHeight(i)
-		if height >= remaining {
-			v.index, v.line = i, height-remaining
-			return
+		for part := len(v.itemParts(i)) - 1; part >= 0; part-- {
+			height := v.partHeight(i, part)
+			if height >= remaining {
+				v.index, v.part, v.line = i, part, height-remaining
+				return
+			}
+			remaining -= height
 		}
-		remaining -= height
 	}
 }
 
 // YOffset is a selection coordinate, not an exact scrollbar total. Unknown
-// preceding blocks count as one row; measuring them here would defeat lazy
-// rendering. Drag selection freezes both this coordinate and the visible rows.
+// blocks count as one row; measuring them here would defeat lazy rendering.
+// Drag selection freezes both this coordinate and the visible rows.
 func (v transcriptViewport) YOffset() int {
 	offset := v.line
-	for i := 0; i < v.index; i++ {
-		offset += max(1, len(v.items[i].lines)) + v.items[i].gap
+	for i := 0; i <= v.index && i < len(v.items); i++ {
+		item := v.items[i]
+		if item.parts == nil {
+			if i < v.index {
+				offset += max(1, len(item.lines)) + item.gap
+			}
+			continue
+		}
+		for part, piece := range item.parts {
+			if i == v.index && part >= v.part {
+				break
+			}
+			offset += max(1, len(piece.lines)) + piece.gap
+		}
 	}
 	return offset
 }
@@ -163,6 +205,32 @@ func (v transcriptViewport) YOffset() int {
 func (v *transcriptViewport) SetYOffset(offset int) {
 	v.GotoTop()
 	v.scroll(max(offset, 0))
+}
+
+func (v *transcriptViewport) previousPart() bool {
+	if v.part > 0 {
+		v.part--
+		return true
+	}
+	if v.index == 0 {
+		return false
+	}
+	v.index--
+	v.part = len(v.itemParts(v.index)) - 1
+	return true
+}
+
+func (v *transcriptViewport) nextPart() bool {
+	if v.part+1 < len(v.itemParts(v.index)) {
+		v.part++
+		return true
+	}
+	if v.index+1 >= len(v.items) {
+		return false
+	}
+	v.index++
+	v.part = 0
+	return true
 }
 
 func (v *transcriptViewport) scroll(delta int) {
@@ -174,25 +242,23 @@ func (v *transcriptViewport) scroll(delta int) {
 			take := min(-delta, v.line)
 			v.line -= take
 			delta += take
-			if delta == 0 || v.index == 0 {
+			if delta == 0 || !v.previousPart() {
 				break
 			}
-			v.index--
-			v.line = v.itemHeight(v.index)
+			v.line = v.partHeight(v.index, v.part)
 		}
 	} else {
 		for delta > 0 {
-			remaining := v.itemHeight(v.index) - v.line
+			remaining := v.partHeight(v.index, v.part) - v.line
 			if delta < remaining {
 				v.line += delta
 				break
 			}
-			if v.index+1 >= len(v.items) {
+			if !v.nextPart() {
 				v.GotoBottom()
 				return
 			}
 			delta -= remaining
-			v.index++
 			v.line = 0
 		}
 		if v.AtBottom() {
@@ -226,6 +292,7 @@ func (v transcriptViewport) View() string {
 type transcriptRow struct {
 	text string
 	item int
+	part int
 	key  int
 	line int
 	fold foldTarget
@@ -236,22 +303,28 @@ func (v transcriptViewport) visibleRows() []transcriptRow {
 	rows := make([]transcriptRow, 0, v.height)
 	skip := v.line
 	for i := v.index; i < len(v.items) && len(rows) < v.height; i++ {
-		lines := v.itemLines(i)
-		item := v.items[i]
-		height := item.gap + len(lines)
-		if skip >= height {
-			skip -= height
-			continue
+		start := 0
+		if i == v.index {
+			start = v.part
 		}
-		for line := skip; line < height && len(rows) < v.height; line++ {
-			row := transcriptRow{item: i, key: item.key, line: line}
-			if line >= item.gap {
-				row.text, row.fold = lines[line-item.gap], item.fold
-				row.code = item.codeRows[line-item.gap]
+		for part := start; part < len(v.itemParts(i)) && len(rows) < v.height; part++ {
+			lines := v.partLines(i, part)
+			item := v.itemParts(i)[part]
+			height := item.gap + len(lines)
+			if skip >= height {
+				skip -= height
+				continue
 			}
-			rows = append(rows, row)
+			for line := skip; line < height && len(rows) < v.height; line++ {
+				row := transcriptRow{item: i, part: part, key: v.items[i].key, line: line}
+				if line >= item.gap {
+					row.text, row.fold = lines[line-item.gap], item.fold
+					row.code = item.codeRows[line-item.gap]
+				}
+				rows = append(rows, row)
+			}
+			skip = 0
 		}
-		skip = 0
 	}
 	return rows
 }
@@ -267,7 +340,7 @@ func (v transcriptViewport) viewWithCodeHover(hover foldTarget, codeHover codeHi
 	for _, row := range v.visibleRows() {
 		text := row.withCodeHover(codeHover)
 		if hover.kind != foldNone && row.fold == hover {
-			if item := &v.items[row.item]; hoverLines == nil && item.renderHover != nil {
+			if item := &v.itemParts(row.item)[row.part]; hoverLines == nil && item.renderHover != nil {
 				if item.hoverLines == nil {
 					item.hoverLines = wrapTranscriptLines(item.renderHover(), v.width)
 				}
@@ -286,7 +359,7 @@ func (v transcriptViewport) viewWithCodeHover(hover foldTarget, codeHover codeHi
 func (v *transcriptViewport) anchorRow(key, line, screenRow int) {
 	for index, item := range v.items {
 		if item.key == key {
-			v.index, v.line = index, min(line, v.itemHeight(index)-1)
+			v.index, v.part, v.line = index, 0, min(line, v.partHeight(index, 0)-1)
 			v.scroll(-screenRow)
 			return
 		}
@@ -297,10 +370,12 @@ func (v *transcriptViewport) anchorRow(key, line, screenRow int) {
 func (v transcriptViewport) GetContent() string {
 	var lines []string
 	for i := range v.items {
-		for range v.items[i].gap {
-			lines = append(lines, "")
+		for part, item := range v.itemParts(i) {
+			for range item.gap {
+				lines = append(lines, "")
+			}
+			lines = append(lines, v.partLines(i, part)...)
 		}
-		lines = append(lines, v.itemLines(i)...)
 	}
 	return strings.Join(lines, "\n")
 }

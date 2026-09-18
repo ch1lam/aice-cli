@@ -124,7 +124,7 @@ func (m *model) transcriptEntryItem(index int, e transcriptEntry, active bool, m
 		Mode                transcriptEntryMode
 		Animation, Duration string
 	}{e, active, mode, animation, duration}
-	return transcriptItem{key: index*16 + int(mode), version: version, renderContent: func() transcriptContent {
+	item := transcriptItem{key: index*16 + int(mode), version: version, renderContent: func() transcriptContent {
 		if e.kind == entryAssistant {
 			return m.assistantEntryContent(e, active, mode != transcriptConclusion, mode != transcriptThinking, mode == transcriptStandalone)
 		}
@@ -135,6 +135,10 @@ func (m *model) transcriptEntryItem(index int, e transcriptEntry, active bool, m
 		}
 		return transcriptContent{view: m.entryView(e, active)}
 	}}
+	if e.kind == entryAssistant && e.complete && mode != transcriptThinking && len(e.text) >= historyMarkdownThreshold {
+		item.split = func() []transcriptItem { return m.historyAssistantParts(e, mode) }
+	}
+	return item
 }
 
 func (m model) sideTranscriptItems() []transcriptItem {

@@ -10,9 +10,9 @@ import (
 // A press remembers source and geometry, so streaming or reflow between press
 // and release cannot copy text from a replacement block at the same position.
 type codeHit struct {
-	valid                          bool
-	key, block, row, column, width int
-	source                         string
+	valid                                bool
+	key, part, block, row, column, width int
+	source                               string
 	// -1 is the whole-block button; otherwise an original logical source row.
 	sourceLine int
 	text       string
@@ -54,7 +54,7 @@ func (m model) codeHitAt(mouse tea.Mouse) codeHit {
 			text = strings.TrimSuffix(line, "\r")
 		}
 	}
-	return codeHit{valid: true, key: row.key, block: code.block, row: row.line,
+	return codeHit{valid: true, key: row.key, part: row.part, block: code.block, row: row.line,
 		column: block.column, width: layout.width, source: layout.block.source,
 		sourceLine: sourceLine, text: text}
 }
@@ -68,7 +68,7 @@ func (m model) hoveredCode() codeHit {
 
 func (row transcriptRow) withCodeHover(hover codeHit) string {
 	code := row.code
-	if !hover.valid || row.key != hover.key || code.placement == nil || code.block != hover.block {
+	if !hover.valid || row.key != hover.key || row.part != hover.part || code.placement == nil || code.block != hover.block {
 		return row.text
 	}
 	block := code.placement
