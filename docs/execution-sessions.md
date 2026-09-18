@@ -521,8 +521,14 @@ Escape returns to the picker with the original live draft and conversation intac
 Enter from transcript reading resumes the saved active branch. Ctrl+T in the idle
 main conversation opens its question directory with the same reading controls.
 
+The picker opens with list focus. `/` focuses the search field from either pane
+without inserting the shortcut character; its placeholder is `/ to Filter`, and
+the footer labels the shortcut `/ search`. A slash typed while search already
+has focus is ordinary query text. Up/Down from search or clicking a list row
+returns focus to the list; clicking the search field also focuses it.
+
 Up/Down or a mouse click select a session, and Enter restores it. With preview
-open, Left focuses the search/list and Right focuses the scrollable preview.
+open, Left focuses the list and Right focuses the scrollable preview.
 With preview enabled, wide terminals show both panes; narrow terminals show one
 at a time. A highlighted pane heading and filled dot mark keyboard focus;
 clicking a pane also focuses it.

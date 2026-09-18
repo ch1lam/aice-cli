@@ -220,10 +220,9 @@ func (m model) openSessionPicker() (model, tea.Cmd, bool) {
 	p := &sessionPicker{loading: true}
 	p.input = textinput.New()
 	p.input.Prompt = "› "
-	p.input.Placeholder = "Search titles and conversation text…"
+	p.input.Placeholder = "/ to Filter"
 	p.input.CharLimit = 256
 	p.input.SetVirtualCursor(false)
-	p.input.Focus()
 	p.list = list.New(nil, sessionItemDelegate{}, 30, 12)
 	p.list.SetFilteringEnabled(false)
 	p.list.SetShowTitle(false)
@@ -348,8 +347,9 @@ func (m *model) toggleSessionPreview() tea.Cmd {
 	}
 	m.sessionPreviewGeneration++
 	p.notice = ""
+	p.input.Blur()
 	m.resizeSessionPicker()
-	return p.input.Focus()
+	return nil
 }
 
 func (m model) applySessionSearch(result sessionSearchResult) (tea.Model, tea.Cmd) {
@@ -411,6 +411,11 @@ func (m model) handleSessionPicker(message tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	if key, ok := message.(tea.KeyPressMsg); ok {
 		switch key.String() {
+		case "/":
+			if !p.input.Focused() {
+				p.previewFocused = false
+				return m, p.input.Focus()
+			}
 		case "esc":
 			if p.previewVisible {
 				return m, m.toggleSessionPreview()
@@ -428,7 +433,8 @@ func (m model) handleSessionPicker(message tea.Msg) (tea.Model, tea.Cmd) {
 		case "left":
 			if p.previewVisible {
 				p.previewFocused = false
-				return m, p.input.Focus()
+				p.input.Blur()
+				return m, nil
 			}
 		case "f2":
 			return m, m.openSessionTitleEditor()
@@ -450,6 +456,7 @@ func (m model) handleSessionPicker(message tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return m, nil
 			}
+			p.input.Blur()
 			old := p.list.Index()
 			if key.String() == "up" || key.String() == "ctrl+p" {
 				p.list.CursorUp()
@@ -472,6 +479,7 @@ func (m model) handleSessionPicker(message tea.Msg) (tea.Model, tea.Cmd) {
 				p.preview.ScrollDown(3)
 			}
 		} else {
+			p.input.Blur()
 			if mouse.Button == tea.MouseWheelUp {
 				p.list.CursorUp()
 			} else {

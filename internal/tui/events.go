@@ -209,7 +209,7 @@ func (m model) applyRunBatch(batch runBatchMsg) (tea.Model, tea.Cmd) {
 				p.restoring = false
 				if update.err != nil {
 					p.notice = update.err.Error()
-					p.input.Focus()
+					p.previewFocused = false
 					update.err = nil // The picker owns this error; preserve the old transcript.
 				} else {
 					m.resetCommandInput()

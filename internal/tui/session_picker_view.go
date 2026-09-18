@@ -70,17 +70,17 @@ func (m model) sessionPickerView() string {
 	if p.previewFocused {
 		title = "SESSIONS · PREVIEW"
 	}
-	help := "→ preview · Esc close · ↑↓ select · Enter resume · F2 rename · F4 read"
+	help := "/ search · → preview · Esc close · ↑↓ select · Enter resume · F2 rename · F4 read"
 	if p.previewVisible {
-		help = "←→ focus · Esc hide preview · ↑↓ select · Enter resume · F2 rename · F4 read"
+		help = "/ search · ←→ focus · Esc hide preview · ↑↓ select · Enter resume · F2 rename · F4 read"
 	}
 	if p.previewFocused {
-		help = "←→ focus · Esc hide preview · ↑↓ scroll · Enter resume"
+		help = "/ search · ←→ focus · Esc hide preview · ↑↓ scroll · Enter resume"
 	}
 	if l.inner < 55 {
-		help = "→ preview · Esc close · ↑↓ · Enter"
+		help = "/ search · → preview · Esc close · ↑↓ · Enter"
 		if p.previewVisible {
-			help = "←→ focus · Esc hide preview · ↑↓ · Enter"
+			help = "/ search · ←→ focus · Esc hide preview · ↑↓ · Enter"
 		}
 	}
 	if p.loading {
@@ -173,7 +173,7 @@ func (m model) sessionPickerPaneHeading(l sessionPickerLayout) string {
 		}
 		return style.Width(width).Render(ansi.Truncate(marker+text, width, "…"))
 	}
-	list := heading("LIST", !p.previewFocused, l.listWidth)
+	list := heading("LIST", !p.previewFocused && !p.input.Focused(), l.listWidth)
 	if l.wide {
 		return list + mutedStyle.Render(" │ ") + heading("PREVIEW", p.previewFocused, l.previewWidth)
 	}
@@ -196,7 +196,7 @@ func (m model) overlaySessionPicker(content string) (string, *tea.Cursor) {
 		lipgloss.NewLayer(restoreCanvasColors(m.sessionPickerView())).X(l.x).Y(l.y).Z(1),
 	))
 	var cursor *tea.Cursor
-	if (!m.sessionPicker.previewFocused || m.sessionPicker.rename != nil) && !m.sessionPicker.restoring {
+	if (m.sessionPicker.input.Focused() || m.sessionPicker.rename != nil) && !m.sessionPicker.restoring {
 		cursor = m.sessionPicker.input.Cursor()
 		if m.sessionPicker.rename != nil {
 			cursor = m.sessionPicker.rename.input.Cursor()
@@ -233,7 +233,7 @@ func (m model) clickSessionPicker(mouse tea.MouseClickMsg) (tea.Model, tea.Cmd) 
 		return m, nil
 	}
 	p.previewFocused = false
-	p.input.Focus()
+	p.input.Blur()
 	if y == 2 || (l.wide && x >= l.listWidth) {
 		return m, nil
 	}

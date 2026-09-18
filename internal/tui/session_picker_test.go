@@ -101,6 +101,7 @@ func TestSessionPickerCancelPreservesDraftAndRejectsStaleResults(t *testing.T) {
 		t.Fatal("list not visible")
 	}
 	oldGeneration := m.sessionQueryGeneration
+	m = updateModel(t, m, tea.KeyPressMsg{Code: '/', Text: "/"})
 	m = updateModel(t, m, tea.KeyPressMsg{Code: 'x', Text: "nothing"})
 	if len(m.sessionPicker.list.Items()) != 0 {
 		t.Fatal("title filter did not apply immediately")
@@ -127,6 +128,11 @@ func TestSessionPickerCanvasAndIME(t *testing.T) {
 			for _, preview := range []bool{false, true} {
 				m.sessionPicker.previewFocused = preview
 				m.sessionPicker.previewVisible = preview
+				if preview {
+					m.sessionPicker.input.Blur()
+				} else {
+					m.sessionPicker.input.Focus()
+				}
 				m.resizeSessionPicker()
 				view := m.View()
 				if lipgloss.Width(view.Content) != size[0] || lipgloss.Height(view.Content) != size[1] {
@@ -149,6 +155,7 @@ func TestSessionPickerFailedRestoreKeepsConversation(t *testing.T) {
 	m := pickerModel(t, 100, 28)
 	m.entries = []transcriptEntry{{kind: entryUser, text: "original question"}}
 	m.refreshViewport(true)
+	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyRight})
 	next, _ := m.resumeSelectedSession()
 	m = next.(model)
 	if !m.running || !m.sessionPicker.restoring {
@@ -163,6 +170,13 @@ func TestSessionPickerFailedRestoreKeepsConversation(t *testing.T) {
 	}
 	if !strings.Contains(m.sessionPicker.notice, "disappeared") {
 		t.Fatal("failure was hidden")
+	}
+	if m.sessionPicker.previewFocused || m.sessionPicker.input.Focused() || m.View().Cursor != nil {
+		t.Fatal("failed restore did not return focus to the list")
+	}
+	m = updateModel(t, m, tea.KeyPressMsg{Code: '/', Text: "/"})
+	if !m.sessionPicker.input.Focused() || m.sessionPicker.input.Value() != "" {
+		t.Fatal("search shortcut failed after restoration error")
 	}
 }
 
@@ -283,6 +297,7 @@ func TestSessionPickerPreviewIsOptIn(t *testing.T) {
 			func() { cancelled++ }
 	}
 	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyDown})
+	m = updateModel(t, m, tea.KeyPressMsg{Code: '/', Text: "/"})
 	m = updateModel(t, m, tea.PasteMsg{Content: "Second"})
 	if requested != 0 || m.sessionPickerLayout().listWidth != m.sessionPickerLayout().inner {
 		t.Fatal("hidden preview fetched data or consumed list space")
@@ -296,8 +311,8 @@ func TestSessionPickerPreviewIsOptIn(t *testing.T) {
 		t.Fatal("preview focus is not visible")
 	}
 	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyLeft})
-	if !strings.Contains(ansi.Strip(m.sessionPickerView()), "● LIST") || m.View().Cursor == nil {
-		t.Fatal("list focus or search cursor missing")
+	if !strings.Contains(ansi.Strip(m.sessionPickerView()), "● LIST") || m.View().Cursor != nil {
+		t.Fatal("list focus is missing or search retained the cursor")
 	}
 	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyEscape})
 	if cancelled != 1 || m.sessionPicker.previewVisible || m.sessionPickerLayout().wide {
@@ -423,8 +438,8 @@ func TestSessionPickerArrowFocusAndLayeredEscape(t *testing.T) {
 					if !m.sessionPicker.previewVisible || m.sessionPicker.previewFocused != preview {
 						t.Fatal("arrow did not focus the corresponding pane")
 					}
-					if (m.View().Cursor == nil) != preview || m.sessionPreviewGeneration != generation {
-						t.Fatal("focus switch lost cursor or reloaded preview")
+					if m.View().Cursor != nil || m.sessionPreviewGeneration != generation {
+						t.Fatal("pane focus exposed the search cursor or reloaded preview")
 					}
 				}
 				if closeFromList {
@@ -440,6 +455,51 @@ func TestSessionPickerArrowFocusAndLayeredEscape(t *testing.T) {
 				m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyEscape})
 				if m.sessionPicker != nil || m.input.Value() != "keep my draft" {
 					t.Fatal("second Escape did not close picker and preserve draft")
+				}
+			})
+		}
+	}
+}
+
+func TestSessionPickerSlashFocusesSearch(t *testing.T) {
+	t.Parallel()
+	for _, width := range []int{60, 160} {
+		for _, preview := range []bool{false, true} {
+			t.Run(fmt.Sprintf("width=%d/preview=%v", width, preview), func(t *testing.T) {
+				m := pickerModel(t, width, 28)
+				if m.sessionPicker.input.Focused() || m.View().Cursor != nil {
+					t.Fatal("picker should open with list focus")
+				}
+				if !strings.Contains(ansi.Strip(m.sessionPickerView()), "/ to Filter") ||
+					!strings.Contains(ansi.Strip(m.sessionPickerView()), "/ search") {
+					t.Fatal("search placeholder or shortcut hint missing")
+				}
+				if preview {
+					m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyRight})
+				}
+				slash := tea.KeyPressMsg{Code: '/', Text: "/"}
+				m = updateModel(t, m, slash)
+				if !m.sessionPicker.input.Focused() || m.sessionPicker.previewFocused || m.View().Cursor == nil {
+					t.Fatal("slash did not focus search from the active pane")
+				}
+				if m.sessionPicker.input.Value() != "" || m.sessionPicker.previewVisible != preview {
+					t.Fatal("search shortcut inserted a slash or changed preview visibility")
+				}
+				m = updateModel(t, m, tea.PasteMsg{Content: "Second"})
+				if selectedSessionKey(m.sessionPicker) != "two" {
+					t.Fatal("focused search did not filter sessions")
+				}
+				m = updateModel(t, m, slash)
+				if m.sessionPicker.input.Value() != "Second/" {
+					t.Fatal("slash inside search was consumed as a shortcut")
+				}
+				m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyDown})
+				if m.sessionPicker.input.Focused() || m.View().Cursor != nil {
+					t.Fatal("list navigation retained search focus")
+				}
+				m = updateModel(t, m, slash)
+				if !m.sessionPicker.input.Focused() || m.sessionPicker.input.Value() != "Second/" {
+					t.Fatal("refocusing search lost the existing query")
 				}
 			})
 		}
