@@ -21,11 +21,14 @@ type sessionGroupItem struct {
 
 func (g sessionGroupItem) FilterValue() string { return g.name }
 
-func (g sessionGroupItem) render(w io.Writer, width int, selected bool) {
+func (g sessionGroupItem) render(w io.Writer, width int, selected, focused bool) {
 	prefix, arrow := "  ", "▾"
 	style := infoStyle.Bold(true)
 	if selected {
-		prefix, style = "› ", labelStyle
+		prefix = "› "
+		if focused {
+			style = labelStyle
+		}
 	}
 	if g.collapsed {
 		arrow = "▸"

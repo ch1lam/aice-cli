@@ -16,13 +16,13 @@ type sessionPickerLayout struct {
 
 func (m model) sessionPickerLayout() sessionPickerLayout {
 	w, h := max(8, m.width-4), max(8, m.height-2)
-	l := sessionPickerLayout{width: w, height: h, inner: w - 4, bodyHeight: h - 7}
+	l := sessionPickerLayout{width: w, height: h, inner: w - 4, bodyHeight: h - 5}
 	l.x, l.y = max(0, (m.width-w)/2), max(0, (m.height-h)/2)
 	l.wide = w >= 84 && m.sessionPicker != nil && m.sessionPicker.previewVisible
-	l.listWidth, l.previewWidth = l.inner-2, l.inner-2
+	l.listWidth, l.previewWidth = l.inner, l.inner
 	if l.wide {
-		l.listWidth = (l.inner - 5) / 2
-		l.previewWidth = l.inner - l.listWidth - 5
+		l.listWidth = (l.inner - 3) / 2
+		l.previewWidth = l.inner - l.listWidth - 3
 	}
 	return l
 }
@@ -39,14 +39,21 @@ func (m *model) resizeSessionPicker() {
 	}
 	p.list.SetSize(l.listWidth, l.bodyHeight)
 	p.preview.SetWidth(l.previewWidth)
-	p.preview.SetHeight(l.bodyHeight)
-	p.preview.SetContent(ansi.Hardwrap(sanitizeToolDetail(p.previewText, true), l.previewWidth, true))
+	header, content := sessionPreviewParts(p.previewText)
+	height := l.bodyHeight
+	if header != "" {
+		height -= 2
+	}
+	p.preview.SetHeight(height)
+	p.preview.SetContent(ansi.Hardwrap(sanitizeToolDetail(content, true), l.previewWidth, true))
 }
 
 func (m model) sessionPickerView() string {
 	p := m.sessionPicker
 	l := m.sessionPickerLayout()
-	listView := p.list.View()
+	listViewModel := p.list
+	listViewModel.SetDelegate(sessionItemDelegate{focused: !p.previewFocused && !p.input.Focused() && p.rename == nil && !p.restoring})
+	listView := listViewModel.View()
 	if len(p.list.Items()) == 0 {
 		listView = "No matching sessions"
 		if p.input.Value() == "" {
@@ -58,12 +65,12 @@ func (m model) sessionPickerView() string {
 		listView = mutedStyle.Render(ansi.Hardwrap(listView, l.listWidth, true))
 	}
 	listView = lipgloss.NewStyle().Width(l.listWidth).Height(l.bodyHeight).MaxHeight(l.bodyHeight).Render(listView)
-	body := m.sessionPickerPane(listView, l.listWidth, !p.previewFocused && !p.input.Focused())
+	body := listView
 	if l.wide {
-		preview := m.sessionPickerPane(p.preview.View(), l.previewWidth, p.previewFocused)
-		body = lipgloss.JoinHorizontal(lipgloss.Top, body, " ", preview)
+		divider := mutedStyle.Render(strings.TrimSuffix(strings.Repeat(" │ \n", l.bodyHeight), "\n"))
+		body = lipgloss.JoinHorizontal(lipgloss.Top, listView, divider, m.sessionPickerPreviewView(l))
 	} else if p.previewFocused {
-		body = m.sessionPickerPane(p.preview.View(), l.previewWidth, true)
+		body = m.sessionPickerPreviewView(l)
 	}
 	count, position := len(p.results), 0
 	for i, item := range p.results {
@@ -186,14 +193,27 @@ func (m *model) trackSessionPickerClose(message tea.Msg) bool {
 	return false
 }
 
-func (m model) sessionPickerPane(content string, width int, focused bool) string {
-	style := slashCommandMenuStyle.Padding(0).
-		Foreground(primaryTextColor).Background(inkBlackColor).
-		BorderBackground(inkBlackColor).Width(width + 2)
-	if focused && m.sessionPicker.rename == nil && !m.sessionPicker.restoring {
-		style = style.BorderForeground(secondaryColor)
+// Keep the activity date attached to the displayed preview, including while a
+// newly selected session is loading. Only conversation content scrolls.
+func sessionPreviewParts(text string) (string, string) {
+	header, content, _ := strings.Cut(text, "\n")
+	if strings.HasPrefix(header, "Last activity · ") {
+		return header, strings.TrimPrefix(content, "\n")
 	}
-	return style.Render(content)
+	return "", text
+}
+
+func (m model) sessionPickerPreviewView(l sessionPickerLayout) string {
+	p := m.sessionPicker
+	header, _ := sessionPreviewParts(p.previewText)
+	if header == "" {
+		return p.preview.View()
+	}
+	style := bodyStyle
+	if p.previewFocused && p.rename == nil && !p.restoring {
+		style = labelStyle
+	}
+	return style.Render(ansi.Truncate(sanitizeToolDetail(header, false), l.previewWidth, "…")) + "\n\n" + p.preview.View()
 }
 
 func (m model) overlaySessionPicker(content string) (string, *tea.Cursor) {
@@ -237,7 +257,7 @@ func (m model) clickSessionPicker(mouse tea.MouseClickMsg) (tea.Model, tea.Cmd) 
 		p.input.Focus()
 		return m, nil
 	}
-	if y < 2 || y > 3+l.bodyHeight || (l.wide && x == l.listWidth+2) {
+	if y < 2 || y >= 2+l.bodyHeight || (l.wide && x >= l.listWidth && x < l.listWidth+3) {
 		return m, nil
 	}
 	if (l.wide && x >= l.listWidth+3) || (!l.wide && p.previewFocused) {
@@ -247,10 +267,7 @@ func (m model) clickSessionPicker(mouse tea.MouseClickMsg) (tea.Model, tea.Cmd) 
 	}
 	p.previewFocused = false
 	p.input.Blur()
-	if y == 2 || y == 3+l.bodyHeight || x == 0 || x == l.listWidth+1 {
-		return m, nil
-	}
-	row := (y - 3) / (sessionItemDelegate{}.Height() + sessionItemDelegate{}.Spacing())
+	row := (y - 2) / (sessionItemDelegate{}.Height() + sessionItemDelegate{}.Spacing())
 	if row >= p.list.Paginator.PerPage {
 		return m, nil
 	}

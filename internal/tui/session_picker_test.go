@@ -207,7 +207,7 @@ func TestSessionPickerCapturesInputAndMouse(t *testing.T) {
 	t.Parallel()
 	m := pickerModel(t, 100, 28)
 	l := m.sessionPickerLayout()
-	m = updateModel(t, m, tea.MouseClickMsg{X: l.x + 3, Y: l.y + 8, Button: tea.MouseLeft})
+	m = updateModel(t, m, tea.MouseClickMsg{X: l.x + 3, Y: l.y + 7, Button: tea.MouseLeft})
 	if selectedSessionKey(m.sessionPicker) != "two" {
 		t.Fatal("mouse did not select second item")
 	}
@@ -299,7 +299,7 @@ func TestSessionPickerPreviewIsOptIn(t *testing.T) {
 	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyDown})
 	m = updateModel(t, m, tea.KeyPressMsg{Code: '/', Text: "/"})
 	m = updateModel(t, m, tea.PasteMsg{Content: "Second"})
-	if requested != 0 || m.sessionPickerLayout().listWidth+2 != m.sessionPickerLayout().inner {
+	if requested != 0 || m.sessionPickerLayout().listWidth != m.sessionPickerLayout().inner {
 		t.Fatal("hidden preview fetched data or consumed list space")
 	}
 	next, command := m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
@@ -421,7 +421,7 @@ func TestSessionPickerClickIgnoresPagePadding(t *testing.T) {
 	}
 	m.setSessionItems(items)
 	l := m.sessionPickerLayout()
-	m = updateModel(t, m, tea.MouseClickMsg{X: l.x + 3, Y: l.y + 3 + l.bodyHeight, Button: tea.MouseLeft})
+	m = updateModel(t, m, tea.MouseClickMsg{X: l.x + 3, Y: l.y + 2 + l.bodyHeight, Button: tea.MouseLeft})
 	if selectedSessionKey(m.sessionPicker) != "0" {
 		t.Fatal("click on bottom padding selected an invisible item on the next page")
 	}
@@ -517,11 +517,13 @@ func TestSessionPickerSlashFocusesSearch(t *testing.T) {
 	}
 }
 
-func TestSessionPickerPaneBordersShowFocus(t *testing.T) {
+func TestSessionPickerSelectionAndPreviewShowFocus(t *testing.T) {
 	t.Parallel()
 	for _, width := range []int{60, 160} {
 		t.Run(fmt.Sprint(width), func(t *testing.T) {
 			m := pickerModel(t, width, 28)
+			m.sessionPicker.previewText = "Last activity · 2026-09-18 12:34\n\nYou\nPreview content"
+			m.resizeSessionPicker()
 			for _, step := range []struct {
 				key           rune
 				list, preview bool
@@ -529,6 +531,8 @@ func TestSessionPickerPaneBordersShowFocus(t *testing.T) {
 				{0, true, false},
 				{tea.KeyRight, false, true},
 				{tea.KeyLeft, true, false},
+				{tea.KeyUp, true, false},
+				{tea.KeyRight, false, true},
 				{'/', false, false},
 				{tea.KeyDown, true, false},
 			} {
@@ -539,55 +543,87 @@ func TestSessionPickerPaneBordersShowFocus(t *testing.T) {
 					}
 					m = updateModel(t, m, key)
 				}
+				// Keep the same activity payload while testing focus on both row types.
+				m.sessionPicker.previewText = "Last activity · 2026-09-18 12:34\n\nYou\nPreview content"
+				m.resizeSessionPicker()
 				l := m.sessionPickerLayout()
 				view := m.sessionPickerView()
 				if lipgloss.Width(view) != l.width || lipgloss.Height(view) != l.height {
-					t.Fatal("pane borders overflowed the floating window")
+					t.Fatal("content overflowed the floating window")
 				}
-				if strings.Contains(ansi.Strip(view), "LIST") || strings.Contains(view, "○ PREVIEW") ||
-					strings.Contains(view, "● PREVIEW") {
-					t.Fatal("pane status heading is still visible")
+				plain := ansi.Strip(view)
+				if strings.Count(plain, "╭") != 1 || strings.Count(plain, "╰") != 1 {
+					t.Fatal("inner pane borders are still visible")
 				}
 				canvas := lipgloss.NewCanvas(l.width, l.height).Compose(lipgloss.NewLayer(view))
-				check := func(x, paneWidth int, focused bool) {
-					t.Helper()
-					want := slashCommandMenuStyle.GetBorderTopForeground()
-					if focused {
+				if l.wide || !step.preview {
+					want := primaryTextColor
+					if _, ok := m.sessionPicker.list.SelectedItem().(sessionGroupItem); ok {
+						want = informationColor
+					}
+					if step.list {
 						want = secondaryColor
 					}
-					for _, point := range [][2]int{{x, 3}, {x + paneWidth + 1, 3},
-						{x, 4 + l.bodyHeight}, {x + paneWidth + 1, 4 + l.bodyHeight}} {
-						cell := canvas.CellAt(point[0], point[1])
-						if cell == nil || !strings.Contains("╭╮╰╯", cell.Content) || cell.Content == "" {
-							t.Fatalf("missing pane corner at %v", point)
-						}
-						assertColor(t, cell.Style.Fg, want)
-					}
+					y := 3 + 2*(m.sessionPicker.list.Index()%m.sessionPicker.list.Paginator.PerPage)
+					assertColor(t, canvas.CellAt(5, y).Style.Fg, want)
 				}
-				check(2, l.listWidth, step.list || (!l.wide && step.preview))
-				if l.wide {
-					check(2+l.listWidth+3, l.previewWidth, step.preview)
+				if l.wide || step.preview {
+					x := 2
+					if l.wide {
+						x += l.listWidth + 3
+						if canvas.CellAt(2+l.listWidth+1, 3).Content != "│" {
+							t.Fatal("pane separator missing")
+						}
+					}
+					want := primaryTextColor
+					if step.preview {
+						want = secondaryColor
+					}
+					assertColor(t, canvas.CellAt(x, 3).Style.Fg, want)
 				}
 			}
 		})
 	}
 }
 
-func TestSessionPickerPaneBorderClicks(t *testing.T) {
+func TestSessionPickerDividerAndPaneClicks(t *testing.T) {
 	t.Parallel()
 	m := pickerModel(t, 160, 40)
 	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyRight})
 	l := m.sessionPickerLayout()
-	// Borders focus a pane without selecting a row; the gap keeps current focus.
-	for _, point := range [][2]int{{l.listWidth + 2, 4}, {0, 5}, {l.listWidth + 1, 5}, {1, 2}, {1, 3 + l.bodyHeight}} {
-		m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyRight})
-		m = updateModel(t, m, tea.MouseClickMsg{X: l.x + 2 + point[0], Y: l.y + 1 + point[1], Button: tea.MouseLeft})
-		if selectedSessionKey(m.sessionPicker) != "one" || m.sessionPicker.previewFocused != (point[0] == l.listWidth+2) {
-			t.Fatal("border click selected a row or focused the wrong pane")
+	for x := l.listWidth; x < l.listWidth+3; x++ {
+		m = updateModel(t, m, tea.MouseClickMsg{X: l.x + 2 + x, Y: l.y + 5, Button: tea.MouseLeft})
+		if selectedSessionKey(m.sessionPicker) != "one" || !m.sessionPicker.previewFocused {
+			t.Fatal("divider click selected an item or changed focus")
 		}
 	}
-	m = updateModel(t, m, tea.MouseClickMsg{X: l.x + l.listWidth + 5, Y: l.y + 4, Button: tea.MouseLeft})
+	m = updateModel(t, m, tea.MouseClickMsg{X: l.x + 5, Y: l.y + 5, Button: tea.MouseLeft})
+	if m.sessionPicker.previewFocused || selectedSessionKey(m.sessionPicker) != "one" {
+		t.Fatal("list click did not focus the painted item")
+	}
+	m = updateModel(t, m, tea.MouseClickMsg{X: l.x + l.listWidth + 5, Y: l.y + 3, Button: tea.MouseLeft})
 	if !m.sessionPicker.previewFocused {
-		t.Fatal("preview border click did not focus preview")
+		t.Fatal("activity header click did not focus preview")
+	}
+}
+
+func TestSessionPickerActivityHeaderStaysFixed(t *testing.T) {
+	t.Parallel()
+	for _, width := range []int{60, 160} {
+		m := pickerModel(t, width, 24)
+		m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyRight})
+		m = updateModel(t, m, sessionPreviewResult{generation: m.sessionPreviewGeneration,
+			text: "Last activity · 2026-09-18 12:34\n\n" + strings.Repeat("Conversation line\n", 100) + "End of preview"})
+		before := m.sessionPicker.preview.View()
+		m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyPgDown})
+		m = updateModel(t, m, tea.MouseWheelMsg{Button: tea.MouseWheelDown})
+		for range 10 {
+			m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyPgDown})
+		}
+		header, _, _ := strings.Cut(ansi.Strip(m.sessionPickerPreviewView(m.sessionPickerLayout())), "\n")
+		if header != "Last activity · 2026-09-18 12:34" || m.sessionPicker.preview.View() == before ||
+			strings.Contains(m.sessionPicker.preview.View(), "Last activity") || !strings.Contains(m.sessionPicker.preview.View(), "End of preview") {
+			t.Fatal("activity header scrolled or preview body failed to scroll independently")
+		}
 	}
 }

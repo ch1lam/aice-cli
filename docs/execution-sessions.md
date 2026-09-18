@@ -469,9 +469,9 @@ picker. It discovers regular `.jsonl` files under `<workspace>/.aice/sessions/`,
 validates their workspace, hides empty sessions, and sorts by last recorded
 activity, grouped as Today, Yesterday and Earlier in the local calendar. Each
 group has a separate bold, blue subtitle with a count, disclosure arrow and
-separator line; selection highlights it in gold. Up/Down and the mouse wheel
-select group headings as well as sessions. Enter on a heading folds or unfolds
-its sessions, leaving the heading selected. Fold state and selection survive
+separator line; list focus highlights the selected heading in gold. Up/Down
+and the mouse wheel select group headings as well as sessions. Enter on a heading
+folds or unfolds its sessions, leaving the heading selected. Fold state and selection survive
 additional search batches; changing the search query expands matching groups.
 Group rows cannot be resumed, renamed or opened as transcripts, and do not load
 a session preview. The total counts sessions, including folded ones. Cold
@@ -540,9 +540,12 @@ Up/Down or a mouse click select a session or group heading. Enter restores a
 session or toggles a selected group. With preview open, Left focuses the list
 and Right focuses the scrollable preview.
 With preview enabled, wide terminals show both panes; narrow terminals show one
-at a time. Each pane has a thin border: gold marks keyboard focus, while
-inactive panes use the muted slash-command border color. There is no pane status
-heading. Clicking a pane also focuses it; focusing search dims both pane borders.
+at a time. The picker has only its outer border, with a single vertical separator
+between panes. The selected list item or group heading is gold only while the
+list has focus; it returns to its normal text color when focus leaves. The
+preview activity-date line stays fixed above the scrolling conversation, turning
+gold with preview focus and returning to white otherwise. Clicking a pane also
+focuses it; focusing search removes both pane highlights.
 Escape hides an open preview and restores the full-width list, regardless of
 which pane has focus. With preview hidden, Escape closes the picker. The top-right
 `[ ✘ ]` button closes the picker directly. Closing preserves the current draft and

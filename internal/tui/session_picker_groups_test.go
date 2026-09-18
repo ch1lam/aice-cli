@@ -59,7 +59,7 @@ func TestSessionGroupNavigationAndToggle(t *testing.T) {
 		t.Fatal("expanded session is unreachable")
 	}
 	l := m.sessionPickerLayout()
-	m = updateModel(t, m, tea.MouseClickMsg{X: l.x + 5, Y: l.y + 4, Button: tea.MouseLeft})
+	m = updateModel(t, m, tea.MouseClickMsg{X: l.x + 5, Y: l.y + 3, Button: tea.MouseLeft})
 	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if !m.sessionPicker.list.SelectedItem().(sessionGroupItem).collapsed {
 		t.Fatal("mouse did not select the painted group heading")
@@ -142,17 +142,17 @@ func TestSessionListTextLeavesTimeColumnClear(t *testing.T) {
 func TestSessionGroupPaginationAndMouseRows(t *testing.T) {
 	t.Parallel()
 	m := groupedPickerModel(t)
-	m = updateModel(t, m, tea.WindowSizeMsg{Width: 60, Height: 18})
+	m = updateModel(t, m, tea.WindowSizeMsg{Width: 60, Height: 16})
 	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyPgDown})
 	if group, ok := m.sessionPicker.list.SelectedItem().(sessionGroupItem); !ok || group.name != "Earlier" {
 		t.Fatal("page navigation did not reach the next page's group heading")
 	}
 	l := m.sessionPickerLayout()
-	m = updateModel(t, m, tea.MouseClickMsg{X: l.x + 5, Y: l.y + 4, Button: tea.MouseLeft})
+	m = updateModel(t, m, tea.MouseClickMsg{X: l.x + 5, Y: l.y + 3, Button: tea.MouseLeft})
 	if selectedSessionKey(m.sessionPicker) != "yesterday" {
 		t.Fatal("mouse selected the wrong session on the second page")
 	}
-	m = updateModel(t, m, tea.MouseClickMsg{X: l.x + 5, Y: l.y + 6, Button: tea.MouseLeft})
+	m = updateModel(t, m, tea.MouseClickMsg{X: l.x + 5, Y: l.y + 5, Button: tea.MouseLeft})
 	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if group, ok := m.sessionPicker.list.SelectedItem().(sessionGroupItem); !ok || group.name != "Earlier" || !group.collapsed {
 		t.Fatal("mouse did not select the painted heading on the second page")

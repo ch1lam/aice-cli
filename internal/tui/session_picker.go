@@ -150,14 +150,14 @@ type sessionListItem struct {
 
 func (i sessionListItem) FilterValue() string { return i.Title }
 
-type sessionItemDelegate struct{}
+type sessionItemDelegate struct{ focused bool }
 
 func (sessionItemDelegate) Height() int                         { return 2 }
 func (sessionItemDelegate) Spacing() int                        { return 0 }
 func (sessionItemDelegate) Update(tea.Msg, *list.Model) tea.Cmd { return nil }
-func (sessionItemDelegate) Render(w io.Writer, model list.Model, index int, item list.Item) {
+func (d sessionItemDelegate) Render(w io.Writer, model list.Model, index int, item list.Item) {
 	if group, ok := item.(sessionGroupItem); ok {
-		group.render(w, model.Width(), index == model.Index())
+		group.render(w, model.Width(), index == model.Index(), d.focused)
 		return
 	}
 	i, ok := item.(sessionListItem)
@@ -168,7 +168,9 @@ func (sessionItemDelegate) Render(w io.Writer, model list.Model, index int, item
 	style := bodyStyle
 	if index == model.Index() {
 		prefix = "› "
-		style = labelStyle
+		if d.focused {
+			style = labelStyle
+		}
 	}
 	title := sanitizeToolDetail(i.Title, false)
 	if i.current {
