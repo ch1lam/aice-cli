@@ -134,6 +134,11 @@ func (m model) sessionPickerView() string {
 	if p.notice != "" {
 		help = sanitizeToolDetail(p.notice, false)
 	}
+	if m.sessionPickerCopyVisible() && m.copyNotice && p.copiedID != "" && p.copiedID == p.previewID {
+		help = "Session ID copied"
+	} else if m.sessionPickerCopyHovered() {
+		help = "Copy session ID"
+	}
 	content := strings.Join([]string{
 		"", input, body,
 		mutedStyle.Render(ansi.Truncate(help, l.inner, "…")),
@@ -164,11 +169,11 @@ func (m model) sessionPickerTopBorder(title string, l sessionPickerLayout) strin
 
 func (m model) sessionPickerCloseHovered() bool {
 	p := m.sessionPicker
-	if p.closePointer == nil || m.width < 16 || m.height < 8 {
+	if p.pointer == nil || m.width < 16 || m.height < 8 {
 		return false
 	}
 	l := m.sessionPickerLayout()
-	x, y := p.closePointer.X-l.x-2, p.closePointer.Y-l.y
+	x, y := p.pointer.X-l.x-2, p.pointer.Y-l.y
 	return y == 0 && x >= l.inner-ansi.StringWidth(sessionPickerCloseLabel) && x < l.inner
 }
 
@@ -178,14 +183,14 @@ func (m *model) trackSessionPickerClose(message tea.Msg) bool {
 	switch mouse := message.(type) {
 	case tea.MouseMotionMsg:
 		pointer := tea.Mouse(mouse)
-		p.closePointer = &pointer
+		p.pointer = &pointer
 	case tea.MouseClickMsg:
 		pointer := tea.Mouse(mouse)
-		p.closePointer = &pointer
+		p.pointer = &pointer
 		p.closePressed = mouse.Button == tea.MouseLeft && m.sessionPickerCloseHovered()
 	case tea.MouseReleaseMsg:
 		pointer := tea.Mouse(mouse)
-		p.closePointer = &pointer
+		p.pointer = &pointer
 		close := p.closePressed && mouse.Button == tea.MouseLeft && m.sessionPickerCloseHovered()
 		p.closePressed = false
 		return close
@@ -213,7 +218,21 @@ func (m model) sessionPickerPreviewView(l sessionPickerLayout) string {
 	if p.previewFocused && p.rename == nil && !p.restoring {
 		style = labelStyle
 	}
-	return style.Render(ansi.Truncate(sanitizeToolDetail(header, false), l.previewWidth, "…")) + "\n\n" + p.preview.View()
+	headerWidth := l.previewWidth
+	button := ""
+	if m.sessionPickerCopyVisible() {
+		headerWidth -= ansi.StringWidth(sessionPickerCopyLabel)
+		buttonStyle := mutedStyle
+		if m.copyNotice && p.copiedID == p.previewID {
+			buttonStyle = buttonStyle.Foreground(successColor)
+		} else if m.sessionPickerCopyHovered() {
+			buttonStyle = buttonStyle.Foreground(secondaryColor).Bold(p.copyPressedID != "")
+		}
+		button = buttonStyle.Render(sessionPickerCopyLabel)
+	}
+	heading := ansi.Truncate(sanitizeToolDetail(header, false), headerWidth, "…")
+	heading += strings.Repeat(" ", max(0, headerWidth-ansi.StringWidth(heading)))
+	return style.Render(heading) + button + "\n\n" + p.preview.View()
 }
 
 func (m model) overlaySessionPicker(content string) (string, *tea.Cursor) {

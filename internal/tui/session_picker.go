@@ -27,9 +27,11 @@ type sessionPicker struct {
 	results                     []interaction.SessionSummary
 	collapsedGroups             map[string]bool
 	previewText                 string
+	previewID                   string
+	copyPressedID, copiedID     string
 	previewFocused              bool
 	previewVisible              bool
-	closePointer                *tea.Mouse
+	pointer                     *tea.Mouse
 	closePressed                bool
 	loading, restoring          bool
 	notice                      string
@@ -292,6 +294,7 @@ func (m *model) requestSessionSearch() tea.Cmd {
 
 func (m *model) requestSessionPreview() tea.Cmd {
 	p := m.sessionPicker
+	p.copyPressedID = ""
 	if p.cancelPreview != nil {
 		p.cancelPreview()
 	}
@@ -303,6 +306,7 @@ func (m *model) requestSessionPreview() tea.Cmd {
 	item, ok := p.list.SelectedItem().(sessionListItem)
 	if !ok {
 		p.notice = ""
+		p.previewID = ""
 		p.previewText = "Select a session to preview its recent conversation."
 		if group, ok := p.list.SelectedItem().(sessionGroupItem); ok {
 			action := "collapse"
@@ -315,6 +319,7 @@ func (m *model) requestSessionPreview() tea.Cmd {
 		return nil
 	}
 	if item.Problem != "" {
+		p.previewID = ""
 		p.previewText = item.Problem
 		m.resizeSessionPicker()
 		return nil
@@ -332,6 +337,7 @@ func (m *model) requestSessionPreview() tea.Cmd {
 
 func (m *model) toggleSessionPreview() tea.Cmd {
 	p := m.sessionPicker
+	p.copyPressedID = ""
 	p.previewVisible = !p.previewVisible
 	p.previewFocused = p.previewVisible
 	if p.previewVisible {
@@ -377,8 +383,12 @@ func (m model) applySessionPreview(result sessionPreviewResult) (tea.Model, tea.
 	}
 	p.notice = ""
 	p.previewText = result.text
+	p.previewID, p.copyPressedID = "", ""
 	if result.err != nil {
 		p.previewText = result.err.Error()
+	} else if item, ok := p.list.SelectedItem().(sessionListItem); ok {
+		// Keep the ID with the displayed payload, even while the next selection loads.
+		p.previewID = item.ID
 	}
 	m.resizeSessionPicker()
 	return m, nil
@@ -405,6 +415,9 @@ func (m model) handleSessionPicker(message tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, nil
+	}
+	if command, handled := m.trackSessionPickerCopy(message); handled {
+		return m, command
 	}
 	if key, ok := message.(tea.KeyPressMsg); ok {
 		switch key.String() {

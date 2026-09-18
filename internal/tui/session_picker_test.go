@@ -628,7 +628,7 @@ func TestSessionPickerActivityHeaderStaysFixed(t *testing.T) {
 			m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyPgDown})
 		}
 		header, _, _ := strings.Cut(ansi.Strip(m.sessionPickerPreviewView(m.sessionPickerLayout())), "\n")
-		if header != "Last activity · 2026-09-18 12:34" || m.sessionPicker.preview.View() == before ||
+		if !strings.HasPrefix(header, "Last activity · 2026-09-18 12:34") || m.sessionPicker.preview.View() == before ||
 			strings.Contains(m.sessionPicker.preview.View(), "Last activity") || !strings.Contains(m.sessionPicker.preview.View(), "End of preview") {
 			t.Fatal("activity header scrolled or preview body failed to scroll independently")
 		}
