@@ -15,7 +15,7 @@ import (
 	"github.com/ch1lam/aice-cli/internal/tool"
 )
 
-func browserHarness(t *testing.T) *interactiveSession {
+func browserHarness(t testing.TB) *interactiveSession {
 	t.Helper()
 	workspace, err := tool.NewWorkspace(t.TempDir())
 	if err != nil {
@@ -24,7 +24,7 @@ func browserHarness(t *testing.T) *interactiveSession {
 	return &interactiveSession{workspace: workspace, workspacePath: workspace.PhysicalPath()}
 }
 
-func browserFixture(t *testing.T, s *interactiveSession, id, prompt, answer string, at int64) *session.Store {
+func browserFixture(t testing.TB, s *interactiveSession, id, prompt, answer string, at int64) *session.Store {
 	t.Helper()
 	store, err := session.Create(t.Context(), filepath.Join(s.sessionDirectory(), id+".jsonl"), session.Metadata{
 		ID: id, CreatedAt: at, WorkingDirectory: s.workspace.Path(),

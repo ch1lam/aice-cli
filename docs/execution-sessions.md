@@ -456,17 +456,24 @@ recovered by resuming the main Session.
 Use `/history` or Ctrl+R in the idle TUI to open the current-project history
 picker. It discovers regular `.jsonl` files under `<workspace>/.aice/sessions/`,
 validates their workspace, hides empty sessions, and sorts by last recorded
-activity. Each row shows the first user prompt as its title, a timestamp, and
-a current-session marker where applicable. Malformed or unsupported files are
-shown as unavailable rather than repaired. Sessions outside this directory
+activity. Each row shows the first user prompt as its title, a timestamp,
+recent content and a current-session marker where applicable. Malformed or
+unsupported files are shown as unavailable rather than repaired. Sessions outside this directory
 remain accessible through an explicit startup `--session` path.
 
 Search matches titles, filename stems, and user/assistant prose across all
 branches, case-insensitively. Cached titles filter immediately; cancellable
 body searches start after a 180 ms debounce. Tool payloads, reasoning, and image
-bytes are not search targets. The catalog reads one session at a time without
-a durable index. Preview shows up to six recent active-branch messages or
-matching excerpts, each limited to 1,200 runes. Other-branch matches are labeled;
+bytes are not search targets. The application caches derived prose in memory,
+bounded to 256 sessions and a 32 MiB accounting budget; oversized sessions are
+read without retention. File identity, size and modification time invalidate
+entries, and discovery evicts deleted files. JSONL remains the only durable
+source; a cold or changed file is replayed read-only, one session at a time.
+Preview shows the last active-branch user request and assistant answer with
+activity time, or up to six matching excerpts, each limited to 1,200 runes.
+Selection moves immediately; previews wait for a 120 ms pause, cancel obsolete
+work, and keep the previous preview visible with a loading notice. Loading does
+not block selection, closing, or resuming. Other-branch matches are labeled;
 selecting a result still resumes the saved active branch without checking out
 the matching message.
 

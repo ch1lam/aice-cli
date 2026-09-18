@@ -80,6 +80,13 @@ func sessionBrowserCommands(ctx context.Context, browser interaction.SessionBrow
 				return sessionPreviewResult{generation: generation, err: context.Canceled}
 			}
 			defer owner.wg.Done()
+			timer := time.NewTimer(120 * time.Millisecond)
+			defer timer.Stop()
+			select {
+			case <-previewCtx.Done():
+				return sessionPreviewResult{generation: generation, err: previewCtx.Err()}
+			case <-timer.C:
+			}
 			text, err := browser.PreviewSession(previewCtx, key, query)
 			return sessionPreviewResult{generation: generation, text: text, err: err}
 		}, cancel
@@ -249,7 +256,11 @@ func (m *model) requestSessionPreview() tea.Cmd {
 		m.resizeSessionPicker()
 		return nil
 	}
-	p.previewText = "Loading preview…"
+	// Keep the previous preview during rapid movement; identify it explicitly.
+	p.notice = "Loading selected preview…"
+	if p.previewText == "" {
+		p.previewText = "Loading preview…"
+	}
 	m.resizeSessionPicker()
 	command, cancel := m.previewSession(m.sessionPreviewGeneration, item.Key, p.input.Value())
 	p.cancelPreview = cancel
@@ -278,6 +289,7 @@ func (m model) applySessionPreview(result sessionPreviewResult) (tea.Model, tea.
 	if p == nil || p.restoring || result.generation != m.sessionPreviewGeneration {
 		return m, nil
 	}
+	p.notice = ""
 	p.previewText = result.text
 	if result.err != nil {
 		p.previewText = result.err.Error()

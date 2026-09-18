@@ -88,7 +88,7 @@ aice --workspace . --print "解释这个仓库的架构。"
 `--print` 默认不保存 Session；传入 `--session` 才会创建或续接指定文件。
 交互模式会自动在 `<workspace>/.aice/sessions/` 创建 Session。使用 `/history`
 或 Ctrl+R 可以查找、预览并恢复当前项目的历史会话，显示原始对话并从其活动分支继续。
-也可以在启动时指定历史文件：
+列表提供最近内容摘要，轻量预览展示最后一个问题和回答。也可以在启动时指定历史文件：
 
 ```sh
 aice --workspace . --session .aice/sessions/<session-id>.jsonl

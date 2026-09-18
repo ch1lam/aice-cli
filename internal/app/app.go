@@ -751,6 +751,7 @@ func (a *application) newAgentLoopWithOptions(
 }
 
 type interactiveSession struct {
+	catalog        sessionCatalog
 	browser        *browser.Manager
 	modelErr       error
 	application    *application

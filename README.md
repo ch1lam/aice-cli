@@ -97,8 +97,9 @@ text mode keeps answer text on stdout and reports progress on stderr. See
 `--print` is stateless unless `--session` is supplied. Interactive runs create
 a Session automatically under `<workspace>/.aice/sessions/`. Use `/history` or
 Ctrl+R to search, preview, and resume this project's sessions. Restoring shows
-the original conversation and continues its active branch. You can also resume
-an explicit file at startup:
+the original conversation and continues its active branch. Recent rows include
+a content excerpt; lightweight previews show the last question and answer.
+You can also resume an explicit file at startup:
 
 ```sh
 aice --workspace . --session .aice/sessions/<session-id>.jsonl

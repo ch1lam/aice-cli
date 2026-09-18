@@ -208,3 +208,34 @@ func TestSessionPickerCapturesInputAndMouse(t *testing.T) {
 		t.Fatal("narrow preview missing")
 	}
 }
+
+func TestSessionPickerMovementKeepsPreviewAndCancelsOldWork(t *testing.T) {
+	t.Parallel()
+	m := pickerModel(t, 100, 28)
+	previous := m.sessionPicker.previewText
+	next, old := m.handleSessionPicker(tea.KeyPressMsg{Code: tea.KeyDown})
+	m = next.(model)
+	if m.sessionPicker.list.Index() != 1 || m.sessionPicker.previewText != previous {
+		t.Fatal("selection delayed or preview flashed")
+	}
+	next, latest := m.handleSessionPicker(tea.KeyPressMsg{Code: tea.KeyUp})
+	m = next.(model)
+	result := old().(sessionPreviewResult)
+	if !errors.Is(result.err, context.Canceled) {
+		t.Fatal("obsolete preview not cancelled")
+	}
+	m = updateModel(t, m, result)
+	if m.sessionPicker.previewText != previous {
+		t.Fatal("obsolete result replaced preview")
+	}
+	m = updateModel(t, m, latest())
+	if m.sessionPicker.notice != "" {
+		t.Fatal("loading notice remained")
+	}
+	// Pending search and preview must never gate Enter or Escape.
+	m.sessionPicker.loading = true
+	next, _ = m.resumeSelectedSession()
+	if !next.(model).sessionPicker.restoring {
+		t.Fatal("loading blocked restore")
+	}
+}

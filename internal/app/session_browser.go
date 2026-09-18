@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/ch1lam/aice-cli/internal/interaction"
@@ -56,6 +57,7 @@ func (s *interactiveSession) SearchSessions(ctx context.Context, query string) (
 	}
 	files, err := os.ReadDir(s.sessionDirectory())
 	if errors.Is(err, os.ErrNotExist) {
+		s.catalog.prune(nil)
 		return nil, nil
 	}
 	if err != nil {
@@ -63,51 +65,49 @@ func (s *interactiveSession) SearchSessions(ctx context.Context, query string) (
 	}
 	query = strings.ToLower(strings.TrimSpace(query))
 	var items []interaction.SessionSummary
+	present := make(map[string]bool, len(files))
+	for _, file := range files {
+		if file.Type().IsRegular() && strings.HasSuffix(file.Name(), ".jsonl") {
+			present[strings.TrimSuffix(file.Name(), ".jsonl")] = true
+		}
+	}
+	s.catalog.prune(present)
 	for _, file := range files {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
+		key := strings.TrimSuffix(file.Name(), ".jsonl")
 		if !file.Type().IsRegular() || !strings.HasSuffix(file.Name(), ".jsonl") {
 			continue
 		}
-		key := strings.TrimSuffix(file.Name(), ".jsonl")
 		item := interaction.SessionSummary{Key: key, Title: key}
-		snapshot, _, err := s.readSelectedSession(ctx, key)
+		entry, err := s.catalogSession(ctx, key)
+		matched := false
 		if err != nil {
 			item.Problem = err.Error()
 			if info, statErr := file.Info(); statErr == nil {
 				item.UpdatedAt = info.ModTime().UnixMilli()
 			}
 		} else {
-			if len(snapshot.Messages) == 0 && len(snapshot.Compactions) == 0 {
+			if entry.empty {
 				continue
 			}
-			item.ID = snapshot.Header.ID
-			item.UpdatedAt = snapshot.Header.CreatedAt
-			titled := false
-			for _, entry := range snapshot.Messages {
-				if err := ctx.Err(); err != nil {
-					return nil, err
+			item = entry.summary
+			if query != "" {
+				item.Snippet = ""
+				for _, prose := range entry.prose {
+					if err := ctx.Err(); err != nil {
+						return nil, err
+					}
+					if strings.Contains(strings.ToLower(prose.text), query) {
+						item.Snippet = sessionExcerpt(prose.text, query, 160)
+						matched = true
+						break
+					}
 				}
-				item.UpdatedAt = max(item.UpdatedAt, entry.CreatedAt)
-				text := sessionMessageText(entry.Message)
-				if _, user := entry.Message.(llm.UserMessage); user && !titled && text != "" {
-					item.Title = sessionExcerpt(strings.Join(strings.Fields(text), " "), "", 70)
-					titled = true
-				}
-				if query != "" && item.Snippet == "" && strings.Contains(strings.ToLower(text), query) {
-					item.Snippet = sessionExcerpt(text, query, 160)
-				}
-			}
-			for _, entry := range snapshot.Compactions {
-				item.UpdatedAt = max(item.UpdatedAt, entry.CreatedAt)
-			}
-			for _, entry := range snapshot.LeafMoves {
-				item.UpdatedAt = max(item.UpdatedAt, entry.CreatedAt)
 			}
 		}
-		if query == "" || strings.Contains(strings.ToLower(item.Title), query) ||
-			strings.Contains(strings.ToLower(item.Key), query) || item.Snippet != "" {
+		if query == "" || strings.Contains(strings.ToLower(item.Title), query) || strings.Contains(strings.ToLower(item.Key), query) || matched {
 			items = append(items, item)
 		}
 	}
@@ -121,45 +121,48 @@ func (s *interactiveSession) SearchSessions(ctx context.Context, query string) (
 }
 
 func (s *interactiveSession) PreviewSession(ctx context.Context, key, query string) (string, error) {
-	snapshot, incomplete, err := s.readSelectedSession(ctx, key)
+	entry, err := s.catalogSession(ctx, key)
 	if err != nil {
 		return "", err
-	}
-	branch, err := session.ActiveBranch(snapshot)
-	if err != nil {
-		return "", err
-	}
-	active := make(map[string]bool, len(branch))
-	for _, node := range branch {
-		active[node.ID] = true
 	}
 	query = strings.ToLower(strings.TrimSpace(query))
 	var parts []string
-	for _, entry := range snapshot.Messages {
+	userSeen, assistantSeen := false, false
+	for i := len(entry.prose) - 1; i >= 0; i-- {
 		if err := ctx.Err(); err != nil {
 			return "", err
 		}
-		text := sessionMessageText(entry.Message)
-		if text == "" || (query == "" && !active[entry.ID]) ||
-			(query != "" && !strings.Contains(strings.ToLower(text), query)) {
+		prose := entry.prose[i]
+		if query == "" {
+			if !prose.active || (prose.user && userSeen) || (!prose.user && assistantSeen) {
+				continue
+			}
+		} else if !strings.Contains(strings.ToLower(prose.text), query) {
 			continue
 		}
 		label := "Assistant"
-		if _, user := entry.Message.(llm.UserMessage); user {
+		if prose.user {
 			label = "You"
+			userSeen = true
+		} else {
+			assistantSeen = true
 		}
-		if !active[entry.ID] {
+		if !prose.active {
 			label += " · another branch (resume keeps the active branch)"
 		}
-		parts = append(parts, label+"\n"+sessionExcerpt(text, query, 1200))
-		if len(parts) > 6 {
-			parts = parts[1:]
+		parts = append(parts, label+"\n"+sessionExcerpt(prose.text, query, 1200))
+		if (query == "" && userSeen && assistantSeen) || len(parts) == 6 {
+			break
 		}
+	}
+	for i, j := 0, len(parts)-1; i < j; i, j = i+1, j-1 {
+		parts[i], parts[j] = parts[j], parts[i]
 	}
 	if len(parts) == 0 {
 		parts = append(parts, "No matching conversation text on this view.")
 	}
-	if incomplete {
+	parts = append([]string{"Last activity · " + time.UnixMilli(entry.summary.UpdatedAt).Local().Format("2006-01-02 15:04")}, parts...)
+	if entry.incomplete {
 		parts = append(parts, "Incomplete final record; showing the complete prefix. Repair happens only on resume.")
 	}
 	return strings.Join(parts, "\n\n"), nil
@@ -180,21 +183,35 @@ func sessionMessageText(message llm.AgentMessage) string {
 }
 
 func sessionExcerpt(text, query string, limit int) string {
-	runes := []rune(text)
 	start := 0
 	if query != "" {
-		// Locate in lowercased runes: Unicode case mapping can change byte widths.
+		// Match offsets belong to the lowercased string; Unicode case mapping
+		// can change byte widths, so translate through rune positions.
 		lower := strings.ToLower(text)
 		if index := strings.Index(lower, query); index >= 0 {
-			start = max(0, utf8.RuneCountInString(lower[:index])-40)
+			skip := max(0, utf8.RuneCountInString(lower[:index])-40)
+			for i := range text {
+				if skip == 0 {
+					start = i
+					break
+				}
+				skip--
+			}
 		}
 	}
-	end := min(len(runes), start+limit)
-	result := string(runes[start:end])
+	end, count := len(text), 0
+	for i := range text[start:] {
+		if count == limit {
+			end = start + i
+			break
+		}
+		count++
+	}
+	result := text[start:end]
 	if start > 0 {
 		result = "…" + result
 	}
-	if end < len(runes) {
+	if end < len(text) {
 		result += "…"
 	}
 	return result
