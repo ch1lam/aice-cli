@@ -30,6 +30,7 @@ type sessionPicker struct {
 }
 
 type sessionSearchResult struct {
+	next       tea.Cmd
 	generation uint64
 	query      string
 	items      []interaction.SessionSummary
@@ -53,24 +54,7 @@ func sessionBrowserCommands(ctx context.Context, browser interaction.SessionBrow
 	var owner sessionQueryOwner
 	search := func(generation uint64, query string) (tea.Cmd, context.CancelFunc) {
 		searchCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-		return func() tea.Msg {
-			defer cancel()
-			if !owner.begin() {
-				return sessionSearchResult{generation: generation, err: context.Canceled}
-			}
-			defer owner.wg.Done()
-			if query != "" {
-				timer := time.NewTimer(180 * time.Millisecond)
-				defer timer.Stop()
-				select {
-				case <-searchCtx.Done():
-					return sessionSearchResult{generation: generation, query: query, err: searchCtx.Err()}
-				case <-timer.C:
-				}
-			}
-			items, err := browser.SearchSessions(searchCtx, query)
-			return sessionSearchResult{generation: generation, query: query, items: items, err: err}
-		}, cancel
+		return sessionSearchCommand(searchCtx, cancel, &owner, browser, generation, query), cancel
 	}
 	preview := func(generation uint64, key, query string) (tea.Cmd, context.CancelFunc) {
 		previewCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
@@ -121,13 +105,14 @@ func (o *sessionQueryOwner) begin() bool {
 type sessionListItem struct {
 	interaction.SessionSummary
 	current bool
+	group   string
 }
 
 func (i sessionListItem) FilterValue() string { return i.Title }
 
 type sessionItemDelegate struct{}
 
-func (sessionItemDelegate) Height() int                         { return 2 }
+func (sessionItemDelegate) Height() int                         { return 3 }
 func (sessionItemDelegate) Spacing() int                        { return 1 }
 func (sessionItemDelegate) Update(tea.Msg, *list.Model) tea.Cmd { return nil }
 func (sessionItemDelegate) Render(w io.Writer, model list.Model, index int, item list.Item) {
@@ -152,7 +137,7 @@ func (sessionItemDelegate) Render(w io.Writer, model list.Model, index int, item
 	if i.Snippet != "" {
 		detail += " · " + sanitizeToolDetail(i.Snippet, false)
 	}
-	_, _ = fmt.Fprint(w, style.Render(ansi.Truncate(prefix+title, model.Width(), "…")), "\n",
+	_, _ = fmt.Fprint(w, mutedStyle.Render(i.group), "\n", style.Render(ansi.Truncate(prefix+title, model.Width(), "…")), "\n",
 		mutedStyle.Render(ansi.Truncate("  "+detail, model.Width(), "…")))
 }
 
@@ -228,8 +213,16 @@ func (m *model) setSessionItems(items []interaction.SessionSummary) {
 	}
 	rows := make([]list.Item, 0, len(items))
 	index := 0
+	lastGroup := ""
+	now := time.Now()
 	for i, item := range items {
-		rows = append(rows, sessionListItem{SessionSummary: item, current: item.ID != "" && item.ID == m.sessionID})
+		group := sessionDateGroup(item.UpdatedAt, now)
+		heading := ""
+		if group != lastGroup {
+			heading = group
+			lastGroup = group
+		}
+		rows = append(rows, sessionListItem{SessionSummary: item, current: item.ID != "" && item.ID == m.sessionID, group: heading})
 		if item.Key == selected {
 			index = i
 		}
@@ -272,7 +265,7 @@ func (m model) applySessionSearch(result sessionSearchResult) (tea.Model, tea.Cm
 	if p == nil || p.restoring || result.generation != m.sessionQueryGeneration {
 		return m, nil
 	}
-	p.loading = false
+	p.loading = result.next != nil
 	if result.err != nil {
 		p.notice = result.err.Error()
 		return m, nil
@@ -280,8 +273,12 @@ func (m model) applySessionSearch(result sessionSearchResult) (tea.Model, tea.Cm
 	if result.query == "" {
 		p.all = result.items
 	}
+	selected := selectedSessionKey(p)
 	m.setSessionItems(result.items)
-	return m, m.requestSessionPreview()
+	if selected != "" && selectedSessionKey(p) == selected {
+		return m, result.next
+	}
+	return m, tea.Batch(result.next, m.requestSessionPreview())
 }
 
 func (m model) applySessionPreview(result sessionPreviewResult) (tea.Model, tea.Cmd) {

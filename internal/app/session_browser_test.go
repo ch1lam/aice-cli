@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ch1lam/aice-cli/internal/interaction"
 	"github.com/ch1lam/aice-cli/internal/llm"
@@ -22,6 +24,38 @@ func browserHarness(t testing.TB) *interactiveSession {
 		t.Fatal(err)
 	}
 	return &interactiveSession{workspace: workspace, workspacePath: workspace.PhysicalPath()}
+}
+
+func TestSessionScanPublishesRecentPrefixAndCancels(t *testing.T) {
+	s := browserHarness(t)
+	for i := range 20 {
+		store := browserFixture(t, s, fmt.Sprintf("task%02d", i), "Question", "Answer", int64(i+1))
+		if err := store.Close(); err != nil {
+			t.Fatal(err)
+		}
+		at := time.Unix(int64(i+1), 0)
+		if err := os.Chtimes(store.Path(), at, at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	var prefix []interaction.SessionSummary
+	_, err := s.ScanSessions(ctx, "", func(items []interaction.SessionSummary) error {
+		prefix = items
+		cancel()
+		return ctx.Err()
+	})
+	if !errors.Is(err, context.Canceled) || len(prefix) != 8 || prefix[0].Key != "task19" {
+		t.Fatalf("prefix=%v, error=%v", prefix, err)
+	}
+	items, err := s.SearchSessions(t.Context(), "")
+	if err != nil || len(items) != 20 || items[19].Key != "task00" {
+		t.Fatal(items, err)
+	}
+	if len(prefix) != 8 || prefix[0].Key != "task19" {
+		t.Fatal("published prefix mutated")
+	}
 }
 
 func browserFixture(t testing.TB, s *interactiveSession, id, prompt, answer string, at int64) *session.Store {

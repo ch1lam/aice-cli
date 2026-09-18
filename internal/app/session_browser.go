@@ -52,6 +52,10 @@ func (s *interactiveSession) readSelectedSession(ctx context.Context, key string
 }
 
 func (s *interactiveSession) SearchSessions(ctx context.Context, query string) ([]interaction.SessionSummary, error) {
+	return s.ScanSessions(ctx, query, nil)
+}
+
+func (s *interactiveSession) ScanSessions(ctx context.Context, query string, publish func([]interaction.SessionSummary) error) ([]interaction.SessionSummary, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -66,28 +70,38 @@ func (s *interactiveSession) SearchSessions(ctx context.Context, query string) (
 	query = strings.ToLower(strings.TrimSpace(query))
 	var items []interaction.SessionSummary
 	present := make(map[string]bool, len(files))
+	type candidate struct {
+		key      string
+		modified int64
+	}
+	candidates := make([]candidate, 0, len(files))
 	for _, file := range files {
 		if file.Type().IsRegular() && strings.HasSuffix(file.Name(), ".jsonl") {
-			present[strings.TrimSuffix(file.Name(), ".jsonl")] = true
+			key := strings.TrimSuffix(file.Name(), ".jsonl")
+			present[key] = true
+			modified := int64(0)
+			if info, err := file.Info(); err == nil {
+				modified = info.ModTime().UnixMilli()
+			}
+			candidates = append(candidates, candidate{key, modified})
 		}
 	}
 	s.catalog.prune(present)
-	for _, file := range files {
+	// File timestamps prioritize cold discovery; displayed ordering always uses
+	// validated record activity, including branch moves and compaction.
+	sort.Slice(candidates, func(i, j int) bool { return candidates[i].modified > candidates[j].modified })
+	lastPublish := time.Now()
+	for index, candidate := range candidates {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		key := strings.TrimSuffix(file.Name(), ".jsonl")
-		if !file.Type().IsRegular() || !strings.HasSuffix(file.Name(), ".jsonl") {
-			continue
-		}
+		key := candidate.key
 		item := interaction.SessionSummary{Key: key, Title: key}
 		entry, err := s.catalogSession(ctx, key)
 		matched := false
 		if err != nil {
 			item.Problem = err.Error()
-			if info, statErr := file.Info(); statErr == nil {
-				item.UpdatedAt = info.ModTime().UnixMilli()
-			}
+			item.UpdatedAt = candidate.modified
 		} else {
 			if entry.empty {
 				continue
@@ -110,14 +124,25 @@ func (s *interactiveSession) SearchSessions(ctx context.Context, query string) (
 		if query == "" || strings.Contains(strings.ToLower(item.Title), query) || strings.Contains(strings.ToLower(item.Key), query) || matched {
 			items = append(items, item)
 		}
+		if publish != nil && index < len(candidates)-1 && (index == 7 || time.Since(lastPublish) >= 100*time.Millisecond) {
+			sortSessionSummaries(items)
+			if err := publish(append([]interaction.SessionSummary(nil), items...)); err != nil {
+				return nil, err
+			}
+			lastPublish = time.Now()
+		}
 	}
+	sortSessionSummaries(items)
+	return items, ctx.Err()
+}
+
+func sortSessionSummaries(items []interaction.SessionSummary) {
 	sort.Slice(items, func(i, j int) bool {
 		if items[i].UpdatedAt == items[j].UpdatedAt {
 			return items[i].Key < items[j].Key
 		}
 		return items[i].UpdatedAt > items[j].UpdatedAt
 	})
-	return items, ctx.Err()
 }
 
 func (s *interactiveSession) PreviewSession(ctx context.Context, key, query string) (string, error) {

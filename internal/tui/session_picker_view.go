@@ -75,7 +75,11 @@ func (m model) sessionPickerView() string {
 		help = "↑↓ · Enter resume · Tab · Esc"
 	}
 	if p.loading {
-		title += " · searching"
+		if p.input.Value() == "" {
+			title += " · loading older sessions"
+		} else {
+			title += " · searching text"
+		}
 	}
 	if p.notice != "" {
 		help = sanitizeToolDetail(p.notice, false)
@@ -134,7 +138,7 @@ func (m model) clickSessionPicker(mouse tea.MouseClickMsg) (tea.Model, tea.Cmd) 
 	}
 	p.previewFocused = false
 	p.input.Focus()
-	index := p.list.Paginator.Page*p.list.Paginator.PerPage + (y-3)/3
+	index := p.list.Paginator.Page*p.list.Paginator.PerPage + (y-3)/4
 	if index < len(p.list.Items()) {
 		p.list.Select(index)
 		return m, m.requestSessionPreview()

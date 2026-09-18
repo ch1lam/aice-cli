@@ -456,9 +456,14 @@ recovered by resuming the main Session.
 Use `/history` or Ctrl+R in the idle TUI to open the current-project history
 picker. It discovers regular `.jsonl` files under `<workspace>/.aice/sessions/`,
 validates their workspace, hides empty sessions, and sorts by last recorded
-activity. Each row shows the first user prompt as its title, a timestamp,
+activity, grouped as Today, Yesterday and Earlier in the local calendar. Cold
+scans visit recently modified files first and publish an initial batch before
+continuing through older files. Rows already loaded stay selectable and resumable;
+Escape cancels scanning. Later batches preserve the selected session by identity.
+Each row shows the first user prompt as its title, a timestamp,
 recent content and a current-session marker where applicable. Malformed or
-unsupported files are shown as unavailable rather than repaired. Sessions outside this directory
+unsupported files are shown as unavailable rather than repaired. Sessions outside
+this directory
 remain accessible through an explicit startup `--session` path.
 
 Search matches titles, filename stems, and user/assistant prose across all

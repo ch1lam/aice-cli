@@ -18,6 +18,13 @@ type SessionBrowser interface {
 	PreviewSession(context.Context, string, string) (string, error)
 }
 
+// SessionScanner optionally publishes independently owned partial catalogs.
+// The callback runs synchronously on the scanning goroutine and may cancel
+// scanning by returning an error. The final return contains the full catalog.
+type SessionScanner interface {
+	ScanSessions(context.Context, string, func([]SessionSummary) error) ([]SessionSummary, error)
+}
+
 // Transcript is the original active branch, independent of compacted model
 // context. It is transferred once at startup or after a branch replacement.
 type Transcript struct {

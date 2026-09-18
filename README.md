@@ -98,7 +98,8 @@ text mode keeps answer text on stdout and reports progress on stderr. See
 a Session automatically under `<workspace>/.aice/sessions/`. Use `/history` or
 Ctrl+R to search, preview, and resume this project's sessions. Restoring shows
 the original conversation and continues its active branch. Recent rows include
-a content excerpt; lightweight previews show the last question and answer.
+a content excerpt, grouped by Today, Yesterday and Earlier. Older rows load
+while the list remains usable; lightweight previews show the last question and answer.
 You can also resume an explicit file at startup:
 
 ```sh

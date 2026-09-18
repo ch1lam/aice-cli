@@ -191,7 +191,7 @@ func TestSessionPickerCapturesInputAndMouse(t *testing.T) {
 	t.Parallel()
 	m := pickerModel(t, 100, 28)
 	l := m.sessionPickerLayout()
-	m = updateModel(t, m, tea.MouseClickMsg{X: l.x + 3, Y: l.y + 7, Button: tea.MouseLeft})
+	m = updateModel(t, m, tea.MouseClickMsg{X: l.x + 3, Y: l.y + 8, Button: tea.MouseLeft})
 	if m.sessionPicker.list.Index() != 1 {
 		t.Fatal("mouse did not select second item")
 	}
