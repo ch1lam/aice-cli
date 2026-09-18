@@ -26,6 +26,7 @@ type sessionPicker struct {
 	all                         []interaction.SessionSummary
 	previewText                 string
 	previewFocused              bool
+	previewVisible              bool
 	loading, restoring          bool
 	notice                      string
 	cancelSearch, cancelPreview context.CancelFunc
@@ -305,6 +306,9 @@ func (m *model) requestSessionPreview() tea.Cmd {
 		p.cancelPreview()
 	}
 	m.sessionPreviewGeneration++
+	if !p.previewVisible {
+		return nil
+	}
 	p.preview.GotoTop()
 	item, ok := p.list.SelectedItem().(sessionListItem)
 	if !ok {
@@ -326,6 +330,24 @@ func (m *model) requestSessionPreview() tea.Cmd {
 	command, cancel := m.previewSession(m.sessionPreviewGeneration, item.Key, p.input.Value())
 	p.cancelPreview = cancel
 	return command
+}
+
+func (m *model) toggleSessionPreview() tea.Cmd {
+	p := m.sessionPicker
+	p.previewVisible = !p.previewVisible
+	p.previewFocused = p.previewVisible
+	if p.previewVisible {
+		p.input.Blur()
+		m.resizeSessionPicker()
+		return m.requestSessionPreview()
+	}
+	if p.cancelPreview != nil {
+		p.cancelPreview()
+	}
+	m.sessionPreviewGeneration++
+	p.notice = ""
+	m.resizeSessionPicker()
+	return p.input.Focus()
 }
 
 func (m model) applySessionSearch(result sessionSearchResult) (tea.Model, tea.Cmd) {
@@ -351,7 +373,7 @@ func (m model) applySessionSearch(result sessionSearchResult) (tea.Model, tea.Cm
 
 func (m model) applySessionPreview(result sessionPreviewResult) (tea.Model, tea.Cmd) {
 	p := m.sessionPicker
-	if p == nil || p.restoring || result.generation != m.sessionPreviewGeneration {
+	if p == nil || !p.previewVisible || p.restoring || result.generation != m.sessionPreviewGeneration {
 		return m, nil
 	}
 	p.notice = ""
@@ -383,14 +405,18 @@ func (m model) handleSessionPicker(message tea.Msg) (tea.Model, tea.Cmd) {
 		case "esc", "ctrl+c":
 			return m, m.closeSessionPicker()
 		case "tab", "shift+tab":
+			if !p.previewVisible {
+				return m, m.toggleSessionPreview()
+			}
 			p.previewFocused = !p.previewFocused
 			if p.previewFocused {
 				p.input.Blur()
 			} else {
 				p.input.Focus()
 			}
-			m.resizeSessionPicker()
 			return m, nil
+		case "f3":
+			return m, m.toggleSessionPreview()
 		case "f2":
 			return m, m.openSessionTitleEditor()
 		case "f4":

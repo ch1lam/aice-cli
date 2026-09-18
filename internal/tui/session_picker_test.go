@@ -126,6 +126,8 @@ func TestSessionPickerCanvasAndIME(t *testing.T) {
 			m := pickerModel(t, size[0], size[1])
 			for _, preview := range []bool{false, true} {
 				m.sessionPicker.previewFocused = preview
+				m.sessionPicker.previewVisible = preview
+				m.resizeSessionPicker()
 				view := m.View()
 				if lipgloss.Width(view.Content) != size[0] || lipgloss.Height(view.Content) != size[1] {
 					t.Fatalf("canvas = %dx%d", lipgloss.Width(view.Content), lipgloss.Height(view.Content))
@@ -212,6 +214,9 @@ func TestSessionPickerCapturesInputAndMouse(t *testing.T) {
 func TestSessionPickerMovementKeepsPreviewAndCancelsOldWork(t *testing.T) {
 	t.Parallel()
 	m := pickerModel(t, 100, 28)
+	command := m.toggleSessionPreview()
+	m = updateModel(t, m, command())
+	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyTab})
 	previous := m.sessionPicker.previewText
 	next, old := m.handleSessionPicker(tea.KeyPressMsg{Code: tea.KeyDown})
 	m = next.(model)
@@ -262,5 +267,48 @@ func TestSessionRelativeTime(t *testing.T) {
 				t.Fatalf("age = %q, want %q", got, test.want)
 			}
 		})
+	}
+}
+
+func TestSessionPickerPreviewIsOptIn(t *testing.T) {
+	t.Parallel()
+	m := pickerModel(t, 160, 40)
+	if m.sessionPicker.previewText != "" || m.sessionPicker.previewVisible {
+		t.Fatal("opening picker loaded a preview")
+	}
+	requested, cancelled := 0, 0
+	m.previewSession = func(generation uint64, key, query string) (tea.Cmd, context.CancelFunc) {
+		requested++
+		return func() tea.Msg { return sessionPreviewResult{generation: generation, text: "Preview fixture"} },
+			func() { cancelled++ }
+	}
+	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyDown})
+	m = updateModel(t, m, tea.PasteMsg{Content: "Second"})
+	if requested != 0 || m.sessionPickerLayout().listWidth != m.sessionPickerLayout().inner {
+		t.Fatal("hidden preview fetched data or consumed list space")
+	}
+	next, command := m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+	m = next.(model)
+	if requested != 1 || !m.sessionPicker.previewFocused || !m.sessionPickerLayout().wide {
+		t.Fatal("Tab did not open and request preview")
+	}
+	if !strings.Contains(ansi.Strip(m.sessionPickerView()), "● PREVIEW") {
+		t.Fatal("preview focus is not visible")
+	}
+	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyTab})
+	if !strings.Contains(ansi.Strip(m.sessionPickerView()), "● LIST") || m.View().Cursor == nil {
+		t.Fatal("list focus or search cursor missing")
+	}
+	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyF3})
+	if cancelled != 1 || m.sessionPicker.previewVisible || m.sessionPickerLayout().wide {
+		t.Fatal("hiding preview did not cancel work and reclaim width")
+	}
+	m = updateModel(t, m, command())
+	if strings.Contains(m.sessionPicker.previewText, "Preview fixture") {
+		t.Fatal("late preview result was applied after hiding")
+	}
+	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyDown})
+	if requested != 1 {
+		t.Fatal("hidden preview restarted on selection")
 	}
 }
