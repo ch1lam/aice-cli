@@ -473,7 +473,9 @@ continuing through older files. Rows already loaded stay selectable and resumabl
 Escape cancels scanning. Later batches preserve the selected session by identity.
 The picker fills the terminal with a small outer margin. Its title and `[ ✘ ]` close
 button sit on the top border, using the same thin, muted border as the slash
-command menu. Compact two-line rows
+command menu. List rows keep two cells of right padding and a fixed five-cell
+relative-time column, separated from title and snippet text by at least three
+blank cells. Very narrow panes omit the time column. Compact two-line rows
 show the custom title, or the first user prompt when none is set, recent content
 and a current-session marker where applicable. Activity ages use `min`, `h`, `d`,
 `m` and `y` (months use 30 days; years use 365 days); activity under one minute

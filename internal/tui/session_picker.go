@@ -182,12 +182,20 @@ func (sessionItemDelegate) Render(w io.Writer, model list.Model, index int, item
 		}
 		detail += sanitizeToolDetail(strings.Join(strings.Fields(i.Snippet), " "), false)
 	}
+	// Keep both text lines out of the time column, with room before the border.
+	textWidth := max(1, model.Width()-11) // left 1, gap 3, age 5, right 2
 	age := sessionRelativeTime(i.UpdatedAt, time.Now())
-	titleWidth := max(1, model.Width()-len(age)-1)
-	line := ansi.Truncate(prefix+title, titleWidth, "…")
-	line += strings.Repeat(" ", max(0, titleWidth-ansi.StringWidth(line)))
-	_, _ = fmt.Fprint(w, style.Render(line), " ", mutedStyle.Render(age), "\n",
-		mutedStyle.Render(ansi.Truncate("  "+detail, model.Width(), "…")))
+	if model.Width() < 16 {
+		textWidth = max(1, model.Width()-3)
+		age = ""
+	}
+	line := ansi.Truncate(prefix+title, textWidth, "…")
+	line += strings.Repeat(" ", max(0, textWidth-ansi.StringWidth(line)))
+	_, _ = fmt.Fprint(w, " ", style.Render(line))
+	if age != "" {
+		_, _ = fmt.Fprintf(w, "   %s  ", mutedStyle.Render(fmt.Sprintf("%5s", age)))
+	}
+	_, _ = fmt.Fprint(w, "\n ", mutedStyle.Render(ansi.Truncate("  "+detail, textWidth, "…")))
 }
 
 // Months and years use fixed intervals for a compact relative activity label.
