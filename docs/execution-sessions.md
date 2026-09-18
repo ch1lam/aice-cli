@@ -503,7 +503,8 @@ entries, and discovery evicts deleted files. JSONL remains the only durable
 source; a cold or changed file is replayed read-only, one session at a time.
 Preview is hidden and does not load by default, leaving the full width for the
 list. Tab or F3 opens it on demand. Preview shows the last active-branch user
-request and assistant answer with activity time, or up to six matching excerpts, each limited to 1,200 runes.
+request and assistant answer with activity time, or up to six matching excerpts,
+each limited to 1,200 runes.
 Selection moves immediately; previews wait for a 120 ms pause, cancel obsolete
 work, and keep the previous preview visible with a loading notice. Loading does
 not block selection, closing, or resuming. Other-branch matches are labeled;
@@ -522,9 +523,11 @@ Arrows or a mouse click select a session, Enter restores it, and Tab switches
 between the search/list and scrollable preview. With preview enabled, wide
 terminals show both panes; narrow terminals show one at a time. A highlighted
 pane heading and filled dot mark keyboard focus; clicking a pane also focuses it.
-F3 hides preview and restores the full-width list. Escape closes the picker and
-preserves the current draft and transcript position. `/history <id>` restores an existing
-local file by filename stem; it never creates a missing session.
+F3 hides preview and restores the full-width list. Escape or the top-right `×`
+button closes the picker and preserves the current draft and transcript position.
+The button highlights on hover; press and release inside it to close. During
+restoration, it requests cancellation like Escape. `/history <id>` restores an
+existing local file by filename stem; it never creates a missing session.
 
 Switching requires the main response and every BTW response to be idle. The
 application validates and prepares the target before replacing the current

@@ -100,12 +100,59 @@ func (m model) sessionPickerView() string {
 		help = sanitizeToolDetail(p.notice, false)
 	}
 	content := strings.Join([]string{
-		labelStyle.Render(ansi.Truncate(title, l.inner, "…")), input, m.sessionPickerPaneHeading(l), body, "",
+		m.sessionPickerTitle(title, l), input, m.sessionPickerPaneHeading(l), body, "",
 		mutedStyle.Render(ansi.Truncate(help, l.inner, "…")),
 	}, "\n")
 	return lipgloss.NewStyle().Foreground(primaryTextColor).Background(inkBlackColor).
 		Border(lipgloss.RoundedBorder()).BorderForeground(secondaryColor).BorderBackground(inkBlackColor).
 		Padding(0, 1).Width(l.width).Render(content)
+}
+
+const sessionPickerCloseLabel = " × "
+
+func (m model) sessionPickerTitle(title string, l sessionPickerLayout) string {
+	style := mutedStyle.Background(panelBlackColor)
+	if m.sessionPickerCloseHovered() {
+		style = labelStyle.Foreground(inkBlackColor).Background(secondaryColor)
+		if m.sessionPicker.closePressed {
+			style = style.Background(accentColor)
+		}
+	}
+	titleWidth := max(0, l.inner-ansi.StringWidth(sessionPickerCloseLabel)-1)
+	heading := ansi.Truncate(title, titleWidth, "…")
+	gap := l.inner - ansi.StringWidth(heading) - ansi.StringWidth(sessionPickerCloseLabel)
+	return labelStyle.Render(heading) + strings.Repeat(" ", gap) + style.Render(sessionPickerCloseLabel)
+}
+
+func (m model) sessionPickerCloseHovered() bool {
+	p := m.sessionPicker
+	if p.closePointer == nil || m.width < 16 || m.height < 8 {
+		return false
+	}
+	l := m.sessionPickerLayout()
+	x, y := p.closePointer.X-l.x-2, p.closePointer.Y-l.y-1
+	return y == 0 && x >= l.inner-ansi.StringWidth(sessionPickerCloseLabel) && x < l.inner
+}
+
+// Activate only after a left press and release within the painted button.
+func (m *model) trackSessionPickerClose(message tea.Msg) bool {
+	p := m.sessionPicker
+	switch mouse := message.(type) {
+	case tea.MouseMotionMsg:
+		pointer := tea.Mouse(mouse)
+		p.closePointer = &pointer
+	case tea.MouseClickMsg:
+		pointer := tea.Mouse(mouse)
+		p.closePointer = &pointer
+		p.closePressed = mouse.Button == tea.MouseLeft && m.sessionPickerCloseHovered()
+	case tea.MouseReleaseMsg:
+		pointer := tea.Mouse(mouse)
+		p.closePointer = &pointer
+		close := p.closePressed && mouse.Button == tea.MouseLeft && m.sessionPickerCloseHovered()
+		p.closePressed = false
+		return close
+	}
+	return false
 }
 
 func (m model) sessionPickerPaneHeading(l sessionPickerLayout) string {
@@ -181,7 +228,11 @@ func (m model) clickSessionPicker(mouse tea.MouseClickMsg) (tea.Model, tea.Cmd) 
 	if y == 2 || (l.wide && x >= l.listWidth) {
 		return m, nil
 	}
-	index := p.list.Paginator.Page*p.list.Paginator.PerPage + (y-3)/(sessionItemDelegate{}.Height()+sessionItemDelegate{}.Spacing())
+	row := (y - 3) / (sessionItemDelegate{}.Height() + sessionItemDelegate{}.Spacing())
+	if row >= p.list.Paginator.PerPage {
+		return m, nil
+	}
+	index := p.list.Paginator.Page*p.list.Paginator.PerPage + row
 	if index < len(p.list.Items()) {
 		p.list.Select(index)
 		return m, m.requestSessionPreview()

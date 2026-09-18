@@ -312,3 +312,84 @@ func TestSessionPickerPreviewIsOptIn(t *testing.T) {
 		t.Fatal("hidden preview restarted on selection")
 	}
 }
+
+func TestSessionPickerCloseButton(t *testing.T) {
+	t.Parallel()
+	for _, size := range [][2]int{{24, 10}, {60, 24}, {160, 40}} {
+		t.Run(fmt.Sprint(size), func(t *testing.T) {
+			m := pickerModel(t, size[0], size[1])
+			mouse := sessionCloseMouse(t, m)
+			idle := m.sessionPickerView()
+			m = updateModel(t, m, tea.MouseMotionMsg(mouse))
+			if m.sessionPickerView() == idle {
+				t.Fatal("close button did not highlight on hover")
+			}
+			m = updateModel(t, m, tea.MouseMotionMsg{X: 0, Y: 0})
+			if m.sessionPickerView() != idle {
+				t.Fatal("close button retained hover after leaving")
+			}
+			mouse.Button = tea.MouseRight
+			m = updateModel(t, m, tea.MouseClickMsg(mouse))
+			m = updateModel(t, m, tea.MouseReleaseMsg(mouse))
+			if m.sessionPicker == nil {
+				t.Fatal("right click closed picker")
+			}
+			mouse.Button = tea.MouseLeft
+			m = updateModel(t, m, tea.MouseClickMsg(mouse))
+			m = updateModel(t, m, tea.MouseReleaseMsg{X: 0, Y: 0, Button: tea.MouseLeft})
+			if m.sessionPicker == nil {
+				t.Fatal("release outside closed picker")
+			}
+			m = updateModel(t, m, tea.MouseReleaseMsg(mouse))
+			if m.sessionPicker == nil {
+				t.Fatal("release without press closed picker")
+			}
+			m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyF2})
+			m = updateModel(t, m, tea.MouseClickMsg(mouse))
+			m = updateModel(t, m, tea.MouseReleaseMsg(mouse))
+			if m.sessionPicker != nil || m.input.Value() != "keep my draft" {
+				t.Fatal("close button failed in rename mode or lost draft")
+			}
+		})
+	}
+}
+
+func TestSessionPickerCloseButtonCancelsRestore(t *testing.T) {
+	t.Parallel()
+	m := pickerModel(t, 100, 28)
+	m.sessionPicker.restoring = true
+	cancelled := false
+	m.cancelRun = func() { cancelled = true }
+	mouse := sessionCloseMouse(t, m)
+	m = updateModel(t, m, tea.MouseClickMsg(mouse))
+	m = updateModel(t, m, tea.MouseReleaseMsg(mouse))
+	if !cancelled || m.sessionPicker == nil {
+		t.Fatal("close during restore did not preserve restoration's cancellation lifecycle")
+	}
+}
+
+func sessionCloseMouse(t *testing.T, m model) tea.Mouse {
+	t.Helper()
+	for y, row := range strings.Split(ansi.Strip(m.View().Content), "\n") {
+		if x := strings.Index(row, "×"); x >= 0 {
+			return tea.Mouse{X: ansi.StringWidth(row[:x]), Y: y, Button: tea.MouseLeft}
+		}
+	}
+	t.Fatal("close button not painted")
+	return tea.Mouse{}
+}
+
+func TestSessionPickerClickIgnoresPagePadding(t *testing.T) {
+	t.Parallel()
+	m := pickerModel(t, 160, 40)
+	items := make([]interaction.SessionSummary, 30)
+	for i := range items {
+		items[i] = interaction.SessionSummary{Key: fmt.Sprint(i), Title: fmt.Sprint(i)}
+	}
+	m.setSessionItems(items)
+	l := m.sessionPickerLayout()
+	m = updateModel(t, m, tea.MouseClickMsg{X: l.x + 3, Y: l.y + 3 + l.bodyHeight, Button: tea.MouseLeft})
+	if m.sessionPicker.list.Index() != 0 {
+		t.Fatal("click on bottom padding selected an invisible item on the next page")
+	}
+}

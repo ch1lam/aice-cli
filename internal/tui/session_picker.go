@@ -27,6 +27,8 @@ type sessionPicker struct {
 	previewText                 string
 	previewFocused              bool
 	previewVisible              bool
+	closePointer                *tea.Mouse
+	closePressed                bool
 	loading, restoring          bool
 	notice                      string
 	cancelSearch, cancelPreview context.CancelFunc
@@ -387,6 +389,13 @@ func (m model) applySessionPreview(result sessionPreviewResult) (tea.Model, tea.
 
 func (m model) handleSessionPicker(message tea.Msg) (tea.Model, tea.Cmd) {
 	p := m.sessionPicker
+	if m.trackSessionPickerClose(message) {
+		if p.restoring {
+			// Match Escape: restoration owns completion and cancellation.
+			return m.handleSessionPicker(tea.KeyPressMsg{Code: tea.KeyEscape})
+		}
+		return m, m.closeSessionPicker()
+	}
 	if p.rename != nil {
 		return m.handleSessionTitleEditor(message)
 	}
