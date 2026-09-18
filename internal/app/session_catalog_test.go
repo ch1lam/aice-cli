@@ -3,11 +3,13 @@ package app
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 
 	"github.com/ch1lam/aice-cli/internal/llm"
+	"github.com/ch1lam/aice-cli/internal/session"
 )
 
 func TestSessionCatalogInvalidation(t *testing.T) {
@@ -111,5 +113,32 @@ func TestSessionExcerptUnicodeAndBoundaries(t *testing.T) {
 	}
 	if got := sessionExcerpt("中文abc", "", 2); got != "中文…" {
 		t.Fatal(got)
+	}
+}
+
+func TestSessionCatalogAccountsForLongSessionIdentity(t *testing.T) {
+	s := browserHarness(t)
+	id := strings.Repeat("session-id-", 10000)
+	store, err := session.Create(t.Context(), filepath.Join(s.sessionDirectory(), "short-key.jsonl"), session.Metadata{
+		ID: id, CreatedAt: 100, WorkingDirectory: s.workspace.Path(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { store.Close() })
+	entry, err := s.catalogSession(t.Context(), "short-key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if entry.summary.ID != id || entry.bytes < len(id) {
+		t.Fatal("retained identity exceeds accounted cache bytes")
+	}
+	// Leave less budget than that identity requires. Retaining it must evict
+	// the earlier entry, even though its filename and title are both short.
+	var cache sessionCatalog
+	cache.put("older", &sessionCatalogEntry{bytes: sessionCatalogBytes - len(id)/2})
+	cache.put("short-key", entry)
+	if cache.entries["older"] != nil || cache.entries["short-key"] == nil || cache.bytes > sessionCatalogBytes {
+		t.Fatal("identity bytes did not participate in eviction")
 	}
 }

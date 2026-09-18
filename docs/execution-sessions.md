@@ -473,8 +473,9 @@ before body scanning and remain ahead of body-only matches; result arrivals keep
 the selected session stable. An active-branch match is preferred when available;
 otherwise the result explicitly says that resuming will use the active branch.
 Tool payloads, reasoning, and image bytes are not search targets. The application caches derived prose in memory,
-bounded to 256 sessions and a 32 MiB accounting budget; oversized sessions are
-read without retention. File identity, size and modification time invalidate
+bounded to 256 sessions and a 32 MiB accounting budget covering retained prose,
+identifiers, summaries and per-entry overhead; oversized sessions are read
+without retention. File identity, size and modification time invalidate
 entries, and discovery evicts deleted files. JSONL remains the only durable
 source; a cold or changed file is replayed read-only, one session at a time.
 Preview shows the last active-branch user request and assistant answer with
