@@ -411,21 +411,25 @@ func (m model) handleSessionPicker(message tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	if key, ok := message.(tea.KeyPressMsg); ok {
 		switch key.String() {
-		case "esc", "ctrl+c":
+		case "esc":
+			if p.previewVisible {
+				return m, m.toggleSessionPreview()
+			}
 			return m, m.closeSessionPicker()
-		case "tab", "shift+tab":
+		case "ctrl+c":
+			return m, m.closeSessionPicker()
+		case "right":
 			if !p.previewVisible {
 				return m, m.toggleSessionPreview()
 			}
-			p.previewFocused = !p.previewFocused
-			if p.previewFocused {
-				p.input.Blur()
-			} else {
-				p.input.Focus()
-			}
+			p.previewFocused = true
+			p.input.Blur()
 			return m, nil
-		case "f3":
-			return m, m.toggleSessionPreview()
+		case "left":
+			if p.previewVisible {
+				p.previewFocused = false
+				return m, p.input.Focus()
+			}
 		case "f2":
 			return m, m.openSessionTitleEditor()
 		case "f4":

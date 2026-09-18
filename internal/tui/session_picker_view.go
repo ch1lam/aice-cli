@@ -70,15 +70,18 @@ func (m model) sessionPickerView() string {
 	if p.previewFocused {
 		title = "SESSIONS · PREVIEW"
 	}
-	help := "Tab preview · ↑↓ select · Enter resume · F2 rename · F4 read · Esc close"
+	help := "→ preview · Esc close · ↑↓ select · Enter resume · F2 rename · F4 read"
 	if p.previewVisible {
-		help = "Tab focus · F3 hide preview · ↑↓ select · Enter resume · F2 rename · F4 read · Esc close"
+		help = "←→ focus · Esc hide preview · ↑↓ select · Enter resume · F2 rename · F4 read"
 	}
 	if p.previewFocused {
-		help = "Tab list · F3 hide preview · ↑↓ scroll · Enter resume · Esc close"
+		help = "←→ focus · Esc hide preview · ↑↓ scroll · Enter resume"
 	}
 	if l.inner < 55 {
-		help = "↑↓ · Enter resume · Tab · Esc"
+		help = "→ preview · Esc close · ↑↓ · Enter"
+		if p.previewVisible {
+			help = "←→ focus · Esc hide preview · ↑↓ · Enter"
+		}
 	}
 	if p.loading {
 		if p.input.Value() == "" {

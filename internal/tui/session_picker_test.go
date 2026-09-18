@@ -197,9 +197,9 @@ func TestSessionPickerCapturesInputAndMouse(t *testing.T) {
 	if m.sessionPicker.list.Index() != 1 {
 		t.Fatal("mouse did not select second item")
 	}
-	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyTab})
+	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyRight})
 	if !m.sessionPicker.previewFocused {
-		t.Fatal("tab did not enter preview")
+		t.Fatal("right arrow did not enter preview")
 	}
 	m = updateModel(t, m, tea.PasteMsg{Content: "do not insert"})
 	if m.input.Value() != "keep my draft" || m.sessionPicker.input.Value() != "" {
@@ -216,7 +216,7 @@ func TestSessionPickerMovementKeepsPreviewAndCancelsOldWork(t *testing.T) {
 	m := pickerModel(t, 100, 28)
 	command := m.toggleSessionPreview()
 	m = updateModel(t, m, command())
-	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyTab})
+	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyLeft})
 	previous := m.sessionPicker.previewText
 	next, old := m.handleSessionPicker(tea.KeyPressMsg{Code: tea.KeyDown})
 	m = next.(model)
@@ -287,19 +287,19 @@ func TestSessionPickerPreviewIsOptIn(t *testing.T) {
 	if requested != 0 || m.sessionPickerLayout().listWidth != m.sessionPickerLayout().inner {
 		t.Fatal("hidden preview fetched data or consumed list space")
 	}
-	next, command := m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+	next, command := m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
 	m = next.(model)
 	if requested != 1 || !m.sessionPicker.previewFocused || !m.sessionPickerLayout().wide {
-		t.Fatal("Tab did not open and request preview")
+		t.Fatal("right arrow did not open and request preview")
 	}
 	if !strings.Contains(ansi.Strip(m.sessionPickerView()), "● PREVIEW") {
 		t.Fatal("preview focus is not visible")
 	}
-	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyTab})
+	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyLeft})
 	if !strings.Contains(ansi.Strip(m.sessionPickerView()), "● LIST") || m.View().Cursor == nil {
 		t.Fatal("list focus or search cursor missing")
 	}
-	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyF3})
+	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyEscape})
 	if cancelled != 1 || m.sessionPicker.previewVisible || m.sessionPickerLayout().wide {
 		t.Fatal("hiding preview did not cancel work and reclaim width")
 	}
@@ -391,5 +391,50 @@ func TestSessionPickerClickIgnoresPagePadding(t *testing.T) {
 	m = updateModel(t, m, tea.MouseClickMsg{X: l.x + 3, Y: l.y + 3 + l.bodyHeight, Button: tea.MouseLeft})
 	if m.sessionPicker.list.Index() != 0 {
 		t.Fatal("click on bottom padding selected an invisible item on the next page")
+	}
+}
+
+func TestSessionPickerArrowFocusAndLayeredEscape(t *testing.T) {
+	t.Parallel()
+	for _, width := range []int{60, 160} {
+		for _, closeFromList := range []bool{false, true} {
+			t.Run(fmt.Sprintf("width=%d/list=%v", width, closeFromList), func(t *testing.T) {
+				m := pickerModel(t, width, 28)
+				m.sessionPicker.input.SetValue("query")
+				m.sessionPicker.list.Select(1)
+				for _, key := range []tea.KeyPressMsg{{Code: tea.KeyTab}, {Code: tea.KeyTab, Mod: tea.ModShift}, {Code: tea.KeyF3}} {
+					m = updateModel(t, m, key)
+				}
+				if m.sessionPicker.previewVisible {
+					t.Fatal("removed shortcuts opened preview")
+				}
+				m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyRight})
+				generation := m.sessionPreviewGeneration
+				for _, key := range []rune{tea.KeyRight, tea.KeyLeft, tea.KeyLeft, tea.KeyRight} {
+					m = updateModel(t, m, tea.KeyPressMsg{Code: key})
+					preview := key == tea.KeyRight
+					if !m.sessionPicker.previewVisible || m.sessionPicker.previewFocused != preview {
+						t.Fatal("arrow did not focus the corresponding pane")
+					}
+					if (m.View().Cursor == nil) != preview || m.sessionPreviewGeneration != generation {
+						t.Fatal("focus switch lost cursor or reloaded preview")
+					}
+				}
+				if closeFromList {
+					m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyLeft})
+				}
+				m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyEscape})
+				if m.sessionPicker == nil || m.sessionPicker.previewVisible || m.sessionPicker.previewFocused {
+					t.Fatal("first Escape did not return to the full-width list")
+				}
+				if m.sessionPicker.input.Value() != "query" || selectedSessionKey(m.sessionPicker) != "two" {
+					t.Fatal("preview navigation lost search or selection")
+				}
+				m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyEscape})
+				if m.sessionPicker != nil || m.input.Value() != "keep my draft" {
+					t.Fatal("second Escape did not close picker and preserve draft")
+				}
+			})
+		}
 	}
 }
