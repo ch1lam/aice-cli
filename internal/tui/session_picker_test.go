@@ -558,13 +558,20 @@ func TestSessionPickerSelectionAndPreviewShowFocus(t *testing.T) {
 				canvas := lipgloss.NewCanvas(l.width, l.height).Compose(lipgloss.NewLayer(view))
 				if l.wide || !step.preview {
 					want := primaryTextColor
-					if _, ok := m.sessionPicker.list.SelectedItem().(sessionGroupItem); ok {
+					_, isGroup := m.sessionPicker.list.SelectedItem().(sessionGroupItem)
+					if isGroup {
 						want = informationColor
 					}
 					if step.list {
 						want = secondaryColor
 					}
 					y := 3 + 2*(m.sessionPicker.list.Index()%m.sessionPicker.list.Paginator.PerPage)
+					if isGroup {
+						y++
+						if strings.Contains(ansi.Strip(strings.Split(view, "\n")[y]), "›") {
+							t.Fatal("group heading has a session selection marker")
+						}
+					}
 					assertColor(t, canvas.CellAt(5, y).Style.Fg, want)
 				}
 				if l.wide || step.preview {

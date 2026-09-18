@@ -158,3 +158,15 @@ func TestSessionGroupPaginationAndMouseRows(t *testing.T) {
 		t.Fatal("mouse did not select the painted heading on the second page")
 	}
 }
+
+func TestSessionGroupHeadingSpacerAndSelection(t *testing.T) {
+	t.Parallel()
+	for _, focused := range []bool{false, true} {
+		var rendered strings.Builder
+		sessionGroupItem{name: "Yesterday", count: 3}.render(&rendered, 50, true, focused)
+		rows := strings.Split(ansi.Strip(rendered.String()), "\n")
+		if len(rows) != 2 || rows[0] != "" || !strings.Contains(rows[1], "▾ Yesterday 3") || strings.Contains(rows[1], "›") {
+			t.Fatal("group heading must have a blank line above and no session selection marker")
+		}
+	}
+}

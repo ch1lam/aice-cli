@@ -469,7 +469,8 @@ picker. It discovers regular `.jsonl` files under `<workspace>/.aice/sessions/`,
 validates their workspace, hides empty sessions, and sorts by last recorded
 activity, grouped as Today, Yesterday and Earlier in the local calendar. Each
 group has a separate bold, blue subtitle with a count, disclosure arrow and
-separator line; list focus highlights the selected heading in gold. Up/Down
+separator line, with a blank line above it. List focus highlights the selected
+heading in gold without adding a `›`; that marker is reserved for sessions. Up/Down
 and the mouse wheel select group headings as well as sessions. Enter on a heading
 folds or unfolds its sessions, leaving the heading selected. Fold state and selection survive
 additional search batches; changing the search query expands matching groups.

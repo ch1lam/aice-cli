@@ -24,11 +24,8 @@ func (g sessionGroupItem) FilterValue() string { return g.name }
 func (g sessionGroupItem) render(w io.Writer, width int, selected, focused bool) {
 	prefix, arrow := "  ", "▾"
 	style := infoStyle.Bold(true)
-	if selected {
-		prefix = "› "
-		if focused {
-			style = labelStyle
-		}
+	if selected && focused {
+		style = labelStyle
 	}
 	if g.collapsed {
 		arrow = "▸"
@@ -36,7 +33,7 @@ func (g sessionGroupItem) render(w io.Writer, width int, selected, focused bool)
 	available := max(1, width-3)
 	heading := ansi.Truncate(fmt.Sprintf("%s%s %s %d", prefix, arrow, g.name, g.count), available, "…")
 	line := strings.Repeat("─", max(0, available-ansi.StringWidth(heading)-1))
-	_, _ = fmt.Fprint(w, " ", style.Render(heading), " ", mutedStyle.Render(line), "\n")
+	_, _ = fmt.Fprint(w, "\n ", style.Render(heading), " ", mutedStyle.Render(line))
 }
 
 func (m *model) setSessionItems(items []interaction.SessionSummary) {
