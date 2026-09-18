@@ -26,6 +26,7 @@ type sessionPicker struct {
 	all                         []interaction.SessionSummary
 	results                     []interaction.SessionSummary
 	collapsedGroups             map[string]bool
+	previewLayout               sessionPreviewLayout
 	previewText                 string
 	previewID                   string
 	copyPressedID, copiedID     string

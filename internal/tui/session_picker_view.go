@@ -39,13 +39,13 @@ func (m *model) resizeSessionPicker() {
 	}
 	p.list.SetSize(l.listWidth, l.bodyHeight)
 	p.preview.SetWidth(l.previewWidth)
-	header, content := sessionPreviewParts(p.previewText)
+	header, _ := sessionPreviewParts(p.previewText)
 	height := l.bodyHeight
 	if header != "" {
 		height -= 2
 	}
 	p.preview.SetHeight(height)
-	p.preview.SetContent(ansi.Hardwrap(sanitizeToolDetail(content, true), l.previewWidth, true))
+	p.preview.SetContent(p.previewLayout.render(p.previewText, l.previewWidth))
 }
 
 func (m model) sessionPickerView() string {

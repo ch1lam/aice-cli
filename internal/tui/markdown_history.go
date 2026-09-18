@@ -73,7 +73,7 @@ func (h *historyMarkdown) content(index, width int) transcriptContent {
 	rendered, err := renderMarkdownRange(h.document, part.first, part.end, h.source, width)
 	content := transcriptContent{view: rendered}
 	if err == nil && len(part.blocks) > 0 {
-		content, err = insertMarkdownBlocks(rendered, h.marker, part.blocks, width)
+		content, err = insertMarkdownBlocks(rendered, h.marker, part.blocks, codeBlockOptions{width: width})
 	}
 	if err != nil {
 		return newCodeBlock(h.markdown[part.start:part.stop], "text").layout(codeBlockOptions{width: width}).content()

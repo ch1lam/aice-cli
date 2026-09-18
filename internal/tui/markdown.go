@@ -36,6 +36,10 @@ func layoutMarkdown(markdown string, width int) transcriptContent {
 // then insert the shared component at those explicit slots. Never locate code
 // by matching its content against prose or by guessing indentation.
 func renderMarkdownBlocks(markdown string, width int) (transcriptContent, error) {
+	return renderMarkdownWithOptions(markdown, codeBlockOptions{width: width})
+}
+
+func renderMarkdownWithOptions(markdown string, options codeBlockOptions) (transcriptContent, error) {
 	md, document, source, blocks, marker, err := prepareMarkdown(markdown, nil)
 	if err != nil {
 		return transcriptContent{}, err
@@ -43,7 +47,7 @@ func renderMarkdownBlocks(markdown string, width int) (transcriptContent, error)
 	style := inkMarkdownStyle()
 	style.CodeBlock = glamouransi.StyleCodeBlock{}
 	md.SetRenderer(renderer.NewRenderer(renderer.WithNodeRenderers(util.Prioritized(
-		glamouransi.NewRenderer(glamouransi.Options{Styles: style, WordWrap: width}), 1000))))
+		glamouransi.NewRenderer(glamouransi.Options{Styles: style, WordWrap: options.width}), 1000))))
 	var out bytes.Buffer
 	if err := md.Renderer().Render(&out, source, document); err != nil {
 		return transcriptContent{}, err
@@ -52,7 +56,7 @@ func renderMarkdownBlocks(markdown string, width int) (transcriptContent, error)
 	if len(blocks) == 0 {
 		return transcriptContent{view: rendered}, nil
 	}
-	return insertMarkdownBlocks(rendered, marker, blocks, width)
+	return insertMarkdownBlocks(rendered, marker, blocks, options)
 }
 
 func prepareMarkdown(markdown string, context parser.Context) (goldmark.Markdown, ast.Node, []byte, []codeBlock, string, error) {
@@ -120,7 +124,8 @@ func markdownMarker(source string) (string, error) {
 	return "", fmt.Errorf("markdown code marker alphabet exhausted")
 }
 
-func insertMarkdownBlocks(rendered, marker string, blocks []codeBlock, width int) (transcriptContent, error) {
+func insertMarkdownBlocks(rendered, marker string, blocks []codeBlock, options codeBlockOptions) (transcriptContent, error) {
+	width := options.width
 	var rows []string
 	result := transcriptContent{}
 	next := 0
@@ -140,7 +145,8 @@ func insertMarkdownBlocks(rendered, marker string, blocks []codeBlock, width int
 			before = ansi.Truncate(before, max(width-6, 0), "")
 			column = ansi.StringWidth(before)
 		}
-		layout := blocks[next].layout(codeBlockOptions{width: max(width-column, 6)})
+		options.width = max(width-column, 6)
+		layout := blocks[next].layout(options)
 		result.blocks = append(result.blocks, codeBlockPlacement{layout: layout, row: len(rows), column: column})
 		for _, row := range layout.rows {
 			rows = append(rows, before+row.text)

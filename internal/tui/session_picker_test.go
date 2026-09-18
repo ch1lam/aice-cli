@@ -620,7 +620,7 @@ func TestSessionPickerActivityHeaderStaysFixed(t *testing.T) {
 		m := pickerModel(t, width, 24)
 		m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyRight})
 		m = updateModel(t, m, sessionPreviewResult{generation: m.sessionPreviewGeneration,
-			text: "Last activity · 2026-09-18 12:34\n\n" + strings.Repeat("Conversation line\n", 100) + "End of preview"})
+			text: "Last activity · 2026-09-18 12:34\n\n" + strings.Repeat("Conversation line\n\n", 40) + "End of preview"})
 		before := m.sessionPicker.preview.View()
 		m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyPgDown})
 		m = updateModel(t, m, tea.MouseWheelMsg{Button: tea.MouseWheelDown})
@@ -629,8 +629,8 @@ func TestSessionPickerActivityHeaderStaysFixed(t *testing.T) {
 		}
 		header, _, _ := strings.Cut(ansi.Strip(m.sessionPickerPreviewView(m.sessionPickerLayout())), "\n")
 		if !strings.HasPrefix(header, "Last activity · 2026-09-18 12:34") || m.sessionPicker.preview.View() == before ||
-			strings.Contains(m.sessionPicker.preview.View(), "Last activity") || !strings.Contains(m.sessionPicker.preview.View(), "End of preview") {
-			t.Fatal("activity header scrolled or preview body failed to scroll independently")
+			strings.Contains(m.sessionPicker.preview.View(), "Last activity") || !strings.Contains(ansi.Strip(m.sessionPicker.preview.View()), "End of preview") {
+			t.Fatalf("activity header scrolled or preview body failed to scroll independently: width=%d header=%q body=%q", width, header, ansi.Strip(m.sessionPicker.preview.View()))
 		}
 	}
 }

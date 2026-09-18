@@ -85,7 +85,7 @@ func (c *markdownCache) render(markdown string, width int) (transcriptContent, e
 			}
 			content := transcriptContent{view: rendered}
 			if count > 0 {
-				content, err = insertMarkdownBlocks(rendered, marker, blocks[blockIndex:blockIndex+count], width)
+				content, err = insertMarkdownBlocks(rendered, marker, blocks[blockIndex:blockIndex+count], codeBlockOptions{width: width})
 				if err != nil {
 					return transcriptContent{}, err
 				}

@@ -40,6 +40,8 @@ type codeBlockOptions struct {
 	incomplete bool
 	// Tool titles own their line summary; keep the panel's Copy row available.
 	hideSummary bool
+	// Read-only previews have no code-copy mouse target.
+	hideCopy bool
 	// Previews clip before highlighting to bound work on oversized source rows.
 	clip bool
 }
@@ -110,7 +112,7 @@ func (b codeBlock) layout(options codeBlockOptions) codeBlockLayout {
 	}
 	labelWidth := width - 4
 	button := ""
-	if b.source != "" && labelWidth >= 10 {
+	if !options.hideCopy && b.source != "" && labelWidth >= 10 {
 		button = "[Copy]"
 		result.copyColumn = width - 2 - len(button)
 		labelWidth -= len(button) + 1

@@ -516,7 +516,10 @@ source; a cold or changed file is replayed read-only, one session at a time.
 Preview is hidden and does not load by default, leaving the full width for the
 list. Right opens it on demand and focuses the preview. Preview shows the last
 active-branch user request and assistant answer with activity time, or up to six
-matching excerpts, each limited to 1,200 runes.
+matching excerpts, each limited to 1,200 runes. Conversation excerpts reuse the
+main transcript’s Markdown rules, colors and syntax-highlighted code panels.
+Preview code panels omit the transcript’s code-copy controls. The rendered
+preview is reused until its text or available width changes.
 Selection moves immediately; previews wait for a 120 ms pause, cancel obsolete
 work, and keep the previous preview visible with a loading notice. Loading does
 not block selection, closing, or resuming. Other-branch matches are labeled;
