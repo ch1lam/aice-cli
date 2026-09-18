@@ -580,6 +580,7 @@ checkpoints. Long completed answers parse once and format only reached Markdown
 sections, preserving lists, quotes, tables, reference links and original code
 copy targets. Long standalone lists without code panels load complete items in
 small groups as they become visible, retaining numbering and nested content.
+Mouse-wheel scrolling reuses the surrounding layout and composer state.
 Long code blocks show short previews; click the code heading or
 press C in the reader (Alt+O in the main conversation) to expand the first visible
 expandable block. Copy retains the entire code source. Searching hidden code

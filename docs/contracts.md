@@ -473,6 +473,8 @@ consistency for those behaviors.
   completion and preview revisions, and live activity; unchanged historical
   headings reuse both normal and hover rows. Width changes invalidate wrapping,
   height changes retain it.
+  Mouse-wheel input updates the transcript viewport directly, without updating
+  the composer, completion state or unchanged surrounding layout.
   Refreshes rebuild lightweight item descriptions but never concatenate the
   full transcript. Full-content snapshots are explicit operations, not part of
   animation, scrolling, or streaming frames. Selection freezes visible rows and

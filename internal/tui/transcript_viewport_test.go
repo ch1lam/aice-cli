@@ -156,3 +156,23 @@ func TestTranscriptWrappedRowsPreserveStylesAndWideCharacters(t *testing.T) {
 		}
 	}
 }
+
+func TestTranscriptWheelPreservesComposerAndScrolls(t *testing.T) {
+	m := newModel(nil, nil)
+	m.width, m.height = 80, 24
+	m.input.SetValue("Keep this draft")
+	m.input.CursorStart()
+	m.resizeLayout()
+	m.viewport.SetContent(strings.Repeat("history line\n", 100))
+	m.viewport.GotoBottom()
+	before := m.viewport.YOffset()
+	m.selection.active = true
+	next, command := m.Update(tea.MouseWheelMsg{Button: tea.MouseWheelUp})
+	m = next.(model)
+	if m.viewport.YOffset() >= before || m.selection.active {
+		t.Fatal("wheel did not scroll and clear selection")
+	}
+	if m.input.Value() != "Keep this draft" || m.input.Column() != 0 || command != nil {
+		t.Fatal("wheel changed the composer or scheduled input work")
+	}
+}

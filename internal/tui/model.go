@@ -483,6 +483,11 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			m.guardViewport, command = m.guardViewport.Update(message)
 			return m, command
 		}
+		// Scrolling changes only the transcript anchor. Routing wheel events
+		// through the composer also rebuilds its layout and completion state.
+		var command tea.Cmd
+		m.viewport, command = m.viewport.Update(message)
+		return m, command
 	case tea.BlurMsg:
 		m.workspacePress = nil
 		m.contextPressed = false
