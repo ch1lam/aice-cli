@@ -30,6 +30,6 @@ func Read(ctx context.Context, path string) (Snapshot, bool, error) {
 	}
 	return Snapshot{
 		Header: state.header, Messages: state.messages, Compactions: state.compactions,
-		LeafMoves: state.leafMoves, Order: state.order, LeafID: state.leafID,
+		LeafMoves: state.leafMoves, Titles: state.titles, Order: state.order, LeafID: state.leafID,
 	}, incomplete, nil
 }

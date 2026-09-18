@@ -99,6 +99,18 @@ func replayRecords(ctx context.Context, source io.Reader) (storeState, int64, bo
 			continue
 		}
 		switch envelope.Type {
+		case RecordTypeTitle:
+			var title TitleRecord
+			if err := decodeRecord(line, &title); err != nil {
+				return storeState{}, 0, false, corrupt(lineNumber, recordOffset, err)
+			}
+			if err := title.Validate(); err != nil {
+				return storeState{}, 0, false, corrupt(lineNumber, recordOffset, err)
+			}
+			if _, exists := state.index.recordIDs[title.ID]; exists {
+				return storeState{}, 0, false, corrupt(lineNumber, recordOffset, fmt.Errorf("duplicate record id %q", title.ID))
+			}
+			state.retainTitle(title)
 		case RecordTypeMessage:
 			var message MessageEntry
 			if err := decodeRecord(line, &message); err != nil {

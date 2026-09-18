@@ -28,6 +28,12 @@ type SessionScanner interface {
 	ScanSessions(context.Context, string, func([]SessionSummary) error) ([]SessionSummary, error)
 }
 
+// SessionRenamer optionally appends title metadata to an existing session.
+// It must preserve the live conversation, active branch and all source records.
+type SessionRenamer interface {
+	RenameSession(context.Context, string, string) (SessionSummary, error)
+}
+
 // SessionReader projects a branch for inspection without changing the saved
 // active leaf, acquiring writer ownership, or recovering interrupted tools.
 type SessionReader interface {

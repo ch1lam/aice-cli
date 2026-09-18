@@ -157,6 +157,14 @@ func (s *interactiveSession) catalogSession(ctx context.Context, key string) (*s
 	for _, l := range snapshot.LeafMoves {
 		entry.summary.UpdatedAt = max(entry.summary.UpdatedAt, l.CreatedAt)
 	}
+	for _, title := range snapshot.Titles {
+		entry.summary.UpdatedAt = max(entry.summary.UpdatedAt, title.CreatedAt)
+	}
+	if len(snapshot.Titles) > 0 {
+		if title := snapshot.Titles[len(snapshot.Titles)-1].Title; title != "" {
+			entry.summary.Title = title
+		}
+	}
 	entry.bytes += len(key) + len(entry.summary.ID) + len(entry.summary.Title) + len(entry.summary.Snippet) + 512
 	// A concurrent append/replacement must never label an old prefix as fresh.
 	after, err := os.Lstat(path)

@@ -19,6 +19,8 @@ import (
 
 type sessionPicker struct {
 	input                       textinput.Model
+	rename                      *sessionTitleEditor
+	cancelRename                context.CancelFunc
 	list                        list.Model
 	preview                     viewport.Model
 	all                         []interaction.SessionSummary
@@ -47,6 +49,7 @@ type sessionPreviewResult struct {
 // cancellation and also has a per-query cancellation/deadline.
 func sessionBrowserCommands(ctx context.Context, browser interaction.SessionBrowser) (
 	func(uint64, string) (tea.Cmd, context.CancelFunc),
+	func(uint64, string, string) (tea.Cmd, context.CancelFunc),
 	func(uint64, string, string) (tea.Cmd, context.CancelFunc),
 	func(uint64, string, string) (tea.Cmd, context.CancelFunc),
 	func(),
@@ -92,7 +95,23 @@ func sessionBrowserCommands(ctx context.Context, browser interaction.SessionBrow
 			return sessionReadingResult{generation: generation, view: view, err: err}
 		}, cancel
 	}
-	return search, preview, read, func() {
+	rename := func(generation uint64, key, title string) (tea.Cmd, context.CancelFunc) {
+		renameCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		return func() tea.Msg {
+			defer cancel()
+			if !owner.begin() {
+				return sessionRenameResult{generation: generation, err: context.Canceled}
+			}
+			defer owner.wg.Done()
+			renamer, ok := browser.(interaction.SessionRenamer)
+			if !ok {
+				return sessionRenameResult{generation: generation, err: fmt.Errorf("session renaming unavailable")}
+			}
+			item, err := renamer.RenameSession(renameCtx, key, title)
+			return sessionRenameResult{generation: generation, item: item, err: err}
+		}, cancel
+	}
+	return search, preview, read, rename, func() {
 		owner.mu.Lock()
 		owner.closed = true
 		owner.mu.Unlock()
@@ -206,6 +225,9 @@ func (m *model) closeSessionPicker() tea.Cmd {
 	if p.cancelPreview != nil {
 		p.cancelPreview()
 	}
+	if p.cancelRename != nil {
+		p.cancelRename()
+	}
 	m.sessionQueryGeneration++
 	m.sessionPreviewGeneration++
 	m.sessionPicker = nil
@@ -317,6 +339,9 @@ func (m model) applySessionPreview(result sessionPreviewResult) (tea.Model, tea.
 
 func (m model) handleSessionPicker(message tea.Msg) (tea.Model, tea.Cmd) {
 	p := m.sessionPicker
+	if p.rename != nil {
+		return m.handleSessionTitleEditor(message)
+	}
 	if p.restoring {
 		if key, ok := message.(tea.KeyPressMsg); ok && (key.Code == tea.KeyEscape || key.String() == "ctrl+c") {
 			if m.cancelRun != nil {
@@ -340,6 +365,8 @@ func (m model) handleSessionPicker(message tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.resizeSessionPicker()
 			return m, nil
+		case "f2":
+			return m, m.openSessionTitleEditor()
 		case "f4":
 			return m, m.requestSessionReading()
 		case "enter":

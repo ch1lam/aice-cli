@@ -862,7 +862,7 @@ without color.
 | `/thinking` | Select and save a supported reasoning level |
 | `/trust` | Save a Trust choice for restart; temporary choices are available only at startup |
 | `/session` | Show the Session ID, path, active leaf, and counts |
-| `/history [id]` | Open the current-project history picker (also Ctrl+R), or restore an existing local session by filename stem |
+| `/history [id]` | Open the current-project history picker (also Ctrl+R; F2 renames the selected session, an empty title restores the first question), or restore an existing local session by filename stem |
 | `/tree` | Show all Session branches |
 | `/checkout` | Select where the next branch starts |
 | `/compact` | Append a compaction checkpoint for the active branch |

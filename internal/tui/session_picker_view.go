@@ -34,6 +34,9 @@ func (m *model) resizeSessionPicker() {
 	}
 	l := m.sessionPickerLayout()
 	p.input.SetWidth(max(1, l.inner-2))
+	if p.rename != nil {
+		p.rename.input.SetWidth(max(1, l.inner-2))
+	}
 	p.list.SetSize(l.listWidth, l.bodyHeight)
 	p.preview.SetWidth(l.previewWidth)
 	p.preview.SetHeight(l.bodyHeight)
@@ -67,7 +70,7 @@ func (m model) sessionPickerView() string {
 	if p.previewFocused {
 		title = "SESSIONS · PREVIEW"
 	}
-	help := "↑↓ select · Enter resume · F4 read · Tab preview · Esc close"
+	help := "↑↓ select · Enter resume · F2 rename · F4 read · Tab preview · Esc close"
 	if p.previewFocused {
 		help = "↑↓ scroll · Enter resume · Tab search · Esc close"
 	}
@@ -81,11 +84,20 @@ func (m model) sessionPickerView() string {
 			title += " · searching text"
 		}
 	}
+	input := p.input.View()
+	if p.rename != nil {
+		title = "RENAME SESSION · blank restores automatic title"
+		input = p.rename.input.View()
+		help = "Enter save · Esc cancel"
+		if p.rename.saving {
+			help = "Saving title… · Esc closes"
+		}
+	}
 	if p.notice != "" {
 		help = sanitizeToolDetail(p.notice, false)
 	}
 	content := strings.Join([]string{
-		labelStyle.Render(ansi.Truncate(title, l.inner, "…")), p.input.View(), "", body, "",
+		labelStyle.Render(ansi.Truncate(title, l.inner, "…")), input, "", body, "",
 		mutedStyle.Render(ansi.Truncate(help, l.inner, "…")),
 	}, "\n")
 	return lipgloss.NewStyle().Foreground(primaryTextColor).Background(inkBlackColor).
@@ -106,8 +118,14 @@ func (m model) overlaySessionPicker(content string) (string, *tea.Cursor) {
 		lipgloss.NewLayer(restoreCanvasColors(m.sessionPickerView())).X(l.x).Y(l.y).Z(1),
 	))
 	var cursor *tea.Cursor
-	if !m.sessionPicker.previewFocused && !m.sessionPicker.restoring {
+	if (!m.sessionPicker.previewFocused || m.sessionPicker.rename != nil) && !m.sessionPicker.restoring {
 		cursor = m.sessionPicker.input.Cursor()
+		if m.sessionPicker.rename != nil {
+			cursor = m.sessionPicker.rename.input.Cursor()
+			if m.sessionPicker.rename.saving {
+				cursor = nil
+			}
+		}
 		if cursor != nil {
 			cursor.X += l.x + 2
 			cursor.Y += l.y + 2

@@ -373,6 +373,12 @@ consistency for those behaviors.
   the previous model, draft and viewport until return. Its source projection may
   inspect another branch, but only the existing explicit restore command changes
   the application's active store. Question directories address entries in that immutable display snapshot.
+  Optional `interaction.SessionRenamer` is a separate mutation boundary from
+  browsing and reading. The application serializes renaming with history
+  switches and appends metadata through the existing Store writer lock, without
+  replacing live context or its display snapshot. F2 owns a temporary title
+  input; saves inherit cancellation and are joined on TUI exit, with stale
+  results rejected by generation. Completed writes survive UI cancellation.
   Switching requires idle main and side responses; side-thread creation is
   serialized with the history switch.
   The TUI coalesces streaming deltas for up to 16 ms or 64 events before

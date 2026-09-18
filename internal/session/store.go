@@ -15,6 +15,8 @@ const maxRecordBytes = 64 * 1024 * 1024
 var (
 	// ErrBusy means another Store or process owns this Session for writing.
 	ErrBusy = errors.New("session is open in another writer; close it before resuming")
+	// ErrIncompleteTail means a metadata-only open would require transcript repair.
+	ErrIncompleteTail = errors.New("session has an incomplete final record; resume it before renaming")
 	// ErrClosed indicates that a store no longer accepts writes.
 	ErrClosed = errors.New("session store is closed")
 	// ErrCorrupt indicates a malformed complete record or invalid file structure.
@@ -92,6 +94,16 @@ func Create(ctx context.Context, path string, metadata Metadata) (*Store, error)
 
 // Open loads an existing session and truncates only an incomplete final record.
 func Open(ctx context.Context, path string) (*Store, error) {
+	return openStore(ctx, path, true)
+}
+
+// OpenComplete opens a writer without repairing any bytes. Metadata operations
+// must reject an interrupted tail and leave recovery to an explicit resume.
+func OpenComplete(ctx context.Context, path string) (*Store, error) {
+	return openStore(ctx, path, false)
+}
+
+func openStore(ctx context.Context, path string, repair bool) (*Store, error) {
 	if err := validateContext(ctx); err != nil {
 		return nil, err
 	}
@@ -111,6 +123,9 @@ func Open(ctx context.Context, path string) (*Store, error) {
 	state, validBytes, incompleteTail, err := readSnapshot(ctx, file)
 	if err != nil {
 		return nil, errors.Join(err, closeWriter(file))
+	}
+	if incompleteTail && !repair {
+		return nil, errors.Join(ErrIncompleteTail, closeWriter(file))
 	}
 	if incompleteTail {
 		if err := file.Truncate(validBytes); err != nil {
@@ -196,6 +211,7 @@ func (s *Store) Snapshot() (Snapshot, error) {
 		Messages:    messages,
 		Compactions: cloneCompactions(s.compactions),
 		LeafMoves:   cloneLeaves(s.leafMoves),
+		Titles:      append([]TitleRecord(nil), s.titles...),
 		Order:       append([]string(nil), s.order...),
 		LeafID:      s.leafID,
 	}, nil

@@ -112,6 +112,7 @@ type commandMenuState struct {
 type model struct {
 	reading                  *sessionReading
 	readSession              func(uint64, string, string) (tea.Cmd, context.CancelFunc)
+	renameSession            func(uint64, string, string) (tea.Cmd, context.CancelFunc)
 	sessionID                string
 	sessionPicker            *sessionPicker
 	sessionQueryGeneration   uint64
@@ -311,6 +312,8 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 	switch message := message.(type) {
+	case sessionRenameResult:
+		return m.applySessionRename(message)
 	case sessionReadingResult:
 		return m.applySessionReading(message)
 	case sessionSearchResult:

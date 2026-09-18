@@ -390,6 +390,16 @@ Each file contains a versioned header followed by append-only records:
 | `message` | One accepted user message, ended assistant response, or tool result, with its complete metadata |
 | `compaction` | A derived summary checkpoint for the active branch |
 | `leaf` | A move of the active branch pointer; no history is deleted |
+| `title` | A session-wide display title; empty text restores the automatic title |
+
+Title changes append to the original JSONL file; there is no separate metadata
+log and no rewrite of the header or source messages. The last `title` record
+wins across all branches. Titles have unique record IDs but are not tree nodes,
+do not move the active leaf, and never enter model context. Text is normalized
+to single spaces and limited to 200 Unicode characters without control characters.
+Old v3 files without title records remain readable and use the first user
+request as their title. This is compatibility with existing files: binaries
+predating title support reject the new record type because replay is strict.
 
 Tool-result `truncation` is an additive optional field inside v3 source messages.
 It persists in the same JSONL record as the content and survives reopening,
@@ -460,11 +470,20 @@ activity, grouped as Today, Yesterday and Earlier in the local calendar. Cold
 scans visit recently modified files first and publish an initial batch before
 continuing through older files. Rows already loaded stay selectable and resumable;
 Escape cancels scanning. Later batches preserve the selected session by identity.
-Each row shows the first user prompt as its title, a timestamp,
+Each row shows its custom title, or the first user prompt when none is set, a timestamp,
 recent content and a current-session marker where applicable. Malformed or
 unsupported files are shown as unavailable rather than repaired. Sessions outside
 this directory
 remain accessible through an explicit startup `--session` path.
+
+F2 edits the selected session's title. Enter saves; an empty value restores the
+automatic title. Escape leaves the editor without switching sessions or losing
+the live draft. Saving counts as session activity, refreshes search and preview,
+clears the old search query, and preserves selection by file identity. A save
+already committed to disk is not undone by closing its editor. Renaming reuses
+the current session's writer or temporarily locks the selected file. Another
+writer causes an error; an incomplete final JSONL record must be repaired by an
+explicit resume first. Renaming never repairs history or recovers pending tools.
 
 Search matches titles, filename stems, and user/assistant prose across all
 branches, case-insensitively. Cached titles filter immediately; cancellable
@@ -556,7 +575,7 @@ to reload prompt files or Skills.
 
 ## Recovery and compaction
 
-On open, AICE replays every complete record. It truncates only an incomplete
+On writable resume, AICE replays every complete record. It truncates only an incomplete
 final JSONL record in a supported v3 file; malformed complete or middle records
 fail as corruption. Old versions are rejected before any tail repair, and their
 files are neither migrated nor modified. A Session can be resumed only with the

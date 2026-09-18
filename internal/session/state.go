@@ -59,21 +59,27 @@ type storeState struct {
 	messages    []MessageEntry
 	compactions []Compaction
 	leafMoves   []Leaf
+	titles      []TitleRecord
 	order       []string
 	index       recordIndex
 	leafID      string
 }
 
 func newStoreState(snapshot Snapshot) storeState {
-	return storeState{
+	state := storeState{
 		header:      snapshot.Header,
 		messages:    snapshot.Messages,
 		compactions: snapshot.Compactions,
 		leafMoves:   snapshot.LeafMoves,
+		titles:      snapshot.Titles,
 		order:       snapshot.Order,
 		index:       indexRecords(snapshot.Messages, snapshot.Compactions, snapshot.LeafMoves),
 		leafID:      snapshot.LeafID,
 	}
+	for _, title := range state.titles {
+		state.index.recordIDs[title.ID] = struct{}{}
+	}
+	return state
 }
 
 func (state *storeState) retainMessage(message MessageEntry, sequence messageSequence) {

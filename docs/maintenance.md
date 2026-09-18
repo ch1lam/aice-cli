@@ -99,26 +99,6 @@ historical documentation.
 
 ## Known discrepancies
 
-### Session rename persistence decision
-
-History browsing still derives titles from the first user request; renaming is
-not implemented. The requested append-only rename needs a compatibility choice.
-[`replayRecords`](../internal/session/replay.go) rejects unsupported record types,
-and strict record decoding rejects unknown fields. Appending a title record to
-an existing v3 transcript would therefore make it unreadable to older binaries.
-Keeping the current transcript unchanged and appending titles to a separate,
-title-only JSONL log would preserve that reader compatibility, but introduces
-persistent metadata outside the transcript. The choice is pending user input;
-no format change or metadata file has been introduced.
-
-Acceptance after that decision: old sessions remain readable in the new binary,
-renames append without rewriting transcript records or moving the active leaf,
-concurrent writes and interrupted tails have defined behavior, title search and
-previews refresh without losing selection, and the old-binary compatibility
-boundary is explicit in the Session documentation. The title log, if selected,
-must not duplicate dialogue or become a second transcript store. Remove this
-entry when the implementation and its owning documentation land.
-
 ### Browser acceptance gaps
 
 The [browser acceptance record](browser.md#maintenance-and-verification) owns

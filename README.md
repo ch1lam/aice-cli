@@ -100,6 +100,8 @@ Ctrl+R to search, preview, and resume this project's sessions. Restoring shows
 the original conversation and continues its active branch. Recent rows include
 a content excerpt, grouped by Today, Yesterday and Earlier. Older rows load
 while the list remains usable; lightweight previews show the last question and answer.
+F2 renames the selected session by appending to its original JSONL; clearing the
+title restores the first question. Existing sessions need no migration.
 F4 reads a search hit without switching branches; T lists questions, End returns
 to the latest active conversation, and Ctrl+T opens the current question directory.
 Long answers format their Markdown sections as you scroll. Long code defaults to

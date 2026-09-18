@@ -27,7 +27,7 @@ func (b streamingPickerBrowser) ScanSessions(ctx context.Context, _ string, publ
 
 func TestSessionSearchStreamCancelsBlockedPublisher(t *testing.T) {
 	browser := streamingPickerBrowser{stopped: make(chan struct{})}
-	search, _, _, shutdown := sessionBrowserCommands(t.Context(), browser)
+	search, _, _, _, shutdown := sessionBrowserCommands(t.Context(), browser)
 	defer shutdown()
 	command, cancel := search(1, "")
 	result := command().(sessionSearchResult)
