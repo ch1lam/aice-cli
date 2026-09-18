@@ -513,6 +513,10 @@ identifiers, summaries and per-entry overhead; oversized sessions are read
 without retention. File identity, size and modification time invalidate
 entries, and discovery evicts deleted files. JSONL remains the only durable
 source; a cold or changed file is replayed read-only, one session at a time.
+Body matching scans the original prose with a query prepared once per search,
+stops at the first match in each message, and reuses its rune offset for the
+excerpt. It does not allocate a lowercase copy of each complete message or
+retain a second search-text copy in the catalog.
 Preview is hidden and does not load by default, leaving the full width for the
 list. Right opens it on demand and focuses the preview. Preview shows the last
 active-branch user request and assistant answer with activity time, or up to six

@@ -9,7 +9,6 @@ import (
 	"sort"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/ch1lam/aice-cli/internal/interaction"
 	"github.com/ch1lam/aice-cli/internal/llm"
@@ -68,6 +67,7 @@ func (s *interactiveSession) ScanSessions(ctx context.Context, query string, pub
 		return nil, fmt.Errorf("app: list sessions: %w", err)
 	}
 	query = strings.ToLower(strings.TrimSpace(query))
+	textQuery := newSessionTextQuery(query)
 	var items []interaction.SessionSummary
 	present := make(map[string]bool, len(files))
 	type candidate struct {
@@ -143,17 +143,17 @@ func (s *interactiveSession) ScanSessions(ctx context.Context, query string, pub
 				continue
 			}
 			// Prefer an active-branch hit; otherwise explicitly mark the other branch.
-			match := -1
+			match, matchOffset := -1, -1
 			for i := len(entry.prose) - 1; i >= 0; i-- {
 				if err := ctx.Err(); err != nil {
 					return nil, err
 				}
-				if strings.Contains(strings.ToLower(entry.prose[i].text), query) {
+				if offset := textQuery.index(entry.prose[i].text); offset >= 0 {
 					if match < 0 {
-						match = i
+						match, matchOffset = i, offset
 					}
 					if entry.prose[i].active {
-						match = i
+						match, matchOffset = i, offset
 						break
 					}
 				}
@@ -162,7 +162,7 @@ func (s *interactiveSession) ScanSessions(ctx context.Context, query string, pub
 				prose := entry.prose[match]
 				item := entry.summary
 				item.MatchID, item.OtherBranch = prose.id, !prose.active
-				item.Snippet = sessionExcerpt(prose.text, query, 160)
+				item.Snippet = sessionExcerptAt(prose.text, matchOffset, 160)
 				if position, ok := positions[item.Key]; ok {
 					item.TitleMatch = true
 					items[position] = item
@@ -204,6 +204,7 @@ func (s *interactiveSession) PreviewSession(ctx context.Context, key, query stri
 		return "", err
 	}
 	query = strings.ToLower(strings.TrimSpace(query))
+	textQuery := newSessionTextQuery(query)
 	var parts []string
 	userSeen, assistantSeen := false, false
 	for i := len(entry.prose) - 1; i >= 0; i-- {
@@ -211,12 +212,16 @@ func (s *interactiveSession) PreviewSession(ctx context.Context, key, query stri
 			return "", err
 		}
 		prose := entry.prose[i]
+		matchOffset := -1
 		if query == "" {
 			if !prose.active || (prose.user && userSeen) || (!prose.user && assistantSeen) {
 				continue
 			}
-		} else if !strings.Contains(strings.ToLower(prose.text), query) {
-			continue
+		} else {
+			matchOffset = textQuery.index(prose.text)
+			if matchOffset < 0 {
+				continue
+			}
 		}
 		label := "Assistant"
 		if prose.user {
@@ -228,7 +233,7 @@ func (s *interactiveSession) PreviewSession(ctx context.Context, key, query stri
 		if !prose.active {
 			label += " · another branch (resume keeps the active branch)"
 		}
-		parts = append(parts, label+"\n"+sessionExcerpt(prose.text, query, 1200))
+		parts = append(parts, label+"\n"+sessionExcerptAt(prose.text, matchOffset, 1200))
 		if (query == "" && userSeen && assistantSeen) || len(parts) == 6 {
 			break
 		}
@@ -261,20 +266,18 @@ func sessionMessageText(message llm.AgentMessage) string {
 }
 
 func sessionExcerpt(text, query string, limit int) string {
+	return sessionExcerptAt(text, newSessionTextQuery(query).index(text), limit)
+}
+
+func sessionExcerptAt(text string, matchOffset, limit int) string {
 	start := 0
-	if query != "" {
-		// Match offsets belong to the lowercased string; Unicode case mapping
-		// can change byte widths, so translate through rune positions.
-		lower := strings.ToLower(text)
-		if index := strings.Index(lower, query); index >= 0 {
-			skip := max(0, utf8.RuneCountInString(lower[:index])-40)
-			for i := range text {
-				if skip == 0 {
-					start = i
-					break
-				}
-				skip--
+	if skip := max(0, matchOffset-40); skip > 0 {
+		for i := range text {
+			if skip == 0 {
+				start = i
+				break
 			}
+			skip--
 		}
 	}
 	end, count := len(text), 0

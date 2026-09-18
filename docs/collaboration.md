@@ -151,6 +151,7 @@ from tests and other benchmarks, and compare repeated samples on the same host:
 
 ```sh
 go test ./internal/app -run '^$' -bench '^BenchmarkSessionBrowser$' -benchmem -count=5
+go test ./internal/app -run '^$' -bench '^BenchmarkSessionTextQuery$' -benchmem -count=5
 go test ./internal/tui -run '^$' -bench '^BenchmarkHistory(Markdown|Code)FirstView$' -benchmem -count=5
 ```
 
@@ -160,6 +161,8 @@ each operation with 32 KiB or 128 KiB of mixed Markdown, or a collapsed code
 block with 1,000 or 10,000 log lines. Report time and allocation
 per operation separately from retained memory, and distinguish these fixtures
 from actual terminal interaction checks.
+Text-query benchmarks compare full lowercase conversion with prepared matching
+for early hits, late hits, missing text and Unicode, without filesystem costs.
 
 ## Git and Collaboration
 
