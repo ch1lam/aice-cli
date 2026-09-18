@@ -63,3 +63,43 @@ func TestRenameSessionSameFileFallbackAndIsolation(t *testing.T) {
 		t.Fatal(preview, err)
 	}
 }
+
+func TestSessionTitleFallbackForNewAndExistingFiles(t *testing.T) {
+	const custom = `{"type":"title","id":"title1","created_at":300,"title":"Custom title"}`
+	const empty = `{"type":"title","id":"title2","created_at":301,"title":""}`
+	const missing = `{"type":"title","id":"title3","created_at":302}`
+	for _, tc := range []struct {
+		name, records, want string
+	}{
+		{name: "old file without title", want: "First question"},
+		{name: "missing title field", records: missing, want: "First question"},
+		{name: "empty title", records: empty, want: "First question"},
+		{name: "custom title", records: custom, want: "Custom title"},
+		{name: "cleared title", records: custom + "\n" + empty, want: "First question"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := browserHarness(t)
+			store := browserFixture(t, s, "one", "First question", "Answer", 100)
+			if err := store.Close(); err != nil {
+				t.Fatal(err)
+			}
+			if tc.records != "" {
+				file, err := os.OpenFile(store.Path(), os.O_WRONLY|os.O_APPEND, 0)
+				if err != nil {
+					t.Fatal(err)
+				}
+				_, writeErr := file.WriteString(tc.records + "\n")
+				if err := errors.Join(writeErr, file.Close()); err != nil {
+					t.Fatal(err)
+				}
+			}
+			items, err := s.SearchSessions(t.Context(), "")
+			if err != nil || len(items) != 1 {
+				t.Fatalf("sessions = %v, error = %v", items, err)
+			}
+			if items[0].Problem != "" || items[0].Title != tc.want {
+				t.Fatalf("session = %+v, want title %q", items[0], tc.want)
+			}
+		})
+	}
+}

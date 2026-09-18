@@ -129,8 +129,13 @@ func (s *interactiveSession) catalogSession(ctx context.Context, key string) (*s
 	}
 	entry := &sessionCatalogEntry{info: info, incomplete: incomplete,
 		empty:   len(snapshot.Messages) == 0 && len(snapshot.Compactions) == 0,
-		summary: interaction.SessionSummary{Key: key, ID: snapshot.Header.ID, Title: key, UpdatedAt: snapshot.Header.CreatedAt}}
-	titled := false
+		summary: interaction.SessionSummary{Key: key, ID: snapshot.Header.ID, UpdatedAt: snapshot.Header.CreatedAt}}
+	// New and old sessions share one rule: use the latest title, falling back
+	// to the first user question only when the title is absent or empty.
+	for _, title := range snapshot.Titles {
+		entry.summary.Title = title.Title
+		entry.summary.UpdatedAt = max(entry.summary.UpdatedAt, title.CreatedAt)
+	}
 	for _, message := range snapshot.Messages {
 		if err := ctx.Err(); err != nil {
 			return nil, err
@@ -141,9 +146,8 @@ func (s *interactiveSession) catalogSession(ctx context.Context, key string) (*s
 			continue
 		}
 		_, user := message.Message.(llm.UserMessage)
-		if user && !titled {
+		if user && entry.summary.Title == "" {
 			entry.summary.Title = sessionExcerpt(strings.Join(strings.Fields(sessionExcerpt(text, "", 200)), " "), "", 70)
-			titled = true
 		}
 		entry.prose = append(entry.prose, sessionProse{id: message.ID, text: text, user: user, active: active[message.ID]})
 		if active[message.ID] {
@@ -157,13 +161,8 @@ func (s *interactiveSession) catalogSession(ctx context.Context, key string) (*s
 	for _, l := range snapshot.LeafMoves {
 		entry.summary.UpdatedAt = max(entry.summary.UpdatedAt, l.CreatedAt)
 	}
-	for _, title := range snapshot.Titles {
-		entry.summary.UpdatedAt = max(entry.summary.UpdatedAt, title.CreatedAt)
-	}
-	if len(snapshot.Titles) > 0 {
-		if title := snapshot.Titles[len(snapshot.Titles)-1].Title; title != "" {
-			entry.summary.Title = title
-		}
+	if entry.summary.Title == "" {
+		entry.summary.Title = key
 	}
 	entry.bytes += len(key) + len(entry.summary.ID) + len(entry.summary.Title) + len(entry.summary.Snippet) + 512
 	// A concurrent append/replacement must never label an old prefix as fresh.

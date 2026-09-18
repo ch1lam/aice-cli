@@ -397,9 +397,10 @@ log and no rewrite of the header or source messages. The last `title` record
 wins across all branches. Titles have unique record IDs but are not tree nodes,
 do not move the active leaf, and never enter model context. Text is normalized
 to single spaces and limited to 200 Unicode characters without control characters.
-Old v3 files without title records remain readable and use the first user
-request as their title. This is compatibility with existing files: binaries
-predating title support reject the new record type because replay is strict.
+New and existing v3 files use the same display rule: prefer the latest title;
+if it is absent or empty, use the first user request. No migration or separate
+legacy-reader path is needed. If neither contains displayable text, use the
+session filename stem.
 
 Tool-result `truncation` is an additive optional field inside v3 source messages.
 It persists in the same JSONL record as the content and survives reopening,
