@@ -15,7 +15,7 @@ type sessionPickerLayout struct {
 }
 
 func (m model) sessionPickerLayout() sessionPickerLayout {
-	w, h := max(8, min(112, m.width-4)), max(8, min(28, m.height-2))
+	w, h := max(8, m.width-4), max(8, m.height-2)
 	l := sessionPickerLayout{width: w, height: h, inner: w - 4, bodyHeight: h - 7}
 	l.x, l.y = max(0, (m.width-w)/2), max(0, (m.height-h)/2)
 	l.wide = w >= 84
@@ -156,7 +156,7 @@ func (m model) clickSessionPicker(mouse tea.MouseClickMsg) (tea.Model, tea.Cmd) 
 	}
 	p.previewFocused = false
 	p.input.Focus()
-	index := p.list.Paginator.Page*p.list.Paginator.PerPage + (y-3)/4
+	index := p.list.Paginator.Page*p.list.Paginator.PerPage + (y-3)/(sessionItemDelegate{}.Height()+sessionItemDelegate{}.Spacing())
 	if index < len(p.list.Items()) {
 		p.list.Select(index)
 		return m, m.requestSessionPreview()

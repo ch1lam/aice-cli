@@ -191,7 +191,7 @@ func TestSessionPickerCapturesInputAndMouse(t *testing.T) {
 	t.Parallel()
 	m := pickerModel(t, 100, 28)
 	l := m.sessionPickerLayout()
-	m = updateModel(t, m, tea.MouseClickMsg{X: l.x + 3, Y: l.y + 8, Button: tea.MouseLeft})
+	m = updateModel(t, m, tea.MouseClickMsg{X: l.x + 3, Y: l.y + 6, Button: tea.MouseLeft})
 	if m.sessionPicker.list.Index() != 1 {
 		t.Fatal("mouse did not select second item")
 	}
@@ -237,5 +237,30 @@ func TestSessionPickerMovementKeepsPreviewAndCancelsOldWork(t *testing.T) {
 	next, _ = m.resumeSelectedSession()
 	if !next.(model).sessionPicker.restoring {
 		t.Fatal("loading blocked restore")
+	}
+}
+
+func TestSessionRelativeTime(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 9, 18, 12, 0, 0, 0, time.UTC)
+	for _, test := range []struct {
+		name string
+		age  time.Duration
+		want string
+	}{
+		{"future", -time.Hour, "now"},
+		{"seconds", 59 * time.Second, "now"},
+		{"minute", time.Minute, "1min"},
+		{"minutes", 59 * time.Minute, "59min"},
+		{"hour", time.Hour, "1h"},
+		{"day", 24 * time.Hour, "1d"},
+		{"month", 30 * 24 * time.Hour, "1m"},
+		{"year", 365 * 24 * time.Hour, "1y"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := sessionRelativeTime(now.Add(-test.age).UnixMilli(), now); got != test.want {
+				t.Fatalf("age = %q, want %q", got, test.want)
+			}
+		})
 	}
 }

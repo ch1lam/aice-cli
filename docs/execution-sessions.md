@@ -471,8 +471,11 @@ activity, grouped as Today, Yesterday and Earlier in the local calendar. Cold
 scans visit recently modified files first and publish an initial batch before
 continuing through older files. Rows already loaded stay selectable and resumable;
 Escape cancels scanning. Later batches preserve the selected session by identity.
-Each row shows its custom title, or the first user prompt when none is set, a timestamp,
-recent content and a current-session marker where applicable. Malformed or
+The picker fills the terminal with a small outer margin. Compact two-line rows
+show the custom title, or the first user prompt when none is set, recent content
+and a current-session marker where applicable. Activity ages use `min`, `h`, `d`,
+`m` and `y` (months use 30 days; years use 365 days); activity under one minute
+shows `now`. Date group labels share the detail line. Malformed or
 unsupported files are shown as unavailable rather than repaired. Sessions outside
 this directory
 remain accessible through an explicit startup `--session` path.

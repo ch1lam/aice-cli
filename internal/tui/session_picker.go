@@ -148,8 +148,8 @@ func (i sessionListItem) FilterValue() string { return i.Title }
 
 type sessionItemDelegate struct{}
 
-func (sessionItemDelegate) Height() int                         { return 3 }
-func (sessionItemDelegate) Spacing() int                        { return 1 }
+func (sessionItemDelegate) Height() int                         { return 2 }
+func (sessionItemDelegate) Spacing() int                        { return 0 }
 func (sessionItemDelegate) Update(tea.Msg, *list.Model) tea.Cmd { return nil }
 func (sessionItemDelegate) Render(w io.Writer, model list.Model, index int, item list.Item) {
 	i, ok := item.(sessionListItem)
@@ -166,18 +166,44 @@ func (sessionItemDelegate) Render(w io.Writer, model list.Model, index int, item
 	if i.current {
 		title = "● " + title
 	}
-	detail := time.UnixMilli(i.UpdatedAt).Local().Format("Jan 02 15:04")
+	detail := i.group
 	if i.Problem != "" {
 		detail = "Unavailable · " + sanitizeToolDetail(i.Problem, false)
 	}
 	if i.OtherBranch {
-		detail = "Other branch · resume active · " + detail
+		detail = strings.TrimSuffix("Other branch · resume active · "+detail, " · ")
 	}
 	if i.Snippet != "" {
-		detail += " · " + sanitizeToolDetail(strings.Join(strings.Fields(i.Snippet), " "), false)
+		if detail != "" {
+			detail += " · "
+		}
+		detail += sanitizeToolDetail(strings.Join(strings.Fields(i.Snippet), " "), false)
 	}
-	_, _ = fmt.Fprint(w, mutedStyle.Render(i.group), "\n", style.Render(ansi.Truncate(prefix+title, model.Width(), "…")), "\n",
+	age := sessionRelativeTime(i.UpdatedAt, time.Now())
+	titleWidth := max(1, model.Width()-len(age)-1)
+	line := ansi.Truncate(prefix+title, titleWidth, "…")
+	line += strings.Repeat(" ", max(0, titleWidth-ansi.StringWidth(line)))
+	_, _ = fmt.Fprint(w, style.Render(line), " ", mutedStyle.Render(age), "\n",
 		mutedStyle.Render(ansi.Truncate("  "+detail, model.Width(), "…")))
+}
+
+// Months and years use fixed intervals for a compact relative activity label.
+func sessionRelativeTime(timestamp int64, now time.Time) string {
+	elapsed := now.Sub(time.UnixMilli(timestamp))
+	switch {
+	case elapsed < time.Minute:
+		return "now"
+	case elapsed < time.Hour:
+		return fmt.Sprintf("%dmin", int(elapsed/time.Minute))
+	case elapsed < 24*time.Hour:
+		return fmt.Sprintf("%dh", int(elapsed/time.Hour))
+	case elapsed < 30*24*time.Hour:
+		return fmt.Sprintf("%dd", int(elapsed/(24*time.Hour)))
+	case elapsed < 365*24*time.Hour:
+		return fmt.Sprintf("%dm", int(elapsed/(30*24*time.Hour)))
+	default:
+		return fmt.Sprintf("%dy", int(elapsed/(365*24*time.Hour)))
+	}
 }
 
 func (m model) openSessionPicker() (model, tea.Cmd, bool) {
