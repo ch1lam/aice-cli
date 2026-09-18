@@ -509,7 +509,11 @@ conversation uses original source records with completed tool/reasoning details
 folded and the viewport at the end; model context still uses compaction
 checkpoints. Long completed answers parse once and format only reached Markdown
 sections, preserving lists, quotes, tables, reference links and original code
-copy targets. A single large Markdown construct still requires its whole layout.
+copy targets. Long code blocks show short previews; click the code heading or
+press C in the reader (Alt+O in the main conversation) to expand the first visible
+expandable block. Copy retains the entire code source. Searching hidden code
+opens the matching block and locates the original line. A single large paragraph
+or list still requires its whole prose layout.
 `/checkout` uses the same original-history display projection.
 
 Listing and preview use read-only replay bounded by the file's initial size;

@@ -10,6 +10,7 @@ type keyMap struct {
 	newline   key.Binding
 	scroll    key.Binding
 	process   key.Binding
+	code      key.Binding
 	editor    key.Binding
 	paste     key.Binding
 	commands  key.Binding
@@ -22,6 +23,7 @@ type keyMap struct {
 
 func newKeyMap() keyMap {
 	return keyMap{
+		code:     key.NewBinding(key.WithKeys("alt+o"), key.WithHelp("Alt+o", "visible code")),
 		turns:    key.NewBinding(key.WithKeys("ctrl+t"), key.WithHelp("Ctrl+t", "questions")),
 		sessions: key.NewBinding(key.WithKeys("ctrl+r"), key.WithHelp("Ctrl+r", "sessions")),
 		paste:    key.NewBinding(key.WithKeys("ctrl+v", "alt+v"), key.WithHelp("Ctrl+v/Alt+v", "paste image/text")),
@@ -103,7 +105,7 @@ func (k keyMap) ShortHelp() []key.Binding {
 func (k keyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.send, k.queue, k.newline, k.paste},
-		{k.commands, k.sessions, k.turns, k.history, k.scroll, k.process, k.editor, k.help},
+		{k.commands, k.sessions, k.turns, k.history, k.scroll, k.process, k.code, k.editor, k.help},
 		{k.clear, k.interrupt, k.quit},
 	}
 }

@@ -13,9 +13,11 @@ type codeHit struct {
 	valid                                bool
 	key, part, block, row, column, width int
 	source                               string
-	// -1 is the whole-block button; otherwise an original logical source row.
+	// -2 is the fold heading, -1 the Copy button; otherwise a source row.
 	sourceLine int
 	text       string
+	expansion  *bool
+	expanded   bool
 }
 
 func (m model) codeHitAt(mouse tea.Mouse) codeHit {
@@ -41,8 +43,11 @@ func (m model) codeHitAt(mouse tea.Mouse) codeHit {
 	layout := block.layout
 	sourceLine := layout.rows[code.row].sourceLine
 	text := layout.block.source
+	var expansion *bool
 	if code.row == 0 {
-		if layout.copyColumn == 0 || x < layout.copyColumn || x >= layout.width-2 {
+		if layout.block.expanded != nil && x >= 2 && x < codeFoldEnd(layout) {
+			expansion, sourceLine, text = layout.block.expanded, -2, ""
+		} else if layout.copyColumn == 0 || x < layout.copyColumn || x >= layout.width-2 {
 			return codeHit{}
 		}
 	} else {
@@ -56,7 +61,7 @@ func (m model) codeHitAt(mouse tea.Mouse) codeHit {
 	}
 	return codeHit{valid: true, key: row.key, part: row.part, block: code.block, row: row.line,
 		column: block.column, width: layout.width, source: layout.block.source,
-		sourceLine: sourceLine, text: text}
+		sourceLine: sourceLine, text: text, expansion: expansion, expanded: layout.expanded}
 }
 
 func (m model) hoveredCode() codeHit {
@@ -73,7 +78,7 @@ func (row transcriptRow) withCodeHover(hover codeHit) string {
 	}
 	block := code.placement
 	layout := block.layout
-	if layout.block.source != hover.source || layout.rows[code.row].sourceLine != hover.sourceLine {
+	if layout.block.source != hover.source || (hover.expansion == nil && layout.rows[code.row].sourceLine != hover.sourceLine) {
 		return row.text
 	}
 	start, end := block.column+2, block.column+layout.width-2
@@ -81,8 +86,48 @@ func (row transcriptRow) withCodeHover(hover codeHit) string {
 		if code.row != 0 {
 			return row.text
 		}
-		start = block.column + layout.copyColumn
+		if hover.expansion != nil {
+			end = block.column + codeFoldEnd(layout)
+		} else {
+			start = block.column + layout.copyColumn
+		}
 	}
 	return ansi.Cut(row.text, 0, start) + paintCodeBackground(ansi.Cut(row.text, start, end), subtleColor) +
 		ansi.Cut(row.text, end, ansi.StringWidth(row.text))
+}
+
+func codeFoldEnd(layout codeBlockLayout) int {
+	if layout.copyColumn > 0 {
+		return layout.copyColumn - 1
+	}
+	return layout.width - 2
+}
+
+// The clicked code heading stays anchored while only its containing Markdown
+// group is invalidated. Literal source and neighboring groups remain intact.
+func (m *model) toggleCode(hit codeHit) {
+	if hit.expansion == nil {
+		return
+	}
+	for y, row := range m.viewport.visibleRows() {
+		if row.key != hit.key || row.part != hit.part || row.code.placement == nil || row.code.block != hit.block {
+			continue
+		}
+		*hit.expansion = !*hit.expansion
+		part := &m.viewport.itemParts(row.item)[row.part]
+		part.lines, part.codeRows = nil, nil
+		m.viewport.index, m.viewport.part = row.item, row.part
+		m.viewport.line = max(0, row.line-row.code.row)
+		m.viewport.scroll(-max(0, y-row.code.row))
+		return
+	}
+}
+
+func (m *model) toggleVisibleCode() {
+	for _, row := range m.viewport.visibleRows() {
+		if p := row.code.placement; p != nil && p.layout.block.expanded != nil {
+			m.toggleCode(codeHit{key: row.key, part: row.part, block: row.code.block, expansion: p.layout.block.expanded})
+			return
+		}
+	}
 }

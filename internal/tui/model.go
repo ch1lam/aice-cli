@@ -923,6 +923,9 @@ func (m model) handleKey(message tea.KeyPressMsg) (model, tea.Cmd, bool) {
 		m.resizeLayout()
 		m.refreshViewport(false)
 		return m, nil, true
+	case key.Matches(message, m.keys.code):
+		m.toggleVisibleCode()
+		return m, nil, true
 	case key.Matches(message, m.keys.process):
 		follow := m.viewport.AtBottom()
 		m.toggleProcessGroups()

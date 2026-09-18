@@ -25,12 +25,20 @@ type historyMarkdownPart struct {
 	blocks      []codeBlock
 }
 
-const historyMarkdownThreshold = 8 * 1024
+const (
+	historyMarkdownThreshold = 8 * 1024
+	historyCodeLineLimit     = 80
+)
 
 func parseHistoryMarkdown(markdown string) (*historyMarkdown, error) {
 	_, document, source, blocks, marker, err := prepareMarkdown(markdown, nil)
 	if err != nil {
 		return nil, err
+	}
+	for i := range blocks {
+		if len(blocks[i].lines) > historyCodeLineLimit || len(blocks[i].source) >= historyMarkdownThreshold {
+			blocks[i].expanded = new(bool)
+		}
 	}
 	result := &historyMarkdown{markdown: markdown, document: document, source: source, marker: marker}
 	start, blockIndex := 0, 0
@@ -109,23 +117,39 @@ func (m model) historyAssistantParts(entry transcriptEntry, mode transcriptEntry
 	h := p.history
 	parts := make([]transcriptItem, len(h.parts))
 	for i, part := range h.parts {
-		parts[i] = transcriptItem{source: entry.text[part.start:part.stop], renderContent: func() transcriptContent {
-			body := h.content(i, m.contentWidth()).pad(assistantBodyStyle.GetPaddingLeft(), assistantBodyStyle.GetPaddingRight())
-			if i == 0 {
-				var prefix transcriptContent
-				if mode != transcriptConclusion {
-					prefix.appendText(p.thinkingView(entry.thinking, m.contentWidth(), false))
+		parts[i] = transcriptItem{
+			source:      entry.text[part.start:part.stop],
+			revealMatch: func(query string) bool { return h.revealMatch(i, query) },
+			renderContent: func() transcriptContent {
+				body := h.content(i, m.contentWidth()).pad(assistantBodyStyle.GetPaddingLeft(), assistantBodyStyle.GetPaddingRight())
+				if i == 0 {
+					var prefix transcriptContent
+					if mode != transcriptConclusion {
+						prefix.appendText(p.thinkingView(entry.thinking, m.contentWidth(), false))
+					}
+					prefix.append(body, "\n")
+					body = prefix
+					if mode == transcriptStandalone {
+						heading := transcriptContent{view: assistantBodyStyle.Render(m.assistantHeader(entry.processID))}
+						heading.append(body, "\n\n")
+						body = heading
+					}
 				}
-				prefix.append(body, "\n")
-				body = prefix
-				if mode == transcriptStandalone {
-					heading := transcriptContent{view: assistantBodyStyle.Render(m.assistantHeader(entry.processID))}
-					heading.append(body, "\n\n")
-					body = heading
-				}
-			}
-			return body.pad(1, 1)
-		}}
+				return body.pad(1, 1)
+			},
+		}
 	}
 	return parts
+}
+
+// Search opens only hidden code that contains the requested text. This is a
+// presentation change; the source, branch and Session remain untouched.
+func (h *historyMarkdown) revealMatch(part int, query string) bool {
+	changed := false
+	for _, block := range h.parts[part].blocks {
+		if block.expanded != nil && !*block.expanded && strings.Contains(strings.ToLower(block.source), query) {
+			*block.expanded, changed = true, true
+		}
+	}
+	return changed
 }

@@ -102,7 +102,9 @@ a content excerpt, grouped by Today, Yesterday and Earlier. Older rows load
 while the list remains usable; lightweight previews show the last question and answer.
 F4 reads a search hit without switching branches; T lists questions, End returns
 to the latest active conversation, and Ctrl+T opens the current question directory.
-Long answers format their Markdown sections as you scroll.
+Long answers format their Markdown sections as you scroll. Long code defaults to
+short previews; click its heading or press C while reading to expand. Copy keeps
+the full code, and search opens hidden code matches.
 You can also resume an explicit file at startup:
 
 ```sh

@@ -17,9 +17,10 @@ type transcriptItem struct {
 	render        func() string
 	renderContent func() transcriptContent
 	// Split immutable Markdown only when this item is reached.
-	split  func() []transcriptItem
-	parts  []transcriptItem
-	source string
+	split       func() []transcriptItem
+	parts       []transcriptItem
+	source      string
+	revealMatch func(string) bool
 	// Optional styled header variant; it must have identical text and wrapping.
 	renderHover func() string
 	hoverLines  []string

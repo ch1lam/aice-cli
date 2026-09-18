@@ -1014,6 +1014,14 @@ code punctuation is retained and tabs display as spaces. Long result lines wrap.
 The background covers blank lines and trailing space after highlighting and wrapping.
 Markdown fences (including unfinished streamed fences) and indented code blocks
 remain literal inside lists and quotations.
+Completed main-answer code blocks over 80 lines or at least 8 KiB show a
+12-line clipped preview by default. Click the status row left of `[Copy]` to
+expand/collapse; `Alt+O` toggles the first visible expandable code block, and
+read-only history also accepts `C`. The arrow and full source line count remain
+visible. Expansion restores full line wrapping. A search hit inside hidden code
+opens that block and jumps to its source line. `[Copy]` always copies the entire
+recorded code block, including while its preview is collapsed. Tool output uses
+its existing tool-heading expansion and recorded-preview limits.
 Tool headings show their supplied source line count in parentheses, such as
 `read file.go (24 lines)`. One blank row separates a tool heading from its expanded
 content. Code panels retain a separate, subtly lighter status row: language on

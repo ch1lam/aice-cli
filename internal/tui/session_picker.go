@@ -155,7 +155,7 @@ func (sessionItemDelegate) Render(w io.Writer, model list.Model, index int, item
 		detail = "Other branch · resume active · " + detail
 	}
 	if i.Snippet != "" {
-		detail += " · " + sanitizeToolDetail(i.Snippet, false)
+		detail += " · " + sanitizeToolDetail(strings.Join(strings.Fields(i.Snippet), " "), false)
 	}
 	_, _ = fmt.Fprint(w, mutedStyle.Render(i.group), "\n", style.Render(ansi.Truncate(prefix+title, model.Width(), "…")), "\n",
 		mutedStyle.Render(ansi.Truncate("  "+detail, model.Width(), "…")))

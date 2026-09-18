@@ -83,6 +83,11 @@ func (m model) openCurrentReading() model {
 	reader.width, reader.height = m.width, m.height
 	reader.currentModel, reader.workingDirectory = m.currentModel, m.workingDirectory
 	reader.entries = append([]transcriptEntry(nil), m.entries...)
+	for i := range reader.entries {
+		if reader.entries[i].kind == entryAssistant {
+			reader.entries[i].presentation = &assistantPresentation{}
+		}
+	}
 	reader.processGroups = append([]processGroup(nil), m.processGroups...)
 	reader.reading = &sessionReading{previous: &m}
 	reader.input.Blur()
@@ -113,13 +118,13 @@ func (m *model) jumpReadingEntry(index int, query string) {
 					if piece.source != "" && !strings.Contains(strings.ToLower(piece.source), query) {
 						continue
 					}
-					m.viewport.part, m.viewport.line = part, piece.gap
-					for row, line := range m.viewport.partLines(i, part) {
-						if strings.Contains(strings.ToLower(ansi.Strip(line)), query) {
-							m.viewport.line = piece.gap + max(0, row-2)
-							break
-						}
+					if piece.revealMatch != nil && piece.revealMatch(query) {
+						m.viewport.itemParts(i)[part].lines = nil
 					}
+					m.viewport.part, m.viewport.line = part, piece.gap
+					lines := m.viewport.partLines(i, part)
+					row := historyMatchRow(lines, m.viewport.itemParts(i)[part].codeRows, query)
+					m.viewport.line = piece.gap + max(0, row-2)
 					break
 				}
 			}
@@ -236,6 +241,8 @@ func (m model) handleReadingKey(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.viewport.PageUp()
 	case "pgdown", " ":
 		m.viewport.PageDown()
+	case "c", "alt+o":
+		m.toggleVisibleCode()
 	case "home":
 		m.viewport.GotoTop()
 	case "end":
@@ -252,4 +259,45 @@ func (m model) handleReadingKey(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return previous, nil
 	}
 	return m, nil
+}
+
+// Match wrapped prose without terminal padding, and map code matches directly
+// to literal source lines so line numbers, clipping and escaping cannot hide a
+// hit. A query containing Markdown-only syntax falls back to the group's start.
+func historyMatchRow(lines []string, codeRows map[int]transcriptCodeRow, query string) int {
+	targets := make(map[*codeBlockPlacement]int)
+	for _, code := range codeRows {
+		if _, ok := targets[code.placement]; ok {
+			continue
+		}
+		source := strings.ToLower(code.placement.layout.block.source)
+		targets[code.placement] = -1
+		if at := strings.Index(source, query); at >= 0 {
+			targets[code.placement] = strings.Count(source[:at], "\n")
+		}
+	}
+	var text strings.Builder
+	offsets := make([]int, len(lines))
+	for row, line := range lines {
+		if code, ok := codeRows[row]; ok && targets[code.placement] >= 0 && code.placement.layout.rows[code.row].sourceLine == targets[code.placement] {
+			return row
+		}
+		plain := strings.ToLower(ansi.Strip(line))
+		if strings.Contains(plain, query) {
+			return row
+		}
+		offsets[row] = text.Len()
+		text.WriteString(strings.Join(strings.Fields(plain), ""))
+	}
+	needle := strings.Join(strings.Fields(query), "")
+	if needle != "" {
+		if at := strings.Index(text.String(), needle); at >= 0 {
+			for row := len(offsets) - 1; row >= 0; row-- {
+				if offsets[row] <= at {
+					return row
+				}
+			}
+		}
+	}
+	return 0
 }

@@ -421,13 +421,19 @@ consistency for those behaviors.
   reference definitions invalidate all groups so earlier links resolve correctly.
   Cached code layouts retain literal source; composition rebases their row
   coordinates without modifying cached placements. Completed main answers of at
-  least 8 KiB use `historyMarkdown`: parse once when reached, release streaming
-  layout caches, and lazily lay out complete top-level groups. The viewport
+  least 8 KiB or more than 80 newlines use `historyMarkdown`: parse once when
+  reached, release streaming layout caches, and lazily lay out complete top-level groups. The viewport
   anchors to item, group and row, and copy targets include the group identity.
   Search selects a source group before laying out its matching rows. Short
   completed answers and BTW answers retain whole-answer layout. Parsing remains
-  linear in answer size; one very large paragraph, list or code block still
-  requires its group's full layout. This is not an incremental syntax highlighter.
+  linear in answer size; one very large paragraph or list still requires its
+  group's full prose layout. Completed code over 80 source lines or at least
+  8 KiB defaults to 12 clipped preview lines, with fold state owned by the parsed
+  presentation. Expansion invalidates only its containing group's rows; copying
+  always uses full literal source. Search reveals a matching hidden code block
+  and uses its source-row map to locate the hit. Read-only current-session views
+  own separate presentations so their code folds cannot change the live view.
+  This is not an incremental syntax highlighter.
   `transcriptContent` carries text and block placements through
   composition, indentation and the viewport's lazy cache. Hit testing uses the
   same visible rows as painting, including main and BTW answers, tool output and

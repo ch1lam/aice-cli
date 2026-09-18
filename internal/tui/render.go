@@ -133,7 +133,7 @@ func (m model) headerView(width int) string {
 
 func (m model) footerView(width int) string {
 	if m.reading != nil {
-		help := "↑↓ scroll · T questions · End latest · Enter resume · Esc back"
+		help := "↑↓ scroll · T questions · C code · End latest · Enter resume · Esc back"
 		if m.reading.directory {
 			help = "↑↓ select · Enter jump to question · Esc back"
 		}

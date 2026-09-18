@@ -19,6 +19,8 @@ type codeBlock struct {
 	source   string
 	language string
 	lines    []string
+	// Non-nil only for completed, expandable history code.
+	expanded *bool
 }
 
 func newCodeBlock(source, language string) codeBlock {
@@ -53,6 +55,7 @@ type codeBlockLayout struct {
 	rows                 []codeBlockRow
 	width, contentColumn int
 	copyColumn           int
+	expanded             bool
 }
 
 func (b codeBlock) layout(options codeBlockOptions) codeBlockLayout {
@@ -63,10 +66,15 @@ func (b codeBlock) layout(options codeBlockOptions) codeBlockLayout {
 		gutter = 0
 	}
 	inner -= gutter
-	display := make([]string, len(b.lines))
-	for i, line := range b.lines {
+	sourceLines := b.lines
+	collapsed := b.expanded != nil && !*b.expanded
+	if collapsed {
+		sourceLines = sourceLines[:min(len(sourceLines), 12)]
+	}
+	display := make([]string, len(sourceLines))
+	for i, line := range sourceLines {
 		display[i] = escapeCodeRow(strings.TrimSuffix(line, "\n"))
-		if options.clip {
+		if options.clip || collapsed {
 			display[i] = ansi.Truncate(display[i], inner, "…")
 		}
 	}
@@ -84,6 +92,10 @@ func (b codeBlock) layout(options codeBlockOptions) codeBlockLayout {
 			indices = append(indices, i)
 		}
 	}
+	if collapsed {
+		body = append(body, mutedStyle.Render(ansi.Truncate("… preview · click header to expand", width-4, "…")))
+		indices = append(indices, -1)
+	}
 	if len(body) == 0 {
 		for _, part := range wrapCodeRow(escapeCodeRow(options.emptyText), width-4) {
 			body = append(body, part)
@@ -93,6 +105,9 @@ func (b codeBlock) layout(options codeBlockOptions) codeBlockLayout {
 	indices = append(indices, -1)
 	panel := strings.Split(blockPanel(strings.Join(body, "\n"), width), "\n")
 	result := codeBlockLayout{block: b, rows: make([]codeBlockRow, len(panel)), width: width, contentColumn: 2 + gutter}
+	if b.expanded != nil {
+		result.expanded = *b.expanded
+	}
 	labelWidth := width - 4
 	button := ""
 	if b.source != "" && labelWidth >= 10 {
@@ -102,7 +117,15 @@ func (b codeBlock) layout(options codeBlockOptions) codeBlockLayout {
 	}
 	header := ""
 	if !options.hideSummary {
-		header = mutedStyle.Render(b.lineSummary(options.incomplete, labelWidth))
+		label := b.lineSummary(options.incomplete, labelWidth)
+		if b.expanded != nil {
+			arrow := "▸ "
+			if *b.expanded {
+				arrow = "▾ "
+			}
+			label = ansi.Truncate(arrow+label, labelWidth, "…")
+		}
+		header = mutedStyle.Render(label)
 	}
 	language := escapeCodeRow(b.language)
 	if language == "" {

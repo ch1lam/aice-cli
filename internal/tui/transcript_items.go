@@ -135,7 +135,8 @@ func (m *model) transcriptEntryItem(index int, e transcriptEntry, active bool, m
 		}
 		return transcriptContent{view: m.entryView(e, active)}
 	}}
-	if e.kind == entryAssistant && e.complete && mode != transcriptThinking && len(e.text) >= historyMarkdownThreshold {
+	if e.kind == entryAssistant && e.complete && mode != transcriptThinking &&
+		(len(e.text) >= historyMarkdownThreshold || strings.Count(e.text, "\n") > historyCodeLineLimit) {
 		item.split = func() []transcriptItem { return m.historyAssistantParts(e, mode) }
 	}
 	return item
