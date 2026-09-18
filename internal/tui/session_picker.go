@@ -237,7 +237,7 @@ func (m model) openSessionPicker() (model, tea.Cmd, bool) {
 	}
 	p := &sessionPicker{loading: true}
 	p.input = textinput.New()
-	p.input.Prompt = "› "
+	p.input.Prompt = ""
 	p.input.Placeholder = "/ to Filter"
 	p.input.CharLimit = 256
 	p.input.SetVirtualCursor(false)

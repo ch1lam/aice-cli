@@ -535,8 +535,8 @@ Enter from transcript reading resumes the saved active branch. Ctrl+T in the idl
 main conversation opens its question directory with the same reading controls.
 
 The picker opens with list focus. `/` focuses the search field from either pane
-without inserting the shortcut character; its placeholder is `/ to Filter`, and
-the footer labels the shortcut `/ search`. A slash typed while search already
+without inserting the shortcut character. The field has no prompt prefix and
+uses `/ to Filter` as its placeholder; the footer labels the shortcut `/ search`. A slash typed while search already
 has focus is ordinary query text. Up/Down from search or clicking a list row
 returns focus to the list; clicking the search field also focuses it.
 
