@@ -467,7 +467,14 @@ recovered by resuming the main Session.
 Use `/history` or Ctrl+R in the idle TUI to open the current-project history
 picker. It discovers regular `.jsonl` files under `<workspace>/.aice/sessions/`,
 validates their workspace, hides empty sessions, and sorts by last recorded
-activity, grouped as Today, Yesterday and Earlier in the local calendar. Cold
+activity, grouped as Today, Yesterday and Earlier in the local calendar. Each
+group has a separate bold, blue subtitle with a count, disclosure arrow and
+separator line; selection highlights it in gold. Up/Down and the mouse wheel
+select group headings as well as sessions. Enter on a heading folds or unfolds
+its sessions, leaving the heading selected. Fold state and selection survive
+additional search batches; changing the search query expands matching groups.
+Group rows cannot be resumed, renamed or opened as transcripts, and do not load
+a session preview. The total counts sessions, including folded ones. Cold
 scans visit recently modified files first and publish an initial batch before
 continuing through older files. Rows already loaded stay selectable and resumable;
 Escape cancels scanning. Later batches preserve the selected session by identity.
@@ -529,8 +536,9 @@ the footer labels the shortcut `/ search`. A slash typed while search already
 has focus is ordinary query text. Up/Down from search or clicking a list row
 returns focus to the list; clicking the search field also focuses it.
 
-Up/Down or a mouse click select a session, and Enter restores it. With preview
-open, Left focuses the list and Right focuses the scrollable preview.
+Up/Down or a mouse click select a session or group heading. Enter restores a
+session or toggles a selected group. With preview open, Left focuses the list
+and Right focuses the scrollable preview.
 With preview enabled, wide terminals show both panes; narrow terminals show one
 at a time. Each pane has a thin border: gold marks keyboard focus, while
 inactive panes use the muted slash-command border color. There is no pane status

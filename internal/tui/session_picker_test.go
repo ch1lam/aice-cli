@@ -207,8 +207,8 @@ func TestSessionPickerCapturesInputAndMouse(t *testing.T) {
 	t.Parallel()
 	m := pickerModel(t, 100, 28)
 	l := m.sessionPickerLayout()
-	m = updateModel(t, m, tea.MouseClickMsg{X: l.x + 3, Y: l.y + 6, Button: tea.MouseLeft})
-	if m.sessionPicker.list.Index() != 1 {
+	m = updateModel(t, m, tea.MouseClickMsg{X: l.x + 3, Y: l.y + 8, Button: tea.MouseLeft})
+	if selectedSessionKey(m.sessionPicker) != "two" {
 		t.Fatal("mouse did not select second item")
 	}
 	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyRight})
@@ -234,7 +234,7 @@ func TestSessionPickerMovementKeepsPreviewAndCancelsOldWork(t *testing.T) {
 	previous := m.sessionPicker.previewText
 	next, old := m.handleSessionPicker(tea.KeyPressMsg{Code: tea.KeyDown})
 	m = next.(model)
-	if m.sessionPicker.list.Index() != 1 || m.sessionPicker.previewText != previous {
+	if selectedSessionKey(m.sessionPicker) != "two" || m.sessionPicker.previewText != previous {
 		t.Fatal("selection delayed or preview flashed")
 	}
 	next, latest := m.handleSessionPicker(tea.KeyPressMsg{Code: tea.KeyUp})
@@ -422,7 +422,7 @@ func TestSessionPickerClickIgnoresPagePadding(t *testing.T) {
 	m.setSessionItems(items)
 	l := m.sessionPickerLayout()
 	m = updateModel(t, m, tea.MouseClickMsg{X: l.x + 3, Y: l.y + 3 + l.bodyHeight, Button: tea.MouseLeft})
-	if m.sessionPicker.list.Index() != 0 {
+	if selectedSessionKey(m.sessionPicker) != "0" {
 		t.Fatal("click on bottom padding selected an invisible item on the next page")
 	}
 }
@@ -434,7 +434,7 @@ func TestSessionPickerArrowFocusAndLayeredEscape(t *testing.T) {
 			t.Run(fmt.Sprintf("width=%d/list=%v", width, closeFromList), func(t *testing.T) {
 				m := pickerModel(t, width, 28)
 				m.sessionPicker.input.SetValue("query")
-				m.sessionPicker.list.Select(1)
+				m.sessionPicker.list.Select(2)
 				for _, key := range []tea.KeyPressMsg{{Code: tea.KeyTab}, {Code: tea.KeyTab, Mod: tea.ModShift}, {Code: tea.KeyF3}} {
 					m = updateModel(t, m, key)
 				}
@@ -582,7 +582,7 @@ func TestSessionPickerPaneBorderClicks(t *testing.T) {
 	for _, point := range [][2]int{{l.listWidth + 2, 4}, {0, 5}, {l.listWidth + 1, 5}, {1, 2}, {1, 3 + l.bodyHeight}} {
 		m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyRight})
 		m = updateModel(t, m, tea.MouseClickMsg{X: l.x + 2 + point[0], Y: l.y + 1 + point[1], Button: tea.MouseLeft})
-		if m.sessionPicker.list.Index() != 0 || m.sessionPicker.previewFocused != (point[0] == l.listWidth+2) {
+		if selectedSessionKey(m.sessionPicker) != "one" || m.sessionPicker.previewFocused != (point[0] == l.listWidth+2) {
 			t.Fatal("border click selected a row or focused the wrong pane")
 		}
 	}

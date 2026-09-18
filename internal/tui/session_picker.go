@@ -24,6 +24,8 @@ type sessionPicker struct {
 	list                        list.Model
 	preview                     viewport.Model
 	all                         []interaction.SessionSummary
+	results                     []interaction.SessionSummary
+	collapsedGroups             map[string]bool
 	previewText                 string
 	previewFocused              bool
 	previewVisible              bool
@@ -144,7 +146,6 @@ func (o *sessionQueryOwner) begin() bool {
 type sessionListItem struct {
 	interaction.SessionSummary
 	current bool
-	group   string
 }
 
 func (i sessionListItem) FilterValue() string { return i.Title }
@@ -155,6 +156,10 @@ func (sessionItemDelegate) Height() int                         { return 2 }
 func (sessionItemDelegate) Spacing() int                        { return 0 }
 func (sessionItemDelegate) Update(tea.Msg, *list.Model) tea.Cmd { return nil }
 func (sessionItemDelegate) Render(w io.Writer, model list.Model, index int, item list.Item) {
+	if group, ok := item.(sessionGroupItem); ok {
+		group.render(w, model.Width(), index == model.Index())
+		return
+	}
 	i, ok := item.(sessionListItem)
 	if !ok {
 		return
@@ -169,7 +174,7 @@ func (sessionItemDelegate) Render(w io.Writer, model list.Model, index int, item
 	if i.current {
 		title = "● " + title
 	}
-	detail := i.group
+	detail := ""
 	if i.Problem != "" {
 		detail = "Unavailable · " + sanitizeToolDetail(i.Problem, false)
 	}
@@ -283,32 +288,6 @@ func (m *model) requestSessionSearch() tea.Cmd {
 	return command
 }
 
-func (m *model) setSessionItems(items []interaction.SessionSummary) {
-	p := m.sessionPicker
-	selected := ""
-	if old, ok := p.list.SelectedItem().(sessionListItem); ok {
-		selected = old.Key
-	}
-	rows := make([]list.Item, 0, len(items))
-	index := 0
-	lastGroup := ""
-	now := time.Now()
-	for i, item := range items {
-		group := sessionDateGroup(item.UpdatedAt, now)
-		heading := ""
-		if group != lastGroup {
-			heading = group
-			lastGroup = group
-		}
-		rows = append(rows, sessionListItem{SessionSummary: item, current: item.ID != "" && item.ID == m.sessionID, group: heading})
-		if item.Key == selected {
-			index = i
-		}
-	}
-	p.list.SetItems(rows)
-	p.list.Select(index)
-}
-
 func (m *model) requestSessionPreview() tea.Cmd {
 	p := m.sessionPicker
 	if p.cancelPreview != nil {
@@ -321,7 +300,15 @@ func (m *model) requestSessionPreview() tea.Cmd {
 	p.preview.GotoTop()
 	item, ok := p.list.SelectedItem().(sessionListItem)
 	if !ok {
+		p.notice = ""
 		p.previewText = "Select a session to preview its recent conversation."
+		if group, ok := p.list.SelectedItem().(sessionGroupItem); ok {
+			action := "collapse"
+			if group.collapsed {
+				action = "expand"
+			}
+			p.previewText = fmt.Sprintf("%s · %d sessions\n\nEnter to %s this group.", group.name, group.count, action)
+		}
 		m.resizeSessionPicker()
 		return nil
 	}
@@ -449,6 +436,9 @@ func (m model) handleSessionPicker(message tea.Msg) (tea.Model, tea.Cmd) {
 		case "f4":
 			return m, m.requestSessionReading()
 		case "enter":
+			if _, ok := p.list.SelectedItem().(sessionGroupItem); ok {
+				return m, m.toggleSessionGroup()
+			}
 			return m.resumeSelectedSession()
 		case "up", "ctrl+p", "down", "ctrl+n", "pgup", "pgdown":
 			if p.previewFocused {
@@ -507,6 +497,8 @@ func (m model) handleSessionPicker(message tea.Msg) (tea.Model, tea.Cmd) {
 	var command tea.Cmd
 	p.input, command = p.input.Update(message)
 	if before != p.input.Value() {
+		// A new filter reveals matching sessions, including previously folded groups.
+		p.collapsedGroups = nil
 		query := strings.ToLower(strings.TrimSpace(p.input.Value()))
 		var matches []interaction.SessionSummary
 		for _, item := range p.all {

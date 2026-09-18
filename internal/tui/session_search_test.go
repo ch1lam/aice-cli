@@ -46,7 +46,7 @@ func TestSessionSearchStreamCancelsBlockedPublisher(t *testing.T) {
 
 func TestSessionSearchArrivalPreservesSelectionAndPreview(t *testing.T) {
 	m := pickerModel(t, 100, 28)
-	m.sessionPicker.list.Select(1)
+	m.sessionPicker.list.Select(2)
 	m.sessionPicker.previewText = "Selected preview"
 	next := func() tea.Msg { return nil }
 	m = updateModel(t, m, sessionSearchResult{generation: m.sessionQueryGeneration, next: next,

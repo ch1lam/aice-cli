@@ -65,8 +65,17 @@ func (m model) sessionPickerView() string {
 	} else if p.previewFocused {
 		body = m.sessionPickerPane(p.preview.View(), l.previewWidth, true)
 	}
-	count := len(p.list.Items())
-	title := fmt.Sprintf("SESSIONS · CURRENT PROJECT  %d/%d", min(count, p.list.Index()+1), count)
+	count, position := len(p.results), 0
+	for i, item := range p.results {
+		if item.Key == selectedSessionKey(p) {
+			position = i + 1
+			break
+		}
+	}
+	title := fmt.Sprintf("SESSIONS · CURRENT PROJECT  %d/%d", position, count)
+	if _, ok := p.list.SelectedItem().(sessionGroupItem); ok {
+		title = fmt.Sprintf("SESSIONS · CURRENT PROJECT  %d sessions", count)
+	}
 	if p.previewFocused {
 		title = "SESSIONS · PREVIEW"
 	}
@@ -81,6 +90,22 @@ func (m model) sessionPickerView() string {
 		help = "/ search · → preview · Esc close · ↑↓ · Enter"
 		if p.previewVisible {
 			help = "/ search · ←→ focus · Esc hide preview · ↑↓ · Enter"
+		}
+	}
+	if group, ok := p.list.SelectedItem().(sessionGroupItem); ok {
+		action := "collapse"
+		if group.collapsed {
+			action = "expand"
+		}
+		help = "/ search · ↑↓ select · Enter " + action + " group · → preview · Esc close"
+		if p.previewVisible {
+			help = "/ search · ←→ focus · Enter " + action + " group · Esc hide preview"
+		}
+		if l.inner < 55 {
+			help = "/ search · Enter " + action + " · ↑↓ · Esc close"
+			if p.previewVisible {
+				help = "/ search · Enter " + action + " · Esc hide preview"
+			}
 		}
 	}
 	if p.loading {

@@ -13,7 +13,7 @@ import (
 
 func TestSessionRenameEditorSavesWithoutSwitchingAndPreservesSelection(t *testing.T) {
 	m := pickerModel(t, 100, 28)
-	m.sessionPicker.list.Select(1)
+	m.sessionPicker.list.Select(2)
 	m.renameSession = func(generation uint64, key, title string) (tea.Cmd, context.CancelFunc) {
 		if key != "two" || title != "新名字" {
 			t.Fatal(key, title)
