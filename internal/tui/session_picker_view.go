@@ -113,15 +113,12 @@ func (m model) sessionPickerView() string {
 	return m.sessionPickerTopBorder(title, l) + "\n" + rest
 }
 
-const sessionPickerCloseLabel = " ✕ "
+const sessionPickerCloseLabel = " [ ✘ ] "
 
 func (m model) sessionPickerTopBorder(title string, l sessionPickerLayout) string {
 	style := mutedStyle.Background(inkBlackColor)
 	if m.sessionPickerCloseHovered() {
-		style = labelStyle.Foreground(inkBlackColor).Background(secondaryColor)
-		if m.sessionPicker.closePressed {
-			style = style.Background(accentColor)
-		}
+		style = style.Foreground(errorColor).Bold(m.sessionPicker.closePressed)
 	}
 	titleWidth := max(0, l.inner-ansi.StringWidth(sessionPickerCloseLabel)-1)
 	heading := ansi.Truncate(" "+title+" ", titleWidth, "…")

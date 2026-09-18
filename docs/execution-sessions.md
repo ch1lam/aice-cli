@@ -471,7 +471,7 @@ activity, grouped as Today, Yesterday and Earlier in the local calendar. Cold
 scans visit recently modified files first and publish an initial batch before
 continuing through older files. Rows already loaded stay selectable and resumable;
 Escape cancels scanning. Later batches preserve the selected session by identity.
-The picker fills the terminal with a small outer margin. Its title and `✕` close
+The picker fills the terminal with a small outer margin. Its title and `[ ✘ ]` close
 button sit on the top border, using the same thin, muted border as the slash
 command menu. Compact two-line rows
 show the custom title, or the first user prompt when none is set, recent content
@@ -535,11 +535,12 @@ inactive panes use the muted slash-command border color. There is no pane status
 heading. Clicking a pane also focuses it; focusing search dims both pane borders.
 Escape hides an open preview and restores the full-width list, regardless of
 which pane has focus. With preview hidden, Escape closes the picker. The top-right
-`✕` button closes the picker directly. Closing preserves the current draft and
+`[ ✘ ]` button closes the picker directly. Closing preserves the current draft and
 transcript position.
-The button highlights on hover; press and release inside it to close. During
-restoration, it requests cancellation like Escape. `/history <id>` restores an
-existing local file by filename stem; it never creates a missing session.
+Hover and press turn the button characters error-red without changing the
+background; pressing also makes them bold. Press and release inside it to close.
+During restoration, it requests cancellation like Escape. `/history <id>` restores
+an existing local file by filename stem; it never creates a missing session.
 
 Switching requires the main response and every BTW response to be idle. The
 application validates and prepares the target before replacing the current

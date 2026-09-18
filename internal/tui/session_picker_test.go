@@ -335,13 +335,27 @@ func TestSessionPickerCloseButton(t *testing.T) {
 				t.Fatal("close button is not on the top border")
 			}
 			top, _, _ := strings.Cut(ansi.Strip(m.sessionPickerView()), "\n")
-			if !strings.Contains(top, "SESSIONS") || ansi.StringWidth(top) != m.sessionPickerLayout().width {
+			if !strings.Contains(top, "SESS") || !strings.Contains(top, " [ ✘ ] ") ||
+				ansi.StringWidth(top) != m.sessionPickerLayout().width {
 				t.Fatalf("title or border width is wrong: %q", top)
 			}
 			idle := m.sessionPickerView()
 			m = updateModel(t, m, tea.MouseMotionMsg(mouse))
 			if m.sessionPickerView() == idle {
 				t.Fatal("close button did not highlight on hover")
+			}
+			for _, press := range []bool{false, true} {
+				if press {
+					mouse.Button = tea.MouseLeft
+					m = updateModel(t, m, tea.MouseClickMsg(mouse))
+				}
+				view := m.View().Content
+				canvas := lipgloss.NewCanvas(m.width, m.height).Compose(lipgloss.NewLayer(view))
+				for x := mouse.X - 2; x <= mouse.X+2; x++ {
+					cell := canvas.CellAt(x, mouse.Y)
+					assertColor(t, cell.Style.Fg, errorColor)
+					assertColor(t, cell.Style.Bg, inkBlackColor)
+				}
 			}
 			m = updateModel(t, m, tea.MouseMotionMsg{X: 0, Y: 0})
 			if m.sessionPickerView() != idle {
@@ -390,7 +404,7 @@ func TestSessionPickerCloseButtonCancelsRestore(t *testing.T) {
 func sessionCloseMouse(t *testing.T, m model) tea.Mouse {
 	t.Helper()
 	for y, row := range strings.Split(ansi.Strip(m.View().Content), "\n") {
-		if x := strings.Index(row, "✕"); x >= 0 {
+		if x := strings.Index(row, "✘"); x >= 0 {
 			return tea.Mouse{X: ansi.StringWidth(row[:x]), Y: y, Button: tea.MouseLeft}
 		}
 	}
