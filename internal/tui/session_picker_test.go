@@ -319,6 +319,13 @@ func TestSessionPickerCloseButton(t *testing.T) {
 		t.Run(fmt.Sprint(size), func(t *testing.T) {
 			m := pickerModel(t, size[0], size[1])
 			mouse := sessionCloseMouse(t, m)
+			if mouse.Y != m.sessionPickerLayout().y {
+				t.Fatal("close button is not on the top border")
+			}
+			top, _, _ := strings.Cut(ansi.Strip(m.sessionPickerView()), "\n")
+			if !strings.Contains(top, "SESSIONS") || ansi.StringWidth(top) != m.sessionPickerLayout().width {
+				t.Fatalf("title or border width is wrong: %q", top)
+			}
 			idle := m.sessionPickerView()
 			m = updateModel(t, m, tea.MouseMotionMsg(mouse))
 			if m.sessionPickerView() == idle {
@@ -371,7 +378,7 @@ func TestSessionPickerCloseButtonCancelsRestore(t *testing.T) {
 func sessionCloseMouse(t *testing.T, m model) tea.Mouse {
 	t.Helper()
 	for y, row := range strings.Split(ansi.Strip(m.View().Content), "\n") {
-		if x := strings.Index(row, "×"); x >= 0 {
+		if x := strings.Index(row, "✕"); x >= 0 {
 			return tea.Mouse{X: ansi.StringWidth(row[:x]), Y: y, Button: tea.MouseLeft}
 		}
 	}

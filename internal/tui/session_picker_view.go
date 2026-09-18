@@ -103,18 +103,20 @@ func (m model) sessionPickerView() string {
 		help = sanitizeToolDetail(p.notice, false)
 	}
 	content := strings.Join([]string{
-		m.sessionPickerTitle(title, l), input, m.sessionPickerPaneHeading(l), body, "",
+		"", input, m.sessionPickerPaneHeading(l), body, "",
 		mutedStyle.Render(ansi.Truncate(help, l.inner, "…")),
 	}, "\n")
-	return lipgloss.NewStyle().Foreground(primaryTextColor).Background(inkBlackColor).
-		Border(lipgloss.RoundedBorder()).BorderForeground(secondaryColor).BorderBackground(inkBlackColor).
-		Padding(0, 1).Width(l.width).Render(content)
+	frame := slashCommandMenuStyle.Foreground(primaryTextColor).Background(inkBlackColor).
+		BorderBackground(inkBlackColor).Width(l.width).Render(content)
+	// Put controls on the border without shifting content or its mouse/IME rows.
+	_, rest, _ := strings.Cut(frame, "\n")
+	return m.sessionPickerTopBorder(title, l) + "\n" + rest
 }
 
-const sessionPickerCloseLabel = " × "
+const sessionPickerCloseLabel = " ✕ "
 
-func (m model) sessionPickerTitle(title string, l sessionPickerLayout) string {
-	style := mutedStyle.Background(panelBlackColor)
+func (m model) sessionPickerTopBorder(title string, l sessionPickerLayout) string {
+	style := mutedStyle.Background(inkBlackColor)
 	if m.sessionPickerCloseHovered() {
 		style = labelStyle.Foreground(inkBlackColor).Background(secondaryColor)
 		if m.sessionPicker.closePressed {
@@ -122,9 +124,13 @@ func (m model) sessionPickerTitle(title string, l sessionPickerLayout) string {
 		}
 	}
 	titleWidth := max(0, l.inner-ansi.StringWidth(sessionPickerCloseLabel)-1)
-	heading := ansi.Truncate(title, titleWidth, "…")
+	heading := ansi.Truncate(" "+title+" ", titleWidth, "…")
 	gap := l.inner - ansi.StringWidth(heading) - ansi.StringWidth(sessionPickerCloseLabel)
-	return labelStyle.Render(heading) + strings.Repeat(" ", gap) + style.Render(sessionPickerCloseLabel)
+	border := slashCommandMenuStyle.GetBorderStyle()
+	stroke := lipgloss.NewStyle().Foreground(slashCommandMenuStyle.GetBorderTopForeground()).Background(inkBlackColor)
+	return stroke.Render(border.TopLeft+border.Top) + bodyStyle.Bold(true).Background(inkBlackColor).Render(heading) +
+		stroke.Render(strings.Repeat(border.Top, gap)) + style.Render(sessionPickerCloseLabel) +
+		stroke.Render(border.Top+border.TopRight)
 }
 
 func (m model) sessionPickerCloseHovered() bool {
@@ -133,7 +139,7 @@ func (m model) sessionPickerCloseHovered() bool {
 		return false
 	}
 	l := m.sessionPickerLayout()
-	x, y := p.closePointer.X-l.x-2, p.closePointer.Y-l.y-1
+	x, y := p.closePointer.X-l.x-2, p.closePointer.Y-l.y
 	return y == 0 && x >= l.inner-ansi.StringWidth(sessionPickerCloseLabel) && x < l.inner
 }
 

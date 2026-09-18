@@ -471,7 +471,9 @@ activity, grouped as Today, Yesterday and Earlier in the local calendar. Cold
 scans visit recently modified files first and publish an initial batch before
 continuing through older files. Rows already loaded stay selectable and resumable;
 Escape cancels scanning. Later batches preserve the selected session by identity.
-The picker fills the terminal with a small outer margin. Compact two-line rows
+The picker fills the terminal with a small outer margin. Its title and `✕` close
+button sit on the top border, using the same thin, muted border as the slash
+command menu. Compact two-line rows
 show the custom title, or the first user prompt when none is set, recent content
 and a current-session marker where applicable. Activity ages use `min`, `h`, `d`,
 `m` and `y` (months use 30 days; years use 365 days); activity under one minute
@@ -526,7 +528,7 @@ at a time. A highlighted pane heading and filled dot mark keyboard focus;
 clicking a pane also focuses it.
 Escape hides an open preview and restores the full-width list, regardless of
 which pane has focus. With preview hidden, Escape closes the picker. The top-right
-`×` button closes the picker directly. Closing preserves the current draft and
+`✕` button closes the picker directly. Closing preserves the current draft and
 transcript position.
 The button highlights on hover; press and release inside it to close. During
 restoration, it requests cancellation like Escape. `/history <id>` restores an
