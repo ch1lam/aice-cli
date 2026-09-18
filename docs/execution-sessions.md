@@ -468,8 +468,11 @@ remain accessible through an explicit startup `--session` path.
 
 Search matches titles, filename stems, and user/assistant prose across all
 branches, case-insensitively. Cached titles filter immediately; cancellable
-body searches start after a 180 ms debounce. Tool payloads, reasoning, and image
-bytes are not search targets. The application caches derived prose in memory,
+body searches start after a 180 ms debounce. Validated title hits are published
+before body scanning and remain ahead of body-only matches; result arrivals keep
+the selected session stable. An active-branch match is preferred when available;
+otherwise the result explicitly says that resuming will use the active branch.
+Tool payloads, reasoning, and image bytes are not search targets. The application caches derived prose in memory,
 bounded to 256 sessions and a 32 MiB accounting budget; oversized sessions are
 read without retention. File identity, size and modification time invalidate
 entries, and discovery evicts deleted files. JSONL remains the only durable
@@ -481,6 +484,14 @@ work, and keep the previous preview visible with a loading notice. Loading does
 not block selection, closing, or resuming. Other-branch matches are labeled;
 selecting a result still resumes the saved active branch without checking out
 the matching message.
+
+F4 opens a read-only transcript at the matched message (or the latest conversation
+when there is no body match). Other-branch inspection is labeled and never writes
+a checkout record. End returns to the latest active-branch conversation. T opens
+a numbered directory of user questions; arrows and Enter jump to that question.
+Escape returns to the picker with the original live draft and conversation intact.
+Enter from transcript reading resumes the saved active branch. Ctrl+T in the idle
+main conversation opens its question directory with the same reading controls.
 
 Arrows or a mouse click select a session, Enter restores it, and Tab switches
 between the search/list and scrollable preview. Wide terminals show both panes;

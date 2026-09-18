@@ -67,7 +67,7 @@ func (m model) sessionPickerView() string {
 	if p.previewFocused {
 		title = "SESSIONS · PREVIEW"
 	}
-	help := "↑↓ select · Enter resume · Tab preview · Esc close"
+	help := "↑↓ select · Enter resume · F4 read · Tab preview · Esc close"
 	if p.previewFocused {
 		help = "↑↓ scroll · Enter resume · Tab search · Esc close"
 	}

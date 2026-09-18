@@ -125,7 +125,7 @@ func Run(ctx context.Context, runner Runner, options Options) error {
 	initialModel := newModel(requests, controllerDone, slashCommands...)
 	if browser, ok := runner.(interaction.SessionBrowser); ok {
 		var closeQueries func()
-		initialModel.searchSessions, initialModel.previewSession, closeQueries = sessionBrowserCommands(controllerCtx, browser)
+		initialModel.searchSessions, initialModel.previewSession, initialModel.readSession, closeQueries = sessionBrowserCommands(controllerCtx, browser)
 		defer closeQueries()
 	}
 	if options.Transcript != nil {

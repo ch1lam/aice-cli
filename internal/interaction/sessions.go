@@ -9,6 +9,9 @@ type SessionSummary struct {
 	UpdatedAt      int64
 	Snippet        string
 	Problem        string
+	MatchID        string
+	OtherBranch    bool
+	TitleMatch     bool
 }
 
 // SessionBrowser reads project history independently of the active-run
@@ -23,6 +26,21 @@ type SessionBrowser interface {
 // scanning by returning an error. The final return contains the full catalog.
 type SessionScanner interface {
 	ScanSessions(context.Context, string, func([]SessionSummary) error) ([]SessionSummary, error)
+}
+
+// SessionReader projects a branch for inspection without changing the saved
+// active leaf, acquiring writer ownership, or recovering interrupted tools.
+type SessionReader interface {
+	ReadSession(context.Context, string, string) (*SessionReading, error)
+}
+
+// SessionReading contains read-only display projections, with the saved active
+// branch available for returning to its latest content.
+type SessionReading struct {
+	Transcript  *Transcript
+	Active      *Transcript
+	FocusID     string
+	OtherBranch bool
 }
 
 // Transcript is the original active branch, independent of compacted model

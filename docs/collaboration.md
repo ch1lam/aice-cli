@@ -143,6 +143,23 @@ For model comparisons, preserve initial/final source and refactor-only diffs,
 record settings and interventions, and review readability, change locality and
 the need for each abstraction. Agree on models and cost before paid evaluation.
 
+## History performance checks
+
+The synthetic history benchmarks use temporary sessions and generated Markdown;
+they do not read user conversations or credentials. Run them serially, separately
+from tests and other benchmarks, and compare repeated samples on the same host:
+
+```sh
+go test ./internal/app -run '^$' -bench '^BenchmarkSessionBrowser$' -benchmem -count=5
+go test ./internal/tui -run '^$' -bench '^BenchmarkHistoryMarkdownFirstView$' -benchmem -count=5
+```
+
+Catalog search measures repeated queries after warm-up against 134 files totaling
+about 27 MiB of prose. First-view rendering constructs a fresh TUI projection for
+each operation with 32 KiB or 128 KiB of mixed Markdown. Report time and allocation
+per operation separately from retained memory, and distinguish these fixtures
+from actual terminal interaction checks.
+
 ## Git and Collaboration
 
 - Multiple sessions may share this worktree. Preserve unrelated staged, unstaged, and untracked changes.

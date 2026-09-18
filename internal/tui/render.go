@@ -107,6 +107,16 @@ func (m model) headerLayout(width int) headerLayout {
 }
 
 func (m model) headerView(width int) string {
+	if m.reading != nil {
+		label := "HISTORY · READ ONLY · active branch"
+		if m.reading.otherBranch {
+			label = "HISTORY · READ ONLY · other branch · Enter resumes active branch"
+		}
+		if m.reading.directory {
+			label = "HISTORY · USER QUESTIONS"
+		}
+		return lipgloss.NewStyle().Width(width).Padding(0, 1, 1).Render(ansi.Truncate(label, width-2, "…"))
+	}
 	layout := m.headerLayout(width)
 	left := layout.brand
 	if layout.workspace != "" {
@@ -122,6 +132,13 @@ func (m model) headerView(width int) string {
 }
 
 func (m model) footerView(width int) string {
+	if m.reading != nil {
+		help := "↑↓ scroll · T questions · End latest · Enter resume · Esc back"
+		if m.reading.directory {
+			help = "↑↓ select · Enter jump to question · Esc back"
+		}
+		return mutedStyle.Width(width).Render(ansi.Truncate(help, width, "…"))
+	}
 	innerWidth := max(width-2, 1)
 	style := lipgloss.NewStyle().
 		Width(innerWidth).
@@ -180,6 +197,9 @@ func (m model) composerParts(contentWidth int) []string {
 }
 
 func (m model) composerView(width int) string {
+	if m.reading != nil {
+		return ""
+	}
 	style := composerBlurredStyle
 	if m.input.Focused() && (m.composerActive || m.composerHovered(width)) {
 		style = composerFocusedStyle

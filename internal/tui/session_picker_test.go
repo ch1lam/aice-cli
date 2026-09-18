@@ -33,7 +33,7 @@ func (b waitingSessionBrowser) PreviewSession(context.Context, string, string) (
 func TestSessionPickerQueryShutdown(t *testing.T) {
 	t.Parallel()
 	browser := waitingSessionBrowser{started: make(chan struct{}), cancelled: make(chan struct{})}
-	search, preview, shutdown := sessionBrowserCommands(t.Context(), browser)
+	search, preview, _, shutdown := sessionBrowserCommands(t.Context(), browser)
 	command, cancel := search(1, "")
 	defer cancel()
 	queued, cancelQueued := preview(1, "one", "")
@@ -82,7 +82,7 @@ func pickerModel(t *testing.T, width, height int) model {
 	m := newModel(make(chan runRequest), make(chan struct{}), SlashCommand{Name: "history"})
 	m = updateModel(t, m, tea.WindowSizeMsg{Width: width, Height: height})
 	var closeQueries func()
-	m.searchSessions, m.previewSession, closeQueries = sessionBrowserCommands(t.Context(), pickerBrowser{})
+	m.searchSessions, m.previewSession, m.readSession, closeQueries = sessionBrowserCommands(t.Context(), pickerBrowser{})
 	t.Cleanup(closeQueries)
 	m.input.SetValue("keep my draft")
 	m, cmd, _ := m.openSessionPicker()

@@ -110,6 +110,8 @@ type commandMenuState struct {
 }
 
 type model struct {
+	reading                  *sessionReading
+	readSession              func(uint64, string, string) (tea.Cmd, context.CancelFunc)
 	sessionID                string
 	sessionPicker            *sessionPicker
 	sessionQueryGeneration   uint64
@@ -294,6 +296,14 @@ func (m model) Init() tea.Cmd {
 }
 
 func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
+	if m.reading != nil {
+		switch message := message.(type) {
+		case tea.KeyPressMsg:
+			return m.handleReadingKey(message)
+		case tea.PasteMsg:
+			return m, nil
+		}
+	}
 	if m.sessionPicker != nil {
 		switch message.(type) {
 		case tea.KeyPressMsg, tea.PasteMsg, tea.MouseClickMsg, tea.MouseReleaseMsg, tea.MouseMotionMsg, tea.MouseWheelMsg:
@@ -301,6 +311,8 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 	switch message := message.(type) {
+	case sessionReadingResult:
+		return m.applySessionReading(message)
 	case sessionSearchResult:
 		return m.applySessionSearch(message)
 	case sessionPreviewResult:
@@ -364,6 +376,9 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m.resizeSessionPicker()
 		m.resizeLayout()
 		m.refreshViewport(false)
+		if m.reading != nil && m.reading.directory {
+			m.showTurnDirectory()
+		}
 		return m, nil
 	case tea.KeyPressMsg:
 		m.selection.clear()
@@ -734,6 +749,9 @@ func (m model) positionComposerCursor(position *tea.Position, width int) {
 }
 
 func (m model) handleKey(message tea.KeyPressMsg) (model, tea.Cmd, bool) {
+	if message.String() == "ctrl+t" && !m.running && !m.side.anyRunning() && !m.side.isVisible && !m.clipboardPending && !m.deliveryPending && m.side.menu == nil && m.side.confirm == nil && m.guardPending == nil && m.commandMenu == nil && m.secretInput == nil && m.authInput == nil {
+		return m.openCurrentReading(), nil, true
+	}
 	if message.String() == "ctrl+r" && m.searchSessions != nil && !m.side.isVisible &&
 		m.guardPending == nil && m.authInput == nil && m.secretInput == nil && m.commandMenu == nil &&
 		m.side.menu == nil && m.side.confirm == nil && !m.clipboardPending && !m.deliveryPending {

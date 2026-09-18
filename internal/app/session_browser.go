@@ -98,7 +98,6 @@ func (s *interactiveSession) ScanSessions(ctx context.Context, query string, pub
 		key := candidate.key
 		item := interaction.SessionSummary{Key: key, Title: key}
 		entry, err := s.catalogSession(ctx, key)
-		matched := false
 		if err != nil {
 			item.Problem = err.Error()
 			item.UpdatedAt = candidate.modified
@@ -107,23 +106,12 @@ func (s *interactiveSession) ScanSessions(ctx context.Context, query string, pub
 				continue
 			}
 			item = entry.summary
-			if query != "" {
-				item.Snippet = ""
-				for _, prose := range entry.prose {
-					if err := ctx.Err(); err != nil {
-						return nil, err
-					}
-					if strings.Contains(strings.ToLower(prose.text), query) {
-						item.Snippet = sessionExcerpt(prose.text, query, 160)
-						matched = true
-						break
-					}
-				}
-			}
 		}
-		if query == "" || strings.Contains(strings.ToLower(item.Title), query) || strings.Contains(strings.ToLower(item.Key), query) || matched {
+		item.TitleMatch = query != "" && (strings.Contains(strings.ToLower(item.Title), query) || strings.Contains(strings.ToLower(item.Key), query))
+		if query == "" || item.TitleMatch {
 			items = append(items, item)
 		}
+
 		if publish != nil && index < len(candidates)-1 && (index == 7 || time.Since(lastPublish) >= 100*time.Millisecond) {
 			sortSessionSummaries(items)
 			if err := publish(append([]interaction.SessionSummary(nil), items...)); err != nil {
@@ -132,12 +120,77 @@ func (s *interactiveSession) ScanSessions(ctx context.Context, query string, pub
 			lastPublish = time.Now()
 		}
 	}
+	if query != "" {
+		// Publish every title hit before scanning bodies. Already validated cached
+		// files are cheap here, and large projects remain bounded by the catalog.
+		sortSessionSummaries(items)
+		if publish != nil {
+			if err := publish(append([]interaction.SessionSummary(nil), items...)); err != nil {
+				return nil, err
+			}
+		}
+		positions := make(map[string]int, len(items))
+		for i, item := range items {
+			positions[item.Key] = i
+		}
+		lastPublish = time.Now()
+		for index, candidate := range candidates {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+			entry, err := s.catalogSession(ctx, candidate.key)
+			if err != nil {
+				continue
+			}
+			// Prefer an active-branch hit; otherwise explicitly mark the other branch.
+			match := -1
+			for i := len(entry.prose) - 1; i >= 0; i-- {
+				if err := ctx.Err(); err != nil {
+					return nil, err
+				}
+				if strings.Contains(strings.ToLower(entry.prose[i].text), query) {
+					if match < 0 {
+						match = i
+					}
+					if entry.prose[i].active {
+						match = i
+						break
+					}
+				}
+			}
+			if match >= 0 {
+				prose := entry.prose[match]
+				item := entry.summary
+				item.MatchID, item.OtherBranch = prose.id, !prose.active
+				item.Snippet = sessionExcerpt(prose.text, query, 160)
+				if position, ok := positions[item.Key]; ok {
+					item.TitleMatch = true
+					items[position] = item
+				} else {
+					positions[item.Key] = len(items)
+					items = append(items, item)
+				}
+			}
+			if publish != nil && index < len(candidates)-1 && time.Since(lastPublish) >= 100*time.Millisecond {
+				batch := append([]interaction.SessionSummary(nil), items...)
+				sortSessionSummaries(batch)
+				if err := publish(batch); err != nil {
+					return nil, err
+				}
+				lastPublish = time.Now()
+			}
+		}
+	}
+
 	sortSessionSummaries(items)
 	return items, ctx.Err()
 }
 
 func sortSessionSummaries(items []interaction.SessionSummary) {
 	sort.Slice(items, func(i, j int) bool {
+		if items[i].TitleMatch != items[j].TitleMatch {
+			return items[i].TitleMatch
+		}
 		if items[i].UpdatedAt == items[j].UpdatedAt {
 			return items[i].Key < items[j].Key
 		}

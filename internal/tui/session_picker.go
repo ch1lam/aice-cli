@@ -48,6 +48,7 @@ type sessionPreviewResult struct {
 func sessionBrowserCommands(ctx context.Context, browser interaction.SessionBrowser) (
 	func(uint64, string) (tea.Cmd, context.CancelFunc),
 	func(uint64, string, string) (tea.Cmd, context.CancelFunc),
+	func(uint64, string, string) (tea.Cmd, context.CancelFunc),
 	func(),
 ) {
 	ctx, cancelAll := context.WithCancel(ctx)
@@ -75,7 +76,23 @@ func sessionBrowserCommands(ctx context.Context, browser interaction.SessionBrow
 			return sessionPreviewResult{generation: generation, text: text, err: err}
 		}, cancel
 	}
-	return search, preview, func() {
+	read := func(generation uint64, key, focus string) (tea.Cmd, context.CancelFunc) {
+		readCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		return func() tea.Msg {
+			defer cancel()
+			if !owner.begin() {
+				return sessionReadingResult{generation: generation, err: context.Canceled}
+			}
+			defer owner.wg.Done()
+			reader, ok := browser.(interaction.SessionReader)
+			if !ok {
+				return sessionReadingResult{generation: generation, err: fmt.Errorf("history reading unavailable")}
+			}
+			view, err := reader.ReadSession(readCtx, key, focus)
+			return sessionReadingResult{generation: generation, view: view, err: err}
+		}, cancel
+	}
+	return search, preview, read, func() {
 		owner.mu.Lock()
 		owner.closed = true
 		owner.mu.Unlock()
@@ -133,6 +150,9 @@ func (sessionItemDelegate) Render(w io.Writer, model list.Model, index int, item
 	detail := time.UnixMilli(i.UpdatedAt).Local().Format("Jan 02 15:04")
 	if i.Problem != "" {
 		detail = "Unavailable · " + sanitizeToolDetail(i.Problem, false)
+	}
+	if i.OtherBranch {
+		detail = "Other branch · resume active · " + detail
 	}
 	if i.Snippet != "" {
 		detail += " · " + sanitizeToolDetail(i.Snippet, false)
@@ -320,6 +340,8 @@ func (m model) handleSessionPicker(message tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.resizeSessionPicker()
 			return m, nil
+		case "f4":
+			return m, m.requestSessionReading()
 		case "enter":
 			return m.resumeSelectedSession()
 		case "up", "ctrl+p", "down", "ctrl+n", "pgup", "pgdown":
@@ -401,7 +423,9 @@ func (m model) resumeSelectedSession() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if item.current {
-		return m, m.closeSessionPicker()
+		command := m.closeSessionPicker()
+		m.viewport.GotoBottom()
+		return m, command
 	}
 	if m.running || m.side.anyRunning() {
 		p.notice = "Stop responses before switching sessions"

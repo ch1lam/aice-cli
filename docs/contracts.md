@@ -369,7 +369,12 @@ consistency for those behaviors.
   partial snapshots through a bounded channel; one scanner owns publication,
   cancellation releases blocked sends, and the update loop schedules the next
   receive. Partial arrivals preserve selected identity and preview position.
-  Switching requires idle main and side responses; side-thread creation is serialized with the history switch.
+  Read-only inspection creates a separate TUI presentation model and preserves
+  the previous model, draft and viewport until return. Its source projection may
+  inspect another branch, but only the existing explicit restore command changes
+  the application's active store. Question directories address entries in that immutable display snapshot.
+  Switching requires idle main and side responses; side-thread creation is
+  serialized with the history switch.
   The TUI coalesces streaming deltas for up to 16 ms or 64 events before
   rendering; lifecycle updates flush the batch immediately. Main and side
   views use the same batching rule. Only the update loop owns assistant

@@ -89,7 +89,8 @@ aice --workspace . --print "解释这个仓库的架构。"
 交互模式会自动在 `<workspace>/.aice/sessions/` 创建 Session。使用 `/history`
 或 Ctrl+R 可以查找、预览并恢复当前项目的历史会话，显示原始对话并从其活动分支继续。
 列表按今天、昨天、更早分组并提供最近内容摘要；较旧记录继续加载时仍可选择和退出。
-轻量预览展示最后一个问题和回答。也可以在启动时指定历史文件：
+轻量预览展示最后一个问题和回答。F4 只读查看命中位置，不切换分支；T 查看提问目录，
+End 回到活动分支最新内容，Ctrl+T 打开当前会话提问目录。也可以在启动时指定历史文件：
 
 ```sh
 aice --workspace . --session .aice/sessions/<session-id>.jsonl

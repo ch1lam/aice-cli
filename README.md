@@ -100,6 +100,8 @@ Ctrl+R to search, preview, and resume this project's sessions. Restoring shows
 the original conversation and continues its active branch. Recent rows include
 a content excerpt, grouped by Today, Yesterday and Earlier. Older rows load
 while the list remains usable; lightweight previews show the last question and answer.
+F4 reads a search hit without switching branches; T lists questions, End returns
+to the latest active conversation, and Ctrl+T opens the current question directory.
 You can also resume an explicit file at startup:
 
 ```sh
