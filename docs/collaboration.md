@@ -153,6 +153,7 @@ from tests and other benchmarks, and compare repeated samples on the same host:
 go test ./internal/app -run '^$' -bench '^BenchmarkSessionBrowser$' -benchmem -count=5
 go test ./internal/app -run '^$' -bench '^BenchmarkSessionTextQuery$' -benchmem -count=5
 go test ./internal/tui -run '^$' -bench '^BenchmarkHistory(Markdown|Code)FirstView$' -benchmem -count=5
+go test ./internal/tui -run '^$' -bench '^BenchmarkHistoryNavigation$' -benchmem -count=5
 ```
 
 Catalog search measures repeated queries after warm-up against 134 files totaling
@@ -163,6 +164,10 @@ per operation separately from retained memory, and distinguish these fixtures
 from actual terminal interaction checks.
 Text-query benchmarks compare full lowercase conversion with prepared matching
 for early hits, late hits, missing text and Unicode, without filesystem costs.
+Navigation benchmarks cover restoration and mouse-wheel frames for 500 turns,
+a long continuous paragraph, and a 1,000-item list. `TestSessionBrowserTUI`
+exercises search, preview, read-only opening, scrolling and resumption through
+the actual CLI and Bubble Tea with generated history and isolated settings.
 
 ## Git and Collaboration
 

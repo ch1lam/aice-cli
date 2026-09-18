@@ -19,6 +19,13 @@ func TestHistoryMarkdownPreservesStructureAndCodeGeometry(t *testing.T) {
 		"first\n\nterm\n: definition\n\nnext\n\n| a | b |\n| - | - |\n| x | y |\n\nlast",
 		"first\r\n\r\n### Title\r\n\r\n    code\r\n\r\nafter",
 		"first\n\n```\nsame\n```\n\nsecond\n\n```\nsame\n```\n\n\ue000 &#57345;\n\nlast",
+		strings.Repeat("- item **bold** 中文\n", 40),
+		"7. start\n" + strings.Repeat("8. item\n", 40) + "\nAfter list.",
+		strings.Repeat("- [x] done\n- [ ] pending\n  - nested\n", 20),
+		strings.Repeat("- first\n\n  second paragraph\n\n", 40),
+		"Intro paragraph.\n\n" + strings.Repeat("- item **bold** 中文\n", 40) + "\nAfter list.",
+		"# Heading\n\n" + strings.Repeat("- item\n", 40),
+		strings.Repeat("- item\n", 16) + "-\n" + strings.Repeat("- item\n", 20),
 	}
 	for i, source := range fixtures {
 		for _, width := range []int{24, 80} {
@@ -70,6 +77,43 @@ func TestHistoryMarkdownFirstViewAndSearchLeaveEarlierPartsUnrendered(t *testing
 	m.viewport.GotoTop()
 	if !strings.Contains(ansi.Strip(m.viewport.View()), "formatted") {
 		t.Fatal("beginning missing")
+	}
+}
+
+func TestHistoryListFirstViewScrollAndSearch(t *testing.T) {
+	var source strings.Builder
+	source.WriteString("Intro.\n\n")
+	for i := range 1000 {
+		fmt.Fprintf(&source, "- Item %04d with **bold** 中文\n", i)
+	}
+	m := newModel(nil, nil)
+	m.width, m.height = 80, 20
+	m.resizeLayout()
+	m.entries = []transcriptEntry{{kind: entryAssistant, text: source.String(), complete: true, presentation: &assistantPresentation{}}}
+	m.refreshViewport(true)
+	if !strings.Contains(ansi.Strip(m.viewport.View()), "Item 0999") {
+		t.Fatal("latest list items are missing")
+	}
+	parts := m.viewport.items[0].parts
+	for i := 1; i < len(parts)-3; i++ {
+		if parts[i].lines != nil {
+			t.Fatalf("offscreen list part %d was rendered", i)
+		}
+	}
+	m.jumpReadingEntry(0, "Item 0500")
+	if !strings.Contains(ansi.Strip(m.viewport.View()), "Item 0500") {
+		t.Fatal("search did not land in the matching list chunk")
+	}
+	m.viewport.PageUp()
+	m.viewport.PageDown()
+	if !strings.Contains(ansi.Strip(m.viewport.View()), "Item 0500") {
+		t.Fatal("scrolling across chunk boundaries lost the anchor")
+	}
+	m.width = 60
+	m.resizeLayout()
+	m.refreshViewport(false)
+	if !strings.Contains(ansi.Strip(m.viewport.View()), "Item 0500") {
+		t.Fatal("resize lost the list position")
 	}
 }
 

@@ -143,6 +143,12 @@ func (f markdownRenderFuncs) Register(kind ast.NodeKind, render renderer.NodeRen
 // while keeping the original AST parents/siblings and resolved references.
 // Keep boundary newlines: trimming each group would change paragraph spacing.
 func renderMarkdownRange(document, first, end ast.Node, source []byte, width int) (string, error) {
+	return renderMarkdownChildRange(document, nil, first, end, source, width)
+}
+
+// A list slice keeps its original ancestry and siblings, so numbering, nested
+// indentation, references and task markers use the same renderer as a full list.
+func renderMarkdownChildRange(document, container, first, end ast.Node, source []byte, width int) (string, error) {
 	style := inkMarkdownStyle()
 	style.CodeBlock = glamouransi.StyleCodeBlock{}
 	funcs := make(markdownRenderFuncs)
@@ -152,6 +158,11 @@ func renderMarkdownRange(document, first, end ast.Node, source []byte, width int
 	if _, err := funcs[ast.KindDocument](w, source, document, true); err != nil {
 		return "", err
 	}
+	if container != nil {
+		if _, err := funcs[container.Kind()](w, source, container, true); err != nil {
+			return "", err
+		}
+	}
 	for node := first; node != end; node = node.NextSibling() {
 		if err := ast.Walk(node, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
 			if render := funcs[n.Kind()]; render != nil {
@@ -159,6 +170,11 @@ func renderMarkdownRange(document, first, end ast.Node, source []byte, width int
 			}
 			return ast.WalkContinue, nil
 		}); err != nil {
+			return "", err
+		}
+	}
+	if container != nil {
+		if _, err := funcs[container.Kind()](w, source, container, false); err != nil {
 			return "", err
 		}
 	}

@@ -428,12 +428,18 @@ consistency for those behaviors.
   Cached code layouts retain literal source; composition rebases their row
   coordinates without modifying cached placements. Completed main answers of at
   least 8 KiB or more than 80 newlines use `historyMarkdown`: parse once when
-  reached, release streaming layout caches, and lazily lay out complete top-level groups. The viewport
+  reached, release streaming layout caches, and lazily lay out complete top-level groups.
+  Standalone top-level lists without code panels are divided into groups of at
+  most 16 complete items when source boundaries are available. Each group enters
+  the original list container and retains its siblings, preserving numbering,
+  nesting, task markers and resolved references. Only synthetic outer spacing
+  between list groups is removed. The viewport
   anchors to item, group and row, and copy targets include the group identity.
   Search selects a source group before laying out its matching rows. Short
   completed answers and BTW answers retain whole-answer layout. Parsing remains
-  linear in answer size; one very large paragraph or list still requires its
-  group's full prose layout. Completed code over 80 source lines or at least
+  linear in answer size; a very large paragraph, individual list item, or list
+  grouped with other constructs or code still requires its group's full prose
+  layout. Completed code over 80 source lines or at least
   8 KiB defaults to 12 clipped preview lines, with fold state owned by the parsed
   presentation. Expansion invalidates only its containing group's rows; copying
   always uses full literal source. Search reveals a matching hidden code block

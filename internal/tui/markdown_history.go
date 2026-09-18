@@ -8,8 +8,8 @@ import (
 )
 
 // Completed answers keep a parsed tree, not a fully laid-out transcript. A
-// part always contains complete top-level constructs; reference links and
-// container ancestry are resolved against the original, unmodified document.
+// part contains complete top-level constructs or complete list items. Links
+// and container ancestry use the original, unmodified document.
 // The presentation and its fold state belong exclusively to the TUI loop.
 type historyMarkdown struct {
 	markdown string
@@ -21,6 +21,7 @@ type historyMarkdown struct {
 
 type historyMarkdownPart struct {
 	first, end  ast.Node
+	container   ast.Node
 	start, stop int
 	blocks      []codeBlock
 }
@@ -28,6 +29,7 @@ type historyMarkdownPart struct {
 const (
 	historyMarkdownThreshold = 8 * 1024
 	historyCodeLineLimit     = 80
+	historyListChunkItems    = 16
 )
 
 func parseHistoryMarkdown(markdown string) (*historyMarkdown, error) {
@@ -45,7 +47,14 @@ func parseHistoryMarkdown(markdown string) (*historyMarkdown, error) {
 	for first := document.FirstChild(); first != nil; {
 		end, stop := first.NextSibling(), len(markdown)
 		for end != nil {
-			if offset, ok := markdownCheckpoint(end, markdown); ok {
+			offset, ok := markdownCheckpoint(end, markdown)
+			if !ok && end.Kind() == ast.KindList {
+				switch end.PreviousSibling().Kind() {
+				case ast.KindParagraph, ast.KindHeading:
+					offset, ok = historyNodeStart(end, markdown)
+				}
+			}
+			if ok {
 				stop = offset
 				break
 			}
@@ -64,13 +73,82 @@ func parseHistoryMarkdown(markdown string) (*historyMarkdown, error) {
 		blockIndex += count
 		first, start = end, stop
 	}
+	result.splitLists()
 	return result, nil
+}
+
+// Split standalone top-level lists at complete items. Complex groups and
+// individual nested items retain their full Markdown layout.
+func (h *historyMarkdown) splitLists() {
+	var parts []historyMarkdownPart
+	for _, part := range h.parts {
+		if part.first.Kind() != ast.KindList || part.first.NextSibling() != part.end ||
+			part.first.ChildCount() <= historyListChunkItems || len(part.blocks) != 0 {
+			parts = append(parts, part)
+			continue
+		}
+		list := part.first
+		start := part.start
+		for first := list.FirstChild(); first != nil; {
+			end := first
+			for count := 0; count < historyListChunkItems && end != nil; count++ {
+				end = end.NextSibling()
+			}
+			stop := part.stop
+			if end != nil {
+				// Find the first source line of the next complete item. Empty
+				// items have no source segment, so retain the remainder together.
+				if offset, ok := historyNodeStart(end, h.markdown); ok {
+					stop = offset
+				} else {
+					end = nil
+				}
+			}
+			parts = append(parts, historyMarkdownPart{first: first, end: end, container: list, start: start, stop: stop})
+			first, start = end, stop
+		}
+	}
+	h.parts = parts
+}
+
+func historyNodeStart(node ast.Node, source string) (int, bool) {
+	for node != nil && node.Type() == ast.TypeBlock {
+		if node.Lines().Len() > 0 {
+			offset := node.Lines().At(0).Start
+			if offset < len(source) {
+				return strings.LastIndexByte(source[:offset], '\n') + 1, true
+			}
+			return 0, false
+		}
+		node = node.FirstChild()
+	}
+	return 0, false
 }
 
 func (h *historyMarkdown) content(index, width int) transcriptContent {
 	width = max(width-assistantBodyStyle.GetHorizontalFrameSize(), 20)
 	part := h.parts[index]
-	rendered, err := renderMarkdownRange(h.document, part.first, part.end, h.source, width)
+	rendered, err := renderMarkdownChildRange(h.document, part.container, part.first, part.end, h.source, width)
+	if part.container != nil {
+		if part.first != part.container.FirstChild() {
+			for {
+				line, rest, ok := strings.Cut(rendered, "\n")
+				if !ok || strings.TrimSpace(ansi.Strip(line)) != "" {
+					break
+				}
+				rendered = rest
+			}
+		}
+		if part.end != nil {
+			for {
+				end := strings.LastIndexByte(rendered, '\n')
+				if end < 0 || strings.TrimSpace(ansi.Strip(rendered[end+1:])) != "" {
+					break
+				}
+				rendered = rendered[:end]
+			}
+		}
+	}
 	content := transcriptContent{view: rendered}
 	if err == nil && len(part.blocks) > 0 {
 		content, err = insertMarkdownBlocks(rendered, h.marker, part.blocks, codeBlockOptions{width: width})
