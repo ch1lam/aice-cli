@@ -530,8 +530,9 @@ returns focus to the list; clicking the search field also focuses it.
 Up/Down or a mouse click select a session, and Enter restores it. With preview
 open, Left focuses the list and Right focuses the scrollable preview.
 With preview enabled, wide terminals show both panes; narrow terminals show one
-at a time. A highlighted pane heading and filled dot mark keyboard focus;
-clicking a pane also focuses it.
+at a time. Each pane has a thin border: gold marks keyboard focus, while
+inactive panes use the muted slash-command border color. There is no pane status
+heading. Clicking a pane also focuses it; focusing search dims both pane borders.
 Escape hides an open preview and restores the full-width list, regardless of
 which pane has focus. With preview hidden, Escape closes the picker. The top-right
 `✕` button closes the picker directly. Closing preserves the current draft and

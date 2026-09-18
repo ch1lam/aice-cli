@@ -299,7 +299,7 @@ func TestSessionPickerPreviewIsOptIn(t *testing.T) {
 	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyDown})
 	m = updateModel(t, m, tea.KeyPressMsg{Code: '/', Text: "/"})
 	m = updateModel(t, m, tea.PasteMsg{Content: "Second"})
-	if requested != 0 || m.sessionPickerLayout().listWidth != m.sessionPickerLayout().inner {
+	if requested != 0 || m.sessionPickerLayout().listWidth+2 != m.sessionPickerLayout().inner {
 		t.Fatal("hidden preview fetched data or consumed list space")
 	}
 	next, command := m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
@@ -307,11 +307,8 @@ func TestSessionPickerPreviewIsOptIn(t *testing.T) {
 	if requested != 1 || !m.sessionPicker.previewFocused || !m.sessionPickerLayout().wide {
 		t.Fatal("right arrow did not open and request preview")
 	}
-	if !strings.Contains(ansi.Strip(m.sessionPickerView()), "● PREVIEW") {
-		t.Fatal("preview focus is not visible")
-	}
 	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyLeft})
-	if !strings.Contains(ansi.Strip(m.sessionPickerView()), "● LIST") || m.View().Cursor != nil {
+	if m.sessionPicker.previewFocused || m.View().Cursor != nil {
 		t.Fatal("list focus is missing or search retained the cursor")
 	}
 	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyEscape})
@@ -503,5 +500,80 @@ func TestSessionPickerSlashFocusesSearch(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestSessionPickerPaneBordersShowFocus(t *testing.T) {
+	t.Parallel()
+	for _, width := range []int{60, 160} {
+		t.Run(fmt.Sprint(width), func(t *testing.T) {
+			m := pickerModel(t, width, 28)
+			for _, step := range []struct {
+				key           rune
+				list, preview bool
+			}{
+				{0, true, false},
+				{tea.KeyRight, false, true},
+				{tea.KeyLeft, true, false},
+				{'/', false, false},
+				{tea.KeyDown, true, false},
+			} {
+				if step.key != 0 {
+					key := tea.KeyPressMsg{Code: step.key}
+					if step.key == '/' {
+						key.Text = "/"
+					}
+					m = updateModel(t, m, key)
+				}
+				l := m.sessionPickerLayout()
+				view := m.sessionPickerView()
+				if lipgloss.Width(view) != l.width || lipgloss.Height(view) != l.height {
+					t.Fatal("pane borders overflowed the floating window")
+				}
+				if strings.Contains(ansi.Strip(view), "LIST") || strings.Contains(view, "○ PREVIEW") ||
+					strings.Contains(view, "● PREVIEW") {
+					t.Fatal("pane status heading is still visible")
+				}
+				canvas := lipgloss.NewCanvas(l.width, l.height).Compose(lipgloss.NewLayer(view))
+				check := func(x, paneWidth int, focused bool) {
+					t.Helper()
+					want := slashCommandMenuStyle.GetBorderTopForeground()
+					if focused {
+						want = secondaryColor
+					}
+					for _, point := range [][2]int{{x, 3}, {x + paneWidth + 1, 3},
+						{x, 4 + l.bodyHeight}, {x + paneWidth + 1, 4 + l.bodyHeight}} {
+						cell := canvas.CellAt(point[0], point[1])
+						if cell == nil || !strings.Contains("╭╮╰╯", cell.Content) || cell.Content == "" {
+							t.Fatalf("missing pane corner at %v", point)
+						}
+						assertColor(t, cell.Style.Fg, want)
+					}
+				}
+				check(2, l.listWidth, step.list || (!l.wide && step.preview))
+				if l.wide {
+					check(2+l.listWidth+3, l.previewWidth, step.preview)
+				}
+			}
+		})
+	}
+}
+
+func TestSessionPickerPaneBorderClicks(t *testing.T) {
+	t.Parallel()
+	m := pickerModel(t, 160, 40)
+	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyRight})
+	l := m.sessionPickerLayout()
+	// Borders focus a pane without selecting a row; the gap keeps current focus.
+	for _, point := range [][2]int{{l.listWidth + 2, 4}, {0, 5}, {l.listWidth + 1, 5}, {1, 2}, {1, 3 + l.bodyHeight}} {
+		m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyRight})
+		m = updateModel(t, m, tea.MouseClickMsg{X: l.x + 2 + point[0], Y: l.y + 1 + point[1], Button: tea.MouseLeft})
+		if m.sessionPicker.list.Index() != 0 || m.sessionPicker.previewFocused != (point[0] == l.listWidth+2) {
+			t.Fatal("border click selected a row or focused the wrong pane")
+		}
+	}
+	m = updateModel(t, m, tea.MouseClickMsg{X: l.x + l.listWidth + 5, Y: l.y + 4, Button: tea.MouseLeft})
+	if !m.sessionPicker.previewFocused {
+		t.Fatal("preview border click did not focus preview")
 	}
 }
