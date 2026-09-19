@@ -2,7 +2,7 @@ package tui
 
 import "testing"
 
-func TestKeyMapForState(t *testing.T) {
+func TestKeyMapForInputContext(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -46,7 +46,9 @@ func TestKeyMapForState(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			keys := newKeyMap().forState(tt.running, tt.acceptsDelivery)
+			current := newModel(nil, nil)
+			current.running, current.acceptsDelivery = tt.running, tt.acceptsDelivery
+			keys := current.inputActionKeys()
 			if keys.send.Enabled() != tt.wantSendEnabled {
 				t.Errorf("send enabled = %v, want %v", keys.send.Enabled(), tt.wantSendEnabled)
 			}
@@ -108,11 +110,13 @@ func TestKeyMapHistoryShowsInFullHelpAndDisablesWhileRunning(t *testing.T) {
 		t.Fatalf("full help = %#v, want up/down history binding", fullHelp)
 	}
 
-	idle := newKeyMap().forState(false, false)
+	current := newModel(nil, nil)
+	idle := current.inputActionKeys()
 	if !idle.history.Enabled() {
 		t.Error("history binding disabled while idle")
 	}
-	running := newKeyMap().forState(true, false)
+	current.running = true
+	running := current.inputActionKeys()
 	if running.history.Enabled() {
 		t.Error("history binding enabled while running")
 	}

@@ -341,6 +341,30 @@ consistency for those behaviors.
 - Only Bubble Tea's update loop mutates UI state. The application bridge turns
   Agent events into frontend-neutral interaction events; the TUI does not
   depend on `internal/llm`.
+- `inputContext` derives the current input owner from existing model state;
+  it is not a second focus store. Keyboard and paste routing is exclusive to
+  that owner, and each edit reaches its editor once. Main/BTW action bindings
+  supply both availability and help; a disabled reserved shortcut is consumed,
+  while ordinary text and editing arrows remain editor input. Completion is
+  synchronized before action resolution and after edits. System, run, delivery,
+  search and preview results retain their explicit handlers while dialogs are
+  open. Only editor commands wrap Bubbles' private asynchronous replies with
+  input identity and generation, preventing delayed paste across a dialog or
+  draft clear. Unknown messages do not rebuild the composer.
+- `resizeLayout` measures outer chrome during Update. `screenLayout` derives
+  half-open cell rectangles from those measurements and viewport dimensions;
+  composer hit testing, transcript coordinates and the real terminal caret
+  share them. Asynchronous action changes also remeasure expanded help. View
+  does not write layout state. Body hit targets still use the lazy transcript's
+  visible wrapped rows, without enumerating hidden content.
+- One pointer capture lifetime covers header, picker controls and transcript
+  gestures. A new press, key, paste, wheel, resize, terminal blur, input-owner
+  change or outer reflow cancels the previous capture; a mismatched release
+  cannot activate it. Button drags do not re-arm on returning to the target.
+  Click release revalidates target identity/content/geometry. Transcript drags
+  retain their frozen visible-text snapshot across content updates; content
+  revision alone does not invalidate that snapshot. Local command choosers
+  reserve keyboard input without blocking clicks on visible transcript rows.
 - The welcome-screen update check runs as a context-bound Bubble Tea command
   after the first render. Its result returns through the update loop; it never
   writes around the renderer or blocks terminal startup.

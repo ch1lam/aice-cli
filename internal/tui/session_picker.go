@@ -512,6 +512,7 @@ func (m model) handleSessionPicker(message tea.Msg) (tea.Model, tea.Cmd) {
 	before := p.input.Value()
 	var command tea.Cmd
 	p.input, command = p.input.Update(message)
+	command = m.scopeInputCommand(command)
 	if before != p.input.Value() {
 		// A new filter reveals matching sessions, including previously folded groups.
 		p.collapsedGroups = nil

@@ -15,15 +15,16 @@ import (
 	"charm.land/lipgloss/v2"
 )
 
-func (m model) workspaceContains(mouse tea.Mouse) bool {
-	if m.guardPending != nil || strings.TrimSpace(m.workingDirectory) == "" {
-		return false
+func (m model) workspaceRect() screenRect {
+	if m.guardPending != nil || m.reading != nil || strings.TrimSpace(m.workingDirectory) == "" {
+		return screenRect{}
 	}
 	layout := m.headerLayout(m.layoutWidth())
-	left := m.horizontalPadding() + layout.workspaceX
-	return mouse.Y == m.verticalPadding() && mouse.X >= left &&
-		mouse.X < left+lipgloss.Width(layout.workspace)
+	header := m.screenLayout().header
+	return screenRect{header.x + layout.workspaceX, header.y, lipgloss.Width(layout.workspace), 1}
 }
+
+func (m model) workspaceContains(mouse tea.Mouse) bool { return m.workspaceRect().contains(mouse) }
 
 func (m model) workspaceHeaderView(layout headerLayout) string {
 	if strings.TrimSpace(m.workingDirectory) == "" {

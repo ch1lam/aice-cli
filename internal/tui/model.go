@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/bubbles/v2/cursor"
 	"charm.land/bubbles/v2/help"
 	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/spinner"
@@ -193,6 +194,9 @@ type model struct {
 	submittedInput *RunInput
 	submittedDraft composerDraft
 
+	inputGeneration  uint64
+	chrome           chromeMeasurements
+	capture          pointerCapture
 	width            int
 	height           int
 	assistantEntry   int
@@ -279,6 +283,7 @@ func newModel(
 			threads: map[uint64]*sideThreadState{},
 		},
 		status: "Ready",
+		chrome: chromeMeasurements{header: 2, composer: 3, footer: 1},
 		// The welcome animation starts running at construction; Init() emits
 		// its first tick. It pauses once the run starts and resumes on /clear.
 		welcomeAnimation: welcomeAnimation{running: true, generation: 1},
@@ -297,21 +302,42 @@ func (m model) Init() tea.Cmd {
 }
 
 func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
-	if m.reading != nil {
-		switch message := message.(type) {
-		case tea.KeyPressMsg:
-			return m.handleReadingKey(message)
-		case tea.PasteMsg:
-			return m, nil
-		}
+	before := m.inputIdentity()
+	beforeHelp := m.expandedHelpLayout()
+	m.beginInputEvent(message)
+	next, command := m.update(message)
+	updated := next.(model)
+	transition := updated.finishInputTransition(before)
+	if beforeHelp != updated.expandedHelpLayout() {
+		updated.resizeLayout()
+		updated.refreshViewport(false)
 	}
-	if m.sessionPicker != nil {
-		switch message.(type) {
-		case tea.KeyPressMsg, tea.PasteMsg, tea.MouseClickMsg, tea.MouseReleaseMsg, tea.MouseMotionMsg, tea.MouseWheelMsg:
-			return m.handleSessionPicker(message)
-		}
+	updated.finishPointerEvent(message)
+	return updated, tea.Batch(command, transition)
+}
+
+func (m model) update(message tea.Msg) (tea.Model, tea.Cmd) {
+	switch message := message.(type) {
+	case tea.KeyPressMsg:
+		return m.routeKey(message)
+	case tea.PasteMsg:
+		return m.routePaste(message)
+	case tea.KeyReleaseMsg:
+		return m, nil
 	}
 	switch message := message.(type) {
+	case inputComponentResult:
+		if message.generation != m.inputGeneration || message.owner != m.inputIdentity() {
+			return m, nil
+		}
+		if m.sessionPicker != nil {
+			return m.handleSessionPicker(message.message)
+		}
+		if m.composerInputEnabled() {
+			command := m.updateInput(message.message)
+			return m, command
+		}
+		return m, nil
 	case sessionRenameResult:
 		return m.applySessionRename(message)
 	case sessionReadingResult:
@@ -383,119 +409,8 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			m.showTurnDirectory()
 		}
 		return m, nil
-	case tea.KeyPressMsg:
-		m.selection.clear()
-		if message.Code == tea.KeyEscape {
-			m.composerActive = false
-		} else if m.composerInputEnabled() && m.input.Focused() {
-			switch message.Code {
-			case tea.KeyBackspace, tea.KeyDelete, tea.KeyLeft, tea.KeyRight, tea.KeyHome, tea.KeyEnd, tea.KeyEnter:
-				m.composerActive = true
-			default:
-				if message.Text != "" {
-					m.composerActive = true
-				}
-			}
-		}
-		updated, command, handled := m.handleKey(message)
-		m = updated
-		if handled {
-			if key.Matches(message, m.keys.send, m.keys.queue) && m.input.Value() == "" {
-				m.composerActive = false
-			}
-			return m, command
-		}
-		if m.composerInputEnabled() {
-			command := m.updateInput(message)
-			return m, command
-		}
-	case tea.MouseClickMsg:
-		m.trackPointer(message.Mouse())
-		m.workspacePress = nil
-		if message.Button == tea.MouseLeft && m.workspaceContains(message.Mouse()) {
-			mouse := message.Mouse()
-			m.workspacePress = &mouse
-			m.selection.clear()
-			m.composerActive = false
-			return m, nil
-		}
-		if message.Button == tea.MouseLeft {
-			m.contextPressed = m.contextContains(message.Mouse())
-			if m.contextPressed {
-				m.selection.clear()
-				m.composerActive = false
-				return m, nil
-			}
-		}
-		if message.Button == tea.MouseLeft {
-			m.composerActive = m.composerContains(message.Mouse(), m.layoutWidth())
-		}
-		if m.guardPending != nil {
-			return m, nil
-		}
-		if updated, command, handled := m.handleTranscriptMouseClick(message); handled {
-			return updated, command
-		}
-	case tea.MouseMotionMsg:
-		m.trackPointer(message.Mouse())
-		if press := m.workspacePress; press != nil && (press.X != message.X || press.Y != message.Y) {
-			m.workspacePress = nil
-		}
-		m.contextPressed = false
-		if m.guardPending != nil {
-			return m, nil
-		}
-		if updated, command, handled := m.handleTranscriptMouseMotion(message); handled {
-			return updated, command
-		}
-		return m, nil
-	case tea.MouseReleaseMsg:
-		m.trackPointer(message.Mouse())
-		if press := m.workspacePress; press != nil && message.Button == tea.MouseLeft {
-			m.workspacePress = nil
-			if press.X == message.X && press.Y == message.Y && m.workspaceContains(message.Mouse()) {
-				command := m.activateWorkspace(press.Mod)
-				return m, command
-			}
-			return m, nil
-		}
-		if m.contextPressed && message.Button == tea.MouseLeft {
-			m.contextPressed = false
-			if m.contextContains(message.Mouse()) {
-				m.contextShowFraction = m.contextFractionVisible()
-				m.contextHoverConfirmed = true
-			}
-			return m, nil
-		}
-		if m.guardPending != nil {
-			return m, nil
-		}
-		if updated, command, handled := m.handleTranscriptMouseRelease(message); handled {
-			return updated, command
-		}
-	case tea.MouseWheelMsg:
-		m.workspacePress = nil
-		m.contextPressed = false
-		m.trackPointer(message.Mouse())
-		m.selection.clear()
-		if m.guardPending != nil {
-			var command tea.Cmd
-			m.guardViewport, command = m.guardViewport.Update(message)
-			return m, command
-		}
-		// Scrolling changes only the transcript anchor. Routing wheel events
-		// through the composer also rebuilds its layout and completion state.
-		var command tea.Cmd
-		m.viewport, command = m.viewport.Update(message)
-		return m, command
-	case tea.BlurMsg:
-		m.workspacePress = nil
-		m.contextPressed = false
-		m.contextHoverConfirmed = false
-		m.pointer = transcriptPointer{}
-		m.composerActive = false
-		m.selection.clear()
-		return m, nil
+	case tea.MouseClickMsg, tea.MouseMotionMsg, tea.MouseReleaseMsg, tea.MouseWheelMsg, tea.BlurMsg:
+		return m.routePointer(message)
 	case editorFinishedMsg:
 		m = m.applyEditorResult(message)
 		m.refreshViewport(false)
@@ -625,24 +540,12 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	if m.sessionPicker != nil {
+	// Component clocks are routed explicitly. Private paste replies arrive in
+	// inputComponentResult; unrelated messages never rebuild editor layout.
+	if _, ok := message.(cursor.BlinkMsg); ok && m.sessionPicker != nil {
 		return m.handleSessionPicker(message)
 	}
-	var commands []tea.Cmd
-	if m.running || m.side.anyRunning() {
-		var command tea.Cmd
-		m.spinner, command = m.spinner.Update(message)
-		commands = append(commands, command)
-	}
-	if m.composerInputEnabled() {
-		command := m.updateInput(message)
-		commands = append(commands, command)
-	}
-
-	var viewportCommand tea.Cmd
-	m.viewport, viewportCommand = m.viewport.Update(message)
-	commands = append(commands, viewportCommand)
-	return m, tea.Batch(commands...)
+	return m, nil
 }
 
 func (m model) View() tea.View {
@@ -751,9 +654,7 @@ func (m model) positionComposerCursor(position *tea.Position, width int) {
 		style.GetMarginTop() +
 		style.GetPaddingTop() +
 		style.GetBorderTopSize()
-	position.Y += m.height - m.verticalPadding() -
-		lipgloss.Height(m.composerView(width)) -
-		lipgloss.Height(m.footerView(width))
+	position.Y += m.screenLayout().composer.y
 }
 
 // clearInputOrQuit consumes the first press even when the editor is empty.
@@ -762,6 +663,7 @@ func (m model) clearInputOrQuit() (model, tea.Cmd, bool) {
 	if m.clearQuitPending && m.input.Value() == "" && len(m.pastes) == 0 {
 		return m, tea.Quit, true
 	}
+	m.inputGeneration++
 	m.input.Reset()
 	m.pastes = nil
 	m.inputNotice = ""
@@ -780,32 +682,6 @@ func (m model) clearInputOrQuit() (model, tea.Cmd, bool) {
 		}
 	}
 	return m.settleCommand(false, nil)
-}
-
-func (m model) composerInputEnabled() bool {
-	if m.sessionPicker != nil {
-		return false
-	}
-	if m.deliveryPending {
-		return false
-	}
-	if m.authInput != nil {
-		return m.authPrompt != nil && m.authPrompt.AllowInput && !m.cancelRequested
-	}
-	if m.guardPending != nil {
-		return false
-	}
-	if m.side.isVisible {
-		if m.side.activeID == 0 {
-			return m.side.newPending == nil
-		}
-		thread := m.side.activeThread()
-		return thread != nil && !thread.isRunning && !thread.readOnly()
-	}
-	if m.side.menu != nil {
-		return false
-	}
-	return !m.running || m.acceptsDelivery
 }
 
 func cancelKeyPressed(message tea.KeyPressMsg, keys keyMap) bool {
@@ -841,7 +717,7 @@ func (m *model) updateInput(message tea.Msg) tea.Cmd {
 		}
 		var command tea.Cmd
 		m.input, command = m.input.Update(message)
-		return command
+		return m.scopeInputCommand(command)
 	}
 
 	// A bracketed paste arrives whole: collapse it before the textarea can
@@ -862,6 +738,7 @@ func (m *model) updateInput(message tea.Msg) tea.Cmd {
 	previousRow, previousCol := m.input.Line(), m.input.Column()
 	var command tea.Cmd
 	m.input, command = m.input.Update(message)
+	command = m.scopeInputCommand(command)
 	nextValue := m.input.Value()
 	if nextValue != previousValue {
 		// Clipboard pastes and other large inserts that bypass PasteMsg

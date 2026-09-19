@@ -28,12 +28,16 @@ func (m *model) resizeLayout() {
 	if m.guardPending != nil {
 		return
 	}
-	chromeHeight := lipgloss.Height(m.headerView(width)) +
-		lipgloss.Height(m.footerView(width)) +
-		lipgloss.Height(m.commandMenuView(width)) +
-		lipgloss.Height(m.composerView(width))
-	viewportHeight := m.layoutHeight() - chromeHeight
-	m.viewport.SetHeight(max(viewportHeight, minimumViewport))
+	m.chrome = chromeMeasurements{
+		header: lipgloss.Height(m.headerView(width)),
+		menu:   lipgloss.Height(m.commandMenuView(width)),
+		footer: lipgloss.Height(m.footerView(width)),
+	}
+	if m.reading == nil {
+		m.chrome.composer = lipgloss.Height(m.composerViewWithStyle(width, composerBlurredStyle))
+	}
+	c := m.chrome
+	m.viewport.SetHeight(max(m.layoutHeight()-c.header-c.menu-c.composer-c.footer, minimumViewport))
 }
 
 func (m *model) refreshViewport(forceBottom bool) {
@@ -162,7 +166,10 @@ func (m model) footerView(width int) string {
 }
 
 func (m model) footerKeys() keyMap {
-	keys := m.keys.forState(m.running, m.acceptsDelivery)
+	keys := m.inputActionKeys()
+	if m.deliveryPending {
+		return keys
+	}
 	if m.clearQuitPending {
 		keys.clear.SetHelp("Ctrl+c", "quit")
 	}
@@ -171,9 +178,6 @@ func (m model) footerKeys() keyMap {
 		if !m.clearQuitPending {
 			keys.clear.SetHelp("Ctrl+c", "clear, then quit")
 		}
-		// Full help documents contextual shortcuts even while they are inactive.
-		keys.queue.SetEnabled(true)
-		keys.interrupt.SetEnabled(true)
 	}
 	return keys
 }

@@ -145,7 +145,7 @@ func (m model) handleTranscriptMouseRelease(
 	if !m.selection.moved && m.selection.fold.target.kind != foldNone {
 		pressed := m.selection.fold
 		m.selection.clear()
-		if hit := m.foldHitAt(message.Mouse()); hit.target == pressed.target && hit.key == pressed.key {
+		if hit := m.foldHitAt(message.Mouse()); hit == pressed {
 			m.toggleFoldAt(hit)
 		}
 		return m, nil, true
@@ -199,7 +199,7 @@ func (m model) transcriptMousePosition(
 		return transcriptPosition{}, false
 	}
 
-	viewportTop := m.verticalPadding() + lipgloss.Height(m.headerView(m.layoutWidth()))
+	viewportTop := m.screenLayout().transcript.y
 	x := mouse.X - m.horizontalPadding()
 	y := mouse.Y - viewportTop
 	inside := x >= 0 && x < width && y >= 0 && y < height

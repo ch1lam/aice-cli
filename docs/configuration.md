@@ -998,6 +998,10 @@ temporarily turns it gold; clicking it or editing a draft keeps it gold until
 submission, Escape, an outside click, or loss of terminal focus. This visual
 state does not prevent typing directly into the composer.
 
+Shortcut help lists actions available in the current input context. A reserved
+shortcut that is temporarily unavailable does not become editor text or invoke
+a background conversation action.
+
 Process headings use `✧` when expanded and `✦` when collapsed, without a
 separate triangle. Clicking the heading toggles that process;
 `Ctrl+O` expands or collapses all main-task process details, including children.
@@ -1081,8 +1085,9 @@ The composer remains active while an Agent run is working:
 In the main and side composers, the first `Ctrl+C` clears all unsent text,
 long-paste placeholders, and image attachments without adding a notice row.
 This first press never cancels generation or exits, even when the editor is already
-empty. A consecutive second `Ctrl+C` on the empty editor exits; another key or
-text paste resets the sequence. Clearing a draft does not remove queued inputs
+empty. A consecutive second `Ctrl+C` on the empty editor exits; another key,
+text paste, mouse press/wheel, terminal blur, or input-domain change resets the
+sequence. Streaming output and timers do not reset it. Clearing a draft does not remove queued inputs
 or conversation history. Exiting uses normal shutdown to cancel and wait for
 active runs. `Ctrl+D` also exits from an empty, idle main composer.
 

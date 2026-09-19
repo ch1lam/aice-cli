@@ -7,7 +7,86 @@ import (
 	tea "charm.land/bubbletea/v2"
 )
 
+// handleKey resolves the domain before its reserved keys. An unconsumed key
+// may reach only this domain's editor, never another domain's shortcuts.
 func (m model) handleKey(message tea.KeyPressMsg) (model, tea.Cmd, bool) {
+	if m.inputContext().domain == inputMain {
+		m.syncCommandCompletion()
+	}
+	if match := m.matchInputAction(message); match.matched && !match.enabled {
+		return m.blockedInputAction(match)
+	}
+	switch m.inputContext().domain {
+	case inputReading:
+		next, cmd := m.handleReadingKey(message)
+		return next.(model), cmd, true
+	case inputSessions:
+		next, cmd := m.handleSessionPicker(message)
+		return next.(model), cmd, true
+	case inputGuard:
+		return m.handleGuardKey(message)
+	case inputAuth:
+		return m.handleAuthKey(message)
+	case inputSideMenu:
+		return m.handleSideMenuKey(message)
+	case inputSideConfirm:
+		return m.handleSideConfirmKey(message)
+	default:
+		return m.handleComposerKey(message)
+	}
+}
+
+func (m model) routeKey(message tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	if m.clearQuitPending && !key.Matches(message, m.keys.clear) {
+		m.clearQuitPending = false
+		m.resizeLayout()
+	}
+	m.selection.clear()
+	if message.Code == tea.KeyEscape {
+		m.composerActive = false
+	} else if m.composerInputEnabled() && m.input.Focused() {
+		switch message.Code {
+		case tea.KeyBackspace, tea.KeyDelete, tea.KeyLeft, tea.KeyRight, tea.KeyHome, tea.KeyEnd, tea.KeyEnter:
+			m.composerActive = true
+		default:
+			if message.Text != "" {
+				m.composerActive = true
+			}
+		}
+	}
+	updated, command, handled := m.handleKey(message)
+	m = updated
+	if handled {
+		if key.Matches(message, m.keys.send, m.keys.queue) && m.input.Value() == "" {
+			m.composerActive = false
+		}
+		return m, command
+	}
+	if m.composerInputEnabled() {
+		edit := m.updateInput(message)
+		return m, tea.Batch(command, edit)
+	}
+
+	return m, command
+}
+
+func (m model) routePaste(message tea.PasteMsg) (tea.Model, tea.Cmd) {
+	m.clearQuitPending = false
+	switch m.inputContext().domain {
+	case inputSessions:
+		return m.handleSessionPicker(message)
+	case inputGuard, inputReading, inputSideMenu, inputSideConfirm:
+		return m, nil
+	default:
+		if m.composerInputEnabled() {
+			command := m.updateInput(message)
+			return m, command
+		}
+		return m, nil
+	}
+}
+
+func (m model) handleComposerKey(message tea.KeyPressMsg) (model, tea.Cmd, bool) {
 	if message.String() == "ctrl+t" && !m.running && !m.side.anyRunning() && !m.side.isVisible && !m.clipboardPending && !m.deliveryPending && m.side.menu == nil && m.side.confirm == nil && m.guardPending == nil && m.commandMenu == nil && m.secretInput == nil && m.authInput == nil {
 		return m.openCurrentReading(), nil, true
 	}
@@ -16,30 +95,11 @@ func (m model) handleKey(message tea.KeyPressMsg) (model, tea.Cmd, bool) {
 		m.side.menu == nil && m.side.confirm == nil && !m.clipboardPending && !m.deliveryPending {
 		return m.openSessionPicker()
 	}
-	if m.commandMenu == nil {
-		m.syncCommandCompletion()
-	}
 	if m.clearQuitPending && (!key.Matches(message, m.keys.clear) ||
 		m.guardPending != nil || m.authInput != nil || m.secretInput != nil ||
 		m.commandMenu != nil || m.side.menu != nil || m.side.confirm != nil) {
 		m.clearQuitPending = false
 		m.resizeLayout()
-	}
-	if m.guardPending != nil {
-		updated, cmd, handled := m.handleGuardKey(message)
-		if handled {
-			return updated, cmd, true
-		}
-		return m, nil, true
-	}
-	if m.authInput != nil {
-		return m.handleAuthKey(message)
-	}
-	if m.side.menu != nil {
-		return m.handleSideMenuKey(message)
-	}
-	if m.side.confirm != nil {
-		return m.handleSideConfirmKey(message)
 	}
 	if m.deliveryPending {
 		if cancelKeyPressed(message, m.keys) && m.cancelDelivery != nil {
@@ -68,13 +128,8 @@ func (m model) handleKey(message tea.KeyPressMsg) (model, tea.Cmd, bool) {
 		return m.clearInputOrQuit()
 	}
 	if m.side.isVisible {
-		if updated, command, handled := m.handleSideKey(message); handled {
-			return updated, command, true
-		}
-		// The side panel owns all keyboard input while visible. Unhandled keys
-		// fall through to its textarea in Update, never to main-run shortcuts or
-		// prompt-history navigation.
-		return m, nil, false
+		// The side domain owns unhandled editing input and any auxiliary command.
+		return m.handleSideKey(message)
 	}
 
 	if !m.running && m.secretInput != nil {
@@ -204,8 +259,8 @@ func (m model) handleKey(message tea.KeyPressMsg) (model, tea.Cmd, bool) {
 		return m, nil, true
 	case key.Matches(message, m.keys.newline):
 		if m.composerInputEnabled() {
-			m.input.InsertString("\n")
-			m.resizeLayout()
+			command := m.updateInput(tea.PasteMsg{Content: "\n"})
+			return m, command, true
 		}
 		return m, nil, true
 	case key.Matches(message, m.keys.send):

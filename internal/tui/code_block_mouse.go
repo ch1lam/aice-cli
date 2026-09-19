@@ -22,7 +22,7 @@ type codeHit struct {
 
 func (m model) codeHitAt(mouse tea.Mouse) codeHit {
 	if m.guardPending != nil || m.authInput != nil || m.secretInput != nil ||
-		m.side.menu != nil || m.side.confirm != nil || m.commandMenu != nil {
+		m.side.menu != nil || m.side.confirm != nil {
 		return codeHit{}
 	}
 	position, inside := m.transcriptMousePosition(mouse, false, 0)

@@ -386,6 +386,7 @@ func TestGuardDefersHiddenTranscriptRendering(t *testing.T) {
 	current := newModel(nil, nil)
 	current = updateModel(t, current, tea.WindowSizeMsg{Width: 80, Height: 24})
 	current.running = true
+	current.acceptsDelivery = true // This fixture represents an active agent run.
 	current.applyAgentEvent(DisplayEvent{Kind: DisplayEventAssistantStart})
 	current.applyAgentEvent(DisplayEvent{Kind: DisplayEventAssistantEnd, Assistant: AssistantDisplay{Thinking: "earlier reasoning"}})
 	current.setFoldExpanded(foldTarget{kind: foldThinking, id: 0}, true)

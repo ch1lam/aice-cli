@@ -565,6 +565,8 @@ which pane has focus. With preview hidden, Escape closes the picker. The top-rig
 transcript position.
 Hover and press turn the button characters error-red without changing the
 background; pressing also makes them bold. Press and release inside it to close.
+Dragging away, typing, scrolling, resizing or losing terminal focus cancels a
+pending button press; returning to the button does not re-arm it.
 During restoration, it requests cancellation like Escape. `/history <id>` restores
 an existing local file by filename stem; it never creates a missing session.
 

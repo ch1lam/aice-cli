@@ -73,6 +73,7 @@ func (m model) handleSessionTitleEditor(message tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	var command tea.Cmd
 	editor.input, command = editor.input.Update(message)
+	command = m.scopeInputCommand(command)
 	return m, command
 }
 

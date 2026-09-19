@@ -19,10 +19,12 @@ type keyMap struct {
 	clear     key.Binding
 	interrupt key.Binding
 	quit      key.Binding
+	close     key.Binding
 }
 
 func newKeyMap() keyMap {
 	return keyMap{
+		close:    key.NewBinding(key.WithKeys("alt+esc"), key.WithHelp("Alt+Esc", "close")),
 		code:     key.NewBinding(key.WithKeys("alt+o"), key.WithHelp("Alt+o", "visible code")),
 		turns:    key.NewBinding(key.WithKeys("ctrl+t"), key.WithHelp("Ctrl+t", "questions")),
 		sessions: key.NewBinding(key.WithKeys("ctrl+r"), key.WithHelp("Ctrl+r", "sessions")),
@@ -78,22 +80,6 @@ func newKeyMap() keyMap {
 	}
 }
 
-func (k keyMap) forState(running, acceptsDelivery bool) keyMap {
-	composerEnabled := !running || acceptsDelivery
-	k.send.SetEnabled(composerEnabled)
-	k.newline.SetEnabled(composerEnabled)
-	k.queue.SetEnabled(running && acceptsDelivery)
-	k.history.SetEnabled(!running)
-	k.sessions.SetEnabled(!running)
-	k.turns.SetEnabled(!running)
-	k.quit.SetEnabled(!running)
-	k.interrupt.SetEnabled(running)
-	if running && acceptsDelivery {
-		k.send.SetHelp("Enter", "steer")
-	}
-	return k
-}
-
 func (k keyMap) ShortHelp() []key.Binding {
 	return []key.Binding{
 		k.help,
@@ -106,6 +92,6 @@ func (k keyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.send, k.queue, k.newline, k.paste},
 		{k.commands, k.sessions, k.turns, k.history, k.scroll, k.process, k.code, k.editor, k.help},
-		{k.clear, k.interrupt, k.quit},
+		{k.clear, k.interrupt, k.close, k.quit},
 	}
 }

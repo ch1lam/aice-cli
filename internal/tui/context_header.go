@@ -42,14 +42,16 @@ func (m model) contextHeaderWidth() int {
 	return max(lipgloss.Width(m.contextStatus()), lipgloss.Width(m.contextFraction()))
 }
 
-func (m model) contextContains(mouse tea.Mouse) bool {
-	if m.guardPending != nil || m.contextHeaderWidth() == 0 {
-		return false
+func (m model) contextRect() screenRect {
+	if m.guardPending != nil || m.reading != nil || m.contextHeaderWidth() == 0 {
+		return screenRect{}
 	}
-	right := m.horizontalPadding() + m.layoutWidth() - 1
-	return mouse.Y == m.verticalPadding() &&
-		mouse.X >= right-m.contextHeaderWidth() && mouse.X < right
+	header := m.screenLayout().header
+	right := header.x + header.width - 1
+	return screenRect{right - m.contextHeaderWidth(), header.y, m.contextHeaderWidth(), 1}
 }
+
+func (m model) contextContains(mouse tea.Mouse) bool { return m.contextRect().contains(mouse) }
 
 // A click accepts the hover preview once; keep it until the pointer leaves.
 func (m model) contextFractionVisible() bool {

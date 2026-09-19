@@ -562,8 +562,8 @@ func TestModelQuestionMarkHelpTogglesAndUsesAvailableHeight(t *testing.T) {
 	if !updated.help.ShowAll {
 		t.Fatal("help remains collapsed after question mark")
 	}
-	if help := ansi.Strip(updated.footerView(updated.width)); !strings.Contains(help, "Ctrl+Enter") || !strings.Contains(help, "queue") {
-		t.Fatalf("expanded help = %q, want ctrl+enter queue shortcut", help)
+	if help := ansi.Strip(updated.footerView(updated.width)); !strings.Contains(help, "Enter") || !strings.Contains(help, "send") || strings.Contains(help, "Ctrl+Enter") {
+		t.Fatalf("expanded help = %q, want available send shortcut and no disabled queue shortcut", help)
 	}
 	if updated.viewport.Height() >= collapsedHeight {
 		t.Errorf(
@@ -730,7 +730,7 @@ func TestModelKeepsReadyInHeaderAndUsesBubblesHelpBelowComposer(t *testing.T) {
 
 	content := ansi.Strip(current.View().Content)
 	composerIndex := strings.Index(content, "composer marker")
-	helpView := ansi.Strip(current.help.View(current.keys.forState(false, false)))
+	helpView := ansi.Strip(current.help.View(current.footerKeys()))
 	helpIndex := strings.Index(content, helpView)
 	if composerIndex < 0 || helpView == "" || helpIndex < 0 {
 		t.Fatalf(
@@ -754,12 +754,13 @@ func TestModelKeepsReadyInHeaderAndUsesBubblesHelpBelowComposer(t *testing.T) {
 		t.Fatalf("footer still has a divider below the composer: %q", footer)
 	}
 	footerText := ansi.Strip(footer)
-	for _, want := range []string{"? shortcuts", "Ctrl+c clear"} {
+	for _, want := range []string{"Ctrl+c clear"} {
 		if !strings.Contains(footerText, want) {
 			t.Errorf("collapsed footer = %q, want %q", footer, want)
 		}
 	}
 	for _, unwanted := range []string{
+		"? shortcuts",
 		"f1",
 		"Enter send",
 		"Shift+Enter",
