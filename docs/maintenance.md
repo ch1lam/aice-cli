@@ -99,6 +99,102 @@ historical documentation.
 
 ## Known discrepancies
 
+### Composer click positioning and textarea capabilities
+
+Composer mouse input does not position the editing caret. The composer keeps
+the real terminal caret from `textarea.Cursor()` as the IME candidate-window
+anchor. See [composer mouse input](../internal/tui/composer_mouse.go),
+[file references](../internal/tui/composer_files.go), and
+[paste tokens](../internal/tui/composer_paste.go).
+
+The pinned `charm.land/bubbles/v2 v2.1.1` textarea exposes `Line()`, `Column()`
+(a rune index), `LineInfo()` for the cursor's current soft-wrapped line,
+`Cursor()`, and `ScrollYOffset()`. `SetCursorColumn()`, `CursorUp/Down()`, and
+`MoveToBegin/End()` can move the cursor without replacing text. Missing
+capabilities are a read-only mapping from an arbitrary visible cell to an
+editing position and direct movement to an arbitrary logical row and column.
+The existing methods make ordinary cases possible, but do not establish a
+reliable general mouse-positioning implementation:
+
+- Wrapping can split a grapheme: at width 40, 38 ASCII characters followed by
+  `👨‍👩‍👧‍👦cd` place `👨` on the first row and start the second row with a ZWJ.
+  Combining accents and emoji skin-tone modifiers can also split across rows.
+- Repeated `CursorDown()` is not a dependable visible-row iterator. At width 6,
+  `中文测试甲乙\nlast` can stop advancing at the second wrapped Chinese row,
+  before the synthetic trailing row and the next logical line.
+- A shallow `textarea.Model` copy shares its internal viewport. Moving a copied
+  model to the end can scroll the original model and leave its original caret
+  outside the visible area. A copied model is not an isolated geometry probe.
+- `SetCursorColumn()` accepts positions within graphemes and does not itself
+  reposition the viewport. `LineInfo()` only describes the current position;
+  obtaining every position by repeated cursor movement would add navigation
+  workarounds and layout traversal to AICE.
+
+These are dependency limitations to reassess on upgrade, not behavior to lock
+in with regression assertions. From the repository root, save this diagnostic
+as `/tmp/aice-textarea-capabilities.go` and run
+`GOPROXY=off GOSUMDB=off go run /tmp/aice-textarea-capabilities.go`. It uses the
+locally cached pinned dependencies and prints observations without requiring
+the defects to remain present:
+
+```go
+package main
+
+import (
+	"fmt"
+	"strings"
+
+	"charm.land/bubbles/v2/textarea"
+	"github.com/charmbracelet/x/ansi"
+)
+
+func input(value string, width, height int) textarea.Model {
+	m := textarea.New()
+	m.Prompt, m.ShowLineNumbers, m.CharLimit = "", false, 0
+	m.MaxHeight = 100
+	m.SetWidth(width)
+	m.SetHeight(height)
+	m.SetVirtualCursor(false)
+	m.Focus()
+	m.SetValue(value)
+	m.MoveToBegin()
+	m, _ = m.Update(nil)
+	return m
+}
+
+func main() {
+	m := input(strings.Repeat("a", 38)+"👨‍👩‍👧‍👦cd", 40, 3)
+	fmt.Printf("wrapped grapheme: %q\n", ansi.Strip(m.View()))
+	m = input("中文测试甲乙\nlast", 6, 6)
+	for range 5 {
+		fmt.Printf("down: row=%d column=%d screen=%v\n",
+			m.Line(), m.Column(), m.Cursor().Position)
+		m.CursorDown()
+	}
+	m = input(strings.Repeat("line\n", 8)+"last", 10, 2)
+	probe := m
+	probe.MoveToEnd()
+	fmt.Printf("original after copy moved: scroll=%d caret=%v\n",
+		m.ScrollYOffset(), m.Cursor().Position)
+}
+```
+
+Click positioning remains deferred; no dependency fork or replacement editor
+is maintained. A suitable upstream capability would use the rendering layout
+for read-only visible-cell hit testing, preserve grapheme boundaries, and move
+to a logical row/rune column while maintaining the viewport. AICE would still
+own snapping hits on confirmed file references and paste tokens to their
+atomic boundaries. Calling `composerInput.SetValue()` to move the caret would
+clear file-reference spans; cursor-only changes must preserve the draft and
+attachment identities. The independent textarea created by
+[`composer_file_view.go`](../internal/tui/composer_file_view.go) for file-label
+styling is not a shallow copy and must not be replaced by one.
+
+Acceptance requires visible-position tests for soft wrapping, scrolling,
+trailing spaces, CJK, combining sequences and emoji, plus file/paste-token
+integrity and real-caret/IME alignment. Passing single-line ASCII cases is
+insufficient to claim composer click positioning.
+
 ### Browser acceptance gaps
 
 The [browser acceptance record](browser.md#maintenance-and-verification) owns

@@ -998,6 +998,10 @@ temporarily turns it gold; clicking it or editing a draft keeps it gold until
 submission, Escape, an outside click, or loss of terminal focus. This visual
 state does not prevent typing directly into the composer.
 
+Clicking the composer highlights its frame; it does not reposition the text
+caret. Keyboard editing and the real terminal cursor remain the input path,
+including IME anchoring. The dependency capabilities and requirements for future
+click positioning are recorded in [Maintenance](maintenance.md#composer-click-positioning-and-textarea-capabilities).
 Shortcut help lists actions available in the current input context. A reserved
 shortcut that is temporarily unavailable does not become editor text or invoke
 a background conversation action.
