@@ -19,6 +19,21 @@ type sessionGroupItem struct {
 	collapsed bool
 }
 
+type sessionSelectionIdentity struct {
+	key, group string
+}
+
+func (p *sessionPicker) selectionIdentity() sessionSelectionIdentity {
+	switch item := p.list.SelectedItem().(type) {
+	case sessionListItem:
+		return sessionSelectionIdentity{key: item.Key}
+	case sessionGroupItem:
+		return sessionSelectionIdentity{group: item.name}
+	default:
+		return sessionSelectionIdentity{}
+	}
+}
+
 func (g sessionGroupItem) FilterValue() string { return g.name }
 
 func (g sessionGroupItem) render(w io.Writer, width int, selected, focused bool) {

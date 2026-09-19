@@ -547,6 +547,10 @@ returns focus to the list; clicking the search field also focuses it.
 Up/Down or a mouse click select a session or group heading. Enter restores a
 session or toggles a selected group. With preview open, Left focuses the list
 and Right focuses the scrollable preview.
+The vertical mouse wheel acts on the pane under the pointer without changing
+keyboard or search focus. It moves one list item/group or three preview rows
+per event. The divider, borders, outside area and horizontal wheel events do
+nothing. At a list boundary, wheel input preserves any pending preview request.
 With preview enabled, wide terminals show both panes; narrow terminals show one
 at a time. The picker has only its outer border, with a single vertical separator
 between panes. The selected list item or group heading is gold only while the

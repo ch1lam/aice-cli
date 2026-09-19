@@ -365,6 +365,12 @@ consistency for those behaviors.
   retain their frozen visible-text snapshot across content updates; content
   revision alone does not invalidate that snapshot. Local command choosers
   reserve keyboard input without blocking clicks on visible transcript rows.
+- Vertical wheel input goes to the permission review or displayed transcript;
+  the session picker chooses its painted list/preview pane by pointer position,
+  independently of keyboard focus. Borders, divider and outside coordinates in
+  the picker, and horizontal wheel input, are ignored. A list wheel requests a
+  new preview only when selected session/group identity changes. Wheel handling
+  never updates the composer and does not infer devices or add inertia.
 - The welcome-screen update check runs as a context-bound Bubble Tea command
   after the first render. Its result returns through the update loop; it never
   writes around the renderer or blocks terminal startup.

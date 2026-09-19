@@ -49,7 +49,8 @@ func TestSessionGroupNavigationAndToggle(t *testing.T) {
 	if group := m.sessionPicker.list.SelectedItem().(sessionGroupItem); group.name != "Yesterday" {
 		t.Fatal("navigation did not skip folded sessions")
 	}
-	m = updateModel(t, m, tea.MouseWheelMsg{Button: tea.MouseWheelUp})
+	l := m.sessionPickerLayout()
+	m = updateModel(t, m, tea.MouseWheelMsg{X: l.x + 3, Y: l.y + 3, Button: tea.MouseWheelUp})
 	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if len(m.sessionPicker.list.Items()) != 7 || m.sessionPicker.list.SelectedItem().(sessionGroupItem).collapsed {
 		t.Fatal("Enter did not expand the wheel-selected group")
@@ -58,7 +59,7 @@ func TestSessionGroupNavigationAndToggle(t *testing.T) {
 	if selectedSessionKey(m.sessionPicker) != "today-1" {
 		t.Fatal("expanded session is unreachable")
 	}
-	l := m.sessionPickerLayout()
+	l = m.sessionPickerLayout()
 	m = updateModel(t, m, tea.MouseClickMsg{X: l.x + 5, Y: l.y + 3, Button: tea.MouseLeft})
 	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if !m.sessionPicker.list.SelectedItem().(sessionGroupItem).collapsed {

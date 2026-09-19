@@ -486,22 +486,8 @@ func (m model) handleSessionPicker(message tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 	if mouse, ok := message.(tea.MouseWheelMsg); ok {
-		if p.previewFocused {
-			if mouse.Button == tea.MouseWheelUp {
-				p.preview.ScrollUp(3)
-			} else {
-				p.preview.ScrollDown(3)
-			}
-		} else {
-			p.input.Blur()
-			if mouse.Button == tea.MouseWheelUp {
-				p.list.CursorUp()
-			} else {
-				p.list.CursorDown()
-			}
-			return m, m.requestSessionPreview()
-		}
-		return m, nil
+		command := m.scrollSessionPicker(mouse)
+		return m, command
 	}
 	if mouse, ok := message.(tea.MouseClickMsg); ok {
 		return m.clickSessionPicker(mouse)
@@ -527,6 +513,34 @@ func (m model) handleSessionPicker(message tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(command, m.requestSessionSearch(), m.requestSessionPreview())
 	}
 	return m, command
+}
+
+// Wheel input belongs to the painted pane under the pointer. Keyboard focus
+// stays where the user left it, including when the search field has focus.
+func (m *model) scrollSessionPicker(mouse tea.MouseWheelMsg) tea.Cmd {
+	if mouse.Button != tea.MouseWheelUp && mouse.Button != tea.MouseWheelDown {
+		return nil
+	}
+	p := m.sessionPicker
+	switch m.sessionPickerPaneAt(mouse.X, mouse.Y) {
+	case sessionPanePreview:
+		if mouse.Button == tea.MouseWheelUp {
+			p.preview.ScrollUp(3)
+		} else {
+			p.preview.ScrollDown(3)
+		}
+	case sessionPaneList:
+		before := p.selectionIdentity()
+		if mouse.Button == tea.MouseWheelUp {
+			p.list.CursorUp()
+		} else {
+			p.list.CursorDown()
+		}
+		if before != p.selectionIdentity() {
+			return m.requestSessionPreview()
+		}
+	}
+	return nil
 }
 
 func (m model) resumeSelectedSession() (tea.Model, tea.Cmd) {

@@ -14,6 +14,39 @@ type sessionPickerLayout struct {
 	wide                                                            bool
 }
 
+type sessionPickerPane uint8
+
+const (
+	sessionPaneNone sessionPickerPane = iota
+	sessionPaneList
+	sessionPanePreview
+)
+
+func (m model) sessionPickerPaneAt(x, y int) sessionPickerPane {
+	if m.width < 16 || m.height < 8 {
+		return sessionPaneNone
+	}
+	l := m.sessionPickerLayout()
+	x, y = x-l.x-2, y-l.y-3
+	if x < 0 || x >= l.inner || y < 0 || y >= l.bodyHeight {
+		return sessionPaneNone
+	}
+	if l.wide {
+		switch {
+		case x < l.listWidth:
+			return sessionPaneList
+		case x >= l.listWidth+3:
+			return sessionPanePreview
+		default:
+			return sessionPaneNone
+		}
+	}
+	if m.sessionPicker.previewFocused {
+		return sessionPanePreview
+	}
+	return sessionPaneList
+}
+
 func (m model) sessionPickerLayout() sessionPickerLayout {
 	w, h := max(8, m.width-4), max(8, m.height-2)
 	l := sessionPickerLayout{width: w, height: h, inner: w - 4, bodyHeight: h - 5}
@@ -276,10 +309,11 @@ func (m model) clickSessionPicker(mouse tea.MouseClickMsg) (tea.Model, tea.Cmd) 
 		p.input.Focus()
 		return m, nil
 	}
-	if y < 2 || y >= 2+l.bodyHeight || (l.wide && x >= l.listWidth && x < l.listWidth+3) {
+	pane := m.sessionPickerPaneAt(mouse.X, mouse.Y)
+	if pane == sessionPaneNone {
 		return m, nil
 	}
-	if (l.wide && x >= l.listWidth+3) || (!l.wide && p.previewFocused) {
+	if pane == sessionPanePreview {
 		p.previewFocused = true
 		p.input.Blur()
 		return m, nil

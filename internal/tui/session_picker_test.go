@@ -623,7 +623,12 @@ func TestSessionPickerActivityHeaderStaysFixed(t *testing.T) {
 			text: "Last activity · 2026-09-18 12:34\n\n" + strings.Repeat("Conversation line\n\n", 40) + "End of preview"})
 		before := m.sessionPicker.preview.View()
 		m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyPgDown})
-		m = updateModel(t, m, tea.MouseWheelMsg{Button: tea.MouseWheelDown})
+		l := m.sessionPickerLayout()
+		x := l.x + 2
+		if l.wide {
+			x += l.listWidth + 3
+		}
+		m = updateModel(t, m, tea.MouseWheelMsg{X: x, Y: l.y + 5, Button: tea.MouseWheelDown})
 		for range 10 {
 			m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyPgDown})
 		}
