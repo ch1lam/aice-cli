@@ -180,6 +180,10 @@ func input(value string, width, height int) textarea.Model {
 }
 
 func main() {
+	for _, text := range []string{"👨‍👩‍👧‍👦cd", "👍🏽cd"} {
+		m := input(text, 40, 3)
+		fmt.Printf("hit after emoji %q: %+v\n", text, m.PositionAt(2, 0))
+	}
 	m := input(strings.Repeat("a", 38)+"👨‍👩‍👧‍👦cd", 40, 3)
 	fmt.Printf("wrapped grapheme: %q\n", ansi.Strip(m.View()))
 	m = input("中文测试甲乙\nlast", 6, 6)
@@ -202,9 +206,10 @@ boundaries, and cursor movement must maintain the viewport. AICE would still
 own snapping hits on confirmed file references and paste tokens to their
 atomic boundaries. Calling `composerInput.SetValue()` to move the caret would
 clear file-reference spans; cursor-only changes must preserve the draft and
-attachment identities. The independent textarea created by
-[`composer_file_view.go`](../internal/tui/composer_file_view.go) for file-label
-styling is not a shallow copy and must not be replaced by one.
+attachment identities. [`composer_file_view.go`](../internal/tui/composer_file_view.go)
+uses `PositionAt(0, y)` only to locate visible row starts, then measures whole
+segments for file-label styling. This avoids the horizontal per-rune hit-test
+defect and does not require a second textarea or simulated cursor movement.
 
 Acceptance requires visible-position tests for soft wrapping, scrolling,
 trailing spaces, CJK, combining sequences and emoji, plus file/paste-token

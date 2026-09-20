@@ -358,7 +358,10 @@ consistency for those behaviors.
   composer hit testing, transcript coordinates and the real terminal caret
   share them. Asynchronous action changes also remeasure expanded help. View
   does not write layout state. Body hit targets still use the lazy transcript's
-  visible wrapped rows, without enumerating hidden content.
+  visible wrapped rows, without enumerating hidden content. Composer file
+  coloring queries visible row starts through the textarea's `PositionAt`
+  API and measures whole text segments; it does not create a probe editor or
+  move the editing cursor to discover wrapping.
 - One pointer capture lifetime covers header, picker controls and transcript
   gestures. A new press, key, paste, wheel, resize, terminal blur, input-owner
   change or outer reflow cancels the previous capture; a mismatched release
