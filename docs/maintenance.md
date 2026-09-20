@@ -99,6 +99,21 @@ historical documentation.
 
 ## Known discrepancies
 
+### Self-update OpenPGP dependency warning
+
+`govulncheck ./...` reports [GO-2026-5932](https://pkg.go.dev/vuln/GO-2026-5932)
+because `github.com/creativeprojects/go-selfupdate v1.6.0` imports the
+unmaintained `golang.org/x/crypto/openpgp` package. There is no patched version
+listed for that package. AICE's [`newClient`](../internal/update/update.go)
+configures only `ChecksumValidator` (SHA-256); it does not configure a
+`PGPValidator` or parse PGP keys or signatures. The scanner still reports the
+package initialization and shared error types, so the scan is not clean.
+
+Keep the finding visible until an upstream release removes or replaces this
+dependency, or a separately reviewed updater change does so. Preserve checksum
+rejection and executable replacement tests; do not disable validation or
+suppress the finding to make the scan pass.
+
 ### Composer click positioning and textarea capabilities
 
 Composer mouse input does not position the editing caret. The composer keeps
