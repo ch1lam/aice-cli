@@ -95,6 +95,7 @@ type ContextWindow struct {
 // Settings is the file schema shared by user and project configuration.
 // API keys normally live in auth.json, with the same keys and precedence.
 type Settings struct {
+	RunNoProgressLimit  int               `json:"run_no_progress_limit"`
 	RunTokenBudget      int64             `json:"run_token_budget,omitempty"`
 	RunTimeout          string            `json:"run_timeout,omitempty"`
 	ContextWindows      []ContextWindow   `json:"context_windows,omitempty"`
@@ -134,6 +135,7 @@ type Paths struct {
 // Config is an immutable effective snapshot owned by one application instance.
 // Interactive changes create another snapshot; they never reload file layers.
 type Config struct {
+	RunNoProgressLimit  int
 	RunTokenBudget      int64
 	RunTimeout          time.Duration
 	ContextWindows      map[string]int64
@@ -211,7 +213,8 @@ func DefaultPaths() (Paths, error) {
 // every key also makes env-only values visible to Viper's AllSettings.
 func EnvironmentVariables() map[string]string {
 	return map[string]string{
-		"run_token_budget": "AICE_RUN_TOKEN_BUDGET", "run_timeout": "AICE_RUN_TIMEOUT",
+		"run_no_progress_limit": "AICE_RUN_NO_PROGRESS_LIMIT",
+		"run_token_budget":      "AICE_RUN_TOKEN_BUDGET", "run_timeout": "AICE_RUN_TIMEOUT",
 		"provider": EnvProvider, "model": EnvModel, "thinking": EnvThinking,
 		"default_project_trust": "AICE_DEFAULT_PROJECT_TRUST",
 		"context_windows":       "AICE_CONTEXT_WINDOWS",
@@ -271,6 +274,7 @@ func LoadFiles(paths Paths, options LoadOptions) (Config, error) {
 	v.SetDefault("thinking", string(llm.DefaultThinkingLevel))
 	v.SetDefault("no_dep_install", false)
 	v.SetDefault("no_update_check", false)
+	v.SetDefault("run_no_progress_limit", 8)
 	var diagnostics []string
 	fileValues := make(map[string]any)
 	for _, path := range []string{paths.GlobalSettings, paths.GlobalAuth, paths.ProjectSettings} {
@@ -383,6 +387,7 @@ func (c Config) SavedValuesOverridden(changes map[Setting]string) bool {
 
 func (c Config) settings() Settings {
 	s := Settings{
+		RunNoProgressLimit:  c.RunNoProgressLimit,
 		RunTokenBudget:      c.RunTokenBudget,
 		RunTimeout:          c.RunTimeout.String(),
 		Provider:            c.Provider,
@@ -438,7 +443,7 @@ func decodeEffective(v *viper.Viper) (Config, error) {
 				return Config{}, fmt.Errorf("config: %s must be a boolean", key)
 			}
 			values[key] = parsed
-		case "run_token_budget":
+		case "run_token_budget", "run_no_progress_limit":
 			parsed, err := strconv.ParseInt(text, 10, 64)
 			if err != nil {
 				return Config{}, fmt.Errorf("config: %s must be an integer", key)
@@ -472,6 +477,7 @@ func decodeEffective(v *viper.Viper) (Config, error) {
 	}
 	timeout, _ := time.ParseDuration(s.RunTimeout) // validated above
 	c := Config{
+		RunNoProgressLimit:  s.RunNoProgressLimit,
 		RunTokenBudget:      s.RunTokenBudget,
 		RunTimeout:          timeout,
 		Provider:            s.Provider,
@@ -742,6 +748,9 @@ func (p Paths) validate() error {
 }
 
 func (s Settings) validate() error {
+	if s.RunNoProgressLimit < 0 || s.RunNoProgressLimit == 1 {
+		return errors.New("config: run_no_progress_limit must be zero or at least two")
+	}
 	if s.RunTokenBudget < 0 {
 		return errors.New("config: run_token_budget cannot be negative")
 	}

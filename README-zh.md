@@ -45,7 +45,8 @@ aice --workspace .
 详见[配置与持久化](./docs/configuration.md#settings-and-precedence)。
 
 默认不限制运行轮数。可用 `--run-token-budget 200000` 和 `--run-timeout 30m`
-设置单次运行预算，详见[运行限制](./docs/configuration.md#run-limits)。
+设置单次运行预算。默认连续 8 轮工具调用、参数和结果均相同时停止；
+`--run-no-progress-limit 0` 可关闭此检测。详见[运行限制](./docs/configuration.md#run-limits)。
 
 首次启动后执行 `/login`，先选择账号或 API Key 登录，再选择 provider
 并完成对应的登录流程。输入 `/help` 查看命令，输入 `?`

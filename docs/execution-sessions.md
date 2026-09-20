@@ -32,6 +32,32 @@ control to the user. Completed edits are retained. Send a new message to continu
 with a fresh run budget, or restart with different limits. This does not bypass
 Guard or Project Trust.
 
+### Repeated-tool detection
+
+By default, AICE stops after 8 consecutive completed tool rounds have identical
+ordered tool names, arguments and results. Configure `--run-no-progress-limit N`
+with `N >= 2`, or `0` to disable it. JSON object key order and whitespace do not
+matter; different call IDs, timestamps or assistant commentary alone do not
+count as progress. Result content, error status, diff and truncation metadata
+participate in the comparison. Repeated denials are detected too.
+
+Changed tool work resets the streak. Accepted steering and natural completion
+also reset it, so queued follow-ups and new runs start fresh. Compaction does
+not reset it. This counter is separate from the resource budget, which remains
+shared across steering and follow-ups in the same run.
+
+Detection happens after the whole tool round completes: actual outcomes are
+retained, then a terminal reason is recorded without another model request.
+Print mode exits nonzero; interactive mode returns control to the user. Review
+the results and adjust the instruction or threshold before continuing. No work
+is rolled back, and this stop is not automatically retried.
+
+This is a conservative repetition heuristic, not a semantic progress evaluator.
+Alternating cycles and commands whose output keeps changing can escape it;
+legitimate polling that repeatedly returns the same result can trigger it.
+For polling tasks, adjust or disable detection and consider a timeout. The
+check does not impose a maximum on productive model rounds or tool calls.
+
 ## Tool execution boundary
 
 Built-in tools run with the filesystem, process, network, environment, and

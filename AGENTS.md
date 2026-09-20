@@ -61,8 +61,8 @@ and routes; README files may summarize product behavior and link to details.
   [Ownership rules](docs/architecture.md#dependency-and-ownership-rules)
 - **Keep control flow in the Agent Loop.** The loop owns tools, steering,
   follow-up, retries, and stopping. No fixed `MaxTurns`/`MaxToolSteps`; optional
-  per-run resource budgets stay in the Loop. Never execute invalid or incomplete
-  streamed tool calls. UI and concrete tool/SDK
+  per-run resource budgets and repeated-tool detection stay in the Loop. Never
+  execute invalid or incomplete streamed tool calls. UI and concrete tool/SDK
   dependencies stay out of the loop. [Contracts](docs/contracts.md#agent-loop)
 - **Keep history recoverable.** Session JSONL is the only durable transcript;
   messages have stable IDs and parents. Never rewrite source history or delete

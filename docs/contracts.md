@@ -140,8 +140,8 @@ normal transcript cache key, including replayed result projections.
   The application and frontend must not reproduce this stopping decision.
 - There is no fixed `MaxTurns` or `MaxToolSteps`. A run ends only when the model
   completes naturally and no follow-up is waiting, or on cancellation/deadline,
-  context protection, configured run resource limits, or an unrecoverable provider, protocol, runtime, or
-  event-sink failure.
+  context protection, configured run resource limits, repeated-tool detection,
+  or an unrecoverable provider, protocol, runtime, or event-sink failure.
 - Optional `RunLimits` are immutable Loop configuration with per-Run counters.
   Token accounting includes reported failed attempts and automatic compaction;
   usage events are request snapshots, not increments. The compactor returns
@@ -152,6 +152,14 @@ normal transcript cache key, including replayed result projections.
   approval waits, tools, compaction and queued inputs. Neither limit resets on
   steering or follow-up. Resource stops are non-retryable and retain paired
   tool results and a durable terminal reason. See [run limits](execution-sessions.md#run-resource-limits).
+- `RunLimits.NoProgress` counts consecutive identical completed tool rounds.
+  Application configuration defaults to 8; zero disables it. The Loop compares
+  ordered tool names, canonical JSON arguments and observable results, retaining
+  only one digest and count per Run. Model prose, call IDs and timestamps do not
+  count as progress. Changed work, accepted steering, natural completion and a
+  new Run reset the streak; compaction does not. At the threshold, `ErrNoProgress`
+  stops further requests without retry, preserving actual paired results and a
+  durable reason. This heuristic does not establish semantic task completion.
 - Before each tool execution the loop consults the consumer-defined `Guard`
   interface (`internal/agent` defines it, `internal/guard` implements it,
   `internal/app` wires it). `NewLoop` requires a non-nil `Guard` when the

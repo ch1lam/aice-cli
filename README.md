@@ -47,7 +47,9 @@ other running instances keep their loaded configuration. See
 [configuration and persistence](./docs/configuration.md#settings-and-precedence).
 
 Runs have no fixed round limit. Optionally set `--run-token-budget 200000`
-and `--run-timeout 30m`; see [run limits](./docs/configuration.md#run-limits).
+and `--run-timeout 30m`. By default, 8 consecutive identical tool rounds stop
+the run; `--run-no-progress-limit 0` disables this check. See
+[run limits](./docs/configuration.md#run-limits).
 
 On first launch, run `/login`, choose account or API key authentication, then
 select a provider and complete its login flow. Run `/help` for

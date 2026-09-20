@@ -89,6 +89,8 @@ The default suite's [binary print acceptance](../cmd/aice/main_process_test.go)
 builds AICE once into a temporary directory and invokes `--print` against local
 HTTP fixtures. It checks stdout/stderr separation, process exit codes, and
 `--yolo` preserving the secret-file deny while ordinary reads still succeed.
+It also checks token exhaustion before tool execution and repeated-tool stops
+with the default threshold, an explicit threshold, and detection disabled.
 Each invocation uses a temporary home and workspace, an environment allowlist,
 disabled helper downloads and update checks, and explicit project distrust.
 The build reuses the Go test toolchain and caches with module downloads disabled.
@@ -119,7 +121,7 @@ Every exit path cancels and waits for the writer processes before test teardown.
 The default Go suite includes [long-task acceptance](../internal/app/long_task_test.go):
 one interactive input with an in-run correction, and one stateless print input,
 each complete 200 scripted main model requests and at least three real application
-compactions. Tools perform local reads; summary generation uses a scripted model.
+compactions. Tools perform varying local reads; summary generation uses a scripted model.
 Checks cover request pairing, retained requirements, budget, source counts, usage,
 and reopening after summary cancellation or checkpoint failures. To inspect its
 counts independently:

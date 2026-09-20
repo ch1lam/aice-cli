@@ -177,6 +177,8 @@ func resultEndsAtAssistant(result Result) bool {
 
 func terminalFailure(runErr error) (string, llm.StopReason) {
 	switch {
+	case errors.Is(runErr, ErrNoProgress):
+		return runErr.Error(), llm.StopReasonError
 	case errors.Is(runErr, ErrTokenBudget):
 		return runErr.Error(), llm.StopReasonError
 	case errors.Is(runErr, ErrTimeBudget):

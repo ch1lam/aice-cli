@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -71,6 +72,39 @@ data: [DONE]
 			t.Fatalf("requests=%d stdout=%s stderr=%s", requests.Load(), stdout, stderr)
 		}
 	})
+
+	for _, tc := range []struct {
+		name     string
+		flags    []string
+		requests int32
+		exit     int
+	}{
+		{"default repetition limit", nil, 8, 1},
+		{"custom repetition limit", []string{"--run-no-progress-limit=3"}, 3, 1},
+		{"repetition detection disabled", []string{"--run-no-progress-limit=0"}, 10, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var requests atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				n := requests.Add(1)
+				w.Header().Set("Content-Type", "text/event-stream")
+				if n == 10 {
+					_, _ = io.WriteString(w, "data: "+`{"id":"done","model":"test-model","choices":[{"index":0,"delta":{"role":"assistant","content":"done"},"finish_reason":"stop"}]}`+"\n\ndata: [DONE]\n\n")
+					return
+				}
+				_, _ = fmt.Fprintf(w, "data: "+`{"id":"repeat","model":"test-model","choices":[{"index":0,"delta":{"role":"assistant","tool_calls":[{"index":0,"id":"read-%d","type":"function","function":{"name":"read","arguments":"{\"path\":\"public.txt\"}"}}]},"finish_reason":"tool_calls"}]}`+"\n\ndata: [DONE]\n\n", n)
+			}))
+			defer server.Close()
+			flags := append([]string{"--output-format=json"}, tc.flags...)
+			stdout, stderr := runBinaryPrint(t, binary, server.URL, tc.exit, flags...)
+			if requests.Load() != tc.requests || strings.Contains(stderr, "no observable progress") != (tc.exit != 0) {
+				t.Fatalf("requests=%d stderr=%s", requests.Load(), stderr)
+			}
+			if !strings.Contains(stdout, "fixture-public-value") || !strings.Contains(stdout, `"type":"agent_end"`) {
+				t.Fatalf("missing actual tool result or terminal event: %s", stdout)
+			}
+		})
+	}
 
 	t.Run("provider error exits nonzero", func(t *testing.T) {
 		var requests atomic.Int32

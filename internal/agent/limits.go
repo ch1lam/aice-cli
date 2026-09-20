@@ -21,13 +21,18 @@ var (
 type RunLimits struct {
 	Tokens  int64
 	Timeout time.Duration
+	// NoProgress stops consecutive identical tool rounds. Zero disables it.
+	NoProgress int
 }
 
 // WithRunLimits configures immutable limits; counters belong to each Run.
 func WithRunLimits(limits RunLimits) LoopOption {
 	return func(loop *Loop) error {
-		if limits.Tokens < 0 || limits.Timeout < 0 {
+		if limits.Tokens < 0 || limits.Timeout < 0 || limits.NoProgress < 0 {
 			return errors.New("agent: run limits cannot be negative")
+		}
+		if limits.NoProgress == 1 {
+			return errors.New("agent: no-progress limit must be zero or at least two")
 		}
 		loop.limits = limits
 		return nil

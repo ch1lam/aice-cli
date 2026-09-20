@@ -165,6 +165,7 @@ type runExecution struct {
 	pendingInputs    []llm.UserMessage
 	interactionStart int
 	tokensUsed       int64
+	repetition       repetitionTracker
 	recordedMessages int
 	recorderErr      error
 }
@@ -384,6 +385,7 @@ func (e *runExecution) settleToolsAndSteering(
 		return result, err, settleStop
 	}
 	if steers {
+		e.repetition = repetitionTracker{}
 		(*turnNumber)++
 		*retryAttempt = 0
 		e.history = append(e.history, steering.Message)
@@ -402,9 +404,14 @@ func (e *runExecution) settleToolsAndSteering(
 		return e.result, nil, settleContinue
 	}
 	if len(turn.ToolResults) == 0 {
+		e.repetition = repetitionTracker{}
 		return e.result, nil, settleDone
 	}
 
+	if err := e.checkProgress(completedTurn); err != nil {
+		result, err := e.finishRun(ctx, err)
+		return result, err, settleStop
+	}
 	*retryAttempt = 0
 	(*turnNumber)++
 	if err := e.emit(ctx, AgentEvent{

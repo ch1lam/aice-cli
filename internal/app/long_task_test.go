@@ -199,7 +199,7 @@ func (m *longTaskModel) Stream(_ context.Context, request llm.Request) (llm.Stre
 		{Type: llm.EventTypeTextDelta, ContentIndex: 0, Delta: output}, {Type: llm.EventTypeTextEnd, ContentIndex: 0},
 	}
 	if request.SystemPrompt != compactionSystemPrompt && m.mainCalls < 200 {
-		call := llm.ToolCall{ID: fmt.Sprintf("read-%d", m.mainCalls), Name: "read", Arguments: json.RawMessage(`{"path":"long-context.txt"}`)}
+		call := llm.ToolCall{ID: fmt.Sprintf("read-%d", m.mainCalls), Name: "read", Arguments: json.RawMessage(fmt.Sprintf(`{"path":"long-context.txt","limit":%d}`, 31+m.mainCalls%2))}
 		response.Content = append(response.Content, llm.ContentPart{Type: llm.ContentTypeToolCall, ToolCall: &call})
 		response.StopReason = llm.StopReasonToolUse
 		events = append(events, llm.Event{Type: llm.EventTypeToolCallStart, ContentIndex: 1}, llm.Event{Type: llm.EventTypeToolCallEnd, ContentIndex: 1, ToolCall: &call})
