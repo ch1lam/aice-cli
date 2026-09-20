@@ -9,14 +9,25 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 )
 
 // Run with AICE_BROWSER_TEST_HELPER pointing to the verified pinned binary.
-// This opt-in check uses only a local data URL and a separate headless profile.
+// This opt-in check uses only a local data URL and separate temporary profiles.
+// The headed case requires a desktop display.
 func TestNativeManagedBrowserLifecycle(t *testing.T) {
+	for _, headed := range []bool{false, true} {
+		t.Run("headed="+strconv.FormatBool(headed), func(t *testing.T) {
+			testNativeManagedBrowserLifecycle(t, headed)
+		})
+	}
+}
+
+func testNativeManagedBrowserLifecycle(t *testing.T, headed bool) {
+	t.Helper()
 	helper := os.Getenv("AICE_BROWSER_TEST_HELPER")
 	if helper == "" {
 		t.Skip("set AICE_BROWSER_TEST_HELPER to the pinned native helper")
@@ -27,6 +38,7 @@ func TestNativeManagedBrowserLifecycle(t *testing.T) {
 	}
 	m := testManager(t)
 	m.pid = os.Getpid()
+	m.SetHeaded(headed)
 	if err := os.WriteFile(filepath.Join(m.binDir, "agent-browser"), data, 0755); err != nil {
 		t.Fatal(err)
 	}

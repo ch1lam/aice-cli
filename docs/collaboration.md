@@ -201,7 +201,8 @@ AICE_BROWSER_TEST_HELPER=/absolute/path/to/agent-browser \
   go test -tags=integration ./internal/browser -run '^TestNativeManagedBrowserLifecycle$' -v
 ```
 
-It uses an isolated session, a local data-URL form, snapshots, input actions,
+It checks headed and headless modes (the headed case requires a desktop display),
+using isolated sessions, a local data-URL form, snapshots, input actions,
 screenshot PNG decoding, close/sidecar checks and a fresh generation. Never point
 it at the user's live profile. Actual `/browser` TUI, external CDP connection and
 Chrome Allow acceptance need a dedicated profile and a desktop. Keep native,

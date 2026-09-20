@@ -209,6 +209,7 @@ acceptance record distinguishes tests from full interactive/model acceptance.
 | V17 external disconnect | Native probes and TUI `/new` preserve dedicated Chrome and both tabs | Not exercised |
 | V18 inspect auto-detect | Actual Chrome Allow/login-state acceptance not exercised | Not exercised |
 | V19 Guard | Existing screenshot-path/open-command semantics covered by unit tests | Same portable tests; not run natively |
+| V20 window visibility | CLI/TUI toggle and persistence pass; native headed/headless lifecycle passes on isolated profiles | Not exercised natively |
 
 The matrix remains incomplete: native helper tests and offline fixtures do not
 prove actual-model browsing/vision or print behavior. Complete the outstanding
