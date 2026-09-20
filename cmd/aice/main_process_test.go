@@ -54,6 +54,24 @@ func TestBinaryPrint(t *testing.T) {
 		}
 	})
 
+	t.Run("token budget skips tools and exits nonzero", func(t *testing.T) {
+		var requests atomic.Int32
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			requests.Add(1)
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = io.WriteString(w, `data: {"id":"budget","model":"test-model","choices":[{"index":0,"delta":{"role":"assistant","tool_calls":[{"index":0,"id":"read-budget","type":"function","function":{"name":"read","arguments":"{\"path\":\"public.txt\"}"}}]},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}
+
+data: [DONE]
+
+`)
+		}))
+		defer server.Close()
+		stdout, stderr := runBinaryPrint(t, binary, server.URL, 1, "--run-token-budget=10", "--output-format=json")
+		if requests.Load() != 1 || !strings.Contains(stderr, "token budget") || strings.Contains(stdout, "fixture-public-value") || !strings.Contains(stdout, `"type":"agent_end"`) {
+			t.Fatalf("requests=%d stdout=%s stderr=%s", requests.Load(), stdout, stderr)
+		}
+	})
+
 	t.Run("provider error exits nonzero", func(t *testing.T) {
 		var requests atomic.Int32
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

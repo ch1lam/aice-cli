@@ -213,6 +213,8 @@ func NewRootCommand(dependencies Dependencies) (*cobra.Command, error) {
 		false,
 		"automatically allow tool calls that would otherwise ask; for isolated containers/CI; dangerous",
 	)
+	command.Flags().Int64("run-token-budget", 0, "provider-reported token budget per agent run; 0 is unlimited")
+	command.Flags().Duration("run-timeout", 0, "wall-clock budget per agent run, e.g. 30m; 0 is unlimited")
 	command.Flags().String("provider", "", "provider for this invocation")
 	command.Flags().String("model", "", "model for this invocation")
 	command.Flags().String("thinking", "", "requested thinking level for this invocation")

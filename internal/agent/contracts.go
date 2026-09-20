@@ -118,7 +118,14 @@ type InputSource func() (InputMessage, bool, error)
 type HistoryCompactor func(
 	ctx context.Context,
 	history []llm.AgentMessage,
-) ([]llm.AgentMessage, error)
+) (CompactionResult, error)
+
+// CompactionResult reports replacement context and all usage incurred, including
+// failed summary attempts. Usage must be returned even when compaction fails.
+type CompactionResult struct {
+	History []llm.AgentMessage
+	Usage   llm.Usage
+}
 
 // MessageRecorder synchronously accepts one completed source message before the
 // loop proceeds to later effects or display events. Messages are defensive copies.
@@ -160,6 +167,8 @@ type ModelRound struct {
 // Result contains only the messages produced by this run. The caller remains
 // responsible for the history supplied in RunInput.
 type Result struct {
+	// Usage includes all reported attempts and automatic compaction.
+	Usage       llm.Usage
 	Prompt      llm.UserMessage
 	ModelRounds []ModelRound
 }

@@ -23,12 +23,12 @@ func TestLoopCompactionFailureStopsBeforeEffects(t *testing.T) {
 			input := testInput(info, mustPrompt(t, strings.Repeat("x", 14000)))
 			calls := 0
 			cause := &llm.ProviderError{StatusCode: 503, Err: errors.New("summary unavailable")}
-			input.Compactor = func(_ context.Context, history []llm.AgentMessage) ([]llm.AgentMessage, error) {
+			input.Compactor = func(_ context.Context, history []llm.AgentMessage) (agent.CompactionResult, error) {
 				calls++
 				if name == "transient summary failure" {
-					return nil, cause
+					return agent.CompactionResult{}, cause
 				}
-				return history, nil
+				return agent.CompactionResult{History: history}, nil
 			}
 			_, err := loop.Run(t.Context(), input, nil)
 			if !errors.Is(err, agent.ErrContextLimit) {
@@ -79,7 +79,7 @@ func TestLoopCompactsAfterPairedToolsAndSteeringBeforeRetry(t *testing.T) {
 		return agent.InputMessage{ID: "steer", Message: steering}, true, nil
 	}
 	compactions := 0
-	input.Compactor = func(_ context.Context, history []llm.AgentMessage) ([]llm.AgentMessage, error) {
+	input.Compactor = func(_ context.Context, history []llm.AgentMessage) (agent.CompactionResult, error) {
 		compactions++
 		if len(tool.calls) != 1 || len(history) != 4 {
 			t.Fatalf("compaction before paired tool+steering: %#v", history)
@@ -87,7 +87,7 @@ func TestLoopCompactsAfterPairedToolsAndSteeringBeforeRetry(t *testing.T) {
 		if _, ok := history[2].(llm.ToolResultMessage); !ok {
 			t.Fatal("unpaired group")
 		}
-		return []llm.AgentMessage{llm.CompactionSummaryMessage{Role: llm.RoleCompactionSummary, Summary: "read completed", TokensBefore: 3500, Timestamp: steering.Timestamp + 1}, history[3]}, nil
+		return agent.CompactionResult{History: []llm.AgentMessage{llm.CompactionSummaryMessage{Role: llm.RoleCompactionSummary, Summary: "read completed", TokensBefore: 3500, Timestamp: steering.Timestamp + 1}, history[3]}}, nil
 	}
 	if _, err := loop.Run(t.Context(), input, nil); err != nil {
 		t.Fatal(err)

@@ -17,14 +17,15 @@ func (e *runExecution) prepareRequest(ctx context.Context, allowCompaction bool)
 		return request, err
 	}
 	compacted, compactErr := e.input.Compactor(ctx, slices.Clone(e.history))
+	e.addUsage(compacted.Usage)
 	if compactErr != nil {
 		return llm.Request{}, errors.Join(err, fmt.Errorf("agent: compact complete history: %w", compactErr))
 	}
-	request, err = e.checkedRequest(compacted)
+	request, err = e.checkedRequest(compacted.History)
 	if err != nil {
 		return llm.Request{}, fmt.Errorf("agent: protect request after compaction: %w", err)
 	}
-	e.history = slices.Clone(compacted)
+	e.history = slices.Clone(compacted.History)
 	return request, nil
 }
 

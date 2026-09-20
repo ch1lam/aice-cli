@@ -15,7 +15,7 @@ to lowest priority:
 This order covers provider, model, reasoning, endpoints, API keys, context
 windows, default trust policy, and operational switches. Flags currently expose
 `--provider`, `--model`, `--thinking`, `--no-dep-install`, and
-`--no-update-check`; an omitted flag does not override another source.
+`--no-update-check`, `--run-token-budget`, and `--run-timeout`; an omitted flag does not override another source.
 Invocation controls such as `--workspace`, `--session`, `--approve`, and
 `--yolo` retain their separate command semantics. No remote key/value store is used.
 
@@ -66,6 +66,26 @@ peak billing is twice the estimate.
 | Context windows | `AICE_CONTEXT_WINDOWS` | JSON array of provider/model/token entries described below |
 | Disable helper downloads | `AICE_NO_DEP_INSTALL` | Boolean; file key `no_dep_install` |
 | Disable startup update check | `AICE_NO_UPDATE_CHECK` | Boolean; file key `no_update_check` |
+
+### Run limits
+
+| Flag | Settings key | Environment | Default |
+| --- | --- | --- | --- |
+| `--run-token-budget N` | `run_token_budget` | `AICE_RUN_TOKEN_BUDGET` | `0` (unlimited) |
+| `--run-timeout 30m` | `run_timeout` | `AICE_RUN_TIMEOUT` | `0s` (unlimited) |
+
+Token budgets must be non-negative integers; timeouts are non-negative Go duration
+strings such as `30m` or `1h`. Explicit zero disables an inherited limit. Invalid
+winning values fail configuration loading. Model/provider changes preserve the
+loaded limits. No fixed round limit is imposed.
+
+```sh
+aice --run-token-budget 200000 --run-timeout 30m
+aice --print "Fix the failing tests" --run-token-budget 100000
+```
+
+See [execution semantics](execution-sessions.md#run-resource-limits) for accounting,
+compaction, overshoot, stopping and continuation.
 
 ### Interactive persistence and multiple instances
 
@@ -702,6 +722,8 @@ aice [--print <prompt>] [flags]
 --thinking <level>   override the requested thinking level
 --no-dep-install    disable automatic helper downloads
 --no-update-check   disable the interactive startup update check
+--run-token-budget  provider-reported token budget per Agent run (0: unlimited)
+--run-timeout       wall-clock budget per Agent run, e.g. 30m (0: unlimited)
 --approve, -a        trust project-local resources for this run
 --no-approve         ignore project-local resources for this run
 --yolo               automatically allow tool calls that would otherwise ask; for isolated containers/CI; dangerous

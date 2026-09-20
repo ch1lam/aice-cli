@@ -21,6 +21,9 @@ func (e *runExecution) streamAssistant(
 	turnNumber int,
 	allowCompaction bool,
 ) (assistantOutcome, error) {
+	if err := e.checkBudget(ctx); err != nil {
+		return assistantOutcome{}, err
+	}
 	request, err := e.prepareRequest(ctx, allowCompaction)
 	if err != nil {
 		return assistantOutcome{}, fmt.Errorf(
@@ -30,6 +33,9 @@ func (e *runExecution) streamAssistant(
 		)
 	}
 
+	if err := e.checkBudget(ctx); err != nil {
+		return assistantOutcome{}, err
+	}
 	stream, err := e.loop.model.Stream(ctx, request)
 	if err != nil {
 		return assistantOutcome{}, fmt.Errorf("agent: start model stream: %w", err)
@@ -52,6 +58,8 @@ func (e *runExecution) consumeAssistant(
 	stream llm.Stream,
 ) (assistantOutcome, error) {
 	started := false
+	var usage llm.Usage
+	defer func() { e.addUsage(usage) }()
 	for {
 		event, err := stream.Next()
 		if err != nil {
@@ -99,6 +107,9 @@ func (e *runExecution) consumeAssistant(
 			}
 
 			message := *event.Message
+			if message.Usage.TotalTokens > 0 || message.Usage.InputTokens > 0 || message.Usage.OutputTokens > 0 || message.Usage.CacheReadTokens > 0 || message.Usage.CacheWriteTokens > 0 {
+				usage = message.Usage
+			}
 			if err := message.Validate(); err != nil {
 				return assistantOutcome{}, fmt.Errorf(
 					"%w: validate terminal assistant message: %v",
@@ -129,6 +140,9 @@ func (e *runExecution) consumeAssistant(
 					ErrProtocol,
 					event.Type,
 				)
+			}
+			if event.Type == llm.EventTypeUsage && event.Usage != nil {
+				usage = *event.Usage
 			}
 			streamEvent := event
 			if err := e.emit(ctx, AgentEvent{

@@ -48,8 +48,15 @@ func (a *application) historyCompactor(
 	configured *configuredModel,
 	onUsage func(llm.Usage),
 ) agent.HistoryCompactor {
-	return func(ctx context.Context, history []llm.AgentMessage) ([]llm.AgentMessage, error) {
-		return a.compactHistory(ctx, store, history, configured, onUsage)
+	return func(ctx context.Context, history []llm.AgentMessage) (agent.CompactionResult, error) {
+		var usage llm.Usage
+		compacted, err := a.compactHistory(ctx, store, history, configured, func(value llm.Usage) {
+			usage = llm.AddUsage(usage, value)
+			if onUsage != nil {
+				onUsage(value)
+			}
+		})
+		return agent.CompactionResult{History: compacted, Usage: usage}, err
 	}
 }
 
@@ -439,7 +446,7 @@ func (a *application) generateCompactionSummary(
 			err,
 		)
 	}
-	loop, err := agent.NewLoop(configured.service, nil)
+	loop, err := agent.NewLoop(configured.service, nil, agent.WithRunLimits(runLimits(configured.configuration)))
 	if err != nil {
 		return "", llm.Usage{}, fmt.Errorf(
 			"app: create compaction loop: %w",
@@ -454,10 +461,7 @@ func (a *application) generateCompactionSummary(
 		Prompt:       prompt,
 		Options:      options,
 	}, nil)
-	var usage llm.Usage
-	for _, round := range result.ModelRounds {
-		usage = llm.AddUsage(usage, round.Assistant.Usage)
-	}
+	usage := result.Usage
 
 	if err != nil {
 		return "", usage, fmt.Errorf(

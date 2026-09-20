@@ -58,7 +58,7 @@ func (e *runExecution) executeTools(
 ) error {
 	for index := range calls {
 		call := calls[index]
-		if ctxErr := ctx.Err(); ctxErr != nil {
+		if ctxErr := e.checkBudget(ctx); ctxErr != nil {
 			err := e.syntheticToolResults(
 				ctx,
 				turnNumber,

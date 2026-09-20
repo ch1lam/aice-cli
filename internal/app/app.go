@@ -126,7 +126,7 @@ func newCommand(dependencies dependencies) (*cobra.Command, error) {
 		return nil, err
 	}
 	application.bindFlags = func(v *viper.Viper) error {
-		for key, name := range map[string]string{"provider": "provider", "model": "model", "thinking": "thinking", "no_dep_install": "no-dep-install", "no_update_check": "no-update-check"} {
+		for key, name := range map[string]string{"run_token_budget": "run-token-budget", "run_timeout": "run-timeout", "provider": "provider", "model": "model", "thinking": "thinking", "no_dep_install": "no-dep-install", "no_update_check": "no-update-check"} {
 			if !command.Flags().Changed(name) {
 				continue
 			}
@@ -281,7 +281,7 @@ func (a *application) Print(
 	}); err != nil {
 		return err
 	}
-	loop, err := agent.NewLoop(configured.service, environment.tools, agent.WithGuard(environment.guardAdapter))
+	loop, err := agent.NewLoop(configured.service, environment.tools, agent.WithGuard(environment.guardAdapter), agent.WithRunLimits(runLimits(configured.configuration)))
 	if err != nil {
 		return fmt.Errorf("app: create agent loop: %w", err)
 	}
@@ -743,6 +743,7 @@ func (a *application) newAgentLoopWithOptions(
 	if err != nil {
 		return nil, fmt.Errorf("app: create model: %w", err)
 	}
+	options = append(options, agent.WithRunLimits(runLimits(configuration)))
 	loop, err := agent.NewLoop(service, tools, options...)
 	if err != nil {
 		return nil, fmt.Errorf("app: create agent loop: %w", err)

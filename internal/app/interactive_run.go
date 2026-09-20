@@ -175,12 +175,13 @@ func (r *interactiveRun) Run(ctx context.Context) error {
 			contextHistory = append(contextHistory, message)
 			return nil
 		},
-		Compactor: func(compactCtx context.Context, history []llm.AgentMessage) ([]llm.AgentMessage, error) {
-			compacted, err := r.session.compactHistory(compactCtx, history, &configured)
+		Compactor: func(compactCtx context.Context, history []llm.AgentMessage) (agent.CompactionResult, error) {
+			var usage llm.Usage
+			compacted, err := r.session.compactHistory(compactCtx, history, &configured, func(value llm.Usage) { usage = llm.AddUsage(usage, value) })
 			if err == nil {
 				contextHistory = append([]llm.AgentMessage(nil), compacted...)
 			}
-			return compacted, err
+			return agent.CompactionResult{History: compacted, Usage: usage}, err
 		},
 		Steering: mailboxInputSource(r.mailbox.TakeSteering, "steering", snapshot.model),
 		FollowUp: mailboxInputSource(r.mailbox.TakeFollowUp, "follow-up", snapshot.model),
@@ -271,6 +272,7 @@ func (s *interactiveSession) compactHistory(
 	ctx context.Context,
 	currentHistory []llm.AgentMessage,
 	configured *configuredModel,
+	onUsage func(llm.Usage),
 ) ([]llm.AgentMessage, error) {
 	if s == nil || s.application == nil {
 		return nil, fmt.Errorf("app: interactive Session is not initialized")
@@ -284,7 +286,7 @@ func (s *interactiveSession) compactHistory(
 	s.conversation.historySyncMu.Lock()
 	defer s.conversation.historySyncMu.Unlock()
 
-	history, err := s.application.compactHistory(ctx, s.conversation.store, currentHistory, configured, nil)
+	history, err := s.application.compactHistory(ctx, s.conversation.store, currentHistory, configured, onUsage)
 	if err != nil {
 		return nil, err
 	}

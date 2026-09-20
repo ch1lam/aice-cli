@@ -480,9 +480,9 @@ func TestLoopCompactsInitialHistoryAtThreshold(t *testing.T) {
 	input.Compactor = func(
 		_ context.Context,
 		history []llm.AgentMessage,
-	) ([]llm.AgentMessage, error) {
+	) (agent.CompactionResult, error) {
 		compactedHistory = history
-		return []llm.AgentMessage{
+		return agent.CompactionResult{History: []llm.AgentMessage{
 			llm.CompactionSummaryMessage{
 				Role:         llm.RoleCompactionSummary,
 				Summary:      "first interaction completed",
@@ -490,7 +490,7 @@ func TestLoopCompactsInitialHistoryAtThreshold(t *testing.T) {
 				Timestamp:    3,
 			},
 			history[len(history)-1],
-		}, nil
+		}}, nil
 	}
 
 	if _, err := loop.Run(t.Context(), input, nil); err != nil {
@@ -543,11 +543,11 @@ func TestLoopCompactsHistoryBeforeFollowUp(t *testing.T) {
 	input.Compactor = func(
 		_ context.Context,
 		history []llm.AgentMessage,
-	) ([]llm.AgentMessage, error) {
+	) (agent.CompactionResult, error) {
 		if len(history) != 3 {
-			return nil, fmt.Errorf("compactor history = %d, want 3", len(history))
+			return agent.CompactionResult{}, fmt.Errorf("compactor history = %d, want 3", len(history))
 		}
-		return []llm.AgentMessage{
+		return agent.CompactionResult{History: []llm.AgentMessage{
 			llm.CompactionSummaryMessage{
 				Role:         llm.RoleCompactionSummary,
 				Summary:      "first interaction completed",
@@ -555,7 +555,7 @@ func TestLoopCompactsHistoryBeforeFollowUp(t *testing.T) {
 				Timestamp:    3,
 			},
 			history[len(history)-1],
-		}, nil
+		}}, nil
 	}
 
 	if _, err := loop.Run(t.Context(), input, nil); err != nil {
@@ -725,7 +725,7 @@ func TestLoopSettlesToolRunAfterCrossingCompactionThreshold(t *testing.T) {
 	prompt.Timestamp = 1
 	input := testInput(modelInfo, prompt)
 	compacted := 0
-	input.Compactor = func(_ context.Context, history []llm.AgentMessage) ([]llm.AgentMessage, error) {
+	input.Compactor = func(_ context.Context, history []llm.AgentMessage) (agent.CompactionResult, error) {
 		compacted++
 		if len(history) != 3 {
 			t.Fatalf("context = %#v, want user, call and settled result", history)
@@ -733,7 +733,7 @@ func TestLoopSettlesToolRunAfterCrossingCompactionThreshold(t *testing.T) {
 		if _, ok := history[2].(llm.ToolResultMessage); !ok {
 			t.Fatal("compacted before tool settled")
 		}
-		return []llm.AgentMessage{llm.CompactionSummaryMessage{Role: llm.RoleCompactionSummary, Summary: "read completed", TokensBefore: 90001, Timestamp: 4}}, nil
+		return agent.CompactionResult{History: []llm.AgentMessage{llm.CompactionSummaryMessage{Role: llm.RoleCompactionSummary, Summary: "read completed", TokensBefore: 90001, Timestamp: 4}}}, nil
 	}
 	result, err := loop.Run(t.Context(), input, nil)
 	if err != nil {

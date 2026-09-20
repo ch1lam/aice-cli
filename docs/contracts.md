@@ -140,8 +140,18 @@ normal transcript cache key, including replayed result projections.
   The application and frontend must not reproduce this stopping decision.
 - There is no fixed `MaxTurns` or `MaxToolSteps`. A run ends only when the model
   completes naturally and no follow-up is waiting, or on cancellation/deadline,
-  context protection, or an unrecoverable provider, protocol, runtime, or
+  context protection, configured run resource limits, or an unrecoverable provider, protocol, runtime, or
   event-sink failure.
+- Optional `RunLimits` are immutable Loop configuration with per-Run counters.
+  Token accounting includes reported failed attempts and automatic compaction;
+  usage events are request snapshots, not increments. The compactor returns
+  `CompactionResult` with usage even on failure. A token limit prevents starting
+  further model requests or tools once the reported total reaches the limit;
+  it does not discard a final answer that already completed without tools.
+  A timeout derives a cancellable context for the whole Run, including retries,
+  approval waits, tools, compaction and queued inputs. Neither limit resets on
+  steering or follow-up. Resource stops are non-retryable and retain paired
+  tool results and a durable terminal reason. See [run limits](execution-sessions.md#run-resource-limits).
 - Before each tool execution the loop consults the consumer-defined `Guard`
   interface (`internal/agent` defines it, `internal/guard` implements it,
   `internal/app` wires it). `NewLoop` requires a non-nil `Guard` when the

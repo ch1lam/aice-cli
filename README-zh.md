@@ -44,6 +44,9 @@ aice --workspace .
 交互选择立即保存，其他运行中的实例继续使用已加载的配置。
 详见[配置与持久化](./docs/configuration.md#settings-and-precedence)。
 
+默认不限制运行轮数。可用 `--run-token-budget 200000` 和 `--run-timeout 30m`
+设置单次运行预算，详见[运行限制](./docs/configuration.md#run-limits)。
+
 首次启动后执行 `/login`，先选择账号或 API Key 登录，再选择 provider
 并完成对应的登录流程。输入 `/help` 查看命令，输入 `?`
 查看快捷键。AICE 工作期间，按 Enter 可调整当前响应，按 Ctrl+Enter 可排队

@@ -41,6 +41,9 @@ func (e *runExecution) finishIncompleteTurn(
 // finalize flushes only the unrecorded tail produced by failure cleanup. A
 // recorder failure is sticky: never retry it or append later cleanup records.
 func (e *runExecution) finalize(ctx context.Context, runErr error) (Result, error) {
+	if errors.Is(context.Cause(ctx), ErrTimeBudget) {
+		runErr = errors.Join(runErr, ErrTimeBudget)
+	}
 	result, finalizeErr := finalizeFailedResult(e.result, e.input.Model, runErr, e.takePendingInputs())
 	e.result = result
 	runErr = errors.Join(runErr, finalizeErr)
@@ -83,7 +86,9 @@ func finalizeFailedResult(
 	result = paired
 	if len(pendingInputs) == 0 &&
 		resultEndsAtAssistant(result) &&
-		!needsAbortedTerminal(result, stopReason) {
+		!needsAbortedTerminal(result, stopReason) &&
+		!((errors.Is(runErr, ErrTokenBudget) || errors.Is(runErr, ErrTimeBudget)) &&
+			result.ModelRounds[len(result.ModelRounds)-1].Assistant.ErrorMessage != terminalText) {
 		return result, nil
 	}
 	if err := result.Prompt.Validate(); err != nil {
@@ -172,6 +177,10 @@ func resultEndsAtAssistant(result Result) bool {
 
 func terminalFailure(runErr error) (string, llm.StopReason) {
 	switch {
+	case errors.Is(runErr, ErrTokenBudget):
+		return runErr.Error(), llm.StopReasonError
+	case errors.Is(runErr, ErrTimeBudget):
+		return "agent run time budget exhausted; send a new message to continue", llm.StopReasonAborted
 	case errors.Is(runErr, context.Canceled):
 		return "agent run canceled before completion", llm.StopReasonAborted
 	case errors.Is(runErr, context.DeadlineExceeded):

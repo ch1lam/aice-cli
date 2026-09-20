@@ -17,6 +17,7 @@ type Loop struct {
 	model       Model
 	tools       map[string]Tool
 	definitions []llm.ToolDefinition
+	limits      RunLimits
 	retry       RetryPolicy
 	guard       Guard
 	guardAsk    GuardAskHandler
@@ -118,6 +119,11 @@ func (l *Loop) Run(ctx context.Context, input RunInput, sink AgentEventSink) (Re
 		return Result{}, fmt.Errorf("agent: validate prompt: %w", err)
 	}
 
+	if l.limits.Timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeoutCause(ctx, l.limits.Timeout, ErrTimeBudget)
+		defer cancel()
+	}
 	initialResult := Result{Prompt: input.Prompt}
 	execution := runExecution{
 		loop:    l,
@@ -158,6 +164,7 @@ type runExecution struct {
 	result           Result
 	pendingInputs    []llm.UserMessage
 	interactionStart int
+	tokensUsed       int64
 	recordedMessages int
 	recorderErr      error
 }

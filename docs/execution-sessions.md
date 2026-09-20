@@ -1,5 +1,37 @@
 # Tool Execution and Sessions
 
+## Run resource limits
+
+AICE has no fixed model-round or tool-step ceiling. Optional
+`--run-token-budget N` and `--run-timeout 30m` bound one Agent run; both default
+to zero (unlimited). They work in interactive and print modes, with the same
+configuration precedence as model settings. See [configuration](configuration.md#run-limits).
+
+A run includes its steering and queued follow-up inputs. Automatic compaction
+is charged to the same run. A new user-triggered run starts a fresh budget,
+including when continuing an existing Session; historical usage is not charged
+again. These are run controls, not a persistent Session or Goal budget.
+
+Token accounting uses provider-reported total tokens, including cached tokens;
+when total is absent it sums normalized input, output, cache-read and cache-write
+counts without counting reasoning twice. Reported failed attempts count too.
+Missing usage is not estimated, so providers that omit it cannot be fully bounded
+by tokens; use a timeout as well. Checks occur before model requests and tools,
+not while individual tokens stream. A response or in-flight compaction operation
+can overshoot the budget. This is not an exact billing cap. A final answer that
+already completed without tools remains successful.
+
+Timeouts include model requests, retries, tools, approval waits and compaction.
+Providers and tools must observe context cancellation; cleanup may take additional
+time. A caller's earlier deadline or cancellation keeps its original meaning.
+
+On exhaustion the Loop stops new work, records known outcomes and paired error
+results for skipped calls, then records the stop reason without another model
+request. Print mode exits nonzero for a resource stop; interactive mode returns
+control to the user. Completed edits are retained. Send a new message to continue
+with a fresh run budget, or restart with different limits. This does not bypass
+Guard or Project Trust.
+
 ## Tool execution boundary
 
 Built-in tools run with the filesystem, process, network, environment, and
