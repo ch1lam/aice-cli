@@ -153,3 +153,51 @@ func TestBrowserCommandPromptsAndTabMenu(t *testing.T) {
 		t.Fatal("browser UI retained command state")
 	}
 }
+
+func TestAuthMenuShortcutsRespectModifiersAndCancellation(t *testing.T) {
+	t.Parallel()
+
+	m := newModel(nil, nil)
+	m.authInput = make(chan string, 1)
+	m.running = true
+	m.authPrompt = &interaction.AuthPrompt{Menu: &interaction.CommandMenu{
+		Options: []interaction.CommandOption{{Label: "First", Arguments: "first"}, {Label: "Second", Arguments: "second"}},
+	}}
+	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyDown, Mod: tea.ModCtrl})
+	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyEnter, Mod: tea.ModAlt})
+	if m.authSelection != 0 || len(m.authInput) != 0 || m.authPrompt == nil {
+		t.Fatal("modified shortcuts triggered plain menu navigation or confirmation")
+	}
+	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyEscape})
+	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyDown})
+	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	if m.authSelection != 0 || len(m.authInput) != 0 {
+		t.Fatal("cancelled menu accepted navigation or confirmation")
+	}
+	if help := m.inputHelp(1000, true); strings.Contains(help, "select") || strings.Contains(help, "navigate") {
+		t.Fatalf("cancelled menu still advertises enabled actions: %q", help)
+	}
+}
+
+func TestAuthInputHelpTracksPromptMode(t *testing.T) {
+	t.Parallel()
+
+	m := newModel(nil, nil)
+	m.authInput = make(chan string, 1)
+	m.running = true
+	if help := m.inputHelp(1000, true); strings.Contains(help, "submit") || strings.Contains(help, "newline") {
+		t.Fatalf("waiting command advertises text submission: %q", help)
+	}
+	m.authPrompt = &interaction.AuthPrompt{AllowInput: true}
+	if help := m.inputHelp(1000, true); !strings.Contains(help, "Enter submit") || strings.Contains(help, "newline") {
+		t.Fatalf("manual prompt help does not match single-line input: %q", help)
+	}
+	m = updateModel(t, m, tea.KeyPressMsg{Code: 'a', Text: "a"})
+	if m.input.Value() != "a" {
+		t.Fatal("manual authorization text did not reach its editor")
+	}
+	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyEnter, Mod: tea.ModShift})
+	if m.input.Value() != "a" || len(m.authInput) != 0 {
+		t.Fatal("reserved newline edited or submitted single-line authorization")
+	}
+}

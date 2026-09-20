@@ -238,7 +238,7 @@ func (m model) openSessionPicker() (model, tea.Cmd, bool) {
 	p := &sessionPicker{loading: true}
 	p.input = textinput.New()
 	p.input.Prompt = ""
-	p.input.Placeholder = "/ to Filter"
+	p.input.Placeholder = sessionSearchInputBinding().binding.Help().Key + " to Filter"
 	p.input.CharLimit = 256
 	p.input.SetVirtualCursor(false)
 	p.list = list.New(nil, sessionItemDelegate{}, 30, 12)
@@ -310,11 +310,8 @@ func (m *model) requestSessionPreview() tea.Cmd {
 		p.previewID = ""
 		p.previewText = "Select a session to preview its recent conversation."
 		if group, ok := p.list.SelectedItem().(sessionGroupItem); ok {
-			action := "collapse"
-			if group.collapsed {
-				action = "expand"
-			}
-			p.previewText = fmt.Sprintf("%s · %d sessions\n\nEnter to %s this group.", group.name, group.count, action)
+			help := sessionGroupInputBinding(group).binding.Help()
+			p.previewText = fmt.Sprintf("%s · %d sessions\n\n%s %s", group.name, group.count, help.Key, help.Desc)
 		}
 		m.resizeSessionPicker()
 		return nil
@@ -400,90 +397,36 @@ func (m model) handleSessionPicker(message tea.Msg) (tea.Model, tea.Cmd) {
 	if m.trackSessionPickerClose(message) {
 		if p.restoring {
 			// Match Escape: restoration owns completion and cancellation.
-			return m.handleSessionPicker(tea.KeyPressMsg{Code: tea.KeyEscape})
+			return m.handleSessionAction(inputActionMatch{action: inputActionSessionCancelRestore})
 		}
 		return m, m.closeSessionPicker()
 	}
 	if p.rename != nil {
 		return m.handleSessionTitleEditor(message)
 	}
-	if p.restoring {
-		if key, ok := message.(tea.KeyPressMsg); ok && (key.Code == tea.KeyEscape || key.String() == "ctrl+c") {
-			if m.cancelRun != nil {
-				m.cancelRun()
-			} else {
-				m.cancelRequested = true
+	if key, ok := message.(tea.KeyPressMsg); ok {
+		match := m.matchInputAction(key)
+		if match.matched {
+			if !match.enabled {
+				if match.action == inputActionSessionResume {
+					if item, ok := p.list.SelectedItem().(sessionListItem); ok {
+						if item.Problem != "" {
+							p.notice = item.Problem
+						} else if m.running || m.side.anyRunning() {
+							p.notice = "Stop responses before switching sessions"
+						}
+					}
+				}
+				return m, nil
 			}
+			return m.handleSessionAction(match)
 		}
+	}
+	if p.restoring {
 		return m, nil
 	}
 	if command, handled := m.trackSessionPickerCopy(message); handled {
 		return m, command
-	}
-	if key, ok := message.(tea.KeyPressMsg); ok {
-		switch key.String() {
-		case "/":
-			if !p.input.Focused() {
-				p.previewFocused = false
-				return m, p.input.Focus()
-			}
-		case "esc":
-			if p.previewVisible {
-				return m, m.toggleSessionPreview()
-			}
-			return m, m.closeSessionPicker()
-		case "ctrl+c":
-			return m, m.closeSessionPicker()
-		case "right":
-			if !p.previewVisible {
-				return m, m.toggleSessionPreview()
-			}
-			p.previewFocused = true
-			p.input.Blur()
-			return m, nil
-		case "left":
-			if p.previewVisible {
-				p.previewFocused = false
-				p.input.Blur()
-				return m, nil
-			}
-		case "f2":
-			return m, m.openSessionTitleEditor()
-		case "f4":
-			return m, m.requestSessionReading()
-		case "enter":
-			if _, ok := p.list.SelectedItem().(sessionGroupItem); ok {
-				return m, m.toggleSessionGroup()
-			}
-			return m.resumeSelectedSession()
-		case "up", "ctrl+p", "down", "ctrl+n", "pgup", "pgdown":
-			if p.previewFocused {
-				switch key.String() {
-				case "up", "ctrl+p":
-					p.preview.ScrollUp(1)
-				case "down", "ctrl+n":
-					p.preview.ScrollDown(1)
-				case "pgup":
-					p.preview.PageUp()
-				case "pgdown":
-					p.preview.PageDown()
-				}
-				return m, nil
-			}
-			p.input.Blur()
-			old := p.list.Index()
-			if key.String() == "up" || key.String() == "ctrl+p" {
-				p.list.CursorUp()
-			} else if key.String() == "down" || key.String() == "ctrl+n" {
-				p.list.CursorDown()
-			} else {
-				p.list, _ = p.list.Update(key)
-			}
-			if old != p.list.Index() {
-				return m, m.requestSessionPreview()
-			}
-			return m, nil
-		}
 	}
 	if mouse, ok := message.(tea.MouseWheelMsg); ok {
 		command := m.scrollSessionPicker(mouse)

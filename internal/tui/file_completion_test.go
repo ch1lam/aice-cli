@@ -204,7 +204,7 @@ func TestFileCompletionIgnoresStaleResultsAndAttachesSelection(t *testing.T) {
 	if !m.fileCompletionVisible() {
 		t.Fatal("suggestions missing")
 	}
-	m, _, handled := m.handleFileCompletionKey(tea.KeyPressMsg{Code: tea.KeyTab})
+	m, _, handled := m.handleKey(tea.KeyPressMsg{Code: tea.KeyTab})
 	if !handled || m.input.Value() != `look @new file.png ` || m.fileCompletionVisible() {
 		t.Fatalf("selection = %q", m.input.Value())
 	}

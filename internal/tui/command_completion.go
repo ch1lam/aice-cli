@@ -5,7 +5,6 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -148,28 +147,4 @@ func (m model) commandInputView(width int) string {
 	lines[y] = ansi.Cut(lines[y], 0, x) + mutedStyle.Render(hint) +
 		ansi.Cut(lines[y], x+ansi.StringWidth(hint), width)
 	return strings.Join(lines, "\n")
-}
-
-// These bindings describe only the currently visible slash menu. The command
-// handlers still own input; the footer reuses the normal shortcut styling.
-func (m model) slashMenuShortHelp() []key.Binding {
-	if m.side.isVisible || m.fileCompletionVisible() {
-		return nil
-	}
-	options := m.commandMenu != nil && len(m.commandMenu.frames) > 0
-	if !options && !m.slashCommandMenuVisible() {
-		return nil
-	}
-	bindings := []key.Binding{
-		key.NewBinding(key.WithKeys("up", "down"), key.WithHelp("↑/↓", "select")),
-		key.NewBinding(key.WithKeys("tab"), key.WithHelp("Tab", "complete")),
-	}
-	escape := "close"
-	if options {
-		bindings = append(bindings, key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "choose")))
-		if len(m.commandMenu.frames) > 1 {
-			escape = "back"
-		}
-	}
-	return append(bindings, key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", escape)))
 }

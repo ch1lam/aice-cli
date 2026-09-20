@@ -119,35 +119,8 @@ func (m model) sessionPickerView() string {
 	if p.previewFocused {
 		title = "SESSIONS · PREVIEW"
 	}
-	help := "/ search · → preview · Esc close · ↑↓ select · Enter resume · F2 rename · F4 read"
-	if p.previewVisible {
-		help = "/ search · ←→ focus · Esc hide preview · ↑↓ select · Enter resume · F2 rename · F4 read"
-	}
-	if p.previewFocused {
-		help = "/ search · ←→ focus · Esc hide preview · ↑↓ scroll · Enter resume"
-	}
-	if l.inner < 55 {
-		help = "/ search · → preview · Esc close · ↑↓ · Enter"
-		if p.previewVisible {
-			help = "/ search · ←→ focus · Esc hide preview · ↑↓ · Enter"
-		}
-	}
-	if group, ok := p.list.SelectedItem().(sessionGroupItem); ok {
-		action := "collapse"
-		if group.collapsed {
-			action = "expand"
-		}
-		help = "/ search · ↑↓ select · Enter " + action + " group · → preview · Esc close"
-		if p.previewVisible {
-			help = "/ search · ←→ focus · Enter " + action + " group · Esc hide preview"
-		}
-		if l.inner < 55 {
-			help = "/ search · Enter " + action + " · ↑↓ · Esc close"
-			if p.previewVisible {
-				help = "/ search · Enter " + action + " · Esc hide preview"
-			}
-		}
-	}
+	help := m.inputHelp(l.inner, false)
+	notice := p.notice
 	if p.loading {
 		if p.input.Value() == "" {
 			title += " · loading older sessions"
@@ -159,21 +132,17 @@ func (m model) sessionPickerView() string {
 	if p.rename != nil {
 		title = "RENAME SESSION · blank restores automatic title"
 		input = p.rename.input.View()
-		help = "Enter save · Esc cancel"
 		if p.rename.saving {
-			help = "Saving title… · Esc closes"
+			notice = "Saving title…"
 		}
 	}
-	if p.notice != "" {
-		help = sanitizeToolDetail(p.notice, false)
-	}
 	if m.sessionPickerCopyVisible() && m.copyNotice && p.copiedID != "" && p.copiedID == p.previewID {
-		help = "Session ID copied"
+		notice = "Session ID copied"
 	} else if m.sessionPickerCopyHovered() {
-		help = "Copy session ID"
+		notice = "Copy session ID"
 	}
 	content := strings.Join([]string{
-		"", input, body,
+		mutedStyle.Render(ansi.Truncate(sanitizeToolDetail(notice, false), l.inner, "…")), input, body,
 		mutedStyle.Render(ansi.Truncate(help, l.inner, "…")),
 	}, "\n")
 	frame := slashCommandMenuStyle.Foreground(primaryTextColor).Background(inkBlackColor).
@@ -274,7 +243,7 @@ func (m model) overlaySessionPicker(content string) (string, *tea.Cursor) {
 	}
 	l := m.sessionPickerLayout()
 	if m.width < 16 || m.height < 8 {
-		return lipgloss.NewStyle().Width(max(1, m.width)).MaxHeight(max(1, m.height)).Render("Resize terminal\nEsc closes"), nil
+		return lipgloss.NewStyle().Width(max(1, m.width)).MaxHeight(max(1, m.height)).Render("Resize terminal\n" + m.inputHelp(max(1, m.width), false)), nil
 	}
 	canvas := lipgloss.NewCanvas(m.width, m.height).Compose(lipgloss.NewCompositor(
 		lipgloss.NewLayer(content),

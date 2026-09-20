@@ -5,7 +5,6 @@ import (
 	"strings"
 	"time"
 
-	"charm.land/bubbles/v2/key"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/ch1lam/aice-cli/internal/interaction"
@@ -87,29 +86,13 @@ func sanitizeSideTitle(title string) string {
 }
 
 func (m model) sideStatusLine(width int) string {
-	if m.side.confirm != nil {
-		return mutedStyle.Render(ansi.Truncate("y/Enter end thread · n/Esc keep", width, "…"))
-	}
-	if m.side.menu != nil {
-		return mutedStyle.Render(ansi.Truncate("↑/↓ select · Enter open · Esc cancel", width, "…"))
-	}
-	keys := m.footerKeys()
-	bindings := []key.Binding{keys.send, keys.newline, keys.interrupt, keys.close, keys.quit, keys.clear}
-	if m.help.ShowAll {
-		bindings = []key.Binding{keys.send, keys.newline, keys.paste, keys.editor, keys.scroll,
-			keys.interrupt, keys.close, keys.quit, keys.clear, keys.help}
-	}
-	parts := make([]string, 0, len(bindings)+1)
-	if thread := m.side.activeThread(); thread != nil && thread.readOnly() {
-		parts = append(parts, "read-only")
-	}
-	for _, binding := range bindings {
-		if binding.Enabled() {
-			help := binding.Help()
-			parts = append(parts, help.Key+" "+help.Desc)
+	text := m.inputHelp(width, false)
+	if m.inputContext().domain == inputSide {
+		if thread := m.side.activeThread(); thread != nil && thread.readOnly() {
+			text = "read-only · " + text
 		}
 	}
-	return mutedStyle.Render(ansi.Truncate(strings.Join(parts, " · "), width, "…"))
+	return mutedStyle.Render(ansi.Truncate(text, width, "…"))
 }
 
 func (m model) sideMenuView(width int) string {
@@ -138,7 +121,7 @@ func (m model) sideMenuView(width int) string {
 	return renderSlashMenuRows(
 		width,
 		"BTW THREADS",
-		"↑/↓ select · Enter open · Esc cancel",
+		m.inputHelp(width, false),
 		rows,
 		min(max(menu.selection, 0), len(rows)-1),
 	)
@@ -194,7 +177,7 @@ func (m model) sideConfirmView(width int) string {
 	return renderSlashMenuRows(
 		width,
 		"END BTW THREAD?",
-		"y/Enter confirm · n/Esc keep",
+		m.inputHelp(width, false),
 		rows,
 		0,
 	)

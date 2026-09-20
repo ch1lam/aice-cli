@@ -7,25 +7,25 @@ import (
 	tea "charm.land/bubbletea/v2"
 )
 
-type inputAction uint8
+type inputAction string
 
 const (
-	inputActionSessions inputAction = iota
-	inputActionTurns
-	inputActionSend
-	inputActionQueue
-	inputActionNewline
-	inputActionScroll
-	inputActionProcess
-	inputActionCode
-	inputActionEditor
-	inputActionPaste
-	inputActionHistory
-	inputActionHelp
-	inputActionClear
-	inputActionInterrupt
-	inputActionQuit
-	inputActionClose
+	inputActionSessions  inputAction = "sessions"
+	inputActionTurns     inputAction = "turns"
+	inputActionSend      inputAction = "send"
+	inputActionQueue     inputAction = "queue"
+	inputActionNewline   inputAction = "newline"
+	inputActionScroll    inputAction = "scroll"
+	inputActionProcess   inputAction = "process"
+	inputActionCode      inputAction = "code"
+	inputActionEditor    inputAction = "editor"
+	inputActionPaste     inputAction = "paste"
+	inputActionHistory   inputAction = "history"
+	inputActionHelp      inputAction = "help"
+	inputActionClear     inputAction = "clear"
+	inputActionInterrupt inputAction = "interrupt"
+	inputActionQuit      inputAction = "quit"
+	inputActionClose     inputAction = "close"
 )
 
 type inputActionBlock uint8
@@ -39,13 +39,13 @@ const (
 
 type inputActionMatch struct {
 	action           inputAction
+	argument         int
 	matched, enabled bool
 	blocked          inputActionBlock
 }
 
-// inputActionKeys is the availability and label source for both dispatch and
-// help. Local menus own their navigation; this projection only describes the
-// main and side conversation domains.
+// inputActionKeys resolves conversation bindings from current state. The
+// common action resolver adds local completion overrides before dispatch/help.
 func (m model) inputActionKeys() keyMap {
 	k := m.keys
 	c := m.inputContext()
@@ -64,10 +64,12 @@ func (m model) inputActionKeys() keyMap {
 	k.sessions.SetEnabled(main && !m.running && !m.side.anyRunning() && m.searchSessions != nil)
 	k.turns.SetEnabled(main && !m.running && !m.side.anyRunning())
 	k.commands.SetEnabled(main && !m.running && c.editor)
-	k.history.SetEnabled(main && !m.running && !m.slashCommandMenuVisible() &&
-		!m.fileCompletionVisible() && (m.historyBackAllowed() || m.historyForwardAllowed()))
+	history := main && !m.running && !m.slashCommandMenuVisible() && !m.fileCompletionVisible()
+	k.historyUp.SetEnabled(history && m.historyBackAllowed())
+	k.historyDown.SetEnabled(history && m.historyForwardAllowed())
 	k.help.SetEnabled(conversation && empty)
-	k.scroll.SetEnabled(conversation)
+	k.scrollUp.SetEnabled(conversation)
+	k.scrollDown.SetEnabled(conversation)
 	k.process.SetEnabled(main)
 	k.code.SetEnabled(main)
 	k.clear.SetEnabled(conversation)
@@ -124,60 +126,9 @@ func (m model) inputActionKeys() keyMap {
 
 func (k *keyMap) bindings() []*key.Binding {
 	return []*key.Binding{
-		&k.sessions, &k.turns, &k.send, &k.queue, &k.newline, &k.scroll,
-		&k.process, &k.code, &k.editor, &k.paste, &k.commands, &k.history,
+		&k.sessions, &k.turns, &k.send, &k.queue, &k.newline, &k.scrollUp, &k.scrollDown,
+		&k.process, &k.code, &k.editor, &k.paste, &k.commands, &k.historyUp, &k.historyDown,
 		&k.help, &k.clear, &k.interrupt, &k.quit, &k.close,
-	}
-}
-
-func (m model) matchInputAction(message tea.KeyPressMsg) inputActionMatch {
-	c := m.inputContext()
-	if c.domain != inputMain && c.domain != inputSide {
-		return inputActionMatch{}
-	}
-	for index, raw := range m.keys.actionBindings() {
-		raw.SetEnabled(true)
-		if !key.Matches(message, raw) {
-			continue
-		}
-		action := inputAction(index)
-		binding := m.inputActionKeys().actionBindings()[index]
-		// Printable help and vertical cursor keys only become actions when
-		// their conversation behavior applies. Otherwise the editor/menu owns them.
-		if action == inputActionHelp && !binding.Enabled() && !m.deliveryPending {
-			return inputActionMatch{}
-		}
-		if action == inputActionHistory && (!binding.Enabled() ||
-			message.Code == tea.KeyUp && !m.historyBackAllowed() ||
-			message.Code == tea.KeyDown && !m.historyForwardAllowed()) {
-			return inputActionMatch{}
-		}
-		match := inputActionMatch{action: action, matched: true, enabled: binding.Enabled()}
-		if !match.enabled {
-			match.blocked = inputActionUnavailable
-			if m.deliveryPending {
-				match.blocked = inputActionDeliveryPending
-			} else if m.clipboardPending && (action == inputActionSend ||
-				action == inputActionQueue || action == inputActionPaste ||
-				action == inputActionEditor) {
-				match.blocked = inputActionClipboardPending
-			}
-		}
-		return match
-	}
-	return inputActionMatch{}
-}
-
-func (k keyMap) actionBindings() [16]key.Binding {
-	return [16]key.Binding{
-		inputActionSessions: k.sessions, inputActionTurns: k.turns,
-		inputActionSend: k.send, inputActionQueue: k.queue,
-		inputActionNewline: k.newline, inputActionScroll: k.scroll,
-		inputActionProcess: k.process, inputActionCode: k.code,
-		inputActionEditor: k.editor, inputActionPaste: k.paste,
-		inputActionHistory: k.history, inputActionHelp: k.help,
-		inputActionClear: k.clear, inputActionInterrupt: k.interrupt,
-		inputActionQuit: k.quit, inputActionClose: k.close,
 	}
 }
 
@@ -198,23 +149,18 @@ func (m model) blockedInputAction(match inputActionMatch) (model, tea.Cmd, bool)
 	return m, nil, true
 }
 
-// Expanded help can reflow when an asynchronous state change enables actions.
-// Comparing small binding metadata avoids rendering chrome on pointer events.
-type helpLayoutEntry struct {
-	enabled bool
-	help    key.Help
-}
-
-func (m model) expandedHelpLayout() [17]helpLayoutEntry {
-	var layout [17]helpLayoutEntry
-	if !m.help.ShowAll || m.side.isVisible {
-		return layout
+// Expanded help metadata is small and comparable. It tracks every domain's
+// resolved actions without rendering the transcript on background events.
+func (m model) expandedHelpLayout() string {
+	if !m.help.ShowAll {
+		return ""
 	}
-	keys := m.footerKeys()
-	for i, binding := range keys.bindings() {
-		if binding.Enabled() {
-			layout[i] = helpLayoutEntry{true, binding.Help()}
+	var layout strings.Builder
+	for _, item := range m.inputBindings() {
+		if item.binding.Enabled() {
+			h := item.binding.Help()
+			layout.WriteString(h.Key + "\x00" + h.Desc + "\x00")
 		}
 	}
-	return layout
+	return layout.String()
 }

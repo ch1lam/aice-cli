@@ -420,7 +420,8 @@ func TestKeyMapEditorShowsInFullHelp(t *testing.T) {
 		t.Errorf("editor label = %#v, want ctrl+g editor", got)
 	}
 	found := false
-	for _, row := range keys.FullHelp() {
+	current := newModel(nil, nil)
+	for _, row := range current.footerKeys().FullHelp() {
 		for _, binding := range row {
 			if binding.Help().Key == "Ctrl+g" {
 				found = true

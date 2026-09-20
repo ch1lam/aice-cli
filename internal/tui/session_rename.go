@@ -48,24 +48,12 @@ func (m model) handleSessionTitleEditor(message tea.Msg) (tea.Model, tea.Cmd) {
 	p := m.sessionPicker
 	editor := p.rename
 	if key, ok := message.(tea.KeyPressMsg); ok {
-		switch key.String() {
-		case "esc", "ctrl+c":
-			if p.cancelRename != nil {
-				p.cancelRename()
-			}
-			p.rename = nil
-			p.previewFocused = false
-			return m, tea.Batch(p.input.Focus(), m.requestSessionSearch(), m.requestSessionPreview())
-		case "enter":
-			if editor.saving {
+		match := m.matchInputAction(key)
+		if match.matched {
+			if !match.enabled {
 				return m, nil
 			}
-			editor.saving = true
-			editor.input.Blur()
-			p.notice = ""
-			command, cancel := m.renameSession(m.sessionQueryGeneration, editor.key, editor.input.Value())
-			p.cancelRename = cancel
-			return m, command
+			return m.handleSessionAction(match)
 		}
 	}
 	if editor.saving {

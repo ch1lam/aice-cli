@@ -114,7 +114,7 @@ func (m model) headerView(width int) string {
 	if m.reading != nil {
 		label := "HISTORY · READ ONLY · active branch"
 		if m.reading.otherBranch {
-			label = "HISTORY · READ ONLY · other branch · Enter resumes active branch"
+			label = "HISTORY · READ ONLY · other branch"
 		}
 		if m.reading.directory {
 			label = "HISTORY · USER QUESTIONS"
@@ -137,10 +137,7 @@ func (m model) headerView(width int) string {
 
 func (m model) footerView(width int) string {
 	if m.reading != nil {
-		help := "↑↓ scroll · T questions · C code · End latest · Enter resume · Esc back"
-		if m.reading.directory {
-			help = "↑↓ select · Enter jump to question · Esc back"
-		}
+		help := m.inputHelp(width, m.help.ShowAll)
 		return mutedStyle.Width(width).Render(ansi.Truncate(help, width, "…"))
 	}
 	innerWidth := max(width-2, 1)
@@ -156,30 +153,13 @@ func (m model) footerView(width int) string {
 	if status != "" {
 		rows = append(rows, status)
 	}
-	if m.help.ShowAll && !m.side.isVisible {
-		fullHelp := m.help.FullHelpView(m.footerKeys().FullHelp())
+	if m.help.ShowAll {
+		fullHelp := m.inputFullHelp(contentWidth)
 		if fullHelp != "" {
 			rows = append(rows, fullHelp)
 		}
 	}
 	return style.Render(strings.Join(rows, "\n"))
-}
-
-func (m model) footerKeys() keyMap {
-	keys := m.inputActionKeys()
-	if m.deliveryPending {
-		return keys
-	}
-	if m.clearQuitPending {
-		keys.clear.SetHelp("Ctrl+c", "quit")
-	}
-	if m.help.ShowAll {
-		keys.help.SetHelp("?", "close")
-		if !m.clearQuitPending {
-			keys.clear.SetHelp("Ctrl+c", "clear, then quit")
-		}
-	}
-	return keys
 }
 
 // composerParts returns the rows rendered inside the composer frame, in
@@ -559,10 +539,16 @@ func pendingSteerRail(frame uint8) string {
 
 func (m model) processHeader(start, end int, collapsed bool) string {
 	star := "✧"
-	action := "Ctrl+o to collapse"
+	action := "collapse"
 	if collapsed {
 		star = "✦"
-		action = "Ctrl+o to expand"
+		action = "expand"
+	}
+	for _, binding := range m.inputBindings() {
+		if binding.action == inputActionProcess && binding.binding.Enabled() {
+			action = binding.binding.Help().Key + " to " + action
+			break
+		}
 	}
 
 	toolCalls := 0
@@ -760,8 +746,7 @@ func (m model) activityIndicator() string {
 }
 
 func (m model) statusLine(width int) string {
-	menuKeys := m.slashMenuShortHelp()
-	shortcuts := m.help.ShortHelpView(append(menuKeys, m.footerKeys().ShortHelp()...))
+	shortcuts := m.help.ShortHelpView(m.footerKeys().ShortHelp())
 	fullUsage := m.usageStatus(true)
 	compactUsage := m.usageStatus(false)
 	for _, usage := range []string{fullUsage, compactUsage} {
@@ -769,9 +754,9 @@ func (m model) statusLine(width int) string {
 			return line
 		}
 	}
-	// Menu actions stay discoverable when usage and shortcuts cannot share a row.
-	if len(menuKeys) > 0 {
-		return ansi.Truncate(shortcuts, width, "…")
+	// Active controls take priority when usage and shortcuts cannot share a row.
+	if shortcuts != "" {
+		return mutedStyle.Render(m.inputHelp(width, false))
 	}
 	for _, usage := range []string{fullUsage, compactUsage} {
 		if line, ok := alignStatusLine("", usage, width); ok {

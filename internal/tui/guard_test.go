@@ -38,7 +38,9 @@ func TestGuardViewRendersCommandCard(t *testing.T) {
 		`3. Allow "ls …" commands for this run`,
 		"current run only",
 		"4. Deny",
-		"↑/↓ select · 1-9/Enter confirm · y first · n/Esc deny",
+		"Enter confirm",
+		"n/Esc deny",
+		"↑/↓ select",
 	} {
 		if !strings.Contains(view, want) {
 			t.Errorf("view is missing %q:\n%s", want, view)
@@ -312,6 +314,59 @@ func TestGuardDenyFeedback(t *testing.T) {
 		current = updateModel(t, current, tea.KeyPressMsg{Code: tea.KeyEnter})
 		assertGuardReply(t, reply, interaction.GuardReply{OptionID: "deny"})
 	})
+}
+
+func TestGuardShortcutsRespectModifiersAndFeedbackFocus(t *testing.T) {
+	t.Parallel()
+
+	current := newGuardTestModel(t, interaction.GuardRequest{
+		Command: strings.Repeat("echo review\n", 40),
+		Options: guardTestOptions(),
+	})
+	for _, message := range []tea.KeyPressMsg{
+		{Code: tea.KeyDown, Mod: tea.ModCtrl},
+		{Code: tea.KeyEnter, Mod: tea.ModAlt},
+		{Code: tea.KeyPgDown, Mod: tea.ModCtrl},
+		{Code: '2', Mod: tea.ModAlt},
+	} {
+		current = updateModel(t, current, message)
+		if current.guardPending == nil || current.guardSelection != 0 || current.guardViewport.YOffset() != 0 {
+			t.Fatalf("modified shortcut %q triggered its unmodified action", message.String())
+		}
+	}
+	current = updateModel(t, current, tea.KeyPressMsg{Code: 'n', Text: "n"})
+	current = typeGuardText(t, current, "y12n")
+	current = updateModel(t, current, tea.KeyPressMsg{Code: tea.KeyBackspace, Mod: tea.ModAlt})
+	if current.guardFeedbackText != "y12n" || !current.guardFeedback {
+		t.Fatal("feedback input used selection actions or an unmodified backspace action")
+	}
+	current = updateModel(t, current, tea.KeyPressMsg{Code: tea.KeyBackspace})
+	if current.guardFeedbackText != "y12" {
+		t.Fatalf("backspace did not edit feedback: %q", current.guardFeedbackText)
+	}
+}
+
+func TestGuardHelpTracksAvailableOptionsAndFeedback(t *testing.T) {
+	t.Parallel()
+
+	current := newGuardTestModel(t, interaction.GuardRequest{Options: guardTestOptions()[:1]})
+	if help := current.inputHelp(1000, true); strings.Contains(help, "deny") || strings.Contains(help, "2 confirm") {
+		t.Fatalf("help advertises absent options: %q", help)
+	}
+	invalid := current.matchInputAction(tea.KeyPressMsg{Code: '2', Text: "2"})
+	if invalid.matched && invalid.enabled {
+		t.Fatal("absent option has an enabled shortcut")
+	}
+	deny := current.matchInputAction(tea.KeyPressMsg{Code: tea.KeyEscape})
+	if !deny.matched || deny.enabled {
+		t.Fatal("unavailable deny key must remain reserved")
+	}
+	current = newGuardTestModel(t, interaction.GuardRequest{Options: guardTestOptions()})
+	current = updateModel(t, current, tea.KeyPressMsg{Code: 'n', Text: "n"})
+	help := current.inputHelp(1000, true)
+	if !strings.Contains(help, "Enter send") || !strings.Contains(help, "Esc back") || strings.Contains(help, "confirm") {
+		t.Fatalf("help did not follow feedback focus: %q", help)
+	}
 }
 
 func guardTestOptions() []interaction.GuardOption {

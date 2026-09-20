@@ -695,24 +695,6 @@ func (m model) clearInputOrQuit() (model, tea.Cmd, bool) {
 	return m.settleCommand(false, nil)
 }
 
-func cancelKeyPressed(message tea.KeyPressMsg, keys keyMap) bool {
-	return message.Code == tea.KeyEscape ||
-		key.Matches(message, keys.interrupt) ||
-		key.Matches(message, keys.clear) ||
-		key.Matches(message, keys.quit)
-}
-
-func (m model) helpToggleRequested(message tea.KeyPressMsg) bool {
-	if !key.Matches(message, m.keys.help) {
-		return false
-	}
-
-	// Terminals expose committed printable text but not whether it came from
-	// an IME. Treat ? as help only when the regular composer is empty; once
-	// composition has started, printable text must remain textarea input.
-	return m.secretInput == nil && strings.TrimSpace(m.expandComposerText()) == "" && len(m.composerImages()) == 0
-}
-
 func (m *model) updateInput(message tea.Msg) tea.Cmd {
 	if _, pasted := message.(tea.PasteMsg); pasted {
 		m.clearQuitPending = false

@@ -84,3 +84,82 @@ func TestCurrentTurnDirectoryPreservesDraft(t *testing.T) {
 		t.Fatal("draft changed")
 	}
 }
+
+func TestReadingActionsFollowDirectoryFocus(t *testing.T) {
+	m := pickerModel(t, 100, 28)
+	m.closeSessionPicker()
+	m.entries = []transcriptEntry{{kind: entryUser, text: "First question"}, {kind: entryUser, text: "Second question"}}
+	m.refreshViewport(true)
+	m = m.openCurrentReading()
+	if help := ansi.Strip(m.inputHelp(200, true)); !strings.Contains(help, "jump to question") || strings.Contains(help, "scroll up") {
+		t.Fatalf("directory help describes the wrong focus: %s", help)
+	}
+	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyUp, Mod: tea.ModAlt})
+	if m.reading.selected != 1 {
+		t.Fatal("modified arrow was treated as an unmodified directory key")
+	}
+	m = updateModel(t, m, tea.KeyPressMsg{Code: 'k', Text: "k"})
+	if m.reading.selected != 0 {
+		t.Fatal("K alias did not select the previous question")
+	}
+	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyEscape})
+	if m.reading.directory {
+		t.Fatal("Escape did not return from directory to history body")
+	}
+	if help := ansi.Strip(m.inputHelp(200, true)); strings.Contains(help, "jump to question") || !strings.Contains(help, "scroll up") {
+		t.Fatalf("body help describes the wrong focus: %s", help)
+	}
+	m = updateModel(t, m, tea.KeyPressMsg{Code: 't', Mod: tea.ModCtrl})
+	if !m.reading.directory {
+		t.Fatal("Ctrl+T did not return to the question directory")
+	}
+	m = updateModel(t, m, tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
+	if m.reading != nil || m.input.Value() != "keep my draft" {
+		t.Fatal("Ctrl+C did not close the directory and restore the draft")
+	}
+}
+
+func TestEmptyReadingDirectoryReservesEnter(t *testing.T) {
+	m := pickerModel(t, 100, 28)
+	m.closeSessionPicker()
+	m.entries = []transcriptEntry{{kind: entryAssistant, text: "Answer without a question"}}
+	m.refreshViewport(true)
+	m = m.openCurrentReading()
+	enter := tea.KeyPressMsg{Code: tea.KeyEnter}
+	if match := m.matchInputAction(enter); !match.matched || match.enabled {
+		t.Fatalf("empty directory must reserve its disabled Enter action: %+v", match)
+	}
+	if help := ansi.Strip(m.inputHelp(200, true)); strings.Contains(help, "jump to question") {
+		t.Fatalf("empty directory advertises an unavailable jump: %s", help)
+	}
+	m = updateModel(t, m, enter)
+	if m.reading == nil || !m.reading.directory || m.input.Value() != "" {
+		t.Fatal("disabled directory action escaped to the conversation")
+	}
+}
+
+func TestReadingQuitFromBothFocuses(t *testing.T) {
+	for _, directory := range []bool{false, true} {
+		name := "body"
+		if directory {
+			name = "directory"
+		}
+		t.Run(name, func(t *testing.T) {
+			m := pickerModel(t, 100, 28)
+			m.closeSessionPicker()
+			m.entries = []transcriptEntry{{kind: entryUser, text: "Question"}}
+			m.refreshViewport(true)
+			m = m.openCurrentReading()
+			if !directory {
+				m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyEscape})
+			}
+			_, command := m.Update(tea.KeyPressMsg{Code: 'd', Mod: tea.ModCtrl})
+			if command == nil {
+				t.Fatal("Ctrl+D did not quit")
+			}
+			if _, ok := command().(tea.QuitMsg); !ok {
+				t.Fatal("Ctrl+D returned a command other than quit")
+			}
+		})
+	}
+}

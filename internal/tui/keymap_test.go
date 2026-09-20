@@ -81,13 +81,19 @@ func TestKeyMapShortHelpIncludesClearAndInterrupt(t *testing.T) {
 		t.Errorf("help label = %#v, want question mark shortcuts", got)
 	}
 
-	shortHelp := keys.ShortHelp()
+	current := newModel(nil, nil)
+	idleHelp := current.footerKeys().ShortHelp()
+	if len(idleHelp) != 2 || idleHelp[0].Help().Key != "?" || idleHelp[1].Help().Key != "Ctrl+c" {
+		t.Errorf("idle short help = %#v, want question mark and control-c", idleHelp)
+	}
+	current.running = true
+	shortHelp := current.footerKeys().ShortHelp()
 	if len(shortHelp) != 3 ||
-		shortHelp[0].Help().Key != "?" ||
+		shortHelp[0].Help().Key != "Esc" ||
 		shortHelp[1].Help().Key != "Ctrl+c" ||
-		shortHelp[2].Help().Key != "Esc" {
+		shortHelp[2].Help().Key != "?" {
 		t.Errorf(
-			"short help = %#v, want question mark, control-c and escape",
+			"running short help = %#v, want escape, control-c and question mark",
 			shortHelp,
 		)
 	}
@@ -96,28 +102,30 @@ func TestKeyMapShortHelpIncludesClearAndInterrupt(t *testing.T) {
 func TestKeyMapHistoryShowsInFullHelpAndDisablesWhileRunning(t *testing.T) {
 	t.Parallel()
 
-	keys := newKeyMap()
-	fullHelp := keys.FullHelp()
-	found := false
-	for _, row := range fullHelp {
-		for _, binding := range row {
-			if binding.Help().Key == "Up/Down" {
-				found = true
-			}
-		}
-	}
-	if !found {
-		t.Fatalf("full help = %#v, want up/down history binding", fullHelp)
-	}
-
 	current := newModel(nil, nil)
 	idle := current.inputActionKeys()
-	if !idle.history.Enabled() {
-		t.Error("history binding disabled while idle")
+	if !idle.historyUp.Enabled() || !idle.historyDown.Enabled() {
+		t.Error("history bindings disabled while idle")
 	}
-	current.running = true
-	running := current.inputActionKeys()
-	if running.history.Enabled() {
-		t.Error("history binding enabled while running")
+	for _, running := range []bool{false, true} {
+		current.running = running
+		keys := current.inputActionKeys()
+		if running && (keys.historyUp.Enabled() || keys.historyDown.Enabled()) {
+			t.Error("history bindings enabled while running")
+		}
+		found := make(map[string]bool)
+		for _, row := range current.footerKeys().FullHelp() {
+			for _, binding := range row {
+				if binding.Help().Desc == "history" {
+					found[binding.Help().Key] = true
+				}
+			}
+		}
+		if running && len(found) != 0 {
+			t.Errorf("running help advertises unavailable history: %v", found)
+		}
+		if !running && (!found["Up"] || !found["Down"]) {
+			t.Errorf("idle help = %v, want Up and Down history bindings", found)
+		}
 	}
 }

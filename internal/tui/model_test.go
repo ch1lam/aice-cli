@@ -896,9 +896,9 @@ func TestModelStatusLineShowsSessionUsageAndEstimatedCost(t *testing.T) {
 		line := ansi.Strip(current.statusLine(width))
 		wants := []string{"↑1.2k", "↓456", "R100", "W20", "$0.007"}
 		if width == 20 {
-			wants = []string{"↑1.3k", "↓456", "$0.007"}
-			if strings.Contains(line, "R100") || strings.Contains(line, "W20") {
-				t.Fatal("narrow footer did not collapse cache detail")
+			wants = []string{"?", "Ctrl+c"}
+			if strings.ContainsAny(line, "↑↓$") || strings.Contains(line, "R100") || strings.Contains(line, "W20") {
+				t.Fatal("usage displaced shortcuts in the narrow footer")
 			}
 		} else {
 			wants = append(wants, "? shortcuts", "Ctrl+c clear")
@@ -919,17 +919,37 @@ func TestModelStatusLineShowsZeroUsageBeforeConversation(t *testing.T) {
 	current := newModel(nil, nil)
 	for _, width := range []int{80, 32, 15} {
 		line := ansi.Strip(current.statusLine(width))
-		for _, want := range []string{"↑0", "↓0", "$0.000"} {
+		wants := []string{"↑0", "↓0", "R0", "W0", "$0.000", "? shortcuts", "Ctrl+c clear"}
+		if width < 80 {
+			wants = []string{"?", "Ctrl+c"}
+			if width == 32 {
+				wants = []string{"? shortcuts", "Ctrl+c clear"}
+			}
+			if strings.ContainsAny(line, "↑↓$") || strings.Contains(line, "R0") || strings.Contains(line, "W0") {
+				t.Fatal("zero usage displaced shortcuts in the narrow footer")
+			}
+		}
+		for _, want := range wants {
 			if !strings.Contains(line, want) {
 				t.Fatalf("width %d: missing %q in %q", width, want, line)
 			}
 		}
-		if width == 15 && (strings.Contains(line, "R0") || strings.Contains(line, "W0")) {
-			t.Fatal("narrow footer did not collapse cache detail")
-		}
 		if lipgloss.Width(line) > width || lipgloss.Height(line) != 1 {
 			t.Fatalf("footer overflow: %q", line)
 		}
+	}
+}
+
+func TestModelRunningStatusLineKeepsCancellationOnNarrowScreen(t *testing.T) {
+	t.Parallel()
+	current := newModel(nil, nil)
+	current.running = true
+	line := ansi.Strip(current.statusLine(15))
+	if !strings.Contains(line, "Esc") || !strings.Contains(line, "Ctrl+c") {
+		t.Fatalf("running shortcuts lost cancellation or clear: %q", line)
+	}
+	if lipgloss.Width(line) > 15 || lipgloss.Height(line) != 1 {
+		t.Fatalf("running footer overflow: %q", line)
 	}
 }
 

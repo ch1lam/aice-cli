@@ -185,73 +185,62 @@ func (m model) closeReading() model {
 	return previous
 }
 
-func (m model) handleReadingKey(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+func (m model) handleReadingAction(match inputActionMatch) (tea.Model, tea.Cmd) {
 	r := m.reading
 	m.selection.clear()
-	if key.String() == "ctrl+d" {
+	switch match.action {
+	case inputActionReadingQuit:
 		return m, tea.Quit
-	}
-	if r.directory {
-		switch key.String() {
-		case "esc", "t", "ctrl+t":
-			r.directory = false
-			m.viewport = r.savedViewport
-			m.resizeLayout()
-			m.refreshViewport(false)
-		case "up", "k":
-			r.selected = max(0, r.selected-1)
-			m.showTurnDirectory()
-		case "down", "j":
-			r.selected = min(max(0, len(r.turns)-1), r.selected+1)
-			m.showTurnDirectory()
-		case "pgup":
-			r.selected = max(0, r.selected-m.viewport.Height())
-			m.showTurnDirectory()
-		case "pgdown":
-			r.selected = min(max(0, len(r.turns)-1), r.selected+m.viewport.Height())
-			m.showTurnDirectory()
-		case "enter":
-			if len(r.turns) > 0 {
-				r.directory = false
-				m.viewport = r.savedViewport
-				m.resizeLayout()
-				m.refreshViewport(false)
-				m.jumpReadingEntry(r.turns[r.selected], "")
-			}
-		case "ctrl+c":
-			return m.closeReading(), nil
-		}
-		return m, nil
-	}
-	switch key.String() {
-	case "esc", "ctrl+c":
+	case inputActionReadingClose:
 		previous := m.closeReading()
-		if previous.sessionPicker != nil {
-			command := previous.requestSessionSearch()
-			return previous, command
+		if !r.directory && previous.sessionPicker != nil {
+			return previous, previous.requestSessionSearch()
 		}
 		return previous, nil
-	case "t", "ctrl+t":
+	case inputActionReadingBody:
+		r.directory = false
+		m.viewport = r.savedViewport
+		m.resizeLayout()
+		m.refreshViewport(false)
+	case inputActionReadingSelectPrevious:
+		r.selected = max(0, r.selected-1)
+		m.showTurnDirectory()
+	case inputActionReadingSelectNext:
+		r.selected = min(max(0, len(r.turns)-1), r.selected+1)
+		m.showTurnDirectory()
+	case inputActionReadingSelectPageUp:
+		r.selected = max(0, r.selected-m.viewport.Height())
+		m.showTurnDirectory()
+	case inputActionReadingSelectPageDown:
+		r.selected = min(max(0, len(r.turns)-1), r.selected+m.viewport.Height())
+		m.showTurnDirectory()
+	case inputActionReadingJump:
+		r.directory = false
+		m.viewport = r.savedViewport
+		m.resizeLayout()
+		m.refreshViewport(false)
+		m.jumpReadingEntry(r.turns[r.selected], "")
+	case inputActionReadingDirectory:
 		m.openTurnDirectory()
-	case "up", "k":
+	case inputActionReadingScrollUp:
 		m.viewport.scroll(-1)
-	case "down", "j":
+	case inputActionReadingScrollDown:
 		m.viewport.scroll(1)
-	case "pgup":
+	case inputActionReadingPageUp:
 		m.viewport.PageUp()
-	case "pgdown", " ":
+	case inputActionReadingPageDown:
 		m.viewport.PageDown()
-	case "c", "alt+o":
+	case inputActionReadingCode:
 		m.toggleVisibleCode()
-	case "home":
+	case inputActionReadingTop:
 		m.viewport.GotoTop()
-	case "end":
+	case inputActionReadingLatest:
 		if r.latest != nil {
 			m.replaceTranscript(r.latest)
 			r.otherBranch = false
 		}
 		m.viewport.GotoBottom()
-	case "enter":
+	case inputActionReadingResume:
 		previous := m.closeReading()
 		if previous.sessionPicker != nil {
 			return previous.resumeSelectedSession()

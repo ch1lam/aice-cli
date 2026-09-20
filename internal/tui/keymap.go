@@ -3,23 +3,25 @@ package tui
 import "charm.land/bubbles/v2/key"
 
 type keyMap struct {
-	sessions  key.Binding
-	turns     key.Binding
-	send      key.Binding
-	queue     key.Binding
-	newline   key.Binding
-	scroll    key.Binding
-	process   key.Binding
-	code      key.Binding
-	editor    key.Binding
-	paste     key.Binding
-	commands  key.Binding
-	history   key.Binding
-	help      key.Binding
-	clear     key.Binding
-	interrupt key.Binding
-	quit      key.Binding
-	close     key.Binding
+	sessions    key.Binding
+	turns       key.Binding
+	send        key.Binding
+	queue       key.Binding
+	newline     key.Binding
+	scrollUp    key.Binding
+	scrollDown  key.Binding
+	process     key.Binding
+	code        key.Binding
+	editor      key.Binding
+	paste       key.Binding
+	commands    key.Binding
+	historyUp   key.Binding
+	historyDown key.Binding
+	help        key.Binding
+	clear       key.Binding
+	interrupt   key.Binding
+	quit        key.Binding
+	close       key.Binding
 }
 
 func newKeyMap() keyMap {
@@ -41,8 +43,12 @@ func newKeyMap() keyMap {
 			key.WithKeys("shift+enter", "alt+enter", "ctrl+j"),
 			key.WithHelp("Shift+Enter", "newline"),
 		),
-		scroll: key.NewBinding(
-			key.WithKeys("pgup", "pgdown"),
+		scrollUp: key.NewBinding(
+			key.WithKeys("pgup"),
+			key.WithHelp("PgUp/PgDn", "scroll"),
+		),
+		scrollDown: key.NewBinding(
+			key.WithKeys("pgdown"),
 			key.WithHelp("PgUp/PgDn", "scroll"),
 		),
 		process: key.NewBinding(
@@ -57,9 +63,13 @@ func newKeyMap() keyMap {
 			key.WithKeys("/"),
 			key.WithHelp("/", "commands"),
 		),
-		history: key.NewBinding(
-			key.WithKeys("up", "down"),
-			key.WithHelp("Up/Down", "history"),
+		historyUp: key.NewBinding(
+			key.WithKeys("up"),
+			key.WithHelp("Up", "history"),
+		),
+		historyDown: key.NewBinding(
+			key.WithKeys("down"),
+			key.WithHelp("Down", "history"),
 		),
 		help: key.NewBinding(
 			key.WithKeys("?"),
@@ -77,21 +87,5 @@ func newKeyMap() keyMap {
 			key.WithKeys("ctrl+d"),
 			key.WithHelp("Ctrl+d", "quit"),
 		),
-	}
-}
-
-func (k keyMap) ShortHelp() []key.Binding {
-	return []key.Binding{
-		k.help,
-		k.clear,
-		k.interrupt,
-	}
-}
-
-func (k keyMap) FullHelp() [][]key.Binding {
-	return [][]key.Binding{
-		{k.send, k.queue, k.newline, k.paste},
-		{k.commands, k.sessions, k.turns, k.history, k.scroll, k.process, k.code, k.editor, k.help},
-		{k.clear, k.interrupt, k.close, k.quit},
 	}
 }

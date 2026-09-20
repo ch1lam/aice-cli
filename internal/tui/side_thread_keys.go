@@ -3,7 +3,6 @@ package tui
 import (
 	"strings"
 
-	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/ch1lam/aice-cli/internal/interaction"
@@ -297,79 +296,32 @@ func (m model) sideComposerEditable() bool {
 	return thread != nil && !thread.isRunning && !thread.readOnly()
 }
 
-func (m model) handleSideKey(message tea.KeyPressMsg) (model, tea.Cmd, bool) {
-	if !m.side.isVisible {
-		return m, nil, false
-	}
+func (m model) handleSideAction(match inputActionMatch) (model, tea.Cmd, bool) {
 	thread := m.side.activeThread()
-
-	if m.sideComposerEditable() {
-		// Ctrl+G edits the composer in the default editor; placeholder
-		// tokens stay atomic for cursor motion and deletion.
-		if key.Matches(message, m.keys.editor) {
-			updated, command := m.openComposerEditor()
-			return updated, command, true
-		}
-		if updated, command, handled := m.handlePasteTokenKey(message); handled {
-			updated.resizeLayout()
-			return updated, command, true
-		}
-	}
-
-	switch {
-	case message.Code == tea.KeyEscape && message.Mod == tea.ModAlt:
+	switch match.action {
+	case inputActionClose:
 		return m.closeSideThread()
-	case key.Matches(message, m.keys.interrupt):
+	case inputActionInterrupt:
 		if m.side.activeID == 0 && m.side.newPending != nil {
 			m.side.newPending.cancelPending = true
-			m.side.notice = "Cancelling side answer..."
-			m.refreshViewport(false)
-			return m, nil, true
-		}
-		if thread == nil || !thread.isRunning {
+		} else if thread == nil || !thread.isRunning {
 			return m.closeSideThread()
-		}
-		if thread.cancel != nil {
+		} else if thread.cancel != nil {
 			thread.cancel()
 		} else {
 			thread.cancelPending = true
 		}
 		m.side.notice = "Cancelling side answer..."
 		m.refreshViewport(false)
-		return m, nil, true
-	case key.Matches(message, m.keys.quit):
+	case inputActionQuit:
 		return m.requestEndSideThread()
-	case m.helpToggleRequested(message):
-		m.help.ShowAll = !m.help.ShowAll
+	case inputActionNewline:
+		m.input.InsertString("\n")
 		m.resizeLayout()
-		m.refreshViewport(false)
-		return m, nil, true
-	case key.Matches(message, m.keys.newline):
-		if m.side.activeID == 0 {
-			if m.side.newPending == nil {
-				m.input.InsertString("\n")
-				m.resizeLayout()
-			}
-		} else if thread != nil && !thread.isRunning && !thread.readOnly() {
-			m.input.InsertString("\n")
-			m.resizeLayout()
-		}
-		return m, nil, true
-	case key.Matches(message, m.keys.send):
+	case inputActionSend:
 		return m.submitSideComposer()
-	case key.Matches(message, m.keys.queue),
-		key.Matches(message, m.keys.process):
-		return m, nil, true
-	case key.Matches(message, m.keys.scroll):
-		switch message.Code {
-		case tea.KeyPgUp:
-			m.viewport.PageUp()
-		case tea.KeyPgDown:
-			m.viewport.PageDown()
-		}
-		return m, nil, true
 	}
-	return m, nil, false
+	return m, nil, true
 }
 
 // requestEndSideThread handles Ctrl+D inside the side panel: an idle thread
@@ -382,7 +334,7 @@ func (m model) requestEndSideThread() (model, tea.Cmd, bool) {
 	}
 	if thread.isRunning {
 		m.side.confirm = &sideConfirmState{threadID: thread.id}
-		m.side.notice = "End this thread? Its answer will be cancelled. y confirm · n cancel"
+		m.side.notice = "End this thread? Its answer will be cancelled."
 		m.refreshViewport(false)
 		return m, nil, true
 	}
@@ -390,20 +342,14 @@ func (m model) requestEndSideThread() (model, tea.Cmd, bool) {
 	return updated, command, true
 }
 
-func (m model) handleSideMenuKey(message tea.KeyPressMsg) (model, tea.Cmd, bool) {
-	switch {
-	case message.Code == tea.KeyUp:
-		m.moveSideMenuSelection(-1)
+func (m model) handleSideMenuAction(match inputActionMatch) (model, tea.Cmd, bool) {
+	switch match.action {
+	case inputActionMenuMove:
+		m.moveSideMenuSelection(match.argument)
 		m.refreshViewport(false)
-		return m, nil, true
-	case message.Code == tea.KeyDown:
-		m.moveSideMenuSelection(1)
-		m.refreshViewport(false)
-		return m, nil, true
-	case message.Code == tea.KeyTab,
-		key.Matches(message, m.keys.send):
+	case inputActionMenuConfirm:
 		return m.selectSideMenuOption()
-	case message.Code == tea.KeyEscape:
+	case inputActionMenuCancel:
 		return m.cancelSideMenu()
 	}
 	return m, nil, true
@@ -464,19 +410,18 @@ func (m model) cancelSideMenu() (model, tea.Cmd, bool) {
 	return m, nil, true
 }
 
-func (m model) handleSideConfirmKey(message tea.KeyPressMsg) (model, tea.Cmd, bool) {
+func (m model) handleSideConfirmAction(match inputActionMatch) (model, tea.Cmd, bool) {
 	confirm := m.side.confirm
 	if confirm == nil {
 		return m, nil, true
 	}
-	switch {
-	case message.Code == tea.KeyEscape,
-		message.Code == 'n':
+	switch match.action {
+	case inputActionMenuCancel:
 		m.side.confirm = nil
 		m.side.notice = "Thread kept"
 		m.refreshViewport(false)
 		return m, nil, true
-	case message.Code == tea.KeyEnter, message.Code == 'y':
+	case inputActionMenuConfirm:
 		m.side.confirm = nil
 		thread := m.side.thread(confirm.threadID)
 		if thread == nil {

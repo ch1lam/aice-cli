@@ -1,15 +1,16 @@
 package tui
 
 import (
-	"charm.land/bubbles/v2/key"
+	"strings"
+
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
-	"strings"
 )
 
 // Authentication input belongs to the pending command, never to prompt history.
-func (m model) handleAuthKey(message tea.KeyPressMsg) (model, tea.Cmd, bool) {
-	if cancelKeyPressed(message, m.keys) {
+func (m model) handleAuthAction(match inputActionMatch) (model, tea.Cmd, bool) {
+	switch match.action {
+	case inputActionAuthCancel:
 		m.cancelRequested = true
 		if m.cancelRun != nil {
 			m.cancelRun()
@@ -18,37 +19,28 @@ func (m model) handleAuthKey(message tea.KeyPressMsg) (model, tea.Cmd, bool) {
 		m.input.Blur()
 		m.status = "Cancelling command..."
 		return m.settleCommand(false, nil)
-	}
-	if m.authPrompt != nil && m.authPrompt.Menu != nil {
+	case inputActionAuthSelect:
 		options := m.authPrompt.Menu.Options
-		if len(options) == 0 {
-			return m, nil, true
-		}
-		switch message.Code {
-		case tea.KeyUp:
-			m.authSelection = (m.authSelection + len(options) - 1) % len(options)
-		case tea.KeyDown:
-			m.authSelection = (m.authSelection + 1) % len(options)
-		case tea.KeyEnter:
-			select {
-			case m.authInput <- options[m.authSelection].Arguments:
-				m.authPrompt = nil
-				m.input.Blur()
-				m.status = "Working..."
-			default:
-			}
+		m.authSelection = (m.authSelection + len(options) + match.argument) % len(options)
+		return m.settleCommand(true, nil)
+	case inputActionAuthChoose:
+		options := m.authPrompt.Menu.Options
+		select {
+		case m.authInput <- options[m.authSelection].Arguments:
+			m.authPrompt = nil
+			m.input.Blur()
+			m.status = "Working..."
+		default:
 		}
 		return m.settleCommand(true, nil)
-	}
-	if message.Code == tea.KeyPgUp || message.Code == tea.KeyPgDown {
-		var command tea.Cmd
-		m.viewport, command = m.viewport.Update(message)
-		return m, command, true
-	}
-	if !m.composerInputEnabled() {
+	case inputActionAuthPage:
+		if match.argument < 0 {
+			m.viewport.PageUp()
+		} else {
+			m.viewport.PageDown()
+		}
 		return m, nil, true
-	}
-	if key.Matches(message, m.keys.send) {
+	case inputActionAuthSubmit:
 		if value := strings.TrimSpace(m.input.Value()); value != "" {
 			select {
 			case m.authInput <- value:
@@ -65,11 +57,7 @@ func (m model) handleAuthKey(message tea.KeyPressMsg) (model, tea.Cmd, bool) {
 		}
 		return m.settleCommand(false, nil)
 	}
-	if key.Matches(message, m.keys.newline) {
-		return m, nil, true
-	}
-	command := m.updateInput(message)
-	return m, command, true
+	return m, nil, true
 }
 
 func (m model) authView() string {

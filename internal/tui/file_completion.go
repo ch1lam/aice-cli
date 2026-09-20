@@ -126,71 +126,38 @@ func (m model) fileCompletionView(width int) string {
 		rows[i] = slashMenuRow{label: sanitizeToolDetail(item.Path, false), query: m.fileCompletion.ref.Path}
 	}
 	title := fmt.Sprintf("FILES %d/%d", m.fileCompletion.selection+1, len(rows))
-	return renderSlashMenuRows(width, title, "↑/↓ select · → expand · Tab/Enter attach · Esc close", rows, m.fileCompletion.selection)
+	return renderSlashMenuRows(width, title, m.inputHelp(width, false), rows, m.fileCompletion.selection)
 }
 
-func (m model) handleFileCompletionKey(message tea.KeyPressMsg) (model, tea.Cmd, bool) {
-	ref, ok := m.fileReferenceAtCursor()
-	if message.Mod != 0 || !ok || ref != m.fileCompletion.ref || m.fileCompletion.dismissed {
-		return m, nil, false
-	}
-	// The first search has no menu yet. Do not let Enter send a partial
-	// reference, or let retained results attach a path from the previous query.
-	if m.fileCompletion.pending {
-		switch message.Code {
-		case tea.KeyTab, tea.KeyEnter, tea.KeyRight, tea.KeyUp, tea.KeyDown:
-			return m, nil, true
-		case tea.KeyEscape:
-			m.fileCompletion.dismissed = true
-			m.resizeLayout()
-			m.refreshViewport(false)
-			return m, nil, true
+func (m model) applyFileCompletion(expand bool) (model, tea.Cmd, bool) {
+	ref := m.fileCompletion.ref
+	item := m.fileCompletion.items[m.fileCompletion.selection]
+	for _, full := range interaction.ScanFileReferences(m.input.editableReferenceText()) {
+		if full.Start == ref.Start {
+			ref.End = full.End
+			break
 		}
 	}
-	if !m.fileCompletionVisible() {
-		return m, nil, false
+	for _, file := range m.input.files {
+		if file.start == ref.Start && file.editing {
+			ref.End = file.end
+			break
+		}
 	}
-	switch message.Code {
-	case tea.KeyUp:
-		m.fileCompletion.selection = (m.fileCompletion.selection + len(m.fileCompletion.items) - 1) % len(m.fileCompletion.items)
-	case tea.KeyDown:
-		m.fileCompletion.selection = (m.fileCompletion.selection + 1) % len(m.fileCompletion.items)
-	case tea.KeyEscape:
-		m.fileCompletion.dismissed = true
-	case tea.KeyTab, tea.KeyEnter, tea.KeyRight:
-		item := m.fileCompletion.items[m.fileCompletion.selection]
-		for _, full := range interaction.ScanFileReferences(m.input.editableReferenceText()) {
-			if full.Start == ref.Start {
-				ref.End = full.End
-				break
-			}
-		}
-		for _, file := range m.input.files {
-			if file.start == ref.Start && file.editing {
-				ref.End = file.end
-				break
-			}
-		}
-		runes := []rune(m.input.Value())
-		replacement := fileReferenceLabel(item.Path)
-		tail := string(runes[ref.End:])
-		back := len([]rune(tail))
-		if message.Code != tea.KeyRight && (tail == "" || !unicode.IsSpace(runes[ref.End])) {
-			replacement += " "
-		}
-		m.input.replaceReference(ref.Start, ref.End, replacement, item.Path, message.Code == tea.KeyRight)
-		for range back {
-			m.input, _ = m.input.Update(tea.KeyPressMsg{Code: tea.KeyLeft})
-		}
-		m.fileCompletion.dismissed = message.Code != tea.KeyRight
-		command := m.requestFileCompletion()
-		m.resizeLayout()
-		m.refreshViewport(false)
-		return m, command, true
-	default:
-		return m, nil, false
+	runes := []rune(m.input.Value())
+	replacement := fileReferenceLabel(item.Path)
+	tail := string(runes[ref.End:])
+	back := len([]rune(tail))
+	if !expand && (tail == "" || !unicode.IsSpace(runes[ref.End])) {
+		replacement += " "
 	}
+	m.input.replaceReference(ref.Start, ref.End, replacement, item.Path, expand)
+	for range back {
+		m.input, _ = m.input.Update(tea.KeyPressMsg{Code: tea.KeyLeft})
+	}
+	m.fileCompletion.dismissed = !expand
+	command := m.requestFileCompletion()
 	m.resizeLayout()
 	m.refreshViewport(false)
-	return m, nil, true
+	return m, command, true
 }

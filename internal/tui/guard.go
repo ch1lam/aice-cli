@@ -13,11 +13,7 @@ import (
 	"github.com/ch1lam/aice-cli/internal/interaction"
 )
 
-const (
-	guardFeedbackPrompt = "Tell the agent what to do instead (optional):"
-	guardSelectFooter   = "↑/↓ select · 1-9/Enter confirm · y first · n/Esc deny"
-	guardFeedbackFooter = "Enter send · Esc back"
-)
+const guardFeedbackPrompt = "Tell the agent what to do instead (optional):"
 
 type guardRequestMsg struct {
 	req *interaction.GuardRequest
@@ -35,77 +31,49 @@ func waitForGuardRequest(requests <-chan interaction.GuardRequest) tea.Cmd {
 	}
 }
 
-func (m model) handleGuardKey(msg tea.KeyPressMsg) (model, tea.Cmd, bool) {
+func (m model) handleGuardAction(match inputActionMatch) (model, tea.Cmd, bool) {
 	if m.guardPending == nil {
 		return m, nil, false
 	}
-	switch msg.Code {
-	case tea.KeyPgUp:
-		m.guardViewport.PageUp()
-	case tea.KeyPgDown:
-		m.guardViewport.PageDown()
-	case tea.KeyHome:
-		m.guardViewport.GotoTop()
-	case tea.KeyEnd:
-		m.guardViewport.GotoBottom()
-	default:
-		if m.guardFeedback {
-			return m.handleGuardFeedbackKey(msg)
+	switch match.action {
+	case inputActionGuardPage:
+		if match.argument < 0 {
+			m.guardViewport.PageUp()
+		} else {
+			m.guardViewport.PageDown()
 		}
-		return m.handleGuardSelectionKey(msg)
-	}
-	return m, nil, true
-}
-
-func (m model) handleGuardSelectionKey(msg tea.KeyPressMsg) (model, tea.Cmd, bool) {
-	switch msg.Code {
-	case tea.KeyUp:
-		if m.guardSelection > 0 {
-			m.guardSelection--
+	case inputActionGuardBoundary:
+		if match.argument < 0 {
+			m.guardViewport.GotoTop()
+		} else {
+			m.guardViewport.GotoBottom()
 		}
-		return m, nil, true
-	case tea.KeyDown:
-		if m.guardSelection+1 < len(m.guardPending.Options) {
-			m.guardSelection++
-		}
-		return m, nil, true
-	case tea.KeyEnter:
+	case inputActionGuardSelect:
+		m.guardSelection = min(max(m.guardSelection+match.argument, 0), len(m.guardPending.Options)-1)
+	case inputActionGuardConfirm:
 		return m.confirmGuardIndex(m.guardSelection)
-	case tea.KeyEscape:
-		return m.confirmGuardIndex(firstDenyGuardOption(m.guardPending.Options))
-	}
-	switch msg.String() {
-	case "y", "Y":
-		return m.confirmGuardIndex(0)
-	case "n", "N":
-		return m.confirmGuardIndex(firstDenyGuardOption(m.guardPending.Options))
-	case "1", "2", "3", "4", "5", "6", "7", "8", "9":
-		return m.confirmGuardIndex(int(msg.String()[0] - '1'))
-	}
-	return m, nil, true
-}
-
-func (m model) handleGuardFeedbackKey(msg tea.KeyPressMsg) (model, tea.Cmd, bool) {
-	switch msg.Code {
-	case tea.KeyEnter:
+	case inputActionGuardOption:
+		return m.confirmGuardIndex(match.argument)
+	case inputActionGuardSubmit:
 		return m.submitGuardFeedback()
-	case tea.KeyEscape:
+	case inputActionGuardBack:
 		m.guardFeedback = false
 		m.guardFeedbackText = ""
 		m.resizeLayout()
-		return m, nil, true
-	case tea.KeyBackspace:
+	case inputActionGuardBackspace:
 		runes := []rune(m.guardFeedbackText)
 		if len(runes) > 0 {
 			m.guardFeedbackText = string(runes[:len(runes)-1])
 			m.resizeGuard()
 		}
-		return m, nil, true
 	}
-	if msg.Text != "" {
-		m.guardFeedbackText += msg.Text
+	return m, nil, true
+}
+
+func (m model) handleGuardText(message tea.KeyPressMsg) (model, tea.Cmd, bool) {
+	if m.guardFeedback && message.Text != "" {
+		m.guardFeedbackText += message.Text
 		m.resizeGuard()
-		return m, nil, true
 	}
 	return m, nil, true
 }
@@ -224,33 +192,20 @@ func (m model) guardView(width int) string {
 	if !m.guardViewport.AtBottom() {
 		hint += "↓ "
 	}
-	if hint != "" {
-		hint += "PgUp/PgDn · Home/End · wheel"
-	}
-	// The narrow variant keeps the hidden-content arrows and paging hint visible.
-	if lipgloss.Width(hint) > innerWidth {
-		hint = strings.TrimSpace(strings.TrimSuffix(hint, " · Home/End · wheel"))
-	}
 	return style.Render(strings.Join([]string{
 		m.guardViewport.View(), mutedStyle.Render(hint), m.guardControlsView(innerWidth),
 	}, "\n"))
 }
 
 func (m model) guardControlsView(width int) string {
-	footer := guardSelectFooter
-	if width < lipgloss.Width(footer) {
-		footer = "↑/↓ select · Enter · n/Esc deny"
-	}
-	if width < lipgloss.Width(footer) {
-		footer = "↑/↓ · Enter · Esc"
-	}
+	footer := m.inputHelp(width, false)
 	if m.guardFeedback {
 		// Keep the editing tail visible without allowing a long note to move the
 		// send/back controls off screen. The complete note remains in state.
 		input := viewport.New(viewport.WithWidth(width), viewport.WithHeight(2))
 		input.SetContent(ansi.Hardwrap(m.guardFeedbackText+guardCursorStyle.Render(" "), width, true))
 		input.GotoBottom()
-		return ansi.Hardwrap(mutedStyle.Render(guardFeedbackPrompt), width, true) + "\n" + input.View() + "\n" + mutedStyle.Render(guardFeedbackFooter)
+		return ansi.Hardwrap(mutedStyle.Render(guardFeedbackPrompt), width, true) + "\n" + input.View() + "\n" + mutedStyle.Render(footer)
 	}
 	return m.guardOptionsView(width) + "\n" + mutedStyle.Render(footer)
 }

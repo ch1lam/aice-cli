@@ -20,35 +20,80 @@ const (
 	inputCommand
 )
 
+// inputFocus names the active pane or interaction mode within a domain.
+// It is derived from the owning component, never independently mutated.
+type inputFocus uint8
+
+const (
+	inputFocusEditor inputFocus = iota
+	inputFocusList
+	inputFocusPreview
+	inputFocusSearch
+	inputFocusRename
+	inputFocusWaiting
+	inputFocusTranscript
+	inputFocusDirectory
+	inputFocusFeedback
+)
+
 // inputContext is a read-only projection, never a second owner of UI state.
 // Operation limits (clipboard/delivery/run) remain on their existing owners.
 type inputContext struct {
 	domain inputDomain
+	focus  inputFocus
 	editor bool // the shared composer may receive remaining text/editing input
 }
 
 func (m model) inputContext() inputContext {
 	switch {
 	case m.reading != nil:
-		return inputContext{domain: inputReading}
+		focus := inputFocusTranscript
+		if m.reading.directory {
+			focus = inputFocusDirectory
+		}
+		return inputContext{domain: inputReading, focus: focus}
 	case m.sessionPicker != nil:
-		return inputContext{domain: inputSessions}
+		p := m.sessionPicker
+		focus := inputFocusList
+		switch {
+		case p.restoring || p.rename != nil && p.rename.saving:
+			focus = inputFocusWaiting
+		case p.rename != nil:
+			focus = inputFocusRename
+		case p.input.Focused():
+			focus = inputFocusSearch
+		case p.previewFocused:
+			focus = inputFocusPreview
+		}
+		return inputContext{domain: inputSessions, focus: focus}
 	case m.guardPending != nil:
-		return inputContext{domain: inputGuard}
+		focus := inputFocusList
+		if m.guardFeedback {
+			focus = inputFocusFeedback
+		}
+		return inputContext{domain: inputGuard, focus: focus}
 	case m.authInput != nil:
-		return inputContext{inputAuth, m.authPrompt != nil && m.authPrompt.AllowInput && m.authPrompt.Menu == nil && !m.cancelRequested && !m.deliveryPending}
+		c := inputContext{domain: inputAuth, focus: inputFocusWaiting}
+		if m.authPrompt != nil && !m.cancelRequested && !m.deliveryPending {
+			if m.authPrompt.Menu != nil {
+				c.focus = inputFocusList
+			} else if m.authPrompt.AllowInput {
+				c.focus, c.editor = inputFocusEditor, true
+			}
+		}
+		return c
 	case m.side.menu != nil:
-		return inputContext{domain: inputSideMenu}
+		return inputContext{domain: inputSideMenu, focus: inputFocusList}
 	case m.side.confirm != nil:
-		return inputContext{domain: inputSideConfirm}
+		return inputContext{domain: inputSideConfirm, focus: inputFocusList}
 	case m.side.isVisible:
-		return inputContext{inputSide, !m.deliveryPending && m.sideComposerEditable()}
+		return inputContext{domain: inputSide, editor: !m.deliveryPending && m.sideComposerEditable()}
 	case m.secretInput != nil:
-		return inputContext{inputSecret, !m.deliveryPending && !m.running}
+		return inputContext{domain: inputSecret, editor: !m.deliveryPending && !m.running}
 	case m.commandMenu != nil:
-		return inputContext{inputCommand, !m.deliveryPending && !m.running}
+		return inputContext{domain: inputCommand, focus: inputFocusList, editor: !m.deliveryPending && !m.running}
 	default:
-		return inputContext{inputMain, !m.deliveryPending && (!m.running || m.acceptsDelivery)}
+		return inputContext{domain: inputMain, editor: !m.deliveryPending && (!m.running || m.acceptsDelivery)}
 	}
 }
 
@@ -56,6 +101,7 @@ func (m model) inputContext() inputContext {
 // Plain slash/file suggestions remain in the main input lifetime.
 type inputIdentity struct {
 	domain       inputDomain
+	focus        inputFocus
 	session      string
 	side         uint64
 	reading      *sessionReading
@@ -79,8 +125,10 @@ func (m model) inputIdentity() inputIdentity {
 		id.reading = m.reading
 	case inputSessions:
 		id.picker, id.rename = m.sessionPicker, m.sessionPicker.rename
+		id.focus = c.focus
 	case inputGuard:
 		id.guard = m.guardPending
+		id.focus = c.focus
 	case inputAuth:
 		id.auth, id.authPrompt = m.authInput, m.authPrompt
 	case inputCommand:
