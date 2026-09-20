@@ -221,6 +221,17 @@ func newModel(
 	externalCommands ...SlashCommand,
 ) model {
 	input := textarea.New()
+	// Selection edits bypass the composer's atomic attachment boundaries.
+	// Keep these opt-in until selections can preserve those spans; Ctrl+G
+	// remains AICE's external-editor shortcut.
+	for _, binding := range []*key.Binding{
+		&input.KeyMap.SelectCharacterForward, &input.KeyMap.SelectCharacterBackward,
+		&input.KeyMap.SelectWordForward, &input.KeyMap.SelectWordBackward,
+		&input.KeyMap.SelectLineUp, &input.KeyMap.SelectLineDown,
+		&input.KeyMap.SelectAll, &input.KeyMap.CopySelection,
+	} {
+		binding.SetEnabled(false)
+	}
 	input.Prompt = ""
 	input.Placeholder = defaultPlaceholder
 	input.ShowLineNumbers = false

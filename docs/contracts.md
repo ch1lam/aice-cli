@@ -350,7 +350,9 @@ consistency for those behaviors.
   search and preview results retain their explicit handlers while dialogs are
   open. Only editor commands wrap Bubbles' private asynchronous replies with
   input identity and generation, preventing delayed paste across a dialog or
-  draft clear. Unknown messages do not rebuild the composer.
+  draft clear. Unknown messages do not rebuild the composer. The shared
+  textarea disables native selection bindings until selection edits preserve
+  AICE's atomic file and paste spans; Ctrl+G remains the external-editor action.
 - `resizeLayout` measures outer chrome during Update. `screenLayout` derives
   half-open cell rectangles from those measurements and viewport dimensions;
   composer hit testing, transcript coordinates and the real terminal caret

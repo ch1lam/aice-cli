@@ -436,13 +436,14 @@ func toolResultInputParam(
 		}
 	}
 
+	var item responses.ResponseInputItemUnionParam
 	if len(output) == len(texts) {
-		return responses.ResponseInputItemParamOfFunctionCallOutput(
-			callID,
-			strings.Join(texts, "\n"),
-		), nil
+		item = responses.ResponseInputItemParamOfFunctionCallOutput(strings.Join(texts, "\n"))
+	} else {
+		item = responses.ResponseInputItemParamOfFunctionCallOutput(output)
 	}
-	return responses.ResponseInputItemParamOfFunctionCallOutput(callID, output), nil
+	item.OfFunctionCallOutput.CallID = param.NewOpt(callID)
+	return item, nil
 }
 
 func toolParams(tools []llm.ToolDefinition) ([]responses.ToolUnionParam, error) {

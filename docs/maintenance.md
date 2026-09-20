@@ -107,14 +107,16 @@ anchor. See [composer mouse input](../internal/tui/composer_mouse.go),
 [file references](../internal/tui/composer_files.go), and
 [paste tokens](../internal/tui/composer_paste.go).
 
-The pinned `charm.land/bubbles/v2 v2.1.1` textarea exposes `Line()`, `Column()`
-(a rune index), `LineInfo()` for the cursor's current soft-wrapped line,
-`Cursor()`, and `ScrollYOffset()`. `SetCursorColumn()`, `CursorUp/Down()`, and
-`MoveToBegin/End()` can move the cursor without replacing text. Missing
-capabilities are a read-only mapping from an arbitrary visible cell to an
-editing position and direct movement to an arbitrary logical row and column.
-The existing methods make ordinary cases possible, but do not establish a
-reliable general mouse-positioning implementation:
+The pinned `charm.land/bubbles/v2 v2.2.1` textarea provides `PositionAt(x, y)`
+for read-only visible-cell mapping, and `BeginSelection` / `EndSelection` can
+move the cursor without replacing text. `Line()`, `Column()` (a rune index),
+`LineInfo()`, `Cursor()`, and `ScrollYOffset()` expose its current position.
+The public coordinate APIs remove the need to simulate cursor navigation for
+hit testing, but do not yet establish reliable general mouse positioning:
+
+- `PositionAt` measures individual runes, not whole grapheme clusters. In
+  `👨‍👩‍👧‍👦cd`, column 2 maps to rune 2 inside the emoji instead of rune 7
+  before `c`; `👍🏽cd` similarly maps column 2 inside the skin-tone sequence.
 
 - Wrapping can split a grapheme: at width 40, 38 ASCII characters followed by
   `👨‍👩‍👧‍👦cd` place `👨` on the first row and start the second row with a ZWJ.
@@ -180,9 +182,8 @@ func main() {
 ```
 
 Click positioning remains deferred; no dependency fork or replacement editor
-is maintained. A suitable upstream capability would use the rendering layout
-for read-only visible-cell hit testing, preserve grapheme boundaries, and move
-to a logical row/rune column while maintaining the viewport. AICE would still
+is maintained. Upstream hit testing and wrapping must agree on whole grapheme
+boundaries, and cursor movement must maintain the viewport. AICE would still
 own snapping hits on confirmed file references and paste tokens to their
 atomic boundaries. Calling `composerInput.SetValue()` to move the caret would
 clear file-reference spans; cursor-only changes must preserve the draft and
