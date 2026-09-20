@@ -88,10 +88,13 @@ func TestDiffPanelLineNumbers(t *testing.T) {
 func TestEditDiffDisplayLimitsAndSafety(t *testing.T) {
 	diff := interaction.DiffDisplay{Text: "@@ -1 +1 @@\n-old\r\n+\x1b]52;c;evil\a\u202e\\r\t\n" + strings.Repeat(" context\n", 20)}
 	view := ansi.Strip(editDiffView(diff, 100, false))
-	for _, want := range []string{`-old\r`, `\x1b]52;c;evil\a\u202e\\r\t`, "Ctrl+o expand"} {
+	for _, want := range []string{`-old\r`, `\x1b]52;c;evil\a\u202e\\r\t`, "more diff · expand for more"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("missing %q: %s", want, view)
 		}
+	}
+	if strings.Contains(view, "Ctrl+o") || strings.Count(view, "context") != 9 {
+		t.Fatal("folded diff changed its row limit or advertises a context-specific shortcut")
 	}
 	for _, control := range []string{"\x1b", "\a", "\r", "\u202e"} {
 		if strings.Contains(view, control) {
@@ -99,7 +102,8 @@ func TestEditDiffDisplayLimitsAndSafety(t *testing.T) {
 		}
 	}
 	full := ansi.Strip(editDiffView(diff, 100, true))
-	if strings.Contains(full, "Ctrl+o") || strings.Count(full, "context") != 20 {
+	if strings.Contains(full, "expand for more") || strings.Contains(full, "Ctrl+o") ||
+		strings.Count(full, "context") != 20 {
 		t.Fatal(full)
 	}
 	long := ansi.Strip(editDiffView(interaction.DiffDisplay{Text: "+" + strings.Repeat("界", 30000)}, 24, true))
@@ -110,7 +114,8 @@ func TestEditDiffDisplayLimitsAndSafety(t *testing.T) {
 
 func TestEditDiffExpandedReplayStillBoundsRows(t *testing.T) {
 	view := ansi.Strip(editDiffView(interaction.DiffDisplay{Text: strings.Repeat("+row\n", 3000)}, 80, true))
-	if strings.Count(view, "+row") != 2000 || !strings.Contains(view, "diff incomplete") || strings.Contains(view, "Ctrl+o expand") {
+	if strings.Count(view, "+row") != 2000 || !strings.Contains(view, "diff incomplete") ||
+		strings.Contains(view, "more diff") {
 		t.Fatal("expanded replay limit was not reported accurately")
 	}
 }

@@ -49,6 +49,9 @@ func TestWritePreviewBoundsAndExpand(t *testing.T) {
 	if !strings.Contains(pfx, "line10") || strings.Contains(pfx, "line11") {
 		t.Fatalf("bounded preview: %s", pfx)
 	}
+	if !strings.Contains(pfx, "preview limited · expand for more") || strings.Contains(pfx, "Ctrl+o") {
+		t.Fatalf("preview notice must not advertise a context-specific shortcut: %s", pfx)
+	}
 	for range 2 {
 		updated, _ := m.Update(tea.KeyPressMsg{Code: 'o', Mod: tea.ModCtrl})
 		m = updated.(model)

@@ -169,8 +169,8 @@ func (m model) startApplicationSlashCommand(
 				request: request,
 				prompt:  "Custom endpoint URL",
 			}
-			m.input.Placeholder = "Custom endpoint URL (e.g. http://localhost:11434/v1, Enter for default, input hidden)"
-			m.status = "Custom endpoint URL required; Enter for default, Esc cancels"
+			m.input.Placeholder = "Custom endpoint URL (e.g. http://localhost:11434/v1, leave blank for default, input hidden)"
+			m.status = "Custom endpoint URL required; leave blank for default"
 			return m.settleCommand(true, m.input.Focus())
 		}
 		m.entries = append(
@@ -183,7 +183,7 @@ func (m model) startApplicationSlashCommand(
 			prompt:  command.SecretPrompt,
 		}
 		m.input.Placeholder = command.SecretPrompt + " (input hidden)"
-		m.status = command.SecretPrompt + " required; Esc cancels"
+		m.status = command.SecretPrompt + " required"
 		return m.settleCommand(true, m.input.Focus())
 	}
 	m.entries = append(m.entries, transcriptEntry{kind: entryUser, text: raw})
@@ -197,7 +197,7 @@ func (m model) startApplicationSlashCommand(
 		m.authInput = make(chan string, 1)
 		m.authCommand = command.Name
 		request.Auth = &interaction.AuthInteraction{Input: m.authInput}
-		m.input.Placeholder = "Starting /" + command.Name + "; Escape or Ctrl+c cancels"
+		m.input.Placeholder = "Starting /" + command.Name
 		m.status = "Starting /" + command.Name + "..."
 	} else if useSavedCredential {
 		m.status = "Using saved credential..."
@@ -234,7 +234,7 @@ func (m model) openCommandMenu(
 	m.commandDismissed = false
 	m.activeRun = nil
 	m.acceptsDelivery = false
-	m.status = command.Menu.Title + "; Esc cancels"
+	m.status = command.Menu.Title
 	return m.settleCommand(false, nil)
 }
 
@@ -263,7 +263,7 @@ func (m model) selectCommandMenuOption() (model, tea.Cmd, bool) {
 		)
 		m.input.SetValue("/" + m.commandMenu.command.Name + " ")
 		m.input.CursorEnd()
-		m.status = option.Menu.Title + "; Esc goes back"
+		m.status = option.Menu.Title
 		return m.settleCommand(false, nil)
 	}
 
@@ -289,7 +289,7 @@ func (m model) backOrCancelCommandMenu() (model, tea.Cmd, bool) {
 		frame := m.commandMenu.frames[len(m.commandMenu.frames)-1]
 		m.input.SetValue(frame.draft)
 		m.input.CursorEnd()
-		m.status = frame.menu.Title + "; Esc cancels"
+		m.status = frame.menu.Title
 		return m.settleCommand(false, nil)
 	}
 
@@ -344,7 +344,7 @@ func (m model) submitSecretInput() (model, tea.Cmd, bool) {
 		case 0:
 			// Endpoint URL
 			if value != "" && !(strings.HasPrefix(value, "http://") || strings.HasPrefix(value, "https://")) {
-				m.status = "Endpoint must start with http:// or https:// (or Enter for default)"
+				m.status = "Endpoint must start with http:// or https:// (or leave blank for default)"
 				return m, nil, true
 			}
 			m.customLogin.endpoint = value
@@ -352,15 +352,15 @@ func (m model) submitSecretInput() (model, tea.Cmd, bool) {
 			m.secretInput.prompt = "API key"
 			m.input.Reset()
 			m.input.Placeholder = "API key (leave empty for Ollama, input hidden)"
-			m.status = "API key (leave empty for Ollama); Enter to continue, Esc cancels"
+			m.status = "API key (leave empty for Ollama)"
 			return m.settleCommand(true, m.input.Focus())
 		case 1:
 			m.customLogin.apiKey = value
 			m.customLogin.step = 2
 			m.secretInput.prompt = "Model name"
 			m.input.Reset()
-			m.input.Placeholder = "Model name (e.g. llama3.1:8b, Enter for default, input hidden)"
-			m.status = "Model name (Enter for default); Esc cancels"
+			m.input.Placeholder = "Model name (e.g. llama3.1:8b, leave blank for default, input hidden)"
+			m.status = "Model name (leave blank for default)"
 			return m.settleCommand(true, m.input.Focus())
 		case 2:
 			if value != "" && strings.ContainsAny(value, " \t\r\n") {

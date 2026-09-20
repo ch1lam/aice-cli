@@ -73,7 +73,7 @@ func editDiffView(diff interaction.DiffDisplay, width int, expanded bool) string
 	}
 	result := blockPanel(strings.Join(rows, "\n"), width)
 	if folded && !expanded {
-		result += "\n" + mutedStyle.Render("… more diff · Ctrl+o expand")
+		result += "\n" + mutedStyle.Render("… more diff · expand for more")
 	}
 	if clipped {
 		result += "\n" + mutedStyle.Render("… long lines clipped to terminal width")
