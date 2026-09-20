@@ -40,7 +40,6 @@ func TestGuardViewRendersCommandCard(t *testing.T) {
 		"4. Deny",
 		"Enter confirm",
 		"n/Esc deny",
-		"↑/↓ select",
 	} {
 		if !strings.Contains(view, want) {
 			t.Errorf("view is missing %q:\n%s", want, view)

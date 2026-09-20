@@ -746,7 +746,10 @@ func (m model) activityIndicator() string {
 }
 
 func (m model) statusLine(width int) string {
-	shortcuts := m.help.ShortHelpView(m.footerKeys().ShortHelp())
+	shortcuts := ""
+	if !m.help.ShowAll {
+		shortcuts = m.help.ShortHelpView(m.footerKeys().ShortHelp())
+	}
 	fullUsage := m.usageStatus(true)
 	compactUsage := m.usageStatus(false)
 	for _, usage := range []string{fullUsage, compactUsage} {

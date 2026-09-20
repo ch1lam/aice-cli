@@ -11,8 +11,8 @@ func (m trustPromptModel) inputBindings() []inputBinding {
 	bindings := []inputBinding{
 		actionBinding(inputActionTrustSelect, "Enter", "select", "enter"),
 		actionBinding(inputActionTrustCancel, "Esc/Ctrl+c", "cancel", "esc", "ctrl+c"),
-		actionBinding(inputActionTrustPrevious, "↑/↓", "choose", "up"),
-		actionBinding(inputActionTrustNext, "↑/↓", "choose", "down"),
+		actionBinding(inputActionTrustPrevious, "", "", "up"),
+		actionBinding(inputActionTrustNext, "", "", "down"),
 	}
 	for i := range bindings {
 		if bindings[i].action != inputActionTrustCancel {

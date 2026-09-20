@@ -12,13 +12,13 @@ import (
 
 func TestSessionHelpFollowsFocusAndKeepsNoticesSeparate(t *testing.T) {
 	m := pickerModel(t, 200, 30)
-	if help := m.inputHelp(500, true); !strings.Contains(help, "↑↓ select") || !strings.Contains(help, "/ search") {
+	if help := m.inputHelp(500, true); strings.Contains(help, "↑↓") || !strings.Contains(help, "/ search") {
 		t.Fatalf("list help = %q", help)
 	}
 	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyRight})
 	m.sessionPicker.notice = "Loading selected preview…"
 	help := m.inputHelp(500, true)
-	if !strings.Contains(help, "↑↓ scroll") || strings.Contains(help, "↑↓ select") || !strings.Contains(help, "Esc hide preview") {
+	if strings.Contains(help, "↑↓") || !strings.Contains(help, "Esc hide preview") {
 		t.Fatalf("preview help = %q", help)
 	}
 	view := ansi.Strip(m.sessionPickerView())

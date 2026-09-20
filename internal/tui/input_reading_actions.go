@@ -25,10 +25,10 @@ func (m model) readingInputBindings() []inputBinding {
 		bindings := []inputBinding{
 			actionBinding(inputActionReadingJump, "Enter", "jump to question", "enter"),
 			actionBinding(inputActionReadingBody, "Esc/T/Ctrl+t", "back", "esc", "t", "ctrl+t"),
-			actionBinding(inputActionReadingSelectPrevious, "↑/K", "previous question", "up", "k"),
-			actionBinding(inputActionReadingSelectNext, "↓/J", "next question", "down", "j"),
-			actionBinding(inputActionReadingSelectPageUp, "PgUp", "previous page", "pgup"),
-			actionBinding(inputActionReadingSelectPageDown, "PgDn", "next page", "pgdown"),
+			actionBinding(inputActionReadingSelectPrevious, "", "", "up", "k"),
+			actionBinding(inputActionReadingSelectNext, "", "", "down", "j"),
+			actionBinding(inputActionReadingSelectPageUp, "", "", "pgup"),
+			actionBinding(inputActionReadingSelectPageDown, "", "", "pgdown"),
 			actionBinding(inputActionReadingClose, "Ctrl+c", "close history", "ctrl+c"),
 			actionBinding(inputActionReadingQuit, "Ctrl+d", "quit", "ctrl+d"),
 		}
@@ -54,13 +54,13 @@ func (m model) readingInputBindings() []inputBinding {
 		actionBinding(inputActionReadingResume, "Enter", resume, "enter"),
 		actionBinding(inputActionReadingClose, "Esc/Ctrl+c", "back", "esc", "ctrl+c"),
 		actionBinding(inputActionReadingDirectory, "T/Ctrl+t", "questions", "t", "ctrl+t"),
-		actionBinding(inputActionReadingScrollUp, "↑/K", "scroll up", "up", "k"),
-		actionBinding(inputActionReadingScrollDown, "↓/J", "scroll down", "down", "j"),
+		actionBinding(inputActionReadingScrollUp, "", "", "up", "k"),
+		actionBinding(inputActionReadingScrollDown, "", "", "down", "j"),
 		actionBinding(inputActionReadingCode, "C/Alt+o", "toggle code", "c", "alt+o"),
 		actionBinding(inputActionReadingLatest, "End", "latest", "end"),
-		actionBinding(inputActionReadingPageUp, "PgUp", "previous page", "pgup"),
-		actionBinding(inputActionReadingPageDown, "PgDn/Space", "next page", "pgdown", "space", " "),
-		actionBinding(inputActionReadingTop, "Home", "top", "home"),
+		actionBinding(inputActionReadingPageUp, "", "", "pgup"),
+		actionBinding(inputActionReadingPageDown, "", "", "pgdown", "space", " "),
+		actionBinding(inputActionReadingTop, "", "", "home"),
 		actionBinding(inputActionReadingQuit, "Ctrl+d", "quit", "ctrl+d"),
 	}
 	for i := range bindings {

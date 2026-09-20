@@ -395,6 +395,9 @@ consistency for those behaviors.
 - Help follows local focus and availability in every window. Short help orders
   primary controls before secondary actions and abbreviates descriptions when
   space is limited; contextual controls take priority over usage figures.
+  Expanded help replaces short help rather than displaying both. Basic
+  navigation bindings have empty help labels: matching and availability are
+  unchanged, while neither help mode advertises them.
   Status and notices remain separate from action hints, including the session
   picker's search, save, and copy notices. System, run, delivery, search, and
   preview results retain their explicit handlers while dialogs are open.

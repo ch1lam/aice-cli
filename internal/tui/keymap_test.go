@@ -99,7 +99,7 @@ func TestKeyMapShortHelpIncludesClearAndInterrupt(t *testing.T) {
 	}
 }
 
-func TestKeyMapHistoryShowsInFullHelpAndDisablesWhileRunning(t *testing.T) {
+func TestKeyMapHistoryStaysHiddenAndDisablesWhileRunning(t *testing.T) {
 	t.Parallel()
 
 	current := newModel(nil, nil)
@@ -116,16 +116,13 @@ func TestKeyMapHistoryShowsInFullHelpAndDisablesWhileRunning(t *testing.T) {
 		found := make(map[string]bool)
 		for _, row := range current.footerKeys().FullHelp() {
 			for _, binding := range row {
-				if binding.Help().Desc == "history" {
+				if binding.Help().Key == "Up" || binding.Help().Key == "Down" {
 					found[binding.Help().Key] = true
 				}
 			}
 		}
-		if running && len(found) != 0 {
-			t.Errorf("running help advertises unavailable history: %v", found)
-		}
-		if !running && (!found["Up"] || !found["Down"]) {
-			t.Errorf("idle help = %v, want Up and Down history bindings", found)
+		if len(found) != 0 {
+			t.Errorf("help advertises basic history navigation: %v", found)
 		}
 	}
 }

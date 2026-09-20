@@ -161,7 +161,6 @@ func TestTrustPromptModelViewListsChoices(t *testing.T) {
 		"Do not trust",
 		"Enter select",
 		"Esc/Ctrl+c cancel",
-		"↑/↓ choose",
 	} {
 		if !strings.Contains(view, want) {
 			t.Errorf("view = %q, want %q", view, want)

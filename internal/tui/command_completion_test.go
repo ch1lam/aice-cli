@@ -176,7 +176,7 @@ func TestSlashMenuShortcutsAppearOnlyInFooterWhileVisible(t *testing.T) {
 				t.Fatalf("footer overflow at %d columns: %q", width, footer)
 			}
 			if width >= 80 {
-				for _, hint := range []string{"↑/↓ select", "Tab complete", "Esc close"} {
+				for _, hint := range []string{"Tab complete", "Esc close"} {
 					if !strings.Contains(footer, hint) {
 						t.Fatalf("footer missing %q: %q", hint, footer)
 					}

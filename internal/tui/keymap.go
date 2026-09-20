@@ -30,7 +30,7 @@ func newKeyMap() keyMap {
 		code:     key.NewBinding(key.WithKeys("alt+o"), key.WithHelp("Alt+o", "visible code")),
 		turns:    key.NewBinding(key.WithKeys("ctrl+t"), key.WithHelp("Ctrl+t", "questions")),
 		sessions: key.NewBinding(key.WithKeys("ctrl+r"), key.WithHelp("Ctrl+r", "sessions")),
-		paste:    key.NewBinding(key.WithKeys("ctrl+v", "alt+v"), key.WithHelp("Ctrl+v/Alt+v", "paste image/text")),
+		paste:    key.NewBinding(key.WithKeys("ctrl+v", "alt+v")),
 		send: key.NewBinding(
 			key.WithKeys("enter"),
 			key.WithHelp("Enter", "send"),
@@ -45,11 +45,9 @@ func newKeyMap() keyMap {
 		),
 		scrollUp: key.NewBinding(
 			key.WithKeys("pgup"),
-			key.WithHelp("PgUp/PgDn", "scroll"),
 		),
 		scrollDown: key.NewBinding(
 			key.WithKeys("pgdown"),
-			key.WithHelp("PgUp/PgDn", "scroll"),
 		),
 		process: key.NewBinding(
 			key.WithKeys("ctrl+o"),
@@ -65,11 +63,9 @@ func newKeyMap() keyMap {
 		),
 		historyUp: key.NewBinding(
 			key.WithKeys("up"),
-			key.WithHelp("Up", "history"),
 		),
 		historyDown: key.NewBinding(
 			key.WithKeys("down"),
-			key.WithHelp("Down", "history"),
 		),
 		help: key.NewBinding(
 			key.WithKeys("?"),

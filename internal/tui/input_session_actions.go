@@ -62,10 +62,6 @@ func (m model) sessionInputBindings() []inputBinding {
 	}
 	bindings = append(bindings, preview)
 
-	movement := "select"
-	if m.inputContext().focus == inputFocusPreview {
-		movement = "scroll"
-	}
 	for _, direction := range []struct {
 		key, alternate string
 		step           int
@@ -73,18 +69,18 @@ func (m model) sessionInputBindings() []inputBinding {
 		{"up", "ctrl+p", -1},
 		{"down", "ctrl+n", 1},
 	} {
-		binding := actionBinding(inputActionSessionMove, "↑↓", movement, direction.key, direction.alternate)
+		binding := actionBinding(inputActionSessionMove, "", "", direction.key, direction.alternate)
 		binding.argument = direction.step
 		bindings = append(bindings, binding)
 	}
 	for _, direction := range []struct {
-		label, key string
-		step       int
+		key  string
+		step int
 	}{
-		{"PgUp", "pgup", -1},
-		{"PgDown", "pgdown", 1},
+		{"pgup", -1},
+		{"pgdown", 1},
 	} {
-		binding := actionBinding(inputActionSessionPage, direction.label, "page", direction.key)
+		binding := actionBinding(inputActionSessionPage, "", "", direction.key)
 		binding.argument, binding.short = direction.step, false
 		bindings = append(bindings, binding)
 	}

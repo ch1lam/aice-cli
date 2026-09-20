@@ -106,7 +106,7 @@ func TestReadingActionsFollowDirectoryFocus(t *testing.T) {
 	if m.reading.directory {
 		t.Fatal("Escape did not return from directory to history body")
 	}
-	if help := ansi.Strip(m.inputHelp(200, true)); strings.Contains(help, "jump to question") || !strings.Contains(help, "scroll up") {
+	if help := ansi.Strip(m.inputHelp(200, true)); strings.Contains(help, "jump to question") || !strings.Contains(help, "questions") {
 		t.Fatalf("body help describes the wrong focus: %s", help)
 	}
 	m = updateModel(t, m, tea.KeyPressMsg{Code: 't', Mod: tea.ModCtrl})

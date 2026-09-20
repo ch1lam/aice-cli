@@ -86,10 +86,17 @@ func sanitizeSideTitle(title string) string {
 }
 
 func (m model) sideStatusLine(width int) string {
-	text := m.inputHelp(width, false)
+	text := ""
+	if !m.help.ShowAll {
+		text = m.inputHelp(width, false)
+	}
 	if m.inputContext().domain == inputSide {
 		if thread := m.side.activeThread(); thread != nil && thread.readOnly() {
-			text = "read-only · " + text
+			if text == "" {
+				text = "read-only"
+			} else {
+				text = "read-only · " + text
+			}
 		}
 	}
 	return mutedStyle.Render(ansi.Truncate(text, width, "…"))

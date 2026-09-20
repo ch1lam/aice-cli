@@ -103,7 +103,7 @@ func TestSideInputActionHelpFollowsThreadAvailability(t *testing.T) {
 		}
 		current = updateModel(t, current, message)
 	}
-	text := ansi.Strip(current.sideStatusLine(240))
+	text := ansi.Strip(current.footerView(240))
 	if strings.Contains(text, "Enter ask") || strings.Contains(text, "newline") || strings.Contains(text, "editor") ||
 		!strings.Contains(text, "Esc close") || !strings.Contains(text, "Ctrl+d end thread") {
 		t.Fatalf("read-only help = %q", text)
@@ -112,7 +112,7 @@ func TestSideInputActionHelpFollowsThreadAvailability(t *testing.T) {
 		t.Fatal("read-only reserved keys changed draft")
 	}
 	thread.isRunning = true
-	if text := ansi.Strip(current.sideStatusLine(240)); !strings.Contains(text, "Esc cancel") {
+	if text := ansi.Strip(current.footerView(240)); !strings.Contains(text, "Esc cancel") {
 		t.Fatalf("running side help = %q", text)
 	}
 }

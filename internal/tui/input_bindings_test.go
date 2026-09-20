@@ -211,3 +211,47 @@ func TestExpandedHelpKeepsAvailableActionsAtNarrowWidths(t *testing.T) {
 		}
 	}
 }
+
+func TestExpandedFooterShowsEachShortcutOnce(t *testing.T) {
+	t.Parallel()
+	for _, state := range []string{"main", "running", "side", "side running", "side read-only"} {
+		t.Run(state, func(t *testing.T) {
+			for _, width := range []int{40, 80, 160} {
+				m := bindingTestModel(t, state)
+				m = updateModel(t, m, tea.WindowSizeMsg{Width: width, Height: 50})
+				m.help.ShowAll = true
+				view := ansi.Strip(m.footerView(width))
+				for _, label := range []string{"?", "Ctrl+c"} {
+					if count := strings.Count(view, label); count != 1 {
+						t.Errorf("width %d: %q appears %d times: %s", width, label, count, view)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestBasicNavigationIsAvailableWithoutHelp(t *testing.T) {
+	t.Parallel()
+	for _, state := range []string{"main", "running", "side", "slash", "options", "file", "guard", "auth menu", "sessions", "preview", "reading"} {
+		t.Run(state, func(t *testing.T) {
+			m := bindingTestModel(t, state)
+			for _, full := range []bool{false, true} {
+				help := m.inputHelp(2000, full)
+				for _, label := range []string{"↑", "↓", "PgUp", "PgDn", "PgDown", "Up history", "Down history"} {
+					if strings.Contains(help, label) {
+						t.Errorf("basic navigation %q appears in help: %s", label, help)
+					}
+				}
+			}
+			code := tea.KeyDown
+			if state == "running" || state == "side" {
+				code = tea.KeyPgDown
+			}
+			match := m.matchInputAction(tea.KeyPressMsg{Code: code})
+			if !match.matched || !match.enabled {
+				t.Fatalf("hidden navigation became unavailable: %+v", match)
+			}
+		})
+	}
+}

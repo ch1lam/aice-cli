@@ -19,9 +19,9 @@ const (
 )
 
 func menuMoveBindings(action inputAction) []inputBinding {
-	up := actionBinding(action, "↑/↓", "select", "up")
+	up := actionBinding(action, "", "", "up")
 	up.argument = -1
-	down := actionBinding(action, "↑/↓", "select", "down")
+	down := actionBinding(action, "", "", "down")
 	down.argument = 1
 	return []inputBinding{up, down}
 }

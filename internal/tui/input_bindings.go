@@ -99,6 +99,7 @@ func matchInputBindings(bindings []inputBinding, message tea.KeyPressMsg) inputA
 
 // Help consumes the same effective bindings as dispatch. Repeated labels group
 // directional actions without introducing a second set of key definitions.
+// Empty help labels keep basic navigation available without advertising it.
 type inputHelpKeys []inputBinding
 
 func (bindings inputHelpKeys) help(full bool) []key.Binding {

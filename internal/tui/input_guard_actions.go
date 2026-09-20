@@ -37,7 +37,7 @@ func (m model) guardInputBindings() []inputBinding {
 			key   string
 			delta int
 		}{{key: "up", delta: -1}, {key: "down", delta: 1}} {
-			binding := actionBinding(inputActionGuardSelect, "↑/↓", "select", direction.key)
+			binding := actionBinding(inputActionGuardSelect, "", "", direction.key)
 			binding.argument = direction.delta
 			binding.binding.SetEnabled(len(m.guardPending.Options) > 0)
 			bindings = append(bindings, binding)
@@ -55,16 +55,16 @@ func (m model) guardInputBindings() []inputBinding {
 		}
 	}
 	for _, direction := range []struct {
-		key, label string
-		action     inputAction
-		delta      int
+		key    string
+		action inputAction
+		delta  int
 	}{
-		{key: "pgup", label: "PgUp/PgDn", action: inputActionGuardPage, delta: -1},
-		{key: "pgdown", label: "PgUp/PgDn", action: inputActionGuardPage, delta: 1},
-		{key: "home", label: "Home/End", action: inputActionGuardBoundary, delta: -1},
-		{key: "end", label: "Home/End", action: inputActionGuardBoundary, delta: 1},
+		{key: "pgup", action: inputActionGuardPage, delta: -1},
+		{key: "pgdown", action: inputActionGuardPage, delta: 1},
+		{key: "home", action: inputActionGuardBoundary, delta: -1},
+		{key: "end", action: inputActionGuardBoundary, delta: 1},
 	} {
-		binding := actionBinding(direction.action, direction.label, "review", direction.key)
+		binding := actionBinding(direction.action, "", "", direction.key)
 		binding.argument = direction.delta
 		bindings = append(bindings, binding)
 	}

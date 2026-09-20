@@ -1060,7 +1060,10 @@ draft clear, even after returning to the previous editor.
 
 Short help prioritizes the window's primary controls, shortening descriptions
 and omitting secondary hints to fit the available width. Expanded composer
-help wraps complete actions across rows instead of dropping later columns. Search progress, save
+help replaces the short shortcut row and wraps actions across rows, so each
+shortcut appears once. Basic Up/Down, paging, and cursor navigation remain
+available without help labels. Clipboard paste (Ctrl+V / Alt+V) also remains
+available without a shortcut hint. Search progress, save
 errors, and copy confirmations occupy separate status space and do not replace
 the session picker's shortcut row. Shortcut dispatch and help share the same
 action definitions; their ownership is specified in

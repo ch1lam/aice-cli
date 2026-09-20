@@ -22,7 +22,7 @@ func (m model) authInputBindings() []inputBinding {
 			key   string
 			delta int
 		}{{key: "up", delta: -1}, {key: "down", delta: 1}} {
-			binding := actionBinding(inputActionAuthSelect, "↑/↓", "navigate", direction.key)
+			binding := actionBinding(inputActionAuthSelect, "", "", direction.key)
 			binding.argument = direction.delta
 			binding.binding.SetEnabled(len(options) > 0 && !m.cancelRequested)
 			bindings = append(bindings, binding)
@@ -38,7 +38,7 @@ func (m model) authInputBindings() []inputBinding {
 		key   string
 		delta int
 	}{{key: "pgup", delta: -1}, {key: "pgdown", delta: 1}} {
-		binding := actionBinding(inputActionAuthPage, "PgUp/PgDn", "scroll", direction.key)
+		binding := actionBinding(inputActionAuthPage, "", "", direction.key)
 		binding.argument = direction.delta
 		bindings = append(bindings, binding)
 	}
