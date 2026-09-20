@@ -926,7 +926,8 @@ Nested choices open the next menu, whose hint and filter update together; Escape
 returns to the parent and restores its draft. Hints are display-only and are
 never submitted. Only options supplied by the active command catalog are offered.
 Provider, model, and thinking changes apply to the current Session immediately
-and are also saved globally. Press `?` for keyboard shortcuts. Session
+and are also saved globally. With an empty main or BTW composer, press `?`
+to expand or close its available shortcuts. Session
 navigation and compaction commands (`/session`, `/history`, `/tree`, `/checkout`,
 `/compact`) are detailed in [Tool execution and
 Sessions](execution-sessions.md#resume-and-navigate).
@@ -1009,7 +1010,8 @@ below 12 rows. The top bar has no separator line and leaves one blank row below
 its status text. The model and thinking level
 sit in the composer’s bottom-right border as `model-name (low)`, without labels.
 Long model names shorten to fit while retaining the thinking level. The footer
-keeps shortcuts, cumulative Session token usage, and cost. Shortcut hints capitalize
+keeps shortcuts, cumulative Session token usage, and cost. When width is limited,
+contextual shortcuts take priority over usage and cost. Shortcut hints capitalize
 named keys (`Tab`, `Ctrl`, `Alt`, `Shift`, `Enter`, `Esc`) and keep letter keys
 lowercase, for example `Ctrl+c` and `Ctrl+o`.
 
@@ -1036,9 +1038,33 @@ Clicking the composer highlights its frame; it does not reposition the text
 caret. Keyboard editing and the real terminal cursor remain the input path,
 including IME anchoring. The dependency capabilities and requirements for future
 click positioning are recorded in [Maintenance](maintenance.md#composer-click-positioning-and-textarea-capabilities).
-Shortcut help lists actions available in the current input context. A reserved
-shortcut that is temporarily unavailable does not become editor text or invoke
-a background conversation action.
+Shortcut hints follow the active window and the focused pane or input mode.
+This applies to main and BTW composers, completion and command menus, session
+search/list/preview and title editing, history reading and its question directory,
+permission selection and denial feedback, login menus and input, and the startup
+Trust prompt. Switching focus or entering a waiting or read-only state updates
+the hints together with the available actions. Dialogs consume their own keys;
+those keys cannot trigger a background conversation action. A reserved shortcut
+that is temporarily unavailable stays blocked and is omitted from help.
+Modified keys trigger only their declared actions; for example, `Ctrl+Down`
+does not act as plain Down unless that window explicitly offers it as an alias.
+
+In the session picker, Up/Down selects items with list focus and scrolls content
+with preview focus. Right opens or focuses preview; when preview is visible,
+Left returns to the list. These pane keys keep that meaning while the search
+field has focus; `/` returns to search. Mouse-wheel scrolling targets the pane under
+the pointer without moving keyboard focus. Entering or leaving title editing
+changes the available shortcuts, and saving leaves cancellation available.
+Delayed editor paste results cannot cross a dialog, picker focus change, or
+draft clear, even after returning to the previous editor.
+
+Short help prioritizes the window's primary controls, shortening descriptions
+and omitting secondary hints to fit the available width. Expanded composer
+help wraps complete actions across rows instead of dropping later columns. Search progress, save
+errors, and copy confirmations occupy separate status space and do not replace
+the session picker's shortcut row. Shortcut dispatch and help share the same
+action definitions; their ownership is specified in
+[Concurrency and TUI](contracts.md#concurrency-and-tui).
 
 Process headings use `✧` when expanded and `✦` when collapsed, without a
 separate triangle. Clicking the heading toggles that process;

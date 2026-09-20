@@ -367,18 +367,45 @@ consistency for those behaviors.
 - Only Bubble Tea's update loop mutates UI state. The application bridge turns
   Agent events into frontend-neutral interaction events; the TUI does not
   depend on `internal/llm`.
-- `inputContext` derives the current input owner from existing model state;
-  it is not a second focus store. Keyboard and paste routing is exclusive to
-  that owner, and each edit reaches its editor once. Main/BTW action bindings
-  supply both availability and help; a disabled reserved shortcut is consumed,
-  while ordinary text and editing arrows remain editor input. Completion is
-  synchronized before action resolution and after edits. System, run, delivery,
-  search and preview results retain their explicit handlers while dialogs are
-  open. Only editor commands wrap Bubbles' private asynchronous replies with
-  input identity and generation, preventing delayed paste across a dialog or
-  draft clear. Unknown messages do not rebuild the composer. The shared
-  textarea disables native selection bindings until selection edits preserve
-  AICE's atomic file and paste spans; Ctrl+G remains the external-editor action.
+- [Input context](../internal/tui/input_context.go) is a read-only projection
+  of the active domain, its local focus or mode, and editor availability.
+  Existing components own that state; there is no additional mutable focus
+  store. Domains cover main/BTW composers, side menus and confirmations,
+  command and secret prompts, authentication, permission review, session
+  browsing, and read-only history. Local modes distinguish search, list,
+  preview, rename, waiting, question directory, and denial feedback where
+  applicable. Keyboard and paste routing is exclusive to that owner, and each
+  edit reaches its editor once. Picker pane keys keep their meaning while
+  search has focus: Right opens or focuses preview, and Left returns to the
+  list while preview is visible. Unmatched editing keys reach only the active
+  editor.
+- Each domain resolves one effective `inputBinding` collection from its context
+  and current state. The [shared matcher and help projection](../internal/tui/input_bindings.go)
+  consume that same collection: actions define their keys, availability,
+  arguments, labels, and short-help visibility. Executors receive resolved
+  actions rather than interpreting keys again. The separate startup Trust
+  model uses the same matcher and help projection with its own bindings;
+  it owns no main TUI or run lifecycle. Keys match their declared modifiers and
+  aliases; checking a key code alone must not turn a modified key into its
+  plain-key action. A disabled reserved binding still consumes its keys and
+  is omitted from help. Completion is synchronized before action resolution
+  and after edits, then explicitly replaces the base keys it owns before
+  either matching or rendering help. Its reserved confirmation keys cannot
+  fall through to sending a draft while results are pending.
+- Help follows local focus and availability in every window. Short help orders
+  primary controls before secondary actions and abbreviates descriptions when
+  space is limited; contextual controls take priority over usage figures.
+  Status and notices remain separate from action hints, including the session
+  picker's search, save, and copy notices. System, run, delivery, search, and
+  preview results retain their explicit handlers while dialogs are open.
+  Only editor commands wrap Bubbles' private asynchronous replies with input
+  identity and generation. Domain changes, picker focus changes, permission
+  selection/feedback changes, and draft clears invalidate stale editor replies,
+  including a round trip back to the original editor. Ordinary slash/file
+  completion stays within its composer's draft lifetime. Unknown messages do
+  not rebuild the composer. The shared textarea disables native selection
+  bindings until selection edits preserve AICE's atomic file and paste spans;
+  Ctrl+G remains the external-editor action.
 - `resizeLayout` measures outer chrome during Update. `screenLayout` derives
   half-open cell rectangles from those measurements and viewport dimensions;
   composer hit testing, transcript coordinates and the real terminal caret
@@ -398,9 +425,10 @@ consistency for those behaviors.
   reserve keyboard input without blocking clicks on visible transcript rows.
 - Vertical wheel input goes to the permission review or displayed transcript;
   the session picker chooses its painted list/preview pane by pointer position,
-  independently of keyboard focus. Borders, divider and outside coordinates in
-  the picker, and horizontal wheel input, are ignored. A list wheel requests a
-  new preview only when selected session/group identity changes. Wheel handling
+  independently of keyboard focus, and scrolling never transfers that focus.
+  Borders, divider and outside coordinates in the picker, and horizontal wheel
+  input, are ignored. A list wheel requests a new preview only when selected
+  session/group identity changes. Wheel handling
   never updates the composer and does not infer devices or add inertia.
 - The welcome-screen update check runs as a context-bound Bubble Tea command
   after the first render. Its result returns through the update loop; it never
@@ -563,7 +591,10 @@ protocol. `interaction.AuthInteraction` carries transient progress and manual
 input between the command and TUI. The TUI owns menus, browser/device prompts,
 and hidden authorization input; none of these secrets enter transcript entries,
 Session history, prompt history, steering, or queued model input. Completion
-and cancellation discard the transient authentication state.
+and cancellation discard the transient authentication state. Menu selection,
+manual input, and waiting resolve different bindings. Waiting accepts no editor
+input; cancellation immediately disables submission and menu navigation, and
+late progress cannot reactivate a cancelled login.
 
 ## Image content
 
