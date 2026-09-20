@@ -159,7 +159,9 @@ func TestTrustPromptModelViewListsChoices(t *testing.T) {
 		"/workspace",
 		"Trust",
 		"Do not trust",
-		"Enter to select",
+		"Enter select",
+		"Esc/Ctrl+c cancel",
+		"↑/↓ choose",
 	} {
 		if !strings.Contains(view, want) {
 			t.Errorf("view = %q, want %q", view, want)
@@ -179,4 +181,58 @@ func updateTrustModel(
 		t.Fatalf("Update() returned %T, want trustPromptModel", updated)
 	}
 	return next
+}
+
+func TestTrustPromptModifiedKeysDoNotSelectOrCancel(t *testing.T) {
+	t.Parallel()
+	for _, message := range []tea.KeyPressMsg{
+		{Code: tea.KeyDown, Mod: tea.ModAlt},
+		{Code: tea.KeyUp, Mod: tea.ModCtrl},
+		{Code: tea.KeyEnter, Mod: tea.ModAlt},
+		{Code: tea.KeyEnter, Mod: tea.ModCtrl},
+		{Code: tea.KeyEscape, Mod: tea.ModAlt},
+		{Code: 'c', Mod: tea.ModCtrl | tea.ModAlt},
+	} {
+		t.Run(message.String(), func(t *testing.T) {
+			t.Parallel()
+			m := trustPromptModel{cwd: "/workspace", choices: trustChoicesForTest(), selected: 1}
+			m = updateTrustModel(t, m, message)
+			if m.selected != 1 || m.done || m.choice.Decision != trust.DecisionUnknown || len(m.choice.Updates) != 0 {
+				t.Fatalf("modified key changed trust selection: %+v", m)
+			}
+		})
+	}
+}
+
+func TestTrustPromptCtrlCCancelsWithoutPersisting(t *testing.T) {
+	t.Parallel()
+	m := trustPromptModel{cwd: "/workspace", choices: trustChoicesForTest()}
+	updated, command := m.Update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
+	m = updated.(trustPromptModel)
+	if !m.done || m.choice.Decision != trust.DecisionUntrusted || len(m.choice.Updates) != 0 {
+		t.Fatalf("Ctrl+C did not cancel with a session-only denial: %+v", m)
+	}
+	if command == nil {
+		t.Fatal("Ctrl+C did not quit the prompt")
+	}
+	if _, ok := command().(tea.QuitMsg); !ok {
+		t.Fatal("Ctrl+C returned a command other than quit")
+	}
+}
+
+func TestTrustPromptEmptyChoicesReserveSelectAndHideHelp(t *testing.T) {
+	t.Parallel()
+	m := trustPromptModel{cwd: "/workspace"}
+	enter := tea.KeyPressMsg{Code: tea.KeyEnter}
+	if match := matchInputBindings(m.inputBindings(), enter); !match.matched || match.enabled {
+		t.Fatalf("empty selector did not reserve its disabled Enter key: %+v", match)
+	}
+	m = updateTrustModel(t, m, enter)
+	if m.done {
+		t.Fatal("empty selector accepted a selection")
+	}
+	view := m.View().Content
+	if strings.Contains(view, "Enter") || strings.Contains(view, "choose") || !strings.Contains(view, "cancel") {
+		t.Fatalf("help advertises unavailable trust actions: %s", view)
+	}
 }

@@ -6,7 +6,6 @@ import (
 	"io"
 	"strings"
 
-	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/ch1lam/aice-cli/internal/trust"
@@ -19,11 +18,6 @@ type TrustPromptOptions struct {
 	CWD     string
 	Choices []trust.Choice
 }
-
-var trustInterruptKeys = key.NewBinding(
-	key.WithKeys("ctrl+c"),
-	key.WithHelp("Ctrl+c", "cancel"),
-)
 
 // RunTrustPrompt shows the project trust choices before the main TUI starts.
 // It only renders and returns a selection; it never reads the trust store,
@@ -75,6 +69,7 @@ func RunTrustPrompt(ctx context.Context, options TrustPromptOptions) (trust.Choi
 // starts, so it owns no run controller or agent goroutine.
 type trustPromptModel struct {
 	cwd      string
+	width    int
 	choices  []trust.Choice
 	selected int
 	choice   trust.Choice
@@ -87,22 +82,27 @@ func (m trustPromptModel) Init() tea.Cmd {
 
 func (m trustPromptModel) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := message.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
 	case tea.KeyPressMsg:
-		switch {
-		case msg.Code == tea.KeyUp:
+		match := matchInputBindings(m.inputBindings(), msg)
+		if !match.matched || !match.enabled {
+			return m, nil
+		}
+		switch match.action {
+		case inputActionTrustPrevious:
 			if m.selected > 0 {
 				m.selected--
 			}
-		case msg.Code == tea.KeyDown:
+		case inputActionTrustNext:
 			if m.selected < len(m.choices)-1 {
 				m.selected++
 			}
-		case msg.Code == tea.KeyEnter:
+		case inputActionTrustSelect:
 			m.choice = m.choices[m.selected]
 			m.done = true
 			return m, tea.Quit
-		case msg.Code == tea.KeyEscape,
-			key.Matches(msg, trustInterruptKeys):
+		case inputActionTrustCancel:
 			// Cancellation is a session-only "do not trust" without updates.
 			m.choice = trust.Choice{Decision: trust.DecisionUntrusted}
 			m.done = true
@@ -136,8 +136,10 @@ func (m trustPromptModel) View() tea.View {
 		builder.WriteString("\n")
 	}
 	builder.WriteString("\n")
-	builder.WriteString(mutedStyle.Render(
-		"Use ↑/↓ to choose, Enter to select, Esc to cancel.",
-	))
+	width := m.width
+	if width <= 0 {
+		width = 80
+	}
+	builder.WriteString(mutedStyle.Render(inputBindingsHelp(m.inputBindings(), width, false)))
 	return tea.NewView(builder.String())
 }
