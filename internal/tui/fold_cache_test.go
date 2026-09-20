@@ -132,6 +132,7 @@ func TestFoldCachedHeadingsMatchFreshRenderingAfterUpdates(t *testing.T) {
 	m.setFoldExpanded(foldTarget{kind: foldTool, id: 2}, true)
 	check()
 	m.entries[0].complete, m.running, m.assistantEntry = false, true, 0
+	m.entries[0].text = ""
 	m.status = "FIRST_STATUS"
 	check()
 	m.status = "SECOND_STATUS"

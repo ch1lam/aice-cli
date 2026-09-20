@@ -120,9 +120,6 @@ func (m model) processContentItems(start, end int) []transcriptItem {
 			if strings.TrimSpace(entry.thinking) != "" {
 				target := foldTarget{kind: foldThinking, id: index}
 				label := "Thinking"
-				if live {
-					label += " · " + m.activityIndicator()
-				}
 				expanded := m.foldExpanded(target)
 				version := struct {
 					Label    string
@@ -139,7 +136,7 @@ func (m model) processContentItems(start, end int) []transcriptItem {
 					items = append(items, body)
 				}
 			}
-			if !entry.conclusion && assistantHasContent(entry, live && strings.TrimSpace(entry.thinking) == "", false, true) {
+			if !entry.conclusion && assistantHasContent(entry, live, false, true) {
 				item := m.transcriptEntryItem(index, entry, live, transcriptConclusion)
 				item.gap = 1
 				items = append(items, item)

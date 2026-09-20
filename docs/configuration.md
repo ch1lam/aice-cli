@@ -943,6 +943,9 @@ and sibling calls. Closing a parent preserves its children's choices.
 Fold state is transient presentation state, cleared with the visible transcript.
 Expanded processes leave one blank line before their first child heading;
 expanded thinking also leaves one blank line between its heading and body.
+While waiting for visible answer text, the Thinking/Responding activity indicator
+occupies its own row below the thinking block, separate from the fold heading.
+Visible answer text replaces that waiting indicator.
 
 Message text, process markers, fold arrows, and tool panels share one left
 alignment. Expanding a process, batch, thinking block, or tool does not add

@@ -104,3 +104,52 @@ func TestFoldedResultsUpdateWithoutFormattingHiddenBody(t *testing.T) {
 		t.Fatal("expanded result stale")
 	}
 }
+
+func TestThinkingActivityStaysOnSeparateRow(t *testing.T) {
+	for _, expanded := range []bool{false, true} {
+		name := "collapsed"
+		if expanded {
+			name = "expanded"
+		}
+		t.Run(name, func(t *testing.T) {
+			m := foldTestModel()
+			m.entries = m.entries[:3]
+			m.running = true
+			m.applyAgentEvent(DisplayEvent{Kind: DisplayEventAssistantStart})
+			check := func(status string) {
+				t.Helper()
+				m.refreshViewport(true)
+				view := ansi.Strip(m.viewport.GetContent())
+				if strings.Count(view, status) != 1 {
+					t.Fatalf("want one %q indicator:\n%s", status, view)
+				}
+				for _, row := range strings.Split(view, "\n") {
+					if strings.Contains(row, status) && (strings.Contains(row, "▸") || strings.Contains(row, "▾") || strings.Contains(row, "LIVE_REASONING")) {
+						t.Fatalf("activity shares a content row: %q", row)
+					}
+				}
+			}
+			check("Thinking...")
+			m.applyAgentEvent(DisplayEvent{Kind: DisplayEventAssistantDelta,
+				Delta: DisplayDelta{Kind: DisplayDeltaThinking, Delta: "LIVE_REASONING"}})
+			m.setFoldExpanded(foldTarget{kind: foldThinking, id: m.assistantEntry}, expanded)
+			check("Thinking...")
+			if strings.Contains(m.viewport.GetContent(), "LIVE_REASONING") != expanded {
+				t.Fatal("activity rendering changed the thinking fold")
+			}
+			m.applyAgentEvent(DisplayEvent{Kind: DisplayEventAssistantDelta,
+				Delta: DisplayDelta{Kind: DisplayDeltaText, Delta: " \n"}})
+			check("Responding...")
+			m.width = 40
+			m.resizeLayout()
+			check("Responding...")
+			m.applyAgentEvent(DisplayEvent{Kind: DisplayEventAssistantDelta,
+				Delta: DisplayDelta{Kind: DisplayDeltaText, Delta: "ANSWER"}})
+			m.refreshViewport(true)
+			view := ansi.Strip(m.viewport.GetContent())
+			if !strings.Contains(view, "ANSWER") || strings.Contains(view, "Responding...") {
+				t.Fatalf("answer must replace the waiting indicator:\n%s", view)
+			}
+		})
+	}
+}
