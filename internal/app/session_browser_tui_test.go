@@ -50,8 +50,20 @@ func TestSessionBrowserTUI(t *testing.T) {
 	done, stopped := make(chan error, 1), make(chan struct{})
 	go func() { defer close(stopped); done <- command.ExecuteContext(ctx) }()
 	t.Cleanup(func() { cancel(); input.Close(); reader.Close(); <-stopped })
+	width := 120
+	send := func(value string) {
+		t.Helper()
+		if _, err := io.WriteString(input, value+fmt.Sprintf("\x1b[8;40;%dt", width)); err != nil {
+			t.Fatal(err)
+		}
+		width = 239 - width
+	}
 	waitFor := func(want string) {
 		t.Helper()
+		// Async search results can arrive after the resize sent with a key.
+		// Repaint while waiting so assertions do not depend on cell diffs.
+		repaint := time.NewTicker(250 * time.Millisecond)
+		defer repaint.Stop()
 		var frames strings.Builder
 		for {
 			select {
@@ -60,20 +72,14 @@ func TestSessionBrowserTUI(t *testing.T) {
 				if strings.Contains(frames.String(), want) {
 					return
 				}
+			case <-repaint.C:
+				send("")
 			case err := <-done:
 				t.Fatalf("command stopped waiting for %q: %v\n%s", want, err, frames.String())
 			case <-ctx.Done():
 				t.Fatalf("missing %q\n%s", want, frames.String())
 			}
 		}
-	}
-	width := 120
-	send := func(value string) {
-		t.Helper()
-		if _, err := io.WriteString(input, value+fmt.Sprintf("\x1b[8;40;%dt", width)); err != nil {
-			t.Fatal(err)
-		}
-		width = 239 - width
 	}
 	send("")
 	waitFor("AICE")
@@ -90,7 +96,9 @@ func TestSessionBrowserTUI(t *testing.T) {
 	send("\x1b[5~") // PageUp into the long list.
 	waitFor("History list item")
 	send("\x1b")
-	waitFor("CURRENT PROJECT")
+	// Returning starts a fresh search, whose title-only batch has no hits.
+	// The border follows the count only once the loading suffix is gone.
+	waitFor("CURRENT PROJECT  1/1 ─")
 	send("\r")
 	waitFor("Resumed session")
 	send("/quit\r")

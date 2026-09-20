@@ -168,6 +168,11 @@ Navigation benchmarks cover restoration and mouse-wheel frames for 500 turns,
 a long continuous paragraph, and a 1,000-item list. `TestSessionBrowserTUI`
 exercises search, preview, read-only opening, scrolling and resumption through
 the actual CLI and Bubble Tea with generated history and isolated settings.
+On returning from read-only history, the test waits for a completed search with
+a selected result before pressing Enter: the initial title-only batch may be
+empty even when a later body match exists. While waiting for terminal text, it
+requests resize repaints so asynchronous results can be matched as complete
+frames instead of relying on renderer cell diffs.
 
 ## Git and Collaboration
 
