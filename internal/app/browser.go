@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"strconv"
 	"strings"
 
 	"github.com/ch1lam/aice-cli/internal/browser"
+	"github.com/ch1lam/aice-cli/internal/config"
 	"github.com/ch1lam/aice-cli/internal/deps"
 	"github.com/ch1lam/aice-cli/internal/interaction"
 )
@@ -20,9 +22,14 @@ macOS: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --remote-d
 Linux: google-chrome --remote-debugging-port=9222 --user-data-dir=/tmp/aice-debug
 Chrome 136+ requires a non-default user-data-dir when using that flag; this new profile does not carry your existing login.`
 
-func browserMenu() *interaction.CommandMenu {
+func (s *interactiveSession) browserMenu() *interaction.CommandMenu {
+	visibility := "off"
+	if s.settingsSnapshot().configuration.BrowserHeaded {
+		visibility = "on"
+	}
 	return &interaction.CommandMenu{Title: "Browser", Options: []interaction.CommandOption{
 		{Label: "Status", Arguments: "status"},
+		{Label: "Show window: " + visibility + " (toggle)", Description: "Save visibility for the next managed browser session", Arguments: "headed"},
 		{Label: "Connect to running browser (auto-detect)", Arguments: "auto"},
 		{Label: "Connect to port or URL…", Arguments: "connect"},
 		{Label: "Choose tab…", Arguments: "tabs"},
@@ -75,6 +82,9 @@ func (s *interactiveSession) slashBrowser(ctx context.Context, request interacti
 	if active {
 		return "", fmt.Errorf("app: cannot change the browser while a response is running")
 	}
+	if action == "headed" {
+		return s.toggleBrowserWindow(ctx)
+	}
 	if action == "close" {
 		err := closeBrowser(ctx, s.browser)
 		// close may acknowledge before the daemon exits; never reuse that name.
@@ -121,6 +131,36 @@ func (s *interactiveSession) slashBrowser(ctx context.Context, request interacti
 		return "", fmt.Errorf("unknown browser action %q", action)
 	}
 }
+func (s *interactiveSession) toggleBrowserWindow(ctx context.Context) (string, error) {
+	current := s.settingsSnapshot().configuration
+	headed := !current.BrowserHeaded
+	changes := map[config.Setting]string{config.SettingBrowserHeaded: strconv.FormatBool(headed)}
+	configuration, err := s.persistSettings(ctx, current, changes)
+	if err != nil {
+		return "", err
+	}
+	s.stateMu.Lock()
+	s.configuration = configuration
+	s.stateMu.Unlock()
+	s.browser.SetHeaded(headed)
+	if err := applyBrowserEnvironment(s.browser); err != nil {
+		return "", fmt.Errorf("browser window preference saved, but environment update failed: %w", err)
+	}
+	state := "off"
+	if headed {
+		state = "on"
+	}
+	output := "Show window: " + state + " (saved)"
+	if s.browser.Target() != (browser.Target{}) {
+		output += "\nApplies to AICE-managed browsers; the connected browser is unchanged."
+	} else if s.browser.Headed() != headed {
+		output += "\nThe current browser is unchanged. Use /browser → Close, then open a page to apply; closing discards its temporary pages and login state."
+	} else {
+		output += "\nApplies when AICE next opens a browser."
+	}
+	return output + savedOverrideNotice(configuration, changes), nil
+}
+
 func browserPrompt(ctx context.Context, ui *interaction.AuthInteraction, prompt interaction.AuthPrompt) (string, error) {
 	if err := ui.Notify(ctx, prompt); err != nil {
 		return "", err
@@ -165,6 +205,15 @@ func (s *interactiveSession) chooseBrowserTab(ctx context.Context, ui *interacti
 func (s *interactiveSession) browserStatus(ctx context.Context) (string, error) {
 	executable, err := s.browser.Executable()
 	lines := []string{"Browser helper: " + executable, "Pinned version: " + deps.AgentBrowserVersion, "Session: " + s.browser.Name(), "Run directory: " + s.browser.RunDir(), fmt.Sprintf("Sidecar present: %v", s.browser.HasSidecar())}
+	headed := s.settingsSnapshot().configuration.BrowserHeaded
+	visibility := "off"
+	if headed {
+		visibility = "on"
+	}
+	lines = append(lines, "Show window: "+visibility+" (preference)")
+	if s.browser.Target() == (browser.Target{}) && s.browser.Headed() != headed {
+		lines = append(lines, "Window preference pending: close this browser session to apply on next open")
+	}
 	if s.settingsSnapshot().configuration.NoDepInstall {
 		lines = append(lines, "Automatic installation disabled (no_dep_install)")
 	}
@@ -176,6 +225,9 @@ func (s *interactiveSession) browserStatus(ctx context.Context) (string, error) 
 		return strings.Join(lines, "\n"), err
 	}
 	mode := "managed headless (on first browser command)"
+	if s.browser.Headed() {
+		mode = "managed headed (show window)"
+	}
 	target := s.browser.Target()
 	if target.Auto {
 		mode = "external, auto-detect"

@@ -621,6 +621,7 @@ func (a *application) prepareRunEnvironment(
 			binDir := filepath.Join(home, ".aice", "bin")
 			browserManager, err = browser.NewManager(os.Getpid(), binDir, workspace.PhysicalPath())
 			if err == nil {
+				browserManager.SetHeaded(configured.configuration.BrowserHeaded)
 				err = applyBrowserEnvironment(browserManager)
 			}
 			if err != nil {

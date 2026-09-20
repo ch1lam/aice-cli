@@ -30,7 +30,7 @@ iwr -useb https://raw.githubusercontent.com/ch1lam/aice-cli/main/scripts/install
 
 ## 快速开始
 
-使用 `/browser` 连接运行中的浏览器或选择工作标签页；准备步骤见
+使用 `/browser` 切换显示窗口、连接运行中的浏览器或选择工作标签页；准备步骤见
 [浏览器自动化](./docs/browser.md)。
 
 在项目中启动交互式 Session：
@@ -111,7 +111,7 @@ aice --workspace . --session .aice/sessions/<session-id>.jsonl
 | Provider | DeepSeek V4、OpenCode Go 内建模型目录、Kimi Coding Plan（Responses API）、Moonshot 开放平台 API、智谱开放平台 API 与 Coding Plan、OpenAI API（GPT-6 Astra 与 GPT-5.6）、Codex/ChatGPT 订阅，以及 Custom（OpenAI 兼容） |
 | 协议 | Anthropic Messages、OpenAI Responses、OpenAI Chat Completions |
 | 工具 | `read`、`write`、`edit`、`bash`、`grep`、`find`、`ls`、`skill` |
-| 浏览器 | 原生 agent-browser，通过 `bash`/`read` 与内置 browser skill 工作；`/browser` 连接与选择标签页，见[浏览器自动化](./docs/browser.md) |
+| 浏览器 | 原生 agent-browser，通过 `bash`/`read` 与内置 browser skill 工作；`/browser` 切换显示窗口、连接与选择标签页，见[浏览器自动化](./docs/browser.md) |
 | Guard | 工具调用前的路径与危险命令检查、交互授权；详见[工具执行与 Session](./docs/execution-sessions.md#tool-execution-boundary) |
 | Session | 当前项目历史选择器、搜索与预览、原始对话恢复、分支、回退与自动/手动非破坏性压缩 |
 | 侧问题 | Session 历史之外、无工具的多个临时 `/btw` 线程 |

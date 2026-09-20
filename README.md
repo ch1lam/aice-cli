@@ -31,7 +31,8 @@ runtime helpers, source builds, and `aice update`.
 
 ## Quickstart
 
-Use `/browser` to connect to a running browser or choose its working tab; see
+Use `/browser` to toggle a visible browser window, connect to a running browser,
+or choose its working tab; see
 [Browser automation](./docs/browser.md) for setup.
 
 Start an interactive Session inside a project:
@@ -126,7 +127,7 @@ aice --workspace . --session .aice/sessions/<session-id>.jsonl
 | Providers | DeepSeek V4, OpenCode Go's built-in catalog, Kimi Coding Plan (Responses API), Moonshot API Platform, Zhipu API Platform and Coding Plan, OpenAI API (GPT-6 Astra and GPT-5.6), Codex/ChatGPT subscription, and Custom (OpenAI-compatible) |
 | Protocols | Anthropic Messages, OpenAI Responses, OpenAI Chat Completions |
 | Tools | `read`, `write`, `edit`, `bash`, `grep`, `find`, `ls`, `skill` |
-| Browser | Native agent-browser through `bash`/`read`, builtin browser skill, `/browser` connection and tab controls; see [Browser automation](./docs/browser.md) |
+| Browser | Native agent-browser through `bash`/`read`, builtin browser skill, `/browser` window visibility, connection and tab controls; see [Browser automation](./docs/browser.md) |
 | Guard | path and dangerous-command checks with interactive approvals; see [Tool execution and Sessions](./docs/execution-sessions.md#tool-execution-boundary) |
 | Sessions | project history picker with search and preview, transcript recovery, branches, checkout/backtracking, automatic and manual compaction |
 | Side questions | multiple ephemeral, tool-free `/btw` threads outside Session history |

@@ -58,9 +58,26 @@ The first `open` starts the browser lazily. It has no access to your existing
 browser login state. Observe with `snapshot -i` before acting and after each page
 change. Element refs from older observations must not be reused.
 
+## Show the browser window
+
+Select **Show window: off (toggle)** in `/browser` to turn it on. The menu
+reflects the selected on/off preference; `/browser headed` also toggles it.
+AICE saves `browser_headed` as a boolean in `~/.aice/settings.json` and supplies
+`AGENT_BROWSER_HEADED` to the helper, so ordinary browser commands open a visible
+window without the model adding `--headed`. The default is off. Configuration
+layers, including `AICE_BROWSER_HEADED`, follow the usual
+[precedence](configuration.md#settings-and-precedence).
+
+Changing the preference keeps an already running browser and its pages intact.
+Use `/browser` → **Close**, then ask AICE to open a page to apply the new mode;
+closing discards that managed browser's temporary pages and login state. `/new`
+also applies the preference to the next browser session. Switching the preference
+back before closing cancels the pending change. Connected external browsers keep
+their own window visibility. A visible window requires a desktop display.
+
 ## Connect to a running browser
 
-Use `/browser` to open Status, Connect to running browser (auto-detect),
+Use `/browser` to open Status, Show window, Connect to running browser (auto-detect),
 Connect to port or URL, Choose tab, or Close. `/browser status` is also accepted.
 Connection prerequisites are shown before connecting. Port/URL entry and tab
 selection are transient application prompts, never model messages or Session
@@ -98,12 +115,15 @@ Disconnecting keeps the user's browser and its tabs, including AICE-created tabs
 `internal/browser.Manager` owns one `aice-<pid>-<generation>` browser session per
 AICE process. `internal/app` wires its environment and serializes lifecycle
 changes at idle command boundaries. The Agent Loop and Guard are unchanged.
-Browser state is ephemeral and is never restored from Session JSONL. Resuming a
+The window preference is persisted by `internal/config`; the manager keeps the
+current generation’s launch mode stable until rotation. Browser state is
+ephemeral and is never restored from Session JSONL. Resuming a
 conversation requires fresh page observation, even if history contains old refs.
 
 | Environment variable managed by AICE | Value |
 | --- | --- |
 | `AGENT_BROWSER_SESSION` | Current process/generation name |
+| `AGENT_BROWSER_HEADED` | Current generation’s managed window preference (`true`/`false`) |
 | `AGENT_BROWSER_SOCKET_DIR` | `~/.aice/browser/run` |
 | `AGENT_BROWSER_SCREENSHOT_DIR` | Absolute workspace `.aice/browser/screenshots` |
 | `AGENT_BROWSER_SKILLS_DIR` | Private versioned upstream skill directory |

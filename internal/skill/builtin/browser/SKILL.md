@@ -20,7 +20,8 @@ Do not silently download a browser.
 
 AICE has already set `AGENT_BROWSER_SESSION` and browser directories. Do not
 pass `--session`, export, unset, or otherwise change any `AGENT_BROWSER_*`
-variable. Each bash invocation is a fresh shell. Browser state is not Session
+variable. Window visibility is controlled by the user through `/browser`; do not
+pass `--headed` to override it. Each bash invocation is a fresh shell. Browser state is not Session
 history: after resuming a transcript, all old refs and tab IDs are invalid.
 
 First read upstream instructions with `agent-browser skills get core`.

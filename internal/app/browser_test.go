@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -9,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/ch1lam/aice-cli/internal/browser"
+	"github.com/ch1lam/aice-cli/internal/config"
 	"github.com/ch1lam/aice-cli/internal/deps"
 	"github.com/ch1lam/aice-cli/internal/guard"
 	"github.com/ch1lam/aice-cli/internal/interaction"
@@ -66,7 +68,7 @@ esac
 func TestBrowserCommandsAndSessionRotation(t *testing.T) {
 	s, dir := browserTestSession(t)
 	command := interactiveSlashCommand(t, s.SlashCommands(), "browser")
-	if command.Menu == nil || len(command.Menu.Options) != 5 || !command.Interactive {
+	if command.Menu == nil || len(command.Menu.Options) != 6 || !command.Interactive {
 		t.Fatal("browser menu incomplete")
 	}
 	input := make(chan string, 1)
@@ -126,5 +128,100 @@ func TestBrowserCleanupIgnoresCancelledParent(t *testing.T) {
 	}
 	if _, err := os.Stat(sidecar); !os.IsNotExist(err) {
 		t.Fatal("cancelled parent prevented cleanup")
+	}
+}
+
+func TestBrowserWindowPreference(t *testing.T) {
+	s, dir := browserTestSession(t)
+	s.configuration.Paths = authTestPaths(t)
+	s.application = &application{dependencies: dependencies{saveSettings: config.SaveSettingsFile}}
+	toggle := func() string {
+		t.Helper()
+		output, err := s.RunSlashCommand(t.Context(), interaction.CommandRequest{Name: "browser", Arguments: "headed"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return output
+	}
+	toggle()
+	if os.Getenv("AGENT_BROWSER_HEADED") != "true" {
+		t.Fatal("headed preference not inherited")
+	}
+	if !strings.Contains(s.browserMenu().Options[1].Label, "on") {
+		t.Fatal("menu not refreshed")
+	}
+	loaded, err := config.LoadFiles(s.configuration.Paths, config.LoadOptions{})
+	if err != nil || !loaded.BrowserHeaded {
+		t.Fatalf("preference not saved: %v", err)
+	}
+	// An existing daemon keeps its environment and pages until an explicit close.
+	before := s.browser.Name()
+	sidecar := filepath.Join(s.browser.RunDir(), before+".pid")
+	if err := os.WriteFile(sidecar, []byte("1"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if output := toggle(); !strings.Contains(output, "current browser is unchanged") {
+		t.Fatal(output)
+	}
+	if s.browser.Name() != before || os.Getenv("AGENT_BROWSER_HEADED") != "true" {
+		t.Fatal("changed running browser")
+	}
+	if _, err := os.Stat(sidecar); err != nil {
+		t.Fatal("closed current browser")
+	}
+	if _, err := s.slashBrowser(t.Context(), interaction.CommandRequest{Arguments: "close"}); err != nil {
+		t.Fatal(err)
+	}
+	if s.browser.Name() == before || os.Getenv("AGENT_BROWSER_HEADED") != "false" {
+		t.Fatal("pending preference not applied")
+	}
+	// A connected browser is never closed or rebound by the preference toggle.
+	if _, err := s.browser.Connect(t.Context(), browser.Target{Endpoint: "9222"}); err != nil {
+		t.Fatal(err)
+	}
+	before = s.browser.Name()
+	commands := filepath.Join(dir, "browser", "run", "commands")
+	prior, err := os.ReadFile(commands)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if output := toggle(); !strings.Contains(output, "connected browser is unchanged") {
+		t.Fatal(output)
+	}
+	after, err := os.ReadFile(commands)
+	if err != nil || string(prior) != string(after) || s.browser.Target().Endpoint != "9222" || s.browser.Name() != before {
+		t.Fatal("touched external browser")
+	}
+	if _, err := s.slashNew(t.Context(), interaction.CommandRequest{}); err != nil {
+		t.Fatal(err)
+	}
+	if os.Getenv("AGENT_BROWSER_HEADED") != "true" {
+		t.Fatal("new session lost saved preference")
+	}
+}
+
+func TestBrowserWindowSaveFailure(t *testing.T) {
+	s, _ := browserTestSession(t)
+	s.application = &application{dependencies: dependencies{saveSettings: func(context.Context, config.Paths, map[config.Setting]string) error {
+		return errors.New("disk unavailable")
+	}}}
+	before := s.browser.Name()
+	if _, err := s.slashBrowser(t.Context(), interaction.CommandRequest{Arguments: "headed"}); err == nil {
+		t.Fatal("ignored save error")
+	}
+	if s.configuration.BrowserHeaded || s.browser.Headed() || os.Getenv("AGENT_BROWSER_HEADED") != "false" || s.browser.Name() != before {
+		t.Fatal("failed save changed runtime")
+	}
+}
+
+func TestBrowserWindowCannotChangeDuringRun(t *testing.T) {
+	s, _ := browserTestSession(t)
+	s.conversation.activeMainRun = &mainRunState{}
+	s.application = &application{dependencies: dependencies{saveSettings: func(context.Context, config.Paths, map[config.Setting]string) error {
+		t.Fatal("saved during active run")
+		return nil
+	}}}
+	if _, err := s.slashBrowser(t.Context(), interaction.CommandRequest{Arguments: "headed"}); err == nil {
+		t.Fatal("changed browser during run")
 	}
 }

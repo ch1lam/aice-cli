@@ -66,6 +66,7 @@ peak billing is twice the estimate.
 | Default Project Trust | `AICE_DEFAULT_PROJECT_TRUST` | `ask`, `always`, `never`; project values cannot grant startup trust |
 | Custom base URL | `AICE_CUSTOM_BASE_URL` | OpenAI-compatible endpoint persisted as `custom_base_url`; default `http://localhost:11434/v1` |
 | Context windows | `AICE_CONTEXT_WINDOWS` | JSON array of provider/model/token entries described below |
+| Show browser window | `AICE_BROWSER_HEADED` | Boolean; file key `browser_headed`, default `false`; saved through `/browser` → Show window, see [Browser automation](browser.md#show-the-browser-window) |
 | Disable helper downloads | `AICE_NO_DEP_INSTALL` | Boolean; file key `no_dep_install` |
 | Disable startup update check | `AICE_NO_UPDATE_CHECK` | Boolean; file key `no_update_check` |
 

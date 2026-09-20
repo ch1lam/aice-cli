@@ -15,7 +15,7 @@ import (
 
 func mutableSetting(setting Setting) bool {
 	switch setting {
-	case SettingProvider, SettingModel, SettingThinking, SettingCustomBaseURL:
+	case SettingProvider, SettingModel, SettingThinking, SettingCustomBaseURL, SettingBrowserHeaded:
 		return true
 	default:
 		return false
@@ -38,12 +38,17 @@ func SaveSettingsFile(ctx context.Context, paths Paths, changes map[Setting]stri
 	}
 	// Validate only the new fields. An unrelated, overridden bad field must not
 	// prevent saving a valid selection or be copied from the effective snapshot.
-	if _, err := (Config{}).WithSettings(changes); err != nil {
+	validated, err := (Config{}).WithSettings(changes)
+	if err != nil {
 		return err
 	}
 	patch := make(map[string]any, len(changes))
 	for key, value := range changes {
-		patch[string(key)] = strings.TrimSpace(value)
+		if key == SettingBrowserHeaded {
+			patch[string(key)] = validated.BrowserHeaded
+		} else {
+			patch[string(key)] = strings.TrimSpace(value)
+		}
 	}
 	return patchFile(ctx, paths.GlobalSettings, patch)
 }

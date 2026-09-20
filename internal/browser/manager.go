@@ -51,6 +51,7 @@ type Manager struct {
 	pid, gen                  int
 	binDir, runDir, workspace string
 	target                    Target
+	headed, nextHeaded        bool
 	exec                      func(context.Context, []string, []string) ([]byte, error)
 	closeTimeout              time.Duration
 	alive                     func(int) bool
@@ -82,6 +83,18 @@ func NewManager(pid int, binDir, workspace string) (*Manager, error) {
 	return m, nil
 }
 
+// SetHeaded selects visibility for the next managed browser session. Keep the
+// current generation's launch environment stable while its daemon is running.
+func (m *Manager) SetHeaded(headed bool) {
+	m.nextHeaded = headed
+	if !m.HasSidecar() {
+		m.headed = headed
+	}
+}
+
+// Headed reports the current generation's launch preference.
+func (m *Manager) Headed() bool { return m.headed }
+
 func (m *Manager) Name() string   { return fmt.Sprintf("aice-%d-%d", m.pid, m.gen) }
 func (m *Manager) RunDir() string { return m.runDir }
 func (m *Manager) ScreenshotDir() string {
@@ -100,12 +113,14 @@ func (m *Manager) Rotate() error {
 		return err
 	}
 	m.gen++
+	m.headed = m.nextHeaded
 	m.target = Target{}
 	return nil
 }
 func (m *Manager) Environment() map[string]string {
 	return map[string]string{
 		"AGENT_BROWSER_SESSION":        m.Name(),
+		"AGENT_BROWSER_HEADED":         strconv.FormatBool(m.headed),
 		"AGENT_BROWSER_SOCKET_DIR":     m.runDir,
 		"AGENT_BROWSER_SCREENSHOT_DIR": m.ScreenshotDir(),
 		"AGENT_BROWSER_SKILLS_DIR":     filepath.Join(m.binDir, "agent-browser-skills", deps.AgentBrowserVersion),
