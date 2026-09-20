@@ -22,7 +22,7 @@ import (
 
 func (s *interactiveSession) SlashCommands() []interaction.Command {
 	return []interaction.Command{
-		{Name: "history", Description: "Find and resume a session in this project", ArgumentHint: "[id]"},
+		{Name: "history", Description: "Browse conversation history in this project", ArgumentHint: "[id]"},
 		{Name: "browser", Description: "Manage browser connection and tabs", Menu: browserMenu(), Interactive: true},
 		{
 			Name:        "session",

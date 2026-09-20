@@ -335,7 +335,7 @@ func TestSessionPickerCloseButton(t *testing.T) {
 				t.Fatal("close button is not on the top border")
 			}
 			top, _, _ := strings.Cut(ansi.Strip(m.sessionPickerView()), "\n")
-			if !strings.Contains(top, "SESS") || !strings.Contains(top, " [ ✘ ] ") ||
+			if !strings.Contains(top, "HIST") || !strings.Contains(top, " [ ✘ ] ") ||
 				ansi.StringWidth(top) != m.sessionPickerLayout().width {
 				t.Fatalf("title or border width is wrong: %q", top)
 			}

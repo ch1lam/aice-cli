@@ -893,7 +893,7 @@ without color.
 | `/thinking` | Select and save a supported reasoning level |
 | `/trust` | Save a Trust choice for restart; temporary choices are available only at startup |
 | `/session` | Show the Session ID, path, active leaf, and counts |
-| `/history [id]` | Open the current-project history picker (also Ctrl+R; F2 renames the selected session, an empty title restores the first question), or restore an existing local session by filename stem |
+| `/history [id]` | Browse conversation history in the current project (also Ctrl+R, labeled `history`; F2 renames the selected session, an empty title restores the first question), or restore an existing local session by filename stem |
 | `/tree` | Show all Session branches |
 | `/checkout` | Select where the next branch starts |
 | `/compact` | Append a compaction checkpoint for the active branch |
@@ -1063,7 +1063,8 @@ and omitting secondary hints to fit the available width. Expanded composer
 help replaces the short shortcut row and wraps actions across rows, so each
 shortcut appears once. Basic Up/Down, paging, and cursor navigation remain
 available without help labels. Clipboard paste (Ctrl+V / Alt+V) also remains
-available without a shortcut hint. Search progress, save
+available without a shortcut hint. The `/history` command, Ctrl+R hint, and
+history window title use the same history terminology. Search progress, save
 errors, and copy confirmations occupy separate status space and do not replace
 the session picker's shortcut row. Shortcut dispatch and help share the same
 action definitions; their ownership is specified in
