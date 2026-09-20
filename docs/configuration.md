@@ -15,8 +15,9 @@ to lowest priority:
 This order covers provider, model, reasoning, endpoints, API keys, context
 windows, default trust policy, and operational switches. Flags currently expose
 `--provider`, `--model`, `--thinking`, `--no-dep-install`,
-`--no-update-check`, `--run-token-budget`, `--run-timeout`, and
-`--run-no-progress-limit`; an omitted flag does not override another source.
+`--no-update-check`, `--run-token-budget`, `--run-timeout`,
+`--run-no-progress-limit`, and `--max-turns`; an omitted flag does not override
+another source.
 Invocation controls such as `--workspace`, `--session`, `--approve`, and
 `--yolo` retain their separate command semantics. No remote key/value store is used.
 
@@ -72,6 +73,7 @@ peak billing is twice the estimate.
 
 | Flag | Settings key | Environment | Default |
 | --- | --- | --- | --- |
+| `--max-turns N` | `max_turns` | `AICE_MAX_TURNS` | `0` (unlimited) |
 | `--run-token-budget N` | `run_token_budget` | `AICE_RUN_TOKEN_BUDGET` | `0` (unlimited) |
 | `--run-timeout 30m` | `run_timeout` | `AICE_RUN_TIMEOUT` | `0s` (unlimited) |
 | `--run-no-progress-limit N` | `run_no_progress_limit` | `AICE_RUN_NO_PROGRESS_LIMIT` | `8` identical tool rounds |
@@ -81,10 +83,11 @@ strings such as `30m` or `1h`. Explicit zero disables an inherited limit. Invali
 winning values fail configuration loading. Model/provider changes preserve the
 loaded limits. Repetition limits accept `0` (disabled) or an integer of at least
 `2`. The threshold counts consecutive identical tool rounds, not total model
-rounds. No fixed round limit is imposed.
+rounds. `max_turns` accepts a non-negative integer; `0` leaves model rounds
+unlimited. It counts model request attempts, including retries, within one run.
 
 ```sh
-aice --run-token-budget 200000 --run-timeout 30m
+aice --max-turns 50 --run-token-budget 200000 --run-timeout 30m
 aice --print "Fix the failing tests" --run-token-budget 100000
 ```
 
@@ -726,6 +729,7 @@ aice [--print <prompt>] [flags]
 --thinking <level>   override the requested thinking level
 --no-dep-install    disable automatic helper downloads
 --no-update-check   disable the interactive startup update check
+--max-turns         model request attempts per Agent run, including retries (0: unlimited)
 --run-token-budget  provider-reported token budget per Agent run (0: unlimited)
 --run-timeout       wall-clock budget per Agent run, e.g. 30m (0: unlimited)
 --run-no-progress-limit  consecutive identical tool rounds before stopping (default: 8; 0: disabled)

@@ -2,7 +2,7 @@
 
 ## Run resource limits
 
-AICE has no fixed model-round or tool-step ceiling. Optional
+AICE has no model-round or tool-step ceiling by default. Optional
 `--run-token-budget N` and `--run-timeout 30m` bound one Agent run; both default
 to zero (unlimited). They work in interactive and print modes, with the same
 configuration precedence as model settings. See [configuration](configuration.md#run-limits).
@@ -31,6 +31,27 @@ request. Print mode exits nonzero for a resource stop; interactive mode returns
 control to the user. Completed edits are retained. Send a new message to continue
 with a fresh run budget, or restart with different limits. This does not bypass
 Guard or Project Trust.
+
+### Optional turn limit
+
+`--max-turns N` optionally bounds model request attempts in each Agent run.
+The default `0` is unlimited; positive integers set a ceiling. Each call to the
+model counts once, including failed attempts and retries. Tool calls do not count
+separately, and a synthetic terminal message does not consume another turn.
+
+The last permitted model response's valid tool batch executes normally through
+Guard, subject to token/time budgets and cancellation. If continuation would
+require another model request, the Loop records `maximum model turns reached`
+and stops without requesting a final summary. A final answer at the limit still
+succeeds if no steering or follow-up needs another model request. Print mode
+exits nonzero for a limit stop; interactive mode returns control to the user.
+Completed actions and accepted inputs remain in history.
+
+Steering and queued follow-ups share the count; a new run starts fresh. Automatic
+compaction does not reset it. Summary generation uses separate loops with their
+own turn counters; it does not consume the main run's turn allowance. No new
+compaction starts once the main turn limit has been reached. Use token/time
+budgets as well to bound resources across compaction and the main run.
 
 ### Repeated-tool detection
 

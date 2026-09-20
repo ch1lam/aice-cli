@@ -127,6 +127,7 @@ func newCommand(dependencies dependencies) (*cobra.Command, error) {
 	}
 	application.bindFlags = func(v *viper.Viper) error {
 		for key, name := range map[string]string{
+			"max_turns":             "max-turns",
 			"run_no_progress_limit": "run-no-progress-limit",
 			"run_token_budget":      "run-token-budget", "run_timeout": "run-timeout",
 			"provider": "provider", "model": "model", "thinking": "thinking",

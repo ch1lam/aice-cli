@@ -46,8 +46,8 @@ settings → user settings → defaults. Interactive selections save immediately
 other running instances keep their loaded configuration. See
 [configuration and persistence](./docs/configuration.md#settings-and-precedence).
 
-Runs have no fixed round limit. Optionally set `--run-token-budget 200000`
-and `--run-timeout 30m`. By default, 8 consecutive identical tool rounds stop
+Runs have no round limit by default. Optionally set `--max-turns 50`,
+`--run-token-budget 200000`, and `--run-timeout 30m`. By default, 8 consecutive identical tool rounds stop
 the run; `--run-no-progress-limit 0` disables this check. See
 [run limits](./docs/configuration.md#run-limits).
 

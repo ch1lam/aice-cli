@@ -60,3 +60,44 @@ func TestInteractiveRunBudgetPersistsAfterCompaction(t *testing.T) {
 		t.Fatalf("cannot resume history: %v", err)
 	}
 }
+
+func TestInteractiveMaxTurnsPreservesResumableSession(t *testing.T) {
+	workspace := t.TempDir()
+	path := filepath.Join(t.TempDir(), "turn-limit.jsonl")
+	model, deps := longTaskDependencies(t, workspace)
+	originalLoad := deps.loadConfig
+	deps.loadConfig = func(options config.LoadOptions) (config.Config, error) {
+		c, err := originalLoad(options)
+		c.MaxTurns = 100
+		return c, err
+	}
+	deps.runTUI = func(ctx context.Context, runner tui.Runner, _ tui.Options) error {
+		active, err := runner.NewRun(ctx, interaction.RunInput{Prompt: longTaskGoal}, nil)
+		if err != nil {
+			return err
+		}
+		return active.Run(ctx)
+	}
+	command, err := newTestCommand(t, deps)
+	if err != nil {
+		t.Fatal(err)
+	}
+	command.SetArgs([]string{"--workspace", workspace, "--session", path})
+	command.SetIn(strings.NewReader(""))
+	command.SetOut(io.Discard)
+	command.SetErr(io.Discard)
+	if err := command.ExecuteContext(t.Context()); !errors.Is(err, agent.ErrMaxTurns) {
+		t.Fatal(err)
+	}
+	if model.mainCalls != 100 || model.summaryCalls == 0 {
+		t.Fatalf("requests/compactions=%d/%d", model.mainCalls, model.summaryCalls)
+	}
+	snapshot := openSessionSnapshot(t, path)
+	last := snapshot.Messages[len(snapshot.Messages)-1].Message.(llm.AssistantMessage)
+	if !strings.Contains(last.ErrorMessage, "maximum model turns") {
+		t.Fatalf("last=%+v", last)
+	}
+	if _, err := sessionHistory(snapshot); err != nil {
+		t.Fatal("cannot resume", err)
+	}
+}

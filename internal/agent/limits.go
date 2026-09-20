@@ -11,6 +11,7 @@ import (
 )
 
 var (
+	ErrMaxTurns    = errors.New("agent: maximum model turns reached")
 	ErrTokenBudget = errors.New("agent: run token budget exhausted")
 	ErrTimeBudget  = errors.New("agent: run time budget exhausted")
 )
@@ -19,8 +20,10 @@ var (
 // Zero values leave resource use unlimited. Tokens are provider-reported usage,
 // checked between operations, not an exact billing or output-token ceiling.
 type RunLimits struct {
-	Tokens  int64
-	Timeout time.Duration
+	// MaxTurns bounds model request attempts, including retries. Zero is unlimited.
+	MaxTurns int
+	Tokens   int64
+	Timeout  time.Duration
 	// NoProgress stops consecutive identical tool rounds. Zero disables it.
 	NoProgress int
 }
@@ -28,7 +31,7 @@ type RunLimits struct {
 // WithRunLimits configures immutable limits; counters belong to each Run.
 func WithRunLimits(limits RunLimits) LoopOption {
 	return func(loop *Loop) error {
-		if limits.Tokens < 0 || limits.Timeout < 0 || limits.NoProgress < 0 {
+		if limits.Tokens < 0 || limits.Timeout < 0 || limits.NoProgress < 0 || limits.MaxTurns < 0 {
 			return errors.New("agent: run limits cannot be negative")
 		}
 		if limits.NoProgress == 1 {
@@ -61,4 +64,13 @@ func (e *runExecution) addUsage(usage llm.Usage) {
 		}
 	}
 	e.tokensUsed += min(max(tokens, 0), math.MaxInt64-e.tokensUsed)
+}
+
+// checkMaxTurns applies only before model requests, allowing the last permitted
+// response's complete tool batch to settle through the ordinary Guard path.
+func (e *runExecution) checkMaxTurns() error {
+	if limit := e.loop.limits.MaxTurns; limit > 0 && e.turnsUsed >= limit {
+		return fmt.Errorf("%w (%d); send a new message to continue with a fresh turn budget", ErrMaxTurns, limit)
+	}
+	return nil
 }

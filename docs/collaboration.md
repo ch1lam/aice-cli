@@ -91,6 +91,8 @@ HTTP fixtures. It checks stdout/stderr separation, process exit codes, and
 `--yolo` preserving the secret-file deny while ordinary reads still succeed.
 It also checks token exhaustion before tool execution and repeated-tool stops
 with the default threshold, an explicit threshold, and detection disabled.
+Turn-limit checks cover settled tools, explicit zero, and natural completion
+at the final permitted request.
 Each invocation uses a temporary home and workspace, an environment allowlist,
 disabled helper downloads and update checks, and explicit project distrust.
 The build reuses the Go test toolchain and caches with module downloads disabled.

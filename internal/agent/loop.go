@@ -165,6 +165,7 @@ type runExecution struct {
 	pendingInputs    []llm.UserMessage
 	interactionStart int
 	tokensUsed       int64
+	turnsUsed        int
 	repetition       repetitionTracker
 	recordedMessages int
 	recorderErr      error

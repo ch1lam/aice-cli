@@ -78,10 +78,14 @@ data: [DONE]
 		flags    []string
 		requests int32
 		exit     int
+		reason   string
 	}{
-		{"default repetition limit", nil, 8, 1},
-		{"custom repetition limit", []string{"--run-no-progress-limit=3"}, 3, 1},
-		{"repetition detection disabled", []string{"--run-no-progress-limit=0"}, 10, 0},
+		{"default repetition limit", nil, 8, 1, "no observable progress"},
+		{"custom repetition limit", []string{"--run-no-progress-limit=3"}, 3, 1, "no observable progress"},
+		{"repetition detection disabled", []string{"--run-no-progress-limit=0"}, 10, 0, ""},
+		{"max turns stops after tools", []string{"--max-turns=3"}, 3, 1, "maximum model turns reached"},
+		{"zero max turns is unlimited", []string{"--max-turns=0", "--run-no-progress-limit=0"}, 10, 0, ""},
+		{"final answer at max turns succeeds", []string{"--max-turns=10", "--run-no-progress-limit=0"}, 10, 0, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var requests atomic.Int32
@@ -97,7 +101,7 @@ data: [DONE]
 			defer server.Close()
 			flags := append([]string{"--output-format=json"}, tc.flags...)
 			stdout, stderr := runBinaryPrint(t, binary, server.URL, tc.exit, flags...)
-			if requests.Load() != tc.requests || strings.Contains(stderr, "no observable progress") != (tc.exit != 0) {
+			if requests.Load() != tc.requests || (tc.reason != "" && !strings.Contains(stderr, tc.reason)) {
 				t.Fatalf("requests=%d stderr=%s", requests.Load(), stderr)
 			}
 			if !strings.Contains(stdout, "fixture-public-value") || !strings.Contains(stdout, `"type":"agent_end"`) {

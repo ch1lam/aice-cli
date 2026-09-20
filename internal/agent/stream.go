@@ -24,6 +24,9 @@ func (e *runExecution) streamAssistant(
 	if err := e.checkBudget(ctx); err != nil {
 		return assistantOutcome{}, err
 	}
+	if err := e.checkMaxTurns(); err != nil {
+		return assistantOutcome{}, err
+	}
 	request, err := e.prepareRequest(ctx, allowCompaction)
 	if err != nil {
 		return assistantOutcome{}, fmt.Errorf(
@@ -36,6 +39,7 @@ func (e *runExecution) streamAssistant(
 	if err := e.checkBudget(ctx); err != nil {
 		return assistantOutcome{}, err
 	}
+	e.turnsUsed++
 	stream, err := e.loop.model.Stream(ctx, request)
 	if err != nil {
 		return assistantOutcome{}, fmt.Errorf("agent: start model stream: %w", err)

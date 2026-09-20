@@ -87,7 +87,7 @@ func finalizeFailedResult(
 	if len(pendingInputs) == 0 &&
 		resultEndsAtAssistant(result) &&
 		!needsAbortedTerminal(result, stopReason) &&
-		!((errors.Is(runErr, ErrTokenBudget) || errors.Is(runErr, ErrTimeBudget)) &&
+		!((errors.Is(runErr, ErrMaxTurns) || errors.Is(runErr, ErrTokenBudget) || errors.Is(runErr, ErrTimeBudget)) &&
 			result.ModelRounds[len(result.ModelRounds)-1].Assistant.ErrorMessage != terminalText) {
 		return result, nil
 	}
@@ -177,7 +177,7 @@ func resultEndsAtAssistant(result Result) bool {
 
 func terminalFailure(runErr error) (string, llm.StopReason) {
 	switch {
-	case errors.Is(runErr, ErrNoProgress):
+	case errors.Is(runErr, ErrMaxTurns), errors.Is(runErr, ErrNoProgress):
 		return runErr.Error(), llm.StopReasonError
 	case errors.Is(runErr, ErrTokenBudget):
 		return runErr.Error(), llm.StopReasonError

@@ -138,9 +138,9 @@ normal transcript cache key, including replayed result projections.
   and steering. When it would otherwise stop naturally, the outer loop polls
   one follow-up; if present, it starts another interaction inside the same run.
   The application and frontend must not reproduce this stopping decision.
-- There is no fixed `MaxTurns` or `MaxToolSteps`. A run ends only when the model
+- Runs have no model-round or tool-step ceiling by default. A run ends when the model
   completes naturally and no follow-up is waiting, or on cancellation/deadline,
-  context protection, configured run resource limits, repeated-tool detection,
+  context protection, configured turn/resource limits, repeated-tool detection,
   or an unrecoverable provider, protocol, runtime, or event-sink failure.
 - Optional `RunLimits` are immutable Loop configuration with per-Run counters.
   Token accounting includes reported failed attempts and automatic compaction;
@@ -152,6 +152,14 @@ normal transcript cache key, including replayed result projections.
   approval waits, tools, compaction and queued inputs. Neither limit resets on
   steering or follow-up. Resource stops are non-retryable and retain paired
   tool results and a durable terminal reason. See [run limits](execution-sessions.md#run-resource-limits).
+- Optional `RunLimits.MaxTurns` bounds model request attempts in one Run, including
+  failed attempts and retries. The counter increments immediately before calling
+  `Model.Stream`; tools and synthetic terminal messages do not consume turns.
+  Checks before request preparation prevent compaction or model continuation
+  after exhaustion. The last permitted response's tools still settle normally;
+  an already completed final answer succeeds. Steering and follow-up share the
+  count; a new Run resets it. `ErrMaxTurns` is non-retryable and leaves a durable
+  terminal reason. Compaction uses separate loops, not the main turn counter.
 - `RunLimits.NoProgress` counts consecutive identical completed tool rounds.
   Application configuration defaults to 8; zero disables it. The Loop compares
   ordered tool names, canonical JSON arguments and observable results, retaining

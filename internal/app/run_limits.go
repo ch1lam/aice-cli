@@ -6,5 +6,5 @@ import (
 )
 
 func runLimits(c config.Config) agent.RunLimits {
-	return agent.RunLimits{Tokens: c.RunTokenBudget, Timeout: c.RunTimeout, NoProgress: c.RunNoProgressLimit}
+	return agent.RunLimits{MaxTurns: c.MaxTurns, Tokens: c.RunTokenBudget, Timeout: c.RunTimeout, NoProgress: c.RunNoProgressLimit}
 }

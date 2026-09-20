@@ -95,6 +95,7 @@ type ContextWindow struct {
 // Settings is the file schema shared by user and project configuration.
 // API keys normally live in auth.json, with the same keys and precedence.
 type Settings struct {
+	MaxTurns            int               `json:"max_turns,omitempty"`
 	RunNoProgressLimit  int               `json:"run_no_progress_limit"`
 	RunTokenBudget      int64             `json:"run_token_budget,omitempty"`
 	RunTimeout          string            `json:"run_timeout,omitempty"`
@@ -135,6 +136,7 @@ type Paths struct {
 // Config is an immutable effective snapshot owned by one application instance.
 // Interactive changes create another snapshot; they never reload file layers.
 type Config struct {
+	MaxTurns            int
 	RunNoProgressLimit  int
 	RunTokenBudget      int64
 	RunTimeout          time.Duration
@@ -213,6 +215,7 @@ func DefaultPaths() (Paths, error) {
 // every key also makes env-only values visible to Viper's AllSettings.
 func EnvironmentVariables() map[string]string {
 	return map[string]string{
+		"max_turns":             "AICE_MAX_TURNS",
 		"run_no_progress_limit": "AICE_RUN_NO_PROGRESS_LIMIT",
 		"run_token_budget":      "AICE_RUN_TOKEN_BUDGET", "run_timeout": "AICE_RUN_TIMEOUT",
 		"provider": EnvProvider, "model": EnvModel, "thinking": EnvThinking,
@@ -387,6 +390,7 @@ func (c Config) SavedValuesOverridden(changes map[Setting]string) bool {
 
 func (c Config) settings() Settings {
 	s := Settings{
+		MaxTurns:            c.MaxTurns,
 		RunNoProgressLimit:  c.RunNoProgressLimit,
 		RunTokenBudget:      c.RunTokenBudget,
 		RunTimeout:          c.RunTimeout.String(),
@@ -443,7 +447,7 @@ func decodeEffective(v *viper.Viper) (Config, error) {
 				return Config{}, fmt.Errorf("config: %s must be a boolean", key)
 			}
 			values[key] = parsed
-		case "run_token_budget", "run_no_progress_limit":
+		case "run_token_budget", "run_no_progress_limit", "max_turns":
 			parsed, err := strconv.ParseInt(text, 10, 64)
 			if err != nil {
 				return Config{}, fmt.Errorf("config: %s must be an integer", key)
@@ -477,6 +481,7 @@ func decodeEffective(v *viper.Viper) (Config, error) {
 	}
 	timeout, _ := time.ParseDuration(s.RunTimeout) // validated above
 	c := Config{
+		MaxTurns:            s.MaxTurns,
 		RunNoProgressLimit:  s.RunNoProgressLimit,
 		RunTokenBudget:      s.RunTokenBudget,
 		RunTimeout:          timeout,
@@ -748,6 +753,9 @@ func (p Paths) validate() error {
 }
 
 func (s Settings) validate() error {
+	if s.MaxTurns < 0 {
+		return errors.New("config: max_turns cannot be negative")
+	}
 	if s.RunNoProgressLimit < 0 || s.RunNoProgressLimit == 1 {
 		return errors.New("config: run_no_progress_limit must be zero or at least two")
 	}
