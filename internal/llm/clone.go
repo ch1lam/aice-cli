@@ -54,6 +54,7 @@ func CloneAgentMessage(message AgentMessage) (AgentMessage, error) {
 	case ToolResultMessage:
 		copied := value
 		copied.Content = cloneContentParts(value.Content)
+		copied.Evidence = value.Evidence.Clone()
 		return copied, nil
 	case CompactionSummaryMessage:
 		return value, nil
@@ -90,6 +91,7 @@ func cloneContentParts(parts []ContentPart) []ContentPart {
 			if part.ToolResult != nil {
 				result := *part.ToolResult
 				result.Content = cloneContentParts(part.ToolResult.Content)
+				result.Evidence = part.ToolResult.Evidence.Clone()
 				cloned[index].ToolResult = &result
 			}
 		}

@@ -9,6 +9,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/ch1lam/aice-cli/internal/evidence"
 )
 
 // API identifies the wire protocol used to call a model.
@@ -355,14 +357,17 @@ type ToolCall struct {
 	Signature string          `json:"signature,omitempty"`
 }
 
-// ToolResult records the output associated with one tool call.
+// ToolResult records the output associated with one tool call. Evidence is
+// optional Session metadata produced by web tools; provider adapters never
+// encode it and older records without it remain valid.
 type ToolResult struct {
-	Diff       ToolDiff       `json:"diff,omitzero"`
-	Truncation ToolTruncation `json:"truncation,omitzero"`
-	CallID     string         `json:"call_id"`
-	Name       string         `json:"name,omitempty"`
-	Content    []ContentPart  `json:"content"`
-	IsError    bool           `json:"is_error,omitempty"`
+	Diff       ToolDiff         `json:"diff,omitzero"`
+	Truncation ToolTruncation   `json:"truncation,omitzero"`
+	Evidence   *evidence.Bundle `json:"evidence,omitempty"`
+	CallID     string           `json:"call_id"`
+	Name       string           `json:"name,omitempty"`
+	Content    []ContentPart    `json:"content"`
+	IsError    bool             `json:"is_error,omitempty"`
 }
 
 // ToolDefinition describes a tool exposed to a model. PromptSnippet and
@@ -465,14 +470,15 @@ type AssistantMessage struct {
 
 // ToolResultMessage is the history message produced by one tool execution.
 type ToolResultMessage struct {
-	Diff       ToolDiff       `json:"diff,omitzero"`
-	Truncation ToolTruncation `json:"truncation,omitzero"`
-	Role       Role           `json:"role"`
-	ToolCallID string         `json:"tool_call_id"`
-	ToolName   string         `json:"tool_name,omitempty"`
-	Content    []ContentPart  `json:"content"`
-	IsError    bool           `json:"is_error,omitempty"`
-	Timestamp  int64          `json:"timestamp"`
+	Diff       ToolDiff         `json:"diff,omitzero"`
+	Truncation ToolTruncation   `json:"truncation,omitzero"`
+	Evidence   *evidence.Bundle `json:"evidence,omitempty"`
+	Role       Role             `json:"role"`
+	ToolCallID string           `json:"tool_call_id"`
+	ToolName   string           `json:"tool_name,omitempty"`
+	Content    []ContentPart    `json:"content"`
+	IsError    bool             `json:"is_error,omitempty"`
+	Timestamp  int64            `json:"timestamp"`
 }
 
 // CompactionSummaryMessage is a derived checkpoint stored in transcript
@@ -577,6 +583,7 @@ func NewToolResultMessage(result ToolResult) (ToolResultMessage, error) {
 		Role:       RoleToolResult,
 		Diff:       result.Diff,
 		Truncation: result.Truncation,
+		Evidence:   result.Evidence.Clone(),
 		ToolCallID: result.CallID,
 		ToolName:   result.Name,
 		Content:    slices.Clone(result.Content),
@@ -600,10 +607,11 @@ func (m ToolResultMessage) Validate() error {
 		return fmt.Errorf("llm: tool result message has role %q", m.Role)
 	}
 	return ToolResult{
-		CallID:  m.ToolCallID,
-		Name:    m.ToolName,
-		Content: m.Content,
-		IsError: m.IsError,
+		CallID:   m.ToolCallID,
+		Name:     m.ToolName,
+		Content:  m.Content,
+		IsError:  m.IsError,
+		Evidence: m.Evidence,
 	}.Validate()
 }
 
@@ -750,6 +758,9 @@ func (r ToolResult) Validate() error {
 		if part.Type != ContentTypeText && part.Type != ContentTypeImage {
 			return fmt.Errorf("tool result content %d has unsupported type %q", index, part.Type)
 		}
+	}
+	if err := r.Evidence.Validate(); err != nil {
+		return fmt.Errorf("tool result evidence: %w", err)
 	}
 	return nil
 }
