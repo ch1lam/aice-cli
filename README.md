@@ -35,6 +35,11 @@ Use `/browser` to toggle a visible browser window, connect to a running browser,
 or choose its working tab; see
 [Browser automation](./docs/browser.md) for setup.
 
+Use `/web` to add an Exa search account, order search sources, and switch
+`web_fetch`. `web_search` works with any tool-calling model once a service is
+configured; `web_fetch` reads public pages directly. Both ask for permission
+per service or origin. See [Web search and fetch](./docs/web.md).
+
 Start an interactive Session inside a project:
 
 ```sh
@@ -126,9 +131,10 @@ aice --workspace . --session .aice/sessions/<session-id>.jsonl
 | Interface | Bubble Tea TUI with [context usage percentage](./docs/configuration.md#context-window-and-status-bar) per provider/model, and one-shot `--print` mode |
 | Providers | DeepSeek V4, OpenCode Go's built-in catalog, Kimi Coding Plan (Responses API), Moonshot API Platform, Zhipu API Platform and Coding Plan, OpenAI API (GPT-6 Astra and GPT-5.6), Codex/ChatGPT subscription, and Custom (OpenAI-compatible) |
 | Protocols | Anthropic Messages, OpenAI Responses, OpenAI Chat Completions |
-| Tools | `read`, `write`, `edit`, `bash`, `grep`, `find`, `ls`, `skill` |
+| Tools | `read`, `write`, `edit`, `bash`, `grep`, `find`, `ls`, `skill`, `web_search`, `web_fetch` |
+| Web | Exa Search API instances with an ordered source list (`native` reserved, not implemented), hardened direct page fetching, recorded sources in Session history, `/web` settings; see [Web search and fetch](./docs/web.md) |
 | Browser | Native agent-browser through `bash`/`read`, builtin browser skill, `/browser` window visibility, connection and tab controls; see [Browser automation](./docs/browser.md) |
-| Guard | path and dangerous-command checks with interactive approvals; see [Tool execution and Sessions](./docs/execution-sessions.md#tool-execution-boundary) |
+| Guard | path, dangerous-command and network-scope checks with interactive approvals; see [Tool execution and Sessions](./docs/execution-sessions.md#tool-execution-boundary) |
 | Sessions | project history picker with search and preview, transcript recovery, branches, checkout/backtracking, automatic and manual compaction |
 | Side questions | multiple ephemeral, tool-free `/btw` threads outside Session history |
 | Agent Skills | open-spec `SKILL.md` directories from builtin, `~/.agents/skills`, and project `.agents/skills`; see [Agent Skills](./docs/configuration.md#agent-skills) |
@@ -150,6 +156,7 @@ Detailed guides:
 
 - [Installation and updates](./docs/installation.md)
 - [Configuration and commands](./docs/configuration.md)
+- [Web search and fetch](./docs/web.md)
 - [Project Trust and prompts](./docs/project-trust.md)
 - [Tool execution and Sessions](./docs/execution-sessions.md)
 - [Architecture](./docs/architecture.md), [runtime contracts](./docs/contracts.md), and [maintenance / known discrepancies](./docs/maintenance.md)

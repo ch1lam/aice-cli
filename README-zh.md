@@ -33,6 +33,10 @@ iwr -useb https://raw.githubusercontent.com/ch1lam/aice-cli/main/scripts/install
 使用 `/browser` 切换显示窗口、连接运行中的浏览器或选择工作标签页；准备步骤见
 [浏览器自动化](./docs/browser.md)。
 
+使用 `/web` 添加 Exa 搜索账户、调整搜索来源顺序并开关 `web_fetch`。配置好服务后，
+任意支持工具调用的模型都可以使用 `web_search`；`web_fetch` 直接读取公开网页。两者都
+按服务或站点 origin 请求授权。详见[联网搜索与抓取](./docs/web.md)。
+
 在项目中启动交互式 Session：
 
 ```sh
@@ -110,9 +114,10 @@ aice --workspace . --session .aice/sessions/<session-id>.jsonl
 | 交互 | Bubble Tea TUI（按 provider/model 显示[上下文使用百分比](./docs/configuration.md#context-window-and-status-bar)）与一次性 `--print` 模式 |
 | Provider | DeepSeek V4、OpenCode Go 内建模型目录、Kimi Coding Plan（Responses API）、Moonshot 开放平台 API、智谱开放平台 API 与 Coding Plan、OpenAI API（GPT-6 Astra 与 GPT-5.6）、Codex/ChatGPT 订阅，以及 Custom（OpenAI 兼容） |
 | 协议 | Anthropic Messages、OpenAI Responses、OpenAI Chat Completions |
-| 工具 | `read`、`write`、`edit`、`bash`、`grep`、`find`、`ls`、`skill` |
+| 工具 | `read`、`write`、`edit`、`bash`、`grep`、`find`、`ls`、`skill`、`web_search`、`web_fetch` |
+| 联网 | Exa Search API 服务实例与可排序来源列表（`native` 预留、未实现）、带防护的直连网页抓取、来源写入 Session 历史、`/web` 设置；见[联网搜索与抓取](./docs/web.md) |
 | 浏览器 | 原生 agent-browser，通过 `bash`/`read` 与内置 browser skill 工作；`/browser` 切换显示窗口、连接与选择标签页，见[浏览器自动化](./docs/browser.md) |
-| Guard | 工具调用前的路径与危险命令检查、交互授权；详见[工具执行与 Session](./docs/execution-sessions.md#tool-execution-boundary) |
+| Guard | 工具调用前的路径、危险命令与网络范围检查、交互授权；详见[工具执行与 Session](./docs/execution-sessions.md#tool-execution-boundary) |
 | Session | 当前项目历史选择器、搜索与预览、原始对话恢复、分支、回退与自动/手动非破坏性压缩 |
 | 侧问题 | Session 历史之外、无工具的多个临时 `/btw` 线程 |
 | Agent Skills | 开放规范的 `SKILL.md` 目录：内建、`~/.agents/skills` 与项目 `.agents/skills`；详见 [Agent Skills](./docs/configuration.md#agent-skills) |
@@ -132,6 +137,7 @@ Guard 不隔离网页内部操作。
 
 - [安装与升级](./docs/installation.md)
 - [配置与命令](./docs/configuration.md)
+- [联网搜索与抓取](./docs/web.md)
 - [Project Trust 与 Prompt](./docs/project-trust.md)
 - [工具执行与 Session](./docs/execution-sessions.md)
 - [架构](./docs/architecture.md)、[运行时契约](./docs/contracts.md)与[维护入口及已知偏差](./docs/maintenance.md)

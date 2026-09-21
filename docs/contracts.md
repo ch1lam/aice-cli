@@ -80,6 +80,28 @@ in normal viewport cache invalidation. Absent metadata (including old results)
 produces no inferred status. Provider adapters continue sending content only;
 this field does not change the curated print NDJSON projection.
 
+### Web evidence metadata
+
+`llm.ToolResult` and `ToolResultMessage` carry an optional
+`Evidence *evidence.Bundle` ([type definition](../internal/evidence/types.go)).
+`web_search` and `web_fetch` create it from their normalized responses; an
+empty result records no bundle. `NewToolResultMessage` clones it, `Validate`
+enforces referential integrity, closed enumerations, valid UTF-8 and the 64 KiB
+encoded bound, and `CloneAgentMessage` deep-copies it, including nested
+tool-result parts. Session JSONL persists the additive field without a version
+change; absent fields decode to nil. Source IDs derive from the normalized URL,
+never from call IDs or time, so equal results produce equal records.
+
+Model-facing content is the deterministic rendering in `internal/web`: it
+excludes retrieval times, request IDs, durations and cost so repeated-tool
+detection (which compares content, error status, diff and truncation, not
+evidence) treats unchanged results as repetition and changed results as
+progress. Provider adapters and print output continue projecting content only.
+The app projects the bundle into `interaction.EvidenceDisplay` (a pointer on
+`ToolDisplay`, nil when absent) for live and replayed results; the TUI renders
+titles and URLs with control characters escaped and rows clipped, without
+opening links or re-parsing tool text.
+
 ### Completed mutation diff metadata
 
 `llm.ToolResult` and `ToolResultMessage` carry optional, value-only `diff`

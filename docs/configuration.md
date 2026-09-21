@@ -69,6 +69,16 @@ peak billing is twice the estimate.
 | Show browser window | `AICE_BROWSER_HEADED` | Boolean; file key `browser_headed`, default `false`; saved through `/browser` → Show window, see [Browser automation](browser.md#show-the-browser-window) |
 | Disable helper downloads | `AICE_NO_DEP_INSTALL` | Boolean; file key `no_dep_install` |
 | Disable startup update check | `AICE_NO_UPDATE_CHECK` | Boolean; file key `no_update_check` |
+| Web search and fetch | none (file only) | Nested `web` object: search sources, priority, service instances, fetch switch; see [Web search and fetch](web.md#configuration) |
+
+The `web` object and the `web_services` credential namespace in `auth.json`
+are handled as whole objects per layer rather than field-merged. Only user
+files and `/web` may define services, endpoints, credentials and priority;
+trusted project settings may only set `web.search.enabled=false` or
+`web.fetch.enabled=false`, and other project `web` content is ignored with a
+diagnostic. Service keys referenced by `auth_ref` are stored under
+`web_services.<id>` in `~/.aice/auth.json`; `env` references read the named
+variable at startup.
 
 ### Run limits
 
@@ -97,8 +107,8 @@ compaction, overshoot, stopping and continuation.
 
 ### Interactive persistence and multiple instances
 
-`/model`, `/provider`, `/thinking`, and `/login` immediately save the explicit
-preference changes to `~/.aice/settings.json`. A custom login saves its selected
+`/model`, `/provider`, `/thinking`, `/login`, `/browser` and `/web` immediately
+save the explicit preference changes to `~/.aice/settings.json`. A custom login saves its selected
 endpoint and model in the same preference operation. API keys go to
 `~/.aice/auth.json`; OAuth has its own credential store. Project settings are
 never edited by these commands, and merged environment/project values are never
@@ -885,8 +895,9 @@ without color.
 | `/help` | List commands |
 | `/btw [question]` | Create or choose an ephemeral, tool-free side thread |
 | `/init` | Create or improve root `AGENTS.md`; loaded after restart |
-| `/settings` | Show effective model, Trust state, and configuration paths |
+| `/settings` | Show effective model, Trust state, web summary, and configuration paths |
 | `/browser` | Browser status, connection, tab selection and close; `/browser status` also works |
+| `/web` | Web search services, priority order, credentials and the `web_fetch` switch; see [Web search and fetch](web.md#the-web-command) |
 | `/skills` | List Agent Skills loaded for this Session |
 | `/login` | Choose account or API key, then provider and credential action; see [login flows](#credentials-and-connection-overrides) |
 | `/provider` | Select and save the global provider |

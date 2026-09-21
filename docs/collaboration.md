@@ -147,6 +147,30 @@ For model comparisons, preserve initial/final source and refactor-only diffs,
 record settings and interventions, and review readability, change locality and
 the need for each abstraction. Agree on models and cost before paid evaluation.
 
+## Web checks
+
+Web tests use local `httptest` servers, injected resolvers and dialers, fixed
+clocks and synthetic keys; they never resolve real hostnames, contact Exa or
+read `EXA_API_KEY`. The [httpfetch tests](../internal/web/httpfetch/fetch_test.go)
+route public-looking hostnames to a loopback server through the injected dialer
+while still running address validation on the resolver answer, so private
+targets, mixed DNS answers, redirects and TLS hostname verification are covered
+without network access. Application tests bind fake search and fetch backends
+through the same factory list as production.
+
+One paid request against the real Exa API is available as an explicit opt-in.
+It needs both the build tag and the environment switch; a key alone does not run
+it:
+
+```sh
+AICE_EXA_INTEGRATION=1 EXA_API_KEY=... \
+  go test -tags=integration ./internal/web/exa -run '^TestRealExaSearch$' -v
+```
+
+It sends one fixed, non-sensitive query with three results and logs whether a
+cost was reported. Agree on the charge before running it and report the result
+separately from the offline suite.
+
 ## History performance checks
 
 The synthetic history benchmarks use temporary sessions and generated Markdown;

@@ -24,6 +24,7 @@ tests. Search for the named symbols rather than relying on line numbers.
 | Side conversations | [app/side_thread.go](../internal/app/side_thread.go), [tui/side_thread.go](../internal/tui/side_thread.go) | [side_thread_lifecycle_test.go](../internal/app/side_thread_lifecycle_test.go), [tui/side_thread_test.go](../internal/tui/side_thread_test.go) |
 | Provider and protocol changes | [providers.go](../internal/app/providers.go), [provider](../internal/provider), [api](../internal/api) | The affected provider and protocol adapter tests; shared fixtures in [apitest](../internal/apitest) |
 | Browser lifecycle | [browser](../internal/browser), [app/browser.go](../internal/app/browser.go), [deps/agentbrowser.go](../internal/deps/agentbrowser.go) | [native_test.go](../internal/browser/native_test.go), [app/browser_test.go](../internal/app/browser_test.go) |
+| Web search and fetch | [app/web.go](../internal/app/web.go) (`bindWeb`), [app/web_commands.go](../internal/app/web_commands.go), [config/web.go](../internal/config/web.go), [web/resolve.go](../internal/web/resolve.go), [web/exa/client.go](../internal/web/exa/client.go), [web/httpfetch/fetch.go](../internal/web/httpfetch/fetch.go), [guard/network.go](../internal/guard/network.go), [tool/web_search.go](../internal/tool/web_search.go), [tool/web_fetch.go](../internal/tool/web_fetch.go) | [app/web_test.go](../internal/app/web_test.go), [app/web_commands_test.go](../internal/app/web_commands_test.go), [config/web_test.go](../internal/config/web_test.go), [web/web_test.go](../internal/web/web_test.go), [exa_test.go](../internal/web/exa/exa_test.go), [fetch_test.go](../internal/web/httpfetch/fetch_test.go), [guard/network_test.go](../internal/guard/network_test.go) |
 | Print integrations | [json_printer.go](../internal/app/json_printer.go), [Harbor adapter](../integrations/harbor/aice_agent.py) | [stream_printer_test.go](../internal/app/stream_printer_test.go), [Harbor guide](../integrations/harbor/README.md) |
 
 For a new feature, identify what state it adds, who owns that state, how it
@@ -215,6 +216,17 @@ Acceptance requires visible-position tests for soft wrapping, scrolling,
 trailing spaces, CJK, combining sequences and emoji, plus file/paste-token
 integrity and real-caret/IME alignment. Passing single-line ASCII cases is
 insufficient to claim composer click positioning.
+
+### Web search acceptance gaps
+
+The web tools were verified with offline fixtures, injected resolvers/dialers
+and the application-level fake backend. Not yet verified: a real Exa request
+(the opt-in test in [Verification](collaboration.md#web-checks) has not been run
+against a live key), a real public page through `web_fetch` on the open
+internet, and the `/web` menu in a real terminal beyond the Bubble Tea unit
+tests. Windows and Linux runs of the new tests are unverified locally. Record
+results here or in the owning guide when these are exercised; do not claim
+end-to-end Exa acceptance until then.
 
 ### Browser acceptance gaps
 

@@ -52,6 +52,17 @@ Durable design rules:
   execution and Sessions](execution-sessions.md#tool-execution-boundary).
 - Built-ins and future replacements use the same consumer-owned interfaces.
 - Dependencies are assembled explicitly in `internal/app`.
+- Web search separates the API adapter (`internal/web/exa`), the provider
+  descriptor facts it exports, the user's service instances
+  (`config.WebService`) and the run binding chosen by the pure resolver in
+  `internal/web`. `internal/app` owns the fixed factory list, resolves one
+  binding per run environment, registers `web_search` only when a source is
+  usable, and hands the Guard the bound service fingerprint. Provider wire
+  fields stop in the adapter; tools, Session records and the TUI consume the
+  `internal/evidence` contract. Model-native search is a reserved priority
+  entry without an implementation; when added, the request-construction layer
+  will enable it and omit the local `web_search` schema from the same request.
+  See [Web search and fetch](web.md).
 
 ## Runtime flow
 
@@ -110,8 +121,12 @@ model context remains independently derived through compaction checkpoints.
 | `internal/api/{anthropic,openairesponses,openaicompletions}` | Protocol translation around official SDKs |
 | `internal/api/streamcore` | Protocol-neutral streaming mechanics shared by adapters |
 | `internal/provider/{deepseek,opencode,kimi,moonshot,zhipu,openai,codex,custom}` | Provider catalogs, credentials, defaults, compatibility; `zhipu` owns separate API Platform and Coding Plan presets; `codex` owns ChatGPT OAuth; `custom` accepts arbitrary model IDs |
-| `internal/tool` | `read`, `write`, `edit`, `bash`, `grep`, `find`, `ls`, `skill` |
-| `internal/guard` | Intrinsic execution gate: file policies, permission gate, pathAccess mode (`allow`/`ask`/`block`), check Decision (`allow`/`ask`/`deny`) |
+| `internal/tool` | `read`, `write`, `edit`, `bash`, `grep`, `find`, `ls`, `skill`, `web_search`, `web_fetch` |
+| `internal/evidence` | Leaf source/evidence contract retained as tool-result metadata; deterministic source IDs, validation, cloning |
+| `internal/web` | Provider-neutral search/fetch requests and results, classified errors, domain policy, pure source resolver, deterministic model rendering |
+| `internal/web/exa` | Exa Search REST adapter: wire types, bounded HTTP, error classification, normalization into evidence |
+| `internal/web/httpfetch` | Hardened page fetcher: URL policy, public-address validation with pinned dialing, bounded redirects and bodies, HTML-to-Markdown extraction |
+| `internal/guard` | Intrinsic execution gate: file policies, permission gate, pathAccess mode (`allow`/`ask`/`block`), network scopes for web tools, check Decision (`allow`/`ask`/`deny`) |
 | `internal/session` | Versioned JSONL replay, tree navigation, compaction context |
 | `internal/trust` | Protected-resource discovery and global Trust decisions |
 | `internal/skill` | Agent Skill discovery, SKILL.md parse, source layering, embedded builtins |
@@ -179,6 +194,13 @@ such as `core`, `types`, `services`, `utils`, or `helpers`.
   has no decoders for those formats. PNG/JPEG/GIF use the standard library.
   Conversion and resource limits stay in `internal/media`; no host converter
   or additional runtime is required.
+- Web tools use `golang.org/x/net` (Go Authors, BSD-3-Clause), a module that
+  was already pinned as an indirect dependency, as a direct import for
+  `html` and `html/charset` (DOM parsing, charset detection) and `idna`
+  (hostname normalization). The standard library has no HTML parser or IDNA
+  mapping, and regex tag stripping is not acceptable for untrusted pages. No
+  readability, HTML-to-Markdown or search-provider SDK is used; the Exa
+  adapter is hand-written over `net/http`.
 - Markdown code-block recognition uses the already-pinned Goldmark parser
   (MIT, user-approved direct dependency), also used by Glamour. The standard
   library has no Markdown parser; reusing this maintained parser preserves
@@ -243,6 +265,9 @@ Use existing boundaries and update the owning guide when a capability ships.
 | Plan mode | Required, not implemented | Enforce allowed actions in Guard; app owns mode transitions and UI commands |
 | Subagents | Required, not implemented | Reuse the Agent Loop through an app-wired tool with explicit child ownership |
 | Memory | Required product capability, strategy undecided; optional use | Project context remains primary; retention, scope, and retrieval need a concrete design |
+| Model-native web search | Planned; `native` priority entry reserved, not implemented | Capability must be confirmed per provider, endpoint, auth mode, API and model; request construction enables it and removes local `web_search` from that request; server-side activity maps to the evidence contract, provider continuation state stays in the API adapter |
+| Second independent search service | Planned | New adapter, descriptor and factory entry only; tool schema, Loop and TUI must not change |
+| Search failover after execution errors | Not implemented | Distinct from static "next usable source" selection; needs bounds on paid retries and safe continuation |
 | MCP | Optional, no current requirement | If needed, adapt client tools to the existing Tool and Guard boundary |
 
 No agent framework, plugin bus, LSP, RPC/ACP layer, Node bridge, database,

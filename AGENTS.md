@@ -38,10 +38,12 @@ and routes; README files may summarize product behavior and link to details.
 | --- | --- |
 | Product overview and quickstart | [README.md](README.md) and [README-zh.md](README-zh.md); keep both in sync |
 | Browser automation, connection, tabs and lifecycle | [Browser automation](docs/browser.md) |
+| Web search services, priority, `web_fetch`, network permissions, evidence | [Web search and fetch](docs/web.md) |
 | Installation, helper binaries, source builds, updates | [Installation](docs/installation.md) |
 | Providers, models, reasoning, credentials, flags, Skills, TUI input | [Configuration](docs/configuration.md) |
 | Project Trust, prompt precedence, protected resources, `/init` | [Project Trust](docs/project-trust.md) |
 | Tool permissions, Sessions, `/new`, branches, recovery, compaction | [Execution and Sessions](docs/execution-sessions.md) |
+| Search provider adapters (`internal/web/exa`), fetch hardening | [Web search and fetch](docs/web.md) and [Architecture](docs/architecture.md#package-map) |
 | Package ownership, dependencies, extension boundaries | [Architecture](docs/architecture.md) |
 | Messages, Agent Loop, events, concurrency, TUI boundaries | [Runtime contracts](docs/contracts.md) |
 | Go implementation and review | [Go quality](docs/go-quality.md) |
