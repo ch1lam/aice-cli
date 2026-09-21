@@ -144,6 +144,9 @@ func (m model) toolBodyContent(entry transcriptEntry) transcriptContent {
 	if entry.toolDone && entry.toolTruncation.Reason != "" {
 		content.appendText(noticeStyle.Render(toolTruncationStatus(entry.toolTruncation)))
 	}
+	if entry.toolDone && entry.toolEvidence != nil {
+		content.appendText(toolEvidenceView(*entry.toolEvidence, width))
+	}
 	if content.view == "" {
 		content.appendText(mutedStyle.Render("Waiting for result…"))
 	}

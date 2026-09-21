@@ -72,6 +72,17 @@ type dependencies struct {
 	codexInteractiveLogin      func(context.Context, bool, codex.LoginInteraction) (config.CodexCredentials, error)
 	openBrowser                func(context.Context, string) error
 	ensureHelpers              func(context.Context, deps.Options) error
+	// webBackends overrides the fixed search/fetch factory list; nil uses the
+	// production adapters. Tests inject fakes here so no network is touched.
+	webBackends     *webBackends
+	saveWebSettings func(context.Context, config.Paths, config.WebPatch) (config.WebSettings, error)
+}
+
+func (a *application) webBackends() webBackends {
+	if a.dependencies.webBackends != nil {
+		return *a.dependencies.webBackends
+	}
+	return defaultWebBackends()
 }
 
 func newCommand(dependencies dependencies) (*cobra.Command, error) {
@@ -104,6 +115,9 @@ func newCommand(dependencies dependencies) (*cobra.Command, error) {
 	}
 	if dependencies.ensureHelpers == nil {
 		dependencies.ensureHelpers = deps.Ensure
+	}
+	if dependencies.saveWebSettings == nil {
+		dependencies.saveWebSettings = config.SaveWebSettingsFile
 	}
 	if dependencies.compactionKeepRecentTokens == 0 {
 		dependencies.compactionKeepRecentTokens = session.DefaultKeepRecentTokens
@@ -233,8 +247,12 @@ func (a *application) Print(
 		return err
 	}
 	defer func() { returnErr = errors.Join(returnErr, closeBrowser(ctx, environment.browser)) }()
+	defer environment.web.closeBackend()
 	for _, diagnostic := range environment.configuration.Diagnostics {
 		fmt.Fprintln(diagnostics, "aice: "+diagnostic)
+	}
+	if environment.web.configErr != nil {
+		fmt.Fprintln(diagnostics, "aice: web search unavailable: "+environment.web.configErr.Error())
 	}
 	if !providerConfigured(a.dependencies.providers, environment.configuration) {
 		return credentialNotConfiguredError(
@@ -390,6 +408,8 @@ func (a *application) Interactive(
 		configuration: environment.configuration,
 		modelErr:      environment.modelErr,
 		tools:         environment.tools,
+		baseTools:     environment.baseTools,
+		web:           environment.web,
 		systemPrompt:  environment.systemPrompt,
 		skills:        environment.skills,
 		skillDiags:    environment.skillDiags,
@@ -432,6 +452,9 @@ func (a *application) Interactive(
 		return errors.Join(err, store.Close())
 	}
 	startupNotice := strings.Join(environment.configuration.Diagnostics, "\n")
+	if environment.web.configErr != nil {
+		startupNotice = strings.TrimSpace(startupNotice + "\nWeb search unavailable: " + environment.web.configErr.Error() + " (see /web)")
+	}
 	if environment.modelErr != nil {
 		startupNotice = strings.TrimSpace(startupNotice + "\n" + environment.modelErr.Error())
 	}
@@ -468,6 +491,9 @@ func (a *application) Interactive(
 	// interactive files so unused explicit paths do not accumulate.
 	browserErr := closeBrowser(ctx, runner.browser)
 	browserClosed = true
+	runner.stateMu.Lock()
+	runner.web.closeBackend()
+	runner.stateMu.Unlock()
 	closeErr := errors.Join(browserErr, closeInteractiveStore(runner.conversation.store))
 	if runErr != nil {
 		return errors.Join(fmt.Errorf("app: run TUI: %w", runErr), closeErr)
@@ -513,12 +539,16 @@ type runEnvironment struct {
 	model         llm.Model
 	options       llm.StreamOptions
 	tools         []agent.Tool
-	systemPrompt  string
-	skills        skill.Catalog
-	skillDiags    []skill.Diagnostic
-	trust         trust.Resolution
-	guard         *guard.Guard
-	guardAdapter  *guardAdapter
+	// baseTools are the host tools without the web tools; web rebinding
+	// recomposes tools from them.
+	baseTools    []agent.Tool
+	web          webState
+	systemPrompt string
+	skills       skill.Catalog
+	skillDiags   []skill.Diagnostic
+	trust        trust.Resolution
+	guard        *guard.Guard
+	guardAdapter *guardAdapter
 }
 
 type configuredModel struct {
@@ -597,6 +627,11 @@ func (a *application) prepareRunEnvironment(
 		return nil, err
 	}
 	tools = appendSkillTool(tools, discovery.catalog)
+	baseTools := tools
+	// Web tools are registered only when a source is usable; the model never
+	// sees a schema without an implementation behind it.
+	webState := bindWeb(a.webBackends(), configured.configuration.Web)
+	tools = append(slices.Clip(baseTools), webState.tools()...)
 	systemPrompt, err := assembleSystemPrompt(
 		workspace,
 		configured.configuration,
@@ -615,6 +650,7 @@ func (a *application) prepareRunEnvironment(
 	if err != nil {
 		return nil, err
 	}
+	g.SetSearchTarget(webState.searchTarget)
 	var browserManager *browser.Manager
 	if runtime.GOOS != "windows" {
 		if home, pathErr := a.userHome(); pathErr == nil && home != "" {
@@ -642,6 +678,8 @@ func (a *application) prepareRunEnvironment(
 		model:         configured.model,
 		options:       configured.options,
 		tools:         tools,
+		baseTools:     baseTools,
+		web:           webState,
 		systemPrompt:  systemPrompt,
 		skills:        discovery.catalog,
 		skillDiags:    discovery.diags,
@@ -770,6 +808,8 @@ type interactiveSession struct {
 	options        llm.StreamOptions
 	configuration  config.Config
 	tools          []agent.Tool
+	baseTools      []agent.Tool
+	web            webState
 	systemPrompt   string
 	skills         skill.Catalog
 	skillDiags     []skill.Diagnostic

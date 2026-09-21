@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	"github.com/ch1lam/aice-cli/internal/agent"
 	"github.com/ch1lam/aice-cli/internal/guard"
@@ -21,6 +22,7 @@ const (
 	guardOptionAllowRunCommand = "allow-run-command"
 	guardOptionAllowRunPrefix  = "allow-run-prefix"
 	guardOptionAllowRunTool    = "allow-run-tool"
+	guardOptionAllowRunNetwork = "allow-run-network"
 	guardOptionDeny            = "deny"
 
 	guardRulePathAccessAsk = "pathAccess.ask"
@@ -216,7 +218,7 @@ func mapGuardApproval(approval guard.Approval) agent.GuardApproval {
 }
 
 func mapGuardAction(action guard.Action) agent.GuardAction {
-	return agent.GuardAction{Kind: action.Kind, Path: action.Path, Command: action.Command, ToolName: action.ToolName}
+	return agent.GuardAction{Kind: action.Kind, Path: action.Path, Command: action.Command, ToolName: action.ToolName, Target: action.Target}
 }
 
 // GuardRequests exposes pending guard confirmations for the TUI.
@@ -299,6 +301,15 @@ func guardAskOptions(g *guard.Guard, toolName string, result agent.GuardApproval
 			},
 			{ID: guardOptionDeny, Label: "Deny", Deny: true},
 		}
+	case guard.RuleNetworkSearch, guard.RuleNetworkFetch:
+		if result.Action.Target == "" {
+			return guardAskOnceOrDeny()
+		}
+		return []interaction.GuardOption{
+			{ID: guardOptionAllowOnce, Label: "Allow once"},
+			{ID: guardOptionAllowRunNetwork, Label: networkGrantLabel(result.RuleID, result.Action.Target)},
+			{ID: guardOptionDeny, Label: "Deny", Deny: true},
+		}
 	default:
 		return guardAskOnceOrDeny()
 	}
@@ -378,7 +389,17 @@ func (s *interactiveSession) applyGuardAskGrant(optionID, toolName string, resul
 		g.AllowCommandPrefixSession(prefix)
 	case guardOptionAllowRunTool:
 		g.AllowToolSession(toolName)
+	case guardOptionAllowRunNetwork:
+		g.AllowNetworkSession(result.Action.Target)
 	}
+}
+
+// networkGrantLabel describes the exact scope a Session network grant covers.
+func networkGrantLabel(ruleID, target string) string {
+	if ruleID == guard.RuleNetworkSearch {
+		return "Allow searches through " + strings.TrimPrefix(target, "search:") + " for this session"
+	}
+	return "Allow fetching from " + strings.TrimPrefix(target, "fetch:") + " for this session"
 }
 
 func resolveGuardAbs(g *guard.Guard, path, toolName string) string {

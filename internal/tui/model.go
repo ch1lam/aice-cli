@@ -71,6 +71,9 @@ type transcriptEntry struct {
 	toolError           bool
 	toolTruncation      interaction.TruncationDisplay
 	toolDiff            interaction.DiffDisplay
+	// toolEvidence is an immutable projection assigned once on completion; the
+	// pointer keeps transcriptEntry comparable for viewport cache versions.
+	toolEvidence *interaction.EvidenceDisplay
 }
 
 type processGroup struct {

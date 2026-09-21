@@ -134,7 +134,10 @@ func (m model) submitSlashCommand(
 	if m.controllerClosed {
 		return m.commandError(raw, "TUI run controller stopped")
 	}
-	if command.Menu != nil && (request.Arguments == "" || command.Name != "browser") {
+	// Interactive commands (/browser, /web) receive their menu choice as
+	// arguments and continue with their own prompts; other menu commands open
+	// the option menu and select the supplied value.
+	if command.Menu != nil && (request.Arguments == "" || !command.Interactive) {
 		m, _, _ = m.openCommandMenu(raw, request, command)
 		if request.Arguments != "" {
 			m.input.SetValue(raw)

@@ -24,6 +24,7 @@ func (s *interactiveSession) SlashCommands() []interaction.Command {
 	return []interaction.Command{
 		{Name: "history", Description: "Browse conversation history in this project", ArgumentHint: "[id]"},
 		{Name: "browser", Description: "Manage browser connection and tabs", Menu: s.browserMenu(), Interactive: true},
+		{Name: "web", Description: "Configure web search services, priority and web fetch", Menu: s.webMenu(), Interactive: true},
 		{
 			Name:        "session",
 			Description: "Show current Session information",
@@ -360,6 +361,7 @@ type slashCommandHandler func(
 var slashCommandHandlers = map[string]slashCommandHandler{
 	"history":  (*interactiveSession).slashResume,
 	"browser":  (*interactiveSession).slashBrowser,
+	"web":      (*interactiveSession).slashWeb,
 	"session":  (*interactiveSession).slashSession,
 	"tree":     (*interactiveSession).slashTree,
 	"checkout": (*interactiveSession).slashCheckout,
@@ -1028,6 +1030,10 @@ func (s *interactiveSession) settingsInformation() string {
 		fmt.Sprintf("Automatic helper downloads disabled: %v", settings.configuration.NoDepInstall),
 		fmt.Sprintf("Startup update check disabled: %v", settings.configuration.NoUpdateCheck),
 	)
+	s.stateMu.RLock()
+	webSummary := s.web.summary()
+	s.stateMu.RUnlock()
+	lines = append(lines, webSummary)
 	if settings.configuration.Paths.GlobalAuth != "" {
 		lines = append(
 			lines,

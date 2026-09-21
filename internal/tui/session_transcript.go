@@ -38,6 +38,7 @@ func (m *model) replaceTranscript(view *interaction.Transcript) {
 				kind: entryTool, sourceID: item.ID, processID: m.activeProcessID,
 				toolID: tool.ID, toolName: tool.Name, toolDetail: sanitizeToolDetail(tool.Detail, tool.Name == "bash"),
 				toolDone: true, toolError: tool.Failed, toolOutput: tool.Output, toolDiff: tool.Diff, toolTruncation: tool.Truncation,
+				toolEvidence: tool.Evidence,
 			}
 			if tool.Name == "write" {
 				e.writePreview = &writePreview{}

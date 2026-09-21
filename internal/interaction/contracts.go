@@ -214,6 +214,9 @@ type ToolDisplay struct {
 	Output     ToolOutputDisplay
 	Diff       DiffDisplay
 	Truncation TruncationDisplay
+	// Evidence is nil when no sources were recorded; a pointer keeps the
+	// display value comparable for frontend cache keys.
+	Evidence   *EvidenceDisplay
 	ID         string
 	Name       string
 	Detail     string
@@ -239,6 +242,22 @@ type DiffDisplay struct {
 	Added      int
 	Removed    int
 	StatsKnown bool
+}
+
+// SourceDisplay is one external source recorded by a web tool. Kinds lists the
+// evidence kinds obtained from it (excerpt, document, summary, snippet).
+type SourceDisplay struct {
+	Title string
+	URL   string
+	Kinds []string
+}
+
+// EvidenceDisplay is the value-only projection of a tool result's recorded
+// sources. Its zero value means no evidence was recorded, including legacy
+// results. Text is untrusted external content; frontends must escape it.
+type EvidenceDisplay struct {
+	Sources  []SourceDisplay
+	Warnings []string
 }
 
 // TruncationDisplay carries source counts independently of model-facing text.

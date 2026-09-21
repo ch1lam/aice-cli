@@ -3,6 +3,7 @@ package app
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/ch1lam/aice-cli/internal/agent"
@@ -71,6 +72,7 @@ func translateAgentEvent(event agent.AgentEvent) *interaction.Event {
 					Failed:     event.Err != nil || (event.ToolResult != nil && event.ToolResult.IsError),
 					Diff:       displayToolDiff(event),
 					Truncation: displayToolTruncation(event.ToolResult),
+					Evidence:   displayToolEvidence(event.ToolResult),
 				},
 			}
 		}
@@ -182,6 +184,8 @@ func toolCallDetail(call llm.ToolCall) string {
 		Command string `json:"command"`
 		Name    string `json:"name"`
 		Path    string `json:"path"`
+		Query   string `json:"query"`
+		URL     string `json:"url"`
 	}
 	if err := json.Unmarshal(call.Arguments, &arguments); err != nil {
 		return ""
@@ -191,6 +195,10 @@ func toolCallDetail(call llm.ToolCall) string {
 		return arguments.Command
 	case "skill":
 		return arguments.Name
+	case "web_search":
+		return arguments.Query
+	case "web_fetch":
+		return arguments.URL
 	default:
 		return arguments.Path
 	}
@@ -288,6 +296,28 @@ func displayToolTruncation(result *llm.ToolResultMessage) interaction.Truncation
 		TotalLinesKnown: t.TotalLinesKnown,
 		RequiresBash:    t.Reason == llm.TruncationOversizedLine,
 	}
+}
+
+// displayToolEvidence projects recorded sources without rereading the tool
+// output or interpreting provider fields. Absent evidence yields the zero value.
+func displayToolEvidence(result *llm.ToolResultMessage) *interaction.EvidenceDisplay {
+	if result == nil || result.Evidence == nil {
+		return nil
+	}
+	kinds := make(map[string][]string, len(result.Evidence.Sources))
+	for _, item := range result.Evidence.Items {
+		if !slices.Contains(kinds[item.SourceID], string(item.Kind)) {
+			kinds[item.SourceID] = append(kinds[item.SourceID], string(item.Kind))
+		}
+	}
+	display := &interaction.EvidenceDisplay{Warnings: slices.Clone(result.Evidence.Diagnostics.Warnings)}
+	for _, source := range result.Evidence.Sources {
+		display.Sources = append(display.Sources, interaction.SourceDisplay{Title: source.Title, URL: source.URL, Kinds: kinds[source.ID]})
+	}
+	if len(display.Sources) == 0 && len(display.Warnings) == 0 {
+		return nil
+	}
+	return display
 }
 
 func displayToolCall(call llm.ToolCall) interaction.ToolDisplay {

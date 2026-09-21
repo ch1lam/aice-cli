@@ -46,10 +46,15 @@ func (m model) handleAuthAction(match inputActionMatch) (model, tea.Cmd, bool) {
 			case m.authInput <- value:
 				m.input.Reset()
 				m.status = "Checking authorization..."
-				if m.authCommand == "browser" {
+				if m.authCommand != "login" {
+					// Interactive command prompts are single-shot: the command
+					// sends the next prompt itself.
 					m.authPrompt = nil
 					m.input.Blur()
-					m.status = "Connecting browser..."
+					m.status = "Running /" + m.authCommand + "..."
+					if m.authCommand == "browser" {
+						m.status = "Connecting browser..."
+					}
 				}
 			default:
 				m.status = "Still checking authorization; please wait"

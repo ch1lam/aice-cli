@@ -396,6 +396,7 @@ func (m *model) completeTool(tool ToolDisplay) {
 			entry.toolDone = true
 			entry.toolError = tool.Failed
 			entry.toolTruncation = tool.Truncation
+			entry.toolEvidence = tool.Evidence
 			entry.toolOutput = tool.Output
 			if (entry.toolName == "edit" || entry.toolName == "write") && !tool.Failed {
 				entry.toolDiff = tool.Diff
@@ -412,6 +413,7 @@ func (m *model) finishRun(err error) tea.Cmd {
 	}
 	wasAuth := m.authInput != nil
 	wasBrowser := m.authCommand == "browser"
+	wasWeb := m.authCommand == "web"
 	m.authCommand = ""
 	if wasAuth {
 		m.authInput = nil
@@ -444,6 +446,9 @@ func (m *model) finishRun(err error) tea.Cmd {
 				message = "Login cancelled"
 				if wasBrowser {
 					message = "Browser command cancelled"
+				}
+				if wasWeb {
+					message = "Web settings command cancelled"
 				}
 			}
 			m.entries = append(m.entries, transcriptEntry{kind: entryNotice, text: message})

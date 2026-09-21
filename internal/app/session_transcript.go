@@ -64,6 +64,7 @@ func sessionTranscript(snapshot session.Snapshot) (*interaction.Transcript, erro
 			tool.Output = displayToolOutput(event)
 			tool.Diff = displayToolDiff(event)
 			tool.Truncation = displayToolTruncation(&message)
+			tool.Evidence = displayToolEvidence(&message)
 			tool.Failed = message.IsError
 			view.Entries[index].ID = entry.ID
 		}
