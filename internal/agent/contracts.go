@@ -74,6 +74,8 @@ type GuardAction struct {
 	Path     string
 	Command  string
 	ToolName string
+	// Target is the network scope of a "network" action.
+	Target string
 }
 
 var (

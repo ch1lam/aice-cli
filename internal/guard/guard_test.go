@@ -586,7 +586,7 @@ func TestGuard_UnknownToolAsks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	cases := []string{"web_search", "Read", "read_file", "custom"}
+	cases := []string{"mystery_tool", "Read", "read_file", "custom"}
 	for _, name := range cases {
 		res, err := g.Check(context.Background(), toolCall(name, map[string]any{"path": "README.md"}))
 		if err != nil {
@@ -810,7 +810,7 @@ func TestGuard_AllowToolSession(t *testing.T) {
 		t.Fatalf("New: %v", err)
 	}
 
-	res, err := g.Check(context.Background(), toolCall("web_search", map[string]any{"q": "x"}))
+	res, err := g.Check(context.Background(), toolCall("mystery_tool", map[string]any{"q": "x"}))
 	if err != nil {
 		t.Fatalf("Check before grant: %v", err)
 	}
@@ -821,9 +821,9 @@ func TestGuard_AllowToolSession(t *testing.T) {
 		t.Fatalf("rule %q want unknownTool", res.RuleID)
 	}
 
-	g.AllowToolSession("web_search")
+	g.AllowToolSession("mystery_tool")
 
-	res, err = g.Check(context.Background(), toolCall("web_search", map[string]any{"q": "x"}))
+	res, err = g.Check(context.Background(), toolCall("mystery_tool", map[string]any{"q": "x"}))
 	if err != nil {
 		t.Fatalf("Check after grant: %v", err)
 	}

@@ -395,9 +395,9 @@ func TestGuardAskOptions(t *testing.T) {
 			name: "unknown tool",
 			result: agent.GuardApproval{
 				RuleID: guardRuleUnknownTool,
-				Action: agent.GuardAction{ToolName: "web_search"},
+				Action: agent.GuardAction{ToolName: "mystery_tool"},
 			},
-			toolName: "web_search",
+			toolName: "mystery_tool",
 			wantIDs: []string{
 				guardOptionAllowOnce,
 				guardOptionAllowRunTool,
@@ -552,7 +552,7 @@ func TestHandleGuardAskAllowRunToolGrantsUnknownTool(t *testing.T) {
 	session := newGuardAskSession(t, t.TempDir(), guard.Config{})
 	call := llm.ToolCall{
 		ID:        "call-1",
-		Name:      "web_search",
+		Name:      "mystery_tool",
 		Arguments: json.RawMessage(`{}`),
 	}
 	before, err := session.guard.Check(t.Context(), call)
@@ -675,12 +675,12 @@ func TestHandleGuardAskRejectsUnofferedOption(t *testing.T) {
 		session := newGuardAskSession(t, t.TempDir(), guard.Config{})
 		call := llm.ToolCall{
 			ID:        "call-1",
-			Name:      "web_search",
+			Name:      "mystery_tool",
 			Arguments: json.RawMessage(`{}`),
 		}
 		reply, request := handleGuardAskWithReply(t, session, call, agent.GuardApproval{
 			RuleID: "policy.secret-files",
-			Action: agent.GuardAction{ToolName: "web_search"},
+			Action: agent.GuardAction{ToolName: "mystery_tool"},
 		}, interaction.GuardReply{OptionID: guardOptionAllowRunTool})
 		if guardOptionOffered(request.Options, guardOptionAllowRunTool) {
 			t.Fatal("unknown rule unexpectedly offered allow-run-tool")

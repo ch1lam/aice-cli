@@ -10,11 +10,14 @@ import (
 
 // Action is the normalized guard input derived from a ToolCall.
 type Action struct {
-	Kind       string // "file" or "command"
+	Kind       string // "file", "command" or "network"
 	Path       string
 	Command    string
 	ToolName   string
 	Unresolved bool // true when path contains $VAR / $(...) etc - cannot stat
+	// Target is the network scope of a "network" action: the bound search
+	// service fingerprint for web_search or the fetch origin for web_fetch.
+	Target string
 }
 
 // Decision is the outcome of a guard check.
@@ -50,7 +53,26 @@ var fileTools = map[string]bool{
 }
 
 func isKnownTool(name string) bool {
-	return fileTools[name] || name == "bash" || name == "skill"
+	return fileTools[name] || name == "bash" || name == "skill" || isNetworkTool(name)
+}
+
+// networkTools reach outside the host and require a network approval scope
+// instead of a path or command scope.
+func isNetworkTool(name string) bool {
+	return name == "web_search" || name == "web_fetch"
+}
+
+func extractStringArgument(raw json.RawMessage, key string) string {
+	var m map[string]any
+	if err := jsonutil.DecodeStrict(raw, &m); err != nil {
+		return ""
+	}
+	if v, ok := m[key]; ok {
+		if s, ok := v.(string); ok {
+			return s
+		}
+	}
+	return ""
 }
 
 // extractActions extracts one or more Actions from a ToolCall.
