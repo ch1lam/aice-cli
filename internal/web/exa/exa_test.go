@@ -214,30 +214,62 @@ func TestSearchClassifiesHTTPErrorsWithoutLeakingSecrets(t *testing.T) {
 	}
 }
 
+// countingTransport records how many response body bytes the client actually
+// consumes. Measuring on the client side keeps the assertion independent of
+// kernel socket buffering, which lets the server write several megabytes
+// ahead of what the client has read.
+type countingTransport struct {
+	next http.RoundTripper
+	read atomic.Int64
+}
+
+func (c *countingTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	response, err := c.next.RoundTrip(r)
+	if err != nil {
+		return nil, err
+	}
+	response.Body = &countingBody{ReadCloser: response.Body, read: &c.read}
+	return response, nil
+}
+
+type countingBody struct {
+	io.ReadCloser
+	read *atomic.Int64
+}
+
+func (b *countingBody) Read(p []byte) (int, error) {
+	n, err := b.ReadCloser.Read(p)
+	b.read.Add(int64(n))
+	return n, err
+}
+
 func TestSearchBoundsBodiesAndStopsReading(t *testing.T) {
 	t.Parallel()
-	var written atomic.Int64
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Transfer-Encoding", "chunked")
 		_, _ = io.WriteString(w, `{"results":[`)
 		flusher := w.(http.Flusher)
 		chunk := strings.Repeat("x", 64*1024)
 		for range 100 {
-			n, err := io.WriteString(w, chunk)
-			written.Add(int64(n))
-			if err != nil {
+			if _, err := io.WriteString(w, chunk); err != nil {
 				return
 			}
 			flusher.Flush()
 		}
 	}))
 	defer server.Close()
-	_, err := newTestClient(t, server, "k").Search(t.Context(), web.SearchRequest{Query: "q"})
+	transport := &countingTransport{next: server.Client().Transport}
+	client, err := New(Config{InstanceID: "exa-main", BaseURL: server.URL, APIKey: "k", Timeout: 5 * time.Second, Transport: transport})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = client.Search(t.Context(), web.SearchRequest{Query: "q"})
 	if web.CodeOf(err) != web.CodeResponseTooLarge {
 		t.Fatalf("err = %v", err)
 	}
-	if written.Load() > 4*1024*1024 {
-		t.Fatalf("client kept reading %d bytes past the limit", written.Load())
+	// The client must stop at limit+1; allow one extra read buffer of slack.
+	if read := transport.read.Load(); read > int64(maxSuccessBodyBytes)+64*1024 {
+		t.Fatalf("client kept reading %d bytes past the %d byte limit", read, maxSuccessBodyBytes)
 	}
 }
 
