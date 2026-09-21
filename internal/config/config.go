@@ -167,9 +167,14 @@ type Config struct {
 	NoDepInstall        bool
 	NoUpdateCheck       bool
 	CodexCredentials    CodexCredentials
+	Web                 WebConfig
 	Paths               Paths
 	Diagnostics         []string
 	startupOverrides    map[string]bool
+	// webCredentials and webEnv let WithWeb re-resolve credential references
+	// after an interactive save without rereading files or the environment.
+	webCredentials map[string]string
+	webEnv         func(string) (string, bool)
 }
 
 // LoadOptions supplies invocation-specific configuration inputs. Files and
@@ -284,6 +289,7 @@ func LoadFiles(paths Paths, options LoadOptions) (Config, error) {
 	v.SetDefault("browser_headed", false)
 	v.SetDefault("run_no_progress_limit", 8)
 	var diagnostics []string
+	var webValues webLayer
 	fileValues := make(map[string]any)
 	for _, path := range []string{paths.GlobalSettings, paths.GlobalAuth, paths.ProjectSettings} {
 		if path == "" {
@@ -318,6 +324,10 @@ func LoadFiles(paths Paths, options LoadOptions) (Config, error) {
 			diagnostics = append(diagnostics, fmt.Sprintf("Ignored unparseable configuration %s", path))
 			continue
 		}
+		// Nested web objects are replaced per layer outside Viper's deep merge.
+		if err := webValues.extractWebValues(path, values, path == paths.ProjectSettings); err != nil {
+			return Config{}, err
+		}
 		// Every schema field is a scalar or a complete array. Replace fields
 		// before handing the file layer to Viper: MergeConfigMap otherwise
 		// retains an invalid lower-layer object when a scalar replaces it.
@@ -341,6 +351,16 @@ func LoadFiles(paths Paths, options LoadOptions) (Config, error) {
 		return Config{}, err
 	}
 	c.Paths, c.Diagnostics = paths, diagnostics
+	if options.Environment {
+		c.webEnv = os.LookupEnv
+	}
+	c.webCredentials = webValues.credentials
+	effectiveWebConfig, webDiagnostics, err := effectiveWeb(webValues, paths.ProjectSettings, c.webEnv)
+	if err != nil {
+		return Config{}, err
+	}
+	c.Web = effectiveWebConfig
+	c.Diagnostics = append(c.Diagnostics, webDiagnostics...)
 	c.startupOverrides = make(map[string]bool)
 	for key := range high.AllSettings() {
 		c.startupOverrides[key] = true
@@ -379,6 +399,7 @@ func (c Config) WithSettings(changes map[Setting]string) (Config, error) {
 	}
 	next.Paths, next.CodexCredentials = c.Paths, c.CodexCredentials
 	next.Diagnostics, next.startupOverrides = c.Diagnostics, c.startupOverrides
+	next.Web, next.webCredentials, next.webEnv = c.Web, c.webCredentials, c.webEnv
 	return next, nil
 }
 
