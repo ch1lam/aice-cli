@@ -299,7 +299,11 @@ func assistantInputParams(
 		message.API == target.API &&
 		message.ModelID == target.ID
 	content := message.Content
-	if !sameModel {
+	if !sameModel || target.FilterReasoningHistory {
+		// Gateways that cannot round-trip opaque reasoning (the OpenCode
+		// Muse Spark lane proxies to an upstream that binds
+		// encrypted_content to its own caller) must never see a replayed
+		// reasoning item; thinking travels as plain text instead.
 		content = streamcore.ProjectThinkingToText(content)
 	}
 	result := make([]responses.ResponseInputItemUnionParam, 0, len(content))

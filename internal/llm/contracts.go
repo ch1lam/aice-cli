@@ -404,7 +404,14 @@ type Model struct {
 	SupportsReasoningEffort bool `json:"supports_reasoning_effort,omitempty"`
 	// OmitMaxTokensByDefault lets the protocol adapter defer the output limit
 	// to the provider when a request has no explicit MaxTokens value.
-	OmitMaxTokensByDefault bool            `json:"omit_max_tokens_by_default,omitempty"`
+	OmitMaxTokensByDefault bool `json:"omit_max_tokens_by_default,omitempty"`
+	// FilterReasoningHistory tells the protocol adapter that the gateway
+	// cannot round-trip opaque reasoning: thinking is projected to plain
+	// text and reasoning items are never replayed, while reasoning effort
+	// and tool history stay unchanged. Stored signatures remain Session
+	// data; they are only filtered on the wire, so older histories recover
+	// without rewriting.
+	FilterReasoningHistory bool            `json:"filter_reasoning_history,omitempty"`
 	InputModalities        []InputModality `json:"input_modalities,omitempty"`
 	ContextWindow          int64           `json:"context_window,omitempty"`
 	MaxTokens              int64           `json:"max_tokens,omitempty"`

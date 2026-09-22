@@ -685,6 +685,108 @@ func TestAdapterDropsProtocolSignaturesForForeignAssistantHistory(t *testing.T) 
 	}
 }
 
+func TestAdapterFiltersReasoningHistoryForFlaggedModel(t *testing.T) {
+	t.Parallel()
+
+	bodies := make(chan []byte, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("read request body: %v", err)
+			return
+		}
+		bodies <- raw
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(
+			w,
+			"data: "+
+				`{"type":"response.completed","sequence_number":0,"response":`+
+				`{"id":"resp-1","model":"muse-spark-1.3-contributor","status":"completed"}}`+
+				"\n\n",
+		)
+	}))
+	defer server.Close()
+
+	adapter, err := openairesponses.New(openairesponses.Config{
+		APIKey:     "test-key",
+		BaseURL:    server.URL,
+		HTTPClient: server.Client(),
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	// The gateway binds encrypted_content to its own caller, so replaying a
+	// stored reasoning item 400s even for same-model history. Flagged models
+	// must project thinking to text instead.
+	encrypted := `{"id":"rs_poisoned","type":"reasoning","status":"completed","encrypted_content":"opaque-blob-from-gateway"}`
+	request := apitest.MinimalRequest(openairesponses.API)
+	request.Model.ID = "muse-spark-1.3-contributor"
+	request.Model.Provider = "opencode-go"
+	request.Model.FilterReasoningHistory = true
+	request.Messages = append(request.Messages,
+		llm.AssistantMessage{
+			Role:     llm.RoleAssistant,
+			API:      openairesponses.API,
+			Provider: "opencode-go",
+			ModelID:  "muse-spark-1.3-contributor",
+			Content: []llm.ContentPart{
+				llm.NewThinkingContent("private plan", encrypted).Part(),
+				{
+					Type:      llm.ContentTypeText,
+					Text:      "visible answer",
+					Signature: "msg-1",
+				},
+				{
+					Type: llm.ContentTypeToolCall,
+					ToolCall: &llm.ToolCall{
+						ID:        "call-1",
+						Name:      "read",
+						Arguments: json.RawMessage(`{"path":"README.md"}`),
+						Signature: "fc-1",
+					},
+				},
+			},
+		},
+		llm.ToolResultMessage{
+			Role:       llm.RoleToolResult,
+			ToolCallID: "call-1",
+			Content:    []llm.ContentPart{llm.NewTextContent("contents").Part()},
+		},
+	)
+
+	modelStream, err := adapter.Stream(context.Background(), request)
+	if err != nil {
+		t.Fatalf("Stream() error = %v", err)
+	}
+	if err := modelStream.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+
+	raw := <-bodies
+	if strings.Contains(string(raw), "opaque-blob-from-gateway") {
+		t.Fatalf("request replays gateway encrypted_content: %s", raw)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(raw, &body); err != nil {
+		t.Fatalf("decode request body: %v", err)
+	}
+	input, ok := body["input"].([]any)
+	if !ok || len(input) != 5 {
+		t.Fatalf("input = %#v, want five items", body["input"])
+	}
+	for _, item := range input {
+		if typed, ok := item.(map[string]any); ok && typed["type"] == "reasoning" {
+			t.Fatalf("reasoning item replayed for filtered model: %#v", item)
+		}
+	}
+	assertForeignAssistantText(t, input[1], "private plan")
+	call, ok := input[3].(map[string]any)
+	if !ok || call["type"] != "function_call" || call["call_id"] != "call-1" || call["id"] != "fc-1" {
+		t.Fatalf("same-model function call lost protocol replay: %#v", input[3])
+	}
+}
+
 func assertForeignAssistantText(t *testing.T, value any, want string) {
 	t.Helper()
 
