@@ -7,6 +7,7 @@ import (
 	"io"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -216,7 +217,8 @@ func TestWebSearchThroughPrintWithFakeBackend(t *testing.T) {
 	fetch := &fakeFetch{}
 	sessionPath := filepath.Join(t.TempDir(), "web.jsonl")
 	call := llm.ToolCall{ID: "call-1", Name: "web_search", Arguments: json.RawMessage(`{"query":"go context cancellation","max_results":3}`)}
-	model, err := runWebPrint(t, readyWebConfig("native", "service:fake-main"), testWebBackends(search, fetch), call, true, sessionPath)
+	// --print uses the same web policy as interactive mode: no --yolo needed.
+	model, err := runWebPrint(t, readyWebConfig("native", "service:fake-main"), testWebBackends(search, fetch), call, false, sessionPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -295,52 +297,75 @@ func TestWebSearchThroughPrintWithFakeBackend(t *testing.T) {
 	}
 }
 
-func TestWebToolsFailClosedWithoutApprovalAndNeverReachBackend(t *testing.T) {
+func TestWebToolsDefaultAllowWithoutApproval(t *testing.T) {
 	t.Parallel()
 	search := &fakeWireBackend{rows: []fakeWireRow{{Headline: "x", Link: "https://example.com/", Blurb: "b"}}}
 	fetch := &fakeFetch{}
-	for _, call := range []llm.ToolCall{
-		{ID: "call-1", Name: "web_search", Arguments: json.RawMessage(`{"query":"secret plans"}`)},
-		{ID: "call-1", Name: "web_fetch", Arguments: json.RawMessage(`{"url":"https://example.com/page"}`)},
-	} {
-		model, err := runWebPrint(t, readyWebConfig("service:fake-main"), testWebBackends(search, fetch), call, false, "")
+	backends := testWebBackends(search, fetch)
+	settings := readyWebConfig("service:fake-main")
+
+	// Legal search runs in --print without --yolo and without any approval.
+	model, err := runWebPrint(t, settings, backends, llm.ToolCall{ID: "call-1", Name: "web_search", Arguments: json.RawMessage(`{"query":"secret plans"}`)}, false, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := lastToolResult(t, model)
+	if result.IsError || result.Evidence == nil {
+		t.Fatalf("default search = %+v", result)
+	}
+	if search.calls.Load() != 1 {
+		t.Fatalf("search calls = %d, want 1", search.calls.Load())
+	}
+
+	// Legal fetches from different normal domains also run without approval.
+	for _, url := range []string{"https://example.com/page", "https://other.example/b"} {
+		model, err := runWebPrint(t, settings, backends, llm.ToolCall{ID: "call-1", Name: "web_fetch", Arguments: json.RawMessage(`{"url":` + strconv.Quote(url) + `}`)}, false, "")
 		if err != nil {
 			t.Fatal(err)
 		}
 		result := lastToolResult(t, model)
-		if !result.IsError || !strings.Contains(result.Content[0].Text, "example") {
-			t.Fatalf("%s without approval = %+v", call.Name, result)
+		if result.IsError || result.Evidence == nil || !strings.Contains(result.Content[0].Text, "fetched body") {
+			t.Fatalf("default fetch %s = %+v", url, result)
+		}
+	}
+	if fetch.calls.Load() != 2 {
+		t.Fatalf("fetch calls = %d, want 2", fetch.calls.Load())
+	}
+
+	// A URL outside the shared shape policy is refused before any backend
+	// call, with or without --yolo. Address policy for private targets is
+	// exercised in the httpfetch package.
+	for _, yolo := range []bool{false, true} {
+		before := fetch.calls.Load()
+		model, err := runWebPrint(t, settings, backends, llm.ToolCall{ID: "call-1", Name: "web_fetch", Arguments: json.RawMessage(`{"url":"https://example.com:8443/admin"}`)}, yolo, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		result := lastToolResult(t, model)
+		if !result.IsError || fetch.calls.Load() != before || !strings.Contains(result.Content[0].Text, "port") {
+			t.Fatalf("yolo=%v illegal fetch = %+v (fetch calls %d)", yolo, result, fetch.calls.Load())
 		}
 		if result.Evidence != nil {
 			t.Fatal("denied call recorded evidence")
 		}
 	}
-	if search.calls.Load() != 0 || fetch.calls.Load() != 0 {
-		t.Fatalf("backends were called: search=%d fetch=%d", search.calls.Load(), fetch.calls.Load())
-	}
 
-	// --yolo lifts the ask but never a deny: a URL outside the shared shape
-	// policy (non-default port) is refused before any backend call. Address
-	// policy for private targets is exercised in the httpfetch package.
-	model, err := runWebPrint(t, readyWebConfig("service:fake-main"), testWebBackends(search, fetch), llm.ToolCall{ID: "call-1", Name: "web_fetch", Arguments: json.RawMessage(`{"url":"https://example.com:8443/admin"}`)}, true, "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	result := lastToolResult(t, model)
-	if !result.IsError || fetch.calls.Load() != 0 || !strings.Contains(result.Content[0].Text, "port") {
-		t.Fatalf("yolo bypassed url policy: %+v (fetch calls %d)", result, fetch.calls.Load())
-	}
-	model, err = runWebPrint(t, readyWebConfig("service:fake-main"), testWebBackends(search, fetch), llm.ToolCall{ID: "call-1", Name: "web_fetch", Arguments: json.RawMessage(`{"url":"https://example.com/page"}`)}, true, "")
+	// Disabled fetch registers no tool and sends no request.
+	disabledFetch := settings
+	disabledFetch.FetchEnabled = false
+	before := fetch.calls.Load()
+	model, err = runWebPrint(t, disabledFetch, backends, llm.ToolCall{ID: "call-1", Name: "web_fetch", Arguments: json.RawMessage(`{"url":"https://example.com/page"}`)}, false, "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	result = lastToolResult(t, model)
-	if result.IsError || fetch.calls.Load() != 1 || result.Evidence == nil || !strings.Contains(result.Content[0].Text, "fetched body") {
-		t.Fatalf("yolo fetch = %+v", result)
+	if !result.IsError || fetch.calls.Load() != before {
+		t.Fatalf("disabled fetch = %+v (fetch calls %d)", result, fetch.calls.Load())
 	}
 
-	// Without a bound search source the schema is absent and a call denies.
-	model, err = runWebPrint(t, readyWebConfig("native"), testWebBackends(search, fetch), llm.ToolCall{ID: "call-1", Name: "web_search", Arguments: json.RawMessage(`{"query":"x"}`)}, true, "")
+	// Without a bound search source the schema is absent and a call denies
+	// without contacting any backend.
+	model, err = runWebPrint(t, readyWebConfig("native"), backends, llm.ToolCall{ID: "call-1", Name: "web_search", Arguments: json.RawMessage(`{"query":"x"}`)}, false, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -350,58 +375,35 @@ func TestWebToolsFailClosedWithoutApprovalAndNeverReachBackend(t *testing.T) {
 		}
 	}
 	result = lastToolResult(t, model)
-	if !result.IsError || search.calls.Load() != 0 {
+	if !result.IsError || search.calls.Load() != 1 {
 		t.Fatalf("unbound web_search = %+v", result)
 	}
 }
 
-func TestWebGuardOptionsAndSessionGrant(t *testing.T) {
+func TestWebGuardAllowsWithoutSessionGrant(t *testing.T) {
 	t.Parallel()
 	sess := newGuardAskSession(t, t.TempDir(), guard.Config{})
 	sess.guard.SetSearchTarget("search:fake-main@https://fake.example")
 	call := llm.ToolCall{ID: "call-1", Name: "web_search", Arguments: json.RawMessage(`{"query":"x"}`)}
-	before, err := sess.guard.Check(t.Context(), call)
-	if err != nil || before.Decision != guard.DecisionAsk {
-		t.Fatalf("before = %+v %v", before, err)
+	if res, err := sess.guard.Check(t.Context(), call); err != nil || res.Decision != guard.DecisionAllow || len(res.Approvals) != 0 {
+		t.Fatalf("search = %+v %v", res, err)
 	}
-	approval := mapGuardApproval(before.Approvals[0])
-	reply, request := handleGuardAskWithReply(t, sess, call, approval, interaction.GuardReply{OptionID: guardOptionAllowRunNetwork})
-	if reply.Decision != agent.GuardAllow {
-		t.Fatalf("reply = %+v", reply)
-	}
-	labels := make([]string, 0, len(request.Options))
-	for _, option := range request.Options {
-		labels = append(labels, option.Label)
-	}
-	if !strings.Contains(strings.Join(labels, "|"), "Allow searches through fake-main@https://fake.example for this session") {
-		t.Fatalf("options = %v", labels)
-	}
-	after, err := sess.guard.Check(t.Context(), call)
-	if err != nil || after.Decision != guard.DecisionAllow {
-		t.Fatalf("after grant = %+v %v", after, err)
-	}
-	// Endpoint change invalidates the grant; /new clears it.
+	// Rebinding and clearing session grants never introduces a confirmation.
 	sess.guard.SetSearchTarget("search:fake-main@https://other.example")
-	if res, _ := sess.guard.Check(t.Context(), call); res.Decision != guard.DecisionAsk {
-		t.Fatalf("changed endpoint reused grant: %+v", res)
+	if res, _ := sess.guard.Check(t.Context(), call); res.Decision != guard.DecisionAllow {
+		t.Fatalf("rebound search = %+v", res)
 	}
 	sess.guard.SetSearchTarget("search:fake-main@https://fake.example")
 	sess.guard.ResetSessionGrants()
-	if res, _ := sess.guard.Check(t.Context(), call); res.Decision != guard.DecisionAsk {
-		t.Fatalf("reset kept grant: %+v", res)
+	if res, _ := sess.guard.Check(t.Context(), call); res.Decision != guard.DecisionAllow {
+		t.Fatalf("search after reset = %+v", res)
 	}
 
-	fetchCall := llm.ToolCall{ID: "call-2", Name: "web_fetch", Arguments: json.RawMessage(`{"url":"https://docs.example/a"}`)}
-	before, _ = sess.guard.Check(t.Context(), fetchCall)
-	reply, request = handleGuardAskWithReply(t, sess, fetchCall, mapGuardApproval(before.Approvals[0]), interaction.GuardReply{OptionID: guardOptionAllowRunNetwork})
-	if reply.Decision != agent.GuardAllow || !strings.Contains(request.Options[1].Label, "Allow fetching from https://docs.example for this session") {
-		t.Fatalf("fetch grant = %+v %v", reply, request.Options)
-	}
-	if res, _ := sess.guard.Check(t.Context(), llm.ToolCall{ID: "call-3", Name: "web_fetch", Arguments: json.RawMessage(`{"url":"https://docs.example/b"}`)}); res.Decision != guard.DecisionAllow {
-		t.Fatalf("same-origin fetch not covered: %+v", res)
-	}
-	if res, _ := sess.guard.Check(t.Context(), llm.ToolCall{ID: "call-4", Name: "web_fetch", Arguments: json.RawMessage(`{"url":"https://other.example/b"}`)}); res.Decision != guard.DecisionAsk {
-		t.Fatalf("other origin covered: %+v", res)
+	for _, url := range []string{"https://docs.example/a", "https://docs.example/b", "https://other.example/b"} {
+		fetchCall := llm.ToolCall{ID: "call-2", Name: "web_fetch", Arguments: json.RawMessage(`{"url":` + strconv.Quote(url) + `}`)}
+		if res, _ := sess.guard.Check(t.Context(), fetchCall); res.Decision != guard.DecisionAllow || len(res.Approvals) != 0 {
+			t.Fatalf("fetch %s = %+v", url, res)
+		}
 	}
 }
 

@@ -15,7 +15,7 @@ type Action struct {
 	Command    string
 	ToolName   string
 	Unresolved bool // true when path contains $VAR / $(...) etc - cannot stat
-	// Target is the network scope of a "network" action: the bound search
+	// Target is the network identity of a "network" action: the bound search
 	// service fingerprint for web_search or the fetch origin for web_fetch.
 	Target string
 }
@@ -56,8 +56,8 @@ func isKnownTool(name string) bool {
 	return fileTools[name] || name == "bash" || name == "skill" || isNetworkTool(name)
 }
 
-// networkTools reach outside the host and require a network approval scope
-// instead of a path or command scope.
+// networkTools reach outside the host through the web entry points and are
+// checked as network actions instead of path or command actions.
 func isNetworkTool(name string) bool {
 	return name == "web_search" || name == "web_fetch"
 }

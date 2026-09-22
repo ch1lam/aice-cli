@@ -124,24 +124,29 @@ send no requests. `/settings` shows a one-line web summary.
 
 ## Permissions
 
-Both tools ask for permission by default. The prompt for `web_search` names
-the bound instance and endpoint origin and shows the query; the prompt for
-`web_fetch` shows the URL and its origin. Options are Allow once, allow the
-displayed scope for this Session, or Deny:
+Enabled web tools access the network automatically without an extra
+confirmation. There is no per-call, per-origin, per-project or per-Session
+web authorization: new projects, new Sessions, `/new` and restarts add no
+web approval, and project trust stays separate from web use. `--print` uses
+the same policy as interactive mode, so an enabled web tool works without
+`--yolo`.
 
-- The search scope is the instance ID plus endpoint origin. Changing the
-  endpoint or selecting another instance produces a new scope that never
-  inherits an earlier grant.
-- The fetch scope is one origin (`scheme://host[:port]`). Redirects within that
-  origin continue; a redirect to another origin is refused and the target URL
-  is returned so the model can request it under a new check. `https` never
-  downgrades to `http`.
+- `web_search` runs when a search service is bound (instance ID plus
+  endpoint origin, set by the application per run). Without a binding it
+  denies and sends no request. Disabling search, an unusable priority list,
+  a configuration error or missing credentials keeps the tool unregistered
+  or unavailable; default allow never enables the tool or configures a
+  provider by itself.
+- `web_fetch` runs when the URL passes the shared shape check. Malformed
+  URLs, userinfo, zone-scoped IPv6 literals and non-default ports deny
+  before any request. Disabling fetch unregisters the tool.
+- Explicitly rejected targets, body limits and the configured service list
+  still apply; `--yolo` never lifts a deny. A denied or cancelled call
+  sends no request. `/btw`, compaction and `/init` remain tool-free.
 
-Grants last for the Session and are cleared by `/new` or a new process.
-Non-interactive `--print` fails closed unless `--yolo`, which lifts asks but
-never a deny: malformed URLs, non-default ports, blocked addresses, body limits
-and the configured service list still apply. A denied or cancelled call sends no
-request. `/btw`, compaction and `/init` remain tool-free.
+Enabling a web tool means the model can cause automatic network access
+through that tool. The limits below bound `web_fetch` only; they are not a
+process-wide network sandbox.
 
 ## `web_fetch` limits
 
@@ -153,8 +158,10 @@ documentation ranges, including the link-local metadata address. Hostnames
 that are not literals are left to the standard HTTP transport (and the proxy
 side, when one applies) to resolve; AICE performs no DNS pre-resolution and
 pins no addresses. TLS verifies the URL hostname. Each redirect hop (at most
-5) is revalidated under the same URL, origin and literal-target policy, with
-no `https` to `http` downgrade.
+5) is revalidated under the same URL-shape and literal-target policy, with
+no `https` to `http` downgrade. Legal cross-origin redirects continue
+automatically; dangerous targets, downgrades and over-limit chains still
+fail.
 
 Requests use a clone of `http.DefaultTransport`, so the standard proxy
 environment (`HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY` and their lowercase forms)

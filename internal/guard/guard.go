@@ -54,10 +54,9 @@ type Guard struct {
 	allowedPaths        []AllowedPath
 	sessionAllowedPaths map[string]bool // absolute paths or dir: prefix
 	readOnlyRoots       []string
-	// network scopes: the bound search service fingerprint set by the
-	// application per run, and Session grants keyed by scope string.
-	searchTarget   string
-	sessionNetwork map[string]bool
+	// network target: the bound search service fingerprint set by the
+	// application per run. An empty value means web_search is unbound.
+	searchTarget string
 }
 
 // New constructs a Guard for the given workspace and configuration.
@@ -206,7 +205,6 @@ func (g *Guard) ResetSessionGrants() {
 	clear(g.sessionAllowedTools)
 	clear(g.sessionAllowedPaths)
 	clear(g.sessionCommands)
-	clear(g.sessionNetwork)
 	g.sessionCmdPrefixes = nil
 }
 

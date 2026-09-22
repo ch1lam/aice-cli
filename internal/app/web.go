@@ -63,7 +63,7 @@ func newExaService(service config.WebService, settings config.WebConfig) (webSea
 
 // webState is the frozen web wiring of one run environment: the tools that
 // were registered, the resolver outcome for display, and the fingerprint the
-// Guard uses for web_search approvals.
+// Guard uses to tell whether web_search is bound.
 type webState struct {
 	settings     config.WebConfig
 	binding      web.Binding

@@ -387,25 +387,23 @@ func TestFetchRedirectPolicy(t *testing.T) {
 	if err != nil || response.FinalURL != "http://example.test/sub/final" {
 		t.Fatalf("relative redirect: %+v %v", response, err)
 	}
+	// Legal cross-origin redirects continue automatically once the target
+	// passes the URL and literal-target checks.
+	response, err = fetcher.Fetch(t.Context(), web.FetchRequest{URL: "http://example.test/cross"})
+	if err != nil || response.FinalURL != "http://other.test/final" || !strings.Contains(response.Evidence.Items[0].Text, "arrived at /final") {
+		t.Fatalf("cross-origin redirect: %+v %v", response, err)
+	}
+	if response.Evidence.Sources[0].URL != "http://other.test/final" {
+		t.Fatal("source must be the final url")
+	}
 	for path, want := range map[string]web.ErrorCode{
-		"/cross": web.CodeRedirectRefused, "/literal": web.CodeRedirectRefused, "/private-literal": web.CodeRedirectRefused,
+		"/literal": web.CodeBlockedTarget, "/private-literal": web.CodeBlockedTarget,
 		"/port": web.CodeRedirectRefused, "/loop": web.CodeRedirectRefused, "/nolocation": web.CodeInvalidResponse, "/scheme": web.CodeRedirectRefused,
 	} {
 		_, err := fetcher.Fetch(t.Context(), web.FetchRequest{URL: "http://example.test" + path})
 		if web.CodeOf(err) != want {
 			t.Fatalf("%s: err = %v, want %s", path, err, want)
 		}
-		if path == "/cross" && !strings.Contains(err.Error(), "http://other.test/final") {
-			t.Fatalf("cross-origin refusal must name the target: %v", err)
-		}
-	}
-	// Allowing cross-origin redirects still applies the literal-target check.
-	permissive := h.fetcher(t, func(c *Config) { c.AllowCrossOriginRedirects = true })
-	if response, err := permissive.Fetch(t.Context(), web.FetchRequest{URL: "http://example.test/cross"}); err != nil || response.FinalURL != "http://other.test/final" {
-		t.Fatalf("permissive cross-origin: %+v %v", response, err)
-	}
-	if _, err := permissive.Fetch(t.Context(), web.FetchRequest{URL: "http://example.test/private-literal"}); web.CodeOf(err) != web.CodeBlockedTarget {
-		t.Fatalf("literal redirect accepted under permissive policy: %v", err)
 	}
 }
 

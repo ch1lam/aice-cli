@@ -34,8 +34,7 @@ iwr -useb https://raw.githubusercontent.com/ch1lam/aice-cli/main/scripts/install
 [浏览器自动化](./docs/browser.md)。
 
 使用 `/web` 添加 Exa 搜索账户、调整搜索来源顺序并开关 `web_fetch`。配置好服务后，
-任意支持工具调用的模型都可以使用 `web_search`；`web_fetch` 直接读取公开网页。两者都
-按服务或站点 origin 请求授权。详见[联网搜索与抓取](./docs/web.md)。
+任意支持工具调用的模型都可以使用 `web_search`；`web_fetch` 直接读取公开网页。启用的 Web 工具会自动访问网络，无需额外确认。详见[联网搜索与抓取](./docs/web.md)。
 
 在项目中启动交互式 Session：
 

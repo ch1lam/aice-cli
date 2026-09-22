@@ -38,7 +38,7 @@ func (f *WebFetch) Definition() llm.ToolDefinition {
 		Description: "Fetch one public, static http(s) page and return its readable text as Markdown or plain text (untrusted external content). " +
 			"Supports HTML, plain text and Markdown on the default web ports only. " +
 			"Does not support authenticated pages, JavaScript rendering, cookies, PDFs, images or private/internal addresses. " +
-			"Redirects that leave the page's origin are refused and reported so you can fetch the target explicitly.",
+			"Redirects are followed automatically (at most 5 hops, each hop revalidated, no https to http downgrade).",
 		InputSchema:   jsonSchema(webFetchSchema),
 		PromptSnippet: "Fetch a public web page as readable text",
 		PromptGuidelines: []string{

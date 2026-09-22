@@ -49,7 +49,7 @@ func (r FetchRequest) Validate() error {
 	return nil
 }
 
-// FetchTarget is a validated, normalized fetch URL and its permission origin.
+// FetchTarget is a validated, normalized fetch URL and its origin.
 type FetchTarget struct {
 	URL    string
 	Host   string

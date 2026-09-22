@@ -40,11 +40,7 @@ type Config struct {
 	Timeout      time.Duration
 	MaxBodyBytes int64
 	MaxRedirects int
-	// AllowCrossOriginRedirects lets a redirect leave the requested origin.
-	// The default refuses and reports the target so the model can request it
-	// under a new permission check.
-	AllowCrossOriginRedirects bool
-	Now                       func() time.Time
+	Now          func() time.Time
 	// RootCAs replaces the system roots for tests with local certificates.
 	// Verification itself is never disabled and always uses the URL hostname.
 	RootCAs *x509.CertPool
@@ -116,8 +112,8 @@ func defaultTransport(timeout time.Duration, roots *x509.CertPool) *http.Transpo
 	return transport
 }
 
-// Fetch performs one bounded GET, following at most MaxRedirects same-origin
-// redirects with each hop revalidated, then extracts readable text.
+// Fetch performs one bounded GET, following at most MaxRedirects redirects
+// with each hop revalidated, then extracts readable text.
 func (f *Fetcher) Fetch(ctx context.Context, request web.FetchRequest) (web.FetchResponse, error) {
 	if ctx == nil {
 		return web.FetchResponse{}, web.NewError(web.CodeInvalidArgument, "context is required")
@@ -231,8 +227,9 @@ func (f *Fetcher) get(ctx context.Context, hop target) (*http.Response, error) {
 	return response, nil
 }
 
-// nextHop validates a redirect target: same policy as the first URL, no
-// https→http downgrade and, by default, no change of origin.
+// nextHop validates a redirect target under the same policy as the first
+// URL, with no https→http downgrade. Cross-origin redirects continue
+// automatically once each hop passes URL and literal-target checks.
 func (f *Fetcher) nextHop(current target, location string) (target, error) {
 	resolved, err := current.url.Parse(location)
 	if err != nil {
@@ -244,9 +241,6 @@ func (f *Fetcher) nextHop(current target, location string) (target, error) {
 	}
 	if current.url.Scheme == "https" && next.url.Scheme != "https" {
 		return target{}, web.NewError(web.CodeRedirectRefused, "redirect from https to http refused: %s", next.url)
-	}
-	if next.origin != current.origin && !f.cfg.AllowCrossOriginRedirects {
-		return target{}, web.NewError(web.CodeRedirectRefused, "redirect leaves the approved origin %s; request %s with a new web_fetch call", current.origin, next.url)
 	}
 	return next, nil
 }

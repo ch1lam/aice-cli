@@ -37,8 +37,8 @@ or choose its working tab; see
 
 Use `/web` to add an Exa search account, order search sources, and switch
 `web_fetch`. `web_search` works with any tool-calling model once a service is
-configured; `web_fetch` reads public pages directly. Both ask for permission
-per service or origin. See [Web search and fetch](./docs/web.md).
+configured; `web_fetch` reads public pages directly. Enabled web tools access
+the network automatically without an extra confirmation. See [Web search and fetch](./docs/web.md).
 
 Start an interactive Session inside a project:
 

@@ -136,9 +136,9 @@ func TestWebCommandAddsInstanceSavesCredentialAndRebinds(t *testing.T) {
 	if !strings.Contains(s.settingsInformation(), "Web: search on (source service:exa-main), fetch on") {
 		t.Fatalf("settings summary = %q", s.settingsInformation())
 	}
-	// The Guard now knows the bound fingerprint.
+	// The Guard now knows the bound fingerprint and allows directly.
 	res, err := s.guard.Check(t.Context(), llm.ToolCall{ID: "c", Name: "web_search", Arguments: json.RawMessage(`{"query":"x"}`)})
-	if err != nil || res.Decision != guard.DecisionAsk || !strings.Contains(res.Approvals[0].Action.Target, "exa-main@https://fake.example") {
+	if err != nil || res.Decision != guard.DecisionAllow || !strings.Contains(res.Action.Target, "exa-main@https://fake.example") {
 		t.Fatalf("guard = %+v %v", res, err)
 	}
 

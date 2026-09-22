@@ -33,7 +33,7 @@ func validateURL(raw string) (target, error) {
 	return target{url: parsed, host: validated.Host, port: validated.Port, origin: validated.Origin}, nil
 }
 
-// OriginOf validates a raw URL and returns its permission origin.
+// OriginOf validates a raw URL and returns its origin.
 func OriginOf(raw string) (string, error) {
 	validated, err := web.ValidateFetchURL(raw)
 	if err != nil {

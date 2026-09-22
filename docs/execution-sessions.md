@@ -91,13 +91,14 @@ unless `--yolo` is set.
 The `skill` tool is a known tool: it has no path argument and returns
 content already parsed at startup, so Check allows it after the known-tool
 gate. File policies and path access do not apply to it.
-`web_search` and `web_fetch` are known tools with a network scope instead of a
-path or command: `web_search` asks for the bound search service (instance ID
-plus endpoint origin, set by the application per run; without a binding it
-denies) and `web_fetch` asks for the URL's origin after the shared URL-shape
-check (malformed URLs, userinfo, zone-scoped IPv6 and non-default ports deny).
-Address validation, redirects and body limits run inside the tool, outside the
-Guard lock. See [Web search and fetch](web.md#permissions).
+`web_search` and `web_fetch` are known tools that pass through the same
+execution gate without a web confirmation step: `web_search` allows when a
+search service is bound (instance ID plus endpoint origin, set by the
+application per run; without a binding it denies) and `web_fetch` allows
+when the URL passes the shared URL-shape check (malformed URLs, userinfo,
+zone-scoped IPv6 and non-default ports deny). Address validation, redirects
+and body limits run inside the tool, outside the Guard lock. See [Web search
+and fetch](web.md#permissions).
 `--workspace` sets the default working directory and is the boundary used by
 the path-access gate; it is not a sandbox.
 
@@ -162,8 +163,6 @@ approval waits fail closed.
 | `pathAccess.ask` | Allow once; Allow this file for this session; Allow directory `<dir>/` for this session; Deny |
 | `permissionGate.dangerous` | Allow once; Allow this exact command for this session; Allow `"<prefix> …"` commands for this session; Deny |
 | `unknownTool` | Allow once; Allow tool `"X"` for this session; Deny |
-| `network.search` | Allow once; Allow searches through `<instance>@<origin>` for this session; Deny |
-| `network.fetch` | Allow once; Allow fetching from `<origin>` for this session; Deny |
 | Other `ask` rules | Allow once; Deny |
 
 The directory option is omitted when the parent is `/` or `$HOME`. The
@@ -180,9 +179,6 @@ Grant scope within the current Session:
   are split with a shell AST (`&&`, `||`, `;`, `|`, and similar). Every
   subcommand must start with an authorized prefix at a word boundary
 - **tool name** — that unknown tool name (`AllowToolSession`)
-- **network scope** — the exact search fingerprint or fetch origin string
-  (`AllowNetworkSession`); a changed endpoint, another instance or another
-  origin never matches an earlier grant
 
 Exact command grants compare the complete original string, including whitespace
 and quoting. They are separate from deliberately configured allowed patterns
