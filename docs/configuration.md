@@ -50,9 +50,10 @@ When `settings.json` omits `provider` and `model`, AICE uses `deepseek` and
 `deepseek-flash`. The `opencode-go` catalog default remains
 `deepseek-v4-flash`.
 
-The DeepSeek API catalog contains only `deepseek-flash` and `deepseek-v4-pro`.
-Both accept text/image input. Flash retains Responses; Pro retains Anthropic
-Messages. The OpenCode Go catalog is independent and unchanged.
+The DeepSeek API catalog contains only `deepseek-flash` (V4.1-Flash) and
+`deepseek-v4-pro` (V4-Pro-0813). Only Flash accepts text/image input; Pro is
+text-only. Flash retains Responses; Pro retains Anthropic Messages. The
+OpenCode Go catalog is independent and unchanged.
 Existing DeepSeek settings using removed model IDs must select one of these two
 models; old IDs are not remapped.
 DeepSeek cost estimates use official [off-peak rates](https://api-docs.deepseek.com/quick_start/pricing/);

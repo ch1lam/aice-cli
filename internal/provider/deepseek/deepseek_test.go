@@ -33,9 +33,9 @@ func TestModels(t *testing.T) {
 			ContextWindow:    1_000_000,
 			MaxTokens:        384_000,
 			Pricing: llm.Pricing{
-				Input:     0.22,
-				Output:    0.66,
-				CacheRead: 0.007,
+				Input:     0.15,
+				Output:    0.6,
+				CacheRead: 0.003,
 			},
 		},
 		{
@@ -46,7 +46,7 @@ func TestModels(t *testing.T) {
 			SupportsThinking:        true,
 			ThinkingLevelMap:        deepSeekThinkingLevelMap(),
 			SupportsReasoningEffort: true,
-			InputModalities:         []llm.InputModality{llm.InputModalityText, llm.InputModalityImage},
+			InputModalities:         []llm.InputModality{llm.InputModalityText},
 			ContextWindow:           1_000_000,
 			MaxTokens:               384_000,
 			Pricing: llm.Pricing{
@@ -276,7 +276,8 @@ func TestProviderDescriptor(t *testing.T) {
 
 func TestVisionModelsSendImageAndExactModelID(t *testing.T) {
 	t.Parallel()
-	for _, modelID := range []string{deepseek.ModelV4Flash, deepseek.ModelV4Pro} {
+	// Only Flash (V4.1-Flash) supports native vision; V4 Pro is text-only.
+	for _, modelID := range []string{deepseek.ModelV4Flash} {
 		t.Run(modelID, func(t *testing.T) {
 			t.Parallel()
 			bodies := make(chan string, 1)
@@ -286,11 +287,7 @@ func TestVisionModelsSendImageAndExactModelID(t *testing.T) {
 					t.Error(err)
 				}
 				bodies <- string(body)
-				wantPath := "/responses"
-				if modelID == deepseek.ModelV4Pro {
-					wantPath = "/anthropic/v1/messages"
-				}
-				if r.URL.Path != wantPath {
+				if r.URL.Path != "/responses" {
 					t.Errorf("path = %q", r.URL.Path)
 				}
 				w.Header().Set("Content-Type", "text/event-stream")
@@ -329,9 +326,6 @@ func TestVisionModelsSendImageAndExactModelID(t *testing.T) {
 				Reasoning struct {
 					Effort string `json:"effort"`
 				} `json:"reasoning"`
-				OutputConfig struct {
-					Effort string `json:"effort"`
-				} `json:"output_config"`
 			}
 			if err := json.Unmarshal([]byte(body), &payload); err != nil {
 				t.Fatal(err)
@@ -339,19 +333,50 @@ func TestVisionModelsSendImageAndExactModelID(t *testing.T) {
 			if payload.Model != modelID {
 				t.Errorf("model = %q", payload.Model)
 			}
-			effort := payload.Reasoning.Effort
-			imageType, imageData := `"type":"input_image"`, "data:image/png;base64,aW1hZ2U="
-			if modelID == deepseek.ModelV4Pro {
-				effort = payload.OutputConfig.Effort
-				imageType, imageData = `"type":"image"`, `"data":"aW1hZ2U="`
+			if payload.Reasoning.Effort != "high" {
+				t.Errorf("effort = %q", payload.Reasoning.Effort)
 			}
-			if effort != "high" {
-				t.Errorf("effort = %q", effort)
-			}
-			if !strings.Contains(body, imageType) || !strings.Contains(body, imageData) {
+			if !strings.Contains(body, `"type":"input_image"`) || !strings.Contains(body, "data:image/png;base64,aW1hZ2U=") {
 				t.Errorf("image missing from request: %s", body)
 			}
 
 		})
+	}
+}
+
+func TestV4ProRejectsImageBeforeHTTP(t *testing.T) {
+	t.Parallel()
+
+	var requests atomic.Int64
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		requests.Add(1)
+	}))
+	defer server.Close()
+
+	service, err := deepseek.New(deepseek.Config{APIKey: "test-key", BaseURL: server.URL, HTTPClient: server.Client()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var selected llm.Model
+	for _, model := range deepseek.Models() {
+		if model.ID == deepseek.ModelV4Pro {
+			selected = model
+		}
+	}
+	_, err = service.Stream(t.Context(), llm.Request{
+		Model: selected,
+		Messages: []llm.Message{llm.UserMessage{
+			Role: llm.RoleUser,
+			Content: []llm.ContentPart{
+				llm.NewTextContent("Describe this image").Part(),
+				{Type: llm.ContentTypeImage, Image: &llm.ImageContent{Data: []byte("image"), MIMEType: "image/png"}},
+			},
+		}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "image content is not supported") {
+		t.Fatalf("Stream() error = %v, want image unsupported", err)
+	}
+	if got := requests.Load(); got != 0 {
+		t.Errorf("HTTP requests = %d, want 0", got)
 	}
 }

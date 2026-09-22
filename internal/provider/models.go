@@ -24,15 +24,16 @@ type ModelSpec struct {
 // direct provider. Compatible catalogs may reuse these as a starting point and
 // override provider-specific names, rates, or effort choices. Prices are
 // official off-peak USD rates; peak billing is twice these estimates.
+// Flash serves DeepSeek-V4.1-Flash; Pro serves DeepSeek-V4-Pro-0813.
 var deepSeekModelSpecs = []ModelSpec{
 	{
 		ID:            "deepseek-v4-flash",
 		Name:          "DeepSeek V4 Flash",
 		ContextWindow: 1_000_000,
 		MaxTokens:     384_000,
-		Input:         0.22,
-		Output:        0.66,
-		CacheRead:     0.007,
+		Input:         0.15,
+		Output:        0.6,
+		CacheRead:     0.003,
 		// DeepSeek exposes three actual effort values plus off. Medium and
 		// xhigh both map to high, so they are not separate choices.
 		ThinkingLevelMap: deepSeekThinkingLevelMap(),

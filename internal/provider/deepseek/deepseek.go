@@ -106,7 +106,7 @@ func (p *Provider) Stream(ctx context.Context, request llm.Request) (llm.Stream,
 			expectedAPI,
 		)
 	}
-	if err := provider.ValidateMessages(request.Messages, messageCapabilities); err != nil {
+	if err := provider.ValidateMessages(request.Messages, messageCapabilitiesFor(request.Model.ID)); err != nil {
 		return nil, err
 	}
 	switch request.Model.API {
@@ -151,7 +151,7 @@ func model(id string) llm.Model {
 		SupportsThinking:        true,
 		ThinkingLevelMap:        spec.ThinkingLevelMap,
 		SupportsReasoningEffort: id == ModelV4Pro,
-		InputModalities:         []llm.InputModality{llm.InputModalityText, llm.InputModalityImage},
+		InputModalities:         inputModalities(id),
 		ContextWindow:           spec.ContextWindow,
 		MaxTokens:               spec.MaxTokens,
 		Pricing: llm.Pricing{
@@ -174,6 +174,22 @@ func protocolBaseURLs(configured string) (string, string) {
 		return configured, responsesBaseURL
 	}
 	return configured + "/anthropic", responsesBaseURL
+}
+
+// inputModalities reports the content a DeepSeek model accepts. Only Flash
+// (V4.1-Flash) supports native vision; V4 Pro is text-only.
+func inputModalities(id string) []llm.InputModality {
+	if id == ModelV4Pro {
+		return []llm.InputModality{llm.InputModalityText}
+	}
+	return []llm.InputModality{llm.InputModalityText, llm.InputModalityImage}
+}
+
+// messageCapabilitiesFor enables image validation only for Flash.
+func messageCapabilitiesFor(id string) provider.MessageCapabilities {
+	capabilities := messageCapabilities
+	capabilities.SupportsImage = id != ModelV4Pro
+	return capabilities
 }
 
 // messageCapabilities declares the message content DeepSeek models accept.
