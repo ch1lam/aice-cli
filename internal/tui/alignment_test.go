@@ -28,12 +28,12 @@ func TestTranscriptAlignmentAcrossFoldsAndWidths(t *testing.T) {
 				case "expanded":
 					m.expandAllDetails(true)
 				case "batch closed":
-					m.setFoldExpanded(foldTarget{kind: foldCalls, id: 2}, false)
+					m.setFoldExpanded(foldTarget{kind: foldTool, id: 2}, false)
 				case "process closed":
 					m.setFoldExpanded(foldTarget{kind: foldProcess, id: id}, false)
 				case "reopened":
 					m.setFoldExpanded(foldTarget{kind: foldProcess, id: id}, true)
-					m.setFoldExpanded(foldTarget{kind: foldCalls, id: 2}, true)
+					m.setFoldExpanded(foldTarget{kind: foldTool, id: 2}, true)
 				}
 				m.refreshViewport(false)
 				m.viewport.GotoTop()

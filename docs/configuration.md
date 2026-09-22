@@ -993,7 +993,8 @@ cache invalidation, and shared paint/hit-test coordinates are defined in
 [Concurrency and TUI](contracts.md#concurrency-and-tui).
 
 The main transcript has independent folds for each process, each contiguous
-batch of tool calls, each thinking block, and each tool's details. Batches show
+batch of two or more tool calls, each thinking block, and each tool's details.
+A lone tool call shows its own heading directly without a batch heading. Batches show
 counts by operation (including Skill loads); they do not infer that later tools
 belong to a loaded Skill. Process and batch summaries start open, while thinking
 and tool bodies start closed. Final answers remain outside the process fold.

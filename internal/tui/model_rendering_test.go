@@ -49,7 +49,7 @@ func TestModelRendersOneProcessHeadingPerProcess(t *testing.T) {
 			t.Fatalf("expanded transcript contains %q, want merged header only:\n%s", hidden, transcript)
 		}
 	}
-	assertTranscriptGap(t, transcript, "FIRST_OUTPUT", "1 file read", 2)
+	assertTranscriptGap(t, transcript, "FIRST_OUTPUT", "✓ read", 2)
 	assertTranscriptGap(t, transcript[strings.Index(transcript, "✓ read"):], "✓ read", "Thinking", 2)
 	assertTranscriptGap(t, transcript, "FINAL_REASONING", "FINAL_OUTPUT", 2)
 }

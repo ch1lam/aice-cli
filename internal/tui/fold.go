@@ -96,6 +96,18 @@ func (m model) processContentItems(start, end int) []transcriptItem {
 			for last < end && m.entries[last].kind == entryTool {
 				last++
 			}
+			if last-index == 1 {
+				// A lone tool needs no batch heading; show its own heading directly
+				// with the same leading gap the batch heading provided.
+				for _, item := range m.foldedToolItems(index) {
+					if item.gap == 0 {
+						item.gap = 1
+					}
+					items = append(items, item)
+				}
+				index = last
+				continue
+			}
 			target := foldTarget{kind: foldCalls, id: index}
 			summary, expanded := toolGroupSummary(m.entries[index:last]), m.foldExpanded(target)
 			version := struct {
