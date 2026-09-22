@@ -44,6 +44,10 @@ func (c *markdownCache) render(markdown string, width int) (transcriptContent, e
 	if err != nil {
 		return transcriptContent{}, err
 	}
+	tables, tableMarker, source, err := extractMarkdownTables(document, source)
+	if err != nil {
+		return transcriptContent{}, err
+	}
 	refs := make(map[string]markdownReference)
 	for _, ref := range context.References() {
 		refs[string(ref.Label())] = markdownReference{string(ref.Destination()), string(ref.Title())}
@@ -55,7 +59,7 @@ func (c *markdownCache) render(markdown string, width int) (transcriptContent, e
 	var parts []markdownPart
 	var out strings.Builder
 	result := transcriptContent{}
-	row, blockIndex, start := 0, 0, 0
+	row, blockIndex, tableIndex, start := 0, 0, 0, 0
 	for first := document.FirstChild(); first != nil; {
 		end, stop := first.NextSibling(), len(markdown)
 		for end != nil {
@@ -65,15 +69,7 @@ func (c *markdownCache) render(markdown string, width int) (transcriptContent, e
 			}
 			end = end.NextSibling()
 		}
-		count := 0
-		for node := first; node != end; node = node.NextSibling() {
-			_ = ast.Walk(node, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
-				if entering && n.Kind() == ast.KindCodeBlock {
-					count++
-				}
-				return ast.WalkContinue, nil
-			})
-		}
+		codeCount, tableCount := countMarkdownPlaceholders(first, end, source, tableMarker)
 		key := markdown[start:stop]
 		var part markdownPart
 		if i := len(parts); i < len(c.parts) && c.parts[i].source == key {
@@ -84,8 +80,8 @@ func (c *markdownCache) render(markdown string, width int) (transcriptContent, e
 				return transcriptContent{}, err
 			}
 			content := transcriptContent{view: rendered}
-			if count > 0 {
-				content, err = insertMarkdownBlocks(rendered, marker, blocks[blockIndex:blockIndex+count], codeBlockOptions{width: width})
+			if codeCount+tableCount > 0 {
+				content, err = insertMarkdownBlocks(rendered, marker, blocks[blockIndex:blockIndex+codeCount], tables[tableIndex:tableIndex+tableCount], tableMarker, codeBlockOptions{width: width})
 				if err != nil {
 					return transcriptContent{}, err
 				}
@@ -100,7 +96,8 @@ func (c *markdownCache) render(markdown string, width int) (transcriptContent, e
 			result.blocks = append(result.blocks, block)
 		}
 		row += strings.Count(part.content.view, "\n")
-		blockIndex += count
+		blockIndex += codeCount
+		tableIndex += tableCount
 		first, start = end, stop
 	}
 	c.width, c.refs, c.parts = width, refs, parts

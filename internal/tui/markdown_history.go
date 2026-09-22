@@ -12,11 +12,12 @@ import (
 // and container ancestry use the original, unmodified document.
 // The presentation and its fold state belong exclusively to the TUI loop.
 type historyMarkdown struct {
-	markdown string
-	document ast.Node
-	source   []byte
-	marker   string
-	parts    []historyMarkdownPart
+	markdown    string
+	document    ast.Node
+	source      []byte
+	marker      string
+	tableMarker string
+	parts       []historyMarkdownPart
 }
 
 type historyMarkdownPart struct {
@@ -24,6 +25,7 @@ type historyMarkdownPart struct {
 	container   ast.Node
 	start, stop int
 	blocks      []codeBlock
+	tables      []tableBlock
 }
 
 const (
@@ -37,13 +39,17 @@ func parseHistoryMarkdown(markdown string) (*historyMarkdown, error) {
 	if err != nil {
 		return nil, err
 	}
+	tables, tableMarker, source, err := extractMarkdownTables(document, source)
+	if err != nil {
+		return nil, err
+	}
 	for i := range blocks {
 		if len(blocks[i].lines) > historyCodeLineLimit || len(blocks[i].source) >= historyMarkdownThreshold {
 			blocks[i].expanded = new(bool)
 		}
 	}
-	result := &historyMarkdown{markdown: markdown, document: document, source: source, marker: marker}
-	start, blockIndex := 0, 0
+	result := &historyMarkdown{markdown: markdown, document: document, source: source, marker: marker, tableMarker: tableMarker}
+	start, blockIndex, tableIndex := 0, 0, 0
 	for first := document.FirstChild(); first != nil; {
 		end, stop := first.NextSibling(), len(markdown)
 		for end != nil {
@@ -60,17 +66,10 @@ func parseHistoryMarkdown(markdown string) (*historyMarkdown, error) {
 			}
 			end = end.NextSibling()
 		}
-		count := 0
-		for node := first; node != end; node = node.NextSibling() {
-			_ = ast.Walk(node, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
-				if entering && n.Kind() == ast.KindCodeBlock {
-					count++
-				}
-				return ast.WalkContinue, nil
-			})
-		}
-		result.parts = append(result.parts, historyMarkdownPart{first: first, end: end, start: start, stop: stop, blocks: blocks[blockIndex : blockIndex+count]})
-		blockIndex += count
+		codeCount, tableCount := countMarkdownPlaceholders(first, end, source, tableMarker)
+		result.parts = append(result.parts, historyMarkdownPart{first: first, end: end, start: start, stop: stop, blocks: blocks[blockIndex : blockIndex+codeCount], tables: tables[tableIndex : tableIndex+tableCount]})
+		blockIndex += codeCount
+		tableIndex += tableCount
 		first, start = end, stop
 	}
 	result.splitLists()
@@ -83,7 +82,7 @@ func (h *historyMarkdown) splitLists() {
 	var parts []historyMarkdownPart
 	for _, part := range h.parts {
 		if part.first.Kind() != ast.KindList || part.first.NextSibling() != part.end ||
-			part.first.ChildCount() <= historyListChunkItems || len(part.blocks) != 0 {
+			part.first.ChildCount() <= historyListChunkItems || len(part.blocks) != 0 || len(part.tables) != 0 {
 			parts = append(parts, part)
 			continue
 		}
@@ -150,8 +149,8 @@ func (h *historyMarkdown) content(index, width int) transcriptContent {
 		}
 	}
 	content := transcriptContent{view: rendered}
-	if err == nil && len(part.blocks) > 0 {
-		content, err = insertMarkdownBlocks(rendered, h.marker, part.blocks, codeBlockOptions{width: width})
+	if err == nil && (len(part.blocks) > 0 || len(part.tables) > 0) {
+		content, err = insertMarkdownBlocks(rendered, h.marker, part.blocks, part.tables, h.tableMarker, codeBlockOptions{width: width})
 	}
 	if err != nil {
 		return newCodeBlock(h.markdown[part.start:part.stop], "text").layout(codeBlockOptions{width: width}).content()

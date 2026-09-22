@@ -44,6 +44,10 @@ func renderMarkdownWithOptions(markdown string, options codeBlockOptions) (trans
 	if err != nil {
 		return transcriptContent{}, err
 	}
+	tables, tableMarker, source, err := extractMarkdownTables(document, source)
+	if err != nil {
+		return transcriptContent{}, err
+	}
 	style := inkMarkdownStyle()
 	style.CodeBlock = glamouransi.StyleCodeBlock{}
 	md.SetRenderer(renderer.NewRenderer(renderer.WithNodeRenderers(util.Prioritized(
@@ -53,10 +57,10 @@ func renderMarkdownWithOptions(markdown string, options codeBlockOptions) (trans
 		return transcriptContent{}, err
 	}
 	rendered := strings.Trim(out.String(), "\r\n")
-	if len(blocks) == 0 {
+	if len(blocks) == 0 && len(tables) == 0 {
 		return transcriptContent{view: rendered}, nil
 	}
-	return insertMarkdownBlocks(rendered, marker, blocks, options)
+	return insertMarkdownBlocks(rendered, marker, blocks, tables, tableMarker, options)
 }
 
 func prepareMarkdown(markdown string, context parser.Context) (goldmark.Markdown, ast.Node, []byte, []codeBlock, string, error) {
@@ -124,12 +128,43 @@ func markdownMarker(source string) (string, error) {
 	return "", fmt.Errorf("markdown code marker alphabet exhausted")
 }
 
-func insertMarkdownBlocks(rendered, marker string, blocks []codeBlock, options codeBlockOptions) (transcriptContent, error) {
+func insertMarkdownBlocks(rendered, marker string, blocks []codeBlock, tables []tableBlock, tableMarker string, options codeBlockOptions) (transcriptContent, error) {
 	width := options.width
+	var tableStyle *glamouransi.StyleConfig
 	var rows []string
 	result := transcriptContent{}
-	next := 0
+	next, nextTable := 0, 0
 	for line := range strings.SplitSeq(rendered, "\n") {
+		if tableMarker != "" {
+			if before, after, found := strings.Cut(line, tableMarker); found {
+				if nextTable >= len(tables) || strings.TrimSpace(ansi.Strip(after)) != "" {
+					return transcriptContent{}, fmt.Errorf("invalid markdown table slot")
+				}
+				column := ansi.StringWidth(before)
+				// Same container clipping as code slots.
+				if column > width-6 {
+					before = ansi.Truncate(before, max(width-6, 0), "")
+					column = ansi.StringWidth(before)
+				}
+				if tableStyle == nil {
+					style := inkMarkdownStyle()
+					tableStyle = &style
+				}
+				box := renderBoxTable(tables[nextTable].node, tables[nextTable].source, max(width-column, 6), *tableStyle)
+				if box == "" {
+					return transcriptContent{}, fmt.Errorf("invalid markdown table slot")
+				}
+				for row := range strings.SplitSeq(box, "\n") {
+					rows = append(rows, before+row)
+				}
+				nextTable++
+				continue
+			}
+		}
+		if marker == "" {
+			rows = append(rows, line)
+			continue
+		}
 		before, after, found := strings.Cut(line, marker)
 		if !found {
 			rows = append(rows, line)
@@ -153,7 +188,7 @@ func insertMarkdownBlocks(rendered, marker string, blocks []codeBlock, options c
 		}
 		next++
 	}
-	if next != len(blocks) {
+	if next != len(blocks) || nextTable != len(tables) {
 		return transcriptContent{}, fmt.Errorf("missing markdown code slots")
 	}
 	result.view = strings.Join(rows, "\n")
