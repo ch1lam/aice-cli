@@ -244,7 +244,7 @@ func TestCopyNoticePreservesActivityAndExpires(t *testing.T) {
 				t.Fatal("copy notice lost after another copy or agent event")
 			}
 			if strings.Contains(current.transcriptView(), "✓ Copied") ||
-				!strings.Contains(current.activityIndicator(), "Thinking...") {
+				!strings.Contains(ansi.Strip(current.activityIndicator()), "Thinking...") {
 				t.Fatal("copy notice replaced activity")
 			}
 			if lipgloss.Height(current.View().Content) != beforeHeight {

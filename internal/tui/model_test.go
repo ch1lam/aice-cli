@@ -2130,7 +2130,7 @@ func assertActivityInTranscript(t *testing.T, current model, want string) {
 
 	transcript := current.transcriptView()
 	if !strings.Contains(transcript, current.spinner.View()) ||
-		!strings.Contains(transcript, want) {
+		!strings.Contains(ansi.Strip(transcript), want) {
 		t.Fatalf(
 			"transcript activity = %q, want spinner and %q",
 			transcript,
