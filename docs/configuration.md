@@ -244,6 +244,7 @@ The default request is `medium`. On DeepSeek Flash and V4 Pro it becomes
 | --- | --- |
 | `deepseek/deepseek-flash`, `deepseek/deepseek-v4-pro` | `off`, `low`, `high`, `max` |
 | `opencode-go/deepseek-v4-flash` | `low`, `high`, `max` |
+| `opencode-go/deepseek-v4.1-flash` | `low`, `high`, `max` |
 | `opencode-go/deepseek-v4-pro` | `high`, `max` |
 | `opencode-go/deepseek-v4-flash-vision-exp` | `off`, `low`, `high`, `max` |
 | `opencode-go/kimi-k2.6` | `off`, `high` |
@@ -257,9 +258,8 @@ The default request is `medium`. On DeepSeek Flash and V4 Pro it becomes
 | `opencode-go/glm-5.2` | `high`, `max` |
 | `opencode-go/glm-5.3`, `opencode-go/glm-5.3-flash` | `low`, `high`, `max` |
 | `opencode-go/gpt-5.6-luna` | `off`, `low`, `medium`, `high`, `xhigh`, `max` |
-| `opencode-go/grok-4.6` | `low`, `medium`, `high`, `xhigh` |
-| `opencode-go/muse-spark-1.2-contributor`, `opencode-go/muse-spark-1.3-contributor` | `minimal`, `low`, `medium`, `high`, `xhigh` |
-| `opencode-go/omen-alpha` | `low`, `high` |
+| `opencode-go/grok-4.6`, `opencode-go/grok-4.7` | `low`, `medium`, `high`, `xhigh` |
+| `opencode-go/muse-spark-1.2-contributor`, `opencode-go/muse-spark-1.3-contributor` | `minimal`, `low`, `medium`, `high`, `xhigh` (no `max`: Meta reserves `max` for Standard-tier `muse-spark-1.3`, while Go only offers the Contributor variants) |
 | `opencode-go/hy3` | `off`, `low`, `high` |
 | `opencode-go/hy4-preview` | `off`, `high` |
 | `openai/gpt-6-astra` | `low`, `medium`, `high`, `xhigh`, `max` |
@@ -328,14 +328,14 @@ $4/$20 for Sol and its alias, $2/$12 for Terra, and $0.20/$1.20 for Luna.
 AICE's flat pricing metadata does not model long-context or service-tier
 surcharges; displayed costs are estimates, not billing totals.
 
-The OpenCode Go catalog contains the 27 active upstream models; entries marked
-deprecated upstream are omitted. The catalog was checked on 2026-09-07 against
+The OpenCode Go catalog contains the 31 active upstream models; entries marked
+deprecated upstream are omitted. The catalog was checked on 2026-09-22 against
 the [gateway model list](https://opencode.ai/zen/go/v1/models) and
-[models.dev metadata](https://models.dev/api.json). Omen Alpha uses Chat
-Completions with text/image input and low/high reasoning. GPT-5.6 Luna, Grok 4.6, and Muse Spark
+[models.dev metadata](https://models.dev/api.json). GPT-5.6 Luna, Grok 4.6/4.7, and Muse Spark
 1.2/1.3 Contributor use the Responses protocol. Qwen3.6 through Qwen3.8
-(including Qwen3.8 Flash) and MiniMax M2.7/M3 use Anthropic Messages; the
-remaining catalog uses Chat Completions.
+(including Qwen3.8 Flash) and MiniMax M2.5/M2.7/M3 use Anthropic Messages; the
+remaining catalog uses Chat Completions, including DeepSeek V4.1 Flash and
+MiMo V2.6 Flash/Pro.
 Models whose upstream input modalities include images accept image content
 through the LLM contract and [clipboard image input](#clipboard-images).
 

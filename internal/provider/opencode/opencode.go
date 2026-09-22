@@ -155,14 +155,14 @@ func knownModel(id string) bool {
 var modelSpecs = modelSpecCatalog()
 
 func modelSpecCatalog() map[string]provider.ModelSpec {
-	specs := make(map[string]provider.ModelSpec, 27)
+	specs := make(map[string]provider.ModelSpec, 31)
 	for _, shared := range provider.DeepSeekModelSpecs() {
 		specs[shared.ID] = shared
 	}
 	flash := specs["deepseek-v4-flash"]
-	flash.Input = 0.22
-	flash.Output = 0.66
-	flash.CacheRead = 0.007
+	flash.Input = 0.15
+	flash.Output = 0.6
+	flash.CacheRead = 0.003
 	flash.ThinkingLevelMap = llm.ThinkingLevelsMap(
 		llm.ThinkingLevelLow,
 		llm.ThinkingLevelHigh,
@@ -184,14 +184,31 @@ func modelSpecCatalog() map[string]provider.ModelSpec {
 	pro.SupportsReasoningEffort = true
 	specs[pro.ID] = pro
 
+	specs["deepseek-v4.1-flash"] = provider.ModelSpec{
+		ID:            "deepseek-v4.1-flash",
+		Name:          "DeepSeek V4.1 Flash",
+		ContextWindow: 1_000_000,
+		MaxTokens:     384_000,
+		Input:         0.15,
+		Output:        0.6,
+		CacheRead:     0.003,
+		ThinkingLevelMap: llm.ThinkingLevelsMap(
+			llm.ThinkingLevelLow,
+			llm.ThinkingLevelHigh,
+			llm.ThinkingLevelMax,
+		),
+		ThinkingFormat:          llm.ThinkingFormatDeepSeek,
+		SupportsReasoningEffort: true,
+	}
+
 	specs["deepseek-v4-flash-vision-exp"] = provider.ModelSpec{
 		ID:            "deepseek-v4-flash-vision-exp",
 		Name:          "DeepSeek V4 Flash Vision Exp",
 		ContextWindow: 1_000_000,
 		MaxTokens:     384_000,
-		Input:         0.22,
-		Output:        0.66,
-		CacheRead:     0.007,
+		Input:         0.15,
+		Output:        0.6,
+		CacheRead:     0.003,
 		ThinkingLevelMap: llm.ThinkingLevelsMap(
 			llm.ThinkingLevelOff,
 			llm.ThinkingLevelLow,
@@ -238,7 +255,7 @@ func modelSpecCatalog() map[string]provider.ModelSpec {
 		),
 	}
 	specs["glm-5.3-flash"] = provider.ModelSpec{
-		ID: "glm-5.3-flash", Name: "GLM-5.3-Flash", ContextWindow: 1_000_000, MaxTokens: 131_072, Input: 0.075, Output: 0.25, CacheRead: 0.015,
+		ID: "glm-5.3-flash", Name: "GLM-5.3-Flash", ContextWindow: 1_000_000, MaxTokens: 131_072, Input: 0.15, Output: 0.5, CacheRead: 0.03,
 		ThinkingLevelMap: llm.ThinkingLevelsMap(
 			llm.ThinkingLevelLow,
 			llm.ThinkingLevelHigh,
@@ -251,9 +268,12 @@ func modelSpecCatalog() map[string]provider.ModelSpec {
 	specs["qwen3.8-max"] = standardSpec("qwen3.8-max", "Qwen3.8 Max", 1_000_000, 131_072, 2, 6, 0.25)
 	specs["qwen3.8-flash"] = standardSpec("qwen3.8-flash", "Qwen3.8 Flash", 1_000_000, 131_072, 0.15, 0.47, 0.016)
 	specs["minimax-m2.7"] = standardSpec("minimax-m2.7", "MiniMax M2.7", 204_800, 131_072, 0.3, 1.2, 0.06)
+	specs["minimax-m2.5"] = standardSpec("minimax-m2.5", "MiniMax M2.5", 204_800, 65_536, 0.3, 1.2, 0.06)
 	specs["minimax-m3"] = standardSpec("minimax-m3", "MiniMax M3", 1_000_000, 131_072, 0.3, 1.2, 0.06)
 	specs["mimo-v2.5"] = standardSpec("mimo-v2.5", "MiMo V2.5", 1_000_000, 128_000, 0.14, 0.28, 0.0028)
 	specs["mimo-v2.5-pro"] = standardSpec("mimo-v2.5-pro", "MiMo V2.5 Pro", 1_048_576, 128_000, 0.435, 0.87, 0.003625)
+	specs["mimo-v2.6-flash"] = standardSpec("mimo-v2.6-flash", "MiMo V2.6 Flash", 1_048_576, 131_072, 0.14, 0.28, 0.0028)
+	specs["mimo-v2.6-pro"] = standardSpec("mimo-v2.6-pro", "MiMo V2.6 Pro", 1_048_576, 131_072, 0.435, 0.87, 0.003625)
 	specs["longcat-2.0"] = standardSpec("longcat-2.0", "LongCat-2.0", 1_000_000, 131_072, 0.3, 1.2, 0.006)
 	// OpenCode Go exposes off as none plus low through max.
 	specs["gpt-5.6-luna"] = provider.ModelSpec{
@@ -278,6 +298,22 @@ func modelSpecCatalog() map[string]provider.ModelSpec {
 	specs["grok-4.6"] = provider.ModelSpec{
 		ID:            "grok-4.6",
 		Name:          "Grok 4.6",
+		ContextWindow: 500_000,
+		MaxTokens:     500_000,
+		Input:         2,
+		Output:        6,
+		CacheRead:     0.5,
+		ThinkingLevelMap: llm.ThinkingLevelsMap(
+			llm.ThinkingLevelLow,
+			llm.ThinkingLevelMedium,
+			llm.ThinkingLevelHigh,
+			llm.ThinkingLevelXHigh,
+		),
+	}
+	// Grok 4.7 exposes low, medium, high, and xhigh efforts.
+	specs["grok-4.7"] = provider.ModelSpec{
+		ID:            "grok-4.7",
+		Name:          "Grok 4.7",
 		ContextWindow: 500_000,
 		MaxTokens:     500_000,
 		Input:         2,
@@ -360,12 +396,6 @@ func modelSpecCatalog() map[string]provider.ModelSpec {
 			llm.ThinkingLevelMax:     nil,
 		},
 	}
-	specs["omen-alpha"] = provider.ModelSpec{
-		ID: "omen-alpha", Name: "Omen Alpha",
-		ContextWindow: 500_000, MaxTokens: 128_000,
-		Input: 0.2, Output: 0.66, CacheRead: 0.04,
-		ThinkingLevelMap: llm.ThinkingLevelsMap(llm.ThinkingLevelLow, llm.ThinkingLevelHigh),
-	}
 	return specs
 }
 
@@ -386,7 +416,7 @@ func standardSpec(
 // modelIDs lists the OpenCode Go models in menu order; Models constructs
 // fresh values so callers cannot mutate catalog maps shared by later runs.
 var modelIDs = []string{
-	"omen-alpha",
+	"grok-4.7",
 	"grok-4.6",
 	"gpt-5.6-luna",
 	"glm-5.3-flash",
@@ -398,12 +428,16 @@ var modelIDs = []string{
 	"kimi-k2.6",
 	"longcat-2.0",
 	"deepseek-v4-pro",
+	"deepseek-v4.1-flash",
 	"deepseek-v4-flash",
 	"deepseek-v4-flash-vision-exp",
+	"mimo-v2.6-pro",
+	"mimo-v2.6-flash",
 	"mimo-v2.5",
 	"mimo-v2.5-pro",
 	"minimax-m3",
 	"minimax-m2.7",
+	"minimax-m2.5",
 	"muse-spark-1.3-contributor",
 	"muse-spark-1.2-contributor",
 	"qwen3.8-max",
@@ -441,9 +475,10 @@ func model(id string) llm.Model {
 
 func modelAPI(id string) llm.API {
 	switch id {
-	case "gpt-5.6-luna", "grok-4.6", "muse-spark-1.2-contributor", "muse-spark-1.3-contributor":
+	case "gpt-5.6-luna", "grok-4.6", "grok-4.7", "muse-spark-1.2-contributor", "muse-spark-1.3-contributor":
 		return openairesponses.API
-	case "minimax-m2.7",
+	case "minimax-m2.5",
+		"minimax-m2.7",
 		"minimax-m3",
 		"qwen3.6-plus",
 		"qwen3.7-max",
@@ -466,16 +501,19 @@ func inputModalities(id string) []llm.InputModality {
 
 func supportsImage(id string) bool {
 	switch id {
-	case "omen-alpha",
+	case "deepseek-v4.1-flash",
 		"deepseek-v4-flash-vision-exp",
 		"glm-5.3-flash",
 		"gpt-5.6-luna",
 		"grok-4.6",
+		"grok-4.7",
 		"kimi-k2.6",
 		"kimi-k2.7-code",
 		"kimi-k3",
 		"minimax-m3",
 		"mimo-v2.5",
+		"mimo-v2.6-flash",
+		"mimo-v2.6-pro",
 		"muse-spark-1.2-contributor",
 		"muse-spark-1.3-contributor",
 		"qwen3.6-plus",
@@ -492,6 +530,8 @@ func cacheWritePrice(id string) float64 {
 	switch id {
 	case "gpt-5.6-luna":
 		return 0.25
+	case "minimax-m2.5":
+		return 0.375
 	case "minimax-m2.7":
 		return 0.375
 	case "qwen3.6-plus":

@@ -22,7 +22,7 @@ func TestModels(t *testing.T) {
 
 	models := opencode.Models()
 	wantIDs := []string{
-		"omen-alpha",
+		"grok-4.7",
 		"grok-4.6",
 		"gpt-5.6-luna",
 		"glm-5.3-flash",
@@ -34,12 +34,16 @@ func TestModels(t *testing.T) {
 		"kimi-k2.6",
 		"longcat-2.0",
 		"deepseek-v4-pro",
+		"deepseek-v4.1-flash",
 		"deepseek-v4-flash",
 		"deepseek-v4-flash-vision-exp",
+		"mimo-v2.6-pro",
+		"mimo-v2.6-flash",
 		"mimo-v2.5",
 		"mimo-v2.5-pro",
 		"minimax-m3",
 		"minimax-m2.7",
+		"minimax-m2.5",
 		"muse-spark-1.3-contributor",
 		"muse-spark-1.2-contributor",
 		"qwen3.8-max",
@@ -60,10 +64,12 @@ func TestModels(t *testing.T) {
 	responsesModels := map[string]bool{
 		"gpt-5.6-luna":               true,
 		"grok-4.6":                   true,
+		"grok-4.7":                   true,
 		"muse-spark-1.2-contributor": true,
 		"muse-spark-1.3-contributor": true,
 	}
 	anthropicModels := map[string]bool{
+		"minimax-m2.5":  true,
 		"minimax-m2.7":  true,
 		"minimax-m3":    true,
 		"qwen3.6-plus":  true,
@@ -124,13 +130,6 @@ func TestModels(t *testing.T) {
 		t.Errorf("vision modalities = %v, want %v", vision.InputModalities, wantModalities)
 	}
 
-	omen, ok := modelForID(models, "omen-alpha")
-	if !ok || omen.ContextWindow != 500_000 || omen.MaxTokens != 128_000 ||
-		!reflect.DeepEqual(omen.InputModalities, wantModalities) ||
-		omen.Pricing != (llm.Pricing{Input: 0.2, Output: 0.66, CacheRead: 0.04}) {
-		t.Fatalf("incorrect Omen Alpha metadata: %#v", omen)
-	}
-
 	textOnly, ok := modelForID(models, "glm-5.3")
 	if !ok {
 		t.Fatal("glm-5.3 missing from Models()")
@@ -148,9 +147,14 @@ func TestModels(t *testing.T) {
 	}
 
 	wantLevels := map[string][]llm.ThinkingLevel{
-		"omen-alpha": {llm.ThinkingLevelLow, llm.ThinkingLevelHigh},
 		// DeepSeek V4 Flash exposes low, high, and max effort.
 		"deepseek-v4-flash": {
+			llm.ThinkingLevelLow,
+			llm.ThinkingLevelHigh,
+			llm.ThinkingLevelMax,
+		},
+		// DeepSeek V4.1 Flash exposes low, high, and max effort.
+		"deepseek-v4.1-flash": {
 			llm.ThinkingLevelLow,
 			llm.ThinkingLevelHigh,
 			llm.ThinkingLevelMax,
@@ -188,6 +192,13 @@ func TestModels(t *testing.T) {
 		},
 		// Grok 4.6 exposes low, medium, high, and xhigh efforts.
 		"grok-4.6": {
+			llm.ThinkingLevelLow,
+			llm.ThinkingLevelMedium,
+			llm.ThinkingLevelHigh,
+			llm.ThinkingLevelXHigh,
+		},
+		// Grok 4.7 exposes low, medium, high, and xhigh efforts.
+		"grok-4.7": {
 			llm.ThinkingLevelLow,
 			llm.ThinkingLevelMedium,
 			llm.ThinkingLevelHigh,
@@ -248,7 +259,7 @@ func TestModels(t *testing.T) {
 		{modelID: "kimi-k3", request: llm.ThinkingLevelMedium, effective: llm.ThinkingLevelMax},
 		{modelID: "gpt-5.6-luna", request: llm.ThinkingLevelMinimal, effective: llm.ThinkingLevelLow},
 		{modelID: "grok-4.6", request: llm.ThinkingLevelMax, effective: llm.ThinkingLevelXHigh},
-		{modelID: "omen-alpha", request: llm.ThinkingLevelMedium, effective: llm.ThinkingLevelHigh},
+		{modelID: "grok-4.7", request: llm.ThinkingLevelMax, effective: llm.ThinkingLevelXHigh},
 		{modelID: "hy3", request: llm.ThinkingLevelMedium, effective: llm.ThinkingLevelHigh},
 		{modelID: "hy4-preview", request: llm.ThinkingLevelLow, effective: llm.ThinkingLevelHigh},
 	}
@@ -288,8 +299,9 @@ func TestModels(t *testing.T) {
 		format                  llm.ThinkingFormat
 		supportsReasoningEffort bool
 	}{
-		"deepseek-v4-flash": {format: llm.ThinkingFormatDeepSeek, supportsReasoningEffort: true},
-		"deepseek-v4-pro":   {format: llm.ThinkingFormatDeepSeek, supportsReasoningEffort: true},
+		"deepseek-v4-flash":   {format: llm.ThinkingFormatDeepSeek, supportsReasoningEffort: true},
+		"deepseek-v4.1-flash": {format: llm.ThinkingFormatDeepSeek, supportsReasoningEffort: true},
+		"deepseek-v4-pro":     {format: llm.ThinkingFormatDeepSeek, supportsReasoningEffort: true},
 		"deepseek-v4-flash-vision-exp": {
 			format: llm.ThinkingFormatDeepSeek, supportsReasoningEffort: true,
 		},
@@ -572,8 +584,8 @@ func TestProviderDescriptor(t *testing.T) {
 	if got := descriptor.MenuDescription(); !strings.Contains(got, "OpenCode Go subscription") {
 		t.Errorf("MenuDescription() = %q, want OpenCode Go subscription", got)
 	}
-	if got := descriptor.MenuDescription(); !strings.Contains(got, "27 models") {
-		t.Errorf("MenuDescription() = %q, want 27 models", got)
+	if got := descriptor.MenuDescription(); !strings.Contains(got, "31 models") {
+		t.Errorf("MenuDescription() = %q, want 31 models", got)
 	}
 	if got := descriptor.DefaultModel(); !reflect.DeepEqual(got, opencode.DefaultModel()) {
 		t.Errorf("DefaultModel() = %#v, want %#v", got, opencode.DefaultModel())
