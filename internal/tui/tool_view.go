@@ -47,7 +47,12 @@ func (m model) toolHeaderStyled(entry transcriptEntry, hovered bool) string {
 		} else {
 			detail = strings.Join(strings.Fields(detail), " ")
 			available := m.contentWidth() - 2 - ansi.StringWidth(heading) - ansi.StringWidth(stats) - 2
-			heading += "  " + detailStyle.Render(ansi.Truncate(detail, max(available, 1), "…"))
+			truncated := ansi.Truncate(detail, max(available, 1), "…")
+			if entry.toolName == "bash" {
+				heading += "  " + highlightBashLine(truncated)
+			} else {
+				heading += "  " + detailStyle.Render(truncated)
+			}
 		}
 	}
 	heading += stats
@@ -103,11 +108,11 @@ func (m model) toolBodyContent(entry transcriptEntry) transcriptContent {
 	width := m.contentWidth()
 	var content transcriptContent
 	if entry.toolDetail != "" && !toolHasPath(entry.toolName) {
-		prefix := ""
 		if entry.toolName == "bash" {
-			prefix = "$ "
+			content.appendText(renderBashDetail(entry.toolDetail))
+		} else {
+			content.appendText(mutedStyle.Render(entry.toolDetail))
 		}
-		content.appendText(mutedStyle.Render(prefix + entry.toolDetail))
 	}
 	hasDiff := toolHasDiff(entry)
 	if entry.writePreview != nil && !hasDiff {
@@ -155,6 +160,43 @@ func (m model) toolBodyContent(entry transcriptEntry) transcriptContent {
 
 func toolHasDiff(entry transcriptEntry) bool {
 	return entry.toolDone && !entry.toolError && (entry.toolDiff.Text != "" || entry.toolDiff.Truncated || entry.toolDiff.StatsKnown)
+}
+
+// renderBashDetail keeps the "$ " prompt muted while highlighting the shell
+// command with the shared code theme, so bash calls read like code blocks.
+// The stripped text stays "$ "+command to preserve transcript expectations.
+func renderBashDetail(command string) string {
+	rows := strings.Split(command, "\n")
+	escaped := make([]string, len(rows))
+	for i, row := range rows {
+		escaped[i] = escapeCodeRow(row)
+	}
+	highlighted := highlightCodeRows(escaped, "bash")
+	hasColor := false
+	for _, row := range highlighted {
+		if strings.Contains(row, "\x1b[") {
+			hasColor = true
+			break
+		}
+	}
+	if !hasColor {
+		return mutedStyle.Render("$ " + command)
+	}
+	prefix := mutedStyle.Render("$ ")
+	highlighted[0] = prefix + highlighted[0]
+	return strings.Join(highlighted, "\n")
+}
+
+// highlightBashLine highlights a single-line shell snippet with the shared
+// code theme. The stripped text is unchanged; without lexer color it falls
+// back to the muted single-line style used before highlighting.
+func highlightBashLine(line string) string {
+	escaped := escapeCodeRow(line)
+	highlighted := highlightCodeRows([]string{escaped}, "bash")
+	if len(highlighted) != 1 || !strings.Contains(highlighted[0], "\x1b[") {
+		return mutedStyle.Render(line)
+	}
+	return highlighted[0]
 }
 
 func toolOutputSource(entry transcriptEntry) (string, bool) {
