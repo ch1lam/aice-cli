@@ -18,10 +18,6 @@ type ModelSpec struct {
 	ThinkingLevelMap        llm.ThinkingLevelMap
 	ThinkingFormat          llm.ThinkingFormat
 	SupportsReasoningEffort bool
-	// FilterReasoningHistory marks models whose gateway cannot round-trip
-	// opaque reasoning (see llm.Model); protocol adapters project thinking
-	// to text instead of replaying reasoning items.
-	FilterReasoningHistory bool
 }
 
 // deepSeekModelSpecs declares the DeepSeek V4 model specifications used by the

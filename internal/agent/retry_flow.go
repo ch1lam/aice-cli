@@ -102,16 +102,23 @@ type retryOutcome struct {
 
 // retryTurn advances one retry attempt after a failed model turn. runErr is
 // the error that failed the turn; record, when non-nil, records the failed
-// attempt before the retry.
+// attempt before the retry. force retries irrespective of the retry policy
+// with no backoff; the loop uses it exactly once after arming reasoning
+// degradation, when the retried request differs from the rejected one.
 func (e *runExecution) retryTurn(
 	ctx context.Context,
 	retryAttempt int,
 	turnNumber int,
 	runErr error,
 	record func() error,
+	force bool,
 ) retryOutcome {
 	nextAttempt := retryAttempt + 1
 	delay, retry := e.loop.retry.decision(runErr, nextAttempt)
+	if force {
+		retry = true
+		delay = 0
+	}
 	if !retry {
 		if retryAttempt > 0 {
 			if err := e.emitRetryEnd(ctx, retryAttempt, false, runErr); err != nil {

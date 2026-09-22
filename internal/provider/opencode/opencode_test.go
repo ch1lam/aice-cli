@@ -345,37 +345,6 @@ func TestModelsReturnsIndependentThinkingMaps(t *testing.T) {
 	}
 }
 
-func TestModelsFilterReasoningHistoryForMuseSpark(t *testing.T) {
-	t.Parallel()
-
-	models := opencode.Models()
-	byID := make(map[string]llm.Model, len(models))
-	for _, model := range models {
-		byID[model.ID] = model
-	}
-	// The OpenCode gateways proxy the Muse Spark lane to an upstream that
-	// binds encrypted_content to its own caller, so replaying stored
-	// reasoning 400s. Only that lane filters reasoning history.
-	for _, id := range []string{"muse-spark-1.2-contributor", "muse-spark-1.3-contributor"} {
-		model, ok := byID[id]
-		if !ok {
-			t.Fatalf("%s missing from Models()", id)
-		}
-		if !model.FilterReasoningHistory {
-			t.Errorf("model %q does not filter reasoning history", id)
-		}
-	}
-	for _, id := range []string{"gpt-5.6-luna", "grok-4.6", "deepseek-v4-flash", "kimi-k2.6"} {
-		model, ok := byID[id]
-		if !ok {
-			t.Fatalf("%s missing from Models()", id)
-		}
-		if model.FilterReasoningHistory {
-			t.Errorf("model %q unexpectedly filters reasoning history", id)
-		}
-	}
-}
-
 func modelForID(models []llm.Model, id string) (llm.Model, bool) {
 	for _, model := range models {
 		if model.ID == id {

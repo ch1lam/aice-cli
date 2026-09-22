@@ -59,6 +59,9 @@ func (e *runExecution) requestForHistory(
 		Tools:        definitions,
 		Options:      e.input.Options,
 	}
+	if e.degradeReasoning {
+		request.Options.FilterReasoningHistory = true
+	}
 	return protectRequestContext(request)
 }
 

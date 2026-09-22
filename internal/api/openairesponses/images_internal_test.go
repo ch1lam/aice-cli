@@ -22,7 +22,7 @@ func TestToolImageWireContentAndPairing(t *testing.T) {
 		llm.ToolResultMessage{Role: llm.RoleToolResult, ToolCallID: "one", ToolName: "read", Content: []llm.ContentPart{{Type: llm.ContentTypeImage, Image: &img}}},
 		llm.ToolResultMessage{Role: llm.RoleToolResult, ToolCallID: "two", ToolName: "read", Content: []llm.ContentPart{llm.NewTextContent("second result").Part()}},
 	}
-	converted, err := inputParams(messages, model)
+	converted, err := inputParams(messages, model, false)
 	if err != nil {
 		t.Fatal(err)
 	}

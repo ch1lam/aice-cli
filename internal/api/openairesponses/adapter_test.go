@@ -685,7 +685,7 @@ func TestAdapterDropsProtocolSignaturesForForeignAssistantHistory(t *testing.T) 
 	}
 }
 
-func TestAdapterFiltersReasoningHistoryForFlaggedModel(t *testing.T) {
+func TestAdapterFiltersReasoningHistoryWhenDegraded(t *testing.T) {
 	t.Parallel()
 
 	bodies := make(chan []byte, 1)
@@ -716,14 +716,15 @@ func TestAdapterFiltersReasoningHistoryForFlaggedModel(t *testing.T) {
 		t.Fatalf("New() error = %v", err)
 	}
 
-	// The gateway binds encrypted_content to its own caller, so replaying a
-	// stored reasoning item 400s even for same-model history. Flagged models
-	// must project thinking to text instead.
+	// The gateway binds encrypted_content to the upstream context that issued
+	// it, so a stale replay 400s even for same-model history. The Agent Loop
+	// arms the request option reactively after the first rejection; the
+	// degraded request must project thinking to text instead of replaying it.
 	encrypted := `{"id":"rs_poisoned","type":"reasoning","status":"completed","encrypted_content":"opaque-blob-from-gateway"}`
 	request := apitest.MinimalRequest(openairesponses.API)
 	request.Model.ID = "muse-spark-1.3-contributor"
 	request.Model.Provider = "opencode-go"
-	request.Model.FilterReasoningHistory = true
+	request.Options.FilterReasoningHistory = true
 	request.Messages = append(request.Messages,
 		llm.AssistantMessage{
 			Role:     llm.RoleAssistant,

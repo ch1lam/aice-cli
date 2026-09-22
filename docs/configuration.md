@@ -298,15 +298,20 @@ wire formats follow provider documentation and gateway-specific requirements.
 Update the model map, its wire-format metadata, and catalog assertions together
 when upstream capabilities change.
 
-Gateway-specific replay limits also live in the catalog. The OpenCode Go
-gateway proxies the Muse Spark lane to an upstream that binds
-`reasoning.encrypted_content` to its own caller, so replaying a stored
-reasoning item fails with `400 invalid_request_error` on a later step.
-Both `muse-spark` models therefore set `FilterReasoningHistory`: the
+Gateway-specific replay limits also live in the catalog and loop. The
+OpenCode Go gateway proxies the Muse Spark lane to an upstream that binds
+`reasoning.encrypted_content` to its own context, so replaying a stored
+reasoning item can fail with `400 invalid_request_error ...
+encrypted_content was not issued to this caller` once that context
+rotates. Muse Spark therefore keeps the Responses default: reasoning items
+replay while the upstream still recognizes them, preserving cross-turn
+reasoning continuity. After the first actual rejection the Agent Loop arms
+a per-run `FilterReasoningHistory` request option and retries once: the
 Responses adapter projects thinking to plain text and never replays
-reasoning items, while reasoning effort and tool history stay unchanged.
-Stored signatures remain Session data and are only filtered on the wire,
-so histories recorded before this change recover without rewriting.
+reasoning items for the remainder of the run, while reasoning effort and
+tool history stay unchanged. Stored signatures remain Session data and
+are only filtered on the wire, so histories recorded before this change
+recover without rewriting.
 
 The built-in OpenAI catalog contains `gpt-6-astra`, `gpt-5.6-sol`,
 `gpt-5.6` (the Sol alias), `gpt-5.6-terra`, and `gpt-5.6-luna`.

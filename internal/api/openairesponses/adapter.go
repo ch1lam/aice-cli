@@ -151,7 +151,7 @@ func requestParams(request llm.Request) (responses.ResponseNewParams, error) {
 		return responses.ResponseNewParams{}, fmt.Errorf("openai responses: %w", err)
 	}
 
-	input, err := inputParams(request.Messages, request.Model)
+	input, err := inputParams(request.Messages, request.Model, request.Options.FilterReasoningHistory)
 	if err != nil {
 		return responses.ResponseNewParams{}, err
 	}
@@ -207,6 +207,7 @@ func reasoningParam(model llm.Model, level llm.ThinkingLevel) (shared.ReasoningP
 func inputParams(
 	messages []llm.Message,
 	target llm.Model,
+	filterReasoning bool,
 ) (responses.ResponseInputParam, error) {
 	result := make(responses.ResponseInputParam, 0, len(messages))
 	for messageIndex, message := range messages {
@@ -222,7 +223,7 @@ func inputParams(
 			}
 			result = append(result, items...)
 		case llm.AssistantMessage:
-			items, err := assistantInputParams(value, target)
+			items, err := assistantInputParams(value, target, filterReasoning)
 			if err != nil {
 				return nil, fmt.Errorf(
 					"openai responses: message %d: %w",
@@ -294,16 +295,18 @@ func userInputParams(content []llm.ContentPart) ([]responses.ResponseInputItemUn
 func assistantInputParams(
 	message llm.AssistantMessage,
 	target llm.Model,
+	filterReasoning bool,
 ) ([]responses.ResponseInputItemUnionParam, error) {
 	sameModel := message.Provider == target.Provider &&
 		message.API == target.API &&
 		message.ModelID == target.ID
 	content := message.Content
-	if !sameModel || target.FilterReasoningHistory {
-		// Gateways that cannot round-trip opaque reasoning (the OpenCode
-		// Muse Spark lane proxies to an upstream that binds
-		// encrypted_content to its own caller) must never see a replayed
-		// reasoning item; thinking travels as plain text instead.
+	if !sameModel || filterReasoning {
+		// The Agent Loop arms this request option reactively after a gateway
+		// rejects a replayed reasoning item (the OpenCode Muse Spark lane
+		// proxies to an upstream that binds encrypted_content to its own
+		// context). While replaying works it keeps reasoning continuity;
+		// once armed, thinking travels as plain text instead.
 		content = streamcore.ProjectThinkingToText(content)
 	}
 	result := make([]responses.ResponseInputItemUnionParam, 0, len(content))

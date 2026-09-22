@@ -167,6 +167,10 @@ type runExecution struct {
 	tokensUsed       int64
 	turnsUsed        int
 	repetition       repetitionTracker
+	// degradeReasoning filters reasoning items out of assistant history after
+	// the first gateway rejection of a replayed reasoning item. It is armed
+	// once per run; poisoned sessions self-heal on the immediate retry.
+	degradeReasoning bool
 	recordedMessages int
 	recorderErr      error
 }
@@ -213,6 +217,7 @@ func (e *runExecution) runInteraction(
 				streamErr = fmt.Errorf("%w: assistant turn did not complete", ErrProtocol)
 			}
 			currentTurn := *turnNumber
+			selfHeal := e.armReasoningReplayRetry(streamErr)
 			retry := e.retryTurn(
 				ctx,
 				retryAttempt,
@@ -226,6 +231,7 @@ func (e *runExecution) runInteraction(
 						streamErr,
 					)
 				},
+				selfHeal,
 			)
 			if retry.waitErr != nil {
 				result, err := e.finishRun(ctx, retry.waitErr)
@@ -351,12 +357,14 @@ func (e *runExecution) settleToolsAndSteering(
 		return e.result, errors.Join(runErr, err), settleStop
 	}
 	if modelErr != nil {
+		selfHeal := e.armReasoningReplayRetry(modelErr)
 		retry := e.retryTurn(
 			ctx,
 			*retryAttempt,
 			*turnNumber,
 			runErr,
 			nil,
+			selfHeal,
 		)
 		if retry.waitErr != nil {
 			result, err := e.finishRun(ctx, retry.waitErr)
