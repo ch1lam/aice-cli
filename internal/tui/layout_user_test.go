@@ -23,6 +23,42 @@ func TestSanitizeMultilineTextKeepsPlainText(t *testing.T) {
 	}
 }
 
+func TestSanitizeSingleLineTextReplacesControls(t *testing.T) {
+	t.Parallel()
+
+	got := sanitizeSingleLineText("a\nb\rc\td\x1b[31mred\x1b[0m\x7f tail")
+	// Single-line keeps nothing structural: every control becomes �,
+	// ANSI sequences are stripped first so only their text remains.
+	want := "a�b�c�dred� tail"
+	if got != want {
+		t.Fatalf("single-line = %q, want %q", got, want)
+	}
+	if got != sanitizeToolDetail("a\nb\rc\td\x1b[31mred\x1b[0m\x7f tail", false) {
+		t.Fatal("sanitizeToolDetail(false) diverged from single-line helper")
+	}
+}
+
+func TestSanitizeToolDetailMultilineDelegates(t *testing.T) {
+	t.Parallel()
+
+	text := "a\r\nb\rc\td\x1b[31mred\x1b[0m tail"
+	if got := sanitizeToolDetail(text, true); got != sanitizeMultilineText(text) {
+		t.Fatalf("multiline tool detail = %q, want helper %q", got, sanitizeMultilineText(text))
+	}
+}
+
+func TestSanitizeSideTitleTrims(t *testing.T) {
+	t.Parallel()
+
+	if got := sanitizeSideTitle("  thread\x1b[31m title\n"); got != "thread title" {
+		t.Fatalf("side title = %q, want %q", got, "thread title")
+	}
+	// Interior controls stay visible instead of silently joining words.
+	if got := sanitizeSideTitle("a\nb"); got != "a�b" {
+		t.Fatalf("side title interior = %q, want %q", got, "a�b")
+	}
+}
+
 func TestUserMessageViewStaysRectangularForLongPaste(t *testing.T) {
 	t.Parallel()
 

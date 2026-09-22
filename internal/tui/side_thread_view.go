@@ -73,16 +73,13 @@ func (m model) sideAnswerContent(entry sideThreadEntry, active bool) transcriptC
 }
 
 // sanitizeSideTitle strips control characters and ANSI escapes from a thread
-// title before rendering.
+// title before rendering. Trimming stays here: generic single-line text
+// keeps surrounding spaces (paths, labels), titles do not. Edge � marks
+// (e.g. from a trailing line break) are trimmed so titles stay clean
+// while interior controls remain visible.
 func sanitizeSideTitle(title string) string {
-	title = ansi.Strip(title)
-	title = strings.Map(func(character rune) rune {
-		if character < 0x20 || character == 0x7f {
-			return -1
-		}
-		return character
-	}, title)
-	return strings.TrimSpace(title)
+	trimmed := strings.TrimSpace(sanitizeSingleLineText(title))
+	return strings.Trim(trimmed, "�")
 }
 
 func (m model) sideStatusLine(width int) string {

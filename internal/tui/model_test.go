@@ -1115,8 +1115,8 @@ func TestModelToolCallsShowRelevantInput(t *testing.T) {
 				Name:   "read",
 				Detail: "internal/[31mmodel.go",
 			},
-			want:      "internal/�[31mmodel.go",
-			notWanted: []string{""},
+			want:      "internal/model.go",
+			notWanted: []string{"", "[31m"},
 		},
 	}
 

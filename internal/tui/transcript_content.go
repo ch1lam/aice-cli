@@ -55,7 +55,7 @@ func (c transcriptContent) pad(left, right int) transcriptContent {
 // Content is already styled. Add unstyled padding in one pass after measuring
 // each row once, retaining the rectangular alignment of a padding-only style.
 func padTranscript(view string, left, right int) string {
-	view = strings.ReplaceAll(view, "\t", "    ")
+	view = strings.ReplaceAll(view, "\t", sanitizeTabExpansion)
 	view = strings.ReplaceAll(view, "\r\n", "\n")
 	rows := strings.Split(view, "\n")
 	widths := make([]int, len(rows))

@@ -122,12 +122,7 @@ func (m *composerInput) replaceReference(start, end int, replacement string, pat
 }
 
 func fileReferenceLabel(path string) string {
-	return "@" + strings.Map(func(r rune) rune {
-		if unicode.IsControl(r) {
-			return '�'
-		}
-		return r
-	}, path)
+	return "@" + sanitizeSingleLineText(path)
 }
 
 // referenceText serializes known spans using the shared quoting syntax.

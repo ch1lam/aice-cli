@@ -253,7 +253,7 @@ func escapeCodeRow(row string) string {
 	for _, r := range strings.ToValidUTF8(row, "�") {
 		switch {
 		case r == '\t':
-			out.WriteString("    ")
+			out.WriteString(sanitizeTabExpansion)
 		case unicode.IsControl(r) || unicode.Is(unicode.Cf, r):
 			out.WriteString(escapeDiffRow(string(r)))
 		default:

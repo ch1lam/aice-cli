@@ -5,7 +5,6 @@ import (
 	"math"
 	"strconv"
 	"strings"
-	"unicode"
 	"unicode/utf8"
 
 	"charm.land/lipgloss/v2"
@@ -650,15 +649,10 @@ func (m model) entryView(
 }
 
 func sanitizeToolDetail(value string, multiline bool) string {
-	return strings.Map(func(character rune) rune {
-		if multiline && (character == '\n' || character == '\t') {
-			return character
-		}
-		if unicode.IsControl(character) {
-			return '�'
-		}
-		return character
-	}, value)
+	if multiline {
+		return sanitizeMultilineText(value)
+	}
+	return sanitizeSingleLineText(value)
 }
 
 func (m model) assistantEntryContent(entry transcriptEntry, active, thinking, text, header bool) transcriptContent {
@@ -862,12 +856,7 @@ func formatTokens(count int64) string {
 }
 
 func shellWorkingDirectory(path string) string {
-	return strings.Map(func(character rune) rune {
-		if unicode.IsControl(character) {
-			return '�'
-		}
-		return character
-	}, hostpath.HomeDisplay(path))
+	return sanitizeSingleLineText(hostpath.HomeDisplay(path))
 }
 
 func (m model) modelStatus(width int) string {
