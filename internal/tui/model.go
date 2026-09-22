@@ -216,6 +216,7 @@ type model struct {
 	copyGeneration   uint64
 	nextDeliveryID   uint64
 	steerRailFrame   uint8
+	thinkingShimmer  uint64
 }
 
 func newModel(
@@ -533,6 +534,7 @@ func (m model) update(message tea.Msg) (tea.Model, tea.Cmd) {
 		var command tea.Cmd
 		m.spinner, command = m.spinner.Update(message)
 		if m.running || m.side.anyRunning() {
+			m.thinkingShimmer++
 			hasPendingSteer := m.hasPendingSteer()
 			if hasPendingSteer {
 				m.steerRailFrame = (m.steerRailFrame + 1) % 4
