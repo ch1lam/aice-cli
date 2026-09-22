@@ -736,6 +736,11 @@ func (m model) activityIndicator() string {
 	if status == "" {
 		status = "Working..."
 	}
+	// Only the thinking row carries the Grok-style sweep. Answering, tools
+	// and other statuses keep the static muted style.
+	if status == "Thinking..." {
+		return m.spinner.View() + " " + renderThinkingStatus(status, m.thinkingShimmer)
+	}
 	return m.spinner.View() + " " + mutedStyle.Render(status)
 }
 

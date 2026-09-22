@@ -60,8 +60,12 @@ func (m model) sideAnswerContent(entry sideThreadEntry, active bool) transcriptC
 		!entry.complete &&
 		strings.TrimSpace(entry.answer) == "" &&
 		entry.err == "" {
+		notice := mutedStyle.Render(m.side.notice)
+		if strings.TrimSpace(m.side.notice) == "Thinking..." {
+			notice = renderThinkingStatus(strings.TrimSpace(m.side.notice), m.thinkingShimmer)
+		}
 		content.appendText(assistantBodyStyle.Render(
-			m.spinner.View() + " " + mutedStyle.Render(m.side.notice),
+			m.spinner.View() + " " + notice,
 		))
 	}
 	if content.view == "" {
