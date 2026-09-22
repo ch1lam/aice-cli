@@ -109,3 +109,25 @@ func TestBoxTableMatchesCacheRender(t *testing.T) {
 	assertMarkdownCacheEqual(t, &markdownCache{}, source, 80)
 	assertMarkdownCacheEqual(t, &markdownCache{}, source, 32)
 }
+
+func TestBoxTableStaysCompact(t *testing.T) {
+	t.Parallel()
+
+	source := "| 项目 | 内容 |\n|------|------|\n| 名称 | AICE |\n"
+	rendered := ansi.Strip(layoutMarkdown(source, 100).view)
+	maxWidth := 0
+	for line := range strings.Lines(rendered) {
+		trimmed := strings.TrimRight(line, " ")
+		if !strings.Contains(trimmed, "│") && !strings.Contains(trimmed, "┌") &&
+			!strings.Contains(trimmed, "└") && !strings.Contains(trimmed, "├") {
+			continue
+		}
+		maxWidth = max(maxWidth, ansi.StringWidth(trimmed))
+	}
+	if maxWidth == 0 {
+		t.Fatal("no table lines found")
+	}
+	if maxWidth > 40 {
+		t.Errorf("two-column table is %d wide at terminal width 100, want compact (<=40):\n%s", maxWidth, rendered)
+	}
+}

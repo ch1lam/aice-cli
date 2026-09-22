@@ -7,6 +7,7 @@ import (
 	glamouransi "charm.land/glamour/v2/ansi"
 	"charm.land/lipgloss/v2"
 	"charm.land/lipgloss/v2/table"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/yuin/goldmark/ast"
 	astext "github.com/yuin/goldmark/extension/ast"
 	"github.com/yuin/goldmark/text"
@@ -131,8 +132,19 @@ func renderBoxTable(tbl *astext.Table, source []byte, width int, styles glamoura
 		rows[i] = padBoxRow(rows[i], columns)
 	}
 
+	t := buildBoxTable(header, rows, tbl.Alignments, styles)
+	out := t.String()
+	// Compact by default: keep the natural content width and only shrink
+	// to the available width when the table would overflow.
+	if boxDisplayWidth(out) > width {
+		t.Width(max(width, columns*4+1))
+		out = t.String()
+	}
+	return out
+}
+
+func buildBoxTable(header []string, rows [][]string, alignments []astext.Alignment, styles glamouransi.StyleConfig) *table.Table {
 	t := table.New().
-		Width(max(width, columns*4+1)).
 		Wrap(true).
 		Border(lipgloss.NormalBorder()).
 		BorderTop(true).
@@ -143,7 +155,7 @@ func renderBoxTable(tbl *astext.Table, source []byte, width int, styles glamoura
 		BorderColumn(true).
 		BorderRow(true).
 		BorderStyle(lipgloss.NewStyle().Foreground(lipgloss.Color(separatorHex))).
-		StyleFunc(boxTableStyleFunc(tbl.Alignments))
+		StyleFunc(boxTableStyleFunc(alignments))
 	if styles.Document.BackgroundColor != nil {
 		t.BaseStyle(lipgloss.NewStyle().Background(lipgloss.Color(*styles.Document.BackgroundColor)))
 	}
@@ -151,7 +163,15 @@ func renderBoxTable(tbl *astext.Table, source []byte, width int, styles glamoura
 	for _, row := range rows {
 		t.Row(row...)
 	}
-	return t.String()
+	return t
+}
+
+func boxDisplayWidth(out string) int {
+	width := 0
+	for line := range strings.SplitSeq(out, "\n") {
+		width = max(width, ansi.StringWidth(ansi.Strip(line)))
+	}
+	return width
 }
 
 func renderBoxRowCells(row ast.Node, source []byte, helper *glamouransi.ANSIRenderer, cellContext glamouransi.RenderContext, tableStyle glamouransi.StylePrimitive) []string {
