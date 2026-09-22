@@ -21,21 +21,26 @@ type transcriptSelection struct {
 	focus          transcriptPosition
 	viewportOffset int
 	viewportView   string
-	active         bool
-	moved          bool
-	fold           foldHit
-	code           codeHit
+	// rows freezes the visible geometry at press time so a drag copies the
+	// same rows it highlights even if streaming reflows the viewport.
+	rows   []transcriptRow
+	active bool
+	moved  bool
+	fold   foldHit
+	code   codeHit
 }
 
 func (s *transcriptSelection) begin(
 	position transcriptPosition,
 	viewportOffset int,
 	viewportView string,
+	rows []transcriptRow,
 ) {
 	s.anchor = position
 	s.focus = position
 	s.viewportOffset = viewportOffset
 	s.viewportView = viewportView
+	s.rows = rows
 	s.active = true
 	s.moved = false
 }
@@ -102,7 +107,7 @@ func (m model) handleTranscriptMouseClick(
 		return m, nil, false
 	}
 
-	m.selection.begin(position, viewportOffset, m.viewport.View())
+	m.selection.begin(position, viewportOffset, m.viewport.View(), m.viewport.visibleRows())
 	m.selection.fold = m.foldHitAt(message.Mouse())
 	m.selection.code = m.codeHitAt(message.Mouse())
 	return m, nil, true
@@ -237,6 +242,15 @@ func highlightTranscriptSelection(
 		if !inRange {
 			continue
 		}
+		// Line numbers are display-only. Highlight only the source content
+		// so the gutter never looks copyable.
+		if _, _, contentStart, contentEnd, ok := codeSourceRange(selection.rowSnapshot(row, viewportOffset)); ok {
+			columnStart = max(columnStart, contentStart)
+			columnEnd = min(columnEnd, contentEnd)
+			if columnEnd <= columnStart {
+				continue
+			}
+		}
 		lines[index] = lipgloss.StyleRanges(
 			line,
 			lipgloss.NewRange(
@@ -247,6 +261,46 @@ func highlightTranscriptSelection(
 		)
 	}
 	return strings.Join(lines, "\n")
+}
+
+// codeSourceRange maps a frozen viewport row to the copyable source content
+// it displays. Panel padding, the header and the line-number gutter are not
+// source, so they report ok=false or an intersectable content interval.
+func codeSourceRange(snapshotRow *transcriptRow) (*codeBlockPlacement, int, int, int, bool) {
+	if snapshotRow == nil || snapshotRow.code.placement == nil {
+		return nil, 0, 0, 0, false
+	}
+	placement := snapshotRow.code.placement
+	layout := placement.layout
+	if snapshotRow.code.row < 0 || snapshotRow.code.row >= len(layout.rows) {
+		return nil, 0, 0, 0, false
+	}
+	sourceLine := layout.rows[snapshotRow.code.row].sourceLine
+	if sourceLine < 0 || sourceLine >= len(layout.block.lines) {
+		return nil, 0, 0, 0, false
+	}
+	contentStart := placement.column + layout.contentColumn
+	contentEnd := placement.column + layout.width - 2
+	if contentEnd <= contentStart {
+		return nil, 0, 0, 0, false
+	}
+	return placement, sourceLine, contentStart, contentEnd, true
+}
+
+func (s transcriptSelection) rowSnapshot(row, viewportOffset int) *transcriptRow {
+	index := row - viewportOffset
+	if index < 0 || index >= len(s.rows) {
+		return nil
+	}
+	return &s.rows[index]
+}
+
+func codeSourceLiteral(placement *codeBlockPlacement, sourceLine int) string {
+	literal := placement.layout.block.lines[sourceLine]
+	if stripped, terminated := strings.CutSuffix(literal, "\n"); terminated {
+		literal = strings.TrimSuffix(stripped, "\r")
+	}
+	return literal
 }
 
 func selectedTranscriptText(
@@ -266,23 +320,115 @@ func selectedTranscriptText(
 		return ""
 	}
 
-	selectedLines := make([]string, 0, end.row-start.row+1)
+	type codePick struct {
+		placement       *codeBlockPlacement
+		sourceLine      int
+		line            string
+		columnStart     int
+		columnEnd       int
+		contentStart    int
+		contentEnd      int
+		full            bool
+		pickedStart     int
+		pickedEnd       int
+		totalVisualRows int
+	}
+	// Collect per-viewport-row picks so wrapped continuations of one source
+	// line can be joined without inserting fake newlines or line numbers.
+	picks := make([]any, 0, end.row-start.row+1)
 	for row := start.row; row <= end.row; row++ {
 		line := lines[row-viewportOffset]
-		columnStart, columnEnd, inRange := selectedLineRange(
-			start,
-			end,
-			row,
-			ansi.StringWidth(line),
-		)
+		lineWidth := ansi.StringWidth(line)
+		columnStart, columnEnd, inRange := selectedLineRange(start, end, row, lineWidth)
 		if !inRange {
-			selectedLines = append(selectedLines, "")
+			picks = append(picks, "")
 			continue
 		}
-		part := ansi.Strip(ansi.Cut(line, columnStart, columnEnd))
-		selectedLines = append(selectedLines, strings.TrimRight(part, " "))
+		placement, sourceLine, contentStart, contentEnd, ok := codeSourceRange(selection.rowSnapshot(row, viewportOffset))
+		if !ok {
+			part := ansi.Strip(ansi.Cut(line, columnStart, columnEnd))
+			picks = append(picks, strings.TrimRight(part, " "))
+			continue
+		}
+		contentStart = max(contentStart, 0)
+		contentEnd = min(contentEnd, lineWidth)
+		pickedStart, pickedEnd := max(columnStart, contentStart), min(columnEnd, contentEnd)
+		if pickedEnd <= pickedStart {
+			// Gutter or panel padding only: never copy line numbers.
+			picks = append(picks, codePick{placement: placement, sourceLine: sourceLine, full: false, pickedStart: -1})
+			continue
+		}
+		full := columnStart <= contentStart && columnEnd >= contentEnd
+		total := 0
+		for _, r := range placement.layout.rows {
+			if r.sourceLine == sourceLine {
+				total++
+			}
+		}
+		picks = append(picks, codePick{
+			placement: placement, sourceLine: sourceLine, line: line,
+			columnStart: columnStart, columnEnd: columnEnd,
+			contentStart: contentStart, contentEnd: contentEnd,
+			full: full, pickedStart: pickedStart, pickedEnd: pickedEnd,
+			totalVisualRows: total,
+		})
 	}
-	return strings.TrimRight(strings.Join(selectedLines, "\n"), " \n")
+
+	selectedLines := make([]string, 0, len(picks))
+	for i := 0; i < len(picks); {
+		pick, isCode := picks[i].(codePick)
+		if !isCode {
+			selectedLines = append(selectedLines, picks[i].(string))
+			i++
+			continue
+		}
+		// Group consecutive visual rows of the same source line.
+		j := i + 1
+		for j < len(picks) {
+			next, ok := picks[j].(codePick)
+			if !ok || next.placement != pick.placement || next.sourceLine != pick.sourceLine {
+				break
+			}
+			j++
+		}
+		group := make([]codePick, 0, j-i)
+		for _, p := range picks[i:j] {
+			// Gutter-only visual rows contribute nothing to the group.
+			if cp, ok := p.(codePick); ok && cp.pickedStart >= 0 {
+				group = append(group, cp)
+			}
+		}
+		if len(group) == 0 {
+			selectedLines = append(selectedLines, "")
+			i = j
+			continue
+		}
+		allFull := len(group) == group[0].totalVisualRows
+		for _, g := range group {
+			if !g.full {
+				allFull = false
+				break
+			}
+		}
+		if allFull {
+			// Whole source line: copy literal so tabs, trailing spaces
+			// and wrapping never leak into the paste.
+			selectedLines = append(selectedLines, codeSourceLiteral(pick.placement, pick.sourceLine))
+		} else {
+			var joined strings.Builder
+			for _, g := range group {
+				joined.WriteString(ansi.Strip(ansi.Cut(g.line, g.pickedStart, g.pickedEnd)))
+			}
+			selectedLines = append(selectedLines, strings.TrimRight(joined.String(), " "))
+		}
+		i = j
+	}
+	// Drop trailing blank rows (gutter-only drags, panel padding) without
+	// stripping intentional trailing spaces from a final code line.
+	for len(selectedLines) > 0 && selectedLines[len(selectedLines)-1] == "" {
+		selectedLines = selectedLines[:len(selectedLines)-1]
+	}
+	return strings.Join(selectedLines, "\n")
 }
 
 func selectedLineRange(

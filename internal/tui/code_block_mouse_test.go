@@ -297,3 +297,105 @@ func TestCodeHoverDistinguishesIdenticalBlocks(t *testing.T) {
 		t.Fatalf("changed %d rows, want only the second block's source row", changed)
 	}
 }
+
+func codeDragSelection(view string, rows []transcriptRow, offset, startRow, startColumn, endRow, endColumn int) transcriptSelection {
+	return transcriptSelection{
+		anchor:         transcriptPosition{row: offset + startRow, column: startColumn},
+		focus:          transcriptPosition{row: offset + endRow, column: endColumn},
+		viewportOffset: offset,
+		viewportView:   view,
+		rows:           rows,
+		moved:          true,
+	}
+}
+
+func codeSourceRows(rows []transcriptRow, source string) (int, int) {
+	start, end := -1, -1
+	for i, row := range rows {
+		if p := row.code.placement; p != nil && p.layout.block.source == source {
+			if l := p.layout.rows[row.code.row].sourceLine; l >= 0 {
+				if start < 0 {
+					start = i
+				}
+				end = i
+			}
+		}
+	}
+	return start, end
+}
+
+func TestCodeDragCopiesSourceWithoutLineNumbers(t *testing.T) {
+	m := codeTestModel(t, 60)
+	source := "first\nsecond\nthird\n"
+	m.entries = []transcriptEntry{{kind: entryAssistant, text: "```text\n" + source + "```", complete: true}}
+	m.refreshViewport(true)
+	m.viewport.GotoTop()
+	view := m.viewport.View()
+	rows := m.viewport.visibleRows()
+	offset := m.viewport.YOffset()
+	start, end := codeSourceRows(rows, source)
+	if start < 0 {
+		t.Fatal("no code source rows")
+	}
+	// Drag from the gutter across the full width: numbers must not leak.
+	selection := codeDragSelection(view, rows, offset, start, 0, end, 1000)
+	if got, want := selectedTranscriptText(view, selection, offset), strings.TrimSuffix(source, "\n"); got != want {
+		t.Fatalf("drag copy = %q, want %q", got, want)
+	}
+	for _, line := range strings.Split(selectedTranscriptText(view, selection, offset), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "1 ") || strings.HasPrefix(trimmed, "2 ") || strings.HasPrefix(trimmed, "3 ") {
+			t.Fatalf("gutter leaked into %q", line)
+		}
+	}
+	// Gutter-only on one visual row copies nothing.
+	gutter := codeDragSelection(view, rows, offset, start, 0, start, 1)
+	if got := selectedTranscriptText(view, gutter, offset); strings.TrimSpace(got) != "" {
+		t.Fatalf("gutter-only drag copied %q", got)
+	}
+}
+
+func TestCodeDragPreservesLiteralAndWrappedLines(t *testing.T) {
+	m := codeTestModel(t, 40)
+	source := "\thello  \nsecond line\n"
+	m.entries = []transcriptEntry{{kind: entryAssistant, text: "```text\n" + source + "```", complete: true}}
+	m.refreshViewport(true)
+	m.viewport.GotoTop()
+	view := m.viewport.View()
+	rows := m.viewport.visibleRows()
+	offset := m.viewport.YOffset()
+	var start, end = -1, -1
+	for i, row := range rows {
+		if p := row.code.placement; p != nil && p.layout.block.source == source && p.layout.rows[row.code.row].sourceLine == 0 {
+			if start < 0 {
+				start = i
+			}
+			end = i
+		}
+	}
+	if start < 0 {
+		t.Fatal("no rows for source line 0")
+	}
+	selection := codeDragSelection(view, rows, offset, start, 0, end, 1000)
+	if got := selectedTranscriptText(view, selection, offset); got != "\thello  " {
+		t.Fatalf("tab drag = %q, want literal with trailing spaces", got)
+	}
+
+	wide := codeTestModel(t, 30)
+	long := "prefix-" + strings.Repeat("x", 100) + "-suffix"
+	wideSource := long + "\nnext\n"
+	wide.entries = []transcriptEntry{{kind: entryAssistant, text: "```text\n" + wideSource + "```", complete: true}}
+	wide.refreshViewport(true)
+	wide.viewport.GotoTop()
+	wideView := wide.viewport.View()
+	wideRows := wide.viewport.visibleRows()
+	wideOffset := wide.viewport.YOffset()
+	wideStart, wideEnd := codeSourceRows(wideRows, wideSource)
+	if wideStart < 0 {
+		t.Fatal("no wrapped code rows")
+	}
+	wideSelection := codeDragSelection(wideView, wideRows, wideOffset, wideStart, 0, wideEnd, 1000)
+	if got, want := selectedTranscriptText(wideView, wideSelection, wideOffset), strings.TrimSuffix(wideSource, "\n"); got != want {
+		t.Fatalf("wrapped drag = %q, want %q", got, want)
+	}
+}
