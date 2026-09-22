@@ -214,7 +214,7 @@ func (s webState) statusLines() []string {
 	}
 	fetch := "Web fetch: " + onOff(s.settings.FetchEnabled)
 	if s.settings.FetchEnabled {
-		fetch += fmt.Sprintf(" (direct connections, no authentication, HTML/text/Markdown only, %s timeout)", s.settings.FetchTimeout)
+		fetch += fmt.Sprintf(" (standard proxy environment, no authentication, HTML/text/Markdown only, %s timeout)", s.settings.FetchTimeout)
 	}
 	if s.fetchErr != nil {
 		fetch += " — unavailable: " + s.fetchErr.Error()

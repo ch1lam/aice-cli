@@ -125,7 +125,7 @@ model context remains independently derived through compaction checkpoints.
 | `internal/evidence` | Leaf source/evidence contract retained as tool-result metadata; deterministic source IDs, validation, cloning |
 | `internal/web` | Provider-neutral search/fetch requests and results, classified errors, domain policy, pure source resolver, deterministic model rendering |
 | `internal/web/exa` | Exa Search REST adapter: wire types, bounded HTTP, error classification, normalization into evidence |
-| `internal/web/httpfetch` | Hardened page fetcher: URL policy, public-address validation with pinned dialing, bounded redirects and bodies, HTML-to-Markdown extraction |
+| `internal/web/httpfetch` | Page fetcher: URL policy, IP-literal checks, standard-transport proxy/DNS/dialing, bounded redirects and bodies, HTML-to-Markdown extraction |
 | `internal/guard` | Intrinsic execution gate: file policies, permission gate, pathAccess mode (`allow`/`ask`/`block`), network scopes for web tools, check Decision (`allow`/`ask`/`deny`) |
 | `internal/session` | Versioned JSONL replay, tree navigation, compaction context |
 | `internal/trust` | Protected-resource discovery and global Trust decisions |

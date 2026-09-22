@@ -1,15 +1,15 @@
 package httpfetch
 
 import (
+	"bytes"
 	"compress/gzip"
 	"context"
-	"crypto/x509"
+	"crypto/tls"
 	"errors"
 	"io"
-	"net"
 	"net/http"
-	"net/http/httptest"
-	"net/netip"
+	"net/url"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -17,68 +17,110 @@ import (
 
 	"github.com/ch1lam/aice-cli/internal/evidence"
 	"github.com/ch1lam/aice-cli/internal/web"
+	"golang.org/x/net/http/httpproxy"
 )
 
-// harness routes public-looking hostnames to a local test server without real
-// DNS or network: the resolver answers a public address and the dialer connects
-// to the server instead. Address validation still runs on the resolver answer.
+// roundTripFunc is a fake HTTP transport. Tests answer public-looking
+// hostnames in memory without real DNS or network; literal-target checks
+// still run before the transport is used.
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
+	return f(request)
+}
+
 type harness struct {
-	server *httptest.Server
-	dials  atomic.Int32
-	hosts  map[string][]netip.Addr
+	calls atomic.Int32
+	stub  func(request *http.Request) (*http.Response, error)
 }
 
-func newHarness(server *httptest.Server) *harness {
-	return &harness{server: server, hosts: map[string][]netip.Addr{
-		"example.test":       {netip.MustParseAddr("93.184.216.34")},
-		"other.test":         {netip.MustParseAddr("93.184.216.35")},
-		"example.com":        {netip.MustParseAddr("93.184.216.34")},
-		"mixed.test":         {netip.MustParseAddr("93.184.216.34"), netip.MustParseAddr("10.0.0.5")},
-		"private.test":       {netip.MustParseAddr("192.168.1.1")},
-		"loopback.test":      {netip.MustParseAddr("127.0.0.1")},
-		"mapped.test":        {netip.MustParseAddr("::ffff:10.1.2.3")},
-		"cgnat.test":         {netip.MustParseAddr("100.64.0.1")},
-		"linklocal6.test":    {netip.MustParseAddr("fe80::1")},
-		"uniquelocal6.test":  {netip.MustParseAddr("fd00::1")},
-		"multicast.test":     {netip.MustParseAddr("224.0.0.1")},
-		"metadata.test":      {netip.MustParseAddr("169.254.169.254")},
-		"nat64.test":         {netip.MustParseAddr("64:ff9b::a00:1")},
-		"unspecified.test":   {netip.MustParseAddr("0.0.0.0")},
-		"documentation.test": {netip.MustParseAddr("2001:db8::1")},
-	}}
-}
-
-func (h *harness) resolve(_ context.Context, host string) ([]netip.Addr, error) {
-	addrs, ok := h.hosts[host]
-	if !ok {
-		return nil, errors.New("no such host")
-	}
-	return addrs, nil
-}
-
-func (h *harness) dial(ctx context.Context, network, address string) (net.Conn, error) {
-	h.dials.Add(1)
-	addr, err := netip.ParseAddrPort(address)
-	if err != nil {
-		return nil, err
-	}
-	if err := checkPublicAddress(addr.Addr()); err != nil {
-		return nil, errors.New("dialer received a non-public address: " + err.Error())
-	}
-	return (&net.Dialer{}).DialContext(ctx, network, h.server.Listener.Addr().String())
+func (h *harness) transport() http.RoundTripper {
+	return roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		h.calls.Add(1)
+		return h.stub(request)
+	})
 }
 
 func (h *harness) fetcher(t *testing.T, mutate func(*Config)) *Fetcher {
 	t.Helper()
-	cfg := Config{Resolver: h.resolve, Dialer: h.dial, Timeout: 5 * time.Second, Now: func() time.Time { return time.UnixMilli(1700000000000) }}
+	cfg := Config{
+		Client:  &http.Client{Transport: h.transport()},
+		Timeout: 5 * time.Second,
+		Now:     func() time.Time { return time.UnixMilli(1700000000000) },
+	}
 	if mutate != nil {
 		mutate(&cfg)
+		// The mutation may replace the client; make sure the fake transport
+		// and the redirect policy still apply.
+		if cfg.Client == nil {
+			cfg.Client = &http.Client{Transport: h.transport()}
+		} else if _, ok := cfg.Client.Transport.(roundTripFunc); !ok && cfg.Client.Transport != h.transport() {
+			// A test-provided client without our stub keeps its own
+			// transport; request counting below does not apply to it.
+		}
 	}
 	fetcher, err := New(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return fetcher
+}
+
+func textResponse(request *http.Request, contentType, body string) *http.Response {
+	header := make(http.Header)
+	if contentType != "" {
+		header.Set("Content-Type", contentType)
+	}
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     header,
+		Body:       io.NopCloser(strings.NewReader(body)),
+		Request:    request,
+	}
+}
+
+func redirectResponse(request *http.Request, location string) *http.Response {
+	return &http.Response{
+		StatusCode: http.StatusFound,
+		Header:     http.Header{"Location": []string{location}},
+		Body:       io.NopCloser(strings.NewReader("")),
+		Request:    request,
+	}
+}
+
+func gzipBytes(t *testing.T, raw []byte) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	writer := gzip.NewWriter(&buf)
+	if _, err := writer.Write(raw); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+// slowBody blocks until the request context ends, simulating a stalled body.
+type slowBody struct {
+	ctx context.Context
+}
+
+func (b slowBody) Read([]byte) (int, error) {
+	<-b.ctx.Done()
+	return 0, b.ctx.Err()
+}
+
+func (b slowBody) Close() error { return nil }
+
+// endlessReader yields an unbounded stream so the byte limit stops the fetch.
+type endlessReader struct{}
+
+func (endlessReader) Read(p []byte) (int, error) {
+	for i := range p {
+		p[i] = 'c'
+	}
+	return len(p), nil
 }
 
 const samplePage = `<!DOCTYPE html><html><head><meta charset="utf-8"><title> Sample  Page </title>
@@ -100,14 +142,11 @@ func TestFetchHTMLExtractsMarkdown(t *testing.T) {
 	t.Parallel()
 	var requests atomic.Int32
 	var gotHost, gotAgent, gotEncoding string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	h := &harness{stub: func(request *http.Request) (*http.Response, error) {
 		requests.Add(1)
-		gotHost, gotAgent, gotEncoding = r.Host, r.Header.Get("User-Agent"), r.Header.Get("Accept-Encoding")
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_, _ = io.WriteString(w, samplePage)
-	}))
-	defer server.Close()
-	h := newHarness(server)
+		gotHost, gotAgent, gotEncoding = request.URL.Host, request.Header.Get("User-Agent"), request.Header.Get("Accept-Encoding")
+		return textResponse(request, "text/html; charset=utf-8", samplePage), nil
+	}}
 	response, err := h.fetcher(t, nil).Fetch(t.Context(), web.FetchRequest{URL: "HTTP://Example.test/docs/page?x=1"})
 	if err != nil {
 		t.Fatal(err)
@@ -179,29 +218,24 @@ func TestFetchPlainMarkdownAndFallbacks(t *testing.T) {
 		"/rate":     {"text/html", "slow"},
 		"/server":   {"text/html", "boom"},
 	}
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		page := pages[r.URL.Path]
-		if page.contentType != "" {
-			w.Header().Set("Content-Type", page.contentType)
-		} else {
-			w.Header()["Content-Type"] = nil // suppress net/http's automatic sniffing
-		}
-		switch r.URL.Path {
+	h := &harness{stub: func(request *http.Request) (*http.Response, error) {
+		page := pages[request.URL.Path]
+		response := textResponse(request, page.contentType, page.body)
+		switch request.URL.Path {
 		case "/brotli":
-			w.Header().Set("Content-Encoding", "br")
+			response.Header.Set("Content-Encoding", "br")
 		case "/notfound":
-			w.WriteHeader(404)
+			response.StatusCode = 404
 		case "/auth":
-			w.WriteHeader(401)
+			response.StatusCode = 401
 		case "/rate":
-			w.WriteHeader(429)
+			response.StatusCode = 429
 		case "/server":
-			w.WriteHeader(503)
+			response.StatusCode = 503
 		}
-		_, _ = io.WriteString(w, page.body)
-	}))
-	defer server.Close()
-	fetcher := newHarness(server).fetcher(t, nil)
+		return response, nil
+	}}
+	fetcher := h.fetcher(t, nil)
 	cases := []struct {
 		path, wantText, wantMethod, wantMedia string
 		wantCode                              web.ErrorCode
@@ -257,18 +291,19 @@ func TestFetchPlainMarkdownAndFallbacks(t *testing.T) {
 	}
 }
 
-func TestFetchRefusesBlockedTargetsWithoutDialing(t *testing.T) {
+func TestFetchRefusesBlockedTargetsWithoutRequest(t *testing.T) {
 	t.Parallel()
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = io.WriteString(w, "should not be reached") }))
-	defer server.Close()
-	h := newHarness(server)
+	h := &harness{stub: func(request *http.Request) (*http.Response, error) {
+		return textResponse(request, "text/plain", "should not be reached"), nil
+	}}
 	fetcher := h.fetcher(t, nil)
 	cases := []struct {
 		url      string
 		wantCode web.ErrorCode
 	}{
 		{"http://127.0.0.1/", web.CodeBlockedTarget},
-		{"http://localhost/", web.CodeUnavailable}, // unknown to the test resolver; never dialed
+		{"http://localhost/", web.CodeBlockedTarget},
+		{"http://LOCALHOST/", web.CodeBlockedTarget},
 		{"http://10.0.0.1/", web.CodeBlockedTarget},
 		{"http://[::1]/", web.CodeBlockedTarget},
 		{"http://[::ffff:127.0.0.1]/", web.CodeBlockedTarget},
@@ -281,18 +316,6 @@ func TestFetchRefusesBlockedTargetsWithoutDialing(t *testing.T) {
 		{"http://192.0.2.1/", web.CodeBlockedTarget},
 		{"http://[fd00::1]/", web.CodeBlockedTarget},
 		{"http://[64:ff9b::a00:1]/", web.CodeBlockedTarget},
-		{"http://private.test/", web.CodeBlockedTarget},
-		{"http://loopback.test/", web.CodeBlockedTarget},
-		{"http://mapped.test/", web.CodeBlockedTarget},
-		{"http://cgnat.test/", web.CodeBlockedTarget},
-		{"http://linklocal6.test/", web.CodeBlockedTarget},
-		{"http://uniquelocal6.test/", web.CodeBlockedTarget},
-		{"http://multicast.test/", web.CodeBlockedTarget},
-		{"http://metadata.test/", web.CodeBlockedTarget},
-		{"http://nat64.test/", web.CodeBlockedTarget},
-		{"http://unspecified.test/", web.CodeBlockedTarget},
-		{"http://documentation.test/", web.CodeBlockedTarget},
-		{"http://mixed.test/", web.CodeBlockedTarget},
 		{"http://example.test:8080/", web.CodeBlockedTarget},
 		{"https://example.test:80/", web.CodeBlockedTarget},
 		{"ftp://example.test/", web.CodeInvalidArgument},
@@ -313,43 +336,44 @@ func TestFetchRefusesBlockedTargetsWithoutDialing(t *testing.T) {
 			}
 		})
 	}
-	if h.dials.Load() != 0 {
-		t.Fatalf("blocked targets were dialed %d times", h.dials.Load())
+	if h.calls.Load() != 0 {
+		t.Fatalf("blocked targets were requested %d times", h.calls.Load())
 	}
 }
 
 func TestFetchRedirectPolicy(t *testing.T) {
 	t.Parallel()
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/same":
-			http.Redirect(w, r, "/final", http.StatusFound)
-		case "/relative":
-			w.Header().Set("Location", "sub/final")
-			w.WriteHeader(http.StatusMovedPermanently)
-		case "/sub/final", "/final":
-			w.Header().Set("Content-Type", "text/plain")
-			_, _ = io.WriteString(w, "arrived at "+r.URL.Path)
-		case "/cross":
-			http.Redirect(w, r, "http://other.test/final", http.StatusFound)
-		case "/private":
-			http.Redirect(w, r, "http://private.test/final", http.StatusFound)
-		case "/literal":
-			http.Redirect(w, r, "http://127.0.0.1:80/final", http.StatusFound)
-		case "/port":
-			http.Redirect(w, r, "http://example.test:8080/final", http.StatusFound)
-		case "/loop":
-			http.Redirect(w, r, "/loop", http.StatusFound)
-		case "/nolocation":
-			w.WriteHeader(http.StatusFound)
-		case "/scheme":
-			http.Redirect(w, r, "file:///etc/passwd", http.StatusFound)
-		default:
-			w.WriteHeader(404)
+	h := &harness{stub: func(request *http.Request) (*http.Response, error) {
+		if request.URL.Host == "other.test" && request.URL.Path == "/final" {
+			return textResponse(request, "text/plain", "arrived at /final"), nil
 		}
-	}))
-	defer server.Close()
-	h := newHarness(server)
+		switch request.URL.Path {
+		case "/same":
+			return redirectResponse(request, "/final"), nil
+		case "/relative":
+			response := redirectResponse(request, "sub/final")
+			response.StatusCode = http.StatusMovedPermanently
+			return response, nil
+		case "/sub/final", "/final":
+			return textResponse(request, "text/plain", "arrived at "+request.URL.Path), nil
+		case "/cross":
+			return redirectResponse(request, "http://other.test/final"), nil
+		case "/literal":
+			return redirectResponse(request, "http://127.0.0.1/final"), nil
+		case "/private-literal":
+			return redirectResponse(request, "http://10.0.0.1/final"), nil
+		case "/port":
+			return redirectResponse(request, "http://example.test:8080/final"), nil
+		case "/loop":
+			return redirectResponse(request, "/loop"), nil
+		case "/nolocation":
+			return &http.Response{StatusCode: http.StatusFound, Header: make(http.Header), Body: io.NopCloser(strings.NewReader("")), Request: request}, nil
+		case "/scheme":
+			return redirectResponse(request, "file:///etc/passwd"), nil
+		default:
+			return &http.Response{StatusCode: 404, Header: make(http.Header), Body: io.NopCloser(strings.NewReader("missing")), Request: request}, nil
+		}
+	}}
 	fetcher := h.fetcher(t, nil)
 
 	response, err := fetcher.Fetch(t.Context(), web.FetchRequest{URL: "http://example.test/same"})
@@ -364,7 +388,7 @@ func TestFetchRedirectPolicy(t *testing.T) {
 		t.Fatalf("relative redirect: %+v %v", response, err)
 	}
 	for path, want := range map[string]web.ErrorCode{
-		"/cross": web.CodeRedirectRefused, "/private": web.CodeRedirectRefused, "/literal": web.CodeRedirectRefused,
+		"/cross": web.CodeRedirectRefused, "/literal": web.CodeRedirectRefused, "/private-literal": web.CodeRedirectRefused,
 		"/port": web.CodeRedirectRefused, "/loop": web.CodeRedirectRefused, "/nolocation": web.CodeInvalidResponse, "/scheme": web.CodeRedirectRefused,
 	} {
 		_, err := fetcher.Fetch(t.Context(), web.FetchRequest{URL: "http://example.test" + path})
@@ -375,88 +399,170 @@ func TestFetchRedirectPolicy(t *testing.T) {
 			t.Fatalf("cross-origin refusal must name the target: %v", err)
 		}
 	}
-	// Allowing cross-origin redirects still validates the target address.
+	// Allowing cross-origin redirects still applies the literal-target check.
 	permissive := h.fetcher(t, func(c *Config) { c.AllowCrossOriginRedirects = true })
 	if response, err := permissive.Fetch(t.Context(), web.FetchRequest{URL: "http://example.test/cross"}); err != nil || response.FinalURL != "http://other.test/final" {
 		t.Fatalf("permissive cross-origin: %+v %v", response, err)
 	}
-	if _, err := permissive.Fetch(t.Context(), web.FetchRequest{URL: "http://example.test/private"}); web.CodeOf(err) != web.CodeBlockedTarget {
-		t.Fatalf("private redirect accepted under permissive policy: %v", err)
+	if _, err := permissive.Fetch(t.Context(), web.FetchRequest{URL: "http://example.test/private-literal"}); web.CodeOf(err) != web.CodeBlockedTarget {
+		t.Fatalf("literal redirect accepted under permissive policy: %v", err)
 	}
 }
 
-func TestFetchHTTPSDowngradeAndCertificateHostname(t *testing.T) {
+func TestFetchHTTPSDowngradeRefused(t *testing.T) {
 	t.Parallel()
-	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/downgrade" {
-			http.Redirect(w, r, "http://example.com/final", http.StatusFound)
-			return
+	h := &harness{stub: func(request *http.Request) (*http.Response, error) {
+		if request.URL.Path == "/downgrade" {
+			return redirectResponse(request, "http://example.test/final"), nil
 		}
-		w.Header().Set("Content-Type", "text/plain")
-		_, _ = io.WriteString(w, "secure "+r.Host)
-	}))
-	defer server.Close()
-	roots := x509.NewCertPool()
-	roots.AddCert(server.Certificate())
-	h := newHarness(server)
-	fetcher := h.fetcher(t, func(c *Config) { c.RootCAs = roots })
-	// The httptest certificate is valid for example.com; dialing the pinned
-	// address still verifies that hostname.
-	response, err := fetcher.Fetch(t.Context(), web.FetchRequest{URL: "https://example.com/page"})
-	if err != nil || response.Evidence.Items[0].Text != "secure example.com" {
-		t.Fatalf("tls fetch: %+v %v", response, err)
+		return textResponse(request, "text/plain", "secure "+request.URL.Host), nil
+	}}
+	fetcher := h.fetcher(t, nil)
+	response, err := fetcher.Fetch(t.Context(), web.FetchRequest{URL: "https://example.test/page"})
+	if err != nil || response.Evidence.Items[0].Text != "secure example.test" {
+		t.Fatalf("https fetch: %+v %v", response, err)
 	}
-	_, err = fetcher.Fetch(t.Context(), web.FetchRequest{URL: "https://other.test/page"})
-	var certErr x509.HostnameError
-	if err == nil || !errors.As(err, &certErr) {
-		t.Fatalf("certificate for another hostname accepted: %v", err)
-	}
-	if _, err := fetcher.Fetch(t.Context(), web.FetchRequest{URL: "https://example.com/downgrade"}); web.CodeOf(err) != web.CodeRedirectRefused || !strings.Contains(err.Error(), "https to http") {
+	if _, err := fetcher.Fetch(t.Context(), web.FetchRequest{URL: "https://example.test/downgrade"}); web.CodeOf(err) != web.CodeRedirectRefused || !strings.Contains(err.Error(), "https to http") {
 		t.Fatalf("downgrade accepted: %v", err)
+	}
+}
+
+func TestFetchDefaultTransportFollowsProxyEnvironment(t *testing.T) {
+	// net/http caches ProxyFromEnvironment after its first use in the
+	// process, so env-sensitive assertions go through
+	// golang.org/x/net/http/httpproxy, which implements the same standard
+	// selection without the cache. The transport itself must wire the
+	// standard function instead of custom logic.
+	transport := defaultTransport(DefaultTimeout, nil)
+	if transport.Proxy == nil {
+		t.Fatal("default transport has no proxy function")
+	}
+	if reflect.ValueOf(transport.Proxy).Pointer() != reflect.ValueOf(http.ProxyFromEnvironment).Pointer() {
+		t.Fatal("default transport must use http.ProxyFromEnvironment, not custom proxy logic")
+	}
+	proxyURL, err := url.Parse("http://proxy.test:8080")
+	if err != nil {
+		t.Fatal(err)
+	}
+	request, err := http.NewRequest(http.MethodGet, "http://example.test/", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HTTP_PROXY", proxyURL.String())
+	t.Setenv("http_proxy", proxyURL.String())
+	t.Setenv("HTTPS_PROXY", proxyURL.String())
+	t.Setenv("https_proxy", proxyURL.String())
+	t.Setenv("ALL_PROXY", "")
+	t.Setenv("all_proxy", "")
+	t.Setenv("NO_PROXY", "")
+	t.Setenv("no_proxy", "")
+	got, err := httpproxy.FromEnvironment().ProxyFunc()(request.URL)
+	if err != nil || got == nil || got.String() != proxyURL.String() {
+		t.Fatalf("proxy = %v, %v, want %s", got, err, proxyURL)
+	}
+	t.Setenv("NO_PROXY", "example.test")
+	t.Setenv("no_proxy", "example.test")
+	got, err = httpproxy.FromEnvironment().ProxyFunc()(request.URL)
+	if err != nil || got != nil {
+		t.Fatalf("NO_PROXY bypass = %v, %v, want nil", got, err)
+	}
+}
+
+func TestFetchDefaultClientLeavesGlobalTransportAlone(t *testing.T) {
+	t.Parallel()
+	base, ok := http.DefaultTransport.(*http.Transport)
+	if !ok {
+		t.Skip("http.DefaultTransport is not a *http.Transport")
+	}
+	beforeCompression, beforeHeaders := base.DisableCompression, base.MaxResponseHeaderBytes
+	fetcher, err := New(Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fetcher.client.Transport == base {
+		t.Fatal("fetcher must not reuse the global transport instance")
+	}
+	transport, ok := fetcher.client.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("transport = %T", fetcher.client.Transport)
+	}
+	if !transport.DisableCompression {
+		t.Fatal("default client must decompress manually to keep body limits")
+	}
+	if transport.TLSClientConfig == nil || transport.TLSClientConfig.MinVersion != tls.VersionTLS12 || transport.TLSClientConfig.InsecureSkipVerify {
+		t.Fatalf("tls config = %+v", transport.TLSClientConfig)
+	}
+	// Note: Transport.Clone may lazily initialize shared internal state on
+	// the source; only the fetch-specific exported settings must stay
+	// untouched on the global.
+	if base.DisableCompression != beforeCompression || base.MaxResponseHeaderBytes != beforeHeaders {
+		t.Fatal("global http.DefaultTransport was mutated")
+	}
+}
+
+func TestFetchSurfacesTransportErrorsWithoutRetrying(t *testing.T) {
+	t.Parallel()
+	var calls atomic.Int32
+	sentinel := errors.New("proxy connect failed")
+	h := &harness{stub: func(*http.Request) (*http.Response, error) {
+		calls.Add(1)
+		return nil, sentinel
+	}}
+	_, err := h.fetcher(t, nil).Fetch(t.Context(), web.FetchRequest{URL: "http://example.test/"})
+	if !errors.Is(err, sentinel) && web.CodeOf(err) != web.CodeUnavailable {
+		t.Fatalf("err = %v", err)
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("transport calls = %d, want exactly one attempt with no direct fallback", calls.Load())
 	}
 }
 
 func TestFetchBodyLimitsGzipBombAndSlowBody(t *testing.T) {
 	t.Parallel()
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/plain")
-		switch r.URL.Path {
+	h := &harness{stub: func(request *http.Request) (*http.Response, error) {
+		switch request.URL.Path {
 		case "/large":
-			for range 200 {
-				if _, err := io.WriteString(w, strings.Repeat("x", 64*1024)); err != nil {
-					return
-				}
-				w.(http.Flusher).Flush()
-			}
+			return textResponse(request, "text/plain", strings.Repeat("x", 2*1024*1024)), nil
 		case "/bomb":
-			w.Header().Set("Content-Encoding", "gzip")
-			writer := gzip.NewWriter(w)
 			zeros := make([]byte, 1024*1024)
-			for range 20 {
-				_, _ = writer.Write(zeros)
+			compressed := gzipBytes(t, bytes.Repeat(zeros, 20))
+			response := &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"text/plain"}, "Content-Encoding": []string{"gzip"}},
+				Body:       io.NopCloser(bytes.NewReader(compressed)),
+				Request:    request,
 			}
-			_ = writer.Close()
+			return response, nil
 		case "/gzip":
-			w.Header().Set("Content-Encoding", "gzip")
-			writer := gzip.NewWriter(w)
-			_, _ = io.WriteString(writer, "compressed ok")
-			_ = writer.Close()
-		case "/slow":
-			_, _ = io.WriteString(w, "partial")
-			w.(http.Flusher).Flush()
-			<-r.Context().Done()
-		case "/endless":
-			for {
-				if _, err := io.WriteString(w, "chunk\n"); err != nil {
-					return
-				}
-				w.(http.Flusher).Flush()
-				time.Sleep(time.Millisecond)
+			compressed := gzipBytes(t, []byte("compressed ok"))
+			response := &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"text/plain"}, "Content-Encoding": []string{"gzip"}},
+				Body:       io.NopCloser(bytes.NewReader(compressed)),
+				Request:    request,
 			}
+			return response, nil
+		case "/slow":
+			if err := request.Context().Err(); err != nil {
+				return nil, err
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"text/plain"}},
+				Body:       slowBody{ctx: request.Context()},
+				Request:    request,
+			}, nil
+		case "/endless":
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"text/plain"}},
+				Body:       io.NopCloser(endlessReader{}),
+				Request:    request,
+			}, nil
+		default:
+			return textResponse(request, "text/plain", "ok"), nil
 		}
-	}))
-	defer server.Close()
-	h := newHarness(server)
+	}}
 	small := h.fetcher(t, func(c *Config) { c.MaxBodyBytes = 1024 * 1024 })
 	if _, err := small.Fetch(t.Context(), web.FetchRequest{URL: "http://example.test/large"}); web.CodeOf(err) != web.CodeResponseTooLarge {
 		t.Fatalf("large body: %v", err)
@@ -485,42 +591,12 @@ func TestFetchBodyLimitsGzipBombAndSlowBody(t *testing.T) {
 	}
 }
 
-func TestFetchIgnoresProxyEnvironment(t *testing.T) {
-	proxyHits := make(chan struct{}, 1)
-	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		select {
-		case proxyHits <- struct{}{}:
-		default:
-		}
-		w.WriteHeader(502)
-	}))
-	defer proxy.Close()
-	t.Setenv("HTTP_PROXY", proxy.URL)
-	t.Setenv("http_proxy", proxy.URL)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "text/plain")
-		_, _ = io.WriteString(w, "direct")
-	}))
-	defer server.Close()
-	response, err := newHarness(server).fetcher(t, nil).Fetch(t.Context(), web.FetchRequest{URL: "http://example.test/"})
-	if err != nil || response.Evidence.Items[0].Text != "direct" {
-		t.Fatalf("direct fetch: %+v %v", response, err)
-	}
-	select {
-	case <-proxyHits:
-		t.Fatal("fetch used the proxy from the environment")
-	default:
-	}
-}
-
 func TestFetchTruncatesLongDocumentsAndKeepsUTF8(t *testing.T) {
 	t.Parallel()
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		_, _ = io.WriteString(w, strings.Repeat("汉字", 40*1024))
-	}))
-	defer server.Close()
-	response, err := newHarness(server).fetcher(t, nil).Fetch(t.Context(), web.FetchRequest{URL: "http://example.test/"})
+	h := &harness{stub: func(request *http.Request) (*http.Response, error) {
+		return textResponse(request, "text/plain; charset=utf-8", strings.Repeat("汉字", 40*1024)), nil
+	}}
+	response, err := h.fetcher(t, nil).Fetch(t.Context(), web.FetchRequest{URL: "http://example.test/"})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -146,16 +146,24 @@ request. `/btw`, compaction and `/init` remain tool-free.
 ## `web_fetch` limits
 
 `web_fetch` accepts absolute `http`/`https` URLs on the default ports (80/443)
-without userinfo or zone-scoped IPv6 literals. The host is resolved and every
-address is checked before connecting: loopback, private, link-local, CGNAT,
-multicast, unspecified, IPv4-mapped IPv6, NAT64, 6to4 and documentation ranges
-are refused, and a mixed answer is refused as a whole. The validated address is
-pinned for the connection so a second DNS answer cannot redirect it; TLS still
-verifies the URL hostname. Each redirect hop (at most 5) is revalidated.
+without userinfo or zone-scoped IPv6 literals. An explicit `localhost` name or
+a blocked IP literal is refused before any request: loopback, private,
+link-local, CGNAT, multicast, unspecified, IPv4-mapped IPv6, NAT64, 6to4 and
+documentation ranges, including the link-local metadata address. Hostnames
+that are not literals are left to the standard HTTP transport (and the proxy
+side, when one applies) to resolve; AICE performs no DNS pre-resolution and
+pins no addresses. TLS verifies the URL hostname. Each redirect hop (at most
+5) is revalidated under the same URL, origin and literal-target policy, with
+no `https` to `http` downgrade.
 
-Connections are direct: proxy environment variables are ignored, and the
-fetcher shares no cookies, headers or credentials with the model or search
-clients. Raw and decompressed bodies are limited to 5 MiB each; the whole
+Requests use a clone of `http.DefaultTransport`, so the standard proxy
+environment (`HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY` and their lowercase forms)
+applies and `NO_PROXY` bypass works as usual. AICE does not choose a network
+exit, implement `CONNECT`, branch between direct and proxy paths, retry a
+proxy failure over a direct connection, or add proxy settings, menus or
+commands. The fetcher shares no cookies, headers or credentials with the
+model or search clients. Raw and decompressed bodies are limited to 5 MiB
+each; the whole
 fetch, including redirects and body reading, is bounded by `web.fetch.timeout`
 (default 30 s). Supported content types are `text/plain`, `text/markdown`,
 `text/html` and `application/xhtml+xml`; missing or generic types are sniffed
@@ -223,6 +231,7 @@ request requires the `integration` tag and an explicit opt-in; see
 Model-native search, a second real search provider, Exa Answer/Research
 endpoints, automatic failover between services after a failed request,
 connection tests, JavaScript rendering, authenticated pages, PDFs and images,
-proxy support for `web_fetch`, and MCP search tools. Native search will reuse
+custom proxy configuration for `web_fetch` (it only follows the standard
+proxy environment), and MCP search tools. Native search will reuse
 the same priority list and evidence contract; see
 [Architecture](architecture.md#planned-extensions-and-restraint).

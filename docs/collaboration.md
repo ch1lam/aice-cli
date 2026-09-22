@@ -149,13 +149,15 @@ the need for each abstraction. Agree on models and cost before paid evaluation.
 
 ## Web checks
 
-Web tests use local `httptest` servers, injected resolvers and dialers, fixed
+Web tests use local `httptest` servers, injected HTTP transports/clients, fixed
 clocks and synthetic keys; they never resolve real hostnames, contact Exa or
 read `EXA_API_KEY`. The [httpfetch tests](../internal/web/httpfetch/fetch_test.go)
-route public-looking hostnames to a loopback server through the injected dialer
-while still running address validation on the resolver answer, so private
-targets, mixed DNS answers, redirects and TLS hostname verification are covered
-without network access. Application tests bind fake search and fetch backends
+answer public-looking hostnames with an in-memory transport while still
+running the URL-shape and IP-literal checks before each request, so blocked
+literals, redirects, `https` downgrade refusal, body limits, standard proxy
+selection (`HTTP_PROXY`/`NO_PROXY`) and single-attempt transport errors are
+covered without network access. TLS hostname verification itself belongs to
+the standard transport. Application tests bind fake search and fetch backends
 through the same factory list as production.
 
 One paid request against the real Exa API is available as an explicit opt-in.

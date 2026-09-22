@@ -34,9 +34,8 @@ const (
 	sniffBytes       = 512
 )
 
-// Config constructs one Fetcher. Every network dependency is injectable so
-// tests never touch real DNS or the internet; production code paths have no
-// switch that disables address validation.
+// Config constructs one Fetcher. The HTTP client is injectable so tests use a
+// fake transport and never touch real DNS or the internet.
 type Config struct {
 	Timeout      time.Duration
 	MaxBodyBytes int64
@@ -45,17 +44,20 @@ type Config struct {
 	// The default refuses and reports the target so the model can request it
 	// under a new permission check.
 	AllowCrossOriginRedirects bool
-	Resolver                  Resolver
-	Dialer                    Dialer
 	Now                       func() time.Time
 	// RootCAs replaces the system roots for tests with local certificates.
 	// Verification itself is never disabled and always uses the URL hostname.
 	RootCAs *x509.CertPool
+	// Client overrides the default HTTP client. Tests inject a fake
+	// transport; production uses a clone of http.DefaultTransport. The
+	// redirect policy is always enforced.
+	Client *http.Client
 }
 
 // Fetcher retrieves public pages. It is safe for concurrent use.
 type Fetcher struct {
-	cfg Config
+	cfg    Config
+	client *http.Client
 }
 
 // New applies defaults and validates the configuration.
@@ -72,17 +74,46 @@ func New(cfg Config) (*Fetcher, error) {
 	if cfg.MaxRedirects == 0 {
 		cfg.MaxRedirects = DefaultMaxRedirects
 	}
-	if cfg.Resolver == nil {
-		cfg.Resolver = defaultResolver
-	}
-	if cfg.Dialer == nil {
-		dialer := &net.Dialer{Timeout: 10 * time.Second}
-		cfg.Dialer = dialer.DialContext
-	}
 	if cfg.Now == nil {
 		cfg.Now = time.Now
 	}
-	return &Fetcher{cfg: cfg}, nil
+	client := cfg.Client
+	if client == nil {
+		client = &http.Client{Transport: defaultTransport(cfg.Timeout, cfg.RootCAs)}
+	} else {
+		cloned := *client
+		if cloned.Transport == nil {
+			cloned.Transport = defaultTransport(cfg.Timeout, cfg.RootCAs)
+		}
+		client = &cloned
+	}
+	// Redirects are handled by Fetch so every hop is revalidated under the
+	// same permission and address policy.
+	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	cfg.Client = client
+	return &Fetcher{cfg: cfg, client: client}, nil
+}
+
+// defaultTransport clones http.DefaultTransport to keep the standard proxy,
+// dial and connection behavior (including ProxyFromEnvironment), then applies
+// the fetch-specific bounds. The global default is never mutated.
+func defaultTransport(timeout time.Duration, roots *x509.CertPool) *http.Transport {
+	var transport *http.Transport
+	if base, ok := http.DefaultTransport.(*http.Transport); ok {
+		transport = base.Clone()
+	} else {
+		transport = &http.Transport{
+			Proxy:       http.ProxyFromEnvironment,
+			DialContext: (&net.Dialer{Timeout: 10 * time.Second}).DialContext,
+		}
+	}
+	transport.DisableKeepAlives = true
+	transport.DisableCompression = true // decompress manually to bound decoded bytes
+	transport.TLSHandshakeTimeout = 10 * time.Second
+	transport.ResponseHeaderTimeout = timeout
+	transport.MaxResponseHeaderBytes = 64 * 1024
+	transport.TLSClientConfig = &tls.Config{MinVersion: tls.VersionTLS12, RootCAs: roots}
+	return transport
 }
 
 // Fetch performs one bounded GET, following at most MaxRedirects same-origin
@@ -176,25 +207,11 @@ func (f *Fetcher) Fetch(ctx context.Context, request web.FetchRequest) (web.Fetc
 	}, nil
 }
 
-// get performs one hop: resolve, validate, pin the address, request.
+// get performs one hop: lightweight literal check, then request. DNS,
+// proxy selection and dialing are left to the standard HTTP transport.
 func (f *Fetcher) get(ctx context.Context, hop target) (*http.Response, error) {
-	pinned, err := resolvePublic(ctx, f.cfg.Resolver, hop)
-	if err != nil {
+	if err := checkFetchTarget(hop); err != nil {
 		return nil, err
-	}
-	transport := &http.Transport{
-		Proxy:                  nil, // direct connections only; proxy environment is deliberately ignored
-		DialContext:            pinnedDial(f.cfg.Dialer, pinned),
-		DisableKeepAlives:      true,
-		DisableCompression:     true, // decompress manually to bound decoded bytes
-		TLSHandshakeTimeout:    10 * time.Second,
-		ResponseHeaderTimeout:  f.cfg.Timeout,
-		MaxResponseHeaderBytes: 64 * 1024,
-		TLSClientConfig:        &tls.Config{MinVersion: tls.VersionTLS12, RootCAs: f.cfg.RootCAs},
-	}
-	client := &http.Client{
-		Transport:     transport,
-		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, hop.url.String(), nil)
 	if err != nil {
@@ -203,7 +220,7 @@ func (f *Fetcher) get(ctx context.Context, hop target) (*http.Response, error) {
 	request.Header.Set("User-Agent", "aice/"+buildinfo.Version)
 	request.Header.Set("Accept", "text/html, application/xhtml+xml, text/plain, text/markdown;q=0.9, */*;q=0.1")
 	request.Header.Set("Accept-Encoding", "gzip")
-	response, err := client.Do(request)
+	response, err := f.client.Do(request)
 	if err != nil {
 		var classified *web.Error
 		if errors.As(err, &classified) {

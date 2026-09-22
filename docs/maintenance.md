@@ -219,7 +219,8 @@ insufficient to claim composer click positioning.
 
 ### Web search acceptance gaps
 
-The web tools were verified with offline fixtures, injected resolvers/dialers
+The web tools were verified with offline fixtures, injected HTTP
+transports/clients
 and the application-level fake backend. Not yet verified: a real Exa request
 (the opt-in test in [Verification](collaboration.md#web-checks) has not been run
 against a live key), a real public page through `web_fetch` on the open
