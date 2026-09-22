@@ -11,7 +11,7 @@ import (
 const transcriptContentIndent = 3
 
 func (m model) userMessageView(text string) string {
-	return userStyle.Width(m.layoutWidth()).Render(text)
+	return userStyle.Width(m.layoutWidth()).Render(sanitizeMultilineText(text))
 }
 
 func (m model) transcriptContentView(content string) string {
