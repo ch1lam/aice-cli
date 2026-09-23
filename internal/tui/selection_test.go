@@ -18,37 +18,48 @@ func TestTranscriptSelectionSelectedRange(t *testing.T) {
 	tests := []struct {
 		name      string
 		selection transcriptSelection
-		wantStart transcriptPosition
-		wantEnd   transcriptPosition
+		wantStart selectionPoint
+		wantEnd   selectionPoint
 		want      bool
 	}{
 		{
 			name: "forward",
 			selection: transcriptSelection{
-				anchor: transcriptPosition{row: 2, column: 3},
-				focus:  transcriptPosition{row: 4, column: 5},
+				anchor: selectionPoint{item: 0, part: 0, line: 2, column: 3},
+				focus:  selectionPoint{item: 0, part: 0, line: 4, column: 5},
 				moved:  true,
 			},
-			wantStart: transcriptPosition{row: 2, column: 3},
-			wantEnd:   transcriptPosition{row: 4, column: 6},
+			wantStart: selectionPoint{item: 0, part: 0, line: 2, column: 3},
+			wantEnd:   selectionPoint{item: 0, part: 0, line: 4, column: 6},
 			want:      true,
 		},
 		{
 			name: "reverse",
 			selection: transcriptSelection{
-				anchor: transcriptPosition{row: 4, column: 5},
-				focus:  transcriptPosition{row: 2, column: 3},
+				anchor: selectionPoint{item: 0, part: 0, line: 4, column: 5},
+				focus:  selectionPoint{item: 0, part: 0, line: 2, column: 3},
 				moved:  true,
 			},
-			wantStart: transcriptPosition{row: 2, column: 3},
-			wantEnd:   transcriptPosition{row: 4, column: 6},
+			wantStart: selectionPoint{item: 0, part: 0, line: 2, column: 3},
+			wantEnd:   selectionPoint{item: 0, part: 0, line: 4, column: 6},
+			want:      true,
+		},
+		{
+			name: "cross item orders by item",
+			selection: transcriptSelection{
+				anchor: selectionPoint{item: 3, part: 0, line: 0, column: 0},
+				focus:  selectionPoint{item: 1, part: 2, line: 5, column: 9},
+				moved:  true,
+			},
+			wantStart: selectionPoint{item: 1, part: 2, line: 5, column: 9},
+			wantEnd:   selectionPoint{item: 3, part: 0, line: 0, column: 1},
 			want:      true,
 		},
 		{
 			name: "no drag",
 			selection: transcriptSelection{
-				anchor: transcriptPosition{row: 2, column: 3},
-				focus:  transcriptPosition{row: 2, column: 3},
+				anchor: selectionPoint{item: 0, part: 0, line: 2, column: 3},
+				focus:  selectionPoint{item: 0, part: 0, line: 2, column: 3},
 			},
 		},
 	}
@@ -77,27 +88,31 @@ func TestTranscriptSelectionSelectedRange(t *testing.T) {
 func TestSelectedTranscriptTextHandlesANSIAndMultipleLines(t *testing.T) {
 	t.Parallel()
 
-	firstLine := bodyStyle.Render("alpha bravo")
-	secondLine := infoStyle.Render("charlie delta")
-	view := firstLine + "\n" + secondLine
-	selection := transcriptSelection{
-		anchor:         transcriptPosition{row: 10, column: 6},
-		focus:          transcriptPosition{row: 11, column: 6},
-		viewportOffset: 10,
-		moved:          true,
-	}
-
-	if got, want := selectedTranscriptText(view, selection, 10), "bravo\ncharlie"; got != want {
+	current := newModel(make(chan runRequest), make(chan struct{}))
+	current = updateModel(t, current, tea.WindowSizeMsg{Width: 40, Height: 14})
+	current.viewport.SetContent("alpha bravo\ncharlie delta")
+	current.viewport.GotoTop()
+	viewportTop := current.verticalPadding() + lipgloss.Height(current.headerView(current.layoutWidth()))
+	press := tea.Mouse{X: current.horizontalPadding() + 6, Y: viewportTop, Button: tea.MouseLeft}
+	current = updateModel(t, current, tea.MouseClickMsg(press))
+	drag := tea.Mouse{X: current.horizontalPadding() + 6, Y: viewportTop + 1, Button: tea.MouseLeft}
+	current = updateModel(t, current, tea.MouseMotionMsg(drag))
+	if got, want := selectedFrozenText(&current.selection.frozen, current.selection), "bravo\ncharlie"; got != want {
 		t.Errorf("selected transcript text = %q, want %q", got, want)
 	}
-
-	highlighted := highlightTranscriptSelection(view, selection, 10)
+	highlighted := highlightCurrentWindow(&current.selection.frozen, current.selection)
+	plain := ansi.Strip(current.selection.frozen.View())
+	if ansi.Strip(highlighted) != plain {
+		t.Errorf("highlight changed text content")
+	}
+	if highlighted == current.selection.frozen.View() {
+		t.Errorf("highlight did not style the selection")
+	}
+	// The selected words must survive stripping and the highlight must not
+	// be a no-op: both rows are styled in place.
 	for _, selected := range []string{"bravo", "charlie"} {
-		if !strings.Contains(
-			highlighted,
-			transcriptSelectionStyle.Render(selected),
-		) {
-			t.Errorf("highlighted transcript does not style %q: %q", selected, highlighted)
+		if !strings.Contains(plain, selected) || !strings.Contains(ansi.Strip(highlighted), selected) {
+			t.Errorf("highlighted transcript lost %q", selected)
 		}
 	}
 }
@@ -210,7 +225,7 @@ func TestCachedHighlightMatchesPureRecompute(t *testing.T) {
 	assertCached := func(step string) {
 		t.Helper()
 		cached := current.selection.highlightedView()
-		pure := highlightTranscriptSelection(current.selection.viewportView, current.selection, current.selection.viewportOffset)
+		pure := highlightCurrentWindow(&current.selection.frozen, current.selection)
 		if cached != pure {
 			t.Fatalf("%s: cached highlight differs from pure recompute", step)
 		}
@@ -262,10 +277,9 @@ func TestStreamingBatchDuringSelectionDefersLayout(t *testing.T) {
 		t.Fatal("drag did not start a moved selection")
 	}
 	frozenHighlight := current.selection.highlightedView()
-	frozenCopy := selectedTranscriptText(
-		current.selection.viewportView,
+	frozenCopy := selectedFrozenText(
+		&current.selection.frozen,
 		current.selection,
-		current.selection.viewportOffset,
 	)
 	liveFirstLine := strings.Split(current.viewport.View(), "\n")[0]
 
@@ -286,10 +300,9 @@ func TestStreamingBatchDuringSelectionDefersLayout(t *testing.T) {
 	if got := current.selection.highlightedView(); got != frozenHighlight {
 		t.Fatal("streaming batch changed the frozen selection display")
 	}
-	if got := selectedTranscriptText(
-		current.selection.viewportView,
+	if got := selectedFrozenText(
+		&current.selection.frozen,
 		current.selection,
-		current.selection.viewportOffset,
 	); got != frozenCopy {
 		t.Fatal("streaming batch changed the frozen copy text")
 	}

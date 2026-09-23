@@ -165,12 +165,12 @@ func TestTranscriptWheelPreservesComposerAndScrolls(t *testing.T) {
 	m.resizeLayout()
 	m.viewport.SetContent(strings.Repeat("history line\n", 100))
 	m.viewport.GotoBottom()
+	// Plain wheel without a drag still scrolls the live viewport.
 	before := m.viewport.YOffset()
-	m.selection.active = true
 	next, command := m.Update(tea.MouseWheelMsg{Button: tea.MouseWheelUp})
 	m = next.(model)
 	if m.viewport.YOffset() >= before || m.selection.active {
-		t.Fatal("wheel did not scroll and clear selection")
+		t.Fatal("wheel did not scroll the live viewport")
 	}
 	if m.input.Value() != "Keep this draft" || m.input.Column() != 0 || command != nil {
 		t.Fatal("wheel changed the composer or scheduled input work")

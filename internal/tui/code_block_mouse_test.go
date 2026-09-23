@@ -130,10 +130,12 @@ func TestCodeButtonRejectsStalePressAndDrag(t *testing.T) {
 				m = updateModel(t, m, tea.MouseMotionMsg(motion))
 			}
 			_, command := m.Update(tea.MouseReleaseMsg(mouse))
-			if change == "drag" {
-				// A drag still selects display text, never the original block.
+			if change == "drag" || change == "scroll" {
+				// A drag or a wheel-scroll still selects display text, never
+				// the original block. The wheel revokes the Copy-button
+				// click but keeps the text range for a cross-screen drag.
 				if command != nil && fmt.Sprint(command().(tea.BatchMsg)[0]()) == "original\n" {
-					t.Fatal("drag triggered whole-block copy")
+					t.Fatal(change + " triggered whole-block copy")
 				}
 			} else if command != nil {
 				t.Fatal("stale press triggered copy")
@@ -232,7 +234,7 @@ func TestCodeLineHoverPreservesGeometryAndHighlighting(t *testing.T) {
 	}
 	// Starting a selection suppresses hover and preserves its clean snapshot.
 	m = updateModel(t, m, tea.MouseClickMsg(mouse))
-	if m.hoveredCode().valid || m.selection.viewportView != m.viewport.View() {
+	if m.hoveredCode().valid || m.selection.frozen.View() != m.viewport.View() {
 		t.Fatal("hover leaked into the drag-selection snapshot")
 	}
 }
@@ -298,15 +300,20 @@ func TestCodeHoverDistinguishesIdenticalBlocks(t *testing.T) {
 	}
 }
 
-func codeDragSelection(view string, rows []transcriptRow, offset, startRow, startColumn, endRow, endColumn int) transcriptSelection {
-	return transcriptSelection{
-		anchor:         transcriptPosition{row: offset + startRow, column: startColumn},
-		focus:          transcriptPosition{row: offset + endRow, column: endColumn},
-		viewportOffset: offset,
-		viewportView:   view,
-		rows:           rows,
-		moved:          true,
+func codeDragSelection(frozen *transcriptViewport, rows []transcriptRow, startRow, startColumn, endRow, endColumn int) transcriptSelection {
+	if len(rows) == 0 || frozen == nil {
+		return transcriptSelection{}
 	}
+	start := rows[startRow]
+	end := rows[endRow]
+	sel := transcriptSelection{
+		anchor: selectionPoint{item: start.item, part: start.part, line: start.line, column: startColumn},
+		focus:  selectionPoint{item: end.item, part: end.part, line: end.line, column: endColumn},
+		frozen: *frozen,
+		active: true,
+		moved:  true,
+	}
+	return sel
 }
 
 func codeSourceRows(rows []transcriptRow, source string) (int, int) {
@@ -330,27 +337,25 @@ func TestCodeDragCopiesSourceWithoutLineNumbers(t *testing.T) {
 	m.entries = []transcriptEntry{{kind: entryAssistant, text: "```text\n" + source + "```", complete: true}}
 	m.refreshViewport(true)
 	m.viewport.GotoTop()
-	view := m.viewport.View()
 	rows := m.viewport.visibleRows()
-	offset := m.viewport.YOffset()
 	start, end := codeSourceRows(rows, source)
 	if start < 0 {
 		t.Fatal("no code source rows")
 	}
 	// Drag from the gutter across the full width: numbers must not leak.
-	selection := codeDragSelection(view, rows, offset, start, 0, end, 1000)
-	if got, want := selectedTranscriptText(view, selection, offset), strings.TrimSuffix(source, "\n"); got != want {
+	selection := codeDragSelection(&m.viewport, rows, start, 0, end, 1000)
+	if got, want := selectedFrozenText(&selection.frozen, selection), strings.TrimSuffix(source, "\n"); got != want {
 		t.Fatalf("drag copy = %q, want %q", got, want)
 	}
-	for _, line := range strings.Split(selectedTranscriptText(view, selection, offset), "\n") {
+	for _, line := range strings.Split(selectedFrozenText(&selection.frozen, selection), "\n") {
 		trimmed := strings.TrimSpace(line)
 		if strings.HasPrefix(trimmed, "1 ") || strings.HasPrefix(trimmed, "2 ") || strings.HasPrefix(trimmed, "3 ") {
 			t.Fatalf("gutter leaked into %q", line)
 		}
 	}
 	// Gutter-only on one visual row copies nothing.
-	gutter := codeDragSelection(view, rows, offset, start, 0, start, 1)
-	if got := selectedTranscriptText(view, gutter, offset); strings.TrimSpace(got) != "" {
+	gutter := codeDragSelection(&m.viewport, rows, start, 0, start, 1)
+	if got := selectedFrozenText(&gutter.frozen, gutter); strings.TrimSpace(got) != "" {
 		t.Fatalf("gutter-only drag copied %q", got)
 	}
 }
@@ -361,9 +366,7 @@ func TestCodeDragPreservesLiteralAndWrappedLines(t *testing.T) {
 	m.entries = []transcriptEntry{{kind: entryAssistant, text: "```text\n" + source + "```", complete: true}}
 	m.refreshViewport(true)
 	m.viewport.GotoTop()
-	view := m.viewport.View()
 	rows := m.viewport.visibleRows()
-	offset := m.viewport.YOffset()
 	var start, end = -1, -1
 	for i, row := range rows {
 		if p := row.code.placement; p != nil && p.layout.block.source == source && p.layout.rows[row.code.row].sourceLine == 0 {
@@ -376,8 +379,8 @@ func TestCodeDragPreservesLiteralAndWrappedLines(t *testing.T) {
 	if start < 0 {
 		t.Fatal("no rows for source line 0")
 	}
-	selection := codeDragSelection(view, rows, offset, start, 0, end, 1000)
-	if got := selectedTranscriptText(view, selection, offset); got != "\thello  " {
+	selection := codeDragSelection(&m.viewport, rows, start, 0, end, 1000)
+	if got := selectedFrozenText(&selection.frozen, selection); got != "\thello  " {
 		t.Fatalf("tab drag = %q, want literal with trailing spaces", got)
 	}
 
@@ -387,15 +390,13 @@ func TestCodeDragPreservesLiteralAndWrappedLines(t *testing.T) {
 	wide.entries = []transcriptEntry{{kind: entryAssistant, text: "```text\n" + wideSource + "```", complete: true}}
 	wide.refreshViewport(true)
 	wide.viewport.GotoTop()
-	wideView := wide.viewport.View()
 	wideRows := wide.viewport.visibleRows()
-	wideOffset := wide.viewport.YOffset()
 	wideStart, wideEnd := codeSourceRows(wideRows, wideSource)
 	if wideStart < 0 {
 		t.Fatal("no wrapped code rows")
 	}
-	wideSelection := codeDragSelection(wideView, wideRows, wideOffset, wideStart, 0, wideEnd, 1000)
-	if got, want := selectedTranscriptText(wideView, wideSelection, wideOffset), strings.TrimSuffix(wideSource, "\n"); got != want {
+	wideSelection := codeDragSelection(&wide.viewport, wideRows, wideStart, 0, wideEnd, 1000)
+	if got, want := selectedFrozenText(&wideSelection.frozen, wideSelection), strings.TrimSuffix(wideSource, "\n"); got != want {
 		t.Fatalf("wrapped drag = %q, want %q", got, want)
 	}
 }
