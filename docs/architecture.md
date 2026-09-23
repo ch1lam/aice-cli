@@ -114,14 +114,14 @@ model context remains independently derived through compaction checkpoints.
 | `internal/app` | Composition root, lifecycle, prompt assembly, Sessions, Agent-event translation, interactive commands |
 | `internal/cli` | Cobra commands, flags, validation, exit behavior |
 | `internal/tui` | Bubble Tea presentation and interaction-event rendering |
-| `internal/interaction` | Frontend-neutral active-run, event, command, state, and input-mailbox contracts |
+| `internal/interaction` | Frontend-neutral active-run, event, command, state, question, and input-mailbox contracts |
 | `internal/agent` | Agent Loop, retries, tool lifecycle, Agent events |
 | `internal/media` | Shared image decoding, conversion, validation, resizing, original retention and coordinate descriptions |
 | `internal/llm` | Canonical messages, models, usage, streams, context estimates |
 | `internal/api/{anthropic,openairesponses,openaicompletions}` | Protocol translation around official SDKs |
 | `internal/api/streamcore` | Protocol-neutral streaming mechanics shared by adapters |
 | `internal/provider/{deepseek,opencode,kimi,moonshot,zhipu,openai,codex,custom}` | Provider catalogs, credentials, defaults, compatibility; `zhipu` owns separate API Platform and Coding Plan presets; `codex` owns ChatGPT OAuth; `custom` accepts arbitrary model IDs |
-| `internal/tool` | `read`, `write`, `edit`, `bash`, `grep`, `find`, `ls`, `skill`, `web_search`, `web_fetch` |
+| `internal/tool` | `read`, `write`, `edit`, `bash`, `grep`, `find`, `ls`, `skill`, `request_user_input` (interactive-only), `web_search`, `web_fetch` |
 | `internal/evidence` | Leaf source/evidence contract retained as tool-result metadata; deterministic source IDs, validation, cloning |
 | `internal/web` | Provider-neutral search/fetch requests and results, classified errors, domain policy, pure source resolver, deterministic model rendering |
 | `internal/web/exa` | Exa Search REST adapter: wire types, bounded HTTP, error classification, normalization into evidence |

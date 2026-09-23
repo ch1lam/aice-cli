@@ -365,6 +365,16 @@ consistency for those behaviors.
   prompts, including attachment preparation cancelled by a finished run. Product option
   generation and grant scope are in [Tool execution and
   Sessions](execution-sessions.md#tool-execution-boundary).
+- Interactive Q&A uses a separate, bottom-panel contract: `internal/app` sends
+  `interaction.QuestionPrompt` (`Request`, `Done`, `Reply`) and the frontend
+  replies once with a `QuestionReply` covering every requested question.
+  The panel owns drafts, focus, and per-question edits; only an explicit
+  submit (or explicit per-question skip) produces a result. The main composer
+  draft is preserved independently, question input never triggers slash
+  commands, file expansion, or steering, and a permission prompt temporarily
+  takes over input while keeping panel state. `Esc` browses the conversation
+  with drafts kept; the run's stop shortcut cancels the run and its pending
+  prompt.
 - Pending TUI permission prompts own the screen. A Bubbles viewport wraps the
   complete command, path, reason, and option details without ellipses; long
   option labels are shown there under their option numbers, with matching

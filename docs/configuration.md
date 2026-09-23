@@ -1213,6 +1213,38 @@ instead of collapsing again. `Enter` always sends the expanded text, and
 pasted content is sent literally, never parsed as a slash command. History
 and thread drafts keep the expanded text.
 
+### Asking the user (Q&A)
+
+When a choice materially affects scope, outcome, or rework cost, the model
+may call the interactive-only `request_user_input` tool with 1–3 focused
+questions. A bottom panel replaces the composer while it is visible; the
+conversation above stays readable and the previous composer draft is
+preserved independently:
+
+- Each question shows its options with the practical difference of each
+  choice; at most one option is marked recommended, and the recommendation
+  only sets initial focus, never an answer.
+- `↑`/`↓` move focus, digits select an option directly, typing writes the
+  answer (or a supplement to a selected option), `Tab` switches between
+  options and text, `Enter` confirms the question, `s`/`Ctrl+s` skips it
+  explicitly, and `Backspace` on empty text goes back one question.
+- Focus, selection, and submission are separate: only submitting the whole
+group answers the call. Blank text is never an answer; skip explicitly.
+- `Esc` browses the conversation with drafts and focus kept; `Ctrl+c`
+  cancels the run. Question input never triggers slash commands, file
+  expansion, or steering, and a permission prompt temporarily takes over
+  while keeping panel state.
+- Skipped questions continue with what stands alone; cancelled or expired
+  prompts leave no partial answers. History keeps the questions in the tool
+  call and the submitted answers in its result, so reopening a Session
+  restores them without replaying anything.
+
+The model asks sparingly: it checks the repository, docs, and conversation
+first, decides routine choices itself, never re-asks settled requirements,
+and never uses Q&A for permissions or credentials. `--print`, Harbor, and
+`/btw` have no Q&A tool; there the model states missing information and the
+affected scope in its output.
+
 ### Clipboard images
 
 In the main composer, `Ctrl+V` or `Alt+V` reads an image from the system

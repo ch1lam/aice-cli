@@ -99,6 +99,15 @@ when the URL passes the shared URL-shape check (malformed URLs, userinfo,
 zone-scoped IPv6 and non-default ports deny). Address validation, redirects
 and body limits run inside the tool, outside the Guard lock. See [Web search
 and fetch](web.md#permissions).
+`request_user_input` is a known interactive-only tool: the gate allows it
+without an extra confirmation step, and answers never change the
+authorization scope (`--yolo` never answers for the user). The tool is
+registered only for interactive runs; `--print`, Harbor, and `/btw` never
+see its schema, so a model without a frontend states the missing
+information in its output instead of waiting. Answers travel on a dedicated
+reply channel, never the steering mailbox, and each prompt accepts exactly
+one submission bound to its tool-call ID: skips stay skips, late or
+duplicate replies are dropped, and cancellation wins over a racing submit.
 `--workspace` sets the default working directory and is the boundary used by
 the path-access gate; it is not a sandbox.
 
