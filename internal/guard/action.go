@@ -53,7 +53,7 @@ var fileTools = map[string]bool{
 }
 
 func isKnownTool(name string) bool {
-	return fileTools[name] || name == "bash" || name == "skill" || isNetworkTool(name)
+	return fileTools[name] || name == "bash" || name == "skill" || name == "request_user_input" || isNetworkTool(name)
 }
 
 // networkTools reach outside the host through the web entry points and are

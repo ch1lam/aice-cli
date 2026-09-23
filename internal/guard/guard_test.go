@@ -621,6 +621,7 @@ func TestGuard_KnownToolWithoutRestrictedActionAllows(t *testing.T) {
 		toolCall("skill", map[string]any{}),
 		toolCall("skill", map[string]any{"name": "pdf"}),
 		toolCall("skill", map[string]any{"name": "/etc/passwd"}),
+		toolCall("request_user_input", map[string]any{}),
 	}
 	for _, call := range cases {
 		res, err := g.Check(context.Background(), call)
