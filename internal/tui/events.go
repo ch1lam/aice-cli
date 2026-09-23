@@ -127,7 +127,12 @@ func (m model) hasProcessContent(processID int) bool {
 
 func (m model) applyRunBatch(batch runBatchMsg) (tea.Model, tea.Cmd) {
 	var commands []tea.Cmd
-	follow := m.viewport.AtBottom()
+	// AtBottom walks and wraps changed items; the frozen selection display
+	// cannot show them, so skip the walk while a drag owns the screen.
+	follow := false
+	if !m.selection.active {
+		follow = m.viewport.AtBottom()
+	}
 	contentChanged := false
 	finished := false
 	for _, update := range batch.updates {
@@ -407,7 +412,11 @@ func (m *model) completeTool(tool ToolDisplay) {
 }
 
 func (m *model) finishRun(err error) tea.Cmd {
-	follow := m.viewport.AtBottom()
+	// See applyRunBatch: skip the wrapping walk while a drag owns the screen.
+	follow := false
+	if !m.selection.active {
+		follow = m.viewport.AtBottom()
+	}
 	if m.cancelDelivery != nil {
 		m.cancelDelivery()
 	}

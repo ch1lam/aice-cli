@@ -45,6 +45,15 @@ func (m *model) refreshViewport(forceBottom bool) {
 	if m.guardPending != nil {
 		return
 	}
+	if m.selection.active {
+		// The frozen snapshot owns the screen: defer item rebuilds and the
+		// wrapping walks entirely. Release and clear paths settle with one
+		// catch-up refresh; setItems itself clamps through partHeight, so
+		// even the metadata sync would rewrap the growing message here.
+		m.viewportStale = true
+		return
+	}
+	m.viewportStale = false
 	wasAtBottom := m.viewport.AtBottom()
 	m.viewport.setItems(m.transcriptItems())
 	if forceBottom || wasAtBottom {

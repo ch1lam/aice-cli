@@ -143,8 +143,13 @@ type model struct {
 	guardFeedback            bool
 	guardFeedbackText        string
 
-	viewport              transcriptViewport
-	selection             transcriptSelection
+	viewport  transcriptViewport
+	selection transcriptSelection
+	// viewportStale marks transcript items deferred while a drag owns the
+	// screen. Streaming batches skip layout until the gesture settles, then
+	// release and clear paths pay one catch-up refresh instead of one per
+	// batch. It is only ever true while entries changed mid-gesture.
+	viewportStale         bool
 	folds                 map[foldTarget]bool
 	pointer               transcriptPointer
 	composerActive        bool
@@ -328,6 +333,10 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		updated.refreshViewport(false)
 	}
 	updated.finishPointerEvent(message)
+	// Backstop for clear paths without an explicit settle (keypress
+	// cancellation, blur, outside clicks): run the deferred catch-up once so
+	// the live viewport never shows pre-gesture items after the stream ends.
+	updated.settleDeferredViewport()
 	return updated, tea.Batch(command, transition)
 }
 

@@ -235,6 +235,100 @@ func TestCachedHighlightMatchesPureRecompute(t *testing.T) {
 	assertCached("back at anchor")
 }
 
+func TestStreamingBatchDuringSelectionDefersLayout(t *testing.T) {
+	t.Parallel()
+
+	current := newModel(make(chan runRequest), make(chan struct{}))
+	current = updateModel(t, current, tea.WindowSizeMsg{Width: 100, Height: 30})
+	seed := strings.Repeat("streaming seed line with enough text to wrap. ", 60)
+	current.entries = append(current.entries, transcriptEntry{
+		kind:         entryAssistant,
+		text:         seed,
+		presentation: &assistantPresentation{},
+	})
+	current.assistantEntry = 0
+	current.running = true
+	current.refreshViewport(true)
+
+	viewportTop := current.verticalPadding() + lipgloss.Height(current.headerView(current.layoutWidth()))
+	press := tea.Mouse{X: current.horizontalPadding(), Y: viewportTop, Button: tea.MouseLeft}
+	current = updateModel(t, current, tea.MouseClickMsg(press))
+	current = updateModel(t, current, tea.MouseMotionMsg(tea.Mouse{
+		X:      current.horizontalPadding() + 10,
+		Y:      viewportTop + 10,
+		Button: tea.MouseLeft,
+	}))
+	if !current.selection.active || !current.selection.moved {
+		t.Fatal("drag did not start a moved selection")
+	}
+	frozenHighlight := current.selection.highlightedView()
+	frozenCopy := selectedTranscriptText(
+		current.selection.viewportView,
+		current.selection,
+		current.selection.viewportOffset,
+	)
+	liveFirstLine := strings.Split(current.viewport.View(), "\n")[0]
+
+	// Streaming batches grow the transcript while the frozen snapshot owns
+	// the screen. The frozen highlight and copy text must not change, and
+	// the live viewport must stay pinned instead of following along with
+	// layout work nobody can see.
+	for i := 0; i < 3; i++ {
+		updated, _ := current.applyRunBatch(runBatchMsg{updates: []runUpdate{{event: DisplayEvent{
+			Kind:  DisplayEventAssistantDelta,
+			Delta: DisplayDelta{Kind: DisplayDeltaText, Delta: " streaming-token-0123456789"},
+		}}}})
+		current = updated.(model)
+	}
+	if !current.selection.active {
+		t.Fatal("streaming batch ended the active selection")
+	}
+	if got := current.selection.highlightedView(); got != frozenHighlight {
+		t.Fatal("streaming batch changed the frozen selection display")
+	}
+	if got := selectedTranscriptText(
+		current.selection.viewportView,
+		current.selection,
+		current.selection.viewportOffset,
+	); got != frozenCopy {
+		t.Fatal("streaming batch changed the frozen copy text")
+	}
+	if !strings.Contains(current.entries[0].text, "streaming-token") {
+		t.Fatal("streaming batch did not reach the transcript entries")
+	}
+	if got := strings.Split(current.viewport.View(), "\n")[0]; got != liveFirstLine {
+		t.Fatal("live viewport followed streaming content during a frozen selection")
+	}
+
+	// Release still copies the frozen text, and the next batch resumes
+	// following to the new bottom.
+	release := tea.MouseReleaseMsg(tea.Mouse{
+		X:      current.horizontalPadding() + 10,
+		Y:      viewportTop + 10,
+		Button: tea.MouseLeft,
+	})
+	updated, command := current.Update(release)
+	current = updated.(model)
+	if command == nil {
+		t.Fatal("release did not return a clipboard command")
+	}
+	if got := fmt.Sprint(command().(tea.BatchMsg)[0]()); got != frozenCopy {
+		t.Errorf("released copy = %q, want frozen %q", got, frozenCopy)
+	}
+	updated, _ = current.applyRunBatch(runBatchMsg{updates: []runUpdate{{event: DisplayEvent{
+		Kind:  DisplayEventAssistantDelta,
+		Delta: DisplayDelta{Kind: DisplayDeltaText, Delta: " after-release-token"},
+	}}}})
+	current = updated.(model)
+	// The token may wrap across visual rows, so flatten whitespace before
+	// matching; following to the bottom is what matters here.
+	stripped := ansi.Strip(current.viewport.View())
+	flat := strings.ReplaceAll(strings.ReplaceAll(stripped, "\n", ""), " ", "")
+	if !strings.Contains(flat, "after-release-token") {
+		t.Fatal("viewport did not resume following after selection release")
+	}
+}
+
 func TestModelMouseClickWithoutDragDoesNotCopy(t *testing.T) {
 	t.Parallel()
 

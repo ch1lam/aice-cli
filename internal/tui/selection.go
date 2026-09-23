@@ -28,6 +28,11 @@ type transcriptSelection struct {
 	moved  bool
 	fold   foldHit
 	code   codeHit
+	// follow records whether the viewport was pinned to the bottom at press
+	// time. Layout and following pause while the frozen snapshot owns the
+	// screen; a drag release restores the pinned position with one catch-up
+	// refresh instead of paying per-batch walks during the gesture.
+	follow bool
 	// highlight caches the frozen view's per-row geometry and rendered
 	// output for the gesture, so each drag frame only restyles rows whose
 	// selected interval changed. View/Update copies share it through the
@@ -134,6 +139,8 @@ func (m model) handleTranscriptMouseClick(
 	}
 
 	m.selection.begin(position, viewportOffset, m.viewport.View(), m.viewport.visibleRows())
+	// One walk per gesture, not per frame: items are warm in steady state.
+	m.selection.follow = m.viewport.AtBottom()
 	m.selection.fold = m.foldHitAt(message.Mouse())
 	m.selection.code = m.codeHitAt(message.Mouse())
 	return m, nil, true
@@ -176,6 +183,7 @@ func (m model) handleTranscriptMouseRelease(
 	if !m.selection.moved && m.selection.fold.target.kind != foldNone {
 		pressed := m.selection.fold
 		m.selection.clear()
+		m.settleDeferredViewport()
 		if hit := m.foldHitAt(message.Mouse()); hit == pressed {
 			m.toggleFoldAt(hit)
 		}
@@ -184,6 +192,7 @@ func (m model) handleTranscriptMouseRelease(
 	if !m.selection.moved && m.selection.code.valid {
 		pressed := m.selection.code
 		m.selection.clear()
+		m.settleDeferredViewport()
 		if hit := m.codeHitAt(message.Mouse()); hit == pressed {
 			if hit.expansion != nil {
 				m.toggleCode(hit)
@@ -201,13 +210,31 @@ func (m model) handleTranscriptMouseRelease(
 		m.selection,
 		m.selection.viewportOffset,
 	)
+	restoreFollow := m.selection.follow
 	m.selection.clear()
+	if m.viewportStale {
+		// End-of-gesture calibration: rebuild deferred items and restore
+		// the pinned bottom position with one walk instead of one per
+		// streaming batch. Without deferred batches this stays a no-op so
+		// a plain release never rebuilds the viewport. Clicks on folds and
+		// code targets settle above and keep their own anchors.
+		m.refreshViewport(restoreFollow)
+	}
 	if strings.TrimSpace(selected) == "" {
 		return m, nil, true
 	}
 
 	command := m.copyText(selected)
 	return m, command, true
+}
+
+// settleDeferredViewport runs the catch-up refresh once when streaming
+// batches deferred layout during a gesture. Outside that window it is a
+// no-op; the Update wrapper backstops clear paths without an explicit one.
+func (m *model) settleDeferredViewport() {
+	if m.viewportStale && !m.selection.active {
+		m.refreshViewport(false)
+	}
 }
 
 func (m *model) copyText(text string) tea.Cmd {

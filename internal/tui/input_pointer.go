@@ -156,6 +156,9 @@ func (m model) routePointer(message tea.Msg) (tea.Model, tea.Cmd) {
 		m.contextPressed = false
 		m.trackPointer(message.Mouse())
 		m.selection.clear()
+		// Scrolling needs fresh items; a deferred gesture may have skipped
+		// their rebuild, so settle before moving the anchor.
+		m.settleDeferredViewport()
 		if m.guardPending != nil {
 			var command tea.Cmd
 			m.guardViewport, command = m.guardViewport.Update(message)
