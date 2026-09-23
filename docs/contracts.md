@@ -441,16 +441,22 @@ consistency for those behaviors.
   API and measures whole text segments; it does not create a probe editor or
   move the editing cursor to discover wrapping.
 - One pointer capture lifetime covers header, picker controls and transcript
-  gestures. A new press, key, paste, wheel, resize, terminal blur, input-owner
+  gestures. A new press, key, paste, resize, terminal blur, input-owner
   change or outer reflow cancels the previous capture; a mismatched release
-  cannot activate it. Button drags do not re-arm on returning to the target.
+  cannot activate it. A wheel cancels picker/modal captures but scrolls an
+  active transcript drag instead of cancelling it. Button drags do not re-arm
+  on returning to the target.
   Click release revalidates target identity/content/geometry. Transcript drags
-  retain their frozen visible-text snapshot across content updates; content
-  revision alone does not invalidate that snapshot. Local command choosers
+  retain their frozen content version and scroll it across screens; content
+  revision alone does not invalidate that version. A wheel during the gesture
+  revokes click/fold eligibility without clearing the text range. Local command choosers
   reserve keyboard input without blocking clicks on visible transcript rows.
 - Vertical wheel input goes to the permission review or displayed transcript;
   the session picker chooses its painted list/preview pane by pointer position,
   independently of keyboard focus, and scrolling never transfers that focus.
+  During a transcript drag the wheel scrolls the frozen version, re-hits the
+  focus at the current pointer and repaints only the new window; release
+  copies the full anchor-to-focus interval including offscreen rows.
   Borders, divider and outside coordinates in the picker, and horizontal wheel
   input, are ignored. A list wheel requests a new preview only when selected
   session/group identity changes. Wheel handling

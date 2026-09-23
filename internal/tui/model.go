@@ -584,11 +584,7 @@ func (m model) View() tea.View {
 		// cache instead of building the live viewport this overwrote.
 		transcript = m.selection.highlightedView()
 	} else {
-		transcript = highlightTranscriptSelection(
-			m.viewport.viewWithCodeHover(m.hoveredFold(), m.hoveredCode()),
-			m.selection,
-			m.viewport.YOffset(),
-		)
+		transcript = m.viewport.viewWithCodeHover(m.hoveredFold(), m.hoveredCode())
 	}
 	content := lipgloss.JoinVertical(
 		lipgloss.Left,

@@ -36,8 +36,18 @@ func (m *model) beginInputEvent(message tea.Msg) {
 			m.sessionPicker.pointer = nil
 		}
 	case tea.MouseWheelMsg:
-		m.cancelPointer()
-		m.clearQuitPending = false
+		if m.selection.active {
+			// A transcript drag owns the screen: the wheel browses the
+			// frozen version and re-hits the focus instead of cancelling
+			// the gesture. Other buttons, the picker and modals keep
+			// their existing cancel behaviour. The wheel also revokes
+			// click/fold eligibility (selection.wheeled) without clearing
+			// the text range.
+			m.clearQuitPending = false
+		} else {
+			m.cancelPointer()
+			m.clearQuitPending = false
+		}
 	case tea.MouseClickMsg:
 		m.cancelPointer()
 		m.clearQuitPending = false
@@ -155,6 +165,15 @@ func (m model) routePointer(message tea.Msg) (tea.Model, tea.Cmd) {
 		m.workspacePress = nil
 		m.contextPressed = false
 		m.trackPointer(message.Mouse())
+		if m.selection.active {
+			// Drag gesture: scroll the frozen version, re-hit the focus
+			// at the current mouse position and repaint only the new
+			// window. Never settle deferred streaming layout here and
+			// never touch the live viewport anchor; the release restores
+			// it from the frozen anchor.
+			m.handleSelectionWheel(message)
+			return m, nil
+		}
 		m.selection.clear()
 		// Scrolling needs fresh items; a deferred gesture may have skipped
 		// their rebuild, so settle before moving the anchor.
