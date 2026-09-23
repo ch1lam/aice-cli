@@ -25,7 +25,7 @@ func TestNewBuiltInToolsDegradesGracefully(t *testing.T) {
 	t.Setenv("ProgramFiles(x86)", "")
 	t.Setenv("LocalAppData", "")
 
-	tools, err := newBuiltInTools(t.Context(), workspace)
+	tools, err := newBuiltInTools(t.Context(), workspace, false)
 	if err != nil {
 		t.Fatalf("newBuiltInTools() error = %v", err)
 	}

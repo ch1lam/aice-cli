@@ -195,6 +195,8 @@ func toolCallDetail(call llm.ToolCall) string {
 		return arguments.Command
 	case "skill":
 		return arguments.Name
+	case "request_user_input":
+		return questionCallDetail(call.Arguments)
 	case "web_search":
 		return arguments.Query
 	case "web_fetch":
@@ -202,6 +204,33 @@ func toolCallDetail(call llm.ToolCall) string {
 	default:
 		return arguments.Path
 	}
+}
+
+func questionCallDetail(raw json.RawMessage) string {
+	var arguments struct {
+		Questions []struct {
+			Header   string `json:"header"`
+			Question string `json:"question"`
+			ID       string `json:"id"`
+		} `json:"questions"`
+	}
+	if err := json.Unmarshal(raw, &arguments); err != nil {
+		return ""
+	}
+	headings := make([]string, 0, len(arguments.Questions))
+	for _, item := range arguments.Questions {
+		title := strings.TrimSpace(item.Header)
+		if title == "" {
+			title = strings.TrimSpace(item.Question)
+			if title == "" {
+				title = strings.TrimSpace(item.ID)
+			}
+		}
+		if title != "" {
+			headings = append(headings, title)
+		}
+	}
+	return strings.Join(headings, " · ")
 }
 
 func displayThinking(level llm.ThinkingLevel) (interaction.DisplayThinking, error) {

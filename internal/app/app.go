@@ -376,6 +376,7 @@ func (a *application) Interactive(
 		askUI,
 		request.Yolo,
 		configured,
+		true,
 	)
 	if err != nil {
 		return err
@@ -402,6 +403,10 @@ func (a *application) Interactive(
 		guard:         environment.guard,
 		guardAdapter:  environment.guardAdapter,
 		guardRequests: make(chan interaction.GuardRequest, 4),
+		questionRequests: make(
+			chan interaction.QuestionPrompt,
+			questionBridgeLifetime,
+		),
 		conversation:  conversationState{store: store, history: history},
 		model:         environment.model,
 		options:       environment.options,
@@ -421,6 +426,10 @@ func (a *application) Interactive(
 		providers:     a.dependencies.providers,
 		totalUsage:    usage,
 	}
+	// The question tool advertises its schema from the environment; only now
+	// can it be answered, so bind this Session as its asker before the loop
+	// is created.
+	runner.bindQuestionTool()
 	if err := bindImageReader(runner.tools, runner.workspace, tool.ReadOptions{
 		LookupImage: runner.lookupImage, CanReadImages: runner.canReadImages,
 	}); err != nil {
@@ -578,6 +587,7 @@ func (a *application) newRunEnvironment(
 		askUI,
 		yolo,
 		configured,
+		false,
 	)
 }
 
@@ -588,6 +598,7 @@ func (a *application) prepareRunEnvironment(
 	askUI trust.AskFunc,
 	yolo bool,
 	configured configuredModel,
+	interactive bool,
 ) (*runEnvironment, error) {
 	workspace, err := tool.NewWorkspace(workingDirectory)
 	if err != nil {
@@ -622,7 +633,7 @@ func (a *application) prepareRunEnvironment(
 		workspace.PhysicalPath(),
 		resolution.Decision == trust.DecisionTrusted,
 	)
-	tools, err := newBuiltInTools(ctx, workspace)
+	tools, err := newBuiltInTools(ctx, workspace, interactive)
 	if err != nil {
 		return nil, err
 	}
@@ -825,6 +836,9 @@ type interactiveSession struct {
 	guard          *guard.Guard
 	guardAdapter   *guardAdapter
 	guardRequests  chan interaction.GuardRequest
+	// questionRequests carries at most one live prompt to the TUI; the app
+	// owns waiting and validation, the TUI only a display copy plus Reply.
+	questionRequests chan interaction.QuestionPrompt
 
 	// sideMu guards the ephemeral /btw thread registry below. sideClock is
 	// the injectable time source used for idle windows and expiry; nil means

@@ -570,7 +570,7 @@ func newTestCommand(t *testing.T, deps dependencies) (*cobra.Command, error) {
 // prompt assembly exercises the same snippets and guidelines as production.
 func testBuiltInTools(t *testing.T, workspace *tool.Workspace) []agent.Tool {
 	t.Helper()
-	tools, err := newBuiltInTools(t.Context(), workspace)
+	tools, err := newBuiltInTools(t.Context(), workspace, false)
 	if err != nil {
 		t.Fatalf("newBuiltInTools() error = %v", err)
 	}

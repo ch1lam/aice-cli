@@ -264,6 +264,24 @@ func TestTranslateAgentEventExtractsToolInput(t *testing.T) {
 		t.Fatalf("skill translation = %#v, want skill name only", display)
 	}
 
+	question := llm.ToolCall{
+		ID:   "q-call",
+		Name: "request_user_input",
+		Arguments: []byte(`{"questions": [
+			{"id": "mode", "header": "执行方式", "question": "采用哪种行为？"},
+			{"id": "goal", "question": "目标是什么？"}
+		]}`),
+	}
+	display = translateAgentEvent(agent.AgentEvent{
+		Type:     agent.EventTypeToolExecutionStart,
+		ToolCall: &question,
+	})
+	if display == nil ||
+		display.Kind != tui.DisplayEventToolStart ||
+		display.Tool.Detail != "执行方式 · 目标是什么？" {
+		t.Fatalf("question translation = %#v, want question headings", display)
+	}
+
 	failed := translateAgentEvent(agent.AgentEvent{
 		Type:     agent.EventTypeToolExecutionEnd,
 		ToolCall: &call,
