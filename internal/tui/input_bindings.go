@@ -30,6 +30,8 @@ func (m model) inputBindings() []inputBinding {
 		return m.sessionInputBindings()
 	case inputGuard:
 		return m.guardInputBindings()
+	case inputQuestion:
+		return m.questionInputBindings()
 	case inputAuth:
 		return m.authInputBindings()
 	case inputSideMenu:

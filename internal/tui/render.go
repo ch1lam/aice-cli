@@ -175,6 +175,11 @@ func (m model) footerView(width int) string {
 // Attached paste placeholders render inline tinted, still occupying exactly
 // their visible width so the terminal cursor stays aligned.
 func (m model) composerParts(contentWidth int) []string {
+	// The Q&A panel replaces the composer while it is visible: the main
+	// draft is preserved in the panel and restored on submit or expiry.
+	if m.questionVisible() {
+		return []string{m.questionView(contentWidth)}
+	}
 	parts := make([]string, 0, 3)
 	if !m.side.isVisible {
 		if pending := m.pendingQueueView(contentWidth); pending != "" {

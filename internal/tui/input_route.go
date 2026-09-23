@@ -26,6 +26,8 @@ func (m model) handleKey(message tea.KeyPressMsg) (model, tea.Cmd, bool) {
 			return next.(model), cmd, true
 		case inputGuard:
 			return m.handleGuardAction(match)
+		case inputQuestion:
+			return m.handleQuestionAction(match)
 		case inputAuth:
 			return m.handleAuthAction(match)
 		case inputSideMenu:
@@ -42,6 +44,9 @@ func (m model) handleKey(message tea.KeyPressMsg) (model, tea.Cmd, bool) {
 	}
 	if m.inputContext().domain == inputGuard {
 		return m.handleGuardText(message)
+	}
+	if m.inputContext().domain == inputQuestion {
+		return m.handleQuestionText(message)
 	}
 	if m.deliveryPending {
 		return m, nil, true
@@ -102,6 +107,9 @@ func (m model) routePaste(message tea.PasteMsg) (tea.Model, tea.Cmd) {
 		return m.handleSessionPicker(message)
 	case inputGuard, inputReading, inputSideMenu, inputSideConfirm:
 		return m, nil
+	case inputQuestion:
+		updated, command := m.handleQuestionPaste(message.Content)
+		return updated, command
 	default:
 		if m.composerInputEnabled() {
 			command := m.updateInput(message)

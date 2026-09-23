@@ -12,6 +12,7 @@ const (
 	inputReading
 	inputSessions
 	inputGuard
+	inputQuestion
 	inputAuth
 	inputSideMenu
 	inputSideConfirm
@@ -72,6 +73,8 @@ func (m model) inputContext() inputContext {
 			focus = inputFocusFeedback
 		}
 		return inputContext{domain: inputGuard, focus: focus}
+	case m.question != nil:
+		return inputContext{domain: inputQuestion, focus: inputFocusEditor}
 	case m.authInput != nil:
 		c := inputContext{domain: inputAuth, focus: inputFocusWaiting}
 		if m.authPrompt != nil && !m.cancelRequested && !m.deliveryPending {
@@ -109,6 +112,7 @@ type inputIdentity struct {
 	rename       *sessionTitleEditor
 	guard        *interaction.GuardRequest
 	auth         chan string
+	question     *questionPanel
 	authPrompt   *interaction.AuthPrompt
 	command      *commandMenuState
 	commandDepth int
@@ -129,6 +133,8 @@ func (m model) inputIdentity() inputIdentity {
 	case inputGuard:
 		id.guard = m.guardPending
 		id.focus = c.focus
+	case inputQuestion:
+		id.question = m.question
 	case inputAuth:
 		id.auth, id.authPrompt = m.authInput, m.authPrompt
 	case inputCommand:

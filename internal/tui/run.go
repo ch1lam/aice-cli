@@ -147,6 +147,9 @@ func Run(ctx context.Context, runner Runner, options Options) error {
 	if guardReq, ok := runner.(interaction.GuardRequester); ok {
 		initialModel.guardRequests = guardReq.GuardRequests()
 	}
+	if questionReq, ok := runner.(interaction.QuestionRequester); ok {
+		initialModel.questionRequests = questionReq.QuestionRequests()
+	}
 	if options.StartupNotice != "" {
 		initialModel.entries = append(initialModel.entries, transcriptEntry{kind: entryNotice, text: options.StartupNotice})
 	}

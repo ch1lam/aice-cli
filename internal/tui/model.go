@@ -138,6 +138,8 @@ type model struct {
 	side                     sidePanelState
 	guardRequests            <-chan interaction.GuardRequest
 	guardPending             *interaction.GuardRequest
+	questionRequests         <-chan interaction.QuestionPrompt
+	question                 *questionPanel
 	guardViewport            viewport.Model
 	guardSelection           int
 	guardFeedback            bool
@@ -318,6 +320,9 @@ func (m model) Init() tea.Cmd {
 	if m.guardRequests != nil {
 		commands = append(commands, waitForGuardRequest(m.guardRequests))
 	}
+	if m.questionRequests != nil {
+		commands = append(commands, waitForQuestionPrompt(m.questionRequests))
+	}
 	return tea.Batch(commands...)
 }
 
@@ -396,6 +401,18 @@ func (m model) update(message tea.Msg) (tea.Model, tea.Cmd) {
 		if m.guardPending != nil && m.guardPending.Reply == message.reply {
 			m.sendGuardReply("", "")
 			return m, m.nextGuardWait()
+		}
+		return m, nil
+	case questionPromptMsg:
+		m.workspacePress = nil
+		if message.prompt.Request.ID != "" {
+			return m, m.openQuestion(message.prompt)
+		}
+		return m, m.nextQuestionWait()
+	case questionExpiredMsg:
+		if m.question != nil && m.question.prompt.Reply == message.reply {
+			m.closeQuestion()
+			return m, m.nextQuestionWait()
 		}
 		return m, nil
 	case guardRequestMsg:
@@ -624,7 +641,7 @@ func (m model) terminalView(content string) tea.View {
 	view.ReportFocus = true
 	if m.sessionPicker != nil {
 		view.Cursor = pickerCursor
-	} else if m.secretInput == nil && m.authInput == nil && m.guardPending == nil {
+	} else if m.secretInput == nil && m.authInput == nil && m.guardPending == nil && m.question == nil {
 		// Anchor the real terminal cursor on the composer caret. The IME
 		// candidate window follows the terminal cursor, and Bubble Tea's
 		// renderer hides the cursor around every updated frame and restores

@@ -26,6 +26,17 @@ const (
 	inputActionInterrupt inputAction = "interrupt"
 	inputActionQuit      inputAction = "quit"
 	inputActionClose     inputAction = "close"
+
+	inputActionQuestionMove      inputAction = "question.move"
+	inputActionQuestionTab       inputAction = "question.tab"
+	inputActionQuestionConfirm   inputAction = "question.confirm"
+	inputActionQuestionSkip      inputAction = "question.skip"
+	inputActionQuestionBack      inputAction = "question.back"
+	inputActionQuestionBackspace inputAction = "question.backspace"
+	inputActionQuestionNewline   inputAction = "question.newline"
+	inputActionQuestionBrowse    inputAction = "question.browse"
+	inputActionQuestionScroll    inputAction = "question.scroll"
+	inputActionQuestionCancel    inputAction = "question.cancel"
 )
 
 type inputActionBlock uint8
