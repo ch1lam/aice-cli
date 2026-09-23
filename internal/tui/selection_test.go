@@ -185,6 +185,56 @@ func TestModelMouseDragSelectsAndCopiesTranscript(t *testing.T) {
 	}
 }
 
+func TestCachedHighlightMatchesPureRecompute(t *testing.T) {
+	t.Parallel()
+
+	current := newModel(make(chan runRequest), make(chan struct{}))
+	current = updateModel(t, current, tea.WindowSizeMsg{Width: 100, Height: 30})
+	var code strings.Builder
+	code.WriteString("```go\n")
+	for i := 0; i < 40; i++ {
+		code.WriteString("func example(i int) int {\n\treturn i * 2\n}\n")
+	}
+	code.WriteString("```\n")
+	current.entries = append(current.entries, transcriptEntry{
+		kind:         entryAssistant,
+		text:         "# Cached highlight\n\n" + code.String() + "\n" + strings.Repeat("trailing prose line\n", 10),
+		complete:     true,
+		presentation: &assistantPresentation{},
+	})
+	current.refreshViewport(true)
+	viewportTop := current.verticalPadding() + lipgloss.Height(current.headerView(current.layoutWidth()))
+	press := tea.Mouse{X: current.horizontalPadding(), Y: viewportTop, Button: tea.MouseLeft}
+	current = updateModel(t, current, tea.MouseClickMsg(press))
+
+	assertCached := func(step string) {
+		t.Helper()
+		cached := current.selection.highlightedView()
+		pure := highlightTranscriptSelection(current.selection.viewportView, current.selection, current.selection.viewportOffset)
+		if cached != pure {
+			t.Fatalf("%s: cached highlight differs from pure recompute", step)
+		}
+	}
+	assertCached("press without drag")
+
+	height := current.viewport.Height()
+	// Forward drag, then reverse back through the anchor, then forward again.
+	positions := []int{1, height / 2, height - 1, height / 2, 0, 2, height - 1}
+	for i, y := range positions {
+		current = updateModel(t, current, tea.MouseMotionMsg(tea.Mouse{
+			X:      current.horizontalPadding() + 20 + i,
+			Y:      viewportTop + y,
+			Button: tea.MouseLeft,
+		}))
+		assertCached(fmt.Sprintf("drag step %d", i))
+	}
+
+	// Returning to the anchor keeps moved latched, so both paths must agree
+	// on the single collapsed cell.
+	current = updateModel(t, current, tea.MouseMotionMsg(press))
+	assertCached("back at anchor")
+}
+
 func TestModelMouseClickWithoutDragDoesNotCopy(t *testing.T) {
 	t.Parallel()
 

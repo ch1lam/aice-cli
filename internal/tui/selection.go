@@ -28,6 +28,29 @@ type transcriptSelection struct {
 	moved  bool
 	fold   foldHit
 	code   codeHit
+	// highlight caches the frozen view's per-row geometry and rendered
+	// output for the gesture, so each drag frame only restyles rows whose
+	// selected interval changed. View/Update copies share it through the
+	// pointer; begin rebuilds it and clear drops it.
+	highlight *selectionHighlight
+}
+
+// selectionHighlight is the per-gesture highlight cache. The frozen view,
+// its row widths and the code content intervals never change while the
+// gesture is active; only the anchor/focus move, so a frame only needs to
+// restyle rows entering or leaving the selected range.
+type selectionHighlight struct {
+	original []string
+	rendered []string
+	widths   []int
+	// codeStart/codeEnd bound the copyable source content per row.
+	// codeStart is negative for non-code rows, where the whole selected
+	// interval is highlightable.
+	codeStart []int
+	codeEnd   []int
+	selected  bool
+	lastStart transcriptPosition
+	lastEnd   transcriptPosition
 }
 
 func (s *transcriptSelection) begin(
@@ -43,6 +66,9 @@ func (s *transcriptSelection) begin(
 	s.rows = rows
 	s.active = true
 	s.moved = false
+	// A press reusing this struct must not inherit the previous gesture's
+	// highlight cache: the frozen view and its rows are replaced below.
+	s.highlight = nil
 }
 
 func (s *transcriptSelection) update(position transcriptPosition) bool {
@@ -261,6 +287,128 @@ func highlightTranscriptSelection(
 		)
 	}
 	return strings.Join(lines, "\n")
+}
+
+// highlightedView renders the frozen snapshot with the current selection.
+// The cache is built once per gesture from the frozen view; each frame only
+// restyles rows whose selected interval changed since the previous frame.
+// The result matches highlightTranscriptSelection for the same inputs.
+func (s *transcriptSelection) highlightedView() string {
+	if !s.active {
+		return s.viewportView
+	}
+	h := s.highlight
+	if h == nil {
+		h = buildSelectionHighlight(s)
+		s.highlight = h
+	}
+
+	start, end, selected := s.selectedRange()
+	if !selected {
+		if h.selected {
+			for row := h.lastStart.row; row <= h.lastEnd.row; row++ {
+				h.restore(row, s.viewportOffset)
+			}
+			h.selected = false
+		}
+		return strings.Join(h.rendered, "\n")
+	}
+
+	if h.selected {
+		from := min(h.lastStart.row, start.row)
+		to := max(h.lastEnd.row, end.row)
+		for row := from; row <= to; row++ {
+			oldStart, oldEnd, oldIn := selectedLineRange(h.lastStart, h.lastEnd, row, h.width(row, s.viewportOffset))
+			newStart, newEnd, newIn := selectedLineRange(start, end, row, h.width(row, s.viewportOffset))
+			if oldIn == newIn && oldStart == newStart && oldEnd == newEnd {
+				continue
+			}
+			if !newIn {
+				h.restore(row, s.viewportOffset)
+				continue
+			}
+			h.restyle(row, s.viewportOffset, newStart, newEnd)
+		}
+	} else {
+		for row := start.row; row <= end.row; row++ {
+			columnStart, columnEnd, inRange := selectedLineRange(start, end, row, h.width(row, s.viewportOffset))
+			if !inRange {
+				continue
+			}
+			h.restyle(row, s.viewportOffset, columnStart, columnEnd)
+		}
+	}
+	h.selected = true
+	h.lastStart, h.lastEnd = start, end
+	return strings.Join(h.rendered, "\n")
+}
+
+// buildSelectionHighlight freezes the per-row geometry both highlight paths
+// share: display widths and the copyable code intervals. Rendering the rows
+// themselves stays lazy so a press without a drag costs one split.
+func buildSelectionHighlight(s *transcriptSelection) *selectionHighlight {
+	lines := strings.Split(s.viewportView, "\n")
+	h := &selectionHighlight{
+		original:  lines,
+		rendered:  append([]string(nil), lines...),
+		widths:    make([]int, len(lines)),
+		codeStart: make([]int, len(lines)),
+		codeEnd:   make([]int, len(lines)),
+	}
+	for index, line := range lines {
+		h.widths[index] = ansi.StringWidth(line)
+		h.codeStart[index] = -1
+		row := s.viewportOffset + index
+		// rowSnapshot bounds-checks s.rows, so rows without a code
+		// placement simply keep the whole-row highlight interval.
+		if _, _, contentStart, contentEnd, ok := codeSourceRange(s.rowSnapshot(row, s.viewportOffset)); ok {
+			h.codeStart[index] = contentStart
+			h.codeEnd[index] = contentEnd
+		}
+	}
+	return h
+}
+
+func (h *selectionHighlight) width(row, viewportOffset int) int {
+	index := row - viewportOffset
+	if index < 0 || index >= len(h.widths) {
+		return 0
+	}
+	return h.widths[index]
+}
+
+func (h *selectionHighlight) restore(row, viewportOffset int) {
+	index := row - viewportOffset
+	if index < 0 || index >= len(h.rendered) {
+		return
+	}
+	h.rendered[index] = h.original[index]
+}
+
+// restyle applies the selection style to the selected interval of one frozen
+// row, clamping code rows to their copyable source content exactly like
+// highlightTranscriptSelection does.
+func (h *selectionHighlight) restyle(row, viewportOffset, columnStart, columnEnd int) {
+	index := row - viewportOffset
+	if index < 0 || index >= len(h.rendered) {
+		return
+	}
+	if h.codeStart[index] >= 0 {
+		columnStart = max(columnStart, h.codeStart[index])
+		columnEnd = min(columnEnd, h.codeEnd[index])
+		if columnEnd <= columnStart {
+			h.rendered[index] = h.original[index]
+			return
+		}
+	}
+	h.rendered[index] = lipgloss.StyleRanges(
+		h.original[index],
+		lipgloss.NewRange(
+			columnStart,
+			columnEnd,
+			transcriptSelectionStyle,
+		),
+	)
 }
 
 // codeSourceRange maps a frozen viewport row to the copyable source content

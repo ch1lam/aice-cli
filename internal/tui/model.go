@@ -569,17 +569,18 @@ func (m model) View() tea.View {
 		return m.terminalView(m.guardView(max(m.width-2*m.horizontalPadding(), 1)))
 	}
 	width := m.layoutWidth()
-	viewportView := m.viewport.viewWithCodeHover(m.hoveredFold(), m.hoveredCode())
-	viewportOffset := m.viewport.YOffset()
+	var transcript string
 	if m.selection.active {
-		viewportView = m.selection.viewportView
-		viewportOffset = m.selection.viewportOffset
+		// The frozen snapshot owns the frame: reuse the gesture highlight
+		// cache instead of building the live viewport this overwrote.
+		transcript = m.selection.highlightedView()
+	} else {
+		transcript = highlightTranscriptSelection(
+			m.viewport.viewWithCodeHover(m.hoveredFold(), m.hoveredCode()),
+			m.selection,
+			m.viewport.YOffset(),
+		)
 	}
-	transcript := highlightTranscriptSelection(
-		viewportView,
-		m.selection,
-		viewportOffset,
-	)
 	content := lipgloss.JoinVertical(
 		lipgloss.Left,
 		m.headerView(width),
