@@ -353,15 +353,31 @@ func (m *model) submitQuestion() tea.Cmd {
 	return m.nextQuestionWait()
 }
 
-func (m model) questionView(width int) string {
-	panel := m.question
-	if panel == nil {
+// questionDialogIndent insets the Q&A dialog from both sides so it stays
+// narrower than the composer it grows out of.
+const questionDialogIndent = 4
+
+// questionDialogMinimumWidth is the narrowest readable dialog; the indent
+// shrinks before the dialog does.
+const questionDialogMinimumWidth = 32
+
+// questionDialogView renders the Q&A dialog merged with the composer. The
+// dialog keeps a top and side gold frame, and its walls turn rounded corners
+// into the composer's top edge, so both frames read as one outline with an
+// open neck between them instead of two stacked boxes.
+func (m model) questionDialogView(width int) string {
+	if !m.questionVisible() {
 		return ""
 	}
-	inner := max(width-4, 20)
-	rows := make([]string, 0, 16)
+	indent := min(questionDialogIndent, max((width-questionDialogMinimumWidth)/2, 0))
+	dialogWidth := max(width-2*indent, 1)
+	inner := max(dialogWidth-questionDialogStyle.GetHorizontalFrameSize(), 1)
+	panel := m.question
 	item := panel.current()
-	rows = append(rows, bodyStyle.Render(questionLine(item)))
+	rows := make([]string, 0, 16)
+	for _, line := range strings.Split(ansi.Wrap(questionLine(item), inner, ""), "\n") {
+		rows = append(rows, bodyStyle.Render(line))
+	}
 	rows = append(rows, "")
 	for row, option := range item.Options {
 		rows = append(rows, m.questionOptionRow(inner, panel, row, option))
@@ -374,7 +390,50 @@ func (m model) questionView(width int) string {
 		rows = append(rows, noticeStyle.Render(panel.notice))
 	}
 	rows = append(rows, mutedStyle.Render(m.questionHelp(inner)))
-	return strings.Join(rows, "\n")
+	// The box stays open at the bottom; the shared edge below replaces both
+	// its bottom border and the composer's top border.
+	box := questionDialogStyle.Width(dialogWidth).BorderBottom(false).
+		Render(strings.Join(rows, "\n"))
+	pad := strings.Repeat(" ", indent)
+	painted := make([]string, 0, len(rows)+2)
+	for _, line := range strings.Split(box, "\n") {
+		painted = append(painted, pad+line)
+	}
+	painted = append(painted, questionAttachRow(width, indent, indent+dialogWidth-1))
+	return strings.Join(painted, "\n")
+}
+
+// questionAttachRow is the single edge shared by the dialog and the composer.
+// It keeps the composer's blurred brown tone throughout so the edge reads as
+// part of the input frame: corners and shelves run to the dialog walls,
+// rounded corners turn the walls into the shelves, and the open neck between
+// them reads as the dialog growing out of the input box. A wall that reaches
+// the composer edge has no shelf to turn into, so it continues straight down
+// onto the composer's own wall instead.
+func questionAttachRow(width, left, right int) string {
+	edge := lipgloss.NewStyle().Foreground(subtleColor)
+	var row strings.Builder
+	if left > 0 {
+		row.WriteString(edge.Render("╭" + strings.Repeat("─", left-1) + "╯"))
+	} else {
+		row.WriteString(edge.Render("│"))
+	}
+	row.WriteString(strings.Repeat(" ", max(right-left-1, 0)))
+	if right < width-1 {
+		row.WriteString(edge.Render("╰" + strings.Repeat("─", width-2-right) + "╮"))
+	} else {
+		row.WriteString(edge.Render("│"))
+	}
+	return row.String()
+}
+
+// questionDialogHeight reports the dialog's painted rows, or 0 when hidden, so
+// chrome measurement and painting agree.
+func (m model) questionDialogHeight(width int) int {
+	if !m.questionVisible() {
+		return 0
+	}
+	return lipgloss.Height(m.questionDialogView(width))
 }
 
 // questionLine is the panel's single question row: just the question

@@ -33,10 +33,11 @@ func (m *model) resizeLayout() {
 		footer: lipgloss.Height(m.footerView(width)),
 	}
 	if m.reading == nil {
-		m.chrome.composer = lipgloss.Height(m.composerViewWithStyle(width, composerBlurredStyle))
+		m.chrome.composer = lipgloss.Height(m.composerViewWithStyle(width, m.composerFrameStyle(width)))
 	}
+	m.chrome.question = m.questionDialogHeight(width)
 	c := m.chrome
-	m.viewport.SetHeight(max(m.layoutHeight()-c.header-c.menu-c.composer-c.footer, minimumViewport))
+	m.viewport.SetHeight(max(m.layoutHeight()-c.header-c.menu-c.question-c.composer-c.footer, minimumViewport))
 }
 
 func (m *model) refreshViewport(forceBottom bool) {
@@ -173,13 +174,9 @@ func (m model) footerView(width int) string {
 // composerParts returns the rows rendered inside the composer frame, in
 // order: an optional pending-queue notice followed by the input field.
 // Attached paste placeholders render inline tinted, still occupying exactly
-// their visible width so the terminal cursor stays aligned.
+// their visible width so the terminal cursor stays aligned. A visible Q&A
+// dialog sits above the frame; it never replaces these rows.
 func (m model) composerParts(contentWidth int) []string {
-	// The Q&A panel replaces the composer while it is visible: the main
-	// draft is preserved in the panel and restored on submit or expiry.
-	if m.questionVisible() {
-		return []string{m.questionView(contentWidth)}
-	}
 	parts := make([]string, 0, 3)
 	if !m.side.isVisible {
 		if pending := m.pendingQueueView(contentWidth); pending != "" {
@@ -197,11 +194,21 @@ func (m model) composerView(width int) string {
 	if m.reading != nil {
 		return ""
 	}
+	return m.composerViewWithStyle(width, m.composerFrameStyle(width))
+}
+
+// composerFrameStyle resolves the composer frame. An attached Q&A dialog owns
+// the top edge, so the composer drops its own top border and merges into the
+// shared attachment row instead of painting a second line beneath it.
+func (m model) composerFrameStyle(width int) lipgloss.Style {
 	style := composerBlurredStyle
 	if m.input.Focused() && (m.composerActive || m.composerHovered(width)) {
 		style = composerFocusedStyle
 	}
-	return m.composerViewWithStyle(width, style)
+	if m.questionVisible() {
+		style = style.BorderTop(false)
+	}
+	return style
 }
 
 func (m model) composerViewWithStyle(width int, style lipgloss.Style) string {

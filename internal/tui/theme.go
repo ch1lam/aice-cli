@@ -75,7 +75,14 @@ var (
 				Border(lipgloss.RoundedBorder()).
 				BorderForeground(secondaryColor).
 				Padding(0, 1)
-	composerBlurredStyle  = composerFocusedStyle.BorderForeground(subtleColor)
+	composerBlurredStyle = composerFocusedStyle.BorderForeground(subtleColor)
+	// The Q&A dialog grows out of the composer's top edge and owns keyboard
+	// input, so it carries the focused frame while the composer keeps the
+	// blurred one underneath.
+	questionDialogStyle = lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(secondaryColor).
+				Padding(0, 1)
 	slashCommandMenuStyle = lipgloss.NewStyle().
 				Border(lipgloss.RoundedBorder()).
 				BorderForeground(subtleColor).

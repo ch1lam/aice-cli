@@ -603,14 +603,19 @@ func (m model) View() tea.View {
 	} else {
 		transcript = m.viewport.viewWithCodeHover(m.hoveredFold(), m.hoveredCode())
 	}
-	content := lipgloss.JoinVertical(
-		lipgloss.Left,
+	frame := []string{
 		m.headerView(width),
 		transcript,
 		m.commandMenuView(width),
-		m.composerView(width),
-		m.footerView(width),
-	)
+	}
+	// The Q&A dialog merges with the composer: the dialog paints above it and
+	// shares the composer's top edge, while the composer keeps its placeholder
+	// below.
+	if dialog := m.questionDialogView(width); dialog != "" {
+		frame = append(frame, dialog)
+	}
+	frame = append(frame, m.composerView(width), m.footerView(width))
+	content := lipgloss.JoinVertical(lipgloss.Left, frame...)
 
 	return m.terminalView(content)
 }

@@ -836,8 +836,10 @@ func (m model) overlayCopyNotice(content string, width int) string {
 		Padding(0, 2).
 		Render("✓ Copied")
 	x := max((width-lipgloss.Width(bubble))/2, 0)
+	layout := m.layoutWidth()
 	composerTop := lipgloss.Height(content) - m.verticalPadding() -
-		lipgloss.Height(m.footerView(m.layoutWidth())) - lipgloss.Height(m.composerView(m.layoutWidth()))
+		lipgloss.Height(m.footerView(layout)) - lipgloss.Height(m.composerView(layout)) -
+		m.questionDialogHeight(layout)
 	y := max(composerTop-lipgloss.Height(bubble), 0)
 	return lipgloss.NewCompositor(
 		lipgloss.NewLayer(content),
