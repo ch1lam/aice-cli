@@ -113,7 +113,7 @@ func (p *questionPanel) moveFocus(delta int) {
 }
 
 // typeText appends user input to the current text field. Typing without a
-// selection drafts a custom answer (settled by Enter); typing after a
+// selection selects a non-blank custom answer; typing after a
 // selection keeps the choice and treats the text as a supplement.
 func (p *questionPanel) typeText(value string) {
 	if value == "" {
@@ -131,12 +131,12 @@ func (p *questionPanel) typeText(value string) {
 		if p.focus == p.customRow() || p.selected[p.index] < 0 {
 			p.selected[p.index] = -1
 			p.custom[p.index] = true
-			p.settled[p.index] = false
+			p.settled[p.index] = strings.TrimSpace(p.texts[p.index]) != ""
 			p.focus = p.customRow()
 		}
 	} else {
 		p.custom[p.index] = true
-		p.settled[p.index] = false
+		p.settled[p.index] = strings.TrimSpace(p.texts[p.index]) != ""
 	}
 	p.notice = ""
 	p.scroll, p.inputScroll = -1, -1
@@ -148,6 +148,9 @@ func (p *questionPanel) backspace() {
 		return
 	}
 	p.texts[p.index] = string(runes[:len(runes)-1])
+	if p.custom[p.index] {
+		p.settled[p.index] = strings.TrimSpace(p.texts[p.index]) != ""
+	}
 	p.notice = ""
 	p.scroll, p.inputScroll = -1, -1
 }
@@ -165,7 +168,7 @@ func (p *questionPanel) selectFocused() {
 		p.selected[p.index] = -1
 		p.custom[p.index] = true
 		p.skipped[p.index] = false
-		p.settled[p.index] = false
+		p.settled[p.index] = strings.TrimSpace(p.texts[p.index]) != ""
 		p.notice = ""
 		p.scroll, p.inputScroll = -1, -1
 		return
@@ -183,11 +186,12 @@ func (p *questionPanel) selectFocused() {
 // Otherwise Space stays a text key so supplements, custom answers, and
 // free-text answers containing spaces remain typable.
 func (p *questionPanel) shouldSpaceSelect() bool {
-	return p.hasOptions() && !p.textFocus && p.focus != p.customRow()
+	return p.hasOptions() && !p.textFocus &&
+		(p.focus != p.customRow() || strings.TrimSpace(p.texts[p.index]) != "")
 }
 
-// submitAttempt finalizes text drafts (custom and free-text answers settle
-// on submit) and reports whether every question is answered or skipped.
+// submitAttempt validates drafts and reports whether every question is
+// answered or skipped. Selection alone never submits a reply.
 func (p *questionPanel) submitAttempt() bool {
 	for i := range p.prompt.Request.Questions {
 		if p.skipped[i] {
@@ -455,17 +459,13 @@ func (m model) questionOptionRow(
 	row int,
 	option interaction.QuestionOption,
 ) string {
-	marker := "  "
 	style := bodyStyle
-	if row == panel.focus && !panel.textFocus {
-		marker = "› "
-		style = lipgloss.NewStyle().Bold(true).Foreground(secondaryColor)
+	selected := panel.settled[panel.index] && panel.selected[panel.index] == row && !panel.custom[panel.index]
+	if selected {
+		style = style.Foreground(successColor)
 	}
-	selected := "○"
-	if panel.settled[panel.index] && panel.selected[panel.index] == row && !panel.custom[panel.index] {
-		selected = "●"
-	}
-	label := fmt.Sprintf("%s%d %s %s", marker, row+1, selected, sanitizeSingleLineText(option.Label))
+	prefix := questionChoicePrefix(row == panel.focus && !panel.textFocus, selected)
+	label := sanitizeSingleLineText(option.Label)
 	description := sanitizeSingleLineText(option.Description)
 	recommend := ""
 	recommendStyle := lipgloss.NewStyle().Foreground(secondaryColor)
@@ -475,44 +475,64 @@ func (m model) questionOptionRow(
 	if description != "" {
 		// Wide terminals keep name and description on one row; narrow
 		// terminals stack the description below the name.
-		if ansi.StringWidth(label+"  "+description+recommend) <= inner {
-			return style.Render(label) + mutedStyle.Render("  "+description) + recommendStyle.Render(recommend)
+		if ansi.StringWidth(prefix+label+"  "+description+recommend) <= inner {
+			return prefix + style.Render(label) + mutedStyle.Render("  "+description) + recommendStyle.Render(recommend)
 		}
 	}
-	line := style.Render(label) + recommendStyle.Render(recommend)
+	line := prefix + style.Render(label) + recommendStyle.Render(recommend)
 	if description != "" {
-		indent := strings.Repeat(" ", ansi.StringWidth(marker)+4)
+		indent := strings.Repeat(" ", ansi.StringWidth(prefix))
 		desc := truncateTerminalText(description, max(inner-ansi.StringWidth(indent), 1))
 		line += "\n" + indent + mutedStyle.Render(desc)
 	}
 	return line
 }
 
+// questionChoicePrefix shares the huh-style focus and selection marks between
+// preset options and the custom answer, whose editor is the final option row.
+func questionChoicePrefix(focused, selected bool) string {
+	marker := "  "
+	if focused {
+		marker = lipgloss.NewStyle().Foreground(secondaryColor).Render("> ")
+	}
+	check := mutedStyle.Render("• ")
+	if selected {
+		check = lipgloss.NewStyle().Foreground(successColor).Render("✓ ")
+	}
+	return marker + check
+}
+
 // questionInputWindow renders the answer inside the shared composer frame.
 // The ordinary composer editor stays suspended, retaining attachments and caret.
 func (m model) questionInputWindow(width int) (rows []string, offset, height int) {
 	panel := m.question
+	prefix := ""
+	if panel.hasOptions() {
+		prefix = questionChoicePrefix(panel.focus == panel.customRow(),
+			panel.custom[panel.index] && panel.settled[panel.index])
+	}
+	textWidth := max(width-ansi.StringWidth(prefix), 1)
 	text := sanitizeMultilineText(panel.texts[panel.index])
 	shown := bodyStyle.Render(text)
 	if text == "" {
 		placeholder := "输入回复…"
 		if panel.hasOptions() {
-			placeholder = fmt.Sprintf("%d · 自定义回复…", panel.customRow()+1)
+			placeholder = "自定义回复…"
 			if panel.selected[panel.index] >= 0 && !panel.custom[panel.index] && panel.focus != panel.customRow() {
 				placeholder = "为所选项补充说明，或按 ↓ 选择自定义回复…"
 			}
 		}
-		shown = mutedStyle.Render(truncateTerminalText(placeholder, width))
+		shown = mutedStyle.Render(truncateTerminalText(placeholder, textWidth))
 	}
 	if panel.textFocus || !panel.hasOptions() || panel.focus == panel.customRow() {
 		if text == "" {
 			// The caret sits where typing starts, not after the placeholder.
-			shown = guardCursorStyle.Render(" ") + ansi.Truncate(shown, max(width-1, 0), "…")
+			shown = guardCursorStyle.Render(" ") + ansi.Truncate(shown, max(textWidth-1, 0), "…")
 		} else {
 			shown += guardCursorStyle.Render(" ")
 		}
 	}
-	rows = strings.Split(ansi.Hardwrap(shown, max(width, 1), true), "\n")
+	rows = strings.Split(ansi.Hardwrap(shown, textWidth, true), "\n")
 	// Reserve the question's top edge/body and the composer's bottom edge.
 	available := max(m.layoutHeight()-m.chrome.header-m.chrome.footer-minimumViewport-3, 1)
 	height = min(len(rows), inputMaximumHeight, available)
@@ -521,6 +541,13 @@ func (m model) questionInputWindow(width int) (rows []string, offset, height int
 		offset = len(rows) - height
 	}
 	offset = min(max(offset, 0), len(rows)-height)
+	for i := range rows {
+		if i == offset {
+			rows[i] = prefix + rows[i]
+		} else {
+			rows[i] = strings.Repeat(" ", ansi.StringWidth(prefix)) + rows[i]
+		}
+	}
 	return rows, offset, height
 }
 

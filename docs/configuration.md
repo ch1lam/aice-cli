@@ -1234,9 +1234,14 @@ into view:
 
 - Each question sits in the upper-left border, with a blank separator before
   its options. Long or multiline questions also keep their full text in the
-  scrollable body. The input area is the custom option: its placeholder shows
-  the next option number (for example, `4 · 自定义回复…`), and typing replaces
-  that placeholder. There is no duplicate custom-option row above it.
+  scrollable body. Preset options and the custom input use huh MultiSelect's
+  visual convention: `>` marks focus, `•` is unselected, and a green `✓`
+  marks the single selected answer. The existing Lip Gloss renderer owns
+  these styles and the panel keeps single-selection behavior.
+  The input area is the custom option (for example, `• 自定义回复…`);
+  its selection mark remains visible when typing replaces the placeholder.
+  Option rows do not display numeric labels. There is no duplicate
+  custom-option row above it.
   Free-text questions use `输入回复…`; after selecting an option, the input
   can still hold a supplement to that selection.
   Options show the practical difference of each choice; at most one is marked
@@ -1255,7 +1260,10 @@ never an answer: every question must be answered before `Enter` submits.
   An option question accepts either a valid selection (with optional
   supplement text) or a custom answer (empty selection, non-blank text).
   Choosing or typing into the custom row clears any previous selection;
-  switching questions preserves that custom answer. Moving focus alone
+  non-blank custom text immediately marks that row selected, and clearing
+  it removes the mark. After moving focus back to a populated custom row,
+  `Space` selects it; during typing, spaces remain literal input.
+  Switching questions preserves that custom answer. Moving focus alone
   never changes the submitted choice.
   Answers are limited to 2,000 characters; an oversized insert is rejected
   with a notice and leaves the existing answer intact. Terminal control

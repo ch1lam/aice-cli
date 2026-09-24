@@ -126,8 +126,8 @@ func TestQuestionComposerOwnsCustomAnswer(t *testing.T) {
 			prompt.Request.Questions[0].Options = append(prompt.Request.Questions[0].Options,
 				interaction.QuestionOption{ID: "explain", Label: "解释代码"})
 			current := newQuestionTestModelSized(t, prompt, width, 24)
-			if view := ansi.Strip(current.composerView(current.layoutWidth())); !strings.Contains(view, "4 · 自定义回复") {
-				t.Fatalf("composer must identify the fourth option: %s", view)
+			if view := ansi.Strip(current.composerView(current.layoutWidth())); !strings.Contains(view, "• 自定义回复") {
+				t.Fatalf("composer must show the custom option: %s", view)
 			}
 			current = pressQuestionKey(t, current, tea.KeyPressMsg{Code: '4', Text: "4"})
 			text := "回复开头\n" + strings.Repeat("中间内容\n", 40) + "回复末尾"
@@ -159,6 +159,66 @@ func TestQuestionComposerOwnsCustomAnswer(t *testing.T) {
 				t.Fatal("input did not submit")
 			}
 		})
+	}
+}
+
+func TestQuestionCustomSelectionTracksTextAndReplacesOptions(t *testing.T) {
+	prompt, replies := newQuestionTestPrompt()
+	prompt.Request.Questions = prompt.Request.Questions[:1]
+	prompt.Request.Questions[0].Options = append(prompt.Request.Questions[0].Options,
+		interaction.QuestionOption{ID: "explain", Label: "解释代码"})
+	current := newQuestionTestModel(t, prompt)
+	assertChoice := func(want string, count int) {
+		t.Helper()
+		view := questionScreen(t, current)
+		if !strings.Contains(view, want) || strings.Count(view, "✓") != count {
+			t.Fatalf("want %q and %d selected row(s):\n%s", want, count, view)
+		}
+		select {
+		case <-replies:
+			t.Fatal("selecting or editing must not submit")
+		default:
+		}
+	}
+	current = pressQuestionKey(t, current, tea.KeyPressMsg{Code: '1', Text: "1"})
+	assertChoice("> ✓ 仅检查", 1)
+	current = pressQuestionKey(t, current, tea.KeyPressMsg{Code: '4', Text: "4"})
+	assertChoice("> • ", 0)
+	current = typeQuestionText(t, current, " \n")
+	assertChoice("> • ", 0)
+	current = typeQuestionText(t, current, "a b")
+	assertChoice("> ✓ ", 1)
+	// Moving focus keeps the custom selection; Space replaces it with a preset.
+	current = pressQuestionKey(t, current, tea.KeyPressMsg{Code: tea.KeyUp})
+	assertChoice("✓ ", 1)
+	current = pressQuestionKey(t, current, tea.KeyPressMsg{Code: ' ', Text: " "})
+	assertChoice("> ✓ 解释代码", 1)
+	// A populated custom row can be selected again without inserting a space.
+	current = pressQuestionKey(t, current, tea.KeyPressMsg{Code: tea.KeyDown})
+	current = pressQuestionKey(t, current, tea.KeyPressMsg{Code: ' ', Text: " "})
+	assertChoice("> ✓ ", 1)
+	if current.question.texts[0] != " \na b" {
+		t.Fatalf("selecting custom changed text: %q", current.question.texts[0])
+	}
+	for range 3 {
+		current = pressQuestionKey(t, current, tea.KeyPressMsg{Code: tea.KeyBackspace})
+	}
+	assertChoice("> • ", 0)
+	current = pressQuestionKey(t, current, tea.KeyPressMsg{Code: tea.KeyEnter})
+	if current.question == nil {
+		t.Fatal("whitespace-only custom answer submitted")
+	}
+	current = updateModel(t, current, tea.PasteMsg{Content: "自定义回答"})
+	assertChoice("> ✓ ", 1)
+	current = pressQuestionKey(t, current, tea.KeyPressMsg{Code: tea.KeyEnter})
+	select {
+	case reply := <-replies:
+		answer := reply.Answers["mode"]
+		if answer.SelectedOptionID != "" || answer.Text != "自定义回答" {
+			t.Fatalf("custom answer changed: %+v", answer)
+		}
+	default:
+		t.Fatal("Enter did not submit")
 	}
 }
 

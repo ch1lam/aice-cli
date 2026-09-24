@@ -375,8 +375,12 @@ consistency for those behaviors.
   submit (or explicit per-question skip) produces a result. Its dialog extends
   the composer upward into one yellow frame with aligned sides and no
   internal border. The question title sits in the upper-left edge; overflow
-  remains in the body. The input area holds the answer and its placeholder
-  identifies the custom option number, without duplicating it in the list.
+  remains in the body. The input area holds the answer with a persistent
+  selection mark, without duplicating it in the list. Preset and custom rows
+  do not display numeric labels.
+  Preset and custom rows share huh-style focus and selection marks, with
+  at most one selected answer. Non-blank custom input selects the custom row
+  immediately; clearing it removes selection. Only Enter submits the group.
   The question body is capped to the available height; the answer window
   grows to at most six rows. Shortcut hints appear
   only in the shared footer below the composer, derived from the effective
