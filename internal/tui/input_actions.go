@@ -28,10 +28,9 @@ const (
 	inputActionClose     inputAction = "close"
 
 	inputActionQuestionMove      inputAction = "question.move"
-	inputActionQuestionTab       inputAction = "question.tab"
-	inputActionQuestionConfirm   inputAction = "question.confirm"
-	inputActionQuestionSkip      inputAction = "question.skip"
-	inputActionQuestionBack      inputAction = "question.back"
+	inputActionQuestionSwitch    inputAction = "question.switch"
+	inputActionQuestionSelect    inputAction = "question.select"
+	inputActionQuestionSubmit    inputAction = "question.submit"
 	inputActionQuestionBackspace inputAction = "question.backspace"
 	inputActionQuestionNewline   inputAction = "question.newline"
 	inputActionQuestionBrowse    inputAction = "question.browse"

@@ -91,10 +91,10 @@ func (p *questionPanel) moveQuestion(delta int) {
 	p.index = min(max(p.index+delta, 0), count-1)
 	p.focus = p.initialFocus(p.index)
 	// Keep an already recorded choice visible when returning to a question.
-	if p.settled[p.index] && p.hasOptions() && !p.custom[p.index] && !p.skipped[p.index] {
+	if p.hasOptions() && !p.custom[p.index] && !p.skipped[p.index] && p.selected[p.index] >= 0 {
 		p.focus = p.selected[p.index]
 	}
-	if p.settled[p.index] && (p.custom[p.index] || !p.hasOptions()) {
+	if p.custom[p.index] || !p.hasOptions() {
 		p.focus = p.customRow()
 	}
 	p.textFocus = false
@@ -108,9 +108,9 @@ func (p *questionPanel) moveFocus(delta int) {
 	p.focus = min(max(p.focus+delta, 0), p.rows()-1)
 }
 
-// typeText appends user input to the current text field. With a selected
-// option the text is a supplement; otherwise it becomes the answer itself and
-// focus moves to the custom row.
+// typeText appends user input to the current text field. Typing without a
+// selection drafts a custom answer (settled by Enter); typing after a
+// selection keeps the choice and treats the text as a supplement.
 func (p *questionPanel) typeText(value string) {
 	if value == "" {
 		return
@@ -118,8 +118,15 @@ func (p *questionPanel) typeText(value string) {
 	p.texts[p.index] += value
 	p.skipped[p.index] = false
 	p.textFocus = true
-	if p.hasOptions() && p.selected[p.index] < 0 {
-		p.focus = p.customRow()
+	if p.hasOptions() {
+		if p.focus == p.customRow() || p.selected[p.index] < 0 {
+			p.custom[p.index] = true
+			p.settled[p.index] = false
+			p.focus = p.customRow()
+		}
+	} else {
+		p.custom[p.index] = true
+		p.settled[p.index] = false
 	}
 	p.notice = ""
 }
@@ -133,48 +140,64 @@ func (p *questionPanel) backspace() {
 	p.notice = ""
 }
 
-// confirm settles the current question from focus and text. It reports
-// whether every question is now settled.
-func (p *questionPanel) confirm() bool {
-	text := strings.TrimSpace(p.texts[p.index])
+// selectFocused records the focused option for the current question and
+// stays on it; Enter submits the whole group separately.
+func (p *questionPanel) selectFocused() {
 	if !p.hasOptions() {
-		if text == "" {
-			p.notice = "输入答案，或按 Ctrl+s 跳过本题"
-			return false
-		}
-		p.custom[p.index] = true
-		p.selected[p.index] = -1
-		p.skipped[p.index] = false
-		p.settled[p.index] = true
-		p.notice = ""
-		return p.allSettled()
+		return
 	}
 	if p.focus == p.customRow() {
-		if text == "" {
-			p.notice = "输入自定义答案，或按 s 跳过本题"
-			return false
-		}
-		p.custom[p.index] = true
-		p.selected[p.index] = -1
-		p.skipped[p.index] = false
-		p.settled[p.index] = true
+		// The custom row holds no option: focus the text field so the
+		// answer (including spaces) stays typable.
+		p.textFocus = true
 		p.notice = ""
-		return p.allSettled()
+		return
 	}
 	p.selected[p.index] = p.focus
 	p.custom[p.index] = false
 	p.skipped[p.index] = false
 	p.settled[p.index] = true
-	p.notice = ""
-	return p.allSettled()
-}
-
-func (p *questionPanel) skip() bool {
-	p.skipped[p.index] = true
-	p.settled[p.index] = true
-	p.selected[p.index] = -1
 	p.textFocus = false
 	p.notice = ""
+}
+
+// shouldSpaceSelect reports whether Space chooses the focused option.
+// Otherwise Space stays a text key so supplements, custom answers, and
+// free-text answers containing spaces remain typable.
+func (p *questionPanel) shouldSpaceSelect() bool {
+	return p.hasOptions() && !p.textFocus && p.focus != p.customRow()
+}
+
+// submitAttempt finalizes text drafts (custom and free-text answers settle
+// on submit) and reports whether every question is answered or skipped.
+func (p *questionPanel) submitAttempt() bool {
+	if currentText := strings.TrimSpace(p.texts[p.index]); currentText != "" &&
+		p.hasOptions() && p.focus == p.customRow() && !p.skipped[p.index] {
+		// An explicit custom-row submit replaces a previous selection.
+		p.selected[p.index] = -1
+		p.custom[p.index] = true
+		p.skipped[p.index] = false
+		p.settled[p.index] = true
+	}
+	for i := range p.prompt.Request.Questions {
+		if p.skipped[i] {
+			p.settled[i] = true
+			continue
+		}
+		if p.selected[i] >= 0 && p.selected[i] < len(p.prompt.Request.Questions[i].Options) {
+			p.custom[i] = false
+			p.settled[i] = true
+			continue
+		}
+		p.selected[i] = -1
+		if strings.TrimSpace(p.texts[i]) != "" {
+			p.custom[i] = true
+			p.settled[i] = true
+			continue
+		}
+		p.custom[i] = false
+		p.settled[i] = false
+	}
 	return p.allSettled()
 }
 
@@ -187,14 +210,16 @@ func (p *questionPanel) allSettled() bool {
 	return true
 }
 
-// nextUnsettled moves to the first question still awaiting an explicit
-// answer or skip.
-func (p *questionPanel) nextUnsettled() {
-	for offset := 1; offset <= len(p.settled); offset++ {
-		next := (p.index + offset) % len(p.settled)
-		if !p.settled[next] {
-			p.index = next
-			p.focus = p.initialFocus(next)
+// firstUnsettled moves to the lowest-index question still awaiting an
+// answer or skip, so an incomplete submit guides the user forward.
+func (p *questionPanel) firstUnsettled() {
+	for offset := 0; offset < len(p.settled); offset++ {
+		if !p.settled[offset] {
+			p.index = offset
+			p.focus = p.initialFocus(offset)
+			if p.custom[offset] {
+				p.focus = p.customRow()
+			}
 			p.textFocus = false
 			p.notice = ""
 			return
@@ -290,7 +315,6 @@ func (m *model) openQuestion(prompt interaction.QuestionPrompt) tea.Cmd {
 	m.question.saved = m.input.Value()
 	m.input.SetValue("")
 	m.input.Blur()
-	m.status = "等待你的回答…"
 	m.resizeLayout()
 	m.refreshViewport(true)
 	return waitForQuestionExpiry(prompt)
@@ -315,7 +339,7 @@ func (m *model) submitQuestion() tea.Cmd {
 	}
 	reply, err := panel.buildReply()
 	if err != nil {
-		panel.notice = "答案不完整：请回答或跳过每一题"
+		panel.notice = "答案不完整：请回答每一题"
 		m.resizeLayout()
 		m.refreshViewport(false)
 		return nil
@@ -336,24 +360,9 @@ func (m model) questionView(width int) string {
 	}
 	inner := max(width-4, 20)
 	rows := make([]string, 0, 16)
-	rows = append(rows, brandStyle.Render("◆ 等待你的回答"))
 	item := panel.current()
-	title := strings.TrimSpace(item.Header)
-	if title == "" {
-		title = strings.TrimSpace(item.Question)
-	}
-	counter := mutedStyle.Render(fmt.Sprintf("%d / %d", panel.index+1, len(panel.prompt.Request.Questions)))
-	heading := bodyStyle.Render(title)
-	if ansi.StringWidth(title)+ansi.StringWidth(counter)+3 <= inner {
-		gap := inner - ansi.StringWidth(title) - ansi.StringWidth(counter)
-		heading += strings.Repeat(" ", gap) + counter
-	} else {
-		heading += "\n" + counter
-	}
-	rows = append(rows, heading)
-	if strings.TrimSpace(item.Header) != "" {
-		rows = append(rows, mutedStyle.Render(sanitizeSingleLineText(item.Question)))
-	}
+	rows = append(rows, bodyStyle.Render(questionLine(item)))
+	rows = append(rows, "")
 	for row, option := range item.Options {
 		rows = append(rows, m.questionOptionRow(inner, panel, row, option))
 	}
@@ -366,6 +375,15 @@ func (m model) questionView(width int) string {
 	}
 	rows = append(rows, mutedStyle.Render(m.questionHelp(inner)))
 	return strings.Join(rows, "\n")
+}
+
+// questionLine is the panel's single question row: just the question
+// itself, with options separated below by a blank line.
+func questionLine(item *interaction.QuestionItem) string {
+	if text := strings.TrimSpace(item.Question); text != "" {
+		return text
+	}
+	return strings.TrimSpace(item.Header)
 }
 
 func (m model) questionOptionRow(
@@ -386,6 +404,7 @@ func (m model) questionOptionRow(
 	}
 	label := fmt.Sprintf("%s%d %s %s", marker, row+1, selected, option.Label)
 	recommend := ""
+	recommendStyle := lipgloss.NewStyle().Foreground(secondaryColor)
 	if option.ID == panel.current().RecommendedOptionID {
 		recommend = "  推荐"
 	}
@@ -393,10 +412,10 @@ func (m model) questionOptionRow(
 		// Wide terminals keep name and description on one row; narrow
 		// terminals stack the description below the name.
 		if ansi.StringWidth(label+"  "+option.Description+recommend) <= inner {
-			return style.Render(label) + mutedStyle.Render("  "+option.Description) + mutedStyle.Render(recommend)
+			return style.Render(label) + mutedStyle.Render("  "+option.Description) + recommendStyle.Render(recommend)
 		}
 	}
-	line := style.Render(label) + mutedStyle.Render(recommend)
+	line := style.Render(label) + recommendStyle.Render(recommend)
 	if option.Description != "" {
 		indent := strings.Repeat(" ", ansi.StringWidth(marker)+4)
 		desc := truncateTerminalText(option.Description, max(inner-ansi.StringWidth(indent), 1))
@@ -439,11 +458,8 @@ func (m model) questionTextRow(inner int, panel *questionPanel) string {
 }
 
 func (m model) questionHelp(inner int) string {
-	help := "↑↓ 选择 · Tab 切换输入 · Enter 确认"
-	if m.question != nil && m.question.index == len(m.question.prompt.Request.Questions)-1 {
-		help = "↑↓ 选择 · Tab 切换输入 · Enter 提交全部答案"
-	}
-	help += " · s/Ctrl+s 跳过 · Bksp 上一题 · Esc 查看对话 · Ctrl+c 取消运行"
+	help := "↑↓ 选择 · Space 选中 · ←→ 切换问题 · Enter 提交全部"
+	help += " · Esc 查看对话 · Ctrl+c 取消运行"
 	return truncateTerminalText(help, max(inner, 1))
 }
 
@@ -484,39 +500,23 @@ func (m model) handleQuestionAction(match inputActionMatch) (model, tea.Cmd, boo
 		panel.textFocus = false
 		panel.moveFocus(match.argument)
 		m.resizeLayout()
-	case inputActionQuestionTab:
-		panel.textFocus = !panel.textFocus
-		if panel.textFocus && panel.hasOptions() && panel.selected[panel.index] < 0 {
-			panel.focus = panel.customRow()
-		}
-		m.resizeLayout()
-	case inputActionQuestionConfirm:
-		if panel.confirm() && panel.allSettled() {
-			return m, m.submitQuestion(), true
-		}
-		if panel.settled[panel.index] {
-			panel.nextUnsettled()
-		}
+	case inputActionQuestionSwitch:
+		panel.moveQuestion(match.argument)
 		m.resizeLayout()
 		m.refreshViewport(false)
-	case inputActionQuestionSkip:
-		if panel.skip() && panel.allSettled() {
+	case inputActionQuestionSelect:
+		panel.selectFocused()
+		m.resizeLayout()
+	case inputActionQuestionSubmit:
+		if panel.submitAttempt() {
 			return m, m.submitQuestion(), true
 		}
-		panel.nextUnsettled()
-		m.resizeLayout()
-		m.refreshViewport(false)
-	case inputActionQuestionBack:
-		panel.moveQuestion(-1)
+		panel.firstUnsettled()
+		panel.notice = "答案不完整：请回答每一题"
 		m.resizeLayout()
 		m.refreshViewport(false)
 	case inputActionQuestionBackspace:
-		// Empty text steps back; otherwise it edits.
-		if panel.texts[panel.index] == "" {
-			panel.moveQuestion(-1)
-		} else {
-			panel.backspace()
-		}
+		panel.backspace()
 		m.resizeLayout()
 	case inputActionQuestionNewline:
 		panel.typeText("\n")
@@ -538,45 +538,24 @@ func (m model) handleQuestionAction(match inputActionMatch) (model, tea.Cmd, boo
 	return m, nil, true
 }
 
-// handleQuestionText routes printable input. Single-letter and digit answers
-// stay available as shortcuts only while the text field is empty and unfocused;
-// any other input (or any input into a non-empty field) edits the text.
+// handleQuestionText routes printable input. Digit answers stay available
+// as shortcuts only while the text field is empty and unfocused; any other
+// input (or any input into a non-empty field) edits the text. Space never
+// reaches here for selection: it is bound to question.select while an option
+// row is focused and falls through as text otherwise.
 func (m model) handleQuestionText(message tea.KeyPressMsg) (model, tea.Cmd, bool) {
 	if m.question == nil || m.question.browse || message.Text == "" {
 		return m, nil, true
 	}
 	panel := m.question
 	if !panel.textFocus && panel.texts[panel.index] == "" && panel.hasOptions() {
-		switch message.Text {
-		case "s", "S":
-			if panel.skip() && panel.allSettled() {
-				return m, m.submitQuestion(), true
-			}
-			panel.nextUnsettled()
-			m.resizeLayout()
-			m.refreshViewport(false)
-			return m, nil, true
-		case "b", "B":
-			panel.moveQuestion(-1)
-			m.resizeLayout()
-			m.refreshViewport(false)
-			return m, nil, true
-		}
 		if len(message.Text) == 1 && message.Text[0] >= '1' && message.Text[0] <= '9' {
 			row := int(message.Text[0] - '1')
 			if row < panel.rows() {
 				panel.focus = row
-				if panel.confirm() && panel.allSettled() {
-					return m, m.submitQuestion(), true
-				}
-				// Only an explicitly settled question may advance. A digit
-				// that lands on the custom row with empty text stays on the
-				// current question and focuses the input for editing.
-				if panel.settled[panel.index] {
-					panel.nextUnsettled()
-				} else if row == panel.customRow() {
-					panel.textFocus = true
-				}
+				// A digit on the custom row with empty text focuses the
+				// input for editing; option digits select and stay.
+				panel.selectFocused()
 				m.resizeLayout()
 				m.refreshViewport(false)
 				return m, nil, true
