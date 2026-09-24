@@ -104,8 +104,8 @@ type selectionHighlight struct {
 	codeEnd   []int
 	// points carries the content identity per window row; padding rows use
 	// item -1 and never match the selection.
-	points   []selectionPoint
-	selected bool
+	points    []selectionPoint
+	selected  bool
 	lastStart selectionPoint
 	lastEnd   selectionPoint
 }
@@ -247,9 +247,8 @@ func (m *model) handleSelectionWheel(message tea.MouseWheelMsg) {
 	}
 	m.selection.frozen.scroll(delta)
 	m.selection.wheeled = true
-	if position, _ := viewportPointAt(&m.selection.frozen, message.Mouse(), *m, true); true {
-		m.selection.update(position)
-	}
+	position, _ := viewportPointAt(&m.selection.frozen, message.Mouse(), *m, true)
+	m.selection.update(position)
 }
 
 func (m model) handleTranscriptMouseRelease(
@@ -656,22 +655,16 @@ func selectedFrozenText(
 		return ""
 	}
 
-	type codePick struct {
-		placement       *codeBlockPlacement
-		sourceLine      int
-		line            string
-		columnStart     int
-		columnEnd       int
-		contentStart    int
-		contentEnd      int
-		full            bool
-		pickedStart     int
-		pickedEnd       int
-		totalVisualRows int
+	// A nil placement identifies prose; code rows retain their layout row so
+	// complete source lines can be recognized from adjacent row boundaries.
+	type rowPick struct {
+		placement              *codeBlockPlacement
+		sourceLine, row        int
+		line                   string
+		full                   bool
+		pickedStart, pickedEnd int
 	}
-	// Collect per-row picks so wrapped continuations of one source line can
-	// be joined without inserting fake newlines or line numbers.
-	var picks []any
+	var picks []rowPick
 	curItem, curPart, curLine := start.item, start.part, start.line
 	endItem, endPart, endLine := end.item, end.part, end.line
 	// Guard against stale endpoints outside the frozen version.
@@ -708,34 +701,25 @@ func selectedFrozenText(
 		lineWidth := ansi.StringWidth(text)
 		columnStart, columnEnd, inRange := selectedColumnRange(start, end, rowPoint, lineWidth)
 		if !inRange {
-			picks = append(picks, "")
+			picks = append(picks, rowPick{})
 		} else {
 			snapshot := transcriptRow{item: curItem, part: curPart, line: curLine, text: text, code: code}
 			placement, sourceLine, contentStart, contentEnd, ok := codeSourceRange(&snapshot)
 			if !ok {
 				part := ansi.Strip(ansi.Cut(text, columnStart, columnEnd))
-				picks = append(picks, strings.TrimRight(part, " "))
+				picks = append(picks, rowPick{line: strings.TrimRight(part, " ")})
 			} else {
 				contentStart = max(contentStart, 0)
 				contentEnd = min(contentEnd, lineWidth)
 				pickedStart, pickedEnd := max(columnStart, contentStart), min(columnEnd, contentEnd)
 				if pickedEnd <= pickedStart {
 					// Gutter or panel padding only: never copy line numbers.
-					picks = append(picks, codePick{placement: placement, sourceLine: sourceLine, full: false, pickedStart: -1})
+					picks = append(picks, rowPick{placement: placement, sourceLine: sourceLine, row: code.row, pickedStart: -1})
 				} else {
 					full := columnStart <= contentStart && columnEnd >= contentEnd
-					total := 0
-					for _, r := range placement.layout.rows {
-						if r.sourceLine == sourceLine {
-							total++
-						}
-					}
-					picks = append(picks, codePick{
-						placement: placement, sourceLine: sourceLine, line: text,
-						columnStart: columnStart, columnEnd: columnEnd,
-						contentStart: contentStart, contentEnd: contentEnd,
+					picks = append(picks, rowPick{
+						placement: placement, sourceLine: sourceLine, row: code.row, line: text,
 						full: full, pickedStart: pickedStart, pickedEnd: pickedEnd,
-						totalVisualRows: total,
 					})
 				}
 			}
@@ -765,34 +749,26 @@ func selectedFrozenText(
 
 	selectedLines := make([]string, 0, len(picks))
 	for i := 0; i < len(picks); {
-		pick, isCode := picks[i].(codePick)
-		if !isCode {
-			selectedLines = append(selectedLines, picks[i].(string))
+		pick := picks[i]
+		if pick.placement == nil {
+			selectedLines = append(selectedLines, pick.line)
 			i++
 			continue
 		}
 		// Group consecutive visual rows of the same source line.
 		j := i + 1
 		for j < len(picks) {
-			next, ok := picks[j].(codePick)
-			if !ok || next.placement != pick.placement || next.sourceLine != pick.sourceLine {
+			next := picks[j]
+			if next.placement != pick.placement || next.sourceLine != pick.sourceLine {
 				break
 			}
 			j++
 		}
-		group := make([]codePick, 0, j-i)
-		for _, p := range picks[i:j] {
-			// Gutter-only visual rows contribute nothing to the group.
-			if cp, ok := p.(codePick); ok && cp.pickedStart >= 0 {
-				group = append(group, cp)
-			}
-		}
-		if len(group) == 0 {
-			selectedLines = append(selectedLines, "")
-			i = j
-			continue
-		}
-		allFull := len(group) == group[0].totalVisualRows
+		group := picks[i:j]
+		layoutRows := pick.placement.layout.rows
+		firstRow, lastRow := pick.row, group[len(group)-1].row
+		allFull := (firstRow == 0 || layoutRows[firstRow-1].sourceLine != pick.sourceLine) &&
+			(lastRow+1 == len(layoutRows) || layoutRows[lastRow+1].sourceLine != pick.sourceLine)
 		for _, g := range group {
 			if !g.full {
 				allFull = false
@@ -806,6 +782,9 @@ func selectedFrozenText(
 		} else {
 			var joined strings.Builder
 			for _, g := range group {
+				if g.pickedStart < 0 {
+					continue
+				}
 				joined.WriteString(ansi.Strip(ansi.Cut(g.line, g.pickedStart, g.pickedEnd)))
 			}
 			selectedLines = append(selectedLines, strings.TrimRight(joined.String(), " "))

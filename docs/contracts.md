@@ -472,6 +472,10 @@ consistency for those behaviors.
   During a transcript drag the wheel scrolls the frozen version, re-hits the
   focus at the current pointer and repaints only the new window; release
   copies the full anchor-to-focus interval including offscreen rows.
+  Code extraction walks the selected visual rows once and uses neighboring
+  layout rows to recognize complete source lines; it never rescans an entire
+  code block for each selected row. Complete lines retain their literal tabs
+  and trailing spaces, while partial selections copy only the visible range.
   Borders, divider and outside coordinates in the picker, and horizontal wheel
   input, are ignored. A list wheel requests a new preview only when selected
   session/group identity changes. Wheel handling

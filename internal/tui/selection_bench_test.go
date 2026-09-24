@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -9,6 +10,32 @@ import (
 
 	"github.com/ch1lam/aice-cli/internal/interaction"
 )
+
+func BenchmarkSelectionCopyCode(b *testing.B) {
+	for _, lines := range []int{1000, 10000} {
+		b.Run(fmt.Sprint(lines), func(b *testing.B) {
+			source := strings.Repeat("\tvalue := 42  \n", lines)
+			content := newCodeBlock(source, "text").layout(codeBlockOptions{width: 80}).content()
+			view := newTranscriptViewport()
+			view.SetWidth(80)
+			view.SetHeight(30)
+			view.setItems([]transcriptItem{{renderContent: func() transcriptContent { return content }}})
+			rows := view.partLines(0, 0)
+			selection := transcriptSelection{
+				anchor: selectionPoint{line: 1},
+				focus:  selectionPoint{line: len(rows) - 2, column: 79},
+				moved:  true,
+			}
+			if got := selectedFrozenText(&view, selection); got != strings.TrimSuffix(source, "\n") {
+				b.Fatal("selection did not copy the complete source")
+			}
+			b.ReportAllocs()
+			for b.Loop() {
+				_ = selectedFrozenText(&view, selection)
+			}
+		})
+	}
+}
 
 // Static large-range selection benchmarks: the transcript is finished (no
 // streaming), the viewport shows ANSI-heavy rows (markdown code fence with a

@@ -400,3 +400,20 @@ func TestCodeDragPreservesLiteralAndWrappedLines(t *testing.T) {
 		t.Fatalf("wrapped drag = %q, want %q", got, want)
 	}
 }
+
+func TestCodeDragPartialWrappedLineDoesNotCopyHiddenEnds(t *testing.T) {
+	m := codeTestModel(t, 30)
+	source := "START-" + strings.Repeat("x", 100) + "-END\n"
+	content := newCodeBlock(source, "text").layout(codeBlockOptions{width: 24}).content()
+	m.viewport.setItems([]transcriptItem{{renderContent: func() transcriptContent { return content }}})
+	rows := m.viewport.visibleRows()
+	start, end := codeSourceRows(rows, source)
+	if end-start < 3 {
+		t.Fatal("fixture must wrap to multiple rows")
+	}
+	selection := codeDragSelection(&m.viewport, rows, start+1, 0, end-1, 1000)
+	got := selectedFrozenText(&selection.frozen, selection)
+	if got == "" || strings.Trim(got, "x") != "" {
+		t.Fatalf("partial selection copied unselected source: %q", got)
+	}
+}
