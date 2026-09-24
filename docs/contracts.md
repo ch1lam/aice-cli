@@ -369,7 +369,12 @@ consistency for those behaviors.
   `interaction.QuestionPrompt` (`Request`, `Done`, `Reply`) and the frontend
   replies once with a `QuestionReply` covering every requested question.
   The panel owns drafts, focus, and per-question edits; only an explicit
-  submit (or explicit per-question skip) produces a result. The main composer
+  submit (or explicit per-question skip) produces a result. Its dialog extends
+  the composer upward instead of replacing it: the composer keeps its frame
+  and placeholder visible below, the dialog is indented narrower than the
+  composer on both sides with its walls dropping into the composer's top
+  edge, and its height follows the current question's option list, so both
+  frames stay connected without covering the composer. The main composer
   draft is preserved independently, question input never triggers slash
   commands, file expansion, or steering, and a permission prompt temporarily
   takes over input while keeping panel state. `Esc` browses the conversation
@@ -485,7 +490,8 @@ consistency for those behaviors.
   clipboard support. A bordered confirmation bubble uses the screen background
   and floats centered immediately above the composer for one second
   in both main and BTW views, independently of Agent activity, footer content,
-  and composer layout. Repeated copies
+  and composer layout. A visible Q&A dialog counts as part of the composer's
+  stack, so the bubble stays above it. Repeated copies
   restart the confirmation lifetime; streaming events do not dismiss it.
   The TUI resolves canvas colors before composing the bubble, preserving
   foregrounds, backgrounds and padding outside its bounds, including Markdown

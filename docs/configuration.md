@@ -1217,9 +1217,13 @@ and thread drafts keep the expanded text.
 
 When a choice materially affects scope, outcome, or rework cost, the model
 may call the interactive-only `request_user_input` tool with 1–3 focused
-questions (at most 3 options per question). A bottom panel replaces the composer while it is visible; the
-conversation above stays readable and the previous composer draft is
-preserved independently:
+questions (at most 3 options per question). The panel extends a dialog upward
+from the composer while it is visible; the composer keeps its frame,
+placeholder, and model label below the dialog, the conversation above stays
+readable, and the previous composer draft is preserved independently. The
+dialog is indented narrower than the composer on both sides, shares a single
+edge with it so both frames stay connected, and grows only as far as the
+current question needs:
 
 - Each question shows one question line, a blank separator, then its options
   with the practical difference of each choice; at most one option is marked
