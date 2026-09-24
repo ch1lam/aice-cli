@@ -235,7 +235,7 @@ func cellIndexOfRune(line string, target rune, occurrence int) (int, bool) {
 // edge instead of stacking two borders, the composer keeps its draft row, and
 // the dialog height still follows the current option list.
 func TestQuestionDialogMergesWithComposer(t *testing.T) {
-	for _, width := range []int{100, 60, 32} {
+	for _, width := range []int{240, 100, 60, 32} {
 		t.Run(fmt.Sprint(width), func(t *testing.T) {
 			prompt, _ := newQuestionTestPrompt()
 			current := newQuestionTestModelSized(t, prompt, width, 30)
@@ -261,7 +261,13 @@ func assertQuestionMergedFrame(t *testing.T, current model) {
 	t.Helper()
 	view := questionScreen(t, current)
 	lines := strings.Split(view, "\n")
-	top, attach, _, _ := questionFrameRows(t, view)
+	top, attach, _, bottom := questionFrameRows(t, view)
+	if !strings.Contains(lines[bottom+1], "Enter") {
+		t.Fatalf("shortcuts must start directly below the input frame:\n%s", view)
+	}
+	if current.width == 240 && !strings.Contains(lines[bottom+1], "$0.000") {
+		t.Fatalf("usage must share the shortcut row when it fits:\n%s", view)
+	}
 	if !strings.Contains(lines[top], "╭─ 采用哪种行为？ ") {
 		t.Fatalf("question title must sit in the top border: %q", lines[top])
 	}

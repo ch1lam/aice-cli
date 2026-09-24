@@ -1226,7 +1226,9 @@ dialog is indented narrower than the composer on both sides, shares a single
 edge with it in the same yellow color throughout, and grows only as far as the
 current question needs, up to the available terminal height. `PgUp`/`PgDown`
 scroll a long question or answer inside the dialog. All shortcut hints use
-the shared footer below the composer, wrapping at narrow widths; the dialog
+the shared footer directly below the composer, wrapping at narrow widths.
+Usage shares the first shortcut row when space permits; it never reserves
+a separate row above the controls. The dialog
 does not repeat them. Choosing an option or typing brings the focused row
 into view:
 

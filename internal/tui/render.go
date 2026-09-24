@@ -154,6 +154,18 @@ func (m model) footerView(width int) string {
 		Width(innerWidth).
 		Padding(0, 1)
 	contentWidth := max(innerWidth-style.GetHorizontalFrameSize(), 1)
+	if m.questionVisible() {
+		rows := strings.Split(m.inputFullHelp(contentWidth), "\n")
+		// Controls start directly below the frame. Usage shares their first
+		// row when it fits, without reserving an otherwise empty status row.
+		for _, usage := range []string{m.usageStatus(true), m.usageStatus(false)} {
+			if line, ok := alignStatusLine(rows[0], usage, contentWidth); ok {
+				rows[0] = line
+				break
+			}
+		}
+		return style.Render(strings.Join(rows, "\n"))
+	}
 	rows := make([]string, 0, 2)
 	status := m.statusLine(contentWidth)
 	if m.side.isVisible {
@@ -162,7 +174,7 @@ func (m model) footerView(width int) string {
 	if status != "" {
 		rows = append(rows, status)
 	}
-	if m.help.ShowAll || m.questionVisible() {
+	if m.help.ShowAll {
 		fullHelp := m.inputFullHelp(contentWidth)
 		if fullHelp != "" {
 			rows = append(rows, fullHelp)
@@ -772,7 +784,7 @@ func (m model) activityIndicator() string {
 
 func (m model) statusLine(width int) string {
 	shortcuts := ""
-	if !m.help.ShowAll && !m.questionVisible() {
+	if !m.help.ShowAll {
 		shortcuts = m.help.ShortHelpView(m.footerKeys().ShortHelp())
 	}
 	fullUsage := m.usageStatus(true)
