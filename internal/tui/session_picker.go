@@ -237,7 +237,9 @@ func (m model) openSessionPicker() (model, tea.Cmd, bool) {
 	}
 	p := &sessionPicker{loading: true}
 	p.input = textinput.New()
-	p.input.Prompt = ""
+	// Three-space indent so the filter text aligns with the list text
+	// column (one delegate cell plus a two-cell marker prefix).
+	p.input.Prompt = "   "
 	p.input.Placeholder = sessionSearchInputBinding().binding.Help().Key + " to Filter"
 	p.input.CharLimit = 256
 	p.input.SetVirtualCursor(false)

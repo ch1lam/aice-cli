@@ -34,7 +34,8 @@ func (m *model) openSessionTitleEditor() tea.Cmd {
 	m.sessionPreviewGeneration++
 	p.loading, p.notice = false, ""
 	input := textinput.New()
-	input.Prompt, input.Placeholder, input.CharLimit = "› ", "Automatic title", 200
+	// Leading space aligns the rename marker with list selection markers.
+	input.Prompt, input.Placeholder, input.CharLimit = " › ", "Automatic title", 200
 	input.SetVirtualCursor(false)
 	input.SetValue(item.Title)
 	input.CursorEnd()

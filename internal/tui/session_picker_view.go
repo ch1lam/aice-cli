@@ -66,9 +66,13 @@ func (m *model) resizeSessionPicker() {
 		return
 	}
 	l := m.sessionPickerLayout()
-	p.input.SetWidth(max(1, l.inner-2))
+	// Keep prompt plus field width equal to the inner width so the right
+	// edge aligns with the list below. Search uses a three-cell indent to
+	// match the list text column; rename uses " › " (three cells) so its
+	// marker aligns with list rows and its text matches the same column.
+	p.input.SetWidth(max(1, l.inner-3))
 	if p.rename != nil {
-		p.rename.input.SetWidth(max(1, l.inner-2))
+		p.rename.input.SetWidth(max(1, l.inner-3))
 	}
 	p.list.SetSize(l.listWidth, l.bodyHeight)
 	p.preview.SetWidth(l.previewWidth)
