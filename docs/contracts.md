@@ -373,18 +373,18 @@ consistency for those behaviors.
   fail before publishing a prompt, so trimming cannot bypass resource bounds.
   The panel owns drafts, focus, and per-question edits; only an explicit
   submit (or explicit per-question skip) produces a result. Its dialog extends
-  the composer upward instead of replacing it: the composer keeps its frame
-  and placeholder visible below, the dialog is indented narrower than the
-  composer on both sides with its walls dropping into the composer's top
-  edge, with one continuous yellow border. The question title sits in the
-  upper-left edge; overflow remains in the body. Custom answers are edited
-  inline in the last option row, followed by a blank separator.
-  Its wrapped body is capped to the available height. Shortcut hints appear
+  the composer upward into one yellow frame with aligned sides and no
+  internal border. The question title sits in the upper-left edge; overflow
+  remains in the body. The input area holds the answer and its placeholder
+  identifies the custom option number, without duplicating it in the list.
+  The question body is capped to the available height; the answer window
+  grows to at most six rows. Shortcut hints appear
   only in the shared footer below the composer, derived from the effective
-  input bindings and wrapped at narrow widths. PgUp/PgDn scroll the body and
-  focus changes reveal the active row. Display text uses the shared terminal
-  sanitizer without mutating the request or reply. Both frames stay connected
-  without covering the composer.
+  input bindings and wrapped at narrow widths. PgUp/PgDn scroll the answer
+  while the input is focused, falling back to the question body at the
+  answer's edge; option focus scrolls the question body.
+  Focus changes reveal the active row. Display text uses the shared terminal
+  sanitizer without mutating the request or reply.
   The main composer retains its editor and attachment state while hidden;
   question input never triggers slash
   commands, file expansion, or steering, and a permission prompt temporarily

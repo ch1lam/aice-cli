@@ -187,8 +187,12 @@ func (m model) footerView(width int) string {
 // order: an optional pending-queue notice followed by the input field.
 // Attached paste placeholders render inline tinted, still occupying exactly
 // their visible width so the terminal cursor stays aligned. A visible Q&A
-// dialog sits above the frame; it never replaces these rows.
+// dialog shares the frame and places its answer in the input area.
 func (m model) composerParts(contentWidth int) []string {
+	if m.questionVisible() {
+		rows, offset, height := m.questionInputWindow(contentWidth)
+		return []string{strings.Join(rows[offset:offset+height], "\n")}
+	}
 	if m.question != nil {
 		// Hide the suspended draft without replacing the editor: its caret,
 		// file spans and paste attachments remain owned by the composer.
@@ -215,8 +219,7 @@ func (m model) composerView(width int) string {
 }
 
 // composerFrameStyle resolves the composer frame. An attached Q&A dialog owns
-// the top edge, so the composer drops its own top border and merges into the
-// shared attachment row instead of painting a second line beneath it.
+// the top edge, so the composer continues the same walls without a divider.
 func (m model) composerFrameStyle(width int) lipgloss.Style {
 	style := composerBlurredStyle
 	if m.input.Focused() && (m.composerActive || m.composerHovered(width)) {

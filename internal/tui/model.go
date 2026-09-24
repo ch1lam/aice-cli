@@ -608,9 +608,8 @@ func (m model) View() tea.View {
 		transcript,
 		m.commandMenuView(width),
 	}
-	// The Q&A dialog merges with the composer: the dialog paints above it and
-	// shares the composer's top edge, while the composer keeps its placeholder
-	// below.
+	// The Q&A dialog and answer input share one frame: the question owns the
+	// top edge, and the composer continues its walls and closes the bottom.
 	if dialog := m.questionDialogView(width); dialog != "" {
 		frame = append(frame, dialog)
 	}

@@ -20,7 +20,8 @@ import (
 func TestQuestionTUI(t *testing.T) {
 	backend := &toolLoopModel{firstCall: &llm.ToolCall{
 		ID: "question-1", Name: "request_user_input", Arguments: []byte(`{"questions":[
-		{"id":"mode","question":"Choose a mode","options":[{"id":"old","label":"Old choice"}]},
+		{"id":"mode","question":"Choose a mode","options":[
+			{"id":"old","label":"Old choice"},{"id":"review","label":"Review"},{"id":"explain","label":"Explain"}]},
 		{"id":"goal","question":"Describe the goal"}
 	]}`),
 	}}
@@ -81,9 +82,10 @@ func TestQuestionTUI(t *testing.T) {
 	waitFor("AICE")
 	send("ask me\r")
 	waitFor("Choose a mode")
+	waitFor("4 · 自定义回复")
 	// Select an option, then replace it with a custom answer and switch
 	// questions before submitting. This must not revive the original choice.
-	send("12custom answer")
+	send("14custom answer")
 	waitFor("custom answer")
 	send("\x1b[C")
 	waitFor("Describe the goal")

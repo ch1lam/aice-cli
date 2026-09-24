@@ -35,19 +35,20 @@ type questionPanel struct {
 	textFocus bool
 	browse    bool
 	notice    string
-	// Negative scroll follows the focused option or the end of the answer.
-	scroll int
+	// Negative offsets follow the focused option or the end of the answer.
+	scroll, inputScroll int
 }
 
 func newQuestionPanel(prompt interaction.QuestionPrompt) *questionPanel {
 	count := len(prompt.Request.Questions)
 	panel := &questionPanel{
-		prompt:   prompt,
-		selected: make([]int, count),
-		custom:   make([]bool, count),
-		texts:    make([]string, count),
-		skipped:  make([]bool, count),
-		settled:  make([]bool, count),
+		prompt:      prompt,
+		selected:    make([]int, count),
+		custom:      make([]bool, count),
+		texts:       make([]string, count),
+		skipped:     make([]bool, count),
+		settled:     make([]bool, count),
+		inputScroll: -1,
 	}
 	for i := range panel.selected {
 		panel.selected[i] = -1
@@ -60,8 +61,7 @@ func (p *questionPanel) current() *interaction.QuestionItem {
 	return &p.prompt.Request.Questions[p.index]
 }
 
-// rows counts the selectable rows of the current question: one per option
-// plus a trailing custom-answer row. Free-text questions have no rows.
+// rows counts each option plus the composer as the final custom-answer target.
 func (p *questionPanel) rows() int {
 	return len(p.current().Options) + 1
 }
@@ -101,7 +101,7 @@ func (p *questionPanel) moveQuestion(delta int) {
 	}
 	p.textFocus = false
 	p.notice = ""
-	p.scroll = -1
+	p.scroll, p.inputScroll = -1, -1
 }
 
 func (p *questionPanel) moveFocus(delta int) {
@@ -109,7 +109,7 @@ func (p *questionPanel) moveFocus(delta int) {
 		return
 	}
 	p.focus = min(max(p.focus+delta, 0), p.rows()-1)
-	p.scroll = -1
+	p.scroll, p.inputScroll = -1, -1
 }
 
 // typeText appends user input to the current text field. Typing without a
@@ -121,7 +121,7 @@ func (p *questionPanel) typeText(value string) {
 	}
 	if utf8.RuneCountInString(p.texts[p.index])+utf8.RuneCountInString(value) > interaction.MaxAnswerTextRunes {
 		p.notice = fmt.Sprintf("回答最多 %d 字，请缩短输入", interaction.MaxAnswerTextRunes)
-		p.scroll = -1
+		p.scroll, p.inputScroll = -1, -1
 		return
 	}
 	p.texts[p.index] += value
@@ -139,7 +139,7 @@ func (p *questionPanel) typeText(value string) {
 		p.settled[p.index] = false
 	}
 	p.notice = ""
-	p.scroll = -1
+	p.scroll, p.inputScroll = -1, -1
 }
 
 func (p *questionPanel) backspace() {
@@ -149,7 +149,7 @@ func (p *questionPanel) backspace() {
 	}
 	p.texts[p.index] = string(runes[:len(runes)-1])
 	p.notice = ""
-	p.scroll = -1
+	p.scroll, p.inputScroll = -1, -1
 }
 
 // selectFocused records the focused option for the current question and
@@ -167,7 +167,7 @@ func (p *questionPanel) selectFocused() {
 		p.skipped[p.index] = false
 		p.settled[p.index] = false
 		p.notice = ""
-		p.scroll = -1
+		p.scroll, p.inputScroll = -1, -1
 		return
 	}
 	p.selected[p.index] = p.focus
@@ -176,7 +176,7 @@ func (p *questionPanel) selectFocused() {
 	p.settled[p.index] = true
 	p.textFocus = false
 	p.notice = ""
-	p.scroll = -1
+	p.scroll, p.inputScroll = -1, -1
 }
 
 // shouldSpaceSelect reports whether Space chooses the focused option.
@@ -232,7 +232,7 @@ func (p *questionPanel) firstUnsettled() {
 			}
 			p.textFocus = false
 			p.notice = ""
-			p.scroll = -1
+			p.scroll, p.inputScroll = -1, -1
 			return
 		}
 	}
@@ -270,7 +270,7 @@ func (p *questionPanel) buildReply() (interaction.QuestionReply, error) {
 	return reply, nil
 }
 
-// questionVisible reports whether the panel replaces the composer.
+// questionVisible reports whether the question owns the composer frame.
 func (m model) questionVisible() bool {
 	return m.question != nil && !m.question.browse && m.guardPending == nil && m.reading == nil
 }
@@ -360,27 +360,18 @@ func (m *model) submitQuestion() tea.Cmd {
 	return m.nextQuestionWait()
 }
 
-// questionDialogIndent insets the Q&A dialog from both sides so it stays
-// narrower than the composer it grows out of.
-const questionDialogIndent = 4
-
-// questionDialogMinimumWidth is the narrowest readable dialog; the indent
-// shrinks before the dialog does.
-const questionDialogMinimumWidth = 32
-
 type questionDialogLayout struct {
-	indent, width, inner int
-	title                string
-	rows                 []string
-	offset, height       int
+	width, inner   int
+	title          string
+	rows           []string
+	offset, height int
 }
 
 // Content and focus share one wrapped layout. Only its visible window enters
 // the frame, so valid long questions cannot push the controls off screen.
 func (m model) layoutQuestionDialog(width int) questionDialogLayout {
-	l := questionDialogLayout{indent: min(questionDialogIndent, max((width-questionDialogMinimumWidth)/2, 0))}
-	l.width = max(width-2*l.indent, 1)
-	l.inner = max(l.width-questionDialogStyle.GetHorizontalFrameSize(), 1)
+	l := questionDialogLayout{width: max(width, 1)}
+	l.inner = max(l.width-composerFocusedStyle.GetHorizontalFrameSize(), 1)
 	panel := m.question
 	item := panel.current()
 	appendRows := func(view string) {
@@ -402,25 +393,18 @@ func (m model) layoutQuestionDialog(width int) questionDialogLayout {
 		appendRows(m.questionOptionRow(l.inner, panel, row, option))
 	}
 	if panel.hasOptions() {
-		if panel.focus == panel.customRow() {
-			focus = len(l.rows)
-		}
-		appendRows(m.questionCustomRow(panel))
+		appendRows("")
 	}
-	if !panel.hasOptions() || (!panel.custom[panel.index] && panel.texts[panel.index] != "") {
-		appendRows(m.questionTextRow(panel))
-	}
-	if panel.textFocus || !panel.hasOptions() {
+	if panel.textFocus || panel.focus == panel.customRow() {
 		focus = len(l.rows) - 1
 	}
-	appendRows("")
 	if panel.notice != "" {
 		appendRows(noticeStyle.Render(panel.notice))
 		focus = len(l.rows) - 1
 	}
-	// The top border and shared attachment edge each consume a row.
+	// Only the top border adds a row; the input continues the same walls.
 	c := m.chrome
-	budget := max(m.layoutHeight()-c.header-c.menu-c.composer-c.footer-minimumViewport-2, 1)
+	budget := max(m.layoutHeight()-c.header-c.menu-c.composer-c.footer-minimumViewport-1, 1)
 	l.height = min(len(l.rows), budget)
 	l.offset = panel.scroll
 	if l.offset < 0 {
@@ -430,14 +414,14 @@ func (m model) layoutQuestionDialog(width int) questionDialogLayout {
 	return l
 }
 
-// questionDialogView paints the bounded body above the shared composer edge.
+// questionDialogView paints the top of the shared question and input frame.
 func (m model) questionDialogView(width int) string {
 	if !m.questionVisible() {
 		return ""
 	}
 	l := m.layoutQuestionDialog(width)
 	body := strings.Join(l.rows[l.offset:l.offset+l.height], "\n")
-	box := questionDialogStyle.Width(l.width).BorderBottom(false).
+	box := composerFocusedStyle.Width(l.width).BorderBottom(false).
 		Render(body)
 	// Replace only the top edge; body wrapping and measured height stay shared.
 	_, rest, _ := strings.Cut(box, "\n")
@@ -445,37 +429,7 @@ func (m model) questionDialogView(width int) string {
 	heading := " " + l.title + " "
 	box = edge.Render("╭─") + bodyStyle.Bold(true).Render(heading) +
 		edge.Render(strings.Repeat("─", max(l.width-3-ansi.StringWidth(heading), 0))+"╮") + "\n" + rest
-	pad := strings.Repeat(" ", l.indent)
-	var painted []string
-	for _, line := range strings.Split(box, "\n") {
-		painted = append(painted, pad+line)
-	}
-	painted = append(painted, questionAttachRow(width, l.indent, l.indent+l.width-1))
-	return strings.Join(painted, "\n")
-}
-
-// questionAttachRow is the single edge shared by the dialog and the composer.
-// It keeps the focused yellow tone throughout so the edge reads as
-// part of the input frame: corners and shelves run to the dialog walls,
-// rounded corners turn the walls into the shelves, and the open neck between
-// them reads as the dialog growing out of the input box. A wall that reaches
-// the composer edge has no shelf to turn into, so it continues straight down
-// onto the composer's own wall instead.
-func questionAttachRow(width, left, right int) string {
-	edge := lipgloss.NewStyle().Foreground(secondaryColor)
-	var row strings.Builder
-	if left > 0 {
-		row.WriteString(edge.Render("╭" + strings.Repeat("─", left-1) + "╯"))
-	} else {
-		row.WriteString(edge.Render("│"))
-	}
-	row.WriteString(strings.Repeat(" ", max(right-left-1, 0)))
-	if right < width-1 {
-		row.WriteString(edge.Render("╰" + strings.Repeat("─", width-2-right) + "╮"))
-	} else {
-		row.WriteString(edge.Render("│"))
-	}
-	return row.String()
+	return box
 }
 
 // questionDialogHeight reports the dialog's painted rows, or 0 when hidden, so
@@ -534,46 +488,40 @@ func (m model) questionOptionRow(
 	return line
 }
 
-func (m model) questionCustomRow(panel *questionPanel) string {
-	marker := "  "
-	style := bodyStyle
-	if panel.focus == panel.customRow() {
-		marker = "› "
-		style = lipgloss.NewStyle().Bold(true).Foreground(secondaryColor)
-	}
-	selected := "○"
-	if panel.settled[panel.index] && panel.custom[panel.index] {
-		selected = "●"
-	}
-	prefix := style.Render(fmt.Sprintf("%s%d %s ", marker, panel.customRow()+1, selected))
-	text := ""
-	if panel.custom[panel.index] {
-		text = sanitizeMultilineText(panel.texts[panel.index])
-	}
-	shown := bodyStyle.Render(text)
-	if text == "" {
-		shown = mutedStyle.Render("或自行撰写回复")
-	}
-	if panel.textFocus && panel.custom[panel.index] {
-		shown += guardCursorStyle.Render(" ")
-	}
-	return prefix + shown
-}
-
-func (m model) questionTextRow(panel *questionPanel) string {
+// questionInputWindow renders the answer inside the shared composer frame.
+// The ordinary composer editor stays suspended, retaining attachments and caret.
+func (m model) questionInputWindow(width int) (rows []string, offset, height int) {
+	panel := m.question
 	text := sanitizeMultilineText(panel.texts[panel.index])
-	prefix := ""
-	if panel.hasOptions() {
-		prefix = mutedStyle.Render("补充说明：")
-	}
 	shown := bodyStyle.Render(text)
 	if text == "" {
-		shown = mutedStyle.Render("或自行撰写回复")
+		placeholder := "输入回复…"
+		if panel.hasOptions() {
+			placeholder = fmt.Sprintf("%d · 自定义回复…", panel.customRow()+1)
+			if panel.selected[panel.index] >= 0 && !panel.custom[panel.index] && panel.focus != panel.customRow() {
+				placeholder = "为所选项补充说明，或按 ↓ 选择自定义回复…"
+			}
+		}
+		shown = mutedStyle.Render(truncateTerminalText(placeholder, width))
 	}
-	if panel.textFocus {
-		shown += guardCursorStyle.Render(" ")
+	if panel.textFocus || !panel.hasOptions() || panel.focus == panel.customRow() {
+		if text == "" {
+			// The caret sits where typing starts, not after the placeholder.
+			shown = guardCursorStyle.Render(" ") + ansi.Truncate(shown, max(width-1, 0), "…")
+		} else {
+			shown += guardCursorStyle.Render(" ")
+		}
 	}
-	return prefix + shown
+	rows = strings.Split(ansi.Hardwrap(shown, max(width, 1), true), "\n")
+	// Reserve the question's top edge/body and the composer's bottom edge.
+	available := max(m.layoutHeight()-m.chrome.header-m.chrome.footer-minimumViewport-3, 1)
+	height = min(len(rows), inputMaximumHeight, available)
+	offset = panel.inputScroll
+	if offset < 0 {
+		offset = len(rows) - height
+	}
+	offset = min(max(offset, 0), len(rows)-height)
+	return rows, offset, height
 }
 
 func (m model) handleQuestionAction(match inputActionMatch) (model, tea.Cmd, bool) {
@@ -635,6 +583,17 @@ func (m model) handleQuestionAction(match inputActionMatch) (model, tea.Cmd, boo
 		panel.typeText("\n")
 		m.resizeLayout()
 	case inputActionQuestionScroll:
+		if panel.textFocus || !panel.hasOptions() || panel.focus == panel.customRow() {
+			width := max(m.layoutWidth()-composerFocusedStyle.GetHorizontalFrameSize(), 1)
+			rows, offset, height := m.questionInputWindow(width)
+			next := min(max(offset+match.argument*height, 0), len(rows)-height)
+			if next != offset {
+				panel.inputScroll = next
+				break
+			}
+		}
+		// Once the answer reaches its edge, paging can still reveal a long
+		// question, including free-text prompts with no option focus to move to.
 		l := m.layoutQuestionDialog(m.layoutWidth())
 		panel.scroll = min(max(l.offset+match.argument*l.height, 0), len(l.rows)-l.height)
 	case inputActionQuestionCancel:

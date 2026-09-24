@@ -73,7 +73,7 @@ func TestQuestionLongContentStaysWithinTerminal(t *testing.T) {
 	for range 30 {
 		current = pressQuestionKey(t, current, tea.KeyPressMsg{Code: tea.KeyPgDown})
 	}
-	if view = questionScreen(t, current); !strings.Contains(view, "问题末尾") || !strings.Contains(view, "或自行撰写回复") {
+	if view = questionScreen(t, current); !strings.Contains(view, "问题末尾") || !strings.Contains(view, "自定义回复") {
 		t.Fatalf("cannot browse the complete question:\n%s", view)
 	}
 	current = pressQuestionKey(t, current, tea.KeyPressMsg{Code: tea.KeyDown})
@@ -115,6 +115,70 @@ func TestQuestionRejectsOversizedInsertWithoutLosingDraft(t *testing.T) {
 	current = updateModel(t, current, tea.PasteMsg{Content: strings.Repeat("中", interaction.MaxAnswerTextRunes)})
 	if current.question.texts[0] != "原有回答" || !strings.Contains(questionScreen(t, current), "2000") {
 		t.Fatal("oversized paste changed the draft or failed to explain the limit")
+	}
+}
+
+func TestQuestionComposerOwnsCustomAnswer(t *testing.T) {
+	for _, width := range []int{32, 100} {
+		t.Run(fmt.Sprint(width), func(t *testing.T) {
+			prompt, replies := newQuestionTestPrompt()
+			prompt.Request.Questions = prompt.Request.Questions[:1]
+			prompt.Request.Questions[0].Options = append(prompt.Request.Questions[0].Options,
+				interaction.QuestionOption{ID: "explain", Label: "解释代码"})
+			current := newQuestionTestModelSized(t, prompt, width, 24)
+			if view := ansi.Strip(current.composerView(current.layoutWidth())); !strings.Contains(view, "4 · 自定义回复") {
+				t.Fatalf("composer must identify the fourth option: %s", view)
+			}
+			current = pressQuestionKey(t, current, tea.KeyPressMsg{Code: '4', Text: "4"})
+			text := "回复开头\n" + strings.Repeat("中间内容\n", 40) + "回复末尾"
+			current = updateModel(t, current, tea.PasteMsg{Content: text})
+			if current.chrome.composer > inputMaximumHeight+1 || lipgloss.Height(questionScreen(t, current)) != 24 {
+				t.Fatalf("long answer overflowed the composer:\n%s", questionScreen(t, current))
+			}
+			if !strings.Contains(current.composerView(current.layoutWidth()), "回复末尾") ||
+				strings.Contains(current.questionDialogView(current.layoutWidth()), "回复末尾") {
+				t.Fatal("answer must be visible only in the bottom input area")
+			}
+			for range 50 {
+				current = pressQuestionKey(t, current, tea.KeyPressMsg{Code: tea.KeyPgUp})
+			}
+			if !strings.Contains(current.composerView(current.layoutWidth()), "回复开头") {
+				t.Fatal("cannot scroll to the start of the input")
+			}
+			current = typeQuestionText(t, current, "追加")
+			if !strings.Contains(current.composerView(current.layoutWidth()), "回复末尾追加") {
+				t.Fatal("typing must return to the current insertion position")
+			}
+			current = pressQuestionKey(t, current, tea.KeyPressMsg{Code: tea.KeyEnter})
+			select {
+			case reply := <-replies:
+				if answer := reply.Answers["mode"]; answer.Text != text+"追加" || answer.SelectedOptionID != "" {
+					t.Fatalf("input changed the custom answer: %+v", answer)
+				}
+			default:
+				t.Fatal("input did not submit")
+			}
+		})
+	}
+}
+
+func TestQuestionFreeTextPagingCanReachEntirePrompt(t *testing.T) {
+	prompt, _ := newQuestionTestPrompt()
+	prompt.Request.Questions = prompt.Request.Questions[1:]
+	prompt.Request.Questions[0].Question = "问题开头\n" + strings.Repeat("问题内容\n", 40) + "问题末尾"
+	current := newQuestionTestModelSized(t, prompt, 60, 24)
+	current = updateModel(t, current, tea.PasteMsg{Content: strings.Repeat("回答内容\n", 30)})
+	for range 50 {
+		current = pressQuestionKey(t, current, tea.KeyPressMsg{Code: tea.KeyPgUp})
+	}
+	if current.layoutQuestionDialog(current.layoutWidth()).offset != 0 {
+		t.Fatal("free-text input prevented scrolling to the prompt start")
+	}
+	for range 50 {
+		current = pressQuestionKey(t, current, tea.KeyPressMsg{Code: tea.KeyPgDown})
+	}
+	if !strings.Contains(current.questionDialogView(current.layoutWidth()), "问题末尾") {
+		t.Fatal("free-text input prevented scrolling to the prompt end")
 	}
 }
 
@@ -180,16 +244,14 @@ func questionScreen(t *testing.T, current model) string {
 }
 
 // questionFrameRows locates the merged frame's painted rows in a stripped
-// screen: the dialog top border, the shared attachment edge, the composer's
-// draft row, and the composer's bottom border. While the dialog is attached
-// the composer keeps no separate top border of its own.
+// screen: the top border, separator, input row and bottom border.
 func questionFrameRows(t *testing.T, view string) (top, attach, draft, bottom int) {
 	t.Helper()
 	lines := strings.Split(view, "\n")
 	draft = -1
 	for index, line := range lines {
 		// The placeholder is truncated on narrow terminals; match its head.
-		if strings.Contains(line, "Ask about") {
+		if strings.Contains(line, "自定义回复") || strings.Contains(line, "输入回复") {
 			draft = index
 			break
 		}
@@ -231,9 +293,8 @@ func cellIndexOfRune(line string, target rune, occurrence int) (int, bool) {
 	return 0, false
 }
 
-// The dialog merges with the composer into one frame: both share a single
-// edge instead of stacking two borders, the composer keeps its draft row, and
-// the dialog height still follows the current option list.
+// The dialog and composer share straight walls and one outer border;
+// the dialog height follows the current option list.
 func TestQuestionDialogMergesWithComposer(t *testing.T) {
 	for _, width := range []int{240, 100, 60, 32} {
 		t.Run(fmt.Sprint(width), func(t *testing.T) {
@@ -243,7 +304,7 @@ func TestQuestionDialogMergesWithComposer(t *testing.T) {
 		})
 	}
 	// Switching to the free-text question drops the option rows and the
-	// dialog with them; the shared edge and the composer stay put.
+	// dialog with them; the input remains inside the same frame.
 	prompt, _ := newQuestionTestPrompt()
 	current := newQuestionTestModel(t, prompt)
 	options := current.chrome.question
@@ -252,7 +313,7 @@ func TestQuestionDialogMergesWithComposer(t *testing.T) {
 		t.Fatalf("dialog height %d did not shrink from %d without options", current.chrome.question, options)
 	}
 	view := questionScreen(t, current)
-	if _, attach, draft, _ := questionFrameRows(t, view); !strings.Contains(strings.Split(view, "\n")[draft], "Ask about this workspace") || !strings.ContainsAny(strings.Split(view, "\n")[attach], "╯╰│") {
+	if _, attach, draft, _ := questionFrameRows(t, view); !strings.Contains(strings.Split(view, "\n")[draft], "输入回复") || !strings.ContainsAny(strings.Split(view, "\n")[attach], "╯╰│") {
 		t.Fatalf("merged frame lost after switching questions:\n%s", view)
 	}
 }
@@ -290,46 +351,28 @@ func assertQuestionMergedFrame(t *testing.T, current model) {
 	if len(lines) != current.height {
 		t.Fatalf("painted canvas rows = %d, want terminal height %d", len(lines), current.height)
 	}
-	pad := current.horizontalPadding()
-	indent := min(questionDialogIndent, max((current.layoutWidth()-questionDialogMinimumWidth)/2, 0))
-	dialogWidth := max(current.layoutWidth()-2*indent, 1)
-	if indent > 0 && dialogWidth >= current.layoutWidth() {
-		t.Fatalf("dialog width %d must stay narrower than composer %d", dialogWidth, current.layoutWidth())
-	}
-	left, right := pad+indent, pad+indent+dialogWidth-1
-	attachLine, topLine := lines[attach], lines[top]
-	// The walls turn exactly onto the shared edge: rounded corners where a
-	// shelf continues, straight walls where the dialog reaches the edge.
-	leftJoint, rightJoint := '╯', '╰'
-	rightOccurrence := 0
-	if indent == 0 {
-		// No shelf continues on either side: both joints are straight walls.
-		leftJoint, rightJoint, rightOccurrence = '│', '│', 1
-	}
-	for _, check := range []struct {
-		line       string
-		target     rune
-		occurrence int
-		want       int
-	}{
-		{attachLine, leftJoint, 0, left},
-		{attachLine, rightJoint, rightOccurrence, right},
-		{topLine, '╭', 0, left},
-	} {
-		if got, ok := cellIndexOfRune(check.line, check.target, check.occurrence); !ok || got != check.want {
-			t.Fatalf("%q at cell %d, want %d: %q", string(check.target), got, check.want, check.line)
+	left, right := current.horizontalPadding(), current.horizontalPadding()+current.layoutWidth()-1
+	for index := top; index <= bottom; index++ {
+		leftEdge, rightEdge := '│', '│'
+		if index == top {
+			leftEdge, rightEdge = '╭', '╮'
+		}
+		if index == bottom {
+			leftEdge, rightEdge = '╰', '╯'
+		}
+		if got, ok := cellIndexOfRune(lines[index], leftEdge, 0); !ok || got != left {
+			t.Fatalf("left edge not aligned on row %d: %q", index, lines[index])
+		}
+		occurrence := 0
+		if leftEdge == rightEdge {
+			occurrence = 1
+		}
+		if got, ok := cellIndexOfRune(lines[index], rightEdge, occurrence); !ok || got != right {
+			t.Fatalf("right edge not aligned on row %d: %q", index, lines[index])
 		}
 	}
-	if indent > 0 && (strings.Count(attachLine, "╯") != 1 || strings.Count(attachLine, "╰") != 1) {
-		t.Fatalf("shared edge must turn both walls into corners: %q", attachLine)
-	}
-	// The shared edge spans the whole composer width with its own corners.
-	trimmed := strings.TrimRight(attachLine, " ")
-	if want := current.horizontalPadding() + current.layoutWidth(); lipgloss.Width(trimmed) != want {
-		t.Fatalf("shared edge width = %d, want %d", lipgloss.Width(trimmed), want)
-	}
-	if indent > 0 && !strings.HasSuffix(trimmed, "╮") {
-		t.Fatalf("shared edge must end at the composer corner: %q", attachLine)
+	if strings.Contains(view, "Ask about") || strings.Count(view, "自定义回复") != 1 {
+		t.Fatalf("answer input must replace the normal composer placeholder exactly once:\n%s", view)
 	}
 	if layout := current.screenLayout(); layout.composer.y != layout.question.y+layout.question.height {
 		t.Fatalf("composer does not sit directly under the dialog: %#v", layout)
@@ -564,8 +607,9 @@ func TestQuestionPanelDigitCustomStaysOnCurrent(t *testing.T) {
 	// Typing then Enter settles Q1 as a custom answer and guides to Q2.
 	current = typeQuestionText(t, current, "先做最小实现")
 	view := questionScreen(t, current)
-	if !strings.Contains(view, "3 ○ 先做最小实现") || strings.Contains(view, "回答：") {
-		t.Fatalf("custom reply must replace its placeholder inline:\n%s", view)
+	if !strings.Contains(ansi.Strip(current.composerView(current.layoutWidth())), "先做最小实现") ||
+		strings.Contains(current.questionDialogView(current.layoutWidth()), "先做最小实现") {
+		t.Fatalf("custom reply must appear only in the composer:\n%s", view)
 	}
 	current = pressQuestionKey(t, current, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if !current.question.settled[0] || !current.question.custom[0] {

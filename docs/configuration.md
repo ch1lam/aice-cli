@@ -1217,15 +1217,15 @@ and thread drafts keep the expanded text.
 
 When a choice materially affects scope, outcome, or rework cost, the model
 may call the interactive-only `request_user_input` tool with 1–3 focused
-questions (at most 3 options per question). The panel extends a dialog upward
-from the composer while it is visible; the composer keeps its frame,
-placeholder, and model label below the dialog, the conversation above stays
-readable, and the previous composer draft, caret, file references, and paste
-attachments stay intact while hidden. The
-dialog is indented narrower than the composer on both sides, shares a single
-edge with it in the same yellow color throughout, and grows only as far as the
-current question needs, up to the available terminal height. `PgUp`/`PgDown`
-scroll a long question or answer inside the dialog. All shortcut hints use
+questions (at most 3 options per question). The question and composer share
+one yellow frame with aligned sides and no internal border. Options appear
+above the input area, separated by a blank row. The input area takes the
+answer, while the previous composer draft, caret, file references, and paste
+attachments stay intact while hidden. The model label remains on the bottom
+edge. The question body is capped to the available terminal height; the
+answer grows to at most six visible rows. `PgUp`/`PgDown` scroll the answer
+when the input is focused, falling back to the question body at the answer's
+edge; option focus scrolls the question body. All shortcut hints use
 the shared footer directly below the composer, wrapping at narrow widths.
 Usage shares the first shortcut row when space permits; it never reserves
 a separate row above the controls. The dialog
@@ -1234,9 +1234,11 @@ into view:
 
 - Each question sits in the upper-left border, with a blank separator before
   its options. Long or multiline questions also keep their full text in the
-  scrollable body. The last option is an inline custom reply field whose
-  placeholder is replaced by the answer; no separate answer caption is shown,
-  and a blank row follows the answer.
+  scrollable body. The input area is the custom option: its placeholder shows
+  the next option number (for example, `4 · 自定义回复…`), and typing replaces
+  that placeholder. There is no duplicate custom-option row above it.
+  Free-text questions use `输入回复…`; after selecting an option, the input
+  can still hold a supplement to that selection.
   Options show the practical difference of each choice; at most one is marked
   recommended in gold, and the recommendation only sets initial focus,
   never an answer.
