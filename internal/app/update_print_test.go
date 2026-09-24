@@ -3,12 +3,11 @@ package app
 import (
 	"bytes"
 	"fmt"
-	"github.com/charmbracelet/x/ansi"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/ch1lam/aice-cli/internal/update"
+	"github.com/charmbracelet/x/ansi"
 )
 
 func TestPrintUpdateCheck(t *testing.T) {
@@ -51,7 +50,6 @@ func TestUpdateProgressPrinter(t *testing.T) {
 			p := newUpdateProgressPrinter(&output)
 			p.terminal = terminal
 			for _, count := range []int64{0, 50, 100} {
-				p.lastDraw = time.Time{}
 				if err := p.Report(update.Progress{Current: "1.0.0", Latest: "1.2.0", Downloaded: count, Total: 100}); err != nil {
 					t.Fatal(err)
 				}
@@ -64,7 +62,7 @@ func TestUpdateProgressPrinter(t *testing.T) {
 			}
 			rendered := ansi.Strip(output.String())
 			if terminal {
-				for _, want := range []string{"0%", "50%", "100%", "\nverifying"} {
+				for _, want := range []string{"0%", "100%", "\nverifying"} {
 					if !strings.Contains(rendered, want) {
 						t.Fatalf("missing %q in %q", want, rendered)
 					}

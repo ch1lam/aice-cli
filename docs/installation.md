@@ -105,7 +105,12 @@ explicit `false` or `0` environment values override a lower-layer disable settin
 The command reports release discovery and download/checksum verification progress
 on stderr, keeping the final result on stdout. In a terminal, a Bubbles progress
 bar displays the archive download percentage based on bytes received and the
-release asset size. Downloads without a known size show received MiB instead.
+release asset size. Update and helper downloads share the ink theme’s sunset-to-gold
+gradient, scaled across the filled portion, with Bubbles/Harmonica spring animation.
+The printer owns the animation worker and joins it before subsequent logs or TUI
+startup; completion and cancellation flush the actual received percentage without
+waiting for the animation to settle. Downloads without a known size show received
+MiB instead.
 The bar reaching 100% means the archive has downloaded; checksum verification
 and installation follow with a separate status. Redirected output uses compact
 plain-text stage messages. Failed or canceled downloads end the progress line

@@ -1,21 +1,33 @@
 package app
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
+	"sync"
 	"time"
 
 	"charm.land/bubbles/v2/progress"
+	tea "charm.land/bubbletea/v2"
 	"github.com/ch1lam/aice-cli/internal/deps"
+	"github.com/ch1lam/aice-cli/internal/tui"
 )
 
-// downloadProgressPrinter owns one transient terminal line, without a timer loop.
+// downloadProgressPrinter owns one transient line and its animation worker.
+// Callers serialize Draw/Close; mu protects state and output shared with animate.
+// Close stops and joins the worker before any subsequent stage can write output.
 type downloadProgressPrinter struct {
 	output           io.Writer
-	bar              progress.Model
 	terminal, active bool
 	lastDraw         time.Time
+	stop, done, wake chan struct{}
+
+	mu        sync.Mutex
+	bar       progress.Model
+	fraction  float64
+	knownSize bool
+	err       error
 }
 
 func newDownloadProgressPrinter(output io.Writer) *downloadProgressPrinter {
@@ -25,34 +37,117 @@ func newDownloadProgressPrinter(output io.Writer) *downloadProgressPrinter {
 			terminal = info.Mode()&os.ModeCharDevice != 0
 		}
 	}
-	return &downloadProgressPrinter{output: output, terminal: terminal, bar: progress.New(progress.WithWidth(32))}
+	return &downloadProgressPrinter{output: output, terminal: terminal, bar: tui.NewDownloadProgress(32)}
 }
+
 func (p *downloadProgressPrinter) Close() error {
+	p.stopAnimation()
 	if !p.active {
-		return nil
+		return p.err
 	}
 	p.active = false
+	if p.knownSize && p.err == nil {
+		p.render(p.bar.ViewAs(p.fraction))
+	}
 	_, err := fmt.Fprintln(p.output)
-	return err
+	p.err = errors.Join(p.err, err)
+	p.bar = tui.NewDownloadProgress(32)
+	return p.err
 }
+
 func (p *downloadProgressPrinter) Draw(downloaded, total int64) error {
 	// Redirected output remains a compact log, without cursor controls or bars.
 	if !p.terminal {
 		return nil
 	}
 	complete := total > 0 && downloaded >= total
-	if p.active && !complete && time.Since(p.lastDraw) < 80*time.Millisecond {
-		return nil
+	if total <= 0 || complete {
+		p.stopAnimation()
 	}
-	p.lastDraw = time.Now()
-	p.active = true
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.err != nil {
+		return p.err
+	}
+	p.knownSize = total > 0
 	if total <= 0 {
-		_, err := fmt.Fprintf(p.output, "\r\x1b[2Kdownloaded %.1f MiB", float64(downloaded)/(1<<20))
-		return err
+		if p.active && time.Since(p.lastDraw) < 80*time.Millisecond {
+			return nil
+		}
+		p.lastDraw = time.Now()
+		p.active = true
+		p.render(fmt.Sprintf("downloaded %.1f MiB", float64(downloaded)/(1<<20)))
+		return p.err
 	}
-	fraction := min(1.0, float64(downloaded)/float64(total))
-	_, err := fmt.Fprintf(p.output, "\r\x1b[2K%s", p.bar.ViewAs(fraction))
-	return err
+	p.fraction = max(0.0, min(1.0, float64(downloaded)/float64(total)))
+	if complete {
+		p.render(p.bar.ViewAs(p.fraction))
+	} else if !p.active {
+		p.render(p.bar.View())
+	}
+	p.active = true
+	if complete || p.err != nil {
+		return p.err
+	}
+	if p.stop == nil {
+		p.stop, p.done, p.wake = make(chan struct{}), make(chan struct{}), make(chan struct{}, 1)
+		go p.animate()
+	}
+	select {
+	case p.wake <- struct{}{}:
+	default:
+	}
+	return nil
+}
+
+func (p *downloadProgressPrinter) stopAnimation() {
+	if p.stop == nil {
+		return
+	}
+	close(p.stop)
+	<-p.done
+	p.stop, p.done, p.wake = nil, nil, nil
+}
+
+func (p *downloadProgressPrinter) animate() {
+	defer close(p.done)
+	var command tea.Cmd
+	for {
+		select {
+		case <-p.stop:
+			return
+		default:
+		}
+		p.mu.Lock()
+		if p.fraction != p.bar.Percent() {
+			command = p.bar.SetPercent(p.fraction)
+		}
+		p.mu.Unlock()
+		if command == nil {
+			select {
+			case <-p.stop:
+				return
+			case <-p.wake:
+				continue
+			}
+		}
+		// A Bubbles frame command waits one animation frame (1/60 second).
+		// No lock is held while it waits; download callbacks only set a target.
+		message := command()
+		p.mu.Lock()
+		p.bar, command = p.bar.Update(message)
+		p.render(p.bar.View())
+		failed := p.err != nil
+		p.mu.Unlock()
+		if failed {
+			return
+		}
+	}
+}
+
+// render runs under mu, or after the animation worker has been joined.
+func (p *downloadProgressPrinter) render(view string) {
+	_, p.err = fmt.Fprintf(p.output, "\r\x1b[2K%s", view)
 }
 
 type helperProgressPrinter struct {
