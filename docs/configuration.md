@@ -1224,7 +1224,9 @@ readable, and the previous composer draft, caret, file references, and paste
 attachments stay intact while hidden. The
 dialog is indented narrower than the composer on both sides, shares a single
 edge with it so both frames stay connected, and grows only as far as the
-current question needs:
+current question needs, up to the available terminal height. `PgUp`/`PgDown`
+scroll a long question or answer inside the dialog; the submit hint stays
+visible, and choosing an option or typing brings the focused row into view:
 
 - Each question shows one question line, a blank separator, then its options
   with the practical difference of each choice; at most one option is marked
@@ -1245,6 +1247,9 @@ never an answer: every question must be answered before `Enter` submits.
   Choosing or typing into the custom row clears any previous selection;
   switching questions preserves that custom answer. Moving focus alone
   never changes the submitted choice.
+  Answers are limited to 2,000 characters; an oversized insert is rejected
+  with a notice and leaves the existing answer intact. Terminal control
+  sequences are removed from display without changing the submitted text.
 - `Esc` browses the conversation with drafts and focus kept; `Ctrl+c`
   cancels the run. Question input never triggers slash commands, file
   expansion, or steering, and a permission prompt temporarily takes over

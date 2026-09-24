@@ -373,9 +373,12 @@ consistency for those behaviors.
   the composer upward instead of replacing it: the composer keeps its frame
   and placeholder visible below, the dialog is indented narrower than the
   composer on both sides with its walls dropping into the composer's top
-  edge, and its height follows the current question's option list, so both
-  frames stay connected without covering the composer. The main composer
-  draft is preserved independently, question input never triggers slash
+  edge. Its wrapped body is capped to the available height with a pinned
+  submit hint; PgUp/PgDn scroll this body and focus changes reveal the active
+  row. Display text uses the shared terminal sanitizer without mutating the
+  request or reply. Both frames stay connected without covering the composer.
+  The main composer retains its editor and attachment state while hidden;
+  question input never triggers slash
   commands, file expansion, or steering, and a permission prompt temporarily
   takes over input while keeping panel state. `Esc` browses the conversation
   with drafts kept; the run's stop shortcut cancels the run and its pending

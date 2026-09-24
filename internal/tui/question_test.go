@@ -62,6 +62,62 @@ func TestQuestionPreservesComposerAttachmentsAndCaret(t *testing.T) {
 	}
 }
 
+func TestQuestionLongContentStaysWithinTerminal(t *testing.T) {
+	prompt, _ := newQuestionTestPrompt()
+	prompt.Request.Questions[0].Question = "问题开头\n" + strings.Repeat("较长的问题内容\n", 80) + "问题末尾"
+	current := newQuestionTestModelSized(t, prompt, 60, 24)
+	view := questionScreen(t, current)
+	if lipgloss.Height(view) != 24 || !strings.Contains(view, "问题开头") || !strings.Contains(view, "Enter") {
+		t.Fatalf("long question overflowed or hid its controls:\n%s", view)
+	}
+	for range 30 {
+		current = pressQuestionKey(t, current, tea.KeyPressMsg{Code: tea.KeyPgDown})
+	}
+	if view = questionScreen(t, current); !strings.Contains(view, "问题末尾") || !strings.Contains(view, "自己填写") {
+		t.Fatalf("cannot browse the complete question:\n%s", view)
+	}
+	current = pressQuestionKey(t, current, tea.KeyPressMsg{Code: tea.KeyDown})
+	if view = questionScreen(t, current); !strings.Contains(view, "直接修改") {
+		t.Fatalf("focused option not visible:\n%s", view)
+	}
+}
+
+func TestQuestionDisplaySanitizesControlsWithoutChangingReply(t *testing.T) {
+	prompt, replies := newQuestionTestPrompt()
+	prompt.Request.Questions = prompt.Request.Questions[:1]
+	control := "\x1b]52;c;dGVzdA==\a"
+	prompt.Request.Questions[0].Question += control
+	prompt.Request.Questions[0].Options[0].Label += control
+	prompt.Request.Questions[0].Options[0].Description += "\t" + control
+	current := newQuestionTestModel(t, prompt)
+	current = pressQuestionKey(t, current, tea.KeyPressMsg{Code: '1', Text: "1"})
+	current = updateModel(t, current, tea.PasteMsg{Content: "补充" + control})
+	view := current.View().Content
+	if strings.Contains(view, control) || strings.ContainsAny(view, "\a\t") {
+		t.Fatalf("question emitted raw terminal controls: %q", view)
+	}
+	current = pressQuestionKey(t, current, tea.KeyPressMsg{Code: tea.KeyEnter})
+	select {
+	case reply := <-replies:
+		answer := reply.Answers["mode"]
+		if answer.Text != "补充"+control || answer.SelectedLabel != prompt.Request.Questions[0].Options[0].Label {
+			t.Fatalf("display sanitization changed answer data: %+v", answer)
+		}
+	default:
+		t.Fatal("no reply")
+	}
+}
+
+func TestQuestionRejectsOversizedInsertWithoutLosingDraft(t *testing.T) {
+	prompt, _ := newQuestionTestPrompt()
+	current := newQuestionTestModel(t, prompt)
+	current = typeQuestionText(t, current, "原有回答")
+	current = updateModel(t, current, tea.PasteMsg{Content: strings.Repeat("中", interaction.MaxAnswerTextRunes)})
+	if current.question.texts[0] != "原有回答" || !strings.Contains(questionScreen(t, current), "2000") {
+		t.Fatal("oversized paste changed the draft or failed to explain the limit")
+	}
+}
+
 func newQuestionTestPrompt() (interaction.QuestionPrompt, chan interaction.QuestionReply) {
 	reply := make(chan interaction.QuestionReply, 1)
 	done := make(chan struct{})

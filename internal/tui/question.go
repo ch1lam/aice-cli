@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -34,6 +35,8 @@ type questionPanel struct {
 	textFocus bool
 	browse    bool
 	notice    string
+	// Negative scroll follows the focused option or the end of the answer.
+	scroll int
 }
 
 func newQuestionPanel(prompt interaction.QuestionPrompt) *questionPanel {
@@ -98,6 +101,7 @@ func (p *questionPanel) moveQuestion(delta int) {
 	}
 	p.textFocus = false
 	p.notice = ""
+	p.scroll = -1
 }
 
 func (p *questionPanel) moveFocus(delta int) {
@@ -105,6 +109,7 @@ func (p *questionPanel) moveFocus(delta int) {
 		return
 	}
 	p.focus = min(max(p.focus+delta, 0), p.rows()-1)
+	p.scroll = -1
 }
 
 // typeText appends user input to the current text field. Typing without a
@@ -112,6 +117,11 @@ func (p *questionPanel) moveFocus(delta int) {
 // selection keeps the choice and treats the text as a supplement.
 func (p *questionPanel) typeText(value string) {
 	if value == "" {
+		return
+	}
+	if utf8.RuneCountInString(p.texts[p.index])+utf8.RuneCountInString(value) > interaction.MaxAnswerTextRunes {
+		p.notice = fmt.Sprintf("回答最多 %d 字，请缩短输入", interaction.MaxAnswerTextRunes)
+		p.scroll = -1
 		return
 	}
 	p.texts[p.index] += value
@@ -129,6 +139,7 @@ func (p *questionPanel) typeText(value string) {
 		p.settled[p.index] = false
 	}
 	p.notice = ""
+	p.scroll = -1
 }
 
 func (p *questionPanel) backspace() {
@@ -138,6 +149,7 @@ func (p *questionPanel) backspace() {
 	}
 	p.texts[p.index] = string(runes[:len(runes)-1])
 	p.notice = ""
+	p.scroll = -1
 }
 
 // selectFocused records the focused option for the current question and
@@ -155,6 +167,7 @@ func (p *questionPanel) selectFocused() {
 		p.skipped[p.index] = false
 		p.settled[p.index] = false
 		p.notice = ""
+		p.scroll = -1
 		return
 	}
 	p.selected[p.index] = p.focus
@@ -163,6 +176,7 @@ func (p *questionPanel) selectFocused() {
 	p.settled[p.index] = true
 	p.textFocus = false
 	p.notice = ""
+	p.scroll = -1
 }
 
 // shouldSpaceSelect reports whether Space chooses the focused option.
@@ -218,6 +232,7 @@ func (p *questionPanel) firstUnsettled() {
 			}
 			p.textFocus = false
 			p.notice = ""
+			p.scroll = -1
 			return
 		}
 	}
@@ -353,45 +368,73 @@ const questionDialogIndent = 4
 // shrinks before the dialog does.
 const questionDialogMinimumWidth = 32
 
-// questionDialogView renders the Q&A dialog merged with the composer. The
-// dialog keeps a top and side gold frame, and its walls turn rounded corners
-// into the composer's top edge, so both frames read as one outline with an
-// open neck between them instead of two stacked boxes.
+type questionDialogLayout struct {
+	indent, width, inner int
+	rows                 []string
+	offset, height       int
+}
+
+// Content and focus share one wrapped layout. Only its visible window enters
+// the frame, so valid long questions cannot push the controls off screen.
+func (m model) layoutQuestionDialog(width int) questionDialogLayout {
+	l := questionDialogLayout{indent: min(questionDialogIndent, max((width-questionDialogMinimumWidth)/2, 0))}
+	l.width = max(width-2*l.indent, 1)
+	l.inner = max(l.width-questionDialogStyle.GetHorizontalFrameSize(), 1)
+	panel := m.question
+	item := panel.current()
+	appendRows := func(view string) {
+		l.rows = append(l.rows, strings.Split(ansi.Hardwrap(view, l.inner, true), "\n")...)
+	}
+	appendRows(bodyStyle.Render(questionLine(item)))
+	appendRows("")
+	focus := 0
+	for row, option := range item.Options {
+		if row == panel.focus {
+			focus = len(l.rows)
+		}
+		appendRows(m.questionOptionRow(l.inner, panel, row, option))
+	}
+	if panel.hasOptions() {
+		if panel.focus == panel.customRow() {
+			focus = len(l.rows)
+		}
+		appendRows(m.questionCustomRow(panel))
+	}
+	appendRows(m.questionTextRow(panel))
+	if panel.textFocus || !panel.hasOptions() {
+		focus = len(l.rows) - 1
+	}
+	if panel.notice != "" {
+		appendRows(noticeStyle.Render(panel.notice))
+		focus = len(l.rows) - 1
+	}
+	// Top border, shared attachment edge and pinned help each consume a row.
+	c := m.chrome
+	budget := max(m.layoutHeight()-c.header-c.menu-c.composer-c.footer-minimumViewport-3, 1)
+	l.height = min(len(l.rows), budget)
+	l.offset = panel.scroll
+	if l.offset < 0 {
+		l.offset = max(focus-l.height+1, 0)
+	}
+	l.offset = min(max(l.offset, 0), len(l.rows)-l.height)
+	return l
+}
+
+// questionDialogView paints the bounded body above the shared composer edge.
 func (m model) questionDialogView(width int) string {
 	if !m.questionVisible() {
 		return ""
 	}
-	indent := min(questionDialogIndent, max((width-questionDialogMinimumWidth)/2, 0))
-	dialogWidth := max(width-2*indent, 1)
-	inner := max(dialogWidth-questionDialogStyle.GetHorizontalFrameSize(), 1)
-	panel := m.question
-	item := panel.current()
-	rows := make([]string, 0, 16)
-	for _, line := range strings.Split(ansi.Wrap(questionLine(item), inner, ""), "\n") {
-		rows = append(rows, bodyStyle.Render(line))
-	}
-	rows = append(rows, "")
-	for row, option := range item.Options {
-		rows = append(rows, m.questionOptionRow(inner, panel, row, option))
-	}
-	if panel.hasOptions() {
-		rows = append(rows, m.questionCustomRow(panel))
-	}
-	rows = append(rows, m.questionTextRow(inner, panel))
-	if panel.notice != "" {
-		rows = append(rows, noticeStyle.Render(panel.notice))
-	}
-	rows = append(rows, mutedStyle.Render(m.questionHelp(inner)))
-	// The box stays open at the bottom; the shared edge below replaces both
-	// its bottom border and the composer's top border.
-	box := questionDialogStyle.Width(dialogWidth).BorderBottom(false).
-		Render(strings.Join(rows, "\n"))
-	pad := strings.Repeat(" ", indent)
-	painted := make([]string, 0, len(rows)+2)
+	l := m.layoutQuestionDialog(width)
+	body := strings.Join(l.rows[l.offset:l.offset+l.height], "\n")
+	box := questionDialogStyle.Width(l.width).BorderBottom(false).
+		Render(body + "\n" + mutedStyle.Render(m.questionHelp(l.inner)))
+	pad := strings.Repeat(" ", l.indent)
+	var painted []string
 	for _, line := range strings.Split(box, "\n") {
 		painted = append(painted, pad+line)
 	}
-	painted = append(painted, questionAttachRow(width, indent, indent+dialogWidth-1))
+	painted = append(painted, questionAttachRow(width, l.indent, l.indent+l.width-1))
 	return strings.Join(painted, "\n")
 }
 
@@ -432,9 +475,9 @@ func (m model) questionDialogHeight(width int) int {
 // itself, with options separated below by a blank line.
 func questionLine(item *interaction.QuestionItem) string {
 	if text := strings.TrimSpace(item.Question); text != "" {
-		return text
+		return sanitizeMultilineText(text)
 	}
-	return strings.TrimSpace(item.Header)
+	return sanitizeSingleLineText(strings.TrimSpace(item.Header))
 }
 
 func (m model) questionOptionRow(
@@ -453,23 +496,24 @@ func (m model) questionOptionRow(
 	if panel.settled[panel.index] && panel.selected[panel.index] == row && !panel.custom[panel.index] {
 		selected = "●"
 	}
-	label := fmt.Sprintf("%s%d %s %s", marker, row+1, selected, option.Label)
+	label := fmt.Sprintf("%s%d %s %s", marker, row+1, selected, sanitizeSingleLineText(option.Label))
+	description := sanitizeSingleLineText(option.Description)
 	recommend := ""
 	recommendStyle := lipgloss.NewStyle().Foreground(secondaryColor)
 	if option.ID == panel.current().RecommendedOptionID {
 		recommend = "  推荐"
 	}
-	if option.Description != "" {
+	if description != "" {
 		// Wide terminals keep name and description on one row; narrow
 		// terminals stack the description below the name.
-		if ansi.StringWidth(label+"  "+option.Description+recommend) <= inner {
-			return style.Render(label) + mutedStyle.Render("  "+option.Description) + recommendStyle.Render(recommend)
+		if ansi.StringWidth(label+"  "+description+recommend) <= inner {
+			return style.Render(label) + mutedStyle.Render("  "+description) + recommendStyle.Render(recommend)
 		}
 	}
 	line := style.Render(label) + recommendStyle.Render(recommend)
-	if option.Description != "" {
+	if description != "" {
 		indent := strings.Repeat(" ", ansi.StringWidth(marker)+4)
-		desc := truncateTerminalText(option.Description, max(inner-ansi.StringWidth(indent), 1))
+		desc := truncateTerminalText(description, max(inner-ansi.StringWidth(indent), 1))
 		line += "\n" + indent + mutedStyle.Render(desc)
 	}
 	return line
@@ -494,8 +538,8 @@ func (m model) questionCustomRow(panel *questionPanel) string {
 	))
 }
 
-func (m model) questionTextRow(inner int, panel *questionPanel) string {
-	text := panel.texts[panel.index]
+func (m model) questionTextRow(panel *questionPanel) string {
+	text := sanitizeMultilineText(panel.texts[panel.index])
 	caption := "补充说明"
 	if !panel.hasOptions() || panel.custom[panel.index] || panel.focus == panel.customRow() {
 		caption = "回答"
@@ -504,12 +548,11 @@ func (m model) questionTextRow(inner int, panel *questionPanel) string {
 	if panel.textFocus {
 		shown += guardCursorStyle.Render(" ")
 	}
-	shown = truncateTerminalText(shown, max(inner-ansi.StringWidth(caption)-3, 1))
 	return mutedStyle.Render(caption+"：") + bodyStyle.Render(shown)
 }
 
 func (m model) questionHelp(inner int) string {
-	help := "↑↓ 选择 · Space 选中 · ←→ 切换问题 · Enter 提交全部"
+	help := "Enter 提交 · PgUp/PgDn 滚动 · ↑↓ 选择 · Space 选中 · ←→ 切题"
 	help += " · Esc 查看对话 · Ctrl+c 取消运行"
 	return truncateTerminalText(help, max(inner, 1))
 }
@@ -573,11 +616,8 @@ func (m model) handleQuestionAction(match inputActionMatch) (model, tea.Cmd, boo
 		panel.typeText("\n")
 		m.resizeLayout()
 	case inputActionQuestionScroll:
-		if match.argument < 0 {
-			m.viewport.PageUp()
-		} else {
-			m.viewport.PageDown()
-		}
+		l := m.layoutQuestionDialog(m.layoutWidth())
+		panel.scroll = min(max(l.offset+match.argument*l.height, 0), len(l.rows)-l.height)
 	case inputActionQuestionCancel:
 		if m.cancelRun != nil {
 			m.cancelRun()
