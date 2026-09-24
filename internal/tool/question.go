@@ -39,7 +39,8 @@ func (q *RequestUserInput) SetAsker(asker interaction.QuestionAsker) {
 func (q *RequestUserInput) Definition() llm.ToolDefinition {
 	return llm.ToolDefinition{
 		Name: "request_user_input",
-		Description: "Ask the user 1-3 focused questions when a choice materially affects " +
+		Description: "Ask the user 1-3 focused questions with at most 3 options per question " +
+			"when a choice materially affects " +
 			"scope, outcome, or rework cost. Use it to resolve requirements, delivery " +
 			"shape, compatibility, or preferences you cannot determine from the " +
 			"repository, docs, or conversation. Do not use it for permissions, " +
@@ -59,7 +60,7 @@ func (q *RequestUserInput) Definition() llm.ToolDefinition {
 							"question": {"type": "string"},
 							"options": {
 								"type": "array",
-								"maxItems": 6,
+								"maxItems": 3,
 								"items": {
 									"type": "object",
 									"properties": {
@@ -81,11 +82,11 @@ func (q *RequestUserInput) Definition() llm.ToolDefinition {
 			"required": ["questions"],
 			"additionalProperties": false
 		}`),
-		PromptSnippet: "Ask the user 1-3 focused questions when a choice materially affects the outcome",
+		PromptSnippet: "Ask the user 1-3 focused questions with at most 3 options per question when a choice materially affects the outcome",
 		PromptGuidelines: []string{
 			"Check the repository, docs, and conversation first; never ask for information you can obtain yourself",
 			"Decide routine implementation choices yourself; ask only when a choice materially affects scope, outcome, or rework cost",
-			"Keep asking efficient: at most 3 questions per call, one idea per question, and never re-ask settled requirements",
+			"Keep asking efficient: at most 3 questions per call, one idea per question, at most 3 options per question, and never re-ask settled requirements",
 			"Explain the practical difference of each option; mark at most one recommended option per question without assuming it is chosen",
 			"Ask dependent questions in separate rounds once their premise is known; accept skipped questions and continue with what stands alone",
 		},

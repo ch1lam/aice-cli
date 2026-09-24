@@ -13,7 +13,7 @@ import (
 // before any UI is shown.
 const (
 	MaxQuestionsPerRequest    = 3
-	MaxOptionsPerQuestion     = 6
+	MaxOptionsPerQuestion     = 3
 	MaxQuestionIDRunes        = 64
 	MaxQuestionHeaderRunes    = 80
 	MaxQuestionTextRunes      = 2000
