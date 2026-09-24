@@ -166,6 +166,52 @@ func TestValidateQuestionReply(t *testing.T) {
 	}
 }
 
+func TestValidateQuestionReplyCustomText(t *testing.T) {
+	t.Parallel()
+	request := validQuestionRequest()
+	// Option questions accept a custom answer: empty selection, non-blank text.
+	custom := interaction.QuestionReply{
+		RequestID: "call-1",
+		Answers: map[string]interaction.QuestionAnswer{
+			"execution_mode": {
+				Status: interaction.QuestionAnswered,
+				Text:   "先做最小实现，不增加新依赖",
+			},
+		},
+	}
+	if err := interaction.ValidateQuestionReply(request, custom); err != nil {
+		t.Fatalf("ValidateQuestionReply() error = %v, want custom text to validate", err)
+	}
+	cases := map[string]interaction.QuestionAnswer{
+		"blank custom": {
+			Status: interaction.QuestionAnswered,
+			Text:   "   ",
+		},
+		"half-filled id": {
+			Status:           interaction.QuestionAnswered,
+			SelectedOptionID: "check",
+			Text:             "补充说明",
+		},
+		"half-filled label": {
+			Status:        interaction.QuestionAnswered,
+			SelectedLabel: "仅检查并显示建议",
+			Text:          "补充说明",
+		},
+	}
+	for name, answer := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			reply := interaction.QuestionReply{
+				RequestID: "call-1",
+				Answers:   map[string]interaction.QuestionAnswer{"execution_mode": answer},
+			}
+			if err := interaction.ValidateQuestionReply(request, reply); err == nil {
+				t.Fatalf("ValidateQuestionReply() = nil, want error for %s", name)
+			}
+		})
+	}
+}
+
 func TestValidateQuestionReplyFreeText(t *testing.T) {
 	t.Parallel()
 	request := interaction.QuestionRequest{

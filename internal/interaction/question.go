@@ -59,9 +59,11 @@ const (
 	QuestionSkipped  QuestionAnswerStatus = "skipped"
 )
 
-// QuestionAnswer is one submitted answer. For option questions Text is an
-// optional supplement; for free-text questions Text is the answer itself and
-// the selected fields stay empty.
+// QuestionAnswer is one submitted answer. Option questions accept either a
+// selected option (SelectedOptionID/SelectedLabel set, Text optional
+// supplement) or a custom answer (both selected fields empty, Text non-empty).
+// For free-text questions Text is the answer itself and the selected fields
+// stay empty.
 type QuestionAnswer struct {
 	Status           QuestionAnswerStatus `json:"status"`
 	SelectedOptionID string               `json:"selected_option_id,omitempty"`
@@ -269,6 +271,15 @@ func validateAnswer(item *QuestionItem, answer QuestionAnswer) error {
 		if answer.SelectedOptionID != "" || answer.SelectedLabel != "" {
 			return fmt.Errorf("interaction: questions[%q] is free-text and must not select an option", item.ID)
 		}
+		if strings.TrimSpace(answer.Text) == "" {
+			return fmt.Errorf("interaction: questions[%q] needs an answer or an explicit skip", item.ID)
+		}
+		return nil
+	}
+	// Option questions accept either a valid selection (with optional
+	// supplement text) or a custom answer (both selected fields empty and
+	// non-blank text). A half-filled selection stays invalid.
+	if answer.SelectedOptionID == "" && answer.SelectedLabel == "" {
 		if strings.TrimSpace(answer.Text) == "" {
 			return fmt.Errorf("interaction: questions[%q] needs an answer or an explicit skip", item.ID)
 		}
