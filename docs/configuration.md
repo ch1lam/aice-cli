@@ -1221,26 +1221,27 @@ questions. A bottom panel replaces the composer while it is visible; the
 conversation above stays readable and the previous composer draft is
 preserved independently:
 
-- Each question shows its options with the practical difference of each
-  choice; at most one option is marked recommended, and the recommendation
-  only sets initial focus, never an answer.
-- `↑`/`↓` move focus, digits select an option directly, typing writes the
-  answer (or a supplement to a selected option), `Tab` switches between
-  options and text, `Enter` confirms the question, `s`/`Ctrl+s` skips it
-  explicitly, and `Backspace` on empty text goes back one question.
+- Each question shows one question line, a blank separator, then its options
+  with the practical difference of each choice; at most one option is marked
+  recommended in gold, and the recommendation only sets initial focus,
+  never an answer.
+- `↑`/`↓` move focus within a question, `←`/`→` switch questions,
+  `Space` (or a digit) selects the focused option and stays on it, typing
+  writes the answer (or a supplement to a selected option), and `Enter`
+  submits all answers at once.
   A digit that lands on the custom row with empty text stays on the current
-  question and focuses the input; only an answered or skipped question
-  advances.
+  question and focuses the input instead of selecting.
 - Focus, selection, and submission are separate: only submitting the whole
-group answers the call. Blank text is never an answer; skip explicitly.
+group answers the call. `Enter` with unanswered questions keeps the panel
+open, prompts, and jumps to the first unanswered question. Blank text is
+never an answer: every question must be answered before `Enter` submits.
   An option question accepts either a valid selection (with optional
   supplement text) or a custom answer (empty selection, non-blank text).
-  A skip carries no content and is never treated as consent.
 - `Esc` browses the conversation with drafts and focus kept; `Ctrl+c`
   cancels the run. Question input never triggers slash commands, file
   expansion, or steering, and a permission prompt temporarily takes over
   while keeping panel state.
-- Skipped questions continue with what stands alone; cancelled or expired
+- Cancelled or expired
   prompts leave no partial answers. History keeps the questions in the tool
   call and the submitted answers in its result, so reopening a Session
   restores them without replaying anything.
