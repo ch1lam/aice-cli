@@ -1,10 +1,12 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/ch1lam/aice-cli/internal/interaction"
@@ -40,8 +42,13 @@ func newQuestionTestPrompt() (interaction.QuestionPrompt, chan interaction.Quest
 
 func newQuestionTestModel(t *testing.T, prompt interaction.QuestionPrompt) model {
 	t.Helper()
+	return newQuestionTestModelSized(t, prompt, 100, 30)
+}
+
+func newQuestionTestModelSized(t *testing.T, prompt interaction.QuestionPrompt, width, height int) model {
+	t.Helper()
 	current := newModel(make(chan runRequest), make(chan struct{}))
-	current = updateModel(t, current, tea.WindowSizeMsg{Width: 100, Height: 30})
+	current = updateModel(t, current, tea.WindowSizeMsg{Width: width, Height: height})
 	return updateModel(t, current, questionPromptMsg{prompt: prompt})
 }
 
@@ -64,6 +71,141 @@ func typeQuestionText(t *testing.T, current model, text string) model {
 func questionScreen(t *testing.T, current model) string {
 	t.Helper()
 	return ansi.Strip(current.View().Content)
+}
+
+// questionFrameRows locates the merged frame's painted rows in a stripped
+// screen: the dialog top border, the shared attachment edge, the composer's
+// draft row, and the composer's bottom border. While the dialog is attached
+// the composer keeps no separate top border of its own.
+func questionFrameRows(t *testing.T, view string) (top, attach, draft, bottom int) {
+	t.Helper()
+	lines := strings.Split(view, "\n")
+	draft = -1
+	for index, line := range lines {
+		// The placeholder is truncated on narrow terminals; match its head.
+		if strings.Contains(line, "Ask about") {
+			draft = index
+			break
+		}
+	}
+	if draft < 1 || draft+1 >= len(lines) {
+		t.Fatalf("composer draft row missing:\n%s", view)
+	}
+	attach = draft - 1
+	if strings.Trim(lines[attach], " ") == "" {
+		t.Fatalf("blank row separates the dialog from the composer:\n%s", view)
+	}
+	bottom = draft + 1
+	if !strings.Contains(lines[bottom], "╰") {
+		t.Fatalf("composer bottom border missing:\n%s", view)
+	}
+	for index := attach - 1; index >= 0; index-- {
+		if strings.HasPrefix(strings.TrimLeft(lines[index], " "), "╭") {
+			return index, attach, draft, bottom
+		}
+	}
+	t.Fatalf("dialog top border missing:\n%s", view)
+	return 0, 0, 0, 0
+}
+
+// cellIndexOfRune reports the terminal cell offset of the nth occurrence
+// of a target rune, so painted borders can be compared across CJK text.
+func cellIndexOfRune(line string, target rune, occurrence int) (int, bool) {
+	width := 0
+	found := 0
+	for _, r := range line {
+		if r == target {
+			if found == occurrence {
+				return width, true
+			}
+			found++
+		}
+		width += lipgloss.Width(string(r))
+	}
+	return 0, false
+}
+
+// The dialog merges with the composer into one frame: both share a single
+// edge instead of stacking two borders, the composer keeps its draft row, and
+// the dialog height still follows the current option list.
+func TestQuestionDialogMergesWithComposer(t *testing.T) {
+	for _, width := range []int{100, 60, 32} {
+		t.Run(fmt.Sprint(width), func(t *testing.T) {
+			prompt, _ := newQuestionTestPrompt()
+			current := newQuestionTestModelSized(t, prompt, width, 30)
+			assertQuestionMergedFrame(t, current)
+		})
+	}
+	// Switching to the free-text question drops the option rows and the
+	// dialog with them; the shared edge and the composer stay put.
+	prompt, _ := newQuestionTestPrompt()
+	current := newQuestionTestModel(t, prompt)
+	options := current.chrome.question
+	current = pressQuestionKey(t, current, tea.KeyPressMsg{Code: tea.KeyRight})
+	if current.chrome.question >= options {
+		t.Fatalf("dialog height %d did not shrink from %d without options", current.chrome.question, options)
+	}
+	view := questionScreen(t, current)
+	if _, attach, draft, _ := questionFrameRows(t, view); !strings.Contains(strings.Split(view, "\n")[draft], "Ask about this workspace") || !strings.ContainsAny(strings.Split(view, "\n")[attach], "╯╰│") {
+		t.Fatalf("merged frame lost after switching questions:\n%s", view)
+	}
+}
+
+func assertQuestionMergedFrame(t *testing.T, current model) {
+	t.Helper()
+	view := questionScreen(t, current)
+	lines := strings.Split(view, "\n")
+	top, attach, _, _ := questionFrameRows(t, view)
+	if painted := attach - top + 1; painted != current.chrome.question {
+		t.Fatalf("painted dialog rows = %d, measured %d", painted, current.chrome.question)
+	}
+	if len(lines) != current.height {
+		t.Fatalf("painted canvas rows = %d, want terminal height %d", len(lines), current.height)
+	}
+	pad := current.horizontalPadding()
+	indent := min(questionDialogIndent, max((current.layoutWidth()-questionDialogMinimumWidth)/2, 0))
+	dialogWidth := max(current.layoutWidth()-2*indent, 1)
+	if indent > 0 && dialogWidth >= current.layoutWidth() {
+		t.Fatalf("dialog width %d must stay narrower than composer %d", dialogWidth, current.layoutWidth())
+	}
+	left, right := pad+indent, pad+indent+dialogWidth-1
+	attachLine, topLine := lines[attach], lines[top]
+	// The walls turn exactly onto the shared edge: rounded corners where a
+	// shelf continues, straight walls where the dialog reaches the edge.
+	leftJoint, rightJoint := '╯', '╰'
+	rightOccurrence := 0
+	if indent == 0 {
+		// No shelf continues on either side: both joints are straight walls.
+		leftJoint, rightJoint, rightOccurrence = '│', '│', 1
+	}
+	for _, check := range []struct {
+		line       string
+		target     rune
+		occurrence int
+		want       int
+	}{
+		{attachLine, leftJoint, 0, left},
+		{attachLine, rightJoint, rightOccurrence, right},
+		{topLine, '╭', 0, left},
+	} {
+		if got, ok := cellIndexOfRune(check.line, check.target, check.occurrence); !ok || got != check.want {
+			t.Fatalf("%q at cell %d, want %d: %q", string(check.target), got, check.want, check.line)
+		}
+	}
+	if indent > 0 && (strings.Count(attachLine, "╯") != 1 || strings.Count(attachLine, "╰") != 1) {
+		t.Fatalf("shared edge must turn both walls into corners: %q", attachLine)
+	}
+	// The shared edge spans the whole composer width with its own corners.
+	trimmed := strings.TrimRight(attachLine, " ")
+	if want := current.horizontalPadding() + current.layoutWidth(); lipgloss.Width(trimmed) != want {
+		t.Fatalf("shared edge width = %d, want %d", lipgloss.Width(trimmed), want)
+	}
+	if indent > 0 && !strings.HasSuffix(trimmed, "╮") {
+		t.Fatalf("shared edge must end at the composer corner: %q", attachLine)
+	}
+	if layout := current.screenLayout(); layout.composer.y != layout.question.y+layout.question.height {
+		t.Fatalf("composer does not sit directly under the dialog: %#v", layout)
+	}
 }
 
 func TestQuestionPanelRecommendsWithoutAnswering(t *testing.T) {
