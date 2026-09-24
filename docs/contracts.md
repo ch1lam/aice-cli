@@ -589,6 +589,10 @@ consistency for those behaviors.
   and uses its source-row map to locate the hit. Read-only current-session views
   own separate presentations so their code folds cannot change the live view.
   This is not an incremental syntax highlighter.
+  Markdown tables use the TUI's compact outer frame with Glamour-rendered
+  inline content. Link and image destinations stay inline because the custom
+  table frame does not run Glamour's table-link footer. Streaming, completed
+  and restored history views use the same table renderer.
   `transcriptContent` carries text and block placements through
   composition, indentation and the viewport's lazy cache. Hit testing uses the
   same visible rows as painting, including main and BTW answers, tool output and

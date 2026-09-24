@@ -103,8 +103,12 @@ func countMarkdownPlaceholders(first, end ast.Node, source []byte, tableMarker s
 func renderBoxTable(tbl *astext.Table, source []byte, width int, styles glamouransi.StyleConfig) string {
 	var header []string
 	var rows [][]string
-	helper := glamouransi.NewRenderer(glamouransi.Options{Styles: styles, WordWrap: width})
-	cellContext := glamouransi.NewRenderContext(glamouransi.Options{Styles: styles, WordWrap: width})
+	// This renderer owns the table frame, so Glamour's table footer never
+	// runs. Render destinations inline instead of emitting footer references
+	// whose targets would otherwise disappear.
+	options := glamouransi.Options{Styles: styles, WordWrap: width, InlineTableLinks: true}
+	helper := glamouransi.NewRenderer(options)
+	cellContext := glamouransi.NewRenderContext(options)
 	tableStyle := styles.Table.StylePrimitive
 	for child := tbl.FirstChild(); child != nil; child = child.NextSibling() {
 		switch child.Kind() {

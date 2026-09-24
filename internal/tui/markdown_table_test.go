@@ -131,3 +131,34 @@ func TestBoxTableStaysCompact(t *testing.T) {
 		t.Errorf("two-column table is %d wide at terminal width 100, want compact (<=40):\n%s", maxWidth, rendered)
 	}
 }
+
+func TestBoxTablePreservesLinkDestinations(t *testing.T) {
+	source := "| Kind | Resource |\n|---|---|\n| link | [guide](https://example.com/guide) |\n" +
+		"| image | ![diagram](https://example.com/image.png) |\n\n" +
+		"A paragraph after the table.\n"
+	history, err := parseHistoryMarkdown(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cache markdownCache
+	for name, render := range map[string]func() string{
+		"direct":    func() string { return layoutMarkdown(source, 100).view },
+		"streaming": func() string { return cache.layout(source, 100).view },
+		"history": func() string {
+			var rows []string
+			for i := range history.parts {
+				rows = append(rows, history.content(i, 100).view)
+			}
+			return strings.Join(rows, "\n")
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			view := ansi.Strip(render())
+			for _, destination := range []string{"https://example.com/guide", "https://example.com/image.png"} {
+				if !strings.Contains(view, destination) {
+					t.Errorf("table lost destination %q:\n%s", destination, view)
+				}
+			}
+		})
+	}
+}
