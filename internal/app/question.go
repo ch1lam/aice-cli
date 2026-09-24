@@ -7,10 +7,10 @@ import (
 	"github.com/ch1lam/aice-cli/internal/interaction"
 )
 
-// questionBridgeLifetime bounds how many unanswered prompts one Session may
-// hold for its frontend. Agent execution is sequential, so one slot is
-// enough; the buffer only absorbs a prompt published just as its run ends.
-const questionBridgeLifetime = 4
+// questionBridgeCapacity bounds queued prompts, including expired prompts
+// the frontend has not consumed yet. Sequential tool execution still allows
+// only one live prompt; sends to a full queue remain cancellable.
+const questionBridgeCapacity = 4
 
 // QuestionRequests exposes pending question prompts for the TUI.
 func (s *interactiveSession) QuestionRequests() <-chan interaction.QuestionPrompt {
@@ -59,13 +59,6 @@ func (s *interactiveSession) AskQuestion(
 		if err := ctx.Err(); err != nil {
 			return interaction.QuestionReply{}, err
 		}
-		if answered.RequestID != request.ID {
-			return interaction.QuestionReply{}, fmt.Errorf(
-				"app: question reply targets %q, want %q",
-				answered.RequestID,
-				request.ID,
-			)
-		}
 		if err := interaction.ValidateQuestionReply(request, answered); err != nil {
 			return interaction.QuestionReply{}, err
 		}
@@ -87,12 +80,9 @@ func (s *interactiveSession) bindQuestionTool() {
 	if s == nil {
 		return
 	}
+	// tools and baseTools contain the same host-tool instances. Bind each
+	// instance once; web rebinding reuses the bound baseTools.
 	for _, current := range s.tools {
-		if setter, ok := current.(questionAskerSetter); ok {
-			setter.SetAsker(s)
-		}
-	}
-	for _, current := range s.baseTools {
 		if setter, ok := current.(questionAskerSetter); ok {
 			setter.SetAsker(s)
 		}

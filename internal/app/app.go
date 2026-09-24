@@ -405,7 +405,7 @@ func (a *application) Interactive(
 		guardRequests: make(chan interaction.GuardRequest, 4),
 		questionRequests: make(
 			chan interaction.QuestionPrompt,
-			questionBridgeLifetime,
+			questionBridgeCapacity,
 		),
 		conversation:  conversationState{store: store, history: history},
 		model:         environment.model,

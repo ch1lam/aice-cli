@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	"github.com/ch1lam/aice-cli/internal/interaction"
 	"github.com/ch1lam/aice-cli/internal/llm"
@@ -133,28 +132,4 @@ func (q *RequestUserInput) Execute(ctx context.Context, call llm.ToolCall) (llm.
 		return llm.ToolResult{}, fmt.Errorf("tool %q: encode answers: %w", "request_user_input", err)
 	}
 	return textResult(call, string(payload), false), nil
-}
-
-// QuestionSummary renders one compact history line per answered question for
-// display projections. It never parses model prose.
-func QuestionSummary(request interaction.QuestionRequest, reply interaction.QuestionReply) string {
-	rows := make([]string, 0, len(request.Questions))
-	for _, item := range request.Questions {
-		answer, ok := reply.Answers[item.ID]
-		if !ok || answer.Status == interaction.QuestionSkipped {
-			continue
-		}
-		title := item.Header
-		if strings.TrimSpace(title) == "" {
-			title = item.Question
-		}
-		detail := answer.SelectedLabel
-		if strings.TrimSpace(detail) == "" {
-			detail = answer.Text
-		} else if strings.TrimSpace(answer.Text) != "" {
-			detail += " (" + strings.TrimSpace(answer.Text) + ")"
-		}
-		rows = append(rows, strings.TrimSpace(title)+"："+strings.TrimSpace(detail))
-	}
-	return strings.Join(rows, "\n")
 }

@@ -82,6 +82,9 @@ cmd/aice
 The Agent Loop does not know Cobra, Bubble Tea, concrete tools, Session files,
 or provider SDKs. The application prepares one active run and connects its
 UI-neutral input mailbox to the Agent Loop's steering and follow-up sources.
+Interactive questions use the same tool boundary: the tool returns structured
+answers, the application owns the cancellable exchange, and the frontend owns
+drafts and presentation. Display formatting is not part of the question tool.
 The TUI is display state: it submits inputs to that capability, mirrors pending
 inputs for presentation, and never owns delivery semantics or writes Session
 truth. A future GUI must use the same application-owned active-run boundary.

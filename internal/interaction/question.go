@@ -14,7 +14,6 @@ import (
 const (
 	MaxQuestionsPerRequest    = 3
 	MaxOptionsPerQuestion     = 3
-	MaxQuestionIDRunes        = 64
 	MaxQuestionHeaderRunes    = 80
 	MaxQuestionTextRunes      = 2000
 	MaxOptionLabelRunes       = 120
@@ -146,7 +145,7 @@ func ValidateQuestionRequest(request QuestionRequest) error {
 				MaxOptionsPerQuestion,
 			)
 		}
-		optionSeen := make(map[string]QuestionOption, len(item.Options))
+		optionSeen := make(map[string]struct{}, len(item.Options))
 		for optionIndex := range item.Options {
 			option := &item.Options[optionIndex]
 			if !questionIDPattern.MatchString(option.ID) {
@@ -164,7 +163,7 @@ func ValidateQuestionRequest(request QuestionRequest) error {
 					option.ID,
 				)
 			}
-			optionSeen[option.ID] = *option
+			optionSeen[option.ID] = struct{}{}
 			if strings.TrimSpace(option.Label) == "" || utf8.RuneCountInString(option.Label) > MaxOptionLabelRunes {
 				return fmt.Errorf(
 					"interaction: questions[%q].options[%q].label must contain 1-%d runes",
@@ -183,7 +182,7 @@ func ValidateQuestionRequest(request QuestionRequest) error {
 			}
 		}
 		if item.RecommendedOptionID != "" {
-			recommended, ok := optionSeen[item.RecommendedOptionID]
+			_, ok := optionSeen[item.RecommendedOptionID]
 			if !ok {
 				return fmt.Errorf(
 					"interaction: questions[%q].recommended_option_id %q does not reference an option",
@@ -191,7 +190,6 @@ func ValidateQuestionRequest(request QuestionRequest) error {
 					item.RecommendedOptionID,
 				)
 			}
-			_ = recommended
 		}
 		if !utf8.ValidString(item.Header) ||
 			!utf8.ValidString(item.Question) ||
@@ -207,9 +205,9 @@ func ValidateQuestionRequest(request QuestionRequest) error {
 	return nil
 }
 
-// ValidateQuestionReply checks one submission against its request. It runs on
-// the answered path so a faulty frontend can never inject a malformed result
-// into the Session.
+// ValidateQuestionReply checks one submission against its validated request.
+// It runs on the answered path so a faulty frontend can never inject a
+// malformed result into the Session.
 func ValidateQuestionReply(request QuestionRequest, reply QuestionReply) error {
 	if reply.RequestID != request.ID {
 		return fmt.Errorf("interaction: question reply targets %q, want %q", reply.RequestID, request.ID)
@@ -229,18 +227,6 @@ func ValidateQuestionReply(request QuestionRequest, reply QuestionReply) error {
 		}
 		if err := validateAnswer(item, answer); err != nil {
 			return err
-		}
-	}
-	for id := range reply.Answers {
-		found := false
-		for index := range request.Questions {
-			if request.Questions[index].ID == id {
-				found = true
-				break
-			}
-		}
-		if !found {
-			return fmt.Errorf("interaction: question reply answers unknown question %q", id)
 		}
 	}
 	return nil

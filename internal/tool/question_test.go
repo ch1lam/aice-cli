@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"strings"
 	"testing"
 
 	"github.com/ch1lam/aice-cli/internal/interaction"
@@ -163,29 +162,5 @@ func TestRequestUserInputDiscardsSubmitRacingCancellation(t *testing.T) {
 	_, err := tool.NewRequestUserInput(asker).Execute(ctx, questionCall(t, validQuestionArguments))
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("Execute() error = %v, want context.Canceled", err)
-	}
-}
-
-func TestQuestionSummary(t *testing.T) {
-	t.Parallel()
-	request := interaction.QuestionRequest{Questions: []interaction.QuestionItem{
-		{ID: "a", Header: "执行方式", Question: "行为？"},
-		{ID: "b", Question: "目标？"},
-	}}
-	reply := interaction.QuestionReply{Answers: map[string]interaction.QuestionAnswer{
-		"a": {
-			Status:           interaction.QuestionAnswered,
-			SelectedOptionID: "check",
-			SelectedLabel:    "仅检查",
-			Text:             "不递归",
-		},
-		"b": {Status: interaction.QuestionSkipped},
-	}}
-	summary := tool.QuestionSummary(request, reply)
-	if !strings.Contains(summary, "执行方式") || !strings.Contains(summary, "仅检查") {
-		t.Fatalf("summary = %q", summary)
-	}
-	if strings.Contains(summary, "目标") {
-		t.Fatalf("summary must omit skipped questions: %q", summary)
 	}
 }

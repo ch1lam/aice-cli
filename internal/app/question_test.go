@@ -42,7 +42,7 @@ func answerFor(request interaction.QuestionRequest) interaction.QuestionReply {
 func TestAskQuestionDeliversSingleSubmission(t *testing.T) {
 	t.Parallel()
 	session := &interactiveSession{
-		questionRequests: make(chan interaction.QuestionPrompt, questionBridgeLifetime),
+		questionRequests: make(chan interaction.QuestionPrompt, questionBridgeCapacity),
 	}
 	request := testQuestionRequest()
 	done := make(chan interaction.QuestionReply, 1)
@@ -83,7 +83,7 @@ func TestAskQuestionDeliversSingleSubmission(t *testing.T) {
 func TestAskQuestionRejectsMismatchedReply(t *testing.T) {
 	t.Parallel()
 	session := &interactiveSession{
-		questionRequests: make(chan interaction.QuestionPrompt, questionBridgeLifetime),
+		questionRequests: make(chan interaction.QuestionPrompt, questionBridgeCapacity),
 	}
 	request := testQuestionRequest()
 	errResult := make(chan error, 1)
@@ -113,7 +113,7 @@ func TestAskQuestionRejectsMismatchedReply(t *testing.T) {
 func TestAskQuestionHonorsCancellation(t *testing.T) {
 	t.Parallel()
 	session := &interactiveSession{
-		questionRequests: make(chan interaction.QuestionPrompt, questionBridgeLifetime),
+		questionRequests: make(chan interaction.QuestionPrompt, questionBridgeCapacity),
 	}
 	ctx, cancel := context.WithCancel(t.Context())
 	errResult := make(chan error, 1)
