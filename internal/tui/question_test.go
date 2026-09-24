@@ -79,29 +79,71 @@ func TestQuestionPanelRecommendsWithoutAnswering(t *testing.T) {
 		t.Fatal("recommended option must not count as an answer")
 	}
 	view := questionScreen(t, current)
-	if !strings.Contains(view, "等待你的回答") || !strings.Contains(view, "1 / 2") {
-		t.Fatalf("panel missing header/counter:\n%s", view)
+	if strings.Contains(view, "等待你的回答") {
+		t.Fatalf("panel must not show the waiting header:\n%s", view)
+	}
+	if strings.Contains(view, "1 / 2") {
+		t.Fatalf("panel must not show a question counter:\n%s", view)
 	}
 	if !strings.Contains(view, "推荐") {
 		t.Fatalf("panel must mark the recommended option:\n%s", view)
 	}
+	lines := strings.Split(view, "\n")
+	questionAt := -1
+	for i, line := range lines {
+		if strings.Contains(line, "采用哪种行为？") {
+			questionAt = i
+			break
+		}
+	}
+	if questionAt < 0 {
+		t.Fatalf("panel must show the question:\n%s", view)
+	}
+	if questionAt+1 >= len(lines) || strings.Trim(lines[questionAt+1], " │") != "" {
+		t.Fatalf("panel must separate the question from options with a blank line:\n%s", view)
+	}
 }
 
-func TestQuestionPanelSelectAdvanceSubmit(t *testing.T) {
+func TestQuestionPanelSpaceSelectSwitchSubmit(t *testing.T) {
 	prompt, replies := newQuestionTestPrompt()
 	current := newQuestionTestModel(t, prompt)
 	// Draft preservation: the composer value survives the whole exchange.
 	current.question.saved = "wip draft"
 
-	// Q1: move to row 2 and confirm with Enter.
-	current = pressQuestionKey(t, current, tea.KeyPressMsg{Code: tea.KeyDown})
+	// Enter submits the whole group: with nothing answered it stays open
+	// and guides to the first unanswered question.
 	current = pressQuestionKey(t, current, tea.KeyPressMsg{Code: tea.KeyEnter})
+	if current.question == nil {
+		t.Fatal("incomplete Enter must not submit")
+	}
+	if current.question.notice == "" {
+		t.Fatal("incomplete Enter must prompt for the missing answers")
+	}
+	select {
+	case <-replies:
+		t.Fatal("incomplete Enter must not submit")
+	default:
+	}
+
+	// Q1: move to row 2 and Space-select it; selection stays on Q1.
+	current = pressQuestionKey(t, current, tea.KeyPressMsg{Code: tea.KeyDown})
+	current = pressQuestionKey(t, current, tea.KeyPressMsg{Code: ' ', Text: " "})
 	if !current.question.settled[0] || current.question.selected[0] != 1 {
 		t.Fatalf("q1 not settled on row 2: %#v", current.question)
 	}
+	if current.question.index != 0 {
+		t.Fatalf("index = %d, want 0 (Space stays, Right switches)", current.question.index)
+	}
+	// Right switches to Q2; Left returns with the choice kept.
+	current = pressQuestionKey(t, current, tea.KeyPressMsg{Code: tea.KeyRight})
 	if current.question.index != 1 {
 		t.Fatalf("index = %d, want 1", current.question.index)
 	}
+	current = pressQuestionKey(t, current, tea.KeyPressMsg{Code: tea.KeyLeft})
+	if current.question.index != 0 || current.question.selected[0] != 1 {
+		t.Fatalf("choice lost after switch: %#v", current.question)
+	}
+	current = pressQuestionKey(t, current, tea.KeyPressMsg{Code: tea.KeyRight})
 	// Q2 is free-text: typing then Enter answers it and submits everything.
 	current = typeQuestionText(t, current, "修 flaky")
 	current = pressQuestionKey(t, current, tea.KeyPressMsg{Code: tea.KeyEnter})
@@ -130,33 +172,48 @@ func TestQuestionPanelSelectAdvanceSubmit(t *testing.T) {
 	}
 }
 
-func TestQuestionPanelSkipAndBack(t *testing.T) {
+func TestQuestionPanelSwitchAndSubmit(t *testing.T) {
 	prompt, replies := newQuestionTestPrompt()
 	current := newQuestionTestModel(t, prompt)
-	// Blank Enter on the custom row must not answer: it asks for an
-	// explicit answer or skip instead.
+	// Blank Enter on the custom row must not answer: it keeps the panel
+	// open and prompts for the missing answers instead.
 	current = pressQuestionKey(t, current, tea.KeyPressMsg{Code: tea.KeyDown})
 	current = pressQuestionKey(t, current, tea.KeyPressMsg{Code: tea.KeyDown})
 	current = pressQuestionKey(t, current, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if current.question.settled[0] {
 		t.Fatal("blank Enter on the custom row must not answer")
 	}
-	// Skip q1, return with b, then answer it via digit shortcut.
-	current = pressQuestionKey(t, current, tea.KeyPressMsg{Code: 's', Text: "s"})
-	if !current.question.settled[0] || !current.question.skipped[0] {
-		t.Fatalf("q1 not skipped: %#v", current.question)
+	if current.question.notice == "" {
+		t.Fatal("blank Enter must prompt for the missing answers")
 	}
+	// Left on the first question stays; Right/Left switch explicitly.
+	current = pressQuestionKey(t, current, tea.KeyPressMsg{Code: tea.KeyLeft})
+	if current.question.index != 0 {
+		t.Fatalf("index = %d, want 0 (Left stays on the first question)", current.question.index)
+	}
+	current = pressQuestionKey(t, current, tea.KeyPressMsg{Code: tea.KeyRight})
 	if current.question.index != 1 {
 		t.Fatalf("index = %d, want 1", current.question.index)
 	}
+	current = pressQuestionKey(t, current, tea.KeyPressMsg{Code: tea.KeyLeft})
+	if current.question.index != 0 {
+		t.Fatalf("index = %d, want 0 after left", current.question.index)
+	}
+	// Backspace only edits text, never switches questions.
 	current = pressQuestionKey(t, current, tea.KeyPressMsg{Code: tea.KeyBackspace})
 	if current.question.index != 0 {
-		t.Fatalf("index = %d, want 0 after back", current.question.index)
+		t.Fatalf("index = %d, want 0 (Backspace must not switch)", current.question.index)
 	}
-	current = pressQuestionKey(t, current, tea.KeyPressMsg{Code: '1', Text: "1"})
-	if current.question.selected[0] != 0 || current.question.skipped[0] {
-		t.Fatalf("q1 not re-answered: %#v", current.question)
+	// Space selects row 2 and stays; Right + text + Enter submits everything.
+	current = pressQuestionKey(t, current, tea.KeyPressMsg{Code: tea.KeyDown})
+	current = pressQuestionKey(t, current, tea.KeyPressMsg{Code: ' ', Text: " "})
+	if current.question.selected[0] != 1 || !current.question.settled[0] {
+		t.Fatalf("q1 not selected: %#v", current.question)
 	}
+	if current.question.index != 0 {
+		t.Fatalf("index = %d, want 0 (Space stays, Right switches)", current.question.index)
+	}
+	current = pressQuestionKey(t, current, tea.KeyPressMsg{Code: tea.KeyRight})
 	current = typeQuestionText(t, current, "goal text")
 	current = pressQuestionKey(t, current, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if current.question != nil {
@@ -165,7 +222,7 @@ func TestQuestionPanelSkipAndBack(t *testing.T) {
 	select {
 	case reply := <-replies:
 		if first := reply.Answers["mode"]; first.Status != interaction.QuestionAnswered ||
-			first.SelectedOptionID != "check" {
+			first.SelectedOptionID != "apply" {
 			t.Fatalf("mode = %#v, want answered check", first)
 		}
 		if second := reply.Answers["goal"]; second.Text != "goal text" {
@@ -182,6 +239,32 @@ func TestQuestionPanelDigitSelectsOption(t *testing.T) {
 	current = pressQuestionKey(t, current, tea.KeyPressMsg{Code: '2', Text: "2"})
 	if current.question.selected[0] != 1 {
 		t.Fatalf("digit did not select row 2: %#v", current.question)
+	}
+	if current.question.index != 0 {
+		t.Fatalf("index = %d, want 0 (digit stays, Right switches)", current.question.index)
+	}
+	if current.question == nil {
+		t.Fatal("digit must not submit a partially answered group")
+	}
+}
+
+func TestQuestionPanelSpaceTypesInTextMode(t *testing.T) {
+	prompt, _ := newQuestionTestPrompt()
+	current := newQuestionTestModel(t, prompt)
+	// Space on an option row selects and stays.
+	current = pressQuestionKey(t, current, tea.KeyPressMsg{Code: ' ', Text: " "})
+	if current.question.selected[0] != 0 {
+		t.Fatalf("space did not select row 1: %#v", current.question)
+	}
+	// Typing enters text mode automatically: a later Space types a
+	// supplement instead of reselecting, so answers containing spaces
+	// remain typable.
+	current = typeQuestionText(t, current, "a b")
+	if got := current.question.texts[0]; got != "a b" {
+		t.Fatalf("supplement = %q, want %q", got, "a b")
+	}
+	if current.question.selected[0] != 0 || !current.question.settled[0] {
+		t.Fatalf("selection lost after typing a supplement: %#v", current.question)
 	}
 }
 
@@ -207,7 +290,7 @@ func TestQuestionPanelDigitCustomStaysOnCurrent(t *testing.T) {
 	if !panel.textFocus {
 		t.Fatal("digit custom must focus the text input")
 	}
-	// Typing then Enter settles Q1 as a custom answer and advances to Q2.
+	// Typing then Enter settles Q1 as a custom answer and guides to Q2.
 	current = typeQuestionText(t, current, "先做最小实现")
 	current = pressQuestionKey(t, current, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if !current.question.settled[0] || !current.question.custom[0] {
@@ -221,7 +304,7 @@ func TestQuestionPanelDigitCustomStaysOnCurrent(t *testing.T) {
 func TestQuestionPanelCustomTextSubmit(t *testing.T) {
 	prompt, replies := newQuestionTestPrompt()
 	current := newQuestionTestModel(t, prompt)
-	// Q1: move to the custom row, type a custom answer, confirm.
+	// Q1: move to the custom row, type a custom answer, submit-attempt guides to Q2.
 	current = pressQuestionKey(t, current, tea.KeyPressMsg{Code: tea.KeyDown})
 	current = pressQuestionKey(t, current, tea.KeyPressMsg{Code: tea.KeyDown})
 	current = typeQuestionText(t, current, "先做最小实现，不增加新依赖")
