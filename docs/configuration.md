@@ -1228,8 +1228,14 @@ preserved independently:
   answer (or a supplement to a selected option), `Tab` switches between
   options and text, `Enter` confirms the question, `s`/`Ctrl+s` skips it
   explicitly, and `Backspace` on empty text goes back one question.
+  A digit that lands on the custom row with empty text stays on the current
+  question and focuses the input; only an answered or skipped question
+  advances.
 - Focus, selection, and submission are separate: only submitting the whole
 group answers the call. Blank text is never an answer; skip explicitly.
+  An option question accepts either a valid selection (with optional
+  supplement text) or a custom answer (empty selection, non-blank text).
+  A skip carries no content and is never treated as consent.
 - `Esc` browses the conversation with drafts and focus kept; `Ctrl+c`
   cancels the run. Question input never triggers slash commands, file
   expansion, or steering, and a permission prompt temporarily takes over
