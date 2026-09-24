@@ -132,8 +132,7 @@ func ValidateQuestionRequest(request QuestionRequest) error {
 				MaxQuestionHeaderRunes,
 			)
 		}
-		questionRunes := utf8.RuneCountInString(strings.TrimSpace(item.Question))
-		if questionRunes == 0 || questionRunes > MaxQuestionTextRunes {
+		if strings.TrimSpace(item.Question) == "" || utf8.RuneCountInString(item.Question) > MaxQuestionTextRunes {
 			return fmt.Errorf(
 				"interaction: questions[%q].question must contain 1-%d runes",
 				item.ID,
@@ -166,8 +165,7 @@ func ValidateQuestionRequest(request QuestionRequest) error {
 				)
 			}
 			optionSeen[option.ID] = *option
-			labelRunes := utf8.RuneCountInString(strings.TrimSpace(option.Label))
-			if labelRunes == 0 || labelRunes > MaxOptionLabelRunes {
+			if strings.TrimSpace(option.Label) == "" || utf8.RuneCountInString(option.Label) > MaxOptionLabelRunes {
 				return fmt.Errorf(
 					"interaction: questions[%q].options[%q].label must contain 1-%d runes",
 					item.ID,

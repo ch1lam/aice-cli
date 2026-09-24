@@ -368,6 +368,9 @@ consistency for those behaviors.
 - Interactive Q&A uses a separate, bottom-panel contract: `internal/app` sends
   `interaction.QuestionPrompt` (`Request`, `Done`, `Reply`) and the frontend
   replies once with a `QuestionReply` covering every requested question.
+  Request text limits count the original Unicode code points, including
+  surrounding whitespace; non-blank checks are separate. Invalid requests
+  fail before publishing a prompt, so trimming cannot bypass resource bounds.
   The panel owns drafts, focus, and per-question edits; only an explicit
   submit (or explicit per-question skip) produces a result. Its dialog extends
   the composer upward instead of replacing it: the composer keeps its frame

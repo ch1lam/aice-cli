@@ -1,6 +1,7 @@
 package interaction_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/ch1lam/aice-cli/internal/interaction"
@@ -53,6 +54,12 @@ func TestValidateQuestionRequestRejects(t *testing.T) {
 		},
 		"empty question": func(r *interaction.QuestionRequest) {
 			r.Questions[0].Question = "   "
+		},
+		"padded question exceeds limit": func(r *interaction.QuestionRequest) {
+			r.Questions[0].Question = "q" + strings.Repeat(" ", interaction.MaxQuestionTextRunes)
+		},
+		"padded label exceeds limit": func(r *interaction.QuestionRequest) {
+			r.Questions[0].Options[0].Label = strings.Repeat(" ", interaction.MaxOptionLabelRunes) + "x"
 		},
 		"too many options": func(r *interaction.QuestionRequest) {
 			for i := 0; i < 7; i++ {
