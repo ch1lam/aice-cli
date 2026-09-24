@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
@@ -255,9 +256,9 @@ func (m model) overlaySessionPicker(content string) (string, *tea.Cursor) {
 	))
 	var cursor *tea.Cursor
 	if (m.sessionPicker.input.Focused() || m.sessionPicker.rename != nil) && !m.sessionPicker.restoring {
-		cursor = m.sessionPicker.input.Cursor()
+		cursor = sessionPickerTextCursor(m.sessionPicker.input)
 		if m.sessionPicker.rename != nil {
-			cursor = m.sessionPicker.rename.input.Cursor()
+			cursor = sessionPickerTextCursor(m.sessionPicker.rename.input)
 			if m.sessionPicker.rename.saving {
 				cursor = nil
 			}
@@ -268,6 +269,30 @@ func (m model) overlaySessionPicker(content string) (string, *tea.Cursor) {
 		}
 	}
 	return canvas.Render(), cursor
+}
+
+// sessionPickerTextCursor returns the picker input caret corrected to
+// display-cell width. bubbles textinput reports the caret as rune offset,
+// so each wide (CJK) character leaves the real terminal cursor – and the IME
+// candidate window anchored to it – one cell to the left of the rendered text.
+func sessionPickerTextCursor(input textinput.Model) *tea.Cursor {
+	cursor := input.Cursor()
+	if cursor == nil {
+		return nil
+	}
+	if input.EchoMode != textinput.EchoNormal {
+		return cursor
+	}
+	value := []rune(input.Value())
+	position := max(0, min(input.Position(), len(value)))
+	prefixWidth := lipgloss.Width(string(value[:position]))
+	promptWidth := lipgloss.Width(input.Prompt)
+	x := promptWidth + prefixWidth
+	if input.Width() > 0 {
+		x = min(x, promptWidth+input.Width())
+	}
+	cursor.X = x
+	return cursor
 }
 
 func (m model) clickSessionPicker(mouse tea.MouseClickMsg) (tea.Model, tea.Cmd) {

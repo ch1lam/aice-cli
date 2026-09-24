@@ -639,3 +639,25 @@ func TestSessionPickerActivityHeaderStaysFixed(t *testing.T) {
 		}
 	}
 }
+
+func TestSessionPickerSearchCursorUsesDisplayWidth(t *testing.T) {
+	t.Parallel()
+	for _, query := range []string{"filter", "ab反对cd", "fdfdfsafsa反对舒服的爽肤水 反对反对的方法发"} {
+		m := pickerModel(t, 120, 30)
+		p := m.sessionPicker
+		p.previewFocused = false
+		p.input.Focus()
+		p.input.SetValue(query)
+		p.input.CursorEnd()
+		m.resizeSessionPicker()
+		_, cursor := m.overlaySessionPicker("")
+		if cursor == nil {
+			t.Fatalf("query %q: no cursor", query)
+		}
+		l := m.sessionPickerLayout()
+		wantX := l.x + 2 + lipgloss.Width(p.input.Prompt) + lipgloss.Width(query)
+		if cursor.X != wantX || cursor.Y != l.y+2 {
+			t.Fatalf("query %q: cursor = (%d, %d), want (%d, %d)", query, cursor.X, cursor.Y, wantX, l.y+2)
+		}
+	}
+}
