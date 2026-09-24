@@ -1217,7 +1217,7 @@ and thread drafts keep the expanded text.
 
 When a choice materially affects scope, outcome, or rework cost, the model
 may call the interactive-only `request_user_input` tool with 1–3 focused
-questions. A bottom panel replaces the composer while it is visible; the
+questions (at most 3 options per question). A bottom panel replaces the composer while it is visible; the
 conversation above stays readable and the previous composer draft is
 preserved independently:
 
