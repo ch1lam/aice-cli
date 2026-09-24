@@ -1225,14 +1225,16 @@ attachments stay intact while hidden. The
 dialog is indented narrower than the composer on both sides, shares a single
 edge with it in the same yellow color throughout, and grows only as far as the
 current question needs, up to the available terminal height. `PgUp`/`PgDown`
-scroll a long question or answer inside the dialog; the submit hint stays
-visible, and choosing an option or typing brings the focused row into view:
+scroll a long question or answer inside the dialog. All shortcut hints use
+the shared footer below the composer, wrapping at narrow widths; the dialog
+does not repeat them. Choosing an option or typing brings the focused row
+into view:
 
 - Each question sits in the upper-left border, with a blank separator before
   its options. Long or multiline questions also keep their full text in the
   scrollable body. The last option is an inline custom reply field whose
   placeholder is replaced by the answer; no separate answer caption is shown,
-  and a blank row separates the answer from the controls.
+  and a blank row follows the answer.
   Options show the practical difference of each choice; at most one is marked
   recommended in gold, and the recommendation only sets initial focus,
   never an answer.

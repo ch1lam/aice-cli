@@ -418,9 +418,9 @@ func (m model) layoutQuestionDialog(width int) questionDialogLayout {
 		appendRows(noticeStyle.Render(panel.notice))
 		focus = len(l.rows) - 1
 	}
-	// Top border, shared attachment edge and pinned help each consume a row.
+	// The top border and shared attachment edge each consume a row.
 	c := m.chrome
-	budget := max(m.layoutHeight()-c.header-c.menu-c.composer-c.footer-minimumViewport-3, 1)
+	budget := max(m.layoutHeight()-c.header-c.menu-c.composer-c.footer-minimumViewport-2, 1)
 	l.height = min(len(l.rows), budget)
 	l.offset = panel.scroll
 	if l.offset < 0 {
@@ -438,7 +438,7 @@ func (m model) questionDialogView(width int) string {
 	l := m.layoutQuestionDialog(width)
 	body := strings.Join(l.rows[l.offset:l.offset+l.height], "\n")
 	box := questionDialogStyle.Width(l.width).BorderBottom(false).
-		Render(body + "\n" + mutedStyle.Render(m.questionHelp(l.inner)))
+		Render(body)
 	// Replace only the top edge; body wrapping and measured height stay shared.
 	_, rest, _ := strings.Cut(box, "\n")
 	edge := lipgloss.NewStyle().Foreground(secondaryColor)
@@ -574,12 +574,6 @@ func (m model) questionTextRow(panel *questionPanel) string {
 		shown += guardCursorStyle.Render(" ")
 	}
 	return prefix + shown
-}
-
-func (m model) questionHelp(inner int) string {
-	help := "Enter 提交 · PgUp/PgDn 滚动 · ↑↓ 选择 · Space 选中 · ←→ 切题"
-	help += " · Esc 查看对话 · Ctrl+c 取消运行"
-	return truncateTerminalText(help, max(inner, 1))
 }
 
 func (m model) handleQuestionAction(match inputActionMatch) (model, tea.Cmd, bool) {

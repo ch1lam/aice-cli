@@ -379,10 +379,12 @@ consistency for those behaviors.
   edge, with one continuous yellow border. The question title sits in the
   upper-left edge; overflow remains in the body. Custom answers are edited
   inline in the last option row, followed by a blank separator.
-  Its wrapped body is capped to the available height with a pinned
-  submit hint; PgUp/PgDn scroll this body and focus changes reveal the active
-  row. Display text uses the shared terminal sanitizer without mutating the
-  request or reply. Both frames stay connected without covering the composer.
+  Its wrapped body is capped to the available height. Shortcut hints appear
+  only in the shared footer below the composer, derived from the effective
+  input bindings and wrapped at narrow widths. PgUp/PgDn scroll the body and
+  focus changes reveal the active row. Display text uses the shared terminal
+  sanitizer without mutating the request or reply. Both frames stay connected
+  without covering the composer.
   The main composer retains its editor and attachment state while hidden;
   question input never triggers slash
   commands, file expansion, or steering, and a permission prompt temporarily

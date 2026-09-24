@@ -269,6 +269,12 @@ func assertQuestionMergedFrame(t *testing.T, current model) {
 	assertColor(t, frame.GetBorderLeftForeground(), secondaryColor)
 	assertColor(t, frame.GetBorderRightForeground(), secondaryColor)
 	assertColor(t, frame.GetBorderBottomForeground(), secondaryColor)
+	footer := ansi.Strip(current.footerView(current.layoutWidth()))
+	for _, label := range []string{"Enter 提交全部", "Esc", "Ctrl+c", "Space", "↑↓", "←→", "PgUp/PgDn"} {
+		if strings.Count(footer, label) != 1 || strings.Contains(strings.Join(lines[top:attach], "\n"), label) {
+			t.Fatalf("shortcut %q must appear once below the composer:\n%s", label, view)
+		}
+	}
 	if strings.Contains(view, "回答：") || strings.Contains(view, "自己填写") {
 		t.Fatalf("custom answer must not have a separate caption:\n%s", view)
 	}

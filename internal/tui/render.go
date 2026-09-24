@@ -162,7 +162,7 @@ func (m model) footerView(width int) string {
 	if status != "" {
 		rows = append(rows, status)
 	}
-	if m.help.ShowAll {
+	if m.help.ShowAll || m.questionVisible() {
 		fullHelp := m.inputFullHelp(contentWidth)
 		if fullHelp != "" {
 			rows = append(rows, fullHelp)
@@ -772,7 +772,7 @@ func (m model) activityIndicator() string {
 
 func (m model) statusLine(width int) string {
 	shortcuts := ""
-	if !m.help.ShowAll {
+	if !m.help.ShowAll && !m.questionVisible() {
 		shortcuts = m.help.ShortHelpView(m.footerKeys().ShortHelp())
 	}
 	fullUsage := m.usageStatus(true)

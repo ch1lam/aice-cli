@@ -27,6 +27,9 @@ func (m model) questionInputBindings() []inputBinding {
 		delta int
 	}{{key: "up", delta: -1}, {key: "down", delta: 1}} {
 		binding := actionBinding(inputActionQuestionMove, "", "", direction.key)
+		if m.question.hasOptions() {
+			binding.binding.SetHelp("↑↓", "选择")
+		}
 		binding.argument = direction.delta
 		bindings = append(bindings, binding)
 	}
@@ -35,6 +38,9 @@ func (m model) questionInputBindings() []inputBinding {
 		delta int
 	}{{key: "left", delta: -1}, {key: "right", delta: 1}} {
 		binding := actionBinding(inputActionQuestionSwitch, "", "", direction.key)
+		if len(m.question.prompt.Request.Questions) > 1 {
+			binding.binding.SetHelp("←→", "切题")
+		}
 		binding.argument = direction.delta
 		bindings = append(bindings, binding)
 	}
@@ -42,7 +48,7 @@ func (m model) questionInputBindings() []inputBinding {
 		key   string
 		delta int
 	}{{key: "pgup", delta: -1}, {key: "pgdown", delta: 1}} {
-		binding := actionBinding(inputActionQuestionScroll, "", "", direction.key)
+		binding := actionBinding(inputActionQuestionScroll, "PgUp/PgDn", "滚动", direction.key)
 		binding.argument = direction.delta
 		bindings = append(bindings, binding)
 	}
