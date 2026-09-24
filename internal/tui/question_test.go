@@ -185,6 +185,76 @@ func TestQuestionPanelDigitSelectsOption(t *testing.T) {
 	}
 }
 
+func TestQuestionPanelDigitCustomStaysOnCurrent(t *testing.T) {
+	prompt, _ := newQuestionTestPrompt()
+	current := newQuestionTestModel(t, prompt)
+	// Q1 has two options, so digit 3 lands on the custom row. With empty
+	// text it must stay on Q1 and focus the input instead of advancing.
+	current = pressQuestionKey(t, current, tea.KeyPressMsg{Code: '3', Text: "3"})
+	panel := current.question
+	if panel == nil {
+		t.Fatal("question panel closed after digit custom, want it kept")
+	}
+	if panel.index != 0 {
+		t.Fatalf("index = %d, want 0 after digit custom with empty text", panel.index)
+	}
+	if panel.settled[0] {
+		t.Fatal("digit custom with empty text must not settle the question")
+	}
+	if panel.focus != panel.customRow() {
+		t.Fatalf("focus = %d, want custom row %d", panel.focus, panel.customRow())
+	}
+	if !panel.textFocus {
+		t.Fatal("digit custom must focus the text input")
+	}
+	// Typing then Enter settles Q1 as a custom answer and advances to Q2.
+	current = typeQuestionText(t, current, "先做最小实现")
+	current = pressQuestionKey(t, current, tea.KeyPressMsg{Code: tea.KeyEnter})
+	if !current.question.settled[0] || !current.question.custom[0] {
+		t.Fatalf("q1 not settled as custom: %#v", current.question)
+	}
+	if current.question.index != 1 {
+		t.Fatalf("index = %d, want 1 after answering q1", current.question.index)
+	}
+}
+
+func TestQuestionPanelCustomTextSubmit(t *testing.T) {
+	prompt, replies := newQuestionTestPrompt()
+	current := newQuestionTestModel(t, prompt)
+	// Q1: move to the custom row, type a custom answer, confirm.
+	current = pressQuestionKey(t, current, tea.KeyPressMsg{Code: tea.KeyDown})
+	current = pressQuestionKey(t, current, tea.KeyPressMsg{Code: tea.KeyDown})
+	current = typeQuestionText(t, current, "先做最小实现，不增加新依赖")
+	current = pressQuestionKey(t, current, tea.KeyPressMsg{Code: tea.KeyEnter})
+	if !current.question.settled[0] || !current.question.custom[0] {
+		t.Fatalf("q1 not settled as custom: %#v", current.question)
+	}
+	// Q2 is free-text: answer it and submit the whole group.
+	current = typeQuestionText(t, current, "修 flaky")
+	current = pressQuestionKey(t, current, tea.KeyPressMsg{Code: tea.KeyEnter})
+	if current.question != nil {
+		t.Fatal("panel must close after submitting all answers")
+	}
+	select {
+	case reply := <-replies:
+		if err := interaction.ValidateQuestionReply(prompt.Request, reply); err != nil {
+			t.Fatalf("panel reply failed validation: %v", err)
+		}
+		first := reply.Answers["mode"]
+		if first.Status != interaction.QuestionAnswered ||
+			first.SelectedOptionID != "" ||
+			first.SelectedLabel != "" ||
+			first.Text != "先做最小实现，不增加新依赖" {
+			t.Fatalf("mode custom answer = %#v", first)
+		}
+		if second := reply.Answers["goal"]; second.Text != "修 flaky" {
+			t.Fatalf("goal answer = %#v", second)
+		}
+	default:
+		t.Fatal("no reply submitted")
+	}
+}
+
 func TestQuestionPanelBrowseKeepsDrafts(t *testing.T) {
 	prompt, _ := newQuestionTestPrompt()
 	current := newQuestionTestModel(t, prompt)

@@ -217,6 +217,9 @@ func (p *questionPanel) buildReply() (interaction.QuestionReply, error) {
 		answer := interaction.QuestionAnswer{Status: interaction.QuestionAnswered}
 		if p.custom[i] || len(item.Options) == 0 {
 			answer.Text = strings.TrimSpace(p.texts[i])
+		} else if p.selected[i] < 0 || p.selected[i] >= len(item.Options) {
+			// An unsettled option question must fail validation as an
+			// incomplete answer, never panic on the option index.
 		} else {
 			option := &item.Options[p.selected[i]]
 			answer.SelectedOptionID = option.ID
@@ -566,7 +569,14 @@ func (m model) handleQuestionText(message tea.KeyPressMsg) (model, tea.Cmd, bool
 				if panel.confirm() && panel.allSettled() {
 					return m, m.submitQuestion(), true
 				}
-				panel.nextUnsettled()
+				// Only an explicitly settled question may advance. A digit
+				// that lands on the custom row with empty text stays on the
+				// current question and focuses the input for editing.
+				if panel.settled[panel.index] {
+					panel.nextUnsettled()
+				} else if row == panel.customRow() {
+					panel.textFocus = true
+				}
 				m.resizeLayout()
 				m.refreshViewport(false)
 				return m, nil, true
