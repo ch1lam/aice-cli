@@ -14,7 +14,7 @@ import (
 // questionPanel is the bottom Q&A panel state. It keeps a display copy of one
 // live QuestionPrompt: drafts, focus, and per-question answers live here
 // until an explicit submit sends exactly one QuestionReply. The main composer
-// draft is preserved independently and restored afterwards.
+// remains untouched while its draft is hidden.
 type questionPanel struct {
 	prompt interaction.QuestionPrompt
 	index  int
@@ -34,7 +34,6 @@ type questionPanel struct {
 	textFocus bool
 	browse    bool
 	notice    string
-	saved     string
 }
 
 func newQuestionPanel(prompt interaction.QuestionPrompt) *questionPanel {
@@ -120,6 +119,7 @@ func (p *questionPanel) typeText(value string) {
 	p.textFocus = true
 	if p.hasOptions() {
 		if p.focus == p.customRow() || p.selected[p.index] < 0 {
+			p.selected[p.index] = -1
 			p.custom[p.index] = true
 			p.settled[p.index] = false
 			p.focus = p.customRow()
@@ -150,6 +150,10 @@ func (p *questionPanel) selectFocused() {
 		// The custom row holds no option: focus the text field so the
 		// answer (including spaces) stays typable.
 		p.textFocus = true
+		p.selected[p.index] = -1
+		p.custom[p.index] = true
+		p.skipped[p.index] = false
+		p.settled[p.index] = false
 		p.notice = ""
 		return
 	}
@@ -171,14 +175,6 @@ func (p *questionPanel) shouldSpaceSelect() bool {
 // submitAttempt finalizes text drafts (custom and free-text answers settle
 // on submit) and reports whether every question is answered or skipped.
 func (p *questionPanel) submitAttempt() bool {
-	if currentText := strings.TrimSpace(p.texts[p.index]); currentText != "" &&
-		p.hasOptions() && p.focus == p.customRow() && !p.skipped[p.index] {
-		// An explicit custom-row submit replaces a previous selection.
-		p.selected[p.index] = -1
-		p.custom[p.index] = true
-		p.skipped[p.index] = false
-		p.settled[p.index] = true
-	}
 	for i := range p.prompt.Request.Questions {
 		if p.skipped[i] {
 			p.settled[i] = true
@@ -312,8 +308,6 @@ func (m *model) openQuestion(prompt interaction.QuestionPrompt) tea.Cmd {
 		m.closeQuestion()
 	}
 	m.question = newQuestionPanel(prompt)
-	m.question.saved = m.input.Value()
-	m.input.SetValue("")
 	m.input.Blur()
 	m.resizeLayout()
 	m.refreshViewport(true)
@@ -324,8 +318,6 @@ func (m *model) closeQuestion() {
 	if m.question == nil {
 		return
 	}
-	m.input.SetValue(m.question.saved)
-	m.input.CursorEnd()
 	m.question = nil
 	m.input.Focus()
 	m.resizeLayout()

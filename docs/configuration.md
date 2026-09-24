@@ -1220,7 +1220,8 @@ may call the interactive-only `request_user_input` tool with 1–3 focused
 questions (at most 3 options per question). The panel extends a dialog upward
 from the composer while it is visible; the composer keeps its frame,
 placeholder, and model label below the dialog, the conversation above stays
-readable, and the previous composer draft is preserved independently. The
+readable, and the previous composer draft, caret, file references, and paste
+attachments stay intact while hidden. The
 dialog is indented narrower than the composer on both sides, shares a single
 edge with it so both frames stay connected, and grows only as far as the
 current question needs:
@@ -1241,6 +1242,9 @@ open, prompts, and jumps to the first unanswered question. Blank text is
 never an answer: every question must be answered before `Enter` submits.
   An option question accepts either a valid selection (with optional
   supplement text) or a custom answer (empty selection, non-blank text).
+  Choosing or typing into the custom row clears any previous selection;
+  switching questions preserves that custom answer. Moving focus alone
+  never changes the submitted choice.
 - `Esc` browses the conversation with drafts and focus kept; `Ctrl+c`
   cancels the run. Question input never triggers slash commands, file
   expansion, or steering, and a permission prompt temporarily takes over

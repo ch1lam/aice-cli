@@ -177,6 +177,11 @@ func (m model) footerView(width int) string {
 // their visible width so the terminal cursor stays aligned. A visible Q&A
 // dialog sits above the frame; it never replaces these rows.
 func (m model) composerParts(contentWidth int) []string {
+	if m.question != nil {
+		// Hide the suspended draft without replacing the editor: its caret,
+		// file spans and paste attachments remain owned by the composer.
+		return []string{mutedStyle.Render(truncateTerminalText(m.input.Placeholder, contentWidth))}
+	}
 	parts := make([]string, 0, 3)
 	if !m.side.isVisible {
 		if pending := m.pendingQueueView(contentWidth); pending != "" {

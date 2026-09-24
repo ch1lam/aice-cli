@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -11,6 +12,55 @@ import (
 
 	"github.com/ch1lam/aice-cli/internal/interaction"
 )
+
+func TestQuestionCustomAnswerReplacesSelectionAcrossQuestions(t *testing.T) {
+	prompt, replies := newQuestionTestPrompt()
+	current := newQuestionTestModel(t, prompt)
+	current = pressQuestionKey(t, current, tea.KeyPressMsg{Code: '1', Text: "1"})
+	current = pressQuestionKey(t, current, tea.KeyPressMsg{Code: '3', Text: "3"})
+	current = typeQuestionText(t, current, "另一种方式")
+	current = pressQuestionKey(t, current, tea.KeyPressMsg{Code: tea.KeyRight})
+	current = typeQuestionText(t, current, "目标")
+	current = pressQuestionKey(t, current, tea.KeyPressMsg{Code: tea.KeyEnter})
+	select {
+	case reply := <-replies:
+		answer := reply.Answers["mode"]
+		if answer.SelectedOptionID != "" || answer.SelectedLabel != "" || answer.Text != "另一种方式" {
+			t.Fatalf("custom answer reverted to a selection: %+v", answer)
+		}
+	default:
+		t.Fatal("answers were not submitted")
+	}
+}
+
+func TestQuestionPreservesComposerAttachmentsAndCaret(t *testing.T) {
+	for _, expire := range []bool{false, true} {
+		t.Run(fmt.Sprintf("expire=%t", expire), func(t *testing.T) {
+			prompt, _ := newQuestionTestPrompt()
+			current := attachTestFile(t, completionTestModel(), "my folder/main.go")
+			current.insertPastePlaceholder(strings.Repeat("draft line\n", 10))
+			current.input.MoveToBegin()
+			wantText, wantExpanded := current.input.Value(), current.expandComposerText()
+			wantFiles := current.composerFiles()
+			current = updateModel(t, current, questionPromptMsg{prompt: prompt})
+			if strings.Contains(questionScreen(t, current), "my folder") {
+				t.Fatal("suspended draft should be hidden")
+			}
+			if expire {
+				current = updateModel(t, current, questionExpiredMsg{reply: prompt.Reply})
+			} else {
+				current = typeQuestionText(t, current, "answer")
+				current = pressQuestionKey(t, current, tea.KeyPressMsg{Code: tea.KeyRight})
+				current = typeQuestionText(t, current, "goal")
+				current = pressQuestionKey(t, current, tea.KeyPressMsg{Code: tea.KeyEnter})
+			}
+			if current.input.Value() != wantText || current.expandComposerText() != wantExpanded ||
+				!reflect.DeepEqual(current.composerFiles(), wantFiles) || current.input.cursorOffset() != 0 {
+				t.Fatalf("composer changed: text=%q files=%v caret=%d", current.input.Value(), current.composerFiles(), current.input.cursorOffset())
+			}
+		})
+	}
+}
 
 func newQuestionTestPrompt() (interaction.QuestionPrompt, chan interaction.QuestionReply) {
 	reply := make(chan interaction.QuestionReply, 1)
@@ -248,9 +298,10 @@ func TestQuestionPanelRecommendsWithoutAnswering(t *testing.T) {
 
 func TestQuestionPanelSpaceSelectSwitchSubmit(t *testing.T) {
 	prompt, replies := newQuestionTestPrompt()
-	current := newQuestionTestModel(t, prompt)
-	// Draft preservation: the composer value survives the whole exchange.
-	current.question.saved = "wip draft"
+	current := newModel(make(chan runRequest), make(chan struct{}))
+	current = updateModel(t, current, tea.WindowSizeMsg{Width: 100, Height: 30})
+	current.input.SetValue("wip draft")
+	current = updateModel(t, current, questionPromptMsg{prompt: prompt})
 
 	// Enter submits the whole group: with nothing answered it stays open
 	// and guides to the first unanswered question.
