@@ -376,7 +376,10 @@ consistency for those behaviors.
   the composer upward instead of replacing it: the composer keeps its frame
   and placeholder visible below, the dialog is indented narrower than the
   composer on both sides with its walls dropping into the composer's top
-  edge. Its wrapped body is capped to the available height with a pinned
+  edge, with one continuous yellow border. The question title sits in the
+  upper-left edge; overflow remains in the body. Custom answers are edited
+  inline in the last option row, followed by a blank separator.
+  Its wrapped body is capped to the available height with a pinned
   submit hint; PgUp/PgDn scroll this body and focus changes reveal the active
   row. Display text uses the shared terminal sanitizer without mutating the
   request or reply. Both frames stay connected without covering the composer.

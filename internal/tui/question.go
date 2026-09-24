@@ -370,6 +370,7 @@ const questionDialogMinimumWidth = 32
 
 type questionDialogLayout struct {
 	indent, width, inner int
+	title                string
 	rows                 []string
 	offset, height       int
 }
@@ -385,7 +386,13 @@ func (m model) layoutQuestionDialog(width int) questionDialogLayout {
 	appendRows := func(view string) {
 		l.rows = append(l.rows, strings.Split(ansi.Hardwrap(view, l.inner, true), "\n")...)
 	}
-	appendRows(bodyStyle.Render(questionLine(item)))
+	question := questionLine(item)
+	first, _, multiline := strings.Cut(question, "\n")
+	l.title = truncateTerminalText(first, max(l.width-6, 1))
+	// Keep the full prompt scrollable when it cannot fit on the title edge.
+	if multiline || l.title != question {
+		appendRows(bodyStyle.Render(question))
+	}
 	appendRows("")
 	focus := 0
 	for row, option := range item.Options {
@@ -400,10 +407,13 @@ func (m model) layoutQuestionDialog(width int) questionDialogLayout {
 		}
 		appendRows(m.questionCustomRow(panel))
 	}
-	appendRows(m.questionTextRow(panel))
+	if !panel.hasOptions() || (!panel.custom[panel.index] && panel.texts[panel.index] != "") {
+		appendRows(m.questionTextRow(panel))
+	}
 	if panel.textFocus || !panel.hasOptions() {
 		focus = len(l.rows) - 1
 	}
+	appendRows("")
 	if panel.notice != "" {
 		appendRows(noticeStyle.Render(panel.notice))
 		focus = len(l.rows) - 1
@@ -429,6 +439,12 @@ func (m model) questionDialogView(width int) string {
 	body := strings.Join(l.rows[l.offset:l.offset+l.height], "\n")
 	box := questionDialogStyle.Width(l.width).BorderBottom(false).
 		Render(body + "\n" + mutedStyle.Render(m.questionHelp(l.inner)))
+	// Replace only the top edge; body wrapping and measured height stay shared.
+	_, rest, _ := strings.Cut(box, "\n")
+	edge := lipgloss.NewStyle().Foreground(secondaryColor)
+	heading := " " + l.title + " "
+	box = edge.Render("╭─") + bodyStyle.Bold(true).Render(heading) +
+		edge.Render(strings.Repeat("─", max(l.width-3-ansi.StringWidth(heading), 0))+"╮") + "\n" + rest
 	pad := strings.Repeat(" ", l.indent)
 	var painted []string
 	for _, line := range strings.Split(box, "\n") {
@@ -439,14 +455,14 @@ func (m model) questionDialogView(width int) string {
 }
 
 // questionAttachRow is the single edge shared by the dialog and the composer.
-// It keeps the composer's blurred brown tone throughout so the edge reads as
+// It keeps the focused yellow tone throughout so the edge reads as
 // part of the input frame: corners and shelves run to the dialog walls,
 // rounded corners turn the walls into the shelves, and the open neck between
 // them reads as the dialog growing out of the input box. A wall that reaches
 // the composer edge has no shelf to turn into, so it continues straight down
 // onto the composer's own wall instead.
 func questionAttachRow(width, left, right int) string {
-	edge := lipgloss.NewStyle().Foreground(subtleColor)
+	edge := lipgloss.NewStyle().Foreground(secondaryColor)
 	var row strings.Builder
 	if left > 0 {
 		row.WriteString(edge.Render("╭" + strings.Repeat("─", left-1) + "╯"))
@@ -471,8 +487,7 @@ func (m model) questionDialogHeight(width int) int {
 	return lipgloss.Height(m.questionDialogView(width))
 }
 
-// questionLine is the panel's single question row: just the question
-// itself, with options separated below by a blank line.
+// questionLine supplies the border title and, for long prompts, the body.
 func questionLine(item *interaction.QuestionItem) string {
 	if text := strings.TrimSpace(item.Question); text != "" {
 		return sanitizeMultilineText(text)
@@ -530,25 +545,35 @@ func (m model) questionCustomRow(panel *questionPanel) string {
 	if panel.settled[panel.index] && panel.custom[panel.index] {
 		selected = "●"
 	}
-	return style.Render(fmt.Sprintf(
-		"%s%d %s 自己填写…",
-		marker,
-		panel.customRow()+1,
-		selected,
-	))
+	prefix := style.Render(fmt.Sprintf("%s%d %s ", marker, panel.customRow()+1, selected))
+	text := ""
+	if panel.custom[panel.index] {
+		text = sanitizeMultilineText(panel.texts[panel.index])
+	}
+	shown := bodyStyle.Render(text)
+	if text == "" {
+		shown = mutedStyle.Render("或自行撰写回复")
+	}
+	if panel.textFocus && panel.custom[panel.index] {
+		shown += guardCursorStyle.Render(" ")
+	}
+	return prefix + shown
 }
 
 func (m model) questionTextRow(panel *questionPanel) string {
 	text := sanitizeMultilineText(panel.texts[panel.index])
-	caption := "补充说明"
-	if !panel.hasOptions() || panel.custom[panel.index] || panel.focus == panel.customRow() {
-		caption = "回答"
+	prefix := ""
+	if panel.hasOptions() {
+		prefix = mutedStyle.Render("补充说明：")
 	}
-	shown := text
+	shown := bodyStyle.Render(text)
+	if text == "" {
+		shown = mutedStyle.Render("或自行撰写回复")
+	}
 	if panel.textFocus {
 		shown += guardCursorStyle.Render(" ")
 	}
-	return mutedStyle.Render(caption+"：") + bodyStyle.Render(shown)
+	return prefix + shown
 }
 
 func (m model) questionHelp(inner int) string {

@@ -73,7 +73,7 @@ func TestQuestionLongContentStaysWithinTerminal(t *testing.T) {
 	for range 30 {
 		current = pressQuestionKey(t, current, tea.KeyPressMsg{Code: tea.KeyPgDown})
 	}
-	if view = questionScreen(t, current); !strings.Contains(view, "问题末尾") || !strings.Contains(view, "自己填写") {
+	if view = questionScreen(t, current); !strings.Contains(view, "问题末尾") || !strings.Contains(view, "或自行撰写回复") {
 		t.Fatalf("cannot browse the complete question:\n%s", view)
 	}
 	current = pressQuestionKey(t, current, tea.KeyPressMsg{Code: tea.KeyDown})
@@ -262,6 +262,16 @@ func assertQuestionMergedFrame(t *testing.T, current model) {
 	view := questionScreen(t, current)
 	lines := strings.Split(view, "\n")
 	top, attach, _, _ := questionFrameRows(t, view)
+	if !strings.Contains(lines[top], "╭─ 采用哪种行为？ ") {
+		t.Fatalf("question title must sit in the top border: %q", lines[top])
+	}
+	frame := current.composerFrameStyle(current.layoutWidth())
+	assertColor(t, frame.GetBorderLeftForeground(), secondaryColor)
+	assertColor(t, frame.GetBorderRightForeground(), secondaryColor)
+	assertColor(t, frame.GetBorderBottomForeground(), secondaryColor)
+	if strings.Contains(view, "回答：") || strings.Contains(view, "自己填写") {
+		t.Fatalf("custom answer must not have a separate caption:\n%s", view)
+	}
 	if painted := attach - top + 1; painted != current.chrome.question {
 		t.Fatalf("painted dialog rows = %d, measured %d", painted, current.chrome.question)
 	}
@@ -541,6 +551,10 @@ func TestQuestionPanelDigitCustomStaysOnCurrent(t *testing.T) {
 	}
 	// Typing then Enter settles Q1 as a custom answer and guides to Q2.
 	current = typeQuestionText(t, current, "先做最小实现")
+	view := questionScreen(t, current)
+	if !strings.Contains(view, "3 ○ 先做最小实现") || strings.Contains(view, "回答：") {
+		t.Fatalf("custom reply must replace its placeholder inline:\n%s", view)
+	}
 	current = pressQuestionKey(t, current, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if !current.question.settled[0] || !current.question.custom[0] {
 		t.Fatalf("q1 not settled as custom: %#v", current.question)

@@ -211,7 +211,7 @@ func (m model) composerFrameStyle(width int) lipgloss.Style {
 		style = composerFocusedStyle
 	}
 	if m.questionVisible() {
-		style = style.BorderTop(false)
+		style = composerFocusedStyle.BorderTop(false)
 	}
 	return style
 }

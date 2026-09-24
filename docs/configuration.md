@@ -1223,13 +1223,17 @@ placeholder, and model label below the dialog, the conversation above stays
 readable, and the previous composer draft, caret, file references, and paste
 attachments stay intact while hidden. The
 dialog is indented narrower than the composer on both sides, shares a single
-edge with it so both frames stay connected, and grows only as far as the
+edge with it in the same yellow color throughout, and grows only as far as the
 current question needs, up to the available terminal height. `PgUp`/`PgDown`
 scroll a long question or answer inside the dialog; the submit hint stays
 visible, and choosing an option or typing brings the focused row into view:
 
-- Each question shows one question line, a blank separator, then its options
-  with the practical difference of each choice; at most one option is marked
+- Each question sits in the upper-left border, with a blank separator before
+  its options. Long or multiline questions also keep their full text in the
+  scrollable body. The last option is an inline custom reply field whose
+  placeholder is replaced by the answer; no separate answer caption is shown,
+  and a blank row separates the answer from the controls.
+  Options show the practical difference of each choice; at most one is marked
   recommended in gold, and the recommendation only sets initial focus,
   never an answer.
 - `↑`/`↓` move focus within a question, `←`/`→` switch questions,
