@@ -57,6 +57,10 @@ const (
 	EnvMoonshotAPIKey = "MOONSHOT_API_KEY"
 	// EnvMoonshotBaseURL overrides the Moonshot API Platform endpoint.
 	EnvMoonshotBaseURL = "AICE_MOONSHOT_BASE_URL"
+	// EnvAiHubMixAPIKey authenticates requests to AiHubMix.
+	EnvAiHubMixAPIKey = "AIHUBMIX_API_KEY"
+	// EnvAiHubMixBaseURL overrides the AiHubMix API root.
+	EnvAiHubMixBaseURL = "AICE_AIHUBMIX_BASE_URL"
 	// EnvCustomAPIKey authenticates requests to a custom OpenAI-compatible endpoint.
 	EnvCustomAPIKey = "AICE_CUSTOM_API_KEY"
 	// EnvCustomBaseURL overrides the custom OpenAI-compatible endpoint.
@@ -120,6 +124,8 @@ type Settings struct {
 	ZhipuBaseURL        string            `json:"zhipu_base_url,omitempty"`
 	MoonshotAPIKey      string            `json:"moonshot_api_key,omitempty"`
 	MoonshotBaseURL     string            `json:"moonshot_base_url,omitempty"`
+	AiHubMixAPIKey      string            `json:"aihubmix_api_key,omitempty"`
+	AiHubMixBaseURL     string            `json:"aihubmix_base_url,omitempty"`
 	CustomAPIKey        string            `json:"custom_api_key,omitempty"`
 	CustomBaseURL       string            `json:"custom_base_url,omitempty"`
 	NoDepInstall        bool              `json:"no_dep_install,omitempty"`
@@ -162,6 +168,8 @@ type Config struct {
 	ZhipuBaseURL        string
 	MoonshotAPIKey      string
 	MoonshotBaseURL     string
+	AiHubMixAPIKey      string
+	AiHubMixBaseURL     string
 	CustomAPIKey        string
 	CustomBaseURL       string
 	NoDepInstall        bool
@@ -245,6 +253,8 @@ func EnvironmentVariables() map[string]string {
 		"zhipu_base_url":        EnvZhipuBaseURL,
 		"moonshot_api_key":      EnvMoonshotAPIKey,
 		"moonshot_base_url":     EnvMoonshotBaseURL,
+		"aihubmix_api_key":      EnvAiHubMixAPIKey,
+		"aihubmix_base_url":     EnvAiHubMixBaseURL,
 		"custom_api_key":        EnvCustomAPIKey,
 		"custom_base_url":       EnvCustomBaseURL,
 	}
@@ -438,6 +448,8 @@ func (c Config) settings() Settings {
 		ZhipuBaseURL:        c.ZhipuBaseURL,
 		MoonshotAPIKey:      c.MoonshotAPIKey,
 		MoonshotBaseURL:     c.MoonshotBaseURL,
+		AiHubMixAPIKey:      c.AiHubMixAPIKey,
+		AiHubMixBaseURL:     c.AiHubMixBaseURL,
 		CustomAPIKey:        c.CustomAPIKey,
 		CustomBaseURL:       c.CustomBaseURL,
 		NoDepInstall:        c.NoDepInstall,
@@ -530,6 +542,8 @@ func decodeEffective(v *viper.Viper) (Config, error) {
 		ZhipuBaseURL:        s.ZhipuBaseURL,
 		MoonshotAPIKey:      s.MoonshotAPIKey,
 		MoonshotBaseURL:     s.MoonshotBaseURL,
+		AiHubMixAPIKey:      s.AiHubMixAPIKey,
+		AiHubMixBaseURL:     s.AiHubMixBaseURL,
 		CustomAPIKey:        s.CustomAPIKey,
 		CustomBaseURL:       s.CustomBaseURL,
 		NoDepInstall:        s.NoDepInstall,
@@ -742,6 +756,28 @@ func SaveMoonshotAPIKeyFile(paths Paths, apiKey string) error {
 	return saveAPIKeyFile(paths, "Moonshot", "moonshot_api_key", apiKey)
 }
 
+// SaveAiHubMixAPIKey stores the AiHubMix credential in the global auth file.
+func SaveAiHubMixAPIKey(apiKey string) (string, error) {
+	paths, err := DefaultPaths()
+	if err != nil {
+		return "", err
+	}
+	if err := SaveAiHubMixAPIKeyFile(paths, apiKey); err != nil {
+		return "", err
+	}
+	return paths.GlobalAuth, nil
+}
+
+// SaveAiHubMixAPIKeyFile stores the AiHubMix credential in an explicit global
+// auth file, preserving any other provider credentials already present.
+func SaveAiHubMixAPIKeyFile(paths Paths, apiKey string) error {
+	apiKey = strings.TrimSpace(apiKey)
+	if apiKey == "" {
+		return errors.New("config: AiHubMix API key is required")
+	}
+	return saveAPIKeyFile(paths, "AiHubMix", "aihubmix_api_key", apiKey)
+}
+
 // SaveCustomAPIKey stores the custom OpenAI-compatible credential in the global auth file.
 func SaveCustomAPIKey(apiKey string) (string, error) {
 	paths, err := DefaultPaths()
@@ -838,6 +874,7 @@ func (s Settings) validate() error {
 		"zhipu_coding_base_url": s.ZhipuCodingBaseURL,
 		"zhipu_base_url":        s.ZhipuBaseURL,
 		"moonshot_base_url":     s.MoonshotBaseURL,
+		"aihubmix_base_url":     s.AiHubMixBaseURL,
 		"custom_base_url":       s.CustomBaseURL,
 	} {
 		if err := validateCustomBaseURL(endpoint); err != nil {
@@ -852,6 +889,7 @@ func (s Settings) validate() error {
 		"zhipu_coding_api_key": s.ZhipuCodingAPIKey,
 		"zhipu_api_key":        s.ZhipuAPIKey,
 		"moonshot_api_key":     s.MoonshotAPIKey,
+		"aihubmix_api_key":     s.AiHubMixAPIKey,
 		"custom_api_key":       s.CustomAPIKey,
 	} {
 		if strings.ContainsAny(credential, "\r\n") {
