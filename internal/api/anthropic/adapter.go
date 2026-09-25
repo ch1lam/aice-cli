@@ -190,6 +190,11 @@ func applyThinking(
 		effort = string(llm.ThinkingLevelLow)
 	}
 	params.Thinking = anthropicsdk.ThinkingConfigParamOfEnabled(1_024)
+	if model.ThinkingFormat == llm.ThinkingFormatAdaptive {
+		params.Thinking = anthropicsdk.ThinkingConfigParamUnion{
+			OfAdaptive: &anthropicsdk.ThinkingConfigAdaptiveParam{},
+		}
+	}
 	if model.SupportsReasoningEffort {
 		params.OutputConfig.Effort = anthropicsdk.OutputConfigEffort(effort)
 	}

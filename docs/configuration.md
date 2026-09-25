@@ -61,7 +61,7 @@ peak billing is twice the estimate.
 
 | Setting | Environment variable | Supported values |
 | --- | --- | --- |
-| Provider | `AICE_PROVIDER` | `deepseek`, `opencode-go`, `kimi-coding`, `moonshot`, `zhipu`, `zhipu-coding`, `openai`, `openai-codex`, `custom` |
+| Provider | `AICE_PROVIDER` | `deepseek`, `opencode-go`, `kimi-coding`, `moonshot`, `zhipu`, `zhipu-coding`, `openai`, `openai-codex`, `aihubmix`, `custom` |
 | Model | `AICE_MODEL` | A catalog model, or any model ID for `custom` |
 | Thinking | `AICE_THINKING` | `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` |
 | Default Project Trust | `AICE_DEFAULT_PROJECT_TRUST` | `ask`, `always`, `never`; project values cannot grant startup trust |
@@ -435,6 +435,7 @@ credentials use a separate file as described below.
 | Zhipu Coding Plan | `ZHIPU_CODING_API_KEY` | `zhipu_coding_api_key` | `AICE_ZHIPU_CODING_BASE_URL` |
 | Zhipu API (China) | `ZHIPU_API_KEY` | `zhipu_api_key` | `AICE_ZHIPU_BASE_URL` |
 | OpenAI | `OPENAI_API_KEY` | `openai_api_key` | `AICE_OPENAI_BASE_URL` |
+| AiHubMix | `AIHUBMIX_API_KEY` | `aihubmix_api_key` | `AICE_AIHUBMIX_BASE_URL` |
 | Custom (Ollama, vLLM, LM Studio, any OpenAI-compatible) | `AICE_CUSTOM_API_KEY` | `custom_api_key` | `AICE_CUSTOM_BASE_URL` (default `http://localhost:11434/v1`) |
 
 In the TUI, `/login` first offers `Sign in with an account` or
@@ -472,6 +473,59 @@ printf '%s\n' "$OPENAI_API_KEY" | \
 ```
 
 Provider keys are stored side by side; updating one does not erase another.
+
+### AiHubMix
+
+Select `/login` → `Sign in with an API key` → `AiHubMix`, then enter an
+AiHubMix key. `/provider` switches to an already configured account;
+`/model` selects a model from the compiled catalog. The default is `gpt-6-sol`.
+The built-in API root is `https://aihubmix.com/v1`.
+
+```sh
+export AIHUBMIX_API_KEY="your-aihubmix-key"
+aice --provider aihubmix --model gpt-6-sol
+```
+
+To store only the credential, run
+`printf '%s\n' "$AIHUBMIX_API_KEY" | aice config set-key --provider aihubmix`.
+It is saved as `aihubmix_api_key` in `~/.aice/auth.json`, independently of
+OpenAI and Custom credentials. `/login` also persists provider/model selection.
+The optional `AICE_AIHUBMIX_BASE_URL` (file key `aihubmix_base_url`) replaces
+the API root, including `/v1`; do not append `/responses`, `/messages`, or
+`/chat/completions`. The Messages adapter removes the trailing `/v1` before
+the Anthropic SDK appends its versioned path; gateway path prefixes are retained.
+
+| Model | Protocol | Context / AICE output budget | Thinking |
+| --- | --- | --- | --- |
+| `gpt-6-sol` (default), `gpt-6-luna` | Responses | 1,050,000 / 128,000 | `off`, `low`, `medium`, `high`, `xhigh`, `max` |
+| `gpt-6-astra` | Responses | 1,050,000 / 128,000 | `low`, `medium`, `high`, `xhigh`, `max` |
+| `claude-sonnet-5` | Messages | 1,000,000 / 128,000 | `off`, `low`, `medium`, `high`, `xhigh`, `max` |
+| `claude-opus-5-5` | Messages | 1,000,000 / 128,000 | `low`, `medium`, `high`, `xhigh`, `max` |
+| `deepseek-v4.1-flash` | Chat Completions | 1,000,000 / 384,000 | `off`, `low`, `high`, `max` |
+| `kimi-k3` | Chat Completions | 1,048,576 / 131,072 | `low`, `high`, `max` |
+
+All included models accept text and images and support streamed tool calls.
+GPT uses Responses to retain reasoning and tool-call support together. Claude
+uses native Messages with adaptive thinking and `output_config.effort`;
+Opus 5.5 cannot disable thinking. DeepSeek sends a thinking toggle plus effort,
+while Kimi sends `reasoning_effort`. Unsupported thinking levels are clamped
+through the normal application path. Kimi's output budget is an AICE limit
+below the gateway's advertised maximum.
+
+This is a curated coding catalog, not automatic discovery of every AiHubMix
+model. Arbitrary IDs remain available through `custom`, with its generic
+Chat Completions capabilities and configurable context window. AiHubMix model
+access still depends on the account and key restrictions. Price estimates use
+published base-tier USD rates; long-context tiers and changing promotions may
+make the actual charge differ. DeepSeek's catalog rate includes the currently
+published promotion. Consult the AiHubMix billing console for actual charges.
+
+Sources: AiHubMix's [public catalog](https://aihubmix.com/api/v1/models),
+[model parameter schemas](https://aihubmix.com/model-data/index.json), and
+[API reference](https://aihubmix.com/developers), checked 2026-09-25.
+Offline fixtures cover protocol selection, authentication, thinking controls,
+usage and tool-result replay. Live requests and account availability have not
+been verified.
 
 ### Kimi Coding Plan
 

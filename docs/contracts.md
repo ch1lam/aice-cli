@@ -30,7 +30,7 @@ are rejected explicitly. Protocol adapters retain responsibility for wire encodi
   messages, content parts, tool calls, usage, models, stop reasons, events, and
   stream abstractions.
 - `Model` carries a tri-state map from canonical thinking inputs to provider
-  wire tokens, plus any Chat Completions thinking-format metadata. Provider
+  wire tokens, plus protocol-specific thinking-format metadata. Provider
   catalogs own those facts. Application code derives distinct effective menu
   choices from the map, collapsing inputs that share a canonical token;
   protocol adapters encode the mapped value and reject unsupported requests.
@@ -47,7 +47,10 @@ are rejected explicitly. Protocol adapters retain responsibility for wire encodi
   helpers encode validated data; protocol-specific restrictions stay in adapters.
 - Provider identity and model catalogs stay separate from protocol adapters;
   compatible providers reuse the protocol layer. Thinking translation switches
-  on protocol-format metadata rather than provider or model IDs.
+  on protocol-format metadata rather than provider or model IDs. Anthropic
+  Messages uses fixed-budget thinking by default; models declaring `adaptive`
+  send adaptive thinking without `budget_tokens`. Effort support and whether
+  thinking can be disabled remain catalog facts.
 
 ### Tool truncation metadata
 

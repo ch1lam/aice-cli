@@ -83,6 +83,10 @@ aice --workspace .
 使用智谱时，在 API Key 登录菜单选择 `Zhipu API` 或 `Zhipu Coding Plan`。详见
 [智谱配置](./docs/configuration.md#zhipu-api-platform)。
 
+使用 AiHubMix 时，在 API Key 登录菜单中选择 `AiHubMix`，或运行
+`AIHUBMIX_API_KEY=... aice --provider aihubmix`。模型与地址配置见
+[AiHubMix 配置](./docs/configuration.md#aihubmix)。
+
 执行一次非交互请求：
 
 ```sh
@@ -111,7 +115,7 @@ aice --workspace . --session .aice/sessions/<session-id>.jsonl
 | 领域 | 当前实现 |
 | --- | --- |
 | 交互 | Bubble Tea TUI（按 provider/model 显示[上下文使用百分比](./docs/configuration.md#context-window-and-status-bar)）与一次性 `--print` 模式 |
-| Provider | DeepSeek V4、OpenCode Go 内建模型目录、Kimi Coding Plan（Responses API）、Moonshot 开放平台 API、智谱开放平台 API 与 Coding Plan、OpenAI API（GPT-6 Astra 与 GPT-5.6）、Codex/ChatGPT 订阅，以及 Custom（OpenAI 兼容） |
+| Provider | DeepSeek V4、OpenCode Go 内建模型目录、Kimi Coding Plan（Responses API）、Moonshot 开放平台 API、智谱开放平台 API 与 Coding Plan、OpenAI API（GPT-6 Astra 与 GPT-5.6）、Codex/ChatGPT 订阅、AiHubMix，以及 Custom（OpenAI 兼容） |
 | 协议 | Anthropic Messages、OpenAI Responses、OpenAI Chat Completions |
 | 工具 | `read`、`write`、`edit`、`bash`、`grep`、`find`、`ls`、`skill`、`web_search`、`web_fetch` |
 | 联网 | Exa Search API 服务实例与可排序来源列表（`native` 预留、未实现）、带防护的直连网页抓取、来源写入 Session 历史、`/web` 设置；见[联网搜索与抓取](./docs/web.md) |
@@ -154,7 +158,7 @@ go vet ./...
 ## 当前状态
 
 AICE 仍在快速迭代，稳定版发布前 Session 与配置格式仍可能变化。内核保持
-provider-neutral；当前内建 provider 为 DeepSeek、OpenCode Go、Kimi Coding Plan、Moonshot API、智谱 API/Coding Plan、OpenAI、Codex 与
+provider-neutral；当前内建 provider 为 DeepSeek、OpenCode Go、Kimi Coding Plan、Moonshot API、智谱 API/Coding Plan、OpenAI、Codex、AiHubMix 与
 Custom。
 
 ## 许可证

@@ -65,9 +65,8 @@ const (
 // what the selected model supports.
 const DefaultThinkingLevel = ThinkingLevelMedium
 
-// ThinkingFormat selects the wire shape a Chat Completions gateway expects
-// for thinking controls. The empty value is the standard reasoning_effort
-// field.
+// ThinkingFormat selects a model-specific wire shape for thinking controls.
+// The empty value uses the protocol adapter's default.
 type ThinkingFormat string
 
 const (
@@ -78,6 +77,8 @@ const (
 	// ThinkingFormatQwen sends a top-level enable_thinking boolean and, when
 	// the model declares reasoning effort support, reasoning_effort.
 	ThinkingFormatQwen ThinkingFormat = "qwen"
+	// ThinkingFormatAdaptive uses Anthropic adaptive thinking without a fixed budget.
+	ThinkingFormatAdaptive ThinkingFormat = "adaptive"
 )
 
 // thinkingLevelOrder ranks every thinking level from lowest to highest.
@@ -393,9 +394,8 @@ type Model struct {
 	// their provider wire tokens. A nil map means the standard levels off
 	// through high apply.
 	ThinkingLevelMap ThinkingLevelMap `json:"thinking_level_map,omitempty"`
-	// ThinkingFormat is the wire shape for thinking controls on Chat
-	// Completions gateways. The empty value means the standard
-	// reasoning_effort field.
+	// ThinkingFormat selects model-specific thinking controls. Empty uses
+	// reasoning_effort for Chat Completions and budgeted thinking for Messages.
 	ThinkingFormat ThinkingFormat `json:"thinking_format,omitempty"`
 	// SupportsReasoningEffort reports whether the gateway accepts an effort
 	// control alongside format-specific thinking controls. Chat Completions
