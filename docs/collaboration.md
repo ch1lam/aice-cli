@@ -615,6 +615,23 @@ calculated point committed once, covering Driver downscaling on this Retina host
 This is screenshot-coordinate acceptance on the AppKit fixture, not visual model
 recognition, crop/negative-monitor geometry, scrolling, dragging or overlay QA.
 
+The separate window-translation gate captures at screen x=100, moves the
+synthetic window to x=−40 while preserving size/content, then clicks using the
+original screenshot-local coordinates. Independent AppKit state must show one
+commit, one native click request, the retained negative origin and no sentinel
+focus loss. It also requires a fresh bound screenshot and a usable shared
+service after cleanup. Pure translation keeps window-local coordinates valid;
+it is not the resize-refusal case. Run sequentially with other native gates:
+
+```sh
+AICE_CUA_NATIVE=1 go test -race -tags=integration ./internal/desktop -run '^TestNativeMacWindowMove$' -count=1 -v
+```
+
+This passed on the authorized macOS 0.29.1 host on 2026-09-27. It uses one display
+and a partly off-screen window; multiple monitors, mixed display scales and
+image crops remain separate acceptance. No model or user application receives
+the synthetic input.
+
 The separate pointer-button gate uses a custom AppKit view without AXPress or a
 context menu. It counts actual left/right down/up events, checks click count,
 window/button/modifiers and screenshot-derived position, and requires exactly

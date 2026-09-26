@@ -69,6 +69,7 @@ final class Fixture: NSObject, NSApplicationDelegate {
     var armed = false
     var ticks = 0
     var resized = false
+    var moved = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         if Bundle.main.object(forInfoDictionaryKey: "AICEFixtureDirectory") != nil {
@@ -148,6 +149,10 @@ final class Fixture: NSObject, NSApplicationDelegate {
             resized = true
             window.setContentSize(NSSize(width: 900, height: 350))
         }
+        if !sentinel && !moved && FileManager.default.fileExists(atPath: directory.appendingPathComponent("move-left").path) {
+            moved = true
+            window.setFrameOrigin(NSPoint(x: -40, y: window.frame.minY))
+        }
         if !armed && FileManager.default.fileExists(atPath: directory.appendingPathComponent("arm").path) {
             armed = true
             focusLosses = 0
@@ -164,6 +169,7 @@ final class Fixture: NSObject, NSApplicationDelegate {
                                   "activation_policy": NSRunningApplication.current.activationPolicy.rawValue,
                                   "focus_losses": focusLosses, "ticks": ticks,
                                   "width": window.frame.width, "height": window.frame.height,
+                                  "frame_x": window.frame.minX,
                                   "button_x": buttonScreen.x - window.frame.minX,
                                   "button_y": window.frame.maxY - buttonScreen.y,
                                   "value": editor?.string ?? input.stringValue, "result": result.stringValue,

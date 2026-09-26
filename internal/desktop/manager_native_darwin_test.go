@@ -279,6 +279,7 @@ type nativeFixtureState struct {
 	SelectionLength      int     `json:"selection_length"`
 	Width                float64 `json:"width"`
 	Height               float64 `json:"height"`
+	FrameX               float64 `json:"frame_x"`
 	ButtonX              float64 `json:"button_x"`
 	ButtonY              float64 `json:"button_y"`
 	ScrollX              float64 `json:"scroll_x"`

@@ -593,6 +593,18 @@ as proof of success; the independent widget commit established it.
 This does not establish double/right-click, overlay appearance, image crops or
 multiple monitors with negative coordinates; gesture evidence follows below.
 
+`TestNativeMacWindowMove` additionally passed with race detection on 2026-09-27.
+After capturing the 500×328-point window at screen x=100, the fixture moved it
+to x=−40 without changing its dimensions or content. The same screenshot-local
+button point dispatched exactly one native click and produced one independent
+widget commit. The negative-origin window remained there, a fresh bound image
+was returned, and the sentinel retained focus and contents through cleanup.
+Action plus observation took 2.03 s; the full gate took 8.84 s. This verifies
+pure window translation with a partly off-screen window on one display. Unlike
+resize, translation does not invalidate local image coordinates: the pinned
+Driver resolves the window's current position when routing input. It does not
+establish multi-display origins, display-scale transitions or cropped images.
+
 The separate `TestNativeMacPointerButtons` gate **fails** for both background
 pixel actions on the pinned macOS Driver. Its custom AppKit view has no AXPress
 implementation or context menu and counts actual mouse-down/up events. Each

@@ -18,6 +18,11 @@ func TestNativeMacPixelClick(t *testing.T) {
 	testNativeMacPixelInput(t, []string{"click", "resize"}, BackgroundOnly)
 }
 
+// Uses one display with a partly off-screen window, not a multi-monitor claim.
+func TestNativeMacWindowMove(t *testing.T) {
+	testNativeMacPixelInput(t, []string{"move-left"}, BackgroundOnly)
+}
+
 func TestNativeMacPointerButtons(t *testing.T) {
 	testNativeMacPixelInput(t, []string{"double_click", "right_click"}, BackgroundOnly)
 }
@@ -126,6 +131,19 @@ func testNativeMacPixelInput(t *testing.T, kinds []string, controlMode ControlMo
 				}
 				awaitNativeState(t, ctx, target, func(s nativeFixtureState) bool { return s.Width == 900 && s.Height != before.Height })
 			}
+			if kind == "move-left" {
+				if before.FrameX < 0 {
+					t.Fatal("fixture did not start at a nonnegative screen origin")
+				}
+				if err := os.WriteFile(filepath.Join(target.directory, kind), nil, 0600); err != nil {
+					t.Fatal(err)
+				}
+				moved := awaitNativeState(t, ctx, target, func(s nativeFixtureState) bool { return s.FrameX == -40 })
+				if moved.Width != before.Width || moved.Height != before.Height || moved.ButtonX+moved.FrameX <= 0 {
+					t.Fatal("move must retain window dimensions and a visible button center")
+				}
+				t.Logf("window translation: frame_x_before=%.0f frame_x_after=%.0f local_button_x=%.0f", before.FrameX, moved.FrameX, moved.ButtonX)
+			}
 			request := ActRequest{Kind: "click", ObservationRef: obs.Ref, Point: point, Screenshot: true}
 			if mode == "pointer" {
 				if before.LeftDowns != 0 || before.LeftUps != 0 || before.RightDowns != 0 || before.RightUps != 0 {
@@ -196,11 +214,11 @@ func testNativeMacPixelInput(t *testing.T, kinds []string, controlMode ControlMo
 				}
 				fresh := result.Observation
 				if fresh == nil || fresh.Image == nil || fresh.Degraded || run.observations[fresh.Ref].capture == "" {
-					t.Fatal("resize refusal did not return a usable fresh observation")
+					t.Fatal("geometry refusal did not return a usable fresh observation")
 				}
-				t.Logf("resized frame_points=%.0fx%.0f image_pixels=%dx%d", settled.Width, settled.Height, fresh.ImageWidth, fresh.ImageHeight)
+				t.Logf("updated frame_x=%.0f frame_points=%.0fx%.0f image_pixels=%dx%d", settled.FrameX, settled.Width, settled.Height, fresh.ImageWidth, fresh.ImageHeight)
 				result, err = run.Act(ctx, ActRequest{Kind: "click", ObservationRef: fresh.Ref, Point: nativeButtonPoint(t, *fresh, settled), Screenshot: true})
-				t.Logf("case=resize recovery timing=%+v", result.Timing)
+				t.Logf("case=%s recovery timing=%+v", kind, result.Timing)
 			}
 			nativeReturned(t, result, err)
 			if result.Observation.Image == nil || run.observations[result.Observation.Ref].capture == "" {
@@ -224,6 +242,9 @@ func testNativeMacPixelInput(t *testing.T, kinds []string, controlMode ControlMo
 			}
 			if mode == "target" && (settled.Commits != 1 || settled.Result != "Result: AICE-314" || settled.Value != before.Value) {
 				t.Fatalf("pixel click postcondition failed: commits=%d result_matches=%v input_unchanged=%v", settled.Commits, settled.Result == "Result: AICE-314", settled.Value == before.Value)
+			}
+			if kind == "move-left" && (settled.FrameX != -40 || calls["click"] != 1) {
+				t.Error("moved-window click must retain the negative origin and dispatch exactly once")
 			}
 		})
 	}
