@@ -14,6 +14,7 @@ import (
 	"github.com/ch1lam/aice-cli/internal/deps"
 	"github.com/ch1lam/aice-cli/internal/desktop"
 	"github.com/ch1lam/aice-cli/internal/llm"
+	"github.com/ch1lam/aice-cli/internal/tool"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -29,13 +30,25 @@ func TestSettingsUsageTUI(t *testing.T) {
 	paths := authTestPaths(t)
 	writeConfigFixture(t, paths.GlobalSettings, `{"provider":"custom","model":"old-model"}`)
 	installCalls, setupCalls := 0, 0
+	binds, closes := 0, 0
+	model := &gatedModel{gates: map[int]chan struct{}{1: make(chan struct{})}, preDelta: "Synthetic run waiting"}
 	command, err := newTestCommand(t, dependencies{
 		loadConfig:   func(options config.LoadOptions) (config.Config, error) { return config.LoadFiles(paths, options) },
-		newModel:     func(config.Config) (llm.Streamer, error) { return &recordingModel{}, nil },
+		newModel:     func(config.Config) (llm.Streamer, error) { return model, nil },
 		userHomeDir:  func() (string, error) { return home, nil },
 		saveSettings: config.SaveSettingsFile,
 		newDesktop: func(c config.Config) (*desktopState, error) {
 			return &desktopState{installOptions: deps.DefaultOptions().WithNoInstall(c.NoDepInstall),
+				bind: func(ctx context.Context, _ desktop.RunOptions) (tool.DesktopBackend, func() error, error) {
+					binds++
+					return &appDesktopBackend{}, func() error {
+						closes++
+						if ctx.Err() == nil {
+							t.Error("cleanup began before run cancellation")
+						}
+						return nil
+					}, nil
+				},
 				install: func(_ context.Context, o deps.Options) (deps.CuaInstallResult, error) {
 					installCalls++
 					if !o.NoInstall {
@@ -119,8 +132,8 @@ func TestSettingsUsageTUI(t *testing.T) {
 	waitFor("Saved to user settings")
 	send("\x1b")
 	if runtime.GOOS == "darwin" {
-		send("/settings\r")
-		waitFor("Models & Accounts")
+		send("/desktop\r")
+		waitFor("[Tools & Network]")
 		send("/Computer Use setup")
 		waitFor("Computer Use setup / repair")
 		send("\r")
@@ -140,6 +153,19 @@ func TestSettingsUsageTUI(t *testing.T) {
 	waitFor("Not started")
 	send("\x1b")
 
+	send("wait for explicit cancellation\r")
+	waitFor("Synthetic run waiting")
+	send("/desktop\r")
+	waitFor("Stop current run")
+	// Esc only closes the modal; the next open must still offer Stop.
+	send("\x1b")
+	waitFor("Synthetic run waiting")
+	send("/desktop\r")
+	waitFor("Stop current run")
+	send("\x1b[17~") // F6: the explicit Settings stop control.
+	send("\x1b")
+	waitFor("Response cancelled")
+
 	send("\x15/quit\r")
 	select {
 	case err := <-done:
@@ -158,5 +184,8 @@ func TestSettingsUsageTUI(t *testing.T) {
 	}
 	if runtime.GOOS == "darwin" && (!loaded.DesktopEnabled || installCalls != 1 || setupCalls != 1) {
 		t.Fatalf("desktop setup enabled=%v install=%d setup=%d", loaded.DesktopEnabled, installCalls, setupCalls)
+	}
+	if model.requestCount() != 1 || (runtime.GOOS == "darwin" && (binds != 1 || closes != 1)) {
+		t.Fatalf("stop requests=%d binds=%d closes=%d", model.requestCount(), binds, closes)
 	}
 }

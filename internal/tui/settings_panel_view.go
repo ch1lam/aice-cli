@@ -147,7 +147,14 @@ func (m model) settingsPanelView() string {
 	if notice != "" {
 		search = sanitizeSingleLineText(notice)
 	}
-	content := strings.Join([]string{mutedStyle.Render(ansi.Truncate(p.tabs(), l.inner, "…")), ansi.Truncate(search, l.inner, "…"), body, mutedStyle.Render(ansi.Truncate(p.footer(), l.inner, "…"))}, "\n")
+	footer := p.footer()
+	if m.running && !p.usage {
+		footer = "[Stop current run] F6 · Esc back"
+		if m.cancelRequested {
+			footer = "Stopping… · Esc back"
+		}
+	}
+	content := strings.Join([]string{mutedStyle.Render(ansi.Truncate(p.tabs(), l.inner, "…")), ansi.Truncate(search, l.inner, "…"), body, mutedStyle.Render(ansi.Truncate(footer, l.inner, "…"))}, "\n")
 	hover := p.pointer != nil && modalCloseContains(l, *p.pointer)
 	return modalFrame(title, content, l, hover, p.pressed == "close")
 }
@@ -249,17 +256,21 @@ func (m model) settingsPointer(message tea.Msg) (tea.Model, tea.Cmd) {
 		mouse := event.Mouse()
 		p.pointer = &mouse
 		if event.Button == tea.MouseLeft {
-			p.pressed = p.target(mouse)
+			p.pressed = m.settingsTarget(mouse)
 			p.pressedLayout = p.layout
 		}
 	case tea.MouseReleaseMsg:
 		mouse := event.Mouse()
 		p.pointer = &mouse
-		target := p.target(mouse)
+		target := m.settingsTarget(mouse)
 		if event.Button != tea.MouseLeft || p.pressed == "" || p.pressed != target || p.pressedLayout != p.layout {
 			return m, nil
 		}
 		p.pressed = ""
+		if target == "stop-run" {
+			m.requestRunCancellation()
+			return m, nil
+		}
 		if p.editing != nil && target != "close" && target != "outside" {
 			return m.settingEditClick(target)
 		}
@@ -326,4 +337,17 @@ func (m model) settingsPointer(message tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+func (m model) settingsTarget(mouse tea.Mouse) string {
+	p := m.settings
+	if m.running && !p.usage && mouse.Y == p.layout.y+p.layout.height-2 {
+		x := mouse.X - p.layout.x - 2
+		if !m.cancelRequested && x >= 0 && x < min(p.layout.inner, len("[Stop current run]")) {
+			return "stop-run"
+		}
+		// The run controls replace, rather than overlay, the editor footer.
+		return ""
+	}
+	return p.target(mouse)
 }

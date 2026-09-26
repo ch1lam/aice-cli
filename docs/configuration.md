@@ -151,6 +151,11 @@ and credential files are not one transaction.
 ### Settings window
 
 Open `/settings`, press Ctrl+comma, or click **Settings** under the header.
+`/desktop` opens the same panel at Computer Use in Tools & Network. It does not
+start a run or create a Session. During a main run, the Settings footer offers
+**Stop current run** (click or F6 within the panel); Esc only returns or closes.
+Stopping cancels the existing run and waits for lifecycle completion before
+preferences become editable again. It does not save a disabled preference.
 The five categories are Models & Accounts, Tools & Network, Run Limits,
 Project & Trust, and System. Tab/Shift+Tab switches categories; `/` searches
 across them. Arrow keys select, Enter edits, and `?` opens scrollable details.
@@ -1145,6 +1150,7 @@ without color.
 | `/btw [question]` | Create or choose an ephemeral, tool-free side thread |
 | `/init` | Create or improve root `AGENTS.md`; loaded after restart |
 | `/settings` | Open the five-category Settings window (also Ctrl+comma) |
+| `/desktop` | Open Computer Use in the same Settings window |
 | `/context`, `/usage` | Open current context or recorded Session usage |
 | `/browser` | Browser status, connection, tab selection and close; `/browser status` also works |
 | `/web` | Web search services, priority order, credentials and the `web_fetch` switch; see [Web search and fetch](web.md#the-web-command) |

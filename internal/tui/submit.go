@@ -33,7 +33,7 @@ func (m model) submit() (model, tea.Cmd, bool) {
 			}
 			// Side questions never enter the main prompt history, even when
 			// submitted through the main composer while a run is active.
-			if request.Name != "btw" && request.Name != "settings" && request.Name != "usage" && request.Name != "context" && request.Name != "session" {
+			if request.Name != "btw" && request.Name != "settings" && request.Name != "desktop" && request.Name != "usage" && request.Name != "context" && request.Name != "session" {
 				m.promptHistory = appendPromptHistory(m.promptHistory, prompt)
 				m.historyIndex = -1
 				m.historyDraft = ""
@@ -87,6 +87,18 @@ func (m model) submitSlashCommand(
 	}
 
 	switch command.Name {
+	case "desktop":
+		if request.Arguments != "" {
+			return m.commandUsageError(raw, command)
+		}
+		m.resetCommandInput()
+		if m.readSettings == nil {
+			m.inputNotice = "Settings is unavailable"
+			return m, nil, true
+		}
+		next, cmd, handled := m.openSettings()
+		next.settings.focusField = "desktop_enabled"
+		return next, cmd, handled
 	case "usage", "context", "session":
 		if request.Arguments == "" && m.readUsage != nil {
 			tab := 1

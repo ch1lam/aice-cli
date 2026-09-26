@@ -696,6 +696,14 @@ Menu disclosures wrap and page before choices become actionable. Rendering and
 mouse targets use the same layout; cancellation rejects late prompts. Multiline
 action results open a scrollable information view so partial external success,
 commit facts and later errors remain visible together.
+The `/desktop` deep-link is a frontend navigation command targeting the existing
+`desktop_enabled` field. It adds neither a configuration writer nor a run.
+Settings' explicit Stop footer and panel-local F6 call the same cancellation
+path as the main composer, including cancellation before the controller has
+published its cancel function. They do not acquire a Settings reservation or
+change preferences. Esc retains modal hierarchy semantics. The UI keeps the
+run active and displays Stopping until the controller reports completion;
+the ordinary completion refresh then obtains current editability and revision.
 Usage reads copy source Session records and derive price completeness without
 calling the consuming `RuntimeState` method or creating an empty Session. Reads
 occur on open, lifecycle completion or manual refresh, not streaming deltas.

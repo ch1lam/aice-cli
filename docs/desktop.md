@@ -194,10 +194,14 @@ known readiness, revision and warnings. The panel retains those facts alongside
 a later error instead of replacing success output. Ordinary patch preparation
 and publication also have an internal entry point under the existing reservation,
 so setup does not acquire a second reservation.
-Remaining changes include bounded read-only status projection,
-TUI deep-link/Stop handling and the remaining typed tools.
-Stop must use the
-existing cancellation path. A Web rebuild must retain the same Desktop binding
+`/desktop` opens this same panel at Computer Use, including during a run; it
+does not enter the transcript or prompt history. The Settings footer's explicit
+Stop current run button (mouse or panel-local F6) uses the existing cancellation
+path, including preparation before the cancel callback arrives. It stays in
+Stopping until run completion. Esc only closes the current modal level. No
+stop action changes the enabled preference or stops the shared service.
+Remaining changes include bounded read-only status projection and the remaining
+typed tools. A Web rebuild must retain the same Desktop binding
 as the tools and prompt it publishes; offline publication tests cover this.
 
 ## Platform evidence
@@ -238,6 +242,11 @@ writer rejection, peer-setting preservation, save failure after authorization,
 cancelled grants, preference-only retry and frozen download policy. Renderer
 tests cover 80×24, 120×40 and 32×16 disclosures and visible partial results. These
 do not substitute for native OS UI or IME acceptance.
+The CLI/TUI flow also opens `/desktop` during a synthetic blocked model run,
+checks that Esc leaves it running, and cancels through Settings F6. Its fake
+desktop binding verifies cancellation precedes cleanup and enable remains saved.
+Renderer tests cover the mouse button, information-page Stop and the early
+preparation interval before the controller publishes cancellation.
 
 Manager tests use synthetic windows and PNGs to verify single dispatch,
 post-observation failure, cancellation, per-run cleanup, reconnection,

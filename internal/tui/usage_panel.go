@@ -89,5 +89,5 @@ func (m model) isInfoCommandInput() bool {
 	if !ok || request.Arguments != "" {
 		return false
 	}
-	return (request.Name == "settings" && m.readSettings != nil) || ((request.Name == "usage" || request.Name == "context" || request.Name == "session") && m.readUsage != nil)
+	return ((request.Name == "settings" || request.Name == "desktop") && m.readSettings != nil) || ((request.Name == "usage" || request.Name == "context" || request.Name == "session") && m.readUsage != nil)
 }

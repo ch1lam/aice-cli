@@ -174,12 +174,7 @@ func (m model) handleComposerAction(match inputActionMatch) (model, tea.Cmd, boo
 	case inputActionHistory:
 		return m.recallHistory(match.argument), nil, true
 	case inputActionInterrupt:
-		if m.cancelRun != nil {
-			m.cancelRun()
-		} else {
-			m.cancelRequested = true
-		}
-		m.status = "Cancelling current response..."
+		m.requestRunCancellation()
 		return m, nil, true
 	case inputActionQuit:
 		return m, tea.Quit, true
@@ -208,4 +203,17 @@ func (m model) handleComposerAction(match inputActionMatch) (model, tea.Cmd, boo
 		return m.handleCompletionAction(match)
 	}
 	return m, nil, true
+}
+
+// Settings and the main composer use the same cancellation chain, including
+// the interval before the controller publishes its cancel function.
+func (m *model) requestRunCancellation() {
+	if !m.running || m.cancelRequested {
+		return
+	}
+	m.cancelRequested = true
+	if m.cancelRun != nil {
+		m.cancelRun()
+	}
+	m.status = "Cancelling current response..."
 }

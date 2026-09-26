@@ -29,6 +29,7 @@ type settingsPanel struct {
 	choice                 int
 	confirmUnset           bool
 	detailOffset           int
+	focusField             string
 	notice                 string
 	layout                 modalLayout
 	pointer                *tea.Mouse
@@ -154,6 +155,25 @@ func (m model) applySettingsRead(message settingsReadResult) (tea.Model, tea.Cmd
 		return m, nil
 	}
 	p.snapshot = message.snapshot
+	if p.focusField != "" {
+		for _, field := range p.snapshot.Fields {
+			if field.ID != p.focusField {
+				continue
+			}
+			for i, category := range p.snapshot.Categories {
+				if category.ID == field.Category {
+					p.tab = i
+				}
+			}
+			for i, candidate := range p.fields() {
+				if candidate.ID == field.ID {
+					p.selection = i
+				}
+			}
+			break
+		}
+		p.focusField = ""
+	}
 	p.tab = min(p.tab, max(0, len(p.snapshot.Categories)-1))
 	p.selection = min(p.selection, max(0, len(p.fields())-1))
 	return m, nil
@@ -322,6 +342,10 @@ func (m model) handleSettings(message tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	if key, ok := message.(tea.KeyPressMsg); ok {
 		name := key.String()
+		if name == "f6" && !p.usage && m.running {
+			m.requestRunCancellation()
+			return m, nil
+		}
 		if p.action != nil {
 			return m.settingActionKey(key)
 		}
