@@ -109,7 +109,15 @@ func download(ctx context.Context, opts Options, url, want, suffix string) (stri
 	if err != nil {
 		return "", fmt.Errorf("create temp file: %w", err)
 	}
-	defer file.Close()
+	keep := false
+	defer func() {
+		// Windows refuses removal of an open downloaded file. Close before
+		// cleaning up rejected/canceled downloads on every failure path.
+		file.Close()
+		if !keep {
+			os.Remove(file.Name())
+		}
+	}()
 
 	var source io.Reader = response.Body
 	if opts.Progress != nil {
@@ -123,7 +131,6 @@ func download(ctx context.Context, opts Options, url, want, suffix string) (stri
 		}
 		progress := Progress{Helper: helper, Version: version, Total: response.ContentLength}
 		if err := opts.Progress(progress); err != nil {
-			os.Remove(file.Name())
 			return "", err
 		}
 		source = &downloadProgressReader{Reader: response.Body, progress: progress, report: opts.Progress}
@@ -134,18 +141,19 @@ func download(ctx context.Context, opts Options, url, want, suffix string) (stri
 		io.LimitReader(source, maxDownloadBytes+1),
 	)
 	if err != nil {
-		os.Remove(file.Name())
 		return "", fmt.Errorf("download %s: %w", url, err)
 	}
 	if written > maxDownloadBytes {
-		os.Remove(file.Name())
 		return "", fmt.Errorf("download %s: response exceeds %d bytes", url, maxDownloadBytes)
 	}
 	got := hex.EncodeToString(hash.Sum(nil))
 	if got != want {
-		os.Remove(file.Name())
 		return "", fmt.Errorf("download %s: checksum mismatch", url)
 	}
+	if err := file.Close(); err != nil {
+		return "", fmt.Errorf("close download %s: %w", url, err)
+	}
+	keep = true
 	return file.Name(), nil
 }
 

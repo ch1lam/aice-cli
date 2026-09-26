@@ -229,6 +229,25 @@ Default Cua installer tests use synthetic archives and in-memory HTTP transports
 Artifact validation is distinct from native Computer Use acceptance; see the
 [platform evidence](desktop.md#platform-evidence).
 
+The Windows/Linux archive check runs on any host with all four previously
+downloaded, pinned full distribution archives. It verifies archive digests,
+bounded selective extraction and native-file digests without executing them,
+installing into a user directory or evaluating OS signature trust:
+
+```sh
+AICE_CUA_TEST_ARTIFACTS=/absolute/path/to/archives \
+  go test -tags=integration ./internal/deps -run '^TestCuaNativeReleaseArchives$' -v
+```
+
+Default installer tests cover tar/zip rejection, read-only reuse, modification,
+additional-library and symlink refusal, cancellation, single-download concurrent
+installation and cleanup. Native Linux/Windows unit tests check exclusive
+publication against both empty and populated destination directories, without
+executing Cua. They must run on those hosts; compiling them elsewhere is not a
+passing execution result. The shared downloader test uses an isolated temporary
+directory to check rejected-file cleanup, including Windows's close-before-remove
+requirement.
+
 The negative native proxy check uses a verified App binary, temporary HOME and
 an absent socket. It verifies that the proxy refuses automatic service launch,
 without connecting to a user service or requesting OS permissions:

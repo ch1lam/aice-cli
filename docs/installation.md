@@ -110,8 +110,33 @@ macOS Settings setup invokes this API after the feature/install/authorization
 disclosure. Its download policy is captured at AICE startup; a saved restart-only
 change does not authorize a download in the current instance. Completed install
 facts survive a later authorization or preference-save failure. Windows/Linux
-installer integration and native desktop acceptance remain open; the
+desktop runtime integration and native acceptance remain open; the
 [Computer Use status](desktop.md) records the exact scope of verification.
+
+The Windows/Linux provisioning API installs into the private
+`~/.aice/bin/cua/0.29.1/<os>-<arch>` directory (under the user profile on Windows).
+It uses the same pinned release downloads, progress reporting and cancellable
+installation lock. It selects only `cua-driver`, `cua-cursor-theme`, and, on
+Windows, the signed `cua-driver-uia.exe` sibling, with the MIT license. It does
+not install SDK libraries, Node addons or GNOME shell extensions. Each native
+file has a reviewed hash; reuse verifies those hashes, rejects additional files
+and links, and checks the license before running a version probe. Windows also
+requires a valid timestamped Authenticode signature from `Cua AI, Inc.` on all
+three executables, through system PowerShell without profiles. Verification
+failure preserves the existing installation. Publication uses Linux
+`RENAME_NOREPLACE` or Windows `MoveFile`, never a replace operation or fallback.
+Rejected downloads are closed before cleanup so Windows can remove them.
+
+The Linux version probe reports missing native loader/library dependencies;
+AICE does not invoke a package manager. The pinned CLI depends on system
+libX11, libXi, libxkbcommon and the GNU runtime, independently of the SDK files
+excluded from installation. A successful version probe does not establish a
+display, AT-SPI access, compositor support or desktop readiness. The private
+Windows install does not grant UIAccess: the sibling's secure-path/signing
+requirements remain OS policy, and AICE does not change registry policy, elevate
+or move it to Program Files. No service, login task or shell extension starts
+during provisioning. Native installer execution and signature trust still need
+their respective platform hosts; cross-compilation is recorded separately.
 
 ## Update
 

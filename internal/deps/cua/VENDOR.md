@@ -14,9 +14,20 @@ checked before native tool dispatch; new platform/version schemas need review.
 The adjacent upstream release manifest has SHA-256
 `d114a50c1487ad20c7f7ca6fb6380284f160fd967d5e2f2050ccbb444e72b52b`.
 It and GitHub's release asset digests agree with the pins in `cua.go`.
-The macOS universal archive was downloaded and its bytes independently hashed.
-Windows/Linux assets have published digests only; they have not been executed
-or locally hashed. Artifact pinning does not establish native acceptance.
+All five full distribution archives (macOS universal and Windows/Linux on
+amd64/arm64) were downloaded and independently hashed on 2026-09-26. The static
+Windows/Linux extraction check also verifies the per-executable pins in
+`cua_install_native.go`. Those platform executables have not been run here;
+artifact validation does not establish native acceptance.
+
+Static ELF/PE import inspection found no dependency on the adjacent SDK or
+Node libraries for the selected executables. Linux needs system libX11, libXi,
+libxkbcommon and GNU runtime libraries. Windows executables carry certificate
+tables and import Windows system DLLs; the release pipeline requires timestamped
+Authenticode signatures from `Cua AI, Inc.`. AICE's Windows verifier enforces
+that policy on the native host; local macOS inspection is not Windows trust
+verification. The UIAccess worker also requires an OS-approved secure path or
+administrator policy; the private install does not establish that authority.
 
 The downloaded macOS App passed `codesign --verify --deep --strict` and
 `spctl --assess --type execute` on 2026-09-26. Signing identity:

@@ -21,7 +21,8 @@ var cuaLicense []byte
 var ErrCuaNotInstalled = errors.New("Cua Driver is not installed")
 
 // CuaInstallation describes a verified installation, not service ownership or
-// OS authorization. Installing an App never makes its later processes ours.
+// OS authorization. Bundle is populated only for macOS. Installing a helper
+// never makes its later processes ours.
 type CuaInstallation struct {
 	Binary, Bundle, Version string
 }
