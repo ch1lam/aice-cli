@@ -1177,7 +1177,7 @@ func TestSideThreadDeepCloneIsolationRichNestedFields(t *testing.T) {
 
 // TestSideThreadConcurrentSnapshotsConsistent drives a gated main run
 // through multiple committed interactions and follow-ups while side threads
-// are created concurrently, settings commands churn the selected model, and
+// are created concurrently, settings commands attempt model changes, and
 // the session history is reloaded from the store. Every observed side
 // snapshot must be a complete interaction prefix with the initial main
 // prompt exactly once: never a half turn, a duplicate, or a torn settings
@@ -1220,8 +1220,10 @@ func TestSideThreadConcurrentSnapshotsConsistent(t *testing.T) {
 	mainDone := make(chan error, 1)
 	go func() { mainDone <- active.Run(ctx) }()
 
-	// Settings churn: alternate /model between the two catalog models while
-	// side threads are created.
+	// Wait for acceptance before attempting edits: a prepared but not yet
+	// started runner intentionally becomes stale after a successful edit.
+	waitFor(t, func() bool { return mainModel.requestCount() >= 1 })
+	// Model edits during a run are rejected while side snapshots remain readable.
 	settingsDone := make(chan struct{})
 	var settingsWG sync.WaitGroup
 	settingsWG.Add(2)
@@ -1240,7 +1242,7 @@ func TestSideThreadConcurrentSnapshotsConsistent(t *testing.T) {
 					Name:      "model",
 					Arguments: ids[index%len(ids)],
 				},
-			); err != nil {
+			); err != nil && !errors.Is(err, interaction.ErrSettingsRunning) && !errors.Is(err, interaction.ErrSettingsBusy) {
 				t.Errorf("RunSlashCommand(/model) error = %v", err)
 			}
 			time.Sleep(time.Millisecond)

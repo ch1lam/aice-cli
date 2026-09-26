@@ -15,7 +15,7 @@ import (
 
 // webIntro is shown at the top of /web prompts.
 const webIntro = "Web search sends queries to the configured service; web_fetch connects directly to public sites. " +
-	"Every call still asks for permission unless granted for this Session. Manual configuration lives under \"web\" in the global settings file."
+	"Enabled web tools use the existing network policy. Manual configuration lives under \"web\" in the global settings file."
 
 func (s *interactiveSession) webMenu() *interaction.CommandMenu {
 	settings := s.settingsSnapshot().configuration.Web
@@ -350,13 +350,22 @@ func (s *interactiveSession) saveWeb(ctx context.Context, patch config.WebPatch,
 		return "", fmt.Errorf("app: application is required")
 	}
 	current := s.settingsSnapshot().configuration
-	saved, err := s.application.dependencies.saveWebSettings(ctx, current.Paths, patch)
+	candidate, err := current.WithWebPatch(patch)
 	if err != nil {
-		return "", fmt.Errorf("app: save web settings; current Session unchanged: %w", err)
-	}
-	if err := s.applyWebSettings(saved); err != nil {
 		return "", err
 	}
+	prepared, err := s.prepareWebSettings(candidate)
+	if err != nil {
+		return "", err
+	}
+	if _, err := s.application.dependencies.saveWebSettings(ctx, current.Paths, patch); err != nil {
+		if !config.WasCommitted(err) {
+			prepared.state.closeBackend()
+			return "", fmt.Errorf("app: save web settings; current Session unchanged: %w", err)
+		}
+		s.settingsWarning(err)
+	}
+	s.publishWebSettings(prepared)
 	s.stateMu.RLock()
 	state := s.web
 	s.stateMu.RUnlock()
@@ -371,37 +380,69 @@ func (s *interactiveSession) saveWeb(ctx context.Context, patch config.WebPatch,
 	return strings.Join(lines, "\n"), nil
 }
 
-// applyWebSettings publishes a saved web configuration: new snapshot, rebound
-// tools, refreshed prompt, rebuilt loop and Guard fingerprint. Callers ensure
-// no main run is active so an approved call never targets another service.
-func (s *interactiveSession) applyWebSettings(saved config.WebSettings) error {
-	s.stateMu.Lock()
-	defer s.stateMu.Unlock()
-	configuration, err := s.configuration.WithWeb(saved)
-	if err != nil {
-		return fmt.Errorf("app: apply web settings: %w", err)
-	}
+// preparedWeb owns replacement resources until publication or failed-save cleanup.
+type preparedWeb struct {
+	configuration config.Config
+	state         webState
+	tools         []agent.Tool
+	systemPrompt  string
+	loop          *agent.Loop
+}
+
+func (s *interactiveSession) prepareWebSettings(configuration config.Config) (preparedWeb, error) {
+	current := s.settingsSnapshot()
 	state := bindWeb(s.application.webBackends(), configuration.Web)
+	if state.configErr != nil {
+		state.closeBackend()
+		return preparedWeb{}, fmt.Errorf("app: prepare web search: %w", state.configErr)
+	}
+	if state.fetchErr != nil {
+		state.closeBackend()
+		return preparedWeb{}, fmt.Errorf("app: prepare web fetch: %w", state.fetchErr)
+	}
 	tools := append(slices.Clip(s.baseTools), state.tools()...)
 	systemPrompt, err := assembleSystemPrompt(s.workspace, configuration, s.trustDecision, tools, s.skills)
 	if err != nil {
 		state.closeBackend()
-		return fmt.Errorf("app: rebuild system prompt: %w", err)
+		return preparedWeb{}, fmt.Errorf("app: rebuild system prompt: %w", err)
 	}
-	loop := s.loop
-	if s.modelErr == nil && providerConfigured(s.providers, configuration) {
+	loop := current.loop
+	if current.modelErr == nil && providerConfigured(s.providers, configuration) {
 		loop, err = s.application.newAgentLoopWithOptions(configuration, tools, agent.WithGuard(s.guardAdapter), agent.WithGuardAskHandler(s.handleGuardAsk))
 		if err != nil {
 			state.closeBackend()
-			return err
+			return preparedWeb{}, err
 		}
 	}
-	s.web.closeBackend()
-	s.web = state
-	s.configuration = configuration
-	s.tools = tools
-	s.systemPrompt = systemPrompt
-	s.loop = loop
-	s.guard.SetSearchTarget(state.searchTarget)
+	return preparedWeb{configuration: configuration, state: state, tools: tools, systemPrompt: systemPrompt, loop: loop}, nil
+}
+
+func (s *interactiveSession) publishWebSettings(prepared preparedWeb) {
+	s.stateMu.Lock()
+	old := s.web
+	s.web = prepared.state
+	s.configuration = prepared.configuration
+	s.tools = prepared.tools
+	s.systemPrompt = prepared.systemPrompt
+	s.loop = prepared.loop
+	s.stateMu.Unlock()
+	if s.guard != nil {
+		s.guard.SetSearchTarget(prepared.state.searchTarget)
+	}
+	old.closeBackend()
+}
+
+// applyWebSettings is the startup/test replacement path. Interactive saves
+// prepare before writing, then call the infallible publish step directly.
+func (s *interactiveSession) applyWebSettings(saved config.WebSettings) error {
+	configuration, err := s.settingsSnapshot().configuration.WithWeb(saved)
+	if err != nil {
+		return err
+	}
+	prepared, err := s.prepareWebSettings(configuration)
+	if err != nil {
+		return err
+	}
+	s.publishWebSettings(prepared)
 	return nil
 }

@@ -817,6 +817,7 @@ func (a *application) newAgentLoopWithOptions(
 }
 
 type interactiveSession struct {
+	lifecycle      settingsLifecycle
 	catalog        sessionCatalog
 	browser        *browser.Manager
 	modelErr       error
@@ -860,6 +861,7 @@ type interactiveSession struct {
 }
 
 type interactiveSettings struct {
+	tools         []agent.Tool
 	modelErr      error
 	loop          *agent.Loop
 	configuration config.Config
@@ -875,6 +877,7 @@ func (s *interactiveSession) settingsSnapshot() interactiveSettings {
 	s.stateMu.RLock()
 	defer s.stateMu.RUnlock()
 	return interactiveSettings{
+		tools:         append([]agent.Tool(nil), s.tools...),
 		modelErr:      s.modelErr,
 		loop:          s.loop,
 		configuration: s.configuration,

@@ -23,6 +23,8 @@ import (
 
 func (s *interactiveSession) SlashCommands() []interaction.Command {
 	return []interaction.Command{
+		{Name: "usage", Description: "Open recorded Session usage"},
+		{Name: "context", Description: "Open current context information"},
 		{Name: "history", Description: "Browse conversation history in this project", ArgumentHint: "[id]"},
 		{Name: "browser", Description: "Manage browser connection and tabs", Menu: s.browserMenu(), Interactive: true},
 		{Name: "web", Description: "Configure web search services, priority and web fetch", Menu: s.webMenu(), Interactive: true},
@@ -53,7 +55,7 @@ func (s *interactiveSession) SlashCommands() []interaction.Command {
 		},
 		{
 			Name:        "settings",
-			Description: "Show effective model settings and configuration paths",
+			Description: "Open Settings (Ctrl+,)",
 		},
 		{
 			Name:        "skills",
@@ -369,6 +371,8 @@ type slashCommandHandler func(
 
 var slashCommandHandlers = map[string]slashCommandHandler{
 	"history":  (*interactiveSession).slashResume,
+	"usage":    (*interactiveSession).slashUsage,
+	"context":  (*interactiveSession).slashUsage,
 	"browser":  (*interactiveSession).slashBrowser,
 	"web":      (*interactiveSession).slashWeb,
 	"session":  (*interactiveSession).slashSession,
@@ -400,7 +404,22 @@ func (s *interactiveSession) RunSlashCommand(
 	if !ok {
 		return "", fmt.Errorf("app: unsupported slash command /%s", request.Name)
 	}
-	return handler(s, ctx, request)
+	changes, shared := slashChangesResources(request)
+	if !changes {
+		return handler(s, ctx, request)
+	}
+	if err := s.beginSettingsOperation(nil, shared); err != nil {
+		return "", err
+	}
+	changed := false
+
+	output, err := handler(s, ctx, request)
+	changed = err == nil
+	_, warnings := s.endSettingsOperation(changed)
+	if len(warnings) > 0 {
+		output += "\n" + strings.Join(warnings, "\n")
+	}
+	return output, err
 }
 
 func (s *interactiveSession) requireSessionStore() error {
@@ -1112,7 +1131,10 @@ func (s *interactiveSession) persistSettings(
 		return config.Config{}, fmt.Errorf("app: configuration persistence is unavailable")
 	}
 	if err := s.application.dependencies.saveSettings(ctx, current.Paths, changes); err != nil {
-		return config.Config{}, fmt.Errorf("app: save settings; current Session unchanged: %w", err)
+		if !config.WasCommitted(err) {
+			return config.Config{}, fmt.Errorf("app: save settings; current Session unchanged: %w", err)
+		}
+		s.settingsWarning(err)
 	}
 	return next, nil
 }

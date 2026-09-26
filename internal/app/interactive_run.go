@@ -12,10 +12,11 @@ import (
 )
 
 type interactiveRun struct {
-	session *interactiveSession
-	prompt  llm.UserMessage
-	sink    interaction.EventSink
-	mailbox *interaction.Mailbox
+	session  *interactiveSession
+	prompt   llm.UserMessage
+	sink     interaction.EventSink
+	mailbox  *interaction.Mailbox
+	revision uint64
 
 	mu        sync.Mutex
 	isStarted bool
@@ -42,6 +43,11 @@ func (s *interactiveSession) NewRun(
 	if s == nil {
 		return nil, fmt.Errorf("app: interactive Session is required")
 	}
+	revision, err := s.beginPreparation()
+	if err != nil {
+		return nil, err
+	}
+	defer s.endPreparation()
 	settings := s.settingsSnapshot()
 	if settings.modelErr != nil {
 		return nil, settings.modelErr
@@ -52,7 +58,7 @@ func (s *interactiveSession) NewRun(
 			settings.configuration,
 		)
 	}
-	input, err := prepareFileInput(ctx, input, s.workspace, s.guardAdapter, s.handleGuardAsk)
+	input, err = prepareFileInput(ctx, input, s.workspace, s.guardAdapter, s.handleGuardAsk)
 	if err != nil {
 		return nil, err
 	}
@@ -64,11 +70,12 @@ func (s *interactiveSession) NewRun(
 		return nil, err
 	}
 	return &interactiveRun{
-		session: s,
-		prompt:  prompt,
-		sink:    sink,
-		mailbox: interaction.NewMailbox(),
-		model:   settings.model,
+		session:  s,
+		prompt:   prompt,
+		sink:     sink,
+		mailbox:  interaction.NewMailbox(),
+		revision: revision,
+		model:    settings.model,
 	}, nil
 }
 
@@ -141,6 +148,10 @@ func (r *interactiveRun) Run(ctx context.Context) error {
 	r.mu.Unlock()
 	defer r.mailbox.Seal()
 
+	if err := r.session.reserveMainRun(r.revision); err != nil {
+		return err
+	}
+	defer r.session.releaseMainRun()
 	snapshot, err := r.session.beginMainRun(r.prompt)
 	if err != nil {
 		return err

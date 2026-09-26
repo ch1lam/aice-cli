@@ -46,6 +46,7 @@ type sideThread struct {
 	runner       *sideRunner
 	lastActiveAt time.Time
 	isRunning    bool
+	invalidated  bool
 }
 
 // sideRunner is one isolated, tool-free side thread. It owns a frozen
@@ -116,6 +117,11 @@ func (s *interactiveSession) CreateSideThread(
 			"app: side question is required",
 		)
 	}
+	revision, err := s.beginPreparation()
+	if err != nil {
+		return interaction.SideThread{}, nil, err
+	}
+	defer s.endPreparation()
 	// Session switching and side creation share this boundary, so a new
 	// registry entry can never carry the previous Session's snapshot.
 	s.conversation.historySyncMu.Lock()
@@ -159,7 +165,7 @@ func (s *interactiveSession) CreateSideThread(
 		systemPrompt: sideThreadSystemPrompt(settings.systemPrompt),
 		snapshot:     snapshot,
 		history:      make([][]llm.AgentMessage, 0, maximumSideInteractions),
-		begin:        func() error { return s.beginSideRun(id) },
+		begin:        func() error { return s.beginSideRunRevision(id, revision) },
 		end:          func() { s.endSideRun(id) },
 	}
 	threads[id] = thread
@@ -215,6 +221,21 @@ func (s *interactiveSession) CloseSideThread(id uint64) error {
 // authority for read-only, expiry, and concurrency limits even if a
 // frontend bypasses Create/Open validation.
 func (s *interactiveSession) beginSideRun(id uint64) error {
+	s.lifecycle.mu.Lock()
+	revision := s.lifecycle.resourceRevision
+	s.lifecycle.mu.Unlock()
+	return s.beginSideRunRevision(id, revision)
+}
+
+func (s *interactiveSession) beginSideRunRevision(id, revision uint64) error {
+	s.lifecycle.mu.Lock()
+	defer s.lifecycle.mu.Unlock()
+	if s.lifecycle.changing {
+		return interaction.ErrSettingsBusy
+	}
+	if revision != s.lifecycle.resourceRevision {
+		return interaction.ErrSettingsStale
+	}
 	s.sideMu.Lock()
 	defer s.sideMu.Unlock()
 	now := s.sideNow()
@@ -237,6 +258,7 @@ func (s *interactiveSession) beginSideRun(id uint64) error {
 	}
 	thread.isRunning = true
 	s.sideRunning++
+	s.lifecycle.sideRunning++
 	return nil
 }
 
@@ -244,6 +266,8 @@ func (s *interactiveSession) beginSideRun(id uint64) error {
 // cancellation, or failure. It clears the running state, releases a
 // concurrency slot, and restarts the idle clock.
 func (s *interactiveSession) endSideRun(id uint64) {
+	s.lifecycle.mu.Lock()
+	defer s.lifecycle.mu.Unlock()
 	s.sideMu.Lock()
 	defer s.sideMu.Unlock()
 	thread, ok := s.sideThreads[id]
@@ -253,6 +277,7 @@ func (s *interactiveSession) endSideRun(id uint64) {
 	thread.isRunning = false
 	if s.sideRunning > 0 {
 		s.sideRunning--
+		s.lifecycle.sideRunning--
 	}
 	thread.lastActiveAt = s.sideNow()
 }
@@ -299,7 +324,7 @@ func sideThreadView(
 	switch {
 	case thread.isRunning:
 		status = interaction.SideThreadRunning
-	case now.Sub(thread.lastActiveAt) >= sideWritableIdle:
+	case thread.invalidated || now.Sub(thread.lastActiveAt) >= sideWritableIdle:
 		status = interaction.SideThreadReadOnly
 	}
 	return interaction.SideThread{
