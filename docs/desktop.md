@@ -967,9 +967,8 @@ This establishes the length-unit defect in the reviewed insertion path; it is
 not a patched-Driver test, background-input acceptance or an alternative AICE
 backend. The experiment used a private display/bus and no host input devices.
 
-The official-source review on 2026-09-27 found no repaired insertion path in
-the latest published nightly or current main. The latest stable release returned
-by GitHub's release API remained 0.29.1. Nightly
+An earlier official-source review on 2026-09-27 found no repaired insertion path
+in the reviewed nightly or main snapshot. Nightly
 [`0.29.2-nightly.20260926.36217989449`](https://github.com/trycua/cua/releases/tag/nightly-cua-driver-rs-v0.29.2-nightly.20260926.36217989449)
 resolves to commit `7ee9b37edc4ebc5f7f606682ae2699d1baa5d397`;
 main was `5b3d48dfda23bde15ae1f2c150940defbdc64c21`. Their
@@ -979,6 +978,36 @@ files were byte-for-byte identical and still passed `text.chars().count()` to
 count; the passing GTK `set_value` test exercises `SetTextContents`, so it does
 not validate that fallback. This is a dated source review, not execution of the
 nightly or a guarantee about later releases. No release pin has been changed.
+
+### Subsequent 0.30.1 source review
+
+A later release query on 2026-09-27 found the stable
+[0.30.1 release](https://github.com/trycua/cua/releases/tag/cua-driver-rs-v0.30.1),
+published on 2026-09-26 at 19:45:40 UTC, at commit
+`039783f9221a08c0daf9cda65a460fc4f346fa6e`. Upstream uses GitHub's prerelease
+label for monorepo release routing; its notes identify plain SemVer releases as
+stable. The review compared this commit directly with the pinned 0.29.1 commit,
+including intervening 0.30.0 changes. The 0.30.1 notes themselves describe a
+Windows isolated-browser de-elevation fix.
+
+The macOS `input/mouse.rs` and `tools/drag.rs` files are byte-for-byte unchanged
+from 0.29.1. The click route adds hardware-pointer/HID delivery for explicit
+foreground window clicks and refuses background pixel clicks for detected Tk
+targets. The AppKit background route still permits target activation and
+restores the prior foreground app; its mouse helper still has the dual-post
+right-click path. These source changes do not establish a repair for the
+observed background double-click focus loss, duplicate right-click events or
+drag failures. See the fixed-commit
+[click route](https://github.com/trycua/cua/blob/039783f9221a08c0daf9cda65a460fc4f346fa6e/libs/cua-driver/rust/crates/platform-macos/src/tools/pixel_route.rs)
+and [input implementation](https://github.com/trycua/cua/blob/039783f9221a08c0daf9cda65a460fc4f346fa6e/libs/cua-driver/rust/crates/platform-macos/src/input/mouse.rs).
+
+The Linux
+[insertion path](https://github.com/trycua/cua/blob/039783f9221a08c0daf9cda65a460fc4f346fa6e/libs/cua-driver/rust/crates/platform-linux/src/atspi/native.rs#L2735)
+still passes `text.chars().count()` to `EditableText.InsertText`. Its reviewed
+diff changes pixel hit-test filtering, not this length calculation. This is
+source evidence only: 0.30.1 has not been installed, schema-admitted or run
+through native acceptance here. The installed App and AICE artifact/schema pins
+remain 0.29.1; existing failed native gates remain unresolved.
 
 ### Linux launch acceptance failure
 
