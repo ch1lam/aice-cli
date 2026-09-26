@@ -64,6 +64,8 @@ Task window contents may be sent to the model, and actions can affect applicatio
 outside the project. Linux setup asks you to choose a window for a local capture
 test. See [Computer Use](./docs/desktop.md) for verified scope and remaining
 platform limitations, including unavailable Wayland/XWayland and Windows routes.
+The pinned Linux Driver also has an unresolved Unicode insertion failure;
+GTK keyboard delivery needs an independent input route unavailable in the test fixture.
 
 Runs have no round limit by default. Optionally set `--max-turns 50`,
 `--run-token-budget 200000`, and `--run-timeout 30m`. By default, 8 consecutive identical tool rounds stop

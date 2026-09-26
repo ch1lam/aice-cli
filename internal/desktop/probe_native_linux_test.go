@@ -246,13 +246,19 @@ type linuxProbeFixture struct {
 }
 
 type linuxProbeState struct {
-	Active      bool   `json:"active"`
-	Armed       bool   `json:"armed"`
-	FocusLosses int    `json:"focus_losses"`
-	KeysSent    int    `json:"keys_sent"`
-	Commits     int    `json:"commits"`
-	Value       string `json:"value"`
-	Result      string `json:"result"`
+	Ticks       int     `json:"ticks"`
+	Active      bool    `json:"active"`
+	Armed       bool    `json:"armed"`
+	FocusLosses int     `json:"focus_losses"`
+	KeysSent    int     `json:"keys_sent"`
+	Commits     int     `json:"commits"`
+	Value       string  `json:"value"`
+	Result      string  `json:"result"`
+	Width       int     `json:"width"`
+	Height      int     `json:"height"`
+	ButtonX     float64 `json:"button_x"`
+	ButtonY     float64 `json:"button_y"`
+	Selection   []int   `json:"selection"`
 }
 
 func startLinuxProbeChild(t *testing.T, cmd *exec.Cmd) {

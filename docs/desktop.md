@@ -388,7 +388,7 @@ as the tools and prompt it publishes; offline publication tests cover this.
 | --- | --- | --- |
 | macOS 0.29.1 universal artifact | Download hash matches fixed release manifest; temporary extraction/exclusive publication preserves signature, signing identity and Gatekeeper acceptance; CLI/schema inspected; Settings setup exercised through CLI/Bubble Tea with fake native operations | Signed installed service, system authorization, persistent MCP handshake against that service, synthetic multi-app task, background focus/input sentinel, native overlay, cancellation and cold/warm measurements |
 | Windows amd64/arm64 | Downloaded archives and selected executable hashes verified; private installer with Authenticode checks implemented; synthetic extraction/reuse/cancellation tests and cross-compilation pass; static imports inspected | Native installation/signature trust and exclusive publication; runtime/service admission, interactive-session/UIAccess detection, native UI/input/lifecycle tests |
-| Linux arm64 | Private installation/reuse and read-only headless inspection passed in an isolated Debian 13 container; production Manager and selected-window setup passed owned stdio and verified shared-service X11/GTK checks; scripted-model native print/Guard/tool/Session flow passed; actual Settings CLI flow passed with synthetic native operations | Fully native Settings installation workflow and actual-model tasks; native launch, pixel/keyboard/drag routes, foreground assistance, overlay, other toolkits, real compositor/Wayland and physical-input/IME checks |
+| Linux arm64 | Private installation/reuse and read-only headless inspection passed in an isolated Debian 13 container; production Manager and selected-window setup passed owned stdio and verified shared-service X11/GTK checks; scripted-model native print/Guard/tool/Session flow, ASCII insertion and pixel click/resize rejection passed; actual Settings CLI flow passed with synthetic native operations | Unicode insertion truncates and GTK key/hotkey are unavailable in the fixture; fully native Settings workflow and actual-model tasks; launch, other pixel actions/drag, foreground assistance, overlay, other toolkits, real compositor/Wayland and physical-input/IME checks |
 | Linux amd64 | Downloaded archive and selected executable hashes verified; synthetic installer tests and cross-compilation pass; ELF library dependencies inspected | Native installation/dynamic loading and exclusive publication; runtime/service admission, AT-SPI/display detection, compositor-specific input/capture/overlay tests |
 
 On 2026-09-26 the native host had a signed, Gatekeeper-accepted CuaDriver
@@ -498,8 +498,41 @@ omission alongside a capture ID and matching PNG dimensions. The admitted X11
 adapter accepts that omission only without a domain or screenshot error and
 still requires exact target identity, a capture ID and actual matching image
 dimensions. Explicit false or conflicting evidence prevents pixel binding.
-The macOS requirement for explicit true is unchanged. Native pixel-action and
-geometry-change acceptance remains open despite this capture-binding evidence.
+The macOS requirement for explicit true is unchanged. The isolated Linux GTK
+input gate additionally exercises a screenshot-bound button click and rejection
+of the old capture after a 420×180 to 900×350 resize. Its coordinates come from
+the synthetic widget geometry; this is coordinate/lifecycle evidence, not model
+visual grounding, multi-monitor or Retina acceptance.
+
+### Linux input acceptance failures
+
+The opt-in `TestNativeLinuxInput` is an acceptance gate, not an expected-failure
+test. Its full run currently fails with the fixed Linux arm64 0.29.1 Driver:
+
+- GTK `type_text` with mixed ASCII/CJK text and a check mark returns a non-error
+  `effect: unverifiable`, but independent widget state contains only a prefix.
+  The 17-byte, 11-character request produced 10 bytes and 8 characters after
+  waiting for fixture frames published after the Driver response. The separate
+  12-character ASCII case passed. All six cases retained the foreground
+  sentinel's concurrent input without focus loss.
+  ASCII insertion and Unicode `set_value` are separate routes; their success
+  does not establish Unicode insertion. The fixed source's AT-SPI insert helper
+  passes a character count as the insertion length, which is consistent with
+  the observed truncation; the upstream cause/fix still needs verification.
+- GTK `key` and `hotkey` return `background_unavailable` in the isolated
+  Xvfb fixture. The fixed source requires a real independent keyboard route for
+  GTK; this container has no `/dev/uinput` access. This is an unavailable route
+  in the tested environment, not evidence that those inputs work on a physical
+  Linux desktop. Do not mount the user's input devices to make the fixture pass.
+
+The tests retain the requested postconditions and fail when input does not land.
+AICE preserves the native refusal/unverifiable result and does not replay it or
+switch to foreground. The Unicode insertion discrepancy is unresolved; do not
+claim complete Linux keyboard support, substitute `set_value` for insertion, or
+change the pinned artifact silently. A repaired/reviewed Driver and an isolated
+environment with a supported independent keyboard route need fresh acceptance.
+
+### Shared runtime and application verification
 
 The SDK closes both stdio stream sides; both share one idempotent process owner
 so cleanup closes and reaps the child only once. Normal proxy exit returns success;

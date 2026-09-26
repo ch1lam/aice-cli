@@ -330,6 +330,14 @@ concurrent core key with no focus loss in both modes. Static labels are not
 part of Linux's actionable-element projection, so independent fixture state
 confirms commits; a missing semantic match must not claim failure or completion.
 Both native tests compare the full production Linux schema pin.
+The optional `TestNativeLinuxInput` adds ASCII/Unicode insertion, single-key,
+hotkey, screenshot-bound button click and resize/refusal/re-observation cases.
+Pass `'^TestNativeLinuxInput$'` as the runner's third argument to run this gate.
+Its full native run currently **fails** on Unicode insertion and GTK keyboard
+delivery; see [input acceptance failures](desktop.md#linux-input-acceptance-failures).
+Do not change those cases into expected-success tests for refusal or truncation.
+The passing pixel cases do not establish keyboard readiness. Fixture geometry
+supplies coordinates only to these tests; production input still goes through Cua.
 The Manager test additionally calls the public Linux setup API with a selector
 limited to its synthetic target. It verifies a real capture, absence of invented
 grant/service-launch facts, connection cleanup and shared-service preservation

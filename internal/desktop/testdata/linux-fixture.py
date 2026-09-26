@@ -44,6 +44,8 @@ button.connect("clicked", commit)
 window.connect("focus-out-event", focus_out)
 window.connect("destroy", Gtk.main_quit)
 window.show_all()
+if mode == "input":
+    entry.grab_focus()
 
 # XTest sends ordinary core keyboard events to this container's isolated display.
 # It is test input to the sentinel, never an alternative Cua action backend.
@@ -67,6 +69,9 @@ if mode == "sentinel":
 
 def tick():
     state["ticks"] += 1
+    if (directory / "resize").exists():
+        (directory / "resize").unlink()
+        window.resize(900, 350)
     if (directory / "activate").exists():
         (directory / "activate").unlink()
         entry.grab_focus()
@@ -80,6 +85,11 @@ def tick():
         x11.XFlush(display)
         state["keys_sent"] += 1
     state.update(active=window.is_active(), value=entry.get_text(), result=result.get_text())
+    button_x, button_y = button.translate_coordinates(window, 0, 0)
+    state.update(width=window.get_allocated_width(), height=window.get_allocated_height(),
+                 button_x=button_x + button.get_allocated_width() / 2,
+                 button_y=button_y + button.get_allocated_height() / 2,
+                 selection=list(entry.get_selection_bounds()))
     temporary = directory / "state.tmp"
     temporary.write_text(json.dumps(state))
     temporary.replace(directory / "state.json")

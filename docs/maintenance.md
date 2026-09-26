@@ -125,6 +125,11 @@ remain in their existing modules.
 The [desktop integration record](desktop.md) tracks the pinned Cua connection,
 remaining Settings/tool wiring and platform evidence. Transport tests do not
 establish desktop task acceptance. Native tests remain opt-in.
+The Linux [input acceptance gate](desktop.md#linux-input-acceptance-failures)
+currently fails on truncated Unicode insertion and unavailable GTK background
+keyboard delivery. Keep those failures distinct from passing semantic value
+changes and pixel clicks; neither a non-error RPC nor cross-compilation proves
+the requested input landed.
 
 ### Self-update OpenPGP dependency warning
 
