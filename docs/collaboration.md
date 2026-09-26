@@ -503,6 +503,31 @@ temporary files are cleaned up on failure as well as success.
 AICE_CUA_NATIVE=1 go test -tags=integration ./internal/desktop -run '^TestNativeCuaMultiApp$' -v
 ```
 
+The macOS cross-toolkit gate transfers Unicode text through three synthetic
+processes, AppKit → WebKit → AppKit, using one production Manager connection.
+The embedded WebKit form uses a non-persistent store and local HTML with no
+remote content. Its page handlers report DOM state only; all test input goes
+through AICE/Cua. It checks independent input/commit results, nine returned
+captures, exact label/role control selection, zero sentinel activation losses,
+and owned-session cleanup with the shared service preserved:
+
+```sh
+AICE_CUA_NATIVE=1 go test -race -tags=integration ./internal/desktop -run '^TestNativeMacWebKitTransfer$' -v
+```
+
+This passed on 2026-09-27. AppKit uses `set_value`; the empty WebKit input uses
+`type_text`. A prior attempt using WebKit `set_value` failed actual DOM readback,
+as described in the [platform evidence](desktop.md#platform-evidence). The gate
+does not downgrade that failed route to success or retry it automatically.
+Run sequentially with other native focus gates. It requires the existing pinned
+service and grants, makes no model calls and does not establish third-party
+application, Electron, physical-input or actual-model compatibility.
+The separate compilation-only gate opens no windows and connects to no service:
+
+```sh
+AICE_CUA_BUILD_FIXTURE=1 go test -tags=integration ./internal/desktop -run '^TestNativeMacWebKitFixtureBuild$' -v
+```
+
 The macOS cold-launch gate additionally creates and registers one unique
 temporary AppKit bundle in `~/Applications`, a real Driver app-discovery root.
 It discovers the unopened app, consumes one local app reference, checks its exact

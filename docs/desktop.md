@@ -459,6 +459,31 @@ recorded focus loss and an earlier CLI attempt lost the foreground precondition
 before actions; their causes were not attributed. The later complete passes do
 not establish uninterrupted coexistence under arbitrary desktop activity.
 
+The [cross-toolkit transfer gate](../internal/desktop/webkit_native_darwin_test.go)
+passed with race detection on 2026-09-27. One production Manager connection and
+session carried Unicode text through AppKit → WebKit → AppKit in three separate
+synthetic processes, with one commit in each and nine verified window captures.
+The WebKit fixture loads a local HTML form into a non-persistent data store;
+its own page handlers report actual DOM value and commit state independently of
+Driver accessibility read-back. The other stages use native widget state.
+No model, browser automation, remote page or JavaScript input route is used.
+The armed foreground sentinel retained focus and contents through cleanup,
+and the shared service remained available. The three stages took 20.88 s after
+discovery; the full gate, including compilation and setup, took 31.12 s.
+
+This probe also exposed a real toolkit difference: `set_value` returned on the
+WebKit field, but the DOM value and committed result did not match the requested
+text. That attempt failed its independent postcondition. The pinned upstream
+`set_value` implementation documents untrusted web-content AXValue writes.
+The passing task instead uses `type_text` on an initially empty web input;
+the Driver still reports `effect:unverifiable`, so success comes from the DOM
+and commit checks, not the RPC status. Control selection requires both label
+and role because WebKit exposes more than one element named `Task value`.
+There is no automatic input retry or fallback in the production adapter.
+This establishes two toolkits, not three distinct third-party applications,
+Electron compatibility, browser profiles, actual-model reasoning or physical
+input/IME coexistence. Those broader acceptance items remain open.
+
 The separate [cold-launch gate](../internal/desktop/apps_native_darwin_test.go)
 passed with race detection on 2026-09-27. It registers a unique synthetic AppKit
 bundle in `~/Applications`, then uses real app discovery and a locally issued

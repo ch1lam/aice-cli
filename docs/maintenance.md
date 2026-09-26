@@ -141,6 +141,12 @@ AppKit launch, exact process/window binding, explicit multi-window selection and
 continued app availability after Manager close, with no foreground-sentinel
 activation loss. It uses a temporary registered bundle and does not establish
 third-party self-activation behavior or physical input/IME coexistence.
+The macOS [cross-toolkit gate](desktop.md#platform-evidence) passes a Unicode
+transfer through AppKit → WebKit → AppKit on one connection. Direct `set_value`
+on the WebKit field failed independent DOM readback; `type_text` on the empty
+field completed the task while the Driver honestly retained `unverifiable`.
+Do not infer web-content success from AXValue echoes or a returned RPC. The
+fixture proves two toolkits, not third-party or actual-model task acceptance.
 The macOS [cursor gate](desktop.md#platform-evidence) verifies renderer visibility
 and session cleanup without an external observer. A separate host-surface
 screenshot visibly showed the blue cursor; its combined manual run failed the
