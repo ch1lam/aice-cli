@@ -526,8 +526,11 @@ test. Its full run currently fails with the fixed Linux arm64 0.29.1 Driver:
   sentinel's concurrent input without focus loss.
   ASCII insertion and Unicode `set_value` are separate routes; their success
   does not establish Unicode insertion. The fixed source's AT-SPI insert helper
-  passes a character count as the insertion length, which is consistent with
-  the observed truncation; the upstream cause/fix still needs verification.
+  passes a character count as the insertion length. The official
+  [AT-SPI contract](https://gnome.pages.gitlab.gnome.org/at-spi2-core/libatspi/method.EditableText.insert_text.html)
+  requires a byte count for the UTF-8 text, while the insertion position remains
+  a character offset. The [ATK contract](https://docs.gtk.org/atk/method.EditableText.insert_text.html)
+  also specifies bytes. These are different units for this failing request.
 - GTK `key` and `hotkey` return `background_unavailable` in the isolated
   Xvfb fixture. The fixed source requires a real independent keyboard route for
   GTK; this container has no `/dev/uinput` access. This is an unavailable route
@@ -540,6 +543,29 @@ switch to foreground. The Unicode insertion discrepancy is unresolved; do not
 claim complete Linux keyboard support, substitute `set_value` for insertion, or
 change the pinned artifact silently. A repaired/reviewed Driver and an isolated
 environment with a supported independent keyboard route need fresh acceptance.
+
+An isolated arm64 Debian/GTK control experiment on 2026-09-27 confirmed the
+length mismatch independently of Cua. Against the same synthetic entry fixture,
+AT-SPI `InsertText(0, "Native 中文 ✓", 11)` returned success but produced the
+same 10-byte, 8-character prefix. Clearing the entry and passing length 17
+instead produced the exact 17-byte, 11-character text. A 12-byte ASCII control
+also matched exactly. Readback waited for three fixture frames after each reply.
+This establishes the length-unit defect in the reviewed insertion path; it is
+not a patched-Driver test, background-input acceptance or an alternative AICE
+backend. The experiment used a private display/bus and no host input devices.
+
+The official-source review on 2026-09-27 found no repaired insertion path in
+the latest published nightly or current main. The latest stable release returned
+by GitHub's release API remained 0.29.1. Nightly
+[`0.29.2-nightly.20260926.36217989449`](https://github.com/trycua/cua/releases/tag/nightly-cua-driver-rs-v0.29.2-nightly.20260926.36217989449)
+resolves to commit `7ee9b37edc4ebc5f7f606682ae2699d1baa5d397`;
+main was `5b3d48dfda23bde15ae1f2c150940defbdc64c21`. Their
+[`native.rs`](https://github.com/trycua/cua/blob/5b3d48dfda23bde15ae1f2c150940defbdc64c21/libs/cua-driver/rust/crates/platform-linux/src/atspi/native.rs#L2721)
+files were byte-for-byte identical and still passed `text.chars().count()` to
+`EditableText.InsertText`. The `set_value` insertion fallback also used character
+count; the passing GTK `set_value` test exercises `SetTextContents`, so it does
+not validate that fallback. This is a dated source review, not execution of the
+nightly or a guarantee about later releases. No release pin has been changed.
 
 ### Shared runtime and application verification
 
