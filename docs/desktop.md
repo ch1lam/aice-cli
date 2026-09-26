@@ -346,8 +346,12 @@ failure or cancellation, and no action is retried to obtain a measurement.
 These fields are excluded from tool JSON and Session records, with no background
 sampler or additional telemetry. Native Manager acceptance tests print only
 operation names, synthetic target indexes and these durations. Model output
-wait, Guard time and next-request preparation remain outside this boundary and
-still need application-level end-to-end measurement.
+wait, Guard time and next-request preparation remain outside this boundary.
+The [opt-in model gate](collaboration.md#explicit-real-model-desktop-gate) now
+measures those intervals in its report alongside the Manager phases, with
+explicit provider/Loop/Session boundaries. Its scripted native run validates
+measurement coverage and protocol preservation; actual-model/network performance
+and controlled cold/warm comparisons remain unverified.
 
 Interactive runs show one Computer Use activity row above the composer. It
 uses application-projected tool events: discovery/observation, a requested

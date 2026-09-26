@@ -854,6 +854,38 @@ provider reads/calls; offline scope tests reject out-of-scope actions and stale
 references without a native backend call. Preparing or passing the scripted
 harness does not establish real-model acceptance.
 
+The report also records platform, architecture, Driver, actual/scripted model
+transport and per-request/tool timing samples. Model time starts immediately
+before invoking the provider and ends at its terminal event or stream error;
+`first_tool_call_ms` is present only when a complete tool-call event arrives.
+This includes provider encoding, transport and local stream handling, not just
+remote inference. Stream failures remain failures and are retained as attempts.
+`preparation_gap_ms` measures the interval from the preceding completed Loop
+turn to the next provider invocation, including Loop bookkeeping and the test's
+image accounting. It is absent without that preceding boundary; it is not a
+pure request-encoding microbenchmark and does not isolate network latency.
+
+Tool totals span execution-start through execution-end, including Guard and
+Session result persistence. Guard check and optional revalidation have separate
+samples. Admitted actions include the existing Manager timings for total, queue,
+Driver round trip, condition wait and final observation/image processing.
+These phases are nested, not additive across request/tool/action totals. A zero
+wait duration means no condition wait occurred; omitted stream/Guard fields
+mean their measurement boundary was not reached. Tool/request sequence numbers
+identify first and subsequent calls; fixture setup is outside Loop elapsed time,
+the shared service is already running and OS/provider caches are not controlled.
+Do not label this a cold process-start benchmark.
+
+The scripted native timing gate passed with race detection on 2026-09-27:
+11 requests, 10 tools, six actions, nine images and zero approvals/scope refusals.
+Its Loop took 23.35 s; sampled Driver round trips were 2.40–3.28 s and final
+observations 0.35–0.39 s. This is one instrumented acceptance run, not a speedup,
+statistical performance comparison or actual-model result. The scripted gate
+also writes/reads the report in its temporary directory. Timings remain outside
+model messages and Session JSON; they contain no input values, window identities,
+credentials or images. Offline stream tests preserve events, EOF/terminal
+semantics and Close errors through the measurement wrapper.
+
 ## Browser checks
 
 The default browser/dependency tests use fake commands and local HTTP fixtures,

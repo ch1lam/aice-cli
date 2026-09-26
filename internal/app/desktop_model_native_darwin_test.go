@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -108,7 +109,8 @@ func testNativeMacModelTask(t *testing.T, model llm.Model, options llm.StreamOpt
 	sentinel := startMacPrintFixture(t, ctx, appKit, prefix+"Sentinel", true)
 	awaitNativePrintState(t, ctx, sentinel, func(s nativePrintState) bool { return s.Active })
 	query := "AICE CLI " + prefix + "Target"
-	scope := &nativeModelScope{query: query, targets: targets, refs: make(map[string]bool), observations: make(map[string]bool), captured: make(map[string]bool)}
+	timings := &nativeModelTimings{}
+	scope := &nativeModelScope{timings: timings, query: query, targets: targets, refs: make(map[string]bool), observations: make(map[string]bool), captured: make(map[string]bool)}
 	bind := state.bind
 	state.bind = func(ctx context.Context, options desktop.RunOptions) (tool.DesktopBackend, func() error, error) {
 		backend, closeRun, err := bind(ctx, options)
@@ -134,7 +136,7 @@ func testNativeMacModelTask(t *testing.T, model llm.Model, options llm.StreamOpt
 	}
 	gate.SetDesktopEnabled(configuration.DesktopEnabled)
 	guard.desktop = state
-	countedGuard := &nativeModelGuard{Guard: guard}
+	countedGuard := &nativeModelGuard{Guard: guard, timings: timings}
 	typed, err := tool.NewDesktopTools(state)
 	if err != nil {
 		t.Fatal(err)
@@ -143,7 +145,7 @@ func testNativeMacModelTask(t *testing.T, model llm.Model, options llm.StreamOpt
 	for _, capability := range typed {
 		taskTools = append(taskTools, capability)
 	}
-	observer := &nativeModelObserver{Streamer: factory(targets, query), model: model, results: make(map[string]llm.ToolResultMessage)}
+	observer := &nativeModelObserver{timings: timings, Streamer: factory(targets, query), model: model, results: make(map[string]llm.ToolResultMessage)}
 	loop, err := agent.NewLoop(observer, taskTools, agent.WithGuard(countedGuard), agent.WithRunLimits(agent.RunLimits{
 		MaxTurns: 20, Tokens: 100000, Timeout: 5 * time.Minute, NoProgress: 3,
 	}))
@@ -183,13 +185,14 @@ func testNativeMacModelTask(t *testing.T, model llm.Model, options llm.StreamOpt
 		MessageRecorder: func(ctx context.Context, message llm.AgentMessage) error {
 			return appendSessionMessage(ctx, store, message)
 		},
-	}, nil)
+	}, timings.event)
 	elapsed := time.Since(started)
 	accepted := false
 	t.Logf("actual_model=%v provider=%s model=%s thinking=%s driver=%s elapsed=%s requests=%d images=%d guard_asks=%d scope_refusals=%d reported_tokens=%d", actual, model.Provider, model.ID, options.Thinking, desktop.DriverVersion, elapsed, observer.requests, observer.images, countedGuard.asks, scope.refusals, result.Usage.TotalTokens)
 	defer func() {
-		if !actual {
-			return
+		network := "scripted decisions; no model network"
+		if actual {
+			network = "configured provider transport; network latency not isolated"
 		}
 		report := struct {
 			Provider                                   llm.ProviderID    `json:"provider"`
@@ -200,7 +203,17 @@ func testNativeMacModelTask(t *testing.T, model llm.Model, options llm.StreamOpt
 			Usage                                      llm.Usage `json:"usage"`
 			LoopCompleted                              bool      `json:"loop_completed"`
 			Accepted                                   bool      `json:"accepted"`
-		}{model.Provider, model.ID, options.Thinking, elapsed.Milliseconds(), observer.requests, observer.images, countedGuard.asks, scope.refusals, result.Usage, runErr == nil, accepted && !t.Failed()}
+			ActualModel                                bool      `json:"actual_model"`
+			Platform, Architecture, Driver, Network    string
+			Timings                                    *nativeModelTimings `json:"timings"`
+		}{
+			Provider: model.Provider, Model: model.ID, Thinking: options.Thinking,
+			ElapsedMS: elapsed.Milliseconds(), Requests: observer.requests, Images: observer.images,
+			GuardAsks: countedGuard.asks, ScopeRefusals: scope.refusals, Usage: result.Usage,
+			LoopCompleted: runErr == nil, Accepted: accepted && !t.Failed(), ActualModel: actual,
+			Platform: runtime.GOOS, Architecture: runtime.GOARCH, Driver: desktop.DriverVersion,
+			Network: network, Timings: timings,
+		}
 		data, err := json.MarshalIndent(report, "", "  ")
 		if err != nil {
 			t.Fatal(err)
@@ -208,7 +221,17 @@ func testNativeMacModelTask(t *testing.T, model llm.Model, options llm.StreamOpt
 		if err := os.WriteFile(filepath.Join(artifacts, "report.json"), data, 0600); err != nil {
 			t.Fatal(err)
 		}
-		t.Logf("actual-model artifacts retained at %s", artifacts)
+		if actual {
+			t.Logf("actual-model artifacts retained at %s", artifacts)
+		}
+		// Read back the actual report format in the scripted gate as well.
+		var saved struct {
+			Timings nativeModelTimings `json:"timings"`
+		}
+		data, err = os.ReadFile(filepath.Join(artifacts, "report.json"))
+		if err != nil || json.Unmarshal(data, &saved) != nil || len(saved.Timings.Requests) != observer.requests || len(saved.Timings.Tools) != len(timings.Tools) {
+			t.Error("timing report did not survive JSON serialization", err)
+		}
 	}()
 	if runErr != nil {
 		t.Fatal("bounded model task did not complete", runErr)
@@ -218,6 +241,25 @@ func testNativeMacModelTask(t *testing.T, model llm.Model, options llm.StreamOpt
 		awaitNativePrintState(t, ctx, target, func(s nativePrintState) bool {
 			return s.Value == value && s.Result == "Result: "+value && s.Commits == 1
 		})
+	}
+	timings.verify(t, observer.requests, len(observer.results))
+	if !actual {
+		// This known scripted sequence has no retries and returns one complete
+		// action event in each of its first ten provider requests.
+		for i, request := range timings.Requests {
+			if (request.PreparationMS != nil) != (i > 0) || (request.FirstToolCallMS != nil) != (i < 10) {
+				t.Fatal("scripted timing gate missed request preparation or action output")
+			}
+		}
+		actions := 0
+		for _, call := range timings.Tools {
+			if call.Action != nil {
+				actions++
+			}
+		}
+		if actions != 6 {
+			t.Fatal("scripted timing gate did not retain all six native actions")
+		}
 	}
 	if countedGuard.asks != 0 || scope.refusals != 0 || observer.images < 3 || len(scope.captured) != len(targets) {
 		t.Fatal("model task needed approval, left its scope, or lacked images")
@@ -247,6 +289,7 @@ func testNativeMacModelTask(t *testing.T, model llm.Model, options llm.StreamOpt
 // results or introduce an application allowlist in the product.
 type nativeModelScope struct {
 	tool.DesktopBackend
+	timings                      *nativeModelTimings
 	query                        string
 	targets                      []nativePrintFixture
 	refs, observations, captured map[string]bool
@@ -313,6 +356,12 @@ func (s *nativeModelScope) Act(ctx context.Context, request desktop.ActRequest) 
 	}
 	delete(s.observations, request.ObservationRef)
 	result, err := s.DesktopBackend.Act(ctx, request)
+	if s.timings != nil && s.timings.active != nil {
+		s.timings.active.Action = &nativeModelActionTiming{
+			Kind: request.Kind, TotalMS: nativeMS(result.Timing.Total), QueueMS: nativeMS(result.Timing.Queue),
+			DriverMS: nativeMS(result.Timing.Driver), ConditionWaitMS: nativeMS(result.Timing.ConditionWait), ObservationMS: nativeMS(result.Timing.Observation),
+		}
+	}
 	if result.Observation != nil {
 		s.observations[result.Observation.Ref] = true
 	}
@@ -321,11 +370,28 @@ func (s *nativeModelScope) Act(ctx context.Context, request desktop.ActRequest) 
 
 type nativeModelGuard struct {
 	agent.Guard
-	asks int
+	timings *nativeModelTimings
+	asks    int
 }
 
 func (g *nativeModelGuard) Check(ctx context.Context, call llm.ToolCall) (agent.GuardResult, error) {
+	started := time.Now()
 	result, err := g.Guard.Check(ctx, call)
+	current := g.timings.active
+	if current != nil {
+		elapsed := nativeMS(time.Since(started))
+		current.GuardMS = &elapsed
+		if result.Revalidate != nil {
+			revalidate := result.Revalidate
+			result.Revalidate = func(ctx context.Context) error {
+				started := time.Now()
+				err := revalidate(ctx)
+				elapsed := nativeMS(time.Since(started))
+				current.RevalidateMS = &elapsed
+				return err
+			}
+		}
+	}
 	if result.Decision == agent.GuardAsk {
 		g.asks++
 	}
@@ -334,6 +400,7 @@ func (g *nativeModelGuard) Check(ctx context.Context, call llm.ToolCall) (agent.
 
 type nativeModelObserver struct {
 	llm.Streamer
+	timings          *nativeModelTimings
 	model            llm.Model
 	requests, images int
 	results          map[string]llm.ToolResultMessage
@@ -361,7 +428,14 @@ func (m *nativeModelObserver) Stream(ctx context.Context, request llm.Request) (
 			}
 		}
 	}
-	return m.Streamer.Stream(ctx, request)
+	measurement := m.timings.startRequest()
+	stream, err := m.Streamer.Stream(ctx, request)
+	if err != nil || stream == nil {
+		elapsed := nativeMS(time.Since(measurement.started))
+		measurement.FinishedMS = &elapsed
+		return stream, err
+	}
+	return &nativeModelTimedStream{Stream: stream, measurement: measurement}, nil
 }
 
 func verifyNativeModelReplay(t *testing.T, ctx context.Context, path string, delivered map[string]llm.ToolResultMessage) {
