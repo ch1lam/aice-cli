@@ -8,11 +8,13 @@ final class Fixture: NSObject, NSApplicationDelegate {
     var window: NSWindow!
     var input: NSTextField!
     var result: NSTextField!
+    var button: NSButton!
     var timer: Timer?
     var commits = 0
     var focusLosses = 0
     var armed = false
     var ticks = 0
+    var resized = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         window = NSWindow(contentRect: NSRect(x: 100, y: 100, width: 500, height: 300),
@@ -27,7 +29,7 @@ final class Fixture: NSObject, NSApplicationDelegate {
         input.frame = NSRect(x: 30, y: 180, width: 440, height: 30)
         input.setAccessibilityLabel("Task value")
         view.addSubview(input)
-        let button = NSButton(title: "Commit", target: self, action: #selector(commit))
+        button = NSButton(title: "Commit", target: self, action: #selector(commit))
         button.frame = NSRect(x: 30, y: 125, width: 100, height: 32)
         view.addSubview(button)
         result = NSTextField(labelWithString: "Result: pending")
@@ -57,6 +59,10 @@ final class Fixture: NSObject, NSApplicationDelegate {
     }
 
     func sample() {
+        if !sentinel && !resized && FileManager.default.fileExists(atPath: directory.appendingPathComponent("resize").path) {
+            resized = true
+            window.setContentSize(NSSize(width: 900, height: 350))
+        }
         if !armed && FileManager.default.fileExists(atPath: directory.appendingPathComponent("arm").path) {
             armed = true
             focusLosses = 0
@@ -64,6 +70,7 @@ final class Fixture: NSObject, NSApplicationDelegate {
         ticks += 1
         let editor = input.currentEditor() as? NSTextView
         let selection = editor?.selectedRange()
+        let buttonScreen = window.convertPoint(toScreen: button.convert(NSPoint(x: button.bounds.midX, y: button.bounds.midY), to: nil))
         let state: [String: Any] = ["pid": ProcessInfo.processInfo.processIdentifier,
                                   "active": NSApp.isActive, "armed": armed,
                                   "visible": window.isVisible, "key": window.isKeyWindow,
@@ -71,6 +78,9 @@ final class Fixture: NSObject, NSApplicationDelegate {
                                   "front_is_login": NSWorkspace.shared.frontmostApplication?.bundleIdentifier == "com.apple.loginwindow",
                                   "activation_policy": NSRunningApplication.current.activationPolicy.rawValue,
                                   "focus_losses": focusLosses, "ticks": ticks,
+                                  "width": window.frame.width, "height": window.frame.height,
+                                  "button_x": buttonScreen.x - window.frame.minX,
+                                  "button_y": window.frame.maxY - buttonScreen.y,
                                   "value": editor?.string ?? input.stringValue, "result": result.stringValue,
                                   "selection_location": selection?.location ?? -1,
                                   "selection_length": selection?.length ?? -1,

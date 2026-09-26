@@ -523,6 +523,26 @@ hotkey. The sentinel detects activation loss and misdirected text; it does not
 generate physical or IME input. Pixel actions,
 other toolkits, overlay and real user coexistence remain separate acceptance.
 
+The separate macOS pixel-click gate measures the AppKit button center and
+window frame independently, converts that geometry into coordinates in the
+actual returned image, and dispatches through the production Manager. It checks
+one real commit, then separately resizes the window and requires
+`capture_frame_mismatch`/`refused` with zero commits. Only a newly returned image
+and newly calculated point may complete the second case. Both cases verify the
+foreground sentinel through connection cleanup and preserve the shared service:
+
+```sh
+AICE_CUA_NATIVE=1 go test -tags=integration ./internal/desktop -run '^TestNativeMacPixelClick$' -v
+```
+
+Both cases passed on the authorized macOS host on 2026-09-27. The initial
+500×328-point window produced a 1000×656-pixel image. Independent widget state
+confirmed the click even though the Driver reported `effect:unverifiable`.
+The resized 900×378-point frame produced a 1600×672-pixel image and its newly
+calculated point committed once, covering Driver downscaling on this Retina host.
+This is screenshot-coordinate acceptance on the AppKit fixture, not visual model
+recognition, crop/negative-monitor geometry, scrolling, dragging or overlay QA.
+
 The application-level macOS gate uses the same synthetic AppKit fixture with a
 scripted model through the actual print command, Guard, typed tools, production
 desktop constructor and Session writer. It checks three exact-window Unicode

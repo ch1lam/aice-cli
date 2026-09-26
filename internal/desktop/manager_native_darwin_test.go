@@ -262,21 +262,25 @@ type nativeFixture struct {
 }
 
 type nativeFixtureState struct {
-	PID               int    `json:"pid"`
-	Active            bool   `json:"active"`
-	Visible           bool   `json:"visible"`
-	Key               bool   `json:"key"`
-	FrontPID          int    `json:"front_pid"`
-	FrontIsLogin      bool   `json:"front_is_login"`
-	ActivationPolicy  int    `json:"activation_policy"`
-	Armed             bool   `json:"armed"`
-	FocusLosses       int    `json:"focus_losses"`
-	Ticks             int    `json:"ticks"`
-	Value             string `json:"value"`
-	Result            string `json:"result"`
-	Commits           int    `json:"commits"`
-	SelectionLocation int    `json:"selection_location"`
-	SelectionLength   int    `json:"selection_length"`
+	PID               int     `json:"pid"`
+	Active            bool    `json:"active"`
+	Visible           bool    `json:"visible"`
+	Key               bool    `json:"key"`
+	FrontPID          int     `json:"front_pid"`
+	FrontIsLogin      bool    `json:"front_is_login"`
+	ActivationPolicy  int     `json:"activation_policy"`
+	Armed             bool    `json:"armed"`
+	FocusLosses       int     `json:"focus_losses"`
+	Ticks             int     `json:"ticks"`
+	Value             string  `json:"value"`
+	Result            string  `json:"result"`
+	Commits           int     `json:"commits"`
+	SelectionLocation int     `json:"selection_location"`
+	SelectionLength   int     `json:"selection_length"`
+	Width             float64 `json:"width"`
+	Height            float64 `json:"height"`
+	ButtonX           float64 `json:"button_x"`
+	ButtonY           float64 `json:"button_y"`
 }
 
 func startNativeFixture(t *testing.T, ctx context.Context, binary, label string, sentinel bool) nativeFixture {
