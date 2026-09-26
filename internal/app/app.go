@@ -27,6 +27,7 @@ import (
 	"github.com/ch1lam/aice-cli/internal/interaction"
 	"github.com/ch1lam/aice-cli/internal/llm"
 	"github.com/ch1lam/aice-cli/internal/provider"
+	"github.com/ch1lam/aice-cli/internal/provider/claudesubscription"
 	"github.com/ch1lam/aice-cli/internal/provider/codex"
 	"github.com/ch1lam/aice-cli/internal/session"
 	"github.com/ch1lam/aice-cli/internal/skill"
@@ -68,6 +69,8 @@ type dependencies struct {
 	compactionKeepRecentTokens int64
 	providers                  []provider.Provider
 	userHomeDir                func() (string, error)
+	claudeLogin                func(context.Context, io.Writer) (config.ClaudeSubscriptionCredentials, error)
+	claudeInteractiveLogin     func(context.Context, claudesubscription.LoginInteraction) (config.ClaudeSubscriptionCredentials, error)
 	codexLogin                 func(context.Context, bool, io.Writer) (config.CodexCredentials, error)
 	codexInteractiveLogin      func(context.Context, bool, codex.LoginInteraction) (config.CodexCredentials, error)
 	openBrowser                func(context.Context, string) error
@@ -103,6 +106,12 @@ func newCommand(dependencies dependencies) (*cobra.Command, error) {
 	}
 	if dependencies.runTUI == nil {
 		dependencies.runTUI = tui.Run
+	}
+	if dependencies.claudeLogin == nil {
+		dependencies.claudeLogin = (claudesubscription.AuthClient{}).Login
+	}
+	if dependencies.claudeInteractiveLogin == nil {
+		dependencies.claudeInteractiveLogin = (claudesubscription.AuthClient{}).LoginWithInteraction
 	}
 	if dependencies.codexLogin == nil {
 		dependencies.codexLogin = (codex.AuthClient{}).Login

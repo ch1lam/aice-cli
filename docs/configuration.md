@@ -61,7 +61,7 @@ peak billing is twice the estimate.
 
 | Setting | Environment variable | Supported values |
 | --- | --- | --- |
-| Provider | `AICE_PROVIDER` | `deepseek`, `opencode-go`, `kimi-coding`, `moonshot`, `zhipu`, `zhipu-coding`, `openai`, `anthropic`, `openai-codex`, `aihubmix`, `custom` |
+| Provider | `AICE_PROVIDER` | `deepseek`, `opencode-go`, `kimi-coding`, `moonshot`, `zhipu`, `zhipu-coding`, `openai`, `anthropic`, `anthropic-subscription`, `openai-codex`, `aihubmix`, `custom` |
 | Model | `AICE_MODEL` | A catalog model, or any model ID for `custom` |
 | Thinking | `AICE_THINKING` | `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` |
 | Default Project Trust | `AICE_DEFAULT_PROJECT_TRUST` | `ask`, `always`, `never`; project values cannot grant startup trust |
@@ -423,8 +423,8 @@ API keys are stored by provider in `~/.aice/auth.json` with file mode
 `0600`. Keys and endpoints follow the same precedence as other settings.
 The auth file normally holds credentials, but both JSON files share the full
 schema. For each row below, the file endpoint key replaces `_api_key` in the
-auth key with `_base_url`, for example `openai_base_url`. Codex OAuth
-credentials use a separate file as described below.
+auth key with `_base_url`, for example `openai_base_url`. Codex and Claude subscription OAuth
+credentials each use a separate file as described below.
 
 | Provider | API key environment variable | Auth file key | Base URL override |
 | --- | --- | --- | --- |
@@ -514,10 +514,58 @@ account access, tier limits and actual billing remain controlled by Anthropic.
 Live account/model access has not been verified.
 
 Claude Pro/Max subscriptions do not supply an API key or API credit for this
-provider. AICE does not import Claude Code credentials or offer Claude.ai OAuth.
-Anthropic's [authentication rules](https://code.claude.com/docs/en/legal-and-compliance#authentication-and-credential-use)
-reserve that login for its own applications and permit users to sign in to the
-unmodified Claude Code binary. AICE currently has no Claude Code process bridge.
+provider. Use the separate subscription provider below for account login.
+
+### Claude subscription (Pro/Max OAuth)
+
+Select `/login` → `Sign in with an account` → `Claude Pro/Max` → `Browser login`.
+AICE opens the authorization page and receives the callback on
+`127.0.0.1:53692` (`http://localhost:53692/callback`). The TUI also accepts a
+pasted authorization code or callback URL. If another login owns that port,
+finish or cancel it before retrying. Escape or Ctrl+C cancels the login and
+closes the callback listener. Terminal commands print a URL and wait for the
+browser callback; there is no device-code flow.
+
+```sh
+aice auth login --provider anthropic-subscription
+aice auth status --provider anthropic-subscription
+aice --provider anthropic-subscription --model claude-sonnet-5
+aice auth logout --provider anthropic-subscription
+```
+
+Successful login saves the provider and a compatible model; TUI login also
+activates them in the current Session. `/provider` or `Use saved credential`
+switches back without authorizing again. This provider shares the Claude API
+model catalog and thinking choices above; model access, context limits and
+subscription quota depend on the account. AICE does not quote API prices for
+subscription requests or infer remaining quota from token usage.
+
+AICE implements the native PKCE OAuth and Messages protocol used by
+[Pi's Anthropic OAuth implementation](https://github.com/badlogic/pi-mono/blob/d6af72e1857cfb10b41d8ff8e69f0d72b4cf6d31/packages/ai/src/auth/oauth/anthropic.ts).
+It needs no Claude Code executable and does not import another harness's
+credentials. The compatibility request uses Pi's OAuth client ID, required
+Claude CLI headers/system preamble and tool-name casing; the Messages adapter
+maps tool names back before AICE's Agent Loop and Guard see them. AICE retains
+ownership of tools, permission checks, history and cancellation. Ordinary API
+requests keep AICE's client identity and use their own API key.
+
+Credentials live only in `~/.aice/claude-subscription-auth.json` (mode `0600`).
+A bounded cross-process lock serializes login, logout and token refresh;
+each request rereads the file and refreshes within five minutes of expiry.
+Rotated tokens are atomically saved before use, and failed refresh preserves
+the previous file. Logout removes only this file; it stops new requests but
+does not revoke an already running request. API keys and Codex credentials
+remain independent. `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN` and
+`AICE_ANTHROPIC_BASE_URL` cannot override subscription authentication or routing;
+there is no automatic fallback to billable API access.
+
+This is third-party compatibility with Pi, not an officially supported
+Anthropic integration. Anthropic's [authentication rules](https://code.claude.com/docs/en/legal-and-compliance#authentication-and-credential-use)
+restrict subscription OAuth use to its own products; availability can change.
+OpenCode [removed its built-in Anthropic auth plugin](https://github.com/anomalyco/opencode/pull/18186),
+so its current main branch is not the implementation reference here.
+Offline tests cover login, refresh, streaming tools and replay; live account
+acceptance and subscription billing have not been verified.
 
 ### AiHubMix
 

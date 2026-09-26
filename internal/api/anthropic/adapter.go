@@ -26,7 +26,10 @@ const API llm.API = "anthropic-messages"
 
 // Config contains transport settings resolved by a provider.
 type Config struct {
-	APIKey     string
+	APIKey string
+	// OAuthToken selects the native subscription compatibility protocol.
+	// It is mutually exclusive with APIKey and never inferred from the environment.
+	OAuthToken string
 	BaseURL    string
 	HTTPClient *http.Client
 }
@@ -35,13 +38,19 @@ type Config struct {
 // SDK. Provider credentials and defaults are passed explicitly so Anthropic
 // environment variables cannot accidentally override another provider.
 type Adapter struct {
-	client anthropicsdk.Client
+	client       anthropicsdk.Client
+	subscription bool
 }
 
 // New constructs an Anthropic Messages adapter.
 func New(config Config) (*Adapter, error) {
-	if strings.TrimSpace(config.APIKey) == "" {
-		return nil, errors.New("anthropic: API key is required")
+	config.APIKey = strings.TrimSpace(config.APIKey)
+	config.OAuthToken = strings.TrimSpace(config.OAuthToken)
+	if config.APIKey == "" && config.OAuthToken == "" {
+		return nil, errors.New("anthropic: API key is required unless an OAuth token is supplied")
+	}
+	if config.APIKey != "" && config.OAuthToken != "" {
+		return nil, errors.New("anthropic: API key and OAuth token are mutually exclusive")
 	}
 	if err := validateBaseURL(config.BaseURL); err != nil {
 		return nil, err
@@ -49,18 +58,29 @@ func New(config Config) (*Adapter, error) {
 
 	opts := []option.RequestOption{
 		option.WithoutEnvironmentDefaults(),
-		option.WithAPIKey(config.APIKey),
 		option.WithBaseURL(config.BaseURL),
 		option.WithMaxRetries(0),
+	}
+	if config.OAuthToken != "" {
+		opts = append(opts, option.WithAuthToken(config.OAuthToken),
+			option.WithHeader("anthropic-beta", "claude-code-20250219,oauth-2025-04-20,interleaved-thinking-2025-05-14,fine-grained-tool-streaming-2025-05-14"),
+			option.WithHeader("x-app", "cli"), option.WithQuery("beta", "true"))
+	} else {
+		opts = append(opts, option.WithAPIKey(config.APIKey))
 	}
 	if config.HTTPClient != nil {
 		opts = append(opts, option.WithHTTPClient(config.HTTPClient))
 	}
 
-	// Client identity is owned by AICE, not a provider-specific header override.
-	opts = append(opts, option.WithHeader("User-Agent", buildinfo.UserAgent()))
+	identity := buildinfo.UserAgent()
+	if config.OAuthToken != "" {
+		// Subscription compatibility follows Pi's native OAuth request identity.
+		// API-key providers retain AICE's own identity.
+		identity = subscriptionUserAgent
+	}
+	opts = append(opts, option.WithHeader("User-Agent", identity))
 
-	return &Adapter{client: anthropicsdk.NewClient(opts...)}, nil
+	return &Adapter{client: anthropicsdk.NewClient(opts...), subscription: config.OAuthToken != ""}, nil
 }
 
 func validateBaseURL(rawURL string) error {
@@ -91,6 +111,13 @@ func (a *Adapter) Stream(ctx context.Context, request llm.Request) (llm.Stream, 
 	if err != nil {
 		return nil, err
 	}
+	var names map[string]string
+	if a.subscription {
+		names, err = subscriptionParams(&params)
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	source := a.client.Messages.NewStreaming(ctx, params)
 	if err := source.Err(); err != nil {
@@ -101,9 +128,10 @@ func (a *Adapter) Stream(ctx context.Context, request llm.Request) (llm.Stream, 
 	}
 
 	return &stream{
-		core:   streamcore.NewStream(request.Model),
-		source: source,
-		blocks: make(map[int]*blockState),
+		core:      streamcore.NewStream(request.Model),
+		source:    source,
+		blocks:    make(map[int]*blockState),
+		toolNames: names,
 	}, nil
 }
 
@@ -422,10 +450,11 @@ func (s *blockState) PartialContent() (llm.ContentPart, bool) {
 }
 
 type stream struct {
-	core   *streamcore.Stream
-	source *ssestream.Stream[anthropicsdk.MessageStreamEventUnion]
-	blocks map[int]*blockState
-	stop   llm.StopReason
+	core      *streamcore.Stream
+	source    *ssestream.Stream[anthropicsdk.MessageStreamEventUnion]
+	blocks    map[int]*blockState
+	stop      llm.StopReason
+	toolNames map[string]string
 }
 
 func (s *stream) Next() (llm.Event, error) {
@@ -543,13 +572,16 @@ func (s *stream) startBlock(
 		state.type_ = llm.ContentTypeToolCall
 		state.toolCall.ID = value.ID
 		state.toolCall.Name = value.Name
+		if original, ok := s.toolNames[value.Name]; ok {
+			state.toolCall.Name = original
+		}
 		state.initialArguments = append(json.RawMessage(nil), value.Input...)
 		events = append(events, llm.Event{
 			Type:         llm.EventTypeToolCallStart,
 			ContentIndex: index,
 			ToolCallDelta: &llm.ToolCallDelta{
 				ID:   value.ID,
-				Name: value.Name,
+				Name: state.toolCall.Name,
 			},
 		})
 	default:

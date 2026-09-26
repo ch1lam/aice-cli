@@ -77,8 +77,12 @@ aice --workspace .
 
 使用 Claude API 时，在 `/login` 选择 `Sign in with an API key` →
 `Anthropic (Claude API)`，或设置 `ANTHROPIC_API_KEY` 并运行
-`aice --provider anthropic`。Claude 订阅与 API 独立，详见
-[Claude 配置与订阅限制](./docs/configuration.md#anthropic-claude-api)。
+`aice --provider anthropic`。使用 Claude Pro/Max 时，选择 `/login` →
+`Sign in with an account` → `Claude Pro/Max`，或运行
+`aice auth login --provider anthropic-subscription`。订阅采用与 Pi 一致的原生
+OAuth 接入，不依赖 Claude Code 可执行文件。详见
+[Claude API 配置](./docs/configuration.md#anthropic-claude-api) 和
+[订阅配置与兼容性限制](./docs/configuration.md#claude-subscription-promax-oauth)。
 
 使用 Kimi Coding Plan 时，在 `/login` 选择 `Sign in with an API key` →
 `Kimi Coding Plan`。详见 [Kimi 配置](./docs/configuration.md#kimi-coding-plan)。
@@ -120,7 +124,7 @@ aice --workspace . --session .aice/sessions/<session-id>.jsonl
 | 领域 | 当前实现 |
 | --- | --- |
 | 交互 | Bubble Tea TUI（按 provider/model 显示[上下文使用百分比](./docs/configuration.md#context-window-and-status-bar)）与一次性 `--print` 模式 |
-| Provider | DeepSeek V4、OpenCode Go 内建模型目录、Kimi Coding Plan（Responses API）、Moonshot 开放平台 API、智谱开放平台 API 与 Coding Plan、OpenAI API（GPT-6 Astra 与 GPT-5.6）、Claude API、Codex/ChatGPT 订阅、AiHubMix，以及 Custom（OpenAI 兼容） |
+| Provider | DeepSeek V4、OpenCode Go 内建模型目录、Kimi Coding Plan（Responses API）、Moonshot 开放平台 API、智谱开放平台 API 与 Coding Plan、OpenAI API（GPT-6 Astra 与 GPT-5.6）、Claude API 与 Pro/Max 订阅、Codex/ChatGPT 订阅、AiHubMix，以及 Custom（OpenAI 兼容） |
 | 协议 | Anthropic Messages、OpenAI Responses、OpenAI Chat Completions |
 | 工具 | `read`、`write`、`edit`、`bash`、`grep`、`find`、`ls`、`skill`、`web_search`、`web_fetch` |
 | 联网 | Exa Search API 服务实例与可排序来源列表（`native` 预留、未实现）、带防护的直连网页抓取、来源写入 Session 历史、`/web` 设置；见[联网搜索与抓取](./docs/web.md) |
@@ -163,7 +167,7 @@ go vet ./...
 ## 当前状态
 
 AICE 仍在快速迭代，稳定版发布前 Session 与配置格式仍可能变化。内核保持
-provider-neutral；当前内建 provider 为 DeepSeek、OpenCode Go、Kimi Coding Plan、Moonshot API、智谱 API/Coding Plan、OpenAI、Anthropic、Codex、AiHubMix 与
+provider-neutral；当前内建 provider 为 DeepSeek、OpenCode Go、Kimi Coding Plan、Moonshot API、智谱 API/Coding Plan、OpenAI、Anthropic API 与订阅、Codex、AiHubMix 与
 Custom。
 
 ## 许可证

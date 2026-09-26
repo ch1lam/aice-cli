@@ -13,6 +13,7 @@ import (
 	"github.com/ch1lam/aice-cli/internal/interaction"
 	"github.com/ch1lam/aice-cli/internal/llm"
 	"github.com/ch1lam/aice-cli/internal/provider"
+	"github.com/ch1lam/aice-cli/internal/provider/claudesubscription"
 	"github.com/ch1lam/aice-cli/internal/provider/codex"
 	"github.com/ch1lam/aice-cli/internal/provider/custom"
 	"github.com/ch1lam/aice-cli/internal/provider/deepseek"
@@ -91,7 +92,7 @@ func (s *interactiveSession) loginProviderMenu() *interaction.CommandMenu {
 	settings := s.settingsSnapshot()
 	var accounts, keys []interaction.CommandOption
 	for _, option := range loginProviderOptions(s.providers, settings.configuration) {
-		if option.Arguments == string(codex.ProviderID) {
+		if option.Arguments == string(codex.ProviderID) || option.Arguments == string(claudesubscription.ProviderID) {
 			accounts = append(accounts, option)
 		} else {
 			keys = append(keys, option)
@@ -167,6 +168,14 @@ func loginProviderOptions(
 ) []interaction.CommandOption {
 	options := providerOptions(providers, configuration)
 	for index, candidate := range providers {
+		if candidate.ProviderID() == claudesubscription.ProviderID {
+			methods := []interaction.CommandOption{{Label: "Browser login", Arguments: string(claudesubscription.ProviderID), LoginMethod: "browser"}}
+			if candidate.Configured(configuration) {
+				methods = append(methods, interaction.CommandOption{Label: "Use saved credential", Arguments: string(claudesubscription.ProviderID), UseSavedCredential: true})
+			}
+			options[index].Menu = &interaction.CommandMenu{Title: "Claude subscription login", Options: methods}
+			continue
+		}
 		if candidate.ProviderID() == codex.ProviderID {
 			methods := []interaction.CommandOption{
 				{Label: "Browser login (default)", Arguments: string(codex.ProviderID), LoginMethod: "browser"},
@@ -652,6 +661,12 @@ func (s *interactiveSession) slashProvider(
 			return "", err
 		}
 	}
+	if value == string(claudesubscription.ProviderID) {
+		configuration.ClaudeSubscriptionCredentials, err = config.LoadClaudeSubscriptionCredentials(configuration.Paths)
+		if err != nil {
+			return "", err
+		}
+	}
 	model := providerModel(s.providers, value, configuration.Model)
 	changes := map[config.Setting]string{config.SettingProvider: value}
 	if model.ID != configuration.Model {
@@ -828,6 +843,12 @@ func (s *interactiveSession) login(
 			strings.Join(knownProviders(s.providers), ", "),
 		)
 	}
+	if provider == string(claudesubscription.ProviderID) {
+		if request.Secret != "" {
+			return "", fmt.Errorf("app: Claude subscriptions use OAuth; run aice auth login --provider anthropic-subscription")
+		}
+		return s.slashProvider(ctx, interaction.CommandRequest{Name: "provider", Arguments: provider})
+	}
 	if provider == string(codex.ProviderID) {
 		if request.Secret != "" {
 			return "", fmt.Errorf("app: Codex uses OAuth; run aice auth login --provider openai-codex")
@@ -985,7 +1006,7 @@ func (s *interactiveSession) settingsInformation() string {
 		apiKey = "configured"
 	}
 	credentialLabel := "API key"
-	if settings.model.Provider == codex.ProviderID {
+	if settings.model.Provider == codex.ProviderID || settings.model.Provider == claudesubscription.ProviderID {
 		credentialLabel = "OAuth credential"
 	}
 	endpoint := strings.TrimSpace(settings.configuration.CustomBaseURL)

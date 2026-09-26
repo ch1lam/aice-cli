@@ -16,6 +16,9 @@ import (
 // loginAccount runs within the existing command lifetime. Only successful
 // authorization updates disk and the current Session's provider state.
 func (s *interactiveSession) loginAccount(ctx context.Context, request interaction.CommandRequest) (string, error) {
+	if request.Arguments == "anthropic-subscription" {
+		return s.loginClaudeAccount(ctx, request)
+	}
 	if request.Arguments != string(codex.ProviderID) || request.Secret != "" || request.UseSavedCredential {
 		return "", errors.New("app: invalid account login request")
 	}

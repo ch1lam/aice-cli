@@ -28,13 +28,16 @@ func newAuthCommand(authenticator Authenticator) *cobra.Command {
 			Use: action, Short: action + " for a subscription provider",
 			Args: func(command *cobra.Command, args []string) error { return newUsageError(cobra.NoArgs(command, args)) },
 			RunE: func(command *cobra.Command, _ []string) error {
-				if request.Provider != "openai-codex" {
-					return newUsageError(fmt.Errorf("subscription auth supports openai-codex; use config set-key for API keys"))
+				if request.Provider != "openai-codex" && request.Provider != "anthropic-subscription" {
+					return newUsageError(fmt.Errorf("subscription auth supports openai-codex and anthropic-subscription; use config set-key for API keys"))
+				}
+				if request.Provider == "anthropic-subscription" && request.DeviceCode {
+					return newUsageError(fmt.Errorf("Claude subscription uses browser login; omit --device-code"))
 				}
 				return authenticator.Auth(command.Context(), request, command.OutOrStdout())
 			},
 		}
-		child.Flags().StringVar(&request.Provider, "provider", request.Provider, "subscription provider (openai-codex)")
+		child.Flags().StringVar(&request.Provider, "provider", request.Provider, "subscription provider (openai-codex, anthropic-subscription)")
 		if action == "login" {
 			child.Flags().BoolVar(&request.DeviceCode, "device-code", false, "use device code login for remote or headless terminals")
 		}

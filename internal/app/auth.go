@@ -15,6 +15,9 @@ import (
 // Auth performs explicit OAuth operations outside model runs. Login persists
 // credentials before switching settings; logout never touches Session history.
 func (a *application) Auth(ctx context.Context, request cli.AuthRequest, output io.Writer) error {
+	if request.Provider == "anthropic-subscription" {
+		return a.authClaude(ctx, request, output)
+	}
 	if request.Provider != string(codex.ProviderID) {
 		return errors.New("app: unsupported subscription provider")
 	}

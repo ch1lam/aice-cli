@@ -191,6 +191,8 @@ type Config struct {
 	// after an interactive save without rereading files or the environment.
 	webCredentials map[string]string
 	webEnv         func(string) (string, bool)
+
+	ClaudeSubscriptionCredentials ClaudeSubscriptionCredentials
 }
 
 // LoadOptions supplies invocation-specific configuration inputs. Files and
@@ -393,6 +395,14 @@ func LoadFiles(paths Paths, options LoadOptions) (Config, error) {
 		}
 		c.Diagnostics = append(c.Diagnostics, fmt.Sprintf("Ignored unparseable credentials %s", CodexAuthPath(paths)))
 	}
+	c.ClaudeSubscriptionCredentials, err = LoadClaudeSubscriptionCredentials(paths)
+	if err != nil {
+		var syntax *sourceSyntaxError
+		if !errors.As(err, &syntax) {
+			return Config{}, err
+		}
+		c.Diagnostics = append(c.Diagnostics, fmt.Sprintf("Ignored unparseable credentials %s", ClaudeSubscriptionAuthPath(paths)))
+	}
 	return c, nil
 }
 
@@ -418,6 +428,7 @@ func (c Config) WithSettings(changes map[Setting]string) (Config, error) {
 		return Config{}, err
 	}
 	next.Paths, next.CodexCredentials = c.Paths, c.CodexCredentials
+	next.ClaudeSubscriptionCredentials = c.ClaudeSubscriptionCredentials
 	next.Diagnostics, next.startupOverrides = c.Diagnostics, c.startupOverrides
 	next.Web, next.webCredentials, next.webEnv = c.Web, c.webCredentials, c.webEnv
 	return next, nil

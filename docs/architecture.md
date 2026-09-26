@@ -123,7 +123,7 @@ model context remains independently derived through compaction checkpoints.
 | `internal/llm` | Canonical messages, models, usage, streams, context estimates |
 | `internal/api/{anthropic,openairesponses,openaicompletions}` | Protocol translation around official SDKs |
 | `internal/api/streamcore` | Protocol-neutral streaming mechanics shared by adapters |
-| `internal/provider/{deepseek,opencode,kimi,moonshot,zhipu,openai,anthropic,codex,aihubmix,custom}` | Provider catalogs, credentials, defaults, compatibility; `zhipu` owns separate API Platform and Coding Plan presets; `codex` owns ChatGPT OAuth; `custom` accepts arbitrary model IDs |
+| `internal/provider/{deepseek,opencode,kimi,moonshot,zhipu,openai,anthropic,claudesubscription,codex,aihubmix,custom}` | Provider catalogs, credentials, defaults, compatibility; `zhipu` owns separate API Platform and Coding Plan presets; `codex` owns ChatGPT OAuth; `claudesubscription` owns Claude Pro/Max OAuth; `custom` accepts arbitrary model IDs |
 | `internal/tool` | `read`, `write`, `edit`, `bash`, `grep`, `find`, `ls`, `skill`, `request_user_input` (interactive-only), `web_search`, `web_fetch` |
 | `internal/evidence` | Leaf source/evidence contract retained as tool-result metadata; deterministic source IDs, validation, cloning |
 | `internal/web` | Provider-neutral search/fetch requests and results, classified errors, domain policy, pure source resolver, deterministic model rendering |
@@ -167,14 +167,17 @@ such as `core`, `types`, `services`, `utils`, or `helpers`.
   model-specific reasoning policy.
 - Interfaces are defined by consumers. Constructors normally return concrete
   types; adapter factories may return the consumer capability they select.
-- Codex subscription login is an application command using the provider's
+- Codex and Claude subscription login are application commands using the provider's
   OAuth client, shared by terminal auth commands and the TUI’s cancellable
   account-login flow. The app opens the browser; transient interaction events
-  carry progress and manual authorization input. `internal/config` owns AICE's separate OAuth credential file,
+  carry progress and manual authorization input. `internal/config` owns AICE's separate per-provider OAuth credential files,
   atomic replacement, and a bounded cross-process lock. Each model request
   rereads credentials under that lock and refreshes near expiry before sending.
   The Responses adapter owns Codex wire differences and encrypted reasoning
-  replay. No external harness, subprocess agent, or additional runtime is used.
+  replay. The Messages adapter owns Claude subscription compatibility headers,
+  the required identity preamble, and reversible tool-name mapping. These apply
+  only to explicitly supplied OAuth tokens; API-key clients retain AICE identity.
+  No external harness, subprocess agent, or additional runtime is used.
 - Do not use mutable global service registries or `init()` wiring. Fixed,
   package-private dispatch tables are ordinary implementation data, not an
   extension mechanism; keep dependency construction in `internal/app`. Do not
