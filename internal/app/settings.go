@@ -38,6 +38,10 @@ func settingPresentation(id string) (category, label, description string, timing
 		return "models", "Context windows", "Override a provider/model capacity in tokens. Removing an entry uses its catalog default.", timing, false
 	case "browser_headed":
 		return "tools", "Show browser window", "Changes visibility of the next managed browser session.", interaction.SettingNextBrowser, false
+	case "desktop_enabled":
+		return "tools", "Computer Use", "Allow desktop access beyond the project. Task window content may be sent to the current model provider; actions affect real applications. User preference only; enabled does not mean ready.", timing, false
+	case "desktop_control_mode":
+		return "tools", "Computer Use control mode", "Background only refuses actions that need foreground input. Foreground allowed may affect your real keyboard, pointer and focused window. Applies to the next run.", timing, false
 	case "max_turns":
 		return "limits", "Maximum turns", "0 means unlimited model turns.", timing, false
 	case "run_token_budget":
@@ -102,6 +106,12 @@ func (s *interactiveSession) ReadSettings(ctx context.Context) (interaction.Sett
 			field.DisabledReason = disabled
 		}
 		switch def.ID {
+		case config.SettingDesktopEnabled, config.SettingDesktopControlMode:
+			field.Keywords = []string{"desktop", "computer", "cua", "permission", "background", "foreground"}
+			field.DisabledReason = "Computer Use setup is still being integrated"
+			if def.ID == config.SettingDesktopControlMode {
+				field.Choices = []interaction.SettingChoice{{Value: string(config.DesktopBackgroundOnly), Label: "Background only"}, {Value: string(config.DesktopForegroundAllowed), Label: "Foreground allowed"}}
+			}
 		case config.SettingProvider:
 			field.Effective = activeProvider(settings.model, settings.configuration)
 			for _, candidate := range s.providers {

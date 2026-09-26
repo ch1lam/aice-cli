@@ -79,6 +79,7 @@ type SettingDefinition struct {
 	Kind        ValueKind
 	Default     SettingValue
 	Environment string
+	UserOnly    bool // only the user settings file and explicit runtime patches may supply it
 }
 
 // SettingDefinitions returns an independent catalog of editable preferences.
@@ -90,6 +91,8 @@ func SettingDefinitions() []SettingDefinition {
 		{ID: SettingThinking, Kind: EnumValue, Default: SettingValue{Text: string(llm.DefaultThinkingLevel)}},
 		{ID: "default_project_trust", Kind: EnumValue, Default: SettingValue{Text: string(trust.DefaultAsk)}},
 		{ID: SettingBrowserHeaded, Kind: BoolValue},
+		{ID: SettingDesktopEnabled, Kind: BoolValue, UserOnly: true},
+		{ID: SettingDesktopControlMode, Kind: EnumValue, UserOnly: true, Default: SettingValue{Text: string(DesktopBackgroundOnly)}},
 		{ID: "no_dep_install", Kind: BoolValue},
 		{ID: "no_update_check", Kind: BoolValue},
 		{ID: "max_turns", Kind: IntValue},

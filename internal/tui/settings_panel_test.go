@@ -160,16 +160,16 @@ func TestSettingsCursorTracksUnicodeEditorAndCell(t *testing.T) {
 
 type actionFixture struct{ stopped chan struct{} }
 
-func (f actionFixture) RunSettingsAction(ctx context.Context, _ uint64, request interaction.CommandRequest) (string, error) {
+func (f actionFixture) RunSettingsAction(ctx context.Context, _ uint64, request interaction.CommandRequest) (interaction.SettingsActionResult, error) {
 	defer close(f.stopped)
 	if err := request.Auth.Notify(ctx, interaction.AuthPrompt{Title: "Synthetic credential", AllowInput: true}); err != nil {
-		return "", err
+		return interaction.SettingsActionResult{}, err
 	}
 	select {
 	case <-ctx.Done():
-		return "", ctx.Err()
+		return interaction.SettingsActionResult{}, ctx.Err()
 	case <-request.Auth.Input:
-		return "Configured synthetic account", nil
+		return interaction.SettingsActionResult{Output: "Configured synthetic account"}, nil
 	}
 }
 func TestSettingsActionCancelKeepsConversationAndWaits(t *testing.T) {
@@ -209,5 +209,29 @@ func TestSettingsActionCancelKeepsConversationAndWaits(t *testing.T) {
 	}
 	if m.settings.action != nil || m.settings.input.Value() != "" || m.input.Value() != draft || len(m.entries) != 0 || len(m.promptHistory) != 0 {
 		t.Fatal("credential action escaped its input domain")
+	}
+}
+
+func TestSettingsActionPreservesPartialSuccess(t *testing.T) {
+	t.Parallel()
+	m := panelModel(t, 120, 40)
+	a := &settingsAction{request: interaction.CommandRequest{Secret: "synthetic-secret"}}
+	m.settings.action = a
+	result := interaction.SettingsActionResult{
+		External:  []interaction.SettingsActionStep{{Name: "Driver installation", Completed: true}},
+		Committed: true, Applied: true, ReadinessKnown: true,
+		Warnings: []string{"Cleanup still pending"},
+	}
+	m = updateModel(t, m, settingsActionDone{action: a, result: result, err: errors.New("Connection unavailable")})
+	for _, fact := range []string{"Completed: Driver installation", "Preference saved", "Not ready", "Cleanup still pending", "Connection unavailable"} {
+		if !strings.Contains(m.settings.notice, fact) {
+			t.Fatalf("lost %q: %s", fact, m.settings.notice)
+		}
+	}
+	if a.request.Secret != "" || len(m.entries) != 0 || len(m.promptHistory) != 0 {
+		t.Fatal("action retained a secret or entered the transcript")
+	}
+	if got := settingsActionNotice(interaction.SettingsActionResult{}, nil); strings.Contains(got, "Ready") {
+		t.Fatal("unknown readiness became ready")
 	}
 }

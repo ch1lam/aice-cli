@@ -64,6 +64,12 @@ func (s *interactiveSession) ApplySettings(ctx context.Context, request interact
 		result.Revision, warnings = s.endSettingsOperation(result.Committed)
 		result.Warnings = append(result.Warnings, warnings...)
 	}()
+	return s.applySettingsReserved(ctx, request, shared, timing)
+}
+
+// applySettingsReserved shares the ordinary prepare/save/publish path with
+// domain setup. Its caller must own exactly one settings operation reservation.
+func (s *interactiveSession) applySettingsReserved(ctx context.Context, request interaction.SettingsRequest, shared bool, timing interaction.SettingTiming) (result interaction.SettingsResult, returnErr error) {
 	result.Applies = timing
 	if strings.HasPrefix(request.Changes[0].ID, "web.") {
 		return s.applyWebRequest(ctx, request)
@@ -150,22 +156,19 @@ func (s *interactiveSession) ApplySettings(ctx context.Context, request interact
 	return result, nil
 }
 
-func (s *interactiveSession) RunSettingsAction(ctx context.Context, revision uint64, request interaction.CommandRequest) (string, error) {
+func (s *interactiveSession) RunSettingsAction(ctx context.Context, revision uint64, request interaction.CommandRequest) (result interaction.SettingsActionResult, returnErr error) {
 	switch request.Name {
 	case "login", "web", "browser", "trust":
 	default:
-		return "", fmt.Errorf("unsupported settings action %s", request.Name)
+		return result, fmt.Errorf("unsupported settings action %s", request.Name)
 	}
 	if err := s.beginSettingsOperation(&revision, request.Name != "trust"); err != nil {
-		return "", err
+		return result, err
 	}
 	// Actions may save credentials before a later preference write fails. Any
 	// completed action invalidates older drafts, including partial success.
-	output, err := slashCommandHandlers[request.Name](s, ctx, request)
+	result.Output, returnErr = slashCommandHandlers[request.Name](s, ctx, request)
 	changed, _ := slashChangesResources(request)
-	_, warnings := s.endSettingsOperation(changed)
-	if len(warnings) > 0 {
-		output += "\n" + strings.Join(warnings, "\n")
-	}
-	return output, err
+	result.Revision, result.Warnings = s.endSettingsOperation(changed)
+	return result, returnErr
 }

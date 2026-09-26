@@ -28,7 +28,7 @@ type settingsActionPrompt struct {
 }
 type settingsActionDone struct {
 	action   *settingsAction
-	output   string
+	result   interaction.SettingsActionResult
 	snapshot interaction.SettingsSnapshot
 	err      error
 }
@@ -59,9 +59,9 @@ func settingsActionCommands(parent context.Context, runner interaction.SettingsA
 			}
 			defer owner.wg.Done()
 			defer stop()
-			output, err := runner.RunSettingsAction(ctx, revision, request)
+			result, err := runner.RunSettingsAction(ctx, revision, request)
 			snapshot, _ := reader.ReadSettings(parent)
-			return settingsActionDone{action: a, output: output, err: err, snapshot: snapshot}
+			return settingsActionDone{action: a, result: result, err: err, snapshot: snapshot}
 		}
 		a.wait = func() tea.Msg {
 			select {
@@ -283,11 +283,37 @@ func (m model) applySettingActionDone(msg settingsActionDone) (tea.Model, tea.Cm
 	if msg.snapshot.Categories != nil {
 		p.snapshot = msg.snapshot
 	}
-	p.notice = msg.output
-	if msg.err != nil {
-		p.notice = msg.err.Error()
-	}
+	p.notice = settingsActionNotice(msg.result, msg.err)
 	return m, nil
+}
+
+func settingsActionNotice(result interaction.SettingsActionResult, err error) string {
+	var lines []string
+	if result.Output != "" {
+		lines = append(lines, result.Output)
+	}
+	for _, step := range result.External {
+		status := "Incomplete"
+		if step.Completed {
+			status = "Completed"
+		}
+		lines = append(lines, status+": "+step.Name+". "+step.Detail)
+	}
+	if result.Committed {
+		lines = append(lines, "Preference saved")
+	}
+	if result.ReadinessKnown {
+		if result.Ready {
+			lines = append(lines, "Ready")
+		} else {
+			lines = append(lines, "Not ready; check setup status")
+		}
+	}
+	lines = append(lines, result.Warnings...)
+	if err != nil {
+		lines = append(lines, err.Error())
+	}
+	return strings.Join(lines, "\n")
 }
 func (p *settingsPanel) actionView() string {
 	a := p.action

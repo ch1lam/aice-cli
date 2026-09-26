@@ -1,8 +1,9 @@
 # Computer Use integration
 
 Computer Use is being integrated with Cua Driver. The current implementation
-contains the pinned distribution metadata and a private, persistent stdio client;
-it is not yet exposed as a user-facing Settings capability or model tool.
+contains the pinned distribution metadata, a private persistent stdio client,
+and User-only configuration fields. The Settings fields are visible but disabled
+until setup and execution are connected; no model desktop tool is exposed yet.
 The implementation plan's complete native acceptance remains open.
 
 ## Ownership and connection contract
@@ -36,12 +37,19 @@ The earlier Settings plan is absent and was not restored.
 
 Reusable boundaries: `Config.WithPatch` / `SaveSettingsPatch`,
 `SettingsReader` / `SettingsWriter`, `beginSettingsOperation`, and the existing
-five-category Settings panel. Remaining changes belong in config source
-filtering, app tool/prompt/Guard composition, structured Settings action results,
+five-category Settings panel. Configuration source filtering now excludes auth,
+project, environment and flag input for both desktop preferences, including
+case variants. Reset inherits only the user/default source chain.
+Settings actions return structured external steps, commit/application facts,
+known readiness, revision and warnings. The panel retains those facts alongside
+a later error instead of replacing success output. Ordinary patch preparation
+and publication also have an internal entry point under the existing reservation,
+so a future setup action need not acquire a second reservation.
+Remaining changes belong in app tool/prompt/Guard composition,
 TUI deep-link/setup/Stop handling, desktop run ownership and typed tools.
 Setup must use one configuration coordination reservation; Stop must use the
 existing cancellation path. A Web rebuild must retain the same Desktop binding
-as the tools and prompt it publishes. These changes have not yet landed.
+as the tools and prompt it publishes. These execution changes have not yet landed.
 
 ## Platform evidence
 

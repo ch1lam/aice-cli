@@ -135,5 +135,23 @@ func (v SettingValue) Validate() error {
 
 // SettingsActionRunner keeps domain actions outside the transcript path.
 type SettingsActionRunner interface {
-	RunSettingsAction(context.Context, uint64, CommandRequest) (string, error)
+	RunSettingsAction(context.Context, uint64, CommandRequest) (SettingsActionResult, error)
+}
+
+// SettingsActionResult preserves completed external work when a later step
+// fails. Ready is meaningful only when ReadinessKnown is true; saving a
+// preference does not establish that a native capability is available.
+type SettingsActionResult struct {
+	Output             string
+	External           []SettingsActionStep
+	Committed, Applied bool
+	ReadinessKnown     bool
+	Ready              bool
+	Revision           uint64
+	Warnings           []string
+}
+
+type SettingsActionStep struct {
+	Name, Detail string
+	Completed    bool
 }

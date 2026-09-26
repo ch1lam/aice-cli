@@ -42,6 +42,7 @@ func (f *frozenSettings) add(source Source, values map[string]any) {
 	for key, value := range values {
 		data[strings.ToLower(key)] = cloneSettingRaw(value)
 	}
+	filterSettingSources(data, source.Kind)
 	f.layers = append(f.layers, configLayer{source: source, values: data})
 }
 

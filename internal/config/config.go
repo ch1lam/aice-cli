@@ -87,11 +87,13 @@ const (
 type Setting string
 
 const (
-	SettingBrowserHeaded Setting = "browser_headed"
-	SettingProvider      Setting = settingsKeyProvider
-	SettingModel         Setting = settingsKeyModel
-	SettingThinking      Setting = settingsKeyThinking
-	SettingCustomBaseURL Setting = settingsKeyCustomBaseURL
+	SettingDesktopEnabled     Setting = "desktop_enabled"
+	SettingDesktopControlMode Setting = "desktop_control_mode"
+	SettingBrowserHeaded      Setting = "browser_headed"
+	SettingProvider           Setting = settingsKeyProvider
+	SettingModel              Setting = settingsKeyModel
+	SettingThinking           Setting = settingsKeyThinking
+	SettingCustomBaseURL      Setting = settingsKeyCustomBaseURL
 )
 
 // ContextWindow identifies a model without treating its identifier as a Viper key.
@@ -104,38 +106,40 @@ type ContextWindow struct {
 // Settings is the file schema shared by user and project configuration.
 // API keys normally live in auth.json, with the same keys and precedence.
 type Settings struct {
-	BrowserHeaded       bool              `json:"browser_headed,omitempty"`
-	MaxTurns            int               `json:"max_turns,omitempty"`
-	RunNoProgressLimit  int               `json:"run_no_progress_limit"`
-	RunTokenBudget      int64             `json:"run_token_budget,omitempty"`
-	RunTimeout          string            `json:"run_timeout,omitempty"`
-	ContextWindows      []ContextWindow   `json:"context_windows,omitempty"`
-	Provider            string            `json:"provider,omitempty"`
-	Model               string            `json:"model,omitempty"`
-	Thinking            llm.ThinkingLevel `json:"thinking,omitempty"`
-	DefaultProjectTrust trust.Default     `json:"default_project_trust,omitempty"`
-	DeepSeekAPIKey      string            `json:"deepseek_api_key,omitempty"`
-	DeepSeekBaseURL     string            `json:"deepseek_base_url,omitempty"`
-	OpenCodeAPIKey      string            `json:"opencode_api_key,omitempty"`
-	OpenCodeBaseURL     string            `json:"opencode_base_url,omitempty"`
-	OpenAIAPIKey        string            `json:"openai_api_key,omitempty"`
-	OpenAIBaseURL       string            `json:"openai_base_url,omitempty"`
-	AnthropicAPIKey     string            `json:"anthropic_api_key,omitempty"`
-	AnthropicBaseURL    string            `json:"anthropic_base_url,omitempty"`
-	KimiAPIKey          string            `json:"kimi_api_key,omitempty"`
-	KimiBaseURL         string            `json:"kimi_base_url,omitempty"`
-	ZhipuCodingAPIKey   string            `json:"zhipu_coding_api_key,omitempty"`
-	ZhipuCodingBaseURL  string            `json:"zhipu_coding_base_url,omitempty"`
-	ZhipuAPIKey         string            `json:"zhipu_api_key,omitempty"`
-	ZhipuBaseURL        string            `json:"zhipu_base_url,omitempty"`
-	MoonshotAPIKey      string            `json:"moonshot_api_key,omitempty"`
-	MoonshotBaseURL     string            `json:"moonshot_base_url,omitempty"`
-	AiHubMixAPIKey      string            `json:"aihubmix_api_key,omitempty"`
-	AiHubMixBaseURL     string            `json:"aihubmix_base_url,omitempty"`
-	CustomAPIKey        string            `json:"custom_api_key,omitempty"`
-	CustomBaseURL       string            `json:"custom_base_url,omitempty"`
-	NoDepInstall        bool              `json:"no_dep_install,omitempty"`
-	NoUpdateCheck       bool              `json:"no_update_check,omitempty"`
+	DesktopEnabled      bool               `json:"desktop_enabled,omitempty"`
+	DesktopControlMode  DesktopControlMode `json:"desktop_control_mode,omitempty"`
+	BrowserHeaded       bool               `json:"browser_headed,omitempty"`
+	MaxTurns            int                `json:"max_turns,omitempty"`
+	RunNoProgressLimit  int                `json:"run_no_progress_limit"`
+	RunTokenBudget      int64              `json:"run_token_budget,omitempty"`
+	RunTimeout          string             `json:"run_timeout,omitempty"`
+	ContextWindows      []ContextWindow    `json:"context_windows,omitempty"`
+	Provider            string             `json:"provider,omitempty"`
+	Model               string             `json:"model,omitempty"`
+	Thinking            llm.ThinkingLevel  `json:"thinking,omitempty"`
+	DefaultProjectTrust trust.Default      `json:"default_project_trust,omitempty"`
+	DeepSeekAPIKey      string             `json:"deepseek_api_key,omitempty"`
+	DeepSeekBaseURL     string             `json:"deepseek_base_url,omitempty"`
+	OpenCodeAPIKey      string             `json:"opencode_api_key,omitempty"`
+	OpenCodeBaseURL     string             `json:"opencode_base_url,omitempty"`
+	OpenAIAPIKey        string             `json:"openai_api_key,omitempty"`
+	OpenAIBaseURL       string             `json:"openai_base_url,omitempty"`
+	AnthropicAPIKey     string             `json:"anthropic_api_key,omitempty"`
+	AnthropicBaseURL    string             `json:"anthropic_base_url,omitempty"`
+	KimiAPIKey          string             `json:"kimi_api_key,omitempty"`
+	KimiBaseURL         string             `json:"kimi_base_url,omitempty"`
+	ZhipuCodingAPIKey   string             `json:"zhipu_coding_api_key,omitempty"`
+	ZhipuCodingBaseURL  string             `json:"zhipu_coding_base_url,omitempty"`
+	ZhipuAPIKey         string             `json:"zhipu_api_key,omitempty"`
+	ZhipuBaseURL        string             `json:"zhipu_base_url,omitempty"`
+	MoonshotAPIKey      string             `json:"moonshot_api_key,omitempty"`
+	MoonshotBaseURL     string             `json:"moonshot_base_url,omitempty"`
+	AiHubMixAPIKey      string             `json:"aihubmix_api_key,omitempty"`
+	AiHubMixBaseURL     string             `json:"aihubmix_base_url,omitempty"`
+	CustomAPIKey        string             `json:"custom_api_key,omitempty"`
+	CustomBaseURL       string             `json:"custom_base_url,omitempty"`
+	NoDepInstall        bool               `json:"no_dep_install,omitempty"`
+	NoUpdateCheck       bool               `json:"no_update_check,omitempty"`
 }
 
 // Paths identifies configuration sources and helper storage.
@@ -150,6 +154,8 @@ type Paths struct {
 // Config is an immutable effective snapshot owned by one application instance.
 // Interactive changes create another snapshot; they never reload file layers.
 type Config struct {
+	DesktopEnabled      bool
+	DesktopControlMode  DesktopControlMode
 	BrowserHeaded       bool
 	MaxTurns            int
 	RunNoProgressLimit  int
@@ -357,6 +363,7 @@ func LoadFiles(paths Paths, options LoadOptions) (Config, error) {
 		if path == paths.ProjectSettings {
 			kind = "project"
 		}
+		filterSettingSources(values, kind)
 		layers.add(Source{Kind: kind, Location: path}, values)
 		// Every schema field is a scalar or a complete array. Replace fields
 		// before handing the file layer to Viper: MergeConfigMap otherwise
@@ -378,6 +385,13 @@ func LoadFiles(paths Paths, options LoadOptions) (Config, error) {
 	}
 	if err := layers.addInvocation(options); err != nil {
 		return Config{}, err
+	}
+	// User-only fields are resolved from accepted frozen layers, overriding even
+	// an embedding caller's unsupported flag/env bindings in Viper.
+	for _, def := range SettingDefinitions() {
+		if def.UserOnly {
+			v.Set(string(def.ID), layers.resolved()[string(def.ID)])
+		}
 	}
 	c, err := decodeEffective(v)
 	if err != nil {
@@ -458,6 +472,8 @@ func (c Config) SavedValuesOverridden(changes map[Setting]string) bool {
 
 func (c Config) settings() Settings {
 	s := Settings{
+		DesktopEnabled:      c.DesktopEnabled,
+		DesktopControlMode:  c.DesktopControlMode,
 		MaxTurns:            c.MaxTurns,
 		RunNoProgressLimit:  c.RunNoProgressLimit,
 		RunTokenBudget:      c.RunTokenBudget,
@@ -514,7 +530,7 @@ func decodeEffective(v *viper.Viper) (Config, error) {
 		}
 		text = strings.TrimSpace(text)
 		switch key {
-		case "no_dep_install", "no_update_check", "browser_headed":
+		case "no_dep_install", "no_update_check", "browser_headed", "desktop_enabled":
 			parsed, err := strconv.ParseBool(text)
 			if err != nil {
 				return Config{}, fmt.Errorf("config: %s must be a boolean", key)
@@ -549,11 +565,16 @@ func decodeEffective(v *viper.Viper) (Config, error) {
 		}
 		return Config{}, fmt.Errorf("config: invalid effective configuration: %w", err)
 	}
+	if s.DesktopControlMode == "" {
+		s.DesktopControlMode = DesktopBackgroundOnly
+	}
 	if err := s.validate(); err != nil {
 		return Config{}, err
 	}
 	timeout, _ := time.ParseDuration(s.RunTimeout) // validated above
 	c := Config{
+		DesktopEnabled:      s.DesktopEnabled,
+		DesktopControlMode:  s.DesktopControlMode,
 		MaxTurns:            s.MaxTurns,
 		RunNoProgressLimit:  s.RunNoProgressLimit,
 		RunTokenBudget:      s.RunTokenBudget,
@@ -875,6 +896,11 @@ func (p Paths) validate() error {
 }
 
 func (s Settings) validate() error {
+	switch s.DesktopControlMode {
+	case "", DesktopBackgroundOnly, DesktopForegroundAllowed:
+	default:
+		return errors.New("config: desktop_control_mode must be background_only or foreground_allowed")
+	}
 	if s.MaxTurns < 0 {
 		return errors.New("config: max_turns cannot be negative")
 	}

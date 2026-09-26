@@ -21,6 +21,14 @@ another source.
 Invocation controls such as `--workspace`, `--session`, `--approve`, and
 `--yolo` retain their separate command semantics. No remote key/value store is used.
 
+Computer Use preferences are User-only: `desktop_enabled` defaults to `false`
+and `desktop_control_mode` defaults to `background_only` (the other value is
+`foreground_allowed`). Only the user settings file and explicit runtime patches
+can supply them. Auth files, trusted projects, environment and flag bindings
+cannot change them or become reset/inheritance candidates. The Settings fields
+remain disabled while desktop setup and execution are being integrated; saving
+these keys alone does not make a Driver ready. See [Computer Use](desktop.md).
+
 Project settings are protected by [Project Trust](project-trust.md).
 Until trusted, the project contributes no configuration values. The initial
 trust decision uses only user files, environment variables, explicit trust
