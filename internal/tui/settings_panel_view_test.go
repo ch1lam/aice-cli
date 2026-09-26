@@ -146,6 +146,7 @@ func TestSettingsGroupedRowsStaySelectableAfterScrolling(t *testing.T) {
 					id := fmt.Sprintf("%s%02d", prefix, i)
 					m.settings.snapshot.Fields = append(m.settings.snapshot.Fields, interaction.SettingField{
 						ID: id, Category: "tools", Label: id, Kind: interaction.SettingString,
+						Value: interaction.SettingValue{Kind: interaction.SettingString, Text: "v"},
 					})
 				}
 			}

@@ -76,8 +76,8 @@ func (p *settingsPanel) editTarget(x, y int) string {
 		return ""
 	}
 	if field := p.editing; field != nil && field.Kind == interaction.SettingEnum && !field.AllowCustom && !p.confirmUnset {
-		start := max(0, p.choice-(p.layout.bodyHeight-2)+1)
-		if row+start < len(field.Choices) {
+		start, end := p.visibleChoices()
+		if row+start < end {
 			return "choice:" + field.Choices[row+start].Value
 		}
 	}

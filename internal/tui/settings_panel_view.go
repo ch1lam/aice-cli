@@ -99,14 +99,18 @@ func (m model) settingsPanelView() string {
 			body = "Remove the user override\n\n" + settingDetails(*field, p.snapshot.SavePath)
 		} else if field.Kind == interaction.SettingEnum && !field.AllowCustom {
 			var rows []string
-			start := max(0, p.choice-(l.bodyHeight-2)+1)
-			for i := start; i < min(len(field.Choices), start+l.bodyHeight-2); i++ {
+			start, end := p.visibleChoices()
+			for i := start; i < end; i++ {
 				choice := field.Choices[i]
 				prefix := "  "
+				style := bodyStyle
 				if i == p.choice {
 					prefix = "› "
+					style = slashCommandSelectedStyle
 				}
-				rows = append(rows, sanitizeSingleLineText(prefix+choice.Label+"  "+choice.Description))
+				rows = append(rows, style.Render(ansi.Truncate(
+					sanitizeSingleLineText(prefix+choice.Label+"  "+choice.Description), l.inner, "…",
+				)))
 			}
 			body = strings.Join(rows, "\n")
 		} else {
@@ -121,23 +125,7 @@ func (m model) settingsPanelView() string {
 				rows = append(rows, settingSectionHeading(row.section, listWidth))
 				continue
 			}
-			field := fields[row.field]
-			prefix := "  "
-			style := bodyStyle
-			if row.field == p.selection {
-				prefix = "› "
-				style = labelStyle
-			}
-			value := settingValueText(field.Value, field.InvertBool)
-			if field.Kind == interaction.SettingAction {
-				value = "›"
-			}
-			if field.Kind == interaction.SettingInfo {
-				value = field.Value.Text
-			}
-			rows = append(rows, style.Render(ansi.Truncate(
-				sanitizeSingleLineText(prefix+field.Label+"  "+value), listWidth, "…",
-			)))
+			rows = append(rows, settingRow(fields[row.field], row.field == p.selection, listWidth))
 		}
 		if len(rows) == 0 {
 			rows = []string{"No matching settings"}

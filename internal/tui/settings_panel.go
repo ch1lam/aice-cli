@@ -326,7 +326,7 @@ func (m model) beginSettingEdit(unset bool) (tea.Model, tea.Cmd) {
 	p.notice = ""
 	p.choice = 0
 	for i, choice := range field.Choices {
-		if choice.Value == field.Value.Text {
+		if choice.Value == settingChoiceValue(field) {
 			p.choice = i
 		}
 	}
