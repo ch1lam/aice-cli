@@ -74,7 +74,7 @@ func TestDesktopSettingsReadOnlyStatusFacts(t *testing.T) {
 					field = f
 				}
 			}
-			want := map[string]string{"disabled": "Disabled", "absent": "Not installed", "stopped": "Needs setup", "missing": "Needs setup", "granted": "Connected; capture not checked", "text-model": "Degraded", "captured": "Ready at last capture check", "capture-failed": "Degraded", "unknown": "Unavailable"}[kind]
+			want := map[string]string{"disabled": "Disabled", "absent": "Not installed", "stopped": "Needs setup", "missing": "Needs setup", "granted": "Connected; capture not checked", "text-model": "Degraded", "captured": "Last capture succeeded", "capture-failed": "Degraded", "unknown": "Unavailable"}[kind]
 			if calls != 1 || field.Value.Text != want || snapshot.Revision != 0 || s.conversation.store != nil || field.DisabledReason != "" {
 				t.Fatalf("status=%+v calls=%d", field, calls)
 			}

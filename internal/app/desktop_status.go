@@ -100,7 +100,7 @@ func (s *interactiveSession) desktopStatusField(ctx context.Context, settings in
 		capture = result + " at " + checked.Format(time.RFC3339) + "; historical result, not a guarantee for the next capture"
 		if summary == "Connected; capture not checked" {
 			if available {
-				summary = "Ready at last capture check"
+				summary = "Last capture succeeded"
 			} else {
 				summary = "Degraded"
 			}
@@ -163,9 +163,15 @@ func (s *interactiveSession) desktopStatusField(ctx context.Context, settings in
 			"Wayland backend enabled: "+desktopCapabilityState(facts.WaylandBackend),
 			"XSendEvent prerequisite: "+desktopCapabilityState(facts.XSendEvent),
 			"Connection and display facts above describe the shared service; this instance may instead own a private tool process.",
-			"Display and bus checks do not verify target input or capture. X11 setup and actions are integrated; Wayland remains unavailable.")
+			"Display and bus checks do not verify target input or capture. X11 setup and actions are integrated; Wayland remains unavailable.",
+			"Known Linux input limits: Unicode typing truncated text in native tests; GTK keyboard, pixel scrolling and dragging were unavailable. App launch took foreground focus.")
 	} else {
 		lines = append(lines, "Accessibility: "+string(permissions.Accessibility), "Screen Recording: "+string(permissions.ScreenRecording))
+		if runtime.GOOS == "darwin" {
+			lines = append(lines,
+				"Known macOS input limits: Background dragging is unavailable; foreground dragging has not passed repeatability checks.",
+				"Pixel double-click interrupted foreground focus in native tests; pixel right-click delivered twice.")
+		}
 	}
 	if !permissions.CheckedAt.IsZero() {
 		lines = append(lines, "Permissions read at: "+permissions.CheckedAt.Format(time.RFC3339))

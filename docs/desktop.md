@@ -88,6 +88,11 @@ image support, and capture verification. Capture results come only from explicit
 setup verification or actual requested task screenshots and carry a timestamp.
 They are labelled historical, not a guarantee for the next capture; upstream
 historical `screen_recording_capturable` fields do not establish current readiness.
+A successful historical capture is labelled `Last capture succeeded`, not general
+input readiness. Status details disclose the pinned macOS double/right-click and
+drag limits and the measured Linux typing/input/launch limits. Model action
+guidance carries the same limitations, separately from individual Driver results;
+it does not turn a refusal into success or authorize foreground fallback.
 The feature's enabled preference remains separate. Refresh occurs on panel reads
 and manual refresh, not on streaming tokens or hover, and cancellation ends the
 read without publishing its snapshot. Status reads hold no Settings write

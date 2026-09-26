@@ -155,9 +155,11 @@ func TestSettingsUsageTUI(t *testing.T) {
 		send("/Computer Use status\r")
 		if runtime.GOOS == "darwin" {
 			waitFor("Screen Recording: Missing")
+			waitFor("Known macOS input limits")
 		} else {
 			waitFor("X11 connection: Unavailable")
 			waitFor("AT-SPI bus owner: Unavailable")
+			waitFor("Known Linux input limits")
 		}
 		send("\x1b")
 		send("/Computer Use setup")
