@@ -1,0 +1,339 @@
+{
+  "platform": "linux",
+  "tools": {
+    "check_permissions": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    },
+    "click": {
+      "additionalProperties": false,
+      "properties": {
+        "button": {
+          "description": "Mouse button. Default: \"left\" (legacy back-compat). X11: routed via ButtonPress/Release with the matching evdev code. Native Wayland: only left-button is supported via the virtual-pointer protocol; right/middle return an error.",
+          "enum": [
+            "left",
+            "right",
+            "middle"
+          ],
+          "type": "string"
+        },
+        "capture_id": {
+          "description": "Optional one-shot binding to the exact PNG returned by get_window_state or get_desktop_state. When present, x/y are interpreted in that capture and admitted before native dispatch.",
+          "type": "string"
+        },
+        "coordinate_frame": {
+          "description": "Frame of x/y (and from_x/from_y/to_x/to_y). Default \"window\": window-local screenshot pixels as returned by get_window_state. \"desktop\": full-screen pixels as returned by get_desktop_state, translated to the target window. Passing scope:\"desktop\" together with pid/window_id means the same thing.",
+          "enum": [
+            "window",
+            "desktop"
+          ],
+          "type": "string"
+        },
+        "count": {
+          "description": "Number of clicks in one press train: 1 (default), 2 = double-click, 3 = triple-click (line/paragraph selection). There is no separate triple_click tool — pass count: 3 here.",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "cursor_id": {
+          "description": "Optional multi-cursor instance id. Default: 'default'.",
+          "type": "string"
+        },
+        "delivery_mode": {
+          "default": "background",
+          "description": "Input delivery mode. 'background' (default) never activates or raises the target window. On X11 it injects via XTEST / the XInput2 master pointer (no focus steal). On Wayland it goes through libei + xdg-desktop-portal, which injects to the compositor's input focus — Wayland's security model has no per-window background targeting, so a specific non-focused window cannot be aimed at; when no libei backend is available the tool returns a structured background_unavailable error. 'foreground' is the explicit escalation: activate the target (X11 _NET_ACTIVE_WINDOW; Wayland compositor activate), inject, then restore the prior active window — a brief focus swap unless the target was already active. Matches the macOS / Windows delivery_mode surface.",
+          "enum": [
+            "background",
+            "foreground"
+          ],
+          "type": "string"
+        },
+        "element_index": {
+          "description": "Element index from get_window_state. Requires the matching `snapshot_id` alongside it. Prefer `element_token`, which carries both values.",
+          "type": "integer"
+        },
+        "element_token": {
+          "description": "Opaque per-snapshot element handle from `structuredContent.elements[].element_token`. If element_index, snapshot_id, or window_id are also supplied they must agree. Returns an explicit stale error once a newer snapshot supersedes it.",
+          "type": "string"
+        },
+        "from_zoom": {
+          "description": "Set true after a zoom call to auto-translate zoom-image pixel coordinates back to full-window space.",
+          "type": "boolean"
+        },
+        "modifier": {
+          "description": "Modifier keys held during the action: cmd, shift, option/alt, ctrl.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "pid": {
+          "type": "integer"
+        },
+        "scope": {
+          "default": "window",
+          "enum": [
+            "window",
+            "desktop"
+          ],
+          "type": "string"
+        },
+        "session": {
+          "description": "For multi-call work, prefer a short public session label and repeat it on every call that accepts it. Omit it to use the authenticated transport's implicit lifecycle session.",
+          "type": "string"
+        },
+        "snapshot_id": {
+          "description": "Snapshot handle from get_window_state. Required when targeting by element_index; stale snapshots fail closed.",
+          "pattern": "^s[0-9a-f]{8}$",
+          "type": "string"
+        },
+        "target": {
+          "description": "Exact capture/input target selected independently for each action.\n\n`display_id=\"primary\"` is the portable desktop target in this release.\nPlatforms that cannot address another display reject it explicitly rather\nthan silently changing coordinate spaces.",
+          "oneOf": [
+            {
+              "additionalProperties": true,
+              "properties": {
+                "kind": {
+                  "const": "window",
+                  "type": "string"
+                },
+                "pid": {
+                  "format": "uint32",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "window_id": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "kind",
+                "pid",
+                "window_id"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": true,
+              "properties": {
+                "display_id": {
+                  "type": "string"
+                },
+                "kind": {
+                  "const": "desktop",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind",
+                "display_id"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "window_id": {
+          "type": "integer"
+        },
+        "x": {
+          "description": "Window-local pixel X of the target window's own get_window_state screenshot (0..screenshot_width). For get_desktop_state pixels pass scope:\"desktop\" (or coordinate_frame:\"desktop\").",
+          "type": "number"
+        },
+        "y": {
+          "description": "Window-local pixel Y of the target window's own get_window_state screenshot (0..screenshot_height); see x.",
+          "type": "number"
+        }
+      },
+      "required": [],
+      "type": "object"
+    },
+    "end_session": {
+      "additionalProperties": true,
+      "properties": {
+        "session": {
+          "description": "Optional public label to end. When omitted, end the caller's attached\nimplicit session.",
+          "type": "string"
+        }
+      },
+      "required": [],
+      "type": "object"
+    },
+    "get_config": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    },
+    "get_window_state": {
+      "additionalProperties": false,
+      "properties": {
+        "capture_mode": {
+          "description": "DEPRECATED and ignored. get_window_state always returns BOTH the element tree and a screenshot — ground on both. The modality is chosen at action time by how you address the target: an element ax action (element_index/element_token) or an element px action (x,y). Any value (including the old \"som\"/\"screenshot\" aliases) is accepted but has no effect.",
+          "enum": [
+            "ax",
+            "vision"
+          ],
+          "type": "string"
+        },
+        "include_accessibility_tree": {
+          "description": "Default true — walk the AT-SPI tree and return `elements` + `tree_markdown` alongside the screenshot. Set false to SKIP the AT-SPI walk entirely and return just the screenshot plus window metadata (window_bounds, app_name, window_title) — the capture-only path for a live window preview / picture-in-picture. Mirrors include_screenshot. Setting BOTH include_accessibility_tree:false AND include_screenshot:false is an error (nothing to return).",
+          "type": "boolean"
+        },
+        "include_screenshot": {
+          "description": "Default true — returns a grounding screenshot alongside the tree. Set false to skip the grab and return tree only (the cheap path for re-indexing before an element ax action).",
+          "type": "boolean"
+        },
+        "max_depth": {
+          "description": "Cap on the AT-SPI tree walk depth. Omit for the default (uncapped). Lower for deeply nested apps.",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "max_dimension": {
+          "description": "Legacy optional cap on the returned screenshot's long edge. Applied on top of the configured max_image_dimension ceiling when max_image_dimension is omitted.",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "max_elements": {
+          "description": "Cap on total AT-SPI nodes walked. Omit for the default (5 000). Lower for huge web/Electron trees.",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "max_image_dimension": {
+          "description": "Per-call long-edge override. This value wins over configured and legacy limits; 0 returns native-resolution PNG bytes. Omit to preserve configured behavior.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "pid": {
+          "type": "integer"
+        },
+        "query": {
+          "description": "Optional case-insensitive substring. Projects both tree_markdown and structured elements to matches plus ancestors while preserving original indices. Compare total_element_count with returned_element_count.",
+          "type": "string"
+        },
+        "screenshot_out_file": {
+          "description": "When set, write the PNG to this file path (~ expanded) instead of embedding base64 in the response. The structured output carries screenshot_file_path instead.",
+          "type": "string"
+        },
+        "session": {
+          "description": "For multi-call work, prefer a short public session label and repeat it on every call that accepts it. Omit it to use the authenticated transport's implicit lifecycle session.",
+          "type": "string"
+        },
+        "timeout_ms": {
+          "default": 1000,
+          "description": "Wall-clock budget in milliseconds for the accessibility-tree walk (default 1000, min 100, max 120000). Bounds the WHOLE walk. When the budget runs out the tool returns the PARTIAL tree it has, flagged with `truncated: true`, `truncation_reason`, `nodes_visited`, `nodes_pending` and `elements_complete: false`; retry with a larger value (e.g. 5000) or narrow with `query` / `max_depth`.",
+          "maximum": 120000,
+          "minimum": 100,
+          "type": "integer"
+        },
+        "window_id": {
+          "description": "Native window identifier from list_windows, or the `popup.window_id` a click / right_click result named (an open context menu / popover; its menu items then get element indices). Omitted: the pid's open popup menu when one is mapped, else its focused / active / largest window.",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "pid"
+      ],
+      "type": "object"
+    },
+    "list_windows": {
+      "additionalProperties": false,
+      "properties": {
+        "on_screen_only": {
+          "description": "When true, filter to visible windows only. Default false.",
+          "type": "boolean"
+        },
+        "pid": {
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "set_value": {
+      "additionalProperties": false,
+      "properties": {
+        "element_index": {
+          "description": "Element index from get_window_state. Requires the matching `snapshot_id` alongside it. Prefer `element_token`, which carries both values.",
+          "type": "integer"
+        },
+        "element_token": {
+          "description": "Opaque per-snapshot element handle from `structuredContent.elements[].element_token`. If element_index, snapshot_id, or window_id are also supplied they must agree. Returns an explicit stale error once a newer snapshot supersedes it.",
+          "type": "string"
+        },
+        "pid": {
+          "type": "integer"
+        },
+        "session": {
+          "description": "For multi-call work, prefer a short public session label and repeat it on every call that accepts it. Omit it to use the authenticated transport's implicit lifecycle session.",
+          "type": "string"
+        },
+        "snapshot_id": {
+          "description": "Snapshot handle from get_window_state. Required when targeting by element_index; stale snapshots fail closed.",
+          "pattern": "^s[0-9a-f]{8}$",
+          "type": "string"
+        },
+        "value": {
+          "description": "New value. Written through AT-SPI EditableText/Value when the element exposes them; otherwise (GTK2 spin scales, VCL spin buttons) the field is clicked with the session's real pointer, its text selected and replaced through the virtual keyboard and committed with Tab, then read back.",
+          "type": [
+            "string",
+            "number"
+          ]
+        },
+        "window_id": {
+          "description": "Required when element_index is used; optional when element_token is supplied (the token carries it).",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "pid",
+        "value"
+      ],
+      "type": "object"
+    },
+    "start_session": {
+      "additionalProperties": true,
+      "properties": {
+        "capture_scope": {
+          "description": "Deprecated compatibility policy. New callers select window or desktop\nmodality on each action instead of storing it on the session.",
+          "enum": [
+            "auto",
+            "window",
+            "desktop"
+          ],
+          "type": "string"
+        },
+        "cursor_theme": {
+          "description": "Optional initial cursor theme. The host applies it before the cursor is\nfirst made visible, avoiding a flash of the default theme.",
+          "properties": {
+            "reduced_motion": {
+              "default": "auto",
+              "enum": [
+                "auto",
+                "on",
+                "off"
+              ],
+              "type": "string"
+            },
+            "theme_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "theme_id"
+          ],
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "session": {
+          "description": "Optional stable public label for this run (e.g. \"research-run-1\").\nWhen omitted, the authenticated transport lease's implicit session is\ncreated or returned.",
+          "type": "string"
+        }
+      },
+      "required": [],
+      "type": "object"
+    }
+  },
+  "version": "0.29.1"
+}

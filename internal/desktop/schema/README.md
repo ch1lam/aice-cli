@@ -36,3 +36,10 @@ those two tools; it cannot dispatch input or capture even though the service
 advertises additional tools. Linux action schemas remain to be adapted and
 reviewed separately. The native headless inspection test verifies this connection
 path without declaring the desktop usable.
+
+The opt-in X11 probe's [eight-tool fixture](../testdata/linux-probe-0.29.1.json)
+comes from the same Linux metadata export and is covered by the same upstream
+MIT license. It is embedded only in Linux integration tests, where the actual
+MCP handshake compares the complete schemas before dispatch. It is not a
+production action-admission pin; the platform adapter must still establish
+Linux-specific output, input and lifecycle contracts.

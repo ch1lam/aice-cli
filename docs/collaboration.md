@@ -292,6 +292,39 @@ The normal owned-process shutdown test waits for the child readiness message
 before closing; the race runtime's artificial exit sleep is disabled only in
 that synthetic child, so it cannot masquerade as a hung Driver.
 
+The opt-in X11 capability probe uses the pinned Linux Driver in a disposable
+Debian container. Its runner installs Xvfb, Openbox, GTK and AT-SPI **only in that
+container**, then runs as an ordinary user with a private display and D-Bus. Do
+not mount the user's display, bus, home or input devices, and do not run the
+package-preparation script on the host. Python/GTK is a synthetic test application,
+not an AICE runtime dependency. With the native archive already downloaded:
+
+```sh
+GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go test -c -tags=integration \
+  -o /tmp/aice-desktop-linux.test ./internal/desktop
+docker run --rm \
+  --mount type=bind,src=/tmp/aice-desktop-linux.test,dst=/probe.test,readonly \
+  --mount type=bind,src=/absolute/path/to/cua-driver-rs-0.29.1-linux-arm64.tar.gz,dst=/driver.tar.gz,readonly \
+  --mount type=bind,src="$PWD/internal/desktop/testdata/run-linux-probe.sh",dst=/run-probe.sh,readonly \
+  python:3.13-slim sh /run-probe.sh /probe.test /driver.tar.gz
+```
+
+The test binary and archive must match the container's native architecture;
+emulation or cross-compilation is not native execution. The runner verifies the
+archive's fixed SHA-256. `TestNativeLinuxBackgroundProbe` validates three GTK
+processes through one persistent stdio connection: semantic Unicode edits,
+button clicks, PNG dimensions, independent application readback, old-token
+rejection and concurrent foreground core keyboard input. Read-only inspection
+between observation and input must preserve the token. The separate
+`TestNativeLinuxFocusSentinel` deliberately moves focus between its own windows
+and verifies that the monitor retains focus-loss and misdirected-input evidence
+even after focus restoration. Cleanup reaps test-owned children only.
+
+This probe uses a test-only schema pin and raw typed calls through AICE's MCP
+client. It does not prove the production Manager, tool/Guard/Session flow,
+automatic setup, pixel actions, physical input or other Linux compositors. See
+the [platform evidence](desktop.md#platform-evidence) before claiming support.
+
 The negative native proxy check uses a verified App binary, temporary HOME and
 an absent socket. It verifies that the proxy refuses automatic service launch,
 without connecting to a user service or requesting OS permissions:

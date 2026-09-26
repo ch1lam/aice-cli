@@ -341,7 +341,7 @@ as the tools and prompt it publishes; offline publication tests cover this.
 | --- | --- | --- |
 | macOS 0.29.1 universal artifact | Download hash matches fixed release manifest; temporary extraction/exclusive publication preserves signature, signing identity and Gatekeeper acceptance; CLI/schema inspected; Settings setup exercised through CLI/Bubble Tea with fake native operations | Signed installed service, system authorization, persistent MCP handshake against that service, synthetic multi-app task, background focus/input sentinel, native overlay, cancellation and cold/warm measurements |
 | Windows amd64/arm64 | Downloaded archives and selected executable hashes verified; private installer with Authenticode checks implemented; synthetic extraction/reuse/cancellation tests and cross-compilation pass; static imports inspected | Native installation/signature trust and exclusive publication; runtime/service admission, interactive-session/UIAccess detection, native UI/input/lifecycle tests |
-| Linux arm64 | Downloaded archive and selected executable hashes verified; private installer, native version probe/reuse, exclusive publication, concurrent installation and rejected-download cleanup passed as an ordinary user in an isolated Debian 13 container; native tool inventory and read-only headless service inspection verified | Runtime startup/action admission, compositor-specific input/capture/overlay tests |
+| Linux arm64 | Private installation/reuse and read-only headless inspection passed in an isolated Debian 13 container; native Cua X11/GTK probe confirmed semantic edits, clicks and window captures across three synthetic apps while a foreground sentinel received concurrent core keyboard input | AICE runtime startup/action adapter and full tool flow; pixel/keyboard/drag routes, native overlay, other toolkits, real compositor/Wayland and physical-input/IME checks |
 | Linux amd64 | Downloaded archive and selected executable hashes verified; synthetic installer tests and cross-compilation pass; ELF library dependencies inspected | Native installation/dynamic loading and exclusive publication; runtime/service admission, AT-SPI/display detection, compositor-specific input/capture/overlay tests |
 
 On 2026-09-26 the native host had a signed, Gatekeeper-accepted CuaDriver
@@ -366,10 +366,10 @@ The fixed source's platform matrix documents limitations for raw Wayland
 background input and toolkit-specific paths. Structured refusal is not proof
 that a promised action is supported. AICE must preserve `background_only`,
 report unsupported routes and obtain a product decision if an upstream limit
-prevents the agreed acceptance. Windows/Linux remain in scope; no native
-desktop validation is claimed for them. The Linux arm64 container check covers
-installation without a display; its missing-library precondition and exact scope
-are recorded in [collaboration](collaboration.md#computer-use-checks).
+prevents the agreed acceptance. Windows/Linux remain in scope. Windows native
+desktop validation is still missing. Linux arm64 has separate headless installation
+and isolated X11 capability evidence, with the exact scope and commands in
+[collaboration](collaboration.md#computer-use-checks).
 
 The native Linux 0.29.1 metadata export contains all 15 tool names currently used
 by AICE, but 11 input schemas differ from the macOS pin. Only `get_config`,
@@ -397,6 +397,30 @@ connection does not make Linux actions ready; runtime startup, compositor-specif
 capabilities and action adapters remain incomplete. The Linux arm64 headless
 fixture passed two inspections of its own service and correctly reported absent
 display/bus capabilities while leaving that service alive between checks.
+
+The opt-in Linux background probe uses a private Xvfb display, Openbox and AT-SPI
+bus, three GTK fixture processes, and a fourth foreground fixture receiving
+continuous XTest core keyboard events. It uses the actual pinned stdio MCP
+client and a test-only eight-tool schema inventory. Independent fixture state
+checks semantic Unicode writes and single button commits; PNG bytes and reported
+dimensions are checked on each observation. This is upstream native capability
+evidence, not an AICE Manager/tool acceptance result: production Linux action
+admission remains unavailable. Three GTK copies do not establish other toolkit,
+physical keyboard, IME, pixel input, GPU, overlay or Wayland compatibility.
+On 2026-09-26 the arm64 probe passed in 8.81 seconds: all three commits matched
+independent application state, stale tokens were rejected, and the sentinel
+retained all 69 injected core keystrokes with zero focus loss. The separate
+negative control detected deliberately misdirected input and retained the focus
+loss after restoration. Per-target set/click plus three captures took about
+1.5–2.7 seconds; those aggregates are not a model/Guard/native-action timing
+breakdown or a guarantee for other applications.
+
+The Linux success response omits `screenshot_frame_valid`; the same fixed source
+sets it to false when a capture error occurs. The native probe confirms the
+omission alongside a capture ID and matching PNG dimensions. A platform adapter
+must review the capture identity and coordinate contract before enabling pixels;
+the existing macOS requirement for an explicit true value cannot simply be
+removed for every platform.
 
 The SDK closes both stdio stream sides; both share one idempotent process owner
 so cleanup closes and reaps the child only once. Normal proxy exit returns success;
