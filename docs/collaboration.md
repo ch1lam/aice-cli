@@ -543,6 +543,37 @@ calculated point committed once, covering Driver downscaling on this Retina host
 This is screenshot-coordinate acceptance on the AppKit fixture, not visual model
 recognition, crop/negative-monitor geometry, scrolling, dragging or overlay QA.
 
+The macOS gesture gate uses an actual `NSScrollView` and `NSSlider`, their
+independent geometry and post-response widget state. Background scroll passed
+on 2026-09-27 (offset 0→60); background drag remains a failing postcondition
+because the pinned Driver returns `background_unavailable` and leaves the
+slider at zero. Both cases preserve the foreground sentinel. Keep the failing
+native case explicit; the default suite skips these opt-in desktop actions:
+
+```sh
+AICE_CUA_NATIVE=1 go test -tags=integration ./internal/desktop -run '^TestNativeMacGestures$' -v
+```
+
+Foreground drag has an additional opt-in because it can affect the real pointer
+and temporarily activate the synthetic target. This gate binds the existing
+`foreground_allowed` mode, verifies background refusal without input/focus loss,
+rejects the consumed observation, and then explicitly dispatches from the fresh
+image. One run completed with slider value 0→92.7 and one observed activation
+loss followed by sentinel-focus restoration. A later run passed the strengthened
+pre-foreground focus check but failed movement/restoration with ChatGPT
+foreground. The current native gate is therefore not consistently accepted;
+keep that failed postcondition visible. It checks unaffected controls and
+shared-service cleanup without asserting background coexistence or changing
+saved settings:
+
+```sh
+AICE_CUA_NATIVE=1 AICE_CUA_NATIVE_FOREGROUND=1 go test -tags=integration ./internal/desktop -run '^TestNativeMacForegroundDrag$' -v
+```
+
+These fixture tests do not establish physical user/IME coexistence, heterogeneous
+application dragging, snapshot geometry changes during scroll/drag, or overlay
+appearance. They do not silently switch a background-only run to foreground.
+
 The application-level macOS gate uses the same synthetic AppKit fixture with a
 scripted model through the actual print command, Guard, typed tools, production
 desktop constructor and Session writer. It checks three exact-window Unicode

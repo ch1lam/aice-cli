@@ -65,6 +65,8 @@ outside the project. Linux setup asks you to choose a window for a local capture
 test. See [Computer Use](./docs/desktop.md) for verified scope and remaining
 platform limitations, including unavailable Wayland/XWayland and Windows action routes.
 Windows read-only status inspection is implemented but still needs native verification.
+The pinned macOS Driver refuses background dragging. Dragging requires an
+explicitly selected Foreground allowed mode and can temporarily change focus.
 The pinned Linux Driver also has an unresolved Unicode insertion failure;
 GTK keyboard, pixel scroll and drag need independent input routes unavailable
 in the test fixture.

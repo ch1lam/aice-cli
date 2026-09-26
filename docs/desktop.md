@@ -305,7 +305,9 @@ whole action/observation sequence serialized. Cua refuses a snapshot replaced
 by another owner, retired by session cleanup, or refreshed without a screenshot.
 AICE never adds private `_session_id` fields or supplies unsupported capture
 parameters. These routes do not provide immutable capture-ID checking, and
-native geometry-change and foreground-delivery acceptance remains outstanding.
+native geometry-change acceptance remains outstanding for these routes. The
+macOS AppKit foreground-drag gate below establishes one explicit continuation
+path, not foreground acceptance for all tools or surfaces.
 Both point axes must be explicit numbers; omitted axes never become zero.
 
 Tool adapters serialize bounded domain facts as JSON text and append the actual
@@ -408,7 +410,7 @@ as the tools and prompt it publishes; offline publication tests cover this.
 
 | Scope | Evidence | Remaining acceptance |
 | --- | --- | --- |
-| macOS 0.29.1 universal artifact | Verified App installed and both OS grants enabled by the operator; signature, Gatekeeper and 15-tool admission checks pass; native three-AppKit Manager and scripted-model CLI/Guard/Session gates pass with nine captures and foreground sentinel intact; ASCII/Unicode insertion, single key, select-all, Retina pixel click and resize refusal/recovery pass independent widget checks; actual Settings repair reuses the installation, completes the public grant/capture check and saves temporary enable | First-time Settings installation and system-dialog interaction, launch, overlay, in-flight cancellation, remaining pixel actions, heterogeneous applications and physical input/IME coexistence; actual-model and broader performance acceptance |
+| macOS 0.29.1 universal artifact | Verified App installed and both OS grants enabled by the operator; signature, Gatekeeper and 15-tool admission checks pass; native three-AppKit Manager and scripted-model CLI/Guard/Session gates pass with nine captures and foreground sentinel intact; ASCII/Unicode insertion, single key, select-all, Retina pixel click, resize refusal/recovery and background scroll pass independent widget checks; one explicit foreground-drag run succeeded with a measured focus transition and restoration; actual Settings repair reuses the installation, completes the public grant/capture check and saves temporary enable | Background drag is refused by 0.29.1 and foreground-drag repeatability remains open; first-time Settings installation and system-dialog interaction, launch, overlay, in-flight cancellation, remaining pixel actions, heterogeneous applications and physical input/IME coexistence; actual-model and broader performance acceptance |
 | Windows amd64/arm64 | Downloaded archives and selected executable hashes verified; private installer with Authenticode checks implemented; synthetic extraction/reuse/cancellation tests and cross-compilation pass; static imports inspected; read-only service inspection and Windows status presentation implemented with synthetic tests | Native installation/signature trust, exclusive publication, named-pipe identity/UIAccess/session checks and status-schema confirmation; setup/action runtime integration and native UI/input/lifecycle tests |
 | Linux arm64 | Private installation/reuse and read-only headless inspection passed in an isolated Debian 13 container; production Manager and selected-window setup passed owned stdio and verified shared-service X11/GTK checks; scripted-model native print/Guard/tool/Session flow, ASCII insertion and pixel click/resize rejection passed; launch established its exact window and preserved the app after Manager close; actual Settings CLI flow passed native private installation, selected-window capture, cancellation/retry and saved enable | Launch steals focus, Unicode insertion truncates and GTK key/hotkey, pixel scroll and drag are unavailable in the fixture; actual-model tasks, physical terminal/IME and other desktop environments; other pixel actions, foreground assistance, overlay, other toolkits, real compositor/Wayland and physical-input/IME checks |
 | Linux amd64 | Downloaded archive and selected executable hashes verified; synthetic installer tests and cross-compilation pass; ELF library dependencies inspected | Native installation/dynamic loading and exclusive publication; runtime/service admission, AT-SPI/display detection, compositor-specific input/capture/overlay tests |
@@ -476,8 +478,37 @@ then committed once in 2.01 s. The resized 900×378-point frame produced a
 Both cases preserved sentinel focus and contents
 through cleanup. A returned `effect:unverifiable` on ordinary click was not used
 as proof of success; the independent widget commit established it.
-This does not establish double/right-click, scroll, drag, overlay appearance,
-image crops or multiple monitors with negative coordinates.
+This does not establish double/right-click, overlay appearance, image crops or
+multiple monitors with negative coordinates; gesture evidence follows below.
+
+The separate `TestNativeMacGestures` gate passed background pixel scrolling on
+an AppKit `NSScrollView`: its independently reported content offset changed from
+0 to 60 points, with text, button count and slider unchanged. The action plus
+observation took 3.08 s; the sentinel retained focus and contents. The Driver
+reported `effect:unverifiable`, so the widget readback is the effect evidence.
+The background drag case **fails**: 0.29.1 returned the code-only
+`background_unavailable` response, with the `NSSlider` still at zero and no focus
+loss. The pinned `drag.rs` rejects this route before target resolution or input.
+The gate retains its requested movement postcondition; refusal is not a pass.
+
+An initial `TestNativeMacForegroundDrag` run completed in an explicitly opted-in
+`foreground_allowed` mode. Its first background request was refused; the test
+then rejected reuse of that consumed observation and used the returned fresh
+image with `foreground_action_available:drag` for one explicit foreground
+request. The slider moved from 0 to 92.7, while text, button count and scroll
+position remained unchanged. The sequence recorded one foreground-sentinel
+activation loss and restored its focus before cleanup. This is expected
+foreground interaction, not background coexistence, and does not make the
+background drag gate pass. No saved control-mode preference is changed by the
+test. A later probe additionally verified zero focus loss before the explicit
+foreground dispatch, but failed afterward: the slider remained at zero and the
+sentinel was inactive with ChatGPT foreground. A preceding regression attempt
+also lost focus to iTerm2, then failed to establish the next sentinel's initial
+focus before input. These observations do not attribute who changed focus;
+foreground-drag repeatability remains unaccepted. They reinforce that
+`effect:unverifiable` must retain uncertain delivery rather than report success
+or trigger automatic replay. Commands and remaining geometry/physical-input
+limits are in [collaboration](collaboration.md#computer-use-checks).
 
 These gates require the installed authorized service and an available desktop;
 their preparation installs nothing and requests no grants. They use no real

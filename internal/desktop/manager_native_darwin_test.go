@@ -281,9 +281,26 @@ type nativeFixtureState struct {
 	Height            float64 `json:"height"`
 	ButtonX           float64 `json:"button_x"`
 	ButtonY           float64 `json:"button_y"`
+	ScrollX           float64 `json:"scroll_x"`
+	ScrollY           float64 `json:"scroll_y"`
+	ScrollValue       float64 `json:"scroll_value"`
+	SliderValue       float64 `json:"slider_value"`
+	DragFromX         float64 `json:"drag_from_x"`
+	DragFromY         float64 `json:"drag_from_y"`
+	DragToX           float64 `json:"drag_to_x"`
+	DragToY           float64 `json:"drag_to_y"`
 }
 
 func startNativeFixture(t *testing.T, ctx context.Context, binary, label string, sentinel bool) nativeFixture {
+	t.Helper()
+	mode := "target"
+	if sentinel {
+		mode = "sentinel"
+	}
+	return startNativeFixtureMode(t, ctx, binary, label, mode)
+}
+
+func startNativeFixtureMode(t *testing.T, ctx context.Context, binary, label, mode string) nativeFixture {
 	t.Helper()
 	dir := t.TempDir()
 	// All windows share the unique test binary's directory basename for discovery.
@@ -305,10 +322,6 @@ func startNativeFixture(t *testing.T, ctx context.Context, binary, label string,
 	if err := os.WriteFile(filepath.Join(app, "Info.plist"), []byte(plist), 0600); err != nil {
 		t.Fatal(err)
 	}
-	mode := "target"
-	if sentinel {
-		mode = "sentinel"
-	}
 	cmd := exec.CommandContext(ctx, fixtureBinary, dir, name, mode)
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
@@ -316,7 +329,7 @@ func startNativeFixture(t *testing.T, ctx context.Context, binary, label string,
 	t.Cleanup(func() { _ = cmd.Process.Kill(); _ = cmd.Wait() })
 	fixture := nativeFixture{directory: dir, prefix: prefix, name: name, pid: cmd.Process.Pid}
 	awaitNativeState(t, ctx, fixture, func(s nativeFixtureState) bool { return s.PID == fixture.pid })
-	if sentinel {
+	if mode == "sentinel" {
 		// LaunchServices provides the explicit initial foreground transition.
 		// No activation is performed after arming the focus monitor.
 		activateCtx, cancel := context.WithTimeout(ctx, 5*time.Second)

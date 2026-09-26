@@ -15,6 +15,25 @@ import (
 // fixture. No visual model or user app receives input. A resize must refuse the
 // old capture before input; recovery uses a fresh image and newly derived point.
 func TestNativeMacPixelClick(t *testing.T) {
+	testNativeMacPixelInput(t, []string{"click", "resize"}, BackgroundOnly)
+}
+
+// Refusal remains a failing input postcondition, not an expected-pass case.
+func TestNativeMacGestures(t *testing.T) {
+	testNativeMacPixelInput(t, []string{"scroll", "drag"}, BackgroundOnly)
+}
+
+// Separate opt-in: the synthetic target may receive foreground input. This
+// never changes the user's saved preference or makes background refusal pass.
+func TestNativeMacForegroundDrag(t *testing.T) {
+	if os.Getenv("AICE_CUA_NATIVE_FOREGROUND") != "1" {
+		t.Skip("set AICE_CUA_NATIVE_FOREGROUND=1 to allow foreground input to a synthetic slider")
+	}
+	testNativeMacPixelInput(t, []string{"drag"}, ForegroundAllowed)
+}
+
+func testNativeMacPixelInput(t *testing.T, kinds []string, controlMode ControlMode) {
+	t.Helper()
 	if os.Getenv("AICE_CUA_NATIVE") != "1" {
 		t.Skip("set AICE_CUA_NATIVE=1 after explicit native setup; opens synthetic windows")
 	}
@@ -22,11 +41,15 @@ func TestNativeMacPixelClick(t *testing.T) {
 	defer cancel()
 	driver, endpoint := nativeMacSetup(t, ctx)
 	binary := buildNativeFixture(t, ctx)
-	for _, kind := range []string{"click", "resize"} {
+	for _, kind := range kinds {
 		t.Run(kind, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(ctx, time.Minute)
 			defer cancel()
-			target := startNativeFixture(t, ctx, binary, "PixelTarget", false)
+			mode := "target"
+			if kind == "scroll" || kind == "drag" {
+				mode = "gestures"
+			}
+			target := startNativeFixtureMode(t, ctx, binary, "PixelTarget", mode)
 			sentinel := startNativeFixture(t, ctx, binary, "PixelSentinel", true)
 			awaitNativeState(t, ctx, sentinel, func(s nativeFixtureState) bool { return s.Active })
 			if err := os.WriteFile(filepath.Join(sentinel.directory, "arm"), nil, 0600); err != nil {
@@ -36,9 +59,10 @@ func TestNativeMacPixelClick(t *testing.T) {
 			defer func() {
 				after := readNativeState(t, sentinel)
 				final := awaitNativeState(t, ctx, sentinel, func(s nativeFixtureState) bool { return s.Ticks > after.Ticks+3 })
-				if !final.Active || final.FocusLosses != 0 || final.Value != "AICE-314" || final.Commits != 0 {
+				if !final.Active || (controlMode == BackgroundOnly && final.FocusLosses != 0) || final.Value != "AICE-314" || final.Commits != 0 {
 					t.Errorf("pixel action disturbed sentinel: active=%v focus_losses=%d front_pid=%d", final.Active, final.FocusLosses, final.FrontPID)
 				}
+				t.Logf("sentinel mode=%s restored=%v focus_losses=%d", controlMode, final.Active, final.FocusLosses)
 			}()
 			manager, err := NewManager(func(context.Context) (string, string, error) { return driver, endpoint, nil })
 			if err != nil {
@@ -49,7 +73,7 @@ func TestNativeMacPixelClick(t *testing.T) {
 					t.Error(err)
 				}
 			}()
-			run, err := manager.Bind(ctx, RunOptions{Mode: BackgroundOnly, Images: true})
+			run, err := manager.Bind(ctx, RunOptions{Mode: controlMode, Images: true})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -87,12 +111,59 @@ func TestNativeMacPixelClick(t *testing.T) {
 				}
 				awaitNativeState(t, ctx, target, func(s nativeFixtureState) bool { return s.Width == 900 && s.Height != before.Height })
 			}
-			result, err := run.Act(ctx, ActRequest{Kind: "click", ObservationRef: obs.Ref, Point: point, Screenshot: true})
+			request := ActRequest{Kind: "click", ObservationRef: obs.Ref, Point: point, Screenshot: true}
+			if mode == "gestures" {
+				if before.ScrollValue != 0 || before.SliderValue != 0 || before.DragToX <= before.DragFromX {
+					t.Fatal("gesture fixture did not establish initial state")
+				}
+				request.Kind = kind
+				if kind == "scroll" {
+					request.Point = nativeImagePoint(t, obs, before, before.ScrollX, before.ScrollY)
+					request.Direction, request.Amount = "down", 3
+				} else {
+					request.Point = nil
+					request.Drag = &DragGesture{From: nativeImagePoint(t, obs, before, before.DragFromX, before.DragFromY), To: nativeImagePoint(t, obs, before, before.DragToX, before.DragToY), DurationMS: 500}
+				}
+			}
+			result, err := run.Act(ctx, request)
 			var facts struct{ Code, Effect string }
 			_ = json.Unmarshal(result.Driver, &facts)
 			t.Logf("case=%s timing=%+v outcome=%s driver_error=%v code=%s effect=%s", kind, result.Timing, result.Outcome, result.DriverError, facts.Code, facts.Effect)
 			afterReply := readNativeState(t, target)
 			settled := awaitNativeState(t, ctx, target, func(s nativeFixtureState) bool { return s.Ticks > afterReply.Ticks+3 })
+			if controlMode == ForegroundAllowed {
+				priorFocus := readNativeState(t, sentinel)
+				if !priorFocus.Active || priorFocus.FocusLosses != 0 {
+					t.Fatal("background refusal disturbed focus before explicit foreground input")
+				}
+				fresh := result.Observation
+				if err != nil || !result.DriverError || facts.Code != "background_unavailable" || fresh == nil || fresh.ForegroundAction != "drag" || settled.SliderValue != 0 || settled.Commits != 0 || settled.Value != before.Value {
+					t.Fatal("foreground continuation lacks a verified pre-input refusal and fresh observation", err)
+				}
+				stale := request
+				stale.DeliveryMode = "foreground"
+				if _, err := run.Act(ctx, stale); err == nil {
+					t.Fatal("foreground accepted the consumed background observation")
+				}
+				request.ObservationRef, request.DeliveryMode = fresh.Ref, "foreground"
+				request.Drag = &DragGesture{From: nativeImagePoint(t, *fresh, settled, settled.DragFromX, settled.DragFromY), To: nativeImagePoint(t, *fresh, settled, settled.DragToX, settled.DragToY), DurationMS: 500}
+				result, err = run.Act(ctx, request)
+				facts = struct{ Code, Effect string }{}
+				_ = json.Unmarshal(result.Driver, &facts)
+				t.Logf("foreground drag timing=%+v outcome=%s driver_error=%v code=%s effect=%s", result.Timing, result.Outcome, result.DriverError, facts.Code, facts.Effect)
+				afterReply = readNativeState(t, target)
+				settled = awaitNativeState(t, ctx, target, func(s nativeFixtureState) bool { return s.Ticks > afterReply.Ticks+3 })
+			}
+			if mode == "gestures" {
+				t.Logf("gesture readback: scroll_before=%.1f scroll_after=%.1f slider_before=%.1f slider_after=%.1f", before.ScrollValue, settled.ScrollValue, before.SliderValue, settled.SliderValue)
+				matched := settled.ScrollValue > before.ScrollValue && settled.SliderValue == before.SliderValue
+				if kind == "drag" {
+					matched = settled.SliderValue >= 80 && settled.ScrollValue == before.ScrollValue
+				}
+				if !matched || settled.Commits != 0 || settled.Value != before.Value {
+					t.Error("independent application state did not satisfy gesture postcondition")
+				}
+			}
 			if kind == "resize" {
 				if err != nil || !result.Dispatched || result.Outcome != "returned" || !result.DriverError || facts.Code != "capture_frame_mismatch" || facts.Effect != "refused" || settled.Commits != 0 || settled.Value != before.Value {
 					t.Fatal("old capture was not refused before input", err)
@@ -107,11 +178,11 @@ func TestNativeMacPixelClick(t *testing.T) {
 			}
 			nativeReturned(t, result, err)
 			if result.Observation.Image == nil || run.observations[result.Observation.Ref].capture == "" {
-				t.Fatal("pixel click did not return a verified fresh capture")
+				t.Fatal("pixel action did not return a verified fresh capture")
 			}
 			afterReply = readNativeState(t, target)
 			settled = awaitNativeState(t, ctx, target, func(s nativeFixtureState) bool { return s.Ticks > afterReply.Ticks+3 })
-			if settled.Commits != 1 || settled.Result != "Result: AICE-314" || settled.Value != before.Value {
+			if mode != "gestures" && (settled.Commits != 1 || settled.Result != "Result: AICE-314" || settled.Value != before.Value) {
 				t.Fatalf("pixel click postcondition failed: commits=%d result_matches=%v input_unchanged=%v", settled.Commits, settled.Result == "Result: AICE-314", settled.Value == before.Value)
 			}
 		})
@@ -123,10 +194,15 @@ func TestNativeMacPixelClick(t *testing.T) {
 
 func nativeButtonPoint(t *testing.T, observation Observation, state nativeFixtureState) *Point {
 	t.Helper()
-	if state.Width <= 0 || state.Height <= 0 || state.ButtonX <= 0 || state.ButtonY <= 0 || state.ButtonX >= state.Width || state.ButtonY >= state.Height {
-		t.Fatal("fixture button geometry unavailable")
+	return nativeImagePoint(t, observation, state, state.ButtonX, state.ButtonY)
+}
+
+func nativeImagePoint(t *testing.T, observation Observation, state nativeFixtureState, x, y float64) *Point {
+	t.Helper()
+	if state.Width <= 0 || state.Height <= 0 || x <= 0 || y <= 0 || x >= state.Width || y >= state.Height {
+		t.Fatal("fixture geometry unavailable")
 	}
 	// Convert independently reported AppKit points to the image actually sent
 	// to the model. AICE/Driver remain responsible for their own inverse scales.
-	return &Point{X: state.ButtonX * float64(observation.ImageWidth) / state.Width, Y: state.ButtonY * float64(observation.ImageHeight) / state.Height}
+	return &Point{X: x * float64(observation.ImageWidth) / state.Width, Y: y * float64(observation.ImageHeight) / state.Height}
 }

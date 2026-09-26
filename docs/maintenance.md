@@ -136,6 +136,13 @@ launch uses best-effort focus restoration. A pure-function diagnostic reproduced
 the candidate ordering, but no native Windows launch has run. Resolve exact
 application/window ownership and continuous focus acceptance before enabling that
 adapter; do not treat `active:false` or foreground-retry advice as proof of safety.
+The macOS [gesture gates](desktop.md#platform-evidence) establish AppKit
+background scrolling, but the full background gate fails because 0.29.1 rejects
+drag before input. One explicit foreground-drag run completed with a measured
+focus transition and restoration, but a later probe failed movement/restoration
+with another app foreground. The cause is not attributed and native foreground
+repeatability remains open; neither result establishes background support. Keep the refusal and failing movement postcondition visible pending
+an upstream repair or an explicit acceptance of that capability limit.
 The Linux [input acceptance gate](desktop.md#linux-input-acceptance-failures)
 currently fails on truncated Unicode insertion and unavailable GTK background
 keyboard, pixel scroll and drag delivery. Keep those failures distinct from passing
