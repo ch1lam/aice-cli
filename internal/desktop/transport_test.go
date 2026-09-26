@@ -204,7 +204,7 @@ func TestDriverEnvironmentDoesNotInheritAuthorityOrSecrets(t *testing.T) {
 			t.Fatal("unsafe child environment")
 		}
 	}
-	if !strings.Contains(text, "DISPLAY=:1") || !strings.Contains(text, "CUA_DRIVER_PERMISSION_MODE=standard") {
+	if !strings.Contains(text, "DISPLAY=:1") || !strings.Contains(text, "CUA_DRIVER_PERMISSION_MODE=standard") || !strings.Contains(text, "CUA_DRIVER_RS_UPDATE_CHECK=false") {
 		t.Fatal("missing required environment")
 	}
 }

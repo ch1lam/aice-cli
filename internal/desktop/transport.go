@@ -43,6 +43,10 @@ type Image struct {
 	MIMEType string
 }
 
+// beforeDispatchError is reserved for failures established before CallTool.
+// Other transport errors cannot prove whether the native action happened.
+type beforeDispatchError struct{ error }
+
 // client is private: callers cannot expose arbitrary Driver tools to the model.
 type client struct {
 	session *mcp.ClientSession
@@ -132,10 +136,10 @@ func connect(ctx context.Context, transport mcp.Transport) (*client, error) {
 // call sends exactly once. Neither domain errors nor EOF/cancellation are retried.
 func (c *client) call(ctx context.Context, name string, arguments any) (Reply, error) {
 	if err := ctx.Err(); err != nil {
-		return Reply{}, err
+		return Reply{}, beforeDispatchError{err}
 	}
 	if _, ok := c.tools[name]; !ok {
-		return Reply{}, fmt.Errorf("desktop: capability %s unavailable", name)
+		return Reply{}, beforeDispatchError{fmt.Errorf("desktop: capability %s unavailable", name)}
 	}
 	ctx, cancel := context.WithTimeout(ctx, callTimeout)
 	defer cancel()
@@ -205,7 +209,7 @@ func driverEnvironment(environ []string) []string {
 			result = append(result, entry)
 		}
 	}
-	return append(result, "CUA_DRIVER_RS_TELEMETRY_ENABLED=false", "CUA_DRIVER_PERMISSION_MODE=standard")
+	return append(result, "CUA_DRIVER_RS_TELEMETRY_ENABLED=false", "CUA_DRIVER_RS_UPDATE_CHECK=false", "CUA_DRIVER_PERMISSION_MODE=standard")
 }
 
 // processTransport adds bounded framing and child ownership to the SDK's stdio

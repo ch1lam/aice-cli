@@ -28,7 +28,8 @@ must extract the exact pinned artifact, preserve the signed App, avoid PATH,
 autostart and agent-skill modifications, and validate before publication.
 
 Cua sends content-free product telemetry by default. AICE-owned child processes
-set `CUA_DRIVER_RS_TELEMETRY_ENABLED=false`; this does not modify preferences of
+set `CUA_DRIVER_RS_TELEMETRY_ENABLED=false` and disable the child's update check
+with `CUA_DRIVER_RS_UPDATE_CHECK=false`; this does not modify preferences of
 an existing shared service. Cua updates are explicit; no `latest` resolution or
 upstream update command belongs in the runtime path.
 
@@ -44,7 +45,7 @@ JSON-RPC client would duplicate protocol/lifecycle code; the SDK stays private
 to `internal/desktop`, without creating a generic MCP plugin platform.
 
 SDK transitive runtime additions: google/jsonschema-go (MIT),
-segmentio/encoding and segmentio/asm (MIT), yosida95/uritemplate/v3 (MIT).
+segmentio/encoding and segmentio/asm (MIT), yosida95/uritemplate/v3 (BSD-3-Clause).
 Versions are locked in go.mod/go.sum. Existing OAuth/sys dependencies retain
 the application's newer versions. Tests use a raw local peer, not paid models
 or the user's desktop.
