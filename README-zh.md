@@ -47,7 +47,7 @@ aice --workspace .
 交互选择立即保存，其他运行中的实例继续使用已加载的配置。
 详见[配置与持久化](./docs/configuration.md#settings-and-precedence)。
 
-使用 `/settings`（或 Ctrl+逗号）编辑模型、账户、工具、运行限制、Trust 偏好与启动选项。
+使用 `/settings` 编辑模型、账户、工具、运行限制、Trust 偏好与启动选项。
 `/context`、`/usage` 和 `/session` 分别打开上下文占用、Session 已记录用量和会话信息。
 窗口会保留后台草稿，仅打开窗口不会创建 Session。详见
 [Settings 与 Usage](./docs/configuration.md#settings-window)。

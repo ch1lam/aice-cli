@@ -160,20 +160,3 @@ func (p *settingsPanel) footer() string {
 	}
 	return "Tab category · ↑↓ · Enter edit · ? details · D default · u inherit · / search · Esc"
 }
-func (m model) settingsLauncher(mouse tea.Mouse) string {
-	if m.inputContext().domain != inputMain || m.readSettings == nil {
-		return ""
-	}
-	header := m.screenLayout().header
-	if mouse.Y != header.y+1 {
-		return ""
-	}
-	x := mouse.X - header.x - 1
-	if x >= 0 && x < 10 {
-		return "settings"
-	}
-	if x >= 12 && x < 19 && m.readUsage != nil {
-		return "usage"
-	}
-	return ""
-}

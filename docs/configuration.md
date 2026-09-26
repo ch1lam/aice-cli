@@ -152,7 +152,7 @@ and credential files are not one transaction.
 
 ### Settings window
 
-Open `/settings`, press Ctrl+comma, or click **Settings** under the header.
+Open `/settings` to edit settings. The main header has no Settings or Usage buttons.
 `/desktop` opens the same panel at Computer Use in Tools & Network. It does not
 start a run or create a Session. During a main run, the Settings footer offers
 **Stop current run** (click or F6 within the panel); Esc only returns or closes.
@@ -167,7 +167,7 @@ Project & Trust, and System. Tab/Shift+Tab switches categories; `/` searches
 across them. Arrow keys select, Enter edits, and `?` opens scrollable details.
 Mouse clicks select categories, fields, choices and Save/Cancel; the wheel
 scrolls the active list. Escape backs out of a field, search or window without
-cancelling the background response. Ctrl+comma preserves the composer and attachments.
+cancelling the background response.
 
 | Area | Editable preferences or actions | Takes effect |
 | --- | --- | --- |
@@ -220,9 +220,9 @@ or Settings revision changed. See [Computer Use](desktop.md#baseline-and-outstan
 ### Usage and Session information
 
 `/context`, `/usage`, and `/session` open Context, Session usage, and Session
-info in the same window. The clickable **Usage** entry opens Context; the
-existing top-right context hover/click format toggle is unchanged. Tab changes
-pages and `r` refreshes. Select an information row and Enter for scrollable text.
+info in the same window. The top-right context indicator supports a hover/click
+format toggle. Tab changes pages and `r` refreshes. Select an information row
+and Enter for scrollable text.
 
 Context shows occupancy, capacity, estimate status, window source and model.
 Session usage counts recorded input/output/cache tokens across every branch and
@@ -1159,7 +1159,7 @@ without color.
 | `/help` | List commands |
 | `/btw [question]` | Create or choose an ephemeral, tool-free side thread |
 | `/init` | Create or improve root `AGENTS.md`; loaded after restart |
-| `/settings` | Open the five-category Settings window (also Ctrl+comma) |
+| `/settings` | Open the five-category Settings window |
 | `/desktop` | Open Computer Use in the same Settings window |
 | `/context`, `/usage` | Open current context or recorded Session usage |
 | `/browser` | Browser status, connection, tab selection and close; `/browser status` also works |

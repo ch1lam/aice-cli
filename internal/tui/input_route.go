@@ -12,9 +12,6 @@ func (m model) handleKey(message tea.KeyPressMsg) (model, tea.Cmd, bool) {
 		next, command := m.handleSettings(message)
 		return next.(model), command, true
 	}
-	if m.inputContext().domain == inputMain && message.String() == "ctrl+," {
-		return m.openSettings()
-	}
 	if m.inputContext().domain == inputMain {
 		m.syncCommandCompletion()
 	}

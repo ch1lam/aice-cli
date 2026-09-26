@@ -52,7 +52,7 @@ settings → user settings → defaults. Interactive selections save immediately
 other running instances keep their loaded configuration. See
 [configuration and persistence](./docs/configuration.md#settings-and-precedence).
 
-Open `/settings` (or Ctrl+comma) to edit models, accounts, tools, run limits,
+Open `/settings` to edit models, accounts, tools, run limits,
 Trust preferences and startup options. `/context`, `/usage` and `/session` open
 context occupancy, recorded Session usage and Session information. Both windows
 keep the background draft and create no Session just by opening.

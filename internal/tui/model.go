@@ -118,7 +118,6 @@ type model struct {
 	settings                 *settingsPanel
 	settingsTab              int
 	settingsGeneration       uint64
-	settingsLauncherPress    string
 	runSettingsAction        func(*settingsAction, uint64) tea.Cmd
 	settingsPositions        map[int]int
 	readUsage                func(uint64) (tea.Cmd, context.CancelFunc)
