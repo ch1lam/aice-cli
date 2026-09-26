@@ -66,6 +66,8 @@ test. See [Computer Use](./docs/desktop.md) for verified scope and remaining
 platform limitations, including unavailable Wayland/XWayland and Windows routes.
 The pinned Linux Driver also has an unresolved Unicode insertion failure;
 GTK keyboard delivery needs an independent input route unavailable in the test fixture.
+Linux application launch also failed background coexistence by taking foreground
+focus in the native fixture, despite the Driver reporting an inactive app.
 
 Runs have no round limit by default. Optionally set `--max-turns 50`,
 `--run-token-budget 200000`, and `--run-timeout 30m`. By default, 8 consecutive identical tool rounds stop

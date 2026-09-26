@@ -338,6 +338,15 @@ delivery; see [input acceptance failures](desktop.md#linux-input-acceptance-fail
 Do not change those cases into expected-success tests for refusal or truncation.
 The passing pixel cases do not establish keyboard readiness. Fixture geometry
 supplies coordinates only to these tests; production input still goes through Cua.
+The optional `TestNativeLinuxLaunch` discovers a temporary XDG desktop entry,
+launches it once, checks exact PID/window binding and a follow-up task, and
+verifies the application survives Manager close. Pass `'^TestNativeLinuxLaunch$'`
+as the runner's third argument. The full gate currently **fails** because launch
+steals the foreground sentinel's focus despite Cua reporting `active:false`;
+see [launch acceptance failure](desktop.md#linux-launch-acceptance-failure).
+The wrapper, application files and launched process are test-owned; no system
+desktop entry or host application is installed. AICE itself must leave launched
+apps alive, and the test cleans up its synthetic fixture separately.
 The Manager test additionally calls the public Linux setup API with a selector
 limited to its synthetic target. It verifies a real capture, absence of invented
 grant/service-launch facts, connection cleanup and shared-service preservation

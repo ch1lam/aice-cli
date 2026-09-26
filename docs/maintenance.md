@@ -130,6 +130,11 @@ currently fails on truncated Unicode insertion and unavailable GTK background
 keyboard delivery. Keep those failures distinct from passing semantic value
 changes and pixel clicks; neither a non-error RPC nor cross-compilation proves
 the requested input landed.
+The separate [Linux launch gate](desktop.md#linux-launch-acceptance-failure)
+also fails background coexistence: its synthetic app launches and remains usable,
+but the foreground sentinel loses focus despite the Driver's `active:false`.
+That field is not measured focus evidence. Preserve the failing acceptance
+condition pending a reviewed repair or explicit product decision.
 
 ### Self-update OpenPGP dependency warning
 

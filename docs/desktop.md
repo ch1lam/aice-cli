@@ -213,8 +213,10 @@ command before window binding. A ready single window
 is observed immediately; multiple windows remain explicit candidates. If the
 process is known but its window is late, a bounded five-second read-only wait
 discovers that PID's windows without launching again. A lost response never
-triggers another launch. Launch itself uses Cua's background-launch behavior;
-native focus-side-effect acceptance remains open.
+triggers another launch. Launch itself uses Cua's launch path. The Linux native
+launch gate observed foreground focus loss despite the Driver's `active:false`
+response; see [launch acceptance failure](#linux-launch-acceptance-failure).
+macOS launch focus-side-effect acceptance remains open.
 Observation references bind the run, connection generation, exact target,
 Driver snapshot, opaque element tokens and immutable capture ID. Rediscovery,
 same-window observation (including from another run), action dispatch,
@@ -388,7 +390,7 @@ as the tools and prompt it publishes; offline publication tests cover this.
 | --- | --- | --- |
 | macOS 0.29.1 universal artifact | Download hash matches fixed release manifest; temporary extraction/exclusive publication preserves signature, signing identity and Gatekeeper acceptance; CLI/schema inspected; Settings setup exercised through CLI/Bubble Tea with fake native operations | Signed installed service, system authorization, persistent MCP handshake against that service, synthetic multi-app task, background focus/input sentinel, native overlay, cancellation and cold/warm measurements |
 | Windows amd64/arm64 | Downloaded archives and selected executable hashes verified; private installer with Authenticode checks implemented; synthetic extraction/reuse/cancellation tests and cross-compilation pass; static imports inspected | Native installation/signature trust and exclusive publication; runtime/service admission, interactive-session/UIAccess detection, native UI/input/lifecycle tests |
-| Linux arm64 | Private installation/reuse and read-only headless inspection passed in an isolated Debian 13 container; production Manager and selected-window setup passed owned stdio and verified shared-service X11/GTK checks; scripted-model native print/Guard/tool/Session flow, ASCII insertion and pixel click/resize rejection passed; actual Settings CLI flow passed with synthetic native operations | Unicode insertion truncates and GTK key/hotkey are unavailable in the fixture; fully native Settings workflow and actual-model tasks; launch, other pixel actions/drag, foreground assistance, overlay, other toolkits, real compositor/Wayland and physical-input/IME checks |
+| Linux arm64 | Private installation/reuse and read-only headless inspection passed in an isolated Debian 13 container; production Manager and selected-window setup passed owned stdio and verified shared-service X11/GTK checks; scripted-model native print/Guard/tool/Session flow, ASCII insertion and pixel click/resize rejection passed; launch established its exact window and preserved the app after Manager close; actual Settings CLI flow passed with synthetic native operations | Launch steals focus, Unicode insertion truncates and GTK key/hotkey are unavailable in the fixture; fully native Settings workflow and actual-model tasks; other pixel actions/drag, foreground assistance, overlay, other toolkits, real compositor/Wayland and physical-input/IME checks |
 | Linux amd64 | Downloaded archive and selected executable hashes verified; synthetic installer tests and cross-compilation pass; ELF library dependencies inspected | Native installation/dynamic loading and exclusive publication; runtime/service admission, AT-SPI/display detection, compositor-specific input/capture/overlay tests |
 
 On 2026-09-26 the native host had a signed, Gatekeeper-accepted CuaDriver
@@ -577,6 +579,33 @@ files were byte-for-byte identical and still passed `text.chars().count()` to
 count; the passing GTK `set_value` test exercises `SetTextContents`, so it does
 not validate that fallback. This is a dated source review, not execution of the
 nightly or a guarantee about later releases. No release pin has been changed.
+
+### Linux launch acceptance failure
+
+`TestNativeLinuxLaunch` exercises a temporary XDG desktop entry through the
+production Manager in the isolated arm64 X11/GTK fixture. On 2026-09-27 the
+pinned 0.29.1 Driver launched it once, returned the exact PID/window with an
+immediate screenshot, rejected reuse of the consumed AICE app reference, and
+allowed a Unicode value change and button commit. Independent fixture state
+confirmed the task and continued advancing after Manager close: the app's
+lifetime is separate from AICE's connection. Launch plus observation took about
+128 ms; the full fixture case took 3.67 seconds, with no model call.
+
+The full gate nevertheless **failed**: the foreground sentinel lost activation
+once and remained inactive after launch, while Cua reported `active:false`.
+All five core keys sent in that interval were retained, so this run establishes
+focus interference, not observed keyboard misdelivery. Returning a process and
+window successfully does not satisfy background coexistence. The fixed Linux
+launch helper spawns the application but does not prevent its mapped window
+from activating; the returned `active` field is a constant false, not a measured
+focus fact. AICE does not restore focus or replay launch to disguise this result.
+
+Keep this failure separate from successful inputs into already open background
+windows. No repaired Driver or product exception has been accepted. The gate
+must preserve focus/input requirements and be rerun after a reviewed fix;
+changing a window-manager setting solely to make this case pass would not prove
+the existing launch route. Other window managers, D-Bus handoffs, and macOS or
+Windows launch behavior require their own native evidence.
 
 ### Shared runtime and application verification
 

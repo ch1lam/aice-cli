@@ -58,6 +58,8 @@ Linux setup 会让你选择一个窗口进行本地截图验证。已验证范�
 [Computer Use](./docs/desktop.md)；Wayland/XWayland 与 Windows 操作路线仍不可用。
 固定版本的 Linux Driver 还存在未解决的 Unicode 插入失败；GTK 键盘操作所需的
 独立输入路线在当前测试环境中不可用。
+Linux 应用启动也未通过后台共存验收：原生测试中启动操作抢占了前台焦点，
+尽管 Driver 返回应用未激活。
 
 默认不限制运行轮数。可用 `--max-turns 50` 设置可选轮数上限，
 `--run-token-budget 200000` 和 `--run-timeout 30m` 设置单次运行资源预算。默认连续 8 轮工具调用、参数和结果均相同时停止；
