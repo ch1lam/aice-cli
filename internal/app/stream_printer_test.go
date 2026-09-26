@@ -338,3 +338,37 @@ type errorWriter struct {
 func (w errorWriter) Write([]byte) (int, error) {
 	return 0, w.err
 }
+
+func TestStreamPrinterDesktopProgressOmitsPayloads(t *testing.T) {
+	t.Parallel()
+	for _, name := range []string{"desktop_apps", "desktop_observe", "desktop_act"} {
+		t.Run(name, func(t *testing.T) {
+			var output, diagnostics bytes.Buffer
+			printer := newStreamPrinter(&output, &diagnostics)
+			call := llm.ToolCall{ID: "desktop", Name: name, Arguments: json.RawMessage(`{"query":"PRIVATE QUERY","action":"set_value","text":"PRIVATE INPUT","observation_ref":"PRIVATE REF"}`)}
+			result, err := llm.NewToolResultMessage(llm.ToolResult{CallID: call.ID, Name: name, Content: []llm.ContentPart{
+				llm.NewTextContent(`{"elements":[{"value":"PRIVATE OBSERVATION"}]}`).Part(),
+				{Type: llm.ContentTypeImage, Image: &llm.ImageContent{MIMEType: "image/png", Data: []byte("PRIVATE IMAGE")}},
+			}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, event := range []agent.AgentEvent{
+				{Type: agent.EventTypeToolExecutionStart, ToolCall: &call},
+				{Type: agent.EventTypeToolExecutionEnd, ToolCall: &call, ToolResult: &result},
+			} {
+				if err := printer.Accept(t.Context(), event); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if output.Len() != 0 || strings.Contains(diagnostics.String(), "PRIVATE") || strings.Contains(diagnostics.String(), "detail=") {
+				t.Fatal("desktop payload duplicated into progress output")
+			}
+			for _, want := range []string{"name=" + name + " status=started", "name=" + name + " status=succeeded duration_ms="} {
+				if !strings.Contains(diagnostics.String(), want) {
+					t.Fatal("missing bounded desktop progress", diagnostics.String())
+				}
+			}
+		})
+	}
+}

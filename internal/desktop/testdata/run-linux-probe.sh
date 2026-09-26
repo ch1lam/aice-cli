@@ -1,11 +1,14 @@
 #!/bin/sh
 # Run only in a disposable Debian container. Do not mount the host display,
-# D-Bus, home or /dev/input. Arguments: compiled Linux test binary, pinned archive.
+# D-Bus, home or /dev/input. Arguments: compiled Linux test binary, pinned archive,
+# optional test expression, optional mounted GTK fixture path for app tests.
 set -eu
 [ -f /.dockerenv ] || { echo 'Requires an isolated Docker container' >&2; exit 1; }
 [ "$(id -u)" = 0 ] || { echo 'Container package preparation requires container root' >&2; exit 1; }
 test_binary=$1
 archive=$2
+test_expression=${3:-^TestNativeLinux(BackgroundProbe|FocusSentinel|Manager)$}
+fixture=${4:-}
 case "$(uname -m)" in
   aarch64) label=linux-arm64; digest=47c1efa081057c9c1a18e45b20cb7dd0d7d2313520d18ba7d0d35f271005fe19 ;;
   x86_64) label=linux-x86_64; digest=61a0c0f24d6b03e31bb7a73390db875ecf0de2ce53aa435eadb03d70979d79a5 ;;
@@ -29,6 +32,7 @@ runuser -u nobody -- env -i PATH=/usr/bin:/bin HOME="$directory/home" \
   GTK_MODULES=gail:atk-bridge NO_AT_BRIDGE=0 \
   CUA_DRIVER_RS_TELEMETRY_ENABLED=false CUA_DRIVER_RS_UPDATE_CHECK=false \
   AICE_CUA_X11_CONTAINER=1 AICE_CUA_TEST_BINARY="$driver" \
+  AICE_CUA_TEST_NATIVE_ARCHIVE="$archive" AICE_CUA_TEST_LINUX_FIXTURE="$fixture" \
   dbus-run-session -- sh -eu -c '
     Xvfb :99 -screen 0 1280x1024x24 -nolisten tcp -ac >/dev/null 2>&1 &
     display_pid=$!
@@ -42,5 +46,5 @@ runuser -u nobody -- env -i PATH=/usr/bin:/bin HOME="$directory/home" \
     done
     openbox >/dev/null 2>&1 &
     wm_pid=$!
-    "$1" -test.run "^TestNativeLinux(BackgroundProbe|FocusSentinel|Manager)$" -test.v -test.timeout=3m
-  ' sh "$test_binary"
+    "$1" -test.run "$2" -test.v -test.timeout=3m
+  ' sh "$test_binary" "$test_expression"

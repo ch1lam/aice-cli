@@ -306,6 +306,13 @@ facts and any follow-up observation even when a later error occurs, marking the
 result as an error without replacing it with a generic Go error. Images and
 originals continue through the existing provider projection and Session JSONL.
 
+Text `--print` progress reports desktop tool names, status and elapsed time;
+it omits argument details so input text and observation queries are not copied
+to stderr. Full calls and results remain in the Session. Explicit
+`--output-format json` retains the existing [NDJSON event contract](contracts.md#print-ndjson-events),
+including arguments and bounded result text; it is transcript output and can
+contain window contents, not a content-free diagnostic stream.
+
 Interactive runs show one Computer Use activity row above the composer. It
 uses application-projected tool events: discovery/observation, a requested
 background or foreground route, a condition wait, and model Planning between
@@ -381,7 +388,7 @@ as the tools and prompt it publishes; offline publication tests cover this.
 | --- | --- | --- |
 | macOS 0.29.1 universal artifact | Download hash matches fixed release manifest; temporary extraction/exclusive publication preserves signature, signing identity and Gatekeeper acceptance; CLI/schema inspected; Settings setup exercised through CLI/Bubble Tea with fake native operations | Signed installed service, system authorization, persistent MCP handshake against that service, synthetic multi-app task, background focus/input sentinel, native overlay, cancellation and cold/warm measurements |
 | Windows amd64/arm64 | Downloaded archives and selected executable hashes verified; private installer with Authenticode checks implemented; synthetic extraction/reuse/cancellation tests and cross-compilation pass; static imports inspected | Native installation/signature trust and exclusive publication; runtime/service admission, interactive-session/UIAccess detection, native UI/input/lifecycle tests |
-| Linux arm64 | Private installation/reuse and read-only headless inspection passed in an isolated Debian 13 container; production Manager and selected-window setup passed owned stdio and verified shared-service X11/GTK checks; actual Settings CLI flow passed with synthetic native operations | Full native Settings/installer/tool/Guard/Session flow; native launch, pixel/keyboard/drag routes, foreground assistance, overlay, other toolkits, real compositor/Wayland and physical-input/IME checks |
+| Linux arm64 | Private installation/reuse and read-only headless inspection passed in an isolated Debian 13 container; production Manager and selected-window setup passed owned stdio and verified shared-service X11/GTK checks; scripted-model native print/Guard/tool/Session flow passed; actual Settings CLI flow passed with synthetic native operations | Fully native Settings installation workflow and actual-model tasks; native launch, pixel/keyboard/drag routes, foreground assistance, overlay, other toolkits, real compositor/Wayland and physical-input/IME checks |
 | Linux amd64 | Downloaded archive and selected executable hashes verified; synthetic installer tests and cross-compilation pass; ELF library dependencies inspected | Native installation/dynamic loading and exclusive publication; runtime/service admission, AT-SPI/display detection, compositor-specific input/capture/overlay tests |
 
 On 2026-09-26 the native host had a signed, Gatekeeper-accepted CuaDriver
@@ -437,8 +444,8 @@ service connection alone does not establish capture or target-input readiness.
 An absent shared service is compatible with an active owned tool process; the
 panel shows that cached instance connection separately, with unknown shared
 display facts. Without an active connection it reports that connection happens
-on first use. Refresh still starts nothing. Full native CLI and compositor-specific
-acceptance remain incomplete. The Linux arm64 headless
+on first use. Refresh still starts nothing. Native interactive Settings and
+compositor-specific acceptance remain incomplete. The Linux arm64 headless
 fixture passed two inspections of its own service and correctly reported absent
 display/bus capabilities while leaving that service alive between checks.
 
@@ -470,6 +477,20 @@ three-target case took about 8.8 seconds. These are synthetic X11 Manager
 measurements, not full model/tool/Guard/Session acceptance. Linux-only rejection
 tests also confirm that external restrictions, unknown status and foreign peers
 do not trigger an owned-runtime fallback.
+
+The separate native print test passed on Linux arm64 in the isolated X11 fixture.
+It installs the checksum-pinned archive into a temporary HOME through the real
+installer, then uses ordinary enabled configuration, the actual command, Guard,
+typed tools and production Manager with a scripted model. No `--yolo` or desktop
+backend substitution is used. Three exact-window Unicode edits and commits
+completed in about 7.1 seconds; independent GTK state confirmed all three.
+Nine valid PNG tool results reached subsequent model requests and replayed
+unchanged from Session JSONL, with stable message parents and paired calls.
+All 70 concurrent core keys remained in the sentinel, with zero focus loss;
+the owned Driver was gone after command completion. Text progress omitted input
+contents. This verifies native execution and image transport; the script does
+not interpret pixels, and setup UI, actual-model reasoning and physical input
+remain separate acceptance work.
 
 The Linux success response omits `screenshot_frame_valid`; the same fixed source
 sets it to false when a capture error occurs. The native probe confirms the

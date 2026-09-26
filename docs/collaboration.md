@@ -343,10 +343,34 @@ Linux with synthetic native operations: it follows disclosure, explicit window
 selection, saved enable, Stop and explicit continuation through the actual CLI.
 Unit tests cover cancellation before capture, foreign targets, missing images,
 invalid mappings and partial external-step retention without Session creation.
-These checks do not prove a fully native Settings/installer/tool/Guard/Session
-flow, native launch/pixel/keyboard/drag actions, physical input or
-other Linux compositors. See
-the [platform evidence](desktop.md#platform-evidence) before claiming support.
+The separate `TestNativeLinuxDesktopPrint` uses the production private installer
+with the local pinned archive supplied by an in-memory HTTP transport, then the
+actual print command, configuration loader, Guard, typed tools and native runtime.
+Only the model is scripted; unrelated helper downloads are disabled. It selects
+three synthetic GTK windows by returned PID/title, edits Unicode values and
+commits once per window. Independent fixture state confirms results. Nine PNGs
+must reach the next model request, and reopening the Session must recover exact
+tool results/images, stable message parents and complete call/result pairs.
+The foreground sentinel must retain concurrent core input with no focus loss,
+and command completion must reap its private Driver. Text progress must not
+duplicate desktop input contents. Run it with the same isolated runner:
+
+```sh
+GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go test -c -tags=integration \
+  -o /tmp/aice-app-linux.test ./internal/app
+docker run --rm \
+  --mount type=bind,src=/tmp/aice-app-linux.test,dst=/probe.test,readonly \
+  --mount type=bind,src=/absolute/path/to/cua-driver-rs-0.29.1-linux-arm64.tar.gz,dst=/driver.tar.gz,readonly \
+  --mount type=bind,src="$PWD/internal/desktop/testdata/run-linux-probe.sh",dst=/run-probe.sh,readonly \
+  --mount type=bind,src="$PWD/internal/desktop/testdata/linux-fixture.py",dst=/fixture.py,readonly \
+  python:3.13-slim sh /run-probe.sh /probe.test /driver.tar.gz \
+  '^TestNativeLinuxDesktopPrint$' /fixture.py
+```
+
+This is scripted-model native execution, not actual-model visual reasoning or a
+fully native Settings installation workflow. Native launch/pixel/keyboard/drag
+actions, physical input and other Linux compositors also need separate evidence.
+See the [platform evidence](desktop.md#platform-evidence) before claiming support.
 
 The negative native proxy check uses a verified App binary, temporary HOME and
 an absent socket. It verifies that the proxy refuses automatic service launch,
