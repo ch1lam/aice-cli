@@ -574,6 +574,26 @@ These fixture tests do not establish physical user/IME coexistence, heterogeneou
 application dragging, snapshot geometry changes during scroll/drag, or overlay
 appearance. They do not silently switch a background-only run to foreground.
 
+The native cancellation gates use the production Manager and synthetic AppKit
+targets without a foreground sentinel. One cancels a condition wait after a
+completed native poll while another window's click competes for execution; it
+requires zero click dispatches and permits input only through a fresh run and
+observation. The other independently observes a committed click before its RPC
+returns, then cancels and requires retained dispatch status, no replay and fresh
+read-only recovery. Both reject old references and verify the shared service
+remains usable. They passed with race detection on 2026-09-27; the in-flight
+case reported `unknown` and retired its task connection. Run sequentially:
+
+```sh
+AICE_CUA_NATIVE=1 go test -race -tags=integration ./internal/desktop -run '^TestNativeMacCancel(Wait|DispatchedClick)$' -v
+```
+
+These gates count actual native calls and inspect independent widget state.
+They do not establish foreground coexistence, native TUI Stop, interrupted
+gestures or cleanup of every resource inside the Driver. A complete native reply
+that races cancellation remains a known result; cancellation must not rewrite it
+as unknown. No cancelled mutation is replayed during recovery.
+
 The application-level macOS gate uses the same synthetic AppKit fixture with a
 scripted model through the actual print command, Guard, typed tools, production
 desktop constructor and Session writer. It checks three exact-window Unicode

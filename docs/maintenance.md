@@ -143,6 +143,11 @@ focus transition and restoration, but a later probe failed movement/restoration
 with another app foreground. The cause is not attributed and native foreground
 repeatability remains open; neither result establishes background support. Keep the refusal and failing movement postcondition visible pending
 an upstream repair or an explicit acceptance of that capability limit.
+The macOS [cancellation gates](desktop.md#platform-evidence) now verify native
+condition-wait cancellation and an already committed click whose RPC is still
+pending. They preserve unknown dispatch, reject stale references, avoid replay
+and recover read-only while the shared service remains usable. This does not
+establish native TUI Stop, interrupted gesture cleanup or physical coexistence.
 The Linux [input acceptance gate](desktop.md#linux-input-acceptance-failures)
 currently fails on truncated Unicode insertion and unavailable GTK background
 keyboard, pixel scroll and drag delivery. Keep those failures distinct from passing
