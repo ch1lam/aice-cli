@@ -317,6 +317,11 @@ image as an existing image content part. They preserve partial/unknown dispatch
 facts and any follow-up observation even when a later error occurs, marking the
 result as an error without replacing it with a generic Go error. Images and
 originals continue through the existing provider projection and Session JSONL.
+Built-in tool guidance asks the model to distinguish same-name semantic elements
+by role. For macOS web-content text fields it prefers `type_text` over direct
+`set_value`, and requires checking the rendered result because AXValue read-back
+can echo a write that never reached the page. This guidance does not replace
+the frozen control mode or turn an unverifiable result into confirmed success.
 
 Text `--print` progress reports desktop tool names, status and elapsed time;
 it omits argument details so input text and observation queries are not copied
@@ -483,6 +488,18 @@ There is no automatic input retry or fallback in the production adapter.
 This establishes two toolkits, not three distinct third-party applications,
 Electron compatibility, browser profiles, actual-model reasoning or physical
 input/IME coexistence. Those broader acceptance items remain open.
+
+The corresponding actual-CLI `TestNativeMacWebKitPrint` gate also passed with
+race detection on 2026-09-27. It runs two AppKit targets and the WebKit form
+through the production desktop constructor, Guard, Loop, typed tools and Session,
+using a scripted model. Three Unicode edits/commits completed in 24.55 s with
+11 model requests and nine PNGs passed directly to later requests. Exact Session
+replay retained the complete tool pairs and images, including the WebKit insert's
+`effect:unverifiable`; independent DOM state confirmed its actual result.
+No native input body appeared in text progress, the sentinel recorded no focus
+loss, and CLI cleanup preserved the shared service. The existing AppKit-only CLI
+gate passed in the same sequential run. These are native application-pipeline
+checks, not actual-model visual reasoning or physical terminal input.
 
 The separate [cold-launch gate](../internal/desktop/apps_native_darwin_test.go)
 passed with race detection on 2026-09-27. It registers a unique synthetic AppKit

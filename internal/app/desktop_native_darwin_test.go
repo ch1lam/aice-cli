@@ -5,6 +5,7 @@ package app
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -22,6 +23,17 @@ import (
 // Explicit opt-in only, after native setup. Only synthetic AppKit windows are
 // addressed. This is scripted-model execution, not physical input or vision QA.
 func TestNativeMacDesktopPrint(t *testing.T) {
+	testNativeMacDesktopPrint(t, false)
+}
+
+// The same CLI/Guard/Session gate with a WebKit target between native targets.
+// A real type_text result, including its unverifiable effect, reaches the model.
+func TestNativeMacWebKitPrint(t *testing.T) {
+	testNativeMacDesktopPrint(t, true)
+}
+
+func testNativeMacDesktopPrint(t *testing.T, withWebKit bool) {
+	t.Helper()
 	if os.Getenv("AICE_CUA_NATIVE") != "1" {
 		t.Skip("set AICE_CUA_NATIVE=1 after explicit native setup; opens synthetic windows")
 	}
@@ -41,15 +53,26 @@ func TestNativeMacDesktopPrint(t *testing.T) {
 		t.Fatal("complete native setup and authorization before running the CLI test", err)
 	}
 	binary := buildMacPrintFixture(t, ctx)
+	webBinary := ""
+	if withWebKit {
+		webBinary = buildMacPrintFixtureSource(t, ctx, "webkit-fixture.swift")
+	}
 	var targets []nativePrintFixture
 	for i := range 3 {
-		targets = append(targets, startMacPrintFixture(t, ctx, binary, fmt.Sprintf("Target%d", i), false))
+		targetBinary := binary
+		if withWebKit && i == 1 {
+			targetBinary = webBinary
+		}
+		targets = append(targets, startMacPrintFixture(t, ctx, targetBinary, fmt.Sprintf("Target%d", i), false))
 	}
 	sentinel := startMacPrintFixture(t, ctx, binary, "Sentinel", true)
 	awaitNativePrintState(t, ctx, sentinel, func(s nativePrintState) bool { return s.Active })
 	paths := authTestPaths(t)
 	writeConfigFixture(t, paths.GlobalSettings, `{"provider":"custom","model":"synthetic","desktop_enabled":true,"desktop_control_mode":"background_only"}`)
 	model := &nativePrintModel{t: t, targets: targets, query: "AICE CLI"}
+	if withWebKit {
+		model.inputActions = map[int]string{1: "type_text"}
+	}
 	// General configuration/skill discovery stays in the isolated test HOME.
 	// Only the real desktop constructor resolves the user's installed service;
 	// no fake Manager, backend, Guard or Session is injected.
@@ -92,20 +115,37 @@ func TestNativeMacDesktopPrint(t *testing.T) {
 		t.Fatal("CLI task disturbed foreground sentinel")
 	}
 	verifyNativePrintSession(t, ctx, sessionPath, model.results)
+	if withWebKit {
+		// The web insert is the sixth result. Do not let native renderer
+		// success erase the Driver's limited verification at the tool boundary.
+		var result desktop.ActResult
+		if err := json.Unmarshal([]byte(model.results[5].Content[0].Text), &result); err != nil {
+			t.Fatal(err)
+		}
+		var facts struct{ Effect string }
+		if err := json.Unmarshal(result.Driver, &facts); err != nil || facts.Effect != "unverifiable" {
+			t.Fatal("WebKit insert lost the Driver's unverifiable effect", err)
+		}
+	}
 	// Command cleanup must leave the separately owned authorized service usable.
 	if after, err := desktop.Inspect(ctx, installed.Installation.Binary, endpoint); err != nil || !after.ConnectionVerified {
 		t.Fatal("shared Driver unavailable after command completion", err)
 	}
-	t.Logf("native macOS CLI: three AppKit commits in %s, nine PNG results replayed, focus_losses=0, shared service preserved", elapsed)
+	t.Logf("native macOS CLI: three commits in %s, webkit=%v, model_requests=%d, nine PNG results replayed, focus_losses=0, shared service preserved", elapsed, withWebKit, model.requests)
 }
 
 func buildMacPrintFixture(t *testing.T, ctx context.Context) string {
 	t.Helper()
+	return buildMacPrintFixtureSource(t, ctx, "native-fixture.swift")
+}
+
+func buildMacPrintFixtureSource(t *testing.T, ctx context.Context, source string) string {
+	t.Helper()
 	directory := t.TempDir()
 	binary := filepath.Join(directory, "fixture")
-	command := exec.CommandContext(ctx, "/usr/bin/xcrun", "swiftc", "-module-cache-path", filepath.Join(directory, "cache"), "-o", binary, "../desktop/testdata/native-fixture.swift")
+	command := exec.CommandContext(ctx, "/usr/bin/xcrun", "swiftc", "-module-cache-path", filepath.Join(directory, "cache"), "-o", binary, filepath.Join("../desktop/testdata", source))
 	if output, err := command.CombinedOutput(); err != nil {
-		t.Fatalf("compile synthetic AppKit fixture: %v\n%s", err, output)
+		t.Fatalf("compile synthetic %s fixture: %v\n%s", source, err, output)
 	}
 	return binary
 }

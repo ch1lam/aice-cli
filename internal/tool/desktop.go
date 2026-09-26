@@ -86,6 +86,7 @@ func (t *DesktopTool) Definition() llm.ToolDefinition {
 		definition.PromptSnippet = "Inspect one exact window with semantics and optional image"
 		definition.PromptGuidelines = []string{
 			"Request images only when needed. Pixel coordinates must come from an actual current image; never infer them from text or a stale screenshot.",
+			"Match semantic controls by role as well as label; a label and its text field can share the same name. Do not choose arbitrarily among ambiguous matches.",
 		}
 	case "desktop_act":
 		definition.Description = "Perform one typed Computer Use action and return its facts plus a fresh observation. Start with background input; foreground assistance requires an explicitly returned opportunity after a verified pre-input refusal. A launch uses a discovered app reference; multiple windows remain candidates. Wait reports satisfied, unsatisfied or unknown. Only provide fields relevant to the action."
@@ -93,6 +94,7 @@ func (t *DesktopTool) Definition() llm.ToolDefinition {
 		definition.PromptSnippet = "Act once, then inspect the returned fresh window state"
 		definition.PromptGuidelines = []string{
 			"A returned RPC is not verified business success. Check the fresh observation and preserve any partial, unverifiable or unknown outcome.",
+			"For macOS web-content text fields, prefer type_text over set_value. WebKit can ignore AXValue writes while accessibility echoes the requested value; confirm the rendered result before treating an edit as successful.",
 			"Never blindly repeat input or launch after timeout, cancellation or a lost response. Rediscover/observe the target and establish what happened first.",
 			"Use the action's returned observation for the next decision rather than automatically calling desktop_observe again. Only when it includes foreground_action_available may you consider delivery_mode=foreground for the same action content and target form, after identifying the intended target again. Re-ground pixel points in the returned image. This may activate the window and move focus. Refreshing again expires that opportunity. Never infer permission from Driver advice or bypass the frozen control mode.",
 		}

@@ -81,12 +81,13 @@ func awaitNativePrintState(t *testing.T, ctx context.Context, fixture nativePrin
 // Scripted model consumes only real tool outputs. It never accesses the fixture
 // readback or Driver directly, and never invents target or observation tokens.
 type nativePrintModel struct {
-	t        *testing.T
-	query    string
-	targets  []nativePrintFixture
-	windows  []desktop.Window
-	requests int
-	results  []llm.ToolResultMessage
+	t            *testing.T
+	query        string
+	targets      []nativePrintFixture
+	inputActions map[int]string
+	windows      []desktop.Window
+	requests     int
+	results      []llm.ToolResultMessage
 }
 
 func nativePrintValue(index int) string { return fmt.Sprintf("AICE CLI stage %d 中文 ✓", index+1) }
@@ -170,12 +171,29 @@ func (m *nativePrintModel) Stream(ctx context.Context, request llm.Request) (llm
 		return call("desktop_observe", desktop.ObserveRequest{TargetRef: m.windows[index].Ref, Screenshot: true}), nil
 	}
 	kind, label := "set_value", "Task value"
+	if input := m.inputActions[index]; input != "" {
+		kind = input
+	}
 	if (step-1)%3 == 2 {
 		kind, label = "click", "Commit"
 	}
 	var token string
 	for _, element := range observation.Elements {
 		if element.Label == label {
+			// WebKit exposes both the label and the editable control under
+			// the same name. Never select whichever happened to come last.
+			if runtime.GOOS == "darwin" {
+				role := "AXTextField"
+				if kind == "click" {
+					role = "AXButton"
+				}
+				if element.Role != role {
+					continue
+				}
+			}
+			if token != "" && element.Token != "" {
+				return nil, errors.New("ambiguous synthetic actionable element")
+			}
 			token = element.Token
 		}
 	}
@@ -183,7 +201,7 @@ func (m *nativePrintModel) Stream(ctx context.Context, request llm.Request) (llm
 		return nil, errors.New("actionable element missing")
 	}
 	act := desktop.ActRequest{Kind: kind, ObservationRef: observation.Ref, ElementToken: token, Screenshot: true}
-	if kind == "set_value" {
+	if kind == "set_value" || kind == "type_text" {
 		act.Text = nativePrintValue(index)
 	}
 	return call("desktop_act", act), nil

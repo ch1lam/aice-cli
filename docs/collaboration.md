@@ -684,21 +684,31 @@ condition-wait cancellation through the real UI, not physical keyboard/IME,
 foreground coexistence or Stop during a native mutation. Setup reuses existing
 grants and installation; it installs nothing and requests no new permissions.
 
-The application-level macOS gate uses the same synthetic AppKit fixture with a
-scripted model through the actual print command, Guard, typed tools, production
-desktop constructor and Session writer. It checks three exact-window Unicode
+The application-level macOS gates use synthetic AppKit targets, with a variant
+substituting the middle target with the local WebKit form. They use a scripted
+model through the actual print command, Guard, typed tools, production
+desktop constructor and Session writer. They check three exact-window Unicode
 value changes/commits, nine PNGs delivered directly to later model requests,
 exact replayed tool results/images and stable message parents. Configuration and
 skill discovery use temporary directories; only desktop resolution uses the
 host's verified App and service endpoint. It installs nothing and requests no
 permissions during preparation. As in the Manager test, the run retains ordinary
 lazy service-start behavior if the admitted service later disappears.
-It also checks that text progress omits native input bodies, the armed sentinel
+They also check that text progress omits native input bodies, the armed sentinel
 never loses focus, and command cleanup leaves the shared service available:
 
 ```sh
-AICE_CUA_NATIVE=1 go test -tags=integration ./internal/app -run '^TestNativeMacDesktopPrint$' -v
+AICE_CUA_NATIVE=1 go test -race -tags=integration ./internal/app -run '^TestNativeMac(DesktopPrint|WebKitPrint)$' -v
 ```
+
+The WebKit variant uses `type_text` on the empty web input and matches both
+label and role. Its actual page state must contain the requested Unicode value
+and one commit, while the Driver's `unverifiable` effect must reach the model and
+survive exact Session replay. It passed with race detection on 2026-09-27 in
+24.55 s of command execution, with 11 scripted model requests, nine PNGs and no
+sentinel focus loss. The AppKit-only gate passed in the same sequential run.
+Both retain isolated configuration/skills and existing grants; neither invokes
+a real model or establishes third-party browser/profile compatibility.
 
 The shared model/Session checks are also used by the native Linux print gate.
 Both the Manager and CLI gates passed on the authorized macOS 0.29.1 host on

@@ -147,6 +147,10 @@ on the WebKit field failed independent DOM readback; `type_text` on the empty
 field completed the task while the Driver honestly retained `unverifiable`.
 Do not infer web-content success from AXValue echoes or a returned RPC. The
 fixture proves two toolkits, not third-party or actual-model task acceptance.
+Its CLI counterpart also passes Guard/Loop/tool execution and exact Session
+image/result replay, preserving WebKit's `unverifiable` effect despite the
+independently confirmed page result. Built-in tool guidance now distinguishes
+duplicate labels by role and prefers text insertion for macOS web inputs.
 The macOS [cursor gate](desktop.md#platform-evidence) verifies renderer visibility
 and session cleanup without an external observer. A separate host-surface
 screenshot visibly showed the blue cursor; its combined manual run failed the
