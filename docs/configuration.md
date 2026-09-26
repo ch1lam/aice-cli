@@ -209,7 +209,11 @@ replacement remains saved if later lock cleanup fails; the result reports a
 warning. Closing a saving window does not roll back its committed preference.
 Credentials keep their dedicated stores and partial-success reporting. Window
 operations, drafts, API keys and authorization responses never enter prompt
-history or Session JSONL.
+history or Session JSONL. Computer Use setup can offer an explicit **Continue**
+button for an existing task. That choice sends a new request using the recorded
+context; it preserves the composer draft and attachments, and does not migrate
+queued follow-ups. The application rejects a continuation if its Session, branch
+or Settings revision changed. See [Computer Use](desktop.md#baseline-and-outstanding-integration).
 
 ### Usage and Session information
 

@@ -316,7 +316,22 @@ Stop current run button (mouse or panel-local F6) uses the existing cancellation
 path, including preparation before the cancel callback arrives. It stays in
 Stopping until run completion. Esc only closes the current modal level. No
 stop action changes the enabled preference or stops the shared service.
-Remaining changes include the remaining typed tools and native acceptance.
+After successful setup or preference-only enable, an existing recorded task gets
+an explicit **Continue** button (panel-local F6) on the action result page.
+The page previews the new request: continue from recorded progress, observe the
+current application state, and avoid replaying completed or uncertain actions.
+Setup never starts that request automatically. Choosing it creates a fresh run
+against the existing Session context; composer text, file references and images
+remain unsent, and old queued follow-ups are not transferred. The proposal is
+transient and disappears when leaving the result page. It records no Session
+entry until explicitly submitted through the ordinary run path.
+
+The application binds each proposal to the Session ID, selected leaf and Settings
+revision. Both input preparation and run admission revalidate it, rejecting
+changed settings, branches, Sessions or a proposal already consumed by a recorded
+run. Empty Sessions do not offer continuation. A rejected preparation removes its
+optimistic transcript entry without replacing the preserved composer draft.
+Native acceptance and the remaining platform implementations remain open.
 A Web rebuild must retain the same Desktop binding
 as the tools and prompt it publishes; offline publication tests cover this.
 
@@ -363,7 +378,10 @@ The CLI/TUI flow also opens `/desktop` during a synthetic blocked model run,
 checks that Esc leaves it running, and cancels through Settings F6. Its fake
 desktop binding verifies cancellation precedes cleanup and enable remains saved.
 Renderer tests cover the mouse button, information-page Stop and the early
-preparation interval before the controller publishes cancellation.
+preparation interval before the controller publishes cancellation. The CLI flow
+also re-enables after cancellation, verifies no automatic model request, and
+explicitly continues and stops a second run. Unit tests cover proposal staleness,
+repeat use, no setup history writes, draft/attachment retention and rejection.
 The separate `TestDesktopActivityTUI` drives the real command, Loop and typed
 tools with a synthetic discovery/observation/wait backend. It checks the app
 label, collapsed input, Planning and Settings Stop through Bubble Tea. Renderer

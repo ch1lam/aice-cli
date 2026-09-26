@@ -31,7 +31,7 @@ func TestSettingsUsageTUI(t *testing.T) {
 	writeConfigFixture(t, paths.GlobalSettings, `{"provider":"custom","model":"old-model"}`)
 	installCalls, setupCalls := 0, 0
 	binds, closes := 0, 0
-	model := &gatedModel{gates: map[int]chan struct{}{1: make(chan struct{})}, preDelta: "Synthetic run waiting"}
+	model := &gatedModel{gates: map[int]chan struct{}{1: make(chan struct{}), 2: make(chan struct{})}, preDelta: "Synthetic run waiting"}
 	command, err := newTestCommand(t, dependencies{
 		loadConfig:   func(options config.LoadOptions) (config.Config, error) { return config.LoadFiles(paths, options) },
 		newModel:     func(config.Config) (llm.Streamer, error) { return model, nil },
@@ -172,6 +172,33 @@ func TestSettingsUsageTUI(t *testing.T) {
 	send("\x1b")
 	waitFor("Response cancelled")
 
+	if runtime.GOOS == "darwin" {
+		send("/desktop\r")
+		waitFor("[Tools & Network]")
+		send("/Computer Use setup\r")
+		waitFor("Enable preference only")
+		send("\x1b[B\r")
+		waitFor("Continue?")
+		send("\x1b[B\r")
+		waitFor("[Continue] F6")
+		if model.requestCount() != 1 {
+			t.Fatal("setup automatically continued task")
+		}
+		// The previous partial output remains in the transcript. Wait for a
+		// distinct new-run delta before typing, so preparation cannot drop keys.
+		model.mu.Lock()
+		model.preDelta = "Synthetic continuation waiting"
+		model.mu.Unlock()
+		send("\x1b[17~")
+		waitFor("Continue the current task from its recorded progress")
+		waitFor("Synthetic continuation waiting")
+		send("/desktop\r")
+		waitFor("Stop current run")
+		send("\x1b[17~")
+		send("\x1b")
+		waitFor("Response cancelled")
+	}
+
 	send("\x15/quit\r")
 	select {
 	case err := <-done:
@@ -191,7 +218,11 @@ func TestSettingsUsageTUI(t *testing.T) {
 	if runtime.GOOS == "darwin" && (!loaded.DesktopEnabled || installCalls != 1 || setupCalls != 1) {
 		t.Fatalf("desktop setup enabled=%v install=%d setup=%d", loaded.DesktopEnabled, installCalls, setupCalls)
 	}
-	if model.requestCount() != 1 || (runtime.GOOS == "darwin" && (binds != 1 || closes != 1)) {
+	wantRequests := 1
+	if runtime.GOOS == "darwin" {
+		wantRequests = 2
+	}
+	if model.requestCount() != wantRequests || (runtime.GOOS == "darwin" && (binds != 2 || closes != 2)) {
 		t.Fatalf("stop requests=%d binds=%d closes=%d", model.requestCount(), binds, closes)
 	}
 }

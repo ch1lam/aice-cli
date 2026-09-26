@@ -148,6 +148,9 @@ func (m model) settingsPanelView() string {
 		search = sanitizeSingleLineText(notice)
 	}
 	footer := p.footer()
+	if m.canContinueTask() {
+		footer = "[Continue] F6 · new run · Esc back"
+	}
 	if m.running && !p.usage {
 		footer = "[Stop current run] F6 · Esc back"
 		if m.cancelRequested {
@@ -267,6 +270,9 @@ func (m model) settingsPointer(message tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		p.pressed = ""
+		if target == "continue-task" {
+			return m.continueTask()
+		}
 		if target == "stop-run" {
 			m.requestRunCancellation()
 			return m, nil
@@ -347,6 +353,13 @@ func (m model) settingsTarget(mouse tea.Mouse) string {
 			return "stop-run"
 		}
 		// The run controls replace, rather than overlay, the editor footer.
+		return ""
+	}
+	if m.canContinueTask() && mouse.Y == p.layout.y+p.layout.height-2 {
+		x := mouse.X - p.layout.x - 2
+		if x >= 0 && x < min(p.layout.inner, len("[Continue]")) {
+			return "continue-task"
+		}
 		return ""
 	}
 	return p.target(mouse)

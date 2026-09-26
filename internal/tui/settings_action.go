@@ -86,6 +86,7 @@ func (m model) openSettingAction(field interaction.SettingField) (tea.Model, tea
 		return m, nil
 	}
 	m.invalidateSettingsRead()
+	p.continuation = nil
 	p.editing = &field
 	p.search = false
 	p.input.SetValue("")
@@ -307,7 +308,13 @@ func (m model) applySettingActionDone(msg settingsActionDone) (tea.Model, tea.Cm
 	if msg.snapshot.Categories != nil {
 		p.snapshot = msg.snapshot
 	}
+	p.continuation = nil
 	p.notice = settingsActionNotice(msg.result, msg.err)
+	if value := msg.result.Continuation; value != nil && msg.err == nil && !msg.action.cancelled && msg.result.Committed && msg.result.Applied {
+		copy := *value
+		p.continuation = &copy
+		p.notice += "\n\nContinue in a new run sends the following request using the recorded task context. Your composer draft and attachments stay in the composer.\n\n" + copy.Prompt
+	}
 	if strings.Contains(p.notice, "\n") {
 		p.editing = &interaction.SettingField{Kind: interaction.SettingInfo, Label: "Action result", Description: p.notice}
 		p.detailOffset = 0

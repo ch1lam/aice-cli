@@ -211,11 +211,12 @@ func checkForUpdate(ctx context.Context, checker UpdateChecker) tea.Cmd {
 }
 
 type runRequest struct {
-	prompt  string
-	files   []string
-	images  []llm.ImageContent
-	command *SlashCommandRequest
-	updates chan runUpdate
+	continuation *interaction.TaskContinuation
+	prompt       string
+	files        []string
+	images       []llm.ImageContent
+	command      *SlashCommandRequest
+	updates      chan runUpdate
 	// sideCreate requests a brand-new side thread for this prompt;
 	// sideThreadID targets an existing thread for a follow-up. The resolved
 	// metadata is stored back on sideThread before the run starts.
@@ -329,7 +330,7 @@ func runOne(ctx context.Context, runner Runner, request runRequest) error {
 	if !sendRunUpdate(ctx, request.updates, runUpdate{cancel: cancel, sideThread: request.sideThread}) {
 		return ctx.Err()
 	}
-	active, err := runner.NewRun(runCtx, RunInput{Prompt: request.prompt, Images: request.images, Files: request.files}, func(
+	active, err := runner.NewRun(runCtx, RunInput{Prompt: request.prompt, Images: request.images, Files: request.files, Continuation: request.continuation}, func(
 		eventCtx context.Context,
 		event DisplayEvent,
 	) error {

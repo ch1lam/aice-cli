@@ -10,10 +10,20 @@ import (
 
 // RunInput contains one initial prompt for an interactive Agent run.
 type RunInput struct {
-	Prompt string
-	Images []llm.ImageContent
+	// Continuation binds an explicit Settings follow-up to its original task.
+	Continuation *TaskContinuation
+	Prompt       string
+	Images       []llm.ImageContent
 	// Files are explicit references parsed by the frontend before expanding literal pastes.
 	Files []string
+}
+
+// TaskContinuation is a transient, application-issued proposal. The user must
+// choose it explicitly; NewRun rechecks its Session, branch and settings.
+// It grants no tool permissions and carries no old tool calls or queued inputs.
+type TaskContinuation struct {
+	SessionID, LeafID, Prompt string
+	Revision                  uint64
 }
 
 // ActiveRun is one prepared Agent run. Its implementation owns accepted input

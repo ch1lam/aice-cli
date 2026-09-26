@@ -145,5 +145,6 @@ func (s *interactiveSession) runDesktopSettings(ctx context.Context, request int
 		return result, err
 	}
 	result.Output = "Computer Use enabled for the next run"
+	result.Continuation = s.desktopContinuation()
 	return result, nil
 }

@@ -13,11 +13,12 @@ import (
 )
 
 type interactiveRun struct {
-	session  *interactiveSession
-	prompt   llm.UserMessage
-	sink     interaction.EventSink
-	mailbox  *interaction.Mailbox
-	revision uint64
+	session      *interactiveSession
+	prompt       llm.UserMessage
+	sink         interaction.EventSink
+	mailbox      *interaction.Mailbox
+	revision     uint64
+	continuation *interaction.TaskContinuation
 
 	mu        sync.Mutex
 	isStarted bool
@@ -49,6 +50,16 @@ func (s *interactiveSession) NewRun(
 		return nil, err
 	}
 	defer s.endPreparation()
+	if input.Continuation != nil {
+		copy := *input.Continuation
+		input.Continuation = &copy
+		if input.Prompt != copy.Prompt || len(input.Images) != 0 || len(input.Files) != 0 {
+			return nil, errDesktopContinuationStale
+		}
+		if err := s.validateDesktopContinuation(&copy); err != nil {
+			return nil, err
+		}
+	}
 	settings := s.settingsSnapshot()
 	if settings.modelErr != nil {
 		return nil, settings.modelErr
@@ -71,12 +82,13 @@ func (s *interactiveSession) NewRun(
 		return nil, err
 	}
 	return &interactiveRun{
-		session:  s,
-		prompt:   prompt,
-		sink:     sink,
-		mailbox:  interaction.NewMailbox(),
-		revision: revision,
-		model:    settings.model,
+		session:      s,
+		prompt:       prompt,
+		sink:         sink,
+		mailbox:      interaction.NewMailbox(),
+		revision:     revision,
+		continuation: input.Continuation,
+		model:        settings.model,
 	}, nil
 }
 
@@ -153,6 +165,9 @@ func (r *interactiveRun) Run(ctx context.Context) (returnErr error) {
 		return err
 	}
 	defer r.session.releaseMainRun()
+	if err := r.session.validateDesktopContinuation(r.continuation); err != nil {
+		return err
+	}
 	snapshot, err := r.session.beginMainRun(r.prompt)
 	if err != nil {
 		return err

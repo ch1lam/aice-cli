@@ -62,11 +62,13 @@ func (m *model) restoreSubmittedInput() {
 	}
 	input := *m.submittedInput
 	m.submittedInput = nil
-	m.input.SetValue(m.submittedDraft.text)
-	m.input.files = m.submittedDraft.files
-	m.pastes = m.submittedDraft.pastes
+	if input.Continuation == nil {
+		m.input.SetValue(m.submittedDraft.text)
+		m.input.files = m.submittedDraft.files
+		m.pastes = m.submittedDraft.pastes
+		m.input.CursorEnd()
+	}
 	m.submittedDraft = composerDraft{}
-	m.input.CursorEnd()
 	if len(input.Images) > 0 {
 		m.inputNotice = "Input was not accepted; text and images restored"
 	}

@@ -49,15 +49,21 @@ func (m model) submit() (model, tea.Cmd, bool) {
 	}
 
 	input := RunInput{Prompt: prompt, Files: m.composerFiles(), Images: interaction.CloneImages(m.composerImages())}
-	m.submittedInput = &input
 	m.submittedDraft = composerDraft{text: m.input.Value(), pastes: m.pastes, files: m.input.files}
-	m.entries = append(m.entries, transcriptEntry{kind: entryUser, text: imageInputText(prompt, len(input.Images))})
-	m.beginProcess()
 	m.input.Reset()
 	m.pastes = nil
 	m.inputNotice = ""
 	m.commandSelection = 0
 	m.commandDismissed = false
+	return m.beginSubmittedRun(input)
+}
+
+// Composer submission and explicit Settings continuation share run startup.
+// Their callers own whether the current composer draft is consumed.
+func (m model) beginSubmittedRun(input RunInput) (model, tea.Cmd, bool) {
+	m.submittedInput = &input
+	m.entries = append(m.entries, transcriptEntry{kind: entryUser, text: imageInputText(input.Prompt, len(input.Images))})
+	m.beginProcess()
 	m.pendingDeliveries = nil
 	m.activeRun = nil
 	m.acceptsDelivery = false

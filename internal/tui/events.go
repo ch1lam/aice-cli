@@ -512,10 +512,11 @@ func startRun(
 		case <-controllerDone:
 			return runUnavailableMsg{}
 		case requests <- runRequest{
-			prompt:  input.Prompt,
-			files:   input.Files,
-			images:  input.Images,
-			updates: updates,
+			prompt:       input.Prompt,
+			continuation: input.Continuation,
+			files:        input.Files,
+			images:       input.Images,
+			updates:      updates,
 		}:
 			return runStartedMsg{updates: updates}
 		}

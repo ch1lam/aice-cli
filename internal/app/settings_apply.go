@@ -192,6 +192,9 @@ func (s *interactiveSession) RunSettingsAction(ctx context.Context, revision uin
 		var warnings []string
 		result.Revision, warnings = s.endSettingsOperation(result.Committed || len(result.External) > 0)
 		result.Warnings = append(result.Warnings, warnings...)
+		if result.Continuation != nil {
+			result.Continuation.Revision = result.Revision
+		}
 		return result, returnErr
 	}
 	// Actions may save credentials before a later preference write fails. Any

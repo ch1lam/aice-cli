@@ -16,6 +16,7 @@ import (
 type settingsPanel struct {
 	usage                  bool
 	action                 *settingsAction
+	continuation           *interaction.TaskContinuation
 	collection             *collectionDraft
 	generation             uint64
 	snapshot               interaction.SettingsSnapshot
@@ -73,6 +74,7 @@ func (m *model) refreshSettings() tea.Cmd {
 	}
 	m.settingsGeneration++
 	p.generation = m.settingsGeneration
+	p.continuation = nil
 	p.loading = true
 	read := m.readSettings
 	if p.usage {
@@ -225,6 +227,7 @@ func (m *model) submitSettings(changes []interaction.SettingChange) tea.Cmd {
 		return nil
 	}
 	m.invalidateSettingsRead()
+	p.continuation = nil
 	p.saving = true
 	p.notice = "Saving…"
 	p.input.Blur()
@@ -260,6 +263,7 @@ func settingValueText(value interaction.SettingValue, invert bool) string {
 
 func (m model) beginSettingEdit(unset bool) (tea.Model, tea.Cmd) {
 	p := m.settings
+	p.continuation = nil
 	fields := p.fields()
 	if len(fields) == 0 || p.saving {
 		return m, nil
@@ -346,6 +350,9 @@ func (m model) handleSettings(message tea.Msg) (tea.Model, tea.Cmd) {
 			m.requestRunCancellation()
 			return m, nil
 		}
+		if name == "f6" && m.canContinueTask() {
+			return m.continueTask()
+		}
 		if p.action != nil {
 			return m.settingActionKey(key)
 		}
@@ -358,6 +365,7 @@ func (m model) handleSettings(message tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			if p.editing != nil {
+				p.continuation = nil
 				p.editing = nil
 				p.confirmUnset = false
 				p.input.SetValue("")
