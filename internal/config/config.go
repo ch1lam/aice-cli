@@ -41,6 +41,10 @@ const (
 	EnvOpenAIAPIKey = "OPENAI_API_KEY"
 	// EnvOpenAIBaseURL overrides OpenAI's official API endpoint.
 	EnvOpenAIBaseURL = "AICE_OPENAI_BASE_URL"
+	// EnvAnthropicAPIKey authenticates requests to Anthropic.
+	EnvAnthropicAPIKey = "ANTHROPIC_API_KEY"
+	// EnvAnthropicBaseURL overrides Anthropic's official API endpoint.
+	EnvAnthropicBaseURL = "AICE_ANTHROPIC_BASE_URL"
 	// EnvKimiAPIKey authenticates Kimi Coding Plan requests.
 	EnvKimiAPIKey = "KIMI_API_KEY"
 	// EnvKimiBaseURL overrides the Kimi Coding Plan endpoint.
@@ -116,6 +120,8 @@ type Settings struct {
 	OpenCodeBaseURL     string            `json:"opencode_base_url,omitempty"`
 	OpenAIAPIKey        string            `json:"openai_api_key,omitempty"`
 	OpenAIBaseURL       string            `json:"openai_base_url,omitempty"`
+	AnthropicAPIKey     string            `json:"anthropic_api_key,omitempty"`
+	AnthropicBaseURL    string            `json:"anthropic_base_url,omitempty"`
 	KimiAPIKey          string            `json:"kimi_api_key,omitempty"`
 	KimiBaseURL         string            `json:"kimi_base_url,omitempty"`
 	ZhipuCodingAPIKey   string            `json:"zhipu_coding_api_key,omitempty"`
@@ -160,6 +166,8 @@ type Config struct {
 	OpenCodeBaseURL     string
 	OpenAIAPIKey        string
 	OpenAIBaseURL       string
+	AnthropicAPIKey     string
+	AnthropicBaseURL    string
 	KimiAPIKey          string
 	KimiBaseURL         string
 	ZhipuCodingAPIKey   string
@@ -245,6 +253,8 @@ func EnvironmentVariables() map[string]string {
 		"opencode_base_url":     EnvOpenCodeBaseURL,
 		"openai_api_key":        EnvOpenAIAPIKey,
 		"openai_base_url":       EnvOpenAIBaseURL,
+		"anthropic_api_key":     EnvAnthropicAPIKey,
+		"anthropic_base_url":    EnvAnthropicBaseURL,
 		"kimi_api_key":          EnvKimiAPIKey,
 		"kimi_base_url":         EnvKimiBaseURL,
 		"zhipu_coding_api_key":  EnvZhipuCodingAPIKey,
@@ -440,6 +450,8 @@ func (c Config) settings() Settings {
 		OpenCodeBaseURL:     c.OpenCodeBaseURL,
 		OpenAIAPIKey:        c.OpenAIAPIKey,
 		OpenAIBaseURL:       c.OpenAIBaseURL,
+		AnthropicAPIKey:     c.AnthropicAPIKey,
+		AnthropicBaseURL:    c.AnthropicBaseURL,
 		KimiAPIKey:          c.KimiAPIKey,
 		KimiBaseURL:         c.KimiBaseURL,
 		ZhipuCodingAPIKey:   c.ZhipuCodingAPIKey,
@@ -534,6 +546,8 @@ func decodeEffective(v *viper.Viper) (Config, error) {
 		OpenCodeBaseURL:     s.OpenCodeBaseURL,
 		OpenAIAPIKey:        s.OpenAIAPIKey,
 		OpenAIBaseURL:       s.OpenAIBaseURL,
+		AnthropicAPIKey:     s.AnthropicAPIKey,
+		AnthropicBaseURL:    s.AnthropicBaseURL,
 		KimiAPIKey:          s.KimiAPIKey,
 		KimiBaseURL:         s.KimiBaseURL,
 		ZhipuCodingAPIKey:   s.ZhipuCodingAPIKey,
@@ -666,6 +680,28 @@ func SaveOpenAIAPIKeyFile(paths Paths, apiKey string) error {
 		return errors.New("config: OpenAI API key is required")
 	}
 	return saveAPIKeyFile(paths, "OpenAI", "openai_api_key", apiKey)
+}
+
+// SaveAnthropicAPIKey stores the Anthropic credential in the global auth file.
+func SaveAnthropicAPIKey(apiKey string) (string, error) {
+	paths, err := DefaultPaths()
+	if err != nil {
+		return "", err
+	}
+	if err := SaveAnthropicAPIKeyFile(paths, apiKey); err != nil {
+		return "", err
+	}
+	return paths.GlobalAuth, nil
+}
+
+// SaveAnthropicAPIKeyFile stores the Anthropic credential in an explicit global
+// auth file, preserving any other provider credentials already present.
+func SaveAnthropicAPIKeyFile(paths Paths, apiKey string) error {
+	apiKey = strings.TrimSpace(apiKey)
+	if apiKey == "" {
+		return errors.New("config: Anthropic API key is required")
+	}
+	return saveAPIKeyFile(paths, "Anthropic", "anthropic_api_key", apiKey)
 }
 
 // SaveKimiAPIKey stores the Kimi credential in the global auth file.
@@ -870,6 +906,7 @@ func (s Settings) validate() error {
 		"deepseek_base_url":     s.DeepSeekBaseURL,
 		"opencode_base_url":     s.OpenCodeBaseURL,
 		"openai_base_url":       s.OpenAIBaseURL,
+		"anthropic_base_url":    s.AnthropicBaseURL,
 		"kimi_base_url":         s.KimiBaseURL,
 		"zhipu_coding_base_url": s.ZhipuCodingBaseURL,
 		"zhipu_base_url":        s.ZhipuBaseURL,
@@ -885,6 +922,7 @@ func (s Settings) validate() error {
 		"deepseek_api_key":     s.DeepSeekAPIKey,
 		"opencode_api_key":     s.OpenCodeAPIKey,
 		"openai_api_key":       s.OpenAIAPIKey,
+		"anthropic_api_key":    s.AnthropicAPIKey,
 		"kimi_api_key":         s.KimiAPIKey,
 		"zhipu_coding_api_key": s.ZhipuCodingAPIKey,
 		"zhipu_api_key":        s.ZhipuAPIKey,

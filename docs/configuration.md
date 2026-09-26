@@ -61,7 +61,7 @@ peak billing is twice the estimate.
 
 | Setting | Environment variable | Supported values |
 | --- | --- | --- |
-| Provider | `AICE_PROVIDER` | `deepseek`, `opencode-go`, `kimi-coding`, `moonshot`, `zhipu`, `zhipu-coding`, `openai`, `openai-codex`, `aihubmix`, `custom` |
+| Provider | `AICE_PROVIDER` | `deepseek`, `opencode-go`, `kimi-coding`, `moonshot`, `zhipu`, `zhipu-coding`, `openai`, `anthropic`, `openai-codex`, `aihubmix`, `custom` |
 | Model | `AICE_MODEL` | A catalog model, or any model ID for `custom` |
 | Thinking | `AICE_THINKING` | `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` |
 | Default Project Trust | `AICE_DEFAULT_PROJECT_TRUST` | `ask`, `always`, `never`; project values cannot grant startup trust |
@@ -435,6 +435,7 @@ credentials use a separate file as described below.
 | Zhipu Coding Plan | `ZHIPU_CODING_API_KEY` | `zhipu_coding_api_key` | `AICE_ZHIPU_CODING_BASE_URL` |
 | Zhipu API (China) | `ZHIPU_API_KEY` | `zhipu_api_key` | `AICE_ZHIPU_BASE_URL` |
 | OpenAI | `OPENAI_API_KEY` | `openai_api_key` | `AICE_OPENAI_BASE_URL` |
+| Anthropic (Claude API) | `ANTHROPIC_API_KEY` | `anthropic_api_key` | `AICE_ANTHROPIC_BASE_URL` |
 | AiHubMix | `AIHUBMIX_API_KEY` | `aihubmix_api_key` | `AICE_AIHUBMIX_BASE_URL` |
 | Custom (Ollama, vLLM, LM Studio, any OpenAI-compatible) | `AICE_CUSTOM_API_KEY` | `custom_api_key` | `AICE_CUSTOM_BASE_URL` (default `http://localhost:11434/v1`) |
 
@@ -473,6 +474,50 @@ printf '%s\n' "$OPENAI_API_KEY" | \
 ```
 
 Provider keys are stored side by side; updating one does not erase another.
+
+### Anthropic (Claude API)
+
+Select `/login` → `Sign in with an API key` → `Anthropic (Claude API)` and
+enter a key from [Claude Console](https://platform.claude.com/). This provider
+uses the separately billed Messages API at `https://api.anthropic.com/v1/messages`.
+
+```sh
+export ANTHROPIC_API_KEY="your-api-key"
+aice --provider anthropic --model claude-sonnet-5
+```
+
+To save only the key, run
+`printf '%s\n' "$ANTHROPIC_API_KEY" | aice config set-key --provider anthropic`.
+It is stored as `anthropic_api_key` in `~/.aice/auth.json`, independently of
+other providers. `/login` also saves the selected provider and compatible model.
+`AICE_ANTHROPIC_BASE_URL` (file key `anthropic_base_url`) overrides the API
+root; omit `/v1/messages` and `/v1`, which the SDK appends itself.
+
+| Model | Context / output budget | Thinking choices |
+| --- | --- | --- |
+| `claude-sonnet-5` (default) | 1,000,000 / 128,000 | `off`, `low`, `medium`, `high`, `xhigh`, `max` |
+| `claude-opus-5-5`, `claude-fable-5-1` | 1,000,000 / 128,000 | `low`, `medium`, `high`, `xhigh`, `max` |
+| `claude-haiku-4-5-20251001` | 200,000 / 64,000 | `off`, `high` |
+
+All models accept text/images and streamed tool calls. Sonnet, Opus and Fable
+use adaptive thinking with `output_config.effort`. Opus 5.5 and Fable 5.1
+cannot disable thinking; AICE clamps an `off` request to `low`. Haiku uses
+extended thinking: `high` enables the adapter's fixed 1,024-token thinking
+budget without an effort parameter. AICE's default requested level is `medium`;
+Haiku clamps it to `high`. Signed thinking and tool results use the shared
+Messages adapter and Session history.
+
+The compiled catalog follows Anthropic's [model overview](https://platform.claude.com/docs/en/models/overview)
+and [effort reference](https://platform.claude.com/docs/en/build-with-claude/effort).
+Prices are standard USD estimates, with five-minute cache-write pricing;
+account access, tier limits and actual billing remain controlled by Anthropic.
+Live account/model access has not been verified.
+
+Claude Pro/Max subscriptions do not supply an API key or API credit for this
+provider. AICE does not import Claude Code credentials or offer Claude.ai OAuth.
+Anthropic's [authentication rules](https://code.claude.com/docs/en/legal-and-compliance#authentication-and-credential-use)
+reserve that login for its own applications and permit users to sign in to the
+unmodified Claude Code binary. AICE currently has no Claude Code process bridge.
 
 ### AiHubMix
 

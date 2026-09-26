@@ -8,6 +8,7 @@ import (
 	"github.com/ch1lam/aice-cli/internal/llm"
 	"github.com/ch1lam/aice-cli/internal/provider"
 	"github.com/ch1lam/aice-cli/internal/provider/aihubmix"
+	anthropicprovider "github.com/ch1lam/aice-cli/internal/provider/anthropic"
 	"github.com/ch1lam/aice-cli/internal/provider/codex"
 	"github.com/ch1lam/aice-cli/internal/provider/custom"
 	"github.com/ch1lam/aice-cli/internal/provider/deepseek"
@@ -28,6 +29,7 @@ func defaultProviders() []provider.Provider {
 		&zhipu.Provider{},
 		zhipu.CodingPlan(),
 		&openai.Provider{},
+		&anthropicprovider.Provider{},
 		&codex.Provider{},
 		&aihubmix.Provider{},
 		&custom.Provider{},

@@ -76,7 +76,7 @@ func newSetAPIKeyCommand(configurator Configurator) *cobra.Command {
 		"provider",
 		"deepseek",
 		"provider whose credential to store (deepseek, opencode-go, kimi-coding, moonshot, "+
-			"zhipu, zhipu-coding, openai, aihubmix, custom)",
+			"zhipu, zhipu-coding, openai, anthropic, aihubmix, custom)",
 	)
 	return command
 }

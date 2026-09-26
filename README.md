@@ -87,6 +87,11 @@ or Ctrl+C cancels. The terminal alternative is `aice auth login --provider
 openai-codex` (add `--device-code` for headless login).
 See [Codex subscription setup](./docs/configuration.md#codex-subscription-chatgpt-oauth).
 
+For Claude API access, choose `/login` → `Sign in with an API key` →
+`Anthropic (Claude API)`, or set `ANTHROPIC_API_KEY` and run
+`aice --provider anthropic`. Claude subscriptions are separate; see
+[Claude setup and subscription limits](./docs/configuration.md#anthropic-claude-api).
+
 For Kimi Coding Plan, select `/login` → `Sign in with an API key` →
 `Kimi Coding Plan`. See [Kimi setup](./docs/configuration.md#kimi-coding-plan).
 For the separately billed China API platform, choose `Moonshot API` and enter
@@ -133,7 +138,7 @@ aice --workspace . --session .aice/sessions/<session-id>.jsonl
 | Area | Current implementation |
 | --- | --- |
 | Interface | Bubble Tea TUI with [context usage percentage](./docs/configuration.md#context-window-and-status-bar) per provider/model, and one-shot `--print` mode |
-| Providers | DeepSeek V4, OpenCode Go's built-in catalog, Kimi Coding Plan (Responses API), Moonshot API Platform, Zhipu API Platform and Coding Plan, OpenAI API (GPT-6 Astra and GPT-5.6), Codex/ChatGPT subscription, AiHubMix, and Custom (OpenAI-compatible) |
+| Providers | DeepSeek V4, OpenCode Go's built-in catalog, Kimi Coding Plan (Responses API), Moonshot API Platform, Zhipu API Platform and Coding Plan, OpenAI API (GPT-6 Astra and GPT-5.6), Claude API, Codex/ChatGPT subscription, AiHubMix, and Custom (OpenAI-compatible) |
 | Protocols | Anthropic Messages, OpenAI Responses, OpenAI Chat Completions |
 | Tools | `read`, `write`, `edit`, `bash`, `grep`, `find`, `ls`, `skill`, `web_search`, `web_fetch` |
 | Web | Exa Search API instances with an ordered source list (`native` reserved, not implemented), hardened direct page fetching, recorded sources in Session history, `/web` settings; see [Web search and fetch](./docs/web.md) |
@@ -179,7 +184,7 @@ go vet ./...
 
 AICE is under active development. Session and configuration formats may still
 change before a stable release. The core is provider-neutral, while the
-built-in provider set is currently DeepSeek, OpenCode Go, Kimi Coding Plan, Moonshot API, Zhipu API/Coding Plan, OpenAI, Codex, AiHubMix, and Custom.
+built-in provider set is currently DeepSeek, OpenCode Go, Kimi Coding Plan, Moonshot API, Zhipu API/Coding Plan, OpenAI, Anthropic, Codex, AiHubMix, and Custom.
 
 ## License
 
