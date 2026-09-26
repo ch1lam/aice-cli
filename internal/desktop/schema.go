@@ -22,6 +22,9 @@ var linuxStatusSchemaInventory []byte
 //go:embed schema/linux-0.29.1.json
 var linuxSchemaInventory []byte
 
+//go:embed schema/windows-status-0.29.1.json
+var windowsStatusSchemaInventory []byte
+
 type schemaInventory struct {
 	Version  string                     `json:"version"`
 	Platform string                     `json:"platform"`
@@ -38,6 +41,10 @@ func reviewedLinuxStatusTools(actual map[string]json.RawMessage) (map[string]jso
 
 func reviewedLinuxTools(actual map[string]json.RawMessage) (map[string]json.RawMessage, error) {
 	return reviewedTools(actual, linuxSchemaInventory, "linux")
+}
+
+func reviewedWindowsStatusTools(actual map[string]json.RawMessage) (map[string]json.RawMessage, error) {
+	return reviewedTools(actual, windowsStatusSchemaInventory, "windows")
 }
 
 func reviewedTools(actual map[string]json.RawMessage, data []byte, platform string) (map[string]json.RawMessage, error) {

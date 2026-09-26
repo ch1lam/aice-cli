@@ -44,6 +44,12 @@ func fakeTransport(t *testing.T, mode string) (*mcp.IOTransport, *fixturePeer) {
 			schemas["check_permissions"] = json.RawMessage(`{"type":"object"}`)
 		}
 	}
+	if strings.HasPrefix(mode, "windows-status") {
+		schemas = windowsStatusFixture(t)
+		if mode == "windows-status-drift" {
+			schemas["check_permissions"] = json.RawMessage(`{"type":"object"}`)
+		}
+	}
 	schemas["unreviewed_tool"] = json.RawMessage(`{"type":"object"}`)
 	if mode == "missing-tool" {
 		delete(schemas, "drag")

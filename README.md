@@ -63,7 +63,8 @@ macOS and Linux X11; setup is explicit and desktop access is disabled by default
 Task window contents may be sent to the model, and actions can affect applications
 outside the project. Linux setup asks you to choose a window for a local capture
 test. See [Computer Use](./docs/desktop.md) for verified scope and remaining
-platform limitations, including unavailable Wayland/XWayland and Windows routes.
+platform limitations, including unavailable Wayland/XWayland and Windows action routes.
+Windows read-only status inspection is implemented but still needs native verification.
 The pinned Linux Driver also has an unresolved Unicode insertion failure;
 GTK keyboard delivery needs an independent input route unavailable in the test fixture.
 Linux application launch also failed background coexistence by taking foreground

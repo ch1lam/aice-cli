@@ -7,6 +7,7 @@ import (
 	"os"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -31,6 +32,7 @@ func TestSettingsUsageTUI(t *testing.T) {
 	writeConfigFixture(t, paths.GlobalSettings, `{"provider":"custom","model":"old-model"}`)
 	installCalls, setupCalls := 0, 0
 	binds, closes := 0, 0
+	var windowsStatus atomic.Bool
 	model := &gatedModel{gates: map[int]chan struct{}{1: make(chan struct{}), 2: make(chan struct{})}, preDelta: "Synthetic run waiting"}
 	command, err := newTestCommand(t, dependencies{
 		loadConfig:   func(options config.LoadOptions) (config.Config, error) { return config.LoadFiles(paths, options) },
@@ -40,6 +42,12 @@ func TestSettingsUsageTUI(t *testing.T) {
 		newDesktop: func(c config.Config) (*desktopState, error) {
 			return &desktopState{installOptions: deps.DefaultOptions().WithNoInstall(c.NoDepInstall),
 				inspect: func(context.Context) (desktop.Inspection, error) {
+					if windowsStatus.Load() || runtime.GOOS == "windows" {
+						rid, session := uint32(0x2000), uint32(2)
+						return desktop.Inspection{ConnectionVerified: true, Windows: &desktop.WindowsInspection{
+							IntegrityLevel: "Medium", IntegrityRID: &rid, SessionID: &session, UIAccess: desktop.PermissionMissing,
+							UIAReported: desktop.PermissionGranted, PostMessageReported: desktop.PermissionGranted}, CheckedAt: time.Now()}, nil
+					}
 					if runtime.GOOS == "linux" {
 						return desktop.Inspection{ConnectionVerified: true, Linux: &desktop.LinuxInspection{X11: desktop.PermissionMissing, ATSPI: desktop.PermissionMissing}, CheckedAt: time.Now()}, nil
 					}
@@ -215,6 +223,17 @@ func TestSettingsUsageTUI(t *testing.T) {
 		waitFor("Response cancelled")
 	}
 
+	// Render Windows facts through the actual command on every host. This is
+	// synthetic status evidence, never native Windows service acceptance.
+	windowsStatus.Store(true)
+	send("/desktop\r")
+	waitFor("[Tools & Network]")
+	send("/Computer Use status\r")
+	waitFor("Driver integrity level: Medium (RID 0x2000)")
+	waitFor("Driver UIAccess token: Unavailable")
+	waitFor("Windows setup and action runtime are not yet integrated")
+	send("\x1b")
+	send("\x1b")
 	send("\x15/quit\r")
 	select {
 	case err := <-done:

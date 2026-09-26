@@ -24,7 +24,7 @@ func (s *interactiveSession) desktopStatusField(ctx context.Context, settings in
 	var err error
 	var cached desktop.Status
 	var setupCapture time.Time
-	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
+	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" && runtime.GOOS != "windows" {
 		summary = "Unavailable"
 		err = errors.New("Native Computer Use status is not yet integrated on this platform")
 	} else if s.desktop == nil || s.desktop.inspect == nil {
@@ -48,10 +48,16 @@ func (s *interactiveSession) desktopStatusField(ctx context.Context, settings in
 		setupCapture = s.desktop.setupCaptureAt
 		s.desktop.healthMu.Unlock()
 	}
-	linux := permissions.Linux != nil || runtime.GOOS == "linux"
+	windows := permissions.Windows != nil || runtime.GOOS == "windows"
+	linux := !windows && (permissions.Linux != nil || runtime.GOOS == "linux")
+	if windows {
+		summary = "Unavailable"
+	}
 	if permissions.ConnectionVerified {
 		connection, summary = "Verified", "Connected; capture not checked"
-		if linux {
+		if windows {
+			summary = "Unavailable" // Status admission does not enable the Windows action runtime.
+		} else if linux {
 			facts := permissions.Linux
 			if facts == nil || facts.X11 != desktop.PermissionGranted || facts.WaylandEnvironment != desktop.PermissionMissing || facts.WaylandBackend != desktop.PermissionMissing {
 				summary = "Unavailable"
@@ -69,7 +75,9 @@ func (s *interactiveSession) desktopStatusField(ctx context.Context, settings in
 			summary, connection = "Not installed", "Stopped"
 		case errors.As(err, &native) && native.Code == "not_running":
 			summary, connection = "Needs setup", "Stopped"
-			if linux {
+			if windows {
+				summary = "Unavailable"
+			} else if linux {
 				summary = "Idle; connects on first use"
 				if cached.Connected {
 					summary = "Connected (cached)"
@@ -117,7 +125,33 @@ func (s *interactiveSession) desktopStatusField(ctx context.Context, settings in
 		fmt.Sprintf("This instance's tool connection: %t (generation %d)", cached.Connected, cached.Generation),
 		"Refresh reads status only; it never captures, requests grants or starts a service.",
 	}
-	if linux {
+	if windows {
+		facts := permissions.Windows
+		if facts == nil {
+			facts = &desktop.WindowsInspection{}
+		}
+		integrity, session := "Unknown", "Unknown"
+		if facts.IntegrityLevel != "" {
+			integrity = facts.IntegrityLevel
+		}
+		if facts.IntegrityRID != nil {
+			integrity += fmt.Sprintf(" (RID 0x%04X)", *facts.IntegrityRID)
+		}
+		if facts.SessionID != nil {
+			session = fmt.Sprint(*facts.SessionID)
+			if *facts.SessionID == 0 {
+				session += " (services; no interactive user desktop)"
+			}
+		}
+		lines = append(lines,
+			"Driver integrity level: "+integrity,
+			"Driver UIAccess token: "+desktopCapabilityState(facts.UIAccess),
+			"Driver Windows session: "+session,
+			"Driver-reported UIA: "+desktopCapabilityState(facts.UIAReported),
+			"Driver-reported PostMessage: "+desktopCapabilityState(facts.PostMessageReported),
+			"These are shared-service identity and prerequisite facts, not verified target input or capture. A nonzero session does not prove an unlocked desktop.",
+			"Windows setup and action runtime are not yet integrated. Status checks never elevate, change UIAccess, request UAC consent or start a service.")
+	} else if linux {
 		facts := permissions.Linux
 		if facts == nil {
 			facts = &desktop.LinuxInspection{}

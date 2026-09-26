@@ -157,3 +157,51 @@ func TestDesktopLinuxStatusSeparatesOwnedConnectionFromSharedInspection(t *testi
 		})
 	}
 }
+
+func TestDesktopWindowsStatusSeparatesIdentityFromReadiness(t *testing.T) {
+	for _, kind := range []string{"connected", "session-zero", "unavailable-integrity", "missing", "disabled"} {
+		t.Run(kind, func(t *testing.T) {
+			s := desktopSettingsSession(t)
+			s.configuration.DesktopEnabled = kind != "disabled"
+			s.model.InputModalities = []llm.InputModality{llm.InputModalityImage}
+			calls := 0
+			s.desktop.inspect = func(context.Context) (desktop.Inspection, error) {
+				calls++
+				session, rid := uint32(2), uint32(0x2000)
+				facts := &desktop.WindowsInspection{SessionID: &session, IntegrityRID: &rid, IntegrityLevel: "Medium",
+					UIAccess: desktop.PermissionMissing, UIAReported: desktop.PermissionGranted, PostMessageReported: desktop.PermissionGranted}
+				if kind == "session-zero" {
+					session = 0
+				}
+				if kind == "unavailable-integrity" {
+					facts.IntegrityRID, facts.IntegrityLevel, facts.UIAccess = nil, "Unavailable", desktop.PermissionUnknown
+				}
+				if kind == "missing" {
+					return desktop.Inspection{Windows: &desktop.WindowsInspection{}}, &desktop.ServiceError{Code: "not_running", Detail: "absent"}
+				}
+				return desktop.Inspection{ConnectionVerified: true, Windows: facts}, nil
+			}
+			s.desktop.status = func() desktop.Status {
+				// Even an earlier capture cannot enable an unintegrated runtime.
+				return desktop.Status{CaptureCheckedAt: time.Unix(100, 0), CaptureAvailable: true}
+			}
+			field := s.desktopStatusField(t.Context(), s.settingsSnapshot())
+			want := "Unavailable"
+			if kind == "disabled" {
+				want = "Disabled"
+			}
+			if calls != 1 || field.Value.Text != want || !strings.Contains(field.Description, "Windows setup and action runtime are not yet integrated") || strings.Contains(field.Description, "Screen Recording:") || strings.Contains(field.Description, "X11 connection:") {
+				t.Fatal("Windows facts became readiness or other platform permissions", field)
+			}
+			if kind == "connected" && (!strings.Contains(field.Description, "Connection: Verified") || !strings.Contains(field.Description, "Driver integrity level: Medium (RID 0x2000)")) {
+				t.Fatal(field)
+			}
+			if kind == "session-zero" && !strings.Contains(field.Description, "0 (services; no interactive user desktop)") {
+				t.Fatal(field)
+			}
+			if kind == "unavailable-integrity" && (!strings.Contains(field.Description, "integrity level: Unavailable") || !strings.Contains(field.Description, "UIAccess token: Unknown")) {
+				t.Fatal(field)
+			}
+		})
+	}
+}

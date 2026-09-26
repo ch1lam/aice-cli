@@ -125,6 +125,11 @@ remain in their existing modules.
 The [desktop integration record](desktop.md) tracks the pinned Cua connection,
 remaining Settings/tool wiring and platform evidence. Transport tests do not
 establish desktop task acceptance. Native tests remain opt-in.
+Windows has a source-reviewed two-tool status client and native named-pipe peer
+checks, with synthetic admission/UI coverage. The native Windows tests have only
+been compiled; status admission is not verified there, and setup/actions remain
+unintegrated. Do not infer input readiness from the upstream constant UIA and
+PostMessage fields or from a nonzero Windows session ID.
 The Linux [input acceptance gate](desktop.md#linux-input-acceptance-failures)
 currently fails on truncated Unicode insertion and unavailable GTK background
 keyboard delivery. Keep those failures distinct from passing semantic value

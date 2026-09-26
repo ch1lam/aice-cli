@@ -56,6 +56,7 @@ Computer Use 仍在集成中。macOS 和 Linux X11 可通过 `/desktop` 打开�
 桌面访问默认关闭。任务窗口内容可能发送给模型，操作可影响项目之外的应用。
 Linux setup 会让你选择一个窗口进行本地截图验证。已验证范围与剩余平台限制见
 [Computer Use](./docs/desktop.md)；Wayland/XWayland 与 Windows 操作路线仍不可用。
+Windows 只读状态检查已实现，尚待原生验证。
 固定版本的 Linux Driver 还存在未解决的 Unicode 插入失败；GTK 键盘操作所需的
 独立输入路线在当前测试环境中不可用。
 Linux 应用启动也未通过后台共存验收：原生测试中启动操作抢占了前台焦点，

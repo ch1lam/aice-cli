@@ -144,7 +144,7 @@ settings service, global registry, alternate transcript or file watcher.
 | `internal/skill` | Agent Skill discovery, SKILL.md parse, source layering, embedded builtins |
 | `internal/config` | Instance-local Viper precedence, effective snapshots, and locked atomic preference/credential persistence |
 | `internal/deps` | Verified ripgrep, Windows Git Bash, pinned agent-browser and Cua provisioning, including upstream browser skill resources |
-| `internal/desktop` | Pinned Cua stdio client, verified shared-service admission and Linux owned runtime; run sessions, serialized action/observation sequences, generation and exact-window references, image coordinate mapping; app binds each main run, native setup remains in progress ([status](desktop.md)) |
+| `internal/desktop` | Pinned Cua stdio client, shared-service admission, Linux owned runtime and Windows read-only inspection; run sessions, serialized action/observation sequences, generation and exact-window references, image coordinate mapping; app binds each main run, native setup remains in progress ([status](desktop.md)) |
 | `internal/browser` | Process-owned browser names, environment, connection and bounded cleanup; app owns wiring, Loop remains unaware |
 | `internal/update` | Checksum-validated GitHub release updates |
 | `internal/hostpath` | Host path membership, tilde expansion, slash-normalized display |

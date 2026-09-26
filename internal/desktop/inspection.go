@@ -22,6 +22,7 @@ type Inspection struct {
 	Accessibility, ScreenRecording PermissionState
 	CheckedAt                      time.Time
 	Linux                          *LinuxInspection
+	Windows                        *WindowsInspection
 }
 
 func permissionState(granted bool) PermissionState {
@@ -38,6 +39,9 @@ func permissionState(granted bool) PermissionState {
 func Inspect(ctx context.Context, binary, endpoint string) (Inspection, error) {
 	if runtime.GOOS == "linux" {
 		return inspectLinuxService(ctx, binary, endpoint)
+	}
+	if runtime.GOOS == "windows" {
+		return inspectWindowsService(ctx, binary, endpoint)
 	}
 	if runtime.GOOS != "darwin" {
 		return Inspection{}, serviceError("platform_unavailable", "native Computer Use status is not yet integrated on this platform")

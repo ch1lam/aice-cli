@@ -409,7 +409,7 @@ as the tools and prompt it publishes; offline publication tests cover this.
 | Scope | Evidence | Remaining acceptance |
 | --- | --- | --- |
 | macOS 0.29.1 universal artifact | Download hash matches fixed release manifest; temporary extraction/exclusive publication preserves signature, signing identity and Gatekeeper acceptance; CLI/schema inspected; Settings setup exercised through CLI/Bubble Tea with fake native operations | Signed installed service, system authorization, persistent MCP handshake against that service, synthetic multi-app task, background focus/input sentinel, native overlay, cancellation and cold/warm measurements |
-| Windows amd64/arm64 | Downloaded archives and selected executable hashes verified; private installer with Authenticode checks implemented; synthetic extraction/reuse/cancellation tests and cross-compilation pass; static imports inspected | Native installation/signature trust and exclusive publication; runtime/service admission, interactive-session/UIAccess detection, native UI/input/lifecycle tests |
+| Windows amd64/arm64 | Downloaded archives and selected executable hashes verified; private installer with Authenticode checks implemented; synthetic extraction/reuse/cancellation tests and cross-compilation pass; static imports inspected; read-only service inspection and Windows status presentation implemented with synthetic tests | Native installation/signature trust, exclusive publication, named-pipe identity/UIAccess/session checks and status-schema confirmation; setup/action runtime integration and native UI/input/lifecycle tests |
 | Linux arm64 | Private installation/reuse and read-only headless inspection passed in an isolated Debian 13 container; production Manager and selected-window setup passed owned stdio and verified shared-service X11/GTK checks; scripted-model native print/Guard/tool/Session flow, ASCII insertion and pixel click/resize rejection passed; launch established its exact window and preserved the app after Manager close; actual Settings CLI flow passed native private installation, selected-window capture, cancellation/retry and saved enable | Launch steals focus, Unicode insertion truncates and GTK key/hotkey are unavailable in the fixture; actual-model tasks, physical terminal/IME and other desktop environments; other pixel actions/drag, foreground assistance, overlay, other toolkits, real compositor/Wayland and physical-input/IME checks |
 | Linux amd64 | Downloaded archive and selected executable hashes verified; synthetic installer tests and cross-compilation pass; ELF library dependencies inspected | Native installation/dynamic loading and exclusive publication; runtime/service admission, AT-SPI/display detection, compositor-specific input/capture/overlay tests |
 
@@ -459,6 +459,35 @@ prevents the agreed acceptance. Windows/Linux remain in scope. Windows native
 desktop validation is still missing. Linux arm64 has separate headless installation
 and isolated X11 capability evidence, with the exact scope and commands in
 [collaboration](collaboration.md#computer-use-checks).
+
+Windows Settings now has a bounded read-only inspection path for an already
+verified private installation and the existing `\\.\pipe\cua-driver` service.
+Before and after the two-tool MCP exchange it checks the public standard-mode
+status, the pipe server PID, the corresponding executable file, user SID,
+same Windows login session and process creation time. The local identity probe
+uses identification-only SQOS; it sends no protocol request and grants no
+service ownership. These API choices follow Microsoft's
+[pipe-server identity](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-getnamedpipeserverprocessid)
+and [CreateFile SQOS](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew)
+contracts. AICE never starts, elevates, reconfigures or stops the service in this path.
+
+The Windows report separates the Driver's integrity RID/name, its reported
+UIA/PostMessage prerequisites, the service process's actual UIAccess token bit,
+and its login session. A failed integrity lookup remains Unavailable; a failed
+UIAccess query remains Unknown. Session 0 is shown as a services session, and a
+nonzero session is not evidence of an unlocked/input-ready desktop. The fixed
+Driver reports UIA and PostMessage as constants, so those fields never establish
+target capability. Status does not inspect the separate UIAccess helper or grant
+access to higher-integrity applications or UAC surfaces. Windows setup and actions
+remain unavailable even when the status connection is verified.
+
+The Windows status schemas were reviewed from the fixed source, not a native
+metadata export. Synthetic admission tests cover external restrictions, foreign
+or changed identities, PID reuse, malformed/contradictory facts and cancellation;
+the actual CLI/Bubble Tea test renders these synthetic Windows facts. The native
+named-pipe tests and opt-in existing-service inspection test compile for Windows
+but have not executed here. No Windows native status or desktop acceptance is
+claimed; commands and boundaries are in [collaboration](collaboration.md#computer-use-checks).
 
 The native Linux 0.29.1 metadata export contains all 15 tool names currently used
 by AICE, but 11 input schemas differ from the macOS pin. Only `get_config`,

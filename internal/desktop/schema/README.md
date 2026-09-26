@@ -45,3 +45,15 @@ capture validity and actionable-only semantic projections. The opt-in X11 probe
 and Manager acceptance test compare this production pin during the real MCP
 handshake. Matching schemas do not establish Wayland or foreground safety;
 those routes remain unavailable pending their own reviewed adapters.
+
+`windows-status-0.29.1.json` pins only `get_config` and `check_permissions`.
+Unlike the macOS/Linux inventories above, this pin was reviewed from
+[`platform-windows/src/tools/impl_.rs`](https://github.com/trycua/cua/blob/7a8f66ad04e62fccb18cca9965f2964fcaee124e/libs/cua-driver/rust/crates/platform-windows/src/tools/impl_.rs)
+at the same fixed source commit, not exported from an executing Windows binary.
+Both real Windows definitions have empty properties and reject extra arguments;
+the non-Windows build stubs are not their contract. The separate inspection client
+admits only these two tools and compares the advertised schemas before any call.
+`TestNativeWindowsServiceInspection` is prepared to verify that pin through an
+installed native service, but has not run here. This source review and synthetic
+handshake coverage are not Windows runtime acceptance. The same MIT provenance
+and preserved license apply.

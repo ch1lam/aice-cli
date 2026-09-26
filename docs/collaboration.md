@@ -271,6 +271,30 @@ or desktop D-Bus connection was supplied. This verifies headless installation,
 not X11/Wayland input, accessibility or capture. Windows and Linux amd64 native
 execution remain unverified.
 
+Windows's ordinary `TestWindowsPeerRequiresExactExecutableAndPID` uses only a
+temporary named pipe belonging to its own test process. It checks kernel-reported
+PID, executable identity, session, creation time and cancellation without Cua,
+GUI access or elevation. It is compiled here, not natively executed. Synthetic
+cross-platform tests cover service admission and capability projection; the
+actual `TestSettingsUsageTUI` CLI flow also renders synthetic Windows status.
+Neither establishes native Windows readiness.
+
+On Windows, the separate opt-in status test requires the already installed pinned
+private distribution and an existing standard-mode service running from that
+same binary as the current user in the same login session:
+
+```powershell
+$env:AICE_CUA_NATIVE_STATUS = '1'
+go test -tags=integration ./internal/desktop -run '^TestNativeWindowsServiceInspection$' -v
+Remove-Item Env:AICE_CUA_NATIVE_STATUS
+```
+
+It performs two read-only inspections, checking the advertised source-reviewed
+status schemas and leaving the shared service running. It never installs, starts
+a service, creates a native task session, captures or requests UAC/UIAccess.
+This native gate has not run here. A successful run would verify only status
+admission, not interactive desktop, secure-desktop, input, capture or overlay behavior.
+
 In an isolated Linux container with no user display or desktop bus mounted,
 the headless service test starts one test-owned foreground daemon, reads status
 twice through the production inspector, and reaps only that daemon. It requires
