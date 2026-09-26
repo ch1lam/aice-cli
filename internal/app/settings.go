@@ -249,6 +249,10 @@ func (s *interactiveSession) ReadSettings(ctx context.Context) (interaction.Sett
 		desktopReason = "Computer Use runtime is unavailable in this session"
 	}
 	result.Fields = append(result.Fields, interaction.SettingField{ID: "desktop.setup", Category: "tools", Label: "Computer Use setup / repair", Description: "Install the signed Driver and request OS permissions, or retry saving the enabled preference. No Session is created.", Kind: interaction.SettingAction, Action: desktopSetupCommand(), Applies: interaction.SettingDomainAction, DisabledReason: desktopReason})
+	result.Fields = append(result.Fields, s.desktopStatusField(ctx, settings))
+	if err := ctx.Err(); err != nil {
+		return interaction.SettingsSnapshot{}, err
+	}
 	result.Runtime = s.settingsDisplay(settings)
 	return result, nil
 }

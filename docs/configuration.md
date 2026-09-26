@@ -156,6 +156,10 @@ start a run or create a Session. During a main run, the Settings footer offers
 **Stop current run** (click or F6 within the panel); Esc only returns or closes.
 Stopping cancels the existing run and waits for lifecycle completion before
 preferences become editable again. It does not save a disabled preference.
+Computer Use status is a bounded read-only check of the installed Driver and
+existing service. Its details distinguish OS grants, connection and historical
+capture verification; refreshing never starts a service, captures or asks for
+permissions. An enabled preference alone is not readiness.
 The five categories are Models & Accounts, Tools & Network, Run Limits,
 Project & Trust, and System. Tab/Shift+Tab switches categories; `/` searches
 across them. Arrow keys select, Enter edits, and `?` opens scrollable details.

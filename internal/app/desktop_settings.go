@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/ch1lam/aice-cli/internal/deps"
 	"github.com/ch1lam/aice-cli/internal/interaction"
@@ -107,6 +108,11 @@ func (s *interactiveSession) runDesktopSettings(ctx context.Context, request int
 			return result, err
 		}
 		native, err := s.desktop.setup(ctx, installed.Installation.Binary)
+		if native.AuthorizationCompleted {
+			s.desktop.healthMu.Lock()
+			s.desktop.setupCaptureAt = time.Now()
+			s.desktop.healthMu.Unlock()
+		}
 		if native.LaunchRequested {
 			result.External = append(result.External, interaction.SettingsActionStep{Name: "Service launch", Detail: "Launch requested; the shared daemon is not owned by AICE", Completed: native.Ready})
 		}

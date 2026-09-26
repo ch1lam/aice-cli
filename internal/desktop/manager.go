@@ -27,9 +27,11 @@ type RunOptions struct {
 // Status is a content-free, cached projection. Reading it never captures a
 // window, launches a process, or asks for OS authorization.
 type Status struct {
-	Connected  bool
-	Generation uint64
-	Diagnostic string
+	Connected        bool
+	Generation       uint64
+	Diagnostic       string
+	CaptureCheckedAt time.Time
+	CaptureAvailable bool
 }
 
 type driverClient interface {
@@ -184,6 +186,12 @@ func (m *Manager) setDiagnostic(text string) {
 	m.mu.Lock()
 	m.status.Diagnostic = text
 	m.mu.Unlock()
+}
+
+func (m *Manager) recordCapture(available bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.status.CaptureCheckedAt, m.status.CaptureAvailable = time.Now(), available
 }
 
 func (m *Manager) disconnectLocked(reason string) error {

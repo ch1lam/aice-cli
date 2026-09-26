@@ -102,6 +102,10 @@ func (s *serviceConnector) dial(ctx context.Context) (driverClient, error) {
 }
 
 func (s *serviceConnector) admit(ctx context.Context, requireGrants bool) (driverClient, error) {
+	return s.admitInspection(ctx, requireGrants, nil)
+}
+
+func (s *serviceConnector) admitInspection(ctx context.Context, requireGrants bool, report *Inspection) (driverClient, error) {
 	// One bounded deadline covers both management probes and MCP admission.
 	ctx, cancel := context.WithTimeout(ctx, 25*time.Second)
 	defer cancel()
@@ -134,8 +138,12 @@ func (s *serviceConnector) admit(ctx context.Context, requireGrants bool) (drive
 	if err != nil {
 		return nil, err
 	}
-	if err := validateMacPermissionIdentity(permission, s.binary, before.pid, requireGrants); err != nil {
+	grants, err := readMacPermissionIdentity(permission, s.binary, before.pid)
+	if err != nil {
 		return nil, err
+	}
+	if requireGrants && (!*grants.Accessibility || !*grants.ScreenRecording) {
+		return nil, serviceError("setup_required", "Cua needs Accessibility and Screen Recording grants; open Computer Use setup")
 	}
 	// Mode is immutable for a daemon lifetime. Verify that the status endpoint
 	// still names the same PID after MCP admission, without claiming ownership.
@@ -145,6 +153,11 @@ func (s *serviceConnector) admit(ctx context.Context, requireGrants bool) (drive
 	}
 	if before.pid != after.pid {
 		return nil, serviceError("service_changed", "Cua service changed during connection; reconnect before observing or acting")
+	}
+	if report != nil {
+		report.ConnectionVerified = true
+		report.Accessibility = permissionState(*grants.Accessibility)
+		report.ScreenRecording = permissionState(*grants.ScreenRecording)
 	}
 	accepted = true
 	return c, nil
@@ -207,29 +220,28 @@ func parseServiceStatus(output, endpoint string) (serviceStatus, error) {
 	return serviceStatus{pid: pid}, nil
 }
 
-func validateMacPermissionIdentity(reply Reply, binary string, pid int, requireGrants bool) error {
-	var permission struct {
-		Accessibility   *bool `json:"accessibility"`
-		ScreenRecording *bool `json:"screen_recording"`
-		Source          struct {
-			Attribution string `json:"attribution"`
-			PID         int    `json:"pid"`
-			Executable  string `json:"executable"`
-			BundleID    string `json:"bundle_id"`
-		} `json:"source"`
-	}
+type macPermissions struct {
+	Accessibility   *bool `json:"accessibility"`
+	ScreenRecording *bool `json:"screen_recording"`
+	Source          struct {
+		Attribution string `json:"attribution"`
+		PID         int    `json:"pid"`
+		Executable  string `json:"executable"`
+		BundleID    string `json:"bundle_id"`
+	} `json:"source"`
+}
+
+func readMacPermissionIdentity(reply Reply, binary string, pid int) (macPermissions, error) {
+	var permission macPermissions
 	if reply.IsError || json.Unmarshal(reply.Structured, &permission) != nil || permission.Accessibility == nil || permission.ScreenRecording == nil {
-		return serviceError("permissions_unknown", "Cua OS permission status is unknown")
+		return macPermissions{}, serviceError("permissions_unknown", "Cua OS permission status is unknown")
 	}
 	if permission.Source.Attribution != "driver-daemon" || permission.Source.PID != pid || permission.Source.Executable != binary || permission.Source.BundleID != "com.trycua.driver" {
-		return serviceError("identity_mismatch", "Cua permission status does not belong to the verified signed App service")
-	}
-	if requireGrants && (!*permission.Accessibility || !*permission.ScreenRecording) {
-		return serviceError("setup_required", "Cua needs Accessibility and Screen Recording grants; open Computer Use setup")
+		return macPermissions{}, serviceError("identity_mismatch", "Cua permission status does not belong to the verified signed App service")
 	}
 	// Grants are not capture evidence. Ignore historical direct_capture_* fields;
 	// a real observation remains responsible for reporting capture availability.
-	return nil
+	return permission, nil
 }
 
 func validateInspectionSchemas(tools map[string]json.RawMessage) error {

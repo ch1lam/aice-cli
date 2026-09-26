@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"slices"
 	"sync"
+	"time"
 
 	"github.com/ch1lam/aice-cli/internal/agent"
 	"github.com/ch1lam/aice-cli/internal/config"
@@ -25,6 +26,9 @@ type desktopState struct {
 	installOptions deps.Options
 	install        func(context.Context, deps.Options) (deps.CuaInstallResult, error)
 	setup          func(context.Context, string) (desktop.SetupResult, error)
+	inspect        func(context.Context) (desktop.Inspection, error)
+	healthMu       sync.Mutex
+	setupCaptureAt time.Time
 }
 
 func (a *application) newDesktopState(configuration config.Config) (*desktopState, error) {
@@ -49,6 +53,16 @@ func (a *application) newDesktopState(configuration config.Config) (*desktopStat
 		return nil, err
 	}
 	return &desktopState{installOptions: options, close: manager.Close, status: manager.Status,
+		inspect: func(ctx context.Context) (desktop.Inspection, error) {
+			if homeErr != nil || home == "" {
+				return desktop.Inspection{}, errors.New("Computer Use needs an available user home directory")
+			}
+			result, err := deps.InstallCua(ctx, options.WithNoInstall(true))
+			if err != nil {
+				return desktop.Inspection{}, err
+			}
+			return desktop.Inspect(ctx, result.Installation.Binary, filepath.Join(home, "Library", "Caches", "cua-driver", "cua-driver.sock"))
+		},
 		install: func(ctx context.Context, options deps.Options) (deps.CuaInstallResult, error) {
 			if homeErr != nil || home == "" {
 				return deps.CuaInstallResult{}, errors.New("app: Computer Use needs an available user home directory")

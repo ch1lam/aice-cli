@@ -18,6 +18,8 @@ import (
 //go:embed cua/LICENSE
 var cuaLicense []byte
 
+var ErrCuaNotInstalled = errors.New("Cua Driver is not installed")
+
 // CuaInstallation describes a verified installation, not service ownership or
 // OS authorization. Installing an App never makes its later processes ours.
 type CuaInstallation struct {
@@ -55,7 +57,7 @@ func (i cuaBundleInstaller) install(ctx context.Context) (result CuaInstallResul
 		return result, err
 	}
 	if i.options.NoInstall {
-		return result, errors.New("Cua download disabled by current no_dep_install preference; change applies on next startup")
+		return result, fmt.Errorf("%w; Cua download disabled by current no_dep_install preference; change applies on next startup", ErrCuaNotInstalled)
 	}
 	// The official public macOS grant flow requires /Applications. Stage and
 	// publish there, without sudo, PATH edits, LaunchAgents or login autostart.

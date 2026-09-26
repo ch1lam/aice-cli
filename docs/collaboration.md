@@ -239,8 +239,8 @@ AICE_CUA_TEST_BINARY=/absolute/path/to/CuaDriver.app/Contents/MacOS/cua-driver \
 ```
 
 With the same binary, `TestNativeCuaStatusEstablishesAbsence` checks the pinned
-read-only status diagnostic on a temporary absent socket. It also uses an
-isolated HOME and does not launch a service. Default setup tests use fake
+read-only status diagnostic and public inspection API on a temporary absent
+socket. It also uses an isolated HOME and does not launch a service. Default setup tests use fake
 commands to cover lock contention, external restrictions, startup races and
 partial authorization outcomes; they do not prove native grant behavior.
 

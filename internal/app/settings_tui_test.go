@@ -39,6 +39,9 @@ func TestSettingsUsageTUI(t *testing.T) {
 		saveSettings: config.SaveSettingsFile,
 		newDesktop: func(c config.Config) (*desktopState, error) {
 			return &desktopState{installOptions: deps.DefaultOptions().WithNoInstall(c.NoDepInstall),
+				inspect: func(context.Context) (desktop.Inspection, error) {
+					return desktop.Inspection{ConnectionVerified: true, Accessibility: desktop.PermissionGranted, ScreenRecording: desktop.PermissionMissing, CheckedAt: time.Now()}, nil
+				},
 				bind: func(ctx context.Context, _ desktop.RunOptions) (tool.DesktopBackend, func() error, error) {
 					binds++
 					return &appDesktopBackend{}, func() error {
@@ -134,6 +137,9 @@ func TestSettingsUsageTUI(t *testing.T) {
 	if runtime.GOOS == "darwin" {
 		send("/desktop\r")
 		waitFor("[Tools & Network]")
+		send("/Computer Use status\r")
+		waitFor("Screen Recording: Missing")
+		send("\x1b")
 		send("/Computer Use setup")
 		waitFor("Computer Use setup / repair")
 		send("\r")

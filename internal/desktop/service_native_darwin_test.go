@@ -59,4 +59,11 @@ func TestNativeCuaStatusEstablishesAbsence(t *testing.T) {
 	if _, err := os.Lstat(endpoint); !os.IsNotExist(err) {
 		t.Fatal("read-only status created service endpoint", err)
 	}
+	report, err := Inspect(t.Context(), binary, endpoint)
+	if !serviceHasCode(err, "not_running") || report.ConnectionVerified || report.Accessibility != PermissionUnknown || report.ScreenRecording != PermissionUnknown {
+		t.Fatalf("absent service became permission/capture readiness: %+v %v", report, err)
+	}
+	if _, err := os.Lstat(endpoint); !os.IsNotExist(err) {
+		t.Fatal("inspection started a service", err)
+	}
 }

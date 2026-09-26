@@ -50,6 +50,26 @@ No admission probe enumerates windows or captures; granted TCC booleans are not 
 of successful capture. Cold application connections use this preflight after
 verifying the installed App. Settings calls the explicit native setup API;
 native authorization acceptance remains outstanding.
+
+Settings' Computer Use status row uses a bounded read-only refresh (eight seconds
+for installed-App verification and inspection, with a five-second inspection
+deadline). It reuses only an already installed, verified App; it never starts a
+daemon or downloads. A separate short-lived MCP proxy reads `get_config` and
+`check_permissions` with `prompt=false`, verifies the same service identity and
+standard-mode contract, then closes only that proxy. No session or observation is
+created, so this refresh cannot replace the task's executable window snapshot.
+Missing grants remain distinct from Unknown. An absent service remains Stopped
+with Unknown permission facts, rather than reading the terminal's grants.
+
+The status details separate connection, Accessibility, Screen Recording, model
+image support, and capture verification. Capture results come only from explicit
+setup verification or actual requested task screenshots and carry a timestamp.
+They are labelled historical, not a guarantee for the next capture; upstream
+historical `screen_recording_capturable` fields do not establish current readiness.
+The feature's enabled preference remains separate. Refresh occurs on panel reads
+and manual refresh, not on streaming tokens or hover, and cancellation ends the
+read without publishing its snapshot. Status reads hold no Settings write
+reservation and never advance the configuration revision.
 The native no-autolaunch check passed with the pinned App binary, a temporary
 HOME and an absent socket. No user service was connected or started. Default
 tests cover changing service identity, missing grants, mode/policy rejection,
@@ -200,8 +220,8 @@ Stop current run button (mouse or panel-local F6) uses the existing cancellation
 path, including preparation before the cancel callback arrives. It stays in
 Stopping until run completion. Esc only closes the current modal level. No
 stop action changes the enabled preference or stops the shared service.
-Remaining changes include bounded read-only status projection and the remaining
-typed tools. A Web rebuild must retain the same Desktop binding
+Remaining changes include the remaining typed tools and native acceptance.
+A Web rebuild must retain the same Desktop binding
 as the tools and prompt it publishes; offline publication tests cover this.
 
 ## Platform evidence
@@ -247,6 +267,12 @@ checks that Esc leaves it running, and cancels through Settings F6. Its fake
 desktop binding verifies cancellation precedes cleanup and enable remains saved.
 Renderer tests cover the mouse button, information-page Stop and the early
 preparation interval before the controller publishes cancellation.
+The same CLI flow opens the status details with synthetic permission facts.
+Default inspection tests reject foreign/changing identities, retain Missing and
+Unknown separately, bound cancellation, and assert that only the two read-only
+inspection calls execute. Screenshot tests record actual success and failure,
+while semantic-only observations leave capture Not checked. The opt-in absent
+socket test also exercises the public inspection API without starting a daemon.
 
 Manager tests use synthetic windows and PNGs to verify single dispatch,
 post-observation failure, cancellation, per-run cleanup, reconnection,

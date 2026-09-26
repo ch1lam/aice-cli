@@ -171,9 +171,16 @@ func (r *Run) observeLocked(ctx context.Context, request ObserveRequest) (Observ
 		"timeout_ms": 5000, "query": request.Query,
 	})
 	if err != nil {
+		if request.Screenshot {
+			r.manager.recordCapture(false)
+		}
 		return Observation{}, err
 	}
-	return r.bindObservation(ctx, request.TargetRef, target, request.Screenshot, reply)
+	result, err := r.bindObservation(ctx, request.TargetRef, target, request.Screenshot, reply)
+	if request.Screenshot {
+		r.manager.recordCapture(err == nil && result.Image != nil)
+	}
+	return result, err
 }
 
 func (r *Run) bindObservation(ctx context.Context, targetRef string, target windowIdentity, screenshot bool, reply Reply) (Observation, error) {
