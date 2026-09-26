@@ -75,6 +75,11 @@ also applies the preference to the next browser session. Switching the preferenc
 back before closing cancels the pending change. Connected external browsers keep
 their own window visibility. A visible window requires a desktop display.
 
+Settings → Tools & Network exposes the same browser actions and the separate
+window preference. The action exchange stays in the window and can be cancelled;
+its draft never replaces the main composer. Connection actions require idle main
+and BTW responses. Platform restrictions remain the same as `/browser`.
+
 ## Connect to a running browser
 
 Use `/browser` to open Status, Show window, Connect to running browser (auto-detect),

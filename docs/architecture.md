@@ -108,6 +108,15 @@ It never retains writable stores or persists a second transcript.
 snapshot to the TUI. That snapshot derives from original branch records, while
 model context remains independently derived through compaction checkpoints.
 
+Settings use the same application coordinator. `config/settings_schema.go` and
+`sources.go` own typed preferences and frozen precedence layers; the locked
+writer changes only requested user fields. `app/settings_lifecycle.go` reserves
+configuration, run preparation and Session operations, while existing provider,
+auth, browser and Web modules retain their business behavior. Interaction
+snapshots carry public descriptions to the TUI's independent modal editor.
+`app/usage.go` derives a non-consuming Session information view. There is no
+settings service, global registry, alternate transcript or file watcher.
+
 ## Package map
 
 | Package | Ownership |

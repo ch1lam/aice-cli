@@ -60,6 +60,12 @@ restart; it does not change already-loaded configuration, prompt files, or Skill
 choices remain available at startup, where they affect loading immediately
 without being saved.
 
+Settings → Project & Trust shows the loaded decision/source and discovered
+Skills, and provides the same saved-decision operation as `/trust`. Editing the
+default policy or saved decision affects startup only; it neither reloads project
+inputs nor relaxes current tool permissions. The panel writes user preferences,
+not project configuration files.
+
 ## Prompt assembly
 
 The base prompt is selected from the first available source:

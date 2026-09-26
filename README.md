@@ -52,6 +52,12 @@ settings → user settings → defaults. Interactive selections save immediately
 other running instances keep their loaded configuration. See
 [configuration and persistence](./docs/configuration.md#settings-and-precedence).
 
+Open `/settings` (or Ctrl+comma) to edit models, accounts, tools, run limits,
+Trust preferences and startup options. `/context`, `/usage` and `/session` open
+context occupancy, recorded Session usage and Session information. Both windows
+keep the background draft and create no Session just by opening.
+See [Settings and Usage](./docs/configuration.md#settings-window).
+
 Runs have no round limit by default. Optionally set `--max-turns 50`,
 `--run-token-budget 200000`, and `--run-timeout 30m`. By default, 8 consecutive identical tool rounds stop
 the run; `--run-no-progress-limit 0` disables this check. See

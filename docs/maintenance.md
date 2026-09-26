@@ -98,6 +98,26 @@ Keep reproducible verification commands and evaluation task specifications.
 Session recovery and supported-format rejection are current behavior, not
 historical documentation.
 
+## Settings and Usage verification
+
+Entry points are `config/settings_schema.go`, `sources.go`, `settings_patch.go`,
+`app/settings.go`, `settings_apply.go`, `settings_lifecycle.go`, `usage.go`, and
+`tui/settings_panel.go`, `settings_action.go`, `settings_collection.go`,
+`usage_panel.go`. Config owns storage/source semantics, app owns resource
+publication, and TUI owns only navigation and drafts. To add a scalar preference,
+update its config definition/parser, app description/timing, and actual behavior;
+existing value kinds require no additional TUI key routing. Domain operations
+remain in their existing modules.
+
+| Evidence | Coverage |
+| --- | --- |
+| Config/application tests | Typed zero/false/empty/unset, frozen sources, peer writes, damaged files, prepare/save failures, stale runs, main/BTW edit exclusion, cost completeness and non-consuming reads |
+| Modal tests | 80×24, 120×40, wide and tiny layouts; CJK/emoji draft and paste isolation; mouse enum save, array drafts, permission preemption, stale reads and save completion after close |
+| Actual CLI with Bubble Tea, isolated configuration and fake model | Settings navigation/search, duration save including nanoseconds, Usage and empty Session views |
+| Native desktop IME candidate window and physical mouse | Not exercised: Computer Use denied access to macOS Terminal; terminal-cell cursor tests and synthetic events do not establish native acceptance |
+| Native Linux/Windows terminal behavior | Not exercised on this macOS host; CI/portable tests do not replace it |
+| Live OAuth and paid provider/search calls through Settings | Not exercised; existing domain tests use synthetic credentials and local fake services |
+
 ## Known discrepancies
 
 ### Self-update OpenPGP dependency warning

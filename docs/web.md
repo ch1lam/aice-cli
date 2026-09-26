@@ -120,7 +120,15 @@ snapshot, rebinds the tools and refreshes the system prompt. Changes are
 refused while a response is running so an approval never targets a different
 service than the one shown. `/web` never contacts the search API; there is no
 connection test. Opening menus, reordering entries and redrawing the screen
-send no requests. `/settings` shows a one-line web summary.
+send no requests. Settings → Tools & Network hosts these actions and adds
+result count, positive search/fetch durations, priority/domain list forms, and
+per-instance enabled state, endpoint, credential reference and Exa mode fields.
+A list is committed as one array; an instance edit patches only named fields.
+The panel requires allow/exclude lists to be mutually exclusive without changing
+the existing file-policy interpretation. User preferences and project tightening
+are shown separately. Backend preparation failures prevent saving; successful
+saves publish tools, prompt and Guard target together at an idle boundary.
+See [Settings](configuration.md#settings-window).
 
 ## Permissions
 

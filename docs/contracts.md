@@ -650,6 +650,48 @@ consistency for those behaviors.
   `TestTerminalRepaintsChangedWideText` exercises actual terminal output rather
   than only checking the text returned by `View`.
 
+### Settings and Usage capabilities
+
+`interaction.SettingsReader`, `SettingsWriter`, `SettingsActionRunner` and
+`UsageReader` are implemented by the interactive application. Snapshots contain
+public value types and copied metadata, never credentials or writable stores.
+Config owns scalar types, defaults and frozen source layers; app owns dynamic
+model/service choices, editability, timing, validation and prepared resources.
+The TUI chooses controls from value kinds, without importing config/providers.
+
+`settingsLifecycle` reserves a change, preparation or active response under a
+short mutex. Lock order is lifecycle before state/history/side locks. The
+lifecycle and state locks are never held while waiting on file locks,
+authorization or model calls; the conversation history synchronization lock
+continues to serialize its own store operations.
+Read snapshots capture configuration and revision together. Main and BTW starts
+check their prepared resource revision before accepting input. Settings and conflicting
+slash commands use this same boundary. An active response keeps its frozen
+loop, limits and tools, including queued follow-ups. Existing BTW snapshots are
+read-only after a successful shared-resource configuration operation. Restart-only saves leave
+current loaded Trust, Skills and startup actions unchanged.
+
+A setting operation prepares before writing, publishes after atomic replacement,
+and reports cleanup separately from commit failure. Web instance edits patch
+only selected properties; a writer rereads disk to preserve unrelated peers,
+but the running instance publishes its own candidate. Preferences, credentials
+and OAuth files do not form a multi-file transaction.
+
+Settings/Usage share the small `modal.go` frame with history. Their editor,
+search, selection and array drafts belong to the modal input domain. Permission
+and question prompts take precedence. Identity includes the field, action,
+prompt and array cell, so delayed editor work cannot land in a different prompt.
+Mouse release validates the target and geometry. Native cursor placement uses
+terminal cell widths; background streaming continues behind the window.
+
+Read generations govern presentation only. Closing a read cancels it; closing
+a submitted preference write does not undo publication. Domain actions have
+cancellable prompt exchanges and use the modal editor, never the conversation
+composer. Query owners cancel and wait at shutdown, including late queued work.
+Usage reads copy source Session records and derive price completeness without
+calling the consuming `RuntimeState` method or creating an empty Session. Reads
+occur on open, lifecycle completion or manual refresh, not streaming deltas.
+
 ### Interactive authentication
 
 Login menus supply the selected provider and credential action. Custom login

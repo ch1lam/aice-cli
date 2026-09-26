@@ -138,6 +138,82 @@ leaves the current selection unchanged. If login already saved a credential
 before that failure, the error explicitly reports the credential-only success; preference
 and credential files are not one transaction.
 
+### Settings window
+
+Open `/settings`, press Ctrl+comma, or click **Settings** under the header.
+The five categories are Models & Accounts, Tools & Network, Run Limits,
+Project & Trust, and System. Tab/Shift+Tab switches categories; `/` searches
+across them. Arrow keys select, Enter edits, and `?` opens scrollable details.
+Mouse clicks select categories, fields, choices and Save/Cancel; the wheel
+scrolls the active list. Escape backs out of a field, search or window without
+cancelling the background response. Ctrl+comma preserves the composer and attachments.
+
+| Area | Editable preferences or actions | Takes effect |
+| --- | --- | --- |
+| Models & Accounts | Provider, model (including custom IDs), thinking, every provider endpoint, context capacity table; API key and OAuth actions for every installed provider | Next Agent run |
+| Tools & Network | Search/fetch switches, timeouts, result count, priority, domain lists; Exa instance creation/removal, enabled state, endpoint, credential reference and `auto`/`fast` mode | Next Agent run |
+| Browser | Window visibility; existing connection, disconnect and tab actions | Visibility: next browser generation; actions: explicit operation |
+| Run Limits | Maximum turns, token budget, timeout, repeated-tool limit | Next Agent run |
+| Project & Trust | Default policy and saved project decision | Next startup; loaded Trust, directory and Skills stay read-only |
+| System | Allow helper downloads, check for updates; paths and diagnostics | Next startup |
+
+Booleans save immediately. Text, integers, durations and choices save with
+Enter. Context and list editors stage their rows: `a` adds, Enter edits,
+Tab moves between row cells, `d` deletes, Ctrl+Up/Down reorders, and Ctrl+S
+saves the whole array. Leaving a changed array offers save/discard/keep.
+An empty priority list deliberately allows no search source. Domain editors
+require either an allow list or an exclude list; clear one before using the other.
+Provider/API facts come from the implemented service; Exa is the only current
+adapter, so the form does not offer nonexistent providers. Its only option is
+`type`; unsupported options remain errors, not arbitrary JSON editor inputs.
+
+Details distinguish effective values, known saved preferences, inherited
+candidates and source locations. “Known saved” means startup/latest local save,
+not a fresh disk read. Sources are default, user-settings, user-auth, trusted
+project, environment, flag and runtime. Rejected project content is never an
+inheritance candidate. `D` explicitly writes the product default; `u` previews
+removing a user override, then Enter confirms. Model/provider inheritance is
+previewed and reset as the provider/model/thinking group. Reset removes only
+user preferences and this instance's corresponding runtime choices; flags,
+environment, auth and trusted project inputs remain. Resolution uses frozen
+startup layers, so neither reset nor refresh imports unrelated external edits.
+
+Each submission validates its revision and candidate, prepares dependencies,
+saves the local patch, then publishes. Settings can be read during main and BTW
+responses. Shared-resource edits are refused while input is being prepared or
+any response runs; restart-only preferences can still be saved. A prepared run
+whose resource revision changed is refused before accepting its prompt,
+and the TUI retains the draft. Older BTW snapshots become read-only after a
+shared-resource configuration operation; start a new BTW question to use current settings.
+A failed preparation or save keeps the previous runtime. A successful atomic
+replacement remains saved if later lock cleanup fails; the result reports a
+warning. Closing a saving window does not roll back its committed preference.
+Credentials keep their dedicated stores and partial-success reporting. Window
+operations, drafts, API keys and authorization responses never enter prompt
+history or Session JSONL.
+
+### Usage and Session information
+
+`/context`, `/usage`, and `/session` open Context, Session usage, and Session
+info in the same window. The clickable **Usage** entry opens Context; the
+existing top-right context hover/click format toggle is unchanged. Tab changes
+pages and `r` refreshes. Select an information row and Enter for scrollable text.
+
+Context shows occupancy, capacity, estimate status, window source and model.
+Session usage counts recorded input/output/cache tokens across every branch and
+compaction, excluding temporary BTW answers. Reasoning tokens are an output
+subset. Cost is **Unavailable**, **Partial estimate**, or **Estimate** according
+to the original records' price coverage; current prices are never applied
+retroactively. Missing reports from interrupted requests remain unreported.
+This is not an account balance or subscription quota display.
+
+Session info shows identity, path, directory, active leaf and node/message/
+compaction counts. Opening any information window before the first prompt
+shows “Not started” and creates no Session file. Reads are asynchronous and
+cancelled on close. Generation checks reject stale window reads; lifecycle
+completion or manual refresh updates the snapshot, never every streamed token.
+The reader does not consume the one-time restored transcript in RuntimeState.
+
 ### Unavailable configured models
 
 If a known provider's saved or environment-selected model is absent from its
@@ -1058,7 +1134,8 @@ without color.
 | `/help` | List commands |
 | `/btw [question]` | Create or choose an ephemeral, tool-free side thread |
 | `/init` | Create or improve root `AGENTS.md`; loaded after restart |
-| `/settings` | Show effective model, Trust state, web summary, and configuration paths |
+| `/settings` | Open the five-category Settings window (also Ctrl+comma) |
+| `/context`, `/usage` | Open current context or recorded Session usage |
 | `/browser` | Browser status, connection, tab selection and close; `/browser status` also works |
 | `/web` | Web search services, priority order, credentials and the `web_fetch` switch; see [Web search and fetch](web.md#the-web-command) |
 | `/skills` | List Agent Skills loaded for this Session |
@@ -1067,7 +1144,7 @@ without color.
 | `/model` | Select and save a model from that provider |
 | `/thinking` | Select and save a supported reasoning level |
 | `/trust` | Save a Trust choice for restart; temporary choices are available only at startup |
-| `/session` | Show the Session ID, path, active leaf, and counts |
+| `/session` | Open Session information in the Usage window |
 | `/history [id]` | Browse conversation history in the current project (also Ctrl+R, labeled `history`; F2 renames the selected session, an empty title restores the first question), or restore an existing local session by filename stem |
 | `/tree` | Show all Session branches |
 | `/checkout` | Select where the next branch starts |
