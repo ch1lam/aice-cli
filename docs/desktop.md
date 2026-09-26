@@ -97,7 +97,7 @@ as the tools and prompt it publishes. These execution changes have not yet lande
 
 | Scope | Evidence | Remaining acceptance |
 | --- | --- | --- |
-| macOS 0.29.1 universal artifact | Download hash matches fixed release manifest; strict signature and Gatekeeper accepted; `--version` and advertised CLI/schema inspected | Signed installed service, system authorization, persistent MCP handshake against that service, synthetic multi-app task, background focus/input sentinel, native overlay, cancellation and cold/warm measurements |
+| macOS 0.29.1 universal artifact | Download hash matches fixed release manifest; AICE's temporary extraction/exclusive publication preserves strict signature, Cua signing identity and Gatekeeper acceptance; `--version` and advertised CLI/schema inspected | Settings installer wiring, signed installed service, system authorization, persistent MCP handshake against that service, synthetic multi-app task, background focus/input sentinel, native overlay, cancellation and cold/warm measurements |
 | Windows amd64/arm64 | Published release digests pinned; upstream interactive-session requirements reviewed | Downloads, signatures where available, install/autostart opt-out, native UI/input/lifecycle tests |
 | Linux amd64/arm64 | Published release digests pinned; upstream X11/Wayland capability distinction reviewed | Downloads, dynamic dependencies, AT-SPI/display detection, native compositor-specific input/capture/overlay tests |
 
@@ -123,3 +123,12 @@ post-observation failure, cancellation, per-run cleanup, reconnection,
 cross-run snapshot invalidation, malformed-image semantic fallback and exact
 2100-to-2000-pixel coordinate conversion. These are offline lifecycle checks,
 not native background-input or overlay acceptance.
+
+The explicit macOS installer API now stages and verifies the signed App, reuses
+a compatible existing installation, preserves conflicting files and respects
+the current helper-download policy. It is not yet called by Settings or startup.
+See [installation](installation.md#computer-use-helper-integration-in-progress).
+Its opt-in artifact test passed on macOS using the pinned local archive. This
+checks extraction, native signature/Gatekeeper verification and exclusive
+publication in temporary directories; it never installs into `/Applications`,
+starts a service, requests OS permissions or reads the desktop.

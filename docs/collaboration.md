@@ -213,6 +213,22 @@ frames instead of relying on renderer cell diffs.
 - When asked to commit, follow the repository's existing short gitmoji/conventional subject style and keep each commit to one intent. Do not use Pi package scopes or release conventions.
 - If a conflict touches a file not modified for the current task, stop and ask the user instead of resolving it speculatively.
 
+## Computer Use checks
+
+The opt-in Cua artifact check uses an already downloaded, fixed-digest macOS
+archive. It extracts into temporary directories, verifies signing identity and
+Gatekeeper acceptance, and checks exclusive publication. It does not install
+the App, launch a service, request TCC, or capture any window:
+
+```sh
+AICE_CUA_TEST_ARCHIVE=/absolute/path/to/cua-driver-rs-0.29.1-darwin-universal.tar.gz \
+  go test -tags=integration ./internal/deps -run '^TestNativeCuaArtifactExtraction$' -v
+```
+
+Default Cua installer tests use synthetic archives and in-memory HTTP transports.
+Artifact validation is distinct from native Computer Use acceptance; see the
+[platform evidence](desktop.md#platform-evidence).
+
 ## Browser checks
 
 The default browser/dependency tests use fake commands and local HTTP fixtures,

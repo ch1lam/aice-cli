@@ -86,6 +86,28 @@ Set `AICE_NO_DEP_INSTALL=1`, pass `--no-dep-install`, or set
 `"no_dep_install": true` in settings to disable helper downloads. A missing helper only
 disables the tools that require it; AICE reports the degraded capability.
 
+### Computer Use helper (integration in progress)
+
+Cua Driver is separate from automatic startup helpers. The macOS provisioning
+API downloads only the pinned full 0.29.1 archive, verifies SHA-256, extracts the
+signed App into a temporary directory under `/Applications`, and checks its
+signature, Cua signing identity, Gatekeeper acceptance and version before an
+exclusive rename to `/Applications/CuaDriver.app`. It preserves the license in
+`~/.aice/bin/cua/0.29.1/LICENSE`. No bare Driver, Node addon or SDK runtime is
+installed. See [provenance](../internal/deps/cua/VENDOR.md).
+
+Provisioning respects the current instance's helper-download policy. It can
+reuse a verified compatible existing App and refuses to overwrite an incompatible
+or concurrently created installation. The installation directory lock waits up
+to 30 seconds, is cancellable and is never stolen automatically. Directory
+permission errors are reported; AICE does not invoke sudo, weaken signing checks,
+change PATH or enable login autostart. Installation does not establish process
+ownership or OS authorization.
+
+This API is not yet connected to Settings setup. Windows/Linux installer
+integration and native desktop acceptance remain open; the
+[Computer Use status](desktop.md) records the exact scope of verification.
+
 ## Update
 
 ```sh

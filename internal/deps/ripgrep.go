@@ -116,6 +116,8 @@ func download(ctx context.Context, opts Options, url, want, suffix string) (stri
 		helper, version := "ripgrep", ripgrepVersion
 		if strings.Contains(url, "/agent-browser/") {
 			helper, version = "agent-browser", AgentBrowserVersion
+		} else if strings.Contains(url, "/trycua/cua/") {
+			helper, version = "Cua Driver", CuaDriverVersion
 		} else if strings.Contains(url, "/git-for-windows/") {
 			helper, version = "Git Bash", gitForWindowsTag
 		}
