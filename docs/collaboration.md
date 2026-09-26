@@ -434,6 +434,24 @@ temporary files are cleaned up on failure as well as success.
 AICE_CUA_NATIVE=1 go test -tags=integration ./internal/desktop -run '^TestNativeCuaMultiApp$' -v
 ```
 
+The separate macOS input gate checks ASCII and Unicode `type_text`, a single
+`key`, and `cmd+a` through exact semantic element tokens. It reads the AppKit
+field editor's actual text and selection after the response, including when
+the Driver reports refusal or an unverifiable effect. Refusal or unmet input
+postconditions fail the gate; a successful `set_value` seed does not count as
+successful insertion. Each case has its own target and foreground sentinel,
+which must retain focus and contents throughout setup, input and cleanup:
+
+```sh
+AICE_CUA_NATIVE=1 go test -tags=integration ./internal/desktop -run '^TestNativeMacInput$' -v
+```
+
+This gate uses the same read-only installed-service/grant preflight before
+opening any fixture, installs nothing and requests no grants. It compiles but
+has not passed native execution. The sentinel detects activation loss and
+misdirected text; it does not generate physical or IME input. Pixel actions,
+other toolkits, overlay and real user coexistence remain separate acceptance.
+
 The application-level macOS gate uses the same synthetic AppKit fixture with a
 scripted model through the actual print command, Guard, typed tools, production
 desktop constructor and Session writer. It checks three exact-window Unicode

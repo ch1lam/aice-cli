@@ -24,19 +24,7 @@ func TestNativeCuaMultiApp(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
 	defer cancel()
-	installed, err := deps.InstallCua(ctx, deps.DefaultOptions().WithNoInstall(true))
-	if err != nil {
-		t.Fatal(err)
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		t.Fatal(err)
-	}
-	endpoint := filepath.Join(home, "Library", "Caches", "cua-driver", "cua-driver.sock")
-	report, err := Inspect(ctx, installed.Installation.Binary, endpoint)
-	if err != nil || !report.ConnectionVerified || report.Accessibility != PermissionGranted || report.ScreenRecording != PermissionGranted {
-		t.Fatalf("native setup must be completed before this test: %+v %v", report, err)
-	}
+	driver, endpoint := nativeMacSetup(t, ctx)
 	binary := buildNativeFixture(t, ctx)
 	targets := make([]nativeFixture, 3)
 	for i := range targets {
@@ -48,7 +36,7 @@ func TestNativeCuaMultiApp(t *testing.T) {
 		t.Fatal(err)
 	}
 	initial := awaitNativeState(t, ctx, sentinel, func(s nativeFixtureState) bool { return s.Armed && s.Active })
-	m, err := NewManager(func(context.Context) (string, string, error) { return installed.Installation.Binary, endpoint, nil })
+	m, err := NewManager(func(context.Context) (string, string, error) { return driver, endpoint, nil })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,7 +92,7 @@ func TestNativeCuaMultiApp(t *testing.T) {
 		}
 		if i == 0 {
 			// Read-only status must not replace the action's native snapshot.
-			if _, err := Inspect(ctx, installed.Installation.Binary, endpoint); err != nil {
+			if _, err := Inspect(ctx, driver, endpoint); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -152,9 +140,28 @@ func TestNativeCuaMultiApp(t *testing.T) {
 	if _, err := r.Windows(ctx, targets[0].prefix, 16); err == nil {
 		t.Fatal("closed run accepted discovery")
 	}
-	if _, err := Inspect(ctx, installed.Installation.Binary, endpoint); err != nil {
+	if _, err := Inspect(ctx, driver, endpoint); err != nil {
 		t.Fatal("closing run stopped shared service", err)
 	}
+}
+
+// Read-only preparation shared by native macOS gates, before opening fixtures.
+func nativeMacSetup(t *testing.T, ctx context.Context) (string, string) {
+	t.Helper()
+	installed, err := deps.InstallCua(ctx, deps.DefaultOptions().WithBinDir(t.TempDir()).WithNoInstall(true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	endpoint := filepath.Join(home, "Library", "Caches", "cua-driver", "cua-driver.sock")
+	report, err := Inspect(ctx, installed.Installation.Binary, endpoint)
+	if err != nil || !report.ConnectionVerified || report.Accessibility != PermissionGranted || report.ScreenRecording != PermissionGranted {
+		t.Fatalf("native setup must be completed before this test: %+v %v", report, err)
+	}
+	return installed.Installation.Binary, endpoint
 }
 
 type nativeCountedClient struct {
@@ -247,19 +254,21 @@ type nativeFixture struct {
 }
 
 type nativeFixtureState struct {
-	PID              int    `json:"pid"`
-	Active           bool   `json:"active"`
-	Visible          bool   `json:"visible"`
-	Key              bool   `json:"key"`
-	FrontPID         int    `json:"front_pid"`
-	FrontIsLogin     bool   `json:"front_is_login"`
-	ActivationPolicy int    `json:"activation_policy"`
-	Armed            bool   `json:"armed"`
-	FocusLosses      int    `json:"focus_losses"`
-	Ticks            int    `json:"ticks"`
-	Value            string `json:"value"`
-	Result           string `json:"result"`
-	Commits          int    `json:"commits"`
+	PID               int    `json:"pid"`
+	Active            bool   `json:"active"`
+	Visible           bool   `json:"visible"`
+	Key               bool   `json:"key"`
+	FrontPID          int    `json:"front_pid"`
+	FrontIsLogin      bool   `json:"front_is_login"`
+	ActivationPolicy  int    `json:"activation_policy"`
+	Armed             bool   `json:"armed"`
+	FocusLosses       int    `json:"focus_losses"`
+	Ticks             int    `json:"ticks"`
+	Value             string `json:"value"`
+	Result            string `json:"result"`
+	Commits           int    `json:"commits"`
+	SelectionLocation int    `json:"selection_location"`
+	SelectionLength   int    `json:"selection_length"`
 }
 
 func startNativeFixture(t *testing.T, ctx context.Context, binary, label string, sentinel bool) nativeFixture {

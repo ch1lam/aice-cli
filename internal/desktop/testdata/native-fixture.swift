@@ -62,6 +62,8 @@ final class Fixture: NSObject, NSApplicationDelegate {
             focusLosses = 0
         }
         ticks += 1
+        let editor = input.currentEditor() as? NSTextView
+        let selection = editor?.selectedRange()
         let state: [String: Any] = ["pid": ProcessInfo.processInfo.processIdentifier,
                                   "active": NSApp.isActive, "armed": armed,
                                   "visible": window.isVisible, "key": window.isKeyWindow,
@@ -69,7 +71,9 @@ final class Fixture: NSObject, NSApplicationDelegate {
                                   "front_is_login": NSWorkspace.shared.frontmostApplication?.bundleIdentifier == "com.apple.loginwindow",
                                   "activation_policy": NSRunningApplication.current.activationPolicy.rawValue,
                                   "focus_losses": focusLosses, "ticks": ticks,
-                                  "value": input.stringValue, "result": result.stringValue,
+                                  "value": editor?.string ?? input.stringValue, "result": result.stringValue,
+                                  "selection_location": selection?.location ?? -1,
+                                  "selection_length": selection?.length ?? -1,
                                   "commits": commits]
         do {
             let data = try JSONSerialization.data(withJSONObject: state, options: [.sortedKeys])

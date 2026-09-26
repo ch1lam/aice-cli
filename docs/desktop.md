@@ -418,6 +418,17 @@ passed; compilation is not desktop acceptance. The setup precheck reads the
 installed App and existing grants before opening fixtures. Its command and
 scope are in [collaboration](collaboration.md#computer-use-checks).
 
+The separate `TestNativeMacInput` gate is prepared for semantic ASCII/Unicode
+insertion, single-key input and select-all hotkey delivery. Independent AppKit
+field-editor text/selection and post-response fixture frames establish the
+requested effects; a non-error Driver response alone cannot pass. Its sentinel
+checks focus/content preservation through input and connection cleanup. The
+test and expanded fixture compile. Its opt-in run rejected the installed 0.7.0
+App at the production version check before creating fixtures or connecting;
+native input acceptance has not passed.
+Neither this gate nor the existing value-setting task proves physical keyboard,
+IME, pixel, overlay or heterogeneous-application behavior.
+
 The fixed source's platform matrix documents limitations for raw Wayland
 background input and toolkit-specific paths. Structured refusal is not proof
 that a promised action is supported. AICE must preserve `background_only`,
