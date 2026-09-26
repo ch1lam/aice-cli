@@ -81,7 +81,7 @@ func (m *Manager) Bind(ctx context.Context, options RunOptions) (*Run, error) {
 		return nil, err
 	}
 	runCtx, cancel := context.WithCancel(ctx)
-	r := &Run{manager: m, ctx: runCtx, cancel: cancel, options: options, id: "aice-" + rand.Text(), targets: make(map[string]windowIdentity), observations: make(map[string]observationBinding)}
+	r := &Run{manager: m, ctx: runCtx, cancel: cancel, options: options, id: "aice-" + rand.Text(), targets: make(map[string]windowIdentity), apps: make(map[string]string), observations: make(map[string]observationBinding)}
 	r.stopManager = context.AfterFunc(m.ctx, cancel)
 	return r, nil
 }
@@ -97,6 +97,7 @@ type Run struct {
 	started      bool // gate-owned
 	active       bool
 	targets      map[string]windowIdentity
+	apps         map[string]string // opaque discovered app reference -> bundle ID
 	observations map[string]observationBinding
 }
 
@@ -196,6 +197,7 @@ func (m *Manager) disconnectLocked(reason string) error {
 		run.started = false
 		run.active = false
 		clear(run.targets)
+		clear(run.apps)
 		clear(run.observations)
 	}
 	clear(m.runs)
@@ -227,6 +229,7 @@ func (r *Run) Close() error {
 	defer func() { r.manager.gate <- struct{}{} }()
 	defer delete(r.manager.runs, r)
 	clear(r.targets)
+	clear(r.apps)
 	r.clearObservationsLocked()
 	if !r.started || r.manager.client == nil {
 		return nil

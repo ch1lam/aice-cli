@@ -15,6 +15,7 @@ type Point struct {
 
 type ActRequest struct {
 	Kind           string         `json:"action"`
+	AppRef         string         `json:"app_ref,omitempty"`
 	ObservationRef string         `json:"observation_ref"`
 	ElementToken   string         `json:"element_token,omitempty"`
 	Point          *Point         `json:"point,omitempty"`
@@ -40,6 +41,8 @@ type ActResult struct {
 	Observation      *Observation    `json:"observation,omitempty"`
 	ObservationError string          `json:"observation_error,omitempty"`
 	WaitState        string          `json:"wait_state,omitempty"`
+	Windows          []Window        `json:"windows,omitempty"`
+	WindowsTruncated bool            `json:"windows_truncated,omitempty"`
 }
 
 func (r *Run) Act(ctx context.Context, request ActRequest) (ActResult, error) {
@@ -51,6 +54,12 @@ func (r *Run) Act(ctx context.Context, request ActRequest) (ActResult, error) {
 		return ActResult{}, err
 	}
 	defer release()
+	if request.Kind == "launch" {
+		return r.launchLocked(ctx, request)
+	}
+	if request.AppRef != "" {
+		return ActResult{}, errors.New("desktop: app_ref is only valid for launch")
+	}
 	binding, err := r.observationLocked(request.ObservationRef)
 	if err != nil {
 		return ActResult{}, err
@@ -70,6 +79,20 @@ func (r *Run) Act(ctx context.Context, request ActRequest) (ActResult, error) {
 	delete(r.manager.latest, binding.target)
 	delete(r.observations, request.ObservationRef)
 	reply, err := r.callLocked(ctx, name, args)
+	result := actionResult(reply, err)
+	if err != nil {
+		return result, nil
+	}
+	after, err := r.observeLocked(ctx, ObserveRequest{TargetRef: binding.targetRef, Screenshot: request.Screenshot})
+	if err != nil {
+		result.ObservationError = "Action response received, but follow-up observation failed; observe again before deciding what to do"
+		return result, nil
+	}
+	result.Observation = &after
+	return result, nil
+}
+
+func actionResult(reply Reply, err error) ActResult {
 	result := ActResult{Dispatched: true, Outcome: "returned", DriverError: reply.IsError}
 	if len(reply.Structured) <= 64*1024 {
 		result.Driver = reply.Structured
@@ -88,11 +111,11 @@ func (r *Run) Act(ctx context.Context, request ActRequest) (ActResult, error) {
 			result.Dispatched = false
 			result.Outcome = "not_dispatched"
 			result.Diagnostic = before.Error()
-			return result, nil
+			return result
 		}
 		result.Outcome = "unknown"
 		result.Diagnostic = "Action was dispatched but no complete response was received. Do not repeat it without observing and checking the target."
-		return result, nil
+		return result
 	}
 	if len(reply.Structured) > 64*1024 {
 		result.Diagnostic = "Driver action details exceeded the result limit; inspect the fresh observation before continuing"
@@ -100,13 +123,7 @@ func (r *Run) Act(ctx context.Context, request ActRequest) (ActResult, error) {
 	if reply.IsError && result.Diagnostic == "" {
 		result.Diagnostic = "Driver reported an action error; partial effects may have occurred"
 	}
-	after, err := r.observeLocked(ctx, ObserveRequest{TargetRef: binding.targetRef, Screenshot: request.Screenshot})
-	if err != nil {
-		result.ObservationError = "Action response received, but follow-up observation failed; observe again before deciding what to do"
-		return result, nil
-	}
-	result.Observation = &after
-	return result, nil
+	return result
 }
 
 func (r *Run) actionArguments(binding observationBinding, request ActRequest) (string, map[string]any, error) {

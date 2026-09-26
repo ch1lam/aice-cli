@@ -61,6 +61,15 @@ native service acceptance; a pinned proxy alone cannot prove a shared daemon's
 version or permission mode.
 
 Window discovery issues opaque references for returned native pid/window pairs.
+Application discovery also returns bounded installed/running app identities,
+including localized names; bundle-ID matches include their running windows.
+Launch accepts only a locally issued app reference, resolves its known bundle
+ID, and consumes that reference before one native request. A ready single window
+is observed immediately; multiple windows remain explicit candidates. If the
+process is known but its window is late, a bounded five-second read-only wait
+discovers that PID's windows without launching again. A lost response never
+triggers another launch. Launch itself uses Cua's background-launch behavior;
+native focus-side-effect acceptance remains open.
 Observation references bind the run, connection generation, exact target,
 Driver snapshot, opaque element tokens and immutable capture ID. Rediscovery,
 same-window observation (including from another run), action dispatch,
@@ -95,7 +104,7 @@ capture ID; it never adds screen offsets or reapplies Retina scaling. A failed
 image can leave valid semantic references available. A text-only model cannot
 request a screenshot or obtain a usable pixel binding.
 
-App discovery/launch, pixel scrolling, dragging, foreground assistance,
+Pixel scrolling, dragging, foreground assistance,
 full schema capability validation and the public tool adapters
 remain to be implemented. This partial manager is not yet wired to the Agent
 Loop or declared native-ready.

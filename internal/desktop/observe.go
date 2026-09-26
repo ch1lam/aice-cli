@@ -33,8 +33,10 @@ type Window struct {
 }
 
 type Discovery struct {
-	Windows   []Window `json:"windows"`
-	Truncated bool     `json:"truncated"`
+	Apps       []Application `json:"apps,omitempty"`
+	Windows    []Window      `json:"windows"`
+	Truncated  bool          `json:"truncated"`
+	Diagnostic string        `json:"diagnostic,omitempty"`
 }
 
 // Windows returns only window metadata, never AX contents or screenshots.
@@ -48,6 +50,10 @@ func (r *Run) Windows(ctx context.Context, query string, limit int) (Discovery, 
 		return Discovery{}, err
 	}
 	defer release()
+	return r.windowsLocked(ctx, query, limit, nil)
+}
+
+func (r *Run) windowsLocked(ctx context.Context, query string, limit int, matchingPIDs map[int]bool) (Discovery, error) {
 	if err := r.ensureLocked(ctx); err != nil {
 		return Discovery{}, err
 	}
@@ -65,7 +71,7 @@ func (r *Run) Windows(ctx context.Context, query string, limit int) (Discovery, 
 			Title string `json:"title"`
 		} `json:"windows"`
 	}
-	if err := json.Unmarshal(reply.Structured, &wire); err != nil {
+	if err := json.Unmarshal(reply.Structured, &wire); err != nil || wire.Windows == nil {
 		return Discovery{}, errors.New("desktop: invalid window discovery response")
 	}
 	// Refresh replaces this run's discovery. It never silently rebinds an old
@@ -75,7 +81,8 @@ func (r *Run) Windows(ctx context.Context, query string, limit int) (Discovery, 
 	result := Discovery{Windows: []Window{}}
 	query = strings.ToLower(strings.TrimSpace(query))
 	for _, window := range wire.Windows {
-		if window.PID <= 0 || window.WindowID == 0 || !strings.Contains(strings.ToLower(window.App+" "+window.Title), query) {
+		matches := (query == "" && len(matchingPIDs) == 0) || matchingPIDs[window.PID] || (query != "" && strings.Contains(strings.ToLower(window.App+" "+window.Title), query))
+		if window.PID <= 0 || window.WindowID == 0 || !matches {
 			continue
 		}
 		if len(result.Windows) == limit {
