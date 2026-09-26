@@ -235,6 +235,9 @@ func (m model) applyRunBatch(batch runBatchMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 
+	if finished && m.settings != nil && !m.settings.saving && m.settings.action == nil {
+		commands = append(commands, m.refreshSettings())
+	}
 	if batch.closed {
 		m.updates = nil
 		if m.running {

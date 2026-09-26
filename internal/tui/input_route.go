@@ -8,6 +8,13 @@ import (
 // handleKey resolves the domain before its reserved keys. An unconsumed key
 // may reach only this domain's editor, never another domain's shortcuts.
 func (m model) handleKey(message tea.KeyPressMsg) (model, tea.Cmd, bool) {
+	if m.inputContext().domain == inputSettings {
+		next, command := m.handleSettings(message)
+		return next.(model), command, true
+	}
+	if m.inputContext().domain == inputMain && message.String() == "ctrl+," {
+		return m.openSettings()
+	}
 	if m.inputContext().domain == inputMain {
 		m.syncCommandCompletion()
 	}
@@ -103,6 +110,8 @@ func (m model) routeKey(message tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 func (m model) routePaste(message tea.PasteMsg) (tea.Model, tea.Cmd) {
 	m.clearQuitPending = false
 	switch m.inputContext().domain {
+	case inputSettings:
+		return m.handleSettings(message)
 	case inputSessions:
 		return m.handleSessionPicker(message)
 	case inputGuard, inputReading, inputSideMenu, inputSideConfirm:
@@ -181,7 +190,7 @@ func (m model) handleComposerAction(match inputActionMatch) (model, tea.Cmd, boo
 		m.toggleProcessGroups()
 		m.refreshViewport(follow)
 	case inputActionQueue:
-		if m.isBTWCommandInput() {
+		if m.isBTWCommandInput() || m.isInfoCommandInput() {
 			return m.submit()
 		}
 		return m.submitDelivery(deliveryQueue)
@@ -189,7 +198,7 @@ func (m model) handleComposerAction(match inputActionMatch) (model, tea.Cmd, boo
 		return m, m.updateInput(tea.PasteMsg{Content: "\n"}), true
 	case inputActionSend:
 		if m.running {
-			if m.isBTWCommandInput() {
+			if m.isBTWCommandInput() || m.isInfoCommandInput() {
 				return m.submit()
 			}
 			return m.submitDelivery(deliverySteer)

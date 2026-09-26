@@ -150,28 +150,13 @@ func (m model) sessionPickerView() string {
 		mutedStyle.Render(ansi.Truncate(sanitizeToolDetail(notice, false), l.inner, "…")), input, body,
 		mutedStyle.Render(ansi.Truncate(help, l.inner, "…")),
 	}, "\n")
-	frame := slashCommandMenuStyle.Foreground(primaryTextColor).Background(inkBlackColor).
-		BorderBackground(inkBlackColor).Width(l.width).Render(content)
-	// Put controls on the border without shifting content or its mouse/IME rows.
-	_, rest, _ := strings.Cut(frame, "\n")
-	return m.sessionPickerTopBorder(title, l) + "\n" + rest
+	return modalFrame(title, content, modalLayout{x: l.x, y: l.y, width: l.width, height: l.height, inner: l.inner, bodyHeight: l.bodyHeight}, m.sessionPickerCloseHovered(), p.closePressed)
 }
 
 const sessionPickerCloseLabel = " [ ✘ ] "
 
 func (m model) sessionPickerTopBorder(title string, l sessionPickerLayout) string {
-	style := mutedStyle.Background(inkBlackColor)
-	if m.sessionPickerCloseHovered() {
-		style = style.Foreground(errorColor).Bold(m.sessionPicker.closePressed)
-	}
-	titleWidth := max(0, l.inner-ansi.StringWidth(sessionPickerCloseLabel)-1)
-	heading := ansi.Truncate(" "+title+" ", titleWidth, "…")
-	gap := l.inner - ansi.StringWidth(heading) - ansi.StringWidth(sessionPickerCloseLabel)
-	border := slashCommandMenuStyle.GetBorderStyle()
-	stroke := lipgloss.NewStyle().Foreground(slashCommandMenuStyle.GetBorderTopForeground()).Background(inkBlackColor)
-	return stroke.Render(border.TopLeft+border.Top) + bodyStyle.Bold(true).Background(inkBlackColor).Render(heading) +
-		stroke.Render(strings.Repeat(border.Top, gap)) + style.Render(sessionPickerCloseLabel) +
-		stroke.Render(border.Top+border.TopRight)
+	return modalTopBorder(title, l.inner, m.sessionPickerCloseHovered(), m.sessionPicker.closePressed)
 }
 
 func (m model) sessionPickerCloseHovered() bool {

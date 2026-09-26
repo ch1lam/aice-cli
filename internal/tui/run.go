@@ -128,6 +128,23 @@ func Run(ctx context.Context, runner Runner, options Options) error {
 		initialModel.searchSessions, initialModel.previewSession, initialModel.readSession, initialModel.renameSession, closeQueries = sessionBrowserCommands(controllerCtx, browser)
 		defer closeQueries()
 	}
+	if reader, ok := runner.(interaction.UsageReader); ok {
+		var closeUsage func()
+		initialModel.readUsage, closeUsage = usageCommands(controllerCtx, reader)
+		defer closeUsage()
+	}
+	if reader, ok := runner.(interaction.SettingsReader); ok {
+		if actions, ok := runner.(interaction.SettingsActionRunner); ok {
+			var closeActions func()
+			initialModel.runSettingsAction, closeActions = settingsActionCommands(controllerCtx, actions, reader)
+			defer closeActions()
+		}
+		if writer, ok := runner.(interaction.SettingsWriter); ok {
+			var closeSettings func()
+			initialModel.readSettings, initialModel.writeSettings, closeSettings = settingsCommands(controllerCtx, reader, writer)
+			defer closeSettings()
+		}
+	}
 	if options.Transcript != nil {
 		initialModel.replaceTranscript(options.Transcript)
 	}

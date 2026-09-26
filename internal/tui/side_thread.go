@@ -482,6 +482,10 @@ func (m model) applySideThreadBatch(
 			m.refreshViewport(false)
 		}
 	}
+	if finished && m.settings != nil && !m.settings.saving && m.settings.action == nil {
+		commands = append(commands, m.refreshSettings())
+	}
+
 	return m, tea.Batch(commands...)
 }
 

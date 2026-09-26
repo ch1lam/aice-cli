@@ -11,6 +11,7 @@ const (
 	inputMain inputDomain = iota
 	inputReading
 	inputSessions
+	inputSettings
 	inputGuard
 	inputQuestion
 	inputAuth
@@ -85,6 +86,12 @@ func (m model) inputContext() inputContext {
 			}
 		}
 		return c
+	case m.settings != nil:
+		focus := inputFocusList
+		if m.settings.input.Focused() {
+			focus = inputFocusEditor
+		}
+		return inputContext{domain: inputSettings, focus: focus}
 	case m.side.menu != nil:
 		return inputContext{domain: inputSideMenu, focus: inputFocusList}
 	case m.side.confirm != nil:
@@ -103,28 +110,45 @@ func (m model) inputContext() inputContext {
 // identity distinguishes user-interaction lifetimes, not token/animation updates.
 // Plain slash/file suggestions remain in the main input lifetime.
 type inputIdentity struct {
-	domain       inputDomain
-	focus        inputFocus
-	session      string
-	side         uint64
-	reading      *sessionReading
-	picker       *sessionPicker
-	rename       *sessionTitleEditor
-	guard        *interaction.GuardRequest
-	auth         chan string
-	question     *questionPanel
-	authPrompt   *interaction.AuthPrompt
-	command      *commandMenuState
-	commandDepth int
-	secret       *secretInput
-	menu         *sideMenuState
-	confirm      *sideConfirmState
+	domain                   inputDomain
+	focus                    inputFocus
+	session                  string
+	side                     uint64
+	reading                  *sessionReading
+	picker                   *sessionPicker
+	settings                 *settingsPanel
+	settingEdit              *interaction.SettingField
+	settingAction            *settingsAction
+	settingPrompt            *interaction.AuthPrompt
+	settingCell, settingStep int
+	rename                   *sessionTitleEditor
+	guard                    *interaction.GuardRequest
+	auth                     chan string
+	question                 *questionPanel
+	authPrompt               *interaction.AuthPrompt
+	command                  *commandMenuState
+	commandDepth             int
+	secret                   *secretInput
+	menu                     *sideMenuState
+	confirm                  *sideConfirmState
 }
 
 func (m model) inputIdentity() inputIdentity {
 	c := m.inputContext()
 	id := inputIdentity{domain: c.domain, session: m.sessionID}
 	switch c.domain {
+	case inputSettings:
+		id.settings = m.settings
+		id.settingEdit = m.settings.editing
+		if a := m.settings.action; a != nil {
+			id.settingAction = a
+			id.settingPrompt = a.prompt
+			id.settingStep = a.customStep
+		}
+		if d := m.settings.collection; d != nil && d.editing {
+			id.settingCell = d.cell + 1
+		}
+		id.focus = c.focus
 	case inputReading:
 		id.reading = m.reading
 	case inputSessions:

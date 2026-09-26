@@ -141,6 +141,9 @@ func (m model) headerView(width int) string {
 		right := m.contextHeaderView()
 		line += strings.Repeat(" ", max(width-2-lipgloss.Width(line)-lipgloss.Width(right), 0)) + right
 	}
+	if m.readSettings != nil {
+		return lipgloss.NewStyle().Width(width).Padding(0, 1).Render(line + "\n" + mutedStyle.Render("[Settings]  [Usage]"))
+	}
 	return lipgloss.NewStyle().Width(width).Padding(0, 1, 1).Render(line)
 }
 

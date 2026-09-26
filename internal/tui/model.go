@@ -114,6 +114,15 @@ type commandMenuState struct {
 }
 
 type model struct {
+	settings                 *settingsPanel
+	settingsTab              int
+	settingsGeneration       uint64
+	settingsLauncherPress    string
+	runSettingsAction        func(*settingsAction, uint64) tea.Cmd
+	settingsPositions        map[int]int
+	readUsage                func(uint64) (tea.Cmd, context.CancelFunc)
+	readSettings             func(uint64) (tea.Cmd, context.CancelFunc)
+	writeSettings            func(uint64, interaction.SettingsRequest) tea.Cmd
 	reading                  *sessionReading
 	readSession              func(uint64, string, string) (tea.Cmd, context.CancelFunc)
 	renameSession            func(uint64, string, string) (tea.Cmd, context.CancelFunc)
@@ -355,9 +364,20 @@ func (m model) update(message tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	switch message := message.(type) {
+	case settingsActionPrompt:
+		return m.applySettingActionPrompt(message)
+	case settingsActionDone:
+		return m.applySettingActionDone(message)
+	case settingsReadResult:
+		return m.applySettingsRead(message)
+	case settingsSaveResult:
+		return m.applySettingsSave(message)
 	case inputComponentResult:
 		if message.generation != m.inputGeneration || message.owner != m.inputIdentity() {
 			return m, nil
+		}
+		if m.settingsVisible() {
+			return m.handleSettings(message.message)
 		}
 		if m.sessionPicker != nil {
 			return m.handleSessionPicker(message.message)
@@ -444,6 +464,7 @@ func (m model) update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = message.Width
 		m.height = message.Height
 		m.resizeSessionPicker()
+		m.resizeSettings()
 		m.resizeLayout()
 		m.refreshViewport(false)
 		if m.reading != nil && m.reading.directory {
@@ -587,6 +608,9 @@ func (m model) update(message tea.Msg) (tea.Model, tea.Cmd) {
 	if _, ok := message.(cursor.BlinkMsg); ok && m.sessionPicker != nil {
 		return m.handleSessionPicker(message)
 	}
+	if _, ok := message.(cursor.BlinkMsg); ok && m.settingsVisible() {
+		return m.handleSettings(message)
+	}
 	return m, nil
 }
 
@@ -638,12 +662,15 @@ func (m model) terminalView(content string) tea.View {
 	// resets with other attributes, so textual reset restoration must run first.
 	content = m.overlayCopyNotice(content, m.width)
 	content, pickerCursor := m.overlaySessionPicker(content)
+	content, settingsCursor := m.overlaySettings(content)
 	view := tea.NewView(content)
 	view.AltScreen = true
 	view.WindowTitle = "AICE"
 	view.MouseMode = tea.MouseModeAllMotion
 	view.ReportFocus = true
-	if m.sessionPicker != nil {
+	if m.settingsVisible() {
+		view.Cursor = settingsCursor
+	} else if m.sessionPicker != nil {
 		view.Cursor = pickerCursor
 	} else if m.secretInput == nil && m.authInput == nil && m.guardPending == nil && m.question == nil {
 		// Anchor the real terminal cursor on the composer caret. The IME

@@ -18,7 +18,11 @@ func (m *model) cancelPointer() {
 	m.capture = pointerCapture{}
 	m.workspacePress = nil
 	m.contextPressed = false
+	m.settingsLauncherPress = ""
 	m.selection.clear()
+	if p := m.settings; p != nil {
+		p.pressed = ""
+	}
 	if p := m.sessionPicker; p != nil {
 		p.closePressed = false
 		p.copyPressedID = ""
@@ -85,6 +89,9 @@ func (m *model) finishPointerEvent(message tea.Msg) {
 }
 
 func (m model) routePointer(message tea.Msg) (tea.Model, tea.Cmd) {
+	if m.settingsVisible() {
+		return m.settingsPointer(message)
+	}
 	if m.sessionPicker != nil {
 		if _, blurred := message.(tea.BlurMsg); !blurred {
 			return m.handleSessionPicker(message)
@@ -92,6 +99,10 @@ func (m model) routePointer(message tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	switch message := message.(type) {
 	case tea.MouseClickMsg:
+		if target := m.settingsLauncher(message.Mouse()); target != "" && message.Button == tea.MouseLeft {
+			m.settingsLauncherPress = target
+			return m, nil
+		}
 		m.trackPointer(message.Mouse())
 		m.workspacePress = nil
 		if message.Button == tea.MouseLeft && m.workspaceContains(message.Mouse()) {
@@ -132,6 +143,20 @@ func (m model) routePointer(message tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case tea.MouseReleaseMsg:
+		if target := m.settingsLauncherPress; target != "" {
+			m.settingsLauncherPress = ""
+			if message.Button == tea.MouseLeft && m.settingsLauncher(message.Mouse()) == target {
+				var next model
+				var cmd tea.Cmd
+				if target == "usage" {
+					next, cmd, _ = m.openUsage(0)
+				} else {
+					next, cmd, _ = m.openSettings()
+				}
+				return next, cmd
+			}
+			return m, nil
+		}
 		m.trackPointer(message.Mouse())
 		if press := m.workspacePress; press != nil && message.Button == tea.MouseLeft {
 			m.workspacePress = nil
