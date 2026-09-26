@@ -343,6 +343,24 @@ as the tools and prompt it publishes; offline publication tests cover this.
 | Windows amd64/arm64 | Published release digests pinned; upstream interactive-session requirements reviewed | Downloads, signatures where available, install/autostart opt-out, native UI/input/lifecycle tests |
 | Linux amd64/arm64 | Published release digests pinned; upstream X11/Wayland capability distinction reviewed | Downloads, dynamic dependencies, AT-SPI/display detection, native compositor-specific input/capture/overlay tests |
 
+On 2026-09-26 the native host had a signed, Gatekeeper-accepted CuaDriver
+**0.7.0** in `/Applications`, distinct from the reviewed **0.29.1** artifact.
+The pinned public status command reported no daemon at the default endpoint.
+The existing App was preserved; using it does not satisfy pinned admission.
+The opt-in native manager test was run and refused this version before creating
+fixtures or connecting to Cua, through the production installation verifier.
+An upgrade of this pre-existing global installation requires an explicit
+operator decision rather than an automatic overwrite.
+
+The opt-in [native manager test](../internal/desktop/manager_native_darwin_test.go)
+and its synthetic AppKit fixture are now available; invocation and boundaries
+are in [collaboration](collaboration.md#computer-use-checks). The fixture compiles
+on this host. Its lifecycle probe created visible windows but could not activate
+the sentinel: macOS `loginwindow` was foreground. This is a failed environment
+precondition, not a Cua background-input result. Owned fixture processes were
+confirmed gone after cleanup. The full native manager task has not passed;
+it still needs the compatible installed service, grants and an available desktop.
+
 The fixed source's platform matrix documents limitations for raw Wayland
 background input and toolkit-specific paths. Structured refusal is not proof
 that a promised action is supported. AICE must preserve `background_only`,

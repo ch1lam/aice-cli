@@ -266,6 +266,43 @@ no native desktop or paid model is accessed:
 go test ./internal/app -run '^TestDesktopActivityTUI$' -v
 ```
 
+The macOS native manager acceptance test is separately opted in. It requires
+the verified pinned App, an already running standard-mode service with its OS
+grants, an available interactive desktop, and Xcode's Swift compiler. Preparation
+only verifies installation and inspects the existing service; it never installs
+or requests permissions. The subsequent task uses the production Manager,
+including its ordinary lazy-start behavior if that service later disappears.
+It opens three temporary AppKit target processes and a foreground sentinel,
+performs semantic edits/commits with window screenshots, and checks independent
+fixture state, fresh references, connection reuse and owned-session cleanup.
+It logs only operation counts/timing and content-free diagnostics. Only these
+synthetic windows receive actions; no model is called. Fixture processes and
+temporary files are cleaned up on failure as well as success.
+
+```sh
+AICE_CUA_NATIVE=1 go test -tags=integration ./internal/desktop -run '^TestNativeCuaMultiApp$' -v
+```
+
+The sentinel counts activation loss notifications while armed; returning to it
+at the end cannot erase a temporary focus loss. It does not inject a stream of
+global keystrokes and does not replace physical keyboard, native IME, overlay,
+pixel-action, heterogeneous-app or full CLI acceptance. Run without unrelated
+foreground changes. A foreground login window fails the opt-in fixture check;
+the test never tries to unlock it. Three copies of the AppKit fixture do not
+establish compatibility with Electron or other native toolkits.
+
+Two narrower opt-ins validate the harness separately. The first only compiles
+and opens no windows. The second opens/closes the four synthetic windows and
+checks the focus monitor without connecting to Cua:
+
+```sh
+AICE_CUA_BUILD_FIXTURE=1 go test -tags=integration ./internal/desktop -run '^TestNativeCuaFixtureBuild$' -v
+AICE_CUA_TEST_FIXTURE=1 go test -tags=integration ./internal/desktop -run '^TestNativeCuaFixtureLifecycle$' -v
+```
+
+See the [platform evidence](desktop.md#platform-evidence) for actual results;
+the presence or compilation of an opt-in test is not native acceptance.
+
 ## Browser checks
 
 The default browser/dependency tests use fake commands and local HTTP fixtures,
