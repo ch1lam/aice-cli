@@ -42,5 +42,5 @@ runuser -u nobody -- env -i PATH=/usr/bin:/bin HOME="$directory/home" \
     done
     openbox >/dev/null 2>&1 &
     wm_pid=$!
-    "$1" -test.run "^TestNativeLinux(BackgroundProbe|FocusSentinel)$" -test.v -test.timeout=2m
+    "$1" -test.run "^TestNativeLinux(BackgroundProbe|FocusSentinel|Manager)$" -test.v -test.timeout=3m
   ' sh "$test_binary"

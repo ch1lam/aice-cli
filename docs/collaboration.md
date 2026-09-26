@@ -320,9 +320,23 @@ between observation and input must preserve the token. The separate
 and verifies that the monitor retains focus-loss and misdirected-input evidence
 even after focus restoration. Cleanup reaps test-owned children only.
 
-This probe uses a test-only schema pin and raw typed calls through AICE's MCP
-client. It does not prove the production Manager, tool/Guard/Session flow,
-automatic setup, pixel actions, physical input or other Linux compositors. See
+The runner also executes `TestNativeLinuxManager` through the public production
+constructor. It checks both an owned stdio runtime and reuse of a test-owned
+verified shared service, three exact-window tasks, nine capture bindings,
+consumed-reference rejection, one connection/session, owned-process cleanup and
+preservation of the shared service. This test passed natively on Linux arm64 in
+the isolated Debian fixture on 2026-09-26; its foreground sentinel retained every
+concurrent core key with no focus loss in both modes. Static labels are not
+part of Linux's actionable-element projection, so independent fixture state
+confirms commits; a missing semantic match must not claim failure or completion.
+Both native tests compare the full production Linux schema pin.
+
+Default Linux runtime tests separately reject restricted/unknown/foreign shared
+services without starting private fallback, and check owned process arguments,
+fixed standard mode and credential filtering. They passed in a headless arm64
+container as an ordinary user. These checks do not prove tool/Guard/Session flow,
+automatic setup, native launch/pixel/keyboard/drag actions, physical input or
+other Linux compositors. See
 the [platform evidence](desktop.md#platform-evidence) before claiming support.
 
 The negative native proxy check uses a verified App binary, temporary HOME and

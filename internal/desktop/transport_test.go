@@ -32,6 +32,12 @@ type fixturePeer struct {
 func fakeTransport(t *testing.T, mode string) (*mcp.IOTransport, *fixturePeer) {
 	t.Helper()
 	schemas := schemaFixture(t)
+	if strings.HasPrefix(mode, "linux-full") {
+		schemas = linuxFullSchemaFixture(t)
+		if mode == "linux-full-drift" {
+			schemas["launch_app"] = json.RawMessage(`{"type":"object"}`)
+		}
+	}
 	if strings.HasPrefix(mode, "linux-status") {
 		schemas = linuxStatusFixture(t)
 		if mode == "linux-status-drift" {

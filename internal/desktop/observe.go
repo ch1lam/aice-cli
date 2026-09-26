@@ -188,21 +188,27 @@ func (r *Run) observeLocked(ctx context.Context, request ObserveRequest) (Observ
 func (r *Run) bindObservation(ctx context.Context, targetRef string, target windowIdentity, screenshot bool, reply Reply) (Observation, error) {
 	var wire struct {
 		windowIdentity
-		Snapshot   string    `json:"snapshot_id"`
-		Capture    string    `json:"capture_id"`
-		Elements   []Element `json:"elements"`
-		Complete   bool      `json:"elements_complete"`
-		Degraded   bool      `json:"degraded"`
-		Reason     string    `json:"degraded_reason"`
-		Width      int       `json:"screenshot_width"`
-		Height     int       `json:"screenshot_height"`
-		FrameValid bool      `json:"screenshot_frame_valid"`
+		Snapshot     string          `json:"snapshot_id"`
+		Capture      string          `json:"capture_id"`
+		Elements     []Element       `json:"elements"`
+		Complete     bool            `json:"elements_complete"`
+		Degraded     bool            `json:"degraded"`
+		Reason       string          `json:"degraded_reason"`
+		Width        int             `json:"screenshot_width"`
+		Height       int             `json:"screenshot_height"`
+		FrameValid   *bool           `json:"screenshot_frame_valid"`
+		CaptureError json.RawMessage `json:"screenshot_error"`
 	}
 	if err := json.Unmarshal(reply.Structured, &wire); err != nil || wire.windowIdentity != target {
 		return Observation{}, errors.New("desktop: observation did not establish the exact requested window")
 	}
 	ref := "observation-" + rand.Text()
 	result := Observation{Ref: ref, TargetRef: targetRef, Complete: wire.Complete && !reply.IsError, Degraded: wire.Degraded || reply.IsError, Diagnostic: boundedText(wire.Reason, 2048), Elements: []Element{}}
+	// Linux's complete AT-SPI walk still projects only actionable nodes into
+	// elements. Missing text cannot establish absence of a passive label.
+	if r.manager.platform == "linux" {
+		result.Complete = false
+	}
 	binding := observationBinding{target: target, targetRef: targetRef, generation: r.manager.Status().Generation, snapshot: wire.Snapshot, tokens: make(map[string]struct{})}
 	textBytes := 0
 	for _, element := range wire.Elements {
@@ -239,7 +245,14 @@ func (r *Run) bindObservation(ctx context.Context, targetRef string, target wind
 			if prepared.Original != nil {
 				width, height = prepared.Original.Width, prepared.Original.Height
 			}
-			if wire.FrameValid && wire.Capture != "" && wire.Width == width && wire.Height == height {
+			// Linux 0.29.1 publishes this field only for capture failure. On its
+			// admitted X11 route a capture ID binds the exact window drawable;
+			// macOS still requires its explicit positive frame validation.
+			frameValid := wire.FrameValid != nil && *wire.FrameValid
+			if r.manager.platform == "linux" {
+				frameValid = (wire.FrameValid == nil || *wire.FrameValid) && !reply.IsError && len(wire.CaptureError) == 0
+			}
+			if frameValid && wire.Capture != "" && wire.Width == width && wire.Height == height {
 				binding.capture = wire.Capture
 				binding.width, binding.height = prepared.Width, prepared.Height
 				binding.sourceWidth, binding.sourceHeight = width, height

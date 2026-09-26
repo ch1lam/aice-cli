@@ -119,3 +119,41 @@ func TestDesktopLinuxStatusDoesNotInventCaptureOrMacGrants(t *testing.T) {
 		t.Fatal(field)
 	}
 }
+
+func TestDesktopLinuxStatusSeparatesOwnedConnectionFromSharedInspection(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Linux and macOS status reader")
+	}
+	for _, kind := range []string{"x11", "no-atspi", "idle", "owned", "owned-captured", "restricted"} {
+		t.Run(kind, func(t *testing.T) {
+			s := desktopSettingsSession(t)
+			s.configuration.DesktopEnabled = true
+			s.model.InputModalities = []llm.InputModality{llm.InputModalityImage}
+			s.desktop.inspect = func(context.Context) (desktop.Inspection, error) {
+				facts := &desktop.LinuxInspection{X11: desktop.PermissionGranted, ATSPI: desktop.PermissionGranted, WaylandEnvironment: desktop.PermissionMissing, WaylandBackend: desktop.PermissionMissing}
+				if kind == "idle" || strings.HasPrefix(kind, "owned") {
+					return desktop.Inspection{Linux: &desktop.LinuxInspection{}}, &desktop.ServiceError{Code: "not_running", Detail: "shared service absent"}
+				}
+				if kind == "restricted" {
+					return desktop.Inspection{Linux: &desktop.LinuxInspection{}}, &desktop.ServiceError{Code: "external_restriction", Detail: "shared service restricted"}
+				}
+				if kind == "no-atspi" {
+					facts.ATSPI = desktop.PermissionMissing
+				}
+				return desktop.Inspection{ConnectionVerified: true, Linux: facts}, nil
+			}
+			s.desktop.status = func() desktop.Status {
+				status := desktop.Status{Connected: strings.HasPrefix(kind, "owned") || kind == "restricted"}
+				if kind == "owned-captured" {
+					status.CaptureCheckedAt, status.CaptureAvailable = time.Unix(100, 0), true
+				}
+				return status
+			}
+			field := s.desktopStatusField(t.Context(), s.settingsSnapshot())
+			want := map[string]string{"x11": "Connected; capture not checked", "no-atspi": "Degraded", "idle": "Idle; connects on first use", "owned": "Connected (cached)", "owned-captured": "Connected (cached)", "restricted": "Unavailable"}[kind]
+			if field.Value.Text != want || strings.Contains(field.Description, "Screen Recording:") || !strings.Contains(field.Description, "describe the shared service") {
+				t.Fatal(field)
+			}
+		})
+	}
+}

@@ -19,7 +19,7 @@ defaults, bounds, target alternatives, descriptions or other members require
 review, even when a change might be backward compatible. Extra upstream tool
 names are ignored and remain unavailable to the private client.
 
-This strict check is intentional for the fixed macOS artifact. A version or
+This strict check is intentional for each fixed platform artifact. A version or
 platform change must update its schema pin and typed adapter together; do not
 regenerate pins merely to make a failing connection test pass. Schema matching
 is evidence of the advertised contract, not native input/capture acceptance.
@@ -33,13 +33,15 @@ inspection: `get_config` and `check_permissions`. They were exported from the
 checksum-verified arm64 binary in an isolated Debian 13 container on 2026-09-26.
 Linux has no `prompt` permission argument. This inspection client admits only
 those two tools; it cannot dispatch input or capture even though the service
-advertises additional tools. Linux action schemas remain to be adapted and
-reviewed separately. The native headless inspection test verifies this connection
+advertises additional tools. The native headless inspection test verifies this connection
 path without declaring the desktop usable.
 
-The opt-in X11 probe's [eight-tool fixture](../testdata/linux-probe-0.29.1.json)
-comes from the same Linux metadata export and is covered by the same upstream
-MIT license. It is embedded only in Linux integration tests, where the actual
-MCP handshake compares the complete schemas before dispatch. It is not a
-production action-admission pin; the platform adapter must still establish
-Linux-specific output, input and lifecycle contracts.
+`linux-0.29.1.json` contains the unmodified schemas of all 15 tools from that
+same native Linux metadata export, under the same upstream MIT license. The
+Linux runtime uses this inventory for both owned stdio and verified shared
+service connections. Eleven schemas differ from macOS. Linux's typed adapter
+also accounts for empty permission arguments, discovered XDG launch commands,
+capture validity and actionable-only semantic projections. The opt-in X11 probe
+and Manager acceptance test compare this production pin during the real MCP
+handshake. Matching schemas do not establish Wayland or foreground safety;
+those routes remain unavailable pending their own reviewed adapters.

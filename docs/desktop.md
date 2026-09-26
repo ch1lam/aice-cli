@@ -22,7 +22,7 @@ Agent Loop, Guard, media pipeline and Session remain the execution boundaries.
 The client uses official Go MCP SDK v1.6.1, sends legacy `initialize` with
 `2025-06-18`, checks the returned protocol and Cua identity/version, then discovers
 tools once with bounded pagination. Before any `tools/call`, it compares the
-complete input schemas of all 15 used macOS tools against the
+complete input schemas of all 15 used tools against the corresponding macOS or Linux
 [reviewed 0.29.1 inventory](../internal/desktop/schema/README.md). Only JSON
 object ordering and whitespace are ignored; missing tools or changed fields,
 required parameters, defaults, enums, bounds and target alternatives reject the
@@ -40,11 +40,23 @@ window contents or typed text in logs. Process environment construction excludes
 model credentials, loader injection and inherited Cua permission overrides.
 Owned children disable Cua telemetry and update checks.
 Closing the connection waits for or terminates only its owned MCP child; it does
-not stop a shared service. A service endpoint is required explicitly.
+not stop a shared service. The shared-service path requires an explicit endpoint.
 The proxy uses the pinned release's `--embedded` switch solely to refuse
-automatic service launch if that endpoint disappears. It never uses `--direct`
-or claims a host bundle identity; the standalone daemon retains its own TCC
+automatic service launch if that endpoint disappears. On macOS AICE never uses
+`--direct` or claims a host bundle identity; the standalone daemon retains its own TCC
 identity and permission mode.
+
+Linux reuses a compatible existing service only after status, policy, Unix peer,
+executable and MCP checks. Only the exact pinned `not_running` diagnostic permits
+an owned `mcp --direct` child, which the public Linux CLI supports. Other status,
+identity or policy failures never fall back to a new runtime. That child has a
+fixed standard-mode environment and validates upstream native policy at startup;
+it creates no shared daemon, autostart entry or implicit OS grant. Its working
+directory is the verified distribution directory and its lifetime belongs to
+the Manager connection. Both paths require known X11 availability and known
+absence of Wayland routing. Unknown display facts, Wayland and XWayland are
+refused until their background-input adapters have been reviewed. Missing
+AT-SPI can leave a pixel-only route, whose actual capture is checked separately.
 
 A private macOS connection preflight now checks the existing service before
 admission. The bounded public `status --socket` command supplies content-free
@@ -59,7 +71,7 @@ of successful capture. Cold application connections use this preflight after
 verifying the installed App. Settings calls the explicit native setup API;
 native authorization acceptance remains outstanding.
 
-Settings' Computer Use status row uses a bounded read-only refresh (eight seconds
+On macOS, Settings' Computer Use status row uses a bounded read-only refresh (eight seconds
 for installed-App verification and inspection, with a five-second inspection
 deadline). It reuses only an already installed, verified App; it never starts a
 daemon or downloads. A separate short-lived MCP proxy reads `get_config` and
@@ -173,8 +185,11 @@ describes that boundary.
 Window discovery issues opaque references for returned native pid/window pairs.
 Application discovery also returns bounded installed/running app identities,
 including localized names; bundle-ID matches include their running windows.
-Launch accepts only a locally issued app reference, resolves its known bundle
-ID, and consumes that reference before one native request. A ready single window
+Launch accepts only a locally issued app reference, resolves its known macOS
+bundle ID or Linux discovered XDG command, and consumes that reference before
+one native request. Linux launch never accepts a command or extra arguments
+from the model; its response must establish a running PID and the same discovered
+command before window binding. A ready single window
 is observed immediately; multiple windows remain explicit candidates. If the
 process is known but its window is late, a bounded five-second read-only wait
 discovers that PID's windows without launching again. A lost response never
@@ -200,7 +215,7 @@ A lost response returns `outcome=unknown`; it never retries the mutation.
 independently confirmed. Driver `isError`, structured details and bounded text
 remain separate from transport and follow-up-observation failure.
 
-Foreground assistance requires the user-selected `foreground_allowed` mode,
+The reviewed macOS foreground assistance requires the user-selected `foreground_allowed` mode,
 frozen when the run starts. Input still defaults to background. After a reviewed
 pre-input refusal, a successful follow-up observation can expose
 `foreground_action_available`. The main Agent may then explicitly request
@@ -230,6 +245,8 @@ Only these reviewed paths establish that input did not run. Generic advice,
 unknown codes, partial/unverifiable effects, lost responses and failed follow-up
 observations never create an opportunity. `set_value`, launch and wait do not
 accept delivery mode. New platform/version admission must re-review the classifier.
+Linux currently retains background refusals without creating a foreground
+continuation; macOS refusal codes do not authorize input on another platform.
 
 Semantic condition waits hold the same executor and repeatedly observe the
 exact window within a caller-selected deadline of at most ten seconds. They
@@ -239,6 +256,9 @@ is captured once only while time remains, and its semantic condition is checked
 again. An expired deadline can return the last valid semantic observation;
 a failed refresh never returns older execution references. No hard sleep or
 image-stability heuristic stands in for a condition.
+The pinned Linux `elements` array contains actionable nodes only, even when
+the AT-SPI walk is complete. Its AICE projection therefore remains incomplete:
+positive text matches are evidence, but absent passive labels remain unknown.
 
 Observations project at most 200 semantic elements and 96 KiB of their text,
 with visible truncation/incompleteness. One screenshot goes through the existing
@@ -341,7 +361,7 @@ as the tools and prompt it publishes; offline publication tests cover this.
 | --- | --- | --- |
 | macOS 0.29.1 universal artifact | Download hash matches fixed release manifest; temporary extraction/exclusive publication preserves signature, signing identity and Gatekeeper acceptance; CLI/schema inspected; Settings setup exercised through CLI/Bubble Tea with fake native operations | Signed installed service, system authorization, persistent MCP handshake against that service, synthetic multi-app task, background focus/input sentinel, native overlay, cancellation and cold/warm measurements |
 | Windows amd64/arm64 | Downloaded archives and selected executable hashes verified; private installer with Authenticode checks implemented; synthetic extraction/reuse/cancellation tests and cross-compilation pass; static imports inspected | Native installation/signature trust and exclusive publication; runtime/service admission, interactive-session/UIAccess detection, native UI/input/lifecycle tests |
-| Linux arm64 | Private installation/reuse and read-only headless inspection passed in an isolated Debian 13 container; native Cua X11/GTK probe confirmed semantic edits, clicks and window captures across three synthetic apps while a foreground sentinel received concurrent core keyboard input | AICE runtime startup/action adapter and full tool flow; pixel/keyboard/drag routes, native overlay, other toolkits, real compositor/Wayland and physical-input/IME checks |
+| Linux arm64 | Private installation/reuse and read-only headless inspection passed in an isolated Debian 13 container; production Manager passed owned stdio and verified shared-service X11/GTK tasks, with semantic edits, clicks, window captures, connection reuse, cleanup and concurrent foreground input | Setup and full native tool/Guard/Session flow; native launch, pixel/keyboard/drag routes, foreground assistance, overlay, other toolkits, real compositor/Wayland and physical-input/IME checks |
 | Linux amd64 | Downloaded archive and selected executable hashes verified; synthetic installer tests and cross-compilation pass; ELF library dependencies inspected | Native installation/dynamic loading and exclusive publication; runtime/service admission, AT-SPI/display detection, compositor-specific input/capture/overlay tests |
 
 On 2026-09-26 the native host had a signed, Gatekeeper-accepted CuaDriver
@@ -393,19 +413,22 @@ The status projection separates X11 connectivity, AT-SPI bus ownership, Wayland
 environment presence, backend enablement and the XSendEvent prerequisite. Unknown
 fields stay unknown, and Wayland environment presence is not compositor or input
 verification. No D-Bus address or upstream free text is projected. A verified
-connection does not make Linux actions ready; runtime startup, compositor-specific
-capabilities and action adapters remain incomplete. The Linux arm64 headless
+service connection alone does not establish capture or target-input readiness.
+An absent shared service is compatible with an active owned tool process; the
+panel shows that cached instance connection separately, with unknown shared
+display facts. Without an active connection it reports that connection happens
+on first use. Refresh still starts nothing. Linux setup and compositor-specific
+acceptance remain incomplete. The Linux arm64 headless
 fixture passed two inspections of its own service and correctly reported absent
 display/bus capabilities while leaving that service alive between checks.
 
 The opt-in Linux background probe uses a private Xvfb display, Openbox and AT-SPI
 bus, three GTK fixture processes, and a fourth foreground fixture receiving
 continuous XTest core keyboard events. It uses the actual pinned stdio MCP
-client and a test-only eight-tool schema inventory. Independent fixture state
+client and the reviewed production Linux schema inventory. Independent fixture state
 checks semantic Unicode writes and single button commits; PNG bytes and reported
 dimensions are checked on each observation. This is upstream native capability
-evidence, not an AICE Manager/tool acceptance result: production Linux action
-admission remains unavailable. Three GTK copies do not establish other toolkit,
+evidence, separate from the Manager acceptance below. Three GTK copies do not establish other toolkit,
 physical keyboard, IME, pixel input, GPU, overlay or Wayland compatibility.
 On 2026-09-26 the arm64 probe passed in 8.81 seconds: all three commits matched
 independent application state, stale tokens were rejected, and the sentinel
@@ -415,12 +438,27 @@ loss after restoration. Per-target set/click plus three captures took about
 1.5–2.7 seconds; those aggregates are not a model/Guard/native-action timing
 breakdown or a guarantee for other applications.
 
+The production Manager test subsequently passed both owned-stdio and shared-service
+paths in the same isolated arm64 environment. Each made three Unicode edits and
+single button commits with nine verified screenshot mappings, one connection,
+one session and no replay of a consumed AICE reference. Independent fixture state
+confirmed each result. The foreground sentinel retained all 69 core keys in each
+mode, with zero focus loss. Closing the Manager reaped owned MCP children
+and left the shared service available; the private path created no shared socket.
+Cold discovery took approximately 157 ms and 91 ms in that run; each full
+three-target case took about 8.8 seconds. These are synthetic X11 Manager
+measurements, not full model/tool/Guard/Session acceptance. Linux-only rejection
+tests also confirm that external restrictions, unknown status and foreign peers
+do not trigger an owned-runtime fallback.
+
 The Linux success response omits `screenshot_frame_valid`; the same fixed source
 sets it to false when a capture error occurs. The native probe confirms the
-omission alongside a capture ID and matching PNG dimensions. A platform adapter
-must review the capture identity and coordinate contract before enabling pixels;
-the existing macOS requirement for an explicit true value cannot simply be
-removed for every platform.
+omission alongside a capture ID and matching PNG dimensions. The admitted X11
+adapter accepts that omission only without a domain or screenshot error and
+still requires exact target identity, a capture ID and actual matching image
+dimensions. Explicit false or conflicting evidence prevents pixel binding.
+The macOS requirement for explicit true is unchanged. Native pixel-action and
+geometry-change acceptance remains open despite this capture-binding evidence.
 
 The SDK closes both stdio stream sides; both share one idempotent process owner
 so cleanup closes and reaps the child only once. Normal proxy exit returns success;

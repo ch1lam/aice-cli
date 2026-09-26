@@ -109,8 +109,9 @@ ownership or OS authorization.
 macOS Settings setup invokes this API after the feature/install/authorization
 disclosure. Its download policy is captured at AICE startup; a saved restart-only
 change does not authorize a download in the current instance. Completed install
-facts survive a later authorization or preference-save failure. Windows/Linux
-desktop runtime integration and native acceptance remain open; the
+facts survive a later authorization or preference-save failure. Linux X11 runtime
+integration is available for an installed helper; Linux setup and broader native
+acceptance, along with Windows runtime integration, remain open. The
 [Computer Use status](desktop.md) records the exact scope of verification.
 
 The Windows/Linux provisioning API installs into the private

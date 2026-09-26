@@ -105,7 +105,7 @@ func (r *Run) Act(ctx context.Context, request ActRequest) (ActResult, error) {
 	if err != nil {
 		return result, nil
 	}
-	refusedBeforeInput := request.DeliveryMode != "foreground" && safeForegroundRefusal(binding, request, reply)
+	refusedBeforeInput := r.manager.platform == "darwin" && request.DeliveryMode != "foreground" && safeForegroundRefusal(binding, request, reply)
 	if refusedBeforeInput {
 		result.Diagnostic = "Driver refused this action before input; inspect the fresh observation before choosing the next action"
 	}

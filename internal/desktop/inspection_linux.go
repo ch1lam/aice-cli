@@ -12,13 +12,21 @@ import (
 )
 
 func inspectLinuxService(ctx context.Context, binary, endpoint string) (Inspection, error) {
+	s, err := newLinuxInspector(binary, endpoint)
+	if err != nil {
+		return Inspection{}, err
+	}
+	return s.inspect(ctx)
+}
+
+func newLinuxInspector(binary, endpoint string) (linuxInspector, error) {
 	if !filepath.IsAbs(binary) || !filepath.IsAbs(endpoint) {
-		return Inspection{}, errors.New("desktop: verified absolute binary and service endpoint required")
+		return linuxInspector{}, errors.New("desktop: verified absolute binary and service endpoint required")
 	}
 	service := &serviceConnector{binary: binary, endpoint: endpoint, status: func(ctx context.Context) (string, error) {
 		return serviceCommand(ctx, binary, "status", "--socket", endpoint)
 	}}
-	return (linuxInspector{service: service,
+	return linuxInspector{service: service,
 		peer: func(ctx context.Context, pid int) error { return verifyLinuxServicePeer(ctx, binary, endpoint, pid) },
 		connect: func(ctx context.Context) (driverClient, error) {
 			transport, err := newProcessTransport(binary, endpoint)
@@ -27,7 +35,7 @@ func inspectLinuxService(ctx context.Context, binary, endpoint string) (Inspecti
 			}
 			return connectReviewed(ctx, transport, reviewedLinuxStatusTools)
 		},
-	}).inspect(ctx)
+	}, nil
 }
 
 // SO_PEERCRED ties the public status PID to the actual listener. /proc verifies

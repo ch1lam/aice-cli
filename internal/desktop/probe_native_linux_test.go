@@ -19,12 +19,6 @@ import (
 	"time"
 )
 
-// This pin belongs only to the upstream capability probe. It does not admit
-// Linux actions through NewManager until the platform adapter is implemented.
-//
-//go:embed testdata/linux-probe-0.29.1.json
-var linuxProbeSchemas []byte
-
 //go:embed testdata/linux-fixture.py
 var linuxFixtureScript []byte
 
@@ -76,9 +70,7 @@ func TestNativeLinuxBackgroundProbe(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c, err := connectReviewed(ctx, transport, func(actual map[string]json.RawMessage) (map[string]json.RawMessage, error) {
-		return reviewedTools(actual, linuxProbeSchemas, "linux")
-	})
+	c, err := connectReviewed(ctx, transport, reviewedLinuxTools)
 	if err != nil {
 		t.Fatal(err)
 	}

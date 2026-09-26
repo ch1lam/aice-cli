@@ -38,12 +38,15 @@ func NewManager(resolve RuntimeResolver) (*Manager, error) {
 		return nil, errors.New("desktop: verified runtime resolver required")
 	}
 	manager := newManager(func(ctx context.Context) (driverClient, error) {
-		if runtime.GOOS != "darwin" {
+		if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
 			return nil, serviceError("platform_unavailable", "native Computer Use connection setup is not yet integrated on this platform")
 		}
 		binary, endpoint, err := resolve(ctx)
 		if err != nil {
 			return nil, err
+		}
+		if runtime.GOOS == "linux" {
+			return dialLinuxRuntime(ctx, binary, endpoint)
 		}
 		connector, err := newMacServiceConnector(binary, endpoint)
 		if err != nil {
@@ -58,13 +61,17 @@ func NewManager(resolve RuntimeResolver) (*Manager, error) {
 		}
 		return connector.dial(ctx)
 	})
+	manager.platform = runtime.GOOS
 	manager.occupy = func(ctx context.Context) (func() error, error) {
-		if runtime.GOOS != "darwin" {
+		if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
 			return nil, serviceError("platform_unavailable", "native Computer Use connection setup is not yet integrated on this platform")
 		}
 		home, err := os.UserHomeDir()
 		if err != nil {
 			return nil, err
+		}
+		if runtime.GOOS == "linux" {
+			return lockDesktop(ctx, filepath.Join(home, ".cache", "cua-driver"))
 		}
 		return lockDesktop(ctx, filepath.Join(home, "Library", "Caches", "cua-driver"))
 	}

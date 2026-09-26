@@ -210,7 +210,7 @@ func driverEnvironment(environ []string) []string {
 	for _, entry := range environ {
 		key, _, _ := strings.Cut(entry, "=")
 		switch strings.ToUpper(key) {
-		case "HOME", "USER", "LOGNAME", "PATH", "TMPDIR", "TMP", "TEMP", "LANG", "LC_ALL", "LC_CTYPE", "DISPLAY", "WAYLAND_DISPLAY", "XDG_RUNTIME_DIR", "DBUS_SESSION_BUS_ADDRESS", "XAUTHORITY", "SYSTEMROOT", "WINDIR", "USERPROFILE", "LOCALAPPDATA", "APPDATA":
+		case "HOME", "USER", "LOGNAME", "PATH", "TMPDIR", "TMP", "TEMP", "LANG", "LC_ALL", "LC_CTYPE", "DISPLAY", "WAYLAND_DISPLAY", "XDG_RUNTIME_DIR", "XDG_DATA_HOME", "XDG_DATA_DIRS", "XDG_SESSION_TYPE", "XDG_CURRENT_DESKTOP", "XDG_SESSION_DESKTOP", "DBUS_SESSION_BUS_ADDRESS", "XAUTHORITY", "SYSTEMROOT", "WINDIR", "USERPROFILE", "LOCALAPPDATA", "APPDATA":
 			result = append(result, entry)
 		}
 	}
@@ -227,7 +227,8 @@ func newProcessTransport(binary, endpoint string) (*processTransport, error) {
 	}
 	// On this pinned release, --embedded on the proxy disables automatic
 	// standalone service launch. It does not change the connected daemon's TCC
-	// attribution or mode. Never use --direct or set a claimed host bundle ID.
+	// attribution or mode. This shared-service path never uses --direct or
+	// sets a claimed host bundle ID; Linux's owned runtime is separate.
 	cmd := exec.Command(binary, "mcp", "--socket", endpoint, "--embedded")
 	cmd.Env = driverEnvironment(os.Environ())
 	// Driver diagnostics can contain window text or input. Do not duplicate them

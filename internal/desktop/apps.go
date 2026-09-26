@@ -17,6 +17,10 @@ type Application struct {
 	Running  bool   `json:"running"`
 }
 
+type appLaunchTarget struct {
+	bundleID, path string
+}
+
 // Apps discovers installed/running app identities and window metadata. It does
 // not read window contents. Query and limits apply independently to each list.
 func (r *Run) Apps(ctx context.Context, query string, limit int) (Discovery, error) {
@@ -36,7 +40,10 @@ func (r *Run) Apps(ctx context.Context, query string, limit int) (Discovery, err
 		return Discovery{}, err
 	}
 	var wire struct {
-		Apps []Application `json:"apps"`
+		Apps []struct {
+			Application
+			LaunchPath string `json:"launch_path"`
+		} `json:"apps"`
 	}
 	if reply.IsError || json.Unmarshal(reply.Structured, &wire) != nil || wire.Apps == nil {
 		return Discovery{}, errors.New("desktop: app discovery unavailable")
@@ -45,7 +52,8 @@ func (r *Run) Apps(ctx context.Context, query string, limit int) (Discovery, err
 	result := Discovery{Apps: []Application{}, Windows: []Window{}}
 	filter := strings.ToLower(strings.TrimSpace(query))
 	matchingPIDs := make(map[int]bool)
-	for _, app := range wire.Apps {
+	for _, native := range wire.Apps {
+		app := native.Application
 		if !strings.Contains(strings.ToLower(app.Name+" "+app.BundleID), filter) {
 			continue
 		}
@@ -54,11 +62,15 @@ func (r *Run) Apps(ctx context.Context, query string, limit int) (Discovery, err
 			break
 		}
 		// Never accept a reference supplied by the upstream response. Only a
-		// bounded, real bundle ID can become a local launch binding.
+		// bounded, discovered native identity can become a local launch binding.
 		app.Ref = ""
-		if app.BundleID != "" && len(app.BundleID) <= 512 {
+		launchable := app.BundleID != "" && len(app.BundleID) <= 512
+		if r.manager.platform == "linux" {
+			launchable = launchable && native.LaunchPath != "" && len(native.LaunchPath) <= 16*1024 && !strings.ContainsRune(native.LaunchPath, 0)
+		}
+		if launchable {
 			app.Ref = "app-" + rand.Text()
-			r.apps[app.Ref] = app.BundleID
+			r.apps[app.Ref] = appLaunchTarget{bundleID: app.BundleID, path: native.LaunchPath}
 		}
 		app.Name, app.BundleID = boundedText(app.Name, 256), boundedText(app.BundleID, 512)
 		result.Apps = append(result.Apps, app)
@@ -87,7 +99,7 @@ func (r *Run) launchLocked(ctx context.Context, request ActRequest) (ActResult, 
 	if request.Drag != nil || request.DeliveryMode != "" || request.ObservationRef != "" || request.ElementToken != "" || request.Point != nil || request.Text != "" || request.Key != "" || len(request.Keys) != 0 || request.Direction != "" || request.Amount != 0 || request.Wait != nil {
 		return ActResult{}, errors.New("desktop: launch accepts only app_ref and screenshot")
 	}
-	bundle, ok := r.apps[request.AppRef]
+	app, ok := r.apps[request.AppRef]
 	if !ok || r.manager.client == nil || !r.active {
 		return ActResult{}, errors.New("desktop: stale app reference; discover the application again")
 	}
@@ -100,7 +112,13 @@ func (r *Run) launchLocked(ctx context.Context, request ActRequest) (ActResult, 
 	// Launch has no public session argument in the pinned schema. It uses the
 	// MCP connection's authenticated lifecycle and does not accept arbitrary
 	// paths, URLs, arguments, browser-profile or inspector options from the model.
-	reply, err := r.callLocked(ctx, "launch_app", map[string]any{"bundle_id": bundle})
+	args := map[string]any{"bundle_id": app.bundleID}
+	if r.manager.platform == "linux" {
+		// Linux ignores bundle_id. Round-trip only the bounded XDG launcher
+		// obtained during discovery, never a command or extra arguments from the model.
+		args = map[string]any{"launch_path": app.path}
+	}
+	reply, err := r.callLocked(ctx, "launch_app", args)
 	result := actionResult(reply, err)
 	if err != nil || reply.IsError {
 		return result, nil
@@ -108,13 +126,20 @@ func (r *Run) launchLocked(ctx context.Context, request ActRequest) (ActResult, 
 	var launched struct {
 		PID      int    `json:"pid"`
 		BundleID string `json:"bundle_id"`
+		Name     string `json:"name"`
+		Running  bool   `json:"running"`
 		Windows  []struct {
 			windowIdentity
 			App   string `json:"app_name"`
 			Title string `json:"title"`
 		} `json:"windows"`
 	}
-	if json.Unmarshal(reply.Structured, &launched) != nil || launched.PID <= 0 || launched.BundleID != bundle {
+	decodeErr := json.Unmarshal(reply.Structured, &launched)
+	matched := launched.BundleID == app.bundleID
+	if r.manager.platform == "linux" {
+		matched = launched.Name == app.path && launched.Running
+	}
+	if decodeErr != nil || launched.PID <= 0 || !matched {
 		result.ObservationError = "Launch returned without establishing the requested app's running identity; discover it before continuing and do not repeat launch automatically"
 		return result, nil
 	}

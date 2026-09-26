@@ -57,8 +57,8 @@ func foregroundActionKey(request ActRequest) string {
 // is insufficient: other paths can refuse after focus or partial input.
 // scroll.rs (Electron) and drag.rs also have early background_unavailable
 // returns with no effect field, before resolving targets or invoking input.
-// Admission currently permits only the pinned macOS service. Re-review this
-// classifier before admitting another version or platform.
+// Only the macOS adapter uses this classifier. Linux refusals need their own
+// pre-input evidence before a foreground continuation can be offered.
 func safeForegroundRefusal(binding observationBinding, request ActRequest, reply Reply) bool {
 	if !reply.IsError || len(reply.Structured) > 64*1024 {
 		return false

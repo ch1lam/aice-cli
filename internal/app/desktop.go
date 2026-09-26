@@ -42,8 +42,8 @@ func (a *application) newDesktopState(configuration config.Config) (*desktopStat
 		if homeErr != nil || home == "" {
 			return "", "", &desktop.ServiceError{Code: "setup_required", Detail: "Computer Use needs an available user home directory"}
 		}
-		// Resolution only reuses a verified installed App. The native manager
-		// owns lazy service startup; installation and grants require setup.
+		// Resolution only reuses a verified installed helper. The native manager
+		// owns lazy runtime startup; installation and grants require setup.
 		result, err := deps.InstallCua(ctx, options.WithNoInstall(true))
 		if err != nil {
 			return "", "", &desktop.ServiceError{Code: "setup_required", Detail: "Computer Use needs a compatible installed Driver; open Settings setup. " + err.Error()}

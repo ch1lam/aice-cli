@@ -48,9 +48,17 @@ func (s *interactiveSession) desktopStatusField(ctx context.Context, settings in
 		setupCapture = s.desktop.setupCaptureAt
 		s.desktop.healthMu.Unlock()
 	}
+	linux := permissions.Linux != nil || runtime.GOOS == "linux"
 	if permissions.ConnectionVerified {
 		connection, summary = "Verified", "Connected; capture not checked"
-		if permissions.Accessibility != desktop.PermissionGranted || permissions.ScreenRecording != desktop.PermissionGranted {
+		if linux {
+			facts := permissions.Linux
+			if facts == nil || facts.X11 != desktop.PermissionGranted || facts.WaylandEnvironment != desktop.PermissionMissing || facts.WaylandBackend != desktop.PermissionMissing {
+				summary = "Unavailable"
+			} else if facts.ATSPI != desktop.PermissionGranted {
+				summary = "Degraded"
+			}
+		} else if permissions.Accessibility != desktop.PermissionGranted || permissions.ScreenRecording != desktop.PermissionGranted {
 			summary = "Needs setup"
 		}
 	}
@@ -61,6 +69,12 @@ func (s *interactiveSession) desktopStatusField(ctx context.Context, settings in
 			summary, connection = "Not installed", "Stopped"
 		case errors.As(err, &native) && native.Code == "not_running":
 			summary, connection = "Needs setup", "Stopped"
+			if linux {
+				summary = "Idle; connects on first use"
+				if cached.Connected {
+					summary = "Connected (cached)"
+				}
+			}
 		case summary != "Unavailable":
 			summary = "Unavailable"
 		}
@@ -88,12 +102,9 @@ func (s *interactiveSession) desktopStatusField(ctx context.Context, settings in
 	modelCapability := "Semantic and image input"
 	if !images {
 		modelCapability = "Semantic only; current model cannot receive images or use pixel actions"
-		if permissions.ConnectionVerified && summary != "Needs setup" && err == nil {
+		if permissions.ConnectionVerified && summary != "Needs setup" && summary != "Unavailable" && err == nil {
 			summary = "Degraded"
 		}
-	}
-	if permissions.Linux != nil {
-		summary = "Unavailable" // Native actions are not integrated yet.
 	}
 	if !settings.configuration.DesktopEnabled {
 		summary = "Disabled"
@@ -106,7 +117,7 @@ func (s *interactiveSession) desktopStatusField(ctx context.Context, settings in
 		fmt.Sprintf("This instance's tool connection: %t (generation %d)", cached.Connected, cached.Generation),
 		"Refresh reads status only; it never captures, requests grants or starts a service.",
 	}
-	if permissions.Linux != nil || runtime.GOOS == "linux" {
+	if linux {
 		facts := permissions.Linux
 		if facts == nil {
 			facts = &desktop.LinuxInspection{}
@@ -117,7 +128,8 @@ func (s *interactiveSession) desktopStatusField(ctx context.Context, settings in
 			"Wayland environment reported by Driver: "+desktopCapabilityState(facts.WaylandEnvironment),
 			"Wayland backend enabled: "+desktopCapabilityState(facts.WaylandBackend),
 			"XSendEvent prerequisite: "+desktopCapabilityState(facts.XSendEvent),
-			"Display and bus checks do not verify target input or capture. Linux actions and setup remain in progress.")
+			"Connection and display facts above describe the shared service; this instance may instead own a private tool process.",
+			"Display and bus checks do not verify target input or capture. X11 actions are integrated; Linux setup and Wayland remain in progress.")
 	} else {
 		lines = append(lines, "Accessibility: "+string(permissions.Accessibility), "Screen Recording: "+string(permissions.ScreenRecording))
 	}

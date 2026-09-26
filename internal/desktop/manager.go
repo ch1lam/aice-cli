@@ -42,6 +42,7 @@ type driverClient interface {
 // Manager owns one connection and serializes every observation/action sequence.
 // Config publication, installation and OS authorization belong to the app.
 type Manager struct {
+	platform  string // immutable native wire contract; never selected by the model
 	ctx       context.Context
 	cancel    context.CancelFunc
 	gate      chan struct{}
@@ -61,7 +62,7 @@ type Manager struct {
 // requires the native runtime's verified identity and standard-mode preflight.
 func newManager(dial func(context.Context) (driverClient, error)) *Manager {
 	ctx, cancel := context.WithCancel(context.Background())
-	m := &Manager{ctx: ctx, cancel: cancel, gate: make(chan struct{}, 1), dial: dial, runs: make(map[*Run]struct{}), latest: make(map[windowIdentity]string), occupants: make(map[*Run]struct{})}
+	m := &Manager{platform: "darwin", ctx: ctx, cancel: cancel, gate: make(chan struct{}, 1), dial: dial, runs: make(map[*Run]struct{}), latest: make(map[windowIdentity]string), occupants: make(map[*Run]struct{})}
 	m.gate <- struct{}{}
 	return m
 }
@@ -85,7 +86,7 @@ func (m *Manager) Bind(ctx context.Context, options RunOptions) (*Run, error) {
 		return nil, err
 	}
 	runCtx, cancel := context.WithCancel(ctx)
-	r := &Run{manager: m, ctx: runCtx, cancel: cancel, options: options, id: "aice-" + rand.Text(), targets: make(map[string]windowIdentity), apps: make(map[string]string), observations: make(map[string]observationBinding)}
+	r := &Run{manager: m, ctx: runCtx, cancel: cancel, options: options, id: "aice-" + rand.Text(), targets: make(map[string]windowIdentity), apps: make(map[string]appLaunchTarget), observations: make(map[string]observationBinding)}
 	r.stopManager = context.AfterFunc(m.ctx, cancel)
 	return r, nil
 }
@@ -103,7 +104,7 @@ type Run struct {
 	cleanupDone  bool
 	cleanupErr   error
 	targets      map[string]windowIdentity
-	apps         map[string]string // opaque discovered app reference -> bundle ID
+	apps         map[string]appLaunchTarget // opaque reference -> native discovered launcher
 	observations map[string]observationBinding
 }
 

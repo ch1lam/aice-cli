@@ -19,6 +19,9 @@ var macSchemaInventory []byte
 //go:embed schema/linux-status-0.29.1.json
 var linuxStatusSchemaInventory []byte
 
+//go:embed schema/linux-0.29.1.json
+var linuxSchemaInventory []byte
+
 type schemaInventory struct {
 	Version  string                     `json:"version"`
 	Platform string                     `json:"platform"`
@@ -31,6 +34,10 @@ func reviewedMacTools(actual map[string]json.RawMessage) (map[string]json.RawMes
 
 func reviewedLinuxStatusTools(actual map[string]json.RawMessage) (map[string]json.RawMessage, error) {
 	return reviewedTools(actual, linuxStatusSchemaInventory, "linux")
+}
+
+func reviewedLinuxTools(actual map[string]json.RawMessage) (map[string]json.RawMessage, error) {
+	return reviewedTools(actual, linuxSchemaInventory, "linux")
 }
 
 func reviewedTools(actual map[string]json.RawMessage, data []byte, platform string) (map[string]json.RawMessage, error) {
