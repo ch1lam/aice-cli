@@ -79,11 +79,13 @@ func cuaVerifyCommand(ctx context.Context, binary string, args ...string) (strin
 	return output.String(), nil
 }
 
-type cuaVerifyOutput struct{ bytes.Buffer }
+type cuaVerifyOutput struct{ buffer bytes.Buffer }
+
+func (w *cuaVerifyOutput) String() string { return w.buffer.String() }
 
 func (w *cuaVerifyOutput) Write(p []byte) (int, error) {
-	if w.Len()+len(p) > 8192 {
+	if w.buffer.Len()+len(p) > 8192 {
 		return 0, errors.New("Cua verification output exceeds limit")
 	}
-	return w.Buffer.Write(p)
+	return w.buffer.Write(p)
 }

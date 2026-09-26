@@ -95,6 +95,8 @@ signature, Cua signing identity, Gatekeeper acceptance and version before an
 exclusive rename to `/Applications/CuaDriver.app`. It preserves the license in
 `~/.aice/bin/cua/0.29.1/LICENSE`. No bare Driver, Node addon or SDK runtime is
 installed. See [provenance](../internal/deps/cua/VENDOR.md).
+Verification subprocesses have a 20-second deadline and an 8 KiB stdout limit;
+the limit also applies to the process pipe's buffered-copy path.
 
 Provisioning respects the current instance's helper-download policy. It can
 reuse a verified compatible existing App and refuses to overwrite an incompatible
