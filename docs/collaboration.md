@@ -552,6 +552,21 @@ check opens no windows, connects to no service and requests no grants:
 AICE_CUA_BUILD_FIXTURE=1 go test -tags=integration ./internal/app -run '^TestNativeMacPrintFixtureBuild$' -v
 ```
 
+The separate macOS Settings reuse gate invokes the production public
+grant/direct-capture flow through CLI/Bubble Tea. It requires the verified App,
+existing grants and running service before starting; downloads are disabled.
+It checks cancellation before external work, then explicitly confirms repair,
+verifies live capture, saves enable into temporary configuration, and checks
+that no model request or Session was created and the shared service survives.
+Unlike task gates, this can show OS permission UI and probe direct screen
+capture; it has its own opt-in and does not establish first-time installation
+or physical interaction with system dialogs. This gate passed on the authorized
+0.29.1 host on 2026-09-27 in 4.53 s:
+
+```sh
+AICE_CUA_NATIVE_SETUP=1 go test -tags=integration ./internal/app -run '^TestNativeMacDesktopSetupTUI$' -v
+```
+
 The sentinel counts activation loss notifications while armed; returning to it
 at the end cannot erase a temporary focus loss. It does not inject a stream of
 global keystrokes and does not replace physical keyboard, native IME, overlay,

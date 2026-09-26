@@ -408,7 +408,7 @@ as the tools and prompt it publishes; offline publication tests cover this.
 
 | Scope | Evidence | Remaining acceptance |
 | --- | --- | --- |
-| macOS 0.29.1 universal artifact | Verified App installed and both OS grants enabled by the operator; signature, Gatekeeper and 15-tool admission checks pass; native three-AppKit Manager and scripted-model CLI/Guard/Session gates pass with nine captures and foreground sentinel intact; ASCII/Unicode insertion, single key and select-all pass independent widget checks | Native Settings setup workflow, launch, overlay, cancellation, pixel actions, heterogeneous applications and physical input/IME coexistence; actual-model and broader performance acceptance |
+| macOS 0.29.1 universal artifact | Verified App installed and both OS grants enabled by the operator; signature, Gatekeeper and 15-tool admission checks pass; native three-AppKit Manager and scripted-model CLI/Guard/Session gates pass with nine captures and foreground sentinel intact; ASCII/Unicode insertion, single key and select-all pass independent widget checks; actual Settings repair reuses the installation, completes the public grant/capture check and saves temporary enable | First-time Settings installation and system-dialog interaction, launch, overlay, in-flight cancellation, pixel actions, heterogeneous applications and physical input/IME coexistence; actual-model and broader performance acceptance |
 | Windows amd64/arm64 | Downloaded archives and selected executable hashes verified; private installer with Authenticode checks implemented; synthetic extraction/reuse/cancellation tests and cross-compilation pass; static imports inspected; read-only service inspection and Windows status presentation implemented with synthetic tests | Native installation/signature trust, exclusive publication, named-pipe identity/UIAccess/session checks and status-schema confirmation; setup/action runtime integration and native UI/input/lifecycle tests |
 | Linux arm64 | Private installation/reuse and read-only headless inspection passed in an isolated Debian 13 container; production Manager and selected-window setup passed owned stdio and verified shared-service X11/GTK checks; scripted-model native print/Guard/tool/Session flow, ASCII insertion and pixel click/resize rejection passed; launch established its exact window and preserved the app after Manager close; actual Settings CLI flow passed native private installation, selected-window capture, cancellation/retry and saved enable | Launch steals focus, Unicode insertion truncates and GTK key/hotkey, pixel scroll and drag are unavailable in the fixture; actual-model tasks, physical terminal/IME and other desktop environments; other pixel actions, foreground assistance, overlay, other toolkits, real compositor/Wayland and physical-input/IME checks |
 | Linux amd64 | Downloaded archive and selected executable hashes verified; synthetic installer tests and cross-compilation pass; ELF library dependencies inspected | Native installation/dynamic loading and exclusive publication; runtime/service admission, AT-SPI/display detection, compositor-specific input/capture/overlay tests |
@@ -425,7 +425,8 @@ The installed App runs through LaunchServices in standard mode, with no
 external policy or capability manifest. The operator enabled Accessibility and
 Screen Recording; production inspection reports both granted and verifies the
 connection. Actual window captures subsequently passed. This establishes the
-current service's access, not the unexercised native Settings authorization flow.
+current service's access; the separate Settings repair gate below also exercises
+the public grant/direct-capture command with these existing grants.
 
 The opt-in [native Manager test](../internal/desktop/manager_native_darwin_test.go)
 passed on this host on 2026-09-27. Three separate AppKit targets received Unicode
@@ -467,8 +468,9 @@ The full four-case gate took 24.63 s, with input action/observation calls taking
 These gates require the installed authorized service and an available desktop;
 their preparation installs nothing and requests no grants. They use no real
 model and do not prove physical keyboard, IME, pixel, overlay or heterogeneous
-application behavior. Native Settings installation and authorization acceptance
-remain separate from the operator-performed upgrade and grants above.
+application behavior. First-time Settings installation and physical interaction
+with system authorization dialogs remain separate from the operator-performed
+upgrade and grants above.
 
 The fixed source's platform matrix documents limitations for raw Wayland
 background input and toolkit-specific paths. Structured refusal is not proof
@@ -797,9 +799,18 @@ publication, binding cleanup, stale-context denial, Web recomposition, failed
 preference saves, and partial action/image retention in Session records. They
 never enumerate or control the user's desktop.
 
-The macOS Settings CLI/TUI test traverses search, setup, disclosure, confirmation
-and persisted enable with fake installation/authorization. It verifies that setup
-creates no Session. Default application tests cover concurrent preparation and
+The default Settings CLI/TUI test traverses search, setup, disclosure,
+confirmation and persisted enable with fake installation/authorization. The
+separate native `TestNativeMacDesktopSetupTUI` passed on 2026-09-27 in 4.53 s.
+It cancels before external work, retries and confirms repair, reuses the verified
+installed App with downloads disabled, then runs the real public grant/capture
+flow and checks the displayed permission/capture facts. Enable is persisted only
+in temporary configuration; no model request or Session is created, and command
+cleanup preserves the shared service. This is repair with existing grants, not
+first installation or physical interaction with a system permission dialog.
+Its explicit opt-in is documented in
+[collaboration](collaboration.md#computer-use-checks).
+Default application tests cover concurrent preparation and
 writer rejection, peer-setting preservation, save failure after authorization,
 cancelled grants, preference-only retry and frozen download policy. Renderer
 tests cover 80×24, 120×40 and 32×16 disclosures and visible partial results. These
