@@ -217,6 +217,12 @@ triggers another launch. Launch itself uses Cua's launch path. The Linux native
 launch gate observed foreground focus loss despite the Driver's `active:false`
 response; see [launch acceptance failure](#linux-launch-acceptance-failure).
 macOS launch focus-side-effect acceptance remains open.
+Offline launch-wait tests keep an unrelated window with the same document title
+present while the target is delayed. Only the launched PID may supply candidates.
+The tests cover target arrival, the five-second deadline and cancellation: a
+failed wait retains the launch result without observing another app or replaying
+launch, and subsequent explicit discovery remains usable. These checks validate
+the local binding/lifecycle contract, not native launch focus behavior.
 Observation references bind the run, connection generation, exact target,
 Driver snapshot, opaque element tokens and immutable capture ID. Rediscovery,
 same-window observation (including from another run), action dispatch,

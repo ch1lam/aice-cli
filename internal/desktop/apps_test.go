@@ -4,6 +4,8 @@ import (
 	"context"
 	"io"
 	"testing"
+	"testing/synctest"
+	"time"
 )
 
 func appFixtureDriver(t *testing.T, mode string) *fakeDriver {
@@ -116,5 +118,74 @@ func TestLaunchValidationDoesNotConsumeReference(t *testing.T) {
 	}
 	if _, err := r.Act(t.Context(), ActRequest{Kind: "launch", AppRef: ref}); err != nil {
 		t.Fatal("local validation consumed app reference", err)
+	}
+}
+
+func TestLaunchWaitNeverUsesAnotherApplicationsWindow(t *testing.T) {
+	t.Parallel()
+	for _, mode := range []string{"target-arrives", "deadline", "cancel"} {
+		t.Run(mode, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				ctx, cancel := context.WithCancel(t.Context())
+				defer cancel()
+				f := appFixtureDriver(t, "late-window")
+				f.image = pixelFixture(t)
+				base := f.handle
+				polls := 0
+				f.handle = func(callCtx context.Context, name string, args map[string]any) (Reply, error, bool) {
+					if name == "get_window_state" && (args["pid"] != 41 || args["window_id"] != uint64(99)) {
+						t.Fatal("launch observed an unrelated window", args)
+					}
+					if name != "list_windows" || f.count("launch_app") == 0 {
+						return base(callCtx, name, args)
+					}
+					polls++
+					// The title matches the intended document; only the process
+					// identity distinguishes this already-open foreign window.
+					windows := []any{map[string]any{"pid": 55, "window_id": 101, "app_name": "Synthetic editor", "title": "Synthetic document"}}
+					if mode == "target-arrives" && polls >= 3 {
+						windows = append(windows, map[string]any{"pid": 41, "window_id": 99, "title": "Synthetic document"})
+					}
+					if mode == "cancel" {
+						cancel()
+					}
+					return structuredReply(map[string]any{"windows": windows}), nil, true
+				}
+				_, run := testRun(t, f, true)
+				discovery, err := run.Apps(t.Context(), "合成", 8)
+				if err != nil || len(discovery.Apps) != 1 {
+					t.Fatal("initial app discovery failed", err)
+				}
+				request := ActRequest{Kind: "launch", AppRef: discovery.Apps[0].Ref, Screenshot: true}
+				started := time.Now()
+				result, err := run.Act(ctx, request)
+				if err != nil || !result.Dispatched || result.Outcome != "returned" || result.DriverError || len(result.Driver) == 0 {
+					t.Fatal("window wait discarded the completed launch", result, err)
+				}
+				if mode == "target-arrives" {
+					if len(result.Windows) != 1 || result.Windows[0].PID != 41 || result.Windows[0].WindowID != 99 || result.Observation == nil || result.Observation.Image == nil || result.ObservationError != "" || polls != 3 || f.count("get_window_state") != 1 {
+						t.Fatal("late target was not exclusively bound and observed", result, polls)
+					}
+				} else {
+					if len(result.Windows) != 0 || result.Observation != nil || result.ObservationError == "" || f.count("get_window_state") != 0 {
+						t.Fatal("failed wait substituted an unrelated window", result)
+					}
+					if mode == "deadline" && time.Since(started) != 5*time.Second {
+						t.Fatal("launch window wait escaped its five-second bound", time.Since(started))
+					}
+					if mode == "cancel" && (polls != 1 || time.Since(started) != 0) {
+						t.Fatal("cancellation did not stop the read-only window wait", polls, time.Since(started))
+					}
+				}
+				if _, err := run.Act(t.Context(), request); err == nil || f.count("launch_app") != 1 {
+					t.Fatal("window wait allowed a repeated launch")
+				}
+				// A cancelled call does not close the run or leave its executor
+				// held. Fresh discovery remains available without another launch.
+				if _, err := run.Windows(t.Context(), "", 8); err != nil {
+					t.Fatal("window wait prevented later discovery", err)
+				}
+			})
+		})
 	}
 }
