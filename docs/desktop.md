@@ -417,7 +417,7 @@ as the tools and prompt it publishes; offline publication tests cover this.
 
 | Scope | Evidence | Remaining acceptance |
 | --- | --- | --- |
-| macOS 0.29.1 universal artifact | Verified App installed and both OS grants enabled by the operator; signature, Gatekeeper and 15-tool admission checks pass; native three-AppKit Manager and scripted-model CLI/Guard/Session gates pass with nine captures and foreground sentinel intact; ASCII/Unicode insertion, single key, select-all, Retina pixel click, resize refusal/recovery and background scroll pass independent widget checks; AppKit cold launch preserves focus, returns multiple candidates and completes the explicitly selected window's task; cursor renderer lifecycle and isolated host-surface appearance verified; wait and dispatched-click cancellation pass without input replay; Settings Stop cancels a native condition wait with complete Session tool pairs; one explicit foreground-drag run succeeded with a measured focus transition and restoration; actual Settings repair reuses the installation, completes the public grant/capture check and saves temporary enable | Background drag is refused by 0.29.1 and foreground-drag repeatability remains open; first-time Settings installation and system-dialog interaction, overlay compositing/animation, interrupted gestures and native TUI Stop during mutations, remaining pixel actions, heterogeneous applications and physical input/IME coexistence; actual-model and broader performance acceptance |
+| macOS 0.29.1 universal artifact | Verified App installed and both OS grants enabled by the operator; signature, Gatekeeper and 15-tool admission checks pass; native three-AppKit Manager and scripted-model CLI/Guard/Session gates pass with nine captures and foreground sentinel intact; ASCII/Unicode insertion, single key, select-all, Retina pixel click, resize refusal/recovery and background scroll pass independent widget checks; AppKit cold launch preserves focus, returns multiple candidates and completes the explicitly selected window's task; cursor renderer lifecycle and isolated host-surface appearance verified; wait and dispatched-click cancellation pass without input replay; Settings Stop cancels a native condition wait with complete Session tool pairs; one explicit foreground-drag run succeeded with a measured focus transition and restoration; actual Settings repair reuses the installation, completes the public grant/capture check and saves temporary enable | Pixel double-click loses foreground focus and pixel right-click delivers duplicate event pairs; background drag is refused by 0.29.1 and foreground-drag repeatability remains open; first-time Settings installation and system-dialog interaction, overlay compositing/animation, interrupted gestures and native TUI Stop during mutations, remaining pixel actions, heterogeneous applications and physical input/IME coexistence; actual-model and broader performance acceptance |
 | Windows amd64/arm64 | Downloaded archives and selected executable hashes verified; private installer with Authenticode checks implemented; synthetic extraction/reuse/cancellation tests and cross-compilation pass; static imports inspected; read-only service inspection and Windows status presentation implemented with synthetic tests | Native installation/signature trust, exclusive publication, named-pipe identity/UIAccess/session checks and status-schema confirmation; setup/action runtime integration and native UI/input/lifecycle tests |
 | Linux arm64 | Private installation/reuse and read-only headless inspection passed in an isolated Debian 13 container; production Manager and selected-window setup passed owned stdio and verified shared-service X11/GTK checks; scripted-model native print/Guard/tool/Session flow, ASCII insertion and pixel click/resize rejection passed; launch established its exact window and preserved the app after Manager close; actual Settings CLI flow passed native private installation, selected-window capture, cancellation/retry and saved enable | Launch steals focus, Unicode insertion truncates and GTK key/hotkey, pixel scroll and drag are unavailable in the fixture; actual-model tasks, physical terminal/IME and other desktop environments; other pixel actions, foreground assistance, overlay, other toolkits, real compositor/Wayland and physical-input/IME checks |
 | Linux amd64 | Downloaded archive and selected executable hashes verified; synthetic installer tests and cross-compilation pass; ELF library dependencies inspected | Native installation/dynamic loading and exclusive publication; runtime/service admission, AT-SPI/display detection, compositor-specific input/capture/overlay tests |
@@ -583,6 +583,32 @@ through cleanup. A returned `effect:unverifiable` on ordinary click was not used
 as proof of success; the independent widget commit established it.
 This does not establish double/right-click, overlay appearance, image crops or
 multiple monitors with negative coordinates; gesture evidence follows below.
+
+The separate `TestNativeMacPointerButtons` gate **fails** for both background
+pixel actions on the pinned macOS Driver. Its custom AppKit view has no AXPress
+implementation or context menu and counts actual mouse-down/up events. Each
+case dispatches exactly one native `click` RPC, starting with an active sentinel
+and zero activation losses. Double-click delivers exactly two left-down/up pairs
+with click count two, but the sentinel records one activation loss before focus
+is restored. Right-click delivers two right-down/up pairs instead of one; that
+case preserves sentinel focus. Both land at the requested center with the right
+button/window and no unintended modifiers, while text and commit state remain
+unchanged. Both Driver replies say `effect:unverifiable`. The counted run took
+3.44 s and 3.19 s per action including observation; a preceding run reproduced
+the same failures. Restored focus and non-error RPCs do not satisfy acceptance.
+
+Source inspection of the [pinned revision](../internal/deps/cua/VENDOR.md)
+provides plausible mechanisms: macOS `tools/click.rs` permits target activation
+for a background raw left click, calls `prepare_background_pixel_click`, and
+then restores the prior application/focus. The right-click path in
+`input/mouse.rs` posts each down/up through `MousePostMode::Both`, which
+unconditionally uses both SkyLight and public `post_to_pid`. The measured
+single RPC rules out an AICE action retry; source inspection is not a trace of
+which native transport delivered each event or which app caused the temporary
+activation loss. Keep the exact-count and continuous-focus gates failing until
+those behaviors are repaired. No custom Driver replacement, automatic replay or
+implicit foreground fallback is introduced. This does not establish semantic
+right-click/context-menu behavior or physical-input coexistence.
 
 The separate `TestNativeMacGestures` gate passed background pixel scrolling on
 an AppKit `NSScrollView`: its independently reported content offset changed from

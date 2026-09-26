@@ -162,6 +162,14 @@ screenshot visibly showed the blue cursor; its combined manual run failed the
 foreground sentinel. Keep those facts separate: render acknowledgement and
 isolated surface appearance do not establish desktop compositing, animation or
 physical-pointer independence.
+The macOS [pointer-button gate](desktop.md#platform-evidence) fails continuous
+focus for pixel double-click and exact event count for pixel right-click. Each
+request makes one native RPC; independent AppKit counters observe two right-click
+pairs and one transient sentinel activation loss for double-click. The pinned
+source contains dual right-event posting and a background-left activation/restore
+path, but native transport/focus causality has not been traced. Preserve strict
+counts and continuous focus; restoring focus or reporting `unverifiable` cannot
+make these gates pass. Repair and rerun before claiming those routes accepted.
 The macOS [gesture gates](desktop.md#platform-evidence) establish AppKit
 background scrolling, but the full background gate fails because 0.29.1 rejects
 drag before input. One explicit foreground-drag run completed with a measured

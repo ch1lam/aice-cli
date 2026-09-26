@@ -18,6 +18,10 @@ func TestNativeMacPixelClick(t *testing.T) {
 	testNativeMacPixelInput(t, []string{"click", "resize"}, BackgroundOnly)
 }
 
+func TestNativeMacPointerButtons(t *testing.T) {
+	testNativeMacPixelInput(t, []string{"double_click", "right_click"}, BackgroundOnly)
+}
+
 // Refusal remains a failing input postcondition, not an expected-pass case.
 func TestNativeMacGestures(t *testing.T) {
 	testNativeMacPixelInput(t, []string{"scroll", "drag"}, BackgroundOnly)
@@ -48,6 +52,8 @@ func testNativeMacPixelInput(t *testing.T, kinds []string, controlMode ControlMo
 			mode := "target"
 			if kind == "scroll" || kind == "drag" {
 				mode = "gestures"
+			} else if kind == "double_click" || kind == "right_click" {
+				mode = "pointer"
 			}
 			target := startNativeFixtureMode(t, ctx, binary, "PixelTarget", mode)
 			sentinel := startNativeFixture(t, ctx, binary, "PixelSentinel", true)
@@ -73,6 +79,15 @@ func testNativeMacPixelInput(t *testing.T, kinds []string, controlMode ControlMo
 					t.Error(err)
 				}
 			}()
+			calls := make(map[string]int)
+			dial := manager.dial
+			manager.dial = func(ctx context.Context) (driverClient, error) {
+				client, err := dial(ctx)
+				if err != nil {
+					return nil, err
+				}
+				return &nativeCountedClient{driverClient: client, calls: calls}, nil
+			}
 			run, err := manager.Bind(ctx, RunOptions{Mode: controlMode, Images: true})
 			if err != nil {
 				t.Fatal(err)
@@ -112,6 +127,13 @@ func testNativeMacPixelInput(t *testing.T, kinds []string, controlMode ControlMo
 				awaitNativeState(t, ctx, target, func(s nativeFixtureState) bool { return s.Width == 900 && s.Height != before.Height })
 			}
 			request := ActRequest{Kind: "click", ObservationRef: obs.Ref, Point: point, Screenshot: true}
+			if mode == "pointer" {
+				if before.LeftDowns != 0 || before.LeftUps != 0 || before.RightDowns != 0 || before.RightUps != 0 {
+					t.Fatal("pointer fixture already received input")
+				}
+				request.Kind = kind
+				request.Point = nativeImagePoint(t, obs, before, before.PointerX, before.PointerY)
+			}
 			if mode == "gestures" {
 				if before.ScrollValue != 0 || before.SliderValue != 0 || before.DragToX <= before.DragFromX {
 					t.Fatal("gesture fixture did not establish initial state")
@@ -124,6 +146,10 @@ func testNativeMacPixelInput(t *testing.T, kinds []string, controlMode ControlMo
 					request.Point = nil
 					request.Drag = &DragGesture{From: nativeImagePoint(t, obs, before, before.DragFromX, before.DragFromY), To: nativeImagePoint(t, obs, before, before.DragToX, before.DragToY), DurationMS: 500}
 				}
+			}
+			priorFocus := readNativeState(t, sentinel)
+			if !priorFocus.Active || priorFocus.FocusLosses != 0 {
+				t.Fatal("sentinel lost focus before pixel dispatch")
 			}
 			result, err := run.Act(ctx, request)
 			var facts struct{ Code, Effect string }
@@ -182,7 +208,21 @@ func testNativeMacPixelInput(t *testing.T, kinds []string, controlMode ControlMo
 			}
 			afterReply = readNativeState(t, target)
 			settled = awaitNativeState(t, ctx, target, func(s nativeFixtureState) bool { return s.Ticks > afterReply.Ticks+3 })
-			if mode != "gestures" && (settled.Commits != 1 || settled.Result != "Result: AICE-314" || settled.Value != before.Value) {
+			if mode == "pointer" {
+				t.Logf("pointer native click calls=%d, pre-dispatch sentinel active=%v focus_losses=%d", calls["click"], priorFocus.Active, priorFocus.FocusLosses)
+				if calls["click"] != 1 {
+					t.Error("pointer action did not dispatch exactly one native click call")
+				}
+				t.Logf("pointer readback: left_downs=%d left_ups=%d right_downs=%d right_ups=%d max_count=%d invalid=%d distance_points=%.2f", settled.LeftDowns, settled.LeftUps, settled.RightDowns, settled.RightUps, settled.MaxClickCount, settled.InvalidPointerEvents, settled.PointerDistance)
+				matched := settled.LeftDowns == 2 && settled.LeftUps == 2 && settled.RightDowns == 0 && settled.RightUps == 0 && settled.MaxClickCount == 2
+				if kind == "right_click" {
+					matched = settled.LeftDowns == 0 && settled.LeftUps == 0 && settled.RightDowns == 1 && settled.RightUps == 1 && settled.MaxClickCount == 1
+				}
+				if !matched || settled.InvalidPointerEvents != 0 || settled.PointerDistance > 2 || settled.Commits != 0 || settled.Result != before.Result || settled.Value != before.Value {
+					t.Error("independent pointer event postcondition failed")
+				}
+			}
+			if mode == "target" && (settled.Commits != 1 || settled.Result != "Result: AICE-314" || settled.Value != before.Value) {
 				t.Fatalf("pixel click postcondition failed: commits=%d result_matches=%v input_unchanged=%v", settled.Commits, settled.Result == "Result: AICE-314", settled.Value == before.Value)
 			}
 		})

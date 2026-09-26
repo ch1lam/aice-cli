@@ -615,6 +615,24 @@ calculated point committed once, covering Driver downscaling on this Retina host
 This is screenshot-coordinate acceptance on the AppKit fixture, not visual model
 recognition, crop/negative-monitor geometry, scrolling, dragging or overlay QA.
 
+The separate pointer-button gate uses a custom AppKit view without AXPress or a
+context menu. It counts actual left/right down/up events, checks click count,
+window/button/modifiers and screenshot-derived position, and requires exactly
+one native `click` RPC per request. It checks zero sentinel activation losses
+before dispatch and through cleanup. Both cases currently **fail** on macOS
+0.29.1: double-click delivers the correct pairs but briefly loses sentinel focus;
+right-click delivers duplicate pairs. The strict acceptance conditions remain:
+
+```sh
+AICE_CUA_NATIVE=1 go test -race -tags=integration ./internal/desktop -run '^TestNativeMacPointerButtons$' -count=1 -v
+```
+
+Run sequentially with other native focus gates. It uses temporary synthetic
+windows, existing installation/grants and no model calls. The default suite
+skips it. See the [platform evidence](desktop.md#platform-evidence) for measured
+results and the distinct source-based explanation; semantic menu invocation and
+physical input are not covered.
+
 The macOS gesture gate uses an actual `NSScrollView` and `NSSlider`, their
 independent geometry and post-response widget state. Background scroll passed
 on 2026-09-27 (offset 0→60); background drag remains a failing postcondition

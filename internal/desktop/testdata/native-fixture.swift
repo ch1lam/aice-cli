@@ -15,6 +15,42 @@ final class ScrollDocument: NSView {
     override var isFlipped: Bool { true }
 }
 
+// Counts actual AppKit mouse events without an AXPress implementation or a
+// context menu. This isolates button/count delivery from menu behavior.
+final class PointerSurface: NSView {
+    var leftDowns = 0
+    var leftUps = 0
+    var rightDowns = 0
+    var rightUps = 0
+    var maxClickCount = 0
+    var invalidEvents = 0
+    var lastDistance = 0.0
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override func mouseDown(with event: NSEvent) { leftDowns += 1; record(event, button: 0) }
+    override func mouseUp(with event: NSEvent) { leftUps += 1; record(event, button: 0) }
+    override func rightMouseDown(with event: NSEvent) { rightDowns += 1; record(event, button: 1) }
+    override func rightMouseUp(with event: NSEvent) { rightUps += 1; record(event, button: 1) }
+
+    func record(_ event: NSEvent, button: Int) {
+        let point = convert(event.locationInWindow, from: nil)
+        let modifiers: NSEvent.ModifierFlags = [.command, .control, .option, .shift, .function]
+        if event.windowNumber != window?.windowNumber || event.buttonNumber != button ||
+           !bounds.contains(point) || !event.modifierFlags.intersection(modifiers).isEmpty {
+            invalidEvents += 1
+        }
+        maxClickCount = max(maxClickCount, event.clickCount)
+        lastDistance = hypot(point.x - bounds.midX, point.y - bounds.midY)
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        NSColor.systemTeal.setFill()
+        bounds.fill()
+        ("Pointer target" as NSString).draw(at: NSPoint(x: 12, y: 24),
+            withAttributes: [.font: NSFont.systemFont(ofSize: 17), .foregroundColor: NSColor.white])
+    }
+}
+
 final class Fixture: NSObject, NSApplicationDelegate {
     let directory = URL(fileURLWithPath: fixtureArgument(1, "AICEFixtureDirectory"))
     let name = fixtureArgument(2, "AICEFixtureName")
@@ -26,6 +62,7 @@ final class Fixture: NSObject, NSApplicationDelegate {
     var button: NSButton!
     var scroll: NSScrollView?
     var slider: NSSlider?
+    var pointer: PointerSurface?
     var timer: Timer?
     var commits = 0
     var focusLosses = 0
@@ -56,6 +93,11 @@ final class Fixture: NSObject, NSApplicationDelegate {
         result = NSTextField(labelWithString: "Result: pending")
         result.frame = NSRect(x: 30, y: 65, width: 440, height: 30)
         view.addSubview(result)
+        if mode == "pointer" {
+            let surface = PointerSurface(frame: NSRect(x: 240, y: 110, width: 220, height: 60))
+            view.addSubview(surface)
+            pointer = surface
+        }
         if mode == "gestures" {
             window.setContentSize(NSSize(width: 900, height: 550))
             let scroller = NSScrollView(frame: NSRect(x: 530, y: 170, width: 320, height: 330))
@@ -128,6 +170,18 @@ final class Fixture: NSObject, NSApplicationDelegate {
                                   "selection_location": selection?.location ?? -1,
                                   "selection_length": selection?.length ?? -1,
                                   "commits": commits]
+        if let surface = pointer {
+            let point = capturePoint(surface, NSPoint(x: surface.bounds.midX, y: surface.bounds.midY))
+            state["pointer_x"] = point.x
+            state["pointer_y"] = point.y
+            state["left_downs"] = surface.leftDowns
+            state["left_ups"] = surface.leftUps
+            state["right_downs"] = surface.rightDowns
+            state["right_ups"] = surface.rightUps
+            state["max_click_count"] = surface.maxClickCount
+            state["invalid_pointer_events"] = surface.invalidEvents
+            state["pointer_distance"] = surface.lastDistance
+        }
         if let scroller = scroll, let control = slider, let cell = control.cell as? NSSliderCell {
             let scrollPoint = capturePoint(scroller, NSPoint(x: scroller.bounds.midX, y: scroller.bounds.midY))
             let knob = cell.knobRect(flipped: control.isFlipped)
