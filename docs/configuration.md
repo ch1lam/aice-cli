@@ -180,8 +180,10 @@ Web search, Web fetch and individual search services). Headings are not
 selectable, and scrolling keeps the selected field visible. Search results
 retain their category and section headings.
 Setting names align left and current values align right, with a separate arrow
-for submenus. Boolean values toggle on click or Enter; Off stays muted even on
-the selected row. Enum rows show the current choice label and open a choice menu
+for submenus. Values supplied by the default configuration remain muted;
+explicitly configured values use normal text even when equal to the default.
+Boolean values toggle on click or Enter; Off stays muted even on the selected
+row. Enum rows show the current choice label and open a choice menu
 focused on that value; choosing an option saves it and returns to the list.
 Custom model IDs retain their text editor, and enabling Computer Use retains
 its explicit setup flow.

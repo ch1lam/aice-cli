@@ -56,7 +56,7 @@ func settingRow(field interaction.SettingField, selected bool, width int) string
 	}
 	value, submenu := settingRowValue(field)
 	valueStyle := bodyStyle
-	if field.Kind == interaction.SettingBool && field.Value.Bool == field.InvertBool {
+	if field.Source.Kind == "default" || (field.Kind == interaction.SettingBool && field.Value.Bool == field.InvertBool) {
 		valueStyle = mutedStyle
 	}
 	// Reserve a shared right edge for values and a separate submenu arrow.
