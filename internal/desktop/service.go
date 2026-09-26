@@ -37,7 +37,7 @@ func NewManager(resolve RuntimeResolver) (*Manager, error) {
 	if resolve == nil {
 		return nil, errors.New("desktop: verified runtime resolver required")
 	}
-	return newManager(func(ctx context.Context) (driverClient, error) {
+	manager := newManager(func(ctx context.Context) (driverClient, error) {
 		if runtime.GOOS != "darwin" {
 			return nil, serviceError("platform_unavailable", "native Computer Use connection setup is not yet integrated on this platform")
 		}
@@ -57,7 +57,18 @@ func NewManager(resolve RuntimeResolver) (*Manager, error) {
 			return nil, err
 		}
 		return connector.dial(ctx)
-	}), nil
+	})
+	manager.occupy = func(ctx context.Context) (func() error, error) {
+		if runtime.GOOS != "darwin" {
+			return nil, serviceError("platform_unavailable", "native Computer Use connection setup is not yet integrated on this platform")
+		}
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return nil, err
+		}
+		return lockDesktop(ctx, filepath.Join(home, "Library", "Caches", "cua-driver"))
+	}
+	return manager, nil
 }
 
 // serviceConnector performs content-free, read-only admission on each cold

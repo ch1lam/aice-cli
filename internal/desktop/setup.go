@@ -25,7 +25,7 @@ type SetupResult struct {
 // flow. Only the user-facing setup action may call it, after disclosure. The
 // supplied installed App must already have passed dependency verification.
 // Cancellation stops our command, but cannot undo grants or close system UI.
-func Setup(ctx context.Context, binary, endpoint string) (SetupResult, error) {
+func Setup(ctx context.Context, binary, endpoint string) (result SetupResult, returnErr error) {
 	if runtime.GOOS != "darwin" {
 		return SetupResult{}, serviceError("platform_unavailable", "native Computer Use setup is not yet integrated on this platform")
 	}
@@ -37,6 +37,13 @@ func Setup(ctx context.Context, binary, endpoint string) (SetupResult, error) {
 	if err != nil {
 		return SetupResult{}, err
 	}
+	// Explicit setup may show OS UI and perform the capture probe. Coordinate
+	// it with other AICE runs; read-only Inspect deliberately takes no lock.
+	unlock, err := lockDesktop(ctx, filepath.Dir(endpoint))
+	if err != nil {
+		return SetupResult{}, err
+	}
+	defer func() { returnErr = errors.Join(returnErr, unlock()) }()
 	return native.setup(ctx)
 }
 

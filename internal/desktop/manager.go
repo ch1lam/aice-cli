@@ -42,13 +42,16 @@ type driverClient interface {
 // Manager owns one connection and serializes every observation/action sequence.
 // Config publication, installation and OS authorization belong to the app.
 type Manager struct {
-	ctx    context.Context
-	cancel context.CancelFunc
-	gate   chan struct{}
-	dial   func(context.Context) (driverClient, error)
-	client driverClient // all connection/run/reference fields are gate-owned
-	runs   map[*Run]struct{}
-	latest map[windowIdentity]string
+	ctx       context.Context
+	cancel    context.CancelFunc
+	gate      chan struct{}
+	dial      func(context.Context) (driverClient, error)
+	client    driverClient // all connection/run/reference fields are gate-owned
+	runs      map[*Run]struct{}
+	latest    map[windowIdentity]string
+	occupy    func(context.Context) (func() error, error)
+	unlock    func() error
+	occupants map[*Run]struct{} // survives connection loss until run cleanup
 
 	mu     sync.Mutex // status only; never held across I/O
 	status Status
@@ -58,7 +61,7 @@ type Manager struct {
 // requires the native runtime's verified identity and standard-mode preflight.
 func newManager(dial func(context.Context) (driverClient, error)) *Manager {
 	ctx, cancel := context.WithCancel(context.Background())
-	m := &Manager{ctx: ctx, cancel: cancel, gate: make(chan struct{}, 1), dial: dial, runs: make(map[*Run]struct{}), latest: make(map[windowIdentity]string)}
+	m := &Manager{ctx: ctx, cancel: cancel, gate: make(chan struct{}, 1), dial: dial, runs: make(map[*Run]struct{}), latest: make(map[windowIdentity]string), occupants: make(map[*Run]struct{})}
 	m.gate <- struct{}{}
 	return m
 }
@@ -97,6 +100,8 @@ type Run struct {
 	options      RunOptions
 	started      bool // gate-owned
 	active       bool
+	cleanupDone  bool
+	cleanupErr   error
 	targets      map[string]windowIdentity
 	apps         map[string]string // opaque discovered app reference -> bundle ID
 	observations map[string]observationBinding
@@ -126,6 +131,14 @@ func (r *Run) acquire(ctx context.Context) (context.Context, func(), error) {
 	return joined, func() {
 		if r.manager.ctx.Err() != nil {
 			_ = r.manager.disconnectLocked("Manager closed")
+		} else if r.closed.Load() {
+			// Close may have exhausted its wait while this call was settling.
+			// The execution owner completes cleanup before releasing the gate.
+			cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), cleanupTimeout)
+			if err := r.closeLocked(cleanupCtx); err != nil {
+				r.manager.setDiagnostic("Run ended with incomplete native cleanup")
+			}
+			cleanupCancel()
 		}
 		r.manager.gate <- struct{}{}
 		releaseContext()
@@ -134,6 +147,17 @@ func (r *Run) acquire(ctx context.Context) (context.Context, func(), error) {
 
 func (r *Run) ensureLocked(ctx context.Context) error {
 	m := r.manager
+	if _, exists := m.occupants[r]; !exists {
+		if m.unlock == nil && m.occupy != nil {
+			unlock, err := m.occupy(ctx)
+			if err != nil {
+				m.setDiagnostic("Desktop is occupied or its coordination lock is unavailable")
+				return err
+			}
+			m.unlock = unlock
+		}
+		m.occupants[r] = struct{}{}
+	}
 	if m.client == nil {
 		c, err := m.dial(ctx)
 		if err != nil {
@@ -213,7 +237,20 @@ func (m *Manager) disconnectLocked(reason string) error {
 	m.status.Connected = false
 	m.status.Diagnostic = reason
 	m.mu.Unlock()
+	if m.ctx.Err() != nil {
+		clear(m.occupants)
+		err = errors.Join(err, m.releaseOccupancyLocked())
+	}
 	return err
+}
+
+func (m *Manager) releaseOccupancyLocked() error {
+	if len(m.occupants) != 0 || m.unlock == nil {
+		return nil
+	}
+	unlock := m.unlock
+	m.unlock = nil
+	return unlock()
 }
 
 const cleanupTimeout = 3 * time.Second
@@ -249,7 +286,19 @@ func (r *Run) Close() error {
 	case <-r.manager.gate:
 	}
 	defer func() { r.manager.gate <- struct{}{} }()
-	defer delete(r.manager.runs, r)
+	return r.closeLocked(ctx)
+}
+
+func (r *Run) closeLocked(ctx context.Context) (returnErr error) {
+	if r.cleanupDone {
+		return r.cleanupErr
+	}
+	defer func() {
+		delete(r.manager.runs, r)
+		delete(r.manager.occupants, r)
+		returnErr = errors.Join(returnErr, r.manager.releaseOccupancyLocked())
+		r.cleanupDone, r.cleanupErr = true, returnErr
+	}()
 	clear(r.targets)
 	clear(r.apps)
 	r.clearObservationsLocked()

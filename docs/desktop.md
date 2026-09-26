@@ -86,6 +86,25 @@ Public manager construction requires an application runtime resolver. It only
 reuses a verified installation and admits a compatible service; a pinned
 proxy alone cannot prove a shared daemon's version or permission mode.
 
+On macOS, the first desktop use also obtains an exclusive AICE occupancy lock
+at `~/Library/Caches/cua-driver/.aice-desktop.lock`, before runtime resolution or
+connection. The lock waits at most two seconds and responds to Stop; contention
+returns `desktop_busy` without native discovery or input. It spans the run's
+model decisions and connection recovery, so another AICE instance cannot replace
+the pending observation. Multiple bindings in one manager share ownership until
+the last desktop-using run closes. An idle reusable MCP connection holds no lock.
+Explicit setup obtains the same occupancy before its separate startup/setup
+lock; read-only status and Settings refresh do not acquire occupancy.
+
+The lock follows the Session writer's OS file-lock pattern. Its persistent file
+is never deleted or treated as proof of a live process; the kernel releases
+ownership when the handle closes or the process exits. Run/manager cleanup
+releases it after local in-flight work settles. If Stop's cleanup deadline expires,
+the execution owner performs the deferred cleanup on return and then releases
+occupancy. This coordinates AICE instances only; it neither isolates the user or
+third-party Cua clients nor proves that a lost native request has stopped inside
+the shared daemon. Unknown action results remain unknown.
+
 On macOS, an enabled cold run starts the signed `/Applications/CuaDriver.app`
 through LaunchServices only after the pinned `status` command establishes an
 absent daemon. A bounded per-user setup lock serializes AICE instances and a
@@ -333,6 +352,12 @@ Pixel scroll/type/drag tests check exact session/window routing, image-coordinat
 rescaling, absence of unsupported capture arguments, missing/invalid image
 rejection, bounded gestures, explicit foreground choice and fresh-image gating.
 These remain synthetic tests; no user window is captured or controlled.
+Occupancy tests use temporary files and two managers, plus an independent helper
+process whose forced exit demonstrates kernel lock release on the tested host.
+They cover cancellation, connection recovery, shared local bindings, setup
+contention, and late completion after the run-cleanup deadline. macOS native
+GUI delivery remains separate; Windows/Linux lock implementations are not proof
+of native desktop acceptance on those platforms.
 
 The explicit macOS installer API stages and verifies the signed App, reuses
 a compatible existing installation, preserves conflicting files and respects
