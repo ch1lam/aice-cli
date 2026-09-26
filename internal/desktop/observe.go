@@ -207,6 +207,10 @@ func (r *Run) bindObservation(ctx context.Context, targetRef string, target wind
 	if len(reply.Images) > 1 {
 		return Observation{}, errors.New("desktop: observation exceeds one-image result budget")
 	}
+	if screenshot && len(reply.Images) == 0 {
+		result.Degraded = true
+		result.Diagnostic = "Screenshot was requested but unavailable; semantic references may still be used"
+	}
 	if len(reply.Images) == 1 && r.options.Images && screenshot {
 		part := reply.Images[0]
 		prepared, err := media.Prepare(ctx, llm.ImageContent{Data: part.Data, MIMEType: part.MIMEType, Source: "Computer Use window observation"}, nil)

@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strconv"
+	"strings"
 )
 
 type Point struct {
@@ -12,12 +14,17 @@ type Point struct {
 }
 
 type ActRequest struct {
-	Kind           string `json:"action"`
-	ObservationRef string `json:"observation_ref"`
-	ElementToken   string `json:"element_token,omitempty"`
-	Point          *Point `json:"point,omitempty"`
-	Text           string `json:"text,omitempty"`
-	Screenshot     bool   `json:"screenshot"`
+	Kind           string         `json:"action"`
+	ObservationRef string         `json:"observation_ref"`
+	ElementToken   string         `json:"element_token,omitempty"`
+	Point          *Point         `json:"point,omitempty"`
+	Text           string         `json:"text,omitempty"`
+	Key            string         `json:"key,omitempty"`
+	Keys           []string       `json:"keys,omitempty"`
+	Direction      string         `json:"direction,omitempty"`
+	Amount         int            `json:"amount,omitempty"`
+	Wait           *WaitCondition `json:"wait,omitempty"`
+	Screenshot     bool           `json:"screenshot"`
 }
 
 // ActResult separates dispatch/Driver response from the follow-up observation.
@@ -32,6 +39,7 @@ type ActResult struct {
 	Diagnostic       string          `json:"diagnostic,omitempty"`
 	Observation      *Observation    `json:"observation,omitempty"`
 	ObservationError string          `json:"observation_error,omitempty"`
+	WaitState        string          `json:"wait_state,omitempty"`
 }
 
 func (r *Run) Act(ctx context.Context, request ActRequest) (ActResult, error) {
@@ -46,6 +54,9 @@ func (r *Run) Act(ctx context.Context, request ActRequest) (ActResult, error) {
 	binding, err := r.observationLocked(request.ObservationRef)
 	if err != nil {
 		return ActResult{}, err
+	}
+	if request.Kind == "wait" {
+		return r.waitLocked(ctx, binding, request)
 	}
 	name, args, err := r.actionArguments(binding, request)
 	if err != nil {
@@ -99,7 +110,11 @@ func (r *Run) Act(ctx context.Context, request ActRequest) (ActResult, error) {
 }
 
 func (r *Run) actionArguments(binding observationBinding, request ActRequest) (string, map[string]any, error) {
-	if (request.Point == nil) == (request.ElementToken == "") {
+	if request.Wait != nil || (request.Key != "" && request.Kind != "key") || (len(request.Keys) != 0 && request.Kind != "hotkey") || ((request.Direction != "" || request.Amount != 0) && request.Kind != "scroll") || (request.Text != "" && request.Kind != "type_text" && request.Kind != "set_value") {
+		return "", nil, errors.New("desktop: action contains unrelated fields")
+	}
+	windowKey := (request.Kind == "key" || request.Kind == "hotkey") && request.Point == nil && request.ElementToken == ""
+	if !windowKey && (request.Point == nil) == (request.ElementToken == "") {
 		return "", nil, errors.New("desktop: supply exactly one element token or screenshot point")
 	}
 	if len(request.Text) > 16*1024 {
@@ -111,7 +126,7 @@ func (r *Run) actionArguments(binding observationBinding, request ActRequest) (s
 			return "", nil, errors.New("desktop: element token does not belong to this observation")
 		}
 		args["element_token"] = request.ElementToken
-	} else {
+	} else if request.Point != nil {
 		x, y, err := binding.pixel(request.Point.X, request.Point.Y)
 		if err != nil {
 			return "", nil, err
@@ -148,7 +163,73 @@ func (r *Run) actionArguments(binding observationBinding, request ActRequest) (s
 			args["value"] = request.Text
 		}
 		return request.Kind, args, nil
+	case "key", "hotkey":
+		if request.Point != nil {
+			return "", nil, errors.New("desktop: key actions accept a semantic element or the observed window; click a bound pixel first if needed")
+		}
+		args["delivery_mode"] = "background"
+		if request.Kind == "key" {
+			if !validKey(request.Key) {
+				return "", nil, errors.New("desktop: unsupported key name")
+			}
+			args["key"] = request.Key
+			return "press_key", args, nil
+		}
+		if len(request.Keys) < 2 || len(request.Keys) > 6 || !validKey(request.Keys[len(request.Keys)-1]) {
+			return "", nil, errors.New("desktop: hotkey requires modifiers followed by one key")
+		}
+		seen := make(map[string]bool)
+		for _, key := range request.Keys[:len(request.Keys)-1] {
+			if !validModifier(key) || seen[key] {
+				return "", nil, errors.New("desktop: unsupported or duplicate hotkey modifier")
+			}
+			seen[key] = true
+		}
+		args["keys"] = request.Keys
+		return "hotkey", args, nil
+	case "scroll":
+		if request.Point != nil {
+			return "", nil, errors.New("desktop: scroll requires an exact semantic element token")
+		}
+		switch request.Direction {
+		case "up", "down", "left", "right":
+		default:
+			return "", nil, errors.New("desktop: scroll direction must be up, down, left or right")
+		}
+		amount := request.Amount
+		if amount == 0 {
+			amount = 3
+		}
+		if amount < 1 || amount > 50 {
+			return "", nil, errors.New("desktop: scroll amount must be 1..50")
+		}
+		args["direction"], args["amount"], args["by"], args["delivery_mode"] = request.Direction, amount, "line", "background"
+		return "scroll", args, nil
 	default:
 		return "", nil, errors.New("desktop: unsupported typed action")
 	}
+}
+
+func validModifier(key string) bool {
+	switch key {
+	case "cmd", "shift", "option", "ctrl", "fn":
+		return true
+	default:
+		return false
+	}
+}
+
+func validKey(key string) bool {
+	if len(key) == 1 && ((key[0] >= 'a' && key[0] <= 'z') || (key[0] >= '0' && key[0] <= '9')) {
+		return true
+	}
+	switch key {
+	case "return", "tab", "escape", "up", "down", "left", "right", "space", "delete", "home", "end", "pageup", "pagedown":
+		return true
+	}
+	if strings.HasPrefix(key, "f") {
+		n, err := strconv.Atoi(key[1:])
+		return err == nil && n >= 1 && n <= 12 && key == "f"+strconv.Itoa(n)
+	}
+	return false
 }

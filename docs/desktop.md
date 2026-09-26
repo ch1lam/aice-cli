@@ -68,13 +68,24 @@ cancellation and disconnect invalidate the relevant old references. There is
 no process start-time claim beyond the evidence Cua exposes.
 
 The current typed actions cover background click/double/right-click, semantic
-text insertion and value setting. Each action consumes its observation before
+text insertion and value setting, exact-window keys/hotkeys and semantic scroll.
+Key names and modifier combinations are validated before dispatch; unrelated
+action fields are rejected. Each mutation consumes its observation before
 dispatch and returns its Driver facts plus a fresh observation under the same
 execution reservation. Post-observation failure preserves the action response.
 A lost response returns `outcome=unknown`; it never retries the mutation.
 `outcome=returned` means an RPC response arrived, not that a business effect was
 independently confirmed. Driver `isError`, structured details and bounded text
 remain separate from transport and follow-up-observation failure.
+
+Semantic condition waits hold the same executor and repeatedly observe the
+exact window within a caller-selected deadline of at most ten seconds. They
+report `satisfied`, `unsatisfied` or `unknown`; a missing match in an incomplete
+projection stays unknown. Polls request no images. A requested final screenshot
+is captured once only while time remains, and its semantic condition is checked
+again. An expired deadline can return the last valid semantic observation;
+a failed refresh never returns older execution references. No hard sleep or
+image-stability heuristic stands in for a condition.
 
 Observations project at most 200 semantic elements and 96 KiB of their text,
 with visible truncation/incompleteness. One screenshot goes through the existing
@@ -84,8 +95,8 @@ capture ID; it never adds screen offsets or reapplies Retina scaling. A failed
 image can leave valid semantic references available. A text-only model cannot
 request a screenshot or obtain a usable pixel binding.
 
-App discovery/launch, key/hotkey, scrolling, dragging, finite condition waits,
-foreground assistance, schema capability validation and the public tool adapters
+App discovery/launch, pixel scrolling, dragging, foreground assistance,
+full schema capability validation and the public tool adapters
 remain to be implemented. This partial manager is not yet wired to the Agent
 Loop or declared native-ready.
 
