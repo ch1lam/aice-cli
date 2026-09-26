@@ -43,8 +43,7 @@ func TestSettingsContinuationRequiresExplicitChoiceAndPreservesDraft(t *testing.
 			var next tea.Model
 			var cmd tea.Cmd
 			if mode == "mouse" {
-				l := m.settings.layout
-				mouse := tea.Mouse{X: l.x + 3, Y: l.y + l.height - 3, Button: tea.MouseLeft}
+				mouse := settingsPaintedMouse(t, m, "[Continue]")
 				m = updateModel(t, m, tea.MouseClickMsg(mouse))
 				next, cmd = m.settingsPointer(tea.MouseReleaseMsg(mouse))
 			} else {

@@ -20,12 +20,12 @@ func (p *settingsPanel) tabs() string {
 		parts = append(parts, style.Render(tab.Label))
 	}
 	joined := strings.Join(parts, mutedStyle.Render(" │ "))
-	if ansi.StringWidth(joined) <= p.layout.inner {
-		return joined
+	if ansi.StringWidth(joined) <= p.layout.inner-2 {
+		return "  " + joined
 	}
 	// Keep the selected category visible in narrow terminals.
 	if p.tab < len(parts) {
-		return "‹ " + parts[p.tab] + " ›"
+		return "  ‹ " + parts[p.tab] + " ›"
 	}
 	return ""
 }
@@ -151,6 +151,18 @@ func (m model) settingsPanelView() string {
 	if notice != "" {
 		search = mutedStyle.Render(ansi.Truncate("  "+sanitizeSingleLineText(notice), l.inner, "…"))
 	}
+	footer, footerX := settingsFooterLayout(m.settingsFooter(), l.inner)
+	content := strings.Join([]string{
+		"", ansi.Truncate(p.tabs(), l.inner, "…"), "", ansi.Truncate(search, l.inner, "…"),
+		mutedStyle.Render("  " + strings.Repeat("─", max(0, l.inner-2))), body,
+		strings.Repeat(" ", footerX) + mutedStyle.Render(footer),
+	}, "\n")
+	hover := p.pointer != nil && modalCloseContains(l, *p.pointer)
+	return modalFrame(title, content, l, hover, p.pressed == "close")
+}
+
+func (m model) settingsFooter() string {
+	p := m.settings
 	footer := p.footer()
 	if m.canContinueTask() {
 		footer = "[Continue] F6 · new run · Esc back"
@@ -161,13 +173,13 @@ func (m model) settingsPanelView() string {
 			footer = "Stopping… · Esc back"
 		}
 	}
-	content := strings.Join([]string{
-		"", ansi.Truncate(p.tabs(), l.inner, "…"), ansi.Truncate(search, l.inner, "…"),
-		mutedStyle.Render(strings.Repeat("─", l.inner)), body,
-		mutedStyle.Render(ansi.Truncate(footer, l.inner, "…")), "",
-	}, "\n")
-	hover := p.pointer != nil && modalCloseContains(l, *p.pointer)
-	return modalFrame(title, content, l, hover, p.pressed == "close")
+	return footer
+}
+
+// Use the same truncated text and offset for painting and footer hit testing.
+func settingsFooterLayout(text string, width int) (string, int) {
+	text = ansi.Truncate(text, width, "…")
+	return text, max(0, (width-ansi.StringWidth(text))/2)
 }
 
 func (m model) overlaySettings(content string) (string, *tea.Cursor) {
@@ -184,9 +196,9 @@ func (m model) overlaySettings(content string) (string, *tea.Cursor) {
 		cursor = sessionPickerTextCursor(p.input)
 		if cursor != nil {
 			cursor.X += l.x + 2
-			cursor.Y += l.y + 3
+			cursor.Y += l.y + 4
 			if p.editing != nil {
-				cursor.Y = l.y + 6
+				cursor.Y = l.y + 7
 				if p.collection != nil && p.collection.editing {
 					cursor.Y += 2 * p.collection.cell
 				}
@@ -205,16 +217,20 @@ func (p *settingsPanel) target(mouse tea.Mouse) string {
 	if mouse.X < l.x || mouse.X >= l.x+l.width || mouse.Y < l.y || mouse.Y >= l.y+l.height {
 		return "outside"
 	}
-	if x < 0 || x >= l.inner || y < 0 || y > l.height-5 {
+	if x < 0 || x >= l.inner || y < 0 || y > l.height-4 {
 		return ""
 	}
 	if p.editing != nil {
 		return p.editTarget(x, y)
 	}
 	if y == 0 {
+		if x < 2 {
+			return ""
+		}
+		x -= 2
 		offset := 0
-		if p.tabsWidth() > l.inner {
-			if x < l.inner/2 {
+		if p.tabsWidth() > l.inner-2 {
+			if x < (l.inner-2)/2 {
 				return "previous"
 			}
 			return "next"
@@ -227,11 +243,11 @@ func (p *settingsPanel) target(mouse tea.Mouse) string {
 			offset += w + 3
 		}
 	}
-	if y == 1 {
+	if y == 2 {
 		return "search"
 	}
 	listWidth, _ := p.listSize()
-	row := y - 3
+	row := y - 4
 	fields := p.fields()
 	rows := p.visibleSettingRows(fields)
 	if row >= 0 && row < len(rows) && x < listWidth && rows[row].field >= 0 {
@@ -338,16 +354,18 @@ func (m model) settingsPointer(message tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m model) settingsTarget(mouse tea.Mouse) string {
 	p := m.settings
-	if m.running && !p.usage && mouse.Y == p.layout.y+p.layout.height-3 {
-		x := mouse.X - p.layout.x - 2
+	if m.running && !p.usage && mouse.Y == p.layout.y+p.layout.height-2 {
+		_, footerX := settingsFooterLayout(m.settingsFooter(), p.layout.inner)
+		x := mouse.X - p.layout.x - 2 - footerX
 		if !m.cancelRequested && x >= 0 && x < min(p.layout.inner, len("[Stop current run]")) {
 			return "stop-run"
 		}
 		// The run controls replace, rather than overlay, the editor footer.
 		return ""
 	}
-	if m.canContinueTask() && mouse.Y == p.layout.y+p.layout.height-3 {
-		x := mouse.X - p.layout.x - 2
+	if m.canContinueTask() && mouse.Y == p.layout.y+p.layout.height-2 {
+		_, footerX := settingsFooterLayout(m.settingsFooter(), p.layout.inner)
+		x := mouse.X - p.layout.x - 2 - footerX
 		if x >= 0 && x < min(p.layout.inner, len("[Continue]")) {
 			return "continue-task"
 		}

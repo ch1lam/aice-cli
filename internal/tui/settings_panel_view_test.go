@@ -41,10 +41,22 @@ func TestSettingsPaddingTabsAndSearchGeometry(t *testing.T) {
 					t.Fatalf("missing horizontal padding at row %d: %q", y+1, line)
 				}
 			}
-			for _, y := range []int{1, len(lines) - 2} {
+			for _, y := range []int{1, 3} {
 				if strings.TrimSpace(ansi.Cut(lines[y], 1, l.width-1)) != "" {
 					t.Fatalf("missing vertical padding: %q", lines[y])
 				}
+			}
+			for _, y := range []int{2, 4, 5} {
+				content := ansi.Cut(lines[y], 2, l.width-2)
+				if !strings.HasPrefix(content, "  ") || strings.HasPrefix(content, "   ") {
+					t.Fatalf("tab, search or divider is not aligned: %q", lines[y])
+				}
+			}
+			footer := ansi.Cut(lines[len(lines)-2], 2, l.width-2)
+			left := len(footer) - len(strings.TrimLeft(footer, " "))
+			right := len(footer) - len(strings.TrimRight(footer, " "))
+			if !strings.Contains(footer, "Tab category") || right-left < 0 || right-left > 1 {
+				t.Fatalf("footer is not centered against the bottom border: %q", footer)
 			}
 			if strings.Contains(lines[2], "[") || strings.Contains(lines[2], "]") {
 				t.Fatal("tab still has brackets")

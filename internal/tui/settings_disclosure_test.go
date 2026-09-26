@@ -38,7 +38,7 @@ func TestSettingsDisclosurePagesBeforeActionAndSharesMouseGeometry(t *testing.T)
 					break
 				}
 				for row := 0; row < m.settings.layout.bodyHeight; row++ {
-					if strings.HasPrefix(m.settings.editTarget(1, row+3), "action:") {
+					if strings.HasPrefix(m.settings.editTarget(1, row+4), "action:") {
 						t.Fatal("action clickable before disclosure ends")
 					}
 				}
@@ -51,7 +51,7 @@ func TestSettingsDisclosurePagesBeforeActionAndSharesMouseGeometry(t *testing.T)
 				t.Fatal("disclosure was clipped")
 			}
 			layout := m.settings.actionMenuLayout(menu)
-			target := m.settings.editTarget(1, 3+len(layout.header)+1)
+			target := m.settings.editTarget(1, 4+len(layout.header)+1)
 			if target != "action:Continue:continue" {
 				t.Fatalf("wrong hit target: %s", target)
 			}

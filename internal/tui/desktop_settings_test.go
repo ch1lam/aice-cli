@@ -53,8 +53,7 @@ func TestSettingsStopUsesExistingCancellationWithoutPatch(t *testing.T) {
 				t.Fatal("stop control hidden by details")
 			}
 			if mode == "mouse" {
-				l := m.settings.layout
-				mouse := tea.Mouse{X: l.x + 3, Y: l.y + l.height - 3, Button: tea.MouseLeft}
+				mouse := settingsPaintedMouse(t, m, "[Stop current run]")
 				m = updateModel(t, m, tea.MouseClickMsg(mouse))
 				m = updateModel(t, m, tea.MouseReleaseMsg(mouse))
 			} else {

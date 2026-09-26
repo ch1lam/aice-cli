@@ -91,7 +91,7 @@ func TestSettingsCollectionAtomicAndMouseEnum(t *testing.T) {
 	m := panelModel(t, 120, 40)
 	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	l := m.settings.layout
-	mouse := tea.Mouse{X: l.x + 4, Y: l.y + 6, Button: tea.MouseLeft}
+	mouse := tea.Mouse{X: l.x + 4, Y: l.y + 7, Button: tea.MouseLeft}
 	m = updateModel(t, m, tea.MouseClickMsg(mouse))
 	next, cmd := m.Update(tea.MouseReleaseMsg(mouse))
 	m = next.(model)
@@ -118,7 +118,9 @@ func TestSettingsCollectionAtomicAndMouseEnum(t *testing.T) {
 		t.Fatal("unsaved form discarded without choice")
 	}
 	m = updateModel(t, m, tea.KeyPressMsg{Code: 'k', Text: "k"})
-	next, cmd = m.handleSettings(tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl})
+	mouse = settingsPaintedMouse(t, m, "[Save]")
+	m = updateModel(t, m, tea.MouseClickMsg(mouse))
+	next, cmd = m.Update(tea.MouseReleaseMsg(mouse))
 	m = next.(model)
 	if cmd == nil || !m.settings.saving {
 		t.Fatal("collection did not save")
@@ -153,7 +155,7 @@ func TestSettingsCursorTracksUnicodeEditorAndCell(t *testing.T) {
 	}
 	l := m.settings.layout
 	local := sessionPickerTextCursor(m.settings.input)
-	if cursor.X != l.x+2+local.X || cursor.Y != l.y+6 {
+	if cursor.X != l.x+2+local.X || cursor.Y != l.y+7 {
 		t.Fatalf("cursor=%+v", cursor)
 	}
 }
