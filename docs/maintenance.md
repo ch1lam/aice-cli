@@ -130,6 +130,12 @@ checks, with synthetic admission/UI coverage. The native Windows tests have only
 been compiled; status admission is not verified there, and setup/actions remain
 unintegrated. Do not infer input readiness from the upstream constant UIA and
 PostMessage fields or from a nonzero Windows session ID.
+The [Windows action source review](desktop.md#windows-action-admission-gaps)
+also found that launch can choose an unrelated same-name process, and background
+launch uses best-effort focus restoration. A pure-function diagnostic reproduced
+the candidate ordering, but no native Windows launch has run. Resolve exact
+application/window ownership and continuous focus acceptance before enabling that
+adapter; do not treat `active:false` or foreground-retry advice as proof of safety.
 The Linux [input acceptance gate](desktop.md#linux-input-acceptance-failures)
 currently fails on truncated Unicode insertion and unavailable GTK background
 keyboard delivery. Keep those failures distinct from passing semantic value

@@ -488,6 +488,9 @@ the actual CLI/Bubble Tea test renders these synthetic Windows facts. The native
 named-pipe tests and opt-in existing-service inspection test compile for Windows
 but have not executed here. No Windows native status or desktop acceptance is
 claimed; commands and boundaries are in [collaboration](collaboration.md#computer-use-checks).
+The separate [Windows action source review](#windows-action-admission-gaps)
+records launch identity and focus issues that must be resolved before admitting
+its action runtime.
 
 The native Linux 0.29.1 metadata export contains all 15 tool names currently used
 by AICE, but 11 input schemas differ from the macOS pin. Only `get_config`,
@@ -602,6 +605,58 @@ input gate additionally exercises a screenshot-bound button click and rejection
 of the old capture after a 420×180 to 900×350 resize. Its coordinates come from
 the synthetic widget geometry; this is coordinate/lifecycle evidence, not model
 visual grounding, multi-monitor or Retina acceptance.
+
+### Windows action admission gaps
+
+Review of the pinned 0.29.1 Windows implementation on 2026-09-27 found that the
+macOS/Linux launch adapter cannot be reused by changing only the platform gate.
+This is source evidence, not a native Windows acceptance result. Windows actions
+remain unavailable; the read-only status connection does not admit these tools.
+
+The fixed [`LaunchAppTool`](https://github.com/trycua/cua/blob/7a8f66ad04e62fccb18cca9965f2964fcaee124e/libs/cua-driver/rust/crates/platform-windows/src/tools/impl_.rs#L2034)
+uses discovered `launch_path` commands or packaged-app AUMIDs. Plain desktop
+launch responses have a null `bundle_id`; nested windows omit `pid`. Packaged
+apps can return an ApplicationFrameHost PID instead of the activated app PID.
+When the initial process has no window, a separate fallback can replace the
+returned PID with a descendant **or a name-related process**. Neither copying
+the top-level PID into nested windows nor matching the response's display name
+establishes the requested application's identity.
+
+The [`related_processes`](https://github.com/trycua/cua/blob/7a8f66ad04e62fccb18cca9965f2964fcaee124e/libs/cua-driver/rust/crates/platform-windows/src/win32/apps.rs#L84)
+helper strips version suffixes and includes unrelated processes with the same
+remaining executable name. The launch fallback builds a vector in that order,
+then removes candidates from its end. A local Rust diagnostic compiled the exact
+pure helper functions and candidate-queue construction, replacing only process
+enumeration with this fixture:
+
+| PID | Parent | Executable | Relationship to launch PID 42 |
+| --- | --- | --- | --- |
+| 42 | 1 | `gimp-3.exe` | Launched process |
+| 43 | 42 | `gimp-3.2.exe` | Actual child |
+| 99 | 1 | `gimp-3.3.exe` | Unrelated process |
+
+It produced descendants `[42, 43]`, related candidates `[42, 43, 99]`, and first
+fallback candidate `99`. If that candidate has a window, the source returns it
+before checking child 43. This diagnostic executed no Windows or GUI APIs;
+it demonstrates the selection algorithm, not an observed misdirected native
+action. The reviewed helper file was also byte-compared with the fixed official
+source. Native acceptance must cover an existing unrelated same-name process,
+launcher handoff and packaged host windows, and establish exact ownership before
+issuing a target reference. A launch response alone is insufficient evidence.
+
+The ordinary launch route also schedules best-effort focus restoration **after**
+activation. Its `active:false` field is a constant, not a focus measurement.
+`start_minimized` adds foreground locking and window minimization, with another
+process-family/name heuristic; it is not an accepted replacement for the agreed
+background launch behavior. Keep continuous focus/input sentinel acceptance,
+including after the response, and obtain a product decision before weakening it.
+
+Input refusals need their own review too: `finish_pixel_uia_attempt` reports
+`background_unavailable` with `effect:unverifiable` after a UIA timeout or provider
+failure, while its advice suggests foreground input. That advice cannot authorize
+replay. Preserve unknown/partial effects and require reviewed evidence of a
+pre-input refusal before offering foreground continuation. The existing macOS
+classifier must not be enabled for Windows based on a matching error code.
 
 ### Linux input acceptance failures
 
