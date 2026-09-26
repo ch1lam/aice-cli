@@ -492,7 +492,10 @@ including its ordinary lazy-start behavior if that service later disappears.
 It opens three temporary AppKit target processes and a foreground sentinel,
 performs semantic edits/commits with window screenshots, and checks independent
 fixture state, fresh references, connection reuse and owned-session cleanup.
-It logs only operation counts/timing and content-free diagnostics. Only these
+All nine images must retain verified capture mappings. Since the pinned macOS
+projection omits passive labels, the returned editable value and independently
+read post-response commit state are checked separately. It logs only operation
+counts/timing and content-free diagnostics. Only these
 synthetic windows receive actions; no model is called. Fixture processes and
 temporary files are cleaned up on failure as well as success.
 
@@ -513,9 +516,11 @@ AICE_CUA_NATIVE=1 go test -tags=integration ./internal/desktop -run '^TestNative
 ```
 
 This gate uses the same read-only installed-service/grant preflight before
-opening any fixture, installs nothing and requests no grants. It compiles but
-has not passed native execution. The sentinel detects activation loss and
-misdirected text; it does not generate physical or IME input. Pixel actions,
+opening any fixture, installs nothing and requests no grants. All four cases
+passed on the authorized macOS host on 2026-09-27, including independent full
+selection verification when the Driver returned `effect:unverifiable` for the
+hotkey. The sentinel detects activation loss and misdirected text; it does not
+generate physical or IME input. Pixel actions,
 other toolkits, overlay and real user coexistence remain separate acceptance.
 
 The application-level macOS gate uses the same synthetic AppKit fixture with a
@@ -535,9 +540,12 @@ AICE_CUA_NATIVE=1 go test -tags=integration ./internal/app -run '^TestNativeMacD
 ```
 
 The shared model/Session checks are also used by the native Linux print gate.
-The macOS gate and its fixture compile here, but its native task has **not**
-passed: the installed 0.29.1 App now verifies and admits a read-only MCP connection,
-but the native preflight still reports missing OS grants. A separate compilation-only
+Both the Manager and CLI gates passed on the authorized macOS 0.29.1 host on
+2026-09-27. The CLI task completed its three commits in 19.53 s with nine PNGs
+replayed and no sentinel focus loss. Earlier attempts encountered foreground
+loss; subsequent passes do not identify its cause or prove physical-user
+coexistence. Run these native GUI gates sequentially on an available desktop;
+parallel fixtures would invalidate their focus assertions. A separate compilation-only
 check opens no windows, connects to no service and requests no grants:
 
 ```sh

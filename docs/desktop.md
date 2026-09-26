@@ -408,7 +408,7 @@ as the tools and prompt it publishes; offline publication tests cover this.
 
 | Scope | Evidence | Remaining acceptance |
 | --- | --- | --- |
-| macOS 0.29.1 universal artifact | Verified App installed after explicit operator approval; installed signature, signing identity, Gatekeeper and 15-tool schema checks pass; production read-only MCP admission verifies the running standard-mode service; Settings setup exercised through CLI/Bubble Tea with fake native operations | System authorization and live capture; synthetic multi-app task, background focus/input sentinel, native overlay, cancellation and cold/warm measurements |
+| macOS 0.29.1 universal artifact | Verified App installed and both OS grants enabled by the operator; signature, Gatekeeper and 15-tool admission checks pass; native three-AppKit Manager and scripted-model CLI/Guard/Session gates pass with nine captures and foreground sentinel intact; ASCII/Unicode insertion, single key and select-all pass independent widget checks | Native Settings setup workflow, launch, overlay, cancellation, pixel actions, heterogeneous applications and physical input/IME coexistence; actual-model and broader performance acceptance |
 | Windows amd64/arm64 | Downloaded archives and selected executable hashes verified; private installer with Authenticode checks implemented; synthetic extraction/reuse/cancellation tests and cross-compilation pass; static imports inspected; read-only service inspection and Windows status presentation implemented with synthetic tests | Native installation/signature trust, exclusive publication, named-pipe identity/UIAccess/session checks and status-schema confirmation; setup/action runtime integration and native UI/input/lifecycle tests |
 | Linux arm64 | Private installation/reuse and read-only headless inspection passed in an isolated Debian 13 container; production Manager and selected-window setup passed owned stdio and verified shared-service X11/GTK checks; scripted-model native print/Guard/tool/Session flow, ASCII insertion and pixel click/resize rejection passed; launch established its exact window and preserved the app after Manager close; actual Settings CLI flow passed native private installation, selected-window capture, cancellation/retry and saved enable | Launch steals focus, Unicode insertion truncates and GTK key/hotkey, pixel scroll and drag are unavailable in the fixture; actual-model tasks, physical terminal/IME and other desktop environments; other pixel actions, foreground assistance, overlay, other toolkits, real compositor/Wayland and physical-input/IME checks |
 | Linux amd64 | Downloaded archive and selected executable hashes verified; synthetic installer tests and cross-compilation pass; ELF library dependencies inspected | Native installation/dynamic loading and exclusive publication; runtime/service admission, AT-SPI/display detection, compositor-specific input/capture/overlay tests |
@@ -421,43 +421,54 @@ reports 0.29.1 and its 15-tool metadata inventory matches AICE's pin. This was a
 operator-authorized host upgrade, not proof of the Settings installation workflow.
 The production installer still preserves incompatible pre-existing Apps.
 
-The installed App now runs through LaunchServices in standard mode, with no
-external policy or capability manifest. The native Manager gate passed production
-installation verification and read-only MCP service admission, reporting
-`ConnectionVerified:true`, but stopped before creating fixtures because both
-Accessibility and Screen Recording were Missing. The official public grant flow
-was opened for operator consent and timed out with both grants still missing;
-no system grant was bypassed. Successful connection/schema checks do not establish
-input or capture readiness.
+The installed App runs through LaunchServices in standard mode, with no
+external policy or capability manifest. The operator enabled Accessibility and
+Screen Recording; production inspection reports both granted and verifies the
+connection. Actual window captures subsequently passed. This establishes the
+current service's access, not the unexercised native Settings authorization flow.
 
-The opt-in [native manager test](../internal/desktop/manager_native_darwin_test.go)
-and its synthetic AppKit fixture are now available; invocation and boundaries
-are in [collaboration](collaboration.md#computer-use-checks). The fixture compiles
-on this host. Its lifecycle probe created visible windows but could not activate
-the sentinel: macOS `loginwindow` was foreground. This is a failed environment
-precondition, not a Cua background-input result. Owned fixture processes were
-confirmed gone after cleanup. The full native manager task has not passed;
-it still needs OS grants and an available desktop.
+The opt-in [native Manager test](../internal/desktop/manager_native_darwin_test.go)
+passed on this host on 2026-09-27. Three separate AppKit targets received Unicode
+value changes and one commit each, independently confirmed after the responses.
+All nine observations retained verified image/capture mappings. The foreground
+sentinel retained focus and contents, consumed references were rejected, one
+connection/session served the complete task, and closing it preserved the shared
+service. Cold window discovery took 143 ms; each warm set/commit sequence plus
+observations and fixture checks took 5.67–5.75 s. Individual Driver calls took
+2.47–2.61 s, with follow-up observations taking 188–210 ms. These are single-run
+fixture measurements, not a general desktop latency guarantee.
 
-The application-level `TestNativeMacDesktopPrint` gate is also prepared. It uses
-the production desktop constructor with a scripted model through the actual CLI,
-Guard and Session, operating only on the synthetic AppKit targets. It shares
-the Linux print gate's model image checks and exact durable-history replay
-assertions. The macOS test and fixture compile, but native CLI execution has not
-passed; compilation is not desktop acceptance. The setup precheck reads the
-installed App and existing grants before opening fixtures. Its command and
-scope are in [collaboration](collaboration.md#computer-use-checks).
+The pinned macOS structured projection contains actionable nodes and reports
+`elements_complete:false`; passive result labels can be omitted. The Manager
+gate therefore verifies the editable value in the observation and the commit in
+independent AppKit state. Missing passive text remains unknown; a successful RPC
+or retained input value alone does not establish that the button worked.
 
-The separate `TestNativeMacInput` gate is prepared for semantic ASCII/Unicode
+The application-level `TestNativeMacDesktopPrint` also passed. It uses the
+production desktop constructor with a scripted model through the actual CLI,
+Guard and Session. Three AppKit commits completed in 19.53 s; nine PNGs reached
+subsequent model requests and exact durable-history replay passed. Native input
+bodies stayed out of CLI progress, the armed sentinel recorded no activation
+loss, and command cleanup preserved the shared service. An earlier Manager run
+recorded focus loss and an earlier CLI attempt lost the foreground precondition
+before actions; their causes were not attributed. The later complete passes do
+not establish uninterrupted coexistence under arbitrary desktop activity.
+
+The separate `TestNativeMacInput` passed all four cases: semantic ASCII/Unicode
 insertion, single-key input and select-all hotkey delivery. Independent AppKit
-field-editor text/selection and post-response fixture frames establish the
-requested effects; a non-error Driver response alone cannot pass. Its sentinel
-checks focus/content preservation through input and connection cleanup. The
-test and expanded fixture compile. Native input acceptance has not passed;
-the compatible installed service still needs OS grants before this gate can
-create fixtures or dispatch input.
-Neither this gate nor the existing value-setting task proves physical keyboard,
-IME, pixel, overlay or heterogeneous-application behavior.
+field-editor text/selection and post-response fixture frames established the
+requested effects. The Driver reports select-all as `unverifiable`; the gate
+passed because the field editor independently confirmed the complete selection.
+Each sentinel retained focus and contents through input and connection cleanup.
+The full four-case gate took 24.63 s, with input action/observation calls taking
+1.23–1.35 s. Commands and fixture boundaries are in
+[collaboration](collaboration.md#computer-use-checks).
+
+These gates require the installed authorized service and an available desktop;
+their preparation installs nothing and requests no grants. They use no real
+model and do not prove physical keyboard, IME, pixel, overlay or heterogeneous
+application behavior. Native Settings installation and authorization acceptance
+remain separate from the operator-performed upgrade and grants above.
 
 The fixed source's platform matrix documents limitations for raw Wayland
 background input and toolkit-specific paths. Structured refusal is not proof

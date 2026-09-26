@@ -30,6 +30,7 @@ type nativePrintState struct {
 	Ticks        int    `json:"ticks"`
 	Armed        bool   `json:"armed"`
 	FrontIsLogin bool   `json:"front_is_login"`
+	FrontPID     int    `json:"front_pid"`
 	Active       bool   `json:"active"`
 	FocusLosses  int    `json:"focus_losses"`
 	KeysSent     int    `json:"keys_sent"`
@@ -51,6 +52,7 @@ func awaitNativePrintState(t *testing.T, ctx context.Context, fixture nativePrin
 	defer cancel()
 	tick := time.NewTicker(100 * time.Millisecond)
 	defer tick.Stop()
+	var last nativePrintState
 	for {
 		data, err := os.ReadFile(filepath.Join(fixture.directory, "state.json"))
 		if err == nil {
@@ -58,6 +60,7 @@ func awaitNativePrintState(t *testing.T, ctx context.Context, fixture nativePrin
 			if err := json.Unmarshal(data, &state); err != nil {
 				t.Fatal(err)
 			}
+			last = state
 			if state.FrontIsLogin {
 				t.Fatal("native fixture requires an available desktop; loginwindow is foreground (no unlock attempted)")
 			}
@@ -69,7 +72,7 @@ func awaitNativePrintState(t *testing.T, ctx context.Context, fixture nativePrin
 		}
 		select {
 		case <-ctx.Done():
-			t.Fatal("synthetic fixture postcondition not reached", fixture.name)
+			t.Fatalf("synthetic fixture postcondition not reached: name=%s pid=%d active=%v armed=%v focus_losses=%d front_pid=%d ticks=%d", fixture.name, last.PID, last.Active, last.Armed, last.FocusLosses, last.FrontPID, last.Ticks)
 		case <-tick.C:
 		}
 	}

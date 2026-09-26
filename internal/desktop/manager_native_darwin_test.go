@@ -87,7 +87,7 @@ func TestNativeCuaMultiApp(t *testing.T) {
 			t.Fatalf("synthetic target %d not discovered", i)
 		}
 		observation, err := r.Observe(ctx, ObserveRequest{TargetRef: window.Ref, Screenshot: true})
-		if err != nil || observation.Image == nil || observation.ImageWidth <= 0 || observation.ImageHeight <= 0 {
+		if err != nil || observation.Image == nil || observation.ImageWidth <= 0 || observation.ImageHeight <= 0 || r.observations[observation.Ref].capture == "" {
 			t.Fatalf("target %d capture unavailable: %v", i, err)
 		}
 		if i == 0 {
@@ -102,8 +102,8 @@ func TestNativeCuaMultiApp(t *testing.T) {
 			ElementToken: nativeElement(t, observation, "Task value"), Text: value, Screenshot: true})
 		nativeReturned(t, set, err)
 		t.Logf("target=%d action=set_value timing=%+v", i, set.Timing)
-		if set.Observation.Image == nil {
-			t.Fatal("action did not return its requested image")
+		if set.Observation.Image == nil || r.observations[set.Observation.Ref].capture == "" {
+			t.Fatal("action did not return its verified capture mapping")
 		}
 		if _, err := r.Act(ctx, ActRequest{Kind: "set_value", ObservationRef: observation.Ref, ElementToken: "stale", Text: "must not execute"}); err == nil {
 			t.Fatal("consumed reference accepted")
@@ -112,18 +112,24 @@ func TestNativeCuaMultiApp(t *testing.T) {
 			ElementToken: nativeElement(t, *set.Observation, "Commit"), Screenshot: true})
 		nativeReturned(t, click, err)
 		t.Logf("target=%d action=click timing=%+v", i, click.Timing)
-		if semanticCondition(*click.Observation, "Result: "+value) != "satisfied" {
-			t.Fatal("action observation did not confirm commit")
+		if click.Observation.Image == nil || r.observations[click.Observation.Ref].capture == "" {
+			t.Fatal("click did not return its verified capture mapping")
 		}
-		confirmed := awaitNativeState(t, ctx, target, func(s nativeFixtureState) bool {
-			return s.Value == value && s.Result == "Result: "+value && s.Commits == 1
-		})
+		// macOS 0.29.1 projects actionable nodes, omitting this passive result
+		// label. Verify the editable value in the fresh observation and confirm
+		// the commit separately through independent, post-response widget state.
+		afterReply := readNativeState(t, target)
+		confirmed := awaitNativeState(t, ctx, target, func(s nativeFixtureState) bool { return s.Ticks > afterReply.Ticks+3 })
+		semantic := semanticCondition(*click.Observation, value)
+		if semantic != "satisfied" || confirmed.Value != value || confirmed.Result != "Result: "+value || confirmed.Commits != 1 {
+			t.Fatalf("commit verification failed: semantic=%s value_matches=%v result_matches=%v commits=%d elements=%d", semantic, confirmed.Value == value, confirmed.Result == "Result: "+value, confirmed.Commits, len(click.Observation.Elements))
+		}
 		value = strings.TrimPrefix(confirmed.Result, "Result: ")
 		t.Logf("target=%d warm_set_click_and_observe=%s", i, time.Since(started))
 		previous := readNativeState(t, sentinel)
 		state := awaitNativeState(t, ctx, sentinel, func(s nativeFixtureState) bool { return s.Ticks > previous.Ticks })
 		if !state.Active || state.FocusLosses != 0 {
-			t.Fatal("background actions disturbed sentinel focus")
+			t.Fatalf("background actions disturbed sentinel focus: active=%v losses=%d front_pid=%d target_pid=%d sentinel_pid=%d", state.Active, state.FocusLosses, state.FrontPID, target.pid, sentinel.pid)
 		}
 	}
 	if dials != 1 || calls["start_session"] != 1 || calls["list_windows"] != 1 || calls["set_value"] != 3 || calls["click"] != 3 || calls["get_window_state"] != 9 {
