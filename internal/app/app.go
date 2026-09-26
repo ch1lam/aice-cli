@@ -79,6 +79,7 @@ type dependencies struct {
 	// production adapters. Tests inject fakes here so no network is touched.
 	webBackends     *webBackends
 	saveWebSettings func(context.Context, config.Paths, config.WebPatch) (config.WebSettings, error)
+	newDesktop      func(config.Config) (*desktopState, error)
 }
 
 func (a *application) webBackends() webBackends {
@@ -257,6 +258,7 @@ func (a *application) Print(
 	}
 	defer func() { returnErr = errors.Join(returnErr, closeBrowser(ctx, environment.browser)) }()
 	defer environment.web.closeBackend()
+	defer func() { returnErr = errors.Join(returnErr, environment.desktop.Close()) }()
 	for _, diagnostic := range environment.configuration.Diagnostics {
 		fmt.Fprintln(diagnostics, "aice: "+diagnostic)
 	}
@@ -331,6 +333,11 @@ func (a *application) Print(
 	if err != nil {
 		return err
 	}
+	ctx, closeDesktopRun, err := environment.desktop.bindContext(ctx, environment.configuration, environment.model)
+	if err != nil {
+		return err
+	}
+	defer func() { returnErr = errors.Join(returnErr, closeDesktopRun()) }()
 
 	_, loopErr := loop.Run(ctx, agent.RunInput{
 		Model:           environment.model,
@@ -391,6 +398,7 @@ func (a *application) Interactive(
 		return err
 	}
 	browserClosed := false
+	defer func() { returnErr = errors.Join(returnErr, environment.desktop.Close()) }()
 	defer func() {
 		if !browserClosed {
 			returnErr = errors.Join(returnErr, closeBrowser(ctx, environment.browser))
@@ -424,6 +432,7 @@ func (a *application) Interactive(
 		tools:         environment.tools,
 		baseTools:     environment.baseTools,
 		web:           environment.web,
+		desktop:       environment.desktop,
 		systemPrompt:  environment.systemPrompt,
 		skills:        environment.skills,
 		skillDiags:    environment.skillDiags,
@@ -557,10 +566,11 @@ type runEnvironment struct {
 	model         llm.Model
 	options       llm.StreamOptions
 	tools         []agent.Tool
-	// baseTools are the host tools without the web tools; web rebinding
-	// recomposes tools from them.
+	// baseTools contain host tools only; optional capabilities are composed
+	// together when startup or Settings publishes a tool/prompt snapshot.
 	baseTools    []agent.Tool
 	web          webState
+	desktop      *desktopState
 	systemPrompt string
 	skills       skill.Catalog
 	skillDiags   []skill.Diagnostic
@@ -651,7 +661,22 @@ func (a *application) prepareRunEnvironment(
 	// Web tools are registered only when a source is usable; the model never
 	// sees a schema without an implementation behind it.
 	webState := bindWeb(a.webBackends(), configured.configuration.Web)
-	tools = append(slices.Clip(baseTools), webState.tools()...)
+	desktopState, err := a.newDesktopState(configured.configuration)
+	if err != nil {
+		webState.closeBackend()
+		return nil, err
+	}
+	prepared := false
+	defer func() {
+		if !prepared {
+			_ = desktopState.Close()
+			webState.closeBackend()
+		}
+	}()
+	tools, err = composeTools(baseTools, webState, desktopState, configured.configuration)
+	if err != nil {
+		return nil, err
+	}
 	systemPrompt, err := assembleSystemPrompt(
 		workspace,
 		configured.configuration,
@@ -671,6 +696,8 @@ func (a *application) prepareRunEnvironment(
 		return nil, err
 	}
 	g.SetSearchTarget(webState.searchTarget)
+	g.SetDesktopEnabled(configured.configuration.DesktopEnabled)
+	adapter.desktop = desktopState
 	var browserManager *browser.Manager
 	if runtime.GOOS != "windows" {
 		if home, pathErr := a.userHome(); pathErr == nil && home != "" {
@@ -690,6 +717,7 @@ func (a *application) prepareRunEnvironment(
 			}
 		}
 	}
+	prepared = true
 	return &runEnvironment{
 		browser:       browserManager,
 		modelErr:      configured.modelErr,
@@ -700,6 +728,7 @@ func (a *application) prepareRunEnvironment(
 		tools:         tools,
 		baseTools:     baseTools,
 		web:           webState,
+		desktop:       desktopState,
 		systemPrompt:  systemPrompt,
 		skills:        discovery.catalog,
 		skillDiags:    discovery.diags,
@@ -831,6 +860,7 @@ type interactiveSession struct {
 	tools          []agent.Tool
 	baseTools      []agent.Tool
 	web            webState
+	desktop        *desktopState
 	systemPrompt   string
 	skills         skill.Catalog
 	skillDiags     []skill.Diagnostic

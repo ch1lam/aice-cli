@@ -133,7 +133,7 @@ settings service, global registry, alternate transcript or file watcher.
 | `internal/api/{anthropic,openairesponses,openaicompletions}` | Protocol translation around official SDKs |
 | `internal/api/streamcore` | Protocol-neutral streaming mechanics shared by adapters |
 | `internal/provider/{deepseek,opencode,kimi,moonshot,zhipu,openai,anthropic,claudesubscription,codex,aihubmix,custom}` | Provider catalogs, credentials, defaults, compatibility; `zhipu` owns separate API Platform and Coding Plan presets; `codex` owns ChatGPT OAuth; `claudesubscription` owns Claude Pro/Max OAuth; `custom` accepts arbitrary model IDs |
-| `internal/tool` | `read`, `write`, `edit`, `bash`, `grep`, `find`, `ls`, `skill`, `request_user_input` (interactive-only), `web_search`, `web_fetch` |
+| `internal/tool` | `read`, `write`, `edit`, `bash`, `grep`, `find`, `ls`, `skill`, `request_user_input` (interactive-only), `web_search`, `web_fetch`, typed `desktop_apps` / `desktop_observe` / `desktop_act` adapters |
 | `internal/evidence` | Leaf source/evidence contract retained as tool-result metadata; deterministic source IDs, validation, cloning |
 | `internal/web` | Provider-neutral search/fetch requests and results, classified errors, domain policy, pure source resolver, deterministic model rendering |
 | `internal/web/exa` | Exa Search REST adapter: wire types, bounded HTTP, error classification, normalization into evidence |
@@ -144,7 +144,7 @@ settings service, global registry, alternate transcript or file watcher.
 | `internal/skill` | Agent Skill discovery, SKILL.md parse, source layering, embedded builtins |
 | `internal/config` | Instance-local Viper precedence, effective snapshots, and locked atomic preference/credential persistence |
 | `internal/deps` | Verified ripgrep, Windows Git Bash and pinned agent-browser provisioning, including upstream browser skill resources |
-| `internal/desktop` | Pinned Cua stdio client; run sessions, serialized action/observation sequences, generation and exact-window references, image coordinate mapping; user-facing integration is in progress ([status](desktop.md)) |
+| `internal/desktop` | Pinned Cua stdio client and verified service admission; run sessions, serialized action/observation sequences, generation and exact-window references, image coordinate mapping; app binds each main run, native setup remains in progress ([status](desktop.md)) |
 | `internal/browser` | Process-owned browser names, environment, connection and bounded cleanup; app owns wiring, Loop remains unaware |
 | `internal/update` | Checksum-validated GitHub release updates |
 | `internal/hostpath` | Host path membership, tilde expansion, slash-normalized display |

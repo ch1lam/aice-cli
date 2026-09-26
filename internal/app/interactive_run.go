@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 
@@ -132,7 +133,7 @@ func (r *interactiveRun) Deliver(ctx context.Context, delivery interaction.Deliv
 	return r.mailbox.Deliver(delivery)
 }
 
-func (r *interactiveRun) Run(ctx context.Context) error {
+func (r *interactiveRun) Run(ctx context.Context) (returnErr error) {
 	if ctx == nil {
 		return fmt.Errorf("app: context is required")
 	}
@@ -164,6 +165,11 @@ func (r *interactiveRun) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	ctx, closeDesktopRun, err := r.session.desktop.bindContext(ctx, snapshot.configuration, snapshot.model)
+	if err != nil {
+		return err
+	}
+	defer func() { returnErr = errors.Join(returnErr, closeDesktopRun()) }()
 
 	configured := configuredModel{
 		configuration: snapshot.configuration,

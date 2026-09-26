@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/ch1lam/aice-cli/internal/agent"
 	"github.com/ch1lam/aice-cli/internal/config"
 	"github.com/ch1lam/aice-cli/internal/interaction"
 )
@@ -105,7 +106,11 @@ func (s *interactiveSession) applySettingsReserved(ctx context.Context, request 
 	}
 	model, options, modelErr := resolveModelSettings(s.providers, candidate)
 	changesModel := false
+	changesDesktop := false
 	for _, change := range request.Changes {
+		if change.ID == "desktop_enabled" || change.ID == "desktop_control_mode" {
+			changesDesktop = true
+		}
 		if change.ID == "provider" || change.ID == "model" || change.ID == "thinking" || change.ID == "context_windows" || strings.HasSuffix(change.ID, "_base_url") {
 			changesModel = true
 		}
@@ -114,11 +119,22 @@ func (s *interactiveSession) applySettingsReserved(ctx context.Context, request 
 		return result, modelErr
 	}
 	loop := current.loop
+	tools, systemPrompt := current.tools, current.systemPrompt
+	if changesDesktop {
+		tools, err = composeTools(s.baseTools, s.web, s.desktop, candidate)
+		if err != nil {
+			return result, err
+		}
+		systemPrompt, err = assembleSystemPrompt(s.workspace, candidate, s.trustDecision, tools, s.skills)
+		if err != nil {
+			return result, err
+		}
+	}
 	if shared && !providerConfigured(s.providers, candidate) {
 		loop = nil
 	}
 	if shared && modelErr == nil && s.application != nil && providerConfigured(s.providers, candidate) {
-		loop, err = s.rebuildAgentLoop(candidate)
+		loop, err = s.application.newAgentLoopWithOptions(candidate, tools, agent.WithGuard(s.guardAdapter), agent.WithGuardAskHandler(s.handleGuardAsk))
 		if err != nil {
 			return result, err
 		}
@@ -133,6 +149,12 @@ func (s *interactiveSession) applySettingsReserved(ctx context.Context, request 
 	}
 	s.stateMu.Lock()
 	s.configuration = candidate
+	if changesDesktop {
+		s.tools, s.systemPrompt = tools, systemPrompt
+		if s.guard != nil {
+			s.guard.SetDesktopEnabled(candidate.DesktopEnabled)
+		}
+	}
 	if shared {
 		s.loop = loop
 		if modelErr == nil {

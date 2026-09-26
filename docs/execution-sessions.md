@@ -99,6 +99,15 @@ when the URL passes the shared URL-shape check (malformed URLs, userinfo,
 zone-scoped IPv6 and non-default ports deny). Address validation, redirects
 and body limits run inside the tool, outside the Guard lock. See [Web search
 and fetch](web.md#permissions).
+`desktop_apps`, `desktop_observe` and `desktop_act` are known tools exposed only
+when the User-only Computer Use preference is enabled. The application Guard
+requires a live run binding from its desktop owner, and the intrinsic Guard
+requires the global toggle. Either failure is a hard deny, unaffected by
+`--yolo` or generic tool-session grants. There is no per-application approval.
+Native service admission separately checks standard mode, identity and OS
+grants; tool calls cannot install or authorize the helper. Workspace file
+policies do not constrain GUI actions in other applications. See the current
+[Computer Use integration status](desktop.md).
 `request_user_input` is a known interactive-only tool: the gate allows it
 without an extra confirmation step, and answers never change the
 authorization scope (`--yolo` never answers for the user). The tool is

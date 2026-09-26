@@ -400,7 +400,11 @@ func (s *interactiveSession) prepareWebSettings(configuration config.Config) (pr
 		state.closeBackend()
 		return preparedWeb{}, fmt.Errorf("app: prepare web fetch: %w", state.fetchErr)
 	}
-	tools := append(slices.Clip(s.baseTools), state.tools()...)
+	tools, err := composeTools(s.baseTools, state, s.desktop, configuration)
+	if err != nil {
+		state.closeBackend()
+		return preparedWeb{}, err
+	}
 	systemPrompt, err := assembleSystemPrompt(s.workspace, configuration, s.trustDecision, tools, s.skills)
 	if err != nil {
 		state.closeBackend()
@@ -428,6 +432,7 @@ func (s *interactiveSession) publishWebSettings(prepared preparedWeb) {
 	s.stateMu.Unlock()
 	if s.guard != nil {
 		s.guard.SetSearchTarget(prepared.state.searchTarget)
+		s.guard.SetDesktopEnabled(prepared.configuration.DesktopEnabled)
 	}
 	old.closeBackend()
 }

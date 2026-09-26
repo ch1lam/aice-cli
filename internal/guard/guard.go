@@ -56,7 +56,8 @@ type Guard struct {
 	readOnlyRoots       []string
 	// network target: the bound search service fingerprint set by the
 	// application per run. An empty value means web_search is unbound.
-	searchTarget string
+	searchTarget   string
+	desktopEnabled bool
 }
 
 // New constructs a Guard for the given workspace and configuration.
@@ -223,6 +224,21 @@ func (g *Guard) Workspace() string { return g.workspace }
 // (fail-closed); the interactive TUI confirms every approval in an Ask. Pending
 // asks never short-circuit checks that could deny the call.
 func (g *Guard) Check(ctx context.Context, call llm.ToolCall) (Result, error) {
+	if g != nil && isDesktopTool(call.Name) {
+		if ctx == nil {
+			return Result{}, fmt.Errorf("guard: context is required")
+		}
+		if err := ctx.Err(); err != nil {
+			return Result{}, err
+		}
+		g.mu.RLock()
+		enabled := g.desktopEnabled
+		g.mu.RUnlock()
+		if !enabled {
+			return Result{Decision: DecisionDeny, Reason: "Computer Use is disabled", RuleID: "desktop.disabled", Action: Action{ToolName: call.Name}}, nil
+		}
+		return Result{Decision: DecisionAllow, Action: Action{Kind: "desktop", ToolName: call.Name}}, nil
+	}
 	if g == nil || !g.enabled {
 		return Result{Decision: DecisionAllow}, nil
 	}

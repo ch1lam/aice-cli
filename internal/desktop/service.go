@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -26,10 +27,37 @@ func (e *ServiceError) Error() string { return "desktop: " + e.Detail }
 
 func serviceError(code, detail string) error { return &ServiceError{Code: code, Detail: detail} }
 
+// RuntimeResolver verifies an installed native helper and returns its exact
+// binary and service endpoint. Resolution runs only on a cold connection; it
+// must not install software or request OS permissions.
+type RuntimeResolver func(context.Context) (binary, endpoint string, err error)
+
+// NewManager creates a lazy manager without inspecting or starting the desktop.
+// The application owns installation verification and configuration publication.
+func NewManager(resolve RuntimeResolver) (*Manager, error) {
+	if resolve == nil {
+		return nil, errors.New("desktop: verified runtime resolver required")
+	}
+	return newManager(func(ctx context.Context) (driverClient, error) {
+		if runtime.GOOS != "darwin" {
+			return nil, serviceError("platform_unavailable", "native Computer Use connection setup is not yet integrated on this platform")
+		}
+		binary, endpoint, err := resolve(ctx)
+		if err != nil {
+			return nil, err
+		}
+		connector, err := newMacServiceConnector(binary, endpoint)
+		if err != nil {
+			return nil, err
+		}
+		return connector.dial(ctx)
+	}), nil
+}
+
 // serviceConnector performs content-free, read-only admission on each cold
 // connection. The application supplies a verified installed binary. Neither
 // this connector nor its proxy may install, start, reconfigure or stop a daemon.
-// It remains private until setup and application composition are connected.
+// NewManager is its application-facing construction path.
 type serviceConnector struct {
 	binary, endpoint string
 	status           func(context.Context) (string, error)

@@ -1,10 +1,12 @@
 # Computer Use integration
 
 Computer Use is being integrated with Cua Driver. The current implementation
-contains the pinned distribution metadata, a private persistent stdio client,
-User-only configuration fields, and a privately constructed desktop manager.
-The Settings fields are visible but disabled
-until setup and execution are connected; no model desktop tool is exposed yet.
+contains pinned distribution metadata, a persistent stdio client, User-only
+configuration fields, and application-owned desktop run bindings. When enabled
+in user configuration, Print and interactive main runs expose `desktop_apps`,
+`desktop_observe` and `desktop_act` through the existing Loop and Guard.
+The Settings fields remain disabled pending the explicit setup flow; enabling
+the preference alone does not install, start or authorize a native service.
 The implementation plan's complete native acceptance remains open.
 
 ## Ownership and connection contract
@@ -12,7 +14,7 @@ The implementation plan's complete native acceptance remains open.
 `internal/deps` owns immutable artifact selection; see
 [provenance and licensing](../internal/deps/cua/VENDOR.md).
 `internal/desktop` owns the Cua connection and its exact child handle. The
-application will own configuration publication and run bindings. The existing
+application owns configuration publication and run bindings. The existing
 Agent Loop, Guard, media pipeline and Session remain the execution boundaries.
 
 The client uses official Go MCP SDK v1.6.1, sends legacy `initialize` with
@@ -43,7 +45,8 @@ with `prompt:false` for App executable, bundle identity, PID and OS grants.
 A second status read rejects a changed service. External policies/manifests,
 non-standard mode, identity mismatch and missing grants remain distinct errors.
 No probe enumerates windows or captures; granted TCC booleans are not evidence
-of successful capture. This preflight is not yet connected to setup or the app.
+of successful capture. Cold application connections use this preflight after
+verifying the installed App; setup/service launch remain outstanding.
 The native no-autolaunch check passed with the pinned App binary, a temporary
 HOME and an absent socket. No user service was connected or started. Default
 tests cover changing service identity, missing grants, mode/policy rejection,
@@ -56,9 +59,27 @@ I/O. The manager serializes complete action/observation sequences. It lazily
 starts a uniquely named Driver session, ends only that session on run close,
 and keeps its connection available until disconnect or manager close. A cached
 status read never enumerates, captures, launches or requests authorization.
-The manager constructor remains private pending setup/application wiring and
-native service acceptance; a pinned proxy alone cannot prove a shared daemon's
-version or permission mode.
+Public manager construction requires an application runtime resolver. It only
+reuses a verified installation and an existing compatible service; a pinned
+proxy alone cannot prove a shared daemon's version or permission mode.
+
+The application constructs one manager without native I/O and binds it only
+when a main run actually starts. The context carries both the owner identity
+and frozen run backend; closing a run cancels that context before bounded
+session cleanup. Print and interactive shutdown also close the manager.
+Settings reads and input preparation create no native run. Tool arguments cannot
+change control mode, install helpers or request authorization. Side questions
+retain their existing tool-free model boundary.
+
+Startup, Web replacement and desktop preference changes share one tool
+composition function. Settings prepares the candidate Loop/tools/prompt before
+saving and publishes with the Guard toggle under its existing shared-resource
+reservation. A failed save leaves the previous snapshot active. The application
+Guard requires a live binding from the same owner; the intrinsic Guard requires
+the global toggle. Missing/closed bindings and disabled capability are hard
+denials, including under `--yolo`. This does not enforce workspace file policies
+inside native applications; [Guard behavior](execution-sessions.md#tool-execution-boundary)
+describes that boundary.
 
 Window discovery issues opaque references for returned native pid/window pairs.
 Application discovery also returns bounded installed/running app identities,
@@ -104,10 +125,15 @@ capture ID; it never adds screen offsets or reapplies Retina scaling. A failed
 image can leave valid semantic references available. A text-only model cannot
 request a screenshot or obtain a usable pixel binding.
 
-Pixel scrolling, dragging, foreground assistance,
-full schema capability validation and the public tool adapters
-remain to be implemented. This partial manager is not yet wired to the Agent
-Loop or declared native-ready.
+Tool adapters serialize bounded domain facts as JSON text and append the actual
+image as an existing image content part. They preserve partial/unknown dispatch
+facts and any follow-up observation even when a later error occurs, marking the
+result as an error without replacing it with a generic Go error. Images and
+originals continue through the existing provider projection and Session JSONL.
+
+Pixel scrolling, dragging, foreground assistance and full schema capability
+validation remain to be implemented. Loop wiring is covered by scripted-model
+tests and is not a claim of native readiness.
 
 ## Baseline and outstanding integration
 
@@ -126,11 +152,11 @@ known readiness, revision and warnings. The panel retains those facts alongside
 a later error instead of replacing success output. Ordinary patch preparation
 and publication also have an internal entry point under the existing reservation,
 so a future setup action need not acquire a second reservation.
-Remaining changes belong in app tool/prompt/Guard composition,
-TUI deep-link/setup/Stop handling, app run binding and the remaining typed tools.
+Remaining changes belong in native setup/service launch,
+TUI deep-link/setup/Stop handling and the remaining typed tools.
 Setup must use one configuration coordination reservation; Stop must use the
 existing cancellation path. A Web rebuild must retain the same Desktop binding
-as the tools and prompt it publishes. These execution changes have not yet landed.
+as the tools and prompt it publishes; offline publication tests cover this.
 
 ## Platform evidence
 
@@ -156,6 +182,12 @@ App installed, user application controlled, or paid model called.
 Default tests use raw fake MCP peers and synthetic bytes. Native tests must
 be explicitly opted into and use synthetic applications and data. Cross-builds
 and upstream test claims do not replace local native evidence.
+
+Application tests also execute the real Print command and interactive Loop with
+a scripted model and fake desktop backend. They cover disabled/enabled tool
+publication, binding cleanup, stale-context denial, Web recomposition, failed
+preference saves, and partial action/image retention in Session records. They
+never enumerate or control the user's desktop.
 
 Manager tests use synthetic windows and PNGs to verify single dispatch,
 post-observation failure, cancellation, per-run cleanup, reconnection,

@@ -52,9 +52,8 @@ type Manager struct {
 	status Status
 }
 
-// newManager stays private until the native runtime's verified identity and
-// standard-mode preflight are wired. Merely knowing a binary path is not proof
-// that an existing shared service uses the requested permission mode.
+// newManager is the transport seam used by offline tests. Public construction
+// requires the native runtime's verified identity and standard-mode preflight.
 func newManager(dial func(context.Context) (driverClient, error)) *Manager {
 	ctx, cancel := context.WithCancel(context.Background())
 	m := &Manager{ctx: ctx, cancel: cancel, gate: make(chan struct{}, 1), dial: dial, runs: make(map[*Run]struct{}), latest: make(map[windowIdentity]string)}
