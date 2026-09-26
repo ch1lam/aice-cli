@@ -182,9 +182,11 @@ condition-wait cancellation and an already committed click whose RPC is still
 pending. They preserve unknown dispatch, reject stale references, avoid replay
 and recover read-only while the shared service remains usable. A separate native
 Settings Stop gate cancels a condition wait through the actual CLI/Bubble Tea UI,
-retains complete Session tool pairs and preserves saved preferences. These do
-not establish TUI Stop during mutations, interrupted gesture cleanup or physical
-coexistence.
+retains complete Session tool pairs and preserves saved preferences. Its mutation
+variant now cancels a natively committed click while the response is pending,
+retains the exact unknown result in Session, and verifies one commit with no
+model continuation. These do not establish interrupted gesture cleanup, physical
+Stop keys or foreground/IME coexistence.
 The Linux [input acceptance gate](desktop.md#linux-input-acceptance-failures)
 currently fails on truncated Unicode insertion and unavailable GTK background
 keyboard, pixel scroll and drag delivery. Keep those failures distinct from passing

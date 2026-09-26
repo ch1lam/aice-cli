@@ -702,6 +702,24 @@ condition-wait cancellation through the real UI, not physical keyboard/IME,
 foreground coexistence or Stop during a native mutation. Setup reuses existing
 grants and installation; it installs nothing and requests no new permissions.
 
+The separate mutation variant opens Settings before releasing the scripted
+model's click decision, then waits for independent widget state to prove one
+commit. It presses Settings F6 while the native result is still pending; native
+input and responses are never held by the harness. It requires a dispatched
+`unknown` outcome, exact result retention in Session replay, one commit and
+binding cleanup, unchanged saved preferences, no model continuation, and a
+usable shared service. A result that already returned cannot pass this gate.
+This passed with race detection on 2026-09-27, showing cancellation in 1.11 s:
+
+```sh
+AICE_CUA_NATIVE=1 go test -race -tags=integration ./internal/app -run '^TestNativeMacDesktopStopMutationTUI$' -count=1 -v
+```
+
+Run it sequentially with other native gates. It uses the existing verified
+service and synthetic AppKit fixture, no real model or new grants. This proves
+Settings Stop during one committed click's pending response; it does not prove
+physical keyboard input, continuous focus or interrupted gesture cleanup.
+
 The application-level macOS gates use synthetic AppKit targets, with a variant
 substituting the middle target with the local WebKit form. They use a scripted
 model through the actual print command, Guard, typed tools, production
