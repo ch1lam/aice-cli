@@ -38,6 +38,7 @@ and routes; README files may summarize product behavior and link to details.
 | --- | --- |
 | Product overview and quickstart | [README.md](README.md) and [README-zh.md](README-zh.md); keep both in sync |
 | Browser automation, connection, tabs and lifecycle | [Browser automation](docs/browser.md) |
+| Computer Use, Cua installation/setup, native sessions, window actions and platform evidence | [Computer Use](docs/desktop.md) |
 | Web search services, priority, `web_fetch`, network permissions, evidence | [Web search and fetch](docs/web.md) |
 | Installation, helper binaries, source builds, updates | [Installation](docs/installation.md) |
 | Providers, models, reasoning, credentials, flags, Skills, TUI input | [Configuration](docs/configuration.md) |

@@ -25,10 +25,12 @@ Computer Use preferences are User-only: `desktop_enabled` defaults to `false`
 and `desktop_control_mode` defaults to `background_only` (the other value is
 `foreground_allowed`). Only the user settings file and explicit runtime patches
 can supply them. Auth files, trusted projects, environment and flag bindings
-cannot change them or become reset/inheritance candidates. On macOS, enabling
+cannot change them or become reset/inheritance candidates. On macOS and Linux, enabling
 in Settings opens the disclosed setup flow; the setup/repair action also offers
 preference-only saving without native effects. Saving these keys alone does not
-make a Driver ready. Other platforms' setup remains disabled pending integration.
+make a Driver ready. Linux setup checks X11 and asks for one window to capture
+locally; it never sends that verification image to a model or installs system
+packages. Wayland/XWayland routes and Windows setup remain unavailable.
 See [Computer Use](desktop.md) for implemented actions and acceptance status.
 
 Project settings are protected by [Project Trust](project-trust.md).

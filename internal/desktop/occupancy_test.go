@@ -239,7 +239,7 @@ func TestDesktopSetupRespectsOtherInstanceOccupancy(t *testing.T) {
 	defer unlock()
 	ctx, cancel := context.WithTimeout(t.Context(), 25*time.Millisecond)
 	defer cancel()
-	result, err := Setup(ctx, "/Applications/CuaDriver.app/Contents/MacOS/cua-driver", filepath.Join(directory, "cua-driver.sock"))
+	result, err := Setup(ctx, "/Applications/CuaDriver.app/Contents/MacOS/cua-driver", filepath.Join(directory, "cua-driver.sock"), SetupOptions{})
 	if !serviceHasCode(err, "desktop_busy") || result.LaunchRequested || result.AuthorizationRequested {
 		t.Fatal("setup reached native operations while occupied", result, err)
 	}

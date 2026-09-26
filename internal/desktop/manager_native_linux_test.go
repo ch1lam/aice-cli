@@ -144,6 +144,17 @@ func TestNativeLinuxManager(t *testing.T) {
 			if err := m.Close(); err != nil {
 				t.Fatal(err)
 			}
+			setup, err := Setup(ctx, binary, endpoint, SetupOptions{SelectWindow: func(_ context.Context, windows []Window) (string, error) {
+				for _, window := range windows {
+					if window.PID == targets[0].pid && window.Title == targets[0].name {
+						return window.Ref, nil
+					}
+				}
+				return "", fmt.Errorf("setup target missing")
+			}})
+			if err != nil || !setup.Ready || !setup.ConnectionVerified || !setup.CaptureVerified || setup.AuthorizationRequested || setup.LaunchRequested {
+				t.Fatal("native selected-window setup", setup, err)
+			}
 			for pid := range linuxDriverPIDs(t, binary) {
 				if !before[pid] {
 					t.Fatalf("owned MCP child %d survived Manager close", pid)

@@ -20,8 +20,8 @@ func desktopSettingsSession(t *testing.T) *interactiveSession {
 		install: func(context.Context, deps.Options) (deps.CuaInstallResult, error) {
 			return deps.CuaInstallResult{Installed: true, Installation: deps.CuaInstallation{Binary: "/synthetic/driver"}}, nil
 		},
-		setup: func(context.Context, string) (desktop.SetupResult, error) {
-			return desktop.SetupResult{LaunchRequested: true, AuthorizationRequested: true, AuthorizationCompleted: true, Ready: true}, nil
+		setup: func(context.Context, string, desktop.SetupOptions) (desktop.SetupResult, error) {
+			return desktop.SetupResult{LaunchRequested: true, AuthorizationRequested: true, AuthorizationCompleted: true, CaptureVerified: true, Ready: true}, nil
 		},
 	}
 	s.guardAdapter.desktop = s.desktop
@@ -33,7 +33,7 @@ func TestDesktopSettingsSetupUsesOneReservationAndRetainsExternalSuccess(t *test
 		t.Run(map[bool]string{false: "saved", true: "save-failed"}[failSave], func(t *testing.T) {
 			s := desktopSettingsSession(t)
 			native := s.desktop.setup
-			s.desktop.setup = func(ctx context.Context, binary string) (desktop.SetupResult, error) {
+			s.desktop.setup = func(ctx context.Context, binary string, options desktop.SetupOptions) (desktop.SetupResult, error) {
 				if binary != "/synthetic/driver" {
 					t.Fatal("unverified binary supplied")
 				}
@@ -56,7 +56,7 @@ func TestDesktopSettingsSetupUsesOneReservationAndRetainsExternalSuccess(t *test
 						t.Fatal(err)
 					}
 				}
-				return native(ctx, binary)
+				return native(ctx, binary, options)
 			}
 			ui, auth := newScriptedUI("continue")
 			result, err := s.RunSettingsAction(t.Context(), 0, interaction.CommandRequest{Name: "desktop", Arguments: "setup", Auth: auth})
@@ -153,7 +153,7 @@ func TestDesktopSetupCancellationKeepsInstalledFactWithoutPublishing(t *testing.
 	s := desktopSettingsSession(t)
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
-	s.desktop.setup = func(context.Context, string) (desktop.SetupResult, error) {
+	s.desktop.setup = func(context.Context, string, desktop.SetupOptions) (desktop.SetupResult, error) {
 		cancel()
 		return desktop.SetupResult{AuthorizationRequested: true}, context.Canceled
 	}
@@ -177,5 +177,29 @@ func TestDesktopSetupIsUnavailableDuringActiveRun(t *testing.T) {
 	_, err := s.RunSettingsAction(t.Context(), 0, interaction.CommandRequest{Name: "desktop", Arguments: "setup", Auth: auth})
 	if !errors.Is(err, interaction.ErrSettingsRunning) || len(ui.prompts) != 0 {
 		t.Fatalf("active setup=%v prompts=%d", err, len(ui.prompts))
+	}
+}
+
+func TestDesktopSetupWindowSelectionAndCaptureFacts(t *testing.T) {
+	for _, answer := range []string{"selected", "cancel", "foreign"} {
+		t.Run(answer, func(t *testing.T) {
+			s := desktopSettingsSession(t)
+			s.desktop.setup = func(ctx context.Context, _ string, options desktop.SetupOptions) (desktop.SetupResult, error) {
+				ref, err := options.SelectWindow(ctx, []desktop.Window{{Ref: "selected", App: "Fixture", Title: "Synthetic window", PID: 41, WindowID: 99}})
+				return desktop.SetupResult{ConnectionVerified: true, CaptureVerified: ref == "selected" && err == nil, Ready: ref == "selected" && err == nil}, err
+			}
+			ui, auth := newScriptedUI("continue", answer)
+			result, err := s.RunSettingsAction(t.Context(), 0, interaction.CommandRequest{Name: "desktop", Arguments: "setup", Auth: auth})
+			if (err == nil) != (answer == "selected") || result.Committed != (answer == "selected") || len(result.External) != 3 || result.External[2].Completed != (answer == "selected") {
+				t.Fatal(result, err)
+			}
+			if s.conversation.store != nil || s.desktop.setupCaptureAt.IsZero() != (answer != "selected") {
+				t.Fatal("setup created history or invented capture evidence")
+			}
+			prompt := ui.prompts[len(ui.prompts)-1]
+			if prompt.Menu == nil || prompt.Menu.Options[0].Arguments != "cancel" || !strings.Contains(prompt.Instructions, "not sent to a model") {
+				t.Fatal("window capture was not explicitly disclosed", prompt)
+			}
+		})
 	}
 }

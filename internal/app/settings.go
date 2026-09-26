@@ -108,7 +108,7 @@ func (s *interactiveSession) ReadSettings(ctx context.Context) (interaction.Sett
 		switch def.ID {
 		case config.SettingDesktopEnabled, config.SettingDesktopControlMode:
 			field.Keywords = []string{"desktop", "computer", "cua", "permission", "background", "foreground"}
-			if runtime.GOOS != "darwin" {
+			if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
 				field.DisabledReason = "Computer Use native setup is not yet integrated on this platform"
 			} else if s.desktop == nil {
 				field.DisabledReason = "Computer Use runtime is unavailable in this session"
@@ -243,12 +243,12 @@ func (s *interactiveSession) ReadSettings(ctx context.Context) (interaction.Sett
 	}
 	result.Fields = append(result.Fields, webSettingFields(settings.configuration, disabled)...)
 	desktopReason := disabled
-	if runtime.GOOS != "darwin" {
+	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
 		desktopReason = "Computer Use native setup is not yet integrated on this platform"
 	} else if s.desktop == nil {
 		desktopReason = "Computer Use runtime is unavailable in this session"
 	}
-	result.Fields = append(result.Fields, interaction.SettingField{ID: "desktop.setup", Category: "tools", Label: "Computer Use setup / repair", Description: "Install the signed Driver and request OS permissions, or retry saving the enabled preference. No Session is created.", Kind: interaction.SettingAction, Action: desktopSetupCommand(), Applies: interaction.SettingDomainAction, DisabledReason: desktopReason})
+	result.Fields = append(result.Fields, interaction.SettingField{ID: "desktop.setup", Category: "tools", Label: "Computer Use setup / repair", Description: "Install and verify the Driver and desktop access, or retry saving the enabled preference. No Session is created.", Kind: interaction.SettingAction, Action: desktopSetupCommand(), Applies: interaction.SettingDomainAction, DisabledReason: desktopReason})
 	result.Fields = append(result.Fields, s.desktopStatusField(ctx, settings))
 	if err := ctx.Err(); err != nil {
 		return interaction.SettingsSnapshot{}, err

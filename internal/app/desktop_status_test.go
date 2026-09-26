@@ -52,7 +52,7 @@ func TestDesktopSettingsReadOnlyStatusFacts(t *testing.T) {
 				t.Fatal("status installed a helper")
 				return deps.CuaInstallResult{}, nil
 			}
-			s.desktop.setup = func(context.Context, string) (desktop.SetupResult, error) {
+			s.desktop.setup = func(context.Context, string, desktop.SetupOptions) (desktop.SetupResult, error) {
 				t.Fatal("status requested grants")
 				return desktop.SetupResult{}, nil
 			}

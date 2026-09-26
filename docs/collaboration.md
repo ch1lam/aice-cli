@@ -330,12 +330,21 @@ concurrent core key with no focus loss in both modes. Static labels are not
 part of Linux's actionable-element projection, so independent fixture state
 confirms commits; a missing semantic match must not claim failure or completion.
 Both native tests compare the full production Linux schema pin.
+The Manager test additionally calls the public Linux setup API with a selector
+limited to its synthetic target. It verifies a real capture, absence of invented
+grant/service-launch facts, connection cleanup and shared-service preservation
+in both modes. This selected-window setup passed in the same native fixture.
 
 Default Linux runtime tests separately reject restricted/unknown/foreign shared
 services without starting private fallback, and check owned process arguments,
 fixed standard mode and credential filtering. They passed in a headless arm64
-container as an ordinary user. These checks do not prove tool/Guard/Session flow,
-automatic setup, native launch/pixel/keyboard/drag actions, physical input or
+container as an ordinary user. `TestSettingsUsageTUI` also passed natively on
+Linux with synthetic native operations: it follows disclosure, explicit window
+selection, saved enable, Stop and explicit continuation through the actual CLI.
+Unit tests cover cancellation before capture, foreign targets, missing images,
+invalid mappings and partial external-step retention without Session creation.
+These checks do not prove a fully native Settings/installer/tool/Guard/Session
+flow, native launch/pixel/keyboard/drag actions, physical input or
 other Linux compositors. See
 the [platform evidence](desktop.md#platform-evidence) before claiming support.
 

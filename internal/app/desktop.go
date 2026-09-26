@@ -26,7 +26,7 @@ type desktopState struct {
 	status         func() desktop.Status
 	installOptions deps.Options
 	install        func(context.Context, deps.Options) (deps.CuaInstallResult, error)
-	setup          func(context.Context, string) (desktop.SetupResult, error)
+	setup          func(context.Context, string, desktop.SetupOptions) (desktop.SetupResult, error)
 	inspect        func(context.Context) (desktop.Inspection, error)
 	healthMu       sync.Mutex
 	setupCaptureAt time.Time
@@ -70,11 +70,11 @@ func (a *application) newDesktopState(configuration config.Config) (*desktopStat
 			}
 			return deps.InstallCua(ctx, options)
 		},
-		setup: func(ctx context.Context, binary string) (desktop.SetupResult, error) {
+		setup: func(ctx context.Context, binary string, options desktop.SetupOptions) (desktop.SetupResult, error) {
 			if err := manager.Disconnect(ctx); err != nil {
 				return desktop.SetupResult{}, err
 			}
-			return desktop.Setup(ctx, binary, desktopServiceEndpoint(home))
+			return desktop.Setup(ctx, binary, desktopServiceEndpoint(home), options)
 		},
 		bind: func(ctx context.Context, options desktop.RunOptions) (tool.DesktopBackend, func() error, error) {
 			run, err := manager.Bind(ctx, options)

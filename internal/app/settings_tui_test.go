@@ -62,9 +62,13 @@ func TestSettingsUsageTUI(t *testing.T) {
 					}
 					return deps.CuaInstallResult{Reused: true, Installation: deps.CuaInstallation{Binary: "/synthetic/driver"}}, nil
 				},
-				setup: func(context.Context, string) (desktop.SetupResult, error) {
+				setup: func(ctx context.Context, _ string, options desktop.SetupOptions) (desktop.SetupResult, error) {
 					setupCalls++
-					return desktop.SetupResult{AuthorizationRequested: true, AuthorizationCompleted: true, Ready: true}, nil
+					if runtime.GOOS == "linux" {
+						_, err := options.SelectWindow(ctx, []desktop.Window{{Ref: "synthetic-window", App: "Fixture", Title: "Setup window", PID: 41, WindowID: 99}})
+						return desktop.SetupResult{ConnectionVerified: true, CaptureVerified: err == nil, Ready: err == nil}, err
+					}
+					return desktop.SetupResult{AuthorizationRequested: true, AuthorizationCompleted: true, CaptureVerified: true, Ready: true}, nil
 				},
 			}, nil
 		},
@@ -137,20 +141,16 @@ func TestSettingsUsageTUI(t *testing.T) {
 	send("\x151m30.000000001s\r")
 	waitFor("Saved to user settings")
 	send("\x1b")
-	if runtime.GOOS == "linux" {
+	if runtime.GOOS == "darwin" || runtime.GOOS == "linux" {
 		send("/desktop\r")
 		waitFor("[Tools & Network]")
 		send("/Computer Use status\r")
-		waitFor("X11 connection: Unavailable")
-		waitFor("AT-SPI bus owner: Unavailable")
-		send("\x1b")
-		send("\x1b")
-	}
-	if runtime.GOOS == "darwin" {
-		send("/desktop\r")
-		waitFor("[Tools & Network]")
-		send("/Computer Use status\r")
-		waitFor("Screen Recording: Missing")
+		if runtime.GOOS == "darwin" {
+			waitFor("Screen Recording: Missing")
+		} else {
+			waitFor("X11 connection: Unavailable")
+			waitFor("AT-SPI bus owner: Unavailable")
+		}
 		send("\x1b")
 		send("/Computer Use setup")
 		waitFor("Computer Use setup / repair")
@@ -160,6 +160,10 @@ func TestSettingsUsageTUI(t *testing.T) {
 		waitFor("outside this project")
 		waitFor("Continue?")
 		send("\x1b[B\r")
+		if runtime.GOOS == "linux" {
+			waitFor("Window capture test")
+			send("\x1b[B\r")
+		}
 		waitFor("Computer Use enabled for the next run")
 		send("\x1b")
 		send("\x1b")
@@ -184,7 +188,7 @@ func TestSettingsUsageTUI(t *testing.T) {
 	send("\x1b")
 	waitFor("Response cancelled")
 
-	if runtime.GOOS == "darwin" {
+	if runtime.GOOS == "darwin" || runtime.GOOS == "linux" {
 		send("/desktop\r")
 		waitFor("[Tools & Network]")
 		send("/Computer Use setup\r")
@@ -227,14 +231,14 @@ func TestSettingsUsageTUI(t *testing.T) {
 	if loaded.RunTimeout != time.Minute+30*time.Second+time.Nanosecond {
 		t.Fatalf("timeout not persisted: %v", loaded.RunTimeout)
 	}
-	if runtime.GOOS == "darwin" && (!loaded.DesktopEnabled || installCalls != 1 || setupCalls != 1) {
+	if (runtime.GOOS == "darwin" || runtime.GOOS == "linux") && (!loaded.DesktopEnabled || installCalls != 1 || setupCalls != 1) {
 		t.Fatalf("desktop setup enabled=%v install=%d setup=%d", loaded.DesktopEnabled, installCalls, setupCalls)
 	}
 	wantRequests := 1
-	if runtime.GOOS == "darwin" {
+	if runtime.GOOS == "darwin" || runtime.GOOS == "linux" {
 		wantRequests = 2
 	}
-	if model.requestCount() != wantRequests || (runtime.GOOS == "darwin" && (binds != 2 || closes != 2)) {
+	if model.requestCount() != wantRequests || ((runtime.GOOS == "darwin" || runtime.GOOS == "linux") && (binds != 2 || closes != 2)) {
 		t.Fatalf("stop requests=%d binds=%d closes=%d", model.requestCount(), binds, closes)
 	}
 }

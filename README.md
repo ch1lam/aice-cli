@@ -58,6 +58,13 @@ context occupancy, recorded Session usage and Session information. Both windows
 keep the background draft and create no Session just by opening.
 See [Settings and Usage](./docs/configuration.md#settings-window).
 
+Computer Use integration is in progress. `/desktop` opens setup and status on
+macOS and Linux X11; setup is explicit and desktop access is disabled by default.
+Task window contents may be sent to the model, and actions can affect applications
+outside the project. Linux setup asks you to choose a window for a local capture
+test. See [Computer Use](./docs/desktop.md) for verified scope and remaining
+platform limitations, including unavailable Wayland/XWayland and Windows routes.
+
 Runs have no round limit by default. Optionally set `--max-turns 50`,
 `--run-token-budget 200000`, and `--run-timeout 30m`. By default, 8 consecutive identical tool rounds stop
 the run; `--run-no-progress-limit 0` disables this check. See

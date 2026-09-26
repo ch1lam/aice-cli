@@ -9,6 +9,8 @@ On macOS, Settings → Tools & Network → Computer Use opens an explicit setup
 flow when enabling. The setup/repair row also offers preference-only saving;
 the preference alone does not install or authorize a native service. An enabled
 run may lazily start the already verified App without permission prompts.
+Linux Settings uses the same entry point for private installation, X11 connection
+checks and an explicitly selected window capture. Verification images stay local.
 The implementation plan's complete native acceptance remains open.
 
 ## Ownership and connection contract
@@ -136,7 +138,7 @@ Telemetry/update opt-outs and non-embedded mode are explicit. LaunchServices
 owns the daemon; AICE owns only its management/proxy children. A lost launch
 response is not retried automatically.
 
-The explicit native setup API uses the same lock, checks service mode/version
+The explicit macOS setup API uses the same lock, checks service mode/version
 and signed daemon identity before requesting `permissions grant`, then performs
 fresh read-only admission. The pinned public grant command includes an explicit
 live capture probe; its successful completion is retained as a point-in-time
@@ -147,9 +149,27 @@ but cannot retract grants or guarantee closure of already opened system UI.
 Only the Settings setup action invokes this API after disclosure;
 model tools and read-only Settings views cannot request grants.
 
+Linux setup creates a temporary Manager through the production runtime resolver,
+holds the existing desktop occupancy reservation, and discovers bounded window
+metadata. The Settings menu starts with Cancel; only an explicitly selected
+opaque target reference can trigger one screenshot. The same media validation
+and capture binding used by task observations must succeed. No click, typing,
+full-desktop capture, system package installation or permission change occurs.
+The verification image is discarded locally, never sent to a model or recorded
+in a Session. The temporary native session and owned connection close on success,
+selection cancellation, stale target, capture failure and deadline; shared
+services and user applications remain running. One four-minute deadline includes
+selection and verification. An empty window list asks the user to open a window
+and retry; setup never chooses a different target automatically.
+
+Connection and selected-window capture are separate external-step facts on Linux.
+Capture success is retained as historical evidence even if saving enable later
+fails. No macOS-style authorization grant is invented. Wayland/XWayland and
+headless displays fail before window selection, with a display diagnostic.
+
 The Settings flow describes access beyond the project, model-provider exposure,
-real application effects, signed-App installation, OS permission identity and
-the explicit capture test. Cancel is the initial choice. Long descriptions are
+real application effects, platform-specific installation and permission behavior,
+and the explicit capture test. Cancel is the initial choice. Long descriptions are
 paged before confirmation choices become active, with shared mouse/keyboard
 geometry; resizing restarts disclosure pagination. Cancelling ignores late
 prompts and leaves the conversation composer/history untouched.
@@ -361,7 +381,7 @@ as the tools and prompt it publishes; offline publication tests cover this.
 | --- | --- | --- |
 | macOS 0.29.1 universal artifact | Download hash matches fixed release manifest; temporary extraction/exclusive publication preserves signature, signing identity and Gatekeeper acceptance; CLI/schema inspected; Settings setup exercised through CLI/Bubble Tea with fake native operations | Signed installed service, system authorization, persistent MCP handshake against that service, synthetic multi-app task, background focus/input sentinel, native overlay, cancellation and cold/warm measurements |
 | Windows amd64/arm64 | Downloaded archives and selected executable hashes verified; private installer with Authenticode checks implemented; synthetic extraction/reuse/cancellation tests and cross-compilation pass; static imports inspected | Native installation/signature trust and exclusive publication; runtime/service admission, interactive-session/UIAccess detection, native UI/input/lifecycle tests |
-| Linux arm64 | Private installation/reuse and read-only headless inspection passed in an isolated Debian 13 container; production Manager passed owned stdio and verified shared-service X11/GTK tasks, with semantic edits, clicks, window captures, connection reuse, cleanup and concurrent foreground input | Setup and full native tool/Guard/Session flow; native launch, pixel/keyboard/drag routes, foreground assistance, overlay, other toolkits, real compositor/Wayland and physical-input/IME checks |
+| Linux arm64 | Private installation/reuse and read-only headless inspection passed in an isolated Debian 13 container; production Manager and selected-window setup passed owned stdio and verified shared-service X11/GTK checks; actual Settings CLI flow passed with synthetic native operations | Full native Settings/installer/tool/Guard/Session flow; native launch, pixel/keyboard/drag routes, foreground assistance, overlay, other toolkits, real compositor/Wayland and physical-input/IME checks |
 | Linux amd64 | Downloaded archive and selected executable hashes verified; synthetic installer tests and cross-compilation pass; ELF library dependencies inspected | Native installation/dynamic loading and exclusive publication; runtime/service admission, AT-SPI/display detection, compositor-specific input/capture/overlay tests |
 
 On 2026-09-26 the native host had a signed, Gatekeeper-accepted CuaDriver
@@ -417,7 +437,7 @@ service connection alone does not establish capture or target-input readiness.
 An absent shared service is compatible with an active owned tool process; the
 panel shows that cached instance connection separately, with unknown shared
 display facts. Without an active connection it reports that connection happens
-on first use. Refresh still starts nothing. Linux setup and compositor-specific
+on first use. Refresh still starts nothing. Full native CLI and compositor-specific
 acceptance remain incomplete. The Linux arm64 headless
 fixture passed two inspections of its own service and correctly reported absent
 display/bus capabilities while leaving that service alive between checks.

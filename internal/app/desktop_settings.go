@@ -4,11 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"runtime"
 	"slices"
 	"strings"
 	"time"
 
 	"github.com/ch1lam/aice-cli/internal/deps"
+	"github.com/ch1lam/aice-cli/internal/desktop"
 	"github.com/ch1lam/aice-cli/internal/interaction"
 	"github.com/ch1lam/aice-cli/internal/llm"
 )
@@ -17,9 +19,16 @@ const desktopDisclosure = "Computer Use can access applications and data outside
 
 const desktopSetupDisclosure = "Setup may download the pinned Cua Driver and install its signed App in /Applications. It requests Accessibility and Screen Recording for CuaDriver, then explicitly tests direct capture. macOS may show an additional screen access picker; only you can approve it. AICE disables telemetry and update checks for children it starts, and leaves shared Driver preferences unchanged. Cancelling cannot undo installation or grants already completed."
 
+func desktopSetupInstructions(platform string) string {
+	if platform == "linux" {
+		return "Setup may download the pinned Cua Driver into your private ~/.aice/bin directory. It checks the current X11 session and accessibility connection, then asks you to select one window for a direct capture test. That test image stays local and is discarded; no model request or Session is created. AICE does not install system packages, change desktop permissions, or enable login startup. Wayland and XWayland are not yet supported. AICE disables telemetry and update checks for its children and leaves shared Driver preferences unchanged. Cancelling cannot undo installation already completed."
+	}
+	return desktopSetupDisclosure
+}
+
 func desktopSetupCommand() *interaction.Command {
 	return &interaction.Command{Name: "desktop", Interactive: true, Menu: &interaction.CommandMenu{Title: "Computer Use", Options: []interaction.CommandOption{
-		{Label: "Set up / Repair", Arguments: "setup", Description: "Install, request OS permissions and verify"},
+		{Label: "Set up / Repair", Arguments: "setup", Description: "Install and verify desktop access"},
 		{Label: "Enable preference only", Arguments: "enable", Description: "Save without installation or OS prompts; readiness stays unknown"},
 	}}}
 }
@@ -46,9 +55,9 @@ func (s *interactiveSession) runDesktopSettings(ctx context.Context, request int
 		if s.desktop.install == nil || s.desktop.setup == nil {
 			return result, errors.New("app: Computer Use setup is unavailable")
 		}
-		instructions += "\n\n" + desktopSetupDisclosure
+		instructions += "\n\n" + desktopSetupInstructions(runtime.GOOS)
 		if s.desktop.installOptions.NoInstall {
-			instructions += "\n\nHelper downloads are disabled for this instance. A compatible installed App can be reused. Changes to Allow helper downloads apply after restarting AICE."
+			instructions += "\n\nHelper downloads are disabled for this instance. A compatible installed Driver can be reused. Changes to Allow helper downloads apply after restarting AICE."
 		}
 	}
 	if err := ui.Notify(ctx, interaction.AuthPrompt{Title: "Enable Computer Use", Instructions: instructions, Menu: &interaction.CommandMenu{Title: "Continue?", Options: []interaction.CommandOption{
@@ -75,7 +84,7 @@ func (s *interactiveSession) runDesktopSettings(ctx context.Context, request int
 		return ui.Notify(ctx, interaction.AuthPrompt{Title: "Computer Use setup", Instructions: text})
 	}
 	if action == "setup" {
-		if err := notify("Verifying the signed Cua Driver installation…"); err != nil {
+		if err := notify("Verifying the pinned Cua Driver installation…"); err != nil {
 			return result, err
 		}
 		// The policy was captured at startup. A restart-only preference saved in
@@ -92,9 +101,9 @@ func (s *interactiveSession) runDesktopSettings(ctx context.Context, request int
 		installed, err := s.desktop.install(ctx, options)
 		result.Warnings = append(result.Warnings, installed.Warnings...)
 		if installed.Installed || installed.Reused {
-			verb := "Verified existing signed App"
+			verb := "Verified existing Driver"
 			if installed.Installed {
-				verb = "Installed and verified signed App"
+				verb = "Installed and verified Driver"
 			}
 			result.External = append(result.External, interaction.SettingsActionStep{Name: "Driver installation", Detail: verb, Completed: true})
 		}
@@ -104,11 +113,17 @@ func (s *interactiveSession) runDesktopSettings(ctx context.Context, request int
 		if installed.Installation.Binary == "" {
 			return result, errors.New("app: verified Driver installation is missing its binary")
 		}
-		if err := notify("Opening CuaDriver's system permission flow. Approve CuaDriver in macOS, then return here. Direct capture will be tested. Esc cancels this wait; system dialogs may remain open."); err != nil {
+		progress := "Opening CuaDriver's system permission flow. Approve CuaDriver in macOS, then return here. Direct capture will be tested. Esc cancels this wait; system dialogs may remain open."
+		if runtime.GOOS == "linux" {
+			progress = "Checking the X11 connection. Next, choose a window for a local capture test. Esc cancels setup."
+		}
+		if err := notify(progress); err != nil {
 			return result, err
 		}
-		native, err := s.desktop.setup(ctx, installed.Installation.Binary)
-		if native.AuthorizationCompleted {
+		native, err := s.desktop.setup(ctx, installed.Installation.Binary, desktop.SetupOptions{SelectWindow: func(ctx context.Context, windows []desktop.Window) (string, error) {
+			return selectDesktopSetupWindow(ctx, ui, windows)
+		}})
+		if native.CaptureVerified {
 			s.desktop.healthMu.Lock()
 			s.desktop.setupCaptureAt = time.Now()
 			s.desktop.healthMu.Unlock()
@@ -118,6 +133,10 @@ func (s *interactiveSession) runDesktopSettings(ctx context.Context, request int
 		}
 		if native.AuthorizationRequested {
 			result.External = append(result.External, interaction.SettingsActionStep{Name: "OS authorization and live capture check", Detail: "Completed grants are not rolled back on cancellation", Completed: native.AuthorizationCompleted})
+		}
+		if native.ConnectionVerified && !native.AuthorizationRequested {
+			result.External = append(result.External, interaction.SettingsActionStep{Name: "Desktop connection", Detail: "Verified for this setup check; temporary connection is closed afterwards", Completed: true})
+			result.External = append(result.External, interaction.SettingsActionStep{Name: "Selected window capture", Detail: "Local verification only; no image is saved to the Session or sent to a model", Completed: native.CaptureVerified})
 		}
 		result.ReadinessKnown, result.Ready = true, native.Ready
 		if err != nil {
@@ -147,4 +166,31 @@ func (s *interactiveSession) runDesktopSettings(ctx context.Context, request int
 	result.Output = "Computer Use enabled for the next run"
 	result.Continuation = s.desktopContinuation()
 	return result, nil
+}
+
+func selectDesktopSetupWindow(ctx context.Context, ui *interaction.AuthInteraction, windows []desktop.Window) (string, error) {
+	menu := &interaction.CommandMenu{Title: "Window capture test", Options: []interaction.CommandOption{{Label: "Cancel", Arguments: "cancel"}}}
+	for _, window := range windows {
+		menu.Options = append(menu.Options, interaction.CommandOption{Label: window.App + " · " + window.Title, Arguments: window.Ref, Description: fmt.Sprintf("Process %d, window %d", window.PID, window.WindowID)})
+	}
+	if err := ui.Notify(ctx, interaction.AuthPrompt{Title: "Verify Computer Use", Instructions: "Choose one listed window for a local screenshot test. The image is discarded and is not sent to a model.", Menu: menu}); err != nil {
+		return "", err
+	}
+	select {
+	case <-ctx.Done():
+		return "", ctx.Err()
+	case answer, ok := <-ui.Input:
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
+		if !ok || answer == "cancel" {
+			return "", context.Canceled
+		}
+		for _, window := range windows {
+			if answer == window.Ref {
+				return answer, nil
+			}
+		}
+		return "", errors.New("app: setup window selection is no longer valid")
+	}
 }

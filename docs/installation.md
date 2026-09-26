@@ -110,8 +110,11 @@ macOS Settings setup invokes this API after the feature/install/authorization
 disclosure. Its download policy is captured at AICE startup; a saved restart-only
 change does not authorize a download in the current instance. Completed install
 facts survive a later authorization or preference-save failure. Linux X11 runtime
-integration is available for an installed helper; Linux setup and broader native
-acceptance, along with Windows runtime integration, remain open. The
+integration and explicit Settings setup are implemented; broader native
+acceptance and Windows runtime integration remain open. Linux setup installs
+the private helper below, checks the display, and lets the user select a window
+for a local capture test. It does not install system packages or grant desktop
+permissions. The
 [Computer Use status](desktop.md) records the exact scope of verification.
 
 The Windows/Linux provisioning API installs into the private

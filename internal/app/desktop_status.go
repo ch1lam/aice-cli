@@ -129,7 +129,7 @@ func (s *interactiveSession) desktopStatusField(ctx context.Context, settings in
 			"Wayland backend enabled: "+desktopCapabilityState(facts.WaylandBackend),
 			"XSendEvent prerequisite: "+desktopCapabilityState(facts.XSendEvent),
 			"Connection and display facts above describe the shared service; this instance may instead own a private tool process.",
-			"Display and bus checks do not verify target input or capture. X11 actions are integrated; Linux setup and Wayland remain in progress.")
+			"Display and bus checks do not verify target input or capture. X11 setup and actions are integrated; Wayland remains unavailable.")
 	} else {
 		lines = append(lines, "Accessibility: "+string(permissions.Accessibility), "Screen Recording: "+string(permissions.ScreenRecording))
 	}

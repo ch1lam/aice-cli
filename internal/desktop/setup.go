@@ -18,14 +18,33 @@ type SetupResult struct {
 	LaunchRequested        bool
 	AuthorizationRequested bool
 	AuthorizationCompleted bool
+	ConnectionVerified     bool
+	CaptureVerified        bool
 	Ready                  bool
 }
 
-// Setup explicitly requests Cua's public OS grant and live capture verification
-// flow. Only the user-facing setup action may call it, after disclosure. The
-// supplied installed App must already have passed dependency verification.
+// SetupOptions supplies the UI-owned choice for a live window capture. The
+// callback must return one of the supplied opaque references, or an error.
+type SetupOptions struct {
+	SelectWindow func(context.Context, []Window) (string, error)
+}
+
+// Setup explicitly verifies desktop access and live capture. macOS uses Cua's
+// public OS grant flow; Linux captures a chosen window without changing grants.
+// Only the user-facing setup action may call it, after disclosure. The
+// supplied installed helper must already have passed dependency verification.
 // Cancellation stops our command, but cannot undo grants or close system UI.
-func Setup(ctx context.Context, binary, endpoint string) (result SetupResult, returnErr error) {
+func Setup(ctx context.Context, binary, endpoint string, options SetupOptions) (result SetupResult, returnErr error) {
+	if runtime.GOOS == "linux" {
+		if options.SelectWindow == nil {
+			return result, errors.New("desktop: setup requires an explicit window selection")
+		}
+		manager, err := NewManager(func(context.Context) (string, string, error) { return binary, endpoint, nil })
+		if err != nil {
+			return result, err
+		}
+		return setupWindowCapture(ctx, manager, options.SelectWindow)
+	}
 	if runtime.GOOS != "darwin" {
 		return SetupResult{}, serviceError("platform_unavailable", "native Computer Use setup is not yet integrated on this platform")
 	}
@@ -160,6 +179,7 @@ func (n *nativeService) setup(ctx context.Context) (result SetupResult, returnEr
 	// Pinned `permissions grant` exits successfully only after its explicit live
 	// direct-capture probe. This is a point-in-time fact, not permanent readiness.
 	result.AuthorizationCompleted = true
+	result.CaptureVerified = true
 	c, err = n.connector.dial(ctx)
 	if err != nil {
 		return result, err
@@ -168,6 +188,41 @@ func (n *nativeService) setup(ctx context.Context) (result SetupResult, returnEr
 		return result, err
 	}
 	result.Ready = true
+	result.ConnectionVerified = true
+	return result, nil
+}
+
+// setupWindowCapture owns a temporary Manager and native session, but never a
+// transcript or user application. A screenshot stays local and is discarded.
+func setupWindowCapture(ctx context.Context, manager *Manager, selectWindow func(context.Context, []Window) (string, error)) (result SetupResult, returnErr error) {
+	ctx, cancel := context.WithTimeout(ctx, 4*time.Minute)
+	defer cancel()
+	defer func() { returnErr = errors.Join(returnErr, manager.Close()) }()
+	run, err := manager.Bind(ctx, RunOptions{Mode: BackgroundOnly, Images: true})
+	if err != nil {
+		return result, err
+	}
+	defer func() { returnErr = errors.Join(returnErr, run.Close()) }()
+	discovery, err := run.Windows(ctx, "", maxTargets)
+	if err != nil {
+		return result, err
+	}
+	result.ConnectionVerified = true
+	if len(discovery.Windows) == 0 {
+		return result, serviceError("capture_unavailable", "no window available for setup verification; open a window in the intended X11 session and retry")
+	}
+	target, err := selectWindow(ctx, discovery.Windows)
+	if err != nil {
+		return result, err
+	}
+	observation, err := run.Observe(ctx, ObserveRequest{TargetRef: target, Screenshot: true})
+	if err != nil {
+		return result, err
+	}
+	if observation.Image == nil || run.observations[observation.Ref].capture == "" {
+		return result, serviceError("capture_unavailable", "the selected window did not produce a verified capture; inspect the graphical session and retry setup")
+	}
+	result.CaptureVerified, result.Ready = true, true
 	return result, nil
 }
 
