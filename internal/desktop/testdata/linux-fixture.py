@@ -24,6 +24,21 @@ button = Gtk.Button(label="Commit")
 result = Gtk.Label(label="Result: pending")
 for widget in (entry, button, result):
     box.pack_start(widget, True, True, 0)
+if mode == "gestures":
+    window.set_default_size(560, 500)
+    scroll = Gtk.ScrolledWindow()
+    scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+    scroll.set_size_request(-1, 140)
+    rows = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+    for index in range(50):
+        rows.pack_start(Gtk.Label(label="Synthetic row %02d" % index), False, False, 0)
+    scroll.add(rows)
+    scale = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 0, 100, 1)
+    scale.set_value(0)
+    scale.set_draw_value(False)
+    scale.set_size_request(-1, 48)
+    box.pack_start(scroll, True, True, 0)
+    box.pack_start(scale, False, False, 0)
 window.add(box)
 state = {"pid": os.getpid(), "armed": False, "focus_losses": 0,
          "keys_sent": 0, "commits": 0, "ticks": 0}
@@ -90,6 +105,19 @@ def tick():
                  button_x=button_x + button.get_allocated_width() / 2,
                  button_y=button_y + button.get_allocated_height() / 2,
                  selection=list(entry.get_selection_bounds()))
+    if mode == "gestures":
+        scroll_x, scroll_y = scroll.translate_coordinates(window, 0, 0)
+        scale_x, scale_y = scale.translate_coordinates(window, 0, 0)
+        trough = scale.get_range_rect()
+        slider_start, slider_end = scale.get_slider_range()
+        state.update(scroll_value=scroll.get_vadjustment().get_value(),
+                     scale_value=scale.get_value(),
+                     scroll_x=scroll_x + scroll.get_allocated_width() / 2,
+                     scroll_y=scroll_y + scroll.get_allocated_height() / 2,
+                     drag_from_x=scale_x + (slider_start + slider_end) / 2,
+                     drag_from_y=scale_y + trough.y + trough.height / 2,
+                     drag_to_x=scale_x + trough.x + trough.width * 0.9,
+                     drag_to_y=scale_y + trough.y + trough.height / 2)
     temporary = directory / "state.tmp"
     temporary.write_text(json.dumps(state))
     temporary.replace(directory / "state.json")

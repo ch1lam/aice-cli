@@ -16,8 +16,8 @@ import (
 
 // Native input evidence for the reviewed X11 route. Coordinates come from the
 // synthetic fixture's geometry, not a visual model. Never run on a user display.
-// The full gate currently fails for Unicode insertion and unavailable GTK key
-// delivery; keep the requested postconditions (docs/desktop.md), not xfails.
+// The full gate currently fails for Unicode insertion and unavailable GTK key,
+// pixel scroll and drag delivery; retain the requested postconditions, not xfails.
 func TestNativeLinuxInput(t *testing.T) {
 	if os.Getenv("AICE_CUA_X11_CONTAINER") != "1" {
 		t.Skip("requires the explicitly isolated Linux X11 fixture")
@@ -29,7 +29,7 @@ func TestNativeLinuxInput(t *testing.T) {
 	if !filepath.IsAbs(binary) {
 		t.Fatal("requires explicitly supplied checksum-verified Driver")
 	}
-	for _, kind := range []string{"type_text_ascii", "type_text_unicode", "key", "hotkey", "pixel_click", "pixel_resize"} {
+	for _, kind := range []string{"type_text_ascii", "type_text_unicode", "key", "hotkey", "pixel_click", "pixel_resize", "pixel_scroll", "pixel_drag"} {
 		t.Run(kind, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
 			defer cancel()
@@ -39,7 +39,11 @@ func TestNativeLinuxInput(t *testing.T) {
 			if err := os.WriteFile(script, linuxFixtureScript, 0600); err != nil {
 				t.Fatal(err)
 			}
-			target := startLinuxProbeFixture(t, ctx, script, "AICE Native Input Target", "input")
+			mode := "input"
+			if kind == "pixel_scroll" || kind == "pixel_drag" {
+				mode = "gestures"
+			}
+			target := startLinuxProbeFixture(t, ctx, script, "AICE Native Input Target", mode)
 			sentinel := startLinuxProbeFixture(t, ctx, script, "AICE Native Input Sentinel", "sentinel")
 			awaitLinuxProbeState(t, ctx, sentinel, func(s linuxProbeState) bool { return s.Active })
 			m, err := NewManager(func(context.Context) (string, string, error) { return binary, filepath.Join(home, "cua.sock"), nil })
@@ -101,6 +105,20 @@ func TestNativeLinuxInput(t *testing.T) {
 				request.Key, request.ElementToken = "x", (linuxProbeObservation{Elements: obs.Elements}).token(t, "Task value")
 			case "hotkey":
 				request.Keys, request.ElementToken = []string{"ctrl", "a"}, (linuxProbeObservation{Elements: obs.Elements}).token(t, "Task value")
+			case "pixel_scroll", "pixel_drag":
+				if before.ScrollValue != 0 || before.ScaleValue != 0 || before.DragToX <= before.DragFromX || before.ScrollY <= 0 {
+					t.Fatal("gesture fixture did not establish initial state and geometry")
+				}
+				point := func(x, y float64) *Point {
+					return &Point{X: x * float64(obs.ImageWidth) / float64(before.Width), Y: y * float64(obs.ImageHeight) / float64(before.Height)}
+				}
+				if kind == "pixel_scroll" {
+					request.Kind, request.Direction, request.Amount = "scroll", "down", 3
+					request.Point = point(before.ScrollX, before.ScrollY)
+				} else {
+					request.Kind = "drag"
+					request.Drag = &DragGesture{From: point(before.DragFromX, before.DragFromY), To: point(before.DragToX, before.DragToY), DurationMS: 500}
+				}
 			default:
 				request.Kind = "click"
 				request.Point = &Point{X: before.ButtonX * float64(obs.ImageWidth) / float64(before.Width), Y: before.ButtonY * float64(obs.ImageHeight) / float64(before.Height)}
@@ -144,6 +162,12 @@ func TestNativeLinuxInput(t *testing.T) {
 					matched = settled.Value == "x"
 				case "hotkey":
 					matched = slices.Equal(settled.Selection, []int{0, len("AICE-314")})
+				case "pixel_scroll":
+					matched = settled.ScrollValue > before.ScrollValue && settled.ScaleValue == before.ScaleValue && settled.Commits == 0 && settled.Value == before.Value
+					t.Logf("scroll readback: before=%.1f after=%.1f", before.ScrollValue, settled.ScrollValue)
+				case "pixel_drag":
+					matched = settled.ScaleValue >= 80 && settled.ScrollValue == before.ScrollValue && settled.Commits == 0 && settled.Value == before.Value
+					t.Logf("drag readback: before=%.1f after=%.1f", before.ScaleValue, settled.ScaleValue)
 				default:
 					matched = settled.Commits == 1 && settled.Result == "Result: AICE-314"
 				}

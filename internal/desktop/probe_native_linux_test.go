@@ -259,6 +259,14 @@ type linuxProbeState struct {
 	ButtonX     float64 `json:"button_x"`
 	ButtonY     float64 `json:"button_y"`
 	Selection   []int   `json:"selection"`
+	ScrollValue float64 `json:"scroll_value"`
+	ScaleValue  float64 `json:"scale_value"`
+	ScrollX     float64 `json:"scroll_x"`
+	ScrollY     float64 `json:"scroll_y"`
+	DragFromX   float64 `json:"drag_from_x"`
+	DragFromY   float64 `json:"drag_from_y"`
+	DragToX     float64 `json:"drag_to_x"`
+	DragToY     float64 `json:"drag_to_y"`
 }
 
 func startLinuxProbeChild(t *testing.T, cmd *exec.Cmd) {

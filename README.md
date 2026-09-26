@@ -66,7 +66,8 @@ test. See [Computer Use](./docs/desktop.md) for verified scope and remaining
 platform limitations, including unavailable Wayland/XWayland and Windows action routes.
 Windows read-only status inspection is implemented but still needs native verification.
 The pinned Linux Driver also has an unresolved Unicode insertion failure;
-GTK keyboard delivery needs an independent input route unavailable in the test fixture.
+GTK keyboard, pixel scroll and drag need independent input routes unavailable
+in the test fixture.
 Linux application launch also failed background coexistence by taking foreground
 focus in the native fixture, despite the Driver reporting an inactive app.
 

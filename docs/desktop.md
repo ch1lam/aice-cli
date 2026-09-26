@@ -410,7 +410,7 @@ as the tools and prompt it publishes; offline publication tests cover this.
 | --- | --- | --- |
 | macOS 0.29.1 universal artifact | Download hash matches fixed release manifest; temporary extraction/exclusive publication preserves signature, signing identity and Gatekeeper acceptance; CLI/schema inspected; Settings setup exercised through CLI/Bubble Tea with fake native operations | Signed installed service, system authorization, persistent MCP handshake against that service, synthetic multi-app task, background focus/input sentinel, native overlay, cancellation and cold/warm measurements |
 | Windows amd64/arm64 | Downloaded archives and selected executable hashes verified; private installer with Authenticode checks implemented; synthetic extraction/reuse/cancellation tests and cross-compilation pass; static imports inspected; read-only service inspection and Windows status presentation implemented with synthetic tests | Native installation/signature trust, exclusive publication, named-pipe identity/UIAccess/session checks and status-schema confirmation; setup/action runtime integration and native UI/input/lifecycle tests |
-| Linux arm64 | Private installation/reuse and read-only headless inspection passed in an isolated Debian 13 container; production Manager and selected-window setup passed owned stdio and verified shared-service X11/GTK checks; scripted-model native print/Guard/tool/Session flow, ASCII insertion and pixel click/resize rejection passed; launch established its exact window and preserved the app after Manager close; actual Settings CLI flow passed native private installation, selected-window capture, cancellation/retry and saved enable | Launch steals focus, Unicode insertion truncates and GTK key/hotkey are unavailable in the fixture; actual-model tasks, physical terminal/IME and other desktop environments; other pixel actions/drag, foreground assistance, overlay, other toolkits, real compositor/Wayland and physical-input/IME checks |
+| Linux arm64 | Private installation/reuse and read-only headless inspection passed in an isolated Debian 13 container; production Manager and selected-window setup passed owned stdio and verified shared-service X11/GTK checks; scripted-model native print/Guard/tool/Session flow, ASCII insertion and pixel click/resize rejection passed; launch established its exact window and preserved the app after Manager close; actual Settings CLI flow passed native private installation, selected-window capture, cancellation/retry and saved enable | Launch steals focus, Unicode insertion truncates and GTK key/hotkey, pixel scroll and drag are unavailable in the fixture; actual-model tasks, physical terminal/IME and other desktop environments; other pixel actions, foreground assistance, overlay, other toolkits, real compositor/Wayland and physical-input/IME checks |
 | Linux amd64 | Downloaded archive and selected executable hashes verified; synthetic installer tests and cross-compilation pass; ELF library dependencies inspected | Native installation/dynamic loading and exclusive publication; runtime/service admission, AT-SPI/display detection, compositor-specific input/capture/overlay tests |
 
 On 2026-09-26 the native host had a signed, Gatekeeper-accepted CuaDriver
@@ -681,13 +681,29 @@ test. Its full run currently fails with the fixed Linux arm64 0.29.1 Driver:
   GTK; this container has no `/dev/uinput` access. This is an unavailable route
   in the tested environment, not evidence that those inputs work on a physical
   Linux desktop. Do not mount the user's input devices to make the fixture pass.
+- GTK pixel `scroll` and `drag` also return `background_unavailable` in this
+  environment. On 2026-09-27, separate cases used a real `GtkScrolledWindow` and
+  `GtkScale`, with screenshot coordinates derived from fixture geometry. Scroll
+  offset and slider value remained zero in independent application state sampled
+  after the replies. Each case retained all eight concurrent core keys in the
+  foreground sentinel with zero focus loss. This is successful refusal handling,
+  not successful scrolling or dragging, and it does not validate gesture geometry
+  after dispatch. The pinned implementation's `unavailable_gtk_pointer_background`
+  gate requires an available independent pointer route; its
+  `real_pointer_input_available` check returns false without `/dev/uinput` access.
+  The fixture intentionally supplies no host input devices. Passing GTK button
+  clicks can use a semantic route and do not prove general pointer delivery.
 
-The tests retain the requested postconditions and fail when input does not land.
+The complete eight-case native run on 2026-09-27 took 20.51 seconds: ASCII
+insertion, button click and resize/refusal/re-observation passed; Unicode
+insertion, key, hotkey, pixel scroll and drag failed. Every case retained its
+concurrent foreground input without focus loss. The tests retain the requested
+postconditions and fail when input does not land.
 AICE preserves the native refusal/unverifiable result and does not replay it or
 switch to foreground. The Unicode insertion discrepancy is unresolved; do not
-claim complete Linux keyboard support, substitute `set_value` for insertion, or
+claim complete Linux input support, substitute `set_value` for insertion, or
 change the pinned artifact silently. A repaired/reviewed Driver and an isolated
-environment with a supported independent keyboard route need fresh acceptance.
+environment with supported independent keyboard/pointer routes need fresh acceptance.
 
 An isolated arm64 Debian/GTK control experiment on 2026-09-27 confirmed the
 length mismatch independently of Cua. Against the same synthetic entry fixture,

@@ -138,9 +138,9 @@ application/window ownership and continuous focus acceptance before enabling tha
 adapter; do not treat `active:false` or foreground-retry advice as proof of safety.
 The Linux [input acceptance gate](desktop.md#linux-input-acceptance-failures)
 currently fails on truncated Unicode insertion and unavailable GTK background
-keyboard delivery. Keep those failures distinct from passing semantic value
-changes and pixel clicks; neither a non-error RPC nor cross-compilation proves
-the requested input landed.
+keyboard, pixel scroll and drag delivery. Keep those failures distinct from passing
+semantic value changes and pixel clicks; neither a non-error RPC nor
+cross-compilation proves the requested input landed.
 The separate [Linux launch gate](desktop.md#linux-launch-acceptance-failure)
 also fails background coexistence: its synthetic app launches and remains usable,
 but the foreground sentinel loses focus despite the Driver's `active:false`.

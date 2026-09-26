@@ -363,13 +363,17 @@ cancellation, condition deadlines and delayed launch windows. Native timings
 are local harness measurements; neither these nor the aggregate discovery time
 measure provider latency, Guard time or next-model-request preparation.
 The optional `TestNativeLinuxInput` adds ASCII/Unicode insertion, single-key,
-hotkey, screenshot-bound button click and resize/refusal/re-observation cases.
+hotkey, screenshot-bound button click, resize/refusal/re-observation, pixel scroll
+and drag cases. The latter two read actual GTK scroll offset and slider value;
+fixture geometry supplies their points, not a visual model.
 Pass `'^TestNativeLinuxInput$'` as the runner's third argument to run this gate.
-Its full native run currently **fails** on Unicode insertion and GTK keyboard
-delivery; see [input acceptance failures](desktop.md#linux-input-acceptance-failures).
+Its full native run currently **fails** on Unicode insertion and unavailable GTK
+keyboard, pixel scroll and drag delivery; see
+[input acceptance failures](desktop.md#linux-input-acceptance-failures).
 Do not change those cases into expected-success tests for refusal or truncation.
-The passing pixel cases do not establish keyboard readiness. Fixture geometry
-supplies coordinates only to these tests; production input still goes through Cua.
+The passing button-click cases do not establish general pointer or keyboard
+readiness. Fixture geometry supplies coordinates only to these tests; production
+input still goes through Cua.
 The optional `TestNativeLinuxLaunch` discovers a temporary XDG desktop entry,
 launches it once, checks exact PID/window binding and a follow-up task, and
 verifies the application survives Manager close. Pass `'^TestNativeLinuxLaunch$'`
