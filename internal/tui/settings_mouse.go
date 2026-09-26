@@ -55,11 +55,18 @@ func (p *settingsPanel) editTarget(x, y int) string {
 			menu = a.menus[len(a.menus)-1]
 		}
 		if menu != nil {
-			start := max(0, a.choice-p.layout.bodyHeight+3)
-			index := row - 1 + start
-			if row >= 1 && index < len(menu.Options) {
+			layout := p.actionMenuLayout(menu)
+			if layout.more {
+				if row == len(layout.header) {
+					return "action-next"
+				}
+				return ""
+			}
+			index := row - len(layout.header) + layout.start
+			if row >= len(layout.header) && index >= layout.start && index < layout.end {
 				return "action:" + menu.Options[index].Label + ":" + menu.Options[index].Arguments
 			}
+			return ""
 		}
 		if row == 1 {
 			return "editor"
@@ -80,6 +87,8 @@ func (p *settingsPanel) editTarget(x, y int) string {
 func (m model) settingEditClick(target string) (tea.Model, tea.Cmd) {
 	p := m.settings
 	switch {
+	case target == "action-next":
+		return m.settingActionKey(tea.KeyPressMsg{Code: tea.KeyEnter})
 	case target == "add":
 		return m.collectionKey(tea.KeyPressMsg{Code: 'a', Text: "a"})
 	case target == "delete":

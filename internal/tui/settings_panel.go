@@ -112,6 +112,9 @@ func (m *model) resizeSettings() {
 		p.layout = centeredModal(m.width, m.height, 112, 36)
 		p.input.SetWidth(max(1, p.layout.inner-3))
 		p.pressed = ""
+		if p.action != nil {
+			p.action.page = 0
+		}
 	}
 }
 
@@ -265,6 +268,9 @@ func (m model) beginSettingEdit(unset bool) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if field.Kind == interaction.SettingBool {
+		if !field.Value.Bool && field.Action != nil {
+			return m.openSettingAction(field)
+		}
 		value := field.Value
 		value.Bool = !value.Bool
 		return m, m.submitSetting(interaction.SettingChange{ID: field.ID, Value: value})

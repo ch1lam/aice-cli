@@ -8,6 +8,7 @@ import (
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"github.com/ch1lam/aice-cli/internal/interaction"
+	"github.com/charmbracelet/x/ansi"
 )
 
 type settingsAction struct {
@@ -17,8 +18,10 @@ type settingsAction struct {
 	menus              []*interaction.CommandMenu
 	prompt             *interaction.AuthPrompt
 	choice, customStep int
+	page               int
 	secret             bool
 	running            bool
+	cancelled          bool
 	cancel             context.CancelFunc
 	input              chan string
 }
@@ -133,6 +136,7 @@ func (m model) settingActionKey(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	name := key.String()
 	if name == "esc" {
 		if a.running {
+			a.cancelled = true
 			if a.cancel != nil {
 				a.cancel()
 			}
@@ -144,6 +148,7 @@ func (m model) settingActionKey(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if !a.secret && len(a.menus) > 1 {
 			a.menus = a.menus[:len(a.menus)-1]
 			a.choice = 0
+			a.page = 0
 			return m, nil
 		}
 		p.action = nil
@@ -154,6 +159,9 @@ func (m model) settingActionKey(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		p.notice = ""
 		return m, nil
 	}
+	if a.cancelled {
+		return m, nil
+	}
 	var menu *interaction.CommandMenu
 	if a.prompt != nil {
 		menu = a.prompt.Menu
@@ -161,6 +169,20 @@ func (m model) settingActionKey(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		menu = a.menus[len(a.menus)-1]
 	}
 	if menu != nil {
+		layout := p.actionMenuLayout(menu)
+		if name == "pgup" {
+			a.page = max(0, a.page-1)
+			return m, nil
+		}
+		if layout.more {
+			switch name {
+			case "enter", "down", "pgdown":
+				a.page++
+			case "up":
+				a.page = max(0, a.page-1)
+			}
+			return m, nil
+		}
 		switch name {
 		case "up":
 			a.choice = max(0, a.choice-1)
@@ -183,6 +205,7 @@ func (m model) settingActionKey(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			if option.Menu != nil {
 				a.menus = append(a.menus, option.Menu)
 				a.choice = 0
+				a.page = 0
 				return m, nil
 			}
 			a.request.Arguments = option.Arguments
@@ -245,12 +268,13 @@ func (m model) settingActionKey(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 }
 func (m model) applySettingActionPrompt(msg settingsActionPrompt) (tea.Model, tea.Cmd) {
 	p := m.settings
-	if p == nil || p.action != msg.action {
+	if p == nil || p.action != msg.action || msg.action.cancelled {
 		return m, nil
 	}
 	a := p.action
 	a.prompt = &msg.prompt
 	a.choice = 0
+	a.page = 0
 	p.input.SetValue("")
 	p.notice = ""
 	if msg.prompt.AllowInput {
@@ -284,6 +308,10 @@ func (m model) applySettingActionDone(msg settingsActionDone) (tea.Model, tea.Cm
 		p.snapshot = msg.snapshot
 	}
 	p.notice = settingsActionNotice(msg.result, msg.err)
+	if strings.Contains(p.notice, "\n") {
+		p.editing = &interaction.SettingField{Kind: interaction.SettingInfo, Label: "Action result", Description: p.notice}
+		p.detailOffset = 0
+	}
 	return m, nil
 }
 
@@ -331,17 +359,53 @@ func (p *settingsPanel) actionView() string {
 		menu = a.menus[len(a.menus)-1]
 	}
 	if menu == nil {
-		return title
+		return sanitizeMultilineText(title)
 	}
-	rows := []string{menu.Title}
-	start := max(0, a.choice-p.layout.bodyHeight+3)
-	for i := start; i < min(len(menu.Options), start+p.layout.bodyHeight-2); i++ {
+	layout := p.actionMenuLayout(menu)
+	rows := layout.header
+	if layout.more {
+		return strings.Join(append(rows, ansi.Truncate("Enter: more · PgUp: back", max(1, p.layout.inner), "…")), "\n")
+	}
+	for i := layout.start; i < layout.end; i++ {
 		v := menu.Options[i]
 		prefix := "  "
 		if i == a.choice {
 			prefix = "› "
 		}
-		rows = append(rows, sanitizeSingleLineText(fmt.Sprint(prefix, v.Label, "  ", v.Description)))
+		rows = append(rows, ansi.Truncate(sanitizeSingleLineText(fmt.Sprint(prefix, v.Label, "  ", v.Description)), max(1, p.layout.inner), "…"))
 	}
 	return strings.Join(rows, "\n")
+}
+
+type actionMenuLayout struct {
+	header     []string
+	more       bool
+	start, end int
+}
+
+// Layout and hit testing share the wrapped disclosure. Long instructions are
+// paged before choices become actionable, rather than clipped above a consent.
+func (p *settingsPanel) actionMenuLayout(menu *interaction.CommandMenu) actionMenuLayout {
+	a := p.action
+	parts := []string{menu.Title}
+	if q := a.prompt; q != nil {
+		parts = nil
+		for _, text := range []string{q.Title, q.Instructions, q.URL, q.Code} {
+			if text != "" {
+				parts = append(parts, text)
+			}
+		}
+		if menu.Title != q.Title {
+			parts = append(parts, menu.Title)
+		}
+	}
+	lines := strings.Split(ansi.Hardwrap(sanitizeMultilineText(strings.Join(parts, "\n")), max(1, p.layout.inner), true), "\n")
+	pageSize := max(1, p.layout.bodyHeight-1-max(1, min(len(menu.Options), 3)))
+	start := min(a.page*pageSize, ((len(lines)-1)/pageSize)*pageSize)
+	end := min(len(lines), start+pageSize)
+	layout := actionMenuLayout{header: lines[start:end], more: end < len(lines)}
+	available := max(1, p.layout.bodyHeight-len(layout.header))
+	layout.start = max(0, a.choice-available+1)
+	layout.end = min(len(menu.Options), layout.start+available)
+	return layout
 }

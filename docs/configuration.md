@@ -25,9 +25,11 @@ Computer Use preferences are User-only: `desktop_enabled` defaults to `false`
 and `desktop_control_mode` defaults to `background_only` (the other value is
 `foreground_allowed`). Only the user settings file and explicit runtime patches
 can supply them. Auth files, trusted projects, environment and flag bindings
-cannot change them or become reset/inheritance candidates. The Settings fields
-remain disabled while desktop setup and execution are being integrated; saving
-these keys alone does not make a Driver ready. See [Computer Use](desktop.md).
+cannot change them or become reset/inheritance candidates. On macOS, enabling
+in Settings opens the disclosed setup flow; the setup/repair action also offers
+preference-only saving without native effects. Saving these keys alone does not
+make a Driver ready. Other platforms' setup remains disabled pending integration.
+See [Computer Use](desktop.md) for implemented actions and acceptance status.
 
 Project settings are protected by [Project Trust](project-trust.md).
 Until trusted, the project contributes no configuration values. The initial

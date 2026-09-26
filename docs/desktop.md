@@ -5,7 +5,8 @@ contains pinned distribution metadata, a persistent stdio client, User-only
 configuration fields, and application-owned desktop run bindings. When enabled
 in user configuration, Print and interactive main runs expose `desktop_apps`,
 `desktop_observe` and `desktop_act` through the existing Loop and Guard.
-The Settings fields remain disabled pending the explicit setup flow; enabling
+On macOS, Settings → Tools & Network → Computer Use opens an explicit setup
+flow when enabling. The setup/repair row also offers preference-only saving;
 the preference alone does not install or authorize a native service. An enabled
 run may lazily start the already verified App without permission prompts.
 The implementation plan's complete native acceptance remains open.
@@ -47,8 +48,8 @@ A second status read rejects a changed service. External policies/manifests,
 non-standard mode, identity mismatch and missing grants remain distinct errors.
 No admission probe enumerates windows or captures; granted TCC booleans are not evidence
 of successful capture. Cold application connections use this preflight after
-verifying the installed App. Explicit setup has a native API; its Settings
-action wiring and native authorization acceptance remain outstanding.
+verifying the installed App. Settings calls the explicit native setup API;
+native authorization acceptance remains outstanding.
 The native no-autolaunch check passed with the pinned App binary, a temporary
 HOME and an absent socket. No user service was connected or started. Default
 tests cover changing service identity, missing grants, mode/policy rejection,
@@ -84,8 +85,25 @@ fact even if subsequent admission fails. Setup reports requested/completed
 external steps separately from readiness. It never calls private permission
 helpers, resets TCC, or stops a shared daemon. Cancellation stops AICE's command
 but cannot retract grants or guarantee closure of already opened system UI.
-Only the future Settings setup action may invoke this API after disclosure;
+Only the Settings setup action invokes this API after disclosure;
 model tools and read-only Settings views cannot request grants.
+
+The Settings flow describes access beyond the project, model-provider exposure,
+real application effects, signed-App installation, OS permission identity and
+the explicit capture test. Cancel is the initial choice. Long descriptions are
+paged before confirmation choices become active, with shared mouse/keyboard
+geometry; resizing restarts disclosure pagination. Cancelling ignores late
+prompts and leaves the conversation composer/history untouched.
+
+Setup owns one shared Settings reservation throughout installation, authorization
+and the ordinary prepare/save/publish path. It holds no settings file lock during
+native work. Installation, authorization, saved preference and applied resources
+remain separate result facts, shown in a scrollable result page. Failed saving
+retains external success and offers preference-only retry. The captured startup
+helper-download policy still applies after a restart-only setting is saved.
+Before requesting grants, setup retires the idle manager's connection and refs
+so the next run admits a fresh connection. Text-only models retain semantic
+access but the result describes unavailable image/pixel capability.
 
 The application constructs one manager without native I/O and binds it only
 when a main run actually starts. The context carries both the owner identity
@@ -175,10 +193,10 @@ Settings actions return structured external steps, commit/application facts,
 known readiness, revision and warnings. The panel retains those facts alongside
 a later error instead of replacing success output. Ordinary patch preparation
 and publication also have an internal entry point under the existing reservation,
-so a future setup action need not acquire a second reservation.
-Remaining changes belong in Settings setup orchestration,
-TUI deep-link/setup/Stop handling and the remaining typed tools.
-Setup must use one configuration coordination reservation; Stop must use the
+so setup does not acquire a second reservation.
+Remaining changes include bounded read-only status projection,
+TUI deep-link/Stop handling and the remaining typed tools.
+Stop must use the
 existing cancellation path. A Web rebuild must retain the same Desktop binding
 as the tools and prompt it publishes; offline publication tests cover this.
 
@@ -186,7 +204,7 @@ as the tools and prompt it publishes; offline publication tests cover this.
 
 | Scope | Evidence | Remaining acceptance |
 | --- | --- | --- |
-| macOS 0.29.1 universal artifact | Download hash matches fixed release manifest; AICE's temporary extraction/exclusive publication preserves strict signature, Cua signing identity and Gatekeeper acceptance; `--version` and advertised CLI/schema inspected | Settings installer wiring, signed installed service, system authorization, persistent MCP handshake against that service, synthetic multi-app task, background focus/input sentinel, native overlay, cancellation and cold/warm measurements |
+| macOS 0.29.1 universal artifact | Download hash matches fixed release manifest; temporary extraction/exclusive publication preserves signature, signing identity and Gatekeeper acceptance; CLI/schema inspected; Settings setup exercised through CLI/Bubble Tea with fake native operations | Signed installed service, system authorization, persistent MCP handshake against that service, synthetic multi-app task, background focus/input sentinel, native overlay, cancellation and cold/warm measurements |
 | Windows amd64/arm64 | Published release digests pinned; upstream interactive-session requirements reviewed | Downloads, signatures where available, install/autostart opt-out, native UI/input/lifecycle tests |
 | Linux amd64/arm64 | Published release digests pinned; upstream X11/Wayland capability distinction reviewed | Downloads, dynamic dependencies, AT-SPI/display detection, native compositor-specific input/capture/overlay tests |
 
@@ -213,6 +231,14 @@ publication, binding cleanup, stale-context denial, Web recomposition, failed
 preference saves, and partial action/image retention in Session records. They
 never enumerate or control the user's desktop.
 
+The macOS Settings CLI/TUI test traverses search, setup, disclosure, confirmation
+and persisted enable with fake installation/authorization. It verifies that setup
+creates no Session. Default application tests cover concurrent preparation and
+writer rejection, peer-setting preservation, save failure after authorization,
+cancelled grants, preference-only retry and frozen download policy. Renderer
+tests cover 80×24, 120×40 and 32×16 disclosures and visible partial results. These
+do not substitute for native OS UI or IME acceptance.
+
 Manager tests use synthetic windows and PNGs to verify single dispatch,
 post-observation failure, cancellation, per-run cleanup, reconnection,
 cross-run snapshot invalidation, malformed-image semantic fallback and exact
@@ -222,7 +248,7 @@ not native background-input or overlay acceptance.
 The explicit macOS installer API stages and verifies the signed App, reuses
 a compatible existing installation, preserves conflicting files and respects
 the current helper-download policy. Cold enabled runs use its read-only reuse
-path; Settings installation wiring remains outstanding.
+path; Settings uses the explicit install path after confirmation.
 See [installation](installation.md#computer-use-helper-integration-in-progress).
 Its opt-in artifact test passed on macOS using the pinned local archive. This
 checks extraction, native signature/Gatekeeper verification and exclusive

@@ -23,6 +23,8 @@ type desktopState struct {
 	close          func() error
 	status         func() desktop.Status
 	installOptions deps.Options
+	install        func(context.Context, deps.Options) (deps.CuaInstallResult, error)
+	setup          func(context.Context, string) (desktop.SetupResult, error)
 }
 
 func (a *application) newDesktopState(configuration config.Config) (*desktopState, error) {
@@ -47,6 +49,18 @@ func (a *application) newDesktopState(configuration config.Config) (*desktopStat
 		return nil, err
 	}
 	return &desktopState{installOptions: options, close: manager.Close, status: manager.Status,
+		install: func(ctx context.Context, options deps.Options) (deps.CuaInstallResult, error) {
+			if homeErr != nil || home == "" {
+				return deps.CuaInstallResult{}, errors.New("app: Computer Use needs an available user home directory")
+			}
+			return deps.InstallCua(ctx, options)
+		},
+		setup: func(ctx context.Context, binary string) (desktop.SetupResult, error) {
+			if err := manager.Disconnect(ctx); err != nil {
+				return desktop.SetupResult{}, err
+			}
+			return desktop.Setup(ctx, binary, filepath.Join(home, "Library", "Caches", "cua-driver", "cua-driver.sock"))
+		},
 		bind: func(ctx context.Context, options desktop.RunOptions) (tool.DesktopBackend, func() error, error) {
 			run, err := manager.Bind(ctx, options)
 			if err != nil {

@@ -5,11 +5,14 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/ch1lam/aice-cli/internal/config"
+	"github.com/ch1lam/aice-cli/internal/deps"
+	"github.com/ch1lam/aice-cli/internal/desktop"
 	"github.com/ch1lam/aice-cli/internal/llm"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -25,11 +28,27 @@ func TestSettingsUsageTUI(t *testing.T) {
 	t.Setenv("AGENT_BROWSER_HEADED", "")
 	paths := authTestPaths(t)
 	writeConfigFixture(t, paths.GlobalSettings, `{"provider":"custom","model":"old-model"}`)
+	installCalls, setupCalls := 0, 0
 	command, err := newTestCommand(t, dependencies{
 		loadConfig:   func(options config.LoadOptions) (config.Config, error) { return config.LoadFiles(paths, options) },
 		newModel:     func(config.Config) (llm.Streamer, error) { return &recordingModel{}, nil },
 		userHomeDir:  func() (string, error) { return home, nil },
 		saveSettings: config.SaveSettingsFile,
+		newDesktop: func(c config.Config) (*desktopState, error) {
+			return &desktopState{installOptions: deps.DefaultOptions().WithNoInstall(c.NoDepInstall),
+				install: func(_ context.Context, o deps.Options) (deps.CuaInstallResult, error) {
+					installCalls++
+					if !o.NoInstall {
+						t.Error("startup download policy lost")
+					}
+					return deps.CuaInstallResult{Reused: true, Installation: deps.CuaInstallation{Binary: "/synthetic/driver"}}, nil
+				},
+				setup: func(context.Context, string) (desktop.SetupResult, error) {
+					setupCalls++
+					return desktop.SetupResult{AuthorizationRequested: true, AuthorizationCompleted: true, Ready: true}, nil
+				},
+			}, nil
+		},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -99,6 +118,21 @@ func TestSettingsUsageTUI(t *testing.T) {
 	send("\x151m30.000000001s\r")
 	waitFor("Saved to user settings")
 	send("\x1b")
+	if runtime.GOOS == "darwin" {
+		send("/settings\r")
+		waitFor("Models & Accounts")
+		send("/Computer Use setup")
+		waitFor("Computer Use setup / repair")
+		send("\r")
+		waitFor("Enable preference only")
+		send("\r")
+		waitFor("outside this project")
+		waitFor("Continue?")
+		send("\x1b[B\r")
+		waitFor("Computer Use enabled for the next run")
+		send("\x1b")
+		send("\x1b")
+	}
 	send("/usage\r")
 	waitFor("Session usage")
 	send("\x1b")
@@ -121,5 +155,8 @@ func TestSettingsUsageTUI(t *testing.T) {
 	}
 	if loaded.RunTimeout != time.Minute+30*time.Second+time.Nanosecond {
 		t.Fatalf("timeout not persisted: %v", loaded.RunTimeout)
+	}
+	if runtime.GOOS == "darwin" && (!loaded.DesktopEnabled || installCalls != 1 || setupCalls != 1) {
+		t.Fatalf("desktop setup enabled=%v install=%d setup=%d", loaded.DesktopEnabled, installCalls, setupCalls)
 	}
 }

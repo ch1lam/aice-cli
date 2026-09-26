@@ -180,12 +180,19 @@ func (s *interactiveSession) applySettingsReserved(ctx context.Context, request 
 
 func (s *interactiveSession) RunSettingsAction(ctx context.Context, revision uint64, request interaction.CommandRequest) (result interaction.SettingsActionResult, returnErr error) {
 	switch request.Name {
-	case "login", "web", "browser", "trust":
+	case "login", "web", "browser", "trust", "desktop":
 	default:
 		return result, fmt.Errorf("unsupported settings action %s", request.Name)
 	}
 	if err := s.beginSettingsOperation(&revision, request.Name != "trust"); err != nil {
 		return result, err
+	}
+	if request.Name == "desktop" {
+		result, returnErr = s.runDesktopSettings(ctx, request)
+		var warnings []string
+		result.Revision, warnings = s.endSettingsOperation(result.Committed || len(result.External) > 0)
+		result.Warnings = append(result.Warnings, warnings...)
+		return result, returnErr
 	}
 	// Actions may save credentials before a later preference write fails. Any
 	// completed action invalidates older drafts, including partial success.

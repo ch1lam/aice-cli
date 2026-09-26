@@ -106,8 +106,11 @@ permission errors are reported; AICE does not invoke sudo, weaken signing checks
 change PATH or enable login autostart. Installation does not establish process
 ownership or OS authorization.
 
-This API is not yet connected to Settings setup. Windows/Linux installer
-integration and native desktop acceptance remain open; the
+macOS Settings setup invokes this API after the feature/install/authorization
+disclosure. Its download policy is captured at AICE startup; a saved restart-only
+change does not authorize a download in the current instance. Completed install
+facts survive a later authorization or preference-save failure. Windows/Linux
+installer integration and native desktop acceptance remain open; the
 [Computer Use status](desktop.md) records the exact scope of verification.
 
 ## Update

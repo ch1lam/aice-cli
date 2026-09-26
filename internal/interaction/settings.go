@@ -71,8 +71,9 @@ type SettingField struct {
 	DefaultChanges                              []SettingChange
 	InvertBool                                  bool
 	Applies                                     SettingTiming
-	Action                                      *Command
-	Arguments                                   string
+	// Action handles action rows, or the explicit enable flow of an off boolean.
+	Action    *Command
+	Arguments string
 }
 
 type SettingsSnapshot struct {

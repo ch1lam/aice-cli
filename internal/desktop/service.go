@@ -207,10 +207,6 @@ func parseServiceStatus(output, endpoint string) (serviceStatus, error) {
 	return serviceStatus{pid: pid}, nil
 }
 
-func validateMacPermissions(reply Reply, binary string, pid int) error {
-	return validateMacPermissionIdentity(reply, binary, pid, true)
-}
-
 func validateMacPermissionIdentity(reply Reply, binary string, pid int, requireGrants bool) error {
 	var permission struct {
 		Accessibility   *bool `json:"accessibility"`

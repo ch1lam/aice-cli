@@ -231,6 +231,10 @@ func TestSettingsActionPreservesPartialSuccess(t *testing.T) {
 	if a.request.Secret != "" || len(m.entries) != 0 || len(m.promptHistory) != 0 {
 		t.Fatal("action retained a secret or entered the transcript")
 	}
+	view := ansi.Strip(m.settingsPanelView())
+	if !strings.Contains(view, "Completed: Driver installation") || !strings.Contains(view, "Connection unavailable") || m.settings.editing == nil || m.settings.editing.Kind != interaction.SettingInfo {
+		t.Fatal("partial facts not available in scrollable result view", view)
+	}
 	if got := settingsActionNotice(interaction.SettingsActionResult{}, nil); strings.Contains(got, "Ready") {
 		t.Fatal("unknown readiness became ready")
 	}

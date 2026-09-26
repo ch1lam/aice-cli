@@ -108,7 +108,15 @@ func (s *interactiveSession) ReadSettings(ctx context.Context) (interaction.Sett
 		switch def.ID {
 		case config.SettingDesktopEnabled, config.SettingDesktopControlMode:
 			field.Keywords = []string{"desktop", "computer", "cua", "permission", "background", "foreground"}
-			field.DisabledReason = "Computer Use setup is still being integrated"
+			if runtime.GOOS != "darwin" {
+				field.DisabledReason = "Computer Use native setup is not yet integrated on this platform"
+			} else if s.desktop == nil {
+				field.DisabledReason = "Computer Use runtime is unavailable in this session"
+			}
+			if def.ID == config.SettingDesktopEnabled {
+				field.Action = &interaction.Command{Name: "desktop", Interactive: true}
+				field.Arguments = "setup"
+			}
 			if def.ID == config.SettingDesktopControlMode {
 				field.Choices = []interaction.SettingChoice{{Value: string(config.DesktopBackgroundOnly), Label: "Background only"}, {Value: string(config.DesktopForegroundAllowed), Label: "Foreground allowed"}}
 			}
@@ -234,6 +242,13 @@ func (s *interactiveSession) ReadSettings(ctx context.Context) (interaction.Sett
 		result.Fields = append(result.Fields, interaction.SettingField{ID: fmt.Sprintf("system.diagnostic.%d", i), Category: "system", Kind: interaction.SettingInfo, Label: "Configuration diagnostic", Description: diagnostic})
 	}
 	result.Fields = append(result.Fields, webSettingFields(settings.configuration, disabled)...)
+	desktopReason := disabled
+	if runtime.GOOS != "darwin" {
+		desktopReason = "Computer Use native setup is not yet integrated on this platform"
+	} else if s.desktop == nil {
+		desktopReason = "Computer Use runtime is unavailable in this session"
+	}
+	result.Fields = append(result.Fields, interaction.SettingField{ID: "desktop.setup", Category: "tools", Label: "Computer Use setup / repair", Description: "Install the signed Driver and request OS permissions, or retry saving the enabled preference. No Session is created.", Kind: interaction.SettingAction, Action: desktopSetupCommand(), Applies: interaction.SettingDomainAction, DisabledReason: desktopReason})
 	result.Runtime = s.settingsDisplay(settings)
 	return result, nil
 }

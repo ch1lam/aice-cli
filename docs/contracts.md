@@ -658,6 +658,10 @@ public value types and copied metadata, never credentials or writable stores.
 Config owns scalar types, defaults and frozen source layers; app owns dynamic
 model/service choices, editability, timing, validation and prepared resources.
 The TUI chooses controls from value kinds, without importing config/providers.
+An off boolean may carry an application-defined `Action` for its explicit enable
+flow. The TUI routes enable through that action and keeps ordinary disable as a
+preference patch. Computer Use setup reuses this path and one existing shared
+reservation for external work plus internal preference publication.
 
 `settingsLifecycle` reserves a change, preparation or active response under a
 short mutex. Lock order is lifecycle before state/history/side locks. The
@@ -688,6 +692,10 @@ Read generations govern presentation only. Closing a read cancels it; closing
 a submitted preference write does not undo publication. Domain actions have
 cancellable prompt exchanges and use the modal editor, never the conversation
 composer. Query owners cancel and wait at shutdown, including late queued work.
+Menu disclosures wrap and page before choices become actionable. Rendering and
+mouse targets use the same layout; cancellation rejects late prompts. Multiline
+action results open a scrollable information view so partial external success,
+commit facts and later errors remain visible together.
 Usage reads copy source Session records and derive price completeness without
 calling the consuming `RuntimeState` method or creating an empty Session. Reads
 occur on open, lifecycle completion or manual refresh, not streaming deltas.

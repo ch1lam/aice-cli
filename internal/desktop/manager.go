@@ -210,6 +210,21 @@ func (m *Manager) disconnectLocked(reason string) error {
 
 const cleanupTimeout = 3 * time.Second
 
+// Disconnect retires only this manager's connection and execution references.
+// The application uses it under its idle setup reservation before OS grants or
+// repair, so the next run performs fresh service admission. No daemon is stopped.
+func (m *Manager) Disconnect(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, cleanupTimeout)
+	defer cancel()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-m.gate:
+	}
+	defer func() { m.gate <- struct{}{} }()
+	return m.disconnectLocked("Connection retired for setup; next run will verify readiness")
+}
+
 // Close first invalidates the binding, then ends only its own Cua session.
 // It neither closes user applications nor sends a global Driver stop/revoke.
 func (r *Run) Close() error {
