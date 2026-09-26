@@ -321,6 +321,20 @@ to stderr. Full calls and results remain in the Session. Explicit
 including arguments and bounded result text; it is transcript output and can
 contain window contents, not a content-free diagnostic stream.
 
+`desktop.Act` returns local `ActionTiming` evidence alongside its domain result:
+executor queue admission, mutation RPC, condition/window polling, final observation,
+and total call time. Polling includes read-only RPCs and timer intervals; final
+observation includes capture, decoding and image processing. The mutation RPC
+measurement includes transport overhead and connection retirement on failure;
+it is not a measurement inside Cua's native input implementation. Total also
+includes local validation and release cleanup. Durations remain available after
+failure or cancellation, and no action is retried to obtain a measurement.
+These fields are excluded from tool JSON and Session records, with no background
+sampler or additional telemetry. Native Manager acceptance tests print only
+operation names, synthetic target indexes and these durations. Model output
+wait, Guard time and next-request preparation remain outside this boundary and
+still need application-level end-to-end measurement.
+
 Interactive runs show one Computer Use activity row above the composer. It
 uses application-projected tool events: discovery/observation, a requested
 background or foreground route, a condition wait, and model Planning between
@@ -506,6 +520,19 @@ three-target case took about 8.8 seconds. These are synthetic X11 Manager
 measurements, not full model/tool/Guard/Session acceptance. Linux-only rejection
 tests also confirm that external restrictions, unknown status and foreign peers
 do not trigger an owned-runtime fallback.
+
+On 2026-09-27 the same native Manager gate passed again with phase timing enabled
+(0.29.1, Linux arm64, isolated Xvfb/Openbox/GTK, no model or provider network).
+Owned stdio and shared service each retained all 70 concurrent core keys with
+zero focus loss and passed session/process cleanup. Cold discovery took about
+135 ms and 83 ms respectively. Across the twelve warm actions, final observations
+took 7.2–28.6 ms; the six click RPCs took 1.436–1.480 seconds. The first value-setting
+RPC in each mode took 2.8–7.5 ms, while later value-setting RPCs took 1.150–1.159
+seconds. Queue admission stayed below 5 microseconds in this uncontended run.
+This locates most measured action latency within the Driver RPC boundary, but
+does not distinguish transport, upstream waits or native input work inside it.
+These single-run ranges are not percentiles, an end-to-end performance result,
+or evidence for macOS or another desktop environment.
 
 The separate native print test passed on Linux arm64 in the isolated X11 fixture.
 It installs the checksum-pinned archive into a temporary HOME through the real

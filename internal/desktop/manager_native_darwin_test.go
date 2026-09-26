@@ -101,6 +101,7 @@ func TestNativeCuaMultiApp(t *testing.T) {
 		set, err := r.Act(ctx, ActRequest{Kind: "set_value", ObservationRef: observation.Ref,
 			ElementToken: nativeElement(t, observation, "Task value"), Text: value, Screenshot: true})
 		nativeReturned(t, set, err)
+		t.Logf("target=%d action=set_value timing=%+v", i, set.Timing)
 		if set.Observation.Image == nil {
 			t.Fatal("action did not return its requested image")
 		}
@@ -110,6 +111,7 @@ func TestNativeCuaMultiApp(t *testing.T) {
 		click, err := r.Act(ctx, ActRequest{Kind: "click", ObservationRef: set.Observation.Ref,
 			ElementToken: nativeElement(t, *set.Observation, "Commit"), Screenshot: true})
 		nativeReturned(t, click, err)
+		t.Logf("target=%d action=click timing=%+v", i, click.Timing)
 		if semanticCondition(*click.Observation, "Result: "+value) != "satisfied" {
 			t.Fatal("action observation did not confirm commit")
 		}

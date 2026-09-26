@@ -114,12 +114,14 @@ func TestNativeLinuxManager(t *testing.T) {
 				set, err := r.Act(ctx, ActRequest{Kind: "set_value", ObservationRef: observation.Ref,
 					ElementToken: (linuxProbeObservation{Elements: observation.Elements}).token(t, "Task value"), Text: value, Screenshot: true})
 				linuxManagerReturned(t, r, set, err)
+				t.Logf("target=%d action=set_value timing=%+v", i, set.Timing)
 				if _, err := r.Act(ctx, ActRequest{Kind: "set_value", ObservationRef: observation.Ref, ElementToken: "stale", Text: "must not execute"}); err == nil {
 					t.Fatal("consumed AICE reference was accepted")
 				}
 				click, err := r.Act(ctx, ActRequest{Kind: "click", ObservationRef: set.Observation.Ref,
 					ElementToken: (linuxProbeObservation{Elements: set.Observation.Elements}).token(t, "Commit"), Screenshot: true})
 				linuxManagerReturned(t, r, click, err)
+				t.Logf("target=%d action=click timing=%+v", i, click.Timing)
 				if click.Observation.Complete {
 					t.Fatal("actionable-only Linux projection claimed all visible text")
 				}

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type Point struct {
@@ -54,6 +55,7 @@ type ActRequest struct {
 // An error after dispatch is data, not a Go error that a tool boundary could
 // discard. A successful RPC by itself does not confirm a business postcondition.
 type ActResult struct {
+	Timing           ActionTiming    `json:"-"`
 	Dispatched       bool            `json:"dispatched"`
 	Outcome          string          `json:"outcome"`
 	DriverError      bool            `json:"driver_error"`
@@ -67,17 +69,35 @@ type ActResult struct {
 	WindowsTruncated bool            `json:"windows_truncated,omitempty"`
 }
 
-func (r *Run) Act(ctx context.Context, request ActRequest) (ActResult, error) {
+// ActionTiming is local diagnostic evidence, excluded from model and Session
+// JSON. Driver includes the mutation RPC round trip (and transport retirement
+// on failure), not just time spent inside the native input implementation.
+// ConditionWait includes polling RPCs and their intervals; Observation includes
+// final capture, decoding and image processing. Total also includes validation
+// and gate-release cleanup. Model/Guard time lies outside this boundary.
+type ActionTiming struct {
+	Total, Queue, Driver, ConditionWait, Observation time.Duration
+}
+
+func (r *Run) Act(ctx context.Context, request ActRequest) (result ActResult, returnErr error) {
+	started := time.Now()
+	var timing ActionTiming
+	defer func() {
+		timing.Total = time.Since(started)
+		result.Timing = timing
+	}()
 	if request.Screenshot && !r.options.Images {
 		return ActResult{}, errors.New("desktop: current model does not accept images")
 	}
+	queued := time.Now()
 	ctx, release, err := r.acquire(ctx)
+	timing.Queue = time.Since(queued)
 	if err != nil {
 		return ActResult{}, err
 	}
 	defer release()
 	if request.Kind == "launch" {
-		return r.launchLocked(ctx, request)
+		return r.launchLocked(ctx, request, &timing)
 	}
 	if request.AppRef != "" {
 		return ActResult{}, errors.New("desktop: app_ref is only valid for launch")
@@ -87,7 +107,7 @@ func (r *Run) Act(ctx context.Context, request ActRequest) (ActResult, error) {
 		return ActResult{}, err
 	}
 	if request.Kind == "wait" {
-		return r.waitLocked(ctx, binding, request)
+		return r.waitLocked(ctx, binding, request, &timing)
 	}
 	name, args, err := r.actionArguments(binding, request)
 	if err != nil {
@@ -100,8 +120,10 @@ func (r *Run) Act(ctx context.Context, request ActRequest) (ActResult, error) {
 	// to answer. It is never restored by observation failure or reconnection.
 	delete(r.manager.latest, binding.target)
 	delete(r.observations, request.ObservationRef)
+	phase := time.Now()
 	reply, err := r.callLocked(ctx, name, args)
-	result := actionResult(reply, err)
+	timing.Driver = time.Since(phase)
+	result = actionResult(reply, err)
 	if err != nil {
 		return result, nil
 	}
@@ -111,7 +133,9 @@ func (r *Run) Act(ctx context.Context, request ActRequest) (ActResult, error) {
 	}
 	foreground := r.options.Mode == ForegroundAllowed && refusedBeforeInput
 	needsPixels := request.Point != nil || request.Drag != nil
+	phase = time.Now()
 	after, err := r.observeLocked(ctx, ObserveRequest{TargetRef: binding.targetRef, Screenshot: request.Screenshot || (foreground && needsPixels)})
+	timing.Observation = time.Since(phase)
 	if err != nil {
 		result.ObservationError = "Action response received, but follow-up observation failed; observe again before deciding what to do"
 		return result, nil

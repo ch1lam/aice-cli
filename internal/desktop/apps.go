@@ -95,7 +95,7 @@ func (r *Run) Apps(ctx context.Context, query string, limit int) (Discovery, err
 	return result, nil
 }
 
-func (r *Run) launchLocked(ctx context.Context, request ActRequest) (ActResult, error) {
+func (r *Run) launchLocked(ctx context.Context, request ActRequest, timing *ActionTiming) (ActResult, error) {
 	if request.Drag != nil || request.DeliveryMode != "" || request.ObservationRef != "" || request.ElementToken != "" || request.Point != nil || request.Text != "" || request.Key != "" || len(request.Keys) != 0 || request.Direction != "" || request.Amount != 0 || request.Wait != nil {
 		return ActResult{}, errors.New("desktop: launch accepts only app_ref and screenshot")
 	}
@@ -118,7 +118,9 @@ func (r *Run) launchLocked(ctx context.Context, request ActRequest) (ActResult, 
 		// obtained during discovery, never a command or extra arguments from the model.
 		args = map[string]any{"launch_path": app.path}
 	}
+	phase := time.Now()
 	reply, err := r.callLocked(ctx, "launch_app", args)
+	timing.Driver = time.Since(phase)
 	result := actionResult(reply, err)
 	if err != nil || reply.IsError {
 		return result, nil
@@ -159,7 +161,9 @@ func (r *Run) launchLocked(ctx context.Context, request ActRequest) (ActResult, 
 		waitCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		defer cancel()
 		for {
+			phase = time.Now()
 			discovery, err := r.windowsLocked(waitCtx, "", maxTargets, map[int]bool{launched.PID: true})
+			timing.ConditionWait += time.Since(phase)
 			if err != nil {
 				result.ObservationError = "App launch returned, but its window could not be checked; discover windows before continuing"
 				return result, nil
@@ -169,18 +173,23 @@ func (r *Run) launchLocked(ctx context.Context, request ActRequest) (ActResult, 
 			if len(result.Windows) != 0 {
 				break
 			}
+			phase = time.Now()
 			timer := time.NewTimer(200 * time.Millisecond)
 			select {
 			case <-waitCtx.Done():
 				timer.Stop()
+				timing.ConditionWait += time.Since(phase)
 				result.ObservationError = "App launched but no window was ready before the deadline; discover windows later without repeating launch"
 				return result, nil
 			case <-timer.C:
 			}
+			timing.ConditionWait += time.Since(phase)
 		}
 	}
 	if len(result.Windows) == 1 {
+		phase = time.Now()
 		observation, err := r.observeLocked(ctx, ObserveRequest{TargetRef: result.Windows[0].Ref, Screenshot: request.Screenshot})
+		timing.Observation = time.Since(phase)
 		if err != nil {
 			result.ObservationError = "App window found but follow-up observation failed; rediscover and observe before acting"
 			for i := range result.Windows {

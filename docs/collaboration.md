@@ -330,6 +330,14 @@ concurrent core key with no focus loss in both modes. Static labels are not
 part of Linux's actionable-element projection, so independent fixture state
 confirms commits; a missing semantic match must not claim failure or completion.
 Both native tests compare the full production Linux schema pin.
+The native Manager gates on Linux and macOS also log per-action local timings
+for queue admission, mutation RPC, condition polling, final observation and total
+call time. These diagnostics contain no native request/response bodies and are
+excluded from model/Session JSON. Virtual-time tests separately check phase
+attribution for delayed input, lost replies, observation failures, queued
+cancellation, condition deadlines and delayed launch windows. Native timings
+are local harness measurements; neither these nor the aggregate discovery time
+measure provider latency, Guard time or next-model-request preparation.
 The optional `TestNativeLinuxInput` adds ASCII/Unicode insertion, single-key,
 hotkey, screenshot-bound button click and resize/refusal/re-observation cases.
 Pass `'^TestNativeLinuxInput$'` as the runner's third argument to run this gate.

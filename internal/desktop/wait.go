@@ -14,7 +14,7 @@ type WaitCondition struct {
 	TimeoutMS int    `json:"timeout_ms"`
 }
 
-func (r *Run) waitLocked(ctx context.Context, binding observationBinding, request ActRequest) (ActResult, error) {
+func (r *Run) waitLocked(ctx context.Context, binding observationBinding, request ActRequest, timing *ActionTiming) (ActResult, error) {
 	condition := request.Wait
 	if condition == nil || strings.TrimSpace(condition.Text) == "" || len(condition.Text) > 256 || condition.TimeoutMS < 1 || condition.TimeoutMS > 10000 {
 		return ActResult{}, errors.New("desktop: wait requires semantic text of 1..256 bytes and timeout_ms of 1..10000")
@@ -32,7 +32,9 @@ func (r *Run) waitLocked(ctx context.Context, binding observationBinding, reques
 		if waitCtx.Err() != nil {
 			break
 		}
+		phase := time.Now()
 		observation, err := r.observeLocked(waitCtx, ObserveRequest{TargetRef: binding.targetRef, Query: condition.Text})
+		timing.ConditionWait += time.Since(phase)
 		if err != nil {
 			result.Observation = nil // a failed refresh invalidates older refs too
 			result.WaitState = "unknown"
@@ -44,12 +46,14 @@ func (r *Run) waitLocked(ctx context.Context, binding observationBinding, reques
 		if result.WaitState == "satisfied" {
 			break
 		}
+		phase = time.Now()
 		timer := time.NewTimer(200 * time.Millisecond)
 		select {
 		case <-waitCtx.Done():
 			timer.Stop()
 		case <-timer.C:
 		}
+		timing.ConditionWait += time.Since(phase)
 	}
 	if request.Screenshot {
 		if waitCtx.Err() != nil {
@@ -58,7 +62,9 @@ func (r *Run) waitLocked(ctx context.Context, binding observationBinding, reques
 		}
 		// Capture once at completion, then re-evaluate using that exact final
 		// observation. No screenshot is taken on every polling tick.
+		phase := time.Now()
 		observation, err := r.observeLocked(waitCtx, ObserveRequest{TargetRef: binding.targetRef, Screenshot: true, Query: condition.Text})
+		timing.Observation = time.Since(phase)
 		if err != nil {
 			result.Observation = nil // the attempted refresh invalidated its refs
 			result.WaitState = "unknown"
