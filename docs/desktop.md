@@ -1,0 +1,69 @@
+# Computer Use integration
+
+Computer Use is being integrated with Cua Driver. The current implementation
+contains the pinned distribution metadata and a private, persistent stdio client;
+it is not yet exposed as a user-facing Settings capability or model tool.
+The implementation plan's complete native acceptance remains open.
+
+## Ownership and connection contract
+
+`internal/deps` owns immutable artifact selection; see
+[provenance and licensing](../internal/deps/cua/VENDOR.md).
+`internal/desktop` owns the Cua connection and its exact child handle. The
+application will own configuration publication and run bindings. The existing
+Agent Loop, Guard, media pipeline and Session remain the execution boundaries.
+
+The client uses official Go MCP SDK v1.6.1, sends legacy `initialize` with
+`2025-06-18`, checks the returned protocol and Cua identity/version, then discovers
+tools once with bounded pagination. It does not mix modern `server/discover`
+or per-request protocol metadata into that session. Responses retain text,
+image bytes, structured content and domain error status. No tool call retries
+at this transport boundary, including after cancellation, timeout or EOF.
+
+Stdout is a private NDJSON pipe capped at 24 MiB per message before JSON/base64
+decoding. SDK diagnostics and child stderr are discarded rather than duplicating
+window contents or typed text in logs. Process environment construction excludes
+model credentials, loader injection and inherited Cua permission overrides.
+Closing the connection waits for or terminates only its owned MCP child; it does
+not stop a shared service. A service endpoint is required explicitly.
+
+## Baseline and outstanding integration
+
+At implementation start, main was `f64611e`; Settings configuration, application
+coordination and TUI were committed in `a61649f`, `bd3d949`, and `0e531b9`.
+There were no staged/unstaged source changes. Untracked plans were preserved.
+The earlier Settings plan is absent and was not restored.
+
+Reusable boundaries: `Config.WithPatch` / `SaveSettingsPatch`,
+`SettingsReader` / `SettingsWriter`, `beginSettingsOperation`, and the existing
+five-category Settings panel. Remaining changes belong in config source
+filtering, app tool/prompt/Guard composition, structured Settings action results,
+TUI deep-link/setup/Stop handling, desktop run ownership and typed tools.
+Setup must use one configuration coordination reservation; Stop must use the
+existing cancellation path. A Web rebuild must retain the same Desktop binding
+as the tools and prompt it publishes. These changes have not yet landed.
+
+## Platform evidence
+
+| Scope | Evidence | Remaining acceptance |
+| --- | --- | --- |
+| macOS 0.29.1 universal artifact | Download hash matches fixed release manifest; strict signature and Gatekeeper accepted; `--version` and advertised CLI/schema inspected | Signed installed service, system authorization, persistent MCP handshake against that service, synthetic multi-app task, background focus/input sentinel, native overlay, cancellation and cold/warm measurements |
+| Windows amd64/arm64 | Published release digests pinned; upstream interactive-session requirements reviewed | Downloads, signatures where available, install/autostart opt-out, native UI/input/lifecycle tests |
+| Linux amd64/arm64 | Published release digests pinned; upstream X11/Wayland capability distinction reviewed | Downloads, dynamic dependencies, AT-SPI/display detection, native compositor-specific input/capture/overlay tests |
+
+The fixed source's platform matrix documents limitations for raw Wayland
+background input and toolkit-specific paths. Structured refusal is not proof
+that a promised action is supported. AICE must preserve `background_only`,
+report unsupported routes and obtain a product decision if an upstream limit
+prevents the agreed acceptance. Windows/Linux remain in scope; no native
+validation is claimed for them.
+
+The C0 local schema probe used an isolated HOME and disabled telemetry. Its
+sandboxed invocation failed during AppKit pasteboard initialization; the
+read-only schema export succeeded with normal GUI access. Neither invocation
+read a window or executed a desktop action. No OS permission was requested,
+App installed, user application controlled, or paid model called.
+
+Default tests use raw fake MCP peers and synthetic bytes. Native tests must
+be explicitly opted into and use synthetic applications and data. Cross-builds
+and upstream test claims do not replace local native evidence.

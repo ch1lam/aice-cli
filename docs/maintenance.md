@@ -120,6 +120,12 @@ remain in their existing modules.
 
 ## Known discrepancies
 
+### Computer Use integration
+
+The [desktop integration record](desktop.md) tracks the pinned Cua connection,
+remaining Settings/tool wiring and platform evidence. Transport tests do not
+establish desktop task acceptance. Native tests remain opt-in.
+
 ### Self-update OpenPGP dependency warning
 
 `govulncheck ./...` reports [GO-2026-5932](https://pkg.go.dev/vuln/GO-2026-5932)

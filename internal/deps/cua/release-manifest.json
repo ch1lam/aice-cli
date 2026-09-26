@@ -1,0 +1,195 @@
+{
+  "assets": [
+    {
+      "bytes": 66841,
+      "name": "_install-rust.sh",
+      "sha256": "18090e0a711d652a6d38c1fa6275a4b5c5e537ec9b8549318ecbe469dbe6bb80"
+    },
+    {
+      "bytes": 1742,
+      "name": "checksums.txt",
+      "sha256": "c52d980d0b4f589f602c72393af1b165f0b8d9479f82ba618897b97a848474ae"
+    },
+    {
+      "bytes": 73719520,
+      "name": "cua-driver-rs-0.29.1-darwin-arm64.tar.gz",
+      "sha256": "096552de60bff0bcd476619b97f60ea12ecb1c38d7abdb2ea4496b3478e2458c"
+    },
+    {
+      "bytes": 45812644,
+      "name": "cua-driver-rs-0.29.1-darwin-universal-binary.tar.gz",
+      "sha256": "ba47526554ea832b4a77566ee946ef3fac1c51bb5e8a0d3f0c150e1377740bc7"
+    },
+    {
+      "bytes": 73719539,
+      "name": "cua-driver-rs-0.29.1-darwin-universal.tar.gz",
+      "sha256": "ee376d59ef37afac29a10c60c71469ac85fdc8844d1884bd317edd8def29055a"
+    },
+    {
+      "bytes": 73719492,
+      "name": "cua-driver-rs-0.29.1-darwin-x86_64.tar.gz",
+      "sha256": "838dedc3a82dfc9ea385204c7cdb3667cb9519356dfef4f96f1f3cfb64e28b0e"
+    },
+    {
+      "bytes": 33798405,
+      "name": "cua-driver-rs-0.29.1-linux-arm64-binary.tar.gz",
+      "sha256": "92ddc1bf01a68be543445d8cdd0df9900f0a0a43a17d251bf581a7c26cd5168b"
+    },
+    {
+      "bytes": 33797281,
+      "name": "cua-driver-rs-0.29.1-linux-arm64.tar.gz",
+      "sha256": "47c1efa081057c9c1a18e45b20cb7dd0d7d2313520d18ba7d0d35f271005fe19"
+    },
+    {
+      "bytes": 33632010,
+      "name": "cua-driver-rs-0.29.1-linux-x86_64-binary.tar.gz",
+      "sha256": "cf3acd8d7b6ce44917374463758ab6eae0c1e5295592a968fd496c7c8b3d36f1"
+    },
+    {
+      "bytes": 33634849,
+      "name": "cua-driver-rs-0.29.1-linux-x86_64.tar.gz",
+      "sha256": "61a0c0f24d6b03e31bb7a73390db875ecf0de2ce53aa435eadb03d70979d79a5"
+    },
+    {
+      "bytes": 28681454,
+      "name": "cua-driver-rs-0.29.1-windows-arm64-binary.zip",
+      "sha256": "6427e148d5ff322381124945b1870c134c025af219df0054c0027dc58b92569d"
+    },
+    {
+      "bytes": 28682684,
+      "name": "cua-driver-rs-0.29.1-windows-arm64.zip",
+      "sha256": "ec253f1b916b6cc43ea49a3259d009de24ee6d945e195783bfe7ab5e9cccec96"
+    },
+    {
+      "bytes": 30488714,
+      "name": "cua-driver-rs-0.29.1-windows-x86_64-binary.zip",
+      "sha256": "4b5ace1d784b3e4b0d41360408600eac2fa8f008931e07dca200b58e477621ac"
+    },
+    {
+      "bytes": 30489958,
+      "name": "cua-driver-rs-0.29.1-windows-x86_64.zip",
+      "sha256": "679d30dbda901d65a6573f6f4f94aefca8b1eb3bb2ceadb23225dcbe8faa2470"
+    },
+    {
+      "bytes": 74865,
+      "name": "cua-driver-rs-v0.29.1-skills.tar.gz",
+      "sha256": "7f6184ced9756a9d27204da9da8dd176d444dabd8c6a1a96bd02e6b311649969"
+    },
+    {
+      "bytes": 12813,
+      "name": "cua-hyprland-plugin-0.29.1-7a8f66ad04e62fccb18cca9965f2964fcaee124e-build-kit.tar.gz",
+      "sha256": "4f689cac36b48e9c60e03ddfbb1c5a45665f744f3dbce82c91728031d46e17a9"
+    },
+    {
+      "bytes": 68428,
+      "name": "cua-hyprland-plugin-0.29.1-7a8f66ad04e62fccb18cca9965f2964fcaee124e.tar.gz",
+      "sha256": "30d3639fd08b2f08a15ebfff43138535713f4d76efbbdcbec7a83aea044069c5"
+    },
+    {
+      "bytes": 83703,
+      "name": "install.ps1",
+      "sha256": "60671116909dc9aa46ee62f4674511ec97930e829dfa32cc61a7b71b1e1ad1c6"
+    },
+    {
+      "bytes": 5692,
+      "name": "install.sh",
+      "sha256": "317ba3a49fdba10f2a7f1b9f392c1bc1b7657f3aae85e1e2e43684cf17a1bf3b"
+    },
+    {
+      "bytes": 25705,
+      "name": "uninstall.ps1",
+      "sha256": "561a4a36cf362a6e3490c3d9f7368599d265dca3e74b2c238fb6378ac0c05398"
+    },
+    {
+      "bytes": 47325,
+      "name": "uninstall.sh",
+      "sha256": "524fb76d155183607f665992678bda5b89f7fa02dd9ccb78b672bfeb327ecc86"
+    }
+  ],
+  "bump": "patch",
+  "changelog": {
+    "path": "libs/cua-driver/rust/CHANGELOG.md",
+    "sha256": "21a0d51cc64145822713188170efdd9bba713016e02fb0c9810cec9919751004"
+  },
+  "changes": [
+    {
+      "breaking": false,
+      "contributors": [
+        {
+          "external": false,
+          "login": "f-trycua",
+          "role": "author"
+        },
+        {
+          "external": false,
+          "login": "f-trycua",
+          "role": "reporter"
+        }
+      ],
+      "issues": [
+        4125
+      ],
+      "pr": 4148,
+      "scope": "cua-driver",
+      "summary": "keep a macOS selection when pixel typing into a focused field",
+      "type": "fix"
+    },
+    {
+      "breaking": false,
+      "contributors": [
+        {
+          "external": false,
+          "login": "f-trycua",
+          "role": "author"
+        }
+      ],
+      "issues": [],
+      "pr": 4158,
+      "scope": "cua-driver",
+      "summary": "finish Edge 153 session cleanup when its accessibility tree is briefly empty",
+      "type": "fix"
+    },
+    {
+      "breaking": false,
+      "contributors": [
+        {
+          "external": false,
+          "login": "f-trycua",
+          "role": "author"
+        },
+        {
+          "external": false,
+          "login": "f-trycua",
+          "role": "coauthor"
+        }
+      ],
+      "issues": [],
+      "pr": 4160,
+      "scope": "cua-driver",
+      "summary": "make macOS existing-profile browser setup finish reliably",
+      "type": "fix"
+    }
+  ],
+  "compareUrl": "https://github.com/trycua/cua/compare/cua-driver-rs-v0.29.0...cua-driver-rs-v0.29.1",
+  "contributors": [
+    {
+      "external": false,
+      "login": "f-trycua",
+      "roles": [
+        "author",
+        "coauthor",
+        "reporter"
+      ]
+    }
+  ],
+  "displayName": "Cua Driver",
+  "previousTag": "cua-driver-rs-v0.29.0",
+  "product": "cua-driver-rs",
+  "repository": "trycua/cua",
+  "schema": "https://raw.githubusercontent.com/trycua/cua/7a8f66ad04e62fccb18cca9965f2964fcaee124e/.github/release-manifest.schema.json",
+  "schemaVersion": 1,
+  "sha": "7a8f66ad04e62fccb18cca9965f2964fcaee124e",
+  "tag": "cua-driver-rs-v0.29.1",
+  "version": "0.29.1",
+  "visualRequested": false
+}
