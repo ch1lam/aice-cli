@@ -91,7 +91,7 @@ func TestSettingsCollectionAtomicAndMouseEnum(t *testing.T) {
 	m := panelModel(t, 120, 40)
 	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	l := m.settings.layout
-	mouse := tea.Mouse{X: l.x + 4, Y: l.y + 4, Button: tea.MouseLeft}
+	mouse := tea.Mouse{X: l.x + 4, Y: l.y + 6, Button: tea.MouseLeft}
 	m = updateModel(t, m, tea.MouseClickMsg(mouse))
 	next, cmd := m.Update(tea.MouseReleaseMsg(mouse))
 	m = next.(model)
@@ -153,7 +153,7 @@ func TestSettingsCursorTracksUnicodeEditorAndCell(t *testing.T) {
 	}
 	l := m.settings.layout
 	local := sessionPickerTextCursor(m.settings.input)
-	if cursor.X != l.x+2+local.X || cursor.Y != l.y+4 {
+	if cursor.X != l.x+2+local.X || cursor.Y != l.y+6 {
 		t.Fatalf("cursor=%+v", cursor)
 	}
 }

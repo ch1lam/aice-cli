@@ -9,7 +9,7 @@ import (
 )
 
 func (p *settingsPanel) editTarget(x, y int) string {
-	if y == p.layout.height-3 {
+	if y == p.layout.height-5 {
 		if x >= 0 && x < 6 {
 			return "save"
 		}
@@ -17,8 +17,8 @@ func (p *settingsPanel) editTarget(x, y int) string {
 			return "cancel"
 		}
 	}
-	row := y - 2
-	if row < 0 {
+	row := y - 3
+	if row < 0 || row >= p.layout.bodyHeight {
 		return ""
 	}
 	if p.collection != nil {

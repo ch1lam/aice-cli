@@ -55,6 +55,11 @@ func (m model) openSettingsPanel(usage bool) (model, tea.Cmd, bool) {
 	input.Prompt = "› "
 	input.CharLimit = 0
 	input.SetVirtualCursor(false)
+	styles := textinput.DefaultDarkStyles()
+	styles.Focused.Text, styles.Blurred.Text = bodyStyle, bodyStyle
+	styles.Focused.Placeholder, styles.Blurred.Placeholder = mutedStyle, mutedStyle
+	styles.Focused.Prompt, styles.Blurred.Prompt = mutedStyle, mutedStyle
+	input.SetStyles(styles)
 	m.settings = &settingsPanel{generation: m.settingsGeneration, input: input, positions: m.settingsPositions, tab: m.settingsTab, usage: usage}
 	if m.settings.positions == nil {
 		m.settings.positions = map[int]int{}
@@ -113,6 +118,7 @@ func (m *model) closeSettings() {
 func (m *model) resizeSettings() {
 	if p := m.settings; p != nil {
 		p.layout = centeredModal(m.width, m.height, 112, 36)
+		p.layout.bodyHeight = max(1, p.layout.height-8)
 		p.input.SetWidth(max(1, p.layout.inner-3))
 		p.pressed = ""
 		if p.action != nil {
@@ -142,7 +148,7 @@ func (p *settingsPanel) fields() []interaction.SettingField {
 		}
 		fields = append(fields, field)
 	}
-	return fields
+	return groupSettingFields(fields)
 }
 
 func (m model) applySettingsRead(message settingsReadResult) (tea.Model, tea.Cmd) {

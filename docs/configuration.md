@@ -165,6 +165,12 @@ permissions. An enabled preference alone is not readiness.
 The five categories are Models & Accounts, Tools & Network, Run Limits,
 Project & Trust, and System. Tab/Shift+Tab switches categories; `/` searches
 across them. Arrow keys select, Enter edits, and `?` opens scrollable details.
+The window leaves one cell of padding inside each border. The active category
+uses the slash menu's bold light text without brackets. A muted, indented search
+prompt sits above a divider; settings are grouped under secondary headings and
+rules (for example Browser, Computer Use, Web search, Web fetch and individual
+search services). Headings are not selectable, and scrolling keeps the selected
+field visible. Search results retain their category and section headings.
 Mouse clicks select categories, fields, choices and Save/Cancel; the wheel
 scrolls the active list. Escape backs out of a field, search or window without
 cancelling the background response.

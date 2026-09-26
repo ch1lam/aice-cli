@@ -151,7 +151,7 @@ func TestSettingsUsageTUI(t *testing.T) {
 	send("\x1b")
 	if runtime.GOOS == "darwin" || runtime.GOOS == "linux" {
 		send("/desktop\r")
-		waitFor("[Tools & Network]")
+		waitFor("Computer Use control mode")
 		send("/Computer Use status\r")
 		if runtime.GOOS == "darwin" {
 			waitFor("Screen Recording: Missing")
@@ -198,7 +198,7 @@ func TestSettingsUsageTUI(t *testing.T) {
 
 	if runtime.GOOS == "darwin" || runtime.GOOS == "linux" {
 		send("/desktop\r")
-		waitFor("[Tools & Network]")
+		waitFor("Computer Use control mode")
 		send("/Computer Use setup\r")
 		waitFor("Enable preference only")
 		send("\x1b[B\r")
@@ -227,7 +227,7 @@ func TestSettingsUsageTUI(t *testing.T) {
 	// synthetic status evidence, never native Windows service acceptance.
 	windowsStatus.Store(true)
 	send("/desktop\r")
-	waitFor("[Tools & Network]")
+	waitFor("Computer Use control mode")
 	send("/Computer Use status\r")
 	waitFor("Driver integrity level: Medium (RID 0x2000)")
 	waitFor("Driver UIAccess token: Unavailable")

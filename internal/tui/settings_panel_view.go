@@ -13,13 +13,13 @@ import (
 func (p *settingsPanel) tabs() string {
 	var parts []string
 	for i, tab := range p.snapshot.Categories {
-		label := tab.Label
+		style := mutedStyle
 		if i == p.tab {
-			label = "[" + label + "]"
+			style = slashCommandSelectedStyle
 		}
-		parts = append(parts, label)
+		parts = append(parts, style.Render(tab.Label))
 	}
-	joined := strings.Join(parts, " │ ")
+	joined := strings.Join(parts, mutedStyle.Render(" │ "))
 	if ansi.StringWidth(joined) <= p.layout.inner {
 		return joined
 	}
@@ -90,22 +90,18 @@ func (m model) settingsPanelView() string {
 		}
 	} else {
 		fields := p.fields()
-		available := max(1, l.bodyHeight-5)
+		listWidth, _ := p.listSize()
 		wide := l.inner >= 88
-		if wide {
-			available = l.bodyHeight
-		}
-		start := max(0, p.selection-available+1)
-		listWidth := l.inner
-		if wide {
-			listWidth = l.inner/2 - 2
-		}
 		var rows []string
-		for i := start; i < min(len(fields), start+available); i++ {
-			field := fields[i]
+		for _, row := range p.visibleSettingRows(fields) {
+			if row.field < 0 {
+				rows = append(rows, settingSectionHeading(row.section, listWidth))
+				continue
+			}
+			field := fields[row.field]
 			prefix := "  "
 			style := bodyStyle
-			if i == p.selection {
+			if row.field == p.selection {
 				prefix = "› "
 				style = labelStyle
 			}
@@ -116,11 +112,9 @@ func (m model) settingsPanelView() string {
 			if field.Kind == interaction.SettingInfo {
 				value = field.Value.Text
 			}
-			label := field.Label
-			if p.search && p.input.Value() != "" {
-				label = field.Category + " · " + label
-			}
-			rows = append(rows, style.Render(ansi.Truncate(sanitizeSingleLineText(prefix+label+"  "+value), listWidth, "…")))
+			rows = append(rows, style.Render(ansi.Truncate(
+				sanitizeSingleLineText(prefix+field.Label+"  "+value), listWidth, "…",
+			)))
 		}
 		if len(rows) == 0 {
 			rows = []string{"No matching settings"}
@@ -129,23 +123,33 @@ func (m model) settingsPanelView() string {
 		if len(fields) > 0 {
 			details := settingDetails(fields[min(p.selection, len(fields)-1)], p.snapshot.SavePath)
 			if wide {
-				body = lipgloss.JoinHorizontal(lipgloss.Top, lipgloss.NewStyle().Width(listWidth).Height(l.bodyHeight).Render(body), " │ ", mutedStyle.Width(l.inner-listWidth-3).Render(ansi.Hardwrap(sanitizeMultilineText(details), l.inner-listWidth-3, true)))
+				divider := mutedStyle.Render(strings.TrimSuffix(strings.Repeat(" │ \n", l.bodyHeight), "\n"))
+				detailWidth := l.inner - listWidth - 3
+				body = lipgloss.JoinHorizontal(
+					lipgloss.Top,
+					lipgloss.NewStyle().Width(listWidth).Height(l.bodyHeight).Render(body),
+					divider,
+					mutedStyle.Width(detailWidth).Render(ansi.Hardwrap(sanitizeMultilineText(details), detailWidth, true)),
+				)
 			} else {
 				body += "\n\n" + mutedStyle.Render(ansi.Hardwrap(sanitizeMultilineText(details), l.inner, true))
 			}
 		}
 	}
 	body = lipgloss.NewStyle().Width(l.inner).Height(l.bodyHeight).MaxHeight(l.bodyHeight).Render(body)
-	search := "/ Search all settings"
+	search := mutedStyle.Render("  / Search all settings")
 	if p.search {
-		search = p.input.View()
+		input := p.input
+		input.Prompt = "  "
+		input.Placeholder = "/ Search all settings"
+		search = input.View()
 	}
 	notice := p.notice
 	if p.loading {
 		notice = "Loading…"
 	}
 	if notice != "" {
-		search = sanitizeSingleLineText(notice)
+		search = mutedStyle.Render(ansi.Truncate("  "+sanitizeSingleLineText(notice), l.inner, "…"))
 	}
 	footer := p.footer()
 	if m.canContinueTask() {
@@ -157,7 +161,11 @@ func (m model) settingsPanelView() string {
 			footer = "Stopping… · Esc back"
 		}
 	}
-	content := strings.Join([]string{mutedStyle.Render(ansi.Truncate(p.tabs(), l.inner, "…")), ansi.Truncate(search, l.inner, "…"), body, mutedStyle.Render(ansi.Truncate(footer, l.inner, "…"))}, "\n")
+	content := strings.Join([]string{
+		"", ansi.Truncate(p.tabs(), l.inner, "…"), ansi.Truncate(search, l.inner, "…"),
+		mutedStyle.Render(strings.Repeat("─", l.inner)), body,
+		mutedStyle.Render(ansi.Truncate(footer, l.inner, "…")), "",
+	}, "\n")
 	hover := p.pointer != nil && modalCloseContains(l, *p.pointer)
 	return modalFrame(title, content, l, hover, p.pressed == "close")
 }
@@ -176,9 +184,9 @@ func (m model) overlaySettings(content string) (string, *tea.Cursor) {
 		cursor = sessionPickerTextCursor(p.input)
 		if cursor != nil {
 			cursor.X += l.x + 2
-			cursor.Y += l.y + 2
+			cursor.Y += l.y + 3
 			if p.editing != nil {
-				cursor.Y = l.y + 4
+				cursor.Y = l.y + 6
 				if p.collection != nil && p.collection.editing {
 					cursor.Y += 2 * p.collection.cell
 				}
@@ -193,26 +201,19 @@ func (p *settingsPanel) target(mouse tea.Mouse) string {
 	if modalCloseContains(l, mouse) {
 		return "close"
 	}
-	x, y := mouse.X-l.x-2, mouse.Y-l.y-1
+	x, y := mouse.X-l.x-2, mouse.Y-l.y-2
 	if mouse.X < l.x || mouse.X >= l.x+l.width || mouse.Y < l.y || mouse.Y >= l.y+l.height {
 		return "outside"
+	}
+	if x < 0 || x >= l.inner || y < 0 || y > l.height-5 {
+		return ""
 	}
 	if p.editing != nil {
 		return p.editTarget(x, y)
 	}
 	if y == 0 {
 		offset := 0
-		if ansi.StringWidth(strings.Join(func() []string {
-			var labels []string
-			for i, t := range p.snapshot.Categories {
-				label := t.Label
-				if i == p.tab {
-					label = "[" + label + "]"
-				}
-				labels = append(labels, label)
-			}
-			return labels
-		}(), " │ ")) > l.inner {
+		if p.tabsWidth() > l.inner {
 			if x < l.inner/2 {
 				return "previous"
 			}
@@ -220,31 +221,21 @@ func (p *settingsPanel) target(mouse tea.Mouse) string {
 		}
 		for i, tab := range p.snapshot.Categories {
 			w := ansi.StringWidth(tab.Label)
-			if i == p.tab {
-				w += 2
-			}
 			if x >= offset && x < offset+w {
 				return fmt.Sprintf("tab:%d", i)
 			}
 			offset += w + 3
 		}
 	}
-	if p.editing != nil {
-		return ""
-	}
 	if y == 1 {
 		return "search"
 	}
-	available := max(1, l.bodyHeight-5)
-	listWidth := l.inner
-	if l.inner >= 88 {
-		available = l.bodyHeight
-		listWidth = l.inner/2 - 2
-	}
-	row := y - 2
-	start := max(0, p.selection-available+1)
-	if row >= 0 && row < available && x >= 0 && x < listWidth && row+start < len(p.fields()) {
-		return "field:" + p.fields()[row+start].ID
+	listWidth, _ := p.listSize()
+	row := y - 3
+	fields := p.fields()
+	rows := p.visibleSettingRows(fields)
+	if row >= 0 && row < len(rows) && x < listWidth && rows[row].field >= 0 {
+		return "field:" + fields[rows[row].field].ID
 	}
 	return ""
 }
@@ -347,7 +338,7 @@ func (m model) settingsPointer(message tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m model) settingsTarget(mouse tea.Mouse) string {
 	p := m.settings
-	if m.running && !p.usage && mouse.Y == p.layout.y+p.layout.height-2 {
+	if m.running && !p.usage && mouse.Y == p.layout.y+p.layout.height-3 {
 		x := mouse.X - p.layout.x - 2
 		if !m.cancelRequested && x >= 0 && x < min(p.layout.inner, len("[Stop current run]")) {
 			return "stop-run"
@@ -355,7 +346,7 @@ func (m model) settingsTarget(mouse tea.Mouse) string {
 		// The run controls replace, rather than overlay, the editor footer.
 		return ""
 	}
-	if m.canContinueTask() && mouse.Y == p.layout.y+p.layout.height-2 {
+	if m.canContinueTask() && mouse.Y == p.layout.y+p.layout.height-3 {
 		x := mouse.X - p.layout.x - 2
 		if x >= 0 && x < min(p.layout.inner, len("[Continue]")) {
 			return "continue-task"

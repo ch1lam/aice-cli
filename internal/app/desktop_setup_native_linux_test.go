@@ -131,7 +131,7 @@ func TestNativeLinuxDesktopSetupTUI(t *testing.T) {
 	writeNativePrintSignal(t, sentinel, "arm")
 	awaitNativePrintState(t, ctx, sentinel, func(s nativePrintState) bool { return s.KeysSent >= 3 })
 	send("/desktop\r")
-	waitFor("[Tools & Network]")
+	waitFor("Computer Use control mode")
 	send("/Computer Use setup\r")
 	waitFor("Enable preference only")
 	send("\r")
