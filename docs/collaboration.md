@@ -812,6 +812,36 @@ AICE_CUA_TEST_FIXTURE=1 go test -tags=integration ./internal/desktop -run '^Test
 See the [platform evidence](desktop.md#platform-evidence) for actual results;
 the presence or compilation of an opt-in test is not native acceptance.
 
+### Native session idle expiry
+
+The macOS expiry gate waits for the official daemon's default five-minute
+session idle timeout and thirty-second maintenance sweep. It requires a separate
+opt-in because it takes more than five minutes. It does not alter TTLs, call
+private lifecycle APIs, inject an expiry response or restart the shared service:
+
+```sh
+AICE_CUA_NATIVE=1 AICE_CUA_NATIVE_EXPIRY=1 go test -race -tags=integration ./internal/desktop -run '^TestNativeMacSessionExpiry$' -count=1 -timeout=9m -v
+```
+
+The fixture captures one exact synthetic AppKit window, then sends no task
+traffic while a separate read-only operator connection watches that session's
+label disappear. Disappearance before 290 seconds or no disappearance within
+six minutes fails the gate. An action using the old semantic token must fail
+without changing the fixture; the test preserves either a returned native error
+or an unknown transport outcome and never replays the consumed reference.
+After closing that run, a new run must discover/capture the window and commit
+once using a new token. The shared service must remain usable after cleanup.
+This does not test daemon restart, permission revocation, physical input or
+continuous foreground focus; it has no foreground sentinel. Run sequentially
+with other native gates. Default tests skip it and do not wait for native expiry.
+
+The 2026-09-27 attempt observed session removal after 5 min 10 s and a failed
+old-token action, but then detected macOS `loginwindow` foreground. It **did not
+pass**: independent post-action readback and new-run recovery were not completed.
+The gate retains the interactive-desktop check, including before the expired
+action, and never unlocks the host or changes its lock policy. Rerun on an
+available desktop that remains unlocked for the full interval.
+
 ### Explicit real-model desktop gate
 
 `TestNativeMacActualModelDesktop` uses the selected production provider, Agent

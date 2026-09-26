@@ -113,6 +113,16 @@ Public manager construction requires an application runtime resolver. It only
 reuses a verified installation and admits a compatible service; a pinned
 proxy alone cannot prove a shared daemon's version or permission mode.
 
+Cua's native lifecycle session can expire independently of the reusable MCP
+connection. The pinned runtime defaults to five minutes of session inactivity
+with a thirty-second maintenance sweep. AICE does not send keepalives or silently
+revive expired labels to replay an action. The separate native expiry gate
+observed session removal after 5 min 10 s on 2026-09-27, followed by a failed
+old-token action. The host then reported `loginwindow` foreground, blocking
+independent widget readback and new-run recovery. This is partial evidence,
+not passed lifecycle acceptance; the complete gate must be rerun on an unlocked
+desktop. See [the expiry procedure](collaboration.md#native-session-idle-expiry).
+
 On macOS, the first desktop use also obtains an exclusive AICE occupancy lock
 at `~/Library/Caches/cua-driver/.aice-desktop.lock`, before runtime resolution or
 connection. The lock waits at most two seconds and responds to Stop; contention
