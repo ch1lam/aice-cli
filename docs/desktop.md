@@ -501,6 +501,17 @@ loss, and CLI cleanup preserved the shared service. The existing AppKit-only CLI
 gate passed in the same sequential run. These are native application-pipeline
 checks, not actual-model visual reasoning or physical terminal input.
 
+A separately opted-in [real-model gate](collaboration.md#explicit-real-model-desktop-gate)
+is prepared but has not yet been run against a real provider. Its scripted
+native harness passed with race detection in 23.23 s of Loop execution on
+2026-09-27: 11 requests, nine images, zero Guard asks/scope refusals, independent
+three-window postconditions, Session replay and focus/service cleanup passed.
+The real path requires explicit provider/model/thinking selection and a fresh
+artifact directory. It uses bounded requests and only synthetic desktop tools;
+its test-only scope checks do not add a product app allowlist. Real-model task
+success and model/network timing remain unverified until that opt-in actually
+runs and passes, separately from the existing scripted CLI gates.
+
 The separate [cold-launch gate](../internal/desktop/apps_native_darwin_test.go)
 passed with race detection on 2026-09-27. It registers a unique synthetic AppKit
 bundle in `~/Applications`, then uses real app discovery and a locally issued

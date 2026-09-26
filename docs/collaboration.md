@@ -759,6 +759,65 @@ AICE_CUA_TEST_FIXTURE=1 go test -tags=integration ./internal/desktop -run '^Test
 See the [platform evidence](desktop.md#platform-evidence) for actual results;
 the presence or compilation of an opt-in test is not native acceptance.
 
+### Explicit real-model desktop gate
+
+`TestNativeMacActualModelDesktop` uses the selected production provider, Agent
+Loop, Guard, typed desktop tools, Manager and Session recorder for the same
+three synthetic forms (AppKit/WebKit/AppKit). The model chooses its actions;
+independent widget/DOM readback requires the assigned Unicode text and exactly
+one commit per window. Each window must have been captured, returned images
+must reach model requests, exact tool-result/image replay must pass, and the
+sentinel and shared service must survive cleanup. This is a targeted Loop/model
+gate, not the full CLI with a real model, physical input or third-party apps.
+
+The harness registers only the three desktop tools. Its test-only scope wrapper
+admits the exact synthetic discovery query, removes unrelated discovery entries,
+and refuses references outside those windows, foreground delivery, launch and
+non-task keyboard actions before dispatch. It retains genuine native results;
+this is not a product allowlist or a change to Cua standard mode. Scope refusals
+fail acceptance even if a model later completes the task. Unknown mutations are
+not replayed by the harness. The guard remains the production gate without yolo;
+any application approval also fails acceptance.
+
+First verify this harness without provider access:
+
+```sh
+AICE_CUA_NATIVE=1 go test -race -tags=integration ./internal/app -run '^TestNativeMacModelHarness$' -v
+```
+
+That scripted-decision check passed on 2026-09-27 with 11 requests, nine images,
+zero Guard asks and zero scope refusals. The real-model gate has a separate
+opt-in; neither `AICE_CUA_NATIVE=1` nor the integration build tag enables it.
+After selecting and authorizing a provider/model, set all of the following:
+
+```sh
+AICE_CUA_NATIVE_MODEL=1 \
+  AICE_CUA_MODEL_PROVIDER='<configured-provider-id>' \
+  AICE_CUA_MODEL_ID='<image-capable-model-id>' \
+  AICE_CUA_MODEL_THINKING='<supported-thinking-level>' \
+  AICE_CUA_MODEL_ARTIFACT_DIR='/absolute/fresh-empty-directory' \
+  go test -race -tags=integration ./internal/app -run '^TestNativeMacActualModelDesktop$' -count=1 -v
+```
+
+This explicitly reads normal user configuration/credentials and uses the normal
+provider authentication path, including OAuth refresh if applicable. It does
+not read project settings or skills. Provider selection and thinking are
+required rather than silently using an ambient default. The model receives only
+the synthetic task and admitted native observations; credentials stay outside
+the prompt and logs. It can consume provider quota or incur charges.
+The run allows at most 20 model attempts, five minutes and 100,000 reported
+tokens, with 4,096 requested output tokens per response. Token limits are checked
+between operations and are not an exact billing ceiling.
+
+The caller must create a fresh empty artifact directory. `task.txt`, the normal
+`model-task.jsonl` and `report.json` remain there for review once the run reaches
+those stages. The report separates Loop completion from full `accepted` status;
+it contains counts/usage, not credentials or input bodies. The Session does
+contain the synthetic images and model transcript. Default tests skip all
+provider reads/calls; offline scope tests reject out-of-scope actions and stale
+references without a native backend call. Preparing or passing the scripted
+harness does not establish real-model acceptance.
+
 ## Browser checks
 
 The default browser/dependency tests use fake commands and local HTTP fixtures,

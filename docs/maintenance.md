@@ -151,6 +151,11 @@ Its CLI counterpart also passes Guard/Loop/tool execution and exact Session
 image/result replay, preserving WebKit's `unverifiable` effect despite the
 independently confirmed page result. Built-in tool guidance now distinguishes
 duplicate labels by role and prefers text insertion for macOS web inputs.
+The [real-model gate](collaboration.md#explicit-real-model-desktop-gate) is now
+prepared behind an independent opt-in and requires an explicit model and
+artifact directory. Its scripted native harness passes; no real-provider
+acceptance has been established. Keep its targeted Loop/fixture scope distinct
+from full CLI, third-party-app and physical-input acceptance.
 The macOS [cursor gate](desktop.md#platform-evidence) verifies renderer visibility
 and session cleanup without an external observer. A separate host-surface
 screenshot visibly showed the blue cursor; its combined manual run failed the
