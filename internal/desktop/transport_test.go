@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"io"
 	"net"
 	"os"
@@ -165,8 +166,8 @@ func TestMutationTransportFailureNeverReplays(t *testing.T) {
 				t.Fatalf("mutation calls=%d", state.calls.Load())
 			}
 			cancel()
-			if _, err := c.call(ctx, "click", nil); err == nil {
-				t.Fatal("canceled call accepted")
+			if _, err := c.call(ctx, "click", nil); !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
+				t.Fatal("canceled call accepted or cancellation cause lost", err)
 			}
 			if state.calls.Load() != 1 {
 				t.Fatal("canceled action dispatched")

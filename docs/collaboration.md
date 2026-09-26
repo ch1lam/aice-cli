@@ -229,6 +229,15 @@ Default Cua installer tests use synthetic archives and in-memory HTTP transports
 Artifact validation is distinct from native Computer Use acceptance; see the
 [platform evidence](desktop.md#platform-evidence).
 
+The negative native proxy check uses a verified App binary, temporary HOME and
+an absent socket. It verifies that the proxy refuses automatic service launch,
+without connecting to a user service or requesting OS permissions:
+
+```sh
+AICE_CUA_TEST_BINARY=/absolute/path/to/CuaDriver.app/Contents/MacOS/cua-driver \
+  go test -tags=integration ./internal/desktop -run '^TestNativeCuaProxyRefusesAutolaunch$' -v
+```
+
 ## Browser checks
 
 The default browser/dependency tests use fake commands and local HTTP fixtures,

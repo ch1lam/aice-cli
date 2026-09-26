@@ -29,6 +29,25 @@ model credentials, loader injection and inherited Cua permission overrides.
 Owned children disable Cua telemetry and update checks.
 Closing the connection waits for or terminates only its owned MCP child; it does
 not stop a shared service. A service endpoint is required explicitly.
+The proxy uses the pinned release's `--embedded` switch solely to refuse
+automatic service launch if that endpoint disappears. It never uses `--direct`
+or claims a host bundle identity; the standalone daemon retains its own TCC
+identity and permission mode.
+
+A private macOS connection preflight now checks the existing service before
+admission. The bounded public `status --socket` command supplies content-free
+mode, policy and PID facts; its pinned text format is parsed only for management,
+never for desktop action results. The persistent MCP connection then checks
+`get_config` for the actual daemon version/platform and `check_permissions`
+with `prompt:false` for App executable, bundle identity, PID and OS grants.
+A second status read rejects a changed service. External policies/manifests,
+non-standard mode, identity mismatch and missing grants remain distinct errors.
+No probe enumerates windows or captures; granted TCC booleans are not evidence
+of successful capture. This preflight is not yet connected to setup or the app.
+The native no-autolaunch check passed with the pinned App binary, a temporary
+HOME and an absent socket. No user service was connected or started. Default
+tests cover changing service identity, missing grants, mode/policy rejection,
+inspection schema checks, bounded subprocess output and cancellation.
 
 ## Run, reference and result contracts
 
@@ -37,9 +56,9 @@ I/O. The manager serializes complete action/observation sequences. It lazily
 starts a uniquely named Driver session, ends only that session on run close,
 and keeps its connection available until disconnect or manager close. A cached
 status read never enumerates, captures, launches or requests authorization.
-The manager constructor remains private pending verified native service
-identity and standard-mode preflight; a pinned proxy alone cannot prove a
-shared daemon's version or permission mode.
+The manager constructor remains private pending setup/application wiring and
+native service acceptance; a pinned proxy alone cannot prove a shared daemon's
+version or permission mode.
 
 Window discovery issues opaque references for returned native pid/window pairs.
 Observation references bind the run, connection generation, exact target,

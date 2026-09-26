@@ -47,6 +47,8 @@ type Image struct {
 // Other transport errors cannot prove whether the native action happened.
 type beforeDispatchError struct{ error }
 
+func (e beforeDispatchError) Unwrap() error { return e.error }
+
 // client is private: callers cannot expose arbitrary Driver tools to the model.
 type client struct {
 	session *mcp.ClientSession
@@ -220,7 +222,10 @@ func newProcessTransport(binary, endpoint string) (*processTransport, error) {
 	if !filepath.IsAbs(binary) || endpoint == "" {
 		return nil, errors.New("desktop: verified absolute binary and service endpoint required")
 	}
-	cmd := exec.Command(binary, "mcp", "--socket", endpoint)
+	// On this pinned release, --embedded on the proxy disables automatic
+	// standalone service launch. It does not change the connected daemon's TCC
+	// attribution or mode. Never use --direct or set a claimed host bundle ID.
+	cmd := exec.Command(binary, "mcp", "--socket", endpoint, "--embedded")
 	cmd.Env = driverEnvironment(os.Environ())
 	// Driver diagnostics can contain window text or input. Do not duplicate them
 	// in the terminal, Session, or logs. Protocol failures carry content-free status.
