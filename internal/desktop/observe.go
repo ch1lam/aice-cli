@@ -112,19 +112,21 @@ type Element struct {
 }
 
 type Observation struct {
-	Ref         string            `json:"observation_ref"`
-	TargetRef   string            `json:"target_ref"`
-	Elements    []Element         `json:"elements"`
-	Complete    bool              `json:"elements_complete"`
-	Truncated   bool              `json:"projection_truncated"`
-	Degraded    bool              `json:"degraded"`
-	Diagnostic  string            `json:"diagnostic,omitempty"`
-	ImageWidth  int               `json:"image_width,omitempty"`
-	ImageHeight int               `json:"image_height,omitempty"`
-	Image       *llm.ImageContent `json:"-"`
+	ForegroundAction string            `json:"foreground_action_available,omitempty"`
+	Ref              string            `json:"observation_ref"`
+	TargetRef        string            `json:"target_ref"`
+	Elements         []Element         `json:"elements"`
+	Complete         bool              `json:"elements_complete"`
+	Truncated        bool              `json:"projection_truncated"`
+	Degraded         bool              `json:"degraded"`
+	Diagnostic       string            `json:"diagnostic,omitempty"`
+	ImageWidth       int               `json:"image_width,omitempty"`
+	ImageHeight      int               `json:"image_height,omitempty"`
+	Image            *llm.ImageContent `json:"-"`
 }
 
 type observationBinding struct {
+	foregroundAction                         string
 	target                                   windowIdentity
 	targetRef                                string
 	generation                               uint64

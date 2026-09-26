@@ -84,7 +84,7 @@ func (r *Run) Apps(ctx context.Context, query string, limit int) (Discovery, err
 }
 
 func (r *Run) launchLocked(ctx context.Context, request ActRequest) (ActResult, error) {
-	if request.ObservationRef != "" || request.ElementToken != "" || request.Point != nil || request.Text != "" || request.Key != "" || len(request.Keys) != 0 || request.Direction != "" || request.Amount != 0 || request.Wait != nil {
+	if request.DeliveryMode != "" || request.ObservationRef != "" || request.ElementToken != "" || request.Point != nil || request.Text != "" || request.Key != "" || len(request.Keys) != 0 || request.Direction != "" || request.Amount != 0 || request.Wait != nil {
 		return ActResult{}, errors.New("desktop: launch accepts only app_ref and screenshot")
 	}
 	bundle, ok := r.apps[request.AppRef]

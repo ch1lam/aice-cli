@@ -102,3 +102,33 @@ func TestDesktopToolWaitAndObservationFailureRemainExplicit(t *testing.T) {
 		})
 	}
 }
+
+func TestDesktopToolCarriesExplicitForegroundChoiceAndFreshOpportunity(t *testing.T) {
+	t.Parallel()
+	calls := 0
+	tools, err := NewDesktopTools(fakeDesktopBackend{act: func(_ context.Context, request desktop.ActRequest) (desktop.ActResult, error) {
+		calls++
+		if calls == 1 {
+			if request.DeliveryMode != "" {
+				t.Fatal("tool changed default delivery", request)
+			}
+			return desktop.ActResult{Dispatched: true, Outcome: "returned", DriverError: true,
+				Observation: &desktop.Observation{Ref: "fresh", ForegroundAction: "hotkey"}}, nil
+		}
+		if request.DeliveryMode != "foreground" || request.ObservationRef != "fresh" || request.Kind != "hotkey" {
+			t.Fatal("foreground choice lost at tool boundary", request)
+		}
+		return desktop.ActResult{Dispatched: true, Outcome: "returned", Observation: &desktop.Observation{Ref: "new"}}, nil
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := tools[2].Execute(t.Context(), llm.ToolCall{Name: "desktop_act", Arguments: []byte(`{"action":"hotkey","observation_ref":"original","keys":["cmd","s"]}`)})
+	if err != nil || !result.IsError || calls != 1 || !strings.Contains(result.Content[0].Text, `"foreground_action_available":"hotkey"`) {
+		t.Fatal("refusal lost its next-decision evidence", result, err)
+	}
+	result, err = tools[2].Execute(t.Context(), llm.ToolCall{Name: "desktop_act", Arguments: []byte(`{"action":"hotkey","observation_ref":"fresh","keys":["cmd","s"],"delivery_mode":"foreground"}`)})
+	if err != nil || result.IsError || calls != 2 || strings.Contains(result.Content[0].Text, `foreground_action_available`) {
+		t.Fatal("explicit choice did not complete once", result, err)
+	}
+}

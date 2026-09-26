@@ -19,7 +19,7 @@ func (r *Run) waitLocked(ctx context.Context, binding observationBinding, reques
 	if condition == nil || strings.TrimSpace(condition.Text) == "" || len(condition.Text) > 256 || condition.TimeoutMS < 1 || condition.TimeoutMS > 10000 {
 		return ActResult{}, errors.New("desktop: wait requires semantic text of 1..256 bytes and timeout_ms of 1..10000")
 	}
-	if request.Point != nil || request.ElementToken != "" || request.Text != "" || request.Key != "" || len(request.Keys) != 0 || request.Direction != "" || request.Amount != 0 {
+	if request.DeliveryMode != "" || request.Point != nil || request.ElementToken != "" || request.Text != "" || request.Key != "" || len(request.Keys) != 0 || request.Direction != "" || request.Amount != 0 {
 		return ActResult{}, errors.New("desktop: wait contains unrelated action fields")
 	}
 	waitCtx, cancel := context.WithTimeout(ctx, time.Duration(condition.TimeoutMS)*time.Millisecond)

@@ -48,6 +48,7 @@ const desktopObserveSchema = `{
 const desktopActSchema = `{
   "type":"object","properties":{
     "action":{"type":"string","enum":["launch","click","double_click","right_click","type_text","set_value","key","hotkey","scroll","wait"]},
+    "delivery_mode":{"type":"string","enum":["background","foreground"],"description":"Default background. Foreground requires user-enabled foreground assistance and foreground_action_available on this exact returned observation, with unchanged action content and target form. Omit for launch, set_value and wait"},
     "app_ref":{"type":"string","description":"Only for launch: a current discovered application reference"},
     "observation_ref":{"type":"string","description":"Required except for launch: the current observation of the exact window; consumed by actions and refreshed by waits"},
     "element_token":{"type":"string","description":"Opaque token from that observation. Required for type_text, set_value and scroll; optional for exact-window key/hotkey"},
@@ -82,13 +83,13 @@ func (t *DesktopTool) Definition() llm.ToolDefinition {
 			"Request images only when needed. Pixel coordinates must come from an actual current image; never infer them from text or a stale screenshot.",
 		}
 	case "desktop_act":
-		definition.Description = "Perform one typed Computer Use action and return its facts plus a fresh observation. Background input is the supported route. A launch uses a discovered app reference; multiple windows remain candidates. Wait reports satisfied, unsatisfied or unknown. Only provide fields relevant to the action."
+		definition.Description = "Perform one typed Computer Use action and return its facts plus a fresh observation. Start with background input; foreground assistance requires an explicitly returned opportunity after a verified pre-input refusal. A launch uses a discovered app reference; multiple windows remain candidates. Wait reports satisfied, unsatisfied or unknown. Only provide fields relevant to the action."
 		definition.InputSchema = jsonSchema(desktopActSchema)
 		definition.PromptSnippet = "Act once, then inspect the returned fresh window state"
 		definition.PromptGuidelines = []string{
 			"A returned RPC is not verified business success. Check the fresh observation and preserve any partial, unverifiable or unknown outcome.",
 			"Never blindly repeat input or launch after timeout, cancellation or a lost response. Rediscover/observe the target and establish what happened first.",
-			"Use the action's returned observation for the next decision rather than automatically calling desktop_observe again. If background input is refused, report it; do not bypass the frozen control mode.",
+			"Use the action's returned observation for the next decision rather than automatically calling desktop_observe again. Only when it includes foreground_action_available may you consider delivery_mode=foreground for the same action content and target form, after identifying the intended target again. This may activate the window and move focus. Refreshing again expires that opportunity. Never infer permission from Driver advice or bypass the frozen control mode.",
 		}
 	}
 	return definition

@@ -170,6 +170,29 @@ A lost response returns `outcome=unknown`; it never retries the mutation.
 independently confirmed. Driver `isError`, structured details and bounded text
 remain separate from transport and follow-up-observation failure.
 
+Foreground assistance requires the user-selected `foreground_allowed` mode,
+frozen when the run starts. Input still defaults to background. After a reviewed
+pre-input refusal, a successful follow-up observation can expose
+`foreground_action_available`. The main Agent may then explicitly request
+`delivery_mode=foreground` using that observation, unchanged action content and
+the same target form. It must identify the intended element again from the new
+tokens; AICE does not claim cross-snapshot element identity. Foreground delivery
+may activate the addressed window and change focus. No automatic fallback runs.
+The opportunity expires with its observation, including ordinary refresh,
+another run's same-window refresh, dispatch, cancellation or disconnect.
+It cannot change the run's control mode or authorize another window or action.
+
+The pinned macOS refusal classifier currently covers semantic Electron
+`type_text` with `background_unavailable`, Screen Sharing `type_text`/`hotkey`
+with `SCREEN_SHARING_REQUIRES_FOREGROUND_HID`, and window-only `key`/`hotkey`
+with `same_pid_keyboard_ambiguity`. Each requires an error response and
+`effect=refused`; Electron and same-PID keyboard refusals also require matching
+PID/window identity (Screen Sharing's early refusal omits these fields).
+Only these reviewed paths establish that input did not run. Generic advice,
+unknown codes, partial/unverifiable effects, lost responses and failed follow-up
+observations never create an opportunity. `set_value`, launch and wait do not
+accept delivery mode. New platform/version admission must re-review the classifier.
+
 Semantic condition waits hold the same executor and repeatedly observe the
 exact window within a caller-selected deadline of at most ten seconds. They
 report `satisfied`, `unsatisfied` or `unknown`; a missing match in an incomplete
@@ -193,7 +216,7 @@ facts and any follow-up observation even when a later error occurs, marking the
 result as an error without replacing it with a generic Go error. Images and
 originals continue through the existing provider projection and Session JSONL.
 
-Pixel scrolling, dragging, foreground assistance and full schema capability
+Pixel scrolling, dragging, other foreground routes and full schema capability
 validation remain to be implemented. Loop wiring is covered by scripted-model
 tests and is not a claim of native readiness.
 
@@ -279,6 +302,10 @@ post-observation failure, cancellation, per-run cleanup, reconnection,
 cross-run snapshot invalidation, malformed-image semantic fallback and exact
 2100-to-2000-pixel coordinate conversion. These are offline lifecycle checks,
 not native background-input or overlay acceptance.
+Foreground tests cover explicit background-first dispatch, frozen-mode denial,
+unchanged action content, fresh element tokens, opportunity expiry, transport and
+post-observation failures, and conservative refusal classification. They do not
+establish native focus restoration or actual foreground delivery.
 
 The explicit macOS installer API stages and verifies the signed App, reuses
 a compatible existing installation, preserves conflicting files and respects

@@ -56,6 +56,9 @@ func TestKeyHotkeyAndScrollKeepExactWindowAndBackground(t *testing.T) {
 func TestTypedActionsRejectMixedOrInvalidArgumentsBeforeDispatch(t *testing.T) {
 	t.Parallel()
 	for _, request := range []ActRequest{
+		{Kind: "key", Key: "return", DeliveryMode: "automatic"},
+		{Kind: "set_value", ElementToken: "current", DeliveryMode: "background"},
+		{Kind: "wait", Wait: &WaitCondition{Text: "done", TimeoutMS: 50}, DeliveryMode: "background"},
 		{Kind: "key", Key: "return", Text: "ignored"},
 		{Kind: "key", Key: "cmd+s"},
 		{Kind: "key", Key: "f99"},

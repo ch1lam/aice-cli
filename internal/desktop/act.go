@@ -15,6 +15,7 @@ type Point struct {
 
 type ActRequest struct {
 	Kind           string         `json:"action"`
+	DeliveryMode   string         `json:"delivery_mode,omitempty"`
 	AppRef         string         `json:"app_ref,omitempty"`
 	ObservationRef string         `json:"observation_ref"`
 	ElementToken   string         `json:"element_token,omitempty"`
@@ -83,10 +84,17 @@ func (r *Run) Act(ctx context.Context, request ActRequest) (ActResult, error) {
 	if err != nil {
 		return result, nil
 	}
+	foreground := r.options.Mode == ForegroundAllowed && request.DeliveryMode != "foreground" && safeForegroundRefusal(binding, request, reply)
 	after, err := r.observeLocked(ctx, ObserveRequest{TargetRef: binding.targetRef, Screenshot: request.Screenshot})
 	if err != nil {
 		result.ObservationError = "Action response received, but follow-up observation failed; observe again before deciding what to do"
 		return result, nil
+	}
+	if foreground {
+		fresh := r.observations[after.Ref]
+		fresh.foregroundAction = foregroundActionKey(request)
+		r.observations[after.Ref] = fresh
+		after.ForegroundAction = request.Kind
 	}
 	result.Observation = &after
 	return result, nil
@@ -127,6 +135,10 @@ func actionResult(reply Reply, err error) ActResult {
 }
 
 func (r *Run) actionArguments(binding observationBinding, request ActRequest) (string, map[string]any, error) {
+	delivery, err := r.actionDelivery(binding, request)
+	if err != nil {
+		return "", nil, err
+	}
 	if request.Wait != nil || (request.Key != "" && request.Kind != "key") || (len(request.Keys) != 0 && request.Kind != "hotkey") || ((request.Direction != "" || request.Amount != 0) && request.Kind != "scroll") || (request.Text != "" && request.Kind != "type_text" && request.Kind != "set_value") {
 		return "", nil, errors.New("desktop: action contains unrelated fields")
 	}
@@ -155,7 +167,7 @@ func (r *Run) actionArguments(binding observationBinding, request ActRequest) (s
 		if request.Text != "" {
 			return "", nil, errors.New("desktop: click does not accept text")
 		}
-		args["delivery_mode"] = "background"
+		args["delivery_mode"] = delivery
 		if request.Kind == "double_click" {
 			if request.Point == nil {
 				return "", nil, errors.New("desktop: double click requires a bound screenshot point")
@@ -175,7 +187,7 @@ func (r *Run) actionArguments(binding observationBinding, request ActRequest) (s
 				return "", nil, errors.New("desktop: type_text requires text")
 			}
 			args["text"] = request.Text
-			args["delivery_mode"] = "background"
+			args["delivery_mode"] = delivery
 		} else {
 			args["value"] = request.Text
 		}
@@ -184,7 +196,7 @@ func (r *Run) actionArguments(binding observationBinding, request ActRequest) (s
 		if request.Point != nil {
 			return "", nil, errors.New("desktop: key actions accept a semantic element or the observed window; click a bound pixel first if needed")
 		}
-		args["delivery_mode"] = "background"
+		args["delivery_mode"] = delivery
 		if request.Kind == "key" {
 			if !validKey(request.Key) {
 				return "", nil, errors.New("desktop: unsupported key name")
@@ -220,7 +232,7 @@ func (r *Run) actionArguments(binding observationBinding, request ActRequest) (s
 		if amount < 1 || amount > 50 {
 			return "", nil, errors.New("desktop: scroll amount must be 1..50")
 		}
-		args["direction"], args["amount"], args["by"], args["delivery_mode"] = request.Direction, amount, "line", "background"
+		args["direction"], args["amount"], args["by"], args["delivery_mode"] = request.Direction, amount, "line", delivery
 		return "scroll", args, nil
 	default:
 		return "", nil, errors.New("desktop: unsupported typed action")
