@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -48,6 +47,13 @@ func NewManager(resolve RuntimeResolver) (*Manager, error) {
 		}
 		connector, err := newMacServiceConnector(binary, endpoint)
 		if err != nil {
+			return nil, err
+		}
+		native, err := newMacNativeService(connector)
+		if err != nil {
+			return nil, err
+		}
+		if _, err := native.ensure(ctx); err != nil {
 			return nil, err
 		}
 		return connector.dial(ctx)
@@ -92,6 +98,10 @@ func newMacServiceConnector(binary, endpoint string) (*serviceConnector, error) 
 }
 
 func (s *serviceConnector) dial(ctx context.Context) (driverClient, error) {
+	return s.admit(ctx, true)
+}
+
+func (s *serviceConnector) admit(ctx context.Context, requireGrants bool) (driverClient, error) {
 	// One bounded deadline covers both management probes and MCP admission.
 	ctx, cancel := context.WithTimeout(ctx, 25*time.Second)
 	defer cancel()
@@ -124,7 +134,7 @@ func (s *serviceConnector) dial(ctx context.Context) (driverClient, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := validateMacPermissions(permission, s.binary, before.pid); err != nil {
+	if err := validateMacPermissionIdentity(permission, s.binary, before.pid, requireGrants); err != nil {
 		return nil, err
 	}
 	// Mode is immutable for a daemon lifetime. Verify that the status endpoint
@@ -198,6 +208,10 @@ func parseServiceStatus(output, endpoint string) (serviceStatus, error) {
 }
 
 func validateMacPermissions(reply Reply, binary string, pid int) error {
+	return validateMacPermissionIdentity(reply, binary, pid, true)
+}
+
+func validateMacPermissionIdentity(reply Reply, binary string, pid int, requireGrants bool) error {
 	var permission struct {
 		Accessibility   *bool `json:"accessibility"`
 		ScreenRecording *bool `json:"screen_recording"`
@@ -214,7 +228,7 @@ func validateMacPermissions(reply Reply, binary string, pid int) error {
 	if permission.Source.Attribution != "driver-daemon" || permission.Source.PID != pid || permission.Source.Executable != binary || permission.Source.BundleID != "com.trycua.driver" {
 		return serviceError("identity_mismatch", "Cua permission status does not belong to the verified signed App service")
 	}
-	if !*permission.Accessibility || !*permission.ScreenRecording {
+	if requireGrants && (!*permission.Accessibility || !*permission.ScreenRecording) {
 		return serviceError("setup_required", "Cua needs Accessibility and Screen Recording grants; open Computer Use setup")
 	}
 	// Grants are not capture evidence. Ignore historical direct_capture_* fields;
@@ -243,9 +257,13 @@ func serviceCommand(ctx context.Context, binary string, args ...string) (string,
 	cmd := exec.CommandContext(ctx, binary, args...)
 	cmd.WaitDelay = time.Second
 	cmd.Env = driverEnvironment(os.Environ())
-	var output serviceOutput
-	cmd.Stdout, cmd.Stderr = &output, io.Discard
+	var output, diagnostic serviceOutput
+	cmd.Stdout, cmd.Stderr = &output, &diagnostic
 	if err := cmd.Run(); err != nil {
+		var exit *exec.ExitError
+		if ctx.Err() == nil && errors.As(err, &exit) && exit.ExitCode() == 1 && len(args) == 3 && args[0] == "status" && args[1] == "--socket" && output.String() == "" && strings.TrimSpace(diagnostic.String()) == "Cua Driver daemon is not running" {
+			return "", serviceError("not_running", "Cua service is not running")
+		}
 		return "", errors.Join(ctx.Err(), err)
 	}
 	return output.String(), nil

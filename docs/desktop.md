@@ -6,7 +6,8 @@ configuration fields, and application-owned desktop run bindings. When enabled
 in user configuration, Print and interactive main runs expose `desktop_apps`,
 `desktop_observe` and `desktop_act` through the existing Loop and Guard.
 The Settings fields remain disabled pending the explicit setup flow; enabling
-the preference alone does not install, start or authorize a native service.
+the preference alone does not install or authorize a native service. An enabled
+run may lazily start the already verified App without permission prompts.
 The implementation plan's complete native acceptance remains open.
 
 ## Ownership and connection contract
@@ -44,9 +45,10 @@ never for desktop action results. The persistent MCP connection then checks
 with `prompt:false` for App executable, bundle identity, PID and OS grants.
 A second status read rejects a changed service. External policies/manifests,
 non-standard mode, identity mismatch and missing grants remain distinct errors.
-No probe enumerates windows or captures; granted TCC booleans are not evidence
+No admission probe enumerates windows or captures; granted TCC booleans are not evidence
 of successful capture. Cold application connections use this preflight after
-verifying the installed App; setup/service launch remain outstanding.
+verifying the installed App. Explicit setup has a native API; its Settings
+action wiring and native authorization acceptance remain outstanding.
 The native no-autolaunch check passed with the pinned App binary, a temporary
 HOME and an absent socket. No user service was connected or started. Default
 tests cover changing service identity, missing grants, mode/policy rejection,
@@ -60,8 +62,30 @@ starts a uniquely named Driver session, ends only that session on run close,
 and keeps its connection available until disconnect or manager close. A cached
 status read never enumerates, captures, launches or requests authorization.
 Public manager construction requires an application runtime resolver. It only
-reuses a verified installation and an existing compatible service; a pinned
+reuses a verified installation and admits a compatible service; a pinned
 proxy alone cannot prove a shared daemon's version or permission mode.
+
+On macOS, an enabled cold run starts the signed `/Applications/CuaDriver.app`
+through LaunchServices only after the pinned `status` command establishes an
+absent daemon. A bounded per-user setup lock serializes AICE instances and a
+second status read avoids duplicate launch. Unknown failures, policy conflicts
+and existing incompatible services never trigger restart or reconfiguration.
+Launch uses `serve --permission-mode standard --no-permissions-gate`: the last
+switch suppresses unsolicited startup permission UI, not OS access checks.
+Telemetry/update opt-outs and non-embedded mode are explicit. LaunchServices
+owns the daemon; AICE owns only its management/proxy children. A lost launch
+response is not retried automatically.
+
+The explicit native setup API uses the same lock, checks service mode/version
+and signed daemon identity before requesting `permissions grant`, then performs
+fresh read-only admission. The pinned public grant command includes an explicit
+live capture probe; its successful completion is retained as a point-in-time
+fact even if subsequent admission fails. Setup reports requested/completed
+external steps separately from readiness. It never calls private permission
+helpers, resets TCC, or stops a shared daemon. Cancellation stops AICE's command
+but cannot retract grants or guarantee closure of already opened system UI.
+Only the future Settings setup action may invoke this API after disclosure;
+model tools and read-only Settings views cannot request grants.
 
 The application constructs one manager without native I/O and binds it only
 when a main run actually starts. The context carries both the owner identity
@@ -152,7 +176,7 @@ known readiness, revision and warnings. The panel retains those facts alongside
 a later error instead of replacing success output. Ordinary patch preparation
 and publication also have an internal entry point under the existing reservation,
 so a future setup action need not acquire a second reservation.
-Remaining changes belong in native setup/service launch,
+Remaining changes belong in Settings setup orchestration,
 TUI deep-link/setup/Stop handling and the remaining typed tools.
 Setup must use one configuration coordination reservation; Stop must use the
 existing cancellation path. A Web rebuild must retain the same Desktop binding
@@ -195,9 +219,10 @@ cross-run snapshot invalidation, malformed-image semantic fallback and exact
 2100-to-2000-pixel coordinate conversion. These are offline lifecycle checks,
 not native background-input or overlay acceptance.
 
-The explicit macOS installer API now stages and verifies the signed App, reuses
+The explicit macOS installer API stages and verifies the signed App, reuses
 a compatible existing installation, preserves conflicting files and respects
-the current helper-download policy. It is not yet called by Settings or startup.
+the current helper-download policy. Cold enabled runs use its read-only reuse
+path; Settings installation wiring remains outstanding.
 See [installation](installation.md#computer-use-helper-integration-in-progress).
 Its opt-in artifact test passed on macOS using the pinned local archive. This
 checks extraction, native signature/Gatekeeper verification and exclusive

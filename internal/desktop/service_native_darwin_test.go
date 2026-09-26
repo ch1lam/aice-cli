@@ -43,3 +43,20 @@ func TestNativeCuaProxyRefusesAutolaunch(t *testing.T) {
 		t.Fatal("service endpoint appeared", err)
 	}
 }
+
+func TestNativeCuaStatusEstablishesAbsence(t *testing.T) {
+	binary := os.Getenv("AICE_CUA_TEST_BINARY")
+	if binary == "" {
+		t.Skip("set AICE_CUA_TEST_BINARY to the verified pinned macOS App binary")
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	endpoint := filepath.Join(home, "absent.sock")
+	_, err := serviceCommand(t.Context(), binary, "status", "--socket", endpoint)
+	if !serviceHasCode(err, "not_running") {
+		t.Fatalf("fixed public status did not establish absence: %v", err)
+	}
+	if _, err := os.Lstat(endpoint); !os.IsNotExist(err) {
+		t.Fatal("read-only status created service endpoint", err)
+	}
+}
