@@ -1,14 +1,25 @@
 // Synthetic native acceptance target, never part of the AICE executable.
 import AppKit
 
+// LaunchServices supplies no task arguments. The cold-launch gate puts only
+// its synthetic fixture settings in the temporary bundle's Info.plist.
+func fixtureArgument(_ index: Int, _ key: String, default fallback: String? = nil) -> String {
+    if CommandLine.arguments.count >= 4 { return CommandLine.arguments[index] }
+    guard let value = Bundle.main.object(forInfoDictionaryKey: key) as? String ?? fallback else {
+        fatalError("Missing synthetic fixture configuration")
+    }
+    return value
+}
+
 final class ScrollDocument: NSView {
     override var isFlipped: Bool { true }
 }
 
 final class Fixture: NSObject, NSApplicationDelegate {
-    let directory = URL(fileURLWithPath: CommandLine.arguments[1])
-    let name = CommandLine.arguments[2]
-    let sentinel = CommandLine.arguments[3] == "sentinel"
+    let directory = URL(fileURLWithPath: fixtureArgument(1, "AICEFixtureDirectory"))
+    let name = fixtureArgument(2, "AICEFixtureName")
+    let mode = fixtureArgument(3, "AICEFixtureMode", default: "target")
+    var sentinel: Bool { mode == "sentinel" }
     var window: NSWindow!
     var input: NSTextField!
     var result: NSTextField!
@@ -23,6 +34,10 @@ final class Fixture: NSObject, NSApplicationDelegate {
     var resized = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        if Bundle.main.object(forInfoDictionaryKey: "AICEFixtureDirectory") != nil {
+            let marker = "launched-\(ProcessInfo.processInfo.processIdentifier)"
+            try! Data().write(to: directory.appendingPathComponent(marker), options: .atomic)
+        }
         window = NSWindow(contentRect: NSRect(x: 100, y: 100, width: 500, height: 300),
                           styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
         window.title = name
@@ -41,7 +56,7 @@ final class Fixture: NSObject, NSApplicationDelegate {
         result = NSTextField(labelWithString: "Result: pending")
         result.frame = NSRect(x: 30, y: 65, width: 440, height: 30)
         view.addSubview(result)
-        if CommandLine.arguments[3] == "gestures" {
+        if mode == "gestures" {
             window.setContentSize(NSSize(width: 900, height: 550))
             let scroller = NSScrollView(frame: NSRect(x: 530, y: 170, width: 320, height: 330))
             scroller.hasVerticalScroller = true
@@ -83,6 +98,10 @@ final class Fixture: NSObject, NSApplicationDelegate {
     }
 
     func sample() {
+        if FileManager.default.fileExists(atPath: directory.appendingPathComponent("quit").path) {
+            NSApp.terminate(nil)
+            return
+        }
         if !sentinel && !resized && FileManager.default.fileExists(atPath: directory.appendingPathComponent("resize").path) {
             resized = true
             window.setContentSize(NSSize(width: 900, height: 350))
@@ -131,6 +150,11 @@ final class Fixture: NSObject, NSApplicationDelegate {
             // A fixture that cannot report independent state cannot pass.
             NSApp.terminate(nil)
         }
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        let marker = "terminated-\(ProcessInfo.processInfo.processIdentifier)"
+        try? Data().write(to: directory.appendingPathComponent(marker), options: .atomic)
     }
 
     func capturePoint(_ view: NSView, _ point: NSPoint) -> NSPoint {

@@ -503,6 +503,26 @@ temporary files are cleaned up on failure as well as success.
 AICE_CUA_NATIVE=1 go test -tags=integration ./internal/desktop -run '^TestNativeCuaMultiApp$' -v
 ```
 
+The macOS cold-launch gate additionally creates and registers one unique
+temporary AppKit bundle in `~/Applications`, a real Driver app-discovery root.
+It discovers the unopened app, consumes one local app reference, checks its exact
+bundle ID/PID, and explicitly selects the named fixture window if multiple
+candidates are returned. It requires an actual capture and Unicode value/commit,
+zero foreground-sentinel activation losses, rejection of the consumed launch
+reference and continued application/shared-service availability after Manager
+close. Its own cleanup requests fixture termination through a private file,
+then unregisters/removes only the temporary bundle; no name/PID-wide kill is used.
+This gate passed with race detection on 2026-09-27, with two returned candidates.
+It needs a separate opt-in because it writes and registers a temporary app:
+
+```sh
+AICE_CUA_NATIVE=1 AICE_CUA_NATIVE_LAUNCH=1 go test -race -tags=integration ./internal/desktop -run '^TestNativeMacLaunch$' -v
+```
+
+No Driver installation, new OS grants or model calls occur. This checks ordinary
+AppKit launch, not self-activating third-party applications, physical input/IME
+or other toolkits. Run it sequentially with the other focus-sensitive gates.
+
 The separate macOS input gate checks ASCII and Unicode `type_text`, a single
 `key`, and `cmd+a` through exact semantic element tokens. It reads the AppKit
 field editor's actual text and selection after the response, including when

@@ -216,7 +216,9 @@ discovers that PID's windows without launching again. A lost response never
 triggers another launch. Launch itself uses Cua's launch path. The Linux native
 launch gate observed foreground focus loss despite the Driver's `active:false`
 response; see [launch acceptance failure](#linux-launch-acceptance-failure).
-macOS launch focus-side-effect acceptance remains open.
+The macOS AppKit cold-launch gate preserves its foreground sentinel and returns
+multiple candidates without choosing one; heterogeneous application launch and
+physical-user coexistence remain separate acceptance.
 Offline launch-wait tests keep an unrelated window with the same document title
 present while the target is delayed. Only the launched PID may supply candidates.
 The tests cover target arrival, the five-second deadline and cancellation: a
@@ -410,7 +412,7 @@ as the tools and prompt it publishes; offline publication tests cover this.
 
 | Scope | Evidence | Remaining acceptance |
 | --- | --- | --- |
-| macOS 0.29.1 universal artifact | Verified App installed and both OS grants enabled by the operator; signature, Gatekeeper and 15-tool admission checks pass; native three-AppKit Manager and scripted-model CLI/Guard/Session gates pass with nine captures and foreground sentinel intact; ASCII/Unicode insertion, single key, select-all, Retina pixel click, resize refusal/recovery and background scroll pass independent widget checks; wait and dispatched-click cancellation pass without input replay; Settings Stop cancels a native condition wait with complete Session tool pairs; one explicit foreground-drag run succeeded with a measured focus transition and restoration; actual Settings repair reuses the installation, completes the public grant/capture check and saves temporary enable | Background drag is refused by 0.29.1 and foreground-drag repeatability remains open; first-time Settings installation and system-dialog interaction, launch, overlay, interrupted gestures and native TUI Stop during mutations, remaining pixel actions, heterogeneous applications and physical input/IME coexistence; actual-model and broader performance acceptance |
+| macOS 0.29.1 universal artifact | Verified App installed and both OS grants enabled by the operator; signature, Gatekeeper and 15-tool admission checks pass; native three-AppKit Manager and scripted-model CLI/Guard/Session gates pass with nine captures and foreground sentinel intact; ASCII/Unicode insertion, single key, select-all, Retina pixel click, resize refusal/recovery and background scroll pass independent widget checks; AppKit cold launch preserves focus, returns multiple candidates and completes the explicitly selected window's task; wait and dispatched-click cancellation pass without input replay; Settings Stop cancels a native condition wait with complete Session tool pairs; one explicit foreground-drag run succeeded with a measured focus transition and restoration; actual Settings repair reuses the installation, completes the public grant/capture check and saves temporary enable | Background drag is refused by 0.29.1 and foreground-drag repeatability remains open; first-time Settings installation and system-dialog interaction, overlay, interrupted gestures and native TUI Stop during mutations, remaining pixel actions, heterogeneous applications and physical input/IME coexistence; actual-model and broader performance acceptance |
 | Windows amd64/arm64 | Downloaded archives and selected executable hashes verified; private installer with Authenticode checks implemented; synthetic extraction/reuse/cancellation tests and cross-compilation pass; static imports inspected; read-only service inspection and Windows status presentation implemented with synthetic tests | Native installation/signature trust, exclusive publication, named-pipe identity/UIAccess/session checks and status-schema confirmation; setup/action runtime integration and native UI/input/lifecycle tests |
 | Linux arm64 | Private installation/reuse and read-only headless inspection passed in an isolated Debian 13 container; production Manager and selected-window setup passed owned stdio and verified shared-service X11/GTK checks; scripted-model native print/Guard/tool/Session flow, ASCII insertion and pixel click/resize rejection passed; launch established its exact window and preserved the app after Manager close; actual Settings CLI flow passed native private installation, selected-window capture, cancellation/retry and saved enable | Launch steals focus, Unicode insertion truncates and GTK key/hotkey, pixel scroll and drag are unavailable in the fixture; actual-model tasks, physical terminal/IME and other desktop environments; other pixel actions, foreground assistance, overlay, other toolkits, real compositor/Wayland and physical-input/IME checks |
 | Linux amd64 | Downloaded archive and selected executable hashes verified; synthetic installer tests and cross-compilation pass; ELF library dependencies inspected | Native installation/dynamic loading and exclusive publication; runtime/service admission, AT-SPI/display detection, compositor-specific input/capture/overlay tests |
@@ -456,6 +458,27 @@ loss, and command cleanup preserved the shared service. An earlier Manager run
 recorded focus loss and an earlier CLI attempt lost the foreground precondition
 before actions; their causes were not attributed. The later complete passes do
 not establish uninterrupted coexistence under arbitrary desktop activity.
+
+The separate [cold-launch gate](../internal/desktop/apps_native_darwin_test.go)
+passed with race detection on 2026-09-27. It registers a unique synthetic AppKit
+bundle in `~/Applications`, then uses real app discovery and a locally issued
+app reference to launch it once through the production Manager. The native
+response established the exact bundle ID/PID and returned two windows: the
+named fixture and an untitled candidate. AICE returned both without automatically
+observing either. The test explicitly selected the unique fixture title,
+captured that window, changed its value to Unicode text and committed once.
+The consumed app reference was rejected without another native launch.
+
+Launch took 2.27 s and the full gate 16.12 s in this run. The Driver's reported
+`self_activation_suppressed:true` was not the focus evidence: the armed AppKit
+sentinel independently recorded zero activation losses through launch, input
+and connection cleanup. The launched app kept producing state after Manager
+close; shared-service inspection also remained usable. Test-owned cleanup then
+requested fixture termination, unregistered and removed its temporary bundle.
+An earlier test attempt incorrectly required a single candidate and stopped
+before observation; the corrected gate preserves the specified multi-window
+contract. This establishes ordinary synthetic AppKit cold launch, not behavior
+of self-activating third-party apps, physical input/IME or other toolkits.
 
 The separate `TestNativeMacInput` passed all four cases: semantic ASCII/Unicode
 insertion, single-key input and select-all hotkey delivery. Independent AppKit
@@ -852,8 +875,9 @@ Keep this failure separate from successful inputs into already open background
 windows. No repaired Driver or product exception has been accepted. The gate
 must preserve focus/input requirements and be rerun after a reviewed fix;
 changing a window-manager setting solely to make this case pass would not prove
-the existing launch route. Other window managers, D-Bus handoffs, and macOS or
-Windows launch behavior require their own native evidence.
+the existing launch route. Other window managers, D-Bus handoffs and Windows
+launch behavior require their own native evidence; macOS AppKit evidence is
+recorded separately above.
 
 ### Shared runtime and application verification
 

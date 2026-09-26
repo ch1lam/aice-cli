@@ -136,6 +136,11 @@ launch uses best-effort focus restoration. A pure-function diagnostic reproduced
 the candidate ordering, but no native Windows launch has run. Resolve exact
 application/window ownership and continuous focus acceptance before enabling that
 adapter; do not treat `active:false` or foreground-retry advice as proof of safety.
+The macOS [cold-launch gate](desktop.md#platform-evidence) establishes one real
+AppKit launch, exact process/window binding, explicit multi-window selection and
+continued app availability after Manager close, with no foreground-sentinel
+activation loss. It uses a temporary registered bundle and does not establish
+third-party self-activation behavior or physical input/IME coexistence.
 The macOS [gesture gates](desktop.md#platform-evidence) establish AppKit
 background scrolling, but the full background gate fails because 0.29.1 rejects
 drag before input. One explicit foreground-drag run completed with a measured
