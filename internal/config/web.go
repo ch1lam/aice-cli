@@ -6,9 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
-	"os"
-	"path/filepath"
-	"runtime"
 	"slices"
 	"strings"
 	"time"
@@ -397,11 +394,11 @@ func effectiveWeb(layer webLayer, projectPath string, lookupEnv func(string) (st
 	if diagnostic != "" {
 		diagnostics = append(diagnostics, diagnostic)
 	}
-	if searchOff && effective.SearchEnabled {
+	if searchOff {
 		effective.SearchEnabled = false
 		effective.ProjectRestricted = append(effective.ProjectRestricted, "web.search.enabled=false")
 	}
-	if fetchOff && effective.FetchEnabled {
+	if fetchOff {
 		effective.FetchEnabled = false
 		effective.ProjectRestricted = append(effective.ProjectRestricted, "web.fetch.enabled=false")
 	}
@@ -500,6 +497,8 @@ func (c Config) WithWeb(settings WebSettings) (Config, error) {
 	}
 	effective.ProjectRestricted = slices.Clone(c.Web.ProjectRestricted)
 	next.Web = effective
+	copy := cloneWebSettings(settings)
+	next.webUser = &copy
 	return next, nil
 }
 
@@ -522,10 +521,18 @@ func (c Config) WithWebCredential(instanceID, secret string) Config {
 // WebPatch is one user action on the "web" object. Nil pointers leave a field
 // unchanged; a nil Services value removes that instance.
 type WebPatch struct {
-	Services      map[string]*WebServiceSettings
-	Priority      *[]string
-	SearchEnabled *bool
-	FetchEnabled  *bool
+	ServiceEdits      map[string]WebServicePatch
+	Services          map[string]*WebServiceSettings
+	Priority          *[]string
+	SearchEnabled     *bool
+	FetchEnabled      *bool
+	DefaultMaxResults *int
+	SearchTimeout     *time.Duration
+	FetchTimeout      *time.Duration
+	AllowedDomains    *[]string
+	ExcludedDomains   *[]string
+	// Unset removes individual user fields, restoring their product defaults.
+	Unset []WebSetting
 }
 
 // SaveWebSettingsFile applies one patch to the "web" object of the user
@@ -535,8 +542,22 @@ func SaveWebSettingsFile(ctx context.Context, paths Paths, patch WebPatch) (WebS
 	if err := paths.validate(); err != nil {
 		return WebSettings{}, err
 	}
+	result, commit, err := saveWebPatch(ctx, paths, patch)
+	return result, legacyCommitError(commit, err)
+}
+
+// SaveWebPatch exposes the replacement outcome separately from cleanup.
+func SaveWebPatch(ctx context.Context, paths Paths, patch WebPatch) (CommitResult, error) {
+	_, result, err := saveWebPatch(ctx, paths, patch)
+	return result, err
+}
+
+func saveWebPatch(ctx context.Context, paths Paths, patch WebPatch) (WebSettings, CommitResult, error) {
+	if err := paths.validate(); err != nil {
+		return WebSettings{}, CommitResult{}, err
+	}
 	var result WebSettings
-	err := patchFileWith(ctx, paths.GlobalSettings, func(values map[string]any) error {
+	commit, err := editFile(ctx, paths.GlobalSettings, func(values map[string]any) error {
 		var raw json.RawMessage
 		if existing, ok := values[webSettingsKey]; ok {
 			encoded, err := json.Marshal(existing)
@@ -552,7 +573,10 @@ func SaveWebSettingsFile(ctx context.Context, paths Paths, patch WebPatch) (WebS
 		if err := settings.Validate(); err != nil {
 			return fmt.Errorf("existing web settings left unchanged: %w", err)
 		}
-		next := patch.apply(settings)
+		next, err := patch.Apply(settings)
+		if err != nil {
+			return err
+		}
 		if err := next.Validate(); err != nil {
 			return err
 		}
@@ -569,13 +593,13 @@ func SaveWebSettingsFile(ctx context.Context, paths Paths, patch WebPatch) (WebS
 		return nil
 	})
 	if err != nil {
-		return WebSettings{}, err
+		return WebSettings{}, commit, err
 	}
-	return result, nil
+	return result, commit, nil
 }
 
 func (p WebPatch) apply(settings WebSettings) WebSettings {
-	next := settings
+	next := cloneWebSettings(settings)
 	if len(p.Services) > 0 {
 		next.Services = make(map[string]WebServiceSettings, len(settings.Services)+len(p.Services))
 		for id, service := range settings.Services {
@@ -592,7 +616,32 @@ func (p WebPatch) apply(settings WebSettings) WebSettings {
 			next.Services = nil
 		}
 	}
-	if p.Priority != nil || p.SearchEnabled != nil {
+	for id, edit := range p.ServiceEdits {
+		service, ok := next.Services[id]
+		if !ok {
+			continue
+		}
+		if edit.Enabled != nil {
+			b := *edit.Enabled
+			service.Enabled = &b
+		}
+		if edit.BaseURL != nil {
+			service.BaseURL = *edit.BaseURL
+		}
+		if edit.Credential != nil {
+			service.Credential = *edit.Credential
+		}
+		if len(edit.Options) > 0 {
+			options := map[string]json.RawMessage{}
+			_ = json.Unmarshal(service.Options, &options)
+			for key, value := range edit.Options {
+				options[key] = slices.Clone(value)
+			}
+			service.Options, _ = json.Marshal(options)
+		}
+		next.Services[id] = service
+	}
+	if p.Priority != nil || p.SearchEnabled != nil || p.DefaultMaxResults != nil || p.SearchTimeout != nil || p.AllowedDomains != nil || p.ExcludedDomains != nil {
 		search := WebSearchSettings{}
 		if settings.Search != nil {
 			search = *settings.Search
@@ -608,15 +657,32 @@ func (p WebPatch) apply(settings WebSettings) WebSettings {
 			enabled := *p.SearchEnabled
 			search.Enabled = &enabled
 		}
+		if p.DefaultMaxResults != nil {
+			search.DefaultMaxResults = *p.DefaultMaxResults
+		}
+		if p.SearchTimeout != nil {
+			search.Timeout = p.SearchTimeout.String()
+		}
+		if p.AllowedDomains != nil {
+			search.AllowedDomains = slices.Clone(*p.AllowedDomains)
+		}
+		if p.ExcludedDomains != nil {
+			search.ExcludedDomains = slices.Clone(*p.ExcludedDomains)
+		}
 		next.Search = &search
 	}
-	if p.FetchEnabled != nil {
+	if p.FetchEnabled != nil || p.FetchTimeout != nil {
 		fetch := WebFetchSettings{}
 		if settings.Fetch != nil {
 			fetch = *settings.Fetch
 		}
-		enabled := *p.FetchEnabled
-		fetch.Enabled = &enabled
+		if p.FetchEnabled != nil {
+			enabled := *p.FetchEnabled
+			fetch.Enabled = &enabled
+		}
+		if p.FetchTimeout != nil {
+			fetch.Timeout = p.FetchTimeout.String()
+		}
 		next.Fetch = &fetch
 	}
 	return next
@@ -658,33 +724,4 @@ func SaveWebCredentialFile(ctx context.Context, paths Paths, instanceID, secret 
 		}
 		return nil
 	})
-}
-
-// patchFileWith is the locked read-modify-write used by web saves; the
-// callback edits the decoded document in place.
-func patchFileWith(ctx context.Context, path string, edit func(map[string]any) error) (returnErr error) {
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return fmt.Errorf("config: create directory: %w", err)
-	}
-	lock := path + ".lock"
-	if err := acquireConfigLock(ctx, lock, os.Mkdir, runtime.GOOS == "windows"); err != nil {
-		return err
-	}
-	defer func() { returnErr = errors.Join(returnErr, os.Remove(lock)) }()
-	values, err := readValues(path)
-	if err != nil {
-		return fmt.Errorf("config: existing file left unchanged: %w", err)
-	}
-	if err := edit(values); err != nil {
-		return fmt.Errorf("config: %w", err)
-	}
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	if err := writeJSON(ctx, path, values); err != nil {
-		return fmt.Errorf("config: save %s: %w", path, err)
-	}
-	return nil
 }

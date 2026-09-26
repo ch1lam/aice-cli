@@ -63,31 +63,63 @@ func saveAPIKeyFile(paths Paths, providerName, key, apiKey string) error {
 	return patchFile(context.Background(), paths.GlobalAuth, map[string]any{key: apiKey})
 }
 
-func patchFile(ctx context.Context, path string, patch map[string]any) (returnErr error) {
+// CommitResult distinguishes replacement success from subsequent lock cleanup.
+// Once Committed is true, cancellation cannot undo the saved document.
+type CommitResult struct {
+	Committed      bool
+	CleanupWarning error
+}
+
+func patchFile(ctx context.Context, path string, patch map[string]any) error {
+	return patchFileWith(ctx, path, func(values map[string]any) error {
+		for key, value := range patch {
+			values[key] = value
+		}
+		return nil
+	})
+}
+
+func patchFileWith(ctx context.Context, path string, edit func(map[string]any) error) error {
+	result, err := editFile(ctx, path, edit)
+	return legacyCommitError(result, err)
+}
+
+// editFile is the single locked read/modify/replace primitive for preferences
+// and API keys. The callback must perform only bounded in-memory work.
+func editFile(ctx context.Context, path string, edit func(map[string]any) error) (result CommitResult, returnErr error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return fmt.Errorf("config: create directory: %w", err)
+		return result, fmt.Errorf("config: create directory: %w", err)
 	}
 	lock := path + ".lock"
 	if err := acquireConfigLock(ctx, lock, os.Mkdir, runtime.GOOS == "windows"); err != nil {
-		return err
+		return result, err
 	}
-	defer func() { returnErr = errors.Join(returnErr, os.Remove(lock)) }()
+	defer func() {
+		if err := os.Remove(lock); err != nil {
+			if result.Committed {
+				result.CleanupWarning = err
+			} else {
+				returnErr = errors.Join(returnErr, err)
+			}
+		}
+	}()
 	values, err := readValues(path)
 	if err != nil {
-		return fmt.Errorf("config: existing file left unchanged: %w", err)
+		return result, fmt.Errorf("config: existing file left unchanged: %w", err)
 	}
-	for key, value := range patch {
-		values[key] = value
+	if err := edit(values); err != nil {
+		return result, fmt.Errorf("config: %w", err)
 	}
 	if err := ctx.Err(); err != nil {
-		return err
+		return result, err
 	}
 	if err := writeJSON(ctx, path, values); err != nil {
-		return fmt.Errorf("config: save %s: %w", path, err)
+		return result, fmt.Errorf("config: save %s: %w", path, err)
 	}
-	return nil
+	result.Committed = true
+	return result, nil
 }
 
 // writeJSON replaces a complete document; readers see either old or new bytes.

@@ -187,10 +187,12 @@ type Config struct {
 	Paths               Paths
 	Diagnostics         []string
 	startupOverrides    map[string]bool
+	layers              *frozenSettings
 	// webCredentials and webEnv let WithWeb re-resolve credential references
 	// after an interactive save without rereading files or the environment.
 	webCredentials map[string]string
 	webEnv         func(string) (string, bool)
+	webUser        *WebSettings
 
 	ClaudeSubscriptionCredentials ClaudeSubscriptionCredentials
 }
@@ -304,14 +306,12 @@ func LoadFiles(paths Paths, options LoadOptions) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
-	v.SetDefault("default_project_trust", string(trust.DefaultAsk))
-	v.SetDefault("thinking", string(llm.DefaultThinkingLevel))
-	v.SetDefault("no_dep_install", false)
-	v.SetDefault("no_update_check", false)
-	v.SetDefault("browser_headed", false)
-	v.SetDefault("run_no_progress_limit", 8)
+	for key, value := range defaultValues() {
+		v.SetDefault(key, value)
+	}
 	var diagnostics []string
 	var webValues webLayer
+	layers := newFrozenSettings()
 	fileValues := make(map[string]any)
 	for _, path := range []string{paths.GlobalSettings, paths.GlobalAuth, paths.ProjectSettings} {
 		if path == "" {
@@ -350,6 +350,14 @@ func LoadFiles(paths Paths, options LoadOptions) (Config, error) {
 		if err := webValues.extractWebValues(path, values, path == paths.ProjectSettings); err != nil {
 			return Config{}, err
 		}
+		kind := "user-settings"
+		if path == paths.GlobalAuth {
+			kind = "user-auth"
+		}
+		if path == paths.ProjectSettings {
+			kind = "project"
+		}
+		layers.add(Source{Kind: kind, Location: path}, values)
 		// Every schema field is a scalar or a complete array. Replace fields
 		// before handing the file layer to Viper: MergeConfigMap otherwise
 		// retains an invalid lower-layer object when a scalar replaces it.
@@ -368,13 +376,22 @@ func LoadFiles(paths Paths, options LoadOptions) (Config, error) {
 			}
 		}
 	}
+	if err := layers.addInvocation(options); err != nil {
+		return Config{}, err
+	}
 	c, err := decodeEffective(v)
 	if err != nil {
 		return Config{}, err
 	}
 	c.Paths, c.Diagnostics = paths, diagnostics
+	c.layers = layers
 	if options.Environment {
-		c.webEnv = os.LookupEnv
+		environment := make(map[string]string)
+		for _, entry := range os.Environ() {
+			key, value, _ := strings.Cut(entry, "=")
+			environment[key] = value
+		}
+		c.webEnv = func(key string) (string, bool) { value, ok := environment[key]; return value, ok }
 	}
 	c.webCredentials = webValues.credentials
 	effectiveWebConfig, webDiagnostics, err := effectiveWeb(webValues, paths.ProjectSettings, c.webEnv)
@@ -382,6 +399,11 @@ func LoadFiles(paths Paths, options LoadOptions) (Config, error) {
 		return Config{}, err
 	}
 	c.Web = effectiveWebConfig
+	webUser, err := decodeWebSettings(webValues.user)
+	if err != nil {
+		return Config{}, err
+	}
+	c.webUser = &webUser
 	c.Diagnostics = append(c.Diagnostics, webDiagnostics...)
 	c.startupOverrides = make(map[string]bool)
 	for key := range high.AllSettings() {
@@ -409,29 +431,18 @@ func LoadFiles(paths Paths, options LoadOptions) (Config, error) {
 // WithSettings applies explicit runtime values to this snapshot using Viper's
 // highest-priority Set layer. No file or environment is reread.
 func (c Config) WithSettings(changes map[Setting]string) (Config, error) {
-	values, err := settingsValues(c.settings())
-	if err != nil {
-		return Config{}, err
-	}
-	v := viper.New()
-	if err := v.MergeConfigMap(values); err != nil {
-		return Config{}, err
-	}
-	for key, value := range changes {
+	patch := SettingsPatch{}
+	for key, text := range changes {
 		if !mutableSetting(key) {
 			return Config{}, fmt.Errorf("config: unsupported setting %q", key)
 		}
-		v.Set(string(key), strings.TrimSpace(value))
+		value, err := ParseSettingValue(key, text)
+		if err != nil {
+			return Config{}, err
+		}
+		patch.Changes = append(patch.Changes, SettingChange{ID: key, Value: value})
 	}
-	next, err := decodeEffective(v)
-	if err != nil {
-		return Config{}, err
-	}
-	next.Paths, next.CodexCredentials = c.Paths, c.CodexCredentials
-	next.ClaudeSubscriptionCredentials = c.ClaudeSubscriptionCredentials
-	next.Diagnostics, next.startupOverrides = c.Diagnostics, c.startupOverrides
-	next.Web, next.webCredentials, next.webEnv = c.Web, c.webCredentials, c.webEnv
-	return next, nil
+	return c.WithPatch(patch)
 }
 
 // SavedValuesOverridden reports whether a startup layer above the user file
