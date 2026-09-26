@@ -21,7 +21,15 @@ Agent Loop, Guard, media pipeline and Session remain the execution boundaries.
 
 The client uses official Go MCP SDK v1.6.1, sends legacy `initialize` with
 `2025-06-18`, checks the returned protocol and Cua identity/version, then discovers
-tools once with bounded pagination. It does not mix modern `server/discover`
+tools once with bounded pagination. Before any `tools/call`, it compares the
+complete input schemas of all 15 used macOS tools against the
+[reviewed 0.29.1 inventory](../internal/desktop/schema/README.md). Only JSON
+object ordering and whitespace are ignored; missing tools or changed fields,
+required parameters, defaults, enums, bounds and target alternatives reject the
+connection. Additional upstream tools remain unavailable to the private client.
+A version/platform update requires reviewing both its schema pin and adapters.
+This validates the advertised contract, not actual native behavior.
+It does not mix modern `server/discover`
 or per-request protocol metadata into that session. Responses retain text,
 image bytes, structured content and domain error status. No tool call retries
 at this transport boundary, including after cancellation, timeout or EOF.
@@ -258,9 +266,9 @@ facts and any follow-up observation even when a later error occurs, marking the
 result as an error without replacing it with a generic Go error. Images and
 originals continue through the existing provider projection and Session JSONL.
 
-Other foreground routes and full schema capability validation remain to be
-implemented. Loop wiring is covered by scripted-model
-tests and is not a claim of native readiness.
+Other foreground routes remain to be implemented. Loop wiring and schema
+rejection are covered by scripted-model and raw MCP tests; they are not a claim
+of native readiness.
 
 ## Baseline and outstanding integration
 
@@ -306,7 +314,8 @@ validation is claimed for them.
 
 The C0 local schema probe used an isolated HOME and disabled telemetry. Its
 sandboxed invocation failed during AppKit pasteboard initialization; the
-read-only schema export succeeded with normal GUI access. Neither invocation
+read-only schema export succeeded with normal GUI access. The opt-in inventory
+test repeats the metadata comparison for the 15 used tools. Neither invocation
 read a window or executed a desktop action. No OS permission was requested,
 App installed, user application controlled, or paid model called.
 

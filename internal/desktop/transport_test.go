@@ -8,9 +8,11 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"maps"
 	"net"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -29,6 +31,15 @@ type fixturePeer struct {
 // SDK server implementation. It never starts Cua or reads desktop content.
 func fakeTransport(t *testing.T, mode string) (*mcp.IOTransport, *fixturePeer) {
 	t.Helper()
+	schemas := schemaFixture(t)
+	schemas["unreviewed_tool"] = json.RawMessage(`{"type":"object"}`)
+	if mode == "missing-tool" {
+		delete(schemas, "drag")
+	}
+	if mode == "changed-schema" {
+		schemas["check_permissions"] = json.RawMessage(`{"type":"object"}`)
+	}
+	allNames := slices.Sorted(maps.Keys(schemas))
 	local, peer := net.Pipe()
 	state := &fixturePeer{}
 	done := make(chan struct{})
@@ -70,10 +81,10 @@ func fakeTransport(t *testing.T, mode string) (*mcp.IOTransport, *fixturePeer) {
 					Cursor string `json:"cursor"`
 				}
 				_ = json.Unmarshal(request.Params, &params)
-				names := []string{"list_apps", "list_windows", "get_window_state"}
+				names := allNames[:3]
 				next := "second"
 				if params.Cursor != "" {
-					names = []string{"click", "start_session", "end_session"}
+					names = allNames[3:]
 					next = ""
 				}
 				if mode == "loop-pagination" {
@@ -82,7 +93,7 @@ func fakeTransport(t *testing.T, mode string) (*mcp.IOTransport, *fixturePeer) {
 				}
 				list := []any{}
 				for _, name := range names {
-					list = append(list, map[string]any{"name": name, "inputSchema": map[string]any{"type": "object"}})
+					list = append(list, map[string]any{"name": name, "inputSchema": schemas[name]})
 				}
 				result = map[string]any{"tools": list, "nextCursor": next}
 			case "tools/call":
@@ -120,6 +131,9 @@ func TestLegacyConnectionReuseAndContent(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer c.close()
+	if _, err := c.call(t.Context(), "unreviewed_tool", nil); err == nil || state.calls.Load() != 0 {
+		t.Fatal("unreviewed upstream tool dispatched")
+	}
 	for range 2 {
 		reply, err := c.call(t.Context(), "click", map[string]any{"pid": 1})
 		if err != nil {
@@ -136,12 +150,15 @@ func TestLegacyConnectionReuseAndContent(t *testing.T) {
 
 func TestConnectionRejectsIncompatiblePeer(t *testing.T) {
 	t.Parallel()
-	for _, mode := range []string{"wrong-version", "loop-pagination"} {
+	for _, mode := range []string{"wrong-version", "loop-pagination", "missing-tool", "changed-schema"} {
 		t.Run(mode, func(t *testing.T) {
-			transport, _ := fakeTransport(t, mode)
+			transport, state := fakeTransport(t, mode)
 			if c, err := connect(t.Context(), transport); err == nil {
 				_ = c.close()
 				t.Fatal("accepted incompatible discovery")
+			}
+			if state.calls.Load() != 0 {
+				t.Fatal("tool called before schema admission")
 			}
 		})
 	}

@@ -244,6 +244,19 @@ socket. It also uses an isolated HOME and does not launch a service. Default set
 commands to cover lock contention, external restrictions, startup races and
 partial authorization outcomes; they do not prove native grant behavior.
 
+The metadata-only `TestNativeCuaSchemaInventory` uses that same explicitly
+supplied binary with an isolated HOME and runs `dump-docs --type mcp`. It checks
+the complete advertised schemas against the reviewed pin without constructing
+a desktop runtime, enumerating windows, requesting grants or connecting to a
+service. It requires a native macOS GUI environment because upstream CLI startup
+initializes AppKit. Default raw MCP tests reject missing/changed schemas before
+any tool call and keep additional upstream tools unavailable.
+
+```sh
+AICE_CUA_TEST_BINARY=/absolute/path/to/CuaDriver.app/Contents/MacOS/cua-driver \
+  go test -tags=integration ./internal/desktop -run '^TestNativeCuaSchemaInventory$' -v
+```
+
 ## Browser checks
 
 The default browser/dependency tests use fake commands and local HTTP fixtures,

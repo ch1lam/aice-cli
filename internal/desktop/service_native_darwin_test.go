@@ -3,13 +3,58 @@
 package desktop
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 )
+
+// dump-docs inspects the canonical inventory without constructing a runtime.
+// This test never connects to a daemon or requests desktop access.
+func TestNativeCuaSchemaInventory(t *testing.T) {
+	binary := os.Getenv("AICE_CUA_TEST_BINARY")
+	if binary == "" {
+		t.Skip("set AICE_CUA_TEST_BINARY to the verified pinned macOS App binary")
+	}
+	home := t.TempDir()
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	command := exec.CommandContext(ctx, binary, "dump-docs", "--type", "mcp")
+	command.Env = driverEnvironment([]string{"HOME=" + home, "PATH=/usr/bin:/bin:/usr/sbin:/sbin", "TMPDIR=" + home})
+	var output bytes.Buffer
+	command.Stdout = &output
+	if err := command.Run(); err != nil {
+		t.Fatal("metadata export failed", err)
+	}
+	var inventory struct {
+		Version string `json:"version"`
+		Tools   []struct {
+			Name   string          `json:"name"`
+			Schema json.RawMessage `json:"input_schema"`
+		} `json:"tools"`
+	}
+	if err := json.Unmarshal(output.Bytes(), &inventory); err != nil {
+		t.Fatal(err)
+	}
+	if inventory.Version != DriverVersion {
+		t.Fatal("metadata binary version mismatch")
+	}
+	schemas := make(map[string]json.RawMessage, len(inventory.Tools))
+	for _, tool := range inventory.Tools {
+		if _, exists := schemas[tool.Name]; exists {
+			t.Fatal("duplicate exported tool", tool.Name)
+		}
+		schemas[tool.Name] = tool.Schema
+	}
+	if _, err := reviewedMacTools(schemas); err != nil {
+		t.Fatal(err)
+	}
+}
 
 // This opt-in negative test contacts only an absent, isolated socket. It never
 // connects to the user's daemon, requests permissions or captures the desktop.

@@ -2,7 +2,6 @@ package desktop
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"io"
 	"os"
@@ -134,21 +133,6 @@ func TestServiceStatusMissingAmbiguousOrForeignIdentity(t *testing.T) {
 		if _, err := parseServiceStatus(value, "/synthetic/cua.sock"); err == nil {
 			t.Fatal("ambiguous state accepted", value)
 		}
-	}
-}
-
-func TestServiceInspectionSchemaRequiresExplicitReadonlyPrompt(t *testing.T) {
-	t.Parallel()
-	schemas := map[string]json.RawMessage{
-		"get_config":        json.RawMessage(`{"type":"object","properties":{}}`),
-		"check_permissions": json.RawMessage(`{"type":"object","properties":{"prompt":{"type":"boolean"}}}`),
-	}
-	if err := validateInspectionSchemas(schemas); err != nil {
-		t.Fatal(err)
-	}
-	schemas["check_permissions"] = json.RawMessage(`{"type":"object","properties":{}}`)
-	if err := validateInspectionSchemas(schemas); err == nil {
-		t.Fatal("missing read-only switch accepted")
 	}
 }
 

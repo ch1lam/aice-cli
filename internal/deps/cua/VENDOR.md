@@ -6,6 +6,11 @@ source commit `7a8f66ad04e62fccb18cca9965f2964fcaee124e`.
 The helper is MIT licensed; preserve LICENSE with installations. AICE does
 not embed its Node/Python SDK, perception extensions, or browser-profile tools.
 
+The 15 macOS input schemas used by AICE are preserved under
+[desktop/schema](../../desktop/schema/README.md), exported from this signed
+binary's canonical inventory. They retain the adjacent MIT license and are
+checked before native tool dispatch; new platform/version schemas need review.
+
 The adjacent upstream release manifest has SHA-256
 `d114a50c1487ad20c7f7ca6fb6380284f160fd967d5e2f2050ccbb444e72b52b`.
 It and GitHub's release asset digests agree with the pins in `cua.go`.

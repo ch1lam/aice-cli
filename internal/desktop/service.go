@@ -99,10 +99,6 @@ func newMacServiceConnector(binary, endpoint string) (*serviceConnector, error) 
 			if err != nil {
 				return nil, err
 			}
-			if err := validateInspectionSchemas(c.tools); err != nil {
-				_ = c.close()
-				return nil, err
-			}
 			return c, nil
 		},
 	}, nil
@@ -253,21 +249,6 @@ func readMacPermissionIdentity(reply Reply, binary string, pid int) (macPermissi
 	// Grants are not capture evidence. Ignore historical direct_capture_* fields;
 	// a real observation remains responsible for reporting capture availability.
 	return permission, nil
-}
-
-func validateInspectionSchemas(tools map[string]json.RawMessage) error {
-	for _, name := range []string{"get_config", "check_permissions"} {
-		var schema struct {
-			Type       string `json:"type"`
-			Properties map[string]struct {
-				Type string `json:"type"`
-			} `json:"properties"`
-		}
-		if json.Unmarshal(tools[name], &schema) != nil || schema.Type != "object" || (name == "check_permissions" && schema.Properties["prompt"].Type != "boolean") {
-			return serviceError("incompatible_service", "Cua service does not expose the reviewed read-only inspection schema")
-		}
-	}
-	return nil
 }
 
 func serviceCommand(ctx context.Context, binary string, args ...string) (string, error) {

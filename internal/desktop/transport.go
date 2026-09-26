@@ -126,10 +126,9 @@ func connect(ctx context.Context, transport mcp.Transport) (*client, error) {
 		}
 		seen[cursor] = true
 	}
-	for _, name := range []string{"list_apps", "list_windows", "get_window_state", "click", "start_session", "end_session"} {
-		if _, exists := result.tools[name]; !exists {
-			return nil, fmt.Errorf("desktop: required tool %s unavailable", name)
-		}
+	result.tools, err = reviewedMacTools(result.tools)
+	if err != nil {
+		return nil, err
 	}
 	ok = true
 	return result, nil
