@@ -410,7 +410,7 @@ as the tools and prompt it publishes; offline publication tests cover this.
 
 | Scope | Evidence | Remaining acceptance |
 | --- | --- | --- |
-| macOS 0.29.1 universal artifact | Verified App installed and both OS grants enabled by the operator; signature, Gatekeeper and 15-tool admission checks pass; native three-AppKit Manager and scripted-model CLI/Guard/Session gates pass with nine captures and foreground sentinel intact; ASCII/Unicode insertion, single key, select-all, Retina pixel click, resize refusal/recovery and background scroll pass independent widget checks; wait and dispatched-click cancellation pass without input replay; one explicit foreground-drag run succeeded with a measured focus transition and restoration; actual Settings repair reuses the installation, completes the public grant/capture check and saves temporary enable | Background drag is refused by 0.29.1 and foreground-drag repeatability remains open; first-time Settings installation and system-dialog interaction, launch, overlay, native TUI Stop and interrupted gestures, remaining pixel actions, heterogeneous applications and physical input/IME coexistence; actual-model and broader performance acceptance |
+| macOS 0.29.1 universal artifact | Verified App installed and both OS grants enabled by the operator; signature, Gatekeeper and 15-tool admission checks pass; native three-AppKit Manager and scripted-model CLI/Guard/Session gates pass with nine captures and foreground sentinel intact; ASCII/Unicode insertion, single key, select-all, Retina pixel click, resize refusal/recovery and background scroll pass independent widget checks; wait and dispatched-click cancellation pass without input replay; Settings Stop cancels a native condition wait with complete Session tool pairs; one explicit foreground-drag run succeeded with a measured focus transition and restoration; actual Settings repair reuses the installation, completes the public grant/capture check and saves temporary enable | Background drag is refused by 0.29.1 and foreground-drag repeatability remains open; first-time Settings installation and system-dialog interaction, launch, overlay, interrupted gestures and native TUI Stop during mutations, remaining pixel actions, heterogeneous applications and physical input/IME coexistence; actual-model and broader performance acceptance |
 | Windows amd64/arm64 | Downloaded archives and selected executable hashes verified; private installer with Authenticode checks implemented; synthetic extraction/reuse/cancellation tests and cross-compilation pass; static imports inspected; read-only service inspection and Windows status presentation implemented with synthetic tests | Native installation/signature trust, exclusive publication, named-pipe identity/UIAccess/session checks and status-schema confirmation; setup/action runtime integration and native UI/input/lifecycle tests |
 | Linux arm64 | Private installation/reuse and read-only headless inspection passed in an isolated Debian 13 container; production Manager and selected-window setup passed owned stdio and verified shared-service X11/GTK checks; scripted-model native print/Guard/tool/Session flow, ASCII insertion and pixel click/resize rejection passed; launch established its exact window and preserved the app after Manager close; actual Settings CLI flow passed native private installation, selected-window capture, cancellation/retry and saved enable | Launch steals focus, Unicode insertion truncates and GTK key/hotkey, pixel scroll and drag are unavailable in the fixture; actual-model tasks, physical terminal/IME and other desktop environments; other pixel actions, foreground assistance, overlay, other toolkits, real compositor/Wayland and physical-input/IME checks |
 | Linux amd64 | Downloaded archive and selected executable hashes verified; synthetic installer tests and cross-compilation pass; ELF library dependencies inspected | Native installation/dynamic loading and exclusive publication; runtime/service admission, AT-SPI/display detection, compositor-specific input/capture/overlay tests |
@@ -528,8 +528,21 @@ started two sessions but made only one explicit `end_session` call, for the
 recovery session; the cancelled transport had already been retired. A separate
 read-only inspection confirmed the shared service remained usable. These are
 single-run timing samples and Manager lifecycle evidence, not proof of native
-TUI Stop, interrupted gesture cleanup, physical-input coexistence or every
-resource's cleanup inside Cua.
+TUI Stop during mutations, interrupted gesture cleanup, physical-input coexistence
+or every resource's cleanup inside Cua.
+
+The separate [native Settings Stop gate](../internal/app/desktop_stop_native_darwin_test.go)
+also passed with race detection on 2026-09-27. A scripted model discovers the
+exact synthetic AppKit window, receives its real capture, then issues a native
+condition wait. Through the actual CLI/Bubble Tea UI, Esc closes Settings without
+ending that wait; reopening Settings and invoking its F6 Stop cancels it. The
+cancelled response appeared in 400 ms, polling had started, run cancellation
+preceded its one cleanup, and no fourth model request or widget change occurred.
+Reopened Session history retained all three complete tool pairs and the capture;
+the cancelled wait was an error result. Saved enable/control-mode preferences
+and the shared service were preserved. This 11.37 s gate exercises terminal
+input through pipes and has no foreground sentinel; it does not establish
+physical keys, IME, foreground coexistence or stopping a native mutation.
 
 These gates require the installed authorized service and an available desktop;
 their preparation installs nothing and requests no grants. They use no real

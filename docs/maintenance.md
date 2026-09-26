@@ -146,8 +146,11 @@ an upstream repair or an explicit acceptance of that capability limit.
 The macOS [cancellation gates](desktop.md#platform-evidence) now verify native
 condition-wait cancellation and an already committed click whose RPC is still
 pending. They preserve unknown dispatch, reject stale references, avoid replay
-and recover read-only while the shared service remains usable. This does not
-establish native TUI Stop, interrupted gesture cleanup or physical coexistence.
+and recover read-only while the shared service remains usable. A separate native
+Settings Stop gate cancels a condition wait through the actual CLI/Bubble Tea UI,
+retains complete Session tool pairs and preserves saved preferences. These do
+not establish TUI Stop during mutations, interrupted gesture cleanup or physical
+coexistence.
 The Linux [input acceptance gate](desktop.md#linux-input-acceptance-failures)
 currently fails on truncated Unicode insertion and unavailable GTK background
 keyboard, pixel scroll and drag delivery. Keep those failures distinct from passing

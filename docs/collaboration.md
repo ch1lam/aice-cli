@@ -594,6 +594,24 @@ gestures or cleanup of every resource inside the Driver. A complete native reply
 that races cancellation remains a known result; cancellation must not rewrite it
 as unknown. No cancelled mutation is replayed during recovery.
 
+The macOS Settings Stop gate uses the actual command, Loop, Guard, typed tools,
+production Manager and Session with a scripted model. It discovers and captures
+one exact synthetic AppKit window, then cancels its native condition wait through
+Settings-local F6. Esc alone must keep the wait running. The test checks that
+polling started, cancellation precedes one binding cleanup, no model continuation
+or widget mutation occurs, saved preferences remain unchanged, and all three
+tool pairs plus the capture survive Session replay. The shared service must
+remain usable after command exit. This passed with race detection on 2026-09-27:
+
+```sh
+AICE_CUA_NATIVE=1 go test -race -tags=integration ./internal/app -run '^TestNativeMacDesktopStopTUI$' -v
+```
+
+Its terminal input is piped and it uses no foreground sentinel. This is native
+condition-wait cancellation through the real UI, not physical keyboard/IME,
+foreground coexistence or Stop during a native mutation. Setup reuses existing
+grants and installation; it installs nothing and requests no new permissions.
+
 The application-level macOS gate uses the same synthetic AppKit fixture with a
 scripted model through the actual print command, Guard, typed tools, production
 desktop constructor and Session writer. It checks three exact-window Unicode
