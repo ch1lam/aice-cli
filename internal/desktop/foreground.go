@@ -26,14 +26,22 @@ func (r *Run) actionDelivery(binding observationBinding, request ActRequest) (st
 }
 
 // Keep every action field in the comparison, including future additions. Only
-// observation-local tokens and presentation choices may change. The Agent must
-// identify the intended element again in the returned observation; tokens from
-// the refused action cannot survive a refresh.
+// observation-local tokens, re-grounded image coordinates and presentation
+// choices may change. The Agent must identify the intended target again in the
+// returned observation; references from the refused action cannot survive it.
 func foregroundActionKey(request ActRequest) string {
 	request.ObservationRef, request.DeliveryMode = "", ""
 	request.Screenshot = false
 	if request.ElementToken != "" {
 		request.ElementToken = "semantic"
+	}
+	if request.Point != nil {
+		request.Point = &Point{}
+	}
+	if request.Drag != nil {
+		gesture := *request.Drag
+		gesture.From, gesture.To = &Point{}, &Point{}
+		request.Drag = &gesture
 	}
 	encoded, err := json.Marshal(request)
 	if err != nil {
@@ -47,10 +55,12 @@ func foregroundActionKey(request ActRequest) string {
 // hotkey.rs screen_sharing_modifier_delivery_error, and the initial GenericKey
 // gate in press_key.rs/hotkey.rs for window-only requests. Generic effect=refused
 // is insufficient: other paths can refuse after focus or partial input.
+// scroll.rs (Electron) and drag.rs also have early background_unavailable
+// returns with no effect field, before resolving targets or invoking input.
 // Admission currently permits only the pinned macOS service. Re-review this
 // classifier before admitting another version or platform.
 func safeForegroundRefusal(binding observationBinding, request ActRequest, reply Reply) bool {
-	if !reply.IsError || request.Point != nil || len(reply.Structured) > 64*1024 {
+	if !reply.IsError || len(reply.Structured) > 64*1024 {
 		return false
 	}
 	var refusal struct {
@@ -59,10 +69,22 @@ func safeForegroundRefusal(binding observationBinding, request ActRequest, reply
 		PID      *int    `json:"pid"`
 		WindowID *uint64 `json:"window_id"`
 	}
-	if json.Unmarshal(reply.Structured, &refusal) != nil || refusal.Effect != "refused" {
+	if json.Unmarshal(reply.Structured, &refusal) != nil {
 		return false
 	}
 	if (refusal.PID != nil && *refusal.PID != binding.target.PID) || (refusal.WindowID != nil && *refusal.WindowID != binding.target.WindowID) {
+		return false
+	}
+	if refusal.Code == "background_unavailable" && refusal.Effect == "" && refusal.PID == nil && refusal.WindowID == nil {
+		// These two pinned paths emit exactly the code-only object. Do not
+		// treat an explicit null effect or unreviewed extra outcome as refusal.
+		var fields map[string]json.RawMessage
+		if json.Unmarshal(reply.Structured, &fields) != nil || len(fields) != 1 {
+			return false
+		}
+		return request.Kind == "scroll" || request.Kind == "drag"
+	}
+	if refusal.Effect != "refused" {
 		return false
 	}
 	if refusal.Code == "SCREEN_SHARING_REQUIRES_FOREGROUND_HID" {

@@ -159,8 +159,11 @@ same-window observation (including from another run), action dispatch,
 cancellation and disconnect invalidate the relevant old references. There is
 no process start-time claim beyond the evidence Cua exposes.
 
-The current typed actions cover background click/double/right-click, semantic
-text insertion and value setting, exact-window keys/hotkeys and semantic scroll.
+The current typed actions cover click/double/right-click, semantic or pixel
+text insertion, semantic value setting, exact-window keys/hotkeys, semantic or
+pixel scroll, and left-button dragging inside one observed window. Drag takes
+two screenshot points and a bounded duration (default 500 ms, maximum ten seconds).
+The pinned macOS Driver refuses background drag; AICE preserves that refusal.
 Key names and modifier combinations are validated before dispatch; unrelated
 action fields are rejected. Each mutation consumes its observation before
 dispatch and returns its Driver facts plus a fresh observation under the same
@@ -176,7 +179,11 @@ pre-input refusal, a successful follow-up observation can expose
 `foreground_action_available`. The main Agent may then explicitly request
 `delivery_mode=foreground` using that observation, unchanged action content and
 the same target form. It must identify the intended element again from the new
-tokens; AICE does not claim cross-snapshot element identity. Foreground delivery
+tokens or re-ground both drag points in the returned image; AICE does not claim
+cross-snapshot element identity. A pixel refusal that permits foreground requests
+a fresh screenshot even when the original call did not request a post-action
+image. Missing or invalid screenshot bindings suppress that opportunity.
+Foreground delivery
 may activate the addressed window and change focus. No automatic fallback runs.
 The opportunity expires with its observation, including ordinary refresh,
 another run's same-window refresh, dispatch, cancellation or disconnect.
@@ -188,6 +195,10 @@ with `SCREEN_SHARING_REQUIRES_FOREGROUND_HID`, and window-only `key`/`hotkey`
 with `same_pid_keyboard_ambiguity`. Each requires an error response and
 `effect=refused`; Electron and same-PID keyboard refusals also require matching
 PID/window identity (Screen Sharing's early refusal omits these fields).
+It also recognizes the pinned `scroll` Electron refusal and `drag` background
+refusal: these return only `code=background_unavailable`, before target resolution
+or input, without an effect or identity field. This is a method-specific source
+contract, not a general rule that a missing effect means no input occurred.
 Only these reviewed paths establish that input did not run. Generic advice,
 unknown codes, partial/unverifiable effects, lost responses and failed follow-up
 observations never create an opportunity. `set_value`, launch and wait do not
@@ -210,14 +221,26 @@ capture ID; it never adds screen offsets or reapplies Retina scaling. A failed
 image can leave valid semantic references available. A text-only model cannot
 request a screenshot or obtain a usable pixel binding.
 
+Pixel clicks send Cua's immutable `capture_id`. The pinned macOS `scroll`,
+`type_text` and `drag` schemas do not accept that argument; their pixel routes
+resolve the authoritative latest screenshot through the same public session,
+PID and window used for observation. AICE requires both its verified image
+mapping and a non-empty snapshot, consumes the observation once, and keeps the
+whole action/observation sequence serialized. Cua refuses a snapshot replaced
+by another owner, retired by session cleanup, or refreshed without a screenshot.
+AICE never adds private `_session_id` fields or supplies unsupported capture
+parameters. These routes do not provide immutable capture-ID checking, and
+native geometry-change and foreground-delivery acceptance remains outstanding.
+Both point axes must be explicit numbers; omitted axes never become zero.
+
 Tool adapters serialize bounded domain facts as JSON text and append the actual
 image as an existing image content part. They preserve partial/unknown dispatch
 facts and any follow-up observation even when a later error occurs, marking the
 result as an error without replacing it with a generic Go error. Images and
 originals continue through the existing provider projection and Session JSONL.
 
-Pixel scrolling, dragging, other foreground routes and full schema capability
-validation remain to be implemented. Loop wiring is covered by scripted-model
+Other foreground routes and full schema capability validation remain to be
+implemented. Loop wiring is covered by scripted-model
 tests and is not a claim of native readiness.
 
 ## Baseline and outstanding integration
@@ -306,6 +329,10 @@ Foreground tests cover explicit background-first dispatch, frozen-mode denial,
 unchanged action content, fresh element tokens, opportunity expiry, transport and
 post-observation failures, and conservative refusal classification. They do not
 establish native focus restoration or actual foreground delivery.
+Pixel scroll/type/drag tests check exact session/window routing, image-coordinate
+rescaling, absence of unsupported capture arguments, missing/invalid image
+rejection, bounded gestures, explicit foreground choice and fresh-image gating.
+These remain synthetic tests; no user window is captured or controlled.
 
 The explicit macOS installer API stages and verifies the signed App, reuses
 a compatible existing installation, preserves conflicting files and respects

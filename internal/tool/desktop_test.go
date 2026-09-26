@@ -132,3 +132,29 @@ func TestDesktopToolCarriesExplicitForegroundChoiceAndFreshOpportunity(t *testin
 		t.Fatal("explicit choice did not complete once", result, err)
 	}
 }
+
+func TestDesktopToolRejectsIncompletePixelCoordinates(t *testing.T) {
+	t.Parallel()
+	calls := 0
+	tools, _ := NewDesktopTools(fakeDesktopBackend{act: func(_ context.Context, request desktop.ActRequest) (desktop.ActResult, error) {
+		calls++
+		if request.Drag == nil || request.Drag.From.X != 0 || request.Drag.From.Y != 0 || request.Drag.To.X != 10 || request.Drag.To.Y != 20 {
+			t.Fatal("drag arguments lost", request)
+		}
+		return desktop.ActResult{Outcome: "returned"}, nil
+	}})
+	for _, args := range []string{
+		`{"action":"scroll","point":{"x":10}}`,
+		`{"action":"type_text","point":{"x":null,"y":0}}`,
+		`{"action":"drag","drag":{"from":{},"to":{"x":10,"y":20}}}`,
+		`{"action":"drag","drag":{"from":{"x":0,"y":0,"extra":1},"to":{"x":10,"y":20}}}`,
+	} {
+		if _, err := tools[2].Execute(t.Context(), llm.ToolCall{Name: "desktop_act", Arguments: []byte(args)}); err == nil || calls != 0 {
+			t.Fatal("incomplete point reached backend", args, err)
+		}
+	}
+	_, err := tools[2].Execute(t.Context(), llm.ToolCall{Name: "desktop_act", Arguments: []byte(`{"action":"drag","drag":{"from":{"x":0,"y":0},"to":{"x":10,"y":20}}}`)})
+	if err != nil || calls != 1 {
+		t.Fatal("explicit zero coordinate rejected", err)
+	}
+}

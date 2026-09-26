@@ -1,6 +1,7 @@
 package desktop
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -13,6 +14,25 @@ type Point struct {
 	Y float64 `json:"y"`
 }
 
+// A missing axis must not silently become coordinate zero. Keep zero itself
+// valid when it was explicitly supplied, and reject unknown nested fields.
+func (p *Point) UnmarshalJSON(data []byte) error {
+	var wire struct {
+		X *float64 `json:"x"`
+		Y *float64 `json:"y"`
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&wire); err != nil {
+		return err
+	}
+	if wire.X == nil || wire.Y == nil {
+		return errors.New("desktop: point requires explicit numeric x and y")
+	}
+	p.X, p.Y = *wire.X, *wire.Y
+	return nil
+}
+
 type ActRequest struct {
 	Kind           string         `json:"action"`
 	DeliveryMode   string         `json:"delivery_mode,omitempty"`
@@ -20,6 +40,7 @@ type ActRequest struct {
 	ObservationRef string         `json:"observation_ref"`
 	ElementToken   string         `json:"element_token,omitempty"`
 	Point          *Point         `json:"point,omitempty"`
+	Drag           *DragGesture   `json:"drag,omitempty"`
 	Text           string         `json:"text,omitempty"`
 	Key            string         `json:"key,omitempty"`
 	Keys           []string       `json:"keys,omitempty"`
@@ -84,17 +105,24 @@ func (r *Run) Act(ctx context.Context, request ActRequest) (ActResult, error) {
 	if err != nil {
 		return result, nil
 	}
-	foreground := r.options.Mode == ForegroundAllowed && request.DeliveryMode != "foreground" && safeForegroundRefusal(binding, request, reply)
-	after, err := r.observeLocked(ctx, ObserveRequest{TargetRef: binding.targetRef, Screenshot: request.Screenshot})
+	refusedBeforeInput := request.DeliveryMode != "foreground" && safeForegroundRefusal(binding, request, reply)
+	if refusedBeforeInput {
+		result.Diagnostic = "Driver refused this action before input; inspect the fresh observation before choosing the next action"
+	}
+	foreground := r.options.Mode == ForegroundAllowed && refusedBeforeInput
+	needsPixels := request.Point != nil || request.Drag != nil
+	after, err := r.observeLocked(ctx, ObserveRequest{TargetRef: binding.targetRef, Screenshot: request.Screenshot || (foreground && needsPixels)})
 	if err != nil {
 		result.ObservationError = "Action response received, but follow-up observation failed; observe again before deciding what to do"
 		return result, nil
 	}
 	if foreground {
 		fresh := r.observations[after.Ref]
-		fresh.foregroundAction = foregroundActionKey(request)
-		r.observations[after.Ref] = fresh
-		after.ForegroundAction = request.Kind
+		if !needsPixels || (fresh.capture != "" && fresh.snapshot != "") {
+			fresh.foregroundAction = foregroundActionKey(request)
+			r.observations[after.Ref] = fresh
+			after.ForegroundAction = request.Kind
+		}
 	}
 	result.Observation = &after
 	return result, nil
@@ -139,8 +167,11 @@ func (r *Run) actionArguments(binding observationBinding, request ActRequest) (s
 	if err != nil {
 		return "", nil, err
 	}
-	if request.Wait != nil || (request.Key != "" && request.Kind != "key") || (len(request.Keys) != 0 && request.Kind != "hotkey") || ((request.Direction != "" || request.Amount != 0) && request.Kind != "scroll") || (request.Text != "" && request.Kind != "type_text" && request.Kind != "set_value") {
+	if request.Wait != nil || (request.Drag != nil && request.Kind != "drag") || (request.Key != "" && request.Kind != "key") || (len(request.Keys) != 0 && request.Kind != "hotkey") || ((request.Direction != "" || request.Amount != 0) && request.Kind != "scroll") || (request.Text != "" && request.Kind != "type_text" && request.Kind != "set_value") {
 		return "", nil, errors.New("desktop: action contains unrelated fields")
+	}
+	if request.Kind == "drag" {
+		return r.dragArguments(binding, request, delivery)
 	}
 	windowKey := (request.Kind == "key" || request.Kind == "hotkey") && request.Point == nil && request.ElementToken == ""
 	if !windowKey && (request.Point == nil) == (request.ElementToken == "") {
@@ -160,7 +191,15 @@ func (r *Run) actionArguments(binding observationBinding, request ActRequest) (s
 		if err != nil {
 			return "", nil, err
 		}
-		args["x"], args["y"], args["capture_id"] = x, y, binding.capture
+		args["x"], args["y"] = x, y
+		switch request.Kind {
+		case "click", "double_click", "right_click":
+			args["capture_id"] = binding.capture
+		case "scroll", "type_text":
+			if binding.snapshot == "" {
+				return "", nil, errors.New("desktop: pixel input requires a current session-owned screenshot snapshot")
+			}
+		}
 	}
 	switch request.Kind {
 	case "click", "double_click", "right_click":
@@ -179,8 +218,8 @@ func (r *Run) actionArguments(binding observationBinding, request ActRequest) (s
 		}
 		return "click", args, nil
 	case "type_text", "set_value":
-		if request.Point != nil {
-			return "", nil, errors.New("desktop: text requires an exact semantic element token")
+		if request.Kind == "set_value" && request.Point != nil {
+			return "", nil, errors.New("desktop: set_value requires an exact semantic element token")
 		}
 		if request.Kind == "type_text" {
 			if request.Text == "" {
@@ -217,9 +256,6 @@ func (r *Run) actionArguments(binding observationBinding, request ActRequest) (s
 		args["keys"] = request.Keys
 		return "hotkey", args, nil
 	case "scroll":
-		if request.Point != nil {
-			return "", nil, errors.New("desktop: scroll requires an exact semantic element token")
-		}
 		switch request.Direction {
 		case "up", "down", "left", "right":
 		default:

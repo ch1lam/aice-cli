@@ -47,12 +47,17 @@ const desktopObserveSchema = `{
 
 const desktopActSchema = `{
   "type":"object","properties":{
-    "action":{"type":"string","enum":["launch","click","double_click","right_click","type_text","set_value","key","hotkey","scroll","wait"]},
+    "action":{"type":"string","enum":["launch","click","double_click","right_click","type_text","set_value","key","hotkey","scroll","drag","wait"]},
     "delivery_mode":{"type":"string","enum":["background","foreground"],"description":"Default background. Foreground requires user-enabled foreground assistance and foreground_action_available on this exact returned observation, with unchanged action content and target form. Omit for launch, set_value and wait"},
     "app_ref":{"type":"string","description":"Only for launch: a current discovered application reference"},
     "observation_ref":{"type":"string","description":"Required except for launch: the current observation of the exact window; consumed by actions and refreshed by waits"},
-    "element_token":{"type":"string","description":"Opaque token from that observation. Required for type_text, set_value and scroll; optional for exact-window key/hotkey"},
-    "point":{"type":"object","properties":{"x":{"type":"number","minimum":0},"y":{"type":"number","minimum":0}},"required":["x","y"],"additionalProperties":false,"description":"Click only: coordinates in the actual image you received; exclusive with element_token. Double click requires this form"},
+    "element_token":{"type":"string","description":"Opaque token from that observation. Required for set_value; preferred for type_text and scroll; optional for exact-window key/hotkey"},
+    "point":{"type":"object","properties":{"x":{"type":"number","minimum":0},"y":{"type":"number","minimum":0}},"required":["x","y"],"additionalProperties":false,"description":"Click, type_text or scroll: coordinates in the actual image you received; exclusive with element_token. Double click requires this form"},
+    "drag":{"type":"object","properties":{
+      "from":{"type":"object","properties":{"x":{"type":"number","minimum":0},"y":{"type":"number","minimum":0}},"required":["x","y"],"additionalProperties":false},
+      "to":{"type":"object","properties":{"x":{"type":"number","minimum":0},"y":{"type":"number","minimum":0}},"required":["x","y"],"additionalProperties":false},
+      "duration_ms":{"type":"integer","minimum":1,"maximum":10000,"description":"Default 500"}
+    },"required":["from","to"],"additionalProperties":false,"description":"Only for drag: left-button gesture between two points in the same current window image; exclusive with point and element_token. macOS background drag is refused; foreground assistance still requires the returned opportunity"},
     "text":{"type":"string","maxLength":16384,"description":"Only for type_text or set_value; runtime limit is 16 KiB"},
     "key":{"type":"string","description":"Only for key: return, tab, escape, arrows, space, delete, home, end, pageup, pagedown, f1-f12, lowercase letter or digit"},
     "keys":{"type":"array","items":{"type":"string"},"minItems":2,"maxItems":6,"description":"Only for hotkey: unique cmd/shift/option/ctrl/fn modifiers followed by one key, e.g. [cmd,s]"},
@@ -89,7 +94,7 @@ func (t *DesktopTool) Definition() llm.ToolDefinition {
 		definition.PromptGuidelines = []string{
 			"A returned RPC is not verified business success. Check the fresh observation and preserve any partial, unverifiable or unknown outcome.",
 			"Never blindly repeat input or launch after timeout, cancellation or a lost response. Rediscover/observe the target and establish what happened first.",
-			"Use the action's returned observation for the next decision rather than automatically calling desktop_observe again. Only when it includes foreground_action_available may you consider delivery_mode=foreground for the same action content and target form, after identifying the intended target again. This may activate the window and move focus. Refreshing again expires that opportunity. Never infer permission from Driver advice or bypass the frozen control mode.",
+			"Use the action's returned observation for the next decision rather than automatically calling desktop_observe again. Only when it includes foreground_action_available may you consider delivery_mode=foreground for the same action content and target form, after identifying the intended target again. Re-ground pixel points in the returned image. This may activate the window and move focus. Refreshing again expires that opportunity. Never infer permission from Driver advice or bypass the frozen control mode.",
 		}
 	}
 	return definition
