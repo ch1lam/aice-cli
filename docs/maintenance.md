@@ -141,6 +141,12 @@ AppKit launch, exact process/window binding, explicit multi-window selection and
 continued app availability after Manager close, with no foreground-sentinel
 activation loss. It uses a temporary registered bundle and does not establish
 third-party self-activation behavior or physical input/IME coexistence.
+The macOS [cursor gate](desktop.md#platform-evidence) verifies renderer visibility
+and session cleanup without an external observer. A separate host-surface
+screenshot visibly showed the blue cursor; its combined manual run failed the
+foreground sentinel. Keep those facts separate: render acknowledgement and
+isolated surface appearance do not establish desktop compositing, animation or
+physical-pointer independence.
 The macOS [gesture gates](desktop.md#platform-evidence) establish AppKit
 background scrolling, but the full background gate fails because 0.29.1 rejects
 drag before input. One explicit foreground-drag run completed with a measured

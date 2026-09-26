@@ -523,6 +523,33 @@ No Driver installation, new OS grants or model calls occur. This checks ordinary
 AppKit launch, not self-activating third-party applications, physical input/IME
 or other toolkits. Run it sequentially with the other focus-sensitive gates.
 
+The macOS cursor lifecycle gate uses the production Manager for one pixel click
+and the official read-only `sessions list --json` CLI for render acknowledgement.
+It matches only its own public session label, keeps other session metadata out of
+logs, and requires absent → hidden → visible → removed session/cursor states.
+The fixture must commit once, the sentinel must retain focus and contents, and
+the shared service must remain available. This passed with race detection on
+2026-09-27 without an external UI observer:
+
+```sh
+AICE_CUA_NATIVE=1 go test -race -tags=integration ./internal/desktop -run '^TestNativeMacCursorLifecycle$' -v
+```
+
+For optional appearance inspection, set `AICE_CUA_NATIVE_CURSOR_HOLD_DIR` to a
+fresh empty absolute directory. The test writes `ready` containing the exact
+temporary App path; bind the observer, then create `act` to permit its one click.
+After renderer acknowledgement it writes `acted`; inspect promptly before idle
+fading and create `finish` to release cleanup. Each phase is bounded to four
+minutes and the test to nine. The ordinary gate has no such wait, and neither
+mode infers an appearance verdict from a marker. Inspect the Cua Driver's
+transparent host surface: a target-only screenshot did not include its overlay
+in the native probe. A blue cursor was visually observed on the host surface,
+but the combined manual probes failed their focus assertions; retain those
+failures separately from the passing automatic lifecycle gate. Desktop
+compositing, animation, physical-pointer independence and multiple displays or
+Spaces still require acceptance. No cursor preference is changed, no recording
+is started, and no input is replayed to keep the cursor visible.
+
 The separate macOS input gate checks ASCII and Unicode `type_text`, a single
 `key`, and `cmd+a` through exact semantic element tokens. It reads the AppKit
 field editor's actual text and selection after the response, including when

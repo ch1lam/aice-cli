@@ -412,7 +412,7 @@ as the tools and prompt it publishes; offline publication tests cover this.
 
 | Scope | Evidence | Remaining acceptance |
 | --- | --- | --- |
-| macOS 0.29.1 universal artifact | Verified App installed and both OS grants enabled by the operator; signature, Gatekeeper and 15-tool admission checks pass; native three-AppKit Manager and scripted-model CLI/Guard/Session gates pass with nine captures and foreground sentinel intact; ASCII/Unicode insertion, single key, select-all, Retina pixel click, resize refusal/recovery and background scroll pass independent widget checks; AppKit cold launch preserves focus, returns multiple candidates and completes the explicitly selected window's task; wait and dispatched-click cancellation pass without input replay; Settings Stop cancels a native condition wait with complete Session tool pairs; one explicit foreground-drag run succeeded with a measured focus transition and restoration; actual Settings repair reuses the installation, completes the public grant/capture check and saves temporary enable | Background drag is refused by 0.29.1 and foreground-drag repeatability remains open; first-time Settings installation and system-dialog interaction, overlay, interrupted gestures and native TUI Stop during mutations, remaining pixel actions, heterogeneous applications and physical input/IME coexistence; actual-model and broader performance acceptance |
+| macOS 0.29.1 universal artifact | Verified App installed and both OS grants enabled by the operator; signature, Gatekeeper and 15-tool admission checks pass; native three-AppKit Manager and scripted-model CLI/Guard/Session gates pass with nine captures and foreground sentinel intact; ASCII/Unicode insertion, single key, select-all, Retina pixel click, resize refusal/recovery and background scroll pass independent widget checks; AppKit cold launch preserves focus, returns multiple candidates and completes the explicitly selected window's task; cursor renderer lifecycle and isolated host-surface appearance verified; wait and dispatched-click cancellation pass without input replay; Settings Stop cancels a native condition wait with complete Session tool pairs; one explicit foreground-drag run succeeded with a measured focus transition and restoration; actual Settings repair reuses the installation, completes the public grant/capture check and saves temporary enable | Background drag is refused by 0.29.1 and foreground-drag repeatability remains open; first-time Settings installation and system-dialog interaction, overlay compositing/animation, interrupted gestures and native TUI Stop during mutations, remaining pixel actions, heterogeneous applications and physical input/IME coexistence; actual-model and broader performance acceptance |
 | Windows amd64/arm64 | Downloaded archives and selected executable hashes verified; private installer with Authenticode checks implemented; synthetic extraction/reuse/cancellation tests and cross-compilation pass; static imports inspected; read-only service inspection and Windows status presentation implemented with synthetic tests | Native installation/signature trust, exclusive publication, named-pipe identity/UIAccess/session checks and status-schema confirmation; setup/action runtime integration and native UI/input/lifecycle tests |
 | Linux arm64 | Private installation/reuse and read-only headless inspection passed in an isolated Debian 13 container; production Manager and selected-window setup passed owned stdio and verified shared-service X11/GTK checks; scripted-model native print/Guard/tool/Session flow, ASCII insertion and pixel click/resize rejection passed; launch established its exact window and preserved the app after Manager close; actual Settings CLI flow passed native private installation, selected-window capture, cancellation/retry and saved enable | Launch steals focus, Unicode insertion truncates and GTK key/hotkey, pixel scroll and drag are unavailable in the fixture; actual-model tasks, physical terminal/IME and other desktop environments; other pixel actions, foreground assistance, overlay, other toolkits, real compositor/Wayland and physical-input/IME checks |
 | Linux amd64 | Downloaded archive and selected executable hashes verified; synthetic installer tests and cross-compilation pass; ELF library dependencies inspected | Native installation/dynamic loading and exclusive publication; runtime/service admission, AT-SPI/display detection, compositor-specific input/capture/overlay tests |
@@ -479,6 +479,33 @@ An earlier test attempt incorrectly required a single candidate and stopped
 before observation; the corrected gate preserves the specified multi-window
 contract. This establishes ordinary synthetic AppKit cold launch, not behavior
 of self-activating third-party apps, physical input/IME or other toolkits.
+
+The [native cursor lifecycle gate](../internal/desktop/cursor_native_darwin_test.go)
+passed with race detection on 2026-09-27 in 8.48 s without an external UI
+observer. The production Manager's session was absent before discovery, present
+with `cursor_visible:false` after observation, and reported visible after one
+pixel click independently committed in the fixture. Closing the run removed the
+session from the official `sessions list --json` operator view. The foreground
+sentinel retained focus and contents, and shared-service inspection still worked.
+This read-only test diagnostic is not a model tool or a new production poller.
+The pinned source connects `cursor_visible` to the render collection's enabled,
+on-screen, non-faded cursor state; it is stronger than an input RPC result, but
+does not itself prove compositing, appearance or physical pointer independence.
+
+A separate live inspection captured the Cua Driver's transparent host surface
+through Computer Use. It visibly contained the blue, white-edged agent cursor
+after the test click; a later capture after run close was empty. Capturing the
+target application alone showed its changed result text but no overlay. This is
+isolated overlay-surface appearance evidence, not a desktop composite, animation
+sequence or proof that the disappearance was caused only by close rather than
+idle fading. The combined manual-inspection runs failed their foreground
+sentinel checks (two losses with PID 71102 foreground; one with ChatGPT PID 63540
+foreground). The cause is not attributed, and those runs do not pass background
+coexistence. A prior short inspection window expired before the observer bound;
+the optional test handshake now permits binding before the single click. It
+never replays input or changes cursor settings to obtain a screenshot. Overlay
+placement over other windows, animation and multi-display/Space behavior remain
+unverified; commands are in [collaboration](collaboration.md#computer-use-checks).
 
 The separate `TestNativeMacInput` passed all four cases: semantic ASCII/Unicode
 insertion, single-key input and select-all hotkey delivery. Independent AppKit
@@ -570,7 +597,7 @@ physical keys, IME, foreground coexistence or stopping a native mutation.
 These gates require the installed authorized service and an available desktop;
 their preparation installs nothing and requests no grants. They use no real
 model and do not prove physical keyboard, IME, remaining pixel routes, overlay
-or heterogeneous application behavior. First-time Settings installation and physical interaction
+compositing/animation or heterogeneous application behavior. First-time Settings installation and physical interaction
 with system authorization dialogs remain separate from the operator-performed
 upgrade and grants above.
 
