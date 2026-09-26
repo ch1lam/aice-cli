@@ -248,6 +248,29 @@ passing execution result. The shared downloader test uses an isolated temporary
 directory to check rejected-file cleanup, including Windows's close-before-remove
 requirement.
 
+On a native Linux or Windows host, the private-install acceptance test uses a
+previously downloaded archive for that host and architecture. The production
+installer still checks its fixed digest, runs native version/signature checks,
+publishes into a test-owned directory and verifies download-disabled reuse. Its
+in-memory HTTP transport reads only that archive; it does not contact GitHub.
+The test does not launch a daemon, capture, request OS grants, install into the
+user's helper directory or change autostart:
+
+```sh
+AICE_CUA_TEST_NATIVE_ARCHIVE=/absolute/path/to/native-archive \
+  go test -tags=integration ./internal/deps -run '^TestNativeCuaPrivateInstallation$' -v
+```
+
+Linux arm64 passed this test, native exclusive-publication tests, concurrent
+installation and rejected-download cleanup in an isolated Debian 13 container
+on 2026-09-26, running as an ordinary user. The initial slim image's standalone
+version probe failed for missing `libX11.so.6`; installing libX11, libXi and
+libxkbcommon **inside that disposable test container** allowed the native check
+to pass. AICE's installer does not perform that package installation. No display
+or desktop D-Bus connection was supplied. This verifies headless installation,
+not X11/Wayland input, accessibility or capture. Windows and Linux amd64 native
+execution remain unverified.
+
 The negative native proxy check uses a verified App binary, temporary HOME and
 an absent socket. It verifies that the proxy refuses automatic service launch,
 without connecting to a user service or requesting OS permissions:

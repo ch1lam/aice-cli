@@ -341,7 +341,8 @@ as the tools and prompt it publishes; offline publication tests cover this.
 | --- | --- | --- |
 | macOS 0.29.1 universal artifact | Download hash matches fixed release manifest; temporary extraction/exclusive publication preserves signature, signing identity and Gatekeeper acceptance; CLI/schema inspected; Settings setup exercised through CLI/Bubble Tea with fake native operations | Signed installed service, system authorization, persistent MCP handshake against that service, synthetic multi-app task, background focus/input sentinel, native overlay, cancellation and cold/warm measurements |
 | Windows amd64/arm64 | Downloaded archives and selected executable hashes verified; private installer with Authenticode checks implemented; synthetic extraction/reuse/cancellation tests and cross-compilation pass; static imports inspected | Native installation/signature trust and exclusive publication; runtime/service admission, interactive-session/UIAccess detection, native UI/input/lifecycle tests |
-| Linux amd64/arm64 | Downloaded archives and selected executable hashes verified; private installer implemented; synthetic extraction/reuse/cancellation tests and cross-compilation pass; ELF library dependencies inspected | Native installation/dynamic loading and exclusive publication; runtime/service admission, AT-SPI/display detection, compositor-specific input/capture/overlay tests |
+| Linux arm64 | Downloaded archive and selected executable hashes verified; private installer, native version probe/reuse, exclusive publication, concurrent installation and rejected-download cleanup passed as an ordinary user in an isolated Debian 13 container; native tool inventory exported | Runtime/service admission, AT-SPI/display detection, compositor-specific input/capture/overlay tests |
+| Linux amd64 | Downloaded archive and selected executable hashes verified; synthetic installer tests and cross-compilation pass; ELF library dependencies inspected | Native installation/dynamic loading and exclusive publication; runtime/service admission, AT-SPI/display detection, compositor-specific input/capture/overlay tests |
 
 On 2026-09-26 the native host had a signed, Gatekeeper-accepted CuaDriver
 **0.7.0** in `/Applications`, distinct from the reviewed **0.29.1** artifact.
@@ -366,7 +367,18 @@ background input and toolkit-specific paths. Structured refusal is not proof
 that a promised action is supported. AICE must preserve `background_only`,
 report unsupported routes and obtain a product decision if an upstream limit
 prevents the agreed acceptance. Windows/Linux remain in scope; no native
-validation is claimed for them.
+desktop validation is claimed for them. The Linux arm64 container check covers
+installation without a display; its missing-library precondition and exact scope
+are recorded in [collaboration](collaboration.md#computer-use-checks).
+
+The native Linux 0.29.1 metadata export contains all 15 tool names currently used
+by AICE, but 11 input schemas differ from the macOS pin. Only `get_config`,
+`list_apps`, `start_session` and `end_session` match. In particular Linux's
+`check_permissions` takes no `prompt` field, and window/element/action parameter
+contracts differ. Its permission response reports X11, Wayland and AT-SPI facts
+without the macOS daemon attribution fields. Consequently platform integration
+requires reviewed typed adapters and process-identity verification; admitting
+Linux by bypassing the current macOS schema check would be incorrect.
 
 The C0 local schema probe used an isolated HOME and disabled telemetry. Its
 sandboxed invocation failed during AppKit pasteboard initialization; the

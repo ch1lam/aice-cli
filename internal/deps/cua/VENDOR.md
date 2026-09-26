@@ -17,8 +17,12 @@ It and GitHub's release asset digests agree with the pins in `cua.go`.
 All five full distribution archives (macOS universal and Windows/Linux on
 amd64/arm64) were downloaded and independently hashed on 2026-09-26. The static
 Windows/Linux extraction check also verifies the per-executable pins in
-`cua_install_native.go`. Those platform executables have not been run here;
-artifact validation does not establish native acceptance.
+`cua_install_native.go`. Linux arm64 was subsequently executed as an ordinary
+user in an isolated Debian 13 container: the production private installer,
+version probe, reuse and exclusive publisher passed. Its `dump-docs --type mcp`
+inventory also exported successfully without a display. Windows and Linux amd64
+executables have not been run here. Artifact or headless installation validation
+does not establish native desktop acceptance.
 
 Static ELF/PE import inspection found no dependency on the adjacent SDK or
 Node libraries for the selected executables. Linux needs system libX11, libXi,

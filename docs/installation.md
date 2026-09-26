@@ -135,8 +135,10 @@ display, AT-SPI access, compositor support or desktop readiness. The private
 Windows install does not grant UIAccess: the sibling's secure-path/signing
 requirements remain OS policy, and AICE does not change registry policy, elevate
 or move it to Program Files. No service, login task or shell extension starts
-during provisioning. Native installer execution and signature trust still need
-their respective platform hosts; cross-compilation is recorded separately.
+during provisioning. Native Linux arm64 installation has passed in a headless
+Debian 13 container; Windows signature trust/installation and Linux amd64 native
+installation still need their respective platform hosts. Cross-compilation and
+desktop acceptance are recorded separately.
 
 ## Update
 
