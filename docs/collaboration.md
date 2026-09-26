@@ -536,7 +536,8 @@ AICE_CUA_NATIVE=1 go test -tags=integration ./internal/app -run '^TestNativeMacD
 
 The shared model/Session checks are also used by the native Linux print gate.
 The macOS gate and its fixture compile here, but its native task has **not**
-passed: the installed App remains incompatible. A separate compilation-only
+passed: the installed 0.29.1 App now verifies and admits a read-only MCP connection,
+but the native preflight still reports missing OS grants. A separate compilation-only
 check opens no windows, connects to no service and requests no grants:
 
 ```sh

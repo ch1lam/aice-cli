@@ -408,19 +408,27 @@ as the tools and prompt it publishes; offline publication tests cover this.
 
 | Scope | Evidence | Remaining acceptance |
 | --- | --- | --- |
-| macOS 0.29.1 universal artifact | Download hash matches fixed release manifest; temporary extraction/exclusive publication preserves signature, signing identity and Gatekeeper acceptance; CLI/schema inspected; Settings setup exercised through CLI/Bubble Tea with fake native operations | Signed installed service, system authorization, persistent MCP handshake against that service, synthetic multi-app task, background focus/input sentinel, native overlay, cancellation and cold/warm measurements |
+| macOS 0.29.1 universal artifact | Verified App installed after explicit operator approval; installed signature, signing identity, Gatekeeper and 15-tool schema checks pass; production read-only MCP admission verifies the running standard-mode service; Settings setup exercised through CLI/Bubble Tea with fake native operations | System authorization and live capture; synthetic multi-app task, background focus/input sentinel, native overlay, cancellation and cold/warm measurements |
 | Windows amd64/arm64 | Downloaded archives and selected executable hashes verified; private installer with Authenticode checks implemented; synthetic extraction/reuse/cancellation tests and cross-compilation pass; static imports inspected; read-only service inspection and Windows status presentation implemented with synthetic tests | Native installation/signature trust, exclusive publication, named-pipe identity/UIAccess/session checks and status-schema confirmation; setup/action runtime integration and native UI/input/lifecycle tests |
 | Linux arm64 | Private installation/reuse and read-only headless inspection passed in an isolated Debian 13 container; production Manager and selected-window setup passed owned stdio and verified shared-service X11/GTK checks; scripted-model native print/Guard/tool/Session flow, ASCII insertion and pixel click/resize rejection passed; launch established its exact window and preserved the app after Manager close; actual Settings CLI flow passed native private installation, selected-window capture, cancellation/retry and saved enable | Launch steals focus, Unicode insertion truncates and GTK key/hotkey, pixel scroll and drag are unavailable in the fixture; actual-model tasks, physical terminal/IME and other desktop environments; other pixel actions, foreground assistance, overlay, other toolkits, real compositor/Wayland and physical-input/IME checks |
 | Linux amd64 | Downloaded archive and selected executable hashes verified; synthetic installer tests and cross-compilation pass; ELF library dependencies inspected | Native installation/dynamic loading and exclusive publication; runtime/service admission, AT-SPI/display detection, compositor-specific input/capture/overlay tests |
 
-On 2026-09-26 the native host had a signed, Gatekeeper-accepted CuaDriver
-**0.7.0** in `/Applications`, distinct from the reviewed **0.29.1** artifact.
-The pinned public status command reported no daemon at the default endpoint.
-The existing App was preserved; using it does not satisfy pinned admission.
-The opt-in native manager test was run and refused this version before creating
-fixtures or connecting to Cua, through the production installation verifier.
-An upgrade of this pre-existing global installation requires an explicit
-operator decision rather than an automatic overwrite.
+On 2026-09-27, after explicit operator approval, the native host's pre-existing
+0.7.0 App was replaced with the verified **0.29.1** distribution. No old service
+was running. The replacement retained the official signature and passed signing
+identity and Gatekeeper checks before and after publication; the installed CLI
+reports 0.29.1 and its 15-tool metadata inventory matches AICE's pin. This was an
+operator-authorized host upgrade, not proof of the Settings installation workflow.
+The production installer still preserves incompatible pre-existing Apps.
+
+The installed App now runs through LaunchServices in standard mode, with no
+external policy or capability manifest. The native Manager gate passed production
+installation verification and read-only MCP service admission, reporting
+`ConnectionVerified:true`, but stopped before creating fixtures because both
+Accessibility and Screen Recording were Missing. The official public grant flow
+was opened for operator consent and timed out with both grants still missing;
+no system grant was bypassed. Successful connection/schema checks do not establish
+input or capture readiness.
 
 The opt-in [native manager test](../internal/desktop/manager_native_darwin_test.go)
 and its synthetic AppKit fixture are now available; invocation and boundaries
@@ -429,7 +437,7 @@ on this host. Its lifecycle probe created visible windows but could not activate
 the sentinel: macOS `loginwindow` was foreground. This is a failed environment
 precondition, not a Cua background-input result. Owned fixture processes were
 confirmed gone after cleanup. The full native manager task has not passed;
-it still needs the compatible installed service, grants and an available desktop.
+it still needs OS grants and an available desktop.
 
 The application-level `TestNativeMacDesktopPrint` gate is also prepared. It uses
 the production desktop constructor with a scripted model through the actual CLI,
@@ -445,9 +453,9 @@ insertion, single-key input and select-all hotkey delivery. Independent AppKit
 field-editor text/selection and post-response fixture frames establish the
 requested effects; a non-error Driver response alone cannot pass. Its sentinel
 checks focus/content preservation through input and connection cleanup. The
-test and expanded fixture compile. Its opt-in run rejected the installed 0.7.0
-App at the production version check before creating fixtures or connecting;
-native input acceptance has not passed.
+test and expanded fixture compile. Native input acceptance has not passed;
+the compatible installed service still needs OS grants before this gate can
+create fixtures or dispatch input.
 Neither this gate nor the existing value-setting task proves physical keyboard,
 IME, pixel, overlay or heterogeneous-application behavior.
 

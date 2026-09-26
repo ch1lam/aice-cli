@@ -40,6 +40,10 @@ bundle `com.trycua.driver`; stapled notarization ticket. Sandboxed codesign
 reported an invalid signature with unavailable authority; the same unchanged
 bytes passed verification with access to system certificates. Do not work
 around a production signature failure by re-signing or removing quarantine.
+After the operator-authorized host upgrade on 2026-09-27, these signature,
+signing-identity and Gatekeeper checks also passed at `/Applications/CuaDriver.app`.
+The installed CLI reports 0.29.1 and its native metadata inventory matches the
+reviewed 15-tool pin. This does not establish OS grants or desktop task acceptance.
 
 No upstream installer is executed. The published top-level install.sh delegates
 to a secondary installer and includes skill/PATH integration outside AICE's
