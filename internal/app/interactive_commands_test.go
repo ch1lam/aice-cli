@@ -900,21 +900,6 @@ func TestInteractiveSessionConfigurationCommandsRejectUnsupportedValues(
 	t *testing.T,
 ) {
 	t.Parallel()
-
-	runner := &interactiveSession{
-		application: &application{dependencies: dependencies{
-			saveSettings: recordSettings(func(
-				config.Setting,
-				string,
-			) error {
-				t.Fatal("invalid setting was persisted")
-				return nil
-			}),
-		}},
-		model:         deepseek.DefaultModel(),
-		configuration: config.Config{Provider: string(deepseek.ProviderID)},
-		providers:     defaultProviders(),
-	}
 	tests := []struct {
 		name    string
 		request tui.SlashCommandRequest
@@ -957,6 +942,19 @@ func TestInteractiveSessionConfigurationCommandsRejectUnsupportedValues(
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
+			// A session serializes settings operations. Each independent input
+			// validation case needs its own lifecycle reservation.
+			runner := &interactiveSession{
+				application: &application{dependencies: dependencies{
+					saveSettings: recordSettings(func(config.Setting, string) error {
+						t.Fatal("invalid setting was persisted")
+						return nil
+					}),
+				}},
+				model:         deepseek.DefaultModel(),
+				configuration: config.Config{Provider: string(deepseek.ProviderID)},
+				providers:     defaultProviders(),
+			}
 
 			_, err := runner.RunSlashCommand(t.Context(), tt.request)
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
