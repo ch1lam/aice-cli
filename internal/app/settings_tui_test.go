@@ -40,6 +40,9 @@ func TestSettingsUsageTUI(t *testing.T) {
 		newDesktop: func(c config.Config) (*desktopState, error) {
 			return &desktopState{installOptions: deps.DefaultOptions().WithNoInstall(c.NoDepInstall),
 				inspect: func(context.Context) (desktop.Inspection, error) {
+					if runtime.GOOS == "linux" {
+						return desktop.Inspection{ConnectionVerified: true, Linux: &desktop.LinuxInspection{X11: desktop.PermissionMissing, ATSPI: desktop.PermissionMissing}, CheckedAt: time.Now()}, nil
+					}
 					return desktop.Inspection{ConnectionVerified: true, Accessibility: desktop.PermissionGranted, ScreenRecording: desktop.PermissionMissing, CheckedAt: time.Now()}, nil
 				},
 				bind: func(ctx context.Context, _ desktop.RunOptions) (tool.DesktopBackend, func() error, error) {
@@ -134,6 +137,15 @@ func TestSettingsUsageTUI(t *testing.T) {
 	send("\x151m30.000000001s\r")
 	waitFor("Saved to user settings")
 	send("\x1b")
+	if runtime.GOOS == "linux" {
+		send("/desktop\r")
+		waitFor("[Tools & Network]")
+		send("/Computer Use status\r")
+		waitFor("X11 connection: Unavailable")
+		waitFor("AT-SPI bus owner: Unavailable")
+		send("\x1b")
+		send("\x1b")
+	}
 	if runtime.GOOS == "darwin" {
 		send("/desktop\r")
 		waitFor("[Tools & Network]")

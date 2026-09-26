@@ -271,6 +271,27 @@ or desktop D-Bus connection was supplied. This verifies headless installation,
 not X11/Wayland input, accessibility or capture. Windows and Linux amd64 native
 execution remain unverified.
 
+In an isolated Linux container with no user display or desktop bus mounted,
+the headless service test starts one test-owned foreground daemon, reads status
+twice through the production inspector, and reaps only that daemon. It requires
+the explicit opt-in and an already checksum-verified binary; it never installs
+or uses a user's existing service:
+
+```sh
+AICE_CUA_HEADLESS_CONTAINER=1 AICE_CUA_TEST_BINARY=/absolute/path/to/cua-driver \
+  go test -tags=integration ./internal/desktop -run '^TestNativeLinuxHeadlessInspection$' -v
+```
+
+Linux arm64 passed this check in the Debian 13 fixture. Native Unix peer tests
+also verified PID/executable mismatch rejection. Default raw MCP tests reject
+Linux status-schema drift and prevent that connection from dispatching actions.
+`TestSettingsUsageTUI` also passed on that Linux host using the actual CLI and
+Bubble Tea with a synthetic backend; it opens `/desktop` and checks the separate
+X11/AT-SPI status fields. This checks presentation, not a native desktop action.
+The normal owned-process shutdown test waits for the child readiness message
+before closing; the race runtime's artificial exit sleep is disabled only in
+that synthetic child, so it cannot masquerade as a hung Driver.
+
 The negative native proxy check uses a verified App binary, temporary HOME and
 an absent socket. It verifies that the proxy refuses automatic service launch,
 without connecting to a user service or requesting OS permissions:

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"sync"
 	"time"
@@ -47,7 +48,7 @@ func (a *application) newDesktopState(configuration config.Config) (*desktopStat
 		if err != nil {
 			return "", "", &desktop.ServiceError{Code: "setup_required", Detail: "Computer Use needs a compatible installed Driver; open Settings setup. " + err.Error()}
 		}
-		return result.Installation.Binary, filepath.Join(home, "Library", "Caches", "cua-driver", "cua-driver.sock"), nil
+		return result.Installation.Binary, desktopServiceEndpoint(home), nil
 	})
 	if err != nil {
 		return nil, err
@@ -61,7 +62,7 @@ func (a *application) newDesktopState(configuration config.Config) (*desktopStat
 			if err != nil {
 				return desktop.Inspection{}, err
 			}
-			return desktop.Inspect(ctx, result.Installation.Binary, filepath.Join(home, "Library", "Caches", "cua-driver", "cua-driver.sock"))
+			return desktop.Inspect(ctx, result.Installation.Binary, desktopServiceEndpoint(home))
 		},
 		install: func(ctx context.Context, options deps.Options) (deps.CuaInstallResult, error) {
 			if homeErr != nil || home == "" {
@@ -73,7 +74,7 @@ func (a *application) newDesktopState(configuration config.Config) (*desktopStat
 			if err := manager.Disconnect(ctx); err != nil {
 				return desktop.SetupResult{}, err
 			}
-			return desktop.Setup(ctx, binary, filepath.Join(home, "Library", "Caches", "cua-driver", "cua-driver.sock"))
+			return desktop.Setup(ctx, binary, desktopServiceEndpoint(home))
 		},
 		bind: func(ctx context.Context, options desktop.RunOptions) (tool.DesktopBackend, func() error, error) {
 			run, err := manager.Bind(ctx, options)
@@ -181,4 +182,18 @@ func composeTools(base []agent.Tool, web webState, desktopState *desktopState, c
 		}
 	}
 	return result, nil
+}
+
+// Match the pinned release namespace without consulting PATH or project input.
+func desktopServiceEndpoint(home string) string {
+	switch runtime.GOOS {
+	case "darwin":
+		return filepath.Join(home, "Library", "Caches", "cua-driver", "cua-driver.sock")
+	case "linux":
+		return filepath.Join(home, ".cache", "cua-driver", "cua-driver.sock")
+	case "windows":
+		return `\\.\pipe\cua-driver`
+	default:
+		return ""
+	}
 }

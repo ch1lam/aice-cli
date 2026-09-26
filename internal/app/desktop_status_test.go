@@ -104,3 +104,18 @@ func TestDesktopSettingsStatusCancellation(t *testing.T) {
 		t.Fatal("cancelled read published a snapshot", err)
 	}
 }
+
+func TestDesktopLinuxStatusDoesNotInventCaptureOrMacGrants(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Linux and macOS status reader")
+	}
+	s := desktopSettingsSession(t)
+	s.configuration.DesktopEnabled = true
+	s.desktop.inspect = func(context.Context) (desktop.Inspection, error) {
+		return desktop.Inspection{ConnectionVerified: true, Linux: &desktop.LinuxInspection{X11: desktop.PermissionMissing, ATSPI: desktop.PermissionGranted, WaylandEnvironment: desktop.PermissionGranted, WaylandBackend: desktop.PermissionMissing}}, nil
+	}
+	field := s.desktopStatusField(t.Context(), s.settingsSnapshot())
+	if field.Value.Text != "Unavailable" || !strings.Contains(field.Description, "Connection: Verified") || !strings.Contains(field.Description, "X11 connection: Unavailable") || !strings.Contains(field.Description, "AT-SPI bus owner: Available") || !strings.Contains(field.Description, "Capture verification: Not checked") || strings.Contains(field.Description, "Screen Recording:") {
+		t.Fatal(field)
+	}
+}

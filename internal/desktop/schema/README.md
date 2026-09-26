@@ -27,3 +27,12 @@ is evidence of the advertised contract, not native input/capture acceptance.
 `TestNativeCuaSchemaInventory` repeats the metadata-only comparison against an
 explicitly supplied verified binary. Default tests mutate the reviewed fixture
 and exercise rejection through the real MCP handshake before any `tools/call`.
+
+`linux-status-0.29.1.json` pins the two read-only tools used by Linux service
+inspection: `get_config` and `check_permissions`. They were exported from the
+checksum-verified arm64 binary in an isolated Debian 13 container on 2026-09-26.
+Linux has no `prompt` permission argument. This inspection client admits only
+those two tools; it cannot dispatch input or capture even though the service
+advertises additional tools. Linux action schemas remain to be adapted and
+reviewed separately. The native headless inspection test verifies this connection
+path without declaring the desktop usable.

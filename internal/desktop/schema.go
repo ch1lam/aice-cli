@@ -16,6 +16,9 @@ import (
 //go:embed schema/macos-0.29.1.json
 var macSchemaInventory []byte
 
+//go:embed schema/linux-status-0.29.1.json
+var linuxStatusSchemaInventory []byte
+
 type schemaInventory struct {
 	Version  string                     `json:"version"`
 	Platform string                     `json:"platform"`
@@ -23,8 +26,16 @@ type schemaInventory struct {
 }
 
 func reviewedMacTools(actual map[string]json.RawMessage) (map[string]json.RawMessage, error) {
+	return reviewedTools(actual, macSchemaInventory, "macos")
+}
+
+func reviewedLinuxStatusTools(actual map[string]json.RawMessage) (map[string]json.RawMessage, error) {
+	return reviewedTools(actual, linuxStatusSchemaInventory, "linux")
+}
+
+func reviewedTools(actual map[string]json.RawMessage, data []byte, platform string) (map[string]json.RawMessage, error) {
 	var inventory schemaInventory
-	if json.Unmarshal(macSchemaInventory, &inventory) != nil || inventory.Version != DriverVersion || inventory.Platform != "macos" || len(inventory.Tools) == 0 {
+	if json.Unmarshal(data, &inventory) != nil || inventory.Version != DriverVersion || inventory.Platform != platform || len(inventory.Tools) == 0 {
 		return nil, errors.New("desktop: invalid built-in Cua schema inventory")
 	}
 	reviewed := make(map[string]json.RawMessage, len(inventory.Tools))
@@ -34,7 +45,7 @@ func reviewedMacTools(actual map[string]json.RawMessage) (map[string]json.RawMes
 			return nil, errors.New("desktop: invalid built-in Cua tool schema")
 		}
 		if json.Unmarshal(actual[name], &received) != nil || !reflect.DeepEqual(received, expected) {
-			return nil, serviceError("incompatible_service", "Cua tool "+name+" does not match the reviewed macOS schema; no desktop action was dispatched")
+			return nil, serviceError("incompatible_service", "Cua tool "+name+" does not match the reviewed "+platform+" schema; no desktop action was dispatched")
 		}
 		reviewed[name] = actual[name]
 	}

@@ -32,6 +32,12 @@ type fixturePeer struct {
 func fakeTransport(t *testing.T, mode string) (*mcp.IOTransport, *fixturePeer) {
 	t.Helper()
 	schemas := schemaFixture(t)
+	if strings.HasPrefix(mode, "linux-status") {
+		schemas = linuxStatusFixture(t)
+		if mode == "linux-status-drift" {
+			schemas["check_permissions"] = json.RawMessage(`{"type":"object"}`)
+		}
+	}
 	schemas["unreviewed_tool"] = json.RawMessage(`{"type":"object"}`)
 	if mode == "missing-tool" {
 		delete(schemas, "drag")
@@ -255,6 +261,37 @@ func TestOwnedProcessClosesHungChild(t *testing.T) {
 		t.Fatal("owned process was not waited")
 	}
 	_ = conn.Close()
+}
+
+func TestOwnedProcessNormalCloseIsSuccessful(t *testing.T) {
+	if os.Getenv("AICE_DESKTOP_NORMAL_CHILD") == "1" {
+		_, _ = io.WriteString(os.Stdout, "{\"jsonrpc\":\"2.0\",\"method\":\"ready\"}\n")
+		_, _ = io.Copy(io.Discard, os.Stdin)
+		os.Exit(0)
+	}
+	t.Parallel()
+	command := exec.Command(os.Args[0], "-test.run=^TestOwnedProcessNormalCloseIsSuccessful$")
+	command.Env = append(os.Environ(), "AICE_DESKTOP_NORMAL_CHILD=1", "GORACE=atexit_sleep_ms=0")
+	transport := &processTransport{command: command}
+	conn, err := transport.Connect(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ready, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	if _, err := conn.Read(ready); err != nil {
+		_ = conn.Close()
+		t.Fatal("child did not become ready", err)
+	}
+	if err := conn.Close(); err != nil {
+		t.Fatal("normal child shutdown failed", err)
+	}
+	if command.ProcessState == nil || !command.ProcessState.Success() {
+		t.Fatal("normal child not reaped successfully")
+	}
+	if err := conn.Close(); err != nil {
+		t.Fatal("repeated close failed", err)
+	}
 }
 
 func TestInitializeCancellationClosesBlockedWriter(t *testing.T) {

@@ -56,6 +56,10 @@ type client struct {
 }
 
 func connect(ctx context.Context, transport mcp.Transport) (*client, error) {
+	return connectReviewed(ctx, transport, reviewedMacTools)
+}
+
+func connectReviewed(ctx context.Context, transport mcp.Transport, review func(map[string]json.RawMessage) (map[string]json.RawMessage, error)) (*client, error) {
 	ctx, cancel := context.WithTimeout(ctx, connectTimeout)
 	defer cancel()
 	c := mcp.NewClient(&mcp.Implementation{Name: "aice", Version: buildinfo.Version}, &mcp.ClientOptions{
@@ -126,7 +130,7 @@ func connect(ctx context.Context, transport mcp.Transport) (*client, error) {
 		}
 		seen[cursor] = true
 	}
-	result.tools, err = reviewedMacTools(result.tools)
+	result.tools, err = review(result.tools)
 	if err != nil {
 		return nil, err
 	}
@@ -251,7 +255,9 @@ func (t *processTransport) Connect(ctx context.Context) (mcp.Connection, error) 
 		return nil, err
 	}
 	p := &ownedProcess{cmd: t.command, stdout: stdout, stdin: stdin}
-	transport := &mcp.IOTransport{Reader: &boundedReader{ReadCloser: p, limit: maxMessageBytes}, Writer: stdin}
+	// Both sides share the same idempotent owner. The SDK closes reader then
+	// writer; giving it stdin directly would close an already reaped pipe twice.
+	transport := &mcp.IOTransport{Reader: &boundedReader{ReadCloser: p, limit: maxMessageBytes}, Writer: p}
 	return transport.Connect(ctx)
 }
 
@@ -263,7 +269,8 @@ type ownedProcess struct {
 	err    error
 }
 
-func (p *ownedProcess) Read(b []byte) (int, error) { return p.stdout.Read(b) }
+func (p *ownedProcess) Read(b []byte) (int, error)  { return p.stdout.Read(b) }
+func (p *ownedProcess) Write(b []byte) (int, error) { return p.stdin.Write(b) }
 func (p *ownedProcess) Close() error {
 	p.once.Do(func() {
 		_ = p.stdin.Close()

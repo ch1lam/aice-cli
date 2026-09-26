@@ -341,7 +341,7 @@ as the tools and prompt it publishes; offline publication tests cover this.
 | --- | --- | --- |
 | macOS 0.29.1 universal artifact | Download hash matches fixed release manifest; temporary extraction/exclusive publication preserves signature, signing identity and Gatekeeper acceptance; CLI/schema inspected; Settings setup exercised through CLI/Bubble Tea with fake native operations | Signed installed service, system authorization, persistent MCP handshake against that service, synthetic multi-app task, background focus/input sentinel, native overlay, cancellation and cold/warm measurements |
 | Windows amd64/arm64 | Downloaded archives and selected executable hashes verified; private installer with Authenticode checks implemented; synthetic extraction/reuse/cancellation tests and cross-compilation pass; static imports inspected | Native installation/signature trust and exclusive publication; runtime/service admission, interactive-session/UIAccess detection, native UI/input/lifecycle tests |
-| Linux arm64 | Downloaded archive and selected executable hashes verified; private installer, native version probe/reuse, exclusive publication, concurrent installation and rejected-download cleanup passed as an ordinary user in an isolated Debian 13 container; native tool inventory exported | Runtime/service admission, AT-SPI/display detection, compositor-specific input/capture/overlay tests |
+| Linux arm64 | Downloaded archive and selected executable hashes verified; private installer, native version probe/reuse, exclusive publication, concurrent installation and rejected-download cleanup passed as an ordinary user in an isolated Debian 13 container; native tool inventory and read-only headless service inspection verified | Runtime startup/action admission, compositor-specific input/capture/overlay tests |
 | Linux amd64 | Downloaded archive and selected executable hashes verified; synthetic installer tests and cross-compilation pass; ELF library dependencies inspected | Native installation/dynamic loading and exclusive publication; runtime/service admission, AT-SPI/display detection, compositor-specific input/capture/overlay tests |
 
 On 2026-09-26 the native host had a signed, Gatekeeper-accepted CuaDriver
@@ -379,6 +379,28 @@ contracts differ. Its permission response reports X11, Wayland and AT-SPI facts
 without the macOS daemon attribution fields. Consequently platform integration
 requires reviewed typed adapters and process-identity verification; admitting
 Linux by bypassing the current macOS schema check would be incorrect.
+
+Linux Settings now inspects an existing verified installation at the pinned
+`~/.cache/cua-driver/cua-driver.sock` endpoint. It checks standard authorization
+mode and policy, ties the reported PID to the Unix socket's `SO_PEERCRED` user
+and PID, and checks `/proc/<pid>/exe` against the verified executable path and
+inode before and after the read-only MCP exchange. The separate status client
+admits only the two reviewed Linux status tools. Its five-second inspection
+deadline covers the probes and handshake; it neither starts nor repairs a
+service, creates a desktop session, observes a window, or captures.
+
+The status projection separates X11 connectivity, AT-SPI bus ownership, Wayland
+environment presence, backend enablement and the XSendEvent prerequisite. Unknown
+fields stay unknown, and Wayland environment presence is not compositor or input
+verification. No D-Bus address or upstream free text is projected. A verified
+connection does not make Linux actions ready; runtime startup, compositor-specific
+capabilities and action adapters remain incomplete. The Linux arm64 headless
+fixture passed two inspections of its own service and correctly reported absent
+display/bus capabilities while leaving that service alive between checks.
+
+The SDK closes both stdio stream sides; both share one idempotent process owner
+so cleanup closes and reaps the child only once. Normal proxy exit returns success;
+hung-child cleanup and nonzero exit reporting retain their existing behavior.
 
 The C0 local schema probe used an isolated HOME and disabled telemetry. Its
 sandboxed invocation failed during AppKit pasteboard initialization; the

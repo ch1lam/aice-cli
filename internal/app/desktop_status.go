@@ -24,7 +24,7 @@ func (s *interactiveSession) desktopStatusField(ctx context.Context, settings in
 	var err error
 	var cached desktop.Status
 	var setupCapture time.Time
-	if runtime.GOOS != "darwin" {
+	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
 		summary = "Unavailable"
 		err = errors.New("Native Computer Use status is not yet integrated on this platform")
 	} else if s.desktop == nil || s.desktop.inspect == nil {
@@ -92,18 +92,34 @@ func (s *interactiveSession) desktopStatusField(ctx context.Context, settings in
 			summary = "Degraded"
 		}
 	}
+	if permissions.Linux != nil {
+		summary = "Unavailable" // Native actions are not integrated yet.
+	}
 	if !settings.configuration.DesktopEnabled {
 		summary = "Disabled"
 	}
 	lines := []string{
 		"State: " + summary,
 		"Connection: " + connection,
-		"Accessibility: " + string(permissions.Accessibility),
-		"Screen Recording: " + string(permissions.ScreenRecording),
 		"Capture verification: " + capture,
 		"Model: " + modelCapability,
 		fmt.Sprintf("This instance's tool connection: %t (generation %d)", cached.Connected, cached.Generation),
 		"Refresh reads status only; it never captures, requests grants or starts a service.",
+	}
+	if permissions.Linux != nil || runtime.GOOS == "linux" {
+		facts := permissions.Linux
+		if facts == nil {
+			facts = &desktop.LinuxInspection{}
+		}
+		lines = append(lines,
+			"X11 connection: "+desktopCapabilityState(facts.X11),
+			"AT-SPI bus owner: "+desktopCapabilityState(facts.ATSPI),
+			"Wayland environment reported by Driver: "+desktopCapabilityState(facts.WaylandEnvironment),
+			"Wayland backend enabled: "+desktopCapabilityState(facts.WaylandBackend),
+			"XSendEvent prerequisite: "+desktopCapabilityState(facts.XSendEvent),
+			"Display and bus checks do not verify target input or capture. Linux actions and setup remain in progress.")
+	} else {
+		lines = append(lines, "Accessibility: "+string(permissions.Accessibility), "Screen Recording: "+string(permissions.ScreenRecording))
 	}
 	if !permissions.CheckedAt.IsZero() {
 		lines = append(lines, "Permissions read at: "+permissions.CheckedAt.Format(time.RFC3339))
@@ -116,4 +132,15 @@ func (s *interactiveSession) desktopStatusField(ctx context.Context, settings in
 	}
 	field.Value.Text, field.Description = summary, strings.Join(lines, "\n")
 	return field
+}
+
+func desktopCapabilityState(state desktop.PermissionState) string {
+	switch state {
+	case desktop.PermissionGranted:
+		return "Available"
+	case desktop.PermissionMissing:
+		return "Unavailable"
+	default:
+		return "Unknown"
+	}
 }
