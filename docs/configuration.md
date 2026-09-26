@@ -167,6 +167,10 @@ Project & Trust, and System. Tab/Shift+Tab switches categories; `/` searches
 across them. Arrow keys select, Enter edits, and `?` opens scrollable details.
 The window leaves one cell of padding inside the top and side borders. The
 footer is centered directly above the bottom border, with no blank row below it.
+One blank row separates the content from the footer. The list spans the full
+content width; a muted, centered explanation of the selected setting sits below
+it, using one line where possible and at most two. Very short windows prioritize
+the list; `?` still opens the complete description, source and persistence details.
 Tab titles and the search divider align with search text and section headings.
 The active category uses the slash menu's bold light text without brackets.
 A blank row separates

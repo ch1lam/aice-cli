@@ -41,7 +41,7 @@ func TestSettingsPaddingTabsAndSearchGeometry(t *testing.T) {
 					t.Fatalf("missing horizontal padding at row %d: %q", y+1, line)
 				}
 			}
-			for _, y := range []int{1, 3} {
+			for _, y := range []int{1, 3, len(lines) - 3} {
 				if strings.TrimSpace(ansi.Cut(lines[y], 1, l.width-1)) != "" {
 					t.Fatalf("missing vertical padding: %q", lines[y])
 				}
@@ -77,6 +77,56 @@ func TestSettingsPaddingTabsAndSearchGeometry(t *testing.T) {
 			text := settingsPaintedMouse(t, m, "中文")
 			if cursor == nil || cursor.X != text.X+4 || cursor.Y != text.Y {
 				t.Fatalf("search cursor = %+v, text at %+v", cursor, text)
+			}
+		})
+	}
+}
+
+func TestSettingsSelectedExplanationAtBottom(t *testing.T) {
+	t.Parallel()
+	for _, size := range [][2]int{{120, 40}, {80, 24}, {32, 16}} {
+		t.Run(fmt.Sprintf("%dx%d", size[0], size[1]), func(t *testing.T) {
+			m := panelModel(t, size[0], size[1])
+			p := m.settings
+			p.snapshot.Fields = []interaction.SettingField{
+				{ID: "model", Category: "models", Label: "Model with a label extending beyond the old sidebar boundary",
+					Description: "Choose the next model. Further details only.", Kind: interaction.SettingString},
+				{ID: "thinking", Category: "models", Label: "Thinking", Kind: interaction.SettingString,
+					Description: strings.Repeat("推理级别决定模型回答之前的思考深度", 8)},
+			}
+			l := p.layout
+			view := ansi.Strip(m.settingsPanelView())
+			lines := strings.Split(view, "\n")
+			if size[0] == 120 && !strings.Contains(view, p.snapshot.Fields[0].Label) {
+				t.Fatal("list still truncates labels at the old sidebar boundary")
+			}
+			if strings.Contains(view, "Further details") || strings.Contains(view, "Save to:") {
+				t.Fatal("full details leaked into the summary")
+			}
+			summary := strings.TrimSpace(ansi.Cut(lines[len(lines)-4], 2, l.width-2))
+			if summary != "Choose the next model." {
+				t.Fatalf("summary above footer gap = %q", summary)
+			}
+			mouse := settingsPaintedMouse(t, m, "Choose")
+			if got := p.target(mouse); got != "" {
+				t.Fatalf("summary is clickable: %q", got)
+			}
+			m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyDown})
+			lines = strings.Split(ansi.Strip(m.settingsPanelView()), "\n")
+			for _, y := range []int{len(lines) - 5, len(lines) - 4} {
+				if !strings.Contains(lines[y], "思") && !strings.Contains(lines[y], "推") {
+					t.Fatalf("missing wrapped explanation at row %d: %q", y, lines[y])
+				}
+			}
+			if !strings.Contains(lines[len(lines)-4], "…") {
+				t.Fatal("long explanation was not limited to two lines")
+			}
+			if strings.TrimSpace(ansi.Cut(lines[len(lines)-6], 2, l.width-2)) != "" {
+				t.Fatal("missing gap between list and explanation")
+			}
+			m = updateModel(t, m, tea.KeyPressMsg{Code: '?', Text: "?"})
+			if m.settings.editing == nil || !strings.Contains(m.settings.editing.Description, "Save to:") {
+				t.Fatal("full details are no longer accessible")
 			}
 		})
 	}

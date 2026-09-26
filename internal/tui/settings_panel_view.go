@@ -53,6 +53,30 @@ func settingDetails(field interaction.SettingField, path string) string {
 	return strings.Join(parts, "\n")
 }
 
+func settingSummary(field interaction.SettingField, width, height int) string {
+	text := strings.TrimSpace(sanitizeMultilineText(field.Description))
+	if field.Action != nil && field.Action.Name == "login" {
+		text = "Manage sign-in and credentials for this account."
+	} else if text == "" && field.Kind == interaction.SettingAction {
+		text = "Open " + sanitizeSingleLineText(field.Label) + "."
+	}
+	// Descriptions can include runtime details after the initial explanation.
+	text, _, _ = strings.Cut(text, "\n")
+	if first, _, ok := strings.Cut(text, ". "); ok {
+		text = first + "."
+	}
+	if first, _, ok := strings.Cut(text, "。"); ok {
+		text = first + "。"
+	}
+	lines := strings.Split(ansi.Wrap(text, width, ""), "\n")
+	if len(lines) > height {
+		lines = lines[:height]
+		lines[height-1] = ansi.Truncate(lines[height-1]+"…", width, "…")
+	}
+	return mutedStyle.Italic(true).Width(width).Height(height).
+		Align(lipgloss.Center, lipgloss.Bottom).Render(strings.Join(lines, "\n"))
+}
+
 func (m model) settingsPanelView() string {
 	p := m.settings
 	l := p.layout
@@ -90,8 +114,7 @@ func (m model) settingsPanelView() string {
 		}
 	} else {
 		fields := p.fields()
-		listWidth, _ := p.listSize()
-		wide := l.inner >= 88
+		listWidth, listHeight := p.listSize()
 		var rows []string
 		for _, row := range p.visibleSettingRows(fields) {
 			if row.field < 0 {
@@ -119,21 +142,9 @@ func (m model) settingsPanelView() string {
 		if len(rows) == 0 {
 			rows = []string{"No matching settings"}
 		}
-		body = strings.Join(rows, "\n")
-		if len(fields) > 0 {
-			details := settingDetails(fields[min(p.selection, len(fields)-1)], p.snapshot.SavePath)
-			if wide {
-				divider := mutedStyle.Render(strings.TrimSuffix(strings.Repeat(" │ \n", l.bodyHeight), "\n"))
-				detailWidth := l.inner - listWidth - 3
-				body = lipgloss.JoinHorizontal(
-					lipgloss.Top,
-					lipgloss.NewStyle().Width(listWidth).Height(l.bodyHeight).Render(body),
-					divider,
-					mutedStyle.Width(detailWidth).Render(ansi.Hardwrap(sanitizeMultilineText(details), detailWidth, true)),
-				)
-			} else {
-				body += "\n\n" + mutedStyle.Render(ansi.Hardwrap(sanitizeMultilineText(details), l.inner, true))
-			}
+		body = lipgloss.NewStyle().Width(listWidth).Height(listHeight).Render(strings.Join(rows, "\n"))
+		if summaryHeight := p.summaryHeight(); summaryHeight > 0 && len(fields) > 0 {
+			body += "\n\n" + settingSummary(fields[min(p.selection, len(fields)-1)], l.inner, summaryHeight)
 		}
 	}
 	body = lipgloss.NewStyle().Width(l.inner).Height(l.bodyHeight).MaxHeight(l.bodyHeight).Render(body)
@@ -154,7 +165,7 @@ func (m model) settingsPanelView() string {
 	footer, footerX := settingsFooterLayout(m.settingsFooter(), l.inner)
 	content := strings.Join([]string{
 		"", ansi.Truncate(p.tabs(), l.inner, "…"), "", ansi.Truncate(search, l.inner, "…"),
-		mutedStyle.Render("  " + strings.Repeat("─", max(0, l.inner-2))), body,
+		mutedStyle.Render("  " + strings.Repeat("─", max(0, l.inner-2))), body, "",
 		strings.Repeat(" ", footerX) + mutedStyle.Render(footer),
 	}, "\n")
 	hover := p.pointer != nil && modalCloseContains(l, *p.pointer)

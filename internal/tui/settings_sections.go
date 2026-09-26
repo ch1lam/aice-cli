@@ -96,10 +96,17 @@ type settingListRow struct {
 }
 
 func (p *settingsPanel) listSize() (width, height int) {
-	if p.layout.inner >= 88 {
-		return p.layout.inner/2 - 2, p.layout.bodyHeight
+	height = p.layout.bodyHeight
+	if summaryHeight := p.summaryHeight(); summaryHeight > 0 {
+		height -= summaryHeight + 1
 	}
-	return p.layout.inner, max(1, p.layout.bodyHeight-5)
+	return p.layout.inner, height
+}
+
+func (p *settingsPanel) summaryHeight() int {
+	// Keep at least one selectable row and a gap above the summary. Very
+	// short terminals retain navigation; full details remain available with ?.
+	return max(0, min(2, p.layout.bodyHeight-2))
 }
 
 func (p *settingsPanel) sectionTitle(field interaction.SettingField) string {

@@ -118,7 +118,7 @@ func (m *model) closeSettings() {
 func (m *model) resizeSettings() {
 	if p := m.settings; p != nil {
 		p.layout = centeredModal(m.width, m.height, 112, 36)
-		p.layout.bodyHeight = max(1, p.layout.height-8)
+		p.layout.bodyHeight = max(1, p.layout.height-9)
 		p.input.SetWidth(max(1, p.layout.inner-3))
 		p.pressed = ""
 		if p.action != nil {
