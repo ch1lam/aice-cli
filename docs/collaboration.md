@@ -434,10 +434,36 @@ temporary files are cleaned up on failure as well as success.
 AICE_CUA_NATIVE=1 go test -tags=integration ./internal/desktop -run '^TestNativeCuaMultiApp$' -v
 ```
 
+The application-level macOS gate uses the same synthetic AppKit fixture with a
+scripted model through the actual print command, Guard, typed tools, production
+desktop constructor and Session writer. It checks three exact-window Unicode
+value changes/commits, nine PNGs delivered directly to later model requests,
+exact replayed tool results/images and stable message parents. Configuration and
+skill discovery use temporary directories; only desktop resolution uses the
+host's verified App and service endpoint. It installs nothing and requests no
+permissions during preparation. As in the Manager test, the run retains ordinary
+lazy service-start behavior if the admitted service later disappears.
+It also checks that text progress omits native input bodies, the armed sentinel
+never loses focus, and command cleanup leaves the shared service available:
+
+```sh
+AICE_CUA_NATIVE=1 go test -tags=integration ./internal/app -run '^TestNativeMacDesktopPrint$' -v
+```
+
+The shared model/Session checks are also used by the native Linux print gate.
+The macOS gate and its fixture compile here, but its native task has **not**
+passed: the installed App remains incompatible. A separate compilation-only
+check opens no windows, connects to no service and requests no grants:
+
+```sh
+AICE_CUA_BUILD_FIXTURE=1 go test -tags=integration ./internal/app -run '^TestNativeMacPrintFixtureBuild$' -v
+```
+
 The sentinel counts activation loss notifications while armed; returning to it
 at the end cannot erase a temporary focus loss. It does not inject a stream of
 global keystrokes and does not replace physical keyboard, native IME, overlay,
-pixel-action, heterogeneous-app or full CLI acceptance. Run without unrelated
+pixel-action or heterogeneous-app acceptance. The CLI gate also uses a scripted
+model, not actual-model visual reasoning. Run without unrelated
 foreground changes. A foreground login window fails the opt-in fixture check;
 the test never tries to unlock it. Three copies of the AppKit fixture do not
 establish compatibility with Electron or other native toolkits.

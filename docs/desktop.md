@@ -409,6 +409,15 @@ precondition, not a Cua background-input result. Owned fixture processes were
 confirmed gone after cleanup. The full native manager task has not passed;
 it still needs the compatible installed service, grants and an available desktop.
 
+The application-level `TestNativeMacDesktopPrint` gate is also prepared. It uses
+the production desktop constructor with a scripted model through the actual CLI,
+Guard and Session, operating only on the synthetic AppKit targets. It shares
+the Linux print gate's model image checks and exact durable-history replay
+assertions. The macOS test and fixture compile, but native CLI execution has not
+passed; compilation is not desktop acceptance. The setup precheck reads the
+installed App and existing grants before opening fixtures. Its command and
+scope are in [collaboration](collaboration.md#computer-use-checks).
+
 The fixed source's platform matrix documents limitations for raw Wayland
 background input and toolkit-specific paths. Structured refusal is not proof
 that a promised action is supported. AICE must preserve `background_only`,
