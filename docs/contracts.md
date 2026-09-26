@@ -283,6 +283,15 @@ The public print format below is a separate, curated projection. Adding an
 internal event does not automatically expose it in NDJSON or justify serializing
 frontend state.
 
+Computer Use tool events carry an optional immutable `DesktopDisplay` with an
+application name and phase. The app's serial run event bridge derives this from
+bounded original results and keeps a bounded display-only reference/name cache;
+it performs no native I/O and creates no executable capability. The TUI owns one
+transient activity row and existing tool folds. History derives the same facts
+from Session records without replaying lifecycle events. Request, response,
+unknown effect and setup-needed labels remain distinct; see
+[Computer Use presentation](desktop.md#run-reference-and-result-contracts).
+
 ## Print NDJSON events
 
 `aice --print --output-format json` writes a stable, additive NDJSON stream to

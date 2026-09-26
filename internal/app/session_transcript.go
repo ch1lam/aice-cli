@@ -19,6 +19,7 @@ func sessionTranscript(snapshot session.Snapshot) (*interaction.Transcript, erro
 		messages[entry.ID] = entry
 	}
 	view := &interaction.Transcript{SessionID: snapshot.Header.ID}
+	var desktopDisplay desktopDisplayProjection
 	calls := make(map[string]llm.ToolCall)
 	indices := make(map[string]int)
 	for _, node := range branch {
@@ -42,10 +43,16 @@ func sessionTranscript(snapshot session.Snapshot) (*interaction.Transcript, erro
 					continue
 				}
 				call := *part.ToolCall
+				display := displayToolCall(call)
+				display.Desktop = desktopDisplay.start(call)
+				if display.Desktop != nil {
+					display.Desktop.Phase = "Result not recorded"
+					display.Failed = true
+				}
 				calls[call.ID] = call
 				indices[call.ID] = len(view.Entries)
 				view.Entries = append(view.Entries, interaction.TranscriptEntry{
-					ID: entry.ID, Kind: interaction.TranscriptTool, Tool: displayToolCall(call),
+					ID: entry.ID, Kind: interaction.TranscriptTool, Tool: display,
 				})
 			}
 			if message.ErrorMessage != "" && (message.StopReason == llm.StopReasonError || message.StopReason == llm.StopReasonAborted) {
@@ -61,6 +68,7 @@ func sessionTranscript(snapshot session.Snapshot) (*interaction.Transcript, erro
 			call := calls[message.ToolCallID]
 			event := agent.AgentEvent{ToolCall: &call, ToolResult: &message}
 			tool := &view.Entries[index].Tool
+			tool.Desktop = desktopDisplay.end(event)
 			tool.Output = displayToolOutput(event)
 			tool.Diff = displayToolDiff(event)
 			tool.Truncation = displayToolTruncation(&message)

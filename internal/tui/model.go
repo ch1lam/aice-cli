@@ -74,6 +74,7 @@ type transcriptEntry struct {
 	// toolEvidence is an immutable projection assigned once on completion; the
 	// pointer keeps transcriptEntry comparable for viewport cache versions.
 	toolEvidence *interaction.EvidenceDisplay
+	toolDesktop  *interaction.DesktopDisplay
 }
 
 type processGroup struct {
@@ -228,6 +229,7 @@ type model struct {
 	cancelRequested  bool
 	controllerClosed bool
 	status           string
+	desktopActivity  *interaction.DesktopDisplay
 	copyNotice       bool
 	copyGeneration   uint64
 	nextDeliveryID   uint64

@@ -29,6 +29,10 @@ func (m model) toolHeaderStyled(entry transcriptEntry, hovered bool) string {
 	if hovered {
 		style, nameStyle, detailStyle = transcriptHoverStyle, transcriptHoverStyle, transcriptHoverStyle
 	}
+	if entry.toolDesktop != nil {
+		label := desktopActivityLabel(*entry.toolDesktop, m.contentWidth()-4)
+		return style.Render(icon) + " " + nameStyle.Render(label)
+	}
 	heading := style.Render(icon) + " " + nameStyle.Render(entry.toolName)
 	stats := toolDiffStats(entry) + toolLineStats(entry)
 	if entry.toolDetail != "" {

@@ -178,6 +178,7 @@ func (r *interactiveRun) Run(ctx context.Context) (returnErr error) {
 	}
 	// This run-local projection includes completed messages even while a tool
 	// group is not yet replay-safe for the conversation's side snapshots.
+	var desktopDisplay desktopDisplayProjection
 	contextHistory := append([]llm.AgentMessage(nil), snapshot.history...)
 	_, runErr := snapshot.loop.Run(ctx, agent.RunInput{
 		Model:        snapshot.model,
@@ -207,6 +208,7 @@ func (r *interactiveRun) Run(ctx context.Context) (returnErr error) {
 			return nil
 		}
 		display := translateAgentEvent(event)
+		desktopDisplay.decorate(event, display)
 		if display == nil {
 			return nil
 		}

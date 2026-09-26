@@ -203,6 +203,9 @@ func (m model) composerParts(contentWidth int) []string {
 	}
 	parts := make([]string, 0, 3)
 	if !m.side.isVisible {
+		if activity := m.desktopActivityView(contentWidth); activity != "" {
+			parts = append(parts, activity)
+		}
 		if pending := m.pendingQueueView(contentWidth); pending != "" {
 			parts = append(parts, pending, "")
 		}

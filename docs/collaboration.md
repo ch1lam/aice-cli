@@ -257,6 +257,15 @@ AICE_CUA_TEST_BINARY=/absolute/path/to/CuaDriver.app/Contents/MacOS/cua-driver \
   go test -tags=integration ./internal/desktop -run '^TestNativeCuaSchemaInventory$' -v
 ```
 
+The desktop activity CLI check uses the actual interactive command, a scripted
+model and synthetic typed backend, with isolated user settings. It exercises
+application labels, waiting/planning, folded parameters and Settings Stop;
+no native desktop or paid model is accessed:
+
+```sh
+go test ./internal/app -run '^TestDesktopActivityTUI$' -v
+```
+
 ## Browser checks
 
 The default browser/dependency tests use fake commands and local HTTP fixtures,

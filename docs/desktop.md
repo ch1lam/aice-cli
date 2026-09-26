@@ -266,6 +266,29 @@ facts and any follow-up observation even when a later error occurs, marking the
 result as an error without replacing it with a generic Go error. Images and
 originals continue through the existing provider projection and Session JSONL.
 
+Interactive runs show one Computer Use activity row above the composer. It
+uses application-projected tool events: discovery/observation, a requested
+background or foreground route, a condition wait, and model Planning between
+calls. A request label does not claim native dispatch or successful delivery.
+The app name comes only from returned discovery metadata matched to the local
+reference; unknown names are omitted. A bounded run-local display cache owns
+these names and never authorizes execution or polls the desktop.
+
+Tool headings show the same concise identity and recorded outcome; parameters
+and bounded result details stay under the existing detail fold. Unknown outcome, missing
+setup, failed/incomplete observation and unmet/unknown conditions remain
+explicit instead of changing to a success label. `Returned` means only that a
+non-error response was recorded. Stop displays Stopping until completion;
+missing terminal tool results become Result unavailable. Run completion and
+branch replacement clear live activity, and unrelated tools/BTW presentation
+use their ordinary status. Narrow layouts prioritize the phase and escape
+application names before rendering.
+
+History reuses the result projection from original Session records without
+starting a runtime or synthesizing live progress. Display names and phases are
+not additional Session truth. Native overlay/input evidence remains separate
+from this TUI activity indicator.
+
 Other foreground routes remain to be implemented. Loop wiring and schema
 rejection are covered by scripted-model and raw MCP tests; they are not a claim
 of native readiness.
@@ -341,7 +364,12 @@ checks that Esc leaves it running, and cancels through Settings F6. Its fake
 desktop binding verifies cancellation precedes cleanup and enable remains saved.
 Renderer tests cover the mouse button, information-page Stop and the early
 preparation interval before the controller publishes cancellation.
-The same CLI flow opens the status details with synthetic permission facts.
+The separate `TestDesktopActivityTUI` drives the real command, Loop and typed
+tools with a synthetic discovery/observation/wait backend. It checks the app
+label, collapsed input, Planning and Settings Stop through Bubble Tea. Renderer
+tests cover model waits, unknown/setup outcomes, narrow/CJK/untrusted labels,
+new-run reset and history projection. These checks do not read desktop content.
+The same Settings CLI flow opens the status details with synthetic permission facts.
 Default inspection tests reject foreign/changing identities, retain Missing and
 Unknown separately, bound cancellation, and assert that only the two read-only
 inspection calls execute. Screenshot tests record actual success and failure,

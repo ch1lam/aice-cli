@@ -223,7 +223,11 @@ func TestDesktopInteractivePersistsPartialActionImage(t *testing.T) {
 	if binds != 0 {
 		t.Fatal("Settings touched native run")
 	}
-	active, err := s.NewRun(t.Context(), interaction.RunInput{Prompt: "synthetic action"}, nil)
+	var displayed []interaction.Event
+	active, err := s.NewRun(t.Context(), interaction.RunInput{Prompt: "synthetic action"}, func(_ context.Context, event interaction.Event) error {
+		displayed = append(displayed, event)
+		return nil
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -240,6 +244,31 @@ func TestDesktopInteractivePersistsPartialActionImage(t *testing.T) {
 	snapshot, err := s.conversation.store.Snapshot()
 	if err != nil {
 		t.Fatal(err)
+	}
+	var phases []string
+	for _, event := range displayed {
+		if event.Tool.Desktop != nil {
+			phases = append(phases, event.Tool.Desktop.Phase)
+		}
+	}
+	if !reflect.DeepEqual(phases, []string{"Background requested", "Outcome unknown"}) {
+		t.Fatalf("live desktop projection: %v", phases)
+	}
+	transcript, err := sessionTranscript(snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, entry := range transcript.Entries {
+		if entry.Tool.Desktop != nil {
+			found = true
+			if entry.Tool.Desktop.Phase != "Outcome unknown" {
+				t.Fatal("replay lost unknown outcome")
+			}
+		}
+	}
+	if !found {
+		t.Fatal("replay lost desktop presentation")
 	}
 	data, err := json.Marshal(snapshot.Messages)
 	if err != nil {

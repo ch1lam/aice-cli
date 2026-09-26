@@ -191,6 +191,8 @@ func toolCallDetail(call llm.ToolCall) string {
 		return ""
 	}
 	switch call.Name {
+	case "desktop_apps", "desktop_observe", "desktop_act":
+		return string(call.Arguments[:min(len(call.Arguments), maximumDisplayToolOutputBytes)])
 	case "bash":
 		return arguments.Command
 	case "skill":

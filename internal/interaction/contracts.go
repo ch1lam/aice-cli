@@ -211,6 +211,7 @@ type AssistantDisplay struct {
 // tool input already extracted for display by the application bridge. Content
 // is write input; HasContent distinguishes an empty file from absent input.
 type ToolDisplay struct {
+	Desktop    *DesktopDisplay
 	Output     ToolOutputDisplay
 	Diff       DiffDisplay
 	Truncation TruncationDisplay
@@ -223,6 +224,14 @@ type ToolDisplay struct {
 	Failed     bool
 	Content    string
 	HasContent bool
+}
+
+// DesktopDisplay contains presentation facts, never executable references.
+// App comes from returned discovery metadata; Phase describes a request or
+// recorded result, not proof that its business postcondition succeeded.
+type DesktopDisplay struct {
+	App   string
+	Phase string
 }
 
 // ToolOutputDisplay is a bounded, immutable projection of a tool result.
