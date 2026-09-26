@@ -389,6 +389,27 @@ fully native Settings installation workflow. Native launch/pixel/keyboard/drag
 actions, physical input and other Linux compositors also need separate evidence.
 See the [platform evidence](desktop.md#platform-evidence) before claiming support.
 
+The separate `TestNativeLinuxDesktopSetupTUI` drives `/desktop` through the
+actual CLI and Bubble Tea with the production desktop constructor, installer,
+setup API and Settings writer. Archive delivery uses the local pinned file
+through an in-memory HTTP transport; unrelated helper downloads are disabled
+by the test harness. No native operation is replaced. It checks that disclosure
+precedes installation, the default Cancel at window selection retains installation
+without capture or enable, and retry reuses that installation before an explicit
+window choice. Successful native capture must precede saved enable and appear
+as historical verification in the status view. No model request or Session may
+be created, and both cancelled and completed setup must reap their private Driver.
+The synthetic foreground fixture must retain focus and all concurrent core keys.
+Use the same compiled app test and mounts above, changing the final arguments to:
+
+```sh
+'^TestNativeLinuxDesktopSetupTUI$' /fixture.py
+```
+
+This covers the native X11 setup backend and terminal UI together in the isolated
+container. It is not a physical terminal/IME test, public-network download test,
+or evidence for macOS system authorization or Windows setup.
+
 The negative native proxy check uses a verified App binary, temporary HOME and
 an absent socket. It verifies that the proxy refuses automatic service launch,
 without connecting to a user service or requesting OS permissions:

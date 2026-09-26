@@ -396,7 +396,7 @@ as the tools and prompt it publishes; offline publication tests cover this.
 | --- | --- | --- |
 | macOS 0.29.1 universal artifact | Download hash matches fixed release manifest; temporary extraction/exclusive publication preserves signature, signing identity and Gatekeeper acceptance; CLI/schema inspected; Settings setup exercised through CLI/Bubble Tea with fake native operations | Signed installed service, system authorization, persistent MCP handshake against that service, synthetic multi-app task, background focus/input sentinel, native overlay, cancellation and cold/warm measurements |
 | Windows amd64/arm64 | Downloaded archives and selected executable hashes verified; private installer with Authenticode checks implemented; synthetic extraction/reuse/cancellation tests and cross-compilation pass; static imports inspected | Native installation/signature trust and exclusive publication; runtime/service admission, interactive-session/UIAccess detection, native UI/input/lifecycle tests |
-| Linux arm64 | Private installation/reuse and read-only headless inspection passed in an isolated Debian 13 container; production Manager and selected-window setup passed owned stdio and verified shared-service X11/GTK checks; scripted-model native print/Guard/tool/Session flow, ASCII insertion and pixel click/resize rejection passed; launch established its exact window and preserved the app after Manager close; actual Settings CLI flow passed with synthetic native operations | Launch steals focus, Unicode insertion truncates and GTK key/hotkey are unavailable in the fixture; fully native Settings workflow and actual-model tasks; other pixel actions/drag, foreground assistance, overlay, other toolkits, real compositor/Wayland and physical-input/IME checks |
+| Linux arm64 | Private installation/reuse and read-only headless inspection passed in an isolated Debian 13 container; production Manager and selected-window setup passed owned stdio and verified shared-service X11/GTK checks; scripted-model native print/Guard/tool/Session flow, ASCII insertion and pixel click/resize rejection passed; launch established its exact window and preserved the app after Manager close; actual Settings CLI flow passed native private installation, selected-window capture, cancellation/retry and saved enable | Launch steals focus, Unicode insertion truncates and GTK key/hotkey are unavailable in the fixture; actual-model tasks, physical terminal/IME and other desktop environments; other pixel actions/drag, foreground assistance, overlay, other toolkits, real compositor/Wayland and physical-input/IME checks |
 | Linux amd64 | Downloaded archive and selected executable hashes verified; synthetic installer tests and cross-compilation pass; ELF library dependencies inspected | Native installation/dynamic loading and exclusive publication; runtime/service admission, AT-SPI/display detection, compositor-specific input/capture/overlay tests |
 
 On 2026-09-26 the native host had a signed, Gatekeeper-accepted CuaDriver
@@ -472,8 +472,9 @@ service connection alone does not establish capture or target-input readiness.
 An absent shared service is compatible with an active owned tool process; the
 panel shows that cached instance connection separately, with unknown shared
 display facts. Without an active connection it reports that connection happens
-on first use. Refresh still starts nothing. Native interactive Settings and
-compositor-specific acceptance remain incomplete. The Linux arm64 headless
+on first use. Refresh still starts nothing. The isolated native Settings CLI
+flow passed as described below; physical terminal/IME and other compositor
+acceptance remain incomplete. The Linux arm64 headless
 fixture passed two inspections of its own service and correctly reported absent
 display/bus capabilities while leaving that service alive between checks.
 
@@ -519,6 +520,20 @@ the owned Driver was gone after command completion. Text progress omitted input
 contents. This verifies native execution and image transport; the script does
 not interpret pixels, and setup UI, actual-model reasoning and physical input
 remain separate acceptance work.
+
+The native Settings CLI gate also passed on Linux arm64 in the isolated X11
+fixture on 2026-09-27. It drove the real `/desktop` modal with production desktop
+construction, private installation, native setup and the Settings writer; only
+the pinned archive's HTTP delivery used a local file. Confirmation preceded the
+single installation. Cancelling the default window choice retained that verified
+installation, left enable false and capture unrecorded, and reaped the temporary
+Driver. Retrying reused the same installation, explicitly selected the synthetic
+window, verified capture, saved enable and displayed historical capture status.
+Neither attempt requested a model response or created a Session. Final command
+cleanup left no private Driver process. The 3.68-second fixture run retained all
+28 concurrent core keys with zero focus loss. This is native setup backend plus
+CLI/Bubble Tea evidence; it does not prove physical terminal/IME interaction,
+public-network downloads, other compositors or another platform's authorization.
 
 The Linux success response omits `screenshot_frame_valid`; the same fixed source
 sets it to false when a capture error occurs. The native probe confirms the
