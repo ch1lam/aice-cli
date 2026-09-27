@@ -851,6 +851,28 @@ Keep the desktop unlocked for the full interval. The gate checks for
 or changes its lock policy. An earlier locked-host attempt was incomplete;
 session disappearance alone does not satisfy this gate.
 
+### Native owned-proxy crash
+
+The separate crash gate terminates only the MCP proxy child it created through
+the production transport. Shared-service admission and the AICE occupancy lock
+remain active. It first observes a synthetic AppKit Commit through independent
+widget state while the native RPC response is still pending, then kills that
+exact child handle. A completed response cannot satisfy this precondition.
+
+```sh
+AICE_CUA_NATIVE=1 AICE_CUA_NATIVE_PROXY_CRASH=1 go test -race -tags=integration ./internal/desktop -run '^TestNativeMacProxyCrash$' -count=1 -v
+```
+
+On macOS 0.29.1 this passed with race detection on 2026-09-27 in 8.04 s. The
+pending action settled in 2.10 ms as dispatched/unknown without an observation.
+Old references were refused both in the original run and a replacement run.
+Explicit read-only discovery/capture established a second admitted connection;
+the native click count and independent widget commit count both remained one.
+The public standard-mode service status retained the same daemon PID. This
+tests proxy-process loss, not daemon restart, interrupted drag/key release,
+permission revocation or foreground/IME coexistence. It requests no grants or
+model calls and must run sequentially with other native GUI gates.
+
 ### Explicit real-model desktop gate
 
 `TestNativeMacActualModelDesktop` uses the selected production provider, Agent

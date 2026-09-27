@@ -143,6 +143,15 @@ gate took 335.95 s. This verifies natural expiry and new-run recovery, not daemo
 restart, permission revocation or foreground/IME coexistence. See
 [the expiry procedure](collaboration.md#native-session-idle-expiry).
 
+The macOS [owned-proxy crash gate](collaboration.md#native-owned-proxy-crash)
+also passed with race detection on 2026-09-27. It terminated the test's MCP child
+after a synthetic click independently committed but before its RPC returned.
+The result remained dispatched/unknown, old references were refused, and a new
+run recovered through fresh discovery/capture without repeating the click.
+The shared daemon PID and standard-mode policy survived. This establishes
+connection-process loss recovery, not shared-daemon restart or interrupted
+gesture cleanup.
+
 On macOS, the first desktop use also obtains an exclusive AICE occupancy lock
 at `~/Library/Caches/cua-driver/.aice-desktop.lock`, before runtime resolution or
 connection. The lock waits at most two seconds and responds to Stop; contention
