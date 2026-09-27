@@ -898,6 +898,49 @@ and no replay across app, window, observation and post-action failures. This
 proves recovery after connection retirement, not the cause of the manual run's
 initial discovery failure or physical foreground behavior.
 
+### Native discovery idle recovery
+
+The discovery-idle gate separates the pinned Driver's implicit discovery
+lifecycle from AICE's explicitly named action lifecycle:
+
+```sh
+AICE_CUA_NATIVE=1 AICE_CUA_NATIVE_DISCOVERY_EXPIRY=1 \
+  go test -race -tags=integration ./internal/desktop \
+  -run '^TestNativeMacDiscoveryIdleRecovery$' -count=1 -timeout=9m -v
+```
+
+It first discovers metadata, then waits six minutes without further discovery.
+Every thirty seconds it redeclares only its existing explicit session through
+public `start_session`, checking that it remains active and was not revived.
+This is test-only activity, not a production keepalive. No TTL override, private
+session field, capture, input, app launch, focus change or model call is used.
+The public `list_apps` and `list_windows` schemas accept no session argument.
+
+After the wait, discovery must either remain usable or return a native
+`session_ended` error that retires the connection and old references. In the
+latter case, the next explicit discovery must succeed in the same AICE run
+using a fresh native identity. Other errors fail the test. The shared daemon
+identity must remain unchanged. Run sequentially with other native gates and
+interactive desktop tasks; default tests skip it. This gate verifies metadata
+discovery recovery, not a gesture, physical focus or model task.
+
+On macOS 0.29.1 on 2026-09-27, this passed with race detection in 364.65 s.
+After six minutes the explicit lifecycle was still active without revival, but
+the daemon rejected `list_apps` because its implicit session had ended. The
+proxy's structured code was `tool_invocation_failed`; the native text identified
+the ended session. The test recognizes that daemon form and the core's nested
+`refusal.code` form without logging the session identity. Production recovery
+does not match either error text or code. The next explicit discovery admitted a
+new connection and lifecycle in the same AICE run, and shared-service identity
+was preserved. No input, capture or model call occurred.
+
+The manual Session's 468.432-second gap between successful discovery and failure
+is consistent with this independently reproduced path. Its generic tool error
+did not retain the underlying native reply, so this is supporting evidence,
+not proof of that historical call's exact cause. The implicit lifecycle can
+expire even while explicitly named actions continue; a first discovery after
+such an idle interval may fail and require a new read. Do not replay prior input.
+
 ### Explicit real-model desktop gate
 
 `TestNativeMacActualModelDesktop` uses the selected production provider, Agent

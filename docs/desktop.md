@@ -146,7 +146,19 @@ connection after an unusable discovery. Neither path replays input. The operator
 `Driver session unavailable` error after discovery had retired the connection.
 Its Session and a native reproduction exposed same-run label reuse. The
 [read-only reconnect gate](collaboration.md#native-same-run-reconnection) now
-passes with a fresh label; the initial discovery failure's cause remains unknown.
+passes with a fresh label.
+
+The pinned discovery schemas accept no public session argument. App/window
+discovery therefore uses the transport's implicit lifecycle, which can expire
+independently while explicitly named actions remain active. The
+[discovery-idle gate](collaboration.md#native-discovery-idle-recovery) reproduced
+that case after six idle minutes: the daemon rejected discovery for an ended
+implicit session, and the next explicit discovery recovered in the same run.
+A first discovery after such an idle interval can still return an error; AICE
+does not add keepalives or replay the failed call internally. This supports an
+expiry explanation for the manual run's initial failure, but its original
+generic error did not retain the native cause, so retrospective attribution is
+not certain.
 
 Cua's native lifecycle session can expire independently of the reusable MCP
 connection. The pinned runtime defaults to five minutes of session inactivity
@@ -590,8 +602,10 @@ passes for this run. The final Safari recheck was blocked by
 `Driver session unavailable`, without repeating the submission. The retained
 Session subsequently established discovery failure followed by failed session
 startup and another refusal. Same-run recovery is now fixed and independently
-verified with metadata-only native discovery; the initial failure remains
-unattributed. Session-derived counts and usage are in the manual record.
+verified with metadata-only native discovery. A separate six-minute test
+reproduced implicit discovery expiry despite an active named session and
+verified recovery; that is consistent with the manual timeline, without proving
+the original native cause. Session-derived counts and usage are in the manual record.
 This evidence does not supersede the failed sentinel or pixel-action gates.
 
 The separate [cold-launch gate](../internal/desktop/apps_native_darwin_test.go)
