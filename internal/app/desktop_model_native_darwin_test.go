@@ -188,14 +188,46 @@ func testNativeMacModelTask(t *testing.T, model llm.Model, options llm.StreamOpt
 	writeNativePrintSignal(t, sentinel, "arm")
 	awaitNativePrintState(t, ctx, sentinel, func(s nativePrintState) bool { return s.Armed && s.Active })
 	started := time.Now()
+	var focusSamples []nativeModelFocusSample
+	captureFocus := func(phase string) {
+		data, err := os.ReadFile(filepath.Join(sentinel.directory, "state.json"))
+		var state nativePrintState
+		if err != nil || json.Unmarshal(data, &state) != nil {
+			t.Error("sentinel diagnostic state unavailable", err)
+			return
+		}
+		sample := nativeModelFocusState(phase, nativeMS(time.Since(started)), state, sentinel, targets)
+		sample.ToolSequence = len(timings.Tools)
+		if len(focusSamples) > 0 {
+			previous := focusSamples[len(focusSamples)-1]
+			if sample.Active != previous.Active || sample.FocusLosses != previous.FocusLosses || sample.Foreground != previous.Foreground || sample.ValueState != previous.ValueState {
+				t.Logf("sentinel state changed: %+v", sample)
+			}
+		}
+		focusSamples = append(focusSamples, sample)
+	}
+	captureFocus("before_loop")
 	result, runErr := loop.Run(runCtx, agent.RunInput{Model: model, Options: options, Prompt: message,
 		SystemPrompt: buildDefaultSystemPrompt(taskTools, workspace.Path()),
 		MessageRecorder: func(ctx context.Context, message llm.AgentMessage) error {
 			return appendSessionMessage(ctx, store, message)
 		},
-	}, timings.event)
+	}, func(ctx context.Context, event agent.AgentEvent) error {
+		if err := timings.event(ctx, event); err != nil {
+			return err
+		}
+		switch event.Type {
+		case agent.EventTypeToolExecutionStart:
+			captureFocus("before_tool")
+		case agent.EventTypeToolExecutionEnd:
+			captureFocus("after_tool")
+		}
+		return nil
+	})
+	captureFocus("after_loop")
 	elapsed := time.Since(started)
 	accepted := false
+	serviceVerified, replayVerified := false, false
 	t.Logf("actual_model=%v provider=%s model=%s thinking=%s driver=%s elapsed=%s requests=%d images=%d guard_asks=%d scope_refusals=%d reported_tokens=%d", actual, model.Provider, model.ID, options.Thinking, desktop.DriverVersion, elapsed, observer.requests, observer.images, countedGuard.asks, scope.refusals, result.Usage.TotalTokens)
 	defer func() {
 		network := "scripted decisions; no model network"
@@ -213,15 +245,19 @@ func testNativeMacModelTask(t *testing.T, model llm.Model, options llm.StreamOpt
 			Accepted                                   bool      `json:"accepted"`
 			ActualModel                                bool      `json:"actual_model"`
 			Platform, Architecture, Driver, Network    string
-			Timings                                    *nativeModelTimings `json:"timings"`
-			Limits                                     map[string]int64    `json:"limits"`
+			Timings                                    *nativeModelTimings      `json:"timings"`
+			Limits                                     map[string]int64         `json:"limits"`
+			Focus                                      []nativeModelFocusSample `json:"focus"`
+			ServiceVerified                            bool                     `json:"service_verified"`
+			ReplayVerified                             bool                     `json:"replay_verified"`
 		}{
 			Provider: model.Provider, Model: model.ID, Thinking: options.Thinking,
 			ElapsedMS: elapsed.Milliseconds(), Requests: observer.requests, Images: observer.images,
 			GuardAsks: countedGuard.asks, ScopeRefusals: scope.refusals, Usage: result.Usage,
 			LoopCompleted: runErr == nil, Accepted: accepted && !t.Failed(), ActualModel: actual,
 			Platform: runtime.GOOS, Architecture: runtime.GOARCH, Driver: desktop.DriverVersion,
-			Network: network, Timings: timings,
+			Network: network, Timings: timings, Focus: focusSamples,
+			ServiceVerified: serviceVerified, ReplayVerified: replayVerified,
 			Limits: map[string]int64{
 				"reported_tokens": limits.Tokens, "model_requests": int64(limits.MaxTurns),
 				"timeout_ms": limits.Timeout.Milliseconds(), "output_tokens_per_response": int64(options.MaxTokens),
@@ -239,11 +275,12 @@ func testNativeMacModelTask(t *testing.T, model llm.Model, options llm.StreamOpt
 		}
 		// Read back the actual report format in the scripted gate as well.
 		var saved struct {
-			Timings nativeModelTimings `json:"timings"`
-			Limits  map[string]int64   `json:"limits"`
+			Timings nativeModelTimings       `json:"timings"`
+			Limits  map[string]int64         `json:"limits"`
+			Focus   []nativeModelFocusSample `json:"focus"`
 		}
 		data, err = os.ReadFile(filepath.Join(artifacts, "report.json"))
-		if err != nil || json.Unmarshal(data, &saved) != nil || len(saved.Timings.Requests) != observer.requests || len(saved.Timings.Tools) != len(timings.Tools) || !reflect.DeepEqual(saved.Limits, report.Limits) {
+		if err != nil || json.Unmarshal(data, &saved) != nil || len(saved.Timings.Requests) != observer.requests || len(saved.Timings.Tools) != len(timings.Tools) || !reflect.DeepEqual(saved.Limits, report.Limits) || !reflect.DeepEqual(saved.Focus, report.Focus) {
 			t.Error("timing report or limits did not survive JSON serialization", err)
 		}
 	}()
@@ -286,17 +323,68 @@ func testNativeMacModelTask(t *testing.T, model llm.Model, options llm.StreamOpt
 	}
 	previous := awaitNativePrintState(t, ctx, sentinel, func(nativePrintState) bool { return true })
 	final := awaitNativePrintState(t, ctx, sentinel, func(s nativePrintState) bool { return s.Ticks > previous.Ticks+3 })
+	focusSamples = append(focusSamples, nativeModelFocusState("after_cleanup", nativeMS(time.Since(started)), final, sentinel, targets))
 	if !final.Active || final.FocusLosses != 0 || final.Value != "AICE-314" || final.Commits != 0 {
-		t.Fatal("model task disturbed the foreground sentinel")
+		t.Errorf("model task disturbed the foreground sentinel: %+v", focusSamples[len(focusSamples)-1])
 	}
 	if report, err := state.inspect(ctx); err != nil || !report.ConnectionVerified {
 		t.Fatal("model task cleanup stopped the shared service", err)
 	}
+	serviceVerified = true
 	if err := store.Close(); err != nil {
 		t.Fatal(err)
 	}
 	verifyNativeModelReplay(t, ctx, store.Path(), observer.results)
+	replayVerified = true
+	t.Log("shared service and exact tool-result/image Session replay verified")
 	accepted = true
+}
+
+// The fixture samples every 50 ms; event-boundary reads can share a tick and do
+// not attribute the cause of a focus change. No PID, app name or input is retained.
+type nativeModelFocusSample struct {
+	Phase          string  `json:"phase"`
+	ElapsedMS      float64 `json:"elapsed_ms"`
+	Ticks          int     `json:"ticks"`
+	Active         bool    `json:"active"`
+	FocusLosses    int     `json:"focus_losses"`
+	Foreground     string  `json:"foreground"`
+	ValueUnchanged bool    `json:"value_unchanged"`
+	Commits        int     `json:"commits"`
+	ToolSequence   int     `json:"tool_sequence"`
+	ValueState     string  `json:"value_state"`
+}
+
+func nativeModelFocusState(phase string, elapsedMS float64, state nativePrintState, sentinel nativePrintFixture, targets []nativePrintFixture) nativeModelFocusSample {
+	foreground := "other"
+	switch {
+	case state.FrontPID == sentinel.pid:
+		foreground = "sentinel"
+	case state.FrontPID == 0:
+		foreground = "unknown"
+	case state.FrontIsLogin:
+		foreground = "loginwindow"
+	default:
+		for i, target := range targets {
+			if state.FrontPID == target.pid {
+				foreground = fmt.Sprintf("target_%d", i+1)
+				break
+			}
+		}
+	}
+	value := "other"
+	if state.Value == "AICE-314" {
+		value = "baseline"
+	} else {
+		for i := range targets {
+			if strings.Contains(state.Value, nativePrintValue(i)) {
+				value = fmt.Sprintf("contains_task_value_%d", i+1)
+				break
+			}
+		}
+	}
+	return nativeModelFocusSample{Phase: phase, ElapsedMS: elapsedMS, Ticks: state.Ticks, Active: state.Active,
+		FocusLosses: state.FocusLosses, Foreground: foreground, ValueUnchanged: state.Value == "AICE-314", Commits: state.Commits, ValueState: value}
 }
 
 // Scope assertions belong only to this opt-in test. They never replace native

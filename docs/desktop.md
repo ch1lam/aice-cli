@@ -608,6 +608,15 @@ verified recovery; that is consistent with the manual timeline, without proving
 the original native cause. Session-derived counts and usage are in the manual record.
 This evidence does not supersede the failed sentinel or pixel-action gates.
 
+Two later scripted diagnostic runs recorded focus loss while the operator was
+also switching windows or typing. Those samples cannot attribute the focus
+changes to Cua and are not passing focus acceptance. In the second run all task
+postconditions, shared-service verification and exact tool-result/image replay
+passed; the sentinel value remained unchanged. The test now retains sanitized
+event-boundary focus state and continues independent service/replay checks after
+a focus assertion fails, without changing the acceptance threshold. See the
+[diagnostic record](collaboration.md#explicit-real-model-desktop-gate).
+
 The separate [cold-launch gate](../internal/desktop/apps_native_darwin_test.go)
 passed with race detection on 2026-09-27. It registers a unique synthetic AppKit
 bundle in `~/Applications`, then uses real app discovery and a locally issued

@@ -1057,6 +1057,28 @@ cause remains unverified. The [manual record](desktop-manual-checks.md#当前验
 adds its 3,746,474 reported tokens, bringing usage in the authorized envelope to
 4,421,305. The three automated attempts alone account for the 674,831 above.
 
+The harness also retains sanitized sentinel samples before/after each tool,
+before/after the Loop and after cleanup: elapsed time, fixture tick, tool
+sequence, activation state, loss count, foreground category (sentinel, task
+target, other, unknown or loginwindow), baseline-value match and synthetic-task
+value category. It records no foreground PID, application name or input text.
+The fixture samples every 50 ms, so consecutive event-boundary reads can share a
+tick; these records locate observed changes but do not establish causation.
+Focus failure still fails acceptance, while independent shared-service and exact
+Session replay checks now continue and record their own verification flags.
+
+Two scripted diagnostic runs on 2026-09-27 failed the focus assertion. The first
+recorded three losses and a changed sentinel value. The second completed the
+three widget/DOM postconditions in 23.63 s with 11 scripted requests, nine images,
+zero Guard asks and zero scope refusals. Its first recorded focus loss was after
+tool 4 (the first Commit), around 9.10 s; foreground was outside the fixture
+targets, and the sentinel value stayed unchanged. Shared-service verification
+and exact tool-result/image replay both passed. The operator then confirmed
+switching windows or typing during these two runs. Their focus measurements
+are contaminated by concurrent human activity and establish neither Cua-caused
+focus loss nor a passing sentinel gate. No paid model run followed this baseline.
+This clarification applies to these two diagnostic runs, not all earlier failures.
+
 The report also records platform, architecture, Driver, actual/scripted model
 transport and per-request/tool timing samples. Model time starts immediately
 before invoking the provider and ends at its terminal event or stream error;
