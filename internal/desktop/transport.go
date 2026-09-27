@@ -274,12 +274,16 @@ func (p *ownedProcess) Read(b []byte) (int, error)  { return p.stdout.Read(b) }
 func (p *ownedProcess) Write(b []byte) (int, error) { return p.stdin.Write(b) }
 func (p *ownedProcess) Close() error {
 	p.once.Do(func() {
-		_ = p.stdin.Close()
-		_ = p.stdout.Close()
-		done := make(chan error, 1)
-		go func() { done <- p.cmd.Wait() }()
 		timer := time.NewTimer(time.Second)
 		defer timer.Stop()
+		done := make(chan error, 1)
+		go func() {
+			// A pipe Close can wait for in-flight I/O on Windows. Include it
+			// in the grace period so it cannot prevent terminating the child.
+			_ = p.stdin.Close()
+			_ = p.stdout.Close()
+			done <- p.cmd.Wait()
+		}()
 		select {
 		case p.err = <-done:
 		case <-timer.C:

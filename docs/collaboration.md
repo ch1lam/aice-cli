@@ -322,6 +322,11 @@ X11/AT-SPI status fields. This checks presentation, not a native desktop action.
 The normal owned-process shutdown test waits for the child readiness message
 before closing; the race runtime's artificial exit sleep is disabled only in
 that synthetic child, so it cannot masquerade as a hung Driver.
+The blocked-pipe shutdown regression models a pipe close that waits for child
+EOF on every host. It verifies the shutdown deadline can still terminate and
+reap the owned child when pipe closure blocks, and that repeated close preserves
+the result. The native-pipe test retains the same ten-second watchdog and joins
+its close goroutine after emergency termination on failure.
 
 The opt-in X11 capability probe uses the pinned Linux Driver in a disposable
 Debian container. Its runner installs Xvfb, Openbox, GTK and AT-SPI **only in that

@@ -267,6 +267,7 @@ func TestOwnedProcessClosesHungChild(t *testing.T) {
 	case <-done:
 	case <-time.After(10 * time.Second):
 		_ = command.Process.Kill()
+		<-done
 		t.Fatal("child cleanup blocked")
 	}
 	if command.ProcessState == nil {
@@ -303,6 +304,52 @@ func TestOwnedProcessNormalCloseIsSuccessful(t *testing.T) {
 	}
 	if err := conn.Close(); err != nil {
 		t.Fatal("repeated close failed", err)
+	}
+}
+
+// Model a pipe Close waiting for an outstanding read until the child exits.
+// This makes the Windows shutdown ordering regression reproducible on any host.
+type closeAfterEOFReader struct{ io.ReadCloser }
+
+func (r closeAfterEOFReader) Close() error {
+	_, _ = io.Copy(io.Discard, r.ReadCloser)
+	return r.ReadCloser.Close()
+}
+
+func TestOwnedProcessClosesBlockedPipe(t *testing.T) {
+	t.Parallel()
+	command := exec.Command(os.Args[0], "-test.run=^TestOwnedProcessClosesHungChild$")
+	command.Env = append(os.Environ(), "AICE_DESKTOP_FAKE_CHILD=1")
+	stdout, err := command.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = stdout.Close() })
+	stdin, err := command.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = stdin.Close() })
+	if err := command.Start(); err != nil {
+		t.Fatal(err)
+	}
+	p := &ownedProcess{cmd: command, stdin: stdin, stdout: closeAfterEOFReader{stdout}}
+	done := make(chan struct{})
+	go func() { _ = p.Close(); close(done) }()
+	t.Cleanup(func() {
+		_ = command.Process.Kill()
+		<-done
+	})
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("pipe close prevented the child shutdown deadline")
+	}
+	if command.ProcessState == nil || command.ProcessState.Success() || p.err == nil {
+		t.Fatal("hung child was not terminated and reaped", command.ProcessState, p.err)
+	}
+	if err := p.Close(); err != p.err {
+		t.Fatal("repeated close changed the shutdown result", err)
 	}
 }
 

@@ -42,7 +42,11 @@ window contents or typed text in logs. Process environment construction excludes
 model credentials, loader injection and inherited Cua permission overrides.
 Owned children disable Cua telemetry and update checks.
 Closing the connection waits for or terminates only its owned MCP child; it does
-not stop a shared service. The shared-service path requires an explicit endpoint.
+not stop a shared service. The one-second shutdown grace period covers pipe
+closure as well as process exit. Pipe cleanup runs under that deadline because
+closing a Windows pipe can wait for in-flight I/O; on expiry the owner kills its
+exact child, then joins cleanup and reaps the process before returning.
+The shared-service path requires an explicit endpoint.
 The proxy uses the pinned release's `--embedded` switch solely to refuse
 automatic service launch if that endpoint disappears. On macOS AICE never uses
 `--direct` or claims a host bundle identity; the standalone daemon retains its own TCC
