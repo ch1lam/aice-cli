@@ -380,7 +380,9 @@ wait, Guard time and next-request preparation remain outside this boundary.
 The [opt-in model gate](collaboration.md#explicit-real-model-desktop-gate) now
 measures those intervals in its report alongside the Manager phases, with
 explicit provider/Loop/Session boundaries. Its scripted native run validates
-measurement coverage and protocol preservation; actual-model/network performance
+measurement coverage and protocol preservation. One authorized real-model run
+recorded provider and tool timings but exhausted its reported-token budget before
+any Commit click was dispatched; full task acceptance, isolated network timing
 and controlled cold/warm comparisons remain unverified.
 
 Interactive runs show one Computer Use activity row above the composer. It
@@ -1104,7 +1106,8 @@ never enumerate or control the user's desktop.
 
 The default Settings CLI/TUI test traverses search, setup, disclosure,
 confirmation and persisted enable with fake installation/authorization. The
-separate native `TestNativeMacDesktopSetupTUI` passed on 2026-09-27 in 4.53 s.
+separate native `TestNativeMacDesktopSetupTUI` passed with the race detector on
+2026-09-27 in 10.47 s after asynchronous Settings status loading was integrated.
 It cancels before external work, retries and confirms repair, reuses the verified
 installed App with downloads disabled, then runs the real public grant/capture
 flow and checks the displayed permission/capture facts. Enable is persisted only

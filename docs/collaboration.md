@@ -784,11 +784,12 @@ verifies live capture, saves enable into temporary configuration, and checks
 that no model request or Session was created and the shared service survives.
 Unlike task gates, this can show OS permission UI and probe direct screen
 capture; it has its own opt-in and does not establish first-time installation
-or physical interaction with system dialogs. This gate passed on the authorized
-0.29.1 host on 2026-09-27 in 4.53 s:
+or physical interaction with system dialogs. After asynchronous Settings status
+loading was integrated, this gate passed with the race detector on the authorized
+0.29.1 host on 2026-09-27 in 10.47 s:
 
 ```sh
-AICE_CUA_NATIVE_SETUP=1 go test -tags=integration ./internal/app -run '^TestNativeMacDesktopSetupTUI$' -v
+AICE_CUA_NATIVE_SETUP=1 go test -race -tags=integration ./internal/app -run '^TestNativeMacDesktopSetupTUI$' -count=1 -v
 ```
 
 The sentinel counts activation loss notifications while armed; returning to it
@@ -909,6 +910,21 @@ provider reads/calls; offline scope tests reject out-of-scope actions and stale
 references without a native backend call. Preparing or passing the scripted
 harness does not establish real-model acceptance.
 
+One explicitly authorized run on 2026-09-27 used
+`opencode-go/muse-spark-1.3-contributor` with `xhigh` and Driver 0.29.1 on
+macOS arm64. It stopped at the reported-token budget after 96.26 s of Loop
+execution: six requests, six images delivered to model requests, zero Guard
+asks and zero scope refusals. Usage was 101,745 tokens, including 68,661 cache-read
+tokens. The budget is checked between operations, so the sixth response could
+cross 100,000; its requested first Commit click received a budget refusal without
+native dispatch. Before that, three input actions returned native results and
+images. No Commit was dispatched. The independent final widget/DOM assertions,
+sentinel assertion, shared-service reinspection and exact replay acceptance were
+not reached. The report correctly records `loop_completed=false` and
+`accepted=false`; this is an incomplete attempt, not real-model acceptance.
+The run's Session, task and report were retained in the caller-selected artifact
+directory. Another provider run requires separate authorization.
+
 The report also records platform, architecture, Driver, actual/scripted model
 transport and per-request/tool timing samples. Model time starts immediately
 before invoking the provider and ends at its terminal event or stream error;
@@ -940,6 +956,13 @@ also writes/reads the report in its temporary directory. Timings remain outside
 model messages and Session JSON; they contain no input values, window identities,
 credentials or images. Offline stream tests preserve events, EOF/terminal
 semantics and Close errors through the measurement wrapper.
+
+The incomplete real-model run above retained six provider timing samples totaling
+83.02 s and seven executed tool samples totaling 13.05 s. Its three dispatched
+input actions sampled Driver round trips of 1.94–3.20 s and final observations
+of 0.36–0.38 s. This single race-instrumented sample includes provider transport
+and does not isolate network time, prove task completion, or establish controlled
+cold/warm performance.
 
 ## Browser checks
 
