@@ -31,11 +31,22 @@ func TestBinaryPrint(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		binary += ".exe"
 	}
-	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Minute)
 	defer cancel()
-	build := exec.CommandContext(ctx, filepath.Join(runtime.GOROOT(), "bin", "go"), "build", "-o", binary, ".")
+	// Race and non-race dependencies use distinct cache entries. Match the
+	// parent test so a cold CI runner does not compile the whole graph twice.
+	args := []string{"build", "-o", binary}
+	if binaryPrintRaceEnabled {
+		args = append(args, "-race")
+	}
+	args = append(args, ".")
+	build := exec.CommandContext(ctx, filepath.Join(runtime.GOROOT(), "bin", "go"), args...)
 	build.Env = append(processBuildEnvironment, "GOTOOLCHAIN=local", "GOPROXY=off", "GOSUMDB=off", "GOFLAGS=", "GOOS="+runtime.GOOS, "GOARCH="+runtime.GOARCH)
-	if output, err := build.CombinedOutput(); err != nil {
+	output, err := build.CombinedOutput()
+	if ctx.Err() != nil {
+		t.Fatalf("build aice watchdog expired: %v\n%s", ctx.Err(), output)
+	}
+	if err != nil {
 		t.Fatalf("build aice: %v\n%s", err, output)
 	}
 

@@ -95,7 +95,9 @@ Turn-limit checks cover settled tools, explicit zero, and natural completion
 at the final permitted request.
 Each invocation uses a temporary home and workspace, an environment allowlist,
 disabled helper downloads and update checks, and explicit project distrust.
-The build reuses the Go test toolchain and caches with module downloads disabled.
+The build reuses the Go test toolchain, race mode and caches with module downloads
+disabled. Its five-minute build watchdog is separate from each invocation's
+20-second runtime watchdog; build timeout diagnostics identify that phase.
 
 [Stream failure tests](../internal/agent/stream_failure_test.go) distinguish
 unaccepted tool deltas from valid calls retained in a terminal assistant:
@@ -226,6 +228,9 @@ AICE_CUA_TEST_ARCHIVE=/absolute/path/to/cua-driver-rs-0.29.1-darwin-universal.ta
 ```
 
 Default Cua installer tests use synthetic archives and in-memory HTTP transports.
+The pinned upstream release manifest is checked out with LF endings through
+[`.gitattributes`](../.gitattributes), preserving its byte-for-byte SHA-256 even with Windows
+`core.autocrlf` enabled. The checksum assertion is not normalized or weakened.
 Artifact validation is distinct from native Computer Use acceptance; see the
 [platform evidence](desktop.md#platform-evidence).
 
@@ -274,9 +279,11 @@ execution remain unverified.
 Windows's ordinary `TestWindowsPeerRequiresExactExecutableAndPID` uses only a
 temporary named pipe belonging to its own test process. It checks kernel-reported
 PID, executable identity, session, creation time and cancellation without Cua,
-GUI access or elevation. It is compiled here, not natively executed. Synthetic
-cross-platform tests cover service admission and capability projection; the
-actual `TestSettingsUsageTUI` CLI flow also renders synthetic Windows status.
+GUI access or elevation. It is compiled here, not natively executed. These
+identity checks connect directly to the created pipe without a pending server
+accept; teardown closes the handle without waiting for an asynchronous operation.
+Synthetic cross-platform tests cover service admission and capability projection;
+the actual `TestSettingsUsageTUI` CLI flow also renders synthetic Windows status.
 Neither establishes native Windows readiness.
 
 On Windows, the separate opt-in status test requires the already installed pinned

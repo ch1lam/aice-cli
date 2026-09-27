@@ -26,26 +26,15 @@ func TestWindowsPeerRequiresExactExecutableAndPID(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			pipe, err := windows.CreateNamedPipe(name, windows.PIPE_ACCESS_DUPLEX|windows.FILE_FLAG_OVERLAPPED|windows.FILE_FLAG_FIRST_PIPE_INSTANCE,
+			pipe, err := windows.CreateNamedPipe(name, windows.PIPE_ACCESS_DUPLEX|windows.FILE_FLAG_FIRST_PIPE_INSTANCE,
 				windows.PIPE_TYPE_BYTE|windows.PIPE_READMODE_BYTE|windows.PIPE_WAIT|windows.PIPE_REJECT_REMOTE_CLIENTS, 1, 4096, 4096, 0, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
 			defer windows.CloseHandle(pipe)
-			event, err := windows.CreateEvent(nil, 1, 0, nil)
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer windows.CloseHandle(event)
-			overlapped := windows.Overlapped{HEvent: event}
-			if err := windows.ConnectNamedPipe(pipe, &overlapped); err != nil && !errors.Is(err, windows.ERROR_IO_PENDING) && !errors.Is(err, windows.ERROR_PIPE_CONNECTED) {
-				t.Fatal(err)
-			}
-			defer func() {
-				_ = windows.CancelIoEx(pipe, &overlapped)
-				var transferred uint32
-				_ = windows.GetOverlappedResult(pipe, &overlapped, &transferred, true)
-			}()
+			// CreateFile can connect before ConnectNamedPipe is called. This
+			// identity-only fixture never exchanges data, so it needs no pending
+			// accept to cancel or wait for when the client context is cancelled.
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
 			path, pid := binary, os.Getpid()

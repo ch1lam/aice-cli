@@ -1,0 +1,2 @@
+# Preserve the upstream bytes covered by the pinned SHA-256 on every host.
+/internal/deps/cua/release-manifest.json text eol=lf
