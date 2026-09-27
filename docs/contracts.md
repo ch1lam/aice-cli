@@ -661,8 +661,8 @@ consistency for those behaviors.
 
 ### Settings and Usage capabilities
 
-`interaction.SettingsReader`, `SettingsWriter`, `SettingsActionRunner` and
-`UsageReader` are implemented by the interactive application. Snapshots contain
+`interaction.SettingsReader`, `SettingsStatusReader`, `SettingsWriter`,
+`SettingsActionRunner` and `UsageReader` are implemented by the interactive application. Snapshots contain
 public value types and copied metadata, never credentials or writable stores.
 Config owns scalar types, defaults and frozen source layers; app owns dynamic
 model/service choices, editability, timing, validation and prepared resources.
@@ -701,6 +701,13 @@ Read generations govern presentation only. Closing a read cancels it; closing
 a submitted preference write does not undo publication. Domain actions have
 cancellable prompt exchanges and use the modal editor, never the conversation
 composer. Query owners cancel and wait at shutdown, including late queued work.
+Preference snapshots never inspect the native desktop. A separate bounded
+status read supplies the Computer Use information row for a captured settings
+revision. The app rejects a revision change across inspection; the TUI also
+checks panel generation and revision before replacing only that row. It keeps
+navigation, drafts and save/action feedback intact, and updates open status
+details in place. Refreshes, writes and actions cancel the old status read;
+accepted preference snapshots start a new one without blocking display.
 Menu disclosures wrap and page before choices become actionable. Rendering and
 mouse targets use the same layout; cancellation rejects late prompts. Multiline
 action results open a scrollable information view so partial external success,

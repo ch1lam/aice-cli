@@ -114,6 +114,9 @@ writer changes only requested user fields. `app/settings_lifecycle.go` reserves
 configuration, run preparation and Session operations, while existing provider,
 auth, browser and Web modules retain their business behavior. Interaction
 snapshots carry public descriptions to the TUI's independent modal editor.
+Preference reads do not probe the desktop; the app exposes a separate bounded
+status read, and the TUI owns its cancellation and updates only the status row
+after checking the panel generation and settings revision.
 `app/usage.go` derives a non-consuming Session information view. There is no
 settings service, global registry, alternate transcript or file watcher.
 

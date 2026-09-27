@@ -15,10 +15,40 @@ import (
 	"github.com/ch1lam/aice-cli/internal/llm"
 )
 
-// desktopStatusField does no work under the Settings lifecycle/state locks.
-// Opening or refreshing the panel triggers one bounded read, never a poll loop.
+var _ interaction.SettingsStatusReader = (*interactiveSession)(nil)
+
+func desktopStatusPlaceholder() interaction.SettingField {
+	return interaction.SettingField{ID: "desktop.status", Category: "tools", Label: "Computer Use status", Kind: interaction.SettingInfo,
+		Keywords: []string{"desktop", "cua", "permissions", "capture"}, Value: interaction.SettingValue{Text: "Checking…"},
+		Description: "Checking Computer Use status in the background. Other settings are available."}
+}
+
+// ReadSettingsStatus performs one bounded inspection outside the preference
+// read path and all lifecycle/state locks. It never reserves a writer or polls.
+func (s *interactiveSession) ReadSettingsStatus(ctx context.Context, revision uint64) (interaction.SettingField, error) {
+	field := desktopStatusPlaceholder()
+	if err := ctx.Err(); err != nil {
+		return field, err
+	}
+	s.lifecycle.mu.Lock()
+	settings := s.settingsSnapshot()
+	current := s.lifecycle.revision
+	s.lifecycle.mu.Unlock()
+	if revision != current {
+		return field, interaction.ErrSettingsStale
+	}
+	status := s.desktopStatusField(ctx, settings)
+	if err := ctx.Err(); err != nil {
+		return field, err
+	}
+	if current, _ := s.settingsStatus(); revision != current {
+		return field, interaction.ErrSettingsStale
+	}
+	return status, nil
+}
+
 func (s *interactiveSession) desktopStatusField(ctx context.Context, settings interactiveSettings) interaction.SettingField {
-	field := interaction.SettingField{ID: "desktop.status", Category: "tools", Label: "Computer Use status", Kind: interaction.SettingInfo, Keywords: []string{"desktop", "cua", "permissions", "capture"}}
+	field := desktopStatusPlaceholder()
 	summary, connection := "Unknown", "Unknown"
 	permissions := desktop.Inspection{Accessibility: desktop.PermissionUnknown, ScreenRecording: desktop.PermissionUnknown}
 	var err error

@@ -81,7 +81,8 @@ func publicSettingPointer(value *config.SettingValue) *interaction.SettingValue 
 }
 
 // ReadSettings projects immutable descriptions without consuming RuntimeState
-// or creating a Session. All credential rows contain status and actions only.
+// or creating a Session. It never probes the native desktop; that status is
+// read separately. All credential rows contain status and actions only.
 func (s *interactiveSession) ReadSettings(ctx context.Context) (interaction.SettingsSnapshot, error) {
 	if err := ctx.Err(); err != nil {
 		return interaction.SettingsSnapshot{}, err
@@ -249,7 +250,7 @@ func (s *interactiveSession) ReadSettings(ctx context.Context) (interaction.Sett
 		desktopReason = "Computer Use runtime is unavailable in this session"
 	}
 	result.Fields = append(result.Fields, interaction.SettingField{ID: "desktop.setup", Category: "tools", Label: "Computer Use setup / repair", Description: "Install and verify the Driver and desktop access, or retry saving the enabled preference. No Session is created.", Kind: interaction.SettingAction, Action: desktopSetupCommand(), Applies: interaction.SettingDomainAction, DisabledReason: desktopReason})
-	result.Fields = append(result.Fields, s.desktopStatusField(ctx, settings))
+	result.Fields = append(result.Fields, desktopStatusPlaceholder())
 	if err := ctx.Err(); err != nil {
 		return interaction.SettingsSnapshot{}, err
 	}

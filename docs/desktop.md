@@ -93,10 +93,16 @@ input readiness. Status details disclose the pinned macOS double/right-click and
 drag limits and the measured Linux typing/input/launch limits. Model action
 guidance carries the same limitations, separately from individual Driver results;
 it does not turn a refusal into success or authorize foreground fallback.
-The feature's enabled preference remains separate. Refresh occurs on panel reads
-and manual refresh, not on streaming tokens or hover, and cancellation ends the
-read without publishing its snapshot. Status reads hold no Settings write
-reservation and never advance the configuration revision.
+The feature's enabled preference remains separate. Preferences load without
+native inspection; after displaying them, the TUI requests status separately and
+updates only that row (including its open details). Opening or manually refreshing
+the panel, saving a preference and completing a domain action each request one
+check, not a poll loop. Closing, refreshing, saving or starting a domain action
+cancels the preceding check; shutdown cancels and waits. Cancelled results and
+results for an older panel generation or configuration revision are discarded.
+Status reads hold no Settings write reservation and never advance the
+configuration revision. Inspection failures stay in the status row and do not
+block other settings or overwrite save feedback.
 The native no-autolaunch check passed with the pinned App binary, a temporary
 HOME and an absent socket. No user service was connected or started. Default
 tests cover changing service identity, missing grants, mode/policy rejection,

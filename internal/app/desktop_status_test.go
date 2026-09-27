@@ -68,11 +68,12 @@ func TestDesktopSettingsReadOnlyStatusFacts(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			var field interaction.SettingField
-			for _, f := range snapshot.Fields {
-				if f.ID == "desktop.status" {
-					field = f
-				}
+			if calls != 0 {
+				t.Fatal("preference read inspected the native desktop")
+			}
+			field, err := s.ReadSettingsStatus(t.Context(), snapshot.Revision)
+			if err != nil {
+				t.Fatal(err)
 			}
 			want := map[string]string{"disabled": "Disabled", "absent": "Not installed", "stopped": "Needs setup", "missing": "Needs setup", "granted": "Connected; capture not checked", "text-model": "Degraded", "captured": "Last capture succeeded", "capture-failed": "Degraded", "unknown": "Unavailable"}[kind]
 			if calls != 1 || field.Value.Text != want || snapshot.Revision != 0 || s.conversation.store != nil || field.DisabledReason != "" {
@@ -100,8 +101,30 @@ func TestDesktopSettingsStatusCancellation(t *testing.T) {
 		<-ctx.Done()
 		return desktop.Inspection{}, ctx.Err()
 	}
-	if _, err := s.ReadSettings(ctx); !errors.Is(err, context.Canceled) {
+	if _, err := s.ReadSettingsStatus(ctx, 0); !errors.Is(err, context.Canceled) {
 		t.Fatal("cancelled read published a snapshot", err)
+	}
+}
+
+func TestDesktopSettingsStatusRejectsChangedRevision(t *testing.T) {
+	s := desktopSettingsSession(t)
+	calls := 0
+	s.desktop.inspect = func(context.Context) (desktop.Inspection, error) {
+		calls++
+		// A write can complete while a status read is waiting on native I/O.
+		s.lifecycle.mu.Lock()
+		s.lifecycle.revision++
+		s.lifecycle.mu.Unlock()
+		return desktop.Inspection{}, nil
+	}
+	for _, revision := range []uint64{1, 0} {
+		field, err := s.ReadSettingsStatus(t.Context(), revision)
+		if !errors.Is(err, interaction.ErrSettingsStale) || field.ID != "desktop.status" {
+			t.Fatalf("stale status: %+v %v", field, err)
+		}
+	}
+	if calls != 1 {
+		t.Fatalf("old revision reached inspector: calls=%d", calls)
 	}
 }
 

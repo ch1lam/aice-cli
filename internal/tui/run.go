@@ -134,6 +134,11 @@ func Run(ctx context.Context, runner Runner, options Options) error {
 		defer closeUsage()
 	}
 	if reader, ok := runner.(interaction.SettingsReader); ok {
+		if status, ok := runner.(interaction.SettingsStatusReader); ok {
+			var closeStatus func()
+			initialModel.readSettingsStatus, closeStatus = settingsStatusCommands(controllerCtx, status)
+			defer closeStatus()
+		}
 		if actions, ok := runner.(interaction.SettingsActionRunner); ok {
 			var closeActions func()
 			initialModel.runSettingsAction, closeActions = settingsActionCommands(controllerCtx, actions, reader)

@@ -122,6 +122,7 @@ type model struct {
 	settingsPositions        map[int]int
 	readUsage                func(uint64) (tea.Cmd, context.CancelFunc)
 	readSettings             func(uint64) (tea.Cmd, context.CancelFunc)
+	readSettingsStatus       func(uint64, uint64) (tea.Cmd, context.CancelFunc)
 	writeSettings            func(uint64, interaction.SettingsRequest) tea.Cmd
 	reading                  *sessionReading
 	readSession              func(uint64, string, string) (tea.Cmd, context.CancelFunc)
@@ -371,6 +372,8 @@ func (m model) update(message tea.Msg) (tea.Model, tea.Cmd) {
 		return m.applySettingActionDone(message)
 	case settingsReadResult:
 		return m.applySettingsRead(message)
+	case settingsStatusResult:
+		return m.applySettingsStatus(message)
 	case settingsSaveResult:
 		return m.applySettingsSave(message)
 	case inputComponentResult:

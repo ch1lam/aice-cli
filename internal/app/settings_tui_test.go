@@ -7,6 +7,7 @@ import (
 	"os"
 	"runtime"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -33,6 +34,11 @@ func TestSettingsUsageTUI(t *testing.T) {
 	installCalls, setupCalls := 0, 0
 	binds, closes := 0, 0
 	var windowsStatus atomic.Bool
+	statusRelease := make(chan struct{})
+	statusStarted := make(chan struct{})
+	statusCancelled := make(chan struct{})
+	signalStatusStarted := sync.OnceFunc(func() { close(statusStarted) })
+	signalStatusCancelled := sync.OnceFunc(func() { close(statusCancelled) })
 	model := &gatedModel{gates: map[int]chan struct{}{1: make(chan struct{}), 2: make(chan struct{})}, preDelta: "Synthetic run waiting"}
 	command, err := newTestCommand(t, dependencies{
 		loadConfig:   func(options config.LoadOptions) (config.Config, error) { return config.LoadFiles(paths, options) },
@@ -41,7 +47,14 @@ func TestSettingsUsageTUI(t *testing.T) {
 		saveSettings: config.SaveSettingsFile,
 		newDesktop: func(c config.Config) (*desktopState, error) {
 			return &desktopState{installOptions: deps.DefaultOptions().WithNoInstall(c.NoDepInstall),
-				inspect: func(context.Context) (desktop.Inspection, error) {
+				inspect: func(ctx context.Context) (desktop.Inspection, error) {
+					signalStatusStarted()
+					select {
+					case <-statusRelease:
+					case <-ctx.Done():
+						signalStatusCancelled()
+						return desktop.Inspection{}, ctx.Err()
+					}
 					if windowsStatus.Load() || runtime.GOOS == "windows" {
 						rid, session := uint32(0x2000), uint32(2)
 						return desktop.Inspection{ConnectionVerified: true, Windows: &desktop.WindowsInspection{
@@ -142,12 +155,30 @@ func TestSettingsUsageTUI(t *testing.T) {
 
 	send("/settings\r")
 	waitFor("Models & Accounts")
+	select {
+	case <-statusStarted:
+	case <-ctx.Done():
+		t.Fatal("background status read did not start")
+	}
+	select {
+	case <-statusCancelled:
+		t.Fatal("preferences waited for the native status deadline")
+	default:
+	}
 	send("/Run timeout")
 	waitFor("Run timeout")
 	send("\r")
 	waitFor("0s")
 	send("\x151m30.000000001s\r")
 	waitFor("Saved to user settings")
+	// The native reader is still blocked: opening, editing and saving must
+	// all work without it. Saving also cancels the obsolete inspection.
+	select {
+	case <-statusCancelled:
+	case <-ctx.Done():
+		t.Fatal("saving did not cancel the old status read")
+	}
+	close(statusRelease)
 	send("\x1b")
 	if runtime.GOOS == "darwin" || runtime.GOOS == "linux" {
 		send("/desktop\r")

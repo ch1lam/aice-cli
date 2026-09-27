@@ -158,7 +158,7 @@ func (m model) settingActionKey(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		p.input.Blur()
 		p.input.EchoMode = textinput.EchoNormal
 		p.notice = ""
-		return m, nil
+		return m, m.refreshSettingsStatus()
 	}
 	if a.cancelled {
 		return m, nil
@@ -319,7 +319,7 @@ func (m model) applySettingActionDone(msg settingsActionDone) (tea.Model, tea.Cm
 		p.editing = &interaction.SettingField{Kind: interaction.SettingInfo, Label: "Action result", Description: p.notice}
 		p.detailOffset = 0
 	}
-	return m, nil
+	return m, m.refreshSettingsStatus()
 }
 
 func settingsActionNotice(result interaction.SettingsActionResult, err error) string {

@@ -22,6 +22,7 @@ type settingsPanel struct {
 	snapshot               interaction.SettingsSnapshot
 	loading, saving        bool
 	cancelRead             context.CancelFunc
+	cancelStatus           context.CancelFunc
 	tab, selection, offset int
 	positions              map[int]int
 	search                 bool
@@ -77,6 +78,10 @@ func (m *model) refreshSettings() tea.Cmd {
 	if p.cancelRead != nil {
 		p.cancelRead()
 	}
+	if p.cancelStatus != nil {
+		p.cancelStatus()
+		p.cancelStatus = nil
+	}
 	m.settingsGeneration++
 	p.generation = m.settingsGeneration
 	p.continuation = nil
@@ -95,6 +100,9 @@ func (m *model) refreshSettings() tea.Cmd {
 
 func (m *model) closeSettings() {
 	if p := m.settings; p != nil {
+		if p.cancelStatus != nil {
+			p.cancelStatus()
+		}
 		if p.cancelRead != nil {
 			p.cancelRead()
 		}
@@ -184,7 +192,7 @@ func (m model) applySettingsRead(message settingsReadResult) (tea.Model, tea.Cmd
 	}
 	p.tab = min(p.tab, max(0, len(p.snapshot.Categories)-1))
 	p.selection = min(p.selection, max(0, len(p.fields())-1))
-	return m, nil
+	return m, m.refreshSettingsStatus()
 }
 
 func (m model) applySettingsSave(message settingsSaveResult) (tea.Model, tea.Cmd) {
@@ -204,12 +212,13 @@ func (m model) applySettingsSave(message settingsSaveResult) (tea.Model, tea.Cmd
 	if message.snapshot.Categories != nil {
 		p.snapshot = message.snapshot
 	}
+	status := m.refreshSettingsStatus()
 	if message.err != nil {
 		p.notice = message.err.Error()
 		if p.editing != nil && !p.confirmUnset && p.collection == nil && (p.editing.Kind != interaction.SettingEnum || p.editing.AllowCustom) {
-			return m, p.input.Focus()
+			return m, tea.Batch(p.input.Focus(), status)
 		}
-		return m, nil
+		return m, status
 	}
 	p.editing = nil
 	p.search = false
@@ -221,7 +230,7 @@ func (m model) applySettingsSave(message settingsSaveResult) (tea.Model, tea.Cmd
 	if len(message.result.Warnings) > 0 {
 		p.notice += " · " + strings.Join(message.result.Warnings, "; ")
 	}
-	return m, nil
+	return m, status
 }
 
 func (m *model) submitSetting(change interaction.SettingChange) tea.Cmd {
@@ -539,6 +548,10 @@ func (m *model) invalidateSettingsRead() {
 	p := m.settings
 	if p == nil {
 		return
+	}
+	if p.cancelStatus != nil {
+		p.cancelStatus()
+		p.cancelStatus = nil
 	}
 	if p.cancelRead != nil {
 		p.cancelRead()
