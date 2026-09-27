@@ -922,7 +922,7 @@ the prompt and logs. It can consume provider quota or incur charges.
 The run allows at most 20 model attempts and five minutes, with 4,096 requested
 output tokens per response. Its default reported-token budget is 100,000.
 After separately authorizing a different budget, set
-`AICE_CUA_MODEL_TOKEN_BUDGET` to an integer from 1 through 400,000. Invalid or
+`AICE_CUA_MODEL_TOKEN_BUDGET` to an integer from 1 through 10,000,000. Invalid or
 empty supplied values fail before configuration or credentials are read; zero
 cannot enable an unlimited run. This variable does not authorize another run
 and is ignored by the scripted harness. Token limits are checked between
@@ -951,7 +951,24 @@ sentinel assertion, shared-service reinspection and exact replay acceptance were
 not reached. The report correctly records `loop_completed=false` and
 `accepted=false`; this is an incomplete attempt, not real-model acceptance.
 The run's Session, task and report were retained in the caller-selected artifact
-directory. Another provider run requires separate authorization.
+directory. Further runs must stay within the operator's authorized model and
+budget scope; an existing authorization need not be requested again.
+
+After the operator authorized a 10,000,000-token envelope and both models on
+2026-09-27, two further real-provider attempts ran sequentially with the same
+three-form task and race detection:
+
+| Model / thinking | Loop time | Requests / images | Reported tokens | Result |
+| --- | --- | --- | --- | --- |
+| `muse-spark-1.3-contributor` / `xhigh` | 111.64 s | 9 / 4 | 126,761 | The model serialized the entire action object into the `action` string; three scope refusals prevented dispatch. The model ended, but widget postconditions failed. |
+| `deepseek-v4.1-flash` / `high` | 81.13 s | 11 / 9 | 195,698 | All three independent widget/DOM values and exactly-one-commit assertions passed, with zero Guard asks/scope refusals. The final foreground sentinel assertion failed. |
+
+Both reports have `accepted=false`; Loop completion alone is insufficient.
+The DeepSeek failure does not identify whether Driver behavior or an external
+foreground switch caused the sentinel failure. Shared-service reinspection and
+exact Session replay assertions after that check were not reached. The two runs
+consumed 322,459 reported tokens in the newly authorized envelope. No additional
+model run is implied by preparing the [manual checks](desktop-manual-checks.md).
 
 The report also records platform, architecture, Driver, actual/scripted model
 transport and per-request/tool timing samples. Model time starts immediately

@@ -1062,6 +1062,39 @@ source evidence only: 0.30.1 has not been installed, schema-admitted or run
 through native acceptance here. The installed App and AICE artifact/schema pins
 remain 0.29.1; existing failed native gates remain unresolved.
 
+### Community repair candidates
+
+A public issue/PR review on 2026-09-27 found an open candidate for foreground
+input disruption: [PR #4024](https://github.com/trycua/cua/pull/4024), head
+`065ceadb8caa22eda46f06885464884179f57020`. It changes left-button coordinate
+delivery to target-only synthetic focus. Its latest candidate has not repeated
+the historical human-assisted native checks; right-button and drag repairs are
+outside its stated scope. It is a candidate, not an installed or accepted fix.
+
+The merged [PR #2907](https://github.com/trycua/cua/pull/2907) repaired left-click
+delivery and explicitly excluded generic/right/middle/drag transport redesign.
+It cannot explain away AICE's independently reproduced right-button duplicate
+events. [PR #2646](https://github.com/trycua/cua/pull/2646) documents macOS's
+background drag refusal without changing it. The cross-platform foreground
+restoration contract remains tracked in open
+[issue #2206](https://github.com/trycua/cua/issues/2206).
+
+The new [0.30.2 nightly](https://github.com/trycua/cua/releases/tag/nightly-cua-driver-rs-v0.30.2-nightly.20260927.36294544935)
+uses commit `0e75660ce4c2edda519e0c795fa3ad98abf4e76f`. Its macOS `mouse.rs` and
+`drag.rs` are byte-identical to the reviewed 0.29.1 files, and Linux AT-SPI
+insertion still counts characters rather than UTF-8 bytes. This source check
+does not establish a native repair; no nightly or unsigned fork was installed.
+
+Prefer an equivalent semantic control when the application exposes one, as
+recommended by the upstream
+[tool reference](https://github.com/trycua/cua/blob/main/docs/content/docs/reference/cua-driver/mcp-tools.mdx).
+For example, a value field may avoid a slider gesture. This is task completion
+through another supported control, not proof that drag works. Foreground
+assistance remains explicit and is offered only after an established pre-input
+refusal. Do not bypass exact-window binding, change permission mode, or repeat
+an unknown mutation as a workaround. The remaining physical checks are in the
+[manual acceptance guide](desktop-manual-checks.md).
+
 ### Linux launch acceptance failure
 
 `TestNativeLinuxLaunch` exercises a temporary XDG desktop entry through the

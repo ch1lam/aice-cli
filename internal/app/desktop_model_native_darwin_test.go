@@ -38,8 +38,8 @@ func TestNativeMacActualModelDesktop(t *testing.T) {
 	tokenBudget := int64(100000)
 	if raw, supplied := os.LookupEnv("AICE_CUA_MODEL_TOKEN_BUDGET"); supplied {
 		parsed, err := strconv.ParseInt(raw, 10, 64)
-		if err != nil || parsed < 1 || parsed > 400000 {
-			t.Fatal("AICE_CUA_MODEL_TOKEN_BUDGET must be an explicitly authorized integer from 1 to 400000")
+		if err != nil || parsed < 1 || parsed > 10000000 {
+			t.Fatal("AICE_CUA_MODEL_TOKEN_BUDGET must be an explicitly authorized integer from 1 to 10000000")
 		}
 		tokenBudget = parsed
 	}
