@@ -315,6 +315,18 @@ func TestDesktopUnusableReadRetiresLiveConnection(t *testing.T) {
 				return fresh, nil
 			}
 			o := observed(t, r, false)
+			retiredSession := r.id
+			freshBase := fresh.handle
+			fresh.handle = func(ctx context.Context, name string, args map[string]any) (Reply, error, bool) {
+				// Native lifecycle labels belong to the transport that created them.
+				// A new transport cannot revive an episode owned by the old one.
+				if name == "start_session" && args["session"] == retiredSession {
+					reply := structuredReply(map[string]any{"code": "session_unavailable"})
+					reply.IsError = true
+					return reply, nil, true
+				}
+				return freshBase(ctx, name, args)
+			}
 			base := old.handle
 			old.handle = func(ctx context.Context, name string, args map[string]any) (Reply, error, bool) {
 				if (kind == "apps" && name == "list_apps") || (kind == "windows" && name == "list_windows") || ((kind == "observation" || kind == "after_action") && name == "get_window_state") {

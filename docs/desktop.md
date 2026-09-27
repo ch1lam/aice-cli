@@ -130,7 +130,11 @@ Failed or malformed app/window discovery retires the manager's connection and
 all execution references. An observation that cannot establish usable state for
 the exact target does the same, including a native domain error over a still-live
 MCP pipe. A later explicit discovery re-admits the service and starts a fresh
-session; the failed operation is not retried internally. A returned mutation
+session with a new public label; the failed operation is not retried internally.
+Labels are scoped to the native transport that created them. A recovered
+connection must not reuse the previous label even within the same AICE run:
+Cua rejects a new transport claiming the prior lifecycle episode. Old references
+remain invalid, and reconnecting never replays input. A returned mutation
 keeps its original outcome and details if its follow-up observation fails.
 Valid target-bound partial observations retain their available semantic
 references, and a failed screenshot alone does not retire a usable semantic
@@ -139,8 +143,10 @@ If native session startup itself returns unusable state, the binding remains
 unavailable and requires a new run; this is distinct from retiring an established
 connection after an unusable discovery. Neither path replays input. The operator's
 [manual run](desktop-manual-checks.md#当前验收结果) reported a final
-`Driver session unavailable` error without enough diagnostic evidence to identify
-its cause or verify recovery.
+`Driver session unavailable` error after discovery had retired the connection.
+Its Session and a native reproduction exposed same-run label reuse. The
+[read-only reconnect gate](collaboration.md#native-same-run-reconnection) now
+passes with a fresh label; the initial discovery failure's cause remains unknown.
 
 Cua's native lifecycle session can expire independently of the reusable MCP
 connection. The pinned runtime defaults to five minutes of session inactivity
@@ -481,7 +487,7 @@ as the tools and prompt it publishes; offline publication tests cover this.
 
 | Scope | Evidence | Remaining acceptance |
 | --- | --- | --- |
-| macOS 0.29.1 universal artifact | Verified App installed and both OS grants enabled by the operator; signature, Gatekeeper and 15-tool admission checks pass; native three-AppKit Manager and scripted-model CLI/Guard/Session gates pass with nine captures and foreground sentinel intact; ASCII/Unicode insertion, single key, select-all, Retina pixel click, resize refusal/recovery and background scroll pass independent widget checks; AppKit cold launch preserves focus, returns multiple candidates and completes the explicitly selected window's task; cursor renderer lifecycle and isolated host-surface appearance verified; wait and dispatched-click cancellation pass without input replay; Settings Stop cancels a native wait and an in-flight committed click with exact unknown-result Session retention; one explicit foreground-drag run succeeded with a measured focus transition and restoration; actual Settings repair reuses the installation, completes the public grant/capture check and saves temporary enable; operator reports passing the manual TextEdit/Safari/VS Code task, physical input/focus, cursor, repair and Stop checks (see manual record) | Pixel double-click loses foreground focus and pixel right-click delivers duplicate event pairs; background drag is refused by 0.29.1 and foreground-drag repeatability remains open; first-time Settings installation and system-dialog interaction, overlay compositing/animation, interrupted gestures, remaining pixel actions and broader application/input coverage; automated real-model focus acceptance, manual-run final discovery failure/recovery and broader performance acceptance |
+| macOS 0.29.1 universal artifact | Verified App installed and both OS grants enabled by the operator; signature, Gatekeeper and 15-tool admission checks pass; native three-AppKit Manager and scripted-model CLI/Guard/Session gates pass with nine captures and foreground sentinel intact; ASCII/Unicode insertion, single key, select-all, Retina pixel click, resize refusal/recovery and background scroll pass independent widget checks; AppKit cold launch preserves focus, returns multiple candidates and completes the explicitly selected window's task; cursor renderer lifecycle and isolated host-surface appearance verified; wait and dispatched-click cancellation pass without input replay; Settings Stop cancels a native wait and an in-flight committed click with exact unknown-result Session retention; one explicit foreground-drag run succeeded with a measured focus transition and restoration; actual Settings repair reuses the installation, completes the public grant/capture check and saves temporary enable; operator reports passing the manual TextEdit/Safari/VS Code task, physical input/focus, cursor, repair and Stop checks (see manual record); read-only same-run reconnection passes with a fresh native session label | Pixel double-click loses foreground focus and pixel right-click delivers duplicate event pairs; background drag is refused by 0.29.1 and foreground-drag repeatability remains open; first-time Settings installation and system-dialog interaction, overlay compositing/animation, interrupted gestures, remaining pixel actions and broader application/input coverage; automated real-model focus acceptance, cause of the manual-run initial discovery failure and broader performance acceptance |
 | Windows amd64/arm64 | Downloaded archives and selected executable hashes verified; private installer with Authenticode checks implemented; synthetic extraction/reuse/cancellation tests and cross-compilation pass; static imports inspected; read-only service inspection and Windows status presentation implemented with synthetic tests | Native installation/signature trust, exclusive publication, named-pipe identity/UIAccess/session checks and status-schema confirmation; setup/action runtime integration and native UI/input/lifecycle tests |
 | Linux arm64 | Private installation/reuse and read-only headless inspection passed in an isolated Debian 13 container; production Manager and selected-window setup passed owned stdio and verified shared-service X11/GTK checks; scripted-model native print/Guard/tool/Session flow, ASCII insertion and pixel click/resize rejection passed; launch established its exact window and preserved the app after Manager close; actual Settings CLI flow passed native private installation, selected-window capture, cancellation/retry and saved enable | Launch steals focus, Unicode insertion truncates and GTK key/hotkey, pixel scroll and drag are unavailable in the fixture; actual-model tasks, physical terminal/IME and other desktop environments; other pixel actions, foreground assistance, overlay, other toolkits, real compositor/Wayland and physical-input/IME checks |
 | Linux amd64 | Downloaded archive and selected executable hashes verified; synthetic installer tests and cross-compilation pass; ELF library dependencies inspected | Native installation/dynamic loading and exclusive publication; runtime/service admission, AT-SPI/display detection, compositor-specific input/capture/overlay tests |
@@ -581,8 +587,11 @@ submission, then to an unsaved VS Code editor with full accessibility read-back.
 VS Code required enabling Screen Reader Optimized through its UI. Physical
 input/focus, cursor, repair and Stop checks are recorded as operator-reported
 passes for this run. The final Safari recheck was blocked by
-`Driver session unavailable`, without repeating the submission. Recovery and
-the cause remain unverified; raw Session replay and usage were not supplied.
+`Driver session unavailable`, without repeating the submission. The retained
+Session subsequently established discovery failure followed by failed session
+startup and another refusal. Same-run recovery is now fixed and independently
+verified with metadata-only native discovery; the initial failure remains
+unattributed. Session-derived counts and usage are in the manual record.
 This evidence does not supersede the failed sentinel or pixel-action gates.
 
 The separate [cold-launch gate](../internal/desktop/apps_native_darwin_test.go)

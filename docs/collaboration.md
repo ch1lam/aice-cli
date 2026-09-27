@@ -873,6 +873,31 @@ tests proxy-process loss, not daemon restart, interrupted drag/key release,
 permission revocation or foreground/IME coexistence. It requests no grants or
 model calls and must run sequentially with other native GUI gates.
 
+### Native same-run reconnection
+
+The metadata-only macOS gate verifies reconnection inside one AICE run:
+
+```sh
+AICE_CUA_NATIVE=1 AICE_CUA_NATIVE_RECONNECT=1 \
+  go test -race -tags=integration ./internal/desktop \
+  -run '^TestNativeMacSameRunReconnect$' -count=1 -v
+```
+
+It discovers app/window metadata, explicitly retires only AICE's connection,
+then discovers again in the same run. It performs no capture, input, activation
+or model request. Production admission and occupancy remain in use, and the
+shared daemon identity is checked before and after. Run sequentially with other
+native gates and interactive desktop tasks; default tests skip this gate.
+
+On 2026-09-27 this reproduced `Driver session unavailable`: AICE reused the
+old native lifecycle label on a new transport. Cua's owner checks reject that
+claim. Issuing a fresh label per native session start made the gate pass with
+race detection in 4.43 s. Offline unusable-read tests also model the native
+ownership rejection and verify fresh discovery/action, invalid old references
+and no replay across app, window, observation and post-action failures. This
+proves recovery after connection retirement, not the cause of the manual run's
+initial discovery failure or physical foreground behavior.
+
 ### Explicit real-model desktop gate
 
 `TestNativeMacActualModelDesktop` uses the selected production provider, Agent
@@ -982,9 +1007,12 @@ The operator subsequently reported that the [manual checks](desktop-manual-check
 passed except first-time installation, including physical input/focus and a
 TextEdit → Safari → VS Code transfer with one form submission. This is operator
 evidence for that run, not a replacement for the failed automated sentinel
-assertions. A final discovery returned `Driver session unavailable`; its cause
-and recovery remain unverified. No raw Session or usage report was supplied for
-the manual run, so the token total above covers only the three automated attempts.
+assertions. The retained manual Session subsequently established an initial
+discovery failure followed by same-run recovery failure; the latter was
+reproduced and fixed by the native reconnect gate above. The initial failure's
+cause remains unverified. The [manual record](desktop-manual-checks.md#当前验收结果)
+adds its 3,746,474 reported tokens, bringing usage in the authorized envelope to
+4,421,305. The three automated attempts alone account for the 674,831 above.
 
 The report also records platform, architecture, Driver, actual/scripted model
 transport and per-request/tool timing samples. Model time starts immediately

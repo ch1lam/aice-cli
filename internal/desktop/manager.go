@@ -86,7 +86,7 @@ func (m *Manager) Bind(ctx context.Context, options RunOptions) (*Run, error) {
 		return nil, err
 	}
 	runCtx, cancel := context.WithCancel(ctx)
-	r := &Run{manager: m, ctx: runCtx, cancel: cancel, options: options, id: "aice-" + rand.Text(), targets: make(map[string]windowIdentity), apps: make(map[string]appLaunchTarget), observations: make(map[string]observationBinding)}
+	r := &Run{manager: m, ctx: runCtx, cancel: cancel, options: options, targets: make(map[string]windowIdentity), apps: make(map[string]appLaunchTarget), observations: make(map[string]observationBinding)}
 	r.stopManager = context.AfterFunc(m.ctx, cancel)
 	return r, nil
 }
@@ -180,6 +180,9 @@ func (r *Run) ensureLocked(ctx context.Context) error {
 	}
 	// Track the session before dispatch so Close attempts bounded cleanup even
 	// if start_session executed but its response was lost.
+	// Labels belong to the creating native transport. After connection loss,
+	// use a new lifecycle identity; never revive the old transport's episode.
+	r.id = "aice-" + rand.Text()
 	m.runs[r] = struct{}{}
 	r.started = true
 	reply, err := r.callLocked(ctx, "start_session", map[string]any{"session": r.id})
