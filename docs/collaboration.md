@@ -919,14 +919,20 @@ not read project settings or skills. Provider selection and thinking are
 required rather than silently using an ambient default. The model receives only
 the synthetic task and admitted native observations; credentials stay outside
 the prompt and logs. It can consume provider quota or incur charges.
-The run allows at most 20 model attempts, five minutes and 100,000 reported
-tokens, with 4,096 requested output tokens per response. Token limits are checked
-between operations and are not an exact billing ceiling.
+The run allows at most 20 model attempts and five minutes, with 4,096 requested
+output tokens per response. Its default reported-token budget is 100,000.
+After separately authorizing a different budget, set
+`AICE_CUA_MODEL_TOKEN_BUDGET` to an integer from 1 through 400,000. Invalid or
+empty supplied values fail before configuration or credentials are read; zero
+cannot enable an unlimited run. This variable does not authorize another run
+and is ignored by the scripted harness. Token limits are checked between
+operations, include reported cache usage, and are not an exact billing ceiling.
 
 The caller must create a fresh empty artifact directory. `task.txt`, the normal
 `model-task.jsonl` and `report.json` remain there for review once the run reaches
 those stages. The report separates Loop completion from full `accepted` status;
-it contains counts/usage, not credentials or input bodies. The Session does
+it contains counts/usage and the effective request/token/time/output limits,
+not credentials or input bodies. The Session does
 contain the synthetic images and model transcript. Default tests skip all
 provider reads/calls; offline scope tests reject out-of-scope actions and stale
 references without a native backend call. Preparing or passing the scripted

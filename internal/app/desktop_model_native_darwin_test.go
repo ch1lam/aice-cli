@@ -12,6 +12,7 @@ import (
 	"reflect"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -33,6 +34,14 @@ func TestNativeMacActualModelDesktop(t *testing.T) {
 	providerID, modelID, thinking := os.Getenv("AICE_CUA_MODEL_PROVIDER"), os.Getenv("AICE_CUA_MODEL_ID"), os.Getenv("AICE_CUA_MODEL_THINKING")
 	if providerID == "" || modelID == "" || thinking == "" {
 		t.Fatal("explicit AICE_CUA_MODEL_PROVIDER, AICE_CUA_MODEL_ID and AICE_CUA_MODEL_THINKING are required")
+	}
+	tokenBudget := int64(100000)
+	if raw, supplied := os.LookupEnv("AICE_CUA_MODEL_TOKEN_BUDGET"); supplied {
+		parsed, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil || parsed < 1 || parsed > 400000 {
+			t.Fatal("AICE_CUA_MODEL_TOKEN_BUDGET must be an explicitly authorized integer from 1 to 400000")
+		}
+		tokenBudget = parsed
 	}
 	artifacts := os.Getenv("AICE_CUA_MODEL_ARTIFACT_DIR")
 	entries, err := os.ReadDir(artifacts)
@@ -59,7 +68,7 @@ func TestNativeMacActualModelDesktop(t *testing.T) {
 	if err != nil {
 		t.Fatal("create opted-in provider", err)
 	}
-	testNativeMacModelTask(t, model, options, func([]nativePrintFixture, string) llm.Streamer { return service }, true)
+	testNativeMacModelTask(t, model, options, func([]nativePrintFixture, string) llm.Streamer { return service }, true, tokenBudget)
 }
 
 // Exercises the same harness without loading credentials or calling a model.
@@ -73,10 +82,10 @@ func TestNativeMacModelHarness(t *testing.T) {
 	}
 	testNativeMacModelTask(t, model, options, func(targets []nativePrintFixture, query string) llm.Streamer {
 		return &nativePrintModel{t: t, targets: targets, query: query, inputActions: map[int]string{1: "type_text"}}
-	}, false)
+	}, false, 100000)
 }
 
-func testNativeMacModelTask(t *testing.T, model llm.Model, options llm.StreamOptions, factory func([]nativePrintFixture, string) llm.Streamer, actual bool) {
+func testNativeMacModelTask(t *testing.T, model llm.Model, options llm.StreamOptions, factory func([]nativePrintFixture, string) llm.Streamer, actual bool, tokenBudget int64) {
 	t.Helper()
 	options.MaxTokens = 4096
 	ctx, cancel := context.WithTimeout(t.Context(), 7*time.Minute)
@@ -146,9 +155,8 @@ func testNativeMacModelTask(t *testing.T, model llm.Model, options llm.StreamOpt
 		taskTools = append(taskTools, capability)
 	}
 	observer := &nativeModelObserver{timings: timings, Streamer: factory(targets, query), model: model, results: make(map[string]llm.ToolResultMessage)}
-	loop, err := agent.NewLoop(observer, taskTools, agent.WithGuard(countedGuard), agent.WithRunLimits(agent.RunLimits{
-		MaxTurns: 20, Tokens: 100000, Timeout: 5 * time.Minute, NoProgress: 3,
-	}))
+	limits := agent.RunLimits{MaxTurns: 20, Tokens: tokenBudget, Timeout: 5 * time.Minute, NoProgress: 3}
+	loop, err := agent.NewLoop(observer, taskTools, agent.WithGuard(countedGuard), agent.WithRunLimits(limits))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -206,6 +214,7 @@ func testNativeMacModelTask(t *testing.T, model llm.Model, options llm.StreamOpt
 			ActualModel                                bool      `json:"actual_model"`
 			Platform, Architecture, Driver, Network    string
 			Timings                                    *nativeModelTimings `json:"timings"`
+			Limits                                     map[string]int64    `json:"limits"`
 		}{
 			Provider: model.Provider, Model: model.ID, Thinking: options.Thinking,
 			ElapsedMS: elapsed.Milliseconds(), Requests: observer.requests, Images: observer.images,
@@ -213,6 +222,10 @@ func testNativeMacModelTask(t *testing.T, model llm.Model, options llm.StreamOpt
 			LoopCompleted: runErr == nil, Accepted: accepted && !t.Failed(), ActualModel: actual,
 			Platform: runtime.GOOS, Architecture: runtime.GOARCH, Driver: desktop.DriverVersion,
 			Network: network, Timings: timings,
+			Limits: map[string]int64{
+				"reported_tokens": limits.Tokens, "model_requests": int64(limits.MaxTurns),
+				"timeout_ms": limits.Timeout.Milliseconds(), "output_tokens_per_response": int64(options.MaxTokens),
+			},
 		}
 		data, err := json.MarshalIndent(report, "", "  ")
 		if err != nil {
@@ -227,10 +240,11 @@ func testNativeMacModelTask(t *testing.T, model llm.Model, options llm.StreamOpt
 		// Read back the actual report format in the scripted gate as well.
 		var saved struct {
 			Timings nativeModelTimings `json:"timings"`
+			Limits  map[string]int64   `json:"limits"`
 		}
 		data, err = os.ReadFile(filepath.Join(artifacts, "report.json"))
-		if err != nil || json.Unmarshal(data, &saved) != nil || len(saved.Timings.Requests) != observer.requests || len(saved.Timings.Tools) != len(timings.Tools) {
-			t.Error("timing report did not survive JSON serialization", err)
+		if err != nil || json.Unmarshal(data, &saved) != nil || len(saved.Timings.Requests) != observer.requests || len(saved.Timings.Tools) != len(timings.Tools) || !reflect.DeepEqual(saved.Limits, report.Limits) {
+			t.Error("timing report or limits did not survive JSON serialization", err)
 		}
 	}()
 	if runErr != nil {
