@@ -119,15 +119,29 @@ Public manager construction requires an application runtime resolver. It only
 reuses a verified installation and admits a compatible service; a pinned
 proxy alone cannot prove a shared daemon's version or permission mode.
 
+Failed or malformed app/window discovery retires the manager's connection and
+all execution references. An observation that cannot establish usable state for
+the exact target does the same, including a native domain error over a still-live
+MCP pipe. A later explicit discovery re-admits the service and starts a fresh
+session; the failed operation is not retried internally. A returned mutation
+keeps its original outcome and details if its follow-up observation fails.
+Valid target-bound partial observations retain their available semantic
+references, and a failed screenshot alone does not retire a usable semantic
+observation. Only AICE's connection is closed, not the shared daemon.
+
 Cua's native lifecycle session can expire independently of the reusable MCP
 connection. The pinned runtime defaults to five minutes of session inactivity
 with a thirty-second maintenance sweep. AICE does not send keepalives or silently
-revive expired labels to replay an action. The separate native expiry gate
-observed session removal after 5 min 10 s on 2026-09-27, followed by a failed
-old-token action. The host then reported `loginwindow` foreground, blocking
-independent widget readback and new-run recovery. This is partial evidence,
-not passed lifecycle acceptance; the complete gate must be rerun on an unlocked
-desktop. See [the expiry procedure](collaboration.md#native-session-idle-expiry).
+revive expired labels to replay an action. The native expiry gate passed with
+race detection on 2026-09-27: the session disappeared after 5 min 20 s; the old
+token returned a native error with no widget commit or fresh observation. Its
+unusable follow-up observation retired the connection. A new run established
+a second connection, discovered/captured the same fixture and committed once.
+The returned error outcome was preserved, consumed references were rejected,
+and the shared daemon retained its process and standard-mode policy. The full
+gate took 335.95 s. This verifies natural expiry and new-run recovery, not daemon
+restart, permission revocation or foreground/IME coexistence. See
+[the expiry procedure](collaboration.md#native-session-idle-expiry).
 
 On macOS, the first desktop use also obtains an exclusive AICE occupancy lock
 at `~/Library/Caches/cua-driver/.aice-desktop.lock`, before runtime resolution or

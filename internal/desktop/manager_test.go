@@ -298,3 +298,99 @@ func TestDesktopCancelStopsQueuedMutation(t *testing.T) {
 		t.Fatal("cancel repeated mutation")
 	}
 }
+
+func TestDesktopUnusableReadRetiresLiveConnection(t *testing.T) {
+	t.Parallel()
+	for _, kind := range []string{"apps", "windows", "observation", "after_action"} {
+		t.Run(kind, func(t *testing.T) {
+			t.Parallel()
+			old, fresh := appFixtureDriver(t, "ready"), appFixtureDriver(t, "ready")
+			m, r := testRun(t, old, false)
+			dials := 0
+			m.dial = func(context.Context) (driverClient, error) {
+				dials++
+				if dials == 1 {
+					return old, nil
+				}
+				return fresh, nil
+			}
+			o := observed(t, r, false)
+			base := old.handle
+			old.handle = func(ctx context.Context, name string, args map[string]any) (Reply, error, bool) {
+				if (kind == "apps" && name == "list_apps") || (kind == "windows" && name == "list_windows") || ((kind == "observation" || kind == "after_action") && name == "get_window_state") {
+					// A domain failure has no Go transport error and no target identity.
+					return Reply{IsError: true, Text: []string{"native session unavailable"}}, nil, true
+				}
+				if kind == "after_action" && name == "click" {
+					reply := structuredReply(map[string]any{"code": "session_ended"})
+					reply.IsError = true
+					return reply, nil, true
+				}
+				return base(ctx, name, args)
+			}
+			request := ActRequest{Kind: "click", ObservationRef: o.Ref, ElementToken: o.Elements[0].Token}
+			var err error
+			oldClicks := 0
+			switch kind {
+			case "apps":
+				_, err = r.Apps(t.Context(), "editor", 8)
+			case "windows":
+				_, err = r.Windows(t.Context(), "editor", 8)
+			case "observation":
+				_, err = r.Observe(t.Context(), ObserveRequest{TargetRef: o.TargetRef})
+			case "after_action":
+				result, callErr := r.Act(t.Context(), request)
+				if callErr != nil || !result.Dispatched || result.Outcome != "returned" || !result.DriverError || !bytes.Contains(result.Driver, []byte("session_ended")) || result.Observation != nil || result.ObservationError == "" {
+					t.Fatal("read failure rewrote the returned mutation result", result, callErr)
+				}
+				oldClicks = 1
+			}
+			if kind != "after_action" && err == nil {
+				t.Fatal("unusable read succeeded")
+			}
+			if m.Status().Connected || old.closed != 1 || dials != 1 || old.count("click") != oldClicks {
+				t.Fatal("unusable connection was retained or automatically retried")
+			}
+			if _, err := r.Act(t.Context(), request); err == nil || old.count("click") != oldClicks {
+				t.Fatal("old mutation reference survived retirement")
+			}
+			if _, err := r.Observe(t.Context(), ObserveRequest{TargetRef: o.TargetRef}); err == nil || dials != 1 {
+				t.Fatal("old target survived retirement")
+			}
+			next := observed(t, r, false)
+			if dials != 2 || m.Status().Generation != 2 || fresh.count("start_session") != 1 {
+				t.Fatal("explicit discovery did not establish a fresh connection")
+			}
+			result, err := r.Act(t.Context(), ActRequest{Kind: "click", ObservationRef: next.Ref, ElementToken: next.Elements[0].Token})
+			if err != nil || result.Outcome != "returned" || result.Observation == nil || fresh.count("click") != 1 || old.count("click") != oldClicks {
+				t.Fatal("fresh action failed or replayed previous input", result, err)
+			}
+		})
+	}
+}
+
+func TestDesktopValidPartialObservationKeepsSemanticReferences(t *testing.T) {
+	t.Parallel()
+	f := &fakeDriver{}
+	m, r := testRun(t, f, false)
+	initial := observed(t, r, false)
+	f.handle = func(_ context.Context, name string, _ map[string]any) (Reply, error, bool) {
+		if name != "get_window_state" {
+			return Reply{}, nil, false
+		}
+		reply := structuredReply(map[string]any{
+			"pid": 41, "window_id": 99, "snapshot_id": "partial-snapshot",
+			"elements": []any{map[string]any{"element_token": "partial-token", "role": "AXButton"}},
+		})
+		reply.IsError = true
+		return reply, nil, true
+	}
+	partial, err := r.Observe(t.Context(), ObserveRequest{TargetRef: initial.TargetRef})
+	if err != nil || !partial.Degraded || partial.Complete || !m.Status().Connected || f.closed != 0 {
+		t.Fatal("target-bound partial observation incorrectly retired connection", partial, err)
+	}
+	result, err := r.Act(t.Context(), ActRequest{Kind: "click", ObservationRef: partial.Ref, ElementToken: "partial-token"})
+	if err != nil || result.Outcome != "returned" || result.Observation == nil || f.count("click") != 1 || f.closed != 0 {
+		t.Fatal("valid partial semantic reference was lost", result, err)
+	}
+}

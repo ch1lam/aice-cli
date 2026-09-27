@@ -46,6 +46,7 @@ func (r *Run) Apps(ctx context.Context, query string, limit int) (Discovery, err
 		} `json:"apps"`
 	}
 	if reply.IsError || json.Unmarshal(reply.Structured, &wire) != nil || wire.Apps == nil {
+		_ = r.manager.disconnectLocked("App discovery failed; discover again to verify a fresh connection")
 		return Discovery{}, errors.New("desktop: app discovery unavailable")
 	}
 	clear(r.apps)

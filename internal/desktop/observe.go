@@ -62,6 +62,7 @@ func (r *Run) windowsLocked(ctx context.Context, query string, limit int, matchi
 		return Discovery{}, err
 	}
 	if reply.IsError {
+		_ = r.manager.disconnectLocked("Window discovery failed; discover again to verify a fresh connection")
 		return Discovery{}, errors.New("desktop: window discovery unavailable")
 	}
 	var wire struct {
@@ -72,6 +73,7 @@ func (r *Run) windowsLocked(ctx context.Context, query string, limit int, matchi
 		} `json:"windows"`
 	}
 	if err := json.Unmarshal(reply.Structured, &wire); err != nil || wire.Windows == nil {
+		_ = r.manager.disconnectLocked("Window discovery returned invalid state; discover again to verify a fresh connection")
 		return Discovery{}, errors.New("desktop: invalid window discovery response")
 	}
 	// Refresh replaces this run's discovery. It never silently rebinds an old
@@ -179,6 +181,13 @@ func (r *Run) observeLocked(ctx context.Context, request ObserveRequest) (Observ
 		return Observation{}, err
 	}
 	result, err := r.bindObservation(ctx, request.TargetRef, target, request.Screenshot, reply)
+	if err != nil {
+		// An ended native session can return a domain error over a live MCP
+		// connection. Without a valid target-bound observation, retire that
+		// connection and every reference; a later read must re-admit it. Keep
+		// any already returned mutation result and never retry its dispatch.
+		_ = r.manager.disconnectLocked("Observation could not establish usable target state; discover again to verify a fresh connection")
+	}
 	if request.Screenshot {
 		r.manager.recordCapture(err == nil && result.Image != nil)
 	}

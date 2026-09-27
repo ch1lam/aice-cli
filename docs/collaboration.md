@@ -835,12 +835,20 @@ This does not test daemon restart, permission revocation, physical input or
 continuous foreground focus; it has no foreground sentinel. Run sequentially
 with other native gates. Default tests skip it and do not wait for native expiry.
 
-The 2026-09-27 attempt observed session removal after 5 min 10 s and a failed
-old-token action, but then detected macOS `loginwindow` foreground. It **did not
-pass**: independent post-action readback and new-run recovery were not completed.
-The gate retains the interactive-desktop check, including before the expired
-action, and never unlocks the host or changes its lock policy. Rerun on an
-available desktop that remains unlocked for the full interval.
+This passed with race detection on macOS 0.29.1 on 2026-09-27: expiry was observed
+after 5 min 20 s, the old action returned `outcome:returned` with `driver_error:true`
+and no observation or widget commit, and recovery used a second connection to
+commit exactly once. The full gate took 335.95 s. It first reproduced a recovery
+failure where a live MCP pipe retained expired native lifecycle state. Failed
+discovery or an unusable target observation now retires that connection without
+retrying input; returned action details remain intact. Offline tests cover app
+and window discovery failures, invalid observations and failed post-action
+observations, while preserving valid partial semantic observations.
+
+Keep the desktop unlocked for the full interval. The gate checks for
+`loginwindow`, including before the expired action, and never unlocks the host
+or changes its lock policy. An earlier locked-host attempt was incomplete;
+session disappearance alone does not satisfy this gate.
 
 ### Explicit real-model desktop gate
 
