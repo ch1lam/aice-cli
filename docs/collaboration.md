@@ -967,8 +967,19 @@ Both reports have `accepted=false`; Loop completion alone is insufficient.
 The DeepSeek failure does not identify whether Driver behavior or an external
 foreground switch caused the sentinel failure. Shared-service reinspection and
 exact Session replay assertions after that check were not reached. The two runs
-consumed 322,459 reported tokens in the newly authorized envelope. No additional
-model run is implied by preparing the [manual checks](desktop-manual-checks.md).
+consumed 322,459 reported tokens in the newly authorized envelope.
+
+After adding explicit action-shape guidance and rejecting invalid action names
+at the typed tool boundary, another `muse-spark-1.3-contributor` / `xhigh` run
+completed all three widget/DOM postconditions with exactly one commit each.
+It took 131.03 s of Loop time, 14 requests, 12 images and 352,372 reported tokens,
+with zero Guard asks and zero scope refusals. The foreground sentinel assertion
+still failed, so `accepted=false`; subsequent shared-service/replay checks were
+not reached. This sample does not prove that prompt changes alone caused the
+model's corrected behavior or that focus interference is attributable to Cua.
+The three attempts total 674,831 reported tokens in the 10,000,000-token envelope.
+Continue with the [manual checks](desktop-manual-checks.md) before treating the
+focus boundary as accepted; repeated successful form edits do not satisfy it.
 
 The report also records platform, architecture, Driver, actual/scripted model
 transport and per-request/tool timing samples. Model time starts immediately

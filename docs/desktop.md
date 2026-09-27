@@ -119,6 +119,13 @@ Public manager construction requires an application runtime resolver. It only
 reuses a verified installation and admits a compatible service; a pinned
 proxy alone cannot prove a shared daemon's version or permission mode.
 
+The typed tool rejects a missing or unsupported action name before calling its
+desktop backend. If a model serializes a whole argument object into `action`,
+the error explains that the action name and its parameters must be sibling
+fields. AICE never unpacks and executes that string. This shape rejection sends
+no input and consumes no observation; target, lifecycle and action-specific
+validation remain owned by the Manager.
+
 Failed or malformed app/window discovery retires the manager's connection and
 all execution references. An observation that cannot establish usable state for
 the exact target does the same, including a native domain error over a still-live

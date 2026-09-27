@@ -89,7 +89,7 @@ func (t *DesktopTool) Definition() llm.ToolDefinition {
 			"Match semantic controls by role as well as label; a label and its text field can share the same name. Do not choose arbitrarily among ambiguous matches.",
 		}
 	case "desktop_act":
-		definition.Description = "Perform one typed Computer Use action and return its facts plus a fresh observation. Start with background input; foreground assistance requires an explicitly returned opportunity after a verified pre-input refusal. A launch uses a discovered app reference; multiple windows remain candidates. Wait reports satisfied, unsatisfied or unknown. Only provide fields relevant to the action."
+		definition.Description = "Perform one typed Computer Use action and return its facts plus a fresh observation. action is a name such as set_value, not a JSON-encoded object; observation_ref, element_token and text are sibling fields. Start with background input; foreground assistance requires an explicitly returned opportunity after a verified pre-input refusal. A launch uses a discovered app reference; multiple windows remain candidates. Wait reports satisfied, unsatisfied or unknown. Only provide fields relevant to the action."
 		definition.InputSchema = jsonSchema(desktopActSchema)
 		definition.PromptSnippet = "Act once, then inspect the returned fresh window state"
 		definition.PromptGuidelines = []string{
@@ -136,6 +136,13 @@ func (t *DesktopTool) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolR
 		args, err := decodeArguments[desktop.ActRequest](ctx, call, t.name)
 		if err != nil {
 			return llm.ToolResult{}, err
+		}
+		// Shape errors must not reach the backend or consume its observation.
+		// In particular, do not unpack a JSON object supplied as an action name.
+		switch args.Kind {
+		case "launch", "click", "double_click", "right_click", "type_text", "set_value", "key", "hotkey", "scroll", "drag", "wait":
+		default:
+			return llm.ToolResult{}, errors.New(`tool: desktop_act action must be one supported action name, e.g. "action":"set_value"; put observation_ref, element_token, text and screenshot beside action in the top-level object, not inside an encoded JSON string. No desktop action was dispatched`)
 		}
 		result, err := t.backend.Act(ctx, args)
 		if err != nil && result.Outcome == "" && !result.Dispatched && result.Observation == nil {

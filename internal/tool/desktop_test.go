@@ -43,7 +43,11 @@ func TestDesktopToolPreservesImageAndPartialAction(t *testing.T) {
 	}
 	for _, index := range []int{1, 2} {
 		tool := tools[index]
-		call := llm.ToolCall{ID: "call", Name: tool.Definition().Name, Arguments: json.RawMessage(`{}`)}
+		arguments := json.RawMessage(`{"target_ref":"target"}`)
+		if index == 2 {
+			arguments = json.RawMessage(`{"action":"click","observation_ref":"observed","element_token":"button"}`)
+		}
+		call := llm.ToolCall{ID: "call", Name: tool.Definition().Name, Arguments: arguments}
 		result, err := tool.Execute(t.Context(), call)
 		if err != nil || result.CallID != call.ID || len(result.Content) != 2 {
 			t.Fatalf("result=%+v error=%v", result, err)
@@ -58,6 +62,37 @@ func TestDesktopToolPreservesImageAndPartialAction(t *testing.T) {
 		if index == 2 && (!result.IsError || !strings.Contains(text, `"dispatched":true`) || !strings.Contains(text, `"outcome":"unknown"`) || !strings.Contains(text, "response lost")) {
 			t.Fatalf("partial action facts lost: %+v", result)
 		}
+	}
+}
+
+func TestDesktopToolRejectsEncodedActionBeforeBackend(t *testing.T) {
+	t.Parallel()
+	calls := 0
+	tools, err := NewDesktopTools(fakeDesktopBackend{act: func(_ context.Context, request desktop.ActRequest) (desktop.ActResult, error) {
+		calls++
+		if request.Kind != "set_value" || request.ObservationRef != "observed" || request.ElementToken != "field" || request.Text != "synthetic" {
+			t.Fatal("corrected arguments changed at the tool boundary", request)
+		}
+		return desktop.ActResult{Outcome: "returned"}, nil
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, arguments := range []string{
+		`{"action":"{\"action\":\"set_value\",\"observation_ref\":\"observed\",\"element_token\":\"field\",\"text\":\"synthetic\"}","screenshot":true}`,
+		`{"action":"unknown","observation_ref":"observed"}`,
+		`{}`,
+	} {
+		_, err := tools[2].Execute(t.Context(), llm.ToolCall{Name: "desktop_act", Arguments: []byte(arguments)})
+		if err == nil || !strings.Contains(err.Error(), "top-level object") || !strings.Contains(err.Error(), "No desktop action was dispatched") || calls != 0 {
+			t.Fatal("malformed action reached backend or lacked corrective feedback", err, calls)
+		}
+	}
+	// A corrected call can retain the original reference: the rejected shape
+	// neither dispatches input nor consumes the backend's observation.
+	_, err = tools[2].Execute(t.Context(), llm.ToolCall{Name: "desktop_act", Arguments: []byte(`{"action":"set_value","observation_ref":"observed","element_token":"field","text":"synthetic"}`)})
+	if err != nil || calls != 1 {
+		t.Fatal("corrected action did not reach backend exactly once", err, calls)
 	}
 }
 
