@@ -978,8 +978,13 @@ still failed, so `accepted=false`; subsequent shared-service/replay checks were
 not reached. This sample does not prove that prompt changes alone caused the
 model's corrected behavior or that focus interference is attributable to Cua.
 The three attempts total 674,831 reported tokens in the 10,000,000-token envelope.
-Continue with the [manual checks](desktop-manual-checks.md) before treating the
-focus boundary as accepted; repeated successful form edits do not satisfy it.
+The operator subsequently reported that the [manual checks](desktop-manual-checks.md#当前验收结果)
+passed except first-time installation, including physical input/focus and a
+TextEdit → Safari → VS Code transfer with one form submission. This is operator
+evidence for that run, not a replacement for the failed automated sentinel
+assertions. A final discovery returned `Driver session unavailable`; its cause
+and recovery remain unverified. No raw Session or usage report was supplied for
+the manual run, so the token total above covers only the three automated attempts.
 
 The report also records platform, architecture, Driver, actual/scripted model
 transport and per-request/tool timing samples. Model time starts immediately

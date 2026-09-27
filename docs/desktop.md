@@ -135,6 +135,12 @@ keeps its original outcome and details if its follow-up observation fails.
 Valid target-bound partial observations retain their available semantic
 references, and a failed screenshot alone does not retire a usable semantic
 observation. Only AICE's connection is closed, not the shared daemon.
+If native session startup itself returns unusable state, the binding remains
+unavailable and requires a new run; this is distinct from retiring an established
+connection after an unusable discovery. Neither path replays input. The operator's
+[manual run](desktop-manual-checks.md#当前验收结果) reported a final
+`Driver session unavailable` error without enough diagnostic evidence to identify
+its cause or verify recovery.
 
 Cua's native lifecycle session can expire independently of the reusable MCP
 connection. The pinned runtime defaults to five minutes of session inactivity
@@ -398,8 +404,9 @@ measures those intervals in its report alongside the Manager phases, with
 explicit provider/Loop/Session boundaries. Its scripted native run validates
 measurement coverage and protocol preservation. One authorized real-model run
 recorded provider and tool timings but exhausted its reported-token budget before
-any Commit click was dispatched; full task acceptance, isolated network timing
-and controlled cold/warm comparisons remain unverified.
+any Commit click was dispatched. Later Muse and DeepSeek attempts completed the
+form tasks but failed their focus checks; full automated acceptance, isolated
+network timing and controlled cold/warm comparisons remain unverified.
 
 Interactive runs show one Computer Use activity row above the composer. It
 uses application-projected tool events: discovery/observation, a requested
@@ -474,7 +481,7 @@ as the tools and prompt it publishes; offline publication tests cover this.
 
 | Scope | Evidence | Remaining acceptance |
 | --- | --- | --- |
-| macOS 0.29.1 universal artifact | Verified App installed and both OS grants enabled by the operator; signature, Gatekeeper and 15-tool admission checks pass; native three-AppKit Manager and scripted-model CLI/Guard/Session gates pass with nine captures and foreground sentinel intact; ASCII/Unicode insertion, single key, select-all, Retina pixel click, resize refusal/recovery and background scroll pass independent widget checks; AppKit cold launch preserves focus, returns multiple candidates and completes the explicitly selected window's task; cursor renderer lifecycle and isolated host-surface appearance verified; wait and dispatched-click cancellation pass without input replay; Settings Stop cancels a native wait and an in-flight committed click with exact unknown-result Session retention; one explicit foreground-drag run succeeded with a measured focus transition and restoration; actual Settings repair reuses the installation, completes the public grant/capture check and saves temporary enable | Pixel double-click loses foreground focus and pixel right-click delivers duplicate event pairs; background drag is refused by 0.29.1 and foreground-drag repeatability remains open; first-time Settings installation and system-dialog interaction, overlay compositing/animation, interrupted gestures, remaining pixel actions, heterogeneous applications and physical input/IME coexistence; actual-model and broader performance acceptance |
+| macOS 0.29.1 universal artifact | Verified App installed and both OS grants enabled by the operator; signature, Gatekeeper and 15-tool admission checks pass; native three-AppKit Manager and scripted-model CLI/Guard/Session gates pass with nine captures and foreground sentinel intact; ASCII/Unicode insertion, single key, select-all, Retina pixel click, resize refusal/recovery and background scroll pass independent widget checks; AppKit cold launch preserves focus, returns multiple candidates and completes the explicitly selected window's task; cursor renderer lifecycle and isolated host-surface appearance verified; wait and dispatched-click cancellation pass without input replay; Settings Stop cancels a native wait and an in-flight committed click with exact unknown-result Session retention; one explicit foreground-drag run succeeded with a measured focus transition and restoration; actual Settings repair reuses the installation, completes the public grant/capture check and saves temporary enable; operator reports passing the manual TextEdit/Safari/VS Code task, physical input/focus, cursor, repair and Stop checks (see manual record) | Pixel double-click loses foreground focus and pixel right-click delivers duplicate event pairs; background drag is refused by 0.29.1 and foreground-drag repeatability remains open; first-time Settings installation and system-dialog interaction, overlay compositing/animation, interrupted gestures, remaining pixel actions and broader application/input coverage; automated real-model focus acceptance, manual-run final discovery failure/recovery and broader performance acceptance |
 | Windows amd64/arm64 | Downloaded archives and selected executable hashes verified; private installer with Authenticode checks implemented; synthetic extraction/reuse/cancellation tests and cross-compilation pass; static imports inspected; read-only service inspection and Windows status presentation implemented with synthetic tests | Native installation/signature trust, exclusive publication, named-pipe identity/UIAccess/session checks and status-schema confirmation; setup/action runtime integration and native UI/input/lifecycle tests |
 | Linux arm64 | Private installation/reuse and read-only headless inspection passed in an isolated Debian 13 container; production Manager and selected-window setup passed owned stdio and verified shared-service X11/GTK checks; scripted-model native print/Guard/tool/Session flow, ASCII insertion and pixel click/resize rejection passed; launch established its exact window and preserved the app after Manager close; actual Settings CLI flow passed native private installation, selected-window capture, cancellation/retry and saved enable | Launch steals focus, Unicode insertion truncates and GTK key/hotkey, pixel scroll and drag are unavailable in the fixture; actual-model tasks, physical terminal/IME and other desktop environments; other pixel actions, foreground assistance, overlay, other toolkits, real compositor/Wayland and physical-input/IME checks |
 | Linux amd64 | Downloaded archive and selected executable hashes verified; synthetic installer tests and cross-compilation pass; ELF library dependencies inspected | Native installation/dynamic loading and exclusive publication; runtime/service admission, AT-SPI/display detection, compositor-specific input/capture/overlay tests |
@@ -544,7 +551,8 @@ and role because WebKit exposes more than one element named `Task value`.
 There is no automatic input retry or fallback in the production adapter.
 This establishes two toolkits, not three distinct third-party applications,
 Electron compatibility, browser profiles, actual-model reasoning or physical
-input/IME coexistence. Those broader acceptance items remain open.
+input/IME coexistence. The separate operator-reported evidence below covers one
+real-application task; these fixture results alone do not establish it.
 
 The corresponding actual-CLI `TestNativeMacWebKitPrint` gate also passed with
 race detection on 2026-09-27. It runs two AppKit targets and the WebKit form
@@ -558,16 +566,24 @@ loss, and CLI cleanup preserved the shared service. The existing AppKit-only CLI
 gate passed in the same sequential run. These are native application-pipeline
 checks, not actual-model visual reasoning or physical terminal input.
 
-A separately opted-in [real-model gate](collaboration.md#explicit-real-model-desktop-gate)
-is prepared but has not yet been run against a real provider. Its scripted
-native harness passed with race detection in 23.23 s of Loop execution on
-2026-09-27: 11 requests, nine images, zero Guard asks/scope refusals, independent
-three-window postconditions, Session replay and focus/service cleanup passed.
-The real path requires explicit provider/model/thinking selection and a fresh
-artifact directory. It uses bounded requests and only synthetic desktop tools;
-its test-only scope checks do not add a product app allowlist. Real-model task
-success and model/network timing remain unverified until that opt-in actually
-runs and passes, separately from the existing scripted CLI gates.
+The separately opted-in [real-model gate](collaboration.md#explicit-real-model-desktop-gate)
+has run against Muse Spark 1.3 and DeepSeek V4.1 Flash. Both completed the three
+synthetic forms in later attempts, but their final foreground sentinel checks
+failed, so neither attempt passed full acceptance. Its scripted native harness
+passed task, Session replay and focus/service cleanup checks. The real path uses
+bounded requests and only synthetic desktop tools; its test-only scope checks
+do not add a product app allowlist.
+
+The operator also reported passing the [manual checks](desktop-manual-checks.md#当前验收结果)
+on 2026-09-27, except first-time installation. The reported real-application task
+transferred `AICE-MANUAL-314 中文 ✓` from TextEdit to Safari with one verified
+submission, then to an unsaved VS Code editor with full accessibility read-back.
+VS Code required enabling Screen Reader Optimized through its UI. Physical
+input/focus, cursor, repair and Stop checks are recorded as operator-reported
+passes for this run. The final Safari recheck was blocked by
+`Driver session unavailable`, without repeating the submission. Recovery and
+the cause remain unverified; raw Session replay and usage were not supplied.
+This evidence does not supersede the failed sentinel or pixel-action gates.
 
 The separate [cold-launch gate](../internal/desktop/apps_native_darwin_test.go)
 passed with race detection on 2026-09-27. It registers a unique synthetic AppKit
