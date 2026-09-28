@@ -12,7 +12,9 @@
 //   - Single interception point: agent.Loop checks via the Guard interface
 //     defined by the consumer (agent), never by the guard importing agent.
 //   - Session grants cover file and directory paths, exact commands, command
-//     prefixes, and tool names. All are current-run and memory-only.
+//     prefixes, and unknown tool names. MCP grants separately bind source,
+//     service, connection, permission scope and tool schema. All are memory-only
+//     for the current Session; new runs do not clear them, a new Session does.
 //     Persistent grants are a planned extension; see docs/architecture.md
 //     Planned extensions and restraint.
 package guard

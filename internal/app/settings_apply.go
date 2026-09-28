@@ -179,6 +179,9 @@ func (s *interactiveSession) applySettingsReserved(ctx context.Context, request 
 }
 
 func (s *interactiveSession) RunSettingsAction(ctx context.Context, revision uint64, request interaction.CommandRequest) (result interaction.SettingsActionResult, returnErr error) {
+	if request.Name == "mcp" {
+		return s.runMCPSettings(ctx, &revision, request)
+	}
 	switch request.Name {
 	case "login", "web", "browser", "trust", "desktop":
 	default:

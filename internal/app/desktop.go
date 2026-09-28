@@ -169,6 +169,13 @@ func (d *desktopState) Close() error {
 // publication. Optional capabilities never become part of the host baseTools.
 func composeTools(base []agent.Tool, web webState, desktopState *desktopState, configuration config.Config) ([]agent.Tool, error) {
 	result := append(slices.Clone(base), web.tools()...)
+	if len(configuration.MCP.Servers) > 0 {
+		search, err := tool.NewToolSearch(mcpRunRouter{})
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, search)
+	}
 	if configuration.DesktopEnabled {
 		if desktopState == nil {
 			return nil, errors.New("app: Computer Use owner is missing")

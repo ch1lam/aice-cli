@@ -384,6 +384,9 @@ type AuthPrompt struct {
 	Code         string
 	Instructions string
 	AllowInput   bool
+	// PublicInput opts non-secret setup fields into visible editing. The
+	// default remains hidden for credentials and authorization callbacks.
+	PublicInput bool
 }
 
 // AuthInteraction connects one cancellable command to its frontend. Notify

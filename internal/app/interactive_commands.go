@@ -28,6 +28,7 @@ func (s *interactiveSession) SlashCommands() []interaction.Command {
 		{Name: "history", Description: "Browse conversation history in this project", ArgumentHint: "[id]"},
 		{Name: "browser", Description: "Manage browser connection and tabs", Menu: s.browserMenu(), Interactive: true},
 		{Name: "web", Description: "Configure web search services, priority and web fetch", Menu: s.webMenu(), Interactive: true},
+		{Name: "mcp", Description: "Manage MCP services, connection approval and credentials", ArgumentHint: "[action] [service]", Interactive: true},
 		{
 			Name:        "session",
 			Description: "Show current Session information",
@@ -399,6 +400,10 @@ func (s *interactiveSession) RunSlashCommand(
 	}
 	if s == nil {
 		return "", fmt.Errorf("app: interactive Session is required")
+	}
+	if request.Name == "mcp" {
+		result, err := s.runMCPSettings(ctx, nil, request)
+		return strings.TrimSpace(result.Output + "\n" + strings.Join(result.Warnings, "\n")), err
 	}
 	handler, ok := slashCommandHandlers[request.Name]
 	if !ok {

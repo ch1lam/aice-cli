@@ -46,6 +46,12 @@ type GuardApproval struct {
 	RuleID  string
 	Pattern string
 	Action  GuardAction
+	// Optional Session grants capture the gate's checked identity and scope.
+	// The application invokes them only for an explicitly offered user choice;
+	// the Loop never invokes them for allow-once, yolo or model content. They
+	// must fail if the bound scope changed and must not perform tool effects.
+	AllowToolSession    func(context.Context) error
+	AllowServiceSession func(context.Context) error
 }
 
 // Valid checks the execution contract before prompting or applying yolo.
@@ -74,7 +80,7 @@ type GuardAction struct {
 	Path     string
 	Command  string
 	ToolName string
-	// Target is the network scope of a "network" action.
+	// Target is a bound service label or the scope of a network action.
 	Target string
 }
 
@@ -101,6 +107,13 @@ type ModelIdentity interface {
 type Tool interface {
 	Definition() llm.ToolDefinition
 	Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult, error)
+}
+
+// BoundTool optionally supplies immutable provenance for a tool the Loop has
+// not dispatched (for example Guard denial). It grants no authority. Execution
+// results remain owned by the tool, including unknown and partial outcomes.
+type BoundTool interface {
+	ToolBinding() llm.ToolBinding
 }
 
 // ToolReference identifies a version in an application-bound catalog. It is

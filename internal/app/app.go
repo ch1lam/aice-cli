@@ -80,6 +80,7 @@ type dependencies struct {
 	webBackends     *webBackends
 	saveWebSettings func(context.Context, config.Paths, config.WebPatch) (config.WebSettings, error)
 	newDesktop      func(config.Config) (*desktopState, error)
+	openMCP         mcpOpenFunc
 }
 
 func (a *application) webBackends() webBackends {
@@ -145,6 +146,7 @@ func newCommand(dependencies dependencies) (*cobra.Command, error) {
 		Configurator:  application,
 		Updater:       application,
 		Authenticator: application,
+		MCPManager:    application,
 	})
 	if err != nil {
 		return nil, err
@@ -258,6 +260,7 @@ func (a *application) Print(
 	}
 	defer func() { returnErr = errors.Join(returnErr, closeBrowser(ctx, environment.browser)) }()
 	defer environment.web.closeBackend()
+	defer func() { returnErr = errors.Join(returnErr, environment.mcp.Close()) }()
 	defer func() { returnErr = errors.Join(returnErr, environment.desktop.Close()) }()
 	for _, diagnostic := range environment.configuration.Diagnostics {
 		fmt.Fprintln(diagnostics, "aice: "+diagnostic)
@@ -338,10 +341,17 @@ func (a *application) Print(
 		return err
 	}
 	defer func() { returnErr = errors.Join(returnErr, closeDesktopRun()) }()
+	ctx, mcpRun, err := environment.mcp.bindRun(ctx)
+	if err != nil {
+		return err
+	}
+	defer mcpRun.Close()
 
 	_, loopErr := loop.Run(ctx, agent.RunInput{
+		Catalog:         mcpRun.Catalog(),
+		PinnedTools:     mcpRun.pins,
 		Model:           environment.model,
-		SystemPrompt:    environment.systemPrompt,
+		SystemPrompt:    environment.systemPrompt + mcpRun.summary,
 		History:         history,
 		Prompt:          prompt,
 		Options:         environment.options,
@@ -398,6 +408,16 @@ func (a *application) Interactive(
 		return err
 	}
 	browserClosed := false
+	var runner *interactiveSession
+	defer func() {
+		owner := environment.mcp
+		if runner != nil {
+			runner.stateMu.RLock()
+			owner = runner.mcp
+			runner.stateMu.RUnlock()
+		}
+		returnErr = errors.Join(returnErr, owner.Close())
+	}()
 	defer func() { returnErr = errors.Join(returnErr, environment.desktop.Close()) }()
 	defer func() {
 		if !browserClosed {
@@ -414,7 +434,8 @@ func (a *application) Interactive(
 		return err
 	}
 
-	runner := &interactiveSession{
+	runner = &interactiveSession{
+		mcp:           environment.mcp,
 		browser:       environment.browser,
 		application:   a,
 		guard:         environment.guard,
@@ -559,6 +580,7 @@ func (a *application) checkForUpdate(
 }
 
 type runEnvironment struct {
+	mcp           *mcpOwner
 	browser       *browser.Manager
 	modelErr      error
 	workspace     *tool.Workspace
@@ -698,6 +720,11 @@ func (a *application) prepareRunEnvironment(
 	g.SetSearchTarget(webState.searchTarget)
 	g.SetDesktopEnabled(configured.configuration.DesktopEnabled)
 	adapter.desktop = desktopState
+	mcpState, err := newMCPOwner(configured.configuration.MCP, g, yolo, a.dependencies.openMCP)
+	if err != nil {
+		return nil, err
+	}
+	adapter.mcp = mcpRunRouter{}
 	var browserManager *browser.Manager
 	if runtime.GOOS != "windows" {
 		if home, pathErr := a.userHome(); pathErr == nil && home != "" {
@@ -719,6 +746,7 @@ func (a *application) prepareRunEnvironment(
 	}
 	prepared = true
 	return &runEnvironment{
+		mcp:           mcpState,
 		browser:       browserManager,
 		modelErr:      configured.modelErr,
 		workspace:     workspace,
@@ -846,6 +874,7 @@ func (a *application) newAgentLoopWithOptions(
 }
 
 type interactiveSession struct {
+	mcp            *mcpOwner
 	lifecycle      settingsLifecycle
 	catalog        sessionCatalog
 	browser        *browser.Manager
@@ -891,6 +920,7 @@ type interactiveSession struct {
 }
 
 type interactiveSettings struct {
+	mcp           *mcpOwner
 	tools         []agent.Tool
 	modelErr      error
 	loop          *agent.Loop
@@ -907,6 +937,7 @@ func (s *interactiveSession) settingsSnapshot() interactiveSettings {
 	s.stateMu.RLock()
 	defer s.stateMu.RUnlock()
 	return interactiveSettings{
+		mcp:           s.mcp,
 		tools:         append([]agent.Tool(nil), s.tools...),
 		modelErr:      s.modelErr,
 		loop:          s.loop,

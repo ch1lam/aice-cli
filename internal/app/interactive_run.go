@@ -185,6 +185,12 @@ func (r *interactiveRun) Run(ctx context.Context) (returnErr error) {
 		return err
 	}
 	defer func() { returnErr = errors.Join(returnErr, closeDesktopRun()) }()
+	ctx, mcpRun, err := r.session.mcp.bindRun(ctx)
+	if err != nil {
+		return err
+	}
+	defer mcpRun.Close()
+	snapshot.systemPrompt += mcpRun.summary
 
 	configured := configuredModel{
 		configuration: snapshot.configuration,
@@ -196,6 +202,8 @@ func (r *interactiveRun) Run(ctx context.Context) (returnErr error) {
 	var desktopDisplay desktopDisplayProjection
 	contextHistory := append([]llm.AgentMessage(nil), snapshot.history...)
 	_, runErr := snapshot.loop.Run(ctx, agent.RunInput{
+		Catalog:      mcpRun.Catalog(),
+		PinnedTools:  mcpRun.pins,
 		Model:        snapshot.model,
 		SystemPrompt: snapshot.systemPrompt,
 		History:      snapshot.history,

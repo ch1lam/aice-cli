@@ -29,8 +29,8 @@ func isBashRootedPath(path, toolName string) bool {
 	return toolName == "bash" && hostpath.IsBashRooted(path)
 }
 
-// Guard is the built-in execution gate. It is immutable after construction
-// except for session-scoped allows which are stored in the in-memory map.
+// Guard is the built-in execution gate. Its policy configuration is immutable;
+// bound service state and Session grants are protected by mu.
 type Guard struct {
 	mu        sync.RWMutex
 	workspace string
@@ -58,6 +58,9 @@ type Guard struct {
 	// application per run. An empty value means web_search is unbound.
 	searchTarget   string
 	desktopEnabled bool
+	mcpServices    map[mcpServiceKey]*mcpServiceState
+	mcpEpoch       uint64
+	mcpSession     uint64
 }
 
 // New constructs a Guard for the given workspace and configuration.
@@ -207,6 +210,10 @@ func (g *Guard) ResetSessionGrants() {
 	clear(g.sessionAllowedPaths)
 	clear(g.sessionCommands)
 	g.sessionCmdPrefixes = nil
+	g.mcpSession++
+	for _, service := range g.mcpServices {
+		clear(service.granted)
+	}
 }
 
 // ResolveAbsolute exposes resolveAbsolute for callers that need to map a

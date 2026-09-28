@@ -21,6 +21,8 @@ const (
 	guardOptionAllowRunCommand = "allow-run-command"
 	guardOptionAllowRunPrefix  = "allow-run-prefix"
 	guardOptionAllowRunTool    = "allow-run-tool"
+	guardOptionAllowMCPTool    = "allow-mcp-tool-session"
+	guardOptionAllowMCPService = "allow-mcp-service-session"
 	guardOptionDeny            = "deny"
 
 	guardRulePathAccessAsk = "pathAccess.ask"
@@ -58,6 +60,7 @@ func newExecutionGuard(
 type guardAdapter struct {
 	inner   *guard.Guard
 	desktop *desktopState
+	mcp     mcpToolBindings
 	// yolo upgrades Decision ask to allow. It never remaps deny.
 	yolo bool
 }
@@ -69,6 +72,15 @@ func (g *guardAdapter) Check(ctx context.Context, call llm.ToolCall) (agent.Guar
 			Reason:   "execution gate is not configured",
 			RuleID:   "guard.unavailable",
 		}, nil
+	}
+	if g.mcp != nil {
+		binding, scope, found, err := g.mcp.MCPBinding(ctx, call.Name)
+		if err != nil {
+			return agent.GuardResult{}, fmt.Errorf("MCP run binding is unavailable")
+		}
+		if found {
+			return g.checkMCP(ctx, call, binding, scope)
+		}
 	}
 	switch call.Name {
 	case "desktop_apps", "desktop_observe", "desktop_act":
@@ -280,13 +292,40 @@ func (s *interactiveSession) handleGuardAsk(ctx context.Context, call llm.ToolCa
 				Feedback: got.Feedback,
 			}, nil
 		}
-		s.applyGuardAskGrant(got.OptionID, toolName, result)
+		if err := ctx.Err(); err != nil {
+			return agent.GuardAskReply{Decision: agent.GuardDeny}, err
+		}
+		switch got.OptionID {
+		case guardOptionAllowMCPTool:
+			if err := result.AllowToolSession(ctx); err != nil {
+				return agent.GuardAskReply{Decision: agent.GuardDeny}, err
+			}
+		case guardOptionAllowMCPService:
+			if err := result.AllowServiceSession(ctx); err != nil {
+				return agent.GuardAskReply{Decision: agent.GuardDeny}, err
+			}
+		default:
+			s.applyGuardAskGrant(got.OptionID, toolName, result)
+		}
 		return agent.GuardAskReply{Decision: agent.GuardAllow}, nil
 	}
 }
 
 func guardAskOptions(g *guard.Guard, toolName string, result agent.GuardApproval) []interaction.GuardOption {
 	switch result.RuleID {
+	case "mcp.tool":
+		options := []interaction.GuardOption{{ID: guardOptionAllowOnce, Label: "Allow once"}}
+		if result.AllowToolSession != nil {
+			options = append(options, interaction.GuardOption{
+				ID: guardOptionAllowMCPTool, Label: "Allow this MCP tool version for this session", Detail: result.Action.Target,
+			})
+		}
+		if result.AllowServiceSession != nil {
+			options = append(options, interaction.GuardOption{
+				ID: guardOptionAllowMCPService, Label: "Allow this service's current tool versions for this session", Detail: result.Action.Target,
+			})
+		}
+		return append(options, interaction.GuardOption{ID: guardOptionDeny, Label: "Deny", Deny: true})
 	case guardRulePathAccessAsk:
 		if result.Action.Path == "" {
 			return guardAskOnceOrDeny()

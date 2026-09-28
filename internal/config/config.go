@@ -190,15 +190,17 @@ type Config struct {
 	NoUpdateCheck       bool
 	CodexCredentials    CodexCredentials
 	Web                 WebConfig
+	MCP                 MCPConfig
 	Paths               Paths
 	Diagnostics         []string
 	startupOverrides    map[string]bool
 	layers              *frozenSettings
-	// webCredentials and webEnv let WithWeb re-resolve credential references
-	// after an interactive save without rereading files or the environment.
-	webCredentials map[string]string
-	webEnv         func(string) (string, bool)
-	webUser        *WebSettings
+	// Credential references resolve against the frozen environment after runtime
+	// changes; Web and MCP never reread process environment during an edit.
+	webCredentials    map[string]string
+	environmentLookup func(string) (string, bool)
+	webUser           *WebSettings
+	mcpInputs         mcpLayer
 
 	ClaudeSubscriptionCredentials ClaudeSubscriptionCredentials
 }
@@ -317,6 +319,7 @@ func LoadFiles(paths Paths, options LoadOptions) (Config, error) {
 	}
 	var diagnostics []string
 	var webValues webLayer
+	var mcpValues mcpLayer
 	layers := newFrozenSettings()
 	fileValues := make(map[string]any)
 	for _, path := range []string{paths.GlobalSettings, paths.GlobalAuth, paths.ProjectSettings} {
@@ -352,7 +355,10 @@ func LoadFiles(paths Paths, options LoadOptions) (Config, error) {
 			diagnostics = append(diagnostics, fmt.Sprintf("Ignored unparseable configuration %s", path))
 			continue
 		}
-		// Nested web objects are replaced per layer outside Viper's deep merge.
+		// Nested service collections retain their identity outside Viper's deep merge.
+		if err := mcpValues.extract(path, values, paths); err != nil {
+			return Config{}, err
+		}
 		if err := webValues.extractWebValues(path, values, path == paths.ProjectSettings); err != nil {
 			return Config{}, err
 		}
@@ -405,14 +411,20 @@ func LoadFiles(paths Paths, options LoadOptions) (Config, error) {
 			key, value, _ := strings.Cut(entry, "=")
 			environment[key] = value
 		}
-		c.webEnv = func(key string) (string, bool) { value, ok := environment[key]; return value, ok }
+		c.environmentLookup = func(key string) (string, bool) { value, ok := environment[key]; return value, ok }
 	}
 	c.webCredentials = webValues.credentials
-	effectiveWebConfig, webDiagnostics, err := effectiveWeb(webValues, paths.ProjectSettings, c.webEnv)
+	effectiveWebConfig, webDiagnostics, err := effectiveWeb(webValues, paths.ProjectSettings, c.environmentLookup)
 	if err != nil {
 		return Config{}, err
 	}
 	c.Web = effectiveWebConfig
+	c.MCP, err = effectiveMCP(mcpValues, paths, c.environmentLookup)
+	if err != nil {
+		return Config{}, err
+	}
+	c.mcpInputs = mcpValues
+	c.Diagnostics = append(c.Diagnostics, mcpValues.diagnostics...)
 	webUser, err := decodeWebSettings(webValues.user)
 	if err != nil {
 		return Config{}, err

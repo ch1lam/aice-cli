@@ -200,15 +200,16 @@ func (s *interactiveSession) ReadSettings(ctx context.Context) (interaction.Sett
 		result.Fields = append(result.Fields, interaction.SettingField{ID: "account." + option.Arguments, Category: "models", Label: option.Label + " account", Description: status, Kind: interaction.SettingAction, Applies: interaction.SettingDomainAction, DisabledReason: disabled, Action: &interaction.Command{Name: "login", SecretPrompt: "API key", Menu: menu}})
 	}
 	commands := []interaction.Command{
+		{Name: "mcp", Menu: mcpMenu(), Interactive: true},
 		{Name: "browser", Menu: s.browserMenu(), Interactive: true},
 		{Name: "web", Menu: s.webMenu(), Interactive: true},
 		{Name: "trust", Menu: s.trustMenu()},
 	}
-	for _, entry := range []struct{ id, category, label, name string }{{"browser.actions", "tools", "Browser connection and tabs", "browser"}, {"web.services", "tools", "Search services and priority", "web"}, {"project.trust", "project", "Change project trust", "trust"}} {
+	for _, entry := range []struct{ id, category, label, name string }{{"mcp.services", "tools", "MCP services and authorization", "mcp"}, {"browser.actions", "tools", "Browser connection and tabs", "browser"}, {"web.services", "tools", "Search services and priority", "web"}, {"project.trust", "project", "Change project trust", "trust"}} {
 		for _, command := range commands {
 			if command.Name == entry.name {
 				reason := disabled
-				if entry.name == "trust" && reason != interaction.ErrSettingsBusy.Error() {
+				if (entry.name == "trust" || entry.name == "mcp") && reason != interaction.ErrSettingsBusy.Error() {
 					reason = ""
 				}
 				if entry.name == "browser" {
@@ -224,6 +225,8 @@ func (s *interactiveSession) ReadSettings(ctx context.Context) (interaction.Sett
 		}
 	}
 	browserState := "Browser manager unavailable"
+	mcpStatus := mcpManagementStatus(settings.configuration, settings.mcp, "")
+	result.Fields = append(result.Fields, interaction.SettingField{ID: "mcp.status", Category: "tools", Label: "MCP status", Kind: interaction.SettingInfo, Description: formatMCPStatus(mcpStatus)})
 	if s.browser != nil {
 		target := s.browser.Target()
 		browserState = fmt.Sprintf("Session: %s\nManaged window visible: %t\nAuto-detect: %t\nEndpoint: %s\nUse browser actions for live connection and tab status.", s.browser.Name(), s.browser.Headed(), target.Auto, target.Endpoint)

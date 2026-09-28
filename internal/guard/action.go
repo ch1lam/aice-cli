@@ -10,13 +10,14 @@ import (
 
 // Action is the normalized guard input derived from a ToolCall.
 type Action struct {
-	Kind       string // "file", "command" or "network"
+	Kind       string // "file", "command", "network" or "mcp"
 	Path       string
 	Command    string
 	ToolName   string
 	Unresolved bool // true when path contains $VAR / $(...) etc - cannot stat
 	// Target is the network identity of a "network" action: the bound search
 	// service fingerprint for web_search or the fetch origin for web_fetch.
+	// For MCP it is the source-qualified service label for approval display.
 	Target string
 }
 
@@ -53,7 +54,7 @@ var fileTools = map[string]bool{
 }
 
 func isKnownTool(name string) bool {
-	return fileTools[name] || name == "bash" || name == "skill" || name == "request_user_input" || isNetworkTool(name)
+	return fileTools[name] || name == "bash" || name == "skill" || name == "tool_search" || name == "request_user_input" || isNetworkTool(name)
 }
 
 // networkTools reach outside the host through the web entry points and are

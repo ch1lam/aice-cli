@@ -28,7 +28,7 @@ func (e *runExecution) failTruncatedToolCalls(
 			return err
 		}
 
-		message, err := newErrorToolResult(call, callErr)
+		message, err := e.notDispatchedToolResult(call, callErr)
 		if err != nil {
 			return err
 		}
@@ -104,7 +104,13 @@ func (e *runExecution) executeTools(
 func (e *runExecution) executeTool(
 	ctx context.Context,
 	call llm.ToolCall,
-) (llm.ToolResultMessage, error) {
+) (message llm.ToolResultMessage, executionErr error) {
+	started := false
+	defer func() {
+		if !started && message.IsError && message.Details == nil {
+			message.Details = e.notDispatchedDetails(call.Name)
+		}
+	}()
 	if err := e.checkToolVersion(ctx, call.Name); err != nil {
 		return newErrorToolResult(call, err)
 	}
@@ -180,6 +186,10 @@ func (e *runExecution) executeTool(
 	var result llm.ToolResult
 	var proposal []ToolReference
 	var err error
+	if revalidate != nil {
+		ctx = context.WithValue(ctx, toolDispatchCheckKey{}, revalidate)
+	}
+	started = true
 	if selector, ok := tool.(ToolSelector); ok {
 		result, proposal, err = selector.SelectTools(ctx, call)
 	} else {
@@ -208,7 +218,7 @@ func (e *runExecution) executeTool(
 
 	result.CallID = call.ID
 	result.Name = call.Name
-	message, err := llm.NewToolResultMessage(result)
+	message, err = llm.NewToolResultMessage(result)
 	if err != nil {
 		if result.Details != nil {
 			return unknownInvalidToolResult(call, err)
@@ -220,6 +230,19 @@ func (e *runExecution) executeTool(
 		e.proposal = proposal
 	}
 	return message, nil
+}
+
+type toolDispatchCheckKey struct{}
+
+// CheckToolDispatch lets an adapter recheck the Loop's call-local Guard permit
+// after waiting for a transport queue. It neither grants permission nor retries
+// execution. The capability is present only during this tool's Execute call.
+func CheckToolDispatch(ctx context.Context) error {
+	check, ok := ctx.Value(toolDispatchCheckKey{}).(func(context.Context) error)
+	if !ok {
+		return errors.New("call-local dispatch check is unavailable")
+	}
+	return check(ctx)
 }
 
 func unknownInvalidToolResult(call llm.ToolCall, err error) (llm.ToolResultMessage, error) {
@@ -243,7 +266,7 @@ func (e *runExecution) syntheticToolResults(
 ) error {
 	for index := range calls {
 		call := calls[index]
-		message, err := newErrorToolResult(call, errors.New(reason))
+		message, err := e.notDispatchedToolResult(call, errors.New(reason))
 		if err != nil {
 			return err
 		}
@@ -303,4 +326,25 @@ func newErrorToolResult(call llm.ToolCall, err error) (llm.ToolResultMessage, er
 		)
 	}
 	return message, nil
+}
+
+func (e *runExecution) notDispatchedDetails(name string) *llm.ToolResultDetails {
+	bound, ok := e.tools[name].(BoundTool)
+	if !ok {
+		return nil
+	}
+	binding := bound.ToolBinding()
+	details := &llm.ToolResultDetails{State: llm.ExecutionNotDispatched, Binding: &binding}
+	if details.Validate() != nil {
+		return &llm.ToolResultDetails{State: llm.ExecutionNotDispatched}
+	}
+	return details
+}
+
+func (e *runExecution) notDispatchedToolResult(call llm.ToolCall, cause error) (llm.ToolResultMessage, error) {
+	message, err := newErrorToolResult(call, cause)
+	if err == nil {
+		message.Details = e.notDispatchedDetails(call.Name)
+	}
+	return message, err
 }

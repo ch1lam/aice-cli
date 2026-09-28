@@ -280,6 +280,9 @@ func (m model) applySettingActionPrompt(msg settingsActionPrompt) (tea.Model, te
 	p.notice = ""
 	if msg.prompt.AllowInput {
 		p.input.EchoMode = textinput.EchoPassword
+		if msg.prompt.PublicInput {
+			p.input.EchoMode = textinput.EchoNormal
+		}
 		return m, p.input.Focus()
 	}
 	p.input.Blur()

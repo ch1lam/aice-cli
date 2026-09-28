@@ -236,7 +236,7 @@ func (m model) composerFrameStyle(width int) lipgloss.Style {
 
 func (m model) composerViewWithStyle(width int, style lipgloss.Style) string {
 	contentWidth := max(width-style.GetHorizontalFrameSize(), 1)
-	if m.secretInput != nil || m.authInput != nil {
+	if m.secretInput != nil || m.authInput != nil && (m.authPrompt == nil || !m.authPrompt.PublicInput) {
 		value := mutedStyle.Render(m.input.Placeholder)
 		if count := utf8.RuneCountInString(m.input.Value()); count > 0 {
 			value = bodyStyle.Render(strings.Repeat("•", min(count, contentWidth)))

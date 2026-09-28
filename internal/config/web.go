@@ -485,7 +485,7 @@ func (c Config) WithWeb(settings WebSettings) (Config, error) {
 		return Config{}, err
 	}
 	next := c
-	effective := settings.effective(c.webCredentials, c.webEnv)
+	effective := settings.effective(c.webCredentials, c.environmentLookup)
 	// Project tightening remains in force for this process.
 	for _, restriction := range c.Web.ProjectRestricted {
 		switch restriction {

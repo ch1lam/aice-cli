@@ -181,7 +181,8 @@ func (c Config) WithPatch(patch SettingsPatch) (Config, error) {
 	next.Paths, next.Diagnostics, next.CodexCredentials = c.Paths, slices.Clone(c.Diagnostics), c.CodexCredentials
 	next.ClaudeSubscriptionCredentials = c.ClaudeSubscriptionCredentials
 	next.startupOverrides = c.startupOverrides
-	next.Web, next.webCredentials, next.webEnv = c.Web.Clone(), c.webCredentials, c.webEnv
+	next.Web, next.webCredentials, next.environmentLookup = c.Web.Clone(), c.webCredentials, c.environmentLookup
+	next.MCP, next.mcpInputs = c.MCP.Clone(), c.mcpInputs
 	next.layers = layers
 	next.webUser = c.webUser
 	return next, nil

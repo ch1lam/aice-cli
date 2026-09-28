@@ -235,6 +235,13 @@ func jsonObject(raw json.RawMessage) bool {
 // Call performs exactly one SDK call. It neither discovers a tool nor grants
 // execution authority; the caller must check the current identity and Guard.
 func (c *Client) Call(ctx context.Context, name string, arguments json.RawMessage) (Result, error) {
+	return c.CallChecked(ctx, name, arguments, nil)
+}
+
+// CallChecked additionally revalidates application-owned assumptions after
+// waiting for this connection's queue and immediately before protocol dispatch.
+// check must be local, bounded, side-effect-free and must not reenter this client.
+func (c *Client) CallChecked(ctx context.Context, name string, arguments json.RawMessage, check func(context.Context) error) (Result, error) {
 	result := Result{State: llm.ExecutionNotDispatched}
 	if !validName(name) || len(arguments) > maxArgumentBytes || !jsonObject(arguments) {
 		return result, ErrConfig
@@ -247,6 +254,14 @@ func (c *Client) Call(ctx context.Context, name string, arguments json.RawMessag
 		return result, err
 	}
 	defer release()
+	if check != nil {
+		if err := check(ctx); err != nil {
+			return result, err
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return result, err
+	}
 	c.receipts.begin("tools/call")
 	_, callErr := c.session.CallTool(ctx, &mcp.CallToolParams{Name: name, Arguments: arguments})
 	received := c.receipts.finish()
