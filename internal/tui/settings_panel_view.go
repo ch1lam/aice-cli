@@ -153,7 +153,7 @@ func (m model) settingsPanelView() string {
 	footer, footerX := settingsFooterLayout(m.settingsFooter(), l.inner)
 	content := strings.Join([]string{
 		"", ansi.Truncate(p.tabs(), l.inner, "…"), "", ansi.Truncate(search, l.inner, "…"),
-		mutedStyle.Render("  " + strings.Repeat("─", max(0, l.inner-2))), body, "",
+		"", body, "",
 		strings.Repeat(" ", footerX) + mutedStyle.Render(footer),
 	}, "\n")
 	hover := p.pointer != nil && modalCloseContains(l, *p.pointer)

@@ -176,10 +176,10 @@ One blank row separates the content from the footer. The list spans the full
 content width; a muted, centered explanation of the selected setting sits below
 it, using one line where possible and at most two. Very short windows prioritize
 the list; `?` still opens the complete description, source and persistence details.
-Tab titles and the search divider align with search text and section headings.
+Tab titles align with search text and section headings.
 The active category uses the slash menu's bold light text without brackets.
-A blank row separates
-the tabs from the muted, indented search prompt above a divider. Settings are
+A blank row separates the tabs from the muted, indented search prompt, and
+another blank row separates the search prompt from the settings list. Settings are
 grouped under secondary headings and rules (for example Browser, Computer Use,
 Web search, Web fetch and individual search services). Headings are not
 selectable, and scrolling keeps the selected field visible. Search results
