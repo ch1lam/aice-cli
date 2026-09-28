@@ -66,6 +66,10 @@ func toolRoundFingerprint(round ModelRound) ([sha256.Size]byte, error) {
 			arguments = canonical
 		}
 		result := round.ToolResults[index]
+		// Compare the original fields, not the storage-only companion that
+		// preserves JSON spelling. Whitespace/HTML escaping must not become
+		// progress merely because serialization now retains those bytes.
+		type detailsFingerprint llm.ToolResultDetails
 		if err := encoder.Encode(struct {
 			Name       string
 			Arguments  string
@@ -73,8 +77,8 @@ func toolRoundFingerprint(round ModelRound) ([sha256.Size]byte, error) {
 			IsError    bool
 			Diff       llm.ToolDiff
 			Truncation llm.ToolTruncation
-			Details    *llm.ToolResultDetails
-		}{call.Name, string(arguments), result.Content, result.IsError, result.Diff, result.Truncation, result.Details}); err != nil {
+			Details    *detailsFingerprint
+		}{call.Name, string(arguments), result.Content, result.IsError, result.Diff, result.Truncation, (*detailsFingerprint)(result.Details)}); err != nil {
 			return [sha256.Size]byte{}, fmt.Errorf("agent: compare tool round: %w", err)
 		}
 	}

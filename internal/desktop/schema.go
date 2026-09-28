@@ -64,6 +64,7 @@ func reviewedTools(actual map[string]json.RawMessage, data []byte, platform stri
 		reviewed[name] = actual[name]
 	}
 	// Unknown upstream tools are deliberately not admitted, even when harmless.
-	// Adding a tool requires a typed adapter and a reviewed schema pin.
+	// Adding a tool requires a reviewed schema pin and an explicit native consumer
+	// or managed field projection; discovery alone does not authorize its use.
 	return reviewed, nil
 }

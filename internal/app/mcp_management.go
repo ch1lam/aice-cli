@@ -41,7 +41,7 @@ func (a *application) ManageMCP(ctx context.Context, request cli.MCPRequest) (re
 	if err != nil {
 		return result, err
 	}
-	owner, err := newMCPOwner(configuration.MCP, gate, false, a.dependencies.openMCP, mcpOAuthRefresh(configuration.Paths))
+	owner, err := a.newConfiguredMCPOwner(configuration, gate, false)
 	if err != nil {
 		return result, err
 	}
@@ -66,6 +66,9 @@ func executeMCPManagement(ctx context.Context, current config.Config, owner *mcp
 	if err := validateMCPManagement(request); err != nil {
 		return current, result, err
 	}
+	if request.Key == managedCUAKey && request.Action != "status" {
+		return current, result, fmt.Errorf("managed:cua is controlled by Computer Use settings; open /desktop")
+	}
 	key := request.Key
 	if request.Action == "add" {
 		key = "user:" + key
@@ -75,7 +78,7 @@ func executeMCPManagement(ctx context.Context, current config.Config, owner *mcp
 		return current, result, fmt.Errorf("MCP service key is not configured; use a source-qualified key from status")
 	}
 	if request.Action == "status" {
-		if key != "" && !exists {
+		if key != "" && key != managedCUAKey && !exists {
 			return current, result, fmt.Errorf("MCP service key is not configured")
 		}
 		result.Services = mcpManagementStatus(current, owner, key)
@@ -229,6 +232,17 @@ func executeMCPManagement(ctx context.Context, current config.Config, owner *mcp
 		if request.Action == "add" {
 			id = request.Key
 		}
+		if owner != nil && owner.checkConnection != nil {
+			// Resolve exactly this proposed definition using the same frozen
+			// inputs as runtime publication, without saving or connecting.
+			candidate, err := current.WithMCP(config.MCPSettings{Servers: map[string]config.MCPServerSettings{id: definition}})
+			if err != nil {
+				return current, result, err
+			}
+			if err := owner.checkConnection(mcpclient.Config{Stdio: mcpStdioConfiguration(candidate.MCP.Servers["user:"+id])}); err != nil {
+				return current, result, err
+			}
+		}
 		patch.Servers = map[string]*config.MCPServerSettings{id: &definition}
 		patch.CreateOnly = request.Action == "add"
 	case "enable", "disable", "remove":
@@ -335,7 +349,19 @@ func mcpManagementStatus(configuration config.Config, owner *mcpOwner, key strin
 		}
 		definition, _ := json.Marshal(server.Settings)
 		savedFingerprint, savedScope, _ := configuration.MCP.StoredPermissions(id)
-		result = append(result, interaction.MCPService{Key: id, Name: server.Settings.Name, Source: server.Source.Kind + ":" + server.Source.Location, State: status.State, Detail: status.Detail, Fingerprint: server.Fingerprint, Approval: string(configuration.MCP.ConnectionDecision(id)), Definition: definition, ToolCount: status.ToolCount, CatalogKnown: status.CatalogKnown, EligibleTools: status.EligibleTools, PermissionScope: configuration.MCP.PermissionScope(id), Permissions: storedMCPPermissions(configuration.MCP, id), SavedPermissionFingerprint: savedFingerprint, SavedPermissionScope: savedScope})
+		result = append(result, interaction.MCPService{Key: id, Enabled: server.Enabled, Name: server.Settings.Name, Source: server.Source.Kind + ":" + server.Source.Location, State: status.State, Detail: status.Detail, Fingerprint: server.Fingerprint, Approval: string(configuration.MCP.ConnectionDecision(id)), Definition: definition, ToolCount: status.ToolCount, CatalogKnown: status.CatalogKnown, EligibleTools: status.EligibleTools, PermissionScope: configuration.MCP.PermissionScope(id), Permissions: storedMCPPermissions(configuration.MCP, id), SavedPermissionFingerprint: savedFingerprint, SavedPermissionScope: savedScope})
+	}
+	if key == "" || key == managedCUAKey {
+		state := "disabled"
+		if configuration.DesktopEnabled {
+			state = "enabled"
+		}
+		result = append(result, interaction.MCPService{
+			Key: managedCUAKey, Name: "Computer Use", Source: "managed:computer-use",
+			Managed: true, Enabled: configuration.DesktopEnabled, State: state,
+			Approval: "computer_use", SettingsField: "desktop_enabled",
+			Detail: "Controlled by Computer Use settings (/desktop). Enabled is a preference, not verified native readiness; this status read performs no discovery or native inspection.",
+		})
 	}
 	return result
 }

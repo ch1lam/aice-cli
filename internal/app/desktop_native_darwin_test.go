@@ -69,7 +69,7 @@ func testNativeMacDesktopPrint(t *testing.T, withWebKit bool) {
 	awaitNativePrintState(t, ctx, sentinel, func(s nativePrintState) bool { return s.Active })
 	paths := authTestPaths(t)
 	writeConfigFixture(t, paths.GlobalSettings, `{"provider":"custom","model":"synthetic","desktop_enabled":true,"desktop_control_mode":"background_only"}`)
-	model := &nativePrintModel{t: t, targets: targets, query: "AICE CLI"}
+	model := &nativeManagedCUAModel{targets: targets, names: make(map[string]string)}
 	if withWebKit {
 		model.inputActions = map[int]string{1: "type_text"}
 	}
@@ -97,7 +97,7 @@ func testNativeMacDesktopPrint(t *testing.T, withWebKit bool) {
 		t.Fatal("native macOS CLI failed", err)
 	}
 	elapsed := time.Since(started)
-	if model.requests != 11 || len(model.results) != 10 || strings.TrimSpace(output.String()) != "Synthetic tool sequence finished." {
+	if model.index != 3 || model.nativeCalls != 18 || model.images != 9 || strings.TrimSpace(output.String()) != "Managed synthetic sequence finished." {
 		t.Fatal("unexpected CLI completion or model request count", model.requests, len(model.results))
 	}
 	for i, target := range targets {
@@ -114,18 +114,23 @@ func testNativeMacDesktopPrint(t *testing.T, withWebKit bool) {
 	if final.Ticks <= initial.Ticks || !final.Active || !final.Armed || final.FocusLosses != 0 || final.Value != "AICE-314" || final.Commits != 0 {
 		t.Fatal("CLI task disturbed foreground sentinel")
 	}
-	verifyNativePrintSession(t, ctx, sessionPath, model.results)
+	verifyNativePrintSession(t, ctx, sessionPath, model.results, model.viewBudget)
 	if withWebKit {
-		// The web insert is the sixth result. Do not let native renderer
-		// success erase the Driver's limited verification at the tool boundary.
-		var result desktop.ActResult
-		if err := json.Unmarshal([]byte(model.results[5].Content[0].Text), &result); err != nil {
-			t.Fatal(err)
+		found := false
+		for _, result := range model.results {
+			if result.Details == nil || result.Details.Binding == nil || result.Details.Binding.ToolName != "type_text" {
+				continue
+			}
+			var facts struct{ Effect string }
+			if err := json.Unmarshal(nativeManagedJSON(result), &facts); err != nil || facts.Effect != "unverifiable" {
+				t.Fatal("WebKit insert lost unverifiable effect", err)
+			}
+			found = true
 		}
-		var facts struct{ Effect string }
-		if err := json.Unmarshal(result.Driver, &facts); err != nil || facts.Effect != "unverifiable" {
-			t.Fatal("WebKit insert lost the Driver's unverifiable effect", err)
+		if !found {
+			t.Fatal("missing WebKit insert result")
 		}
+
 	}
 	// Command cleanup must leave the separately owned authorized service usable.
 	if after, err := desktop.Inspect(ctx, installed.Installation.Binary, endpoint); err != nil || !after.ConnectionVerified {

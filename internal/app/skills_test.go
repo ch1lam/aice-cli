@@ -12,6 +12,8 @@ import (
 
 	"github.com/ch1lam/aice-cli/internal/agent"
 	"github.com/ch1lam/aice-cli/internal/config"
+	"github.com/ch1lam/aice-cli/internal/deps"
+	"github.com/ch1lam/aice-cli/internal/desktop"
 	"github.com/ch1lam/aice-cli/internal/guard"
 	"github.com/ch1lam/aice-cli/internal/llm"
 	"github.com/ch1lam/aice-cli/internal/skill"
@@ -498,4 +500,64 @@ func mustSkillPathArgs(t *testing.T, path string) json.RawMessage {
 		t.Fatalf("json.Marshal() error = %v", err)
 	}
 	return payload
+}
+
+func TestComputerUseSkillUsesNormalDiscoveryAndActivation(t *testing.T) {
+	t.Parallel()
+	discovery := discoverSkills("", "", false)
+	item, ok := discovery.catalog.Lookup("computer-use")
+	if !ok || item.Source != skill.SourceBuiltin || item.Dir != "" || item.Body == "" {
+		t.Fatal("missing embedded Computer Use guide")
+	}
+	if !strings.Contains(item.Description, desktop.DriverVersion) || !strings.Contains(item.Body, "**"+desktop.DriverVersion+"**") || desktop.DriverVersion != deps.CuaDriverVersion {
+		t.Fatal("Computer Use guidance and native runtime pins differ")
+	}
+	prompt := formatSkillsPrompt(discovery.catalog)
+	if !strings.Contains(prompt, item.Description) || strings.Contains(prompt, item.Body) {
+		t.Fatal("startup prompt did not preserve progressive disclosure")
+	}
+	tools := appendSkillTool(nil, discovery.catalog)
+	if len(tools) != 1 || tools[0].Definition().Name != "skill" {
+		t.Fatal("skill discovery added an execution route")
+	}
+	result, err := tools[0].Execute(t.Context(), llm.ToolCall{ID: "load-cua", Name: "skill", Arguments: []byte(`{"name":"computer-use"}`)})
+	if err != nil || result.IsError || len(result.Content) != 1 || !strings.Contains(result.Content[0].Text, item.Body) {
+		t.Fatal("normal activation did not return guidance", err)
+	}
+	if len(skillReadOnlyRoots(discovery.catalog)) != 0 {
+		t.Fatal("embedded guide added host filesystem authority")
+	}
+	// Loading guidance must not create an MCP service policy or an execution grant.
+	gate, err := guard.New(t.TempDir(), guard.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	binding := llm.ToolBinding{Source: "managed:computer-use", ServiceID: "cua", ConnectionFingerprint: "unbound", ToolName: "click", SchemaFingerprint: "unbound"}
+	denied, _, err := gate.CheckMCP(t.Context(), "mcp_click", binding, "unbound")
+	if err != nil || denied.Decision != guard.DecisionDeny {
+		t.Fatal("Skill load implied MCP authority")
+	}
+}
+
+func TestComputerUseSkillRetainsNormalShadowingAndTrust(t *testing.T) {
+	t.Parallel()
+	userRoot, projectRoot := t.TempDir(), t.TempDir()
+	writeTestSkill(t, userRoot, "computer-use", "User Computer Use guidance.")
+	writeTestSkill(t, projectRoot, "computer-use", "Project Computer Use guidance.")
+	for _, trusted := range []bool{false, true} {
+		discovery := discoverSkills(userRoot, projectRoot, trusted)
+		item, ok := discovery.catalog.Lookup("computer-use")
+		want := skill.SourceUser
+		if trusted {
+			want = skill.SourceProject
+		}
+		if !ok || item.Source != want {
+			t.Fatal("Computer Use guide bypassed normal source ordering", trusted)
+		}
+		tools := appendSkillTool(nil, discovery.catalog)
+		result, err := tools[0].Execute(t.Context(), llm.ToolCall{ID: "load", Name: "skill", Arguments: []byte(`{"name":"computer-use"}`)})
+		if err != nil || result.IsError || !strings.Contains(result.Content[0].Text, item.Body) {
+			t.Fatal("activation ignored selected source", err)
+		}
+	}
 }

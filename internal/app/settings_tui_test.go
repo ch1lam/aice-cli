@@ -16,7 +16,6 @@ import (
 	"github.com/ch1lam/aice-cli/internal/deps"
 	"github.com/ch1lam/aice-cli/internal/desktop"
 	"github.com/ch1lam/aice-cli/internal/llm"
-	"github.com/ch1lam/aice-cli/internal/tool"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -66,7 +65,7 @@ func TestSettingsUsageTUI(t *testing.T) {
 					}
 					return desktop.Inspection{ConnectionVerified: true, Accessibility: desktop.PermissionGranted, ScreenRecording: desktop.PermissionMissing, CheckedAt: time.Now()}, nil
 				},
-				bind: func(ctx context.Context, _ desktop.RunOptions) (tool.DesktopBackend, func() error, error) {
+				bind: func(ctx context.Context, _ desktop.RunOptions) (managedDesktopRun, func() error, error) {
 					binds++
 					return &appDesktopBackend{}, func() error {
 						closes++

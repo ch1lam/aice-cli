@@ -226,6 +226,7 @@ func (s *interactiveSession) ReadSettings(ctx context.Context) (interaction.Sett
 	}
 	browserState := "Browser manager unavailable"
 	mcpStatus := mcpManagementStatus(settings.configuration, settings.mcp, "")
+	s.applyMCPLoadedTools(mcpStatus)
 	result.Fields = append(result.Fields, interaction.SettingField{ID: "mcp.status", Category: "tools", Label: "MCP status", Kind: interaction.SettingInfo, Description: formatMCPStatus(mcpStatus)})
 	if s.browser != nil {
 		target := s.browser.Target()

@@ -3,43 +3,82 @@ package app
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"image"
+	"image/png"
 	"reflect"
 	"strings"
 	"testing"
 
-	"github.com/ch1lam/aice-cli/internal/agent"
 	"github.com/ch1lam/aice-cli/internal/config"
 	"github.com/ch1lam/aice-cli/internal/desktop"
 	"github.com/ch1lam/aice-cli/internal/interaction"
 	"github.com/ch1lam/aice-cli/internal/llm"
+	"github.com/ch1lam/aice-cli/internal/mcpclient"
 	"github.com/ch1lam/aice-cli/internal/tool"
 )
 
 type appDesktopBackend struct {
-	calls  int
-	result desktop.ActResult
+	calls         int
+	managedResult mcpclient.Result
 }
 
-func (b *appDesktopBackend) Apps(context.Context, string, int) (desktop.Discovery, error) {
-	b.calls++
-	return desktop.Discovery{}, nil
+func (*appDesktopBackend) ControlMode() desktop.ControlMode { return desktop.BackgroundOnly }
+func (*appDesktopBackend) ToolGeneration() uint64           { return 1 }
+func (*appDesktopBackend) Tools(context.Context) (mcpclient.Catalog[mcpclient.Tool], error) {
+	return mcpclient.Catalog[mcpclient.Tool]{Complete: true, Generation: 1, Items: []mcpclient.Tool{catalogFixtureTool("list_windows", "Discover windows"), catalogFixtureTool("click", "Click window")}}, nil
 }
-func (b *appDesktopBackend) Observe(context.Context, desktop.ObserveRequest) (desktop.Observation, error) {
+func (b *appDesktopBackend) CallChecked(ctx context.Context, _ string, _ json.RawMessage, check func(context.Context) error) (mcpclient.Result, error) {
+	if err := check(ctx); err != nil {
+		return mcpclient.Result{State: llm.ExecutionNotDispatched}, err
+	}
 	b.calls++
-	return desktop.Observation{}, nil
+	if b.managedResult.State != "" {
+		return b.managedResult, nil
+	}
+	return mcpclient.Result{State: llm.ExecutionReturned, Content: []mcpclient.Block{{Kind: mcpclient.BlockText, Text: "returned"}}}, nil
 }
-func (b *appDesktopBackend) Act(context.Context, desktop.ActRequest) (desktop.ActResult, error) {
-	b.calls++
-	return b.result, nil
+
+type managedDesktopModel struct {
+	arguments json.RawMessage
+	operation string
+	requests  []llm.Request
+}
+
+func (m *managedDesktopModel) Stream(ctx context.Context, req llm.Request) (llm.Stream, error) {
+	m.requests = append(m.requests, req)
+	if len(m.requests) == 1 {
+		raw, _ := json.Marshal(tool.ToolSearchRequest{Service: managedCUAKey, Query: m.operation, Limit: 1})
+		return toolCallEventStream(req.Model, llm.ToolCall{ID: "discover", Name: "tool_search", Arguments: raw}), nil
+	}
+	if len(m.requests) == 2 {
+		result, ok := req.Messages[len(req.Messages)-1].(llm.ToolResultMessage)
+		if !ok {
+			return nil, fmt.Errorf("missing discovery result")
+		}
+		if !result.IsError {
+			var found tool.ToolSearchResult
+			if len(result.Content) == 0 || json.Unmarshal([]byte(result.Content[0].Text), &found) != nil || len(found.Entries) != 1 {
+				return nil, fmt.Errorf("missing selected managed tool")
+			}
+			args := m.arguments
+			if len(args) == 0 {
+				args = json.RawMessage(`{}`)
+			}
+			return toolCallEventStream(req.Model, llm.ToolCall{ID: "execute", Name: found.Entries[0].Name, Arguments: args}), nil
+		}
+	}
+	return (&recordingModel{response: "finished"}).Stream(ctx, req)
 }
 
 func TestDesktopRunBindingFreezesCapabilitiesAndRevokesOnClose(t *testing.T) {
 	t.Parallel()
 	var options []desktop.RunOptions
 	closed := 0
-	d := &desktopState{bind: func(ctx context.Context, o desktop.RunOptions) (tool.DesktopBackend, func() error, error) {
+	d := &desktopState{bind: func(ctx context.Context, o desktop.RunOptions) (managedDesktopRun, func() error, error) {
 		options = append(options, o)
 		return &appDesktopBackend{}, func() error { closed++; return nil }, nil
 	}}
@@ -72,47 +111,9 @@ func TestDesktopRunBindingFreezesCapabilitiesAndRevokesOnClose(t *testing.T) {
 	}
 }
 
-func TestDesktopGuardRequiresActiveBindingEvenWithYolo(t *testing.T) {
-	t.Parallel()
-	g, adapter, err := newExecutionGuard(t.TempDir(), nil, true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	d := &desktopState{bind: func(context.Context, desktop.RunOptions) (tool.DesktopBackend, func() error, error) {
-		return &appDesktopBackend{}, func() error { return nil }, nil
-	}}
-	adapter.desktop = d
-	g.SetDesktopEnabled(true)
-	call := llm.ToolCall{Name: "desktop_apps", Arguments: []byte(`{}`)}
-	got, err := adapter.Check(t.Context(), call)
-	if err != nil || got.Decision != agent.GuardDeny {
-		t.Fatalf("unbound=%+v %v", got, err)
-	}
-	ctx, closeRun, err := d.bindContext(t.Context(), config.Config{DesktopEnabled: true}, llm.Model{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	got, err = adapter.Check(ctx, call)
-	if err != nil || got.Decision != agent.GuardAllow {
-		t.Fatalf("bound=%+v %v", got, err)
-	}
-	g.SetDesktopEnabled(false)
-	got, err = adapter.Check(ctx, call)
-	if err != nil || got.Decision != agent.GuardDeny {
-		t.Fatalf("disabled=%+v %v", got, err)
-	}
-	g.SetDesktopEnabled(true)
-	_ = closeRun()
-	got, err = adapter.Check(ctx, call)
-	if err != nil || got.Decision != agent.GuardDeny {
-		t.Fatalf("closed=%+v %v", got, err)
-	}
-}
-
 func TestDesktopSettingsPublicationPreservesOtherTools(t *testing.T) {
 	s := webCommandSession(t, testWebBackends(&fakeWireBackend{}, &fakeFetch{}), nil)
 	s.desktop = &desktopState{}
-	s.guardAdapter.desktop = s.desktop
 	oldTools, oldPrompt, oldLoop := toolNames(s.tools), s.systemPrompt, s.loop
 	change := interaction.SettingChange{ID: "desktop_enabled", Value: interaction.SettingValue{Kind: interaction.SettingBool, Bool: true}}
 	writeConfigFixture(t, s.configuration.Paths.GlobalSettings, `{"broken":`)
@@ -125,15 +126,15 @@ func TestDesktopSettingsPublicationPreservesOtherTools(t *testing.T) {
 	if err != nil || !result.Committed || !result.Applied {
 		t.Fatalf("enable=%+v %v", result, err)
 	}
-	for _, name := range []string{"read", "web_fetch", "desktop_apps", "desktop_observe", "desktop_act"} {
-		if !slicesContains(toolNames(s.tools), name) || !strings.Contains(s.systemPrompt, name+":") {
+	for _, name := range []string{"read", "web_fetch", "tool_search", "mcp_resource_list", "mcp_server_info"} {
+		if !slicesContains(toolNames(s.tools), name) || (name == "read" || name == "web_fetch") && !strings.Contains(s.systemPrompt, name+":") {
 			t.Fatalf("missing %s after desktop publication", name)
 		}
 	}
 	if _, err := s.RunSlashCommand(t.Context(), interaction.CommandRequest{Name: "web", Arguments: "fetch"}); err != nil {
 		t.Fatal(err)
 	}
-	if slicesContains(toolNames(s.tools), "web_fetch") || !slicesContains(toolNames(s.tools), "desktop_act") || !strings.Contains(s.systemPrompt, "desktop_act:") {
+	if slicesContains(toolNames(s.tools), "web_fetch") || !slicesContains(toolNames(s.tools), "tool_search") {
 		t.Fatal("Web rebuild lost desktop capability")
 	}
 	change.Value.Bool = false
@@ -142,7 +143,7 @@ func TestDesktopSettingsPublicationPreservesOtherTools(t *testing.T) {
 		t.Fatal(err)
 	}
 	result, err = s.ApplySettings(t.Context(), interaction.SettingsRequest{Revision: snapshot.Revision, Changes: []interaction.SettingChange{change}})
-	if err != nil || !result.Applied || slicesContains(toolNames(s.tools), "desktop_act") || strings.Contains(s.systemPrompt, "desktop_act:") {
+	if err != nil || !result.Applied || slicesContains(toolNames(s.tools), "tool_search") || strings.Contains(s.systemPrompt, "tool_search:") {
 		t.Fatalf("disable=%+v %v", result, err)
 	}
 }
@@ -153,7 +154,7 @@ func TestDesktopPrintUsesRealLoopAndClosesBinding(t *testing.T) {
 		t.Run(map[bool]string{false: "disabled", true: "enabled"}[enabled], func(t *testing.T) {
 			backend := &appDesktopBackend{}
 			binds, closes, managers := 0, 0, 0
-			model := &toolLoopModel{firstCall: &llm.ToolCall{ID: "desktop-call", Name: "desktop_apps", Arguments: []byte(`{}`)}}
+			model := &managedDesktopModel{operation: "list_windows"}
 			command, err := newTestCommand(t, dependencies{
 				loadConfig: func(config.LoadOptions) (config.Config, error) {
 					return config.Config{DeepSeekAPIKey: "test-key", DesktopEnabled: enabled}, nil
@@ -161,9 +162,11 @@ func TestDesktopPrintUsesRealLoopAndClosesBinding(t *testing.T) {
 				newModel: func(config.Config) (llm.Streamer, error) { return model, nil },
 				newDesktop: func(config.Config) (*desktopState, error) {
 					return &desktopState{
-						bind: func(context.Context, desktop.RunOptions) (tool.DesktopBackend, func() error, error) {
+						bind: func(context.Context, desktop.RunOptions) (managedDesktopRun, func() error, error) {
 							binds++
-							return backend, func() error { closes++; return nil }, nil
+							// Expose only MCP methods: the real Print path must
+							// not depend on the legacy typed action interface.
+							return struct{ managedDesktopRun }{backend}, func() error { closes++; return nil }, nil
 						},
 						close: func() error { managers++; return nil },
 					}, nil
@@ -185,17 +188,30 @@ func TestDesktopPrintUsesRealLoopAndClosesBinding(t *testing.T) {
 			if backend.calls != want || binds != want || closes != want || managers != 1 {
 				t.Fatalf("calls=%d binds=%d closes=%d managers=%d", backend.calls, binds, closes, managers)
 			}
-			if len(model.requests) != 2 {
+			if len(model.requests) != 2+want {
 				t.Fatalf("requests=%d", len(model.requests))
 			}
 			found := false
 			for _, def := range model.requests[0].Tools {
-				if def.Name == "desktop_apps" {
+				if desktopTool(def.Name) {
+					t.Fatal("initial request exposed an eager or legacy desktop action")
+				}
+				if def.Name == "tool_search" {
 					found = true
 				}
 			}
 			if found != enabled {
 				t.Fatal("tool publication differs from enabled setting")
+			}
+			if strings.Contains(model.requests[0].SystemPrompt, "managed:cua: Computer Use enabled") != enabled {
+				t.Fatal("managed summary differs from enabled setting")
+			}
+			for _, request := range model.requests {
+				for _, def := range request.Tools {
+					if def.Name == "desktop_apps" || def.Name == "desktop_observe" || def.Name == "desktop_act" {
+						t.Fatal("managed and typed routes were exposed together")
+					}
+				}
 			}
 		})
 	}
@@ -203,17 +219,27 @@ func TestDesktopPrintUsesRealLoopAndClosesBinding(t *testing.T) {
 
 func TestDesktopInteractivePersistsPartialActionImage(t *testing.T) {
 	s := webCommandSession(t, testWebBackends(&fakeWireBackend{}, &fakeFetch{}), map[string]any{"provider": "deepseek"})
-	img := &llm.ImageContent{Data: []byte("view"), MIMEType: "image/png", Original: &llm.ImageOriginal{Data: []byte("original"), MIMEType: "image/png"}}
-	backend := &appDesktopBackend{result: desktop.ActResult{Dispatched: true, Outcome: "unknown", Observation: &desktop.Observation{Ref: "fresh", Image: img}, ObservationError: "partial observation"}}
+	var pngData bytes.Buffer
+	if err := png.Encode(&pngData, image.NewNRGBA(image.Rect(0, 0, 2, 2))); err != nil {
+		t.Fatal(err)
+	}
+	backend := &appDesktopBackend{managedResult: mcpclient.Result{State: llm.ExecutionUnknown, IsError: true, StructuredContent: []byte(`{"partial":"partial observation"}`), Content: []mcpclient.Block{{Kind: mcpclient.BlockText, Text: "partial observation"}, {Kind: mcpclient.BlockImage, Data: pngData.Bytes(), MIMEType: "image/png"}}}}
+	var err error
+	s.mcp, err = newMCPOwner(s.configuration.MCP, s.guard, false, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.mcp.Close()
+	s.guardAdapter.mcp = mcpRunRouter{}
+
 	binds, closes := 0, 0
-	s.desktop = &desktopState{bind: func(context.Context, desktop.RunOptions) (tool.DesktopBackend, func() error, error) {
+	s.desktop = &desktopState{bind: func(context.Context, desktop.RunOptions) (managedDesktopRun, func() error, error) {
 		binds++
 		return backend, func() error { closes++; return nil }, nil
 	}}
-	s.guardAdapter.desktop = s.desktop
-	model := &toolLoopModel{firstCall: &llm.ToolCall{ID: "desktop-action", Name: "desktop_act", Arguments: []byte(`{"action":"click","observation_ref":"synthetic","element_token":"token"}`)}}
+	model := &managedDesktopModel{operation: "click"}
 	s.application.dependencies.newModel = func(config.Config) (llm.Streamer, error) { return model, nil }
-	_, err := s.ApplySettings(t.Context(), interaction.SettingsRequest{Changes: []interaction.SettingChange{{ID: "desktop_enabled", Value: interaction.SettingValue{Kind: interaction.SettingBool, Bool: true}}}})
+	_, err = s.ApplySettings(t.Context(), interaction.SettingsRequest{Changes: []interaction.SettingChange{{ID: "desktop_enabled", Value: interaction.SettingValue{Kind: interaction.SettingBool, Bool: true}}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -274,7 +300,7 @@ func TestDesktopInteractivePersistsPartialActionImage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, fact := range []string{`unknown`, `partial observation`, `b3JpZ2luYWw=`, `"is_error":true`} {
+	for _, fact := range []string{`unknown`, `partial observation`, base64.StdEncoding.EncodeToString(pngData.Bytes()), `"is_error":true`} {
 		if !bytes.Contains(data, []byte(fact)) {
 			t.Fatalf("Session lost %q: %s", fact, data)
 		}

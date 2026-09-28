@@ -180,6 +180,9 @@ func assistantConcludes(message llm.AssistantMessage) bool {
 }
 
 func toolCallDetail(call llm.ToolCall) string {
+	if desktopTool(call.Name) {
+		return string(call.Arguments[:min(len(call.Arguments), maximumDisplayToolOutputBytes)])
+	}
 	var arguments struct {
 		Command string `json:"command"`
 		Name    string `json:"name"`
@@ -191,8 +194,6 @@ func toolCallDetail(call llm.ToolCall) string {
 		return ""
 	}
 	switch call.Name {
-	case "desktop_apps", "desktop_observe", "desktop_act":
-		return string(call.Arguments[:min(len(call.Arguments), maximumDisplayToolOutputBytes)])
 	case "bash":
 		return arguments.Command
 	case "skill":

@@ -6,19 +6,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"log/slog"
 	"os"
-	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
-	"sync"
+	"sync/atomic"
 	"time"
 
-	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
-
-	"github.com/ch1lam/aice-cli/internal/buildinfo"
+	"github.com/ch1lam/aice-cli/internal/llm"
+	"github.com/ch1lam/aice-cli/internal/mcpclient"
 )
 
 const (
@@ -29,8 +25,9 @@ const (
 	callTimeout     = 30 * time.Second
 )
 
-// Reply retains domain failures and observations independently of transport
-// errors. A transport error after dispatch never establishes that input failed.
+// Reply is the native validation view used by setup, lifecycle and observation
+// checks, including managed MCP calls. The generic client retains the ordered
+// source result separately; this view is not the model-facing transcript.
 type Reply struct {
 	Structured json.RawMessage
 	Text       []string
@@ -43,99 +40,70 @@ type Image struct {
 	MIMEType string
 }
 
-// beforeDispatchError is reserved for failures established before CallTool.
-// Other transport errors cannot prove whether the native action happened.
+// beforeDispatchError is reserved for failures established before dispatch.
+// Native callers treat other transport failures as potentially dispatched.
 type beforeDispatchError struct{ error }
 
 func (e beforeDispatchError) Unwrap() error { return e.error }
 
-// client is private: callers cannot expose arbitrary Driver tools to the model.
+// client admits only the pinned Driver identity and reviewed platform tools.
+// Protocol, framing, cancellation and child ownership belong to mcpclient.
 type client struct {
-	session *mcp.ClientSession
-	tools   map[string]json.RawMessage
+	connection *mcpclient.Client
+	tools      map[string]json.RawMessage
+	catalog    mcpclient.Catalog[mcpclient.Tool]
+	closed     atomic.Bool
 }
 
-func connect(ctx context.Context, transport mcp.Transport) (*client, error) {
-	return connectReviewed(ctx, transport, reviewedMacTools)
+func connect(ctx context.Context, config mcpclient.Config) (*client, error) {
+	return connectReviewed(ctx, config, reviewedMacTools)
 }
 
-func connectReviewed(ctx context.Context, transport mcp.Transport, review func(map[string]json.RawMessage) (map[string]json.RawMessage, error)) (*client, error) {
+func connectReviewed(ctx context.Context, config mcpclient.Config, review func(map[string]json.RawMessage) (map[string]json.RawMessage, error)) (*client, error) {
 	ctx, cancel := context.WithTimeout(ctx, connectTimeout)
 	defer cancel()
-	c := mcp.NewClient(&mcp.Implementation{Name: "aice", Version: buildinfo.Version}, &mcp.ClientOptions{
-		Capabilities: &mcp.ClientCapabilities{},
-		Logger:       slog.New(slog.DiscardHandler),
-	})
-	// The SDK normally proposes its newest legacy version. Pin the reviewed
-	// initialize tier without adding modern per-request discovery metadata.
-	c.AddSendingMiddleware(func(next mcp.MethodHandler) mcp.MethodHandler {
-		return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
-			if init, ok := req.(*mcp.InitializeRequest); ok {
-				init.Params.ProtocolVersion = ProtocolVersion
-			}
-			return next(ctx, method, req)
-		}
-	})
-	tracked := &trackedTransport{Transport: transport}
-	session, err := c.Connect(ctx, tracked, nil)
+	config.ProtocolVersion = ProtocolVersion
+	config.ConnectTimeout, config.CallTimeout = connectTimeout, callTimeout
+	config.Limits = mcpclient.Limits{MessageBytes: maxMessageBytes, CatalogItems: 256, Pages: 16}
+	connection, err := mcpclient.Open(ctx, config)
 	if err != nil {
-		if tracked.connection != nil {
-			_ = tracked.connection.Close()
-		}
 		return nil, fmt.Errorf("desktop: initialize: %w", err)
 	}
 	ok := false
 	defer func() {
 		if !ok {
-			_ = session.Close()
+			_ = connection.Close()
 		}
 	}()
-	init := session.InitializeResult()
-	if init.ProtocolVersion != ProtocolVersion || init.ServerInfo == nil || init.ServerInfo.Name != "cua-driver" || init.ServerInfo.Version != DriverVersion {
+	info := connection.Info()
+	if info.Name != "cua-driver" || info.Version != DriverVersion {
 		return nil, errors.New("desktop: incompatible Driver identity or protocol")
 	}
-	result := &client{session: session, tools: make(map[string]json.RawMessage)}
-	cursor := ""
-	seen := make(map[string]bool)
-	for page := 0; ; page++ {
-		if page >= 16 {
-			return nil, errors.New("desktop: tool discovery exceeds page limit")
-		}
-		list, err := session.ListTools(ctx, &mcp.ListToolsParams{Cursor: cursor})
-		if err != nil {
-			return nil, fmt.Errorf("desktop: discover tools: %w", err)
-		}
-		for _, tool := range list.Tools {
-			if tool == nil || tool.Name == "" {
-				return nil, errors.New("desktop: invalid tool descriptor")
-			}
-			if _, exists := result.tools[tool.Name]; exists {
-				return nil, errors.New("desktop: duplicate tool descriptor")
-			}
-			if len(result.tools) >= 256 {
-				return nil, errors.New("desktop: too many tool descriptors")
-			}
-			schema, err := json.Marshal(tool.InputSchema)
-			if err != nil {
-				return nil, fmt.Errorf("desktop: tool schema: %w", err)
-			}
-			result.tools[tool.Name] = schema
-		}
-		cursor = list.NextCursor
-		if cursor == "" {
-			break
-		}
-		if seen[cursor] {
-			return nil, errors.New("desktop: repeated discovery cursor")
-		}
-		seen[cursor] = true
+	catalog, err := connection.Tools(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("desktop: discover tools: %w", err)
 	}
-	result.tools, err = review(result.tools)
+	if !catalog.Complete {
+		return nil, errors.New("desktop: incomplete Driver tool discovery")
+	}
+	schemas := make(map[string]json.RawMessage, len(catalog.Items))
+	for _, tool := range catalog.Items {
+		schemas[tool.Name] = tool.InputSchema
+	}
+	schemas, err = review(schemas)
 	if err != nil {
 		return nil, err
 	}
+	// Keep complete descriptors for generic mapping, but only for admitted names.
+	admitted := make([]mcpclient.Tool, 0, len(schemas))
+	for _, descriptor := range catalog.Items {
+		if _, ok := schemas[descriptor.Name]; ok {
+			admitted = append(admitted, descriptor)
+		}
+	}
+	catalog.Items = admitted
 	ok = true
-	return result, nil
+	return &client{connection: connection, tools: schemas, catalog: catalog}, nil
 }
 
 // call sends exactly once. Neither domain errors nor EOF/cancellation are retried.
@@ -146,24 +114,28 @@ func (c *client) call(ctx context.Context, name string, arguments any) (Reply, e
 	if _, ok := c.tools[name]; !ok {
 		return Reply{}, beforeDispatchError{fmt.Errorf("desktop: capability %s unavailable", name)}
 	}
-	ctx, cancel := context.WithTimeout(ctx, callTimeout)
-	defer cancel()
-	result, err := c.session.CallTool(ctx, &mcp.CallToolParams{Name: name, Arguments: arguments})
-	if err != nil {
-		return Reply{}, fmt.Errorf("desktop: %s transport failed; dispatched outcome may be unknown: %w", name, err)
-	}
-	reply := Reply{IsError: result.IsError}
-	if result.StructuredContent != nil {
-		reply.Structured, err = json.Marshal(result.StructuredContent)
+	// The SDK previously normalized absent arguments to an empty object.
+	raw := json.RawMessage(`{}`)
+	if arguments != nil {
+		var err error
+		raw, err = json.Marshal(arguments)
 		if err != nil {
-			return reply, fmt.Errorf("desktop: invalid structured result: %w", err)
+			return Reply{}, beforeDispatchError{errors.New("desktop: invalid tool arguments")}
 		}
 	}
+	result, err := c.CallChecked(ctx, name, raw, nil)
+	if err != nil {
+		if errors.Is(err, mcpclient.ErrConfig) || errors.Is(err, errDriverCatalogChanged) || errors.Is(err, mcpclient.ErrClosed) {
+			return Reply{}, beforeDispatchError{err}
+		}
+		return Reply{}, fmt.Errorf("desktop: %s transport failed; dispatched outcome may be unknown: %w", name, err)
+	}
+	reply := Reply{IsError: result.IsError, Structured: result.StructuredContent}
 	for _, part := range result.Content {
-		switch part := part.(type) {
-		case *mcp.TextContent:
+		switch part.Kind {
+		case mcpclient.BlockText:
 			reply.Text = append(reply.Text, part.Text)
-		case *mcp.ImageContent:
+		case mcpclient.BlockImage:
 			reply.Images = append(reply.Images, Image{Data: part.Data, MIMEType: part.MIMEType})
 		default:
 			return reply, errors.New("desktop: unsupported Driver content; action outcome must be checked before continuing")
@@ -172,35 +144,72 @@ func (c *client) call(ctx context.Context, name string, arguments any) (Reply, e
 	return reply, nil
 }
 
-func (c *client) close() error { return c.session.Close() }
+// A list_changed notification invalidates admission; it never expands the
+// reviewed set or silently replaces an executable schema. Re-admit a new client.
+var errDriverCatalogChanged = errors.New("desktop: Driver catalog changed; reconnect and review the current schema before calling tools")
 
-// Close a pipe whose peer stops reading when a write's deadline expires.
-// The SDK checks ctx before Write but an OS pipe itself has no context.
-type trackedTransport struct {
-	mcp.Transport
-	connection mcp.Connection
+func (c *client) ToolGeneration() uint64 { return c.connection.ToolGeneration() }
+
+// Tools returns the admitted catalog without native I/O. Each caller owns its
+// descriptors and exact JSON fields. Native lifecycle/target authorization is
+// still the Run owner's responsibility; this is not a model execution grant.
+func (c *client) Tools(ctx context.Context) (mcpclient.Catalog[mcpclient.Tool], error) {
+	if err := ctx.Err(); err != nil {
+		return mcpclient.Catalog[mcpclient.Tool]{}, err
+	}
+	if c.closed.Load() {
+		return mcpclient.Catalog[mcpclient.Tool]{}, mcpclient.ErrClosed
+	}
+	if c.ToolGeneration() != c.catalog.Generation {
+		return mcpclient.Catalog[mcpclient.Tool]{}, errDriverCatalogChanged
+	}
+	catalog := c.catalog
+	catalog.Items = slices.Clone(c.catalog.Items)
+	for i := range catalog.Items {
+		catalog.Items[i].InputSchema = slices.Clone(catalog.Items[i].InputSchema)
+		catalog.Items[i].OutputSchema = slices.Clone(catalog.Items[i].OutputSchema)
+		catalog.Items[i].Annotations = slices.Clone(catalog.Items[i].Annotations)
+	}
+	return catalog, nil
 }
 
-func (t *trackedTransport) Connect(ctx context.Context) (mcp.Connection, error) {
-	c, err := t.Transport.Connect(ctx)
-	if err != nil {
-		return nil, err
+// CallChecked retains the generic client's ordered/raw result and dispatch
+// state. Internal lifecycle/setup calls and native acceptance helpers also
+// consume this boundary through call; managed model operations use it directly.
+// Recheck admission after the generic connection queue and before its write.
+func (c *client) CallChecked(ctx context.Context, name string, args json.RawMessage, check func(context.Context) error) (mcpclient.Result, error) {
+	checkAdmission := func(ctx context.Context) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if c.closed.Load() {
+			return mcpclient.ErrClosed
+		}
+		if _, ok := c.tools[name]; !ok {
+			return errors.New("desktop: unreviewed Driver tool")
+		}
+		if c.ToolGeneration() != c.catalog.Generation {
+			return errDriverCatalogChanged
+		}
+		return nil
 	}
-	t.connection = &cancelableConnection{Connection: c}
-	return t.connection, nil
+	if err := checkAdmission(ctx); err != nil {
+		return mcpclient.Result{State: llm.ExecutionNotDispatched}, err
+	}
+	return c.connection.CallChecked(ctx, name, args, func(ctx context.Context) error {
+		if err := checkAdmission(ctx); err != nil {
+			return err
+		}
+		if check != nil {
+			return check(ctx)
+		}
+		return nil
+	})
 }
 
-type cancelableConnection struct{ mcp.Connection }
-
-func (c *cancelableConnection) Write(ctx context.Context, message jsonrpc.Message) error {
-	closed := make(chan struct{})
-	stop := context.AfterFunc(ctx, func() { _ = c.Connection.Close(); close(closed) })
-	err := c.Connection.Write(ctx, message)
-	if !stop() {
-		<-closed
-		return ctx.Err()
-	}
-	return err
+func (c *client) close() error {
+	c.closed.Store(true)
+	return c.connection.Close()
 }
 
 // driverEnvironment deliberately excludes provider credentials, loader injection
@@ -217,102 +226,26 @@ func driverEnvironment(environ []string) []string {
 	return append(result, "CUA_DRIVER_RS_TELEMETRY_ENABLED=false", "CUA_DRIVER_RS_UPDATE_CHECK=false", "CUA_DRIVER_PERMISSION_MODE=standard")
 }
 
-// processTransport adds bounded framing and child ownership to the SDK's stdio
-// transport; JSON-RPC correlation, notifications and cancellation stay in the SDK.
-type processTransport struct{ command *exec.Cmd }
+func driverMCPConfig(binary, directory string, args ...string) mcpclient.Config {
+	env := make(map[string]string)
+	for _, entry := range driverEnvironment(os.Environ()) {
+		key, value, _ := strings.Cut(entry, "=")
+		env[key] = value
+	}
+	return mcpclient.Config{Stdio: &mcpclient.StdioConfig{
+		Executable: binary, Args: args, Dir: directory, Env: env, ReplaceEnvironment: true,
+	}}
+}
 
-func newProcessTransport(binary, endpoint string) (*processTransport, error) {
+func newProxyConfig(binary, endpoint string) (mcpclient.Config, error) {
 	if !filepath.IsAbs(binary) || endpoint == "" {
-		return nil, errors.New("desktop: verified absolute binary and service endpoint required")
+		return mcpclient.Config{}, errors.New("desktop: verified absolute binary and service endpoint required")
 	}
-	// On this pinned release, --embedded on the proxy disables automatic
-	// standalone service launch. It does not change the connected daemon's TCC
-	// attribution or mode. This shared-service path never uses --direct or
-	// sets a claimed host bundle ID; Linux's owned runtime is separate.
-	cmd := exec.Command(binary, "mcp", "--socket", endpoint, "--embedded")
-	cmd.Env = driverEnvironment(os.Environ())
-	// Driver diagnostics can contain window text or input. Do not duplicate them
-	// in the terminal, Session, or logs. Protocol failures carry content-free status.
-	cmd.Stderr = io.Discard
-	return &processTransport{command: cmd}, nil
-}
-
-func (t *processTransport) Connect(ctx context.Context) (mcp.Connection, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	stdout, err := t.command.StdoutPipe()
+	directory, err := os.Getwd()
 	if err != nil {
-		return nil, err
+		return mcpclient.Config{}, errors.New("desktop: working directory unavailable")
 	}
-	stdin, err := t.command.StdinPipe()
-	if err != nil {
-		_ = stdout.Close()
-		return nil, err
-	}
-	if err := t.command.Start(); err != nil {
-		_ = stdout.Close()
-		_ = stdin.Close()
-		return nil, err
-	}
-	p := &ownedProcess{cmd: t.command, stdout: stdout, stdin: stdin}
-	// Both sides share the same idempotent owner. The SDK closes reader then
-	// writer; giving it stdin directly would close an already reaped pipe twice.
-	transport := &mcp.IOTransport{Reader: &boundedReader{ReadCloser: p, limit: maxMessageBytes}, Writer: p}
-	return transport.Connect(ctx)
-}
-
-type ownedProcess struct {
-	cmd    *exec.Cmd
-	stdout io.ReadCloser
-	stdin  io.WriteCloser
-	once   sync.Once
-	err    error
-}
-
-func (p *ownedProcess) Read(b []byte) (int, error)  { return p.stdout.Read(b) }
-func (p *ownedProcess) Write(b []byte) (int, error) { return p.stdin.Write(b) }
-func (p *ownedProcess) Close() error {
-	p.once.Do(func() {
-		timer := time.NewTimer(time.Second)
-		defer timer.Stop()
-		done := make(chan error, 1)
-		go func() {
-			// A pipe Close can wait for in-flight I/O on Windows. Include it
-			// in the grace period so it cannot prevent terminating the child.
-			_ = p.stdin.Close()
-			_ = p.stdout.Close()
-			done <- p.cmd.Wait()
-		}()
-		select {
-		case p.err = <-done:
-		case <-timer.C:
-			// Only this exact MCP child is owned, never its shared native service.
-			_ = p.cmd.Process.Kill()
-			p.err = <-done
-		}
-	})
-	return p.err
-}
-
-// boundedReader enforces the NDJSON message limit before JSON/base64 allocation.
-// It does not buffer whole frames or impose Scanner's default 64 KiB limit.
-type boundedReader struct {
-	io.ReadCloser
-	limit, size int
-}
-
-func (r *boundedReader) Read(p []byte) (int, error) {
-	n, err := r.ReadCloser.Read(p)
-	for _, b := range p[:n] {
-		if b == '\n' {
-			r.size = 0
-			continue
-		}
-		r.size++
-		if r.size > r.limit {
-			return 0, errors.New("desktop: MCP message exceeds size limit")
-		}
-	}
-	return n, err
+	// --embedded disables proxy autolaunch in the pinned release. It changes
+	// neither the shared daemon's TCC attribution nor its authority mode.
+	return driverMCPConfig(binary, directory, "mcp", "--socket", endpoint, "--embedded"), nil
 }

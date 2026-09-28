@@ -33,23 +33,14 @@ type nativeModelRequestTiming struct {
 }
 
 type nativeModelToolTiming struct {
-	Sequence     int                      `json:"sequence"`
-	Request      int                      `json:"request"`
-	Name         string                   `json:"name"`
-	TotalMS      *float64                 `json:"total_ms,omitempty"`
-	GuardMS      *float64                 `json:"guard_check_ms,omitempty"`
-	RevalidateMS *float64                 `json:"guard_revalidate_ms,omitempty"`
-	Action       *nativeModelActionTiming `json:"action,omitempty"`
-	started      time.Time
-}
-
-type nativeModelActionTiming struct {
-	Kind            string  `json:"kind"`
-	TotalMS         float64 `json:"total_ms"`
-	QueueMS         float64 `json:"queue_ms"`
-	DriverMS        float64 `json:"driver_round_trip_ms"`
-	ConditionWaitMS float64 `json:"condition_wait_ms"`
-	ObservationMS   float64 `json:"observation_ms"`
+	Sequence      int      `json:"sequence"`
+	Request       int      `json:"request"`
+	Name          string   `json:"name"`
+	TotalMS       *float64 `json:"total_ms,omitempty"`
+	GuardMS       *float64 `json:"guard_check_ms,omitempty"`
+	ManagedCallMS *float64 `json:"managed_call_ms,omitempty"`
+	RevalidateMS  *float64 `json:"guard_revalidate_ms,omitempty"`
+	started       time.Time
 }
 
 func nativeMS(duration time.Duration) float64 {
@@ -72,7 +63,7 @@ func (m *nativeModelTimings) event(_ context.Context, event agent.AgentEvent) er
 	case agent.EventTypeToolExecutionStart:
 		name := "unregistered"
 		switch event.ToolCall.Name {
-		case "desktop_apps", "desktop_observe", "desktop_act":
+		case "skill", "tool_search", "tool_result_read":
 			name = event.ToolCall.Name
 		}
 		m.active = &nativeModelToolTiming{Sequence: len(m.Tools) + 1, Request: len(m.Requests), Name: name, started: time.Now()}
@@ -131,16 +122,8 @@ func (m *nativeModelTimings) verify(t *testing.T, requests, tools int) {
 		if call.Sequence != i+1 || call.Request < 1 || call.Request > requests || call.TotalMS == nil || call.GuardMS == nil || *call.GuardMS < 0 || *call.GuardMS > *call.TotalMS {
 			t.Fatal("missing tool/Guard timing or invalid boundaries")
 		}
-		if call.Action != nil {
-			action := call.Action
-			localMS := *call.GuardMS
-			if call.RevalidateMS != nil {
-				localMS += *call.RevalidateMS
-			}
-			if action.TotalMS <= 0 || action.TotalMS+localMS > *call.TotalMS || action.QueueMS+action.DriverMS+action.ConditionWaitMS+action.ObservationMS > action.TotalMS {
-				t.Fatal("native action phase timings exceed their owning operation")
-			}
-			t.Logf("tool=%d action=%s total_ms=%.3f guard_ms=%.3f queue_ms=%.3f driver_ms=%.3f wait_ms=%.3f observation_ms=%.3f", call.Sequence, action.Kind, *call.TotalMS, *call.GuardMS, action.QueueMS, action.DriverMS, action.ConditionWaitMS, action.ObservationMS)
+		if call.ManagedCallMS != nil && (*call.ManagedCallMS < 0 || *call.ManagedCallMS > *call.TotalMS) {
+			t.Fatal("managed backend timing exceeds tool duration")
 		}
 	}
 }
@@ -150,7 +133,7 @@ func (m *nativeModelTimings) verify(t *testing.T, requests, tools int) {
 func TestNativeModelTimingStreamPreservesProtocol(t *testing.T) {
 	t.Parallel()
 	for _, terminal := range []bool{false, true} {
-		events := []llm.Event{{Type: llm.EventTypeStart}, {Type: llm.EventTypeToolCallEnd, ToolCall: &llm.ToolCall{ID: "synthetic", Name: "desktop_apps"}}}
+		events := []llm.Event{{Type: llm.EventTypeStart}, {Type: llm.EventTypeToolCallEnd, ToolCall: &llm.ToolCall{ID: "synthetic", Name: "tool_search"}}}
 		if terminal {
 			events = append(events, llm.Event{Type: llm.EventTypeDone})
 		}

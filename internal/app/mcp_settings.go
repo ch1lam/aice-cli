@@ -35,7 +35,7 @@ func (s *interactiveSession) runMCPSettings(ctx context.Context, revision *uint6
 	if !mcpActionKnown(op.Action) {
 		return result, fmt.Errorf("unknown MCP action; use /mcp to choose an action")
 	}
-	shared := op.Action != "status" && op.Action != "deny"
+	shared := op.Action != "status" && op.Action != "deny" && op.Action != "desktop"
 	if err := s.beginSettingsOperation(revision, shared); err != nil {
 		return result, err
 	}
@@ -45,6 +45,14 @@ func (s *interactiveSession) runMCPSettings(ctx context.Context, revision *uint6
 		result.Revision, warnings = s.endSettingsOperation(changed)
 		result.Warnings = append(result.Warnings, warnings...)
 	}()
+	if op.Action == "desktop" {
+		if op.Key != "" {
+			return result, fmt.Errorf("usage: /mcp desktop")
+		}
+		result.FocusSetting = "desktop_enabled"
+		result.Output = "Computer Use is managed in /desktop."
+		return result, nil
+	}
 	s.stateMu.RLock()
 	current, owner := s.configuration, s.mcp
 	s.stateMu.RUnlock()
@@ -88,6 +96,7 @@ func (s *interactiveSession) runMCPSettings(ctx context.Context, revision *uint6
 		result.Output = "MCP " + op.Action + " completed.\n" + result.Output
 	}
 	if op.Action == "status" || op.Action == "connect" || op.Action == "reconnect" || op.Action == "permissions" {
+		s.applyMCPLoadedTools(managed.Services)
 		result.Output = strings.TrimSpace(result.Output + "\n" + formatMCPStatus(managed.Services))
 	}
 	if op.Action == "permissions" {
@@ -118,6 +127,10 @@ func (s *interactiveSession) publishMCPConfiguration(next config.Config) error {
 	if closeErr := old.Close(); closeErr != nil {
 		s.settingsWarning(fmt.Errorf("owned MCP connection cleanup failed"))
 	}
+	// This replacement may include narrower global MCP restrictions. Invalidate
+	// the separately owned Computer Use binding even when preparation failed;
+	// a saved policy must not leave the previous managed authority executable.
+	s.desktop.invalidateManagedCatalog(s.guard)
 	if err == nil && (s.guard == nil || s.guardAdapter == nil) {
 		err = fmt.Errorf("MCP Guard is unavailable")
 	}
@@ -128,11 +141,11 @@ func (s *interactiveSession) publishMCPConfiguration(next config.Config) error {
 				s.guard.RemoveMCPService(server.Source.Kind+":"+server.Source.Location, server.ID)
 			}
 		}
-		var open mcpOpenFunc
 		if s.application != nil {
-			open = s.application.dependencies.openMCP
+			owner, err = s.application.newConfiguredMCPOwner(next, s.guard, s.guardAdapter.yolo)
+		} else {
+			err = fmt.Errorf("MCP application is unavailable")
 		}
-		owner, err = newMCPOwner(next.MCP, s.guard, s.guardAdapter.yolo, open, mcpOAuthRefresh(next.Paths))
 	}
 	s.stateMu.Lock()
 	s.configuration = next
@@ -158,12 +171,22 @@ func formatMCPStatus(services []interaction.MCPService) string {
 	}
 	var b strings.Builder
 	for _, service := range services {
+		loaded := "Loaded tools: 0 (no active main Run)\n"
+		if service.RunActive {
+			loaded = fmt.Sprintf("Loaded tools: %d (latest model request in current Run)\n", service.LoadedTools)
+		}
+		if service.Managed {
+			fmt.Fprintf(&b, "%s · %s · controlled by Computer Use\n%s\n", service.Key, service.State, service.Detail)
+			b.WriteString(loaded)
+			continue
+		}
 		fmt.Fprintf(&b, "%s · %s · connection %s\nSource: %s\nFingerprint: %s\n", service.Key, service.State, service.Approval, service.Source, service.Fingerprint)
 		if service.CatalogKnown {
 			fmt.Fprintf(&b, "Tools: %d discovered, %d eligible\n", service.ToolCount, service.EligibleTools)
 		} else {
 			b.WriteString("Tools: catalog not currently known\n")
 		}
+		b.WriteString(loaded)
 		fmt.Fprintf(&b, "Permission scope: %s\n", service.PermissionScope)
 		if len(service.Permissions) > 0 {
 			fmt.Fprintf(&b, "Saved rule binding: %s · %s\n", service.SavedPermissionFingerprint, service.SavedPermissionScope)
@@ -178,6 +201,6 @@ func formatMCPStatus(services []interaction.MCPService) string {
 			b.WriteString(service.Detail + "\n")
 		}
 	}
-	b.WriteString("Tool selection belongs to each run; a ready connection does not grant tool execution permission.")
+	b.WriteString("Loaded counts describe the latest request; revocation still blocks execution immediately. A ready connection does not grant tool execution permission.")
 	return b.String()
 }

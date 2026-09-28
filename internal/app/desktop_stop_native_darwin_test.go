@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -21,6 +22,7 @@ import (
 	"github.com/ch1lam/aice-cli/internal/deps"
 	"github.com/ch1lam/aice-cli/internal/desktop"
 	"github.com/ch1lam/aice-cli/internal/llm"
+	"github.com/ch1lam/aice-cli/internal/mcpclient"
 	"github.com/ch1lam/aice-cli/internal/session"
 	"github.com/ch1lam/aice-cli/internal/tool"
 )
@@ -60,10 +62,7 @@ func testNativeMacDesktopStopTUI(t *testing.T, mutation bool) {
 	target := startMacPrintFixture(t, ctx, buildMacPrintFixture(t, ctx), "Stop", false)
 	paths := authTestPaths(t)
 	writeConfigFixture(t, paths.GlobalSettings, `{"provider":"custom","model":"synthetic","desktop_enabled":true,"desktop_control_mode":"background_only"}`)
-	model := &nativeStopModel{target: target, mutation: mutation}
-	if mutation {
-		model.ready, model.release = make(chan struct{}), make(chan struct{})
-	}
+	model := &nativeStopModel{target: target, mutation: mutation, ready: make(chan struct{}), release: make(chan struct{}), names: make(map[string]string)}
 	backend := &nativeStopBackend{mutation: mutation, started: make(chan struct{}), finished: make(chan nativeStopCompletion, 1)}
 	closed := make(chan error, 1)
 	var binds, closes atomic.Int32
@@ -77,7 +76,7 @@ func testNativeMacDesktopStopTUI(t *testing.T, mutation bool) {
 				return nil, err
 			}
 			bind := state.bind
-			state.bind = func(ctx context.Context, options desktop.RunOptions) (tool.DesktopBackend, func() error, error) {
+			state.bind = func(ctx context.Context, options desktop.RunOptions) (managedDesktopRun, func() error, error) {
 				if binds.Add(1) != 1 {
 					return nil, nil, errors.New("unexpected additional run binding")
 				}
@@ -85,7 +84,7 @@ func testNativeMacDesktopStopTUI(t *testing.T, mutation bool) {
 				if err != nil {
 					return nil, nil, err
 				}
-				backend.DesktopBackend = run
+				backend.managedDesktopRun = run
 				return backend, func() error {
 					wasCancelled := errors.Is(ctx.Err(), context.Canceled)
 					err := closeRun()
@@ -156,61 +155,51 @@ func testNativeMacDesktopStopTUI(t *testing.T, mutation bool) {
 	send("")
 	waitFor("AICE")
 	send("Perform the synthetic Stop acceptance task.\r")
+	// Open Settings while the scripted model is between native operations.
+	select {
+	case <-model.ready:
+	case <-ctx.Done():
+		t.Fatal("model did not receive native observation")
+	}
+	send("/desktop\r")
+	waitFor("Stop current run")
+	// Esc only closes Settings, without cancelling the active model/Run.
+	send("\x1b")
+	send("/desktop\r")
+	waitFor("Stop current run")
+	close(model.release)
 	if mutation {
-		// Hold only the scripted model's next decision while opening Settings.
-		// Once released, native input and its response run without intervention.
+		awaitNativePrintState(t, ctx, target, func(s nativePrintState) bool { return s.Commits == 1 && s.Result == "Result: AICE-314" })
 		select {
-		case <-model.ready:
-		case <-ctx.Done():
-			t.Fatal("model did not receive the native observation")
+		case <-backend.finished:
+			t.Fatal("native mutation ended before explicit Stop")
+		default:
 		}
-		send("/desktop\r")
-		waitFor("Stop current run")
-		close(model.release)
-		awaitNativePrintState(t, ctx, target, func(s nativePrintState) bool {
-			return s.Commits == 1 && s.Result == "Result: AICE-314"
-		})
 	} else {
-		waitFor("· Waiting")
 		select {
 		case <-backend.started:
 		case <-ctx.Done():
-			t.Fatal("native wait did not start")
+			t.Fatal("explicit native read polling did not start")
 		}
-		send("/desktop\r")
-		waitFor("Stop current run")
-		// Esc must only close Settings; the native wait must remain pending.
-		send("\x1b")
-		waitFor("· Waiting")
-		send("/desktop\r")
-		waitFor("Stop current run")
 	}
-	select {
-	case <-backend.finished:
-		t.Fatal("native action ended before explicit Stop")
-	default:
-	}
+
 	started := time.Now()
 	send("\x1b[17~") // Settings-local F6 activates Stop current run.
 	send("\x1b")
 	waitFor("Response cancelled")
 	elapsed := time.Since(started)
 	var completed nativeStopCompletion
-	select {
-	case completed = <-backend.finished:
-		if !errors.Is(completed.ctxErr, context.Canceled) {
-			t.Fatal("native action did not settle under cancellation", completed.ctxErr)
-		}
-		if mutation {
-			if !completed.result.Dispatched || completed.result.Outcome != "unknown" || completed.result.Observation != nil {
-				t.Fatalf("in-flight native mutation precondition/result not established: dispatched=%v outcome=%s", completed.result.Dispatched, completed.result.Outcome)
+	if mutation {
+		select {
+		case completed = <-backend.finished:
+			if !errors.Is(completed.ctxErr, context.Canceled) || completed.result.State != llm.ExecutionUnknown {
+				t.Fatal("native mutation did not settle with unknown outcome under cancellation", completed.ctxErr, completed.result.State)
 			}
-		} else if completed.result.Dispatched || completed.result.Timing.ConditionWait <= 0 {
-			t.Fatalf("native wait did not poll before Stop: dispatched=%v polling=%s", completed.result.Dispatched, completed.result.Timing.ConditionWait)
+		case <-ctx.Done():
+			t.Fatal("native mutation did not settle")
 		}
-	case <-ctx.Done():
-		t.Fatal("native action did not settle")
 	}
+
 	select {
 	case err := <-closed:
 		if err != nil {
@@ -219,7 +208,7 @@ func testNativeMacDesktopStopTUI(t *testing.T, mutation bool) {
 	case <-ctx.Done():
 		t.Fatal("run did not close")
 	}
-	if elapsed > 5*time.Second || binds.Load() != 1 || closes.Load() != 1 || backend.calls.Load() != 1 || model.requests.Load() != 3 {
+	if elapsed > 5*time.Second || binds.Load() != 1 || closes.Load() != 1 || mutation && (backend.calls.Load() != 1 || model.requests.Load() != int32(4+model.readback.calls)) || !mutation && backend.calls.Load() != 0 {
 		t.Fatal("Stop was unbounded, duplicated input/cleanup or resumed the model", elapsed, model.requests.Load())
 	}
 	configuration, err := config.LoadFiles(paths, config.LoadOptions{})
@@ -238,102 +227,161 @@ func testNativeMacDesktopStopTUI(t *testing.T, mutation bool) {
 	state := awaitNativePrintState(t, ctx, target, func(nativePrintState) bool { return true })
 	state = awaitNativePrintState(t, ctx, target, func(s nativePrintState) bool { return s.Ticks > state.Ticks+3 })
 	wantCommits, wantResult := 0, "Result: pending"
-	var retained *desktop.ActResult
+	var retained *mcpclient.Result
 	if mutation {
 		wantCommits, wantResult, retained = 1, "Result: AICE-314", &completed.result
 	}
 	if state.Commits != wantCommits || state.Value != "AICE-314" || state.Result != wantResult {
 		t.Fatal("Stop task lost/replayed input or altered unrelated synthetic controls")
 	}
-	verifyNativeStopSession(t, ctx, sessionPath, retained)
+	verifyNativeStopSession(t, ctx, sessionPath, retained, model.readback.calls)
 	if report, err := desktop.Inspect(ctx, installed.Installation.Binary, endpoint); err != nil || !report.ConnectionVerified {
 		t.Fatal("Stop or command cleanup stopped shared service", err)
 	}
-	t.Logf("native Settings Stop: cancellation visible in %s, mutation=%v outcome=%s commits=%d, one native action, one cancelled binding cleanup, three model requests, complete Session tool pairs, shared service preserved", elapsed, mutation, completed.result.Outcome, state.Commits)
+	t.Logf("native Settings Stop: cancellation visible in %s, mutation=%v outcome=%s commits=%d, cancelled binding cleanup, complete model tool pairing, complete Session tool pairs, shared service preserved", elapsed, mutation, completed.result.State, state.Commits)
 }
 
 const nativeStopCondition = "AICE private impossible Stop condition"
 
 type nativeStopCompletion struct {
-	result desktop.ActResult
+	result mcpclient.Result
 	ctxErr error
 }
-
 type nativeStopBackend struct {
-	tool.DesktopBackend
-	mutation bool
-	started  chan struct{}
-	finished chan nativeStopCompletion
-	calls    atomic.Int32
+	managedDesktopRun
+	mutation     bool
+	started      chan struct{}
+	finished     chan nativeStopCompletion
+	calls, reads atomic.Int32
 }
 
-func (b *nativeStopBackend) Act(ctx context.Context, request desktop.ActRequest) (desktop.ActResult, error) {
-	want := "wait"
-	if b.mutation {
-		want = "click"
+func (b *nativeStopBackend) CallChecked(ctx context.Context, name string, args json.RawMessage, check func(context.Context) error) (mcpclient.Result, error) {
+	if name == "get_window_state" && b.reads.Add(1) == 2 && !b.mutation {
+		close(b.started)
 	}
-	if b.calls.Add(1) != 1 || request.Kind != want {
-		return desktop.ActResult{}, errors.New("unexpected native action")
+	if name != "click" {
+		return b.managedDesktopRun.CallChecked(ctx, name, args, check)
+	}
+	if !b.mutation || b.calls.Add(1) != 1 {
+		return mcpclient.Result{State: llm.ExecutionNotDispatched}, errors.New("unexpected native mutation")
 	}
 	close(b.started)
-	result, err := b.DesktopBackend.Act(ctx, request)
+	result, err := b.managedDesktopRun.CallChecked(ctx, name, args, check)
 	b.finished <- nativeStopCompletion{result: result, ctxErr: ctx.Err()}
 	return result, err
 }
 
 type nativeStopModel struct {
+	readback       nativeManagedReadback
+	step           int
 	mutation       bool
 	ready, release chan struct{}
 	target         nativePrintFixture
 	requests       atomic.Int32
+	names          map[string]string
+	window         uint64
 }
 
 func (m *nativeStopModel) Stream(ctx context.Context, request llm.Request) (llm.Stream, error) {
-	step := m.requests.Add(1) - 1
-	call := func(name string, arguments any) (llm.Stream, error) {
-		data, err := json.Marshal(arguments)
+	m.requests.Add(1)
+	step := m.step
+	if step > 0 {
+		last, ok := request.Messages[len(request.Messages)-1].(llm.ToolResultMessage)
+		if !ok {
+			return nil, errors.New("missing Stop result")
+		}
+		result, stream, err := m.readback.consume(request.Model, last)
+		if stream != nil || err != nil {
+			return stream, err
+		}
+		request.Messages = append([]llm.Message(nil), request.Messages...)
+		request.Messages[len(request.Messages)-1] = result
+	}
+	m.step++
+	call := func(name string, args any) (llm.Stream, error) {
+		raw, err := json.Marshal(args)
 		if err != nil {
 			return nil, err
 		}
-		return toolCallEventStream(request.Model, llm.ToolCall{ID: fmt.Sprintf("stop-%d", step), Name: name, Arguments: data}), nil
+		return toolCallEventStream(request.Model, llm.ToolCall{ID: fmt.Sprintf("stop-%d", step), Name: name, Arguments: raw}), nil
 	}
 	if step == 0 {
-		return call("desktop_apps", map[string]any{"query": m.target.name, "limit": 16})
+		return call("tool_search", tool.ToolSearchRequest{Service: managedCUAKey, IDs: []string{mcpToolID(managedCUAKey, "list_windows"), mcpToolID(managedCUAKey, "get_window_state"), mcpToolID(managedCUAKey, "click")}, Limit: 3})
 	}
 	result, ok := request.Messages[len(request.Messages)-1].(llm.ToolResultMessage)
-	if !ok || result.IsError || result.ToolCallID != fmt.Sprintf("stop-%d", step-1) || len(result.Content) == 0 || result.Content[0].Type != llm.ContentTypeText {
-		return nil, errors.New("native Stop sequence received an invalid result")
+	if !ok || result.IsError || result.ToolCallID != fmt.Sprintf("stop-%d", step-1) {
+		return nil, errors.New("invalid Stop tool result")
 	}
-	switch step {
-	case 1:
-		var discovery desktop.Discovery
-		if err := json.Unmarshal([]byte(result.Content[0].Text), &discovery); err != nil {
-			return nil, err
+	if step == 1 {
+		var found tool.ToolSearchResult
+		if len(result.Content) == 0 || json.Unmarshal([]byte(result.Content[0].Text), &found) != nil {
+			return nil, errors.New("missing Stop discovery")
 		}
-		ref := ""
-		for _, window := range discovery.Windows {
+		for _, entry := range found.Entries {
+			m.names[strings.TrimPrefix(entry.ID, managedCUAKey+"/tool/")] = entry.Name
+		}
+		if len(m.names) != 3 {
+			return nil, errors.New("missing selected Stop tools")
+		}
+		return call(m.names["list_windows"], map[string]any{"pid": m.target.pid})
+	}
+	if result.Details == nil || result.Details.Binding == nil || result.Details.Binding.Source != "managed:computer-use" || result.Details.State != llm.ExecutionReturned {
+		return nil, errors.New("missing Stop native provenance")
+	}
+	if step == 2 {
+		var found struct {
+			Windows []struct {
+				PID    int    `json:"pid"`
+				Window uint64 `json:"window_id"`
+				Title  string `json:"title"`
+			} `json:"windows"`
+		}
+		if json.Unmarshal(nativeManagedJSON(result), &found) != nil {
+			return nil, errors.New("invalid Stop windows")
+		}
+		for _, window := range found.Windows {
 			if window.PID == m.target.pid && window.Title == m.target.name {
-				if ref != "" {
-					return nil, errors.New("ambiguous Stop target")
+				if m.window != 0 {
+					return nil, errors.New("ambiguous Stop window")
 				}
-				ref = window.Ref
+				m.window = window.Window
 			}
 		}
-		if ref == "" {
-			return nil, errors.New("exact Stop target missing")
+		if m.window == 0 {
+			return nil, errors.New("missing exact Stop window")
 		}
-		return call("desktop_observe", desktop.ObserveRequest{TargetRef: ref, Screenshot: true})
-	case 2:
-		var observation desktop.Observation
-		if err := json.Unmarshal([]byte(result.Content[0].Text), &observation); err != nil {
-			return nil, err
+		return call(m.names["get_window_state"], map[string]any{"pid": m.target.pid, "window_id": m.window, "include_screenshot": true})
+	}
+	if step > 3 && m.mutation {
+		return nil, errors.New("model resumed after native mutation")
+	}
+	var observed struct {
+		PID      int               `json:"pid"`
+		Window   uint64            `json:"window_id"`
+		Elements []desktop.Element `json:"elements"`
+	}
+	if json.Unmarshal(nativeManagedJSON(result), &observed) != nil || observed.PID != m.target.pid || observed.Window != m.window {
+		return nil, errors.New("invalid Stop observation")
+	}
+	if step == 3 {
+		images := 0
+		for _, part := range result.Content {
+			if part.Image != nil {
+				images++
+			}
 		}
-		if observation.Ref == "" || observation.Degraded || len(result.Content) != 2 || result.Content[1].Image == nil {
-			return nil, errors.New("native Stop observation or capture missing")
+		if images != 1 {
+			return nil, errors.New("missing initial Stop image")
+		}
+		close(m.ready)
+		select {
+		case <-m.release:
+		case <-ctx.Done():
+			return nil, ctx.Err()
 		}
 		if m.mutation {
 			token := ""
-			for _, element := range observation.Elements {
+			for _, element := range observed.Elements {
 				if element.Label == "Commit" && element.Role == "AXButton" && element.Token != "" {
 					if token != "" {
 						return nil, errors.New("ambiguous Stop button")
@@ -342,23 +390,23 @@ func (m *nativeStopModel) Stream(ctx context.Context, request llm.Request) (llm.
 				}
 			}
 			if token == "" {
-				return nil, errors.New("exact Stop button missing")
+				return nil, errors.New("missing exact Stop button")
 			}
-			close(m.ready)
-			select {
-			case <-m.release:
-			case <-ctx.Done():
-				return nil, ctx.Err()
-			}
-			return call("desktop_act", desktop.ActRequest{Kind: "click", ObservationRef: observation.Ref, ElementToken: token, Screenshot: true})
+			return call(m.names["click"], map[string]any{"pid": m.target.pid, "window_id": m.window, "element_token": token})
 		}
-		return call("desktop_act", desktop.ActRequest{Kind: "wait", ObservationRef: observation.Ref, Wait: &desktop.WaitCondition{Text: nativeStopCondition, TimeoutMS: 10000}})
-	default:
-		return nil, errors.New("model unexpectedly resumed after native Stop action")
 	}
+	// Waiting is now model-owned read polling, not a typed wait action.
+	timer := time.NewTimer(200 * time.Millisecond)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	return call(m.names["get_window_state"], map[string]any{"pid": m.target.pid, "window_id": m.window, "include_screenshot": false, "query": nativeStopCondition})
 }
 
-func verifyNativeStopSession(t *testing.T, ctx context.Context, path string, retained *desktop.ActResult) {
+func verifyNativeStopSession(t *testing.T, ctx context.Context, path string, retained *mcpclient.Result, readbacks int) {
 	t.Helper()
 	store, err := session.Open(ctx, path)
 	if err != nil {
@@ -390,15 +438,31 @@ func verifyNativeStopSession(t *testing.T, ctx context.Context, path string, ret
 			}
 			delete(pending, message.ToolCallID)
 			results++
-			if message.ToolName == "desktop_act" {
+			if managedDesktopOperation(message.ToolName) == "click" {
 				if !message.IsError {
 					t.Fatal("cancelled native action was recorded as successful")
 				}
 				if retained != nil {
-					want, err := json.Marshal(retained)
-					if err != nil || len(message.Content) != 1 || message.Content[0].Type != llm.ContentTypeText || message.Content[0].Text != string(want) {
-						t.Fatal("Session did not retain the exact unknown native dispatch result", err)
+					if message.Details == nil || message.Details.State != retained.State || !reflect.DeepEqual(message.Details.StructuredContent, retained.StructuredContent) {
+						t.Fatal("Session lost unknown native dispatch provenance")
 					}
+					mapped, err := tool.NewMCP(tool.MCPOptions{Definition: llm.ToolDefinition{Name: message.ToolName, Description: "retained native result", InputSchema: []byte(`{"type":"object"}`)}, Binding: *message.Details.Binding, Backend: nativeStopRetainedResult{*retained}})
+					if err != nil {
+						t.Fatal(err)
+					}
+					value, err := mapped.Execute(ctx, llm.ToolCall{ID: message.ToolCallID, Name: message.ToolName, Arguments: []byte(`{}`)})
+					if err != nil {
+						t.Fatal(err)
+					}
+					expected, err := llm.NewToolResultMessage(value)
+					if err != nil {
+						t.Fatal(err)
+					}
+					expected.Timestamp = message.Timestamp
+					if !reflect.DeepEqual(message, expected) {
+						t.Fatal("Session changed the mapped unknown native result")
+					}
+
 				}
 			}
 			for _, part := range message.Content {
@@ -408,7 +472,15 @@ func verifyNativeStopSession(t *testing.T, ctx context.Context, path string, ret
 			}
 		}
 	}
-	if len(pending) != 0 || results != 3 || captures != 1 || snapshot.LeafID != parent {
-		t.Fatal("Stop did not retain three complete tool pairs and the native capture", results, captures)
+	if len(pending) != 0 || results < 3 || retained != nil && results != 4+readbacks || captures != 1 || snapshot.LeafID != parent {
+		t.Fatal("Stop did not retain complete tool pairs and the native capture", results, captures)
 	}
+}
+
+// Reconstruct the expected generic projection from the retained native result,
+// without contacting the Driver or replaying input.
+type nativeStopRetainedResult struct{ result mcpclient.Result }
+
+func (b nativeStopRetainedResult) Call(context.Context, string, json.RawMessage) (mcpclient.Result, error) {
+	return b.result, context.Canceled
 }

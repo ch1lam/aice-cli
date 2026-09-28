@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"path/filepath"
 	"runtime"
@@ -21,7 +22,7 @@ import (
 // Settings candidates and tools reuse this owner; each active run freezes its
 // own mode, image capability, native session and cancellation in bindContext.
 type desktopState struct {
-	bind           func(context.Context, desktop.RunOptions) (tool.DesktopBackend, func() error, error)
+	bind           func(context.Context, desktop.RunOptions) (managedDesktopRun, func() error, error)
 	close          func() error
 	status         func() desktop.Status
 	installOptions deps.Options
@@ -30,6 +31,13 @@ type desktopState struct {
 	inspect        func(context.Context) (desktop.Inspection, error)
 	healthMu       sync.Mutex
 	setupCaptureAt time.Time
+
+	// managedMu serializes local catalog construction with idle Settings
+	// publication. The identity lasts across Runs, but never across a policy
+	// replacement or Manager lifetime. No native work runs under this lock.
+	managedMu       sync.Mutex
+	managedIdentity string
+	managedClosed   bool
 }
 
 func (a *application) newDesktopState(configuration config.Config) (*desktopState, error) {
@@ -76,7 +84,7 @@ func (a *application) newDesktopState(configuration config.Config) (*desktopStat
 			}
 			return desktop.Setup(ctx, binary, desktopServiceEndpoint(home), options)
 		},
-		bind: func(ctx context.Context, options desktop.RunOptions) (tool.DesktopBackend, func() error, error) {
+		bind: func(ctx context.Context, options desktop.RunOptions) (managedDesktopRun, func() error, error) {
 			run, err := manager.Bind(ctx, options)
 			if err != nil {
 				return nil, nil, err
@@ -88,17 +96,29 @@ func (a *application) newDesktopState(configuration config.Config) (*desktopStat
 
 type desktopContextKey struct{}
 type desktopRunBinding struct {
-	owner   *desktopState
-	backend tool.DesktopBackend
+	owner           *desktopState
+	backend         managedDesktopRun
+	managedIdentity string
 }
 
 func (d *desktopState) bindContext(ctx context.Context, configuration config.Config, model llm.Model) (context.Context, func() error, error) {
 	if !configuration.DesktopEnabled {
-		return ctx, func() error { return nil }, nil
+		// A disabled child Run cannot inherit an earlier enabled capability.
+		return context.WithValue(ctx, desktopContextKey{}, desktopRunBinding{}), func() error { return nil }, nil
 	}
 	if d == nil || d.bind == nil {
 		return ctx, nil, errors.New("app: Computer Use runtime is unavailable")
 	}
+	d.managedMu.Lock()
+	if d.managedClosed {
+		d.managedMu.Unlock()
+		return ctx, nil, errors.New("app: Computer Use runtime is closed")
+	}
+	if d.managedIdentity == "" {
+		d.managedIdentity = rand.Text()
+	}
+	identity := d.managedIdentity
+	d.managedMu.Unlock()
 	mode := desktop.ControlMode(configuration.DesktopControlMode)
 	if mode == "" {
 		mode = desktop.BackgroundOnly
@@ -120,10 +140,10 @@ func (d *desktopState) bindContext(ctx context.Context, configuration config.Con
 		cancel()
 		return closeRun()
 	})
-	return context.WithValue(runCtx, desktopContextKey{}, desktopRunBinding{owner: d, backend: backend}), closeBinding, nil
+	return context.WithValue(runCtx, desktopContextKey{}, desktopRunBinding{owner: d, backend: backend, managedIdentity: identity}), closeBinding, nil
 }
 
-func (d *desktopState) bound(ctx context.Context) (tool.DesktopBackend, error) {
+func (d *desktopState) bound(ctx context.Context) (managedDesktopRun, error) {
 	if ctx == nil {
 		return nil, errors.New("app: Computer Use context is required")
 	}
@@ -137,29 +157,15 @@ func (d *desktopState) bound(ctx context.Context) (tool.DesktopBackend, error) {
 	return binding.backend, nil
 }
 
-func (d *desktopState) Apps(ctx context.Context, query string, limit int) (desktop.Discovery, error) {
-	run, err := d.bound(ctx)
-	if err != nil {
-		return desktop.Discovery{}, err
-	}
-	return run.Apps(ctx, query, limit)
-}
-func (d *desktopState) Observe(ctx context.Context, request desktop.ObserveRequest) (desktop.Observation, error) {
-	run, err := d.bound(ctx)
-	if err != nil {
-		return desktop.Observation{}, err
-	}
-	return run.Observe(ctx, request)
-}
-func (d *desktopState) Act(ctx context.Context, request desktop.ActRequest) (desktop.ActResult, error) {
-	run, err := d.bound(ctx)
-	if err != nil {
-		return desktop.ActResult{}, err
-	}
-	return run.Act(ctx, request)
-}
 func (d *desktopState) Close() error {
-	if d == nil || d.close == nil {
+	if d == nil {
+		return nil
+	}
+	d.managedMu.Lock()
+	d.managedClosed = true
+	d.managedIdentity = ""
+	d.managedMu.Unlock()
+	if d.close == nil {
 		return nil
 	}
 	return d.close()
@@ -174,7 +180,7 @@ func composeTools(base []agent.Tool, web webState, desktopState *desktopState, c
 		return nil, err
 	}
 	result = append(result, readResult)
-	if len(configuration.MCP.Servers) > 0 {
+	if len(configuration.MCP.Servers) > 0 || configuration.DesktopEnabled {
 		search, err := tool.NewToolSearch(mcpRunRouter{})
 		if err != nil {
 			return nil, err
@@ -195,20 +201,17 @@ func composeTools(base []agent.Tool, web webState, desktopState *desktopState, c
 		if desktopState == nil {
 			return nil, errors.New("app: Computer Use owner is missing")
 		}
-		tools, err := tool.NewDesktopTools(desktopState)
-		if err != nil {
-			return nil, err
-		}
-		for _, t := range tools {
-			result = append(result, t)
-		}
 	}
 	return result, nil
 }
 
 // Match the pinned release namespace without consulting PATH or project input.
 func desktopServiceEndpoint(home string) string {
-	switch runtime.GOOS {
+	return desktopServiceEndpointFor(home, runtime.GOOS)
+}
+
+func desktopServiceEndpointFor(home, goos string) string {
+	switch goos {
 	case "darwin":
 		return filepath.Join(home, "Library", "Caches", "cua-driver", "cua-driver.sock")
 	case "linux":

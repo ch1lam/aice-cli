@@ -2,7 +2,6 @@ package desktop
 
 import (
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -56,23 +55,23 @@ func TestLinuxRuntimeOwnedProcessHasFixedAuthorityAndNoDaemon(t *testing.T) {
 	t.Setenv("LD_PRELOAD", "/synthetic/loader")
 	t.Setenv("XDG_DATA_HOME", "/synthetic/applications")
 	binary := filepath.Join(t.TempDir(), "driver")
-	transport, err := newLinuxOwnedTransport(binary)
+	transport, err := newLinuxOwnedConfig(binary)
 	if err != nil {
 		t.Fatal(err)
 	}
-	cmd := transport.command
-	if !slices.Equal(cmd.Args, []string{binary, "mcp", "--direct"}) || cmd.Dir != filepath.Dir(binary) || cmd.Stderr != io.Discard {
+	cmd := transport.Stdio
+	if cmd.Executable != binary || !slices.Equal(cmd.Args, []string{"mcp", "--direct"}) || cmd.Dir != filepath.Dir(binary) || !cmd.ReplaceEnvironment {
 		t.Fatal("unexpected owned process configuration")
 	}
-	for _, entry := range cmd.Env {
-		if strings.HasPrefix(entry, "OPENAI_API_KEY=") || strings.HasPrefix(entry, "LD_PRELOAD=") || strings.HasPrefix(entry, "CUA_DRIVER_HOST_BUNDLE_ID=") || entry == "CUA_DRIVER_PERMISSION_MODE=unrestricted" {
+	for key, value := range cmd.Env {
+		if key == "OPENAI_API_KEY" || key == "LD_PRELOAD" || key == "CUA_DRIVER_HOST_BUNDLE_ID" || (key == "CUA_DRIVER_PERMISSION_MODE" && value == "unrestricted") {
 			t.Fatal("owned process inherited forbidden environment")
 		}
 	}
-	if !slices.Contains(cmd.Env, "CUA_DRIVER_PERMISSION_MODE=standard") || !slices.Contains(cmd.Env, "XDG_DATA_HOME=/synthetic/applications") {
+	if cmd.Env["CUA_DRIVER_PERMISSION_MODE"] != "standard" || cmd.Env["XDG_DATA_HOME"] != "/synthetic/applications" {
 		t.Fatal("owned process lost fixed mode or launcher environment")
 	}
-	if _, err := newLinuxOwnedTransport("relative-driver"); err == nil {
+	if _, err := newLinuxOwnedConfig("relative-driver"); err == nil {
 		t.Fatal("relative executable accepted")
 	}
 }

@@ -11,13 +11,12 @@ import (
 	"github.com/ch1lam/aice-cli/internal/desktop"
 	"github.com/ch1lam/aice-cli/internal/interaction"
 	"github.com/ch1lam/aice-cli/internal/llm"
-	"github.com/ch1lam/aice-cli/internal/tool"
 )
 
 func desktopContinuationFixture(t *testing.T) (*interactiveSession, *recordingModel, *interaction.TaskContinuation) {
 	t.Helper()
 	s := desktopSettingsSession(t)
-	s.desktop.bind = func(ctx context.Context, _ desktop.RunOptions) (tool.DesktopBackend, func() error, error) {
+	s.desktop.bind = func(ctx context.Context, _ desktop.RunOptions) (managedDesktopRun, func() error, error) {
 		return &appDesktopBackend{}, func() error { return nil }, nil
 	}
 	model := &recordingModel{response: "continued"}

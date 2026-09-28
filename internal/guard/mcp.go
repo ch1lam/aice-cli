@@ -14,7 +14,8 @@ import (
 // MCPService is a policy snapshot published by the application after binding
 // configuration and a catalog. Neither model arguments nor remote annotations
 // are policy inputs. Publication cannot create user rules or connection approval; UserDecision
-// comes only from an explicit, identity-matched user rule.
+// comes only from an explicit, identity-matched user rule or the application's
+// reviewed managed-CUA policy for the user's frozen Computer Use setting.
 type MCPService struct {
 	Source                string
 	ServiceID             string
@@ -31,7 +32,7 @@ type MCPToolPolicy struct {
 	Name              string
 	SchemaFingerprint string
 	Allowed           bool
-	// UserDecision is empty/ask unless app matched an explicit user rule.
+	// UserDecision is empty/ask unless app matched explicit user authority.
 	UserDecision Decision
 }
 
@@ -169,6 +170,9 @@ func (g *Guard) setMCPService(input MCPService, operation string) error {
 		for name, tool := range next {
 			if old, exists := previous.tools[name]; exists && !old.Allowed && tool.Allowed {
 				return fmt.Errorf("MCP catalog refresh cannot lift a configured tool denial")
+			}
+			if old, exists := previous.tools[name]; exists && old.UserDecision == DecisionDeny && tool.UserDecision != DecisionDeny {
+				return fmt.Errorf("MCP catalog refresh cannot lift an explicit tool denial")
 			}
 		}
 	}

@@ -274,3 +274,45 @@ func TestMCPConcurrentGrantRevokeAndCatalogUpdates(t *testing.T) {
 		t.Fatal("unbounded service storage")
 	}
 }
+
+func TestMCPRefreshCannotReplaceExplicitDeny(t *testing.T) {
+	t.Parallel()
+	for _, operation := range []string{"", llm.OperationResourceRead} {
+		t.Run(operation, func(t *testing.T) {
+			g, _ := New("", Config{})
+			service := mcpPolicyFixture()
+			name := "read"
+			if operation != "" {
+				name = operation
+			}
+			service.Tools = []MCPToolPolicy{{Operation: operation, Name: name, SchemaFingerprint: "schema", Allowed: true, UserDecision: DecisionDeny}}
+			publishMCPPolicy(t, g, service)
+			refresh := g.RefreshMCPTools
+			if operation != "" {
+				refresh = g.RefreshMCPResources
+			}
+			for _, decision := range []Decision{DecisionAsk, DecisionAllow} {
+				service.Tools[0].UserDecision = decision
+				if refresh(service) == nil {
+					t.Fatal("discovery lifted explicit deny")
+				}
+				binding := mcpPolicyBinding(service, name)
+				binding.Operation = operation
+				result, _, err := g.CheckMCP(t.Context(), "mapped", binding, service.PermissionScope)
+				if err != nil || result.Decision != DecisionDeny {
+					t.Fatal("failed refresh changed policy", err)
+				}
+			}
+			// Explicit management still publishes a reviewed policy replacement.
+			if err := g.SetMCPService(service); err != nil {
+				t.Fatal(err)
+			}
+			binding := mcpPolicyBinding(service, name)
+			binding.Operation = operation
+			result, _, err := g.CheckMCP(t.Context(), "mapped", binding, service.PermissionScope)
+			if err != nil || result.Decision != DecisionAllow {
+				t.Fatal("explicit policy replacement failed", err)
+			}
+		})
+	}
+}

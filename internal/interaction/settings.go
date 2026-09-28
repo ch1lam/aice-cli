@@ -151,6 +151,8 @@ type SettingsActionRunner interface {
 // fails. Ready is meaningful only when ReadinessKnown is true; saving a
 // preference does not establish that a native capability is available.
 type SettingsActionResult struct {
+	// FocusSetting is a local application navigation request, never server text.
+	FocusSetting       string
 	Continuation       *TaskContinuation
 	Output             string
 	External           []SettingsActionStep

@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"strings"
@@ -13,10 +14,10 @@ import (
 	"github.com/ch1lam/aice-cli/internal/config"
 	"github.com/ch1lam/aice-cli/internal/desktop"
 	"github.com/ch1lam/aice-cli/internal/llm"
-	"github.com/ch1lam/aice-cli/internal/tool"
+	"github.com/ch1lam/aice-cli/internal/mcpclient"
 )
 
-// Real command -> Loop -> typed tool -> event projection -> Bubble Tea. The
+// Real command -> Loop -> selected MCP tool -> event projection -> Bubble Tea. The
 // only desktop is this synthetic backend; no native helper or model is used.
 func TestDesktopActivityTUI(t *testing.T) {
 	home := t.TempDir()
@@ -29,7 +30,7 @@ func TestDesktopActivityTUI(t *testing.T) {
 		newModel:    func(config.Config) (llm.Streamer, error) { return model, nil },
 		userHomeDir: func() (string, error) { return home, nil },
 		newDesktop: func(config.Config) (*desktopState, error) {
-			return &desktopState{bind: func(context.Context, desktop.RunOptions) (tool.DesktopBackend, func() error, error) {
+			return &desktopState{bind: func(context.Context, desktop.RunOptions) (managedDesktopRun, func() error, error) {
 				return backend, func() error { return nil }, nil
 			}}, nil
 		},
@@ -72,7 +73,7 @@ func TestDesktopActivityTUI(t *testing.T) {
 				send("")
 			case frame := <-output.frames:
 				plain := ansi.Strip(frame)
-				if strings.Contains(plain, "PRIVATE CONDITION") {
+				if strings.Contains(plain, "PRIVATE INPUT") {
 					t.Fatal("folded input leaked into default UI")
 				}
 				recent.WriteString(plain)
@@ -89,9 +90,9 @@ func TestDesktopActivityTUI(t *testing.T) {
 	send("")
 	waitFor("AICE")
 	send("inspect synthetic notes\r")
-	waitFor("Computer Use · Notes · Waiting")
+	waitFor("Computer Use · Background requested")
 	close(backend.release)
-	waitFor("Computer Use · Notes · Planning")
+	waitFor("Computer Use · Planning")
 	send("/desktop\r")
 	waitFor("Stop current run")
 	send("\x1b[17~")
@@ -108,35 +109,36 @@ func TestDesktopActivityTUI(t *testing.T) {
 	}
 }
 
-type activityDesktopBackend struct{ release chan struct{} }
+type activityDesktopBackend struct {
+	appDesktopBackend
+	release chan struct{}
+}
 
-func (*activityDesktopBackend) Apps(context.Context, string, int) (desktop.Discovery, error) {
-	return desktop.Discovery{Windows: []desktop.Window{{Ref: "w", App: "Notes"}}}, nil
+func (*activityDesktopBackend) Tools(context.Context) (mcpclient.Catalog[mcpclient.Tool], error) {
+	definition := catalogFixtureTool("type_text", "Type text in a synthetic window")
+	definition.InputSchema = json.RawMessage(`{"type":"object","properties":{"text":{"type":"string"}},"required":["text"],"additionalProperties":false}`)
+	return mcpclient.Catalog[mcpclient.Tool]{Complete: true, Generation: 1, Items: []mcpclient.Tool{definition}}, nil
 }
-func (*activityDesktopBackend) Observe(context.Context, desktop.ObserveRequest) (desktop.Observation, error) {
-	return desktop.Observation{Ref: "o", TargetRef: "w"}, nil
-}
-func (b *activityDesktopBackend) Act(ctx context.Context, _ desktop.ActRequest) (desktop.ActResult, error) {
+
+func (b *activityDesktopBackend) CallChecked(ctx context.Context, name string, raw json.RawMessage, check func(context.Context) error) (mcpclient.Result, error) {
+	if err := check(ctx); err != nil {
+		return mcpclient.Result{State: llm.ExecutionNotDispatched}, err
+	}
 	select {
 	case <-ctx.Done():
-		return desktop.ActResult{}, ctx.Err()
+		return mcpclient.Result{State: llm.ExecutionUnknown}, ctx.Err()
 	case <-b.release:
-		return desktop.ActResult{Outcome: "returned", WaitState: "satisfied", Observation: &desktop.Observation{Ref: "next", TargetRef: "w"}}, nil
+		return b.appDesktopBackend.CallChecked(ctx, name, raw, check)
 	}
 }
 
-type activityDesktopModel struct{ count int }
+type activityDesktopModel struct{ managedDesktopModel }
 
 func (m *activityDesktopModel) Stream(ctx context.Context, req llm.Request) (llm.Stream, error) {
-	calls := []llm.ToolCall{
-		{ID: "apps", Name: "desktop_apps", Arguments: []byte(`{}`)},
-		{ID: "observe", Name: "desktop_observe", Arguments: []byte(`{"target_ref":"w"}`)},
-		{ID: "act", Name: "desktop_act", Arguments: []byte(`{"action":"wait","observation_ref":"o","wait":{"text":"PRIVATE CONDITION","timeout_ms":1000}}`)},
-	}
-	index := m.count
-	m.count++
-	if index < len(calls) {
-		return toolCallEventStream(req.Model, calls[index]), nil
+	m.operation = "type_text"
+	m.arguments = json.RawMessage(`{"text":"PRIVATE INPUT"}`)
+	if len(m.requests) < 2 {
+		return m.managedDesktopModel.Stream(ctx, req)
 	}
 	return &gatedStream{ctx: ctx, release: make(chan struct{}), prefix: []llm.Event{{Type: llm.EventTypeStart}}}, nil
 }

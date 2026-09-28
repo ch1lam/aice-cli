@@ -65,15 +65,12 @@ func TestNativeCuaProxyRefusesAutolaunch(t *testing.T) {
 	}
 	home := t.TempDir()
 	endpoint := filepath.Join(home, "absent.sock")
-	transport, err := newProcessTransport(binary, endpoint)
+	transport, err := newProxyConfig(binary, endpoint)
 	if err != nil {
 		t.Fatal(err)
 	}
-	transport.command.Env = driverEnvironment([]string{"HOME=" + home, "PATH=/usr/bin:/bin:/usr/sbin:/sbin", "TMPDIR=" + home})
-	// This failure has no desktop content. Inspect only the fixed no-service
-	// diagnostic to distinguish refusal from an unrelated crash or timeout.
-	var diagnostic serviceOutput
-	transport.command.Stderr = &diagnostic
+	transport.Stdio.Env = map[string]string{"HOME": home, "PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "TMPDIR": home,
+		"CUA_DRIVER_RS_TELEMETRY_ENABLED": "false", "CUA_DRIVER_RS_UPDATE_CHECK": "false", "CUA_DRIVER_PERMISSION_MODE": "standard"}
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 	c, err := connect(ctx, transport)
@@ -81,7 +78,17 @@ func TestNativeCuaProxyRefusesAutolaunch(t *testing.T) {
 		_ = c.close()
 		t.Fatal("absent service was connected or launched")
 	}
-	if transport.command.ProcessState == nil || transport.command.ProcessState.ExitCode() != 1 || !strings.Contains(diagnostic.String(), "no Cua Driver daemon listening on") {
+	// Independently check the pinned CLI's refusal diagnostic using exactly the
+	// same executable/arguments. Production transport never exposes stderr.
+	command := exec.CommandContext(ctx, transport.Stdio.Executable, transport.Stdio.Args...)
+	command.Dir = transport.Stdio.Dir
+	command.Env = make([]string, 0, len(transport.Stdio.Env))
+	for key, value := range transport.Stdio.Env {
+		command.Env = append(command.Env, key+"="+value)
+	}
+	var diagnostic serviceOutput
+	command.Stderr = &diagnostic
+	if err := command.Run(); err == nil || command.ProcessState == nil || command.ProcessState.ExitCode() != 1 || !strings.Contains(diagnostic.String(), "no Cua Driver daemon listening on") {
 		t.Fatal("proxy did not report the expected no-autolaunch refusal", err)
 	}
 	if _, err := os.Lstat(endpoint); !os.IsNotExist(err) {

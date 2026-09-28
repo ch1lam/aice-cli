@@ -49,3 +49,36 @@ func TestToolRoundFingerprintIgnoresEvidenceOperationalFields(t *testing.T) {
 		t.Fatal("changed content not detected as progress")
 	}
 }
+
+func TestToolRoundFingerprintIgnoresStructuredSourceEncoding(t *testing.T) {
+	t.Parallel()
+	round := func(source string) ModelRound {
+		call := llm.ToolCall{ID: "call", Name: "inspect", Arguments: json.RawMessage(`{}`)}
+		return ModelRound{
+			Assistant:   llm.AssistantMessage{Role: llm.RoleAssistant, API: "a", Provider: "p", ModelID: "m", StopReason: llm.StopReasonToolUse, Content: []llm.ContentPart{{Type: llm.ContentTypeToolCall, ToolCall: &call}}},
+			ToolResults: []llm.ToolResultMessage{{Role: llm.RoleToolResult, ToolCallID: call.ID, ToolName: call.Name, Timestamp: 1, Details: &llm.ToolResultDetails{State: llm.ExecutionReturned, StructuredContent: json.RawMessage(source)}}},
+		}
+	}
+	baseline, err := toolRoundFingerprint(round(`{"n":9007199254740993,"label":"<tag>"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name, source string
+		changed      bool
+	}{
+		{"whitespace", " { \"n\": 9007199254740993, \"label\": \"<tag>\" }\n", false},
+		{"HTML escaping", `{"n":9007199254740993,"label":"\u003ctag\u003e"}`, false},
+		{"different large number", `{"n":9007199254740994,"label":"<tag>"}`, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := toolRoundFingerprint(round(tc.source))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if (got != baseline) != tc.changed {
+				t.Fatal("storage encoding changed progress detection")
+			}
+		})
+	}
+}

@@ -41,6 +41,12 @@ func Open(ctx context.Context, config Config) (*Client, error) {
 	if (config.Stdio == nil) == (config.HTTP == nil) || config.ConnectTimeout < 0 || config.CallTimeout < 0 {
 		return nil, ErrConfig
 	}
+	// Exact tiers supported by the pinned SDK v1.6.1. Review with SDK upgrades.
+	switch config.ProtocolVersion {
+	case "", "2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05":
+	default:
+		return nil, ErrConfig
+	}
 	if err := normalizeLimits(&config.Limits); err != nil {
 		return nil, err
 	}
@@ -89,6 +95,16 @@ func Open(ctx context.Context, config Config) (*Client, error) {
 		ToolListChangedHandler:     func(context.Context, *mcp.ToolListChangedRequest) {},
 		ResourceListChangedHandler: func(context.Context, *mcp.ResourceListChangedRequest) {},
 	})
+	if config.ProtocolVersion != "" {
+		protocol.AddSendingMiddleware(func(next mcp.MethodHandler) mcp.MethodHandler {
+			return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
+				if init, ok := req.(*mcp.InitializeRequest); ok {
+					init.Params.ProtocolVersion = config.ProtocolVersion
+				}
+				return next(ctx, method, req)
+			}
+		})
+	}
 	// Retain the original connection only for failed-initialization cleanup.
 	// Returning it unchanged preserves SDK-private sessionUpdated hooks.
 	captured := &captureTransport{Transport: transport}
@@ -103,7 +119,8 @@ func Open(ctx context.Context, config Config) (*Client, error) {
 		return nil, operationError(ctx, received, err)
 	}
 	init := c.session.InitializeResult()
-	if init == nil || init.ServerInfo == nil || init.Capabilities == nil {
+	if init == nil || init.ServerInfo == nil || init.Capabilities == nil ||
+		(config.ProtocolVersion != "" && init.ProtocolVersion != config.ProtocolVersion) {
 		_ = c.Close()
 		return nil, ErrProtocol
 	}
@@ -126,6 +143,9 @@ func (t *captureTransport) Connect(ctx context.Context) (mcp.Connection, error) 
 }
 
 func normalizeLimits(limits *Limits) error {
+	if limits.MessageBytes == 0 {
+		limits.MessageBytes = defaultMessageBytes
+	}
 	for _, field := range []struct {
 		value   *int
 		maximum int
@@ -146,6 +166,15 @@ func normalizeLimits(limits *Limits) error {
 func (c *Client) Info() Info                 { return c.info }
 func (c *Client) ToolGeneration() uint64     { return c.toolGeneration.Load() }
 func (c *Client) ResourceGeneration() uint64 { return c.resourceGeneration.Load() }
+
+// StdioPID identifies this connection's owned child for diagnostics. It is zero
+// for HTTP and does not establish that the child is still alive.
+func (c *Client) StdioPID() int {
+	if c.child == nil {
+		return 0
+	}
+	return c.child.cmd.Process.Pid
+}
 
 func (c *Client) Close() error {
 	c.once.Do(func() {

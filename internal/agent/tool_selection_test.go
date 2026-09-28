@@ -89,6 +89,16 @@ func TestToolSelectionTakesEffectOnlyAfterCompleteRecordedRound(t *testing.T) {
 	input.Catalog = catalog
 	var recorded []llm.AgentMessage
 	input.MessageRecorder = captureMessages(&recorded)
+	var observed [][]agent.ToolReference
+	input.ObserveTools = func(refs []agent.ToolReference) {
+		observed = append(observed, slices.Clone(refs))
+		if len(refs) > 0 {
+			if len(recorded) < 4 {
+				t.Fatal("observed selection before the complete tool group was recorded")
+			}
+			refs[0].Revision = "observer owns its copy"
+		}
+	}
 	result, err := loop.Run(t.Context(), input, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -100,6 +110,9 @@ func TestToolSelectionTakesEffectOnlyAfterCompleteRecordedRound(t *testing.T) {
 		t.Fatal("unoffered tool executed")
 	}
 	assertRecordedMessages(t, recorded, result.Messages())
+	if len(observed) != 3 || len(observed[0]) != 0 || !slices.Equal(observed[1], []agent.ToolReference{entry.Reference}) || !slices.Equal(observed[2], observed[1]) {
+		t.Fatal("observer did not receive actual request selections", observed)
+	}
 	// Resumed history does not restore selection. Reusing Loop cannot retain it.
 	model.scripts = append(model.scripts, &streamScript{events: terminalEvents(second)}, &streamScript{events: terminalEvents(last)})
 	input.History = result.Messages()
@@ -123,6 +136,11 @@ func TestToolSelectionRecordingFailureDoesNotPublish(t *testing.T) {
 	input := testInput(info, mustPrompt(t, "find"))
 	input.Catalog = catalog
 	diskErr := errors.New("disk failed")
+	input.ObserveTools = func(refs []agent.ToolReference) {
+		if len(refs) != 0 {
+			t.Fatal("recording failure published a loaded tool")
+		}
+	}
 	input.MessageRecorder = func(_ context.Context, m llm.AgentMessage) error {
 		if m.MessageRole() == llm.RoleToolResult {
 			return diskErr
@@ -164,12 +182,17 @@ func TestSelectedVersionCheckedAfterStreamAndApproval(t *testing.T) {
 			input := testInput(info, mustPrompt(t, "inspect"))
 			input.Catalog = catalog
 			input.PinnedTools = []string{"id"}
+			var observed [][]agent.ToolReference
+			input.ObserveTools = func(refs []agent.ToolReference) { observed = append(observed, refs) }
 			result, err := loop.Run(t.Context(), input, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
 			if len(old.calls) != 0 || len(newer.calls) != 0 || !result.ModelRounds[0].ToolResults[0].IsError {
 				t.Fatal("stale version dispatched")
+			}
+			if len(observed) != 2 || !slices.Equal(observed[0], []agent.ToolReference{{ID: "id", Revision: "v1"}}) || !slices.Equal(observed[1], []agent.ToolReference{{ID: "id", Revision: "v2"}}) {
+				t.Fatal("pinned snapshot did not follow actual request revisions", observed)
 			}
 			if strings.Contains(string(model.requests[0].Tools[0].InputSchema), "updated") || !strings.Contains(string(model.requests[1].Tools[0].InputSchema), "updated") {
 				t.Fatal("request snapshot mutated or refresh missing")
@@ -225,6 +248,7 @@ func TestPinnedToolSchemaBudgetFailsBeforeModel(t *testing.T) {
 	input := testInput(info, mustPrompt(t, "read"))
 	input.Catalog = &selectionCatalog{entries: []agent.CatalogTool{catalogEntry("id", "v1", remote)}}
 	input.PinnedTools = []string{"id"}
+	input.ObserveTools = func([]agent.ToolReference) { t.Fatal("failed request preparation published a tool snapshot") }
 	_, err := mustLoop(t, model, nil, agent.WithGuard(allowAllGuard{})).Run(t.Context(), input, nil)
 	if !errors.Is(err, agent.ErrToolSelection) || len(model.requests) != 0 {
 		t.Fatalf("oversized pinned schema requested: %v", err)
@@ -336,11 +360,16 @@ func TestToolSelectionEvictsWholeDefinitionsAndNotifiesModel(t *testing.T) {
 	loop := mustLoop(t, model, []agent.Tool{namedSelectionTool{selectionTool: selectionTool{proposal: []agent.ToolReference{ea.Reference}}, name: "search_a"}, namedSelectionTool{selectionTool: selectionTool{proposal: []agent.ToolReference{eb.Reference}}, name: "search_b"}})
 	input := testInput(info, mustPrompt(t, "search"))
 	input.Catalog = catalog
+	var observed [][]agent.ToolReference
+	input.ObserveTools = func(refs []agent.ToolReference) { observed = append(observed, refs) }
 	_, err := loop.Run(t.Context(), input, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	request := model.requests[2]
+	if len(observed) != len(model.requests) || len(observed[0]) != 0 || !slices.Equal(observed[1], []agent.ToolReference{ea.Reference}) || !slices.Equal(observed[2], []agent.ToolReference{eb.Reference}) {
+		t.Fatal("observer retained evicted tools", observed)
+	}
 	if hasDefinition(request, "remote_a") || !hasDefinition(request, "remote_b") || !strings.Contains(request.SystemPrompt, "evicted") {
 		t.Fatal("budget did not evict and notify")
 	}

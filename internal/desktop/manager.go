@@ -9,6 +9,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/ch1lam/aice-cli/internal/mcpclient"
 )
 
 // ControlMode is frozen by the application when it creates a run binding.
@@ -92,21 +94,27 @@ func (m *Manager) Bind(ctx context.Context, options RunOptions) (*Run, error) {
 }
 
 type Run struct {
-	manager      *Manager
-	ctx          context.Context
-	cancel       context.CancelFunc
-	stopManager  func() bool
-	closed       atomic.Bool
-	id           string
-	options      RunOptions
-	started      bool // gate-owned
-	active       bool
-	cleanupDone  bool
-	cleanupErr   error
-	targets      map[string]windowIdentity
-	apps         map[string]appLaunchTarget // opaque reference -> native discovered launcher
-	observations map[string]observationBinding
+	manager         *Manager
+	ctx             context.Context
+	cancel          context.CancelFunc
+	stopManager     func() bool
+	closed          atomic.Bool
+	managed         atomic.Pointer[managedAdmission]
+	managedRefusals map[windowIdentity]managedRefusal // gate-owned
+	id              string
+	options         RunOptions
+	started         bool // gate-owned
+	active          bool
+	cleanupDone     bool
+	cleanupErr      error
+	targets         map[string]windowIdentity
+	apps            map[string]appLaunchTarget // opaque reference -> native discovered launcher
+	observations    map[string]observationBinding
 }
+
+// ControlMode returns the immutable mode enforced by this Run. Application
+// permission identities must use this value rather than a second mutable setting.
+func (r *Run) ControlMode() ControlMode { return r.options.Mode }
 
 // acquire joins call and run cancellation. Cancellation invalidates a run even
 // while a dispatched action is still settling; the next caller cannot slip in.
@@ -204,7 +212,9 @@ func (r *Run) ensureLocked(ctx context.Context) error {
 func (r *Run) callLocked(ctx context.Context, name string, args any) (Reply, error) {
 	reply, err := r.manager.client.call(ctx, name, args)
 	var before beforeDispatchError
-	if err != nil && !errors.As(err, &before) {
+	if errors.Is(err, errDriverCatalogChanged) || errors.Is(err, mcpclient.ErrClosed) {
+		_ = r.manager.disconnectLocked("Driver admission is no longer valid; discover again to verify a fresh connection")
+	} else if err != nil && !errors.As(err, &before) {
 		_ = r.manager.disconnectLocked("Driver connection lost; dispatched outcome may be unknown")
 	}
 	return reply, err
@@ -234,6 +244,7 @@ func (m *Manager) disconnectLocked(reason string) error {
 		clear(run.targets)
 		clear(run.apps)
 		clear(run.observations)
+		clear(run.managedRefusals)
 	}
 	clear(m.runs)
 	clear(m.latest)
@@ -305,6 +316,7 @@ func (r *Run) closeLocked(ctx context.Context) (returnErr error) {
 	}()
 	clear(r.targets)
 	clear(r.apps)
+	r.clearManagedRefusalsLocked()
 	r.clearObservationsLocked()
 	if !r.started || r.manager.client == nil {
 		return nil

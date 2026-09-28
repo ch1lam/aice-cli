@@ -66,7 +66,7 @@ func TestNativeLinuxBackgroundProbe(t *testing.T) {
 	if err != nil || !report.ConnectionVerified || report.Linux == nil || report.Linux.X11 != PermissionGranted || report.Linux.ATSPI != PermissionGranted {
 		t.Fatalf("X11/AT-SPI setup unavailable: %+v %v", report.Linux, err)
 	}
-	transport, err := newProcessTransport(binary, endpoint)
+	transport, err := newProxyConfig(binary, endpoint)
 	if err != nil {
 		t.Fatal(err)
 	}

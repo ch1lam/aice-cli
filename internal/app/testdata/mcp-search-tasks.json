@@ -1,0 +1,352 @@
+[
+  {
+    "case": "task-01",
+    "service": "repos",
+    "name": "branch_new",
+    "description": "Create a branch in a repository from a base revision.",
+    "query": "Make a fresh branch off main for my bug fix."
+  },
+  {
+    "case": "task-02",
+    "service": "repos",
+    "name": "changes_compare",
+    "description": "Compare changes between two repository revisions.",
+    "query": "What changed between the release tag and the current revision?"
+  },
+  {
+    "case": "task-03",
+    "service": "repos",
+    "name": "review_open",
+    "description": "Open a pull request with a title and description.",
+    "query": "Send my branch changes for code review by opening a pull request."
+  },
+  {
+    "case": "task-04",
+    "service": "repos",
+    "name": "checks_read",
+    "description": "Read status and logs of CI checks for a commit.",
+    "query": "Which CI check failed for this commit and what did its log say?"
+  },
+  {
+    "case": "task-05",
+    "service": "repos",
+    "name": "issue_assign",
+    "description": "Assign a repository issue to a user.",
+    "query": "Put the reported bug under Alex's ownership by assigning the issue."
+  },
+  {
+    "case": "task-06",
+    "service": "docs",
+    "name": "page_find",
+    "description": "Search knowledge base pages by text and title.",
+    "query": "Find the knowledge base page explaining our deployment checklist."
+  },
+  {
+    "case": "task-07",
+    "service": "docs",
+    "name": "page_read",
+    "description": "Read the full content of a knowledge base page.",
+    "query": "Show me everything written on that knowledge base page."
+  },
+  {
+    "case": "task-08",
+    "service": "docs",
+    "name": "page_create",
+    "description": "Create a knowledge base page under a parent.",
+    "query": "Add a new page beneath the engineering handbook."
+  },
+  {
+    "case": "task-09",
+    "service": "docs",
+    "name": "page_append",
+    "description": "Append content to an existing knowledge base page.",
+    "query": "Put a new paragraph at the end of the onboarding page."
+  },
+  {
+    "case": "task-10",
+    "service": "docs",
+    "name": "page_history",
+    "description": "List revision history for a knowledge base page.",
+    "query": "Who changed this page before the current revision?"
+  },
+  {
+    "case": "task-11",
+    "service": "chat",
+    "name": "messages_find",
+    "description": "Search messages across chat channels.",
+    "query": "Find the chat message mentioning the outage number."
+  },
+  {
+    "case": "task-12",
+    "service": "chat",
+    "name": "thread_read",
+    "description": "Read all replies in a chat message thread.",
+    "query": "Show me the replies underneath this chat message."
+  },
+  {
+    "case": "task-13",
+    "service": "chat",
+    "name": "message_send",
+    "description": "Send a chat message to a channel.",
+    "query": "Post the release announcement into the engineering chat channel."
+  },
+  {
+    "case": "task-14",
+    "service": "chat",
+    "name": "reaction_add",
+    "description": "Add an emoji reaction to a chat message.",
+    "query": "React to that chat message with a thumbs up."
+  },
+  {
+    "case": "task-15",
+    "service": "chat",
+    "name": "channel_members",
+    "description": "List members of a chat channel.",
+    "query": "Who belongs to the on-call chat channel?"
+  },
+  {
+    "case": "task-16",
+    "service": "calendar",
+    "name": "events_list",
+    "description": "List calendar events within a date range.",
+    "query": "What meetings are on my calendar next week?"
+  },
+  {
+    "case": "task-17",
+    "service": "calendar",
+    "name": "event_create",
+    "description": "Create a calendar event with attendees and start time.",
+    "query": "Schedule a calendar meeting with the team tomorrow morning."
+  },
+  {
+    "case": "task-18",
+    "service": "calendar",
+    "name": "event_move",
+    "description": "Reschedule a calendar event to a new start time.",
+    "query": "Move my calendar meeting from Tuesday to Wednesday."
+  },
+  {
+    "case": "task-19",
+    "service": "calendar",
+    "name": "availability_read",
+    "description": "Read free and busy calendar slots for attendees.",
+    "query": "When is everyone free for a half hour calendar slot?"
+  },
+  {
+    "case": "task-20",
+    "service": "calendar",
+    "name": "event_cancel",
+    "description": "Cancel a calendar event and notify attendees.",
+    "query": "Cancel tomorrow's calendar meeting and tell the attendees."
+  },
+  {
+    "case": "task-21",
+    "service": "mail",
+    "name": "messages_search",
+    "description": "Search email messages by sender, subject and body.",
+    "query": "Find the email from the vendor about the renewal."
+  },
+  {
+    "case": "task-22",
+    "service": "mail",
+    "name": "message_read",
+    "description": "Read an email body and its headers.",
+    "query": "Open the full body of the email I selected."
+  },
+  {
+    "case": "task-23",
+    "service": "mail",
+    "name": "draft_create",
+    "description": "Create an unsent email draft with recipients and body.",
+    "query": "Prepare an email draft to the customer without sending it."
+  },
+  {
+    "case": "task-24",
+    "service": "mail",
+    "name": "attachment_save",
+    "description": "Download an email attachment to a file.",
+    "query": "Save the PDF attached to that email onto disk."
+  },
+  {
+    "case": "task-25",
+    "service": "mail",
+    "name": "message_archive",
+    "description": "Archive an email message without deleting it.",
+    "query": "Take this email out of my inbox but keep it in the archive."
+  },
+  {
+    "case": "task-26",
+    "service": "files",
+    "name": "filename_search",
+    "description": "Find files by filename and folder.",
+    "query": "Locate the spreadsheet file whose filename contains forecast."
+  },
+  {
+    "case": "task-27",
+    "service": "files",
+    "name": "file_download",
+    "description": "Download the bytes of a stored file.",
+    "query": "Get a local copy of this stored file."
+  },
+  {
+    "case": "task-28",
+    "service": "files",
+    "name": "file_upload",
+    "description": "Upload a local file into a destination folder.",
+    "query": "Put my local report file into the shared project folder."
+  },
+  {
+    "case": "task-29",
+    "service": "files",
+    "name": "file_move",
+    "description": "Move a file between folders without changing content.",
+    "query": "Move this file from drafts into the published folder."
+  },
+  {
+    "case": "task-30",
+    "service": "files",
+    "name": "sharing_read",
+    "description": "Read file sharing permissions and access roles.",
+    "query": "Who has permission to view or edit this file?"
+  },
+  {
+    "case": "task-31",
+    "service": "tracker",
+    "name": "ticket_create",
+    "description": "Create an issue tracker ticket with a description.",
+    "query": "File a new tracker ticket for this login defect."
+  },
+  {
+    "case": "task-32",
+    "service": "tracker",
+    "name": "ticket_transition",
+    "description": "Change the workflow status of a tracker ticket.",
+    "query": "Mark this tracker ticket as done."
+  },
+  {
+    "case": "task-33",
+    "service": "tracker",
+    "name": "ticket_comment",
+    "description": "Add a comment to an issue tracker ticket.",
+    "query": "Leave a comment with the reproduction steps on that tracker ticket."
+  },
+  {
+    "case": "task-34",
+    "service": "tracker",
+    "name": "sprint_list",
+    "description": "List active and planned sprints for a team.",
+    "query": "Which team sprint is active and which sprint starts next?"
+  },
+  {
+    "case": "task-35",
+    "service": "tracker",
+    "name": "ticket_find",
+    "description": "Search tracker tickets by text and filters.",
+    "query": "Find unresolved tracker tickets mentioning password reset."
+  },
+  {
+    "case": "task-36",
+    "service": "ops",
+    "name": "logs_query",
+    "description": "Query application logs by service, time and text.",
+    "query": "Find application logs containing timeout from the payments service yesterday."
+  },
+  {
+    "case": "task-37",
+    "service": "ops",
+    "name": "metrics_query",
+    "description": "Query numeric service metrics over a time interval.",
+    "query": "Show the payments service error rate metric during the last hour."
+  },
+  {
+    "case": "task-38",
+    "service": "ops",
+    "name": "deployment_read",
+    "description": "Read the current deployed release for a service.",
+    "query": "Which release is currently deployed to the payments service?"
+  },
+  {
+    "case": "task-39",
+    "service": "ops",
+    "name": "deployment_rollback",
+    "description": "Roll back a service deployment to a previous release.",
+    "query": "Undo the last service deployment and restore its previous release."
+  },
+  {
+    "case": "task-40",
+    "service": "ops",
+    "name": "incident_create",
+    "description": "Create an incident record with severity and affected service.",
+    "query": "Open a high severity incident for the checkout service outage."
+  },
+  {
+    "case": "task-41",
+    "service": "crm",
+    "name": "customer_find",
+    "description": "根据姓名或邮箱查找客户资料。",
+    "query": "帮我查找这位客户的资料"
+  },
+  {
+    "case": "task-42",
+    "service": "crm",
+    "name": "customer_add",
+    "description": "新建客户资料，保存姓名和联系方式。",
+    "query": "为新签约的客户新建一份资料"
+  },
+  {
+    "case": "task-43",
+    "service": "crm",
+    "name": "customer_edit",
+    "description": "更新客户资料中的联系方式。",
+    "query": "请更新这位客户的联系方式"
+  },
+  {
+    "case": "task-44",
+    "service": "crm",
+    "name": "deal_stage",
+    "description": "修改销售商机的阶段。",
+    "query": "把销售商机的阶段修改为已成交"
+  },
+  {
+    "case": "task-45",
+    "service": "crm",
+    "name": "activity_list",
+    "description": "查看客户最近的沟通记录。",
+    "query": "我想查看客户最近的沟通记录"
+  },
+  {
+    "case": "task-46",
+    "service": "billing",
+    "name": "invoice_find",
+    "description": "按客户和状态查找发票。",
+    "query": "查找这个客户还没付款的发票"
+  },
+  {
+    "case": "task-47",
+    "service": "billing",
+    "name": "invoice_read",
+    "description": "读取发票的明细项目和总金额。",
+    "query": "帮我读取这张发票的明细项目"
+  },
+  {
+    "case": "task-48",
+    "service": "billing",
+    "name": "invoice_create",
+    "description": "为客户创建新的发票。",
+    "query": "为该客户创建一张新的发票"
+  },
+  {
+    "case": "task-49",
+    "service": "billing",
+    "name": "payment_refund",
+    "description": "退还已收款项，创建退款。",
+    "query": "请退还这笔已收款项"
+  },
+  {
+    "case": "task-50",
+    "service": "billing",
+    "name": "subscription_cancel",
+    "description": "取消客户的续费订阅。",
+    "query": "帮我取消这个客户的续费订阅"
+  }
+]

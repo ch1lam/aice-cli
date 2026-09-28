@@ -8,15 +8,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"image/png"
 	"os"
 	"path/filepath"
 	"reflect"
-	"runtime"
 	"testing"
 	"time"
 
-	"github.com/ch1lam/aice-cli/internal/desktop"
 	"github.com/ch1lam/aice-cli/internal/llm"
 	"github.com/ch1lam/aice-cli/internal/session"
 )
@@ -78,136 +75,9 @@ func awaitNativePrintState(t *testing.T, ctx context.Context, fixture nativePrin
 	}
 }
 
-// Scripted model consumes only real tool outputs. It never accesses the fixture
-// readback or Driver directly, and never invents target or observation tokens.
-type nativePrintModel struct {
-	t            *testing.T
-	query        string
-	targets      []nativePrintFixture
-	inputActions map[int]string
-	windows      []desktop.Window
-	requests     int
-	results      []llm.ToolResultMessage
-}
-
 func nativePrintValue(index int) string { return fmt.Sprintf("AICE CLI stage %d 中文 ✓", index+1) }
 
-func (m *nativePrintModel) Stream(ctx context.Context, request llm.Request) (llm.Stream, error) {
-	step := m.requests
-	m.requests++
-	call := func(name string, value any) llm.Stream {
-		data, err := json.Marshal(value)
-		if err != nil {
-			m.t.Fatal(err)
-		}
-		return toolCallEventStream(request.Model, llm.ToolCall{ID: fmt.Sprintf("native-%d", step), Name: name, Arguments: data})
-	}
-	if step == 0 {
-		return call("desktop_apps", map[string]any{"query": m.query, "limit": 16}), nil
-	}
-	result, ok := request.Messages[len(request.Messages)-1].(llm.ToolResultMessage)
-	if !ok || result.IsError || result.ToolCallID != fmt.Sprintf("native-%d", step-1) {
-		return nil, fmt.Errorf("native tool result failed or mismatched at step %d", step)
-	}
-	m.results = append(m.results, result)
-	if len(result.Content) == 0 || result.Content[0].Type != llm.ContentTypeText {
-		return nil, errors.New("native tool metadata missing")
-	}
-	var observation desktop.Observation
-	switch {
-	case step == 1:
-		var discovery desktop.Discovery
-		if err := json.Unmarshal([]byte(result.Content[0].Text), &discovery); err != nil {
-			return nil, err
-		}
-		for _, target := range m.targets {
-			var selected desktop.Window
-			for _, window := range discovery.Windows {
-				if window.PID == target.pid && window.Title == target.name {
-					selected = window
-				}
-			}
-			if selected.Ref == "" {
-				return nil, errors.New("exact synthetic window missing")
-			}
-			m.windows = append(m.windows, selected)
-		}
-	case (step-2)%3 == 0:
-		if err := json.Unmarshal([]byte(result.Content[0].Text), &observation); err != nil {
-			return nil, err
-		}
-	default:
-		var action desktop.ActResult
-		if err := json.Unmarshal([]byte(result.Content[0].Text), &action); err != nil {
-			return nil, err
-		}
-		if !action.Dispatched || action.Outcome != "returned" || action.DriverError || action.ObservationError != "" || action.Observation == nil {
-			return nil, errors.New("native action did not return a follow-up observation")
-		}
-		observation = *action.Observation
-	}
-	if step > 1 {
-		index := (step - 2) / 3
-		if observation.Ref == "" || observation.TargetRef != m.windows[index].Ref || observation.Degraded {
-			return nil, errors.New("invalid native observation")
-		}
-		if runtime.GOOS == "linux" && observation.Complete {
-			return nil, errors.New("Linux actionable-only projection claimed completeness")
-		}
-		if len(result.Content) != 2 || result.Content[1].Type != llm.ContentTypeImage || result.Content[1].Image == nil {
-			return nil, errors.New("native PNG did not reach the model")
-		}
-		img := result.Content[1].Image
-		decoded, err := png.DecodeConfig(bytes.NewReader(img.Data))
-		if err != nil || img.MIMEType != "image/png" || decoded.Width != observation.ImageWidth || decoded.Height != observation.ImageHeight || decoded.Width <= 0 || decoded.Height <= 0 {
-			return nil, errors.New("native PNG dimensions differ from observation")
-		}
-	}
-	if step == 10 {
-		return (&recordingModel{response: "Synthetic tool sequence finished."}).Stream(ctx, request)
-	}
-	index := (step - 1) / 3
-	if (step-1)%3 == 0 {
-		return call("desktop_observe", desktop.ObserveRequest{TargetRef: m.windows[index].Ref, Screenshot: true}), nil
-	}
-	kind, label := "set_value", "Task value"
-	if input := m.inputActions[index]; input != "" {
-		kind = input
-	}
-	if (step-1)%3 == 2 {
-		kind, label = "click", "Commit"
-	}
-	var token string
-	for _, element := range observation.Elements {
-		if element.Label == label {
-			// WebKit exposes both the label and the editable control under
-			// the same name. Never select whichever happened to come last.
-			if runtime.GOOS == "darwin" {
-				role := "AXTextField"
-				if kind == "click" {
-					role = "AXButton"
-				}
-				if element.Role != role {
-					continue
-				}
-			}
-			if token != "" && element.Token != "" {
-				return nil, errors.New("ambiguous synthetic actionable element")
-			}
-			token = element.Token
-		}
-	}
-	if token == "" {
-		return nil, errors.New("actionable element missing")
-	}
-	act := desktop.ActRequest{Kind: kind, ObservationRef: observation.Ref, ElementToken: token, Screenshot: true}
-	if kind == "set_value" || kind == "type_text" {
-		act.Text = nativePrintValue(index)
-	}
-	return call("desktop_act", act), nil
-}
-
-func verifyNativePrintSession(t *testing.T, ctx context.Context, path string, results []llm.ToolResultMessage) {
+func verifyNativePrintSession(t *testing.T, ctx context.Context, path string, results []llm.ToolResultMessage, viewBudget int64) {
 	t.Helper()
 	store, err := session.Open(ctx, path)
 	if err != nil {
@@ -218,13 +88,13 @@ func verifyNativePrintSession(t *testing.T, ctx context.Context, path string, re
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(snapshot.Messages) != 22 || len(snapshot.Compactions) != 0 {
+	if len(snapshot.Messages) != 2*len(results)+2 || len(snapshot.Compactions) != 0 {
 		t.Fatal("unexpected durable history shape")
 	}
 	var parent string
 	seen := make(map[string]bool)
 	pending := make(map[string]string)
-	index := 0
+	index, captures := 0, 0
 	for _, entry := range snapshot.Messages {
 		if entry.ID == "" || seen[entry.ID] || entry.ParentID != parent {
 			t.Fatal("broken durable message identity or parent")
@@ -238,14 +108,30 @@ func verifyNativePrintSession(t *testing.T, ctx context.Context, path string, re
 				}
 			}
 		case llm.ToolResultMessage:
-			if index >= len(results) || pending[message.ToolCallID] != message.ToolName || !reflect.DeepEqual(message, results[index]) {
-				t.Fatal("replayed tool metadata/image differs from model input or call")
+			for _, part := range message.Content {
+				if part.Image != nil {
+					captures++
+				}
+			}
+			if index >= len(results) || pending[message.ToolCallID] != message.ToolName {
+				t.Fatalf("replayed tool identity differs at result %d", index)
+			}
+			view := llm.BoundToolResultView(message, viewBudget)
+			if !reflect.DeepEqual(view, results[index]) {
+				var savedJSON, deliveredJSON []byte
+				if view.Details != nil {
+					savedJSON = view.Details.StructuredContent
+				}
+				if results[index].Details != nil {
+					deliveredJSON = results[index].Details.StructuredContent
+				}
+				t.Fatalf("replayed result %d differs: tool=%s content_equal=%t details_equal=%t structured_bytes=%d/%d structured_equal=%t", index, message.ToolName, reflect.DeepEqual(view.Content, results[index].Content), reflect.DeepEqual(view.Details, results[index].Details), len(savedJSON), len(deliveredJSON), bytes.Equal(savedJSON, deliveredJSON))
 			}
 			delete(pending, message.ToolCallID)
 			index++
 		}
 	}
-	if len(pending) != 0 || index != 10 || snapshot.LeafID != parent {
+	if len(pending) != 0 || index != len(results) || captures != 9 || snapshot.LeafID != parent {
 		t.Fatal("incomplete durable tool pairs")
 	}
 }

@@ -32,6 +32,7 @@ type settingsPanel struct {
 	confirmUnset           bool
 	detailOffset           int
 	focusField             string
+	focusAction            bool
 	notice                 string
 	layout                 modalLayout
 	pointer                *tea.Mouse
@@ -171,11 +172,13 @@ func (m model) applySettingsRead(message settingsReadResult) (tea.Model, tea.Cmd
 		return m, nil
 	}
 	p.snapshot = message.snapshot
+	foundFocus := false
 	if p.focusField != "" {
 		for _, field := range p.snapshot.Fields {
 			if field.ID != p.focusField {
 				continue
 			}
+			foundFocus = true
 			for i, category := range p.snapshot.Categories {
 				if category.ID == field.Category {
 					p.tab = i
@@ -192,6 +195,12 @@ func (m model) applySettingsRead(message settingsReadResult) (tea.Model, tea.Cmd
 	}
 	p.tab = min(p.tab, max(0, len(p.snapshot.Categories)-1))
 	p.selection = min(p.selection, max(0, len(p.fields())-1))
+	if p.focusAction {
+		p.focusAction = false
+		if fields := p.fields(); foundFocus && p.selection < len(fields) && fields[p.selection].Kind == interaction.SettingAction {
+			return m.beginSettingEdit(false)
+		}
+	}
 	return m, m.refreshSettingsStatus()
 }
 

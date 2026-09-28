@@ -40,6 +40,15 @@ func (e *runExecution) streamAssistant(
 		return assistantOutcome{}, err
 	}
 	e.turnsUsed++
+	if e.input.ObserveTools != nil {
+		refs := make([]ToolReference, 0, len(e.catalogTools))
+		for _, definition := range request.Tools {
+			if entry, ok := e.catalogTools[definition.Name]; ok {
+				refs = append(refs, entry.Reference)
+			}
+		}
+		e.input.ObserveTools(refs)
+	}
 	stream, err := e.loop.model.Stream(ctx, request)
 	if err != nil {
 		return assistantOutcome{}, fmt.Errorf("agent: start model stream: %w", err)

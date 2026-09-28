@@ -27,6 +27,9 @@ type MCPPermission struct {
 }
 
 type MCPService struct {
+	Managed                    bool            `json:"managed,omitempty"`
+	Enabled                    bool            `json:"enabled"`
+	SettingsField              string          `json:"settings_field,omitempty"`
 	Key                        string          `json:"key"`
 	Name                       string          `json:"name,omitempty"`
 	Source                     string          `json:"source"`
@@ -34,10 +37,12 @@ type MCPService struct {
 	Detail                     string          `json:"detail,omitempty"`
 	Fingerprint                string          `json:"fingerprint"`
 	Approval                   string          `json:"connection_approval"`
-	Definition                 json.RawMessage `json:"connection"`
+	Definition                 json.RawMessage `json:"connection,omitempty"`
 	ToolCount                  int             `json:"discovered_tools"`
 	CatalogKnown               bool            `json:"catalog_known"`
 	EligibleTools              int             `json:"eligible_tools"`
+	LoadedTools                int             `json:"loaded_tools"`
+	RunActive                  bool            `json:"run_active"`
 	PermissionScope            string          `json:"permission_scope"`
 	Permissions                []MCPPermission `json:"saved_permissions,omitempty"`
 	SavedPermissionFingerprint string          `json:"saved_permission_fingerprint,omitempty"`

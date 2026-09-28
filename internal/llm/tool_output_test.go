@@ -118,3 +118,105 @@ func TestToolResultProjectionPreservesOrderAndCountsJSON(t *testing.T) {
 		t.Fatal("projection changed source")
 	}
 }
+
+func TestStructuredResultJSONPreservesSourceSpelling(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct{ name, source string }{
+		{"compact", `{"n":9007199254740993}`},
+		{"escaping expansion", `{"text":"` + strings.Repeat("<", MaxStructuredResultBytes/5) + `"}`},
+		{"formatting", " \n{\n  \"n\": 9007199254740993, \"exponent\": 1.20e+03\n}\t"},
+		{"string spelling", `{"label":"<tag>&\u0061","line":"` + "\u2028" + `"}`},
+		{"duplicate keys", `{ "n": 1, "n": 9007199254740993 }`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			original := ToolResultMessage{Role: RoleToolResult, ToolCallID: "source", ToolName: "read", Timestamp: 1, Content: []ContentPart{NewTextContent("result").Part()}, Details: &ToolResultDetails{State: ExecutionReturned, StructuredContent: json.RawMessage(tc.source)}}
+			encoded, err := MarshalAgentMessages([]AgentMessage{original})
+			if err != nil {
+				t.Fatal(err)
+			}
+			decoded, err := UnmarshalAgentMessages(encoded)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := decoded[0].(ToolResultMessage)
+			if string(got.Details.StructuredContent) != tc.source {
+				t.Fatalf("source JSON changed: got %q, want %q", got.Details.StructuredContent, tc.source)
+			}
+			if !reflect.DeepEqual(BoundToolResultView(got, 256), BoundToolResultView(original, 256)) {
+				t.Fatal("persisting source changed the model view")
+			}
+		})
+	}
+}
+
+func TestStructuredResultSourceCompanionValidation(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct{ name, source string }{
+		{"different value", `{"state":"returned","structured_content":{"n":1},"structured_content_raw":"{ \"n\": 2 }"}`},
+		{"number spelling", `{"state":"returned","structured_content":1,"structured_content_raw":"1.0"}`},
+		{"missing value", `{"state":"returned","structured_content_raw":"{}"}`},
+		{"malformed source", `{"state":"returned","structured_content":{},"structured_content_raw":"{"}`},
+		{"empty source", `{"state":"returned","structured_content":{},"structured_content_raw":""}`},
+		{"null companion", `{"state":"returned","structured_content":{},"structured_content_raw":null}`},
+		{"object companion", `{"state":"returned","structured_content":{},"structured_content_raw":{}}`},
+		{"oversize companion", `{"state":"returned","structured_content":{},"structured_content_raw":"` + strings.Repeat(" ", MaxStructuredResultBytes) + `{}"}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			original := resultDetails()
+			target := original.Clone()
+			if err := json.Unmarshal([]byte(tc.source), target); err == nil {
+				t.Fatal("invalid source companion accepted")
+			}
+			if !reflect.DeepEqual(original, target) {
+				t.Fatal("failed decode changed receiver")
+			}
+		})
+	}
+}
+
+func TestStructuredResultSourceCompanionCompatibility(t *testing.T) {
+	t.Parallel()
+	for _, source := range []string{`{"n":9007199254740993}`, " { \"n\": 9007199254740993, \"label\": \"<html>\" } "} {
+		t.Run(source, func(t *testing.T) {
+			details := &ToolResultDetails{State: ExecutionReturned, StructuredContent: json.RawMessage(source)}
+			encoded, err := json.Marshal(details)
+			if err != nil {
+				t.Fatal(err)
+			}
+			// An older details reader can still consume the existing JSON value.
+			var legacy struct {
+				State      ExecutionState  `json:"state"`
+				Structured json.RawMessage `json:"structured_content"`
+			}
+			if err := json.Unmarshal(encoded, &legacy); err != nil {
+				t.Fatal(err)
+			}
+			canonical, err := json.Marshal(json.RawMessage(source))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if legacy.State != ExecutionReturned || string(legacy.Structured) != string(canonical) {
+				t.Fatal("legacy value changed")
+			}
+			if strings.Contains(string(encoded), `"structured_content_raw"`) == (source == string(canonical)) {
+				t.Fatal("companion must appear only for noncanonical source")
+			}
+			var restored ToolResultDetails
+			if err := json.Unmarshal(encoded, &restored); err != nil {
+				t.Fatal(err)
+			}
+			second, err := json.Marshal(restored)
+			if err != nil || string(second) != string(encoded) {
+				t.Fatal("second encoding changed source record")
+			}
+			// Existing records without the companion remain supported.
+			old, err := json.Marshal(legacy)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := json.Unmarshal(old, &restored); err != nil || string(restored.StructuredContent) != string(canonical) {
+				t.Fatal("legacy record rejected or changed", err)
+			}
+		})
+	}
+}

@@ -432,7 +432,6 @@ func (s *interactiveSession) publishWebSettings(prepared preparedWeb) {
 	s.stateMu.Unlock()
 	if s.guard != nil {
 		s.guard.SetSearchTarget(prepared.state.searchTarget)
-		s.guard.SetDesktopEnabled(prepared.configuration.DesktopEnabled)
 	}
 	old.closeBackend()
 }

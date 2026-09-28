@@ -58,9 +58,8 @@ func newExecutionGuard(
 // agent import guard directly in its core package. It lives in app which
 // already depends on both, preserving the "consumer defines interface" rule.
 type guardAdapter struct {
-	inner   *guard.Guard
-	desktop *desktopState
-	mcp     mcpToolBindings
+	inner *guard.Guard
+	mcp   mcpToolBindings
 	// yolo upgrades Decision ask to allow. It never remaps deny.
 	yolo bool
 }
@@ -80,12 +79,6 @@ func (g *guardAdapter) Check(ctx context.Context, call llm.ToolCall) (agent.Guar
 		}
 		if found {
 			return g.checkMCP(ctx, call, binding, scope)
-		}
-	}
-	switch call.Name {
-	case "desktop_apps", "desktop_observe", "desktop_act":
-		if _, err := g.desktop.bound(ctx); err != nil {
-			return agent.GuardResult{Decision: agent.GuardDeny, Reason: err.Error(), RuleID: "desktop.run_unavailable"}, nil
 		}
 	}
 	res, err := g.inner.Check(ctx, call)

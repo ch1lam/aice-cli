@@ -20,7 +20,7 @@ review, even when a change might be backward compatible. Extra upstream tool
 names are ignored and remain unavailable to the private client.
 
 This strict check is intentional for each fixed platform artifact. A version or
-platform change must update its schema pin and typed adapter together; do not
+platform change must review its schema pin and native constraints together; do not
 regenerate pins merely to make a failing connection test pass. Schema matching
 is evidence of the advertised contract, not native input/capture acceptance.
 
@@ -39,7 +39,7 @@ path without declaring the desktop usable.
 `linux-0.29.1.json` contains the unmodified schemas of all 15 tools from that
 same native Linux metadata export, under the same upstream MIT license. The
 Linux runtime uses this inventory for both owned stdio and verified shared
-service connections. Eleven schemas differ from macOS. Linux's typed adapter
+service connections. Eleven schemas differ from macOS. Linux's native boundary
 also accounts for empty permission arguments, discovered XDG launch commands,
 capture validity and actionable-only semantic projections. The opt-in X11 probe
 and Manager acceptance test compare this production pin during the real MCP

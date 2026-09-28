@@ -190,6 +190,8 @@ func (r *interactiveRun) Run(ctx context.Context) (returnErr error) {
 		return err
 	}
 	defer mcpRun.Close()
+	observeTools, clearLoadedTools := r.session.beginMCPLoadedTools(mcpRun.catalog)
+	defer clearLoadedTools()
 	ctx = withResultReader(ctx, r.session.conversation.store, nil)
 	snapshot.systemPrompt += mcpRun.summary
 
@@ -206,6 +208,7 @@ func (r *interactiveRun) Run(ctx context.Context) (returnErr error) {
 		ResultViewTokens: llm.ResultViewBudget(snapshot.model.ContextWindow),
 		Catalog:          mcpRun.Catalog(),
 		PinnedTools:      mcpRun.pins,
+		ObserveTools:     observeTools,
 		Model:            snapshot.model,
 		SystemPrompt:     snapshot.systemPrompt,
 		History:          snapshot.history,

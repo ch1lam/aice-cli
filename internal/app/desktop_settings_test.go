@@ -24,7 +24,13 @@ func desktopSettingsSession(t *testing.T) *interactiveSession {
 			return desktop.SetupResult{LaunchRequested: true, AuthorizationRequested: true, AuthorizationCompleted: true, CaptureVerified: true, Ready: true}, nil
 		},
 	}
-	s.guardAdapter.desktop = s.desktop
+	var err error
+	s.mcp, err = newMCPOwner(s.configuration.MCP, s.guard, false, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.mcp.Close() })
+	s.guardAdapter.mcp = mcpRunRouter{}
 	return s
 }
 
@@ -73,7 +79,7 @@ func TestDesktopSettingsSetupUsesOneReservationAndRetainsExternalSuccess(t *test
 				t.Fatal("disclosures not presented")
 			}
 			if failSave {
-				if slicesContains(toolNames(s.tools), "desktop_act") || !strings.Contains(result.Output, "External setup steps are retained") {
+				if slicesContains(toolNames(s.tools), "tool_search") || !strings.Contains(result.Output, "External setup steps are retained") {
 					t.Fatal("failed save changed tools or lost facts")
 				}
 			} else {
@@ -162,7 +168,7 @@ func TestDesktopSetupCancellationKeepsInstalledFactWithoutPublishing(t *testing.
 	if !errors.Is(err, context.Canceled) || result.Committed || result.Applied || result.Ready || len(result.External) != 2 || !result.External[0].Completed || result.External[1].Completed || result.Revision != 1 {
 		t.Fatalf("cancelled result=%+v err=%v", result, err)
 	}
-	if s.configuration.DesktopEnabled || slicesContains(toolNames(s.tools), "desktop_act") || s.conversation.store != nil {
+	if s.configuration.DesktopEnabled || slicesContains(toolNames(s.tools), "tool_search") || s.conversation.store != nil {
 		t.Fatal("cancel published or created Session")
 	}
 	if _, reason := s.settingsStatus(); reason != "" {

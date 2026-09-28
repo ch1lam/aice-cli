@@ -113,7 +113,7 @@ func TestMCPManagementCLIConfiguredApprovalAndConnect(t *testing.T) {
 		t.Fatal(err)
 	}
 	result, err = managementCommand(t, paths, "", "status")
-	if err != nil || len(result.Services) != 0 {
+	if err != nil || len(result.Services) != 1 || result.Services[0].Key != managedCUAKey {
 		t.Fatal("remove did not take effect")
 	}
 }
@@ -171,11 +171,11 @@ func TestMCPManagementCLIProjectTrustAndReadonlyDefinitions(t *testing.T) {
 		t.Fatal(err)
 	}
 	result, err := managementCommand(t, paths, "", "status", "--workspace", workspace, "--no-trust-project")
-	if err != nil || len(result.Services) != 0 {
+	if err != nil || len(result.Services) != 1 || result.Services[0].Key != managedCUAKey {
 		t.Fatal("untrusted project supplied services")
 	}
 	result, err = managementCommand(t, paths, "", "status", "--workspace", workspace, "--trust-project")
-	if err != nil || len(result.Services) != 1 || result.Services[0].Approval != "ask" {
+	if err != nil || len(result.Services) != 2 || result.Services[0].Approval != "ask" {
 		t.Fatalf("trust became connection approval: %+v %v", result, err)
 	}
 	key := result.Services[0].Key

@@ -6,12 +6,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/url"
 	"slices"
 	"strings"
 	"sync"
 	"time"
-	"unicode"
 
 	"github.com/ch1lam/aice-cli/internal/agent"
 	"github.com/ch1lam/aice-cli/internal/config"
@@ -51,19 +51,32 @@ type mcpCatalog struct {
 	entries      map[string]mcpCatalogEntry
 	names        map[string]string
 	catalogBytes map[string]int
+	managedCUA   bool
 }
 
 func newMCPCatalog(configuration config.MCPConfig, connections map[string]mcpCatalogConnection, gate *guard.Guard) (*mcpCatalog, error) {
+	return buildMCPCatalog(configuration, connections, gate, nil)
+}
+
+func buildMCPCatalog(configuration config.MCPConfig, connections map[string]mcpCatalogConnection, gate *guard.Guard, managed *managedCUACatalogBinding) (*mcpCatalog, error) {
 	if gate == nil || len(configuration.Servers) > 129 || len(connections) > 129 {
 		return nil, fmt.Errorf("MCP catalog requires a Guard and bounded service inputs")
+	}
+	configuration, connections, err := withManagedCUACatalog(configuration, connections, managed)
+	if err != nil {
+		return nil, err
 	}
 	c := &mcpCatalog{
 		refresh: make(chan struct{}, 1), config: configuration.Clone(), guard: gate,
 		connections: make(map[string]mcpCatalogConnection), scopes: make(map[string]string), entries: make(map[string]mcpCatalogEntry), names: make(map[string]string),
 		catalogBytes: make(map[string]int),
+		managedCUA:   managed != nil,
 	}
 	for key := range c.config.Servers {
 		c.scopes[key] = mcpPermissionScope(c.config, key)
+		if managed != nil && key == managedCUAKey {
+			c.scopes[key] += ":managed-cua:" + string(managed.mode) + ":" + managedCUAPolicyVersion
+		}
 	}
 	for key, connection := range connections {
 		if _, found := configuration.Servers[key]; !found || connection == nil {
@@ -364,6 +377,14 @@ func (c *mcpCatalog) publish(server config.MCPServer, connection mcpCatalogConne
 			ToolName: remote.Name, SchemaFingerprint: mcpDigest([]json.RawMessage{remote.InputSchema, remote.OutputSchema})}
 		allowed := c.config.ToolAllowed(server.Key, remote.Name)
 		decision := guard.Decision(permissions.Decision("", remote.Name, binding.SchemaFingerprint))
+		if c.managedCUA && server.Key == managedCUAKey {
+			// Only the explicitly injected, reviewed Run backend can inherit the
+			// user's Computer Use enablement. Config names and annotations cannot.
+			allowed = allowed && slices.Contains(managedCUAToolNames(), remote.Name)
+			if allowed && decision != guard.DecisionDeny {
+				decision = guard.DecisionAllow
+			}
+		}
 		policy.Tools = append(policy.Tools, guard.MCPToolPolicy{Name: remote.Name, SchemaFingerprint: binding.SchemaFingerprint, Allowed: allowed, UserDecision: decision})
 		if !allowed || decision == guard.DecisionDeny {
 			continue
@@ -429,10 +450,18 @@ func mcpConnectionSecrets(server config.MCPServer) []string {
 func (c *mcpCatalog) rank(request tool.ToolSearchRequest, response tool.ToolSearchResult) tool.ToolSearchResult {
 	type candidate struct {
 		entry mcpCatalogEntry
-		score int
+		terms map[string]bool
+		score float64
+		exact bool
 	}
 	var candidates []candidate
-	terms := strings.FieldsFunc(strings.ToLower(request.Query), func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsNumber(r) })
+	terms := mcpSearchTerms(request.Query)
+	queryTerms := make([]string, 0, len(terms))
+	for term := range terms {
+		queryTerms = append(queryTerms, term)
+	}
+	slices.Sort(queryTerms)
+	frequencies := make(map[string]int)
 	for id, entry := range c.entries {
 		if entry.binding.Operation != "" {
 			continue
@@ -441,24 +470,39 @@ func (c *mcpCatalog) rank(request tool.ToolSearchRequest, response tool.ToolSear
 			continue
 		}
 		definition := entry.Tool.Definition()
-		name, description := strings.ToLower(entry.binding.ToolName), strings.ToLower(definition.Description)
-		score := 0
-		for _, term := range terms {
-			if strings.Contains(name, term) {
-				score += 4
-			}
-			if strings.Contains(description, term) {
-				score++
-			}
+		documentTerms := mcpSearchTerms(definition.Description)
+		for term := range mcpSearchTerms(entry.binding.ToolName) {
+			documentTerms[term] = true
 		}
-		if len(terms) > 0 && score == 0 && len(request.IDs) == 0 {
-			continue
+		for term := range documentTerms {
+			frequencies[term]++
 		}
-		candidates = append(candidates, candidate{entry, score})
+		candidates = append(candidates, candidate{entry: entry, terms: documentTerms, exact: strings.EqualFold(strings.TrimSpace(request.Query), entry.binding.ToolName)})
 	}
+	// Common catalog boilerplate and repeated domain words carry less evidence
+	// than rare capabilities. Count each term once so repetition cannot boost it.
+	for i := range candidates {
+		for _, term := range queryTerms {
+			if candidates[i].terms[term] {
+				candidates[i].score += math.Log1p(float64(len(candidates)) / float64(frequencies[term]))
+			}
+		}
+	}
+	candidates = slices.DeleteFunc(candidates, func(c candidate) bool {
+		return len(terms) > 0 && c.score == 0 && !c.exact && len(request.IDs) == 0
+	})
 	slices.SortFunc(candidates, func(a, b candidate) int {
-		if a.score != b.score {
-			return b.score - a.score
+		if a.exact != b.exact {
+			if a.exact {
+				return -1
+			}
+			return 1
+		}
+		if a.score > b.score {
+			return -1
+		}
+		if a.score < b.score {
+			return 1
 		}
 		return strings.Compare(a.entry.Reference.ID, b.entry.Reference.ID)
 	})

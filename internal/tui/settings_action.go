@@ -311,6 +311,12 @@ func (m model) applySettingActionDone(msg settingsActionDone) (tea.Model, tea.Cm
 	if msg.snapshot.Categories != nil {
 		p.snapshot = msg.snapshot
 	}
+	if msg.result.FocusSetting != "" && msg.err == nil && !msg.action.cancelled {
+		p.focusField = msg.result.FocusSetting
+		p.search = false
+		p.notice = ""
+		return m, m.refreshSettings()
+	}
 	p.continuation = nil
 	p.notice = settingsActionNotice(msg.result, msg.err)
 	if value := msg.result.Continuation; value != nil && msg.err == nil && !msg.action.cancelled && msg.result.Committed && msg.result.Applied {

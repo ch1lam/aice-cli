@@ -720,9 +720,7 @@ func (a *application) prepareRunEnvironment(
 		return nil, err
 	}
 	g.SetSearchTarget(webState.searchTarget)
-	g.SetDesktopEnabled(configured.configuration.DesktopEnabled)
-	adapter.desktop = desktopState
-	mcpState, err := newMCPOwner(configured.configuration.MCP, g, yolo, a.dependencies.openMCP, mcpOAuthRefresh(configured.configuration.Paths))
+	mcpState, err := a.newConfiguredMCPOwner(configured.configuration, g, yolo)
 	if err != nil {
 		return nil, err
 	}
@@ -877,6 +875,7 @@ func (a *application) newAgentLoopWithOptions(
 
 type interactiveSession struct {
 	mcp            *mcpOwner
+	mcpLoaded      *mcpLoadedTools // protected by stateMu; current main Run only
 	lifecycle      settingsLifecycle
 	catalog        sessionCatalog
 	browser        *browser.Manager

@@ -18,10 +18,13 @@ type desktopDisplayProjection struct {
 }
 
 func desktopTool(name string) bool {
-	return name == "desktop_apps" || name == "desktop_observe" || name == "desktop_act"
+	return name == "desktop_apps" || name == "desktop_observe" || name == "desktop_act" || managedDesktopOperation(name) != ""
 }
 
 func (p *desktopDisplayProjection) start(call llm.ToolCall) *interaction.DesktopDisplay {
+	if operation := managedDesktopOperation(call.Name); operation != "" {
+		return managedDesktopStart(operation, call.Arguments)
+	}
 	if !desktopTool(call.Name) {
 		return nil
 	}
@@ -72,6 +75,9 @@ func (p *desktopDisplayProjection) end(event agent.AgentEvent) *interaction.Desk
 		return nil
 	}
 	call := *event.ToolCall
+	if operation := managedDesktopOperation(call.Name); operation != "" {
+		return managedDesktopEnd(operation, event)
+	}
 	d := p.start(call)
 	if d == nil {
 		return nil

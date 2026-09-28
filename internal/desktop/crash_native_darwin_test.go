@@ -30,7 +30,7 @@ func TestNativeMacProxyCrash(t *testing.T) {
 	counts := &nativeCancelCounts{polled: make(chan struct{})}
 	var child *os.Process
 	connector.connect = func(ctx context.Context) (driverClient, error) {
-		transport, err := newProcessTransport(driver, endpoint)
+		transport, err := newProxyConfig(driver, endpoint)
 		if err != nil {
 			return nil, err
 		}
@@ -38,7 +38,11 @@ func TestNativeMacProxyCrash(t *testing.T) {
 		if err != nil {
 			return nil, err
 		}
-		child = transport.command.Process
+		child, err = os.FindProcess(client.connection.StdioPID())
+		if err != nil {
+			_ = client.close()
+			return nil, err
+		}
 		counts.dials.Add(1)
 		return &nativeCancelClient{driverClient: client, counts: counts}, nil
 	}

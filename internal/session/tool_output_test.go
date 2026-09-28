@@ -19,7 +19,7 @@ func TestToolDetailsSurviveBranchesCompactionAndReopen(t *testing.T) {
 	result := messages[2].(llm.ToolResultMessage)
 	result.Content = []llm.ContentPart{llm.NewTextContent("before").Part(), {Type: llm.ContentTypeImage, Image: &llm.ImageContent{Data: []byte("image"), MIMEType: "image/png"}}, llm.NewTextContent("after").Part()}
 	result.IsError = true
-	result.Details = &llm.ToolResultDetails{State: llm.ExecutionReturned, StructuredContent: json.RawMessage(`{"value":9007199254740993}`), Binding: &llm.ToolBinding{Source: "project:/fixture", ServiceID: "test", ConnectionFingerprint: "connection", ToolName: "inspect", SchemaFingerprint: "schema"}, Loss: "one block exceeded hard limit"}
+	result.Details = &llm.ToolResultDetails{State: llm.ExecutionReturned, StructuredContent: json.RawMessage(" \n{\n  \"value\": 9007199254740993, \"label\": \"<tag>&\", \"value\": 1.20e+03\n}\t"), Binding: &llm.ToolBinding{Source: "project:/fixture", ServiceID: "test", ConnectionFingerprint: "connection", ToolName: "inspect", SchemaFingerprint: "schema"}, Loss: "one block exceeded hard limit"}
 	messages[2] = result
 	entries := appendMessages(t, store, "initial", messages...)
 	original := fileBytes(t, path)

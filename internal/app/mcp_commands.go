@@ -28,6 +28,7 @@ func mcpMenu() *interaction.CommandMenu {
 		{Label: "Remove a user service and stored access", Arguments: "remove"},
 		{Label: "Inspect operation permissions", Arguments: "permissions"},
 		{Label: "Save or remove a user permission", Arguments: "permission"},
+		{Label: "Computer Use settings", Description: "Manage the built-in CUA service", Arguments: "desktop"},
 	}}
 }
 
@@ -78,6 +79,9 @@ func prepareMCPCommand(ctx context.Context, configuration config.Config, owner *
 	if op.Action == "status" {
 		return op, nil
 	}
+	if op.Key == managedCUAKey {
+		return op, fmt.Errorf("managed:cua is controlled by Computer Use settings; open /desktop")
+	}
 	var err error
 	if op.Key == "" {
 		if op.Action == "add" {
@@ -85,6 +89,9 @@ func prepareMCPCommand(ctx context.Context, configuration config.Config, owner *
 		} else {
 			menu := &interaction.CommandMenu{Title: "Select the exact MCP service"}
 			for _, service := range mcpManagementStatus(configuration, owner, "") {
+				if service.Managed {
+					continue
+				}
 				server := configuration.MCP.Servers[service.Key]
 				if (op.Action == "replace" || op.Action == "enable" || op.Action == "disable" || op.Action == "remove") && server.Source.Kind != "user" {
 					continue

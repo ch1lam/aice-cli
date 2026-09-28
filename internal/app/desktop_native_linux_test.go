@@ -50,7 +50,7 @@ func TestNativeLinuxDesktopPrint(t *testing.T) {
 	awaitNativePrintState(t, ctx, sentinel, func(s nativePrintState) bool { return s.Active })
 	paths := authTestPaths(t)
 	writeConfigFixture(t, paths.GlobalSettings, `{"provider":"custom","model":"synthetic","desktop_enabled":true,"desktop_control_mode":"background_only"}`)
-	model := &nativePrintModel{t: t, targets: targets, query: "AICE CLI Target"}
+	model := &nativeManagedCUAModel{targets: targets, names: make(map[string]string)}
 	command, err := newTestCommand(t, dependencies{
 		loadConfig:  func(options config.LoadOptions) (config.Config, error) { return config.LoadFiles(paths, options) },
 		newModel:    func(config.Config) (llm.Streamer, error) { return model, nil },
@@ -71,7 +71,7 @@ func TestNativeLinuxDesktopPrint(t *testing.T) {
 		t.Fatal("native desktop CLI failed", err)
 	}
 	elapsed := time.Since(started)
-	if model.requests != 11 || len(model.results) != 10 || strings.TrimSpace(output.String()) != "Synthetic tool sequence finished." {
+	if model.index != 3 || model.nativeCalls != 18 || model.images != 9 || strings.TrimSpace(output.String()) != "Managed synthetic sequence finished." {
 		t.Fatal("unexpected CLI completion or model request count", model.requests, len(model.results))
 	}
 	for i, target := range targets {
@@ -88,7 +88,7 @@ func TestNativeLinuxDesktopPrint(t *testing.T) {
 	if !final.Active || final.FocusLosses != 0 || final.Commits != 0 || final.KeysSent < 3 {
 		t.Fatal("CLI actions disturbed concurrent foreground input")
 	}
-	verifyNativePrintSession(t, ctx, sessionPath, model.results)
+	verifyNativePrintSession(t, ctx, sessionPath, model.results, model.viewBudget)
 	// Only this private installation can match; unrelated services are untouched.
 	entries, err := os.ReadDir("/proc")
 	if err != nil {

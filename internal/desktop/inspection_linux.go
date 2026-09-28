@@ -29,7 +29,7 @@ func newLinuxInspector(binary, endpoint string) (linuxInspector, error) {
 	return linuxInspector{service: service,
 		peer: func(ctx context.Context, pid int) error { return verifyLinuxServicePeer(ctx, binary, endpoint, pid) },
 		connect: func(ctx context.Context) (driverClient, error) {
-			transport, err := newProcessTransport(binary, endpoint)
+			transport, err := newProxyConfig(binary, endpoint)
 			if err != nil {
 				return nil, err
 			}

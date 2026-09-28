@@ -2,6 +2,7 @@ package mcpclient
 
 import (
 	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -19,8 +20,8 @@ var baseEnvironment = []string{"PATH", "HOME", "USER", "LOGNAME", "TMPDIR", "TMP
 
 type childProcess struct {
 	cmd    *exec.Cmd
-	stdin  *ownedPipe
-	stdout *ownedPipe
+	stdin  io.WriteCloser
+	stdout io.ReadCloser
 	done   chan struct{}
 	once   sync.Once
 	err    error
@@ -42,9 +43,11 @@ func openStdio(config StdioConfig, limit int, receipts *receipts) (mcp.Transport
 		return nil, nil, ErrConfig
 	}
 	env := make(map[string]string)
-	for _, key := range baseEnvironment {
-		if value, ok := os.LookupEnv(key); ok {
-			env[key] = value
+	if !config.ReplaceEnvironment {
+		for _, key := range baseEnvironment {
+			if value, ok := os.LookupEnv(key); ok {
+				env[key] = value
+			}
 		}
 	}
 	for key, value := range config.Env {
@@ -55,6 +58,7 @@ func openStdio(config StdioConfig, limit int, receipts *receipts) (mcp.Transport
 	}
 	cmd := exec.Command(config.Executable, config.Args...)
 	cmd.Dir = config.Dir
+	cmd.Env = make([]string, 0, len(env))
 	keys := make([]string, 0, len(env))
 	for key := range env {
 		keys = append(keys, key)
@@ -102,12 +106,19 @@ func openStdio(config StdioConfig, limit int, receipts *receipts) (mcp.Transport
 
 func (p *childProcess) Close() error {
 	p.once.Do(func() {
-		_ = p.stdin.Close()
-		_ = p.stdout.Close()
+		// Close itself can wait for in-flight I/O on Windows. The grace period
+		// includes pipe closure so it cannot prevent killing the owned child.
+		closed := make(chan struct{})
+		go func() {
+			_ = p.stdin.Close()
+			_ = p.stdout.Close()
+			<-p.done
+			close(closed)
+		}()
 		timer := time.NewTimer(250 * time.Millisecond)
 		defer timer.Stop()
 		select {
-		case <-p.done:
+		case <-closed:
 			return
 		case <-timer.C:
 		}
@@ -116,7 +127,7 @@ func (p *childProcess) Close() error {
 		}
 		timer.Reset(2 * time.Second)
 		select {
-		case <-p.done:
+		case <-closed:
 		case <-timer.C:
 			p.err = ErrTransport
 		}

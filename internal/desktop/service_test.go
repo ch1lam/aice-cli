@@ -140,16 +140,16 @@ func TestServiceProxyCannotAutolaunch(t *testing.T) {
 	t.Parallel()
 	binary := filepath.Join(t.TempDir(), "cua-driver")
 	endpoint := filepath.Join(t.TempDir(), "cua.sock")
-	transport, err := newProcessTransport(binary, endpoint)
+	transport, err := newProxyConfig(binary, endpoint)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{binary, "mcp", "--socket", endpoint, "--embedded"}
-	if strings.Join(transport.command.Args, "\n") != strings.Join(want, "\n") {
-		t.Fatal("proxy could launch a service", transport.command.Args)
+	want := []string{"mcp", "--socket", endpoint, "--embedded"}
+	if transport.Stdio.Executable != binary || !transport.Stdio.ReplaceEnvironment || strings.Join(transport.Stdio.Args, "\n") != strings.Join(want, "\n") {
+		t.Fatal("proxy could launch a service", transport.Stdio.Args)
 	}
-	for _, entry := range transport.command.Env {
-		if strings.HasPrefix(entry, "CUA_DRIVER_HOST_BUNDLE_ID=") {
+	for key := range transport.Stdio.Env {
+		if key == "CUA_DRIVER_HOST_BUNDLE_ID" {
 			t.Fatal("proxy claimed a host identity")
 		}
 	}

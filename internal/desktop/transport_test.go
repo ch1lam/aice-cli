@@ -1,24 +1,22 @@
 package desktop
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"io"
+	"fmt"
 	"maps"
-	"net"
-	"os"
-	"os/exec"
+	"net/http"
+	"net/http/httptest"
 	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
-	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/ch1lam/aice-cli/internal/mcpclient"
 )
 
 type fixturePeer struct {
@@ -29,7 +27,7 @@ type fixturePeer struct {
 
 // A raw fake peer tests the actual legacy wire contract, independently of the
 // SDK server implementation. It never starts Cua or reads desktop content.
-func fakeTransport(t *testing.T, mode string) (*mcp.IOTransport, *fixturePeer) {
+func fakeTransport(t *testing.T, mode string) (mcpclient.Config, *fixturePeer) {
 	t.Helper()
 	schemas := schemaFixture(t)
 	if strings.HasPrefix(mode, "linux-full") {
@@ -58,87 +56,120 @@ func fakeTransport(t *testing.T, mode string) (*mcp.IOTransport, *fixturePeer) {
 		schemas["check_permissions"] = json.RawMessage(`{"type":"object"}`)
 	}
 	allNames := slices.Sorted(maps.Keys(schemas))
-	local, peer := net.Pipe()
 	state := &fixturePeer{}
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		defer peer.Close()
-		decoder, encoder := json.NewDecoder(peer), json.NewEncoder(peer)
-		for {
-			var request struct {
-				ID     json.RawMessage `json:"id"`
-				Method string          `json:"method"`
-				Params json.RawMessage `json:"params"`
-			}
-			if decoder.Decode(&request) != nil {
-				return
-			}
-			if len(request.ID) == 0 {
-				continue
-			}
-			var result any
-			switch request.Method {
-			case "initialize":
-				state.initializes.Add(1)
-				var params struct {
-					Protocol string `json:"protocolVersion"`
-				}
-				_ = json.Unmarshal(request.Params, &params)
-				if params.Protocol != ProtocolVersion {
-					t.Errorf("initialize protocol %s", params.Protocol)
-				}
-				version := DriverVersion
-				if mode == "wrong-version" {
-					version = "0.0.0"
-				}
-				result = map[string]any{"protocolVersion": ProtocolVersion, "serverInfo": map[string]string{"name": "cua-driver", "version": version}, "capabilities": map[string]any{"tools": map[string]any{}}}
-			case "tools/list":
-				state.pages.Add(1)
-				var params struct {
-					Cursor string `json:"cursor"`
-				}
-				_ = json.Unmarshal(request.Params, &params)
-				names := allNames[:3]
-				next := "second"
-				if params.Cursor != "" {
-					names = allNames[3:]
-					next = ""
-				}
-				if mode == "loop-pagination" {
-					next = "second"
-					names = nil
-				}
-				list := []any{}
-				for _, name := range names {
-					list = append(list, map[string]any{"name": name, "inputSchema": schemas[name]})
-				}
-				result = map[string]any{"tools": list, "nextCursor": next}
-			case "tools/call":
-				state.calls.Add(1)
-				switch mode {
-				case "eof":
-					return
-				case "cancel":
-					// Keep reading so the SDK can send its cancellation notification.
-					continue
-				default:
-					result = map[string]any{"isError": true, "structuredContent": map[string]any{"effect": "partial", "secret": "synthetic"}, "content": []any{
-						map[string]any{"type": "text", "text": "action dispatched; observation failed"},
-						map[string]any{"type": "image", "mimeType": "image/png", "data": base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{42}, 100*1024))},
-					}}
-				}
-			default:
-				t.Errorf("unexpected RPC %s", request.Method)
-				return
-			}
-			if encoder.Encode(map[string]any{"jsonrpc": "2.0", "id": request.ID, "result": result}) != nil {
-				return
-			}
+	native := &fakeDriver{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
 		}
-	}()
-	t.Cleanup(func() { _ = local.Close(); _ = peer.Close(); <-done })
-	return &mcp.IOTransport{Reader: &boundedReader{ReadCloser: local, limit: maxMessageBytes}, Writer: local}, state
+		decoder, encoder := json.NewDecoder(r.Body), json.NewEncoder(w)
+		var request struct {
+			ID     json.RawMessage `json:"id"`
+			Method string          `json:"method"`
+			Params json.RawMessage `json:"params"`
+		}
+		if decoder.Decode(&request) != nil {
+			return
+		}
+		if len(request.ID) == 0 {
+			w.WriteHeader(http.StatusAccepted)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		var result any
+		switch request.Method {
+		case "initialize":
+			state.initializes.Add(1)
+			var params struct {
+				Protocol string `json:"protocolVersion"`
+			}
+			_ = json.Unmarshal(request.Params, &params)
+			if params.Protocol != ProtocolVersion {
+				t.Errorf("initialize protocol %s", params.Protocol)
+			}
+			version := DriverVersion
+			if mode == "wrong-version" {
+				version = "0.0.0"
+			}
+			result = map[string]any{"protocolVersion": ProtocolVersion, "serverInfo": map[string]string{"name": "cua-driver", "version": version}, "capabilities": map[string]any{"tools": map[string]any{}}}
+		case "tools/list":
+			state.pages.Add(1)
+			var params struct {
+				Cursor string `json:"cursor"`
+			}
+			_ = json.Unmarshal(request.Params, &params)
+			names := allNames[:3]
+			next := "second"
+			if params.Cursor != "" {
+				names = allNames[3:]
+				next = ""
+			}
+			if mode == "loop-pagination" {
+				next = "second"
+				names = nil
+			}
+			list := []any{}
+			for _, name := range names {
+				list = append(list, map[string]any{"name": name, "description": "synthetic descriptor", "inputSchema": schemas[name], "outputSchema": json.RawMessage(`{"type":"object","properties":{"n":{"default":9007199254740993}}}`), "annotations": json.RawMessage(`{"readOnlyHint":false}`)})
+			}
+			result = map[string]any{"tools": list, "nextCursor": next}
+		case "tools/call":
+			state.calls.Add(1)
+			switch mode {
+			case "managed-run":
+				var params struct {
+					Name      string         `json:"name"`
+					Arguments map[string]any `json:"arguments"`
+				}
+				if json.Unmarshal(request.Params, &params) != nil {
+					t.Error("invalid managed fixture call")
+					return
+				}
+				reply, err := native.call(r.Context(), params.Name, params.Arguments)
+				if err != nil {
+					t.Error("unexpected managed fixture operation", err)
+					return
+				}
+				content := []any{}
+				for _, text := range reply.Text {
+					content = append(content, map[string]any{"type": "text", "text": text})
+				}
+				result = map[string]any{"structuredContent": reply.Structured, "isError": reply.IsError, "content": content}
+			case "eof":
+				conn, _, err := w.(http.Hijacker).Hijack()
+				if err == nil {
+					_ = conn.Close()
+				}
+				return
+			case "ordered-content":
+				result = json.RawMessage(`{"structuredContent":{"n":9007199254740993},"isError":true,"content":[{"type":"text","text":"before"},{"type":"image","mimeType":"image/png","data":"AQID"},{"type":"text","text":"after"},{"type":"audio","mimeType":"audio/wav","data":"BAUG"},{"type":"future","n":9007199254740993}]}`)
+			case "cancel":
+				<-r.Context().Done()
+				return
+			default:
+				result = map[string]any{"isError": true, "structuredContent": map[string]any{"effect": "partial", "secret": "synthetic"}, "content": []any{
+					map[string]any{"type": "text", "text": "action dispatched; observation failed"},
+					map[string]any{"type": "image", "mimeType": "image/png", "data": base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{42}, 100*1024))},
+				}}
+			}
+		default:
+			t.Errorf("unexpected RPC %s", request.Method)
+			return
+		}
+		if mode == "changed-after-call" && request.Method == "tools/call" {
+			w.Header().Set("Content-Type", "text/event-stream")
+			fmt.Fprint(w, "data: {\"jsonrpc\":\"2.0\",\"method\":\"notifications/tools/list_changed\"}\n\n")
+			response, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": request.ID, "result": result})
+			fmt.Fprintf(w, "data: %s\n\n", response)
+			return
+		}
+		if encoder.Encode(map[string]any{"jsonrpc": "2.0", "id": request.ID, "result": result}) != nil {
+			return
+		}
+	}))
+	t.Cleanup(server.Close)
+	return mcpclient.Config{HTTP: &mcpclient.HTTPConfig{Endpoint: server.URL}}, state
 }
 
 func TestLegacyConnectionReuseAndContent(t *testing.T) {
@@ -211,26 +242,6 @@ func TestMutationTransportFailureNeverReplays(t *testing.T) {
 	}
 }
 
-func TestMessageSizeBound(t *testing.T) {
-	t.Parallel()
-	for _, test := range []struct {
-		name, input string
-		limit       int
-		fails       bool
-	}{
-		{"exact", "1234\n1234\n", 4, false}, {"over", "12345\n", 4, true},
-		{"large", strings.Repeat("x", 100*1024) + "\n", 200 * 1024, false},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			reader := &boundedReader{ReadCloser: io.NopCloser(strings.NewReader(test.input)), limit: test.limit}
-			_, err := io.Copy(io.Discard, reader)
-			if (err != nil) != test.fails {
-				t.Fatal(err)
-			}
-		})
-	}
-}
-
 func TestDriverEnvironmentDoesNotInheritAuthorityOrSecrets(t *testing.T) {
 	t.Parallel()
 	got := driverEnvironment([]string{"HOME=/synthetic", "DISPLAY=:1", "OPENAI_API_KEY=secret", "DYLD_INSERT_LIBRARIES=evil", "CUA_DRIVER_PERMISSION_MODE=unrestricted", "CUA_DRIVER_CAPABILITY_MANIFEST=/evil", "PATH=/usr/bin"})
@@ -242,134 +253,5 @@ func TestDriverEnvironmentDoesNotInheritAuthorityOrSecrets(t *testing.T) {
 	}
 	if !strings.Contains(text, "DISPLAY=:1") || !strings.Contains(text, "CUA_DRIVER_PERMISSION_MODE=standard") || !strings.Contains(text, "CUA_DRIVER_RS_UPDATE_CHECK=false") {
 		t.Fatal("missing required environment")
-	}
-}
-
-func TestOwnedProcessClosesHungChild(t *testing.T) {
-	if os.Getenv("AICE_DESKTOP_FAKE_CHILD") == "1" {
-		// Block even after stdin closes. Parent must terminate only this process.
-		reader := bufio.NewReader(os.Stdin)
-		_, _ = reader.ReadString('\n')
-		time.Sleep(time.Minute)
-		os.Exit(0)
-	}
-	t.Parallel()
-	command := exec.Command(os.Args[0], "-test.run=^TestOwnedProcessClosesHungChild$")
-	command.Env = append(os.Environ(), "AICE_DESKTOP_FAKE_CHILD=1")
-	transport := &processTransport{command: command}
-	conn, err := transport.Connect(t.Context())
-	if err != nil {
-		t.Fatal(err)
-	}
-	done := make(chan struct{})
-	go func() { _ = conn.Close(); close(done) }()
-	select {
-	case <-done:
-	case <-time.After(10 * time.Second):
-		_ = command.Process.Kill()
-		<-done
-		t.Fatal("child cleanup blocked")
-	}
-	if command.ProcessState == nil {
-		t.Fatal("owned process was not waited")
-	}
-	_ = conn.Close()
-}
-
-func TestOwnedProcessNormalCloseIsSuccessful(t *testing.T) {
-	if os.Getenv("AICE_DESKTOP_NORMAL_CHILD") == "1" {
-		_, _ = io.WriteString(os.Stdout, "{\"jsonrpc\":\"2.0\",\"method\":\"ready\"}\n")
-		_, _ = io.Copy(io.Discard, os.Stdin)
-		os.Exit(0)
-	}
-	t.Parallel()
-	command := exec.Command(os.Args[0], "-test.run=^TestOwnedProcessNormalCloseIsSuccessful$")
-	command.Env = append(os.Environ(), "AICE_DESKTOP_NORMAL_CHILD=1", "GORACE=atexit_sleep_ms=0")
-	transport := &processTransport{command: command}
-	conn, err := transport.Connect(t.Context())
-	if err != nil {
-		t.Fatal(err)
-	}
-	ready, cancel := context.WithTimeout(t.Context(), 10*time.Second)
-	defer cancel()
-	if _, err := conn.Read(ready); err != nil {
-		_ = conn.Close()
-		t.Fatal("child did not become ready", err)
-	}
-	if err := conn.Close(); err != nil {
-		t.Fatal("normal child shutdown failed", err)
-	}
-	if command.ProcessState == nil || !command.ProcessState.Success() {
-		t.Fatal("normal child not reaped successfully")
-	}
-	if err := conn.Close(); err != nil {
-		t.Fatal("repeated close failed", err)
-	}
-}
-
-// Model a pipe Close waiting for an outstanding read until the child exits.
-// This makes the Windows shutdown ordering regression reproducible on any host.
-type closeAfterEOFReader struct{ io.ReadCloser }
-
-func (r closeAfterEOFReader) Close() error {
-	_, _ = io.Copy(io.Discard, r.ReadCloser)
-	return r.ReadCloser.Close()
-}
-
-func TestOwnedProcessClosesBlockedPipe(t *testing.T) {
-	t.Parallel()
-	command := exec.Command(os.Args[0], "-test.run=^TestOwnedProcessClosesHungChild$")
-	command.Env = append(os.Environ(), "AICE_DESKTOP_FAKE_CHILD=1")
-	stdout, err := command.StdoutPipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = stdout.Close() })
-	stdin, err := command.StdinPipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = stdin.Close() })
-	if err := command.Start(); err != nil {
-		t.Fatal(err)
-	}
-	p := &ownedProcess{cmd: command, stdin: stdin, stdout: closeAfterEOFReader{stdout}}
-	done := make(chan struct{})
-	go func() { _ = p.Close(); close(done) }()
-	t.Cleanup(func() {
-		_ = command.Process.Kill()
-		<-done
-	})
-	select {
-	case <-done:
-	case <-time.After(10 * time.Second):
-		t.Fatal("pipe close prevented the child shutdown deadline")
-	}
-	if command.ProcessState == nil || command.ProcessState.Success() || p.err == nil {
-		t.Fatal("hung child was not terminated and reaped", command.ProcessState, p.err)
-	}
-	if err := p.Close(); err != p.err {
-		t.Fatal("repeated close changed the shutdown result", err)
-	}
-}
-
-func TestInitializeCancellationClosesBlockedWriter(t *testing.T) {
-	t.Parallel()
-	local, peer := net.Pipe()
-	defer peer.Close()
-	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
-	defer cancel()
-	// Peer never reads initialize. The connection must close to unblock Write.
-	done := make(chan error, 1)
-	go func() { _, err := connect(ctx, &mcp.IOTransport{Reader: local, Writer: local}); done <- err }()
-	select {
-	case err := <-done:
-		if err == nil {
-			t.Fatal("expected cancellation")
-		}
-	case <-time.After(3 * time.Second):
-		_ = local.Close()
-		<-done
-		t.Fatal("initialize write ignored cancellation")
 	}
 }

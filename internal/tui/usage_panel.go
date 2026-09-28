@@ -86,7 +86,13 @@ func (m model) openUsage(tab int) (model, tea.Cmd, bool) {
 }
 func (m model) isInfoCommandInput() bool {
 	request, ok := parseSlashCommand(m.input.Value())
-	if !ok || request.Arguments != "" {
+	if !ok {
+		return false
+	}
+	if request.Name == "mcp" {
+		return m.readSettings != nil && (request.Arguments == "" || request.Arguments == "desktop")
+	}
+	if request.Arguments != "" {
 		return false
 	}
 	return ((request.Name == "settings" || request.Name == "desktop") && m.readSettings != nil) || ((request.Name == "usage" || request.Name == "context" || request.Name == "session") && m.readUsage != nil)

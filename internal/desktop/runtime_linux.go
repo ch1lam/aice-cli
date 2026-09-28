@@ -3,11 +3,10 @@ package desktop
 import (
 	"context"
 	"errors"
-	"io"
-	"os"
-	"os/exec"
 	"path/filepath"
 	"time"
+
+	"github.com/ch1lam/aice-cli/internal/mcpclient"
 )
 
 // Linux supports both a shared service proxy and an owned stdio runtime in the
@@ -22,7 +21,7 @@ func dialLinuxRuntime(ctx context.Context, binary, endpoint string) (driverClien
 	}
 	if _, err := s.service.inspect(ctx); err == nil {
 		s.connect = func(ctx context.Context) (driverClient, error) {
-			transport, err := newProcessTransport(binary, endpoint)
+			transport, err := newProxyConfig(binary, endpoint)
 			if err != nil {
 				return nil, err
 			}
@@ -39,7 +38,7 @@ func dialLinuxRuntime(ctx context.Context, binary, endpoint string) (driverClien
 	} else if !serviceHasCode(err, "not_running") {
 		return nil, err
 	}
-	transport, err := newLinuxOwnedTransport(binary)
+	transport, err := newLinuxOwnedConfig(binary)
 	if err != nil {
 		return nil, err
 	}
@@ -57,17 +56,11 @@ func dialLinuxRuntime(ctx context.Context, binary, endpoint string) (driverClien
 	return c, nil
 }
 
-func newLinuxOwnedTransport(binary string) (*processTransport, error) {
+func newLinuxOwnedConfig(binary string) (mcpclient.Config, error) {
 	if !filepath.IsAbs(binary) {
-		return nil, errors.New("desktop: verified absolute Linux binary required")
+		return mcpclient.Config{}, errors.New("desktop: verified absolute Linux binary required")
 	}
-	// There is no daemon socket, autostart entry, implicit grant or remote
-	// endpoint. This exact child is reaped by the shared ownedProcess transport.
-	// Standard mode comes from the fixed environment; upstream validates its
-	// immutable mode and configured native policy before accepting MCP requests.
-	cmd := exec.Command(binary, "mcp", "--direct")
-	cmd.Dir = filepath.Dir(binary)
-	cmd.Env = driverEnvironment(os.Environ())
-	cmd.Stderr = io.Discard
-	return &processTransport{command: cmd}, nil
+	// No daemon socket or autostart entry. The generic client owns this child;
+	// the fixed environment selects standard native permission mode.
+	return driverMCPConfig(binary, filepath.Dir(binary), "mcp", "--direct"), nil
 }

@@ -98,7 +98,7 @@ func newMacServiceConnector(binary, endpoint string) (*serviceConnector, error) 
 			return serviceCommand(ctx, binary, "status", "--socket", endpoint)
 		},
 		connect: func(ctx context.Context) (driverClient, error) {
-			transport, err := newProcessTransport(binary, endpoint)
+			transport, err := newProxyConfig(binary, endpoint)
 			if err != nil {
 				return nil, err
 			}

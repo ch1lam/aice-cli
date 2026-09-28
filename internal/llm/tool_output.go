@@ -1,6 +1,7 @@
 package llm
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"slices"
@@ -46,6 +47,85 @@ type ToolResultDetails struct {
 	Binding           *ToolBinding    `json:"binding,omitempty"`
 	StructuredContent json.RawMessage `json:"structured_content,omitempty"`
 	Loss              string          `json:"loss,omitempty"`
+}
+
+// MarshalJSON keeps the existing JSON value for older readers. encoding/json
+// compacts RawMessage and escapes HTML characters, so a string companion is
+// needed only when that representation would change the retained source bytes.
+// Both fields stay in the same source record, not a second transcript.
+func (d ToolResultDetails) MarshalJSON() ([]byte, error) {
+	if err := d.Validate(); err != nil {
+		return nil, err
+	}
+	type plain ToolResultDetails
+	wire := struct {
+		plain
+		Source *string `json:"structured_content_raw,omitempty"`
+	}{plain: plain(d)}
+	if len(d.StructuredContent) > 0 {
+		encoded, err := json.Marshal(d.StructuredContent)
+		if err != nil {
+			return nil, err
+		}
+		if !bytes.Equal(encoded, d.StructuredContent) {
+			source := string(d.StructuredContent)
+			wire.Source = &source
+		}
+	}
+	return json.Marshal(wire)
+}
+
+// UnmarshalJSON restores exact source spelling when available. The companion
+// must agree with the ordinary field after JSON's lexical normalization; this
+// comparison never decodes numbers to floats or collapses duplicate keys.
+func (d *ToolResultDetails) UnmarshalJSON(data []byte) error {
+	if d == nil {
+		return fmt.Errorf("tool result details: nil receiver")
+	}
+	type plain ToolResultDetails
+	var wire struct {
+		plain
+		Source json.RawMessage `json:"structured_content_raw"`
+	}
+	if err := json.Unmarshal(data, &wire); err != nil {
+		return err
+	}
+	decoded := ToolResultDetails(wire.plain)
+	if len(wire.Source) > 0 {
+		var source string
+		if wire.Source[0] != '"' || json.Unmarshal(wire.Source, &source) != nil {
+			return fmt.Errorf("tool result structured source must be a JSON string")
+		}
+		original := decoded.StructuredContent
+		// JSON's HTML escaping can expand one retained byte to six. Bound the
+		// compatibility value separately; the 1 MiB limit applies to source.
+		if len(original) > 6*MaxStructuredResultBytes {
+			return fmt.Errorf("tool result structured JSON representation exceeds its bound")
+		}
+		decoded.StructuredContent = json.RawMessage(source)
+		if len(source) == 0 {
+			return fmt.Errorf("tool result structured source must not be empty")
+		}
+		if err := decoded.Validate(); err != nil {
+			return err
+		}
+		expected, err := json.Marshal(original)
+		if err != nil {
+			return err
+		}
+		actual, err := json.Marshal(decoded.StructuredContent)
+		if err != nil {
+			return err
+		}
+		if len(original) == 0 || !bytes.Equal(expected, actual) {
+			return fmt.Errorf("tool result structured source differs from its JSON value")
+		}
+	}
+	if err := decoded.Validate(); err != nil {
+		return err
+	}
+	*d = decoded
+	return nil
 }
 
 // Clone transfers mutable details to an independent owner.

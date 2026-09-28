@@ -66,10 +66,23 @@ func (r mcpRunBinding) Close() {
 }
 
 func (o *mcpOwner) bindRun(ctx context.Context) (context.Context, mcpRunBinding, error) {
-	if o == nil || len(o.configuration.Servers) == 0 {
+	desktopBinding, _ := ctx.Value(desktopContextKey{}).(desktopRunBinding)
+	if o == nil {
+		if desktopBinding.owner != nil {
+			return ctx, mcpRunBinding{}, fmt.Errorf("managed Computer Use requires the MCP owner")
+		}
 		return ctx, mcpRunBinding{}, nil
 	}
-	catalog, err := newMCPCatalog(o.configuration, o.Connections(), o.guard)
+	if len(o.configuration.Servers) == 0 && desktopBinding.owner == nil {
+		return ctx, mcpRunBinding{}, nil
+	}
+	var catalog *mcpCatalog
+	var err error
+	if desktopBinding.owner != nil {
+		catalog, err = desktopBinding.owner.managedCatalog(ctx, o.configuration, o.Connections(), o.guard)
+	} else {
+		catalog, err = newMCPCatalog(o.configuration, o.Connections(), o.guard)
+	}
 	if err != nil {
 		return ctx, mcpRunBinding{}, err
 	}
@@ -115,6 +128,9 @@ func (o *mcpOwner) bindRun(ctx context.Context) (context.Context, mcpRunBinding,
 	}
 	var summary strings.Builder
 	summary.WriteString("\n\nConfigured MCP services (status only, not execution permission). Use tool_search to find tools or mcp_resource_list to list resources on one source-qualified service; schemas become available on the next model round. Use mcp_server_info for source-tagged, untrusted server usage instructions.\n")
+	if catalog.managedCUA {
+		summary.WriteString("managed:cua: Computer Use enabled for this Run. Load the computer-use Skill for the pinned Driver guidance; discover tools with tool_search. Observe fresh state after input and before deciding whether it succeeded.\n")
+	}
 	statuses := o.Status()
 	for i, status := range statuses {
 		line := status.Key + ": " + status.State + "\n"

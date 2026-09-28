@@ -151,9 +151,7 @@ func (s *interactiveSession) applySettingsReserved(ctx context.Context, request 
 	s.configuration = candidate
 	if changesDesktop {
 		s.tools, s.systemPrompt = tools, systemPrompt
-		if s.guard != nil {
-			s.guard.SetDesktopEnabled(candidate.DesktopEnabled)
-		}
+		s.desktop.invalidateManagedCatalog(s.guard)
 	}
 	if shared {
 		s.loop = loop

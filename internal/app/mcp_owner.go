@@ -57,18 +57,19 @@ type mcpOwnedService struct {
 // All mutable service fields and slot accounting are protected by mu. Each
 // service gate serializes its operations without holding mu during I/O.
 type mcpOwner struct {
-	mu            sync.Mutex
-	configuration config.MCPConfig
-	guard         *guard.Guard
-	yolo          bool
-	open          mcpOpenFunc
-	refresh       mcpRefreshFunc
-	services      map[string]*mcpOwnedService
-	slots         int
-	closed        bool
-	work          sync.WaitGroup
-	closeOnce     sync.Once
-	closeErr      error
+	mu              sync.Mutex
+	configuration   config.MCPConfig
+	guard           *guard.Guard
+	yolo            bool
+	open            mcpOpenFunc
+	checkConnection func(mcpclient.Config) error
+	refresh         mcpRefreshFunc
+	services        map[string]*mcpOwnedService
+	slots           int
+	closed          bool
+	work            sync.WaitGroup
+	closeOnce       sync.Once
+	closeErr        error
 }
 
 func newMCPOwner(configuration config.MCPConfig, gate *guard.Guard, yolo bool, open mcpOpenFunc, refresh mcpRefreshFunc) (*mcpOwner, error) {
@@ -217,10 +218,10 @@ func (o *mcpOwner) ensure(ctx context.Context, s *mcpOwnedService) (mcpOwnedConn
 	o.slots++
 	s.status.State, s.status.Detail = "connecting", ""
 	o.mu.Unlock()
-	env, headers := s.server.ConnectionValues()
+	_, headers := s.server.ConnectionValues()
 	configuration := mcpclient.Config{ConnectTimeout: s.server.ConnectTimeout, CallTimeout: s.server.CallTimeout}
 	if s.server.Settings.Transport == "stdio" {
-		configuration.Stdio = &mcpclient.StdioConfig{Executable: s.server.Settings.Command, Args: append([]string(nil), s.server.Settings.Args...), Dir: s.server.Settings.Cwd, Env: env}
+		configuration.Stdio = mcpStdioConfiguration(s.server)
 	} else {
 		configuration.HTTP = &mcpclient.HTTPConfig{Endpoint: s.server.Settings.URL, Headers: headers}
 		if s.server.Settings.OAuth != nil {
@@ -271,6 +272,9 @@ func (o *mcpOwner) ensure(ctx context.Context, s *mcpOwnedService) (mcpOwnedConn
 }
 
 func mcpFailureStatus(err error) (string, string) {
+	if errors.Is(err, errManagedCUAConnection) {
+		return "disabled", errManagedCUAConnection.Error()
+	}
 	var httpError *mcpclient.HTTPError
 	if errors.As(err, &httpError) && (httpError.StatusCode == 401 || httpError.StatusCode == 403) {
 		return "needs_auth", "MCP authentication is required or was rejected"

@@ -37,6 +37,8 @@ type Config struct {
 	ConnectTimeout time.Duration
 	CallTimeout    time.Duration
 	Limits         Limits
+	// ProtocolVersion pins an exact supported tier; empty uses SDK negotiation.
+	ProtocolVersion string
 }
 
 type StdioConfig struct {
@@ -44,6 +46,9 @@ type StdioConfig struct {
 	Args       []string
 	Dir        string            // explicit absolute working directory
 	Env        map[string]string // explicit additions to the small base allowlist
+	// ReplaceEnvironment supplies the complete environment instead of adding
+	// to the base allowlist. Only Go-required OS variables may be added.
+	ReplaceEnvironment bool
 }
 
 type HTTPConfig struct {
@@ -56,7 +61,8 @@ type HTTPConfig struct {
 }
 
 // Limits are hard allocation/storage limits, not model context budgets. Zero
-// uses the defaults; a caller may lower but cannot raise these ceilings.
+// uses the defaults. MessageBytes defaults to 16 MiB with a 24 MiB ceiling;
+// other fields default to their ceilings.
 type Limits struct {
 	MessageBytes int
 	CatalogBytes int
@@ -65,11 +71,12 @@ type Limits struct {
 }
 
 const (
-	maxMessageBytes  = 16 << 20
-	maxCatalogBytes  = 4 << 20
-	maxCatalogItems  = 2000
-	maxPages         = 20
-	maxArgumentBytes = 1 << 20
+	defaultMessageBytes = 16 << 20
+	maxMessageBytes     = 24 << 20
+	maxCatalogBytes     = 4 << 20
+	maxCatalogItems     = 2000
+	maxPages            = 20
+	maxArgumentBytes    = 1 << 20
 )
 
 // Info is usage data supplied by the server, never an instruction or grant.

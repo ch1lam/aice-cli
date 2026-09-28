@@ -104,6 +104,15 @@ func TestMCPManagementTUI(t *testing.T) {
 	waitFor := func(want string) { t.Helper(); waitForAfter("", want) }
 	send("")
 	waitFor("AICE")
+	send("/mcp\r")
+	waitFor("Computer Use settings")
+	// The final menu item navigates to the existing setting, without enabling it.
+	send(strings.Repeat("\x1b[B", len(mcpMenu().Options)-1) + "\r")
+	waitFor("Computer Use control mode")
+	send("?")
+	waitFor("User preference only; enabled does not mean ready.")
+	send("\x1b")
+	send("\x1b")
 	send("/mcp add docs\r")
 	waitFor("MCP server definition (JSON)")
 	send(`{"transport":"http","url":"` + endpoint + `"}` + "\r")
@@ -128,6 +137,7 @@ func TestMCPManagementTUI(t *testing.T) {
 	send("\x1b")
 	send("/mcp connect user:docs\r")
 	waitFor("MCP initialization and tool discovery succeeded")
+	waitFor("Loaded tools: 0 (no active main Run)")
 	send("/mcp reconnect user:docs\r")
 	waitFor("MCP reconnect completed.")
 	send("/mcp permission user:docs\r")

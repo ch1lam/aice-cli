@@ -31,6 +31,18 @@ func TestNativeMacActualModelDesktop(t *testing.T) {
 	if os.Getenv("AICE_CUA_NATIVE_MODEL") != "1" {
 		t.Skip("requires separate approval and AICE_CUA_NATIVE_MODEL=1; uses a real model")
 	}
+	route := os.Getenv("AICE_CUA_MODEL_ROUTE")
+	if route != "" && route != "managed" {
+		t.Fatal("AICE_CUA_MODEL_ROUTE must be omitted or managed; the typed comparison route was removed after acceptance")
+	}
+	requestBudget := 20
+	if raw, supplied := os.LookupEnv("AICE_CUA_MODEL_REQUEST_BUDGET"); supplied {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 1 || parsed > 200 {
+			t.Fatal("AICE_CUA_MODEL_REQUEST_BUDGET must be between 1 and 200")
+		}
+		requestBudget = parsed
+	}
 	providerID, modelID, thinking := os.Getenv("AICE_CUA_MODEL_PROVIDER"), os.Getenv("AICE_CUA_MODEL_ID"), os.Getenv("AICE_CUA_MODEL_THINKING")
 	if providerID == "" || modelID == "" || thinking == "" {
 		t.Fatal("explicit AICE_CUA_MODEL_PROVIDER, AICE_CUA_MODEL_ID and AICE_CUA_MODEL_THINKING are required")
@@ -68,24 +80,10 @@ func TestNativeMacActualModelDesktop(t *testing.T) {
 	if err != nil {
 		t.Fatal("create opted-in provider", err)
 	}
-	testNativeMacModelTask(t, model, options, func([]nativePrintFixture, string) llm.Streamer { return service }, true, tokenBudget)
+	testNativeMacModelTask(t, model, options, func([]nativePrintFixture) llm.Streamer { return service }, true, tokenBudget, requestBudget)
 }
 
-// Exercises the same harness without loading credentials or calling a model.
-func TestNativeMacModelHarness(t *testing.T) {
-	if os.Getenv("AICE_CUA_NATIVE") != "1" {
-		t.Skip("set AICE_CUA_NATIVE=1 to verify the model harness with scripted decisions")
-	}
-	model, options, err := resolveModelSettings(defaultProviders(), config.Config{Provider: "custom", Model: "synthetic"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	testNativeMacModelTask(t, model, options, func(targets []nativePrintFixture, query string) llm.Streamer {
-		return &nativePrintModel{t: t, targets: targets, query: query, inputActions: map[int]string{1: "type_text"}}
-	}, false, 100000)
-}
-
-func testNativeMacModelTask(t *testing.T, model llm.Model, options llm.StreamOptions, factory func([]nativePrintFixture, string) llm.Streamer, actual bool, tokenBudget int64) {
+func testNativeMacModelTask(t *testing.T, model llm.Model, options llm.StreamOptions, factory func([]nativePrintFixture) llm.Streamer, actual bool, tokenBudget int64, requestBudget int) {
 	t.Helper()
 	options.MaxTokens = 4096
 	ctx, cancel := context.WithTimeout(t.Context(), 7*time.Minute)
@@ -117,13 +115,15 @@ func testNativeMacModelTask(t *testing.T, model llm.Model, options llm.StreamOpt
 	}
 	sentinel := startMacPrintFixture(t, ctx, appKit, prefix+"Sentinel", true)
 	awaitNativePrintState(t, ctx, sentinel, func(s nativePrintState) bool { return s.Active })
-	query := "AICE CLI " + prefix + "Target"
 	timings := &nativeModelTimings{}
-	scope := &nativeModelScope{timings: timings, query: query, targets: targets, refs: make(map[string]bool), observations: make(map[string]bool), captured: make(map[string]bool)}
+	scope := &nativeModelScope{timings: timings, targets: targets, captured: make(map[string]bool)}
 	bind := state.bind
-	state.bind = func(ctx context.Context, options desktop.RunOptions) (tool.DesktopBackend, func() error, error) {
+	state.bind = func(ctx context.Context, options desktop.RunOptions) (managedDesktopRun, func() error, error) {
 		backend, closeRun, err := bind(ctx, options)
-		scope.DesktopBackend = backend
+		if err != nil {
+			return nil, nil, err
+		}
+		scope.managedDesktopRun = backend
 		return scope, closeRun, err
 	}
 	runCtx, closeRun, err := state.bindContext(ctx, configuration, model)
@@ -143,19 +143,27 @@ func testNativeMacModelTask(t *testing.T, model llm.Model, options llm.StreamOpt
 	if err != nil {
 		t.Fatal(err)
 	}
-	gate.SetDesktopEnabled(configuration.DesktopEnabled)
-	guard.desktop = state
 	countedGuard := &nativeModelGuard{Guard: guard, timings: timings}
-	typed, err := tool.NewDesktopTools(state)
+	catalog, err := state.managedCatalog(runCtx, config.MCPConfig{}, nil, gate)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var taskTools []agent.Tool
-	for _, capability := range typed {
-		taskTools = append(taskTools, capability)
+	defer catalog.Close()
+	guard.mcp = catalog
+	search, err := tool.NewToolSearch(catalog)
+	if err != nil {
+		t.Fatal(err)
 	}
-	observer := &nativeModelObserver{timings: timings, Streamer: factory(targets, query), model: model, results: make(map[string]llm.ToolResultMessage)}
-	limits := agent.RunLimits{MaxTurns: 20, Tokens: tokenBudget, Timeout: 5 * time.Minute, NoProgress: 3}
+	skills := discoverSkills("", "", false)
+	reader, err := tool.NewToolResultRead(runResultReader{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	taskTools := appendSkillTool([]agent.Tool{search, reader}, skills.catalog)
+	systemPrompt := appendSkillsPrompt(buildDefaultSystemPrompt(taskTools, workspace.Path()), skills.catalog)
+	viewBudget := llm.ResultViewBudget(model.ContextWindow)
+	observer := &nativeModelObserver{timings: timings, Streamer: factory(targets), model: model, results: make(map[string]llm.ToolResultMessage)}
+	limits := agent.RunLimits{MaxTurns: requestBudget, Tokens: tokenBudget, Timeout: 5 * time.Minute, NoProgress: 3}
 	loop, err := agent.NewLoop(observer, taskTools, agent.WithGuard(countedGuard), agent.WithRunLimits(limits))
 	if err != nil {
 		t.Fatal(err)
@@ -173,8 +181,10 @@ func testNativeMacModelTask(t *testing.T, model llm.Model, options llm.StreamOpt
 	if err != nil {
 		t.Fatal(err)
 	}
+	runCtx = withResultReader(runCtx, store, nil)
 	var prompt strings.Builder
-	fmt.Fprintf(&prompt, "Complete this synthetic desktop acceptance task using only the three desktop tools. Discover with the exact query %q. Only the listed windows are in scope. Request a screenshot when observing each target and after each action. In order, replace each Task value field with its assigned text, click Commit exactly once, and inspect the returned result. The middle window is a WebKit form with an initially empty input; the others are native AppKit fields. Do not launch or close apps, use foreground assistance, or act on the Sentinel. Report any uncertainty instead of repeating an unknown action.\n", query)
+	prompt.WriteString("Use the computer-use Skill and managed:cua tool discovery for this task. Only list_windows with a listed PID, get_window_state and background input on the listed windows are in scope. Do not use list_apps or launch_app. Use tool_result_read if an observation is clipped. ")
+	fmt.Fprint(&prompt, "Complete this synthetic desktop acceptance task. Only the listed windows are in scope. Request a screenshot when observing each target and after each action. In order, replace each Task value field with its assigned text, click Commit exactly once, and inspect the returned result. The middle window is a WebKit form with an initially empty input; the others are native AppKit fields. Do not launch or close apps, use foreground assistance, or act on the Sentinel. Report any uncertainty instead of repeating an unknown action.\n")
 	for i, target := range targets {
 		fmt.Fprintf(&prompt, "%d. Window %q, PID %d: %q\n", i+1, target.name, target.pid, nativePrintValue(i))
 	}
@@ -208,7 +218,7 @@ func testNativeMacModelTask(t *testing.T, model llm.Model, options llm.StreamOpt
 	}
 	captureFocus("before_loop")
 	result, runErr := loop.Run(runCtx, agent.RunInput{Model: model, Options: options, Prompt: message,
-		SystemPrompt: buildDefaultSystemPrompt(taskTools, workspace.Path()),
+		SystemPrompt: systemPrompt, Catalog: catalog, ResultViewTokens: viewBudget,
 		MessageRecorder: func(ctx context.Context, message llm.AgentMessage) error {
 			return appendSessionMessage(ctx, store, message)
 		},
@@ -230,11 +240,13 @@ func testNativeMacModelTask(t *testing.T, model llm.Model, options llm.StreamOpt
 	serviceVerified, replayVerified := false, false
 	t.Logf("actual_model=%v provider=%s model=%s thinking=%s driver=%s elapsed=%s requests=%d images=%d guard_asks=%d scope_refusals=%d reported_tokens=%d", actual, model.Provider, model.ID, options.Thinking, desktop.DriverVersion, elapsed, observer.requests, observer.images, countedGuard.asks, scope.refusals, result.Usage.TotalTokens)
 	defer func() {
+		const route = "managed"
 		network := "scripted decisions; no model network"
 		if actual {
 			network = "configured provider transport; network latency not isolated"
 		}
 		report := struct {
+			Route                                      string            `json:"route"`
 			Provider                                   llm.ProviderID    `json:"provider"`
 			Model                                      string            `json:"model"`
 			Thinking                                   llm.ThinkingLevel `json:"thinking"`
@@ -251,7 +263,7 @@ func testNativeMacModelTask(t *testing.T, model llm.Model, options llm.StreamOpt
 			ServiceVerified                            bool                     `json:"service_verified"`
 			ReplayVerified                             bool                     `json:"replay_verified"`
 		}{
-			Provider: model.Provider, Model: model.ID, Thinking: options.Thinking,
+			Route: route, Provider: model.Provider, Model: model.ID, Thinking: options.Thinking,
 			ElapsedMS: elapsed.Milliseconds(), Requests: observer.requests, Images: observer.images,
 			GuardAsks: countedGuard.asks, ScopeRefusals: scope.refusals, Usage: result.Usage,
 			LoopCompleted: runErr == nil, Accepted: accepted && !t.Failed(), ActualModel: actual,
@@ -259,7 +271,7 @@ func testNativeMacModelTask(t *testing.T, model llm.Model, options llm.StreamOpt
 			Network: network, Timings: timings, Focus: focusSamples,
 			ServiceVerified: serviceVerified, ReplayVerified: replayVerified,
 			Limits: map[string]int64{
-				"reported_tokens": limits.Tokens, "model_requests": int64(limits.MaxTurns),
+				"reported_tokens": limits.Tokens, "model_requests": int64(limits.MaxTurns), "result_view_tokens": viewBudget,
 				"timeout_ms": limits.Timeout.Milliseconds(), "output_tokens_per_response": int64(options.MaxTokens),
 			},
 		}
@@ -275,12 +287,13 @@ func testNativeMacModelTask(t *testing.T, model llm.Model, options llm.StreamOpt
 		}
 		// Read back the actual report format in the scripted gate as well.
 		var saved struct {
+			Route   string                   `json:"route"`
 			Timings nativeModelTimings       `json:"timings"`
 			Limits  map[string]int64         `json:"limits"`
 			Focus   []nativeModelFocusSample `json:"focus"`
 		}
 		data, err = os.ReadFile(filepath.Join(artifacts, "report.json"))
-		if err != nil || json.Unmarshal(data, &saved) != nil || len(saved.Timings.Requests) != observer.requests || len(saved.Timings.Tools) != len(timings.Tools) || !reflect.DeepEqual(saved.Limits, report.Limits) || !reflect.DeepEqual(saved.Focus, report.Focus) {
+		if err != nil || json.Unmarshal(data, &saved) != nil || saved.Route != route || len(saved.Timings.Requests) != observer.requests || len(saved.Timings.Tools) != len(timings.Tools) || !reflect.DeepEqual(saved.Limits, report.Limits) || !reflect.DeepEqual(saved.Focus, report.Focus) {
 			t.Error("timing report or limits did not survive JSON serialization", err)
 		}
 	}()
@@ -295,26 +308,31 @@ func testNativeMacModelTask(t *testing.T, model llm.Model, options llm.StreamOpt
 	}
 	timings.verify(t, observer.requests, len(observer.results))
 	if !actual {
-		// This known scripted sequence has no retries and returns one complete
-		// action event in each of its first ten provider requests.
+		// The scripted model emits one call per request except its final reply,
+		// including any local result-readback requests.
 		for i, request := range timings.Requests {
-			if (request.PreparationMS != nil) != (i > 0) || (request.FirstToolCallMS != nil) != (i < 10) {
-				t.Fatal("scripted timing gate missed request preparation or action output")
+			if (request.PreparationMS != nil) != (i > 0) || (request.FirstToolCallMS != nil) != (i < len(timings.Requests)-1) {
+				t.Fatal("scripted timing gate missed request preparation or tool output")
 			}
 		}
-		actions := 0
+		managedCalls := 0
 		for _, call := range timings.Tools {
-			if call.Action != nil {
-				actions++
+			if call.ManagedCallMS != nil {
+				managedCalls++
 			}
 		}
-		if actions != 6 {
-			t.Fatal("scripted timing gate did not retain all six native actions")
+		if managedCalls != 18 {
+			t.Fatal("scripted timing gate did not retain all managed native calls")
+		}
+		decisions := observer.Streamer.(*nativeManagedCUAModel)
+		if !decisions.loaded || decisions.index != 3 || decisions.nativeCalls != 18 || observer.images != 9 {
+			t.Fatal("managed model harness omitted Skill, native actions or screenshots")
 		}
 	}
 	if countedGuard.asks != 0 || scope.refusals != 0 || observer.images < 3 || len(scope.captured) != len(targets) {
 		t.Fatal("model task needed approval, left its scope, or lacked images")
 	}
+	catalog.Close()
 	if err := closeRun(); err != nil {
 		t.Fatal(err)
 	}
@@ -334,7 +352,7 @@ func testNativeMacModelTask(t *testing.T, model llm.Model, options llm.StreamOpt
 	if err := store.Close(); err != nil {
 		t.Fatal(err)
 	}
-	verifyNativeModelReplay(t, ctx, store.Path(), observer.results)
+	verifyNativeModelReplayView(t, ctx, store.Path(), observer.results, viewBudget)
 	replayVerified = true
 	t.Log("shared service and exact tool-result/image Session replay verified")
 	accepted = true
@@ -390,84 +408,16 @@ func nativeModelFocusState(phase string, elapsedMS float64, state nativePrintSta
 // Scope assertions belong only to this opt-in test. They never replace native
 // results or introduce an application allowlist in the product.
 type nativeModelScope struct {
-	tool.DesktopBackend
-	timings                      *nativeModelTimings
-	query                        string
-	targets                      []nativePrintFixture
-	refs, observations, captured map[string]bool
-	refusals                     int
+	managedDesktopRun
+	timings  *nativeModelTimings
+	targets  []nativePrintFixture
+	captured map[string]bool
+	refusals int
 }
 
 func (s *nativeModelScope) refuse() error {
 	s.refusals++
 	return errors.New("synthetic model task scope refused the request before native dispatch")
-}
-
-func (s *nativeModelScope) Apps(ctx context.Context, query string, limit int) (desktop.Discovery, error) {
-	if query != s.query {
-		return desktop.Discovery{}, s.refuse()
-	}
-	result, err := s.DesktopBackend.Apps(ctx, query, limit)
-	if err != nil {
-		return result, err
-	}
-	result.Apps = nil
-	windows := result.Windows[:0]
-	for _, window := range result.Windows {
-		for _, target := range s.targets {
-			if window.PID == target.pid && window.Title == target.name {
-				windows = append(windows, window)
-				s.refs[window.Ref] = true
-			}
-		}
-	}
-	result.Windows = windows
-	return result, nil
-}
-
-func (s *nativeModelScope) Observe(ctx context.Context, request desktop.ObserveRequest) (desktop.Observation, error) {
-	if !s.refs[request.TargetRef] {
-		return desktop.Observation{}, s.refuse()
-	}
-	result, err := s.DesktopBackend.Observe(ctx, request)
-	if err == nil {
-		s.observations[result.Ref] = true
-		if result.Image != nil {
-			s.captured[request.TargetRef] = true
-		}
-	}
-	return result, err
-}
-
-func (s *nativeModelScope) Act(ctx context.Context, request desktop.ActRequest) (desktop.ActResult, error) {
-	if !s.observations[request.ObservationRef] || (request.DeliveryMode != "" && request.DeliveryMode != "background") {
-		return desktop.ActResult{}, s.refuse()
-	}
-	switch request.Kind {
-	case "click", "type_text", "set_value", "wait":
-	case "hotkey":
-		if !slices.Equal(request.Keys, []string{"cmd", "a"}) {
-			return desktop.ActResult{}, s.refuse()
-		}
-	case "key":
-		if request.Key != "delete" {
-			return desktop.ActResult{}, s.refuse()
-		}
-	default:
-		return desktop.ActResult{}, s.refuse()
-	}
-	delete(s.observations, request.ObservationRef)
-	result, err := s.DesktopBackend.Act(ctx, request)
-	if s.timings != nil && s.timings.active != nil {
-		s.timings.active.Action = &nativeModelActionTiming{
-			Kind: request.Kind, TotalMS: nativeMS(result.Timing.Total), QueueMS: nativeMS(result.Timing.Queue),
-			DriverMS: nativeMS(result.Timing.Driver), ConditionWaitMS: nativeMS(result.Timing.ConditionWait), ObservationMS: nativeMS(result.Timing.Observation),
-		}
-	}
-	if result.Observation != nil {
-		s.observations[result.Observation.Ref] = true
-	}
-	return result, err
 }
 
 type nativeModelGuard struct {
@@ -542,6 +492,11 @@ func (m *nativeModelObserver) Stream(ctx context.Context, request llm.Request) (
 
 func verifyNativeModelReplay(t *testing.T, ctx context.Context, path string, delivered map[string]llm.ToolResultMessage) {
 	t.Helper()
+	verifyNativeModelReplayView(t, ctx, path, delivered, 0)
+}
+
+func verifyNativeModelReplayView(t *testing.T, ctx context.Context, path string, delivered map[string]llm.ToolResultMessage, viewBudget int64) {
+	t.Helper()
 	store, err := session.Open(ctx, path)
 	if err != nil {
 		t.Fatal(err)
@@ -567,7 +522,7 @@ func verifyNativeModelReplay(t *testing.T, ctx context.Context, path string, del
 				}
 			}
 		case llm.ToolResultMessage:
-			if pending[message.ToolCallID] != message.ToolName || !reflect.DeepEqual(message, delivered[message.ToolCallID]) {
+			if pending[message.ToolCallID] != message.ToolName || !reflect.DeepEqual(llm.BoundToolResultView(message, viewBudget), delivered[message.ToolCallID]) {
 				t.Fatal("actual-model tool result/image did not survive replay")
 			}
 			delete(pending, message.ToolCallID)
@@ -576,40 +531,5 @@ func verifyNativeModelReplay(t *testing.T, ctx context.Context, path string, del
 	}
 	if len(pending) != 0 || count != len(delivered) || count == 0 || snapshot.LeafID != parent {
 		t.Fatal("actual-model Session has incomplete tool pairs")
-	}
-}
-
-func TestNativeModelScopeRejectsUnownedActions(t *testing.T) {
-	t.Parallel()
-	backend := &appDesktopBackend{result: desktop.ActResult{Outcome: "returned", Observation: &desktop.Observation{Ref: "fresh"}}}
-	scope := &nativeModelScope{DesktopBackend: backend, query: "synthetic", refs: map[string]bool{"owned": true}, observations: map[string]bool{"observed": true}}
-	if _, err := scope.Apps(t.Context(), "", 16); err == nil {
-		t.Fatal("broad discovery accepted")
-	}
-	if _, err := scope.Observe(t.Context(), desktop.ObserveRequest{TargetRef: "foreign"}); err == nil {
-		t.Fatal("foreign window accepted")
-	}
-	for _, request := range []desktop.ActRequest{
-		{Kind: "click", ObservationRef: "foreign"},
-		{Kind: "click", ObservationRef: "observed", DeliveryMode: "foreground"},
-		{Kind: "launch", ObservationRef: "observed", AppRef: "application"},
-		{Kind: "hotkey", ObservationRef: "observed", Keys: []string{"cmd", "q"}},
-		{Kind: "key", ObservationRef: "observed", Key: "return"},
-	} {
-		if _, err := scope.Act(t.Context(), request); err == nil {
-			t.Fatal("out-of-scope native action accepted")
-		}
-	}
-	if backend.calls != 0 || scope.refusals != 7 {
-		t.Fatal("scope failure reached native backend")
-	}
-	if _, err := scope.Act(t.Context(), desktop.ActRequest{Kind: "type_text", ObservationRef: "observed", Text: "synthetic"}); err != nil || backend.calls != 1 {
-		t.Fatal("owned input rejected", err)
-	}
-	if _, err := scope.Act(t.Context(), desktop.ActRequest{Kind: "type_text", ObservationRef: "observed", Text: "duplicate"}); err == nil || backend.calls != 1 {
-		t.Fatal("consumed observation replayed")
-	}
-	if _, err := scope.Act(t.Context(), desktop.ActRequest{Kind: "click", ObservationRef: "fresh"}); err != nil || backend.calls != 2 {
-		t.Fatal("fresh owned observation rejected", err)
 	}
 }
