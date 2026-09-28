@@ -291,3 +291,61 @@ func TestMCPRequiredAndPinnedRunPreparation(t *testing.T) {
 		})
 	}
 }
+
+func TestMCPFailedPreparationRetainsOwnedTransport(t *testing.T) {
+	for _, failure := range []string{"missing pin", "canceled discovery"} {
+		t.Run(failure, func(t *testing.T) {
+			c := ownerTestConfig(t, 1)
+			server := c.MCP.Servers["user:service0"]
+			server.Settings.PinnedTools = []string{"read"}
+			c.MCP.Servers[server.Key] = server
+			client := &mcpOwnedFixture{}
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			if failure == "canceled discovery" {
+				client.items = []mcpclient.Tool{catalogFixtureTool("read", "read")}
+				client.list = func(context.Context) { cancel() }
+			}
+			var opens atomic.Int32
+			owner, err := newMCPOwner(c.MCP, ownerTestGuard(t), true, func(context.Context, mcpclient.Config) (mcpOwnedConnection, error) {
+				opens.Add(1)
+				return client, nil
+			}, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer owner.Close()
+			boundCtx, failed, err := owner.bindRun(ctx)
+			if err == nil || failed.Catalog() != nil || len(failed.pins) != 0 || failed.summary != "" || boundCtx != ctx {
+				t.Fatalf("failed preparation published a binding: %+v, %v", failed, err)
+			}
+			if opens.Load() != 1 || client.listCalls.Load() != 1 || client.closed.Load() != 0 {
+				t.Fatal("preparation failure changed transport ownership")
+			}
+
+			// Search has joined its discovery work. A later explicit preparation
+			// gets a fresh catalog while borrowing the same established client.
+			client.items = []mcpclient.Tool{catalogFixtureTool("read", "read")}
+			client.list = nil
+			_, run, err := owner.bindRun(t.Context())
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer run.Close()
+			resolved, err := run.Catalog().Resolve(t.Context(), run.pins)
+			if err != nil || len(resolved) != 1 || opens.Load() != 1 || client.listCalls.Load() != 2 || client.closed.Load() != 0 {
+				t.Fatalf("retry did not reuse transport with a fresh catalog: %v", err)
+			}
+			run.Close()
+			if run.Catalog().Check(t.Context(), resolved[0].Reference) == nil || client.closed.Load() != 0 {
+				t.Fatal("closing the Run must invalidate its catalog without closing the client")
+			}
+			if err := owner.Close(); err != nil {
+				t.Fatal(err)
+			}
+			if err := owner.Close(); err != nil || client.closed.Load() != 1 {
+				t.Fatalf("owner did not close its client exactly once: %v", err)
+			}
+		})
+	}
+}

@@ -598,7 +598,10 @@ refreshing creates new executable versions. The Loop alone owns selection:
 search proposes typed references, which become definitions only after recording
 the complete tool-result group. Neither search text nor Session replay selects
 or authorizes a tool. Closing a run invalidates its bindings without closing a
-borrowed connection.
+borrowed connection. The application owns the catalog during preparation: any
+preparation error closes that catalog, while success transfers cleanup to the
+Run. Already established connections remain owned by the application owner on
+either path.
 
 Each main run binds a new catalog through an app-owned context capability used
 by discovery tools and the Guard. It starts with builtins, `tool_search`,
