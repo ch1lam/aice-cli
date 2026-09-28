@@ -25,6 +25,8 @@ type settingsPanel struct {
 	cancelStatus           context.CancelFunc
 	tab, selection, offset int
 	positions              map[int]int
+	collapsed              map[string]bool
+	searchCollapsed        map[string]bool
 	search                 bool
 	input                  textinput.Model
 	editing                *interaction.SettingField
@@ -130,6 +132,7 @@ func (m *model) resizeSettings() {
 		p.layout.bodyHeight = max(1, p.layout.height-9)
 		p.input.SetWidth(max(1, p.layout.inner-3))
 		p.pressed = ""
+		p.pointer = nil
 		if p.action != nil {
 			p.action.page = 0
 		}
@@ -179,6 +182,7 @@ func (m model) applySettingsRead(message settingsReadResult) (tea.Model, tea.Cmd
 				continue
 			}
 			foundFocus = true
+			p.setSectionCollapsed(settingSectionKey(field), false)
 			for i, category := range p.snapshot.Categories {
 				if category.ID == field.Category {
 					p.tab = i
@@ -293,6 +297,12 @@ func (m model) beginSettingEdit(unset bool) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	field := fields[min(p.selection, len(fields)-1)]
+	if p.sectionCollapsed(settingSectionKey(field)) {
+		if !unset {
+			p.setSectionCollapsed(settingSectionKey(field), false)
+		}
+		return m, nil
+	}
 	if field.DisabledReason != "" {
 		p.notice = field.DisabledReason
 		return m, nil
@@ -369,6 +379,7 @@ func (m model) handleSettings(message tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if key, ok := message.(tea.KeyPressMsg); ok {
+		p.pointer = nil
 		name := key.String()
 		if name == "f6" && !p.usage && m.running {
 			m.requestRunCancellation()
@@ -484,11 +495,19 @@ func (m model) handleSettings(message tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return m, nil
 			case "up":
-				p.selection = max(0, p.selection-1)
+				p.moveSettingSelection(-1)
 				return m, nil
 			case "down":
-				p.selection = min(max(0, len(p.fields())-1), p.selection+1)
+				p.moveSettingSelection(1)
 				return m, nil
+			case "left", "right":
+				if !p.search {
+					if fields := p.fields(); len(fields) > 0 {
+						field := fields[min(p.selection, len(fields)-1)]
+						p.setSectionCollapsed(settingSectionKey(field), name == "left")
+					}
+					return m, nil
+				}
 			case "enter":
 				return m.beginSettingEdit(false)
 			case " ":
@@ -498,7 +517,7 @@ func (m model) handleSettings(message tea.Msg) (tea.Model, tea.Cmd) {
 			case "?":
 				if !p.search {
 					fields := p.fields()
-					if len(fields) > 0 {
+					if len(fields) > 0 && !p.selectedSectionCollapsed(fields) {
 						f := fields[min(p.selection, len(fields)-1)]
 						f.Description = settingDetails(f, p.snapshot.SavePath)
 						f.Kind = interaction.SettingInfo
@@ -511,7 +530,7 @@ func (m model) handleSettings(message tea.Msg) (tea.Model, tea.Cmd) {
 			case "D":
 				if !p.search {
 					fields := p.fields()
-					if len(fields) > 0 {
+					if len(fields) > 0 && !p.selectedSectionCollapsed(fields) {
 						f := fields[min(p.selection, len(fields)-1)]
 						if f.Default != nil && f.DisabledReason == "" {
 							if len(f.DefaultChanges) > 0 {
@@ -533,6 +552,7 @@ func (m model) handleSettings(message tea.Msg) (tea.Model, tea.Cmd) {
 			case "/":
 				if !p.search {
 					p.search = true
+					p.searchCollapsed = nil
 					p.notice = ""
 					p.positions[p.tab] = p.selection
 					p.selection = 0
@@ -544,9 +564,13 @@ func (m model) handleSettings(message tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	if p.input.Focused() {
 		var command tea.Cmd
+		previous := p.input.Value()
 		p.input, command = p.input.Update(message)
 		if p.search {
 			p.selection = 0
+			if p.input.Value() != previous {
+				p.searchCollapsed = nil
+			}
 		}
 		return m, m.scopeInputCommand(command)
 	}

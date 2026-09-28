@@ -176,14 +176,27 @@ One blank row separates the content from the footer. The list spans the full
 content width; a muted, centered explanation of the selected setting sits below
 it, using one line where possible and at most two. Very short windows prioritize
 the list; `?` still opens the complete description, source and persistence details.
-Tab titles align with search text and section headings.
+Tab titles, section headings and setting names align with search text.
 The active category uses the slash menu's bold light text without brackets.
 A blank row separates the tabs from the muted, indented search prompt, and
 another blank row separates the search prompt from the settings list. Settings are
 grouped under secondary headings and rules (for example Browser, Computer Use,
-Web search, Web fetch and individual search services). Headings are not
-selectable, and scrolling keeps the selected field visible. Search results
-retain their category and section headings.
+Web search, Web fetch and individual search services). Headings have no disclosure
+triangle; clicking anywhere on a heading row collapses or expands that group.
+Hover brightens the heading and rule without an underline on press. Completing
+a fold clears the hover until fresh mouse movement; leaving the row, switching
+to keyboard navigation or losing window focus also clears it immediately.
+The selected collapsed heading uses a chevron with the normal muted title style.
+These visual updates do not wait for the Computer Use status check. All groups
+start expanded whenever the window opens. Fold state belongs only to the panel,
+survives category switches and refreshes, and never changes saved preferences.
+Arrow keys and the wheel skip hidden fields, stopping once on each collapsed
+heading; Enter or Space expands it. Left collapses the selected group and Right
+expands it outside search. Hidden fields cannot be edited or reset. Scrolling
+keeps the selection visible and repeats the section heading when needed.
+Search results retain their category and section headings and start expanded
+for each new query. Their folds are independent of the category view; leaving
+search restores its folds. Explicit navigation to a setting expands its group.
 Setting names align left and current values align right, with a separate arrow
 for submenus. Values supplied by the default configuration remain muted;
 explicitly configured values use normal text even when equal to the default.

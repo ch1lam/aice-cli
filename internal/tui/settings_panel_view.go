@@ -119,10 +119,14 @@ func (m model) settingsPanelView() string {
 	} else {
 		fields := p.fields()
 		listWidth, listHeight := p.listSize()
+		hovered := ""
+		if p.pointer != nil {
+			hovered = p.target(*p.pointer)
+		}
 		var rows []string
 		for _, row := range p.visibleSettingRows(fields) {
 			if row.field < 0 {
-				rows = append(rows, settingSectionHeading(row.section, listWidth))
+				rows = append(rows, p.sectionHeading(row, listWidth, hovered))
 				continue
 			}
 			rows = append(rows, settingRow(fields[row.field], row.field == p.selection, listWidth))
@@ -131,7 +135,7 @@ func (m model) settingsPanelView() string {
 			rows = []string{"No matching settings"}
 		}
 		body = lipgloss.NewStyle().Width(listWidth).Height(listHeight).Render(strings.Join(rows, "\n"))
-		if summaryHeight := p.summaryHeight(); summaryHeight > 0 && len(fields) > 0 {
+		if summaryHeight := p.summaryHeight(); summaryHeight > 0 && len(fields) > 0 && !p.selectedSectionCollapsed(fields) {
 			body += "\n\n" + settingSummary(fields[min(p.selection, len(fields)-1)], l.inner, summaryHeight)
 		}
 	}
@@ -249,8 +253,13 @@ func (p *settingsPanel) target(mouse tea.Mouse) string {
 	row := y - 4
 	fields := p.fields()
 	rows := p.visibleSettingRows(fields)
-	if row >= 0 && row < len(rows) && x < listWidth && rows[row].field >= 0 {
-		return "field:" + fields[rows[row].field].ID
+	if row >= 0 && row < len(rows) && x < listWidth {
+		if rows[row].field >= 0 {
+			return "field:" + fields[rows[row].field].ID
+		}
+		if rows[row].key != "" {
+			return "section:" + rows[row].key
+		}
 	}
 	return ""
 }
@@ -258,6 +267,8 @@ func (p *settingsPanel) target(mouse tea.Mouse) string {
 func (m model) settingsPointer(message tea.Msg) (tea.Model, tea.Cmd) {
 	p := m.settings
 	switch event := message.(type) {
+	case tea.BlurMsg:
+		p.pointer = nil
 	case tea.MouseMotionMsg:
 		mouse := event.Mouse()
 		p.pointer = &mouse
@@ -272,10 +283,11 @@ func (m model) settingsPointer(message tea.Msg) (tea.Model, tea.Cmd) {
 		mouse := event.Mouse()
 		p.pointer = &mouse
 		target := m.settingsTarget(mouse)
-		if event.Button != tea.MouseLeft || p.pressed == "" || p.pressed != target || p.pressedLayout != p.layout {
+		pressed := p.pressed
+		p.pressed = ""
+		if event.Button != tea.MouseLeft || pressed == "" || pressed != target || p.pressedLayout != p.layout {
 			return m, nil
 		}
-		p.pressed = ""
 		if target == "continue-task" {
 			return m.continueTask()
 		}
@@ -311,8 +323,16 @@ func (m model) settingsPointer(message tea.Msg) (tea.Model, tea.Cmd) {
 			p.notice = ""
 			p.positions[p.tab] = p.selection
 			p.search = true
+			p.searchCollapsed = nil
+			p.selection = 0
 			p.input.SetValue("")
 			return m, p.input.Focus()
+		case strings.HasPrefix(target, "section:"):
+			key := strings.TrimPrefix(target, "section:")
+			p.setSectionCollapsed(key, !p.sectionCollapsed(key))
+			// Folding changes the rows under the pointer. Require fresh motion
+			// before showing hover again instead of retaining the click highlight.
+			p.pointer = nil
 		case strings.HasPrefix(target, "field:"):
 			id := strings.TrimPrefix(target, "field:")
 			for i, field := range p.fields() {
@@ -323,6 +343,8 @@ func (m model) settingsPointer(message tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 	case tea.MouseWheelMsg:
+		mouse := event.Mouse()
+		p.pointer = &mouse
 		delta := 0
 		if event.Button == tea.MouseWheelDown {
 			delta = 1
@@ -345,7 +367,7 @@ func (m model) settingsPointer(message tea.Msg) (tea.Model, tea.Cmd) {
 		} else if p.editing != nil {
 			p.choice = max(0, min(p.choice+delta, len(p.editing.Choices)-1))
 		} else {
-			p.selection = max(0, min(p.selection+delta, len(p.fields())-1))
+			p.moveSettingSelection(delta)
 		}
 	}
 	return m, nil

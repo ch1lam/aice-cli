@@ -70,11 +70,15 @@ func settingSection(field interaction.SettingField) string {
 	return "General"
 }
 
+func settingSectionKey(field interaction.SettingField) string {
+	return field.Category + "/" + settingSection(field)
+}
+
 func groupSettingFields(fields []interaction.SettingField) []interaction.SettingField {
 	var groups [][]interaction.SettingField
 	indices := make(map[string]int)
 	for _, field := range fields {
-		key := field.Category + "/" + settingSection(field)
+		key := settingSectionKey(field)
 		index, ok := indices[key]
 		if !ok {
 			index = len(groups)
@@ -91,8 +95,59 @@ func groupSettingFields(fields []interaction.SettingField) []interaction.Setting
 }
 
 type settingListRow struct {
-	field   int // -1 for a heading or blank separator; never selectable.
-	section string
+	field    int // -1 for a heading or blank separator.
+	section  string
+	key      string
+	selected bool
+}
+
+func (p *settingsPanel) sectionCollapsed(key string) bool {
+	if p.search && strings.TrimSpace(p.input.Value()) != "" {
+		return p.searchCollapsed[key]
+	}
+	return p.collapsed[key]
+}
+
+func (p *settingsPanel) selectedSectionCollapsed(fields []interaction.SettingField) bool {
+	return len(fields) > 0 && p.sectionCollapsed(settingSectionKey(fields[min(p.selection, len(fields)-1)]))
+}
+
+func (p *settingsPanel) setSectionCollapsed(key string, collapsed bool) {
+	state := &p.collapsed
+	if p.search && strings.TrimSpace(p.input.Value()) != "" {
+		state = &p.searchCollapsed
+	}
+	if *state == nil {
+		*state = make(map[string]bool)
+	}
+	(*state)[key] = collapsed
+	// A collapsed heading uses its first field's index as the navigation anchor.
+	// Field indices remain stable for editors, refreshes and category positions.
+	for i, field := range p.fields() {
+		if settingSectionKey(field) == key {
+			p.selection = i
+			break
+		}
+	}
+}
+
+func (p *settingsPanel) moveSettingSelection(delta int) {
+	fields := p.fields()
+	var targets []int
+	current := 0
+	for i, field := range fields {
+		key := settingSectionKey(field)
+		if i > 0 && p.sectionCollapsed(key) && settingSectionKey(fields[i-1]) == key {
+			continue
+		}
+		targets = append(targets, i)
+		if i <= p.selection {
+			current = len(targets) - 1
+		}
+	}
+	if len(targets) > 0 {
+		p.selection = targets[max(0, min(current+delta, len(targets)-1))]
+	}
 }
 
 func (p *settingsPanel) listSize() (width, height int) {
@@ -126,20 +181,29 @@ func (p *settingsPanel) sectionTitle(field interaction.SettingField) string {
 func (p *settingsPanel) visibleSettingRows(fields []interaction.SettingField) []settingListRow {
 	_, height := p.listSize()
 	var rows []settingListRow
-	section, selectedRow := "", 0
+	section, selectedRow, heading := "", 0, 0
 	for i, field := range fields {
 		title := p.sectionTitle(field)
-		if title != section {
+		key := settingSectionKey(field)
+		if key != section {
 			if len(rows) > 0 {
 				rows = append(rows, settingListRow{field: -1})
 			}
-			rows = append(rows, settingListRow{field: -1, section: title})
-			section = title
+			heading = len(rows)
+			rows = append(rows, settingListRow{field: -1, section: title, key: key})
+			section = key
 		}
-		if i == p.selection {
+		if p.sectionCollapsed(key) {
+			if i == min(p.selection, len(fields)-1) {
+				selectedRow = heading
+				rows[heading].selected = true
+			}
+			continue
+		}
+		if i == min(p.selection, len(fields)-1) {
 			selectedRow = len(rows)
 		}
-		rows = append(rows, settingListRow{field: i, section: title})
+		rows = append(rows, settingListRow{field: i, section: title, key: key})
 	}
 	start := max(0, selectedRow-height+1)
 	if start > 0 && height > 1 {
@@ -147,7 +211,7 @@ func (p *settingsPanel) visibleSettingRows(fields []interaction.SettingField) []
 		if rows[start].field >= 0 || rows[start].section == "" {
 			start++
 			if rows[start].field >= 0 {
-				visible := []settingListRow{{field: -1, section: rows[start].section}}
+				visible := []settingListRow{{field: -1, section: rows[start].section, key: rows[start].key}}
 				return append(visible, rows[start:min(len(rows), start+height-1)]...)
 			}
 		}
@@ -155,13 +219,22 @@ func (p *settingsPanel) visibleSettingRows(fields []interaction.SettingField) []
 	return rows[start:min(len(rows), start+height)]
 }
 
-func settingSectionHeading(title string, width int) string {
-	if title == "" {
+func (p *settingsPanel) sectionHeading(row settingListRow, width int, hovered string) string {
+	if row.key == "" {
 		return ""
 	}
-	label := ansi.Truncate("  "+sanitizeSingleLineText(title)+" ", width, "…")
-	return mutedStyle.Bold(true).Render(label) +
-		mutedStyle.Render(strings.Repeat("─", max(0, width-ansi.StringWidth(label))))
+	prefix := "  "
+	style := mutedStyle
+	if row.selected {
+		prefix = "› "
+	}
+	target := "section:" + row.key
+	if hovered == target {
+		style = transcriptHoverStyle
+	}
+	label := ansi.Truncate(prefix+sanitizeSingleLineText(row.section)+" ", width, "…")
+	return style.Bold(true).Render(label) +
+		style.Render(strings.Repeat("─", max(0, width-ansi.StringWidth(label))))
 }
 
 func (p *settingsPanel) tabsWidth() int {
