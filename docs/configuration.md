@@ -153,7 +153,8 @@ and credential files are not one transaction.
 ### Settings window
 
 Open `/settings` to edit settings. The main header has no Settings or Usage buttons.
-`/desktop` opens the same panel at Computer Use in Tools & Network. It does not
+`/desktop` and `/mcp desktop` open the same panel at Computer Use in Tools & Network.
+The MCP menu also links to this setting; it has no independent enable switch. It does not
 start a run or create a Session. During a main run, the Settings footer offers
 **Stop current run** (click or F6 within the panel); Esc only returns or closes.
 Stopping cancels the existing run and waits for lifecycle completion before
@@ -1091,6 +1092,10 @@ At startup AICE injects only each skill's name and description into the
 system prompt. The agent loads the body on demand through the `skill` tool.
 The builtin `browser` skill describes browsing through `bash` and `read`; see
 [Browser automation](browser.md) for installation and connection requirements.
+The builtin `computer-use` guide is pinned to Cua Driver 0.29.1 and applies when
+`managed:cua` is available. It uses normal on-demand activation and source
+shadowing; loading guidance neither enables Computer Use nor grants MCP access.
+Enabled production main runs expose only the managed discovery route; see [Computer Use](desktop.md#managed-mcp-migration-boundary).
 Discovery and wiring are in [Skills](architecture.md#skills).
 
 Skill directories on disk are allowed automatically for read-class tools

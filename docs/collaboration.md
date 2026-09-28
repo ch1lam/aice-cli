@@ -175,6 +175,56 @@ It sends one fixed, non-sensitive query with three results and logs whether a
 cost was reported. Agree on the charge before running it and report the result
 separately from the offline suite.
 
+## Real MCP interoperability
+
+The [platform coverage record](mcp.md#platform-coverage) identifies the Linux
+deterministic package and CLI/TUI test selection separately from macOS full-suite
+race coverage. Its isolated Linux run has no race instrumentation or external
+service access. Reproducing that subset does not replace the full CI matrix or
+the opt-in interoperability gates below.
+
+The [MCP evidence and commands](mcp.md#verification-evidence) include opt-in
+production management-to-Print checks for a separately installed Filesystem
+stdio server and public DeepWiki HTTP. They use isolated settings, explicit
+connection and Schema-bound read grants, a scripted model and Session readback.
+Search covers the complete service tool catalog and must return the expected
+read among its first five candidates. Only that read receives an allow rule;
+the scripted model chooses its returned identity, not the first entry.
+They must not read normal credentials or send workspace contents to the remote
+service. Run the offline driver first:
+
+```sh
+go test -race -tags=integration ./internal/app -run '^TestMCP(PrintInteropHarness|InteropModelSelection)$' -v
+```
+
+External gates require their documented switches; an integration build alone
+must not launch a third-party server or contact DeepWiki. The Filesystem test
+uses only its own temporary allowed directory and never installs packages.
+Record package/runtime and negotiated server/protocol versions separately.
+A scripted model verifies interoperability, not actual model task completion.
+
+`TestLinearOAuthReadRefresh` is an opt-in account interoperability check. It
+uses the ordinary CLI login, reads only the authenticated user, and advances the
+validation service's local expiry to exercise production refresh. Its offline
+counterpart is `TestMCPExternalOAuthHarness`. Account access requires explicit
+authorization; neither test logs credentials or account content.
+
+## MCP retrieval checks
+
+The deterministic corpus in `internal/app/testdata/mcp-search-tasks.json` checks
+50 natural-language requests against 50/500/2,000 tools. It uses no model,
+credentials or external services. Run it when changing ranking:
+
+```sh
+AICE_MCP_SEARCH_EVAL=1 go test ./internal/app -run '^TestMCPCatalogRetrievalEvaluation$' -count=1 -v
+```
+
+Natural-language misses are reported separately from exact-ID correctness.
+The default suite retains focused lexical, pagination, identity and selection
+regressions. Generated reports, model transcripts and run logs belong outside
+the repository; they are not test fixtures. Do not add batch runners or tests
+of report accounting to the product suite.
+
 ## History performance checks
 
 The synthetic history benchmarks use temporary sessions and generated Markdown;
@@ -410,7 +460,12 @@ Unit tests cover cancellation before capture, foreign targets, missing images,
 invalid mappings and partial external-step retention without Session creation.
 The separate `TestNativeLinuxDesktopPrint` uses the production private installer
 with the local pinned archive supplied by an in-memory HTTP transport, then the
-actual print command, configuration loader, Guard, typed tools and native runtime.
+actual print command, configuration loader, Guard, managed MCP tools and native runtime.
+The migrated gate passed on Linux arm64/Driver 0.29.1 in the isolated X11
+fixture on 2026-09-28 after repairing structured-result source serialization.
+It took 7.13 seconds of CLI execution, retained 71 concurrent core keys and
+replayed nine PNG results; see [platform evidence](desktop.md#platform-evidence).
+That native run used `CGO_ENABLED=0` and did not use race instrumentation.
 Only the model is scripted; unrelated helper downloads are disabled. It selects
 three synthetic GTK windows by returned PID/title, edits Unicode values and
 commits once per window. Independent fixture state confirms results. Nine PNGs
@@ -487,8 +542,8 @@ AICE_CUA_TEST_BINARY=/absolute/path/to/CuaDriver.app/Contents/MacOS/cua-driver \
 ```
 
 The desktop activity CLI check uses the actual interactive command, a scripted
-model and synthetic typed backend, with isolated user settings. It exercises
-application labels, waiting/planning, folded parameters and Settings Stop;
+model and synthetic managed MCP backend, with isolated user settings. It exercises
+discovery, requested-operation/planning phases, folded parameters and Settings Stop;
 no native desktop or paid model is accessed:
 
 ```sh
@@ -713,21 +768,22 @@ gestures or cleanup of every resource inside the Driver. A complete native reply
 that races cancellation remains a known result; cancellation must not rewrite it
 as unknown. No cancelled mutation is replayed during recovery.
 
-The macOS Settings Stop gate uses the actual command, Loop, Guard, typed tools,
+The macOS Settings Stop gate uses the actual command, Loop, Guard, managed MCP,
 production Manager and Session with a scripted model. It discovers and captures
-one exact synthetic AppKit window, then cancels its native condition wait through
-Settings-local F6. Esc alone must keep the wait running. The test checks that
-polling started, cancellation precedes one binding cleanup, no model continuation
-or widget mutation occurs, saved preferences remain unchanged, and all three
-tool pairs plus the capture survive Session replay. The shared service must
-remain usable after command exit. This passed with race detection on 2026-09-27:
+one exact synthetic AppKit window, then cancels explicit read polling through
+Settings-local F6. Esc alone keeps the Run active. It checks that polling started,
+cancellation precedes one binding cleanup, no widget mutation occurs, saved
+preferences remain unchanged, and complete tool pairs plus the capture survive
+Session replay. Oversized JSON uses ordinary paged `tool_result_read`. The shared
+service must remain usable after command exit. The old typed condition-wait
+variant passed on 2026-09-27; it is distinct from the current managed gate:
 
 ```sh
 AICE_CUA_NATIVE=1 go test -race -tags=integration ./internal/app -run '^TestNativeMacDesktopStopTUI$' -v
 ```
 
 Its terminal input is piped and it uses no foreground sentinel. This is native
-condition-wait cancellation through the real UI, not physical keyboard/IME,
+read-poll cancellation through the real UI, not physical keyboard/IME,
 foreground coexistence or Stop during a native mutation. Setup reuses existing
 grants and installation; it installs nothing and requests no new permissions.
 
@@ -738,7 +794,8 @@ input and responses are never held by the harness. It requires a dispatched
 `unknown` outcome, exact result retention in Session replay, one commit and
 binding cleanup, unchanged saved preferences, no model continuation, and a
 usable shared service. A result that already returned cannot pass this gate.
-This passed with race detection on 2026-09-27, showing cancellation in 1.11 s:
+The earlier typed variant passed with race detection on 2026-09-27, showing
+cancellation in 1.11 s; current managed results are recorded in the desktop guide:
 
 ```sh
 AICE_CUA_NATIVE=1 go test -race -tags=integration ./internal/app -run '^TestNativeMacDesktopStopMutationTUI$' -count=1 -v
@@ -751,10 +808,12 @@ physical keyboard input, continuous focus or interrupted gesture cleanup.
 
 The application-level macOS gates use synthetic AppKit targets, with a variant
 substituting the middle target with the local WebKit form. They use a scripted
-model through the actual print command, Guard, typed tools, production
-desktop constructor and Session writer. They check three exact-window Unicode
+model through the actual print command, Guard, managed MCP discovery/calls,
+production desktop constructor and Session writer. They check three exact-window Unicode
 value changes/commits, nine PNGs delivered directly to later model requests,
-exact replayed tool results/images and stable message parents. Configuration and
+exact budgeted model projections from retained results/images and stable message
+parents. Oversized structured JSON is paged through the public readback tool.
+Configuration and
 skill discovery use temporary directories; only desktop resolution uses the
 host's verified App and service endpoint. It installs nothing and requests no
 permissions during preparation. As in the Manager test, the run retains ordinary
@@ -769,14 +828,14 @@ AICE_CUA_NATIVE=1 go test -race -tags=integration ./internal/app -run '^TestNati
 The WebKit variant uses `type_text` on the empty web input and matches both
 label and role. Its actual page state must contain the requested Unicode value
 and one commit, while the Driver's `unverifiable` effect must reach the model and
-survive exact Session replay. It passed with race detection on 2026-09-27 in
+survive Session replay. The earlier typed gate passed with race detection on 2026-09-27 in
 24.55 s of command execution, with 11 scripted model requests, nine PNGs and no
 sentinel focus loss. The AppKit-only gate passed in the same sequential run.
 Both retain isolated configuration/skills and existing grants; neither invokes
 a real model or establishes third-party browser/profile compatibility.
 
 The shared model/Session checks are also used by the native Linux print gate.
-Both the Manager and CLI gates passed on the authorized macOS 0.29.1 host on
+Both the Manager and earlier typed CLI gates passed on the authorized macOS 0.29.1 host on
 2026-09-27. The CLI task completed its three commits in 19.53 s with nine PNGs
 replayed and no sentinel focus loss. Earlier attempts encountered foreground
 loss; subsequent passes do not identify its cause or prove physical-user
@@ -956,18 +1015,23 @@ such an idle interval may fail and require a new read. Do not replay prior input
 ### Explicit real-model desktop gate
 
 `TestNativeMacActualModelDesktop` uses the selected production provider, Agent
-Loop, Guard, typed desktop tools, Manager and Session recorder for the same
-three synthetic forms (AppKit/WebKit/AppKit). The model chooses its actions;
+Loop, Guard, managed MCP route, Manager and Session recorder
+for the same three synthetic forms (AppKit/WebKit/AppKit). The model chooses its actions;
 independent widget/DOM readback requires the assigned Unicode text and exactly
 one commit per window. Each window must have been captured, returned images
-must reach model requests, exact tool-result/image replay must pass, and the
-sentinel and shared service must survive cleanup. This is a targeted Loop/model
+must reach model requests, Session reconstruction of delivered result/image
+views must pass, and the sentinel and shared service must survive cleanup. This is a targeted Loop/model
 gate, not the full CLI with a real model, physical input or third-party apps.
 
-The harness registers only the three desktop tools. Its test-only scope wrapper
-admits the exact synthetic discovery query, removes unrelated discovery entries,
-and refuses references outside those windows, foreground delivery, launch and
-non-task keyboard actions before dispatch. It retains genuine native results;
+The current harness accepts omitted or `AICE_CUA_MODEL_ROUTE=managed` selection;
+`typed` and other values fail before configuration or credentials are read. It
+registers tool search, the normally loaded builtin Skill and result readback,
+then borrows the admitted native Run through the production managed catalog.
+Its scope requires one of
+the test-owned PIDs for discovery and every native operation. Exact window,
+observation/token and mutation-consumption validation still belongs to the
+native Run. The scope refuses unrelated targets, foreground delivery, launch
+and non-task keyboard actions before dispatch, and retains genuine native results;
 this is not a product allowlist or a change to Cua standard mode. Scope refusals
 fail acceptance even if a model later completes the task. Unknown mutations are
 not replayed by the harness. The guard remains the production gate without yolo;
@@ -976,16 +1040,21 @@ any application approval also fails acceptance.
 First verify this harness without provider access:
 
 ```sh
-AICE_CUA_NATIVE=1 go test -race -tags=integration ./internal/app -run '^TestNativeMacModelHarness$' -v
+AICE_CUA_NATIVE=1 go test -race -tags=integration ./internal/app -run '^TestNativeMacManagedModelHarness$' -v
 ```
 
-That scripted-decision check passed on 2026-09-27 with 11 requests, nine images,
-zero Guard asks and zero scope refusals. The real-model gate has a separate
+The managed scripted-decision evidence and bounded-view assertions are recorded
+below. The old typed harness and paired route comparison are available at
+the pre-removal history; current migration evidence is summarized in
+[Computer Use](desktop.md#managed-mcp-migration-boundary).
+Current code has no typed model tool wrappers. The real-model gate has a separate
 opt-in; neither `AICE_CUA_NATIVE=1` nor the integration build tag enables it.
 After selecting and authorizing a provider/model, set all of the following:
 
 ```sh
 AICE_CUA_NATIVE_MODEL=1 \
+  AICE_CUA_MODEL_ROUTE='managed' \
+  AICE_CUA_MODEL_REQUEST_BUDGET=80 \
   AICE_CUA_MODEL_PROVIDER='<configured-provider-id>' \
   AICE_CUA_MODEL_ID='<image-capable-model-id>' \
   AICE_CUA_MODEL_THINKING='<supported-thinking-level>' \
@@ -999,8 +1068,12 @@ not read project settings or skills. Provider selection and thinking are
 required rather than silently using an ambient default. The model receives only
 the synthetic task and admitted native observations; credentials stay outside
 the prompt and logs. It can consume provider quota or incur charges.
-The run allows at most 20 model attempts and five minutes, with 4,096 requested
-output tokens per response. Its default reported-token budget is 100,000.
+The run defaults to 20 model attempts and has a five-minute time limit, with
+4,096 requested output tokens per response. `AICE_CUA_MODEL_REQUEST_BUDGET`
+accepts 1–200 attempts; managed discovery and readback need additional requests,
+so the command above uses 80. Compare retained samples only with their explicit
+request, token and time budgets; this knob does not authorize provider usage.
+The default reported-token budget is 100,000.
 After separately authorizing a different budget, set
 `AICE_CUA_MODEL_TOKEN_BUDGET` to an integer from 1 through 10,000,000. Invalid or
 empty supplied values fail before configuration or credentials are read; zero
@@ -1011,12 +1084,29 @@ operations, include reported cache usage, and are not an exact billing ceiling.
 The caller must create a fresh empty artifact directory. `task.txt`, the normal
 `model-task.jsonl` and `report.json` remain there for review once the run reaches
 those stages. The report separates Loop completion from full `accepted` status;
-it contains counts/usage and the effective request/token/time/output limits,
-not credentials or input bodies. The Session does
+it contains the route, counts/usage and effective request/token/time/output and
+result-view limits, not credentials or input bodies. The Session does
 contain the synthetic images and model transcript. Default tests skip all
 provider reads/calls; offline scope tests reject out-of-scope actions and stale
 references without a native backend call. Preparing or passing the scripted
 harness does not establish real-model acceptance.
+
+The managed scripted gate passed on 2026-09-28 with race detection: 55 requests,
+18 native operations, nine images, zero Guard asks/scope refusals and a 26.79 s
+Loop. All three independent values/one-commit assertions, the foreground
+sentinel, shared service and replay checks passed. Normal 4,096-token result
+views required 30 `tool_result_read` pages; source history was retained and
+replay reconstructed those bounded model views. Managed timing records
+`managed_call_ms` around the native Run boundary, including its queue and result
+processing. It does not invent the typed adapter's separate Driver/wait/image
+phase measurements. This is a warm shared-service sample, not a cold/warm
+latency comparison. The first attempt stopped before native operations because
+full-name search returned a neighboring capability; the lexical regression was
+reproduced and fixed without disabling the no-progress check.
+
+The following earlier typed-route measurements predate wrapper removal. Their
+archived source is required to reproduce that route; they do not describe a
+second current model entry point.
 
 One explicitly authorized run on 2026-09-27 used
 `opencode-go/muse-spark-1.3-contributor` with `xhigh` and Driver 0.29.1 on
@@ -1104,9 +1194,10 @@ pure request-encoding microbenchmark and does not isolate network latency.
 
 Tool totals span execution-start through execution-end, including Guard and
 Session result persistence. Guard check and optional revalidation have separate
-samples. Admitted actions include the existing Manager timings for total, queue,
-Driver round trip, condition wait and final observation/image processing.
-These phases are nested, not additive across request/tool/action totals. A zero
+samples. Current managed reports include `managed_call_ms` around the native
+Run. Historical typed reports also contain Manager total, queue, Driver round
+trip, condition wait and final observation/image phases. These historical phases
+are nested, not additive across request/tool/action totals. A zero historical
 wait duration means no condition wait occurred; omitted stream/Guard fields
 mean their measurement boundary was not reached. Tool/request sequence numbers
 identify first and subsequent calls; fixture setup is outside Loop elapsed time,

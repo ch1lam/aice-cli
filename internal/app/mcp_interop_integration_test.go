@@ -88,21 +88,7 @@ func TestMCPFilesystemPrintInterop(t *testing.T) {
 	if os.Getenv("AICE_MCP_FILESYSTEM_TEST") != "1" {
 		t.Skip("set AICE_MCP_FILESYSTEM_TEST=1 and supply Node/server paths")
 	}
-	node, entry := os.Getenv("AICE_MCP_TEST_NODE"), os.Getenv("AICE_MCP_FILESYSTEM_ENTRY")
-	for _, path := range []string{node, entry} {
-		info, err := os.Stat(path)
-		if !filepath.IsAbs(path) || err != nil || !info.Mode().IsRegular() {
-			t.Fatal("Node and filesystem entry must be existing absolute file paths")
-		}
-	}
-	data, err := os.ReadFile(filepath.Join(filepath.Dir(filepath.Dir(entry)), "package.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var pkg struct{ Name, Version string }
-	if json.Unmarshal(data, &pkg) != nil || pkg.Name != "@modelcontextprotocol/server-filesystem" || pkg.Version != "2026.8.31" {
-		t.Fatal("expected the reviewed filesystem package version 2026.8.31")
-	}
+	node, entry := mcpFilesystemPaths(t)
 	root := t.TempDir()
 	file := filepath.Join(root, "fixture.txt")
 	const content = "AICE stdio interoperability fixture\n中文内容 · exact readback\n"
@@ -119,6 +105,26 @@ func TestMCPFilesystemPrintInterop(t *testing.T) {
 	if err != nil || string(unchanged) != content {
 		t.Fatal("read-only interoperability changed the synthetic file")
 	}
+}
+
+func mcpFilesystemPaths(t *testing.T) (string, string) {
+	t.Helper()
+	node, entry := os.Getenv("AICE_MCP_TEST_NODE"), os.Getenv("AICE_MCP_FILESYSTEM_ENTRY")
+	for _, path := range []string{node, entry} {
+		info, err := os.Stat(path)
+		if !filepath.IsAbs(path) || err != nil || !info.Mode().IsRegular() {
+			t.Fatal("Node and filesystem entry must be existing absolute file paths")
+		}
+	}
+	data, err := os.ReadFile(filepath.Join(filepath.Dir(filepath.Dir(entry)), "package.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var pkg struct{ Name, Version string }
+	if json.Unmarshal(data, &pkg) != nil || pkg.Name != "@modelcontextprotocol/server-filesystem" || pkg.Version != "2026.8.31" {
+		t.Fatal("expected the reviewed filesystem package version 2026.8.31")
+	}
+	return node, entry
 }
 
 // Only this fixed public repository identifier leaves the process. The model

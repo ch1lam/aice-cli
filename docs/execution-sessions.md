@@ -91,6 +91,15 @@ unless `--yolo` is set.
 The `skill` tool is a known tool: it has no path argument and returns
 content already parsed at startup, so Check allows it after the known-tool
 gate. File policies and path access do not apply to it.
+`tool_search`, `mcp_resource_list` and `mcp_server_info` are known discovery tools.
+Their application catalog uses only explicitly supplied service bindings and
+checks current eligibility. The lazy connection owner requires a separate saved
+connection approval or ordinary yolo Ask bypass before connecting. Discovery and
+reading initialization instructions grant no execution rights; selected MCP
+tools and resource readers still cross the identity-bound Guard. Server text is
+source-tagged untrusted data, never a policy update. CLI and interactive management
+publish connection changes and revocation; see
+[MCP](mcp.md#run-catalog-and-tool-search).
 `web_search` and `web_fetch` are known tools that pass through the same
 execution gate without a web confirmation step: `web_search` allows when a
 search service is bound (instance ID plus endpoint origin, set by the
@@ -99,14 +108,17 @@ when the URL passes the shared URL-shape check (malformed URLs, userinfo,
 zone-scoped IPv6 and non-default ports deny). Address validation, redirects
 and body limits run inside the tool, outside the Guard lock. See [Web search
 and fetch](web.md#permissions).
-`desktop_apps`, `desktop_observe` and `desktop_act` are known tools exposed only
-when the User-only Computer Use preference is enabled. The application Guard
-requires a live run binding from its desktop owner, and the intrinsic Guard
-requires the global toggle. Either failure is a hard deny, unaffected by
-`--yolo` or generic tool-session grants. There is no per-application approval.
-Native service admission separately checks standard mode, identity and OS
-grants; tool calls cannot install or authorize the helper. Workspace file
-policies do not constrain GUI actions in other applications. See the current
+Enabled Computer Use contributes the application-owned `managed:cua` service,
+not the legacy `desktop_*` tools. Discovery requires a live desktop Run binding;
+selected native operations pass the same identity-bound MCP Guard. Its reviewed
+operation inventory inherits the Computer Use preference without a separate
+per-application approval. Explicit deny, configured restrictions and revoked
+bindings still win under `--yolo`. Ordinary services cannot obtain this authority
+from their name or configuration. Native admission separately checks standard
+mode, identity and OS grants; tool calls cannot install or authorize the helper.
+Workspace file policies do not constrain GUI actions in other applications.
+The old `desktop_*` tools and their Guard toggle have been removed. Those names
+follow ordinary unknown-tool policy and have no executable registration. See
 [Computer Use integration status](desktop.md).
 `request_user_input` is a known interactive-only tool: the gate allows it
 without an extra confirmation step, and answers never change the
@@ -181,6 +193,7 @@ approval waits fail closed.
 | `pathAccess.ask` | Allow once; Allow this file for this session; Allow directory `<dir>/` for this session; Deny |
 | `permissionGate.dangerous` | Allow once; Allow this exact command for this session; Allow `"<prefix> …"` commands for this session; Deny |
 | `unknownTool` | Allow once; Allow tool `"X"` for this session; Deny |
+| `mcp.tool` (bound integration) | Allow once; Allow current tool version for this Session; Allow current service tool versions for this Session; Deny |
 | Other `ask` rules | Allow once; Deny |
 
 The directory option is omitted when the parent is `/` or `$HOME`. The
@@ -197,6 +210,13 @@ Grant scope within the current Session:
   are split with a shell AST (`&&`, `||`, `;`, `|`, and similar). Every
   subcommand must start with an authorized prefix at a word boundary
 - **tool name** — that unknown tool name (`AllowToolSession`)
+- **bound MCP tool/service** — source, service, connection, effective permission
+  scope and current tool schema versions; generic name grants do not apply.
+  The catalog, Guard and approval bridge enforce this boundary in main runs.
+  Connection approval grants no tool permissions. Explicit cross-Session user
+  rules are saved separately through MCP management, bound to the reviewed
+  connection, configured scope, operation and schema; Session prompts never save
+  them. User denies survive yolo. See [MCP permission](mcp.md#bound-execution-permission).
 
 Exact command grants compare the complete original string, including whitespace
 and quoting. They are separate from deliberately configured allowed patterns
@@ -523,6 +543,29 @@ source records intact. Replay restores the typed result, which uses the same
 application display projection as a live result; it does not reconstruct metadata
 from continuation prose. Startup and interactive resume hydrate the TUI from
 the original active branch, including recorded tool outputs and diffs.
+
+Tool-result `details` is also additive: structured JSON, bound service/tool
+identity, execution state and source-data loss notices remain in the original
+JSONL record through clones, branches, compaction and reopening. A bounded optional
+`structured_content_raw` string preserves structured JSON spelling when normal
+encoding would compact or escape it; it must agree with `structured_content`.
+Both belong to that same source record. Old records
+acquire no inferred identity or execution status. Recovery of a missing result
+appends explicit `unknown` state and never invokes the tool; neither saved
+bindings nor old remote handles grant authority on resume. Model adapters derive
+ordered content plus JSON/status text without rewriting the source record.
+Resource read provenance includes `operation: "resources/read"`; absent operation
+in older records remains an ordinary tool binding. Reading resources uses a
+separately authorized service-bound reader and never fetches returned links.
+See [resource scope](mcp.md#resource-discovery-and-reading) and
+[structured tool outcomes](contracts.md#structured-tool-outcomes).
+Main runs bound detailed tool results only in model requests. The local
+`tool_result_read` tool reads retained source on the active ancestry, including
+before compaction, without executing its original tool. Duplicate call IDs need
+an exact entry ID; inactive branches and other Sessions are inaccessible through
+this tool. Stateless Print reads only its current invocation's source messages
+and reports that they are not durable. See [readback limits](mcp.md#model-views-and-result-readback).
+
 
 Messages and compactions are tree nodes with stable IDs and parent IDs. Model
 context is derived from the active root-to-leaf path. After checkout to a safe

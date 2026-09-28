@@ -40,6 +40,7 @@ and routes; README files may summarize product behavior and link to details.
 | Browser automation, connection, tabs and lifecycle | [Browser automation](docs/browser.md) |
 | Computer Use, Cua installation/setup, native sessions, window actions and platform evidence | [Computer Use](docs/desktop.md) |
 | Web search services, priority, `web_fetch`, network permissions, evidence | [Web search and fetch](docs/web.md) |
+| Generic MCP connection, discovery, OAuth, result limits and implementation status | [MCP](docs/mcp.md) |
 | Installation, helper binaries, source builds, updates | [Installation](docs/installation.md) |
 | Providers, models, reasoning, credentials, flags, Skills, TUI input | [Configuration](docs/configuration.md) |
 | Project Trust, prompt precedence, protected resources, `/init` | [Project Trust](docs/project-trust.md) |

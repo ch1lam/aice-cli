@@ -36,6 +36,10 @@ iwr -useb https://raw.githubusercontent.com/ch1lam/aice-cli/main/scripts/install
 使用 `/web` 添加 Exa 搜索账户、调整搜索来源顺序并开关 `web_fetch`。配置好服务后，
 任意支持工具调用的模型都可以使用 `web_search`；`web_fetch` 直接读取公开网页。启用的 Web 工具会自动访问网络，无需额外确认。详见[联网搜索与抓取](./docs/web.md)。
 
+使用 `aice mcp`、`/mcp` 或 Settings 添加 stdio/HTTP 服务、查看并批准连接指纹、设置独立凭证和测试发现。
+模型通过 `tool_search` 按需加载工具 Schema，执行仍经过 Guard 授权。
+Settings 可在运行中撤回连接，其他修改在空闲时生效。已支持 OAuth 浏览器登录、注销及操作前自动刷新，失败的操作不会自动重放；详见 [MCP 配置与命令](./docs/mcp.md#management-cli)。
+
 在项目中启动交互式 Session：
 
 ```sh
@@ -144,7 +148,8 @@ aice --workspace . --session .aice/sessions/<session-id>.jsonl
 | 交互 | Bubble Tea TUI（按 provider/model 显示[上下文使用百分比](./docs/configuration.md#context-window-and-status-bar)）与一次性 `--print` 模式 |
 | Provider | DeepSeek V4、OpenCode Go 内建模型目录、Kimi Coding Plan（Responses API）、Moonshot 开放平台 API、智谱开放平台 API 与 Coding Plan、OpenAI API（GPT-6 Astra 与 GPT-5.6）、Claude API 与 Pro/Max 订阅、Codex/ChatGPT 订阅、AiHubMix，以及 Custom（OpenAI 兼容） |
 | 协议 | Anthropic Messages、OpenAI Responses、OpenAI Chat Completions |
-| 工具 | `read`、`write`、`edit`、`bash`、`grep`、`find`、`ls`、`skill`、`web_search`、`web_fetch` |
+| 工具 | `read`、`write`、`edit`、`bash`、`grep`、`find`、`ls`、`skill`、`web_search`、`web_fetch`、`tool_result_read` |
+| MCP | stdio/Streamable HTTP、惰性发现与 `tool_search`、独立连接/工具授权、资源列表与显式读取、有序结构化结果、模型视图预算与本地回读、CLI 与 `/mcp`/Settings 管理；见[支持范围与限制](./docs/mcp.md) |
 | 联网 | Exa Search API 服务实例与可排序来源列表（`native` 预留、未实现）、带防护的直连网页抓取、来源写入 Session 历史、`/web` 设置；见[联网搜索与抓取](./docs/web.md) |
 | 浏览器 | 原生 agent-browser，通过 `bash`/`read` 与内置 browser skill 工作；`/browser` 切换显示窗口、连接与选择标签页，见[浏览器自动化](./docs/browser.md) |
 | Guard | 工具调用前的路径、危险命令与网络范围检查、交互授权；详见[工具执行与 Session](./docs/execution-sessions.md#tool-execution-boundary) |
@@ -168,6 +173,7 @@ Guard 不隔离网页内部操作。
 - [安装与升级](./docs/installation.md)
 - [配置与命令](./docs/configuration.md)
 - [联网搜索与抓取](./docs/web.md)
+- [MCP 服务与命令](./docs/mcp.md)
 - [Project Trust 与 Prompt](./docs/project-trust.md)
 - [工具执行与 Session](./docs/execution-sessions.md)
 - [架构](./docs/architecture.md)、[运行时契约](./docs/contracts.md)与[维护入口及已知偏差](./docs/maintenance.md)

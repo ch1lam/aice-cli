@@ -17,6 +17,13 @@ Only these workspace-relative resources are protected:
 | `.aice/settings.json` | regular file | Overrides user configuration, including endpoints and API keys, below environment variables and flags |
 | `.agents/skills/` | directory | Project-level Agent Skills are discovered and listed in the system prompt. See [Skills](architecture.md#skills). |
 
+The nested MCP collection is an exception to scalar configuration precedence:
+trusted project services retain separate source identities and never merge
+connection fields or credentials into same-name user services. Project MCP
+restrictions may only tighten access. Loading these definitions does not grant
+connection or execution authority; application wiring is still pending. See
+[MCP configuration identity](mcp.md#configuration-identity-and-storage).
+
 The three prompt files must be regular files, valid UTF-8, no larger than
 64 KiB, and readable through an `os.Root` confined to the workspace. Those
 read constraints are specific to the prompt files; general file tools

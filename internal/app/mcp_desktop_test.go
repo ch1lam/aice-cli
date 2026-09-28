@@ -295,37 +295,21 @@ func (f *managedResultFixture) CallChecked(ctx context.Context, name string, arg
 	return mcpclient.Result{State: llm.ExecutionReturned, StructuredContent: []byte(`{"window_id":9007199254740993}`), Content: []mcpclient.Block{{Kind: mcpclient.BlockText, Text: "first"}, {Kind: mcpclient.BlockText, Text: "last"}}}, nil
 }
 
-func TestManagedCUACatalogConstructorFreezesNativeModeWithoutIO(t *testing.T) {
+func TestManagedCUACatalogFreezesNativeModeWithoutIO(t *testing.T) {
 	t.Parallel()
-	manager, err := desktop.NewManager(func(context.Context) (string, string, error) {
-		t.Error("constructor resolved native runtime")
-		return "", "", fmt.Errorf("unexpected native access")
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer manager.Close()
-	for _, mode := range []desktop.ControlMode{desktop.BackgroundOnly, desktop.ForegroundAllowed} {
-		run, err := manager.Bind(t.Context(), desktop.RunOptions{Mode: mode})
+	state := managedLifecycleState(t)
+	for _, mode := range []config.DesktopControlMode{config.DesktopBackgroundOnly, config.DesktopForegroundAllowed} {
+		configuration := config.Config{DesktopEnabled: true, DesktopControlMode: mode, MCP: catalogTestConfig("user:ordinary")}
+		ctx, catalog := managedLifecycleCatalog(t, state, configuration, ownerTestGuard(t))
+		run, err := state.bound(ctx)
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer run.Close()
-		configuration := catalogTestConfig("user:ordinary")
-		connections := map[string]mcpCatalogConnection{"user:ordinary": &mcpCatalogFixture{}}
-		catalog, err := newManagedCUACatalog(configuration, connections, ownerTestGuard(t), run, "native-owner")
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer catalog.Close()
-		if !strings.Contains(catalog.scopes[managedCUAKey], ":managed-cua:"+string(mode)+":") || run.ControlMode() != mode {
+		if !strings.Contains(catalog.scopes[managedCUAKey], ":managed-cua:"+string(mode)+":") || string(run.ControlMode()) != string(mode) {
 			t.Fatal("catalog did not bind actual native mode")
 		}
-		if len(configuration.Servers) != 1 || len(connections) != 1 || manager.Status().Connected {
-			t.Fatal("constructor mutated owner inputs or performed native I/O")
+		if len(configuration.MCP.Servers) != 1 {
+			t.Fatal("catalog mutated owner configuration")
 		}
-	}
-	if _, err := newManagedCUACatalog(config.MCPConfig{}, nil, ownerTestGuard(t), nil, "owner"); err == nil {
-		t.Fatal("missing native backend accepted")
 	}
 }

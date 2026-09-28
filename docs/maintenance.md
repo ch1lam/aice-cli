@@ -25,6 +25,9 @@ tests. Search for the named symbols rather than relying on line numbers.
 | Provider and protocol changes | [providers.go](../internal/app/providers.go), [provider](../internal/provider), [api](../internal/api) | The affected provider and protocol adapter tests; shared fixtures in [apitest](../internal/apitest) |
 | Browser lifecycle | [browser](../internal/browser), [app/browser.go](../internal/app/browser.go), [deps/agentbrowser.go](../internal/deps/agentbrowser.go) | [native_test.go](../internal/browser/native_test.go), [app/browser_test.go](../internal/app/browser_test.go) |
 | Web search and fetch | [app/web.go](../internal/app/web.go) (`bindWeb`), [app/web_commands.go](../internal/app/web_commands.go), [config/web.go](../internal/config/web.go), [web/resolve.go](../internal/web/resolve.go), [web/exa/client.go](../internal/web/exa/client.go), [web/httpfetch/fetch.go](../internal/web/httpfetch/fetch.go), [guard/network.go](../internal/guard/network.go), [tool/web_search.go](../internal/tool/web_search.go), [tool/web_fetch.go](../internal/tool/web_fetch.go) | [app/web_test.go](../internal/app/web_test.go), [app/web_commands_test.go](../internal/app/web_commands_test.go), [config/web_test.go](../internal/config/web_test.go), [web/web_test.go](../internal/web/web_test.go), [exa_test.go](../internal/web/exa/exa_test.go), [fetch_test.go](../internal/web/httpfetch/fetch_test.go), [guard/network_test.go](../internal/guard/network_test.go) |
+| MCP transport and run catalog | [mcpclient/client.go](../internal/mcpclient/client.go), [app/mcp_owner.go](../internal/app/mcp_owner.go), [app/mcp_catalog.go](../internal/app/mcp_catalog.go), [agent/tool_selection.go](../internal/agent/tool_selection.go) | [mcpclient/lifecycle_test.go](../internal/mcpclient/lifecycle_test.go), [app/mcp_startup_test.go](../internal/app/mcp_startup_test.go), [app/mcp_loop_test.go](../internal/app/mcp_loop_test.go), [agent/tool_selection_test.go](../internal/agent/tool_selection_test.go) |
+| MCP management, authorization and OAuth | [app/mcp_management.go](../internal/app/mcp_management.go), [app/mcp_guard.go](../internal/app/mcp_guard.go), [config/mcp_permissions.go](../internal/config/mcp_permissions.go), [mcpauth](../internal/mcpauth) | [app/mcp_tui_test.go](../internal/app/mcp_tui_test.go), [app/mcp_permissions_test.go](../internal/app/mcp_permissions_test.go), [app/mcp_oauth_login_test.go](../internal/app/mcp_oauth_login_test.go), [app/mcp_oauth_refresh_test.go](../internal/app/mcp_oauth_refresh_test.go) |
+| Managed Computer Use and MCP evaluation | [app/mcp_desktop.go](../internal/app/mcp_desktop.go), [desktop/mcp.go](../internal/desktop/mcp.go), [lexical retrieval tests](../internal/app/mcp_search_test.go) | [app/mcp_desktop_lifecycle_test.go](../internal/app/mcp_desktop_lifecycle_test.go), [app/desktop_native_linux_test.go](../internal/app/desktop_native_linux_test.go), [app/desktop_model_native_darwin_test.go](../internal/app/desktop_model_native_darwin_test.go) |
 | Print integrations | [json_printer.go](../internal/app/json_printer.go), [Harbor adapter](../integrations/harbor/aice_agent.py) | [stream_printer_test.go](../internal/app/stream_printer_test.go), [Harbor guide](../integrations/harbor/README.md) |
 
 For a new feature, identify what state it adds, who owns that state, how it
@@ -120,10 +123,30 @@ remain in their existing modules.
 
 ## Known discrepancies
 
+### MCP verification limits
+
+Generic MCP connection, discovery, authorization, resources and result recovery
+have deterministic regression coverage. Filesystem stdio, DeepWiki HTTP and
+Linear OAuth read/refresh have been exercised on macOS. The Linear check forced
+local expiry; it does not prove natural expiry or every provider's behavior.
+
+Keyword search does not translate languages. A model that replaces a Chinese
+request with English keywords can miss Chinese-only descriptions; it must refine
+search or browse instead of choosing an unrelated operation. Synthetic routing
+results do not establish broad task quality. A real DeepWiki run also returned
+an HTTP close error; local tests cover cancellation and socket cleanup, not
+remote session deletion.
+
+Current CUA constraints and native platform limits are in
+[Computer Use](desktop.md#platform-evidence). Cross-process settings changes do
+not immediately revoke an existing frozen Run; no background watcher is added.
+The [acceptance review](plans/AICE_MCP_Acceptance.md) summarizes delivery scope.
+None of these limits permits automatic action replay or a second CUA route.
+
 ### Computer Use integration
 
-The [desktop integration record](desktop.md) tracks the pinned Cua connection,
-remaining Settings/tool wiring and platform evidence. Transport tests do not
+The [desktop integration record](desktop.md) tracks the pinned Cua admission,
+managed MCP consumer and platform evidence. Transport tests do not
 establish desktop task acceptance. Native tests remain opt-in.
 Windows has a source-reviewed two-tool status client and native named-pipe peer
 checks, with synthetic admission/UI coverage. The native Windows tests have only
@@ -151,11 +174,11 @@ Its CLI counterpart also passes Guard/Loop/tool execution and exact Session
 image/result replay, preserving WebKit's `unverifiable` effect despite the
 independently confirmed page result. Built-in tool guidance now distinguishes
 duplicate labels by role and prefers text insertion for macOS web inputs.
-The [real-model gate](collaboration.md#explicit-real-model-desktop-gate) is now
-prepared behind an independent opt-in and requires an explicit model and
-artifact directory. Its scripted native harness passes; no real-provider
-acceptance has been established. Keep its targeted Loop/fixture scope distinct
-from full CLI, third-party-app and physical-input acceptance.
+The [real-model gate](collaboration.md#explicit-real-model-desktop-gate) requires
+an independent opt-in, explicit model and artifact directory. The archived
+DeepSeek three-form pair passes full acceptance for that Loop/fixture scope.
+It does not establish full CLI use with a real model, third-party-app task
+quality, physical-input coexistence or general performance equivalence.
 The macOS [cursor gate](desktop.md#platform-evidence) verifies renderer visibility
 and session cleanup without an external observer. A separate host-surface
 screenshot visibly showed the blue cursor; its combined manual run failed the
@@ -181,7 +204,7 @@ The macOS [cancellation gates](desktop.md#platform-evidence) now verify native
 condition-wait cancellation and an already committed click whose RPC is still
 pending. They preserve unknown dispatch, reject stale references, avoid replay
 and recover read-only while the shared service remains usable. A separate native
-Settings Stop gate cancels a condition wait through the actual CLI/Bubble Tea UI,
+Settings Stop gate now cancels explicit managed read polling through the actual CLI/Bubble Tea UI,
 retains complete Session tool pairs and preserves saved preferences. Its mutation
 variant now cancels a natively committed click while the response is pending,
 retains the exact unknown result in Session, and verifies one commit with no

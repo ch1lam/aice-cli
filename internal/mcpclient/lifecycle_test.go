@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -71,6 +72,89 @@ func TestQueuedCancellationAndConcurrentClose(t *testing.T) {
 	}
 	if f.calls.Load() != 1 {
 		t.Fatalf("dispatched %d times", f.calls.Load())
+	}
+}
+
+func TestHTTPHungCleanupClosesLocalConnection(t *testing.T) {
+	fixture := &httpFixture{}
+	var deletes, opened, closed atomic.Int32
+	connectionClosed := make(chan struct{}, 8)
+	deleteCanceled := make(chan struct{})
+	release := make(chan struct{})
+	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodDelete {
+			fixture.ServeHTTP(w, r)
+			return
+		}
+		deletes.Add(1)
+		select {
+		case <-r.Context().Done():
+			close(deleteCanceled)
+		case <-release:
+		}
+	}))
+	server.Config.ConnState = func(_ net.Conn, state http.ConnState) {
+		switch state {
+		case http.StateNew:
+			opened.Add(1)
+		case http.StateClosed:
+			closed.Add(1)
+			select {
+			case connectionClosed <- struct{}{}:
+			default:
+			}
+		}
+	}
+	server.Start()
+	var client *Client
+	t.Cleanup(func() {
+		// Release the fixture even if the bounded-close assertion fails.
+		close(release)
+		server.CloseClientConnections()
+		if client != nil {
+			_ = client.Close()
+		}
+		server.Close()
+	})
+	var err error
+	client, err = Open(t.Context(), Config{HTTP: &HTTPConfig{Endpoint: server.URL}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.Call(t.Context(), "echo", json.RawMessage(`{}`)); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- client.Close() }()
+	select {
+	case err := <-done:
+		if !errors.Is(err, ErrTransport) {
+			t.Fatalf("hung DELETE close error: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Close did not bound its hung DELETE")
+	}
+	select {
+	case <-deleteCanceled:
+	case <-time.After(5 * time.Second):
+		t.Fatal("hung DELETE request was not canceled")
+	}
+	// Observe the peer's sockets before fixture cleanup could hide a leak.
+	timer := time.NewTimer(5 * time.Second)
+	defer timer.Stop()
+	for closed.Load() != opened.Load() {
+		select {
+		case <-connectionClosed:
+		case <-timer.C:
+			t.Fatalf("local connections remain: opened=%d closed=%d", opened.Load(), closed.Load())
+		}
+	}
+	if err := client.Close(); !errors.Is(err, ErrTransport) {
+		t.Fatalf("repeated Close lost the original failure: %v", err)
+	}
+	result, err := client.Call(t.Context(), "echo", json.RawMessage(`{}`))
+	if !errors.Is(err, ErrClosed) || result.State != llm.ExecutionNotDispatched || fixture.calls.Load() != 1 || deletes.Load() != 1 {
+		t.Fatalf("failed close allowed dispatch or repeated cleanup: result=%+v err=%v calls=%d deletes=%d", result, err, fixture.calls.Load(), deletes.Load())
 	}
 }
 

@@ -108,6 +108,59 @@ It never retains writable stores or persists a second transcript.
 snapshot to the TUI. That snapshot derives from original branch records, while
 model context remains independently derived through compaction checkpoints.
 
+For generic MCP, the application owns reusable authorized transports; each main
+run gets a separate frozen catalog and borrowed connection views. Local
+`tool_search` proposals enter the Loop only at complete tool-pair boundaries.
+Resource listing proposes a service-bound reader through the same selection
+boundary; resource and tool catalogs have independent invalidation and permission
+identities. Connection decisions, explicit user operation rules and transient Session grants
+are separate. Configuration owns user-only durable rules; app binds them to the
+current source/connection/scope/operation/schema, and Guard checks them alongside
+the current policy and catalog version before every dispatch. The `aice mcp` command uses application
+management operations without a model or Session. `/mcp` and Settings share those
+operations under the existing settings reservation: idle edits replace the MCP
+owner and next-run tools, while live deny revokes just the selected service.
+MCP status includes an inert managed Computer Use preference row. Its menu
+requests local Settings navigation; native setup and enablement remain owned by
+the existing Computer Use settings path. The interactive coordinator applies
+partial durable changes even on a later write failure. Result readback receives
+a run-scoped reader into the active
+Session ancestry (or existing ephemeral Print source); it holds no shared mutable
+Session pointer. The Loop clips only model projections, and never the durable
+source. Server instructions use bounded, source-tagged tool-result previews and
+a revision-bound paged reader; the client retains initialization data, and
+remote text never enters the system prompt or grants execution permission.
+The Loop publishes an optional read-only tool-reference snapshot before each
+prepared request. The interactive app derives per-service loaded counts under
+its existing state lock, owns their Run lifetime, and never uses this display
+projection for tool dispatch or authority.
+The managed CUA catalog constructor injects the native Run through this same
+catalog/Guard boundary. Its separate application permission inventory is bound
+to the Manager/settings lifetime, pinned runtime and Run's frozen control mode; ordinary
+configuration cannot supply the managed identity. Enabled Print and interactive
+main runs use only the managed catalog entry, discovered on demand. The Run
+binding requires the consumer-owned managed MCP interface at compile time.
+The old `desktop_*` model adapters and application forwarding methods have
+been removed. Shared native setup/validation APIs remain in `internal/desktop`,
+and legacy Session presentation stays read-only. The same-task comparison preceded wrapper removal. See
+[managed migration status](desktop.md#managed-mcp-migration-boundary).
+The app constructor also supplies ordinary MCP admission with its reserved CUA
+endpoint. Management definition checks and process startup share that policy;
+the generic client does not know about native Computer Use. Independent endpoints
+remain ordinary services, and this configuration rule does not isolate arbitrary
+host programs or infer opaque forwarding destinations.
+The independent `mcpauth` package implements explicit discovery and
+OAuth exchanges. Configuration owns scoped OAuth records, stable login identity
+and refresh under the existing auth-file lock; ordinary token rotation preserves
+that identity, while a new login clears prior connection approval. The owner
+refreshes expired tokens under that lock before authorized operations, without
+reconnecting or changing the catalog/grant identity. Transport callbacks only
+read the current header; final dispatch checks remain local and reject any
+subsequent expiry. Application management
+owns explicit browser login, its loopback callback listener and transient UI;
+login/logout publish saved state through the existing settings reservation.
+Credential rotation never replays an MCP operation. See [current scope](mcp.md).
+
 Settings use the same application coordinator. `config/settings_schema.go` and
 `sources.go` own typed preferences and frozen precedence layers; the locked
 writer changes only requested user fields. `app/settings_lifecycle.go` reserves
@@ -132,22 +185,24 @@ settings service, global registry, alternate transcript or file watcher.
 | `internal/interaction` | Frontend-neutral active-run, event, command, state, question, and input-mailbox contracts |
 | `internal/agent` | Agent Loop, retries, tool lifecycle, Agent events |
 | `internal/media` | Shared image decoding, conversion, validation, resizing, original retention and coordinate descriptions |
+| `internal/mcpclient` | One explicit stdio/Streamable HTTP connection, bounded discovery and raw results, invalidation, cancellation and owned cleanup; SDK types stop here; app owns lazy connection authorization and lifecycle ([status](mcp.md)) |
+| `internal/mcpauth` | Bounded HTTP OAuth discovery, client registration, PKCE code exchange and refresh; no browser, persistence, Guard decision or MCP replay; app owns browser login, pre-operation refresh and persistence coordination ([scope](mcp.md#oauth-protocol-support)) |
 | `internal/llm` | Canonical messages, models, usage, streams, context estimates |
 | `internal/api/{anthropic,openairesponses,openaicompletions}` | Protocol translation around official SDKs |
 | `internal/api/streamcore` | Protocol-neutral streaming mechanics shared by adapters |
 | `internal/provider/{deepseek,opencode,kimi,moonshot,zhipu,openai,anthropic,claudesubscription,codex,aihubmix,custom}` | Provider catalogs, credentials, defaults, compatibility; `zhipu` owns separate API Platform and Coding Plan presets; `codex` owns ChatGPT OAuth; `claudesubscription` owns Claude Pro/Max OAuth; `custom` accepts arbitrary model IDs |
-| `internal/tool` | `read`, `write`, `edit`, `bash`, `grep`, `find`, `ls`, `skill`, `request_user_input` (interactive-only), `web_search`, `web_fetch`, typed `desktop_apps` / `desktop_observe` / `desktop_act` adapters |
+| `internal/tool` | `read`, `write`, `edit`, `bash`, `grep`, `find`, `ls`, `skill`, `request_user_input` (interactive-only), `web_search`, `web_fetch`; generic MCP mapping, run-bound `tool_search` / `mcp_resource_list` / `mcp_server_info`, service-bound resource readers and local `tool_result_read` |
 | `internal/evidence` | Leaf source/evidence contract retained as tool-result metadata; deterministic source IDs, validation, cloning |
 | `internal/web` | Provider-neutral search/fetch requests and results, classified errors, domain policy, pure source resolver, deterministic model rendering |
 | `internal/web/exa` | Exa Search REST adapter: wire types, bounded HTTP, error classification, normalization into evidence |
 | `internal/web/httpfetch` | Page fetcher: URL policy, IP-literal checks, standard-transport proxy/DNS/dialing, bounded redirects and bodies, HTML-to-Markdown extraction |
-| `internal/guard` | Intrinsic execution gate: file policies, permission gate, pathAccess mode (`allow`/`ask`/`block`), network scopes for web tools, check Decision (`allow`/`ask`/`deny`) |
+| `internal/guard` | Intrinsic execution gate: file policies, permission gate, pathAccess mode (`allow`/`ask`/`block`), web network scopes, identity-bound MCP policy/Session grants, check Decision (`allow`/`ask`/`deny`) |
 | `internal/session` | Versioned JSONL replay, tree navigation, compaction context |
 | `internal/trust` | Protected-resource discovery and global Trust decisions |
 | `internal/skill` | Agent Skill discovery, SKILL.md parse, source layering, embedded builtins |
 | `internal/config` | Instance-local Viper precedence, effective snapshots, and locked atomic preference/credential persistence |
 | `internal/deps` | Verified ripgrep, Windows Git Bash, pinned agent-browser and Cua provisioning, including upstream browser skill resources |
-| `internal/desktop` | Pinned Cua stdio client, shared-service admission, Linux owned runtime and Windows read-only inspection; run sessions, serialized action/observation sequences, generation and exact-window references, image coordinate mapping; app binds each main run, native setup remains in progress ([status](desktop.md)) |
+| `internal/desktop` | Pinned Cua admission over `internal/mcpclient`, managed Run operation/schema constraints, shared-service admission, Linux owned runtime and Windows read-only inspection; run sessions, serialized action/observation sequences, generation and exact-window references, image coordinate mapping; app binds each main run, native setup remains in progress ([status](desktop.md)) |
 | `internal/browser` | Process-owned browser names, environment, connection and bounded cleanup; app owns wiring, Loop remains unaware |
 | `internal/update` | Checksum-validated GitHub release updates |
 | `internal/hostpath` | Host path membership, tilde expansion, slash-normalized display |
@@ -165,6 +220,10 @@ such as `core`, `types`, `services`, `utils`, or `helpers`.
   the `Guard` interface and consults it before each tool execution;
   `NewLoop` requires a non-nil `Guard` when tools are non-empty. The
   concrete `internal/guard` implementation is injected from `internal/app`.
+  An optional per-Run catalog supplies immutable executable versions. The Loop
+  owns pending typed selections, complete-schema budgets and per-request tool
+  snapshots; the catalog owns discovery and version invalidation. Catalog Runs
+  also require a Guard. See [run-local selection](contracts.md#run-local-tool-selection).
 - `internal/app` owns interactive run lifecycle, translates Agent events for
   frontends, persists each accepted source message before dependent effects, and
   wires the execution gate into the loop. See [Tool execution and
@@ -287,7 +346,7 @@ Use existing boundaries and update the owning guide when a capability ships.
 | Model-native web search | Planned; `native` priority entry reserved, not implemented | Capability must be confirmed per provider, endpoint, auth mode, API and model; request construction enables it and removes local `web_search` from that request; server-side activity maps to the evidence contract, provider continuation state stays in the API adapter |
 | Second independent search service | Planned | New adapter, descriptor and factory entry only; tool schema, Loop and TUI must not change |
 | Search failover after execution errors | Not implemented | Distinct from static "next usable source" selection; needs bounds on paid retries and safe continuation |
-| MCP | Optional, no current requirement | If needed, adapt client tools to the existing Tool and Guard boundary |
+| MCP | Generic client, lazy application lifecycle, discovery and run-local selection implemented; interactive management, loaded counts, resources and result readback implemented; OAuth login/logout and pre-operation refresh implemented; CUA uses managed discovery, settings and the pinned Skill; remaining platform and service limitations are documented ([current scope](mcp.md), [approved plan](plans/AICE_MCP_Design.md)) | Bind generic discovery, selection and execution through existing Tool, Guard and Session boundaries; migrate CUA as a consumer |
 
 No agent framework, plugin bus, LSP, RPC/ACP layer, Node bridge, database,
 second transcript store, or additional sandbox manager is needed by default.

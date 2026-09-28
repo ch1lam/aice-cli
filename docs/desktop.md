@@ -1,10 +1,12 @@
 # Computer Use integration
 
 Computer Use is being integrated with Cua Driver. The current implementation
-contains pinned distribution metadata, a persistent stdio client, User-only
+contains pinned distribution metadata, a persistent generic MCP connection, User-only
 configuration fields, and application-owned desktop run bindings. When enabled
-in user configuration, Print and interactive main runs expose `desktop_apps`,
-`desktop_observe` and `desktop_act` through the existing Loop and Guard.
+in user configuration, Print and interactive main runs make `managed:cua`
+available through `tool_search`, the existing Loop and identity-bound Guard.
+Native operation schemas enter the next model round only after discovery.
+The builtin `computer-use` Skill supplies version-matched guidance on demand.
 On macOS, Settings → Tools & Network → Computer Use opens an explicit setup
 flow when enabling. The setup/repair row also offers preference-only saving;
 the preference alone does not install or authorize a native service. An enabled
@@ -17,20 +19,27 @@ The implementation plan's complete native acceptance remains open.
 
 `internal/deps` owns immutable artifact selection; see
 [provenance and licensing](../internal/deps/cua/VENDOR.md).
-`internal/desktop` owns the Cua connection and its exact child handle. The
-application owns configuration publication and run bindings. The existing
+`internal/desktop` owns Cua admission and operation state, and consumes
+`internal/mcpclient` for protocol, framing, cancellation and exact child ownership.
+The application owns configuration publication and run bindings. The existing
 Agent Loop, Guard, media pipeline and Session remain the execution boundaries.
 
-The client uses official Go MCP SDK v1.6.1, sends legacy `initialize` with
-`2025-06-18`, checks the returned protocol and Cua identity/version, then discovers
-tools once with bounded pagination. Before any `tools/call`, it compares the
+The generic client uses official Go MCP SDK v1.6.1. Cua connections pin `initialize` to
+`2025-06-18`, check the returned protocol and Cua identity/version, then discover
+tools once within 16 pages, 256 entries and 4 MiB of catalog pages. Incomplete
+discovery is rejected. Before any `tools/call`, the desktop admission layer compares the
 complete input schemas of all 15 used tools against the corresponding macOS or Linux
 [reviewed 0.29.1 inventory](../internal/desktop/schema/README.md). Only JSON
 object ordering and whitespace are ignored; missing tools or changed fields,
 required parameters, defaults, enums, bounds and target alternatives reject the
 connection. Additional upstream tools remain unavailable to the private client.
 A version/platform update requires reviewing both its schema pin and adapters.
-This validates the advertised contract, not actual native behavior.
+This validates the advertised contract, not actual native behavior. The generic
+client preserves exact structured JSON numbers. Production operations use the
+generic result mapper and retained-result readback. The old `desktop_*` model
+adapters have been removed; old Session presentation is retained.
+Configured MCP admission reserves the managed native endpoint; full
+platform/model acceptance remains incomplete.
 It does not mix modern `server/discover`
 or per-request protocol metadata into that session. Responses retain text,
 image bytes, structured content and domain error status. No tool call retries
@@ -42,10 +51,11 @@ window contents or typed text in logs. Process environment construction excludes
 model credentials, loader injection and inherited Cua permission overrides.
 Owned children disable Cua telemetry and update checks.
 Closing the connection waits for or terminates only its owned MCP child; it does
-not stop a shared service. The one-second shutdown grace period covers pipe
-closure as well as process exit. Pipe cleanup runs under that deadline because
-closing a Windows pipe can wait for in-flight I/O; on expiry the owner kills its
-exact child, then joins cleanup and reaps the process before returning.
+not stop a shared service. The generic client allows 250 ms for pipe closure and
+process exit, then kills only that exact child and waits up to two seconds for
+cleanup/reaping, reporting failure if that bound expires. Pipe closure is included
+because a Windows pipe can wait for in-flight I/O. Normal and forced cleanup,
+including a synthetic blocked Close, have deterministic regression coverage.
 The shared-service path requires an explicit endpoint.
 The proxy uses the pinned release's `--embedded` switch solely to refuse
 automatic service launch if that endpoint disappears. On macOS AICE never uses
@@ -112,6 +122,231 @@ HOME and an absent socket. No user service was connected or started. Default
 tests cover changing service identity, missing grants, mode/policy rejection,
 inspection schema checks, bounded subprocess output and cancellation.
 
+### Managed MCP migration boundary
+
+The admitted connection now implements the same `Tools`, `ToolGeneration` and
+`CallChecked` shape used by the application MCP catalog. `Tools` copies the
+complete descriptors (including exact output schemas and annotations) only for
+reviewed names and performs no new I/O. `CallChecked` returns the generic
+client's ordered content, structured JSON and execution state unchanged; the
+managed Run and local native setup/acceptance helpers consume that boundary.
+Admission is checked again after the connection queue, before the caller's final
+dispatch check.
+A `tools/list_changed` notification invalidates the admitted catalog. The
+already returned result remains valid, but no subsequent old-schema call may
+dispatch. The Manager retires the connection/references and reports the
+rejected action as `not_dispatched`; only a later explicit discovery re-admits.
+Closed admission cannot return its cached catalog or accept calls. Synthetic
+HTTP regressions cover these transitions, descriptor copy ownership, final-check
+rejection and ordered text/image/audio/unsupported results with exact JSON
+numbers. The complete macOS unit/vet/race suites passed on 2026-09-28, with a
+final desktop race/vet pass after adding the interleaved-content case; this
+step adds no native desktop or actual-model acceptance claim.
+
+The run-owned managed backend now implements the same catalog/call interface.
+It exposes 11 operations: `list_apps`, `list_windows`, `get_window_state`,
+`launch_app`, `click`, `drag`, `type_text`, `set_value`, `press_key`, `hotkey` and
+`scroll`. Each definition projects the pinned flat object schema to the fields
+supported by the existing native constraints. Property definitions are retained;
+PID/window and launch identities become required where appropriate, unknown
+fields are rejected, and lifecycle/setup, session selection, alternate target
+forms, file output and arbitrary launch options are absent. An unfamiliar schema
+shape is rejected. This is an explicit restricted managed schema, not a claim
+that every raw Driver option is available.
+
+`Run.Tools` performs explicit connection/session admission but no app/window
+listing, capture or input. Calls require that admission and never reconnect.
+The run's catalog epoch becomes invalid on transport/schema change, cancellation
+or close. The caller's final permission check runs after serialization and again
+at the admitted client's dispatch boundary. Complete raw operation results retain
+their content order, structured JSON and execution state; bounded local notices
+explain constraint failures without exposing transport diagnostics.
+
+| Constraint | Current managed enforcement |
+| --- | --- |
+| Executable, service identity and standard mode | The same `deps` resolver, platform service admission and fixed transport configuration |
+| Run-owned session and single controller | Manager gate and occupancy lock; internal session creation/cleanup; no model-facing start/end/config/permission tools |
+| Discovered app/window identity | Native discovery populates only this run's maps; launch accepts only a discovered bundle ID or Linux XDG launch path; window calls require an admitted PID/window pair |
+| Current observation | Existing observation bindings and global per-window freshness checks reject foreign/stale tokens; an action consumes the observation before dispatch |
+| Screenshot coordinates | Existing capture validation and `media.Prepare` dimensions reverse AICE's image transform; images omitted by the generic mapper's 256-block/16 MiB image bounds cannot grant pixel input |
+| Background/foreground policy | Existing `actionDelivery` and reviewed macOS refusal classifier; a matching refusal must be followed by an explicit fresh observation before the same foreground action is allowed |
+| Extra native authority | Managed argument/schema projection rejects file destinations, arbitrary launch options, foreign sessions, scope/target aliases and element indices; duplicate keys and null values also fail before I/O |
+| Result and next action | Original MCP result is returned; the model must explicitly observe/check the postcondition. No automatic observation or mutation replay occurs inside a managed action |
+
+Window admission is bounded to 64 valid entries; `list_windows` can filter by PID.
+Every window discovery replaces the admitted set and retires prior observations,
+including PID-filtered discovery. The builtin Skill therefore guides models to
+pass a known task PID and finish one window before discovering the next, or
+rediscover an earlier window before returning to it. Semantic input must use an
+exact token from the latest observation's structured elements; paged historical
+readback can recover that result's token but cannot renew a stale observation.
+App launch admission accepts up to 4,096 valid entries from the bounded native
+response. `get_window_state` requests at most 200 semantic entries and a 1,600-pixel
+native image; the existing semantic/pixel validity checks still apply. A text-only
+model must explicitly request `include_screenshot=false`. Managed key, click,
+scroll and drag forms remain within the previously reviewed adapter's input
+subset; a matching upstream property does not expand that subset.
+In particular, `get_window_state` exposes only `pid`, `window_id`,
+`include_screenshot` and `query`. Upstream result notes about `max_depth` and
+`max_elements` do not override the managed schema; the Skill directs models to
+use `query` for narrowing instead.
+
+Managed mutations consume the prior observation. Their postcondition read is
+a separate `get_window_state` operation with its own catalog/Guard decision.
+The removed typed model path automatically observed after actions; the pinned
+Skill describes the current explicit-read contract, verified in the archived
+same-task comparison.
+
+Shared native validation remains after removing the old model adapters.
+`Reply` is a local view for lifecycle, setup and managed observation checks,
+not a second transcript or protocol client. Linux setup uses the selected-window
+observation API for its local capture probe. Managed operations share observation
+binding, action validation and coordinate mapping with native acceptance tests;
+those consumers and constraints remain.
+
+Synthetic macOS/Linux tests cover managed schemas, exact discovered identities,
+owned sessions, stale/cross-run state, final permit revocation, cancellation,
+unknown outcomes, image scaling/budget admission and foreground continuation.
+A loopback peer also exercises Manager → admitted client → generic MCP wire
+through discovery, observation, one action and cleanup on one connection.
+These are deterministic backend tests, not native desktop/model acceptance.
+
+The application has an explicit managed-catalog constructor for a native `Run`.
+It supplies `managed:cua` with source `managed:computer-use` to the same catalog,
+search, generic result mapper and Guard. The connection fingerprint includes the
+pinned Driver/protocol and application-owned Manager/settings identity. Permission scope
+also includes the Run's actual immutable control mode, the reviewed operation
+inventory, configuration restrictions and managed policy revision. These identities
+are application-owned; no native session label or configured remote annotation
+can grant authority. The constructor borrows the Run and performs no native I/O.
+
+The application's context-bound constructor accepts only its own live native
+Run. The identity stays stable across Runs with unchanged settings. A successful
+Computer Use enablement/mode publication rotates that identity and removes its
+Guard policy under the idle settings reservation. An MCP owner replacement also
+invalidates the managed binding, including when rebuilding the runtime fails
+after a saved change. Failed saves and unrelated scalar settings preserve the
+existing identity. An old context cannot reconstruct a catalog after replacement,
+and restoring the previous settings cannot revive an old catalog or permit.
+A disabled child Run shadows any inherited desktop capability. The native
+managed harness uses this application-owned constructor; no caller-selected identity
+is needed there. Print and interactive main runs use this same binding.
+
+Only that explicitly injected backend can inherit Computer Use authorization for
+the 11 reviewed names. Additional discovered names are denied, ordinary services
+named CUA still require ordinary authorization, and ordinary configuration cannot
+supply the reserved identity. Whole-service/tool restrictions with source `*`
+apply to the managed service too. Discovery cannot undo revocation, owner/mode
+replacement, or an explicit same-binding tool denial. A changed native catalog
+invalidates already selected versions before dispatch. Synthetic application
+checks cover these transitions and the real Loop/Guard/generic-result/Session
+path, including exact structured values after reopening history.
+
+Production composition exposes the MCP discovery tools when Computer Use is
+on, even with no ordinary configured MCP service. Run binding adds a short local
+service summary and borrows the native Run without connecting or listing tools.
+Only explicit discovery admits the service and selects operation schemas for a
+later model round. Closing the catalog precedes native Run cleanup. The typed
+`desktop_*` tools are absent from production requests; enabling and disabling
+Computer Use updates the next Run through the existing settings publication.
+MCP status displays this preference even when disabled, without native I/O or
+readiness claims. Its Computer Use menu item and `/mcp desktop` focus the same
+setting as `/desktop`; ordinary MCP mutations cannot edit the managed entry.
+Ordinary configured MCP connections cannot target that native endpoint, even
+while Computer Use is disabled. Add/replace and connection startup share this
+application check. Explicit independent endpoints/direct runtimes retain ordinary
+authorization; arbitrary host programs are outside this endpoint reservation.
+See [connection admission](mcp.md#implementation-status) for recognized identities
+and limits. Full platform/model acceptance remains pending.
+
+### Version-matched guidance
+
+The embedded `computer-use` Skill is AICE-authored guidance for the restricted
+managed Cua Driver 0.29.1 interface. Its description explicitly applies only
+when `managed:cua` is available. The normal startup catalog lists its name and
+description; the `skill` tool loads its body on demand. No remote resource,
+initialization instruction or desktop setting automatically activates it.
+User/project copies follow the existing trusted-source precedence and may shadow
+the guide; this cannot replace the execution constraints in desktop or Guard.
+A test compares the guide's version with the desktop and installer pins.
+
+The guide covers next-round tool selection, discovered PID/window identities,
+semantic tokens and displayed-image coordinates, explicit post-action observation,
+exact launch identities, the managed input subset, verified foreground continuation
+and unknown outcomes. It requests no extra approvals or exemptions beyond the
+user's existing task authority. It does not add an action CLI or alternate route.
+Embedded loading adds no host read roots, connections or tool grants.
+
+`TestNativeMacManagedCUAFullView` is an opt-in managed catalog + normally loaded
+Skill gate using AppKit/WebKit/AppKit fixtures for the three-form task. It requires
+exact values and one commit per target, nine delivered images, foreground
+sentinel preservation, shared-service survival and exact full-result Session
+replay. Steps explicitly observe after each mutation. It uses scripted decisions,
+so it checks integration and native behavior, not a real model's reading of the Skill.
+Run it sequentially with other native tests and keep the desktop undisturbed:
+
+```sh
+AICE_CUA_NATIVE=1 go test -race -tags=integration ./internal/app -run '^TestNativeMacManagedCUAFullView$' -count=1 -v
+```
+
+Before wrapper removal, the paired scripted gate passed both routes on macOS
+with Driver 0.29.1. Each route delivered nine images, preserved all three form
+values and exactly one commit per target, kept the foreground sentinel and
+shared service, and passed exact Session result/image replay. Scripted decisions
+validate those integration assertions, not model quality or performance.
+
+This gate does not replace actual-model, physical-input, cancellation/fault or
+other-platform acceptance. Default tests do not open desktop windows or call
+providers.
+
+The same [real-model harness](collaboration.md#explicit-real-model-desktop-gate)
+now supports only the managed route and records its request and result-view
+budgets. Omitted or `managed` route selection is accepted; `typed` and other
+values fail before configuration or credentials are read. Its managed scripted
+gate passed with the normal result budget and Session readback, preserving the same independent native assertions.
+The test-only scope limits operations to synthetic processes; native target and
+observation validation remains in the production Run. Script success alone does
+not establish actual-model acceptance.
+
+Before removing the old wrappers, an actual-model comparison on macOS with
+Driver 0.29.1 passed both routes on the same three AppKit/WebKit/AppKit forms.
+Both preserved exact values, one commit per target, the foreground sentinel,
+shared service and Session result/image replay. Managed execution took more
+requests and recovered one local readback error. Earlier runs failed scope,
+budget or focus checks; those failures do not establish their underlying cause.
+This limited comparison supports the migration's tested behavior, not a broad
+quality or performance advantage. Raw model runs are kept outside the repository.
+The old model wrappers and Guard toggle are removed; shared native constraints
+and historical Session display remain.
+
+### Production managed CLI and Stop evidence
+
+On 2026-09-28, the migrated `TestNativeMacWebKitPrint` passed on macOS arm64,
+Driver 0.29.1 with race detection through the actual CLI and production Run
+binding. The three AppKit/WebKit/AppKit values and exactly one commit each were
+independently verified. Eighteen native operations delivered nine PNGs, the
+sentinel recorded zero focus losses, and cleanup preserved the shared service.
+Command execution took 26.67 s with 55 scripted model requests. Thirty requests
+were ordinary `tool_result_read` pages: the model budget omitted complete native
+observation JSON, so the script reconstructed it from retained source before
+selecting tokens. Earlier attempts failed because the script assumed complete
+JSON in the initial view; no production budget was bypassed or expanded.
+Session reopening checked complete call/result pairs, stable parents, all nine
+images and exact reconstruction of each budgeted model view. The separate
+managed full-view gate above checks exact untrimmed result/image replay. These
+are different assertions; neither establishes real-model efficiency.
+
+Both migrated Settings Stop gates also passed with race detection. Explicit
+native read polling cancelled visibly in 0.78 s, with no widget mutation. The
+mutation gate cancelled in 0.45 s after independent state proved a single Commit
+while its response was still pending. The generic result retained `unknown`,
+matched the complete mapped native result after Session reopening and was never
+replayed. Both preserved saved settings, complete tool pairs, the initial image,
+one cancelled binding cleanup and shared-service availability. Terminal input
+is piped; physical Stop keys, IME and interrupted gesture cleanup remain separate.
+No provider credentials or real-model calls were used. Linux managed CLI native
+acceptance and Windows action support remain unverified.
+
 ## Run, reference and result contracts
 
 A run binding freezes its control mode and model image support without native
@@ -123,12 +358,10 @@ Public manager construction requires an application runtime resolver. It only
 reuses a verified installation and admits a compatible service; a pinned
 proxy alone cannot prove a shared daemon's version or permission mode.
 
-The typed tool rejects a missing or unsupported action name before calling its
-desktop backend. If a model serializes a whole argument object into `action`,
-the error explains that the action name and its parameters must be sibling
-fields. AICE never unpacks and executes that string. This shape rejection sends
-no input and consumes no observation; target, lifecycle and action-specific
-validation remain owned by the Manager.
+Managed tools use a separate flat schema for each native operation. The generic
+tool and native managed boundary validate arguments before input. Target,
+lifecycle and action-specific validation remain owned by the Manager. There is
+no typed model adapter or alternate executable desktop route.
 
 Failed or malformed app/window discovery retires the manager's connection and
 all execution references. An observation that cannot establish usable state for
@@ -273,13 +506,21 @@ retain their existing tool-free model boundary.
 
 Startup, Web replacement and desktop preference changes share one tool
 composition function. Settings prepares the candidate Loop/tools/prompt before
-saving and publishes with the Guard toggle under its existing shared-resource
-reservation. A failed save leaves the previous snapshot active. The application
-Guard requires a live binding from the same owner; the intrinsic Guard requires
-the global toggle. Missing/closed bindings and disabled capability are hard
-denials, including under `--yolo`. This does not enforce workspace file policies
+saving and publishes under its existing shared-resource reservation. A failed
+save leaves the previous snapshot active. Managed discovery requires a live
+owner binding, and each operation passes the generic identity-bound Guard.
+Missing/closed bindings, disabled capability and explicit deny cannot be lifted
+by `--yolo`. This does not enforce workspace file policies
 inside native applications; [Guard behavior](execution-sessions.md#tool-execution-boundary)
 describes that boundary.
+
+### Native helper contracts
+
+The following domain projection supports local setup and native acceptance
+helpers, including Linux setup's selected-window capture. It is not a model tool
+surface. Production managed calls use the explicit discovery and observation
+contract above: native identities, separate post-action reads, model-owned polling
+and generic MCP result preservation. These consumers reuse the Manager constraints.
 
 Window discovery issues opaque references for returned native pid/window pairs.
 Application discovery also returns bounded installed/running app identities,
@@ -310,7 +551,7 @@ same-window observation (including from another run), action dispatch,
 cancellation and disconnect invalidate the relevant old references. There is
 no process start-time claim beyond the evidence Cua exposes.
 
-The current typed actions cover click/double/right-click, semantic or pixel
+The native action helpers cover click/double/right-click, semantic or pixel
 text insertion, semantic value setting, exact-window keys/hotkeys, semantic or
 pixel scroll, and left-button dragging inside one observed window. Drag takes
 two screenshot points and a bounded duration (default 500 ms, maximum ten seconds).
@@ -327,7 +568,7 @@ remain separate from transport and follow-up-observation failure.
 The reviewed macOS foreground assistance requires the user-selected `foreground_allowed` mode,
 frozen when the run starts. Input still defaults to background. After a reviewed
 pre-input refusal, a successful follow-up observation can expose
-`foreground_action_available`. The main Agent may then explicitly request
+`foreground_action_available`. A native helper caller may then explicitly request
 `delivery_mode=foreground` using that observation, unchanged action content and
 the same target form. It must identify the intended element again from the new
 tokens or re-ground both drag points in the returned image; AICE does not claim
@@ -402,14 +643,17 @@ by role. For macOS web-content text fields it prefers `type_text` over direct
 can echo a write that never reached the page. This guidance does not replace
 the frozen control mode or turn an unverifiable result into confirmed success.
 
-Text `--print` progress reports desktop tool names, status and elapsed time;
+### Production presentation
+
+Text `--print` progress reports managed desktop tool names, status and elapsed time;
 it omits argument details so input text and observation queries are not copied
 to stderr. Full calls and results remain in the Session. Explicit
 `--output-format json` retains the existing [NDJSON event contract](contracts.md#print-ndjson-events),
 including arguments and bounded result text; it is transcript output and can
 contain window contents, not a content-free diagnostic stream.
 
-`desktop.Act` returns local `ActionTiming` evidence alongside its domain result:
+Native Manager acceptance helpers use `desktop.Act` local `ActionTiming`
+evidence alongside its domain result:
 executor queue admission, mutation RPC, condition/window polling, final observation,
 and total call time. Polling includes read-only RPCs and timer intervals; final
 observation includes capture, decoding and image processing. The mutation RPC
@@ -422,13 +666,13 @@ sampler or additional telemetry. Native Manager acceptance tests print only
 operation names, synthetic target indexes and these durations. Model output
 wait, Guard time and next-request preparation remain outside this boundary.
 The [opt-in model gate](collaboration.md#explicit-real-model-desktop-gate) now
-measures those intervals in its report alongside the Manager phases, with
-explicit provider/Loop/Session boundaries. Its scripted native run validates
-measurement coverage and protocol preservation. One authorized real-model run
-recorded provider and tool timings but exhausted its reported-token budget before
-any Commit click was dispatched. Later Muse and DeepSeek attempts completed the
-form tasks but failed their focus checks; full automated acceptance, isolated
-network timing and controlled cold/warm comparisons remain unverified.
+measures request, Guard, tool and `managed_call_ms` intervals with explicit
+provider/Loop/Session boundaries. Its scripted gate checks all 18 managed native
+call timings and request measurement coverage. Historical typed reports retain
+Manager phase measurements at their recorded source commit. The matched
+three-form real-model pair passed, as recorded above; earlier failed samples
+remain unchanged. Isolated network timing and controlled cold/warm comparisons
+remain unverified.
 
 Interactive runs show one Computer Use activity row above the composer. It
 uses application-projected tool events: discovery/observation, a requested
@@ -503,9 +747,9 @@ as the tools and prompt it publishes; offline publication tests cover this.
 
 | Scope | Evidence | Remaining acceptance |
 | --- | --- | --- |
-| macOS 0.29.1 universal artifact | Verified App installed and both OS grants enabled by the operator; signature, Gatekeeper and 15-tool admission checks pass; native three-AppKit Manager and scripted-model CLI/Guard/Session gates pass with nine captures and foreground sentinel intact; ASCII/Unicode insertion, single key, select-all, Retina pixel click, resize refusal/recovery and background scroll pass independent widget checks; AppKit cold launch preserves focus, returns multiple candidates and completes the explicitly selected window's task; cursor renderer lifecycle and isolated host-surface appearance verified; wait and dispatched-click cancellation pass without input replay; Settings Stop cancels a native wait and an in-flight committed click with exact unknown-result Session retention; one explicit foreground-drag run succeeded with a measured focus transition and restoration; actual Settings repair reuses the installation, completes the public grant/capture check and saves temporary enable; operator reports passing the manual TextEdit/Safari/VS Code task, physical input/focus, cursor, repair and Stop checks (see manual record); read-only same-run reconnection passes with a fresh native session label | Pixel double-click loses foreground focus and pixel right-click delivers duplicate event pairs; background drag is refused by 0.29.1 and foreground-drag repeatability remains open; first-time Settings installation and system-dialog interaction, overlay compositing/animation, interrupted gestures, remaining pixel actions and broader application/input coverage; automated real-model focus acceptance, cause of the manual-run initial discovery failure and broader performance acceptance |
+| macOS 0.29.1 universal artifact | Verified App installed and both OS grants enabled by the operator; signature, Gatekeeper and 15-tool admission checks pass; native three-AppKit Manager and scripted-model CLI/Guard/Session gates pass with nine captures and foreground sentinel intact; ASCII/Unicode insertion, single key, select-all, Retina pixel click, resize refusal/recovery and background scroll pass independent widget checks; AppKit cold launch preserves focus, returns multiple candidates and completes the explicitly selected window's task; cursor renderer lifecycle and isolated host-surface appearance verified; wait and dispatched-click cancellation pass without input replay; Settings Stop cancels managed read polling and an in-flight committed click with exact unknown-result Session retention; one explicit foreground-drag run succeeded with a measured focus transition and restoration; actual Settings repair reuses the installation, completes the public grant/capture check and saves temporary enable; operator reports passing the manual TextEdit/Safari/VS Code task, physical input/focus, cursor, repair and Stop checks (see manual record); read-only same-run reconnection passes with a fresh native session label | Pixel double-click loses foreground focus and pixel right-click delivers duplicate event pairs; background drag is refused by 0.29.1 and foreground-drag repeatability remains open; first-time Settings installation and system-dialog interaction, overlay compositing/animation, interrupted gestures, remaining pixel actions and broader application/input coverage; automated real-model focus acceptance, cause of the manual-run initial discovery failure and broader performance acceptance |
 | Windows amd64/arm64 | Downloaded archives and selected executable hashes verified; private installer with Authenticode checks implemented; synthetic extraction/reuse/cancellation tests and cross-compilation pass; static imports inspected; read-only service inspection and Windows status presentation implemented with synthetic tests | Native installation/signature trust, exclusive publication, named-pipe identity/UIAccess/session checks and status-schema confirmation; setup/action runtime integration and native UI/input/lifecycle tests |
-| Linux arm64 | Private installation/reuse and read-only headless inspection passed in an isolated Debian 13 container; production Manager and selected-window setup passed owned stdio and verified shared-service X11/GTK checks; scripted-model native print/Guard/tool/Session flow, ASCII insertion and pixel click/resize rejection passed; launch established its exact window and preserved the app after Manager close; actual Settings CLI flow passed native private installation, selected-window capture, cancellation/retry and saved enable | Launch steals focus, Unicode insertion truncates and GTK key/hotkey, pixel scroll and drag are unavailable in the fixture; actual-model tasks, physical terminal/IME and other desktop environments; other pixel actions, foreground assistance, overlay, other toolkits, real compositor/Wayland and physical-input/IME checks |
+| Linux arm64 | Private installation/reuse and read-only headless inspection passed in an isolated Debian 13 container; production Manager and selected-window setup passed owned stdio and verified shared-service X11/GTK checks; managed MCP scripted-model native print/Guard/tool/Session flow with exact structured-source replay, ASCII insertion and pixel click/resize rejection passed; launch established its exact window and preserved the app after Manager close; actual Settings CLI flow passed native private installation, selected-window capture, cancellation/retry and saved enable | Launch steals focus, Unicode insertion truncates and GTK key/hotkey, pixel scroll and drag are unavailable in the fixture; actual-model tasks, physical terminal/IME and other desktop environments; other pixel actions, foreground assistance, overlay, other toolkits, real compositor/Wayland and physical-input/IME checks |
 | Linux amd64 | Downloaded archive and selected executable hashes verified; synthetic installer tests and cross-compilation pass; ELF library dependencies inspected | Native installation/dynamic loading and exclusive publication; runtime/service admission, AT-SPI/display detection, compositor-specific input/capture/overlay tests |
 
 On 2026-09-27, after explicit operator approval, the native host's pre-existing
@@ -540,7 +784,7 @@ gate therefore verifies the editable value in the observation and the commit in
 independent AppKit state. Missing passive text remains unknown; a successful RPC
 or retained input value alone does not establish that the button worked.
 
-The application-level `TestNativeMacDesktopPrint` also passed. It uses the
+The earlier typed version of `TestNativeMacDesktopPrint` also passed. It used the
 production desktop constructor with a scripted model through the actual CLI,
 Guard and Session. Three AppKit commits completed in 19.53 s; nine PNGs reached
 subsequent model requests and exact durable-history replay passed. Native input
@@ -576,7 +820,7 @@ Electron compatibility, browser profiles, actual-model reasoning or physical
 input/IME coexistence. The separate operator-reported evidence below covers one
 real-application task; these fixture results alone do not establish it.
 
-The corresponding actual-CLI `TestNativeMacWebKitPrint` gate also passed with
+The earlier typed actual-CLI `TestNativeMacWebKitPrint` gate also passed with
 race detection on 2026-09-27. It runs two AppKit targets and the WebKit form
 through the production desktop constructor, Guard, Loop, typed tools and Session,
 using a scripted model. Three Unicode edits/commits completed in 24.55 s with
@@ -781,7 +1025,7 @@ single-run timing samples and Manager lifecycle evidence, not proof of native
 TUI Stop during mutations, interrupted gesture cleanup, physical-input coexistence
 or every resource's cleanup inside Cua.
 
-The separate [native Settings Stop gate](../internal/app/desktop_stop_native_darwin_test.go)
+The earlier typed [native Settings Stop gate](../internal/app/desktop_stop_native_darwin_test.go)
 also passed with race detection on 2026-09-27. A scripted model discovers the
 exact synthetic AppKit window, receives its real capture, then issues a native
 condition wait. Through the actual CLI/Bubble Tea UI, Esc closes Settings without
@@ -794,7 +1038,7 @@ and the shared service were preserved. This 11.37 s gate exercises terminal
 input through pipes and has no foreground sentinel; it does not establish
 physical keys, IME, foreground coexistence or stopping a native mutation.
 
-`TestNativeMacDesktopStopMutationTUI` extends the actual CLI gate to a click
+The earlier typed `TestNativeMacDesktopStopMutationTUI` extended the CLI gate to a click
 that independently committed before its native response returned. Only the
 scripted model's next decision is held while Settings opens; native input and
 responses are not delayed or replaced. After the AppKit fixture reports exactly
@@ -862,8 +1106,8 @@ by AICE, but 11 input schemas differ from the macOS pin. Only `get_config`,
 `check_permissions` takes no `prompt` field, and window/element/action parameter
 contracts differ. Its permission response reports X11, Wayland and AT-SPI facts
 without the macOS daemon attribution fields. Consequently platform integration
-requires reviewed typed adapters and process-identity verification; admitting
-Linux by bypassing the current macOS schema check would be incorrect.
+requires reviewed native constraints, platform schemas and process-identity
+verification; admitting Linux by bypassing the current macOS schema check would be incorrect.
 
 Linux Settings now inspects an existing verified installation at the pinned
 `~/.cache/cua-driver/cua-driver.sock` endpoint. It checks standard authorization
@@ -930,19 +1174,32 @@ does not distinguish transport, upstream waits or native input work inside it.
 These single-run ranges are not percentiles, an end-to-end performance result,
 or evidence for macOS or another desktop environment.
 
-The separate native print test passed on Linux arm64 in the isolated X11 fixture.
-It installs the checksum-pinned archive into a temporary HOME through the real
-installer, then uses ordinary enabled configuration, the actual command, Guard,
-typed tools and production Manager with a scripted model. No `--yolo` or desktop
-backend substitution is used. Three exact-window Unicode edits and commits
-completed in about 7.1 seconds; independent GTK state confirmed all three.
-Nine valid PNG tool results reached subsequent model requests and replayed
-unchanged from Session JSONL, with stable message parents and paired calls.
-All 70 concurrent core keys remained in the sentinel, with zero focus loss;
-the owned Driver was gone after command completion. Text progress omitted input
-contents. This verifies native execution and image transport; the script does
-not interpret pixels, and setup UI, actual-model reasoning and physical input
-remain separate acceptance work.
+The migrated managed MCP native print gate passed on Linux arm64 on 2026-09-28
+in an isolated Debian 13 Xvfb/Openbox/GTK fixture with Driver 0.29.1. It installs
+the checksum-pinned archive into a temporary HOME through the real installer,
+then uses ordinary enabled configuration, the actual command, Guard, generic
+MCP discovery/result mapping and production Manager with a scripted model.
+No `--yolo` or desktop backend substitution is used. Three exact-window Unicode
+edits and single commits completed in 7.13 seconds; independent GTK state
+confirmed all three. Nine PNG results and the bounded model views replayed
+exactly from Session JSONL, with stable parents and paired calls. All 71
+concurrent core keys remained in the sentinel with zero focus loss, and the
+owned Driver was gone after completion. Text progress omitted input contents.
+The test completed in 9.07 seconds without race instrumentation. This verifies
+native execution and image/result transport, not model visual reasoning,
+physical input, other toolkits or Wayland.
+
+The first migrated run exposed a structured-JSON serialization discrepancy:
+the model's result and its saved source differed in JSON escaping while their
+text/image content matched. The exact replay assertion was retained. Result
+serialization now preserves source spelling through a bounded companion in the
+same record; see [structured outcomes](contracts.md#structured-tool-outcomes).
+The rerun above passed after that fix. The Manager gate also passed owned-stdio
+and shared-service modes over the generic transport (18.33 seconds total),
+including single-controller/session behavior, stale-reference rejection,
+concurrent input preservation, owned-child cleanup and shared-service survival.
+These are isolated native arm64 results; the Linux binaries were cross-compiled
+with complete Go 1.26.8 sources and executed on an arm64 container, not emulated.
 
 The native Settings CLI gate also passed on Linux arm64 in the isolated X11
 fixture on 2026-09-27. It drove the real `/desktop` modal with production desktop
@@ -1230,9 +1487,12 @@ preparation interval before the controller publishes cancellation. The CLI flow
 also re-enables after cancellation, verifies no automatic model request, and
 explicitly continues and stops a second run. Unit tests cover proposal staleness,
 repeat use, no setup history writes, draft/attachment retention and rejection.
-The separate `TestDesktopActivityTUI` drives the real command, Loop and typed
-tools with a synthetic discovery/observation/wait backend. It checks the app
-label, collapsed input, Planning and Settings Stop through Bubble Tea. Renderer
+The separate `TestDesktopActivityTUI` drives the real command, Loop and managed
+MCP discovery/call path with a synthetic backend. It checks the background
+request phase, collapsed input, Planning and Settings Stop through Bubble Tea.
+Managed presentation derives phases from known operation names and checks result
+provenance; it does not invent an application label or infer business success
+from an RPC return. Legacy typed Session rows keep their existing projection. Renderer
 tests cover model waits, unknown/setup outcomes, narrow/CJK/untrusted labels,
 new-run reset and history projection. These checks do not read desktop content.
 The same Settings CLI flow opens the status details with synthetic permission facts.

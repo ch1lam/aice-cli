@@ -32,17 +32,6 @@ type managedDesktopRun interface {
 	ControlMode() desktop.ControlMode
 }
 
-// newManagedCUACatalog borrows the desktop Run; its caller remains responsible
-// for closing that Run. Creating a catalog performs no native discovery or input.
-// ownerIdentity identifies the application-owned Manager lifetime, not a native
-// session label. Native executable/service/schema admission remains in desktop.
-func newManagedCUACatalog(configuration config.MCPConfig, connections map[string]mcpCatalogConnection, gate *guard.Guard, run *desktop.Run, ownerIdentity string) (*mcpCatalog, error) {
-	if run == nil {
-		return nil, fmt.Errorf("managed CUA requires an admitted Run backend")
-	}
-	return buildMCPCatalog(configuration, connections, gate, &managedCUACatalogBinding{connection: run, ownerIdentity: ownerIdentity, mode: run.ControlMode()})
-}
-
 // managedCatalog accepts only this owner's live, enabled Run context. Callers
 // cannot choose the managed identity or reconstruct authority from a Session.
 // The catalog borrows the Run; close the catalog before closing that Run.

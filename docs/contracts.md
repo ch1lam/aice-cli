@@ -105,6 +105,73 @@ The app projects the bundle into `interaction.EvidenceDisplay` (a pointer on
 titles and URLs with control characters escaped and rows clipped, without
 opening links or re-parsing tool text.
 
+### Structured tool outcomes
+
+`llm.ToolResult` and `ToolResultMessage` retain optional `details` metadata
+([types](../internal/llm/tool_output.go)): an explicit execution state, an optional
+application-bound service/tool identity, structured JSON, and a notice of data
+that could not be saved. States distinguish `not_dispatched`, `returned`
+(including tool-reported errors) and `unknown`. An absent field means legacy
+metadata is unavailable; it does not imply a known successful outcome.
+Binding fingerprints are source metadata, not live handles or permission grants.
+An optional binding `operation` distinguishes `resources/read` from ordinary
+server tools (legacy absent operation). Resource readers carry immutable
+service-bound definitions through the same complete-pair selection, Guard,
+recording and request-budget boundaries. A same-name remote tool cannot alias
+the resource operation's authorization.
+
+
+Structured JSON is retained without decoding numbers into floating point and
+is bounded to 1 MiB of valid UTF-8 JSON. A loss notice describes missing source
+data, not model-only clipping, and must not promise recovery of unsaved bytes.
+Constructors, nested result clones and Session snapshots copy mutable details
+and image payloads. No protocol SDK values or new message roles are introduced.
+This is an additive v3 field; existing records without it remain readable.
+
+Serialization preserves the structured source's whitespace, JSON escapes,
+number spelling and duplicate members. The existing `structured_content` JSON
+value remains available to older readers. Only when normal JSON encoding would
+change the source bytes, details also carry `structured_content_raw`, a JSON
+string in that same record. New readers require both representations to agree
+after lexical JSON normalization, then restore the exact bounded source; they
+reject mismatches, malformed companions and oversized source. No float decoding
+or object-map reordering is used for that comparison. The compatibility value
+can expand through HTML escaping; its bound is six times the 1 MiB source bound.
+Records without the companion retain their stored spelling; previously changed
+whitespace or escapes cannot be reconstructed. Older readers can read the JSON
+value but cannot preserve the new companion when rewriting such a record.
+
+Adapters preserve content order and append structured JSON and uncertainty/loss
+notices to the model projection. Anthropic and Responses retain ordered blocks
+inside the tool result. Chat Completions cannot carry images in a tool message:
+it emits a paired tool placeholder and, after the complete result group, a labeled
+user projection of the entire multimodal result in source order. Text is not
+detached from its neighboring images. Binding fingerprints and original image
+bytes are not sent to providers. Context estimates include JSON and notices.
+
+The Loop preserves partial content with explicit outcome metadata even when
+`Execute` also returns an error. Invalid explicit outcomes become paired unknown
+results with a loss notice; they cannot be misrepresented as an unexecuted action.
+Legacy tool errors retain their existing text-only behavior. Repetition detection
+includes explicit outcome details, so changed structured results count as
+observable progress. The storage companion does not participate in that
+comparison; retained whitespace/HTML spelling alone does not introduce progress.
+Neither result conversion nor Session recovery reruns tools.
+
+The application opts main runs into `RunInput.ResultViewTokens` and provides
+`tool_result_read` through a run-owned reader capability. The Loop applies the
+budget only to projected model messages after recording full source results;
+its history, recorder, returned rounds and display events remain complete.
+Zero preserves the existing full-view embedding contract. A changed projection
+uses current request estimates rather than stale provider usage. Readback and
+view bounds are specified in [MCP result readback](mcp.md#model-views-and-result-readback).
+
+Tools may implement `BoundTool` to supply value-only provenance. Guard refusal,
+version invalidation, pre-execution cancellation and synthetic unexecuted results
+then retain `not_dispatched` plus that binding. The Loop never derives an identity
+from a model-supplied tool name. Once execution starts, the tool's explicit
+outcome remains authoritative; a legacy error does not become `not_dispatched`.
+
 ### Completed mutation diff metadata
 
 `llm.ToolResult` and `ToolResultMessage` carry optional, value-only `diff`
@@ -207,7 +274,17 @@ normal transcript cache key, including replayed result projections.
   A Guard result may carry a call-local `Revalidate` check. The loop runs it
   after all approvals and before tool execution; an error yields a paired
   tool error without execution. It cannot grant authority or execute tools.
-  The app uses it to reject write targets changed during approval waits.
+  The app uses it to reject write targets and bound MCP permissions changed
+  during approval waits. A `GuardApproval` may carry gate-owned callbacks for
+  explicit tool/service Session grants. The application invokes only the callback
+  corresponding to an offered user choice; the Loop, allow-once and yolo never
+  invoke them. Callbacks recheck identity/scope, have no tool effects, and remain
+  transient rather than entering messages, Session records or frontend state.
+  During `Execute`, the Loop also exposes that call-local revalidation through
+  `CheckToolDispatch(ctx)`. A queued transport adapter calls it after acquiring
+  its operation slot, before sending. It is a bounded local check, does not
+  reenter the transport or hold a Guard lock across I/O, and cannot authorize or
+  replay work. It catches permission changes while waiting after initial approval.
   Product behavior of the gate, including Session-scoped grants,
   is in [Tool execution and
   Sessions](execution-sessions.md#tool-execution-boundary).
@@ -261,6 +338,56 @@ normal transcript cache key, including replayed result projections.
   budget calculation; this remains an estimate, not a provider tokenizer.
 - Tests use faux providers and fake tools. Default tests never require paid
   APIs or real credentials.
+
+### Run-local tool selection
+
+`RunInput.Catalog` is an optional consumer-owned catalog capability. The app
+supplies immutable `CatalogTool` versions and stable ID/revision references;
+the Loop owns the selected IDs, frozen per-request definitions and dispatch map.
+The shared `Loop.tools` remains unchanged. A catalog requires a Guard even when
+the initial builtin set is empty; every actual execution still crosses Guard.
+
+A trusted tool may implement `ToolSelector`. After its Guard approval, the Loop
+calls that capability instead of `Execute` and receives a typed proposal alongside
+the ordinary result. At most five distinct candidates may be proposed. Only a
+valid, non-error result whose recorder succeeds can add a pending proposal.
+Selection is applied at preparation of the next complete model round. The same
+assistant response cannot call tools discovered by an earlier call in its batch.
+Tool-result prose and resumed Session messages never restore callable tools.
+
+At the boundary, the catalog resolves selected stable IDs to current immutable
+versions, dropping unavailable optional entries. The dispatch path checks the
+request's exact revision before Guard and again after approval/revalidation;
+invalidated or revoked versions receive a paired error without dispatch. Catalog
+implementations must keep their version invalidation and final execution checks
+consistent. Notifications cannot mutate the request's definitions. Model retries
+reuse the existing tool snapshot, and catalog preparation errors are not retried
+as model transport failures.
+
+Dynamic definitions have a token estimate budget of 5% of the model context
+window, capped at 8192 tokens; unknown windows use 4096. Most recently selected
+tools take precedence, evicting complete older definitions with a model-visible
+notice. Oversized single candidates are refused. App-supplied `PinnedTools`
+cannot be evicted: missing pins or excessive pinned schemas fail preparation
+with an explicit error. No schema is truncated. These defaults still require
+task evaluation. Builtins remain under the ordinary whole-request budget.
+Catalog runs reestimate context including current schemas instead of relying on
+usage measured before tool loading. Selection is transient and isolated between
+concurrent Runs, model changes, and Session resumes; it grants no permissions.
+
+`RunInput.ObserveTools` optionally receives an owned ID/revision snapshot just
+before each model request attempt, after preparation and budget checks. It
+includes only catalog definitions in that request, including pins and excluding
+evictions. A failed result recording or request preparation cannot publish a new
+selection. Retries report the same frozen definitions. This synchronous observer
+must return promptly and has no return value or authority; modifying its copy
+cannot alter the Loop's selected versions. The caller clears its display state
+when the Run ends. This is not a transcript or public NDJSON event.
+
+The application supplies a fresh catalog for each MCP-enabled main run and
+reuses only its authorized transport connections across runs. Configuration,
+connection approval, discovery and lifecycle remain application responsibilities;
+see [MCP](mcp.md#run-catalog-and-tool-search).
 
 ## Internal events
 
@@ -690,6 +817,17 @@ only selected properties; a writer rereads disk to preserve unrelated peers,
 but the running instance publishes its own candidate. Preferences, credentials
 and OAuth files do not form a multi-file transaction.
 
+MCP management shares the CLI's save-and-return-effective-configuration operation.
+Its interactive coordinator publishes that exact saved configuration under an
+idle reservation and closes the preceding owner. A later runtime preparation
+failure is reported as saved but not applied and stops new runs; it must not
+leave older permissions usable. Partial credential/approval removal is also
+published when the subsequent definition write fails. MCP deny is the exception
+to the idle requirement: it revokes one live capability and cancels that service,
+without replacing another active run's owner. Status and input prompts perform
+no discovery. `AuthPrompt.PublicInput` explicitly enables visible non-secret
+setup fields; all other account/credential prompts remain hidden by default.
+
 Settings/Usage share the small `modal.go` frame with history. Their editor,
 search, selection and array drafts belong to the modal input domain. Permission
 and question prompts take precedence. Identity includes the field, action,
@@ -754,8 +892,9 @@ boundaries. Session JSONL is the durable owner; no sidecar image store is used.
 Protocol adapters describe image IDs, sources, format conversion, first-frame
 selection for GIF and coordinate mapping, and send only the view bytes.
 Anthropic and Responses encode images inside tool results.
-Chat Completions emits text tool results followed by an image-bearing user
-message after the entire contiguous tool-result group. This is a request
+Chat Completions emits a tool placeholder for each multimodal result followed
+by a labeled user message containing its ordered text and images after the
+entire contiguous tool-result group. Text-only tool results stay in tool messages. This is a request
 projection, never an additional user message in Session history.
 
 File references in `interaction.RunInput.Files` and `Delivery.Files` are parsed

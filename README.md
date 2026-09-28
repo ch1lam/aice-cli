@@ -40,6 +40,14 @@ Use `/web` to add an Exa search account, order search sources, and switch
 configured; `web_fetch` reads public pages directly. Enabled web tools access
 the network automatically without an extra confirmation. See [Web search and fetch](./docs/web.md).
 
+Use `aice mcp`, `/mcp` or Settings to add stdio/HTTP services, review and approve connection
+fingerprints, set scoped credentials, and test discovery. Models load tool
+schemas through `tool_search` as needed; tool execution still requires Guard
+approval. Settings can revoke a connection during a run; other changes apply
+while idle. OAuth supports browser login, logout and refresh before authorized
+operations; failed operations are never replayed automatically. See
+[MCP setup and commands](./docs/mcp.md#management-cli).
+
 Start an interactive Session inside a project:
 
 ```sh
@@ -167,7 +175,8 @@ aice --workspace . --session .aice/sessions/<session-id>.jsonl
 | Interface | Bubble Tea TUI with [context usage percentage](./docs/configuration.md#context-window-and-status-bar) per provider/model, and one-shot `--print` mode |
 | Providers | DeepSeek V4, OpenCode Go's built-in catalog, Kimi Coding Plan (Responses API), Moonshot API Platform, Zhipu API Platform and Coding Plan, OpenAI API (GPT-6 Astra and GPT-5.6), Claude API and Pro/Max subscription, Codex/ChatGPT subscription, AiHubMix, and Custom (OpenAI-compatible) |
 | Protocols | Anthropic Messages, OpenAI Responses, OpenAI Chat Completions |
-| Tools | `read`, `write`, `edit`, `bash`, `grep`, `find`, `ls`, `skill`, `web_search`, `web_fetch` |
+| Tools | `read`, `write`, `edit`, `bash`, `grep`, `find`, `ls`, `skill`, `web_search`, `web_fetch`, `tool_result_read` |
+| MCP | stdio/Streamable HTTP, lazy discovery and `tool_search`, scoped connection/tool permission, explicit resource listing/reading, ordered structured results with bounded model views and local readback, CLI and `/mcp`/Settings management; [scope and limits](./docs/mcp.md) |
 | Web | Exa Search API instances with an ordered source list (`native` reserved, not implemented), hardened direct page fetching, recorded sources in Session history, `/web` settings; see [Web search and fetch](./docs/web.md) |
 | Browser | Native agent-browser through `bash`/`read`, builtin browser skill, `/browser` window visibility, connection and tab controls; see [Browser automation](./docs/browser.md) |
 | Guard | path, dangerous-command and network-scope checks with interactive approvals; see [Tool execution and Sessions](./docs/execution-sessions.md#tool-execution-boundary) |
@@ -193,6 +202,7 @@ Detailed guides:
 - [Installation and updates](./docs/installation.md)
 - [Configuration and commands](./docs/configuration.md)
 - [Web search and fetch](./docs/web.md)
+- [MCP services and commands](./docs/mcp.md)
 - [Project Trust and prompts](./docs/project-trust.md)
 - [Tool execution and Sessions](./docs/execution-sessions.md)
 - [Architecture](./docs/architecture.md), [runtime contracts](./docs/contracts.md), and [maintenance / known discrepancies](./docs/maintenance.md)
