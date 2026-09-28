@@ -89,7 +89,7 @@ func TestMCPOwnerLazyAndAuthorization(t *testing.T) {
 			}
 			var opened atomic.Int32
 			client := &mcpOwnedFixture{}
-			o, err := newMCPOwner(c.MCP, ownerTestGuard(t), yolo, func(context.Context, mcpclient.Config) (mcpOwnedConnection, error) { opened.Add(1); return client, nil })
+			o, err := newMCPOwner(c.MCP, ownerTestGuard(t), yolo, func(context.Context, mcpclient.Config) (mcpOwnedConnection, error) { opened.Add(1); return client, nil }, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -132,7 +132,7 @@ func TestMCPOwnerConcurrentDiscoverySlotsAndRevocation(t *testing.T) {
 	o, err := newMCPOwner(c.MCP, ownerTestGuard(t), true, func(context.Context, mcpclient.Config) (mcpOwnedConnection, error) {
 		opened.Add(1)
 		return &mcpOwnedFixture{}, nil
-	})
+	}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -179,7 +179,7 @@ func TestMCPOwnerCloseCancelsOpeningAndClosesLateClient(t *testing.T) {
 		<-ctx.Done()
 		close(released)
 		return client, nil
-	})
+	}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -208,7 +208,7 @@ func TestMCPOwnerRevokeCancelsActionWithoutReplay(t *testing.T) {
 		return mcpclient.Result{State: llm.ExecutionUnknown}, ctx.Err()
 	}
 	var opens atomic.Int32
-	o, _ := newMCPOwner(c.MCP, ownerTestGuard(t), true, func(context.Context, mcpclient.Config) (mcpOwnedConnection, error) { opens.Add(1); return client, nil })
+	o, _ := newMCPOwner(c.MCP, ownerTestGuard(t), true, func(context.Context, mcpclient.Config) (mcpOwnedConnection, error) { opens.Add(1); return client, nil }, nil)
 	defer o.Close()
 	connection := o.Connections()["user:service0"]
 	if _, err := connection.Tools(t.Context()); err != nil {
@@ -241,7 +241,7 @@ func TestMCPOwnerFailedConnectRecoveryAndSafeStatus(t *testing.T) {
 			return nil, &mcpclient.HTTPError{StatusCode: 401}
 		}
 		return client, nil
-	})
+	}, nil)
 	defer o.Close()
 	connection := o.Connections()["user:service0"]
 	if _, err := connection.Tools(t.Context()); err == nil {
@@ -272,7 +272,7 @@ func TestMCPOwnerQueuedCallRechecksAndCancels(t *testing.T) {
 		case <-ctx.Done():
 		}
 	}
-	o, _ := newMCPOwner(c.MCP, ownerTestGuard(t), true, func(context.Context, mcpclient.Config) (mcpOwnedConnection, error) { return client, nil })
+	o, _ := newMCPOwner(c.MCP, ownerTestGuard(t), true, func(context.Context, mcpclient.Config) (mcpOwnedConnection, error) { return client, nil }, nil)
 	defer o.Close()
 	connection := o.Connections()["user:service0"]
 	done := make(chan struct{})

@@ -74,12 +74,14 @@ func contextDisplay(
 	if err != nil {
 		return display
 	}
+	boundedResults := llm.BoundToolResultViews(messages, llm.ResultViewBudget(model.ContextWindow))
 	definitions := make([]llm.ToolDefinition, len(tools))
 	for index, tool := range tools {
 		definitions[index] = tool.Definition()
 	}
 	estimate := llm.EstimateContextTokens(llm.Request{
 		Model: model, SystemPrompt: systemPrompt, Tools: definitions, Messages: messages,
+		ReestimateContext: boundedResults,
 	})
 	display.Tokens = estimate.Tokens
 	display.Known = true

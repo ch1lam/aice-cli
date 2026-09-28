@@ -47,6 +47,8 @@ func TestMCPCLIRejectsInvalidInputBeforeManagement(t *testing.T) {
 		input string
 	}{
 		{[]string{"mcp", "approve", "user:docs"}, ""},
+		{[]string{"mcp", "login", "user:docs"}, ""},
+		{[]string{"mcp", "logout", "user:docs"}, ""},
 		{[]string{"mcp", "credential", "user:docs", "token", "--fingerprint", strings.Repeat("a", 64)}, strings.Repeat("x", 8193)},
 		{[]string{"mcp", "credential", "user:docs", "token", "--fingerprint", strings.Repeat("a", 64)}, "\n"},
 		{[]string{"mcp", "status", "--trust-project", "--no-trust-project"}, ""},
@@ -64,5 +66,22 @@ func TestMCPCLIRejectsInvalidInputBeforeManagement(t *testing.T) {
 		if err := command.ExecuteContext(t.Context()); err == nil || manager.calls != 0 {
 			t.Fatalf("invalid input reached manager: %v", tc.args)
 		}
+	}
+}
+
+func TestMCPCLILoginCarriesTransientOutputAndBrowserPreference(t *testing.T) {
+	manager := &mcpManagerRecorder{}
+	command, err := cli.NewRootCommand(cli.Dependencies{Printer: &recordingPrinter{}, Interactor: &recordingInteractor{}, Compactor: &recordingCompactor{}, Navigator: &recordingNavigator{}, Configurator: &apiKeyRecorder{}, MCPManager: manager})
+	if err != nil {
+		t.Fatal(err)
+	}
+	command.SetArgs([]string{"mcp", "login", "user:docs", "--fingerprint", strings.Repeat("a", 64), "--no-browser"})
+	command.SetOut(&bytes.Buffer{})
+	command.SetErr(&bytes.Buffer{})
+	if err := command.ExecuteContext(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if !manager.request.NoBrowser || manager.request.Auth == nil || manager.request.Auth.Notify == nil || manager.request.Auth.Input != nil || manager.request.Operation.Action != "login" {
+		t.Fatal("CLI login interaction was not scoped correctly")
 	}
 }

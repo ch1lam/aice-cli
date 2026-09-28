@@ -271,6 +271,12 @@ func (c *Client) CallChecked(ctx context.Context, name string, arguments json.Ra
 // ReadResource explicitly reads one URI from this server; links in its result
 // are not followed. Resource reads require application authorization too.
 func (c *Client) ReadResource(ctx context.Context, uri string) (Result, error) {
+	return c.ReadResourceChecked(ctx, uri, nil)
+}
+
+// ReadResourceChecked revalidates after the serialized connection queue, just
+// like CallChecked. A rejected check never dispatches or replays the read.
+func (c *Client) ReadResourceChecked(ctx context.Context, uri string, check func(context.Context) error) (Result, error) {
 	result := Result{State: llm.ExecutionNotDispatched}
 	if !validName(uri) {
 		return result, ErrConfig
@@ -283,6 +289,14 @@ func (c *Client) ReadResource(ctx context.Context, uri string) (Result, error) {
 		return result, err
 	}
 	defer release()
+	if check != nil {
+		if err := check(ctx); err != nil {
+			return result, err
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return result, err
+	}
 	c.receipts.begin("resources/read")
 	_, readErr := c.session.ReadResource(ctx, &mcp.ReadResourceParams{URI: uri})
 	return decodeResult(ctx, c.receipts.finish(), readErr, "contents")

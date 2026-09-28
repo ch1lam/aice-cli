@@ -190,6 +190,7 @@ func (r *interactiveRun) Run(ctx context.Context) (returnErr error) {
 		return err
 	}
 	defer mcpRun.Close()
+	ctx = withResultReader(ctx, r.session.conversation.store, nil)
 	snapshot.systemPrompt += mcpRun.summary
 
 	configured := configuredModel{
@@ -202,13 +203,14 @@ func (r *interactiveRun) Run(ctx context.Context) (returnErr error) {
 	var desktopDisplay desktopDisplayProjection
 	contextHistory := append([]llm.AgentMessage(nil), snapshot.history...)
 	_, runErr := snapshot.loop.Run(ctx, agent.RunInput{
-		Catalog:      mcpRun.Catalog(),
-		PinnedTools:  mcpRun.pins,
-		Model:        snapshot.model,
-		SystemPrompt: snapshot.systemPrompt,
-		History:      snapshot.history,
-		Prompt:       r.prompt,
-		Options:      snapshot.options,
+		ResultViewTokens: llm.ResultViewBudget(snapshot.model.ContextWindow),
+		Catalog:          mcpRun.Catalog(),
+		PinnedTools:      mcpRun.pins,
+		Model:            snapshot.model,
+		SystemPrompt:     snapshot.systemPrompt,
+		History:          snapshot.history,
+		Prompt:           r.prompt,
+		Options:          snapshot.options,
 		MessageRecorder: func(recordCtx context.Context, message llm.AgentMessage) error {
 			if err := r.session.conversation.recordMessage(recordCtx, snapshot.state, message); err != nil {
 				return err

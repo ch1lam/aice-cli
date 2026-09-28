@@ -346,17 +346,19 @@ func (a *application) Print(
 		return err
 	}
 	defer mcpRun.Close()
+	ctx = withResultReader(ctx, store, func() []llm.AgentMessage { return sourceMessages })
 
 	_, loopErr := loop.Run(ctx, agent.RunInput{
-		Catalog:         mcpRun.Catalog(),
-		PinnedTools:     mcpRun.pins,
-		Model:           environment.model,
-		SystemPrompt:    environment.systemPrompt + mcpRun.summary,
-		History:         history,
-		Prompt:          prompt,
-		Options:         environment.options,
-		Compactor:       a.historyCompactor(store, &configured, sink.AddUsage),
-		MessageRecorder: recorder,
+		ResultViewTokens: llm.ResultViewBudget(environment.model.ContextWindow),
+		Catalog:          mcpRun.Catalog(),
+		PinnedTools:      mcpRun.pins,
+		Model:            environment.model,
+		SystemPrompt:     environment.systemPrompt + mcpRun.summary,
+		History:          history,
+		Prompt:           prompt,
+		Options:          environment.options,
+		Compactor:        a.historyCompactor(store, &configured, sink.AddUsage),
+		MessageRecorder:  recorder,
 	}, sink.Accept)
 	finishErr := sink.Finish()
 	if loopErr != nil {
@@ -720,7 +722,7 @@ func (a *application) prepareRunEnvironment(
 	g.SetSearchTarget(webState.searchTarget)
 	g.SetDesktopEnabled(configured.configuration.DesktopEnabled)
 	adapter.desktop = desktopState
-	mcpState, err := newMCPOwner(configured.configuration.MCP, g, yolo, a.dependencies.openMCP)
+	mcpState, err := newMCPOwner(configured.configuration.MCP, g, yolo, a.dependencies.openMCP, mcpOAuthRefresh(configured.configuration.Paths))
 	if err != nil {
 		return nil, err
 	}

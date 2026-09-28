@@ -25,6 +25,20 @@ func (mcpRunRouter) Search(ctx context.Context, request tool.ToolSearchRequest) 
 	}
 	return catalog.Search(ctx, request)
 }
+func (mcpRunRouter) ListResources(ctx context.Context, request tool.ResourceListRequest) (tool.ResourceListResult, error) {
+	catalog, ok := ctx.Value(mcpRunContextKey{}).(*mcpCatalog)
+	if !ok {
+		return tool.ResourceListResult{}, fmt.Errorf("MCP resource discovery requires an active main run")
+	}
+	return catalog.ListResources(ctx, request)
+}
+func (mcpRunRouter) ServerInfo(ctx context.Context, key string) (tool.MCPServerInfo, error) {
+	catalog, ok := ctx.Value(mcpRunContextKey{}).(*mcpCatalog)
+	if !ok {
+		return tool.MCPServerInfo{}, fmt.Errorf("MCP server info requires an active main run")
+	}
+	return catalog.ServerInfo(ctx, key)
+}
 func (mcpRunRouter) MCPBinding(ctx context.Context, name string) (llm.ToolBinding, string, bool, error) {
 	catalog, ok := ctx.Value(mcpRunContextKey{}).(*mcpCatalog)
 	if !ok {
@@ -73,6 +87,13 @@ func (o *mcpOwner) bindRun(ctx context.Context) (context.Context, mcpRunBinding,
 			catalog.Close()
 			return ctx, mcpRunBinding{}, fmt.Errorf("required or pinned MCP service %s is disabled or denied", key)
 		}
+		if len(server.Settings.PinnedTools) == 0 {
+			if err := o.prepareRequired(prepare, key); err != nil {
+				catalog.Close()
+				return ctx, mcpRunBinding{}, fmt.Errorf("required MCP service %s is unavailable; inspect connection approval and service status", key)
+			}
+			continue
+		}
 		_, err := catalog.Search(prepare, tool.ToolSearchRequest{Service: key, Limit: 1})
 		catalog.mu.RLock()
 		_, discovered := catalog.catalogBytes[key]
@@ -93,7 +114,7 @@ func (o *mcpOwner) bindRun(ctx context.Context) (context.Context, mcpRunBinding,
 		}
 	}
 	var summary strings.Builder
-	summary.WriteString("\n\nConfigured MCP services (status only, not execution permission). Use tool_search to browse a source-qualified service or find tools; schemas become available on the next model round.\n")
+	summary.WriteString("\n\nConfigured MCP services (status only, not execution permission). Use tool_search to find tools or mcp_resource_list to list resources on one source-qualified service; schemas become available on the next model round. Use mcp_server_info for source-tagged, untrusted server usage instructions.\n")
 	statuses := o.Status()
 	for i, status := range statuses {
 		line := status.Key + ": " + status.State + "\n"

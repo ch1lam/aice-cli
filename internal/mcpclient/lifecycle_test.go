@@ -131,6 +131,7 @@ func TestConfigRejectsImplicitAndReplayableConnections(t *testing.T) {
 		{HTTP: &HTTPConfig{Endpoint: "https://user:password@example.com/mcp"}},
 		{HTTP: &HTTPConfig{Endpoint: "https://example.com/mcp", Headers: map[string]string{"Idempotency-Key": "replay"}}},
 		{HTTP: &HTTPConfig{Endpoint: "https://example.com/mcp", Headers: map[string]string{"Authorization": "bad\r\nvalue"}}},
+		{HTTP: &HTTPConfig{Endpoint: "https://example.com/mcp", Headers: map[string]string{"Authorization": "Bearer static"}, Authorization: func() string { return "Bearer dynamic" }}},
 		{HTTP: &HTTPConfig{Endpoint: "https://example.com/mcp"}, Limits: Limits{Pages: maxPages + 1}},
 	} {
 		if _, err := Open(t.Context(), config); !errors.Is(err, ErrConfig) {
@@ -208,5 +209,44 @@ func TestEscapedArgumentsStillTrackDispatch(t *testing.T) {
 	var failure *HTTPError
 	if result.State != llm.ExecutionUnknown || !errors.As(err, &failure) || failure.StatusCode != 401 || f.calls.Load() != 1 {
 		t.Fatalf("outcome=%s err=%v calls=%d", result.State, err, f.calls.Load())
+	}
+}
+
+func TestHTTPRotatingAuthorizationDoesNotReplayOrRedirect(t *testing.T) {
+	var header atomic.Value
+	header.Store("Bearer initial-private")
+	var destinationCalls atomic.Int32
+	destination := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { destinationCalls.Add(1) }))
+	defer destination.Close()
+	for _, status := range []int{401, 307} {
+		t.Run(fmt.Sprint(status), func(t *testing.T) {
+			f := &httpFixture{onCall: func(w http.ResponseWriter, r *http.Request, _ fixtureRequest) {
+				if r.Header.Get("Authorization") != "Bearer rotated-private" {
+					t.Error("HTTP header was frozen before rotation")
+				}
+				w.Header().Set("Location", destination.URL)
+				w.WriteHeader(status)
+			}}
+			header.Store("Bearer initial-private")
+			c := openFixture(t, f, func(c *Config) { c.HTTP.Authorization = func() string { return header.Load().(string) } })
+			header.Store("Bearer rotated-private")
+			result, err := c.Call(t.Context(), "echo", []byte(`{}`))
+			var httpError *HTTPError
+			if !errors.As(err, &httpError) || httpError.StatusCode != status || result.State != llm.ExecutionUnknown || f.calls.Load() != 1 || destinationCalls.Load() != 0 {
+				t.Fatal("dynamic credential replayed or crossed redirect", err)
+			}
+		})
+	}
+}
+
+func TestHTTPRotatingAuthorizationRejectsInvalidHeaderBeforeDispatch(t *testing.T) {
+	var header atomic.Value
+	header.Store("Bearer initial")
+	f := &httpFixture{}
+	c := openFixture(t, f, func(c *Config) { c.HTTP.Authorization = func() string { return header.Load().(string) } })
+	header.Store("invalid\r\nprivate")
+	result, err := c.Call(t.Context(), "echo", []byte(`{}`))
+	if err == nil || strings.Contains(err.Error(), "private") || result.State != llm.ExecutionNotDispatched || f.calls.Load() != 0 {
+		t.Fatal("invalid rotating header reached transport", err)
 	}
 }

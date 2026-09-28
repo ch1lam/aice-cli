@@ -49,6 +49,10 @@ type StdioConfig struct {
 type HTTPConfig struct {
 	Endpoint string            // HTTPS, or HTTP on a literal loopback address/localhost
 	Headers  map[string]string // resolved by the caller, never included in errors
+	// Authorization reads the caller-owned current header without I/O. It must
+	// be concurrency-safe and cannot be combined with a static Authorization.
+	// Refresh/consent happen before dispatch, never in this transport.
+	Authorization func() string
 }
 
 // Limits are hard allocation/storage limits, not model context budgets. Zero

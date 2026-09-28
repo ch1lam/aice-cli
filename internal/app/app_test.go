@@ -119,7 +119,7 @@ func TestApplicationPrintRunsBuiltInAgent(t *testing.T) {
 			for index, definition := range request.Tools {
 				toolNames[index] = definition.Name
 			}
-			want := []string{"read", "write", "edit", "bash", "grep", "find", "ls", "skill"}
+			want := []string{"read", "write", "edit", "bash", "grep", "find", "ls", "skill", "tool_result_read"}
 			if !reflect.DeepEqual(toolNames, want) {
 				t.Errorf("model tools = %v, want %v", toolNames, want)
 			}

@@ -58,13 +58,14 @@ func (e *runExecution) requestForHistory(
 	if err != nil {
 		return llm.Request{}, fmt.Errorf("agent: project history: %w", err)
 	}
+	boundedResults := llm.BoundToolResultViews(messages, e.input.ResultViewTokens)
 	request := llm.Request{
 		Model:             e.input.Model,
 		SystemPrompt:      e.input.SystemPrompt,
 		Messages:          messages,
 		Tools:             definitions,
 		Options:           e.input.Options,
-		ReestimateContext: e.input.Catalog != nil,
+		ReestimateContext: e.input.Catalog != nil || boundedResults,
 	}
 	if e.toolNotice != "" {
 		request.SystemPrompt += "\n\n" + e.toolNotice

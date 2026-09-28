@@ -18,9 +18,15 @@ const (
 	ExecutionUnknown       ExecutionState = "unknown"
 )
 
+// OperationResourceRead distinguishes protocol resource reads from ordinary
+// tool calls, including remote tools with the same name. Empty operation keeps
+// the legacy ordinary-tool binding.
+const OperationResourceRead = "resources/read"
+
 // ToolBinding records application-bound provenance. It carries neither secrets
 // nor live handles and never grants authority when a Session is resumed.
 type ToolBinding struct {
+	Operation             string `json:"operation,omitempty"`
 	Source                string `json:"source"`
 	ServiceID             string `json:"service_id"`
 	ConnectionFingerprint string `json:"connection_fingerprint"`
@@ -78,6 +84,9 @@ func (d *ToolResultDetails) Validate() error {
 		return fmt.Errorf("tool result loss notice must be UTF-8 and at most 4096 bytes")
 	}
 	if d.Binding != nil {
+		if d.Binding.Operation != "" && d.Binding.Operation != OperationResourceRead {
+			return fmt.Errorf("tool result binding operation is invalid")
+		}
 		for _, field := range []struct{ name, value string }{
 			{"source", d.Binding.Source},
 			{"service ID", d.Binding.ServiceID},

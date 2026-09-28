@@ -13,7 +13,8 @@ import (
 
 // MCPService is a policy snapshot published by the application after binding
 // configuration and a catalog. Neither model arguments nor remote annotations
-// are policy inputs. Publishing it grants no connection or execution authority.
+// are policy inputs. Publication cannot create user rules or connection approval; UserDecision
+// comes only from an explicit, identity-matched user rule.
 type MCPService struct {
 	Source                string
 	ServiceID             string
@@ -26,9 +27,12 @@ type MCPService struct {
 // MCPToolPolicy describes one catalog version and the configured upper bound.
 // An absent or disallowed tool cannot be enabled by a Session grant or yolo.
 type MCPToolPolicy struct {
+	Operation         string
 	Name              string
 	SchemaFingerprint string
 	Allowed           bool
+	// UserDecision is empty/ask unless app matched an explicit user rule.
+	UserDecision Decision
 }
 
 type mcpServiceKey struct{ source, id string }
@@ -78,6 +82,12 @@ func (g *Guard) RefreshMCPTools(input MCPService) error {
 	return g.setMCPService(input, "refresh")
 }
 
+// RefreshMCPResources replaces the resource-read policy without changing the
+// independently discovered ordinary tool catalog.
+func (g *Guard) RefreshMCPResources(input MCPService) error {
+	return g.setMCPService(input, "refresh-resources")
+}
+
 // MCPServiceAvailable checks the current upper bound before discovery. It is
 // not connection authorization and does not grant any tool execution authority.
 func (g *Guard) MCPServiceAvailable(source, id, connection, scope string) bool {
@@ -99,18 +109,38 @@ func (g *Guard) setMCPService(input MCPService, operation string) error {
 			return fmt.Errorf("MCP policy identity is invalid")
 		}
 	}
-	if len(input.Tools) > 2000 {
+	if len(input.Tools) > 2001 {
 		return fmt.Errorf("MCP policy catalog exceeds the tool limit")
 	}
 	next := make(map[string]mcpToolState, len(input.Tools))
+	ordinary, resources := 0, 0
+	refreshing := operation == "refresh" || operation == "refresh-resources"
 	for _, tool := range input.Tools {
+		if tool.Operation != "" && tool.Operation != llm.OperationResourceRead {
+			return fmt.Errorf("MCP operation is invalid")
+		}
+		if tool.Operation == "" {
+			ordinary++
+		} else {
+			resources++
+		}
+		if ordinary > 2000 || resources > 1 {
+			return fmt.Errorf("MCP operation catalog exceeds its bound")
+		}
+		if refreshing && ((operation == "refresh") != (tool.Operation == "")) {
+			return fmt.Errorf("MCP refresh contains a different operation kind")
+		}
+		if tool.UserDecision != "" && tool.UserDecision != DecisionAsk && tool.UserDecision != DecisionAllow && tool.UserDecision != DecisionDeny {
+			return fmt.Errorf("MCP user permission decision is invalid")
+		}
+		key := mcpOperationKey(tool.Operation, tool.Name)
 		if !validMCPIdentity(tool.Name) || !validMCPIdentity(tool.SchemaFingerprint) {
 			return fmt.Errorf("MCP tool policy identity is invalid")
 		}
-		if _, exists := next[tool.Name]; exists {
+		if _, exists := next[key]; exists {
 			return fmt.Errorf("MCP policy catalog contains duplicate tools")
 		}
-		next[tool.Name] = mcpToolState{MCPToolPolicy: tool}
+		next[key] = mcpToolState{MCPToolPolicy: tool}
 	}
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -125,10 +155,17 @@ func (g *Guard) setMCPService(input MCPService, operation string) error {
 			return nil
 		}
 	}
-	if operation == "refresh" && previous == nil {
+	if refreshing && previous == nil {
 		return fmt.Errorf("MCP binding was removed before catalog publication")
 	}
-	if operation == "refresh" {
+	if refreshing {
+		// Preserve the other operation domain under the same lock. A tool refresh
+		// must not remove resource grants, or let a same-name tool inherit them.
+		for name, tool := range previous.tools {
+			if (operation == "refresh") != (tool.Operation == "") {
+				next[name] = tool
+			}
+		}
 		for name, tool := range next {
 			if old, exists := previous.tools[name]; exists && !old.Allowed && tool.Allowed {
 				return fmt.Errorf("MCP catalog refresh cannot lift a configured tool denial")
@@ -232,31 +269,38 @@ func (g *Guard) CheckMCP(ctx context.Context, modelName string, binding llm.Tool
 	if !matchesMCPBinding(state, binding, scope) {
 		return deny, nil, nil
 	}
-	tool := state.tools[binding.ToolName]
+	tool := state.tools[mcpOperationKey(binding.Operation, binding.ToolName)]
 	permit := &MCPPermit{
 		guard: g, key: key, binding: binding, scope: scope, session: g.mcpSession,
 		epoch: state.epoch, tool: tool.epoch, serviceTools: make(map[string]uint64),
 	}
 	for name, candidate := range state.tools {
-		if candidate.Allowed {
+		if candidate.Allowed && candidate.UserDecision != DecisionDeny {
 			permit.serviceTools[name] = candidate.epoch
 		}
 	}
-	if state.granted[binding.ToolName] == tool.epoch {
+	if tool.UserDecision == DecisionAllow || state.granted[mcpOperationKey(binding.Operation, binding.ToolName)] == tool.epoch {
 		return Result{Decision: DecisionAllow, Action: action}, permit, nil
 	}
+	reason := fmt.Sprintf("MCP tool %q from %q (source %q) requires confirmation", binding.ToolName, binding.ServiceID, binding.Source)
+	if binding.Operation == llm.OperationResourceRead {
+		reason = fmt.Sprintf("MCP resource read from %q (source %q) requires confirmation; Session approval covers any URI on this service", binding.ServiceID, binding.Source)
+	}
 	return Result{Decision: DecisionAsk, Approvals: []Approval{{
-		Reason: fmt.Sprintf("MCP tool %q from %q (source %q) requires confirmation", binding.ToolName, binding.ServiceID, binding.Source),
+		Reason: reason,
 		RuleID: "mcp.tool", Action: action,
 	}}}, permit, nil
 }
 
 func matchesMCPBinding(state *mcpServiceState, binding llm.ToolBinding, scope string) bool {
+	if binding.Operation != "" && binding.Operation != llm.OperationResourceRead {
+		return false
+	}
 	if state == nil || !state.enabled || state.revoked || state.connection != binding.ConnectionFingerprint || state.scope != scope {
 		return false
 	}
-	tool, exists := state.tools[binding.ToolName]
-	return exists && tool.Allowed && tool.SchemaFingerprint == binding.SchemaFingerprint
+	tool, exists := state.tools[mcpOperationKey(binding.Operation, binding.ToolName)]
+	return exists && tool.Allowed && tool.UserDecision != DecisionDeny && tool.SchemaFingerprint == binding.SchemaFingerprint
 }
 
 // Validate checks a call approved once as well as a Session-granted call. It
@@ -282,7 +326,7 @@ func (p *MCPPermit) Validate(ctx context.Context) error {
 func (p *MCPPermit) validateLocked() error {
 	state := p.guard.mcpServices[p.key]
 	if p.session != p.guard.mcpSession || !matchesMCPBinding(state, p.binding, p.scope) ||
-		state.epoch != p.epoch || state.tools[p.binding.ToolName].epoch != p.tool {
+		state.epoch != p.epoch || state.tools[mcpOperationKey(p.binding.Operation, p.binding.ToolName)].epoch != p.tool {
 		return fmt.Errorf("MCP permission changed after checking; discover and approve the current tool again")
 	}
 	return nil
@@ -312,7 +356,7 @@ func (p *MCPPermit) AllowSession(ctx context.Context, service bool) error {
 	if service {
 		current := make(map[string]uint64)
 		for name, tool := range state.tools {
-			if tool.Allowed {
+			if tool.Allowed && tool.UserDecision != DecisionDeny {
 				current[name] = tool.epoch
 			}
 		}
@@ -321,7 +365,7 @@ func (p *MCPPermit) AllowSession(ctx context.Context, service bool) error {
 		}
 		maps.Copy(state.granted, current)
 	} else {
-		state.granted[p.binding.ToolName] = p.tool
+		state.granted[mcpOperationKey(p.binding.Operation, p.binding.ToolName)] = p.tool
 	}
 	return nil
 }
@@ -336,4 +380,13 @@ func validMCPIdentity(value string) bool {
 		}
 	}
 	return true
+}
+
+// Ordinary names forbid control characters, so this internal key cannot
+// collide with a server-chosen tool name. It never enters a message or prompt.
+func mcpOperationKey(operation, name string) string {
+	if operation == "" {
+		return name
+	}
+	return "\x00" + operation + "/" + name
 }

@@ -193,6 +193,10 @@ type RunInput struct {
 	Prompt          llm.UserMessage
 	Options         llm.StreamOptions
 	MessageRecorder MessageRecorder
+	// ResultViewTokens limits source-detailed results in model requests only.
+	// Zero preserves complete views. The caller must provide readback of the
+	// retained source; recording and Result.Messages always keep full results.
+	ResultViewTokens int64
 	// Compactor runs before model requests at safe paired-round boundaries.
 	// Retries reuse prepared context without invoking it again.
 	Compactor HistoryCompactor

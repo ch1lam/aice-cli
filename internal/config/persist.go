@@ -89,6 +89,15 @@ func patchFileWith(ctx context.Context, path string, edit func(map[string]any) e
 func editFile(ctx context.Context, path string, edit func(map[string]any) error) (result CommitResult, returnErr error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
+	return editLockedFile(ctx, path, edit)
+}
+
+var errConfigUnchanged = errors.New("configuration unchanged")
+
+// editLockedFile owns the shared file lock and atomic replacement. Its caller
+// must supply a bounded context. Ordinary edits use five seconds; MCP OAuth
+// refresh may hold this same lock during its bounded token exchange.
+func editLockedFile(ctx context.Context, path string, edit func(map[string]any) error) (result CommitResult, returnErr error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return result, fmt.Errorf("config: create directory: %w", err)
 	}
@@ -110,6 +119,9 @@ func editFile(ctx context.Context, path string, edit func(map[string]any) error)
 		return result, fmt.Errorf("config: existing file left unchanged: %w", err)
 	}
 	if err := edit(values); err != nil {
+		if errors.Is(err, errConfigUnchanged) {
+			return result, ctx.Err()
+		}
 		return result, fmt.Errorf("config: %w", err)
 	}
 	if err := ctx.Err(); err != nil {

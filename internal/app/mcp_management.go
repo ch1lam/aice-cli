@@ -3,13 +3,16 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/ch1lam/aice-cli/internal/cli"
 	"github.com/ch1lam/aice-cli/internal/config"
 	"github.com/ch1lam/aice-cli/internal/interaction"
 	"github.com/ch1lam/aice-cli/internal/jsonutil"
+	"github.com/ch1lam/aice-cli/internal/mcpclient"
 	"github.com/ch1lam/aice-cli/internal/tool"
 	"github.com/ch1lam/aice-cli/internal/trust"
 )
@@ -38,7 +41,7 @@ func (a *application) ManageMCP(ctx context.Context, request cli.MCPRequest) (re
 	if err != nil {
 		return result, err
 	}
-	owner, err := newMCPOwner(configuration.MCP, gate, false, a.dependencies.openMCP)
+	owner, err := newMCPOwner(configuration.MCP, gate, false, a.dependencies.openMCP, mcpOAuthRefresh(configuration.Paths))
 	if err != nil {
 		return result, err
 	}
@@ -47,15 +50,15 @@ func (a *application) ManageMCP(ctx context.Context, request cli.MCPRequest) (re
 			result.Warnings = append(result.Warnings, "Owned MCP connection cleanup failed")
 		}
 	}()
-	_, result, returnErr = executeMCPManagement(ctx, configuration, owner, request.Operation)
+	_, result, returnErr = executeMCPManagement(ctx, configuration, owner, request.Operation, a.mcpLogin(request.Auth, request.NoBrowser))
 	return result, returnErr
 }
 
 // executeMCPManagement is shared application behavior for management frontends.
 // It returns the exact saved configuration so an interactive coordinator can
-// publish it under its existing idle/settings reservation. It never grants tool
-// permissions and never writes a transcript. Test and save are separate actions.
-func executeMCPManagement(ctx context.Context, current config.Config, owner *mcpOwner, request interaction.MCPRequest) (config.Config, interaction.MCPResult, error) {
+// publish it under its existing idle/settings reservation. Only the explicit
+// permission action saves tool rules; no action writes a transcript.
+func executeMCPManagement(ctx context.Context, current config.Config, owner *mcpOwner, request interaction.MCPRequest, login mcpLoginFunc) (config.Config, interaction.MCPResult, error) {
 	result := interaction.MCPResult{}
 	if err := ctx.Err(); err != nil {
 		return current, result, err
@@ -78,6 +81,59 @@ func executeMCPManagement(ctx context.Context, current config.Config, owner *mcp
 		result.Services = mcpManagementStatus(current, owner, key)
 		return current, result, nil
 	}
+	if request.Action == "permissions" {
+		var err error
+		result.Permissions, err = inspectMCPPermissions(ctx, current, owner, key)
+		result.Services = mcpManagementStatus(current, owner, key)
+		return current, result, err
+	}
+	if request.Action == "permission" {
+		return saveMCPPermission(ctx, current, request)
+	}
+	if request.Action == "login" || request.Action == "logout" {
+		if server.Settings.OAuth == nil || request.Fingerprint == "" || request.Fingerprint != server.Fingerprint {
+			return current, result, fmt.Errorf("MCP OAuth configuration and its current fingerprint are required")
+		}
+		if request.Action == "logout" {
+			candidate, err := current.WithoutMCPOAuth(key)
+			if err != nil {
+				return current, result, err
+			}
+			commit, err := config.DeleteMCPOAuth(ctx, current.Paths, server)
+			result = mcpCommitResult(commit, "MCP OAuth login and connection decision removed; user tool rules were cleared and explicit client-secret slots were preserved.")
+			if commit.Committed {
+				current = candidate
+			}
+			return current, result, err
+		}
+		if login == nil {
+			return current, result, fmt.Errorf("MCP login interaction is unavailable")
+		}
+		cleared, err := current.WithoutMCPOAuth(key)
+		if err != nil {
+			return current, result, err
+		}
+		credential, err := login(ctx, server)
+		if err != nil {
+			return current, result, err
+		}
+		if err := ctx.Err(); err != nil {
+			return current, result, err
+		}
+		saved, commit, err := config.SaveMCPOAuthLogin(ctx, current.Paths, server, credential)
+		result = mcpCommitResult(commit, "MCP OAuth login saved; previous user tool rules were cleared. Inspect the new fingerprint and approve the connection before use; tool permissions are separate.")
+		if commit.Committed {
+			// Match the writer's removal of all older scopes/decisions. Even an
+			// unexpected projection failure must not leave the old login active.
+			current = cleared
+			candidate, applyErr := current.WithMCPOAuth(key, server.CredentialScope, saved)
+			if applyErr != nil {
+				return current, result, fmt.Errorf("MCP OAuth login saved but runtime projection failed")
+			}
+			current = candidate
+		}
+		return current, result, err
+	}
 	if request.Action == "connect" || request.Action == "reconnect" {
 		if owner == nil {
 			return current, result, fmt.Errorf("MCP connection owner is unavailable")
@@ -91,7 +147,19 @@ func executeMCPManagement(ctx context.Context, current config.Config, owner *mcp
 		}
 		// CLI invocations always own a fresh transport; interactive reconnect will
 		// replace its owner before invoking this same explicit discovery operation.
-		catalog, err := owner.Connections()[key].Tools(ctx)
+		connection := owner.Connections()[key]
+		catalog, err := connection.Tools(ctx)
+		complete := catalog.Complete
+		message := "MCP initialization and tool discovery succeeded; no remote tool was called."
+		if errors.Is(err, mcpclient.ErrUnsupported) {
+			resources, readErr := connection.(mcpResourceConnection).Resources(ctx)
+			err, complete = readErr, resources.Complete
+			message = fmt.Sprintf("MCP initialization and resource discovery succeeded (%d resources); tools are unsupported; no resource was read.", len(resources.Items))
+			if errors.Is(err, mcpclient.ErrUnsupported) {
+				err, complete = nil, true
+				message = "MCP initialization succeeded; this service advertises neither tools nor resources. Other capabilities are unsupported."
+			}
+		}
 		result.Services = mcpManagementStatus(current, owner, key)
 		if err != nil {
 			if ctx.Err() != nil {
@@ -99,10 +167,10 @@ func executeMCPManagement(ctx context.Context, current config.Config, owner *mcp
 			}
 			return current, result, fmt.Errorf("MCP connection test failed; configuration was not changed; inspect service status")
 		}
-		if !catalog.Complete {
-			return current, result, fmt.Errorf("MCP connection established but tool discovery is incomplete")
+		if !complete {
+			return current, result, fmt.Errorf("MCP connection established but discovery is incomplete")
 		}
-		result.Message = "MCP initialization and tool discovery succeeded; no remote tool was called."
+		result.Message = message
 		return current, result, nil
 	}
 	if request.Action == "approve" || request.Action == "deny" || request.Action == "forget" || request.Action == "credential" {
@@ -112,13 +180,7 @@ func executeMCPManagement(ctx context.Context, current config.Config, owner *mcp
 		if request.Action == "credential" {
 			// A slot must already be referenced by this service. This prevents a typo
 			// from silently saving an unused secret or borrowing a provider namespace.
-			referenced := false
-			for _, refs := range []map[string]config.MCPValueRef{server.Settings.Env, server.Settings.Headers} {
-				for _, ref := range refs {
-					referenced = referenced || ref.AuthRef == request.Slot
-				}
-			}
-			if !referenced {
+			if !slices.Contains(server.CredentialSlots(), request.Slot) {
 				return current, result, fmt.Errorf("MCP credential slot is not referenced by this service")
 			}
 			candidate, err := current.WithMCPCredential(key, server.CredentialScope, request.Slot, request.Secret)
@@ -195,7 +257,7 @@ func executeMCPManagement(ctx context.Context, current config.Config, owner *mcp
 			current = candidate
 			accessRemoved = true
 		}
-		result = mcpCommitResult(commit, "Stored MCP credentials and connection decisions removed.")
+		result = mcpCommitResult(commit, "Stored MCP credentials, connection decisions and user tool rules removed.")
 		if err != nil {
 			return current, result, err
 		}
@@ -230,6 +292,12 @@ func validateMCPManagement(r interaction.MCPRequest) error {
 	}
 	if r.Action != "credential" && (r.Secret != "" || r.Slot != "") {
 		return fmt.Errorf("MCP credential input is only valid for credential management")
+	}
+	if r.Action != "permission" && (r.Permission != nil || r.PermissionScope != "") {
+		return fmt.Errorf("MCP permission fields require explicit permission management")
+	}
+	if r.Action == "permission" && (r.Permission == nil || r.PermissionScope == "") {
+		return fmt.Errorf("MCP permission rule and reviewed scope are required")
 	}
 	if r.Action == "credential" && r.Slot == "" {
 		return fmt.Errorf("MCP credential slot is required")
@@ -266,7 +334,8 @@ func mcpManagementStatus(configuration config.Config, owner *mcpOwner, key strin
 			status.State = "disconnected"
 		}
 		definition, _ := json.Marshal(server.Settings)
-		result = append(result, interaction.MCPService{Key: id, Name: server.Settings.Name, Source: server.Source.Kind + ":" + server.Source.Location, State: status.State, Detail: status.Detail, Fingerprint: server.Fingerprint, Approval: string(configuration.MCP.ConnectionDecision(id)), Definition: definition, ToolCount: status.ToolCount, CatalogKnown: status.CatalogKnown, EligibleTools: status.EligibleTools})
+		savedFingerprint, savedScope, _ := configuration.MCP.StoredPermissions(id)
+		result = append(result, interaction.MCPService{Key: id, Name: server.Settings.Name, Source: server.Source.Kind + ":" + server.Source.Location, State: status.State, Detail: status.Detail, Fingerprint: server.Fingerprint, Approval: string(configuration.MCP.ConnectionDecision(id)), Definition: definition, ToolCount: status.ToolCount, CatalogKnown: status.CatalogKnown, EligibleTools: status.EligibleTools, PermissionScope: configuration.MCP.PermissionScope(id), Permissions: storedMCPPermissions(configuration.MCP, id), SavedPermissionFingerprint: savedFingerprint, SavedPermissionScope: savedScope})
 	}
 	return result
 }

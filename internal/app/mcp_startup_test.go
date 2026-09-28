@@ -39,7 +39,7 @@ func (m *mcpStartupModel) Stream(_ context.Context, r llm.Request) (llm.Stream, 
 		if d.Name == "tool_search" {
 			search = true
 		}
-		if strings.HasPrefix(d.Name, "mcp_") {
+		if strings.HasPrefix(d.Name, "mcp_") && d.Name != "mcp_resource_list" && d.Name != "mcp_server_info" {
 			remote = d.Name
 		}
 	}
@@ -74,7 +74,7 @@ func (m *mcpStartupModel) Stream(_ context.Context, r llm.Request) (llm.Stream, 
 	return &eventStream{events: events}, nil
 }
 
-func mcpStartupServer(t *testing.T) (string, *atomic.Int32, *atomic.Int32, *atomic.Int32) {
+func mcpStartupServer(t *testing.T, resultOverride ...string) (string, *atomic.Int32, *atomic.Int32, *atomic.Int32) {
 	t.Helper()
 	var initializes, calls, deletes atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -112,6 +112,9 @@ func mcpStartupServer(t *testing.T) (string, *atomic.Int32, *atomic.Int32, *atom
 			result = `{"content":[{"type":"text","text":"first"},{"type":"text","text":"last"}],"structuredContent":{"n":9007199254740993}}`
 		default:
 			t.Errorf("unexpected RPC %q", rpc.Method)
+		}
+		if rpc.Method == "tools/call" && len(resultOverride) > 0 {
+			result = resultOverride[0]
 		}
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%s,"result":%s}`, rpc.ID, result)
@@ -262,7 +265,7 @@ func TestMCPRequiredAndPinnedRunPreparation(t *testing.T) {
 				client.items = []mcpclient.Tool{catalogFixtureTool("read", "read")}
 			}
 			var opens int
-			owner, err := newMCPOwner(c.MCP, ownerTestGuard(t), mode != "required-ask", func(context.Context, mcpclient.Config) (mcpOwnedConnection, error) { opens++; return client, nil })
+			owner, err := newMCPOwner(c.MCP, ownerTestGuard(t), mode != "required-ask", func(context.Context, mcpclient.Config) (mcpOwnedConnection, error) { opens++; return client, nil }, nil)
 			if err != nil {
 				t.Fatal(err)
 			}

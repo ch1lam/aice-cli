@@ -38,14 +38,17 @@ type mcpServiceStatus struct {
 }
 
 type mcpOwnedService struct {
-	server                       config.MCPServer
-	gate                         chan struct{}
-	ctx                          context.Context
-	cancel                       context.CancelFunc
-	client                       mcpOwnedConnection
-	generation, clientGeneration uint64
-	revoked                      bool
-	status                       mcpServiceStatus
+	server                                       config.MCPServer
+	gate                                         chan struct{}
+	ctx                                          context.Context
+	cancel                                       context.CancelFunc
+	client                                       mcpOwnedConnection
+	generation, clientGeneration                 uint64
+	resourceGeneration, clientResourceGeneration uint64
+	revoked                                      bool
+	authFailed                                   bool
+	secrets                                      []string
+	status                                       mcpServiceStatus
 }
 
 // mcpOwner owns transport reuse across runs, not tool selection. Construction,
@@ -59,6 +62,7 @@ type mcpOwner struct {
 	guard         *guard.Guard
 	yolo          bool
 	open          mcpOpenFunc
+	refresh       mcpRefreshFunc
 	services      map[string]*mcpOwnedService
 	slots         int
 	closed        bool
@@ -67,18 +71,18 @@ type mcpOwner struct {
 	closeErr      error
 }
 
-func newMCPOwner(configuration config.MCPConfig, gate *guard.Guard, yolo bool, open mcpOpenFunc) (*mcpOwner, error) {
+func newMCPOwner(configuration config.MCPConfig, gate *guard.Guard, yolo bool, open mcpOpenFunc, refresh mcpRefreshFunc) (*mcpOwner, error) {
 	if gate == nil || len(configuration.Servers) > 129 {
 		return nil, fmt.Errorf("MCP owner requires a Guard and bounded configuration")
 	}
 	if open == nil {
 		open = openMCPConnection
 	}
-	o := &mcpOwner{configuration: configuration.Clone(), guard: gate, yolo: yolo, open: open, services: make(map[string]*mcpOwnedService)}
+	o := &mcpOwner{configuration: configuration.Clone(), guard: gate, yolo: yolo, open: open, refresh: refresh, services: make(map[string]*mcpOwnedService)}
 	for _, key := range o.configuration.ServerKeys() {
 		server := o.configuration.Servers[key]
 		ctx, cancel := context.WithCancel(context.Background())
-		service := &mcpOwnedService{server: server, gate: make(chan struct{}, 1), ctx: ctx, cancel: cancel, generation: 1, status: mcpServiceStatus{Key: key, State: "disconnected"}}
+		service := &mcpOwnedService{server: server, secrets: mcpConnectionSecrets(server), gate: make(chan struct{}, 1), ctx: ctx, cancel: cancel, generation: 1, resourceGeneration: 1, status: mcpServiceStatus{Key: key, State: "disconnected"}}
 		o.services[key] = service
 		if err := gate.BindMCPService(guard.MCPService{Source: server.Source.Kind + ":" + server.Source.Location, ServiceID: server.ID, ConnectionFingerprint: server.Fingerprint, PermissionScope: mcpPermissionScope(o.configuration, key), Enabled: o.configuration.ServerAllowed(key)}); err != nil {
 			for _, s := range o.services {
@@ -112,9 +116,9 @@ func (o *mcpOwner) Status() []mcpServiceStatus {
 	return result
 }
 
-// permissionLocked checks connection authorization independently of tool
+// policyLocked checks connection authorization independently of expiry and tool
 // grants. --yolo skips only Ask, never configuration or explicit user denies.
-func (o *mcpOwner) permissionLocked(s *mcpOwnedService) error {
+func (o *mcpOwner) policyLocked(s *mcpOwnedService) error {
 	state, detail := "", ""
 	switch {
 	case o.closed:
@@ -127,6 +131,8 @@ func (o *mcpOwner) permissionLocked(s *mcpOwnedService) error {
 		state, detail = "disabled", "MCP connection is denied"
 	case len(s.server.MissingValues) > 0:
 		state, detail = "needs_auth", "MCP connection values are missing"
+	case s.authFailed:
+		state, detail = "needs_auth", "MCP OAuth refresh or authentication failed; inspect credentials and explicitly reconnect or log in"
 	case !o.yolo && o.configuration.ConnectionDecision(s.server.Key) != config.MCPConnectionAllow:
 		state, detail = "needs_approval", "MCP connection needs explicit approval"
 	}
@@ -136,6 +142,17 @@ func (o *mcpOwner) permissionLocked(s *mcpOwnedService) error {
 	s.status.State, s.status.Detail = state, detail
 	s.status.CatalogKnown = false
 	return errors.New(detail)
+}
+
+func (o *mcpOwner) permissionLocked(s *mcpOwnedService) error {
+	if err := o.policyLocked(s); err != nil {
+		return err
+	}
+	if s.server.OAuthTokenExpired(time.Now()) {
+		s.status.State, s.status.Detail = "needs_auth", "MCP OAuth token has expired; refresh is checked before authorized work"
+		return errors.New(s.status.Detail)
+	}
+	return nil
 }
 
 func (o *mcpOwner) begin(ctx context.Context, key string) (*mcpOwnedService, context.Context, func(), error) {
@@ -148,7 +165,7 @@ func (o *mcpOwner) begin(ctx context.Context, key string) (*mcpOwnedService, con
 		o.mu.Unlock()
 		return nil, nil, nil, fmt.Errorf("unknown MCP service")
 	}
-	if err := o.permissionLocked(s); err != nil {
+	if err := o.policyLocked(s); err != nil {
 		o.mu.Unlock()
 		return nil, nil, nil, err
 	}
@@ -163,7 +180,12 @@ func (o *mcpOwner) begin(ctx context.Context, key string) (*mcpOwnedService, con
 	release := func() { stop(); cancel(); o.work.Done() }
 	select {
 	case s.gate <- struct{}{}:
-		return s, operation, func() { <-s.gate; release() }, nil
+		done := func() { <-s.gate; release() }
+		if err := o.prepareAuthentication(operation, s); err != nil {
+			done()
+			return nil, nil, nil, err
+		}
+		return s, operation, done, nil
 	case <-operation.Done():
 		release()
 		return nil, nil, nil, operation.Err()
@@ -201,6 +223,15 @@ func (o *mcpOwner) ensure(ctx context.Context, s *mcpOwnedService) (mcpOwnedConn
 		configuration.Stdio = &mcpclient.StdioConfig{Executable: s.server.Settings.Command, Args: append([]string(nil), s.server.Settings.Args...), Dir: s.server.Settings.Cwd, Env: env}
 	} else {
 		configuration.HTTP = &mcpclient.HTTPConfig{Endpoint: s.server.Settings.URL, Headers: headers}
+		if s.server.Settings.OAuth != nil {
+			delete(headers, "Authorization")
+			configuration.HTTP.Authorization = func() string {
+				o.mu.Lock()
+				defer o.mu.Unlock()
+				credential, _ := s.server.OAuthCredentials()
+				return "Bearer " + credential.AccessToken
+			}
+		}
 	}
 	client, err := o.open(ctx, configuration)
 	o.mu.Lock()
@@ -216,6 +247,7 @@ func (o *mcpOwner) ensure(ctx context.Context, s *mcpOwnedService) (mcpOwnedConn
 	if err != nil {
 		if o.permissionLocked(s) == nil {
 			s.status.State, s.status.Detail = mcpFailureStatus(err)
+			s.authFailed = s.server.Settings.OAuth != nil && mcpAuthenticationRejected(err)
 		}
 		o.mu.Unlock()
 		if client != nil {
@@ -229,6 +261,10 @@ func (o *mcpOwner) ensure(ctx context.Context, s *mcpOwnedService) (mcpOwnedConn
 	s.client = client
 	s.generation++
 	s.clientGeneration = client.ToolGeneration()
+	s.resourceGeneration++
+	if resource, ok := client.(mcpResourceConnection); ok {
+		s.clientResourceGeneration = resource.ResourceGeneration()
+	}
 	s.status.State, s.status.Detail = "ready", ""
 	o.mu.Unlock()
 	return client, nil
@@ -268,6 +304,7 @@ func (o *mcpOwner) Revoke(key string) error {
 	s.revoked = true
 	s.cancel()
 	s.generation++
+	s.resourceGeneration++
 	o.guard.RevokeMCPService(s.server.Source.Kind+":"+s.server.Source.Location, s.server.ID)
 	client := s.client
 	s.client = nil
@@ -295,6 +332,7 @@ func (o *mcpOwner) Close() error {
 		for _, s := range o.services {
 			s.cancel()
 			s.generation++
+			s.resourceGeneration++
 		}
 		o.mu.Unlock()
 		o.work.Wait()
@@ -344,8 +382,14 @@ func (b mcpBorrowedConnection) Tools(ctx context.Context) (mcpclient.Catalog[mcp
 	if policyErr := o.permissionLocked(s); policyErr != nil {
 		return mcpclient.Catalog[mcpclient.Tool]{}, policyErr
 	}
+	if errors.Is(err, mcpclient.ErrUnsupported) {
+		s.status.State, s.status.Detail = "ready", "MCP service does not advertise tools"
+		s.status.CatalogKnown, s.status.ToolCount, s.status.EligibleTools = true, 0, 0
+		return catalog, err
+	}
 	if err != nil {
 		s.status.State, s.status.Detail = mcpFailureStatus(err)
+		s.authFailed = s.server.Settings.OAuth != nil && mcpAuthenticationRejected(err)
 		s.status.CatalogKnown = false
 		return catalog, err
 	}
@@ -378,24 +422,9 @@ func (b mcpBorrowedConnection) CallChecked(ctx context.Context, name string, arg
 	if client == nil {
 		return mcpclient.Result{State: llm.ExecutionNotDispatched}, fmt.Errorf("MCP connection unavailable; discover tools again")
 	}
-	return client.CallChecked(operation, name, args, func(ctx context.Context) error {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		b.owner.mu.Lock()
-		err := b.owner.permissionLocked(s)
-		if err == nil && s.client != client {
-			err = fmt.Errorf("MCP connection changed before dispatch")
-		}
-		b.owner.mu.Unlock()
-		if err != nil {
-			return err
-		}
-		if check == nil {
-			return fmt.Errorf("MCP dispatch check is required")
-		}
-		return check(ctx)
-	})
+	result, err := client.CallChecked(operation, name, args, b.dispatchCheck(s, client, check))
+	b.owner.recordAuthenticationFailure(s, err)
+	return result, err
 }
 
 // MCPStatus returns only application-owned status text, never remote errors or
@@ -406,4 +435,15 @@ func (b mcpBorrowedConnection) MCPStatus() string {
 	s := b.owner.services[b.key]
 	b.owner.permissionLocked(s)
 	return s.status.State + ": " + s.status.Detail
+}
+
+// A required connection need not expose tools (resource-only services are valid).
+func (o *mcpOwner) prepareRequired(ctx context.Context, key string) error {
+	s, operation, release, err := o.begin(ctx, key)
+	if err != nil {
+		return err
+	}
+	defer release()
+	_, err = o.ensure(operation, s)
+	return err
 }

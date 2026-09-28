@@ -138,10 +138,12 @@ func TestMCPGuardLoopApprovalScopes(t *testing.T) {
 
 func TestMCPGuardLoopYoloPreservesDenials(t *testing.T) {
 	t.Parallel()
-	for _, failure := range []string{"none", "disabled", "filtered", "revoked", "removed", "schema", "scope", "closed-run"} {
+	for _, failure := range []string{"none", "user-deny", "disabled", "filtered", "revoked", "removed", "schema", "scope", "closed-run"} {
 		t.Run(failure, func(t *testing.T) {
 			session, adapter, service := mcpGuardTestFixture(t, true)
 			switch failure {
+			case "user-deny":
+				service.Tools[0].UserDecision = guard.DecisionDeny
 			case "disabled":
 				service.Enabled = false
 			case "filtered":

@@ -129,11 +129,7 @@ func validateMCPStoredBinding(paths Paths, server MCPServer) error {
 	}
 	absolute, err := filepath.Abs(source)
 	expected, resolveErr := resolveMCPServer(server.ID, server.Source, server.Settings, nil, nil)
-	env, headers := server.ConnectionValues()
-	fingerprint := mcpDigest(struct {
-		Scope                string
-		Environment, Headers map[string]string
-	}{server.CredentialScope, env, headers})
+	fingerprint := server.connectionFingerprint()
 	if source == "" || err != nil || filepath.Clean(absolute) != server.Source.Location || resolveErr != nil || expected.Key != server.Key || expected.CredentialScope != server.CredentialScope || fingerprint != server.Fingerprint {
 		return fmt.Errorf("config: MCP connection approval identity changed")
 	}
@@ -163,8 +159,19 @@ func ForgetMCPServiceAccess(ctx context.Context, paths Paths, server MCPServer) 
 			}
 			approvals = decoded
 		}
+		if err := clearMCPPermissions(values, server.Key); err != nil {
+			return err
+		}
 		delete(credentials, server.Key)
 		delete(approvals, server.Key)
+		if raw, ok := values[mcpOAuthKey]; ok {
+			oauth, err := decodeMCPOAuth(raw)
+			if err != nil {
+				return err
+			}
+			delete(oauth, server.Key)
+			values[mcpOAuthKey] = oauth
+		}
 		values[mcpCredentialsKey], values[mcpConnectionsKey] = credentials, approvals
 		return nil
 	})
@@ -177,8 +184,12 @@ func (c Config) WithoutMCPServiceAccess(key string) (Config, error) {
 	next := c
 	next.mcpInputs.credentials = cloneMCPCredentials(c.mcpInputs.credentials)
 	next.mcpInputs.connections = maps.Clone(c.mcpInputs.connections)
+	next.mcpInputs.oauth = cloneMCPOAuth(c.mcpInputs.oauth)
+	next.mcpInputs.permissions = cloneMCPPermissions(c.mcpInputs.permissions)
+	delete(next.mcpInputs.permissions, key)
 	delete(next.mcpInputs.credentials, key)
 	delete(next.mcpInputs.connections, key)
+	delete(next.mcpInputs.oauth, key)
 	effective, err := effectiveMCP(next.mcpInputs, c.Paths, c.environmentLookup)
 	if err != nil {
 		return Config{}, err

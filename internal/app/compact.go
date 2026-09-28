@@ -253,9 +253,12 @@ func serializeCompactionMessages(messages []llm.AgentMessage) (string, error) {
 				value.ToolCallID,
 				value.IsError,
 			)
+			if value.Details != nil {
+				fmt.Fprintf(&builder, "[Execution state=%q storage_loss=%q; retained source readable with tool_result_read]\n", value.Details.State, value.Details.Loss)
+			}
 			appendCompactionContent(
 				&builder,
-				value.Content,
+				llm.ToolResultModelContent(value.Content, value.Details, value.IsError),
 				compactionToolResultMaxChars,
 			)
 		case llm.CompactionSummaryMessage:

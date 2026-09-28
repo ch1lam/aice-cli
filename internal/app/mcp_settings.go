@@ -62,7 +62,7 @@ func (s *interactiveSession) runMCPSettings(ctx context.Context, revision *uint6
 		owner = s.mcp
 		s.stateMu.RUnlock()
 	}
-	next, managed, err := executeMCPManagement(ctx, current, owner, op)
+	next, managed, err := executeMCPManagement(ctx, current, owner, op, s.application.mcpLogin(request.Auth, false))
 	result.Committed = managed.Committed
 	result.Warnings = append(result.Warnings, managed.Warnings...)
 	changed = changed || managed.Committed || op.Action == "connect"
@@ -87,8 +87,13 @@ func (s *interactiveSession) runMCPSettings(ctx context.Context, revision *uint6
 	if err == nil && (op.Action == "connect" || op.Action == "reconnect") {
 		result.Output = "MCP " + op.Action + " completed.\n" + result.Output
 	}
-	if op.Action == "status" || op.Action == "connect" || op.Action == "reconnect" {
+	if op.Action == "status" || op.Action == "connect" || op.Action == "reconnect" || op.Action == "permissions" {
 		result.Output = strings.TrimSpace(result.Output + "\n" + formatMCPStatus(managed.Services))
+	}
+	if op.Action == "permissions" {
+		for _, p := range managed.Permissions {
+			result.Output += fmt.Sprintf("\n%s %q · %s · eligible=%t\nSchema: %s", p.Operation, p.Tool, p.Decision, p.Eligible, p.SchemaFingerprint)
+		}
 	}
 	return result, err
 }
@@ -127,7 +132,7 @@ func (s *interactiveSession) publishMCPConfiguration(next config.Config) error {
 		if s.application != nil {
 			open = s.application.dependencies.openMCP
 		}
-		owner, err = newMCPOwner(next.MCP, s.guard, s.guardAdapter.yolo, open)
+		owner, err = newMCPOwner(next.MCP, s.guard, s.guardAdapter.yolo, open, mcpOAuthRefresh(next.Paths))
 	}
 	s.stateMu.Lock()
 	s.configuration = next
@@ -158,6 +163,16 @@ func formatMCPStatus(services []interaction.MCPService) string {
 			fmt.Fprintf(&b, "Tools: %d discovered, %d eligible\n", service.ToolCount, service.EligibleTools)
 		} else {
 			b.WriteString("Tools: catalog not currently known\n")
+		}
+		fmt.Fprintf(&b, "Permission scope: %s\n", service.PermissionScope)
+		if len(service.Permissions) > 0 {
+			fmt.Fprintf(&b, "Saved rule binding: %s · %s\n", service.SavedPermissionFingerprint, service.SavedPermissionScope)
+			if service.SavedPermissionFingerprint != service.Fingerprint || service.SavedPermissionScope != service.PermissionScope {
+				b.WriteString("Saved rules are inactive for the current binding.\n")
+			}
+		}
+		for _, rule := range service.Permissions {
+			fmt.Fprintf(&b, "Saved %s: %s %q · schema %s\n", rule.Decision, rule.Operation, rule.Tool, rule.SchemaFingerprint)
 		}
 		if service.Detail != "" {
 			b.WriteString(service.Detail + "\n")

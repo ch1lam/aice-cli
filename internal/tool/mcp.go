@@ -28,13 +28,17 @@ type MCPOptions struct {
 	// Secrets are explicitly supplied by the connection owner for literal
 	// redaction. They are not discovered from the process environment.
 	Secrets []string
+	// ResultSecrets snapshots additional credentials rotated by the owner. It
+	// performs no I/O and includes credentials used by concurrent calls.
+	ResultSecrets func() []string
 }
 
 type MCP struct {
-	definition llm.ToolDefinition
-	binding    llm.ToolBinding
-	backend    MCPBackend
-	redact     mcpRedactor
+	definition    llm.ToolDefinition
+	binding       llm.ToolBinding
+	backend       MCPBackend
+	redact        mcpRedactor
+	resultSecrets func() []string
 }
 
 func NewMCP(options MCPOptions) (*MCP, error) {
@@ -60,7 +64,7 @@ func NewMCP(options MCPOptions) (*MCP, error) {
 	definition.Description = redact.text(definition.Description)
 	// Remote descriptions are data, not application-authored prompt guidance.
 	definition.PromptSnippet, definition.PromptGuidelines = "", nil
-	return &MCP{definition: definition, binding: options.Binding, backend: options.Backend, redact: redact}, nil
+	return &MCP{definition: definition, binding: options.Binding, backend: options.Backend, redact: redact, resultSecrets: options.ResultSecrets}, nil
 }
 
 func (m *MCP) Definition() llm.ToolDefinition {
@@ -92,7 +96,11 @@ func (m *MCP) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult, e
 	result, err := m.backend.Call(ctx, m.binding.ToolName, slices.Clone(arguments))
 	// Preserve a returned partial result even after cancellation. Media
 	// conversion is bounded by its own storage limits and a cleanup deadline.
-	return m.mapResult(call, result, err), nil
+	mapping := *m
+	if m.resultSecrets != nil {
+		mapping.redact = newMCPRedactor(append(slices.Clone(m.redact.secrets), m.resultSecrets()...))
+	}
+	return mapping.mapResult(call, result, err), nil
 }
 
 type mcpRedactor struct{ secrets []string }

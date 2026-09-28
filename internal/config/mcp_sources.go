@@ -16,11 +16,37 @@ type mcpCredentials map[string]map[string]map[string]string
 type mcpLayer struct {
 	user, project json.RawMessage
 	credentials   mcpCredentials
+	oauth         mcpOAuthCredentials
 	connections   map[string]mcpConnectionApproval
+	permissions   mcpPermissions
 	diagnostics   []string
 }
 
 func (l *mcpLayer) extract(path string, values map[string]any, paths Paths) error {
+	if raw, ok := values[mcpPermissionsKey]; ok {
+		delete(values, mcpPermissionsKey)
+		if path != paths.GlobalAuth {
+			l.diagnostics = append(l.diagnostics, "Ignored mcp_permissions outside the user auth file")
+		} else {
+			permissions, err := decodeMCPPermissions(raw)
+			if err != nil {
+				return err
+			}
+			l.permissions = permissions
+		}
+	}
+	if raw, ok := values[mcpOAuthKey]; ok {
+		delete(values, mcpOAuthKey)
+		if path != paths.GlobalAuth {
+			l.diagnostics = append(l.diagnostics, "Ignored mcp_oauth outside the user auth file")
+		} else {
+			credentials, err := decodeMCPOAuth(raw)
+			if err != nil {
+				return err
+			}
+			l.oauth = credentials
+		}
+	}
 	if raw, ok := values[mcpConnectionsKey]; ok {
 		delete(values, mcpConnectionsKey)
 		if path != paths.GlobalAuth {
@@ -97,7 +123,7 @@ func effectiveMCP(layer mcpLayer, paths Paths, lookup func(string) (string, bool
 	if err != nil {
 		return MCPConfig{}, err
 	}
-	result := MCPConfig{Servers: make(map[string]MCPServer), connections: maps.Clone(layer.connections)}
+	result := MCPConfig{Servers: make(map[string]MCPServer), connections: maps.Clone(layer.connections), permissions: cloneMCPPermissions(layer.permissions)}
 	result.Restrictions = append(cloneMCPRestrictions(user.Restrictions), cloneMCPRestrictions(project.Restrictions)...)
 	for _, input := range []struct {
 		source   Source
@@ -111,6 +137,7 @@ func effectiveMCP(layer mcpLayer, paths Paths, lookup func(string) (string, bool
 			if err != nil {
 				return MCPConfig{}, err
 			}
+			server.applyOAuth(layer.oauth[server.Key][server.CredentialScope])
 			result.Servers[server.Key] = server
 		}
 	}
@@ -159,11 +186,13 @@ func resolveMCPServer(id string, source Source, settings MCPServerSettings, cred
 	headers, missing := resolveMCPValues(settings.Headers, slots, lookup, "headers")
 	server.headers = headers
 	server.MissingValues = append(server.MissingValues, missing...)
+	if settings.OAuth != nil && settings.OAuth.ClientSecret != nil {
+		values, missing := resolveMCPValues(map[string]MCPValueRef{"client_secret": *settings.OAuth.ClientSecret}, slots, lookup, "oauth")
+		server.oauthClientSecret = values["client_secret"]
+		server.MissingValues = append(server.MissingValues, missing...)
+	}
 	slices.Sort(server.MissingValues)
-	server.Fingerprint = mcpDigest(struct {
-		Scope                string
-		Environment, Headers map[string]string
-	}{server.CredentialScope, server.environment, server.headers})
+	server.Fingerprint = server.connectionFingerprint()
 	return server, nil
 }
 

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"slices"
 	"strings"
 
 	"github.com/ch1lam/aice-cli/internal/config"
@@ -20,11 +19,15 @@ func mcpMenu() *interaction.CommandMenu {
 		{Label: "Deny and revoke a connection", Arguments: "deny"},
 		{Label: "Forget connection approval", Arguments: "forget"},
 		{Label: "Set or clear a credential", Arguments: "credential"},
+		{Label: "Log in to an OAuth service", Arguments: "login"},
+		{Label: "Log out of an OAuth service", Arguments: "logout"},
 		{Label: "Test connection and discovery", Arguments: "connect"},
 		{Label: "Reconnect and discover", Arguments: "reconnect"},
 		{Label: "Enable a user service", Arguments: "enable"},
 		{Label: "Disable a user service", Arguments: "disable"},
 		{Label: "Remove a user service and stored access", Arguments: "remove"},
+		{Label: "Inspect operation permissions", Arguments: "permissions"},
+		{Label: "Save or remove a user permission", Arguments: "permission"},
 	}}
 }
 
@@ -106,16 +109,21 @@ func prepareMCPCommand(ctx context.Context, configuration config.Config, owner *
 	if !exists {
 		return op, fmt.Errorf("MCP service key is not configured")
 	}
+	if op.Action == "permission" {
+		return prepareMCPPermission(ctx, configuration, owner, ui, op)
+	}
 	op.Fingerprint = server.Fingerprint
 	definition, _ := json.MarshalIndent(server.Settings, "", "  ")
 	disclosure := fmt.Sprintf("Service: %s\nSource: %s:%s\nConnection fingerprint: %s\nConfigured connection (references only for credentials):\n%s\n", op.Key, server.Source.Kind, server.Source.Location, server.Fingerprint, definition)
 	switch op.Action {
-	case "approve", "deny", "forget", "remove":
+	case "approve", "deny", "forget", "remove", "login", "logout":
 		explanation := map[string]string{
+			"login":   "Contact the configured service and its discovered authorization server, register a public client if needed, and open consent in your browser. A successful login replaces the old login and removes its connection approval and user tool rules. Tool permission is separate.",
+			"logout":  "Remove this service's OAuth login, connection approval and user tool rules, close current MCP connections and clear MCP Session tool grants. Explicit client-secret slots remain configured.",
 			"approve": "Allow this exact connection to start its configured process or contact its endpoint. Remote tool execution still requires separate permission.",
 			"deny":    "Deny this connection and cancel its active work now. Already dispatched actions may have taken effect; they will not be replayed.",
 			"forget":  "Remove the stored connection decision, close current MCP connections, and clear MCP Session tool grants. --yolo may still allow connections without a stored decision.",
-			"remove":  "Remove this user definition, its stored credentials and its connection decision. Project definitions are read-only.",
+			"remove":  "Remove this user definition, its stored credentials, connection decision and user tool rules. Project definitions are read-only.",
 		}[op.Action]
 		choice, err := mcpPrompt(ctx, ui, interaction.AuthPrompt{Title: "Confirm MCP " + op.Action, Instructions: disclosure + explanation, Menu: &interaction.CommandMenu{Title: "Confirm action", Options: []interaction.CommandOption{{Label: "Cancel", Arguments: "cancel"}, {Label: "Confirm " + op.Action, Arguments: "confirm"}}}})
 		if err != nil {
@@ -125,15 +133,7 @@ func prepareMCPCommand(ctx context.Context, configuration config.Config, owner *
 			return op, context.Canceled
 		}
 	case "credential":
-		var slots []string
-		for _, refs := range []map[string]config.MCPValueRef{server.Settings.Env, server.Settings.Headers} {
-			for _, ref := range refs {
-				if ref.AuthRef != "" && !slices.Contains(slots, ref.AuthRef) {
-					slots = append(slots, ref.AuthRef)
-				}
-			}
-		}
-		slices.Sort(slots)
+		slots := server.CredentialSlots()
 		if len(slots) == 0 {
 			return op, fmt.Errorf("service has no auth_ref slots; replace its definition first")
 		}

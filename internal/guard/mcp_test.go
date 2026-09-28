@@ -13,7 +13,7 @@ func mcpPolicyFixture() MCPService {
 	return MCPService{
 		Source: "user:/settings.json", ServiceID: "docs", ConnectionFingerprint: "endpoint-account-v1",
 		PermissionScope: "configured-tools", Enabled: true,
-		Tools: []MCPToolPolicy{{"read", "schema-1", true}, {"write", "schema-2", true}, {"blocked", "schema-3", false}},
+		Tools: []MCPToolPolicy{{Name: "read", SchemaFingerprint: "schema-1", Allowed: true}, {Name: "write", SchemaFingerprint: "schema-2", Allowed: true}, {Name: "blocked", SchemaFingerprint: "schema-3", Allowed: false}},
 	}
 }
 
@@ -110,7 +110,7 @@ func TestMCPServiceGrantFreezesVersions(t *testing.T) {
 	publishMCPPolicy(t, g, service)
 	checkMCPPolicy(t, g, service, "write", DecisionAllow)
 	service.Tools[0].SchemaFingerprint = "changed"
-	service.Tools = append(service.Tools, MCPToolPolicy{"new-tool", "schema-new", true})
+	service.Tools = append(service.Tools, MCPToolPolicy{Name: "new-tool", SchemaFingerprint: "schema-new", Allowed: true})
 	publishMCPPolicy(t, g, service)
 	checkMCPPolicy(t, g, service, "read", DecisionAsk)
 	checkMCPPolicy(t, g, service, "new-tool", DecisionAsk)
@@ -224,7 +224,7 @@ func TestMCPCancellationAndInvalidPolicy(t *testing.T) {
 	}
 	for _, input := range []MCPService{
 		{}, {Source: "bad\x1b[0m"},
-		{Source: "s", ServiceID: "i", ConnectionFingerprint: "c", PermissionScope: "p", Tools: []MCPToolPolicy{{"a", "s", true}, {"a", "s", true}}},
+		{Source: "s", ServiceID: "i", ConnectionFingerprint: "c", PermissionScope: "p", Tools: []MCPToolPolicy{{Name: "a", SchemaFingerprint: "s", Allowed: true}, {Name: "a", SchemaFingerprint: "s", Allowed: true}}},
 	} {
 		if err := g.SetMCPService(input); err == nil {
 			t.Fatal("invalid policy accepted")

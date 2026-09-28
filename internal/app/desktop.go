@@ -169,12 +169,27 @@ func (d *desktopState) Close() error {
 // publication. Optional capabilities never become part of the host baseTools.
 func composeTools(base []agent.Tool, web webState, desktopState *desktopState, configuration config.Config) ([]agent.Tool, error) {
 	result := append(slices.Clone(base), web.tools()...)
+	readResult, err := tool.NewToolResultRead(runResultReader{})
+	if err != nil {
+		return nil, err
+	}
+	result = append(result, readResult)
 	if len(configuration.MCP.Servers) > 0 {
 		search, err := tool.NewToolSearch(mcpRunRouter{})
 		if err != nil {
 			return nil, err
 		}
 		result = append(result, search)
+		resources, err := tool.NewMCPResourceList(mcpRunRouter{})
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, resources)
+		info, err := tool.NewMCPInfo(mcpRunRouter{})
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, info)
 	}
 	if configuration.DesktopEnabled {
 		if desktopState == nil {

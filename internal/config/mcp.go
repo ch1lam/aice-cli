@@ -44,6 +44,7 @@ type MCPServerSettings struct {
 	Env            map[string]MCPValueRef `json:"env,omitempty"`
 	URL            string                 `json:"url,omitempty"`
 	Headers        map[string]MCPValueRef `json:"headers,omitempty"`
+	OAuth          *MCPOAuthSettings      `json:"oauth,omitempty"`
 	ConnectTimeout string                 `json:"connect_timeout,omitempty"`
 	CallTimeout    string                 `json:"call_timeout,omitempty"`
 	IncludeTools   *[]string              `json:"include_tools,omitempty"`
@@ -75,11 +76,13 @@ type MCPConfig struct {
 	Servers      map[string]MCPServer
 	Restrictions []MCPRestriction
 	connections  map[string]mcpConnectionApproval
+	permissions  mcpPermissions
 }
 
 // MCPServer is a frozen, configured identity, not a connection or a grant.
-// CredentialScope binds stored slots to connection parameters; Fingerprint also
-// changes when resolved credentials change, preventing stale grant reuse.
+// CredentialScope binds stored credentials to connection parameters. Fingerprint
+// includes resolved slots or the OAuth login identity, preventing stale grants
+// while allowing token rotation within the same login.
 type MCPServer struct {
 	Key, ID                      string
 	Source                       Source
@@ -89,14 +92,43 @@ type MCPServer struct {
 	ConnectTimeout, CallTimeout  time.Duration
 	MissingValues                []string
 	environment, headers         map[string]string
+	oauthClientSecret            string
+	oauthCredential              *MCPOAuthCredentials
 }
 
 func (s MCPServer) String() string { return s.Key }
 
+// CredentialSlots is the complete set of user-editable scoped secret references.
+func (s MCPServer) CredentialSlots() []string {
+	var slots []string
+	add := func(ref MCPValueRef) {
+		if ref.AuthRef != "" && !slices.Contains(slots, ref.AuthRef) {
+			slots = append(slots, ref.AuthRef)
+		}
+	}
+	for _, refs := range []map[string]MCPValueRef{s.Settings.Env, s.Settings.Headers} {
+		for _, ref := range refs {
+			add(ref)
+		}
+	}
+	if s.Settings.OAuth != nil && s.Settings.OAuth.ClientSecret != nil {
+		add(*s.Settings.OAuth.ClientSecret)
+	}
+	slices.Sort(slots)
+	return slots
+}
+
 // ConnectionValues transfers resolved values only to the connection owner.
 // These maps contain secrets and must never be rendered or persisted as config.
 func (s MCPServer) ConnectionValues() (environment, headers map[string]string) {
-	return maps.Clone(s.environment), maps.Clone(s.headers)
+	environment, headers = maps.Clone(s.environment), maps.Clone(s.headers)
+	if s.oauthCredential != nil {
+		if headers == nil {
+			headers = make(map[string]string)
+		}
+		headers["Authorization"] = "Bearer " + s.oauthCredential.AccessToken
+	}
+	return environment, headers
 }
 
 func (m MCPConfig) Clone() MCPConfig {
@@ -105,11 +137,16 @@ func (m MCPConfig) Clone() MCPConfig {
 	for key, server := range m.Servers {
 		server.Settings = cloneMCPServer(server.Settings)
 		server.MissingValues = slices.Clone(server.MissingValues)
-		server.environment, server.headers = server.ConnectionValues()
+		server.environment, server.headers = maps.Clone(server.environment), maps.Clone(server.headers)
+		if server.oauthCredential != nil {
+			credential := server.oauthCredential.clone()
+			server.oauthCredential = &credential
+		}
 		next.Servers[key] = server
 	}
 	next.Restrictions = cloneMCPRestrictions(m.Restrictions)
 	next.connections = maps.Clone(m.connections)
+	next.permissions = cloneMCPPermissions(m.permissions)
 	return next
 }
 
@@ -219,7 +256,7 @@ func (s MCPServerSettings) validate() error {
 		if !filepath.IsAbs(s.Command) || !filepath.IsAbs(s.Cwd) || !mcpText(s.Command, 4096) || !mcpText(s.Cwd, 4096) {
 			return fmt.Errorf("stdio command and cwd must be explicit absolute paths")
 		}
-		if s.URL != "" || len(s.Headers) > 0 {
+		if s.URL != "" || len(s.Headers) > 0 || s.OAuth != nil {
 			return fmt.Errorf("stdio cannot include HTTP fields")
 		}
 		if len(s.Args) > 128 {
@@ -249,8 +286,14 @@ func (s MCPServerSettings) validate() error {
 			return fmt.Errorf("HTTP headers exceed 32 entries")
 		}
 		seen := make(map[string]bool)
+		if s.OAuth != nil && !s.OAuth.valid() {
+			return fmt.Errorf("invalid MCP OAuth settings (values omitted)")
+		}
 		for key, ref := range s.Headers {
 			canonical := http.CanonicalHeaderKey(key)
+			if s.OAuth != nil && canonical == "Authorization" {
+				return fmt.Errorf("OAuth cannot be combined with an Authorization header")
+			}
 			if !validMCPHeader(key) || seen[canonical] || !ref.valid(false) {
 				return fmt.Errorf("invalid or duplicate HTTP header or credential reference")
 			}
@@ -351,6 +394,10 @@ func mcpTimeout(raw string, fallback time.Duration) (time.Duration, error) {
 }
 
 func cloneMCPServer(s MCPServerSettings) MCPServerSettings {
+	if s.OAuth != nil {
+		oauth := s.OAuth.clone()
+		s.OAuth = &oauth
+	}
 	if s.Enabled != nil {
 		enabled := *s.Enabled
 		s.Enabled = &enabled

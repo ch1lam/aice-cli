@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"slices"
@@ -52,8 +53,6 @@ type mcpCatalog struct {
 	catalogBytes map[string]int
 }
 
-const mcpOrdinaryScope = "ordinary-mcp-tools"
-
 func newMCPCatalog(configuration config.MCPConfig, connections map[string]mcpCatalogConnection, gate *guard.Guard) (*mcpCatalog, error) {
 	if gate == nil || len(configuration.Servers) > 129 || len(connections) > 129 {
 		return nil, fmt.Errorf("MCP catalog requires a Guard and bounded service inputs")
@@ -88,12 +87,7 @@ func newMCPCatalog(configuration config.MCPConfig, connections map[string]mcpCat
 func mcpToolID(service, name string) string { return service + "/tool/" + url.PathEscape(name) }
 
 func mcpPermissionScope(configuration config.MCPConfig, key string) string {
-	settings := configuration.Servers[key].Settings
-	return mcpOrdinaryScope + ":" + mcpDigest(struct {
-		Include      *[]string
-		Exclude      []string
-		Restrictions []config.MCPRestriction
-	}{settings.IncludeTools, settings.ExcludeTools, configuration.Restrictions})
+	return configuration.PermissionScope(key) + ":rules:" + configuration.PermissionRevision(key)
 }
 
 func mcpDigest(value any) string {
@@ -161,7 +155,7 @@ func (c *mcpCatalog) checkEntry(ctx context.Context, entry mcpCatalogEntry) erro
 		return err
 	}
 	connection := c.connections[entry.service]
-	if connection == nil || connection.ToolGeneration() != entry.generation {
+	if connection == nil || mcpEntryGeneration(connection, entry.binding.Operation) != entry.generation {
 		return fmt.Errorf("MCP catalog was invalidated; search again")
 	}
 	decision, _, err := c.guard.CheckMCP(ctx, entry.Tool.Definition().Name, entry.binding, c.scopes[entry.service])
@@ -287,7 +281,7 @@ func (c *mcpCatalog) Search(ctx context.Context, request tool.ToolSearchRequest)
 		if !c.config.ServerAllowed(key) || c.connections[key] != nil && !c.serviceAvailable(key) {
 			response.Complete = false
 			response.Notices = append(response.Notices, key+": disabled or denied.")
-			c.forgetService(key)
+			c.forgetTools(key)
 			continue
 		}
 		if !connected {
@@ -301,17 +295,25 @@ func (c *mcpCatalog) Search(ctx context.Context, request tool.ToolSearchRequest)
 			if status, ok := c.connections[key].(interface{ MCPStatus() string }); ok {
 				notice = status.MCPStatus() + "; catalog is unknown, not empty."
 			}
+			if errors.Is(found.err, mcpclient.ErrUnsupported) {
+				notice = "Tools are unsupported on this service; use mcp_resource_list to inspect resource support."
+				if err := c.guard.RefreshMCPTools(guard.MCPService{Source: server.Source.Kind + ":" + server.Source.Location, ServiceID: server.ID, ConnectionFingerprint: server.Fingerprint, PermissionScope: c.scopes[key], Enabled: c.config.ServerAllowed(key)}); err != nil {
+					notice = "Tool catalog policy is unavailable; inspect service status."
+				}
+			}
 			response.Notices = append(response.Notices, key+": "+notice)
-			c.forgetService(key)
+			c.forgetTools(key)
 			continue
 		}
 		if err := c.publish(server, c.connections[key], found.catalog); err != nil {
 			response.Complete = false
 			response.Notices = append(response.Notices, key+": catalog could not be safely bound.")
-			c.forgetService(key)
+			c.forgetTools(key)
 		}
 	}
-	return c.rank(request, response), nil
+	ranked := c.rank(request, response)
+	c.serverPreviews(&ranked)
+	return ranked, nil
 }
 
 func (c *mcpCatalog) serviceAvailable(key string) bool {
@@ -319,10 +321,10 @@ func (c *mcpCatalog) serviceAvailable(key string) bool {
 	return c.config.ServerAllowed(key) && c.guard.MCPServiceAvailable(server.Source.Kind+":"+server.Source.Location, server.ID, server.Fingerprint, c.scopes[key])
 }
 
-func (c *mcpCatalog) forgetService(key string) {
+func (c *mcpCatalog) forgetTools(key string) {
 	delete(c.catalogBytes, key)
 	for id, entry := range c.entries {
-		if entry.service == key {
+		if entry.service == key && entry.binding.Operation == "" {
 			// Keep the model-name tombstone so an old call cannot fall through
 			// to generic unknown-name authorization.
 			delete(c.entries, id)
@@ -345,7 +347,7 @@ func (c *mcpCatalog) publish(server config.MCPServer, connection mcpCatalogConne
 		}
 	}
 	for _, entry := range c.entries {
-		if entry.service != server.Key {
+		if entry.service != server.Key || entry.binding.Operation != "" {
 			totalItems++
 		}
 	}
@@ -355,13 +357,15 @@ func (c *mcpCatalog) publish(server config.MCPServer, connection mcpCatalogConne
 	policy := guard.MCPService{Source: server.Source.Kind + ":" + server.Source.Location, ServiceID: server.ID,
 		ConnectionFingerprint: server.Fingerprint, PermissionScope: c.scopes[server.Key], Enabled: c.config.ServerAllowed(server.Key)}
 	entries := make([]mcpCatalogEntry, 0, len(catalog.Items))
-	secrets := mcpConnectionSecrets(server)
+	secrets := mcpKnownSecrets(server, connection)
+	permissions := c.config.Permissions(server.Key)
 	for _, remote := range catalog.Items {
 		binding := llm.ToolBinding{Source: policy.Source, ServiceID: server.ID, ConnectionFingerprint: server.Fingerprint,
 			ToolName: remote.Name, SchemaFingerprint: mcpDigest([]json.RawMessage{remote.InputSchema, remote.OutputSchema})}
 		allowed := c.config.ToolAllowed(server.Key, remote.Name)
-		policy.Tools = append(policy.Tools, guard.MCPToolPolicy{Name: remote.Name, SchemaFingerprint: binding.SchemaFingerprint, Allowed: allowed})
-		if !allowed {
+		decision := guard.Decision(permissions.Decision("", remote.Name, binding.SchemaFingerprint))
+		policy.Tools = append(policy.Tools, guard.MCPToolPolicy{Name: remote.Name, SchemaFingerprint: binding.SchemaFingerprint, Allowed: allowed, UserDecision: decision})
+		if !allowed || decision == guard.DecisionDeny {
 			continue
 		}
 		ref := agent.ToolReference{ID: mcpToolID(server.Key, remote.Name), Revision: mcpDigest(struct {
@@ -372,7 +376,7 @@ func (c *mcpCatalog) publish(server config.MCPServer, connection mcpCatalogConne
 		}{binding, remote, catalog.Generation, c.scopes[server.Key]})}
 		mapped, err := tool.NewMCP(tool.MCPOptions{
 			Definition: llm.ToolDefinition{Name: mcpModelName(server.Key, remote.Name), Description: "MCP tool from " + server.Key + ". Server description (untrusted): " + remote.Description, InputSchema: remote.InputSchema},
-			Binding:    binding, Backend: mcpVersionBackend{c, ref, connection}, Secrets: secrets,
+			Binding:    binding, Backend: mcpVersionBackend{c, ref, connection}, Secrets: secrets, ResultSecrets: mcpResultSecrets(connection),
 		})
 		if err != nil {
 			return err
@@ -395,7 +399,7 @@ func (c *mcpCatalog) publish(server config.MCPServer, connection mcpCatalogConne
 	if err := c.guard.RefreshMCPTools(policy); err != nil {
 		return err
 	}
-	c.forgetService(server.Key)
+	c.forgetTools(server.Key)
 	c.catalogBytes[server.Key] = len(encoded)
 	for _, entry := range entries {
 		c.entries[entry.Reference.ID] = entry
@@ -415,6 +419,10 @@ func mcpConnectionSecrets(server config.MCPServer) []string {
 	for key, value := range headers {
 		secrets = append(secrets, value, strings.TrimPrefix(value, server.Settings.Headers[key].Prefix))
 	}
+	if credential, ok := server.OAuthCredentials(); ok {
+		secrets = append(secrets, credential.AccessToken, credential.RefreshToken, credential.ClientSecret)
+	}
+	secrets = append(secrets, server.OAuthClientSecret())
 	return secrets
 }
 
@@ -426,6 +434,9 @@ func (c *mcpCatalog) rank(request tool.ToolSearchRequest, response tool.ToolSear
 	var candidates []candidate
 	terms := strings.FieldsFunc(strings.ToLower(request.Query), func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsNumber(r) })
 	for id, entry := range c.entries {
+		if entry.binding.Operation != "" {
+			continue
+		}
 		if request.Service != "" && entry.service != request.Service || len(request.IDs) > 0 && !slices.Contains(request.IDs, id) {
 			continue
 		}
@@ -468,11 +479,27 @@ func (c *mcpCatalog) rank(request tool.ToolSearchRequest, response tool.ToolSear
 		response.Notices = append(response.Notices, "More tools match; continue with next_offset, narrow query, browse a service or select exact IDs. Catalog changes may move page boundaries; use exact IDs for stable selection.")
 	}
 	for _, id := range request.IDs {
-		if _, exists := c.entries[id]; !exists {
+		if entry, exists := c.entries[id]; !exists || entry.binding.Operation != "" {
 			response.Complete = false
 			response.Notices = append(response.Notices, "An exact tool ID is unavailable; inspect service status and refresh discovery.")
 			break
 		}
 	}
 	return response
+}
+
+// Raw clients have frozen credentials; borrowed app leases also retain tokens
+// rotated during this owner lifetime. No lookup here performs I/O.
+func mcpResultSecrets(connection any) func() []string {
+	if source, ok := connection.(interface{ MCPSecrets() []string }); ok {
+		return source.MCPSecrets
+	}
+	return nil
+}
+func mcpKnownSecrets(server config.MCPServer, connection any) []string {
+	secrets := mcpConnectionSecrets(server)
+	if source := mcpResultSecrets(connection); source != nil {
+		secrets = append(secrets, source()...)
+	}
+	return secrets
 }

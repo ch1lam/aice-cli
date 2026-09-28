@@ -14,11 +14,12 @@ import (
 )
 
 type httpTransport struct {
-	base     *http.Transport
-	lifetime context.Context
-	headers  http.Header
-	limit    int
-	receipts *receipts
+	base          *http.Transport
+	lifetime      context.Context
+	headers       http.Header
+	authorization func() string
+	limit         int
+	receipts      *receipts
 }
 
 func openHTTP(config HTTPConfig, lifetime context.Context, limit int, receipts *receipts) (mcp.Transport, *http.Transport, error) {
@@ -45,6 +46,9 @@ func openHTTP(config HTTPConfig, lifetime context.Context, limit int, receipts *
 		}
 		headers.Set(key, value)
 	}
+	if _, exists := headers["Authorization"]; config.Authorization != nil && exists {
+		return nil, nil, ErrConfig
+	}
 	base := &http.Transport{
 		Proxy:               http.ProxyFromEnvironment,
 		DialContext:         (&net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
@@ -53,7 +57,7 @@ func openHTTP(config HTTPConfig, lifetime context.Context, limit int, receipts *
 		MaxResponseHeaderBytes: 64 << 10,
 	}
 	client := &http.Client{
-		Transport:     &httpTransport{base: base, lifetime: lifetime, headers: headers, limit: limit, receipts: receipts},
+		Transport:     &httpTransport{base: base, lifetime: lifetime, headers: headers, authorization: config.Authorization, limit: limit, receipts: receipts},
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}
 	// No OAuthHandler: the SDK can replay a POST after it authorizes a 401/403.
@@ -74,6 +78,15 @@ func (t *httpTransport) RoundTrip(request *http.Request) (*http.Response, error)
 	req := request.Clone(ctx)
 	for key, values := range t.headers {
 		req.Header[key] = append([]string(nil), values...)
+	}
+	if t.authorization != nil {
+		value := t.authorization()
+		if value == "" || len(value) > 16<<10 || strings.ContainsAny(value, "\r\n\x00") {
+			stop()
+			cancel()
+			return nil, ErrConfig
+		}
+		req.Header.Set("Authorization", value)
 	}
 	var outgoing []byte
 	if req.Method == http.MethodPost && request.GetBody != nil {

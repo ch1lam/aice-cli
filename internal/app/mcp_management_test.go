@@ -305,7 +305,7 @@ func TestMCPManagementRemoveReportsPartialCommit(t *testing.T) {
 	if err := os.WriteFile(paths.GlobalSettings, []byte(`{"mcp":broken}`), 0600); err != nil {
 		t.Fatal(err)
 	}
-	next, result, err := executeMCPManagement(t.Context(), c, nil, interaction.MCPRequest{Action: "remove", Key: server.Key})
+	next, result, err := executeMCPManagement(t.Context(), c, nil, interaction.MCPRequest{Action: "remove", Key: server.Key}, nil)
 	if err == nil || !result.Committed || !strings.Contains(result.Message, "definition was not removed") || next.MCP.ConnectionDecision(server.Key) != "ask" {
 		t.Fatalf("partial removal hidden: %+v %v", result, err)
 	}
@@ -346,13 +346,13 @@ func TestMCPManagementReplaceInvalidatesApproval(t *testing.T) {
 func TestMCPManagementConnectRejectsOldApprovalOwner(t *testing.T) {
 	c := ownerTestConfig(t, 1)
 	c = ownerTestApprove(t, c, "user:service0", config.MCPConnectionAllow)
-	owner, err := newMCPOwner(c.MCP, ownerTestGuard(t), false, nil)
+	owner, err := newMCPOwner(c.MCP, ownerTestGuard(t), false, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer owner.Close()
 	denied := ownerTestApprove(t, c, "user:service0", config.MCPConnectionDeny)
-	_, _, err = executeMCPManagement(t.Context(), denied, owner, interaction.MCPRequest{Action: "connect", Key: "user:service0"})
+	_, _, err = executeMCPManagement(t.Context(), denied, owner, interaction.MCPRequest{Action: "connect", Key: "user:service0"}, nil)
 	if err == nil || !strings.Contains(err.Error(), "stale") {
 		t.Fatal("old owner connected under a superseded approval")
 	}
@@ -366,7 +366,7 @@ func TestMCPManagementCanceledConnectionPreservesExitStatus(t *testing.T) {
 		close(started)
 		<-ctx.Done()
 		return nil, ctx.Err()
-	})
+	}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -375,7 +375,7 @@ func TestMCPManagementCanceledConnectionPreservesExitStatus(t *testing.T) {
 	defer cancel()
 	done := make(chan error, 1)
 	go func() {
-		_, _, err := executeMCPManagement(ctx, c, owner, interaction.MCPRequest{Action: "connect", Key: "user:service0"})
+		_, _, err := executeMCPManagement(ctx, c, owner, interaction.MCPRequest{Action: "connect", Key: "user:service0"}, nil)
 		done <- err
 	}()
 	<-started

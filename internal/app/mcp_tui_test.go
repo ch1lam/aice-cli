@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"strings"
 	"testing"
@@ -17,6 +18,7 @@ import (
 // Real Cobra + Bubble Tea input/rendering, with only a loopback MCP endpoint.
 func TestMCPManagementTUI(t *testing.T) {
 	endpoint, initialized, calls, closed := mcpStartupServer(t)
+	oauth := newMCPLoginFixture(t)
 	paths := authTestPaths(t)
 	home, err := os.MkdirTemp("", "am-tui-")
 	if err != nil {
@@ -28,6 +30,14 @@ func TestMCPManagementTUI(t *testing.T) {
 		userHomeDir: func() (string, error) { return home, nil },
 		loadConfig:  func(options config.LoadOptions) (config.Config, error) { return config.LoadFiles(paths, options) },
 		newModel:    func(config.Config) (llm.Streamer, error) { return &recordingModel{}, nil },
+		openBrowser: func(ctx context.Context, address string) error {
+			req, _ := http.NewRequestWithContext(ctx, "GET", address, nil)
+			resp, err := http.DefaultClient.Do(req)
+			if err == nil {
+				resp.Body.Close()
+			}
+			return err
+		},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -58,7 +68,7 @@ func TestMCPManagementTUI(t *testing.T) {
 	}
 	var transcript strings.Builder
 	tail := func() string { text := transcript.String(); return text[max(0, len(text)-10000):] }
-	waitFor := func(want string) {
+	waitForAfter := func(anchor, want string) {
 		t.Helper()
 		var recent strings.Builder
 		tick := time.NewTicker(150 * time.Millisecond)
@@ -71,7 +81,17 @@ func TestMCPManagementTUI(t *testing.T) {
 				plain := ansi.Strip(frame)
 				transcript.WriteString(plain)
 				recent.WriteString(plain)
-				if strings.Contains(recent.String(), want) {
+				candidate := recent.String()
+				if anchor != "" {
+					// Resizes render the full screen. Require this command and its
+					// result in one frame, not an older success above the command.
+					index := strings.LastIndex(plain, anchor)
+					if index < 0 {
+						continue
+					}
+					candidate = plain[index+len(anchor):]
+				}
+				if strings.Contains(candidate, want) {
 					return
 				}
 			case err := <-done:
@@ -81,6 +101,7 @@ func TestMCPManagementTUI(t *testing.T) {
 			}
 		}
 	}
+	waitFor := func(want string) { t.Helper(); waitForAfter("", want) }
 	send("")
 	waitFor("AICE")
 	send("/mcp add docs\r")
@@ -109,6 +130,27 @@ func TestMCPManagementTUI(t *testing.T) {
 	waitFor("MCP initialization and tool discovery succeeded")
 	send("/mcp reconnect user:docs\r")
 	waitFor("MCP reconnect completed.")
+	send("/mcp permission user:docs\r")
+	waitFor("MCP user permission")
+	send("\x1b[B\r")
+	waitFor("Select one MCP operation")
+	send("\r")
+	waitFor("Confirm MCP user permission")
+	waitFor("Schema fingerprint:")
+	send("\x1b[B\r")
+	waitFor("MCP user permission saved")
+	send("/mcp add auth\r")
+	waitFor("MCP server definition (JSON)")
+	send(`{"transport":"http","url":"` + oauth.url + `/mcp","oauth":{}}` + "\r")
+	waitForAfter("/mcp add auth", "MCP configuration saved without connecting")
+	send("/mcp login user:auth\r")
+	waitFor("Confirm MCP login")
+	send("\x1b[B\r")
+	waitFor("MCP OAuth login saved")
+	send("/mcp logout user:auth\r")
+	waitFor("Confirm MCP logout")
+	send("\x1b[B\r")
+	waitFor("MCP OAuth login and connection decision removed")
 	send("/quit\r")
 	select {
 	case err := <-done:
@@ -118,11 +160,20 @@ func TestMCPManagementTUI(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal("did not quit")
 	}
-	if initialized.Load() != 2 || closed.Load() != 2 || calls.Load() != 0 {
+	if initialized.Load() != 2 || closed.Load() != 2 || calls.Load() != 0 || oauth.tokens.Load() != 1 {
 		t.Fatalf("connections=%d cleanup=%d tool calls=%d", initialized.Load(), closed.Load(), calls.Load())
 	}
 	loaded, err := config.LoadFiles(paths, config.LoadOptions{})
 	if err != nil || loaded.MCP.ConnectionDecision("user:docs") != config.MCPConnectionAllow {
 		t.Fatal("approval not persisted", err)
+	}
+	if rules := loaded.MCP.Permissions("user:docs"); len(rules) != 1 || rules[0].Decision != "allow" {
+		t.Fatal("TUI user rule not persisted")
+	}
+	if _, ok := loaded.MCP.Servers["user:auth"].OAuthCredentials(); ok {
+		t.Fatal("TUI logout retained credentials")
+	}
+	if strings.Contains(transcript.String(), "oauth-access-private") || strings.Contains(transcript.String(), "oauth-refresh-private") || strings.Contains(transcript.String(), "fixture-code") {
+		t.Fatal("TUI exposed OAuth credentials")
 	}
 }
