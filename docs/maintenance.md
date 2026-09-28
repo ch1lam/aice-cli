@@ -131,8 +131,10 @@ Linear OAuth read/refresh have been exercised on macOS. The Linear check forced
 local expiry; it does not prove natural expiry or every provider's behavior.
 
 Keyword search does not translate languages. A model that replaces a Chinese
-request with English keywords can miss Chinese-only descriptions; it must refine
-search or browse instead of choosing an unrelated operation. Synthetic routing
+request with English keywords can miss Chinese-only descriptions. The tool now
+guides it to retain original-language keywords and refine or browse instead of
+choosing an unrelated operation; this guidance has not been re-evaluated with a
+real model. Synthetic routing
 results do not establish broad task quality. A real DeepWiki run also returned
 an HTTP close error; local tests cover cancellation and socket cleanup, not
 remote session deletion.

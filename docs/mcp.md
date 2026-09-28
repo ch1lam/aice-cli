@@ -572,8 +572,10 @@ archive and cancel remain distinct. These are discovery hints, not authorization
 A query equal to a complete remote tool name (ignoring case and outer spaces)
 ranks that tool before prose matches; same-name tools still use stable ID order.
 This is lexical retrieval with those fixed groups, without translation or
-general semantic inference; misses can be recovered by browsing or exact
-selection. Changed catalogs may
+general semantic inference. Search guidance asks the model to retain original-language
+keywords when adding translations and refine or browse when candidates do not
+match the requested operation. This is guidance, not an execution guarantee.
+Misses can be recovered by browsing or exact selection. Changed catalogs may
 move page boundaries. The offline retrieval corpus under `internal/app/testdata`
 keeps language misses separate from exact-ID correctness; it does not prove
 actual-model task quality.
