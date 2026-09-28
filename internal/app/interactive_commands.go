@@ -665,136 +665,45 @@ func (s *interactiveSession) slashProvider(
 	ctx context.Context,
 	request interaction.CommandRequest,
 ) (string, error) {
-	value, err := slashCommandSettingValue(request)
+	value, err := settingSelectionValue(request.Name, request.Arguments)
 	if err != nil {
 		return "", err
 	}
-	if !supportedProvider(s.providers, value) {
-		return "", fmt.Errorf(
-			"app: unsupported provider %q; available: %s",
-			value,
-			strings.Join(knownProviders(s.providers), ", "),
-		)
-	}
-	settings := s.settingsSnapshot()
-	configuration := settings.configuration
-	configuration.Provider = value
-	if value == string(codex.ProviderID) {
-		configuration.CodexCredentials, err = config.LoadCodexCredentials(configuration.Paths)
-		if err != nil {
-			return "", err
-		}
-	}
-	if value == string(claudesubscription.ProviderID) {
-		configuration.ClaudeSubscriptionCredentials, err = config.LoadClaudeSubscriptionCredentials(configuration.Paths)
-		if err != nil {
-			return "", err
-		}
-	}
-	model := providerModel(s.providers, value, configuration.Model)
-	changes := map[config.Setting]string{config.SettingProvider: value}
-	if model.ID != configuration.Model {
-		changes[config.SettingModel] = model.ID
-	}
-	configuration.Model = model.ID
-	loop, err := s.rebuildAgentLoop(configuration)
+	overridden, err := s.selectProvider(ctx, value)
 	if err != nil {
 		return "", err
 	}
-	configuration, err = s.persistSettings(ctx, configuration, changes)
-	if err != nil {
-		return "", err
-	}
-	configuration.Model = model.ID
-	effective := clampedThinkingForModel(model, configuration.Thinking)
-	// The settings transition is one critical section so a concurrent side
-	// snapshot freezes a mutually consistent provider/model/thinking tuple.
-	s.stateMu.Lock()
-	s.configuration = configuration
-	s.modelErr = nil
-	s.loop = loop
-	s.model = applyContextWindow(model, configuration)
-	s.options.Thinking = effective
-	s.stateMu.Unlock()
-	return savedSettingMessage("provider", value) + savedOverrideNotice(configuration, changes), nil
+	return savedSettingMessage("provider", value, overridden), nil
 }
 
 func (s *interactiveSession) slashModel(
 	ctx context.Context,
 	request interaction.CommandRequest,
 ) (string, error) {
-	value, err := slashCommandSettingValue(request)
+	value, err := settingSelectionValue(request.Name, request.Arguments)
 	if err != nil {
 		return "", err
 	}
-	settings := s.settingsSnapshot()
-	providerID := activeProvider(settings.model, settings.configuration)
-	model, exists := modelForProvider(s.providers, providerID, value)
-	if !exists {
-		return "", fmt.Errorf(
-			"app: unsupported model %q; available: %s",
-			value,
-			strings.Join(modelIDsForProvider(s.providers, providerID), ", "),
-		)
-	}
-	effective := clampedThinkingForModel(
-		model,
-		settings.configuration.Thinking,
-	)
-	configuration := settings.configuration
-	configuration.Model = value
-	loop := settings.loop
-	if settings.modelErr != nil && providerConfigured(s.providers, configuration) {
-		loop, err = s.rebuildAgentLoop(configuration)
-		if err != nil {
-			return "", err
-		}
-	}
-	changes := map[config.Setting]string{config.SettingModel: value}
-	configuration, err = s.persistSettings(ctx, configuration, changes)
+	overridden, err := s.selectModel(ctx, value)
 	if err != nil {
 		return "", err
 	}
-	// The settings transition is one critical section so a concurrent side
-	// snapshot freezes a mutually consistent model/thinking pair.
-	s.stateMu.Lock()
-	s.configuration = configuration
-	s.modelErr = nil
-	s.loop = loop
-	s.model = applyContextWindow(model, settings.configuration)
-	s.options.Thinking = effective
-	s.stateMu.Unlock()
-	return savedSettingMessage("model", value) + savedOverrideNotice(configuration, changes), nil
+	return savedSettingMessage("model", value, overridden), nil
 }
 
 func (s *interactiveSession) slashThinking(
 	ctx context.Context,
 	request interaction.CommandRequest,
 ) (string, error) {
-	value, err := slashCommandSettingValue(request)
+	value, err := settingSelectionValue(request.Name, request.Arguments)
 	if err != nil {
 		return "", err
 	}
-	level := llm.ThinkingLevel(value)
-	settings := s.settingsSnapshot()
-	_, options, err := resolveModelSettings(s.providers, config.Config{
-		Provider: settings.configuration.Provider,
-		Model:    settings.model.ID,
-		Thinking: level,
-	})
+	overridden, err := s.selectThinking(ctx, value)
 	if err != nil {
 		return "", err
 	}
-	changes := map[config.Setting]string{config.SettingThinking: value}
-	configuration, err := s.persistSettings(ctx, settings.configuration, changes)
-	if err != nil {
-		return "", err
-	}
-	s.stateMu.Lock()
-	s.configuration = configuration
-	s.options.Thinking = options.Thinking
-	s.stateMu.Unlock()
-	return savedSettingMessage("thinking", value) + savedOverrideNotice(configuration, changes), nil
+	return savedSettingMessage("thinking", value, overridden), nil
 }
 
 func (s *interactiveSession) RuntimeState() interaction.RuntimeState {
@@ -871,13 +780,21 @@ func (s *interactiveSession) login(
 		if request.Secret != "" {
 			return "", fmt.Errorf("app: Claude subscriptions use OAuth; run aice auth login --provider anthropic-subscription")
 		}
-		return s.slashProvider(ctx, interaction.CommandRequest{Name: "provider", Arguments: provider})
+		overridden, err := s.selectProvider(ctx, provider)
+		if err != nil {
+			return "", err
+		}
+		return savedSettingMessage("provider", provider, overridden), nil
 	}
 	if provider == string(codex.ProviderID) {
 		if request.Secret != "" {
 			return "", fmt.Errorf("app: Codex uses OAuth; run aice auth login --provider openai-codex")
 		}
-		return s.slashProvider(ctx, interaction.CommandRequest{Name: "provider", Arguments: provider})
+		overridden, err := s.selectProvider(ctx, provider)
+		if err != nil {
+			return "", err
+		}
+		return savedSettingMessage("provider", provider, overridden), nil
 	}
 
 	customEndpoint := strings.TrimSpace(request.CustomEndpoint)
@@ -1144,22 +1061,22 @@ func (s *interactiveSession) persistSettings(
 	return next, nil
 }
 
+const savedDefaultsOverrideNotice = "\nA flag, environment variable, or project setting overrides the saved defaults on the next startup. This Session uses your selection."
+
 func savedOverrideNotice(configuration config.Config, changes map[config.Setting]string) string {
 	if !configuration.SavedValuesOverridden(changes) {
 		return ""
 	}
-	return "\nA flag, environment variable, or project setting overrides the saved defaults on the next startup. This Session uses your selection."
+	return savedDefaultsOverrideNotice
 }
 
-func slashCommandSettingValue(
-	request interaction.CommandRequest,
-) (string, error) {
-	fields := strings.Fields(request.Arguments)
+func settingSelectionValue(name, input string) (string, error) {
+	fields := strings.Fields(input)
 	if len(fields) != 1 {
 		return "", fmt.Errorf(
 			"app: usage: /%s <%s>",
-			request.Name,
-			request.Name,
+			name,
+			name,
 		)
 	}
 	return fields[0], nil
@@ -1168,12 +1085,17 @@ func slashCommandSettingValue(
 func savedSettingMessage(
 	name string,
 	value string,
+	overridden bool,
 ) string {
-	return fmt.Sprintf(
+	message := fmt.Sprintf(
 		"Set %s to %s for the current Session and saved it to global settings.",
 		name,
 		value,
 	)
+	if overridden {
+		message += savedDefaultsOverrideNotice
+	}
+	return message
 }
 
 func (s *interactiveSession) sessionInformation() (string, error) {

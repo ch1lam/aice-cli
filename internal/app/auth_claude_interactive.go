@@ -57,9 +57,9 @@ func (s *interactiveSession) loginClaudeAccount(ctx context.Context, request int
 	if err != nil {
 		return "", fmt.Errorf("app: save account login: %w", err)
 	}
-	message, err := s.slashProvider(ctx, interaction.CommandRequest{Name: "provider", Arguments: string(claudesubscription.ProviderID)})
+	overridden, err := s.selectProvider(ctx, string(claudesubscription.ProviderID))
 	if err != nil {
 		return "", fmt.Errorf("account credential saved, but preferences and current Session were not changed: %w", err)
 	}
-	return "Signed in to Claude Pro/Max. AICE is ready.\n" + message, nil
+	return "Signed in to Claude Pro/Max. AICE is ready.\n" + savedSettingMessage("provider", string(claudesubscription.ProviderID), overridden), nil
 }

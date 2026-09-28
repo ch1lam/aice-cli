@@ -127,6 +127,13 @@ endpoint and model in the same preference operation. API keys go to
 never edited by these commands, and merged environment/project values are never
 copied into the user file.
 
+Single provider, model and thinking selections from Settings and slash commands
+call the same application operations in `app/model_settings.go`. Account login
+also uses the provider-selection operation after saving its credential. Each
+entry point owns one settings reservation; the operations validate, prepare,
+persist and publish without parsing commands or acquiring another reservation.
+Batch edits and inheritance resets retain their whole-candidate patch path.
+
 After a successful save, the current instance publishes a new in-memory
 snapshot with runtime priority. Already running requests and other AICE
 instances keep their existing snapshots. AICE neither watches configuration

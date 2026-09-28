@@ -87,8 +87,18 @@ func (s *interactiveSession) applySettingsReserved(ctx context.Context, request 
 			if change.Value.Kind != interaction.SettingEnum || change.Value.Bool || change.Value.Int != 0 || change.Value.Duration != 0 || len(change.Value.Contexts) != 0 {
 				return result, fmt.Errorf("app: invalid model selection value")
 			}
-			handler := slashCommandHandlers[change.ID]
-			_, err := handler(s, ctx, interaction.CommandRequest{Name: change.ID, Arguments: change.Value.Text})
+			value, err := settingSelectionValue(change.ID, change.Value.Text)
+			if err != nil {
+				return result, err
+			}
+			switch change.ID {
+			case "provider":
+				_, err = s.selectProvider(ctx, value)
+			case "model":
+				_, err = s.selectModel(ctx, value)
+			case "thinking":
+				_, err = s.selectThinking(ctx, value)
+			}
 			result.Committed, result.Applied = err == nil, err == nil
 			if err == nil {
 				c := s.settingsSnapshot().configuration

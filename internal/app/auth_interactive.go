@@ -61,11 +61,11 @@ func (s *interactiveSession) loginAccount(ctx context.Context, request interacti
 	if err != nil {
 		return "", fmt.Errorf("app: save account login: %w", err)
 	}
-	message, err := s.slashProvider(ctx, interaction.CommandRequest{Name: "provider", Arguments: string(codex.ProviderID)})
+	overridden, err := s.selectProvider(ctx, string(codex.ProviderID))
 	if err != nil {
 		return "", fmt.Errorf("account credential saved, but preferences and current Session were not changed: %w", err)
 	}
-	return "Signed in to OpenAI Codex. AICE is ready.\n" + message, nil
+	return "Signed in to OpenAI Codex. AICE is ready.\n" + savedSettingMessage("provider", string(codex.ProviderID), overridden), nil
 }
 
 func openBrowser(ctx context.Context, address string) error {

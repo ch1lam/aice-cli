@@ -165,7 +165,10 @@ Settings use the same application coordinator. `config/settings_schema.go` and
 `sources.go` own typed preferences and frozen precedence layers; the locked
 writer changes only requested user fields. `app/settings_lifecycle.go` reserves
 configuration, run preparation and Session operations, while existing provider,
-auth, browser and Web modules retain their business behavior. Interaction
+auth, browser and Web modules retain their business behavior. Model selection
+operations own validation, persistence and runtime publication under the caller's
+reservation. Settings, slash adapters and account login call those operations
+directly; slash adapters only parse input and format command output. Interaction
 snapshots carry public descriptions to the TUI's independent modal editor.
 Preference reads do not probe the desktop; the app exposes a separate bounded
 status read, and the TUI owns its cancellation and updates only the status row
