@@ -77,9 +77,13 @@ func (e *runExecution) executeTools(
 			return err
 		}
 
+		e.proposal = nil
 		message, toolErr := e.executeTool(ctx, call)
 		if err := e.acceptToolResult(ctx, message, true); err != nil {
 			return err
+		}
+		if !message.IsError {
+			e.pendingSelection = append(e.pendingSelection, e.proposal...)
 		}
 		if err := e.emit(ctx, AgentEvent{
 			Type:       EventTypeToolExecutionEnd,
@@ -101,6 +105,9 @@ func (e *runExecution) executeTool(
 	ctx context.Context,
 	call llm.ToolCall,
 ) (llm.ToolResultMessage, error) {
+	if err := e.checkToolVersion(ctx, call.Name); err != nil {
+		return newErrorToolResult(call, err)
+	}
 	var revalidate func(context.Context) error
 	// Built-in guard: deny or ask before the tool ever starts. This preserves
 	// the "pair every tool call with one result" invariant while preventing
@@ -152,7 +159,7 @@ func (e *runExecution) executeTool(
 		return newErrorToolResult(call, err)
 	}
 
-	tool, exists := e.loop.tools[call.Name]
+	tool, exists := e.tools[call.Name]
 	if !exists {
 		err := fmt.Errorf("tool %q is not available", call.Name)
 		return newErrorToolResult(call, err)
@@ -164,20 +171,67 @@ func (e *runExecution) executeTool(
 		}
 	}
 
-	result, err := tool.Execute(ctx, call)
+	if err := e.checkToolVersion(ctx, call.Name); err != nil {
+		return newErrorToolResult(call, err)
+	}
+	if err := ctx.Err(); err != nil {
+		return newErrorToolResult(call, err)
+	}
+	var result llm.ToolResult
+	var proposal []ToolReference
+	var err error
+	if selector, ok := tool.(ToolSelector); ok {
+		result, proposal, err = selector.SelectTools(ctx, call)
+	} else {
+		result, err = tool.Execute(ctx, call)
+	}
+	if err == nil && !result.IsError {
+		if selectionErr := e.validateProposal(ctx, proposal); selectionErr != nil {
+			return newErrorToolResult(call, selectionErr)
+		}
+	}
 	if err != nil {
 		wrapped := fmt.Errorf("tool %q failed: %w", call.Name, err)
-		return newErrorToolResult(call, wrapped)
+		if result.Details == nil {
+			return newErrorToolResult(call, wrapped)
+		}
+		// An explicit outcome may include useful partial content even when the
+		// transport or operation failed. Never replace it with error text alone.
+		result.CallID, result.Name, result.IsError = call.ID, call.Name, true
+		result.Content = append(result.Content, llm.NewTextContent(wrapped.Error()).Part())
+		message, messageErr := llm.NewToolResultMessage(result)
+		if messageErr != nil {
+			return unknownInvalidToolResult(call, messageErr)
+		}
+		return message, wrapped
 	}
 
 	result.CallID = call.ID
 	result.Name = call.Name
 	message, err := llm.NewToolResultMessage(result)
 	if err != nil {
+		if result.Details != nil {
+			return unknownInvalidToolResult(call, err)
+		}
 		wrapped := fmt.Errorf("tool %q returned an invalid result: %w", call.Name, err)
 		return newErrorToolResult(call, wrapped)
 	}
+	if !message.IsError {
+		e.proposal = proposal
+	}
 	return message, nil
+}
+
+func unknownInvalidToolResult(call llm.ToolCall, err error) (llm.ToolResultMessage, error) {
+	message, constructErr := llm.NewToolResultMessage(llm.ToolResult{
+		CallID: call.ID, Name: call.Name, IsError: true,
+		Content: []llm.ContentPart{llm.NewTextContent("Tool result could not be retained: " + err.Error()).Part()},
+		Details: &llm.ToolResultDetails{
+			State: llm.ExecutionUnknown,
+			Loss:  "Invalid result payload; execution may have produced effects. Inspect current state before retrying.",
+		},
+	})
+	return message, errors.Join(err, constructErr)
 }
 
 func (e *runExecution) syntheticToolResults(

@@ -30,6 +30,7 @@ func (s *Store) RecoverInterrupted(ctx context.Context) error {
 		message, err := llm.NewToolResultMessage(llm.ToolResult{
 			CallID: call.ID, Name: call.Name, IsError: true,
 			Content: []llm.ContentPart{llm.NewTextContent(unknownOutcome).Part()},
+			Details: &llm.ToolResultDetails{State: llm.ExecutionUnknown},
 		})
 		if err != nil {
 			return err

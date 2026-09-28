@@ -12,6 +12,11 @@ import (
 // prepareRequest runs only between paired model rounds. A retry reuses the
 // already prepared history and must not rebuild it from durable failed attempts.
 func (e *runExecution) prepareRequest(ctx context.Context, allowCompaction bool) (llm.Request, error) {
+	if allowCompaction {
+		if err := e.refreshTools(ctx); err != nil {
+			return llm.Request{}, err
+		}
+	}
 	request, err := e.checkedRequest(e.history)
 	if err == nil || !errors.Is(err, ErrContextLimit) || e.input.Compactor == nil || !allowCompaction {
 		return request, err
@@ -43,9 +48,10 @@ func (e *runExecution) checkedRequest(history []llm.AgentMessage) (llm.Request, 
 func (e *runExecution) requestForHistory(
 	history []llm.AgentMessage,
 ) (llm.Request, error) {
-	definitions := make([]llm.ToolDefinition, len(e.loop.definitions))
-	for index, definition := range e.loop.definitions {
+	definitions := make([]llm.ToolDefinition, len(e.definitions))
+	for index, definition := range e.definitions {
 		definition.InputSchema = slices.Clone(definition.InputSchema)
+		definition.PromptGuidelines = slices.Clone(definition.PromptGuidelines)
 		definitions[index] = definition
 	}
 	messages, err := llm.AgentMessagesToMessages(history)
@@ -53,11 +59,15 @@ func (e *runExecution) requestForHistory(
 		return llm.Request{}, fmt.Errorf("agent: project history: %w", err)
 	}
 	request := llm.Request{
-		Model:        e.input.Model,
-		SystemPrompt: e.input.SystemPrompt,
-		Messages:     messages,
-		Tools:        definitions,
-		Options:      e.input.Options,
+		Model:             e.input.Model,
+		SystemPrompt:      e.input.SystemPrompt,
+		Messages:          messages,
+		Tools:             definitions,
+		Options:           e.input.Options,
+		ReestimateContext: e.input.Catalog != nil,
+	}
+	if e.toolNotice != "" {
+		request.SystemPrompt += "\n\n" + e.toolNotice
 	}
 	if e.degradeReasoning {
 		request.Options.FilterReasoningHistory = true

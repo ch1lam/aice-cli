@@ -269,3 +269,15 @@ func TestEstimateContextTokensIgnoresUsageBeforeNewerPrefix(t *testing.T) {
 		t.Fatalf("EstimateContextTokens() reused stale usage: %#v", got)
 	}
 }
+
+func TestChangedToolSetReestimatesContext(t *testing.T) {
+	t.Parallel()
+	model := llm.Model{Provider: "provider", ID: "model"}
+	r := llm.Request{Model: model, Messages: []llm.Message{usageMessage(model.Provider, model.ID, 100, 1)}, Tools: []llm.ToolDefinition{{Name: "loaded", Description: "new schema context", InputSchema: json.RawMessage(`{"type":"object"}`)}}}
+	old := llm.EstimateContextTokens(r)
+	r.ReestimateContext = true
+	fresh := llm.EstimateContextTokens(r)
+	if old.UsageTokens != 1 || fresh.UsageTokens != 0 || fresh.Tokens <= old.Tokens || fresh.LastUsageIndex != -1 {
+		t.Fatalf("schema budget used stale counts: old=%+v fresh=%+v", old, fresh)
+	}
+}

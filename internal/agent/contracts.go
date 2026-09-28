@@ -103,6 +103,37 @@ type Tool interface {
 	Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult, error)
 }
 
+// ToolReference identifies a version in an application-bound catalog. It is
+// transient run state, never an authorization or a resumable remote handle.
+type ToolReference struct {
+	ID       string
+	Revision string
+}
+
+// CatalogTool is a frozen executable/definition version returned by the catalog.
+// Its Tool must retain this version even if the shared catalog later changes.
+type CatalogTool struct {
+	Reference ToolReference
+	Tool      Tool
+}
+
+// ToolCatalog is the application's catalog capability consumed by one Run.
+// Resolve returns current versions of requested IDs only, omitting unavailable
+// entries. It is called at complete round boundaries. Check must reject revoked
+// or invalidated versions without granting permissions or executing tools.
+type ToolCatalog interface {
+	Resolve(context.Context, []string) ([]CatalogTool, error)
+	Check(context.Context, ToolReference) error
+}
+
+// ToolSelector is an optional capability of a trusted discovery tool. The Loop
+// calls SelectTools instead of Execute after Guard approval, then accepts the
+// proposal only after successfully recording a non-error result. Remote prose
+// and persisted messages cannot implement this capability or select tools.
+type ToolSelector interface {
+	SelectTools(context.Context, llm.ToolCall) (llm.ToolResult, []ToolReference, error)
+}
+
 // InputMessage is one caller-owned user message waiting to be injected into
 // an active run. ID is echoed on the corresponding message events.
 type InputMessage struct {
@@ -139,6 +170,10 @@ type MessageRecorder func(context.Context, llm.AgentMessage) error
 
 // RunInput contains the caller-owned state needed for one agent run.
 type RunInput struct {
+	// Catalog is optional; selection belongs to this Run, not the shared Loop.
+	// PinnedTools contains application-selected stable IDs that cannot be evicted.
+	Catalog         ToolCatalog
+	PinnedTools     []string
 	Model           llm.Model
 	SystemPrompt    string
 	History         []llm.AgentMessage

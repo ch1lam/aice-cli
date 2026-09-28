@@ -83,6 +83,7 @@ func NewLoop(model Model, tools []Tool, options ...LoopOption) (*Loop, error) {
 		}
 
 		definition.InputSchema = slices.Clone(definition.InputSchema)
+		definition.PromptGuidelines = slices.Clone(definition.PromptGuidelines)
 		toolIndex[definition.Name] = tool
 		definitions = append(definitions, definition)
 	}
@@ -124,13 +125,22 @@ func (l *Loop) Run(ctx context.Context, input RunInput, sink AgentEventSink) (Re
 		ctx, cancel = context.WithTimeoutCause(ctx, l.limits.Timeout, ErrTimeBudget)
 		defer cancel()
 	}
+	input.PinnedTools = slices.Clone(input.PinnedTools)
 	initialResult := Result{Prompt: input.Prompt}
+	if input.Catalog != nil && l.guard == nil {
+		return Result{}, fmt.Errorf("agent: a tool catalog requires a guard")
+	}
+	if len(input.PinnedTools) > 0 && input.Catalog == nil {
+		return Result{}, fmt.Errorf("agent: pinned tools require a catalog")
+	}
 	execution := runExecution{
-		loop:    l,
-		input:   input,
-		sink:    sink,
-		history: slices.Clone(input.History),
-		result:  initialResult,
+		loop:        l,
+		input:       input,
+		sink:        sink,
+		history:     slices.Clone(input.History),
+		result:      initialResult,
+		tools:       l.tools,
+		definitions: l.definitions,
 	}
 	if err := execution.recordMessage(ctx, input.Prompt); err != nil {
 		return execution.finalize(ctx, err)
@@ -157,6 +167,14 @@ func validateModel(service Model, model llm.Model) error {
 }
 
 type runExecution struct {
+	// These maps and slices are replaced, never changed through Loop aliases.
+	tools            map[string]Tool
+	definitions      []llm.ToolDefinition
+	catalogTools     map[string]CatalogTool
+	selected         []string
+	pendingSelection []ToolReference
+	proposal         []ToolReference
+	toolNotice       string
 	loop             *Loop
 	input            RunInput
 	sink             AgentEventSink

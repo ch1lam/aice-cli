@@ -298,10 +298,10 @@ func messageParams(messages []llm.Message, target llm.Model) ([]openaisdk.ChatCo
 		}
 		result = append(result, converted)
 		if isTool {
-			for _, part := range toolResult.Content {
-				if part.Type == llm.ContentTypeImage {
-					images = append(images, llm.NewTextContent(fmt.Sprintf("Image from tool %s, call %s:", toolResult.ToolName, toolResult.ToolCallID)).Part(), part)
-				}
+			content := llm.ToolResultModelContent(toolResult.Content, toolResult.Details, toolResult.IsError)
+			if hasToolImage(content) {
+				images = append(images, llm.NewTextContent(fmt.Sprintf("Ordered result from tool %s, call %s:", toolResult.ToolName, toolResult.ToolCallID)).Part())
+				images = append(images, content...)
 			}
 		}
 	}
@@ -496,13 +496,22 @@ func isCompletionsReasoningField(name string) bool {
 func toolResultMessageParam(
 	message llm.ToolResultMessage,
 ) (openaisdk.ChatCompletionMessageParamUnion, error) {
-	text := joinText(message.Content)
-	for _, part := range message.Content {
+	content := llm.ToolResultModelContent(message.Content, message.Details, message.IsError)
+	if hasToolImage(content) {
+		// Keep the tool group contiguous; the following user message carries
+		// the whole multimodal result in source order, not images detached from text.
+		return openaisdk.ToolMessage("Ordered text/image result attached after tool results.", message.ToolCallID), nil
+	}
+	return openaisdk.ToolMessage(joinText(content), message.ToolCallID), nil
+}
+
+func hasToolImage(content []llm.ContentPart) bool {
+	for _, part := range content {
 		if part.Type == llm.ContentTypeImage {
-			text += "\n[Image attached after tool results.]"
+			return true
 		}
 	}
-	return openaisdk.ToolMessage(text, message.ToolCallID), nil
+	return false
 }
 
 func assistantText(content []llm.ContentPart) string {

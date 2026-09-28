@@ -43,7 +43,7 @@ func ContextTokens(usage Usage) int64 {
 // request context, including the system prompt and tool definitions.
 func EstimateContextTokens(request Request) ContextUsageEstimate {
 	usage, usageIndex, ok := lastApplicableUsage(request.Messages, request.Model)
-	if ok {
+	if ok && !request.ReestimateContext {
 		usageTokens := ContextTokens(usage)
 		var trailingTokens int64
 		for index := usageIndex + 1; index < len(request.Messages); index++ {
@@ -101,7 +101,7 @@ func EstimateMessageTokens(message Message) int64 {
 	case AssistantMessage:
 		return estimateContentTokens(value.Content)
 	case ToolResultMessage:
-		return estimateContentTokens(value.Content)
+		return estimateContentTokens(ToolResultModelContent(value.Content, value.Details, value.IsError))
 	default:
 		return 0
 	}
@@ -190,7 +190,7 @@ func estimateContentTokens(content []ContentPart) int64 {
 		case ContentTypeToolResult:
 			if part.ToolResult != nil {
 				tokens += EstimateTextTokens(part.ToolResult.Name)
-				tokens += estimateContentTokens(part.ToolResult.Content)
+				tokens += estimateContentTokens(ToolResultModelContent(part.ToolResult.Content, part.ToolResult.Details, part.ToolResult.IsError))
 			}
 		}
 	}

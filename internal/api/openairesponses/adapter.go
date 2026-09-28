@@ -233,7 +233,7 @@ func inputParams(
 			}
 			result = append(result, items...)
 		case llm.ToolResultMessage:
-			item, err := toolResultInputParam(value.ToolCallID, value.Content)
+			item, err := toolResultInputParam(value.ToolCallID, llm.ToolResultModelContent(value.Content, value.Details, value.IsError))
 			if err != nil {
 				return nil, fmt.Errorf(
 					"openai responses: message %d: %w",

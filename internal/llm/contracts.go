@@ -362,13 +362,14 @@ type ToolCall struct {
 // optional Session metadata produced by web tools; provider adapters never
 // encode it and older records without it remain valid.
 type ToolResult struct {
-	Diff       ToolDiff         `json:"diff,omitzero"`
-	Truncation ToolTruncation   `json:"truncation,omitzero"`
-	Evidence   *evidence.Bundle `json:"evidence,omitempty"`
-	CallID     string           `json:"call_id"`
-	Name       string           `json:"name,omitempty"`
-	Content    []ContentPart    `json:"content"`
-	IsError    bool             `json:"is_error,omitempty"`
+	Details    *ToolResultDetails `json:"details,omitempty"`
+	Diff       ToolDiff           `json:"diff,omitzero"`
+	Truncation ToolTruncation     `json:"truncation,omitzero"`
+	Evidence   *evidence.Bundle   `json:"evidence,omitempty"`
+	CallID     string             `json:"call_id"`
+	Name       string             `json:"name,omitempty"`
+	Content    []ContentPart      `json:"content"`
+	IsError    bool               `json:"is_error,omitempty"`
 }
 
 // ToolDefinition describes a tool exposed to a model. PromptSnippet and
@@ -470,15 +471,16 @@ type AssistantMessage struct {
 
 // ToolResultMessage is the history message produced by one tool execution.
 type ToolResultMessage struct {
-	Diff       ToolDiff         `json:"diff,omitzero"`
-	Truncation ToolTruncation   `json:"truncation,omitzero"`
-	Evidence   *evidence.Bundle `json:"evidence,omitempty"`
-	Role       Role             `json:"role"`
-	ToolCallID string           `json:"tool_call_id"`
-	ToolName   string           `json:"tool_name,omitempty"`
-	Content    []ContentPart    `json:"content"`
-	IsError    bool             `json:"is_error,omitempty"`
-	Timestamp  int64            `json:"timestamp"`
+	Details    *ToolResultDetails `json:"details,omitempty"`
+	Diff       ToolDiff           `json:"diff,omitzero"`
+	Truncation ToolTruncation     `json:"truncation,omitzero"`
+	Evidence   *evidence.Bundle   `json:"evidence,omitempty"`
+	Role       Role               `json:"role"`
+	ToolCallID string             `json:"tool_call_id"`
+	ToolName   string             `json:"tool_name,omitempty"`
+	Content    []ContentPart      `json:"content"`
+	IsError    bool               `json:"is_error,omitempty"`
+	Timestamp  int64              `json:"timestamp"`
 }
 
 // CompactionSummaryMessage is a derived checkpoint stored in transcript
@@ -584,9 +586,10 @@ func NewToolResultMessage(result ToolResult) (ToolResultMessage, error) {
 		Diff:       result.Diff,
 		Truncation: result.Truncation,
 		Evidence:   result.Evidence.Clone(),
+		Details:    result.Details.Clone(),
 		ToolCallID: result.CallID,
 		ToolName:   result.Name,
-		Content:    slices.Clone(result.Content),
+		Content:    cloneContentParts(result.Content),
 		IsError:    result.IsError,
 		Timestamp:  time.Now().UnixMilli(),
 	}
@@ -612,6 +615,7 @@ func (m ToolResultMessage) Validate() error {
 		Content:  m.Content,
 		IsError:  m.IsError,
 		Evidence: m.Evidence,
+		Details:  m.Details,
 	}.Validate()
 }
 
@@ -759,6 +763,9 @@ func (r ToolResult) Validate() error {
 			return fmt.Errorf("tool result content %d has unsupported type %q", index, part.Type)
 		}
 	}
+	if err := r.Details.Validate(); err != nil {
+		return err
+	}
 	if err := r.Evidence.Validate(); err != nil {
 		return fmt.Errorf("tool result evidence: %w", err)
 	}
@@ -798,11 +805,14 @@ type StreamOptions struct {
 // SystemPrompt is separate from message history so adapters can map it to each
 // provider's preferred system or developer instruction representation.
 type Request struct {
-	Model        Model            `json:"model"`
-	SystemPrompt string           `json:"system_prompt,omitempty"`
-	Messages     []Message        `json:"messages"`
-	Tools        []ToolDefinition `json:"tools,omitempty"`
-	Options      StreamOptions    `json:"options"`
+	// ReestimateContext bypasses old usage when the tool set can change between
+	// requests. Prior provider counts cannot account for newly loaded schemas.
+	ReestimateContext bool             `json:"-"`
+	Model             Model            `json:"model"`
+	SystemPrompt      string           `json:"system_prompt,omitempty"`
+	Messages          []Message        `json:"messages"`
+	Tools             []ToolDefinition `json:"tools,omitempty"`
+	Options           StreamOptions    `json:"options"`
 }
 
 func unmarshalAgentMessage(data []byte) (AgentMessage, error) {

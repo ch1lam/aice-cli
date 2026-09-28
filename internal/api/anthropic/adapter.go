@@ -262,6 +262,7 @@ func messageParams(
 				CallID:  value.ToolCallID,
 				Name:    value.ToolName,
 				Content: value.Content,
+				Details: value.Details,
 				IsError: value.IsError,
 			})
 			if err != nil {
@@ -380,7 +381,7 @@ func toolResultBlockParam(result *llm.ToolResult) (anthropicsdk.ContentBlockPara
 	}
 
 	content := make([]anthropicsdk.ToolResultBlockParamContentUnion, 0, len(result.Content))
-	for index, part := range streamcore.DescribeImages(result.Content) {
+	for index, part := range streamcore.DescribeImages(llm.ToolResultModelContent(result.Content, result.Details, result.IsError)) {
 		switch part.Type {
 		case llm.ContentTypeText:
 			content = append(content, anthropicsdk.ToolResultBlockParamContentUnion{OfText: &anthropicsdk.TextBlockParam{Text: part.Text}})

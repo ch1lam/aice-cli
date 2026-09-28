@@ -73,7 +73,8 @@ func toolRoundFingerprint(round ModelRound) ([sha256.Size]byte, error) {
 			IsError    bool
 			Diff       llm.ToolDiff
 			Truncation llm.ToolTruncation
-		}{call.Name, string(arguments), result.Content, result.IsError, result.Diff, result.Truncation}); err != nil {
+			Details    *llm.ToolResultDetails
+		}{call.Name, string(arguments), result.Content, result.IsError, result.Diff, result.Truncation, result.Details}); err != nil {
 			return [sha256.Size]byte{}, fmt.Errorf("agent: compare tool round: %w", err)
 		}
 	}
