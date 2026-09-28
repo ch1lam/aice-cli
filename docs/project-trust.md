@@ -21,7 +21,8 @@ The nested MCP collection is an exception to scalar configuration precedence:
 trusted project services retain separate source identities and never merge
 connection fields or credentials into same-name user services. Project MCP
 restrictions may only tighten access. Loading these definitions does not grant
-connection or execution authority; application wiring is still pending. See
+connection or execution authority. The application checks connection admission
+and the Guard checks each operation independently. See
 [MCP configuration identity](mcp.md#configuration-identity-and-storage).
 
 The three prompt files must be regular files, valid UTF-8, no larger than
