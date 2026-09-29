@@ -52,6 +52,7 @@ func LoadCodexCredentials(paths Paths) (CodexCredentials, error) {
 // UpdateCodexCredentials serializes refresh, login, and logout across AICE
 // processes. The callback receives the latest disk value under the lock.
 // A crashed lock is never stolen while its owner might still be refreshing.
+// A cleanup failure after a write or deletion is reported as a CommittedError.
 func UpdateCodexCredentials(ctx context.Context, paths Paths,
 	update func(CodexCredentials) (CodexCredentials, error),
 ) (credential CodexCredentials, returnErr error) {
@@ -68,7 +69,12 @@ func UpdateCodexCredentials(ctx context.Context, paths Paths,
 	if err := acquireConfigLock(ctx, lock, os.Mkdir, runtime.GOOS == "windows"); err != nil {
 		return credential, err
 	}
-	defer func() { returnErr = errors.Join(returnErr, os.Remove(lock)) }()
+	committed := false
+	defer func() {
+		returnErr = legacyCommitError(CommitResult{
+			Committed: committed, CleanupWarning: os.Remove(lock),
+		}, returnErr)
+	}()
 	previous, err := LoadCodexCredentials(paths)
 	if err != nil {
 		return credential, err
@@ -82,6 +88,7 @@ func UpdateCodexCredentials(ctx context.Context, paths Paths,
 	}
 	if credential == (CodexCredentials{}) {
 		err := os.Remove(path)
+		committed = err == nil
 		if errors.Is(err, os.ErrNotExist) {
 			err = nil
 		}
@@ -108,6 +115,7 @@ func UpdateCodexCredentials(ctx context.Context, paths Paths,
 	if err := renameConfigFile(ctx, file.Name(), path, os.Rename, runtime.GOOS == "windows"); err != nil {
 		return CodexCredentials{}, err
 	}
+	committed = true
 	return credential, nil
 }
 

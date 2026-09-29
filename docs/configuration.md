@@ -157,6 +157,11 @@ leaves the current selection unchanged. If login already saved a credential
 before that failure, the error explicitly reports the credential-only success; preference
 and credential files are not one transaction.
 
+OAuth credential writers distinguish a completed replacement or deletion from
+a failed update: a later lock-cleanup failure carries `config.CommittedError`.
+An unchanged credential, an already absent file, or a failed update does not
+carry this marker. The underlying cleanup and update errors remain inspectable.
+
 ### Settings window
 
 Open `/settings` to edit settings. The main header has no Settings or Usage buttons.
