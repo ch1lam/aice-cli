@@ -290,7 +290,7 @@ func pendingDeliveryPreview(text string) string {
 
 func (m model) slashCommandMenuVisible() bool {
 	return !m.side.isVisible &&
-		!m.running &&
+		m.composerInputEnabled() &&
 		m.secretInput == nil &&
 		m.commandMenu == nil &&
 		!m.commandDismissed &&
@@ -298,7 +298,26 @@ func (m model) slashCommandMenuVisible() bool {
 }
 
 func (m model) matchingSlashCommands() []SlashCommand {
-	return matchingSlashCommands(m.commands, m.input.Value())
+	// Existing run-time navigation (e.g. /desktop) must keep Enter dispatch;
+	// a fuzzy skill-description match must never capture those exact commands.
+	if m.running && (m.isInfoCommandInput() || m.isBTWCommandInput()) {
+		return nil
+	}
+	_, _, query, ok := m.slashAtCursor()
+	if !ok {
+		return nil
+	}
+	matches := matchingSlashCommands(m.commands, query)
+	if m.running {
+		skills := make([]SlashCommand, 0, len(matches))
+		for _, command := range matches {
+			if command.SkillName != "" {
+				skills = append(skills, command)
+			}
+		}
+		return skills
+	}
+	return matches
 }
 
 func (m *model) moveSlashCommandSelection(delta int) {
@@ -320,12 +339,19 @@ func (m model) selectedSlashCommand() (SlashCommand, bool) {
 }
 
 func (m model) hasExactSlashCommand() bool {
+	start, end, _, ok := m.slashAtCursor()
+	if !ok || m.slashHasSurroundingDraft(start, end) {
+		return false
+	}
+	if selected, ok := m.selectedSlashCommand(); ok && selected.SkillName != "" {
+		return false
+	}
 	request, slashCommand := parseSlashCommand(m.input.Value())
 	if !slashCommand || request.Arguments != "" {
 		return false
 	}
-	_, exists := findSlashCommand(m.commands, request.Name)
-	return exists
+	command, exists := findSlashCommand(m.commands, request.Name)
+	return exists && command.SkillName == ""
 }
 
 func (m *model) completeSelectedSlashCommand() {
@@ -334,7 +360,13 @@ func (m *model) completeSelectedSlashCommand() {
 		return
 	}
 	value := "/" + command.Name
-	if command.ArgumentHint != "" || command.Menu != nil {
+	if command.SkillName != "" {
+		start, end, _, ok := m.slashAtCursor()
+		if ok {
+			m.attachSkill(start, end, command.SkillName)
+		}
+		return
+	} else if command.ArgumentHint != "" || command.Menu != nil {
 		value += " "
 	}
 	m.input.SetValue(value)
@@ -368,12 +400,13 @@ func (m model) slashCommandMenuView(width int) string {
 		return ""
 	}
 	matches := m.matchingSlashCommands()
+	_, _, query, _ := m.slashAtCursor()
 	rows := make([]slashMenuRow, len(matches))
 	for index, command := range matches {
 		rows[index] = slashMenuRow{
 			label:       slashCommandUsage(command),
-			description: command.Description,
-			query:       strings.TrimPrefix(strings.TrimSpace(m.input.Value()), "/"),
+			description: sanitizeToolDetail(command.Description, false),
+			query:       strings.TrimPrefix(query, "/"),
 		}
 	}
 	return renderSlashMenuRows(

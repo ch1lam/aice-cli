@@ -16,7 +16,8 @@ import (
 // Replacing a draft clears its spans; ordinary edits rebase surviving spans.
 type composerInput struct {
 	textarea.Model
-	files []composerFile
+	files  []composerFile
+	skills []composerSkill
 }
 
 type composerFile struct {
@@ -28,11 +29,13 @@ type composerFile struct {
 func (m *composerInput) SetValue(value string) {
 	m.Model.SetValue(value)
 	m.files = nil
+	m.skills = nil
 }
 
 func (m *composerInput) Reset() {
 	m.Model.Reset()
 	m.files = nil
+	m.skills = nil
 }
 
 func (m composerInput) cursorOffset() int {
@@ -58,7 +61,7 @@ func (m *composerInput) InsertString(value string) {
 }
 
 func (m *composerInput) rebaseFiles(before string, cursor int) {
-	if len(m.files) == 0 || before == m.Value() {
+	if (len(m.files) == 0 && len(m.skills) == 0) || before == m.Value() {
 		return
 	}
 	previous, next := []rune(before), []rune(m.Value())
@@ -72,6 +75,7 @@ func (m *composerInput) rebaseFiles(before string, cursor int) {
 		oldEnd--
 		newEnd--
 	}
+	m.rebaseSkills(start, oldEnd, newEnd)
 	kept := make([]composerFile, 0, len(m.files))
 	for _, file := range m.files {
 		switch {
@@ -149,6 +153,11 @@ func (m composerInput) editableReferenceText() string {
 			runes[i] = ' '
 		}
 	}
+	for _, skill := range m.skills {
+		for i := skill.start; i < skill.end; i++ {
+			runes[i] = ' '
+		}
+	}
 	return string(runes)
 }
 
@@ -180,6 +189,11 @@ func (m composerInput) fileSpansInRow(row int) [][2]int {
 	for _, file := range m.files {
 		if !file.editing && file.start >= start && file.end <= start+utf8.RuneCountInString(rows[row]) {
 			spans = append(spans, [2]int{file.start - start, file.end - start})
+		}
+	}
+	for _, skill := range m.skills {
+		if skill.start >= start && skill.end <= start+utf8.RuneCountInString(rows[row]) {
+			spans = append(spans, [2]int{skill.start - start, skill.end - start})
 		}
 	}
 	return spans

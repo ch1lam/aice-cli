@@ -47,8 +47,8 @@ func (m model) submitDelivery(mode deliveryMode) (model, tea.Cmd, bool) {
 		mode: mode,
 	}
 	input := interaction.Delivery{ID: delivery.id, Text: text, Kind: mode,
-		Images: m.composerImages(), Files: m.composerFiles()}
-	draft := composerDraft{text: m.input.Value(), pastes: m.pastes, files: m.input.files}
+		Images: m.composerImages(), Files: m.composerFiles(), Skills: m.composerSkills()}
+	draft := m.captureComposerDraft()
 	prepare := m.prepareDelivery
 	if prepare == nil {
 		prepare = deliveryCommand(context.Background())
@@ -154,6 +154,7 @@ func (m model) applyDeliveryResult(result deliveryResult) (tea.Model, tea.Cmd) {
 		m.removePendingDelivery(result.id)
 		m.input.SetValue(result.draft.text)
 		m.input.files = result.draft.files
+		m.input.skills = result.draft.skills
 		m.pastes = result.draft.pastes
 		m.inputNotice = result.err.Error()
 		m.status = "Pending input was not accepted"

@@ -441,6 +441,7 @@ func (m *model) finishRun(err error) tea.Cmd {
 	}
 	m.updateActiveProcessDuration(time.Now())
 	m.running = false
+	m.restoreCommandDraftIfIdle()
 	m.desktopActivity = nil
 	for i := range m.entries {
 		entry := &m.entries[i]
@@ -515,6 +516,7 @@ func startRun(
 			prompt:       input.Prompt,
 			continuation: input.Continuation,
 			files:        input.Files,
+			skills:       input.Skills,
 			images:       input.Images,
 			updates:      updates,
 		}:

@@ -22,7 +22,7 @@ import (
 )
 
 func (s *interactiveSession) SlashCommands() []interaction.Command {
-	return []interaction.Command{
+	commands := []interaction.Command{
 		{Name: "usage", Description: "Open recorded Session usage"},
 		{Name: "context", Description: "Open current context information"},
 		{Name: "history", Description: "Browse conversation history in this project", ArgumentHint: "[id]"},
@@ -89,6 +89,7 @@ func (s *interactiveSession) SlashCommands() []interaction.Command {
 			Menu:        s.thinkingMenu(),
 		},
 	}
+	return append(commands, skillCommands(s.skills)...)
 }
 
 func (s *interactiveSession) loginProviderMenu() *interaction.CommandMenu {

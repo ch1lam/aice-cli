@@ -13,7 +13,7 @@ import (
 // levels retain their explicit selection path until the command name changes.
 func (m *model) syncCommandCompletion() {
 	if m.running || m.side.isVisible || m.secretInput != nil || m.authInput != nil ||
-		m.guardPending != nil || m.commandDismissed || len(m.pastes) > 0 || len(m.input.files) > 0 {
+		m.guardPending != nil || m.commandDismissed || len(m.pastes) > 0 || len(m.input.files) > 0 || len(m.input.skills) > 0 {
 		m.commandMenu = nil
 		return
 	}
@@ -100,7 +100,7 @@ func (m model) completeCommandMenuOption() (model, tea.Cmd, bool) {
 
 func (m model) commandArgumentHint() string {
 	if m.running || m.side.isVisible || m.secretInput != nil || m.authInput != nil ||
-		m.commandDismissed || len(m.pastes) > 0 || strings.ContainsAny(m.input.Value(), "\r\n") {
+		m.commandDismissed || len(m.pastes) > 0 || len(m.input.skills) > 0 || strings.ContainsAny(m.input.Value(), "\r\n") {
 		return ""
 	}
 	request, slash := parseSlashCommand(m.input.Value())

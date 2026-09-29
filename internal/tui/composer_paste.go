@@ -249,7 +249,7 @@ func forwardDeleteKeyMsg() tea.KeyPressMsg {
 // normally; updateInput's post-pass still corrects stray landings inside a
 // token and drops orphaned attachments.
 func (m model) handlePasteTokenKey(message tea.KeyPressMsg) (model, tea.Cmd, bool) {
-	if len(m.pastes) == 0 && len(m.input.files) == 0 {
+	if len(m.pastes) == 0 && len(m.input.files) == 0 && len(m.input.skills) == 0 {
 		return m, nil, false
 	}
 	row, col := m.input.Line(), m.input.Column()
@@ -300,7 +300,7 @@ func (m model) handlePasteTokenKey(message tea.KeyPressMsg) (model, tea.Cmd, boo
 // corrections follow the travel direction; cross-row landings take the
 // nearer edge.
 func (m *model) snapCursorOutOfPasteToken(previousRow, previousCol int) {
-	if len(m.pastes) == 0 && len(m.input.files) == 0 {
+	if len(m.pastes) == 0 && len(m.input.files) == 0 && len(m.input.skills) == 0 {
 		return
 	}
 	row, col := m.input.Line(), m.input.Column()
@@ -462,7 +462,9 @@ func (m model) applyEditorResult(message editorFinishedMsg) model {
 		}
 	}
 	m.pastes = images
+	previous, skills := m.input.Value(), m.input.skills
 	m.input.SetValue(strings.TrimRight(string(data), "\r\n"))
+	m.input.restoreEditedSkills(previous, skills)
 	m.dropOrphanPasteAttachments()
 	m.input.CursorEnd()
 	m.historyIndex = -1

@@ -65,6 +65,7 @@ func (m *model) restoreSubmittedInput() {
 	if input.Continuation == nil {
 		m.input.SetValue(m.submittedDraft.text)
 		m.input.files = m.submittedDraft.files
+		m.input.skills = m.submittedDraft.skills
 		m.pastes = m.submittedDraft.pastes
 		m.input.CursorEnd()
 	}
@@ -111,4 +112,6 @@ type composerDraft struct {
 	text   string
 	pastes []pasteAttachment
 	files  []composerFile
+	skills []composerSkill
+	cursor int
 }

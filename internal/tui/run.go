@@ -219,6 +219,7 @@ type runRequest struct {
 	continuation *interaction.TaskContinuation
 	prompt       string
 	files        []string
+	skills       []string
 	images       []llm.ImageContent
 	command      *SlashCommandRequest
 	updates      chan runUpdate
@@ -335,7 +336,7 @@ func runOne(ctx context.Context, runner Runner, request runRequest) error {
 	if !sendRunUpdate(ctx, request.updates, runUpdate{cancel: cancel, sideThread: request.sideThread}) {
 		return ctx.Err()
 	}
-	active, err := runner.NewRun(runCtx, RunInput{Prompt: request.prompt, Images: request.images, Files: request.files, Continuation: request.continuation}, func(
+	active, err := runner.NewRun(runCtx, RunInput{Prompt: request.prompt, Images: request.images, Files: request.files, Skills: request.skills, Continuation: request.continuation}, func(
 		eventCtx context.Context,
 		event DisplayEvent,
 	) error {

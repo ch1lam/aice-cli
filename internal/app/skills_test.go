@@ -561,3 +561,62 @@ func TestComputerUseSkillRetainsNormalShadowingAndTrust(t *testing.T) {
 		}
 	}
 }
+
+func TestSkillCommandsUseTrustedCatalogAndKeepExactNames(t *testing.T) {
+	t.Parallel()
+	userRoot, projectRoot := t.TempDir(), t.TempDir()
+	writeTestSkill(t, userRoot, "review", "User review")
+	writeTestSkill(t, projectRoot, "review", "Project review")
+	writeTestSkill(t, projectRoot, "private", "Project only")
+	for _, tc := range []struct {
+		name       string
+		trusted    bool
+		wantReview string
+	}{
+		{name: "untrusted", wantReview: "User review"},
+		{name: "trusted", trusted: true, wantReview: "Project review"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			catalog := discoverSkills(userRoot, projectRoot, tc.trusted).catalog
+			runner := &interactiveSession{skills: catalog}
+			commands := runner.SlashCommands()
+			foundPrivate := false
+			for _, command := range commands {
+				if command.Name == "skill:private" {
+					foundPrivate = true
+				}
+				if command.Name == "skill:review" && !strings.Contains(command.Description, tc.wantReview) {
+					t.Fatalf("wrong source: %+v", command)
+				}
+			}
+			if foundPrivate != tc.trusted {
+				t.Fatal("shortcut bypassed project trust")
+			}
+			command := interactiveSlashCommand(t, commands, "skill:review")
+			if command.SkillName != "review" {
+				t.Fatalf("missing explicit activation request: %+v", command)
+			}
+			if interactiveSlashCommand(t, commands, "browser").SkillName != "" || interactiveSlashCommand(t, commands, "skill:browser").SkillName == "" {
+				t.Fatal("browser command collided with skill")
+			}
+		})
+	}
+	catalog, _ := skill.Merge([]skill.Skill{
+		{Name: "Review", Description: "Upper", Body: "secret body"},
+		{Name: "review", Description: "Lower", Body: "secret body"},
+		{Name: "vendor/name@skill", Description: "Qualified", Body: "secret body"},
+	})
+	seen := map[string]bool{}
+	for _, command := range skillCommands(catalog) {
+		if seen[command.Name] || strings.ContainsAny(command.Name, "/ \t\n") {
+			t.Fatalf("unreachable shortcut: %+v", command)
+		}
+		seen[command.Name] = true
+		if strings.Contains(command.SkillName, "secret body") {
+			t.Fatal("shortcut eagerly included skill body")
+		}
+	}
+	if len(seen) != 3 {
+		t.Fatal("lost a leniently discovered skill")
+	}
+}

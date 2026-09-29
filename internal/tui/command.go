@@ -148,7 +148,11 @@ func matchingSlashCommands(
 	}
 	var ranked []match
 	for _, command := range commands {
-		if score, _ := fuzzyMatch(command.Name, query); score >= 0 {
+		score, _ := fuzzyMatch(command.Name, query)
+		if score < 0 && command.SkillName != "" {
+			score, _ = fuzzyMatch(command.Description, query)
+		}
+		if score >= 0 {
 			ranked = append(ranked, match{command: command, score: score})
 		}
 	}

@@ -2,11 +2,13 @@ package app
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/ch1lam/aice-cli/internal/agent"
+	"github.com/ch1lam/aice-cli/internal/interaction"
 	"github.com/ch1lam/aice-cli/internal/skill"
 	"github.com/ch1lam/aice-cli/internal/tool"
 	"github.com/ch1lam/aice-cli/internal/trust"
@@ -145,6 +147,28 @@ func appendSkillsPrompt(base string, catalog skill.Catalog) string {
 		return base
 	}
 	return base + "\n\n" + section
+}
+
+// Only the merged, Trust-filtered startup catalog supplies attachment names.
+func skillCommands(catalog skill.Catalog) []interaction.Command {
+	var commands []interaction.Command
+	seen := make(map[string]bool)
+	for _, item := range catalog.Skills() {
+		name := "skill:" + strings.ToLower(url.PathEscape(item.Name))
+		// Lenient discovery can retain names differing only by case. Slash
+		// lookup is case-insensitive, so keep both reachable with a suffix.
+		base := name
+		for suffix := 2; seen[name]; suffix++ {
+			name = fmt.Sprintf("%s:%d", base, suffix)
+		}
+		seen[name] = true
+		commands = append(commands, interaction.Command{
+			Name:        name,
+			Description: "Skill · " + item.Name + " — " + truncateSkillDescription(item.Description),
+			SkillName:   item.Name,
+		})
+	}
+	return commands
 }
 
 func formatSkillsCommand(

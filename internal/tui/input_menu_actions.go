@@ -151,9 +151,7 @@ func (m model) handleCompletionAction(match inputActionMatch) (model, tea.Cmd, b
 	case inputActionSlashMove:
 		m.moveSlashCommandSelection(match.argument)
 	case inputActionSlashComplete:
-		m.completeSelectedSlashCommand()
-		m.resizeLayout()
-		return m, nil, true
+		return m.chooseSlashCommand()
 	case inputActionSlashCancel:
 		m.commandDismissed = true
 	}

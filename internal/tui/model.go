@@ -195,6 +195,7 @@ type model struct {
 	authCommand           string
 	secretInput           *secretInput
 	commandMenu           *commandMenuState
+	commandDraft          *composerDraft
 	customLogin           *customLoginState
 	pendingDeliveries     []pendingDelivery
 
@@ -343,6 +344,7 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	m.beginInputEvent(message)
 	next, command := m.update(message)
 	updated := next.(model)
+	updated.restoreCommandDraftIfIdle()
 	transition := updated.finishInputTransition(before)
 	if beforeHelp != updated.expandedHelpLayout() {
 		updated.resizeLayout()

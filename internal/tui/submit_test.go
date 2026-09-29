@@ -127,3 +127,40 @@ func TestCustomLoginShortcutDoesNotSkipMenus(t *testing.T) {
 		})
 	}
 }
+
+func TestTypedSkillShortcutPreservesTaskAndAttachments(t *testing.T) {
+	t.Parallel()
+	requests := make(chan runRequest, 1)
+	const instruction = "[skill:review]"
+	m := newModel(requests, make(chan struct{}), SlashCommand{Name: "skill:review", SkillName: "review"})
+	m.input.SetValue("/skill:review inspect @main.go\nand explain")
+	m, cmd, _ := m.submit()
+	if cmd == nil {
+		t.Fatal("shortcut did not submit")
+	}
+	cmd()
+	request := <-requests
+	if request.command != nil || request.prompt != instruction+" inspect @main.go\nand explain" ||
+		len(request.files) != 1 || request.files[0] != "main.go" {
+		t.Fatalf("shortcut lost task or attachment: %+v", request)
+	}
+	if m.submittedDraft.text != "[skill:review] inspect @main.go\nand explain" {
+		t.Fatal("lost retry draft")
+	}
+}
+
+func TestPastedSkillShortcutRemainsLiteral(t *testing.T) {
+	t.Parallel()
+	requests := make(chan runRequest, 1)
+	m := newModel(requests, make(chan struct{}), SlashCommand{Name: "skill:review", SkillName: "review"})
+	literal := "/skill:review " + strings.Repeat("example\n", 100)
+	m = updateModel(t, m, tea.PasteMsg{Content: literal})
+	_, cmd, _ := m.submit()
+	if cmd == nil {
+		t.Fatal("literal paste did not submit")
+	}
+	cmd()
+	if request := <-requests; request.command != nil || request.prompt != strings.TrimSpace(literal) {
+		t.Fatalf("paste activated shortcut: %+v", request)
+	}
+}

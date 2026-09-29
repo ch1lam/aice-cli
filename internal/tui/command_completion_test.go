@@ -217,3 +217,59 @@ func TestCommandHintPreservesDraftCursorAndLayout(t *testing.T) {
 		}
 	}
 }
+
+func TestSkillShortcutSelectionLeavesEditableDraft(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name, query string
+		key         rune
+	}{
+		{name: "fuzzy name tab", query: "/rvw", key: tea.KeyTab},
+		{name: "description enter", query: "/audit", key: tea.KeyEnter},
+		{name: "exact enter", query: "/skill:review", key: tea.KeyEnter},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			requests := make(chan runRequest, 1)
+			const prompt = "[skill:review] "
+			m := newModel(requests, make(chan struct{}), SlashCommand{
+				Name: "skill:review", Description: "Skill · audit code\ncarefully", SkillName: "review",
+			})
+			m = updateModel(t, m, tea.WindowSizeMsg{Width: 100, Height: 30})
+			m = updateModel(t, m, tea.PasteMsg{Content: tc.query})
+			if !m.slashCommandMenuVisible() {
+				t.Fatal("skill absent from slash search")
+			}
+			m, cmd, _ := m.handleKey(tea.KeyPressMsg{Code: tc.key})
+			if cmd != nil || m.running || len(requests) != 0 || m.input.Value() != prompt {
+				t.Fatalf("selection did not leave editable draft: %q", m.input.Value())
+			}
+			m = updateModel(t, m, tea.PasteMsg{Content: "检查本次改动"})
+			m, cmd, _ = m.handleKey(tea.KeyPressMsg{Code: tea.KeyEnter})
+			if cmd == nil || !m.running {
+				t.Fatal("explicit send did not start run")
+			}
+			cmd()
+			request := <-requests
+			if request.command != nil || request.prompt != prompt+"检查本次改动" {
+				t.Fatalf("skill request did not enter normal run: %+v", request)
+			}
+		})
+	}
+}
+
+func TestSkillSelectionWinsOverExactManagementCommand(t *testing.T) {
+	t.Parallel()
+	m := newModel(make(chan runRequest, 1), make(chan struct{}),
+		SlashCommand{Name: "browser", Description: "Manage browser"},
+		SlashCommand{Name: "skill:browser", Description: "Skill · browser", SkillName: "browser"},
+	)
+	m = updateModel(t, m, tea.PasteMsg{Content: "/browser"})
+	if !m.hasExactSlashCommand() {
+		t.Fatal("management command no longer matches exactly")
+	}
+	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyDown})
+	m, cmd, _ := m.handleKey(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if cmd != nil || m.running || m.input.Value() != "[skill:browser] " {
+		t.Fatal("Enter executed management command instead of selecting Skill")
+	}
+}

@@ -10,7 +10,7 @@ import (
 
 func (m composerInput) View() string {
 	view := m.Model.View()
-	if len(m.files) == 0 {
+	if len(m.files) == 0 && len(m.skills) == 0 {
 		return view
 	}
 	lines := strings.Split(view, "\n")
@@ -48,6 +48,15 @@ func (m composerInput) View() string {
 				lines[y] = tintComposerColumns(lines[y], x, min(x+width, m.Width()),
 					lipgloss.NewStyle().Foreground(secondaryColor))
 			}
+		}
+		for _, skill := range m.skills {
+			start, end := max(skill.start-offset, position.Col), min(skill.end-offset, limit)
+			if start >= end {
+				continue
+			}
+			x := ansi.StringWidth(string(row[position.Col:start]))
+			width := ansi.StringWidth(string(row[start:end]))
+			lines[y] = tintComposerColumns(lines[y], x, min(x+width, m.Width()), skillStyle)
 		}
 		position = next
 	}

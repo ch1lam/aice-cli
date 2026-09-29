@@ -47,6 +47,7 @@ var (
 	assistantBodyStyle = lipgloss.NewStyle().
 				PaddingLeft(transcriptContentIndent - 1)
 	mutedStyle             = lipgloss.NewStyle().Foreground(mutedTextColor)
+	skillStyle             = lipgloss.NewStyle().Foreground(successColor)
 	infoStyle              = lipgloss.NewStyle().Foreground(informationColor)
 	pendingSteerLabelStyle = lipgloss.NewStyle().
 				Bold(true).

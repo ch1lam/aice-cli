@@ -330,6 +330,8 @@ type EventSink func(ctx context.Context, event Event) error
 // Command describes one application command exposed by an interactive
 // frontend.
 type Command struct {
+	// SkillName inserts an attached skill reference instead of running a command.
+	SkillName string
 	// Interactive requests transient prompts during command execution.
 	Interactive  bool
 	Name         string
