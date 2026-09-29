@@ -38,6 +38,7 @@ type Delivery struct {
 	Kind   DeliveryKind
 	Images []llm.ImageContent
 	Files  []string
+	Skills []string
 }
 
 // Mailbox is the bounded synchronization point between an interactive UI and
@@ -71,8 +72,8 @@ func (m *Mailbox) Deliver(delivery Delivery) error {
 	default:
 		return fmt.Errorf("interaction: delivery kind %d is invalid", delivery.Kind)
 	}
-	if len(delivery.Files) != 0 {
-		return fmt.Errorf("interaction: file references must be resolved before enqueueing")
+	if len(delivery.Files) != 0 || len(delivery.Skills) != 0 {
+		return fmt.Errorf("interaction: file and skill references must be resolved before enqueueing")
 	}
 	if err := ValidateImages(delivery.Images); err != nil {
 		return err

@@ -39,24 +39,8 @@ func prepareFileInput(ctx context.Context, input interaction.RunInput, workspace
 	for _, path := range input.Files {
 		args, _ := json.Marshal(tool.ReadRequest{Path: path})
 		call := llm.ToolCall{ID: "attachment", Name: "read", Arguments: args}
-		decision, err := gate.Check(ctx, call)
-		if err != nil {
+		if err := authorizeInputTool(ctx, call, path, gate, ask); err != nil {
 			return interaction.RunInput{}, err
-		}
-		if decision.Decision == agent.GuardDeny {
-			return interaction.RunInput{}, fmt.Errorf("attach %q: %s", path, decision.Reason)
-		}
-		for _, approval := range decision.Approvals {
-			if ask == nil {
-				return interaction.RunInput{}, fmt.Errorf("attach %q: %s (approval requires interactive mode)", path, approval.Reason)
-			}
-			reply, err := ask(ctx, call, approval)
-			if err != nil {
-				return interaction.RunInput{}, err
-			}
-			if reply.Decision != agent.GuardAllow {
-				return interaction.RunInput{}, fmt.Errorf("attach %q: permission denied", path)
-			}
 		}
 		resolved, err := reader.ResolvePath(path)
 		if err != nil {
@@ -87,4 +71,30 @@ func prepareFileInput(ctx context.Context, input interaction.RunInput, workspace
 	input.Prompt = text.String()
 	input.Files = nil
 	return input, nil
+}
+
+// Attachments use the same execution gate and interactive approvals as tools.
+func authorizeInputTool(ctx context.Context, call llm.ToolCall, label string, gate *guardAdapter,
+	ask func(context.Context, llm.ToolCall, agent.GuardApproval) (agent.GuardAskReply, error),
+) error {
+	decision, err := gate.Check(ctx, call)
+	if err != nil {
+		return err
+	}
+	if decision.Decision == agent.GuardDeny {
+		return fmt.Errorf("attach %q: %s", label, decision.Reason)
+	}
+	for _, approval := range decision.Approvals {
+		if ask == nil {
+			return fmt.Errorf("attach %q: %s (approval requires interactive mode)", label, approval.Reason)
+		}
+		reply, err := ask(ctx, call, approval)
+		if err != nil {
+			return err
+		}
+		if reply.Decision != agent.GuardAllow {
+			return fmt.Errorf("attach %q: permission denied", label)
+		}
+	}
+	return nil
 }

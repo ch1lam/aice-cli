@@ -384,8 +384,8 @@ func (r *sideRunner) NewRun(
 	input interaction.RunInput,
 	sink interaction.EventSink,
 ) (interaction.ActiveRun, error) {
-	if len(input.Images) > 0 || len(input.Files) > 0 {
-		return nil, fmt.Errorf("file and image attachments are supported in the main conversation only")
+	if len(input.Images) > 0 || len(input.Files) > 0 || len(input.Skills) > 0 {
+		return nil, fmt.Errorf("file, image and skill attachments are supported in the main conversation only")
 	}
 	prompt, err := llm.NewUserMessage(llm.NewTextContent(input.Prompt).Part())
 	if err != nil {

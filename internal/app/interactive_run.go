@@ -53,7 +53,7 @@ func (s *interactiveSession) NewRun(
 	if input.Continuation != nil {
 		copy := *input.Continuation
 		input.Continuation = &copy
-		if input.Prompt != copy.Prompt || len(input.Images) != 0 || len(input.Files) != 0 {
+		if input.Prompt != copy.Prompt || len(input.Images) != 0 || len(input.Files) != 0 || len(input.Skills) != 0 {
 			return nil, errDesktopContinuationStale
 		}
 		if err := s.validateDesktopContinuation(&copy); err != nil {
@@ -70,7 +70,7 @@ func (s *interactiveSession) NewRun(
 			settings.configuration,
 		)
 	}
-	input, err = prepareFileInput(ctx, input, s.workspace, s.guardAdapter, s.handleGuardAsk)
+	input, err = s.prepareAttachedInput(ctx, input)
 	if err != nil {
 		return nil, err
 	}
@@ -123,7 +123,7 @@ func (r *interactiveRun) Deliver(ctx context.Context, delivery interaction.Deliv
 	if r.session == nil {
 		return interaction.ErrClosed
 	}
-	input, err := prepareFileInput(ctx, interaction.RunInput{Prompt: delivery.Text, Images: delivery.Images, Files: delivery.Files}, r.session.workspace, r.session.guardAdapter, r.session.handleGuardAsk)
+	input, err := r.session.prepareAttachedInput(ctx, interaction.RunInput{Prompt: delivery.Text, Images: delivery.Images, Files: delivery.Files, Skills: delivery.Skills})
 	if err != nil {
 		return err
 	}
@@ -134,6 +134,7 @@ func (r *interactiveRun) Deliver(ctx context.Context, delivery interaction.Deliv
 	delivery.Text = input.Prompt
 	delivery.Images = nil
 	delivery.Files = nil
+	delivery.Skills = nil
 	for _, part := range message.Content {
 		if part.Image != nil {
 			delivery.Images = append(delivery.Images, part.Image.Clone())

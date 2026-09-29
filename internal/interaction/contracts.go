@@ -16,6 +16,8 @@ type RunInput struct {
 	Images       []llm.ImageContent
 	// Files are explicit references parsed by the frontend before expanding literal pastes.
 	Files []string
+	// Skills are explicit catalog names selected by the frontend.
+	Skills []string
 }
 
 // TaskContinuation is a transient, application-issued proposal. The user must

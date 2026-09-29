@@ -266,7 +266,7 @@ func formatSkillsPrompt(catalog skill.Catalog) string {
 	builder.WriteString("Available Agent Skills:\n")
 	builder.WriteString("The following skills provide specialized instructions for specific tasks.\n")
 	builder.WriteString("When a task matches a skill's description, call the skill tool with the\n")
-	builder.WriteString("skill's name to load its full instructions.\n")
+	builder.WriteString("skill's name to load its full instructions, unless already attached in the current task.\n")
 	builder.WriteString("<available_skills>\n")
 	for _, item := range skills {
 		builder.WriteString("- ")

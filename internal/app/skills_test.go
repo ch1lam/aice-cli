@@ -101,7 +101,7 @@ func TestFormatSkillsPrompt(t *testing.T) {
 	want := "Available Agent Skills:\n" +
 		"The following skills provide specialized instructions for specific tasks.\n" +
 		"When a task matches a skill's description, call the skill tool with the\n" +
-		"skill's name to load its full instructions.\n" +
+		"skill's name to load its full instructions, unless already attached in the current task.\n" +
 		"<available_skills>\n" +
 		"- alpha: First skill.\n" +
 		"- zeta: Last skill.\n" +

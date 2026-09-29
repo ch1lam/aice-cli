@@ -56,11 +56,11 @@ func (s *Skill) Definition() llm.ToolDefinition {
 		Name: "skill",
 		Description: "Load the full instructions for a named Agent Skill. " +
 			"Call this when the current task matches a skill description from " +
-			"the available skills list in the system prompt.",
+			"the available skills list in the system prompt and its instructions are not already attached to the current task.",
 		InputSchema:   skillInputSchema(s.names),
 		PromptSnippet: "Load Agent Skill instructions on demand",
 		PromptGuidelines: []string{
-			"When a task matches a skill description in the available skills list, call skill with that name before proceeding.",
+			"When a task matches a skill description in the available skills list, call skill with that name before proceeding unless its full instructions are already attached to the current task.",
 		},
 	}
 }
