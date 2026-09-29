@@ -156,7 +156,7 @@ func (p *questionPanel) backspace() {
 }
 
 // selectFocused records the focused option for the current question and
-// stays on it; Enter submits the whole group separately.
+// stays on it so the user can add a supplement before confirming with Enter.
 func (p *questionPanel) selectFocused() {
 	if !p.hasOptions() {
 		return
@@ -596,11 +596,20 @@ func (m model) handleQuestionAction(match inputActionMatch) (model, tea.Cmd, boo
 		panel.selectFocused()
 		m.resizeLayout()
 	case inputActionQuestionSubmit:
+		if !panel.textFocus {
+			panel.selectFocused()
+		}
 		if panel.submitAttempt() {
 			return m, m.submitQuestion(), true
 		}
-		panel.firstUnsettled()
-		panel.notice = "答案不完整：请回答每一题"
+		if !panel.settled[panel.index] {
+			panel.notice = "请先回答当前问题"
+		} else if panel.index < len(panel.settled)-1 {
+			panel.moveQuestion(1)
+		} else {
+			panel.firstUnsettled()
+			panel.notice = "请回答剩余问题"
+		}
 		m.resizeLayout()
 		m.refreshViewport(false)
 	case inputActionQuestionBackspace:

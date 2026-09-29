@@ -397,7 +397,7 @@ func assertQuestionMergedFrame(t *testing.T, current model) {
 	assertColor(t, frame.GetBorderRightForeground(), secondaryColor)
 	assertColor(t, frame.GetBorderBottomForeground(), secondaryColor)
 	footer := ansi.Strip(current.footerView(current.layoutWidth()))
-	for _, label := range []string{"Enter 提交全部", "Esc", "Ctrl+c", "Space", "↑↓", "←→", "PgUp/PgDn"} {
+	for _, label := range []string{"Enter 确认并继续", "Esc", "Ctrl+c", "Space", "↑↓", "←→", "PgUp/PgDn"} {
 		if strings.Count(footer, label) != 1 || strings.Contains(strings.Join(lines[top:attach], "\n"), label) {
 			t.Fatalf("shortcut %q must appear once below the composer:\n%s", label, view)
 		}
@@ -477,27 +477,96 @@ func TestQuestionPanelRecommendsWithoutAnswering(t *testing.T) {
 	}
 }
 
+func TestQuestionPanelEnterSelectsAdvancesAndSubmits(t *testing.T) {
+	for _, count := range []int{1, 3} {
+		t.Run(fmt.Sprint(count), func(t *testing.T) {
+			prompt, replies := newQuestionTestPrompt()
+			item := prompt.Request.Questions[0]
+			prompt.Request.Questions = nil
+			for i := range count {
+				item.ID = fmt.Sprint(i)
+				prompt.Request.Questions = append(prompt.Request.Questions, item)
+			}
+			current := newQuestionTestModel(t, prompt)
+			for i := range count {
+				// Confirm a moved focus on Q1 and the recommendation on later questions.
+				if i == 0 {
+					current = pressQuestionKey(t, current, tea.KeyPressMsg{Code: tea.KeyDown})
+				}
+				current = pressQuestionKey(t, current, tea.KeyPressMsg{Code: tea.KeyEnter})
+				if i < count-1 {
+					if current.question == nil || current.question.index != i+1 || current.question.notice != "" {
+						t.Fatalf("Enter did not advance cleanly from question %d: %+v", i, current.question)
+					}
+					select {
+					case <-replies:
+						t.Fatal("submitted before every question was answered")
+					default:
+					}
+				}
+			}
+			if current.question != nil {
+				t.Fatal("final Enter did not close the panel")
+			}
+			select {
+			case reply := <-replies:
+				if err := interaction.ValidateQuestionReply(prompt.Request, reply); err != nil {
+					t.Fatal(err)
+				}
+				for i := range count {
+					want := "check"
+					if i == 0 {
+						want = "apply"
+					}
+					if answer := reply.Answers[fmt.Sprint(i)]; answer.SelectedOptionID != want {
+						t.Fatalf("question %d: %+v, want %s", i, answer, want)
+					}
+				}
+			default:
+				t.Fatal("final Enter did not submit")
+			}
+		})
+	}
+}
+
+func TestQuestionPanelEnterReturnsToUnansweredQuestion(t *testing.T) {
+	prompt, replies := newQuestionTestPrompt()
+	current := newQuestionTestModel(t, prompt)
+	current = pressQuestionKey(t, current, tea.KeyPressMsg{Code: tea.KeyRight})
+	current = pressQuestionKey(t, current, tea.KeyPressMsg{Code: tea.KeyEnter})
+	if current.question.index != 1 || current.question.notice == "" {
+		t.Fatal("blank answer must stay on the current question with a notice")
+	}
+	current = typeQuestionText(t, current, "goal")
+	current = pressQuestionKey(t, current, tea.KeyPressMsg{Code: tea.KeyEnter})
+	if current.question == nil || current.question.index != 0 {
+		t.Fatal("confirming the last question must return to an earlier unanswered question")
+	}
+	select {
+	case <-replies:
+		t.Fatal("unanswered question was submitted")
+	default:
+	}
+	current = pressQuestionKey(t, current, tea.KeyPressMsg{Code: tea.KeyEnter})
+	if current.question != nil {
+		t.Fatal("confirming the remaining answer must submit")
+	}
+	select {
+	case reply := <-replies:
+		if reply.Answers["mode"].SelectedOptionID != "check" || reply.Answers["goal"].Text != "goal" {
+			t.Fatalf("answers changed: %+v", reply)
+		}
+	default:
+		t.Fatal("remaining answer did not submit")
+	}
+}
+
 func TestQuestionPanelSpaceSelectSwitchSubmit(t *testing.T) {
 	prompt, replies := newQuestionTestPrompt()
 	current := newModel(make(chan runRequest), make(chan struct{}))
 	current = updateModel(t, current, tea.WindowSizeMsg{Width: 100, Height: 30})
 	current.input.SetValue("wip draft")
 	current = updateModel(t, current, questionPromptMsg{prompt: prompt})
-
-	// Enter submits the whole group: with nothing answered it stays open
-	// and guides to the first unanswered question.
-	current = pressQuestionKey(t, current, tea.KeyPressMsg{Code: tea.KeyEnter})
-	if current.question == nil {
-		t.Fatal("incomplete Enter must not submit")
-	}
-	if current.question.notice == "" {
-		t.Fatal("incomplete Enter must prompt for the missing answers")
-	}
-	select {
-	case <-replies:
-		t.Fatal("incomplete Enter must not submit")
-	default:
-	}
 
 	// Q1: move to row 2 and Space-select it; selection stays on Q1.
 	current = pressQuestionKey(t, current, tea.KeyPressMsg{Code: tea.KeyDown})

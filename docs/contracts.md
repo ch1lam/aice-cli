@@ -519,7 +519,12 @@ consistency for those behaviors.
   do not display numeric labels.
   Preset and custom rows share huh-style focus and selection marks, with
   at most one selected answer. Non-blank custom input selects the custom row
-  immediately; clearing it removes selection. Only Enter submits the group.
+  immediately; clearing it removes selection. Enter selects the highlighted
+  option or confirms the active text, then advances to the next question.
+  Confirming the final outstanding answer submits the group in the same
+  action. Empty custom/free-text answers keep the current question open;
+  confirming the last question with earlier gaps returns to the first
+  unanswered question.
   The question body is capped to the available height; the answer window
   grows to at most six rows. Shortcut hints appear
   only in the shared footer below the composer, derived from the effective

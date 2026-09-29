@@ -1,17 +1,18 @@
 package tui
 
 // questionInputBindings resolves the bottom Q&A panel controls. The panel
-// submits all questions at once: Space (or a digit) selects an option for
-// the current question and stays there, Left/Right switch questions, and
-// Enter submits the whole group. Space stays a text key while typing, on
-// an empty custom row, or for free-text questions, so answers containing
-// spaces remain typable. A populated custom row can be selected with Space
+// confirms the current answer with Enter, advances to the next question,
+// and submits when all answers are complete. Space (or a digit) selects
+// without advancing so a supplement can be added. Left/Right switch questions.
+// Space stays a text key while typing, on an empty custom row, or for
+// free-text questions, so answers containing spaces remain typable.
+// A populated custom row can be selected with Space
 // after moving focus back to it.
 func (m model) questionInputBindings() []inputBinding {
 	if m.question == nil {
 		return nil
 	}
-	submit := actionBinding(inputActionQuestionSubmit, "Enter", "提交全部", "enter")
+	submit := actionBinding(inputActionQuestionSubmit, "Enter", "确认并继续", "enter")
 	browse := actionBinding(inputActionQuestionBrowse, "Esc", "查看对话", "esc")
 	cancel := actionBinding(inputActionQuestionCancel, "Ctrl+c", "取消运行", "ctrl+c")
 	backspace := actionBinding(inputActionQuestionBackspace, "", "", "backspace")

@@ -1624,14 +1624,17 @@ into view:
   never an answer.
 - `↑`/`↓` move focus within a question, `←`/`→` switch questions,
   `Space` (or a digit) selects the focused option and stays on it, typing
-  writes the answer (or a supplement to a selected option), and `Enter`
-  submits all answers at once.
+  writes the answer (or a supplement to a selected option). `Enter` selects
+  the highlighted option, or confirms the text being edited, and advances
+  to the next question. Once every answer is complete, that same `Enter`
+  submits the whole group; no extra submission step is needed.
   A digit that lands on the custom row with empty text stays on the current
   question and focuses the input instead of selecting.
-- Focus, selection, and submission are separate: only submitting the whole
-group answers the call. `Enter` with unanswered questions keeps the panel
-open, prompts, and jumps to the first unanswered question. Blank text is
-never an answer: every question must be answered before `Enter` submits.
+- Moving focus alone never answers a question. `Enter` confirms the current
+  answer; an empty custom or free-text answer keeps focus on the current
+  question and prompts for text. If earlier questions were left unanswered,
+  confirming the last question returns to the first unanswered one. Only a
+  complete group answers the tool call; blank text never counts as an answer.
   An option question accepts either a valid selection (with optional
   supplement text) or a custom answer (empty selection, non-blank text).
   Choosing or typing into the custom row clears any previous selection;
