@@ -5,123 +5,125 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"slices"
 	"unicode/utf8"
 )
 
-type managedArguments struct {
-	PID          int      `json:"pid"`
-	WindowID     uint64   `json:"window_id"`
-	OnScreenOnly *bool    `json:"on_screen_only"`
-	Screenshot   *bool    `json:"include_screenshot"`
-	Query        string   `json:"query"`
-	BundleID     string   `json:"bundle_id"`
-	LaunchPath   string   `json:"launch_path"`
-	ElementToken string   `json:"element_token"`
-	X            *float64 `json:"x"`
-	Y            *float64 `json:"y"`
-	FromX        *float64 `json:"from_x"`
-	FromY        *float64 `json:"from_y"`
-	ToX          *float64 `json:"to_x"`
-	ToY          *float64 `json:"to_y"`
-	DurationMS   int      `json:"duration_ms"`
-	Button       string   `json:"button"`
-	Count        *int     `json:"count"`
-	DeliveryMode string   `json:"delivery_mode"`
-	Text         string   `json:"text"`
-	Value        *string  `json:"value"`
-	Key          string   `json:"key"`
-	Keys         []string `json:"keys"`
-	Direction    string   `json:"direction"`
-	Amount       int      `json:"amount"`
+// Keep native options and their constraints intact. These exclusions are host
+// authority boundaries, not a second implementation of Driver input semantics.
+type managedTool struct {
+	properties map[string]json.RawMessage
+	session    bool
 }
 
-func decodeManagedArguments(name, platform string, raw json.RawMessage) (managedArguments, error) {
-	var args managedArguments
-	fail := errors.New("desktop: invalid or unsupported managed CUA arguments")
-	fields := managedFields(name, platform)
-	if fields == nil || len(raw) > 1<<20 || !utf8.Valid(raw) {
-		return args, fail
+func managedSchema(raw json.RawMessage) (json.RawMessage, managedTool, error) {
+	var schema map[string]json.RawMessage
+	var tool managedTool
+	if json.Unmarshal(raw, &schema) != nil || json.Unmarshal(schema["properties"], &tool.properties) != nil || tool.properties == nil {
+		return nil, tool, errors.New("desktop: invalid admitted schema")
+	}
+	_, tool.session = tool.properties["session"]
+	delete(tool.properties, "session")
+	var required []string
+	if len(schema["required"]) > 0 {
+		if json.Unmarshal(schema["required"], &required) != nil {
+			return nil, tool, errors.New("desktop: invalid admitted schema requirements")
+		}
+		for _, field := range required {
+			if _, ok := tool.properties[field]; !ok {
+				return nil, tool, errors.New("desktop: host policy removed a required Driver field")
+			}
+		}
+	}
+	schema["properties"], _ = json.Marshal(tool.properties)
+	projected, err := json.Marshal(schema)
+	return projected, tool, err
+}
+
+// Decode raw values without float64 conversion, preserving exact native IDs.
+// Duplicate keys are rejected so policy and Driver cannot read different values.
+func managedObject(raw json.RawMessage) (map[string]json.RawMessage, error) {
+	fail := errors.New("desktop: arguments must be one JSON object with unique keys")
+	if len(raw) > 1<<20 || !utf8.Valid(raw) {
+		return nil, fail
 	}
 	decoder := json.NewDecoder(bytes.NewReader(raw))
-	token, err := decoder.Token()
-	if err != nil || token != json.Delim('{') {
-		return args, fail
+	if token, err := decoder.Token(); err != nil || token != json.Delim('{') {
+		return nil, fail
 	}
-	seen := make(map[string]bool)
+	fields := make(map[string]json.RawMessage)
 	for decoder.More() {
 		token, err := decoder.Token()
 		key, ok := token.(string)
-		if err != nil || !ok || seen[key] || !slices.Contains(fields, key) {
-			return args, fail
+		if err != nil || !ok {
+			return nil, fail
 		}
-		seen[key] = true
+		if _, exists := fields[key]; exists {
+			return nil, fail
+		}
 		var value json.RawMessage
-		if decoder.Decode(&value) != nil || bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
-			return args, fail
+		if decoder.Decode(&value) != nil {
+			return nil, fail
 		}
+		fields[key] = value
 	}
 	if token, err := decoder.Token(); err != nil || token != json.Delim('}') {
-		return args, fail
+		return nil, fail
 	}
 	if _, err := decoder.Token(); !errors.Is(err, io.EOF) {
-		return args, fail
+		return nil, fail
 	}
-	if json.Unmarshal(raw, &args) != nil {
-		return args, fail
+	return fields, nil
+}
+
+func (r *Run) managedArguments(tool managedTool, name string, raw json.RawMessage) (map[string]json.RawMessage, error) {
+	args, err := managedObject(raw)
+	if err != nil {
+		return nil, err
 	}
-	if name != "list_apps" && name != "list_windows" && name != "launch_app" && (args.PID <= 0 || args.WindowID == 0) {
-		return args, fail
+	for key := range args {
+		if _, allowed := tool.properties[key]; !allowed {
+			return nil, errors.New("desktop: argument is outside the published tool schema")
+		}
 	}
-	if name == "list_windows" && seen["pid"] && args.PID <= 0 {
-		return args, fail
+	if value, exists := args["delivery_mode"]; exists {
+		if !jsonString(value, "background") && !jsonString(value, "foreground") {
+			return nil, errors.New("desktop: delivery_mode must be background or foreground")
+		}
+		if jsonString(value, "foreground") && r.options.Mode != ForegroundAllowed {
+			return nil, errors.New("desktop: this run permits background input only")
+		}
 	}
-	if (args.X == nil) != (args.Y == nil) || len(args.Query) > 256 || len(args.ElementToken) > 512 {
-		return args, fail
+	if r.options.Mode == BackgroundOnly {
+		for _, key := range []string{"scope", "coordinate_frame"} {
+			if value, exists := args[key]; exists && !jsonString(value, "window") {
+				return nil, errors.New("desktop: background-only mode does not permit desktop input")
+			}
+		}
+		if value, exists := args["target"]; exists && !bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+			target, err := managedObject(value)
+			if err != nil || !jsonString(target["kind"], "window") {
+				return nil, errors.New("desktop: background-only mode requires a window target")
+			}
+		}
 	}
-	if name == "set_value" && args.Value == nil {
-		return args, fail
+	if !r.options.Images && ((name == "get_window_state" && !bytes.Equal(bytes.TrimSpace(args["include_screenshot"]), []byte("false"))) || nonemptyJSONText(args["screenshot_out_file"]) || nonemptyJSONText(args["debug_image_out"])) {
+		return nil, errors.New("desktop: this model requires include_screenshot=false")
 	}
-	if name == "drag" && (args.FromX == nil || args.FromY == nil || args.ToX == nil || args.ToY == nil) {
-		return args, fail
-	}
-	if seen["duration_ms"] && (args.DurationMS < 1 || args.DurationMS > 10000) {
-		return args, fail
-	}
-	if seen["amount"] && (args.Amount < 1 || args.Amount > 50) {
-		return args, fail
-	}
-	if name == "launch_app" && ((platform == "linux" && (args.LaunchPath == "" || len(args.LaunchPath) > 16*1024)) || (platform != "linux" && (args.BundleID == "" || len(args.BundleID) > 512))) {
-		return args, fail
+	if tool.session {
+		args["session"], _ = json.Marshal(r.id)
 	}
 	return args, nil
 }
 
-func (a managedArguments) action(name string) (actionRequest, error) {
-	request := actionRequest{Kind: name, ElementToken: a.ElementToken, DeliveryMode: a.DeliveryMode, Text: a.Text, Key: a.Key, Keys: a.Keys, Direction: a.Direction, Amount: a.Amount}
-	if a.X != nil {
-		request.Point = &Point{X: *a.X, Y: *a.Y}
+func jsonString(raw json.RawMessage, want string) bool {
+	var value string
+	return json.Unmarshal(raw, &value) == nil && value == want
+}
+
+func nonemptyJSONText(raw json.RawMessage) bool {
+	if len(raw) == 0 {
+		return false
 	}
-	switch name {
-	case "click":
-		count := 1
-		if a.Count != nil {
-			count = *a.Count
-		}
-		if count < 1 || count > 2 || (a.Button != "" && a.Button != "left" && a.Button != "right") || (a.Button == "right" && count != 1) {
-			return actionRequest{}, errors.New("desktop: managed click supports left single/double or right single click")
-		}
-		if a.Button == "right" {
-			request.Kind = "right_click"
-		} else if count == 2 {
-			request.Kind = "double_click"
-		}
-	case "press_key":
-		request.Kind = "key"
-	case "set_value":
-		request.Text = *a.Value
-	case "drag":
-		request.Drag = &DragGesture{From: &Point{X: *a.FromX, Y: *a.FromY}, To: &Point{X: *a.ToX, Y: *a.ToY}, DurationMS: a.DurationMS}
-	}
-	return request, nil
+	var value string
+	return json.Unmarshal(raw, &value) != nil || value != ""
 }

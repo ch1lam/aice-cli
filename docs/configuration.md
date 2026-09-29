@@ -276,7 +276,7 @@ history or Session JSONL. Computer Use setup can offer an explicit **Continue**
 button for an existing task. That choice sends a new request using the recorded
 context; it preserves the composer draft and attachments, and does not migrate
 queued follow-ups. The application rejects a continuation if its Session, branch
-or Settings revision changed. See [Computer Use](desktop.md#baseline-and-outstanding-integration).
+or Settings revision changed. See [Computer Use](desktop.md#settings-and-task-continuation).
 
 ### Usage and Session information
 
@@ -1179,7 +1179,7 @@ The builtin `browser` skill describes browsing through `bash` and `read`; see
 The builtin `computer-use` guide is pinned to Cua Driver 0.29.1 and applies when
 `managed:cua` is available. It uses normal on-demand activation and source
 shadowing; loading guidance neither enables Computer Use nor grants MCP access.
-Enabled production main runs expose only the managed discovery route; see [Computer Use](desktop.md#managed-mcp-migration-boundary).
+Enabled production main runs expose only the managed discovery route; see [Computer Use](desktop.md#managed-mcp-boundary).
 Discovery and wiring are in [Skills](architecture.md#skills).
 
 Skill directories on disk are allowed automatically for read-class tools

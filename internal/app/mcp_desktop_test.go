@@ -344,3 +344,33 @@ func TestManagedCUACatalogFreezesNativeModeWithoutIO(t *testing.T) {
 		}
 	}
 }
+
+func TestManagedCUAServerInfoSurvivesRunInterfaceWrapping(t *testing.T) {
+	t.Parallel()
+	backend := &appDesktopBackend{}
+	// Production observers embed this consumer interface. Optional methods on
+	// the concrete native Run must not be lost at the application boundary.
+	wrapped := struct{ managedDesktopRun }{backend}
+	catalog, err := buildMCPCatalog(config.MCPConfig{}, nil, ownerTestGuard(t), &managedCUACatalogBinding{connection: wrapped, ownerIdentity: "info-owner", mode: desktop.BackgroundOnly})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer catalog.Close()
+	reader, err := tool.NewMCPInfo(catalog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := reader.Execute(t.Context(), llm.ToolCall{Name: "mcp_server_info", Arguments: []byte(`{"service":"managed:cua"}`)})
+	if err != nil || result.IsError || len(result.Content) != 2 {
+		t.Fatal("managed server info unavailable", result, err)
+	}
+	var view tool.MCPInfoView
+	if err := json.Unmarshal([]byte(result.Content[0].Text), &view); err != nil || view.Name != "cua-driver" || view.Version != desktop.DriverVersion || view.Service != managedCUAKey || backend.calls != 0 {
+		t.Fatal("server info lost identity or dispatched a native action", view, err)
+	}
+	catalog.Close()
+	result, err = reader.Execute(t.Context(), llm.ToolCall{Name: "mcp_server_info", Arguments: []byte(`{"service":"managed:cua"}`)})
+	if err != nil || !result.IsError {
+		t.Fatal("closed catalog returned server information", result, err)
+	}
+}

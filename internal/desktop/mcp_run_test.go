@@ -5,10 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"image"
-	"image/png"
 	"io"
-	"strings"
+	"reflect"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -99,260 +97,51 @@ func managedClick(token string) string {
 	return string(data)
 }
 
-func TestManagedRunCatalogAndLifecycle(t *testing.T) {
-	t.Parallel()
+func (f *managedFake) Info() mcpclient.Info {
+	return mcpclient.Info{Name: "cua-driver", Version: DriverVersion}
+}
+
+func TestManagedCatalogPreservesNativeParameters(t *testing.T) {
 	for _, platform := range []string{"darwin", "linux"} {
 		t.Run(platform, func(t *testing.T) {
-			m, r, f := managedTestRun(t, platform, BackgroundOnly, false)
-			if m.Status().Connected || f.count("start_session") != 0 {
-				t.Fatal("binding caused I/O")
+			_, run, driver := managedTestRun(t, platform, BackgroundOnly, true)
+			catalog, err := run.Tools(t.Context())
+			if err != nil || len(catalog.Items) != 11 {
+				t.Fatal("catalog", err)
 			}
-			catalog, err := r.Tools(t.Context())
-			if err != nil || !catalog.Complete || len(catalog.Items) != 11 || catalog.Generation != r.ToolGeneration() {
-				t.Fatal("managed catalog", err)
-			}
-			for _, entry := range catalog.Items {
-				if entry.Name == "start_session" || entry.Name == "end_session" || entry.Name == "check_permissions" || entry.Name == "get_config" {
-					t.Fatal("lifecycle/setup exposed")
+			for _, tool := range catalog.Items {
+				var got map[string]any
+				if json.Unmarshal(tool.InputSchema, &got) != nil {
+					t.Fatal("schema")
 				}
-				var schema struct {
-					Properties map[string]json.RawMessage `json:"properties"`
-					Required   []string                   `json:"required"`
-				}
-				if json.Unmarshal(entry.InputSchema, &schema) != nil {
-					t.Fatal("invalid projected schema")
-				}
-				for _, field := range []string{"session", "scope", "target", "screenshot_out_file", "debug_image_out", "additional_arguments", "urls", "webkit_inspector_port"} {
-					if _, ok := schema.Properties[field]; ok {
-						t.Fatal("authority escape field exposed", entry.Name, field)
+				for _, source := range driver.catalog.Items {
+					if source.Name != tool.Name {
+						continue
+					}
+					var want map[string]any
+					_ = json.Unmarshal(source.InputSchema, &want)
+					delete(want["properties"].(map[string]any), "session")
+					if !reflect.DeepEqual(got, want) {
+						t.Fatalf("%s lost native schema fields", tool.Name)
 					}
 				}
-				if entry.Name == "list_windows" && len(schema.Required) != 0 {
-					t.Fatal("discovery requires unknown pid")
-				}
 			}
-			managedInvoke(t, r, "list_windows", `{}`)
-			token := managedObserve(t, r, false)
-			action := managedInvoke(t, r, "click", managedClick(token))
-			if !bytes.Contains(action.StructuredContent, []byte("unverifiable")) || f.count("click") != 1 || f.count("get_window_state") != 1 {
-				t.Fatal("action result lost or implicit extra RPC")
+			if driver.count("start_session") != 1 || driver.count("get_window_state") != 0 {
+				t.Fatal("discovery side effects")
 			}
-			result, err := r.CallChecked(t.Context(), "click", []byte(managedClick(token)), nil)
-			if err == nil || result.State != llm.ExecutionNotDispatched || f.count("click") != 1 {
-				t.Fatal("observation replayed")
-			}
-			fresh := managedObserve(t, r, false)
-			managedInvoke(t, r, "click", managedClick(fresh))
-			if err := r.Close(); err != nil {
-				t.Fatal(err)
-			}
-			if f.count("start_session") != 1 || f.count("end_session") != 1 || r.ToolGeneration() == catalog.Generation {
-				t.Fatal("session ownership or close invalidation lost")
+			if err := run.Close(); err != nil || driver.count("end_session") != 1 {
+				t.Fatal("cleanup", err)
 			}
 		})
 	}
 }
 
-func TestManagedRunRejectsUnownedAndExtraAuthority(t *testing.T) {
-	t.Parallel()
-	_, r, f := managedTestRun(t, "darwin", BackgroundOnly, false)
-	before, err := r.CallChecked(t.Context(), "list_windows", []byte(`{}`), nil)
-	if err == nil || before.State != llm.ExecutionNotDispatched || f.count("start_session") != 0 {
-		t.Fatal("execution connected implicitly")
-	}
-	if _, err := r.Tools(t.Context()); err != nil {
+func TestManagedCallsPreserveNativeOptionsAndResultsAcrossRuns(t *testing.T) {
+	manager, first, driver := managedTestRun(t, "darwin", ForegroundAllowed, true)
+	if _, err := first.Tools(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	for _, tc := range []struct{ name, args string }{
-		{"start_session", `{}`}, {"get_config", `{}`}, {"check_permissions", `{"prompt":true}`},
-		{"get_window_state", `{"pid":41,"window_id":99,"include_screenshot":false}`},
-		{"list_windows", `{"pid":41,"pid":42}`}, {"list_windows", `{"pid":null}`},
-		{"list_windows", `{"pid":0}`}, {"list_windows", `{"pid":1.5}`}, {"list_windows", `{} {}`},
-		{"launch_app", `{"bundle_id":"undiscovered"}`},
-		{"launch_app", `{"bundle_id":"known","urls":["https://example.com"]}`},
-		{"get_window_state", `{"pid":41,"window_id":99,"screenshot_out_file":"/tmp/no"}`},
-		{"click", `{"pid":41,"window_id":99,"element_token":"old","session":"foreign"}`},
-		{"click", `{"pid":41,"window_id":99,"x":1}`},
-	} {
-		result, err := r.CallChecked(t.Context(), tc.name, []byte(tc.args), nil)
-		if err == nil || result.State != llm.ExecutionNotDispatched {
-			t.Fatal("unsafe arguments accepted", tc.name, tc.args, err)
-		}
-	}
-	if f.count("list_windows") != 0 || f.count("get_window_state") != 0 || f.count("click") != 0 || f.count("launch_app") != 0 {
-		t.Fatal("rejected arguments reached native service")
-	}
-}
-
-func TestManagedRunFinalPermitAndUnknownOutcome(t *testing.T) {
-	t.Parallel()
-	m, r, f := managedTestRun(t, "darwin", BackgroundOnly, false)
-	if _, err := r.Tools(t.Context()); err != nil {
-		t.Fatal(err)
-	}
-	managedInvoke(t, r, "list_windows", `{}`)
-	token := managedObserve(t, r, false)
-	denied := errors.New("permit revoked")
-	checks := 0
-	result, err := r.CallChecked(t.Context(), "click", []byte(managedClick(token)), func(context.Context) error {
-		checks++
-		if checks == 2 {
-			return denied
-		}
-		return nil
-	})
-	if !errors.Is(err, denied) || result.State != llm.ExecutionNotDispatched || checks != 2 || f.count("click") != 0 {
-		t.Fatal("final permit did not stop dispatch", err)
-	}
-	token = managedObserve(t, r, false)
-	f.handle = func(_ context.Context, name string, _ map[string]any) (Reply, error, bool) {
-		if name == "click" {
-			return Reply{}, io.EOF, true
-		}
-		return Reply{}, nil, false
-	}
-	result, err = r.CallChecked(t.Context(), "click", []byte(managedClick(token)), nil)
-	if err == nil || result.State != llm.ExecutionUnknown || m.Status().Connected || f.count("click") != 1 {
-		t.Fatal("unknown mutation lost or replayed", err)
-	}
-	result, err = r.CallChecked(t.Context(), "list_windows", []byte(`{}`), nil)
-	if err == nil || result.State != llm.ExecutionNotDispatched || f.count("start_session") != 1 {
-		t.Fatal("execution silently reconnected")
-	}
-	if _, err := r.Tools(t.Context()); err != nil {
-		t.Fatal(err)
-	}
-	if f.count("start_session") != 2 || f.count("click") != 1 {
-		t.Fatal("explicit discovery did not re-admit cleanly")
-	}
-}
-
-func TestManagedRunImageCoordinatesUseGenericMediaDimensions(t *testing.T) {
-	t.Parallel()
-	_, r, f := managedTestRun(t, "darwin", BackgroundOnly, true)
-	var data bytes.Buffer
-	if err := png.Encode(&data, image.NewRGBA(image.Rect(0, 0, 2100, 2))); err != nil {
-		t.Fatal(err)
-	}
-	f.image = data.Bytes()
-	if _, err := r.Tools(t.Context()); err != nil {
-		t.Fatal(err)
-	}
-	managedInvoke(t, r, "list_windows", `{}`)
-	managedObserve(t, r, true)
-	result := managedInvoke(t, r, "click", `{"pid":41,"window_id":99,"x":1000,"y":0.5}`)
-	if result.State != llm.ExecutionReturned {
-		t.Fatal("pixel action rejected")
-	}
-	for _, call := range f.calls {
-		if call.name == "click" && (call.args["x"] != float64(1050) || call.args["y"] != float64(1) || call.args["capture_id"] != "capture-1") {
-			t.Fatal("generic image coordinates not mapped", call.args)
-		}
-	}
-}
-
-func TestManagedRunForegroundRequiresFreshVerifiedRefusal(t *testing.T) {
-	t.Parallel()
-	_, r, f := managedTestRun(t, "darwin", ForegroundAllowed, false)
-	if _, err := r.Tools(t.Context()); err != nil {
-		t.Fatal(err)
-	}
-	managedInvoke(t, r, "list_windows", `{}`)
-	token := managedObserve(t, r, false)
-	args := func(token, delivery, text string) []byte {
-		data, _ := json.Marshal(map[string]any{"pid": 41, "window_id": 99, "element_token": token, "text": text, "delivery_mode": delivery})
-		return data
-	}
-	result, err := r.CallChecked(t.Context(), "type_text", args(token, "foreground", "task"), nil)
-	if err == nil || result.State != llm.ExecutionNotDispatched {
-		t.Fatal("foreground without refusal")
-	}
-	f.handle = func(_ context.Context, name string, args map[string]any) (Reply, error, bool) {
-		if name == "type_text" && args["delivery_mode"] == "background" {
-			return backgroundRefusal(), nil, true
-		}
-		return Reply{}, nil, false
-	}
-	result, err = r.CallChecked(t.Context(), "type_text", args(token, "background", "task"), nil)
-	if err != nil || !result.IsError || f.count("type_text") != 1 {
-		t.Fatal("refusal lost", err)
-	}
-	token = managedObserve(t, r, false)
-	result, err = r.CallChecked(t.Context(), "type_text", args(token, "foreground", "different"), nil)
-	if err == nil || result.State != llm.ExecutionNotDispatched {
-		t.Fatal("foreground changed intended action")
-	}
-	result, err = r.CallChecked(t.Context(), "type_text", args(token, "foreground", "task"), nil)
-	if err != nil || result.State != llm.ExecutionReturned || f.count("type_text") != 2 {
-		t.Fatal("explicit continuation failed", err)
-	}
-	for _, c := range f.calls {
-		if c.name == "type_text" && (c.args["session"] != r.id || c.args["target"] != nil || c.args["scope"] != nil) {
-			t.Fatal("native identity not owned")
-		}
-	}
-}
-
-func TestManagedRunDoesNotAdmitForbiddenSchemaFields(t *testing.T) {
-	t.Parallel()
-	raw := json.RawMessage(`{"type":"object","properties":{"x":{"type":"number"}},"required":["x"],"allOf":[]}`)
-	if _, err := managedSchema("click", raw, []string{"x"}); err == nil {
-		t.Fatal("unreviewed schema shape projected")
-	}
-	for _, input := range []string{`{"pid":41,"window_id":99,"scope":"desktop"}`, `{"pid":41,"window_id":99,"capture_id":"saved"}`, `{"pid":41,"window_id":99,"element_index":1}`} {
-		if _, err := decodeManagedArguments("click", "darwin", []byte(input)); err == nil {
-			t.Fatal("alternate target accepted", input)
-		}
-	}
-	if _, err := decodeManagedArguments("click", "darwin", []byte(`{"pid":41,"window_id":99,"x":"`+strings.Repeat("x", 1<<20)+`"}`)); err == nil {
-		t.Fatal("oversized input accepted")
-	}
-}
-
-func TestManagedRunLaunchUsesOnlyDiscoveredIdentity(t *testing.T) {
-	t.Parallel()
-	for _, platform := range []string{"darwin", "linux"} {
-		t.Run(platform, func(t *testing.T) {
-			_, r, f := managedTestRun(t, platform, BackgroundOnly, false)
-			f.handle = func(_ context.Context, name string, args map[string]any) (Reply, error, bool) {
-				switch name {
-				case "list_apps":
-					return structuredReply(map[string]any{"apps": []any{map[string]any{"bundle_id": "app.fixture", "launch_path": "/usr/share/applications/fixture.desktop"}}}), nil, true
-				case "launch_app":
-					if len(args) != 1 || (platform == "linux" && args["launch_path"] != "/usr/share/applications/fixture.desktop") || (platform == "darwin" && args["bundle_id"] != "app.fixture") {
-						t.Fatal("launch changed discovered identity", args)
-					}
-					return structuredReply(map[string]any{"pid": 41, "name": "Fixture"}), nil, true
-				}
-				return Reply{}, nil, false
-			}
-			if _, err := r.Tools(t.Context()); err != nil {
-				t.Fatal(err)
-			}
-			managedInvoke(t, r, "list_apps", `{}`)
-			args := `{"bundle_id":"app.fixture"}`
-			if platform == "linux" {
-				args = `{"launch_path":"/usr/share/applications/fixture.desktop"}`
-			}
-			managedInvoke(t, r, "launch_app", args)
-			result, err := r.CallChecked(t.Context(), "launch_app", []byte(args), nil)
-			if err == nil || result.State != llm.ExecutionNotDispatched || f.count("launch_app") != 1 {
-				t.Fatal("launch identity replayed")
-			}
-		})
-	}
-}
-
-func TestManagedRunCrossRunAndCatalogInvalidation(t *testing.T) {
-	t.Parallel()
-	m, first, f := managedTestRun(t, "darwin", BackgroundOnly, false)
-	original, err := first.Tools(t.Context())
-	if err != nil {
-		t.Fatal(err)
-	}
-	managedInvoke(t, first, "list_windows", `{}`)
-	token := managedObserve(t, first, false)
-	second, err := m.Bind(t.Context(), RunOptions{Mode: BackgroundOnly})
+	second, err := manager.Bind(t.Context(), RunOptions{Mode: ForegroundAllowed, Images: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -360,47 +149,126 @@ func TestManagedRunCrossRunAndCatalogInvalidation(t *testing.T) {
 	if _, err := second.Tools(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	result, err := second.CallChecked(t.Context(), "click", []byte(managedClick(token)), nil)
-	if err == nil || result.State != llm.ExecutionNotDispatched {
-		t.Fatal("window/token crossed run")
+	// PID/window from a previous turn need no second local discovery admission.
+	for _, run := range []*Run{first, second} {
+		managedInvoke(t, run, "get_window_state", `{"pid":41,"window_id":99,"include_screenshot":false,"max_elements":2000,"max_depth":25,"timeout_ms":8000}`)
 	}
-	managedInvoke(t, second, "list_windows", `{}`)
-	managedObserve(t, second, false)
-	result, err = first.CallChecked(t.Context(), "click", []byte(managedClick(token)), nil)
-	if err == nil || result.State != llm.ExecutionNotDispatched {
-		t.Fatal("another run's observation did not invalidate token")
+	response := Reply{IsError: true, Structured: []byte(`{"degraded":true,"escalation":{"recommended":"foreground"}}`), Text: []string{"native detail"}}
+	driver.handle = func(_ context.Context, name string, _ map[string]any) (Reply, error, bool) {
+		return response, nil, name != "end_session"
 	}
-	token = managedObserve(t, first, false)
-	f.generation.Add(1)
-	if first.ToolGeneration() == original.Generation {
-		t.Fatal("catalog notification retained executable epoch")
+	for range 2 {
+		result := managedInvoke(t, second, "click", `{"pid":41,"window_id":99,"x":1000,"y":0.5,"capture_id":"driver-capture","delivery_mode":"foreground"}`)
+		if !result.IsError || !bytes.Equal(result.StructuredContent, response.Structured) || len(result.Content) != 1 || result.Content[0].Text != "native detail" {
+			t.Fatal("result was reinterpreted")
+		}
 	}
-	result, err = first.CallChecked(t.Context(), "click", []byte(managedClick(token)), nil)
-	if err == nil || result.State != llm.ExecutionNotDispatched || f.count("click") != 0 {
-		t.Fatal("stale catalog executed")
+	managedInvoke(t, second, "launch_app", `{"name":"Fixture","additional_arguments":["--fixture"],"urls":["https://example.test"]}`)
+	for _, call := range driver.calls {
+		if call.name == "get_window_state" && (call.args["max_elements"] != float64(2000) || call.args["max_image_dimension"] != nil) {
+			t.Fatal("observation defaults overridden")
+		}
+		if call.name == "click" && (call.args["x"] != float64(1000) || call.args["y"] != 0.5 || call.args["capture_id"] != "driver-capture" || call.args["session"] != second.id) {
+			t.Fatal("input changed")
+		}
+	}
+	if driver.count("list_windows") != 0 || driver.count("list_apps") != 0 || driver.count("click") != 2 || !manager.Status().Connected {
+		t.Fatal("implicit discovery, retry or domain-error retirement")
 	}
 }
 
-func TestManagedRunCloseCancelsOneMutationWithoutReplay(t *testing.T) {
-	t.Parallel()
-	m, r, f := managedTestRun(t, "darwin", BackgroundOnly, false)
-	if _, err := r.Tools(t.Context()); err != nil {
+func TestManagedHostPoliciesAndExplicitForeground(t *testing.T) {
+	for _, mode := range []ControlMode{BackgroundOnly, ForegroundAllowed} {
+		t.Run(string(mode), func(t *testing.T) {
+			_, run, driver := managedTestRun(t, "darwin", mode, false)
+			if _, err := run.Tools(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+			for _, args := range []string{`{"pid":41,"window_id":99,"x":1,"y":2,"delivery_mode":"foreground"}`, `{"scope":"desktop","x":1,"y":2}`, `{"target":{"kind":"desktop","display_id":"primary"},"x":1,"y":2}`} {
+				result, err := run.CallChecked(t.Context(), "click", []byte(args), nil)
+				if mode == BackgroundOnly {
+					if err == nil || result.State != llm.ExecutionNotDispatched {
+						t.Fatal("background policy bypass")
+					}
+				} else if err != nil || result.State != llm.ExecutionReturned {
+					t.Fatal("foreground required a local refusal", err)
+				}
+			}
+			for _, args := range []string{`{"session":"foreign"}`, `{"pid":41,"pid":42}`, `{} {}`, `null`} {
+				if _, err := run.CallChecked(t.Context(), "click", []byte(args), nil); err == nil {
+					t.Fatal("ambiguous arguments accepted")
+				}
+			}
+			for _, args := range []string{`{"pid":41,"window_id":99}`, `{"pid":41,"window_id":99,"include_screenshot":false,"screenshot_out_file":"/tmp/image.png"}`} {
+				if _, err := run.CallChecked(t.Context(), "get_window_state", []byte(args), nil); err == nil {
+					t.Fatal("image capability bypass")
+				}
+			}
+			if _, err := run.CallChecked(t.Context(), "start_session", []byte(`{}`), nil); err == nil {
+				t.Fatal("host lifecycle exposed")
+			}
+			if driver.count("get_window_state") != 0 {
+				t.Fatal("rejected capture dispatched")
+			}
+		})
+	}
+}
+
+func TestManagedFinalPermitAndUnknownNeverReplay(t *testing.T) {
+	manager, run, driver := managedTestRun(t, "darwin", BackgroundOnly, false)
+	if _, err := run.CallChecked(t.Context(), "list_windows", []byte(`{}`), nil); err == nil || driver.count("start_session") != 0 {
+		t.Fatal("call connected implicitly")
+	}
+	if _, err := run.Tools(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	managedInvoke(t, r, "list_windows", `{}`)
-	token := managedObserve(t, r, false)
-	entered := make(chan struct{})
-	f.handle = func(ctx context.Context, name string, _ map[string]any) (Reply, error, bool) {
-		if name == "click" {
-			close(entered)
-			<-ctx.Done()
-			return Reply{}, ctx.Err(), true
+	denied := errors.New("revoked")
+	checks := 0
+	result, err := run.CallChecked(t.Context(), "click", []byte(`{"element_token":"native-token"}`), func(context.Context) error {
+		checks++
+		if checks == 2 {
+			return denied
 		}
-		return Reply{}, nil, false
+		return nil
+	})
+	if !errors.Is(err, denied) || result.State != llm.ExecutionNotDispatched || driver.count("click") != 0 {
+		t.Fatal("final permit missing", err)
 	}
-	done := make(chan mcpclient.Result, 1)
+	driver.handle = func(_ context.Context, name string, _ map[string]any) (Reply, error, bool) {
+		return Reply{}, io.EOF, name == "click"
+	}
+	result, err = run.CallChecked(t.Context(), "click", []byte(`{"element_token":"native-token"}`), nil)
+	if err == nil || result.State != llm.ExecutionUnknown || manager.Status().Connected || driver.count("click") != 1 {
+		t.Fatal("unknown outcome lost or replayed", err)
+	}
+	if _, err := run.CallChecked(t.Context(), "click", []byte(`{"element_token":"native-token"}`), nil); err == nil {
+		t.Fatal("silently reconnected")
+	}
+	if _, err := run.Tools(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if driver.count("click") != 1 || driver.count("start_session") != 2 {
+		t.Fatal("discovery replayed input")
+	}
+}
+
+func TestManagedCloseCancelsRunningAndQueuedCalls(t *testing.T) {
+	manager, run, driver := managedTestRun(t, "darwin", BackgroundOnly, false)
+	if _, err := run.Tools(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	entered := make(chan struct{})
+	driver.handle = func(ctx context.Context, name string, _ map[string]any) (Reply, error, bool) {
+		if name != "click" {
+			return Reply{}, nil, false
+		}
+		close(entered)
+		<-ctx.Done()
+		return Reply{}, ctx.Err(), true
+	}
+	done := make(chan mcpclient.Result, 2)
 	go func() {
-		result, _ := r.CallChecked(t.Context(), "click", []byte(managedClick(token)), nil)
+		result, _ := run.CallChecked(t.Context(), "click", []byte(`{"element_token":"native-token"}`), nil)
 		done <- result
 	}()
 	select {
@@ -408,99 +276,132 @@ func TestManagedRunCloseCancelsOneMutationWithoutReplay(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("mutation did not start")
 	}
-	if err := r.Close(); err != nil {
+	go func() {
+		result, _ := run.CallChecked(t.Context(), "click", []byte(`{"element_token":"native-token"}`), nil)
+		done <- result
+	}()
+	if err := run.Close(); err != nil {
 		t.Fatal(err)
 	}
-	select {
-	case result := <-done:
-		if result.State != llm.ExecutionUnknown {
-			t.Fatal("canceled mutation not unknown")
+	states := map[llm.ExecutionState]int{}
+	for range 2 {
+		select {
+		case result := <-done:
+			states[result.State]++
+		case <-time.After(5 * time.Second):
+			t.Fatal("cancellation did not settle")
 		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("mutation did not settle")
 	}
-	result, err := r.CallChecked(t.Context(), "click", []byte(managedClick(token)), nil)
-	if err == nil || result.State != llm.ExecutionNotDispatched || m.Status().Connected || f.count("click") != 1 {
-		t.Fatal("canceled run retained execution")
+	if states[llm.ExecutionUnknown] != 1 || states[llm.ExecutionNotDispatched] != 1 || driver.count("click") != 1 || manager.Status().Connected {
+		t.Fatal("cancel replayed or admitted queued input", states)
 	}
 }
 
-func TestManagedRunThroughAdmittedMCPWire(t *testing.T) {
-	t.Parallel()
-	config, peer := fakeTransport(t, "managed-run")
-	m := newManager(func(ctx context.Context) (driverClient, error) { return connect(ctx, config) })
-	defer m.Close()
-	r, err := m.Bind(t.Context(), RunOptions{Mode: BackgroundOnly})
+func TestManagedInfoAndCatalogInvalidationHaveNoSideEffects(t *testing.T) {
+	_, run, driver := managedTestRun(t, "darwin", BackgroundOnly, false)
+	if _, err := run.ServerInfo(t.Context()); err == nil || driver.count("start_session") != 0 {
+		t.Fatal("info created lifecycle")
+	}
+	catalog, err := run.Tools(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer r.Close()
-	catalog, err := r.Tools(t.Context())
-	if err != nil || len(catalog.Items) != 11 {
-		t.Fatal("wire catalog did not admit managed operations", err)
+	before := len(driver.calls)
+	info, err := run.ServerInfo(t.Context())
+	if err != nil || info.Name != "cua-driver" || info.Version != DriverVersion || len(driver.calls) != before {
+		t.Fatal("cached info", err)
 	}
-	managedInvoke(t, r, "list_windows", `{}`)
-	token := managedObserve(t, r, false)
-	managedInvoke(t, r, "click", managedClick(token))
-	if err := r.Close(); err != nil {
-		t.Fatal(err)
+	driver.generation.Add(1)
+	if run.ToolGeneration() == catalog.Generation {
+		t.Fatal("stale generation remained executable")
 	}
-	if peer.initializes.Load() != 1 || peer.pages.Load() != 2 || peer.calls.Load() != 5 {
-		t.Fatal("wire lifecycle replayed or used another connection", peer.calls.Load())
+	if _, err := run.ServerInfo(t.Context()); err == nil {
+		t.Fatal("stale metadata admitted")
+	}
+	result, err := run.CallChecked(t.Context(), "click", []byte(`{"element_token":"native-token"}`), nil)
+	if err == nil || result.State != llm.ExecutionNotDispatched || driver.count("click") != 0 {
+		t.Fatal("stale catalog executed")
 	}
 }
 
-func TestManagedRunCannotUsePixelsOmittedByResultBlockLimit(t *testing.T) {
-	t.Parallel()
-	_, r, f := managedTestRun(t, "darwin", BackgroundOnly, true)
-	var data bytes.Buffer
-	if err := png.Encode(&data, image.NewRGBA(image.Rect(0, 0, 2, 2))); err != nil {
+func TestManagedCallsUseAdmittedMCPWire(t *testing.T) {
+	config, peer := fakeTransport(t, "managed-run")
+	manager := newManager(func(ctx context.Context) (driverClient, error) { return connect(ctx, config) })
+	defer manager.Close()
+	run, err := manager.Bind(t.Context(), RunOptions{Mode: BackgroundOnly})
+	if err != nil {
 		t.Fatal(err)
 	}
-	f.handle = func(_ context.Context, name string, _ map[string]any) (Reply, error, bool) {
-		if name != "get_window_state" {
-			return Reply{}, nil, false
-		}
-		reply := structuredReply(map[string]any{"pid": 41, "window_id": 99, "snapshot_id": "snapshot", "capture_id": "capture", "screenshot_width": 2, "screenshot_height": 2, "screenshot_frame_valid": true, "elements": []any{map[string]any{"element_token": "token"}}})
-		reply.Text = make([]string, 256)
-		reply.Images = []Image{{Data: data.Bytes(), MIMEType: "image/png"}}
-		return reply, nil, true
-	}
-	if _, err := r.Tools(t.Context()); err != nil {
+	defer run.Close()
+	if _, err := run.Tools(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	managedInvoke(t, r, "list_windows", `{}`)
-	managedObserve(t, r, true)
-	result, err := r.CallChecked(t.Context(), "click", []byte(`{"pid":41,"window_id":99,"x":1,"y":1}`), nil)
-	if err == nil || result.State != llm.ExecutionNotDispatched || f.count("click") != 0 {
-		t.Fatal("undeliverable screenshot granted pixels")
+	token := managedObserve(t, run, false)
+	managedInvoke(t, run, "click", managedClick(token))
+	if err := run.Close(); err != nil {
+		t.Fatal(err)
 	}
-	managedInvoke(t, r, "click", managedClick("token"))
+	if peer.initializes.Load() != 1 || peer.pages.Load() != 2 || peer.calls.Load() != 4 {
+		t.Fatal("wire calls replayed or used a second connection", peer.calls.Load())
+	}
 }
 
-func TestManagedRunCloseClearsPendingForegroundOwnership(t *testing.T) {
-	t.Parallel()
-	m, r, f := managedTestRun(t, "darwin", ForegroundAllowed, false)
-	if _, err := r.Tools(t.Context()); err != nil {
-		t.Fatal(err)
-	}
-	managedInvoke(t, r, "list_windows", `{}`)
-	token := managedObserve(t, r, false)
-	f.handle = func(_ context.Context, name string, _ map[string]any) (Reply, error, bool) {
-		if name == "type_text" {
-			return backgroundRefusal(), nil, true
+func TestManagedSessionExpiryRetiresWithoutReplayAndReadmits(t *testing.T) {
+	for _, name := range []string{"list_windows", "click"} {
+		for _, form := range []string{"code", "refusal", "daemon"} {
+			t.Run(name+"/"+form, func(t *testing.T) {
+				manager, run, driver := managedTestRun(t, "darwin", BackgroundOnly, false)
+				if _, err := run.Tools(t.Context()); err != nil {
+					t.Fatal(err)
+				}
+				oldSession := run.id
+				reply := Reply{IsError: true}
+				switch form {
+				case "code":
+					reply.Structured = []byte(`{"code":"session_ended"}`)
+				case "refusal":
+					reply.Structured = []byte(`{"refusal":{"code":"session_ended"}}`)
+				case "daemon":
+					reply.Structured = []byte(`{"code":"tool_invocation_failed"}`)
+					reply.Text = []string{"session 'native-implicit' has ended; tool call '" + name + "' was rejected. Call start_session with this id to revive it before issuing further actions, or use a new session id."}
+				}
+				driver.handle = func(_ context.Context, method string, _ map[string]any) (Reply, error, bool) {
+					return reply, nil, method == name
+				}
+				result, err := run.CallChecked(t.Context(), name, []byte(`{}`), nil)
+				if err != nil || !result.IsError || result.State != llm.ExecutionReturned || !bytes.Equal(result.StructuredContent, reply.Structured) {
+					t.Fatal("expiry result changed", err)
+				}
+				if manager.Status().Connected || run.active || driver.count(name) != 1 || driver.count("start_session") != 1 {
+					t.Fatal("expiry did not retire, or retried", manager.Status())
+				}
+				if _, err := run.CallChecked(t.Context(), name, []byte(`{}`), nil); err == nil || driver.count(name) != 1 {
+					t.Fatal("expired connection executed")
+				}
+				driver.handle = nil
+				if _, err := run.Tools(t.Context()); err != nil {
+					t.Fatal("explicit rediscovery could not recover", err)
+				}
+				if run.id == oldSession || manager.Status().Generation != 2 || driver.count("start_session") != 2 || driver.count(name) != 1 {
+					t.Fatal("recovery reused or replayed the expired lifecycle")
+				}
+				managedObserve(t, run, false)
+			})
 		}
-		return Reply{}, nil, false
 	}
-	args, _ := json.Marshal(map[string]any{"pid": 41, "window_id": 99, "element_token": token, "text": "task"})
-	result, err := r.CallChecked(t.Context(), "type_text", args, nil)
-	if err != nil || !result.IsError || len(r.managedRefusals) != 1 {
-		t.Fatal("missing pending refusal", err)
-	}
-	if err := r.Close(); err != nil {
-		t.Fatal(err)
-	}
-	if len(r.managedRefusals) != 0 || len(m.latest) != 0 {
-		t.Fatal("closed run retained foreground ownership")
+}
+
+func TestManagedExpiryRequiresExactNativeFailure(t *testing.T) {
+	exact := "session 'implicit' has ended; tool call 'list_windows' was rejected. Call start_session with this id to revive it before issuing further actions, or use a new session id."
+	for _, result := range []mcpclient.Result{
+		{StructuredContent: []byte(`{"code":"session_ended"}`)},
+		{IsError: true, StructuredContent: []byte(`{"code":"background_unavailable"}`)},
+		{IsError: true, StructuredContent: []byte(`{"degraded":true}`)},
+		{IsError: true, Content: []mcpclient.Block{{Kind: mcpclient.BlockText, Text: "document says session_ended"}}},
+		{IsError: true, Content: []mcpclient.Block{{Kind: mcpclient.BlockText, Text: exact}}}, // another tool's diagnostic
+	} {
+		if managedSessionEnded("click", result) {
+			t.Fatal("ordinary domain result was classified as lifecycle expiry")
+		}
 	}
 }

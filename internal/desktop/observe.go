@@ -39,7 +39,8 @@ type Discovery struct {
 	Diagnostic string        `json:"diagnostic,omitempty"`
 }
 
-// Windows returns only window metadata, never AX contents or screenshots.
+// Windows is the setup UI's metadata projection, not a model tool boundary.
+// It returns only window metadata, never AX contents or screenshots.
 // References come from native results and are scoped to this run/generation.
 func (r *Run) Windows(ctx context.Context, query string, limit int) (Discovery, error) {
 	if len(query) > 256 || limit < 1 || limit > maxTargets {
@@ -114,21 +115,19 @@ type Element struct {
 }
 
 type Observation struct {
-	ForegroundAction string            `json:"foreground_action_available,omitempty"`
-	Ref              string            `json:"observation_ref"`
-	TargetRef        string            `json:"target_ref"`
-	Elements         []Element         `json:"elements"`
-	Complete         bool              `json:"elements_complete"`
-	Truncated        bool              `json:"projection_truncated"`
-	Degraded         bool              `json:"degraded"`
-	Diagnostic       string            `json:"diagnostic,omitempty"`
-	ImageWidth       int               `json:"image_width,omitempty"`
-	ImageHeight      int               `json:"image_height,omitempty"`
-	Image            *llm.ImageContent `json:"-"`
+	Ref         string            `json:"observation_ref"`
+	TargetRef   string            `json:"target_ref"`
+	Elements    []Element         `json:"elements"`
+	Complete    bool              `json:"elements_complete"`
+	Truncated   bool              `json:"projection_truncated"`
+	Degraded    bool              `json:"degraded"`
+	Diagnostic  string            `json:"diagnostic,omitempty"`
+	ImageWidth  int               `json:"image_width,omitempty"`
+	ImageHeight int               `json:"image_height,omitempty"`
+	Image       *llm.ImageContent `json:"-"`
 }
 
 type observationBinding struct {
-	foregroundAction                         string
 	target                                   windowIdentity
 	targetRef                                string
 	generation                               uint64
@@ -137,6 +136,8 @@ type observationBinding struct {
 	width, height, sourceWidth, sourceHeight int
 }
 
+// Observe verifies a user-selected setup preview. Model observations use the
+// generic CallChecked path and are not subject to this setup projection.
 func (r *Run) Observe(ctx context.Context, request ObserveRequest) (Observation, error) {
 	if len(request.Query) > 256 {
 		return Observation{}, errors.New("desktop: observation query exceeds 256 bytes")
@@ -277,14 +278,6 @@ func (r *Run) bindObservation(ctx context.Context, targetRef string, target wind
 	r.observations[ref] = binding
 	r.manager.latest[target] = ref
 	return result, nil
-}
-
-func (r *Run) observationLocked(ref string) (observationBinding, error) {
-	binding, ok := r.observations[ref]
-	if !ok || r.closed.Load() || r.ctx.Err() != nil || !r.manager.Status().Connected || binding.generation != r.manager.Status().Generation || r.manager.latest[binding.target] != ref {
-		return observationBinding{}, errors.New("desktop: stale observation; observe the target again before acting")
-	}
-	return binding, nil
 }
 
 func (r *Run) clearObservationsLocked() {

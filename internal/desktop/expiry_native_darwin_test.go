@@ -122,16 +122,18 @@ func TestNativeMacSessionExpiry(t *testing.T) {
 	if settled.Commits != 0 || settled.Value != "AICE-314" || settled.Result != "Result: pending" {
 		t.Fatal("expired session delivered native input")
 	}
-	if _, err := first.actAndObserve(ctx, request); err == nil || calls["click"] != 1 {
-		t.Fatal("expired observation was replayed")
+	// Do not probe expiry by repeating input. The host must retire the expired
+	// lifecycle before explicit discovery establishes a fresh connection.
+	if calls["click"] != 1 {
+		t.Fatal("expired action was automatically replayed")
+	}
+	if manager.Status().Connected || first.active {
+		t.Fatal("expired native lifecycle retained its connection")
 	}
 	if err := first.Close(); err != nil {
 		t.Fatal("expired session cleanup failed", err)
 	}
 	second := bind()
-	if _, err := second.actAndObserve(ctx, request); err == nil || calls["click"] != 1 {
-		t.Fatal("old observation crossed into the replacement run")
-	}
 	fresh := observe(second)
 	committed, err := second.actAndObserve(ctx, ActRequest{Kind: "click", ObservationRef: fresh.Ref, ElementToken: nativeElement(t, fresh, "Commit"), Screenshot: true})
 	nativeReturned(t, committed, err)

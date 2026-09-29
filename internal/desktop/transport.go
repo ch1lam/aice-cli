@@ -26,7 +26,7 @@ const (
 )
 
 // Reply is the native validation view used by setup, lifecycle and observation
-// checks, including managed MCP calls. The generic client retains the ordered
+// checks for setup; model calls retain native MCP results. The generic client retains the ordered
 // source result separately; this view is not the model-facing transcript.
 type Reply struct {
 	Structured json.RawMessage
@@ -147,6 +147,8 @@ func (c *client) call(ctx context.Context, name string, arguments any) (Reply, e
 // A list_changed notification invalidates admission; it never expands the
 // reviewed set or silently replaces an executable schema. Re-admit a new client.
 var errDriverCatalogChanged = errors.New("desktop: Driver catalog changed; reconnect and review the current schema before calling tools")
+
+func (c *client) Info() mcpclient.Info { return c.connection.Info() }
 
 func (c *client) ToolGeneration() uint64 { return c.connection.ToolGeneration() }
 

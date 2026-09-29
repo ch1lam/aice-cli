@@ -38,14 +38,9 @@ func TestLinuxCaptureContractDoesNotWeakenMacOrFailedFrames(t *testing.T) {
 			if kind != "mac" {
 				m.platform = "linux"
 			}
-			o := observed(t, r, true)
-			_, err := r.actAndObserve(t.Context(), ActRequest{Kind: "click", ObservationRef: o.Ref, Point: &Point{X: 10, Y: 0}})
-			wantCalls := 0
-			if kind == "linux" {
-				wantCalls = 1
-			}
-			if (err == nil) != (kind == "linux") || f.count("click") != wantCalls {
-				t.Fatal("capture contract mismatch", kind, err, f.count("click"))
+			o := setupObserved(t, r, true)
+			if (r.observations[o.Ref].capture != "") != (kind == "linux") {
+				t.Fatal("setup capture verification mismatch", kind)
 			}
 		})
 	}
@@ -62,86 +57,12 @@ func TestLinuxSemanticProjectionCannotProveMissingPassiveText(t *testing.T) {
 	}}
 	m, r := testRun(t, f, false)
 	m.platform = "linux"
-	o := observed(t, r, false)
+	o := setupObserved(t, r, false)
 	if o.Complete || semanticCondition(o, "missing passive label") != "unknown" {
 		t.Fatal("actionable-only projection claimed complete visible text", o)
 	}
 	if semanticCondition(o, "Commit") != "satisfied" {
 		t.Fatal("positive semantic evidence was lost")
-	}
-}
-
-func TestLinuxDoesNotReuseMacForegroundRefusalContract(t *testing.T) {
-	t.Parallel()
-	f := &fakeDriver{handle: func(_ context.Context, name string, _ map[string]any) (Reply, error, bool) {
-		if name == "type_text" {
-			return backgroundRefusal(), nil, true
-		}
-		return Reply{}, nil, false
-	}}
-	m, r := testRun(t, f, false)
-	m.platform = "linux"
-	r.options.Mode = ForegroundAllowed
-	o := observed(t, r, false)
-	request := ActRequest{Kind: "type_text", ObservationRef: o.Ref, ElementToken: o.Elements[0].Token, Text: "synthetic"}
-	result, err := r.actAndObserve(t.Context(), request)
-	if err != nil || !result.DriverError || result.Observation == nil || result.Observation.ForegroundAction != "" {
-		t.Fatal("Linux refusal inferred macOS foreground eligibility", result, err)
-	}
-	request.ObservationRef = result.Observation.Ref
-	request.ElementToken = result.Observation.Elements[0].Token
-	request.DeliveryMode = "foreground"
-	if _, err := r.actAndObserve(t.Context(), request); err == nil || f.count("type_text") != 1 {
-		t.Fatal("unreviewed foreground input dispatched", err)
-	}
-}
-
-func TestLinuxLaunchBindsDiscoveredCommandAndConfirmsNativeIdentity(t *testing.T) {
-	t.Parallel()
-	for _, mode := range []string{"ready", "missing-command", "foreign-response", "missing-running"} {
-		t.Run(mode, func(t *testing.T) {
-			path := "/usr/bin/synthetic --fixture"
-			f := &fakeDriver{handle: func(_ context.Context, name string, args map[string]any) (Reply, error, bool) {
-				switch name {
-				case "list_apps":
-					command := path
-					if mode == "missing-command" {
-						command = ""
-					}
-					return structuredReply(map[string]any{"apps": []any{map[string]any{"name": "Editor", "bundle_id": "synthetic-editor", "launch_path": command, "running": false}}}), nil, true
-				case "launch_app":
-					if len(args) != 1 || args["launch_path"] != path {
-						t.Fatal("launch did not round-trip the discovered XDG command", args)
-					}
-					name := path
-					if mode == "foreign-response" {
-						name = "different-command"
-					}
-					return structuredReply(map[string]any{"pid": 41, "name": name, "bundle_id": nil, "running": mode != "missing-running", "windows": []any{map[string]any{"pid": 41, "window_id": 99}}}), nil, true
-				}
-				return Reply{}, nil, false
-			}}
-			m, r := testRun(t, f, false)
-			m.platform = "linux"
-			discovery, err := r.discoverApps(t.Context(), "", 8)
-			if err != nil || len(discovery.Apps) != 1 {
-				t.Fatal(discovery, err)
-			}
-			if mode == "missing-command" {
-				if discovery.Apps[0].Ref != "" {
-					t.Fatal("unlaunchable process received app ref")
-				}
-				return
-			}
-			request := ActRequest{Kind: "launch", AppRef: discovery.Apps[0].Ref}
-			result, err := r.actAndObserve(t.Context(), request)
-			if err != nil || !result.Dispatched || (result.Observation != nil) != (mode == "ready") || (result.ObservationError == "") != (mode == "ready") {
-				t.Fatal(result, err)
-			}
-			if _, err := r.actAndObserve(t.Context(), request); err == nil || f.count("launch_app") != 1 {
-				t.Fatal("launch was repeated")
-			}
-		})
 	}
 }
 

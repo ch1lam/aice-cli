@@ -7,7 +7,3 @@ type Application struct {
 	PID      int    `json:"pid,omitempty"`
 	Running  bool   `json:"running"`
 }
-
-type appLaunchTarget struct {
-	bundleID, path string
-}

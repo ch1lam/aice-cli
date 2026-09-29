@@ -32,12 +32,23 @@ func TestNativeMacManagedModelHarness(t *testing.T) {
 }
 
 // Fixture-only scope: each PID is a process started by this test. Discovery
-// requires that PID; native Run validation still owns exact window admission,
-// latest observations, tokens/pixels and mutation consumption. This wrapper
+// requires that PID; alternative targets and native file/launch options cannot
+// escape this synthetic task. Driver owns snapshot/token validity. This wrapper
 // neither rewrites native results nor replaces the final dispatch check.
 func (s *nativeModelScope) CallChecked(ctx context.Context, name string, raw json.RawMessage, check func(context.Context) error) (mcpclient.Result, error) {
 	refuse := func() (mcpclient.Result, error) {
 		return mcpclient.Result{State: llm.ExecutionNotDispatched, IsError: true}, s.refuse()
+	}
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(raw, &fields) != nil {
+		return refuse()
+	}
+	for field := range fields {
+		switch field {
+		case "pid", "window_id", "delivery_mode", "include_screenshot", "query", "max_elements", "max_depth", "max_image_dimension", "timeout_ms", "on_screen_only", "element_token", "element_index", "snapshot_id", "capture_id", "x", "y", "key", "keys", "text", "value":
+		default:
+			return refuse()
+		}
 	}
 	var args struct {
 		PID          int      `json:"pid"`
@@ -96,6 +107,9 @@ func TestNativeManagedModelScope(t *testing.T) {
 		{"launch_app", `{"pid":41}`},
 		{"hotkey", `{"pid":41,"window_id":9,"keys":["cmd","q"]}`},
 		{"press_key", `{"pid":41,"window_id":9,"key":"return"}`},
+		{"click", `{"pid":41,"window_id":9,"target":{"kind":"window","pid":42,"window_id":10}}`},
+		{"click", `{"pid":41,"window_id":9,"scope":"desktop"}`},
+		{"get_window_state", `{"pid":41,"window_id":9,"screenshot_out_file":"/tmp/out.png"}`},
 	} {
 		t.Run(tc.name+tc.args, func(t *testing.T) {
 			result, err := scope.CallChecked(t.Context(), tc.name, []byte(tc.args), nil)

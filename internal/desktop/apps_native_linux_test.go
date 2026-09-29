@@ -42,8 +42,8 @@ func TestNativeLinuxLaunch(t *testing.T) {
 	target := linuxProbeFixture{directory: t.TempDir(), name: "AICE Native Launch Target"}
 	launcher := filepath.Join(home, "aice-native-launch")
 	quote := func(s string) string { return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'" }
-	// Exec retains the launcher PID. Its marker proves that a consumed app ref
-	// does not start the app twice; it also identifies cleanup after a lost reply.
+	// Exec retains the launcher PID. Its marker verifies this single requested
+	// launch was not automatically replayed, and identifies cleanup after a lost reply.
 	marker := filepath.Join(target.directory, "launches")
 	body := "#!/bin/sh\nprintf '%s\\n' \"$$\" >> " + quote(marker) + "\nexec /usr/bin/python3 " + quote(script) + " " + quote(target.directory) + " " + quote(target.name) + " target\n"
 	if err := os.WriteFile(launcher, []byte(body), 0700); err != nil {
@@ -110,9 +110,6 @@ func TestNativeLinuxLaunch(t *testing.T) {
 	}
 	_ = json.Unmarshal(result.Driver, &facts)
 	t.Logf("launch elapsed=%s outcome=%s driver_error=%v code=%s reported_active=%v running=%v windows=%d", time.Since(started), result.Outcome, result.DriverError, facts.Code, facts.Active, facts.Running, len(result.Windows))
-	if _, err := run.actAndObserve(ctx, request); err == nil {
-		t.Error("consumed launch reference was accepted")
-	}
 	if err := os.WriteFile(filepath.Join(sentinel.directory, "stop-typing"), nil, 0600); err != nil {
 		t.Fatal(err)
 	}

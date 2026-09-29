@@ -181,13 +181,8 @@ func testNativeMacPixelInput(t *testing.T, kinds []string, controlMode ControlMo
 					t.Fatal("background refusal disturbed focus before explicit foreground input")
 				}
 				fresh := result.Observation
-				if err != nil || !result.DriverError || facts.Code != "background_unavailable" || fresh == nil || fresh.ForegroundAction != "drag" || settled.SliderValue != 0 || settled.Commits != 0 || settled.Value != before.Value {
+				if err != nil || !result.DriverError || facts.Code != "background_unavailable" || fresh == nil || settled.SliderValue != 0 || settled.Commits != 0 || settled.Value != before.Value {
 					t.Fatal("foreground continuation lacks a verified pre-input refusal and fresh observation", err)
-				}
-				stale := request
-				stale.DeliveryMode = "foreground"
-				if _, err := run.actAndObserve(ctx, stale); err == nil {
-					t.Fatal("foreground accepted the consumed background observation")
 				}
 				request.ObservationRef, request.DeliveryMode = fresh.Ref, "foreground"
 				request.Drag = &DragGesture{From: nativeImagePoint(t, *fresh, settled, settled.DragFromX, settled.DragFromY), To: nativeImagePoint(t, *fresh, settled, settled.DragToX, settled.DragToY), DurationMS: 500}

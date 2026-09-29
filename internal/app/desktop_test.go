@@ -28,6 +28,9 @@ type appDesktopBackend struct {
 
 func (*appDesktopBackend) ControlMode() desktop.ControlMode { return desktop.BackgroundOnly }
 func (*appDesktopBackend) ToolGeneration() uint64           { return 1 }
+func (*appDesktopBackend) ServerInfo(context.Context) (mcpclient.Info, error) {
+	return mcpclient.Info{Name: "cua-driver", Version: desktop.DriverVersion, ProtocolVersion: desktop.ProtocolVersion, Tools: true}, nil
+}
 func (*appDesktopBackend) Tools(context.Context) (mcpclient.Catalog[mcpclient.Tool], error) {
 	return mcpclient.Catalog[mcpclient.Tool]{Complete: true, Generation: 1, Items: []mcpclient.Tool{catalogFixtureTool("list_windows", "Discover windows"), catalogFixtureTool("click", "Click window")}}, nil
 }

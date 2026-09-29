@@ -2,6 +2,7 @@ package desktop
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -9,7 +10,6 @@ import (
 
 	"github.com/ch1lam/aice-cli/internal/llm"
 	"github.com/ch1lam/aice-cli/internal/mcpclient"
-	"github.com/ch1lam/aice-cli/internal/media"
 )
 
 // Test scenarios sequence independent managed MCP operations. These helpers are
@@ -147,16 +147,8 @@ func (r *Run) fixtureWindows(ctx context.Context, query string, limit int, pids 
 		if !matches {
 			continue
 		}
-		ref := ""
-		for key, target := range r.targets {
-			if target == window.windowIdentity {
-				ref = key
-				break
-			}
-		}
-		if ref == "" {
-			continue
-		}
+		ref := "fixture-window-" + rand.Text()
+		r.targets[ref] = window.windowIdentity
 		if len(result.Windows) == limit {
 			result.Truncated = true
 			break
@@ -205,12 +197,9 @@ func (r *Run) discoverApps(ctx context.Context, query string, limit int) (Discov
 			result.Truncated = true
 			break
 		}
-		app.Ref = ""
-		for ref, known := range r.apps {
-			if known.bundleID == app.BundleID && (r.manager.platform != "linux" || known.path == native.LaunchPath) {
-				app.Ref = ref
-				break
-			}
+		app.Ref = app.BundleID
+		if r.manager.platform == "linux" {
+			app.Ref = native.LaunchPath
 		}
 		result.Apps = append(result.Apps, app)
 		if filter != "" && app.Running && app.PID > 0 {
@@ -247,56 +236,9 @@ func (r *Run) observeWindow(ctx context.Context, request ObserveRequest) (Observ
 		return Observation{}, err
 	}
 	defer release()
-	ref := r.manager.latest[target]
-	binding, ok := r.observations[ref]
-	if !ok {
-		return Observation{}, errors.New("observation unavailable")
-	}
-	var state struct {
-		Elements []Element `json:"elements"`
-		Complete bool      `json:"elements_complete"`
-		Degraded bool      `json:"degraded"`
-		Reason   string    `json:"degraded_reason"`
-	}
-	if err := json.Unmarshal(raw.StructuredContent, &state); err != nil {
-		return Observation{}, err
-	}
-	result := Observation{Ref: ref, TargetRef: request.TargetRef, Complete: state.Complete && !raw.IsError && r.manager.platform != "linux", Degraded: state.Degraded || raw.IsError, Diagnostic: state.Reason, Elements: []Element{}}
-	if binding.foregroundAction != "" {
-		var action ActRequest
-		_ = json.Unmarshal([]byte(binding.foregroundAction), &action)
-		result.ForegroundAction = action.Kind
-	}
-	textBytes := 0
-	for _, element := range state.Elements {
-		textBytes += len(element.Token) + len(element.Role) + len(element.Label) + len(element.Value)
-		if len(result.Elements) == maxElements || textBytes > maxObservationText {
-			result.Truncated = true
-			result.Complete = false
-			break
-		}
-		if _, ok := binding.tokens[element.Token]; !ok {
-			element.Token = ""
-		}
-		result.Elements = append(result.Elements, element)
-	}
-	if request.Screenshot {
-		for _, block := range raw.Content {
-			if block.Kind == mcpclient.BlockImage {
-				prepared, err := media.Prepare(ctx, llm.ImageContent{Data: block.Data, MIMEType: block.MIMEType}, nil)
-				if err == nil {
-					result.Image = &prepared
-					result.ImageWidth = prepared.Width
-					result.ImageHeight = prepared.Height
-				}
-			}
-		}
-		if result.Image == nil || binding.capture == "" {
-			result.Degraded = true
-			result.Diagnostic = "Screenshot unavailable or unbound"
-		}
-	}
-	return result, nil
+	// Test-owned convenience view for synthetic assertions. Production managed
+	// calls return the original MCP result and never create this binding.
+	return r.bindObservation(ctx, request.TargetRef, target, request.Screenshot, managedReply(raw))
 }
 
 func (r *Run) actAndObserve(ctx context.Context, request ActRequest) (result ActResult, returnErr error) {
@@ -317,10 +259,10 @@ func (r *Run) actAndObserve(ctx context.Context, request ActRequest) (result Act
 		release()
 		return r.fixtureLaunch(ctx, request, &timing)
 	}
-	binding, err := r.observationLocked(request.ObservationRef)
-	if err != nil {
+	binding, ok := r.observations[request.ObservationRef]
+	if !ok {
 		release()
-		return result, err
+		return result, errors.New("fixture observation missing")
 	}
 	if request.AppRef != "" {
 		release()
@@ -330,62 +272,7 @@ func (r *Run) actAndObserve(ctx context.Context, request ActRequest) (result Act
 	if request.Kind == "wait" {
 		return r.fixtureWait(ctx, binding, request, &timing)
 	}
-	args := map[string]any{"pid": binding.target.PID, "window_id": binding.target.WindowID}
-	name := request.Kind
-	if request.ElementToken != "" {
-		args["element_token"] = request.ElementToken
-	}
-	if request.Point != nil {
-		args["x"], args["y"] = request.Point.X, request.Point.Y
-	}
-	if request.DeliveryMode != "" {
-		args["delivery_mode"] = request.DeliveryMode
-	}
-	switch name {
-	case "double_click":
-		name = "click"
-		args["count"] = 2
-	case "right_click":
-		name = "click"
-		args["button"] = "right"
-	case "key":
-		name = "press_key"
-	}
-	if request.Text != "" {
-		args["text"] = request.Text
-	}
-	if request.Kind == "set_value" {
-		delete(args, "text")
-		args["value"] = request.Text
-	}
-	if request.Key != "" {
-		args["key"] = request.Key
-	}
-	if len(request.Keys) > 0 {
-		args["keys"] = request.Keys
-	}
-	if request.Direction != "" {
-		args["direction"] = request.Direction
-	}
-	if request.Amount != 0 {
-		args["amount"] = request.Amount
-	}
-	if request.Wait != nil {
-		args["wait"] = request.Wait
-	}
-	if request.Drag != nil {
-		if request.Drag.From != nil {
-			args["from_x"] = request.Drag.From.X
-			args["from_y"] = request.Drag.From.Y
-		}
-		if request.Drag.To != nil {
-			args["to_x"] = request.Drag.To.X
-			args["to_y"] = request.Drag.To.Y
-		}
-		if request.Drag.DurationMS != 0 {
-			args["duration_ms"] = request.Drag.DurationMS
-		}
-	}
+	name, args := fixtureActionArguments(binding, request)
 	phase := time.Now()
 	raw, err := r.fixtureCall(ctx, name, args)
 	timing.Driver = time.Since(phase)
@@ -423,18 +310,9 @@ func (r *Run) fixtureLaunch(ctx context.Context, request ActRequest, timing *Act
 	if request.Drag != nil || request.DeliveryMode != "" || request.ObservationRef != "" || request.ElementToken != "" || request.Point != nil || request.Text != "" || request.Key != "" || len(request.Keys) > 0 || request.Direction != "" || request.Amount != 0 || request.Wait != nil {
 		return ActResult{}, errors.New("unrelated launch fields")
 	}
-	_, release, err := r.acquire(ctx)
-	if err != nil {
-		return ActResult{}, err
-	}
-	app, ok := r.apps[request.AppRef]
-	release()
-	if !ok {
-		return ActResult{}, errors.New("stale app")
-	}
-	args := map[string]any{"bundle_id": app.bundleID}
+	args := map[string]any{"bundle_id": request.AppRef}
 	if r.manager.platform == "linux" {
-		args = map[string]any{"launch_path": app.path}
+		args = map[string]any{"launch_path": request.AppRef}
 	}
 	phase := time.Now()
 	raw, err := r.fixtureCall(ctx, "launch_app", args)
@@ -453,9 +331,9 @@ func (r *Run) fixtureLaunch(ctx context.Context, request ActRequest, timing *Act
 		Running  bool   `json:"running"`
 	}
 	decodeErr := json.Unmarshal(raw.StructuredContent, &launched)
-	matched := launched.BundleID == app.bundleID
+	matched := launched.BundleID == request.AppRef
 	if r.manager.platform == "linux" {
-		matched = launched.Name == app.path && launched.Running
+		matched = launched.Name == request.AppRef && launched.Running
 	}
 	if decodeErr != nil || launched.PID <= 0 || !matched {
 		result.ObservationError = "Launch did not establish expected process; rediscover without repeating it"
@@ -586,8 +464,8 @@ func (f *fakeDriver) Tools(context.Context) (mcpclient.Catalog[mcpclient.Tool], 
 	if err := json.Unmarshal(macSchemaInventory, &inventory); err != nil {
 		return mcpclient.Catalog[mcpclient.Tool]{}, err
 	}
-	// The fixtures cover both admitted platforms; their launch property union is
-	// projected back to the platform's exact managed field set by Run.Tools.
+	// Legacy native fixtures cover both platforms using this test-only launch
+	// property union. Production catalogs retain the verified platform schema.
 	var launch map[string]json.RawMessage
 	_ = json.Unmarshal(inventory.Tools["launch_app"], &launch)
 	var properties map[string]json.RawMessage
@@ -645,4 +523,18 @@ func (f *fakeDriver) CallChecked(ctx context.Context, name string, raw json.RawM
 type WaitCondition struct {
 	Text      string `json:"text"`
 	TimeoutMS int    `json:"timeout_ms"`
+}
+
+// Native fixture assertion view, never used by the model result path.
+func managedReply(result mcpclient.Result) Reply {
+	reply := Reply{Structured: result.StructuredContent, IsError: result.IsError}
+	for _, block := range result.Content {
+		switch block.Kind {
+		case mcpclient.BlockText:
+			reply.Text = append(reply.Text, block.Text)
+		case mcpclient.BlockImage:
+			reply.Images = append(reply.Images, Image{Data: block.Data, MIMEType: block.MIMEType})
+		}
+	}
+	return reply
 }

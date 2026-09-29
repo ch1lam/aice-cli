@@ -106,9 +106,7 @@ func TestNativeCuaMultiApp(t *testing.T) {
 		if set.Observation.Image == nil || r.observations[set.Observation.Ref].capture == "" {
 			t.Fatal("action did not return its verified capture mapping")
 		}
-		if _, err := r.actAndObserve(ctx, ActRequest{Kind: "set_value", ObservationRef: observation.Ref, ElementToken: "stale", Text: "must not execute"}); err == nil {
-			t.Fatal("consumed reference accepted")
-		}
+
 		click, err := r.actAndObserve(ctx, ActRequest{Kind: "click", ObservationRef: set.Observation.Ref,
 			ElementToken: nativeElement(t, *set.Observation, "Commit"), Screenshot: true})
 		nativeReturned(t, click, err)

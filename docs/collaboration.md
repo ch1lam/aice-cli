@@ -274,7 +274,17 @@ Test-only helpers perform explicit post-action observations and condition pollin
 there is no production typed action orchestrator. Keep independent widget,
 focus, dispatch-count and cleanup assertions when changing fixture sequencing.
 Compiling these fixtures does not rerun their historical native acceptance or
-authorize real desktop input; the opt-ins below still apply.
+authorize real desktop input; the opt-ins below still apply. Cua owns native
+target, token, snapshot and coordinate validity. Fixture helpers may keep local
+references to sequence their own assertions; those are not production admission
+rules. The model path forwards upstream parameters/results and does not consume
+observations or require a prior refusal before explicitly enabled foreground
+input.
+
+Dated results below predate the current thin adapter unless stated otherwise.
+The 2026-09-29 current macOS scripted pass and its two preceding diagnostic
+failures are recorded in [Computer Use evidence](desktop.md#platform-evidence).
+They do not establish real-model, Calendar or foreground-recovery acceptance.
 
 The opt-in Cua artifact check uses an already downloaded, fixed-digest macOS
 archive. It extracts into temporary directories, verifies signing identity and
@@ -417,9 +427,10 @@ even after focus restoration. Cleanup reaps test-owned children only.
 
 The runner also executes `TestNativeLinuxManager` through the public production
 constructor. It checks both an owned stdio runtime and reuse of a test-owned
-verified shared service, three exact-window tasks, nine capture bindings,
-consumed-reference rejection, one connection/session, owned-process cleanup and
-preservation of the shared service. This test passed natively on Linux arm64 in
+verified shared service, three exact-window tasks, nine returned captures,
+one connection/session, owned-process cleanup and preservation of the shared
+service. The earlier version also checked local consumed-reference rejection;
+that is no longer a production model contract. That version passed on Linux arm64 in
 the isolated Debian fixture on 2026-09-26; its foreground sentinel retained every
 concurrent core key with no focus loss in both modes. Static labels are not
 part of Linux's actionable-element projection, so independent fixture state
@@ -428,9 +439,8 @@ Both native tests compare the full production Linux schema pin.
 The native Manager gates on Linux and macOS also log per-action local timings
 for queue admission, mutation RPC, condition polling, final observation and total
 call time. These diagnostics contain no native request/response bodies and are
-excluded from model/Session JSON. Virtual-time tests separately check phase
-attribution for delayed input, lost replies, observation failures, queued
-cancellation, condition deadlines and delayed launch windows. Native timings
+excluded from model/Session JSON. Production cancellation and single-dispatch
+checks remain separate from test-only phase aggregation. Native timings
 are local harness measurements; neither these nor the aggregate discovery time
 measure provider latency, Guard time or next-model-request preparation.
 The optional `TestNativeLinuxInput` adds ASCII/Unicode insertion, single-key,
@@ -567,8 +577,10 @@ or requests permissions. The subsequent task uses the production Manager,
 including its ordinary lazy-start behavior if that service later disappears.
 It opens three temporary AppKit target processes and a foreground sentinel,
 performs semantic edits/commits with window screenshots, and checks independent
-fixture state, fresh references, connection reuse and owned-session cleanup.
-All nine images must retain verified capture mappings. Since the pinned macOS
+fixture state, fresh native references, connection reuse and owned-session
+cleanup. All nine images must retain their source dimensions and capture facts;
+fixture geometry conversion does not add production coordinate mapping. Since
+the pinned macOS
 projection omits passive labels, the returned editable value and independently
 read post-response commit state are checked separately. It logs only operation
 counts/timing and content-free diagnostics. Only these
@@ -606,12 +618,11 @@ AICE_CUA_BUILD_FIXTURE=1 go test -tags=integration ./internal/desktop -run '^Tes
 
 The macOS cold-launch gate additionally creates and registers one unique
 temporary AppKit bundle in `~/Applications`, a real Driver app-discovery root.
-It discovers the unopened app, consumes one local app reference, checks its exact
-bundle ID/PID, and explicitly selects the named fixture window if multiple
-candidates are returned. It requires an actual capture and Unicode value/commit,
-zero foreground-sentinel activation losses, rejection of the consumed launch
-reference and continued application/shared-service availability after Manager
-close. Its own cleanup requests fixture termination through a private file,
+It discovers the unopened app, launches its returned native identity once,
+checks its exact bundle ID/PID, and explicitly selects the named fixture window
+if multiple candidates are returned. It requires an actual capture and Unicode
+value/commit, zero foreground-sentinel activation losses, one native launch and
+continued application/shared-service availability after Manager close. Its own cleanup requests fixture termination through a private file,
 then unregisters/removes only the temporary bundle; no name/PID-wide kill is used.
 This gate passed with race detection on 2026-09-27, with two returned candidates.
 It needs a separate opt-in because it writes and registers a temporary app:
@@ -740,8 +751,10 @@ AICE_CUA_NATIVE=1 go test -tags=integration ./internal/desktop -run '^TestNative
 Foreground drag has an additional opt-in because it can affect the real pointer
 and temporarily activate the synthetic target. This gate binds the existing
 `foreground_allowed` mode, verifies background refusal without input/focus loss,
-rejects the consumed observation, and then explicitly dispatches from the fresh
-image. One run completed with slider value 0→92.7 and one observed activation
+then explicitly observes and dispatches foreground input from the fresh image.
+The fresh read is fixture sequencing; the current Run does not require a
+consumed-observation check or a particular preceding refusal. One run completed
+with slider value 0→92.7 and one observed activation
 loss followed by sentinel-focus restoration. A later run passed the strengthened
 pre-foreground focus check but failed movement/restoration with ChatGPT
 foreground. The current native gate is therefore not consistently accepted;
@@ -763,8 +776,9 @@ completed native poll while another window's click competes for execution; it
 requires zero click dispatches and permits input only through a fresh run and
 observation. The other independently observes a committed click before its RPC
 returns, then cancels and requires retained dispatch status, no replay and fresh
-read-only recovery. Both reject old references and verify the shared service
-remains usable. They passed with race detection on 2026-09-27; the in-flight
+read-only recovery. Both verify closed-run rejection and shared-service
+availability; native reference validity belongs to Cua. Their earlier versions
+passed with race detection on 2026-09-27; the in-flight
 case reported `unknown` and retired its task connection. Run sequentially:
 
 ```sh
@@ -804,7 +818,8 @@ input and responses are never held by the harness. It requires a dispatched
 binding cleanup, unchanged saved preferences, no model continuation, and a
 usable shared service. A result that already returned cannot pass this gate.
 The earlier typed variant passed with race detection on 2026-09-27, showing
-cancellation in 1.11 s; current managed results are recorded in the desktop guide:
+cancellation in 1.11 s; this historical result is not a run of the current thin
+adapter. The current gate remains available:
 
 ```sh
 AICE_CUA_NATIVE=1 go test -race -tags=integration ./internal/app -run '^TestNativeMacDesktopStopMutationTUI$' -count=1 -v
@@ -909,22 +924,24 @@ traffic while a separate read-only operator connection watches that session's
 label disappear. Disappearance before 290 seconds or no disappearance within
 six minutes fails the gate. An action using the old semantic token must fail
 without changing the fixture; the test preserves either a returned native error
-or an unknown transport outcome and never replays the consumed reference.
+or an unknown transport outcome and never repeats that failed action. A known
+native session-expiry result retires only the owned connection, without replay.
 After closing that run, a new run must discover/capture the window and commit
 once using a new token. The shared service must remain usable after cleanup.
 This does not test daemon restart, permission revocation, physical input or
 continuous foreground focus; it has no foreground sentinel. Run sequentially
 with other native gates. Default tests skip it and do not wait for native expiry.
 
-This passed with race detection on macOS 0.29.1 on 2026-09-27: expiry was observed
-after 5 min 20 s, the old action returned `outcome:returned` with `driver_error:true`
-and no observation or widget commit, and recovery used a second connection to
-commit exactly once. The full gate took 335.95 s. It first reproduced a recovery
-failure where a live MCP pipe retained expired native lifecycle state. Failed
-discovery or an unusable target observation now retires that connection without
-retrying input; returned action details remain intact. Offline tests cover app
-and window discovery failures, invalid observations and failed post-action
-observations, while preserving valid partial semantic observations.
+The earlier adapter passed this gate with race detection on macOS 0.29.1 on
+2026-09-27: expiry was observed after 5 min 20 s, the old action returned a
+native error without a widget commit, and recovery used a second connection to
+commit exactly once. That adapter retired a live connection after unusable
+native state. The current thin boundary keeps only the narrower lifecycle
+recovery: known native session expiry retires the connection while preserving
+the original result. Other native domain errors and degraded observations stay
+unchanged. A later explicit discovery establishes the replacement lifecycle;
+no operation is automatically retried. Historical fixture success is not a new
+native run of this narrower boundary.
 
 Keep the desktop unlocked for the full interval. The gate checks for
 `loginwindow`, including before the expired action, and never unlocks the host
@@ -945,7 +962,8 @@ AICE_CUA_NATIVE=1 AICE_CUA_NATIVE_PROXY_CRASH=1 go test -race -tags=integration 
 
 On macOS 0.29.1 this passed with race detection on 2026-09-27 in 8.04 s. The
 pending action settled in 2.10 ms as dispatched/unknown without an observation.
-Old references were refused both in the original run and a replacement run.
+That earlier adapter also refused its old local references; current native
+reference validity is delegated to Cua and closed runs cannot dispatch.
 Explicit read-only discovery/capture established a second admitted connection;
 the native click count and independent widget commit count both remained one.
 The public standard-mode service status retained the same daemon PID. This
@@ -972,11 +990,11 @@ native gates and interactive desktop tasks; default tests skip this gate.
 On 2026-09-27 this reproduced `Driver session unavailable`: AICE reused the
 old native lifecycle label on a new transport. Cua's owner checks reject that
 claim. Issuing a fresh label per native session start made the gate pass with
-race detection in 4.43 s. Offline unusable-read tests also model the native
-ownership rejection and verify fresh discovery/action, invalid old references
-and no replay across app, window, observation and post-action failures. This
-proves recovery after connection retirement, not the cause of the manual run's
-initial discovery failure or physical foreground behavior.
+race detection in 4.43 s. This historical result proves recovery after an
+explicit connection retirement, not the cause of the manual run's initial
+discovery failure or physical foreground behavior. Current offline tests check
+transport/catalog invalidation, final Guard checks and no native action replay;
+they do not recreate a local model target/observation state machine.
 
 ### Native discovery idle recovery
 
@@ -997,29 +1015,39 @@ session field, capture, input, app launch, focus change or model call is used.
 The public `list_apps` and `list_windows` schemas accept no session argument.
 
 After the wait, discovery must either remain usable or return a native
-`session_ended` error that retires the connection and old references. In the
-latter case, the next explicit discovery must succeed in the same AICE run
-using a fresh native identity. Other errors fail the test. The shared daemon
+`session_ended` error. In the latter case, AICE retains the original result and
+retires only its connection; the next explicit discovery must succeed in the
+same Run with a fresh native identity. Other errors fail the test. The shared daemon
 identity must remain unchanged. Run sequentially with other native gates and
 interactive desktop tasks; default tests skip it. This gate verifies metadata
 discovery recovery, not a gesture, physical focus or model task.
 
-On macOS 0.29.1 on 2026-09-27, this passed with race detection in 364.65 s.
+The earlier adapter passed this gate on macOS 0.29.1 on 2026-09-27 with race
+detection in 364.65 s; that run predates the current thin forwarding boundary.
 After six minutes the explicit lifecycle was still active without revival, but
 the daemon rejected `list_apps` because its implicit session had ended. The
 proxy's structured code was `tool_invocation_failed`; the native text identified
-the ended session. The test recognizes that daemon form and the core's nested
-`refusal.code` form without logging the session identity. Production recovery
-does not match either error text or code. The next explicit discovery admitted a
-new connection and lifecycle in the same AICE run, and shared-service identity
-was preserved. No input, capture or model call occurred.
+the ended session. The fixture recognizes that daemon form and the core's
+nested `refusal.code` without logging session identity. In that historical run,
+the earlier adapter retired unusable discovery state and the next discovery
+established a new connection/session. Current code recognizes known native
+session-expiry diagnostics only for host lifecycle retirement, without changing
+the returned result or replaying the failed call. It does not retire on arbitrary
+domain errors or degraded target state. No input, capture or model call occurred.
+
+The current thin forwarding boundary passed this gate on 2026-09-29 with race
+detection in 366.63 s. The daemon again rejected the expired implicit discovery
+session while the explicit lifecycle remained active. Production retirement and
+the next explicit discovery recovered a fresh connection/session in the same
+Run, preserving shared-daemon identity without input, capture or model calls.
 
 The manual Session's 468.432-second gap between successful discovery and failure
 is consistent with this independently reproduced path. Its generic tool error
 did not retain the underlying native reply, so this is supporting evidence,
 not proof of that historical call's exact cause. The implicit lifecycle can
 expire even while explicitly named actions continue; a first discovery after
-such an idle interval may fail and require a new read. Do not replay prior input.
+such an idle interval may fail. After that lifecycle is retired, explicit tool
+discovery is required before subsequent native calls; never replay prior input.
 
 ### Explicit real-model desktop gate
 
@@ -1037,9 +1065,10 @@ The current harness accepts omitted or `AICE_CUA_MODEL_ROUTE=managed` selection;
 registers tool search, the normally loaded builtin Skill and result readback,
 then borrows the admitted native Run through the production managed catalog.
 Its scope requires one of
-the test-owned PIDs for discovery and every native operation. Exact window,
-observation/token and mutation-consumption validation still belongs to the
-native Run. The scope refuses unrelated targets, foreground delivery, launch
+the test-owned PIDs for discovery and every native operation. The scope checks
+exact assigned windows; Cua owns snapshot/token and native input validity. The
+production Run does not keep a second observation-consumption rule. The scope
+refuses unrelated targets, foreground delivery, launch
 and non-task keyboard actions before dispatch, and retains genuine native results;
 this is not a product allowlist or a change to Cua standard mode. Scope refusals
 fail acceptance even if a model later completes the task. Unknown mutations are
@@ -1052,10 +1081,11 @@ First verify this harness without provider access:
 AICE_CUA_NATIVE=1 go test -race -tags=integration ./internal/app -run '^TestNativeMacManagedModelHarness$' -v
 ```
 
-The managed scripted-decision evidence and bounded-view assertions are recorded
-below. The old typed harness and paired route comparison are available at
-the pre-removal history; current migration evidence is summarized in
-[Computer Use](desktop.md#managed-mcp-migration-boundary).
+The current scripted-decision pass on 2026-09-29, bounded-view assertions and
+two preceding diagnostic failures are recorded in
+[Computer Use evidence](desktop.md#platform-evidence). The old typed harness and
+paired route comparison are available in pre-removal history; their results
+do not validate the current forwarding boundary.
 Current code has no typed model tool wrappers. The real-model gate has a separate
 opt-in; neither `AICE_CUA_NATIVE=1` nor the integration build tag enables it.
 After selecting and authorizing a provider/model, set all of the following:
@@ -1096,11 +1126,12 @@ those stages. The report separates Loop completion from full `accepted` status;
 it contains the route, counts/usage and effective request/token/time/output and
 result-view limits, not credentials or input bodies. The Session does
 contain the synthetic images and model transcript. Default tests skip all
-provider reads/calls; offline scope tests reject out-of-scope actions and stale
-references without a native backend call. Preparing or passing the scripted
+provider reads/calls; offline scope tests reject out-of-scope targets/actions
+without a native backend call. Native stale-reference checks belong to Cua. Preparing or passing the scripted
 harness does not establish real-model acceptance.
 
-The managed scripted gate passed on 2026-09-28 with race detection: 55 requests,
+The earlier managed adapter's scripted gate passed on 2026-09-28 with race
+detection: 55 requests,
 18 native operations, nine images, zero Guard asks/scope refusals and a 26.79 s
 Loop. All three independent values/one-commit assertions, the foreground
 sentinel, shared service and replay checks passed. Normal 4,096-token result

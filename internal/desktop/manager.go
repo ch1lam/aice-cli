@@ -41,7 +41,7 @@ type driverClient interface {
 	close() error
 }
 
-// Manager owns one connection and serializes every observation/action sequence.
+// Manager owns one connection and serializes native calls and lifecycle changes.
 // Config publication, installation and OS authorization belong to the app.
 type Manager struct {
 	platform  string // immutable native wire contract; never selected by the model
@@ -75,8 +75,8 @@ func (m *Manager) Status() Status {
 	return m.status
 }
 
-// Bind performs no native I/O. Each binding owns its cancellation, observations
-// and public Cua session label, even when two application runs share a Driver.
+// Bind performs no native I/O. Each binding owns cancellation and its public Cua
+// session label. Setup-only observations remain separate from model MCP results.
 func (m *Manager) Bind(ctx context.Context, options RunOptions) (*Run, error) {
 	if options.Mode != BackgroundOnly && options.Mode != ForegroundAllowed {
 		return nil, errors.New("desktop: invalid frozen control mode")
@@ -88,28 +88,26 @@ func (m *Manager) Bind(ctx context.Context, options RunOptions) (*Run, error) {
 		return nil, err
 	}
 	runCtx, cancel := context.WithCancel(ctx)
-	r := &Run{manager: m, ctx: runCtx, cancel: cancel, options: options, targets: make(map[string]windowIdentity), apps: make(map[string]appLaunchTarget), observations: make(map[string]observationBinding)}
+	r := &Run{manager: m, ctx: runCtx, cancel: cancel, options: options, targets: make(map[string]windowIdentity), observations: make(map[string]observationBinding)}
 	r.stopManager = context.AfterFunc(m.ctx, cancel)
 	return r, nil
 }
 
 type Run struct {
-	manager         *Manager
-	ctx             context.Context
-	cancel          context.CancelFunc
-	stopManager     func() bool
-	closed          atomic.Bool
-	managed         atomic.Pointer[managedAdmission]
-	managedRefusals map[windowIdentity]managedRefusal // gate-owned
-	id              string
-	options         RunOptions
-	started         bool // gate-owned
-	active          bool
-	cleanupDone     bool
-	cleanupErr      error
-	targets         map[string]windowIdentity
-	apps            map[string]appLaunchTarget // opaque reference -> native discovered launcher
-	observations    map[string]observationBinding
+	manager      *Manager
+	ctx          context.Context
+	cancel       context.CancelFunc
+	stopManager  func() bool
+	closed       atomic.Bool
+	managed      atomic.Pointer[managedAdmission]
+	id           string
+	options      RunOptions
+	started      bool // gate-owned
+	active       bool
+	cleanupDone  bool
+	cleanupErr   error
+	targets      map[string]windowIdentity
+	observations map[string]observationBinding
 }
 
 // ControlMode returns the immutable mode enforced by this Run. Application
@@ -242,9 +240,7 @@ func (m *Manager) disconnectLocked(reason string) error {
 		run.started = false
 		run.active = false
 		clear(run.targets)
-		clear(run.apps)
 		clear(run.observations)
-		clear(run.managedRefusals)
 	}
 	clear(m.runs)
 	clear(m.latest)
@@ -315,8 +311,6 @@ func (r *Run) closeLocked(ctx context.Context) (returnErr error) {
 		r.cleanupDone, r.cleanupErr = true, returnErr
 	}()
 	clear(r.targets)
-	clear(r.apps)
-	r.clearManagedRefusalsLocked()
 	r.clearObservationsLocked()
 	if !r.started || r.manager.client == nil {
 		return nil

@@ -95,7 +95,7 @@ func TestReadOnlyInspectionPreservesMissingAndUnknownGrants(t *testing.T) {
 	}
 }
 
-func TestCaptureStatusComesFromActualRequestedObservation(t *testing.T) {
+func TestCaptureStatusComesFromSetupRequestedObservation(t *testing.T) {
 	t.Parallel()
 	var data bytes.Buffer
 	if err := png.Encode(&data, image.NewRGBA(image.Rect(0, 0, 2100, 2))); err != nil {
@@ -109,16 +109,16 @@ func TestCaptureStatusComesFromActualRequestedObservation(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer r.Close()
-	_ = observed(t, r, false)
+	_ = setupObserved(t, r, false)
 	if !m.Status().CaptureCheckedAt.IsZero() {
 		t.Fatal("semantic observation became capture evidence")
 	}
-	_ = observed(t, r, true)
+	_ = setupObserved(t, r, true)
 	if !m.Status().CaptureAvailable || m.Status().CaptureCheckedAt.IsZero() {
 		t.Fatal("valid screenshot not recorded")
 	}
 	f.image = []byte("invalid screenshot")
-	_ = observed(t, r, true)
+	_ = setupObserved(t, r, true)
 	if m.Status().CaptureAvailable {
 		t.Fatal("failed capture retained the earlier success state")
 	}

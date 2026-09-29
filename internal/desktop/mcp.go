@@ -4,14 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"slices"
 
 	"github.com/ch1lam/aice-cli/internal/llm"
 	"github.com/ch1lam/aice-cli/internal/mcpclient"
 )
 
 // The Run consumes the admitted transport, never an arbitrary MCP connection.
-// Native lifecycle, target state and serialization remain Manager-owned.
+// Native lifecycle and serialization remain Manager-owned.
 type managedClient interface {
 	Tools(context.Context) (mcpclient.Catalog[mcpclient.Tool], error)
 	ToolGeneration() uint64
@@ -20,6 +19,7 @@ type managedClient interface {
 
 type managedAdmission struct {
 	client                                     managedClient
+	tools                                      map[string]managedTool
 	epoch, managerGeneration, clientGeneration uint64
 }
 
@@ -62,18 +62,22 @@ func (r *Run) Tools(ctx context.Context) (mcpclient.Catalog[mcpclient.Tool], err
 		return catalog, err
 	}
 	items := make([]mcpclient.Tool, 0, len(catalog.Items))
+	admitted := make(map[string]managedTool)
 	for _, descriptor := range catalog.Items {
-		fields := managedFields(descriptor.Name, r.manager.platform)
-		if fields == nil {
+		if !managedToolName(descriptor.Name) {
 			continue
 		}
-		schema, err := managedSchema(descriptor.Name, descriptor.InputSchema, fields)
+		schema, tool, err := managedSchema(descriptor.InputSchema)
 		if err != nil {
 			return mcpclient.Catalog[mcpclient.Tool]{}, err
 		}
 		descriptor.InputSchema = schema
-		descriptor.Description += " Managed CUA: session is run-owned. Use only discovered app/window identities and the latest observed element tokens or displayed-image pixels. Each mutation consumes the observation; call get_window_state again before another action. No file output, arbitrary launch options or alternative targets."
+		descriptor.Description += " AICE host policy: session is supplied by the host. Other parameters and results follow the native Driver contract, including snapshot and capture validity. Use Driver source screenshot coordinates; generic image views may be resized. Foreground delivery and desktop input require the configured foreground_allowed mode."
+		if !r.options.Images && descriptor.Name == "get_window_state" {
+			descriptor.Description += " This model cannot receive images: set include_screenshot=false."
+		}
 		items = append(items, descriptor)
+		admitted[descriptor.Name] = tool
 	}
 	if len(items) != 11 {
 		return mcpclient.Catalog[mcpclient.Tool]{}, errors.New("desktop: managed tool inventory incomplete")
@@ -85,7 +89,7 @@ func (r *Run) Tools(ctx context.Context) (mcpclient.Catalog[mcpclient.Tool], err
 		if previous != nil {
 			epoch = previous.epoch + 2
 		}
-		r.managed.Store(&managedAdmission{client: client, epoch: epoch, managerGeneration: generation, clientGeneration: catalog.Generation})
+		r.managed.Store(&managedAdmission{client: client, tools: admitted, epoch: epoch, managerGeneration: generation, clientGeneration: catalog.Generation})
 	}
 	catalog.Items, catalog.Generation = items, r.managed.Load().epoch
 	if err := ctx.Err(); err != nil {
@@ -102,10 +106,6 @@ func (r *Run) Tools(ctx context.Context) (mcpclient.Catalog[mcpclient.Tool], err
 // connection first; execution never reconnects or retries a native action.
 func (r *Run) CallChecked(ctx context.Context, name string, raw json.RawMessage, check func(context.Context) error) (mcpclient.Result, error) {
 	notDispatched := mcpclient.Result{State: llm.ExecutionNotDispatched}
-	args, err := decodeManagedArguments(name, r.manager.platform, raw)
-	if err != nil {
-		return managedReject(err)
-	}
 	ctx, release, err := r.acquire(ctx)
 	if err != nil {
 		return notDispatched, err
@@ -115,30 +115,26 @@ func (r *Run) CallChecked(ctx context.Context, name string, raw json.RawMessage,
 	if admission == nil || r.ToolGeneration() != admission.epoch || !r.active {
 		return managedReject(errors.New("desktop: managed admission expired; discover tools again"))
 	}
-	// Reject the current permit before changing even local observation state.
+	tool, ok := admission.tools[name]
+	if !ok {
+		return managedReject(errors.New("desktop: tool is outside the model-facing catalog"))
+	}
+	args, err := r.managedArguments(tool, name, raw)
+	if err != nil {
+		return managedReject(err)
+	}
+	// The application permit is checked here and again immediately before the
+	// generic MCP transport writes. No native input is automatically replayed.
 	if check != nil {
 		if err := check(ctx); err != nil {
 			return notDispatched, err
 		}
 	}
-	switch name {
-	case "list_apps", "list_windows":
-		return r.managedDiscoverLocked(ctx, admission, name, args, check)
-	case "get_window_state":
-		return r.managedObserveLocked(ctx, admission, args, check)
-	case "launch_app":
-		return r.managedLaunchLocked(ctx, admission, args, check)
-	default:
-		return r.managedActionLocked(ctx, admission, name, args, check)
-	}
-}
-
-func (r *Run) managedCallLocked(ctx context.Context, admission *managedAdmission, name string, args map[string]any, check func(context.Context) error) (mcpclient.Result, error) {
-	raw, err := json.Marshal(args)
+	wire, err := json.Marshal(args)
 	if err != nil {
-		return mcpclient.Result{State: llm.ExecutionNotDispatched}, errors.New("desktop: invalid managed arguments")
+		return managedReject(errors.New("desktop: invalid managed arguments"))
 	}
-	result, err := admission.client.CallChecked(ctx, name, raw, func(ctx context.Context) error {
+	result, err := admission.client.CallChecked(ctx, name, wire, func(ctx context.Context) error {
 		if r.ToolGeneration() != admission.epoch {
 			return errDriverCatalogChanged
 		}
@@ -149,88 +145,38 @@ func (r *Run) managedCallLocked(ctx context.Context, admission *managedAdmission
 	})
 	if err != nil && (result.State != llm.ExecutionNotDispatched || errors.Is(err, errDriverCatalogChanged) || errors.Is(err, mcpclient.ErrClosed)) {
 		_ = r.manager.disconnectLocked("Managed Driver call failed; discover again to re-admit without replaying input")
+	} else if err == nil && managedSessionEnded(name, result) {
+		// Preserve the Driver result exactly. This is connection retirement, not
+		// a retry, input recovery, or a second target/observation state machine.
+		_ = r.manager.disconnectLocked("Driver session expired; discover tools again to establish a fresh connection without replaying input")
 	}
 	return result, err
 }
 
-func managedFields(name, platform string) []string {
-	switch name {
-	case "list_apps":
-		return []string{}
-	case "list_windows":
-		return []string{"pid", "on_screen_only"}
-	case "get_window_state":
-		return []string{"pid", "window_id", "include_screenshot", "query"}
-	case "launch_app":
-		if platform == "linux" {
-			return []string{"launch_path"}
-		}
-		return []string{"bundle_id"}
-	case "click":
-		return []string{"pid", "window_id", "element_token", "x", "y", "button", "count", "delivery_mode"}
-	case "drag":
-		return []string{"pid", "window_id", "from_x", "from_y", "to_x", "to_y", "duration_ms", "delivery_mode"}
-	case "type_text":
-		return []string{"pid", "window_id", "element_token", "x", "y", "text", "delivery_mode"}
-	case "set_value":
-		return []string{"pid", "window_id", "element_token", "value"}
-	case "press_key":
-		return []string{"pid", "window_id", "element_token", "key", "delivery_mode"}
-	case "hotkey":
-		return []string{"pid", "window_id", "element_token", "keys", "delivery_mode"}
-	case "scroll":
-		return []string{"pid", "window_id", "element_token", "x", "y", "direction", "amount", "delivery_mode"}
-	default:
-		return nil
+// ServerInfo reads only an already admitted connection. Unlike Tools, it never
+// connects, starts a session, captures, or requests native authorization.
+func (r *Run) ServerInfo(ctx context.Context) (mcpclient.Info, error) {
+	_, release, err := r.acquire(ctx)
+	if err != nil {
+		return mcpclient.Info{}, err
 	}
+	defer release()
+	admission := r.managed.Load()
+	if admission == nil || r.ToolGeneration() != admission.epoch || !r.active {
+		return mcpclient.Info{}, errors.New("desktop: discover tools before requesting server information")
+	}
+	provider, ok := admission.client.(interface{ Info() mcpclient.Info })
+	if !ok {
+		return mcpclient.Info{}, mcpclient.ErrUnsupported
+	}
+	return provider.Info(), nil
 }
 
-// All supported pinned schemas are flat object schemas. Restrict only their
-// property set and required fields, retaining each admitted property verbatim.
-// Refuse an unfamiliar shape instead of weakening a new upstream constraint.
-func managedSchema(name string, raw json.RawMessage, fields []string) (json.RawMessage, error) {
-	var schema map[string]json.RawMessage
-	if json.Unmarshal(raw, &schema) != nil {
-		return nil, errors.New("desktop: invalid managed schema")
+func managedToolName(name string) bool {
+	switch name {
+	case "list_apps", "list_windows", "get_window_state", "launch_app", "click", "drag", "type_text", "set_value", "press_key", "hotkey", "scroll":
+		return true
+	default:
+		return false
 	}
-	for key := range schema {
-		if !slices.Contains([]string{"type", "properties", "required", "additionalProperties"}, key) {
-			return nil, errors.New("desktop: unmanaged schema constraint")
-		}
-	}
-	var properties map[string]json.RawMessage
-	var required []string
-	if json.Unmarshal(schema["properties"], &properties) != nil {
-		return nil, errors.New("desktop: invalid managed properties")
-	}
-	if len(schema["required"]) > 0 && json.Unmarshal(schema["required"], &required) != nil {
-		return nil, errors.New("desktop: invalid managed requirements")
-	}
-	for _, key := range fields {
-		if _, ok := properties[key]; !ok {
-			return nil, errors.New("desktop: missing managed property")
-		}
-	}
-	for key := range properties {
-		if !slices.Contains(fields, key) {
-			delete(properties, key)
-		}
-	}
-	for _, key := range required {
-		if !slices.Contains(fields, key) {
-			return nil, errors.New("desktop: managed projection removed a required property")
-		}
-	}
-	for _, key := range []string{"pid", "window_id", "bundle_id", "launch_path"} {
-		if name != "list_windows" && slices.Contains(fields, key) && !slices.Contains(required, key) {
-			required = append(required, key)
-		}
-	}
-	schema["properties"], _ = json.Marshal(properties)
-	if required == nil {
-		required = []string{}
-	}
-	schema["required"], _ = json.Marshal(required)
-	schema["additionalProperties"] = json.RawMessage(`false`)
-	return json.Marshal(schema)
 }

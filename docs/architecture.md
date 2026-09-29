@@ -149,10 +149,13 @@ binding requires the consumer-owned managed MCP interface at compile time.
 Computer Use uses the generic MCP result projection and explicit post-action
 observation. There is no separate desktop action orchestrator or specialized
 model result format. Native acceptance fixtures execute the same managed MCP
-entry, with polling and postcondition reads owned by the fixture. Shared native
-setup/validation APIs remain in `internal/desktop`, and legacy Session
-presentation stays read-only. See
-[managed migration status](desktop.md#managed-mcp-migration-boundary).
+entry, with polling and postcondition reads owned by the fixture. The model path
+forwards the pinned operation schemas and native results,
+with a host-owned session and frozen control-mode/image capabilities. Cua owns
+window, token, capture and input semantics; AICE does not keep a parallel
+execution-reference state machine. Shared native setup/validation APIs remain
+in `internal/desktop`, and legacy Session presentation stays read-only. See
+[managed MCP boundary](desktop.md#managed-mcp-boundary).
 The app constructor also supplies ordinary MCP admission with its reserved CUA
 endpoint. Management definition checks and process startup share that policy;
 the generic client does not know about native Computer Use. Independent endpoints
@@ -214,7 +217,7 @@ settings service, global registry, alternate transcript or file watcher.
 | `internal/skill` | Agent Skill discovery, SKILL.md parse, source layering, embedded builtins |
 | `internal/config` | Instance-local Viper precedence, effective snapshots, and locked atomic preference/credential persistence |
 | `internal/deps` | Verified ripgrep, Windows Git Bash, pinned agent-browser and Cua provisioning, including upstream browser skill resources |
-| `internal/desktop` | Pinned Cua admission over `internal/mcpclient`, managed Run operation/schema constraints, shared-service admission, Linux owned runtime and Windows read-only inspection; run sessions, serialized action/observation sequences, generation and exact-window references, image coordinate mapping; app binds each main run, native setup remains in progress ([status](desktop.md)) |
+| `internal/desktop` | Pinned Cua admission over `internal/mcpclient`, shared-service admission, Linux owned runtime and Windows read-only inspection; run sessions, serialized calls, frozen control-mode/image capabilities and setup capture validation; Cua owns model-path targeting and input semantics; app binds each main run, native acceptance remains incomplete ([status](desktop.md)) |
 | `internal/browser` | Process-owned browser names, environment, connection and bounded cleanup; app owns wiring, Loop remains unaware |
 | `internal/update` | Checksum-validated GitHub release updates |
 | `internal/hostpath` | Host path membership, tilde expansion, slash-normalized display |

@@ -66,7 +66,8 @@ introduces modern discovery by default; it was reviewed but is not selected for
 this legacy-only connection. AICE pins initialize to `2025-06-18` and checks the
 negotiated version and Driver identity. The alternative of implementing a new
 JSON-RPC client would duplicate protocol/lifecycle code; the SDK stays private
-to `internal/desktop`, without creating a generic MCP plugin platform.
+to `internal/mcpclient`, shared by ordinary MCP services and the desktop
+connection. Native installation and runtime admission remain in `internal/desktop`.
 
 SDK transitive runtime additions: google/jsonschema-go (MIT),
 segmentio/encoding and segmentio/asm (MIT), yosida95/uritemplate/v3 (BSD-3-Clause).

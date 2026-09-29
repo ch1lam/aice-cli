@@ -206,81 +206,44 @@ None of these limits permits automatic action replay or a second CUA route.
 
 ### Computer Use integration
 
-The [desktop integration record](desktop.md) tracks the pinned Cua admission,
-managed MCP consumer and platform evidence. Transport tests do not
-establish desktop task acceptance. Native tests remain opt-in.
-Windows has a source-reviewed two-tool status client and native named-pipe peer
-checks, with synthetic admission/UI coverage. The native Windows tests have only
-been compiled; status admission is not verified there, and setup/actions remain
-unintegrated. Do not infer input readiness from the upstream constant UIA and
-PostMessage fields or from a nonzero Windows session ID.
-The [Windows action source review](desktop.md#windows-action-admission-gaps)
-also found that launch can choose an unrelated same-name process, and background
-launch uses best-effort focus restoration. A pure-function diagnostic reproduced
-the candidate ordering, but no native Windows launch has run. Resolve exact
-application/window ownership and continuous focus acceptance before enabling that
-adapter; do not treat `active:false` or foreground-retry advice as proof of safety.
-The macOS [cold-launch gate](desktop.md#platform-evidence) establishes one real
-AppKit launch, exact process/window binding, explicit multi-window selection and
-continued app availability after Manager close, with no foreground-sentinel
-activation loss. It uses a temporary registered bundle and does not establish
-third-party self-activation behavior or physical input/IME coexistence.
-The macOS [cross-toolkit gate](desktop.md#platform-evidence) passes a Unicode
-transfer through AppKit → WebKit → AppKit on one connection. Direct `set_value`
-on the WebKit field failed independent DOM readback; `type_text` on the empty
-field completed the task while the Driver honestly retained `unverifiable`.
-Do not infer web-content success from AXValue echoes or a returned RPC. The
-fixture proves two toolkits, not third-party or actual-model task acceptance.
-Its CLI counterpart also passes Guard/Loop/tool execution and exact Session
-image/result replay, preserving WebKit's `unverifiable` effect despite the
-independently confirmed page result. Built-in tool guidance now distinguishes
-duplicate labels by role and prefers text insertion for macOS web inputs.
+The [Computer Use guide](desktop.md#managed-mcp-boundary) defines the thin
+managed MCP boundary. Cua owns native targets, references, captures and input
+semantics; AICE owns verified runtime/session lifecycle, configured capability
+limits, generic Guard checks and result retention. Local setup validation must
+not become a second model execution state machine.
+
+Native and real-model evidence predating this boundary does not validate the
+new forwarding path. The current macOS scripted three-form gate passes task,
+focus, shared-service and Session replay assertions with explicitly narrowed
+observations; [its evidence and earlier failed attempts](desktop.md#platform-evidence)
+do not establish real-model or Calendar task acceptance. Remaining checks include
+broader upstream arguments, original/display screenshot coordinates, degraded
+observations, explicit foreground recovery and native new-run continuation.
+The current adapter also passes the native six-minute implicit discovery-expiry
+recovery gate; interrupted-action and other lifecycle scenarios retain their
+separate evidence limits.
 The [real-model gate](collaboration.md#explicit-real-model-desktop-gate) requires
-an independent opt-in, explicit model and artifact directory. The archived
-DeepSeek three-form pair passes full acceptance for that Loop/fixture scope.
-It does not establish full CLI use with a real model, third-party-app task
-quality, physical-input coexistence or general performance equivalence.
-The macOS [cursor gate](desktop.md#platform-evidence) verifies renderer visibility
-and session cleanup without an external observer. A separate host-surface
-screenshot visibly showed the blue cursor; its combined manual run failed the
-foreground sentinel. Keep those facts separate: render acknowledgement and
-isolated surface appearance do not establish desktop compositing, animation or
-physical-pointer independence.
-The macOS [pointer-button gate](desktop.md#platform-evidence) fails continuous
-focus for pixel double-click and exact event count for pixel right-click. Each
-request makes one native RPC; independent AppKit counters observe two right-click
-pairs and one transient sentinel activation loss for double-click. The pinned
-source contains dual right-event posting and a background-left activation/restore
-path, but native transport/focus causality has not been traced. Preserve strict
-counts and continuous focus; restoring focus or reporting `unverifiable` cannot
-make these gates pass. Repair and rerun before claiming those routes accepted.
-The macOS [gesture gates](desktop.md#platform-evidence) establish AppKit
-background scrolling, but the full background gate fails because 0.29.1 rejects
-drag before input. One explicit foreground-drag run completed with a measured
-focus transition and restoration, but a later probe failed movement/restoration
-with another app foreground. The cause is not attributed and native foreground
-repeatability remains open; neither result establishes background support. Keep the refusal and failing movement postcondition visible pending
-an upstream repair or an explicit acceptance of that capability limit.
-The macOS [cancellation gates](desktop.md#platform-evidence) now verify native
-condition-wait cancellation and an already committed click whose RPC is still
-pending. They preserve unknown dispatch, reject stale references, avoid replay
-and recover read-only while the shared service remains usable. A separate native
-Settings Stop gate now cancels explicit managed read polling through the actual CLI/Bubble Tea UI,
-retains complete Session tool pairs and preserves saved preferences. Its mutation
-variant now cancels a natively committed click while the response is pending,
-retains the exact unknown result in Session, and verifies one commit with no
-model continuation. These do not establish interrupted gesture cleanup, physical
-Stop keys or foreground/IME coexistence.
-The Linux [input acceptance gate](desktop.md#linux-input-acceptance-failures)
-currently fails on truncated Unicode insertion and unavailable GTK background
-keyboard, pixel scroll and drag delivery. Keep those failures distinct from passing
-semantic value changes and pixel clicks; neither a non-error RPC nor
-cross-compilation proves the requested input landed.
-The separate [Linux launch gate](desktop.md#linux-launch-acceptance-failure)
-also fails background coexistence: its synthetic app launches and remains usable,
-but the foreground sentinel loses focus despite the Driver's `active:false`.
-That field is not measured focus evidence. Preserve the failing acceptance
-condition pending a reviewed repair or explicit product decision.
+an authorized model/budget, retained artifacts and independent task assertions.
+Default unit tests and cross-compilation establish none of those native effects.
+
+Unresolved platform issues remain in the owning guide:
+
+- [macOS input](desktop.md#macos-input-limitations): double-click focus loss,
+  duplicate right-click events and incomplete foreground-drag repeatability;
+  WebKit AXValue echoes also need independent business-state verification.
+- [Linux input](desktop.md#linux-input-acceptance-failures): Unicode insertion
+  truncation and unavailable GTK background keyboard/gesture routes in the
+  isolated environment. [Linux launch](desktop.md#linux-launch-acceptance-failure)
+  still fails continuous-focus acceptance.
+- [Windows actions](desktop.md#windows-action-admission-gaps): setup/actions
+  remain unintegrated, native status is unverified, and launch process selection
+  needs exact-ownership acceptance before support is enabled.
+
+Keep uncertainty, failed postconditions and focus measurements visible. A native
+refusal, `active:false`, `effect:unverifiable` or foreground advice is not proof
+of successful input or permission to replay an uncertain action. Physical
+IME/input coexistence, first-time installation, interrupted gesture cleanup and
+broader application behavior remain separate acceptance work.
 
 ### Self-update OpenPGP dependency warning
 

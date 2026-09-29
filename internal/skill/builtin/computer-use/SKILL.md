@@ -1,14 +1,16 @@
 ---
 name: computer-use
-description: Operate native desktop apps through AICE's managed:cua MCP service with Cua Driver 0.29.1. Use when that managed service is available for a desktop task; this guide does not apply to the older desktop_* entry points.
+description: Operate native desktop apps through AICE's managed:cua MCP service with Cua Driver 0.29.1. Use when that managed service is available for a desktop task.
 ---
 
 # Computer Use in AICE
 
-This is AICE's guide for its managed Cua Driver **0.29.1** operations. It is
-written for the restricted schemas supplied by AICE, not arbitrary Cua servers
-or upstream CLI examples. Loading it supplies guidance, not permission or a
-connection. Stay within the user's requested task and existing authorization.
+This guide applies to AICE's managed Cua Driver **0.29.1** service. Use the
+selected tool's pinned platform schema as the argument contract. AICE manages
+the native session, connection and configured capabilities; Cua manages targets,
+snapshots, element references, capture coordinates and input semantics. Loading
+this guide creates no connection or permission. Stay within the user's task and
+existing authorization.
 
 ## Find the available operations
 
@@ -17,105 +19,111 @@ for example `{"service":"managed:cua","query":"list_windows","limit":1}`.
 Call the returned model-facing tool name with its complete schema on the next
 model round. Raw names such as `click` identify operations; do not guess the
 hashed model-facing name. Search selects at most five definitions at a time;
-use its returned IDs or next page when needed. Search does not grant execution
+use returned IDs or the next page when needed. Search does not grant execution
 permission. If a selected definition becomes unavailable, search again.
 
-If this service is absent or unavailable, report the supplied diagnostic.
-Computer Use enablement, installation, OS grants and control mode belong to
-Settings → Computer Use. Do not start another Driver, register a second MCP
-connection, use action CLI commands or switch to another automation route to
-work around a refusal. This guide does not turn on the managed route in a
-build that exposes only `desktop_*` tools.
+The service exposes `list_apps`, `list_windows`, `get_window_state`,
+`launch_app`, `click`, `drag`, `type_text`, `set_value`, `press_key`, `hotkey`
+and `scroll`. Public `session` is host-owned and omitted from these schemas;
+do not supply or invent it. Other advertised arguments retain their upstream
+meaning. Lifecycle, configuration and OS permission operations belong to AICE.
+
+If the service is absent or unavailable, report the supplied diagnostic.
+Enablement, installation, OS grants and control mode belong to Settings →
+Computer Use. Do not start another Driver or switch to a separate automation
+route to work around a refusal. `mcp_server_info` can show the admitted service's
+initialization information; it does not itself enable or repair the service.
 
 ## Discover, observe, act, verify
 
-1. Use `list_windows` to find the intended application's window. When the task
-   supplies a current PID, pass it as `pid` on discovery; respect any narrower
-   task scope even if the schema allows broader discovery. Use the returned exact
-   `pid` and `window_id`; neither a title nor an old transcript's numbers establish
-   a current target. Each `list_windows` replaces the admitted window set and
-   retires all prior observations, even when filtered by PID. For multiple apps,
-   finish observing, acting on and verifying one window before discovering the
-   next. Rediscover an earlier window before returning to it. If more than 64
-   valid windows were returned, filter by the intended PID before addressing it.
-2. Use `get_window_state` on that pair. It returns structured target state,
-   semantic elements and optionally a screenshot. Prefer semantic element tokens
-   when they identify the intended control. Use `query` to narrow a large tree.
-   This operation accepts only `pid`, `window_id`, `include_screenshot` and
-   `query`; upstream result notes mentioning `max_depth` or `max_elements` do
-   not make those arguments available in AICE's selected schema.
-   A text-only model must set `include_screenshot: false`; omission requests an
-   image. Capture failure can still leave useful semantic state, but cannot
-   authorize coordinates.
-3. Perform one action grounded in this latest observation. Supply `pid` and
-   `window_id`, plus the current `element_token` or image coordinates required
-   by the action. Copy the exact token from this observation's structured
-   `elements`; a visible element index is not a token. Never construct a token
-   from an index or reuse one from an earlier observation. If the result is
-   clipped, use `tool_result_read` on this latest observation's recorded result
-   until the needed token is available. AICE owns session and capture identities;
-   do not supply them.
-4. Call `get_window_state` again and verify the task's actual postcondition:
-   the desired field value, visible navigation, saved state or submission
-   result. A successful RPC, `returned` state or `effect: unverifiable` alone
-   does not prove success. Managed actions do not include an automatic fresh
-   observation. Every attempted mutation consumes its preceding observation.
+1. Use `list_windows` to locate the intended application and window. A PID filter
+   can reduce irrelevant results. Discover an app with `list_apps` when needed,
+   and copy its actual launch identity rather than guessing a bundle ID or path.
+   After launching once, inspect its windows; absence of an immediate window is
+   not a reason to repeat launch.
+2. Call `get_window_state` for the intended target. Prefer semantic controls
+   whose role and label identify the task. Inspect `elements_complete`,
+   truncation and degraded-state details. Use the advertised `query`,
+   `max_elements` or `max_depth` options when a result is insufficient. These
+   options do not guarantee that a platform exposes every control.
+   A text-only model must pass `include_screenshot:false`.
+3. Perform an action grounded in that state. Copy the returned `element_token`,
+   or use the advertised element-index form together with its `snapshot_id`.
+   An index is not a token. Cua validates references; do not construct tokens
+   or assume old references remain valid after a UI change or new session.
+4. Read current state again and verify the business postcondition: field value,
+   navigation, saved entry or submission result. `returned`, a successful RPC,
+   or `effect:unverifiable` alone does not prove the task succeeded.
 
-Do not batch two actions that depend on one observation. Observe between input
-and submit, between clicks, and after scrolling or dragging. State and
-identities belong to the active Run. After cancellation, reconnection or Session
-resume, rediscover tools/windows and obtain fresh observations. Reading an old
-result with `tool_result_read` does not refresh its tokens or pixel authority.
+AICE does not automatically observe after an action, consume each observation,
+or keep another window allowlist. Nevertheless, refresh state between dependent
+changes and after navigation, scrolling or uncertain input. A new user message
+may start a new native session; read current state before continuing a task.
+Cancellation, reconnection and Session resume do not renew old references.
 
-## Input forms
+## Read complete results
 
-Use only fields in the selected schema. The managed subset supports:
+Large application lists and observations may have a bounded initial model view.
+When required data is missing, use `tool_result_read` with the exact selector
+provided by the result notice, `section:"structured"` for structured JSON, and
+its paging arguments. Do not invent a call ID. Read enough pages to identify the
+needed control and its snapshot/token; do not mistake a clipped JSON prefix for
+the complete result. Reading retained source does not refresh native state.
 
-- `click`: one semantic token or `x`/`y`; left single click by default. Right
-  click uses `button: "right"`. Double click uses `count: 2` and a screenshot
-  point, not a semantic token.
-- `set_value`: exact semantic token and `value`, including an empty string to
-  clear a supported field. `type_text` uses nonempty `text` and one token or
-  screenshot point. Text is bounded to 16 KiB. Observe to check whether the
-  chosen operation replaced or inserted text before doing more input.
-- `press_key`: a key such as `return`, `tab`, `escape` or an arrow; `hotkey`:
-  an array of modifiers followed by one key, such as `["cmd","a"]`. Supported
-  modifiers are `cmd`, `shift`, `option`, `ctrl`, `fn`, without duplicates;
-  supported keys are lowercase a–z, 0–9, f1–f12, return, tab, escape, arrows,
-  space, delete, home, end, pageup and pagedown. Key operations use a current
-  token or the observed window, not a pixel point.
-- `scroll`: one token or screenshot point, direction `up`, `down`, `left` or
-  `right`, and optionally `amount` from 1 through 50 lines (default 3).
-- `drag`: `from_x`, `from_y`, `to_x`, `to_y` grounded in one fresh screenshot;
-  optionally `duration_ms` from 1 through 10000.
+Native text and structured results are complementary. An empty accessibility
+tree can accompany a valid image and an explanation such as an unresolved AX
+window. Preserve the Driver's degraded-state and escalation guidance rather
+than treating it as a disconnected MCP server. If the image or native state
+cannot ground the intended action, obtain a fresh observation or report the
+limitation.
 
-Coordinates use pixels of the image actually displayed to the model, with the
-origin at its top-left. Do not use screen-global coordinates or apply a guessed
-Retina/scale factor; AICE maps the displayed image to the native capture. A
-cropped, omitted, invalid or historical image cannot ground a new pixel action.
+## Input and coordinates
 
-To launch an application, first use `list_apps`, then pass the exact discovered
-`bundle_id` on macOS or `launch_path` on Linux to `launch_app`. Launch once, then
-rediscover its window and observe it. Missing window state is not permission to
-repeat launch. URLs, arbitrary arguments, inspector ports, screenshot file
-paths, element indices and alternative target forms are outside this interface.
+Use only fields in the selected schema. Prefer semantic input where supported.
+For web content, an AX value echo can differ from the application's DOM state;
+verify the actual field/submission behavior. Distinguish duplicate control
+labels by role and surrounding state. Never blindly repeat input to compensate
+for an unverifiable response.
 
-## Refusals and uncertain results
+Screenshot coordinates refer to the Cua source screenshot in the operation's
+advertised coordinate frame. AICE's generic image pipeline may resize the image
+shown to the model; its media description provides original and display sizes.
+If they differ, convert a displayed point to source pixels using those sizes
+before calling Cua. AICE does not automatically rescale CUA arguments. Supply
+the corresponding `capture_id` where the selected schema accepts it. Do not
+invent a capture ID, add screen offsets to window pixels or guess a Retina scale.
+For explicit desktop targets, follow the upstream target/coordinate-frame
+contract. A cropped, missing or historical image is not fresh visual grounding.
+Text-only model runs cannot request screenshots; prefer semantic input when
+no current image is available.
 
-Background delivery is the default. In foreground-allowed mode on macOS, AICE
-may explicitly report a verified refusal before input. Observe that same window
-again. Only if AICE's fresh observation permits the continuation may you request
-`delivery_mode: "foreground"` for the same action and payload, identifying the
-intended target again from fresh tokens or pixels. A generic error or
-`effect: refused` is insufficient. There is no automatic foreground retry;
-Linux does not currently offer this verified continuation path.
+The selected schema determines which actions accept tokens, indices, points,
+keys, delivery modes or launch options. Do not copy a parameter supported by one
+operation into another. Settings and Guard still apply to all calls; native
+application/file effects can extend beyond the project workspace.
 
-For `not_dispatched`, correct the reported precondition before a new attempt.
-If the window identity is no longer admitted, rediscover that window with its
-PID, then observe it again. If an element token is stale, obtain and read a fresh
-observation of the currently admitted window before choosing further input.
-For `unknown`, timeout, cancellation or an error after dispatch, effects may
-already have occurred. Re-establish fresh observation and inspect the business
-state before choosing any further input. Never repeat a submit, send, toggle or
-launch merely because its response was lost. If the postcondition cannot be
-established, report the uncertainty rather than claiming completion.
+## Foreground and uncertain results
+
+Background delivery is the default. In `background_only` mode, explicit
+foreground delivery and desktop-wide input are unavailable. In
+`foreground_allowed` mode, you may explicitly request a supported foreground
+operation when appropriate for the user's task, including when a degraded
+observation recommends it. AICE does not require a particular preceding refusal
+and never switches modes or retries in foreground automatically. Availability
+in a schema is not proof of support by a specific platform or application.
+
+Before changing route after an error, inspect its execution state and the
+application. For `not_dispatched`, correct the reported precondition. For stale
+references, obtain fresh state and copy the new references. For `unknown`,
+timeout, cancellation or an error after dispatch, effects may already have
+occurred. Never repeat a submit, send, toggle or launch solely because its
+response was lost. Foreground advice does not establish that an earlier action
+had no effect. If the postcondition cannot be established, report uncertainty
+rather than claiming completion.
+
+Pinned-platform limitations remain relevant: macOS background pixel double-click
+can disturb focus, right-click can deliver duplicate events, and background drag
+is unavailable in the tested AppKit route. Linux Unicode insertion can truncate,
+and some GTK background key/gesture routes require unavailable independent input
+support. Prefer an equivalent supported semantic control when the task permits;
+do not claim an unsupported gesture worked or repeat it blindly.

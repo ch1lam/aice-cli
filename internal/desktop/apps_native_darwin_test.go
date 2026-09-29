@@ -81,9 +81,6 @@ func TestNativeMacLaunch(t *testing.T) {
 		suppression = *facts.SelfActivationSuppressed
 	}
 	t.Logf("cold launch: elapsed=%s outcome=%s driver_error=%v windows=%d reported_self_activation_suppressed=%v", time.Since(started), result.Outcome, result.DriverError, len(result.Windows), suppression)
-	if repeated, err := run.actAndObserve(ctx, request); err == nil || repeated.Dispatched {
-		t.Error("consumed launch reference was accepted")
-	}
 	if err != nil || !result.Dispatched || result.Outcome != "returned" || result.DriverError || result.ObservationError != "" || facts.PID <= 0 || facts.BundleID != bundleID {
 		t.Fatal("launch did not establish the requested app identity", err)
 	}

@@ -160,7 +160,8 @@ func TestNativeMacDiscoveryIdleRecovery(t *testing.T) {
 		_ = json.Unmarshal(firstClient.lastDiscovery.Structured, &failure)
 		// The daemon may reject an ended session before core dispatch, returning
 		// only text. Core refusals instead carry the nested refusal.code field.
-		// This recognition is diagnostic-only; production recovery matches neither.
+		// Production recognizes these pinned expiry forms to retire the connection;
+		// this diagnostic independently records which native form was returned.
 		daemonEnded := false
 		for _, text := range firstClient.lastDiscovery.Text {
 			if strings.HasPrefix(text, "session '") && strings.Contains(text, "' has ended; tool call 'list_apps' was rejected.") {
@@ -180,7 +181,7 @@ func TestNativeMacDiscoveryIdleRecovery(t *testing.T) {
 		if run.id == initialID || manager.Status().Generation != 2 {
 			t.Fatal("recovery reused the retired lifecycle")
 		}
-		t.Log("native discovery returned session_ended while explicit lifecycle stayed active; next explicit discovery recovered on a fresh connection")
+		t.Log("native discovery returned session_ended; next explicit discovery recovered on a fresh connection without replaying input")
 	} else {
 		t.Log("native discovery remained usable after six idle minutes; no recovery was necessary")
 	}

@@ -8,11 +8,12 @@ import (
 	"github.com/ch1lam/aice-cli/internal/config"
 	"github.com/ch1lam/aice-cli/internal/desktop"
 	"github.com/ch1lam/aice-cli/internal/guard"
+	"github.com/ch1lam/aice-cli/internal/mcpclient"
 )
 
 const (
 	managedCUAKey           = "managed:cua"
-	managedCUAPolicyVersion = "1"
+	managedCUAPolicyVersion = "2"
 )
 
 // This private binding is supplied by the application, never parsed from MCP
@@ -30,6 +31,7 @@ type managedCUACatalogBinding struct {
 type managedDesktopRun interface {
 	mcpCatalogConnection
 	ControlMode() desktop.ControlMode
+	ServerInfo(context.Context) (mcpclient.Info, error)
 }
 
 // managedCatalog accepts only this owner's live, enabled Run context. Callers

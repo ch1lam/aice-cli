@@ -506,8 +506,8 @@ results may still be mapped.
 Catalog refresh cannot replace an explicit tool deny with ask/allow under the
 same binding. Only explicit application policy replacement may change that
 upper bound. Managed CUA uses the same Guard with application-generated,
-reviewed permissions; its staged integration is described in
-[Computer Use](desktop.md#managed-mcp-migration-boundary).
+reviewed permissions; its native lifecycle boundary is described in
+[Computer Use](desktop.md#managed-mcp-boundary).
 
 The intrinsic Guard accepts application-published policy snapshots: source,
 service ID, effective connection fingerprint, permission scope, enablement and
@@ -928,7 +928,7 @@ The current regression boundaries are:
 | Results and recovery | Three API adapters preserve ordered projections; LLM/Session tests cover exact structured source spelling, validation, legacy records, cloning, branches and compaction. [Actual Print readback](../internal/app/result_read_test.go) checks bounded views, exact source retrieval and one remote call with and without persistent Session storage |
 | Resources and server instructions | [Resource tests](../internal/app/mcp_resources_test.go) separate resource/tool authority and invalidation and preserve ordered results; [instruction tests](../internal/app/mcp_info_test.go) check bounded source-tagged previews, UTF-8 paging, cross-page redaction, revisions and no promotion into system instructions or execution authority |
 | Permanent permissions | [CLI/Print/Settings tests](../internal/app/mcp_permissions_test.go) verify cross-Session explicit rules, schema changes asking again, deny under yolo, independent connection approval and invalidation of old references/permits |
-| Managed CUA | Synthetic catalog/Guard tests verify application-owned identity, reviewed mode/schema constraints, final dispatch revalidation and no second production entry. Native evidence and archived comparison limits belong to [Computer Use](desktop.md#managed-mcp-migration-boundary) |
+| Managed CUA | Synthetic catalog/Guard tests verify application-owned identity, reviewed mode/schema constraints, final dispatch revalidation and no second production entry. Native evidence and archived comparison limits belong to [Computer Use](desktop.md#managed-mcp-boundary) |
 
 ### Platform coverage
 

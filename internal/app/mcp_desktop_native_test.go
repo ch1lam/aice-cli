@@ -151,6 +151,14 @@ func (m *nativeManagedCUAModel) Stream(ctx context.Context, request llm.Request)
 	}
 	if operation == "get_window_state" {
 		args["include_screenshot"] = true
+		// Bound this synthetic form explicitly, as an MCP caller would. The
+		// production adapter no longer injects its own observation limits.
+		args["max_elements"], args["max_depth"] = 200, 15
+		args["max_image_dimension"] = 1600
+		args["query"] = "Task value"
+		if m.phase == 3 {
+			args["query"] = "Commit"
+		}
 	}
 	if m.phase == 2 || m.phase == 4 {
 		label, role := "Task value", "AXTextField"
