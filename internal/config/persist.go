@@ -114,7 +114,7 @@ func editLockedFile(ctx context.Context, path string, edit func(map[string]any) 
 			}
 		}
 	}()
-	values, err := readValues(path)
+	values, err := readValues(ctx, path)
 	if err != nil {
 		return result, fmt.Errorf("config: existing file left unchanged: %w", err)
 	}
@@ -134,7 +134,33 @@ func editLockedFile(ctx context.Context, path string, edit func(map[string]any) 
 	return result, nil
 }
 
-// writeJSON replaces a complete document; readers see either old or new bytes.
+// readConfigFile retries Windows sharing violations from a concurrent file
+// replacement. Readers need no write lock; the caller supplies a bounded context.
+// Other errors, including access denial and missing files, retain their semantics.
+func readConfigFile(ctx context.Context, path string,
+	readFile func(string) ([]byte, error), windows bool,
+) ([]byte, error) {
+	const sharingViolation syscall.Errno = 32 // ERROR_SHARING_VIOLATION
+	var lastErr error
+	for {
+		if err := ctx.Err(); err != nil {
+			return nil, errors.Join(err, lastErr)
+		}
+		data, err := readFile(path)
+		if err == nil || !windows || !errors.Is(err, sharingViolation) {
+			return data, err
+		}
+		lastErr = err
+		timer := time.NewTimer(50 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+		case <-timer.C:
+		}
+	}
+}
+
+// writeJSON replaces a complete document; successful reads see old or new bytes.
 // Writers must hold the relevant lock across their read/modify/write operation.
 func writeJSON(ctx context.Context, path string, value any) error {
 	data, err := json.MarshalIndent(value, "", "  ")

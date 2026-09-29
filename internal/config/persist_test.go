@@ -11,6 +11,72 @@ import (
 	"time"
 )
 
+func TestReadConfigFileRetry(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		name         string
+		windows      bool
+		failure      error
+		persistent   bool
+		cancelBefore bool
+		cancelOnFail bool
+		wantErr      error
+		wantAttempts int
+	}{
+		{name: "immediate success", windows: true, wantAttempts: 1},
+		{name: "Windows sharing violation", windows: true, failure: syscall.Errno(32), wantAttempts: 2},
+		{name: "Unix does not retry", failure: syscall.Errno(32), wantErr: syscall.Errno(32), wantAttempts: 1},
+		{name: "access denied is not sharing contention", windows: true, failure: syscall.Errno(5), wantErr: syscall.Errno(5), wantAttempts: 1},
+		{name: "missing file", windows: true, failure: os.ErrNotExist, wantErr: os.ErrNotExist, wantAttempts: 1},
+		{name: "other read error", windows: true, failure: syscall.EIO, wantErr: syscall.EIO, wantAttempts: 1},
+		{name: "cancel before read", windows: true, cancelBefore: true, wantErr: context.Canceled},
+		{name: "cancel during contention", windows: true, failure: syscall.Errno(32), cancelOnFail: true, wantErr: context.Canceled, wantAttempts: 1},
+		{name: "persistent contention", windows: true, failure: syscall.Errno(32), persistent: true, wantErr: context.DeadlineExceeded},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+				defer cancel()
+				if tt.cancelBefore {
+					cancel()
+				}
+				const document = `{"openai_api_key":"fixture"}`
+				attempts := 0
+				start := time.Now()
+				data, err := readConfigFile(ctx, "auth.json", func(path string) ([]byte, error) {
+					if path != "auth.json" {
+						t.Fatalf("read path = %q", path)
+					}
+					attempts++
+					if tt.failure != nil && (attempts == 1 || tt.persistent) {
+						if tt.cancelOnFail {
+							cancel()
+						}
+						return nil, &os.PathError{Op: "open", Path: path, Err: tt.failure}
+					}
+					return []byte(document), nil
+				}, tt.windows)
+				if !errors.Is(err, tt.wantErr) {
+					t.Fatalf("read error = %v, want %v", err, tt.wantErr)
+				}
+				if (tt.cancelOnFail || tt.persistent) && !errors.Is(err, tt.failure) {
+					t.Fatalf("filesystem cause lost: %v", err)
+				}
+				if tt.persistent {
+					if attempts < 2 || time.Since(start) != 5*time.Second {
+						t.Fatalf("attempts = %d, elapsed = %v; want retries until deadline", attempts, time.Since(start))
+					}
+				} else if attempts != tt.wantAttempts {
+					t.Fatalf("attempts = %d, want %d", attempts, tt.wantAttempts)
+				}
+				if err == nil && string(data) != document {
+					t.Fatalf("read bytes = %q, want complete document", data)
+				}
+			})
+		})
+	}
+}
+
 func TestRenameConfigFileRetry(t *testing.T) {
 	t.Parallel()
 	for _, tt := range []struct {

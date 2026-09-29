@@ -151,6 +151,10 @@ On Windows, replacement retries access-denied and sharing-violation errors
 while retaining the write lock and temporary file, so brief reader activity
 does not abort a save. It never deletes the target before replacement; persistent
 conflicts report both the context error and the last filesystem error.
+Settings and shared `auth.json` reads retry Windows sharing violations for up
+to five seconds, so a concurrent replacement does not abort startup. Reads
+inside a write operation also honor its remaining deadline. Readers do not
+acquire the writer lock; missing files and other read errors are not retried.
 A lock left by a crashed writer is not stolen automatically. A malformed target
 is preserved and saving fails until it is repaired. A failed preference save
 leaves the current selection unchanged. If login already saved a credential

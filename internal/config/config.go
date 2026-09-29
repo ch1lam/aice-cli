@@ -3,6 +3,7 @@ package config
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -346,7 +348,7 @@ func LoadFiles(paths Paths, options LoadOptions) (Config, error) {
 				continue
 			}
 		}
-		values, err := readValues(path)
+		values, err := readValues(context.Background(), path)
 		if err != nil {
 			var syntax *sourceSyntaxError
 			if !errors.As(err, &syntax) {
@@ -655,8 +657,10 @@ type sourceSyntaxError struct{ path string }
 
 func (e *sourceSyntaxError) Error() string { return "config: invalid JSON object in " + e.path }
 
-func readValues(path string) (map[string]any, error) {
-	data, err := os.ReadFile(path)
+func readValues(ctx context.Context, path string) (map[string]any, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	data, err := readConfigFile(ctx, path, os.ReadFile, runtime.GOOS == "windows")
 	if errors.Is(err, os.ErrNotExist) {
 		return map[string]any{}, nil
 	}

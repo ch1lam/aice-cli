@@ -108,11 +108,13 @@ tests](../internal/tui/terminal_rendering_test.go) run Bubble Tea with captured
 output, including permission and side-panel transitions. These tests exercise
 the renderer but do not replace native terminal, desktop clipboard or IME checks.
 
-Configuration-lock and replacement retry tests inject filesystem errors and use
+Configuration-lock, read and replacement retry tests inject filesystem errors and use
 a virtual clock to cover Windows access denial, sharing violations, cancellation,
 and timeout on every platform. A native Windows test holds a settings reader open
 to verify failed replacement preserves the original file and cleans up the lock
-and temporary file. Lock tests do not require an open directory handle to
+and temporary file. A native Windows credential-loading test holds an exclusive
+file handle to verify bounded sharing-conflict retries and successful loading
+after release. Lock tests do not require an open directory handle to
 prevent recreation; that behavior varies across Windows filesystems and versions.
 Real temporary directory tests still cover lock ownership and concurrent token refresh with
 a local fake OAuth server, without accessing user credentials or remote APIs.
