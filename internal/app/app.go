@@ -415,6 +415,15 @@ func (a *application) Interactive(
 	browserClosed := false
 	var runner *interactiveSession
 	defer func() {
+		owner := environment.web
+		if runner != nil {
+			runner.stateMu.RLock()
+			owner = runner.web
+			runner.stateMu.RUnlock()
+		}
+		owner.closeBackend()
+	}()
+	defer func() {
 		owner := environment.mcp
 		if runner != nil {
 			runner.stateMu.RLock()
@@ -544,9 +553,6 @@ func (a *application) Interactive(
 	// interactive files so unused explicit paths do not accumulate.
 	browserErr := closeBrowser(ctx, runner.browser)
 	browserClosed = true
-	runner.stateMu.Lock()
-	runner.web.closeBackend()
-	runner.stateMu.Unlock()
 	closeErr := errors.Join(browserErr, closeInteractiveStore(runner.conversation.store))
 	if runErr != nil {
 		return errors.Join(fmt.Errorf("app: run TUI: %w", runErr), closeErr)

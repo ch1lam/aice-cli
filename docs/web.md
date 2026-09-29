@@ -147,6 +147,14 @@ warnings do not undo committed effects. Slash status stays readable during a
 response; Settings status retains the panel's revision and idle checks.
 See [Settings](configuration.md#settings-window).
 
+The application owns the selected search backend's lifetime. Failed startup
+preparation closes its candidate; after preparation succeeds, Print and
+Interactive close their owned backend on every exit, including Session or Loop
+initialization failure. Interactive closes its current backend: publishing a
+replacement closes the old one, and final exit closes the replacement exactly
+once. Backend construction validates configuration without making a search
+request.
+
 ## Permissions
 
 Enabled web tools access the network automatically without an extra
