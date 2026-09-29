@@ -212,9 +212,7 @@ func (s *interactiveSession) RunSettingsAction(ctx context.Context, revision uin
 		if returnErr == nil {
 			result.Output = savedProjectTrustMessage
 		}
-		// Preserve the Settings action contract: even a failed attempt
-		// invalidates old drafts, but never advances the resource revision.
-		result.Revision, result.Warnings = s.endSettingsOperation(true, false)
+		result.Revision, result.Warnings = s.endSettingsOperation(returnErr == nil, false)
 		return result, returnErr
 	}
 	if request.Name == "desktop" {

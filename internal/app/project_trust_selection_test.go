@@ -1,6 +1,7 @@
 package app
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -45,6 +46,10 @@ func TestProjectTrustSelectionEntryPoints(t *testing.T) {
 				if test.name == "missing store" {
 					s.trustStore = nil
 				}
+				wantRevision := uint64(5)
+				if test.wantError != "" {
+					wantRevision = 4
+				}
 				request := interaction.CommandRequest{Name: "trust", Arguments: test.input}
 				var output string
 				var err error
@@ -53,9 +58,8 @@ func TestProjectTrustSelectionEntryPoints(t *testing.T) {
 				} else {
 					result, actionErr := s.RunSettingsAction(t.Context(), 4, request)
 					output, err = result.Output, actionErr
-					// Existing Settings actions invalidate drafts even on failure;
-					// their result does not claim live application or a commit.
-					if result.Revision != 5 || result.Committed || result.Applied || len(result.Warnings) != 0 {
+					// Trust results do not claim a live preference publication.
+					if result.Revision != wantRevision || result.Committed || result.Applied || len(result.Warnings) != 0 {
 						t.Fatalf("Settings result = %+v", result)
 					}
 				}
@@ -65,10 +69,6 @@ func TestProjectTrustSelectionEntryPoints(t *testing.T) {
 					}
 				} else if err != nil || output != "Trust decision saved. Restart AICE for the new trust state to affect project configuration, prompts, and Skills." {
 					t.Fatalf("output=%q error=%v", output, err)
-				}
-				wantRevision := uint64(5)
-				if entry == "slash" && err != nil {
-					wantRevision = 4
 				}
 				if s.lifecycle.revision != wantRevision || s.lifecycle.resourceRevision != 7 || s.lifecycle.changing || !s.lifecycle.mainRunning {
 					t.Fatal("selection changed reservation or resource revision semantics")
@@ -89,5 +89,37 @@ func TestProjectTrustSelectionEntryPoints(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestProjectTrustFailedSaveKeepsDraftForRetry(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "trust.json")
+	if err := os.WriteFile(path, []byte("broken"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s := &interactiveSession{trustStore: trust.NewStore(path), workspacePath: canonicalTestWorkspace(t)}
+	request := interaction.CommandRequest{Name: "trust", Arguments: "0"}
+	if _, err := s.RunSettingsAction(t.Context(), 0, request); err == nil || !strings.Contains(err.Error(), "trust: decode store") {
+		t.Fatalf("first save = %v, want damaged store failure", err)
+	}
+	// Repair only the test-owned store, then reuse the caller's unchanged draft.
+	if err := os.WriteFile(path, []byte(`{"version":1,"projects":{}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	result, err := s.RunSettingsAction(t.Context(), 0, request)
+	if err != nil || result.Revision != 1 || result.Output != savedProjectTrustMessage {
+		t.Fatalf("retry = %+v %v, want one successful save", result, err)
+	}
+	entry, found, err := s.trustStore.Lookup(s.workspacePath)
+	if err != nil || !found || entry.Decision != trust.DecisionTrusted {
+		t.Fatalf("retry did not save trust: %v", err)
+	}
+	request.Arguments = "3"
+	if _, err := s.RunSettingsAction(t.Context(), 0, request); !errors.Is(err, interaction.ErrSettingsStale) {
+		t.Fatalf("old draft after successful save = %v", err)
+	}
+	entry, found, err = s.trustStore.Lookup(s.workspacePath)
+	if err != nil || !found || entry.Decision != trust.DecisionTrusted || s.lifecycle.revision != 1 || s.lifecycle.resourceRevision != 0 || s.lifecycle.changing {
+		t.Fatal("stale retry changed the saved decision or resource lifetime")
 	}
 }

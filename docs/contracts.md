@@ -813,6 +813,9 @@ requiring idle admission does not itself prove that resources changed. Advancing
 the resource revision makes existing BTW snapshots read-only and rejects held
 main and BTW runs before model execution or prompt acceptance. Restart-only saves
 leave current loaded Trust, Skills and startup actions unchanged.
+Trust selection advances the draft revision only after its atomic store write
+succeeds, consistently through slash and Settings; failed validation or saving
+keeps the draft retryable. It never advances the resource revision.
 
 Browser management reports actual local changes and modifying helper processes
 that started, whose effects may be uncertain even on failure or cancellation.

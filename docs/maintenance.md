@@ -123,22 +123,6 @@ remain in their existing modules.
 
 ## Known discrepancies
 
-### Management action invalidation and partial completion
-
-Trust retains one entry-point difference: an admitted Settings action advances
-the draft revision even when saving fails, while `/trust` advances it only on
-success. Both are restart-only and leave the resource revision unchanged;
-reservation rejection changes neither. Main-path acceptance must resolve whether
-this remaining draft-only difference has a useful contract before changing it.
-See [Project Trust](project-trust.md) and
-[RunSettingsAction](../internal/app/settings_apply.go).
-
-Browser, Web and login completion decisions belong to their application
-operations and are shared by slash and Settings. Their effects are intentionally
-different: see [Browser](browser.md), [Web](web.md) and
-[login credentials](configuration.md#credentials-and-connection-overrides).
-Frontend snapshot refresh is presentation only and cannot replace application resource invalidation.
-
 ### MCP verification limits
 
 Generic MCP connection, discovery, authorization, resources and result recovery

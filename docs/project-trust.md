@@ -78,7 +78,11 @@ Both entry points call the application-owned selection operation in
 [project_trust.go](../internal/app/project_trust.go). It validates the selected
 choice for the current workspace and writes the Trust store; it does not depend
 on command request types or the slash dispatch table. Entry points retain their
-own settings reservation and result presentation.
+own settings reservation and result presentation. Both advance the Settings draft
+revision only after a successful save. Validation or persistence failures keep
+the same draft usable for retry. Neither outcome advances the resource revision:
+prepared runs and BTW threads keep their loaded project context. A successful
+save rejects subsequent Settings edits carrying the older draft revision.
 
 ## Prompt assembly
 
