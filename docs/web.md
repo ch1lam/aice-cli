@@ -103,7 +103,14 @@ Saved changes patch only the touched instance, priority or switch under the
 shared settings lock; other keys and other instances are preserved. A malformed
 existing `web` object is left unchanged and the save fails. A credential saved
 to `auth.json` before a failed settings save is reported as a credential-only
-success; the current Session keeps its previous snapshot.
+success; the current Session keeps its previous effective Web configuration and
+runtime resources, while its cached auth-store value reflects the saved key.
+Credential replacement or deletion that commits before lock cleanup fails also
+updates that cache. Cleanup is reported separately as a warning and the ordinary
+preference flow continues; it does not retry the credential write. A failed
+credential write does not update the cache. Removing an instance saves its
+preferences first, so a later credential deletion failure leaves the instance
+removed and reports that its stored credential remains.
 
 ## The `/web` command
 

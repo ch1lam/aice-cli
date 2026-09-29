@@ -77,10 +77,11 @@ type dependencies struct {
 	ensureHelpers              func(context.Context, deps.Options) error
 	// webBackends overrides the fixed search/fetch factory list; nil uses the
 	// production adapters. Tests inject fakes here so no network is touched.
-	webBackends     *webBackends
-	saveWebSettings func(context.Context, config.Paths, config.WebPatch) (config.WebSettings, error)
-	newDesktop      func(config.Config) (*desktopState, error)
-	openMCP         mcpOpenFunc
+	webBackends       *webBackends
+	saveWebSettings   func(context.Context, config.Paths, config.WebPatch) (config.WebSettings, error)
+	saveWebCredential func(context.Context, config.Paths, string, string) error
+	newDesktop        func(config.Config) (*desktopState, error)
+	openMCP           mcpOpenFunc
 }
 
 func (a *application) webBackends() webBackends {

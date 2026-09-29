@@ -128,7 +128,7 @@ Browser/Web 管理已收敛到接收动作名称与交互通道的具体操作�
 
 下一项需要单独明确的是：草稿失效与资源失效各自依据什么事实，以及已提交、未改变和远端效果不确定三类结果的处理。必须检查 held main/BTW Run 的实际可用性，避免只测试版本数字。详细证据与验收条件集中在 [Maintenance](../maintenance.md#management-action-invalidation-and-partial-completion)。
 
-源码审计还发现 [Web credential cleanup](../maintenance.md#web-credential-cleanup-after-commit) 缺口：auth 已提交但锁清理失败时，调用方可能未更新内存凭据。需要先补应用级故障注入证据，再单独修复；不混入入口提取。
+Web 凭据新增、替换与删除共用一次写入及提交判定：auth 已提交但锁清理失败时，同步内存凭据并单独报告清理告警，继续原偏好流程；真正写入失败不发布、不重放。两入口的故障注入测试先用真实临时 auth 文件复现磁盘与缓存不一致，再验证修复，包含后续偏好失败的部分成功情况。凭据与偏好仍是两次独立提交，详见 [Web](../web.md)。
 
 ## 验证与后续进入条件
 

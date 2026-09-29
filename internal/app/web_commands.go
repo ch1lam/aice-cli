@@ -137,6 +137,26 @@ func nextExaInstanceID(existing map[string]config.WebService) string {
 	}
 }
 
+// saveWebCredential updates the cached auth-store value once replacement commits.
+// Lock cleanup warnings do not undo the write or stop the preference operation.
+func (s *interactiveSession) saveWebCredential(ctx context.Context, paths config.Paths, id, secret string) error {
+	save := config.SaveWebCredentialFile
+	if s.application != nil && s.application.dependencies.saveWebCredential != nil {
+		save = s.application.dependencies.saveWebCredential
+	}
+	err := save(ctx, paths, id, secret)
+	if err != nil && !config.WasCommitted(err) {
+		return err
+	}
+	s.stateMu.Lock()
+	s.configuration = s.configuration.WithWebCredential(id, secret)
+	s.stateMu.Unlock()
+	if err != nil {
+		s.settingsWarning(fmt.Errorf("web credential %s: %w", id, err))
+	}
+	return nil
+}
+
 func (s *interactiveSession) webAddInstance(ctx context.Context, ui *interaction.AuthInteraction) (string, error) {
 	current := s.settingsSnapshot().configuration
 	id := nextExaInstanceID(current.Web.Services)
@@ -169,13 +189,10 @@ func (s *interactiveSession) webAddInstance(ctx context.Context, ui *interaction
 		return "", fmt.Errorf("app: unknown credential choice %q", choice)
 	}
 	if secret != "" {
-		if err := config.SaveWebCredentialFile(ctx, current.Paths, id, secret); err != nil {
+		if err := s.saveWebCredential(ctx, current.Paths, id, secret); err != nil {
 			return "", fmt.Errorf("app: save Exa credential: %w", err)
 		}
 		credentialNote = "credential saved to " + current.Paths.GlobalAuth
-		s.stateMu.Lock()
-		s.configuration = s.configuration.WithWebCredential(id, secret)
-		s.stateMu.Unlock()
 	}
 	priority := append(slices.Clone(current.Web.Priority), web.ServiceEntry(id))
 	message, err := s.saveWeb(ctx, config.WebPatch{Services: map[string]*config.WebServiceSettings{id: &service}, Priority: &priority},
@@ -237,12 +254,9 @@ func (s *interactiveSession) webSetCredential(ctx context.Context, ui *interacti
 		if secret == "" || strings.ContainsAny(secret, "\r\n") {
 			return "", fmt.Errorf("app: API key must be one non-empty line")
 		}
-		if err := config.SaveWebCredentialFile(ctx, current.Paths, id, secret); err != nil {
+		if err := s.saveWebCredential(ctx, current.Paths, id, secret); err != nil {
 			return "", fmt.Errorf("app: save credential: %w", err)
 		}
-		s.stateMu.Lock()
-		s.configuration = s.configuration.WithWebCredential(id, secret)
-		s.stateMu.Unlock()
 		updated.Credential = config.WebCredentialRef{AuthRef: config.WebAuthRefPrefix + id}
 		note = "credential saved to " + current.Paths.GlobalAuth
 	default:
@@ -277,12 +291,9 @@ func (s *interactiveSession) webRemoveInstance(ctx context.Context, ui *interact
 		return "", err
 	}
 	if service.Credential.AuthRef != "" {
-		if err := config.SaveWebCredentialFile(ctx, current.Paths, id, ""); err != nil {
+		if err := s.saveWebCredential(ctx, current.Paths, id, ""); err != nil {
 			return message + "\nStored credential could not be removed: " + err.Error(), nil
 		}
-		s.stateMu.Lock()
-		s.configuration = s.configuration.WithWebCredential(id, "")
-		s.stateMu.Unlock()
 		message += "\nStored credential removed from " + current.Paths.GlobalAuth
 	}
 	return message, nil

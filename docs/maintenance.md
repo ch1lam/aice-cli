@@ -161,21 +161,6 @@ commits and cancellation after browser connection. Preserve domain partial-succe
 reporting and do not replay actions to infer their effect. Ownership belongs to
 application operations and lifecycle coordination, not TUI refresh callbacks.
 
-### Web credential cleanup after commit
-
-A source audit found that `SaveWebCredentialFile` (including empty-secret
-removal) can return `config.CommittedError` after replacing the auth file when
-lock cleanup fails. Web add/credential handlers in
-[web_commands.go](../internal/app/web_commands.go) treat this as ordinary failure
-and return before updating their frozen credential cache. Removal can likewise
-leave the cache unchanged after the disk credential has already been removed.
-The ordinary preference path already distinguishes committed writes from failure.
-
-This edge case has not been reproduced through an application-level fault-injection
-test. A focused follow-up should first exercise the committed-cleanup result, then
-preserve the committed credential state and report cleanup separately without
-replaying the write. Keep this behavior change separate from entry-point extraction.
-
 ### MCP verification limits
 
 Generic MCP connection, discovery, authorization, resources and result recovery
