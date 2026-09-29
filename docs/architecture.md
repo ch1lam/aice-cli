@@ -85,9 +85,12 @@ UI-neutral input mailbox to the Agent Loop's steering and follow-up sources.
 Interactive questions use the same tool boundary: the tool returns structured
 answers, the application owns the cancellable exchange, and the frontend owns
 drafts and presentation. Display formatting is not part of the question tool.
-The TUI is display state: it submits inputs to that capability, mirrors pending
-inputs for presentation, and never owns delivery semantics or writes Session
-truth. A future GUI must use the same application-owned active-run boundary.
+The TUI owns interaction and presentation: input editing, local navigation and
+frontend controller scheduling. It submits inputs to that capability and mirrors
+pending inputs for presentation; it never owns delivery semantics, tool execution
+or Session truth. A future GUI must use the same application-owned active-run
+boundary. See the [main-path evidence](maintenance.md#main-path-acceptance) for
+what is verified and what remains outside the current frontend contract.
 
 Within the application, conversation state owns the Session store, derived
 history, and accepted messages from the active interaction. It serializes

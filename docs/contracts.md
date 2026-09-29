@@ -903,10 +903,11 @@ endpoint/model as dedicated `CommandRequest` fields and the key as `Secret`.
 The application validates and persists these values; it does not parse endpoint
 or model configuration from command arguments or the secret.
 
-Account login uses the existing cancellable slash-command lifetime. The app
-owns OAuth orchestration and credential persistence; the provider owns the
-protocol. `interaction.AuthInteraction` carries transient progress and manual
-input between the command and TUI. The TUI owns menus, browser/device prompts,
+Account login uses the shared application operation under the cancellable
+slash-command or Settings-action lifetime. The app owns OAuth orchestration and
+credential persistence; the provider owns the protocol.
+`interaction.AuthInteraction` carries transient progress and manual input between
+the operation and TUI. The TUI owns menus, browser/device prompts,
 and hidden authorization input; none of these secrets enter transcript entries,
 Session history, prompt history, steering, or queued model input. Completion
 and cancellation discard the transient authentication state. Menu selection,

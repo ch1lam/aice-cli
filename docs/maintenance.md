@@ -63,6 +63,65 @@ and a Session record change reaches storage, app coordination and consumers
 without requiring provider SDK changes. Avoid splitting these owners merely to
 reduce file size; extract a new boundary when a real change needs it.
 
+### Main-path acceptance
+
+The existing single-process TUI and Print paths have been traced through input,
+execution, authority, durable history and shutdown. The following is the
+handoff evidence map, not a claim that every backend or future frontend has
+been accepted. The named tests exercise behavior across boundaries, including
+actual execution and disk readback; the full-suite result alone is insufficient.
+
+| Boundary and owner | Decision | Representative verification |
+| --- | --- | --- |
+| Input: frontend adapts drafts; app authorizes and freezes attachments before mailbox admission | Keep `Runner.NewRun` / `ActiveRun.Deliver`; no frontend storage or tool execution API | [file_input_test.go](../internal/app/file_input_test.go): `TestFileInputDoesNotBypassGuardOrPartiallyAccept`, `TestFileDeliveryFreezesBeforeMailboxAndDoesNotReparseFileText` |
+| Prepared and active runs: app reserves lifecycle and checks the prepared resource revision | Keep one application admission owner; frontend `running` is presentation | [settings_test.go](../internal/app/settings_test.go): `TestSettingsHeldMainAndSideRunnerRejectChangedRevision`, `TestSettingsSaveBlocksPreparationAndRejectsConcurrentWriter` |
+| Steering and follow-up: mailbox owns queued delivery; Loop chooses when to consume and stop | Keep bounded mailbox and atomic terminal sealing; no frontend restart for follow-up | [mailbox_test.go](../internal/interaction/mailbox_test.go): `TestMailboxNeverStrandsAnAcceptedDeliveryAtTerminalBoundary`; [app_test.go](../internal/app/app_test.go): `TestInteractiveSessionPersistsFollowUpsAsSourceMessages` |
+| Tool dispatch: Loop accepts complete model messages and consults injected Guard | Keep consumer-owned interfaces; streamed tool deltas cannot execute | [stream_failure_test.go](../internal/agent/stream_failure_test.go): `TestLoopDoesNotAcceptToolDeltasWithoutTerminalMessage`; [guard_scopes_test.go](../internal/app/guard_scopes_test.go): `TestGuardDenyWinsBeforeAnyApproval`, `TestGuardMultipleScopesYoloAndNoninteractive`, `TestGuardCancellationBeforeExecution` |
+| Transcript: Loop calls the recorder; app selects the Store; Session persists source records | Keep synchronous recording separate from display events and derived context | [persistence_boundary_test.go](../internal/app/persistence_boundary_test.go): `TestInteractiveSessionPersistsToolResultAfterDisplayFailure`, `TestInteractiveSessionKeepsUncertainDiskPrefixAfterToolResultSaveFails` |
+| Compaction: Loop chooses complete boundaries; app publishes a checkpoint and derived context | Keep append-only source and separate compaction projection | [long_task_test.go](../internal/app/long_task_test.go): `TestInteractiveSingleInputSurvives200ModelRounds`, `TestStatelessPrintSingleInputSurvives200ModelRounds`, `TestInteractiveCompactionFailureBoundaries` |
+| Cancellation: caller context reaches Run, tools and approval waits; known outcomes receive bounded durable cleanup | Keep cancellation separate from forgetting accepted progress | [mutation_persistence_test.go](../internal/app/mutation_persistence_test.go): `TestMutationSessionPreservesOutcomeOnCancellation`; [app_test.go](../internal/app/app_test.go): `TestInteractiveSessionPersistsCancellationAfterToolSideEffect` |
+| Frontend shutdown: controllers cancel and join; app then closes its current resources and Store | Keep sender-owned event channels and explicit application cleanup | [run_test.go](../internal/tui/run_test.go): `TestServeRunsOwnsPerRunEventChannel`, `TestServeSideRunsStopsBlockedRunsOnCancellation`; [settings_panel_test.go](../internal/tui/settings_panel_test.go): `TestSettingsActionCancelKeepsConversationAndWaits`; [session_test.go](../internal/app/session_test.go): `TestCloseInteractiveStoreKeepsSessionWithMessages` |
+| Management actions: existing app operations own effects; entry points adapt requests and results | Trust failures preserve drafts; resource effects remain domain-specific | [Trust](project-trust.md), [Browser](browser.md), [Web](web.md), [login](configuration.md#credentials-and-connection-overrides); their held-run and partial-completion tests remain the evidence owners |
+
+Application resource ownership also covers initialization failures. Interactive
+exit closes the currently owned Web backend, including failures before a
+frontend starts. Publication closes the superseded backend; final cleanup must
+not close it twice. [web_lifecycle_test.go](../internal/app/web_lifecycle_test.go)
+(`TestInteractiveClosesCurrentWebBackendOnEveryExit`) checks Session/model
+initialization failure and frontend success/failure after actual Web replacement.
+The frontend is injected in that lifecycle test; actual Bubble Tea behavior is
+covered separately. It proves cleanup ownership, not a live socket leak: the
+current Exa constructor has made no search request at these failure points.
+
+The current dependency check (`go list` on agent, interaction, tui, provider and
+API packages) confirms that Agent's only internal package dependency is `llm`;
+TUI does not import app, config, provider, tool or Session. TUI does import Trust
+for its startup choice presentation. It also owns editing, local navigation and
+controller scheduling: “replaceable frontend” does not mean “rendering only.”
+Provider/API types stay outside the Loop. An import graph establishes static
+separation, while the behavioral tests above establish the reviewed execution
+contracts.
+
+Three apparent duplications are intentional. The JSONL transcript, conversation
+history and Loop context have different publication boundaries; an incomplete
+tool group must not leak into a side snapshot. `lifecycle.mainRunning` protects
+resource admission, while `conversation.activeMainRun` owns accepted conversation
+progress. TUI pending deliveries are previews; mailbox/Loop acceptance is the
+authority. Merging these states or adding a generic runtime layer has no proven
+benefit for the current paths.
+
+Print uses the same Loop but owns an ephemeral source unless a Session is
+requested. Interactive execution owns a durable conversation and concurrent
+side snapshots. Keep those orchestration differences; sharing the entire
+executor would need a concrete duplicated decision, not just similar code.
+
+Local acceptance is macOS arm64 with Go 1.27.1: build, full tests, vet and race,
+including the actual CLI/Bubble Tea paths in `TestSettingsUsageTUI` and
+`TestLoginTUI`. No GUI, Web transport, reconnection or simultaneous frontend
+control has been implemented or verified. Backend-specific live-service and
+native-platform limits remain below and in the domain guides. MCP and Computer
+Use internal ownership remain the next separate review scope.
+
 ## Resolving discrepancies
 
 Code proves current behavior, tests prove the cases they cover, and an owning
