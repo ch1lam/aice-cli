@@ -123,6 +123,59 @@ remain in their existing modules.
 
 ## Known discrepancies
 
+### Management action invalidation and partial completion
+
+The slash and Settings action entry points currently use different invalidation
+rules. In [RunSlashCommand](../internal/app/interactive_commands.go), a reserved
+operation advances revisions only when its handler returns nil. In
+[RunSettingsAction](../internal/app/settings_apply.go), login and Trust attempts,
+and non-status Web/browser attempts, invalidate settings drafts even when they
+return an error. Shared actions also advance the resource revision and invalidate
+BTW snapshots; Trust remains restart-only and never advances that resource
+revision. Reservation rejection does not advance either revision.
+
+These rules were introduced together in `bd3d949`. The Settings comment accounts
+for credentials saved before a later preference failure, but does not establish
+that every failed or canceled attempt must invalidate resources. The entry-point
+refactor preserves this difference; it is not a new desired-state contract.
+
+An error cannot determine whether an action changed resources:
+
+- Account login can commit credentials before preference persistence fails.
+  The selected live provider remains unchanged.
+- Web instance setup can commit a key and update the credential cache before
+  preparing or saving preferences fails; bound tools and backends remain old.
+- Browser Connect can retain a new target on failure, or complete before tab
+  selection is canceled. Close can clear the target and rotate the session even
+  when cleanup reports an error. These are documented domain behaviors.
+
+Consequently, a held Run may retain its resource revision after a slash action
+has changed browser state, while a canceled Settings action with no effects can
+invalidate one. Both frontends refresh their visible snapshots on completion;
+that refresh does not advance the application's resource revision.
+
+Before changing this behavior, define draft invalidation separately from resource
+invalidation for no-effect failure, known partial completion and uncertain remote
+effects. Verify both public entry points, held main/BTW runs, credential-only
+commits and cancellation after browser connection. Preserve domain partial-success
+reporting and do not replay actions to infer their effect. Ownership belongs to
+application operations and lifecycle coordination, not TUI refresh callbacks.
+
+### Web credential cleanup after commit
+
+A source audit found that `SaveWebCredentialFile` (including empty-secret
+removal) can return `config.CommittedError` after replacing the auth file when
+lock cleanup fails. Web add/credential handlers in
+[web_commands.go](../internal/app/web_commands.go) treat this as ordinary failure
+and return before updating their frozen credential cache. Removal can likewise
+leave the cache unchanged after the disk credential has already been removed.
+The ordinary preference path already distinguishes committed writes from failure.
+
+This edge case has not been reproduced through an application-level fault-injection
+test. A focused follow-up should first exercise the committed-cleanup result, then
+preserve the committed credential state and report cleanup separately without
+replaying the write. Keep this behavior change separate from entry-point extraction.
+
 ### MCP verification limits
 
 Generic MCP connection, discovery, authorization, resources and result recovery

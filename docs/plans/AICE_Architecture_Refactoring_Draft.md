@@ -106,11 +106,35 @@ app 的 binding 冻结能力、取消先于清理且只清理一次；managed ca
 
 未完成全覆盖审计的部分：平台 admission/安装/进程/peer 校验、legacy typed action 与 observe 的全部实现、TUI status/action 的全部并发实现，以及各 OS 真实原生行为。这些是以后有具体问题证据时的调查入口，不是已经批准的重写清单。
 
+## 管理动作的边界与审计结论
+
+Trust 选择保存已移入现有 `project_trust.go` 的具体操作；Settings 与 slash 各自持有一次预约并直接调用。操作不接收命令请求、不返回展示文案，不增加接口或状态。
+
+Browser/Web 管理已收敛到接收动作名称与交互通道的具体操作。Settings 直接调用，slash 适配只投影所需字段；操作不接收命令名称、登录 secret 等其余 `CommandRequest` 字段，没有新增通用 Action 框架。登录本轮补齐两入口行为验证；其专属输入及部分成功失效规则尚未重构。
+
+以下是现状审计，不是要求永久保留的理想状态模型。`revision` 控制设置草稿，`resourceRevision` 控制已准备的 Run 和 BTW 快照。
+
+| 动作结果 | 已发生的事实 | 当前两入口的差异 |
+| --- | --- | --- |
+| Trust 保存成功 | 修改持久化 Trust；当前加载内容不变 | 均推进草稿版本，不推进资源版本 |
+| Trust 保存失败 | 持久化未成功，当前加载内容不变 | Settings 推进草稿版本，slash 不推进 |
+| 登录凭据成功、偏好失败 | 凭据已持久化，当前 provider 选择不变 | Settings 推进两个版本，slash 不推进 |
+| Web key 成功、偏好失败 | 凭据已保存且缓存更新，已绑定 backend/tools 保留 | Settings 推进两个版本，slash 不推进 |
+| Browser 连接完成后取消选 tab | 连接与目标可能已经改变 | Settings 推进两个版本，slash 不推进 |
+| Web/Browser 输入阶段取消且无副作用 | 通常无资源变化 | Settings 仍推进两个版本，slash 不推进 |
+| Web/Browser status | 不保存设置；Browser 可读取 helper 状态 | Settings 仍先申请 shared 预约，slash 可在运行时读取；均不推进版本 |
+
+因此不能用 `err == nil` 代表所有实际效果，也不能假定所有错误都必须失效运行资源。当前抽取只改变调用边界，不修改上述行为。两入口完成后都会刷新视图，但视图刷新不替代应用层资源失效。
+
+下一项需要单独明确的是：草稿失效与资源失效各自依据什么事实，以及已提交、未改变和远端效果不确定三类结果的处理。必须检查 held main/BTW Run 的实际可用性，避免只测试版本数字。详细证据与验收条件集中在 [Maintenance](../maintenance.md#management-action-invalidation-and-partial-completion)。
+
+源码审计还发现 [Web credential cleanup](../maintenance.md#web-credential-cleanup-after-commit) 缺口：auth 已提交但锁清理失败时，调用方可能未更新内存凭据。需要先补应用级故障注入证据，再单独修复；不混入入口提取。
+
 ## 验证与后续进入条件
 
 新增模型选择及 OAuth 部分成功测试，在旧实现（仅覆盖测试文件的 Go overlay）与新实现均通过。MCP 新增 missing-pin/发现中取消测试，同样先在旧实现通过，再验证改动；它们检查失败不关闭 owner 连接、新 Run 复用连接、Run 失效目录和 owner 恰好关闭一次。
 
-第一代码批次通过 `go build ./...`、`go test ./...`、`go vet ./...`、`go test -race ./...`，并通过实际 CLI/Bubble Tea 的 `TestSettingsUsageTUI`。第二批定向 preparation、Print、交互连接复用及 race 测试通过；最终全量 test、vet 和 race 均通过。
+每批 Go 改动均执行 `go build ./...`、`go test ./...`、`go vet ./...`、`go test -race ./...`。入口提取另通过实际 CLI/Bubble Tea 的 `TestSettingsUsageTUI` 与 `TestBrowserWindowTUI`；MCP 使用 preparation、Print 和交互连接复用测试。管理动作新增对照测试先在旧实现通过，再验证提取后的行为，覆盖 Trust 的重启生效、账户凭据部分提交、Web 凭据保存后偏好失败，以及 Browser 连接后选 tab 取消。
 
 证据限于本机 macOS arm64、Go 1.27.1 与默认离线测试。没有做真实付费模型/OAuth 调用、GUI 接入或原生桌面操作；不据此宣布跨平台原生验证通过。Go 模块依赖未改变。
 
