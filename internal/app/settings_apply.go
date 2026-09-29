@@ -227,7 +227,7 @@ func (s *interactiveSession) RunSettingsAction(ctx context.Context, revision uin
 	}
 	// Actions may save credentials before a later preference write fails. Any
 	// completed action invalidates older drafts, including partial success.
-	result.Output, returnErr = slashCommandHandlers[request.Name](s, ctx, request)
+	result.Output, returnErr = s.runLoginAction(ctx, request)
 	changed, _ := slashChangesResources(request)
 	result.Revision, result.Warnings = s.endSettingsOperation(changed, changed)
 	return result, returnErr

@@ -592,6 +592,11 @@ credentials each use a separate file as described below.
 | AiHubMix | `AIHUBMIX_API_KEY` | `aihubmix_api_key` | `AICE_AIHUBMIX_BASE_URL` |
 | Custom (Ollama, vLLM, LM Studio, any OpenAI-compatible) | `AICE_CUSTOM_API_KEY` | `custom_api_key` | `AICE_CUSTOM_BASE_URL` (default `http://localhost:11434/v1`) |
 
+Settings login actions and `/login` call the same application operation in
+`app/auth_login.go`, which selects account authorization or API-key setup.
+Settings calls it directly; slash dispatch only adapts the command entry point.
+Each entry point owns its settings reservation.
+
 In the TUI, `/login` first offers `Sign in with an account` or
 `Sign in with an API key`, then a provider menu. Confirm each menu level before
 proceeding; text filters only the current menu. `/login` does not accept inline
