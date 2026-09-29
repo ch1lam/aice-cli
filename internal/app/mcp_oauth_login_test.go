@@ -285,10 +285,10 @@ func TestMCPOAuthSettingsPublishesLoginAndLogout(t *testing.T) {
 			}
 			return nil
 		}}
-		old := s.mcp
+		old := s.mcp.Connections()["user:docs"]
 		revision, _ := s.settingsStatus()
 		result, err := s.RunSettingsAction(ctx, revision, interaction.CommandRequest{Name: "mcp", Arguments: "login user:docs", Auth: ui})
-		if err != nil || !result.Committed || !result.Applied || s.mcp == old || !old.closed {
+		if err != nil || !result.Committed || !result.Applied || s.mcp.Connections()["user:docs"] == old {
 			t.Fatal("login not published", err)
 		}
 		server := s.configuration.MCP.Servers["user:docs"]

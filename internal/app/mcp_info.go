@@ -13,7 +13,7 @@ import (
 // is no separate MCP request for instructions: the client retains initialize data.
 func (b mcpBorrowedConnection) ServerInfo(ctx context.Context) (mcpclient.Info, error) {
 	o := b.owner
-	s, operation, release, err := o.begin(ctx, b.key)
+	s, operation, release, err := o.begin(ctx, b.service)
 	if err != nil {
 		return mcpclient.Info{}, err
 	}
@@ -42,7 +42,7 @@ func (b mcpBorrowedConnection) CachedServerInfo() (mcpclient.Info, bool) {
 	o := b.owner
 	o.mu.Lock()
 	defer o.mu.Unlock()
-	s := o.services[b.key]
+	s := b.service
 	if o.permissionLocked(s) != nil {
 		return mcpclient.Info{}, false
 	}

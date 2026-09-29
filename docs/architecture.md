@@ -121,8 +121,11 @@ are separate. Configuration owns user-only durable rules; app binds them to the
 current source/connection/scope/operation/schema, and Guard checks them alongside
 the current policy and catalog version before every dispatch. The `aice mcp` command uses application
 management operations without a model or Session. `/mcp` and Settings share those
-operations under the existing settings reservation: idle edits replace the MCP
-owner and next-run tools, while live deny revokes just the selected service.
+operations under the existing settings reservation: idle edits replace only
+affected service leases and next-run tools, while live deny revokes just the
+selected service. Reconnect retires the selected lease even when its configuration
+is unchanged. Unrelated connections and Session grants survive; global
+restriction changes invalidate all affected authority, including managed CUA.
 MCP status includes an inert managed Computer Use preference row. Its menu
 requests local Settings navigation; native setup and enablement remain owned by
 the existing Computer Use settings path. The interactive coordinator applies

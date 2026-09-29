@@ -141,15 +141,16 @@ func executeMCPManagement(ctx context.Context, current config.Config, owner *mcp
 		if owner == nil {
 			return current, result, fmt.Errorf("MCP connection owner is unavailable")
 		}
-		bound, ok := owner.configuration.Servers[key]
+		owned, _ := owner.snapshot()
+		bound, ok := owned.Servers[key]
 		if !ok || bound.Fingerprint != server.Fingerprint ||
-			owner.configuration.ConnectionDecision(key) != current.MCP.ConnectionDecision(key) ||
-			owner.configuration.ServerAllowed(key) != current.MCP.ServerAllowed(key) ||
-			mcpPermissionScope(owner.configuration, key) != mcpPermissionScope(current.MCP, key) {
+			owned.ConnectionDecision(key) != current.MCP.ConnectionDecision(key) ||
+			owned.ServerAllowed(key) != current.MCP.ServerAllowed(key) ||
+			mcpPermissionScope(owned, key) != mcpPermissionScope(current.MCP, key) {
 			return current, result, fmt.Errorf("MCP connection owner is stale; rebind the current configuration before testing")
 		}
 		// CLI invocations always own a fresh transport; interactive reconnect will
-		// replace its owner before invoking this same explicit discovery operation.
+		// replace the selected service before invoking this same explicit discovery operation.
 		connection := owner.Connections()[key]
 		catalog, err := connection.Tools(ctx)
 		complete := catalog.Complete

@@ -30,11 +30,11 @@ func (o *mcpOwner) resourceGenerationLocked(s *mcpOwnedService) uint64 {
 func (b mcpBorrowedConnection) ResourceGeneration() uint64 {
 	b.owner.mu.Lock()
 	defer b.owner.mu.Unlock()
-	return b.owner.resourceGenerationLocked(b.owner.services[b.key])
+	return b.owner.resourceGenerationLocked(b.service)
 }
 func (b mcpBorrowedConnection) Resources(ctx context.Context) (mcpclient.Catalog[mcpclient.Resource], error) {
 	o := b.owner
-	s, operation, release, err := o.begin(ctx, b.key)
+	s, operation, release, err := o.begin(ctx, b.service)
 	if err != nil {
 		return mcpclient.Catalog[mcpclient.Resource]{}, err
 	}
@@ -71,7 +71,7 @@ func (b mcpBorrowedConnection) Resources(ctx context.Context) (mcpclient.Catalog
 	return catalog, nil
 }
 func (b mcpBorrowedConnection) ReadResourceChecked(ctx context.Context, uri string, check func(context.Context) error) (mcpclient.Result, error) {
-	s, operation, release, err := b.owner.begin(ctx, b.key)
+	s, operation, release, err := b.owner.begin(ctx, b.service)
 	if err != nil {
 		return mcpclient.Result{State: llm.ExecutionNotDispatched}, err
 	}

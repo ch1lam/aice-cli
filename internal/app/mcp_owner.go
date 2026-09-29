@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
+	"slices"
 	"sync"
 	"time"
 
@@ -82,8 +84,7 @@ func newMCPOwner(configuration config.MCPConfig, gate *guard.Guard, yolo bool, o
 	o := &mcpOwner{configuration: configuration.Clone(), guard: gate, yolo: yolo, open: open, refresh: refresh, services: make(map[string]*mcpOwnedService)}
 	for _, key := range o.configuration.ServerKeys() {
 		server := o.configuration.Servers[key]
-		ctx, cancel := context.WithCancel(context.Background())
-		service := &mcpOwnedService{server: server, secrets: mcpConnectionSecrets(server), gate: make(chan struct{}, 1), ctx: ctx, cancel: cancel, generation: 1, resourceGeneration: 1, status: mcpServiceStatus{Key: key, State: "disconnected"}}
+		service := newMCPOwnedService(server)
 		o.services[key] = service
 		if err := gate.BindMCPService(guard.MCPService{Source: server.Source.Kind + ":" + server.Source.Location, ServiceID: server.ID, ConnectionFingerprint: server.Fingerprint, PermissionScope: mcpPermissionScope(o.configuration, key), Enabled: o.configuration.ServerAllowed(key)}); err != nil {
 			for _, s := range o.services {
@@ -97,11 +98,82 @@ func newMCPOwner(configuration config.MCPConfig, gate *guard.Guard, yolo bool, o
 }
 
 func (o *mcpOwner) Connections() map[string]mcpCatalogConnection {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return o.connectionsLocked()
+}
+
+func (o *mcpOwner) connectionsLocked() map[string]mcpCatalogConnection {
 	connections := make(map[string]mcpCatalogConnection, len(o.services))
-	for key := range o.services {
-		connections[key] = mcpBorrowedConnection{o, key}
+	for key, service := range o.services {
+		connections[key] = mcpBorrowedConnection{o, service}
 	}
 	return connections
+}
+
+func (o *mcpOwner) snapshot() (config.MCPConfig, map[string]mcpCatalogConnection) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return o.configuration.Clone(), o.connectionsLocked()
+}
+
+func newMCPOwnedService(server config.MCPServer) *mcpOwnedService {
+	ctx, cancel := context.WithCancel(context.Background())
+	return &mcpOwnedService{server: server, secrets: mcpConnectionSecrets(server), gate: make(chan struct{}, 1), ctx: ctx, cancel: cancel, generation: 1, resourceGeneration: 1, status: mcpServiceStatus{Key: server.Key, State: "disconnected"}}
+}
+
+// reconfigure is an idle settings publication. Unchanged services retain their
+// transport and Guard epochs. Retired leases keep their canceled service object
+// and redaction history; they can never follow a key into its replacement.
+// Cleanup failures are reported separately from policy publication failures.
+func (o *mcpOwner) reconfigure(configuration config.MCPConfig, reconnect ...string) (cleanupErr, err error) {
+	configuration = configuration.Clone()
+	o.mu.Lock()
+	if o.closed || len(configuration.Servers) > 129 {
+		o.mu.Unlock()
+		return nil, fmt.Errorf("MCP owner is closed or configuration exceeds its bound")
+	}
+	o.work.Add(1)
+	defer o.work.Done()
+	var clients []mcpOwnedConnection
+	for key, service := range o.services {
+		next, exists := configuration.Servers[key]
+		if exists && !service.revoked && !slices.Contains(reconnect, key) &&
+			reflect.DeepEqual(o.configuration.Servers[key], next) &&
+			o.configuration.ConnectionDecision(key) == configuration.ConnectionDecision(key) &&
+			mcpPermissionScope(o.configuration, key) == mcpPermissionScope(configuration, key) {
+			continue
+		}
+		if client := o.retireLocked(service); client != nil {
+			clients = append(clients, client)
+		}
+		o.guard.RemoveMCPService(service.server.Source.Kind+":"+service.server.Source.Location, service.server.ID)
+		delete(o.services, key)
+	}
+	o.configuration = configuration
+	for _, key := range configuration.ServerKeys() {
+		if o.services[key] != nil {
+			continue
+		}
+		server := configuration.Servers[key]
+		service := newMCPOwnedService(server)
+		o.services[key] = service
+		bindErr := o.guard.BindMCPService(guard.MCPService{Source: server.Source.Kind + ":" + server.Source.Location, ServiceID: server.ID, ConnectionFingerprint: server.Fingerprint, PermissionScope: mcpPermissionScope(configuration, key), Enabled: configuration.ServerAllowed(key)})
+		if bindErr != nil {
+			service.revoked = true
+			service.cancel()
+			err = errors.Join(err, bindErr)
+		}
+		o.permissionLocked(service)
+	}
+	o.mu.Unlock()
+	for _, client := range clients {
+		cleanupErr = errors.Join(cleanupErr, client.Close())
+		o.mu.Lock()
+		o.slots--
+		o.mu.Unlock()
+	}
+	return cleanupErr, err
 }
 
 func (o *mcpOwner) Status() []mcpServiceStatus {
@@ -156,12 +228,11 @@ func (o *mcpOwner) permissionLocked(s *mcpOwnedService) error {
 	return nil
 }
 
-func (o *mcpOwner) begin(ctx context.Context, key string) (*mcpOwnedService, context.Context, func(), error) {
+func (o *mcpOwner) begin(ctx context.Context, s *mcpOwnedService) (*mcpOwnedService, context.Context, func(), error) {
 	if err := ctx.Err(); err != nil {
 		return nil, nil, nil, err
 	}
 	o.mu.Lock()
-	s := o.services[key]
 	if s == nil {
 		o.mu.Unlock()
 		return nil, nil, nil, fmt.Errorf("unknown MCP service")
@@ -295,7 +366,7 @@ func (o *mcpOwner) generationLocked(s *mcpOwnedService) uint64 {
 }
 
 // Revoke cancels this service's work and invalidates all borrowed versions
-// before closing its owned connection. Restoring it requires a new owner with
+// before closing its owned connection. Restoring it requires a new service with
 // an explicit policy publication; an old run cannot undo the revocation.
 func (o *mcpOwner) Revoke(key string) error {
 	o.mu.Lock()
@@ -305,15 +376,7 @@ func (o *mcpOwner) Revoke(key string) error {
 		return fmt.Errorf("MCP service is unavailable")
 	}
 	o.work.Add(1)
-	s.revoked = true
-	s.cancel()
-	s.generation++
-	s.resourceGeneration++
-	o.guard.RevokeMCPService(s.server.Source.Kind+":"+s.server.Source.Location, s.server.ID)
-	client := s.client
-	s.client = nil
-	s.status.State, s.status.Detail, s.status.ToolCount = "disabled", "MCP service was revoked", 0
-	s.status.CatalogKnown, s.status.EligibleTools = false, 0
+	client := o.retireLocked(s)
 	o.mu.Unlock()
 	defer o.work.Done()
 	if client == nil {
@@ -324,6 +387,19 @@ func (o *mcpOwner) Revoke(key string) error {
 	o.slots--
 	o.mu.Unlock()
 	return err
+}
+
+func (o *mcpOwner) retireLocked(s *mcpOwnedService) mcpOwnedConnection {
+	s.revoked = true
+	s.cancel()
+	s.generation++
+	s.resourceGeneration++
+	o.guard.RevokeMCPService(s.server.Source.Kind+":"+s.server.Source.Location, s.server.ID)
+	client := s.client
+	s.client = nil
+	s.status.State, s.status.Detail, s.status.ToolCount = "disabled", "MCP service was revoked", 0
+	s.status.CatalogKnown, s.status.EligibleTools = false, 0
+	return client
 }
 
 func (o *mcpOwner) Close() error {
@@ -359,19 +435,19 @@ func (o *mcpOwner) Close() error {
 }
 
 type mcpBorrowedConnection struct {
-	owner *mcpOwner
-	key   string
+	owner   *mcpOwner
+	service *mcpOwnedService
 }
 
 func (b mcpBorrowedConnection) ToolGeneration() uint64 {
 	b.owner.mu.Lock()
 	defer b.owner.mu.Unlock()
-	return b.owner.generationLocked(b.owner.services[b.key])
+	return b.owner.generationLocked(b.service)
 }
 
 func (b mcpBorrowedConnection) Tools(ctx context.Context) (mcpclient.Catalog[mcpclient.Tool], error) {
 	o := b.owner
-	s, operation, release, err := o.begin(ctx, b.key)
+	s, operation, release, err := o.begin(ctx, b.service)
 	if err != nil {
 		return mcpclient.Catalog[mcpclient.Tool]{}, err
 	}
@@ -415,7 +491,7 @@ func (b mcpBorrowedConnection) Tools(ctx context.Context) (mcpclient.Catalog[mcp
 }
 
 func (b mcpBorrowedConnection) CallChecked(ctx context.Context, name string, args json.RawMessage, check func(context.Context) error) (mcpclient.Result, error) {
-	s, operation, release, err := b.owner.begin(ctx, b.key)
+	s, operation, release, err := b.owner.begin(ctx, b.service)
 	if err != nil {
 		return mcpclient.Result{State: llm.ExecutionNotDispatched}, err
 	}
@@ -436,14 +512,17 @@ func (b mcpBorrowedConnection) CallChecked(ctx context.Context, name string, arg
 func (b mcpBorrowedConnection) MCPStatus() string {
 	b.owner.mu.Lock()
 	defer b.owner.mu.Unlock()
-	s := b.owner.services[b.key]
+	s := b.service
 	b.owner.permissionLocked(s)
 	return s.status.State + ": " + s.status.Detail
 }
 
 // A required connection need not expose tools (resource-only services are valid).
 func (o *mcpOwner) prepareRequired(ctx context.Context, key string) error {
-	s, operation, release, err := o.begin(ctx, key)
+	o.mu.Lock()
+	service := o.services[key]
+	o.mu.Unlock()
+	s, operation, release, err := o.begin(ctx, service)
 	if err != nil {
 		return err
 	}

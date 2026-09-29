@@ -291,3 +291,66 @@ func TestMCPOwnerQueuedCallRechecksAndCancels(t *testing.T) {
 		t.Fatal("final dispatch check skipped")
 	}
 }
+
+func TestMCPOwnerReplacementCancelsQueuedWorkAndClosesLateClient(t *testing.T) {
+	c := ownerTestConfig(t, 1)
+	started, returnClient := make(chan struct{}), make(chan struct{})
+	oldClient, newClient := &mcpOwnedFixture{}, &mcpOwnedFixture{}
+	var opens atomic.Int32
+	o, err := newMCPOwner(c.MCP, ownerTestGuard(t), true, func(context.Context, mcpclient.Config) (mcpOwnedConnection, error) {
+		if opens.Add(1) == 1 {
+			close(started)
+			<-returnClient
+			return oldClient, nil
+		}
+		return newClient, nil
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer o.Close()
+	var releaseOnce sync.Once
+	releaseClient := func() { releaseOnce.Do(func() { close(returnClient) }) }
+	defer releaseClient()
+	old := o.Connections()["user:service0"]
+	discovery := make(chan error, 1)
+	go func() { _, err := old.Tools(t.Context()); discovery <- err }()
+	<-started
+	queued := make(chan mcpclient.Result, 1)
+	go func() {
+		result, _ := old.CallChecked(t.Context(), "write", json.RawMessage(`{}`), func(context.Context) error { return nil })
+		queued <- result
+	}()
+	if cleanup, err := o.reconfigure(c.MCP, "user:service0"); err != nil || cleanup != nil {
+		t.Fatal("replacement", err, cleanup)
+	}
+	fresh := o.Connections()["user:service0"]
+	if _, err := fresh.Tools(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	o.mu.Lock()
+	occupied := o.slots
+	o.mu.Unlock()
+	if occupied != 2 {
+		t.Fatal("pending opener lost its slot before cleanup", occupied)
+	}
+	releaseClient()
+	if err := <-discovery; err == nil || oldClient.closed.Load() != 1 {
+		t.Fatal("late connection survived replacement", err)
+	}
+	if result := <-queued; result.State != llm.ExecutionNotDispatched || oldClient.calls.Load() != 0 || newClient.calls.Load() != 0 {
+		t.Fatal("retired queued call reached a transport")
+	}
+	if _, err := old.Tools(t.Context()); err == nil || opens.Load() != 2 {
+		t.Fatal("old lease rebound to replacement")
+	}
+	o.mu.Lock()
+	occupied = o.slots
+	o.mu.Unlock()
+	if occupied != 1 {
+		t.Fatal("retired opener leaked a slot", occupied)
+	}
+	if err := o.Close(); err != nil || newClient.closed.Load() != 1 || oldClient.closed.Load() != 1 {
+		t.Fatal("replacement cleanup was not exactly once", err)
+	}
+}

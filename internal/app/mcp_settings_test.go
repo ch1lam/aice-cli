@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ch1lam/aice-cli/internal/agent"
 	"github.com/ch1lam/aice-cli/internal/config"
 	"github.com/ch1lam/aice-cli/internal/guard"
 	"github.com/ch1lam/aice-cli/internal/interaction"
@@ -31,8 +32,13 @@ func mcpTestInput(t *testing.T, values ...string) *interaction.AuthInteraction {
 
 func runMCPSettingsFixture(t *testing.T, definition string, run func(context.Context, *interactiveSession)) config.Paths {
 	t.Helper()
+	return runMCPSettingsConfigurationFixture(t, `"mcp":{"servers":{"docs":`+definition+`}}`, run)
+}
+
+func runMCPSettingsConfigurationFixture(t *testing.T, settings string, run func(context.Context, *interactiveSession)) config.Paths {
+	t.Helper()
 	paths := authTestPaths(t)
-	writeConfigFixture(t, paths.GlobalSettings, `{"provider":"custom","model":"fixture","mcp":{"servers":{"docs":`+definition+`}}}`)
+	writeConfigFixture(t, paths.GlobalSettings, `{"provider":"custom","model":"fixture",`+settings+`}`)
 	command, err := newTestCommand(t, dependencies{
 		loadConfig: func(options config.LoadOptions) (config.Config, error) { return config.LoadFiles(paths, options) },
 		newModel:   func(config.Config) (llm.Streamer, error) { return &recordingModel{response: "answer"}, nil },
@@ -113,6 +119,9 @@ func TestMCPSettingsReconnectRevocationAndExit(t *testing.T) {
 		if _, err := currentRun.catalog.Search(ctx, tool.ToolSearchRequest{Service: "user:docs", Limit: 1}); err != nil {
 			t.Fatal(err)
 		}
+		if permit.Validate(ctx) == nil {
+			t.Fatal("same-fingerprint rediscovery revived an old permit")
+		}
 		decision, _, err := s.guard.CheckMCP(ctx, resolved[0].Tool.Definition().Name, binding, scope)
 		if err != nil || decision.Decision != guard.DecisionAsk {
 			t.Fatal("reconnect retained Session grant", err)
@@ -176,10 +185,10 @@ func TestMCPSettingsCredentialsPartialRemovalAndCancellation(t *testing.T) {
 		if _, err := act("approve", "confirm"); err != nil {
 			t.Fatal(err)
 		}
-		old := s.mcp
+		old := s.mcp.Connections()["user:docs"]
 		writeConfigFixture(t, s.configuration.Paths.GlobalSettings, `{"broken":`)
 		removed, err := act("remove", "confirm")
-		if err == nil || !removed.Committed || !removed.Applied || s.mcp == old {
+		if err == nil || !removed.Committed || !removed.Applied || s.mcp.Connections()["user:docs"] == old {
 			t.Fatal("partial commit not applied", removed, err)
 		}
 		if s.configuration.MCP.ConnectionDecision("user:docs") != config.MCPConnectionAsk || len(s.configuration.MCP.Servers["user:docs"].MissingValues) == 0 {
@@ -244,4 +253,108 @@ func TestMCPSettingsSavedPolicyFailsClosedOnRuntimeError(t *testing.T) {
 			t.Fatal("explicit repair did not restore a consistent runtime", err)
 		}
 	})
+}
+
+func TestMCPSettingsSingleServiceChangesPreserveOtherAuthority(t *testing.T) {
+	for _, action := range []string{"reconnect", "replace", "credential", "permission", "disable", "forget", "remove", "failed-disable"} {
+		t.Run(action, func(t *testing.T) {
+			endpoint, opens, _, closes := mcpStartupServer(t)
+			otherEndpoint, otherOpens, _, otherCloses := mcpStartupServer(t)
+			definition := `{"transport":"http","url":"` + endpoint + `","headers":{"Authorization":{"auth_ref":"token"}}}`
+			settings := `"desktop_enabled":true,"mcp":{"servers":{"docs":` + definition + `,"other":{"transport":"http","url":"` + otherEndpoint + `"}}}`
+			runMCPSettingsConfigurationFixture(t, settings, func(ctx context.Context, s *interactiveSession) {
+				s.desktop = managedLifecycleState(t)
+				act := func(action, key string, values ...string) interaction.SettingsActionResult {
+					t.Helper()
+					revision, _ := s.settingsStatus()
+					result, err := s.RunSettingsAction(ctx, revision, interaction.CommandRequest{Name: "mcp", Arguments: action + " " + key, Auth: mcpTestInput(t, values...)})
+					if err != nil {
+						t.Fatal(action, err)
+					}
+					return result
+				}
+				act("credential", "user:docs", "token", "set", "old-service-secret")
+				act("approve", "user:docs", "confirm")
+				act("approve", "user:other", "confirm")
+				_, run, err := s.mcp.bindRun(ctx)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer run.Close()
+				refs := make(map[string]agent.ToolReference)
+				permits := make(map[string]*guard.MCPPermit)
+				for _, key := range []string{"user:docs", "user:other"} {
+					response, err := run.catalog.Search(ctx, tool.ToolSearchRequest{Service: key, Limit: 1})
+					if err != nil || len(response.Selected) != 1 {
+						t.Fatal("discovery", err)
+					}
+					refs[key] = response.Selected[0]
+					binding, scope, _, err := run.catalog.MCPBinding(ctx, response.Entries[0].Name)
+					if err != nil {
+						t.Fatal(err)
+					}
+					_, permit, err := s.guard.CheckMCP(ctx, response.Entries[0].Name, binding, scope)
+					if err != nil || permit == nil {
+						t.Fatal("missing permit", err)
+					}
+					if err := permit.AllowSession(ctx, false); err != nil {
+						t.Fatal(err)
+					}
+					permits[key] = permit
+				}
+				managedCtx, managed := managedLifecycleCatalog(t, s.desktop, s.configuration, s.guard)
+				managedRef, managedPermit := selectManagedLifecycleTool(t, managedCtx, managed, s.guard)
+				identity := managed.config.Servers[managedCUAKey].Fingerprint
+				oldConnection := s.mcp.Connections()["user:docs"]
+				switch action {
+				case "failed-disable":
+					s.application.dependencies.newModel = func(config.Config) (llm.Streamer, error) {
+						return nil, errors.New("fixture model preparation failure")
+					}
+					revision, _ := s.settingsStatus()
+					result, err := s.RunSettingsAction(ctx, revision, interaction.CommandRequest{Name: "mcp", Arguments: "disable user:docs"})
+					if err == nil || !result.Committed || result.Applied || s.loop != nil || s.modelErr == nil || s.configuration.MCP.ServerAllowed("user:docs") {
+						t.Fatal("failed publication left saved narrower policy executable", err)
+					}
+				case "replace":
+					act(action, "user:docs", `{"transport":"http","url":"`+endpoint+`","call_timeout":"30s"}`)
+				case "credential":
+					act(action, "user:docs", "token", "set", "new-service-secret")
+				case "permission":
+					act(action, "user:docs", "allow", "0", "save")
+				case "forget", "remove":
+					act(action, "user:docs", "confirm")
+				default:
+					act(action, "user:docs")
+				}
+				if closes.Load() != 1 || otherCloses.Load() != 0 || otherOpens.Load() != 1 {
+					t.Fatal("single-service change disturbed unrelated transports")
+				}
+				if permits["user:docs"].Validate(ctx) == nil || run.catalog.Check(ctx, refs["user:docs"]) == nil {
+					t.Fatal("old target authority survived replacement")
+				}
+				if _, err := oldConnection.Tools(ctx); err == nil {
+					t.Fatal("old lease discovered replacement connection")
+				}
+				if permits["user:other"].Validate(ctx) != nil || run.catalog.Check(ctx, refs["user:other"]) != nil {
+					t.Fatal("unrelated MCP permit or catalog invalidated")
+				}
+				binding, scope, _, _ := run.catalog.MCPBinding(ctx, run.catalog.entries[refs["user:other"].ID].Tool.Definition().Name)
+				decision, _, err := s.guard.CheckMCP(ctx, "read", binding, scope)
+				if err != nil || decision.Decision != guard.DecisionAllow {
+					t.Fatal("unrelated MCP Session grant lost", err)
+				}
+				if managedPermit.Validate(managedCtx) != nil || managed.Check(managedCtx, managedRef) != nil {
+					t.Fatal("ordinary service change invalidated managed CUA")
+				}
+				_, freshManaged := managedLifecycleCatalog(t, s.desktop, s.configuration, s.guard)
+				if freshManaged.config.Servers[managedCUAKey].Fingerprint != identity {
+					t.Fatal("ordinary service change replaced managed CUA identity")
+				}
+				if action == "reconnect" && opens.Load() != 2 {
+					t.Fatal("reconnect did not establish a fresh selected transport")
+				}
+			})
+		})
+	}
 }

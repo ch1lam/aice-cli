@@ -143,7 +143,7 @@ func (o *mcpOwner) recordAuthenticationFailure(s *mcpOwnedService, err error) {
 func (b mcpBorrowedConnection) MCPSecrets() []string {
 	b.owner.mu.Lock()
 	defer b.owner.mu.Unlock()
-	return slices.Clone(b.owner.services[b.key].secrets)
+	return slices.Clone(b.service.secrets)
 }
 
 func mcpAuthenticationRejected(err error) bool {

@@ -36,8 +36,9 @@ func inspectMCPPermissions(ctx context.Context, c config.Config, owner *mcpOwner
 	if !ok || owner == nil {
 		return nil, fmt.Errorf("MCP service is unavailable")
 	}
-	bound, ok := owner.configuration.Servers[key]
-	if !ok || bound.Fingerprint != server.Fingerprint || owner.configuration.ConnectionDecision(key) != c.MCP.ConnectionDecision(key) || mcpPermissionScope(owner.configuration, key) != mcpPermissionScope(c.MCP, key) || owner.configuration.ServerAllowed(key) != c.MCP.ServerAllowed(key) {
+	owned, _ := owner.snapshot()
+	bound, ok := owned.Servers[key]
+	if !ok || bound.Fingerprint != server.Fingerprint || owned.ConnectionDecision(key) != c.MCP.ConnectionDecision(key) || mcpPermissionScope(owned, key) != mcpPermissionScope(c.MCP, key) || owned.ServerAllowed(key) != c.MCP.ServerAllowed(key) {
 		return nil, fmt.Errorf("MCP connection owner is stale; reopen current configuration")
 	}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
@@ -152,7 +153,7 @@ func prepareMCPPermission(ctx context.Context, c config.Config, owner *mcpOwner,
 	permission.Decision = decision
 	server := c.MCP.Servers[op.Key]
 	op.Fingerprint, op.PermissionScope = server.Fingerprint, c.MCP.PermissionScope(op.Key)
-	disclosure := fmt.Sprintf("Service: %s\nSource: %s:%s\nConnection fingerprint: %s\nPermission scope: %s\nOperation: %s %q\nSchema fingerprint: %s\nDecision: %s\nAllow applies only to this exact schema; deny covers schema changes within this binding. Resource permission covers every URI on this service. Saving closes current MCP connections and clears MCP Session approvals.", op.Key, server.Source.Kind, server.Source.Location, op.Fingerprint, op.PermissionScope, permission.Operation, permission.Tool, permission.SchemaFingerprint, decision)
+	disclosure := fmt.Sprintf("Service: %s\nSource: %s:%s\nConnection fingerprint: %s\nPermission scope: %s\nOperation: %s %q\nSchema fingerprint: %s\nDecision: %s\nAllow applies only to this exact schema; deny covers schema changes within this binding. Resource permission covers every URI on this service. Saving closes this service connection and clears its MCP Session approvals.", op.Key, server.Source.Kind, server.Source.Location, op.Fingerprint, op.PermissionScope, permission.Operation, permission.Tool, permission.SchemaFingerprint, decision)
 	if decision == "ask" {
 		fingerprint, scope, _ := c.MCP.StoredPermissions(op.Key)
 		disclosure += fmt.Sprintf("\nRemoving the stored rule at fingerprint %s and scope %s, including when that binding is inactive.", fingerprint, scope)

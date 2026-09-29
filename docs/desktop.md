@@ -223,10 +223,11 @@ can grant authority. The constructor borrows the Run and performs no native I/O.
 The application's context-bound constructor accepts only its own live native
 Run. The identity stays stable across Runs with unchanged settings. A successful
 Computer Use enablement/mode publication rotates that identity and removes its
-Guard policy under the idle settings reservation. An MCP owner replacement also
-invalidates the managed binding, including when rebuilding the runtime fails
-after a saved change. Failed saves and unrelated scalar settings preserve the
-existing identity. An old context cannot reconstruct a catalog after replacement,
+Guard policy under the idle settings reservation. A global MCP restriction change
+also invalidates the managed binding, including when rebuilding the runtime fails
+after a saved change. Changes or reconnections of unrelated ordinary MCP services,
+failed saves and unrelated scalar settings preserve the existing identity.
+An old context cannot reconstruct a catalog after invalidation,
 and restoring the previous settings cannot revive an old catalog or permit.
 A disabled child Run shadows any inherited desktop capability. The native
 managed harness uses this application-owned constructor; no caller-selected identity

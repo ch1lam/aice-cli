@@ -484,3 +484,56 @@ func TestMCPOAuthRefreshRejectsChangedGrantAndRetainsBoundedSecrets(t *testing.T
 		})
 	}
 }
+
+func TestMCPOwnerReplacementRedactsLateResultWithRetiredSecrets(t *testing.T) {
+	c := appOAuthConfig(t, time.Now().Add(-time.Hour))
+	started := make(chan struct{})
+	client := &mcpOwnedFixture{mcpCatalogFixture: mcpCatalogFixture{items: []mcpclient.Tool{catalogFixtureTool("read", "Read fixture")}}}
+	client.call = func(ctx context.Context) (mcpclient.Result, error) {
+		close(started)
+		<-ctx.Done()
+		return mcpclient.Result{State: llm.ExecutionReturned, Content: []mcpclient.Block{{Kind: mcpclient.BlockText, Text: "late rotated-access-secret rotated-refresh-secret"}}}, nil
+	}
+	o, err := newMCPOwner(c.MCP, ownerTestGuard(t), true, func(context.Context, mcpclient.Config) (mcpOwnedConnection, error) {
+		return client, nil
+	}, func(_ context.Context, server config.MCPServer) (config.MCPOAuthCredentials, error) {
+		credential, _ := server.OAuthCredentials()
+		credential.AccessToken, credential.RefreshToken = "rotated-access-secret", "rotated-refresh-secret"
+		credential.ExpiresAt = time.Now().Add(time.Hour)
+		return credential, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer o.Close()
+	connection := o.Connections()["user:service0"]
+	if _, err := connection.Tools(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	server := c.MCP.Servers["user:service0"]
+	mapped, err := tool.NewMCP(tool.MCPOptions{
+		Definition: llm.ToolDefinition{Name: "read", Description: "Read fixture", InputSchema: json.RawMessage(`{"type":"object"}`)},
+		Binding:    llm.ToolBinding{Source: server.Source.Kind + ":" + server.Source.Location, ServiceID: server.ID, ConnectionFingerprint: server.Fingerprint, ToolName: "read", SchemaFingerprint: strings.Repeat("a", 64)},
+		Backend:    refreshTestBackend{connection}, ResultSecrets: mcpResultSecrets(connection),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := make(chan llm.ToolResult, 1)
+	go func() {
+		value, _ := mapped.Execute(t.Context(), llm.ToolCall{ID: "late", Name: "read", Arguments: json.RawMessage(`{}`)})
+		result <- value
+	}()
+	<-started
+	if cleanup, err := o.reconfigure(c.MCP, "user:service0"); cleanup != nil || err != nil {
+		t.Fatal("replacement", cleanup, err)
+	}
+	returned := <-result
+	encoded, err := json.Marshal(returned)
+	if err != nil || returned.Details == nil || returned.Details.State != llm.ExecutionReturned || !bytes.Contains(encoded, []byte("late [credential redacted]")) || bytes.Contains(encoded, []byte("rotated-access-secret")) || bytes.Contains(encoded, []byte("rotated-refresh-secret")) {
+		t.Fatal("retirement lost returned facts or credential redaction", err)
+	}
+	if client.calls.Load() != 1 || client.closed.Load() != 1 {
+		t.Fatal("replacement replayed call or leaked old client")
+	}
+}

@@ -126,10 +126,10 @@ func prepareMCPCommand(ctx context.Context, configuration config.Config, owner *
 	case "approve", "deny", "forget", "remove", "login", "logout":
 		explanation := map[string]string{
 			"login":   "Contact the configured service and its discovered authorization server, register a public client if needed, and open consent in your browser. A successful login replaces the old login and removes its connection approval and user tool rules. Tool permission is separate.",
-			"logout":  "Remove this service's OAuth login, connection approval and user tool rules, close current MCP connections and clear MCP Session tool grants. Explicit client-secret slots remain configured.",
+			"logout":  "Remove this service's OAuth login, connection approval and user tool rules, close this service connection and clear its MCP Session tool grants. Explicit client-secret slots remain configured.",
 			"approve": "Allow this exact connection to start its configured process or contact its endpoint. Remote tool execution still requires separate permission.",
 			"deny":    "Deny this connection and cancel its active work now. Already dispatched actions may have taken effect; they will not be replayed.",
-			"forget":  "Remove the stored connection decision, close current MCP connections, and clear MCP Session tool grants. --yolo may still allow connections without a stored decision.",
+			"forget":  "Remove the stored connection decision, close this service connection, and clear its MCP Session tool grants. --yolo may still allow connections without a stored decision.",
 			"remove":  "Remove this user definition, its stored credentials, connection decision and user tool rules. Project definitions are read-only.",
 		}[op.Action]
 		choice, err := mcpPrompt(ctx, ui, interaction.AuthPrompt{Title: "Confirm MCP " + op.Action, Instructions: disclosure + explanation, Menu: &interaction.CommandMenu{Title: "Confirm action", Options: []interaction.CommandOption{{Label: "Cancel", Arguments: "cancel"}, {Label: "Confirm " + op.Action, Arguments: "confirm"}}}})

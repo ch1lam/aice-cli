@@ -73,15 +73,16 @@ func (o *mcpOwner) bindRun(ctx context.Context) (runContext context.Context, run
 		}
 		return ctx, mcpRunBinding{}, nil
 	}
-	if len(o.configuration.Servers) == 0 && desktopBinding.owner == nil {
+	configuration, connections := o.snapshot()
+	if len(configuration.Servers) == 0 && desktopBinding.owner == nil {
 		return ctx, mcpRunBinding{}, nil
 	}
 	var catalog *mcpCatalog
 	var err error
 	if desktopBinding.owner != nil {
-		catalog, err = desktopBinding.owner.managedCatalog(ctx, o.configuration, o.Connections(), o.guard)
+		catalog, err = desktopBinding.owner.managedCatalog(ctx, configuration, connections, o.guard)
 	} else {
-		catalog, err = newMCPCatalog(o.configuration, o.Connections(), o.guard)
+		catalog, err = newMCPCatalog(configuration, connections, o.guard)
 	}
 	if err != nil {
 		return ctx, mcpRunBinding{}, err
@@ -98,12 +99,12 @@ func (o *mcpOwner) bindRun(ctx context.Context) (runContext context.Context, run
 	// optional services remain entirely inert until the model searches for them.
 	prepare, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	for _, key := range o.configuration.ServerKeys() {
-		server := o.configuration.Servers[key]
+	for _, key := range configuration.ServerKeys() {
+		server := configuration.Servers[key]
 		if !server.Settings.Required && len(server.Settings.PinnedTools) == 0 {
 			continue
 		}
-		if !o.configuration.ServerAllowed(key) {
+		if !configuration.ServerAllowed(key) {
 			return ctx, mcpRunBinding{}, fmt.Errorf("required or pinned MCP service %s is disabled or denied", key)
 		}
 		if len(server.Settings.PinnedTools) == 0 {

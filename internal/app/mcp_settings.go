@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 
 	"github.com/ch1lam/aice-cli/internal/agent"
@@ -63,7 +64,7 @@ func (s *interactiveSession) runMCPSettings(ctx context.Context, revision *uint6
 	}
 	if op.Action == "reconnect" {
 		changed = true
-		if err := s.publishMCPConfiguration(current); err != nil {
+		if err := s.publishMCPConfiguration(current, op.Key); err != nil {
 			return result, err
 		}
 		s.stateMu.RLock()
@@ -77,7 +78,7 @@ func (s *interactiveSession) runMCPSettings(ctx context.Context, revision *uint6
 	if managed.Committed {
 		if op.Action == "deny" {
 			// Publish the persisted decision even if writer cleanup failed. The
-			// owner is immutable: revoke its capability rather than mutating it.
+			// active service is revoked without replacing a live Run's resources.
 			s.stateMu.Lock()
 			s.configuration = next
 			s.stateMu.Unlock()
@@ -108,11 +109,12 @@ func (s *interactiveSession) runMCPSettings(ctx context.Context, revision *uint6
 }
 
 // publishMCPConfiguration is called only under an idle resource reservation.
-// A replacement closes every old transport and clears MCP Session grants; the
-// next run starts with new catalogs. Other tool permissions are untouched.
-func (s *interactiveSession) publishMCPConfiguration(next config.Config) error {
+// Only changed services lose transports and Session grants. A global restriction
+// change also invalidates managed Computer Use authority, including on failure.
+func (s *interactiveSession) publishMCPConfiguration(next config.Config, reconnect ...string) error {
 	s.stateMu.RLock()
 	old := s.mcp
+	previous := s.configuration.MCP
 	s.stateMu.RUnlock()
 	tools, err := composeTools(s.baseTools, s.web, s.desktop, next)
 	model, options, modelErr := resolveModelSettings(s.providers, next)
@@ -124,23 +126,22 @@ func (s *interactiveSession) publishMCPConfiguration(next config.Config) error {
 	if err == nil && s.application != nil && modelErr == nil && providerConfigured(s.providers, next) {
 		loop, err = s.application.newAgentLoopWithOptions(next, tools, agent.WithGuard(s.guardAdapter), agent.WithGuardAskHandler(s.handleGuardAsk))
 	}
-	if closeErr := old.Close(); closeErr != nil {
-		s.settingsWarning(fmt.Errorf("owned MCP connection cleanup failed"))
+	if !reflect.DeepEqual(previous.Restrictions, next.MCP.Restrictions) {
+		s.desktop.invalidateManagedCatalog(s.guard)
 	}
-	// This replacement may include narrower global MCP restrictions. Invalidate
-	// the separately owned Computer Use binding even when preparation failed;
-	// a saved policy must not leave the previous managed authority executable.
-	s.desktop.invalidateManagedCatalog(s.guard)
 	if err == nil && (s.guard == nil || s.guardAdapter == nil) {
 		err = fmt.Errorf("MCP Guard is unavailable")
 	}
-	var owner *mcpOwner
-	if err == nil {
-		if old != nil {
-			for _, server := range old.configuration.Servers {
-				s.guard.RemoveMCPService(server.Source.Kind+":"+server.Source.Location, server.ID)
-			}
+	owner := old
+	if old != nil {
+		// Even if model/prompt preparation failed, retire the changed capabilities
+		// so a saved narrower policy cannot leave old references executable.
+		cleanupErr, applyErr := old.reconfigure(next.MCP, reconnect...)
+		if cleanupErr != nil {
+			s.settingsWarning(fmt.Errorf("owned MCP connection cleanup failed"))
 		}
+		err = errors.Join(err, applyErr)
+	} else if err == nil {
 		if s.application != nil {
 			owner, err = s.application.newConfiguredMCPOwner(next, s.guard, s.guardAdapter.yolo)
 		} else {
@@ -157,7 +158,7 @@ func (s *interactiveSession) publishMCPConfiguration(next config.Config) error {
 		}
 	} else {
 		// A saved narrower policy must never leave the old executable runtime
-		// available. Preserve the closed owner for cleanup and stop new runs.
+		// available. Unchanged connections remain owned; stop new runs until repair.
 		s.loop = nil
 		s.modelErr = fmt.Errorf("MCP runtime update failed; restart AICE: %w", err)
 	}

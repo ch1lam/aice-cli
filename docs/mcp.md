@@ -33,9 +33,10 @@ composition uses managed discovery for enabled Print and interactive main runs,
 without exposing the typed desktop tools. An explicit app constructor
 binds a native Run to the generic catalog/Guard with a reserved managed identity
 and reviewed per-tool/mode permissions. Its context-bound entry accepts only the
-application's live native Run; successful desktop settings publication or MCP
-owner replacement invalidates old managed identities and permits, even when a
-saved MCP change fails runtime preparation. The version-matched `computer-use`
+application's live native Run; successful desktop settings publication or global
+MCP restriction changes invalidate old managed identities and permits, even when a
+saved change fails runtime preparation. Changes and reconnections of unrelated
+ordinary services preserve managed authority. The version-matched `computer-use`
 Skill loads through normal discovery. MCP management shows its preference and
 links to Computer Use settings. The configured connection boundary reserves the
 managed native endpoint. Platform-specific validation remains limited; see
@@ -268,8 +269,9 @@ preserves them. Session replay cannot create rules.
 The interactive editor discovers candidates, then shows source, connection,
 operation, schema and scope before saving. Cancel leaves permissions unchanged;
 discovery may already have initialized the approved service. Saving requires an
-idle application and replaces its MCP owner, invalidating old selected tools and
-pending permits. CLI writes apply to subsequently loaded configurations; other
+idle application and retires the affected service lease, invalidating its old
+selected tools, Session grants and pending permits. Other services are retained.
+CLI writes apply to subsequently loaded configurations; other
 running processes keep their frozen snapshots. `status` remains an inert read,
 and removing a rule is possible when the service is offline.
 
@@ -296,12 +298,15 @@ reservation. A reply must match an offered choice. Cancellation before saving
 does not change the runtime. Project definitions remain read-only.
 
 Configuration changes and reconnect require an idle application. After saving,
-the coordinator closes the old MCP owner, clears MCP Session tool grants and
-publishes fresh lazy connections and the next run's tool set. This replacement
-currently resets **all** MCP connections, including when reconnect targets one
-service; non-MCP permissions are untouched. Connect only tests the selected
-existing owner. Neither action executes remote tools. Exit closes the current
-replacement owner. A failure after a durable save reports the committed change;
+the coordinator retires affected service leases, clears their MCP Session grants
+and publishes replacement lazy connections and the next run's tool set.
+Reconnecting one service retires only that service, even with an unchanged
+fingerprint; old borrowed leases cannot acquire its replacement. Unrelated
+connections, grants and managed Computer Use identity are retained. Global
+restriction changes may invalidate all services and managed Computer Use.
+Non-MCP permissions are untouched. Connect only tests the selected current
+connection. Neither action executes remote tools. Exit closes the owner's
+current connections. A failure after a durable save reports the committed change;
 if runtime preparation fails, new runs stop until repair/restart instead of using
 the old permissions. Partial access removal is applied even if deleting the
 definition fails.
@@ -312,7 +317,7 @@ its active/queued operations and closes its connection. Other services continue.
 Already-dispatched effects cannot be undone and remain unknown when the result
 was not received; no action is replayed. A revoked optional service cannot block
 construction of the next run; required/pinned services still enforce their preparation checks.
-An explicit later approval while idle rebuilds the owner without resurrecting
+An explicit later approval while idle replaces that service lease without resurrecting
 Session tool grants. Explicit saved rules are checked against the current binding;
 other AICE processes keep their own frozen state.
 
@@ -360,7 +365,7 @@ A successful login replaces all older OAuth scopes for that service and removes
 its connection decision. Inspect status and approve the new fingerprint before
 connecting; tool execution still requires its own permission. Login and logout
 require the interactive idle reservation and publish saved state by replacing
-the MCP owner and clearing MCP Session grants. Logout removes local credentials
+that service lease and clearing its MCP Session grants. Logout removes local credentials
 and approval, without claiming remote token revocation or signing out another
 AICE process.
 
@@ -726,9 +731,11 @@ I/O. Its queue is included in the configured call timeout (60 seconds by
 default); services have independent queues. Concurrent searches reuse the same
 connection. Failed initialization releases its slot and can be retried by a
 later discovery; tool dispatch never initializes or reconnects a service.
-Repairing an already established failed transport currently requires replacing
-the owner. `aice mcp reconnect` tests a fresh connection in a separate invocation;
-interactive reconnect publishes a new owner while idle (currently resetting all MCP connections).
+Repairing an already established failed transport requires explicitly replacing
+its service lease. `aice mcp reconnect` tests a fresh connection in a separate
+invocation; interactive reconnect replaces only the selected lease while idle.
+Other services retain their connections and grants. Borrowed views retain their
+original lease identity rather than looking up a replacement by service name.
 
 Revocation cancels the service context, denies its Guard binding and invalidates
 borrowed versions before closing the owned connection. Closing the application
