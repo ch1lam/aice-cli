@@ -135,10 +135,16 @@ The panel requires allow/exclude lists to be mutually exclusive without changing
 the existing file-policy interpretation. User preferences and project tightening
 are shown separately. Backend preparation failures prevent saving; successful
 saves publish tools, prompt and Guard target together at an idle boundary.
-Web management actions from both entries call `internal/app.runWebAction`
-with an action and prompt interaction; Settings does not dispatch through the
-slash command table. The outer entry owns the operation reservation; the shared action keeps the existing
-credential, preference and resource publication sequence.
+Web management actions from both entries call `internal/app.runWebSettings`,
+which owns one operation reservation and completes it using the action's actual
+effects. A committed credential or preference refreshes Settings drafts. Only
+publication of a new backend, tools, prompt and Loop invalidates prepared main
+runs and held BTW runners. A credential-only commit leaves those resources
+usable with their previous credentials; the new key is resolved on a later Web
+publication. Cancellation, validation/save failure before any commit, and moving
+an already first/last priority entry do not advance either version. Cleanup
+warnings do not undo committed effects. Slash status stays readable during a
+response; Settings status retains the panel's revision and idle checks.
 See [Settings](configuration.md#settings-window).
 
 ## Permissions

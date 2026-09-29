@@ -374,7 +374,6 @@ var slashCommandHandlers = map[string]slashCommandHandler{
 	"history":  (*interactiveSession).slashResume,
 	"usage":    (*interactiveSession).slashUsage,
 	"context":  (*interactiveSession).slashUsage,
-	"web":      (*interactiveSession).slashWeb,
 	"session":  (*interactiveSession).slashSession,
 	"tree":     (*interactiveSession).slashTree,
 	"checkout": (*interactiveSession).slashCheckout,
@@ -406,6 +405,13 @@ func (s *interactiveSession) RunSlashCommand(
 	}
 	if request.Name == "browser" {
 		result, err := s.runBrowserSettings(ctx, nil, request.Arguments, request.Auth)
+		if len(result.Warnings) > 0 {
+			result.Output += "\n" + strings.Join(result.Warnings, "\n")
+		}
+		return result.Output, err
+	}
+	if request.Name == "web" {
+		result, err := s.runWebSettings(ctx, nil, request.Arguments, request.Auth)
 		if len(result.Warnings) > 0 {
 			result.Output += "\n" + strings.Join(result.Warnings, "\n")
 		}

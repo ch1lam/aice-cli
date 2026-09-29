@@ -33,20 +33,32 @@ func (s *interactiveSession) webMenu() *interaction.CommandMenu {
 	}}
 }
 
-func (s *interactiveSession) slashWeb(ctx context.Context, request interaction.CommandRequest) (string, error) {
-	return s.runWebAction(ctx, request.Arguments, request.Auth)
+type webActionResult struct {
+	output           string
+	committed        bool // Credential or preference replacement completed.
+	resourcesChanged bool // Published replacement tools, backend, prompt and loop.
 }
 
-func (s *interactiveSession) runWebAction(ctx context.Context, action string, ui *interaction.AuthInteraction) (string, error) {
+// runWebSettings gives both frontends one reservation and completion rule.
+// Credential-only commits refresh drafts without invalidating prepared runners.
+// Slash status stays readable during a response; Settings retains its idle check.
+func (s *interactiveSession) runWebSettings(ctx context.Context, revision *uint64, action string, ui *interaction.AuthInteraction) (interaction.SettingsActionResult, error) {
 	action = strings.TrimSpace(action)
-	if action == "" || action == "status" {
-		return s.webStatus(), nil
+	if revision == nil && (action == "" || action == "status") {
+		result, err := s.runWebAction(ctx, action, ui)
+		return interaction.SettingsActionResult{Output: result.output}, err
 	}
-	s.conversation.historyMu.RLock()
-	active := s.conversation.activeMainRun != nil
-	s.conversation.historyMu.RUnlock()
-	if active {
-		return "", fmt.Errorf("app: cannot change web settings while a response is running")
+	if err := s.beginSettingsOperation(revision, true); err != nil {
+		return interaction.SettingsActionResult{}, err
+	}
+	result, err := s.runWebAction(ctx, action, ui)
+	nextRevision, warnings := s.endSettingsOperation(result.committed, result.resourcesChanged)
+	return interaction.SettingsActionResult{Output: result.output, Revision: nextRevision, Warnings: warnings}, err
+}
+
+func (s *interactiveSession) runWebAction(ctx context.Context, action string, ui *interaction.AuthInteraction) (webActionResult, error) {
+	if action == "" || action == "status" {
+		return webActionResult{output: s.webStatus()}, nil
 	}
 	switch action {
 	case "search":
@@ -57,7 +69,7 @@ func (s *interactiveSession) runWebAction(ctx context.Context, action string, ui
 		return s.saveWeb(ctx, config.WebPatch{FetchEnabled: &enabled}, "Web fetch: "+onOff(enabled)+" (saved)")
 	}
 	if ui == nil || ui.Notify == nil {
-		return "", fmt.Errorf("app: /web %s requires the interactive menu", action)
+		return webActionResult{}, fmt.Errorf("app: /web %s requires the interactive menu", action)
 	}
 	switch action {
 	case "add":
@@ -71,7 +83,7 @@ func (s *interactiveSession) runWebAction(ctx context.Context, action string, ui
 	case "append":
 		return s.webAppendSource(ctx, ui)
 	default:
-		return "", fmt.Errorf("app: unknown web action %q", action)
+		return webActionResult{}, fmt.Errorf("app: unknown web action %q", action)
 	}
 }
 
@@ -157,7 +169,8 @@ func (s *interactiveSession) saveWebCredential(ctx context.Context, paths config
 	return nil
 }
 
-func (s *interactiveSession) webAddInstance(ctx context.Context, ui *interaction.AuthInteraction) (string, error) {
+func (s *interactiveSession) webAddInstance(ctx context.Context, ui *interaction.AuthInteraction) (webActionResult, error) {
+	credentialCommitted := false
 	current := s.settingsSnapshot().configuration
 	id := nextExaInstanceID(current.Web.Services)
 	choice, err := webMenuPrompt(ctx, ui, "Add Exa instance "+id,
@@ -167,7 +180,7 @@ func (s *interactiveSession) webAddInstance(ctx context.Context, ui *interaction
 			{Label: "Read the key from environment variable EXA_API_KEY", Arguments: "env"},
 		})
 	if err != nil {
-		return "", err
+		return webActionResult{}, err
 	}
 	service := config.WebServiceSettings{Provider: exa.ProviderID, API: exa.APIID}
 	credentialNote := ""
@@ -178,35 +191,37 @@ func (s *interactiveSession) webAddInstance(ctx context.Context, ui *interaction
 	case "key":
 		secret, err = webPrompt(ctx, ui, interaction.AuthPrompt{Title: "Exa API key for " + id, AllowInput: true, InputLabel: "Exa API key (input hidden)"})
 		if err != nil {
-			return "", err
+			return webActionResult{}, err
 		}
 		secret = strings.TrimSpace(secret)
 		if secret == "" || strings.ContainsAny(secret, "\r\n") {
-			return "", fmt.Errorf("app: Exa API key must be one non-empty line")
+			return webActionResult{}, fmt.Errorf("app: Exa API key must be one non-empty line")
 		}
 		service.Credential = config.WebCredentialRef{AuthRef: config.WebAuthRefPrefix + id}
 	default:
-		return "", fmt.Errorf("app: unknown credential choice %q", choice)
+		return webActionResult{}, fmt.Errorf("app: unknown credential choice %q", choice)
 	}
 	if secret != "" {
 		if err := s.saveWebCredential(ctx, current.Paths, id, secret); err != nil {
-			return "", fmt.Errorf("app: save Exa credential: %w", err)
+			return webActionResult{}, fmt.Errorf("app: save Exa credential: %w", err)
 		}
+		credentialCommitted = true
 		credentialNote = "credential saved to " + current.Paths.GlobalAuth
 	}
 	priority := append(slices.Clone(current.Web.Priority), web.ServiceEntry(id))
-	message, err := s.saveWeb(ctx, config.WebPatch{Services: map[string]*config.WebServiceSettings{id: &service}, Priority: &priority},
+	result, err := s.saveWeb(ctx, config.WebPatch{Services: map[string]*config.WebServiceSettings{id: &service}, Priority: &priority},
 		fmt.Sprintf("Added Exa instance %s and appended %s to the priority list.", id, web.ServiceEntry(id)))
+	result.committed = result.committed || credentialCommitted
 	if err != nil {
 		if credentialNote != "" {
-			return "", fmt.Errorf("%s, but the instance was not saved and the current Session is unchanged: %w", credentialNote, err)
+			return result, fmt.Errorf("%s, but the instance was not saved and the current Session is unchanged: %w", credentialNote, err)
 		}
-		return "", err
+		return result, err
 	}
 	if credentialNote != "" {
-		message += "\n" + credentialNote
+		result.output += "\n" + credentialNote
 	}
-	return message, nil
+	return result, nil
 }
 
 func (s *interactiveSession) webInstanceChoice(ctx context.Context, ui *interaction.AuthInteraction, title string) (string, error) {
@@ -219,22 +234,23 @@ func (s *interactiveSession) webInstanceChoice(ctx context.Context, ui *interact
 	return webMenuPrompt(ctx, ui, title, "", options)
 }
 
-func (s *interactiveSession) webSetCredential(ctx context.Context, ui *interaction.AuthInteraction) (string, error) {
+func (s *interactiveSession) webSetCredential(ctx context.Context, ui *interaction.AuthInteraction) (webActionResult, error) {
 	id, err := s.webInstanceChoice(ctx, ui, "Choose instance")
 	if err != nil {
-		return "", err
+		return webActionResult{}, err
 	}
+	credentialCommitted := false
 	current := s.settingsSnapshot().configuration
 	service, ok := current.Web.Services[id]
 	if !ok {
-		return "", fmt.Errorf("app: instance %q is not configured", id)
+		return webActionResult{}, fmt.Errorf("app: instance %q is not configured", id)
 	}
 	choice, err := webMenuPrompt(ctx, ui, "Credential for "+id, "", []interaction.CommandOption{
 		{Label: "Enter a new API key (saved to the auth store)", Arguments: "key"},
 		{Label: "Read the key from environment variable EXA_API_KEY", Arguments: "env"},
 	})
 	if err != nil {
-		return "", err
+		return webActionResult{}, err
 	}
 	updated := config.WebServiceSettings{Provider: service.Provider, API: service.API, BaseURL: service.BaseURL, Options: service.Options}
 	if !service.Enabled {
@@ -248,58 +264,61 @@ func (s *interactiveSession) webSetCredential(ctx context.Context, ui *interacti
 	case "key":
 		secret, err := webPrompt(ctx, ui, interaction.AuthPrompt{Title: "API key for " + id, AllowInput: true, InputLabel: "API key (input hidden)"})
 		if err != nil {
-			return "", err
+			return webActionResult{}, err
 		}
 		secret = strings.TrimSpace(secret)
 		if secret == "" || strings.ContainsAny(secret, "\r\n") {
-			return "", fmt.Errorf("app: API key must be one non-empty line")
+			return webActionResult{}, fmt.Errorf("app: API key must be one non-empty line")
 		}
 		if err := s.saveWebCredential(ctx, current.Paths, id, secret); err != nil {
-			return "", fmt.Errorf("app: save credential: %w", err)
+			return webActionResult{}, fmt.Errorf("app: save credential: %w", err)
 		}
+		credentialCommitted = true
 		updated.Credential = config.WebCredentialRef{AuthRef: config.WebAuthRefPrefix + id}
 		note = "credential saved to " + current.Paths.GlobalAuth
 	default:
-		return "", fmt.Errorf("app: unknown credential choice %q", choice)
+		return webActionResult{}, fmt.Errorf("app: unknown credential choice %q", choice)
 	}
-	message, err := s.saveWeb(ctx, config.WebPatch{Services: map[string]*config.WebServiceSettings{id: &updated}}, "Updated credential reference for "+id+".")
+	result, err := s.saveWeb(ctx, config.WebPatch{Services: map[string]*config.WebServiceSettings{id: &updated}}, "Updated credential reference for "+id+".")
+	result.committed = result.committed || credentialCommitted
 	if err != nil {
 		if note != "" {
-			return "", fmt.Errorf("%s, but the instance was not updated and the current Session is unchanged: %w", note, err)
+			return result, fmt.Errorf("%s, but the instance was not updated and the current Session is unchanged: %w", note, err)
 		}
-		return "", err
+		return result, err
 	}
 	if note != "" {
-		message += "\n" + note
+		result.output += "\n" + note
 	}
-	return message, nil
+	return result, nil
 }
 
-func (s *interactiveSession) webRemoveInstance(ctx context.Context, ui *interaction.AuthInteraction) (string, error) {
+func (s *interactiveSession) webRemoveInstance(ctx context.Context, ui *interaction.AuthInteraction) (webActionResult, error) {
 	id, err := s.webInstanceChoice(ctx, ui, "Remove instance")
 	if err != nil {
-		return "", err
+		return webActionResult{}, err
 	}
 	current := s.settingsSnapshot().configuration
 	service, ok := current.Web.Services[id]
 	if !ok {
-		return "", fmt.Errorf("app: instance %q is not configured", id)
+		return webActionResult{}, fmt.Errorf("app: instance %q is not configured", id)
 	}
 	priority := slices.DeleteFunc(slices.Clone(current.Web.Priority), func(entry string) bool { return entry == web.ServiceEntry(id) })
-	message, err := s.saveWeb(ctx, config.WebPatch{Services: map[string]*config.WebServiceSettings{id: nil}, Priority: &priority}, "Removed instance "+id+".")
+	result, err := s.saveWeb(ctx, config.WebPatch{Services: map[string]*config.WebServiceSettings{id: nil}, Priority: &priority}, "Removed instance "+id+".")
 	if err != nil {
-		return "", err
+		return webActionResult{}, err
 	}
 	if service.Credential.AuthRef != "" {
 		if err := s.saveWebCredential(ctx, current.Paths, id, ""); err != nil {
-			return message + "\nStored credential could not be removed: " + err.Error(), nil
+			result.output += "\nStored credential could not be removed: " + err.Error()
+			return result, nil
 		}
-		message += "\nStored credential removed from " + current.Paths.GlobalAuth
+		result.output += "\nStored credential removed from " + current.Paths.GlobalAuth
 	}
-	return message, nil
+	return result, nil
 }
 
-func (s *interactiveSession) webReorder(ctx context.Context, ui *interaction.AuthInteraction, action string) (string, error) {
+func (s *interactiveSession) webReorder(ctx context.Context, ui *interaction.AuthInteraction, action string) (webActionResult, error) {
 	current := s.settingsSnapshot().configuration.Web
 	options := make([]interaction.CommandOption, 0, len(current.Priority))
 	for index, entry := range current.Priority {
@@ -308,22 +327,22 @@ func (s *interactiveSession) webReorder(ctx context.Context, ui *interaction.Aut
 	titles := map[string]string{"up": "Move source up", "down": "Move source down", "drop": "Remove source from priority"}
 	entry, err := webMenuPrompt(ctx, ui, titles[action], "", options)
 	if err != nil {
-		return "", err
+		return webActionResult{}, err
 	}
 	priority := slices.Clone(current.Priority)
 	index := slices.Index(priority, entry)
 	if index < 0 {
-		return "", fmt.Errorf("app: %q is not in the priority list", entry)
+		return webActionResult{}, fmt.Errorf("app: %q is not in the priority list", entry)
 	}
 	switch action {
 	case "up":
 		if index == 0 {
-			return entry + " is already first.", nil
+			return webActionResult{output: entry + " is already first."}, nil
 		}
 		priority[index-1], priority[index] = priority[index], priority[index-1]
 	case "down":
 		if index == len(priority)-1 {
-			return entry + " is already last.", nil
+			return webActionResult{output: entry + " is already last."}, nil
 		}
 		priority[index+1], priority[index] = priority[index], priority[index+1]
 	case "drop":
@@ -332,7 +351,7 @@ func (s *interactiveSession) webReorder(ctx context.Context, ui *interaction.Aut
 	return s.saveWeb(ctx, config.WebPatch{Priority: &priority}, "Priority: "+formatPriority(priority))
 }
 
-func (s *interactiveSession) webAppendSource(ctx context.Context, ui *interaction.AuthInteraction) (string, error) {
+func (s *interactiveSession) webAppendSource(ctx context.Context, ui *interaction.AuthInteraction) (webActionResult, error) {
 	current := s.settingsSnapshot().configuration.Web
 	var options []interaction.CommandOption
 	if !slices.Contains(current.Priority, web.PriorityNative) {
@@ -345,7 +364,7 @@ func (s *interactiveSession) webAppendSource(ctx context.Context, ui *interactio
 	}
 	entry, err := webMenuPrompt(ctx, ui, "Add source to priority", "", options)
 	if err != nil {
-		return "", err
+		return webActionResult{}, err
 	}
 	priority := append(slices.Clone(current.Priority), entry)
 	return s.saveWeb(ctx, config.WebPatch{Priority: &priority}, "Priority: "+formatPriority(priority))
@@ -360,23 +379,23 @@ func formatPriority(priority []string) string {
 
 // saveWeb persists one patch, publishes the new snapshot and rebinds the web
 // tools for the next run. A failed save leaves the current snapshot untouched.
-func (s *interactiveSession) saveWeb(ctx context.Context, patch config.WebPatch, message string) (string, error) {
+func (s *interactiveSession) saveWeb(ctx context.Context, patch config.WebPatch, message string) (webActionResult, error) {
 	if s.application == nil {
-		return "", fmt.Errorf("app: application is required")
+		return webActionResult{}, fmt.Errorf("app: application is required")
 	}
 	current := s.settingsSnapshot().configuration
 	candidate, err := current.WithWebPatch(patch)
 	if err != nil {
-		return "", err
+		return webActionResult{}, err
 	}
 	prepared, err := s.prepareWebSettings(candidate)
 	if err != nil {
-		return "", err
+		return webActionResult{}, err
 	}
 	if _, err := s.application.dependencies.saveWebSettings(ctx, current.Paths, patch); err != nil {
 		if !config.WasCommitted(err) {
 			prepared.state.closeBackend()
-			return "", fmt.Errorf("app: save web settings; current Session unchanged: %w", err)
+			return webActionResult{}, fmt.Errorf("app: save web settings; current Session unchanged: %w", err)
 		}
 		s.settingsWarning(err)
 	}
@@ -392,7 +411,7 @@ func (s *interactiveSession) saveWeb(ctx context.Context, patch config.WebPatch,
 	} else if state.settings.SearchEnabled {
 		lines = append(lines, "Search source: none — "+state.binding.Reason)
 	}
-	return strings.Join(lines, "\n"), nil
+	return webActionResult{output: strings.Join(lines, "\n"), committed: true, resourcesChanged: true}, nil
 }
 
 // preparedWeb owns replacement resources until publication or failed-save cleanup.

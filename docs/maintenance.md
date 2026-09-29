@@ -125,37 +125,31 @@ remain in their existing modules.
 
 ### Management action invalidation and partial completion
 
-Login and Web management still use different invalidation rules in the slash
-and Settings entry points. [RunSlashCommand](../internal/app/interactive_commands.go)
-advances revisions only when the reserved handler returns nil;
+Login still uses different invalidation rules in the slash and Settings entry
+points. [RunSlashCommand](../internal/app/interactive_commands.go) advances
+revisions only when the reserved handler returns nil;
 [RunSettingsAction](../internal/app/settings_apply.go) advances both revisions
-for login and non-status Web attempts even when they fail or are canceled.
-Trust attempts retain the same draft-revision difference, but remain restart-only
-and never advance the resource revision. Reservation rejection changes neither.
+for a login attempt even when it fails or is canceled. Trust attempts retain the
+same draft-revision difference, but remain restart-only and never advance the
+resource revision. Reservation rejection changes neither.
 
 These rules were introduced together in `bd3d949`. The Settings comment accounts
 for credentials saved before a later preference failure, but does not establish
-that every failed or canceled attempt must invalidate resources. An error alone
-cannot identify the effects:
+that every failed or canceled attempt must invalidate resources. Account login
+can commit credentials before preference persistence fails while the selected
+live provider remains unchanged. The remaining login review must trace API-key
+and OAuth consumers separately, derive resource effects from those facts, and
+verify held main/BTW execution through both entry points.
 
-- Account login can commit credentials before preference persistence fails.
-  The selected live provider remains unchanged.
-- Web instance setup can commit a key and update the credential cache before
-  preparing or saving preferences fails; bound tools and backends remain old.
-
-The application now separates draft and resource invalidation at the lifecycle
-boundary. [Browser management](browser.md) reports completed or possible resource
-effects from its operation in both entry points: connection followed by canceled
-tab selection invalidates held main/BTW runs; input cancellation without effects
-does not. A started mutating helper with no successful response is conservatively
-treated as possibly changed, with no automatic replay.
-
-Login and Web have not yet adopted operation-owned effect reporting. A follow-up
-must trace each durable write and runtime publication, decide the resource effect
-of credential-only commits, and verify held main/BTW execution through both entry
-points. Keep partial-success reporting and do not replay actions to infer their
-effect. Frontend snapshot refresh is presentation only; it does not replace the
-application's resource invalidation.
+[Browser management](browser.md) and [Web management](web.md) now report effects
+from their operations through shared per-domain coordinators. Browser includes
+uncertain effects of a started modifying helper. Web separates a durable
+credential write from runtime publication: a credential-only commit refreshes
+Settings drafts but leaves held main/BTW runs and their old effective resources
+usable. No-effect failures advance neither revision. See the domain documents
+for partial-success and cleanup semantics; do not replay actions to infer effects.
+Frontend snapshot refresh is presentation only and cannot replace application
+resource invalidation.
 
 ### MCP verification limits
 

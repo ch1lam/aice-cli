@@ -151,13 +151,15 @@ func TestWebCredentialCommitBoundary(t *testing.T) {
 				} else if s.loop == before.loop || !reflect.DeepEqual(loaded.Web, s.configuration.Web) {
 					t.Error("saved preference was not published")
 				}
-				// Preserve the existing entry-point invalidation rules, including failures.
-				wantRevision := revision
-				if entry == "settings" || err == nil {
+				wantRevision, wantResources := revision, revision
+				if !tc.writeFails || tc.action == "remove" {
 					wantRevision++
 				}
-				if got, reason := s.settingsStatus(); got != wantRevision || reason != "" {
-					t.Errorf("revision/reservation = %d %q; want %d", got, reason, wantRevision)
+				if !tc.preferenceFails && (!tc.writeFails || tc.action == "remove") {
+					wantResources++
+				}
+				if got, reason := s.settingsStatus(); got != wantRevision || reason != "" || s.lifecycle.resourceRevision != wantResources {
+					t.Errorf("revision/resource/reservation = %d/%d %q; want %d/%d", got, s.lifecycle.resourceRevision, reason, wantRevision, wantResources)
 				}
 				if search.calls.Load() != 0 {
 					t.Fatal("credential action called search API")

@@ -2,7 +2,6 @@ package app
 
 import (
 	"fmt"
-	"strings"
 	"sync"
 
 	"github.com/ch1lam/aice-cli/internal/interaction"
@@ -135,9 +134,6 @@ func slashChangesResources(request interaction.CommandRequest) (changes, shared 
 		return true, true
 	case "trust":
 		return true, false
-	case "web":
-		action := strings.TrimSpace(request.Arguments)
-		return action != "" && action != "status", true
 	default:
 		return false, false
 	}

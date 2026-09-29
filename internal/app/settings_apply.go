@@ -193,8 +193,11 @@ func (s *interactiveSession) RunSettingsAction(ctx context.Context, revision uin
 	if request.Name == "browser" {
 		return s.runBrowserSettings(ctx, &revision, request.Arguments, request.Auth)
 	}
+	if request.Name == "web" {
+		return s.runWebSettings(ctx, &revision, request.Arguments, request.Auth)
+	}
 	switch request.Name {
-	case "login", "web", "trust", "desktop":
+	case "login", "trust", "desktop":
 	default:
 		return result, fmt.Errorf("unsupported settings action %s", request.Name)
 	}
@@ -224,12 +227,7 @@ func (s *interactiveSession) RunSettingsAction(ctx context.Context, revision uin
 	}
 	// Actions may save credentials before a later preference write fails. Any
 	// completed action invalidates older drafts, including partial success.
-	switch request.Name {
-	case "web":
-		result.Output, returnErr = s.runWebAction(ctx, request.Arguments, request.Auth)
-	default:
-		result.Output, returnErr = slashCommandHandlers[request.Name](s, ctx, request)
-	}
+	result.Output, returnErr = slashCommandHandlers[request.Name](s, ctx, request)
 	changed, _ := slashChangesResources(request)
 	result.Revision, result.Warnings = s.endSettingsOperation(changed, changed)
 	return result, returnErr

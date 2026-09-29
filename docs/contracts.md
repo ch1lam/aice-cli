@@ -820,8 +820,15 @@ Both slash and Settings actions advance both revisions for those effects; pure
 validation failures and cancellation before effects advance neither. Status reads
 do not invalidate resources. Slash status remains available during a response;
 the Settings action retains its revision check and idle admission requirement.
-This rule is specific to Browser management; other domain actions retain their
-existing completion rules. See [Browser actions](browser.md#show-the-browser-window).
+See [Browser actions](browser.md#show-the-browser-window).
+
+Web management reports durable writes separately from runtime publication.
+Both entries refresh drafts after a credential-only commit, but keep held main
+and BTW runs usable with their existing effective resources. Publishing Web
+preferences and the prepared runtime advances both revisions; no-effect failures
+and unchanged priority moves advance neither. This does not make credentials
+and preferences one transaction. See [Web management](web.md); other domain
+actions retain their own completion rules.
 
 A setting operation prepares before writing, publishes after atomic replacement,
 and reports cleanup separately from commit failure. Web instance edits patch

@@ -13,31 +13,6 @@ import (
 	"github.com/ch1lam/aice-cli/internal/interaction"
 )
 
-// These cases preserve the existing entry-point revision difference: Settings
-// invalidates drafts after failed mutation attempts; slash only does on success.
-func managementAction(t *testing.T, s *interactiveSession, entry string, request interaction.CommandRequest) (string, error) {
-	t.Helper()
-	var output string
-	var err error
-	if entry == "slash" {
-		output, err = s.RunSlashCommand(t.Context(), request)
-	} else {
-		result, actionErr := s.RunSettingsAction(t.Context(), 0, request)
-		output, err = result.Output, actionErr
-		if result.Revision != 1 || result.Committed || result.Applied || len(result.Warnings) != 0 {
-			t.Fatalf("Settings action result = %+v", result)
-		}
-	}
-	wantRevision := uint64(1)
-	if entry == "slash" && err != nil {
-		wantRevision = 0
-	}
-	if s.lifecycle.revision != wantRevision || s.lifecycle.resourceRevision != wantRevision || s.lifecycle.changing {
-		t.Fatal("action changed revision or reservation semantics")
-	}
-	return output, err
-}
-
 func TestWebManagementActionEntryPoints(t *testing.T) {
 	for _, entry := range []string{"slash", "settings"} {
 		for _, scenario := range []string{"toggle", "invalid", "cancel", "credential saved preference failed"} {
@@ -62,7 +37,27 @@ func TestWebManagementActionEntryPoints(t *testing.T) {
 						return config.WebSettings{}, errors.New("synthetic preference failure")
 					}
 				}
-				output, err := managementAction(t, s, entry, request)
+				wantRevision, wantResources := uint64(0), uint64(0)
+				if scenario == "toggle" {
+					wantRevision, wantResources = 1, 1
+				}
+				if scenario == "credential saved preference failed" {
+					wantRevision = 1
+				}
+				var output string
+				var err error
+				if entry == "slash" {
+					output, err = s.RunSlashCommand(t.Context(), request)
+				} else {
+					result, actionErr := s.RunSettingsAction(t.Context(), 0, request)
+					output, err = result.Output, actionErr
+					if result.Revision != wantRevision || result.Committed || result.Applied || len(result.Warnings) != 0 {
+						t.Fatalf("Settings result = %+v", result)
+					}
+				}
+				if s.lifecycle.revision != wantRevision || s.lifecycle.resourceRevision != wantResources || s.lifecycle.changing {
+					t.Error("Web revisions do not reflect committed/published effects")
+				}
 				if scenario == "toggle" {
 					loaded, loadErr := config.LoadFiles(s.configuration.Paths, config.LoadOptions{})
 					if err != nil || loadErr != nil || loaded.Web.FetchEnabled || s.configuration.Web.FetchEnabled || slicesContains(toolNames(s.tools), "web_fetch") || s.loop == before.loop || !strings.Contains(output, "Web fetch: off (saved)") {
