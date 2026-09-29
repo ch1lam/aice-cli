@@ -15,7 +15,6 @@ type settingsLifecycle struct {
 	mu               sync.Mutex
 	revision         uint64
 	resourceRevision uint64
-	sharedChange     bool
 	warnings         []string
 	changing         bool
 	preparing        int
@@ -23,7 +22,7 @@ type settingsLifecycle struct {
 	sideRunning      int
 }
 
-func (s *interactiveSession) beginSettingsOperation(revision *uint64, shared bool) error {
+func (s *interactiveSession) beginSettingsOperation(revision *uint64, requiresIdle bool) error {
 	l := &s.lifecycle
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -33,12 +32,12 @@ func (s *interactiveSession) beginSettingsOperation(revision *uint64, shared boo
 	if revision != nil && *revision != l.revision {
 		return interaction.ErrSettingsStale
 	}
-	if shared && (l.preparing > 0 || l.mainRunning || l.sideRunning > 0) {
+	if requiresIdle && (l.preparing > 0 || l.mainRunning || l.sideRunning > 0) {
 		return interaction.ErrSettingsRunning
 	}
 	// Existing embedding consumers can own a conversation directly. Preserve
 	// that active-run authority in addition to the application reservation.
-	if shared {
+	if requiresIdle {
 		s.conversation.historyMu.RLock()
 		active := s.conversation.activeMainRun != nil
 		s.conversation.historyMu.RUnlock()
@@ -47,23 +46,22 @@ func (s *interactiveSession) beginSettingsOperation(revision *uint64, shared boo
 		}
 	}
 	l.changing = true
-	l.sharedChange = shared
 	l.warnings = nil
 	return nil
 }
 
-func (s *interactiveSession) endSettingsOperation(changed bool) (uint64, []string) {
+func (s *interactiveSession) endSettingsOperation(draftsChanged, resourcesChanged bool) (uint64, []string) {
 	s.lifecycle.mu.Lock()
-	if changed {
+	if draftsChanged {
 		s.lifecycle.revision++
-		if s.lifecycle.sharedChange {
-			s.lifecycle.resourceRevision++
-			s.sideMu.Lock()
-			for _, thread := range s.sideThreads {
-				thread.invalidated = true
-			}
-			s.sideMu.Unlock()
+	}
+	if resourcesChanged {
+		s.lifecycle.resourceRevision++
+		s.sideMu.Lock()
+		for _, thread := range s.sideThreads {
+			thread.invalidated = true
 		}
+		s.sideMu.Unlock()
 	}
 	s.lifecycle.changing = false
 	warnings := s.lifecycle.warnings
@@ -137,7 +135,7 @@ func slashChangesResources(request interaction.CommandRequest) (changes, shared 
 		return true, true
 	case "trust":
 		return true, false
-	case "web", "browser":
+	case "web":
 		action := strings.TrimSpace(request.Arguments)
 		return action != "" && action != "status", true
 	default:

@@ -62,7 +62,7 @@ func (s *interactiveSession) ApplySettings(ctx context.Context, request interact
 			}
 		}
 		var warnings []string
-		result.Revision, warnings = s.endSettingsOperation(result.Committed)
+		result.Revision, warnings = s.endSettingsOperation(result.Committed, result.Committed && shared)
 		result.Warnings = append(result.Warnings, warnings...)
 	}()
 	return s.applySettingsReserved(ctx, request, shared, timing)
@@ -190,8 +190,11 @@ func (s *interactiveSession) RunSettingsAction(ctx context.Context, revision uin
 	if request.Name == "mcp" {
 		return s.runMCPSettings(ctx, &revision, request)
 	}
+	if request.Name == "browser" {
+		return s.runBrowserSettings(ctx, &revision, request.Arguments, request.Auth)
+	}
 	switch request.Name {
-	case "login", "web", "browser", "trust", "desktop":
+	case "login", "web", "trust", "desktop":
 	default:
 		return result, fmt.Errorf("unsupported settings action %s", request.Name)
 	}
@@ -205,13 +208,14 @@ func (s *interactiveSession) RunSettingsAction(ctx context.Context, revision uin
 		}
 		// Preserve the Settings action contract: even a failed attempt
 		// invalidates old drafts, but never advances the resource revision.
-		result.Revision, result.Warnings = s.endSettingsOperation(true)
+		result.Revision, result.Warnings = s.endSettingsOperation(true, false)
 		return result, returnErr
 	}
 	if request.Name == "desktop" {
 		result, returnErr = s.runDesktopSettings(ctx, request)
 		var warnings []string
-		result.Revision, warnings = s.endSettingsOperation(result.Committed || len(result.External) > 0)
+		changed := result.Committed || len(result.External) > 0
+		result.Revision, warnings = s.endSettingsOperation(changed, changed)
 		result.Warnings = append(result.Warnings, warnings...)
 		if result.Continuation != nil {
 			result.Continuation.Revision = result.Revision
@@ -221,14 +225,12 @@ func (s *interactiveSession) RunSettingsAction(ctx context.Context, revision uin
 	// Actions may save credentials before a later preference write fails. Any
 	// completed action invalidates older drafts, including partial success.
 	switch request.Name {
-	case "browser":
-		result.Output, returnErr = s.runBrowserAction(ctx, request.Arguments, request.Auth)
 	case "web":
 		result.Output, returnErr = s.runWebAction(ctx, request.Arguments, request.Auth)
 	default:
 		result.Output, returnErr = slashCommandHandlers[request.Name](s, ctx, request)
 	}
 	changed, _ := slashChangesResources(request)
-	result.Revision, result.Warnings = s.endSettingsOperation(changed)
+	result.Revision, result.Warnings = s.endSettingsOperation(changed, changed)
 	return result, returnErr
 }

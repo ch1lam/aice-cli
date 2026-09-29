@@ -61,46 +61,71 @@ func closeBrowser(ctx context.Context, manager *browser.Manager) error {
 	}
 	// Escape and shutdown cancel the parent. Cleanup still gets its own bounded
 	// opportunity to disconnect; Manager.Close owns the ten-second deadline.
-	err := manager.Close(context.WithoutCancel(ctx))
+	_, err := manager.Close(context.WithoutCancel(ctx))
 	return errors.Join(err, applyBrowserEnvironment(manager))
 }
 
-func (s *interactiveSession) slashBrowser(ctx context.Context, request interaction.CommandRequest) (string, error) {
-	return s.runBrowserAction(ctx, request.Arguments, request.Auth)
+type browserActionResult struct {
+	output           string
+	resourcesChanged bool // Changed locally, or a started modifying helper may have changed them.
 }
 
-func (s *interactiveSession) runBrowserAction(ctx context.Context, action string, ui *interaction.AuthInteraction) (string, error) {
+// runBrowserSettings gives both frontends one reservation and completion rule.
+// Slash status remains available during a response; Settings actions retain
+// their revision check and idle requirement, including status.
+func (s *interactiveSession) runBrowserSettings(ctx context.Context, revision *uint64, action string, ui *interaction.AuthInteraction) (interaction.SettingsActionResult, error) {
+	action = strings.TrimSpace(action)
+	if revision == nil && (action == "" || action == "status") {
+		result, err := s.runBrowserAction(ctx, action, ui)
+		return interaction.SettingsActionResult{Output: result.output}, err
+	}
+	if err := s.beginSettingsOperation(revision, true); err != nil {
+		return interaction.SettingsActionResult{}, err
+	}
+	result, err := s.runBrowserAction(ctx, action, ui)
+	nextRevision, warnings := s.endSettingsOperation(result.resourcesChanged, result.resourcesChanged)
+	return interaction.SettingsActionResult{Output: result.output, Revision: nextRevision, Warnings: warnings}, err
+}
+
+func (s *interactiveSession) runBrowserAction(ctx context.Context, action string, ui *interaction.AuthInteraction) (browserActionResult, error) {
+	result := browserActionResult{}
 	if runtime.GOOS == "windows" {
-		return "browser automation is not supported on Windows in this version", nil
+		result.output = "browser automation is not supported on Windows in this version"
+		return result, nil
 	}
 	if s.browser == nil {
-		return "", fmt.Errorf("browser automation is unavailable: session setup failed")
+		return result, fmt.Errorf("browser automation is unavailable: session setup failed")
 	}
 	action = strings.TrimSpace(action)
 	if action == "" || action == "status" {
-		return s.browserStatus(ctx)
+		var err error
+		result.output, err = s.browserStatus(ctx)
+		return result, err
 	}
 	s.conversation.historyMu.RLock()
 	active := s.conversation.activeMainRun != nil
 	s.conversation.historyMu.RUnlock()
 	if active {
-		return "", fmt.Errorf("app: cannot change the browser while a response is running")
+		return result, fmt.Errorf("app: cannot change the browser while a response is running")
 	}
 	if action == "headed" {
 		return s.toggleBrowserWindow(ctx)
 	}
 	if action == "close" {
-		err := closeBrowser(ctx, s.browser)
+		changed, err := s.browser.Close(context.WithoutCancel(ctx))
+		err = errors.Join(err, applyBrowserEnvironment(s.browser))
 		// close may acknowledge before the daemon exits; never reuse that name.
 		rotateErr := s.browser.Rotate()
+		result.resourcesChanged = changed || rotateErr == nil
+		result.output = "Browser session closed"
 		err = errors.Join(err, rotateErr, applyBrowserEnvironment(s.browser))
-		return "Browser session closed", err
+		return result, err
 	}
 	if _, err := s.browser.Executable(); err != nil {
-		return "", err
+		return result, err
 	}
 	if ui == nil || ui.Notify == nil {
-		return "", fmt.Errorf("browser connection and tab selection require the interactive menu")
+		return result, fmt.Errorf("browser connection and tab selection require the interactive menu")
 	}
 	switch action {
 	case "auto", "connect":
@@ -112,43 +137,48 @@ func (s *interactiveSession) runBrowserAction(ctx context.Context, action string
 		}
 		value, err := browserPrompt(ctx, ui, prompt)
 		if err != nil {
-			return "", err
+			return result, err
 		}
 		if action == "connect" {
 			target.Endpoint = strings.TrimSpace(value)
 		}
-		tabs, connectErr := s.browser.Connect(ctx, target)
+		tabs, changed, connectErr := s.browser.Connect(ctx, target)
+		result.resourcesChanged = changed
 		// Publish even failure state: a partial connect must not silently leave the
 		// next model command pointing at the previous browser.
 		envErr := applyBrowserEnvironment(s.browser)
 		if err := errors.Join(connectErr, envErr); err != nil {
-			return "", err
+			return result, err
 		}
-		return s.chooseBrowserTab(ctx, ui, tabs, true)
+		selection, err := s.chooseBrowserTab(ctx, ui, tabs, true)
+		selection.resourcesChanged = selection.resourcesChanged || result.resourcesChanged
+		return selection, err
 	case "tabs":
 		tabs, err := s.browser.Tabs(ctx)
 		if err != nil {
-			return "", err
+			return result, err
 		}
 		return s.chooseBrowserTab(ctx, ui, tabs, false)
 	default:
-		return "", fmt.Errorf("unknown browser action %q", action)
+		return result, fmt.Errorf("unknown browser action %q", action)
 	}
 }
-func (s *interactiveSession) toggleBrowserWindow(ctx context.Context) (string, error) {
+func (s *interactiveSession) toggleBrowserWindow(ctx context.Context) (browserActionResult, error) {
+	result := browserActionResult{}
 	current := s.settingsSnapshot().configuration
 	headed := !current.BrowserHeaded
 	changes := map[config.Setting]string{config.SettingBrowserHeaded: strconv.FormatBool(headed)}
 	configuration, err := s.persistSettings(ctx, current, changes)
 	if err != nil {
-		return "", err
+		return result, err
 	}
 	s.stateMu.Lock()
 	s.configuration = configuration
 	s.stateMu.Unlock()
 	s.browser.SetHeaded(headed)
+	result.resourcesChanged = true
 	if err := applyBrowserEnvironment(s.browser); err != nil {
-		return "", fmt.Errorf("browser window preference saved, but environment update failed: %w", err)
+		return result, fmt.Errorf("browser window preference saved, but environment update failed: %w", err)
 	}
 	state := "off"
 	if headed {
@@ -162,7 +192,8 @@ func (s *interactiveSession) toggleBrowserWindow(ctx context.Context) (string, e
 	} else {
 		output += "\nApplies when AICE next opens a browser."
 	}
-	return output + savedOverrideNotice(configuration, changes), nil
+	result.output = output + savedOverrideNotice(configuration, changes)
+	return result, nil
 }
 
 func browserPrompt(ctx context.Context, ui *interaction.AuthInteraction, prompt interaction.AuthPrompt) (string, error) {
@@ -179,32 +210,39 @@ func browserPrompt(ctx context.Context, ui *interaction.AuthInteraction, prompt 
 		return value, nil
 	}
 }
-func (s *interactiveSession) chooseBrowserTab(ctx context.Context, ui *interaction.AuthInteraction, tabs []browser.Tab, connected bool) (string, error) {
+func (s *interactiveSession) chooseBrowserTab(ctx context.Context, ui *interaction.AuthInteraction, tabs []browser.Tab, connected bool) (browserActionResult, error) {
+	result := browserActionResult{}
 	menu := &interaction.CommandMenu{Title: "Choose browser tab", Options: []interaction.CommandOption{{Label: "New tab (default)", Arguments: "new"}}}
 	for _, tab := range tabs {
 		menu.Options = append(menu.Options, interaction.CommandOption{Label: tab.Title + " — " + tab.URL, Arguments: tab.TargetID})
 	}
 	choice, err := browserPrompt(ctx, ui, interaction.AuthPrompt{Title: menu.Title, Instructions: "Use ↑/↓ and Enter. Login and cookies are shared with other tabs in this browser.", Menu: menu})
 	if err != nil {
-		return "", err
+		return result, err
 	}
 	if choice == "new" {
 		if !connected {
-			if err := s.browser.NewTab(ctx); err != nil {
-				return "", err
+			var err error
+			result.resourcesChanged, err = s.browser.NewTab(ctx)
+			if err != nil {
+				return result, err
 			}
 		}
-		return "Browser connected to a new tab. Observe it with agent-browser snapshot -i.", nil
+		result.output = "Browser connected to a new tab. Observe it with agent-browser snapshot -i."
+		return result, nil
 	}
 	for _, tab := range tabs {
 		if choice == tab.TargetID {
-			if err := s.browser.BindTab(ctx, choice); err != nil {
-				return "", err
+			var err error
+			result.resourcesChanged, err = s.browser.BindTab(ctx, choice)
+			if err != nil {
+				return result, err
 			}
-			return "Browser bound to: " + tab.Title + " — " + tab.URL, nil
+			result.output = "Browser bound to: " + tab.Title + " — " + tab.URL
+			return result, nil
 		}
 	}
-	return "", fmt.Errorf("selected browser tab is no longer available")
+	return result, fmt.Errorf("selected browser tab is no longer available")
 }
 func (s *interactiveSession) browserStatus(ctx context.Context) (string, error) {
 	executable, err := s.browser.Executable()

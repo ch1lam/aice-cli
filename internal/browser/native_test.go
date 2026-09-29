@@ -45,14 +45,14 @@ func testNativeManagedBrowserLifecycle(t *testing.T, headed bool) {
 	ctx, cancel := context.WithTimeout(t.Context(), 45*time.Second)
 	defer cancel()
 	t.Cleanup(func() {
-		if err := m.Close(context.WithoutCancel(ctx)); err != nil {
+		if _, err := m.Close(context.WithoutCancel(ctx)); err != nil {
 			t.Error(err)
 		}
 	})
 	page := `<title>AICE browser fixture</title><form><label>Name<input name="name"></label><button type="button" onclick="document.title='Submitted'">Submit</button></form>`
 	run := func(args ...string) []byte {
 		t.Helper()
-		out, err := m.command(ctx, m.Name(), args...)
+		out, _, err := m.command(ctx, m.Name(), args...)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -91,7 +91,7 @@ func testNativeManagedBrowserLifecycle(t *testing.T, headed bool) {
 	if err := json.Unmarshal(info.Raw, &response); err != nil {
 		t.Fatal(err)
 	}
-	if err := m.Close(ctx); err != nil {
+	if _, err := m.Close(ctx); err != nil {
 		t.Fatal(err)
 	}
 	if m.HasSidecar() {

@@ -32,7 +32,7 @@ func (m *Manager) SweepStale(ctx context.Context) []error {
 			continue
 		}
 		name := strings.TrimSuffix(entry.Name(), ".pid")
-		if err := m.closeSession(ctx, name); err != nil {
+		if _, err := m.closeSession(ctx, name); err != nil {
 			failures = append(failures, fmt.Errorf("close stale browser %s: %w", name, err))
 		}
 	}

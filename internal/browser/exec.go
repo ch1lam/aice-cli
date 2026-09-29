@@ -11,9 +11,9 @@ import (
 	"time"
 )
 
-func (m *Manager) command(ctx context.Context, name string, args ...string) ([]byte, error) {
+func (m *Manager) command(ctx context.Context, name string, args ...string) (data []byte, started bool, err error) {
 	if _, err := m.Executable(); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	env := m.Environment()
 	// Close must not reconnect to an unavailable CDP endpoint before disconnecting.
@@ -38,10 +38,10 @@ func (m *Manager) command(ctx context.Context, name string, args ...string) ([]b
 	return m.exec(ctx, append([]string{"--session", name}, args...), inherited)
 }
 
-func (m *Manager) execute(ctx context.Context, args, env []string) ([]byte, error) {
+func (m *Manager) execute(ctx context.Context, args, env []string) (data []byte, started bool, err error) {
 	path, err := m.Executable()
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	cmd := exec.CommandContext(ctx, path, args...)
 	cmd.Dir = m.workspace
@@ -52,13 +52,16 @@ func (m *Manager) execute(ctx context.Context, args, env []string) ([]byte, erro
 	stderr.limit = 4096
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("agent-browser: %w: %s%s", errors.Join(err, ctx.Err()), stderr.String(), stdout.String())
+	if err := cmd.Start(); err != nil {
+		return nil, false, fmt.Errorf("agent-browser: %w: %s%s", errors.Join(err, ctx.Err()), stderr.String(), stdout.String())
+	}
+	if err := cmd.Wait(); err != nil {
+		return nil, true, fmt.Errorf("agent-browser: %w: %s%s", errors.Join(err, ctx.Err()), stderr.String(), stdout.String())
 	}
 	if stdout.exceeded {
-		return nil, fmt.Errorf("agent-browser response exceeds 1 MiB")
+		return nil, true, fmt.Errorf("agent-browser response exceeds 1 MiB")
 	}
-	return stdout.Bytes(), nil
+	return stdout.Bytes(), true, nil
 }
 
 type limitedBuffer struct {

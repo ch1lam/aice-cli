@@ -67,13 +67,13 @@ func TestManagerConnectAndBind(t *testing.T) {
 		t.Run(fmt.Sprintf("%s/auto=%v", target.Endpoint, target.Auto), func(t *testing.T) {
 			m := testManager(t)
 			var got []string
-			m.exec = func(_ context.Context, args, env []string) ([]byte, error) {
+			m.exec = func(_ context.Context, args, env []string) ([]byte, bool, error) {
 				got = args
-				return []byte(`{"success":true,"data":{"tabs":[{"tabId":"t1","targetId":"ABC123","title":"Example","url":"https://example.com","active":true}]}}`), nil
+				return []byte(`{"success":true,"data":{"tabs":[{"tabId":"t1","targetId":"ABC123","title":"Example","url":"https://example.com","active":true}]}}`), true, nil
 			}
-			tabs, err := m.Connect(t.Context(), target)
-			if err != nil {
-				t.Fatal(err)
+			tabs, changed, err := m.Connect(t.Context(), target)
+			if err != nil || !changed {
+				t.Fatalf("changed=%v err=%v", changed, err)
 			}
 			expected := []string{"--session", m.Name(), "--cdp", target.Endpoint, "--pin-tab", "tab", "list", "--json"}
 			if target.Auto {
@@ -85,8 +85,8 @@ func TestManagerConnectAndBind(t *testing.T) {
 			if m.Environment()["AGENT_BROWSER_CDP"] != target.Endpoint {
 				t.Fatal("lost CDP target")
 			}
-			if err := m.BindTab(t.Context(), tabs[0].TargetID); err != nil {
-				t.Fatal(err)
+			if changed, err := m.BindTab(t.Context(), tabs[0].TargetID); err != nil || !changed {
+				t.Fatalf("changed=%v err=%v", changed, err)
 			}
 			if !reflect.DeepEqual(got, []string{"--session", m.Name(), "tab", "ABC123", "--json"}) {
 				t.Fatal(got)
@@ -98,11 +98,11 @@ func TestManagerRejectsInvalidTarget(t *testing.T) {
 	for _, target := range []Target{{Endpoint: "9222; rm"}, {Endpoint: "0"}, {Endpoint: "65536"}, {Endpoint: "https://example.com"}, {Auto: true, Endpoint: "9222"}, {}} {
 		t.Run(target.Endpoint, func(t *testing.T) {
 			m := testManager(t)
-			m.exec = func(context.Context, []string, []string) ([]byte, error) {
+			m.exec = func(context.Context, []string, []string) ([]byte, bool, error) {
 				t.Fatal("executed invalid target")
-				return nil, nil
+				return nil, false, nil
 			}
-			if _, err := m.Connect(t.Context(), target); err == nil {
+			if _, changed, err := m.Connect(t.Context(), target); err == nil || changed {
 				t.Fatal("accepted invalid target")
 			}
 		})
@@ -111,7 +111,7 @@ func TestManagerRejectsInvalidTarget(t *testing.T) {
 func TestManagerCloseAndMissingHelper(t *testing.T) {
 	m := testManager(t)
 	calls := 0
-	m.exec = func(_ context.Context, args, env []string) ([]byte, error) {
+	m.exec = func(_ context.Context, args, env []string) ([]byte, bool, error) {
 		calls++
 		os.Remove(filepath.Join(m.runDir, m.Name()+".pid"))
 		for _, v := range env {
@@ -119,10 +119,10 @@ func TestManagerCloseAndMissingHelper(t *testing.T) {
 				t.Fatal("close reconnects")
 			}
 		}
-		return []byte(`{"success":true,"data":{"closed":true}}`), nil
+		return []byte(`{"success":true,"data":{"closed":true}}`), true, nil
 	}
-	if err := m.Close(t.Context()); err != nil {
-		t.Fatal(err)
+	if changed, err := m.Close(t.Context()); err != nil || changed {
+		t.Fatalf("changed=%v err=%v", changed, err)
 	}
 	if calls != 0 {
 		t.Fatal("close started daemon")
@@ -131,8 +131,8 @@ func TestManagerCloseAndMissingHelper(t *testing.T) {
 		t.Fatal(err)
 	}
 	m.target = Target{Endpoint: "9222"}
-	if err := m.Close(t.Context()); err != nil {
-		t.Fatal(err)
+	if changed, err := m.Close(t.Context()); err != nil || !changed {
+		t.Fatalf("changed=%v err=%v", changed, err)
 	}
 	if calls != 1 || m.target != (Target{}) {
 		t.Fatal("close did not clear connection")
@@ -141,9 +141,12 @@ func TestManagerCloseAndMissingHelper(t *testing.T) {
 		t.Fatal(err)
 	}
 	m.closeTimeout = time.Millisecond
-	m.exec = func(ctx context.Context, _, _ []string) ([]byte, error) { <-ctx.Done(); return nil, ctx.Err() }
-	if err := m.Close(t.Context()); !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("error %v", err)
+	m.exec = func(ctx context.Context, _, _ []string) ([]byte, bool, error) {
+		<-ctx.Done()
+		return nil, true, ctx.Err()
+	}
+	if changed, err := m.Close(t.Context()); !errors.Is(err, context.DeadlineExceeded) || !changed {
+		t.Fatalf("changed=%v err=%v", changed, err)
 	}
 	if err := os.Remove(filepath.Join(m.binDir, "agent-browser")); err != nil {
 		t.Fatal(err)
@@ -161,10 +164,10 @@ func TestManagerSweepOnlyDeadOwners(t *testing.T) {
 		}
 	}
 	var names []string
-	m.exec = func(_ context.Context, args, _ []string) ([]byte, error) {
+	m.exec = func(_ context.Context, args, _ []string) ([]byte, bool, error) {
 		names = append(names, args[1])
 		os.Remove(filepath.Join(m.runDir, args[1]+".pid"))
-		return []byte(`{"success":true,"data":{"closed":true}}`), nil
+		return []byte(`{"success":true,"data":{"closed":true}}`), true, nil
 	}
 	if errs := m.SweepStale(t.Context()); len(errs) != 0 {
 		t.Fatal(errs)
@@ -180,5 +183,146 @@ func TestManagerRejectsFailedAndMalformedJSON(t *testing.T) {
 				t.Fatal("accepted response")
 			}
 		})
+	}
+}
+
+func TestManagerMutationBeforeDispatch(t *testing.T) {
+	for _, action := range []string{"connect", "bind", "new"} {
+		t.Run(action, func(t *testing.T) {
+			m := testManager(t)
+			m.target = Target{Endpoint: "9222"}
+			m.exec = func(context.Context, []string, []string) ([]byte, bool, error) {
+				t.Fatal("dispatched cancelled operation")
+				return nil, false, nil
+			}
+			ctx, cancel := context.WithCancel(t.Context())
+			cancel()
+			var changed bool
+			var err error
+			switch action {
+			case "connect":
+				_, changed, err = m.Connect(ctx, Target{Endpoint: "9333"})
+			case "bind":
+				changed, err = m.BindTab(ctx, "ABC")
+			case "new":
+				changed, err = m.NewTab(ctx)
+			}
+			if changed || !errors.Is(err, context.Canceled) || m.Target().Endpoint != "9222" || m.Name() != "aice-123-1" {
+				t.Fatalf("changed=%v err=%v target=%+v name=%s", changed, err, m.Target(), m.Name())
+			}
+		})
+	}
+	t.Run("invalid tab", func(t *testing.T) {
+		m := testManager(t)
+		m.exec = func(context.Context, []string, []string) ([]byte, bool, error) {
+			t.Fatal("dispatched invalid tab")
+			return nil, false, nil
+		}
+		if changed, err := m.BindTab(t.Context(), "bad tab"); changed || err == nil {
+			t.Fatalf("changed=%v err=%v", changed, err)
+		}
+	})
+}
+
+func TestManagerTabMutationFacts(t *testing.T) {
+	failure := errors.New("helper failed")
+	for _, action := range []string{"bind", "new"} {
+		for _, tc := range []struct {
+			name    string
+			started bool
+			data    string
+			err     error
+		}{
+			{name: "not started", err: failure},
+			{name: "started error", started: true, err: failure},
+			{name: "started cancelled", started: true, err: context.Canceled},
+			{name: "malformed response", started: true, data: "not json"},
+			{name: "rejected response", started: true, data: `{"success":false,"error":"tab_gone"}`},
+			{name: "success", started: true, data: `{"success":true}`},
+		} {
+			t.Run(action+"/"+tc.name, func(t *testing.T) {
+				m := testManager(t)
+				calls := 0
+				m.exec = func(context.Context, []string, []string) ([]byte, bool, error) {
+					calls++
+					return []byte(tc.data), tc.started, tc.err
+				}
+				var changed bool
+				var err error
+				if action == "bind" {
+					changed, err = m.BindTab(t.Context(), "ABC")
+				} else {
+					changed, err = m.NewTab(t.Context())
+				}
+				if changed != tc.started || calls != 1 || (err == nil) != (tc.name == "success") {
+					t.Fatalf("changed=%v calls=%d err=%v", changed, calls, err)
+				}
+				if tc.err != nil && !errors.Is(err, tc.err) {
+					t.Fatalf("lost error: %v", err)
+				}
+			})
+		}
+	}
+}
+
+func TestManagerConnectPartialEffects(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		started bool
+		data    string
+		err     error
+	}{
+		{name: "not started", err: errors.New("start failed")},
+		{name: "started error", started: true, err: errors.New("helper failed")},
+		{name: "malformed response", started: true, data: "not json"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := testManager(t)
+			m.target = Target{Endpoint: "9222"}
+			m.exec = func(context.Context, []string, []string) ([]byte, bool, error) {
+				return []byte(tc.data), tc.started, tc.err
+			}
+			_, changed, err := m.Connect(t.Context(), Target{Endpoint: "9333"})
+			if !changed || err == nil || m.Target().Endpoint != "9333" || m.Name() != "aice-123-2" {
+				t.Fatalf("changed=%v err=%v target=%+v name=%s", changed, err, m.Target(), m.Name())
+			}
+		})
+	}
+}
+
+func TestManagerCloseFailureFacts(t *testing.T) {
+	for _, action := range []string{"close", "connect"} {
+		for _, hasTarget := range []bool{false, true} {
+			for _, started := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%s/target=%v/started=%v", action, hasTarget, started), func(t *testing.T) {
+					m := testManager(t)
+					if hasTarget {
+						m.target = Target{Endpoint: "9222"}
+					}
+					if err := os.WriteFile(filepath.Join(m.runDir, m.Name()+".pid"), []byte("321"), 0600); err != nil {
+						t.Fatal(err)
+					}
+					failure := errors.New("close failed")
+					calls := 0
+					m.exec = func(_ context.Context, args, _ []string) ([]byte, bool, error) {
+						calls++
+						if args[2] != "close" {
+							t.Fatalf("continued connection after close failure: %v", args)
+						}
+						return nil, started, failure
+					}
+					var changed bool
+					var err error
+					if action == "close" {
+						changed, err = m.Close(t.Context())
+					} else {
+						_, changed, err = m.Connect(t.Context(), Target{Endpoint: "9333"})
+					}
+					if changed != (hasTarget || started) || !errors.Is(err, failure) || calls != 1 || m.Target() != (Target{}) || m.Name() != "aice-123-1" {
+						t.Fatalf("changed=%v err=%v calls=%d target=%+v name=%s", changed, err, calls, m.Target(), m.Name())
+					}
+				})
+			}
+		}
 	}
 }

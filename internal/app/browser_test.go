@@ -80,7 +80,7 @@ func TestBrowserCommandsAndSessionRotation(t *testing.T) {
 		}
 		return nil
 	}}
-	if _, err := s.slashBrowser(t.Context(), interaction.CommandRequest{Arguments: "connect", Auth: ui}); err != nil {
+	if _, err := s.RunSlashCommand(t.Context(), interaction.CommandRequest{Name: "browser", Arguments: "connect", Auth: ui}); err != nil {
 		t.Fatal(err)
 	}
 	if os.Getenv("AGENT_BROWSER_CDP") != "9222" {
@@ -169,14 +169,14 @@ func TestBrowserWindowPreference(t *testing.T) {
 	if _, err := os.Stat(sidecar); err != nil {
 		t.Fatal("closed current browser")
 	}
-	if _, err := s.slashBrowser(t.Context(), interaction.CommandRequest{Arguments: "close"}); err != nil {
+	if _, err := s.RunSlashCommand(t.Context(), interaction.CommandRequest{Name: "browser", Arguments: "close"}); err != nil {
 		t.Fatal(err)
 	}
 	if s.browser.Name() == before || os.Getenv("AGENT_BROWSER_HEADED") != "false" {
 		t.Fatal("pending preference not applied")
 	}
 	// A connected browser is never closed or rebound by the preference toggle.
-	if _, err := s.browser.Connect(t.Context(), browser.Target{Endpoint: "9222"}); err != nil {
+	if _, _, err := s.browser.Connect(t.Context(), browser.Target{Endpoint: "9222"}); err != nil {
 		t.Fatal(err)
 	}
 	before = s.browser.Name()
@@ -206,7 +206,7 @@ func TestBrowserWindowSaveFailure(t *testing.T) {
 		return errors.New("disk unavailable")
 	}}}
 	before := s.browser.Name()
-	if _, err := s.slashBrowser(t.Context(), interaction.CommandRequest{Arguments: "headed"}); err == nil {
+	if _, err := s.RunSlashCommand(t.Context(), interaction.CommandRequest{Name: "browser", Arguments: "headed"}); err == nil {
 		t.Fatal("ignored save error")
 	}
 	if s.configuration.BrowserHeaded || s.browser.Headed() || os.Getenv("AGENT_BROWSER_HEADED") != "false" || s.browser.Name() != before {
@@ -221,7 +221,7 @@ func TestBrowserWindowCannotChangeDuringRun(t *testing.T) {
 		t.Fatal("saved during active run")
 		return nil
 	}}}
-	if _, err := s.slashBrowser(t.Context(), interaction.CommandRequest{Arguments: "headed"}); err == nil {
+	if _, err := s.RunSlashCommand(t.Context(), interaction.CommandRequest{Name: "browser", Arguments: "headed"}); err == nil {
 		t.Fatal("changed browser during run")
 	}
 }

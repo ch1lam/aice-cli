@@ -42,7 +42,7 @@ func (s *interactiveSession) runMCPSettings(ctx context.Context, revision *uint6
 	changed := false
 	defer func() {
 		var warnings []string
-		result.Revision, warnings = s.endSettingsOperation(changed)
+		result.Revision, warnings = s.endSettingsOperation(changed, changed && shared)
 		result.Warnings = append(result.Warnings, warnings...)
 	}()
 	if op.Action == "desktop" {

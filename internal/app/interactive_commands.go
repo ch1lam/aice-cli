@@ -374,7 +374,6 @@ var slashCommandHandlers = map[string]slashCommandHandler{
 	"history":  (*interactiveSession).slashResume,
 	"usage":    (*interactiveSession).slashUsage,
 	"context":  (*interactiveSession).slashUsage,
-	"browser":  (*interactiveSession).slashBrowser,
 	"web":      (*interactiveSession).slashWeb,
 	"session":  (*interactiveSession).slashSession,
 	"tree":     (*interactiveSession).slashTree,
@@ -405,6 +404,13 @@ func (s *interactiveSession) RunSlashCommand(
 		result, err := s.runMCPSettings(ctx, nil, request)
 		return strings.TrimSpace(result.Output + "\n" + strings.Join(result.Warnings, "\n")), err
 	}
+	if request.Name == "browser" {
+		result, err := s.runBrowserSettings(ctx, nil, request.Arguments, request.Auth)
+		if len(result.Warnings) > 0 {
+			result.Output += "\n" + strings.Join(result.Warnings, "\n")
+		}
+		return result.Output, err
+	}
 	handler, ok := slashCommandHandlers[request.Name]
 	if !ok {
 		return "", fmt.Errorf("app: unsupported slash command /%s", request.Name)
@@ -420,7 +426,7 @@ func (s *interactiveSession) RunSlashCommand(
 
 	output, err := handler(s, ctx, request)
 	changed = err == nil
-	_, warnings := s.endSettingsOperation(changed)
+	_, warnings := s.endSettingsOperation(changed, changed && shared)
 	if len(warnings) > 0 {
 		output += "\n" + strings.Join(warnings, "\n")
 	}

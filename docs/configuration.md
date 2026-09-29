@@ -253,7 +253,12 @@ any response runs; restart-only preferences can still be saved. A prepared run
 whose resource revision changed is refused before accepting its prompt,
 and the TUI retains the draft. Older BTW snapshots become read-only after a
 shared-resource configuration operation; start a new BTW question to use current settings.
-A failed preparation or save keeps the previous runtime. A successful atomic
+A failed preference preparation or save keeps the previous runtime. Browser
+management actions separately report changed or possibly changed resources:
+both slash and Settings invalidate prepared responses after partial effects,
+while validation failure or cancellation before effects leaves them usable.
+See [Browser actions](browser.md#show-the-browser-window). Other domain actions
+retain their own completion rules. A successful atomic
 replacement remains saved if later lock cleanup fails; the result reports a
 warning. Closing a saving window does not roll back its committed preference.
 Credentials keep their dedicated stores and partial-success reporting. Window

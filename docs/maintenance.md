@@ -125,41 +125,37 @@ remain in their existing modules.
 
 ### Management action invalidation and partial completion
 
-The slash and Settings action entry points currently use different invalidation
-rules. In [RunSlashCommand](../internal/app/interactive_commands.go), a reserved
-operation advances revisions only when its handler returns nil. In
-[RunSettingsAction](../internal/app/settings_apply.go), login and Trust attempts,
-and non-status Web/browser attempts, invalidate settings drafts even when they
-return an error. Shared actions also advance the resource revision and invalidate
-BTW snapshots; Trust remains restart-only and never advances that resource
-revision. Reservation rejection does not advance either revision.
+Login and Web management still use different invalidation rules in the slash
+and Settings entry points. [RunSlashCommand](../internal/app/interactive_commands.go)
+advances revisions only when the reserved handler returns nil;
+[RunSettingsAction](../internal/app/settings_apply.go) advances both revisions
+for login and non-status Web attempts even when they fail or are canceled.
+Trust attempts retain the same draft-revision difference, but remain restart-only
+and never advance the resource revision. Reservation rejection changes neither.
 
 These rules were introduced together in `bd3d949`. The Settings comment accounts
 for credentials saved before a later preference failure, but does not establish
-that every failed or canceled attempt must invalidate resources. The entry-point
-refactor preserves this difference; it is not a new desired-state contract.
-
-An error cannot determine whether an action changed resources:
+that every failed or canceled attempt must invalidate resources. An error alone
+cannot identify the effects:
 
 - Account login can commit credentials before preference persistence fails.
   The selected live provider remains unchanged.
 - Web instance setup can commit a key and update the credential cache before
   preparing or saving preferences fails; bound tools and backends remain old.
-- Browser Connect can retain a new target on failure, or complete before tab
-  selection is canceled. Close can clear the target and rotate the session even
-  when cleanup reports an error. These are documented domain behaviors.
 
-Consequently, a held Run may retain its resource revision after a slash action
-has changed browser state, while a canceled Settings action with no effects can
-invalidate one. Both frontends refresh their visible snapshots on completion;
-that refresh does not advance the application's resource revision.
+The application now separates draft and resource invalidation at the lifecycle
+boundary. [Browser management](browser.md) reports completed or possible resource
+effects from its operation in both entry points: connection followed by canceled
+tab selection invalidates held main/BTW runs; input cancellation without effects
+does not. A started mutating helper with no successful response is conservatively
+treated as possibly changed, with no automatic replay.
 
-Before changing this behavior, define draft invalidation separately from resource
-invalidation for no-effect failure, known partial completion and uncertain remote
-effects. Verify both public entry points, held main/BTW runs, credential-only
-commits and cancellation after browser connection. Preserve domain partial-success
-reporting and do not replay actions to infer their effect. Ownership belongs to
-application operations and lifecycle coordination, not TUI refresh callbacks.
+Login and Web have not yet adopted operation-owned effect reporting. A follow-up
+must trace each durable write and runtime publication, decide the resource effect
+of credential-only commits, and verify held main/BTW execution through both entry
+points. Keep partial-success reporting and do not replay actions to infer their
+effect. Frontend snapshot refresh is presentation only; it does not replace the
+application's resource invalidation.
 
 ### MCP verification limits
 

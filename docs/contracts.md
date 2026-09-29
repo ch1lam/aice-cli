@@ -807,9 +807,21 @@ continues to serialize its own store operations.
 Read snapshots capture configuration and revision together. Main and BTW starts
 check their prepared resource revision before accepting input. Settings and conflicting
 slash commands use this same boundary. An active response keeps its frozen
-loop, limits and tools, including queued follow-ups. Existing BTW snapshots are
-read-only after a successful shared-resource configuration operation. Restart-only saves leave
-current loaded Trust, Skills and startup actions unchanged.
+loop, limits and tools, including queued follow-ups. Completion decides separately
+whether to advance the Settings draft revision and the prepared-resource revision;
+requiring idle admission does not itself prove that resources changed. Advancing
+the resource revision makes existing BTW snapshots read-only and rejects held
+main and BTW runs before model execution or prompt acceptance. Restart-only saves
+leave current loaded Trust, Skills and startup actions unchanged.
+
+Browser management reports actual local changes and modifying helper processes
+that started, whose effects may be uncertain even on failure or cancellation.
+Both slash and Settings actions advance both revisions for those effects; pure
+validation failures and cancellation before effects advance neither. Status reads
+do not invalidate resources. Slash status remains available during a response;
+the Settings action retains its revision check and idle admission requirement.
+This rule is specific to Browser management; other domain actions retain their
+existing completion rules. See [Browser actions](browser.md#show-the-browser-window).
 
 A setting operation prepares before writing, publishes after atomic replacement,
 and reports cleanup separately from commit failure. Web instance edits patch

@@ -208,7 +208,7 @@ func TestManagedCUAMCPReplacementInvalidatesEvenOnFailure(t *testing.T) {
 				t.Fatal(err)
 			}
 			err := s.publishMCPConfiguration(next)
-			s.endSettingsOperation(true)
+			s.endSettingsOperation(true, true)
 			if (err != nil) != fail || permit.Validate(ctx) == nil || old.Check(ctx, ref) == nil {
 				t.Fatal("MCP replacement retained managed authority", err)
 			}

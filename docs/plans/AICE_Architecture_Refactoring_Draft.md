@@ -114,19 +114,20 @@ Browser/Web 管理已收敛到接收动作名称与交互通道的具体操作�
 
 以下是现状审计，不是要求永久保留的理想状态模型。`revision` 控制设置草稿，`resourceRevision` 控制已准备的 Run 和 BTW 快照。
 
-| 动作结果 | 已发生的事实 | 当前两入口的差异 |
+| 动作结果 | 已发生的事实 | 当前两入口的行为 |
 | --- | --- | --- |
 | Trust 保存成功 | 修改持久化 Trust；当前加载内容不变 | 均推进草稿版本，不推进资源版本 |
 | Trust 保存失败 | 持久化未成功，当前加载内容不变 | Settings 推进草稿版本，slash 不推进 |
 | 登录凭据成功、偏好失败 | 凭据已持久化，当前 provider 选择不变 | Settings 推进两个版本，slash 不推进 |
 | Web key 成功、偏好失败 | 凭据已保存且缓存更新，已绑定 backend/tools 保留 | Settings 推进两个版本，slash 不推进 |
-| Browser 连接完成后取消选 tab | 连接与目标可能已经改变 | Settings 推进两个版本，slash 不推进 |
-| Web/Browser 输入阶段取消且无副作用 | 通常无资源变化 | Settings 仍推进两个版本，slash 不推进 |
+| Browser 连接完成后取消选 tab，或修改 helper 已启动但结果不确定 | 资源已改变或无法排除改变 | 两入口均推进两个版本，拒绝已准备的 main/BTW Run |
+| Browser 输入取消、校验失败且无副作用 | 资源未改变 | 两入口均保留两个版本，已准备的 Run 仍可执行 |
+| Web 输入阶段取消且无副作用 | 资源未改变 | Settings 仍推进两个版本，slash 不推进 |
 | Web/Browser status | 不保存设置；Browser 可读取 helper 状态 | Settings 仍先申请 shared 预约，slash 可在运行时读取；均不推进版本 |
 
-因此不能用 `err == nil` 代表所有实际效果，也不能假定所有错误都必须失效运行资源。当前抽取只改变调用边界，不修改上述行为。两入口完成后都会刷新视图，但视图刷新不替代应用层资源失效。
+Browser 试点把准入与收尾分开：准入决定是否要求空闲，收尾分别决定设置草稿与运行资源是否失效；删除生命周期中用于从准入推导失效的 `sharedChange` 状态。操作返回本次资源是否已改变或可能改变，底层 helper 报告进程是否成功启动，连接与后续选 tab 累积各阶段效果。无需新框架、持久状态或自动重试。
 
-下一项需要单独明确的是：草稿失效与资源失效各自依据什么事实，以及已提交、未改变和远端效果不确定三类结果的处理。必须检查 held main/BTW Run 的实际可用性，避免只测试版本数字。详细证据与验收条件集中在 [Maintenance](../maintenance.md#management-action-invalidation-and-partial-completion)。
+Browser 两入口共享这项收尾决定；本领域的两个版本都按资源效果推进。其他领域保留原规则，Trust 仍为重启生效。两入口完成后都会刷新视图，但视图刷新不替代应用层资源失效。Login/Web 的凭据部分提交尚待单独审阅并迁移；详细剩余证据与进入条件集中在 [Maintenance](../maintenance.md#management-action-invalidation-and-partial-completion)。
 
 Web 凭据新增、替换与删除共用一次写入及提交判定：auth 已提交但锁清理失败时，同步内存凭据并单独报告清理告警，继续原偏好流程；真正写入失败不发布、不重放。两入口的故障注入测试先用真实临时 auth 文件复现磁盘与缓存不一致，再验证修复，包含后续偏好失败的部分成功情况。凭据与偏好仍是两次独立提交，详见 [Web](../web.md)。
 
@@ -134,7 +135,7 @@ Web 凭据新增、替换与删除共用一次写入及提交判定：auth 已�
 
 新增模型选择及 OAuth 部分成功测试，在旧实现（仅覆盖测试文件的 Go overlay）与新实现均通过。MCP 新增 missing-pin/发现中取消测试，同样先在旧实现通过，再验证改动；它们检查失败不关闭 owner 连接、新 Run 复用连接、Run 失效目录和 owner 恰好关闭一次。
 
-每批 Go 改动均执行 `go build ./...`、`go test ./...`、`go vet ./...`、`go test -race ./...`。入口提取另通过实际 CLI/Bubble Tea 的 `TestSettingsUsageTUI` 与 `TestBrowserWindowTUI`；MCP 使用 preparation、Print 和交互连接复用测试。管理动作新增对照测试先在旧实现通过，再验证提取后的行为，覆盖 Trust 的重启生效、账户凭据部分提交、Web 凭据保存后偏好失败，以及 Browser 连接后选 tab 取消。
+每批 Go 改动均执行 `go build ./...`、`go test ./...`、`go vet ./...`、`go test -race ./...`。入口提取另通过实际 CLI/Bubble Tea 的 `TestSettingsUsageTUI` 与 `TestBrowserWindowTUI`；MCP 使用 preparation、Print 和交互连接复用测试。入口提取的管理动作对照测试先在旧实现通过，再验证提取后的行为，覆盖 Trust 的重启生效、账户凭据部分提交、Web 凭据保存后偏好失败，以及 Browser 连接后选 tab 取消。Browser 失效修复另用实际 held main/BTW 执行先复现两入口的错误，再验证无副作用时可执行、有副作用时在模型调用和 Session 消息写入前拒绝；假 helper 日志同时验证修改动作不重放。
 
 证据限于本机 macOS arm64、Go 1.27.1 与默认离线测试。没有做真实付费模型/OAuth 调用、GUI 接入或原生桌面操作；不据此宣布跨平台原生验证通过。Go 模块依赖未改变。
 

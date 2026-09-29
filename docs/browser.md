@@ -79,10 +79,21 @@ Settings → Tools & Network exposes the same browser actions and the separate
 window preference. The action exchange stays in the window and can be cancelled;
 its draft never replaces the main composer. Connection actions require idle main
 and BTW responses. Platform restrictions remain the same as `/browser`.
-Browser management actions from both entries call `internal/app.runBrowserAction`
-with an action and prompt interaction; Settings does not dispatch through the
-slash command table. The outer entry owns the operation reservation, while `internal/browser.Manager`
-continues to own the browser session and connection lifecycle.
+
+Both action entry points invalidate prepared main responses and existing BTW
+snapshots when browser resources changed or a modifying helper process started
+and its effect is uncertain. This includes a completed connection followed by
+cancelling tab selection, a failed close that cleared or rotated the session,
+and a tab command whose response failed. Old prepared responses must be prepared
+again; existing BTW threads become read-only. Validation failures, failed saves,
+and cancellation before any change leave those responses usable. Status reads
+do not invalidate them. Settings drafts use the same effect-based rule for these
+browser actions; the application does not infer effects from a success/error code.
+Browser management actions from both entries use `internal/app.runBrowserSettings`
+for one reservation and completion decision. `runBrowserAction` reports effects
+from the action and prompt interaction; Settings does not dispatch through the
+slash command table. `internal/browser.Manager` continues to own the browser
+session and connection lifecycle.
 
 ## Connect to a running browser
 

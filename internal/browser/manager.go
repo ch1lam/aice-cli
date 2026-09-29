@@ -52,7 +52,7 @@ type Manager struct {
 	binDir, runDir, workspace string
 	target                    Target
 	headed, nextHeaded        bool
-	exec                      func(context.Context, []string, []string) ([]byte, error)
+	exec                      func(context.Context, []string, []string) ([]byte, bool, error)
 	closeTimeout              time.Duration
 	alive                     func(int) bool
 }
@@ -151,33 +151,42 @@ func validateTarget(target Target) error {
 	}
 	return fmt.Errorf("invalid CDP endpoint: expected port 1–65535 or ws:// / wss:// URL")
 }
-func (m *Manager) Connect(ctx context.Context, target Target) ([]Tab, error) {
+
+// Connect reports changes even when a later connection or response step fails.
+func (m *Manager) Connect(ctx context.Context, target Target) (tabs []Tab, changed bool, err error) {
+	if err := ctx.Err(); err != nil {
+		return nil, false, err
+	}
 	if err := validateTarget(target); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	// Disconnect and rotate first so an old pinned target cannot leak into a new
 	// browser, and a daemon finishing close cannot race the next connection.
 	used := m.HasSidecar() || m.target != (Target{})
-	if err := m.Close(ctx); err != nil {
-		return nil, err
+	changed, err = m.Close(ctx)
+	if err != nil {
+		return nil, changed, err
 	}
 	if used {
 		if err := m.Rotate(); err != nil {
-			return nil, err
+			return nil, changed, err
 		}
+		changed = true
 	}
 	m.target = target
+	changed = true
 	args := []string{"--pin-tab", "tab", "list", "--json"}
 	if target.Auto {
 		args = append([]string{"--auto-connect"}, args...)
 	} else {
 		args = append([]string{"--cdp", target.Endpoint}, args...)
 	}
-	data, err := m.command(ctx, m.Name(), args...)
+	data, _, err := m.command(ctx, m.Name(), args...)
 	if err != nil {
-		return nil, err
+		return nil, changed, err
 	}
-	return parseTabs(data)
+	tabs, err = parseTabs(data)
+	return tabs, changed, err
 }
 func parseTabs(data []byte) ([]Tab, error) {
 	var result struct {
@@ -192,31 +201,40 @@ func (m *Manager) Tabs(ctx context.Context) ([]Tab, error) {
 	if !m.HasSidecar() {
 		return nil, fmt.Errorf("browser session is not running")
 	}
-	data, err := m.command(ctx, m.Name(), "tab", "list", "--json")
+	data, _, err := m.command(ctx, m.Name(), "tab", "list", "--json")
 	if err != nil {
 		return nil, err
 	}
 	return parseTabs(data)
 }
-func (m *Manager) BindTab(ctx context.Context, targetID string) error {
+
+// BindTab reports a possible change once the helper has started, even if no
+// successful response arrives. It does not retry an uncertain mutation.
+func (m *Manager) BindTab(ctx context.Context, targetID string) (changed bool, err error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
 	if !regexp.MustCompile(`^[A-Za-z0-9_-]+$`).MatchString(targetID) {
-		return fmt.Errorf("invalid tab identifier")
+		return false, fmt.Errorf("invalid tab identifier")
 	}
-	data, err := m.command(ctx, m.Name(), "tab", targetID, "--json")
+	data, started, err := m.command(ctx, m.Name(), "tab", targetID, "--json")
 	if err != nil {
-		return err
+		return started, err
 	}
-	return decodeResult(data, nil)
+	return started, decodeResult(data, nil)
 }
-func (m *Manager) NewTab(ctx context.Context) error {
-	data, err := m.command(ctx, m.Name(), "tab", "new", "about:blank", "--json")
-	if err != nil {
-		return err
+func (m *Manager) NewTab(ctx context.Context) (changed bool, err error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
 	}
-	return decodeResult(data, nil)
+	data, started, err := m.command(ctx, m.Name(), "tab", "new", "about:blank", "--json")
+	if err != nil {
+		return started, err
+	}
+	return started, decodeResult(data, nil)
 }
 func (m *Manager) Info(ctx context.Context) (Info, error) {
-	data, err := m.command(ctx, m.Name(), "session", "info", "--json")
+	data, _, err := m.command(ctx, m.Name(), "session", "info", "--json")
 	if err != nil {
 		return Info{}, err
 	}
@@ -236,23 +254,27 @@ func (m *Manager) hasSidecar(name string) bool {
 	}
 	return false
 }
-func (m *Manager) Close(ctx context.Context) error {
-	err := m.closeSession(ctx, m.Name())
+
+// Close clears the intended target even when daemon cleanup fails. A started
+// close command may also have changed the daemon before returning an error.
+func (m *Manager) Close(ctx context.Context) (changed bool, err error) {
+	changed, err = m.closeSession(ctx, m.Name())
+	changed = changed || m.target != (Target{})
 	m.target = Target{}
-	return err
+	return changed, err
 }
-func (m *Manager) closeSession(ctx context.Context, name string) error {
+func (m *Manager) closeSession(ctx context.Context, name string) (changed bool, err error) {
 	if !m.hasSidecar(name) {
-		return nil
+		return false, nil
 	}
 	ctx, cancel := context.WithTimeout(ctx, m.closeTimeout)
 	defer cancel()
-	data, err := m.command(ctx, name, "close", "--json")
+	data, started, err := m.command(ctx, name, "close", "--json")
 	if err != nil {
-		return err
+		return started, err
 	}
 	if err := decodeResult(data, nil); err != nil {
-		return err
+		return started, err
 	}
 	// Upstream acknowledges close before removing its socket/pid. Bound the
 	// wait as part of the same deadline so exit means cleanup has completed.
@@ -261,11 +283,11 @@ func (m *Manager) closeSession(ctx context.Context, name string) error {
 		select {
 		case <-ctx.Done():
 			timer.Stop()
-			return fmt.Errorf("waiting for browser shutdown: %w", ctx.Err())
+			return started, fmt.Errorf("waiting for browser shutdown: %w", ctx.Err())
 		case <-timer.C:
 		}
 	}
-	return nil
+	return started, nil
 }
 func decodeResult(data []byte, dest any) error {
 	var result struct {
