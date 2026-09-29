@@ -34,7 +34,11 @@ func (s *interactiveSession) webMenu() *interaction.CommandMenu {
 }
 
 func (s *interactiveSession) slashWeb(ctx context.Context, request interaction.CommandRequest) (string, error) {
-	action := strings.TrimSpace(request.Arguments)
+	return s.runWebAction(ctx, request.Arguments, request.Auth)
+}
+
+func (s *interactiveSession) runWebAction(ctx context.Context, action string, ui *interaction.AuthInteraction) (string, error) {
+	action = strings.TrimSpace(action)
 	if action == "" || action == "status" {
 		return s.webStatus(), nil
 	}
@@ -52,20 +56,20 @@ func (s *interactiveSession) slashWeb(ctx context.Context, request interaction.C
 		enabled := !s.settingsSnapshot().configuration.Web.FetchEnabled
 		return s.saveWeb(ctx, config.WebPatch{FetchEnabled: &enabled}, "Web fetch: "+onOff(enabled)+" (saved)")
 	}
-	if request.Auth == nil || request.Auth.Notify == nil {
+	if ui == nil || ui.Notify == nil {
 		return "", fmt.Errorf("app: /web %s requires the interactive menu", action)
 	}
 	switch action {
 	case "add":
-		return s.webAddInstance(ctx, request.Auth)
+		return s.webAddInstance(ctx, ui)
 	case "credential":
-		return s.webSetCredential(ctx, request.Auth)
+		return s.webSetCredential(ctx, ui)
 	case "remove":
-		return s.webRemoveInstance(ctx, request.Auth)
+		return s.webRemoveInstance(ctx, ui)
 	case "up", "down", "drop":
-		return s.webReorder(ctx, request.Auth, action)
+		return s.webReorder(ctx, ui, action)
 	case "append":
-		return s.webAppendSource(ctx, request.Auth)
+		return s.webAppendSource(ctx, ui)
 	default:
 		return "", fmt.Errorf("app: unknown web action %q", action)
 	}

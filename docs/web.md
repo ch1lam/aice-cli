@@ -128,6 +128,10 @@ The panel requires allow/exclude lists to be mutually exclusive without changing
 the existing file-policy interpretation. User preferences and project tightening
 are shown separately. Backend preparation failures prevent saving; successful
 saves publish tools, prompt and Guard target together at an idle boundary.
+Web management actions from both entries call `internal/app.runWebAction`
+with an action and prompt interaction; Settings does not dispatch through the
+slash command table. The outer entry owns the operation reservation; the shared action keeps the existing
+credential, preference and resource publication sequence.
 See [Settings](configuration.md#settings-window).
 
 ## Permissions

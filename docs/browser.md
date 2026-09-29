@@ -79,6 +79,10 @@ Settings → Tools & Network exposes the same browser actions and the separate
 window preference. The action exchange stays in the window and can be cancelled;
 its draft never replaces the main composer. Connection actions require idle main
 and BTW responses. Platform restrictions remain the same as `/browser`.
+Browser management actions from both entries call `internal/app.runBrowserAction`
+with an action and prompt interaction; Settings does not dispatch through the
+slash command table. The outer entry owns the operation reservation, while `internal/browser.Manager`
+continues to own the browser session and connection lifecycle.
 
 ## Connect to a running browser
 

@@ -66,13 +66,17 @@ func closeBrowser(ctx context.Context, manager *browser.Manager) error {
 }
 
 func (s *interactiveSession) slashBrowser(ctx context.Context, request interaction.CommandRequest) (string, error) {
+	return s.runBrowserAction(ctx, request.Arguments, request.Auth)
+}
+
+func (s *interactiveSession) runBrowserAction(ctx context.Context, action string, ui *interaction.AuthInteraction) (string, error) {
 	if runtime.GOOS == "windows" {
 		return "browser automation is not supported on Windows in this version", nil
 	}
 	if s.browser == nil {
 		return "", fmt.Errorf("browser automation is unavailable: session setup failed")
 	}
-	action := strings.TrimSpace(request.Arguments)
+	action = strings.TrimSpace(action)
 	if action == "" || action == "status" {
 		return s.browserStatus(ctx)
 	}
@@ -95,7 +99,7 @@ func (s *interactiveSession) slashBrowser(ctx context.Context, request interacti
 	if _, err := s.browser.Executable(); err != nil {
 		return "", err
 	}
-	if request.Auth == nil || request.Auth.Notify == nil {
+	if ui == nil || ui.Notify == nil {
 		return "", fmt.Errorf("browser connection and tab selection require the interactive menu")
 	}
 	switch action {
@@ -106,7 +110,7 @@ func (s *interactiveSession) slashBrowser(ctx context.Context, request interacti
 			prompt.AllowInput = false
 			prompt.Menu = &interaction.CommandMenu{Title: "Connect", Options: []interaction.CommandOption{{Label: "Connect (auto-detect)", Arguments: "connect"}}}
 		}
-		value, err := browserPrompt(ctx, request.Auth, prompt)
+		value, err := browserPrompt(ctx, ui, prompt)
 		if err != nil {
 			return "", err
 		}
@@ -120,13 +124,13 @@ func (s *interactiveSession) slashBrowser(ctx context.Context, request interacti
 		if err := errors.Join(connectErr, envErr); err != nil {
 			return "", err
 		}
-		return s.chooseBrowserTab(ctx, request.Auth, tabs, true)
+		return s.chooseBrowserTab(ctx, ui, tabs, true)
 	case "tabs":
 		tabs, err := s.browser.Tabs(ctx)
 		if err != nil {
 			return "", err
 		}
-		return s.chooseBrowserTab(ctx, request.Auth, tabs, false)
+		return s.chooseBrowserTab(ctx, ui, tabs, false)
 	default:
 		return "", fmt.Errorf("unknown browser action %q", action)
 	}
