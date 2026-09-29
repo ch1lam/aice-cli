@@ -3,6 +3,8 @@ package app
 import (
 	"context"
 	"fmt"
+	"strconv"
+	"strings"
 
 	"github.com/ch1lam/aice-cli/internal/agent"
 	"github.com/ch1lam/aice-cli/internal/config"
@@ -143,4 +145,30 @@ func (a *application) resolveProjectContext(
 		systemPrompt: systemPrompt,
 		trust:        resolution,
 	}, nil
+}
+
+// saveProjectTrustSelection validates the current workspace's menu selection
+// and saves it for future startups. The caller owns the settings reservation;
+// loaded project inputs and current tool permissions remain unchanged.
+func (s *interactiveSession) saveProjectTrustSelection(input string) error {
+	if s.trustStore == nil {
+		return fmt.Errorf("app: trust store is required")
+	}
+	fields := strings.Fields(input)
+	if len(fields) != 1 {
+		return fmt.Errorf("app: usage: /trust <choice>")
+	}
+	choices := trust.Choices(s.workspacePath)
+	index, err := strconv.Atoi(fields[0])
+	if err != nil || index < 0 || index >= len(choices) {
+		return fmt.Errorf("app: invalid trust choice %q", fields[0])
+	}
+	choice := choices[index]
+	if len(choice.Updates) == 0 {
+		return fmt.Errorf("app: temporary trust choices are available only at startup")
+	}
+	if err := s.trustStore.SetMany(choice.Updates); err != nil {
+		return fmt.Errorf("app: save project trust: %w", err)
+	}
+	return nil
 }

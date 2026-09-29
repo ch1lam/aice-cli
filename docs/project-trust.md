@@ -74,6 +74,12 @@ default policy or saved decision affects startup only; it neither reloads projec
 inputs nor relaxes current tool permissions. The panel writes user preferences,
 not project configuration files.
 
+Both entry points call the application-owned selection operation in
+[project_trust.go](../internal/app/project_trust.go). It validates the selected
+choice for the current workspace and writes the Trust store; it does not depend
+on command request types or the slash dispatch table. Entry points retain their
+own settings reservation and result presentation.
+
 ## Prompt assembly
 
 The base prompt is selected from the first available source:

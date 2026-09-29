@@ -628,27 +628,16 @@ func (s *interactiveSession) slashSkills(
 	return formatSkillsCommand(s.skills, s.skillDiags, s.workspacePath), nil
 }
 
+const savedProjectTrustMessage = "Trust decision saved. Restart AICE for the new trust state to affect project configuration, prompts, and Skills."
+
 func (s *interactiveSession) slashTrust(
 	_ context.Context,
 	request interaction.CommandRequest,
 ) (string, error) {
-	if s.trustStore == nil {
-		return "", fmt.Errorf("app: trust store is required")
-	}
-	choice, err := slashCommandTrustChoice(
-		request,
-		trust.Choices(s.workspacePath),
-	)
-	if err != nil {
+	if err := s.saveProjectTrustSelection(request.Arguments); err != nil {
 		return "", err
 	}
-	if len(choice.Updates) == 0 {
-		return "", fmt.Errorf("app: temporary trust choices are available only at startup")
-	}
-	if err := s.trustStore.SetMany(choice.Updates); err != nil {
-		return "", fmt.Errorf("app: save project trust: %w", err)
-	}
-	return "Trust decision saved. Restart AICE for the new trust state to affect project configuration, prompts, and Skills.", nil
+	return savedProjectTrustMessage, nil
 }
 
 func (s *interactiveSession) slashLogin(
@@ -1017,26 +1006,6 @@ func trustDecisionLabel(decision trust.Decision) string {
 	default:
 		return "unknown"
 	}
-}
-
-// slashCommandTrustChoice resolves the selected trust choice from the menu
-// option's numeric argument.
-func slashCommandTrustChoice(
-	request interaction.CommandRequest,
-	choices []trust.Choice,
-) (trust.Choice, error) {
-	fields := strings.Fields(request.Arguments)
-	if len(fields) != 1 {
-		return trust.Choice{}, fmt.Errorf("app: usage: /trust <choice>")
-	}
-	index, err := strconv.Atoi(fields[0])
-	if err != nil || index < 0 || index >= len(choices) {
-		return trust.Choice{}, fmt.Errorf(
-			"app: invalid trust choice %q",
-			fields[0],
-		)
-	}
-	return choices[index], nil
 }
 
 func (s *interactiveSession) persistSettings(
