@@ -177,3 +177,16 @@ func TestMCPInfoOmissionNoticeCannotOverflowSearch(t *testing.T) {
 		t.Fatal("notice overflowed existing search result", len(encoded), err)
 	}
 }
+
+func TestMCPInfoUnsupportedAdapterIsNotConnectionFailure(t *testing.T) {
+	reader, err := NewMCPInfo(mcpInfoBackendFunc(func(context.Context, string) (MCPServerInfo, error) {
+		return MCPServerInfo{}, mcpclient.ErrUnsupported
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := reader.Execute(t.Context(), llm.ToolCall{Name: "mcp_server_info", Arguments: []byte(`{"service":"managed:cua"}`)})
+	if err != nil || !result.IsError || !strings.Contains(result.Content[0].Text, "does not expose server information") || strings.Contains(result.Content[0].Text, "inspect connection approval") {
+		t.Fatal("unsupported adapter misreported as connection failure", result, err)
+	}
+}

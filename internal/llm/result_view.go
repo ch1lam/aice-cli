@@ -1,6 +1,9 @@
 package llm
 
-import "unicode/utf8"
+import (
+	"encoding/json"
+	"unicode/utf8"
+)
 
 // ResultViewBudget bounds each bound result's model view. Storage retains the
 // source independently. Unknown windows use the same 4k-token maximum; small
@@ -12,7 +15,7 @@ func ResultViewBudget(contextWindow int64) int64 {
 	return max(256, min(4096, contextWindow/10))
 }
 
-const resultViewNotice = "Model view trimmed. Retained source can be read with tool_result_read using this call_id (metadata, content block index, or structured section). Storage loss is separate; missing source data cannot be recovered."
+const structuredPreviewLabel = "Structured result preview (raw UTF-8 prefix; incomplete, not a complete JSON document):\n"
 
 // BoundToolResultViews updates an already projected, caller-owned message slice.
 // The return value signals that old provider usage may describe a different
@@ -32,9 +35,9 @@ func BoundToolResultViews(messages []Message, tokens int64) bool {
 }
 
 // BoundToolResultView preserves block order and execution/loss metadata without
-// altering durable history. Whole structured JSON is retained or omitted; it
-// is never truncated into invalid JSON. Only results carrying source details
-// are affected; legacy/local tools keep their existing presentation contracts.
+// altering durable history. Structured JSON stays whole in Details; an oversized
+// value gets an explicitly incomplete raw text preview instead. Only results
+// carrying source details are affected; legacy/local tools keep their contracts.
 func BoundToolResultView(source ToolResultMessage, tokens int64) ToolResultMessage {
 	oversizedImage := false
 	for _, part := range source.Content {
@@ -51,7 +54,19 @@ func BoundToolResultView(source ToolResultMessage, tokens int64) ToolResultMessa
 	if EstimateTextTokens(view.Details.Loss) > tokens/4 {
 		view.Details.Loss = "Source data was omitted; use tool_result_read metadata for the recorded loss details."
 	}
-	remaining := max(int64(0), tokens-EstimateMessageTokens(view)-EstimateTextTokens(resultViewNotice))
+	notice := resultReadbackNotice(source, tokens/2)
+	remaining := max(int64(0), tokens-EstimateMessageTokens(view)-EstimateTextTokens(notice))
+	structured := source.Details.StructuredContent
+	// Reserve a modest share before ordered content consumes the budget. This
+	// keeps structured-only facts visible without displacing all text/images.
+	structuredBudget := int64(0)
+	if len(structured) > 0 {
+		structuredBudget = min(512, remaining/4)
+		if len(source.Content) == 0 {
+			structuredBudget = remaining
+		}
+	}
+	remaining -= structuredBudget
 	for _, part := range source.Content {
 		switch part.Type {
 		case ContentTypeText:
@@ -69,12 +84,36 @@ func BoundToolResultView(source ToolResultMessage, tokens int64) ToolResultMessa
 			}
 		}
 	}
-	structured := source.Details.StructuredContent
+	remaining += structuredBudget
 	if len(structured) > 0 && EstimateTextTokens("Structured result (JSON):\n"+string(structured)) <= remaining {
 		view.Details.StructuredContent = append([]byte(nil), structured...)
+	} else if len(structured) > 0 {
+		prefix := resultTextPrefix(string(structured), max(0, remaining-EstimateTextTokens(structuredPreviewLabel)))
+		if prefix != "" {
+			view.Content = append(view.Content, NewTextContent(structuredPreviewLabel+prefix).Part())
+		}
 	}
-	view.Content = append(view.Content, NewTextContent(resultViewNotice).Part())
+	view.Content = append(view.Content, NewTextContent(notice).Part())
 	return view
+}
+
+func resultReadbackNotice(source ToolResultMessage, tokens int64) string {
+	section := "metadata"
+	if len(source.Details.StructuredContent) > 0 {
+		section = "structured"
+	}
+	args, _ := json.Marshal(struct {
+		CallID  string `json:"call_id"`
+		Section string `json:"section"`
+	}{source.ToolCallID, section})
+	notice := "Model view trimmed. Read retained source with tool_result_read arguments:\n" + string(args) +
+		"\nUse section=metadata for block indices; section=content with block reads text/images. Storage loss cannot be recovered."
+	if source.ToolCallID != "" && len(source.ToolCallID) <= 4096 && EstimateTextTokens(notice) <= tokens {
+		return notice
+	}
+	// Never offer a truncated or invented selector when an unusual ID would
+	// consume the view. The message envelope still carries the exact identity.
+	return "Model view trimmed. Use tool_result_read with the exact call_id from this result's tool-call envelope; section=metadata lists blocks, section=structured reads JSON. The selector could not fit here. Storage loss cannot be recovered."
 }
 
 func resultTextPrefix(text string, tokens int64) string {

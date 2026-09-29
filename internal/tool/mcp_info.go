@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"unicode/utf8"
 
@@ -71,6 +72,9 @@ func (r *MCPInfo) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResul
 	}
 	source, err := r.backend.ServerInfo(ctx, args.Service)
 	if err != nil {
+		if errors.Is(err, mcpclient.ErrUnsupported) {
+			return textResult(call, "This MCP adapter does not expose server information; this does not establish a connection or authorization failure.", true), nil
+		}
 		return textResult(call, "MCP server info unavailable; inspect connection approval and service status.", true), nil
 	}
 	if source.Service != args.Service {

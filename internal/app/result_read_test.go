@@ -85,10 +85,11 @@ func TestResultReaderBranchCompactionAndReopen(t *testing.T) {
 }
 
 type resultReadPrintModel struct {
-	base    mcpStartupModel
-	step    int
-	text    string
-	durable bool
+	base     mcpStartupModel
+	step     int
+	text     string
+	durable  bool
+	readJSON json.RawMessage
 }
 
 func (m *resultReadPrintModel) Stream(ctx context.Context, r llm.Request) (llm.Stream, error) {
@@ -102,6 +103,10 @@ func (m *resultReadPrintModel) Stream(ctx context.Context, r llm.Request) (llm.S
 		if last.ToolCallID != "execute" || last.Details == nil || llm.EstimateMessageTokens(last) > llm.ResultViewBudget(r.Model.ContextWindow) || !strings.Contains(last.Content[len(last.Content)-1].Text, "tool_result_read") {
 			m.base.t.Fatal("production request did not trim source")
 		}
+		m.readJSON = json.RawMessage(strings.Split(last.Content[len(last.Content)-1].Text, "\n")[1])
+		if !json.Valid(m.readJSON) {
+			m.base.t.Fatal("readback notice did not supply usable JSON arguments")
+		}
 		args, _ := json.Marshal(map[string]any{"call_id": "execute", "section": "content", "offset": len(m.text) - 12})
 		return toolCallEventStream(r.Model, llm.ToolCall{ID: "read-tail", Name: "tool_result_read", Arguments: args}), nil
 	case 4:
@@ -114,7 +119,7 @@ func (m *resultReadPrintModel) Stream(ctx context.Context, r llm.Request) (llm.S
 		if json.Unmarshal([]byte(last.Content[0].Text), &meta) != nil || meta.Durable != m.durable {
 			m.base.t.Fatal("wrong durability claim")
 		}
-		return toolCallEventStream(r.Model, llm.ToolCall{ID: "read-json", Name: "tool_result_read", Arguments: json.RawMessage(`{"call_id":"execute","section":"structured"}`)}), nil
+		return toolCallEventStream(r.Model, llm.ToolCall{ID: "read-json", Name: "tool_result_read", Arguments: m.readJSON}), nil
 	case 5:
 		if last.IsError || len(last.Content) != 2 || last.Content[1].Text != `{"n":9007199254740993}` {
 			m.base.t.Fatal("raw JSON readback failed", last)

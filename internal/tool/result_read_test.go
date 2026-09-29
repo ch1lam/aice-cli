@@ -42,14 +42,29 @@ func TestResultReadSectionsAndUTF8Paging(t *testing.T) {
 		t.Fatal("split UTF-8 accepted")
 	}
 	var reconstructed strings.Builder
-	for offset := 0; offset < len(raw); {
-		args, _ := json.Marshal(map[string]any{"entry_id": "entry", "section": "structured", "offset": offset, "length": 7})
-		page := read(string(args))
+	args := `{"call_id":"old","section":"structured","length":7}`
+	for {
+		page := read(args)
 		if page.IsError {
 			t.Fatal(page)
 		}
+		var meta struct {
+			Complete bool            `json:"complete"`
+			Fragment bool            `json:"fragment"`
+			Format   string          `json:"format"`
+			NextRead json.RawMessage `json:"next_read"`
+		}
+		if err := json.Unmarshal([]byte(page.Content[0].Text), &meta); err != nil || !meta.Fragment || meta.Format != "raw_json_text" {
+			t.Fatal("missing fragment information", err)
+		}
 		reconstructed.WriteString(page.Content[1].Text)
-		offset += len(page.Content[1].Text)
+		if meta.Complete {
+			break
+		}
+		if !json.Valid(meta.NextRead) || !strings.Contains(string(meta.NextRead), `"entry_id":"entry"`) {
+			t.Fatal("missing exact continuation", string(meta.NextRead))
+		}
+		args = string(meta.NextRead)
 	}
 	if reconstructed.String() != raw {
 		t.Fatal("structured JSON lexemes changed")
@@ -83,8 +98,8 @@ func TestResultReadMetadataPages(t *testing.T) {
 		t.Fatal(err)
 	}
 	seen := 0
-	for start := 0; start < 70; {
-		args, _ := json.Marshal(map[string]any{"entry_id": "entry", "block": start})
+	args := json.RawMessage(`{"entry_id":"entry"}`)
+	for {
 		result, err := reader.Execute(t.Context(), llm.ToolCall{ID: "read", Name: "tool_result_read", Arguments: args})
 		if err != nil || result.IsError {
 			t.Fatal("metadata page failed", err, result)
@@ -93,8 +108,9 @@ func TestResultReadMetadataPages(t *testing.T) {
 			Blocks []struct {
 				Index int `json:"index"`
 			} `json:"blocks"`
-			NextBlock  int `json:"next_block"`
-			BlockCount int `json:"block_count"`
+			NextBlock  int             `json:"next_block"`
+			BlockCount int             `json:"block_count"`
+			NextRead   json.RawMessage `json:"next_read"`
 		}
 		if err := json.Unmarshal([]byte(result.Content[0].Text), &page); err != nil {
 			t.Fatal(err)
@@ -109,9 +125,15 @@ func TestResultReadMetadataPages(t *testing.T) {
 			seen++
 		}
 		if page.NextBlock == 0 {
+			if len(page.NextRead) != 0 {
+				t.Fatal("last page supplied a continuation")
+			}
 			break
 		}
-		start = page.NextBlock
+		if !json.Valid(page.NextRead) {
+			t.Fatal("metadata missing exact continuation")
+		}
+		args = page.NextRead
 	}
 	if seen != 70 {
 		t.Fatal("metadata lost blocks", seen)

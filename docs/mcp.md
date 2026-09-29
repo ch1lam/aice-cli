@@ -865,10 +865,18 @@ not a provider tokenizer guarantee. Legacy results keep their existing tool
 limits. Total context still follows ordinary safe-boundary compaction.
 
 The view preserves execution state, error status and source block order. Text
-prefixes end on UTF-8 boundaries; structured JSON is included whole or omitted.
+prefixes end on UTF-8 boundaries. Before filling the view with text/images, it
+reserves up to 512 tokens and one quarter of the available budget for structured
+data (the full remaining budget for structured-only results). Whole JSON remains
+structured data; otherwise a separate text block shows an explicitly incomplete
+raw UTF-8 prefix. It preserves numeric spelling and is never presented as a
+complete JSON document. Unused content budget can extend that preview.
 Images consume the existing 1,200-token estimate and require at most 4 MiB of
-view bytes. A clipping notice directs the model to readback; long source-loss
-notices are abbreviated only in this view. Neither clipping nor readback changes
+view bytes. A clipping notice supplies callable `tool_result_read` JSON arguments
+with the source's exact `call_id`, selecting structured data when present or
+metadata otherwise. If an unusually long selector cannot fit, the notice points
+to the exact ID in the tool-call envelope instead of inventing a shortened ID.
+Long source-loss notices are abbreviated only in this view. Neither clipping nor readback changes
 source loss into recoverable data. Current request estimates include this view,
 instead of reusing provider usage for a different result projection. Compaction
 input carries explicit execution/loss metadata and bounded JSON/text, while
@@ -886,8 +894,12 @@ Default `section=metadata` reports entry identity, durability, execution state,
 source loss and up to 32 block descriptors. Pass `next_block` as `block` for the
 next metadata page. `section=content` reads one indexed text/image block;
 `section=structured` pages the exact saved JSON bytes as text, preserving numeric
-precision. Text uses UTF-8 byte offsets and lengths up to 8,192 bytes, with
-`next_offset` for continuation. Metadata is capped at 32 KiB and a selected
+precision. Structured pages are marked `format: raw_json_text` and `fragment`
+when they are not the entire document. Text uses UTF-8 byte offsets and lengths
+up to 8,192 bytes, with `next_offset` for continuation. Both text and metadata
+pages provide `next_read` with exact continuation arguments, using the resolved
+entry identity so repeated call IDs do not make subsequent pages ambiguous.
+Metadata is capped at 32 KiB and a selected
 image at 16 MiB; unsupported saved kinds produce an explicit error. Readback
 runs through Guard as a local built-in and adds an ordinary paired result.
 

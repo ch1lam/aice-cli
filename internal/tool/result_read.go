@@ -40,7 +40,7 @@ func NewToolResultRead(reader ToolResultReader) (*ToolResultRead, error) {
 }
 
 func (*ToolResultRead) Definition() llm.ToolDefinition {
-	return llm.ToolDefinition{Name: "tool_result_read", Description: "Read a retained tool result from the active Session branch, including before compaction. Never calls the original tool or fetches links. Supply call_id, or entry_id to disambiguate repeated call IDs. Default metadata lists up to 32 content block indices, execution state and unrecoverable loss; pass next_block as block for the next metadata page. section=content reads one block; section=structured reads raw JSON as text. Text offsets and lengths are UTF-8 bytes; next_offset continues a page. Images are returned one at a time. Unstored data cannot be recovered.", InputSchema: jsonSchema(`{"type":"object","properties":{"call_id":{"type":"string"},"entry_id":{"type":"string"},"section":{"type":"string","enum":["metadata","content","structured"]},"block":{"type":"integer","minimum":0},"offset":{"type":"integer","minimum":0},"length":{"type":"integer","minimum":1,"maximum":8192}},"additionalProperties":false}`)}
+	return llm.ToolDefinition{Name: "tool_result_read", Description: "Read a retained tool result from the active Session branch, including before compaction. Never calls the original tool or fetches links. Supply call_id, or entry_id to disambiguate repeated call IDs. Default metadata lists up to 32 content block indices, execution state and unrecoverable loss. section=content reads one block; section=structured reads exact raw JSON bytes as text, and a page may be an incomplete JSON fragment. Text offsets and lengths are UTF-8 bytes. When present, next_read contains exact arguments for the next page (next_block/next_offset also report its position). Images are returned one at a time. Unstored data cannot be recovered.", InputSchema: jsonSchema(`{"type":"object","properties":{"call_id":{"type":"string"},"entry_id":{"type":"string"},"section":{"type":"string","enum":["metadata","content","structured"]},"block":{"type":"integer","minimum":0},"offset":{"type":"integer","minimum":0},"length":{"type":"integer","minimum":1,"maximum":8192}},"additionalProperties":false}`)}
 }
 
 func (r *ToolResultRead) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult, error) {
@@ -136,7 +136,16 @@ func (r *ToolResultRead) Execute(ctx context.Context, call llm.ToolCall) (llm.To
 		if end < len(value) {
 			metadata["next_offset"] = end
 		}
+		if args.Section == "structured" {
+			metadata["format"] = "raw_json_text"
+			metadata["fragment"] = args.Offset != 0 || end < len(value)
+		}
 		value = value[args.Offset:end]
+	}
+	if next, ok := metadata["next_offset"]; ok {
+		metadata["next_read"] = resultReadContinuation(stored.ID, args, "offset", next)
+	} else if next, ok := metadata["next_block"]; ok {
+		metadata["next_read"] = resultReadContinuation(stored.ID, args, "block", next)
 	}
 	encoded, err := json.Marshal(metadata)
 	if err != nil || len(encoded) > 32<<10 {
@@ -149,4 +158,17 @@ func (r *ToolResultRead) Execute(ctx context.Context, call llm.ToolCall) (llm.To
 		result.Content = append(result.Content, llm.NewTextContent(value).Part())
 	}
 	return result, nil
+}
+
+func resultReadContinuation(entryID string, args toolResultReadArgs, position string, next any) map[string]any {
+	continuation := map[string]any{"section": args.Section, "block": args.Block, "length": args.Length}
+	continuation[position] = next
+	if entryID != "" {
+		continuation["entry_id"] = entryID
+	} else if args.EntryID != "" {
+		continuation["entry_id"] = args.EntryID
+	} else {
+		continuation["call_id"] = args.CallID
+	}
+	return continuation
 }
