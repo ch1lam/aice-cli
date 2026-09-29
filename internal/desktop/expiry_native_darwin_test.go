@@ -53,7 +53,7 @@ func TestNativeMacSessionExpiry(t *testing.T) {
 		return run
 	}
 	observe := func(run *Run) Observation {
-		discovery, err := run.Windows(ctx, target.name, 16)
+		discovery, err := run.discoverWindows(ctx, target.name, 16)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -69,7 +69,7 @@ func TestNativeMacSessionExpiry(t *testing.T) {
 		if ref == "" {
 			t.Fatal("exact expiry fixture missing")
 		}
-		obs, err := run.Observe(ctx, ObserveRequest{TargetRef: ref, Screenshot: true})
+		obs, err := run.observeWindow(ctx, ObserveRequest{TargetRef: ref, Screenshot: true})
 		if err != nil || obs.Image == nil || obs.Degraded {
 			t.Fatal("expiry fixture capture unavailable", err)
 		}
@@ -112,7 +112,7 @@ func TestNativeMacSessionExpiry(t *testing.T) {
 	t.Logf("operator confirms native session absent after idle=%s", elapsed.Round(time.Second))
 	beforeDispatch := readNativeState(t, target)
 	awaitNativeState(t, ctx, target, func(s nativeFixtureState) bool { return s.Ticks > beforeDispatch.Ticks })
-	result, err := first.Act(ctx, request)
+	result, err := first.actAndObserve(ctx, request)
 	t.Logf("expired action outcome=%s driver_error=%v observation_returned=%v", result.Outcome, result.DriverError, result.Observation != nil)
 	if err != nil || !result.Dispatched || (result.Outcome != "unknown" && !(result.Outcome == "returned" && result.DriverError)) || result.Observation != nil {
 		t.Fatal("expired action did not preserve a failed or unknown native outcome", err, result.Outcome, result.DriverError)
@@ -122,18 +122,18 @@ func TestNativeMacSessionExpiry(t *testing.T) {
 	if settled.Commits != 0 || settled.Value != "AICE-314" || settled.Result != "Result: pending" {
 		t.Fatal("expired session delivered native input")
 	}
-	if _, err := first.Act(ctx, request); err == nil || calls["click"] != 1 {
+	if _, err := first.actAndObserve(ctx, request); err == nil || calls["click"] != 1 {
 		t.Fatal("expired observation was replayed")
 	}
 	if err := first.Close(); err != nil {
 		t.Fatal("expired session cleanup failed", err)
 	}
 	second := bind()
-	if _, err := second.Act(ctx, request); err == nil || calls["click"] != 1 {
+	if _, err := second.actAndObserve(ctx, request); err == nil || calls["click"] != 1 {
 		t.Fatal("old observation crossed into the replacement run")
 	}
 	fresh := observe(second)
-	committed, err := second.Act(ctx, ActRequest{Kind: "click", ObservationRef: fresh.Ref, ElementToken: nativeElement(t, fresh, "Commit"), Screenshot: true})
+	committed, err := second.actAndObserve(ctx, ActRequest{Kind: "click", ObservationRef: fresh.Ref, ElementToken: nativeElement(t, fresh, "Commit"), Screenshot: true})
 	nativeReturned(t, committed, err)
 	awaitNativeState(t, ctx, target, func(s nativeFixtureState) bool { return s.Commits == 1 && s.Result == "Result: AICE-314" })
 	if calls["start_session"] != 2 || calls["click"] != 2 {

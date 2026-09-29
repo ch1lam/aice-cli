@@ -88,11 +88,11 @@ func testRun(t *testing.T, f *fakeDriver, images bool) (*Manager, *Run) {
 }
 func observed(t *testing.T, r *Run, screenshot bool) Observation {
 	t.Helper()
-	d, err := r.Windows(t.Context(), "editor", 8)
+	d, err := r.discoverWindows(t.Context(), "editor", 8)
 	if err != nil || len(d.Windows) != 1 {
 		t.Fatalf("discovery=%+v err=%v", d, err)
 	}
-	o, err := r.Observe(t.Context(), ObserveRequest{TargetRef: d.Windows[0].Ref, Screenshot: screenshot})
+	o, err := r.observeWindow(t.Context(), ObserveRequest{TargetRef: d.Windows[0].Ref, Screenshot: screenshot})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,11 +107,11 @@ func TestDesktopRunLifecycleAndActObserve(t *testing.T) {
 		t.Fatal("binding or status performed native I/O")
 	}
 	o := observed(t, r, false)
-	result, err := r.Act(t.Context(), ActRequest{Kind: "type_text", ObservationRef: o.Ref, ElementToken: o.Elements[0].Token, Text: "synthetic update"})
+	result, err := r.actAndObserve(t.Context(), ActRequest{Kind: "type_text", ObservationRef: o.Ref, ElementToken: o.Elements[0].Token, Text: "synthetic update"})
 	if err != nil || !result.Dispatched || result.Observation == nil || result.Outcome != "returned" || !bytes.Contains(result.Driver, []byte("unverifiable")) {
 		t.Fatalf("result=%+v err=%v", result, err)
 	}
-	if _, err := r.Act(t.Context(), ActRequest{Kind: "click", ObservationRef: o.Ref, ElementToken: o.Elements[0].Token}); err == nil {
+	if _, err := r.actAndObserve(t.Context(), ActRequest{Kind: "click", ObservationRef: o.Ref, ElementToken: o.Elements[0].Token}); err == nil {
 		t.Fatal("consumed observation reused")
 	}
 	if f.count("start_session") != 1 || f.count("get_window_state") != 2 || f.count("type_text") != 1 {
@@ -126,7 +126,7 @@ func TestDesktopRunLifecycleAndActObserve(t *testing.T) {
 	if f.count("end_session") != 1 || f.closed != 0 {
 		t.Fatal("run cleanup ended connection or repeated cleanup")
 	}
-	if _, err := r.Windows(t.Context(), "", 8); err == nil {
+	if _, err := r.discoverWindows(t.Context(), "", 8); err == nil {
 		t.Fatal("closed binding stayed usable")
 	}
 }
@@ -141,17 +141,17 @@ func TestDesktopUnknownActionNeverReplayed(t *testing.T) {
 	}}
 	m, r := testRun(t, f, false)
 	o := observed(t, r, false)
-	result, err := r.Act(t.Context(), ActRequest{Kind: "click", ObservationRef: o.Ref, ElementToken: o.Elements[0].Token})
+	result, err := r.actAndObserve(t.Context(), ActRequest{Kind: "click", ObservationRef: o.Ref, ElementToken: o.Elements[0].Token})
 	if err != nil || !result.Dispatched || result.Outcome != "unknown" || result.Observation != nil || m.Status().Connected {
 		t.Fatalf("result=%+v err=%v", result, err)
 	}
-	if _, err := r.Act(t.Context(), ActRequest{Kind: "click", ObservationRef: o.Ref, ElementToken: o.Elements[0].Token}); err == nil {
+	if _, err := r.actAndObserve(t.Context(), ActRequest{Kind: "click", ObservationRef: o.Ref, ElementToken: o.Elements[0].Token}); err == nil {
 		t.Fatal("lost-response action replayed")
 	}
 	if f.count("click") != 1 {
 		t.Fatal("action repeated")
 	}
-	if _, err := r.Observe(t.Context(), ObserveRequest{TargetRef: o.TargetRef}); err == nil {
+	if _, err := r.observeWindow(t.Context(), ObserveRequest{TargetRef: o.TargetRef}); err == nil {
 		t.Fatal("old target survived disconnected generation")
 	}
 	_ = observed(t, r, false)
@@ -171,7 +171,7 @@ func TestDesktopPostObservationFailurePreservesAction(t *testing.T) {
 		}
 		return Reply{}, nil, false
 	}
-	result, err := r.Act(t.Context(), ActRequest{Kind: "click", ObservationRef: o.Ref, ElementToken: o.Elements[0].Token})
+	result, err := r.actAndObserve(t.Context(), ActRequest{Kind: "click", ObservationRef: o.Ref, ElementToken: o.Elements[0].Token})
 	if err != nil || result.Outcome != "returned" || len(result.Driver) == 0 || result.ObservationError == "" || result.Observation != nil || f.count("click") != 1 {
 		t.Fatalf("result=%+v err=%v", result, err)
 	}
@@ -187,7 +187,7 @@ func TestDesktopMissingCapabilityWasNotDispatched(t *testing.T) {
 	}}
 	m, r := testRun(t, f, false)
 	o := observed(t, r, false)
-	result, err := r.Act(t.Context(), ActRequest{Kind: "type_text", ObservationRef: o.Ref, ElementToken: o.Elements[0].Token, Text: "synthetic"})
+	result, err := r.actAndObserve(t.Context(), ActRequest{Kind: "type_text", ObservationRef: o.Ref, ElementToken: o.Elements[0].Token, Text: "synthetic"})
 	if err != nil || result.Dispatched || result.Outcome != "not_dispatched" || !m.Status().Connected {
 		t.Fatalf("result=%+v err=%v", result, err)
 	}
@@ -203,11 +203,11 @@ func TestDesktopSnapshotAndCrossRunIsolation(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer second.Close()
-	if _, err := second.Act(t.Context(), ActRequest{Kind: "click", ObservationRef: o.Ref, ElementToken: o.Elements[0].Token}); err == nil {
+	if _, err := second.actAndObserve(t.Context(), ActRequest{Kind: "click", ObservationRef: o.Ref, ElementToken: o.Elements[0].Token}); err == nil {
 		t.Fatal("observation crossed run identity")
 	}
 	_ = observed(t, second, false)
-	if _, err := first.Act(t.Context(), ActRequest{Kind: "click", ObservationRef: o.Ref, ElementToken: o.Elements[0].Token}); err == nil {
+	if _, err := first.actAndObserve(t.Context(), ActRequest{Kind: "click", ObservationRef: o.Ref, ElementToken: o.Elements[0].Token}); err == nil {
 		t.Fatal("same-window snapshot refresh did not invalidate first run")
 	}
 	if f.count("click") != 0 {
@@ -227,7 +227,7 @@ func TestDesktopImageMappingAndSemanticFallback(t *testing.T) {
 	if o.Image == nil || o.ImageWidth != 2000 || o.ImageHeight != 1 || o.Image.Original == nil {
 		t.Fatalf("image mapping lost: %+v", o)
 	}
-	result, err := r.Act(t.Context(), ActRequest{Kind: "click", ObservationRef: o.Ref, Point: &Point{X: 1000, Y: 0.5}})
+	result, err := r.actAndObserve(t.Context(), ActRequest{Kind: "click", ObservationRef: o.Ref, Point: &Point{X: 1000, Y: 0.5}})
 	if err != nil || !result.Dispatched {
 		t.Fatal(result, err)
 	}
@@ -239,7 +239,7 @@ func TestDesktopImageMappingAndSemanticFallback(t *testing.T) {
 		}
 	}
 	o = observed(t, r, false)
-	if _, err := r.Act(t.Context(), ActRequest{Kind: "click", ObservationRef: o.Ref, Point: &Point{X: 1, Y: 1}}); err == nil {
+	if _, err := r.actAndObserve(t.Context(), ActRequest{Kind: "click", ObservationRef: o.Ref, Point: &Point{X: 1, Y: 1}}); err == nil {
 		t.Fatal("semantic observation accepted pixels")
 	}
 	f.image = []byte("not an image")
@@ -247,7 +247,7 @@ func TestDesktopImageMappingAndSemanticFallback(t *testing.T) {
 	if !o.Degraded || o.Image != nil || len(o.Elements) != 1 {
 		t.Fatal("bad screenshot discarded semantic evidence")
 	}
-	if _, err := r.Act(t.Context(), ActRequest{Kind: "click", ObservationRef: o.Ref, ElementToken: o.Elements[0].Token}); err != nil {
+	if _, err := r.actAndObserve(t.Context(), ActRequest{Kind: "click", ObservationRef: o.Ref, ElementToken: o.Elements[0].Token}); err != nil {
 		t.Fatal(err)
 	}
 	for _, p := range []Point{{X: math.NaN()}, {X: math.Inf(1)}, {X: -1}, {X: 2000}} {
@@ -272,7 +272,7 @@ func TestDesktopCancelStopsQueuedMutation(t *testing.T) {
 	o := observed(t, r, false)
 	done := make(chan ActResult, 1)
 	go func() {
-		result, _ := r.Act(t.Context(), ActRequest{Kind: "click", ObservationRef: o.Ref, ElementToken: o.Elements[0].Token})
+		result, _ := r.actAndObserve(t.Context(), ActRequest{Kind: "click", ObservationRef: o.Ref, ElementToken: o.Elements[0].Token})
 		done <- result
 	}()
 	select {
@@ -291,7 +291,7 @@ func TestDesktopCancelStopsQueuedMutation(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("cancel did not settle")
 	}
-	if _, err := r.Act(t.Context(), ActRequest{Kind: "click", ObservationRef: o.Ref, ElementToken: o.Elements[0].Token}); err == nil {
+	if _, err := r.actAndObserve(t.Context(), ActRequest{Kind: "click", ObservationRef: o.Ref, ElementToken: o.Elements[0].Token}); err == nil {
 		t.Fatal("cancelled run dispatched another action")
 	}
 	if f.count("click") != 1 {
@@ -345,13 +345,13 @@ func TestDesktopUnusableReadRetiresLiveConnection(t *testing.T) {
 			oldClicks := 0
 			switch kind {
 			case "apps":
-				_, err = r.Apps(t.Context(), "editor", 8)
+				_, err = r.discoverApps(t.Context(), "editor", 8)
 			case "windows":
-				_, err = r.Windows(t.Context(), "editor", 8)
+				_, err = r.discoverWindows(t.Context(), "editor", 8)
 			case "observation":
-				_, err = r.Observe(t.Context(), ObserveRequest{TargetRef: o.TargetRef})
+				_, err = r.observeWindow(t.Context(), ObserveRequest{TargetRef: o.TargetRef})
 			case "after_action":
-				result, callErr := r.Act(t.Context(), request)
+				result, callErr := r.actAndObserve(t.Context(), request)
 				if callErr != nil || !result.Dispatched || result.Outcome != "returned" || !result.DriverError || !bytes.Contains(result.Driver, []byte("session_ended")) || result.Observation != nil || result.ObservationError == "" {
 					t.Fatal("read failure rewrote the returned mutation result", result, callErr)
 				}
@@ -363,17 +363,17 @@ func TestDesktopUnusableReadRetiresLiveConnection(t *testing.T) {
 			if m.Status().Connected || old.closed != 1 || dials != 1 || old.count("click") != oldClicks {
 				t.Fatal("unusable connection was retained or automatically retried")
 			}
-			if _, err := r.Act(t.Context(), request); err == nil || old.count("click") != oldClicks {
+			if _, err := r.actAndObserve(t.Context(), request); err == nil || old.count("click") != oldClicks {
 				t.Fatal("old mutation reference survived retirement")
 			}
-			if _, err := r.Observe(t.Context(), ObserveRequest{TargetRef: o.TargetRef}); err == nil || dials != 1 {
+			if _, err := r.observeWindow(t.Context(), ObserveRequest{TargetRef: o.TargetRef}); err == nil || dials != 1 {
 				t.Fatal("old target survived retirement")
 			}
 			next := observed(t, r, false)
 			if dials != 2 || m.Status().Generation != 2 || fresh.count("start_session") != 1 {
 				t.Fatal("explicit discovery did not establish a fresh connection")
 			}
-			result, err := r.Act(t.Context(), ActRequest{Kind: "click", ObservationRef: next.Ref, ElementToken: next.Elements[0].Token})
+			result, err := r.actAndObserve(t.Context(), ActRequest{Kind: "click", ObservationRef: next.Ref, ElementToken: next.Elements[0].Token})
 			if err != nil || result.Outcome != "returned" || result.Observation == nil || fresh.count("click") != 1 || old.count("click") != oldClicks {
 				t.Fatal("fresh action failed or replayed previous input", result, err)
 			}
@@ -397,11 +397,11 @@ func TestDesktopValidPartialObservationKeepsSemanticReferences(t *testing.T) {
 		reply.IsError = true
 		return reply, nil, true
 	}
-	partial, err := r.Observe(t.Context(), ObserveRequest{TargetRef: initial.TargetRef})
+	partial, err := r.observeWindow(t.Context(), ObserveRequest{TargetRef: initial.TargetRef})
 	if err != nil || !partial.Degraded || partial.Complete || !m.Status().Connected || f.closed != 0 {
 		t.Fatal("target-bound partial observation incorrectly retired connection", partial, err)
 	}
-	result, err := r.Act(t.Context(), ActRequest{Kind: "click", ObservationRef: partial.Ref, ElementToken: "partial-token"})
+	result, err := r.actAndObserve(t.Context(), ActRequest{Kind: "click", ObservationRef: partial.Ref, ElementToken: "partial-token"})
 	if err != nil || result.Outcome != "returned" || result.Observation == nil || f.count("click") != 1 || f.closed != 0 {
 		t.Fatal("valid partial semantic reference was lost", result, err)
 	}

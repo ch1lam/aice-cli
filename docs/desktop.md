@@ -193,16 +193,18 @@ use `query` for narrowing instead.
 
 Managed mutations consume the prior observation. Their postcondition read is
 a separate `get_window_state` operation with its own catalog/Guard decision.
-The removed typed model path automatically observed after actions; the pinned
-Skill describes the current explicit-read contract, verified in the archived
-same-task comparison.
+Computer Use uses the generic MCP result projection and readback contract.
+There is no desktop-specific model result format or automatic action/observation
+orchestrator. The pinned Skill describes explicit reads and model-owned polling.
 
 Shared native validation remains after removing the old model adapters.
 `Reply` is a local view for lifecycle, setup and managed observation checks,
 not a second transcript or protocol client. Linux setup uses the selected-window
 observation API for its local capture probe. Managed operations share observation
-binding, action validation and coordinate mapping with native acceptance tests;
-those consumers and constraints remain.
+binding, action validation and coordinate mapping. Native acceptance fixtures
+use the production `Tools` / `CallChecked` boundary for operations; any polling,
+post-action read or timing aggregation is explicit test sequencing rather than
+a second production execution API.
 
 Synthetic macOS/Linux tests cover managed schemas, exact discovered identities,
 owned sessions, stale/cross-run state, final permit revocation, cancellation,
@@ -351,7 +353,7 @@ acceptance and Windows action support remain unverified.
 ## Run, reference and result contracts
 
 A run binding freezes its control mode and model image support without native
-I/O. The manager serializes complete action/observation sequences. It lazily
+I/O. The manager serializes each managed operation and its state updates. It lazily
 starts a uniquely named Driver session, ends only that session on run close,
 and keeps its connection available until disconnect or manager close. A cached
 status read never enumerates, captures, launches or requests authorization.
@@ -517,70 +519,29 @@ describes that boundary.
 
 ### Native helper contracts
 
-The following domain projection supports local setup and native acceptance
-helpers, including Linux setup's selected-window capture. It is not a model tool
-surface. Production managed calls use the explicit discovery and observation
-contract above: native identities, separate post-action reads, model-owned polling
-and generic MCP result preservation. These consumers reuse the Manager constraints.
+Production `Run` exposes managed MCP discovery and calls. Shared argument,
+observation and coordinate validation belongs to `internal/desktop`; it does
+not orchestrate a subsequent action, poll a condition or automatically observe
+an action result. Local Setup retains bounded window discovery and selected-window
+observation for its capture check. These read-only helpers are not model tools.
 
-Window discovery issues opaque references for returned native pid/window pairs.
-Application discovery also returns bounded installed/running app identities,
-including localized names; bundle-ID matches include their running windows.
-Launch accepts only a locally issued app reference, resolves its known macOS
-bundle ID or Linux discovered XDG command, and consumes that reference before
-one native request. Linux launch never accepts a command or extra arguments
-from the model; its response must establish a running PID and the same discovered
-command before window binding. A ready single window
-is observed immediately; multiple windows remain explicit candidates. If the
-process is known but its window is late, a bounded five-second read-only wait
-discovers that PID's windows without launching again. A lost response never
-triggers another launch. Launch itself uses Cua's launch path. The Linux native
-launch gate observed foreground focus loss despite the Driver's `active:false`
-response; see [launch acceptance failure](#linux-launch-acceptance-failure).
-The macOS AppKit cold-launch gate preserves its foreground sentinel and returns
-multiple candidates without choosing one; heterogeneous application launch and
-physical-user coexistence remain separate acceptance.
-Offline launch-wait tests keep an unrelated window with the same document title
-present while the target is delayed. Only the launched PID may supply candidates.
-The tests cover target arrival, the five-second deadline and cancellation: a
-failed wait retains the launch result without observing another app or replaying
-launch, and subsequent explicit discovery remains usable. These checks validate
-the local binding/lifecycle contract, not native launch focus behavior.
-Observation references bind the run, connection generation, exact target,
-Driver snapshot, opaque element tokens and immutable capture ID. Rediscovery,
-same-window observation (including from another run), action dispatch,
-cancellation and disconnect invalidate the relevant old references. There is
-no process start-time claim beyond the evidence Cua exposes.
+Native acceptance fixtures use `Tools` and `CallChecked`, with explicit reads
+and postcondition assertions. Fixture convenience helpers may sequence discovery,
+input and observation or poll a condition; those helpers compile only in tests.
+The fixture's aggregate timing and convenience result are not production tool
+or Session formats. There is no production `Act` or `Apps` API.
 
-The native action helpers cover click/double/right-click, semantic or pixel
-text insertion, semantic value setting, exact-window keys/hotkeys, semantic or
-pixel scroll, and left-button dragging inside one observed window. Drag takes
-two screenshot points and a bounded duration (default 500 ms, maximum ten seconds).
-The pinned macOS Driver refuses background drag; AICE preserves that refusal.
-Key names and modifier combinations are validated before dispatch; unrelated
-action fields are rejected. Each mutation consumes its observation before
-dispatch and returns its Driver facts plus a fresh observation under the same
-execution reservation. Post-observation failure preserves the action response.
-A lost response returns `outcome=unknown`; it never retries the mutation.
-`outcome=returned` means an RPC response arrived, not that a business effect was
-independently confirmed. Driver `isError`, structured details and bounded text
-remain separate from transport and follow-up-observation failure.
+An action consumes its observation before dispatch. A subsequent observation is
+a separate operation, and its failure cannot replace the action's returned or
+unknown execution state. The caller must decide what to read next; neither the
+managed boundary nor the generic client replays a mutation.
 
-The reviewed macOS foreground assistance requires the user-selected `foreground_allowed` mode,
-frozen when the run starts. Input still defaults to background. After a reviewed
-pre-input refusal, a successful follow-up observation can expose
-`foreground_action_available`. A native helper caller may then explicitly request
-`delivery_mode=foreground` using that observation, unchanged action content and
-the same target form. It must identify the intended element again from the new
-tokens or re-ground both drag points in the returned image; AICE does not claim
-cross-snapshot element identity. A pixel refusal that permits foreground requests
-a fresh screenshot even when the original call did not request a post-action
-image. Missing or invalid screenshot bindings suppress that opportunity.
-Foreground delivery
-may activate the addressed window and change focus. No automatic fallback runs.
-The opportunity expires with its observation, including ordinary refresh,
-another run's same-window refresh, dispatch, cancellation or disconnect.
-It cannot change the run's control mode or authorize another window or action.
+Foreground continuation requires the frozen `foreground_allowed` mode and a
+reviewed pre-input refusal. The caller explicitly observes the same window again
+before requesting the same action with `delivery_mode=foreground`. Pixel
+continuation requires a fresh usable screenshot. Changed action content, stale
+observations, another window and unknown outcomes cannot grant continuation.
+No automatic foreground fallback runs.
 
 The pinned macOS refusal classifier currently covers semantic Electron
 `type_text` with `background_unavailable`, Screen Sharing `type_text`/`hotkey`
@@ -594,22 +555,9 @@ or input, without an effect or identity field. This is a method-specific source
 contract, not a general rule that a missing effect means no input occurred.
 Only these reviewed paths establish that input did not run. Generic advice,
 unknown codes, partial/unverifiable effects, lost responses and failed follow-up
-observations never create an opportunity. `set_value`, launch and wait do not
-accept delivery mode. New platform/version admission must re-review the classifier.
+observations never create an opportunity. `set_value` and launch do not accept delivery mode. New platform/version admission must re-review the classifier.
 Linux currently retains background refusals without creating a foreground
 continuation; macOS refusal codes do not authorize input on another platform.
-
-Semantic condition waits hold the same executor and repeatedly observe the
-exact window within a caller-selected deadline of at most ten seconds. They
-report `satisfied`, `unsatisfied` or `unknown`; a missing match in an incomplete
-projection stays unknown. Polls request no images. A requested final screenshot
-is captured once only while time remains, and its semantic condition is checked
-again. An expired deadline can return the last valid semantic observation;
-a failed refresh never returns older execution references. No hard sleep or
-image-stability heuristic stands in for a condition.
-The pinned Linux `elements` array contains actionable nodes only, even when
-the AT-SPI walk is complete. Its AICE projection therefore remains incomplete:
-positive text matches are evidence, but absent passive labels remain unknown.
 
 Observations project at most 200 semantic elements and 96 KiB of their text,
 with visible truncation/incompleteness. One screenshot goes through the existing
@@ -624,7 +572,7 @@ Pixel clicks send Cua's immutable `capture_id`. The pinned macOS `scroll`,
 resolve the authoritative latest screenshot through the same public session,
 PID and window used for observation. AICE requires both its verified image
 mapping and a non-empty snapshot, consumes the observation once, and keeps the
-whole action/observation sequence serialized. Cua refuses a snapshot replaced
+individual operation and state updates serialized. Cua refuses a snapshot replaced
 by another owner, retired by session cleanup, or refreshed without a screenshot.
 AICE never adds private `_session_id` fields or supplies unsupported capture
 parameters. These routes do not provide immutable capture-ID checking, and
@@ -632,17 +580,6 @@ native geometry-change acceptance remains outstanding for these routes. The
 macOS AppKit foreground-drag gate below establishes one explicit continuation
 path, not foreground acceptance for all tools or surfaces.
 Both point axes must be explicit numbers; omitted axes never become zero.
-
-Tool adapters serialize bounded domain facts as JSON text and append the actual
-image as an existing image content part. They preserve partial/unknown dispatch
-facts and any follow-up observation even when a later error occurs, marking the
-result as an error without replacing it with a generic Go error. Images and
-originals continue through the existing provider projection and Session JSONL.
-Built-in tool guidance asks the model to distinguish same-name semantic elements
-by role. For macOS web-content text fields it prefers `type_text` over direct
-`set_value`, and requires checking the rendered result because AXValue read-back
-can echo a write that never reached the page. This guidance does not replace
-the frozen control mode or turn an unverifiable result into confirmed success.
 
 ### Production presentation
 
@@ -653,8 +590,8 @@ to stderr. Full calls and results remain in the Session. Explicit
 including arguments and bounded result text; it is transcript output and can
 contain window contents, not a content-free diagnostic stream.
 
-Native Manager acceptance helpers use `desktop.Act` local `ActionTiming`
-evidence alongside its domain result:
+Test-only native acceptance helpers aggregate local timing across explicit
+managed operations:
 executor queue admission, mutation RPC, condition/window polling, final observation,
 and total call time. Polling includes read-only RPCs and timer intervals; final
 observation includes capture, decoding and image processing. The mutation RPC
@@ -662,7 +599,7 @@ measurement includes transport overhead and connection retirement on failure;
 it is not a measurement inside Cua's native input implementation. Total also
 includes local validation and release cleanup. Durations remain available after
 failure or cancellation, and no action is retried to obtain a measurement.
-These fields are excluded from tool JSON and Session records, with no background
+These fixture fields are not production tool or Session data, with no background
 sampler or additional telemetry. Native Manager acceptance tests print only
 operation names, synthetic target indexes and these durations. Model output
 wait, Guard time and next-request preparation remain outside this boundary.

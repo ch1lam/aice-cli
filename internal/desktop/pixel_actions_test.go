@@ -57,11 +57,11 @@ func TestPixelActionsUseSessionScreenshotCoordinates(t *testing.T) {
 			_, r := testRun(t, f, true)
 			o := observed(t, r, true)
 			request := pixelRequest(kind, o.Ref)
-			result, err := r.Act(t.Context(), request)
+			result, err := r.actAndObserve(t.Context(), request)
 			if err != nil || result.Observation == nil || result.Observation.ForegroundAction != "" || f.count(kind) != 1 || f.count("get_window_state") != 2 {
 				t.Fatal("pixel action failed or background-only mode offered foreground", result, err)
 			}
-			if _, err := r.Act(t.Context(), request); err == nil || f.count(kind) != 1 {
+			if _, err := r.actAndObserve(t.Context(), request); err == nil || f.count(kind) != 1 {
 				t.Fatal("pixel action replayed", err)
 			}
 			for _, call := range f.calls {
@@ -97,7 +97,7 @@ func TestPixelForegroundNeedsFreshImageAndExplicitChoice(t *testing.T) {
 			r.options.Mode = ForegroundAllowed
 			o := observed(t, r, true)
 			request := pixelRequest(kind, o.Ref)
-			result, err := r.Act(t.Context(), request)
+			result, err := r.actAndObserve(t.Context(), request)
 			if err != nil || result.Observation == nil || result.Observation.Image == nil || result.Observation.ForegroundAction != kind || f.count(kind) != 1 {
 				t.Fatal("pixel opportunity had no grounding image or was replayed", result, err)
 			}
@@ -108,7 +108,7 @@ func TestPixelForegroundNeedsFreshImageAndExplicitChoice(t *testing.T) {
 			} else {
 				request.Point.X = 1200
 			}
-			result, err = r.Act(t.Context(), request)
+			result, err = r.actAndObserve(t.Context(), request)
 			if err != nil || result.Observation == nil || result.Observation.ForegroundAction != "" || f.count(kind) != 2 {
 				t.Fatal("explicit foreground dispatch failed", result, err)
 			}
@@ -148,7 +148,7 @@ func TestPixelRefusalCannotOfferForegroundWithoutVerifiedFollowupImage(t *testin
 				}
 				return reply, nil, true
 			}
-			result, err := r.Act(t.Context(), pixelRequest("drag", o.Ref))
+			result, err := r.actAndObserve(t.Context(), pixelRequest("drag", o.Ref))
 			if err != nil || (result.Observation != nil && result.Observation.ForegroundAction != "") || f.count("drag") != 1 {
 				t.Fatal("invalid refusal offered foreground", result, err)
 			}
@@ -186,7 +186,7 @@ func TestPixelActionsRejectUngroundedOrInvalidGestures(t *testing.T) {
 			tc.change(&request, &binding)
 			r.observations[o.Ref] = binding
 			before := len(f.calls)
-			if _, err := r.Act(t.Context(), request); err == nil || len(f.calls) != before {
+			if _, err := r.actAndObserve(t.Context(), request); err == nil || len(f.calls) != before {
 				t.Fatal("invalid gesture dispatched", err)
 			}
 		})
@@ -195,7 +195,7 @@ func TestPixelActionsRejectUngroundedOrInvalidGestures(t *testing.T) {
 		f := &fakeDriver{}
 		_, r := testRun(t, f, false)
 		o := observed(t, r, false)
-		if _, err := r.Act(t.Context(), pixelRequest(kind, o.Ref)); err == nil || f.count(kind) != 0 {
+		if _, err := r.actAndObserve(t.Context(), pixelRequest(kind, o.Ref)); err == nil || f.count(kind) != 0 {
 			t.Fatal("semantic-only model dispatched pixels", kind, err)
 		}
 	}

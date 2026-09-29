@@ -218,7 +218,6 @@ func (r *Run) managedActionLocked(ctx context.Context, admission *managedAdmissi
 	if err != nil {
 		return managedReject(err)
 	}
-	request.ObservationRef = ref
 	nativeName, wire, err := r.actionArguments(binding, request)
 	if err != nil {
 		return managedReject(err)

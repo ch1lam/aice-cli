@@ -42,11 +42,11 @@ func TestKeyHotkeyAndScrollKeepExactWindowAndBackground(t *testing.T) {
 			case "scroll":
 				request.ElementToken, request.Direction = o.Elements[0].Token, "down"
 			}
-			result, err := r.Act(t.Context(), request)
+			result, err := r.actAndObserve(t.Context(), request)
 			if err != nil || !result.Dispatched || result.Outcome != "returned" || result.Observation == nil || f.count("get_window_state") != 2 {
 				t.Fatal("action/observation sequence failed", result, err)
 			}
-			if _, err := r.Act(t.Context(), request); err == nil {
+			if _, err := r.actAndObserve(t.Context(), request); err == nil {
 				t.Fatal("consumed action repeated")
 			}
 		})
@@ -83,14 +83,14 @@ func TestTypedActionsRejectMixedOrInvalidArgumentsBeforeDispatch(t *testing.T) {
 				request.ElementToken = o.Elements[0].Token
 			}
 			before := len(f.calls)
-			if _, err := r.Act(t.Context(), request); err == nil {
+			if _, err := r.actAndObserve(t.Context(), request); err == nil {
 				t.Fatal("invalid action accepted")
 			}
 			if len(f.calls) != before {
 				t.Fatal("invalid action dispatched")
 			}
 			// Rejected local validation does not consume a valid observation.
-			if _, err := r.Act(t.Context(), ActRequest{Kind: "click", ObservationRef: o.Ref, ElementToken: o.Elements[0].Token}); err != nil {
+			if _, err := r.actAndObserve(t.Context(), ActRequest{Kind: "click", ObservationRef: o.Ref, ElementToken: o.Elements[0].Token}); err != nil {
 				t.Fatal("validation consumed reference", err)
 			}
 		})
@@ -111,7 +111,7 @@ func TestSemanticWaitUsesFreshObservationsAndCapturesOnlyAtCompletion(t *testing
 	}
 	_, r := testRun(t, f, true)
 	o := observed(t, r, false)
-	result, err := r.Act(t.Context(), ActRequest{Kind: "wait", ObservationRef: o.Ref, Wait: &WaitCondition{Text: "saved", TimeoutMS: 1500}, Screenshot: true})
+	result, err := r.actAndObserve(t.Context(), ActRequest{Kind: "wait", ObservationRef: o.Ref, Wait: &WaitCondition{Text: "saved", TimeoutMS: 1500}, Screenshot: true})
 	if err != nil || result.Dispatched || result.WaitState != "satisfied" || result.Observation == nil || f.count("get_window_state") != 4 {
 		t.Fatal(result, err, f.count("get_window_state"))
 	}
@@ -124,7 +124,7 @@ func TestSemanticWaitUsesFreshObservationsAndCapturesOnlyAtCompletion(t *testing
 	if images != 1 {
 		t.Fatal("wait captured per polling tick", images)
 	}
-	if _, err := r.Act(t.Context(), ActRequest{Kind: "click", ObservationRef: o.Ref, ElementToken: o.Elements[0].Token}); err == nil {
+	if _, err := r.actAndObserve(t.Context(), ActRequest{Kind: "click", ObservationRef: o.Ref, ElementToken: o.Elements[0].Token}); err == nil {
 		t.Fatal("wait retained old execution reference")
 	}
 }
@@ -141,7 +141,7 @@ func TestWaitMissingTextPreservesUnknownForIncompleteObservation(t *testing.T) {
 			}}
 			_, r := testRun(t, f, false)
 			o := observed(t, r, false)
-			result, err := r.Act(t.Context(), ActRequest{Kind: "wait", ObservationRef: o.Ref, Wait: &WaitCondition{Text: "absent", TimeoutMS: 25}})
+			result, err := r.actAndObserve(t.Context(), ActRequest{Kind: "wait", ObservationRef: o.Ref, Wait: &WaitCondition{Text: "absent", TimeoutMS: 25}})
 			want := "unknown"
 			if complete {
 				want = "unsatisfied"
@@ -165,13 +165,13 @@ func TestWaitDeadlineCancelsAnInFlightObservation(t *testing.T) {
 		<-ctx.Done()
 		return Reply{}, ctx.Err(), true
 	}
-	result, err := r.Act(t.Context(), ActRequest{Kind: "wait", ObservationRef: o.Ref, Wait: &WaitCondition{Text: "ready", TimeoutMS: 25}})
+	result, err := r.actAndObserve(t.Context(), ActRequest{Kind: "wait", ObservationRef: o.Ref, Wait: &WaitCondition{Text: "ready", TimeoutMS: 25}})
 	if err != nil || result.WaitState != "unknown" || result.Observation != nil || result.ObservationError == "" || f.count("get_window_state") != 2 {
 		t.Fatal(result, err)
 	}
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	if _, err := r.Act(ctx, ActRequest{Kind: "key", ObservationRef: o.Ref, Key: "return"}); !errors.Is(err, context.Canceled) {
+	if _, err := r.actAndObserve(ctx, ActRequest{Kind: "key", ObservationRef: o.Ref, Key: "return"}); !errors.Is(err, context.Canceled) {
 		t.Fatal("cancelled wait could be followed by input", err)
 	}
 }

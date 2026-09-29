@@ -20,7 +20,7 @@ func TestDesktopSetupDisconnectRetiresReferencesAndReAdmits(t *testing.T) {
 	if err := m.Disconnect(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	result, err := r.Act(t.Context(), ActRequest{Kind: "click", ObservationRef: o.Ref, ElementToken: o.Elements[0].Token})
+	result, err := r.actAndObserve(t.Context(), ActRequest{Kind: "click", ObservationRef: o.Ref, ElementToken: o.Elements[0].Token})
 	if err == nil || result.Dispatched || f.count("click") != 0 {
 		t.Fatal("retired reference executed")
 	}

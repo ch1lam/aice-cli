@@ -59,7 +59,7 @@ func TestNativeMacLaunch(t *testing.T) {
 			t.Error(err)
 		}
 	}()
-	discovery, err := run.Apps(ctx, bundleID, 16)
+	discovery, err := run.discoverApps(ctx, bundleID, 16)
 	if err != nil || len(discovery.Apps) != 1 || discovery.Apps[0].BundleID != bundleID || discovery.Apps[0].Ref == "" || discovery.Apps[0].Running || len(discovery.Windows) != 0 {
 		t.Fatal("unopened fixture was not discovered as one launchable app", err)
 	}
@@ -69,7 +69,7 @@ func TestNativeMacLaunch(t *testing.T) {
 	awaitNativeState(t, ctx, sentinel, func(s nativeFixtureState) bool { return s.Armed && s.Active })
 	request := ActRequest{Kind: "launch", AppRef: discovery.Apps[0].Ref, Screenshot: true}
 	started := time.Now()
-	result, err := run.Act(ctx, request)
+	result, err := run.actAndObserve(ctx, request)
 	var facts struct {
 		PID                      int
 		BundleID                 string `json:"bundle_id"`
@@ -81,7 +81,7 @@ func TestNativeMacLaunch(t *testing.T) {
 		suppression = *facts.SelfActivationSuppressed
 	}
 	t.Logf("cold launch: elapsed=%s outcome=%s driver_error=%v windows=%d reported_self_activation_suppressed=%v", time.Since(started), result.Outcome, result.DriverError, len(result.Windows), suppression)
-	if repeated, err := run.Act(ctx, request); err == nil || repeated.Dispatched {
+	if repeated, err := run.actAndObserve(ctx, request); err == nil || repeated.Dispatched {
 		t.Error("consumed launch reference was accepted")
 	}
 	if err != nil || !result.Dispatched || result.Outcome != "returned" || result.DriverError || result.ObservationError != "" || facts.PID <= 0 || facts.BundleID != bundleID {
@@ -110,7 +110,7 @@ func TestNativeMacLaunch(t *testing.T) {
 		}
 		// An explicit match to the fixture's known title resolves the candidates;
 		// production launch must not simply observe the first returned window.
-		observed, err := run.Observe(ctx, ObserveRequest{TargetRef: selected.Ref, Screenshot: true})
+		observed, err := run.observeWindow(ctx, ObserveRequest{TargetRef: selected.Ref, Screenshot: true})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -138,9 +138,9 @@ func TestNativeMacLaunch(t *testing.T) {
 	}
 	checkFocus("cold launch")
 	value := "Launched 中文 ✓"
-	set, err := run.Act(ctx, ActRequest{Kind: "set_value", ObservationRef: observation.Ref, ElementToken: nativeElement(t, *observation, "Task value"), Text: value, Screenshot: true})
+	set, err := run.actAndObserve(ctx, ActRequest{Kind: "set_value", ObservationRef: observation.Ref, ElementToken: nativeElement(t, *observation, "Task value"), Text: value, Screenshot: true})
 	nativeReturned(t, set, err)
-	click, err := run.Act(ctx, ActRequest{Kind: "click", ObservationRef: set.Observation.Ref, ElementToken: nativeElement(t, *set.Observation, "Commit"), Screenshot: true})
+	click, err := run.actAndObserve(ctx, ActRequest{Kind: "click", ObservationRef: set.Observation.Ref, ElementToken: nativeElement(t, *set.Observation, "Commit"), Screenshot: true})
 	nativeReturned(t, click, err)
 	awaitNativeState(t, ctx, target, func(s nativeFixtureState) bool {
 		return s.Value == value && s.Result == "Result: "+value && s.Commits == 1

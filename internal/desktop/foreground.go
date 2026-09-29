@@ -5,7 +5,7 @@ import (
 	"errors"
 )
 
-func (r *Run) actionDelivery(binding observationBinding, request ActRequest) (string, error) {
+func (r *Run) actionDelivery(binding observationBinding, request actionRequest) (string, error) {
 	if request.Kind == "set_value" && request.DeliveryMode != "" {
 		return "", errors.New("desktop: set_value does not accept delivery_mode")
 	}
@@ -29,9 +29,8 @@ func (r *Run) actionDelivery(binding observationBinding, request ActRequest) (st
 // observation-local tokens, re-grounded image coordinates and presentation
 // choices may change. The Agent must identify the intended target again in the
 // returned observation; references from the refused action cannot survive it.
-func foregroundActionKey(request ActRequest) string {
-	request.ObservationRef, request.DeliveryMode = "", ""
-	request.Screenshot = false
+func foregroundActionKey(request actionRequest) string {
+	request.DeliveryMode = ""
 	if request.ElementToken != "" {
 		request.ElementToken = "semantic"
 	}
@@ -59,7 +58,7 @@ func foregroundActionKey(request ActRequest) string {
 // returns with no effect field, before resolving targets or invoking input.
 // Only the macOS adapter uses this classifier. Linux refusals need their own
 // pre-input evidence before a foreground continuation can be offered.
-func safeForegroundRefusal(binding observationBinding, request ActRequest, reply Reply) bool {
+func safeForegroundRefusal(binding observationBinding, request actionRequest, reply Reply) bool {
 	if !reply.IsError || len(reply.Structured) > 64*1024 {
 		return false
 	}

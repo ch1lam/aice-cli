@@ -4,15 +4,17 @@ package desktop
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"github.com/ch1lam/aice-cli/internal/mcpclient"
 	"os"
 	"sync/atomic"
 	"testing"
 	"time"
 )
 
-// Cancels a real condition wait after a completed native poll, with a competing
-// click on a different window whose observation remains valid until Stop.
+// Cancels a fixture polling sequence after a completed managed native read,
+// with a queued click on another window whose observation is still valid.
 // This does not claim cancellation of an in-flight native mutation or TUI Stop.
 func TestNativeMacCancelWait(t *testing.T) {
 	if os.Getenv("AICE_CUA_NATIVE") != "1" {
@@ -52,7 +54,7 @@ func TestNativeMacCancelWait(t *testing.T) {
 			t.Error(err)
 		}
 	}()
-	discovery, err := run.Windows(ctx, waiting.prefix, 16)
+	discovery, err := run.discoverWindows(ctx, waiting.prefix, 16)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,11 +74,11 @@ func TestNativeMacCancelWait(t *testing.T) {
 		}
 		return ref
 	}
-	waitObs, err := run.Observe(ctx, ObserveRequest{TargetRef: find(waiting)})
+	waitObs, err := run.observeWindow(ctx, ObserveRequest{TargetRef: find(waiting)})
 	if err != nil {
 		t.Fatal(err)
 	}
-	clickObs, err := run.Observe(ctx, ObserveRequest{TargetRef: find(clicking), Screenshot: true})
+	clickObs, err := run.observeWindow(ctx, ObserveRequest{TargetRef: find(clicking), Screenshot: true})
 	if err != nil || clickObs.Image == nil {
 		t.Fatal("click target observation unavailable", err)
 	}
@@ -87,7 +89,7 @@ func TestNativeMacCancelWait(t *testing.T) {
 	}
 	waitDone, clickDone := make(chan completion, 1), make(chan completion, 1)
 	go func() {
-		result, err := run.Act(ctx, ActRequest{Kind: "wait", ObservationRef: waitObs.Ref, Wait: &WaitCondition{Text: "AICE impossible cancellation condition", TimeoutMS: 10000}})
+		result, err := run.actAndObserve(ctx, ActRequest{Kind: "wait", ObservationRef: waitObs.Ref, Wait: &WaitCondition{Text: "AICE impossible cancellation condition", TimeoutMS: 10000}})
 		waitDone <- completion{result, err}
 	}()
 	select {
@@ -97,19 +99,24 @@ func TestNativeMacCancelWait(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal(ctx.Err())
 	}
+	// Hold one dispatch reservation to establish a queued-operation precondition.
+	// Polling itself no longer owns the gate between managed MCP calls.
+	<-manager.gate
 	entered := make(chan struct{})
 	go func() {
 		close(entered)
-		result, err := run.Act(ctx, clickRequest)
+		result, err := run.actAndObserve(ctx, clickRequest)
 		clickDone <- completion{result, err}
 	}()
 	<-entered
 	select {
 	case <-clickDone:
-		t.Fatal("competing click escaped the condition wait's execution reservation")
+		t.Fatal("competing click escaped the managed dispatch reservation")
 	default:
 	}
 	started := time.Now()
+	run.cancel() // Stop invalidates the run before allowing queued dispatch.
+	manager.gate <- struct{}{}
 	if err := run.Close(); err != nil {
 		t.Fatal("native run close failed", err)
 	}
@@ -130,7 +137,7 @@ func TestNativeMacCancelWait(t *testing.T) {
 	if counts.clicks.Load() != 0 || counts.starts.Load() != 1 || counts.ends.Load() != 1 || len(run.observations) != 0 || !manager.Status().Connected {
 		t.Fatal("cancel did not invalidate references, end exactly one session and preserve the connection")
 	}
-	if result, err := run.Act(ctx, clickRequest); !errors.Is(err, context.Canceled) || result.Dispatched {
+	if result, err := run.actAndObserve(ctx, clickRequest); !errors.Is(err, context.Canceled) || result.Dispatched {
 		t.Fatal("closed run accepted an old action")
 	}
 	for _, target := range []nativeFixture{waiting, clicking} {
@@ -153,18 +160,18 @@ func TestNativeMacCancelWait(t *testing.T) {
 			t.Error(err)
 		}
 	}()
-	discovery, err = next.Windows(ctx, clicking.prefix, 16)
+	discovery, err = next.discoverWindows(ctx, clicking.prefix, 16)
 	if err != nil {
 		t.Fatal(err)
 	}
-	fresh, err := next.Observe(ctx, ObserveRequest{TargetRef: find(clicking), Screenshot: true})
+	fresh, err := next.observeWindow(ctx, ObserveRequest{TargetRef: find(clicking), Screenshot: true})
 	if err != nil || fresh.Image == nil {
 		t.Fatal("new run observation unavailable", err)
 	}
-	if result, err := next.Act(ctx, clickRequest); err == nil || result.Dispatched {
+	if result, err := next.actAndObserve(ctx, clickRequest); err == nil || result.Dispatched {
 		t.Fatal("new run accepted cancelled run's reference")
 	}
-	result, err := next.Act(ctx, ActRequest{Kind: "click", ObservationRef: fresh.Ref, ElementToken: nativeElement(t, fresh, "Commit"), Screenshot: true})
+	result, err := next.actAndObserve(ctx, ActRequest{Kind: "click", ObservationRef: fresh.Ref, ElementToken: nativeElement(t, fresh, "Commit"), Screenshot: true})
 	nativeReturned(t, result, err)
 	awaitNativeState(t, ctx, clicking, func(s nativeFixtureState) bool { return s.Commits == 1 && s.Result == "Result: AICE-314" })
 	if err := next.Close(); err != nil {
@@ -248,7 +255,7 @@ func TestNativeMacCancelDispatchedClick(t *testing.T) {
 			t.Error(err)
 		}
 	}()
-	discovery, err := run.Windows(ctx, target.name, 16)
+	discovery, err := run.discoverWindows(ctx, target.name, 16)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -264,7 +271,7 @@ func TestNativeMacCancelDispatchedClick(t *testing.T) {
 	if ref == "" {
 		t.Fatal("exact synthetic target missing")
 	}
-	obs, err := run.Observe(ctx, ObserveRequest{TargetRef: ref, Screenshot: true})
+	obs, err := run.observeWindow(ctx, ObserveRequest{TargetRef: ref, Screenshot: true})
 	if err != nil || obs.Image == nil {
 		t.Fatal("native observation unavailable", err)
 	}
@@ -274,7 +281,7 @@ func TestNativeMacCancelDispatchedClick(t *testing.T) {
 		err    error
 	}
 	done := make(chan completion, 1)
-	go func() { result, err := run.Act(ctx, request); done <- completion{result, err} }()
+	go func() { result, err := run.actAndObserve(ctx, request); done <- completion{result, err} }()
 	awaitNativeState(t, ctx, target, func(s nativeFixtureState) bool { return s.Commits == 1 && s.Result == "Result: AICE-314" })
 	select {
 	case <-done:
@@ -305,7 +312,7 @@ func TestNativeMacCancelDispatchedClick(t *testing.T) {
 	if completed.err != nil || !completed.result.Dispatched || completed.result.Outcome != wantOutcome || counts.clicks.Load() != 1 {
 		t.Fatalf("cancel discarded or replayed dispatch: dispatched=%v outcome=%s want=%s calls=%d error=%v", completed.result.Dispatched, completed.result.Outcome, wantOutcome, counts.clicks.Load(), completed.err)
 	}
-	if result, err := run.Act(ctx, request); !errors.Is(err, context.Canceled) || result.Dispatched {
+	if result, err := run.actAndObserve(ctx, request); !errors.Is(err, context.Canceled) || result.Dispatched {
 		t.Fatal("cancelled run accepted another mutation")
 	}
 	afterReply := readNativeState(t, target)
@@ -326,7 +333,7 @@ func TestNativeMacCancelDispatchedClick(t *testing.T) {
 			t.Error(err)
 		}
 	}()
-	discovery, err = next.Windows(ctx, target.name, 16)
+	discovery, err = next.discoverWindows(ctx, target.name, 16)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -342,11 +349,11 @@ func TestNativeMacCancelDispatchedClick(t *testing.T) {
 	if ref == "" {
 		t.Fatal("exact recovery target missing")
 	}
-	fresh, err := next.Observe(ctx, ObserveRequest{TargetRef: ref, Screenshot: true})
+	fresh, err := next.observeWindow(ctx, ObserveRequest{TargetRef: ref, Screenshot: true})
 	if err != nil || fresh.Image == nil {
 		t.Fatal("fresh recovery observation unavailable", err)
 	}
-	if result, err := next.Act(ctx, request); err == nil || result.Dispatched {
+	if result, err := next.actAndObserve(ctx, request); err == nil || result.Dispatched {
 		t.Fatal("recovery accepted old execution reference")
 	}
 	if counts.clicks.Load() != 1 || readNativeState(t, target).Commits != 1 {
@@ -356,4 +363,24 @@ func TestNativeMacCancelDispatchedClick(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Logf("native in-flight click cancellation: close=%s outcome=%s commits=1 click_calls=1 dials=%d sessions_started=%d explicit_session_ends=%d, read-only recovery succeeded, shared service preserved", elapsed, completed.result.Outcome, counts.dials.Load(), counts.starts.Load(), counts.ends.Load())
+}
+
+func (c *nativeCancelClient) Tools(ctx context.Context) (mcpclient.Catalog[mcpclient.Tool], error) {
+	return c.driverClient.(managedClient).Tools(ctx)
+}
+func (c *nativeCancelClient) ToolGeneration() uint64 {
+	return c.driverClient.(managedClient).ToolGeneration()
+}
+func (c *nativeCancelClient) CallChecked(ctx context.Context, name string, raw json.RawMessage, check func(context.Context) error) (mcpclient.Result, error) {
+	if name == "click" {
+		c.counts.clicks.Add(1)
+	}
+	result, err := c.driverClient.(managedClient).CallChecked(ctx, name, raw, check)
+	if name == "click" && err == nil {
+		c.counts.clickReturned.Store(true)
+	}
+	if name == "get_window_state" && err == nil && !result.IsError && c.counts.observations.Add(1) == 3 {
+		close(c.counts.polled)
+	}
+	return result, err
 }

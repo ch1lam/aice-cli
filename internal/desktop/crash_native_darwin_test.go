@@ -71,7 +71,7 @@ func TestNativeMacProxyCrash(t *testing.T) {
 		return run
 	}
 	observe := func(run *Run) Observation {
-		discovery, err := run.Windows(ctx, target.name, 16)
+		discovery, err := run.discoverWindows(ctx, target.name, 16)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -87,7 +87,7 @@ func TestNativeMacProxyCrash(t *testing.T) {
 		if ref == "" {
 			t.Fatal("exact crash fixture missing")
 		}
-		observation, err := run.Observe(ctx, ObserveRequest{TargetRef: ref, Screenshot: true})
+		observation, err := run.observeWindow(ctx, ObserveRequest{TargetRef: ref, Screenshot: true})
 		if err != nil || observation.Image == nil || observation.Degraded {
 			t.Fatal("crash fixture capture unavailable", err)
 		}
@@ -104,7 +104,7 @@ func TestNativeMacProxyCrash(t *testing.T) {
 		err    error
 	}
 	done := make(chan completion, 1)
-	go func() { result, err := first.Act(ctx, request); done <- completion{result, err} }()
+	go func() { result, err := first.actAndObserve(ctx, request); done <- completion{result, err} }()
 	awaitNativeState(t, ctx, target, func(s nativeFixtureState) bool { return s.Commits == 1 && s.Result == "Result: AICE-314" })
 	if counts.clickReturned.Load() {
 		t.Fatal("native click response already returned; crash precondition not established")
@@ -130,14 +130,14 @@ func TestNativeMacProxyCrash(t *testing.T) {
 	if manager.Status().Connected || counts.dials.Load() != 1 || counts.clicks.Load() != 1 {
 		t.Fatal("crash did not retire the connection without retry")
 	}
-	if result, err := first.Act(ctx, request); err == nil || result.Dispatched {
+	if result, err := first.actAndObserve(ctx, request); err == nil || result.Dispatched {
 		t.Fatal("crashed connection retained an execution reference")
 	}
 	if err := first.Close(); err != nil {
 		t.Fatal(err)
 	}
 	next := bind()
-	if result, err := next.Act(ctx, request); err == nil || result.Dispatched {
+	if result, err := next.actAndObserve(ctx, request); err == nil || result.Dispatched {
 		t.Fatal("old reference crossed into the replacement run")
 	}
 	_ = observe(next)

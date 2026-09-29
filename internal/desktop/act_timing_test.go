@@ -45,7 +45,7 @@ func TestActionTimingSeparatesQueueMutationAndObservation(t *testing.T) {
 				done := make(chan struct{})
 				go func() {
 					defer close(done)
-					result, err = run.Act(ctx, request)
+					result, err = run.actAndObserve(ctx, request)
 				}()
 				synctest.Wait()
 				time.Sleep(11 * time.Millisecond)
@@ -123,7 +123,7 @@ func TestActionTimingSeparatesConditionPollingAndFinalCapture(t *testing.T) {
 					}
 					return structuredReply(map[string]any{"pid": 41, "window_id": 99, "snapshot_id": "fresh", "elements": []any{map[string]any{"value": value}}}), nil, true
 				}
-				result, err := run.Act(ctx, ActRequest{Kind: "wait", ObservationRef: observation.Ref, Wait: &WaitCondition{Text: "synthetic", TimeoutMS: 300}, Screenshot: true})
+				result, err := run.actAndObserve(ctx, ActRequest{Kind: "wait", ObservationRef: observation.Ref, Wait: &WaitCondition{Text: "synthetic", TimeoutMS: 300}, Screenshot: true})
 				want := ActionTiming{ConditionWait: 210 * time.Millisecond, Observation: 7 * time.Millisecond}
 				switch mode {
 				case "satisfied":
@@ -155,7 +155,7 @@ func TestActionTimingSeparatesLaunchAndWindowWait(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		f := appFixtureDriver(t, "late-window")
 		_, run := testRun(t, f, false)
-		discovery, err := run.Apps(t.Context(), "合成", 8)
+		discovery, err := run.discoverApps(t.Context(), "合成", 8)
 		if err != nil || len(discovery.Apps) != 1 {
 			t.Fatal("app discovery failed", err)
 		}
@@ -171,7 +171,7 @@ func TestActionTimingSeparatesLaunchAndWindowWait(t *testing.T) {
 			}
 			return base(ctx, name, args)
 		}
-		result, err := run.Act(t.Context(), ActRequest{Kind: "launch", AppRef: discovery.Apps[0].Ref})
+		result, err := run.actAndObserve(t.Context(), ActRequest{Kind: "launch", AppRef: discovery.Apps[0].Ref})
 		want := ActionTiming{Driver: 3 * time.Millisecond, ConditionWait: 210 * time.Millisecond, Observation: 7 * time.Millisecond, Total: 220 * time.Millisecond}
 		if err != nil || result.Observation == nil || result.Timing != want || f.count("launch_app") != 1 {
 			t.Fatalf("launch timing=%+v want=%+v err=%v", result.Timing, want, err)

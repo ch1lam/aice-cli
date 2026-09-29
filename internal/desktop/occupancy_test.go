@@ -152,7 +152,7 @@ func TestDesktopOccupancyFollowsRunsAcrossConnectionRecovery(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), 25*time.Millisecond)
 	defer cancel()
-	if _, err := r2.Windows(ctx, "", 1); !serviceHasCode(err, "desktop_busy") || len(f2.calls) != 0 {
+	if _, err := r2.discoverWindows(ctx, "", 1); !serviceHasCode(err, "desktop_busy") || len(f2.calls) != 0 {
 		t.Fatal("other manager reached native service during recovery", err)
 	}
 	_ = observed(t, sibling, false)
@@ -190,7 +190,7 @@ func TestDesktopLateCancelledCallReleasesOccupancy(t *testing.T) {
 	o := observed(t, r, false)
 	done := make(chan ActResult, 1)
 	go func() {
-		result, _ := r.Act(t.Context(), ActRequest{Kind: "click", ObservationRef: o.Ref, ElementToken: o.Elements[0].Token})
+		result, _ := r.actAndObserve(t.Context(), ActRequest{Kind: "click", ObservationRef: o.Ref, ElementToken: o.Elements[0].Token})
 		done <- result
 	}()
 	defer func() {
@@ -255,7 +255,7 @@ func TestDesktopSetupRespectsOtherInstanceOccupancy(t *testing.T) {
 	r := occupancyRun(t, m)
 	callCtx, callCancel := context.WithTimeout(t.Context(), 25*time.Millisecond)
 	defer callCancel()
-	if _, err := r.Windows(callCtx, "", 1); !serviceHasCode(err, "desktop_busy") || resolved {
+	if _, err := r.discoverWindows(callCtx, "", 1); !serviceHasCode(err, "desktop_busy") || resolved {
 		t.Fatal("public manager resolved runtime before occupancy", err)
 	}
 }

@@ -65,7 +65,7 @@ func TestNativeMacCursorLifecycle(t *testing.T) {
 	if found, _ := nativeCursorSession(t, ctx, driver, endpoint, label); found {
 		t.Fatal("unstarted binding unexpectedly owns a native session")
 	}
-	discovery, err := run.Windows(ctx, target.name, 16)
+	discovery, err := run.discoverWindows(ctx, target.name, 16)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,7 +81,7 @@ func TestNativeMacCursorLifecycle(t *testing.T) {
 	if ref == "" {
 		t.Fatal("exact cursor test window missing")
 	}
-	obs, err := run.Observe(ctx, ObserveRequest{TargetRef: ref, Screenshot: true})
+	obs, err := run.observeWindow(ctx, ObserveRequest{TargetRef: ref, Screenshot: true})
 	if err != nil || obs.Image == nil {
 		t.Fatal("cursor test capture unavailable", err)
 	}
@@ -92,7 +92,7 @@ func TestNativeMacCursorLifecycle(t *testing.T) {
 	// consume the cursor's finite idle display interval.
 	nativeCursorInspectionGate(t, ctx, inspection, "ready", "act", filepath.Join(target.directory, "CursorTarget.app"))
 	state := readNativeState(t, target)
-	result, err := run.Act(ctx, ActRequest{Kind: "click", ObservationRef: obs.Ref, Point: nativeButtonPoint(t, obs, state), Screenshot: true})
+	result, err := run.actAndObserve(ctx, ActRequest{Kind: "click", ObservationRef: obs.Ref, Point: nativeButtonPoint(t, obs, state), Screenshot: true})
 	nativeReturned(t, result, err)
 	awaitNativeState(t, ctx, target, func(s nativeFixtureState) bool { return s.Commits == 1 && s.Result == "Result: AICE-314" })
 	nativeAwaitCursorSession(t, ctx, driver, endpoint, label, true, true)

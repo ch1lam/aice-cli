@@ -2,12 +2,10 @@ package desktop
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"errors"
 	"strconv"
 	"strings"
-	"time"
 )
 
 type Point struct {
@@ -34,164 +32,25 @@ func (p *Point) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-type ActRequest struct {
-	Kind           string         `json:"action"`
-	DeliveryMode   string         `json:"delivery_mode,omitempty"`
-	AppRef         string         `json:"app_ref,omitempty"`
-	ObservationRef string         `json:"observation_ref"`
-	ElementToken   string         `json:"element_token,omitempty"`
-	Point          *Point         `json:"point,omitempty"`
-	Drag           *DragGesture   `json:"drag,omitempty"`
-	Text           string         `json:"text,omitempty"`
-	Key            string         `json:"key,omitempty"`
-	Keys           []string       `json:"keys,omitempty"`
-	Direction      string         `json:"direction,omitempty"`
-	Amount         int            `json:"amount,omitempty"`
-	Wait           *WaitCondition `json:"wait,omitempty"`
-	Screenshot     bool           `json:"screenshot"`
+type actionRequest struct {
+	Kind         string       `json:"action"`
+	DeliveryMode string       `json:"delivery_mode,omitempty"`
+	ElementToken string       `json:"element_token,omitempty"`
+	Point        *Point       `json:"point,omitempty"`
+	Drag         *DragGesture `json:"drag,omitempty"`
+	Text         string       `json:"text,omitempty"`
+	Key          string       `json:"key,omitempty"`
+	Keys         []string     `json:"keys,omitempty"`
+	Direction    string       `json:"direction,omitempty"`
+	Amount       int          `json:"amount,omitempty"`
 }
 
-// ActResult separates dispatch/Driver response from the follow-up observation.
-// An error after dispatch is data, not a Go error that a tool boundary could
-// discard. A successful RPC by itself does not confirm a business postcondition.
-type ActResult struct {
-	Timing           ActionTiming    `json:"-"`
-	Dispatched       bool            `json:"dispatched"`
-	Outcome          string          `json:"outcome"`
-	DriverError      bool            `json:"driver_error"`
-	Driver           json.RawMessage `json:"driver,omitempty"`
-	DriverText       []string        `json:"driver_text,omitempty"`
-	Diagnostic       string          `json:"diagnostic,omitempty"`
-	Observation      *Observation    `json:"observation,omitempty"`
-	ObservationError string          `json:"observation_error,omitempty"`
-	WaitState        string          `json:"wait_state,omitempty"`
-	Windows          []Window        `json:"windows,omitempty"`
-	WindowsTruncated bool            `json:"windows_truncated,omitempty"`
-}
-
-// ActionTiming is local diagnostic evidence, excluded from model and Session
-// JSON. Driver includes the mutation RPC round trip (and transport retirement
-// on failure), not just time spent inside the native input implementation.
-// ConditionWait includes polling RPCs and their intervals; Observation includes
-// final capture, decoding and image processing. Total also includes validation
-// and gate-release cleanup. Model/Guard time lies outside this boundary.
-type ActionTiming struct {
-	Total, Queue, Driver, ConditionWait, Observation time.Duration
-}
-
-func (r *Run) Act(ctx context.Context, request ActRequest) (result ActResult, returnErr error) {
-	started := time.Now()
-	var timing ActionTiming
-	defer func() {
-		timing.Total = time.Since(started)
-		result.Timing = timing
-	}()
-	if request.Screenshot && !r.options.Images {
-		return ActResult{}, errors.New("desktop: current model does not accept images")
-	}
-	queued := time.Now()
-	ctx, release, err := r.acquire(ctx)
-	timing.Queue = time.Since(queued)
-	if err != nil {
-		return ActResult{}, err
-	}
-	defer release()
-	if request.Kind == "launch" {
-		return r.launchLocked(ctx, request, &timing)
-	}
-	if request.AppRef != "" {
-		return ActResult{}, errors.New("desktop: app_ref is only valid for launch")
-	}
-	binding, err := r.observationLocked(request.ObservationRef)
-	if err != nil {
-		return ActResult{}, err
-	}
-	if request.Kind == "wait" {
-		return r.waitLocked(ctx, binding, request, &timing)
-	}
-	name, args, err := r.actionArguments(binding, request)
-	if err != nil {
-		return ActResult{}, err
-	}
-	if err := ctx.Err(); err != nil {
-		return ActResult{}, err
-	}
-	// A reference is consumed before dispatch, including when the Driver fails
-	// to answer. It is never restored by observation failure or reconnection.
-	delete(r.manager.latest, binding.target)
-	delete(r.observations, request.ObservationRef)
-	phase := time.Now()
-	reply, err := r.callLocked(ctx, name, args)
-	timing.Driver = time.Since(phase)
-	result = actionResult(reply, err)
-	if err != nil {
-		return result, nil
-	}
-	refusedBeforeInput := r.manager.platform == "darwin" && request.DeliveryMode != "foreground" && safeForegroundRefusal(binding, request, reply)
-	if refusedBeforeInput {
-		result.Diagnostic = "Driver refused this action before input; inspect the fresh observation before choosing the next action"
-	}
-	foreground := r.options.Mode == ForegroundAllowed && refusedBeforeInput
-	needsPixels := request.Point != nil || request.Drag != nil
-	phase = time.Now()
-	after, err := r.observeLocked(ctx, ObserveRequest{TargetRef: binding.targetRef, Screenshot: request.Screenshot || (foreground && needsPixels)})
-	timing.Observation = time.Since(phase)
-	if err != nil {
-		result.ObservationError = "Action response received, but follow-up observation failed; observe again before deciding what to do"
-		return result, nil
-	}
-	if foreground {
-		fresh := r.observations[after.Ref]
-		if !needsPixels || (fresh.capture != "" && fresh.snapshot != "") {
-			fresh.foregroundAction = foregroundActionKey(request)
-			r.observations[after.Ref] = fresh
-			after.ForegroundAction = request.Kind
-		}
-	}
-	result.Observation = &after
-	return result, nil
-}
-
-func actionResult(reply Reply, err error) ActResult {
-	result := ActResult{Dispatched: true, Outcome: "returned", DriverError: reply.IsError}
-	if len(reply.Structured) <= 64*1024 {
-		result.Driver = reply.Structured
-	}
-	remaining := 8192
-	for _, text := range reply.Text {
-		if remaining == 0 {
-			break
-		}
-		result.DriverText = append(result.DriverText, boundedText(text, remaining))
-		remaining -= min(len(text), remaining)
-	}
-	if err != nil {
-		var before beforeDispatchError
-		if errors.As(err, &before) {
-			result.Dispatched = false
-			result.Outcome = "not_dispatched"
-			result.Diagnostic = before.Error()
-			return result
-		}
-		result.Outcome = "unknown"
-		result.Diagnostic = "Action was dispatched but no complete response was received. Do not repeat it without observing and checking the target."
-		return result
-	}
-	if len(reply.Structured) > 64*1024 {
-		result.Diagnostic = "Driver action details exceeded the result limit; inspect the fresh observation before continuing"
-	}
-	if reply.IsError && result.Diagnostic == "" {
-		result.Diagnostic = "Driver reported an action error; partial effects may have occurred"
-	}
-	return result
-}
-
-func (r *Run) actionArguments(binding observationBinding, request ActRequest) (string, map[string]any, error) {
+func (r *Run) actionArguments(binding observationBinding, request actionRequest) (string, map[string]any, error) {
 	delivery, err := r.actionDelivery(binding, request)
 	if err != nil {
 		return "", nil, err
 	}
-	if request.Wait != nil || (request.Drag != nil && request.Kind != "drag") || (request.Key != "" && request.Kind != "key") || (len(request.Keys) != 0 && request.Kind != "hotkey") || ((request.Direction != "" || request.Amount != 0) && request.Kind != "scroll") || (request.Text != "" && request.Kind != "type_text" && request.Kind != "set_value") {
+	if (request.Drag != nil && request.Kind != "drag") || (request.Key != "" && request.Kind != "key") || (len(request.Keys) != 0 && request.Kind != "hotkey") || ((request.Direction != "" || request.Amount != 0) && request.Kind != "scroll") || (request.Text != "" && request.Kind != "type_text" && request.Kind != "set_value") {
 		return "", nil, errors.New("desktop: action contains unrelated fields")
 	}
 	if request.Kind == "drag" {

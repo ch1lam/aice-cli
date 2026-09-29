@@ -5,6 +5,7 @@ package desktop
 import (
 	"context"
 	"encoding/json"
+	"github.com/ch1lam/aice-cli/internal/mcpclient"
 	"os"
 	"strings"
 	"testing"
@@ -46,14 +47,14 @@ func TestNativeMacSameRunReconnect(t *testing.T) {
 			t.Error(err)
 		}
 	}()
-	if _, err := run.Apps(ctx, "AICE reconnect metadata probe", 1); err != nil {
+	if _, err := run.discoverApps(ctx, "AICE reconnect metadata probe", 1); err != nil {
 		t.Fatal("initial discovery", err)
 	}
 	initialID := run.id
 	if err := manager.Disconnect(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := run.Apps(ctx, "AICE reconnect metadata probe", 1); err != nil {
+	if _, err := run.discoverApps(ctx, "AICE reconnect metadata probe", 1); err != nil {
 		t.Fatal("same-run discovery after connection retirement", err)
 	}
 	if manager.Status().Generation != 2 || run.id == initialID {
@@ -118,7 +119,7 @@ func TestNativeMacDiscoveryIdleRecovery(t *testing.T) {
 			t.Error(err)
 		}
 	}()
-	if _, err := run.Apps(ctx, "AICE discovery idle probe", 1); err != nil {
+	if _, err := run.discoverApps(ctx, "AICE discovery idle probe", 1); err != nil {
 		t.Fatal("initial discovery", err)
 	}
 	initialID := run.id
@@ -148,7 +149,7 @@ func TestNativeMacDiscoveryIdleRecovery(t *testing.T) {
 		}
 		t.Logf("discovery idle=%s; explicit lifecycle active without revival", time.Since(started).Round(time.Second))
 	}
-	_, discoveryErr := run.Apps(ctx, "AICE discovery idle probe", 1)
+	_, discoveryErr := run.discoverApps(ctx, "AICE discovery idle probe", 1)
 	if discoveryErr != nil {
 		var failure struct {
 			Code    string `json:"code"`
@@ -173,7 +174,7 @@ func TestNativeMacDiscoveryIdleRecovery(t *testing.T) {
 		if manager.Status().Connected || run.active || len(run.targets) != 0 || len(run.observations) != 0 {
 			t.Fatal("expired implicit lifecycle retained connection or references")
 		}
-		if _, err := run.Apps(ctx, "AICE discovery idle probe", 1); err != nil {
+		if _, err := run.discoverApps(ctx, "AICE discovery idle probe", 1); err != nil {
 			t.Fatal("read-only recovery after implicit expiry", err)
 		}
 		if run.id == initialID || manager.Status().Generation != 2 {
@@ -203,4 +204,18 @@ func (c *nativeDiscoveryExpiryClient) call(ctx context.Context, name string, arg
 		c.lastDiscovery = reply
 	}
 	return reply, err
+}
+
+func (c *nativeDiscoveryExpiryClient) Tools(ctx context.Context) (mcpclient.Catalog[mcpclient.Tool], error) {
+	return c.driverClient.(managedClient).Tools(ctx)
+}
+func (c *nativeDiscoveryExpiryClient) ToolGeneration() uint64 {
+	return c.driverClient.(managedClient).ToolGeneration()
+}
+func (c *nativeDiscoveryExpiryClient) CallChecked(ctx context.Context, name string, raw json.RawMessage, check func(context.Context) error) (mcpclient.Result, error) {
+	result, err := c.driverClient.(managedClient).CallChecked(ctx, name, raw, check)
+	if name == "list_apps" {
+		c.lastDiscovery = managedReply(result)
+	}
+	return result, err
 }

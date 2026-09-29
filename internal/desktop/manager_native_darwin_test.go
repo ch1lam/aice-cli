@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/ch1lam/aice-cli/internal/deps"
+	"github.com/ch1lam/aice-cli/internal/mcpclient"
 )
 
 // Explicit opt-in only. Requires an already installed, authorized pinned service.
@@ -66,7 +67,7 @@ func TestNativeCuaMultiApp(t *testing.T) {
 		}
 	}()
 	started := time.Now()
-	discovery, err := r.Windows(ctx, targets[0].prefix, 16)
+	discovery, err := r.discoverWindows(ctx, targets[0].prefix, 16)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +87,7 @@ func TestNativeCuaMultiApp(t *testing.T) {
 		if window == nil {
 			t.Fatalf("synthetic target %d not discovered", i)
 		}
-		observation, err := r.Observe(ctx, ObserveRequest{TargetRef: window.Ref, Screenshot: true})
+		observation, err := r.observeWindow(ctx, ObserveRequest{TargetRef: window.Ref, Screenshot: true})
 		if err != nil || observation.Image == nil || observation.ImageWidth <= 0 || observation.ImageHeight <= 0 || r.observations[observation.Ref].capture == "" {
 			t.Fatalf("target %d capture unavailable: %v", i, err)
 		}
@@ -98,17 +99,17 @@ func TestNativeCuaMultiApp(t *testing.T) {
 		}
 		value += fmt.Sprintf(" · stage %d 中文 ✓", i+1)
 		started = time.Now()
-		set, err := r.Act(ctx, ActRequest{Kind: "set_value", ObservationRef: observation.Ref,
+		set, err := r.actAndObserve(ctx, ActRequest{Kind: "set_value", ObservationRef: observation.Ref,
 			ElementToken: nativeElement(t, observation, "Task value"), Text: value, Screenshot: true})
 		nativeReturned(t, set, err)
 		t.Logf("target=%d action=set_value timing=%+v", i, set.Timing)
 		if set.Observation.Image == nil || r.observations[set.Observation.Ref].capture == "" {
 			t.Fatal("action did not return its verified capture mapping")
 		}
-		if _, err := r.Act(ctx, ActRequest{Kind: "set_value", ObservationRef: observation.Ref, ElementToken: "stale", Text: "must not execute"}); err == nil {
+		if _, err := r.actAndObserve(ctx, ActRequest{Kind: "set_value", ObservationRef: observation.Ref, ElementToken: "stale", Text: "must not execute"}); err == nil {
 			t.Fatal("consumed reference accepted")
 		}
-		click, err := r.Act(ctx, ActRequest{Kind: "click", ObservationRef: set.Observation.Ref,
+		click, err := r.actAndObserve(ctx, ActRequest{Kind: "click", ObservationRef: set.Observation.Ref,
 			ElementToken: nativeElement(t, *set.Observation, "Commit"), Screenshot: true})
 		nativeReturned(t, click, err)
 		t.Logf("target=%d action=click timing=%+v", i, click.Timing)
@@ -145,7 +146,7 @@ func TestNativeCuaMultiApp(t *testing.T) {
 	if calls["end_session"] != 1 {
 		t.Fatal("owned session was not closed exactly once")
 	}
-	if _, err := r.Windows(ctx, targets[0].prefix, 16); err == nil {
+	if _, err := r.discoverWindows(ctx, targets[0].prefix, 16); err == nil {
 		t.Fatal("closed run accepted discovery")
 	}
 	if _, err := Inspect(ctx, driver, endpoint); err != nil {
@@ -386,4 +387,15 @@ func awaitNativeState(t *testing.T, ctx context.Context, fixture nativeFixture, 
 		case <-time.After(50 * time.Millisecond):
 		}
 	}
+}
+
+func (c *nativeCountedClient) Tools(ctx context.Context) (mcpclient.Catalog[mcpclient.Tool], error) {
+	return c.driverClient.(managedClient).Tools(ctx)
+}
+func (c *nativeCountedClient) ToolGeneration() uint64 {
+	return c.driverClient.(managedClient).ToolGeneration()
+}
+func (c *nativeCountedClient) CallChecked(ctx context.Context, name string, raw json.RawMessage, check func(context.Context) error) (mcpclient.Result, error) {
+	c.calls[name]++
+	return c.driverClient.(managedClient).CallChecked(ctx, name, raw, check)
 }

@@ -146,9 +146,12 @@ to the Manager/settings lifetime, pinned runtime and Run's frozen control mode; 
 configuration cannot supply the managed identity. Enabled Print and interactive
 main runs use only the managed catalog entry, discovered on demand. The Run
 binding requires the consumer-owned managed MCP interface at compile time.
-The old `desktop_*` model adapters and application forwarding methods have
-been removed. Shared native setup/validation APIs remain in `internal/desktop`,
-and legacy Session presentation stays read-only. The same-task comparison preceded wrapper removal. See
+Computer Use uses the generic MCP result projection and explicit post-action
+observation. There is no separate desktop action orchestrator or specialized
+model result format. Native acceptance fixtures execute the same managed MCP
+entry, with polling and postcondition reads owned by the fixture. Shared native
+setup/validation APIs remain in `internal/desktop`, and legacy Session
+presentation stays read-only. See
 [managed migration status](desktop.md#managed-mcp-migration-boundary).
 The app constructor also supplies ordinary MCP admission with its reserved CUA
 endpoint. Management definition checks and process startup share that policy;

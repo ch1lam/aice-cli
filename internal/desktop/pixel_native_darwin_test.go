@@ -102,7 +102,7 @@ func testNativeMacPixelInput(t *testing.T, kinds []string, controlMode ControlMo
 					t.Error(err)
 				}
 			}()
-			discovery, err := run.Windows(ctx, target.name, 16)
+			discovery, err := run.discoverWindows(ctx, target.name, 16)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -118,7 +118,7 @@ func testNativeMacPixelInput(t *testing.T, kinds []string, controlMode ControlMo
 			if ref == "" {
 				t.Fatal("exact synthetic target missing")
 			}
-			obs, err := run.Observe(ctx, ObserveRequest{TargetRef: ref, Screenshot: true})
+			obs, err := run.observeWindow(ctx, ObserveRequest{TargetRef: ref, Screenshot: true})
 			if err != nil || obs.Image == nil || obs.Degraded || run.observations[obs.Ref].capture == "" {
 				t.Fatal("initial pixel mapping unavailable", err)
 			}
@@ -169,7 +169,7 @@ func testNativeMacPixelInput(t *testing.T, kinds []string, controlMode ControlMo
 			if !priorFocus.Active || priorFocus.FocusLosses != 0 {
 				t.Fatal("sentinel lost focus before pixel dispatch")
 			}
-			result, err := run.Act(ctx, request)
+			result, err := run.actAndObserve(ctx, request)
 			var facts struct{ Code, Effect string }
 			_ = json.Unmarshal(result.Driver, &facts)
 			t.Logf("case=%s timing=%+v outcome=%s driver_error=%v code=%s effect=%s", kind, result.Timing, result.Outcome, result.DriverError, facts.Code, facts.Effect)
@@ -186,12 +186,12 @@ func testNativeMacPixelInput(t *testing.T, kinds []string, controlMode ControlMo
 				}
 				stale := request
 				stale.DeliveryMode = "foreground"
-				if _, err := run.Act(ctx, stale); err == nil {
+				if _, err := run.actAndObserve(ctx, stale); err == nil {
 					t.Fatal("foreground accepted the consumed background observation")
 				}
 				request.ObservationRef, request.DeliveryMode = fresh.Ref, "foreground"
 				request.Drag = &DragGesture{From: nativeImagePoint(t, *fresh, settled, settled.DragFromX, settled.DragFromY), To: nativeImagePoint(t, *fresh, settled, settled.DragToX, settled.DragToY), DurationMS: 500}
-				result, err = run.Act(ctx, request)
+				result, err = run.actAndObserve(ctx, request)
 				facts = struct{ Code, Effect string }{}
 				_ = json.Unmarshal(result.Driver, &facts)
 				t.Logf("foreground drag timing=%+v outcome=%s driver_error=%v code=%s effect=%s", result.Timing, result.Outcome, result.DriverError, facts.Code, facts.Effect)
@@ -217,7 +217,7 @@ func testNativeMacPixelInput(t *testing.T, kinds []string, controlMode ControlMo
 					t.Fatal("geometry refusal did not return a usable fresh observation")
 				}
 				t.Logf("updated frame_x=%.0f frame_points=%.0fx%.0f image_pixels=%dx%d", settled.FrameX, settled.Width, settled.Height, fresh.ImageWidth, fresh.ImageHeight)
-				result, err = run.Act(ctx, ActRequest{Kind: "click", ObservationRef: fresh.Ref, Point: nativeButtonPoint(t, *fresh, settled), Screenshot: true})
+				result, err = run.actAndObserve(ctx, ActRequest{Kind: "click", ObservationRef: fresh.Ref, Point: nativeButtonPoint(t, *fresh, settled), Screenshot: true})
 				t.Logf("case=%s recovery timing=%+v", kind, result.Timing)
 			}
 			nativeReturned(t, result, err)

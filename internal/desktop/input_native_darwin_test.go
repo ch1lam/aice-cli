@@ -59,7 +59,7 @@ func TestNativeMacInput(t *testing.T) {
 					t.Error(err)
 				}
 			}()
-			discovery, err := run.Windows(ctx, target.name, 16)
+			discovery, err := run.discoverWindows(ctx, target.name, 16)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -75,12 +75,12 @@ func TestNativeMacInput(t *testing.T) {
 			if ref == "" {
 				t.Fatal("exact synthetic target missing")
 			}
-			obs, err := run.Observe(ctx, ObserveRequest{TargetRef: ref, Screenshot: true})
+			obs, err := run.observeWindow(ctx, ObserveRequest{TargetRef: ref, Screenshot: true})
 			if err != nil || obs.Image == nil || obs.Degraded {
 				t.Fatal("initial native observation unavailable", err)
 			}
 			if kind != "hotkey" {
-				seed, err := run.Act(ctx, ActRequest{Kind: "set_value", ObservationRef: obs.Ref, ElementToken: nativeElement(t, obs, "Task value"), Screenshot: true})
+				seed, err := run.actAndObserve(ctx, ActRequest{Kind: "set_value", ObservationRef: obs.Ref, ElementToken: nativeElement(t, obs, "Task value"), Screenshot: true})
 				nativeReturned(t, seed, err)
 				obs = *seed.Observation
 				awaitNativeState(t, ctx, target, func(s nativeFixtureState) bool { return s.Value == "" })
@@ -98,7 +98,7 @@ func TestNativeMacInput(t *testing.T) {
 				request.Keys, want = []string{"cmd", "a"}, "AICE-314"
 			}
 			started := time.Now()
-			result, err := run.Act(ctx, request)
+			result, err := run.actAndObserve(ctx, request)
 			var facts struct{ Code, Effect string }
 			_ = json.Unmarshal(result.Driver, &facts)
 			t.Logf("native action=%s elapsed=%s outcome=%s driver_error=%v code=%s effect=%s", kind, time.Since(started), result.Outcome, result.DriverError, facts.Code, facts.Effect)

@@ -39,7 +39,7 @@ func TestLinuxCaptureContractDoesNotWeakenMacOrFailedFrames(t *testing.T) {
 				m.platform = "linux"
 			}
 			o := observed(t, r, true)
-			_, err := r.Act(t.Context(), ActRequest{Kind: "click", ObservationRef: o.Ref, Point: &Point{X: 10, Y: 0}})
+			_, err := r.actAndObserve(t.Context(), ActRequest{Kind: "click", ObservationRef: o.Ref, Point: &Point{X: 10, Y: 0}})
 			wantCalls := 0
 			if kind == "linux" {
 				wantCalls = 1
@@ -84,14 +84,14 @@ func TestLinuxDoesNotReuseMacForegroundRefusalContract(t *testing.T) {
 	r.options.Mode = ForegroundAllowed
 	o := observed(t, r, false)
 	request := ActRequest{Kind: "type_text", ObservationRef: o.Ref, ElementToken: o.Elements[0].Token, Text: "synthetic"}
-	result, err := r.Act(t.Context(), request)
+	result, err := r.actAndObserve(t.Context(), request)
 	if err != nil || !result.DriverError || result.Observation == nil || result.Observation.ForegroundAction != "" {
 		t.Fatal("Linux refusal inferred macOS foreground eligibility", result, err)
 	}
 	request.ObservationRef = result.Observation.Ref
 	request.ElementToken = result.Observation.Elements[0].Token
 	request.DeliveryMode = "foreground"
-	if _, err := r.Act(t.Context(), request); err == nil || f.count("type_text") != 1 {
+	if _, err := r.actAndObserve(t.Context(), request); err == nil || f.count("type_text") != 1 {
 		t.Fatal("unreviewed foreground input dispatched", err)
 	}
 }
@@ -123,7 +123,7 @@ func TestLinuxLaunchBindsDiscoveredCommandAndConfirmsNativeIdentity(t *testing.T
 			}}
 			m, r := testRun(t, f, false)
 			m.platform = "linux"
-			discovery, err := r.Apps(t.Context(), "", 8)
+			discovery, err := r.discoverApps(t.Context(), "", 8)
 			if err != nil || len(discovery.Apps) != 1 {
 				t.Fatal(discovery, err)
 			}
@@ -134,11 +134,11 @@ func TestLinuxLaunchBindsDiscoveredCommandAndConfirmsNativeIdentity(t *testing.T
 				return
 			}
 			request := ActRequest{Kind: "launch", AppRef: discovery.Apps[0].Ref}
-			result, err := r.Act(t.Context(), request)
+			result, err := r.actAndObserve(t.Context(), request)
 			if err != nil || !result.Dispatched || (result.Observation != nil) != (mode == "ready") || (result.ObservationError == "") != (mode == "ready") {
 				t.Fatal(result, err)
 			}
-			if _, err := r.Act(t.Context(), request); err == nil || f.count("launch_app") != 1 {
+			if _, err := r.actAndObserve(t.Context(), request); err == nil || f.count("launch_app") != 1 {
 				t.Fatal("launch was repeated")
 			}
 		})

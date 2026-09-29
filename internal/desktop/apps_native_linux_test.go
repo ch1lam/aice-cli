@@ -92,7 +92,7 @@ func TestNativeLinuxLaunch(t *testing.T) {
 			t.Error(err)
 		}
 	}()
-	discovery, err := run.Apps(ctx, bundleID, 16)
+	discovery, err := run.discoverApps(ctx, bundleID, 16)
 	if err != nil || len(discovery.Apps) != 1 || discovery.Apps[0].Ref == "" || discovery.Apps[0].Running || len(discovery.Windows) != 0 {
 		t.Fatal("unopened fixture was not discovered as a launchable app", err)
 	}
@@ -102,7 +102,7 @@ func TestNativeLinuxLaunch(t *testing.T) {
 	awaitLinuxProbeState(t, ctx, sentinel, func(s linuxProbeState) bool { return s.KeysSent >= 3 })
 	request := ActRequest{Kind: "launch", AppRef: discovery.Apps[0].Ref, Screenshot: true}
 	started := time.Now()
-	result, err := run.Act(ctx, request)
+	result, err := run.actAndObserve(ctx, request)
 	var facts struct {
 		PID             int
 		Code, Effect    string
@@ -110,7 +110,7 @@ func TestNativeLinuxLaunch(t *testing.T) {
 	}
 	_ = json.Unmarshal(result.Driver, &facts)
 	t.Logf("launch elapsed=%s outcome=%s driver_error=%v code=%s reported_active=%v running=%v windows=%d", time.Since(started), result.Outcome, result.DriverError, facts.Code, facts.Active, facts.Running, len(result.Windows))
-	if _, err := run.Act(ctx, request); err == nil {
+	if _, err := run.actAndObserve(ctx, request); err == nil {
 		t.Error("consumed launch reference was accepted")
 	}
 	if err := os.WriteFile(filepath.Join(sentinel.directory, "stop-typing"), nil, 0600); err != nil {
@@ -130,10 +130,10 @@ func TestNativeLinuxLaunch(t *testing.T) {
 		t.Fatal("launcher count or returned process identity mismatched", err)
 	}
 	value := "Launched 中文 ✓"
-	set, err := run.Act(ctx, ActRequest{Kind: "set_value", ObservationRef: result.Observation.Ref,
+	set, err := run.actAndObserve(ctx, ActRequest{Kind: "set_value", ObservationRef: result.Observation.Ref,
 		ElementToken: (linuxProbeObservation{Elements: result.Observation.Elements}).token(t, "Task value"), Text: value, Screenshot: true})
 	linuxManagerReturned(t, run, set, err)
-	click, err := run.Act(ctx, ActRequest{Kind: "click", ObservationRef: set.Observation.Ref,
+	click, err := run.actAndObserve(ctx, ActRequest{Kind: "click", ObservationRef: set.Observation.Ref,
 		ElementToken: (linuxProbeObservation{Elements: set.Observation.Elements}).token(t, "Commit"), Screenshot: true})
 	linuxManagerReturned(t, run, click, err)
 	awaitLinuxProbeState(t, ctx, target, func(s linuxProbeState) bool {

@@ -74,7 +74,7 @@ func TestNativeMacWebKitTransfer(t *testing.T) {
 			t.Error(err)
 		}
 	}()
-	discovery, err := run.Windows(ctx, targets[0].prefix, 16)
+	discovery, err := run.discoverWindows(ctx, targets[0].prefix, 16)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,7 +93,7 @@ func TestNativeMacWebKitTransfer(t *testing.T) {
 		if ref == "" {
 			t.Fatalf("exact transfer target %d missing", i)
 		}
-		obs, err := run.Observe(ctx, ObserveRequest{TargetRef: ref, Screenshot: true})
+		obs, err := run.observeWindow(ctx, ObserveRequest{TargetRef: ref, Screenshot: true})
 		if err != nil || obs.Image == nil || run.observations[obs.Ref].capture == "" {
 			t.Fatalf("transfer target %d capture unavailable: %v", i, err)
 		}
@@ -104,7 +104,7 @@ func TestNativeMacWebKitTransfer(t *testing.T) {
 			// WebKit. Insert into the initially empty web field instead.
 			kind = "type_text"
 		}
-		set, err := run.Act(ctx, ActRequest{Kind: kind, ObservationRef: obs.Ref,
+		set, err := run.actAndObserve(ctx, ActRequest{Kind: kind, ObservationRef: obs.Ref,
 			ElementToken: nativeTransferElement(t, obs, "Task value", "AXTextField"), Text: value, Screenshot: true})
 		nativeReturned(t, set, err)
 		var facts struct{ Code, Effect, Path string }
@@ -113,7 +113,7 @@ func TestNativeMacWebKitTransfer(t *testing.T) {
 		if set.Observation.Image == nil || run.observations[set.Observation.Ref].capture == "" {
 			t.Fatal("transfer input did not return a verified image")
 		}
-		click, err := run.Act(ctx, ActRequest{Kind: "click", ObservationRef: set.Observation.Ref,
+		click, err := run.actAndObserve(ctx, ActRequest{Kind: "click", ObservationRef: set.Observation.Ref,
 			ElementToken: nativeTransferElement(t, *set.Observation, "Commit", "AXButton"), Screenshot: true})
 		nativeReturned(t, click, err)
 		t.Logf("stage=%d action=click timing=%+v", i, click.Timing)

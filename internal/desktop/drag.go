@@ -10,7 +10,7 @@ type DragGesture struct {
 	DurationMS int    `json:"duration_ms,omitempty"`
 }
 
-func (r *Run) dragArguments(binding observationBinding, request ActRequest, delivery string) (string, map[string]any, error) {
+func (r *Run) dragArguments(binding observationBinding, request actionRequest, delivery string) (string, map[string]any, error) {
 	gesture := request.Drag
 	if gesture == nil || gesture.From == nil || gesture.To == nil || request.Point != nil || request.ElementToken != "" {
 		return "", nil, errors.New("desktop: drag requires from and to screenshot points, without point or element_token")

@@ -97,8 +97,8 @@ func decodeManagedArguments(name, platform string, raw json.RawMessage) (managed
 	return args, nil
 }
 
-func (a managedArguments) action(name string) (ActRequest, error) {
-	request := ActRequest{Kind: name, ElementToken: a.ElementToken, DeliveryMode: a.DeliveryMode, Text: a.Text, Key: a.Key, Keys: a.Keys, Direction: a.Direction, Amount: a.Amount}
+func (a managedArguments) action(name string) (actionRequest, error) {
+	request := actionRequest{Kind: name, ElementToken: a.ElementToken, DeliveryMode: a.DeliveryMode, Text: a.Text, Key: a.Key, Keys: a.Keys, Direction: a.Direction, Amount: a.Amount}
 	if a.X != nil {
 		request.Point = &Point{X: *a.X, Y: *a.Y}
 	}
@@ -109,7 +109,7 @@ func (a managedArguments) action(name string) (ActRequest, error) {
 			count = *a.Count
 		}
 		if count < 1 || count > 2 || (a.Button != "" && a.Button != "left" && a.Button != "right") || (a.Button == "right" && count != 1) {
-			return ActRequest{}, errors.New("desktop: managed click supports left single/double or right single click")
+			return actionRequest{}, errors.New("desktop: managed click supports left single/double or right single click")
 		}
 		if a.Button == "right" {
 			request.Kind = "right_click"

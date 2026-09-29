@@ -4,7 +4,9 @@ package desktop
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"github.com/ch1lam/aice-cli/internal/mcpclient"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -90,7 +92,7 @@ func TestNativeLinuxManager(t *testing.T) {
 			}
 			awaitLinuxProbeState(t, ctx, sentinel, func(s linuxProbeState) bool { return s.KeysSent >= 3 })
 			started := time.Now()
-			discovery, err := r.Windows(ctx, "AICE Manager Target", 16)
+			discovery, err := r.discoverWindows(ctx, "AICE Manager Target", 16)
 			if err != nil || len(discovery.Windows) != 3 {
 				t.Fatalf("native manager discovery: count=%d err=%v", len(discovery.Windows), err)
 			}
@@ -106,19 +108,19 @@ func TestNativeLinuxManager(t *testing.T) {
 				if selected.Ref == "" {
 					t.Fatal("exact synthetic target missing")
 				}
-				observation, err := r.Observe(ctx, ObserveRequest{TargetRef: selected.Ref, Screenshot: true})
+				observation, err := r.observeWindow(ctx, ObserveRequest{TargetRef: selected.Ref, Screenshot: true})
 				if err != nil || observation.Image == nil || r.observations[observation.Ref].capture == "" {
 					t.Fatal("Linux image did not establish a verified capture mapping", err)
 				}
 				value += fmt.Sprintf(" · stage %d 中文 ✓", i+1)
-				set, err := r.Act(ctx, ActRequest{Kind: "set_value", ObservationRef: observation.Ref,
+				set, err := r.actAndObserve(ctx, ActRequest{Kind: "set_value", ObservationRef: observation.Ref,
 					ElementToken: (linuxProbeObservation{Elements: observation.Elements}).token(t, "Task value"), Text: value, Screenshot: true})
 				linuxManagerReturned(t, r, set, err)
 				t.Logf("target=%d action=set_value timing=%+v", i, set.Timing)
-				if _, err := r.Act(ctx, ActRequest{Kind: "set_value", ObservationRef: observation.Ref, ElementToken: "stale", Text: "must not execute"}); err == nil {
+				if _, err := r.actAndObserve(ctx, ActRequest{Kind: "set_value", ObservationRef: observation.Ref, ElementToken: "stale", Text: "must not execute"}); err == nil {
 					t.Fatal("consumed AICE reference was accepted")
 				}
-				click, err := r.Act(ctx, ActRequest{Kind: "click", ObservationRef: set.Observation.Ref,
+				click, err := r.actAndObserve(ctx, ActRequest{Kind: "click", ObservationRef: set.Observation.Ref,
 					ElementToken: (linuxProbeObservation{Elements: set.Observation.Elements}).token(t, "Commit"), Screenshot: true})
 				linuxManagerReturned(t, r, click, err)
 				t.Logf("target=%d action=click timing=%+v", i, click.Timing)
@@ -211,4 +213,15 @@ func linuxDriverPIDs(t *testing.T, binary string) map[int]bool {
 		}
 	}
 	return pids
+}
+
+func (c *linuxCountedClient) Tools(ctx context.Context) (mcpclient.Catalog[mcpclient.Tool], error) {
+	return c.driverClient.(managedClient).Tools(ctx)
+}
+func (c *linuxCountedClient) ToolGeneration() uint64 {
+	return c.driverClient.(managedClient).ToolGeneration()
+}
+func (c *linuxCountedClient) CallChecked(ctx context.Context, name string, raw json.RawMessage, check func(context.Context) error) (mcpclient.Result, error) {
+	c.calls[name]++
+	return c.driverClient.(managedClient).CallChecked(ctx, name, raw, check)
 }

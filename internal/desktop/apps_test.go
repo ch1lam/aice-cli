@@ -34,6 +34,9 @@ func appFixtureDriver(t *testing.T, mode string) *fakeDriver {
 			}
 			return structuredReply(map[string]any{"pid": 41, "bundle_id": "org.synthetic.editor", "windows": windows, "launch_state": map[string]bool{"requested": true, "process_running": true}}), nil, true
 		case "list_windows":
+			if mode == "multiple" && f.count("launch_app") > 0 {
+				return structuredReply(map[string]any{"windows": []any{map[string]any{"pid": 41, "window_id": 99}, map[string]any{"pid": 41, "window_id": 101}}}), nil, true
+			}
 			if mode == "late-window" && f.count("launch_app") > 0 && f.count("list_windows") < 3 {
 				return structuredReply(map[string]any{"windows": []any{}}), nil, true
 			}
@@ -47,16 +50,16 @@ func TestApplicationDiscoveryFiltersRealIdentitiesAndKeepsInstalledApps(t *testi
 	t.Parallel()
 	f := appFixtureDriver(t, "ready")
 	_, r := testRun(t, f, false)
-	discovery, err := r.Apps(t.Context(), "org.synthetic.editor", 8)
+	discovery, err := r.discoverApps(t.Context(), "org.synthetic.editor", 8)
 	if err != nil || len(discovery.Apps) != 1 || len(discovery.Windows) != 1 || discovery.Apps[0].Name != "合成编辑器" || discovery.Apps[0].Ref == "forged-upstream" {
 		t.Fatal(discovery, err)
 	}
 	old := discovery.Apps[0].Ref
-	discovery, err = r.Apps(t.Context(), "unopened", 8)
+	discovery, err = r.discoverApps(t.Context(), "unopened", 8)
 	if err != nil || len(discovery.Apps) != 1 || discovery.Apps[0].Running || discovery.Apps[0].Ref == "" {
 		t.Fatal(discovery, err)
 	}
-	if _, err := r.Act(t.Context(), ActRequest{Kind: "launch", AppRef: old}); err == nil {
+	if _, err := r.actAndObserve(t.Context(), ActRequest{Kind: "launch", AppRef: old}); err == nil {
 		t.Fatal("rediscovery retained old app reference")
 	}
 	if f.count("launch_app") != 0 || f.count("get_window_state") != 0 {
@@ -71,12 +74,12 @@ func TestApplicationLaunchNeverRepeatsAndReturnsWindowDecision(t *testing.T) {
 			t.Parallel()
 			f := appFixtureDriver(t, mode)
 			_, r := testRun(t, f, false)
-			discovery, err := r.Apps(t.Context(), "合成", 8)
+			discovery, err := r.discoverApps(t.Context(), "合成", 8)
 			if err != nil || len(discovery.Apps) != 1 {
 				t.Fatal(discovery, err)
 			}
 			request := ActRequest{Kind: "launch", AppRef: discovery.Apps[0].Ref}
-			result, err := r.Act(t.Context(), request)
+			result, err := r.actAndObserve(t.Context(), request)
 			if err != nil || !result.Dispatched || f.count("launch_app") != 1 {
 				t.Fatal(result, err)
 			}
@@ -94,7 +97,7 @@ func TestApplicationLaunchNeverRepeatsAndReturnsWindowDecision(t *testing.T) {
 					t.Fatal("lost launch response was retried or treated as failure", result)
 				}
 			}
-			if _, err := r.Act(t.Context(), request); err == nil || f.count("launch_app") != 1 {
+			if _, err := r.actAndObserve(t.Context(), request); err == nil || f.count("launch_app") != 1 {
 				t.Fatal("consumed launch was repeated")
 			}
 		})
@@ -105,18 +108,18 @@ func TestLaunchValidationDoesNotConsumeReference(t *testing.T) {
 	t.Parallel()
 	f := appFixtureDriver(t, "ready")
 	_, r := testRun(t, f, false)
-	discovery, err := r.Apps(t.Context(), "editor", 8)
+	discovery, err := r.discoverApps(t.Context(), "editor", 8)
 	if err != nil {
 		t.Fatal(err)
 	}
 	ref := discovery.Apps[0].Ref
-	if _, err := r.Act(t.Context(), ActRequest{Kind: "launch", AppRef: ref, Text: "unrelated"}); err == nil {
+	if _, err := r.actAndObserve(t.Context(), ActRequest{Kind: "launch", AppRef: ref, Text: "unrelated"}); err == nil {
 		t.Fatal("launch accepted arbitrary text")
 	}
 	if f.count("launch_app") != 0 {
 		t.Fatal("invalid launch dispatched")
 	}
-	if _, err := r.Act(t.Context(), ActRequest{Kind: "launch", AppRef: ref}); err != nil {
+	if _, err := r.actAndObserve(t.Context(), ActRequest{Kind: "launch", AppRef: ref}); err != nil {
 		t.Fatal("local validation consumed app reference", err)
 	}
 }
@@ -152,13 +155,13 @@ func TestLaunchWaitNeverUsesAnotherApplicationsWindow(t *testing.T) {
 					return structuredReply(map[string]any{"windows": windows}), nil, true
 				}
 				_, run := testRun(t, f, true)
-				discovery, err := run.Apps(t.Context(), "合成", 8)
+				discovery, err := run.discoverApps(t.Context(), "合成", 8)
 				if err != nil || len(discovery.Apps) != 1 {
 					t.Fatal("initial app discovery failed", err)
 				}
 				request := ActRequest{Kind: "launch", AppRef: discovery.Apps[0].Ref, Screenshot: true}
 				started := time.Now()
-				result, err := run.Act(ctx, request)
+				result, err := run.actAndObserve(ctx, request)
 				if err != nil || !result.Dispatched || result.Outcome != "returned" || result.DriverError || len(result.Driver) == 0 {
 					t.Fatal("window wait discarded the completed launch", result, err)
 				}
@@ -177,12 +180,12 @@ func TestLaunchWaitNeverUsesAnotherApplicationsWindow(t *testing.T) {
 						t.Fatal("cancellation did not stop the read-only window wait", polls, time.Since(started))
 					}
 				}
-				if _, err := run.Act(t.Context(), request); err == nil || f.count("launch_app") != 1 {
+				if _, err := run.actAndObserve(t.Context(), request); err == nil || f.count("launch_app") != 1 {
 					t.Fatal("window wait allowed a repeated launch")
 				}
 				// A cancelled call does not close the run or leave its executor
 				// held. Fresh discovery remains available without another launch.
-				if _, err := run.Windows(t.Context(), "", 8); err != nil {
+				if _, err := run.discoverWindows(t.Context(), "", 8); err != nil {
 					t.Fatal("window wait prevented later discovery", err)
 				}
 			})

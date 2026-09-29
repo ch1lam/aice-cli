@@ -34,33 +34,33 @@ func TestForegroundRequiresRefusalThenAnExplicitSameAction(t *testing.T) {
 	r.options.Mode = ForegroundAllowed
 	o := observed(t, r, false)
 	request := ActRequest{Kind: "type_text", ObservationRef: o.Ref, ElementToken: o.Elements[0].Token, Text: "synthetic", DeliveryMode: "foreground"}
-	if _, err := r.Act(t.Context(), request); err == nil || f.count("type_text") != 0 {
+	if _, err := r.actAndObserve(t.Context(), request); err == nil || f.count("type_text") != 0 {
 		t.Fatal("foreground ran without a background refusal", err)
 	}
 	request.DeliveryMode = ""
-	result, err := r.Act(t.Context(), request)
+	result, err := r.actAndObserve(t.Context(), request)
 	if err != nil || result.Observation == nil || result.Observation.ForegroundAction != "type_text" || !result.DriverError || f.count("type_text") != 1 {
 		t.Fatal("refusal was lost or automatically replayed", result, err)
 	}
 	request.DeliveryMode = "foreground"
-	if _, err := r.Act(t.Context(), request); err == nil {
+	if _, err := r.actAndObserve(t.Context(), request); err == nil {
 		t.Fatal("refused observation survived")
 	}
 	request.ObservationRef = result.Observation.Ref
-	if _, err := r.Act(t.Context(), request); err == nil {
+	if _, err := r.actAndObserve(t.Context(), request); err == nil {
 		t.Fatal("old element survived refresh")
 	}
 	request.ElementToken = result.Observation.Elements[0].Token
 	changed := request
 	changed.Text = "different action"
-	if _, err := r.Act(t.Context(), changed); err == nil || f.count("type_text") != 1 {
+	if _, err := r.actAndObserve(t.Context(), changed); err == nil || f.count("type_text") != 1 {
 		t.Fatal("opportunity permitted different input", err)
 	}
-	result, err = r.Act(t.Context(), request)
+	result, err = r.actAndObserve(t.Context(), request)
 	if err != nil || result.Observation == nil || result.Observation.ForegroundAction != "" || f.count("type_text") != 2 {
 		t.Fatal("explicit foreground action failed or renewed opportunity", result, err)
 	}
-	if _, err := r.Act(t.Context(), request); err == nil {
+	if _, err := r.actAndObserve(t.Context(), request); err == nil {
 		t.Fatal("foreground action replayed")
 	}
 }
@@ -95,7 +95,7 @@ func TestForegroundOpportunityExpiresAndNeverOverridesMode(t *testing.T) {
 				}
 			}
 			request := ActRequest{Kind: "type_text", ObservationRef: o.Ref, ElementToken: o.Elements[0].Token, Text: "synthetic"}
-			result, err := r.Act(t.Context(), request)
+			result, err := r.actAndObserve(t.Context(), request)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -110,7 +110,7 @@ func TestForegroundOpportunityExpiresAndNeverOverridesMode(t *testing.T) {
 					t.Fatal("background-only mode offered foreground")
 				}
 			case "observe":
-				o, err = r.Observe(t.Context(), ObserveRequest{TargetRef: o.TargetRef})
+				o, err = r.observeWindow(t.Context(), ObserveRequest{TargetRef: o.TargetRef})
 				if err != nil || o.ForegroundAction != "" {
 					t.Fatal("ordinary refresh retained opportunity", o, err)
 				}
@@ -128,7 +128,7 @@ func TestForegroundOpportunityExpiresAndNeverOverridesMode(t *testing.T) {
 			}
 			request.ObservationRef, request.ElementToken = o.Ref, o.Elements[0].Token
 			request.DeliveryMode = "foreground"
-			if _, err := r.Act(t.Context(), request); err == nil || f.count("type_text") != 1 {
+			if _, err := r.actAndObserve(t.Context(), request); err == nil || f.count("type_text") != 1 {
 				t.Fatal("expired opportunity dispatched input", err)
 			}
 		})
@@ -159,7 +159,7 @@ func TestForegroundRefusalClassifierRequiresReviewedPreInputPath(t *testing.T) {
 		{"malformed", "type_text", "token", `{`, true, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got := safeForegroundRefusal(observationBinding{target: windowIdentity{PID: 41, WindowID: 99}}, ActRequest{Kind: tc.kind, ElementToken: tc.token}, Reply{IsError: tc.isError, Structured: json.RawMessage(tc.body)})
+			got := safeForegroundRefusal(observationBinding{target: windowIdentity{PID: 41, WindowID: 99}}, actionRequest{Kind: tc.kind, ElementToken: tc.token}, Reply{IsError: tc.isError, Structured: json.RawMessage(tc.body)})
 			if got != tc.want {
 				t.Fatalf("eligible=%v, want %v", got, tc.want)
 			}

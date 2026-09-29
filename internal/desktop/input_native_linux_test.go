@@ -64,7 +64,7 @@ func TestNativeLinuxInput(t *testing.T) {
 					t.Error(err)
 				}
 			}()
-			discovery, err := r.Windows(ctx, target.name, 16)
+			discovery, err := r.discoverWindows(ctx, target.name, 16)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -77,13 +77,13 @@ func TestNativeLinuxInput(t *testing.T) {
 			if selected.Ref == "" {
 				t.Fatal("exact synthetic target missing")
 			}
-			obs, err := r.Observe(ctx, ObserveRequest{TargetRef: selected.Ref, Screenshot: true})
+			obs, err := r.observeWindow(ctx, ObserveRequest{TargetRef: selected.Ref, Screenshot: true})
 			if err != nil || obs.Image == nil || obs.Degraded {
 				t.Fatal("initial native observation unavailable", err)
 			}
 			// Establish empty contents before testing insertion independently.
 			if strings.HasPrefix(kind, "type_text") || kind == "key" {
-				seed, err := r.Act(ctx, ActRequest{Kind: "set_value", ObservationRef: obs.Ref, ElementToken: (linuxProbeObservation{Elements: obs.Elements}).token(t, "Task value"), Screenshot: true})
+				seed, err := r.actAndObserve(ctx, ActRequest{Kind: "set_value", ObservationRef: obs.Ref, ElementToken: (linuxProbeObservation{Elements: obs.Elements}).token(t, "Task value"), Screenshot: true})
 				linuxManagerReturned(t, r, seed, err)
 				obs = *seed.Observation
 				awaitLinuxProbeState(t, ctx, target, func(s linuxProbeState) bool { return s.Value == "" })
@@ -130,7 +130,7 @@ func TestNativeLinuxInput(t *testing.T) {
 				}
 			}
 			started := time.Now()
-			result, err := r.Act(ctx, request)
+			result, err := r.actAndObserve(ctx, request)
 			var facts struct{ Code, Effect string }
 			_ = json.Unmarshal(result.Driver, &facts)
 			t.Logf("native action=%s elapsed=%s outcome=%s driver_error=%v code=%s effect=%s", kind, time.Since(started), result.Outcome, result.DriverError, facts.Code, facts.Effect)
@@ -145,7 +145,7 @@ func TestNativeLinuxInput(t *testing.T) {
 					// Use the newly returned screenshot, never replay the old point.
 					fresh := result.Observation
 					point := &Point{X: settled.ButtonX * float64(fresh.ImageWidth) / float64(settled.Width), Y: settled.ButtonY * float64(fresh.ImageHeight) / float64(settled.Height)}
-					next, err := r.Act(ctx, ActRequest{Kind: "click", ObservationRef: fresh.Ref, Point: point, Screenshot: true})
+					next, err := r.actAndObserve(ctx, ActRequest{Kind: "click", ObservationRef: fresh.Ref, Point: point, Screenshot: true})
 					linuxManagerReturned(t, r, next, err)
 					awaitLinuxProbeState(t, ctx, target, func(s linuxProbeState) bool { return s.Commits == 1 && s.Result == "Result: AICE-314" })
 				}

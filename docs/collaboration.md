@@ -269,6 +269,13 @@ frames instead of relying on renderer cell diffs.
 
 ## Computer Use checks
 
+Native action fixtures exercise the managed MCP `Tools` / `CallChecked` entry.
+Test-only helpers perform explicit post-action observations and condition polling;
+there is no production typed action orchestrator. Keep independent widget,
+focus, dispatch-count and cleanup assertions when changing fixture sequencing.
+Compiling these fixtures does not rerun their historical native acceptance or
+authorize real desktop input; the opt-ins below still apply.
+
 The opt-in Cua artifact check uses an already downloaded, fixed-digest macOS
 archive. It extracts into temporary directories, verifies signing identity and
 Gatekeeper acceptance, and checks exclusive publication. It does not install
