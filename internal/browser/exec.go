@@ -53,30 +53,31 @@ func (m *Manager) execute(ctx context.Context, args, env []string) (data []byte,
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	if err := cmd.Start(); err != nil {
-		return nil, false, fmt.Errorf("agent-browser: %w: %s%s", errors.Join(err, ctx.Err()), stderr.String(), stdout.String())
+		return nil, false, fmt.Errorf("agent-browser: %w: %s%s", errors.Join(err, ctx.Err()), stderr.buffer.String(), stdout.buffer.String())
 	}
 	if err := cmd.Wait(); err != nil {
-		return nil, true, fmt.Errorf("agent-browser: %w: %s%s", errors.Join(err, ctx.Err()), stderr.String(), stdout.String())
+		return nil, true, fmt.Errorf("agent-browser: %w: %s%s", errors.Join(err, ctx.Err()), stderr.buffer.String(), stdout.buffer.String())
 	}
 	if stdout.exceeded {
 		return nil, true, fmt.Errorf("agent-browser response exceeds 1 MiB")
 	}
-	return stdout.Bytes(), true, nil
+	return stdout.buffer.Bytes(), true, nil
 }
 
 type limitedBuffer struct {
-	bytes.Buffer
+	// Keep Buffer private so io.Copy cannot bypass Write via its ReadFrom method.
+	buffer   bytes.Buffer
 	limit    int
 	exceeded bool
 }
 
 func (b *limitedBuffer) Write(p []byte) (int, error) {
 	n := len(p)
-	remaining := max(0, b.limit-b.Len())
+	remaining := max(0, b.limit-b.buffer.Len())
 	if n > remaining {
 		b.exceeded = true
 		p = p[:remaining]
 	}
-	_, err := b.Buffer.Write(p)
+	_, err := b.buffer.Write(p)
 	return n, err
 }

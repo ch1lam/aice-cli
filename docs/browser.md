@@ -164,6 +164,11 @@ errors but still starts a fresh conversation. Interactive and print exits use a
 bounded cleanup context even after cancellation. Close waits up to ten seconds
 for the socket/pid sidecars to disappear, beyond the upstream acknowledgement.
 
+Manager helper commands retain at most 1 MiB of stdout and 4096 bytes of stderr.
+A successful helper exit with oversized stdout is reported as an error; failed
+exits include only the retained output in diagnostics. Excess output is drained
+without being retained, and uncertain operations are not retried.
+
 Startup only sweeps matching session names whose AICE owner is demonstrably dead.
 Live/reused PIDs and unrelated names are retained. A hard kill can leave a daemon
 until this sweep. Socket paths longer than 103 bytes are rejected with a warning.
