@@ -104,3 +104,42 @@ func TestMCPCatalogFullToolNamePrecedesProse(t *testing.T) {
 		t.Fatal("full tool name lost to neighboring description", result, err)
 	}
 }
+
+func TestMCPCatalogSearchSnapshotHasNoLiveAuthority(t *testing.T) {
+	t.Parallel()
+	client := &resourceCatalogFixture{mcpCatalogFixture: mcpCatalogFixture{
+		items: []mcpclient.Tool{catalogFixtureTool("read", "Read a document")},
+	}}
+	catalog, err := newMCPCatalog(catalogTestConfig("fixture"), map[string]mcpCatalogConnection{"fixture": client}, ownerTestGuard(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(catalog.Close)
+	resources, err := catalog.ListResources(t.Context(), tool.ResourceListRequest{Service: "fixture", Limit: 5})
+	if err != nil || len(resources.Selected) != 1 {
+		t.Fatal("resource discovery", resources, err)
+	}
+	request := tool.ToolSearchRequest{Query: "read", Limit: 5}
+	want, err := catalog.Search(t.Context(), request)
+	if err != nil || len(want.Selected) != 1 {
+		t.Fatal("tool discovery", want, err)
+	}
+	catalog.mu.RLock()
+	documents := catalog.searchSnapshot()
+	catalog.mu.RUnlock()
+	catalog.Close()
+	got := rankMCPTools(documents, request, tool.ToolSearchResult{Complete: true})
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("catalog closure changed snapshot retrieval: got=%+v want=%+v", got, want)
+	}
+	if catalog.Check(t.Context(), got.Selected[0]) == nil {
+		t.Fatal("search snapshot restored execution authority")
+	}
+	result := rankMCPTools(documents, tool.ToolSearchRequest{IDs: []string{resources.Selected[0].ID}, Limit: 1}, tool.ToolSearchResult{Complete: true})
+	if result.Complete || len(result.Selected) != 0 {
+		t.Fatal("resource reader leaked into tool search snapshot", result)
+	}
+	if client.calls.Load() != 0 {
+		t.Fatal("retrieval dispatched a tool or resource read")
+	}
+}

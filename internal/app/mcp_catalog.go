@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
 	"net/url"
 	"slices"
 	"strings"
@@ -52,6 +51,7 @@ type mcpCatalog struct {
 	names        map[string]string
 	catalogBytes map[string]int
 	managedCUA   bool
+	grantedTools map[string][]string
 }
 
 func newMCPCatalog(configuration config.MCPConfig, connections map[string]mcpCatalogConnection, gate *guard.Guard) (*mcpCatalog, error) {
@@ -71,6 +71,7 @@ func buildMCPCatalog(configuration config.MCPConfig, connections map[string]mcpC
 		connections: make(map[string]mcpCatalogConnection), scopes: make(map[string]string), entries: make(map[string]mcpCatalogEntry), names: make(map[string]string),
 		catalogBytes: make(map[string]int),
 		managedCUA:   managed != nil,
+		grantedTools: managedCUAToolGrants(managed),
 	}
 	for key := range c.config.Servers {
 		c.scopes[key] = mcpPermissionScope(c.config, key)
@@ -324,7 +325,7 @@ func (c *mcpCatalog) Search(ctx context.Context, request tool.ToolSearchRequest)
 			c.forgetTools(key)
 		}
 	}
-	ranked := c.rank(request, response)
+	ranked := rankMCPTools(c.searchSnapshot(), request, response)
 	c.serverPreviews(&ranked)
 	return ranked, nil
 }
@@ -377,10 +378,10 @@ func (c *mcpCatalog) publish(server config.MCPServer, connection mcpCatalogConne
 			ToolName: remote.Name, SchemaFingerprint: mcpDigest([]json.RawMessage{remote.InputSchema, remote.OutputSchema})}
 		allowed := c.config.ToolAllowed(server.Key, remote.Name)
 		decision := guard.Decision(permissions.Decision("", remote.Name, binding.SchemaFingerprint))
-		if c.managedCUA && server.Key == managedCUAKey {
-			// Only the explicitly injected, reviewed Run backend can inherit the
-			// user's Computer Use enablement. Config names and annotations cannot.
-			allowed = allowed && slices.Contains(managedCUAToolNames(), remote.Name)
+		if granted, ok := c.grantedTools[server.Key]; ok {
+			// Application grants narrow discovery and never lift a restriction
+			// or explicit deny. Server metadata cannot supply these grants.
+			allowed = allowed && slices.Contains(granted, remote.Name)
 			if allowed && decision != guard.DecisionDeny {
 				decision = guard.DecisionAllow
 			}
@@ -447,89 +448,22 @@ func mcpConnectionSecrets(server config.MCPServer) []string {
 	return secrets
 }
 
-func (c *mcpCatalog) rank(request tool.ToolSearchRequest, response tool.ToolSearchResult) tool.ToolSearchResult {
-	type candidate struct {
-		entry mcpCatalogEntry
-		terms map[string]bool
-		score float64
-		exact bool
-	}
-	var candidates []candidate
-	terms := mcpSearchTerms(request.Query)
-	queryTerms := make([]string, 0, len(terms))
-	for term := range terms {
-		queryTerms = append(queryTerms, term)
-	}
-	slices.Sort(queryTerms)
-	frequencies := make(map[string]int)
+// searchSnapshot is called with c.mu held. It omits resource readers and copies
+// only discovery text and references; ranking has no execution capabilities.
+func (c *mcpCatalog) searchSnapshot() map[string]mcpSearchDocument {
+	documents := make(map[string]mcpSearchDocument, len(c.entries))
 	for id, entry := range c.entries {
 		if entry.binding.Operation != "" {
 			continue
 		}
-		if request.Service != "" && entry.service != request.Service || len(request.IDs) > 0 && !slices.Contains(request.IDs, id) {
-			continue
-		}
 		definition := entry.Tool.Definition()
-		documentTerms := mcpSearchTerms(definition.Description)
-		for term := range mcpSearchTerms(entry.binding.ToolName) {
-			documentTerms[term] = true
-		}
-		for term := range documentTerms {
-			frequencies[term]++
-		}
-		candidates = append(candidates, candidate{entry: entry, terms: documentTerms, exact: strings.EqualFold(strings.TrimSpace(request.Query), entry.binding.ToolName)})
-	}
-	// Common catalog boilerplate and repeated domain words carry less evidence
-	// than rare capabilities. Count each term once so repetition cannot boost it.
-	for i := range candidates {
-		for _, term := range queryTerms {
-			if candidates[i].terms[term] {
-				candidates[i].score += math.Log1p(float64(len(candidates)) / float64(frequencies[term]))
-			}
+		documents[id] = mcpSearchDocument{
+			reference: entry.Reference, service: entry.service,
+			name: definition.Name, remoteName: entry.binding.ToolName,
+			description: definition.Description,
 		}
 	}
-	candidates = slices.DeleteFunc(candidates, func(c candidate) bool {
-		return len(terms) > 0 && c.score == 0 && !c.exact && len(request.IDs) == 0
-	})
-	slices.SortFunc(candidates, func(a, b candidate) int {
-		if a.exact != b.exact {
-			if a.exact {
-				return -1
-			}
-			return 1
-		}
-		if a.score > b.score {
-			return -1
-		}
-		if a.score < b.score {
-			return 1
-		}
-		return strings.Compare(a.entry.Reference.ID, b.entry.Reference.ID)
-	})
-	start := min(request.Offset, len(candidates))
-	end := min(start+request.Limit, len(candidates))
-	for _, hit := range candidates[start:end] {
-		entry := hit.entry
-		description := entry.Tool.Definition().Description
-		if len(description) > 2048 {
-			description = string([]rune(description)[:min(512, len([]rune(description)))]) + "…"
-		}
-		response.Entries = append(response.Entries, tool.ToolSearchEntry{ID: entry.Reference.ID, Name: entry.Tool.Definition().Name, Service: entry.service, Description: description, Status: "available; execution permission checked separately"})
-		response.Selected = append(response.Selected, entry.Reference)
-	}
-	if len(candidates) > end {
-		response.Complete = false
-		response.NextOffset = &end
-		response.Notices = append(response.Notices, "More tools match; continue with next_offset, narrow query, browse a service or select exact IDs. Catalog changes may move page boundaries; use exact IDs for stable selection.")
-	}
-	for _, id := range request.IDs {
-		if entry, exists := c.entries[id]; !exists || entry.binding.Operation != "" {
-			response.Complete = false
-			response.Notices = append(response.Notices, "An exact tool ID is unavailable; inspect service status and refresh discovery.")
-			break
-		}
-	}
-	return response
+	return documents
 }
 
 // Raw clients have frozen credentials; borrowed app leases also retain tokens

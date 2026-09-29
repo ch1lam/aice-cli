@@ -578,7 +578,9 @@ match the requested operation. This is guidance, not an execution guarantee.
 Misses can be recovered by browsing or exact selection. Changed catalogs may
 move page boundaries. The offline retrieval corpus under `internal/app/testdata`
 keeps language misses separate from exact-ID correctness; it does not prove
-actual-model task quality.
+actual-model task quality. Ranking consumes a value-only snapshot of tool
+identities and descriptions; it cannot access connections, Guard state or
+executable tool objects. The live catalog owns version and permission checks.
 
 Discovery has a ten-second overall deadline and up to four concurrent service
 requests. One slow service does not serialize all others. Disabled, revoked,

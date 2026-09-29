@@ -68,6 +68,16 @@ func managedCUAToolNames() []string {
 	return []string{"list_apps", "list_windows", "get_window_state", "launch_app", "click", "drag", "type_text", "set_value", "press_key", "hotkey", "scroll"}
 }
 
+// managedCUAToolGrants translates a validated application binding into the
+// catalog's frozen permission input. Ordinary MCP configuration cannot create it,
+// and newly advertised Driver tools do not extend the reviewed inventory.
+func managedCUAToolGrants(managed *managedCUACatalogBinding) map[string][]string {
+	if managed == nil {
+		return nil
+	}
+	return map[string][]string{managedCUAKey: managedCUAToolNames()}
+}
+
 func withManagedCUACatalog(configuration config.MCPConfig, connections map[string]mcpCatalogConnection, managed *managedCUACatalogBinding) (config.MCPConfig, map[string]mcpCatalogConnection, error) {
 	for key, server := range configuration.Servers {
 		if key == managedCUAKey || server.ID == config.ManagedCUAServerID || server.Source.Kind == "managed" {

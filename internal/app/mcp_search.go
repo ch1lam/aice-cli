@@ -1,8 +1,13 @@
 package app
 
 import (
+	"math"
+	"slices"
 	"strings"
 	"unicode"
+
+	"github.com/ch1lam/aice-cli/internal/agent"
+	"github.com/ch1lam/aice-cli/internal/tool"
 )
 
 // mcpSearchTerms uses words for spaced text and overlapping pairs for Han text,
@@ -68,4 +73,95 @@ func mcpSearchTerms(value string) map[string]bool {
 	flushWord()
 	flushHan()
 	return terms
+}
+
+// mcpSearchDocument is a value-only projection of a discovered tool. Retrieval
+// neither reads live catalog state nor grants execution permission.
+type mcpSearchDocument struct {
+	reference   agent.ToolReference
+	service     string
+	name        string
+	remoteName  string
+	description string
+}
+
+func rankMCPTools(documents map[string]mcpSearchDocument, request tool.ToolSearchRequest, response tool.ToolSearchResult) tool.ToolSearchResult {
+	type candidate struct {
+		entry mcpSearchDocument
+		terms map[string]bool
+		score float64
+		exact bool
+	}
+	var candidates []candidate
+	terms := mcpSearchTerms(request.Query)
+	queryTerms := make([]string, 0, len(terms))
+	for term := range terms {
+		queryTerms = append(queryTerms, term)
+	}
+	slices.Sort(queryTerms)
+	frequencies := make(map[string]int)
+	for id, entry := range documents {
+		if request.Service != "" && entry.service != request.Service || len(request.IDs) > 0 && !slices.Contains(request.IDs, id) {
+			continue
+		}
+		documentTerms := mcpSearchTerms(entry.description)
+		for term := range mcpSearchTerms(entry.remoteName) {
+			documentTerms[term] = true
+		}
+		for term := range documentTerms {
+			frequencies[term]++
+		}
+		candidates = append(candidates, candidate{entry: entry, terms: documentTerms, exact: strings.EqualFold(strings.TrimSpace(request.Query), entry.remoteName)})
+	}
+	// Common catalog boilerplate and repeated domain words carry less evidence
+	// than rare capabilities. Count each term once so repetition cannot boost it.
+	for i := range candidates {
+		for _, term := range queryTerms {
+			if candidates[i].terms[term] {
+				candidates[i].score += math.Log1p(float64(len(candidates)) / float64(frequencies[term]))
+			}
+		}
+	}
+	candidates = slices.DeleteFunc(candidates, func(c candidate) bool {
+		return len(terms) > 0 && c.score == 0 && !c.exact && len(request.IDs) == 0
+	})
+	slices.SortFunc(candidates, func(a, b candidate) int {
+		if a.exact != b.exact {
+			if a.exact {
+				return -1
+			}
+			return 1
+		}
+		if a.score > b.score {
+			return -1
+		}
+		if a.score < b.score {
+			return 1
+		}
+		return strings.Compare(a.entry.reference.ID, b.entry.reference.ID)
+	})
+	start := min(request.Offset, len(candidates))
+	end := min(start+request.Limit, len(candidates))
+	for _, hit := range candidates[start:end] {
+		entry := hit.entry
+		description := entry.description
+		if len(description) > 2048 {
+			description = string([]rune(description)[:min(512, len([]rune(description)))]) + "…"
+		}
+		response.Entries = append(response.Entries, tool.ToolSearchEntry{ID: entry.reference.ID, Name: entry.name, Service: entry.service, Description: description, Status: "available; execution permission checked separately"})
+		response.Selected = append(response.Selected, entry.reference)
+	}
+	if len(candidates) > end {
+		response.Complete = false
+		response.NextOffset = &end
+		response.Notices = append(response.Notices, "More tools match; continue with next_offset, narrow query, browse a service or select exact IDs. Catalog changes may move page boundaries; use exact IDs for stable selection.")
+	}
+	for _, id := range request.IDs {
+		if _, exists := documents[id]; !exists {
+			response.Complete = false
+			response.Notices = append(response.Notices, "An exact tool ID is unavailable; inspect service status and refresh discovery.")
+			break
+		}
+	}
+	return response
 }

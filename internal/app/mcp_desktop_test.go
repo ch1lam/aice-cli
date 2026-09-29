@@ -113,6 +113,37 @@ func TestManagedCUACatalogCannotBeForgedByConfig(t *testing.T) {
 	}
 }
 
+func TestManagedCUACatalogGrantsRemainServiceBound(t *testing.T) {
+	t.Parallel()
+	backend := &mcpCatalogFixture{items: []mcpclient.Tool{catalogFixtureTool("click", "Click a window")}}
+	gate := ownerTestGuard(t)
+	catalog, err := buildMCPCatalog(
+		catalogTestConfig("user:ordinary"),
+		map[string]mcpCatalogConnection{"user:ordinary": backend},
+		gate,
+		&managedCUACatalogBinding{connection: backend, ownerIdentity: "test-owner", mode: desktop.BackgroundOnly},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(catalog.Close)
+	response, err := catalog.Search(t.Context(), tool.ToolSearchRequest{Query: "click", Limit: 5})
+	if err != nil || len(response.Entries) != 2 {
+		t.Fatal("mixed service discovery", response, err)
+	}
+	adapter := &guardAdapter{inner: gate, mcp: catalog}
+	for _, entry := range response.Entries {
+		want := agent.GuardAsk
+		if entry.Service == managedCUAKey {
+			want = agent.GuardAllow
+		}
+		decision, err := adapter.Check(t.Context(), llm.ToolCall{Name: entry.Name, Arguments: []byte(`{}`)})
+		if err != nil || decision.Decision != want {
+			t.Fatalf("service %s: decision=%s want=%s err=%v", entry.Service, decision.Decision, want, err)
+		}
+	}
+}
+
 func TestManagedCUACatalogRestrictionsAndStalePolicy(t *testing.T) {
 	t.Parallel()
 	for _, change := range []string{"restriction", "service-restriction", "revoke", "remove", "mode", "owner", "deny", "notification", "close"} {
