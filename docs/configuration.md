@@ -1148,6 +1148,32 @@ See [Project Trust and prompts](project-trust.md).
 
 At startup AICE injects only each skill's name and description into the
 system prompt. The agent loads the body on demand through the `skill` tool.
+In the main composer, type `/` at the beginning of any line or after whitespace
+and search a Skill name or description. Skills appear alongside commands as
+`/skill:<name>` entries. Tab or Enter inserts a green `[skill:name]` reference at
+the cursor, preserving the surrounding text, files, images and long pastes.
+Selection does not send. References move and delete as whole blocks, including
+when visually wrapped. File references remain gold and image/paste tokens blue.
+Multiple skills can appear anywhere in the draft; sending includes each distinct
+skill once, up to eight per input. Skills can also be selected while composing
+steering or follow-up input during a response; ordinary commands require idle.
+
+On send, the application validates exact names against the Trust-filtered startup
+catalog and uses the Guard and existing `skill` loader to attach the full body,
+base directory and resource listing. Resource file contents are still read on
+demand. The accepted user message persists those instructions in Session history;
+loading failure restores the draft and its references. Selection does not enable
+tools or grant permissions. Typing `/skill:<name> <task>` at the start and sending
+also attaches that skill. Manually typed or pasted `[skill:name]` text alone is
+literal and cannot create a binding. External editing retains unambiguously
+surviving, previously attached labels; copied/ambiguous labels remain literal.
+Like image drafts, drafts with skill attachments do not navigate prompt history
+with Up/Down; recalled historical labels are plain text and can be reselected.
+
+`/skills` lists the startup catalog. Shortcut names escape special characters and
+disambiguate case-only collisions; select the displayed entry for those names.
+These references are an interactive composer feature; `--print` accepts ordinary
+requests to use a named Skill.
 The builtin `browser` skill describes browsing through `bash` and `read`; see
 [Browser automation](browser.md) for installation and connection requirements.
 The builtin `computer-use` guide is pinned to Cua Driver 0.29.1 and applies when
@@ -1254,6 +1280,7 @@ without color.
 | `/browser` | Browser status, connection, tab selection and close; `/browser status` also works |
 | `/web` | Web search services, priority order, credentials and the `web_fetch` switch; see [Web search and fetch](web.md#the-web-command) |
 | `/skills` | List Agent Skills loaded for this Session |
+| `/skill:<name> [task]` | Attach a discovered Skill and load its full instructions on send |
 | `/login` | Choose account or API key, then provider and credential action; see [login flows](#credentials-and-connection-overrides) |
 | `/provider` | Select and save the global provider |
 | `/model` | Select and save a model from that provider |
@@ -1268,7 +1295,15 @@ without color.
 | `/clear` | Clear the viewport without changing Session history |
 | `/quit` | Exit AICE |
 
-Typing `/` opens command suggestions. Names match case-insensitive characters
+Typing `/` at a word boundary opens suggestions for the token under the cursor,
+including in the middle of a draft or on later lines. Paths, URLs, backtick code
+and attachment contents do not trigger suggestions. Selecting an ordinary command
+from inside a draft removes only that token and temporarily saves the surrounding
+text, attachment bindings and cursor. Its existing menu or command runs separately;
+completion, failure or cancellation restores the draft. For `/btw`, restoration
+waits until the side panel closes. Surrounding prose is never used as command
+arguments. A command occupying the whole draft retains its existing completion
+and submission behavior. Names match case-insensitive characters
 in order, with gaps allowed: `/cpt` matches `/compact`. Up/Down selects and Tab
 completes the highlighted command; Escape closes suggestions. Command and option
 menus show rows without a title or shortcut header. Their shortcuts appear in

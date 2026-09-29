@@ -84,6 +84,11 @@ Linux 应用启动也未通过后台共存验收：原生测试中启动操作�
 鼠标移到过程、思考、调用分组或工具标题上会高亮，单击可展开或折叠；拖选文字仍可复制。
 `Ctrl+O` 可统一展开或折叠主任务详情。详见[对话折叠交互](./docs/configuration.md#interactive-input-delivery)。
 
+在主输入框任意一行的词首（开头或空白之后）输入 `/`，可搜索命令和 Skill。
+选择 Skill 会插入绿色 `[skill:名称]` 引用块，发送时将完整指令加入上下文。
+在正文中选择普通指令会打开或执行该指令，完成或取消后恢复前后草稿及附件。
+`/skills` 可查看列表；详见 [Agent Skills](./docs/configuration.md#agent-skills)。
+
 选择支持图片的模型后，用 `Ctrl+V` 或 `Alt+V` 粘贴截图，图片会成为输入框内的占位符，
 与长文本一样用 Backspace/Delete 删除；可配文字或单独发送。平台要求和大小限制见
 [剪贴板图片输入](./docs/configuration.md#clipboard-images)。

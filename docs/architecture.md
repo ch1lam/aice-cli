@@ -327,6 +327,14 @@ label for display and same-name conflict ordering.
   body on demand. `internal/tool` does not import `internal/skill`; `internal/app`
   maps catalog entries into `tool.SkillEntry`.
 - At startup inject only a `name` + `description` list, not skill bodies.
+- The app projects the merged catalog into slash suggestions carrying exact
+  catalog names. The TUI binds `[skill:name]` chips to text ranges and submits
+  names separately from prompt text. App preflight resolves those names through
+  the Guard and existing `skill` loader before accepting an initial input or
+  delivery. Full instructions become part of the durable user-message snapshot;
+  the Loop and Session schema do not change. The frontend never reads Skill
+  files or executes tools. Model-driven activation remains available for skills
+  not explicitly attached. See [explicit selection](configuration.md#agent-skills).
 - Skill directories with a host path (`Dir` non-empty) are passed to
   `guard.Config.ReadOnlyRoots` so `read`/`grep`/`find`/`ls` can load bundled
   resources without path-access prompts. `write`/`edit` are not granted.

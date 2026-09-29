@@ -469,7 +469,7 @@ consistency for those behaviors.
   `Runner.NewRun` and `ActiveRun.Deliver` take caller contexts. The TUI
   publishes cancellation before preparation starts; delivery preparation runs
   in a command, never on the Update goroutine. The application resolves explicit
-  file references through Guard and the shared reader before acceptance.
+  file and skill references through Guard and their existing loaders before acceptance.
 - Every goroutine has an owner, cancellation path, and wait/exit path. Queues
   and buffers stay bounded.
 - Each `/btw` side thread owns a separate Runner, event stream, cancellation
@@ -936,6 +936,16 @@ by the frontend before expanding literal paste placeholders. The application
 replaces them with bounded text/image snapshots. The mailbox refuses unresolved
 paths and owns only accepted content; it never reads files at dequeue time.
 Concurrent file preparation and tool execution share a synchronized Guard.
+
+`interaction.Command.SkillName` identifies a selectable skill, not an executable
+slash command. The TUI binds it to a positional reference and sends exact names in
+`RunInput.Skills` / `Delivery.Skills`. Application preflight validates the frozen
+catalog, deduplicates references and loads complete instructions through Guard
+before accepting the input. The mailbox refuses unresolved skill names. Skills
+are ordinary accepted user-message content in the append-only Session; no marker
+parsing or filesystem reads happen at dequeue. Selecting a normal command inside
+a draft temporarily saves composer text, spans, paste/image data and cursor in
+TUI state, restoring them after its command interaction ends.
 
 `interaction.FileCompleter` exposes name-only search from app to TUI. The TUI
 owns cursor/token state and stale-result rejection; app owns traversal budgets,

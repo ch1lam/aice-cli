@@ -101,6 +101,12 @@ Hover over process, thinking, call-group, or tool headings to highlight them;
 click to expand or collapse. Drag text to copy it. `Ctrl+O` toggles all main
 process details. See [transcript folding](./docs/configuration.md#interactive-input-delivery).
 
+Type `/` at a word boundary anywhere in the main draft to search commands and
+Skills. Selecting a Skill inserts a green `[skill:name]` chip; sending loads its
+full instructions into context. Selecting an inline command opens or runs it,
+then restores the surrounding draft and attachments on completion or cancellation.
+`/skills` lists the catalog; see [Agent Skills](./docs/configuration.md#agent-skills).
+
 Paste a screenshot with `Ctrl+V` or `Alt+V` when using a vision model. Images appear as inline
 placeholders; delete them with Backspace/Delete, like long text pastes.
 Attach files or directories with `@src/main.go` or `@"images/screen shot.png"`.
