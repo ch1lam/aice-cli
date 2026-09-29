@@ -57,7 +57,7 @@ func TestInteractiveClaudeAccountLogin(t *testing.T) {
 					t.Fatal("cancel changed account state")
 				}
 			} else if method == "save failure" {
-				if err == nil || !strings.Contains(err.Error(), "account credential saved, but preferences and current Session were not changed") || !loaded.ClaudeSubscriptionCredentials.Configured() || runner.configuration.Provider != "deepseek" || runner.model.Provider != deepseek.ProviderID || runner.loop != nil {
+				if err == nil || !strings.Contains(err.Error(), "account credential saved, but provider preferences and selection were not changed") || !loaded.ClaudeSubscriptionCredentials.Configured() || runner.configuration.Provider != "deepseek" || runner.model.Provider != deepseek.ProviderID || runner.loop != nil {
 					t.Fatalf("credential-only success was not preserved: %v", err)
 				}
 			} else if err != nil || !loaded.ClaudeSubscriptionCredentials.Configured() || runner.loop == nil || runner.model.Provider != claudesubscription.ProviderID {

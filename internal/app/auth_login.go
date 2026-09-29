@@ -12,12 +12,29 @@ import (
 	"github.com/ch1lam/aice-cli/internal/provider/custom"
 )
 
+// loginActionResult records effects, including a credential committed before
+// a later preference failure. OAuth updates also affect existing providers.
+type loginActionResult struct {
+	output           string
+	committed        bool
+	resourcesChanged bool
+}
+
+func (s *interactiveSession) runLoginSettings(ctx context.Context, revision *uint64, request interaction.CommandRequest) (interaction.SettingsActionResult, error) {
+	if err := s.beginSettingsOperation(revision, true); err != nil {
+		return interaction.SettingsActionResult{}, err
+	}
+	action, err := s.runLoginAction(ctx, request)
+	nextRevision, warnings := s.endSettingsOperation(action.committed, action.resourcesChanged)
+	return interaction.SettingsActionResult{Output: action.output, Revision: nextRevision, Warnings: warnings}, err
+}
+
 // runLoginAction applies a credential action while its caller owns the settings
 // reservation. Both interactive entry points use the same login selection.
 func (s *interactiveSession) runLoginAction(
 	ctx context.Context,
 	request interaction.CommandRequest,
-) (string, error) {
+) (loginActionResult, error) {
 	if request.LoginMethod != "" {
 		return s.loginAccount(ctx, request)
 	}
@@ -27,18 +44,18 @@ func (s *interactiveSession) runLoginAction(
 func (s *interactiveSession) login(
 	ctx context.Context,
 	request interaction.CommandRequest,
-) (message string, returnErr error) {
+) (result loginActionResult, returnErr error) {
 	if s.application == nil {
-		return "", fmt.Errorf("app: application is required")
+		return result, fmt.Errorf("app: application is required")
 	}
 
 	provider := strings.TrimSpace(request.Arguments)
 	if provider == "" || strings.ContainsAny(provider, " \t\r\n") {
-		return "", fmt.Errorf("app: select a provider through the /login menus")
+		return result, fmt.Errorf("app: select a provider through the /login menus")
 	}
 	settings := s.settingsSnapshot()
 	if !supportedProvider(s.providers, provider) {
-		return "", fmt.Errorf(
+		return result, fmt.Errorf(
 			"app: unsupported provider %q; available: %s",
 			provider,
 			strings.Join(knownProviders(s.providers), ", "),
@@ -46,33 +63,33 @@ func (s *interactiveSession) login(
 	}
 	if provider == string(claudesubscription.ProviderID) {
 		if request.Secret != "" {
-			return "", fmt.Errorf("app: Claude subscriptions use OAuth; run aice auth login --provider anthropic-subscription")
+			return result, fmt.Errorf("app: Claude subscriptions use OAuth; run aice auth login --provider anthropic-subscription")
 		}
 		overridden, err := s.selectProvider(ctx, provider)
 		if err != nil {
-			return "", err
+			return result, err
 		}
-		return savedSettingMessage("provider", provider, overridden), nil
+		return loginActionResult{output: savedSettingMessage("provider", provider, overridden), committed: true, resourcesChanged: true}, nil
 	}
 	if provider == string(codex.ProviderID) {
 		if request.Secret != "" {
-			return "", fmt.Errorf("app: Codex uses OAuth; run aice auth login --provider openai-codex")
+			return result, fmt.Errorf("app: Codex uses OAuth; run aice auth login --provider openai-codex")
 		}
 		overridden, err := s.selectProvider(ctx, provider)
 		if err != nil {
-			return "", err
+			return result, err
 		}
-		return savedSettingMessage("provider", provider, overridden), nil
+		return loginActionResult{output: savedSettingMessage("provider", provider, overridden), committed: true, resourcesChanged: true}, nil
 	}
 
 	customEndpoint := strings.TrimSpace(request.CustomEndpoint)
 	customModel := strings.TrimSpace(request.CustomModel)
 	if customEndpoint != "" || customModel != "" {
 		if provider != string(custom.ProviderID) || request.UseSavedCredential {
-			return "", fmt.Errorf("app: endpoint/model require the Custom login form")
+			return result, fmt.Errorf("app: endpoint/model require the Custom login form")
 		}
 		if customEndpoint != "" && !(strings.HasPrefix(customEndpoint, "http://") || strings.HasPrefix(customEndpoint, "https://")) {
-			return "", fmt.Errorf("app: custom endpoint must start with http:// or https://")
+			return result, fmt.Errorf("app: custom endpoint must start with http:// or https://")
 		}
 	}
 	apiKey := strings.TrimSpace(request.Secret)
@@ -80,12 +97,12 @@ func (s *interactiveSession) login(
 	configuration.Provider = provider
 	if request.UseSavedCredential {
 		if apiKey != "" {
-			return "", fmt.Errorf(
+			return result, fmt.Errorf(
 				"app: saved credential selection cannot include an API key",
 			)
 		}
 		if !providerConfigured(s.providers, configuration) {
-			return "", fmt.Errorf(
+			return result, fmt.Errorf(
 				"app: %s API key is not configured",
 				providerLabel(s.providers, provider),
 			)
@@ -95,13 +112,13 @@ func (s *interactiveSession) login(
 		// the stored credential and still enables the provider. Other providers
 		// keep the strict requirement.
 		if provider != string(custom.ProviderID) && apiKey == "" {
-			return "", fmt.Errorf(
+			return result, fmt.Errorf(
 				"app: %s API key is required",
 				providerLabel(s.providers, provider),
 			)
 		}
 		if strings.ContainsAny(apiKey, "\r\n") {
-			return "", fmt.Errorf(
+			return result, fmt.Errorf(
 				"app: %s API key must be one line",
 				providerLabel(s.providers, provider),
 			)
@@ -114,7 +131,7 @@ func (s *interactiveSession) login(
 		}
 		if customModel != "" {
 			if strings.ContainsAny(customModel, " \t\r\n") {
-				return "", fmt.Errorf("app: model must not contain whitespace")
+				return result, fmt.Errorf("app: model must not contain whitespace")
 			}
 			configuration.Model = customModel
 		}
@@ -132,35 +149,42 @@ func (s *interactiveSession) login(
 	}
 	configuration, err := configuration.WithSettings(changes)
 	if err != nil {
-		return "", err
+		return result, err
 	}
 	configuration.Model = model.ID
 	loop, err := s.rebuildAgentLoop(configuration)
 	if err != nil {
-		return "", err
+		return result, err
 	}
 	path := ""
 	if !request.UseSavedCredential {
 		path, err = s.application.dependencies.saveAPIKey(provider, apiKey)
-		if err != nil {
-			return "", fmt.Errorf(
+		if err != nil && !config.WasCommitted(err) {
+			return result, fmt.Errorf(
 				"app: save %s API key: %w",
 				providerLabel(s.providers, provider),
 				err,
 			)
+		}
+		result.committed = true
+		if err != nil {
+			s.settingsWarning(fmt.Errorf("API key saved; %w", err))
 		}
 	}
 
 	configuration, err = s.persistSettings(ctx, configuration, changes)
 	if err != nil {
 		if !request.UseSavedCredential {
-			return "", fmt.Errorf("credential saved to %s, but preferences and current Session were not changed: %w", path, err)
+			if path == "" {
+				return result, fmt.Errorf("credential saved, but preferences and current Session were not changed: %w", err)
+			}
+			return result, fmt.Errorf("credential saved to %s, but preferences and current Session were not changed: %w", path, err)
 		}
-		return "", err
+		return result, err
 	}
 	defer func() {
 		if returnErr == nil {
-			message += savedOverrideNotice(configuration, changes)
+			result.output += savedOverrideNotice(configuration, changes)
 		}
 	}()
 	effective := clampedThinkingForModel(model, configuration.Thinking)
@@ -171,11 +195,17 @@ func (s *interactiveSession) login(
 	s.model = applyContextWindow(model, configuration)
 	s.options.Thinking = effective
 	s.stateMu.Unlock()
+	result.committed, result.resourcesChanged = true, true
 	if request.UseSavedCredential {
-		return fmt.Sprintf(
+		result.output = fmt.Sprintf(
 			"Switched to %s using the saved credential. AICE is ready.",
 			providerLabel(s.providers, provider),
-		), nil
+		)
+		return result, nil
+	}
+	location := ""
+	if path != "" {
+		location = " to " + path
 	}
 	if provider == string(custom.ProviderID) {
 		endpoint := strings.TrimSpace(configuration.CustomBaseURL)
@@ -183,10 +213,12 @@ func (s *interactiveSession) login(
 			endpoint = custom.DefaultBaseURL
 		}
 		if apiKey == "" {
-			return fmt.Sprintf("Configured %s (endpoint %s, no API key). AICE is ready.", providerLabel(s.providers, provider), endpoint), nil
+			result.output = fmt.Sprintf("Configured %s (endpoint %s, no API key). AICE is ready.", providerLabel(s.providers, provider), endpoint)
+			return result, nil
 		}
-		return fmt.Sprintf("Configured %s (endpoint %s) and saved API key to %s. AICE is ready.", providerLabel(s.providers, provider), endpoint, path), nil
+		result.output = fmt.Sprintf("Configured %s (endpoint %s) and saved API key%s. AICE is ready.", providerLabel(s.providers, provider), endpoint, location)
+		return result, nil
 	}
-	return "Saved " + providerLabel(s.providers, provider) + " API key to " + path +
-		". AICE is ready.", nil
+	result.output = "Saved " + providerLabel(s.providers, provider) + " API key" + location + ". AICE is ready."
+	return result, nil
 }

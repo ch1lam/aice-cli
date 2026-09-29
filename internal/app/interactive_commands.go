@@ -383,7 +383,6 @@ var slashCommandHandlers = map[string]slashCommandHandler{
 	"settings": (*interactiveSession).slashSettings,
 	"skills":   (*interactiveSession).slashSkills,
 	"trust":    (*interactiveSession).slashTrust,
-	"login":    (*interactiveSession).slashLogin,
 	"provider": (*interactiveSession).slashProvider,
 	"model":    (*interactiveSession).slashModel,
 	"thinking": (*interactiveSession).slashThinking,
@@ -412,6 +411,13 @@ func (s *interactiveSession) RunSlashCommand(
 	}
 	if request.Name == "web" {
 		result, err := s.runWebSettings(ctx, nil, request.Arguments, request.Auth)
+		if len(result.Warnings) > 0 {
+			result.Output += "\n" + strings.Join(result.Warnings, "\n")
+		}
+		return result.Output, err
+	}
+	if request.Name == "login" {
+		result, err := s.runLoginSettings(ctx, nil, request)
 		if len(result.Warnings) > 0 {
 			result.Output += "\n" + strings.Join(result.Warnings, "\n")
 		}
@@ -652,13 +658,6 @@ func (s *interactiveSession) slashTrust(
 	return savedProjectTrustMessage, nil
 }
 
-func (s *interactiveSession) slashLogin(
-	ctx context.Context,
-	request interaction.CommandRequest,
-) (string, error) {
-	return s.runLoginAction(ctx, request)
-}
-
 func (s *interactiveSession) slashProvider(
 	ctx context.Context,
 	request interaction.CommandRequest,
@@ -865,7 +864,7 @@ func (s *interactiveSession) persistSettings(
 	}
 	if err := s.application.dependencies.saveSettings(ctx, current.Paths, changes); err != nil {
 		if !config.WasCommitted(err) {
-			return config.Config{}, fmt.Errorf("app: save settings; current Session unchanged: %w", err)
+			return config.Config{}, fmt.Errorf("app: save settings: %w", err)
 		}
 		s.settingsWarning(err)
 	}

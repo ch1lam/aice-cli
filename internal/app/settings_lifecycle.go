@@ -130,7 +130,7 @@ func (l *settingsLifecycle) statusLocked() (uint64, string) {
 
 func slashChangesResources(request interaction.CommandRequest) (changes, shared bool) {
 	switch request.Name {
-	case "provider", "model", "thinking", "login", "history", "checkout", "compact", "new", "init":
+	case "provider", "model", "thinking", "history", "checkout", "compact", "new", "init":
 		return true, true
 	case "trust":
 		return true, false

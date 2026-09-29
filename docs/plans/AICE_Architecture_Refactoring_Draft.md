@@ -52,8 +52,8 @@ Loop 不依赖具体前端、工具或 SDK；Guard 与历史记录是执行契�
 | 里程碑 | 完成标准 | 当前证据与状态 |
 | --- | --- | --- |
 | M0 方向与职责 | 明确装配、执行、历史、前端、能力与权限所有者 | 已确定；见上图及 [Architecture](../architecture.md) |
-| M1 应用操作与输入形式分离 | 现有多入口能力直接调用应用操作；输入适配不承担被其他入口复用的业务决策 | 部分完成：模型选择、Trust、Browser、Web、登录已提取操作；Browser/Web 两入口共用各自的完成协调，登录收尾规则待统一 |
-| M2 状态与资源生命周期明确 | 每种修改由发生点报告提交/发布事实；两个入口使用同一领域规则；无效输入、取消、部分提交及清理告警有明确语义，held main/BTW 的可用性符合实际资源状态 | 部分完成：Browser 与 Web 已验证操作事实及 held Run 行为；登录与 Trust 的剩余差异见 [Maintenance](../maintenance.md#management-action-invalidation-and-partial-completion) |
+| M1 应用操作与输入形式分离 | 现有多入口能力直接调用应用操作；输入适配不承担被其他入口复用的业务决策 | 主要路径已收敛：模型选择、Trust、Browser、Web、登录已提取操作，Settings 不再调用 slash handler；完整请求边界仍待 M3 验收 |
+| M2 状态与资源生命周期明确 | 每种修改由发生点报告提交/发布事实；两个入口使用同一领域规则；无效输入、取消、部分提交及清理告警有明确语义，held main/BTW 的可用性符合实际资源状态 | 部分完成：Browser、Web、登录已验证操作事实及 held Run 行为；Trust 的剩余草稿差异见 [Maintenance](../maintenance.md#management-action-invalidation-and-partial-completion) |
 | M3 主干全链路验收 | 从现有前端无关边界追踪输入、Loop、工具/审批、Session、取消和关闭；逐项链接已有测试、补真实缺口，明确哪些路径共享、哪些差异必须保留 | 待收口：已有分段审阅与回归测试，尚未汇成完整验收结论；不以包级测试全绿替代边界验收 |
 | M4 MCP / Computer Use 专项 | 主干验收后，分别核实接入边界、状态归属、授权与连接/Run 生命周期；只重构已证明影响局部维护的耦合，并明确原生平台验证范围 | 主体未开始：MCP 准备期目录清理已收拢，部分 CUA 状态已审阅；不足以认定模块整体完成 |
 
@@ -63,8 +63,7 @@ Loop 不依赖具体前端、工具或 SDK；Guard 与历史记录是执行契�
 
 | 批次 | 唯一主线 | 验收与停止点 |
 | --- | --- | --- |
-| B：登录操作（下一批） | 去除 Settings 对 slash handler 的业务依赖；沿实际凭据消费者决定部分提交与资源失效 | 检查 API key/OAuth 的具体消费时机，保留各自已有流程；不能直接套用 Web/Browser 的结果规则 |
-| C：主干验收与范围封口 | 对 M1–M3 建立逐项证据映射，检查完整请求与结束路径 | 每个候选标明已改、边界已足够或证据不足；已有测试能证明的内容不重复造测试。确认主干可交接后进入 M4 |
+| C：主干验收与范围封口（下一批） | 对 M1–M3 建立逐项证据映射，检查完整请求与结束路径 | 逐项审输入→Loop→工具/审批→Session→取消/关闭，核定 Trust 草稿差异；每个候选标明已改、边界已足够或证据不足。复用已有测试，确认主干可交接后进入 M4 |
 
 实现前读完整操作、调用方和测试，先写出“发生了什么、谁拥有它、哪些消费者会受影响”。不先定义通用 Action/事务框架，再让不同领域填字段。只有重复的具体需求和语义已经证明一致，才考虑进一步复用。
 
@@ -79,6 +78,7 @@ Loop 不依赖具体前端、工具或 SDK；Guard 与历史记录是执行契�
 | 模型设置 | provider/model/thinking 的准备、保存与发布由具体应用操作拥有；requested/effective thinking 是不同事实 | [model_settings.go](../../internal/app/model_settings.go)、[Configuration](../configuration.md) |
 | Browser 管理 | 操作报告本地改变或可能发生的远端效果；准入与收尾分开，草稿与资源版本独立；没有副作用的失败不使 Run 失效 | [browser.go](../../internal/app/browser.go)、[Browser](../browser.md)、[held Run 测试](../../internal/app/browser_invalidation_test.go) |
 | Web 管理 | 操作报告持久提交与资源发布，两入口共享收尾；仅凭据提交不替换旧 backend，也不使 held Run 失效 | [web_commands.go](../../internal/app/web_commands.go)、[Web](../web.md)、[held Run 测试](../../internal/app/web_invalidation_test.go) |
+| 登录操作 | 两入口共享完成协调；API key 客户端保留创建时凭据，OAuth 每次请求读取磁盘，因此凭据单独提交的资源效果不同 | [auth_login.go](../../internal/app/auth_login.go)、[Configuration](../configuration.md#credentials-and-connection-overrides)、[held Run 测试](../../internal/app/auth_invalidation_test.go)、[凭据提交测试](../../internal/config/oauth_cleanup_test.go) |
 | 会话状态 | 初始化、首次创建 Store、new、恢复与 compaction 各有原子范围；只添加 setter 不能消除调用方的锁知识 | [Runtime contracts](../contracts.md)、[Maintenance 请求路径](../maintenance.md#follow-one-interactive-request) |
 | Print / 交互执行 | 已共享 Desktop/MCP 绑定；内存/可选记录与交互历史发布语义不同，尚无统一整个执行器的证据 | [app.go](../../internal/app/app.go)、[Runtime contracts](../contracts.md) |
 | 包布局 | 现有 import 扫描未发现内部包环，Agent 的内部依赖只有 llm；这不能证明不存在运行时耦合 | [Architecture](../architecture.md#package-map) |

@@ -15,18 +15,18 @@ import (
 
 // loginAccount runs within the existing command lifetime. Only successful
 // authorization updates disk and the current Session's provider state.
-func (s *interactiveSession) loginAccount(ctx context.Context, request interaction.CommandRequest) (string, error) {
+func (s *interactiveSession) loginAccount(ctx context.Context, request interaction.CommandRequest) (result loginActionResult, returnErr error) {
 	if request.Arguments == "anthropic-subscription" {
 		return s.loginClaudeAccount(ctx, request)
 	}
 	if request.Arguments != string(codex.ProviderID) || request.Secret != "" || request.UseSavedCredential {
-		return "", errors.New("app: invalid account login request")
+		return result, errors.New("app: invalid account login request")
 	}
 	if request.LoginMethod != "browser" && request.LoginMethod != "device-code" {
-		return "", errors.New("app: unknown account login method")
+		return result, errors.New("app: unknown account login method")
 	}
 	if request.Auth == nil || request.Auth.Notify == nil {
-		return "", errors.New("app: interactive authentication is required")
+		return result, errors.New("app: interactive authentication is required")
 	}
 	settings := s.settingsSnapshot()
 	opened := false
@@ -52,20 +52,40 @@ func (s *interactiveSession) loginAccount(ctx context.Context, request interacti
 		},
 	})
 	if err != nil {
-		return "", err
+		return result, err
 	}
 	if err := ctx.Err(); err != nil {
-		return "", err
+		return result, err
 	}
-	_, err = config.UpdateCodexCredentials(ctx, settings.configuration.Paths, func(config.CodexCredentials) (config.CodexCredentials, error) { return credential, nil })
+	update := s.application.dependencies.updateCodexCredentials
+	if update == nil {
+		update = config.UpdateCodexCredentials
+	}
+	changed := false
+	_, err = update(ctx, settings.configuration.Paths, func(previous config.CodexCredentials) (config.CodexCredentials, error) {
+		changed = previous != credential
+		return credential, nil
+	})
+	if err != nil && !config.WasCommitted(err) {
+		return result, fmt.Errorf("app: save account login: %w", err)
+	}
+	// Existing OAuth providers reread this file for each request, including
+	// providers retained by a side thread after the main selection changed.
+	result.committed, result.resourcesChanged = changed, changed
 	if err != nil {
-		return "", fmt.Errorf("app: save account login: %w", err)
+		s.settingsWarning(fmt.Errorf("Account credential saved; %w", err))
 	}
 	overridden, err := s.selectProvider(ctx, string(codex.ProviderID))
 	if err != nil {
-		return "", fmt.Errorf("account credential saved, but preferences and current Session were not changed: %w", err)
+		status := "unchanged"
+		if result.committed {
+			status = "saved"
+		}
+		return result, fmt.Errorf("account credential %s, but provider preferences and selection were not changed: %w", status, err)
 	}
-	return "Signed in to OpenAI Codex. AICE is ready.\n" + savedSettingMessage("provider", string(codex.ProviderID), overridden), nil
+	result.committed, result.resourcesChanged = true, true
+	result.output = "Signed in to OpenAI Codex. AICE is ready.\n" + savedSettingMessage("provider", string(codex.ProviderID), overridden)
+	return result, nil
 }
 
 func openBrowser(ctx context.Context, address string) error {

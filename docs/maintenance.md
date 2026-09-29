@@ -125,31 +125,19 @@ remain in their existing modules.
 
 ### Management action invalidation and partial completion
 
-Login still uses different invalidation rules in the slash and Settings entry
-points. [RunSlashCommand](../internal/app/interactive_commands.go) advances
-revisions only when the reserved handler returns nil;
-[RunSettingsAction](../internal/app/settings_apply.go) advances both revisions
-for a login attempt even when it fails or is canceled. Trust attempts retain the
-same draft-revision difference, but remain restart-only and never advance the
-resource revision. Reservation rejection changes neither.
+Trust retains one entry-point difference: an admitted Settings action advances
+the draft revision even when saving fails, while `/trust` advances it only on
+success. Both are restart-only and leave the resource revision unchanged;
+reservation rejection changes neither. Main-path acceptance must resolve whether
+this remaining draft-only difference has a useful contract before changing it.
+See [Project Trust](project-trust.md) and
+[RunSettingsAction](../internal/app/settings_apply.go).
 
-These rules were introduced together in `bd3d949`. The Settings comment accounts
-for credentials saved before a later preference failure, but does not establish
-that every failed or canceled attempt must invalidate resources. Account login
-can commit credentials before preference persistence fails while the selected
-live provider remains unchanged. The remaining login review must trace API-key
-and OAuth consumers separately, derive resource effects from those facts, and
-verify held main/BTW execution through both entry points.
-
-[Browser management](browser.md) and [Web management](web.md) now report effects
-from their operations through shared per-domain coordinators. Browser includes
-uncertain effects of a started modifying helper. Web separates a durable
-credential write from runtime publication: a credential-only commit refreshes
-Settings drafts but leaves held main/BTW runs and their old effective resources
-usable. No-effect failures advance neither revision. See the domain documents
-for partial-success and cleanup semantics; do not replay actions to infer effects.
-Frontend snapshot refresh is presentation only and cannot replace application
-resource invalidation.
+Browser, Web and login completion decisions belong to their application
+operations and are shared by slash and Settings. Their effects are intentionally
+different: see [Browser](browser.md), [Web](web.md) and
+[login credentials](configuration.md#credentials-and-connection-overrides).
+Frontend snapshot refresh is presentation only and cannot replace application resource invalidation.
 
 ### MCP verification limits
 

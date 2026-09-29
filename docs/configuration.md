@@ -597,10 +597,29 @@ credentials each use a separate file as described below.
 | AiHubMix | `AIHUBMIX_API_KEY` | `aihubmix_api_key` | `AICE_AIHUBMIX_BASE_URL` |
 | Custom (Ollama, vLLM, LM Studio, any OpenAI-compatible) | `AICE_CUSTOM_API_KEY` | `custom_api_key` | `AICE_CUSTOM_BASE_URL` (default `http://localhost:11434/v1`) |
 
-Settings login actions and `/login` call the same application operation in
-`app/auth_login.go`, which selects account authorization or API-key setup.
-Settings calls it directly; slash dispatch only adapts the command entry point.
-Each entry point owns its settings reservation.
+Settings login actions and `/login` call the same coordinator in
+`app/auth_login.go`. It owns one settings reservation, selects account
+authorization or API-key setup, and advances revisions from actual effects.
+Settings supplies its draft revision; slash dispatch only adapts the entry point.
+Cancellation, validation failures and failed credential writes advance neither
+revision. A successful preference publication advances both revisions and
+invalidates prepared runs and existing BTW threads.
+
+If an API key is saved but preferences fail, the Settings revision advances,
+while the current model selection and its clients keep their previous key.
+Prepared main runs and BTW threads remain usable. OAuth differs: existing
+subscription providers reread their credential file on every request. An actual
+OAuth credential replacement therefore also advances the resource revision,
+even if provider selection fails afterward; prepared runs are rejected and BTW
+threads become read-only. The error identifies the saved credential and the
+unchanged provider preferences and selection. An identical OAuth credential
+requires no write and, if selection then fails, advances neither revision.
+
+A lock-cleanup warning after a committed credential write is reported separately;
+login continues the preference save without repeating authorization or the
+credential write. Credential and preference saves remain separate commits.
+The private effect result does not set Settings' public preference-commit flags;
+login output, errors and warnings describe success or partial success.
 
 In the TUI, `/login` first offers `Sign in with an account` or
 `Sign in with an API key`, then a provider menu. Confirm each menu level before

@@ -830,6 +830,17 @@ and unchanged priority moves advance neither. This does not make credentials
 and preferences one transaction. See [Web management](web.md); other domain
 actions retain their own completion rules.
 
+Login uses one application coordinator for slash and Settings. An API-key write
+without preference publication advances only the draft revision: existing
+clients retain their old key. A changed OAuth credential advances both revisions
+even if the subsequent preference save fails, because Codex and Claude
+subscription clients reread credentials for every request. This uses the existing
+application-wide resource revision; it does not introduce provider-specific
+versions. An identical OAuth credential without a later preference commit,
+validation failure or cancellation before effects advances neither revision.
+Successful runtime publication advances both. Credential cleanup warnings retain
+the committed effects and are reported separately, without replaying login.
+
 A setting operation prepares before writing, publishes after atomic replacement,
 and reports cleanup separately from commit failure. Web instance edits patch
 only selected properties; a writer rereads disk to preserve unrelated peers,

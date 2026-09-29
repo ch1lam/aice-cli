@@ -73,6 +73,8 @@ type dependencies struct {
 	claudeInteractiveLogin     func(context.Context, claudesubscription.LoginInteraction) (config.ClaudeSubscriptionCredentials, error)
 	codexLogin                 func(context.Context, bool, io.Writer) (config.CodexCredentials, error)
 	codexInteractiveLogin      func(context.Context, bool, codex.LoginInteraction) (config.CodexCredentials, error)
+	updateCodexCredentials     func(context.Context, config.Paths, func(config.CodexCredentials) (config.CodexCredentials, error)) (config.CodexCredentials, error)
+	updateClaudeCredentials    func(context.Context, config.Paths, func(config.ClaudeSubscriptionCredentials) (config.ClaudeSubscriptionCredentials, error)) (config.ClaudeSubscriptionCredentials, error)
 	openBrowser                func(context.Context, string) error
 	ensureHelpers              func(context.Context, deps.Options) error
 	// webBackends overrides the fixed search/fetch factory list; nil uses the

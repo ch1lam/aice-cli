@@ -12,15 +12,15 @@ import (
 
 // loginClaudeAccount runs within the existing command lifetime. Only successful
 // authorization updates disk and the current Session's provider state.
-func (s *interactiveSession) loginClaudeAccount(ctx context.Context, request interaction.CommandRequest) (string, error) {
+func (s *interactiveSession) loginClaudeAccount(ctx context.Context, request interaction.CommandRequest) (result loginActionResult, returnErr error) {
 	if request.Arguments != string(claudesubscription.ProviderID) || request.Secret != "" || request.UseSavedCredential {
-		return "", errors.New("app: invalid account login request")
+		return result, errors.New("app: invalid account login request")
 	}
 	if request.LoginMethod != "browser" {
-		return "", errors.New("app: unknown account login method")
+		return result, errors.New("app: unknown account login method")
 	}
 	if request.Auth == nil || request.Auth.Notify == nil {
-		return "", errors.New("app: interactive authentication is required")
+		return result, errors.New("app: interactive authentication is required")
 	}
 	settings := s.settingsSnapshot()
 	opened := false
@@ -46,20 +46,38 @@ func (s *interactiveSession) loginClaudeAccount(ctx context.Context, request int
 		},
 	})
 	if err != nil {
-		return "", err
+		return result, err
 	}
 	if err := ctx.Err(); err != nil {
-		return "", err
+		return result, err
 	}
-	_, err = config.UpdateClaudeSubscriptionCredentials(ctx, settings.configuration.Paths, func(config.ClaudeSubscriptionCredentials) (config.ClaudeSubscriptionCredentials, error) {
+	update := s.application.dependencies.updateClaudeCredentials
+	if update == nil {
+		update = config.UpdateClaudeSubscriptionCredentials
+	}
+	changed := false
+	_, err = update(ctx, settings.configuration.Paths, func(previous config.ClaudeSubscriptionCredentials) (config.ClaudeSubscriptionCredentials, error) {
+		changed = previous != credential
 		return credential, nil
 	})
+	if err != nil && !config.WasCommitted(err) {
+		return result, fmt.Errorf("app: save account login: %w", err)
+	}
+	// Existing OAuth providers reread this file for each request, including
+	// providers retained by a side thread after the main selection changed.
+	result.committed, result.resourcesChanged = changed, changed
 	if err != nil {
-		return "", fmt.Errorf("app: save account login: %w", err)
+		s.settingsWarning(fmt.Errorf("Account credential saved; %w", err))
 	}
 	overridden, err := s.selectProvider(ctx, string(claudesubscription.ProviderID))
 	if err != nil {
-		return "", fmt.Errorf("account credential saved, but preferences and current Session were not changed: %w", err)
+		status := "unchanged"
+		if result.committed {
+			status = "saved"
+		}
+		return result, fmt.Errorf("account credential %s, but provider preferences and selection were not changed: %w", status, err)
 	}
-	return "Signed in to Claude Pro/Max. AICE is ready.\n" + savedSettingMessage("provider", string(claudesubscription.ProviderID), overridden), nil
+	result.committed, result.resourcesChanged = true, true
+	result.output = "Signed in to Claude Pro/Max. AICE is ready.\n" + savedSettingMessage("provider", string(claudesubscription.ProviderID), overridden)
+	return result, nil
 }
