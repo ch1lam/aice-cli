@@ -1309,9 +1309,10 @@ completes the highlighted command; Escape closes suggestions. Command and option
 menus show rows without a title or shortcut header. Their shortcuts appear in
 the bottom shortcut bar only while the menu is visible; option menus also show
 Enter to choose and nested menus show Escape to go back. When space is limited,
-these contextual shortcuts take priority over usage figures. Matches are ranked
-by relevance, favoring exact names, consecutive letters, and word starts. Matching
-letters use AICE's gold secondary color. Selection only makes the option's label
+these contextual shortcuts take priority over usage figures. With only `/`, ordinary
+commands appear first and Skills come last, preserving catalog order within each
+group. Once a search term is entered, all matches are ranked by relevance, favoring
+exact names, consecutive letters, and word starts. Matching letters use AICE's gold secondary color. Selection only makes the option's label
 and arrow bold, without changing their colors or adding a background;
 descriptions always stay muted with normal weight. `(active)` marks the current
 value independently of the highlighted selection. The inactive composer border

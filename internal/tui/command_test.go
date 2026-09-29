@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"slices"
 	"strings"
 	"testing"
 )
@@ -121,6 +122,35 @@ func TestMatchingSlashCommandsUsesFuzzyNames(t *testing.T) {
 	}
 	if matches := matchingSlashCommands(commands, "/checkout "); len(matches) != 0 {
 		t.Fatalf("argument input matches = %#v, want none", matches)
+	}
+}
+
+func TestSlashSuggestionsKeepSkillsLastOnlyWithoutSearch(t *testing.T) {
+	t.Parallel()
+	commands := []SlashCommand{
+		{Name: "skill:review", SkillName: "review", Description: "audit"},
+		{Name: "model"},
+		{Name: "skill:browser", SkillName: "browser"},
+		{Name: "audit-log"},
+		{Name: "settings"},
+	}
+	for _, tc := range []struct {
+		query string
+		want  []string
+	}{
+		{query: "/", want: []string{"model", "audit-log", "settings", "skill:review", "skill:browser"}},
+		{query: "/audit", want: []string{"skill:review", "audit-log"}},
+	} {
+		var names []string
+		for _, command := range matchingSlashCommands(commands, tc.query) {
+			names = append(names, command.Name)
+		}
+		if !slices.Equal(names, tc.want) {
+			t.Errorf("suggestions for %q = %v, want %v", tc.query, names, tc.want)
+		}
+	}
+	if commands[0].Name != "skill:review" {
+		t.Fatal("suggestion sorting mutated the catalog")
 	}
 }
 

@@ -156,7 +156,15 @@ func matchingSlashCommands(
 			ranked = append(ranked, match{command: command, score: score})
 		}
 	}
-	slices.SortStableFunc(ranked, func(a, b match) int { return b.score - a.score })
+	slices.SortStableFunc(ranked, func(a, b match) int {
+		if query == "" && (a.command.SkillName == "") != (b.command.SkillName == "") {
+			if a.command.SkillName == "" {
+				return -1
+			}
+			return 1
+		}
+		return b.score - a.score
+	})
 	matches := make([]SlashCommand, len(ranked))
 	for index, hit := range ranked {
 		matches[index] = hit.command
