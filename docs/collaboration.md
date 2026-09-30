@@ -37,6 +37,10 @@ Default tests use synthetic clipboard data and bounded helpers. Linux/Windows
 clipboard and physical IME behavior require their native desktops. CLI-driven
 TUI tests must wait for the expected reply and idle frame, not just an earlier
 command's idle header; resize repaints can expose full asynchronous frames.
+Match the current reply or cancellation and the READY header in the same frame.
+A previous run's cancellation notice remains in the transcript while a later
+run is still stopping. Failed input or repaint writes must report the pending
+action and terminal transcript so a deadline is not reduced to a closed-pipe error.
 
 ## Installer checks
 

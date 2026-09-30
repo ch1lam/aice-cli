@@ -115,23 +115,27 @@ func TestSettingsUsageTUI(t *testing.T) {
 	t.Cleanup(func() { cancel(); input.Close(); reader.Close(); <-stopped })
 	width := 120
 	var transcript strings.Builder
-	waitFor := func(want string) {
+	waitFor := func(want ...string) {
 		t.Helper()
-		var recent strings.Builder
 		ticker := time.NewTicker(150 * time.Millisecond)
 		defer ticker.Stop()
 		for {
 			select {
 			case <-ticker.C:
 				if _, err := io.WriteString(input, fmt.Sprintf("\x1b[8;40;%dt", width)); err != nil {
-					t.Fatal(err)
+					t.Fatalf("repaint while waiting for %q: %v\n%s", want, err, transcript.String())
 				}
 				width = 239 - width
 			case frame := <-output.frames:
 				plain := ansi.Strip(frame)
 				transcript.WriteString(plain)
-				recent.WriteString(plain)
-				if strings.Contains(recent.String(), want) {
+				// Resize repaints let all markers match the same frame. Combining
+				// old transcript text with a later header can accept stale state.
+				matched := true
+				for _, marker := range want {
+					matched = matched && strings.Contains(plain, marker)
+				}
+				if matched {
 					return
 				}
 			case err := <-done:
@@ -145,7 +149,7 @@ func TestSettingsUsageTUI(t *testing.T) {
 	send := func(value string) {
 		t.Helper()
 		if _, err := io.WriteString(input, value+fmt.Sprintf("\x1b[8;40;%dt", width)); err != nil {
-			t.Fatal(err)
+			t.Fatalf("send %q: %v\n%s", value, err, transcript.String())
 		}
 		width = 239 - width
 	}
@@ -226,7 +230,7 @@ func TestSettingsUsageTUI(t *testing.T) {
 	waitFor("Stop current run")
 	send("\x1b[17~") // F6: the explicit Settings stop control.
 	send("\x1b")
-	waitFor("Response cancelled")
+	waitFor("Response cancelled", "● READY")
 
 	if runtime.GOOS == "darwin" || runtime.GOOS == "linux" {
 		send("/desktop\r")
@@ -252,7 +256,9 @@ func TestSettingsUsageTUI(t *testing.T) {
 		waitFor("Stop current run")
 		send("\x1b[17~")
 		send("\x1b")
-		waitFor("Response cancelled")
+		// The first cancellation remains visible while this run is stopping.
+		// Do not send the next command until this run's idle frame is rendered.
+		waitFor("Synthetic continuation waiting", "Response cancelled", "● READY")
 	}
 
 	// Render Windows facts through the actual command on every host. This is
