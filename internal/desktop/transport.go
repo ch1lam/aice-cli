@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	DriverVersion   = "0.29.1"
+	DriverVersion   = "0.30.4"
 	ProtocolVersion = "2025-06-18"
 	maxMessageBytes = 24 * 1024 * 1024
 	connectTimeout  = 15 * time.Second

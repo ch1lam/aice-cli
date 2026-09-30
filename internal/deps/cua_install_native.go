@@ -19,25 +19,25 @@ func cuaNativeFiles(goos, goarch string) (map[string]string, error) {
 	switch goos + "/" + goarch {
 	case "linux/arm64":
 		return map[string]string{
-			"cua-driver":       "85f6841061f0c2347c84c6a308a09a3fb7e41481de71ba479777e3d808ec50cd",
-			"cua-cursor-theme": "01bab17abde1c6a6d9d7eb1fea35e7062c22904c955bd9267b707adb61c60b0b",
+			"cua-driver":       "15eaf22b6dcb1a33fedad0e9704889d5cef26723b49f9531c34a54050d1bf8c8",
+			"cua-cursor-theme": "7d65078398f73c2cd0572132e6913123374126f9cb48db6d55d6feb4450d0130",
 		}, nil
 	case "linux/amd64":
 		return map[string]string{
-			"cua-driver":       "a9c3262817103cdff6c09e351f6a3410206624a6f40eea5bd14b4abb3ddf9362",
-			"cua-cursor-theme": "49cd40354577a6c6a6ff7e1954ed09787d4b2c7b6a445bb835dd0481f4e42181",
+			"cua-driver":       "312e4398ca7686df0c7d2f78d511dfc7a95b3f3958657da2149421186ae238e5",
+			"cua-cursor-theme": "6c5cdb7ac1bfc3a34bcfabebe037f1ec9213c0736061a67341bb8fa3d42911e0",
 		}, nil
 	case "windows/arm64":
 		return map[string]string{
-			"cua-driver.exe":       "d3637107871cca8fa7109a586a1e2f8412cae30deefc55c266b90976acefd06d",
-			"cua-cursor-theme.exe": "701c540406a89f1c65495ccba0fc0f93a2e4b945ca30616953db6e1ac8788f38",
-			"cua-driver-uia.exe":   "e4210a12f778b9ff503f3119845fe3ffb81d2e9a4ced0ba4791ddbb8b7c2b2f0",
+			"cua-driver.exe":       "84763819f00547de24ccf33cb78cf3ab204e5a29b503b676f368698992aa8568",
+			"cua-cursor-theme.exe": "2e31a078481fa02a78b773e8d3dad234320a34471f778254e7f9eea30739c5a3",
+			"cua-driver-uia.exe":   "f70c439fd1653b665f08a6c851aa9359a12f4290947ecc345dfd12a93689d792",
 		}, nil
 	case "windows/amd64":
 		return map[string]string{
-			"cua-driver.exe":       "c0dc4bdf8d2b24e785769c82fb77fc618b9f3b2263e113d565167e4e38acda57",
-			"cua-cursor-theme.exe": "495cd396fd5dd4d0b744f941b737cb59eb69673ba2a812b011dfd94e6e1b82a8",
-			"cua-driver-uia.exe":   "0e170fd6f66190d15afeb26f90a051d9088b794252a5d26f5099c83227662d23",
+			"cua-driver.exe":       "94bb765aad94e2fdf715c6c152c4e2b2b1f93977779a7569e5abc6466beaeab2",
+			"cua-cursor-theme.exe": "84af3e2ac7cc2f2cb901929a3bdb96b59a1620f691ca979cadd913884a57a6df",
+			"cua-driver-uia.exe":   "11d0b8c3e74b7b77f219633de7abc5ae50d650082582578961e950fca2343c0c",
 		}, nil
 	default:
 		return nil, fmt.Errorf("unsupported Cua native installation: %s/%s", goos, goarch)

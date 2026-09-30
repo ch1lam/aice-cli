@@ -30,7 +30,7 @@ The generic client uses official Go MCP SDK v1.6.1. Cua connections pin `initial
 tools once within 16 pages, 256 entries and 4 MiB of catalog pages. Incomplete
 discovery is rejected. Before any `tools/call`, the desktop admission layer compares the
 complete input schemas of all 15 used tools against the corresponding macOS or Linux
-[reviewed 0.29.1 inventory](../internal/desktop/schema/README.md). Only JSON
+[reviewed 0.30.4 inventory](../internal/desktop/schema/README.md). Only JSON
 object ordering and whitespace are ignored; missing tools or changed fields,
 required parameters, defaults, enums, bounds and target alternatives reject the
 connection. Additional upstream tools remain unavailable to the private client.
@@ -192,7 +192,11 @@ Coordinates follow the upstream operation's coordinate frame. For screenshot
 pixels, use the original Cua screenshot dimensions and capture identity where
 the schema supports it. The generic media layer describes original and displayed
 sizes if it resizes an image; AICE does not reverse that transform inside CUA
-calls. Structured results, including degraded-state and escalation guidance,
+calls. In 0.30.4, macOS window-scoped foreground pixel clicks use exact-window
+HID activation, move the physical pointer and leave it at the target while
+attempting to restore the previous front application. Background pixel input
+does not move that pointer; Tk targets refuse it. This behavior does not change
+AICE's background default or authorize an automatic foreground retry. Structured results, including degraded-state and escalation guidance,
 remain source data. The generic model budget may clip their initial view; use
 `tool_result_read` to retrieve the necessary section with the supplied selector.
 
@@ -265,7 +269,7 @@ and limits. Full platform/model acceptance remains pending.
 ### Version-matched guidance
 
 The embedded `computer-use` Skill is AICE-authored guidance for the managed
-Cua Driver 0.29.1 interface. Its description explicitly applies only
+Cua Driver 0.30.4 interface. Its description explicitly applies only
 when `managed:cua` is available. The normal startup catalog lists its name and
 description; the `skill` tool loads its body on demand. No remote resource,
 initialization instruction or desktop setting automatically activates it.
@@ -531,7 +535,15 @@ as the tools and prompt it publishes; offline publication tests cover this.
 
 ## Platform evidence
 
-Native evidence uses pinned Driver **0.29.1**. The current thin MCP boundary
+The 0.30.4 upgrade passed full Go tests and vet, the macOS metadata inventory
+and absent-service checks, and read-only native same-Run reconnect on
+2026-09-30. The installed signed App retained the existing Accessibility and
+Screen Recording grants. Linux arm64 private installation and reuse passed in
+a disposable container. These checks do not establish Calendar task completion.
+
+The current runtime pins Driver **0.30.4**. The native results below were
+recorded on **0.29.1** unless a newer version is explicitly named; they do not
+constitute native acceptance of the upgraded Driver. The current thin MCP boundary
 has passed the macOS scripted and discovery-expiry gates below; other native
 evidence predates this boundary and establishes only the recorded adapters and fixtures. Reproducible
 test commands, fixture boundaries and model budgets are owned by

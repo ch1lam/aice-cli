@@ -3,92 +3,92 @@
     {
       "bytes": 66841,
       "name": "_install-rust.sh",
-      "sha256": "18090e0a711d652a6d38c1fa6275a4b5c5e537ec9b8549318ecbe469dbe6bb80"
+      "sha256": "a927680902700808d6e09a6653b498e76f6e37d2116c9bcf9296e6167abb5d08"
     },
     {
       "bytes": 1742,
       "name": "checksums.txt",
-      "sha256": "c52d980d0b4f589f602c72393af1b165f0b8d9479f82ba618897b97a848474ae"
+      "sha256": "e9089053ef9421b52cdc0f617fdc94db4644c12b795baf40429cb69dce068b29"
     },
     {
-      "bytes": 73719520,
-      "name": "cua-driver-rs-0.29.1-darwin-arm64.tar.gz",
-      "sha256": "096552de60bff0bcd476619b97f60ea12ecb1c38d7abdb2ea4496b3478e2458c"
+      "bytes": 74332144,
+      "name": "cua-driver-rs-0.30.4-darwin-arm64.tar.gz",
+      "sha256": "e270ea67388d794505031b0a15d8b58994c67e18e754a43634d7732251f595df"
     },
     {
-      "bytes": 45812644,
-      "name": "cua-driver-rs-0.29.1-darwin-universal-binary.tar.gz",
-      "sha256": "ba47526554ea832b4a77566ee946ef3fac1c51bb5e8a0d3f0c150e1377740bc7"
+      "bytes": 46208632,
+      "name": "cua-driver-rs-0.30.4-darwin-universal-binary.tar.gz",
+      "sha256": "a93d21bab914b2d854776f46f71a53bddd4e483ef762aeb74137d3ac306cbf65"
     },
     {
-      "bytes": 73719539,
-      "name": "cua-driver-rs-0.29.1-darwin-universal.tar.gz",
-      "sha256": "ee376d59ef37afac29a10c60c71469ac85fdc8844d1884bd317edd8def29055a"
+      "bytes": 74332196,
+      "name": "cua-driver-rs-0.30.4-darwin-universal.tar.gz",
+      "sha256": "9c75a186f89352fb522dc67791575f8c9e8081a38795af2706e103d41fa72be4"
     },
     {
-      "bytes": 73719492,
-      "name": "cua-driver-rs-0.29.1-darwin-x86_64.tar.gz",
-      "sha256": "838dedc3a82dfc9ea385204c7cdb3667cb9519356dfef4f96f1f3cfb64e28b0e"
+      "bytes": 74332165,
+      "name": "cua-driver-rs-0.30.4-darwin-x86_64.tar.gz",
+      "sha256": "0124eba0fb439e4d51ea38b5c452c00837f5782afa4c805142c76baf9c3ad25c"
     },
     {
-      "bytes": 33798405,
-      "name": "cua-driver-rs-0.29.1-linux-arm64-binary.tar.gz",
-      "sha256": "92ddc1bf01a68be543445d8cdd0df9900f0a0a43a17d251bf581a7c26cd5168b"
+      "bytes": 34061970,
+      "name": "cua-driver-rs-0.30.4-linux-arm64-binary.tar.gz",
+      "sha256": "a77007a57ddac6f5b46a49fa9d7c39d9f22b461bd6b50af736b45946b0207875"
     },
     {
-      "bytes": 33797281,
-      "name": "cua-driver-rs-0.29.1-linux-arm64.tar.gz",
-      "sha256": "47c1efa081057c9c1a18e45b20cb7dd0d7d2313520d18ba7d0d35f271005fe19"
+      "bytes": 34061666,
+      "name": "cua-driver-rs-0.30.4-linux-arm64.tar.gz",
+      "sha256": "21d00fa2fafe889e48a4e497fba95e6cd03de027753fc8799d5cf0695c30a8a1"
     },
     {
-      "bytes": 33632010,
-      "name": "cua-driver-rs-0.29.1-linux-x86_64-binary.tar.gz",
-      "sha256": "cf3acd8d7b6ce44917374463758ab6eae0c1e5295592a968fd496c7c8b3d36f1"
+      "bytes": 33803608,
+      "name": "cua-driver-rs-0.30.4-linux-x86_64-binary.tar.gz",
+      "sha256": "fff2016e0dea320df9be3aa52fc942c4ea4ca651df32cf3e950119bbc3097d29"
     },
     {
-      "bytes": 33634849,
-      "name": "cua-driver-rs-0.29.1-linux-x86_64.tar.gz",
-      "sha256": "61a0c0f24d6b03e31bb7a73390db875ecf0de2ce53aa435eadb03d70979d79a5"
+      "bytes": 33809003,
+      "name": "cua-driver-rs-0.30.4-linux-x86_64.tar.gz",
+      "sha256": "84445347ceb3039034ce30577b3b7c19a1f0c1f67639423f9da3a71be0418f90"
     },
     {
-      "bytes": 28681454,
-      "name": "cua-driver-rs-0.29.1-windows-arm64-binary.zip",
-      "sha256": "6427e148d5ff322381124945b1870c134c025af219df0054c0027dc58b92569d"
+      "bytes": 28995445,
+      "name": "cua-driver-rs-0.30.4-windows-arm64-binary.zip",
+      "sha256": "72d8713401ad1eb65f3046fe1c9d531840d36b3d5f999c79ac5fe1d4e8cff7e3"
     },
     {
-      "bytes": 28682684,
-      "name": "cua-driver-rs-0.29.1-windows-arm64.zip",
-      "sha256": "ec253f1b916b6cc43ea49a3259d009de24ee6d945e195783bfe7ab5e9cccec96"
+      "bytes": 28996675,
+      "name": "cua-driver-rs-0.30.4-windows-arm64.zip",
+      "sha256": "225926273a0bf962da7cefdd6915144d41f6ff519fa270f6c57c85436ae860ae"
     },
     {
-      "bytes": 30488714,
-      "name": "cua-driver-rs-0.29.1-windows-x86_64-binary.zip",
-      "sha256": "4b5ace1d784b3e4b0d41360408600eac2fa8f008931e07dca200b58e477621ac"
+      "bytes": 30771456,
+      "name": "cua-driver-rs-0.30.4-windows-x86_64-binary.zip",
+      "sha256": "7b0ec893797fdeb0514d96f5797ad6aa53617eadcba2e47856461f60140c757b"
     },
     {
-      "bytes": 30489958,
-      "name": "cua-driver-rs-0.29.1-windows-x86_64.zip",
-      "sha256": "679d30dbda901d65a6573f6f4f94aefca8b1eb3bb2ceadb23225dcbe8faa2470"
+      "bytes": 30772700,
+      "name": "cua-driver-rs-0.30.4-windows-x86_64.zip",
+      "sha256": "71ca8dfb3b98edd1e897ec59715269c40610879e03aeff6ae0e2ce709c6900c9"
     },
     {
-      "bytes": 74865,
-      "name": "cua-driver-rs-v0.29.1-skills.tar.gz",
-      "sha256": "7f6184ced9756a9d27204da9da8dd176d444dabd8c6a1a96bd02e6b311649969"
+      "bytes": 76632,
+      "name": "cua-driver-rs-v0.30.4-skills.tar.gz",
+      "sha256": "b1fbd33afe656a8cd6098f023201eb545bb89a8b229d052fb489f7b1cdfa2b23"
     },
     {
-      "bytes": 12813,
-      "name": "cua-hyprland-plugin-0.29.1-7a8f66ad04e62fccb18cca9965f2964fcaee124e-build-kit.tar.gz",
-      "sha256": "4f689cac36b48e9c60e03ddfbb1c5a45665f744f3dbce82c91728031d46e17a9"
+      "bytes": 12808,
+      "name": "cua-hyprland-plugin-0.30.4-bf6c76786d938070f4ecf1e44004752f69f518b8-build-kit.tar.gz",
+      "sha256": "4b03550465b29cae23e57bb48ab986a4162367683b3381baaeff50c5dbfef4b7"
     },
     {
-      "bytes": 68428,
-      "name": "cua-hyprland-plugin-0.29.1-7a8f66ad04e62fccb18cca9965f2964fcaee124e.tar.gz",
-      "sha256": "30d3639fd08b2f08a15ebfff43138535713f4d76efbbdcbec7a83aea044069c5"
+      "bytes": 68432,
+      "name": "cua-hyprland-plugin-0.30.4-bf6c76786d938070f4ecf1e44004752f69f518b8.tar.gz",
+      "sha256": "77db2be520e620ac2a75e39181745481033b80321825f765abeea5fbf776c5b8"
     },
     {
-      "bytes": 83703,
+      "bytes": 84507,
       "name": "install.ps1",
-      "sha256": "60671116909dc9aa46ee62f4674511ec97930e829dfa32cc61a7b71b1e1ad1c6"
+      "sha256": "0c0c09a98c69d78f67fa9a7aa6b0a49355b791fbf7a595d3aca98febec793e63"
     },
     {
       "bytes": 5692,
@@ -109,87 +109,326 @@
   "bump": "patch",
   "changelog": {
     "path": "libs/cua-driver/rust/CHANGELOG.md",
-    "sha256": "21a0d51cc64145822713188170efdd9bba713016e02fb0c9810cec9919751004"
+    "sha256": "a084d44236fa958911516f51d013feec791b6c2c57643794e07507df5eba5ad3"
   },
   "changes": [
     {
       "breaking": false,
       "contributors": [
         {
-          "external": false,
-          "login": "f-trycua",
-          "role": "author"
-        },
-        {
-          "external": false,
-          "login": "f-trycua",
-          "role": "reporter"
-        }
-      ],
-      "issues": [
-        4125
-      ],
-      "pr": 4148,
-      "scope": "cua-driver",
-      "summary": "keep a macOS selection when pixel typing into a focused field",
-      "type": "fix"
-    },
-    {
-      "breaking": false,
-      "contributors": [
-        {
-          "external": false,
-          "login": "f-trycua",
-          "role": "author"
-        }
-      ],
-      "issues": [],
-      "pr": 4158,
-      "scope": "cua-driver",
-      "summary": "finish Edge 153 session cleanup when its accessibility tree is briefly empty",
-      "type": "fix"
-    },
-    {
-      "breaking": false,
-      "contributors": [
-        {
-          "external": false,
-          "login": "f-trycua",
+          "external": true,
+          "login": "lorenzozanee",
           "role": "author"
         },
         {
           "external": false,
           "login": "f-trycua",
           "role": "coauthor"
+        },
+        {
+          "external": true,
+          "login": "leeweisern",
+          "role": "reporter"
+        }
+      ],
+      "issues": [
+        4219
+      ],
+      "pr": 4244,
+      "scope": "cua-driver",
+      "summary": "support fractionally scaled Hyprland desktops",
+      "type": "fix"
+    },
+    {
+      "breaking": false,
+      "contributors": [
+        {
+          "external": true,
+          "login": "redreceipt",
+          "role": "author"
+        },
+        {
+          "external": false,
+          "login": "f-trycua",
+          "role": "coauthor"
+        },
+        {
+          "external": true,
+          "login": "redreceipt",
+          "role": "coauthor"
         }
       ],
       "issues": [],
-      "pr": 4160,
+      "pr": 3462,
       "scope": "cua-driver",
-      "summary": "make macOS existing-profile browser setup finish reliably",
+      "summary": "drop schemars uint/float formats from contract schema",
+      "type": "fix"
+    },
+    {
+      "breaking": false,
+      "contributors": [
+        {
+          "external": false,
+          "login": "f-trycua",
+          "role": "author"
+        },
+        {
+          "external": false,
+          "login": "injaneity",
+          "role": "coauthor"
+        }
+      ],
+      "issues": [],
+      "pr": 3778,
+      "scope": "cua-driver",
+      "summary": "render browser cursor on Linux",
+      "type": "fix"
+    },
+    {
+      "breaking": false,
+      "contributors": [
+        {
+          "external": true,
+          "login": "c8dhjp4tyv-bit",
+          "role": "author"
+        },
+        {
+          "external": true,
+          "login": "c8dhjp4tyv-bit",
+          "role": "coauthor"
+        },
+        {
+          "external": false,
+          "login": "f-trycua",
+          "role": "coauthor"
+        },
+        {
+          "external": true,
+          "login": "0p9b",
+          "role": "reporter"
+        }
+      ],
+      "issues": [
+        3445
+      ],
+      "pr": 3632,
+      "scope": "cua-driver",
+      "summary": "scope trajectory recording to the session that started it",
+      "type": "fix"
+    },
+    {
+      "breaking": false,
+      "contributors": [
+        {
+          "external": true,
+          "login": "will-bogusz",
+          "role": "author"
+        },
+        {
+          "external": true,
+          "login": "will-bogusz",
+          "role": "reporter"
+        }
+      ],
+      "issues": [
+        3849
+      ],
+      "pr": 3855,
+      "scope": "cua-driver",
+      "summary": "keep a foreground key chord's modifiers on its base key",
+      "type": "fix"
+    },
+    {
+      "breaking": false,
+      "contributors": [
+        {
+          "external": true,
+          "login": "will-bogusz",
+          "role": "author"
+        },
+        {
+          "external": true,
+          "login": "will-bogusz",
+          "role": "reporter"
+        }
+      ],
+      "issues": [
+        3784
+      ],
+      "pr": 3785,
+      "scope": "cua-driver",
+      "summary": "verify a raised window on its display, not global order",
+      "type": "fix"
+    },
+    {
+      "breaking": false,
+      "contributors": [
+        {
+          "external": true,
+          "login": "steipete",
+          "role": "author"
+        },
+        {
+          "external": true,
+          "login": "steipete",
+          "role": "reporter"
+        }
+      ],
+      "issues": [
+        3760
+      ],
+      "pr": 3762,
+      "scope": "cua-driver",
+      "summary": "preserve delivered X11 mouse click timing",
+      "type": "fix"
+    },
+    {
+      "breaking": false,
+      "contributors": [
+        {
+          "external": true,
+          "login": "lorenzozanee",
+          "role": "author"
+        },
+        {
+          "external": false,
+          "login": "f-trycua",
+          "role": "coauthor"
+        },
+        {
+          "external": true,
+          "login": "werinad",
+          "role": "reporter"
+        }
+      ],
+      "issues": [
+        4069
+      ],
+      "pr": 4246,
+      "scope": "cua-driver",
+      "summary": "anchor theme transforms at hotspot",
+      "type": "fix"
+    },
+    {
+      "breaking": false,
+      "contributors": [
+        {
+          "external": true,
+          "login": "steipete",
+          "role": "author"
+        },
+        {
+          "external": false,
+          "login": "f-trycua",
+          "role": "coauthor"
+        },
+        {
+          "external": true,
+          "login": "steipete",
+          "role": "coauthor"
+        },
+        {
+          "external": true,
+          "login": "steipete",
+          "role": "reporter"
+        }
+      ],
+      "issues": [
+        3756
+      ],
+      "pr": 3758,
+      "scope": "cua-driver",
+      "summary": "capture X11 DirectColor window colors",
       "type": "fix"
     }
   ],
-  "compareUrl": "https://github.com/trycua/cua/compare/cua-driver-rs-v0.29.0...cua-driver-rs-v0.29.1",
+  "compareUrl": "https://github.com/trycua/cua/compare/cua-driver-rs-v0.30.3...cua-driver-rs-v0.30.4",
   "contributors": [
+    {
+      "external": true,
+      "login": "0p9b",
+      "roles": [
+        "reporter"
+      ]
+    },
+    {
+      "external": true,
+      "login": "c8dhjp4tyv-bit",
+      "roles": [
+        "author",
+        "coauthor"
+      ]
+    },
     {
       "external": false,
       "login": "f-trycua",
       "roles": [
         "author",
+        "coauthor"
+      ]
+    },
+    {
+      "external": false,
+      "login": "injaneity",
+      "roles": [
+        "coauthor"
+      ]
+    },
+    {
+      "external": true,
+      "login": "leeweisern",
+      "roles": [
+        "reporter"
+      ]
+    },
+    {
+      "external": true,
+      "login": "lorenzozanee",
+      "roles": [
+        "author"
+      ]
+    },
+    {
+      "external": true,
+      "login": "redreceipt",
+      "roles": [
+        "author",
+        "coauthor"
+      ]
+    },
+    {
+      "external": true,
+      "login": "steipete",
+      "roles": [
+        "author",
         "coauthor",
+        "reporter"
+      ]
+    },
+    {
+      "external": true,
+      "login": "werinad",
+      "roles": [
+        "reporter"
+      ]
+    },
+    {
+      "external": true,
+      "login": "will-bogusz",
+      "roles": [
+        "author",
         "reporter"
       ]
     }
   ],
   "displayName": "Cua Driver",
-  "previousTag": "cua-driver-rs-v0.29.0",
+  "previousTag": "cua-driver-rs-v0.30.3",
   "product": "cua-driver-rs",
   "repository": "trycua/cua",
-  "schema": "https://raw.githubusercontent.com/trycua/cua/7a8f66ad04e62fccb18cca9965f2964fcaee124e/.github/release-manifest.schema.json",
+  "schema": "https://raw.githubusercontent.com/trycua/cua/bf6c76786d938070f4ecf1e44004752f69f518b8/.github/release-manifest.schema.json",
   "schemaVersion": 1,
-  "sha": "7a8f66ad04e62fccb18cca9965f2964fcaee124e",
-  "tag": "cua-driver-rs-v0.29.1",
-  "version": "0.29.1",
+  "sha": "bf6c76786d938070f4ecf1e44004752f69f518b8",
+  "tag": "cua-driver-rs-v0.30.4",
+  "version": "0.30.4",
   "visualRequested": false
 }

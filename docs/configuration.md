@@ -1176,7 +1176,7 @@ These references are an interactive composer feature; `--print` accepts ordinary
 requests to use a named Skill.
 The builtin `browser` skill describes browsing through `bash` and `read`; see
 [Browser automation](browser.md) for installation and connection requirements.
-The builtin `computer-use` guide is pinned to Cua Driver 0.29.1 and applies when
+The builtin `computer-use` guide is pinned to Cua Driver 0.30.4 and applies when
 `managed:cua` is available. It uses normal on-demand activation and source
 shadowing; loading guidance neither enables Computer Use nor grants MCP access.
 Enabled production main runs expose only the managed discovery route; see [Computer Use](desktop.md#managed-mcp-boundary).

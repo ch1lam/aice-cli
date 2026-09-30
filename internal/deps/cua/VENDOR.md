@@ -1,49 +1,45 @@
 # Cua Driver provenance
 
-The native helper is pinned to **0.29.1**, release
-[`cua-driver-rs-v0.29.1`](https://github.com/trycua/cua/releases/tag/cua-driver-rs-v0.29.1),
-source commit `7a8f66ad04e62fccb18cca9965f2964fcaee124e`.
+The native helper is pinned to **0.30.4**, release
+[`cua-driver-rs-v0.30.4`](https://github.com/trycua/cua/releases/tag/cua-driver-rs-v0.30.4),
+source commit `bf6c76786d938070f4ecf1e44004752f69f518b8`.
 The helper is MIT licensed; preserve LICENSE with installations. AICE does
 not embed its Node/Python SDK, perception extensions, or browser-profile tools.
 
-The 15 macOS input schemas used by AICE are preserved under
-[desktop/schema](../../desktop/schema/README.md), exported from this signed
-binary's canonical inventory. They retain the adjacent MIT license and are
-checked before native tool dispatch; new platform/version schemas need review.
-
 The adjacent upstream release manifest has SHA-256
-`d114a50c1487ad20c7f7ca6fb6380284f160fd967d5e2f2050ccbb444e72b52b`.
+`df3cdde0a4b2c1260abe548ffe3b6ca6967935d131b084e9a826b815b02fe59c`.
 It and GitHub's release asset digests agree with the pins in `cua.go`.
 All five full distribution archives (macOS universal and Windows/Linux on
-amd64/arm64) were downloaded and independently hashed on 2026-09-26. The static
-Windows/Linux extraction check also verifies the per-executable pins in
-`cua_install_native.go`. Linux arm64 was subsequently executed as an ordinary
-user in an isolated Debian 13 container: the production private installer,
-version probe, reuse and exclusive publisher passed. Its `dump-docs --type mcp`
-inventory also exported successfully without a display. Windows and Linux amd64
-executables have not been run here. Artifact or headless installation validation
-does not establish native desktop acceptance.
+amd64/arm64) were downloaded and independently hashed on 2026-09-30. The
+selected Linux/Windows executable bytes supply the per-file hashes in
+`cua_install_native.go`; no unverified executable digest is carried forward.
 
-Static ELF/PE import inspection found no dependency on the adjacent SDK or
-Node libraries for the selected executables. Linux needs system libX11, libXi,
-libxkbcommon and GNU runtime libraries. Windows executables carry certificate
-tables and import Windows system DLLs; the release pipeline requires timestamped
-Authenticode signatures from `Cua AI, Inc.`. AICE's Windows verifier enforces
-that policy on the native host; local macOS inspection is not Windows trust
-verification. The UIAccess worker also requires an OS-approved secure path or
-administrator policy; the private install does not establish that authority.
+The staged macOS App passed `codesign --verify --deep --strict` with the Cua
+signing requirement and `spctl --assess --type execute`. Its signed identity
+remains bundle `com.trycua.driver`, Developer ID team `YCK386LBJ7` (Cua AI, Inc.).
+The same verified App was installed at `/Applications/CuaDriver.app` on
+2026-09-30 and reports 0.30.4. The previous App and local AICE binary were
+preserved outside the installation before replacement. Do not bypass signature
+failures by re-signing or removing quarantine.
 
-The downloaded macOS App passed `codesign --verify --deep --strict` and
-`spctl --assess --type execute` on 2026-09-26. Signing identity:
-`Developer ID Application: Cua AI, Inc. (YCK386LBJ7)`;
-bundle `com.trycua.driver`; stapled notarization ticket. Sandboxed codesign
-reported an invalid signature with unavailable authority; the same unchanged
-bytes passed verification with access to system certificates. Do not work
-around a production signature failure by re-signing or removing quarantine.
-After the operator-authorized host upgrade on 2026-09-27, these signature,
-signing-identity and Gatekeeper checks also passed at `/Applications/CuaDriver.app`.
-The installed CLI reports 0.29.1 and its native metadata inventory matches the
-reviewed 15-tool pin. This does not establish OS grants or desktop task acceptance.
+The 15 macOS schemas were exported by the verified signed binary using
+`dump-docs --type mcp` with an isolated home and telemetry/update checks disabled.
+The Linux arm64 binary exported the same finite metadata inventory as an
+unprivileged user in a disposable Debian container with libX11, libXi and
+libxkbcommon installed. These commands do not access a desktop. The two Windows
+status schemas were reviewed in the fixed source; Windows binaries were not
+executed and native Authenticode trust was not tested on this host.
+The updated Linux arm64 private installer also passed its native install and
+read-only reuse test in that container. See
+[schema provenance and review](../../desktop/schema/README.md).
+
+Version 0.30.4 changes macOS foreground pixel clicks to HID delivery that moves
+the physical pointer and leaves it at the target; it also fixes per-display
+foreground-window verification and cursor-theme hotspot transforms. The
+main-screen-only macOS cursor overlay limitation remains. Archive integrity,
+metadata exports and schema review do not establish native input, focus, cursor
+alignment or real-application acceptance. Earlier 0.29.1 native results remain
+versioned evidence in [Computer Use](../../../docs/desktop.md#platform-evidence).
 
 No upstream installer is executed. The published top-level install.sh delegates
 to a secondary installer and includes skill/PATH integration outside AICE's

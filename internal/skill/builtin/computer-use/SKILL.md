@@ -1,11 +1,11 @@
 ---
 name: computer-use
-description: Operate native desktop apps through AICE's managed:cua MCP service with Cua Driver 0.29.1. Use when that managed service is available for a desktop task.
+description: Operate native desktop apps through AICE's managed:cua MCP service with Cua Driver 0.30.4. Use when that managed service is available for a desktop task.
 ---
 
 # Computer Use in AICE
 
-This guide applies to AICE's managed Cua Driver **0.29.1** service. Use the
+This guide applies to AICE's managed Cua Driver **0.30.4** service. Use the
 selected tool's pinned platform schema as the argument contract. AICE manages
 the native session, connection and configured capabilities; Cua manages targets,
 snapshots, element references, capture coordinates and input semantics. Loading
@@ -128,6 +128,13 @@ observation recommends it. AICE does not require a particular preceding refusal
 and never switches modes or retries in foreground automatically. Availability
 in a schema is not proof of support by a specific platform or application.
 
+On macOS 0.30.4, window-scoped foreground pixel clicks activate the exact
+window, move the physical pointer, dispatch through HID, then attempt to restore
+the previous front application. The pointer stays at the target. Background
+pixel clicks do not move the physical pointer; Tk targets explicitly refuse
+that route. Semantic AX actions and their virtual cursor feedback remain
+separate from physical-pointer movement.
+
 Distinguish the actual refusal before choosing another step:
 
 - `ambiguous_window_target`: supply the exact observed window, not just its PID.
@@ -157,7 +164,8 @@ response was lost. Foreground advice does not establish that an earlier action
 had no effect. If the postcondition cannot be established, report uncertainty
 rather than claiming completion.
 
-Pinned-platform limitations remain relevant: macOS background pixel double-click
+Earlier 0.29.1 native findings remain unresolved until retested on 0.30.4:
+macOS background pixel double-click
 can disturb focus, right-click can deliver duplicate events, and background drag
 is unavailable in the tested AppKit route. Linux Unicode insertion can truncate,
 and some GTK background key/gesture routes require unavailable independent input

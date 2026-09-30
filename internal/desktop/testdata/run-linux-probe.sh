@@ -26,7 +26,7 @@ tar -xzf "$archive" -C "$directory"
 mkdir "$directory/home" "$directory/runtime"
 chown 65534:65534 "$directory/home" "$directory/runtime"
 chmod 700 "$directory/runtime"
-driver=$directory/cua-driver-rs-0.29.1-$label/cua-driver
+driver=$directory/cua-driver-rs-0.30.4-$label/cua-driver
 runuser -u nobody -- env -i PATH=/usr/bin:/bin HOME="$directory/home" \
   LANG=C.UTF-8 DISPLAY=:99 XDG_RUNTIME_DIR="$directory/runtime" \
   GTK_MODULES=gail:atk-bridge NO_AT_BRIDGE=0 \

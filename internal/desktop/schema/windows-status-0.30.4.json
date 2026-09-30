@@ -1,0 +1,16 @@
+{
+  "platform": "windows",
+  "tools": {
+    "check_permissions": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    },
+    "get_config": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "version": "0.30.4"
+}

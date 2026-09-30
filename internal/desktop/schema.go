@@ -13,16 +13,16 @@ import (
 // reviewed release as the executable. See schema/README.md for provenance.
 // This is contract comparison, not another JSON Schema implementation.
 //
-//go:embed schema/macos-0.29.1.json
+//go:embed schema/macos-0.30.4.json
 var macSchemaInventory []byte
 
-//go:embed schema/linux-status-0.29.1.json
+//go:embed schema/linux-status-0.30.4.json
 var linuxStatusSchemaInventory []byte
 
-//go:embed schema/linux-0.29.1.json
+//go:embed schema/linux-0.30.4.json
 var linuxSchemaInventory []byte
 
-//go:embed schema/windows-status-0.29.1.json
+//go:embed schema/windows-status-0.30.4.json
 var windowsStatusSchemaInventory []byte
 
 type schemaInventory struct {

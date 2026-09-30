@@ -89,11 +89,11 @@ disables the tools that require it; AICE reports the degraded capability.
 ### Computer Use helper (integration in progress)
 
 Cua Driver is separate from automatic startup helpers. The macOS provisioning
-API downloads only the pinned full 0.29.1 archive, verifies SHA-256, extracts the
+API downloads only the pinned full 0.30.4 archive, verifies SHA-256, extracts the
 signed App into a temporary directory under `/Applications`, and checks its
 signature, Cua signing identity, Gatekeeper acceptance and version before an
 exclusive rename to `/Applications/CuaDriver.app`. It preserves the license in
-`~/.aice/bin/cua/0.29.1/LICENSE`. No bare Driver, Node addon or SDK runtime is
+`~/.aice/bin/cua/0.30.4/LICENSE`. No bare Driver, Node addon or SDK runtime is
 installed. See [provenance](../internal/deps/cua/VENDOR.md).
 Verification subprocesses have a 20-second deadline and an 8 KiB stdout limit;
 the limit also applies to the process pipe's buffered-copy path.
@@ -118,7 +118,7 @@ permissions. The
 [Computer Use status](desktop.md) records the exact scope of verification.
 
 The Windows/Linux provisioning API installs into the private
-`~/.aice/bin/cua/0.29.1/<os>-<arch>` directory (under the user profile on Windows).
+`~/.aice/bin/cua/0.30.4/<os>-<arch>` directory (under the user profile on Windows).
 It uses the same pinned release downloads, progress reporting and cancellable
 installation lock. It selects only `cua-driver`, `cua-cursor-theme`, and, on
 Windows, the signed `cua-driver-uia.exe` sibling, with the MIT license. It does

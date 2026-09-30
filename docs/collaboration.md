@@ -292,7 +292,7 @@ Gatekeeper acceptance, and checks exclusive publication. It does not install
 the App, launch a service, request TCC, or capture any window:
 
 ```sh
-AICE_CUA_TEST_ARCHIVE=/absolute/path/to/cua-driver-rs-0.29.1-darwin-universal.tar.gz \
+AICE_CUA_TEST_ARCHIVE=/absolute/path/to/cua-driver-rs-0.30.4-darwin-universal.tar.gz \
   go test -tags=integration ./internal/deps -run '^TestNativeCuaArtifactExtraction$' -v
 ```
 
@@ -409,7 +409,7 @@ GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go test -c -tags=integration \
   -o /tmp/aice-desktop-linux.test ./internal/desktop
 docker run --rm \
   --mount type=bind,src=/tmp/aice-desktop-linux.test,dst=/probe.test,readonly \
-  --mount type=bind,src=/absolute/path/to/cua-driver-rs-0.29.1-linux-arm64.tar.gz,dst=/driver.tar.gz,readonly \
+  --mount type=bind,src=/absolute/path/to/cua-driver-rs-0.30.4-linux-arm64.tar.gz,dst=/driver.tar.gz,readonly \
   --mount type=bind,src="$PWD/internal/desktop/testdata/run-linux-probe.sh",dst=/run-probe.sh,readonly \
   python:3.13-slim sh /run-probe.sh /probe.test /driver.tar.gz
 ```
@@ -499,7 +499,7 @@ GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go test -c -tags=integration \
   -o /tmp/aice-app-linux.test ./internal/app
 docker run --rm \
   --mount type=bind,src=/tmp/aice-app-linux.test,dst=/probe.test,readonly \
-  --mount type=bind,src=/absolute/path/to/cua-driver-rs-0.29.1-linux-arm64.tar.gz,dst=/driver.tar.gz,readonly \
+  --mount type=bind,src=/absolute/path/to/cua-driver-rs-0.30.4-linux-arm64.tar.gz,dst=/driver.tar.gz,readonly \
   --mount type=bind,src="$PWD/internal/desktop/testdata/run-linux-probe.sh",dst=/run-probe.sh,readonly \
   --mount type=bind,src="$PWD/internal/desktop/testdata/linux-fixture.py",dst=/fixture.py,readonly \
   python:3.13-slim sh /run-probe.sh /probe.test /driver.tar.gz \
