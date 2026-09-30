@@ -1,42 +1,24 @@
-# AICE
+<h1 align="center">AICE</h1>
 
-**An open-source coding agent harness for long-term software maintenance.**
+<p align="center">
+  <strong>An open-source coding agent harness for long-term software maintenance</strong>
+</p>
 
-AICE aims to help developers build software that stays readable, testable and
-easy to change—from everyday coding to codebase refactoring and documentation
-migration. Code quality is its guiding goal.
-
-Today, AICE provides the runtime for model calls, tools, context and sessions,
-with a terminal UI (TUI) and your choice of model provider.
+<p align="center">
+  <a href="https://go.dev/"><img src="https://img.shields.io/github/go-mod/go-version/ch1lam/aice-cli" alt="Go version"></a>
+  <a href="./LICENSE"><img src="https://img.shields.io/github/license/ch1lam/aice-cli" alt="License"></a>
+  <a href="https://github.com/ch1lam/aice-cli/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/ch1lam/aice-cli/ci.yml?branch=main&amp;label=build" alt="Build status"></a>
+  <a href="https://github.com/ch1lam/aice-cli/releases/latest"><img src="https://img.shields.io/github/v/release/ch1lam/aice-cli" alt="Latest release"></a>
+</p>
 
 <p align="center">
   <img src="./assets/aice-header.png" alt="AICE coding agent" width="900">
 </p>
 
-English | [简体中文](./README-zh.md)
-
-[![Go](https://img.shields.io/github/go-mod/go-version/ch1lam/aice-cli)](https://go.dev/) [![License](https://img.shields.io/github/license/ch1lam/aice-cli)](./LICENSE) [![Build](https://img.shields.io/github/actions/workflow/status/ch1lam/aice-cli/ci.yml?branch=main&label=build)](https://github.com/ch1lam/aice-cli/actions/workflows/ci.yml) [![Release](https://img.shields.io/github/v/release/ch1lam/aice-cli)](https://github.com/ch1lam/aice-cli/releases/latest)
-
-[Quickstart](#quickstart) · [Documentation](./docs/README.md) · [Roadmap](./ROADMAP.md) · [Contributing](./CONTRIBUTING.md)
-
-## Who is it for?
-
-Developers and maintainers who expect to keep working on a codebase over time.
-
-| Work | Example request |
-| --- | --- |
-| Everyday development | “Implement this feature using the project's conventions, with tests and docs.” |
-| Incremental refactoring | “Simplify this module while preserving its behavior, and verify it with tests.” |
-| Large-scale refactoring | “Map the dependencies, plan the migration, and work through it in verified steps.” |
-| Documentation maintenance | “Check the docs against the code, remove outdated content, and reorganize the guides.” |
-
-## Current capabilities
-
-- **Choose your model.** Use OpenAI, Claude, DeepSeek, Kimi and other providers, or a custom OpenAI-compatible endpoint. See [supported providers](./docs/configuration.md#credentials-and-connection-overrides).
-- **Work on your codebase.** Read, search and edit files; run shell commands, builds and tests.
-- **Guide the agent.** Attach files and screenshots, send corrections while the agent works, queue follow-ups, or stop a run.
-- **Resume your work.** Search saved sessions, pick up a previous conversation, or branch from an earlier message. Automatic context compaction supports longer tasks.
-- **Extend your workflow.** Connect tools through [MCP](./docs/mcp.md) and reuse task instructions with [Agent Skills](./docs/configuration.md#agent-skills).
+<p align="center">
+  English · <a href="./README-zh.md">简体中文</a><br>
+  <a href="#quickstart">Quickstart</a> · <a href="./docs/README.md">Documentation</a> · <a href="./ROADMAP.md">Roadmap</a> · <a href="./CONTRIBUTING.md">Contributing</a>
+</p>
 
 ## Install
 
@@ -88,6 +70,29 @@ aice --print "Summarize the changes in this repository."
 Add `--output-format json` for NDJSON events or `--session <path>` to save or
 resume a session. Print mode has no interactive approval prompts; calls that
 require approval are denied by default. See [CLI options](./docs/configuration.md#command-line-options).
+
+## Who is it for?
+
+Developers and maintainers working on long-lived codebases. AICE aims to improve
+code quality, with a focus on readability, testability and the cost of future changes.
+
+| Work | Example request |
+| --- | --- |
+| Everyday development | “Implement this feature using the project's conventions, with tests and docs.” |
+| Incremental refactoring | “Simplify this module while preserving its behavior, and verify it with tests.” |
+| Large-scale refactoring | “Map the dependencies, plan the migration, and work through it in verified steps.” |
+| Documentation maintenance | “Check the docs against the code, remove outdated content, and reorganize the guides.” |
+
+## Current capabilities
+
+AICE manages model calls, tools, context and sessions through a TUI and
+non-interactive CLI.
+
+- **Choose your model.** Use OpenAI, Claude, DeepSeek, Kimi and other providers, or a custom OpenAI-compatible endpoint. See [supported providers](./docs/configuration.md#credentials-and-connection-overrides).
+- **Work on your codebase.** Read, search and edit files; run shell commands, builds and tests.
+- **Guide the agent.** Attach files and screenshots, send corrections while the agent works, queue follow-ups, or stop a run.
+- **Resume your work.** Search saved sessions, pick up a previous conversation, or branch from an earlier message. Automatic context compaction supports longer tasks.
+- **Extend your workflow.** Connect tools through [MCP](./docs/mcp.md) and reuse task instructions with [Agent Skills](./docs/configuration.md#agent-skills).
 
 ## Tools and integrations
 
