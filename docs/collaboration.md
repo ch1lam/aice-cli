@@ -69,6 +69,12 @@ The CLI-driven login test gives the complete multi-step flow a one-minute
 watchdog, including per-key rendering under race instrumentation. Each menu and
 prompt must still appear before the test sends the next input.
 
+The CLI-driven Skill shortcut test waits for the expected model reply and the
+idle header in the same terminal frame before sending `/quit`. The inline
+`/help` command also renders an idle header, so that text alone cannot establish
+completion of the subsequent model run. Resize repaints expose complete frames
+after asynchronous updates without relying on renderer cell diffs.
+
 ## Installer checks
 
 Installer tests use local release fixtures and simulated network failures; they

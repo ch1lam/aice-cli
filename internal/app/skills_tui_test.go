@@ -41,23 +41,6 @@ func TestSkillShortcutTUI(t *testing.T) {
 	stopped := make(chan struct{})
 	go func() { defer close(stopped); done <- command.ExecuteContext(ctx) }()
 	t.Cleanup(func() { cancel(); input.Close(); reader.Close(); <-stopped })
-	waitFor := func(want string) {
-		t.Helper()
-		var recent strings.Builder
-		for {
-			select {
-			case frame := <-output.frames:
-				recent.WriteString(ansi.Strip(frame))
-				if strings.Contains(recent.String(), want) {
-					return
-				}
-			case err := <-done:
-				t.Fatalf("command stopped waiting for %q: %v\n%s", want, err, recent.String())
-			case <-ctx.Done():
-				t.Fatalf("terminal never displayed %q\n%s", want, recent.String())
-			}
-		}
-	}
 	width := 140
 	send := func(value string) {
 		t.Helper()
@@ -65,6 +48,34 @@ func TestSkillShortcutTUI(t *testing.T) {
 			t.Fatal(err)
 		}
 		width = 279 - width
+	}
+	waitFor := func(want ...string) {
+		t.Helper()
+		// Repaint asynchronous updates so all markers can match one frame,
+		// without combining an old idle header with a new streaming reply.
+		repaint := time.NewTicker(250 * time.Millisecond)
+		defer repaint.Stop()
+		var recent strings.Builder
+		for {
+			select {
+			case frame := <-output.frames:
+				plain := ansi.Strip(frame)
+				recent.WriteString(plain)
+				matched := true
+				for _, marker := range want {
+					matched = matched && strings.Contains(plain, marker)
+				}
+				if matched {
+					return
+				}
+			case <-repaint.C:
+				send("")
+			case err := <-done:
+				t.Fatalf("command stopped waiting for %q: %v\n%s", want, err, recent.String())
+			case <-ctx.Done():
+				t.Fatalf("terminal never displayed %q\n%s", want, recent.String())
+			}
+		}
 	}
 	send("")
 	waitFor("AICE")
@@ -75,7 +86,9 @@ func TestSkillShortcutTUI(t *testing.T) {
 	send("Create a tiny test skill. /help\r")
 	waitFor("Available slash commands")
 	send("\r")
-	waitFor("● READY")
+	// /help also renders READY before submission. Wait for this reply and
+	// the idle header together before /quit can be interpreted as a command.
+	waitFor(model.response, "● READY")
 	send("/quit\r")
 	select {
 	case err := <-done:
