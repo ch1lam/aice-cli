@@ -38,10 +38,12 @@ adding a framework is not a substitute for identifying the owner.
 
 ### Follow one interactive request
 
-`newRunEnvironment` assembles the workspace, startup instructions, tools and
-Guard. `Interactive` owns their process lifetime and closes the conversation's
-current Store after the frontend stops. A model change rebuilds the Loop while
-reusing the Session's Guard; `/new` detaches the Store and clears its grants.
+`prepareRunEnvironment` assembles the workspace, startup instructions, tools
+and Guard after model/Trust loading. `Interactive` owns their process lifetime
+and closes the conversation's current Store after the frontend stops. Provider
+changes rebuild the Loop; ordinary model selection reuses it unless recovering
+an unavailable model. Both retain the Session Guard. `/new` detaches the Store
+and clears transient grants.
 
 `NewRun` creates an input mailbox and lazily starts storage. `beginMainRun`
 freezes settings and registers one transcript owner. The Loop accepts inputs,
@@ -65,62 +67,25 @@ reduce file size; extract a new boundary when a real change needs it.
 
 ### Main-path acceptance
 
-The existing single-process TUI and Print paths have been traced through input,
-execution, authority, durable history and shutdown. The following is the
-handoff evidence map, not a claim that every backend or future frontend has
-been accepted. The named tests exercise behavior across boundaries, including
-actual execution and disk readback; the full-suite result alone is insufficient.
+Use the following cross-boundary tests when changing the main TUI/Print path.
+Their presence is a verification map, not a claim that they passed on this host.
 
-| Boundary and owner | Decision | Representative verification |
-| --- | --- | --- |
-| Input: frontend adapts drafts; app authorizes and freezes attachments before mailbox admission | Keep `Runner.NewRun` / `ActiveRun.Deliver`; no frontend storage or tool execution API | [file_input_test.go](../internal/app/file_input_test.go): `TestFileInputDoesNotBypassGuardOrPartiallyAccept`, `TestFileDeliveryFreezesBeforeMailboxAndDoesNotReparseFileText` |
-| Prepared and active runs: app reserves lifecycle and checks the prepared resource revision | Keep one application admission owner; frontend `running` is presentation | [settings_test.go](../internal/app/settings_test.go): `TestSettingsHeldMainAndSideRunnerRejectChangedRevision`, `TestSettingsSaveBlocksPreparationAndRejectsConcurrentWriter` |
-| Steering and follow-up: mailbox owns queued delivery; Loop chooses when to consume and stop | Keep bounded mailbox and atomic terminal sealing; no frontend restart for follow-up | [mailbox_test.go](../internal/interaction/mailbox_test.go): `TestMailboxNeverStrandsAnAcceptedDeliveryAtTerminalBoundary`; [app_test.go](../internal/app/app_test.go): `TestInteractiveSessionPersistsFollowUpsAsSourceMessages` |
-| Tool dispatch: Loop accepts complete model messages and consults injected Guard | Keep consumer-owned interfaces; streamed tool deltas cannot execute | [stream_failure_test.go](../internal/agent/stream_failure_test.go): `TestLoopDoesNotAcceptToolDeltasWithoutTerminalMessage`; [guard_scopes_test.go](../internal/app/guard_scopes_test.go): `TestGuardDenyWinsBeforeAnyApproval`, `TestGuardMultipleScopesYoloAndNoninteractive`, `TestGuardCancellationBeforeExecution` |
-| Transcript: Loop calls the recorder; app selects the Store; Session persists source records | Keep synchronous recording separate from display events and derived context | [persistence_boundary_test.go](../internal/app/persistence_boundary_test.go): `TestInteractiveSessionPersistsToolResultAfterDisplayFailure`, `TestInteractiveSessionKeepsUncertainDiskPrefixAfterToolResultSaveFails` |
-| Compaction: Loop chooses complete boundaries; app publishes a checkpoint and derived context | Keep append-only source and separate compaction projection | [long_task_test.go](../internal/app/long_task_test.go): `TestInteractiveSingleInputSurvives200ModelRounds`, `TestStatelessPrintSingleInputSurvives200ModelRounds`, `TestInteractiveCompactionFailureBoundaries` |
-| Cancellation: caller context reaches Run, tools and approval waits; known outcomes receive bounded durable cleanup | Keep cancellation separate from forgetting accepted progress | [mutation_persistence_test.go](../internal/app/mutation_persistence_test.go): `TestMutationSessionPreservesOutcomeOnCancellation`; [app_test.go](../internal/app/app_test.go): `TestInteractiveSessionPersistsCancellationAfterToolSideEffect` |
-| Frontend shutdown: controllers cancel and join; app then closes its current resources and Store | Keep sender-owned event channels and explicit application cleanup | [run_test.go](../internal/tui/run_test.go): `TestServeRunsOwnsPerRunEventChannel`, `TestServeSideRunsStopsBlockedRunsOnCancellation`; [settings_panel_test.go](../internal/tui/settings_panel_test.go): `TestSettingsActionCancelKeepsConversationAndWaits`; [session_test.go](../internal/app/session_test.go): `TestCloseInteractiveStoreKeepsSessionWithMessages` |
-| Management actions: existing app operations own effects; entry points adapt requests and results | Trust failures preserve drafts; resource effects remain domain-specific | [Trust](project-trust.md), [Browser](browser.md), [Web](web.md), [login](configuration.md#credentials-and-connection-overrides); their held-run and partial-completion tests remain the evidence owners |
+| Boundary | Representative tests |
+| --- | --- |
+| Attachment admission and immutable input | [file_input_test.go](../internal/app/file_input_test.go) |
+| Prepared-run revisions and settings exclusion | [settings_test.go](../internal/app/settings_test.go) |
+| Steering, follow-up and terminal sealing | [mailbox_test.go](../internal/interaction/mailbox_test.go), [interactive_run_test.go](../internal/app/interactive_run_test.go) |
+| Complete tool calls and Guard checks | [stream_failure_test.go](../internal/agent/stream_failure_test.go), [guard_scopes_test.go](../internal/app/guard_scopes_test.go) |
+| Record-before-effect and cancellation recovery | [persistence_boundary_test.go](../internal/app/persistence_boundary_test.go), [mutation_persistence_test.go](../internal/app/mutation_persistence_test.go) |
+| Long runs and compaction failures | [long_task_test.go](../internal/app/long_task_test.go) |
+| Frontend shutdown and current-resource cleanup | [run_test.go](../internal/tui/run_test.go), [web_lifecycle_test.go](../internal/app/web_lifecycle_test.go), [session_test.go](../internal/app/session_test.go) |
 
-Application resource ownership also covers initialization failures. Interactive
-exit closes the currently owned Web backend, including failures before a
-frontend starts. Publication closes the superseded backend; final cleanup must
-not close it twice. [web_lifecycle_test.go](../internal/app/web_lifecycle_test.go)
-(`TestInteractiveClosesCurrentWebBackendOnEveryExit`) checks Session/model
-initialization failure and frontend success/failure after actual Web replacement.
-The frontend is injected in that lifecycle test; actual Bubble Tea behavior is
-covered separately. It proves cleanup ownership, not a live socket leak: the
-current Exa constructor has made no search request at these failure points.
-
-The current dependency check (`go list` on agent, interaction, tui, provider and
-API packages) confirms that Agent's only internal package dependency is `llm`;
-TUI does not import app, config, provider, tool or Session. TUI does import Trust
-for its startup choice presentation. It also owns editing, local navigation and
-controller scheduling: “replaceable frontend” does not mean “rendering only.”
-Provider/API types stay outside the Loop. An import graph establishes static
-separation, while the behavioral tests above establish the reviewed execution
-contracts.
-
-Three apparent duplications are intentional. The JSONL transcript, conversation
-history and Loop context have different publication boundaries; an incomplete
-tool group must not leak into a side snapshot. `lifecycle.mainRunning` protects
-resource admission, while `conversation.activeMainRun` owns accepted conversation
-progress. TUI pending deliveries are previews; mailbox/Loop acceptance is the
-authority. Merging these states or adding a generic runtime layer has no proven
-benefit for the current paths.
-
-Print uses the same Loop but owns an ephemeral source unless a Session is
-requested. Interactive execution owns a durable conversation and concurrent
-side snapshots. Keep those orchestration differences; sharing the entire
-executor would need a concrete duplicated decision, not just similar code.
-
-Local acceptance is macOS arm64 with Go 1.27.1: build, full tests, vet and race,
-including the actual CLI/Bubble Tea paths in `TestSettingsUsageTUI` and
-`TestLoginTUI`. No GUI, Web transport, reconnection or simultaneous frontend
-control has been implemented or verified. Backend-specific live-service and
-native-platform limits remain below and in the domain guides. MCP and Computer
-Use internal ownership remain the next separate review scope.
+Print has ephemeral history unless a Session is requested; interactive execution
+owns durable conversation publication and concurrent side snapshots. Preserve
+these differences. Lifecycle admission, transcript ownership and TUI delivery
+previews also have different authority and must not be merged merely to reduce
+state. GUI, remote transport and simultaneous frontend control are not implemented.
+MCP/CUA acceptance remains scoped by the domain guides below.
 
 ## Resolving discrepancies
 
@@ -162,222 +127,113 @@ historical documentation.
 
 ## Settings and Usage verification
 
-Entry points are `config/settings_schema.go`, `sources.go`, `settings_patch.go`,
-`app/settings.go`, `settings_apply.go`, `settings_lifecycle.go`, `usage.go`, and
-`tui/settings_panel.go`, `settings_action.go`, `settings_collection.go`,
-`usage_panel.go`. Config owns storage/source semantics, app owns resource
-publication, and TUI owns only navigation and drafts. To add a scalar preference,
-update its config definition/parser, app description/timing, and actual behavior;
-existing value kinds require no additional TUI key routing. Domain operations
-remain in their existing modules.
-
-| Evidence | Coverage |
-| --- | --- |
-| Config/application tests | Typed zero/false/empty/unset, frozen sources, peer writes, damaged files, prepare/save failures, stale runs, main/BTW edit exclusion, cost completeness and non-consuming reads |
-| Modal tests | 80×24, 120×40, wide and tiny layouts; CJK/emoji draft and paste isolation; mouse enum save, array drafts, permission preemption, stale reads and save completion after close |
-| Actual CLI with Bubble Tea, isolated configuration and fake model | Settings navigation/search, duration save including nanoseconds, Usage and empty Session views |
-| Native desktop IME candidate window and physical mouse | Not exercised: Computer Use denied access to macOS Terminal; terminal-cell cursor tests and synthetic events do not establish native acceptance |
-| Native Linux/Windows terminal behavior | Not exercised on this macOS host; CI/portable tests do not replace it |
-| Live OAuth and paid provider/search calls through Settings | Not exercised; existing domain tests use synthetic credentials and local fake services |
+Config owns typed fields, frozen sources and partial writes; app owns resource
+publication; TUI owns navigation and drafts. Start at `config/settings_schema.go`,
+`app/settings_apply.go`, `app/settings_lifecycle.go` and `tui/settings_panel.go`.
+Tests cover stale requests, partial commits, main/BTW exclusion, modal layouts,
+attachments and the actual CLI/Bubble Tea flow. Native IME/physical mouse,
+Linux/Windows desktop behavior and live provider/OAuth calls require separate
+acceptance; synthetic terminal events do not establish those results.
 
 ## Known discrepancies
 
 ### MCP verification limits
 
-Generic MCP connection, discovery, authorization, resources and result recovery
-have deterministic regression coverage. Filesystem stdio, DeepWiki HTTP and
-Linear OAuth read/refresh have been exercised on macOS. The Linear check forced
-local expiry; it does not prove natural expiry or every provider's behavior.
-
-Keyword search does not translate languages. A model that replaces a Chinese
-request with English keywords can miss Chinese-only descriptions. The tool now
-guides it to retain original-language keywords and refine or browse instead of
-choosing an unrelated operation; this guidance has not been re-evaluated with a
-real model. Synthetic routing
-results do not establish broad task quality. A real DeepWiki run also returned
-an HTTP close error; local tests cover cancellation and socket cleanup, not
-remote session deletion.
-
-Current CUA constraints and native platform limits are in
-[Computer Use](desktop.md#platform-evidence). Cross-process settings changes do
-not immediately revoke an existing frozen Run; no background watcher is added.
-The [acceptance review](plans/AICE_MCP_Acceptance.md) summarizes delivery scope.
-None of these limits permits automatic action replay or a second CUA route.
+[MCP verification](mcp.md#verification-evidence) owns service and platform scope.
+Deterministic connection/discovery/permission tests do not establish broad model
+task quality. Search is lexical and does not translate languages; models must
+retain original-language keywords or browse/refine. Cross-process settings
+changes do not immediately revoke a frozen Run because there is no watcher.
+Remote close errors do not prove remote session deletion.
 
 ### Computer Use integration
 
-The [Computer Use guide](desktop.md#managed-mcp-boundary) defines the thin
-managed MCP boundary. Cua owns native targets, references, captures and input
-semantics; AICE owns verified runtime/session lifecycle, configured capability
-limits, generic Guard checks and result retention. Local setup validation must
-not become a second model execution state machine.
+The current [managed boundary](desktop.md#managed-mcp-boundary) delegates native
+target, token, capture and input semantics to Cua. AICE retains verified runtime
+admission, Run sessions, mode/image limits, Guard and generic result retention.
+Old typed-wrapper acceptance does not validate this forwarding path.
 
-Native and real-model evidence predating this boundary does not validate the
-new forwarding path. The current macOS scripted three-form gate passes task,
-focus, shared-service and Session replay assertions with explicitly narrowed
-observations; [its evidence and earlier failed attempts](desktop.md#platform-evidence)
-do not establish real-model or Calendar task acceptance. Remaining checks include
-broader upstream arguments, original/display screenshot coordinates, degraded
-observations, explicit foreground recovery and native new-run continuation.
-The current adapter also passes the native six-minute implicit discovery-expiry
-recovery gate; interrupted-action and other lifecycle scenarios retain their
-separate evidence limits.
-The [real-model gate](collaboration.md#explicit-real-model-desktop-gate) requires
-an authorized model/budget, retained artifacts and independent task assertions.
-Default unit tests and cross-compilation establish none of those native effects.
-
-Unresolved platform issues remain in the owning guide:
-
-- [macOS input](desktop.md#macos-input-limitations): double-click focus loss,
-  duplicate right-click events and incomplete foreground-drag repeatability;
-  WebKit AXValue echoes also need independent business-state verification.
-- [macOS cursor rendering](desktop.md#platform-evidence): the pinned Driver's
-  overlay covers only its startup main screen and excludes negative positions
-  from its visibility predicate. Secondary-display input can execute without
-  a visible cursor. This requires a Driver fix and multi-display visual acceptance,
-  not a change to AICE's input coordinates or a foreground fallback.
-- [Linux input](desktop.md#linux-input-acceptance-failures): Unicode insertion
-  truncation and unavailable GTK background keyboard/gesture routes in the
-  isolated environment. [Linux launch](desktop.md#linux-launch-acceptance-failure)
-  still fails continuous-focus acceptance.
-- [Windows actions](desktop.md#windows-action-admission-gaps): setup/actions
-  remain unintegrated, native status is unverified, and launch process selection
-  needs exact-ownership acceptance before support is enabled.
-
-Keep uncertainty, failed postconditions and focus measurements visible. A native
-refusal, `active:false`, `effect:unverifiable` or foreground advice is not proof
-of successful input or permission to replay an uncertain action. Physical
-IME/input coexistence, first-time installation, interrupted gesture cleanup and
-broader application behavior remain separate acceptance work.
+[Platform evidence](desktop.md#platform-evidence) owns outstanding macOS input,
+Linux Unicode/launch/focus, Windows action admission and multi-display cursor
+limitations. Current-pin real-model task completion, screenshot coordinates,
+degraded observation, foreground continuation and physical input coexistence
+need native evidence. Tests or compile success must not erase failed or
+unverified postconditions. Reproduce through the [native gates](collaboration.md#computer-use-checks)
+and [real-model gate](collaboration.md#explicit-real-model-desktop-gate).
 
 ### Self-update OpenPGP dependency warning
 
-`govulncheck ./...` reports [GO-2026-5932](https://pkg.go.dev/vuln/GO-2026-5932)
+A prior `govulncheck ./...` run reported [GO-2026-5932](https://pkg.go.dev/vuln/GO-2026-5932)
 because `github.com/creativeprojects/go-selfupdate v1.6.0` imports the
-unmaintained `golang.org/x/crypto/openpgp` package. There is no patched version
-listed for that package. AICE's [`newClient`](../internal/update/update.go)
-configures only `ChecksumValidator` (SHA-256); it does not configure a
-`PGPValidator` or parse PGP keys or signatures. The scanner still reports the
-package initialization and shared error types, so the scan is not clean.
+unmaintained `golang.org/x/crypto/openpgp` package. The pinned dependency still
+imports it. AICE's [`newClient`](../internal/update/update.go) configures only `ChecksumValidator` (SHA-256); it does not configure a
+`PGPValidator` or parse PGP keys or signatures. The prior scan included package
+initialization and shared error types; this audit did not rerun the scanner
+or establish exploitability.
 
 Keep the finding visible until an upstream release removes or replaces this
 dependency, or a separately reviewed updater change does so. Preserve checksum
 rejection and executable replacement tests; do not disable validation or
 suppress the finding to make the scan pass.
 
+### Settings shortcut hint without a binding
+
+The Settings command description in [interactive_commands.go](../internal/app/interactive_commands.go)
+advertises `Ctrl+,`, but [keymap.go](../internal/tui/keymap.go),
+[input_actions.go](../internal/tui/input_actions.go) and
+[input_route.go](../internal/tui/input_route.go) provide no Settings binding.
+[submit.go](../internal/tui/submit.go) opens Settings through slash navigation.
+The user guide therefore documents `/settings` only. The code hint remains
+incorrect: either remove it or implement the shortcut with a routing-conflict
+check and a focused input test.
+
 ### Composer click positioning and textarea capabilities
 
-Composer mouse input does not position the editing caret. The composer keeps
-the real terminal caret from `textarea.Cursor()` as the IME candidate-window
-anchor. See [composer mouse input](../internal/tui/composer_mouse.go),
-[file references](../internal/tui/composer_files.go), and
-[paste tokens](../internal/tui/composer_paste.go).
+Composer clicks do not position the editing caret. The real terminal caret from
+`textarea.Cursor()` remains the IME anchor. [Composer mouse handling](../internal/tui/composer_mouse.go)
+and [file-label rendering](../internal/tui/composer_file_view.go) are the owners.
 
-The pinned `charm.land/bubbles/v2 v2.2.1` textarea provides `PositionAt(x, y)`
-for read-only visible-cell mapping, and `BeginSelection` / `EndSelection` can
-move the cursor without replacing text. `Line()`, `Column()` (a rune index),
-`LineInfo()`, `Cursor()`, and `ScrollYOffset()` expose its current position.
-The public coordinate APIs remove the need to simulate cursor navigation for
-hit testing, but do not yet establish reliable general mouse positioning:
+The pinned Bubbles textarea exposes coordinate APIs, but prior diagnostics found
+per-rune hit testing and wrapping that split emoji/combining graphemes, incomplete
+wrapped-CJK cursor traversal, and viewport sharing after shallow copies.
+Reassess these dependency limits on upgrade; do not codify them as desired
+regressions. File styling uses `PositionAt(0, y)` for row starts and measures whole
+segments, avoiding horizontal per-rune hit testing.
 
-- `PositionAt` measures individual runes, not whole grapheme clusters. In
-  `👨‍👩‍👧‍👦cd`, column 2 maps to rune 2 inside the emoji instead of rune 7
-  before `c`; `👍🏽cd` similarly maps column 2 inside the skin-tone sequence.
+Any future click positioning must preserve file/paste attachment identities and
+verify wrapping, scrolling, trailing spaces, CJK, combining sequences, emoji and
+real-caret/IME alignment. `SetValue` clears file-reference spans and is not a
+cursor-only operation. No dependency fork or replacement editor is maintained.
 
-- Wrapping can split a grapheme: at width 40, 38 ASCII characters followed by
-  `👨‍👩‍👧‍👦cd` place `👨` on the first row and start the second row with a ZWJ.
-  Combining accents and emoji skin-tone modifiers can also split across rows.
-- Repeated `CursorDown()` is not a dependable visible-row iterator. At width 6,
-  `中文测试甲乙\nlast` can stop advancing at the second wrapped Chinese row,
-  before the synthetic trailing row and the next logical line.
-- A shallow `textarea.Model` copy shares its internal viewport. Moving a copied
-  model to the end can scroll the original model and leave its original caret
-  outside the visible area. A copied model is not an isolated geometry probe.
-- `SetCursorColumn()` accepts positions within graphemes and does not itself
-  reposition the viewport. `LineInfo()` only describes the current position;
-  obtaining every position by repeated cursor movement would add navigation
-  workarounds and layout traversal to AICE.
+### Exa HTTP loopback validation
 
-These are dependency limitations to reassess on upgrade, not behavior to lock
-in with regression assertions. From the repository root, save this diagnostic
-as `/tmp/aice-textarea-capabilities.go` and run
-`GOPROXY=off GOSUMDB=off go run /tmp/aice-textarea-capabilities.go`. It uses the
-locally cached pinned dependencies and prints observations without requiring
-the defects to remain present:
+**Confirmed code discrepancy:** HTTP is intended only for loopback development
+endpoints, but both [config validation](../internal/config/web.go) and
+[adapter validation](../internal/web/exa/config.go) classify any hostname starting
+with `127.` as loopback. An offline call to `WebSettings.Validate` and
+`exa.ResolveBaseURL` accepts `http://127.example.com`, while rejecting
+`http://gateway.example`. No credentials or network are needed to reproduce it.
 
-```go
-package main
+If a user configures and selects such an endpoint, [Search](../internal/web/exa/client.go)
+sends its `x-api-key` over HTTP to that hostname; the prefix does not establish a
+loopback destination. This is a validation defect, not supported remote-HTTP
+behavior. The documentation cleanup leaves code unchanged. A fix should parse
+IP literals and test actual loopback membership in both validators, retaining
+the deliberate `localhost` exception; add rejection cases for `127.*` hostnames
+alongside existing real IPv4/IPv6 loopback and HTTPS/path-prefix cases.
 
-import (
-	"fmt"
-	"strings"
-
-	"charm.land/bubbles/v2/textarea"
-	"github.com/charmbracelet/x/ansi"
-)
-
-func input(value string, width, height int) textarea.Model {
-	m := textarea.New()
-	m.Prompt, m.ShowLineNumbers, m.CharLimit = "", false, 0
-	m.MaxHeight = 100
-	m.SetWidth(width)
-	m.SetHeight(height)
-	m.SetVirtualCursor(false)
-	m.Focus()
-	m.SetValue(value)
-	m.MoveToBegin()
-	m, _ = m.Update(nil)
-	return m
-}
-
-func main() {
-	for _, text := range []string{"👨‍👩‍👧‍👦cd", "👍🏽cd"} {
-		m := input(text, 40, 3)
-		fmt.Printf("hit after emoji %q: %+v\n", text, m.PositionAt(2, 0))
-	}
-	m := input(strings.Repeat("a", 38)+"👨‍👩‍👧‍👦cd", 40, 3)
-	fmt.Printf("wrapped grapheme: %q\n", ansi.Strip(m.View()))
-	m = input("中文测试甲乙\nlast", 6, 6)
-	for range 5 {
-		fmt.Printf("down: row=%d column=%d screen=%v\n",
-			m.Line(), m.Column(), m.Cursor().Position)
-		m.CursorDown()
-	}
-	m = input(strings.Repeat("line\n", 8)+"last", 10, 2)
-	probe := m
-	probe.MoveToEnd()
-	fmt.Printf("original after copy moved: scroll=%d caret=%v\n",
-		m.ScrollYOffset(), m.Cursor().Position)
-}
-```
-
-Click positioning remains deferred; no dependency fork or replacement editor
-is maintained. Upstream hit testing and wrapping must agree on whole grapheme
-boundaries, and cursor movement must maintain the viewport. AICE would still
-own snapping hits on confirmed file references and paste tokens to their
-atomic boundaries. Calling `composerInput.SetValue()` to move the caret would
-clear file-reference spans; cursor-only changes must preserve the draft and
-attachment identities. [`composer_file_view.go`](../internal/tui/composer_file_view.go)
-uses `PositionAt(0, y)` only to locate visible row starts, then measures whole
-segments for file-label styling. This avoids the horizontal per-rune hit-test
-defect and does not require a second textarea or simulated cursor movement.
-
-Acceptance requires visible-position tests for soft wrapping, scrolling,
-trailing spaces, CJK, combining sequences and emoji, plus file/paste-token
-integrity and real-caret/IME alignment. Passing single-line ASCII cases is
-insufficient to claim composer click positioning.
+The separate `web_fetch` use of standard proxy/DNS transport is intentional:
+commit `c748cc41` replaced pinned direct dialing, and `6390df7` removed extra Web
+approval. Its literal-address policy does not block hostnames resolving to
+private addresses. See [fetch limits](web.md#web_fetch-limits); do not restore the
+superseded plan's stronger SSRF guarantee as a description of current code.
 
 ### Web search acceptance gaps
 
-The web tools were verified with offline fixtures, injected HTTP
-transports/clients
-and the application-level fake backend. Not yet verified: a real Exa request
-(the opt-in test in [Verification](collaboration.md#web-checks) has not been run
-against a live key), a real public page through `web_fetch` on the open
-internet, and the `/web` menu in a real terminal beyond the Bubble Tea unit
-tests. Windows and Linux runs of the new tests are unverified locally. Record
-results here or in the owning guide when these are exercised; do not claim
-end-to-end Exa acceptance until then.
+Existing evidence covers offline HTTP fixtures and the app fake backend.
+Live Exa, public-page fetch and native `/web` terminal acceptance remain
+unrecorded; the [opt-in Exa test](collaboration.md#web-checks) is the live-service
+entry. Do not infer live-service or cross-platform acceptance from local tests.
 
 ### Browser acceptance gaps
 

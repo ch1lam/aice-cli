@@ -1,7 +1,7 @@
 # Web search and fetch
 
 AICE ships two built-in web tools. `web_search` sends a query to a configured
-independent search service; `web_fetch` retrieves one public page directly.
+independent search service; `web_fetch` retrieves one page through HTTP.
 Both are ordinary tools: they pass through the execution gate, produce a paired
 tool result, and record their sources in Session history. Neither depends on
 the model provider supporting search natively.
@@ -25,7 +25,8 @@ network reachability. Rules:
 | `["native", "service:exa-main"]`, Exa ready | Exa is used; `/web` shows that `native` was skipped as not implemented |
 | `["service:exa-main", "native"]` | Exa is used even if native search becomes available later |
 | `[]` | No search source is allowed; `web_search` is not registered |
-| Entry references an unknown instance, unknown provider/API, or invalid options | Configuration error: search is unavailable with the exact key path; no other service is chosen |
+| Invalid file schema or priority referencing an unknown instance | Configuration loading fails with the offending key |
+| Resolver reaches an unknown provider/API or invalid provider options | Search is unavailable; no later service is chosen |
 | First usable entry lacks its credential | `missing_credentials` is reported; AICE does not fall back to another account |
 | Instance `enabled: false` | Skipped with `disabled`; later entries are considered |
 | A search request fails (401, 429, timeout…) | The tool returns a classified error; no second backend is tried |
@@ -69,16 +70,17 @@ are validated strictly; unknown fields are errors.
 ```
 
 - `api` and `base_url` may be omitted; the Exa descriptor supplies
-  `exa-rest` and `https://api.exa.ai`. `base_url` must be an https origin
-  without userinfo, query or fragment; `http` is accepted only for loopback
-  development gateways and is shown as a non-standard endpoint.
+  `exa-rest` and `https://api.exa.ai`. `base_url` accepts an HTTPS URL with an
+  optional path prefix; requests append `/search`. Userinfo, query and fragment
+  are rejected. HTTP is intended only for loopback development gateways; the
+  current hostname check has a [known gap](maintenance.md#exa-http-loopback-validation).
 - `credential` is exactly one of `{"env": "NAME"}` or
   `{"auth_ref": "web_services.<id>"}`. Keys are never stored in
   `settings.json`. `auth_ref` reads the `web_services` object in
   `~/.aice/auth.json`, which `/web` writes when you enter a key.
 - Instance IDs match `[a-z0-9][a-z0-9_-]{0,63}`. The same provider can appear
-  several times with different IDs, endpoints and credentials; they never share
-  keys.
+  several times with different IDs and endpoints. Each instance has its own
+  credential reference; environment references may name the same variable.
 - `options.type` accepts `auto` (default) and `fast`. Deep or synthesized
   modes are rejected explicitly rather than mapped to `auto`.
 - `default_max_results` is 1–20 (default 8); the model may request 1–20 per
@@ -99,18 +101,11 @@ other `web` content or a `web_services` object in a project file is ignored
 with a startup diagnostic. `priority` is replaced as a whole array, and each
 service instance is an indivisible unit; layers are never merged field by field.
 
-Saved changes patch only the touched instance, priority or switch under the
-shared settings lock; other keys and other instances are preserved. A malformed
-existing `web` object is left unchanged and the save fails. A credential saved
-to `auth.json` before a failed settings save is reported as a credential-only
-success; the current Session keeps its previous effective Web configuration and
-runtime resources, while its cached auth-store value reflects the saved key.
-Credential replacement or deletion that commits before lock cleanup fails also
-updates that cache. Cleanup is reported separately as a warning and the ordinary
-preference flow continues; it does not retry the credential write. A failed
-credential write does not update the cache. Removing an instance saves its
-preferences first, so a later credential deletion failure leaves the instance
-removed and reports that its stored credential remains.
+Saves patch only the touched fields under the settings lock. If a credential
+save succeeds but a later preference save fails, AICE reports partial completion;
+the current backend keeps its previous credential until the next Web publication.
+Removing a service saves preferences first, so a later credential deletion failure
+can leave an unused key in the auth store.
 
 ## The `/web` command
 
@@ -122,93 +117,53 @@ toggle search or fetch. New instances are appended to the end of the priority
 list so an existing order is never overtaken. Instance IDs are assigned
 automatically (`exa-main`, `exa-2`, …) and can be renamed in the file.
 
-Changes take effect for the next response: AICE publishes a new configuration
-snapshot, rebinds the tools and refreshes the system prompt. Changes are
-refused while a response is running so an approval never targets a different
-service than the one shown. `/web` never contacts the search API; there is no
-connection test. Opening menus, reordering entries and redrawing the screen
-send no requests. Settings → Tools & Network hosts these actions and adds
-result count, positive search/fetch durations, priority/domain list forms, and
-per-instance enabled state, endpoint, credential reference and Exa mode fields.
-A list is committed as one array; an instance edit patches only named fields.
-The panel requires allow/exclude lists to be mutually exclusive without changing
-the existing file-policy interpretation. User preferences and project tightening
-are shown separately. Backend preparation failures prevent saving; successful
-saves publish tools, prompt and Guard target together at an idle boundary.
-Web management actions from both entries call `internal/app.runWebSettings`,
-which owns one operation reservation and completes it using the action's actual
-effects. A committed credential or preference refreshes Settings drafts. Only
-publication of a new backend, tools, prompt and Loop invalidates prepared main
-runs and held BTW runners. A credential-only commit leaves those resources
-usable with their previous credentials; the new key is resolved on a later Web
-publication. Cancellation, validation/save failure before any commit, and moving
-an already first/last priority entry do not advance either version. Cleanup
-warnings do not undo committed effects. Slash status stays readable during a
-response; Settings status retains the panel's revision and idle checks.
-See [Settings](configuration.md#settings-window).
+Changes require idle main and BTW responses and apply to the next response.
+Status remains available through `/web` during a run. Menus and edits never test
+the search API or send paid requests.
 
-The application owns the selected search backend's lifetime. Failed startup
-preparation closes its candidate; after preparation succeeds, Print and
-Interactive close their owned backend on every exit, including Session or Loop
-initialization failure. Interactive closes its current backend: publishing a
-replacement closes the old one, and final exit closes the replacement exactly
-once. Backend construction validates configuration without making a search
-request.
+Settings → Tools & Network provides the same actions plus result count, timeouts,
+priority/domain lists and per-instance options. It shows user preferences and
+project restrictions separately. Successful publication replaces the backend,
+tools, prompt and Guard binding together; prepared responses are invalidated.
+The application closes superseded and exiting backends. See
+[Settings](configuration.md#settings-window) and the
+[Web lifecycle tests](../internal/app/web_lifecycle_test.go).
 
 ## Permissions
 
-Enabled web tools access the network automatically without an extra
-confirmation. There is no per-call, per-origin, per-project or per-Session
-web authorization: new projects, new Sessions, `/new` and restarts add no
-web approval, and project trust stays separate from web use. `--print` uses
-the same policy as interactive mode, so an enabled web tool works without
-`--yolo`.
+Enabled web tools access the network without extra confirmation in interactive
+and Print mode. Search requires an application-bound service; fetch requires a
+valid URL. Invalid targets still fail and `--yolo` never lifts a deny. Disabling
+either tool unregisters it. Project Trust does not grant or revoke Web access;
+`/btw`, compaction and `/init` are tool-free.
 
-- `web_search` runs when a search service is bound (instance ID plus
-  endpoint origin, set by the application per run). Without a binding it
-  denies and sends no request. Disabling search, an unusable priority list,
-  a configuration error or missing credentials keeps the tool unregistered
-  or unavailable; default allow never enables the tool or configures a
-  provider by itself.
-- `web_fetch` runs when the URL passes the shared shape check. Malformed
-  URLs, userinfo, zone-scoped IPv6 literals and non-default ports deny
-  before any request. Disabling fetch unregisters the tool.
-- Explicitly rejected targets, body limits and the configured service list
-  still apply; `--yolo` never lifts a deny. A denied or cancelled call
-  sends no request. `/btw`, compaction and `/init` remain tool-free.
-
-Enabling a web tool means the model can cause automatic network access
-through that tool. The limits below bound `web_fetch` only; they are not a
-process-wide network sandbox.
+These checks apply to the Web tools only. Other tools such as Bash retain the
+process's network access, so disabling Web tools does not take AICE offline.
 
 ## `web_fetch` limits
 
 `web_fetch` accepts absolute `http`/`https` URLs on the default ports (80/443)
 without userinfo or zone-scoped IPv6 literals. An explicit `localhost` name or
 a blocked IP literal is refused before any request: loopback, private,
-link-local, CGNAT, multicast, unspecified, IPv4-mapped IPv6, NAT64, 6to4 and
-documentation ranges, including the link-local metadata address. Hostnames
-that are not literals are left to the standard HTTP transport (and the proxy
+link-local, CGNAT, multicast, unspecified, NAT64, 6to4 and documentation
+ranges, including the link-local metadata address. IPv4-mapped IPv6 is checked
+after converting to IPv4. Hostnames that are not literals are left to the standard HTTP transport (and the proxy
 side, when one applies) to resolve; AICE performs no DNS pre-resolution and
-pins no addresses. TLS verifies the URL hostname. Each redirect hop (at most
+pins no addresses. A hostname resolving to a private address is therefore not
+blocked by this policy. TLS verifies the URL hostname. Each redirect hop (at most
 5) is revalidated under the same URL-shape and literal-target policy, with
 no `https` to `http` downgrade. Legal cross-origin redirects continue
 automatically; dangerous targets, downgrades and over-limit chains still
 fail.
 
-Requests use a clone of `http.DefaultTransport`, so the standard proxy
-environment (`HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY` and their lowercase forms)
-applies and `NO_PROXY` bypass works as usual. AICE does not choose a network
-exit, implement `CONNECT`, branch between direct and proxy paths, retry a
-proxy failure over a direct connection, or add proxy settings, menus or
-commands. The fetcher shares no cookies, headers or credentials with the
-model or search clients. Raw and decompressed bodies are limited to 5 MiB
-each; the whole
-fetch, including redirects and body reading, is bounded by `web.fetch.timeout`
-(default 30 s). Supported content types are `text/plain`, `text/markdown`,
-`text/html` and `application/xhtml+xml`; missing or generic types are sniffed
-within 512 bytes and anything else is `unsupported_content`. Charsets declared
-in headers, a BOM or an HTML meta tag are converted to UTF-8.
+Requests use the standard HTTP transport and proxy environment
+(`HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY`, including lowercase forms), with no
+direct retry after proxy failure. The fetcher shares no cookies, headers or
+credentials with model/search clients. Raw and decoded bodies are each limited
+to 5 MiB; the whole fetch uses `web.fetch.timeout` (default 30 s).
+Supported types are plain text, Markdown, HTML and XHTML. Missing/generic types
+are sniffed; other types fail as `unsupported_content`. Declared charsets are
+converted to UTF-8.
 
 HTML is parsed into a DOM. Scripts, styles, frames, embeds, navigation, asides
 and footers are removed; the `<main>`, `<article>` or `<body>` element is
@@ -217,10 +172,6 @@ against the final URL, ignoring `<base>`), lists, code blocks, tables and quotes
 are converted to Markdown or plain text. This is a basic extraction, not a full
 readability engine. Extracted text retained as evidence is limited to 32 KiB
 with an explicit truncation flag; the model-facing output is also bounded.
-
-These protections bound `web_fetch` only. Other tools, in particular `bash`,
-keep the network access of the AICE process; disabling web tools does not take
-the Agent offline.
 
 ## Results and evidence
 
@@ -232,18 +183,12 @@ timestamps, request IDs or durations, so identical results stay identical for
 repeated-tool detection while changed results count as progress. Terminal
 control sequences are stripped from all upstream text.
 
-Each result also records structured evidence in the tool result message:
-sources (deterministic ID derived from the normalized URL, URL, title, and a
-published date only when the upstream supplied one) and evidence items with a
-kind (`snippet`, `excerpt`, `document`, `summary`), text, format, acquisition
-(`search_service`, `http_fetch`), retrieval time and truncation. Exa highlights
-become excerpts and are never merged with generated summaries. Operational
-diagnostics (upstream request ID, warnings, bytes, reported cost when the
-service returns one) stay out of the model text. Evidence is bounded to
-64 KiB, is cloned across ownership boundaries, persists in the same Session
-record and is restored on resume, checkout and history browsing. Provider
-adapters send content only. The TUI lists the recorded sources beneath the tool
-output; print modes carry the same content text.
+Structured evidence records source URLs, titles, supplied publication dates,
+excerpts/documents, retrieval times and truncation in the same Session tool
+result. URL-derived source IDs are stable. Diagnostics such as upstream request
+IDs, timings and reported costs stay outside model text. Evidence is bounded to
+64 KiB and survives Session replay; the TUI displays recorded sources below the
+tool output. Exa highlights remain excerpts, separate from any returned summaries.
 
 ## Exa adapter
 
@@ -261,17 +206,17 @@ are `invalid_response`; an empty array is a successful empty result. Paid
 requests are never retried automatically. Reported `costDollars.total` is
 recorded as an upstream cost in USD; a missing value stays unknown, never zero.
 
-The adapter was written against the [Exa Search API reference](https://exa.ai/docs/reference/search)
-as published on 2026-09-21. Default tests use local fixtures only. A real
-request requires the `integration` tag and an explicit opt-in; see
-[Verification](collaboration.md#web-checks).
+Default tests use local fixtures. A real request requires the `integration`
+tag and explicit opt-in; see [Verification](collaboration.md#web-checks).
+Implementation: [binding](../internal/app/web.go),
+[configuration](../internal/config/web.go),
+[Exa](../internal/web/exa/client.go), and
+[fetch](../internal/web/httpfetch/fetch.go).
 
 ## Not included in this version
 
-Model-native search, a second real search provider, Exa Answer/Research
-endpoints, automatic failover between services after a failed request,
-connection tests, JavaScript rendering, authenticated pages, PDFs and images,
-custom proxy configuration for `web_fetch` (it only follows the standard
-proxy environment), and MCP search tools. Native search will reuse
-the same priority list and evidence contract; see
-[Architecture](architecture.md#planned-extensions-and-restraint).
+The built-in Web path has no model-native search, second search provider,
+Exa Answer/Research, automatic failover, connection tests, JavaScript rendering,
+authenticated pages, PDFs or images. Fetch uses only standard proxy environment
+settings. Independently configured [MCP services](mcp.md) may expose their own
+search tools; they do not participate in this priority list.

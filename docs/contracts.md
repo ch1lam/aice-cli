@@ -54,56 +54,28 @@ are rejected explicitly. Protocol adapters retain responsibility for wire encodi
 
 ### Tool truncation metadata
 
-`llm.ToolResult` and `ToolResultMessage` retain optional, value-only
-`truncation` metadata ([type definition](../internal/llm/truncation.go)).
-The read tool owns its creation after final complete-line trimming, including
-space reserved for the model-readable continuation notice. Reasons distinguish
-requested pagination, the default line cap, the byte cap, and a line that cannot
-fit. `output_lines` and `output_bytes` count only returned source content (line
-terminators included), excluding the notice and its separator. `next_offset` is
-the 1-based first unreturned line. An oversized line returns zero source lines
-and bytes, leaves that offset unchanged, and retains the bash fallback notice.
-`total_lines_known: false` explicitly means the total is unknown; `total_lines`
-is meaningful only when known. Metadata never triggers additional scanning.
+[ToolTruncation](../internal/llm/truncation.go) is optional value-only source
+metadata on tool results. Read records the limiting reason, returned source
+lines/bytes (excluding notices), known/unknown totals and a 1-based continuation
+offset. It never scans extra data solely to populate metadata; an oversized first
+line leaves the offset unchanged. Grep adds match-limit and long-line flags,
+counts formatted output, and has no read offset or source-total claim.
 
-Grep uses the same optional metadata with additive `match_limit_reached` and
-`lines_truncated` fields. Its reason is `byte_limit` when the output budget is
-hit, otherwise `match_limit` or `long_lines`; the extra fields preserve concurrent
-limits. Counts describe formatted grep output (paths, context and inline context
-failure diagnostics included), before final truncation notices. Grep has no
-continuation offset and does not claim a source total. The app supplies search
-refinement, limit adjustment or read guidance instead of read pagination.
-Old records remain readable, and absent new fields decode to zero values.
-
-The Loop carries these values through its existing result message, recorder,
-and tool-end event. The app projects structured counts and a reason label into
-`interaction.ToolDisplay`; the TUI displays truncation beneath the completed
-tool row without parsing content text. The value-only projection participates
-in normal viewport cache invalidation. Absent metadata (including old results)
-produces no inferred status. Provider adapters continue sending content only;
-this field does not change the curated print NDJSON projection.
+The Loop retains metadata through recording and events. App/TUI display it
+without parsing prose or inferring data for old records. Protocol adapters and
+print NDJSON project content only. See [read/grep behavior](execution-sessions.md#engine-only-configuration).
 
 ### Web evidence metadata
 
-`llm.ToolResult` and `ToolResultMessage` carry an optional
-`Evidence *evidence.Bundle` ([type definition](../internal/evidence/types.go)).
-`web_search` and `web_fetch` create it from their normalized responses; an
-empty result records no bundle. `NewToolResultMessage` clones it, `Validate`
-enforces referential integrity, closed enumerations, valid UTF-8 and the 64 KiB
-encoded bound, and `CloneAgentMessage` deep-copies it, including nested
-tool-result parts. Session JSONL persists the additive field without a version
-change; absent fields decode to nil. Source IDs derive from the normalized URL,
-never from call IDs or time, so equal results produce equal records.
+Tool results optionally retain an [evidence.Bundle](../internal/evidence/types.go)
+from `web_search`/`web_fetch`, bounded to 64 KiB with referential integrity,
+UTF-8 and closed-enumeration validation. IDs derive from normalized URLs.
+Constructors and message clones copy it; old records remain nil.
 
-Model-facing content is the deterministic rendering in `internal/web`: it
-excludes retrieval times, request IDs, durations and cost so repeated-tool
-detection (which compares content, error status, diff and truncation, not
-evidence) treats unchanged results as repetition and changed results as
-progress. Provider adapters and print output continue projecting content only.
-The app projects the bundle into `interaction.EvidenceDisplay` (a pointer on
-`ToolDisplay`, nil when absent) for live and replayed results; the TUI renders
-titles and URLs with control characters escaped and rows clipped, without
-opening links or re-parsing tool text.
+[Web rendering](web.md#results-and-evidence) produces deterministic model content.
+Operational timing/cost evidence does not participate in repetition detection.
+App/TUI show source titles and URLs from metadata without opening them; adapters
+and print output send content only.
 
 ### Structured tool outcomes
 
@@ -174,49 +146,24 @@ outcome remains authoritative; a legacy error does not become `not_dispatched`.
 
 ### Completed mutation diff metadata
 
-`llm.ToolResult` and `ToolResultMessage` carry optional, value-only `diff`
-metadata ([type definition](../internal/llm/diff.go)). Edit and write compare
-their original read with the final written bytes only after atomic write success.
-For new files, write compares against empty content. Write reads at most 4 MiB
-of original content for display; an unreadable, oversized or binary original
-(or binary replacement) omits the diff and marks it incomplete, without rejecting
-the permitted write. Unchanged writes record known zero counts.
-Neither tool derives the diff from requested replacement snippets. Model-facing
-content remains the short outcome summary; provider adapters and print text /
-NDJSON continue projecting content only. The Loop retains metadata through its
-normal result-message, recorder, and tool-end event paths.
+[ToolDiff](../internal/llm/diff.go) records completed `write`/`edit` outcomes.
+Tools compare original and committed bytes after atomic success; new files compare
+against empty content. Missing/oversized/binary original content or binary output
+can omit the diff without refusing a permitted write. Failures never produce a
+successful diff, and old Sessions never reconstruct one from arguments/files.
 
-Session JSONL persists this additive field without a version change. Missing
-fields in older Sessions mean no diff is available; replay must not reconstruct
-one from tool arguments or current files. Immutable strings need no separate
-mutable ownership or transcript store.
+Diffs use three context lines and missing-final-newline markers. Alignment is
+bounded to one million LCS cells after common prefix/suffix removal, then uses
+an exact but potentially non-minimal replacement. Inputs with 100,000 or more
+newlines omit the diff. Stored output is bounded to 64 KiB / 2000 lines; known
+added/removed counts cover alignment before clipping. These display bounds never
+alter mutations. The implementation owns exact mechanics in
+[edit_diff.go](../internal/tool/edit_diff.go).
 
-The tool emits unified hunks with three context lines and no file headers,
-retaining exact line terminators and explicit missing-final-newline markers.
-Unchanged gaps are omitted using hunk coordinates. Alignment is capped at one
-million LCS cells after common prefix/suffix removal; larger changed spans use
-an exact, potentially non-minimal replacement block. Inputs with 100,000 or more
-newline characters omit the diff entirely. Output retains at most 64 KiB / 2000
-lines, stopping before a source row that cannot fit; `truncated` explicitly marks
-omitted output, including an oversized first row. These presentation limits
-never reject or alter a mutation. Failures carry no successful diff.
-Optional `added`, `removed`, and `stats_known` fields retain full alignment counts
-before output limits apply. They are additive Session metadata; absent fields in
-older records mean counts are unknown. The input-line cap also leaves counts
-unknown. Counts describe the bounded alignment, which may be non-minimal.
-
-The app projects successful edit and write results into `interaction.DiffDisplay`;
-either an execution error or `IsError` suppresses the diff and marks the tool failed.
-The TUI shows known counts in the completed tool heading and renders supplied
-hunks in a borderless block with addition/deletion backgrounds and old/new line
-numbers. Complete legacy hunks can provide counts; incomplete legacy hunks cannot.
-It never reads files or rematches arguments. Collapsed tools
-hide their bodies; expanding a tool exposes up to the stored 64 KiB / 2000 lines.
-Long rows are clipped to terminal width with a notice. Stored omissions remain explicitly
-incomplete after expansion. Control and Unicode format characters are escaped
-(including CR, so CRLF changes remain visible), literal backslashes are doubled,
-and invalid UTF-8 displays as replacement runes. Diff values participate in the
-normal transcript cache key, including replayed result projections.
+App projects successful outcomes into `interaction.DiffDisplay`. Execution errors
+or `IsError` suppress the successful diff and mark failure. TUI renders supplied
+hunks/counts, escapes controls, and never rereads files. Adapters and print output
+retain the short content summary; Session keeps the additive metadata.
 
 ## Agent Loop
 
@@ -234,32 +181,16 @@ normal transcript cache key, including replayed result projections.
   completes naturally and no follow-up is waiting, or on cancellation/deadline,
   context protection, configured turn/resource limits, repeated-tool detection,
   or an unrecoverable provider, protocol, runtime, or event-sink failure.
-- Optional `RunLimits` are immutable Loop configuration with per-Run counters.
-  Token accounting includes reported failed attempts and automatic compaction;
-  usage events are request snapshots, not increments. The compactor returns
-  `CompactionResult` with usage even on failure. A token limit prevents starting
-  further model requests or tools once the reported total reaches the limit;
-  it does not discard a final answer that already completed without tools.
-  A timeout derives a cancellable context for the whole Run, including retries,
-  approval waits, tools, compaction and queued inputs. Neither limit resets on
-  steering or follow-up. Resource stops are non-retryable and retain paired
-  tool results and a durable terminal reason. See [run limits](execution-sessions.md#run-resource-limits).
-- Optional `RunLimits.MaxTurns` bounds model request attempts in one Run, including
-  failed attempts and retries. The counter increments immediately before calling
-  `Model.Stream`; tools and synthetic terminal messages do not consume turns.
-  Checks before request preparation prevent compaction or model continuation
-  after exhaustion. The last permitted response's tools still settle normally;
-  an already completed final answer succeeds. Steering and follow-up share the
-  count; a new Run resets it. `ErrMaxTurns` is non-retryable and leaves a durable
-  terminal reason. Compaction uses separate loops, not the main turn counter.
-- `RunLimits.NoProgress` counts consecutive identical completed tool rounds.
-  Application configuration defaults to 8; zero disables it. The Loop compares
-  ordered tool names, canonical JSON arguments and observable results, retaining
-  only one digest and count per Run. Model prose, call IDs and timestamps do not
-  count as progress. Changed work, accepted steering, natural completion and a
-  new Run reset the streak; compaction does not. At the threshold, `ErrNoProgress`
-  stops further requests without retry, preserving actual paired results and a
-  durable reason. This heuristic does not establish semantic task completion.
+- `RunLimits` are immutable configuration with per-run counters. Steering,
+  follow-ups and automatic compaction share token/time budgets; compaction has
+  its own turn counter. Resource/turn/repetition stops are non-retryable, retain
+  actual outcomes and pair skipped calls. Exact accounting, overshoot and
+  continuation behavior belong to [run limits](execution-sessions.md#run-resource-limits).
+- Default model retries allow three retries after the first attempt, with
+  2/4/8-second backoff. Longer provider retry hints are honored up to one minute;
+  larger hints stop retries. Cancellation, protocol/context errors, event-sink
+  failures and configured stop reasons are not retried. Tool execution is never
+  retried by this policy. [retry.go](../internal/agent/retry.go) owns classification.
 - Before each tool execution the loop consults the consumer-defined `Guard`
   interface (`internal/agent` defines it, `internal/guard` implements it,
   `internal/app` wires it). `NewLoop` requires a non-nil `Guard` when the
@@ -451,454 +382,113 @@ the final JSON event from being delivered.
 
 ## Concurrency and TUI
 
-User-facing fold controls, panel appearance, and copy gestures are documented
-in [Interactive input delivery](configuration.md#interactive-input-delivery)
-and [Tool output and code panels](configuration.md#tool-output-and-code-panels).
-The contracts below define state ownership, bounded rendering, and coordinate
-consistency for those behaviors.
+User controls belong to [Configuration](configuration.md#interactive-input-delivery).
+The runtime boundary preserves these ownership rules:
 
-- Propagate `context.Context` through model calls, Agent runs, tools, and
-  persistence boundaries. Do not store it in structs or replace it mid-flow
-  with `context.Background()`. Bounded durable cleanup is an explicit exception:
-  per-message Session submission uses `context.WithoutCancel` plus a five-second
-  timeout to preserve known results after request cancellation.
-  WSL Bash forwards cancellation by closing its stdin lifetime channel first;
-  its host launcher gets up to two seconds for Linux process-group cleanup
-  before forced termination. The tool waits for both cancellation and input
-  writing to finish before releasing the process handles.
-  `Runner.NewRun` and `ActiveRun.Deliver` take caller contexts. The TUI
-  publishes cancellation before preparation starts; delivery preparation runs
-  in a command, never on the Update goroutine. The application resolves explicit
-  file and skill references through Guard and their existing loaders before acceptance.
-- Every goroutine has an owner, cancellation path, and wait/exit path. Queues
-  and buffers stay bounded.
-- Each `/btw` side thread owns a separate Runner, event stream, cancellation
-  path, frozen parent-context snapshot, and bounded private history. An
-  application-owned in-memory registry is authoritative. Limits, idle
-  windows, and TUI controls are in [Configuration](configuration.md#btw).
-- The TUI owns one side-controller goroutine that starts independently
-  cancellable per-thread runs and waits for all of them on shutdown. It keeps
-  only presentation copies, routes batches by their source channel, and never
-  applies one thread's events, draft, cancellation, or unread state to another.
-  Side execution never mutates main history, Session records, usage, settings,
-  or the main run mailbox.
-- A main run snapshots its loop, model, options, system prompt, and connection
-  configuration when it starts. Automatic summaries use that same frozen
-  configuration; they do not reload global settings midway through the run.
-  Concurrent settings changes or side-thread creation must not swap those
-  dependencies underneath the active run.
-- The built-in Guard synchronizes checks and mutable grants. Input preparation
-  can check files while the Agent runs tools; approval waits hold no Guard lock.
-  Session reset still requires active work to stop. Tool-free side threads do
-  not share this execution path.
-- Each run owns its event stream. The sender closes the channel; receivers do
-  not. Blocking sends also select on `ctx.Done()`.
-- `internal/interaction`, wired by `internal/app`, owns one bounded, ordered
-  mailbox per active run. Enter submits a steer and Ctrl+Enter submits a
-  follow-up. At a natural stop boundary the mailbox atomically seals if empty,
-  or promotes remaining steers and returns the oldest input as the next
-  follow-up. Accepted input must not disappear in a run-end race.
-- Interactive Ask confirmation is frontend-neutral: `internal/app` sends
-  `interaction.GuardRequest` (`Options`, `Highlight`, `Done`) and the frontend
-  replies once with `GuardReply` (`OptionID`, `Feedback`). `Done` removes expired
-  prompts, including attachment preparation cancelled by a finished run. Product option
-  generation and grant scope are in [Tool execution and
-  Sessions](execution-sessions.md#tool-execution-boundary).
-- Interactive Q&A uses a separate, bottom-panel contract: `internal/app` sends
-  `interaction.QuestionPrompt` (`Request`, `Done`, `Reply`) and the frontend
-  replies once with a `QuestionReply` covering every requested question.
-  Request text limits count the original Unicode code points, including
-  surrounding whitespace; non-blank checks are separate. Invalid requests
-  fail before publishing a prompt, so trimming cannot bypass resource bounds.
-  The panel owns drafts, focus, and per-question edits; only an explicit
-  submit (or explicit per-question skip) produces a result. Its dialog extends
-  the composer upward into one yellow frame with aligned sides and no
-  internal border. The question title sits in the upper-left edge; overflow
-  remains in the body. The input area holds the answer with a persistent
-  selection mark, without duplicating it in the list. Preset and custom rows
-  do not display numeric labels.
-  Preset and custom rows share huh-style focus and selection marks, with
-  at most one selected answer. Non-blank custom input selects the custom row
-  immediately; clearing it removes selection. Enter selects the highlighted
-  option or confirms the active text, then advances to the next question.
-  Confirming the final outstanding answer submits the group in the same
-  action. Empty custom/free-text answers keep the current question open;
-  confirming the last question with earlier gaps returns to the first
-  unanswered question.
-  The question body is capped to the available height; the answer window
-  grows to at most six rows. Shortcut hints appear
-  only in the shared footer below the composer, derived from the effective
-  input bindings and wrapped at narrow widths. PgUp/PgDn scroll the answer
-  while the input is focused, falling back to the question body at the
-  answer's edge; option focus scrolls the question body.
-  Focus changes reveal the active row. Display text uses the shared terminal
-  sanitizer without mutating the request or reply.
-  The main composer retains its editor and attachment state while hidden;
-  question input never triggers slash
-  commands, file expansion, or steering, and a permission prompt temporarily
-  takes over input while keeping panel state. `Esc` browses the conversation
-  with drafts kept; the run's stop shortcut cancels the run and its pending
-  prompt.
-- Pending TUI permission prompts own the screen. A Bubbles viewport wraps the
-  complete command, path, reason, and option details without ellipses; long
-  option labels are shown there under their option numbers, with matching
-  numbered controls fixed below. PgUp/PgDn, Home/End, and the mouse wheel
-  scroll review content; ↑/↓ markers indicate hidden content. Arrow keys
-  select options independently. Resizing recalculates the review height
-  after reserving controls. While a prompt is visible, transcript state keeps
-  accepting updates but its rendering is deferred; terminal frames contain
-  only the prompt. Closing it renders the latest conversation at the current
-  terminal size and restores the composer.
-- The TUI keeps only presentation copies. Pending steers are transcript
-  previews until the Agent accepts them; follow-ups remain composer chrome
-  until the Agent starts their interaction. Agent input events, not TUI queue
-  policy, move those copies into the transcript.
-- The application publishes current context occupancy separately from cumulative
-  Session usage. Main runs derive it from their frozen settings and a run-local
-  projection of recorded messages, replaced on successful compaction; completed
-  tool results contribute before the next model request. Non-delta frontend
-  events carry immutable context snapshots. Startup and command completion
-  rebuild from the active conversation. The TUI formats the header percentage and its hover/click token fraction;
-  it does not count tokens or own provider limits.
-- Only Bubble Tea's update loop mutates UI state. The application bridge turns
-  Agent events into frontend-neutral interaction events; the TUI does not
-  depend on `internal/llm`.
-- [Input context](../internal/tui/input_context.go) is a read-only projection
-  of the active domain, its local focus or mode, and editor availability.
-  Existing components own that state; there is no additional mutable focus
-  store. Domains cover main/BTW composers, side menus and confirmations,
-  command and secret prompts, authentication, permission review, session
-  browsing, and read-only history. Local modes distinguish search, list,
-  preview, rename, waiting, question directory, and denial feedback where
-  applicable. Keyboard and paste routing is exclusive to that owner, and each
-  edit reaches its editor once. Picker pane keys keep their meaning while
-  search has focus: Right opens or focuses preview, and Left returns to the
-  list while preview is visible. Unmatched editing keys reach only the active
-  editor.
-- Each domain resolves one effective `inputBinding` collection from its context
-  and current state. The [shared matcher and help projection](../internal/tui/input_bindings.go)
-  consume that same collection: actions define their keys, availability,
-  arguments, labels, and short-help visibility. Executors receive resolved
-  actions rather than interpreting keys again. The separate startup Trust
-  model uses the same matcher and help projection with its own bindings;
-  it owns no main TUI or run lifecycle. Keys match their declared modifiers and
-  aliases; checking a key code alone must not turn a modified key into its
-  plain-key action. A disabled reserved binding still consumes its keys and
-  is omitted from help. Completion is synchronized before action resolution
-  and after edits, then explicitly replaces the base keys it owns before
-  either matching or rendering help. Its reserved confirmation keys cannot
-  fall through to sending a draft while results are pending.
-- Help follows local focus and availability in every window. Short help orders
-  primary controls before secondary actions and abbreviates descriptions when
-  space is limited; contextual controls take priority over usage figures.
-  Expanded help replaces short help rather than displaying both. Basic
-  navigation bindings have empty help labels: matching and availability are
-  unchanged, while neither help mode advertises them.
-  Status and notices remain separate from action hints, including the session
-  picker's search, save, and copy notices. System, run, delivery, search, and
-  preview results retain their explicit handlers while dialogs are open.
-  Only editor commands wrap Bubbles' private asynchronous replies with input
-  identity and generation. Domain changes, picker focus changes, permission
-  selection/feedback changes, and draft clears invalidate stale editor replies,
-  including a round trip back to the original editor. Ordinary slash/file
-  completion stays within its composer's draft lifetime. Unknown messages do
-  not rebuild the composer. The shared textarea disables native selection
-  bindings until selection edits preserve AICE's atomic file and paste spans;
-  Ctrl+G remains the external-editor action.
-- `resizeLayout` measures outer chrome during Update. `screenLayout` derives
-  half-open cell rectangles from those measurements and viewport dimensions;
-  composer hit testing, transcript coordinates and the real terminal caret
-  share them. Asynchronous action changes also remeasure expanded help. View
-  does not write layout state. Body hit targets still use the lazy transcript's
-  visible wrapped rows, without enumerating hidden content. Composer file
-  coloring queries visible row starts through the textarea's `PositionAt`
-  API and measures whole text segments; it does not create a probe editor or
-  move the editing cursor to discover wrapping.
-- One pointer capture lifetime covers header, picker controls and transcript
-  gestures. A new press, key, paste, resize, terminal blur, input-owner
-  change or outer reflow cancels the previous capture; a mismatched release
-  cannot activate it. A wheel cancels picker/modal captures but scrolls an
-  active transcript drag instead of cancelling it. Button drags do not re-arm
-  on returning to the target.
-  Click release revalidates target identity/content/geometry. Transcript drags
-  retain their frozen content version and scroll it across screens; content
-  revision alone does not invalidate that version. A wheel during the gesture
-  revokes click/fold eligibility without clearing the text range. Local command choosers
-  reserve keyboard input without blocking clicks on visible transcript rows.
-- Vertical wheel input goes to the permission review or displayed transcript;
-  the session picker chooses its painted list/preview pane by pointer position,
-  independently of keyboard focus, and scrolling never transfers that focus.
-  During a transcript drag the wheel scrolls the frozen version, re-hits the
-  focus at the current pointer and repaints only the new window; release
-  copies the full anchor-to-focus interval including offscreen rows.
-  Code extraction walks the selected visual rows once and uses neighboring
-  layout rows to recognize complete source lines; it never rescans an entire
-  code block for each selected row. Complete lines retain their literal tabs
-  and trailing spaces, while partial selections copy only the visible range.
-  Borders, divider and outside coordinates in the picker, and horizontal wheel
-  input, are ignored. A list wheel requests a new preview only when selected
-  session/group identity changes. Wheel handling
-  never updates the composer and does not infer devices or add inertia.
-- The welcome-screen update check runs as a context-bound Bubble Tea command
-  after the first render. Its result returns through the update loop; it never
-  writes around the renderer or blocks terminal startup.
-- Transcript folding uses all-motion mouse reporting. Rendering and hit testing
-  share visible wrapped rows tagged with stable fold targets; never infer a
-  click from the approximate selection Y offset. Hover is derived from the
-  pointer and current layout without reformatting hidden history. A click
-  commits on left release only when no drag occurred and its target still
-  matches. Fold changes anchor the clicked item/row instead of following the
-  bottom. Permission screens and side views cannot activate main fold targets.
-- Dragging transcript text copies the selection on release using the terminal's
-  clipboard support. A bordered confirmation bubble uses the screen background
-  and floats centered immediately above the composer for one second
-  in both main and BTW views, independently of Agent activity, footer content,
-  and composer layout. A visible Q&A dialog counts as part of the composer's
-  stack, so the bubble stays above it. Repeated copies
-  restart the confirmation lifetime; streaming events do not dismiss it.
-  The TUI resolves canvas colors before composing the bubble, preserving
-  foregrounds, backgrounds and padding outside its bounds, including Markdown
-  heading rows.
-- Session history, model context, and terminal viewport remain separate.
-- History restoration transfers a source-derived display snapshot through
-  `internal/interaction` once, creating completed entries without replaying live
-  events or usage. The session picker owns input and IME focus while open.
-  Search/preview commands inherit cancellation, reject stale generations, and
-  are cancelled and joined when the TUI exits. A catalog scan may publish owned
-  partial snapshots through a bounded channel; one scanner owns publication,
-  cancellation releases blocked sends, and the update loop schedules the next
-  receive. Partial arrivals preserve selected identity and preview position.
-  Read-only inspection creates a separate TUI presentation model and preserves
-  the previous model, draft and viewport until return. Its source projection may
-  inspect another branch, but only the existing explicit restore command changes
-  the application's active store. Question directories address entries in that immutable display snapshot.
-  Optional `interaction.SessionRenamer` is a separate mutation boundary from
-  browsing and reading. The application serializes renaming with history
-  switches and appends metadata through the existing Store writer lock, without
-  replacing live context or its display snapshot. F2 owns a temporary title
-  input; saves inherit cancellation and are joined on TUI exit, with stale
-  results rejected by generation. Completed writes survive UI cancellation.
-  Switching requires idle main and side responses; side-thread creation is
-  serialized with the history switch.
-  The TUI coalesces streaming deltas for up to 16 ms or 64 events before
-  rendering; lifecycle updates flush the batch immediately. Main and side
-  views use the same batching rule. Only the update loop owns assistant
-  accumulation buffers and per-section caches, keyed by source and width.
-  Process, contiguous-call-group, thinking and tool folds are independent TUI
-  state; parent folds retain child choices. Manual choices override automatic
-  process folding during streaming. Only visible branch resets clear them.
-  Collapsed contents are not rendered. During streaming, thinking
-  renders only a UTF-8-safe tail of at most 4 KiB plus an omission notice;
-  full content remains in the presentation snapshot and becomes available
-  on completion. These display limits never truncate Session or model context.
-  Write previews project existing tool-call start/delta/end events through the
-  application bridge. The TUI accumulates at most 64 KiB of raw arguments per
-  call and parses only for presentation when visible, using the existing event
-  batching and item cache. Complete calls replace the partial preview; execution
-  start reconciles the same row by call ID. A preview never authorizes execution.
-  Read selects syntax highlighting from the filename without interpreting source
-  as Markdown. Expanded write previews bound source input to
-  2000 lines / 64 KiB. Lines are clipped before syntax
-  highlighting and terminal control characters are escaped. These limits affect
-  neither tool arguments nor Session history.
-  Assistant Markdown code (fenced or indented), tool text and write previews
-  use the same `internal/tui/code_block.go` component. It retains literal source
-  and line terminators separately from escaped/highlighted rows. Layout maps
-  every wrapped row to its zero-based source line; padding and empty-output
-  labels have no source line. A final newline does not add a phantom line.
-  Callers own source limits and completeness; component line counts describe
-  supplied source, never an inferred complete file. Result text wraps and write
-  previews clip using the same layout boundary. Diff keeps its own hunk/line
-  rendering and shares only the panel decoration.
-  `markdown.go` parses the whole document with Goldmark and replaces code AST
-  nodes with collision-checked render slots, since Glamour's nested buffers
-  do not expose a custom code rendering hook. The shared component fills those
-  slots after prose layout, retaining document-local block coordinates and
-  source-row mappings in the assistant cache. Renderer failure falls back to
-  literal escaped source, never internal markers or partial content. Width and
-  source changes invalidate text and block geometry together. These data are
-  presentation-only. During streaming, `assistantPresentation` owns a
-  `markdownCache` for both main and BTW answers. It still parses the complete
-  source, but reuses unchanged groups of top-level nodes at the same width.
-  Checkpoints precede a source-positioned paragraph or heading after a
-  line-ending block; lists and quotes are never split internally. Rendering
-  keeps the original AST parents, siblings and boundary newlines. Changed
-  reference definitions invalidate all groups so earlier links resolve correctly.
-  Cached code layouts retain literal source; composition rebases their row
-  coordinates without modifying cached placements. Completed main answers of at
-  least 8 KiB or more than 80 newlines use `historyMarkdown`: parse once when
-  reached, release streaming layout caches, and lazily lay out complete top-level groups.
-  Standalone top-level lists without code panels are divided into groups of at
-  most 16 complete items when source boundaries are available. Each group enters
-  the original list container and retains its siblings, preserving numbering,
-  nesting, task markers and resolved references. Only synthetic outer spacing
-  between list groups is removed. The viewport
-  anchors to item, group and row, and copy targets include the group identity.
-  Search selects a source group before laying out its matching rows. Short
-  completed answers and BTW answers retain whole-answer layout. Parsing remains
-  linear in answer size; a very large paragraph, individual list item, or list
-  grouped with other constructs or code still requires its group's full prose
-  layout. Completed code over 80 source lines or at least
-  8 KiB defaults to 12 clipped preview lines, with fold state owned by the parsed
-  presentation. Expansion invalidates only its containing group's rows; copying
-  always uses full literal source. Search reveals a matching hidden code block
-  and uses its source-row map to locate the hit. Read-only current-session views
-  own separate presentations so their code folds cannot change the live view.
-  This is not an incremental syntax highlighter.
-  Markdown tables use the TUI's compact outer frame with Glamour-rendered
-  inline content. Link and image destinations stay inline because the custom
-  table frame does not run Glamour's table-link footer. Streaming, completed
-  and restored history views use the same table renderer.
-  `transcriptContent` carries text and block placements through
-  composition, indentation and the viewport's lazy cache. Hit testing uses the
-  same visible rows as painting, including main and BTW answers, tool output and
-  write previews. Copy buttons use original supplied source and validate both
-  source and geometry at release; scrolling, reflow and replaced content cannot
-  reuse a stale press. Drag selection retains its frozen display snapshot.
-  Single-click line copying uses the same source-row mapping, removes only the
-  final LF/CRLF, and preserves all other characters. Wrapped and clipped rows
-  resolve to their original logical line. Hover repaints only visible target
-  cells, preserves syntax foregrounds and cached geometry, and is suppressed
-  during selection and modal input. Diff rows retain their separate rendering
-  and selection semantics.
-  Tool headings count supplied source lines in parentheses using the same bounded
-  source selection as their bodies, without rendering collapsed panels. Panel
-  status rows have no source-line mapping. Tool truncation and incomplete write
-  previews mark the heading count partial, and completed previews refresh the label.
-  Main and BTW transcripts use an item-anchored viewport: scrolling records a
-  block and a row within it, without measuring all preceding history. Process
-  headers, individual reasoning/answer blocks, tools and questions are separate
-  items, including multiple model rounds within a single process group. Only
-  reached items are formatted and wrapped; unchanged visible items reuse their
-  cached rows. Fold headings follow the same rule: historical thinking labels,
-  tool-group summaries and tool headers are formatted only when reached, and
-  hover variants only when hovered. Heading versions include fold state, tool
-  completion and preview revisions, and live activity; unchanged historical
-  headings reuse both normal and hover rows. Width changes invalidate wrapping,
-  height changes retain it.
-  Mouse-wheel input updates the transcript viewport directly, without updating
-  the composer, completion state or unchanged surrounding layout.
-  Refreshes rebuild lightweight item descriptions but never concatenate the
-  full transcript. Full-content snapshots are explicit operations, not part of
-  animation, scrolling, or streaming frames. Selection freezes visible rows and
-  their local coordinate snapshot while new content continues arriving.
-  Completed content remains available by scrolling; a first visit to a large
-  individual block can still require formatting that whole block.
-- Terminal cell updates remain owned by Bubble Tea and its Ultraviolet
-  renderer. Changed lines containing wide characters are repainted from the
-  line boundary so partial erases cannot split CJK glyphs during streaming.
-  Keep the renderer's wide-line repaint support when changing dependencies;
-  `TestTerminalRepaintsChangedWideText` exercises actual terminal output rather
-  than only checking the text returned by `View`.
+- Propagate cancellation through preparation, model calls, tools, approvals and
+  persistence. Every goroutine has an owner, cancellation and wait/exit path;
+  queues are bounded and event senders close their own channels. Known Session
+  results use explicit cancellation-independent cleanup bounded to five seconds.
+- Each main run freezes loop, model, options, prompt, tools and connections;
+  summaries use that same snapshot. A synchronized Guard permits concurrent
+  input preparation and tool execution without holding its lock during approval
+  waits or I/O. Reset requires active work to stop.
+- App/interaction own the ordered bounded mailbox. The Loop accepts steers only
+  after complete tool pairs and follow-ups only at natural settlement. The
+  mailbox atomically seals when empty or promotes remaining steers; run-end races
+  cannot drop accepted input. TUI pending messages are presentation copies.
+- App owns each BTW thread's frozen context and private history. TUI controllers
+  route events by source and cancel/join all thread runs on shutdown. Side
+  execution never mutates main history, usage, settings or its mailbox.
+- `GuardRequest`/`GuardReply` and `QuestionPrompt`/`QuestionReply` are separate
+  cancellable exchanges. Replies are bound to the current request and validated;
+  cancellation wins racing submissions. Q&A publishes only a complete explicit
+  reply, never focus, drafts or recommendations. Permission UI may preempt it
+  while retaining draft state. Neither exchange uses the steering mailbox.
+- Only Bubble Tea Update mutates UI state. App translates Agent events into
+  interaction types; TUI does not import LLM/tool/Session implementation types.
+  Context occupancy arrives as immutable application snapshots, separately
+  from cumulative Session usage.
+- [input_context.go](../internal/tui/input_context.go) projects the active input
+  domain from existing component state. [input_bindings.go](../internal/tui/input_bindings.go)
+  gives dispatch and help the same actions, modifiers, availability and aliases.
+  Dialog input is exclusive; disabled reserved keys cannot fall through. Async
+  editor replies carry input identity/generation and are rejected after domain,
+  focus or draft changes. Pending completion keys cannot accidentally submit.
+- Layout is measured during Update, not mutated in View. Paint, native caret
+  and hit testing use the same cell geometry. Press/release validates identity,
+  content and geometry; reflow, focus changes and stale targets cancel clicks.
+  Drag selection retains a frozen view while new content arrives. Code copy
+  uses original source mappings, preserving tabs/line endings independently of
+  wrapping, highlighting or clipping.
+- Streaming deltas batch for up to 16 ms or 64 events; lifecycle events flush
+  immediately. Folds, previews and caches are TUI state. Collapsed content is not
+  rendered; streaming thinking/arguments have bounded display tails/previews.
+  These bounds never truncate source history or model requests.
+- Main/BTW viewports anchor to an item and local row, lazily rendering reached
+  items. Width/source changes invalidate text and geometry together; ordinary
+  scrolling avoids formatting hidden history or rebuilding the composer.
+  Completed large answers use grouped Markdown layout; a single large paragraph
+  or list item can still require full group formatting. Literal code and its
+  copy targets survive folding and lazy layout. See
+  [markdown_history.go](../internal/tui/markdown_history.go) and
+  [code_block.go](../internal/tui/code_block.go).
+- Session restoration transfers an immutable original-history display snapshot
+  once, without replaying execution events or counting usage again. Read-only
+  history owns a separate presentation. Catalog reads, previews and title saves
+  reject stale generations and are cancelled/joined on exit; only explicit
+  restore changes the active Store. Saved renames survive UI cancellation.
+- Bubble Tea/Ultraviolet owns terminal output. Preserve wide-character line
+  repaint support on upgrades; `TestTerminalRepaintsChangedWideText` exercises
+  actual terminal output, not just `View` strings.
+
+The frontend owns presentation caches only: Session JSONL, model context and
+terminal viewport remain separate representations with different lifetimes.
 
 ### Settings and Usage capabilities
 
-`interaction.SettingsReader`, `SettingsStatusReader`, `SettingsWriter`,
-`SettingsActionRunner` and `UsageReader` are implemented by the interactive application. Snapshots contain
-public value types and copied metadata, never credentials or writable stores.
-Config owns scalar types, defaults and frozen source layers; app owns dynamic
-model/service choices, editability, timing, validation and prepared resources.
-The TUI chooses controls from value kinds, without importing config/providers.
-An off boolean may carry an application-defined `Action` for its explicit enable
-flow. The TUI routes enable through that action and keeps ordinary disable as a
-preference patch. Computer Use setup reuses this path and one existing shared
-reservation for external work plus internal preference publication.
+App implements `SettingsReader`, `SettingsStatusReader`, `SettingsWriter`,
+`SettingsActionRunner` and `UsageReader`. Snapshots carry copied public values,
+not credentials or writable stores. Config owns types/defaults/frozen sources;
+app owns choices, timing, validation and resource publication; TUI owns editors,
+drafts and modal navigation. Boolean enable actions can invoke domain setup
+without adding another writer or service.
 
-`settingsLifecycle` reserves a change, preparation or active response under a
-short mutex. Lock order is lifecycle before state/history/side locks. The
-lifecycle and state locks are never held while waiting on file locks,
-authorization or model calls; the conversation history synchronization lock
-continues to serialize its own store operations.
-Read snapshots capture configuration and revision together. Main and BTW starts
-check their prepared resource revision before accepting input. Settings and conflicting
-slash commands use this same boundary. An active response keeps its frozen
-loop, limits and tools, including queued follow-ups. Completion decides separately
-whether to advance the Settings draft revision and the prepared-resource revision;
-requiring idle admission does not itself prove that resources changed. Advancing
-the resource revision makes existing BTW snapshots read-only and rejects held
-main and BTW runs before model execution or prompt acceptance. Restart-only saves
-leave current loaded Trust, Skills and startup actions unchanged.
-Trust selection advances the draft revision only after its atomic store write
-succeeds, consistently through slash and Settings; failed validation or saving
-keeps the draft retryable. It never advances the resource revision.
+[settings_lifecycle.go](../internal/app/settings_lifecycle.go) reserves settings,
+preparation and active responses. Lock order is lifecycle before state/history/
+side locks. Lifecycle/state locks never span file-lock waits, authorization or
+model calls; history synchronization separately serializes Store operations.
+Prepared main/BTW runs check resource revision before accepting input. Active
+runs keep frozen dependencies, including follow-ups.
 
-Browser management reports actual local changes and modifying helper processes
-that started, whose effects may be uncertain even on failure or cancellation.
-Both slash and Settings actions advance both revisions for those effects; pure
-validation failures and cancellation before effects advance neither. Status reads
-do not invalidate resources. Slash status remains available during a response;
-the Settings action retains its revision check and idle admission requirement.
-See [Browser actions](browser.md#show-the-browser-window).
+Draft revision and resource revision track different effects:
 
-Web management reports durable writes separately from runtime publication.
-Both entries refresh drafts after a credential-only commit, but keep held main
-and BTW runs usable with their existing effective resources. Publishing Web
-preferences and the prepared runtime advances both revisions; no-effect failures
-and unchanged priority moves advance neither. This does not make credentials
-and preferences one transaction. See [Web management](web.md); other domain
-actions retain their own completion rules.
+| Effect | Draft revision | Resource revision |
+| --- | --- | --- |
+| Published shared preference/runtime | Advance | Advance |
+| Saved Trust/restart-only preference | Advance | Unchanged |
+| API-key-only or Web-credential-only commit | Advance | Unchanged: existing clients retain old resources |
+| Changed subscription OAuth credential, even if selection later fails | Advance | Advance: providers reread credentials |
+| Browser change or modifying helper with uncertain effects | Advance | Advance |
+| Validation failure/cancel before effects, unchanged operation | Unchanged | Unchanged |
 
-Login uses one application coordinator for slash and Settings. An API-key write
-without preference publication advances only the draft revision: existing
-clients retain their old key. A changed OAuth credential advances both revisions
-even if the subsequent preference save fails, because Codex and Claude
-subscription clients reread credentials for every request. This uses the existing
-application-wide resource revision; it does not introduce provider-specific
-versions. An identical OAuth credential without a later preference commit,
-validation failure or cancellation before effects advances neither revision.
-Successful runtime publication advances both. Credential cleanup warnings retain
-the committed effects and are reported separately, without replaying login.
+Resource changes reject held prepared runs and make existing BTW snapshots
+read-only. Operations prepare before writing and publish after atomic replacement;
+cleanup warnings preserve commit facts. Preferences and credentials are separate
+commits. Domain guides own [browser](browser.md), [Web](web.md) and [MCP](mcp.md)
+partial-failure rules. MCP management must publish saved revocation even if later
+preparation fails; new runs stop rather than reuse stale authority. Live MCP deny
+may revoke/cancel one service during a run without replacing another owner.
 
-A setting operation prepares before writing, publishes after atomic replacement,
-and reports cleanup separately from commit failure. Web instance edits patch
-only selected properties; a writer rereads disk to preserve unrelated peers,
-but the running instance publishes its own candidate. Preferences, credentials
-and OAuth files do not form a multi-file transaction.
+Settings reads do not probe the desktop: a separate bounded status read is checked
+against both revision and panel generation. Closing reads cancels them; closing a
+submitted write cannot undo a commit. Domain prompts use transient modal input,
+never the conversation composer. Query/action owners cancel and join at shutdown.
+The panel's Stop action uses ordinary run cancellation and waits for completion.
 
-MCP management shares the CLI's save-and-return-effective-configuration operation.
-Its interactive coordinator publishes that exact saved configuration under an
-idle reservation and closes the preceding owner. A later runtime preparation
-failure is reported as saved but not applied and stops new runs; it must not
-leave older permissions usable. Partial credential/approval removal is also
-published when the subsequent definition write fails. MCP deny is the exception
-to the idle requirement: it revokes one live capability and cancels that service,
-without replacing another active run's owner. Status and input prompts perform
-no discovery. `AuthPrompt.PublicInput` explicitly enables visible non-secret
-setup fields; all other account/credential prompts remain hidden by default.
-
-Settings/Usage share the small `modal.go` frame with history. Their editor,
-search, selection and array drafts belong to the modal input domain. Permission
-and question prompts take precedence. Identity includes the field, action,
-prompt and array cell, so delayed editor work cannot land in a different prompt.
-Mouse release validates the target and geometry. Native cursor placement uses
-terminal cell widths; background streaming continues behind the window.
-
-Read generations govern presentation only. Closing a read cancels it; closing
-a submitted preference write does not undo publication. Domain actions have
-cancellable prompt exchanges and use the modal editor, never the conversation
-composer. Query owners cancel and wait at shutdown, including late queued work.
-Preference snapshots never inspect the native desktop. A separate bounded
-status read supplies the Computer Use information row for a captured settings
-revision. The app rejects a revision change across inspection; the TUI also
-checks panel generation and revision before replacing only that row. It keeps
-navigation, drafts and save/action feedback intact, and updates open status
-details in place. Refreshes, writes and actions cancel the old status read;
-accepted preference snapshots start a new one without blocking display.
-Menu disclosures wrap and page before choices become actionable. Rendering and
-mouse targets use the same layout; cancellation rejects late prompts. Multiline
-action results open a scrollable information view so partial external success,
-commit facts and later errors remain visible together.
-The `/desktop` deep-link is a frontend navigation command targeting the existing
-`desktop_enabled` field. It adds neither a configuration writer nor a run.
-Settings' explicit Stop footer and panel-local F6 call the same cancellation
-path as the main composer, including cancellation before the controller has
-published its cancel function. They do not acquire a Settings reservation or
-change preferences. Esc retains modal hierarchy semantics. The UI keeps the
-run active and displays Stopping until the controller reports completion;
-the ordinary completion refresh then obtains current editability and revision.
-Usage reads copy source Session records and derive price completeness without
-calling the consuming `RuntimeState` method or creating an empty Session. Reads
-occur on open, lifecycle completion or manual refresh, not streaming deltas.
+Usage reads derive from copied source records without consuming restored display
+state or creating empty Sessions. Read on open, lifecycle completion or manual
+refresh, never on each token delta. Missing prices/usage remain unknown.
 
 ### Interactive authentication
 

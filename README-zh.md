@@ -8,8 +8,8 @@
 
 [![Go](https://img.shields.io/github/go-mod/go-version/ch1lam/aice-cli)](https://go.dev/) [![License](https://img.shields.io/github/license/ch1lam/aice-cli)](./LICENSE) [![Build](https://img.shields.io/github/actions/workflow/status/ch1lam/aice-cli/ci.yml?branch=main&label=build)](https://github.com/ch1lam/aice-cli/actions/workflows/ci.yml) [![Release](https://img.shields.io/github/v/release/ch1lam/aice-cli)](https://github.com/ch1lam/aice-cli/releases/latest)
 
-一个小而完整的 coding agent：单一 Go 二进制、显式 Agent Loop 与工具集，
-以及 append-only 的 Session 历史。
+一个小巧的 coding agent：单一 Go 二进制、显式 Agent Loop 与工具集，
+以及只追加的 Session 历史。
 
 ## 安装
 
@@ -25,103 +25,22 @@ Windows PowerShell：
 iwr -useb https://raw.githubusercontent.com/ch1lam/aice-cli/main/scripts/install.ps1 | iex
 ```
 
-无需 Go 工具链。支持平台、手动下载、运行时辅助程序、源码构建和
-`aice update` 参见[安装与升级](./docs/installation.md)。
+无需 Go 工具链。支持平台、辅助程序、手动下载和源码构建见[安装与升级](./docs/installation.md)。
 
 ## 快速开始
-
-使用 `/browser` 切换显示窗口、连接运行中的浏览器或选择工作标签页；准备步骤见
-[浏览器自动化](./docs/browser.md)。
-
-使用 `/web` 添加 Exa 搜索账户、调整搜索来源顺序并开关 `web_fetch`。配置好服务后，
-任意支持工具调用的模型都可以使用 `web_search`；`web_fetch` 直接读取公开网页。启用的 Web 工具会自动访问网络，无需额外确认。详见[联网搜索与抓取](./docs/web.md)。
-
-使用 `aice mcp`、`/mcp` 或 Settings 添加 stdio/HTTP 服务、查看并批准连接指纹、设置独立凭证和测试发现。
-模型通过 `tool_search` 按需加载工具 Schema，执行仍经过 Guard 授权。
-Settings 可在运行中撤回连接，其他修改在空闲时生效。已支持 OAuth 浏览器登录、注销及操作前自动刷新，失败的操作不会自动重放；详见 [MCP 配置与命令](./docs/mcp.md#management-cli)。
-
-在项目中启动交互式 Session：
 
 ```sh
 cd /path/to/project
 aice --workspace .
 ```
 
-配置优先级为：运行时选择 → 命令行参数 → 环境变量 → 已信任项目配置 → 用户配置 → 默认值。
-交互选择立即保存，其他运行中的实例继续使用已加载的配置。
-详见[配置与持久化](./docs/configuration.md#settings-and-precedence)。
+执行 `/login`，选择账号或 API Key 登录，再选择 provider。
+用 `/model` 选择模型、`/settings` 修改偏好、`/help` 查看命令、`?` 查看快捷键。
+各 provider 的接入方法和配置优先级见[配置](./docs/configuration.md)。
 
-使用 `/settings` 编辑模型、账户、工具、运行限制、Trust 偏好与启动选项。
-`/context`、`/usage` 和 `/session` 分别打开上下文占用、Session 已记录用量和会话信息。
-窗口会保留后台草稿，仅打开窗口不会创建 Session。详见
-[Settings 与 Usage](./docs/configuration.md#settings-window)。
-
-Computer Use 仍在集成中。macOS 和 Linux X11 可通过 `/desktop` 打开显式 setup 与状态页，
-桌面访问默认关闭。任务窗口内容可能发送给模型，操作可影响项目之外的应用。
-Linux setup 会让你选择一个窗口进行本地截图验证。已验证范围与剩余平台限制见
-[Computer Use](./docs/desktop.md)；Wayland/XWayland 与 Windows 操作路线仍不可用。
-Windows 只读状态检查已实现，尚待原生验证。
-固定版本的 macOS Driver 不支持后台拖动，前台拖动也尚未稳定通过验收。
-原生测试还发现像素双击短暂丢失前台焦点、像素右键重复投递事件。状态详情会显示这些限制；
-截图成功不代表输入能力已经验证。
-固定版本的 Linux Driver 还存在未解决的 Unicode 插入失败；GTK 键盘、像素滚动和拖拽所需的
-独立输入路线在当前测试环境中不可用。
-Linux 应用启动也未通过后台共存验收：原生测试中启动操作抢占了前台焦点，
-尽管 Driver 返回应用未激活。
-
-默认不限制运行轮数。可用 `--max-turns 50` 设置可选轮数上限，
-`--run-token-budget 200000` 和 `--run-timeout 30m` 设置单次运行资源预算。默认连续 8 轮工具调用、参数和结果均相同时停止；
-`--run-no-progress-limit 0` 可关闭此检测。详见[运行限制](./docs/configuration.md#run-limits)。
-
-首次启动后执行 `/login`，先选择账号或 API Key 登录，再选择 provider
-并完成对应的登录流程。输入 `/help` 查看命令，输入 `?`
-查看快捷键。AICE 工作期间，按 Enter 可调整当前响应，按 Ctrl+Enter 可排队
-同一次 Agent run 内的后续交互。按 `Esc` 中断响应；第一次 `Ctrl+C` 清空输入框，
-连续再按一次退出程序。使用 `/btw [问题]` 可新建一个无工具、不会打断或写入
-主 Session 的侧线程；输入不带参数的 `/btw` 会打开线程选择菜单；没有侧线程
-时则直接打开空白输入框。
-
-鼠标移到过程、思考、调用分组或工具标题上会高亮，单击可展开或折叠；拖选文字仍可复制。
-`Ctrl+O` 可统一展开或折叠主任务详情。详见[对话折叠交互](./docs/configuration.md#interactive-input-delivery)。
-
-在主输入框任意一行的词首（开头或空白之后）输入 `/`，可搜索命令和 Skill。
-选择 Skill 会插入绿色 `[skill:名称]` 引用块，发送时将完整指令加入上下文。
-在正文中选择普通指令会打开或执行该指令，完成或取消后恢复前后草稿及附件。
-`/skills` 可查看列表；详见 [Agent Skills](./docs/configuration.md#agent-skills)。
-
-选择支持图片的模型后，用 `Ctrl+V` 或 `Alt+V` 粘贴截图，图片会成为输入框内的占位符，
-与长文本一样用 Backspace/Delete 删除；可配文字或单独发送。平台要求和大小限制见
-[剪贴板图片输入](./docs/configuration.md#clipboard-images)。
-用 `@src/main.go` 或 `@"images/screen shot.png"` 主动引入文件或目录；输入时可模糊查找，↑/↓ 选择候选，→ 带入路径继续匹配，Tab/Enter 确认引用而不发送草稿。`--print` 同样支持文件引用。
-确认后的路径不显示双引号，`@` 为灰色、路径为主题金黄色，并像图片附件一样整块删除；手动输入或用 → 带入的路径仍可逐字编辑。
-`read` 可以读取图片，并从会话找回原图查看细节；详见[文件引用](./docs/configuration.md#file-references)。
-
-使用 ChatGPT/Codex 订阅时，在 `/login` 选择 `Sign in with an account` →
-`OpenAI Codex`，再选择浏览器或设备代码登录。浏览器登录会自动打开授权页，
-支持回调或粘贴跳转 URL；Escape / Ctrl+C 可取消。也可以在终端执行
-`aice auth login --provider openai-codex`（无界面环境加 `--device-code`）。
-详见 [Codex 订阅配置](./docs/configuration.md#codex-subscription-chatgpt-oauth)。
-
-使用 Claude API 时，在 `/login` 选择 `Sign in with an API key` →
-`Anthropic (Claude API)`，或设置 `ANTHROPIC_API_KEY` 并运行
-`aice --provider anthropic`。使用 Claude Pro/Max 时，选择 `/login` →
-`Sign in with an account` → `Claude Pro/Max`，或运行
-`aice auth login --provider anthropic-subscription`。订阅采用与 Pi 一致的原生
-OAuth 接入，不依赖 Claude Code 可执行文件。详见
-[Claude API 配置](./docs/configuration.md#anthropic-claude-api) 和
-[订阅配置与兼容性限制](./docs/configuration.md#claude-subscription-promax-oauth)。
-
-使用 Kimi Coding Plan 时，在 `/login` 选择 `Sign in with an API key` →
-`Kimi Coding Plan`。详见 [Kimi 配置](./docs/configuration.md#kimi-coding-plan)。
-使用独立计费的中国区开放平台时，选择 `Moonshot API` 并输入平台 Key；
-官方地址已内置。详见 [Moonshot 配置](./docs/configuration.md#moonshot-api-platform)。
-
-使用智谱时，在 API Key 登录菜单选择 `Zhipu API` 或 `Zhipu Coding Plan`。详见
-[智谱配置](./docs/configuration.md#zhipu-api-platform)。
-
-使用 AiHubMix 时，在 API Key 登录菜单中选择 `AiHubMix`，或运行
-`AIHUBMIX_API_KEY=... aice --provider aihubmix`。模型与地址配置见
-[AiHubMix 配置](./docs/configuration.md#aihubmix)。
+用 `@src/main.go` 引用文件；使用视觉模型时，可用 `Ctrl+V` 或 `Alt+V` 粘贴图片。
+AICE 工作期间，Enter 调整当前响应、Ctrl+Enter 排队后续交互、Esc 中断响应。
+`/btw` 打开无工具的侧对话。
 
 执行一次非交互请求：
 
@@ -129,76 +48,41 @@ OAuth 接入，不依赖 Claude Code 可执行文件。详见
 aice --workspace . --print "解释这个仓库的架构。"
 ```
 
-需要机器可读事件流时可加 `--output-format json`；默认 text 模式仍将回答
-写入 stdout，并将执行进度写入 stderr。详见[配置与命令](./docs/configuration.md#command-line-options)。
-
-`--print` 默认不保存 Session；传入 `--session` 才会创建或续接指定文件。
-交互模式会自动在 `<workspace>/.aice/sessions/` 创建 Session。使用 `/history`
-或 Ctrl+R 可以查找、预览并恢复当前项目的历史会话，显示原始对话并从其活动分支继续。
-列表按今天、昨天、更早分组并提供最近内容摘要；较旧记录继续加载时仍可选择和退出。
-轻量预览展示最后一个问题和回答。F2 重命名选中会话，仅向原 JSONL 追加记录；
-清空标题后恢复首个提问，已有会话无需迁移。F4 只读查看命中位置，不切换分支；T 查看提问目录，
-End 回到活动分支最新内容，Ctrl+T 打开当前会话提问目录。
-长回答随滚动按 Markdown 段落结构排版；长代码默认短预览，点击标题或在阅读时按 C 展开，
-复制仍保留完整源码，搜索命中会自动展开。也可以在启动时指定历史文件：
-
-```sh
-aice --workspace . --session .aice/sessions/<session-id>.jsonl
-```
+`--output-format json` 输出 NDJSON 事件。Print 模式默认不保存 Session，
+传入 `--session` 才会保存。交互历史位于 `<workspace>/.aice/sessions/`，
+用 `/history` 或 Ctrl+R 查找并恢复。详见[执行与 Session](./docs/execution-sessions.md)。
 
 ## 当前能力
 
-| 领域 | 当前实现 |
+| 领域 | 入口与范围 |
 | --- | --- |
-| 交互 | Bubble Tea TUI（按 provider/model 显示[上下文使用百分比](./docs/configuration.md#context-window-and-status-bar)）与一次性 `--print` 模式 |
-| Provider | DeepSeek V4、OpenCode Go 内建模型目录、Kimi Coding Plan（Responses API）、Moonshot 开放平台 API、智谱开放平台 API 与 Coding Plan、OpenAI API（GPT-6 Astra 与 GPT-5.6）、Claude API 与 Pro/Max 订阅、Codex/ChatGPT 订阅、AiHubMix，以及 Custom（OpenAI 兼容） |
-| 协议 | Anthropic Messages、OpenAI Responses、OpenAI Chat Completions |
-| 工具 | `read`、`write`、`edit`、`bash`、`grep`、`find`、`ls`、`skill`、`web_search`、`web_fetch`、`tool_result_read` |
-| MCP | stdio/Streamable HTTP、惰性发现与 `tool_search`、独立连接/工具授权、资源列表与显式读取、有序结构化结果、模型视图预算与本地回读、CLI 与 `/mcp`/Settings 管理；见[支持范围与限制](./docs/mcp.md) |
-| 联网 | Exa Search API 服务实例与可排序来源列表（`native` 预留、未实现）、带防护的直连网页抓取、来源写入 Session 历史、`/web` 设置；见[联网搜索与抓取](./docs/web.md) |
-| 浏览器 | 原生 agent-browser，通过 `bash`/`read` 与内置 browser skill 工作；`/browser` 切换显示窗口、连接与选择标签页，见[浏览器自动化](./docs/browser.md) |
-| Guard | 工具调用前的路径、危险命令与网络范围检查、交互授权；详见[工具执行与 Session](./docs/execution-sessions.md#tool-execution-boundary) |
-| Session | 当前项目历史选择器、搜索与预览、原始对话恢复、分支、回退与自动/手动非破坏性压缩 |
-| 侧问题 | Session 历史之外、无工具的多个临时 `/btw` 线程 |
-| Agent Skills | 开放规范的 `SKILL.md` 目录：内建、`~/.agents/skills` 与项目 `.agents/skills`；详见 [Agent Skills](./docs/configuration.md#agent-skills) |
-| 输入 | 文本、`@文件` 与[剪贴板图片](./docs/configuration.md#clipboard-images)，共用图片缩放与原图找回 |
+| 模型 | DeepSeek、OpenCode Go、Kimi Coding Plan、Moonshot API、智谱 API/Coding Plan、OpenAI、Claude API/Pro/Max、Codex/ChatGPT、AiHubMix，以及自定义 OpenAI 兼容端点；见[配置](./docs/configuration.md) |
+| 编程 | 文件读取与编辑、Bash、ripgrep、图片输入和 `SKILL.md` 指令 |
+| 联网 | `/web`：配置 Exa 搜索与公开网页抓取；见[指南](./docs/web.md) |
+| 浏览器 | `/browser`：通过原生 agent-browser 辅助程序控制窗口显示、外部连接与标签页；见[指南](./docs/browser.md) |
+| MCP | `aice mcp`、`/mcp` 或 Settings：stdio/HTTP 服务、OAuth、按需工具发现与资源；见[指南](./docs/mcp.md) |
+| Computer Use | `/desktop`：显式设置与状态，默认关闭；见[平台支持与限制](./docs/desktop.md) |
+| Session | 搜索、恢复、分支、回退和自动/手动压缩；见[指南](./docs/execution-sessions.md) |
 
-工具继承 AICE 进程权限。每次调用都会经过执行门禁；`--print` 下 `ask` 按
-`deny` 处理，除非加上 `--yolo`。`--workspace` 是工作目录并定义路径访问边界，不是沙箱。
-Project Trust 只控制项目 prompt 文件和项目 `.agents/skills` 的加载；详见
-[Project Trust 与 Prompt](./docs/project-trust.md)。更强隔离请使用外部容器/VM。
-
-浏览器自动化需要已安装的 Chrome/Chromium/Brave；AICE 不会自动下载浏览器。
-Guard 不隔离网页内部操作。
-
-## 文档
-
-详细文档：
-
-- [安装与升级](./docs/installation.md)
-- [配置与命令](./docs/configuration.md)
-- [联网搜索与抓取](./docs/web.md)
-- [MCP 服务与命令](./docs/mcp.md)
-- [Project Trust 与 Prompt](./docs/project-trust.md)
-- [工具执行与 Session](./docs/execution-sessions.md)
-- [架构](./docs/architecture.md)、[运行时契约](./docs/contracts.md)与[维护入口及已知偏差](./docs/maintenance.md)
+工具继承 AICE 进程权限，每次调用经过 Guard。`--workspace` 定义工作目录与路径访问边界，
+不是沙箱。Print 模式遇到授权请求会拒绝，除非使用 `--yolo`；明确的 deny 仍生效。
+启用的 Web 工具自动访问网络，无需额外确认；Guard 不隔离浏览器页面内部操作。
+详见[执行权限](./docs/execution-sessions.md#tool-execution-boundary)与
+[Project Trust](./docs/project-trust.md)。需要主机隔离时使用容器或 VM。
 
 ## 开发
 
-使用 [`go.mod`](./go.mod) 声明的 Go 版本，并遵守
-[`AGENTS.md`](./AGENTS.md) 中的仓库规则。
+使用 [go.mod](./go.mod) 中声明的 Go 版本，并遵守 [AGENTS.md](./AGENTS.md)。
+先读[架构](./docs/architecture.md)，代码入口和已知偏差见[维护指南](./docs/maintenance.md)，
+必需检查见[协作规范](./docs/collaboration.md)。
 
 ```sh
 go test ./...
 go vet ./...
 ```
 
-## 当前状态
-
-AICE 仍在快速迭代，稳定版发布前 Session 与配置格式仍可能变化。内核保持
-provider-neutral；当前内建 provider 为 DeepSeek、OpenCode Go、Kimi Coding Plan、Moonshot API、智谱 API/Coding Plan、OpenAI、Anthropic API 与订阅、Codex、AiHubMix 与
-Custom。
+AICE 仍在开发中，稳定版发布前 Session 与配置格式可能变化。
 
 ## 许可证
 
-项目使用 Apache License 2.0，详见 [`LICENSE`](./LICENSE)。
+Apache License 2.0，详见 [LICENSE](./LICENSE)。

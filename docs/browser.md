@@ -7,25 +7,13 @@ There is no additional tool type, service, Node runtime, or Session format.
 
 ## Skill discovery and web verification
 
-The builtin `browser` skill is an AICE-authored integration entrypoint. The
-versioned upstream `skill-data/` tree is vendored without modifications and
-served by `agent-browser skills get core`; command documentation stays with the
-pinned helper. The entrypoint adds AICE's session, screenshot, and authority
-rules and describes browser interaction, local web development verification,
-UI debugging, and exploratory QA as applicable tasks.
+The builtin browser skill adds AICE's session, screenshot and authority rules;
+upstream command documentation comes from the pinned helper. The default system
+prompt asks the model to load this skill and verify web UI changes with real
+browser input, screenshots when needed, and browser error checks.
 
-The default system prompt asks the model to load the available browser skill
-and verify affected rendering, interactions, and browser errors after web UI
-changes, without a separate user reminder. Checks scale to the change and
-respect the user's scope. The skill guides real-input checks, screenshot review
-for visual claims, and rechecking after fixes. Missing Node.js alone is not a
-reason to skip the native helper. Unavailable browser or vision capabilities
-must be reported along with the remaining verification gaps.
-
-This is model guidance, not automatic skill activation or an execution gate.
-Startup still supplies only skill names and descriptions. A custom `SYSTEM.md`
-replaces the default verification guidance but still receives the skill catalog;
-same-name user or project skills can override the builtin under the usual
+This is guidance, not an execution gate. A custom `SYSTEM.md` replaces that
+default guidance; user or project skills can override the builtin under the
 [skill precedence rules](architecture.md#skills).
 
 ## Installation and first use
@@ -39,12 +27,8 @@ with the helper. They are upstream command documentation, not extra entries in
 the AICE skill catalog. See [source and license provenance](../internal/deps/agentbrowser/VENDOR.md).
 
 Downloads use pinned SHA-256 checksums, a bounded installation lock and staged
-replacement. A failed replacement attempts to restore previous files; backups
-are retained if rollback itself fails. Dead Unix lock owners can be reclaimed;
-unknown ownership is left alone and waiting is bounded. Installation warnings
-do not prevent coding, and the next startup retries. Progress goes to stderr:
-a terminal bar for known sizes, received bytes for unknown sizes, compact logs
-when redirected. Completion of the download precedes verification/installation.
+replacement. Installation warnings do not prevent coding; the next startup
+retries. See [runtime helpers](installation.md#runtime-helpers).
 
 `AICE_NO_DEP_INSTALL=1` disables downloads. An already complete pinned helper
 remains usable offline; otherwise startup reports browser automation unavailable.
@@ -80,20 +64,9 @@ window preference. The action exchange stays in the window and can be cancelled;
 its draft never replaces the main composer. Connection actions require idle main
 and BTW responses. Platform restrictions remain the same as `/browser`.
 
-Both action entry points invalidate prepared main responses and existing BTW
-snapshots when browser resources changed or a modifying helper process started
-and its effect is uncertain. This includes a completed connection followed by
-cancelling tab selection, a failed close that cleared or rotated the session,
-and a tab command whose response failed. Old prepared responses must be prepared
-again; existing BTW threads become read-only. Validation failures, failed saves,
-and cancellation before any change leave those responses usable. Status reads
-do not invalidate them. Settings drafts use the same effect-based rule for these
-browser actions; the application does not infer effects from a success/error code.
-Browser management actions from both entries use `internal/app.runBrowserSettings`
-for one reservation and completion decision. `runBrowserAction` reports effects
-from the action and prompt interaction; Settings does not dispatch through the
-slash command table. `internal/browser.Manager` continues to own the browser
-session and connection lifecycle.
+A browser change, including an uncertain partially completed action, invalidates
+prepared responses and makes existing BTW threads read-only. Status reads and
+cancellation before any change leave them usable.
 
 ## Connect to a running browser
 
@@ -164,16 +137,10 @@ errors but still starts a fresh conversation. Interactive and print exits use a
 bounded cleanup context even after cancellation. Close waits up to ten seconds
 for the socket/pid sidecars to disappear, beyond the upstream acknowledgement.
 
-Manager helper commands retain at most 1 MiB of stdout and 4096 bytes of stderr.
-A successful helper exit with oversized stdout is reported as an error; failed
-exits include only the retained output in diagnostics. Excess output is drained
-without being retained, and uncertain operations are not retried.
-
-Startup only sweeps matching session names whose AICE owner is demonstrably dead.
-Live/reused PIDs and unrelated names are retained. A hard kill can leave a daemon
-until this sweep. Socket paths longer than 103 bytes are rejected with a warning.
-Runtime and screenshot directories are created with mode 0700; screenshots are
-not deleted by close or `/new`.
+Startup removes only stale session sidecars whose AICE owner is demonstrably
+dead. Live/reused PIDs and unrelated names are retained. A hard kill can leave a
+daemon until this sweep. Runtime and screenshot directories are created with
+mode 0700; screenshots are not deleted by Close or `/new`.
 
 Cancelling a tool kills its CLI process, not browser actions already received by
 the daemon. It does not undo navigation or submission. A cancelled long wait can
@@ -211,39 +178,19 @@ package, review upstream CLI/JSON/environment changes, then run the offline suit
 and [native integration check](collaboration.md#browser-checks). Do not run an
 unverified downloaded helper as part of checksum collection.
 
-The v0.37.1 release and npm bytes matched on all four supported platforms.
-Verification date: 2026-09-11. macOS arm64 native execution accepts the existing
-ad-hoc signature. Native tests ran on macOS arm64 with Chrome 153 and Linux arm64 with Chromium 152 in a disposable
-container. A second independent download network was not available. The following
-acceptance record distinguishes tests from full interactive/model acceptance.
+Offline tests cover installation, checksums, replacement, session ownership,
+connection targets and cleanup. The opt-in native test covers isolated headed
+and headless page/form/screenshot/close/rotation flows. These checks do not
+establish model-driven browsing or vision acceptance.
 
-| Case | macOS arm64 | Linux arm64 |
-| --- | --- | --- |
-| V1 installation/progress; V3 upgrade | Offline HTTP fixtures, checksum and replacement tests pass | Release bytes verified; native helper runs; installer fixture suite not run natively |
-| V2 disabled/offline | Fixture tests and isolated offline TUI pass | Native helper runs offline; full startup not exercised |
-| V4 page/form/screenshot | Native open/snapshot/fill/click/title/PNG check passes; real model vision not run | Same native test passes; real model vision not run |
-| V5 missing browser | Upstream error behavior inspected; model guidance tested as skill contract | Not exercised |
-| V6 cancel | Native probe: CLI cancellation leaves queued wait; later snapshot recovers | Not exercised |
-| V7 new session; V8 exit | Native close/rotate test and actual `/new`, `/quit` TUI exercised | Native close/rotate test passes; TUI not exercised |
-| V9 stale owner sweep | Dead/live/foreign owner unit tests; no full kill/restart acceptance | Not exercised natively |
-| V10 print cleanup | Application cleanup tests; real model print not run | Not exercised |
-| V11 CDP prerequisites | Dedicated profile + actual TUI connection and new-tab choice pass | Not exercised |
-| V12/V13 new/existing tab | Native CDP probes and target selection; no model-driven complete flow | Not exercised |
-| V14 tab gone; V15 browser gone | Error handling tests/source inspection; full user interaction not exercised | Not exercised |
-| V16 multi-instance | Name isolation and owner-sweep unit tests; simultaneous native CDP flows not exercised | Not exercised |
-| V17 external disconnect | Native probes and TUI `/new` preserve dedicated Chrome and both tabs | Not exercised |
-| V18 inspect auto-detect | Actual Chrome Allow/login-state acceptance not exercised | Not exercised |
-| V19 Guard | Existing screenshot-path/open-command semantics covered by unit tests | Same portable tests; not run natively |
-| V20 window visibility | CLI/TUI toggle and persistence pass; native headed/headless lifecycle passes on isolated profiles | Not exercised natively |
+Remaining acceptance gaps include actual-model and Print flows, Chrome
+auto-detect approval, simultaneous native CDP sessions, and complete
+tab/browser-loss recovery. Windows remains disabled pending native daemon and
+Job Object lifecycle validation. Use an isolated, user-approved browser profile
+for native checks; cancellation must be checked for eventual recovery and fresh
+observation, not rollback.
 
-The matrix remains incomplete: native helper tests and offline fixtures do not
-prove actual-model browsing/vision or print behavior. Complete the outstanding
-cases on an isolated user-approved profile before claiming full acceptance.
-Cancellation acceptance must allow eventual recovery and require a fresh
-observation; it must not claim immediate action cancellation or rollback.
-
-Windows support remains disabled pending native lifecycle/Job Object validation:
-the daemon must survive completion of the launching bash command before support
-can be enabled. The second independent download-network check also remains
-outstanding. [Maintenance](maintenance.md#browser-acceptance-gaps) links here for
-the authoritative acceptance record.
+Implementation: [Manager](../internal/browser/manager.go),
+[application commands](../internal/app/browser.go),
+[installer](../internal/deps/agentbrowser.go), and
+[builtin skill](../internal/skill/builtin/browser/SKILL.md).

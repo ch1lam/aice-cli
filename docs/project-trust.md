@@ -74,15 +74,10 @@ default policy or saved decision affects startup only; it neither reloads projec
 inputs nor relaxes current tool permissions. The panel writes user preferences,
 not project configuration files.
 
-Both entry points call the application-owned selection operation in
-[project_trust.go](../internal/app/project_trust.go). It validates the selected
-choice for the current workspace and writes the Trust store; it does not depend
-on command request types or the slash dispatch table. Entry points retain their
-own settings reservation and result presentation. Both advance the Settings draft
-revision only after a successful save. Validation or persistence failures keep
-the same draft usable for retry. Neither outcome advances the resource revision:
-prepared runs and BTW threads keep their loaded project context. A successful
-save rejects subsequent Settings edits carrying the older draft revision.
+Both entry points use [project_trust.go](../internal/app/project_trust.go).
+A successful save invalidates older Settings drafts, but never the loaded project
+context; failed saves remain retryable. Runtime revision ownership is defined in
+[Settings contracts](contracts.md#settings-and-usage-capabilities).
 
 ## Prompt assembly
 
@@ -93,11 +88,9 @@ The base prompt is selected from the first available source:
 3. The built-in prompt, including the available tool list and working
    directory.
 
-The built-in guidance asks the model to understand behavior and constraints,
-keep control flow and state ownership clear, use abstractions for demonstrated
-changes, and verify proportionally with observable evidence. These are working
-defaults, not a fixed execution schedule or a guarantee of model quality. A
-custom `SYSTEM.md` replaces that base guidance along with the built-in tool list.
+A custom `SYSTEM.md` replaces the built-in guidance and base tool list. Empty
+or whitespace-only prompt files are treated as absent, so selection continues
+to the next source.
 
 Trusted project `AGENTS.md` is appended next. The append prompt then comes
 from trusted project `.aice/APPEND_SYSTEM.md`, otherwise global
@@ -117,14 +110,8 @@ also records the workspace as trusted, and it becomes active after restart.
 
 ## What Trust does not do
 
-An untrusted project still runs with the full permissions of the AICE process
-except for the intrinsic execution gate. Trust does not restrict file access,
-`..`, absolute paths, subprocesses, network access, environment variables, or
-credentials — that is the role of `internal/guard` (file policies, permission
-gate, path access) and, for strong isolation, an external container, VM, or OS
-sandbox.
-
-The `os.Root` confinement of protected prompt files is a loading guard, not a
-general file-access boundary: it exists so untrusted content cannot influence
-the prompt, and it never applies to file tools. File access boundaries belong
-to the execution gate and to the externally selected execution environment.
+Trust gates startup input loading only. It does not confine tools, subprocesses,
+network, environment or credentials. Prompt-file `os.Root` confinement does not
+apply to ordinary file tools. [Guard](execution-sessions.md#tool-execution-boundary)
+checks tool authority; stronger isolation requires an external container, VM or
+OS sandbox.

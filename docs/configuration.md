@@ -120,163 +120,66 @@ compaction, overshoot, stopping and continuation.
 
 ### Interactive persistence and multiple instances
 
-`/model`, `/provider`, `/thinking`, `/login`, `/browser` and `/web` immediately
-save the explicit preference changes to `~/.aice/settings.json`. A custom login saves its selected
-endpoint and model in the same preference operation. API keys go to
-`~/.aice/auth.json`; OAuth has its own credential store. Project settings are
-never edited by these commands, and merged environment/project values are never
-copied into the user file.
+Interactive preference changes save only explicitly changed keys to
+`~/.aice/settings.json`; API keys use `~/.aice/auth.json`, and OAuth uses separate
+stores. Project files and unrelated inherited values are never written back.
+Settings and slash commands share application operations in
+[model_settings.go](../internal/app/model_settings.go).
 
-Single provider, model and thinking selections from Settings and slash commands
-call the same application operations in `app/model_settings.go`. Account login
-also uses the provider-selection operation after saving its credential. Each
-entry point owns one settings reservation; the operations validate, prepare,
-persist and publish without parsing commands or acquiring another reservation.
-Batch edits and inheritance resets retain their whole-candidate patch path.
+A successful save publishes a runtime-priority snapshot in this instance. Active
+runs and other processes retain their frozen settings; there is no file watcher
+or whole-snapshot save on exit. On restart, flags, environment and project values
+can override the saved preference again, and interactive commands report this.
 
-After a successful save, the current instance publishes a new in-memory
-snapshot with runtime priority. Already running requests and other AICE
-instances keep their existing snapshots. AICE neither watches configuration
-files nor saves an entire snapshot on exit. A newly started instance resolves
-the normal precedence again: a flag, environment variable, or project setting
-can still win over the saved preference. Interactive commands report when such
-a higher layer is present. OAuth credential refresh/reread is a separate
-credential lifecycle, not general configuration reload.
-
-Writers lock the target file, reread its latest contents, patch only the changed
-keys, and atomically replace it. Independent field changes from multiple
-processes are preserved; for the same key the last successful writer wins.
-Lock acquisition and replacement retries share a cancellable five-second bound.
-On Windows, replacement retries access-denied and sharing-violation errors
-while retaining the write lock and temporary file, so brief reader activity
-does not abort a save. It never deletes the target before replacement; persistent
-conflicts report both the context error and the last filesystem error.
-Settings and shared `auth.json` reads retry Windows sharing violations for up
-to five seconds, so a concurrent replacement does not abort startup. Reads
-inside a write operation also honor its remaining deadline. Readers do not
-acquire the writer lock; missing files and other read errors are not retried.
-A lock left by a crashed writer is not stolen automatically. A malformed target
-is preserved and saving fails until it is repaired. A failed preference save
-leaves the current selection unchanged. If login already saved a credential
-before that failure, the error explicitly reports the credential-only success; preference
-and credential files are not one transaction.
-
-OAuth credential writers distinguish a completed replacement or deletion from
-a failed update: a later lock-cleanup failure carries `config.CommittedError`.
-An unchanged credential, an already absent file, or a failed update does not
-carry this marker. The underlying cleanup and update errors remain inspectable.
+Writers lock, reread, patch changed keys and atomically replace the target.
+Independent peer changes survive; the last successful write to the same key wins.
+Preference locks and Windows replacement retries have a cancellable five-second
+bound. A crashed writer's lock is not automatically stolen. Malformed target
+files are preserved and must be repaired before saving. Failed preference saves
+leave the active selection unchanged. Credential and preference saves are separate
+commits; errors distinguish credential-only success and post-commit cleanup
+warnings. OAuth refresh has its own lock lifecycle below.
 
 ### Settings window
 
-Open `/settings` to edit settings. The main header has no Settings or Usage buttons.
-`/desktop` and `/mcp desktop` open the same panel at Computer Use in Tools & Network.
-The MCP menu also links to this setting; it has no independent enable switch. It does not
-start a run or create a Session. During a main run, the Settings footer offers
-**Stop current run** (click or F6 within the panel); Esc only returns or closes.
-Stopping cancels the existing run and waits for lifecycle completion before
-preferences become editable again. It does not save a disabled preference.
-Preferences appear before Computer Use status finishes loading. The status row
-loads separately in the background, so its check does not delay navigation,
-editing or save feedback. Closing or refreshing the panel cancels the old check;
-preference saves and domain actions refresh status separately after completion.
-Computer Use status is a bounded read-only check of the installed Driver and
-existing service. Its details distinguish OS grants, connection and historical
-capture verification; refreshing never starts a service, captures or asks for
-permissions. An enabled preference alone is not readiness.
-The five categories are Models & Accounts, Tools & Network, Run Limits,
-Project & Trust, and System. Tab/Shift+Tab switches categories; `/` searches
-across them. Arrow keys select, Enter edits, and `?` opens scrollable details.
-The window leaves one cell of padding inside the top and side borders. The
-footer is centered directly above the bottom border, with no blank row below it.
-One blank row separates the content from the footer. The list spans the full
-content width; a muted, centered explanation of the selected setting sits below
-it, using one line where possible and at most two. Very short windows prioritize
-the list; `?` still opens the complete description, source and persistence details.
-Tab titles, section headings and setting names align with search text.
-The active category uses the slash menu's bold light text without brackets.
-A blank row separates the tabs from the muted, indented search prompt, and
-another blank row separates the search prompt from the settings list. Settings are
-grouped under secondary headings and rules (for example Browser, Computer Use,
-Web search, Web fetch and individual search services). Headings have no disclosure
-triangle; clicking anywhere on a heading row collapses or expands that group.
-Hover brightens the heading and rule without an underline on press. Completing
-a fold clears the hover until fresh mouse movement; leaving the row, switching
-to keyboard navigation or losing window focus also clears it immediately.
-The selected collapsed heading uses a chevron with the normal muted title style.
-These visual updates do not wait for the Computer Use status check. All groups
-start expanded whenever the window opens. Fold state belongs only to the panel,
-survives category switches and refreshes, and never changes saved preferences.
-Arrow keys and the wheel skip hidden fields, stopping once on each collapsed
-heading; Enter or Space expands it. Left collapses the selected group and Right
-expands it outside search. Hidden fields cannot be edited or reset. Scrolling
-keeps the selection visible and repeats the section heading when needed.
-Search results retain their category and section headings and start expanded
-for each new query. Their folds are independent of the category view; leaving
-search restores its folds. Explicit navigation to a setting expands its group.
-Setting names align left and current values align right, with a separate arrow
-for submenus. Values supplied by the default configuration remain muted;
-explicitly configured values use normal text even when equal to the default.
-Boolean values toggle on click or Enter; Off stays muted even on the selected
-row. Enum rows show the current choice label and open a choice menu
-focused on that value; choosing an option saves it and returns to the list.
-Custom model IDs retain their text editor, and enabling Computer Use retains
-its explicit setup flow.
-Mouse clicks select categories, fields, choices and Save/Cancel; the wheel
-scrolls the active list. Escape backs out of a field, search or window without
-cancelling the background response.
+Open `/settings`. `/desktop` and `/mcp desktop` open Computer Use
+in that same panel. Opening Settings creates no Session or Agent run.
 
-| Area | Editable preferences or actions | Takes effect |
+| Area | Preferences or actions | Takes effect |
 | --- | --- | --- |
-| Models & Accounts | Provider, model (including custom IDs), thinking, every provider endpoint, context capacity table; API key and OAuth actions for every installed provider | Next Agent run |
-| Tools & Network | Search/fetch switches, timeouts, result count, priority, domain lists; Exa instance creation/removal, enabled state, endpoint, credential reference and `auto`/`fast` mode | Next Agent run |
-| Browser | Window visibility; existing connection, disconnect and tab actions | Visibility: next browser generation; actions: explicit operation |
-| Run Limits | Maximum turns, token budget, timeout, repeated-tool limit | Next Agent run |
-| Project & Trust | Default policy and saved project decision | Next startup; loaded Trust, directory and Skills stay read-only |
-| System | Allow helper downloads, check for updates; paths and diagnostics | Next startup |
+| Models & Accounts | Provider/model/thinking, endpoints, context windows, API keys and OAuth | Next Agent run |
+| Tools & Network | Browser, Computer Use, Web services and fetch, MCP | See the owning [browser](browser.md), [desktop](desktop.md), [Web](web.md), and [MCP](mcp.md) guides |
+| Run Limits | Turns, tokens, timeout and repeated-tool limit | Next Agent run |
+| Project & Trust | Default policy and saved project decision | Next startup |
+| System | Helper downloads, update checks, paths and diagnostics | Next startup |
 
-Booleans save immediately. Text, integers, durations and choices save with
-Enter. Context and list editors stage their rows: `a` adds, Enter edits,
-Tab moves between row cells, `d` deletes, Ctrl+Up/Down reorders, and Ctrl+S
-saves the whole array. Leaving a changed array offers save/discard/keep.
-An empty priority list deliberately allows no search source. Domain editors
-require either an allow list or an exclude list; clear one before using the other.
-Provider/API facts come from the implemented service; Exa is the only current
-adapter, so the form does not offer nonexistent providers. Its only option is
-`type`; unsupported options remain errors, not arbitrary JSON editor inputs.
+Tab/Shift+Tab switches categories; `/` searches; arrows select; Enter edits;
+`?` opens details. Click a heading or use Left/Right to fold/unfold groups.
+Booleans save immediately. Text, integers, durations and choices save with Enter.
+Array editors use `a` to add, Enter to edit, Tab between cells, `d` to delete,
+Ctrl+Up/Down to reorder, and Ctrl+S to save. Leaving a changed array offers
+save/discard/keep. Escape backs out without cancelling a background response.
 
-Details distinguish effective values, known saved preferences, inherited
-candidates and source locations. “Known saved” means startup/latest local save,
-not a fresh disk read. Sources are default, user-settings, user-auth, trusted
-project, environment, flag and runtime. Rejected project content is never an
-inheritance candidate. `D` explicitly writes the product default; `u` previews
-removing a user override, then Enter confirms. Model/provider inheritance is
-previewed and reset as the provider/model/thinking group. Reset removes only
-user preferences and this instance's corresponding runtime choices; flags,
-environment, auth and trusted project inputs remain. Resolution uses frozen
-startup layers, so neither reset nor refresh imports unrelated external edits.
+Details show effective values, saved preferences, inherited candidates and sources.
+`D` writes the product default; `u` previews removal of a user override and Enter
+confirms. Model inheritance resets the provider/model/thinking group. Reset uses
+frozen startup layers, removes the corresponding runtime choices, and does not
+reload another process's changes. “Known saved” is startup/latest-local-save data.
 
-Each submission validates its revision and candidate, prepares dependencies,
-saves the local patch, then publishes. Settings can be read during main and BTW
-responses. Shared-resource edits are refused while input is being prepared or
-any response runs; restart-only preferences can still be saved. A prepared run
-whose resource revision changed is refused before accepting its prompt,
-and the TUI retains the draft. Older BTW snapshots become read-only after a
-shared-resource configuration operation; start a new BTW question to use current settings.
-A failed preference preparation or save keeps the previous runtime. Browser
-management actions separately report changed or possibly changed resources:
-both slash and Settings invalidate prepared responses after partial effects,
-while validation failure or cancellation before effects leaves them usable.
-See [Browser actions](browser.md#show-the-browser-window). Other domain actions
-retain their own completion rules. A successful atomic
-replacement remains saved if later lock cleanup fails; the result reports a
-warning. Closing a saving window does not roll back its committed preference.
-Credentials keep their dedicated stores and partial-success reporting. Window
-operations, drafts, API keys and authorization responses never enter prompt
-history or Session JSONL. Computer Use setup can offer an explicit **Continue**
-button for an existing task. That choice sends a new request using the recorded
-context; it preserves the composer draft and attachments, and does not migrate
-queued follow-ups. The application rejects a continuation if its Session, branch
-or Settings revision changed. See [Computer Use](desktop.md#settings-and-task-continuation).
+Shared-resource edits require idle main/BTW responses and no input preparation.
+Restart-only preferences can still be saved during a run. The panel's **Stop
+current run** action (F6) cancels and waits for completion before editing resumes;
+Esc only closes or backs out. Resource changes reject previously prepared runs
+and make old BTW snapshots read-only. Failed preparation or saving preserves
+the prior runtime; committed changes survive closing the panel. Domain actions
+report partial external effects separately. See [Settings lifecycle
+contracts](contracts.md#settings-and-usage-capabilities).
+
+Computer Use status loads separately through a bounded read-only check. Refresh
+never starts a service, captures, or asks for OS grants. An enabled preference
+alone does not mean ready. Setup and explicit task continuation are documented
+in [Computer Use](desktop.md#settings-and-task-continuation). Settings drafts,
+credentials and authorization responses never enter prompt or Session history.
 
 ### Usage and Session information
 
@@ -320,29 +223,18 @@ within the selected provider, not by matching model names across providers.
 
 ### Context window and status bar
 
-The top-right corner of the TUI header shows the used context percentage, such
-as `82.40%`, with two decimal places. Hover previews the other format: percentage
-or used tokens / window capacity (e.g. `168K / 1M` or `1.5K / 500K`). Clicking
-accepts the format currently visible, without flipping it again. It stays visible
-while the pointer remains over the indicator and after the pointer leaves.
-Clicking elsewhere or losing terminal focus preserves that choice for the current
-TUI instance. The next hover previews the opposite format; moving away without
-clicking restores the selected format. Unknown values display `?`. Both formats reserve the same
-space so interaction never shifts the transcript. A new, untouched conversation
-shows `0.00%` in percentage mode;
-a full window shows `100.00%`. After the first input is accepted, it uses the
-latest successful response usage for the selected provider/model, including
-cached input and output, plus estimated messages accepted since that response.
-It does not divide cumulative Session usage by the window. Before the first
-response and after compaction or switching models, AICE estimates the active
-prompt, tool definitions, and projected history. Estimates use the same compact
-percentage format. Unsent drafts and queued inputs are excluded until accepted.
-Usage is clamped to 0–100%; at 70% or more it turns amber, and at 90% or more red.
-Narrow terminals drop other details before the percentage.
+The header shows context occupancy as a percentage; hover previews used tokens /
+capacity and clicking keeps that format for this TUI instance. Unknown values
+show `?`; pressure turns amber at 70% and red at 90%. This is current context,
+not cumulative Session usage. Unsent drafts and queued inputs are excluded.
 
-Without configuration, the denominator uses the selected **provider and model**
-catalog default, including when its base URL is overridden. An explicit
-`context_windows` entry in the effective configuration takes precedence:
+After a successful response, occupancy uses matching provider/model usage plus
+estimated accepted messages since that response. Before a response, after
+compaction or after changing models, it estimates the prompt, tool definitions
+and projected history. A new untouched conversation shows zero.
+
+Capacity defaults to the selected provider/model catalog, even with an endpoint
+override. Override it for the capacity actually enabled on your deployment:
 
 ```json
 {
@@ -353,41 +245,15 @@ catalog default, including when its base URL is overridden. An explicit
 }
 ```
 
-These are configuration examples, not account entitlement claims. Entries match
-exact provider/model IDs, preserving case, dots, and slashes in the model ID;
-token counts must be positive integers and provider/model pairs must be unique.
-The winning layer replaces the entire array; entries are not merged by model.
-An empty array clears lower-layer overrides. Overrides apply at startup and
-survive `/model`, `/provider`, and `/login` changes. `/settings` shows the exact
-window and its source. Restart after editing the file. The same resolved window
-controls request protection and automatic compaction, including summary calls.
+Entries match exact, case-sensitive provider/model IDs; token counts must be
+positive and pairs unique. The winning configuration layer replaces the whole
+array; an empty array clears inherited overrides. `/settings` edits it and shows
+the resolved capacity/source. Restart after editing files. Overrides survive
+interactive model changes and govern request protection and compaction too.
 
-Set the limit to the context tier actually enabled on your endpoint/account.
-A model's advertised maximum (including 1M) does not prove that every subscription
-or gateway enables it. AICE does not probe account entitlements or enable remote
-long-context tiers by changing this number; required server settings or protocol
-opt-ins must already be supported and enabled. Catalog defaults describe the
-built-in provider route. Codex subscription defaults to 272,000 tokens for
-Astra, Sol, Terra, and Luna, matching OpenAI's
-[official Codex catalog](https://github.com/openai/codex/blob/main/codex-rs/models-manager/models.json)
-(`context_window`, checked 2026-09-07). Its 872,000 `max_context_window` is not
-the default. The separately billed OpenAI API uses 1,050,000 for these models,
-as documented on the [API model pages](https://developers.openai.com/api/docs/models).
-DeepSeek V4 uses the documented
-[1M default](https://api-docs.deepseek.com/quick_start/pricing).
-
-Arbitrary `custom` IDs have no universal official default: for example,
-[Ollama defaults depend on VRAM](https://docs.ollama.com/context-length).
-AICE uses its existing 128,000-token fallback for these IDs and labels it
-`custom fallback default` in `/settings`; this is not an official model limit.
-The footer shows a percentage using that fallback so configuration is optional.
-Override it when the deployment's actual limit is known. Check overrides again
-when changing an endpoint or account. AICE does not read another harness's settings.
-
-The separation of Session totals and context occupancy follows
-[pi's footer](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/src/modes/interactive/components/footer.ts)
-and [context calculation](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/src/core/agent-session.ts).
-AICE uses its existing estimator after compaction.
+AICE does not probe account entitlements or enable server-side context tiers.
+`custom` uses a 128,000-token fallback until overridden; it is not a discovered
+endpoint limit. Verify capacity again after changing endpoints or accounts.
 
 ### Thinking levels
 
@@ -400,35 +266,10 @@ restore it; `/settings` shows the effective level and `/thinking` lists only
 valid choices for the active model. Models without thinking support expose
 only `off`.
 
-The default request is `medium`. On DeepSeek Flash and V4 Pro it becomes
-`high`; on OpenCode Go Kimi K3 it becomes `max`. Important built-in subsets are:
-
-| Provider and model | Supported levels |
-| --- | --- |
-| `deepseek/deepseek-flash`, `deepseek/deepseek-v4-pro` | `off`, `low`, `high`, `max` |
-| `opencode-go/deepseek-v4-flash` | `low`, `high`, `max` |
-| `opencode-go/deepseek-v4.1-flash` | `low`, `high`, `max` |
-| `opencode-go/deepseek-v4-pro` | `high`, `max` |
-| `opencode-go/deepseek-v4-flash-vision-exp` | `off`, `low`, `high`, `max` |
-| `opencode-go/kimi-k2.6` | `off`, `high` |
-| `opencode-go/kimi-k3` | `max` |
-| `zhipu/glm-5.3`, `zhipu/glm-5.3-flash`, `zhipu-coding/glm-5.3`, `zhipu-coding/glm-5.3-flash` | `low`, `high`, `max` (thinking enabled) |
-| `moonshot/kimi-k3` | `low`, `high`, `max` |
-| `moonshot/kimi-k2.7-code`, `moonshot/kimi-k2.7-code-highspeed` | `high` (thinking enabled) |
-| `moonshot/kimi-k2.6` | `off`, `high` |
-| `kimi-coding/k3`, `kimi-coding/k3-256k` | `low`, `high`, `max` |
-| `kimi-coding/kimi-for-coding`, `kimi-coding/kimi-for-coding-highspeed` | `high` (thinking enabled) |
-| `opencode-go/glm-5.2` | `high`, `max` |
-| `opencode-go/glm-5.3`, `opencode-go/glm-5.3-flash` | `low`, `high`, `max` |
-| `opencode-go/gpt-5.6-luna` | `off`, `low`, `medium`, `high`, `xhigh`, `max` |
-| `opencode-go/grok-4.6`, `opencode-go/grok-4.7` | `low`, `medium`, `high`, `xhigh` |
-| `opencode-go/muse-spark-1.2-contributor`, `opencode-go/muse-spark-1.3-contributor` | `minimal`, `low`, `medium`, `high`, `xhigh` (no `max`: Meta reserves `max` for Standard-tier `muse-spark-1.3`, while Go only offers the Contributor variants) |
-| `opencode-go/hy3` | `off`, `low`, `high` |
-| `opencode-go/hy4-preview` | `off`, `high` |
-| `openai/gpt-6-astra` | `low`, `medium`, `high`, `xhigh`, `max` |
-| `openai/gpt-5.6*` | `off`, `low`, `medium`, `high`, `xhigh`, `max` |
-| `openai-codex/gpt-6-astra`, `openai-codex/gpt-5.6-{sol,terra,luna}` | `low`, `medium`, `high`, `xhigh`, `max` |
-| Other `opencode-go` models | `off`, `minimal`, `low`, `medium`, `high` |
+The default request is `medium`. `/thinking` shows the selected model's actual
+choices; `/model` shows its compiled catalog. Capabilities are maintained in
+[provider catalogs](../internal/provider), rather than copied into a second
+model table here.
 
 `off` is a canonical switch, not necessarily a literal wire value. The
 protocol adapters translate it to the provider's native form, such as
@@ -447,137 +288,50 @@ both into `high`. Its OpenAI-compatible shape sends `thinking.type` plus
 
 ### Model catalog metadata
 
-Reasoning capabilities live with each model in the built-in provider catalogs,
-not in protocol adapters. A model uses a tri-state map from canonical level to
-provider token: a missing key uses the default mapping, a string supplies the
-wire token, and an explicit `null` marks the level unsupported. Missing keys
-for `off` through `high` are supported by default; `xhigh` and `max` require
-explicit entries. Catalog copies deep-clone these maps so a Session or side
-thread cannot mutate shared model data.
+Catalogs are compiled into AICE, not fetched at runtime. Each model owns protocol,
+modalities, context/output budgets, price estimates and a tri-state thinking map:
+a missing key uses the default mapping, a string maps to a wire token, and `null`
+is unsupported. Missing `off`–`high` entries are supported by default; `xhigh` and
+`max` require explicit entries. Equivalent mappings collapse into one choice.
+Update catalogs and their tests together; protocol adapters only encode them.
+See [model contracts](contracts.md#messages-and-model-boundary).
 
-The catalogs are compiled into AICE and are never fetched at runtime. Pi AI is
-the semantic reference for the tri-state map, while concrete capabilities and
-wire formats follow provider documentation and gateway-specific requirements.
-Update the model map, its wire-format metadata, and catalog assertions together
-when upstream capabilities change.
+Model availability, remote limits and billing can differ from compiled metadata.
+Costs are estimates and do not model every service tier, long-context surcharge,
+promotion or subscription quota. Offline adapter tests do not establish live
+account/model access.
 
-Gateway-specific replay limits also live in the catalog and loop. The
-OpenCode Go gateway proxies the Muse Spark lane to an upstream that binds
-`reasoning.encrypted_content` to its own context, so replaying a stored
-reasoning item can fail with `400 invalid_request_error ...
-encrypted_content was not issued to this caller` once that context
-rotates. Muse Spark therefore keeps the Responses default: reasoning items
-replay while the upstream still recognizes them, preserving cross-turn
-reasoning continuity. After the first actual rejection the Agent Loop arms
-a per-run `FilterReasoningHistory` request option and retries once: the
-Responses adapter projects thinking to plain text and never replays
-reasoning items for the remainder of the run, while reasoning effort and
-tool history stay unchanged. Stored signatures remain Session data and
-are only filtered on the wire, so histories recorded before this change
-recover without rewriting.
-
-The built-in OpenAI catalog contains `gpt-6-astra`, `gpt-5.6-sol`,
-`gpt-5.6` (the Sol alias), `gpt-5.6-terra`, and `gpt-5.6-luna`.
-`gpt-5.6-terra` remains the default. All use the official Responses API;
-GPT-5.6 supports `off`, `low`, `medium`, `high`, `xhigh`, and `max`, while
-Astra supports `low` through `max` and cannot disable reasoning.
-
-Metadata was checked on 2026-09-07 against the official
-[Astra](https://developers.openai.com/api/docs/models/gpt-6-astra),
-[Sol](https://developers.openai.com/api/docs/models/gpt-5.6-sol), and
-[Luna](https://developers.openai.com/api/docs/models/gpt-5.6-luna) model pages.
-Standard input/output estimates per million tokens are $10/$50 for Astra,
-$4/$20 for Sol and its alias, $2/$12 for Terra, and $0.20/$1.20 for Luna.
-AICE's flat pricing metadata does not model long-context or service-tier
-surcharges; displayed costs are estimates, not billing totals.
-
-The OpenCode Go catalog contains the 31 active upstream models; entries marked
-deprecated upstream are omitted. The catalog was checked on 2026-09-22 against
-the [gateway model list](https://opencode.ai/zen/go/v1/models) and
-[models.dev metadata](https://models.dev/api.json). GPT-5.6 Luna, Grok 4.6/4.7, and Muse Spark
-1.2/1.3 Contributor use the Responses protocol. Qwen3.6 through Qwen3.8
-(including Qwen3.8 Flash) and MiniMax M2.5/M2.7/M3 use Anthropic Messages; the
-remaining catalog uses Chat Completions, including DeepSeek V4.1 Flash and
-MiMo V2.6 Flash/Pro.
-Models whose upstream input modalities include images accept image content
-through the LLM contract and [clipboard image input](#clipboard-images).
+OpenCode Muse Spark can reject stored encrypted reasoning after its upstream
+context changes. After an actual recognized rejection, the Loop retries once
+with reasoning history projected to plain text for the rest of that run. It
+preserves effort, tool history and original Session signatures; it does not
+rewrite the transcript.
 
 ### Client identity and subscription use
 
-All model requests through AICE's three protocol adapters identify the client
-as `User-Agent: aice/<version>`, including custom endpoints. The version is the
-same build value shown by `aice --version`; unstamped source builds send
-`aice/dev`. The release workflow stamps the release version. This header does
-not include an account ID, hostname, workspace path, or prompt. There is no
-user-facing client-identity override. Provider-specific headers cannot replace
-the Responses adapter's AICE identity.
+Protocol adapters identify AICE as `User-Agent: aice/<version>` (`aice/dev` for
+unstamped builds), without account, host, workspace or prompt data. Claude OAuth
+has the compatibility headers described below. There is no user-facing identity
+override. Use the dedicated subscription provider and authorized credentials;
+changing a `custom` endpoint does not add subscription-specific routing.
 
-Use the built-in `kimi-coding` and `opencode-go` providers for these subscription
-services. Merely pointing `custom` at OpenCode Go does not enable its dedicated
-Session routing transport. When forwarding through a proxy, preserve the AICE
-User-Agent and conversation header on every request, including retries and
-compaction; verify headers at the upstream side without logging API keys or
-prompt bodies.
+OpenCode Go sends `x-opencode-session` across all three protocols. The app uses
+the stored Session ID across turns, retries, model changes, compaction and resume;
+`/new`, stateless print and individual BTW threads get separate identities.
+Direct callers may use `llm.WithSessionID`; otherwise the provider uses an ID
+stable for that provider instance. Proxies must preserve these headers.
+Chat Completions and Responses omit the output cap when none was explicitly
+requested; explicit caps are sent. Other providers retain their own policies.
 
-The [Kimi documentation](https://www.kimi.com/code/docs/) requires truthful
-client identity and distinguishes subscription coding use from product
-integration through its open platform. The
-[OpenCode Go documentation](https://opencode.ai/docs/go/#where-can-i-use-it)
-requires typical coding-agent traffic, a specific client identity, and stable
-conversation routing. These headers describe the client; they are neither an
-authentication mechanism nor a guarantee of provider approval.
+`custom` always uses Chat Completions and accepts arbitrary model IDs, text/images,
+a 128,000-token fallback context and 16,384-token output budget. These are local
+metadata defaults in [custom.go](../internal/provider/custom/custom.go), not
+capability discovery. Unsupported inputs/parameters surface as server errors;
+AICE does not strip them and retry. Missing pricing does not imply free usage.
 
-For personal coding, use your own authorized credentials and remain within the
-provider's current plan limits. For shared services, product backends, or large
-batch evaluations, confirm that the intended workload is permitted or choose
-an API plan intended for that use. Do not rotate accounts or identities to
-bypass limits. Check the provider's current terms rather than assuming a fixed
-request count is always safe.
-
-AICE's model-call retry policy allows three retries with exponential backoff,
-respects longer provider retry hints, and stops when a hint exceeds its maximum
-wait. SDK retries are disabled. This is per-call protection, not an
-account-wide rate limiter: multiple processes and concurrent side conversations
-can still add load. Avoid external scripts that immediately restart exhausted
-requests. See [model retries](contracts.md#agent-loop) for runtime ownership.
-
-OpenCode Go requests across all three protocols carry `x-opencode-session`
-and identify the client as `aice/<version>`, as required by the
-[Go gateway](https://opencode.ai/docs/go/#where-can-i-use-it).
-For Chat Completions and Responses, requests without an explicit output limit
-omit the output-token parameter, allowing OpenCode to select its default.
-An explicit limit is still sent; model token limits remain available for local
-context budgeting.
-
-The application propagates the stored Session ID as routing metadata through
-the request context, preserving it across turns, retries, model changes,
-compaction, and reopening. `/new` creates a new identity with the next Session.
-Stateless print runs and individual `/btw` threads have their own ephemeral
-identities. Direct provider callers can supply `llm.WithSessionID`; without it,
-the provider uses a random identity stable for that provider instance.
-
-OpenCode Go Chat Completions requests omit `max_tokens` when AICE has no
-explicit output-token cap, allowing the gateway to choose its current default.
-An explicit `MaxTokens` value, including one produced by context protection,
-is still sent. Responses models use that protocol's normal output-token field.
-Other providers keep sending their model default.
-
-For arbitrary `custom` models without a context override, AICE uses a
-128,000-token fallback budget and 16,384-token output limit, text/image input, and
-standard thinking levels. The footer uses this budget until overridden;
-`/settings` identifies it as a fallback.
-These are fixed metadata defaults from `custom.ModelForID`, not capabilities
-queried from the endpoint. A server with smaller limits or different reasoning
-support can reject a request despite local budget checks. Custom permits image
-attachments and image results from `read` by default; the endpoint decides
-whether it supports them. Unsupported input or parameters surface as server
-errors; AICE does not automatically strip images or parameters and retry.
-Automatic capability detection is not implemented, and absent custom pricing
-is not evidence that a request is free.
-
-`default_project_trust` defaults to `ask`. Automation should use `--approve`
-or `--no-approve` rather than a broad environment override. See [Project Trust
-and prompts](project-trust.md) for protected resources and decision order.
+Model retries belong to the [Agent Loop](contracts.md#agent-loop); they are not
+an account-wide rate limiter. Subscription eligibility, quota and billing remain
+controlled by the provider; client headers alone do not establish approval.
 
 ## Credentials and connection overrides
 
@@ -601,29 +355,11 @@ credentials each use a separate file as described below.
 | AiHubMix | `AIHUBMIX_API_KEY` | `aihubmix_api_key` | `AICE_AIHUBMIX_BASE_URL` |
 | Custom (Ollama, vLLM, LM Studio, any OpenAI-compatible) | `AICE_CUSTOM_API_KEY` | `custom_api_key` | `AICE_CUSTOM_BASE_URL` (default `http://localhost:11434/v1`) |
 
-Settings login actions and `/login` call the same coordinator in
-`app/auth_login.go`. It owns one settings reservation, selects account
-authorization or API-key setup, and advances revisions from actual effects.
-Settings supplies its draft revision; slash dispatch only adapts the entry point.
-Cancellation, validation failures and failed credential writes advance neither
-revision. A successful preference publication advances both revisions and
-invalidates prepared runs and existing BTW threads.
-
-If an API key is saved but preferences fail, the Settings revision advances,
-while the current model selection and its clients keep their previous key.
-Prepared main runs and BTW threads remain usable. OAuth differs: existing
-subscription providers reread their credential file on every request. An actual
-OAuth credential replacement therefore also advances the resource revision,
-even if provider selection fails afterward; prepared runs are rejected and BTW
-threads become read-only. The error identifies the saved credential and the
-unchanged provider preferences and selection. An identical OAuth credential
-requires no write and, if selection then fails, advances neither revision.
-
-A lock-cleanup warning after a committed credential write is reported separately;
-login continues the preference save without repeating authorization or the
-credential write. Credential and preference saves remain separate commits.
-The private effect result does not set Settings' public preference-commit flags;
-login output, errors and warnings describe success or partial success.
+Settings login and `/login` use one application coordinator. Credential and
+preference writes remain separate; failures report what committed. An API-key-only
+save leaves current clients unchanged. A changed OAuth credential also invalidates
+prepared runs and BTW snapshots because subscription clients reread it on each
+request. See [lifecycle contracts](contracts.md#settings-and-usage-capabilities).
 
 In the TUI, `/login` first offers `Sign in with an account` or
 `Sign in with an API key`, then a provider menu. Confirm each menu level before
@@ -663,44 +399,17 @@ Provider keys are stored side by side; updating one does not erase another.
 
 ### Anthropic (Claude API)
 
-Select `/login` → `Sign in with an API key` → `Anthropic (Claude API)` and
-enter a key from [Claude Console](https://platform.claude.com/). This provider
-uses the separately billed Messages API at `https://api.anthropic.com/v1/messages`.
+Choose `/login` → `Sign in with an API key` → `Anthropic (Claude API)`, or:
 
 ```sh
-export ANTHROPIC_API_KEY="your-api-key"
-aice --provider anthropic --model claude-sonnet-5
+ANTHROPIC_API_KEY="your-key" aice --provider anthropic --model claude-sonnet-5
 ```
 
-To save only the key, run
-`printf '%s\n' "$ANTHROPIC_API_KEY" | aice config set-key --provider anthropic`.
-It is stored as `anthropic_api_key` in `~/.aice/auth.json`, independently of
-other providers. `/login` also saves the selected provider and compatible model.
-`AICE_ANTHROPIC_BASE_URL` (file key `anthropic_base_url`) overrides the API
-root; omit `/v1/messages` and `/v1`, which the SDK appends itself.
-
-| Model | Context / output budget | Thinking choices |
-| --- | --- | --- |
-| `claude-sonnet-5` (default) | 1,000,000 / 128,000 | `off`, `low`, `medium`, `high`, `xhigh`, `max` |
-| `claude-opus-5-5`, `claude-fable-5-1` | 1,000,000 / 128,000 | `low`, `medium`, `high`, `xhigh`, `max` |
-| `claude-haiku-4-5-20251001` | 200,000 / 64,000 | `off`, `high` |
-
-All models accept text/images and streamed tool calls. Sonnet, Opus and Fable
-use adaptive thinking with `output_config.effort`. Opus 5.5 and Fable 5.1
-cannot disable thinking; AICE clamps an `off` request to `low`. Haiku uses
-extended thinking: `high` enables the adapter's fixed 1,024-token thinking
-budget without an effort parameter. AICE's default requested level is `medium`;
-Haiku clamps it to `high`. Signed thinking and tool results use the shared
-Messages adapter and Session history.
-
-The compiled catalog follows Anthropic's [model overview](https://platform.claude.com/docs/en/models/overview)
-and [effort reference](https://platform.claude.com/docs/en/build-with-claude/effort).
-Prices are standard USD estimates, with five-minute cache-write pricing;
-account access, tier limits and actual billing remain controlled by Anthropic.
-Live account/model access has not been verified.
-
-Claude Pro/Max subscriptions do not supply an API key or API credit for this
-provider. Use the separate subscription provider below for account login.
+This uses the separately billed Messages API. `AICE_ANTHROPIC_BASE_URL` is the
+API root: omit `/v1/messages` and `/v1`, which the SDK appends. The default model
+is `claude-sonnet-5`; [anthropic.go](../internal/provider/anthropic/anthropic.go)
+owns models, image support, budgets and thinking choices. `/model` and `/thinking`
+expose those choices. Claude Pro/Max uses the separate OAuth provider below.
 
 ### Claude subscription (Pro/Max OAuth)
 
@@ -755,249 +464,66 @@ acceptance and subscription billing have not been verified.
 
 ### AiHubMix
 
-Select `/login` → `Sign in with an API key` → `AiHubMix`, then enter an
-AiHubMix key. `/provider` switches to an already configured account;
-`/model` selects a model from the compiled catalog. The default is `gpt-6-sol`.
-The built-in API root is `https://aihubmix.com/v1`.
+Use `/login` → API key → AiHubMix, or `AIHUBMIX_API_KEY` with
+`--provider aihubmix`. The default is `gpt-6-sol`, with API root
+`https://aihubmix.com/v1`. `AICE_AIHUBMIX_BASE_URL` includes `/v1` but excludes
+`/responses`, `/messages` and `/chat/completions`.
 
-```sh
-export AIHUBMIX_API_KEY="your-aihubmix-key"
-aice --provider aihubmix --model gpt-6-sol
-```
-
-To store only the credential, run
-`printf '%s\n' "$AIHUBMIX_API_KEY" | aice config set-key --provider aihubmix`.
-It is saved as `aihubmix_api_key` in `~/.aice/auth.json`, independently of
-OpenAI and Custom credentials. `/login` also persists provider/model selection.
-The optional `AICE_AIHUBMIX_BASE_URL` (file key `aihubmix_base_url`) replaces
-the API root, including `/v1`; do not append `/responses`, `/messages`, or
-`/chat/completions`. The Messages adapter removes the trailing `/v1` before
-the Anthropic SDK appends its versioned path; gateway path prefixes are retained.
-
-| Model | Protocol | Context / AICE output budget | Thinking |
-| --- | --- | --- | --- |
-| `gpt-6-sol` (default), `gpt-6-luna` | Responses | 1,050,000 / 128,000 | `off`, `low`, `medium`, `high`, `xhigh`, `max` |
-| `gpt-6-astra` | Responses | 1,050,000 / 128,000 | `low`, `medium`, `high`, `xhigh`, `max` |
-| `claude-sonnet-5` | Messages | 1,000,000 / 128,000 | `off`, `low`, `medium`, `high`, `xhigh`, `max` |
-| `claude-opus-5-5` | Messages | 1,000,000 / 128,000 | `low`, `medium`, `high`, `xhigh`, `max` |
-| `deepseek-v4.1-flash` | Chat Completions | 1,000,000 / 384,000 | `off`, `low`, `high`, `max` |
-| `kimi-k3` | Chat Completions | 1,048,576 / 131,072 | `low`, `high`, `max` |
-
-All included models accept text and images and support streamed tool calls.
-GPT uses Responses to retain reasoning and tool-call support together. Claude
-uses native Messages with adaptive thinking and `output_config.effort`;
-Opus 5.5 cannot disable thinking. DeepSeek sends a thinking toggle plus effort,
-while Kimi sends `reasoning_effort`. Unsupported thinking levels are clamped
-through the normal application path. Kimi's output budget is an AICE limit
-below the gateway's advertised maximum.
-
-This is a curated coding catalog, not automatic discovery of every AiHubMix
-model. Arbitrary IDs remain available through `custom`, with its generic
-Chat Completions capabilities and configurable context window. AiHubMix model
-access still depends on the account and key restrictions. Price estimates use
-published base-tier USD rates; long-context tiers and changing promotions may
-make the actual charge differ. DeepSeek's catalog rate includes the currently
-published promotion. Consult the AiHubMix billing console for actual charges.
-
-Sources: AiHubMix's [public catalog](https://aihubmix.com/api/v1/models),
-[model parameter schemas](https://aihubmix.com/model-data/index.json), and
-[API reference](https://aihubmix.com/developers), checked 2026-09-25.
-Offline fixtures cover protocol selection, authentication, thinking controls,
-usage and tool-result replay. Live requests and account availability have not
-been verified.
+The curated [catalog](../internal/provider/aihubmix/models.go) selects Responses
+for GPT, Messages for Claude and Chat Completions for DeepSeek/Kimi. It is not
+remote discovery. Arbitrary IDs use `custom` with generic Chat Completions
+metadata. Offline fixtures cover protocol/auth/thinking/replay; live account
+access has not been verified.
 
 ### Kimi Coding Plan
 
-Select `/login` → `Sign in with an API key` → `Kimi Coding Plan`, using a key
-from the Kimi Code console. The provider ID is `kimi-coding`; it connects
-directly to `https://api.kimi.com/coding/v1/responses` using the shared OpenAI
-Responses adapter, with streaming text, reasoning replay, and function calls.
-The client identifies itself as `aice`. This uses a Coding Plan key, separate
-from Moonshot's pay-as-you-go API credentials.
+Use `/login` → API key → Kimi Coding Plan, or `KIMI_API_KEY` with
+`--provider kimi-coding`. It uses `https://api.kimi.com/coding/v1/responses`
+through Responses, independently of Moonshot API credentials.
 
-For environment-based setup:
-
-```sh
-export KIMI_API_KEY="your-coding-plan-key"
-export AICE_PROVIDER=kimi-coding
-export AICE_MODEL=kimi-for-coding
-aice
-```
-
-To store the key instead, run `printf '%s\n' "$KIMI_API_KEY" | aice config set-key --provider kimi-coding`.
-This saves only the credential; select the provider through `AICE_PROVIDER`,
-global settings, or `/provider`.
-
-The catalog contains `kimi-for-coding` (default, all members),
-`kimi-for-coding-highspeed`, `k3-256k`, and `k3`. Availability depends on the
-membership tier. All accept text and [clipboard images](#clipboard-images). K3 offers `low`, `high`, and `max`; K2.7 Code keeps
-thinking enabled with `high`. Unsupported levels are clamped as usual, so
-`off` does not silently route these model IDs to K2.6.
-
-All four use a conservative 262,144-token context default and a 32,768-token
-AICE output budget (not a claim about the server's maximum output). If your
-membership enables K3's 1M tier, add
-`{"provider":"kimi-coding","model":"k3","tokens":1048576}` to the
-`context_windows` array in global settings; see
-[context window configuration](#context-window-and-status-bar). Token usage is
-recorded with zero per-token price estimates; subscription quotas still apply.
-
-Protocol and model capabilities were checked on 2026-09-07 against Kimi's
-[Responses integration guide](https://www.kimi.com/code/docs/en/third-party-tools/codex.html)
-and [model configuration](https://www.kimi.com/code/docs/en/kimi-code/models.html).
+The default is `kimi-for-coding`; membership controls access to the compiled
+[catalog](../internal/provider/kimi/kimi.go). Its conservative context default is
+262,144 tokens and AICE output budget is 32,768. If your account enables K3's 1M
+tier, add `{"provider":"kimi-coding","model":"k3","tokens":1048576}` to
+`context_windows`. Usage is recorded; zero per-token estimates do not imply
+unlimited quota.
 
 ### Moonshot API Platform
 
-Select `/login` → `Sign in with an API key` → `Moonshot API`. Enter the
-API key from the China platform at [platform.kimi.com](https://platform.kimi.com).
-The `moonshot` provider includes the official `https://api.moonshot.cn/v1`
-endpoint; no URL configuration is needed. Its credentials are separate from
-`kimi-coding`: platform requests use prepaid, per-token API billing rather
-than Coding Plan quota. `KIMI_API_KEY` never supplies a Moonshot credential.
+Use `/login` → API key → Moonshot API, or `MOONSHOT_API_KEY` with
+`--provider moonshot`. The China API root is `https://api.moonshot.cn/v1` and
+the default model is `kimi-k3`. `KIMI_API_KEY` never supplies its credential.
+`AICE_MOONSHOT_BASE_URL` is an explicit endpoint override, not region detection.
 
-For environment-based setup:
-
-```sh
-export MOONSHOT_API_KEY="your-platform-key"
-export AICE_PROVIDER=moonshot
-export AICE_MODEL=kimi-k3
-aice
-```
-
-Alternatively, store the key with `printf '%s\n' "$MOONSHOT_API_KEY" | aice config set-key --provider moonshot`.
-As with other providers, this command stores only the key; `/login` also
-selects and saves the provider and a compatible model.
-
-| Model | Protocol | Context / default output budget | Thinking |
-| --- | --- | --- | --- |
-| `kimi-k3` (default) | Responses | 1,048,576 / 131,072 | `low`, `high`, `max` |
-| `kimi-k2.7-code` | Responses | 262,144 / 32,768 | Always enabled |
-| `kimi-k2.7-code-highspeed` | Responses | 262,144 / 32,768 | Always enabled |
-| `kimi-k2.6` | Responses | 262,144 / 32,768 | `off`, `high` |
-
-All catalog models use the shared Responses adapter, as does Kimi Coding Plan.
-Thinking uses `reasoning.effort`; K2.6 `off` maps to `none`. There is no
-model-dependent protocol selection or Chat Completions fallback.
-AICE's default requested `medium` becomes `high` on these models. Text/image
-inputs, streamed reasoning, and tool-result replay use the existing adapters.
-The composer supports [clipboard images](#clipboard-images). Retired K2.5 and
-Moonshot V1 models are not included.
-
-This preset targets the China platform. `AICE_MOONSHOT_BASE_URL` is an optional
-advanced override, not a region auto-detection mechanism; keys and model
-availability must match the destination platform. AICE records token usage,
-but does not convert China-platform CNY prices into its USD cost estimates;
-a zero displayed estimate does not mean the API call is free. Use the platform
-billing console for charges.
-
-Official references for the catalog and Responses request format:
-[model list](https://platform.kimi.com/docs/models),
-[Responses reference](https://platform.kimi.com/docs/api/responses), and
-[parameter reference](https://platform.kimi.com/docs/api/models-overview).
+All compiled [Moonshot models](../internal/provider/moonshot/moonshot.go) use
+Responses with text/image input; there is no Chat Completions fallback. This
+uses prepaid API billing, separately from Coding Plan quota. CNY prices are
+not converted into AICE's USD estimates; consult platform billing for charges.
 
 ### Zhipu API Platform
 
-Select `/login` → `Sign in with an API key` → `Zhipu API`, or configure:
+Use `/login` → API key → Zhipu API, or `ZHIPU_API_KEY` with `--provider zhipu`.
+The API root is `https://open.bigmodel.cn/api/paas/v4`; the default model is
+`glm-5.3`. `AICE_ZHIPU_BASE_URL` excludes `/chat/completions`.
 
-```sh
-export ZHIPU_API_KEY="your-platform-key"
-export AICE_PROVIDER=zhipu
-export AICE_MODEL=glm-5.3
-aice
-```
-
-The China BigModel endpoint is built in:
-`https://open.bigmodel.cn/api/paas/v4/chat/completions`.
-To store only the key, use `printf '%s\n' "$ZHIPU_API_KEY" | aice config set-key --provider zhipu`.
-`/login` also saves the provider and compatible model. The optional
-`AICE_ZHIPU_BASE_URL` overrides the API root (without `/chat/completions`).
-
-The API Platform catalog includes the following tool-capable chat models.
-GLM-5.3 remains the default; select another model through `/model` or
-`AICE_MODEL`. Availability still depends on the platform account.
-
-| Model IDs | Input | Context / AICE output budget | Thinking choices |
-| --- | --- | --- | --- |
-| `glm-5.3` | Text | 1,000,000 / 131,072 | `low`, `high`, `max` |
-| `glm-5.3-flash` | Text, image | 1,000,000 / 131,072 | `low`, `high`, `max` |
-| `glm-5.2` | Text | 1,000,000 / 131,072 | `off`, `high`, `max` |
-| `glm-5.1`, `glm-5`, `glm-5-turbo` | Text | 200,000 / 131,072 | `off`, `high` |
-| `glm-4.7`, `glm-4.7-flashx`, `glm-4.7-flash`, `glm-4.6` | Text | 200,000 / 131,072 | `off`, `high` |
-| `glm-4.5-air`, `glm-4.5-airx` | Text | 128,000 / 98,304 | `off`, `high` |
-| `glm-4-flashx-250414`, `glm-4-flash-250414` | Text | 128,000 / 16,384 | `off` (no thinking control) |
-| `glm-5v-turbo` | Text, image | 200,000 / 131,072 | `off`, `high` |
-| `glm-4.6v`, `glm-4.6v-flashx`, `glm-4.6v-flash` | Text, image | 128,000 / 32,768 | `off`, `high` |
-
-For GLM-5.3 and Flash, thinking is always enabled. The default request
-`medium` clamps to `high`, while `off` clamps to `low`. GLM-5.2 additionally
-supports disabling thinking; equivalent upstream effort aliases are collapsed
-into the distinct `high` and `max` choices. Only GLM-5.2 and newer send
-`reasoning_effort`. Older reasoning models send only `thinking.type`;
-`high` means enabled without a separate effort parameter. Non-thinking GLM-4
-Flash models omit both controls.
-
-Streaming text, reasoning, function calls, usage and same-model
-`reasoning_content` replay use the shared Chat Completions adapter.
-Preserved-thinking defaults remain controlled by the endpoint. The LLM
-boundary and [clipboard input](#clipboard-images) accept images for the listed
-visual models. AICE does not implement video or file input blocks.
-
-Context defaults conservatively interpret the overview's 200K and 128K as
-200,000 and 128,000 tokens. Output budgets follow the explicit parameter
-limits. For `glm-4-flash-250414`, the model overview says 16K while the
-parameter table permits 32,768; AICE keeps the lower 16,384 budget. Image,
-video, speech, embedding, OCR and other specialized output APIs are outside
-this chat provider. Retired `glm-4.5-flash` (redirected to `glm-4.7-flash`)
-and deprecated GLM-4.5/4.5-X are omitted.
-
-This is the separately billed API platform. Token counts are recorded, but
-CNY prices are not converted into AICE's USD estimates; a zero estimate does
-not mean free usage. The preset retains AICE's own client identity.
-
-Catalog facts were checked on 2026-09-07 against the official
-[model overview](https://docs.bigmodel.cn/cn/guide/start/model-overview),
-[parameter limits](https://docs.bigmodel.cn/cn/guide/start/concept-param),
-[GLM-5.3](https://docs.bigmodel.cn/cn/guide/models/text/glm-5.3),
-[GLM-5.3-Flash](https://docs.bigmodel.cn/cn/guide/models/vlm/glm-5.3-flash),
-[GLM-4.5 retirement notice](https://docs.bigmodel.cn/cn/guide/models/text/glm-4.5),
-[GLM-4.5-Flash retirement notice](https://docs.bigmodel.cn/cn/guide/models/free/glm-4.5-flash),
-and [thinking/replay guide](https://docs.bigmodel.cn/cn/guide/capabilities/thinking-mode).
-The model pages linked from the overview own individual input and tool capabilities.
+The [catalog](../internal/provider/zhipu/models.go) declares model-specific image
+and thinking support; `/model` and `/thinking` expose its current choices.
+Requests use Chat Completions with same-model reasoning replay. Video, file,
+speech and specialized output APIs are not implemented. This is the separately
+billed China API; CNY prices are not converted into AICE's USD estimates.
 
 ### Zhipu Coding Plan
 
-Select `/login` → `Sign in with an API key` → `Zhipu Coding Plan`, or configure:
+Use `/login` → API key → Zhipu Coding Plan, or `ZHIPU_CODING_API_KEY` with
+`--provider zhipu-coding`. Its API root is
+`https://open.bigmodel.cn/api/coding/paas/v4`, overridable with
+`AICE_ZHIPU_CODING_BASE_URL`. The catalog contains `glm-5.3` (default) and
+`glm-5.3-flash`; it is separate from the API Platform catalog.
 
-```sh
-export ZHIPU_CODING_API_KEY="your-coding-plan-key"
-export AICE_PROVIDER=zhipu-coding
-export AICE_MODEL=glm-5.3
-aice
-```
-
-The preset uses `https://open.bigmodel.cn/api/coding/paas/v4/chat/completions`.
-Its API root override is `AICE_ZHIPU_CODING_BASE_URL`. Store only the credential
-with `printf '%s\n' "$ZHIPU_CODING_API_KEY" | aice config set-key --provider zhipu-coding`.
-The Coding Plan key and endpoint are independent of `zhipu`: neither provider
-falls back to the other's credentials or URL, including when quota is exhausted.
-Team subscriptions require the key from the team plan console.
-
-The Coding Plan catalog contains `glm-5.3` (default) and `glm-5.3-flash`,
-with the same model capabilities documented above. Both are available across
-plan tiers according to the official overview. The plan redirects `glm-5.2`
-and `glm-5.1` to `glm-5.3`, and `glm-5-turbo` and `glm-4.7` to
-`glm-5.3-flash`; AICE lists the actual targets rather than these historical
-aliases. Other API Platform models are not accepted by the Coding Plan preset.
-Token usage is recorded with zero per-token estimates; subscription quotas
-still apply. The endpoint controls preserved-thinking defaults, while AICE
-replays same-provider/model reasoning and tool results through the shared adapter.
-
-The official [quick start](https://docs.bigmodel.cn/cn/coding-plan/quick-start)
-and [plan overview](https://docs.bigmodel.cn/cn/coding-plan/overview) restrict
-plan quota to supported tools and product environments. AICE retains its own
-client identity; this compatibility preset does not assert that AICE has been
-approved by Zhipu for subscription quota. Actual access depends on the account
-and platform eligibility and has not been verified with a live credential.
+Neither credential nor endpoint falls back to `zhipu`, including on quota
+exhaustion. Subscription requests retain AICE's identity and zero per-token
+estimates, which do not imply unlimited quota or platform eligibility. Live
+credential acceptance has not been verified.
 
 ### Codex subscription (ChatGPT OAuth)
 
@@ -1192,80 +718,15 @@ rescan skills. The `/skills` reminder reports that restart requirement.
 
 ## Interactive commands
 
-The startup screen horizontally centers the animated Braille AICE artwork at the
-top of the transcript area, with two blank rows above it and no border. The artwork keeps its 127-column by
-12-row canvas. Background dots (`⡀`) are replaced with spaces, whitespace-only
-rows are removed, and internal spacing is preserved. Only the version and update
-status appear beneath the logo, separated by one blank row and aligned to its
-right edge. There is no welcome title or description beside the artwork.
-Narrow or short terminals skip rendering the artwork when it and the status
-cannot fit. Only the version and update status remain, horizontally centered;
-wrapped text lines are centered as well.
-The logo uses a slowly moving ink-theme gradient with brief, unevenly spaced signal
-glitches: one or two rows shift sideways with sunset-red/gold fringes and sparse
-rice-white scan-line dropouts, then snap back. Each burst lasts about 300 ms, separated by
-several quiet seconds. The fixed logo canvas keeps the version line and composer still.
-Animation belongs to `internal/tui/welcome.go`, uses the existing Bubble Tea
-ticks, stops when a run starts or transcript entries appear, and resumes on
-`/clear`.
-
-Between the logo and composer, the welcome screen shows a rotating, one-sentence
-English usage tip without a label or prefix. Slash commands and keyboard shortcuts
-use the theme's gold accent; surrounding text stays muted gray, including during
-typing, erasing, and line wrapping. Tips type and erase at a pace of one
-Unicode character every 30 ms, advancing by elapsed time on the shared 50 ms
-welcome tick, with a fixed seven-second hold after the last
-character appears. The next tip is chosen randomly from all other entries, so
-consecutive tips never repeat. A drawn caret follows the animated text without
-moving the composer's real cursor. Each complete sentence is centered using its
-own width; wrapped lines are centered individually. Typing reveals text in place
-at those positions. Tips sit above the composer inside the welcome viewport,
-with blank space separating them from the input; the input and footer stay still. Terminals below 16 rows or with insufficient viewport
-space hide tips.
-Tips appear only on the empty, idle main screen, including after `/clear`.
-The catalog and animation state live in
-[welcome_tips.go](../internal/tui/welcome_tips.go), driven by the existing welcome
-tick in the TUI update loop; they never enter conversation history.
+The empty conversation shows AICE artwork, version/update status and rotating
+usage tips when terminal space permits. They never enter conversation history.
 
 ### Visual theme
 
-The built-in ink theme is owned by [theme.go](../internal/tui/theme.go). Its three dark
-layers separate the ink screen (`#0D0B0A`), user-message/code panels
-(`#1B1613`), and quiet brown borders (`#332921`) by brightness. Color roles stay
-consistent across the transcript, composer, menus, and permission prompts:
-
-| Role | Color | Use |
-| --- | --- | --- |
-| Brand and headings | 霞绯 `#FF6B6B` | Brand name, headings, and assistant/process markers |
-| Primary text | 米白 `#F2E9D8` | Body text |
-| Secondary text | 烟灰 `#8F8477` | Metadata, folded details, hints, and thinking |
-| Focus and references | 金 `#C9A063` | Cursor, active composer border, highlighted paths, inline code, and fuzzy matches |
-| Success | 竹青 `#7A9471` | Ready state, completed tools, and inserted diff lines |
-| Warning | 姜黄 `#D98C3D` | Permission attention, output limits, and context pressure |
-| Error | 绛 `#A8383D` | Failed tools, error messages, and deleted diff lines |
-| Information | 石青 `#5B8A9E` | Tool names, working state, spinners, pending steering, and side-thread indicators |
-
-The theme paints the full AICE canvas, including blank cells and outer padding,
-with explicit text and background colors. It leaves the terminal's default
-foreground and background palette unchanged. Hover changes only the target
-heading's text styling; the surrounding canvas keeps its colors. The composer
-uses the same canvas background and retains the real terminal cursor as the
-anchor for IME composition and its candidate window. Transparency and blur
-remain controlled by the terminal.
-
-Headings use the brand accent with weight and spacing for hierarchy; Markdown
-headings omit hash prefixes, and level-six headings use gold. Tool names use
-normal weight, including on hover. Thinking uses muted text and a stone blue
-left rail on the screen background, distinct from code panels; command output
-uses quiet brown rails.
-Reasoning levels use muted gray for default/off/minimal/low, gold for medium,
-ginger yellow for high, orange-red (`#F5735F`) for xhigh, and sunset red for max,
-all at normal weight. Level names remain visible. The welcome logo shares the
-theme's sunset red, ginger yellow, gold, bamboo green, and stone blue palette.
-Code syntax highlighting uses the theme colors: code
-keywords and tags are sunset red, operators gold, and functions and strings
-bamboo green. Status text, icons, diff signs, and focus weight remain meaningful
-without color.
+[theme.go](../internal/tui/theme.go) owns the built-in ink palette. AICE paints its
+canvas without changing terminal defaults; transparency/blur remain terminal
+settings. Status labels, icons and diff signs remain meaningful without color.
+The composer retains the real terminal cursor for IME composition.
 
 ### Commands
 
@@ -1278,6 +739,7 @@ without color.
 | `/desktop` | Open Computer Use in the same Settings window |
 | `/context`, `/usage` | Open current context or recorded Session usage |
 | `/browser` | Browser status, connection, tab selection and close; `/browser status` also works |
+| `/mcp` | Manage MCP services, connection approval and credentials; see [MCP](mcp.md) |
 | `/web` | Web search services, priority order, credentials and the `web_fetch` switch; see [Web search and fetch](web.md#the-web-command) |
 | `/skills` | List Agent Skills loaded for this Session |
 | `/skill:<name> [task]` | Attach a discovered Skill and load its full instructions on send |
@@ -1295,44 +757,15 @@ without color.
 | `/clear` | Clear the viewport without changing Session history |
 | `/quit` | Exit AICE |
 
-Typing `/` at a word boundary opens suggestions for the token under the cursor,
-including in the middle of a draft or on later lines. Paths, URLs, backtick code
-and attachment contents do not trigger suggestions. Selecting an ordinary command
-from inside a draft removes only that token and temporarily saves the surrounding
-text, attachment bindings and cursor. Its existing menu or command runs separately;
-completion, failure or cancellation restores the draft. For `/btw`, restoration
-waits until the side panel closes. Surrounding prose is never used as command
-arguments. A command occupying the whole draft retains its existing completion
-and submission behavior. Names match case-insensitive characters
-in order, with gaps allowed: `/cpt` matches `/compact`. Up/Down selects and Tab
-completes the highlighted command; Escape closes suggestions. Command and option
-menus show rows without a title or shortcut header. Their shortcuts appear in
-the bottom shortcut bar only while the menu is visible; option menus also show
-Enter to choose and nested menus show Escape to go back. When space is limited,
-these contextual shortcuts take priority over usage figures. With only `/`, ordinary
-commands appear first and Skills come last, preserving catalog order within each
-group. Once a search term is entered, all matches are ranked by relevance, favoring
-exact names, consecutive letters, and word starts. Matching letters use AICE's gold secondary color. Selection only makes the option's label
-and arrow bold, without changing their colors or adding a background;
-descriptions always stay muted with normal weight. `(active)` marks the current
-value independently of the highlighted selection. The inactive composer border
-uses the same dark brown separator color as the slash menu border.
+Type `/` at a word boundary to search commands and Skills. Up/Down selects,
+Tab completes, Enter chooses, and Escape closes or returns to the parent menu.
+Typing after a menu command filters its current options. Selecting a command
+inside a draft temporarily preserves surrounding text and attachments, runs that
+command separately, then restores the draft; surrounding prose is not arguments.
+Skill selection inserts an attachment without sending. Press `?` in an empty
+main/BTW composer to expand available shortcuts.
 
-After a full menu command and a space (for example `/thinking `), suggestions
-switch immediately to its options and the composer shows a dim argument hint.
-Typing filters option labels and values with the same fuzzy matching; exact
-values appear first. Tab fills the selected value without running it; Enter
-chooses it. No matches keeps the draft editable and runs nothing. Removing the
-space returns to command suggestions. Escape closes the menu without discarding
-the draft; editing reopens it. Enter on a bare menu command also opens its options.
-Nested choices open the next menu, whose hint and filter update together; Escape
-returns to the parent and restores its draft. Hints are display-only and are
-never submitted. Only options supplied by the active command catalog are offered.
-Provider, model, and thinking changes apply to the current Session immediately
-and are also saved globally. With an empty main or BTW composer, press `?`
-to expand or close its available shortcuts. Session
-navigation and compaction commands (`/session`, `/history`, `/tree`, `/checkout`,
-`/compact`) are detailed in [Tool execution and
+Session navigation is documented in [Execution and
 Sessions](execution-sessions.md#resume-and-navigate).
 
 ### /btw
@@ -1363,184 +796,43 @@ for confirmation and waits for its answer to stop before deleting it.
 
 ## Interactive input delivery
 
-User controls and display limits are described below. Rendering ownership,
-cache invalidation, and shared paint/hit-test coordinates are defined in
-[Concurrency and TUI](contracts.md#concurrency-and-tui).
+Process, tool-batch, thinking and tool-detail folds are independent. Process and
+batch summaries begin open, thinking/tool bodies closed. Final answers stay
+outside process folds; manual fold choices survive streaming. Click a heading
+to toggle it; `Ctrl+O` toggles all main process details. Streaming thinking shows
+a 4 KiB tail until completion. Folding changes only presentation.
 
-The main transcript has independent folds for each process, each contiguous
-batch of two or more tool calls, each thinking block, and each tool's details.
-A lone tool call shows its own heading directly without a batch heading. Batches show
-counts by operation (including Skill loads); they do not infer that later tools
-belong to a loaded Skill. Process and batch summaries start open, while thinking
-and tool bodies start closed. Final answers remain outside the process fold.
-When final text starts, a process closes automatically unless the user has
-manually changed it or one of its children. Manual choices survive new deltas
-and sibling calls. Closing a parent preserves its children's choices.
-Fold state is transient presentation state, cleared with the visible transcript.
-Expanded processes leave one blank line before their first child heading;
-expanded thinking also leaves one blank line between its heading and body.
-While waiting for visible answer text, the Thinking/Responding activity indicator
-occupies its own row below the thinking block, separate from the fold heading.
-Visible answer text replaces that waiting indicator.
+Drag transcript text to copy on release. Click the header directory to copy its
+absolute path; Command-click (macOS) or Ctrl-click (Windows/Linux) opens it in
+the system file manager if the terminal forwards that gesture. Composer clicks
+highlight the frame but do not position the caret; use keyboard editing.
+See the [known textarea limitation](maintenance.md#composer-click-positioning-and-textarea-capabilities).
 
-Message text, process markers, fold arrows, and tool panels share one left
-alignment. Expanding a process, batch, thinking block, or tool does not add
-nested indentation. Wrapped headings retain the same left edge; thinking rails
-sit in the gutter, while code keeps its internal indentation. Submitted user
-messages in both main and BTW views use a borderless dark background spanning
-the layout width, aligned with the top bar and composer frame. Each message has
-one blank background row above and below its text; wrapped text retains the
-same left alignment as tool calls and answers.
-
-Move the mouse over a fold heading to brighten its text without adding a
-background. Collapsed file tools show only the final filename or directory name;
-expanding restores the full supplied path in the same heading, wrapping when
-needed. Hovering does not expand the path. Tool paths and Skill names are gray
-while collapsed and idle;
-hovering or expanding the tool makes them gold with a dashed underline
-(the underline appearance depends on terminal support). Left-click
-(press and release without dragging) toggles that heading. The clicked heading
-stays at its screen position where possible. Dragging text still selects and
-copies on release, including a drag started on a heading. Scrolling, resizing,
-or losing terminal focus cancels a pending click. Hover follows the current
-layout even while the pointer is stationary. Run completion preserves historical
-reading positions; only readers already at the bottom follow the final output.
-These controls require terminal mouse reporting; `Ctrl+O` remains available when it is unsupported.
-
-The interface reserves one blank row above and below, and two columns on each
-side, including on permission screens. Horizontal padding shrinks below 28
-columns to preserve the minimum content width; vertical padding disappears
-below 12 rows. The top bar has no separator line and leaves one blank row below
-its status text. The model and thinking level
-sit in the composer’s bottom-right border as `model-name (low)`, without labels.
-Long model names shorten to fit while retaining the thinking level. The footer
-keeps shortcuts, cumulative Session token usage, and cost. When width is limited,
-contextual shortcuts take priority over usage and cost. Shortcut hints capitalize
-named keys (`Tab`, `Ctrl`, `Alt`, `Shift`, `Enter`, `Esc`) and keep letter keys
-lowercase, for example `Ctrl+c` and `Ctrl+o`.
-
-The top-bar working-directory path changes from muted gray to gold on hover,
-without an underline or terminal hyperlink (which terminals may underline).
-A left click copies its
-absolute path, even when the display uses `~` or an ellipsis. Command-click on
-macOS, or Ctrl-click on Windows/Linux, opens the directory in the system file
-manager when the terminal forwards the modified mouse event to AICE. Modified
-clicks intercepted by the terminal cannot be handled by AICE. A terminal may
-still detect the plain path and underline/open it while its link modifier is
-held; AICE does not disable this native behavior.
-Dragging or a cancelled press does neither;
-only the visible path text is clickable. Copy uses the same terminal clipboard
-support and confirmation as transcript selection. File-manager launch errors
-appear above the input field.
-
-The composer border is dark brown at rest. Hovering anywhere inside its frame
-temporarily turns it gold; clicking it or editing a draft keeps it gold until
-submission, Escape, an outside click, or loss of terminal focus. This visual
-state does not prevent typing directly into the composer.
-
-Clicking the composer highlights its frame; it does not reposition the text
-caret. Keyboard editing and the real terminal cursor remain the input path,
-including IME anchoring. The dependency capabilities and requirements for future
-click positioning are recorded in [Maintenance](maintenance.md#composer-click-positioning-and-textarea-capabilities).
-Shortcut hints follow the active window and the focused pane or input mode.
-This applies to main and BTW composers, completion and command menus, session
-search/list/preview and title editing, history reading and its question directory,
-permission selection and denial feedback, login menus and input, and the startup
-Trust prompt. Switching focus or entering a waiting or read-only state updates
-the hints together with the available actions. Dialogs consume their own keys;
-those keys cannot trigger a background conversation action. A reserved shortcut
-that is temporarily unavailable stays blocked and is omitted from help.
-Modified keys trigger only their declared actions; for example, `Ctrl+Down`
-does not act as plain Down unless that window explicitly offers it as an alias.
-
-In the session picker, Up/Down selects items with list focus and scrolls content
-with preview focus. Right opens or focuses preview; when preview is visible,
-Left returns to the list. These pane keys keep that meaning while the search
-field has focus; `/` returns to search. Mouse-wheel scrolling targets the pane under
-the pointer without moving keyboard focus. Entering or leaving title editing
-changes the available shortcuts, and saving leaves cancellation available.
-Delayed editor paste results cannot cross a dialog, picker focus change, or
-draft clear, even after returning to the previous editor.
-
-Short help prioritizes the window's primary controls, shortening descriptions
-and omitting secondary hints to fit the available width. Expanded composer
-help replaces the short shortcut row and wraps actions across rows, so each
-shortcut appears once. Basic Up/Down, paging, and cursor navigation remain
-available without help labels. Clipboard paste (Ctrl+V / Alt+V) also remains
-available without a shortcut hint. The `/history` command, Ctrl+R hint, and
-history window title use the same history terminology. Search progress, save
-errors, and copy confirmations occupy separate status space and do not replace
-the session picker's shortcut row. Shortcut dispatch and help share the same
-action definitions; their ownership is specified in
-[Concurrency and TUI](contracts.md#concurrency-and-tui).
-
-Process headings use `✧` when expanded and `✦` when collapsed, without a
-separate triangle. Clicking the heading toggles that process;
-`Ctrl+O` expands or collapses all main-task process details, including children.
-Expanded streaming thinking shows only its most recent 4 KiB with an omission
-notice; completion makes the full thinking available. BTW thinking retains the
-same streaming limit. Display folding never removes Session or model content.
+Shortcut help follows the focused window. Dialog keys cannot trigger background
+conversation actions; stale asynchronous paste replies are rejected after focus
+changes or draft clearing. Rendering ownership and shared paint/hit-test geometry
+are in [Concurrency and TUI](contracts.md#concurrency-and-tui).
 
 ### Tool output and code panels
 
-Expanded tools show the recorded result (Read text, command output, Skill body,
-or errors), rather than rereading workspace files. Result previews retain at
-most 64 KiB and display at most 2000 source lines, with an explicit limit notice.
-Non-text results are labelled, and empty output differs from unavailable output.
-Outputs and Markdown code blocks share a borderless panel with the same padding,
-dark background, syntax palette and long-line wrapping. Read output is highlighted by filename or
-extension; other results use plain text. Terminal controls are escaped while
-code punctuation is retained and tabs display as spaces. Long result lines wrap.
-The background covers blank lines and trailing space after highlighting and wrapping.
-Markdown fences (including unfinished streamed fences) and indented code blocks
-remain literal inside lists and quotations.
-Completed main-answer code blocks over 80 lines or at least 8 KiB show a
-12-line clipped preview by default. Click the status row left of `[Copy]` to
-expand/collapse; `Alt+O` toggles the first visible expandable code block, and
-read-only history also accepts `C`. The arrow and full source line count remain
-visible. Expansion restores full line wrapping. A search hit inside hidden code
-opens that block and jumps to its source line. `[Copy]` always copies the entire
-recorded code block, including while its preview is collapsed. Tool output uses
-its existing tool-heading expansion and recorded-preview limits.
-Tool headings show their supplied source line count in parentheses, such as
-`read file.go (24 lines)`. One blank row separates a tool heading from its expanded
-content. Code panels retain a separate, subtly lighter status row: language on
-the left (such as `sh`, `java`, or `python`), `[Copy]` on the right. Source line
-numbers begin on the row below it. Tool panels do not repeat the heading count;
-Markdown code blocks keep their count in their own status row.
-Code panels number each original line from 1, including blank lines. Wrapped
-continuations leave the number gutter blank. Narrow panels hide the gutter to preserve room for code. Limited tool
-output and incomplete write previews label the heading count `partial`; this is
-a count of supplied lines, not the complete file size.
-The panel's `[Copy]` button copies its supplied source, preserving tabs, trailing
-spaces and original line endings, without line numbers or display escaping.
-For limited output/previews it copies only the supplied portion; clipped preview
-rows still copy their full supplied source. Empty or very narrow panels omit the
-button. Copy uses the same terminal clipboard and confirmation as drag selection.
-A drag continues to select visible text. Content changes, scrolling or resizing
-between press and release cancel a pending click.
-Hover highlights a copy button or the original code line, including its wrapped
-continuations, while preserving syntax colors. Single-clicking a code line or
-its number copies the full original line without its final LF/CRLF; indentation
-and trailing spaces remain intact. A blank source line copies an empty string.
-Panel padding and non-code text do not trigger line copying. Hover is hidden
-while dragging and does not change layout or enter the selection snapshot.
+Expanded tools show recorded output, never reread files. Previews are bounded to
+64 KiB / 2000 source lines with explicit notices. Empty, unavailable and non-text
+output remain distinct. Code panels highlight by language/path, escape terminal
+controls, number original lines and preserve source independently of wrapping.
 
-Successful write and edit headings show green `+added` and red `-removed` line
-counts. Expanded results show a unified diff block with red/green line backgrounds,
-hunk coordinates, and old/new line numbers (hidden in narrow panels). Counts
-cover the full generated alignment even if the stored diff is clipped. Unavailable
-counts are labelled as incomplete, never inferred from requested arguments.
-Older complete diffs can supply counts; old results without diffs retain their
-recorded output. The display does not depend on a Git repository.
+Completed main-answer code over 80 lines or at least 8 KiB starts with a 12-line
+preview. Click its status row or use `Alt+O` (history also accepts `C`) to toggle
+the first visible expandable block. Search reveals hidden matching code.
+`[Copy]` copies the entire supplied source even while folded; a source-line click
+copies that original line without its final newline. Limited tool previews can
+copy only their retained source. Dragging still selects visible text.
 
-Write details retain the bounded live argument preview until a completed diff
-replaces it; `preview · not executed`
-means execution has not started. Expanded write and edit previews display up to
-2000 lines / 64 KiB, clipping long source lines before highlighting. Streamed
-write arguments retain at most 64 KiB; a late path/content may arrive with the
-complete call. None of these display limits limits file writes or changes
-recorded tool results.
+Successful writes/edits show recorded unified diffs and added/removed counts.
+Counts come from the full bounded alignment, not requested arguments; unknown
+counts and omitted diff output are marked incomplete. Older records never acquire
+a reconstructed diff. Before execution, writes may show a bounded argument
+preview labelled `not executed`; it grants no authority. Display limits never
+limit file mutations or rewrite Session content.
 
 ### Sending input while working
 
@@ -1590,76 +882,21 @@ and thread drafts keep the expanded text.
 
 ### Asking the user (Q&A)
 
-When a choice materially affects scope, outcome, or rework cost, the model
-may call the interactive-only `request_user_input` tool with 1–3 focused
-questions (at most 3 options per question). The question and composer share
-one yellow frame with aligned sides and no internal border. Options appear
-above the input area, separated by a blank row. The input area takes the
-answer, while the previous composer draft, caret, file references, and paste
-attachments stay intact while hidden. The model label remains on the bottom
-edge. The question body is capped to the available terminal height; the
-answer grows to at most six visible rows. `PgUp`/`PgDown` scroll the answer
-when the input is focused, falling back to the question body at the answer's
-edge; option focus scrolls the question body. All shortcut hints use
-the shared footer directly below the composer, wrapping at narrow widths.
-Usage shares the first shortcut row when space permits; it never reserves
-a separate row above the controls. The dialog
-does not repeat them. Choosing an option or typing brings the focused row
-into view:
+The interactive-only `request_user_input` tool asks 1–3 questions with at most
+3 options each. It is for consequential missing requirements/preferences, not
+permissions, credentials or information available from the repository.
 
-- Each question sits in the upper-left border, with a blank separator before
-  its options. Long or multiline questions also keep their full text in the
-  scrollable body. Preset options and the custom input use huh MultiSelect's
-  visual convention: `>` marks focus, `•` is unselected, and a green `✓`
-  marks the single selected answer. The existing Lip Gloss renderer owns
-  these styles and the panel keeps single-selection behavior.
-  The input area is the custom option (for example, `• 自定义回复…`);
-  its selection mark remains visible when typing replaces the placeholder.
-  Option rows do not display numeric labels. There is no duplicate
-  custom-option row above it.
-  Free-text questions use `输入回复…`; after selecting an option, the input
-  can still hold a supplement to that selection.
-  Options show the practical difference of each choice; at most one is marked
-  recommended in gold, and the recommendation only sets initial focus,
-  never an answer.
-- `↑`/`↓` move focus within a question, `←`/`→` switch questions,
-  `Space` (or a digit) selects the focused option and stays on it, typing
-  writes the answer (or a supplement to a selected option). `Enter` selects
-  the highlighted option, or confirms the text being edited, and advances
-  to the next question. Once every answer is complete, that same `Enter`
-  submits the whole group; no extra submission step is needed.
-  A digit that lands on the custom row with empty text stays on the current
-  question and focuses the input instead of selecting.
-- Moving focus alone never answers a question. `Enter` confirms the current
-  answer; an empty custom or free-text answer keeps focus on the current
-  question and prompts for text. If earlier questions were left unanswered,
-  confirming the last question returns to the first unanswered one. Only a
-  complete group answers the tool call; blank text never counts as an answer.
-  An option question accepts either a valid selection (with optional
-  supplement text) or a custom answer (empty selection, non-blank text).
-  Choosing or typing into the custom row clears any previous selection;
-  non-blank custom text immediately marks that row selected, and clearing
-  it removes the mark. After moving focus back to a populated custom row,
-  `Space` selects it; during typing, spaces remain literal input.
-  Switching questions preserves that custom answer. Moving focus alone
-  never changes the submitted choice.
-  Answers are limited to 2,000 characters; an oversized insert is rejected
-  with a notice and leaves the existing answer intact. Terminal control
-  sequences are removed from display without changing the submitted text.
-- `Esc` browses the conversation with drafts and focus kept; `Ctrl+c`
-  cancels the run. Question input never triggers slash commands, file
-  expansion, or steering, and a permission prompt temporarily takes over
-  while keeping panel state.
-- Cancelled or expired
-  prompts leave no partial answers. History keeps the questions in the tool
-  call and the submitted answers in its result, so reopening a Session
-  restores them without replaying anything.
+Up/Down moves focus; Left/Right switches questions. Space or a digit selects;
+typing supplies a custom answer or supplement. Enter confirms and advances, then
+submits when every question is answered. Focus and recommendations never count
+as answers. Empty custom answers keep the question open; answers are limited to
+2,000 characters. PgUp/PgDown scroll the active answer/question view.
 
-The model asks sparingly: it checks the repository, docs, and conversation
-first, decides routine choices itself, never re-asks settled requirements,
-and never uses Q&A for permissions or credentials. `--print`, Harbor, and
-`/btw` have no Q&A tool; there the model states missing information and the
-affected scope in its output.
+Esc browses the conversation while retaining the answer draft; Ctrl+C cancels
+the run. The previous composer and attachments remain intact. Question input
+cannot trigger slash commands, file expansion or steering. Cancellation retains
+no partial answers; only submitted results enter Session history. Print, Harbor
+and BTW runs have no question tool.
 
 ### Clipboard images
 

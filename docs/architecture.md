@@ -29,164 +29,52 @@ These principles guide tradeoffs, not a frozen directory layout. Use the
 [maintenance procedure](maintenance.md#resolving-discrepancies) when the intended
 boundary and implementation disagree.
 
-Durable design rules:
-
-- AICE owns provider-neutral messages, Agent events, usage, tools, and loop
-  semantics. Provider SDK types stop at protocol adapters.
-- Provider catalogs own model capability facts. Canonical thinking inputs map
-  to provider tokens through model metadata; application code collapses
-  equivalent mappings into distinct choices and clamps requests, while
-  adapters only encode protocol-specific shapes.
-- Sessions are the append-only source of truth. Model context and the TUI
-  viewport are derived views.
-- The application owns conversation routing identity and propagates it through
-  context using the provider-neutral LLM metadata helpers. Providers own its
-  HTTP encoding; the Loop and protocol adapters do not select Session identity.
-  See [OpenCode routing behavior](configuration.md).
-- Built-in tools execute through the host process. Native commands inherit its
-  environment; the optional Windows WSL Bash fallback uses the default Linux
-  distribution and maps the workspace as described in
-  [Installation](installation.md#runtime-helpers). An intrinsic execution gate
-  (`internal/guard`) checks every tool call inline; stronger isolation is
-  still external (container/VM). Product behavior of the gate is in [Tool
-  execution and Sessions](execution-sessions.md#tool-execution-boundary).
-- Built-ins and future replacements use the same consumer-owned interfaces.
-- Dependencies are assembled explicitly in `internal/app`.
-- Web search separates the API adapter (`internal/web/exa`), the provider
-  descriptor facts it exports, the user's service instances
-  (`config.WebService`) and the run binding chosen by the pure resolver in
-  `internal/web`. `internal/app` owns the fixed factory list, resolves one
-  binding per run environment, registers `web_search` only when a source is
-  usable, and hands the Guard the bound service fingerprint. Provider wire
-  fields stop in the adapter; tools, Session records and the TUI consume the
-  `internal/evidence` contract. Model-native search is a reserved priority
-  entry without an implementation; when added, the request-construction layer
-  will enable it and omit the local `web_search` schema from the same request.
-  See [Web search and fetch](web.md).
-
 ## Runtime flow
 
 ```text
-cmd/aice
-  -> internal/app (composition and lifecycle)
-     -> internal/cli or internal/tui (user interface)
-     -> internal/interaction (active-run input coordination)
-     -> internal/agent -> internal/llm (Agent Loop and contracts)
-        -> internal/guard (intrinsic execution gate, checked before every tool call)
-     -> internal/provider -> internal/api (provider and protocol adapters)
-     -> internal/tool (host-executed tools)
-     -> internal/session (append-only JSONL tree)
-     -> internal/trust + internal/config (startup inputs)
+cmd/aice → internal/app (composition and lifecycle)
+  UI:       cli / tui → interaction contracts → app operations
+  Run:      agent → llm contracts → provider / api adapters
+  Tools:    agent → injected Guard → built-in tools / run-local MCP catalog
+  History:  synchronous recorder → app conversation → session JSONL
+  Startup:  config + trust + skill → frozen configuration and prompt
 ```
 
-The Agent Loop does not know Cobra, Bubble Tea, concrete tools, Session files,
-or provider SDKs. The application prepares one active run and connects its
-UI-neutral input mailbox to the Agent Loop's steering and follow-up sources.
-Interactive questions use the same tool boundary: the tool returns structured
-answers, the application owns the cancellable exchange, and the frontend owns
-drafts and presentation. Display formatting is not part of the question tool.
-The TUI owns interaction and presentation: input editing, local navigation and
-frontend controller scheduling. It submits inputs to that capability and mirrors
-pending inputs for presentation; it never owns delivery semantics, tool execution
-or Session truth. A future GUI must use the same application-owned active-run
-boundary. See the [main-path evidence](maintenance.md#main-path-acceptance) for
-what is verified and what remains outside the current frontend contract.
+The arrows describe calls, not imports. `agent` imports only `llm` among AICE
+packages; its Guard, recorder and catalog are injected consumer-owned interfaces.
+The Loop owns tool execution, steering, follow-up, retries and stopping. TUI owns
+editing, local navigation and controller scheduling through `interaction`;
+it does not own execution or durable history. See [Runtime contracts](contracts.md).
 
-Within the application, conversation state owns the Session store, derived
-history, and accepted messages from the active interaction. It serializes
-durable history updates separately from the short lock used by side-question
-snapshots. A Session leaf cursor tracks published context: ordinary appends
-publish only new complete message groups; branch changes and compaction rebuild
-the derived view. The interactive coordinator freezes model settings and handles
-workspace and command lifecycle; an active run owns its input mailbox and
-execution. This keeps transcript publication and copying at one state owner
-without exposing storage concerns to the frontend or Agent Loop.
+`app` freezes settings for each Run and owns resource preparation and cleanup.
+Its conversation state owns the writable Session, paired history and accepted
+pending inputs. Durable writes are serialized separately from short side-snapshot
+reads. Compaction and branch changes rebuild derived context; ordinary appends
+publish new complete message groups. The history picker caches immutable prose,
+not writable stores or another transcript. See [Sessions](execution-sessions.md).
 
-The application owns the project session catalog and session switching. Its
-bounded in-memory catalog retains immutable derived prose, validates file
-identity/size/mtime on use, and holds its bookkeeping lock only for cache access.
-It never retains writable stores or persists a second transcript.
-`internal/session` supplies read-only replay and exclusive writer ownership;
-`internal/interaction` carries catalog queries and a one-time immutable display
-snapshot to the TUI. That snapshot derives from original branch records, while
-model context remains independently derived through compaction checkpoints.
+Settings, slash commands and login call application operations. Config owns
+source precedence and locked partial writes; app owns prepare/save/publish and
+resource revisions; TUI owns drafts and display. External setup and credential
+writes can partially succeed, so their outcomes remain distinct from preference
+commits. See [Configuration](configuration.md).
 
-For generic MCP, the application owns reusable authorized transports; each main
-run gets a separate frozen catalog and borrowed connection views. Local
-`tool_search` proposals enter the Loop only at complete tool-pair boundaries.
-Resource listing proposes a service-bound reader through the same selection
-boundary; resource and tool catalogs have independent invalidation and permission
-identities. Connection decisions, explicit user operation rules and transient Session grants
-are separate. Configuration owns user-only durable rules; app binds them to the
-current source/connection/scope/operation/schema, and Guard checks them alongside
-the current policy and catalog version before every dispatch. The `aice mcp` command uses application
-management operations without a model or Session. `/mcp` and Settings share those
-operations under the existing settings reservation: idle edits replace only
-affected service leases and next-run tools, while live deny revokes just the
-selected service. Reconnect retires the selected lease even when its configuration
-is unchanged. Unrelated connections and Session grants survive; global
-restriction changes invalidate all affected authority, including managed CUA.
-MCP status includes an inert managed Computer Use preference row. Its menu
-requests local Settings navigation; native setup and enablement remain owned by
-the existing Computer Use settings path. The interactive coordinator applies
-partial durable changes even on a later write failure. Result readback receives
-a run-scoped reader into the active
-Session ancestry (or existing ephemeral Print source); it holds no shared mutable
-Session pointer. The Loop clips only model projections, and never the durable
-source. Server instructions use bounded, source-tagged tool-result previews and
-a revision-bound paged reader; the client retains initialization data, and
-remote text never enters the system prompt or grants execution permission.
-The Loop publishes an optional read-only tool-reference snapshot before each
-prepared request. The interactive app derives per-service loaded counts under
-its existing state lock, owns their Run lifetime, and never uses this display
-projection for tool dispatch or authority.
-The managed CUA catalog constructor injects the native Run through this same
-catalog/Guard boundary. Its separate application permission inventory is bound
-to the Manager/settings lifetime, pinned runtime and Run's frozen control mode; ordinary
-configuration cannot supply the managed identity. Enabled Print and interactive
-main runs use only the managed catalog entry, discovered on demand. The Run
-binding requires the consumer-owned managed MCP interface at compile time.
-Computer Use uses the generic MCP result projection and explicit post-action
-observation. There is no separate desktop action orchestrator or specialized
-model result format. Native acceptance fixtures execute the same managed MCP
-entry, with polling and postcondition reads owned by the fixture. The model path
-forwards the pinned operation schemas and native results,
-with a host-owned session and frozen control-mode/image capabilities. Cua owns
-window, token, capture and input semantics; AICE does not keep a parallel
-execution-reference state machine. Shared native setup/validation APIs remain
-in `internal/desktop`, and legacy Session presentation stays read-only. See
-[managed MCP boundary](desktop.md#managed-mcp-boundary).
-The app constructor also supplies ordinary MCP admission with its reserved CUA
-endpoint. Management definition checks and process startup share that policy;
-the generic client does not know about native Computer Use. Independent endpoints
-remain ordinary services, and this configuration rule does not isolate arbitrary
-host programs or infer opaque forwarding destinations.
-The independent `mcpauth` package implements explicit discovery and
-OAuth exchanges. Configuration owns scoped OAuth records, stable login identity
-and refresh under the existing auth-file lock; ordinary token rotation preserves
-that identity, while a new login clears prior connection approval. The owner
-refreshes expired tokens under that lock before authorized operations, without
-reconnecting or changing the catalog/grant identity. Transport callbacks only
-read the current header; final dispatch checks remain local and reject any
-subsequent expiry. Application management
-owns explicit browser login, its loopback callback listener and transient UI;
-login/logout publish saved state through the existing settings reservation.
-Credential rotation never replays an MCP operation. See [current scope](mcp.md).
+Optional capabilities retain their own owners:
 
-Settings use the same application coordinator. `config/settings_schema.go` and
-`sources.go` own typed preferences and frozen precedence layers; the locked
-writer changes only requested user fields. `app/settings_lifecycle.go` reserves
-configuration, run preparation and Session operations, while existing provider,
-auth, browser and Web modules retain their business behavior. Model selection
-operations own validation, persistence and runtime publication under the caller's
-reservation. Settings, slash adapters and account login call those operations
-directly; slash adapters only parse input and format command output. Interaction
-snapshots carry public descriptions to the TUI's independent modal editor.
-Preference reads do not probe the desktop; the app exposes a separate bounded
-status read, and the TUI owns its cancellation and updates only the status row
-after checking the panel generation and settings revision.
-`app/usage.go` derives a non-consuming Session information view. There is no
-settings service, global registry, alternate transcript or file watcher.
+- Web: app selects a source through the pure `web` resolver and constructs its
+  backend. Provider wire data stops in the adapter; results use `evidence`.
+  See [Web](web.md).
+- MCP: app owns authorized reusable connections; each Run borrows them through
+  a frozen catalog. The Loop loads complete schemas at tool-pair boundaries.
+  Guard validates bound identities before dispatch; Session retains bounded
+  results for local readback. See [MCP](mcp.md).
+- Computer Use: app injects a managed MCP entry; `desktop` owns pinned native
+  admission, sessions and frozen control/image capabilities. Cua owns targeting,
+  tokens, capture and input semantics. The model uses native schemas/results and
+  explicit observations; AICE has no second desktop action loop.
+  See [Computer Use](desktop.md#managed-mcp-boundary).
+- Browser: app owns process-scoped connection and helper lifecycle; the Loop
+  remains unaware of browser implementation. See [Browser](browser.md).
 
 ## Package map
 
@@ -200,24 +88,24 @@ settings service, global registry, alternate transcript or file watcher.
 | `internal/interaction` | Frontend-neutral active-run, event, command, state, question, and input-mailbox contracts |
 | `internal/agent` | Agent Loop, retries, tool lifecycle, Agent events |
 | `internal/media` | Shared image decoding, conversion, validation, resizing, original retention and coordinate descriptions |
-| `internal/mcpclient` | One explicit stdio/Streamable HTTP connection, bounded discovery and raw results, invalidation, cancellation and owned cleanup; SDK types stop here; app owns lazy connection authorization and lifecycle ([status](mcp.md)) |
-| `internal/mcpauth` | Bounded HTTP OAuth discovery, client registration, PKCE code exchange and refresh; no browser, persistence, Guard decision or MCP replay; app owns browser login, pre-operation refresh and persistence coordination ([scope](mcp.md#oauth-protocol-support)) |
+| `internal/mcpclient` | One stdio/HTTP transport: bounded discovery/results, invalidation, cancellation and cleanup; SDK boundary |
+| `internal/mcpauth` | OAuth discovery, registration, PKCE exchange and refresh protocol; app/config own user flow and persistence |
 | `internal/llm` | Canonical messages, models, usage, streams, context estimates |
 | `internal/api/{anthropic,openairesponses,openaicompletions}` | Protocol translation around official SDKs |
 | `internal/api/streamcore` | Protocol-neutral streaming mechanics shared by adapters |
-| `internal/provider/{deepseek,opencode,kimi,moonshot,zhipu,openai,anthropic,claudesubscription,codex,aihubmix,custom}` | Provider catalogs, credentials, defaults, compatibility; `zhipu` owns separate API Platform and Coding Plan presets; `codex` owns ChatGPT OAuth; `claudesubscription` owns Claude Pro/Max OAuth; `custom` accepts arbitrary model IDs |
-| `internal/tool` | `read`, `write`, `edit`, `bash`, `grep`, `find`, `ls`, `skill`, `request_user_input` (interactive-only), `web_search`, `web_fetch`; generic MCP mapping, run-bound `tool_search` / `mcp_resource_list` / `mcp_server_info`, service-bound resource readers and local `tool_result_read` |
+| `internal/provider/*` | Model catalogs, credentials, defaults and provider compatibility; [configuration](configuration.md) |
+| `internal/tool` | Host tools, web tools, questions, Skills and MCP discovery/result adapters; [execution guide](execution-sessions.md#tool-execution-boundary) |
 | `internal/evidence` | Leaf source/evidence contract retained as tool-result metadata; deterministic source IDs, validation, cloning |
 | `internal/web` | Provider-neutral search/fetch requests and results, classified errors, domain policy, pure source resolver, deterministic model rendering |
 | `internal/web/exa` | Exa Search REST adapter: wire types, bounded HTTP, error classification, normalization into evidence |
 | `internal/web/httpfetch` | Page fetcher: URL policy, IP-literal checks, standard-transport proxy/DNS/dialing, bounded redirects and bodies, HTML-to-Markdown extraction |
-| `internal/guard` | Intrinsic execution gate: file policies, permission gate, pathAccess mode (`allow`/`ask`/`block`), web network scopes, identity-bound MCP policy/Session grants, check Decision (`allow`/`ask`/`deny`) |
+| `internal/guard` | File/command/network policies, identity-bound MCP permissions, transient grants and allow/ask/deny decisions |
 | `internal/session` | Versioned JSONL replay, tree navigation, compaction context |
 | `internal/trust` | Protected-resource discovery and global Trust decisions |
 | `internal/skill` | Agent Skill discovery, SKILL.md parse, source layering, embedded builtins |
 | `internal/config` | Instance-local Viper precedence, effective snapshots, and locked atomic preference/credential persistence |
 | `internal/deps` | Verified ripgrep, Windows Git Bash, pinned agent-browser and Cua provisioning, including upstream browser skill resources |
-| `internal/desktop` | Pinned Cua admission over `internal/mcpclient`, shared-service admission, Linux owned runtime and Windows read-only inspection; run sessions, serialized calls, frozen control-mode/image capabilities and setup capture validation; Cua owns model-path targeting and input semantics; app binds each main run, native acceptance remains incomplete ([status](desktop.md)) |
+| `internal/desktop` | Pinned Cua admission, shared/owned runtime lifecycle, Run sessions, serialized calls, mode/image limits and setup validation; [platform scope](desktop.md) |
 | `internal/browser` | Process-owned browser names, environment, connection and bounded cleanup; app owns wiring, Loop remains unaware |
 | `internal/update` | Checksum-validated GitHub release updates |
 | `internal/hostpath` | Host path membership, tilde expansion, slash-normalized display |
@@ -228,160 +116,70 @@ such as `core`, `types`, `services`, `utils`, or `helpers`.
 
 ## Dependency and ownership rules
 
-- `cmd/aice` delegates assembly and execution to `internal/app`.
-- `internal/cli` calls application capabilities through small interfaces.
-- `internal/agent` depends on AICE contracts, primarily `internal/llm`; it
-  never constructs tools or imports UI/provider/`guard` packages. It defines
-  the `Guard` interface and consults it before each tool execution;
-  `NewLoop` requires a non-nil `Guard` when tools are non-empty. The
-  concrete `internal/guard` implementation is injected from `internal/app`.
-  An optional per-Run catalog supplies immutable executable versions. The Loop
-  owns pending typed selections, complete-schema budgets and per-request tool
-  snapshots; the catalog owns discovery and version invalidation. Catalog Runs
-  also require a Guard. See [run-local selection](contracts.md#run-local-tool-selection).
-- `internal/app` owns interactive run lifecycle, translates Agent events for
-  frontends, persists each accepted source message before dependent effects, and
-  wires the execution gate into the loop. See [Tool execution and
-  Sessions](execution-sessions.md#tool-execution-boundary).
-- Frontends depend on the application-owned active-run capability. They do not
-  decide when an Agent run stops, promote input, or restart a run for follow-up.
-- `internal/llm` defines thinking-map and clamping semantics without embedding
-  provider or model catalogs.
-- Provider packages select models and protocol adapters and own per-model
-  thinking maps and format metadata. They implement `llm.Streamer` and must
-  not import `internal/agent`. API packages alone translate those canonical
-  values into official SDK or wire types; `streamcore` contains no
-  model-specific reasoning policy.
-- Interfaces are defined by consumers. Constructors normally return concrete
-  types; adapter factories may return the consumer capability they select.
-- Codex and Claude subscription login are application commands using the provider's
-  OAuth client, shared by terminal auth commands and the TUI’s cancellable
-  account-login flow. The app opens the browser; transient interaction events
-  carry progress and manual authorization input. `internal/config` owns AICE's separate per-provider OAuth credential files,
-  atomic replacement, and a bounded cross-process lock. Each model request
-  rereads credentials under that lock and refreshes near expiry before sending.
-  The Responses adapter owns Codex wire differences and encrypted reasoning
-  replay. The Messages adapter owns Claude subscription compatibility headers,
-  the required identity preamble, and reversible tool-name mapping. These apply
-  only to explicitly supplied OAuth tokens; API-key clients retain AICE identity.
-  No external harness, subprocess agent, or additional runtime is used.
-- Do not use mutable global service registries or `init()` wiring. Fixed,
-  package-private dispatch tables are ordinary implementation data, not an
-  extension mechanism; keep dependency construction in `internal/app`. Do not
-  add service locators or DI frameworks.
-- Use standard library packages when sufficient. A new direct dependency
-  requires an explanation, maintenance/license review, and user approval.
-  The guard's bash AST parsing uses `mvdan.cc/sh/v3` (MIT) because dangerous
-  command detection needs a real shell syntax tree; the standard library has
-  no equivalent, and the hand-written tokenizer is only a fallback when AST
-  parsing fails. Skill frontmatter parsing uses `gopkg.in/yaml.v3` (MIT,
-  user-approved) because Agent Skills `SKILL.md` files use YAML frontmatter
-  and interoperability requires YAML parsing; the standard library has no
-  YAML package.
-  Read path normalization reuses the already-pinned `golang.org/x/text`
-  module's `unicode/norm` package (Go Authors, BSD-3-Clause) as a direct import.
-  The standard library has no Unicode normalization package; maintained Unicode
-  tables replace a partial handwritten decomposition map. Candidate selection remains in `internal/tool`.
-  Image decoding uses `golang.org/x/image` (Go-maintained supplementary image
-  libraries, BSD-3-Clause, user-approved) for BMP and WebP; the standard library
-  has no decoders for those formats. PNG/JPEG/GIF use the standard library.
-  Conversion and resource limits stay in `internal/media`; no host converter
-  or additional runtime is required.
-- Web tools use `golang.org/x/net` (Go Authors, BSD-3-Clause), a module that
-  was already pinned as an indirect dependency, as a direct import for
-  `html` and `html/charset` (DOM parsing, charset detection) and `idna`
-  (hostname normalization). The standard library has no HTML parser or IDNA
-  mapping, and regex tag stripping is not acceptable for untrusted pages. No
-  readability, HTML-to-Markdown or search-provider SDK is used; the Exa
-  adapter is hand-written over `net/http`.
-- Markdown code-block recognition uses the already-pinned Goldmark parser
-  (MIT, user-approved direct dependency), also used by Glamour. The standard
-  library has no Markdown parser; reusing this maintained parser preserves
-  nested containers and streaming fence semantics without a second handwritten
-  parser. Glamour still owns prose formatting and syntax highlighting.
-- Imported code must record its repository and commit and preserve required
-  license notices. AICE remains Apache-2.0. The agent-browser skill-data and
-  license are vendored under `internal/deps/agentbrowser`; its `VENDOR.md` records
-  the pinned upstream commit and release provenance.
+- `cmd/aice` delegates assembly to `app`; CLI and TUI use application capabilities.
+  Dependencies are constructor-wired, with no mutable service registry, service
+  locator, `init()` wiring or DI framework. Fixed private dispatch tables are data.
+- Interfaces belong to consumers. Constructors normally return concrete types;
+  factories may return the consumer capability they select. Create a package only
+  for a distinct responsibility, not to make a diagram symmetric.
+- `agent` does not import UI, concrete tools, Session storage, provider SDKs or
+  `guard`. Non-empty tools and dynamic catalogs require an injected Guard.
+  The recorder persists accepted source messages before dependent effects.
+- `llm` owns canonical messages, usage and thinking semantics. Providers own model
+  catalogs, capabilities and credentials; `api` owns SDK/wire translation.
+  Provider packages do not import `agent`. App selects Session routing identity;
+  providers encode it on the transport.
+- Sessions are the sole durable transcript. Context, history search and display
+  are derived views. Do not merge states with different publication or invalidation
+  boundaries merely because their fields look similar.
+- Host tools inherit process privileges. Guard checks calls; Trust gates project
+  inputs. Neither is an OS sandbox. See [execution boundary](execution-sessions.md#tool-execution-boundary)
+  and [Project Trust](project-trust.md).
+- Prefer the standard library. New direct dependencies require a concrete reason,
+  maintenance/license review and explicit user approval. Versions live in
+  [go.mod](../go.mod), not duplicated catalogs in these guides.
+
+Selected non-standard dependencies and their reason:
+
+| Dependency | Reason / license |
+| --- | --- |
+| `mvdan.cc/sh/v3` | Bash AST for dangerous-command checks; MIT |
+| `gopkg.in/yaml.v3` | Agent Skill frontmatter; MIT |
+| `golang.org/x/text` | Unicode normalization for read-path matching; BSD-3-Clause |
+| `golang.org/x/image` | BMP/WebP decoding; BSD-3-Clause |
+| `golang.org/x/net` | HTML parsing, charset and IDNA; BSD-3-Clause |
+| Goldmark | Markdown structure, including nested/streaming code blocks; MIT |
+| Go MCP SDK | Protocol transport behind `mcpclient`; Apache-2.0/MIT transition, see Cua provenance below |
+
+Imported resources retain source/commit and license notices. Helper provenance
+is owned by [agent-browser VENDOR.md](../internal/deps/agentbrowser/VENDOR.md)
+and [Cua VENDOR.md](../internal/deps/cua/VENDOR.md). AICE remains Apache-2.0.
 
 ## Skills
 
-The builtin `browser` skill follows the same catalog rules below. Its upstream
-command references are embedded separately by `internal/deps`, extracted into
-the versioned helper skill directory, and read through `agent-browser skills`.
-See [Browser automation](browser.md); they are not separately scanned AICE skills.
+`skill` scans and parses built-in, user and trusted-project resources through
+one path. App supplies roots, resolves same-name priority (project > user >
+builtin), and injects only names/descriptions into the initial prompt.
+The `skill` tool loads the parsed body on demand; explicit slash selection is
+Guard-checked by app before input admission and retained in the user message.
+TUI never reads Skill files. Host Skill directories receive read-only resource
+access through Guard, without bypassing sensitive-file rules.
 
-`internal/skill` discovers and parses Agent Skills. A skill is a directory
-with `SKILL.md` (YAML frontmatter plus Markdown). All sources are the same
-resource on one scan/parse/validation path; `Source` is only a metadata
-label for display and same-name conflict ordering.
-
-- Layout (vendor-neutral, matching `npx skills add`): project
-  `<workspace>/.agents/skills/<name>/SKILL.md` and user
-  `~/.agents/skills/<name>/SKILL.md`. Scan is one level of children under a
-  caller-supplied root (`fs.FS`); the package does not choose roots.
-- Sources: `builtin` (go:embed in `internal/skill`), `user`, `project`.
-  Same-name priority is project > user > builtin. Builtin skills get no
-  parse exemption, auto-activation, or display preference.
-- Project `.agents/skills/` is Trust-gated (`trust.SkillsDir`). User-global
-  skills are not. See [Protected project
-  resources](project-trust.md#protected-project-resources).
-- Frontmatter is parsed with `gopkg.in/yaml.v3`. Name and description are
-  required; other spec fields are tolerated and ignored. Validation is
-  lenient: format issues warn and still load; missing name/description,
-  missing frontmatter, or unparseable YAML skip that skill with an error
-  diagnostic. Files must be regular, valid UTF-8, and at most 256 KiB;
-  invalid or oversized files are skipped.
-- Ship one built-in `skill` tool that returns the already-parsed `SKILL.md`
-  body on demand. `internal/tool` does not import `internal/skill`; `internal/app`
-  maps catalog entries into `tool.SkillEntry`.
-- At startup inject only a `name` + `description` list, not skill bodies.
-- The app projects the merged catalog into slash suggestions carrying exact
-  catalog names. The TUI binds `[skill:name]` chips to text ranges and submits
-  names separately from prompt text. App preflight resolves those names through
-  the Guard and existing `skill` loader before accepting an initial input or
-  delivery. Full instructions become part of the durable user-message snapshot;
-  the Loop and Session schema do not change. The frontend never reads Skill
-  files or executes tools. Model-driven activation remains available for skills
-  not explicitly attached. See [explicit selection](configuration.md#agent-skills).
-- Skill directories with a host path (`Dir` non-empty) are passed to
-  `guard.Config.ReadOnlyRoots` so `read`/`grep`/`find`/`ls` can load bundled
-  resources without path-access prompts. `write`/`edit` are not granted.
-  Product behavior of the gate is in [Tool execution and
-  Sessions](execution-sessions.md#tool-execution-boundary). `internal/app`
-  wires those directories at startup. Assembly order is trust decision, skill
-  discovery, tool construction, prompt assembly, then guard.
-
-Do not: hot-reload skills, add a new message `Role`, or insert Loop
-middleware.
+Formats, limits and user paths live in [Agent Skills](configuration.md#agent-skills).
+Versioned browser/Cua reference material belongs to dependency provisioning;
+it is not a second independently scanned catalog. No hot reload or Loop
+middleware is implemented.
 
 ## Planned extensions and restraint
 
-These capabilities are not implemented. Their status records product scope;
-implementation requires a concrete use case and resolution of the open decisions.
-Use existing boundaries and update the owning guide when a capability ships.
+Plan mode, subagents and memory remain unimplemented product scope. `/btw` is a
+tool-free side conversation, not a subagent executor. Model-native web search is
+only a reserved priority entry; Exa is the only production search adapter and
+there is no execution-error failover. See [Web](web.md).
 
-| Capability | Status | Design boundary |
-| --- | --- | --- |
-| Plan mode | Required, not implemented | Enforce allowed actions in Guard; app owns mode transitions and UI commands |
-| Subagents | Required, not implemented | Reuse the Agent Loop through an app-wired tool with explicit child ownership |
-| Memory | Required product capability, strategy undecided; optional use | Project context remains primary; retention, scope, and retrieval need a concrete design |
-| Model-native web search | Planned; `native` priority entry reserved, not implemented | Capability must be confirmed per provider, endpoint, auth mode, API and model; request construction enables it and removes local `web_search` from that request; server-side activity maps to the evidence contract, provider continuation state stays in the API adapter |
-| Second independent search service | Planned | New adapter, descriptor and factory entry only; tool schema, Loop and TUI must not change |
-| Search failover after execution errors | Not implemented | Distinct from static "next usable source" selection; needs bounds on paid retries and safe continuation |
-| MCP | Generic client, lazy application lifecycle, discovery and run-local selection implemented; interactive management, loaded counts, resources and result readback implemented; OAuth login/logout and pre-operation refresh implemented; CUA uses managed discovery, settings and the pinned Skill; remaining platform and service limitations are documented ([current scope](mcp.md), [approved plan](plans/AICE_MCP_Design.md)) | Bind generic discovery, selection and execution through existing Tool, Guard and Session boundaries; migrate CUA as a consumer |
-
-No agent framework, plugin bus, LSP, RPC/ACP layer, Node bridge, database,
-second transcript store, or additional sandbox manager is needed by default.
-A concrete requirement must explain why existing boundaries are insufficient
-before adding one. The in-process Guard and external host isolation remain
-separate concerns.
-
-Plan mode must enforce restrictions in Guard and define permitted actions, exit
-approval, and transitions relative to an active run's frozen prompt. Subagents
-need explicit child cancellation, context, permission inheritance, usage and
-failure handling; concurrent children require a review of shared Guard/tool
-state. The main Session remains the transcript, and `/btw` remains tool-free.
-Memory needs user-controlled scope, retention and retrieval, with Trust for
-project-owned loading. None requires a new Loop primitive or transcript store
-by default.
+A concrete requirement must justify extensions to Loop semantics, message/Session
+types, permissions or state ownership. Use existing boundaries first. Plan mode
+would need Guard enforcement; subagents would need explicit child cancellation,
+permission and usage ownership; memory would need retention and retrieval rules.
+No additional framework, plugin bus, public SDK, GUI/Web frontend, RPC/ACP layer,
+second transcript store or sandbox manager is implied by the current design.

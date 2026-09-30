@@ -8,8 +8,8 @@ English | [简体中文](./README-zh.md)
 
 [![Go](https://img.shields.io/github/go-mod/go-version/ch1lam/aice-cli)](https://go.dev/) [![License](https://img.shields.io/github/license/ch1lam/aice-cli)](./LICENSE) [![Build](https://img.shields.io/github/actions/workflow/status/ch1lam/aice-cli/ci.yml?branch=main&label=build)](https://github.com/ch1lam/aice-cli/actions/workflows/ci.yml) [![Release](https://img.shields.io/github/v/release/ch1lam/aice-cli)](https://github.com/ch1lam/aice-cli/releases/latest)
 
-A small, batteries-included coding agent: one Go binary, an explicit Agent
-Loop and tool set, and append-only Session history.
+A small coding agent: one Go binary, an explicit Agent Loop and tool set,
+and append-only Session history.
 
 ## Install
 
@@ -25,125 +25,24 @@ Windows PowerShell:
 iwr -useb https://raw.githubusercontent.com/ch1lam/aice-cli/main/scripts/install.ps1 | iex
 ```
 
-No Go toolchain is required. See [Installation and
-updates](./docs/installation.md) for supported platforms, manual downloads,
-runtime helpers, source builds, and `aice update`.
+No Go toolchain is required. See [Installation and updates](./docs/installation.md)
+for supported platforms, helpers, manual downloads, and source builds.
 
 ## Quickstart
-
-Use `/browser` to toggle a visible browser window, connect to a running browser,
-or choose its working tab; see
-[Browser automation](./docs/browser.md) for setup.
-
-Use `/web` to add an Exa search account, order search sources, and switch
-`web_fetch`. `web_search` works with any tool-calling model once a service is
-configured; `web_fetch` reads public pages directly. Enabled web tools access
-the network automatically without an extra confirmation. See [Web search and fetch](./docs/web.md).
-
-Use `aice mcp`, `/mcp` or Settings to add stdio/HTTP services, review and approve connection
-fingerprints, set scoped credentials, and test discovery. Models load tool
-schemas through `tool_search` as needed; tool execution still requires Guard
-approval. Settings can revoke a connection during a run; other changes apply
-while idle. OAuth supports browser login, logout and refresh before authorized
-operations; failed operations are never replayed automatically. See
-[MCP setup and commands](./docs/mcp.md#management-cli).
-
-Start an interactive Session inside a project:
 
 ```sh
 cd /path/to/project
 aice --workspace .
 ```
 
-Configuration follows runtime selection → flags → environment → trusted project
-settings → user settings → defaults. Interactive selections save immediately;
-other running instances keep their loaded configuration. See
-[configuration and persistence](./docs/configuration.md#settings-and-precedence).
+Run `/login`, choose account or API-key authentication, and select a provider.
+Use `/model` to select a model, `/settings` to edit preferences, `/help` for
+commands, and `?` for keyboard shortcuts. Provider setup and configuration
+precedence are in [Configuration](./docs/configuration.md).
 
-Open `/settings` to edit models, accounts, tools, run limits,
-Trust preferences and startup options. `/context`, `/usage` and `/session` open
-context occupancy, recorded Session usage and Session information. Both windows
-keep the background draft and create no Session just by opening.
-See [Settings and Usage](./docs/configuration.md#settings-window).
-
-Computer Use integration is in progress. `/desktop` opens setup and status on
-macOS and Linux X11; setup is explicit and desktop access is disabled by default.
-Task window contents may be sent to the model, and actions can affect applications
-outside the project. Linux setup asks you to choose a window for a local capture
-test. See [Computer Use](./docs/desktop.md) for verified scope and remaining
-platform limitations, including unavailable Wayland/XWayland and Windows action routes.
-Windows read-only status inspection is implemented but still needs native verification.
-The pinned macOS Driver refuses background dragging; foreground dragging has
-not passed repeatability checks. Native tests also found transient focus loss
-on pixel double-click and duplicate events on pixel right-click. Status details
-show these limits; a successful capture does not establish input support.
-The pinned Linux Driver also has an unresolved Unicode insertion failure;
-GTK keyboard, pixel scroll and drag need independent input routes unavailable
-in the test fixture.
-Linux application launch also failed background coexistence by taking foreground
-focus in the native fixture, despite the Driver reporting an inactive app.
-
-Runs have no round limit by default. Optionally set `--max-turns 50`,
-`--run-token-budget 200000`, and `--run-timeout 30m`. By default, 8 consecutive identical tool rounds stop
-the run; `--run-no-progress-limit 0` disables this check. See
-[run limits](./docs/configuration.md#run-limits).
-
-On first launch, run `/login`, choose account or API key authentication, then
-select a provider and complete its login flow. Run `/help` for
-commands or `?` for keyboard shortcuts. While AICE is working, Enter steers
-the active response and Ctrl+Enter queues a follow-up interaction in the same
-Agent run. Press `Esc` to cancel the response. `Ctrl+C` clears the editor;
-press it again consecutively to exit. Use `/btw [question]` to start a new
-tool-free side thread that does not interrupt or enter the main Session. Bare `/btw` opens the thread
-chooser, or a blank composer when no side threads exist.
-
-Hover over process, thinking, call-group, or tool headings to highlight them;
-click to expand or collapse. Drag text to copy it. `Ctrl+O` toggles all main
-process details. See [transcript folding](./docs/configuration.md#interactive-input-delivery).
-
-Type `/` at a word boundary anywhere in the main draft to search commands and
-Skills. Selecting a Skill inserts a green `[skill:name]` chip; sending loads its
-full instructions into context. Selecting an inline command opens or runs it,
-then restores the surrounding draft and attachments on completion or cancellation.
-`/skills` lists the catalog; see [Agent Skills](./docs/configuration.md#agent-skills).
-
-Paste a screenshot with `Ctrl+V` or `Alt+V` when using a vision model. Images appear as inline
-placeholders; delete them with Backspace/Delete, like long text pastes.
-Attach files or directories with `@src/main.go` or `@"images/screen shot.png"`.
-Fuzzy search supports Up/Down to select, Right to continue into a path, and
-Tab/Enter to confirm the reference without sending the draft. Confirmed paths
-appear without quotes, with a gray `@` and gold path, and delete as one unit;
-typed references remain editable character by character. `read` can also
-inspect images and recover saved originals. The same references work in `--print`.
-See [file references](./docs/configuration.md#file-references) and [clipboard input](./docs/configuration.md#clipboard-images) for platform support and limits.
-
-For a ChatGPT/Codex subscription, use `/login` → `Sign in with an account` →
-`OpenAI Codex`, then choose browser or device code login. Browser login opens
-its authorization page and accepts a callback or pasted redirect URL; Escape
-or Ctrl+C cancels. The terminal alternative is `aice auth login --provider
-openai-codex` (add `--device-code` for headless login).
-See [Codex subscription setup](./docs/configuration.md#codex-subscription-chatgpt-oauth).
-
-For Claude API access, choose `/login` → `Sign in with an API key` →
-`Anthropic (Claude API)`, or set `ANTHROPIC_API_KEY` and run
-`aice --provider anthropic`. For Claude Pro/Max, choose `/login` →
-`Sign in with an account` → `Claude Pro/Max`, or run
-`aice auth login --provider anthropic-subscription`. This uses native OAuth
-following Pi, with no Claude Code executable required. See
-[Claude API setup](./docs/configuration.md#anthropic-claude-api) and
-[subscription setup and compatibility limits](./docs/configuration.md#claude-subscription-promax-oauth).
-
-For Kimi Coding Plan, select `/login` → `Sign in with an API key` →
-`Kimi Coding Plan`. See [Kimi setup](./docs/configuration.md#kimi-coding-plan).
-For the separately billed China API platform, choose `Moonshot API` and enter
-your platform key; its endpoint is built in. See [Moonshot setup](./docs/configuration.md#moonshot-api-platform).
-
-For Zhipu, choose `Zhipu API` or `Zhipu Coding Plan` in the API-key login menu. See
-[Zhipu setup](./docs/configuration.md#zhipu-api-platform).
-
-For AiHubMix, select it in the API-key login menu or run
-`AIHUBMIX_API_KEY=... aice --provider aihubmix`. See
-[AiHubMix setup](./docs/configuration.md#aihubmix) for models and endpoint overrides.
+Attach a file with `@src/main.go`; paste an image with `Ctrl+V` or `Alt+V` when
+using a vision model. While AICE works, Enter steers the response, Ctrl+Enter
+queues a follow-up, and Esc cancels. `/btw` opens a tool-free side conversation.
 
 Run one non-interactive request:
 
@@ -151,84 +50,46 @@ Run one non-interactive request:
 aice --workspace . --print "Explain the architecture of this repository."
 ```
 
-Use `--output-format json` for a machine-readable NDJSON event stream; default
-text mode keeps answer text on stdout and reports progress on stderr. See
-[Configuration and commands](./docs/configuration.md#command-line-options).
-
-`--print` is stateless unless `--session` is supplied. Interactive runs create
-a Session automatically under `<workspace>/.aice/sessions/`. Use `/history` or
-Ctrl+R to search, preview, and resume this project's sessions. Restoring shows
-the original conversation and continues its active branch. Recent rows include
-a content excerpt, grouped by Today, Yesterday and Earlier. Older rows load
-while the list remains usable; lightweight previews show the last question and answer.
-F2 renames the selected session by appending to its original JSONL; clearing the
-title restores the first question. Existing sessions need no migration.
-F4 reads a search hit without switching branches; T lists questions, End returns
-to the latest active conversation, and Ctrl+T opens the current question directory.
-Long answers format their Markdown sections as you scroll. Long code defaults to
-short previews; click its heading or press C while reading to expand. Copy keeps
-the full code, and search opens hidden code matches.
-You can also resume an explicit file at startup:
-
-```sh
-aice --workspace . --session .aice/sessions/<session-id>.jsonl
-```
+`--output-format json` emits NDJSON events. Print mode is stateless unless
+`--session` is supplied. Interactive history is stored under
+`<workspace>/.aice/sessions/`; use `/history` or Ctrl+R to find and resume it.
+See [Execution and Sessions](./docs/execution-sessions.md).
 
 ## Included
 
-| Area | Current implementation |
+| Area | Entry point and scope |
 | --- | --- |
-| Interface | Bubble Tea TUI with [context usage percentage](./docs/configuration.md#context-window-and-status-bar) per provider/model, and one-shot `--print` mode |
-| Providers | DeepSeek V4, OpenCode Go's built-in catalog, Kimi Coding Plan (Responses API), Moonshot API Platform, Zhipu API Platform and Coding Plan, OpenAI API (GPT-6 Astra and GPT-5.6), Claude API and Pro/Max subscription, Codex/ChatGPT subscription, AiHubMix, and Custom (OpenAI-compatible) |
-| Protocols | Anthropic Messages, OpenAI Responses, OpenAI Chat Completions |
-| Tools | `read`, `write`, `edit`, `bash`, `grep`, `find`, `ls`, `skill`, `web_search`, `web_fetch`, `tool_result_read` |
-| MCP | stdio/Streamable HTTP, lazy discovery and `tool_search`, scoped connection/tool permission, explicit resource listing/reading, ordered structured results with bounded model views and local readback, CLI and `/mcp`/Settings management; [scope and limits](./docs/mcp.md) |
-| Web | Exa Search API instances with an ordered source list (`native` reserved, not implemented), hardened direct page fetching, recorded sources in Session history, `/web` settings; see [Web search and fetch](./docs/web.md) |
-| Browser | Native agent-browser through `bash`/`read`, builtin browser skill, `/browser` window visibility, connection and tab controls; see [Browser automation](./docs/browser.md) |
-| Guard | path, dangerous-command and network-scope checks with interactive approvals; see [Tool execution and Sessions](./docs/execution-sessions.md#tool-execution-boundary) |
-| Sessions | project history picker with search and preview, transcript recovery, branches, checkout/backtracking, automatic and manual compaction |
-| Side questions | multiple ephemeral, tool-free `/btw` threads outside Session history |
-| Agent Skills | open-spec `SKILL.md` directories from builtin, `~/.agents/skills`, and project `.agents/skills`; see [Agent Skills](./docs/configuration.md#agent-skills) |
-| Input | text, `@file` attachments, and [clipboard images](./docs/configuration.md#clipboard-images); shared image resizing and original recovery |
+| Models | DeepSeek, OpenCode Go, Kimi Coding Plan, Moonshot API, Zhipu API/Coding Plan, OpenAI, Claude API/Pro/Max, Codex/ChatGPT, AiHubMix, and custom OpenAI-compatible endpoints; [setup](./docs/configuration.md) |
+| Coding | File reading/editing, Bash, ripgrep, image input, and `SKILL.md` instructions |
+| Web | `/web`: configure Exa search and public-page fetching; [guide](./docs/web.md) |
+| Browser | `/browser`: window visibility, external connections, and tab selection through the native agent-browser helper; [guide](./docs/browser.md) |
+| MCP | `aice mcp`, `/mcp`, or Settings: stdio/HTTP services, OAuth, on-demand tool discovery, and resources; [guide](./docs/mcp.md) |
+| Computer Use | `/desktop`: explicit setup and status, disabled by default; [platform support and limits](./docs/desktop.md) |
+| Sessions | Search, resume, branches, backtracking, and automatic/manual compaction; [guide](./docs/execution-sessions.md) |
 
-Tools inherit the permissions of the AICE process. Every call is checked by
-the execution gate; `--print` treats `ask` as `deny` unless `--yolo`. `--workspace` sets the
-working directory and path-access boundary; it is not a sandbox. Project Trust
-gates project prompt files and project `.agents/skills`; see [Project Trust and
-prompts](./docs/project-trust.md). For stronger isolation use an external
-container/VM.
-
-Browser automation requires installed Chrome/Chromium/Brave; AICE does not
-automatically download a browser. Guard does not isolate actions inside websites.
-
-## Documentation
-
-Detailed guides:
-
-- [Installation and updates](./docs/installation.md)
-- [Configuration and commands](./docs/configuration.md)
-- [Web search and fetch](./docs/web.md)
-- [MCP services and commands](./docs/mcp.md)
-- [Project Trust and prompts](./docs/project-trust.md)
-- [Tool execution and Sessions](./docs/execution-sessions.md)
-- [Architecture](./docs/architecture.md), [runtime contracts](./docs/contracts.md), and [maintenance / known discrepancies](./docs/maintenance.md)
+Tools inherit AICE's process permissions and pass through Guard. `--workspace`
+is a working directory and path-access boundary, not a sandbox. Print mode fails
+closed on approval requests unless `--yolo`; explicit denials still apply.
+Enabled web tools access the network without extra confirmation. Browser actions
+inside a page are not isolated by Guard. See [execution permissions](./docs/execution-sessions.md#tool-execution-boundary)
+and [Project Trust](./docs/project-trust.md). Use a container/VM when host isolation
+is required.
 
 ## Development
 
-Use the Go version in [`go.mod`](./go.mod), and preserve the repository rules
-in [`AGENTS.md`](./AGENTS.md).
+Use the Go version in [go.mod](./go.mod) and follow [AGENTS.md](./AGENTS.md).
+Start with [Architecture](./docs/architecture.md); [Maintenance](./docs/maintenance.md)
+indexes code and known discrepancies. Required checks are in
+[Collaboration](./docs/collaboration.md).
 
 ```sh
 go test ./...
 go vet ./...
 ```
 
-## Status
-
-AICE is under active development. Session and configuration formats may still
-change before a stable release. The core is provider-neutral, while the
-built-in provider set is currently DeepSeek, OpenCode Go, Kimi Coding Plan, Moonshot API, Zhipu API/Coding Plan, OpenAI, Anthropic API and subscription, Codex, AiHubMix, and Custom.
+AICE is under active development; Session and configuration formats may change
+before a stable release.
 
 ## License
 
-Apache License 2.0. See [`LICENSE`](./LICENSE).
+Apache License 2.0. See [LICENSE](./LICENSE).
