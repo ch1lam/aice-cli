@@ -541,6 +541,23 @@ and absent-service checks, and read-only native same-Run reconnect on
 Screen Recording grants. Linux arm64 private installation and reuse passed in
 a disposable container. These checks do not establish Calendar task completion.
 
+A subsequent 2026-09-30 visual diagnostic on 0.30.4 exercised four synthetic
+AppKit clicks through the managed MCP boundary: element-token and screenshot
+coordinates, each on the primary Retina display and the left secondary display.
+All four independently recorded exactly one commit and preserved the foreground
+sentinel with zero focus losses. Coordinate requests hit-tested the button and
+also used AX; this does not establish raw pointer-event delivery. Independent
+ScreenCaptureKit captures of only the fixture and Driver overlay showed the
+primary-display cursor at the button location without an obvious offset, but
+no cursor on either secondary-display action. The overlay remained at desktop
+points `(0, 0, 1512, 982)` while the secondary button was at `(-1740, 691)`.
+This reproduces missing multi-display feedback, not the earlier reported visible
+offset or general Calendar behavior. The temporary diagnostic bypassed the
+existing lifecycle test's session-label assertion, which could not find its
+session in the operator listing; it does not establish renderer lifecycle
+acceptance. That assertion needs investigation before the stock gate can pass
+on 0.30.4.
+
 The current runtime pins Driver **0.30.4**. The native results below were
 recorded on **0.29.1** unless a newer version is explicitly named; they do not
 constitute native acceptance of the upgraded Driver. The current thin MCP boundary
@@ -614,6 +631,16 @@ the combined manual run failed its foreground sentinel. These establish neither
 desktop compositing/animation nor physical-pointer independence. Two later focus
 diagnostic runs overlapped operator input and cannot attribute focus changes to
 Cua. Tests retain independent state assertions even when a focus check fails.
+
+The pinned macOS renderer has a concrete multi-display limitation: its overlay
+window and pixel buffer cover only `NSScreen.mainScreen` at startup, and painting
+uses no desktop-origin offset. Its visibility predicate also excludes sufficiently
+negative coordinates. See the [0.30.4 renderer source](https://github.com/trycua/cua/blob/bf6c76786d938070f4ecf1e44004752f69f518b8/libs/cua-driver/rust/crates/platform-macos/src/cursor/overlay.rs).
+An application on a display to the left of the primary screen can therefore
+receive background input without a visible agent cursor. AICE neither moves
+user windows nor changes input coordinates to compensate. Fixing this requires
+a reviewed Driver change and native visual verification on secondary displays;
+passing the existing cursor lifecycle gate does not cover it.
 
 The cancellation gates observed a committed click while its response remained
 pending, preserved an unknown result and verified no replay after cancellation.

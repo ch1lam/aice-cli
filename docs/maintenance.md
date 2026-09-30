@@ -231,6 +231,11 @@ Unresolved platform issues remain in the owning guide:
 - [macOS input](desktop.md#macos-input-limitations): double-click focus loss,
   duplicate right-click events and incomplete foreground-drag repeatability;
   WebKit AXValue echoes also need independent business-state verification.
+- [macOS cursor rendering](desktop.md#platform-evidence): the pinned Driver's
+  overlay covers only its startup main screen and excludes negative positions
+  from its visibility predicate. Secondary-display input can execute without
+  a visible cursor. This requires a Driver fix and multi-display visual acceptance,
+  not a change to AICE's input coordinates or a foreground fallback.
 - [Linux input](desktop.md#linux-input-acceptance-failures): Unicode insertion
   truncation and unavailable GTK background keyboard/gesture routes in the
   isolated environment. [Linux launch](desktop.md#linux-launch-acceptance-failure)
