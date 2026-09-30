@@ -2,8 +2,10 @@
 
 ## Product boundary
 
-AICE is a small coding harness, not an agent platform. It ships as one Go
-module and binary, with one AICE process; host tools may spawn subprocesses.
+AICE currently ships as a small coding harness: one Go module and binary,
+with one AICE process; host tools may spawn subprocesses. This document describes
+implemented boundaries. The [Roadmap](../ROADMAP.md) owns future product direction,
+including additional interfaces and cloud operation.
 
 ## Design philosophy
 

@@ -1,0 +1,27 @@
+name: Feature or documentation request / 功能或文档建议
+description: Describe a problem and a useful improvement / 描述问题和改进建议
+body:
+  - type: markdown
+    attributes:
+      value: |
+        English and Chinese are welcome. Check existing issues and the [roadmap](https://github.com/ch1lam/aice-cli/blob/main/ROADMAP.md) first.
+        Documentation corrections and missing guides are welcome here too.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or workflow / 问题或使用场景
+      description: Who needs this, and what is difficult today? For docs, link the confusing or missing guidance.
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Desired outcome / 期望结果
+      description: Describe the behavior or information you need and how we could verify it helps.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives and context / 替代方案与补充信息
+      description: Optional workarounds, constraints or examples. An implementation proposal is not required.

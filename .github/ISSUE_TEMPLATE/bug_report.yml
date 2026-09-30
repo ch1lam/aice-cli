@@ -1,0 +1,42 @@
+name: Bug report / 缺陷报告
+description: Report a reproducible failure in AICE / 报告可复现的问题
+body:
+  - type: markdown
+    attributes:
+      value: |
+        English and Chinese are welcome. Search existing issues first.
+        Remove API keys, tokens and private project data from all attachments.
+        For vulnerabilities, follow the [security policy](https://github.com/ch1lam/aice-cli/blob/main/SECURITY.md); do not post exploit details here.
+  - type: input
+    id: version
+    attributes:
+      label: AICE version / 版本
+      description: Output of `aice --version`; for a dev build, include the commit.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment / 运行环境
+      description: OS, architecture, terminal, installation method, and provider/model if relevant. Never include credentials.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce / 复现步骤
+      description: Include the smallest example, command or prompt that reproduces the failure and relevant settings.
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Expected and actual behavior / 预期与实际行为
+      description: What should happen, and what happens instead? Does it happen every time?
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Logs or screenshots / 日志或截图
+      description: Optional, sanitized excerpts only. Avoid uploading entire private sessions.

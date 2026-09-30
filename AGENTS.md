@@ -37,6 +37,8 @@ and routes; README files may summarize product behavior and link to details.
 | Task area | Read |
 | --- | --- |
 | Product overview and quickstart | [README.md](README.md) and [README-zh.md](README-zh.md); keep both in sync |
+| Product priorities and future direction | [Roadmap](ROADMAP.md); distinguish plans from shipped behavior |
+| Contributor onboarding, community and reporting | [Contributing](CONTRIBUTING.md), [Code of Conduct](CODE_OF_CONDUCT.md), [Security](SECURITY.md); user guides are indexed in [Documentation](docs/README.md) |
 | Browser automation, connection, tabs and lifecycle | [Browser automation](docs/browser.md) |
 | Computer Use, Cua installation/setup, native sessions, window actions and platform evidence | [Computer Use](docs/desktop.md) |
 | Web search services, priority, `web_fetch`, network permissions, evidence | [Web search and fetch](docs/web.md) |
