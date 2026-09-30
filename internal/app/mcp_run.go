@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/ch1lam/aice-cli/internal/agent"
+	"github.com/ch1lam/aice-cli/internal/desktop"
 	"github.com/ch1lam/aice-cli/internal/llm"
 	"github.com/ch1lam/aice-cli/internal/tool"
 )
@@ -134,6 +135,15 @@ func (o *mcpOwner) bindRun(ctx context.Context) (runContext context.Context, run
 	summary.WriteString("\n\nConfigured MCP services (status only, not execution permission). Use tool_search to find tools or mcp_resource_list to list resources on one source-qualified service; schemas become available on the next model round. Use mcp_server_info for source-tagged, untrusted server usage instructions.\n")
 	if catalog.managedCUA {
 		summary.WriteString("managed:cua: Computer Use enabled for this Run. Load the computer-use Skill for the pinned Driver guidance; discover tools with tool_search. Observe fresh state after input and before deciding whether it succeeded.\n")
+		// The catalog already validated this binding. Describe its frozen native
+		// mode, not mutable settings or a capability inferred from Driver advice.
+		mode := desktopBinding.backend.ControlMode()
+		fmt.Fprintf(&summary, "Computer Use control mode for this Run: %s. ", mode)
+		if mode == desktop.BackgroundOnly {
+			summary.WriteString("Use background delivery only. Foreground requests and desktop-wide input are unavailable even if a Driver result recommends them. Prefer an observed semantic confirm/press action when background keys are refused; report the blocked step if no supported route remains.\n")
+		} else {
+			summary.WriteString("Background delivery remains the default; explicit foreground delivery is permitted when needed for this task. Verify the application state before changing route after uncertain input.\n")
+		}
 	}
 	statuses := o.Status()
 	for i, status := range statuses {

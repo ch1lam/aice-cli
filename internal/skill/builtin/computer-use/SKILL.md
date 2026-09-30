@@ -17,10 +17,14 @@ existing authorization.
 Use `tool_search` with `service: "managed:cua"` and the operation you need,
 for example `{"service":"managed:cua","query":"list_windows","limit":1}`.
 Call the returned model-facing tool name with its complete schema on the next
-model round. Raw names such as `click` identify operations; do not guess the
-hashed model-facing name. Search selects at most five definitions at a time;
-use returned IDs or the next page when needed. Search does not grant execution
-permission. If a selected definition becomes unavailable, search again.
+model round, using its exact name without adding a namespace such as `default.`.
+Raw names such as `click` identify operations; do not guess the hashed name.
+Selected tools remain callable across rounds while present in the request's
+tool definitions. Call them directly; do not precede every observation or action
+with another search. Search selects at most five definitions at a time, not
+five single-use calls. Load the small set needed for the next steps, and search
+again only for a missing definition or explicit connection/catalog expiry.
+Search does not grant execution permission or refresh an AX snapshot.
 
 The service exposes `list_apps`, `list_windows`, `get_window_state`,
 `launch_app`, `click`, `drag`, `type_text`, `set_value`, `press_key`, `hotkey`
@@ -41,16 +45,21 @@ initialization information; it does not itself enable or repair the service.
    and copy its actual launch identity rather than guessing a bundle ID or path.
    After launching once, inspect its windows; absence of an immediate window is
    not a reason to repeat launch.
-2. Call `get_window_state` for the intended target. Prefer semantic controls
-   whose role and label identify the task. Inspect `elements_complete`,
-   truncation and degraded-state details. Use the advertised `query`,
-   `max_elements` or `max_depth` options when a result is insufficient. These
-   options do not guarantee that a platform exposes every control.
-   A text-only model must pass `include_screenshot:false`.
+2. Call `get_window_state` for the intended target. For a known semantic control,
+   use `query` for its label and `include_screenshot:false`; this preserves room
+   for actionable AX data instead of another image and the entire menu tree.
+   Use a screenshot when locating an unfamiliar layout or a visual-only target.
+   Inspect `elements_complete`, truncation and degraded-state details. A timed-out
+   tree is partial, not evidence that the control is absent: increase `timeout_ms`
+   (for example to 5000) or bound the walk with `max_depth` / `max_elements`.
+   `query` filters the output; it does not guarantee a cheaper AX walk.
+   A text-only model must always pass `include_screenshot:false`.
 3. Perform an action grounded in that state. Copy the returned `element_token`,
    or use the advertised element-index form together with its `snapshot_id`.
-   An index is not a token. Cua validates references; do not construct tokens
-   or assume old references remain valid after a UI change or new session.
+   With an index, also supply the exact `window_id`; a PID can own multiple
+   windows even when only one is visible. An index is not a token. Cua validates
+   references; do not construct tokens or assume old references remain valid
+   after a UI change or new session.
 4. Read current state again and verify the business postcondition: field value,
    navigation, saved entry or submission result. `returned`, a successful RPC,
    or `effect:unverifiable` alone does not prove the task succeeded.
@@ -79,7 +88,14 @@ limitation.
 
 ## Input and coordinates
 
-Use only fields in the selected schema. Prefer semantic input where supported.
+Use only fields in the selected schema. Choose an action advertised by the
+observed control before using a keyboard shortcut or screenshot coordinates.
+On macOS, an input exposing `AXConfirm` / `confirm` can be addressed with
+`click` and `action:"confirm"`; a Save/Create button exposing `AXPress` / `press`
+can be addressed with `click` and `action:"press"`. The tool name `click` also
+covers these semantic actions; a submit does not necessarily require Return.
+An advertised action may still fail, so verify the saved entry after submitting.
+Use `type_text` for insertion and `set_value` for supported whole-field replacement.
 For web content, an AX value echo can differ from the application's DOM state;
 verify the actual field/submission behavior. Distinguish duplicate control
 labels by role and surrounding state. Never blindly repeat input to compensate
@@ -111,6 +127,26 @@ operation when appropriate for the user's task, including when a degraded
 observation recommends it. AICE does not require a particular preceding refusal
 and never switches modes or retries in foreground automatically. Availability
 in a schema is not proof of support by a specific platform or application.
+
+Distinguish the actual refusal before choosing another step:
+
+- `ambiguous_window_target`: supply the exact observed window, not just its PID.
+- `same_pid_keyboard_ambiguity`: process-scoped keys cannot safely select between
+  sibling windows. Prefer the observed control's semantic confirm/press action.
+  Do not describe this as lost focus or repeat the same background key.
+- `ax_unresolved` / `off_space_or_ax_unresolved`: a screenshot may be valid while
+  the exact window's AX surface is unavailable. A pixel click is not automatically
+  safe. Refresh the target once after it settles, then follow the returned route
+  limits and the Run's control mode if it remains unresolved.
+- Native session expiry: rediscover the needed tools, then observe fresh state.
+  AICE owns session creation; never call lifecycle tools or reuse old tokens.
+
+If supported semantic routes are exhausted in `background_only`, report the
+specific blocked step and the Settings → Computer Use control-mode option.
+Do not try foreground calls that this Run prohibits or repeatedly switch among
+unverifiable inputs. Report command delivery separately from task completion.
+Cursor visibility is also separate: missing cursor feedback does not establish
+failure, success or lost focus. Do not repeat an input to make a cursor appear.
 
 Before changing route after an error, inspect its execution state and the
 application. For `not_dispatched`, correct the reported precondition. For stale

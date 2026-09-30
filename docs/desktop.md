@@ -170,6 +170,24 @@ text-only model must request `include_screenshot:false`; prefer semantic input
 when no current image is available. These are frozen run capabilities, not decisions inferred from a native
 error code.
 
+The application supplies the Run's actual frozen control mode in the model
+prompt before discovery, including whether foreground delivery is unavailable.
+The builtin Computer Use guidance prefers an observed semantic action (such as
+macOS `confirm` on a text field or `press` on a submit button) over process-wide
+keys or coordinates. A `same_pid_keyboard_ambiguity` refusal concerns routing
+keys among sibling windows; it is not evidence of focus loss. An unresolved AX
+window can still have a valid screenshot without a usable background input route.
+Models should report the specific blocked step when supported routes are exhausted.
+
+Selected tools persist while present in the current request's definitions.
+Discovery is needed for missing definitions or explicit lifecycle/catalog
+invalidation, not before every action. Known semantic targets should use a
+focused `query` and `include_screenshot:false`; screenshots remain available for
+visual grounding. Query filters output rather than guaranteeing a cheaper tree
+walk. Timed-out trees need an appropriate walk budget; clipped model results
+can be read through `tool_result_read`. These are caller instructions, not
+automatic argument rewrites, retries or guarantees of model task completion.
+
 Coordinates follow the upstream operation's coordinate frame. For screenshot
 pixels, use the original Cua screenshot dimensions and capture identity where
 the schema supports it. The generic media layer describes original and displayed

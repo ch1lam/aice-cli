@@ -23,11 +23,17 @@ import (
 
 type appDesktopBackend struct {
 	calls         int
+	mode          desktop.ControlMode
 	managedResult mcpclient.Result
 }
 
-func (*appDesktopBackend) ControlMode() desktop.ControlMode { return desktop.BackgroundOnly }
-func (*appDesktopBackend) ToolGeneration() uint64           { return 1 }
+func (b *appDesktopBackend) ControlMode() desktop.ControlMode {
+	if b.mode != "" {
+		return b.mode
+	}
+	return desktop.BackgroundOnly
+}
+func (*appDesktopBackend) ToolGeneration() uint64 { return 1 }
 func (*appDesktopBackend) ServerInfo(context.Context) (mcpclient.Info, error) {
 	return mcpclient.Info{Name: "cua-driver", Version: desktop.DriverVersion, ProtocolVersion: desktop.ProtocolVersion, Tools: true}, nil
 }
@@ -153,14 +159,25 @@ func TestDesktopSettingsPublicationPreservesOtherTools(t *testing.T) {
 
 func TestDesktopPrintUsesRealLoopAndClosesBinding(t *testing.T) {
 	t.Parallel()
-	for _, enabled := range []bool{false, true} {
-		t.Run(map[bool]string{false: "disabled", true: "enabled"}[enabled], func(t *testing.T) {
-			backend := &appDesktopBackend{}
+	for _, tc := range []struct {
+		name       string
+		enabled    bool
+		configured config.DesktopControlMode
+		native     desktop.ControlMode
+	}{
+		{name: "disabled"},
+		{name: "background", enabled: true, native: desktop.BackgroundOnly},
+		{name: "foreground", enabled: true, configured: config.DesktopForegroundAllowed, native: desktop.ForegroundAllowed},
+		{name: "native mode wins", enabled: true, configured: config.DesktopForegroundAllowed, native: desktop.BackgroundOnly},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			enabled := tc.enabled
+			backend := &appDesktopBackend{mode: tc.native}
 			binds, closes, managers := 0, 0, 0
 			model := &managedDesktopModel{operation: "list_windows"}
 			command, err := newTestCommand(t, dependencies{
 				loadConfig: func(config.LoadOptions) (config.Config, error) {
-					return config.Config{DeepSeekAPIKey: "test-key", DesktopEnabled: enabled}, nil
+					return config.Config{DeepSeekAPIKey: "test-key", DesktopEnabled: enabled, DesktopControlMode: tc.configured}, nil
 				},
 				newModel: func(config.Config) (llm.Streamer, error) { return model, nil },
 				newDesktop: func(config.Config) (*desktopState, error) {
@@ -210,6 +227,15 @@ func TestDesktopPrintUsesRealLoopAndClosesBinding(t *testing.T) {
 				t.Fatal("managed summary differs from enabled setting")
 			}
 			for _, request := range model.requests {
+				modePrefix := "Computer Use control mode for this Run: "
+				if enabled {
+					if !strings.Contains(request.SystemPrompt, modePrefix+string(tc.native)+".") ||
+						strings.Contains(request.SystemPrompt, "Foreground requests and desktop-wide input are unavailable") != (tc.native == desktop.BackgroundOnly) {
+						t.Fatal("model prompt did not describe the frozen native control mode")
+					}
+				} else if strings.Contains(request.SystemPrompt, modePrefix) {
+					t.Fatal("disabled desktop advertised a control mode")
+				}
 				for _, def := range request.Tools {
 					if def.Name == "desktop_apps" || def.Name == "desktop_observe" || def.Name == "desktop_act" {
 						t.Fatal("managed and typed routes were exposed together")
