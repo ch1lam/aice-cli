@@ -213,6 +213,43 @@ func formatSkillsCommand(
 	return strings.Join(lines, "\n")
 }
 
+func formatSkillsSettings(catalog skill.Catalog, diags []skill.Diagnostic, workspace string) string {
+	skills := catalog.Skills()
+	lines := []string{fmt.Sprintf("%d skills loaded · %d diagnostics", len(skills), len(diags))}
+	grouped := groupSkillsBySource(skills)
+	for _, group := range skillListGroups(workspace) {
+		items := grouped[group.source]
+		if len(items) == 0 {
+			continue
+		}
+		lines = append(lines, "", "Source: "+group.title, fmt.Sprintf("Count: %d", len(items)))
+		for _, item := range items {
+			lines = append(lines, "", "Skill: "+item.Name)
+			if item.Description != "" {
+				lines = append(lines, "  Description: "+item.Description)
+			}
+			if location := skillLocationLabel(item); location != "" {
+				lines = append(lines, "  Location: "+location)
+			}
+		}
+	}
+	if len(diags) > 0 {
+		lines = append(lines, "", "Diagnostics")
+		for _, diag := range diags {
+			lines = append(lines, "", "Severity: "+string(diag.Level))
+			if diag.Dir != "" {
+				lines = append(lines, "  Location: "+diag.Dir)
+			}
+			lines = append(lines, "  Message: "+diag.Message)
+		}
+	}
+	if len(skills) == 0 {
+		lines = append(lines, "", "No skills found.", "Install with: npx skills add <owner/repo>")
+	}
+	lines = append(lines, "", "Notes", skillsScanReminder)
+	return strings.Join(lines, "\n")
+}
+
 type skillListGroup struct {
 	source skill.Source
 	title  string

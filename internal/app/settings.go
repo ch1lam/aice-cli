@@ -240,7 +240,7 @@ func (s *interactiveSession) ReadSettings(ctx context.Context) (interaction.Sett
 	for _, entry := range []struct{ id, category, label, value string }{
 		{"project.directory", "project", "Working directory", s.workspacePath},
 		{"project.loaded", "project", "Loaded project trust", fmt.Sprintf("%v (%v)", s.trustDecision, s.trustSource)},
-		{"project.skills", "project", "Skills", formatSkillsCommand(s.skills, s.skillDiags, s.workspacePath)},
+		{"project.skills", "project", "Skills", formatSkillsSettings(s.skills, s.skillDiags, s.workspacePath)},
 		{"system.settings_path", "system", "User settings", settings.configuration.Paths.GlobalSettings},
 		{"system.project_path", "system", "Project settings (read only)", settings.configuration.Paths.ProjectSettings},
 		{"system.auth_path", "system", "Credentials", settings.configuration.Paths.GlobalAuth},

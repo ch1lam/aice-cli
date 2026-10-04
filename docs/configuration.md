@@ -656,7 +656,10 @@ AICE loads skills from three sources when preparing the process's run environmen
 
 When two skills share a name, project wins over user over builtin. `/skills`
 lists the catalog loaded for this Session; grouping is source information
-only.
+only. Settings → Project → Skills shows the same startup catalog grouped by
+source, with each skill name, full description and location on separate lines.
+The TUI highlights names and source headings, separates diagnostics and restart
+notes, and wraps long descriptions and paths in the scrollable detail view.
 
 Install with:
 
