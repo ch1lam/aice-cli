@@ -237,6 +237,17 @@ and removing a rule is possible when the service is offline.
 
 ## Interactive management
 
+The MCP services and authorization settings menu groups actions into status,
+service configuration, connection authorization, credentials/login and operation
+permissions, with a separate Computer Use shortcut. Esc returns from a group
+to the main menu. Details, confirmations and action results use the MCP display
+highlights while preserving the complete paged authorization disclosure.
+
+Settings MCP status details group each service into connection, tool catalog,
+permissions and optional diagnostics, followed by shared notes. The TUI highlights
+section headings, field labels and connection/approval states; long values wrap
+and the detail view scrolls without dropping fingerprints or saved rules.
+
 `/mcp` and Settings → Tools & Network → MCP services and authorization expose
 the management operations above. `/mcp ACTION [KEY]` selects one directly;
 missing keys open a source-qualified selector. Add/replace uses a transient

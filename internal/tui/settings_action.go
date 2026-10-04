@@ -325,7 +325,11 @@ func (m model) applySettingActionDone(msg settingsActionDone) (tea.Model, tea.Cm
 		p.notice += "\n\nContinue in a new run sends the following request using the recorded task context. Your composer draft and attachments stay in the composer.\n\n" + copy.Prompt
 	}
 	if strings.Contains(p.notice, "\n") {
-		p.editing = &interaction.SettingField{Kind: interaction.SettingInfo, Label: "Action result", Description: p.notice}
+		id := ""
+		if msg.action.command.Name == "mcp" {
+			id = "mcp.services"
+		}
+		p.editing = &interaction.SettingField{ID: id, Kind: interaction.SettingInfo, Label: "Action result", Description: p.notice}
 		p.detailOffset = 0
 	}
 	return m, m.refreshSettingsStatus()
@@ -378,7 +382,12 @@ func (p *settingsPanel) actionView() string {
 		return sanitizeMultilineText(title)
 	}
 	layout := p.actionMenuLayout(menu)
-	rows := layout.header
+	rows := append([]string(nil), layout.header...)
+	if a.command.Name == "mcp" {
+		for i, row := range rows {
+			rows[i] = mcpSettingsDetails(row, p.layout.inner)
+		}
+	}
 	if layout.more {
 		return strings.Join(append(rows, ansi.Truncate("Enter: more · PgUp: back", max(1, p.layout.inner), "…")), "\n")
 	}
@@ -388,7 +397,18 @@ func (p *settingsPanel) actionView() string {
 		if i == a.choice {
 			prefix = "› "
 		}
-		rows = append(rows, ansi.Truncate(sanitizeSingleLineText(fmt.Sprint(prefix, v.Label, "  ", v.Description)), max(1, p.layout.inner), "…"))
+		row := sanitizeSingleLineText(fmt.Sprint(prefix, v.Label, "  ", v.Description))
+		if a.command.Name == "mcp" {
+			style := bodyStyle
+			if i == a.choice {
+				style = labelStyle
+			}
+			row = style.Render(sanitizeSingleLineText(prefix + v.Label))
+			if v.Description != "" {
+				row += mutedStyle.Render("  " + sanitizeSingleLineText(v.Description))
+			}
+		}
+		rows = append(rows, ansi.Truncate(row, max(1, p.layout.inner), "…"))
 	}
 	return strings.Join(rows, "\n")
 }

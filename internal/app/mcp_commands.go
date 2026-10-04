@@ -10,6 +10,23 @@ import (
 	"github.com/ch1lam/aice-cli/internal/interaction"
 )
 
+const mcpSettingsDescription = `Manage MCP services, connections and access.
+
+Service configuration
+Add, replace, enable, disable or remove user services.
+
+Connection authorization
+Approve, deny or forget a connection; test or reconnect it.
+
+Credentials and login
+Set or clear credentials; log in or out with OAuth.
+
+Operation permissions
+Inspect, save or remove operation rules. Connection approval and tool execution permission are separate.
+
+Computer Use
+Manage the built-in CUA service in its own settings.`
+
 func mcpMenu() *interaction.CommandMenu {
 	return &interaction.CommandMenu{Title: "MCP services", Options: []interaction.CommandOption{
 		{Label: "Show status", Arguments: "status"},
@@ -30,6 +47,37 @@ func mcpMenu() *interaction.CommandMenu {
 		{Label: "Save or remove a user permission", Arguments: "permission"},
 		{Label: "Computer Use settings", Description: "Manage the built-in CUA service", Arguments: "desktop"},
 	}}
+}
+
+// Settings groups navigation while command validation retains the flat actions.
+func mcpSettingsMenu() *interaction.CommandMenu {
+	groups := []struct {
+		label, description string
+		actions            []string
+	}{
+		{"Status", "Inspect services and loaded tools", []string{"status"}},
+		{"Service configuration", "Add, edit, enable or remove services", []string{"add", "replace", "enable", "disable", "remove"}},
+		{"Connection authorization", "Approve, revoke and test connections", []string{"approve", "deny", "forget", "connect", "reconnect"}},
+		{"Credentials and login", "Manage credentials and OAuth sessions", []string{"credential", "login", "logout"}},
+		{"Operation permissions", "Inspect and manage tool access", []string{"permissions", "permission"}},
+	}
+	actions := mcpMenu().Options
+	menu := &interaction.CommandMenu{Title: "MCP services and authorization"}
+	for _, group := range groups {
+		submenu := &interaction.CommandMenu{Title: group.label}
+		for _, action := range group.actions {
+			for _, option := range actions {
+				if option.Arguments == action {
+					submenu.Options = append(submenu.Options, option)
+				}
+			}
+		}
+		menu.Options = append(menu.Options, interaction.CommandOption{
+			Label: group.label, Description: group.description, Menu: submenu,
+		})
+	}
+	menu.Options = append(menu.Options, actions[len(actions)-1])
+	return menu
 }
 
 func mcpActionKnown(action string) bool {

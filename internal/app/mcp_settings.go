@@ -171,24 +171,28 @@ func formatMCPStatus(services []interaction.MCPService) string {
 		return "No MCP services configured. Use /mcp add."
 	}
 	var b strings.Builder
-	for _, service := range services {
+	for i, service := range services {
+		if i > 0 {
+			b.WriteString("\n")
+		}
 		loaded := "Loaded tools: 0 (no active main Run)\n"
 		if service.RunActive {
 			loaded = fmt.Sprintf("Loaded tools: %d (latest model request in current Run)\n", service.LoadedTools)
 		}
 		if service.Managed {
-			fmt.Fprintf(&b, "%s · %s · controlled by Computer Use\n%s\n", service.Key, service.State, service.Detail)
+			fmt.Fprintf(&b, "Service: %s\nConnection\nState: %s\nManaged by: Computer Use (/desktop)\n%s\n\nTool catalog\n", service.Key, service.State, service.Detail)
 			b.WriteString(loaded)
 			continue
 		}
-		fmt.Fprintf(&b, "%s · %s · connection %s\nSource: %s\nFingerprint: %s\n", service.Key, service.State, service.Approval, service.Source, service.Fingerprint)
+		fmt.Fprintf(&b, "Service: %s\nConnection\nState: %s\nApproval: %s\nSource: %s\nFingerprint: %s\n\nTool catalog\n",
+			service.Key, service.State, service.Approval, service.Source, service.Fingerprint)
 		if service.CatalogKnown {
 			fmt.Fprintf(&b, "Tools: %d discovered, %d eligible\n", service.ToolCount, service.EligibleTools)
 		} else {
 			b.WriteString("Tools: catalog not currently known\n")
 		}
 		b.WriteString(loaded)
-		fmt.Fprintf(&b, "Permission scope: %s\n", service.PermissionScope)
+		fmt.Fprintf(&b, "\nPermissions\nPermission scope: %s\n", service.PermissionScope)
 		if len(service.Permissions) > 0 {
 			fmt.Fprintf(&b, "Saved rule binding: %s · %s\n", service.SavedPermissionFingerprint, service.SavedPermissionScope)
 			if service.SavedPermissionFingerprint != service.Fingerprint || service.SavedPermissionScope != service.PermissionScope {
@@ -199,9 +203,9 @@ func formatMCPStatus(services []interaction.MCPService) string {
 			fmt.Fprintf(&b, "Saved %s: %s %q · schema %s\n", rule.Decision, rule.Operation, rule.Tool, rule.SchemaFingerprint)
 		}
 		if service.Detail != "" {
-			b.WriteString(service.Detail + "\n")
+			b.WriteString("\nDiagnostics\n" + service.Detail + "\n")
 		}
 	}
-	b.WriteString("Loaded counts describe the latest request; revocation still blocks execution immediately. A ready connection does not grant tool execution permission.")
+	b.WriteString("\nNotes\nLoaded counts describe the latest request; revocation still blocks execution immediately. A ready connection does not grant tool execution permission.")
 	return b.String()
 }

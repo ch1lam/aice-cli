@@ -200,7 +200,7 @@ func (s *interactiveSession) ReadSettings(ctx context.Context) (interaction.Sett
 		result.Fields = append(result.Fields, interaction.SettingField{ID: "account." + option.Arguments, Category: "models", Label: option.Label + " account", Description: status, Kind: interaction.SettingAction, Applies: interaction.SettingDomainAction, DisabledReason: disabled, Action: &interaction.Command{Name: "login", SecretPrompt: "API key", Menu: menu}})
 	}
 	commands := []interaction.Command{
-		{Name: "mcp", Menu: mcpMenu(), Interactive: true},
+		{Name: "mcp", Menu: mcpSettingsMenu(), Interactive: true},
 		{Name: "browser", Menu: s.browserMenu(), Interactive: true},
 		{Name: "web", Menu: s.webMenu(), Interactive: true},
 		{Name: "trust", Menu: s.trustMenu()},
@@ -219,7 +219,11 @@ func (s *interactiveSession) ReadSettings(ctx context.Context) (interaction.Sett
 						reason = "Browser manager is unavailable in this session"
 					}
 				}
-				result.Fields = append(result.Fields, interaction.SettingField{ID: entry.id, Category: entry.category, Label: entry.label, Kind: interaction.SettingAction, Applies: interaction.SettingDomainAction, Action: &command, DisabledReason: reason})
+				description := ""
+				if entry.name == "mcp" {
+					description = mcpSettingsDescription
+				}
+				result.Fields = append(result.Fields, interaction.SettingField{Description: description, ID: entry.id, Category: entry.category, Label: entry.label, Kind: interaction.SettingAction, Applies: interaction.SettingDomainAction, Action: &command, DisabledReason: reason})
 				break
 			}
 		}
