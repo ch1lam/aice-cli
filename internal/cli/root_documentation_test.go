@@ -40,7 +40,14 @@ func configurationSection(t *testing.T, heading, next string) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, section, ok := strings.Cut(string(data), "\n"+heading+"\n")
+	return configurationSectionText(t, string(data), heading, next)
+}
+
+func configurationSectionText(t *testing.T, document, heading, next string) string {
+	t.Helper()
+	// Windows checkouts can use CRLF; normalize headings and table rows together.
+	document = strings.ReplaceAll(document, "\r\n", "\n")
+	_, section, ok := strings.Cut(document, "\n"+heading+"\n")
 	if !ok {
 		t.Fatalf("configuration.md: missing %q", heading)
 	}
@@ -49,6 +56,26 @@ func configurationSection(t *testing.T, heading, next string) string {
 		t.Fatalf("configuration.md: missing section boundary %q", next)
 	}
 	return section
+}
+
+func TestConfigurationSectionLineEndings(t *testing.T) {
+	t.Parallel()
+	const document = "# Configuration\n\n### Run limits\n\n| `--max-turns N` | `max_turns` | `AICE_MAX_TURNS` | `0` |\n\n### Next\n\nOther content\n"
+	const want = "\n| `--max-turns N` | `max_turns` | `AICE_MAX_TURNS` | `0` |\n"
+	for _, tc := range []struct {
+		name   string
+		ending string
+	}{
+		{name: "LF", ending: "\n"},
+		{name: "CRLF", ending: "\r\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := configurationSectionText(t, strings.ReplaceAll(document, "\n", tc.ending), "### Run limits", "### Next")
+			if got != want {
+				t.Errorf("section = %q, want %q", got, want)
+			}
+		})
+	}
 }
 
 func TestRootCommandDocumentationFlags(t *testing.T) {

@@ -27,6 +27,11 @@ without dropping tests or race detection. Preserve sequential real-ripgrep
 acceptance where concurrent child processes exhaust hosted-runner resources.
 A local pass establishes only that platform.
 
+The CLI documentation checks in
+[root_documentation_test.go](../internal/cli/root_documentation_test.go) normalize
+CRLF to LF before matching headings and parsing tables. Their line-ending
+regression covers both checkout formats on every host.
+
 For macOS clipboard changes, use an isolated pasteboard:
 
 ```sh
