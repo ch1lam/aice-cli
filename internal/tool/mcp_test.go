@@ -137,7 +137,7 @@ func TestMCPStorageLossIsExplicit(t *testing.T) {
 		return mcpclient.Result{State: llm.ExecutionUnknown, StructuredContent: json.RawMessage(`{bad`), Content: []mcpclient.Block{
 			{Kind: mcpclient.BlockText, Text: strings.Repeat("中", maxMCPTextBytes)},
 			{Kind: mcpclient.BlockImage, MIMEType: "image/png", Data: []byte("invalid")},
-			{Kind: mcpclient.BlockAudio, Data: []byte("audio")}, {Kind: mcpclient.BlockUnsupported, Unsupported: []byte(`{"future":true}`)},
+			{Kind: mcpclient.BlockAudio, Data: []byte("audio")}, {Kind: mcpclient.BlockUnsupported},
 		}}, errors.New("lost response")
 	}))
 	m, _ := NewMCP(options)

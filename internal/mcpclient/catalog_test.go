@@ -20,6 +20,9 @@ func TestCatalogBoundsAndInvalidPages(t *testing.T) {
 		{name: "bytes", limits: Limits{CatalogBytes: 100}},
 		{name: "duplicate", page: `{"tools":[{"name":"same","inputSchema":{}},{"name":"same","inputSchema":{}}]}`, wantCount: 1, wantError: true},
 		{name: "invalid schema", page: `{"tools":[{"name":"bad","inputSchema":[]}]}`, wantError: true},
+		{name: "SDK rejected annotation", page: `{"tools":[{"name":"bad","inputSchema":{},"annotations":{"readOnlyHint":"yes"}}]}`, wantError: true},
+		{name: "SDK filtered entry", page: `{"tools":[null,{"name":"valid","inputSchema":{"type":"object"}}]}`, wantError: true},
+		{name: "invalid cursor", page: `{"tools":[],"nextCursor":42}`, wantError: true},
 		{name: "null", page: `{"tools":null}`, wantError: true},
 		{name: "repeated cursor", page: `{"tools":[],"nextCursor":"loop"}`, wantError: true},
 	} {

@@ -85,7 +85,7 @@ type Info struct {
 	Tools, Resources, Prompts                    bool
 }
 
-// Tool retains exact schemas and annotations. Annotations are untrusted hints.
+// Tool retains exact schemas and SDK-normalized annotations (untrusted hints).
 type Tool struct {
 	Name         string          `json:"name"`
 	Title        string          `json:"title,omitempty"`
@@ -126,15 +126,13 @@ const (
 )
 
 // Block is a transport-neutral result value. Resource supplies provenance for
-// links and embedded data. Unsupported retains an unfamiliar or malformed
-// block as exact JSON for explicit loss/unsupported handling by the adapter.
+// links and embedded data. Unsupported marks SDK values the adapter cannot use.
 type Block struct {
-	Kind        BlockKind
-	Text        string
-	Data        []byte
-	MIMEType    string
-	Resource    Resource
-	Unsupported json.RawMessage
+	Kind     BlockKind
+	Text     string
+	Data     []byte
+	MIMEType string
+	Resource Resource
 }
 
 // Result contains ordered content and exact structured JSON. The tool adapter

@@ -1,64 +1,45 @@
 package mcpclient
 
-import "encoding/json"
+import (
+	"bytes"
 
-// Only this package interprets MCP content tags and embedded resource wire
-// fields. Retain unrecognized/malformed blocks explicitly instead of letting
-// the SDK's closed content union discard the remainder of an otherwise valid
-// ordered result. Image preparation remains the shared media package's job.
-func decodeBlock(raw json.RawMessage, resourceRead bool) Block {
-	unsupported := Block{Kind: BlockUnsupported, Unsupported: raw}
-	if resourceRead {
-		return decodeResource(raw, unsupported)
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+)
+
+// The SDK owns content decoding. This boundary only maps SDK values into the
+// transport-neutral types consumed by tool adapters. Image preparation belongs
+// to the shared media package.
+func contentBlock(content mcp.Content) Block {
+	switch content := content.(type) {
+	case *mcp.TextContent:
+		return Block{Kind: BlockText, Text: content.Text}
+	case *mcp.ImageContent:
+		return Block{Kind: BlockImage, Data: bytes.Clone(content.Data), MIMEType: content.MIMEType}
+	case *mcp.AudioContent:
+		return Block{Kind: BlockAudio, Data: bytes.Clone(content.Data), MIMEType: content.MIMEType}
+	case *mcp.ResourceLink:
+		return Block{Kind: BlockResourceLink, Resource: Resource{
+			URI: content.URI, Name: content.Name, Title: content.Title,
+			Description: content.Description, MIMEType: content.MIMEType,
+		}}
+	case *mcp.EmbeddedResource:
+		return resourceBlock(content.Resource)
+	default:
+		return Block{Kind: BlockUnsupported}
 	}
-	var wire struct {
-		Type     string          `json:"type"`
-		Text     *string         `json:"text"`
-		Data     *[]byte         `json:"data"`
-		MIMEType string          `json:"mimeType"`
-		Resource json.RawMessage `json:"resource"`
-	}
-	if json.Unmarshal(raw, &wire) != nil {
-		return unsupported
-	}
-	switch wire.Type {
-	case "text":
-		if wire.Text != nil {
-			return Block{Kind: BlockText, Text: *wire.Text}
-		}
-	case "image", "audio":
-		if wire.Data != nil && wire.MIMEType != "" {
-			kind := BlockImage
-			if wire.Type == "audio" {
-				kind = BlockAudio
-			}
-			return Block{Kind: kind, Data: *wire.Data, MIMEType: wire.MIMEType}
-		}
-	case "resource_link":
-		var resource Resource
-		if json.Unmarshal(raw, &resource) == nil && validName(resource.URI) && validName(resource.Name) {
-			return Block{Kind: BlockResourceLink, Resource: resource}
-		}
-	case "resource":
-		return decodeResource(wire.Resource, unsupported)
-	}
-	return unsupported
 }
 
-func decodeResource(raw json.RawMessage, unsupported Block) Block {
-	var wire struct {
-		Resource
-		Text *string `json:"text"`
-		Blob *[]byte `json:"blob"`
+func resourceBlock(content *mcp.ResourceContents) Block {
+	// One block cannot represent both text and binary without silently dropping
+	// one value. Let the adapter report this as source loss.
+	if content == nil || content.Blob != nil && content.Text != "" {
+		return Block{Kind: BlockUnsupported}
 	}
-	if json.Unmarshal(raw, &wire) != nil || !validName(wire.URI) || (wire.Text == nil) == (wire.Blob == nil) {
-		return unsupported
-	}
-	block := Block{Resource: wire.Resource, MIMEType: wire.MIMEType}
-	if wire.Text != nil {
-		block.Kind, block.Text = BlockResourceText, *wire.Text
+	block := Block{Resource: Resource{URI: content.URI, MIMEType: content.MIMEType}, MIMEType: content.MIMEType}
+	if content.Blob != nil {
+		block.Kind, block.Data = BlockResourceBlob, bytes.Clone(content.Blob)
 	} else {
-		block.Kind, block.Data = BlockResourceBlob, *wire.Blob
+		block.Kind, block.Text = BlockResourceText, content.Text
 	}
 	return block
 }

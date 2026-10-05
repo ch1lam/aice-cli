@@ -36,13 +36,13 @@ func fixtureResult(req fixtureRequest) string {
 		if bytes.Contains(req.Params, []byte("second")) {
 			return `{"tools":[{"name":"second","inputSchema":{"type":"object"}}]}`
 		}
-		return `{"tools":[{"name":"echo","description":"Echo values","inputSchema":{"type":"object","properties":{"n":{"type":"integer","default":9007199254740993}}}}],"nextCursor":"second"}`
+		return `{"tools":[{"name":"echo","description":"Echo values","inputSchema":{"type":"object","properties":{"n":{"type":"integer","default":9007199254740993}}},"outputSchema":{"type":"object","properties":{"decimal":{"const":1.234567890123456789}}}}],"nextCursor":"second"}`
 	case "tools/call":
 		var params struct {
 			Arguments json.RawMessage `json:"arguments"`
 		}
 		_ = json.Unmarshal(req.Params, &params)
-		return `{"content":[{"type":"text","text":"before"},{"type":"image","data":"AQID","mimeType":"image/png"},{"type":"text","text":"after"},{"type":"resource_link","uri":"fixture://one","name":"one"},{"type":"audio","data":"BAUG","mimeType":"audio/wav"},{"type":"future","value":9007199254740993}],"structuredContent":` + string(params.Arguments) + `,"isError":true}`
+		return `{"content":[{"type":"text","text":"before"},{"type":"image","data":"AQID","mimeType":"image/png"},{"type":"text","text":"after"},{"type":"resource_link","uri":"fixture://one","name":"one"},{"type":"audio","data":"BAUG","mimeType":"audio/wav"}],"structuredContent":` + string(params.Arguments) + `,"isError":true}`
 	case "resources/list":
 		return `{"resources":[{"uri":"fixture://one","name":"one","mimeType":"text/plain"}]}`
 	case "resources/read":
@@ -74,7 +74,11 @@ func TestMCPServerHelper(t *testing.T) {
 		if len(req.ID) == 0 {
 			continue
 		}
-		fmt.Fprintf(os.Stdout, "{\"jsonrpc\":\"2.0\",\"id\":%s,\"result\":%s}\n", req.ID, fixtureResult(req))
+		result := fixtureResult(req)
+		if req.Method == "tools/call" && os.Getenv("AICE_MCP_TEST_MODE") == "large-result" {
+			result = fixtureLargeResult()
+		}
+		fmt.Fprintf(os.Stdout, "{\"jsonrpc\":\"2.0\",\"id\":%s,\"result\":%s}\n", req.ID, result)
 		if req.Method == "initialize" && os.Getenv("AICE_MCP_TEST_MODE") == "stop-reading" {
 			time.Sleep(time.Minute)
 			os.Exit(0)
@@ -122,18 +126,18 @@ func assertRoundTrip(t *testing.T, c *Client) {
 	if !bytes.Contains(catalog.Items[0].InputSchema, []byte("9007199254740993")) {
 		t.Fatalf("schema number rounded: %s", catalog.Items[0].InputSchema)
 	}
+	if !bytes.Contains(catalog.Items[0].OutputSchema, []byte("1.234567890123456789")) {
+		t.Fatalf("output schema number rounded: %s", catalog.Items[0].OutputSchema)
+	}
 	args := json.RawMessage(`{"n":9007199254740993,"decimal":1.234567890123456789}`)
 	result, err := c.Call(t.Context(), "echo", args)
-	if err != nil || result.State != llm.ExecutionReturned || !result.IsError || len(result.Content) != 6 || !bytes.Equal(result.StructuredContent, args) {
+	if err != nil || result.State != llm.ExecutionReturned || !result.IsError || len(result.Content) != 5 || !bytes.Equal(result.StructuredContent, args) {
 		t.Fatalf("call: %+v, %v", result, err)
 	}
-	for i, kind := range []BlockKind{BlockText, BlockImage, BlockText, BlockResourceLink, BlockAudio, BlockUnsupported} {
+	for i, kind := range []BlockKind{BlockText, BlockImage, BlockText, BlockResourceLink, BlockAudio} {
 		if result.Content[i].Kind != kind {
 			t.Fatalf("block %d reordered: %+v", i, result.Content[i])
 		}
-	}
-	if !bytes.Contains(result.Content[5].Unsupported, []byte("9007199254740993")) {
-		t.Fatal("unsupported block lost its exact source")
 	}
 	resources, err := c.Resources(t.Context())
 	if err != nil || !resources.Complete || len(resources.Items) != 1 {
@@ -301,5 +305,43 @@ func TestHungChildInitializationAndClose(t *testing.T) {
 	_, err := Open(t.Context(), config)
 	if !errors.Is(err, context.DeadlineExceeded) || time.Since(start) > 5*time.Second {
 		t.Fatalf("hung initialization: %v in %v", err, time.Since(start))
+	}
+}
+
+// Larger frames exercise SDK limits as well as the observer's configured cap.
+func fixtureLargeResult() string {
+	return `{"content":[{"type":"text","text":"` + strings.Repeat("x", 17<<20) + `"}]}`
+}
+
+func TestConfiguredFrameLimitReachesSDK(t *testing.T) {
+	for _, transport := range []string{"stdio", "sse"} {
+		t.Run(transport, func(t *testing.T) {
+			var c *Client
+			if transport == "stdio" {
+				config := stdioConfig(t)
+				config.Stdio.Env["AICE_MCP_TEST_MODE"] = "large-result"
+				config.Limits.MessageBytes = maxMessageBytes
+				var err error
+				c, err = Open(t.Context(), config)
+				if err != nil {
+					t.Fatal(err)
+				}
+				t.Cleanup(func() { _ = c.Close() })
+			} else {
+				c = openFixture(t, &httpFixture{sse: true, result: func(req fixtureRequest) string {
+					if req.Method == "tools/call" {
+						return fixtureLargeResult()
+					}
+					return fixtureResult(req)
+				}}, func(config *Config) {
+					config.Limits.MessageBytes = maxMessageBytes
+					config.CallTimeout = 30 * time.Second
+				})
+			}
+			result, err := c.Call(t.Context(), "echo", json.RawMessage(`{}`))
+			if err != nil || result.State != llm.ExecutionReturned || len(result.Content) != 1 || len(result.Content[0].Text) != 17<<20 {
+				t.Fatalf("large response: err=%v state=%s blocks=%d", err, result.State, len(result.Content))
+			}
+		})
 	}
 }

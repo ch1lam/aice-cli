@@ -18,13 +18,23 @@ type receipts struct {
 }
 
 type receipt struct {
-	method     string
-	id         string
-	attempted  bool
-	result     json.RawMessage
-	rpcError   bool
-	limited    bool
-	httpStatus int
+	method            string
+	id                string
+	attempted         bool
+	returned          bool
+	resultBytes       int
+	structuredContent json.RawMessage
+	schemas           []schemaJSON
+	rpcError          bool
+	limited           bool
+	httpStatus        int
+}
+
+// Only these arbitrary-JSON fields need wire precision. Content, pagination,
+// metadata and protocol validation are owned by the SDK.
+type schemaJSON struct {
+	InputSchema  json.RawMessage `json:"inputSchema"`
+	OutputSchema json.RawMessage `json:"outputSchema"`
 }
 
 func (r *receipts) begin(method string) {
@@ -81,9 +91,26 @@ func (r *receipts) observe(data []byte, outgoing bool) {
 	if outgoing && msg.Method == c.method && c.id == "" {
 		c.id, c.attempted = id, true // before write: a failed write may be partial
 	}
-	if !outgoing && msg.Method == "" && c.id == id && len(c.result) == 0 && !c.rpcError {
-		c.result = msg.Result
+	if !outgoing && msg.Method == "" && c.id == id && !c.returned && !c.rpcError {
+		c.returned = len(msg.Result) > 0
+		c.resultBytes = len(msg.Result)
 		c.rpcError = len(msg.Error) > 0
+		switch c.method {
+		case "tools/call":
+			var exact struct {
+				StructuredContent json.RawMessage `json:"structuredContent"`
+			}
+			if json.Unmarshal(msg.Result, &exact) == nil {
+				c.structuredContent = exact.StructuredContent
+			}
+		case "tools/list":
+			var exact struct {
+				Tools []schemaJSON `json:"tools"`
+			}
+			if json.Unmarshal(msg.Result, &exact) == nil {
+				c.schemas = exact.Tools
+			}
+		}
 	}
 }
 

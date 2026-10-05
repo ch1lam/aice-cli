@@ -136,7 +136,7 @@ func TestClosedAdmissionCannotServeCachedCatalog(t *testing.T) {
 	}
 }
 
-func TestReviewedCallRetainsOrderedAndUnsupportedBlocks(t *testing.T) {
+func TestReviewedCallRejectsUnknownSDKContentWithoutReplay(t *testing.T) {
 	t.Parallel()
 	config, peer := fakeTransport(t, "ordered-content")
 	c, err := connect(t.Context(), config)
@@ -145,15 +145,8 @@ func TestReviewedCallRetainsOrderedAndUnsupportedBlocks(t *testing.T) {
 	}
 	defer c.close()
 	result, err := c.CallChecked(t.Context(), "click", []byte(`{}`), nil)
-	if err != nil || result.State != llm.ExecutionReturned || !result.IsError || len(result.Content) != 5 || !bytes.Contains(result.StructuredContent, []byte("9007199254740993")) {
-		t.Fatal("raw result was discarded", err)
-	}
-	for i, want := range []mcpclient.BlockKind{mcpclient.BlockText, mcpclient.BlockImage, mcpclient.BlockText, mcpclient.BlockAudio, mcpclient.BlockUnsupported} {
-		if result.Content[i].Kind != want {
-			t.Fatal("content order changed", i)
-		}
-	}
-	if !bytes.Equal(result.Content[1].Data, []byte{1, 2, 3}) || !bytes.Contains(result.Content[4].Unsupported, []byte("9007199254740993")) || peer.calls.Load() != 1 {
-		t.Fatal("source payload or dispatch count changed")
+	if !errors.Is(err, mcpclient.ErrProtocol) || result.State != llm.ExecutionReturned || !result.IsError ||
+		len(result.Content) != 0 || len(result.StructuredContent) != 0 || result.Loss == "" || peer.calls.Load() != 1 {
+		t.Fatalf("SDK rejection was rescued or replayed: result=%+v err=%v calls=%d", result, err, peer.calls.Load())
 	}
 }

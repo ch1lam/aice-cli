@@ -62,7 +62,9 @@ func openHTTP(config HTTPConfig, lifetime context.Context, limit int, receipts *
 	}
 	// No OAuthHandler: the SDK can replay a POST after it authorizes a 401/403.
 	// Authentication is coordinated before dispatch by the application instead.
-	return &mcp.StreamableClientTransport{Endpoint: config.Endpoint, HTTPClient: client, MaxRetries: -1}, base, nil
+	return &mcp.StreamableClientTransport{
+		Endpoint: config.Endpoint, HTTPClient: client, MaxRetries: -1, MaxEventSize: limit,
+	}, base, nil
 }
 
 func (t *httpTransport) RoundTrip(request *http.Request) (*http.Response, error) {

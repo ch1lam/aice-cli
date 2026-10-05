@@ -90,7 +90,7 @@ Optional capabilities retain their own owners:
 | `internal/interaction` | Frontend-neutral active-run, event, command, state, question, and input-mailbox contracts |
 | `internal/agent` | Agent Loop, retries, tool lifecycle, Agent events |
 | `internal/media` | Shared image decoding, conversion, validation, resizing, original retention and coordinate descriptions |
-| `internal/mcpclient` | One stdio/HTTP transport: bounded discovery/results, invalidation, cancellation and cleanup; SDK boundary |
+| `internal/mcpclient` | One stdio/HTTP transport: SDK decoding and typed mapping, exact schema/structured JSON, bounded discovery/results, invalidation, cancellation and cleanup |
 | `internal/mcpauth` | OAuth discovery, registration, PKCE exchange and refresh protocol; app/config own user flow and persistence |
 | `internal/llm` | Canonical messages, models, usage, streams, context estimates |
 | `internal/api/{anthropic,openairesponses,openaicompletions}` | Protocol translation around official SDKs |

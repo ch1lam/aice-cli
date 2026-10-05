@@ -99,8 +99,9 @@ func openStdio(config StdioConfig, limit int, receipts *receipts) (mcp.Transport
 		close(child.done)
 	}()
 	return &mcp.IOTransport{
-		Reader: newFrameReader(child.stdout, limit, false, false, receipts),
-		Writer: &observedWriter{WriteCloser: child.stdin, receipts: receipts},
+		Reader:        newFrameReader(child.stdout, limit, false, false, receipts),
+		Writer:        &observedWriter{WriteCloser: child.stdin, receipts: receipts},
+		MaxLineLength: limit,
 	}, child, nil
 }
 

@@ -235,7 +235,7 @@ func operationError(ctx context.Context, received receipt, err error) error {
 	if received.httpStatus != 0 {
 		return &HTTPError{StatusCode: received.httpStatus}
 	}
-	if received.rpcError || len(received.result) > 0 {
+	if received.rpcError || received.returned {
 		return ErrProtocol
 	}
 	if err != nil {
@@ -284,9 +284,25 @@ func (c *Client) CallChecked(ctx context.Context, name string, arguments json.Ra
 		return result, err
 	}
 	c.receipts.begin("tools/call")
-	_, callErr := c.session.CallTool(ctx, &mcp.CallToolParams{Name: name, Arguments: arguments})
+	called, callErr := c.session.CallTool(ctx, &mcp.CallToolParams{Name: name, Arguments: arguments})
 	received := c.receipts.finish()
-	return decodeResult(ctx, received, callErr, "content")
+	result, err = resultStatus(ctx, received, callErr)
+	if err != nil {
+		return result, err
+	}
+	if called == nil {
+		result.IsError = true
+		return result, ErrProtocol
+	}
+	if called.NeedsInput() {
+		return inputRequired(result)
+	}
+	result.IsError = called.IsError
+	for _, content := range called.Content {
+		result.Content = append(result.Content, contentBlock(content))
+	}
+	result.StructuredContent = received.structuredContent
+	return result, nil
 }
 
 // ReadResource explicitly reads one URI from this server; links in its result
@@ -324,44 +340,46 @@ func (c *Client) ReadResourceChecked(ctx context.Context, uri string, check func
 		// Explicit reads need fresh, bounded wire evidence, not a decoded cache hit.
 		read.TTLMs = 0
 	}
-	return decodeResult(ctx, c.receipts.finish(), readErr, "contents")
+	result, err = resultStatus(ctx, c.receipts.finish(), readErr)
+	if err != nil {
+		return result, err
+	}
+	if read == nil {
+		result.IsError = true
+		return result, ErrProtocol
+	}
+	if read.NeedsInput() {
+		return inputRequired(result)
+	}
+	for _, content := range read.Contents {
+		result.Content = append(result.Content, resourceBlock(content))
+	}
+	return result, nil
 }
 
-func decodeResult(ctx context.Context, received receipt, callErr error, contentKey string) (Result, error) {
+// Wire evidence classifies execution, but never rescues an SDK decoding failure.
+func resultStatus(ctx context.Context, received receipt, callErr error) (Result, error) {
 	result := Result{State: llm.ExecutionNotDispatched}
 	if received.attempted {
 		result.State = llm.ExecutionUnknown
 	}
-	if len(received.result) == 0 || received.rpcError {
-		if received.rpcError {
-			result.State, result.IsError = llm.ExecutionReturned, true
-		}
+	if received.returned || received.rpcError {
+		result.State = llm.ExecutionReturned
+	}
+	if callErr != nil || !received.returned || received.rpcError || received.limited {
+		result.IsError = true
 		if received.limited {
 			result.Loss = "The response exceeded the configured message storage limit."
+		} else if received.returned {
+			result.Loss = "The response was received but the SDK could not decode its result."
 		}
 		return result, operationError(ctx, received, callErr)
 	}
-	result.State = llm.ExecutionReturned
-	var wire map[string]json.RawMessage
-	var blocks []json.RawMessage
-	if json.Unmarshal(received.result, &wire) == nil && string(wire["resultType"]) == `"input_required"` {
-		result.IsError = true
-		result.Loss = "The server requested an unsupported follow-up exchange; the operation was not replayed."
-		return result, ErrUnsupported
-	}
-	if !jsonObject(received.result) || json.Unmarshal(received.result, &wire) != nil ||
-		json.Unmarshal(wire[contentKey], &blocks) != nil || bytes.Equal(bytes.TrimSpace(wire[contentKey]), []byte("null")) ||
-		(len(wire["isError"]) > 0 && json.Unmarshal(wire["isError"], &result.IsError) != nil) {
-		result.IsError = true
-		result.Loss = "The response was received but its malformed result could not be retained."
-		return result, ErrProtocol
-	}
-	for _, raw := range blocks {
-		result.Content = append(result.Content, decodeBlock(raw, contentKey == "contents"))
-	}
-	result.StructuredContent = wire["structuredContent"]
-	// Raw frames remain authoritative when the SDK rejects an unfamiliar
-	// content kind or would round arbitrary JSON numbers. The adapter will
-	// explicitly label unsupported model input, retaining the source block.
 	return result, nil
+}
+
+func inputRequired(result Result) (Result, error) {
+	result.IsError = true
+	result.Loss = "The server requested an unsupported follow-up exchange; the operation was not replayed."
+	return result, ErrUnsupported
 }

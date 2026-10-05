@@ -42,11 +42,11 @@ func TestSSEExactMultilineReceiptAndNotification(t *testing.T) {
 	r.observe([]byte(`{"jsonrpc":"2.0","id":7,"method":"tools/call"}`), true)
 	input := ": heartbeat\r\n\r\n" +
 		"data: {\"jsonrpc\":\"2.0\",\"method\":\"notifications/tools/list_changed\"}\n\n" +
-		"event: message\r\ndata: {\"jsonrpc\":\"2.0\",\"id\":7,\r\ndata: \"result\":{\"n\":9007199254740993}}\r\n\r\n"
+		"event: message\r\ndata: {\"jsonrpc\":\"2.0\",\"id\":7,\r\ndata: \"result\":{\"structuredContent\":{\"n\":9007199254740993}}}\r\n\r\n"
 	data, err := io.ReadAll(newFrameReader(io.NopCloser(strings.NewReader(input)), 4096, true, false, r))
 	received := r.finish()
-	if err != nil || string(data) != input || changed != 1 || !bytes.Equal(received.result, json.RawMessage(`{"n":9007199254740993}`)) {
-		t.Fatalf("%v changed=%d result=%s", err, changed, received.result)
+	if err != nil || string(data) != input || changed != 1 || !bytes.Equal(received.structuredContent, json.RawMessage(`{"n":9007199254740993}`)) {
+		t.Fatalf("%v changed=%d result=%s", err, changed, received.structuredContent)
 	}
 }
 
@@ -55,13 +55,13 @@ func TestReceiptDoesNotAcceptOtherIDsOrLateResults(t *testing.T) {
 	r.begin("tools/call")
 	r.observe([]byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call"}`), true)
 	r.observe([]byte(`{"jsonrpc":"2.0","id":2,"result":{"wrong":true}}`), false)
-	if got := r.finish(); len(got.result) != 0 || !got.attempted {
+	if got := r.finish(); got.returned || !got.attempted {
 		t.Fatalf("%+v", got)
 	}
 	r.begin("tools/call")
 	r.observe([]byte(`{"jsonrpc":"2.0","id":3,"method":"tools/call"}`), true)
 	r.observe([]byte(`{"jsonrpc":"2.0","id":1,"result":{"late":true}}`), false)
-	if got := r.finish(); len(got.result) != 0 {
+	if got := r.finish(); got.returned {
 		t.Fatalf("%+v", got)
 	}
 }

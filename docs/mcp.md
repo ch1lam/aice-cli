@@ -505,19 +505,30 @@ shape; the tool adapter owns the effective model/argument contract.
 SDK subscriptions deliver current-protocol list changes. Application-owned
 catalog freshness and explicit resource reads take precedence over server TTL
 hints: decoded SDK results are marked immediately stale so each explicit fetch
-passes through the same bounded, exact-JSON result path.
+passes through the bounded SDK result path.
 
 Default hard limits are 16 MiB per incoming JSON/SSE frame, 4 MiB catalog pages,
 2,000 entries, 20 pages and 1 MiB arguments. Internal callers may raise frames to
 24 MiB or lower limits. Initialization defaults to 15 seconds and operations to
-60 seconds including queue time. HTTP also bounds dialing/headers/cleanup.
+60 seconds including queue time. SDK frame limits use the configured message
+limit too. HTTP also bounds dialing/headers/cleanup.
 
 Calls and resource reads dispatch once. Pre-dispatch validation/cancellation is
 `not_dispatched`; an observed result/protocol error is `returned`; a failure after
 a write may have begun is conservatively `unknown`. Timeouts, cancellation,
 `isError`, HTTP failures and disconnect do not replay operations.
 
-Raw frames preserve exact structured numbers before SDK floating-point decoding.
+The SDK is the sole decoder for content, catalog metadata and pagination. AICE
+maps its typed results; an SDK decoding failure is an error, with no raw-result
+fallback or partial-content recovery. Unknown content types therefore fail the
+operation while retaining `returned` execution state, without automatic replay.
+A small wire observer retains only input/output schemas and `structuredContent`
+as raw JSON because SDK arbitrary-JSON fields otherwise round numbers through
+`float64`. It also records response size and dispatch/return evidence; it does
+not retain a second copy of the full result or interpret content tags. Tool
+annotations follow the SDK's typed representation. If the SDK filters an invalid
+tool, the page fails rather than attaching another tool's schema by position.
+
 The tool adapter retains ordered text, validated images, embedded resources,
 labeled links, structured JSON, error status and bound execution provenance.
 Session's [structured source companion](contracts.md#structured-tool-outcomes)
@@ -526,10 +537,10 @@ retains image originals and displayed-size information.
 
 Source ceilings are 256 blocks, 1 MiB aggregate text, 1 MiB structured JSON and
 16 MiB image views/originals. Excess, invalid images, unsupported audio/binary
-and unfamiliar content receive explicit loss notices. Local media preparation
-has a separate five-second deadline so cancellation after an RPC does not erase
-received text/JSON. Known credentials are redacted across text/resource metadata
-and decoded JSON values; unsafe redaction or credential-bearing schemas/images
+and SDK values that AICE cannot represent receive explicit loss notices. Local
+media preparation has a separate five-second deadline so cancellation after an
+RPC does not erase received text/JSON. Known credentials are redacted across
+text/resource metadata and decoded JSON values; unsafe redaction or credential-bearing schemas/images
 are rejected or marked lost. This is not detection of secrets drawn in pixels or
 arbitrarily encoded. Source loss cannot be recovered by context readback.
 
