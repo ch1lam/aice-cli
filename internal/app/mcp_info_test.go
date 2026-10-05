@@ -45,6 +45,9 @@ func mcpInfoFixture(t *testing.T, instructions string) (string, *atomic.Int32, *
 		}
 		var result any
 		switch req.Method {
+		case "server/discover":
+			w.WriteHeader(http.StatusNotFound)
+			return
 		case "initialize":
 			opens.Add(1)
 			w.Header().Set("Mcp-Session-Id", "info-fixture")

@@ -11,7 +11,7 @@ require (
 	github.com/anthropics/anthropic-sdk-go v1.74.0
 	github.com/charmbracelet/x/ansi v0.11.8
 	github.com/creativeprojects/go-selfupdate v1.6.0
-	github.com/modelcontextprotocol/go-sdk v1.6.1
+	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/openai/openai-go/v3 v3.63.1
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/viper v1.21.0

@@ -14,7 +14,11 @@ func (c *Client) Tools(ctx context.Context) (Catalog[Tool], error) {
 	}
 	return listCatalog(ctx, c, &c.toolGeneration, "tools/list", "tools",
 		func(ctx context.Context, cursor string) error {
-			_, err := c.session.ListTools(ctx, &mcp.ListToolsParams{Cursor: cursor})
+			page, err := c.session.ListTools(ctx, &mcp.ListToolsParams{Cursor: cursor})
+			if page != nil {
+				// App owns catalog freshness; discovery retains exact wire schemas.
+				page.TTLMs = 0
+			}
 			return err
 		}, func(tool Tool) (string, bool) {
 			return tool.Name, validName(tool.Name) && jsonObject(tool.InputSchema) &&
@@ -28,7 +32,10 @@ func (c *Client) Resources(ctx context.Context) (Catalog[Resource], error) {
 	}
 	return listCatalog(ctx, c, &c.resourceGeneration, "resources/list", "resources",
 		func(ctx context.Context, cursor string) error {
-			_, err := c.session.ListResources(ctx, &mcp.ListResourcesParams{Cursor: cursor})
+			page, err := c.session.ListResources(ctx, &mcp.ListResourcesParams{Cursor: cursor})
+			if page != nil {
+				page.TTLMs = 0
+			}
 			return err
 		}, func(resource Resource) (string, bool) {
 			return resource.URI, validName(resource.URI) && validName(resource.Name)

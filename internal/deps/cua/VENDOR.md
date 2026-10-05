@@ -53,15 +53,14 @@ with `CUA_DRIVER_RS_UPDATE_CHECK=false`; this does not modify preferences of
 an existing shared service. Cua updates are explicit; no `latest` resolution or
 upstream update command belongs in the runtime path.
 
-The Go client is `github.com/modelcontextprotocol/go-sdk v1.6.1`, the official
-SDK maintained under the Model Context Protocol organization. Its LICENSE
+The Go client uses the official `github.com/modelcontextprotocol/go-sdk`,
+with its version locked in [go.mod](../../../go.mod). Its LICENSE
 contains the Apache-2.0/MIT transition notice; both licenses must be retained
-when redistributing SDK source. The release implements legacy initialize,
-request correlation, cancellation, pagination, and content decoding. v1.7.0
-introduces modern discovery by default; it was reviewed but is not selected for
-this legacy-only connection. AICE pins initialize to `2025-06-18` and checks the
-negotiated version and Driver identity. The alternative of implementing a new
-JSON-RPC client would duplicate protocol/lifecycle code; the SDK stays private
+when redistributing SDK source. The SDK owns discovery/initialize, request
+correlation, cancellation, subscriptions, pagination and content decoding.
+AICE supplies `2025-06-18` through `ClientSessionOptions.ProtocolVersion` for
+the current Driver and checks the negotiated version and Driver identity;
+ordinary MCP connections use the SDK's default negotiation. The SDK stays private
 to `internal/mcpclient`, shared by ordinary MCP services and the desktop
 connection. Native installation and runtime admission remain in `internal/desktop`.
 

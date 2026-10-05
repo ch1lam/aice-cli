@@ -73,6 +73,11 @@ func (r *receipts) observe(data []byte, outgoing bool) {
 	if c == nil || id == "" || id == "null" {
 		return
 	}
+	if outgoing && c.method == "connect" && (msg.Method == "server/discover" || msg.Method == "initialize") {
+		// The SDK owns discovery and negotiation; retain the last handshake's
+		// evidence if it moves on to another mutually supported protocol.
+		*c = receipt{method: "connect", id: id, attempted: true}
+	}
 	if outgoing && msg.Method == c.method && c.id == "" {
 		c.id, c.attempted = id, true // before write: a failed write may be partial
 	}

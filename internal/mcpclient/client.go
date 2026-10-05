@@ -41,9 +41,9 @@ func Open(ctx context.Context, config Config) (*Client, error) {
 	if (config.Stdio == nil) == (config.HTTP == nil) || config.ConnectTimeout < 0 || config.CallTimeout < 0 {
 		return nil, ErrConfig
 	}
-	// Exact tiers supported by the pinned SDK v1.6.1. Review with SDK upgrades.
+	// Exact tiers supported by the SDK. Review with SDK upgrades.
 	switch config.ProtocolVersion {
-	case "", "2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05":
+	case "", "2026-07-28", "2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05":
 	default:
 		return nil, ErrConfig
 	}
@@ -94,22 +94,14 @@ func Open(ctx context.Context, config Config) (*Client, error) {
 		Logger:                     slog.New(slog.NewTextHandler(io.Discard, nil)),
 		ToolListChangedHandler:     func(context.Context, *mcp.ToolListChangedRequest) {},
 		ResourceListChangedHandler: func(context.Context, *mcp.ResourceListChangedRequest) {},
+		// The Loop owns follow-up and retries, including input-required results.
+		MultiRoundTrip: &mcp.MultiRoundTripOptions{Disabled: true},
 	})
-	if config.ProtocolVersion != "" {
-		protocol.AddSendingMiddleware(func(next mcp.MethodHandler) mcp.MethodHandler {
-			return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
-				if init, ok := req.(*mcp.InitializeRequest); ok {
-					init.Params.ProtocolVersion = config.ProtocolVersion
-				}
-				return next(ctx, method, req)
-			}
-		})
-	}
 	// Retain the original connection only for failed-initialization cleanup.
 	// Returning it unchanged preserves SDK-private sessionUpdated hooks.
 	captured := &captureTransport{Transport: transport}
-	c.receipts.begin("initialize")
-	c.session, err = protocol.Connect(ctx, captured, nil)
+	c.receipts.begin("connect")
+	c.session, err = protocol.Connect(ctx, captured, &mcp.ClientSessionOptions{ProtocolVersion: config.ProtocolVersion})
 	received := c.receipts.finish()
 	if err != nil {
 		_ = c.Close()
@@ -327,7 +319,11 @@ func (c *Client) ReadResourceChecked(ctx context.Context, uri string, check func
 		return result, err
 	}
 	c.receipts.begin("resources/read")
-	_, readErr := c.session.ReadResource(ctx, &mcp.ReadResourceParams{URI: uri})
+	read, readErr := c.session.ReadResource(ctx, &mcp.ReadResourceParams{URI: uri})
+	if read != nil {
+		// Explicit reads need fresh, bounded wire evidence, not a decoded cache hit.
+		read.TTLMs = 0
+	}
 	return decodeResult(ctx, c.receipts.finish(), readErr, "contents")
 }
 
@@ -348,6 +344,11 @@ func decodeResult(ctx context.Context, received receipt, callErr error, contentK
 	result.State = llm.ExecutionReturned
 	var wire map[string]json.RawMessage
 	var blocks []json.RawMessage
+	if json.Unmarshal(received.result, &wire) == nil && string(wire["resultType"]) == `"input_required"` {
+		result.IsError = true
+		result.Loss = "The server requested an unsupported follow-up exchange; the operation was not replayed."
+		return result, ErrUnsupported
+	}
 	if !jsonObject(received.result) || json.Unmarshal(received.result, &wire) != nil ||
 		json.Unmarshal(wire[contentKey], &blocks) != nil || bytes.Equal(bytes.TrimSpace(wire[contentKey]), []byte("null")) ||
 		(len(wire["isError"]) > 0 && json.Unmarshal(wire["isError"], &result.IsError) != nil) {

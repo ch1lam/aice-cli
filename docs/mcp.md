@@ -488,9 +488,12 @@ returns `ErrTransport` and does not establish remote session deletion. Repeated
 close does not retry DELETE.
 
 Internal consumers can pin protocol and replace the complete stdio environment;
-ordinary services use SDK negotiation. Only Cua pins `2025-06-18`. The client
+ordinary services use SDK discovery/negotiation, including `2026-07-28`.
+Only Cua pins `2025-06-18`, through the SDK's per-session option. The client
 advertises no roots, sampling or elicitation, and exposes no Prompts operations.
-OAuth/approval remain owned outside transport.
+OAuth/approval remain owned outside transport. Automatic SDK multi-round-trip
+handling is disabled: an input-required result is returned as unsupported,
+without replay, because the Loop owns follow-up and tool execution.
 
 ## Discovery and results
 
@@ -499,6 +502,10 @@ and notices. List notifications invalidate generations before dispatch.
 Duplicates, repeated cursors, invalid entries, changed pagination and failed pages
 are incomplete discovery, not empty success. The client checks schema object
 shape; the tool adapter owns the effective model/argument contract.
+SDK subscriptions deliver current-protocol list changes. Application-owned
+catalog freshness and explicit resource reads take precedence over server TTL
+hints: decoded SDK results are marked immediately stale so each explicit fetch
+passes through the same bounded, exact-JSON result path.
 
 Default hard limits are 16 MiB per incoming JSON/SSE frame, 4 MiB catalog pages,
 2,000 entries, 20 pages and 1 MiB arguments. Internal callers may raise frames to

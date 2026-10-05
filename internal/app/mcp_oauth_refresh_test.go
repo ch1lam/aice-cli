@@ -84,6 +84,9 @@ func newMCPRefreshFixture(t *testing.T) *mcpRefreshFixture {
 		}
 		result := `{}`
 		switch rpc.Method {
+		case "server/discover":
+			w.WriteHeader(http.StatusNotFound)
+			return
 		case "initialize":
 			f.opens.Add(1)
 			w.Header().Set("Mcp-Session-Id", "refresh-fixture")

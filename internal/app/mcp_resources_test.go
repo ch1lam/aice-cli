@@ -167,6 +167,9 @@ func TestMCPResourcesThroughPrintAndSession(t *testing.T) {
 				}
 				result := `{}`
 				switch request.Method {
+				case "server/discover":
+					w.WriteHeader(http.StatusNotFound)
+					return
 				case "initialize":
 					initializes.Add(1)
 					result = `{"protocolVersion":"2025-11-25","capabilities":{"resources":{}},"serverInfo":{"name":"resource-only","version":"1"}}`
