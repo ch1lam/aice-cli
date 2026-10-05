@@ -65,6 +65,11 @@ and routes; README files may summarize product behavior and link to details.
   library first; new direct dependencies require a reason, maintenance/license
   review, and explicit user approval.
   [Ownership rules](docs/architecture.md#dependency-and-ownership-rules)
+- **Reuse integration SDKs and remove replaced paths.** Prefer documented
+  provider SDK capabilities, then an OAuth SDK following official guidance or
+  a pinned primary integration reference. Replaced code and interaction paths
+  have no backward-compatibility requirement.
+  [Integration rules](docs/architecture.md#sdk-and-authentication-integration)
 - **Keep control flow in the Agent Loop.** The loop owns tools, steering,
   follow-up, retries, and stopping. Runs are unlimited by default; optional
   `MaxTurns`, resource budgets and repeated-tool detection stay in the Loop. Never

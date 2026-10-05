@@ -60,8 +60,10 @@ mutable state or process environment. Default tests must not need provider
 credentials or paid APIs. Required commands live in
 [Collaboration](collaboration.md#verification-commands).
 
-Internal Go APIs may change with their callers; do not retain obsolete shims
-without a current need. This does not waive the current
+Internal Go APIs change with their callers. Delete superseded implementations,
+compatibility shims and fallback paths when their replacement lands, following
+the [integration rules](architecture.md#sdk-and-authentication-integration).
+This does not waive the current
 [NDJSON contract](contracts.md#print-ndjson-events) or permit silently discarding
 Session history. For a format or user-facing breaking change, identify affected
 readers/integrations and explicitly decide versioning, migration, or rejection

@@ -141,6 +141,34 @@ such as `core`, `types`, `services`, `utils`, or `helpers`.
   maintenance/license review and explicit user approval. Versions live in
   [go.mod](../go.mod), not duplicated catalogs in these guides.
 
+### SDK and authentication integration
+
+Use the provider's official SDK first when it exposes the required capability
+and documents that integration, including coding-plan or subscription access.
+Reuse an existing provider SDK dependency before adding another implementation.
+Check login/token exchange, refresh and inference separately: accepting a bearer
+token for inference does not establish that an SDK implements account login.
+
+When the provider SDK lacks the required authentication capability, use a
+maintained OAuth SDK following the provider's official integration guide. When
+no official guide exists, use the established primary integration as a pinned,
+attributed reference and keep its provider-specific differences in a thin
+adapter. Do not claim official support for such a reference. MCP protocol and
+authorization use the official MCP SDK wherever it provides the needed behavior.
+
+App owns login coordination and credential publication; presentation stays in
+the UI, persistence in config, and provider-specific wire details at the provider
+boundary. Existing login/menu interactions are replaceable, not compatibility
+requirements. Share concrete authentication operations rather than creating a
+service registry or a second runtime.
+
+When replacing an implementation, update its callers and delete the superseded
+path, adapters, fallback switches and obsolete tests/documentation in the same
+change. Do not maintain parallel implementations for old AICE behavior. An
+upstream protocol required by a current integration, such as the pinned Cua
+Driver, is handled through the current SDK's supported API, not by pinning the
+whole application to an old SDK or rebuilding that protocol in AICE.
+
 Selected non-standard dependencies and their reason:
 
 | Dependency | Reason / license |

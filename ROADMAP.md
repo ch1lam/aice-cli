@@ -23,6 +23,7 @@ shipped versions.
 
 | Priority | Work | Evidence of progress |
 | --- | --- | --- |
+| Authentication and connection management | Replace duplicated provider/MCP login flows and cumbersome account menus with shared operations and a simpler entry point, following the [SDK priority](docs/architecture.md#sdk-and-authentication-integration). | Supported official SDK flows take precedence; OAuth SDKs handle remaining protocol work; replaced paths and menus are removed. |
 | Reliable everyday use | Close known gaps in sessions, cancellation, permissions and platform integrations. | Reproducible failures have regression coverage; platform claims have native verification. |
 | Code quality evaluation | Evaluate feature work, bug fixes and behavior-preserving refactoring across successive changes. | Comparable runs retain model/settings, tests, diffs and human review; improvements survive the next requirement. |
 | Maintenance workflows | Improve support for incremental refactoring, large codebase changes, and documentation restructuring and migration. | Representative tasks preserve behavior, keep changes reviewable and leave code and docs aligned. |
