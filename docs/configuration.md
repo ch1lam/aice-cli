@@ -1,5 +1,23 @@
 # Configuration
 
+Use [Settings](#settings-window) for interactive changes and
+[command-line options](#command-line-options) for one invocation. The
+[precedence rules](#settings-and-precedence) determine the effective value;
+the [persistence rules](#interactive-persistence-and-multiple-instances)
+explain what survives a restart.
+
+## Configuration lifetimes
+
+| Term | Lifetime and configuration boundary |
+| --- | --- |
+| Process | One running AICE instance. Its interactive or Print environment loads startup configuration, Project Trust, instructions and the Skills catalog. Restart AICE to reload them. |
+| Session | Conversation history that can span multiple Agent runs. `/new` detaches from it and clears transient Session grants; it does not reload startup configuration or Skills. |
+| Agent run | One execution of the Agent Loop, including accepted steering and queued follow-ups. AICE freezes its settings before execution; run limits apply within that run. |
+
+Interactive changes can update the running process as described below. They do
+not rewrite a running Agent run's snapshot. Session persistence and run stopping
+rules belong to [Execution and Sessions](execution-sessions.md).
+
 ## Settings and precedence
 
 All settings resolve through an instance-local Viper registry, from highest
@@ -58,9 +76,10 @@ Example global settings:
 }
 ```
 
-When `settings.json` omits `provider` and `model`, AICE uses `deepseek` and
-`deepseek-flash`. The `opencode-go` catalog default remains
-`deepseek-v4-flash`.
+When configuration supplies neither a provider nor a model, AICE uses
+`deepseek` and `deepseek-flash`. Omitting them from the user settings file does
+not override flags, environment variables or trusted project settings. The
+`opencode-go` catalog default remains `deepseek-v4-flash`.
 
 The DeepSeek API catalog contains only `deepseek-flash` (V4.1-Flash) and
 `deepseek-v4-pro` (V4-Pro-0813). Only Flash accepts text/image input; Pro is
@@ -102,13 +121,19 @@ variable at startup.
 | `--run-timeout 30m` | `run_timeout` | `AICE_RUN_TIMEOUT` | `0s` (unlimited) |
 | `--run-no-progress-limit N` | `run_no_progress_limit` | `AICE_RUN_NO_PROGRESS_LIMIT` | `8` identical tool rounds |
 
-Token budgets must be non-negative integers; timeouts are non-negative Go duration
-strings such as `30m` or `1h`. Explicit zero disables an inherited limit. Invalid
-winning values fail configuration loading. Model/provider changes preserve the
-loaded limits. Repetition limits accept `0` (disabled) or an integer of at least
-`2`. The threshold counts consecutive identical tool rounds, not total model
-rounds. `max_turns` accepts a non-negative integer; `0` leaves model rounds
-unlimited. It counts model request attempts, including retries, within one run.
+`max_turns` and token budgets accept non-negative integers. Timeouts accept
+non-negative Go duration strings such as `30m` or `1h`. Repetition limits accept
+`0` (disabled) or an integer of at least `2`.
+
+An explicit zero disables an inherited limit. If the winning value is invalid,
+AICE rejects the configuration instead of falling back. Changing the model or
+provider preserves the loaded limits.
+
+`max_turns` counts model request attempts, including retries, within one Agent
+run. The repetition threshold counts consecutive identical completed tool
+rounds. Steering and queued follow-ups remain in the same run; see
+[execution semantics](execution-sessions.md#run-resource-limits) for the distinct
+reset and accounting rules.
 
 ```sh
 aice --max-turns 50 --run-token-budget 200000 --run-timeout 30m
@@ -142,8 +167,8 @@ warnings. OAuth refresh has its own lock lifecycle below.
 
 ### Settings window
 
-Open `/settings`. `/desktop` and `/mcp desktop` open Computer Use
-in that same panel. Opening Settings creates no Session or Agent run.
+To edit preferences, open `/settings`. To open its Computer Use area directly,
+use `/desktop` or `/mcp desktop`. Opening the panel creates no Session or Agent run.
 
 | Area | Preferences or actions | Takes effect |
 | --- | --- | --- |
@@ -153,9 +178,12 @@ in that same panel. Opening Settings creates no Session or Agent run.
 | Project & Trust | Default policy and saved project decision | Next startup |
 | System | Helper downloads, update checks, paths and diagnostics | Next startup |
 
-Tab/Shift+Tab switches categories; `/` searches; arrows select; Enter edits;
-`?` opens details. Click a heading or use Left/Right to fold/unfold groups.
-Booleans save immediately. Text, integers, durations and choices save with Enter.
+Use Tab/Shift+Tab to switch categories. Press `/` to search, use arrows to
+select a row, and press Enter to edit it. Press `?` for details. Click a heading
+or use Left/Right to fold or unfold a group.
+
+When you toggle a Boolean, AICE saves it immediately. For text, integers,
+durations and choices, press Enter to save.
 Array editors use `a` to add, Enter to edit, Tab between cells, `d` to delete,
 Ctrl+Up/Down to reorder, and Ctrl+S to save. Leaving a changed array offers
 save/discard/keep. Escape backs out without cancelling a background response.
@@ -603,6 +631,11 @@ billing endpoint; upstream protocol changes may require an AICE update.
 
 ## Command-line options
 
+The list below covers root-command flags. Use `aice --help` for the help
+provided by your installed binary and `aice <command> --help` for a subcommand.
+Defaults, settings keys and environment variables for limits appear only in
+the [run limits table](#run-limits) in this guide.
+
 ```text
 aice [--print <prompt>] [flags]
 
@@ -615,17 +648,23 @@ aice [--print <prompt>] [flags]
 --thinking <level>   override the requested thinking level
 --no-dep-install    disable automatic helper downloads
 --no-update-check   disable the interactive startup update check
---max-turns         model request attempts per Agent run, including retries (0: unlimited)
---run-token-budget  provider-reported token budget per Agent run (0: unlimited)
---run-timeout       wall-clock budget per Agent run, e.g. 30m (0: unlimited)
---run-no-progress-limit  consecutive identical tool rounds before stopping (default: 8; 0: disabled)
---approve, -a        trust project-local resources for this run
---no-approve         ignore project-local resources for this run
+--max-turns <N>      model request attempts per Agent run, including retries
+--run-token-budget <N>  provider-reported token budget per Agent run
+--run-timeout <duration>  wall-clock budget per Agent run, e.g. 30m
+--run-no-progress-limit <N>  consecutive identical completed tool rounds before stopping
+--approve, -a        trust project-local resources for this invocation
+--no-approve         ignore project-local resources for this invocation
 --yolo               automatically allow tool calls that would otherwise ask; for isolated containers/CI; dangerous
 --version, -v        show the version
+--help, -h           show command help
 ```
 
-`--print` requires exactly one prompt argument. Without `--session` it does
+`--approve` and `--no-approve` are mutually exclusive startup Trust choices;
+they do not grant tool permissions. `--yolo` allows Ask decisions but cannot
+bypass a Deny. See [Project Trust](project-trust.md) and the
+[tool execution boundary](execution-sessions.md#tool-execution-boundary).
+
+`--print` requires exactly one non-blank prompt argument. Without `--session` it does
 not persist the run. Session navigation and compaction commands are documented
 in [Tool execution and Sessions](execution-sessions.md#sessions). `aice
 update` is documented in [Installation and updates](installation.md).
@@ -655,9 +694,10 @@ AICE loads skills from three sources when preparing the process's run environmen
 3. **project** — `<workspace>/.agents/skills/<name>/SKILL.md`
 
 When two skills share a name, project wins over user over builtin. `/skills`
-lists the catalog loaded for this Session; grouping is source information
-only. Settings → Project → Skills shows the same startup catalog grouped by
-source, with each skill name, full description and location on separate lines.
+lists the process startup catalog; grouping indicates the source, not a
+separate permission scope. Settings → Project → Skills shows the same startup
+catalog grouped by source, with each skill name, full description and location
+on separate lines.
 The TUI highlights names and source headings, separates diagnostics and restart
 notes, and wraps long descriptions and paths in the scrollable detail view.
 
@@ -715,9 +755,10 @@ Skill directories on disk are allowed automatically for read-class tools
 (`read`, `grep`, `find`, `ls`); `write` and `edit` are not granted. See
 [Tool execution and Sessions](execution-sessions.md#tool-execution-boundary).
 
-Restart AICE after installing or removing skills. `/new` resets Session
-history but reuses the startup skill catalog, tools, and prompt; it does not
-rescan skills. The `/skills` reminder reports that restart requirement.
+After installing, editing or removing Skills, restart AICE to reload them.
+`/new` detaches from the current Session and preserves its recorded history;
+it reuses the startup Skills catalog and prompt. It does not rescan Skills.
+The `/skills` reminder reports the restart requirement.
 
 ## Interactive commands
 
@@ -744,7 +785,7 @@ The composer retains the real terminal cursor for IME composition.
 | `/browser` | Browser status, connection, tab selection and close; `/browser status` also works |
 | `/mcp` | Manage MCP services, connection approval and credentials; see [MCP](mcp.md) |
 | `/web` | Web search services, priority order, credentials and the `web_fetch` switch; see [Web search and fetch](web.md#the-web-command) |
-| `/skills` | List Agent Skills loaded for this Session |
+| `/skills` | List the process startup Skills catalog; restart to rescan |
 | `/skill:<name> [task]` | Attach a discovered Skill and load its full instructions on send |
 | `/login` | Choose account or API key, then provider and credential action; see [login flows](#credentials-and-connection-overrides) |
 | `/provider` | Select and save the global provider |

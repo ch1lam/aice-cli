@@ -50,8 +50,9 @@ cd /path/to/project
 aice
 ```
 
-Run `/login` to configure a provider using an API key or a supported subscription
-account, then `/model` to choose a model. Enter a task, for example:
+1. Run `/login` to configure a provider using an API key or a supported subscription account.
+2. Run `/model` to choose a model.
+3. Enter a task, for example:
 
 ```text
 Explain how this project is organized and where I should start reading.
@@ -60,6 +61,10 @@ Explain how this project is organized and where I should start reading.
 - Add `@src/main.go` to reference a file; use `Ctrl+V` or `Alt+V` to paste an image with a vision model.
 - While AICE works, press Enter to send a correction, Ctrl+Enter to queue a follow-up, or Esc to cancel.
 - Use `/history` to resume a session, `/settings` to change preferences, and `/help` or `?` for commands and shortcuts.
+
+Interactive preference changes save to your user settings. On restart, flags,
+environment variables or trusted project settings can override them; see
+[configuration precedence and lifetimes](./docs/configuration.md#configuration-lifetimes).
 
 After configuring a provider, use `--print` for non-interactive tasks or scripts:
 
@@ -102,7 +107,7 @@ non-interactive CLI.
 | Browser automation | `/browser` — browse and interact with pages through agent-browser on macOS/Linux; [guide](./docs/browser.md) |
 | Computer Use | `/desktop` — opt-in desktop automation through Cua Driver; [platform limits and verification status](./docs/desktop.md#platform-evidence) |
 | MCP servers | `/mcp` or `aice mcp` — connect external tools and resources; [guide](./docs/mcp.md) |
-| Agent Skills | `/skills` — discover reusable `SKILL.md` instructions; [guide](./docs/configuration.md#agent-skills) |
+| Agent Skills | `/skills` — list the startup `SKILL.md` catalog; restart after changing Skills; [guide](./docs/configuration.md#agent-skills) |
 
 AICE runs tools with your local user permissions; the workspace is not an OS
 sandbox. Model requests send task context to your configured provider.

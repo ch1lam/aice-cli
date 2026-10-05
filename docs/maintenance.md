@@ -125,6 +125,26 @@ Keep reproducible verification commands and evaluation task specifications.
 Session recovery and supported-format rejection are current behavior, not
 historical documentation.
 
+State the actor explicitly, put a condition before its action, and give each
+instruction one main operation. Use Process, Session and Agent run consistently;
+see [configuration lifetimes](configuration.md#configuration-lifetimes). Apply
+these clarity rules to Chinese prose without English word-count rules or a claim
+of STE compliance. Clear wording does not verify implementation behavior.
+
+The [root-command documentation tests](../internal/cli/root_documentation_test.go)
+compare documented flag names/shorthands with Cobra and the run-limit table with
+Cobra defaults and `config.SettingDefinitions`. Run them without starting AICE:
+
+```sh
+go test ./internal/cli -run '^TestRootCommandDocumentation' -count=1
+```
+
+The existing Go test job runs these checks in CI. They cover these facts only;
+behavior, permissions and platform acceptance still need their owning tests and
+the discrepancy procedure above. When changing a check, temporarily change a
+covered default, flag or environment name, confirm that the check fails, then
+restore the file and confirm it passes. Do not update prose to conceal a regression.
+
 ## Settings and Usage verification
 
 Config owns typed fields, frozen sources and partial writes; app owns resource

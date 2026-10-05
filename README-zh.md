@@ -49,8 +49,9 @@ cd /path/to/project
 aice
 ```
 
-执行 `/login`，通过 API Key 或受支持的订阅账号配置模型服务，再用 `/model` 选择模型。
-然后直接输入任务，例如：
+1. 执行 `/login`，通过 API Key 或受支持的订阅账号配置模型服务。
+2. 执行 `/model` 选择模型。
+3. 输入任务，例如：
 
 ```text
 介绍这个项目的代码结构，告诉我应该从哪里开始阅读。
@@ -59,6 +60,9 @@ aice
 - 输入 `@src/main.go` 引用文件；使用视觉模型时，通过 `Ctrl+V` 或 `Alt+V` 粘贴图片。
 - 执行中按 Enter 补充要求，Ctrl+Enter 排队后续任务，Esc 中断运行。
 - 用 `/history` 恢复历史会话、`/settings` 修改设置，`/help` 或 `?` 查看命令和快捷键。
+
+交互式偏好更改会保存到用户设置。重启后，命令行参数、环境变量或已信任的项目设置
+仍可覆盖这些偏好；详见[配置优先级与生命周期](./docs/configuration.md#configuration-lifetimes)。
 
 配置好模型服务后，可通过 `--print` 执行非交互任务或接入脚本：
 
@@ -99,7 +103,7 @@ AICE 提供模型调用、工具执行、上下文与会话管理，通过 TUI �
 | 浏览器自动化 | `/browser` — 通过 agent-browser 浏览和操作网页，支持 macOS/Linux；[指南](./docs/browser.md) |
 | Computer Use | `/desktop` — 显式启用基于 Cua Driver 的桌面自动化；[平台限制与验证状态](./docs/desktop.md#platform-evidence) |
 | MCP 服务 | `/mcp` 或 `aice mcp` — 接入外部工具与资源；[指南](./docs/mcp.md) |
-| Agent Skills | `/skills` — 查看可复用的 `SKILL.md` 任务指令；[指南](./docs/configuration.md#agent-skills) |
+| Agent Skills | `/skills` — 查看启动时加载的 `SKILL.md` 列表；变更 Skills 后需重启；[指南](./docs/configuration.md#agent-skills) |
 
 工具使用当前用户的本机权限执行，工作目录不是操作系统沙箱。
 模型请求会将任务上下文发送给你配置的模型服务。处理敏感项目之前，请了解
