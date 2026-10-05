@@ -356,9 +356,9 @@ func (m *nativeStopModel) Stream(ctx context.Context, request llm.Request) (llm.
 		return nil, errors.New("model resumed after native mutation")
 	}
 	var observed struct {
-		PID      int               `json:"pid"`
-		Window   uint64            `json:"window_id"`
-		Elements []desktop.Element `json:"elements"`
+		PID      int                    `json:"pid"`
+		Window   uint64                 `json:"window_id"`
+		Elements []nativeManagedElement `json:"elements"`
 	}
 	if json.Unmarshal(nativeManagedJSON(result), &observed) != nil || observed.PID != m.target.pid || observed.Window != m.window {
 		return nil, errors.New("invalid Stop observation")

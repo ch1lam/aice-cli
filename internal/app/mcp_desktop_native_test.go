@@ -17,6 +17,13 @@ import (
 	"github.com/ch1lam/aice-cli/internal/tool"
 )
 
+// Scripted native models decode only the fields their fixture needs.
+type nativeManagedElement struct {
+	Token string `json:"element_token"`
+	Role  string `json:"role"`
+	Label string `json:"label"`
+}
+
 type nativeManagedCUAModel struct {
 	readback                            nativeManagedReadback
 	viewBudget                          int64
@@ -29,7 +36,7 @@ type nativeManagedCUAModel struct {
 	loaded                              bool
 	pending, pendingID                  string
 	window                              uint64
-	elements                            []desktop.Element
+	elements                            []nativeManagedElement
 }
 
 func (m *nativeManagedCUAModel) Stream(ctx context.Context, request llm.Request) (llm.Stream, error) {
@@ -92,9 +99,9 @@ func (m *nativeManagedCUAModel) Stream(ctx context.Context, request llm.Request)
 				}
 			case "get_window_state":
 				var observed struct {
-					PID      int               `json:"pid"`
-					Window   uint64            `json:"window_id"`
-					Elements []desktop.Element `json:"elements"`
+					PID      int                    `json:"pid"`
+					Window   uint64                 `json:"window_id"`
+					Elements []nativeManagedElement `json:"elements"`
 				}
 				if json.Unmarshal(nativeManagedJSON(result), &observed) != nil || observed.PID != m.targets[m.index].pid || observed.Window != m.window {
 					return nil, fmt.Errorf("native observation target mismatch: json_bytes=%d pid=%d/%d window=%d/%d parts=%d", len(nativeManagedJSON(result)), observed.PID, m.targets[m.index].pid, observed.Window, m.window, len(result.Content))

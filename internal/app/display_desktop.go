@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/ch1lam/aice-cli/internal/agent"
-	"github.com/ch1lam/aice-cli/internal/desktop"
 	"github.com/ch1lam/aice-cli/internal/interaction"
 	"github.com/ch1lam/aice-cli/internal/llm"
 )
@@ -93,12 +92,18 @@ func (p *desktopDisplayProjection) end(event agent.AgentEvent) *interaction.Desk
 			break
 		}
 	}
-	// AICE's desktop adapter emits one bounded JSON object. Do not infer facts
+	// Legacy desktop tools recorded one bounded JSON object. Do not infer facts
 	// from free-form errors, Driver prose, images or truncated display output.
 	var result struct {
 		desktopObservationDisplay
-		Apps             []desktop.Application      `json:"apps"`
-		Windows          []desktop.Window           `json:"windows"`
+		Apps []struct {
+			Ref  string `json:"app_ref"`
+			Name string `json:"name"`
+		} `json:"apps"`
+		Windows []struct {
+			Ref string `json:"target_ref"`
+			App string `json:"app"`
+		} `json:"windows"`
 		Observation      *desktopObservationDisplay `json:"observation"`
 		Code             string                     `json:"code"`
 		Outcome          string                     `json:"outcome"`

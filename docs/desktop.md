@@ -154,6 +154,8 @@ Planning are presentation facts, not proof of delivery or task success.
 Stop remains Stopping until completion; absent terminal results show Result
 unavailable. Completion and branch replacement clear live activity. Replaying
 history derives display from source records without native I/O or a live runtime.
+Legacy `desktop_*` records use display-owned decoding shapes, independently of
+the current native execution and setup APIs.
 
 ## Settings and task continuation
 
