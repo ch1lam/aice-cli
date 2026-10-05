@@ -11,7 +11,7 @@ func TestDesktopSetupDisconnectRetiresReferencesAndReAdmits(t *testing.T) {
 	connections := 0
 	m := newManager(func(context.Context) (driverClient, error) { connections++; return f, nil })
 	defer m.Close()
-	r, err := m.Bind(t.Context(), RunOptions{Mode: BackgroundOnly})
+	r, err := bindFixtureRun(m, t.Context(), RunOptions{Mode: BackgroundOnly})
 	if err != nil {
 		t.Fatal(err)
 	}

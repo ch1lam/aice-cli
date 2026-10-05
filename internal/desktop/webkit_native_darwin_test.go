@@ -65,7 +65,7 @@ func TestNativeMacWebKitTransfer(t *testing.T) {
 		dials++
 		return &nativeCountedClient{driverClient: client, calls: calls}, nil
 	}
-	run, err := manager.Bind(ctx, RunOptions{Mode: BackgroundOnly, Images: true})
+	run, err := bindFixtureRun(manager, ctx, RunOptions{Mode: BackgroundOnly, Images: true})
 	if err != nil {
 		t.Fatal(err)
 	}

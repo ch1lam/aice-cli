@@ -172,8 +172,11 @@ and resume through the CLI with generated history and isolated settings.
 ## Computer Use checks
 
 Default tests use fake peers, synthetic images and temporary configuration; they
-perform no native desktop or provider calls. Integration compilation alone does
-not run the opt-in gates. Native evidence and unresolved failures live in
+perform no native desktop or provider calls. Selected-window setup tests verify
+screenshot-only dispatch, identity/image validation, cancellation and cleanup.
+Native workflow helpers keep synthetic observations and coordinate conversions
+in test-owned state; their operations still pass through `Run.CallChecked`.
+Integration compilation alone does not run the opt-in gates. Native evidence and unresolved failures live in
 [Computer Use](desktop.md#platform-evidence); keep historical results separate
 from current-version acceptance.
 

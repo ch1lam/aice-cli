@@ -40,8 +40,8 @@ func TestNativeMacSessionExpiry(t *testing.T) {
 		dials++
 		return &nativeCountedClient{driverClient: client, calls: calls}, nil
 	}
-	bind := func() *Run {
-		run, err := manager.Bind(ctx, RunOptions{Mode: BackgroundOnly, Images: true})
+	bind := func() *fixtureRun {
+		run, err := bindFixtureRun(manager, ctx, RunOptions{Mode: BackgroundOnly, Images: true})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -52,7 +52,7 @@ func TestNativeMacSessionExpiry(t *testing.T) {
 		})
 		return run
 	}
-	observe := func(run *Run) Observation {
+	observe := func(run *fixtureRun) Observation {
 		discovery, err := run.discoverWindows(ctx, target.name, 16)
 		if err != nil {
 			t.Fatal(err)

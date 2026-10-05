@@ -78,7 +78,7 @@ func TestNativeLinuxManager(t *testing.T) {
 				dials++
 				return &linuxCountedClient{driverClient: c, calls: calls}, nil
 			}
-			r, err := m.Bind(ctx, RunOptions{Mode: BackgroundOnly, Images: true})
+			r, err := bindFixtureRun(m, ctx, RunOptions{Mode: BackgroundOnly, Images: true})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -173,7 +173,7 @@ func TestNativeLinuxManager(t *testing.T) {
 	}
 }
 
-func linuxManagerReturned(t *testing.T, run *Run, result ActResult, err error) {
+func linuxManagerReturned(t *testing.T, run *fixtureRun, result ActResult, err error) {
 	t.Helper()
 	if err != nil || !result.Dispatched || result.Outcome != "returned" || result.DriverError || result.Observation == nil || result.Observation.Image == nil || result.ObservationError != "" {
 		t.Fatalf("native Manager action: outcome=%s driver_error=%v observation_error=%s err=%v", result.Outcome, result.DriverError, result.ObservationError, err)

@@ -45,7 +45,7 @@ func TestNativeMacCancelWait(t *testing.T) {
 		counts.dials.Add(1)
 		return &nativeCancelClient{driverClient: client, counts: counts}, nil
 	}
-	run, err := manager.Bind(ctx, RunOptions{Mode: BackgroundOnly, Images: true})
+	run, err := bindFixtureRun(manager, ctx, RunOptions{Mode: BackgroundOnly, Images: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,8 +134,8 @@ func TestNativeMacCancelWait(t *testing.T) {
 			t.Fatal("cancelled call did not settle", name)
 		}
 	}
-	if counts.clicks.Load() != 0 || counts.starts.Load() != 1 || counts.ends.Load() != 1 || len(run.observations) != 0 || !manager.Status().Connected {
-		t.Fatal("cancel did not invalidate references, end exactly one session and preserve the connection")
+	if counts.clicks.Load() != 0 || counts.starts.Load() != 1 || counts.ends.Load() != 1 || run.active || !manager.Status().Connected {
+		t.Fatal("cancel did not end exactly one session and preserve the connection")
 	}
 	if result, err := run.actAndObserve(ctx, clickRequest); !errors.Is(err, context.Canceled) || result.Dispatched {
 		t.Fatal("closed run accepted an old action")
@@ -151,7 +151,7 @@ func TestNativeMacCancelWait(t *testing.T) {
 		t.Fatal("cancel stopped shared service", err)
 	}
 	// Only a new binding, new discovery and new observation may resume input.
-	next, err := manager.Bind(ctx, RunOptions{Mode: BackgroundOnly, Images: true})
+	next, err := bindFixtureRun(manager, ctx, RunOptions{Mode: BackgroundOnly, Images: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -246,7 +246,7 @@ func TestNativeMacCancelDispatchedClick(t *testing.T) {
 		counts.dials.Add(1)
 		return &nativeCancelClient{driverClient: client, counts: counts}, nil
 	}
-	run, err := manager.Bind(ctx, RunOptions{Mode: BackgroundOnly, Images: true})
+	run, err := bindFixtureRun(manager, ctx, RunOptions{Mode: BackgroundOnly, Images: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -324,7 +324,7 @@ func TestNativeMacCancelDispatchedClick(t *testing.T) {
 		t.Fatal("in-flight cancellation stopped shared service", err)
 	}
 	// Recover read-only in a new run. Do not repeat the already committed click.
-	next, err := manager.Bind(ctx, RunOptions{Mode: BackgroundOnly, Images: true})
+	next, err := bindFixtureRun(manager, ctx, RunOptions{Mode: BackgroundOnly, Images: true})
 	if err != nil {
 		t.Fatal(err)
 	}

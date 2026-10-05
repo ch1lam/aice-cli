@@ -122,9 +122,9 @@ func occupiedManager(t *testing.T, directory string, f *fakeDriver) *Manager {
 	return m
 }
 
-func occupancyRun(t *testing.T, m *Manager) *Run {
+func occupancyRun(t *testing.T, m *Manager) *fixtureRun {
 	t.Helper()
-	r, err := m.Bind(t.Context(), RunOptions{Mode: BackgroundOnly})
+	r, err := bindFixtureRun(m, t.Context(), RunOptions{Mode: BackgroundOnly})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -93,8 +93,8 @@ func TestDriverCatalogChangePreventsOldCallsAndRetiresManager(t *testing.T) {
 	if !errors.Is(err, errDriverCatalogChanged) || second.State != llm.ExecutionNotDispatched || peer.calls.Load() != 1 {
 		t.Fatal("old catalog dispatched", err)
 	}
-	// Typed transition path must distinguish this pre-dispatch rejection from
-	// unknown execution, while retiring the connection and all run references.
+	// The lifecycle call path must retain pre-dispatch rejection while retiring
+	// the connection and its native sessions.
 	m := newManager(func(context.Context) (driverClient, error) { t.Fatal("implicit reconnect"); return nil, nil })
 	defer m.Close()
 	r, err := m.Bind(t.Context(), RunOptions{Mode: BackgroundOnly})
@@ -105,11 +105,10 @@ func TestDriverCatalogChangePreventsOldCallsAndRetiresManager(t *testing.T) {
 	m.client = c
 	m.status.Connected = true
 	m.runs[r] = struct{}{}
-	r.targets["old-window"] = windowIdentity{PID: 1, WindowID: 2}
 	r.active, r.started = true, true
 	reply, err := r.callLocked(t.Context(), "click", map[string]any{})
 	action := actionResult(reply, err)
-	if action.Dispatched || action.Outcome != "not_dispatched" || m.Status().Connected || len(r.targets) != 0 || r.started || peer.calls.Load() != 1 || peer.pages.Load() != 2 {
+	if action.Dispatched || action.Outcome != "not_dispatched" || m.Status().Connected || r.started || peer.calls.Load() != 1 || peer.pages.Load() != 2 {
 		t.Fatal("invalidated admission retained authority or replayed")
 	}
 }

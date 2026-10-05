@@ -57,7 +57,7 @@ func TestNativeCuaMultiApp(t *testing.T) {
 		dials++
 		return &nativeCountedClient{driverClient: c, calls: calls}, nil
 	}
-	r, err := m.Bind(ctx, RunOptions{Mode: BackgroundOnly, Images: true})
+	r, err := bindFixtureRun(m, ctx, RunOptions{Mode: BackgroundOnly, Images: true})
 	if err != nil {
 		t.Fatal(err)
 	}

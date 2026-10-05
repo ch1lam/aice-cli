@@ -93,7 +93,7 @@ func testNativeMacPixelInput(t *testing.T, kinds []string, controlMode ControlMo
 				}
 				return &nativeCountedClient{driverClient: client, calls: calls}, nil
 			}
-			run, err := manager.Bind(ctx, RunOptions{Mode: controlMode, Images: true})
+			run, err := bindFixtureRun(manager, ctx, RunOptions{Mode: controlMode, Images: true})
 			if err != nil {
 				t.Fatal(err)
 			}

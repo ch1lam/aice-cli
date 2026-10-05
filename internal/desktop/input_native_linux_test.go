@@ -55,7 +55,7 @@ func TestNativeLinuxInput(t *testing.T) {
 					t.Error(err)
 				}
 			}()
-			r, err := m.Bind(ctx, RunOptions{Mode: BackgroundOnly, Images: true})
+			r, err := bindFixtureRun(m, ctx, RunOptions{Mode: BackgroundOnly, Images: true})
 			if err != nil {
 				t.Fatal(err)
 			}

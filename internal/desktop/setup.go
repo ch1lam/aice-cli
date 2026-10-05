@@ -198,29 +198,28 @@ func setupWindowCapture(ctx context.Context, manager *Manager, selectWindow func
 	ctx, cancel := context.WithTimeout(ctx, 4*time.Minute)
 	defer cancel()
 	defer func() { returnErr = errors.Join(returnErr, manager.Close()) }()
+	if selectWindow == nil {
+		return result, errors.New("desktop: setup requires an explicit window selection")
+	}
 	run, err := manager.Bind(ctx, RunOptions{Mode: BackgroundOnly, Images: true})
 	if err != nil {
 		return result, err
 	}
 	defer func() { returnErr = errors.Join(returnErr, run.Close()) }()
-	discovery, err := run.Windows(ctx, "", maxTargets)
+	windows, err := setupWindows(ctx, run)
 	if err != nil {
 		return result, err
 	}
 	result.ConnectionVerified = true
-	if len(discovery.Windows) == 0 {
+	if len(windows) == 0 {
 		return result, serviceError("capture_unavailable", "no window available for setup verification; open a window in the intended X11 session and retry")
 	}
-	target, err := selectWindow(ctx, discovery.Windows)
+	target, err := selectSetupWindow(ctx, windows, selectWindow)
 	if err != nil {
 		return result, err
 	}
-	observation, err := run.Observe(ctx, ObserveRequest{TargetRef: target, Screenshot: true})
-	if err != nil {
+	if err := verifySetupCapture(ctx, run, target); err != nil {
 		return result, err
-	}
-	if observation.Image == nil || run.observations[observation.Ref].capture == "" {
-		return result, serviceError("capture_unavailable", "the selected window did not produce a verified capture; inspect the graphical session and retry setup")
 	}
 	result.CaptureVerified, result.Ready = true, true
 	return result, nil

@@ -95,7 +95,7 @@ func TestReadOnlyInspectionPreservesMissingAndUnknownGrants(t *testing.T) {
 	}
 }
 
-func TestCaptureStatusComesFromSetupRequestedObservation(t *testing.T) {
+func TestCaptureStatusComesFromSetupVerification(t *testing.T) {
 	t.Parallel()
 	var data bytes.Buffer
 	if err := png.Encode(&data, image.NewRGBA(image.Rect(0, 0, 2100, 2))); err != nil {
@@ -109,16 +109,24 @@ func TestCaptureStatusComesFromSetupRequestedObservation(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer r.Close()
-	_ = setupObserved(t, r, false)
-	if !m.Status().CaptureCheckedAt.IsZero() {
-		t.Fatal("semantic observation became capture evidence")
+	windows, err := setupWindows(t.Context(), r)
+	if err != nil || len(windows) == 0 {
+		t.Fatal("setup discovery", err)
 	}
-	_ = setupObserved(t, r, true)
+	target := windowIdentity{PID: windows[0].PID, WindowID: windows[0].WindowID}
+	if !m.Status().CaptureCheckedAt.IsZero() {
+		t.Fatal("window discovery became capture evidence")
+	}
+	if err := verifySetupCapture(t.Context(), r, target); err != nil {
+		t.Fatal(err)
+	}
 	if !m.Status().CaptureAvailable || m.Status().CaptureCheckedAt.IsZero() {
 		t.Fatal("valid screenshot not recorded")
 	}
 	f.image = []byte("invalid screenshot")
-	_ = setupObserved(t, r, true)
+	if err := verifySetupCapture(t.Context(), r, target); err == nil {
+		t.Fatal("invalid image accepted")
+	}
 	if m.Status().CaptureAvailable {
 		t.Fatal("failed capture retained the earlier success state")
 	}

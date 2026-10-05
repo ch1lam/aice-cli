@@ -38,7 +38,7 @@ func TestNativeMacSameRunReconnect(t *testing.T) {
 			t.Error(err)
 		}
 	}()
-	run, err := manager.Bind(ctx, RunOptions{Mode: BackgroundOnly})
+	run, err := bindFixtureRun(manager, ctx, RunOptions{Mode: BackgroundOnly})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,7 +110,7 @@ func TestNativeMacDiscoveryIdleRecovery(t *testing.T) {
 		}
 		return wrapped, nil
 	}
-	run, err := manager.Bind(ctx, RunOptions{Mode: BackgroundOnly})
+	run, err := bindFixtureRun(manager, ctx, RunOptions{Mode: BackgroundOnly})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -172,8 +172,8 @@ func TestNativeMacDiscoveryIdleRecovery(t *testing.T) {
 		if !firstClient.lastDiscovery.IsError || (failure.Code != "session_ended" && failure.Refusal.Code != "session_ended" && !daemonEnded) {
 			t.Error("discovery failed without a native session-ended result", discoveryErr)
 		}
-		if manager.Status().Connected || run.active || len(run.targets) != 0 || len(run.observations) != 0 {
-			t.Fatal("expired implicit lifecycle retained connection or references")
+		if manager.Status().Connected || run.active {
+			t.Fatal("expired implicit lifecycle retained connection or active session")
 		}
 		if _, err := run.discoverApps(ctx, "AICE discovery idle probe", 1); err != nil {
 			t.Fatal("read-only recovery after implicit expiry", err)

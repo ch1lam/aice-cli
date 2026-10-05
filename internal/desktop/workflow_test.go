@@ -12,6 +12,23 @@ import (
 	"github.com/ch1lam/aice-cli/internal/mcpclient"
 )
 
+// fixtureRun owns scenario references under the embedded Run's native gate.
+// Production lifecycle checks still happen in CallChecked, including when a
+// fixture retains a reference after cancellation or connection retirement.
+type fixtureRun struct {
+	*Run
+	targets      map[string]windowIdentity
+	observations map[string]observationBinding
+}
+
+func bindFixtureRun(m *Manager, ctx context.Context, options RunOptions) (*fixtureRun, error) {
+	run, err := m.Bind(ctx, options)
+	if err != nil {
+		return nil, err
+	}
+	return &fixtureRun{Run: run, targets: make(map[string]windowIdentity), observations: make(map[string]observationBinding)}, nil
+}
+
 // Test scenarios sequence independent managed MCP operations. These helpers are
 // not a second production API: every discovery, read and mutation uses CallChecked.
 type ActRequest struct {
@@ -93,7 +110,7 @@ func actionResult(reply Reply, err error) ActResult {
 	return result
 }
 
-func (r *Run) fixtureCall(ctx context.Context, name string, args map[string]any) (mcpclient.Result, error) {
+func (r *fixtureRun) fixtureCall(ctx context.Context, name string, args map[string]any) (mcpclient.Result, error) {
 	raw, err := json.Marshal(args)
 	if err != nil {
 		return mcpclient.Result{State: llm.ExecutionNotDispatched}, err
@@ -101,11 +118,11 @@ func (r *Run) fixtureCall(ctx context.Context, name string, args map[string]any)
 	return r.CallChecked(ctx, name, raw, nil)
 }
 
-func (r *Run) discoverWindows(ctx context.Context, query string, limit int) (Discovery, error) {
+func (r *fixtureRun) discoverWindows(ctx context.Context, query string, limit int) (Discovery, error) {
 	return r.fixtureWindows(ctx, query, limit, nil)
 }
 
-func (r *Run) fixtureWindows(ctx context.Context, query string, limit int, pids map[int]bool) (Discovery, error) {
+func (r *fixtureRun) fixtureWindows(ctx context.Context, query string, limit int, pids map[int]bool) (Discovery, error) {
 	if len(query) > 256 || limit < 1 || limit > maxTargets {
 		return Discovery{}, errors.New("invalid fixture discovery")
 	}
@@ -158,7 +175,7 @@ func (r *Run) fixtureWindows(ctx context.Context, query string, limit int, pids 
 	return result, nil
 }
 
-func (r *Run) discoverApps(ctx context.Context, query string, limit int) (Discovery, error) {
+func (r *fixtureRun) discoverApps(ctx context.Context, query string, limit int) (Discovery, error) {
 	if len(query) > 256 || limit < 1 || limit > maxTargets {
 		return Discovery{}, errors.New("invalid fixture app discovery")
 	}
@@ -217,7 +234,7 @@ func (r *Run) discoverApps(ctx context.Context, query string, limit int) (Discov
 	return result, nil
 }
 
-func (r *Run) observeWindow(ctx context.Context, request ObserveRequest) (Observation, error) {
+func (r *fixtureRun) observeWindow(ctx context.Context, request ObserveRequest) (Observation, error) {
 	_, release, err := r.acquire(ctx)
 	if err != nil {
 		return Observation{}, err
@@ -241,7 +258,7 @@ func (r *Run) observeWindow(ctx context.Context, request ObserveRequest) (Observ
 	return r.bindObservation(ctx, request.TargetRef, target, request.Screenshot, managedReply(raw))
 }
 
-func (r *Run) actAndObserve(ctx context.Context, request ActRequest) (result ActResult, returnErr error) {
+func (r *fixtureRun) actAndObserve(ctx context.Context, request ActRequest) (result ActResult, returnErr error) {
 	started := time.Now()
 	var timing ActionTiming
 	defer func() { timing.Total = time.Since(started); result.Timing = timing }()
@@ -306,7 +323,7 @@ func (r *Run) actAndObserve(ctx context.Context, request ActRequest) (result Act
 	return result, nil
 }
 
-func (r *Run) fixtureLaunch(ctx context.Context, request ActRequest, timing *ActionTiming) (ActResult, error) {
+func (r *fixtureRun) fixtureLaunch(ctx context.Context, request ActRequest, timing *ActionTiming) (ActResult, error) {
 	if request.Drag != nil || request.DeliveryMode != "" || request.ObservationRef != "" || request.ElementToken != "" || request.Point != nil || request.Text != "" || request.Key != "" || len(request.Keys) > 0 || request.Direction != "" || request.Amount != 0 || request.Wait != nil {
 		return ActResult{}, errors.New("unrelated launch fields")
 	}
@@ -376,7 +393,7 @@ func (r *Run) fixtureLaunch(ctx context.Context, request ActRequest, timing *Act
 	return result, nil
 }
 
-func (r *Run) fixtureWait(ctx context.Context, binding observationBinding, request ActRequest, timing *ActionTiming) (ActResult, error) {
+func (r *fixtureRun) fixtureWait(ctx context.Context, binding observationBinding, request ActRequest, timing *ActionTiming) (ActResult, error) {
 	condition := request.Wait
 	if condition == nil || strings.TrimSpace(condition.Text) == "" || len(condition.Text) > 256 || condition.TimeoutMS < 1 || condition.TimeoutMS > 10000 {
 		return ActResult{}, errors.New("desktop: wait requires semantic text of 1..256 bytes and timeout_ms of 1..10000")

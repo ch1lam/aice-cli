@@ -70,17 +70,17 @@ func (f *fakeDriver) count(name string) int {
 	return n
 }
 
-func testRun(t *testing.T, f *fakeDriver, images bool) (*Manager, *Run) {
+func testRun(t *testing.T, f *fakeDriver, images bool) (*Manager, *fixtureRun) {
 	t.Helper()
 	m := newManager(func(context.Context) (driverClient, error) { return f, nil })
-	r, err := m.Bind(t.Context(), RunOptions{Mode: BackgroundOnly, Images: images})
+	r, err := bindFixtureRun(m, t.Context(), RunOptions{Mode: BackgroundOnly, Images: images})
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = r.Close(); _ = m.Close() })
 	return m, r
 }
-func observed(t *testing.T, r *Run, screenshot bool) Observation {
+func observed(t *testing.T, r *fixtureRun, screenshot bool) Observation {
 	t.Helper()
 	d, err := r.discoverWindows(t.Context(), "editor", 8)
 	if err != nil || len(d.Windows) != 1 {
@@ -91,17 +91,4 @@ func observed(t *testing.T, r *Run, screenshot bool) Observation {
 		t.Fatal(err)
 	}
 	return o
-}
-
-func setupObserved(t *testing.T, r *Run, screenshot bool) Observation {
-	t.Helper()
-	windows, err := r.Windows(t.Context(), "editor", 8)
-	if err != nil || len(windows.Windows) != 1 {
-		t.Fatal("setup windows", err)
-	}
-	observation, err := r.Observe(t.Context(), ObserveRequest{TargetRef: windows.Windows[0].Ref, Screenshot: screenshot})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return observation
 }

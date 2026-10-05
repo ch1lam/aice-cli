@@ -58,8 +58,8 @@ func TestNativeMacProxyCrash(t *testing.T) {
 			t.Error(err)
 		}
 	}()
-	bind := func() *Run {
-		run, err := manager.Bind(ctx, RunOptions{Mode: BackgroundOnly, Images: true})
+	bind := func() *fixtureRun {
+		run, err := bindFixtureRun(manager, ctx, RunOptions{Mode: BackgroundOnly, Images: true})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -70,7 +70,7 @@ func TestNativeMacProxyCrash(t *testing.T) {
 		})
 		return run
 	}
-	observe := func(run *Run) Observation {
+	observe := func(run *fixtureRun) Observation {
 		discovery, err := run.discoverWindows(ctx, target.name, 16)
 		if err != nil {
 			t.Fatal(err)

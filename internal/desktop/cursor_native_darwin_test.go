@@ -47,7 +47,7 @@ func TestNativeMacCursorLifecycle(t *testing.T) {
 			t.Error(err)
 		}
 	}()
-	run, err := manager.Bind(ctx, RunOptions{Mode: BackgroundOnly, Images: true})
+	run, err := bindFixtureRun(manager, ctx, RunOptions{Mode: BackgroundOnly, Images: true})
 	if err != nil {
 		t.Fatal(err)
 	}

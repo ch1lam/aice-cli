@@ -73,8 +73,8 @@ AICE has no second model-path app/window allowlist, observation-consumption rule
 element registry, coordinate conversion or refusal-continuation state machine.
 PID/window references can cross model turns, but do not become valid merely by
 appearing in history. Refresh native state when continuing a task and respond to
-Cua's stale-reference diagnostics. Local setup's capture/reference validation
-is not the model execution contract.
+Cua's stale-reference diagnostics. Setup validates its selected screenshot
+locally; Run and Manager retain no app/window or observation registry.
 
 `background_only` rejects explicit foreground delivery and desktop-wide input.
 `foreground_allowed` permits an explicit foreground request without requiring a
@@ -175,9 +175,13 @@ Task tools and read-only settings cannot request grants.
 
 Linux setup installs privately when needed, admits a temporary production
 Manager, then offers bounded window metadata with Cancel selected. Only an
-explicitly selected target triggers one validated screenshot. The local image
-is discarded without model/Session exposure. Setup performs no input, full-desktop
-capture, system-package installation or invented OS grant. Its four-minute
+explicitly selected target triggers one screenshot, without an accessibility
+tree or element query. Setup checks the returned PID/window identity, single
+decodable image, native capture ID, frame validity and source dimensions. Window
+choices live only in that setup call; no observation, token or coordinate state
+is retained. The local image is discarded without model/Session exposure. Setup
+performs no input, full-desktop capture, system-package installation or invented
+OS grant. Its four-minute
 deadline includes selection; all exits close owned sessions/connections.
 
 Setup holds the existing Settings reservation through external work and ordinary

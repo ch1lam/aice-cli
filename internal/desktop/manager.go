@@ -49,9 +49,8 @@ type Manager struct {
 	cancel    context.CancelFunc
 	gate      chan struct{}
 	dial      func(context.Context) (driverClient, error)
-	client    driverClient // all connection/run/reference fields are gate-owned
+	client    driverClient // all connection/run fields are gate-owned
 	runs      map[*Run]struct{}
-	latest    map[windowIdentity]string
 	occupy    func(context.Context) (func() error, error)
 	unlock    func() error
 	occupants map[*Run]struct{} // survives connection loss until run cleanup
@@ -64,7 +63,7 @@ type Manager struct {
 // requires the native runtime's verified identity and standard-mode preflight.
 func newManager(dial func(context.Context) (driverClient, error)) *Manager {
 	ctx, cancel := context.WithCancel(context.Background())
-	m := &Manager{platform: "darwin", ctx: ctx, cancel: cancel, gate: make(chan struct{}, 1), dial: dial, runs: make(map[*Run]struct{}), latest: make(map[windowIdentity]string), occupants: make(map[*Run]struct{})}
+	m := &Manager{platform: "darwin", ctx: ctx, cancel: cancel, gate: make(chan struct{}, 1), dial: dial, runs: make(map[*Run]struct{}), occupants: make(map[*Run]struct{})}
 	m.gate <- struct{}{}
 	return m
 }
@@ -76,7 +75,7 @@ func (m *Manager) Status() Status {
 }
 
 // Bind performs no native I/O. Each binding owns cancellation and its public Cua
-// session label. Setup-only observations remain separate from model MCP results.
+// session label. It stores no window or observation state.
 func (m *Manager) Bind(ctx context.Context, options RunOptions) (*Run, error) {
 	if options.Mode != BackgroundOnly && options.Mode != ForegroundAllowed {
 		return nil, errors.New("desktop: invalid frozen control mode")
@@ -88,26 +87,24 @@ func (m *Manager) Bind(ctx context.Context, options RunOptions) (*Run, error) {
 		return nil, err
 	}
 	runCtx, cancel := context.WithCancel(ctx)
-	r := &Run{manager: m, ctx: runCtx, cancel: cancel, options: options, targets: make(map[string]windowIdentity), observations: make(map[string]observationBinding)}
+	r := &Run{manager: m, ctx: runCtx, cancel: cancel, options: options}
 	r.stopManager = context.AfterFunc(m.ctx, cancel)
 	return r, nil
 }
 
 type Run struct {
-	manager      *Manager
-	ctx          context.Context
-	cancel       context.CancelFunc
-	stopManager  func() bool
-	closed       atomic.Bool
-	managed      atomic.Pointer[managedAdmission]
-	id           string
-	options      RunOptions
-	started      bool // gate-owned
-	active       bool
-	cleanupDone  bool
-	cleanupErr   error
-	targets      map[string]windowIdentity
-	observations map[string]observationBinding
+	manager     *Manager
+	ctx         context.Context
+	cancel      context.CancelFunc
+	stopManager func() bool
+	closed      atomic.Bool
+	managed     atomic.Pointer[managedAdmission]
+	id          string
+	options     RunOptions
+	started     bool // gate-owned
+	active      bool
+	cleanupDone bool
+	cleanupErr  error
 }
 
 // ControlMode returns the immutable mode enforced by this Run. Application
@@ -239,11 +236,8 @@ func (m *Manager) disconnectLocked(reason string) error {
 	for run := range m.runs {
 		run.started = false
 		run.active = false
-		clear(run.targets)
-		clear(run.observations)
 	}
 	clear(m.runs)
-	clear(m.latest)
 	m.mu.Lock()
 	m.status.Connected = false
 	m.status.Diagnostic = reason
@@ -310,8 +304,6 @@ func (r *Run) closeLocked(ctx context.Context) (returnErr error) {
 		returnErr = errors.Join(returnErr, r.manager.releaseOccupancyLocked())
 		r.cleanupDone, r.cleanupErr = true, returnErr
 	}()
-	clear(r.targets)
-	r.clearObservationsLocked()
 	if !r.started || r.manager.client == nil {
 		return nil
 	}

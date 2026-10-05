@@ -34,12 +34,12 @@ func TestLinuxCaptureContractDoesNotWeakenMacOrFailedFrames(t *testing.T) {
 				reply.IsError = kind == "domain" || kind == "true-with-domain-error"
 				return reply, nil, true
 			}}
-			m, r := testRun(t, f, true)
+			m := newManager(func(context.Context) (driverClient, error) { return f, nil })
 			if kind != "mac" {
 				m.platform = "linux"
 			}
-			o := setupObserved(t, r, true)
-			if (r.observations[o.Ref].capture != "") != (kind == "linux") {
+			result, err := setupWindowCapture(t.Context(), m, func(_ context.Context, windows []Window) (string, error) { return windows[0].Ref, nil })
+			if result.CaptureVerified != (kind == "linux") || (err == nil) != (kind == "linux") {
 				t.Fatal("setup capture verification mismatch", kind)
 			}
 		})
@@ -57,7 +57,7 @@ func TestLinuxSemanticProjectionCannotProveMissingPassiveText(t *testing.T) {
 	}}
 	m, r := testRun(t, f, false)
 	m.platform = "linux"
-	o := setupObserved(t, r, false)
+	o := observed(t, r, false)
 	if o.Complete || semanticCondition(o, "missing passive label") != "unknown" {
 		t.Fatal("actionable-only projection claimed complete visible text", o)
 	}
