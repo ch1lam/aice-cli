@@ -20,6 +20,8 @@ func TestDeepSeekModelSpecsSeedCompatibleCatalogs(t *testing.T) {
 	}
 	deepSeekModels := deepseek.Models()
 	opencodeModels := opencode.Models()
+	// OpenCode Go retired the deepseek-v4-flash ID and serves V4.1 Flash
+	// instead, so only the shared Pro specification seeds that catalog.
 	for _, spec := range specs {
 		deepSeekID, deepSeekName := spec.ID, spec.Name
 		if spec.ID == "deepseek-v4-flash" {
@@ -29,10 +31,6 @@ func TestDeepSeekModelSpecsSeedCompatibleCatalogs(t *testing.T) {
 		if !ok {
 			t.Fatalf("DeepSeek catalog missing %q", spec.ID)
 		}
-		opencodeModel, ok := findModel(opencodeModels, spec.ID)
-		if !ok {
-			t.Fatalf("OpenCode Go catalog missing %q", spec.ID)
-		}
 		for name, pair := range map[string][2]any{
 			"name":      {deepSeekName, deepSeekModel.Name},
 			"context":   {spec.ContextWindow, deepSeekModel.ContextWindow},
@@ -41,17 +39,6 @@ func TestDeepSeekModelSpecsSeedCompatibleCatalogs(t *testing.T) {
 			if pair[0] != pair[1] {
 				t.Errorf("%s spec = %v, deepseek = %v", name, pair[0], pair[1])
 			}
-		}
-		if opencodeModel.ContextWindow != spec.ContextWindow ||
-			opencodeModel.MaxTokens != spec.MaxTokens {
-			t.Errorf(
-				"opencode %s limits = %d/%d, want %d/%d",
-				spec.ID,
-				opencodeModel.ContextWindow,
-				opencodeModel.MaxTokens,
-				spec.ContextWindow,
-				spec.MaxTokens,
-			)
 		}
 		for name, want := range map[string]float64{
 			"input":     spec.Input,
@@ -65,6 +52,24 @@ func TestDeepSeekModelSpecsSeedCompatibleCatalogs(t *testing.T) {
 			}; pair[name] != want {
 				t.Errorf("deepseek %s %s pricing = %v, want %v", spec.ID, name, pair[name], want)
 			}
+		}
+		if spec.ID != "deepseek-v4-pro" {
+			continue
+		}
+		opencodeModel, ok := findModel(opencodeModels, spec.ID)
+		if !ok {
+			t.Fatalf("OpenCode Go catalog missing %q", spec.ID)
+		}
+		if opencodeModel.ContextWindow != spec.ContextWindow ||
+			opencodeModel.MaxTokens != spec.MaxTokens {
+			t.Errorf(
+				"opencode %s limits = %d/%d, want %d/%d",
+				spec.ID,
+				opencodeModel.ContextWindow,
+				opencodeModel.MaxTokens,
+				spec.ContextWindow,
+				spec.MaxTokens,
+			)
 		}
 	}
 }

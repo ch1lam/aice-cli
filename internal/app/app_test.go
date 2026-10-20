@@ -275,8 +275,8 @@ func TestResolveModelSettingsOpencodeDefaultModel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolveModelSettings() error = %v", err)
 	}
-	if model.ID != "deepseek-v4-flash" {
-		t.Errorf("default model = %q, want deepseek-v4-flash", model.ID)
+	if model.ID != "deepseek-v4.1-flash" {
+		t.Errorf("default model = %q, want deepseek-v4.1-flash", model.ID)
 	}
 }
 

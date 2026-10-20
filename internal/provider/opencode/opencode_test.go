@@ -35,8 +35,6 @@ func TestModels(t *testing.T) {
 		"longcat-2.0",
 		"deepseek-v4-pro",
 		"deepseek-v4.1-flash",
-		"deepseek-v4-flash",
-		"deepseek-v4-flash-vision-exp",
 		"mimo-v2.6-pro",
 		"mimo-v2.6-flash",
 		"mimo-v2.5",
@@ -100,8 +98,8 @@ func TestModels(t *testing.T) {
 	}
 
 	defaultModel := opencode.DefaultModel()
-	if defaultModel.ID != "deepseek-v4-flash" {
-		t.Errorf("DefaultModel() = %q, want %q", defaultModel.ID, "deepseek-v4-flash")
+	if defaultModel.ID != "deepseek-v4.1-flash" {
+		t.Errorf("DefaultModel() = %q, want %q", defaultModel.ID, "deepseek-v4.1-flash")
 	}
 
 	var kimi *llm.Model
@@ -121,9 +119,9 @@ func TestModels(t *testing.T) {
 		t.Errorf("kimi-k2.6 pricing = %#v", kimi.Pricing)
 	}
 
-	vision, ok := modelForID(models, "deepseek-v4-flash-vision-exp")
+	vision, ok := modelForID(models, "deepseek-v4.1-flash")
 	if !ok {
-		t.Fatal("deepseek-v4-flash-vision-exp missing from Models()")
+		t.Fatal("deepseek-v4.1-flash missing from Models()")
 	}
 	wantModalities := []llm.InputModality{llm.InputModalityText, llm.InputModalityImage}
 	if !reflect.DeepEqual(vision.InputModalities, wantModalities) {
@@ -147,12 +145,6 @@ func TestModels(t *testing.T) {
 	}
 
 	wantLevels := map[string][]llm.ThinkingLevel{
-		// DeepSeek V4 Flash exposes low, high, and max effort.
-		"deepseek-v4-flash": {
-			llm.ThinkingLevelLow,
-			llm.ThinkingLevelHigh,
-			llm.ThinkingLevelMax,
-		},
 		// DeepSeek V4.1 Flash exposes low, high, and max effort.
 		"deepseek-v4.1-flash": {
 			llm.ThinkingLevelLow,
@@ -161,13 +153,6 @@ func TestModels(t *testing.T) {
 		},
 		// DeepSeek V4 Pro exposes high and max effort.
 		"deepseek-v4-pro": {
-			llm.ThinkingLevelHigh,
-			llm.ThinkingLevelMax,
-		},
-		// The vision experiment also exposes a thinking toggle.
-		"deepseek-v4-flash-vision-exp": {
-			llm.ThinkingLevelOff,
-			llm.ThinkingLevelLow,
 			llm.ThinkingLevelHigh,
 			llm.ThinkingLevelMax,
 		},
@@ -252,8 +237,8 @@ func TestModels(t *testing.T) {
 		request   llm.ThinkingLevel
 		effective llm.ThinkingLevel
 	}{
-		{modelID: "deepseek-v4-flash", request: llm.ThinkingLevelMedium, effective: llm.ThinkingLevelHigh},
-		{modelID: "deepseek-v4-flash", request: llm.ThinkingLevelXHigh, effective: llm.ThinkingLevelMax},
+		{modelID: "deepseek-v4.1-flash", request: llm.ThinkingLevelMedium, effective: llm.ThinkingLevelHigh},
+		{modelID: "deepseek-v4.1-flash", request: llm.ThinkingLevelXHigh, effective: llm.ThinkingLevelMax},
 		{modelID: "deepseek-v4-pro", request: llm.ThinkingLevelMedium, effective: llm.ThinkingLevelHigh},
 		{modelID: "deepseek-v4-pro", request: llm.ThinkingLevelXHigh, effective: llm.ThinkingLevelMax},
 		{modelID: "kimi-k3", request: llm.ThinkingLevelMedium, effective: llm.ThinkingLevelMax},
@@ -299,13 +284,9 @@ func TestModels(t *testing.T) {
 		format                  llm.ThinkingFormat
 		supportsReasoningEffort bool
 	}{
-		"deepseek-v4-flash":   {format: llm.ThinkingFormatDeepSeek, supportsReasoningEffort: true},
 		"deepseek-v4.1-flash": {format: llm.ThinkingFormatDeepSeek, supportsReasoningEffort: true},
 		"deepseek-v4-pro":     {format: llm.ThinkingFormatDeepSeek, supportsReasoningEffort: true},
-		"deepseek-v4-flash-vision-exp": {
-			format: llm.ThinkingFormatDeepSeek, supportsReasoningEffort: true,
-		},
-		"kimi-k2.6": {format: llm.ThinkingFormatDeepSeek},
+		"kimi-k2.6":           {format: llm.ThinkingFormatDeepSeek},
 	}
 	for modelID, want := range wantFormats {
 		candidate, ok := modelForID(models, modelID)
@@ -331,26 +312,26 @@ func TestModelsReturnsIndependentThinkingMaps(t *testing.T) {
 	t.Parallel()
 
 	first := opencode.Models()
-	firstVision, ok := modelForID(first, "deepseek-v4-flash-vision-exp")
+	firstModel, ok := modelForID(first, "hy3")
 	if !ok {
-		t.Fatal("deepseek-v4-flash-vision-exp missing from Models()")
+		t.Fatal("hy3 missing from Models()")
 	}
-	firstVision.ThinkingLevelMap[llm.ThinkingLevelOff] = llm.ThinkingValue("mutated")
-	if value := firstVision.ThinkingLevelMap[llm.ThinkingLevelHigh]; value != nil {
+	firstModel.ThinkingLevelMap[llm.ThinkingLevelOff] = llm.ThinkingValue("mutated")
+	if value := firstModel.ThinkingLevelMap[llm.ThinkingLevelHigh]; value != nil {
 		*value = "mutated"
 	}
 
 	second := opencode.Models()
-	secondVision, ok := modelForID(second, "deepseek-v4-flash-vision-exp")
+	secondModel, ok := modelForID(second, "hy3")
 	if !ok {
-		t.Fatal("deepseek-v4-flash-vision-exp missing from second Models()")
+		t.Fatal("hy3 missing from second Models()")
 	}
-	if value, supported := secondVision.ThinkingLevelMap.WireValue(
+	if value, supported := secondModel.ThinkingLevelMap.WireValue(
 		llm.ThinkingLevelOff,
-	); !supported || value != "off" {
-		t.Errorf("second off wire value = %q/%v, want off/true", value, supported)
+	); !supported || value != "none" {
+		t.Errorf("second off wire value = %q/%v, want none/true", value, supported)
 	}
-	if value, supported := secondVision.ThinkingLevelMap.WireValue(
+	if value, supported := secondModel.ThinkingLevelMap.WireValue(
 		llm.ThinkingLevelHigh,
 	); !supported || value != "high" {
 		t.Errorf("second high wire value = %q/%v, want high/true", value, supported)
@@ -409,7 +390,7 @@ func TestProviderDispatchesModelsThroughConfiguredAPIs(t *testing.T) {
 	}
 
 	for _, modelID := range []string{
-		"deepseek-v4-flash",
+		"deepseek-v4.1-flash",
 		"gpt-5.6-luna",
 		"qwen3.8-max",
 	} {
@@ -472,7 +453,7 @@ func TestProviderRejectsModelAPIMismatchBeforeHTTP(t *testing.T) {
 	request.Model.API = "anthropic-messages"
 	_, err = provider.Stream(context.Background(), request)
 	if err == nil ||
-		!strings.Contains(err.Error(), `model "deepseek-v4-flash" API`) ||
+		!strings.Contains(err.Error(), `model "deepseek-v4.1-flash" API`) ||
 		!strings.Contains(err.Error(), string(openaicompletions.API)) {
 		t.Fatalf("Stream() error = %v, want model API mismatch", err)
 	}
@@ -499,8 +480,12 @@ func TestProviderRejectsUnsupportedContentBeforeHTTP(t *testing.T) {
 		t.Fatalf("New() error = %v", err)
 	}
 
+	textOnly, ok := modelForID(opencode.Models(), "glm-5.3")
+	if !ok {
+		t.Fatal("glm-5.3 missing from Models()")
+	}
 	request := llm.Request{
-		Model: opencode.DefaultModel(),
+		Model: textOnly,
 		Messages: []llm.Message{llm.UserMessage{
 			Role: llm.RoleUser,
 			Content: []llm.ContentPart{{
@@ -536,9 +521,9 @@ func TestProviderAcceptsImageForVisionModel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
-	model, ok := modelForID(opencode.Models(), "deepseek-v4-flash-vision-exp")
+	model, ok := modelForID(opencode.Models(), "deepseek-v4.1-flash")
 	if !ok {
-		t.Fatal("deepseek-v4-flash-vision-exp missing from Models()")
+		t.Fatal("deepseek-v4.1-flash missing from Models()")
 	}
 	request := llm.Request{
 		Model: model,
@@ -584,8 +569,8 @@ func TestProviderDescriptor(t *testing.T) {
 	if got := descriptor.MenuDescription(); !strings.Contains(got, "OpenCode Go subscription") {
 		t.Errorf("MenuDescription() = %q, want OpenCode Go subscription", got)
 	}
-	if got := descriptor.MenuDescription(); !strings.Contains(got, "31 models") {
-		t.Errorf("MenuDescription() = %q, want 31 models", got)
+	if got := descriptor.MenuDescription(); !strings.Contains(got, "29 models") {
+		t.Errorf("MenuDescription() = %q, want 29 models", got)
 	}
 	if got := descriptor.DefaultModel(); !reflect.DeepEqual(got, opencode.DefaultModel()) {
 		t.Errorf("DefaultModel() = %#v, want %#v", got, opencode.DefaultModel())

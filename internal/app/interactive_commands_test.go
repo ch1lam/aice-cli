@@ -1509,9 +1509,9 @@ func TestInteractiveSessionProviderSwitchRebuildsLoopAndModel(t *testing.T) {
 	if runner.model.Provider != opencode.ProviderID {
 		t.Errorf("model.Provider = %q, want opencode-go", runner.model.Provider)
 	}
-	if runner.model.ID != "deepseek-v4-flash" {
+	if runner.model.ID != "deepseek-v4.1-flash" {
 		t.Errorf(
-			"model.ID = %q, want the opencode default deepseek-v4-flash",
+			"model.ID = %q, want the opencode default deepseek-v4.1-flash",
 			runner.model.ID,
 		)
 	}

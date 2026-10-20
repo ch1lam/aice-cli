@@ -96,7 +96,7 @@ func Models() []llm.Model {
 
 // DefaultModel returns the fast model used when no explicit model is selected.
 func DefaultModel() llm.Model {
-	return model("deepseek-v4-flash")
+	return model("deepseek-v4.1-flash")
 }
 
 // Stream validates provider-specific compatibility before making a request.
@@ -155,22 +155,14 @@ func knownModel(id string) bool {
 var modelSpecs = modelSpecCatalog()
 
 func modelSpecCatalog() map[string]provider.ModelSpec {
-	specs := make(map[string]provider.ModelSpec, 31)
+	specs := make(map[string]provider.ModelSpec, 29)
 	for _, shared := range provider.DeepSeekModelSpecs() {
-		specs[shared.ID] = shared
+		// OpenCode Go retired the V4 Flash ID and serves V4.1 Flash instead;
+		// only the shared Pro specification seeds this catalog.
+		if shared.ID == "deepseek-v4-pro" {
+			specs[shared.ID] = shared
+		}
 	}
-	flash := specs["deepseek-v4-flash"]
-	flash.Input = 0.15
-	flash.Output = 0.6
-	flash.CacheRead = 0.003
-	flash.ThinkingLevelMap = llm.ThinkingLevelsMap(
-		llm.ThinkingLevelLow,
-		llm.ThinkingLevelHigh,
-		llm.ThinkingLevelMax,
-	)
-	flash.ThinkingFormat = llm.ThinkingFormatDeepSeek
-	flash.SupportsReasoningEffort = true
-	specs[flash.ID] = flash
 
 	pro := specs["deepseek-v4-pro"]
 	pro.Input = 0.66
@@ -193,24 +185,6 @@ func modelSpecCatalog() map[string]provider.ModelSpec {
 		Output:        0.6,
 		CacheRead:     0.003,
 		ThinkingLevelMap: llm.ThinkingLevelsMap(
-			llm.ThinkingLevelLow,
-			llm.ThinkingLevelHigh,
-			llm.ThinkingLevelMax,
-		),
-		ThinkingFormat:          llm.ThinkingFormatDeepSeek,
-		SupportsReasoningEffort: true,
-	}
-
-	specs["deepseek-v4-flash-vision-exp"] = provider.ModelSpec{
-		ID:            "deepseek-v4-flash-vision-exp",
-		Name:          "DeepSeek V4 Flash Vision Exp",
-		ContextWindow: 1_000_000,
-		MaxTokens:     384_000,
-		Input:         0.15,
-		Output:        0.6,
-		CacheRead:     0.003,
-		ThinkingLevelMap: llm.ThinkingLevelsMap(
-			llm.ThinkingLevelOff,
 			llm.ThinkingLevelLow,
 			llm.ThinkingLevelHigh,
 			llm.ThinkingLevelMax,
@@ -275,7 +249,7 @@ func modelSpecCatalog() map[string]provider.ModelSpec {
 	specs["mimo-v2.6-flash"] = standardSpec("mimo-v2.6-flash", "MiMo V2.6 Flash", 1_048_576, 131_072, 0.14, 0.28, 0.0028)
 	specs["mimo-v2.6-pro"] = standardSpec("mimo-v2.6-pro", "MiMo V2.6 Pro", 1_048_576, 131_072, 0.435, 0.87, 0.003625)
 	specs["longcat-2.0"] = standardSpec("longcat-2.0", "LongCat-2.0", 1_000_000, 131_072, 0.3, 1.2, 0.006)
-	// OpenCode Go exposes off as none plus low through max.
+	// GPT-5.6 Luna exposes off as none plus low through max.
 	specs["gpt-5.6-luna"] = provider.ModelSpec{
 		ID:            "gpt-5.6-luna",
 		Name:          "GPT-5.6 Luna",
@@ -429,8 +403,6 @@ var modelIDs = []string{
 	"longcat-2.0",
 	"deepseek-v4-pro",
 	"deepseek-v4.1-flash",
-	"deepseek-v4-flash",
-	"deepseek-v4-flash-vision-exp",
 	"mimo-v2.6-pro",
 	"mimo-v2.6-flash",
 	"mimo-v2.5",
@@ -502,7 +474,6 @@ func inputModalities(id string) []llm.InputModality {
 func supportsImage(id string) bool {
 	switch id {
 	case "deepseek-v4.1-flash",
-		"deepseek-v4-flash-vision-exp",
 		"glm-5.3-flash",
 		"gpt-5.6-luna",
 		"grok-4.6",

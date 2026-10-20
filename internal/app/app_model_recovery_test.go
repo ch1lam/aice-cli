@@ -141,8 +141,8 @@ func TestModelAvailabilityIsProviderScoped(t *testing.T) {
 	t.Parallel()
 	for _, providerID := range []string{"opencode-go", "custom"} {
 		t.Run(providerID, func(t *testing.T) {
-			model, _, err := resolveModelSettings(defaultProviders(), config.Config{Provider: providerID, Model: "deepseek-v4-flash"})
-			if err != nil || model.ID != "deepseek-v4-flash" {
+			model, _, err := resolveModelSettings(defaultProviders(), config.Config{Provider: providerID, Model: "deepseek-v4-pro"})
+			if err != nil || model.ID != "deepseek-v4-pro" {
 				t.Fatalf("model/error = %q/%v", model.ID, err)
 			}
 		})

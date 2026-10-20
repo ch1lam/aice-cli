@@ -649,9 +649,9 @@ func TestAdapterOmitsDefaultMaxTokensForOpenCodeGo(t *testing.T) {
 		t.Fatalf("New() error = %v", err)
 	}
 
-	model, ok := opencodeModelForTest("deepseek-v4-flash")
+	model, ok := opencodeModelForTest("deepseek-v4.1-flash")
 	if !ok {
-		t.Fatal("opencode-go deepseek-v4-flash missing from catalog")
+		t.Fatal("opencode-go deepseek-v4.1-flash missing from catalog")
 	}
 	if !model.OmitMaxTokensByDefault {
 		t.Fatal("OpenCode Go model does not omit default max tokens")
@@ -744,7 +744,7 @@ func TestAdapterThinkingWireControls(t *testing.T) {
 	}{
 		{
 			name:    "opencode deepseek low effort",
-			modelID: "deepseek-v4-flash",
+			modelID: "deepseek-v4.1-flash",
 			level:   llm.ThinkingLevelLow,
 			wantBody: map[string]any{
 				"thinking":         map[string]any{"type": "enabled"},
@@ -753,13 +753,13 @@ func TestAdapterThinkingWireControls(t *testing.T) {
 		},
 		{
 			name:    "opencode deepseek rejects unsupported medium",
-			modelID: "deepseek-v4-flash",
+			modelID: "deepseek-v4.1-flash",
 			level:   llm.ThinkingLevelMedium,
-			wantErr: `model "deepseek-v4-flash" does not support thinking level "medium"`,
+			wantErr: `model "deepseek-v4.1-flash" does not support thinking level "medium"`,
 		},
 		{
 			name:    "opencode deepseek high effort",
-			modelID: "deepseek-v4-flash",
+			modelID: "deepseek-v4.1-flash",
 			level:   llm.ThinkingLevelHigh,
 			wantBody: map[string]any{
 				"thinking":         map[string]any{"type": "enabled"},
@@ -783,7 +783,7 @@ func TestAdapterThinkingWireControls(t *testing.T) {
 		},
 		{
 			name:    "opencode deepseek disabled",
-			modelID: "deepseek-v4-flash-vision-exp",
+			modelID: "kimi-k2.6",
 			level:   llm.ThinkingLevelOff,
 			wantBody: map[string]any{
 				"thinking": map[string]any{"type": "disabled"},

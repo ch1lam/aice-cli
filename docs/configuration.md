@@ -79,14 +79,15 @@ Example global settings:
 When configuration supplies neither a provider nor a model, AICE uses
 `deepseek` and `deepseek-flash`. Omitting them from the user settings file does
 not override flags, environment variables or trusted project settings. The
-`opencode-go` catalog default remains `deepseek-v4-flash`.
+`opencode-go` catalog default is `deepseek-v4.1-flash`.
 
 The DeepSeek API catalog contains only `deepseek-flash` (V4.1-Flash) and
 `deepseek-v4-pro` (V4-Pro-0813). Only Flash accepts text/image input; Pro is
 text-only. Flash retains Responses; Pro retains Anthropic Messages. The
-OpenCode Go catalog is independent and unchanged.
-Existing DeepSeek settings using removed model IDs must select one of these two
-models; old IDs are not remapped.
+OpenCode Go catalog is independent and follows the models served by its own
+endpoint; it retired `deepseek-v4-flash` in favor of `deepseek-v4.1-flash`.
+Existing DeepSeek or OpenCode Go settings using removed model IDs must select a
+current catalog model; old IDs are not remapped.
 DeepSeek cost estimates use official [off-peak rates](https://api-docs.deepseek.com/quick_start/pricing/);
 peak billing is twice the estimate.
 
