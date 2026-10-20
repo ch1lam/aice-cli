@@ -84,10 +84,13 @@ not override flags, environment variables or trusted project settings. The
 The DeepSeek API catalog contains only `deepseek-flash` (V4.1-Flash) and
 `deepseek-v4-pro` (V4-Pro-0813). Only Flash accepts text/image input; Pro is
 text-only. Flash retains Responses; Pro retains Anthropic Messages. The
-OpenCode Go catalog is independent and follows the models served by its own
-endpoint; it retired `deepseek-v4-flash` in favor of `deepseek-v4.1-flash`.
-Existing DeepSeek or OpenCode Go settings using removed model IDs must select a
-current catalog model; old IDs are not remapped.
+OpenCode Go catalog is independent and follows the models served by its
+[endpoint](https://opencode.ai/zen/go/v1/models); it retired
+`deepseek-v4-flash` in favor of `deepseek-v4.1-flash`. Models that require a
+protocol AICE does not implement, such as Gemini 4 Argon Contributor's Google
+generative API, are omitted. Existing DeepSeek or OpenCode Go settings using
+removed model IDs must select a current catalog model; old IDs are not
+remapped.
 DeepSeek cost estimates use official [off-peak rates](https://api-docs.deepseek.com/quick_start/pricing/);
 peak billing is twice the estimate.
 

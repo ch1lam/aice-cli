@@ -150,12 +150,15 @@ func knownModel(id string) bool {
 	return exists
 }
 
-// modelSpecs is the active OpenCode Go catalog. Deprecated models remain
-// absent so the selector matches the upstream catalog.
+// modelSpecs is the active OpenCode Go catalog. It follows the gateway's
+// /zen/go/v1/models endpoint (checked 2026-10-21); models still served but
+// omitted from the Go documentation list are retained for existing selections.
+// Gemini 4 Argon Contributor is advertised by OpenCode Go but served only over
+// Google's generative API, which AICE does not implement.
 var modelSpecs = modelSpecCatalog()
 
 func modelSpecCatalog() map[string]provider.ModelSpec {
-	specs := make(map[string]provider.ModelSpec, 29)
+	specs := make(map[string]provider.ModelSpec, 36)
 	for _, shared := range provider.DeepSeekModelSpecs() {
 		// OpenCode Go retired the V4 Flash ID and serves V4.1 Flash instead;
 		// only the shared Pro specification seeds this catalog.
@@ -244,12 +247,86 @@ func modelSpecCatalog() map[string]provider.ModelSpec {
 	specs["minimax-m2.7"] = standardSpec("minimax-m2.7", "MiniMax M2.7", 204_800, 131_072, 0.3, 1.2, 0.06)
 	specs["minimax-m2.5"] = standardSpec("minimax-m2.5", "MiniMax M2.5", 204_800, 65_536, 0.3, 1.2, 0.06)
 	specs["minimax-m3"] = standardSpec("minimax-m3", "MiniMax M3", 1_000_000, 131_072, 0.3, 1.2, 0.06)
+	specs["minimax-m3.1-flash-free"] = provider.ModelSpec{
+		ID: "minimax-m3.1-flash-free", Name: "MiniMax M3.1 Flash Free",
+		ContextWindow: 1_000_000, MaxTokens: 512_000,
+		ThinkingLevelMap: llm.ThinkingLevelsMap(
+			llm.ThinkingLevelLow,
+			llm.ThinkingLevelMedium,
+			llm.ThinkingLevelHigh,
+			llm.ThinkingLevelXHigh,
+			llm.ThinkingLevelMax,
+		),
+	}
 	specs["mimo-v2.5"] = standardSpec("mimo-v2.5", "MiMo V2.5", 1_000_000, 128_000, 0.14, 0.28, 0.0028)
 	specs["mimo-v2.5-pro"] = standardSpec("mimo-v2.5-pro", "MiMo V2.5 Pro", 1_048_576, 128_000, 0.435, 0.87, 0.003625)
 	specs["mimo-v2.6-flash"] = standardSpec("mimo-v2.6-flash", "MiMo V2.6 Flash", 1_048_576, 131_072, 0.14, 0.28, 0.0028)
 	specs["mimo-v2.6-pro"] = standardSpec("mimo-v2.6-pro", "MiMo V2.6 Pro", 1_048_576, 131_072, 0.435, 0.87, 0.003625)
 	specs["longcat-2.0"] = standardSpec("longcat-2.0", "LongCat-2.0", 1_000_000, 131_072, 0.3, 1.2, 0.006)
-	// GPT-5.6 Luna exposes off as none plus low through max.
+	specs["longcat-2.5-preview-free"] = standardSpec("longcat-2.5-preview-free", "LongCat 2.5 Preview Free", 1_000_000, 131_072, 0, 0, 0)
+	specs["step-5-preview"] = provider.ModelSpec{
+		ID: "step-5-preview", Name: "Step 5 Preview", ContextWindow: 1_000_000, MaxTokens: 65_536, Input: 1, Output: 2.7, CacheRead: 0.1,
+		ThinkingLevelMap: llm.ThinkingLevelsMap(
+			llm.ThinkingLevelLow,
+			llm.ThinkingLevelMedium,
+			llm.ThinkingLevelHigh,
+		),
+	}
+	specs["beam-free"] = provider.ModelSpec{
+		ID: "beam-free", Name: "Beam Free", ContextWindow: 1_048_576, MaxTokens: 131_072,
+		ThinkingLevelMap: llm.ThinkingLevelsMap(
+			llm.ThinkingLevelLow,
+			llm.ThinkingLevelMedium,
+			llm.ThinkingLevelHigh,
+			llm.ThinkingLevelXHigh,
+			llm.ThinkingLevelMax,
+		),
+	}
+	// Omen Alpha is served by the gateway endpoint but is absent from the Go
+	// documentation list and models.dev; retain its historical metadata for
+	// existing selections.
+	specs["omen-alpha"] = provider.ModelSpec{
+		ID: "omen-alpha", Name: "Omen Alpha", ContextWindow: 500_000, MaxTokens: 128_000, Input: 0.2, Output: 0.66, CacheRead: 0.04,
+		ThinkingLevelMap: llm.ThinkingLevelsMap(
+			llm.ThinkingLevelLow,
+			llm.ThinkingLevelHigh,
+		),
+	}
+	// GPT-6 Luna and GPT-5.6 Luna expose off as none plus low through max.
+	specs["gpt-6-luna"] = provider.ModelSpec{
+		ID:            "gpt-6-luna",
+		Name:          "GPT-6 Luna",
+		ContextWindow: 1_050_000,
+		MaxTokens:     128_000,
+		Input:         0.1,
+		Output:        0.5,
+		CacheRead:     0.01,
+		ThinkingLevelMap: llm.ThinkingLevelMap{
+			llm.ThinkingLevelOff:     llm.ThinkingValue("none"),
+			llm.ThinkingLevelMinimal: nil,
+			llm.ThinkingLevelLow:     llm.ThinkingValue("low"),
+			llm.ThinkingLevelMedium:  llm.ThinkingValue("medium"),
+			llm.ThinkingLevelHigh:    llm.ThinkingValue("high"),
+			llm.ThinkingLevelXHigh:   llm.ThinkingValue("xhigh"),
+			llm.ThinkingLevelMax:     llm.ThinkingValue("max"),
+		},
+	}
+	// OpenCode Go exposes Claude Haiku 5.5 adaptive thinking at xhigh and max.
+	specs["claude-haiku-5-5"] = provider.ModelSpec{
+		ID:            "claude-haiku-5-5",
+		Name:          "Claude Haiku 5.5",
+		ContextWindow: 1_000_000,
+		MaxTokens:     128_000,
+		Input:         0.1,
+		Output:        0.5,
+		CacheRead:     0.01,
+		ThinkingLevelMap: llm.ThinkingLevelsMap(
+			llm.ThinkingLevelXHigh,
+			llm.ThinkingLevelMax,
+		),
+		ThinkingFormat:          llm.ThinkingFormatAdaptive,
+		SupportsReasoningEffort: true,
+	}
 	specs["gpt-5.6-luna"] = provider.ModelSpec{
 		ID:            "gpt-5.6-luna",
 		Name:          "GPT-5.6 Luna",
@@ -392,7 +469,9 @@ func standardSpec(
 var modelIDs = []string{
 	"grok-4.7",
 	"grok-4.6",
+	"gpt-6-luna",
 	"gpt-5.6-luna",
+	"claude-haiku-5-5",
 	"glm-5.3-flash",
 	"glm-5.3",
 	"glm-5.2",
@@ -400,7 +479,11 @@ var modelIDs = []string{
 	"kimi-k3",
 	"kimi-k2.7-code",
 	"kimi-k2.6",
+	"longcat-2.5-preview-free",
 	"longcat-2.0",
+	"step-5-preview",
+	"beam-free",
+	"omen-alpha",
 	"deepseek-v4-pro",
 	"deepseek-v4.1-flash",
 	"mimo-v2.6-pro",
@@ -408,6 +491,7 @@ var modelIDs = []string{
 	"mimo-v2.5",
 	"mimo-v2.5-pro",
 	"minimax-m3",
+	"minimax-m3.1-flash-free",
 	"minimax-m2.7",
 	"minimax-m2.5",
 	"muse-spark-1.3-contributor",
@@ -447,9 +531,10 @@ func model(id string) llm.Model {
 
 func modelAPI(id string) llm.API {
 	switch id {
-	case "gpt-5.6-luna", "grok-4.6", "grok-4.7", "muse-spark-1.2-contributor", "muse-spark-1.3-contributor":
+	case "gpt-6-luna", "gpt-5.6-luna", "grok-4.6", "grok-4.7", "muse-spark-1.2-contributor", "muse-spark-1.3-contributor":
 		return openairesponses.API
-	case "minimax-m2.5",
+	case "claude-haiku-5-5",
+		"minimax-m2.5",
 		"minimax-m2.7",
 		"minimax-m3",
 		"qwen3.6-plus",
@@ -473,24 +558,30 @@ func inputModalities(id string) []llm.InputModality {
 
 func supportsImage(id string) bool {
 	switch id {
-	case "deepseek-v4.1-flash",
+	case "claude-haiku-5-5",
+		"deepseek-v4.1-flash",
 		"glm-5.3-flash",
+		"gpt-6-luna",
 		"gpt-5.6-luna",
 		"grok-4.6",
 		"grok-4.7",
 		"kimi-k2.6",
 		"kimi-k2.7-code",
 		"kimi-k3",
+		"longcat-2.5-preview-free",
 		"minimax-m3",
+		"minimax-m3.1-flash-free",
 		"mimo-v2.5",
 		"mimo-v2.6-flash",
 		"mimo-v2.6-pro",
 		"muse-spark-1.2-contributor",
 		"muse-spark-1.3-contributor",
+		"omen-alpha",
 		"qwen3.6-plus",
 		"qwen3.7-plus",
 		"qwen3.8-max",
-		"qwen3.8-flash":
+		"qwen3.8-flash",
+		"step-5-preview":
 		return true
 	default:
 		return false
@@ -499,8 +590,12 @@ func supportsImage(id string) bool {
 
 func cacheWritePrice(id string) float64 {
 	switch id {
+	case "claude-haiku-5-5":
+		return 0.125
 	case "gpt-5.6-luna":
 		return 0.25
+	case "gpt-6-luna":
+		return 0.125
 	case "minimax-m2.5":
 		return 0.375
 	case "minimax-m2.7":

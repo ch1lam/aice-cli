@@ -24,7 +24,9 @@ func TestModels(t *testing.T) {
 	wantIDs := []string{
 		"grok-4.7",
 		"grok-4.6",
+		"gpt-6-luna",
 		"gpt-5.6-luna",
+		"claude-haiku-5-5",
 		"glm-5.3-flash",
 		"glm-5.3",
 		"glm-5.2",
@@ -32,7 +34,11 @@ func TestModels(t *testing.T) {
 		"kimi-k3",
 		"kimi-k2.7-code",
 		"kimi-k2.6",
+		"longcat-2.5-preview-free",
 		"longcat-2.0",
+		"step-5-preview",
+		"beam-free",
+		"omen-alpha",
 		"deepseek-v4-pro",
 		"deepseek-v4.1-flash",
 		"mimo-v2.6-pro",
@@ -40,6 +46,7 @@ func TestModels(t *testing.T) {
 		"mimo-v2.5",
 		"mimo-v2.5-pro",
 		"minimax-m3",
+		"minimax-m3.1-flash-free",
 		"minimax-m2.7",
 		"minimax-m2.5",
 		"muse-spark-1.3-contributor",
@@ -60,6 +67,7 @@ func TestModels(t *testing.T) {
 		t.Fatalf("Models() IDs = %v, want %v", gotIDs, wantIDs)
 	}
 	responsesModels := map[string]bool{
+		"gpt-6-luna":                 true,
 		"gpt-5.6-luna":               true,
 		"grok-4.6":                   true,
 		"grok-4.7":                   true,
@@ -67,14 +75,15 @@ func TestModels(t *testing.T) {
 		"muse-spark-1.3-contributor": true,
 	}
 	anthropicModels := map[string]bool{
-		"minimax-m2.5":  true,
-		"minimax-m2.7":  true,
-		"minimax-m3":    true,
-		"qwen3.6-plus":  true,
-		"qwen3.7-max":   true,
-		"qwen3.7-plus":  true,
-		"qwen3.8-max":   true,
-		"qwen3.8-flash": true,
+		"claude-haiku-5-5": true,
+		"minimax-m2.5":     true,
+		"minimax-m2.7":     true,
+		"minimax-m3":       true,
+		"qwen3.6-plus":     true,
+		"qwen3.7-max":      true,
+		"qwen3.7-plus":     true,
+		"qwen3.8-max":      true,
+		"qwen3.8-flash":    true,
 	}
 	for _, model := range models {
 		if model.Provider != opencode.ProviderID {
@@ -119,9 +128,9 @@ func TestModels(t *testing.T) {
 		t.Errorf("kimi-k2.6 pricing = %#v", kimi.Pricing)
 	}
 
-	vision, ok := modelForID(models, "deepseek-v4.1-flash")
+	vision, ok := modelForID(models, "step-5-preview")
 	if !ok {
-		t.Fatal("deepseek-v4.1-flash missing from Models()")
+		t.Fatal("step-5-preview missing from Models()")
 	}
 	wantModalities := []llm.InputModality{llm.InputModalityText, llm.InputModalityImage}
 	if !reflect.DeepEqual(vision.InputModalities, wantModalities) {
@@ -143,6 +152,13 @@ func TestModels(t *testing.T) {
 	if gpt.Pricing.CacheWrite != 0.25 {
 		t.Errorf("gpt-5.6-luna cache-write pricing = %v, want 0.25", gpt.Pricing.CacheWrite)
 	}
+	gpt6, ok := modelForID(models, "gpt-6-luna")
+	if !ok {
+		t.Fatal("gpt-6-luna missing from Models()")
+	}
+	if gpt6.Pricing.CacheWrite != 0.125 {
+		t.Errorf("gpt-6-luna cache-write pricing = %v, want 0.125", gpt6.Pricing.CacheWrite)
+	}
 
 	wantLevels := map[string][]llm.ThinkingLevel{
 		// DeepSeek V4.1 Flash exposes low, high, and max effort.
@@ -160,6 +176,55 @@ func TestModels(t *testing.T) {
 		"kimi-k2.6": {llm.ThinkingLevelOff, llm.ThinkingLevelHigh},
 		// Kimi K3 always reasons at max.
 		"kimi-k3": {llm.ThinkingLevelMax},
+		// GPT-6 Luna shares the off-to-none effort map.
+		"gpt-6-luna": {
+			llm.ThinkingLevelOff,
+			llm.ThinkingLevelLow,
+			llm.ThinkingLevelMedium,
+			llm.ThinkingLevelHigh,
+			llm.ThinkingLevelXHigh,
+			llm.ThinkingLevelMax,
+		},
+		// Claude Haiku 5.5 uses adaptive thinking at xhigh and max.
+		"claude-haiku-5-5": {
+			llm.ThinkingLevelXHigh,
+			llm.ThinkingLevelMax,
+		},
+		// LongCat 2.5 Preview Free exposes the standard off-to-high map.
+		"longcat-2.5-preview-free": {
+			llm.ThinkingLevelOff,
+			llm.ThinkingLevelMinimal,
+			llm.ThinkingLevelLow,
+			llm.ThinkingLevelMedium,
+			llm.ThinkingLevelHigh,
+		},
+		// Step 5 Preview exposes low through high effort.
+		"step-5-preview": {
+			llm.ThinkingLevelLow,
+			llm.ThinkingLevelMedium,
+			llm.ThinkingLevelHigh,
+		},
+		// Beam Free exposes low through max effort.
+		"beam-free": {
+			llm.ThinkingLevelLow,
+			llm.ThinkingLevelMedium,
+			llm.ThinkingLevelHigh,
+			llm.ThinkingLevelXHigh,
+			llm.ThinkingLevelMax,
+		},
+		// MiniMax M3.1 Flash Free exposes low through max effort.
+		"minimax-m3.1-flash-free": {
+			llm.ThinkingLevelLow,
+			llm.ThinkingLevelMedium,
+			llm.ThinkingLevelHigh,
+			llm.ThinkingLevelXHigh,
+			llm.ThinkingLevelMax,
+		},
+		// Omen Alpha exposes low and high effort.
+		"omen-alpha": {
+			llm.ThinkingLevelLow,
+			llm.ThinkingLevelHigh,
+		},
 		// GLM-5.2 always reasons at high or max.
 		"glm-5.2": {llm.ThinkingLevelHigh, llm.ThinkingLevelMax},
 		// GLM-5.3 exposes low, high, and max.
@@ -286,6 +351,7 @@ func TestModels(t *testing.T) {
 	}{
 		"deepseek-v4.1-flash": {format: llm.ThinkingFormatDeepSeek, supportsReasoningEffort: true},
 		"deepseek-v4-pro":     {format: llm.ThinkingFormatDeepSeek, supportsReasoningEffort: true},
+		"claude-haiku-5-5":    {format: llm.ThinkingFormatAdaptive, supportsReasoningEffort: true},
 		"kimi-k2.6":           {format: llm.ThinkingFormatDeepSeek},
 	}
 	for modelID, want := range wantFormats {
@@ -360,7 +426,8 @@ func TestModelCatalogHasCompleteSpecs(t *testing.T) {
 		if model.MaxTokens <= 0 {
 			t.Errorf("model %q has no max tokens", model.ID)
 		}
-		if model.Pricing.Input <= 0 || model.Pricing.Output <= 0 {
+		free := strings.HasSuffix(model.ID, "-free")
+		if !free && (model.Pricing.Input <= 0 || model.Pricing.Output <= 0) {
 			t.Errorf("model %q has incomplete pricing", model.ID)
 		}
 	}
@@ -521,9 +588,9 @@ func TestProviderAcceptsImageForVisionModel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
-	model, ok := modelForID(opencode.Models(), "deepseek-v4.1-flash")
+	model, ok := modelForID(opencode.Models(), "step-5-preview")
 	if !ok {
-		t.Fatal("deepseek-v4.1-flash missing from Models()")
+		t.Fatal("step-5-preview missing from Models()")
 	}
 	request := llm.Request{
 		Model: model,
@@ -569,8 +636,8 @@ func TestProviderDescriptor(t *testing.T) {
 	if got := descriptor.MenuDescription(); !strings.Contains(got, "OpenCode Go subscription") {
 		t.Errorf("MenuDescription() = %q, want OpenCode Go subscription", got)
 	}
-	if got := descriptor.MenuDescription(); !strings.Contains(got, "29 models") {
-		t.Errorf("MenuDescription() = %q, want 29 models", got)
+	if got := descriptor.MenuDescription(); !strings.Contains(got, "36 models") {
+		t.Errorf("MenuDescription() = %q, want 36 models", got)
 	}
 	if got := descriptor.DefaultModel(); !reflect.DeepEqual(got, opencode.DefaultModel()) {
 		t.Errorf("DefaultModel() = %#v, want %#v", got, opencode.DefaultModel())
