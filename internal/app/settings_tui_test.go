@@ -120,6 +120,14 @@ func TestSettingsUsageTUI(t *testing.T) {
 	t.Cleanup(func() { cancel(); input.Close(); reader.Close(); <-stopped })
 	width := 120
 	var transcript strings.Builder
+	transcriptTail := func() string {
+		const limit = 8 << 10
+		value := transcript.String()
+		if len(value) > limit {
+			return "...(earlier frames truncated)...\n" + value[len(value)-limit:]
+		}
+		return value
+	}
 	waitFor := func(want ...string) {
 		t.Helper()
 		ticker := time.NewTicker(150 * time.Millisecond)
@@ -134,7 +142,7 @@ func TestSettingsUsageTUI(t *testing.T) {
 					continue
 				}
 				if _, err := io.WriteString(input, fmt.Sprintf("\x1b[8;40;%dt", width)); err != nil {
-					t.Fatalf("repaint while waiting for %q: %v\n%s", want, err, transcript.String())
+					t.Fatalf("repaint while waiting for %q: %v\n%s", want, err, transcriptTail())
 				}
 				width = 239 - width
 			case frame := <-output.frames:
@@ -150,9 +158,9 @@ func TestSettingsUsageTUI(t *testing.T) {
 					return
 				}
 			case err := <-done:
-				t.Fatalf("command stopped while waiting for %q: %v\n%s", want, err, transcript.String())
+				t.Fatalf("command stopped while waiting for %q: %v\n%s", want, err, transcriptTail())
 			case <-ctx.Done():
-				t.Fatalf("terminal never displayed %q\n%s", want, transcript.String())
+				t.Fatalf("terminal never displayed %q\n%s", want, transcriptTail())
 			}
 		}
 	}
@@ -160,7 +168,7 @@ func TestSettingsUsageTUI(t *testing.T) {
 	send := func(value string) {
 		t.Helper()
 		if _, err := io.WriteString(input, value+fmt.Sprintf("\x1b[8;40;%dt", width)); err != nil {
-			t.Fatalf("send %q: %v\n%s", value, err, transcript.String())
+			t.Fatalf("send %q: %v\n%s", value, err, transcriptTail())
 		}
 		width = 239 - width
 	}
