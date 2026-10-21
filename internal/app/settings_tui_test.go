@@ -96,15 +96,20 @@ func TestSettingsUsageTUI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Bound the complete menu flow, including rendering under race instrumentation.
-	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+	// Bound the complete menu flow, including rendering under race
+	// instrumentation. The macOS runners are slower than local hosts, so the
+	// bound leaves room for contention while still failing a hung flow.
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Minute)
 	defer cancel()
 	reader, input := io.Pipe()
 	defer reader.Close()
 	defer input.Close()
 	stopClosing := context.AfterFunc(ctx, func() { reader.CloseWithError(ctx.Err()); input.CloseWithError(ctx.Err()) })
 	defer stopClosing()
-	output := loginTerminalOutput{ctx: ctx, frames: make(chan string, 256)}
+	// Keep a deep frame buffer: the TUI blocks on output while the test may be
+	// writing input, and resize repaints can otherwise fill the channel and
+	// deadlock both sides of the pipes.
+	output := loginTerminalOutput{ctx: ctx, frames: make(chan string, 4096)}
 	command.SetIn(reader)
 	command.SetOut(output)
 	command.SetErr(output)
@@ -122,6 +127,12 @@ func TestSettingsUsageTUI(t *testing.T) {
 		for {
 			select {
 			case <-ticker.C:
+				if len(output.frames) > 0 {
+					// Drain rendered frames before asking for another repaint;
+					// otherwise a blocked writer and a blocked input write can
+					// deadlock until the test context expires.
+					continue
+				}
 				if _, err := io.WriteString(input, fmt.Sprintf("\x1b[8;40;%dt", width)); err != nil {
 					t.Fatalf("repaint while waiting for %q: %v\n%s", want, err, transcript.String())
 				}
