@@ -172,7 +172,7 @@ func testNativeMacModelTask(t *testing.T, model llm.Model, options llm.StreamOpt
 	if actual {
 		artifacts = os.Getenv("AICE_CUA_MODEL_ARTIFACT_DIR")
 	}
-	store, _, _, err := prepareSession(ctx, workspace, filepath.Join(artifacts, "model-task.jsonl"), false)
+	store, _, _, err := prepareSession(ctx, workspace, filepath.Join(artifacts, "model-task.jsonl"))
 	if err != nil {
 		t.Fatal(err)
 	}

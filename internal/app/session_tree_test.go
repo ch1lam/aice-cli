@@ -250,7 +250,7 @@ func TestSessionNavigationDoesNotRecoverIncompleteGroup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, _, err := prepareSession(t.Context(), wrongWorkspace, path, false); err == nil {
+	if _, _, _, err := prepareSession(t.Context(), wrongWorkspace, path); err == nil {
 		t.Fatal("wrong workspace accepted")
 	}
 	after, err = os.ReadFile(path)

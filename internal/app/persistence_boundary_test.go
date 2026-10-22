@@ -231,7 +231,7 @@ func TestInteractiveSessionKeepsUncertainDiskPrefixAfterToolResultSaveFails(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
-	reopened, history, _, err := prepareSession(t.Context(), ws, path, false)
+	reopened, history, _, err := prepareSession(t.Context(), ws, path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -249,7 +249,7 @@ func TestInteractiveSessionKeepsUncertainDiskPrefixAfterToolResultSaveFails(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
-	reopened, _, _, err = prepareSession(t.Context(), ws, path, false)
+	reopened, _, _, err = prepareSession(t.Context(), ws, path)
 	if err != nil {
 		t.Fatal(err)
 	}

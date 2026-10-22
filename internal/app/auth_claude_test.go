@@ -71,7 +71,7 @@ func TestClaudeAuthCommandsLoginStatusLogout(t *testing.T) {
 func TestClaudeAuthCancelledLoginLeavesSettingsAndCredentialsUnchanged(t *testing.T) {
 	t.Parallel()
 	paths := authTestPaths(t)
-	if err := config.SaveSettingFile(paths, config.SettingProvider, "openai"); err != nil {
+	if err := config.SaveSettingsFile(t.Context(), paths, map[config.Setting]string{config.SettingProvider: "openai"}); err != nil {
 		t.Fatal(err)
 	}
 	command, err := newCommand(dependencies{

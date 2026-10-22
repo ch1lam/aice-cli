@@ -469,18 +469,3 @@ func (s *interactiveSession) publishWebSettings(prepared preparedWeb) {
 	}
 	old.closeBackend()
 }
-
-// applyWebSettings is the startup/test replacement path. Interactive saves
-// prepare before writing, then call the infallible publish step directly.
-func (s *interactiveSession) applyWebSettings(saved config.WebSettings) error {
-	configuration, err := s.settingsSnapshot().configuration.WithWeb(saved)
-	if err != nil {
-		return err
-	}
-	prepared, err := s.prepareWebSettings(configuration)
-	if err != nil {
-		return err
-	}
-	s.publishWebSettings(prepared)
-	return nil
-}

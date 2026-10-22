@@ -290,7 +290,6 @@ func (a *application) Print(
 		ctx,
 		environment.workspace,
 		request.Session,
-		false,
 	)
 	if err != nil {
 		return err
@@ -442,7 +441,6 @@ func (a *application) Interactive(
 		ctx,
 		environment.workspace,
 		request.Session,
-		false,
 	)
 	if err != nil {
 		return err

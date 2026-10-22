@@ -22,11 +22,6 @@ func mutableSetting(setting Setting) bool {
 	}
 }
 
-// SaveSettingFile patches a single preference without serializing resolved inputs.
-func SaveSettingFile(paths Paths, setting Setting, value string) error {
-	return SaveSettingsFile(context.Background(), paths, map[Setting]string{setting: value})
-}
-
 // SaveSettingsFile persists one user action under a cross-process lock. Values
 // already on disk are preserved, including settings shadowed by higher layers.
 func SaveSettingsFile(ctx context.Context, paths Paths, changes map[Setting]string) error {

@@ -20,18 +20,12 @@ func prepareSession(
 	ctx context.Context,
 	workspace *tool.Workspace,
 	requestedPath string,
-	createDefault bool,
 ) (*session.Store, []llm.AgentMessage, llm.Usage, error) {
 	if workspace == nil {
 		return nil, nil, llm.Usage{}, fmt.Errorf("app: workspace is required")
 	}
-	if requestedPath == "" && !createDefault {
-		return nil, nil, llm.Usage{}, nil
-	}
-
 	if requestedPath == "" {
-		store, err := createDefaultSession(ctx, workspace)
-		return store, nil, llm.Usage{}, err
+		return nil, nil, llm.Usage{}, nil
 	}
 
 	store, snapshot, err := openExistingSession(ctx, workspace, requestedPath)

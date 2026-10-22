@@ -222,12 +222,10 @@ func TestSaveSettingFileUpdatesGlobalSettings(t *testing.T) {
 		"thinking": "low",
 	})
 
-	if err := config.SaveSettingFile(
-		paths,
-		config.SettingModel,
-		"updated-model",
-	); err != nil {
-		t.Fatalf("SaveSettingFile() error = %v", err)
+	if err := config.SaveSettingsFile(t.Context(), paths, map[config.Setting]string{
+		config.SettingModel: "updated-model",
+	}); err != nil {
+		t.Fatalf("SaveSettingsFile() error = %v", err)
 	}
 
 	var global config.Settings
@@ -280,13 +278,11 @@ func TestSaveSettingFileValidatesInput(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 
-			err := config.SaveSettingFile(
-				paths,
-				tt.setting,
-				tt.value,
-			)
+			err := config.SaveSettingsFile(t.Context(), paths, map[config.Setting]string{
+				tt.setting: tt.value,
+			})
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
-				t.Fatalf("SaveSettingFile() error = %v, want %q", err, tt.want)
+				t.Fatalf("SaveSettingsFile() error = %v, want %q", err, tt.want)
 			}
 		})
 	}
@@ -521,7 +517,7 @@ func TestContextWindowsLoadAndSurviveSettingChanges(t *testing.T) {
 	paths := testPaths(t.TempDir())
 	windows := map[string]int64{"openai-codex/gpt-5.6-terra": 272000, "custom/Org/Model.v1": 32768}
 	writeJSON(t, paths.GlobalSettings, config.Settings{ContextWindows: []config.ContextWindow{{Provider: "openai-codex", Model: "gpt-5.6-terra", Tokens: 272000}, {Provider: "custom", Model: "Org/Model.v1", Tokens: 32768}}})
-	if err := config.SaveSettingFile(paths, config.SettingModel, "different"); err != nil {
+	if err := config.SaveSettingsFile(t.Context(), paths, map[config.Setting]string{config.SettingModel: "different"}); err != nil {
 		t.Fatal(err)
 	}
 	got, err := config.LoadFiles(paths, environmentOptions(t, nil))

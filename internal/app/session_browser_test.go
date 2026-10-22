@@ -164,7 +164,7 @@ func TestUnsupportedSessionGuidancePreservesHistory(t *testing.T) {
 			checkGuidance(items[0].Problem)
 			_, previewErr := s.PreviewSession(t.Context(), "unsupported", "")
 			_, resumeErr := s.slashResume(t.Context(), interaction.CommandRequest{Arguments: "unsupported"})
-			_, _, _, startupErr := prepareSession(t.Context(), s.workspace, path, false)
+			_, _, _, startupErr := prepareSession(t.Context(), s.workspace, path)
 			for _, err := range []error{previewErr, resumeErr, startupErr} {
 				if !errors.Is(err, session.ErrUnsupportedVersion) || errors.Is(err, session.ErrCorrupt) {
 					t.Fatalf("misclassified error: %v", err)

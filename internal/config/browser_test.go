@@ -37,7 +37,7 @@ func TestBrowserHeadedConfiguration(t *testing.T) {
 	if err != nil || next.BrowserHeaded || !next.SavedValuesOverridden(changes) {
 		t.Fatal("runtime precedence", err)
 	}
-	if err := config.SaveSettingFile(paths, config.SettingBrowserHeaded, "sometimes"); err == nil {
+	if err := config.SaveSettingsFile(t.Context(), paths, map[config.Setting]string{config.SettingBrowserHeaded: "sometimes"}); err == nil {
 		t.Fatal("invalid boolean accepted")
 	}
 	t.Setenv("AICE_BROWSER_HEADED", "sometimes")

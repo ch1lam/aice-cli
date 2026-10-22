@@ -94,7 +94,7 @@ func TestNativeMacManagedCUAFullView(t *testing.T) {
 		t.Fatal(err)
 	}
 	path := filepath.Join(t.TempDir(), "managed-full-view.jsonl")
-	store, _, _, err := prepareSession(ctx, workspace, path, false)
+	store, _, _, err := prepareSession(ctx, workspace, path)
 	if err != nil {
 		t.Fatal(err)
 	}

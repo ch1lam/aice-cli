@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -647,4 +648,45 @@ func writeAppFile(t *testing.T, dir, rel, content string) {
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
+}
+
+type projectContext struct {
+	systemPrompt string
+	trust        trust.Resolution
+}
+
+// resolveProjectContext follows startup ordering for prompt-file tests: it
+// resolves trust, then assembles the system prompt with an empty Skill catalog.
+func (a *application) resolveProjectContext(
+	ctx context.Context,
+	workspace *tool.Workspace,
+	configuration config.Config,
+	override *bool,
+	askUI trust.AskFunc,
+	tools []agent.Tool,
+) (projectContext, error) {
+	resolution, err := a.resolveProjectTrust(
+		ctx,
+		workspace,
+		configuration,
+		override,
+		askUI,
+	)
+	if err != nil {
+		return projectContext{}, err
+	}
+	systemPrompt, err := assembleSystemPrompt(
+		workspace,
+		configuration,
+		resolution.Decision,
+		tools,
+		skill.Catalog{},
+	)
+	if err != nil {
+		return projectContext{}, err
+	}
+	return projectContext{
+		systemPrompt: systemPrompt,
+		trust:        resolution,
+	}, nil
 }

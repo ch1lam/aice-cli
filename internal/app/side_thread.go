@@ -216,17 +216,6 @@ func (s *interactiveSession) CloseSideThread(id uint64) error {
 	return nil
 }
 
-// beginSideRun is the run-start gate for one side interaction. It runs on
-// the runner's goroutine when a Run starts, so the registry remains the
-// authority for read-only, expiry, and concurrency limits even if a
-// frontend bypasses Create/Open validation.
-func (s *interactiveSession) beginSideRun(id uint64) error {
-	s.lifecycle.mu.Lock()
-	revision := s.lifecycle.resourceRevision
-	s.lifecycle.mu.Unlock()
-	return s.beginSideRunRevision(id, revision)
-}
-
 func (s *interactiveSession) beginSideRunRevision(id, revision uint64) error {
 	s.lifecycle.mu.Lock()
 	defer s.lifecycle.mu.Unlock()

@@ -6,19 +6,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/ch1lam/aice-cli/internal/agent"
 	"github.com/ch1lam/aice-cli/internal/config"
-	"github.com/ch1lam/aice-cli/internal/skill"
 	"github.com/ch1lam/aice-cli/internal/tool"
 	"github.com/ch1lam/aice-cli/internal/trust"
 )
-
-// projectContext carries the effective system prompt and trust resolution for
-// one run environment.
-type projectContext struct {
-	systemPrompt string
-	trust        trust.Resolution
-}
 
 // resolveProjectTrust discovers protected project resources, resolves the
 // trust decision, and persists any interactive choice. It must run before
@@ -107,44 +98,6 @@ func (a *application) loadRunModel(ctx context.Context, directory string, overri
 	})
 	configured.projectTrust = resolution
 	return configured, err
-}
-
-// resolveProjectContext resolves trust and assembles the prompt-file view of
-// the system prompt. Production startup uses resolveProjectTrust, then skill
-// discovery, then assembleSystemPrompt so the catalog can feed tools and
-// guard. Tests keep this helper for prompt-file behavior with an empty catalog.
-func (a *application) resolveProjectContext(
-	ctx context.Context,
-	workspace *tool.Workspace,
-	configuration config.Config,
-	override *bool,
-	askUI trust.AskFunc,
-	tools []agent.Tool,
-) (projectContext, error) {
-	resolution, err := a.resolveProjectTrust(
-		ctx,
-		workspace,
-		configuration,
-		override,
-		askUI,
-	)
-	if err != nil {
-		return projectContext{}, err
-	}
-	systemPrompt, err := assembleSystemPrompt(
-		workspace,
-		configuration,
-		resolution.Decision,
-		tools,
-		skill.Catalog{},
-	)
-	if err != nil {
-		return projectContext{}, err
-	}
-	return projectContext{
-		systemPrompt: systemPrompt,
-		trust:        resolution,
-	}, nil
 }
 
 // saveProjectTrustSelection validates the current workspace's menu selection
