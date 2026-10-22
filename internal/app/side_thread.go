@@ -61,15 +61,12 @@ type sideRunner struct {
 	systemPrompt string
 	snapshot     []llm.AgentMessage
 
-	mu        sync.Mutex
-	history   [][]llm.AgentMessage
-	isRunning bool
+	mu      sync.Mutex
+	history [][]llm.AgentMessage
 
 	// begin and end are the registry-side run lifecycle hooks: begin gates
-	// a run against read-only, expiry, and concurrency limits at run start;
-	// end clears the running state and restarts the idle clock. Hooks are
-	// nil only for runners constructed without a registry, which keeps the
-	// runner itself usable in isolation.
+	// a run against busy, read-only, expiry, and concurrency limits at run
+	// start; end clears the running state and restarts the idle clock.
 	begin func() error
 	end   func()
 }
@@ -137,7 +134,7 @@ func (s *interactiveSession) CreateSideThread(
 	if settings.modelErr != nil {
 		return interaction.SideThread{}, nil, settings.modelErr
 	}
-	loop, err := s.application.newAgentLoop(settings.configuration, nil)
+	loop, err := s.application.newAgentLoopWithOptions(settings.configuration, nil)
 	if err != nil {
 		return interaction.SideThread{}, nil, err
 	}
@@ -242,11 +239,10 @@ func (s *interactiveSession) beginSideRunRevision(id, revision uint64) error {
 	if now.Sub(thread.lastActiveAt) >= sideWritableIdle {
 		return interaction.ErrSideThreadReadOnly
 	}
-	if s.sideRunning >= maximumRunningSideThreads {
+	if s.lifecycle.sideRunning >= maximumRunningSideThreads {
 		return interaction.ErrSideThreadConcurrencyLimit
 	}
 	thread.isRunning = true
-	s.sideRunning++
 	s.lifecycle.sideRunning++
 	return nil
 }
@@ -264,10 +260,7 @@ func (s *interactiveSession) endSideRun(id uint64) {
 		return
 	}
 	thread.isRunning = false
-	if s.sideRunning > 0 {
-		s.sideRunning--
-		s.lifecycle.sideRunning--
-	}
+	s.lifecycle.sideRunning--
 	thread.lastActiveAt = s.sideNow()
 }
 
@@ -432,42 +425,6 @@ func (r *sideRunner) commitTurn(messages []llm.AgentMessage) error {
 	return nil
 }
 
-func (r *sideRunner) beginRun() error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	// The local guard runs first so a registry begin that succeeds can never
-	// strand a running slot: the registry marks the thread running and takes
-	// a concurrency slot before the local flag flips, and once the registry
-	// gate has succeeded there is no path left that can reject the run.
-	if r.isRunning {
-		// Registry-owned runners mirror the local running flag into the
-		// registry before this flag flips and clear it only afterwards, so an
-		// overlapping run is always reported with the registry's busy
-		// sentinel. Standalone runners have no registry and keep the
-		// internal error.
-		if r.begin != nil {
-			return interaction.ErrSideThreadBusy
-		}
-		return fmt.Errorf("app: side run already active")
-	}
-	if r.begin != nil {
-		if err := r.begin(); err != nil {
-			return err
-		}
-	}
-	r.isRunning = true
-	return nil
-}
-
-func (r *sideRunner) endRun() {
-	r.mu.Lock()
-	r.isRunning = false
-	r.mu.Unlock()
-	if r.end != nil {
-		r.end()
-	}
-}
-
 type sideRun struct {
 	runner *sideRunner
 	prompt llm.UserMessage
@@ -497,10 +454,10 @@ func (r *sideRun) Run(ctx context.Context) error {
 	}
 	r.isStarted = true
 	r.mu.Unlock()
-	if err := r.runner.beginRun(); err != nil {
+	if err := r.runner.begin(); err != nil {
 		return err
 	}
-	defer r.runner.endRun()
+	defer r.runner.end()
 
 	history, err := r.runner.requestHistory()
 	if err != nil {

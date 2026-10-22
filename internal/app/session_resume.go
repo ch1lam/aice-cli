@@ -3,7 +3,6 @@ package app
 import (
 	"context"
 	"errors"
-	"fmt"
 
 	"github.com/ch1lam/aice-cli/internal/interaction"
 	"github.com/ch1lam/aice-cli/internal/session"
@@ -14,22 +13,12 @@ func (s *interactiveSession) slashResume(ctx context.Context, request interactio
 	if err != nil {
 		return "", err
 	}
+	// RunSlashCommand holds an idle settings reservation, so no main or side
+	// run can start across the switch. Side creation also acquires
+	// historySyncMu before capturing its parent snapshot.
 	c := &s.conversation
 	c.historySyncMu.Lock()
 	defer c.historySyncMu.Unlock()
-	c.historyMu.RLock()
-	active := c.activeMainRun != nil
-	c.historyMu.RUnlock()
-	if active {
-		return "", fmt.Errorf("app: stop the current response before resuming a session")
-	}
-	// Prevent a held side runner from starting across the switch. Creation
-	// acquires historySyncMu before capturing its parent snapshot as well.
-	s.sideMu.Lock()
-	defer s.sideMu.Unlock()
-	if s.sideRunning != 0 {
-		return "", fmt.Errorf("app: stop BTW responses before resuming a session")
-	}
 	if c.store != nil && c.store.Path() == path {
 		snapshot, err := c.store.Snapshot()
 		if err != nil {

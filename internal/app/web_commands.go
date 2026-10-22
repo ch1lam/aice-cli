@@ -434,19 +434,14 @@ func (s *interactiveSession) prepareWebSettings(configuration config.Config) (pr
 		state.closeBackend()
 		return preparedWeb{}, fmt.Errorf("app: prepare web fetch: %w", state.fetchErr)
 	}
-	tools, err := composeTools(s.baseTools, state, s.desktop, configuration)
+	tools, systemPrompt, err := s.sessionTools(configuration, state)
 	if err != nil {
 		state.closeBackend()
 		return preparedWeb{}, err
 	}
-	systemPrompt, err := assembleSystemPrompt(s.workspace, configuration, s.trustDecision, tools, s.skills)
-	if err != nil {
-		state.closeBackend()
-		return preparedWeb{}, fmt.Errorf("app: rebuild system prompt: %w", err)
-	}
 	loop := current.loop
 	if current.modelErr == nil && providerConfigured(s.providers, configuration) {
-		loop, err = s.application.newAgentLoopWithOptions(configuration, tools, agent.WithGuard(s.guardAdapter), agent.WithGuardAskHandler(s.handleGuardAsk))
+		loop, err = s.sessionLoop(configuration, tools)
 		if err != nil {
 			state.closeBackend()
 			return preparedWeb{}, err

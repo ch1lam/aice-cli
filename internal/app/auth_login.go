@@ -152,7 +152,7 @@ func (s *interactiveSession) login(
 		return result, err
 	}
 	configuration.Model = model.ID
-	loop, err := s.rebuildAgentLoop(configuration)
+	loop, err := s.sessionLoop(configuration, settings.tools)
 	if err != nil {
 		return result, err
 	}
@@ -187,14 +187,7 @@ func (s *interactiveSession) login(
 			result.output += savedOverrideNotice(configuration, changes)
 		}
 	}()
-	effective := clampedThinkingForModel(model, configuration.Thinking)
-	s.stateMu.Lock()
-	s.configuration = configuration
-	s.modelErr = nil
-	s.loop = loop
-	s.model = applyContextWindow(model, configuration)
-	s.options.Thinking = effective
-	s.stateMu.Unlock()
+	s.publishModel(configuration, model, loop)
 	result.committed, result.resourcesChanged = true, true
 	if request.UseSavedCredential {
 		result.output = fmt.Sprintf(

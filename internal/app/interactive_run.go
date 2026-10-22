@@ -28,6 +28,8 @@ type interactiveRun struct {
 type mainRunSnapshot struct {
 	state         *mainRunState
 	loop          *agent.Loop
+	mcp           *mcpOwner
+	tools         []agent.Tool
 	history       []llm.AgentMessage
 	model         llm.Model
 	options       llm.StreamOptions
@@ -177,24 +179,13 @@ func (r *interactiveRun) Run(ctx context.Context) (returnErr error) {
 	r.mu.Lock()
 	r.model = snapshot.model
 	r.mu.Unlock()
-	ctx, err = modelSessionContext(ctx, r.session.conversation.store)
+	ctx, scope, err := bindRunScope(ctx, r.session.conversation.store, r.session.desktop, snapshot.mcp, snapshot.configuration, snapshot.model, nil)
 	if err != nil {
 		return err
 	}
-	ctx, closeDesktopRun, err := r.session.desktop.bindContext(ctx, snapshot.configuration, snapshot.model)
-	if err != nil {
-		return err
-	}
-	defer func() { returnErr = errors.Join(returnErr, closeDesktopRun()) }()
-	ctx, mcpRun, err := r.session.mcp.bindRun(ctx)
-	if err != nil {
-		return err
-	}
-	defer mcpRun.Close()
-	observeTools, clearLoadedTools := r.session.beginMCPLoadedTools(mcpRun.catalog)
+	defer func() { returnErr = errors.Join(returnErr, scope.close()) }()
+	observeTools, clearLoadedTools := r.session.beginMCPLoadedTools(scope.mcp.catalog)
 	defer clearLoadedTools()
-	ctx = withResultReader(ctx, r.session.conversation.store, nil)
-	snapshot.systemPrompt += mcpRun.summary
 
 	configured := configuredModel{
 		configuration: snapshot.configuration,
@@ -205,34 +196,26 @@ func (r *interactiveRun) Run(ctx context.Context) (returnErr error) {
 	// group is not yet replay-safe for the conversation's side snapshots.
 	var desktopDisplay desktopDisplayProjection
 	contextHistory := append([]llm.AgentMessage(nil), snapshot.history...)
-	_, runErr := snapshot.loop.Run(ctx, agent.RunInput{
-		ResultViewTokens: llm.ResultViewBudget(snapshot.model.ContextWindow),
-		Catalog:          mcpRun.Catalog(),
-		PinnedTools:      mcpRun.pins,
-		ObserveTools:     observeTools,
-		Model:            snapshot.model,
-		SystemPrompt:     snapshot.systemPrompt,
-		History:          snapshot.history,
-		Prompt:           r.prompt,
-		Options:          snapshot.options,
-		MessageRecorder: func(recordCtx context.Context, message llm.AgentMessage) error {
-			if err := r.session.conversation.recordMessage(recordCtx, snapshot.state, message); err != nil {
-				return err
-			}
-			contextHistory = append(contextHistory, message)
-			return nil
-		},
-		Compactor: func(compactCtx context.Context, history []llm.AgentMessage) (agent.CompactionResult, error) {
-			var usage llm.Usage
-			compacted, err := r.session.compactHistory(compactCtx, history, &configured, func(value llm.Usage) { usage = llm.AddUsage(usage, value) })
-			if err == nil {
-				contextHistory = append([]llm.AgentMessage(nil), compacted...)
-			}
-			return agent.CompactionResult{History: compacted, Usage: usage}, err
-		},
-		Steering: mailboxInputSource(r.mailbox.TakeSteering, "steering", snapshot.model),
-		FollowUp: mailboxInputSource(r.mailbox.TakeFollowUp, "follow-up", snapshot.model),
-	}, func(eventCtx context.Context, event agent.AgentEvent) error {
+	input := scope.input(snapshot.model, snapshot.systemPrompt, snapshot.options, snapshot.history, r.prompt)
+	input.ObserveTools = observeTools
+	input.Steering = mailboxInputSource(r.mailbox.TakeSteering, "steering", snapshot.model)
+	input.FollowUp = mailboxInputSource(r.mailbox.TakeFollowUp, "follow-up", snapshot.model)
+	input.MessageRecorder = func(recordCtx context.Context, message llm.AgentMessage) error {
+		if err := r.session.conversation.recordMessage(recordCtx, snapshot.state, message); err != nil {
+			return err
+		}
+		contextHistory = append(contextHistory, message)
+		return nil
+	}
+	input.Compactor = func(compactCtx context.Context, history []llm.AgentMessage) (agent.CompactionResult, error) {
+		var usage llm.Usage
+		compacted, err := r.session.compactHistory(compactCtx, history, &configured, func(value llm.Usage) { usage = llm.AddUsage(usage, value) })
+		if err == nil {
+			contextHistory = append([]llm.AgentMessage(nil), compacted...)
+		}
+		return agent.CompactionResult{History: compacted, Usage: usage}, err
+	}
+	_, runErr := snapshot.loop.Run(ctx, input, func(eventCtx context.Context, event agent.AgentEvent) error {
 		if r.sink == nil {
 			return nil
 		}
@@ -243,7 +226,7 @@ func (r *interactiveRun) Run(ctx context.Context) (returnErr error) {
 		}
 		if display.Kind != interaction.EventAssistantDelta {
 			usage := contextDisplay(snapshot.model, snapshot.configuration,
-				snapshot.systemPrompt, r.session.tools, contextHistory)
+				input.SystemPrompt, snapshot.tools, contextHistory)
 			display.Context = &usage
 		}
 		return r.sink(eventCtx, *display)
@@ -308,6 +291,8 @@ func (s *interactiveSession) beginMainRun(
 	return mainRunSnapshot{
 		state:         state,
 		loop:          settings.loop,
+		mcp:           settings.mcp,
+		tools:         settings.tools,
 		history:       history,
 		model:         settings.model,
 		options:       settings.options,

@@ -334,34 +334,16 @@ func (a *application) Print(
 		return nil
 	}
 
-	ctx, err = modelSessionContext(ctx, store)
+	ctx, scope, err := bindRunScope(ctx, store, environment.desktop, environment.mcp, environment.configuration, environment.model, func() []llm.AgentMessage { return sourceMessages })
 	if err != nil {
 		return err
 	}
-	ctx, closeDesktopRun, err := environment.desktop.bindContext(ctx, environment.configuration, environment.model)
-	if err != nil {
-		return err
-	}
-	defer func() { returnErr = errors.Join(returnErr, closeDesktopRun()) }()
-	ctx, mcpRun, err := environment.mcp.bindRun(ctx)
-	if err != nil {
-		return err
-	}
-	defer mcpRun.Close()
-	ctx = withResultReader(ctx, store, func() []llm.AgentMessage { return sourceMessages })
+	defer func() { returnErr = errors.Join(returnErr, scope.close()) }()
 
-	_, loopErr := loop.Run(ctx, agent.RunInput{
-		ResultViewTokens: llm.ResultViewBudget(environment.model.ContextWindow),
-		Catalog:          mcpRun.Catalog(),
-		PinnedTools:      mcpRun.pins,
-		Model:            environment.model,
-		SystemPrompt:     environment.systemPrompt + mcpRun.summary,
-		History:          history,
-		Prompt:           prompt,
-		Options:          environment.options,
-		Compactor:        a.historyCompactor(store, &configured, sink.AddUsage),
-		MessageRecorder:  recorder,
-	}, sink.Accept)
+	runInput := scope.input(environment.model, environment.systemPrompt, environment.options, history, prompt)
+	runInput.Compactor = a.historyCompactor(store, &configured, sink.AddUsage)
+	runInput.MessageRecorder = recorder
+	_, loopErr := loop.Run(ctx, runInput, sink.Accept)
 	finishErr := sink.Finish()
 	if loopErr != nil {
 		return errors.Join(
@@ -842,21 +824,6 @@ func (a *application) initializeConfiguredModel(configured *configuredModel) err
 	return nil
 }
 
-func (a *application) newAgentLoop(
-	configuration config.Config,
-	tools []agent.Tool,
-) (*agent.Loop, error) {
-	_, adapter, err := newExecutionGuard("", nil, false)
-	if err != nil {
-		return nil, err
-	}
-	return a.newAgentLoopWithOptions(
-		configuration,
-		tools,
-		agent.WithGuard(adapter),
-	)
-}
-
 func (a *application) newAgentLoopWithOptions(
 	configuration config.Config,
 	tools []agent.Tool,
@@ -923,7 +890,6 @@ type interactiveSession struct {
 	sideMu      sync.Mutex
 	sideThreads map[uint64]*sideThread
 	sideNextID  uint64
-	sideRunning int
 	sideClock   func() time.Time
 }
 
@@ -956,19 +922,42 @@ func (s *interactiveSession) settingsSnapshot() interactiveSettings {
 	}
 }
 
-// rebuildAgentLoop preserves the Session's workspace-scoped guard and its
-// memory-only grants when provider credentials replace the model service.
-// Inject the Ask handler before publishing the replacement loop.
-func (s *interactiveSession) rebuildAgentLoop(
-	configuration config.Config,
-) (*agent.Loop, error) {
+// sessionTools composes the Session base tools with web and optional
+// capabilities for configuration, and assembles the matching system prompt.
+func (s *interactiveSession) sessionTools(configuration config.Config, web webState) ([]agent.Tool, string, error) {
+	tools, err := composeTools(s.baseTools, web, s.desktop, configuration)
+	if err != nil {
+		return nil, "", err
+	}
+	prompt, err := assembleSystemPrompt(s.workspace, configuration, s.trustDecision, tools, s.skills)
+	if err != nil {
+		return nil, "", fmt.Errorf("app: rebuild system prompt: %w", err)
+	}
+	return tools, prompt, nil
+}
+
+// sessionLoop builds a Loop over tools that keeps the Session's
+// workspace-scoped Guard, its memory-only grants and its Ask handler.
+func (s *interactiveSession) sessionLoop(configuration config.Config, tools []agent.Tool) (*agent.Loop, error) {
 	if s == nil || s.application == nil {
 		return nil, fmt.Errorf("app: application is required")
 	}
 	return s.application.newAgentLoopWithOptions(
 		configuration,
-		s.tools,
+		tools,
 		agent.WithGuard(s.guardAdapter),
 		agent.WithGuardAskHandler(s.handleGuardAsk),
 	)
+}
+
+// publishModel switches configuration, model, thinking and loop in one
+// critical section, so a concurrent side snapshot freezes a consistent tuple.
+func (s *interactiveSession) publishModel(configuration config.Config, model llm.Model, loop *agent.Loop) {
+	s.stateMu.Lock()
+	defer s.stateMu.Unlock()
+	s.configuration = configuration
+	s.modelErr = nil
+	s.loop = loop
+	s.model = applyContextWindow(model, configuration)
+	s.options.Thinking = clampedThinkingForModel(model, configuration.Thinking)
 }

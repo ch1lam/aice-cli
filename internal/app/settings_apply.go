@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/ch1lam/aice-cli/internal/agent"
 	"github.com/ch1lam/aice-cli/internal/config"
 	"github.com/ch1lam/aice-cli/internal/interaction"
 )
@@ -131,11 +130,7 @@ func (s *interactiveSession) applySettingsReserved(ctx context.Context, request 
 	loop := current.loop
 	tools, systemPrompt := current.tools, current.systemPrompt
 	if changesDesktop {
-		tools, err = composeTools(s.baseTools, s.web, s.desktop, candidate)
-		if err != nil {
-			return result, err
-		}
-		systemPrompt, err = assembleSystemPrompt(s.workspace, candidate, s.trustDecision, tools, s.skills)
+		tools, systemPrompt, err = s.sessionTools(candidate, s.web)
 		if err != nil {
 			return result, err
 		}
@@ -144,7 +139,7 @@ func (s *interactiveSession) applySettingsReserved(ctx context.Context, request 
 		loop = nil
 	}
 	if shared && modelErr == nil && s.application != nil && providerConfigured(s.providers, candidate) {
-		loop, err = s.application.newAgentLoopWithOptions(candidate, tools, agent.WithGuard(s.guardAdapter), agent.WithGuardAskHandler(s.handleGuardAsk))
+		loop, err = s.sessionLoop(candidate, tools)
 		if err != nil {
 			return result, err
 		}

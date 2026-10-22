@@ -116,15 +116,11 @@ func (s *interactiveSession) publishMCPConfiguration(next config.Config, reconne
 	old := s.mcp
 	previous := s.configuration.MCP
 	s.stateMu.RUnlock()
-	tools, err := composeTools(s.baseTools, s.web, s.desktop, next)
+	tools, prompt, err := s.sessionTools(next, s.web)
 	model, options, modelErr := resolveModelSettings(s.providers, next)
-	prompt := ""
-	if err == nil {
-		prompt, err = assembleSystemPrompt(s.workspace, next, s.trustDecision, tools, s.skills)
-	}
 	var loop *agent.Loop
 	if err == nil && s.application != nil && modelErr == nil && providerConfigured(s.providers, next) {
-		loop, err = s.application.newAgentLoopWithOptions(next, tools, agent.WithGuard(s.guardAdapter), agent.WithGuardAskHandler(s.handleGuardAsk))
+		loop, err = s.sessionLoop(next, tools)
 	}
 	if !reflect.DeepEqual(previous.Restrictions, next.MCP.Restrictions) {
 		s.desktop.invalidateManagedCatalog(s.guard)

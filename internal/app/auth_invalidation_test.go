@@ -62,7 +62,7 @@ func TestLoginEffectsKeepOrInvalidateHeldRuns(t *testing.T) {
 					return model, nil
 				}
 				var err error
-				s.loop, err = s.rebuildAgentLoop(s.configuration)
+				s.loop, err = s.sessionLoop(s.configuration, s.tools)
 				if err != nil {
 					t.Fatal(err)
 				}

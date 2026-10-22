@@ -43,7 +43,7 @@ func (s *interactiveSession) selectProvider(ctx context.Context, value string) (
 		changes[config.SettingModel] = model.ID
 	}
 	configuration.Model = model.ID
-	loop, err := s.rebuildAgentLoop(configuration)
+	loop, err := s.sessionLoop(configuration, settings.tools)
 	if err != nil {
 		return false, err
 	}
@@ -52,16 +52,7 @@ func (s *interactiveSession) selectProvider(ctx context.Context, value string) (
 		return false, err
 	}
 	configuration.Model = model.ID
-	effective := clampedThinkingForModel(model, configuration.Thinking)
-	// The settings transition is one critical section so a concurrent side
-	// snapshot freezes a mutually consistent provider/model/thinking tuple.
-	s.stateMu.Lock()
-	s.configuration = configuration
-	s.modelErr = nil
-	s.loop = loop
-	s.model = applyContextWindow(model, configuration)
-	s.options.Thinking = effective
-	s.stateMu.Unlock()
+	s.publishModel(configuration, model, loop)
 	return configuration.SavedValuesOverridden(changes), nil
 }
 
@@ -76,15 +67,11 @@ func (s *interactiveSession) selectModel(ctx context.Context, value string) (ove
 			strings.Join(modelIDsForProvider(s.providers, providerID), ", "),
 		)
 	}
-	effective := clampedThinkingForModel(
-		model,
-		settings.configuration.Thinking,
-	)
 	configuration := settings.configuration
 	configuration.Model = value
 	loop := settings.loop
 	if settings.modelErr != nil && providerConfigured(s.providers, configuration) {
-		loop, err = s.rebuildAgentLoop(configuration)
+		loop, err = s.sessionLoop(configuration, settings.tools)
 		if err != nil {
 			return false, err
 		}
@@ -94,15 +81,7 @@ func (s *interactiveSession) selectModel(ctx context.Context, value string) (ove
 	if err != nil {
 		return false, err
 	}
-	// The settings transition is one critical section so a concurrent side
-	// snapshot freezes a mutually consistent model/thinking pair.
-	s.stateMu.Lock()
-	s.configuration = configuration
-	s.modelErr = nil
-	s.loop = loop
-	s.model = applyContextWindow(model, settings.configuration)
-	s.options.Thinking = effective
-	s.stateMu.Unlock()
+	s.publishModel(configuration, model, loop)
 	return configuration.SavedValuesOverridden(changes), nil
 }
 

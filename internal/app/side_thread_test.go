@@ -69,9 +69,9 @@ func newSideHarness(
 	model := deepseek.DefaultModel()
 	model.ThinkingLevelMap = model.ThinkingLevelMap.Clone()
 	model.InputModalities = slices.Clone(model.InputModalities)
-	loop, err := harness.application.newAgentLoop(configuration, nil)
+	loop, err := harness.application.newAgentLoopWithOptions(configuration, nil)
 	if err != nil {
-		t.Fatalf("newAgentLoop() error = %v", err)
+		t.Fatalf("newAgentLoopWithOptions() error = %v", err)
 	}
 	harness.session = &interactiveSession{
 		application:   harness.application,
