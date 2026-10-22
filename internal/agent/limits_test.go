@@ -142,9 +142,20 @@ func TestRunTimeBudgetCancelsToolAndPairsRemainder(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		result, err := loop.Run(t.Context(), testInput(info, mustPrompt(t, "test")), nil)
+		var terminal error
+		result, err := loop.Run(t.Context(), testInput(info, mustPrompt(t, "test")), func(_ context.Context, event agent.AgentEvent) error {
+			if event.Type == agent.EventTypeAgentEnd {
+				terminal = event.Err
+			}
+			return nil
+		})
 		if !errors.Is(err, agent.ErrTimeBudget) || !errors.Is(err, context.DeadlineExceeded) {
 			t.Fatal(err)
+		}
+		// The run finalizes once: the returned error is the agent_end error,
+		// with the budget joined a single time.
+		if terminal == nil || err.Error() != terminal.Error() || strings.Count(err.Error(), agent.ErrTimeBudget.Error()) != 1 {
+			t.Fatalf("run error = %q, agent_end error = %v", err, terminal)
 		}
 		if len(tool.calls) != 1 || len(result.ModelRounds[0].ToolResults) != 2 {
 			t.Fatalf("calls=%d result=%+v", len(tool.calls), result)

@@ -88,64 +88,64 @@ func (e *runExecution) emitRetryEnd(
 	})
 }
 
-// retryOutcome describes the result of one retry decision. retry is false
-// when retries are exhausted or the retry flow was interrupted; stopErr stops
-// the run immediately without an agent_end event; waitErr ends the run because
-// the retry wait was interrupted.
-type retryOutcome struct {
-	nextAttempt int
-	nextTurn    int
-	retry       bool
-	stopErr     error
-	waitErr     error
-}
-
-// retryTurn advances one retry attempt after a failed model turn. runErr is
-// the error that failed the turn; record, when non-nil, records the failed
-// attempt before the retry. force retries irrespective of the retry policy
+// retryTurn settles a failed model turn. runErr is the error that failed the
+// turn. record, when non-nil, marks a turn still open after an incomplete
+// stream: it records the failed attempt before a retry, and on exhaustion the
+// turn is closed with turn_end. force retries irrespective of the retry policy
 // with no backoff; the loop uses it exactly once after arming reasoning
 // degradation, when the retried request differs from the rejected one.
+// stepContinue means attempt and turn advanced to the retry.
 func (e *runExecution) retryTurn(
 	ctx context.Context,
-	retryAttempt int,
-	turnNumber int,
+	attempt *int,
+	turn *int,
 	runErr error,
 	record func() error,
 	force bool,
-) retryOutcome {
-	nextAttempt := retryAttempt + 1
+) (step, error) {
+	nextAttempt := *attempt + 1
 	delay, retry := e.loop.retry.decision(runErr, nextAttempt)
 	if force {
 		retry = true
 		delay = 0
 	}
 	if !retry {
-		if retryAttempt > 0 {
-			if err := e.emitRetryEnd(ctx, retryAttempt, false, runErr); err != nil {
-				return retryOutcome{stopErr: errors.Join(runErr, err)}
+		if *attempt > 0 {
+			if err := e.emitRetryEnd(ctx, *attempt, false, runErr); err != nil {
+				return stepAbort, errors.Join(runErr, err)
 			}
 		}
-		return retryOutcome{}
+		if record != nil {
+			if err := e.emit(ctx, AgentEvent{
+				Type:       EventTypeTurnEnd,
+				TurnNumber: *turn,
+				Err:        runErr,
+			}); err != nil {
+				return stepAbort, errors.Join(runErr, err)
+			}
+		}
+		return stepEnd, runErr
 	}
 	if record != nil {
 		if err := record(); err != nil {
-			return retryOutcome{stopErr: errors.Join(runErr, err)}
+			return stepAbort, errors.Join(runErr, err)
 		}
 	}
 	if err := e.startRetry(ctx, nextAttempt, delay, runErr); err != nil {
-		return retryOutcome{stopErr: errors.Join(runErr, err)}
+		return stepAbort, errors.Join(runErr, err)
 	}
 	if err := waitRetry(ctx, delay); err != nil {
 		waitErr := errors.Join(runErr, err)
 		_ = e.emitRetryEnd(ctx, nextAttempt, false, waitErr)
-		return retryOutcome{waitErr: waitErr}
+		return stepEnd, waitErr
 	}
-	nextTurn := turnNumber + 1
 	if err := e.emit(ctx, AgentEvent{
 		Type:       EventTypeTurnStart,
-		TurnNumber: nextTurn,
+		TurnNumber: *turn + 1,
 	}); err != nil {
-		return retryOutcome{stopErr: err}
+		return stepAbort, err
 	}
-	return retryOutcome{nextAttempt: nextAttempt, nextTurn: nextTurn, retry: true}
+	*attempt = nextAttempt
+	(*turn)++
+	return stepContinue, nil
 }

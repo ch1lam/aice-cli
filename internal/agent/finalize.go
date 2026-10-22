@@ -8,40 +8,11 @@ import (
 	"github.com/ch1lam/aice-cli/internal/llm"
 )
 
-func (e *runExecution) finishRun(ctx context.Context, runErr error) (Result, error) {
-	result, runErr := e.finalize(ctx, runErr)
-	if err := e.emit(ctx, AgentEvent{
-		Type:     EventTypeAgentEnd,
-		Messages: result.Messages(),
-		Err:      runErr,
-	}); err != nil {
-		return e.result, errors.Join(runErr, err)
-	}
-	return e.result, runErr
-}
-
-func (e *runExecution) finishIncompleteTurn(
-	ctx context.Context,
-	turnNumber int,
-	runErr error,
-) (Result, error) {
-	if runErr == nil {
-		runErr = fmt.Errorf("%w: assistant turn did not complete", ErrProtocol)
-	}
-	if err := e.emit(ctx, AgentEvent{
-		Type:       EventTypeTurnEnd,
-		TurnNumber: turnNumber,
-		Err:        runErr,
-	}); err != nil {
-		return e.result, errors.Join(runErr, err)
-	}
-	return e.finishRun(ctx, runErr)
-}
-
-// finalize flushes only the unrecorded tail produced by failure cleanup. A
-// recorder failure is sticky: never retry it or append later cleanup records.
+// finalize runs once per Run. It flushes only the unrecorded tail produced by
+// failure cleanup. A recorder failure is sticky: never retry it or append
+// later cleanup records.
 func (e *runExecution) finalize(ctx context.Context, runErr error) (Result, error) {
-	if errors.Is(context.Cause(ctx), ErrTimeBudget) {
+	if errors.Is(context.Cause(ctx), ErrTimeBudget) && !errors.Is(runErr, ErrTimeBudget) {
 		runErr = errors.Join(runErr, ErrTimeBudget)
 	}
 	result, finalizeErr := finalizeFailedResult(e.result, e.input.Model, runErr, e.takePendingInputs())
