@@ -6,10 +6,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"sort"
-	"strings"
 
+	"github.com/ch1lam/aice-cli/internal/hostpath"
 	"github.com/ch1lam/aice-cli/internal/jsonutil"
 )
 
@@ -26,17 +25,6 @@ type Entry struct {
 type Update struct {
 	Path     string
 	Decision Decision
-}
-
-// normalizeKey canonicalizes a path for use as a store key. Windows paths are
-// case-insensitive, so keys are lowercased there to keep Lookup and SetMany
-// consistent regardless of the case callers pass in.
-func normalizeKey(path string) string {
-	path = filepath.Clean(path)
-	if runtime.GOOS == "windows" {
-		return strings.ToLower(path)
-	}
-	return path
 }
 
 // Store reads and writes the global project trust store. Its format is
@@ -75,7 +63,7 @@ func (s *Store) Lookup(path string) (Entry, bool, error) {
 	if err != nil {
 		return Entry{}, false, err
 	}
-	path = normalizeKey(path)
+	path = hostpath.Key(path)
 	for {
 		if decision, ok := data[path]; ok {
 			return Entry{Path: path, Decision: decision}, true, nil
@@ -110,7 +98,7 @@ func (s *Store) SetMany(updates []Update) error {
 		return err
 	}
 	for _, update := range updates {
-		key := normalizeKey(update.Path)
+		key := hostpath.Key(update.Path)
 		if update.Decision == DecisionUnknown {
 			delete(data, key)
 			continue

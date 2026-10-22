@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ch1lam/aice-cli/internal/hostpath"
 	"github.com/ch1lam/aice-cli/internal/llm"
 	"github.com/ch1lam/aice-cli/internal/provider/deepseek"
 	"github.com/ch1lam/aice-cli/internal/trust"
@@ -98,9 +99,9 @@ func TestInteractiveTrustParentPersistsParentAndClearsExact(t *testing.T) {
 
 func canonicalTestWorkspace(t *testing.T) string {
 	t.Helper()
-	path, err := trust.CanonicalPath(t.TempDir())
+	path, err := hostpath.Canonical(t.TempDir())
 	if err != nil {
-		t.Fatalf("CanonicalPath() error = %v", err)
+		t.Fatalf("Canonical() error = %v", err)
 	}
 	return path
 }

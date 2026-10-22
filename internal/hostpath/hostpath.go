@@ -1,14 +1,41 @@
-// Package hostpath provides host filesystem path membership, tilde expansion,
-// and slash-normalized display. Callers do not branch on GOOS; Windows
-// membership is case-insensitive, matching internal/trust store keys.
+// Package hostpath provides host filesystem path canonicalization, comparison
+// keys, membership, tilde expansion, and slash-normalized display. Callers do
+// not branch on GOOS; Windows comparison is case-insensitive.
 package hostpath
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 )
+
+// Canonical returns the absolute, symlink-resolved, cleaned form of path, so
+// entering the same location through different links yields one value.
+func Canonical(path string) (string, error) {
+	if path == "" {
+		return "", fmt.Errorf("hostpath: path is required")
+	}
+	if strings.IndexByte(path, 0) >= 0 {
+		return "", fmt.Errorf("hostpath: path contains a null byte")
+	}
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return "", fmt.Errorf("hostpath: resolve %q: %w", path, err)
+	}
+	physical, err := filepath.EvalSymlinks(absolute)
+	if err != nil {
+		return "", fmt.Errorf("hostpath: resolve symlinks for %q: %w", path, err)
+	}
+	return filepath.Clean(physical), nil
+}
+
+// Key returns the comparison key for path: cleaned, and lowercased on Windows
+// where host paths are case-insensitive.
+func Key(path string) string {
+	return fold(filepath.Clean(path))
+}
 
 // Within reports whether child is inside parent, including when they name
 // the same path. Different volumes return false.
@@ -16,8 +43,8 @@ func Within(parent, child string) bool {
 	if parent == "" || child == "" {
 		return false
 	}
-	parent = fold(filepath.Clean(parent))
-	child = fold(filepath.Clean(child))
+	parent = Key(parent)
+	child = Key(child)
 	if parent == child {
 		return true
 	}
@@ -30,7 +57,7 @@ func Within(parent, child string) bool {
 
 // Same reports whether a and b name the same path after Clean.
 func Same(a, b string) bool {
-	return fold(filepath.Clean(a)) == fold(filepath.Clean(b))
+	return Key(a) == Key(b)
 }
 
 // UnderHome reports whether path is the user's home directory or a descendant.

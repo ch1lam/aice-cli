@@ -110,7 +110,7 @@ Optional capabilities retain their own owners:
 | `internal/desktop` | Pinned Cua admission, shared/owned runtime lifecycle, Run sessions, serialized calls, mode/image limits and setup validation; [platform scope](desktop.md) |
 | `internal/browser` | Process-owned browser names, environment, connection and bounded cleanup; app owns wiring, Loop remains unaware |
 | `internal/update` | Checksum-validated GitHub release updates |
-| `internal/hostpath` | Host path membership, tilde expansion, slash-normalized display |
+| `internal/hostpath` | Host path canonicalization, comparison keys, membership, tilde expansion, slash-normalized display |
 | `internal/jsonutil`, `internal/apitest` | Focused shared JSON and test infrastructure |
 
 Create a package only when implementation requires it. Avoid vague packages

@@ -2,11 +2,12 @@ package tool
 
 import (
 	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
 
 	"golang.org/x/text/unicode/norm"
+
+	"github.com/ch1lam/aice-cli/internal/hostpath"
 )
 
 // resolveReadTarget applies read-only spelling tolerance, then resolves relative
@@ -24,25 +25,7 @@ func (r *Read) resolveReadTarget(input string) (string, error) {
 // normalizeReadInput applies input spelling fixes before path resolution.
 func normalizeReadInput(input string) string {
 	input = strings.TrimPrefix(input, "@")
-	if home, ok := expandedHome(input); ok {
-		input = home
-	}
-	return foldUnicodeSpaces(input)
-}
-
-// expandedHome resolves a leading "~" to the user's home directory.
-func expandedHome(input string) (string, bool) {
-	if input != "~" && !strings.HasPrefix(input, "~/") {
-		return input, false
-	}
-	home, err := os.UserHomeDir()
-	if err != nil || home == "" {
-		return input, false
-	}
-	if input == "~" {
-		return home, true
-	}
-	return filepath.Join(home, strings.TrimPrefix(input, "~/")), true
+	return foldUnicodeSpaces(hostpath.ExpandTilde(input))
 }
 
 // foldUnicodeSpaces maps the spacing characters that commonly appear in

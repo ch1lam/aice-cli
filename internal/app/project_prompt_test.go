@@ -12,6 +12,7 @@ import (
 
 	"github.com/ch1lam/aice-cli/internal/agent"
 	"github.com/ch1lam/aice-cli/internal/config"
+	"github.com/ch1lam/aice-cli/internal/hostpath"
 	"github.com/ch1lam/aice-cli/internal/provider/deepseek"
 	"github.com/ch1lam/aice-cli/internal/skill"
 	"github.com/ch1lam/aice-cli/internal/tool"
@@ -261,9 +262,9 @@ func TestResolveProjectContextStoredDenyBeatsAlways(t *testing.T) {
 	workspace := t.TempDir()
 	writeAppFile(t, workspace, ".aice/APPEND_SYSTEM.md", "project rules")
 	paths := trustTestPaths(t)
-	key, err := trust.CanonicalPath(workspace)
+	key, err := hostpath.Canonical(workspace)
 	if err != nil {
-		t.Fatalf("CanonicalPath() error = %v", err)
+		t.Fatalf("Canonical() error = %v", err)
 	}
 	if err := trust.NewStore(paths.GlobalTrust).Set(key, trust.DecisionUntrusted); err != nil {
 		t.Fatalf("Set() error = %v", err)
@@ -296,9 +297,9 @@ func TestResolveProjectContextStoredTrustLoadsPrompt(t *testing.T) {
 	workspace := t.TempDir()
 	writeAppFile(t, workspace, ".aice/APPEND_SYSTEM.md", "project rules")
 	paths := trustTestPaths(t)
-	key, err := trust.CanonicalPath(workspace)
+	key, err := hostpath.Canonical(workspace)
 	if err != nil {
-		t.Fatalf("CanonicalPath() error = %v", err)
+		t.Fatalf("Canonical() error = %v", err)
 	}
 	if err := trust.NewStore(paths.GlobalTrust).Set(key, trust.DecisionTrusted); err != nil {
 		t.Fatalf("Set() error = %v", err)
@@ -358,9 +359,9 @@ func TestResolveProjectContextAskWithUIPersistsAndLoads(t *testing.T) {
 	if gotCWD != ws.PhysicalPath() {
 		t.Errorf("AskUI cwd = %q, want %q", gotCWD, ws.PhysicalPath())
 	}
-	key, err := trust.CanonicalPath(workspace)
+	key, err := hostpath.Canonical(workspace)
 	if err != nil {
-		t.Fatalf("CanonicalPath() error = %v", err)
+		t.Fatalf("Canonical() error = %v", err)
 	}
 	entry, found, err := trust.NewStore(paths.GlobalTrust).Lookup(key)
 	if err != nil {

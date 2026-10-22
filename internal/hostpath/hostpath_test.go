@@ -8,6 +8,77 @@ import (
 	"testing"
 )
 
+func TestCanonicalResolvesSymlinks(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	real := filepath.Join(root, "real")
+	if err := os.Mkdir(real, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	link := filepath.Join(root, "link")
+	if err := os.Symlink(real, link); err != nil {
+		t.Skipf("symlink: %v", err)
+	}
+
+	got, err := Canonical(link)
+	if err != nil {
+		t.Fatalf("Canonical() error = %v", err)
+	}
+	want, err := filepath.EvalSymlinks(real)
+	if err != nil {
+		t.Fatalf("EvalSymlinks() error = %v", err)
+	}
+	if got != want {
+		t.Errorf("Canonical(link) = %q, want %q", got, want)
+	}
+}
+
+func TestCanonicalCleansTrailingSeparators(t *testing.T) {
+	t.Parallel()
+
+	root, err := Canonical(t.TempDir())
+	if err != nil {
+		t.Fatalf("Canonical() error = %v", err)
+	}
+	got, err := Canonical(root + string(filepath.Separator))
+	if err != nil {
+		t.Fatalf("Canonical() error = %v", err)
+	}
+	if got != root {
+		t.Errorf("Canonical(trailing sep) = %q, want %q", got, root)
+	}
+}
+
+func TestCanonicalRejectsBlank(t *testing.T) {
+	t.Parallel()
+
+	if _, err := Canonical(""); err == nil {
+		t.Error("Canonical() error = nil, want error")
+	}
+}
+
+func TestCanonicalRejectsNullByte(t *testing.T) {
+	t.Parallel()
+
+	if _, err := Canonical("bad\x00path"); err == nil {
+		t.Error("Canonical() error = nil, want error")
+	}
+}
+
+func TestKey(t *testing.T) {
+	t.Parallel()
+
+	got := Key("/Canonical/Work/")
+	want := filepath.Clean("/Canonical/Work")
+	if runtime.GOOS == "windows" {
+		want = strings.ToLower(want)
+	}
+	if got != want {
+		t.Errorf("Key() = %q, want %q", got, want)
+	}
+}
+
 func TestWithin(t *testing.T) {
 	t.Parallel()
 
