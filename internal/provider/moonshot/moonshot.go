@@ -35,7 +35,7 @@ type Config struct {
 // Provider validates Moonshot model compatibility before delegating to the
 // shared Responses API adapter.
 type Provider struct {
-	responsesAdapter *openairesponses.Adapter
+	route provider.Route
 }
 
 // ProviderID reports the provider identity served by this provider.
@@ -58,7 +58,12 @@ func New(configuration Config) (*Provider, error) {
 	if err != nil {
 		return nil, fmt.Errorf("moonshot: configure Responses adapter: %w", err)
 	}
-	return &Provider{responsesAdapter: adapter}, nil
+	return &Provider{route: provider.Route{
+		Provider: ProviderID,
+		Label:    "Moonshot API",
+		Models:   Models(),
+		Adapters: map[llm.API]llm.Streamer{openairesponses.API: adapter},
+	}}, nil
 }
 
 // Models returns the Moonshot models supported by this provider.
@@ -74,39 +79,9 @@ func Models() []llm.Model {
 // DefaultModel returns the platform's flagship K3 model.
 func DefaultModel() llm.Model { return model(ModelK3, "Kimi K3") }
 
-// Stream validates Moonshot compatibility before making a request.
+// Stream validates compatibility before making a request.
 func (p *Provider) Stream(ctx context.Context, request llm.Request) (llm.Stream, error) {
-	if request.Model.Provider != ProviderID {
-		return nil, fmt.Errorf(
-			"moonshot: model provider %q does not match %q",
-			request.Model.Provider,
-			ProviderID,
-		)
-	}
-	if !knownModel(request.Model.ID) {
-		return nil, fmt.Errorf("moonshot: unsupported model %q", request.Model.ID)
-	}
-	if request.Model.API != openairesponses.API {
-		return nil, fmt.Errorf(
-			"moonshot: model %q API %q does not match %q",
-			request.Model.ID,
-			request.Model.API,
-			openairesponses.API,
-		)
-	}
-	if err := provider.ValidateMessages(request.Messages, messageCapabilities); err != nil {
-		return nil, err
-	}
-	return p.responsesAdapter.Stream(ctx, request)
-}
-
-func knownModel(id string) bool {
-	switch id {
-	case ModelK3, ModelK27Code, ModelK27HighSpeed, ModelK26:
-		return true
-	default:
-		return false
-	}
+	return p.route.Stream(ctx, request)
 }
 
 // Capabilities follow https://platform.kimi.com/docs/api/models-overview.
@@ -128,14 +103,6 @@ func model(id, name string) llm.Model {
 		result.ThinkingLevelMap = llm.ThinkingLevelsMap(llm.ThinkingLevelOff, llm.ThinkingLevelHigh)
 	}
 	return result
-}
-
-var messageCapabilities = provider.MessageCapabilities{
-	ID:                       ProviderID,
-	Label:                    "Moonshot API",
-	SupportsImage:            true,
-	SupportsRedactedThinking: false,
-	NestedToolResultTextOnly: false,
 }
 
 // Label returns the Moonshot display name.

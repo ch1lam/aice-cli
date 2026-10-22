@@ -31,9 +31,7 @@ type Config struct {
 
 // Provider delegates each catalog model to its supported protocol adapter.
 type Provider struct {
-	messages    *anthropic.Adapter
-	responses   *openairesponses.Adapter
-	completions *openaicompletions.Adapter
+	route provider.Route
 }
 
 // New constructs a provider; an empty BaseURL selects the official gateway.
@@ -61,40 +59,22 @@ func New(cfg Config) (*Provider, error) {
 	if err != nil {
 		return nil, fmt.Errorf("aihubmix: configure Chat Completions adapter: %w", err)
 	}
-	return &Provider{messages: messages, responses: responses, completions: completions}, nil
+	return &Provider{route: provider.Route{
+		Provider: ProviderID,
+		Label:    "AiHubMix",
+		Models:   Models(),
+		Adapters: map[llm.API]llm.Streamer{
+			anthropic.API:         messages,
+			openairesponses.API:   responses,
+			openaicompletions.API: completions,
+		},
+		RedactedThinking: []llm.API{anthropic.API},
+	}}, nil
 }
 
 // Stream validates model identity and content before opening a remote stream.
 func (p *Provider) Stream(ctx context.Context, request llm.Request) (llm.Stream, error) {
-	if request.Model.Provider != ProviderID {
-		return nil, fmt.Errorf("aihubmix: model provider %q does not match %q", request.Model.Provider, ProviderID)
-	}
-	expected, ok := catalogModel(request.Model.ID)
-	if !ok {
-		return nil, fmt.Errorf("aihubmix: unsupported model %q", request.Model.ID)
-	}
-	if request.Model.API != expected.API {
-		return nil, fmt.Errorf(
-			"aihubmix: model %q API %q does not match %q",
-			request.Model.ID,
-			request.Model.API,
-			expected.API,
-		)
-	}
-	if err := provider.ValidateMessages(request.Messages, provider.MessageCapabilities{
-		ID: ProviderID, Label: "AiHubMix", SupportsImage: true,
-		SupportsRedactedThinking: expected.API == anthropic.API,
-	}); err != nil {
-		return nil, err
-	}
-	switch expected.API {
-	case anthropic.API:
-		return p.messages.Stream(ctx, request)
-	case openairesponses.API:
-		return p.responses.Stream(ctx, request)
-	default:
-		return p.completions.Stream(ctx, request)
-	}
+	return p.route.Stream(ctx, request)
 }
 
 // ProviderID reports the provider identity.

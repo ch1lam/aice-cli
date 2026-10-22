@@ -76,22 +76,12 @@ func (p *Provider) Stream(ctx context.Context, request llm.Request) (llm.Stream,
 	if err := request.Validate(); err != nil {
 		return nil, fmt.Errorf("claude-subscription: validate request: %w", err)
 	}
-	if request.Model.Provider != ProviderID || request.Model.API != anthropicapi.API {
-		return nil, errors.New("claude-subscription: incompatible model provider or API")
+	// The adapter needs fresh credentials, so the gate only checks here.
+	gate := provider.Route{
+		Provider: ProviderID, Label: "Claude subscription", Models: Models(),
+		RedactedThinking: []llm.API{anthropicapi.API},
 	}
-	known := false
-	for _, model := range Models() {
-		if model.ID == request.Model.ID {
-			known = true
-			break
-		}
-	}
-	if !known {
-		return nil, fmt.Errorf("claude-subscription: unsupported model %q", request.Model.ID)
-	}
-	if err := provider.ValidateMessages(request.Messages, provider.MessageCapabilities{
-		ID: ProviderID, Label: "Claude subscription", SupportsImage: true, SupportsRedactedThinking: true,
-	}); err != nil {
+	if err := gate.Check(request); err != nil {
 		return nil, err
 	}
 	credential, err := config.UpdateClaudeSubscriptionCredentials(ctx, p.paths, func(current config.ClaudeSubscriptionCredentials) (config.ClaudeSubscriptionCredentials, error) {

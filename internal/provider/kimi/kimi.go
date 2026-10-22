@@ -35,7 +35,7 @@ type Config struct {
 // Provider validates Kimi model compatibility before delegating to the
 // shared Responses API adapter.
 type Provider struct {
-	responsesAdapter *openairesponses.Adapter
+	route provider.Route
 }
 
 // ProviderID reports the provider identity served by this provider.
@@ -58,7 +58,12 @@ func New(configuration Config) (*Provider, error) {
 	if err != nil {
 		return nil, fmt.Errorf("kimi-coding: configure Responses adapter: %w", err)
 	}
-	return &Provider{responsesAdapter: adapter}, nil
+	return &Provider{route: provider.Route{
+		Provider: ProviderID,
+		Label:    "Kimi Coding Plan",
+		Models:   Models(),
+		Adapters: map[llm.API]llm.Streamer{openairesponses.API: adapter},
+	}}, nil
 }
 
 // Models returns the Kimi models supported by this provider.
@@ -76,39 +81,9 @@ func DefaultModel() llm.Model {
 	return model(ModelForCoding, "Kimi For Coding")
 }
 
-// Stream validates Kimi compatibility before making a request.
+// Stream validates compatibility before making a request.
 func (p *Provider) Stream(ctx context.Context, request llm.Request) (llm.Stream, error) {
-	if request.Model.Provider != ProviderID {
-		return nil, fmt.Errorf(
-			"kimi-coding: model provider %q does not match %q",
-			request.Model.Provider,
-			ProviderID,
-		)
-	}
-	if !knownModel(request.Model.ID) {
-		return nil, fmt.Errorf("kimi-coding: unsupported model %q", request.Model.ID)
-	}
-	if request.Model.API != openairesponses.API {
-		return nil, fmt.Errorf(
-			"kimi-coding: model %q API %q does not match %q",
-			request.Model.ID,
-			request.Model.API,
-			openairesponses.API,
-		)
-	}
-	if err := provider.ValidateMessages(request.Messages, messageCapabilities); err != nil {
-		return nil, err
-	}
-	return p.responsesAdapter.Stream(ctx, request)
-}
-
-func knownModel(id string) bool {
-	switch id {
-	case ModelForCoding, ModelForCodingHighSpeed, ModelK3, ModelK3256K:
-		return true
-	default:
-		return false
-	}
+	return p.route.Stream(ctx, request)
 }
 
 // Capabilities follow https://www.kimi.com/code/docs/en/kimi-code/models.html.
@@ -132,14 +107,6 @@ func model(id, name string) llm.Model {
 		MaxTokens: 32_768,
 		// Subscription quota has no per-token API price.
 	}
-}
-
-var messageCapabilities = provider.MessageCapabilities{
-	ID:                       ProviderID,
-	Label:                    "Kimi Coding Plan",
-	SupportsImage:            true,
-	SupportsRedactedThinking: false,
-	NestedToolResultTextOnly: false,
 }
 
 // Label returns the Kimi display name.

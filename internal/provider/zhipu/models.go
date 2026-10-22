@@ -40,18 +40,6 @@ func codingModel(id string) bool {
 	return id == ModelGLM53 || id == ModelGLM53Flash
 }
 
-func (p *Provider) modelSpec(id string) (modelSpec, bool) {
-	if p.codingPlan && !codingModel(id) {
-		return modelSpec{}, false
-	}
-	for _, spec := range modelSpecs {
-		if spec.id == id {
-			return spec, true
-		}
-	}
-	return modelSpec{}, false
-}
-
 func catalogModel(spec modelSpec, providerID llm.ProviderID) llm.Model {
 	result := llm.Model{
 		ID: spec.id, Name: spec.name, Provider: providerID, API: openaicompletions.API,

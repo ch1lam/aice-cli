@@ -36,9 +36,7 @@ type Config struct {
 // Provider applies OpenCode Go compatibility rules before delegating to the
 // wire protocol selected by the request model.
 type Provider struct {
-	anthropicAdapter   *anthropic.Adapter
-	completionsAdapter *openaicompletions.Adapter
-	responsesAdapter   *openairesponses.Adapter
+	route provider.Route
 }
 
 // ProviderID reports the provider identity served by this provider.
@@ -78,11 +76,17 @@ func New(config Config) (*Provider, error) {
 	if err != nil {
 		return nil, fmt.Errorf("opencode-go: configure Anthropic adapter: %w", err)
 	}
-	return &Provider{
-		anthropicAdapter:   anthropicAdapter,
-		completionsAdapter: completionsAdapter,
-		responsesAdapter:   responsesAdapter,
-	}, nil
+	return &Provider{route: provider.Route{
+		Provider: ProviderID,
+		Label:    "OpenCode Go",
+		Models:   Models(),
+		Adapters: map[llm.API]llm.Streamer{
+			anthropic.API:         anthropicAdapter,
+			openaicompletions.API: completionsAdapter,
+			openairesponses.API:   responsesAdapter,
+		},
+		RedactedThinking: []llm.API{anthropic.API, openaicompletions.API, openairesponses.API},
+	}}, nil
 }
 
 // Models returns the OpenCode Go models supported by this provider.
@@ -101,53 +105,11 @@ func DefaultModel() llm.Model {
 
 // Stream validates provider-specific compatibility before making a request.
 func (p *Provider) Stream(ctx context.Context, request llm.Request) (llm.Stream, error) {
-	if request.Model.Provider != ProviderID {
-		return nil, fmt.Errorf(
-			"opencode-go: model provider %q does not match %q",
-			request.Model.Provider,
-			ProviderID,
-		)
-	}
-	if !knownModel(request.Model.ID) {
-		return nil, fmt.Errorf("opencode-go: unsupported model %q", request.Model.ID)
-	}
-	expectedModel := model(request.Model.ID)
-	if request.Model.API != expectedModel.API {
-		return nil, fmt.Errorf(
-			"opencode-go: model %q API %q does not match %q",
-			request.Model.ID,
-			request.Model.API,
-			expectedModel.API,
-		)
-	}
-	capabilities := messageCapabilities
-	capabilities.SupportsImage = supportsImage(request.Model.ID)
-	if err := provider.ValidateMessages(request.Messages, capabilities); err != nil {
-		return nil, err
-	}
-	switch request.Model.API {
-	case anthropic.API:
-		return p.anthropicAdapter.Stream(ctx, request)
-	case openaicompletions.API:
-		return p.completionsAdapter.Stream(ctx, request)
-	case openairesponses.API:
-		return p.responsesAdapter.Stream(ctx, request)
-	default:
-		return nil, fmt.Errorf(
-			"opencode-go: model %q uses unsupported API %q",
-			request.Model.ID,
-			request.Model.API,
-		)
-	}
+	return p.route.Stream(ctx, request)
 }
 
 func anthropicBaseURL(baseURL string) string {
 	return strings.TrimSuffix(baseURL, "/v1")
-}
-
-func knownModel(id string) bool {
-	_, exists := modelSpecs[id]
-	return exists
 }
 
 // modelSpecs is the active OpenCode Go catalog. It follows the gateway's
@@ -613,16 +575,6 @@ func cacheWritePrice(id string) float64 {
 	default:
 		return 0
 	}
-}
-
-// messageCapabilities declares shared OpenCode Go content support. Image
-// support is enabled per model immediately before validation.
-var messageCapabilities = provider.MessageCapabilities{
-	ID:                       ProviderID,
-	Label:                    "OpenCode Go",
-	SupportsImage:            false,
-	SupportsRedactedThinking: true,
-	NestedToolResultTextOnly: false,
 }
 
 // Label returns the OpenCode Go display name.

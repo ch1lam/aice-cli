@@ -36,8 +36,7 @@ type Config struct {
 // Provider applies DeepSeek compatibility rules before delegating to the wire
 // protocol selected by the request model.
 type Provider struct {
-	anthropicAdapter *anthropic.Adapter
-	responsesAdapter *openairesponses.Adapter
+	route provider.Route
 }
 
 // ProviderID reports the provider identity served by this provider.
@@ -67,10 +66,16 @@ func New(config Config) (*Provider, error) {
 	if err != nil {
 		return nil, fmt.Errorf("deepseek: configure Responses adapter: %w", err)
 	}
-	return &Provider{
-		anthropicAdapter: anthropicAdapter,
-		responsesAdapter: responsesAdapter,
-	}, nil
+	return &Provider{route: provider.Route{
+		Provider: ProviderID,
+		Label:    "DeepSeek",
+		Models:   Models(),
+		Adapters: map[llm.API]llm.Streamer{
+			anthropic.API:       anthropicAdapter,
+			openairesponses.API: responsesAdapter,
+		},
+		NestedToolResultTextOnly: true,
+	}}, nil
 }
 
 // Models returns the DeepSeek models supported by this provider.
@@ -85,42 +90,7 @@ func DefaultModel() llm.Model {
 
 // Stream validates provider-specific compatibility before making a request.
 func (p *Provider) Stream(ctx context.Context, request llm.Request) (llm.Stream, error) {
-	if request.Model.Provider != ProviderID {
-		return nil, fmt.Errorf(
-			"deepseek: model provider %q does not match %q",
-			request.Model.Provider,
-			ProviderID,
-		)
-	}
-	switch request.Model.ID {
-	case ModelV4Flash, ModelV4Pro:
-	default:
-		return nil, fmt.Errorf("deepseek: unsupported model %q", request.Model.ID)
-	}
-	expectedAPI := model(request.Model.ID).API
-	if request.Model.API != expectedAPI {
-		return nil, fmt.Errorf(
-			"deepseek: model %q API %q does not match %q",
-			request.Model.ID,
-			request.Model.API,
-			expectedAPI,
-		)
-	}
-	if err := provider.ValidateMessages(request.Messages, messageCapabilitiesFor(request.Model.ID)); err != nil {
-		return nil, err
-	}
-	switch request.Model.API {
-	case anthropic.API:
-		return p.anthropicAdapter.Stream(ctx, request)
-	case openairesponses.API:
-		return p.responsesAdapter.Stream(ctx, request)
-	default:
-		return nil, fmt.Errorf(
-			"deepseek: model %q uses unsupported API %q",
-			request.Model.ID,
-			request.Model.API,
-		)
-	}
+	return p.route.Stream(ctx, request)
 }
 
 func model(id string) llm.Model {
@@ -183,22 +153,6 @@ func inputModalities(id string) []llm.InputModality {
 		return []llm.InputModality{llm.InputModalityText}
 	}
 	return []llm.InputModality{llm.InputModalityText, llm.InputModalityImage}
-}
-
-// messageCapabilitiesFor enables image validation only for Flash.
-func messageCapabilitiesFor(id string) provider.MessageCapabilities {
-	capabilities := messageCapabilities
-	capabilities.SupportsImage = id != ModelV4Pro
-	return capabilities
-}
-
-// messageCapabilities declares the message content DeepSeek models accept.
-var messageCapabilities = provider.MessageCapabilities{
-	ID:                       ProviderID,
-	Label:                    "DeepSeek",
-	SupportsImage:            true,
-	SupportsRedactedThinking: false,
-	NestedToolResultTextOnly: true,
 }
 
 // Label returns the DeepSeek display name.

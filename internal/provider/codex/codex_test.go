@@ -206,7 +206,7 @@ func TestCodexRejectsAPIKeyAndIncompatibleModel(t *testing.T) {
 	}
 	request := codexRequest()
 	request.Model.Provider = "openai"
-	if _, err := p.Stream(t.Context(), request); err == nil || !strings.Contains(err.Error(), "incompatible") {
+	if _, err := p.Stream(t.Context(), request); err == nil || !strings.Contains(err.Error(), "does not match") {
 		t.Fatalf("error = %v", err)
 	}
 	for _, model := range Models() {

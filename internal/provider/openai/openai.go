@@ -36,7 +36,7 @@ type Config struct {
 // Provider validates OpenAI model compatibility before delegating to the
 // shared Responses API adapter.
 type Provider struct {
-	responsesAdapter *openairesponses.Adapter
+	route provider.Route
 }
 
 // ProviderID reports the provider identity served by this provider.
@@ -59,7 +59,12 @@ func New(configuration Config) (*Provider, error) {
 	if err != nil {
 		return nil, fmt.Errorf("openai: configure Responses adapter: %w", err)
 	}
-	return &Provider{responsesAdapter: adapter}, nil
+	return &Provider{route: provider.Route{
+		Provider: ProviderID,
+		Label:    "OpenAI",
+		Models:   Models(),
+		Adapters: map[llm.API]llm.Streamer{openairesponses.API: adapter},
+	}}, nil
 }
 
 // Models returns the OpenAI models supported by this provider.
@@ -80,37 +85,7 @@ func DefaultModel() llm.Model {
 
 // Stream validates OpenAI compatibility before making a request.
 func (p *Provider) Stream(ctx context.Context, request llm.Request) (llm.Stream, error) {
-	if request.Model.Provider != ProviderID {
-		return nil, fmt.Errorf(
-			"openai: model provider %q does not match %q",
-			request.Model.Provider,
-			ProviderID,
-		)
-	}
-	if !knownModel(request.Model.ID) {
-		return nil, fmt.Errorf("openai: unsupported model %q", request.Model.ID)
-	}
-	if request.Model.API != openairesponses.API {
-		return nil, fmt.Errorf(
-			"openai: model %q API %q does not match %q",
-			request.Model.ID,
-			request.Model.API,
-			openairesponses.API,
-		)
-	}
-	if err := provider.ValidateMessages(request.Messages, messageCapabilities); err != nil {
-		return nil, err
-	}
-	return p.responsesAdapter.Stream(ctx, request)
-}
-
-func knownModel(id string) bool {
-	switch id {
-	case ModelGPT6Astra, ModelGPT56Sol, ModelGPT56, ModelGPT56Terra, ModelGPT56Luna:
-		return true
-	default:
-		return false
-	}
+	return p.route.Stream(ctx, request)
 }
 
 func model(id, name string, input, output, cacheRead, cacheWrite float64) llm.Model {
@@ -154,14 +129,6 @@ func openAIThinkingLevels() llm.ThinkingLevelMap {
 	)
 	m[llm.ThinkingLevelOff] = llm.ThinkingValue("none")
 	return m
-}
-
-var messageCapabilities = provider.MessageCapabilities{
-	ID:                       ProviderID,
-	Label:                    "OpenAI",
-	SupportsImage:            true,
-	SupportsRedactedThinking: false,
-	NestedToolResultTextOnly: false,
 }
 
 // Label returns the OpenAI display name.

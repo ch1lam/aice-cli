@@ -85,22 +85,9 @@ func (p *Provider) Stream(ctx context.Context, request llm.Request) (llm.Stream,
 	if err := request.Validate(); err != nil {
 		return nil, fmt.Errorf("codex: validate request: %w", err)
 	}
-	if request.Model.Provider != ProviderID || request.Model.API != openairesponses.API {
-		return nil, errors.New("codex: incompatible model provider or API")
-	}
-	known := false
-	for _, model := range Models() {
-		if model.ID == request.Model.ID {
-			known = true
-			break
-		}
-	}
-	if !known {
-		return nil, fmt.Errorf("codex: unsupported model %q", request.Model.ID)
-	}
-	if err := provider.ValidateMessages(request.Messages, provider.MessageCapabilities{
-		ID: ProviderID, Label: "Codex", SupportsImage: true,
-	}); err != nil {
+	// The adapter needs fresh credentials, so the gate only checks here.
+	gate := provider.Route{Provider: ProviderID, Label: "Codex", Models: Models()}
+	if err := gate.Check(request); err != nil {
 		return nil, err
 	}
 	credential, err := config.UpdateCodexCredentials(ctx, p.paths, func(current config.CodexCredentials) (config.CodexCredentials, error) {

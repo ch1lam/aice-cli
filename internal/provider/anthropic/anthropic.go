@@ -35,7 +35,7 @@ type Config struct {
 // Provider validates Anthropic model compatibility before delegating to the
 // shared Messages API adapter.
 type Provider struct {
-	messagesAdapter *anthropicapi.Adapter
+	route provider.Route
 }
 
 // ProviderID reports the provider identity served by this provider.
@@ -58,7 +58,13 @@ func New(configuration Config) (*Provider, error) {
 	if err != nil {
 		return nil, fmt.Errorf("anthropic: configure Messages adapter: %w", err)
 	}
-	return &Provider{messagesAdapter: adapter}, nil
+	return &Provider{route: provider.Route{
+		Provider:         ProviderID,
+		Label:            "Anthropic",
+		Models:           Models(),
+		Adapters:         map[llm.API]llm.Streamer{anthropicapi.API: adapter},
+		RedactedThinking: []llm.API{anthropicapi.API},
+	}}, nil
 }
 
 // Models returns independent catalog values from Anthropic's model and effort
@@ -85,37 +91,7 @@ func DefaultModel() llm.Model { return Models()[0] }
 
 // Stream validates Anthropic compatibility before making a request.
 func (p *Provider) Stream(ctx context.Context, request llm.Request) (llm.Stream, error) {
-	if request.Model.Provider != ProviderID {
-		return nil, fmt.Errorf(
-			"anthropic: model provider %q does not match %q",
-			request.Model.Provider,
-			ProviderID,
-		)
-	}
-	if !knownModel(request.Model.ID) {
-		return nil, fmt.Errorf("anthropic: unsupported model %q", request.Model.ID)
-	}
-	if request.Model.API != anthropicapi.API {
-		return nil, fmt.Errorf(
-			"anthropic: model %q API %q does not match %q",
-			request.Model.ID,
-			request.Model.API,
-			anthropicapi.API,
-		)
-	}
-	if err := provider.ValidateMessages(request.Messages, messageCapabilities); err != nil {
-		return nil, err
-	}
-	return p.messagesAdapter.Stream(ctx, request)
-}
-
-func knownModel(id string) bool {
-	switch id {
-	case ModelSonnet5, ModelOpus55, ModelFable51, ModelHaiku45:
-		return true
-	default:
-		return false
-	}
+	return p.route.Stream(ctx, request)
 }
 
 func adaptiveModel(id, name string, pricing llm.Pricing, supportsOff bool) llm.Model {
@@ -132,14 +108,6 @@ func adaptiveModel(id, name string, pricing llm.Pricing, supportsOff bool) llm.M
 		ThinkingFormat: llm.ThinkingFormatAdaptive, SupportsReasoningEffort: true,
 		Pricing: pricing,
 	}
-}
-
-var messageCapabilities = provider.MessageCapabilities{
-	ID:                       ProviderID,
-	Label:                    "Anthropic",
-	SupportsImage:            true,
-	SupportsRedactedThinking: true,
-	NestedToolResultTextOnly: false,
 }
 
 // Label returns the Anthropic display name.

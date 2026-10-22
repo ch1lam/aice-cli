@@ -104,14 +104,5 @@ func reasoningModel(id, name string, pricing llm.Pricing, supportsOff bool) llm.
 	}
 }
 
-func catalogModel(id string) (llm.Model, bool) {
-	for _, model := range Models() {
-		if model.ID == id {
-			return model, true
-		}
-	}
-	return llm.Model{}, false
-}
-
 // DefaultModel selects the coding-oriented GPT 6 Sol route.
 func DefaultModel() llm.Model { return Models()[0] }

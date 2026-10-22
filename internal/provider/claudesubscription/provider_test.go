@@ -144,7 +144,7 @@ func TestCatalogAndCredentialBoundaries(t *testing.T) {
 	}
 	request := subscriptionRequest()
 	request.Model.Provider = "anthropic"
-	if _, err := p.Stream(t.Context(), request); err == nil || !strings.Contains(err.Error(), "incompatible") {
+	if _, err := p.Stream(t.Context(), request); err == nil || !strings.Contains(err.Error(), "does not match") {
 		t.Fatalf("incompatible request = %v", err)
 	}
 	for _, model := range Models() {

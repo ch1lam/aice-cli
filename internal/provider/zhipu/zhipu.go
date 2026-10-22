@@ -38,8 +38,8 @@ type Config struct {
 // Provider validates Zhipu model compatibility before delegating to the
 // shared Chat Completions API adapter.
 type Provider struct {
-	codingPlan         bool
-	completionsAdapter *openaicompletions.Adapter
+	codingPlan bool
+	route      provider.Route
 }
 
 // ProviderID reports the provider identity served by this provider.
@@ -82,7 +82,13 @@ func newProvider(configuration Config, codingPlan bool) (*Provider, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s: configure Chat Completions adapter: %w", descriptor.ProviderID(), err)
 	}
-	descriptor.completionsAdapter = adapter
+	descriptor.route = provider.Route{
+		Provider:                 descriptor.ProviderID(),
+		Label:                    descriptor.Label(),
+		Models:                   descriptor.Models(),
+		Adapters:                 map[llm.API]llm.Streamer{openaicompletions.API: adapter},
+		NestedToolResultTextOnly: true,
+	}
 	return descriptor, nil
 }
 
@@ -94,43 +100,7 @@ func DefaultModel() llm.Model { return catalogModel(modelSpecs[0], ProviderID) }
 
 // Stream validates Zhipu compatibility before making a request.
 func (p *Provider) Stream(ctx context.Context, request llm.Request) (llm.Stream, error) {
-	if request.Model.Provider != p.ProviderID() {
-		return nil, fmt.Errorf(
-			"%s: model provider %q does not match %q",
-			p.ProviderID(),
-			request.Model.Provider,
-			p.ProviderID(),
-		)
-	}
-	spec, known := p.modelSpec(request.Model.ID)
-	if !known {
-		return nil, fmt.Errorf("%s: unsupported model %q", p.ProviderID(), request.Model.ID)
-	}
-	if request.Model.API != openaicompletions.API {
-		return nil, fmt.Errorf(
-			"%s: model %q API %q does not match %q",
-			p.ProviderID(),
-			request.Model.ID,
-			request.Model.API,
-			openaicompletions.API,
-		)
-	}
-	capabilities := messageCapabilities
-	capabilities.ID = p.ProviderID()
-	capabilities.Label = p.Label()
-	capabilities.SupportsImage = spec.image
-	if err := provider.ValidateMessages(request.Messages, capabilities); err != nil {
-		return nil, err
-	}
-	return p.completionsAdapter.Stream(ctx, request)
-}
-
-var messageCapabilities = provider.MessageCapabilities{
-	ID:                       ProviderID,
-	Label:                    "Zhipu API",
-	SupportsImage:            false,
-	SupportsRedactedThinking: false,
-	NestedToolResultTextOnly: true,
+	return p.route.Stream(ctx, request)
 }
 
 // Label returns the Zhipu display name.

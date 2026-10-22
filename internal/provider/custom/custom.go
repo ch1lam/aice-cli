@@ -39,7 +39,7 @@ type Config struct {
 // Provider is a thin compatibility layer over the Chat Completions adapter.
 // It accepts any model ID and does not enforce a static catalog.
 type Provider struct {
-	completionsAdapter *openaicompletions.Adapter
+	route provider.Route
 }
 
 // ProviderID reports the provider identity served by this provider.
@@ -71,7 +71,12 @@ func New(cfg Config) (*Provider, error) {
 	if err != nil {
 		return nil, fmt.Errorf("custom: configure completions adapter: %w", err)
 	}
-	return &Provider{completionsAdapter: adapter}, nil
+	return &Provider{route: provider.Route{
+		Provider:   ProviderID,
+		Label:      "Custom",
+		ModelForID: ModelForID,
+		Adapters:   map[llm.API]llm.Streamer{openaicompletions.API: adapter},
+	}}, nil
 }
 
 // ModelForID builds a provider-neutral model for an arbitrary ID. This is the
@@ -121,36 +126,7 @@ func DefaultModel() llm.Model {
 
 // Stream validates compatibility and delegates to the completions adapter.
 func (p *Provider) Stream(ctx context.Context, request llm.Request) (llm.Stream, error) {
-	if request.Model.Provider != ProviderID {
-		return nil, fmt.Errorf(
-			"custom: model provider %q does not match %q",
-			request.Model.Provider,
-			ProviderID,
-		)
-	}
-	if strings.TrimSpace(request.Model.ID) == "" {
-		return nil, fmt.Errorf("custom: model id is required")
-	}
-	if request.Model.API != openaicompletions.API {
-		return nil, fmt.Errorf(
-			"custom: model %q API %q does not match %q",
-			request.Model.ID,
-			request.Model.API,
-			openaicompletions.API,
-		)
-	}
-	if err := provider.ValidateMessages(request.Messages, messageCapabilities); err != nil {
-		return nil, err
-	}
-	return p.completionsAdapter.Stream(ctx, request)
-}
-
-var messageCapabilities = provider.MessageCapabilities{
-	ID:                       ProviderID,
-	Label:                    "Custom",
-	SupportsImage:            true,
-	SupportsRedactedThinking: false,
-	NestedToolResultTextOnly: false,
+	return p.route.Stream(ctx, request)
 }
 
 // Label returns the display name.
