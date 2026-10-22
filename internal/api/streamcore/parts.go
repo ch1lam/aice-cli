@@ -76,6 +76,31 @@ func (r *PartRegistry) Snapshot() []llm.ContentPart {
 	return result
 }
 
+// PartState accumulates one streamed content part: text, thinking, or a tool
+// call whose arguments arrive as string deltas.
+type PartState struct {
+	Type      llm.ContentType
+	Index     int
+	Text      strings.Builder
+	Signature string
+	ToolCall  llm.ToolCall
+	Arguments string
+}
+
+// PartialContent implements Partial.
+func (s *PartState) PartialContent() (llm.ContentPart, bool) {
+	switch s.Type {
+	case llm.ContentTypeText:
+		return PartialText(s.Text.String(), s.Signature), true
+	case llm.ContentTypeThinking:
+		return PartialThinking(s.Text.String(), s.Signature, false), true
+	case llm.ContentTypeToolCall:
+		return PartialToolCall(s.ToolCall, s.Arguments, nil)
+	default:
+		return llm.ContentPart{}, false
+	}
+}
+
 // PartialText builds the snapshot of in-progress visible text.
 func PartialText(text, signature string) llm.ContentPart {
 	content := llm.NewTextContent(text).Part()

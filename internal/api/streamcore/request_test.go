@@ -57,15 +57,15 @@ func TestResolveMaxTokens(t *testing.T) {
 func TestValidateTemperature(t *testing.T) {
 	t.Parallel()
 
-	if err := ValidateTemperature(nil); err != nil {
+	if err := validateTemperature(nil); err != nil {
 		t.Fatalf("nil temperature error = %v", err)
 	}
 	ok := 1.5
-	if err := ValidateTemperature(&ok); err != nil {
+	if err := validateTemperature(&ok); err != nil {
 		t.Fatalf("1.5 error = %v", err)
 	}
 	high := 2.1
-	if err := ValidateTemperature(&high); err == nil {
+	if err := validateTemperature(&high); err == nil {
 		t.Fatal("2.1 error = nil, want rejection")
 	}
 }

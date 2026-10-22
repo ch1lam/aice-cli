@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"net/url"
 	"strings"
 
 	anthropicsdk "github.com/anthropics/anthropic-sdk-go"
@@ -52,8 +51,8 @@ func New(config Config) (*Adapter, error) {
 	if config.APIKey != "" && config.OAuthToken != "" {
 		return nil, errors.New("anthropic: API key and OAuth token are mutually exclusive")
 	}
-	if err := validateBaseURL(config.BaseURL); err != nil {
-		return nil, err
+	if err := streamcore.ValidateBaseURL(config.BaseURL); err != nil {
+		return nil, fmt.Errorf("anthropic: %w", err)
 	}
 
 	opts := []option.RequestOption{
@@ -83,28 +82,11 @@ func New(config Config) (*Adapter, error) {
 	return &Adapter{client: anthropicsdk.NewClient(opts...), subscription: config.OAuthToken != ""}, nil
 }
 
-func validateBaseURL(rawURL string) error {
-	parsed, err := url.Parse(rawURL)
-	if err != nil {
-		return fmt.Errorf("anthropic: parse base URL: %w", err)
-	}
-	if parsed.Scheme != "https" && parsed.Scheme != "http" {
-		return fmt.Errorf("anthropic: base URL scheme %q is not HTTP(S)", parsed.Scheme)
-	}
-	if parsed.Host == "" {
-		return errors.New("anthropic: base URL must include a host")
-	}
-	return nil
-}
-
 // Stream starts one model request. The returned stream owns the SDK response
 // body and must be closed by the caller.
 func (a *Adapter) Stream(ctx context.Context, request llm.Request) (llm.Stream, error) {
-	if ctx == nil {
-		return nil, errors.New("anthropic: nil context")
-	}
-	if err := request.Validate(); err != nil {
-		return nil, fmt.Errorf("anthropic: validate request: %w", err)
+	if err := streamcore.CheckRequest(ctx, request, API); err != nil {
+		return nil, fmt.Errorf("anthropic: %w", err)
 	}
 
 	params, err := requestParams(request)
@@ -136,23 +118,6 @@ func (a *Adapter) Stream(ctx context.Context, request llm.Request) (llm.Stream, 
 }
 
 func requestParams(request llm.Request) (anthropicsdk.MessageNewParams, error) {
-	if request.Model.API != API {
-		return anthropicsdk.MessageNewParams{}, fmt.Errorf(
-			"anthropic: model API %q does not match %q",
-			request.Model.API,
-			API,
-		)
-	}
-	if request.Model.ID == "" {
-		return anthropicsdk.MessageNewParams{}, errors.New("anthropic: model ID is required")
-	}
-	if request.Model.Provider == "" {
-		return anthropicsdk.MessageNewParams{}, errors.New("anthropic: model provider is required")
-	}
-
-	if err := streamcore.ValidateTemperature(request.Options.Temperature); err != nil {
-		return anthropicsdk.MessageNewParams{}, fmt.Errorf("anthropic: %w", err)
-	}
 	maxTokens, err := streamcore.ResolveMaxTokens(request)
 	if err != nil {
 		return anthropicsdk.MessageNewParams{}, fmt.Errorf("anthropic: %w", err)
@@ -322,9 +287,7 @@ func assistantContentForModel(
 	message llm.AssistantMessage,
 	target llm.Model,
 ) []llm.ContentPart {
-	if message.Provider == target.Provider &&
-		message.API == target.API &&
-		message.ModelID == target.ID {
+	if streamcore.SameModel(message, target) {
 		return message.Content
 	}
 	return streamcore.ProjectThinkingToText(message.Content)
@@ -485,18 +448,8 @@ func (s *stream) Close() error {
 }
 
 func normalizeProviderError(err error) error {
-	var apiErr *anthropicsdk.Error
-	if !errors.As(err, &apiErr) {
-		return streamcore.NormalizeError(err, nil)
-	}
-	var header http.Header
-	if apiErr.Response != nil {
-		header = apiErr.Response.Header
-	}
-	return streamcore.NormalizeError(err, &streamcore.ErrorInfo{
-		StatusCode: apiErr.StatusCode,
-		Code:       string(apiErr.Type()),
-		Header:     header,
+	return streamcore.SDKError(err, func(apiErr *anthropicsdk.Error) (int, string, *http.Response) {
+		return apiErr.StatusCode, string(apiErr.Type()), apiErr.Response
 	})
 }
 

@@ -12,12 +12,12 @@
 package openaicompletions
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
-	"net/url"
 	"strings"
 
 	openaisdk "github.com/openai/openai-go/v3"
@@ -59,8 +59,8 @@ func New(config Config) (*Adapter, error) {
 	if strings.TrimSpace(config.APIKey) == "" {
 		return nil, errors.New("openai completions: API key is required")
 	}
-	if err := validateBaseURL(config.BaseURL); err != nil {
-		return nil, err
+	if err := streamcore.ValidateBaseURL(config.BaseURL); err != nil {
+		return nil, fmt.Errorf("openai completions: %w", err)
 	}
 
 	opts := []option.RequestOption{
@@ -80,31 +80,11 @@ func New(config Config) (*Adapter, error) {
 	}, nil
 }
 
-func validateBaseURL(rawURL string) error {
-	parsed, err := url.Parse(rawURL)
-	if err != nil {
-		return fmt.Errorf("openai completions: parse base URL: %w", err)
-	}
-	if parsed.Scheme != "https" && parsed.Scheme != "http" {
-		return fmt.Errorf(
-			"openai completions: base URL scheme %q is not HTTP(S)",
-			parsed.Scheme,
-		)
-	}
-	if parsed.Host == "" {
-		return errors.New("openai completions: base URL must include a host")
-	}
-	return nil
-}
-
 // Stream starts one model request. The returned stream owns the SDK response
 // body and must be closed by the caller.
 func (a *Adapter) Stream(ctx context.Context, request llm.Request) (llm.Stream, error) {
-	if ctx == nil {
-		return nil, errors.New("openai completions: nil context")
-	}
-	if err := request.Validate(); err != nil {
-		return nil, fmt.Errorf("openai completions: validate request: %w", err)
+	if err := streamcore.CheckRequest(ctx, request, API); err != nil {
+		return nil, fmt.Errorf("openai completions: %w", err)
 	}
 
 	params, err := requestParams(request)
@@ -123,22 +103,11 @@ func (a *Adapter) Stream(ctx context.Context, request llm.Request) (llm.Stream, 
 	return &stream{
 		core:      streamcore.NewStream(request.Model),
 		source:    source,
-		toolCalls: make(map[int64]*partState),
+		toolCalls: make(map[int64]*streamcore.PartState),
 	}, nil
 }
 
 func requestParams(request llm.Request) (openaisdk.ChatCompletionNewParams, error) {
-	if request.Model.API != API {
-		return openaisdk.ChatCompletionNewParams{}, fmt.Errorf(
-			"openai completions: model API %q does not match %q",
-			request.Model.API,
-			API,
-		)
-	}
-
-	if err := streamcore.ValidateTemperature(request.Options.Temperature); err != nil {
-		return openaisdk.ChatCompletionNewParams{}, fmt.Errorf("openai completions: %w", err)
-	}
 	messages, err := messageParams(request.Messages, request.Model)
 	if err != nil {
 		return openaisdk.ChatCompletionNewParams{}, err
@@ -392,7 +361,7 @@ func assistantMessageParam(
 	message llm.AssistantMessage,
 	target llm.Model,
 ) (openaisdk.ChatCompletionMessageParamUnion, error) {
-	sameModel := isSameModel(message, target)
+	sameModel := streamcore.SameModel(message, target)
 	text := joinText(message.Content)
 	if !sameModel {
 		text = assistantText(message.Content)
@@ -450,12 +419,6 @@ func assistantMessageParam(
 		}
 	}
 	return openaisdk.ChatCompletionMessageParamUnion{OfAssistant: &assistant}, nil
-}
-
-func isSameModel(message llm.AssistantMessage, target llm.Model) bool {
-	return message.Provider == target.Provider &&
-		message.API == target.API &&
-		message.ModelID == target.ID
 }
 
 func reasoningExtraFields(content []llm.ContentPart) map[string]any {
@@ -567,17 +530,6 @@ func toolParams(
 	return result, nil
 }
 
-// partState accumulates one content part (thinking, text, or one tool call)
-// streamed across chat.completions chunks.
-type partState struct {
-	type_        llm.ContentType
-	contentIndex int
-	text         strings.Builder
-	signature    string
-	toolCall     llm.ToolCall
-	arguments    string
-}
-
 // wireChunk is the chat.completion.chunk SSE payload decoded from raw JSON so
 // the reasoning_content delta field survives even though the SDK does not model
 // it. Streamed chunks carry usage as null; the final chunk (enabled by
@@ -640,25 +592,12 @@ func decodeWireChunk(raw string) (wireChunk, error) {
 	return chunk, nil
 }
 
-func (s *partState) PartialContent() (llm.ContentPart, bool) {
-	switch s.type_ {
-	case llm.ContentTypeText:
-		return streamcore.PartialText(s.text.String(), s.signature), true
-	case llm.ContentTypeThinking:
-		return streamcore.PartialThinking(s.text.String(), s.signature, false), true
-	case llm.ContentTypeToolCall:
-		return streamcore.PartialToolCall(s.toolCall, s.arguments, nil)
-	default:
-		return llm.ContentPart{}, false
-	}
-}
-
 type stream struct {
 	core         *streamcore.Stream
 	source       *ssestream.Stream[openaisdk.ChatCompletionChunk]
-	thinking     *partState
-	text         *partState
-	toolCalls    map[int64]*partState
+	thinking     *streamcore.PartState
+	text         *streamcore.PartState
+	toolCalls    map[int64]*streamcore.PartState
 	nextIndex    int
 	finishReason string
 	started      bool
@@ -750,46 +689,46 @@ func (s *stream) deltaEvents(delta wireDelta) []llm.Event {
 
 func (s *stream) thinkingDelta(delta string) []llm.Event {
 	if s.thinking == nil {
-		state := &partState{
-			type_:        llm.ContentTypeThinking,
-			contentIndex: s.nextIndex,
-			signature:    reasoningContentField,
+		state := &streamcore.PartState{
+			Type:      llm.ContentTypeThinking,
+			Index:     s.nextIndex,
+			Signature: reasoningContentField,
 		}
 		s.nextIndex++
 		s.thinking = state
-		s.core.Parts.Partial(state.contentIndex, state)
-		state.text.WriteString(delta)
+		s.core.Parts.Partial(state.Index, state)
+		state.Text.WriteString(delta)
 		return []llm.Event{
-			{Type: llm.EventTypeThinkingStart, ContentIndex: state.contentIndex},
-			{Type: llm.EventTypeThinkingDelta, ContentIndex: state.contentIndex, Delta: delta},
+			{Type: llm.EventTypeThinkingStart, ContentIndex: state.Index},
+			{Type: llm.EventTypeThinkingDelta, ContentIndex: state.Index, Delta: delta},
 		}
 	}
 	state := s.thinking
-	state.text.WriteString(delta)
+	state.Text.WriteString(delta)
 	return []llm.Event{{
 		Type:         llm.EventTypeThinkingDelta,
-		ContentIndex: state.contentIndex,
+		ContentIndex: state.Index,
 		Delta:        delta,
 	}}
 }
 
 func (s *stream) textDelta(delta string) []llm.Event {
 	if s.text == nil {
-		state := &partState{type_: llm.ContentTypeText, contentIndex: s.nextIndex}
+		state := &streamcore.PartState{Type: llm.ContentTypeText, Index: s.nextIndex}
 		s.nextIndex++
 		s.text = state
-		s.core.Parts.Partial(state.contentIndex, state)
-		state.text.WriteString(delta)
+		s.core.Parts.Partial(state.Index, state)
+		state.Text.WriteString(delta)
 		return []llm.Event{
-			{Type: llm.EventTypeTextStart, ContentIndex: state.contentIndex},
-			{Type: llm.EventTypeTextDelta, ContentIndex: state.contentIndex, Delta: delta},
+			{Type: llm.EventTypeTextStart, ContentIndex: state.Index},
+			{Type: llm.EventTypeTextDelta, ContentIndex: state.Index, Delta: delta},
 		}
 	}
 	state := s.text
-	state.text.WriteString(delta)
+	state.Text.WriteString(delta)
 	return []llm.Event{{
 		Type:         llm.EventTypeTextDelta,
-		ContentIndex: state.contentIndex,
+		ContentIndex: state.Index,
 		Delta:        delta,
 	}}
 }
@@ -802,30 +741,30 @@ func (s *stream) toolCallDelta(call wireToolCall) []llm.Event {
 
 	state, exists := s.toolCalls[index]
 	if !exists {
-		state = &partState{type_: llm.ContentTypeToolCall, contentIndex: s.nextIndex}
+		state = &streamcore.PartState{Type: llm.ContentTypeToolCall, Index: s.nextIndex}
 		s.nextIndex++
-		state.toolCall.ID = call.ID
-		state.toolCall.Name = call.Function.Name
+		state.ToolCall.ID = call.ID
+		state.ToolCall.Name = call.Function.Name
 		s.toolCalls[index] = state
-		s.core.Parts.Partial(state.contentIndex, state)
+		s.core.Parts.Partial(state.Index, state)
 		s.sawToolCall = true
 
 		start := llm.Event{
 			Type:         llm.EventTypeToolCallStart,
-			ContentIndex: state.contentIndex,
+			ContentIndex: state.Index,
 		}
-		if state.toolCall.ID != "" || state.toolCall.Name != "" {
+		if state.ToolCall.ID != "" || state.ToolCall.Name != "" {
 			start.ToolCallDelta = &llm.ToolCallDelta{
-				ID:   state.toolCall.ID,
-				Name: state.toolCall.Name,
+				ID:   state.ToolCall.ID,
+				Name: state.ToolCall.Name,
 			}
 		}
 		events := []llm.Event{start}
 		if call.Function.Arguments != "" {
-			state.arguments += call.Function.Arguments
+			state.Arguments += call.Function.Arguments
 			events = append(events, llm.Event{
 				Type:         llm.EventTypeToolCallDelta,
-				ContentIndex: state.contentIndex,
+				ContentIndex: state.Index,
 				ToolCallDelta: &llm.ToolCallDelta{
 					ArgumentsDelta: call.Function.Arguments,
 				},
@@ -835,18 +774,18 @@ func (s *stream) toolCallDelta(call wireToolCall) []llm.Event {
 	}
 
 	if call.ID != "" {
-		state.toolCall.ID = call.ID
+		state.ToolCall.ID = call.ID
 	}
 	if call.Function.Name != "" {
-		state.toolCall.Name = call.Function.Name
+		state.ToolCall.Name = call.Function.Name
 	}
 	if call.Function.Arguments == "" {
 		return nil
 	}
-	state.arguments += call.Function.Arguments
+	state.Arguments += call.Function.Arguments
 	return []llm.Event{{
 		Type:         llm.EventTypeToolCallDelta,
-		ContentIndex: state.contentIndex,
+		ContentIndex: state.Index,
 		ToolCallDelta: &llm.ToolCallDelta{
 			ArgumentsDelta: call.Function.Arguments,
 		},
@@ -873,7 +812,7 @@ func (s *stream) mergeUsage(usage *wireUsage) {
 // agent loop will surface it instead of executing a partial call.
 func (s *stream) finish() ([]llm.Event, error) {
 	for _, state := range s.toolCalls {
-		if _, err := streamcore.FinishToolCall(state.toolCall, state.arguments, nil); err != nil {
+		if _, err := streamcore.FinishToolCall(state.ToolCall, state.Arguments, nil); err != nil {
 			return nil, fmt.Errorf("openai completions: %w", err)
 		}
 	}
@@ -938,21 +877,7 @@ func stopReason(finishReason string) llm.StopReason {
 }
 
 func normalizeProviderError(err error) error {
-	var apiErr *openaisdk.Error
-	if !errors.As(err, &apiErr) {
-		return streamcore.NormalizeError(err, nil)
-	}
-	var header http.Header
-	if apiErr.Response != nil {
-		header = apiErr.Response.Header
-	}
-	code := apiErr.Code
-	if code == "" {
-		code = apiErr.Type
-	}
-	return streamcore.NormalizeError(err, &streamcore.ErrorInfo{
-		StatusCode: apiErr.StatusCode,
-		Code:       code,
-		Header:     header,
+	return streamcore.SDKError(err, func(apiErr *openaisdk.Error) (int, string, *http.Response) {
+		return apiErr.StatusCode, cmp.Or(apiErr.Code, apiErr.Type), apiErr.Response
 	})
 }

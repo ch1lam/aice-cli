@@ -3,12 +3,12 @@
 package openairesponses
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
-	"net/url"
 	"strings"
 
 	openaisdk "github.com/openai/openai-go/v3"
@@ -49,8 +49,8 @@ func New(config Config) (*Adapter, error) {
 	if strings.TrimSpace(config.APIKey) == "" {
 		return nil, errors.New("openai responses: API key is required")
 	}
-	if err := validateBaseURL(config.BaseURL); err != nil {
-		return nil, err
+	if err := streamcore.ValidateBaseURL(config.BaseURL); err != nil {
+		return nil, fmt.Errorf("openai responses: %w", err)
 	}
 
 	opts := []option.RequestOption{
@@ -73,31 +73,11 @@ func New(config Config) (*Adapter, error) {
 	return &Adapter{client: responses.NewResponseService(opts...), codex: config.Codex}, nil
 }
 
-func validateBaseURL(rawURL string) error {
-	parsed, err := url.Parse(rawURL)
-	if err != nil {
-		return fmt.Errorf("openai responses: parse base URL: %w", err)
-	}
-	if parsed.Scheme != "https" && parsed.Scheme != "http" {
-		return fmt.Errorf(
-			"openai responses: base URL scheme %q is not HTTP(S)",
-			parsed.Scheme,
-		)
-	}
-	if parsed.Host == "" {
-		return errors.New("openai responses: base URL must include a host")
-	}
-	return nil
-}
-
 // Stream starts one model request. The returned stream owns the SDK response
 // body and must be closed by the caller.
 func (a *Adapter) Stream(ctx context.Context, request llm.Request) (llm.Stream, error) {
-	if ctx == nil {
-		return nil, errors.New("openai responses: nil context")
-	}
-	if err := request.Validate(); err != nil {
-		return nil, fmt.Errorf("openai responses: validate request: %w", err)
+	if err := streamcore.CheckRequest(ctx, request, API); err != nil {
+		return nil, fmt.Errorf("openai responses: %w", err)
 	}
 
 	params, err := requestParams(request)
@@ -129,23 +109,12 @@ func (a *Adapter) Stream(ctx context.Context, request llm.Request) (llm.Stream, 
 	return &stream{
 		core:   streamcore.NewStream(request.Model),
 		source: source,
-		blocks: make(map[int64]*blockState),
+		blocks: make(map[int64]*streamcore.PartState),
 		codex:  a.codex,
 	}, nil
 }
 
 func requestParams(request llm.Request) (responses.ResponseNewParams, error) {
-	if request.Model.API != API {
-		return responses.ResponseNewParams{}, fmt.Errorf(
-			"openai responses: model API %q does not match %q",
-			request.Model.API,
-			API,
-		)
-	}
-
-	if err := streamcore.ValidateTemperature(request.Options.Temperature); err != nil {
-		return responses.ResponseNewParams{}, fmt.Errorf("openai responses: %w", err)
-	}
 	maxTokens, err := streamcore.ResolveMaxTokens(request)
 	if err != nil {
 		return responses.ResponseNewParams{}, fmt.Errorf("openai responses: %w", err)
@@ -297,9 +266,7 @@ func assistantInputParams(
 	target llm.Model,
 	filterReasoning bool,
 ) ([]responses.ResponseInputItemUnionParam, error) {
-	sameModel := message.Provider == target.Provider &&
-		message.API == target.API &&
-		message.ModelID == target.ID
+	sameModel := streamcore.SameModel(message, target)
 	content := message.Content
 	if !sameModel || filterReasoning {
 		// The Agent Loop arms this request option reactively after a gateway
@@ -469,32 +436,10 @@ func toolParams(tools []llm.ToolDefinition) ([]responses.ToolUnionParam, error) 
 	return result, nil
 }
 
-type blockState struct {
-	type_        llm.ContentType
-	contentIndex int
-	itemID       string
-	text         strings.Builder
-	toolCall     llm.ToolCall
-	arguments    string
-}
-
-func (s *blockState) PartialContent() (llm.ContentPart, bool) {
-	switch s.type_ {
-	case llm.ContentTypeText:
-		return streamcore.PartialText(s.text.String(), s.itemID), true
-	case llm.ContentTypeThinking:
-		return streamcore.PartialThinking(s.text.String(), s.itemID, false), true
-	case llm.ContentTypeToolCall:
-		return streamcore.PartialToolCall(s.toolCall, s.arguments, nil)
-	default:
-		return llm.ContentPart{}, false
-	}
-}
-
 type stream struct {
 	core        *streamcore.Stream
 	source      *ssestream.Stream[responses.ResponseStreamEventUnion]
-	blocks      map[int64]*blockState
+	blocks      map[int64]*streamcore.PartState
 	nextIndex   int
 	sawRefusal  bool
 	sawToolCall bool
@@ -528,22 +473,8 @@ func (s *stream) Close() error {
 }
 
 func normalizeProviderError(err error) error {
-	var apiErr *openaisdk.Error
-	if !errors.As(err, &apiErr) {
-		return streamcore.NormalizeError(err, nil)
-	}
-	var header http.Header
-	if apiErr.Response != nil {
-		header = apiErr.Response.Header
-	}
-	code := apiErr.Code
-	if code == "" {
-		code = apiErr.Type
-	}
-	return streamcore.NormalizeError(err, &streamcore.ErrorInfo{
-		StatusCode: apiErr.StatusCode,
-		Code:       code,
-		Header:     header,
+	return streamcore.SDKError(err, func(apiErr *openaisdk.Error) (int, string, *http.Response) {
+		return apiErr.StatusCode, cmp.Or(apiErr.Code, apiErr.Type), apiErr.Response
 	})
 }
 
@@ -647,32 +578,32 @@ func (s *stream) startItem(
 		)
 	}
 
-	state := &blockState{
-		contentIndex: s.nextIndex,
-		itemID:       item.ID,
+	state := &streamcore.PartState{
+		Index:     s.nextIndex,
+		Signature: item.ID,
 	}
 	s.nextIndex++
-	s.core.Parts.Partial(state.contentIndex, state)
+	s.core.Parts.Partial(state.Index, state)
 
 	switch value := item.AsAny().(type) {
 	case responses.ResponseReasoningItem:
-		state.type_ = llm.ContentTypeThinking
+		state.Type = llm.ContentTypeThinking
 		s.blocks[outputIndex] = state
 		return []llm.Event{{
 			Type:         llm.EventTypeThinkingStart,
-			ContentIndex: state.contentIndex,
+			ContentIndex: state.Index,
 		}}, nil
 	case responses.ResponseOutputMessage:
-		state.type_ = llm.ContentTypeText
+		state.Type = llm.ContentTypeText
 		s.blocks[outputIndex] = state
 		return []llm.Event{{
 			Type:         llm.EventTypeTextStart,
-			ContentIndex: state.contentIndex,
+			ContentIndex: state.Index,
 		}}, nil
 	case responses.ResponseFunctionToolCall:
-		state.type_ = llm.ContentTypeToolCall
-		state.arguments = value.Arguments
-		state.toolCall = llm.ToolCall{
+		state.Type = llm.ContentTypeToolCall
+		state.Arguments = value.Arguments
+		state.ToolCall = llm.ToolCall{
 			ID:        value.CallID,
 			Name:      value.Name,
 			Signature: value.ID,
@@ -681,7 +612,7 @@ func (s *stream) startItem(
 		s.sawToolCall = true
 		return []llm.Event{{
 			Type:         llm.EventTypeToolCallStart,
-			ContentIndex: state.contentIndex,
+			ContentIndex: state.Index,
 			ToolCallDelta: &llm.ToolCallDelta{
 				ID:   value.CallID,
 				Name: value.Name,
@@ -707,14 +638,14 @@ func (s *stream) textDelta(
 			outputIndex,
 		)
 	}
-	if state.type_ != contentType {
+	if state.Type != contentType {
 		return nil, fmt.Errorf(
 			"openai responses: %s delta for incompatible output item %d",
 			contentType,
 			outputIndex,
 		)
 	}
-	state.text.WriteString(delta)
+	state.Text.WriteString(delta)
 
 	eventType := llm.EventTypeTextDelta
 	if contentType == llm.ContentTypeThinking {
@@ -722,7 +653,7 @@ func (s *stream) textDelta(
 	}
 	return []llm.Event{{
 		Type:         eventType,
-		ContentIndex: state.contentIndex,
+		ContentIndex: state.Index,
 		Delta:        delta,
 	}}, nil
 }
@@ -732,16 +663,16 @@ func (s *stream) toolCallDelta(
 	delta string,
 ) ([]llm.Event, error) {
 	state, exists := s.blocks[outputIndex]
-	if !exists || state.type_ != llm.ContentTypeToolCall {
+	if !exists || state.Type != llm.ContentTypeToolCall {
 		return nil, fmt.Errorf(
 			"openai responses: tool arguments delta for incompatible output item %d",
 			outputIndex,
 		)
 	}
-	state.arguments += delta
+	state.Arguments += delta
 	return []llm.Event{{
 		Type:         llm.EventTypeToolCallDelta,
-		ContentIndex: state.contentIndex,
+		ContentIndex: state.Index,
 		ToolCallDelta: &llm.ToolCallDelta{
 			ArgumentsDelta: delta,
 		},
@@ -753,26 +684,26 @@ func (s *stream) toolCallArgumentsDone(
 	arguments string,
 ) ([]llm.Event, error) {
 	state, exists := s.blocks[outputIndex]
-	if !exists || state.type_ != llm.ContentTypeToolCall {
+	if !exists || state.Type != llm.ContentTypeToolCall {
 		return nil, fmt.Errorf(
 			"openai responses: tool arguments done for incompatible output item %d",
 			outputIndex,
 		)
 	}
 	var events []llm.Event
-	if strings.HasPrefix(arguments, state.arguments) {
-		delta := strings.TrimPrefix(arguments, state.arguments)
+	if strings.HasPrefix(arguments, state.Arguments) {
+		delta := strings.TrimPrefix(arguments, state.Arguments)
 		if delta != "" {
 			events = append(events, llm.Event{
 				Type:         llm.EventTypeToolCallDelta,
-				ContentIndex: state.contentIndex,
+				ContentIndex: state.Index,
 				ToolCallDelta: &llm.ToolCallDelta{
 					ArgumentsDelta: delta,
 				},
 			})
 		}
 	}
-	state.arguments = arguments
+	state.Arguments = arguments
 	return events, nil
 }
 
@@ -794,7 +725,7 @@ func (s *stream) finishItem(
 
 	switch value := item.AsAny().(type) {
 	case responses.ResponseReasoningItem:
-		if state.type_ != llm.ContentTypeThinking {
+		if state.Type != llm.ContentTypeThinking {
 			return nil, fmt.Errorf(
 				"openai responses: reasoning completed incompatible output item %d",
 				outputIndex,
@@ -802,7 +733,7 @@ func (s *stream) finishItem(
 		}
 		text := reasoningText(value)
 		if text == "" {
-			text = state.text.String()
+			text = state.Text.String()
 		}
 		signature := item.RawJSON()
 		if signature == "" {
@@ -816,14 +747,14 @@ func (s *stream) finishItem(
 			signature = string(encoded)
 		}
 		content := llm.NewThinkingContent(text, signature).Part()
-		s.core.Parts.Complete(state.contentIndex, content)
+		s.core.Parts.Complete(state.Index, content)
 		events = append(events, llm.Event{
 			Type:         llm.EventTypeThinkingEnd,
-			ContentIndex: state.contentIndex,
+			ContentIndex: state.Index,
 			Content:      &content,
 		})
 	case responses.ResponseOutputMessage:
-		if state.type_ != llm.ContentTypeText {
+		if state.Type != llm.ContentTypeText {
 			return nil, fmt.Errorf(
 				"openai responses: message completed incompatible output item %d",
 				outputIndex,
@@ -831,19 +762,19 @@ func (s *stream) finishItem(
 		}
 		text, refusal := outputMessageText(value)
 		if text == "" {
-			text = state.text.String()
+			text = state.Text.String()
 		}
 		s.sawRefusal = s.sawRefusal || refusal
 		content := llm.NewTextContent(text).Part()
 		content.Signature = value.ID
-		s.core.Parts.Complete(state.contentIndex, content)
+		s.core.Parts.Complete(state.Index, content)
 		events = append(events, llm.Event{
 			Type:         llm.EventTypeTextEnd,
-			ContentIndex: state.contentIndex,
+			ContentIndex: state.Index,
 			Content:      &content,
 		})
 	case responses.ResponseFunctionToolCall:
-		if state.type_ != llm.ContentTypeToolCall {
+		if state.Type != llm.ContentTypeToolCall {
 			return nil, fmt.Errorf(
 				"openai responses: function call completed incompatible output item %d",
 				outputIndex,
@@ -851,12 +782,12 @@ func (s *stream) finishItem(
 		}
 		arguments := value.Arguments
 		if arguments == "" {
-			arguments = state.arguments
+			arguments = state.Arguments
 		}
-		state.toolCall.ID = value.CallID
-		state.toolCall.Name = value.Name
-		state.toolCall.Signature = value.ID
-		call, err := streamcore.FinishToolCall(state.toolCall, arguments, nil)
+		state.ToolCall.ID = value.CallID
+		state.ToolCall.Name = value.Name
+		state.ToolCall.Signature = value.ID
+		call, err := streamcore.FinishToolCall(state.ToolCall, arguments, nil)
 		if err != nil {
 			return nil, fmt.Errorf("openai responses: %w", err)
 		}
@@ -864,10 +795,10 @@ func (s *stream) finishItem(
 			Type:     llm.ContentTypeToolCall,
 			ToolCall: &call,
 		}
-		s.core.Parts.Complete(state.contentIndex, content)
+		s.core.Parts.Complete(state.Index, content)
 		events = append(events, llm.Event{
 			Type:         llm.EventTypeToolCallEnd,
-			ContentIndex: state.contentIndex,
+			ContentIndex: state.Index,
 			Content:      &content,
 			ToolCall:     &call,
 		})

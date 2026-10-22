@@ -17,7 +17,7 @@ func TestFinishRejectsUnknownContentType(t *testing.T) {
 		MaxTokens: 4_096,
 	})
 	core.Parts.Partial(0, unknownPart{})
-	s := &stream{core: core, toolCalls: make(map[int64]*partState)}
+	s := &stream{core: core, toolCalls: make(map[int64]*streamcore.PartState)}
 	if _, err := s.finish(); err == nil {
 		t.Fatal("finish() error = nil, want unknown content type error")
 	}
