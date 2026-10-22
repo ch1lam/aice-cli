@@ -172,39 +172,26 @@ func TestGuardEditRejectsRetargetedLink(t *testing.T) {
 
 func TestGuardEditPhysicalTargetHardPolicies(t *testing.T) {
 	t.Parallel()
-	for _, name := range []string{"outside block", "read only"} {
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-			root, outside := t.TempDir(), t.TempDir()
-			target := filepath.Join(outside, "target.txt")
-			if err := os.WriteFile(target, []byte("old"), 0600); err != nil {
-				t.Fatal(err)
-			}
-			if err := os.Symlink(target, filepath.Join(root, "alias")); err != nil {
-				t.Skipf("symlink unavailable: %v", err)
-			}
-			physicalRoot, err := filepath.EvalSymlinks(root)
-			if err != nil {
-				t.Fatal(err)
-			}
-			mode := guard.PathAccessBlock
-			config := guard.Config{PathAccess: guard.PathAccessConfig{Mode: &mode}}
-			wantRule := "pathAccess.block"
-			if name == "read only" {
-				mode = guard.PathAccessAllow
-				config.Policies = []guard.PolicyRule{{ID: "read-only-target", Patterns: []guard.PatternConfig{{Pattern: "target.txt"}}, Protection: guard.ProtectionReadOnly}}
-				wantRule = "read-only-target"
-			}
-			inner, err := guard.New(physicalRoot, config)
-			if err != nil {
-				t.Fatal(err)
-			}
-			gate := &guardAdapter{inner: inner, yolo: true}
-			result, err := gate.Check(t.Context(), llm.ToolCall{ID: "edit", Name: "edit", Arguments: json.RawMessage(`{"path":"alias","edits":[{"oldText":"old","newText":"new"}]}`)})
-			if err != nil || result.Decision != agent.GuardDeny || result.RuleID != wantRule {
-				t.Fatalf("check = %+v, %v; want %s", result, err, wantRule)
-			}
-		})
+	root, outside := t.TempDir(), t.TempDir()
+	target := filepath.Join(outside, ".env")
+	if err := os.WriteFile(target, []byte("old"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, filepath.Join(root, "alias")); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+	physicalRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	inner, err := guard.New(physicalRoot, guard.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	gate := &guardAdapter{inner: inner, yolo: true}
+	result, err := gate.Check(t.Context(), llm.ToolCall{ID: "edit", Name: "edit", Arguments: json.RawMessage(`{"path":"alias","edits":[{"oldText":"old","newText":"new"}]}`)})
+	if err != nil || result.Decision != agent.GuardDeny || result.RuleID != "secret-files" {
+		t.Fatalf("check = %+v, %v; want secret-files denial", result, err)
 	}
 }
 

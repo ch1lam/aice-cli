@@ -19,7 +19,6 @@ const (
 	guardOptionAllowRunFile    = "allow-run-file"
 	guardOptionAllowRunDir     = "allow-run-dir"
 	guardOptionAllowRunCommand = "allow-run-command"
-	guardOptionAllowRunPrefix  = "allow-run-prefix"
 	guardOptionAllowRunTool    = "allow-run-tool"
 	guardOptionAllowMCPTool    = "allow-mcp-tool-session"
 	guardOptionAllowMCPService = "allow-mcp-service-session"
@@ -372,12 +371,6 @@ func dangerousAskOptions(command string) []interaction.GuardOption {
 		{ID: guardOptionAllowOnce, Label: "Allow once"},
 		{ID: guardOptionAllowRunCommand, Label: "Allow this exact command for this session"},
 	}
-	if prefix := guard.CommandPrefix(command); prefix != "" {
-		options = append(options, interaction.GuardOption{
-			ID:    guardOptionAllowRunPrefix,
-			Label: fmt.Sprintf(`Allow "%s …" commands for this session`, prefix),
-		})
-	}
 	return append(options, interaction.GuardOption{
 		ID:    guardOptionDeny,
 		Label: "Deny",
@@ -408,13 +401,6 @@ func (s *interactiveSession) applyGuardAskGrant(optionID, toolName string, resul
 		g.AllowPathSession(filepath.Dir(abs), true)
 	case guardOptionAllowRunCommand:
 		g.AllowCommandSession(result.Action.Command)
-	case guardOptionAllowRunPrefix:
-		prefix := guard.CommandPrefix(result.Action.Command)
-		if prefix == "" {
-			g.AllowCommandSession(result.Action.Command)
-			return
-		}
-		g.AllowCommandPrefixSession(prefix)
 	case guardOptionAllowRunTool:
 		g.AllowToolSession(toolName)
 	}

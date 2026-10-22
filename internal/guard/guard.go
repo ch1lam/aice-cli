@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
-	"strings"
 	"sync"
 
 	"github.com/ch1lam/aice-cli/internal/hostpath"
@@ -29,32 +28,22 @@ func isBashRootedPath(path, toolName string) bool {
 	return toolName == "bash" && hostpath.IsBashRooted(path)
 }
 
-// Guard is the built-in execution gate. Its policy configuration is immutable;
-// bound service state and Session grants are protected by mu.
+// Guard is the built-in execution gate. Its policies are fixed; bound
+// service state and Session grants are protected by mu.
 type Guard struct {
-	mu        sync.RWMutex
-	workspace string
-	enabled   bool
-	policies  []compiledPolicy
-	exists    func(path, workspace string) bool
-	// sessionAllowed tracks file-policy paths allowed for this session.
+	mu            sync.RWMutex
+	workspace     string
+	readOnlyRoots []string
+	// sessionAllowed tracks secret-file paths allowed for this Session.
 	sessionAllowed map[string]bool
-	// sessionAllowedTools tracks unknown tool names allowed for this session.
+	// sessionAllowedTools tracks unknown tool names allowed for this Session.
 	sessionAllowedTools map[string]bool
-	// permission gate
-	dangerousPatterns    []compiledCommandPattern
-	allowedCmdPatterns   []compiledCommandPattern
-	sessionCommands      map[string]bool // raw commands granted by exact equality
-	sessionCmdPrefixes   []string
-	autoDenyPatterns     []compiledCommandPattern
-	useBuiltinStructural bool
-	requireConfirmation  bool
-	// path access
-	pathAccessMode      PathAccessMode
-	allowedPaths        []AllowedPath
-	sessionAllowedPaths map[string]bool // absolute paths or dir: prefix
-	readOnlyRoots       []string
-	// network target: the bound search service fingerprint set by the
+	// sessionCommands are dangerous raw commands granted by exact equality.
+	sessionCommands map[string]bool
+	// sessionAllowedPaths holds outside-workspace grants: absolute paths or
+	// "dir:" prefixed directories.
+	sessionAllowedPaths map[string]bool
+	// searchTarget is the bound search service fingerprint set by the
 	// application per run. An empty value means web_search is unbound.
 	searchTarget string
 	mcpServices  map[mcpServiceKey]*mcpServiceState
@@ -65,57 +54,14 @@ type Guard struct {
 // New constructs a Guard for the given workspace and configuration.
 // workspace may be empty (uses raw paths without relative conversion).
 func New(workspace string, cfg Config) (*Guard, error) {
-	if cfg.Enabled != nil && !*cfg.Enabled {
-		return &Guard{
-			workspace:           workspace,
-			enabled:             false,
-			requireConfirmation: true,
-			exists:              fileExists,
-			sessionAllowed:      map[string]bool{},
-			sessionAllowedPaths: map[string]bool{},
-			sessionAllowedTools: map[string]bool{},
-		}, nil
-	}
-	resolved := ResolveConfig(cfg)
-	policies := compilePolicies(resolved.Policies)
-	useBuiltin := len(resolved.PermissionGate.CustomPatterns) == 0
-	// When ApplyBuiltinDefaults is false and no custom, dangerousPatterns will be empty; structural should also be off.
-	if !resolved.ShouldApplyBuiltins() && len(resolved.PermissionGate.CustomPatterns) == 0 && len(resolved.PermissionGate.Patterns) == 0 {
-		useBuiltin = false
-	}
-	requireConfirm := true
-	if resolved.PermissionGate.RequireConfirmation != nil {
-		requireConfirm = *resolved.PermissionGate.RequireConfirmation
-	}
 	return &Guard{
-		workspace:            workspace,
-		enabled:              resolved.EnabledOrDefault(),
-		policies:             policies,
-		dangerousPatterns:    compileCommandPatterns(resolved.PermissionGate.Patterns),
-		allowedCmdPatterns:   compileCommandPatterns(resolved.PermissionGate.AllowedPatterns),
-		autoDenyPatterns:     compileCommandPatterns(resolved.PermissionGate.AutoDenyPatterns),
-		useBuiltinStructural: useBuiltin,
-		requireConfirmation:  requireConfirm,
-		pathAccessMode:       resolved.PathAccess.modeOrDefault(),
-		allowedPaths:         resolved.PathAccess.AllowedPaths,
-		readOnlyRoots:        resolveReadOnlyRoots(resolved.ReadOnlyRoots, workspace),
-		exists:               fileExists,
-		sessionAllowed:       map[string]bool{},
-		sessionAllowedPaths:  map[string]bool{},
-		sessionAllowedTools:  map[string]bool{},
+		workspace:           workspace,
+		readOnlyRoots:       resolveReadOnlyRoots(cfg.ReadOnlyRoots, workspace),
+		sessionAllowed:      map[string]bool{},
+		sessionAllowedTools: map[string]bool{},
+		sessionCommands:     map[string]bool{},
+		sessionAllowedPaths: map[string]bool{},
 	}, nil
-}
-
-// NewWithExists is test-only: injects a custom existence probe.
-func NewWithExists(workspace string, cfg Config, exists func(string, string) bool) (*Guard, error) {
-	g, err := New(workspace, cfg)
-	if err != nil {
-		return nil, err
-	}
-	if exists != nil {
-		g.exists = exists
-	}
-	return g, nil
 }
 
 // AllowSession records that path is allowed for the remainder of this session.
@@ -154,17 +100,14 @@ func (g *Guard) AllowPathSession(absPath string, isDir bool) {
 }
 
 // AllowCommandSession records that a dangerous command is allowed for the
-// remainder of this session. Only an identical raw command bypasses the dangerous
-// check; configured allowed patterns and command-prefix grants stay separate.
+// remainder of this session. Only an identical raw command bypasses the
+// dangerous check.
 func (g *Guard) AllowCommandSession(command string) {
 	if g == nil || command == "" {
 		return
 	}
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	if g.sessionCommands == nil {
-		g.sessionCommands = make(map[string]bool)
-	}
 	g.sessionCommands[command] = true
 }
 
@@ -177,22 +120,6 @@ func (g *Guard) AllowToolSession(name string) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	g.sessionAllowedTools[name] = true
-}
-
-// AllowCommandPrefixSession records a command-prefix grant for the remainder
-// of this session. Future bash commands whose every parsed subcommand matches the
-// prefix (exact or prefix plus a following word) skip the dangerous check.
-func (g *Guard) AllowCommandPrefixSession(prefix string) {
-	if g == nil {
-		return
-	}
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	prefix = strings.TrimSpace(prefix)
-	if prefix == "" {
-		return
-	}
-	g.sessionCmdPrefixes = append(g.sessionCmdPrefixes, prefix)
 }
 
 // ResetSessionGrants removes only in-memory authorizations for the previous
@@ -208,7 +135,6 @@ func (g *Guard) ResetSessionGrants() {
 	clear(g.sessionAllowedTools)
 	clear(g.sessionAllowedPaths)
 	clear(g.sessionCommands)
-	g.sessionCmdPrefixes = nil
 	g.mcpSession++
 	for _, service := range g.mcpServices {
 		clear(service.granted)
@@ -224,23 +150,23 @@ func (g *Guard) ResolveAbsolute(p, toolName string) string {
 // Workspace returns the workspace this guard is scoped to.
 func (g *Guard) Workspace() string { return g.workspace }
 
-// Check evaluates one ToolCall against policies, permission gate, and path
-// access. It returns DecisionDeny for hard blocks and DecisionAsk when user
-// confirmation is required. Non-interactive callers treat Ask as Deny
-// (fail-closed); the interactive TUI confirms every approval in an Ask. Pending
-// asks never short-circuit checks that could deny the call.
+// Check evaluates one ToolCall against the secret-file policy, dangerous
+// commands and outside-workspace access. It returns DecisionDeny for hard
+// blocks and DecisionAsk when user confirmation is required. Non-interactive
+// callers treat Ask as Deny (fail-closed); the interactive TUI confirms every
+// approval in an Ask. Pending asks never short-circuit checks that could deny.
 func (g *Guard) Check(ctx context.Context, call llm.ToolCall) (Result, error) {
-	if g == nil || !g.enabled {
+	if g == nil {
 		return Result{Decision: DecisionAllow}, nil
 	}
-	g.mu.RLock()
-	defer g.mu.RUnlock()
 	if ctx == nil {
 		return Result{}, fmt.Errorf("guard: context is required")
 	}
 	if err := ctx.Err(); err != nil {
 		return Result{}, err
 	}
+	g.mu.RLock()
+	defer g.mu.RUnlock()
 	// Known tools with no extractable path/command still allow. Completely
 	// unknown names cannot be mapped to actions and must not be silent-allow,
 	// unless the user granted this tool for the remainder of the session.
@@ -257,93 +183,29 @@ func (g *Guard) Check(ctx context.Context, call llm.ToolCall) (Result, error) {
 		return g.checkNetwork(call), nil
 	}
 	var approvals []Approval
-	// 1. Permission gate: auto-deny blocks; dangerous commands require approval.
 	if call.Name == "bash" {
-		cmd := extractCommand(call.Arguments)
-		if cmd != "" {
-			// Auto-deny has highest priority.
-			if hit := matchCommandPattern(cmd, g.autoDenyPatterns); hit != nil {
-				return Result{Decision: DecisionDeny, Reason: formatCommandBlockReason(hit, ""), RuleID: "permissionGate.autoDeny", Action: Action{Kind: "command", Command: cmd, ToolName: call.Name}}, nil
-			}
-			// Exact session grants, configured patterns, and session prefixes
-			// bypass only the dangerous-command check.
-			if !g.sessionCommands[cmd] &&
-				matchCommandPattern(cmd, g.allowedCmdPatterns) == nil &&
-				!commandCoveredByPrefixes(cmd, g.sessionCmdPrefixes) {
-				if g.useBuiltinStructural {
-					if desc, pat := structuralDangerousMatch(cmd); desc != "" {
-						if g.requireConfirmation {
-							approvals = append(approvals, Approval{
-								Reason:  "Dangerous command requires confirmation (" + desc + "): " + pat,
-								RuleID:  "permissionGate.dangerous",
-								Action:  Action{Kind: "command", Command: cmd, ToolName: call.Name},
-								Pattern: pat,
-							})
-						}
-					}
-					// When builtins are active, structural is authoritative; do not fall back to substring builtins
-					// to avoid false positives like `echo rm -rf`.
-				} else {
-					// Custom patterns replace builtins: check substring/regex
-					if hit := matchCommandPattern(cmd, g.dangerousPatterns); hit != nil {
-						if g.requireConfirmation {
-							approvals = append(approvals, Approval{
-								Reason:  formatCommandBlockReason(hit, ""),
-								RuleID:  "permissionGate.dangerous",
-								Action:  Action{Kind: "command", Command: cmd, ToolName: call.Name},
-								Pattern: hit.source.Pattern,
-							})
-						}
-					}
-				}
-			}
+		if approval, ok := g.checkDangerousCommand(extractCommand(call.Arguments)); ok {
+			approvals = append(approvals, approval)
 		}
 	}
-	// 2. File policy + path access for extracted file actions
-	actions := extractActions(call)
 	seenPaths := make(map[string]bool)
-	for _, act := range actions {
-		// Session allow for file policy
-		key := normalizeTarget(act.Path, g.workspace)
-		if g.sessionAllowed[key] {
-			// Still need path-access check below; do not continue entirely
-		} else {
-			for _, pol := range g.policies {
-				if !isBlocked(pol.protection, call.Name) {
-					continue
-				}
-				matched, reason := checkPolicy(ctx, pol, act, g.workspace, g.exists)
-				if matched {
-					return Result{
-						Decision: DecisionDeny,
-						Reason:   reason,
-						RuleID:   pol.id,
-						Action:   act,
-					}, nil
-				}
+	for _, act := range extractActions(call) {
+		if secretFileTools[call.Name] && !g.sessionAllowed[normalizeTarget(act.Path, g.workspace)] {
+			if reason, denied := checkSecretFile(ctx, act, g.workspace); denied {
+				return Result{Decision: DecisionDeny, Reason: reason, RuleID: secretFilesRuleID, Action: act}, nil
 			}
 		}
-		// 3. Path access (outside workspace)
-		if g.pathAccessMode == PathAccessAllow {
-			continue
-		}
 		abs := resolveAbsolute(act.Path, g.workspace, act.ToolName)
-		if g.workspace != "" && hostpath.Within(g.workspace, abs) {
+		if g.workspace != "" && hostpath.Within(g.workspace, abs) ||
+			isPathAccessReadTool(call.Name) && inReadOnlyRoot(abs, g.readOnlyRoots) ||
+			isPathGranted(abs, g.sessionAllowedPaths) || seenPaths[abs] {
 			continue
 		}
-		if isPathAccessReadTool(call.Name) && inReadOnlyRoot(abs, g.readOnlyRoots) {
-			continue
-		}
-		if isPathAllowed(abs, g.allowedPaths, g.workspace, g.sessionAllowedPaths) {
-			continue
-		}
-		if g.pathAccessMode == PathAccessBlock {
-			return Result{Decision: DecisionDeny, Reason: fmt.Sprintf("Access to %s is blocked (outside working directory).", resolveForDisplay(abs, g.workspace)), RuleID: "pathAccess.block", Action: act}, nil
-		}
-		if !seenPaths[abs] {
-			seenPaths[abs] = true
-			approvals = append(approvals, Approval{Reason: fmt.Sprintf("Access to %s requires confirmation (outside working directory).", resolveForDisplay(abs, g.workspace)), RuleID: "pathAccess.ask", Action: act})
-		}
+		seenPaths[abs] = true
+		approvals = append(approvals, Approval{
+			Reason: fmt.Sprintf("Access to %s requires confirmation (outside working directory).", resolveForDisplay(abs, g.workspace)),
+			RuleID: "pathAccess.ask", Action: act,
+		})
 	}
 	if len(approvals) > 0 {
 		return Result{Decision: DecisionAsk, Approvals: approvals}, nil
@@ -351,5 +213,20 @@ func (g *Guard) Check(ctx context.Context, call llm.ToolCall) (Result, error) {
 	return Result{Decision: DecisionAllow}, nil
 }
 
-// IsEnabled reports whether this guard will enforce policies.
-func (g *Guard) IsEnabled() bool { return g != nil && g.enabled }
+// checkDangerousCommand asks for a structurally dangerous command unless an
+// exact Session grant covers it.
+func (g *Guard) checkDangerousCommand(cmd string) (Approval, bool) {
+	if cmd == "" || g.sessionCommands[cmd] {
+		return Approval{}, false
+	}
+	desc, pattern := structuralDangerousMatch(cmd)
+	if desc == "" {
+		return Approval{}, false
+	}
+	return Approval{
+		Reason:  "Dangerous command requires confirmation (" + desc + "): " + pattern,
+		RuleID:  "permissionGate.dangerous",
+		Action:  Action{Kind: "command", Command: cmd, ToolName: "bash"},
+		Pattern: pattern,
+	}, true
+}

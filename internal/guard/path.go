@@ -7,39 +7,6 @@ import (
 	"github.com/ch1lam/aice-cli/internal/hostpath"
 )
 
-// PathAccessMode controls outside-workspace access.
-type PathAccessMode string
-
-const (
-	PathAccessAllow PathAccessMode = "allow"
-	PathAccessAsk   PathAccessMode = "ask"
-	PathAccessBlock PathAccessMode = "block"
-)
-
-// AllowedPath grants access outside the workspace.
-type AllowedPath struct {
-	Kind string `json:"kind"` // "file" or "directory"
-	Path string `json:"path"`
-}
-
-// PathAccessConfig mirrors pi-guardrails pathAccess section.
-type PathAccessConfig struct {
-	Mode         *PathAccessMode `json:"mode,omitempty"`
-	AllowedPaths []AllowedPath   `json:"allowedPaths,omitempty"`
-}
-
-func (c PathAccessConfig) modeOrDefault() PathAccessMode {
-	if c.Mode == nil {
-		return PathAccessAsk
-	}
-	switch *c.Mode {
-	case PathAccessAllow, PathAccessAsk, PathAccessBlock:
-		return *c.Mode
-	default:
-		return PathAccessAsk
-	}
-}
-
 func resolveForDisplay(path, cwd string) string {
 	path = filepath.Clean(path)
 	if hostpath.Within(cwd, path) {
@@ -50,29 +17,13 @@ func resolveForDisplay(path, cwd string) string {
 	return hostpath.HomeDisplay(path)
 }
 
-func resolveAllowedPath(p AllowedPath, cwd string) string {
-	raw := strings.TrimSpace(p.Path)
-	if raw == "" {
-		return ""
-	}
-	raw = hostpath.ExpandTilde(raw)
-	if filepath.IsAbs(raw) {
-		return filepath.Clean(raw)
-	}
-	if cwd != "" {
-		return filepath.Clean(filepath.Join(cwd, raw))
-	}
-	return filepath.Clean(raw)
-}
-
 func resolveReadOnlyRoots(roots []string, cwd string) []string {
 	out := make([]string, 0, len(roots))
 	for _, root := range roots {
-		resolved := resolveAllowedPath(AllowedPath{Kind: "directory", Path: root}, cwd)
-		if resolved == "" {
+		if root = strings.TrimSpace(root); root == "" {
 			continue
 		}
-		out = append(out, resolved)
+		out = append(out, resolveAbsolute(root, cwd, ""))
 	}
 	return out
 }
@@ -99,37 +50,20 @@ func inReadOnlyRoot(abs string, roots []string) bool {
 	return false
 }
 
-func isPathAllowed(abs string, allowed []AllowedPath, cwd string, sessionAllowed map[string]bool) bool {
+// isPathGranted reports whether a Session grant covers abs. Directory grants
+// are stored with a "dir:" prefix.
+func isPathGranted(abs string, granted map[string]bool) bool {
 	abs = filepath.Clean(abs)
-	if sessionAllowed[abs] {
+	if granted[abs] {
 		return true
 	}
-	for k := range sessionAllowed {
-		if strings.HasPrefix(k, "dir:") {
-			dir := strings.TrimPrefix(k, "dir:")
+	for key := range granted {
+		if dir, ok := strings.CutPrefix(key, "dir:"); ok {
 			if hostpath.Within(dir, abs) {
 				return true
 			}
-			continue
-		}
-		if hostpath.Same(k, abs) {
+		} else if hostpath.Same(key, abs) {
 			return true
-		}
-	}
-	for _, entry := range allowed {
-		resolved := resolveAllowedPath(entry, cwd)
-		if resolved == "" {
-			continue
-		}
-		switch entry.Kind {
-		case "directory":
-			if hostpath.Within(resolved, abs) {
-				return true
-			}
-		default: // file
-			if hostpath.Same(abs, resolved) {
-				return true
-			}
 		}
 	}
 	return false

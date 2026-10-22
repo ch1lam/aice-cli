@@ -196,18 +196,6 @@ func TestMCPCatalogChangeDuringServiceApprovalIsAtomic(t *testing.T) {
 	checkMCPPolicy(t, g, service, "read", DecisionAllow)
 }
 
-func TestMCPDisabledLegacyGuardStillChecksAuthority(t *testing.T) {
-	t.Parallel()
-	disabled := false
-	g, _ := New("", Config{Enabled: &disabled})
-	service := mcpPolicyFixture()
-	publishMCPPolicy(t, g, service)
-	checkMCPPolicy(t, g, service, "read", DecisionAsk)
-	checkMCPPolicy(t, g, service, "blocked", DecisionDeny)
-	g.RevokeMCPService(service.Source, service.ServiceID)
-	checkMCPPolicy(t, g, service, "read", DecisionDeny)
-}
-
 func TestMCPCancellationAndInvalidPolicy(t *testing.T) {
 	t.Parallel()
 	g, _ := New("", Config{})

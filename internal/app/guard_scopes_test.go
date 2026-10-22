@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"slices"
 	"testing"
@@ -129,7 +130,11 @@ func TestGuardDenyWinsBeforeAnyApproval(t *testing.T) {
 	for _, yolo := range []bool{false, true} {
 		for _, command := range []string{"sudo cat .env", "cat ../outside.txt .env", "cat .env ../outside.txt", "sudo cat ../outside.txt .env"} {
 			t.Run(fmt.Sprintf("yolo=%v/%s", yolo, command), func(t *testing.T) {
-				gate, err := guard.NewWithExists(t.TempDir(), guard.Config{}, func(string, string) bool { return true })
+				workspace := t.TempDir()
+				if err := os.WriteFile(filepath.Join(workspace, ".env"), nil, 0o600); err != nil {
+					t.Fatal(err)
+				}
+				gate, err := guard.New(workspace, guard.Config{})
 				if err != nil {
 					t.Fatal(err)
 				}

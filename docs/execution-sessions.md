@@ -140,12 +140,11 @@ Browser skills provide behavioral guidance rather than a security boundary; see
 This section is the source of truth for Guard product behavior. Other
 documents should link here instead of restating these lists.
 
-### Default wired behavior
+### Policies
 
 `internal/app` constructs the gate through `newExecutionGuard`, passing the
-physical workspace and discovered skill directories as `ReadOnlyRoots`.
-Other fields use `DefaultConfig`; `config.Settings` has no guard field.
-The policies below describe the wired behavior.
+physical workspace and discovered skill directories as `ReadOnlyRoots`. The
+policies are fixed in `internal/guard`; `settings.json` has no Guard field.
 
 The gate evaluates three layers in order:
 
@@ -154,28 +153,28 @@ The gate evaluates three layers in order:
    `dd of=`, `mkfs.`, `chmod -R 777`, `chown -R`, `shred`, `wipefs`,
    `blkdiscard`, `fdisk`/`parted`, `doas`/`pkexec`, and container
    `docker`/`podman` with subcommand `run` or `create` plus `--privileged`
-   (example: `docker run --privileged`). Default `autoDenyPatterns` is empty.
-2. **File policies** — default rule `secret-files` uses Protection
-   `noAccess`. Protected basenames: `.env`, `.env.local`, `.env.production`,
-   `.env.prod`, `.dev.vars`. Allow-listed: `*.example.env`, `*.sample.env`,
-   `*.test.env`, `.env.example`, `.env.sample`, `.env.test`. There is no
-   `.env.*` glob. The default existence check applies the rule to existing
-   paths; unresolved expansions are handled conservatively. `noAccess` blocks
-   path-bearing tools when the rule matches an extracted target.
-3. **Path access** — `pathAccess.mode` defaults to `ask` for paths outside
-   the workspace. Mode values are `allow` / `ask` / `block`. Default
-   `allowedPaths` is empty.
+   (example: `docker run --privileged`). Matching uses parsed command words,
+   so `echo rm -rf` is not dangerous.
+2. **Secret files** — rule `secret-files` denies existing files with the
+   basenames `.env`, `.env.local`, `.env.production`, `.env.prod` and
+   `.dev.vars`. Template names `*.example.env`, `*.sample.env`, `*.test.env`,
+   `.env.example`, `.env.sample` and `.env.test` are allowed. There is no
+   `.env.*` glob. Unresolved expansions are denied conservatively. The rule
+   applies to `read`/`write`/`edit`/`bash`/`grep`/`find`/`ls`; the `skill`
+   tool has no path argument.
+3. **Path access** — paths outside the workspace ask for confirmation.
+   `ReadOnlyRoots` (and descendants) skip that ask for
+   `read`/`grep`/`find`/`ls`; `write`/`edit` are not granted.
 
 Each check returns Decision `allow` / `ask` / `deny`. Non-interactive
 `--print` runs treat `ask` as `deny` (fail-closed) unless `--yolo` is
 set. `--yolo` upgrades every `ask` to `allow` and skips the interactive
-confirmation prompt. It does not lift `deny`: `permissionGate.autoDeny`
-still always wins, and file-policy `noAccess` / `readOnly` denials are
+confirmation prompt. It does not lift `deny`: `secret-files` denials are
 unchanged. Interactive `ask` prompts generate options from the
 triggering rule. Grants last for the current Session, across its Agent runs
 and provider or credential changes. `/new` clears all dynamic grants, including
-when no Session file has been created yet. Configured policies, skill read roots,
-and the invocation's `--yolo` setting remain unchanged. Grants never persist to
+when no Session file has been created yet. Policies, skill read roots, and the
+invocation's `--yolo` setting remain unchanged. Grants never persist to
 disk, so resuming a Session in another process starts without them.
 
 The gate checks all applicable policies and extracted paths before returning
@@ -191,24 +190,18 @@ approval waits fail closed.
 | Rule | Options |
 | --- | --- |
 | `pathAccess.ask` | Allow once; Allow this file for this session; Allow directory `<dir>/` for this session; Deny |
-| `permissionGate.dangerous` | Allow once; Allow this exact command for this session; Allow `"<prefix> …"` commands for this session; Deny |
+| `permissionGate.dangerous` | Allow once; Allow this exact command for this session; Deny |
 | `unknownTool` | Allow once; Allow tool `"X"` for this session; Deny |
 | `mcp.tool` (bound integration) | Allow once; Allow current tool version for this Session; Allow current service tool versions for this Session; Deny |
 | Other `ask` rules | Allow once; Deny |
 
-The directory option is omitted when the parent is `/` or `$HOME`. The
-command-prefix option is omitted when `guard.CommandPrefix` returns empty:
-compound commands, dangerous binaries such as `rm`/`sudo`/`dd`/`mkfs`, and
-`docker`/`podman` `run`/`create`.
+The directory option is omitted when the parent is `/` or `$HOME`.
 
 Grant scope within the current Session:
 
 - **file** — that absolute path only
 - **directory** — the parent directory and its descendants
 - **exact command** — the identical bash command string
-- **command prefix** — derived by `guard.CommandPrefix`. Compound commands
-  are split with a shell AST (`&&`, `||`, `;`, `|`, and similar). Every
-  subcommand must start with an authorized prefix at a word boundary
 - **tool name** — that unknown tool name (`AllowToolSession`)
 - **bound MCP tool/service** — source, service, connection, effective permission
   scope and current tool schema versions; generic name grants do not apply.
@@ -219,11 +212,9 @@ Grant scope within the current Session:
   them. User denies survive yolo. See [MCP permission](mcp.md#bound-execution-permission).
 
 Exact command grants compare the complete original string, including whitespace
-and quoting. They are separate from deliberately configured allowed patterns
-and prefix grants; an exact grant does not authorize a changed argument or an
+and quoting. An exact grant does not authorize a changed argument or an
 additional command, and does not bypass file or path policies.
 
-`permissionGate.autoDeny` always wins and cannot be bypassed by any grant.
 Path grants of `/` or the user's home directory are ignored, so a
 Session-scoped grant cannot authorize the entire filesystem or home
 directory. Deny may include an optional user note; the loop appends it to
@@ -234,22 +225,7 @@ isolation still belongs to an external container, VM, or OS sandbox.
 Project Trust does not change tool permissions; see [Project Trust and
 prompts](project-trust.md).
 
-### Engine-only configuration
-
-`guard.Config` can set `enabled`, `applyBuiltinDefaults`, `policies`
-(including Protection `readOnly`/`noAccess`, glob/regex matching, and
-`onlyIfExists`), `permissionGate` (`patterns`, `customPatterns`,
-`allowedPatterns`, `autoDenyPatterns`, `requireConfirmation`),
-`pathAccess` (`mode`, `allowedPaths` with `~` expansion), and
-`readOnlyRoots`. `readOnly` blocks `write`/`edit`/`bash`; `noAccess` blocks
-path-bearing tools (`read`/`write`/`edit`/`bash`/`grep`/`find`/`ls`). The
-`skill` tool has no path argument, so file policies do not apply to it.
-`readOnlyRoots` are constructor-configured directories (and descendants)
-that skip path-access ask/block for `read`/`grep`/`find`/`ls`; `write`/`edit`
-are not granted. Callers pass discovered skill directories; see
-[Skills](architecture.md#skills). These fields are engine-only, not yet
-wired to `settings.json`. Do not document them as user-facing product
-settings until `internal/app` loads them.
+### Tool behavior
 
 The tool layer validates arguments before effects, propagates cancellation,
 bounds output and subprocess lifetime, preserves exit status, and keeps

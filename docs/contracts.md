@@ -63,7 +63,7 @@ counts formatted output, and has no read offset or source-total claim.
 
 The Loop retains metadata through recording and events. App/TUI display it
 without parsing prose or inferring data for old records. Protocol adapters and
-print NDJSON project content only. See [read/grep behavior](execution-sessions.md#engine-only-configuration).
+print NDJSON project content only. See [read/grep behavior](execution-sessions.md#tool-behavior).
 
 ### Web evidence metadata
 

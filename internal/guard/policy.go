@@ -2,110 +2,59 @@ package guard
 
 import (
 	"context"
-	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
 	"github.com/ch1lam/aice-cli/internal/hostpath"
 )
 
-// Protection describes how strictly a rule is enforced.
-type Protection string
+const secretFilesRuleID = "secret-files"
 
-const (
-	ProtectionNone     Protection = "none"
-	ProtectionReadOnly Protection = "readOnly"
-	ProtectionNoAccess Protection = "noAccess"
+// secretFileNames hold credentials; no tool may read or write them unless the
+// name is a template variant in secretFileTemplates. Both match basenames.
+var (
+	secretFileNames     = []string{".env", ".env.local", ".env.production", ".env.prod", ".dev.vars"}
+	secretFileTemplates = []string{"*.example.env", "*.sample.env", "*.test.env", ".env.example", ".env.sample", ".env.test"}
 )
 
-// PolicyRule is the user-facing rule definition.
-type PolicyRule struct {
-	ID              string          `json:"id"`
-	Name            string          `json:"name,omitempty"`
-	Description     string          `json:"description,omitempty"`
-	Patterns        []PatternConfig `json:"patterns"`
-	AllowedPatterns []PatternConfig `json:"allowedPatterns,omitempty"`
-	Protection      Protection      `json:"protection"`
-	OnlyIfExists    *bool           `json:"onlyIfExists,omitempty"`
-	BlockMessage    string          `json:"blockMessage,omitempty"`
-	Enabled         *bool           `json:"enabled,omitempty"`
+// secretFileTools are the tools that can observe or change file contents.
+var secretFileTools = map[string]bool{
+	"read": true, "write": true, "edit": true, "bash": true, "grep": true, "find": true, "ls": true,
 }
 
-func (r PolicyRule) isEnabled() bool {
-	if r.Enabled == nil {
-		return true
+// checkSecretFile reports the denial reason when act targets an existing
+// secret file. Unresolved bash targets are denied without an existence probe.
+func checkSecretFile(ctx context.Context, act Action, workspace string) (string, bool) {
+	if act.Kind != "file" || ctx.Err() != nil {
+		return "", false
 	}
-	return *r.Enabled
-}
-
-func (r PolicyRule) wantsExistsCheck() bool {
-	if r.OnlyIfExists == nil {
-		return true
+	target := normalizeTarget(act.Path, workspace)
+	base := path.Base(target)
+	if !matchesAny(secretFileNames, base) || matchesAny(secretFileTemplates, base) {
+		return "", false
 	}
-	return *r.OnlyIfExists
-}
-
-var defaultBlockMessages = map[Protection]string{
-	ProtectionNoAccess: "Accessing {file} is not allowed. This file is protected. Ask the user if changes are needed.",
-	ProtectionReadOnly: "Writing to {file} is not allowed. This file is read-only.",
-	ProtectionNone:     "",
-}
-
-// blockedTools maps protection to disallowed tool names.
-var blockedTools = map[Protection]map[string]bool{
-	ProtectionNoAccess: {"read": true, "write": true, "edit": true, "bash": true, "grep": true, "find": true, "ls": true},
-	ProtectionReadOnly: {"write": true, "edit": true, "bash": true},
-	ProtectionNone:     {},
-}
-
-// isBlocked reports whether toolName is blocked by protection.
-func isBlocked(protection Protection, toolName string) bool {
-	m, ok := blockedTools[protection]
-	if !ok {
-		return false
+	// The normalized spelling may start with a literal ~ directory inside the
+	// workspace. Probe the action, not that spelling.
+	if !act.Unresolved && !fileExists(act.Path, workspace) {
+		return "", false
 	}
-	return m[toolName]
+	return "Accessing " + target + " is not allowed. This file contains secrets. Explain to the user why you want to access this file, and if changes are needed ask the user to make them.", true
 }
 
-type compiledPolicy struct {
-	id              string
-	protection      Protection
-	patterns        []compiledPattern
-	allowedPatterns []compiledPattern
-	onlyIfExists    bool
-	blockMessage    string
-}
-
-func compilePolicies(rules []PolicyRule) []compiledPolicy {
-	var out []compiledPolicy
-	for _, r := range rules {
-		if !r.isEnabled() {
-			continue
+func matchesAny(patterns []string, name string) bool {
+	for _, pattern := range patterns {
+		if matched, _ := path.Match(pattern, name); matched {
+			return true
 		}
-		if strings.TrimSpace(r.ID) == "" || len(r.Patterns) == 0 {
-			continue
-		}
-		msg := r.BlockMessage
-		if msg == "" {
-			msg = defaultBlockMessages[r.Protection]
-		}
-		out = append(out, compiledPolicy{
-			id:              r.ID,
-			protection:      r.Protection,
-			patterns:        compileFilePatterns(r.Patterns),
-			allowedPatterns: compileFilePatterns(r.AllowedPatterns),
-			onlyIfExists:    r.wantsExistsCheck(),
-			blockMessage:    msg,
-		})
 	}
-	return out
+	return false
 }
 
-// normalizeTarget mirrors pi-guardrails normalizeTarget but simplified for Go:
-//   - "~" and "~/..." are kept as-is with normalization (for pattern matching)
-//   - absolute or relative paths are resolved against workspace, then expressed
-//     relative to workspace when inside it, otherwise as normalized absolute or "~/..."
+// normalizeTarget expresses filePath for matching and display: relative to
+// workspace when inside it, "~/..." under home, otherwise absolute, always
+// with forward slashes.
 func normalizeTarget(filePath, workspace string) string {
 	if filePath == "~" || strings.HasPrefix(filePath, "~/") || strings.HasPrefix(filePath, `~\`) {
 		return normalizeFilePath(filePath)
@@ -131,54 +80,24 @@ func normalizeTarget(filePath, workspace string) string {
 	return normalizeFilePath(abs)
 }
 
-func fileExists(p, workspace string) bool {
-	expanded := hostpath.ExpandTilde(p)
-	abs := expanded
-	if !filepath.IsAbs(expanded) && workspace != "" {
-		abs = filepath.Join(workspace, expanded)
+// normalizeFilePath uses forward slashes, strips leading "./" and collapses
+// repeated separators.
+func normalizeFilePath(input string) string {
+	normalized := strings.ReplaceAll(input, "\\", "/")
+	for strings.HasPrefix(normalized, "./") {
+		normalized = normalized[2:]
 	}
-	_, err := os.Stat(abs)
-	return err == nil
+	for strings.Contains(normalized, "//") {
+		normalized = strings.ReplaceAll(normalized, "//", "/")
+	}
+	return normalized
 }
 
-// checkPolicy evaluates one compiled policy against an Action that has already
-// been filtered to the tool-relevant protection.
-func checkPolicy(ctx context.Context, pol compiledPolicy, act Action, workspace string, exists func(string, string) bool) (bool, string) {
-	if act.Kind != "file" {
-		return false, ""
+func fileExists(p, workspace string) bool {
+	expanded := hostpath.ExpandTilde(p)
+	if !filepath.IsAbs(expanded) && workspace != "" {
+		expanded = filepath.Join(workspace, expanded)
 	}
-	if err := ctx.Err(); err != nil {
-		return false, ""
-	}
-	path := normalizeTarget(act.Path, workspace)
-	matched := false
-	for _, pat := range pol.patterns {
-		if pat.test(path) {
-			matched = true
-			break
-		}
-	}
-	if !matched {
-		return false, ""
-	}
-	for _, pat := range pol.allowedPatterns {
-		if pat.test(path) {
-			return false, ""
-		}
-	}
-	if pol.onlyIfExists && !act.Unresolved {
-		// The normalized match/display spelling may start with a literal ~
-		// directory inside the workspace. Probe the action, not that spelling.
-		if !exists(act.Path, workspace) {
-			return false, ""
-		}
-	}
-	if pol.protection == ProtectionNone {
-		return false, ""
-	}
-	reason := strings.ReplaceAll(pol.blockMessage, "{file}", path)
-	if reason == "" {
-		reason = fmt.Sprintf("Access to %s is blocked by policy %s.", path, pol.id)
-	}
-	return true, reason
+	_, err := os.Stat(expanded)
+	return err == nil
 }

@@ -3,10 +3,7 @@ package guard
 import "testing"
 
 func TestBrowserCommandsKeepExistingPathBoundary(t *testing.T) {
-	g, err := NewWithExists(t.TempDir(), Config{}, alwaysExists)
-	if err != nil {
-		t.Fatal(err)
-	}
+	g := newTestGuard(t, t.TempDir())
 	for _, test := range []struct {
 		name, command string
 		want          Decision

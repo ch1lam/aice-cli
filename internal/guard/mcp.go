@@ -252,7 +252,7 @@ func (g *Guard) RemoveMCPService(source, id string) {
 }
 
 // CheckMCP checks the application's frozen tool binding against current policy.
-// Generic unknown-name grants and the legacy Guard enabled flag do not apply.
+// Generic unknown-name grants do not apply.
 // Connection authorization is separate and must precede service discovery.
 func (g *Guard) CheckMCP(ctx context.Context, modelName string, binding llm.ToolBinding, scope string) (Result, *MCPPermit, error) {
 	if ctx == nil {

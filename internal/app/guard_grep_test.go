@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/ch1lam/aice-cli/internal/agent"
-	"github.com/ch1lam/aice-cli/internal/guard"
 	"github.com/ch1lam/aice-cli/internal/llm"
 	"github.com/ch1lam/aice-cli/internal/tool"
 )
@@ -153,24 +152,14 @@ func TestGuardGrepBlocksOutsideAndRetargetedPaths(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	mode := guard.PathAccessBlock
-	inner, err := guard.New(workspace.PhysicalPath(), guard.Config{PathAccess: guard.PathAccessConfig{Mode: &mode}})
+	_, gate, err := newExecutionGuard(workspace.PhysicalPath(), nil, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	gate := &guardAdapter{inner: inner, yolo: true}
 	call := grepPathCall(t, "@alias")
 	result, err := gate.Check(t.Context(), call)
-	if err != nil || result.Decision != agent.GuardDeny || result.RuleID != "pathAccess.block" {
-		t.Fatalf("outside block bypassed: %+v %v", result, err)
-	}
-	_, gate, err = newExecutionGuard(root, nil, false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	result, err = gate.Check(t.Context(), call)
-	if err != nil || result.Revalidate == nil {
-		t.Fatalf("missing revalidation: %+v %v", result, err)
+	if err != nil || result.Decision != agent.GuardAsk || result.Approvals[0].RuleID != guardRulePathAccessAsk || result.Revalidate == nil {
+		t.Fatalf("outside symlink target: %+v %v", result, err)
 	}
 	if err := os.Remove(link); err != nil {
 		t.Fatal(err)
