@@ -21,6 +21,7 @@ import (
 
 	"github.com/ch1lam/aice-cli/internal/buildinfo"
 	"github.com/ch1lam/aice-cli/internal/evidence"
+	"github.com/ch1lam/aice-cli/internal/utf8text"
 	"github.com/ch1lam/aice-cli/internal/web"
 )
 
@@ -176,7 +177,7 @@ func (f *Fetcher) Fetch(ctx context.Context, request web.FetchRequest) (web.Fetc
 	if err != nil {
 		return web.FetchResponse{}, web.NewError(web.CodeInvalidResponse, "final url: %v", err)
 	}
-	text, truncated := web.TruncateUTF8(extracted.text, MaxDocumentBytes)
+	text := utf8text.Prefix(extracted.text, MaxDocumentBytes)
 	itemFormat := evidence.FormatText
 	if format == web.FetchFormatMarkdown {
 		itemFormat = evidence.FormatMarkdown
@@ -186,7 +187,7 @@ func (f *Fetcher) Fetch(ctx context.Context, request web.FetchRequest) (web.Fetc
 		Items: []evidence.Evidence{{
 			SourceID: source.ID, Kind: evidence.KindDocument, Text: text, Format: itemFormat,
 			Acquisition: evidence.AcquisitionHTTPFetch, RetrievedAt: f.cfg.Now().UnixMilli(),
-			Truncated: truncated, ReturnedBytes: len(text),
+			Truncated: len(text) < len(extracted.text), ReturnedBytes: len(text),
 		}},
 		Diagnostics: evidence.Diagnostics{Warnings: warnings, BytesReceived: int64(len(body))},
 	}

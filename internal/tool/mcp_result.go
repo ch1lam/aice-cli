@@ -12,6 +12,7 @@ import (
 	"github.com/ch1lam/aice-cli/internal/llm"
 	"github.com/ch1lam/aice-cli/internal/mcpclient"
 	"github.com/ch1lam/aice-cli/internal/media"
+	"github.com/ch1lam/aice-cli/internal/utf8text"
 )
 
 const (
@@ -50,7 +51,7 @@ func (m *MCP) mapResult(call llm.ToolCall, source mcpclient.Result, callErr erro
 			loss("Known credential values were redacted.")
 		}
 		if len(redacted) > maxMCPTextBytes-textBytes {
-			redacted = validUTF8Prefix(redacted, maxMCPTextBytes-textBytes)
+			redacted = utf8text.Prefix(redacted, maxMCPTextBytes-textBytes)
 			loss("Text exceeded the 1 MiB storage limit.")
 		}
 		textBytes += len(redacted)

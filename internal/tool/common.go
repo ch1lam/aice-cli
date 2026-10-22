@@ -9,6 +9,7 @@ import (
 
 	"github.com/ch1lam/aice-cli/internal/jsonutil"
 	"github.com/ch1lam/aice-cli/internal/llm"
+	"github.com/ch1lam/aice-cli/internal/utf8text"
 )
 
 const (
@@ -75,7 +76,7 @@ func (c *textCollector) WriteString(value string) bool {
 		_, _ = c.builder.WriteString(value)
 		return true
 	}
-	_, _ = c.builder.WriteString(validUTF8Prefix(value, remaining))
+	_, _ = c.builder.WriteString(utf8text.Prefix(value, remaining))
 	c.truncated = true
 	return false
 }
@@ -88,21 +89,21 @@ func (c *textCollector) String() string {
 	const marker = "\n[output truncated]"
 	text = strings.TrimRight(text, "\n")
 	if maximum := c.limit - len(marker); len(text) > maximum {
-		text = validUTF8Prefix(text, max(0, maximum))
+		text = utf8text.Prefix(text, max(0, maximum))
 	}
 	return text + marker
 }
 
-func validUTF8Prefix(value string, limit int) string {
-	if limit >= len(value) {
-		return value
+// utf8Window returns the end of the readable page [offset, end) of value, at
+// most length bytes and ending on a rune boundary. Offsets come from a
+// previous page's next_offset, so one that splits a character is rejected.
+func utf8Window(value string, offset, length int) (int, error) {
+	if offset > len(value) || offset < len(value) && !utf8.RuneStart(value[offset]) {
+		return 0, fmt.Errorf("Offset is outside the text or splits UTF-8; use the returned next_offset.")
 	}
-	if limit <= 0 {
-		return ""
+	end := offset + len(utf8text.Prefix(value[offset:], length))
+	if end == offset && end < len(value) {
+		return 0, fmt.Errorf("Length is too small for the next UTF-8 character.")
 	}
-	prefix := value[:limit]
-	for !utf8.ValidString(prefix) && len(prefix) > 0 {
-		prefix = prefix[:len(prefix)-1]
-	}
-	return prefix
+	return end, nil
 }

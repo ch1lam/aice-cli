@@ -112,6 +112,7 @@ Optional capabilities retain their own owners:
 | `internal/update` | Checksum-validated GitHub release updates |
 | `internal/hostpath` | Host path canonicalization, comparison keys, membership, tilde expansion, slash-normalized display |
 | `internal/jsonutil`, `internal/apitest` | Focused shared JSON and test infrastructure |
+| `internal/utf8text` | Byte-bounded UTF-8 prefixes shared by tool output and web evidence |
 
 Create a package only when implementation requires it. Avoid vague packages
 such as `core`, `types`, `services`, `utils`, or `helpers`.

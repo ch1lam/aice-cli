@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"strings"
 	"unicode"
-	"unicode/utf8"
 
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/ch1lam/aice-cli/internal/evidence"
+	"github.com/ch1lam/aice-cli/internal/utf8text"
 )
 
 // Model-facing output limits. These are AICE local bounds, not upstream limits.
@@ -105,7 +105,7 @@ func renderSearchEntry(number int, source evidence.Source, bundle evidence.Bundl
 			continue
 		}
 		if len(text) > MaxResultEvidenceBytes {
-			text = truncateUTF8(text, MaxResultEvidenceBytes-len(truncatedEvidenceMarker)) + truncatedEvidenceMarker
+			text = utf8text.Prefix(text, MaxResultEvidenceBytes-len(truncatedEvidenceMarker)) + truncatedEvidenceMarker
 		} else if item.Truncated {
 			text += truncatedEvidenceMarker
 		}
@@ -138,7 +138,7 @@ func RenderFetch(response FetchResponse) string {
 	for _, item := range response.Evidence.Items {
 		text := Sanitize(item.Text)
 		if len(text) > remaining {
-			text = truncateUTF8(text, max(remaining, 0))
+			text = utf8text.Prefix(text, max(remaining, 0))
 			truncated = true
 		}
 		builder.WriteString(text)
@@ -155,27 +155,4 @@ func RenderFetch(response FetchResponse) string {
 	}
 	builder.WriteByte('\n')
 	return builder.String()
-}
-
-// truncateUTF8 cuts at a rune boundary without splitting a character.
-func truncateUTF8(value string, limit int) string {
-	if limit <= 0 {
-		return ""
-	}
-	if len(value) <= limit {
-		return value
-	}
-	cut := limit
-	for cut > 0 && !utf8.RuneStart(value[cut]) {
-		cut--
-	}
-	return value[:cut]
-}
-
-// TruncateUTF8 is the exported form for adapters bounding evidence text.
-func TruncateUTF8(value string, limit int) (string, bool) {
-	if len(value) <= limit {
-		return value, false
-	}
-	return truncateUTF8(value, limit), true
 }

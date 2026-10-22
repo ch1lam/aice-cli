@@ -139,3 +139,32 @@ func TestResultReadMetadataPages(t *testing.T) {
 		t.Fatal("metadata lost blocks", seen)
 	}
 }
+
+func TestUTF8Window(t *testing.T) {
+	t.Parallel()
+
+	const value = "a界b" // 界 occupies bytes 1-3.
+	tests := []struct {
+		name           string
+		offset, length int
+		want           int
+		wantErr        bool
+	}{
+		{name: "whole", offset: 0, length: 8, want: len(value)},
+		{name: "backs off split rune", offset: 0, length: 3, want: 1},
+		{name: "continues at next offset", offset: 1, length: 3, want: 4},
+		{name: "end offset", offset: len(value), length: 1, want: len(value)},
+		{name: "offset splits rune", offset: 2, length: 4, wantErr: true},
+		{name: "offset past end", offset: len(value) + 1, length: 1, wantErr: true},
+		{name: "length below next rune", offset: 1, length: 2, wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := utf8Window(value, tt.offset, tt.length)
+			if (err != nil) != tt.wantErr || !tt.wantErr && got != tt.want {
+				t.Errorf("utf8Window(%d, %d) = %d, %v; want %d, error %v", tt.offset, tt.length, got, err, tt.want, tt.wantErr)
+			}
+		})
+	}
+}

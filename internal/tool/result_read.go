@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"unicode/utf8"
 
 	"github.com/ch1lam/aice-cli/internal/llm"
 )
@@ -122,15 +121,9 @@ func (r *ToolResultRead) Execute(ctx context.Context, call llm.ToolCall) (llm.To
 		value = string(message.Details.StructuredContent)
 	}
 	if args.Section != "metadata" && image == nil {
-		if args.Offset > len(value) || args.Offset < len(value) && !utf8.RuneStart(value[args.Offset]) {
-			return textResult(call, "Offset is outside the section or splits UTF-8; use the returned next_offset.", true), nil
-		}
-		end := min(len(value), args.Offset+args.Length)
-		for end > args.Offset && end < len(value) && !utf8.RuneStart(value[end]) {
-			end--
-		}
-		if end == args.Offset && end < len(value) {
-			return textResult(call, "Length is too small for the next UTF-8 character.", true), nil
+		end, err := utf8Window(value, args.Offset, args.Length)
+		if err != nil {
+			return textResult(call, err.Error(), true), nil
 		}
 		metadata["offset"], metadata["total_bytes"], metadata["complete"] = args.Offset, len(value), end == len(value)
 		if end < len(value) {

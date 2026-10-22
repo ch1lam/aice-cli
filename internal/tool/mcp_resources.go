@@ -8,6 +8,7 @@ import (
 	"github.com/ch1lam/aice-cli/internal/agent"
 	"github.com/ch1lam/aice-cli/internal/llm"
 	"github.com/ch1lam/aice-cli/internal/mcpclient"
+	"github.com/ch1lam/aice-cli/internal/utf8text"
 )
 
 type ResourceListRequest struct {
@@ -62,10 +63,10 @@ func (r *MCPResourceList) SelectTools(ctx context.Context, call llm.ToolCall) (l
 			response.Notice += " A resource URI containing a configured credential was omitted."
 			continue
 		}
-		resource.Name = validUTF8Prefix(redact.text(resource.Name), 256)
-		resource.Title = validUTF8Prefix(redact.text(resource.Title), 256)
-		resource.Description = validUTF8Prefix(redact.text(resource.Description), 1024)
-		resource.MIMEType = validUTF8Prefix(redact.text(resource.MIMEType), 128)
+		resource.Name = utf8text.Prefix(redact.text(resource.Name), 256)
+		resource.Title = utf8text.Prefix(redact.text(resource.Title), 256)
+		resource.Description = utf8text.Prefix(redact.text(resource.Description), 1024)
+		resource.MIMEType = utf8text.Prefix(redact.text(resource.MIMEType), 128)
 		entries = append(entries, resource)
 	}
 	response.Resources = entries

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/ch1lam/aice-cli/internal/evidence"
+	"github.com/ch1lam/aice-cli/internal/utf8text"
 	"github.com/ch1lam/aice-cli/internal/web"
 )
 
@@ -57,7 +58,7 @@ func appendItem(bundle *evidence.Bundle, sourceID string, kind evidence.Kind, te
 	if text == "" {
 		return
 	}
-	bounded, truncated := web.TruncateUTF8(text, limit)
+	bounded := utf8text.Prefix(text, limit)
 	bundle.Items = append(bundle.Items, evidence.Evidence{
 		SourceID:      sourceID,
 		Kind:          kind,
@@ -65,7 +66,7 @@ func appendItem(bundle *evidence.Bundle, sourceID string, kind evidence.Kind, te
 		Format:        evidence.FormatText,
 		Acquisition:   evidence.AcquisitionSearchService,
 		RetrievedAt:   retrievedAt,
-		Truncated:     truncated,
+		Truncated:     len(bounded) < len(text),
 		ReturnedBytes: len(bounded),
 	})
 }
