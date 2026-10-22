@@ -10,17 +10,20 @@ import (
 	"github.com/ch1lam/aice-cli/internal/tool"
 )
 
-func bindImageReader(tools []agent.Tool, workspace *tool.Workspace, options tool.ReadOptions) error {
-	for index, current := range tools {
-		if current.Definition().Name != "read" {
-			continue
+// bindImageReader replaces the read tool in every given set with one reader
+// that can resolve saved images. Settings rebuilds compose from the base set,
+// so an interactive Session must bind both its base and published tools.
+func bindImageReader(workspace *tool.Workspace, options tool.ReadOptions, toolSets ...[]agent.Tool) error {
+	reader, err := tool.NewRead(workspace, options)
+	if err != nil {
+		return err
+	}
+	for _, tools := range toolSets {
+		for index, current := range tools {
+			if current.Definition().Name == "read" {
+				tools[index] = reader
+			}
 		}
-		reader, err := tool.NewRead(workspace, options)
-		if err != nil {
-			return err
-		}
-		tools[index] = reader
-		return nil
 	}
 	return nil
 }

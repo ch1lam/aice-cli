@@ -316,10 +316,10 @@ func (a *application) Print(
 		}
 		return imageFromMessages(sourceMessages, id)
 	}
-	if err := bindImageReader(environment.tools, environment.workspace, tool.ReadOptions{
+	if err := bindImageReader(environment.workspace, tool.ReadOptions{
 		LookupImage:   lookup,
 		CanReadImages: func() bool { return slices.Contains(environment.model.InputModalities, llm.InputModalityImage) },
-	}); err != nil {
+	}, environment.tools); err != nil {
 		return err
 	}
 	loop, err := agent.NewLoop(configured.service, environment.tools, agent.WithGuard(environment.guardAdapter), agent.WithRunLimits(runLimits(configured.configuration)))
@@ -483,9 +483,9 @@ func (a *application) Interactive(
 	// can it be answered, so bind this Session as its asker before the loop
 	// is created.
 	runner.bindQuestionTool()
-	if err := bindImageReader(runner.tools, runner.workspace, tool.ReadOptions{
+	if err := bindImageReader(runner.workspace, tool.ReadOptions{
 		LookupImage: runner.lookupImage, CanReadImages: runner.canReadImages,
-	}); err != nil {
+	}, runner.baseTools, runner.tools); err != nil {
 		return errors.Join(err, store.Close())
 	}
 	if environment.modelErr == nil && providerConfigured(a.dependencies.providers, environment.configuration) {
