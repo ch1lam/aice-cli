@@ -563,18 +563,6 @@ func truncateTerminalText(value string, width int) string {
 	return string(runes) + "…"
 }
 
-// transcriptView materializes an explicit snapshot. Live frames use lazy items.
-func (m model) transcriptView() string {
-	var result strings.Builder
-	for i, item := range m.transcriptItems() {
-		if i > 0 {
-			result.WriteString(strings.Repeat("\n", item.gap+1))
-		}
-		result.WriteString(item.content().view)
-	}
-	return result.String()
-}
-
 func (m model) hasPendingSteer() bool {
 	for _, delivery := range m.pendingDeliveries {
 		if delivery.mode == deliverySteer {

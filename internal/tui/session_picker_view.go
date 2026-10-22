@@ -155,10 +155,6 @@ func (m model) sessionPickerView() string {
 
 const sessionPickerCloseLabel = " [ ✘ ] "
 
-func (m model) sessionPickerTopBorder(title string, l sessionPickerLayout) string {
-	return modalTopBorder(title, l.inner, m.sessionPickerCloseHovered(), m.sessionPicker.closePressed)
-}
-
 func (m model) sessionPickerCloseHovered() bool {
 	p := m.sessionPicker
 	if p.pointer == nil || m.width < 16 || m.height < 8 {

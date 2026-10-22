@@ -49,8 +49,11 @@ func TestClipboardImagesSubmitThroughController(t *testing.T) {
 			request := <-requests
 			var received RunInput
 			runner := runnerFunc(func(_ context.Context, input RunInput, _ DisplayEventSink) error { received = input; return nil })
-			if err := runOne(t.Context(), runner, request); err != nil {
-				t.Fatal(err)
+			go runOne(t.Context(), runner, request)
+			for update := range request.updates {
+				if update.err != nil {
+					t.Fatal(update.err)
+				}
 			}
 			if received.Prompt != text || len(received.Images) != 1 || !bytes.Equal(received.Images[0].Data, img.Data) {
 				t.Fatal("controller lost text or image")

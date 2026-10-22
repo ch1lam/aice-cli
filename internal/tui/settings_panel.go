@@ -14,32 +14,32 @@ import (
 )
 
 type settingsPanel struct {
-	usage                  bool
-	action                 *settingsAction
-	continuation           *interaction.TaskContinuation
-	collection             *collectionDraft
-	generation             uint64
-	snapshot               interaction.SettingsSnapshot
-	loading, saving        bool
-	cancelRead             context.CancelFunc
-	cancelStatus           context.CancelFunc
-	tab, selection, offset int
-	positions              map[int]int
-	collapsed              map[string]bool
-	searchCollapsed        map[string]bool
-	search                 bool
-	input                  textinput.Model
-	editing                *interaction.SettingField
-	choice                 int
-	confirmUnset           bool
-	detailOffset           int
-	focusField             string
-	focusAction            bool
-	notice                 string
-	layout                 modalLayout
-	pointer                *tea.Mouse
-	pressed                string
-	pressedLayout          modalLayout
+	usage           bool
+	action          *settingsAction
+	continuation    *interaction.TaskContinuation
+	collection      *collectionDraft
+	generation      uint64
+	snapshot        interaction.SettingsSnapshot
+	loading, saving bool
+	cancelRead      context.CancelFunc
+	cancelStatus    context.CancelFunc
+	tab, selection  int
+	positions       map[int]int
+	collapsed       map[string]bool
+	searchCollapsed map[string]bool
+	search          bool
+	input           textinput.Model
+	editing         *interaction.SettingField
+	choice          int
+	confirmUnset    bool
+	detailOffset    int
+	focusField      string
+	focusAction     bool
+	notice          string
+	layout          modalLayout
+	pointer         *tea.Mouse
+	pressed         string
+	pressedLayout   modalLayout
 }
 
 func (m model) settingsVisible() bool {
@@ -491,7 +491,6 @@ func (m model) handleSettings(message tea.Msg) (tea.Model, tea.Cmd) {
 					p.positions[p.tab] = p.selection
 					p.tab = (p.tab + delta + n) % n
 					p.selection = p.positions[p.tab]
-					p.offset = 0
 				}
 				return m, nil
 			case "up":

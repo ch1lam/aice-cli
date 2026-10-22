@@ -500,49 +500,6 @@ func (s *transcriptSelection) highlightedView() string {
 	return strings.Join(h.rendered, "\n")
 }
 
-// highlightCurrentWindow is the uncached recompute of the frozen window with
-// the current selection. Tests compare it against highlightedView to verify
-// the per-window cache without scanning the whole跨屏 range.
-func highlightCurrentWindow(frozen *transcriptViewport, selection transcriptSelection) string {
-	view := frozen.View()
-	start, end, selected := selection.selectedRange()
-	if !selected {
-		return view
-	}
-	rows := frozen.visibleRows()
-	lines := strings.Split(view, "\n")
-	for index, line := range lines {
-		var point selectionPoint
-		if index < len(rows) {
-			point = selectionPoint{item: rows[index].item, part: rows[index].part, line: rows[index].line}
-		} else {
-			point = selectionPoint{item: -1}
-		}
-		columnStart, columnEnd, inRange := selectedColumnRange(start, end, point, ansi.StringWidth(line))
-		if !inRange {
-			continue
-		}
-		if index < len(rows) {
-			if _, _, contentStart, contentEnd, ok := codeSourceRange(&rows[index]); ok {
-				columnStart = max(columnStart, contentStart)
-				columnEnd = min(columnEnd, contentEnd)
-				if columnEnd <= columnStart {
-					continue
-				}
-			}
-		}
-		lines[index] = lipgloss.StyleRanges(
-			line,
-			lipgloss.NewRange(
-				columnStart,
-				columnEnd,
-				transcriptSelectionStyle,
-			),
-		)
-	}
-	return strings.Join(lines, "\n")
-}
-
 // buildSelectionHighlight freezes the current window's geometry both
 // highlight paths share: display widths, content identities and the copyable
 // code intervals. Rendering the rows themselves stays lazy so a press

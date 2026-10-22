@@ -92,11 +92,14 @@ func TestControllerStreamsAuthenticationBeforeCompletion(t *testing.T) {
 			return "", ctx.Err()
 		}
 	}}
-	finished := make(chan error, 1)
+	finished := make(chan struct{})
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	request := SlashCommandRequest{Name: "login", Auth: &interaction.AuthInteraction{Input: input}}
-	go func() { finished <- runSlashCommand(ctx, runner, runRequest{command: &request, updates: updates}) }()
+	go func() {
+		defer close(finished)
+		runSlashCommand(ctx, runner, runRequest{command: &request, updates: updates})
+	}()
 	first := <-updates
 	if first.cancel == nil {
 		t.Fatal("missing command cancellation")
@@ -106,11 +109,9 @@ func TestControllerStreamsAuthenticationBeforeCompletion(t *testing.T) {
 		t.Fatal("missing live auth progress")
 	}
 	input <- "signed in"
-	if err := <-finished; err != nil {
-		t.Fatal(err)
-	}
 	done := <-updates
-	if !done.done || done.output != "signed in" {
+	<-finished
+	if !done.done || done.err != nil || done.output != "signed in" {
 		t.Fatal("missing login completion")
 	}
 	if request.Auth.Notify != nil {
