@@ -42,7 +42,7 @@ func TestCatalogCapabilitiesAndWireControls(t *testing.T) {
 		{"glm-4.6v-flashx", 128_000, 32_768, true, []llm.ThinkingLevel{"off", "high"}, false},
 		{"glm-4.6v-flash", 128_000, 32_768, true, []llm.ThinkingLevel{"off", "high"}, false},
 	}
-	models := zhipu.Models()
+	models := (&zhipu.Provider{}).Models()
 	if len(models) != len(cases) {
 		t.Fatalf("models = %d, want %d", len(models), len(cases))
 	}
@@ -125,7 +125,7 @@ func TestCodingRejectsPlatformOnlyModels(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, model := range zhipu.Models()[2:] {
+	for _, model := range (&zhipu.Provider{}).Models()[2:] {
 		model.Provider = zhipu.CodingProviderID
 		request := apitest.MinimalRequest(model.API)
 		request.Model = model

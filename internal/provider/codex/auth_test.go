@@ -77,7 +77,7 @@ func TestBrowserLoginChecksStateAndExchangesPKCE(t *testing.T) {
 		}
 		return len(data), nil
 	})
-	credential, err := (AuthClient{BaseURL: server.URL}).browserLogin(t.Context(), output, listener)
+	credential, err := (AuthClient{BaseURL: server.URL}).authorizeBrowser(t.Context(), writerInteraction(output), listener)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +94,7 @@ func TestBrowserLoginCancellationClosesListener(t *testing.T) {
 	}
 	address := listener.Addr().String()
 	ctx, cancel := context.WithCancel(t.Context())
-	_, err = (AuthClient{}).browserLogin(ctx, outputFunc(func(data []byte) (int, error) { cancel(); return len(data), nil }), listener)
+	_, err = (AuthClient{}).authorizeBrowser(ctx, writerInteraction(outputFunc(func(data []byte) (int, error) { cancel(); return len(data), nil })), listener)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("error = %v", err)
 	}

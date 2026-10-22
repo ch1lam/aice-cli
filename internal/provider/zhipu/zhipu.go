@@ -92,12 +92,6 @@ func newProvider(configuration Config, codingPlan bool) (*Provider, error) {
 	return descriptor, nil
 }
 
-// Models returns the Zhipu models supported by this provider.
-func Models() []llm.Model { return (&Provider{}).Models() }
-
-// DefaultModel returns the GLM-5.3 coding model.
-func DefaultModel() llm.Model { return catalogModel(modelSpecs[0], ProviderID) }
-
 // Stream validates Zhipu compatibility before making a request.
 func (p *Provider) Stream(ctx context.Context, request llm.Request) (llm.Stream, error) {
 	return p.route.Stream(ctx, request)
@@ -131,12 +125,8 @@ func (p *Provider) Models() []llm.Model {
 	return models
 }
 
-// DefaultModel returns the Zhipu model used when none is selected.
-func (p *Provider) DefaultModel() llm.Model {
-	model := DefaultModel()
-	model.Provider = p.ProviderID()
-	return model
-}
+// DefaultModel returns GLM-5.3, which both plans serve.
+func (p *Provider) DefaultModel() llm.Model { return p.Models()[0] }
 
 // Configured reports whether the configuration carries a Zhipu credential.
 func (p *Provider) Configured(configuration config.Config) bool {

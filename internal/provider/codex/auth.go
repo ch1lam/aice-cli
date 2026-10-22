@@ -191,10 +191,6 @@ func (a AuthClient) listenAndAuthorizeBrowser(ctx context.Context, interaction L
 	return a.authorizeBrowser(ctx, interaction, listener)
 }
 
-func (a AuthClient) browserLogin(ctx context.Context, output io.Writer, listener net.Listener) (config.CodexCredentials, error) {
-	return a.authorizeBrowser(ctx, writerInteraction(output), listener)
-}
-
 func (a AuthClient) authorizeBrowser(ctx context.Context, interaction LoginInteraction, listener net.Listener) (config.CodexCredentials, error) {
 	verifier := randomURLToken()
 	state := randomURLToken()

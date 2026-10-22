@@ -119,8 +119,8 @@ func TestRejectsIncompatibleRequestsBeforeHTTP(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			r := apitest.MinimalRequest(zhipu.DefaultModel().API)
-			r.Model = zhipu.DefaultModel()
+			r := apitest.MinimalRequest((&zhipu.Provider{}).DefaultModel().API)
+			r.Model = (&zhipu.Provider{}).DefaultModel()
 			mutate(&r)
 			if _, err := service.Stream(t.Context(), r); err == nil {
 				t.Fatal("expected validation failure")
@@ -136,9 +136,9 @@ func TestConnectionValidation(t *testing.T) {
 			t.Fatal("accepted invalid connection")
 		}
 	}
-	models := zhipu.Models()
+	models := (&zhipu.Provider{}).Models()
 	models[0].ThinkingLevelMap[llm.ThinkingLevelHigh] = nil
-	if !zhipu.DefaultModel().ThinkingLevelMap.Supports(llm.ThinkingLevelHigh) {
+	if !(&zhipu.Provider{}).DefaultModel().ThinkingLevelMap.Supports(llm.ThinkingLevelHigh) {
 		t.Fatal("catalog shares mutable map")
 	}
 }
