@@ -68,13 +68,13 @@ func TestPointerGeometryMatchesPaintedComposer(t *testing.T) {
 
 func TestLocalCommandMenuDoesNotBlockVisibleTranscriptClick(t *testing.T) {
 	m := foldTestModel()
-	m.commandMenu = &commandMenuState{}
+	m.flow = &commandFlow{menus: []commandMenuFrame{{}}}
 	m.resizeLayout()
 	m = clickPainted(t, m, "✓ read")
 	if !m.foldExpanded(foldTarget{kind: foldTool, id: 2}) {
 		t.Fatal("local command chooser blocked visible transcript fold")
 	}
-	if m.commandMenu == nil {
+	if !m.commandMenuOpen() {
 		t.Fatal("transcript action dismissed the command chooser")
 	}
 }

@@ -93,15 +93,15 @@ func bindingTestModel(t *testing.T, state string) model {
 			m.side.confirm = &sideConfirmState{threadID: 1}
 		}
 	case "secret":
-		m.secretInput = &secretInput{}
+		m.flow = &commandFlow{form: []credentialStep{{}}}
 	case "guard", "feedback":
 		m.guardPending = &interaction.GuardRequest{Options: []interaction.GuardOption{{ID: "allow"}, {ID: "deny", Deny: true}}}
 		m.guardFeedback = state == "feedback"
 	case "auth waiting", "auth input", "auth menu":
-		m.authInput = make(chan string, 1)
-		m.authPrompt = &interaction.AuthPrompt{AllowInput: state == "auth input"}
+		m.flow = &commandFlow{input: make(chan string, 1)}
+		m.flow.prompt = &interaction.AuthPrompt{AllowInput: state == "auth input"}
 		if state == "auth menu" {
-			m.authPrompt.Menu = &interaction.CommandMenu{Options: []interaction.CommandOption{{Label: "one"}}}
+			m.flow.prompt.Menu = &interaction.CommandMenu{Options: []interaction.CommandOption{{Label: "one"}}}
 		}
 	case "sessions", "search", "preview", "rename", "saving", "restoring":
 		m = pickerModel(t, 160, 30)

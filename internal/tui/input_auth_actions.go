@@ -13,8 +13,8 @@ func (m model) authInputBindings() []inputBinding {
 	bindings := []inputBinding{
 		actionBinding(inputActionAuthCancel, "Esc/Ctrl+c/Ctrl+d", "cancel", "esc", "ctrl+c", "ctrl+d"),
 	}
-	if m.authPrompt != nil && m.authPrompt.Menu != nil {
-		options := m.authPrompt.Menu.Options
+	if prompt := m.flow.prompt; prompt != nil && prompt.Menu != nil {
+		options := prompt.Menu.Options
 		choose := actionBinding(inputActionAuthChoose, "Enter", "select", m.keys.send.Keys()...)
 		choose.binding.SetEnabled(len(options) > 0 && !m.cancelRequested)
 		bindings = append(bindings, choose)

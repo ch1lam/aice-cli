@@ -489,7 +489,6 @@ func TestWheelFromFoldOrCopyTargetDoesNotMisclick(t *testing.T) {
 	}
 }
 
-
 func TestStreamingUnlaidHistoryKeepsFrozenVersion(t *testing.T) {
 	t.Parallel()
 	m, top := wheelTestModel(t, 100, 30)

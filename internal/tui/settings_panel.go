@@ -43,7 +43,7 @@ type settingsPanel struct {
 }
 
 func (m model) settingsVisible() bool {
-	return m.settings != nil && m.guardPending == nil && m.question == nil && m.authInput == nil && m.secretInput == nil && m.commandMenu == nil
+	return m.settings != nil && m.guardPending == nil && m.question == nil && m.flow == nil
 }
 
 func (m model) openSettings() (model, tea.Cmd, bool) {

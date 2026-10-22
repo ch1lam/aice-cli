@@ -16,7 +16,7 @@ func TestSettingsDisclosurePagesBeforeActionAndSharesMouseGeometry(t *testing.T)
 			m := panelModel(t, size[0], size[1])
 			input := make(chan string, 1)
 			instructions := strings.Repeat("Read the complete disclosure before continuing. ", 12) + "FINAL NOTICE"
-			a := &settingsAction{running: true, input: input, wait: func() tea.Msg { return nil }}
+			a := &settingsAction{commandFlow: commandFlow{input: input}, running: true, wait: func() tea.Msg { return nil }}
 			m.settings.action = a
 			m.settings.editing = &interaction.SettingField{Kind: interaction.SettingAction}
 			menu := &interaction.CommandMenu{Title: "Continue?", Options: []interaction.CommandOption{{Label: "Cancel", Arguments: "cancel"}, {Label: "Continue", Arguments: "continue"}}}
@@ -26,7 +26,7 @@ func TestSettingsDisclosurePagesBeforeActionAndSharesMouseGeometry(t *testing.T)
 				if page > 100 {
 					t.Fatal("disclosure cannot advance")
 				}
-				layout := m.settings.actionMenuLayout(menu)
+				layout := m.settings.actionMenuLayout(menu, m.settings.action.selection)
 				seen = append(seen, strings.Join(layout.header, ""))
 				view := m.settings.actionView()
 				for _, line := range strings.Split(view, "\n") {
@@ -50,7 +50,7 @@ func TestSettingsDisclosurePagesBeforeActionAndSharesMouseGeometry(t *testing.T)
 			if !strings.Contains(strings.Join(seen, ""), "FINAL NOTICE") {
 				t.Fatal("disclosure was clipped")
 			}
-			layout := m.settings.actionMenuLayout(menu)
+			layout := m.settings.actionMenuLayout(menu, m.settings.action.selection)
 			target := m.settings.editTarget(1, 4+len(layout.header)+1)
 			if target != "action:Continue:continue" {
 				t.Fatalf("wrong hit target: %s", target)
@@ -87,7 +87,7 @@ func TestSettingsBooleanEnableUsesDomainAction(t *testing.T) {
 func TestSettingsCancelledActionRejectsLateDisclosure(t *testing.T) {
 	t.Parallel()
 	m := panelModel(t, 80, 24)
-	a := &settingsAction{running: true, input: make(chan string, 1)}
+	a := &settingsAction{commandFlow: commandFlow{input: make(chan string, 1)}, running: true}
 	m.settings.action = a
 	m.settings.editing = &interaction.SettingField{Kind: interaction.SettingAction}
 	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyEscape})

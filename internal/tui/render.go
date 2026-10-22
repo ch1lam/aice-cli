@@ -236,7 +236,7 @@ func (m model) composerFrameStyle(width int) lipgloss.Style {
 
 func (m model) composerViewWithStyle(width int, style lipgloss.Style) string {
 	contentWidth := max(width-style.GetHorizontalFrameSize(), 1)
-	if m.secretInput != nil || m.authInput != nil && (m.authPrompt == nil || !m.authPrompt.PublicInput) {
+	if prompt := m.authPrompt(); m.secretEntry() || m.authActive() && (prompt == nil || !prompt.PublicInput) {
 		value := mutedStyle.Render(m.input.Placeholder)
 		if count := utf8.RuneCountInString(m.input.Value()); count > 0 {
 			value = bodyStyle.Render(strings.Repeat("•", min(count, contentWidth)))
@@ -291,8 +291,8 @@ func pendingDeliveryPreview(text string) string {
 func (m model) slashCommandMenuVisible() bool {
 	return !m.side.isVisible &&
 		m.composerInputEnabled() &&
-		m.secretInput == nil &&
-		m.commandMenu == nil &&
+		!m.secretEntry() &&
+		!m.commandMenuOpen() &&
 		!m.commandDismissed &&
 		len(m.matchingSlashCommands()) > 0
 }
@@ -386,7 +386,7 @@ func (m model) commandMenuView(width int) string {
 	if m.side.isVisible {
 		return ""
 	}
-	if m.commandMenu != nil {
+	if m.commandMenuOpen() {
 		return m.slashCommandSelectionMenuView(width)
 	}
 	if m.fileCompletionVisible() {
@@ -419,7 +419,7 @@ func (m model) slashCommandMenuView(width int) string {
 }
 
 func (m model) slashCommandSelectionMenuView(width int) string {
-	if m.commandMenu == nil || len(m.commandMenu.frames) == 0 {
+	if !m.commandMenuOpen() {
 		return ""
 	}
 	options := m.matchingCommandOptions()
@@ -427,7 +427,7 @@ func (m model) slashCommandSelectionMenuView(width int) string {
 		return renderSlashMenuRows(width, "", "",
 			[]slashMenuRow{{label: "No matching options"}}, -1)
 	}
-	frame := m.commandMenu.frames[len(m.commandMenu.frames)-1]
+	frame := m.flow.menu()
 	rows := make([]slashMenuRow, len(options))
 	request, _ := parseSlashCommand(m.input.Value())
 	for index, option := range options {

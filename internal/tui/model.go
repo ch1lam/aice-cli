@@ -90,30 +90,6 @@ type transcriptViewPart struct {
 	tool    bool
 }
 
-type secretInput struct {
-	request SlashCommandRequest
-	prompt  string
-}
-
-type customLoginState struct {
-	endpoint string
-	apiKey   string
-	step     int // 0: endpoint, 1: api key, 2: model
-}
-
-type commandMenuFrame struct {
-	menu      SlashCommandMenu
-	selection int
-	draft     string
-}
-
-type commandMenuState struct {
-	raw     string
-	request SlashCommandRequest
-	command SlashCommand
-	frames  []commandMenuFrame
-}
-
 type model struct {
 	settings                 *settingsPanel
 	settingsTab              int
@@ -189,14 +165,8 @@ type model struct {
 	entries               []transcriptEntry
 	processGroups         []processGroup
 	commands              []SlashCommand
-	authInput             chan string
-	authPrompt            *interaction.AuthPrompt
-	authSelection         int
-	authCommand           string
-	secretInput           *secretInput
-	commandMenu           *commandMenuState
+	flow                  *commandFlow
 	commandDraft          *composerDraft
-	customLogin           *customLoginState
 	pendingDeliveries     []pendingDelivery
 
 	promptHistory []string
@@ -678,7 +648,7 @@ func (m model) terminalView(content string) tea.View {
 		view.Cursor = settingsCursor
 	} else if m.sessionPicker != nil {
 		view.Cursor = pickerCursor
-	} else if m.secretInput == nil && m.authInput == nil && m.guardPending == nil && m.question == nil {
+	} else if !m.secretEntry() && !m.authActive() && m.guardPending == nil && m.question == nil {
 		// Anchor the real terminal cursor on the composer caret. The IME
 		// candidate window follows the terminal cursor, and Bubble Tea's
 		// renderer hides the cursor around every updated frame and restores
@@ -765,7 +735,7 @@ func (m *model) updateInput(message tea.Msg) tea.Cmd {
 		m.clearQuitPending = false
 		m.composerActive = true
 	}
-	if m.authInput != nil {
+	if m.authActive() {
 		if paste, ok := message.(tea.PasteMsg); ok {
 			value := strings.TrimSpace(paste.Content)
 			if len(value)+len(m.input.Value()) <= 65536 {
@@ -780,7 +750,7 @@ func (m *model) updateInput(message tea.Msg) tea.Cmd {
 
 	// A bracketed paste arrives whole: collapse it before the textarea can
 	// truncate it against the content-height gate, so no pasted line is lost.
-	if paste, ok := message.(tea.PasteMsg); ok && m.secretInput == nil {
+	if paste, ok := message.(tea.PasteMsg); ok && !m.secretEntry() {
 		if exceedsPasteThreshold(paste.Content) {
 			m.insertPastePlaceholder(paste.Content)
 			m.commandSelection = 0
@@ -801,7 +771,7 @@ func (m *model) updateInput(message tea.Msg) tea.Cmd {
 	if nextValue != previousValue {
 		// Clipboard pastes and other large inserts that bypass PasteMsg
 		// still collapse in place, keeping surrounding text in order.
-		if before, added, after := splitInputChange(previousValue, nextValue); m.secretInput == nil &&
+		if before, added, after := splitInputChange(previousValue, nextValue); !m.secretEntry() &&
 			exceedsPasteThreshold(added) {
 			// The pre-collapse viewport sync no longer matches the
 			// shortened content; the collapse re-syncs below.
@@ -817,7 +787,7 @@ func (m *model) updateInput(message tea.Msg) tea.Cmd {
 	}
 	m.snapCursorOutOfPasteToken(previousRow, previousCol)
 	m.syncCommandCompletion()
-	if nextValue != previousValue && m.commandMenu != nil {
+	if nextValue != previousValue && m.commandMenuOpen() {
 		m.resetCommandOptionSelection()
 	}
 	completion := m.requestFileCompletion()

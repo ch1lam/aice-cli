@@ -11,19 +11,15 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
+// settingsAction hosts a commandFlow in the Settings modal. page scrolls
+// long prompt text before its choices become actionable.
 type settingsAction struct {
-	wait               tea.Cmd
-	command            interaction.Command
-	request            interaction.CommandRequest
-	menus              []*interaction.CommandMenu
-	prompt             *interaction.AuthPrompt
-	choice, customStep int
-	page               int
-	secret             bool
-	running            bool
-	cancelled          bool
-	cancel             context.CancelFunc
-	input              chan string
+	commandFlow
+	wait      tea.Cmd
+	page      int
+	running   bool
+	cancelled bool
+	cancel    context.CancelFunc
 }
 type settingsActionPrompt struct {
 	action *settingsAction
@@ -91,10 +87,9 @@ func (m model) openSettingAction(field interaction.SettingField) (tea.Model, tea
 	p.search = false
 	p.input.SetValue("")
 	p.input.Blur()
-	a := &settingsAction{command: *field.Action, request: interaction.CommandRequest{Name: field.Action.Name, Arguments: field.Arguments}, customStep: -1}
+	a := &settingsAction{commandFlow: *newCommandFlow("", *field.Action, interaction.CommandRequest{Name: field.Action.Name, Arguments: field.Arguments})}
 	p.action = a
-	if field.Action.Menu != nil {
-		a.menus = []*interaction.CommandMenu{field.Action.Menu}
+	if a.menu() != nil {
 		return m, nil
 	}
 	return m.prepareSettingAction()
@@ -102,22 +97,22 @@ func (m model) openSettingAction(field interaction.SettingField) (tea.Model, tea
 func (m model) prepareSettingAction() (tea.Model, tea.Cmd) {
 	p := m.settings
 	a := p.action
-	if a.command.SecretPrompt != "" && !a.request.UseSavedCredential && a.request.LoginMethod == "" {
-		a.secret = true
-		title := a.command.SecretPrompt
-		if a.request.Arguments == "custom" {
-			a.customStep = 0
-			title = "Custom endpoint (empty keeps current)"
-		}
-		a.prompt = &interaction.AuthPrompt{Title: title, AllowInput: true}
-		p.input.SetValue("")
-		p.input.EchoMode = textinput.EchoPassword
-		if a.customStep == 0 {
-			p.input.EchoMode = textinput.EchoNormal
-		}
-		return m, p.input.Focus()
+	if a.needsCredential() {
+		a.beginCredential()
+		return m, p.showCredentialStep()
 	}
 	return m, m.executeSettingAction()
+}
+
+// showCredentialStep clears the modal editor for the current form field.
+// Only secret fields are masked.
+func (p *settingsPanel) showCredentialStep() tea.Cmd {
+	p.input.SetValue("")
+	p.input.EchoMode = textinput.EchoNormal
+	if p.action.credential().secret {
+		p.input.EchoMode = textinput.EchoPassword
+	}
+	return p.input.Focus()
 }
 func (m *model) executeSettingAction() tea.Cmd {
 	p := m.settings
@@ -146,9 +141,7 @@ func (m model) settingActionKey(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			p.input.Blur()
 			return m, nil
 		}
-		if !a.secret && len(a.menus) > 1 {
-			a.menus = a.menus[:len(a.menus)-1]
-			a.choice = 0
+		if a.back() {
 			a.page = 0
 			return m, nil
 		}
@@ -163,14 +156,8 @@ func (m model) settingActionKey(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if a.cancelled {
 		return m, nil
 	}
-	var menu *interaction.CommandMenu
-	if a.prompt != nil {
-		menu = a.prompt.Menu
-	} else if len(a.menus) > 0 {
-		menu = a.menus[len(a.menus)-1]
-	}
-	if menu != nil {
-		layout := p.actionMenuLayout(menu)
+	if menu, selection := a.activeMenu(); menu != nil {
+		layout := p.actionMenuLayout(menu, *selection)
 		if name == "pgup" {
 			a.page = max(0, a.page-1)
 			return m, nil
@@ -186,81 +173,55 @@ func (m model) settingActionKey(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		switch name {
 		case "up":
-			a.choice = max(0, a.choice-1)
+			*selection = max(0, *selection-1)
 		case "down":
-			a.choice = min(max(0, len(menu.Options)-1), a.choice+1)
+			*selection = min(max(0, len(menu.Options)-1), *selection+1)
 		case "enter":
 			if len(menu.Options) == 0 {
 				return m, nil
 			}
-			option := menu.Options[a.choice]
+			option := menu.Options[*selection]
 			if a.running {
-				select {
-				case a.input <- option.Arguments:
+				if a.reply(option.Arguments) {
 					a.prompt = nil
 					p.notice = "Working…"
-				default:
 				}
 				return m, a.wait
 			}
-			if option.Menu != nil {
-				a.menus = append(a.menus, option.Menu)
-				a.choice = 0
+			if a.choose(option) {
 				a.page = 0
 				return m, nil
 			}
-			a.request.Arguments = option.Arguments
-			a.request.UseSavedCredential = option.UseSavedCredential
-			a.request.LoginMethod = option.LoginMethod
-			a.menus = nil
 			return m.prepareSettingAction()
 		}
 		return m, nil
 	}
-	if a.prompt != nil && a.prompt.AllowInput {
-		if name == "enter" {
-			value := strings.TrimSpace(p.input.Value())
-			if strings.ContainsAny(value, "\r\n") {
-				p.notice = "Enter one line"
-				return m, nil
-			}
-			if a.secret {
-				if a.customStep >= 0 {
-					switch a.customStep {
-					case 0:
-						a.request.CustomEndpoint = value
-						a.customStep = 1
-						a.prompt.Title = "API key (empty for a local service)"
-						p.input.EchoMode = textinput.EchoPassword
-					case 1:
-						a.request.Secret = value
-						a.customStep = 2
-						a.prompt.Title = "Model ID (empty keeps current)"
-						p.input.EchoMode = textinput.EchoNormal
-					case 2:
-						a.request.CustomModel = value
-						return m, m.executeSettingAction()
-					}
-					p.input.SetValue("")
-					return m, p.input.Focus()
-				}
-				if value == "" {
-					p.notice = "API key is required"
-					return m, nil
-				}
-				a.request.Secret = value
-				return m, m.executeSettingAction()
-			}
-			select {
-			case a.input <- value:
-				p.input.SetValue("")
-				p.input.Blur()
-				a.prompt = nil
-				p.notice = "Working…"
-			default:
-			}
-			return m, a.wait
+	if a.form != nil && name == "enter" {
+		problem, done := a.submitCredential(p.input.Value())
+		p.notice = problem
+		switch {
+		case problem != "":
+			return m, nil
+		case done:
+			return m, m.executeSettingAction()
 		}
+		return m, p.showCredentialStep()
+	}
+	if a.prompt != nil && a.prompt.AllowInput && name == "enter" {
+		value := strings.TrimSpace(p.input.Value())
+		if strings.ContainsAny(value, "\r\n") {
+			p.notice = "Enter one line"
+			return m, nil
+		}
+		if a.reply(value) {
+			p.input.SetValue("")
+			p.input.Blur()
+			a.prompt = nil
+			p.notice = "Working…"
+		}
+		return m, a.wait
+	}
+	if a.form != nil || a.prompt != nil && a.prompt.AllowInput {
 		var cmd tea.Cmd
 		p.input, cmd = p.input.Update(key)
 		return m, m.scopeInputCommand(cmd)
@@ -273,8 +234,7 @@ func (m model) applySettingActionPrompt(msg settingsActionPrompt) (tea.Model, te
 		return m, nil
 	}
 	a := p.action
-	a.prompt = &msg.prompt
-	a.choice = 0
+	a.showPrompt(msg.prompt)
 	a.page = 0
 	p.input.SetValue("")
 	p.notice = ""
@@ -365,23 +325,21 @@ func settingsActionNotice(result interaction.SettingsActionResult, err error) st
 }
 func (p *settingsPanel) actionView() string {
 	a := p.action
-	var menu *interaction.CommandMenu
+	if a.form != nil {
+		return sanitizeSingleLineText(a.credential().title()) + "\n" + p.input.View()
+	}
 	title := "Working… Esc cancels"
-	if a.prompt != nil {
-		q := a.prompt
+	if q := a.prompt; q != nil {
 		title = strings.Join([]string{q.Title, q.Instructions, q.URL, q.Code}, "\n")
-		menu = q.Menu
 		if q.AllowInput {
 			return sanitizeSingleLineText(q.Title) + "\n" + p.input.View() + "\n\n" + sanitizeMultilineText(q.Instructions) + "\n" + sanitizeSingleLineText(q.URL) + "\n" + sanitizeSingleLineText(q.Code)
 		}
 	}
-	if len(a.menus) > 0 {
-		menu = a.menus[len(a.menus)-1]
-	}
+	menu, selection := a.activeMenu()
 	if menu == nil {
 		return sanitizeMultilineText(title)
 	}
-	layout := p.actionMenuLayout(menu)
+	layout := p.actionMenuLayout(menu, *selection)
 	rows := append([]string(nil), layout.header...)
 	if a.command.Name == "mcp" {
 		for i, row := range rows {
@@ -394,13 +352,13 @@ func (p *settingsPanel) actionView() string {
 	for i := layout.start; i < layout.end; i++ {
 		v := menu.Options[i]
 		prefix := "  "
-		if i == a.choice {
+		if i == *selection {
 			prefix = "› "
 		}
 		row := sanitizeSingleLineText(fmt.Sprint(prefix, v.Label, "  ", v.Description))
 		if a.command.Name == "mcp" {
 			style := bodyStyle
-			if i == a.choice {
+			if i == *selection {
 				style = labelStyle
 			}
 			row = style.Render(sanitizeSingleLineText(prefix + v.Label))
@@ -421,7 +379,7 @@ type actionMenuLayout struct {
 
 // Layout and hit testing share the wrapped disclosure. Long instructions are
 // paged before choices become actionable, rather than clipped above a consent.
-func (p *settingsPanel) actionMenuLayout(menu *interaction.CommandMenu) actionMenuLayout {
+func (p *settingsPanel) actionMenuLayout(menu *interaction.CommandMenu, selection int) actionMenuLayout {
 	a := p.action
 	parts := []string{menu.Title}
 	if q := a.prompt; q != nil {
@@ -441,7 +399,7 @@ func (p *settingsPanel) actionMenuLayout(menu *interaction.CommandMenu) actionMe
 	end := min(len(lines), start+pageSize)
 	layout := actionMenuLayout{header: lines[start:end], more: end < len(lines)}
 	available := max(1, p.layout.bodyHeight-len(layout.header))
-	layout.start = max(0, a.choice-available+1)
+	layout.start = max(0, selection-available+1)
 	layout.end = min(len(menu.Options), layout.start+available)
 	return layout
 }

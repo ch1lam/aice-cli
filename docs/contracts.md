@@ -496,7 +496,10 @@ Login menus supply the selected provider and credential action. Custom login
 collects endpoint, API key and model in separate hidden form steps, then sends
 endpoint/model as dedicated `CommandRequest` fields and the key as `Secret`.
 The application validates and persists these values; it does not parse endpoint
-or model configuration from command arguments or the secret.
+or model configuration from command arguments or the secret. The composer and
+Settings host the same [command flow](../internal/tui/command_flow.go): menu
+stack, credential form and running prompts; each host owns its text entry and
+rendering.
 
 Account login uses the shared application operation under the cancellable
 slash-command or Settings-action lifetime. The app owns OAuth orchestration and

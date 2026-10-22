@@ -162,7 +162,7 @@ func TestModelUpDownDoesNotRecallSecretInput(t *testing.T) {
 
 	current := newModel(make(chan runRequest), make(chan struct{}))
 	current.promptHistory = []string{"recorded"}
-	current.secretInput = &secretInput{prompt: "API key"}
+	current.flow = &commandFlow{form: []credentialStep{{label: "API key"}}}
 	current.input.SetValue("typed")
 
 	up, _, _ := current.handleKey(tea.KeyPressMsg{Code: tea.KeyUp})
@@ -179,9 +179,9 @@ func TestModelUpDownDoesNotRecallWhileSelectionMenuOpen(t *testing.T) {
 
 	current := newModel(make(chan runRequest), make(chan struct{}))
 	current.promptHistory = []string{"recorded"}
-	current.commandMenu = &commandMenuState{
+	current.flow = &commandFlow{
 		raw: "/login",
-		frames: []commandMenuFrame{{
+		menus: []commandMenuFrame{{
 			menu: SlashCommandMenu{
 				Title: "Select provider",
 				Options: []SlashCommandOption{{

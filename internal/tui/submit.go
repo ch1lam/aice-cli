@@ -16,7 +16,7 @@ func (m model) settleCommand(forceBottom bool, command tea.Cmd) (model, tea.Cmd,
 }
 
 func (m model) submit() (model, tea.Cmd, bool) {
-	if m.secretInput != nil {
+	if m.secretEntry() {
 		return m.submitSecretInput()
 	}
 
@@ -205,62 +205,39 @@ func (m model) startApplicationSlashCommand(
 	request SlashCommandRequest,
 	command SlashCommand,
 ) (model, tea.Cmd, bool) {
-	useSavedCredential := command.Name == "login" && request.UseSavedCredential
-	accountLogin := command.Name == "login" && request.LoginMethod != ""
-	if command.SecretPrompt != "" && !useSavedCredential && !accountLogin {
-		// Custom provider needs endpoint + API key + model in one centralized
-		// /login flow. Use a 3-step hidden-input sequence instead of a single
-		// API key prompt so the user can configure everything in one place.
-		if command.Name == "login" && request.Arguments == "custom" {
-			m.entries = append(
-				m.entries,
-				transcriptEntry{kind: entryUser, text: raw},
-			)
-			m.resetCommandInput()
-			m.customLogin = &customLoginState{step: 0}
-			m.secretInput = &secretInput{
-				request: request,
-				prompt:  "Custom endpoint URL",
-			}
-			m.input.Placeholder = "Custom endpoint URL (e.g. http://localhost:11434/v1, leave blank for default, input hidden)"
-			m.status = "Custom endpoint URL required; leave blank for default"
-			return m.settleCommand(true, m.input.Focus())
-		}
-		m.entries = append(
-			m.entries,
-			transcriptEntry{kind: entryUser, text: raw},
-		)
-		m.resetCommandInput()
-		m.secretInput = &secretInput{
-			request: request,
-			prompt:  command.SecretPrompt,
-		}
-		m.input.Placeholder = command.SecretPrompt + " (input hidden)"
-		m.status = command.SecretPrompt + " required"
+	return m.runCommandFlow(&commandFlow{raw: raw, command: command, request: request})
+}
+
+// runCommandFlow starts a chosen command. Credentials are first collected in
+// the hidden composer; interactive commands keep the flow for their prompts.
+func (m model) runCommandFlow(flow *commandFlow) (model, tea.Cmd, bool) {
+	m.entries = append(m.entries, transcriptEntry{kind: entryUser, text: flow.raw})
+	m.resetCommandInput()
+	if flow.needsCredential() {
+		flow.beginCredential()
+		m.flow = flow
+		m.showCredentialStep()
 		return m.settleCommand(true, m.input.Focus())
 	}
-	m.entries = append(m.entries, transcriptEntry{kind: entryUser, text: raw})
-	m.resetCommandInput()
 	m.input.Blur()
 	m.activeRun = nil
 	m.acceptsDelivery = false
 	m.running = true
 	m.assistantEntry = -1
-	if accountLogin || command.Interactive {
-		m.authInput = make(chan string, 1)
-		m.authCommand = command.Name
-		request.Auth = &interaction.AuthInteraction{Input: m.authInput}
-		m.input.Placeholder = "Starting /" + command.Name
-		m.status = "Starting /" + command.Name + "..."
-	} else if useSavedCredential {
+	request, name := flow.request, flow.command.Name
+	switch {
+	case request.LoginMethod != "" || flow.command.Interactive:
+		flow.input = make(chan string, 1)
+		request.Auth = &interaction.AuthInteraction{Input: flow.input}
+		m.flow = flow
+		m.input.Placeholder = "Starting /" + name
+		m.status = "Starting /" + name + "..."
+	case request.UseSavedCredential:
 		m.status = "Using saved credential..."
-	} else {
-		m.status = "Running /" + command.Name + "..."
+	default:
+		m.status = "Running /" + name + "..."
 	}
-	return m.settleCommand(
-		true,
-		startSlashCommand(m.requests, m.controllerDone, request),
-	)
+	return m.settleCommand(true, startSlashCommand(m.requests, m.controllerDone, request))
 }
 
 func (m model) openCommandMenu(
@@ -272,15 +249,7 @@ func (m model) openCommandMenu(
 		return m.commandError(raw, "/"+command.Name+" has no available choices")
 	}
 
-	m.commandMenu = &commandMenuState{
-		raw:     raw,
-		request: request,
-		command: command,
-		frames: []commandMenuFrame{{
-			menu:      *command.Menu,
-			selection: currentSlashCommandOption(command.Menu.Options),
-		}},
-	}
+	m.flow = newCommandFlow(raw, command, request)
 	m.input.SetValue("/" + command.Name + " ")
 	m.input.CursorEnd()
 	m.input.Focus()
@@ -292,72 +261,55 @@ func (m model) openCommandMenu(
 }
 
 func (m model) selectCommandMenuOption() (model, tea.Cmd, bool) {
-	if m.commandMenu == nil || len(m.commandMenu.frames) == 0 {
+	if !m.commandMenuOpen() {
 		return m, nil, true
 	}
+	flow := m.flow
 	if m.controllerClosed {
-		return m.commandError(m.commandMenu.raw, "TUI run controller stopped")
+		return m.commandError(flow.raw, "TUI run controller stopped")
 	}
-	frame := &m.commandMenu.frames[len(m.commandMenu.frames)-1]
+	frame := flow.menu()
 	options := m.matchingCommandOptions()
 	if len(options) == 0 {
 		return m.settleCommand(false, nil)
 	}
 	frame.selection = min(max(frame.selection, 0), len(options)-1)
 	option := options[frame.selection]
-	if option.Menu != nil && len(option.Menu.Options) > 0 {
-		frame.draft = m.input.Value()
-		m.commandMenu.frames = append(
-			m.commandMenu.frames,
-			commandMenuFrame{
-				menu:      *option.Menu,
-				selection: currentSlashCommandOption(option.Menu.Options),
-			},
-		)
-		m.input.SetValue("/" + m.commandMenu.command.Name + " ")
+	frame.draft = m.input.Value()
+	if flow.choose(option) {
+		m.input.SetValue("/" + flow.command.Name + " ")
 		m.input.CursorEnd()
 		m.status = option.Menu.Title
 		return m.settleCommand(false, nil)
 	}
-
-	state := *m.commandMenu
-	state.request.Arguments = option.Arguments
-	state.request.UseSavedCredential = option.UseSavedCredential
-	state.request.LoginMethod = option.LoginMethod
-	m.commandMenu = nil
-	m.promptHistory = appendPromptHistory(m.promptHistory, state.raw)
-	return m.startApplicationSlashCommand(
-		state.raw,
-		state.request,
-		state.command,
-	)
+	m.promptHistory = appendPromptHistory(m.promptHistory, flow.raw)
+	return m.runCommandFlow(flow)
 }
 
 func (m model) backOrCancelCommandMenu() (model, tea.Cmd, bool) {
-	if m.commandMenu == nil {
+	if !m.commandMenuOpen() {
 		return m, nil, true
 	}
-	if len(m.commandMenu.frames) > 1 {
-		m.commandMenu.frames = m.commandMenu.frames[:len(m.commandMenu.frames)-1]
-		frame := m.commandMenu.frames[len(m.commandMenu.frames)-1]
+	if m.flow.back() {
+		frame := m.flow.menu()
 		m.input.SetValue(frame.draft)
 		m.input.CursorEnd()
 		m.status = frame.menu.Title
 		return m.settleCommand(false, nil)
 	}
 
-	name := m.commandMenu.command.Name
-	m.commandMenu = nil
+	name := m.flow.command.Name
+	m.flow = nil
 	m.commandDismissed = true
 	m.status = "/" + name + " selection cancelled"
 	return m.settleCommand(false, m.input.Focus())
 }
 
 func (m *model) moveCommandMenuSelection(delta int) {
-	if m.commandMenu == nil || len(m.commandMenu.frames) == 0 {
+	if !m.commandMenuOpen() {
 		return
 	}
-	frame := &m.commandMenu.frames[len(m.commandMenu.frames)-1]
+	frame := m.flow.menu()
 	options := m.matchingCommandOptions()
 	if len(options) == 0 {
 		frame.selection = 0
@@ -375,84 +327,48 @@ func currentSlashCommandOption(options []SlashCommandOption) int {
 	return 0
 }
 
+// showCredentialStep asks for the current credential field in the hidden composer.
+func (m *model) showCredentialStep() {
+	step := m.flow.credential()
+	m.input.Reset()
+	m.input.Placeholder = step.label + " (input hidden)"
+	m.status = step.label + " required"
+	if step.hint != "" {
+		m.input.Placeholder = step.label + " (" + step.hint + ", input hidden)"
+		m.status = step.title()
+	}
+}
+
 func (m model) submitSecretInput() (model, tea.Cmd, bool) {
-	// Custom login uses a 3-step sequence: endpoint -> API key -> model.
-	// Empty is allowed for all steps (default endpoint / no key / default model).
-	isCustomLogin := m.customLogin != nil && m.secretInput != nil && m.secretInput.request.Name == "login" && m.secretInput.request.Arguments == "custom"
-	value := strings.TrimSpace(m.input.Value())
-	if !isCustomLogin && value == "" {
-		m.status = m.secretInput.prompt + " must not be blank"
-		return m, nil, true
-	}
-	if strings.ContainsAny(value, "\r\n") {
-		m.status = m.secretInput.prompt + " must be entered on one line"
-		return m, nil, true
-	}
 	if m.controllerClosed {
 		return m.cancelSecretInput()
 	}
-
-	if isCustomLogin {
-		switch m.customLogin.step {
-		case 0:
-			// Endpoint URL
-			if value != "" && !(strings.HasPrefix(value, "http://") || strings.HasPrefix(value, "https://")) {
-				m.status = "Endpoint must start with http:// or https:// (or leave blank for default)"
-				return m, nil, true
-			}
-			m.customLogin.endpoint = value
-			m.customLogin.step = 1
-			m.secretInput.prompt = "API key"
-			m.input.Reset()
-			m.input.Placeholder = "API key (leave empty for Ollama, input hidden)"
-			m.status = "API key (leave empty for Ollama)"
-			return m.settleCommand(true, m.input.Focus())
-		case 1:
-			m.customLogin.apiKey = value
-			m.customLogin.step = 2
-			m.secretInput.prompt = "Model name"
-			m.input.Reset()
-			m.input.Placeholder = "Model name (e.g. llama3.1:8b, leave blank for default, input hidden)"
-			m.status = "Model name (leave blank for default)"
-			return m.settleCommand(true, m.input.Focus())
-		case 2:
-			if value != "" && strings.ContainsAny(value, " \t\r\n") {
-				m.status = "Model name must not contain whitespace"
-				return m, nil, true
-			}
-			request := m.secretInput.request
-			request.CustomEndpoint = m.customLogin.endpoint
-			request.CustomModel = value
-			request.Secret = m.customLogin.apiKey
-			m.customLogin = nil
-			m.resetCommandInput()
-			m.input.Blur()
-			m.running = true
-			m.assistantEntry = -1
-			m.status = "Saving custom provider..."
-			return m.settleCommand(
-				true,
-				startSlashCommand(m.requests, m.controllerDone, request),
-			)
-		}
+	flow := m.flow
+	problem, done := flow.submitCredential(m.input.Value())
+	if problem != "" {
+		m.status = problem
+		return m, nil, true
 	}
-
-	request := m.secretInput.request
-	request.Secret = value
+	if !done {
+		m.showCredentialStep()
+		return m.settleCommand(true, m.input.Focus())
+	}
 	m.resetCommandInput()
 	m.input.Blur()
 	m.running = true
 	m.assistantEntry = -1
 	m.status = "Saving credential..."
+	if flow.customLogin() {
+		m.status = "Saving custom provider..."
+	}
 	return m.settleCommand(
 		true,
-		startSlashCommand(m.requests, m.controllerDone, request),
+		startSlashCommand(m.requests, m.controllerDone, flow.request),
 	)
 }
 
 func (m model) cancelSecretInput() (model, tea.Cmd, bool) {
-	prompt := m.secretInput.prompt
-	m.customLogin = nil
+	prompt := m.flow.credential().label
 	m.resetCommandInput()
 	m.entries = append(m.entries, transcriptEntry{
 		kind: entryNotice,
@@ -490,9 +406,9 @@ func (m *model) resetCommandInput() {
 	m.input.Reset()
 	m.pastes = nil
 	m.input.Placeholder = defaultPlaceholder
-	m.secretInput = nil
-	m.customLogin = nil
-	m.commandMenu = nil
+	if !m.authActive() {
+		m.flow = nil
+	}
 	m.commandSelection = 0
 	m.commandDismissed = false
 	m.historyIndex = -1

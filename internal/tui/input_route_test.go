@@ -46,8 +46,8 @@ func TestInputComponentRepliesStayWithTheirEditor(t *testing.T) {
 			}
 			if boundary == "auth step" {
 				m.running = true
-				m.authInput = make(chan string, 1)
-				m.authPrompt = &interaction.AuthPrompt{AllowInput: true}
+				m.flow = &commandFlow{input: make(chan string, 1)}
+				m.flow.prompt = &interaction.AuthPrompt{AllowInput: true}
 			}
 			// A fake component command avoids reading the host clipboard. It
 			// follows the same scoped result path as Bubbles' private paste reply.

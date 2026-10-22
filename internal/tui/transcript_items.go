@@ -83,7 +83,7 @@ func (m model) transcriptItems() []transcriptItem {
 		}
 		index = end
 	}
-	if m.authPrompt != nil {
+	if m.authPrompt() != nil {
 		add(staticTranscriptItem(-1, m.authView()), 1)
 	}
 	if activity := m.pendingActivityView(); activity != "" {

@@ -76,12 +76,12 @@ func (m model) inputContext() inputContext {
 		return inputContext{domain: inputGuard, focus: focus}
 	case m.question != nil:
 		return inputContext{domain: inputQuestion, focus: inputFocusEditor}
-	case m.authInput != nil:
+	case m.authActive():
 		c := inputContext{domain: inputAuth, focus: inputFocusWaiting}
-		if m.authPrompt != nil && !m.cancelRequested && !m.deliveryPending {
-			if m.authPrompt.Menu != nil {
+		if prompt := m.flow.prompt; prompt != nil && !m.cancelRequested && !m.deliveryPending {
+			if prompt.Menu != nil {
 				c.focus = inputFocusList
-			} else if m.authPrompt.AllowInput {
+			} else if prompt.AllowInput {
 				c.focus, c.editor = inputFocusEditor, true
 			}
 		}
@@ -98,9 +98,9 @@ func (m model) inputContext() inputContext {
 		return inputContext{domain: inputSideConfirm, focus: inputFocusList}
 	case m.side.isVisible:
 		return inputContext{domain: inputSide, editor: !m.deliveryPending && m.sideComposerEditable()}
-	case m.secretInput != nil:
+	case m.secretEntry():
 		return inputContext{domain: inputSecret, editor: !m.deliveryPending && !m.running}
-	case m.commandMenu != nil:
+	case m.commandMenuOpen():
 		return inputContext{domain: inputCommand, focus: inputFocusList, editor: !m.deliveryPending && !m.running}
 	default:
 		return inputContext{domain: inputMain, editor: !m.deliveryPending && (!m.running || m.acceptsDelivery)}
@@ -119,16 +119,13 @@ type inputIdentity struct {
 	settings                 *settingsPanel
 	settingEdit              *interaction.SettingField
 	settingAction            *settingsAction
-	settingPrompt            *interaction.AuthPrompt
 	settingCell, settingStep int
 	rename                   *sessionTitleEditor
 	guard                    *interaction.GuardRequest
-	auth                     chan string
 	question                 *questionPanel
-	authPrompt               *interaction.AuthPrompt
-	command                  *commandMenuState
+	flow                     *commandFlow
+	prompt                   *interaction.AuthPrompt
 	commandDepth             int
-	secret                   *secretInput
 	menu                     *sideMenuState
 	confirm                  *sideConfirmState
 }
@@ -142,8 +139,8 @@ func (m model) inputIdentity() inputIdentity {
 		id.settingEdit = m.settings.editing
 		if a := m.settings.action; a != nil {
 			id.settingAction = a
-			id.settingPrompt = a.prompt
-			id.settingStep = a.customStep
+			id.prompt = a.prompt
+			id.settingStep = a.formStep()
 		}
 		if d := m.settings.collection; d != nil && d.editing {
 			id.settingCell = d.cell + 1
@@ -160,11 +157,11 @@ func (m model) inputIdentity() inputIdentity {
 	case inputQuestion:
 		id.question = m.question
 	case inputAuth:
-		id.auth, id.authPrompt = m.authInput, m.authPrompt
+		id.flow, id.prompt = m.flow, m.flow.prompt
 	case inputCommand:
-		id.command, id.commandDepth = m.commandMenu, len(m.commandMenu.frames)
+		id.flow, id.commandDepth = m.flow, len(m.flow.menus)
 	case inputSecret:
-		id.secret = m.secretInput
+		id.flow = m.flow
 	case inputSide, inputSideMenu, inputSideConfirm:
 		id.side, id.menu, id.confirm = m.side.activeID, m.side.menu, m.side.confirm
 	}

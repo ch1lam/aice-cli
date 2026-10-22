@@ -16,7 +16,7 @@ func TestAccountLoginInputIsTransientAndCancelled(t *testing.T) {
 			m := newModel(requests, make(chan struct{}))
 			m = updateModel(t, m, tea.WindowSizeMsg{Width: 80, Height: 24})
 			m, command, _ := m.startApplicationSlashCommand("/login", SlashCommandRequest{Name: "login", Arguments: "openai-codex", LoginMethod: method}, SlashCommand{Name: "login", SecretPrompt: "API key"})
-			if m.secretInput != nil || m.authInput == nil || !m.running {
+			if m.secretEntry() || !m.authActive() || !m.running {
 				t.Fatal("account login fell into API key input")
 			}
 			command()
@@ -55,7 +55,7 @@ func TestAccountLoginInputIsTransientAndCancelled(t *testing.T) {
 				t.Fatal("login not cancelled")
 			}
 			m = updateModel(t, m, runBatchMsg{updates: []runUpdate{{err: context.Canceled, done: true}}})
-			if m.authInput != nil || m.authPrompt != nil || m.running || m.input.Value() != "" || !m.input.Focused() {
+			if m.authActive() || m.authPrompt() != nil || m.running || m.input.Value() != "" || !m.input.Focused() {
 				t.Fatal("login state survived cancellation")
 			}
 			if strings.Contains(m.transcriptView(), prompt.Code) || m.status != "Login cancelled" {
@@ -67,13 +67,13 @@ func TestAccountLoginInputIsTransientAndCancelled(t *testing.T) {
 
 func TestAccountLoginCancelBeforeControllerStarts(t *testing.T) {
 	m := newModel(make(chan runRequest, 1), make(chan struct{}))
-	m.authInput = make(chan string, 1)
+	m.flow = &commandFlow{input: make(chan string, 1)}
 	m.running = true
 	m, _, _ = m.handleKey(tea.KeyPressMsg(tea.Key{Code: tea.KeyEscape}))
 	cancelled := false
 	prompt := interaction.AuthPrompt{AllowInput: true}
 	m = updateModel(t, m, runBatchMsg{updates: []runUpdate{{cancel: func() { cancelled = true }}, {auth: &prompt}}})
-	if !cancelled || m.authPrompt != nil || m.composerInputEnabled() {
+	if !cancelled || m.authPrompt() != nil || m.composerInputEnabled() {
 		t.Fatal("late startup revived cancelled login")
 	}
 }
@@ -150,7 +150,7 @@ func TestBrowserCommandPromptsAndTabMenu(t *testing.T) {
 		t.Fatal("browser input entered model history")
 	}
 	m = updateModel(t, m, runBatchMsg{updates: []runUpdate{{done: true}}})
-	if m.running || m.authInput != nil {
+	if m.running || m.authActive() {
 		t.Fatal("browser UI retained command state")
 	}
 }
@@ -159,20 +159,20 @@ func TestAuthMenuShortcutsRespectModifiersAndCancellation(t *testing.T) {
 	t.Parallel()
 
 	m := newModel(nil, nil)
-	m.authInput = make(chan string, 1)
+	m.flow = &commandFlow{input: make(chan string, 1)}
 	m.running = true
-	m.authPrompt = &interaction.AuthPrompt{Menu: &interaction.CommandMenu{
+	m.flow.prompt = &interaction.AuthPrompt{Menu: &interaction.CommandMenu{
 		Options: []interaction.CommandOption{{Label: "First", Arguments: "first"}, {Label: "Second", Arguments: "second"}},
 	}}
 	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyDown, Mod: tea.ModCtrl})
 	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyEnter, Mod: tea.ModAlt})
-	if m.authSelection != 0 || len(m.authInput) != 0 || m.authPrompt == nil {
+	if m.flow.selection != 0 || len(m.flow.input) != 0 || m.authPrompt() == nil {
 		t.Fatal("modified shortcuts triggered plain menu navigation or confirmation")
 	}
 	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyEscape})
 	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyDown})
 	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
-	if m.authSelection != 0 || len(m.authInput) != 0 {
+	if m.flow.selection != 0 || len(m.flow.input) != 0 {
 		t.Fatal("cancelled menu accepted navigation or confirmation")
 	}
 	if help := m.inputHelp(1000, true); strings.Contains(help, "select") || strings.Contains(help, "navigate") {
@@ -184,12 +184,12 @@ func TestAuthInputHelpTracksPromptMode(t *testing.T) {
 	t.Parallel()
 
 	m := newModel(nil, nil)
-	m.authInput = make(chan string, 1)
+	m.flow = &commandFlow{input: make(chan string, 1)}
 	m.running = true
 	if help := m.inputHelp(1000, true); strings.Contains(help, "submit") || strings.Contains(help, "newline") {
 		t.Fatalf("waiting command advertises text submission: %q", help)
 	}
-	m.authPrompt = &interaction.AuthPrompt{AllowInput: true}
+	m.flow.prompt = &interaction.AuthPrompt{AllowInput: true}
 	if help := m.inputHelp(1000, true); !strings.Contains(help, "Enter submit") || strings.Contains(help, "newline") {
 		t.Fatalf("manual prompt help does not match single-line input: %q", help)
 	}
@@ -198,7 +198,7 @@ func TestAuthInputHelpTracksPromptMode(t *testing.T) {
 		t.Fatal("manual authorization text did not reach its editor")
 	}
 	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyEnter, Mod: tea.ModShift})
-	if m.input.Value() != "a" || len(m.authInput) != 0 {
+	if m.input.Value() != "a" || len(m.flow.input) != 0 {
 		t.Fatal("reserved newline edited or submitted single-line authorization")
 	}
 }

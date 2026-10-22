@@ -13,7 +13,7 @@ import (
 func (m model) applyClipboard(result clipboardResult) (tea.Model, tea.Cmd) {
 	// A permission dialog or a side-thread update may have changed focus while
 	// the native clipboard helper was running. Never paste into another input.
-	if !m.composerInputEnabled() || m.secretInput != nil || m.commandMenu != nil || m.authInput != nil {
+	if !m.composerInputEnabled() || m.flow != nil {
 		return m, nil
 	}
 	if result.err == nil && result.image != nil {

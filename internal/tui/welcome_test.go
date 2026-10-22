@@ -70,7 +70,7 @@ func TestSecretInputHidesRealCursor(t *testing.T) {
 	controllerDone := make(chan struct{})
 	current := newModel(requests, controllerDone)
 	current = updateModel(t, current, tea.WindowSizeMsg{Width: 80, Height: 24})
-	current.secretInput = &secretInput{prompt: "API key"}
+	current.flow = &commandFlow{form: []credentialStep{{label: "API key"}}}
 	if cursor := current.View().Cursor; cursor != nil {
 		t.Errorf("secret input cursor = %#v, want nil", cursor)
 	}

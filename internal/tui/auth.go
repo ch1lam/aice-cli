@@ -20,17 +20,15 @@ func (m model) handleAuthAction(match inputActionMatch) (model, tea.Cmd, bool) {
 		m.status = "Cancelling command..."
 		return m.settleCommand(false, nil)
 	case inputActionAuthSelect:
-		options := m.authPrompt.Menu.Options
-		m.authSelection = (m.authSelection + len(options) + match.argument) % len(options)
+		options := m.flow.prompt.Menu.Options
+		m.flow.selection = (m.flow.selection + len(options) + match.argument) % len(options)
 		return m.settleCommand(true, nil)
 	case inputActionAuthChoose:
-		options := m.authPrompt.Menu.Options
-		select {
-		case m.authInput <- options[m.authSelection].Arguments:
-			m.authPrompt = nil
+		options := m.flow.prompt.Menu.Options
+		if m.flow.reply(options[m.flow.selection].Arguments) {
+			m.flow.prompt = nil
 			m.input.Blur()
 			m.status = "Working..."
-		default:
 		}
 		return m.settleCommand(true, nil)
 	case inputActionAuthPage:
@@ -42,22 +40,21 @@ func (m model) handleAuthAction(match inputActionMatch) (model, tea.Cmd, bool) {
 		return m, nil, true
 	case inputActionAuthSubmit:
 		if value := strings.TrimSpace(m.input.Value()); value != "" {
-			select {
-			case m.authInput <- value:
-				m.input.Reset()
-				m.status = "Checking authorization..."
-				if m.authCommand != "login" {
-					// Interactive command prompts are single-shot: the command
-					// sends the next prompt itself.
-					m.authPrompt = nil
-					m.input.Blur()
-					m.status = "Running /" + m.authCommand + "..."
-					if m.authCommand == "browser" {
-						m.status = "Connecting browser..."
-					}
-				}
-			default:
+			if !m.flow.reply(value) {
 				m.status = "Still checking authorization; please wait"
+				return m.settleCommand(false, nil)
+			}
+			m.input.Reset()
+			m.status = "Checking authorization..."
+			if name := m.flow.command.Name; name != "login" {
+				// Interactive command prompts are single-shot: the command
+				// sends the next prompt itself.
+				m.flow.prompt = nil
+				m.input.Blur()
+				m.status = "Running /" + name + "..."
+				if name == "browser" {
+					m.status = "Connecting browser..."
+				}
 			}
 		}
 		return m.settleCommand(false, nil)
@@ -66,7 +63,7 @@ func (m model) handleAuthAction(match inputActionMatch) (model, tea.Cmd, bool) {
 }
 
 func (m model) authView() string {
-	prompt := m.authPrompt
+	prompt := m.flow.prompt
 	link := ansi.SetHyperlink(prompt.URL) + prompt.URL + ansi.SetHyperlink("")
 	parts := []string{prompt.Title, link}
 	if prompt.Code != "" {
@@ -76,7 +73,7 @@ func (m model) authView() string {
 	if prompt.Menu != nil {
 		for i, option := range prompt.Menu.Options {
 			prefix := "  "
-			if i == m.authSelection {
+			if i == m.flow.selection {
 				prefix = "› "
 			}
 			parts = append(parts, prefix+ansi.Strip(option.Label))

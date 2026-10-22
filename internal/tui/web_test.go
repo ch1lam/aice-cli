@@ -19,7 +19,7 @@ func TestWebCommandPromptsMaskSecretsAndStayOutOfHistory(t *testing.T) {
 	// A menu choice on an interactive command starts the command with its
 	// arguments instead of reopening the option menu.
 	m, cmd, handled := m.submitSlashCommand("/web add", SlashCommandRequest{Name: "web", Arguments: "add"})
-	if !handled || cmd == nil || m.commandMenu != nil {
+	if !handled || cmd == nil || m.commandMenuOpen() {
 		t.Fatal("command not started")
 	}
 	cmd()
@@ -46,14 +46,14 @@ func TestWebCommandPromptsMaskSecretsAndStayOutOfHistory(t *testing.T) {
 	if value := <-request.command.Auth.Input; value != "sk-very-secret" {
 		t.Fatal(value)
 	}
-	if m.authPrompt != nil || !strings.Contains(m.status, "/web") {
-		t.Fatalf("single-shot prompt retained: %+v %q", m.authPrompt, m.status)
+	if m.authPrompt() != nil || !strings.Contains(m.status, "/web") {
+		t.Fatalf("single-shot prompt retained: %+v %q", m.authPrompt(), m.status)
 	}
 	if len(m.promptHistory) != 0 {
 		t.Fatal("web input entered prompt history")
 	}
 	m = updateModel(t, m, runBatchMsg{updates: []runUpdate{{done: true, output: "Added Exa instance exa-main"}}})
-	if m.running || m.authInput != nil {
+	if m.running || m.authActive() {
 		t.Fatal("web UI retained command state")
 	}
 	if view := m.transcriptView(); strings.Contains(view, "sk-very-secret") || !strings.Contains(view, "Added Exa instance exa-main") {

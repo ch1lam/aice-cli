@@ -151,10 +151,9 @@ func (m model) applyRunBatch(batch runBatchMsg) (tea.Model, tea.Cmd) {
 				m.status = "Thinking..."
 			}
 		}
-		if update.auth != nil && m.authInput != nil && !m.cancelRequested {
+		if update.auth != nil && m.authActive() && !m.cancelRequested {
 			prompt := *update.auth
-			m.authPrompt = &prompt
-			m.authSelection = 0
+			m.flow.showPrompt(prompt)
 			m.input.Placeholder = prompt.Title
 			if prompt.AllowInput {
 				m.input.Placeholder = "Authorization code / redirect URL (input hidden)"
@@ -427,15 +426,14 @@ func (m *model) finishRun(err error) tea.Cmd {
 	if m.cancelDelivery != nil {
 		m.cancelDelivery()
 	}
-	wasAuth := m.authInput != nil
-	wasBrowser := m.authCommand == "browser"
-	wasWeb := m.authCommand == "web"
-	m.authCommand = ""
+	wasAuth := m.authActive()
+	var authCommand string
 	if wasAuth {
-		m.authInput = nil
-		m.authPrompt = nil
+		authCommand = m.flow.command.Name
+		m.flow = nil
 		m.resetCommandInput()
 	}
+	wasBrowser, wasWeb := authCommand == "browser", authCommand == "web"
 	if err != nil {
 		m.revokeConclusion()
 	}

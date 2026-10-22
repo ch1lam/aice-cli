@@ -107,7 +107,7 @@ func TestInlineCommandsRestoreDraftAfterExecutionAndCancellation(t *testing.T) {
 		m.input.SetValue("前文 /thinking 后文")
 		m.input.setCursorOffset(utf8.RuneCountInString("前文 /thinking"))
 		m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
-		if m.commandMenu == nil || m.commandDraft == nil || m.input.Value() != "/thinking " {
+		if !m.commandMenuOpen() || m.commandDraft == nil || m.input.Value() != "/thinking " {
 			t.Fatal("inline command did not open its menu")
 		}
 		if cancel {

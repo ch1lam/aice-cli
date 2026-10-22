@@ -12,36 +12,38 @@ import (
 // syncCommandCompletion derives the first choice level from the draft. Deeper
 // levels retain their explicit selection path until the command name changes.
 func (m *model) syncCommandCompletion() {
-	if m.running || m.side.isVisible || m.secretInput != nil || m.authInput != nil ||
+	if m.running || m.side.isVisible || m.secretEntry() || m.authActive() ||
 		m.guardPending != nil || m.commandDismissed || len(m.pastes) > 0 || len(m.input.files) > 0 || len(m.input.skills) > 0 {
-		m.commandMenu = nil
+		m.closeCommandMenu()
 		return
 	}
 	value := strings.TrimLeft(m.input.Value(), " \t")
 	request, slash := parseSlashCommand(value)
 	if !slash || strings.ContainsAny(value, "\r\n") || !strings.ContainsAny(value, " \t") {
-		m.commandMenu = nil
+		m.closeCommandMenu()
 		return
 	}
 	command, exists := findSlashCommand(m.commands, request.Name)
 	if !exists || command.Menu == nil {
-		m.commandMenu = nil
+		m.closeCommandMenu()
 		return
 	}
-	if m.commandMenu != nil && m.commandMenu.command.Name == command.Name {
+	if m.commandMenuOpen() && m.flow.command.Name == command.Name {
 		return
 	}
-	m.commandMenu = &commandMenuState{
-		raw:     "/" + command.Name,
-		request: SlashCommandRequest{Name: command.Name},
-		command: command,
-		frames:  []commandMenuFrame{{menu: *command.Menu}},
-	}
+	m.flow = newCommandFlow("/"+command.Name, command, SlashCommandRequest{Name: command.Name})
 	m.resetCommandOptionSelection()
 }
 
+// closeCommandMenu drops a composer option menu; later command phases stay.
+func (m *model) closeCommandMenu() {
+	if m.commandMenuOpen() {
+		m.flow = nil
+	}
+}
+
 func (m *model) resetCommandOptionSelection() {
-	frame := &m.commandMenu.frames[len(m.commandMenu.frames)-1]
+	frame := m.flow.menu()
 	frame.selection = 0
 	request, _ := parseSlashCommand(m.input.Value())
 	if request.Arguments == "" {
@@ -50,11 +52,11 @@ func (m *model) resetCommandOptionSelection() {
 }
 
 func (m model) matchingCommandOptions() []SlashCommandOption {
-	if m.commandMenu == nil || len(m.commandMenu.frames) == 0 {
+	if !m.commandMenuOpen() {
 		return nil
 	}
 	request, _ := parseSlashCommand(m.input.Value())
-	frame := m.commandMenu.frames[len(m.commandMenu.frames)-1]
+	frame := m.flow.menu()
 	type match struct {
 		option SlashCommandOption
 		score  int
@@ -80,12 +82,12 @@ func (m model) completeCommandMenuOption() (model, tea.Cmd, bool) {
 	if len(options) == 0 {
 		return m, nil, true
 	}
-	frame := &m.commandMenu.frames[len(m.commandMenu.frames)-1]
+	frame := m.flow.menu()
 	option := options[min(max(frame.selection, 0), len(options)-1)]
 	if option.Menu != nil {
 		return m.selectCommandMenuOption()
 	}
-	m.input.SetValue("/" + m.commandMenu.command.Name + " " + option.Arguments)
+	m.input.SetValue("/" + m.flow.command.Name + " " + option.Arguments)
 	m.input.CursorEnd()
 	// Different actions can share arguments (e.g. reuse or replace a key).
 	// Keep the selected action when completion changes the filtered list.
@@ -99,7 +101,7 @@ func (m model) completeCommandMenuOption() (model, tea.Cmd, bool) {
 }
 
 func (m model) commandArgumentHint() string {
-	if m.running || m.side.isVisible || m.secretInput != nil || m.authInput != nil ||
+	if m.running || m.side.isVisible || m.secretEntry() || m.authActive() ||
 		m.commandDismissed || len(m.pastes) > 0 || len(m.input.skills) > 0 || strings.ContainsAny(m.input.Value(), "\r\n") {
 		return ""
 	}
@@ -113,8 +115,8 @@ func (m model) commandArgumentHint() string {
 	}
 	hint := command.ArgumentHint
 	menu := command.Menu
-	if m.commandMenu != nil && len(m.commandMenu.frames) > 1 {
-		menu = &m.commandMenu.frames[len(m.commandMenu.frames)-1].menu
+	if m.commandMenuOpen() && len(m.flow.menus) > 1 {
+		menu = &m.flow.menu().menu
 		hint = ""
 	}
 	if hint == "" && menu != nil {

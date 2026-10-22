@@ -52,7 +52,7 @@ func fileCompletionCommand(parent context.Context, completer interaction.FileCom
 }
 
 func (m model) fileReferenceAtCursor() (interaction.FileReference, bool) {
-	if m.completeFiles == nil || m.side.isVisible || m.secretInput != nil || m.commandMenu != nil || !m.composerInputEnabled() {
+	if m.completeFiles == nil || m.side.isVisible || m.secretEntry() || m.commandMenuOpen() || !m.composerInputEnabled() {
 		return interaction.FileReference{}, false
 	}
 	rows := m.composerRows()

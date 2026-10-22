@@ -41,7 +41,7 @@ func TestMCPTransientPublicAndSecretInputs(t *testing.T) {
 		}
 	}
 	m = updateModel(t, m, runBatchMsg{updates: []runUpdate{{done: true}}})
-	if m.authInput != nil || m.authPrompt != nil || m.input.Value() != "" {
+	if m.authActive() || m.authPrompt() != nil || m.input.Value() != "" {
 		t.Fatal("private editor survived completion")
 	}
 }

@@ -68,7 +68,7 @@ func (m model) handleSecretAction(match inputActionMatch) (model, tea.Cmd, bool)
 
 func (m model) commandInputBindings() []inputBinding {
 	label := "close"
-	if len(m.commandMenu.frames) > 1 {
+	if len(m.flow.menus) > 1 {
 		label = "back"
 	}
 	bindings := []inputBinding{

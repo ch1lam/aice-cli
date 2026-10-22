@@ -27,7 +27,7 @@ func TestCommandCompletionChangesLevelsWhileTyping(t *testing.T) {
 	m = updateModel(t, m, tea.WindowSizeMsg{Width: 80, Height: 24})
 	m = updateModel(t, m, tea.PasteMsg{Content: "/tkg"})
 	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyTab})
-	if m.input.Value() != "/thinking " || m.commandMenu == nil || !m.input.Focused() {
+	if m.input.Value() != "/thinking " || !m.commandMenuOpen() || !m.input.Focused() {
 		t.Fatalf("command completion did not enter editable options: %q", m.input.Value())
 	}
 	if !strings.Contains(ansi.Strip(m.composerView(76)), "/thinking <level>") {
@@ -48,25 +48,25 @@ func TestCommandCompletionChangesLevelsWhileTyping(t *testing.T) {
 	for range len("low ") {
 		m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyBackspace})
 	}
-	if m.commandMenu != nil || !m.slashCommandMenuVisible() || m.input.Value() != "/thinking" {
+	if m.commandMenuOpen() || !m.slashCommandMenuVisible() || m.input.Value() != "/thinking" {
 		t.Fatal("deleting the separator did not restore command suggestions")
 	}
 	m = updateModel(t, m, tea.KeyPressMsg{Code: ' ', Text: " "})
-	if m.commandMenu == nil || len(m.matchingCommandOptions()) != 4 {
+	if !m.commandMenuOpen() || len(m.matchingCommandOptions()) != 4 {
 		t.Fatal("typing the separator did not restore all argument options")
 	}
 	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyEscape})
-	if m.commandMenu != nil || m.input.Value() != "/thinking " {
+	if m.commandMenuOpen() || m.input.Value() != "/thinking " {
 		t.Fatal("Escape did not preserve the draft")
 	}
 	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = updateModel(t, m, tea.WindowSizeMsg{Width: 80, Height: 24})
-	if m.commandMenu == nil || m.commandArgumentHint() != "<level>" {
+	if !m.commandMenuOpen() || m.commandArgumentHint() != "<level>" {
 		t.Fatal("Enter after Escape did not reopen the options and hint")
 	}
 	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyEscape})
 	m = updateModel(t, m, tea.PasteMsg{Content: "hg"})
-	if m.commandMenu == nil || len(m.matchingCommandOptions()) != 2 {
+	if !m.commandMenuOpen() || len(m.matchingCommandOptions()) != 2 {
 		t.Fatal("editing after dismissal did not reopen filtered options")
 	}
 }
@@ -76,7 +76,7 @@ func TestCommandCompletionDropsMenuForPastedPrompt(t *testing.T) {
 	m := reasoningCompletionModel()
 	m = updateModel(t, m, tea.PasteMsg{Content: "/thinking "})
 	m = updateModel(t, m, tea.PasteMsg{Content: strings.Repeat("pasted prompt\n", 100)})
-	if m.commandMenu != nil || m.commandArgumentHint() != "" || len(m.pastes) == 0 {
+	if m.commandMenuOpen() || m.commandArgumentHint() != "" || len(m.pastes) == 0 {
 		t.Fatal("pasted prompt retained an executable argument menu")
 	}
 }
@@ -131,7 +131,7 @@ func TestCommandCompletionNestedFilterPreservesAction(t *testing.T) {
 	m = updateModel(t, m, tea.WindowSizeMsg{Width: 120, Height: 24})
 	m = updateModel(t, m, tea.PasteMsg{Content: "/login xmp"})
 	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyTab})
-	if len(m.commandMenu.frames) != 2 || !strings.Contains(m.commandArgumentHint(), "<action>") {
+	if len(m.flow.menus) != 2 || !strings.Contains(m.commandArgumentHint(), "<action>") {
 		t.Fatal("nested menu did not update its options and hint")
 	}
 	if footer := ansi.Strip(m.footerView(120)); !strings.Contains(footer, "Esc back") {
@@ -139,17 +139,17 @@ func TestCommandCompletionNestedFilterPreservesAction(t *testing.T) {
 	}
 	m = updateModel(t, m, tea.PasteMsg{Content: "rsk"})
 	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyEscape})
-	if m.input.Value() != "/login xmp" || len(m.commandMenu.frames) != 1 {
+	if m.input.Value() != "/login xmp" || len(m.flow.menus) != 1 {
 		t.Fatal("back did not restore the parent query")
 	}
 	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = updateModel(t, m, tea.PasteMsg{Content: "rsk"})
 	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyTab})
-	if m.input.Value() != "/login example" || m.running || m.secretInput != nil {
+	if m.input.Value() != "/login example" || m.running || m.secretEntry() {
 		t.Fatal("Tab unexpectedly executed the nested action")
 	}
 	m, cmd, _ := m.handleKey(tea.KeyPressMsg{Code: tea.KeyEnter})
-	if cmd == nil || m.secretInput != nil {
+	if cmd == nil || m.secretEntry() {
 		t.Fatal("Tab lost the reuse action when two actions share arguments")
 	}
 	cmd()

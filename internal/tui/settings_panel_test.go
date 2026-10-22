@@ -181,7 +181,7 @@ func TestSettingsActionCancelKeepsConversationAndWaits(t *testing.T) {
 	stopped := make(chan struct{})
 	start, shutdown := settingsActionCommands(t.Context(), actionFixture{stopped: stopped}, panelFixture{})
 	t.Cleanup(shutdown)
-	a := &settingsAction{request: interaction.CommandRequest{Name: "login"}, running: true}
+	a := &settingsAction{commandFlow: commandFlow{request: interaction.CommandRequest{Name: "login"}}, running: true}
 	m.settings.action = a
 	m.settings.editing = &interaction.SettingField{Kind: interaction.SettingAction}
 	commands := start(a, 3)().(tea.BatchMsg)
@@ -217,7 +217,7 @@ func TestSettingsActionCancelKeepsConversationAndWaits(t *testing.T) {
 func TestSettingsActionPreservesPartialSuccess(t *testing.T) {
 	t.Parallel()
 	m := panelModel(t, 120, 40)
-	a := &settingsAction{request: interaction.CommandRequest{Secret: "synthetic-secret"}}
+	a := &settingsAction{commandFlow: commandFlow{request: interaction.CommandRequest{Secret: "synthetic-secret"}}}
 	m.settings.action = a
 	result := interaction.SettingsActionResult{
 		External:  []interaction.SettingsActionStep{{Name: "Driver installation", Completed: true}},

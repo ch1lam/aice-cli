@@ -642,7 +642,7 @@ func TestModelQuestionMarkTogglesHelpWithoutStealingComposerInput(t *testing.T) 
 			})
 			current.input.SetValue(tt.value)
 			if tt.secretInput {
-				current.secretInput = &secretInput{prompt: "API key"}
+				current.flow = &commandFlow{form: []credentialStep{{label: "API key"}}}
 			}
 
 			updated := updateModel(t, current, tt.message)
@@ -1536,10 +1536,10 @@ func TestModelLoginSelectsProviderThenHidesAndSubmitsSecret(t *testing.T) {
 	selecting, command, handled := current.handleKey(tea.KeyPressMsg{
 		Code: tea.KeyEnter,
 	})
-	if !handled || command != nil || selecting.commandMenu == nil {
+	if !handled || command != nil || !selecting.commandMenuOpen() {
 		t.Fatal("/login did not open the provider menu")
 	}
-	if selecting.secretInput != nil {
+	if selecting.secretEntry() {
 		t.Fatal("/login requested the API key before provider selection")
 	}
 	if menu := selecting.commandMenuView(80); strings.Contains(
@@ -1552,7 +1552,7 @@ func TestModelLoginSelectsProviderThenHidesAndSubmitsSecret(t *testing.T) {
 	entering, _, handled := selecting.handleKey(tea.KeyPressMsg{
 		Code: tea.KeyEnter,
 	})
-	if !handled || entering.secretInput == nil {
+	if !handled || !entering.secretEntry() {
 		t.Fatal("provider selection did not enter secret input mode")
 	}
 
@@ -1585,7 +1585,7 @@ func TestModelLoginSelectsProviderThenHidesAndSubmitsSecret(t *testing.T) {
 		request.command.Secret != secret {
 		t.Fatalf("login request = %#v, want hidden secret", request.command)
 	}
-	if starting.secretInput != nil || starting.input.Value() != "" {
+	if starting.secretEntry() || starting.input.Value() != "" {
 		t.Fatal("secret remains in composer after submission")
 	}
 	if transcript := starting.transcriptView(); strings.Contains(
@@ -1641,20 +1641,20 @@ func TestModelLoginSeparatesSavedCredentialReuseFromReplacement(t *testing.T) {
 		selectingProvider, _, handled := current.handleKey(tea.KeyPressMsg{
 			Code: tea.KeyEnter,
 		})
-		if !handled || selectingProvider.commandMenu == nil {
+		if !handled || !selectingProvider.commandMenuOpen() {
 			t.Fatal("/login did not open the provider menu")
 		}
 		selectingCredential, _, handled := selectingProvider.handleKey(
 			tea.KeyPressMsg{Code: tea.KeyEnter},
 		)
-		if !handled || selectingCredential.commandMenu == nil {
+		if !handled || !selectingCredential.commandMenuOpen() {
 			t.Fatal("configured provider did not open the credential menu")
 		}
 
 		starting, command, handled := selectingCredential.handleKey(
 			tea.KeyPressMsg{Code: tea.KeyEnter},
 		)
-		if !handled || command == nil || starting.secretInput != nil {
+		if !handled || command == nil || starting.secretEntry() {
 			t.Fatal("saved credential selection unexpectedly requested a new key")
 		}
 		if _, ok := command().(runStartedMsg); !ok {
@@ -1694,7 +1694,7 @@ func TestModelLoginSeparatesSavedCredentialReuseFromReplacement(t *testing.T) {
 		entering, _, handled := selectingCredential.handleKey(
 			tea.KeyPressMsg{Code: tea.KeyEnter},
 		)
-		if !handled || entering.secretInput == nil {
+		if !handled || !entering.secretEntry() {
 			t.Fatal("replacement action did not request a new key")
 		}
 	})
@@ -1733,7 +1733,7 @@ func TestModelSecretSlashCommandCanBeCancelledAndRestarted(t *testing.T) {
 		Code: tea.KeyEscape,
 	})
 	if !handled ||
-		cancelled.secretInput != nil ||
+		cancelled.secretEntry() ||
 		cancelled.input.Value() != "" {
 		t.Fatal("Esc did not cancel and clear secret input")
 	}
@@ -1753,13 +1753,13 @@ func TestModelSecretSlashCommandCanBeCancelledAndRestarted(t *testing.T) {
 	reselecting, _, handled := cancelled.handleKey(tea.KeyPressMsg{
 		Code: tea.KeyEnter,
 	})
-	if !handled || reselecting.commandMenu == nil {
+	if !handled || !reselecting.commandMenuOpen() {
 		t.Fatal("/login could not reopen provider selection after cancellation")
 	}
 	restarted, _, handled := reselecting.handleKey(tea.KeyPressMsg{
 		Code: tea.KeyEnter,
 	})
-	if !handled || restarted.secretInput == nil {
+	if !handled || !restarted.secretEntry() {
 		t.Fatal("/login could not be restarted after cancellation")
 	}
 }
@@ -1800,10 +1800,10 @@ func TestModelSlashCommandSelectionMenuRunsSelectedValue(
 	selectingModel, command, handled := current.handleKey(tea.KeyPressMsg{
 		Code: tea.KeyEnter,
 	})
-	if !handled || command != nil || selectingModel.commandMenu == nil {
+	if !handled || command != nil || !selectingModel.commandMenuOpen() {
 		t.Fatal("/model did not open its model menu")
 	}
-	frame := selectingModel.commandMenu.frames[0]
+	frame := selectingModel.flow.menus[0]
 	if frame.selection != 1 {
 		t.Fatalf("initial model selection = %d, want current model at index 1", frame.selection)
 	}
@@ -1877,13 +1877,13 @@ func TestNestedSlashCommandSelectionMenuEscGoesBackThenCancels(
 	back, command, handled := selectingScope.handleKey(tea.KeyPressMsg{
 		Code: tea.KeyEscape,
 	})
-	if !handled || command != nil || len(back.commandMenu.frames) != 1 {
+	if !handled || command != nil || len(back.flow.menus) != 1 {
 		t.Fatal("first Esc did not return to the parent menu")
 	}
 	cancelled, _, handled := back.handleKey(tea.KeyPressMsg{
 		Code: tea.KeyEscape,
 	})
-	if !handled || cancelled.commandMenu != nil {
+	if !handled || cancelled.commandMenuOpen() {
 		t.Fatal("second Esc did not cancel the command menu")
 	}
 	if cancelled.input.Value() != "/configure " || !cancelled.input.Focused() {
@@ -1922,7 +1922,7 @@ func TestModelSlashCommandSelectionMenuAcceptsTypedArguments(t *testing.T) {
 	if !handled || command == nil || !updated.running {
 		t.Fatal("typed menu arguments did not run the selected option")
 	}
-	if updated.commandMenu != nil {
+	if updated.commandMenuOpen() {
 		t.Fatal("typed arguments unexpectedly opened the selection menu")
 	}
 	if _, ok := command().(runStartedMsg); !ok {

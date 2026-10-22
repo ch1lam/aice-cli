@@ -32,14 +32,14 @@ func enterCustomLoginForm(t *testing.T, requests chan runRequest) model {
 	for _, title := range []string{"Select authentication method", "Select API key provider", "Custom credential"} {
 		var cmd tea.Cmd
 		m, cmd, _ = m.handleKey(tea.KeyPressMsg{Code: tea.KeyEnter})
-		if cmd != nil || m.secretInput != nil || m.commandMenu == nil ||
-			m.commandMenu.frames[len(m.commandMenu.frames)-1].menu.Title != title {
+		if cmd != nil || m.secretEntry() || !m.commandMenuOpen() ||
+			m.flow.menus[len(m.flow.menus)-1].menu.Title != title {
 			t.Fatalf("login did not wait for confirmation at %s", title)
 		}
 	}
 	m, _, _ = m.handleKey(tea.KeyPressMsg{Code: tea.KeyDown})
 	m, _, _ = m.handleKey(tea.KeyPressMsg{Code: tea.KeyEnter})
-	if m.secretInput == nil || m.secretInput.prompt != "Custom endpoint URL" {
+	if !m.secretEntry() || m.flow.credential().label != "Custom endpoint URL" {
 		t.Fatal("replacement action did not open Custom form")
 	}
 	return m
@@ -64,7 +64,7 @@ func TestCustomLoginFormSubmitsSeparateFields(t *testing.T) {
 					t.Fatal("form value is visible")
 				}
 				m, cmd, _ = m.handleKey(tea.KeyPressMsg{Code: tea.KeyEnter})
-				if step < 2 && (cmd != nil || m.secretInput == nil) {
+				if step < 2 && (cmd != nil || !m.secretEntry()) {
 					t.Fatal("form submitted before all steps were confirmed")
 				}
 			}
@@ -77,7 +77,7 @@ func TestCustomLoginFormSubmitsSeparateFields(t *testing.T) {
 				req.CustomModel != tc.model || req.Secret != tc.key {
 				t.Fatal("form fields were not delivered separately")
 			}
-			if m.secretInput != nil || m.customLogin != nil || m.input.Value() != "" {
+			if m.secretEntry() || m.flow != nil || m.input.Value() != "" {
 				t.Fatal("completed form retained hidden input")
 			}
 			for _, value := range []string{tc.endpoint, tc.key, tc.model} {
@@ -101,7 +101,7 @@ func TestCustomLoginFormCancellationDiscardsEveryStep(t *testing.T) {
 			}
 			m.input.SetValue("discarded-value")
 			m, _, _ = m.handleKey(tea.KeyPressMsg{Code: tea.KeyEscape})
-			if m.secretInput != nil || m.customLogin != nil || m.input.Value() != "" || len(requests) != 0 {
+			if m.secretEntry() || m.flow != nil || m.input.Value() != "" || len(requests) != 0 {
 				t.Fatal("cancelled form retained or submitted values")
 			}
 			for _, value := range []string{"private.example", "private-key", "discarded-value"} {
@@ -120,8 +120,8 @@ func TestCustomLoginShortcutDoesNotSkipMenus(t *testing.T) {
 			m := newModel(make(chan runRequest, 1), make(chan struct{}), customLoginCommand())
 			m = updateModel(t, m, tea.PasteMsg{Content: draft})
 			m, cmd, _ := m.handleKey(tea.KeyPressMsg{Code: tea.KeyEnter})
-			if cmd != nil || m.secretInput != nil || m.running || m.commandMenu == nil ||
-				len(m.commandMenu.frames) != 1 || len(m.matchingCommandOptions()) != 0 {
+			if cmd != nil || m.secretEntry() || m.running || !m.commandMenuOpen() ||
+				len(m.flow.menus) != 1 || len(m.matchingCommandOptions()) != 0 {
 				t.Fatal("inline login bypassed the authentication menu")
 			}
 		})

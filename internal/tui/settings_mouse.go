@@ -50,14 +50,8 @@ func (p *settingsPanel) editTarget(x, y int) string {
 		return ""
 	}
 	if a := p.action; a != nil {
-		var menu *interaction.CommandMenu
-		if a.prompt != nil {
-			menu = a.prompt.Menu
-		} else if len(a.menus) > 0 {
-			menu = a.menus[len(a.menus)-1]
-		}
-		if menu != nil {
-			layout := p.actionMenuLayout(menu)
+		if menu, selection := a.activeMenu(); menu != nil {
+			layout := p.actionMenuLayout(menu, *selection)
 			if layout.more {
 				if row == len(layout.header) {
 					return "action-next"
@@ -132,17 +126,10 @@ func (m model) settingEditClick(target string) (tea.Model, tea.Cmd) {
 		p.input.SetValue(d.cells[d.cell])
 		return m, p.input.Focus()
 	case strings.HasPrefix(target, "action:"):
-		a := p.action
-		var menu *interaction.CommandMenu
-		if a.prompt != nil {
-			menu = a.prompt.Menu
-		} else if len(a.menus) > 0 {
-			menu = a.menus[len(a.menus)-1]
-		}
-		if menu != nil {
+		if menu, selection := p.action.activeMenu(); menu != nil {
 			for i, c := range menu.Options {
 				if target == "action:"+c.Label+":"+c.Arguments {
-					a.choice = i
+					*selection = i
 					return m.settingActionKey(tea.KeyPressMsg{Code: tea.KeyEnter})
 				}
 			}
