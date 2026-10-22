@@ -115,7 +115,7 @@ func beginTest(t *testing.T, s Server, method string) (*Attempt, Registration, s
 		t.Fatal(err)
 	}
 	u, _ := url.Parse(a.AuthorizationURL())
-	query := url.Values{"code": {"one-use-code"}, "state": {u.Query().Get("state")}, "iss": {s.Issuer()}}
+	query := url.Values{"code": {"one-use-code"}, "state": {u.Query().Get("state")}, "iss": {s.binding().Issuer}}
 	return a, r, r.RedirectURI + "?" + query.Encode()
 }
 
@@ -142,7 +142,7 @@ func TestAuthorizationPKCEAndRefresh(t *testing.T) {
 	if query.Get("scope") != "read" || query.Get("resource") != f.url+"/mcp" || query.Get("code_challenge_method") != "S256" || len(query.Get("state")) < 43 {
 		t.Fatal("authorization parameters", query)
 	}
-	callback := r.RedirectURI + "?" + url.Values{"state": {query.Get("state")}, "iss": {s.Issuer()}, "code": {"one-use-code"}}.Encode()
+	callback := r.RedirectURI + "?" + url.Values{"state": {query.Get("state")}, "iss": {s.binding().Issuer}, "code": {"one-use-code"}}.Encode()
 	before := time.Now()
 	token, err := f.client.Complete(context.Background(), a, callback)
 	if err != nil {
@@ -153,7 +153,7 @@ func TestAuthorizationPKCEAndRefresh(t *testing.T) {
 	if query.Get("code_challenge") != base64.RawURLEncoding.EncodeToString(challenge[:]) || len(request.Get("code_verifier")) < 43 {
 		t.Fatal("PKCE proof did not match")
 	}
-	if request.Get("grant_type") != "authorization_code" || request.Get("resource") != s.Resource() || request.Get("redirect_uri") != r.RedirectURI || request.Get("client_id") != r.ClientID || request.Get("code") != "one-use-code" || request.Get("_authorization") != "" {
+	if request.Get("grant_type") != "authorization_code" || request.Get("resource") != s.binding().Resource || request.Get("redirect_uri") != r.RedirectURI || request.Get("client_id") != r.ClientID || request.Get("code") != "one-use-code" || request.Get("_authorization") != "" {
 		t.Fatal("incorrect token request", request)
 	}
 	if token.Binding != s.binding() || token.ClientID != r.ClientID || token.ExpiresAt.Before(before.Add(119*time.Second)) {
@@ -171,7 +171,7 @@ func TestAuthorizationPKCEAndRefresh(t *testing.T) {
 		t.Fatal(err)
 	}
 	request = <-f.requests
-	if request.Get("grant_type") != "refresh_token" || request.Get("refresh_token") != "refresh-secret" || request.Get("resource") != s.Resource() || request.Get("code") != "" {
+	if request.Get("grant_type") != "refresh_token" || request.Get("refresh_token") != "refresh-secret" || request.Get("resource") != s.binding().Resource || request.Get("code") != "" {
 		t.Fatal("incorrect refresh request")
 	}
 	if refreshed.RefreshToken != token.RefreshToken || refreshed.AccessToken == token.AccessToken || !reflect.DeepEqual(refreshed.Scopes, token.Scopes) {

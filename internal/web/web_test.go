@@ -236,3 +236,19 @@ func TestErrorClassificationRetainsCause(t *testing.T) {
 		t.Fatal("unclassified error has a code")
 	}
 }
+
+func TestValidateFetchURLOrigin(t *testing.T) {
+	t.Parallel()
+	for raw, want := range map[string]string{
+		"HTTPS://Example.com:443/x?y#z": "https://example.com",
+		"http://example.com:80/":        "http://example.com",
+		"http://[2606:4700::1]/":        "http://[2606:4700::1]",
+	} {
+		if got, err := ValidateFetchURL(raw); err != nil || got.Origin != want {
+			t.Fatalf("ValidateFetchURL(%q).Origin = %q, %v", raw, got.Origin, err)
+		}
+	}
+	if _, err := ValidateFetchURL("http://example.com:8443/"); CodeOf(err) != CodeBlockedTarget {
+		t.Fatal(err)
+	}
+}

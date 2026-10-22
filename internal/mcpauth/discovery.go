@@ -18,10 +18,7 @@ type Server struct {
 	responseIssuer                                       bool
 }
 
-func (s Server) Resource() string      { return s.resource }
-func (s Server) Issuer() string        { return s.issuer }
-func (s Server) TokenEndpoint() string { return s.token }
-func (s Server) Scopes() []string      { return slices.Clone(s.scopes) }
+func (s Server) Scopes() []string { return slices.Clone(s.scopes) }
 
 // Discovery specifies an already user-authorized resource. MetadataURL and
 // Scopes may come from a Bearer challenge; Issuer chooses among multiple ASs.

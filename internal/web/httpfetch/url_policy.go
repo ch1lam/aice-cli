@@ -33,15 +33,6 @@ func validateURL(raw string) (target, error) {
 	return target{url: parsed, host: validated.Host, port: validated.Port, origin: validated.Origin}, nil
 }
 
-// OriginOf validates a raw URL and returns its origin.
-func OriginOf(raw string) (string, error) {
-	validated, err := web.ValidateFetchURL(raw)
-	if err != nil {
-		return "", err
-	}
-	return validated.Origin, nil
-}
-
 // literalAddr returns the IP when the host is an address literal.
 func literalAddr(host string) (netip.Addr, bool) {
 	addr, err := netip.ParseAddr(host)

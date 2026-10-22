@@ -609,19 +609,3 @@ func TestFetchTruncatesLongDocumentsAndKeepsUTF8(t *testing.T) {
 		t.Fatalf("rendered %d bytes", len(rendered))
 	}
 }
-
-func TestOriginOf(t *testing.T) {
-	t.Parallel()
-	for raw, want := range map[string]string{
-		"HTTPS://Example.com:443/x?y#z": "https://example.com",
-		"http://example.com:80/":        "http://example.com",
-		"http://[2606:4700::1]/":        "http://[2606:4700::1]",
-	} {
-		if got, err := OriginOf(raw); err != nil || got != want {
-			t.Fatalf("OriginOf(%q) = %q, %v", raw, got, err)
-		}
-	}
-	if _, err := OriginOf("http://example.com:8443/"); web.CodeOf(err) != web.CodeBlockedTarget {
-		t.Fatal(err)
-	}
-}

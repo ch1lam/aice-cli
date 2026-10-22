@@ -73,7 +73,7 @@ func TestDiscoveryFallbackOrderAndEscapedIssuerPath(t *testing.T) {
 			defer srv.Close()
 			root = srv.URL
 			s, err := (Client{HTTPClient: srv.Client()}).Discover(context.Background(), Discovery{Resource: root + "/mcp"})
-			if err != nil || s.Issuer() != root+"/tenant%2Fone" {
+			if err != nil || s.binding().Issuer != root+"/tenant%2Fone" {
 				t.Fatal(err)
 			}
 			want := []string{"/.well-known/oauth-protected-resource/mcp", "/.well-known/oauth-protected-resource", "/.well-known/oauth-authorization-server/tenant%2Fone", "/.well-known/openid-configuration/tenant%2Fone", "/tenant%2Fone/.well-known/openid-configuration"}

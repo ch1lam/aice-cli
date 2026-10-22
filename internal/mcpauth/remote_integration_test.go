@@ -22,7 +22,7 @@ func TestLinearPublicOAuthDiscovery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if s.Resource() != "https://mcp.linear.app/mcp" || s.Issuer() != "https://mcp.linear.app" {
+	if s.binding().Resource != "https://mcp.linear.app/mcp" || s.binding().Issuer != "https://mcp.linear.app" {
 		t.Fatal("unexpected resource/issuer")
 	}
 	if _, err := s.PreRegistered("discovery-check-only", "", "none", "http://127.0.0.1:43123/callback"); err != nil {
@@ -31,5 +31,5 @@ func TestLinearPublicOAuthDiscovery(t *testing.T) {
 	if s.registration == "" {
 		t.Fatal("dynamic registration unavailable")
 	}
-	t.Logf("resource=%s issuer=%s token_endpoint=%s; public S256 authorization-code metadata validated", s.Resource(), s.Issuer(), s.TokenEndpoint())
+	t.Logf("resource=%s issuer=%s token_endpoint=%s; public S256 authorization-code metadata validated", s.binding().Resource, s.binding().Issuer, s.binding().TokenEndpoint)
 }
