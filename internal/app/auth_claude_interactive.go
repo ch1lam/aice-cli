@@ -12,7 +12,7 @@ import (
 
 // loginClaudeAccount runs within the existing command lifetime. Only successful
 // authorization updates disk and the current Session's provider state.
-func (s *interactiveSession) loginClaudeAccount(ctx context.Context, request interaction.CommandRequest) (result loginActionResult, returnErr error) {
+func (s *interactiveSession) loginClaudeAccount(ctx context.Context, request interaction.CommandRequest) (result actionResult, returnErr error) {
 	if request.Arguments != string(claudesubscription.ProviderID) || request.Secret != "" || request.UseSavedCredential {
 		return result, errors.New("app: invalid account login request")
 	}

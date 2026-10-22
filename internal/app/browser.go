@@ -65,11 +65,6 @@ func closeBrowser(ctx context.Context, manager *browser.Manager) error {
 	return errors.Join(err, applyBrowserEnvironment(manager))
 }
 
-type browserActionResult struct {
-	output           string
-	resourcesChanged bool // Changed locally, or a started modifying helper may have changed them.
-}
-
 // runBrowserSettings gives both frontends one reservation and completion rule.
 // Slash status remains available during a response; Settings actions retain
 // their revision check and idle requirement, including status.
@@ -79,16 +74,16 @@ func (s *interactiveSession) runBrowserSettings(ctx context.Context, revision *u
 		result, err := s.runBrowserAction(ctx, action, ui)
 		return interaction.SettingsActionResult{Output: result.output}, err
 	}
-	if err := s.beginSettingsOperation(revision, true); err != nil {
-		return interaction.SettingsActionResult{}, err
-	}
-	result, err := s.runBrowserAction(ctx, action, ui)
-	nextRevision, warnings := s.endSettingsOperation(result.resourcesChanged, result.resourcesChanged)
-	return interaction.SettingsActionResult{Output: result.output, Revision: nextRevision, Warnings: warnings}, err
+	return s.runReserved(revision, func() (actionResult, error) {
+		// A started modifying helper may have changed state even on failure.
+		result, err := s.runBrowserAction(ctx, action, ui)
+		result.committed = result.resourcesChanged
+		return result, err
+	})
 }
 
-func (s *interactiveSession) runBrowserAction(ctx context.Context, action string, ui *interaction.AuthInteraction) (browserActionResult, error) {
-	result := browserActionResult{}
+func (s *interactiveSession) runBrowserAction(ctx context.Context, action string, ui *interaction.AuthInteraction) (actionResult, error) {
+	result := actionResult{}
 	if runtime.GOOS == "windows" {
 		result.output = "browser automation is not supported on Windows in this version"
 		return result, nil
@@ -163,8 +158,8 @@ func (s *interactiveSession) runBrowserAction(ctx context.Context, action string
 		return result, fmt.Errorf("unknown browser action %q", action)
 	}
 }
-func (s *interactiveSession) toggleBrowserWindow(ctx context.Context) (browserActionResult, error) {
-	result := browserActionResult{}
+func (s *interactiveSession) toggleBrowserWindow(ctx context.Context) (actionResult, error) {
+	result := actionResult{}
 	current := s.settingsSnapshot().configuration
 	headed := !current.BrowserHeaded
 	changes := map[config.Setting]string{config.SettingBrowserHeaded: strconv.FormatBool(headed)}
@@ -175,9 +170,8 @@ func (s *interactiveSession) toggleBrowserWindow(ctx context.Context) (browserAc
 	s.stateMu.Lock()
 	s.configuration = configuration
 	s.stateMu.Unlock()
-	s.browser.SetHeaded(headed)
 	result.resourcesChanged = true
-	if err := applyBrowserEnvironment(s.browser); err != nil {
+	if err := s.applyBrowserHeaded(headed); err != nil {
 		return result, fmt.Errorf("browser window preference saved, but environment update failed: %w", err)
 	}
 	state := "off"
@@ -196,6 +190,13 @@ func (s *interactiveSession) toggleBrowserWindow(ctx context.Context) (browserAc
 	return result, nil
 }
 
+// applyBrowserHeaded publishes the saved window preference to the managed
+// browser and its helper environment.
+func (s *interactiveSession) applyBrowserHeaded(headed bool) error {
+	s.browser.SetHeaded(headed)
+	return applyBrowserEnvironment(s.browser)
+}
+
 func browserPrompt(ctx context.Context, ui *interaction.AuthInteraction, prompt interaction.AuthPrompt) (string, error) {
 	if err := ui.Notify(ctx, prompt); err != nil {
 		return "", err
@@ -210,8 +211,8 @@ func browserPrompt(ctx context.Context, ui *interaction.AuthInteraction, prompt 
 		return value, nil
 	}
 }
-func (s *interactiveSession) chooseBrowserTab(ctx context.Context, ui *interaction.AuthInteraction, tabs []browser.Tab, connected bool) (browserActionResult, error) {
-	result := browserActionResult{}
+func (s *interactiveSession) chooseBrowserTab(ctx context.Context, ui *interaction.AuthInteraction, tabs []browser.Tab, connected bool) (actionResult, error) {
+	result := actionResult{}
 	menu := &interaction.CommandMenu{Title: "Choose browser tab", Options: []interaction.CommandOption{{Label: "New tab (default)", Arguments: "new"}}}
 	for _, tab := range tabs {
 		menu.Options = append(menu.Options, interaction.CommandOption{Label: tab.Title + " — " + tab.URL, Arguments: tab.TargetID})

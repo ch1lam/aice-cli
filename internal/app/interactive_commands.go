@@ -15,7 +15,6 @@ import (
 	"github.com/ch1lam/aice-cli/internal/provider"
 	"github.com/ch1lam/aice-cli/internal/provider/claudesubscription"
 	"github.com/ch1lam/aice-cli/internal/provider/codex"
-	"github.com/ch1lam/aice-cli/internal/provider/custom"
 	"github.com/ch1lam/aice-cli/internal/provider/deepseek"
 	"github.com/ch1lam/aice-cli/internal/session"
 	"github.com/ch1lam/aice-cli/internal/trust"
@@ -373,15 +372,15 @@ type slashCommandHandler func(
 
 var slashCommandHandlers = map[string]slashCommandHandler{
 	"history":  (*interactiveSession).slashResume,
-	"usage":    (*interactiveSession).slashUsage,
-	"context":  (*interactiveSession).slashUsage,
-	"session":  (*interactiveSession).slashSession,
+	"usage":    (*interactiveSession).slashPanel,
+	"context":  (*interactiveSession).slashPanel,
+	"session":  (*interactiveSession).slashPanel,
 	"tree":     (*interactiveSession).slashTree,
 	"checkout": (*interactiveSession).slashCheckout,
 	"compact":  (*interactiveSession).slashCompact,
 	"new":      (*interactiveSession).slashNew,
 	"init":     (*interactiveSession).slashInit,
-	"settings": (*interactiveSession).slashSettings,
+	"settings": (*interactiveSession).slashPanel,
 	"skills":   (*interactiveSession).slashSkills,
 	"trust":    (*interactiveSession).slashTrust,
 	"provider": (*interactiveSession).slashProvider,
@@ -399,30 +398,11 @@ func (s *interactiveSession) RunSlashCommand(
 	if s == nil {
 		return "", fmt.Errorf("app: interactive Session is required")
 	}
-	if request.Name == "mcp" {
-		result, err := s.runMCPSettings(ctx, nil, request)
-		return strings.TrimSpace(result.Output + "\n" + strings.Join(result.Warnings, "\n")), err
-	}
-	if request.Name == "browser" {
-		result, err := s.runBrowserSettings(ctx, nil, request.Arguments, request.Auth)
-		if len(result.Warnings) > 0 {
-			result.Output += "\n" + strings.Join(result.Warnings, "\n")
-		}
-		return result.Output, err
-	}
-	if request.Name == "web" {
-		result, err := s.runWebSettings(ctx, nil, request.Arguments, request.Auth)
-		if len(result.Warnings) > 0 {
-			result.Output += "\n" + strings.Join(result.Warnings, "\n")
-		}
-		return result.Output, err
-	}
-	if request.Name == "login" {
-		result, err := s.runLoginSettings(ctx, nil, request)
-		if len(result.Warnings) > 0 {
-			result.Output += "\n" + strings.Join(result.Warnings, "\n")
-		}
-		return result.Output, err
+	switch request.Name {
+	case "mcp", "browser", "web", "login":
+		// Slash entries share the Settings actions without a draft revision.
+		result, err := s.settingsAction(ctx, nil, request)
+		return appendWarnings(result.Output, result.Warnings), err
 	}
 	handler, ok := slashCommandHandlers[request.Name]
 	if !ok {
@@ -435,15 +415,10 @@ func (s *interactiveSession) RunSlashCommand(
 	if err := s.beginSettingsOperation(nil, shared); err != nil {
 		return "", err
 	}
-	changed := false
-
 	output, err := handler(s, ctx, request)
-	changed = err == nil
+	changed := err == nil
 	_, warnings := s.endSettingsOperation(changed, changed && shared)
-	if len(warnings) > 0 {
-		output += "\n" + strings.Join(warnings, "\n")
-	}
-	return output, err
+	return appendWarnings(output, warnings), err
 }
 
 func (s *interactiveSession) requireSessionStore() error {
@@ -453,17 +428,16 @@ func (s *interactiveSession) requireSessionStore() error {
 	return nil
 }
 
-func (s *interactiveSession) slashSession(
+// slashPanel rejects panel commands that reach the application. Interactive
+// frontends open the panel for the bare command, so only arguments arrive.
+func (s *interactiveSession) slashPanel(
 	_ context.Context,
 	request interaction.CommandRequest,
 ) (string, error) {
-	if err := s.requireSessionStore(); err != nil {
-		return "", err
-	}
 	if err := requireNoSlashCommandArguments(request); err != nil {
 		return "", err
 	}
-	return s.sessionInformation()
+	return "", fmt.Errorf("app: /%s is shown in its panel", request.Name)
 }
 
 func (s *interactiveSession) slashTree(
@@ -627,16 +601,6 @@ func (s *interactiveSession) slashInit(
 	return s.runInitCommand(ctx)
 }
 
-func (s *interactiveSession) slashSettings(
-	_ context.Context,
-	request interaction.CommandRequest,
-) (string, error) {
-	if err := requireNoSlashCommandArguments(request); err != nil {
-		return "", err
-	}
-	return s.settingsInformation(), nil
-}
-
 func (s *interactiveSession) slashSkills(
 	_ context.Context,
 	request interaction.CommandRequest,
@@ -767,89 +731,6 @@ func clampedThinkingForModel(
 	return llm.ClampThinkingLevel(model, requested)
 }
 
-func (s *interactiveSession) settingsInformation() string {
-	settings := s.settingsSnapshot()
-	thinking := string(settings.options.Thinking)
-	if settings.options.Thinking == llm.ThinkingLevelUnknown {
-		thinking = "default"
-	}
-	apiKey := "not configured"
-	if providerConfigured(s.providers, settings.configuration) {
-		apiKey = "configured"
-	}
-	credentialLabel := "API key"
-	if settings.model.Provider == codex.ProviderID || settings.model.Provider == claudesubscription.ProviderID {
-		credentialLabel = "OAuth credential"
-	}
-	endpoint := strings.TrimSpace(settings.configuration.CustomBaseURL)
-	if endpoint == "" {
-		endpoint = custom.DefaultBaseURL
-	}
-	lines := []string{
-		"Settings",
-		"Provider: " + string(settings.model.Provider),
-		"Model: " + settings.model.ID,
-		contextWindowInformation(settings.model, settings.configuration),
-		"Thinking: " + thinking,
-		"Thinking (requested): " + string(settings.configuration.Thinking),
-		credentialLabel + ": " + apiKey,
-		"Custom endpoint: " + endpoint,
-	}
-	if settings.configuration.DefaultProjectTrust == "" {
-		lines = append(lines, "Default project trust: ask")
-	} else {
-		lines = append(
-			lines,
-			"Default project trust: "+string(
-				settings.configuration.DefaultProjectTrust,
-			),
-		)
-	}
-	lines = append(
-		lines,
-		"Project trust: "+trustDecisionLabel(s.trustDecision)+
-			" ("+s.trustSource.String()+")",
-	)
-	if settings.configuration.Paths.GlobalSettings != "" {
-		lines = append(
-			lines,
-			"Global settings: "+settings.configuration.Paths.GlobalSettings,
-		)
-	}
-	if settings.configuration.Paths.ProjectSettings != "" {
-		lines = append(lines, "Project settings: "+settings.configuration.Paths.ProjectSettings)
-	}
-	lines = append(lines,
-		fmt.Sprintf("Automatic helper downloads disabled: %v", settings.configuration.NoDepInstall),
-		fmt.Sprintf("Startup update check disabled: %v", settings.configuration.NoUpdateCheck),
-	)
-	s.stateMu.RLock()
-	webSummary := s.web.summary()
-	s.stateMu.RUnlock()
-	lines = append(lines, webSummary)
-	if settings.configuration.Paths.GlobalAuth != "" {
-		lines = append(
-			lines,
-			"Global credentials: "+settings.configuration.Paths.GlobalAuth,
-		)
-	}
-	if s.trustStore != nil && s.trustStore.Path() != "" {
-		lines = append(lines, "Trust store: "+s.trustStore.Path())
-	}
-	return strings.Join(lines, "\n")
-}
-
-func trustDecisionLabel(decision trust.Decision) string {
-	switch decision {
-	case trust.DecisionTrusted:
-		return "trusted"
-	case trust.DecisionUntrusted:
-		return "not trusted"
-	default:
-		return "unknown"
-	}
-}
-
 func (s *interactiveSession) persistSettings(
 	ctx context.Context,
 	current config.Config,
@@ -907,30 +788,6 @@ func savedSettingMessage(
 		message += savedDefaultsOverrideNotice
 	}
 	return message
-}
-
-func (s *interactiveSession) sessionInformation() (string, error) {
-	snapshot, err := s.conversation.store.Snapshot()
-	if err != nil {
-		return "", fmt.Errorf("app: read Session information: %w", err)
-	}
-	nodes, err := session.Nodes(snapshot)
-	if err != nil {
-		return "", fmt.Errorf("app: read Session nodes: %w", err)
-	}
-	leaf := snapshot.LeafID
-	if leaf == "" {
-		leaf = "root"
-	}
-	return fmt.Sprintf(
-		"Session %s\nPath: %s\nActive leaf: %s\nNodes: %d\nMessages: %d\nCompactions: %d",
-		snapshot.Header.ID,
-		s.conversation.store.Path(),
-		leaf,
-		len(nodes),
-		len(snapshot.Messages),
-		len(snapshot.Compactions),
-	), nil
 }
 
 func requireNoSlashCommandArguments(

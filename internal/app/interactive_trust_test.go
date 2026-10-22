@@ -1,6 +1,7 @@
 package app
 
 import (
+	"fmt"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -126,30 +127,26 @@ func TestInteractiveSettingsShowsTrust(t *testing.T) {
 	t.Parallel()
 
 	paths := trustTestPaths(t)
-	configuration := trustTestConfig(paths)
 	runner := &interactiveSession{
-		configuration: configuration,
+		configuration: trustTestConfig(paths),
 		model:         deepseekModel(t, deepseek.ModelV4Flash),
-		trustStore:    trust.NewStore(paths.GlobalTrust),
 		trustDecision: trust.DecisionTrusted,
 		trustSource:   trust.SourceStore,
 		workspacePath: t.TempDir(),
 	}
-	output, err := runner.RunSlashCommand(t.Context(), tui.SlashCommandRequest{
-		Name: "settings",
-	})
+	snapshot, err := runner.ReadSettings(t.Context())
 	if err != nil {
-		t.Fatalf("/settings error = %v", err)
+		t.Fatalf("ReadSettings() error = %v", err)
 	}
-	for _, want := range []string{
-		"Default project trust: ask",
-		"Project trust: trusted (saved decision)",
-		"Trust store: " + paths.GlobalTrust,
-	} {
-		if !strings.Contains(output, want) {
-			t.Errorf("/settings output = %q, want %q", output, want)
+	for _, field := range snapshot.Fields {
+		if field.ID == "project.loaded" {
+			if want := fmt.Sprintf("%v (%v)", trust.DecisionTrusted, trust.SourceStore); field.Description != want {
+				t.Fatalf("loaded trust = %q, want %q", field.Description, want)
+			}
+			return
 		}
 	}
+	t.Fatal("settings have no loaded project trust")
 }
 
 func TestTrustMenuExposesOnlySavedChoices(t *testing.T) {
@@ -185,7 +182,7 @@ func deepseekModel(t *testing.T, id string) llm.Model {
 func TestStartupTemporaryTrustAffectsPromptWithoutPersisting(t *testing.T) {
 	t.Parallel()
 	for _, decision := range []trust.Decision{trust.DecisionTrusted, trust.DecisionUntrusted} {
-		t.Run(trustDecisionLabel(decision), func(t *testing.T) {
+		t.Run(string(decision), func(t *testing.T) {
 			workspace := t.TempDir()
 			writeAppFile(t, workspace, "AGENTS.md", "temporary project guidance")
 			paths := trustTestPaths(t)

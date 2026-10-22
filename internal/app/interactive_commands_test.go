@@ -64,22 +64,6 @@ func TestInteractiveSessionSlashCommandsNavigateCurrentStore(t *testing.T) {
 		conversation: conversationState{store: store, history: history},
 	}
 
-	info, err := runner.RunSlashCommand(t.Context(), tui.SlashCommandRequest{
-		Name: "session",
-	})
-	if err != nil {
-		t.Fatalf("/session error = %v", err)
-	}
-	for _, want := range []string{
-		snapshot.Header.ID,
-		sessionPath,
-		"Active leaf: " + snapshot.Messages[3].ID,
-	} {
-		if !strings.Contains(info, want) {
-			t.Errorf("/session output = %q, want %q", info, want)
-		}
-	}
-
 	tree, err := runner.RunSlashCommand(t.Context(), tui.SlashCommandRequest{
 		Name: "tree",
 	})
@@ -827,25 +811,6 @@ func TestInteractiveSessionSlashCommandsPersistRuntimeSettings(t *testing.T) {
 			},
 		},
 		providers: defaultProviders(),
-	}
-
-	settings, err := runner.RunSlashCommand(
-		t.Context(),
-		tui.SlashCommandRequest{Name: "settings"},
-	)
-	if err != nil {
-		t.Fatalf("/settings error = %v", err)
-	}
-	for _, want := range []string{
-		"Provider: deepseek",
-		"Model: " + deepseek.ModelV4Flash,
-		"Thinking: medium",
-		"API key: configured",
-		"Global settings: /global/settings.json",
-	} {
-		if !strings.Contains(settings, want) {
-			t.Errorf("/settings output = %q, want %q", settings, want)
-		}
 	}
 
 	output, err := runner.RunSlashCommand(

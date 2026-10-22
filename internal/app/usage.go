@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/ch1lam/aice-cli/internal/interaction"
@@ -64,22 +63,4 @@ func (s *interactiveSession) ReadUsage(ctx context.Context) (interaction.UsageSn
 		}
 	}
 	return result, nil
-}
-
-func (s *interactiveSession) slashUsage(ctx context.Context, request interaction.CommandRequest) (string, error) {
-	if err := requireNoSlashCommandArguments(request); err != nil {
-		return "", err
-	}
-	u, err := s.ReadUsage(ctx)
-	if err != nil {
-		return "", err
-	}
-	if request.Name == "context" {
-		return fmt.Sprintf("%s\nProvider/model: %s/%s\nContext: %d tokens (known=%t, estimated=%t)", u.WindowSource, u.Provider, u.Model, u.Context.Tokens, u.Context.Known, u.Context.Estimated), nil
-	}
-	cost := u.CostStatus
-	if cost != "Unavailable" {
-		cost = fmt.Sprintf("$%.6f (%s)", u.Usage.TotalCost, cost)
-	}
-	return fmt.Sprintf("Recorded Session usage\nInput: %d; output: %d; cache read/write: %d/%d\nCost: %s\n%s", u.Usage.InputTokens, u.Usage.OutputTokens, u.Usage.CacheReadTokens, u.Usage.CacheWriteTokens, cost, u.Scope), nil
 }

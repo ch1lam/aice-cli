@@ -172,8 +172,7 @@ func (s *interactiveSession) applySettingsReserved(ctx context.Context, request 
 	}
 	for _, change := range request.Changes {
 		if change.ID == "browser_headed" && s.browser != nil {
-			s.browser.SetHeaded(candidate.BrowserHeaded)
-			if err := applyBrowserEnvironment(s.browser); err != nil {
+			if err := s.applyBrowserHeaded(candidate.BrowserHeaded); err != nil {
 				result.Warnings = append(result.Warnings, "Preference saved; browser environment: "+err.Error())
 			}
 		}
@@ -181,25 +180,28 @@ func (s *interactiveSession) applySettingsReserved(ctx context.Context, request 
 	return result, nil
 }
 
-func (s *interactiveSession) RunSettingsAction(ctx context.Context, revision uint64, request interaction.CommandRequest) (result interaction.SettingsActionResult, returnErr error) {
-	if request.Name == "mcp" {
-		return s.runMCPSettings(ctx, &revision, request)
-	}
-	if request.Name == "browser" {
-		return s.runBrowserSettings(ctx, &revision, request.Arguments, request.Auth)
-	}
-	if request.Name == "web" {
-		return s.runWebSettings(ctx, &revision, request.Arguments, request.Auth)
-	}
-	if request.Name == "login" {
-		return s.runLoginSettings(ctx, &revision, request)
+func (s *interactiveSession) RunSettingsAction(ctx context.Context, revision uint64, request interaction.CommandRequest) (interaction.SettingsActionResult, error) {
+	return s.settingsAction(ctx, &revision, request)
+}
+
+// settingsAction runs one domain action. Slash entries pass a nil revision.
+func (s *interactiveSession) settingsAction(ctx context.Context, revision *uint64, request interaction.CommandRequest) (result interaction.SettingsActionResult, returnErr error) {
+	switch request.Name {
+	case "mcp":
+		return s.runMCPSettings(ctx, revision, request)
+	case "browser":
+		return s.runBrowserSettings(ctx, revision, request.Arguments, request.Auth)
+	case "web":
+		return s.runWebSettings(ctx, revision, request.Arguments, request.Auth)
+	case "login":
+		return s.runLoginSettings(ctx, revision, request)
 	}
 	switch request.Name {
 	case "trust", "desktop":
 	default:
 		return result, fmt.Errorf("unsupported settings action %s", request.Name)
 	}
-	if err := s.beginSettingsOperation(&revision, request.Name != "trust"); err != nil {
+	if err := s.beginSettingsOperation(revision, request.Name != "trust"); err != nil {
 		return result, err
 	}
 	if request.Name == "trust" {

@@ -601,22 +601,8 @@ func TestApplicationInteractiveStartsWithoutCredentials(t *testing.T) {
 			if err == nil || !strings.Contains(err.Error(), "/login") {
 				t.Fatalf("Run() error = %v, want /login guidance", err)
 			}
-			commandRunner, ok := runner.(tui.SlashCommandRunner)
-			if !ok {
-				t.Fatal("interactive runner does not expose slash commands")
-			}
-			settings, err := commandRunner.RunSlashCommand(
-				ctx,
-				tui.SlashCommandRequest{Name: "settings"},
-			)
-			if err != nil {
-				return err
-			}
-			if !strings.Contains(settings, "API key: not configured") {
-				t.Errorf(
-					"/settings output = %q, want unconfigured state",
-					settings,
-				)
+			if runner.(tui.RuntimeStateProvider).RuntimeState().APIKeyConfigured {
+				t.Error("runtime state reports an API key before login")
 			}
 			return nil
 		},

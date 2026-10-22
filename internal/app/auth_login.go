@@ -12,21 +12,8 @@ import (
 	"github.com/ch1lam/aice-cli/internal/provider/custom"
 )
 
-// loginActionResult records effects, including a credential committed before
-// a later preference failure. OAuth updates also affect existing providers.
-type loginActionResult struct {
-	output           string
-	committed        bool
-	resourcesChanged bool
-}
-
 func (s *interactiveSession) runLoginSettings(ctx context.Context, revision *uint64, request interaction.CommandRequest) (interaction.SettingsActionResult, error) {
-	if err := s.beginSettingsOperation(revision, true); err != nil {
-		return interaction.SettingsActionResult{}, err
-	}
-	action, err := s.runLoginAction(ctx, request)
-	nextRevision, warnings := s.endSettingsOperation(action.committed, action.resourcesChanged)
-	return interaction.SettingsActionResult{Output: action.output, Revision: nextRevision, Warnings: warnings}, err
+	return s.runReserved(revision, func() (actionResult, error) { return s.runLoginAction(ctx, request) })
 }
 
 // runLoginAction applies a credential action while its caller owns the settings
@@ -34,7 +21,7 @@ func (s *interactiveSession) runLoginSettings(ctx context.Context, revision *uin
 func (s *interactiveSession) runLoginAction(
 	ctx context.Context,
 	request interaction.CommandRequest,
-) (loginActionResult, error) {
+) (actionResult, error) {
 	if request.LoginMethod != "" {
 		return s.loginAccount(ctx, request)
 	}
@@ -44,7 +31,7 @@ func (s *interactiveSession) runLoginAction(
 func (s *interactiveSession) login(
 	ctx context.Context,
 	request interaction.CommandRequest,
-) (result loginActionResult, returnErr error) {
+) (result actionResult, returnErr error) {
 	if s.application == nil {
 		return result, fmt.Errorf("app: application is required")
 	}
@@ -69,7 +56,7 @@ func (s *interactiveSession) login(
 		if err != nil {
 			return result, err
 		}
-		return loginActionResult{output: savedSettingMessage("provider", provider, overridden), committed: true, resourcesChanged: true}, nil
+		return actionResult{output: savedSettingMessage("provider", provider, overridden), committed: true, resourcesChanged: true}, nil
 	}
 	if provider == string(codex.ProviderID) {
 		if request.Secret != "" {
@@ -79,7 +66,7 @@ func (s *interactiveSession) login(
 		if err != nil {
 			return result, err
 		}
-		return loginActionResult{output: savedSettingMessage("provider", provider, overridden), committed: true, resourcesChanged: true}, nil
+		return actionResult{output: savedSettingMessage("provider", provider, overridden), committed: true, resourcesChanged: true}, nil
 	}
 
 	customEndpoint := strings.TrimSpace(request.CustomEndpoint)

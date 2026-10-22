@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/ch1lam/aice-cli/internal/interaction"
@@ -143,4 +144,28 @@ func (s *interactiveSession) settingsWarning(err error) {
 	s.lifecycle.mu.Lock()
 	s.lifecycle.warnings = append(s.lifecycle.warnings, err.Error())
 	s.lifecycle.mu.Unlock()
+}
+
+// actionResult records a settings action's effects. committed refreshes
+// drafts, including a credential saved before a later failure;
+// resourcesChanged invalidates prepared runners.
+type actionResult struct {
+	output           string
+	committed        bool
+	resourcesChanged bool
+}
+
+// runReserved runs one action under an idle settings reservation.
+func (s *interactiveSession) runReserved(revision *uint64, run func() (actionResult, error)) (interaction.SettingsActionResult, error) {
+	if err := s.beginSettingsOperation(revision, true); err != nil {
+		return interaction.SettingsActionResult{}, err
+	}
+	result, err := run()
+	next, warnings := s.endSettingsOperation(result.committed, result.resourcesChanged)
+	return interaction.SettingsActionResult{Output: result.output, Revision: next, Warnings: warnings}, err
+}
+
+// appendWarnings adds settings warnings to command output on separate lines.
+func appendWarnings(output string, warnings []string) string {
+	return strings.TrimSpace(strings.Join(append([]string{output}, warnings...), "\n"))
 }

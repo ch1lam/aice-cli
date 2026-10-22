@@ -1258,7 +1258,7 @@ func TestSideThreadConcurrentSnapshotsConsistent(t *testing.T) {
 			}
 			_ = harness.session.SlashCommands()
 			_ = harness.session.RuntimeState()
-			_ = harness.session.settingsInformation()
+			_, _ = harness.session.ReadSettings(t.Context())
 			time.Sleep(time.Millisecond)
 		}
 	}()

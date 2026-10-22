@@ -15,7 +15,7 @@ import (
 
 // loginAccount runs within the existing command lifetime. Only successful
 // authorization updates disk and the current Session's provider state.
-func (s *interactiveSession) loginAccount(ctx context.Context, request interaction.CommandRequest) (result loginActionResult, returnErr error) {
+func (s *interactiveSession) loginAccount(ctx context.Context, request interaction.CommandRequest) (result actionResult, returnErr error) {
 	if request.Arguments == "anthropic-subscription" {
 		return s.loginClaudeAccount(ctx, request)
 	}
