@@ -154,7 +154,9 @@ func Run(ctx context.Context, runner Runner, options Options) error {
 		initialModel.replaceTranscript(options.Transcript)
 	}
 	if completer, ok := runner.(interaction.FileCompleter); ok {
-		initialModel.completeFiles = fileCompletionCommand(controllerCtx, completer)
+		var closeCompletion func()
+		initialModel.completeFiles, closeCompletion = fileCompletionCommand(controllerCtx, completer)
+		defer closeCompletion()
 	}
 	initialModel.prepareDelivery = deliveryCommand(controllerCtx)
 	initialModel.clipboard = pasteClipboard(controllerCtx)

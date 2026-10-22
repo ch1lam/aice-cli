@@ -2,7 +2,6 @@ package tui
 
 import (
 	"context"
-	"sync"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/ch1lam/aice-cli/internal/interaction"
@@ -20,34 +19,18 @@ type settingsSaveResult struct {
 	err        error
 }
 
-type settingsQueryOwner struct {
-	mu     sync.Mutex
-	wg     sync.WaitGroup
-	closed bool
-}
-
-func (o *settingsQueryOwner) begin() bool {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	if o.closed {
-		return false
-	}
-	o.wg.Add(1)
-	return true
-}
-
 func settingsCommands(parent context.Context, reader interaction.SettingsReader, writer interaction.SettingsWriter) (
 	func(uint64) (tea.Cmd, context.CancelFunc), func(uint64, interaction.SettingsRequest) tea.Cmd, func(),
 ) {
 	ctx, cancel := context.WithCancel(parent)
-	owner := &settingsQueryOwner{}
+	owner := &queryGate{}
 	read := func(generation uint64) (tea.Cmd, context.CancelFunc) {
 		readCtx, stop := context.WithCancel(ctx)
 		return func() tea.Msg {
 			if !owner.begin() {
 				return settingsReadResult{generation: generation, err: context.Canceled}
 			}
-			defer owner.wg.Done()
+			defer owner.done()
 			defer stop()
 			snapshot, err := reader.ReadSettings(readCtx)
 			return settingsReadResult{generation: generation, snapshot: snapshot, err: err}
@@ -58,12 +41,11 @@ func settingsCommands(parent context.Context, reader interaction.SettingsReader,
 			if !owner.begin() {
 				return settingsSaveResult{generation: generation, err: context.Canceled}
 			}
-			defer owner.wg.Done()
+			defer owner.done()
 			result, err := writer.ApplySettings(ctx, request)
 			snapshot, _ := reader.ReadSettings(ctx)
 			return settingsSaveResult{generation: generation, result: result, snapshot: snapshot, err: err}
 		}
 	}
-	close := func() { owner.mu.Lock(); owner.closed = true; owner.mu.Unlock(); cancel(); owner.wg.Wait() }
-	return read, save, close
+	return read, save, func() { owner.close(cancel) }
 }

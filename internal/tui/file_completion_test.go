@@ -2,9 +2,11 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/ch1lam/aice-cli/internal/interaction"
@@ -317,5 +319,46 @@ func TestCancelledApprovalRestoresComposerAndDoesNotDismissNewRequest(t *testing
 	m = updateModel(t, m, guardExpiredMsg{reply: reply})
 	if m.guardPending != newer {
 		t.Fatal("old cancellation dismissed newer approval")
+	}
+}
+
+type fileCompleterFunc func(context.Context, string) ([]interaction.FileCompletion, error)
+
+func (f fileCompleterFunc) CompleteFiles(ctx context.Context, query string) ([]interaction.FileCompletion, error) {
+	return f(ctx, query)
+}
+
+func TestFileCompletionShutdownCancelsAndRefusesQueries(t *testing.T) {
+	t.Parallel()
+	started, cancelled := make(chan struct{}), make(chan struct{})
+	complete, shutdown := fileCompletionCommand(t.Context(), fileCompleterFunc(func(ctx context.Context, query string) ([]interaction.FileCompletion, error) {
+		if query != "first" {
+			panic("queued completion started after shutdown")
+		}
+		close(started)
+		<-ctx.Done()
+		close(cancelled)
+		return nil, ctx.Err()
+	}))
+	command, cancel := complete(1, "first")
+	defer cancel()
+	queued, cancelQueued := complete(2, "late")
+	defer cancelQueued()
+	done := make(chan struct{})
+	go func() { command(); close(done) }()
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("completion did not start")
+	}
+	shutdown()
+	select {
+	case <-cancelled:
+	default:
+		t.Fatal("shutdown returned before completion cancellation")
+	}
+	<-done
+	if result := queued().(fileCompletionResult); !errors.Is(result.err, context.Canceled) {
+		t.Fatal("late completion was not refused")
 	}
 }

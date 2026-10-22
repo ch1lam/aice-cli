@@ -17,7 +17,7 @@ type settingsStatusResult struct {
 
 func settingsStatusCommands(parent context.Context, reader interaction.SettingsStatusReader) (func(uint64, uint64) (tea.Cmd, context.CancelFunc), func()) {
 	ctx, cancel := context.WithCancel(parent)
-	owner := &settingsQueryOwner{}
+	owner := &queryGate{}
 	read := func(generation, revision uint64) (tea.Cmd, context.CancelFunc) {
 		readCtx, stop := context.WithCancel(ctx)
 		return func() tea.Msg {
@@ -25,18 +25,12 @@ func settingsStatusCommands(parent context.Context, reader interaction.SettingsS
 			if !owner.begin() {
 				return settingsStatusResult{generation: generation, revision: revision, err: context.Canceled}
 			}
-			defer owner.wg.Done()
+			defer owner.done()
 			field, err := reader.ReadSettingsStatus(readCtx, revision)
 			return settingsStatusResult{generation: generation, revision: revision, field: field, err: err}
 		}, stop
 	}
-	return read, func() {
-		owner.mu.Lock()
-		owner.closed = true
-		owner.mu.Unlock()
-		cancel()
-		owner.wg.Wait()
-	}
+	return read, func() { owner.close(cancel) }
 }
 
 func (m *model) refreshSettingsStatus() tea.Cmd {

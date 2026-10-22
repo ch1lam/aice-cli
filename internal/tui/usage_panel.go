@@ -11,20 +11,20 @@ import (
 
 func usageCommands(parent context.Context, reader interaction.UsageReader) (func(uint64) (tea.Cmd, context.CancelFunc), func()) {
 	ctx, cancel := context.WithCancel(parent)
-	owner := &settingsQueryOwner{}
+	owner := &queryGate{}
 	read := func(generation uint64) (tea.Cmd, context.CancelFunc) {
 		ctx, stop := context.WithCancel(ctx)
 		return func() tea.Msg {
 			if !owner.begin() {
 				return settingsReadResult{generation: generation, err: context.Canceled}
 			}
-			defer owner.wg.Done()
+			defer owner.done()
 			defer stop()
 			snapshot, err := reader.ReadUsage(ctx)
 			return settingsReadResult{generation: generation, snapshot: usageFields(snapshot), err: err}
 		}, stop
 	}
-	return read, func() { owner.mu.Lock(); owner.closed = true; owner.mu.Unlock(); cancel(); owner.wg.Wait() }
+	return read, func() { owner.close(cancel) }
 }
 func usageFields(u interaction.UsageSnapshot) interaction.SettingsSnapshot {
 	s := interaction.SettingsSnapshot{Revision: u.Revision, Categories: []interaction.SettingCategory{{ID: "context", Label: "Context"}, {ID: "usage", Label: "Session usage"}, {ID: "session", Label: "Session info"}}}

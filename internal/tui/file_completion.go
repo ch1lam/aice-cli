@@ -26,11 +26,17 @@ type fileCompletionResult struct {
 	err        error
 }
 
-func fileCompletionCommand(ctx context.Context, completer interaction.FileCompleter) func(uint64, string) (tea.Cmd, context.CancelFunc) {
-	return func(generation uint64, query string) (tea.Cmd, context.CancelFunc) {
+func fileCompletionCommand(parent context.Context, completer interaction.FileCompleter) (func(uint64, string) (tea.Cmd, context.CancelFunc), func()) {
+	ctx, cancelAll := context.WithCancel(parent)
+	owner := &queryGate{}
+	complete := func(generation uint64, query string) (tea.Cmd, context.CancelFunc) {
 		searchCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 		return func() tea.Msg {
 			defer cancel()
+			if !owner.begin() {
+				return fileCompletionResult{generation: generation, err: context.Canceled}
+			}
+			defer owner.done()
 			timer := time.NewTimer(120 * time.Millisecond)
 			defer timer.Stop()
 			select {
@@ -42,6 +48,7 @@ func fileCompletionCommand(ctx context.Context, completer interaction.FileComple
 			return fileCompletionResult{generation: generation, items: items, err: err}
 		}, cancel
 	}
+	return complete, func() { owner.close(cancelAll) }
 }
 
 func (m model) fileReferenceAtCursor() (interaction.FileReference, bool) {

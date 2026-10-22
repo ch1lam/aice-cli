@@ -10,7 +10,7 @@ import (
 
 // One scanner owns the channel. Each UI result schedules only the next receive;
 // cancellation releases backpressure even after the picker has disappeared.
-func sessionSearchCommand(ctx context.Context, cancel context.CancelFunc, owner *sessionQueryOwner,
+func sessionSearchCommand(ctx context.Context, cancel context.CancelFunc, owner *queryGate,
 	browser interaction.SessionBrowser, generation uint64, query string,
 ) tea.Cmd {
 	return func() tea.Msg {
@@ -35,7 +35,7 @@ func sessionSearchCommand(ctx context.Context, cancel context.CancelFunc, owner 
 			}
 		}
 		go func() {
-			defer owner.wg.Done()
+			defer owner.done()
 			defer cancel()
 			send := func(items []interaction.SessionSummary, err error, next tea.Cmd) error {
 				select {

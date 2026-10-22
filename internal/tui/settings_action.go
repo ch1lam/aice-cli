@@ -40,7 +40,7 @@ type settingsActionDone struct {
 // editor. No command, secret or result passes through the composer/transcript.
 func settingsActionCommands(parent context.Context, runner interaction.SettingsActionRunner, reader interaction.SettingsReader) (func(*settingsAction, uint64) tea.Cmd, func()) {
 	ctx, cancel := context.WithCancel(parent)
-	owner := &settingsQueryOwner{}
+	owner := &queryGate{}
 	start := func(a *settingsAction, revision uint64) tea.Cmd {
 		ctx, stop := context.WithCancel(ctx)
 		a.cancel = stop
@@ -60,7 +60,7 @@ func settingsActionCommands(parent context.Context, runner interaction.SettingsA
 				stop()
 				return settingsActionDone{action: a, err: context.Canceled}
 			}
-			defer owner.wg.Done()
+			defer owner.done()
 			defer stop()
 			result, err := runner.RunSettingsAction(ctx, revision, request)
 			snapshot, _ := reader.ReadSettings(parent)
@@ -76,7 +76,7 @@ func settingsActionCommands(parent context.Context, runner interaction.SettingsA
 		}
 		return tea.Batch(run, a.wait)
 	}
-	return start, func() { owner.mu.Lock(); owner.closed = true; owner.mu.Unlock(); cancel(); owner.wg.Wait() }
+	return start, func() { owner.close(cancel) }
 }
 
 func (m model) openSettingAction(field interaction.SettingField) (tea.Model, tea.Cmd) {

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"strings"
-	"sync"
 	"time"
 
 	"charm.land/bubbles/v2/list"
@@ -62,7 +61,7 @@ func sessionBrowserCommands(ctx context.Context, browser interaction.SessionBrow
 	func(),
 ) {
 	ctx, cancelAll := context.WithCancel(ctx)
-	var owner sessionQueryOwner
+	var owner queryGate
 	search := func(generation uint64, query string) (tea.Cmd, context.CancelFunc) {
 		searchCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 		return sessionSearchCommand(searchCtx, cancel, &owner, browser, generation, query), cancel
@@ -74,7 +73,7 @@ func sessionBrowserCommands(ctx context.Context, browser interaction.SessionBrow
 			if !owner.begin() {
 				return sessionPreviewResult{generation: generation, err: context.Canceled}
 			}
-			defer owner.wg.Done()
+			defer owner.done()
 			timer := time.NewTimer(120 * time.Millisecond)
 			defer timer.Stop()
 			select {
@@ -93,7 +92,7 @@ func sessionBrowserCommands(ctx context.Context, browser interaction.SessionBrow
 			if !owner.begin() {
 				return sessionReadingResult{generation: generation, err: context.Canceled}
 			}
-			defer owner.wg.Done()
+			defer owner.done()
 			reader, ok := browser.(interaction.SessionReader)
 			if !ok {
 				return sessionReadingResult{generation: generation, err: fmt.Errorf("history reading unavailable")}
@@ -109,7 +108,7 @@ func sessionBrowserCommands(ctx context.Context, browser interaction.SessionBrow
 			if !owner.begin() {
 				return sessionRenameResult{generation: generation, err: context.Canceled}
 			}
-			defer owner.wg.Done()
+			defer owner.done()
 			renamer, ok := browser.(interaction.SessionRenamer)
 			if !ok {
 				return sessionRenameResult{generation: generation, err: fmt.Errorf("session renaming unavailable")}
@@ -118,31 +117,7 @@ func sessionBrowserCommands(ctx context.Context, browser interaction.SessionBrow
 			return sessionRenameResult{generation: generation, item: item, err: err}
 		}, cancel
 	}
-	return search, preview, read, rename, func() {
-		owner.mu.Lock()
-		owner.closed = true
-		owner.mu.Unlock()
-		cancelAll()
-		owner.wg.Wait()
-	}
-}
-
-// Commands can be queued when Bubble Tea exits. The gate prevents work from
-// starting after shutdown begins, while the owner waits for started queries.
-type sessionQueryOwner struct {
-	mu     sync.Mutex
-	wg     sync.WaitGroup
-	closed bool
-}
-
-func (o *sessionQueryOwner) begin() bool {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	if o.closed {
-		return false
-	}
-	o.wg.Add(1)
-	return true
+	return search, preview, read, rename, func() { owner.close(cancelAll) }
 }
 
 type sessionListItem struct {
