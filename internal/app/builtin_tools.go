@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/ch1lam/aice-cli/internal/agent"
+	"github.com/ch1lam/aice-cli/internal/deps"
 	"github.com/ch1lam/aice-cli/internal/tool"
 )
 
@@ -29,7 +30,7 @@ func newBuiltInTools(ctx context.Context, workspace *tool.Workspace, interactive
 	add("write", write, err)
 	edit, err := tool.NewEdit(workspace)
 	add("edit", edit, err)
-	bash, err := tool.NewBash(ctx, workspace)
+	bash, err := tool.NewBash(ctx, workspace, hostBashShells())
 	add("bash", bash, err)
 	grep, err := tool.NewGrep(workspace)
 	add("grep", grep, err)
@@ -45,4 +46,15 @@ func newBuiltInTools(ctx context.Context, workspace *tool.Workspace, interactive
 		tools = append(tools, tool.NewRequestUserInput(nil))
 	}
 	return tools, nil
+}
+
+// hostBashShells resolves the bash tool's shell: native Bash, otherwise the
+// WSL launchers the tool probes as a fallback.
+func hostBashShells() tool.BashShells {
+	opts := deps.DefaultOptions()
+	native, err := deps.FindNativeBash(opts)
+	if err != nil {
+		return tool.BashShells{NativeErr: err, WSL: deps.WSLBashPaths(opts)}
+	}
+	return tool.BashShells{Native: native}
 }

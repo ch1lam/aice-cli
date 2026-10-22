@@ -9,16 +9,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ch1lam/aice-cli/internal/deps"
 	"github.com/ch1lam/aice-cli/internal/tool"
 )
 
 func TestBashExecuteRunsWithoutApproval(t *testing.T) {
 	t.Parallel()
 	workspace, _ := newWorkspace(t)
-	bash, err := tool.NewBash(t.Context(), workspace)
-	if err != nil {
-		t.Skipf("NewBash() error = %v", err)
-	}
+	bash := newBash(t, workspace)
 	result, err := bash.Execute(
 		t.Context(),
 		toolCall(t, "bash", map[string]any{"command": "printf ready"}),
@@ -34,11 +32,8 @@ func TestBashExecuteRunsWithoutApproval(t *testing.T) {
 func TestBashExecuteRejectsInvalidTimeoutBeforeStartingProcess(t *testing.T) {
 	t.Parallel()
 	workspace, root := newWorkspace(t)
-	bash, err := tool.NewBash(t.Context(), workspace)
-	if err != nil {
-		t.Skipf("NewBash() error = %v", err)
-	}
-	_, err = bash.Execute(t.Context(), toolCall(t, "bash", map[string]any{
+	bash := newBash(t, workspace)
+	_, err := bash.Execute(t.Context(), toolCall(t, "bash", map[string]any{
 		"command": "printf ran > marker.txt",
 		"timeout": -1,
 	}))
@@ -54,10 +49,7 @@ func TestBashExecuteUsesWorkingDirectoryAndHostEnvironment(t *testing.T) {
 	workspace, root := newWorkspace(t)
 	t.Setenv("AICE_TOOL_TEST_VALUE", "inherited")
 	t.Setenv("AICE_TOOL_TEST_SECRET", "hidden")
-	bash, err := tool.NewBash(t.Context(), workspace)
-	if err != nil {
-		t.Skipf("NewBash() error = %v", err)
-	}
+	bash := newBash(t, workspace)
 
 	result, err := bash.Execute(t.Context(), toolCall(t, "bash", map[string]any{
 		"command": `printf '%s' "$AICE_TOOL_TEST_VALUE"; printf cwd > working-directory-marker.txt`,
@@ -87,10 +79,7 @@ func TestBashExecuteUsesWorkingDirectoryAndHostEnvironment(t *testing.T) {
 func TestBashExecuteReportsExitAndTimeout(t *testing.T) {
 	t.Parallel()
 	workspace, root := newWorkspace(t)
-	bash, err := tool.NewBash(t.Context(), workspace)
-	if err != nil {
-		t.Skipf("NewBash() error = %v", err)
-	}
+	bash := newBash(t, workspace)
 
 	result, err := bash.Execute(t.Context(), toolCall(t, "bash", map[string]any{"command": "printf failure; exit 7"}))
 	if err != nil {
@@ -125,10 +114,7 @@ func TestBashExecuteReportsExitAndTimeout(t *testing.T) {
 func TestBashExecuteBoundsCombinedOutput(t *testing.T) {
 	t.Parallel()
 	workspace, _ := newWorkspace(t)
-	bash, err := tool.NewBash(t.Context(), workspace)
-	if err != nil {
-		t.Skipf("NewBash() error = %v", err)
-	}
+	bash := newBash(t, workspace)
 	result, err := bash.Execute(t.Context(), toolCall(t, "bash", map[string]any{
 		"command": "for ((i=0; i<60000; i++)); do printf x; done",
 	}))
@@ -156,10 +142,7 @@ func TestBashExecuteRetainsFinalDiagnostic(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			workspace, _ := newWorkspace(t)
-			bash, err := tool.NewBash(t.Context(), workspace)
-			if err != nil {
-				t.Skipf("NewBash() error = %v", err)
-			}
+			bash := newBash(t, workspace)
 			result, err := bash.Execute(t.Context(), toolCall(t, "bash", map[string]any{
 				"command": "printf 'HEAD\\n'; printf '%060000d' 0; printf '\\nFINAL DIAGNOSTIC\\n' >&2; " + test.ending,
 				"timeout": 1,
@@ -180,16 +163,13 @@ func TestBashExecuteRetainsFinalDiagnostic(t *testing.T) {
 func TestBashExecuteHonorsCallerCancellation(t *testing.T) {
 	t.Parallel()
 	workspace, _ := newWorkspace(t)
-	bash, err := tool.NewBash(t.Context(), workspace)
-	if err != nil {
-		t.Skipf("NewBash() error = %v", err)
-	}
+	bash := newBash(t, workspace)
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	timer := time.AfterFunc(100*time.Millisecond, cancel)
 	defer timer.Stop()
 	started := time.Now()
-	_, err = bash.Execute(ctx, toolCall(t, "bash", map[string]any{
+	_, err := bash.Execute(ctx, toolCall(t, "bash", map[string]any{
 		"command": "printf '%060000d' 0; sleep 10",
 	}))
 	if !errors.Is(err, context.Canceled) {
@@ -198,4 +178,18 @@ func TestBashExecuteHonorsCallerCancellation(t *testing.T) {
 	if elapsed := time.Since(started); elapsed > 5*time.Second {
 		t.Fatalf("cancellation took %s", elapsed)
 	}
+}
+
+// newBash builds the bash tool on the host's native Bash, skipping without one.
+func newBash(t *testing.T, workspace *tool.Workspace) *tool.Bash {
+	t.Helper()
+	shell, err := deps.FindNativeBash(deps.DefaultOptions())
+	if err != nil {
+		t.Skipf("native Bash unavailable: %v", err)
+	}
+	bash, err := tool.NewBash(t.Context(), workspace, tool.BashShells{Native: shell})
+	if err != nil {
+		t.Fatalf("NewBash() error = %v", err)
+	}
+	return bash
 }

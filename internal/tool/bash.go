@@ -11,7 +11,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ch1lam/aice-cli/internal/deps"
 	"github.com/ch1lam/aice-cli/internal/llm"
 )
 
@@ -36,8 +35,17 @@ type Bash struct {
 	wsl       bool
 }
 
+// BashShells is the caller-resolved shell selection. Native, an absolute
+// path, is used when set. Otherwise the WSL launchers are probed in order and
+// NativeErr explains the missing native shell if none of them works.
+type BashShells struct {
+	Native    string
+	NativeErr error
+	WSL       []string
+}
+
 // NewBash constructs a bash tool.
-func NewBash(ctx context.Context, workspace *Workspace) (*Bash, error) {
+func NewBash(ctx context.Context, workspace *Workspace, shells BashShells) (*Bash, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -47,15 +55,17 @@ func NewBash(ctx context.Context, workspace *Workspace) (*Bash, error) {
 	if !supportsProcessTreeTermination() {
 		return nil, fmt.Errorf("tool: bash is unsupported because process-tree termination is unavailable")
 	}
-	opts := deps.DefaultOptions()
-	shellPath, err := deps.FindNativeBash(opts)
-	if err != nil {
-		return newWSLBash(ctx, workspace, deps.WSLBashPaths(opts), err)
+	if shells.Native == "" {
+		nativeErr := shells.NativeErr
+		if nativeErr == nil {
+			nativeErr = errors.New("native Bash is not configured")
+		}
+		return newWSLBash(ctx, workspace, shells.WSL, nativeErr)
 	}
-	if !filepath.IsAbs(shellPath) {
+	if !filepath.IsAbs(shells.Native) {
 		return nil, fmt.Errorf("tool: bash executable path must be absolute")
 	}
-	return &Bash{workspace: workspace, shellPath: shellPath}, nil
+	return &Bash{workspace: workspace, shellPath: shells.Native}, nil
 }
 
 // Definition returns the model-facing bash contract.
