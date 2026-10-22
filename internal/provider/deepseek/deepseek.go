@@ -78,58 +78,51 @@ func New(config Config) (*Provider, error) {
 	}}, nil
 }
 
-// Models returns the DeepSeek models supported by this provider.
+// Models returns the DeepSeek models supported by this provider. Prices are
+// official off-peak USD rates; peak billing is twice these estimates. Flash
+// serves DeepSeek-V4.1-Flash with native vision; V4 Pro serves
+// DeepSeek-V4-Pro-0813, is text-only, and uses the Anthropic-compatible API.
 func Models() []llm.Model {
-	return []llm.Model{model(ModelV4Flash), model(ModelV4Pro)}
+	return []llm.Model{
+		{
+			ID: ModelV4Flash, Name: "DeepSeek Flash", API: openairesponses.API, Provider: ProviderID,
+			ContextWindow: 1_000_000, MaxTokens: 384_000,
+			InputModalities:  []llm.InputModality{llm.InputModalityText, llm.InputModalityImage},
+			SupportsThinking: true, ThinkingLevelMap: thinkingLevels(),
+			Pricing: llm.Pricing{Input: 0.15, Output: 0.6, CacheRead: 0.003},
+		},
+		{
+			ID: ModelV4Pro, Name: "DeepSeek V4 Pro", API: anthropic.API, Provider: ProviderID,
+			ContextWindow: 1_000_000, MaxTokens: 384_000,
+			InputModalities:  []llm.InputModality{llm.InputModalityText},
+			SupportsThinking: true, ThinkingLevelMap: thinkingLevels(), SupportsReasoningEffort: true,
+			Pricing: llm.Pricing{Input: 0.66, Output: 1.98, CacheRead: 0.022},
+		},
+	}
 }
 
 // DefaultModel returns the fast model used when no explicit model is selected.
-func DefaultModel() llm.Model {
-	return model(ModelV4Flash)
+func DefaultModel() llm.Model { return Models()[0] }
+
+// thinkingLevels exposes DeepSeek's three effort values plus off. Medium and
+// xhigh both map to high, so they are not separate choices.
+func thinkingLevels() llm.ThinkingLevelMap {
+	levels := llm.ThinkingLevelsMap(
+		llm.ThinkingLevelOff,
+		llm.ThinkingLevelLow,
+		llm.ThinkingLevelMedium,
+		llm.ThinkingLevelHigh,
+		llm.ThinkingLevelXHigh,
+		llm.ThinkingLevelMax,
+	)
+	levels[llm.ThinkingLevelMedium] = llm.ThinkingValue("high")
+	levels[llm.ThinkingLevelXHigh] = llm.ThinkingValue("high")
+	return levels
 }
 
 // Stream validates provider-specific compatibility before making a request.
 func (p *Provider) Stream(ctx context.Context, request llm.Request) (llm.Stream, error) {
 	return p.route.Stream(ctx, request)
-}
-
-func model(id string) llm.Model {
-	// OpenCode Go still uses the shared V4 Flash identity and metadata.
-	specID := id
-	if id == ModelV4Flash {
-		specID = "deepseek-v4-flash"
-	}
-	var spec provider.ModelSpec
-	for _, candidate := range provider.DeepSeekModelSpecs() {
-		if candidate.ID == specID {
-			spec = candidate
-			break
-		}
-	}
-	if id == ModelV4Flash {
-		spec.Name = "DeepSeek Flash"
-	}
-	api := openairesponses.API
-	if id == ModelV4Pro {
-		api = anthropic.API
-	}
-	return llm.Model{
-		ID:                      id,
-		Name:                    spec.Name,
-		API:                     api,
-		Provider:                ProviderID,
-		SupportsThinking:        true,
-		ThinkingLevelMap:        spec.ThinkingLevelMap,
-		SupportsReasoningEffort: id == ModelV4Pro,
-		InputModalities:         inputModalities(id),
-		ContextWindow:           spec.ContextWindow,
-		MaxTokens:               spec.MaxTokens,
-		Pricing: llm.Pricing{
-			Input:     spec.Input,
-			Output:    spec.Output,
-			CacheRead: spec.CacheRead,
-		},
-	}
 }
 
 func protocolBaseURLs(configured string) (string, string) {
@@ -144,15 +137,6 @@ func protocolBaseURLs(configured string) (string, string) {
 		return configured, responsesBaseURL
 	}
 	return configured + "/anthropic", responsesBaseURL
-}
-
-// inputModalities reports the content a DeepSeek model accepts. Only Flash
-// (V4.1-Flash) supports native vision; V4 Pro is text-only.
-func inputModalities(id string) []llm.InputModality {
-	if id == ModelV4Pro {
-		return []llm.InputModality{llm.InputModalityText}
-	}
-	return []llm.InputModality{llm.InputModalityText, llm.InputModalityImage}
 }
 
 // Label returns the DeepSeek display name.
