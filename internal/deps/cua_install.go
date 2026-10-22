@@ -1,15 +1,11 @@
 package deps
 
 import (
-	"archive/tar"
-	"compress/gzip"
 	"context"
 	_ "embed"
 	"errors"
 	"fmt"
-	"io"
 	"os"
-	"path"
 	"path/filepath"
 	"strings"
 	"time"
@@ -153,81 +149,27 @@ func lockCuaInstall(ctx context.Context, directory string) (func() error, error)
 	}
 }
 
-// The pinned full distribution contains a regular-file App, with no symlinks.
+// The pinned full distribution holds only regular files and directories.
 // Extract only that App, retaining execute bits and its original signed bytes.
 // The bare binary, Node addon and SDK libraries outside it are not installed.
 func extractCuaBundle(ctx context.Context, archive, destination string) error {
-	file, err := os.Open(archive)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-	gz, err := gzip.NewReader(file)
-	if err != nil {
-		return err
-	}
-	defer gz.Close()
-	reader := tar.NewReader(gz)
-	prefix := "cua-driver-rs-" + CuaDriverVersion + "-darwin-universal/"
-	seen := make(map[string]bool)
-	var total int64
-	for count := 0; ; count++ {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		header, err := reader.Next()
-		if errors.Is(err, io.EOF) {
-			break
-		}
-		if err != nil {
-			return err
-		}
-		if count >= 4096 || header.Size < 0 || header.Size > 256<<20 {
-			return errors.New("Cua archive exceeds extraction limits")
-		}
-		total += header.Size
-		if total > 512<<20 {
-			return errors.New("Cua archive expands beyond 512 MiB")
-		}
-		if strings.ContainsAny(header.Name, "\\:") || path.IsAbs(header.Name) || strings.Contains("/"+header.Name, "/../") {
-			return errors.New("unsafe Cua archive path")
-		}
-		name := path.Clean(header.Name)
-		if !strings.HasPrefix(name, prefix) && name != strings.TrimSuffix(prefix, "/") {
+	root := "cua-driver-rs-" + CuaDriverVersion + "-darwin-universal"
+	err := walkArchive(ctx, archive, false, func(entry archiveEntry) error {
+		if entry.name != root && !strings.HasPrefix(entry.name, root+"/") {
 			return errors.New("unexpected Cua archive root")
 		}
-		rel := strings.TrimPrefix(name, prefix)
+		rel := strings.TrimPrefix(entry.name, root+"/")
 		if rel != "CuaDriver.app" && !strings.HasPrefix(rel, "CuaDriver.app/") {
-			continue
+			return nil
 		}
-		if seen[rel] {
-			return errors.New("duplicate Cua archive entry")
+		target := filepath.Join(destination, filepath.FromSlash(rel))
+		if entry.mode.IsDir() {
+			return os.MkdirAll(target, 0o755)
 		}
-		seen[rel] = true
-		dest, err := safeJoin(destination, rel)
-		if err != nil {
-			return err
-		}
-		switch header.Typeflag {
-		case tar.TypeDir:
-			if err := os.MkdirAll(dest, 0755); err != nil {
-				return err
-			}
-		case tar.TypeReg:
-			if err := os.MkdirAll(filepath.Dir(dest), 0755); err != nil {
-				return err
-			}
-			out, err := os.OpenFile(dest, os.O_WRONLY|os.O_CREATE|os.O_EXCL, os.FileMode(header.Mode)&0755)
-			if err != nil {
-				return err
-			}
-			_, copyErr := io.Copy(out, &cuaContextReader{ctx: ctx, reader: reader})
-			if err := errors.Join(copyErr, out.Close()); err != nil {
-				return err
-			}
-		default:
-			return errors.New("Cua App archive contains an unexpected link or special file")
-		}
+		return extractArchiveFile(ctx, entry, target, entry.mode.Perm()&0o755)
+	})
+	if err != nil {
+		return fmt.Errorf("extract Cua archive: %w", err)
 	}
 	for _, required := range []string{"Contents/Info.plist", "Contents/_CodeSignature/CodeResources", "Contents/MacOS/cua-driver"} {
 		info, err := os.Lstat(filepath.Join(destination, "CuaDriver.app", filepath.FromSlash(required)))
@@ -236,16 +178,4 @@ func extractCuaBundle(ctx context.Context, archive, destination string) error {
 		}
 	}
 	return nil
-}
-
-type cuaContextReader struct {
-	ctx    context.Context
-	reader io.Reader
-}
-
-func (r *cuaContextReader) Read(p []byte) (int, error) {
-	if err := r.ctx.Err(); err != nil {
-		return 0, err
-	}
-	return r.reader.Read(p)
 }

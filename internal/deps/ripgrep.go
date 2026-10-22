@@ -1,9 +1,6 @@
 package deps
 
 import (
-	"archive/tar"
-	"archive/zip"
-	"compress/gzip"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -45,23 +42,27 @@ func installRipgrep(ctx context.Context, opts Options) error {
 	}
 	defer os.RemoveAll(extractTo)
 
-	if strings.HasSuffix(asset, ".zip") {
-		if err := extractZip(archivePath, extractTo); err != nil {
-			return fmt.Errorf("extract %s: %w", asset, err)
-		}
-	} else {
-		if err := extractTarGz(archivePath, extractTo); err != nil {
-			return fmt.Errorf("extract %s: %w", asset, err)
-		}
-	}
-
 	binName := "rg"
 	if opts.Goos == "windows" {
 		binName = "rg.exe"
 	}
-	from, err := findFile(extractTo, binName)
+	from := filepath.Join(extractTo, binName)
+	found := false
+	err = walkArchive(ctx, archivePath, strings.HasSuffix(asset, ".zip"), func(entry archiveEntry) error {
+		if entry.mode.IsDir() || path.Base(entry.name) != binName {
+			return nil
+		}
+		if found {
+			return fmt.Errorf("archive contains more than one %s", binName)
+		}
+		found = true
+		return extractArchiveFile(ctx, entry, from, 0o755)
+	})
 	if err != nil {
-		return err
+		return fmt.Errorf("extract %s: %w", asset, err)
+	}
+	if !found {
+		return fmt.Errorf("extract %s: archive does not contain %s", asset, binName)
 	}
 	dest := filepath.Join(opts.BinDir, binName)
 	if err := moveFile(from, dest); err != nil {
@@ -157,74 +158,6 @@ func download(ctx context.Context, opts Options, url, want, suffix string) (stri
 	return file.Name(), nil
 }
 
-func extractZip(archive, dest string) error {
-	reader, err := zip.OpenReader(archive)
-	if err != nil {
-		return err
-	}
-	defer reader.Close()
-	for _, entry := range reader.File {
-		path, err := safeJoin(dest, entry.Name)
-		if err != nil {
-			return err
-		}
-		if entry.FileInfo().IsDir() {
-			if err := os.MkdirAll(path, 0o755); err != nil {
-				return err
-			}
-			continue
-		}
-		source, err := entry.Open()
-		if err != nil {
-			return err
-		}
-		err = writeFile(path, source)
-		source.Close()
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func extractTarGz(archive, dest string) error {
-	file, err := os.Open(archive)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-	gz, err := gzip.NewReader(file)
-	if err != nil {
-		return err
-	}
-	defer gz.Close()
-
-	reader := tar.NewReader(gz)
-	for {
-		header, err := reader.Next()
-		if err == io.EOF {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		path, err := safeJoin(dest, header.Name)
-		if err != nil {
-			return err
-		}
-		switch header.Typeflag {
-		case tar.TypeDir:
-			if err := os.MkdirAll(path, 0o755); err != nil {
-				return err
-			}
-		case tar.TypeReg:
-			if err := writeFile(path, reader); err != nil {
-				return err
-			}
-		}
-	}
-}
-
 // archiveSuffix returns the recognizable extension of a ripgrep asset so the
 // downloaded temp file is tidy; extraction does not rely on it.
 func archiveSuffix(asset string) string {
@@ -232,19 +165,6 @@ func archiveSuffix(asset string) string {
 		return ".tar.gz"
 	}
 	return filepath.Ext(asset)
-}
-
-// safeJoin joins an archive entry name onto base, rejecting entries that would
-// escape base. Archive names use forward slashes, so path.Clean gives the same
-// result on every platform before the cleaned path is converted back.
-func safeJoin(base, name string) (string, error) {
-	clean := path.Clean(name)
-	if clean == "." || clean == ".." ||
-		strings.HasPrefix(clean, "../") ||
-		strings.HasPrefix(clean, "/") {
-		return "", fmt.Errorf("archive entry escapes destination: %q", name)
-	}
-	return filepath.Join(base, filepath.FromSlash(clean)), nil
 }
 
 func writeFile(path string, source io.Reader) error {
@@ -260,28 +180,6 @@ func writeFile(path string, source io.Reader) error {
 		return err
 	}
 	return target.Close()
-}
-
-// findFile returns the path of the file named name anywhere under root.
-func findFile(root, name string) (string, error) {
-	var found string
-	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if !entry.IsDir() && filepath.Base(path) == name {
-			found = path
-			return io.EOF
-		}
-		return nil
-	})
-	if err != nil && err != io.EOF {
-		return "", err
-	}
-	if found == "" {
-		return "", fmt.Errorf("archive does not contain %s", name)
-	}
-	return found, nil
 }
 
 // moveFile renames from to to, falling back to a copy on cross-device errors.

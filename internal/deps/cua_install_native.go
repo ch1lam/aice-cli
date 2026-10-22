@@ -187,7 +187,7 @@ func verifyCuaNativeFiles(ctx context.Context, directory string, files map[strin
 			return err
 		}
 		hash := sha256.New()
-		_, copyErr := io.Copy(hash, io.LimitReader(&cuaContextReader{ctx: ctx, reader: f}, (256<<20)+1))
+		_, copyErr := io.Copy(hash, io.LimitReader(&contextReader{ctx: ctx, reader: f}, (256<<20)+1))
 		if err := errors.Join(copyErr, f.Close()); err != nil {
 			return err
 		}

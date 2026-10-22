@@ -217,17 +217,6 @@ func TestPrependPath(t *testing.T) {
 	}
 }
 
-func TestSafeJoinRejectsTraversal(t *testing.T) {
-	for _, entry := range []string{"../evil", "sub/../../evil", "/absolute"} {
-		if _, err := safeJoin("/dest", entry); err == nil {
-			t.Fatalf("safeJoin accepted traversal entry %q", entry)
-		}
-	}
-	if path, err := safeJoin("/dest", "a/b.txt"); err != nil || path != filepath.Join("/dest", "a", "b.txt") {
-		t.Fatalf("safeJoin() = %q, %v", path, err)
-	}
-}
-
 func tarGzFixture(t *testing.T, entries map[string]string) []byte {
 	t.Helper()
 	var buffer bytes.Buffer

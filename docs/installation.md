@@ -49,6 +49,11 @@ AICE uses Bash and ripgrep (`rg`). At startup it looks on `PATH` and in
 - On Windows, missing Git Bash is downloaded as the Bash runtime.
 - On macOS and Linux, Bash must already be available on the host.
 
+Helper archives (ripgrep and Cua) are checksum-pinned and extracted by one
+bounded walker: at most 4,096 entries, 256 MiB per entry and 512 MiB in total,
+relative paths only, no duplicates, links or special files. Only the selected
+executables or App are written.
+
 On Windows, AICE prefers its managed Git Bash, then Git Bash beside the `git.exe`
 found on `PATH`, then standard Git for Windows installation directories. Other
 native Bash executables in AICE's helper directory and absolute `PATH` entries
