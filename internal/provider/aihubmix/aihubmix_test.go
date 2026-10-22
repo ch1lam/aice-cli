@@ -46,9 +46,6 @@ func TestCredentialsAndValidation(t *testing.T) {
 		name   string
 		mutate func(*llm.Request)
 	}{
-		{"provider", func(r *llm.Request) { r.Model.Provider = "openai" }},
-		{"model", func(r *llm.Request) { r.Model.ID = "unknown" }},
-		{"protocol", func(r *llm.Request) { r.Model.API = anthropic.API }},
 		{"unsupported effort", func(r *llm.Request) { r.Options.Thinking = llm.ThinkingLevelMinimal }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

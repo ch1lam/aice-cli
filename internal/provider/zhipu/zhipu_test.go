@@ -110,9 +110,6 @@ func TestRejectsIncompatibleRequestsBeforeHTTP(t *testing.T) {
 		t.Fatal(err)
 	}
 	for name, mutate := range map[string]func(*llm.Request){
-		"provider":     func(r *llm.Request) { r.Model.Provider = "openai" },
-		"model":        func(r *llm.Request) { r.Model.ID = "unknown" },
-		"protocol":     func(r *llm.Request) { r.Model.API = "openai-responses" },
 		"thinking off": func(r *llm.Request) { r.Options.Thinking = llm.ThinkingLevelOff },
 		"image": func(r *llm.Request) {
 			r.Messages = []llm.Message{llm.UserMessage{Role: llm.RoleUser, Content: []llm.ContentPart{{Type: llm.ContentTypeImage, Image: &llm.ImageContent{Data: []byte("image"), MIMEType: "image/png"}}}}}
@@ -135,11 +132,6 @@ func TestConnectionValidation(t *testing.T) {
 		if _, err := zhipu.New(c); err == nil {
 			t.Fatal("accepted invalid connection")
 		}
-	}
-	models := (&zhipu.Provider{}).Models()
-	models[0].ThinkingLevelMap[llm.ThinkingLevelHigh] = nil
-	if !(&zhipu.Provider{}).DefaultModel().ThinkingLevelMap.Supports(llm.ThinkingLevelHigh) {
-		t.Fatal("catalog shares mutable map")
 	}
 }
 

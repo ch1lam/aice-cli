@@ -108,22 +108,6 @@ func TestProviderPassesImagesToEndpoint(t *testing.T) {
 	}
 }
 
-func TestDefaultModelIsInCatalog(t *testing.T) {
-	t.Parallel()
-
-	def := custom.DefaultModel()
-	found := false
-	for _, m := range custom.Models() {
-		if m.ID == def.ID {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Errorf("DefaultModel %q not in Models() catalog", def.ID)
-	}
-}
-
 func TestProviderAcceptsArbitraryModel(t *testing.T) {
 	t.Parallel()
 

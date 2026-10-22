@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
-	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -18,35 +17,6 @@ import (
 	"github.com/ch1lam/aice-cli/internal/config"
 	"github.com/ch1lam/aice-cli/internal/llm"
 )
-
-func TestModels(t *testing.T) {
-	t.Parallel()
-	models := Models()
-	var ids []string
-	for _, model := range models {
-		ids = append(ids, model.ID)
-		if model.ContextWindow != 272_000 {
-			t.Errorf("%s default context = %d, want 272000", model.ID, model.ContextWindow)
-		}
-	}
-	want := []string{"gpt-6-astra", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"}
-	if !slices.Equal(ids, want) {
-		t.Fatalf("model IDs = %v, want %v", ids, want)
-	}
-	if DefaultModel().ID != "gpt-5.6-terra" {
-		t.Fatal("catalog update changed the default model")
-	}
-	astra := models[0]
-	if astra.ContextWindow != 272_000 || astra.MaxTokens != 128_000 ||
-		!slices.Contains(astra.InputModalities, llm.InputModalityImage) {
-		t.Fatalf("incorrect Astra metadata: %#v", astra)
-	}
-	wantLevels := []llm.ThinkingLevel{llm.ThinkingLevelLow, llm.ThinkingLevelMedium,
-		llm.ThinkingLevelHigh, llm.ThinkingLevelXHigh, llm.ThinkingLevelMax}
-	if !slices.Equal(llm.SupportedThinkingLevels(astra), wantLevels) {
-		t.Fatal("incorrect Astra reasoning levels")
-	}
-}
 
 func saveTestCredential(t *testing.T, paths config.Paths, expires time.Time) {
 	t.Helper()

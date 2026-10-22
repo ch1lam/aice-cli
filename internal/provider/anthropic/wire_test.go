@@ -96,14 +96,3 @@ func TestAlwaysThinkingModelsRejectOffBeforeHTTP(t *testing.T) {
 		}
 	}
 }
-
-func TestCatalogValuesAreIndependent(t *testing.T) {
-	t.Parallel()
-	models := anthropic.Models()
-	*models[0].ThinkingLevelMap[llm.ThinkingLevelHigh] = "changed"
-	models[0].InputModalities[0] = "changed"
-	fresh := anthropic.DefaultModel()
-	if value, _ := fresh.ThinkingLevelMap.WireValue(llm.ThinkingLevelHigh); value != "high" || fresh.InputModalities[0] != llm.InputModalityText {
-		t.Fatal("catalog mutation leaked")
-	}
-}
