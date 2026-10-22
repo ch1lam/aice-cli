@@ -18,22 +18,21 @@ import (
 )
 
 type sessionPicker struct {
-	input                       textinput.Model
-	rename                      *sessionTitleEditor
-	cancelRename                context.CancelFunc
-	list                        list.Model
-	preview                     viewport.Model
-	all                         []interaction.SessionSummary
-	results                     []interaction.SessionSummary
-	collapsedGroups             map[string]bool
-	previewLayout               sessionPreviewLayout
-	previewText                 string
-	previewID                   string
-	copyPressedID, copiedID     string
-	previewFocused              bool
-	previewVisible              bool
-	pointer                     *tea.Mouse
-	closePressed                bool
+	input                   textinput.Model
+	rename                  *sessionTitleEditor
+	cancelRename            context.CancelFunc
+	list                    list.Model
+	preview                 viewport.Model
+	all                     []interaction.SessionSummary
+	results                 []interaction.SessionSummary
+	collapsedGroups         map[string]bool
+	previewLayout           sessionPreviewLayout
+	previewText             string
+	previewID               string
+	copyPressedID, copiedID string
+	previewFocused          bool
+	previewVisible          bool
+	modalPointer
 	loading, restoring          bool
 	notice                      string
 	cancelSearch, cancelPreview context.CancelFunc
@@ -396,7 +395,7 @@ func (m model) applySessionPreview(result sessionPreviewResult) (tea.Model, tea.
 
 func (m model) handleSessionPicker(message tea.Msg) (tea.Model, tea.Cmd) {
 	p := m.sessionPicker
-	if m.trackSessionPickerClose(message) {
+	if p.trackClose(message, m.sessionPickerLayout().modalLayout) && m.width >= 16 && m.height >= 8 {
 		if p.restoring {
 			// Match Escape: restoration owns completion and cancellation.
 			return m.handleSessionAction(inputActionMatch{action: inputActionSessionCancelRestore})

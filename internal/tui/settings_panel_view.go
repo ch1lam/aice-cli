@@ -166,7 +166,7 @@ func (m model) settingsPanelView() string {
 		"", body, "",
 		strings.Repeat(" ", footerX) + mutedStyle.Render(footer),
 	}, "\n")
-	hover := p.pointer != nil && modalCloseContains(l, *p.pointer)
+	hover := p.pointer != nil && l.closeContains(*p.pointer)
 	return modalFrame(title, content, l, hover, p.pressed == "close")
 }
 
@@ -219,7 +219,7 @@ func (m model) overlaySettings(content string) (string, *tea.Cursor) {
 
 func (p *settingsPanel) target(mouse tea.Mouse) string {
 	l := p.layout
-	if modalCloseContains(l, mouse) {
+	if l.closeContains(mouse) {
 		return "close"
 	}
 	x, y := mouse.X-l.x-2, mouse.Y-l.y-2

@@ -11,8 +11,9 @@ import (
 )
 
 type sessionPickerLayout struct {
-	x, y, width, height, inner, bodyHeight, listWidth, previewWidth int
-	wide                                                            bool
+	modalLayout
+	listWidth, previewWidth int
+	wide                    bool
 }
 
 type sessionPickerPane uint8
@@ -49,10 +50,8 @@ func (m model) sessionPickerPaneAt(x, y int) sessionPickerPane {
 }
 
 func (m model) sessionPickerLayout() sessionPickerLayout {
-	w, h := max(8, m.width-4), max(8, m.height-2)
-	l := sessionPickerLayout{width: w, height: h, inner: w - 4, bodyHeight: h - 5}
-	l.x, l.y = max(0, (m.width-w)/2), max(0, (m.height-h)/2)
-	l.wide = w >= 84 && m.sessionPicker != nil && m.sessionPicker.previewVisible
+	l := sessionPickerLayout{modalLayout: centeredModal(m.width, m.height, m.width, m.height)}
+	l.wide = l.width >= 84 && m.sessionPicker != nil && m.sessionPicker.previewVisible
 	l.listWidth, l.previewWidth = l.inner, l.inner
 	if l.wide {
 		l.listWidth = (l.inner - 3) / 2
@@ -150,40 +149,11 @@ func (m model) sessionPickerView() string {
 		mutedStyle.Render(ansi.Truncate(sanitizeToolDetail(notice, false), l.inner, "…")), input, body,
 		mutedStyle.Render(ansi.Truncate(help, l.inner, "…")),
 	}, "\n")
-	return modalFrame(title, content, modalLayout{x: l.x, y: l.y, width: l.width, height: l.height, inner: l.inner, bodyHeight: l.bodyHeight}, m.sessionPickerCloseHovered(), p.closePressed)
+	return modalFrame(title, content, l.modalLayout, m.sessionPickerCloseHovered(), p.closePressed)
 }
-
-const sessionPickerCloseLabel = " [ ✘ ] "
 
 func (m model) sessionPickerCloseHovered() bool {
-	p := m.sessionPicker
-	if p.pointer == nil || m.width < 16 || m.height < 8 {
-		return false
-	}
-	l := m.sessionPickerLayout()
-	x, y := p.pointer.X-l.x-2, p.pointer.Y-l.y
-	return y == 0 && x >= l.inner-ansi.StringWidth(sessionPickerCloseLabel) && x < l.inner
-}
-
-// Activate only after a left press and release within the painted button.
-func (m *model) trackSessionPickerClose(message tea.Msg) bool {
-	p := m.sessionPicker
-	switch mouse := message.(type) {
-	case tea.MouseMotionMsg:
-		pointer := tea.Mouse(mouse)
-		p.pointer = &pointer
-	case tea.MouseClickMsg:
-		pointer := tea.Mouse(mouse)
-		p.pointer = &pointer
-		p.closePressed = mouse.Button == tea.MouseLeft && m.sessionPickerCloseHovered()
-	case tea.MouseReleaseMsg:
-		pointer := tea.Mouse(mouse)
-		p.pointer = &pointer
-		close := p.closePressed && mouse.Button == tea.MouseLeft && m.sessionPickerCloseHovered()
-		p.closePressed = false
-		return close
-	}
-	return false
+	return m.width >= 16 && m.height >= 8 && m.sessionPicker.closeHovered(m.sessionPickerLayout().modalLayout)
 }
 
 // Keep the activity date attached to the displayed preview, including while a
