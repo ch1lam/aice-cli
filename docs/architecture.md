@@ -95,7 +95,7 @@ Optional capabilities retain their own owners:
 | `internal/llm` | Canonical messages, models, usage, streams, context estimates |
 | `internal/api/{anthropic,openairesponses,openaicompletions}` | Protocol translation around official SDKs |
 | `internal/api/streamcore` | Protocol-neutral streaming mechanics shared by adapters |
-| `internal/provider/*` | Model catalogs, credentials, defaults and provider compatibility; [configuration](configuration.md) |
+| `internal/provider/*` | Model catalogs, credentials, defaults and provider compatibility; `provider.Route` gates each request (identity, catalog model, API, content) and dispatches by API; [configuration](configuration.md) |
 | `internal/tool` | Host tools, web tools, questions, Skills and MCP discovery/result adapters; [execution guide](execution-sessions.md#tool-execution-boundary) |
 | `internal/evidence` | Leaf source/evidence contract retained as tool-result metadata; deterministic source IDs, validation, cloning |
 | `internal/web` | Provider-neutral search/fetch requests and results, classified errors, domain policy, pure source resolver, deterministic model rendering |
