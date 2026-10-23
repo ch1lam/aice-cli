@@ -37,6 +37,29 @@ func recordSettings(save func(config.Setting, string) error) func(context.Contex
 	}
 }
 
+// newAPIKeyLoginSession returns a session for /login API-key tests: the key
+// save succeeds, persisted setting names are appended to saved, and rebuilt
+// models answer "ready". Tests override the dependency they exercise.
+func newAPIKeyLoginSession(model llm.Model, configuration config.Config, saved *[]config.Setting) *interactiveSession {
+	return &interactiveSession{
+		application: &application{dependencies: dependencies{
+			saveAPIKey: func(string, string) (string, error) { return "/global/auth.json", nil },
+			saveSettings: recordSettings(func(setting config.Setting, _ string) error {
+				*saved = append(*saved, setting)
+				return nil
+			}),
+			newModel: func(config.Config) (agent.Model, error) {
+				return &recordingModel{response: "ready"}, nil
+			},
+			providers: defaultProviders(),
+		}},
+		model:         model,
+		options:       llm.StreamOptions{Thinking: llm.ThinkingLevelMedium},
+		configuration: configuration,
+		providers:     defaultProviders(),
+	}
+}
+
 func TestInteractiveSessionSlashCommandsNavigateCurrentStore(t *testing.T) {
 	t.Parallel()
 
@@ -863,36 +886,16 @@ func TestInteractiveSessionLoginCanRetryAfterPersistenceFailure(t *testing.T) {
 	saveAttempts := 0
 	wantErr := errors.New("credential write interrupted")
 	var savedSettings []config.Setting
-	runner := &interactiveSession{
-		application: &application{dependencies: dependencies{
-			saveAPIKey: func(string, string) (string, error) {
-				saveAttempts++
-				if saveAttempts == 1 {
-					return "", wantErr
-				}
-				return "/global/auth.json", nil
-			},
-			saveSettings: recordSettings(func(setting config.Setting, _ string) error {
-				savedSettings = append(savedSettings, setting)
-				return nil
-			}),
-			newModel: func(config.Config) (agent.Model, error) {
-				return &recordingModel{
-					response:   "ready",
-					stopReason: llm.StopReasonStop,
-				}, nil
-			},
-			providers: defaultProviders(),
-		}},
-		model: deepseek.DefaultModel(),
-		options: llm.StreamOptions{
-			Thinking: llm.ThinkingLevelMedium,
-		},
-		configuration: config.Config{
-			Provider: string(deepseek.ProviderID),
-			Model:    deepseek.ModelV4Flash,
-		},
-		providers: defaultProviders(),
+	runner := newAPIKeyLoginSession(deepseek.DefaultModel(), config.Config{
+		Provider: string(deepseek.ProviderID),
+		Model:    deepseek.ModelV4Flash,
+	}, &savedSettings)
+	runner.application.dependencies.saveAPIKey = func(string, string) (string, error) {
+		saveAttempts++
+		if saveAttempts == 1 {
+			return "", wantErr
+		}
+		return "/global/auth.json", nil
 	}
 	request := interaction.CommandRequest{
 		Name:      "login",
@@ -1057,35 +1060,14 @@ func TestInteractiveSessionLoginOpencode(t *testing.T) {
 
 	var savedProvider, savedKey string
 	var savedSettings []config.Setting
-	runner := &interactiveSession{
-		application: &application{dependencies: dependencies{
-			saveAPIKey: func(provider, apiKey string) (string, error) {
-				savedProvider = provider
-				savedKey = apiKey
-				return "/global/auth.json", nil
-			},
-			saveSettings: recordSettings(func(setting config.Setting, value string) error {
-				savedSettings = append(savedSettings, setting)
-				_ = value
-				return nil
-			}),
-			newModel: func(config.Config) (agent.Model, error) {
-				return &recordingModel{
-					response:   "ready",
-					stopReason: llm.StopReasonStop,
-				}, nil
-			},
-			providers: defaultProviders(),
-		}},
-		model: opencode.DefaultModel(),
-		options: llm.StreamOptions{
-			Thinking: llm.ThinkingLevelMedium,
-		},
-		configuration: config.Config{
-			Provider: string(opencode.ProviderID),
-			Model:    opencode.DefaultModel().ID,
-		},
-		providers: defaultProviders(),
+	runner := newAPIKeyLoginSession(opencode.DefaultModel(), config.Config{
+		Provider: string(opencode.ProviderID),
+		Model:    opencode.DefaultModel().ID,
+	}, &savedSettings)
+	runner.application.dependencies.saveAPIKey = func(provider, apiKey string) (string, error) {
+		savedProvider = provider
+		savedKey = apiKey
+		return "/global/auth.json", nil
 	}
 
 	output, err := runner.RunSlashCommand(t.Context(), interaction.CommandRequest{
@@ -1137,35 +1119,18 @@ func TestInteractiveSessionLoginUsesSavedCredentialWithoutSaving(t *testing.T) {
 	var savedSettings []config.Setting
 	var modelConfiguration config.Config
 	saveAttempts := 0
-	runner := &interactiveSession{
-		application: &application{dependencies: dependencies{
-			saveAPIKey: func(string, string) (string, error) {
-				saveAttempts++
-				return "/global/auth.json", nil
-			},
-			saveSettings: recordSettings(func(setting config.Setting, _ string) error {
-				savedSettings = append(savedSettings, setting)
-				return nil
-			}),
-			newModel: func(configuration config.Config) (agent.Model, error) {
-				modelConfiguration = configuration
-				return &recordingModel{
-					response:   "ready",
-					stopReason: llm.StopReasonStop,
-				}, nil
-			},
-			providers: defaultProviders(),
-		}},
-		model: opencode.DefaultModel(),
-		options: llm.StreamOptions{
-			Thinking: llm.ThinkingLevelMedium,
-		},
-		configuration: config.Config{
-			Provider: string(deepseek.ProviderID),
-			Model:    "gpt-5.6-terra",
-			APIKeys:  map[string]string{"deepseek": "deepseek-key", "opencode-go": "opencode-key"},
-		},
-		providers: defaultProviders(),
+	runner := newAPIKeyLoginSession(opencode.DefaultModel(), config.Config{
+		Provider: string(deepseek.ProviderID),
+		Model:    "gpt-5.6-terra",
+		APIKeys:  map[string]string{"deepseek": "deepseek-key", "opencode-go": "opencode-key"},
+	}, &savedSettings)
+	runner.application.dependencies.saveAPIKey = func(string, string) (string, error) {
+		saveAttempts++
+		return "/global/auth.json", nil
+	}
+	runner.application.dependencies.newModel = func(configuration config.Config) (agent.Model, error) {
+		modelConfiguration = configuration
+		return &recordingModel{response: "ready"}, nil
 	}
 
 	output, err := runner.RunSlashCommand(t.Context(), interaction.CommandRequest{
@@ -1210,38 +1175,19 @@ func TestInteractiveSessionLoginPersistsProviderAndFallsBackModel(t *testing.T) 
 
 	var savedSettings []config.Setting
 	var savedValues []string
-	runner := &interactiveSession{
-		application: &application{dependencies: dependencies{
-			saveAPIKey: func(string, string) (string, error) {
-				return "/global/auth.json", nil
-			},
-			saveSettings: recordSettings(func(setting config.Setting, value string) error {
-				savedSettings = append(savedSettings, setting)
-				savedValues = append(savedValues, value)
-				return nil
-			}),
-			newModel: func(configuration config.Config) (agent.Model, error) {
-				return &recordingModel{
-					response:   "ready",
-					stopReason: llm.StopReasonStop,
-				}, nil
-			},
-			providers: defaultProviders(),
-		}},
-		// The stored model is OpenAI-only, so logging into
-		// OpenCode Go must persist both the provider and its default model;
-		// otherwise a restart would fail with an unsupported-model error.
-		model: opencode.DefaultModel(),
-		options: llm.StreamOptions{
-			Thinking: llm.ThinkingLevelMedium,
-		},
-		configuration: config.Config{
-			Provider: string(opencode.ProviderID),
-			Model:    "gpt-5.6-terra",
-			APIKeys:  map[string]string{"openai": "openai-key"},
-		},
-		providers: defaultProviders(),
-	}
+	// The stored model is OpenAI-only, so logging into OpenCode Go must
+	// persist both the provider and its default model; otherwise a restart
+	// would fail with an unsupported-model error.
+	runner := newAPIKeyLoginSession(opencode.DefaultModel(), config.Config{
+		Provider: string(opencode.ProviderID),
+		Model:    "gpt-5.6-terra",
+		APIKeys:  map[string]string{"openai": "openai-key"},
+	}, &savedSettings)
+	runner.application.dependencies.saveSettings = recordSettings(func(setting config.Setting, value string) error {
+		savedSettings = append(savedSettings, setting)
+		savedValues = append(savedValues, value)
+		return nil
+	})
 
 	output, err := runner.RunSlashCommand(t.Context(), interaction.CommandRequest{
 		Name:      "login",
