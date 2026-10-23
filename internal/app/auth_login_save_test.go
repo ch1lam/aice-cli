@@ -9,10 +9,8 @@ import (
 
 	"github.com/ch1lam/aice-cli/internal/config"
 	"github.com/ch1lam/aice-cli/internal/interaction"
-	"github.com/ch1lam/aice-cli/internal/llm"
 	"github.com/ch1lam/aice-cli/internal/provider/claudesubscription"
 	"github.com/ch1lam/aice-cli/internal/provider/codex"
-	"github.com/ch1lam/aice-cli/internal/provider/deepseek"
 )
 
 func TestAccountLoginSavesCredentialBeforePreference(t *testing.T) {
@@ -22,20 +20,16 @@ func TestAccountLoginSavesCredentialBeforePreference(t *testing.T) {
 		for _, outcome := range []string{"publish", "preference failure"} {
 			t.Run(provider+"/"+outcome, func(t *testing.T) {
 				paths := authTestPaths(t)
-				s := &interactiveSession{configuration: config.Config{Provider: "deepseek", Paths: paths}, model: deepseek.DefaultModel(), providers: defaultProviders()}
+				s := newLoginTestSession(paths)
 				failure := errors.New("synthetic preference failure")
 				updates, saves := 0, 0
-				s.application = &application{dependencies: dependencies{
-					providers: defaultProviders(),
-					newModel:  func(config.Config) (llm.Streamer, error) { return &recordingModel{}, nil },
-					saveSettings: func(ctx context.Context, p config.Paths, changes map[config.Setting]string) error {
-						saves++
-						if outcome == "preference failure" {
-							return failure
-						}
-						return config.SaveSettingsFile(ctx, p, changes)
-					},
-				}}
+				s.application.dependencies.saveSettings = func(ctx context.Context, p config.Paths, changes map[config.Setting]string) error {
+					saves++
+					if outcome == "preference failure" {
+						return failure
+					}
+					return config.SaveSettingsFile(ctx, p, changes)
+				}
 				expiry := time.Now().UTC().Add(time.Hour)
 				codexCredential := config.CodexCredentials{AccessToken: "private-token", RefreshToken: "private-refresh", AccountID: "fixture", ExpiresAt: expiry}
 				claudeCredential := config.ClaudeSubscriptionCredentials{AccessToken: "private-token", RefreshToken: "private-refresh", ExpiresAt: expiry}

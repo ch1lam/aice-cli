@@ -12,9 +12,7 @@ import (
 	"github.com/ch1lam/aice-cli/internal/browser"
 	"github.com/ch1lam/aice-cli/internal/config"
 	"github.com/ch1lam/aice-cli/internal/interaction"
-	"github.com/ch1lam/aice-cli/internal/llm"
 	"github.com/ch1lam/aice-cli/internal/provider/codex"
-	"github.com/ch1lam/aice-cli/internal/provider/deepseek"
 )
 
 func TestWebManagementActions(t *testing.T) {
@@ -186,18 +184,11 @@ func TestSlashDelegatesToSettingsActions(t *testing.T) {
 		{
 			name: "login",
 			session: func(t *testing.T) *interactiveSession {
-				return &interactiveSession{
-					configuration: config.Config{Provider: "deepseek", Paths: authTestPaths(t)},
-					model:         deepseek.DefaultModel(), providers: defaultProviders(),
-					application: &application{dependencies: dependencies{
-						providers:    defaultProviders(),
-						newModel:     func(config.Config) (llm.Streamer, error) { return &recordingModel{}, nil },
-						saveSettings: config.SaveSettingsFile,
-						codexInteractiveLogin: func(context.Context, bool, codex.LoginInteraction) (config.CodexCredentials, error) {
-							return config.CodexCredentials{AccessToken: "synthetic-token", RefreshToken: "synthetic-refresh", AccountID: "fixture", ExpiresAt: time.Now().Add(time.Hour)}, nil
-						},
-					}},
+				s := newLoginTestSession(authTestPaths(t))
+				s.application.dependencies.codexInteractiveLogin = func(context.Context, bool, codex.LoginInteraction) (config.CodexCredentials, error) {
+					return config.CodexCredentials{AccessToken: "synthetic-token", RefreshToken: "synthetic-refresh", AccountID: "fixture", ExpiresAt: time.Now().Add(time.Hour)}, nil
 				}
+				return s
 			},
 			request: func() interaction.CommandRequest {
 				return interaction.CommandRequest{Name: "login", Arguments: "openai-codex", LoginMethod: "browser", Auth: &interaction.AuthInteraction{Notify: func(context.Context, interaction.AuthPrompt) error { return nil }}}

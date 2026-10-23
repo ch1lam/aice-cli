@@ -9,9 +9,7 @@ import (
 
 	"github.com/ch1lam/aice-cli/internal/config"
 	"github.com/ch1lam/aice-cli/internal/interaction"
-	"github.com/ch1lam/aice-cli/internal/llm"
 	"github.com/ch1lam/aice-cli/internal/provider/codex"
-	"github.com/ch1lam/aice-cli/internal/provider/deepseek"
 )
 
 func TestAccountLoginPreservesPartialCommit(t *testing.T) {
@@ -19,31 +17,24 @@ func TestAccountLoginPreservesPartialCommit(t *testing.T) {
 		t.Run(outcome, func(t *testing.T) {
 			paths := authTestPaths(t)
 			failure := errors.New("synthetic preference failure")
-			s := &interactiveSession{
-				configuration: config.Config{Provider: "deepseek", Paths: paths},
-				model:         deepseek.DefaultModel(), providers: defaultProviders(),
-			}
+			s := newLoginTestSession(paths)
 			saves := 0
-			s.application = &application{dependencies: dependencies{
-				providers: defaultProviders(),
-				newModel:  func(config.Config) (llm.Streamer, error) { return &recordingModel{}, nil },
-				saveSettings: func(ctx context.Context, paths config.Paths, changes map[config.Setting]string) error {
-					saves++
-					if outcome == "preference failure" {
-						return failure
-					}
-					return config.SaveSettingsFile(ctx, paths, changes)
-				},
-				codexInteractiveLogin: func(context.Context, bool, codex.LoginInteraction) (config.CodexCredentials, error) {
-					if _, err := s.beginPreparation(); !errors.Is(err, interaction.ErrSettingsBusy) {
-						t.Fatalf("login did not hold its settings reservation: %v", err)
-					}
-					if outcome == "cancel" {
-						return config.CodexCredentials{}, context.Canceled
-					}
-					return config.CodexCredentials{AccessToken: "synthetic-private-token", RefreshToken: "synthetic-private-refresh", AccountID: "fixture", ExpiresAt: time.Now().Add(time.Hour)}, nil
-				},
-			}}
+			s.application.dependencies.saveSettings = func(ctx context.Context, paths config.Paths, changes map[config.Setting]string) error {
+				saves++
+				if outcome == "preference failure" {
+					return failure
+				}
+				return config.SaveSettingsFile(ctx, paths, changes)
+			}
+			s.application.dependencies.codexInteractiveLogin = func(context.Context, bool, codex.LoginInteraction) (config.CodexCredentials, error) {
+				if _, err := s.beginPreparation(); !errors.Is(err, interaction.ErrSettingsBusy) {
+					t.Fatalf("login did not hold its settings reservation: %v", err)
+				}
+				if outcome == "cancel" {
+					return config.CodexCredentials{}, context.Canceled
+				}
+				return config.CodexCredentials{AccessToken: "synthetic-private-token", RefreshToken: "synthetic-private-refresh", AccountID: "fixture", ExpiresAt: time.Now().Add(time.Hour)}, nil
+			}
 			request := interaction.CommandRequest{Name: "login", Arguments: "openai-codex", LoginMethod: "browser", Auth: &interaction.AuthInteraction{Notify: func(context.Context, interaction.AuthPrompt) error { return nil }}}
 			result, err := s.RunSettingsAction(t.Context(), 0, request)
 			output := result.Output

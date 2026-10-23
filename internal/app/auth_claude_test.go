@@ -13,7 +13,6 @@ import (
 	"github.com/ch1lam/aice-cli/internal/interaction"
 	"github.com/ch1lam/aice-cli/internal/llm"
 	"github.com/ch1lam/aice-cli/internal/provider/claudesubscription"
-	"github.com/ch1lam/aice-cli/internal/provider/deepseek"
 )
 
 func TestClaudeAuthCommandsLoginStatusLogout(t *testing.T) {
@@ -99,17 +98,13 @@ func TestClaudeAuthCancelledLoginLeavesSettingsAndCredentialsUnchanged(t *testin
 func TestClaudeSubscriptionLoginMenuSkipsAPIKeyAndReloadsSavedCredential(t *testing.T) {
 	t.Parallel()
 	paths := authTestPaths(t)
-	runner := &interactiveSession{
-		configuration: config.Config{Provider: "deepseek", Paths: paths}, model: deepseek.DefaultModel(), providers: defaultProviders(),
-		application: &application{dependencies: dependencies{
-			providers: defaultProviders(), saveSettings: recordSettings(func(config.Setting, string) error { return nil }),
-			newModel: func(c config.Config) (llm.Streamer, error) {
-				if !c.ClaudeSubscriptionCredentials.Configured() {
-					t.Error("did not load newly saved OAuth credential")
-				}
-				return &recordingModel{response: "ready"}, nil
-			},
-		}},
+	runner := newLoginTestSession(paths)
+	runner.application.dependencies.saveSettings = recordSettings(func(config.Setting, string) error { return nil })
+	runner.application.dependencies.newModel = func(c config.Config) (llm.Streamer, error) {
+		if !c.ClaudeSubscriptionCredentials.Configured() {
+			t.Error("did not load newly saved OAuth credential")
+		}
+		return &recordingModel{response: "ready"}, nil
 	}
 	options := loginProviderOptions(runner.providers, runner.configuration)
 	found := false
