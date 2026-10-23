@@ -9,6 +9,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/ch1lam/aice-cli/internal/interaction"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -284,9 +285,9 @@ func TestStreamingBatchDuringSelectionDefersLayout(t *testing.T) {
 	// the live viewport must stay pinned instead of following along with
 	// layout work nobody can see.
 	for i := 0; i < 3; i++ {
-		updated, _ := current.applyRunBatch(runBatchMsg{updates: []runUpdate{{event: DisplayEvent{
-			Kind:  DisplayEventAssistantDelta,
-			Delta: DisplayDelta{Kind: DisplayDeltaText, Delta: " streaming-token-0123456789"},
+		updated, _ := current.applyRunBatch(runBatchMsg{updates: []runUpdate{{event: interaction.Event{
+			Kind:  interaction.EventAssistantDelta,
+			Delta: interaction.Delta{Kind: interaction.DeltaText, Delta: " streaming-token-0123456789"},
 		}}}})
 		current = updated.(model)
 	}
@@ -324,9 +325,9 @@ func TestStreamingBatchDuringSelectionDefersLayout(t *testing.T) {
 	if got := fmt.Sprint(command().(tea.BatchMsg)[0]()); got != frozenCopy {
 		t.Errorf("released copy = %q, want frozen %q", got, frozenCopy)
 	}
-	updated, _ = current.applyRunBatch(runBatchMsg{updates: []runUpdate{{event: DisplayEvent{
-		Kind:  DisplayEventAssistantDelta,
-		Delta: DisplayDelta{Kind: DisplayDeltaText, Delta: " after-release-token"},
+	updated, _ = current.applyRunBatch(runBatchMsg{updates: []runUpdate{{event: interaction.Event{
+		Kind:  interaction.EventAssistantDelta,
+		Delta: interaction.Delta{Kind: interaction.DeltaText, Delta: " after-release-token"},
 	}}}})
 	current = updated.(model)
 	// The token may wrap across visual rows, so flatten whitespace before
@@ -389,7 +390,7 @@ func TestCopyNoticePreservesActivityAndExpires(t *testing.T) {
 			old := copyNoticeExpiredMsg(current.copyGeneration)
 			copySelection()
 			current = updateModel(t, current, old)
-			current.applyAgentEvent(DisplayEvent{Kind: DisplayEventAssistantStart})
+			current.applyAgentEvent(interaction.Event{Kind: interaction.EventAssistantStart})
 			current.refreshViewport(false)
 			if !strings.Contains(ansi.Strip(current.View().Content), "✓ Copied") {
 				t.Fatal("copy notice lost after another copy or agent event")

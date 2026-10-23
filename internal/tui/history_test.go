@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/ch1lam/aice-cli/internal/interaction"
 )
 
 func TestAppendPromptHistoryDeduplicatesConsecutiveEntries(t *testing.T) {
@@ -178,9 +179,9 @@ func TestModelUpDownDoesNotRecallWhileSelectionMenuOpen(t *testing.T) {
 	current.flow = &commandFlow{
 		raw: "/login",
 		menus: []commandMenuFrame{{
-			menu: SlashCommandMenu{
+			menu: interaction.CommandMenu{
 				Title: "Select provider",
-				Options: []SlashCommandOption{{
+				Options: []interaction.CommandOption{{
 					Label:     "DeepSeek",
 					Arguments: "deepseek",
 				}},
@@ -418,6 +419,6 @@ func submitPrompt(t *testing.T, current model, prompt string) model {
 	if updated.running || !updated.input.Focused() {
 		t.Fatalf("submit of %q did not leave an idle focused composer", prompt)
 	}
-	updated.currentModel = DisplayModel{ID: "test"}
+	updated.currentModel = interaction.DisplayModel{ID: "test"}
 	return updated
 }

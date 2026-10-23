@@ -8,10 +8,10 @@ import (
 	"testing"
 
 	"github.com/ch1lam/aice-cli/internal/hostpath"
+	"github.com/ch1lam/aice-cli/internal/interaction"
 	"github.com/ch1lam/aice-cli/internal/llm"
 	"github.com/ch1lam/aice-cli/internal/provider/deepseek"
 	"github.com/ch1lam/aice-cli/internal/trust"
-	"github.com/ch1lam/aice-cli/internal/tui"
 )
 
 func TestInteractiveTrustSavesDecision(t *testing.T) {
@@ -25,7 +25,7 @@ func TestInteractiveTrustSavesDecision(t *testing.T) {
 	}
 	choices := trust.Choices(workspacePath)
 
-	output, err := runner.RunSlashCommand(t.Context(), tui.SlashCommandRequest{
+	output, err := runner.RunSlashCommand(t.Context(), interaction.CommandRequest{
 		Name:      "trust",
 		Arguments: "0",
 	})
@@ -56,7 +56,7 @@ func TestInteractiveTrustRejectsTemporaryChoices(t *testing.T) {
 		if len(choice.Updates) != 0 {
 			continue
 		}
-		output, err := runner.RunSlashCommand(t.Context(), tui.SlashCommandRequest{
+		output, err := runner.RunSlashCommand(t.Context(), interaction.CommandRequest{
 			Name: "trust", Arguments: strconv.Itoa(index),
 		})
 		if err == nil || output != "" {
@@ -82,7 +82,7 @@ func TestInteractiveTrustParentPersistsParentAndClearsExact(t *testing.T) {
 	}
 
 	// "Trust parent folder" is option 1.
-	if _, err := runner.RunSlashCommand(t.Context(), tui.SlashCommandRequest{
+	if _, err := runner.RunSlashCommand(t.Context(), interaction.CommandRequest{
 		Name:      "trust",
 		Arguments: "1",
 	}); err != nil {
@@ -114,7 +114,7 @@ func TestInteractiveTrustRejectsInvalidChoice(t *testing.T) {
 		workspacePath: t.TempDir(),
 	}
 	for _, arguments := range []string{"", "x", "-1", "99"} {
-		_, err := runner.RunSlashCommand(t.Context(), tui.SlashCommandRequest{
+		_, err := runner.RunSlashCommand(t.Context(), interaction.CommandRequest{
 			Name:      "trust",
 			Arguments: arguments,
 		})
@@ -227,7 +227,7 @@ func TestTrustMenuSelectionsPersistWithoutChangingLoadedContext(t *testing.T) {
 				trustStore: store, workspacePath: workspace,
 				trustDecision: trust.DecisionUntrusted, systemPrompt: "loaded prompt",
 			}
-			output, err := runner.RunSlashCommand(t.Context(), tui.SlashCommandRequest{Name: "trust", Arguments: option.Arguments})
+			output, err := runner.RunSlashCommand(t.Context(), interaction.CommandRequest{Name: "trust", Arguments: option.Arguments})
 			if err != nil {
 				t.Fatal(err)
 			}

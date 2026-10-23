@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"github.com/ch1lam/aice-cli/internal/interaction"
 	"testing"
 )
 
@@ -8,14 +9,14 @@ func TestUsageAnimationRollsToTargetAndRejectsStaleTicks(t *testing.T) {
 	t.Parallel()
 
 	var animation usageAnimation
-	target := DisplayUsage{
+	target := interaction.DisplayUsage{
 		InputTokens:      1_200,
 		OutputTokens:     456,
 		CacheReadTokens:  100,
 		CacheWriteTokens: 20,
 		TotalCost:        0.0074,
 	}
-	if command := animation.Start(DisplayUsage{}, target); command == nil {
+	if command := animation.Start(interaction.DisplayUsage{}, target); command == nil {
 		t.Fatal("Start() command = nil, want first animation tick")
 	}
 
@@ -25,14 +26,14 @@ func TestUsageAnimationRollsToTargetAndRejectsStaleTicks(t *testing.T) {
 	}); command != nil {
 		t.Fatal("stale tick scheduled another animation tick")
 	}
-	if got := animation.Value(DisplayUsage{}); got != (DisplayUsage{}) {
+	if got := animation.Value(interaction.DisplayUsage{}); got != (interaction.DisplayUsage{}) {
 		t.Fatalf("stale tick changed usage to %#v", got)
 	}
 
 	previousInput := int64(0)
 	for range usageAnimationFrames {
 		animation.Update(usageAnimationTickMsg{generation: generation})
-		current := animation.Value(DisplayUsage{})
+		current := animation.Value(interaction.DisplayUsage{})
 		if current.InputTokens < previousInput ||
 			current.InputTokens > target.InputTokens {
 			t.Fatalf(
@@ -45,7 +46,7 @@ func TestUsageAnimationRollsToTargetAndRejectsStaleTicks(t *testing.T) {
 		previousInput = current.InputTokens
 	}
 
-	got := animation.Value(DisplayUsage{})
+	got := animation.Value(interaction.DisplayUsage{})
 	if got != target {
 		t.Fatalf("animated usage = %#v, want %#v", got, target)
 	}

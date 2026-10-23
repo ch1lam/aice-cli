@@ -6,6 +6,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/ch1lam/aice-cli/internal/interaction"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -13,18 +14,18 @@ func TestContextStatusUsedPercentage(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct {
 		name  string
-		usage DisplayContext
+		usage interaction.DisplayContext
 		want  string
 	}{
-		{"small window", DisplayContext{Tokens: 50000, Window: 200000, Known: true}, "25.00%"},
-		{"long window", DisplayContext{Tokens: 50000, Window: 1000000, Known: true}, "5.00%"},
-		{"estimated", DisplayContext{Tokens: 50000, Window: 200000, Known: true, Estimated: true}, "25.00%"},
-		{"full", DisplayContext{Tokens: 200000, Window: 200000, Known: true}, "100.00%"},
-		{"negative", DisplayContext{Tokens: -1, Window: 200000, Known: true}, "0.00%"},
-		{"overflow", DisplayContext{Tokens: 210000, Window: 200000, Known: true}, "100.00%"},
-		{"empty", DisplayContext{Window: 200000, Known: true}, "0.00%"},
-		{"unknown model", DisplayContext{Known: true}, "?%"},
-		{"unknown usage", DisplayContext{Window: 200000}, "?%"},
+		{"small window", interaction.DisplayContext{Tokens: 50000, Window: 200000, Known: true}, "25.00%"},
+		{"long window", interaction.DisplayContext{Tokens: 50000, Window: 1000000, Known: true}, "5.00%"},
+		{"estimated", interaction.DisplayContext{Tokens: 50000, Window: 200000, Known: true, Estimated: true}, "25.00%"},
+		{"full", interaction.DisplayContext{Tokens: 200000, Window: 200000, Known: true}, "100.00%"},
+		{"negative", interaction.DisplayContext{Tokens: -1, Window: 200000, Known: true}, "0.00%"},
+		{"overflow", interaction.DisplayContext{Tokens: 210000, Window: 200000, Known: true}, "100.00%"},
+		{"empty", interaction.DisplayContext{Window: 200000, Known: true}, "0.00%"},
+		{"unknown model", interaction.DisplayContext{Known: true}, "?%"},
+		{"unknown usage", interaction.DisplayContext{Window: 200000}, "?%"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			current := newModel(nil, nil)
@@ -39,9 +40,9 @@ func TestContextStatusUsedPercentage(t *testing.T) {
 func TestContextStatusSurvivesNarrowTerminalsAndUpdates(t *testing.T) {
 	t.Parallel()
 	current := newModel(nil, nil)
-	current.currentModel = DisplayModel{ID: "deepseek-v4-flash"}
-	usage := DisplayContext{Tokens: 50000, Window: 200000, Known: true}
-	current.applyAgentEvent(DisplayEvent{Context: &usage})
+	current.currentModel = interaction.DisplayModel{ID: "deepseek-v4-flash"}
+	usage := interaction.DisplayContext{Tokens: 50000, Window: 200000, Known: true}
+	current.applyAgentEvent(interaction.Event{Context: &usage})
 	for _, width := range []int{24, 32, 60, 80, 120, 160} {
 		line := current.headerView(width)
 		if !strings.Contains(ansi.Strip(line), "25.00%") {
@@ -54,8 +55,8 @@ func TestContextStatusSurvivesNarrowTerminalsAndUpdates(t *testing.T) {
 			t.Fatalf("status bar has no blank row below it: %q", line)
 		}
 	}
-	updated, _ := current.applyRunBatch(runBatchMsg{updates: []runUpdate{{state: &RuntimeState{
-		Model: DisplayModel{ID: "other"}, Context: DisplayContext{Window: 1000000, Tokens: 50000, Known: true},
+	updated, _ := current.applyRunBatch(runBatchMsg{updates: []runUpdate{{state: &interaction.RuntimeState{
+		Model: interaction.DisplayModel{ID: "other"}, Context: interaction.DisplayContext{Window: 1000000, Tokens: 50000, Known: true},
 	}}}})
 	current = updated.(model)
 	if !strings.Contains(current.contextStatus(), "5.00%") {
@@ -66,7 +67,7 @@ func TestContextStatusSurvivesNarrowTerminalsAndUpdates(t *testing.T) {
 func TestContextHeaderHoverAndClick(t *testing.T) {
 	for _, width := range []int{24, 40, 80} {
 		current := newModel(nil, nil)
-		current.contextUsage = DisplayContext{Tokens: 168000, Window: 1000000, Known: true}
+		current.contextUsage = interaction.DisplayContext{Tokens: 168000, Window: 1000000, Known: true}
 		current = updateModel(t, current, tea.WindowSizeMsg{Width: width, Height: 24})
 		before := current.View()
 		// Locate the percentage from painted cells, independently of hit testing.
@@ -129,15 +130,15 @@ func TestContextHeaderHoverAndClick(t *testing.T) {
 
 func TestContextFractionUsesCompactTokenCounts(t *testing.T) {
 	for _, test := range []struct {
-		usage DisplayContext
+		usage interaction.DisplayContext
 		want  string
 	}{
-		{DisplayContext{Tokens: 168000, Window: 1000000, Known: true}, "168K / 1M"},
-		{DisplayContext{Tokens: 1500, Window: 500000, Known: true}, "1.5K / 500K"},
-		{DisplayContext{Window: 500000, Known: true}, "0 / 500K"},
-		{DisplayContext{Window: 500000}, "? / 500K"},
-		{DisplayContext{Tokens: 1500, Known: true}, "1.5K / ?"},
-		{DisplayContext{Tokens: 210000, Window: 200000, Known: true}, "210K / 200K"},
+		{interaction.DisplayContext{Tokens: 168000, Window: 1000000, Known: true}, "168K / 1M"},
+		{interaction.DisplayContext{Tokens: 1500, Window: 500000, Known: true}, "1.5K / 500K"},
+		{interaction.DisplayContext{Window: 500000, Known: true}, "0 / 500K"},
+		{interaction.DisplayContext{Window: 500000}, "? / 500K"},
+		{interaction.DisplayContext{Tokens: 1500, Known: true}, "1.5K / ?"},
+		{interaction.DisplayContext{Tokens: 210000, Window: 200000, Known: true}, "210K / 200K"},
 	} {
 		current := newModel(nil, nil)
 		current.contextUsage = test.usage

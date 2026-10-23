@@ -11,20 +11,13 @@ import (
 	"github.com/ch1lam/aice-cli/internal/interaction"
 )
 
-type deliveryMode = interaction.DeliveryKind
-
-const (
-	deliverySteer = interaction.DeliveryKindSteer
-	deliveryQueue = interaction.DeliveryKindFollowUp
-)
-
 type pendingDelivery struct {
 	id   string
 	text string
-	mode deliveryMode
+	mode interaction.DeliveryKind
 }
 
-func (m model) submitDelivery(mode deliveryMode) (model, tea.Cmd, bool) {
+func (m model) submitDelivery(mode interaction.DeliveryKind) (model, tea.Cmd, bool) {
 	text := strings.TrimSpace(m.expandComposerText())
 	if len(m.pastes) == 0 && len(m.input.files) == 0 && m.searchSessions != nil {
 		if request, ok := parseSlashCommand(text); ok && request.Name == "history" {
@@ -65,7 +58,7 @@ func (m model) submitDelivery(mode deliveryMode) (model, tea.Cmd, bool) {
 	m.inputNotice = ""
 	m.commandSelection = 0
 	m.commandDismissed = false
-	if mode == deliveryQueue {
+	if mode == interaction.DeliveryKindFollowUp {
 		m.status = "Queued for the next response"
 	} else {
 		m.status = "Steer waiting for a safe point"
@@ -97,8 +90,8 @@ func (m *model) promotePendingDeliveries() bool {
 	changed := false
 	for index := range m.pendingDeliveries {
 		delivery := &m.pendingDeliveries[index]
-		if delivery.mode == deliverySteer {
-			delivery.mode = deliveryQueue
+		if delivery.mode == interaction.DeliveryKindSteer {
+			delivery.mode = interaction.DeliveryKindFollowUp
 			changed = true
 		}
 	}
@@ -121,7 +114,7 @@ func (m *model) startQueuedDelivery(delivery pendingDelivery) {
 	m.resizeLayout()
 }
 
-func (m *model) applySteer(steering InputDisplay) bool {
+func (m *model) applySteer(steering interaction.InputDisplay) bool {
 	delivery, found := m.removePendingDelivery(steering.ID)
 	text := steering.Text
 	if found {
@@ -175,8 +168,8 @@ func (m model) applyDeliveryResult(result deliveryResult) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func deliveryCommand(ctx context.Context) func(ActiveRun, interaction.Delivery, composerDraft) (tea.Cmd, context.CancelFunc) {
-	return func(active ActiveRun, input interaction.Delivery, draft composerDraft) (tea.Cmd, context.CancelFunc) {
+func deliveryCommand(ctx context.Context) func(interaction.ActiveRun, interaction.Delivery, composerDraft) (tea.Cmd, context.CancelFunc) {
+	return func(active interaction.ActiveRun, input interaction.Delivery, draft composerDraft) (tea.Cmd, context.CancelFunc) {
 		deliveryCtx, cancel := context.WithCancel(ctx)
 		return func() tea.Msg {
 			defer cancel()

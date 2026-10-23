@@ -8,14 +8,9 @@ import (
 	"github.com/ch1lam/aice-cli/internal/interaction"
 )
 
-type SlashCommand = interaction.Command
-type SlashCommandMenu = interaction.CommandMenu
-type SlashCommandOption = interaction.CommandOption
-type SlashCommandRequest = interaction.CommandRequest
-type SlashCommandRunner = interaction.CommandRunner
 
-func localSlashCommands() []SlashCommand {
-	return []SlashCommand{
+func localSlashCommands() []interaction.Command {
+	return []interaction.Command{
 		{
 			Name:        "help",
 			Description: "Show available slash commands",
@@ -35,15 +30,15 @@ func localSlashCommands() []SlashCommand {
 	}
 }
 
-func slashCommandCatalog(external []SlashCommand) []SlashCommand {
+func slashCommandCatalog(external []interaction.Command) []interaction.Command {
 	local := localSlashCommands()
 	commands := make(
-		[]SlashCommand,
+		[]interaction.Command,
 		0,
 		len(local)+len(external),
 	)
 	seen := make(map[string]struct{}, cap(commands))
-	appendCommand := func(command SlashCommand) {
+	appendCommand := func(command interaction.Command) {
 		command.Name = strings.ToLower(strings.TrimPrefix(
 			strings.TrimSpace(command.Name),
 			"/",
@@ -71,12 +66,12 @@ func slashCommandCatalog(external []SlashCommand) []SlashCommand {
 	return commands
 }
 
-func normalizeSlashCommandMenu(menu *SlashCommandMenu) *SlashCommandMenu {
+func normalizeSlashCommandMenu(menu *interaction.CommandMenu) *interaction.CommandMenu {
 	if menu == nil {
 		return nil
 	}
 
-	normalized := &SlashCommandMenu{
+	normalized := &interaction.CommandMenu{
 		Title: strings.TrimSpace(menu.Title),
 	}
 	for _, option := range menu.Options {
@@ -98,40 +93,40 @@ func normalizeSlashCommandMenu(menu *SlashCommandMenu) *SlashCommandMenu {
 	return normalized
 }
 
-func parseSlashCommand(value string) (SlashCommandRequest, bool) {
+func parseSlashCommand(value string) (interaction.CommandRequest, bool) {
 	value = strings.TrimSpace(value)
 	if !strings.HasPrefix(value, "/") {
-		return SlashCommandRequest{}, false
+		return interaction.CommandRequest{}, false
 	}
 	body := strings.TrimPrefix(value, "/")
 	nameEnd := strings.IndexAny(body, " \t\r\n")
 	if nameEnd < 0 {
-		return SlashCommandRequest{
+		return interaction.CommandRequest{
 			Name: strings.ToLower(body),
 		}, true
 	}
-	return SlashCommandRequest{
+	return interaction.CommandRequest{
 		Name:      strings.ToLower(body[:nameEnd]),
 		Arguments: strings.TrimSpace(body[nameEnd:]),
 	}, true
 }
 
 func findSlashCommand(
-	commands []SlashCommand,
+	commands []interaction.Command,
 	name string,
-) (SlashCommand, bool) {
+) (interaction.Command, bool) {
 	for _, command := range commands {
 		if command.Name == name {
 			return command, true
 		}
 	}
-	return SlashCommand{}, false
+	return interaction.Command{}, false
 }
 
 func matchingSlashCommands(
-	commands []SlashCommand,
+	commands []interaction.Command,
 	value string,
-) []SlashCommand {
+) []interaction.Command {
 	value = strings.TrimLeft(value, " \t")
 	if !strings.HasPrefix(value, "/") {
 		return nil
@@ -143,7 +138,7 @@ func matchingSlashCommands(
 	query = strings.ToLower(query)
 
 	type match struct {
-		command SlashCommand
+		command interaction.Command
 		score   int
 	}
 	var ranked []match
@@ -165,14 +160,14 @@ func matchingSlashCommands(
 		}
 		return b.score - a.score
 	})
-	matches := make([]SlashCommand, len(ranked))
+	matches := make([]interaction.Command, len(ranked))
 	for index, hit := range ranked {
 		matches[index] = hit.command
 	}
 	return matches
 }
 
-func slashCommandUsage(command SlashCommand) string {
+func slashCommandUsage(command interaction.Command) string {
 	usage := "/" + command.Name
 	if command.ArgumentHint != "" {
 		usage += " " + command.ArgumentHint
@@ -180,7 +175,7 @@ func slashCommandUsage(command SlashCommand) string {
 	return usage
 }
 
-func slashCommandHelp(commands []SlashCommand) string {
+func slashCommandHelp(commands []interaction.Command) string {
 	lines := make([]string, 0, len(commands)+1)
 	lines = append(lines, "Available slash commands")
 	for _, command := range commands {

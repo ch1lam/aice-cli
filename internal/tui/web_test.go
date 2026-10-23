@@ -14,11 +14,11 @@ func TestWebCommandPromptsMaskSecretsAndStayOutOfHistory(t *testing.T) {
 	requests := make(chan runRequest, 1)
 	m := newModel(requests, make(chan struct{}))
 	m = updateModel(t, m, tea.WindowSizeMsg{Width: 80, Height: 24})
-	command := SlashCommand{Name: "web", Interactive: true, Menu: &SlashCommandMenu{Title: "Web", Options: []SlashCommandOption{{Label: "Add Exa instance…", Arguments: "add"}}}}
-	m.commands = slashCommandCatalog([]SlashCommand{command})
+	command := interaction.Command{Name: "web", Interactive: true, Menu: &interaction.CommandMenu{Title: "Web", Options: []interaction.CommandOption{{Label: "Add Exa instance…", Arguments: "add"}}}}
+	m.commands = slashCommandCatalog([]interaction.Command{command})
 	// A menu choice on an interactive command starts the command with its
 	// arguments instead of reopening the option menu.
-	m, cmd, handled := m.submitSlashCommand("/web add", SlashCommandRequest{Name: "web", Arguments: "add"})
+	m, cmd, handled := m.submitSlashCommand("/web add", interaction.CommandRequest{Name: "web", Arguments: "add"})
 	if !handled || cmd == nil || m.commandMenuOpen() {
 		t.Fatal("command not started")
 	}

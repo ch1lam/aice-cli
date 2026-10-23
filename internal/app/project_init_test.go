@@ -8,11 +8,11 @@ import (
 	"testing"
 
 	"github.com/ch1lam/aice-cli/internal/agent"
+	"github.com/ch1lam/aice-cli/internal/interaction"
 	"github.com/ch1lam/aice-cli/internal/llm"
 	"github.com/ch1lam/aice-cli/internal/provider/deepseek"
 	"github.com/ch1lam/aice-cli/internal/tool"
 	"github.com/ch1lam/aice-cli/internal/trust"
-	"github.com/ch1lam/aice-cli/internal/tui"
 )
 
 func TestInitCommandCreatesAgentsFileAndRecordsTrust(t *testing.T) {
@@ -21,7 +21,7 @@ func TestInitCommandCreatesAgentsFileAndRecordsTrust(t *testing.T) {
 	workspace := testWorkspace(t, t.TempDir())
 	runner := initTestRunner(t, workspace, nil)
 
-	output, err := runner.RunSlashCommand(t.Context(), tui.SlashCommandRequest{
+	output, err := runner.RunSlashCommand(t.Context(), interaction.CommandRequest{
 		Name: "init",
 	})
 	if err != nil {
@@ -60,7 +60,7 @@ func TestInitCommandUpdatesExistingAgentsFileWithoutTrustChange(t *testing.T) {
 	}
 	runner := initTestRunner(t, workspace, nil)
 
-	output, err := runner.RunSlashCommand(t.Context(), tui.SlashCommandRequest{
+	output, err := runner.RunSlashCommand(t.Context(), interaction.CommandRequest{
 		Name: "init",
 	})
 	if err != nil {
@@ -91,7 +91,7 @@ func TestInitCommandRequiresCredentials(t *testing.T) {
 	runner := initTestRunner(t, workspace, nil)
 	runner.loop = nil
 
-	_, err := runner.RunSlashCommand(t.Context(), tui.SlashCommandRequest{
+	_, err := runner.RunSlashCommand(t.Context(), interaction.CommandRequest{
 		Name: "init",
 	})
 	if err == nil || !strings.Contains(err.Error(), "API key is not configured") {
@@ -105,7 +105,7 @@ func TestInitCommandRejectsArguments(t *testing.T) {
 	workspace := testWorkspace(t, t.TempDir())
 	runner := initTestRunner(t, workspace, nil)
 
-	_, err := runner.RunSlashCommand(t.Context(), tui.SlashCommandRequest{
+	_, err := runner.RunSlashCommand(t.Context(), interaction.CommandRequest{
 		Name:      "init",
 		Arguments: "extra",
 	})
@@ -123,7 +123,7 @@ func TestInitCommandPropagatesModelFailure(t *testing.T) {
 	loop := mustAppLoop(t, model, runner.tools)
 	runner.loop = loop
 
-	_, err := runner.RunSlashCommand(t.Context(), tui.SlashCommandRequest{
+	_, err := runner.RunSlashCommand(t.Context(), interaction.CommandRequest{
 		Name: "init",
 	})
 	if err == nil || !strings.Contains(err.Error(), "modelFailure") {
@@ -142,7 +142,7 @@ func TestInitCommandReportsMissingWrite(t *testing.T) {
 	}, runner.tools)
 	runner.loop = loop
 
-	_, err := runner.RunSlashCommand(t.Context(), tui.SlashCommandRequest{
+	_, err := runner.RunSlashCommand(t.Context(), interaction.CommandRequest{
 		Name: "init",
 	})
 	if err == nil || !strings.Contains(err.Error(), "without creating AGENTS.md") {

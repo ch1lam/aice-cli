@@ -22,7 +22,7 @@ type fakeSideManager struct {
 	mu          sync.Mutex
 	nextID      uint64
 	threads     map[uint64]*fakeSideThread
-	newRunner   func(id uint64) Runner
+	newRunner   func(id uint64) interaction.Runner
 	createErr   error
 	openErr     error
 	closeErr    error
@@ -93,7 +93,7 @@ func (f *fakeSideManager) SideThreads() []interaction.SideThread {
 
 func (f *fakeSideManager) CreateSideThread(
 	prompt string,
-) (interaction.SideThread, Runner, error) {
+) (interaction.SideThread, interaction.Runner, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.createErr != nil {
@@ -105,9 +105,8 @@ func (f *fakeSideManager) CreateSideThread(
 		return info, runnerFactory(info.ID), nil
 	}
 	return info, runnerFunc(func(
-		context.Context,
-		RunInput,
-		DisplayEventSink,
+		context.Context, interaction.RunInput, interaction.EventSink,
+
 	) error {
 		return nil
 	}), nil
@@ -115,7 +114,7 @@ func (f *fakeSideManager) CreateSideThread(
 
 func (f *fakeSideManager) OpenSideThread(
 	id uint64,
-) (interaction.SideThread, Runner, error) {
+) (interaction.SideThread, interaction.Runner, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.openCalls++
@@ -133,9 +132,8 @@ func (f *fakeSideManager) OpenSideThread(
 		return info, runnerFactory(id), nil
 	}
 	return info, runnerFunc(func(
-		context.Context,
-		RunInput,
-		DisplayEventSink,
+		context.Context, interaction.RunInput, interaction.EventSink,
+
 	) error {
 		return nil
 	}), nil
@@ -1108,7 +1106,7 @@ func TestModelCommandRefreshRetainsBTWCapability(t *testing.T) {
 	current := newModel(make(chan runRequest), make(chan struct{}))
 	current.sideRequests = make(chan runRequest)
 	updated := updateModel(t, current, runBatchMsg{updates: []runUpdate{{
-		commands: &[]SlashCommand{{Name: "tree", Description: "Show tree"}},
+		commands: &[]interaction.Command{{Name: "tree", Description: "Show tree"}},
 	}}})
 	if _, exists := findSlashCommand(updated.commands, "btw"); !exists {
 		t.Fatalf("refreshed commands omitted /btw: %#v", updated.commands)

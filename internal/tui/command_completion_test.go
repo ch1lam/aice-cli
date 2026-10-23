@@ -6,13 +6,14 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/ch1lam/aice-cli/internal/interaction"
 	"github.com/charmbracelet/x/ansi"
 )
 
 func reasoningCompletionModel() model {
-	return newModel(make(chan runRequest, 1), make(chan struct{}), SlashCommand{
+	return newModel(make(chan runRequest, 1), make(chan struct{}), interaction.Command{
 		Name: "thinking", ArgumentHint: "<level>",
-		Menu: &SlashCommandMenu{Title: "Select reasoning level", Options: []SlashCommandOption{
+		Menu: &interaction.CommandMenu{Title: "Select reasoning level", Options: []interaction.CommandOption{
 			{Label: "Extra High", Arguments: "xhigh", Current: true},
 			{Label: "High", Arguments: "high"},
 			{Label: "Medium", Arguments: "medium"},
@@ -119,10 +120,10 @@ func TestCommandCompletionExactValueWinsAndNoMatchDoesNotRun(t *testing.T) {
 func TestCommandCompletionNestedFilterPreservesAction(t *testing.T) {
 	t.Parallel()
 	requests := make(chan runRequest, 1)
-	m := newModel(requests, make(chan struct{}), SlashCommand{
+	m := newModel(requests, make(chan struct{}), interaction.Command{
 		Name: "login", SecretPrompt: "API key",
-		Menu: &SlashCommandMenu{Title: "Select provider", Options: []SlashCommandOption{{
-			Label: "Example", Menu: &SlashCommandMenu{Title: "Select action", Options: []SlashCommandOption{
+		Menu: &interaction.CommandMenu{Title: "Select provider", Options: []interaction.CommandOption{{
+			Label: "Example", Menu: &interaction.CommandMenu{Title: "Select action", Options: []interaction.CommandOption{
 				{Label: "Replace key", Arguments: "example"},
 				{Label: "Reuse saved key", Arguments: "example", UseSavedCredential: true},
 			}},
@@ -231,7 +232,7 @@ func TestSkillShortcutSelectionLeavesEditableDraft(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			requests := make(chan runRequest, 1)
 			const prompt = "[skill:review] "
-			m := newModel(requests, make(chan struct{}), SlashCommand{
+			m := newModel(requests, make(chan struct{}), interaction.Command{
 				Name: "skill:review", Description: "Skill · audit code\ncarefully", SkillName: "review",
 			})
 			m = updateModel(t, m, tea.WindowSizeMsg{Width: 100, Height: 30})
@@ -259,10 +260,7 @@ func TestSkillShortcutSelectionLeavesEditableDraft(t *testing.T) {
 
 func TestSkillSelectionWinsOverExactManagementCommand(t *testing.T) {
 	t.Parallel()
-	m := newModel(make(chan runRequest, 1), make(chan struct{}),
-		SlashCommand{Name: "browser", Description: "Manage browser"},
-		SlashCommand{Name: "skill:browser", Description: "Skill · browser", SkillName: "browser"},
-	)
+	m := newModel(make(chan runRequest, 1), make(chan struct{}), interaction.Command{Name: "browser", Description: "Manage browser"}, interaction.Command{Name: "skill:browser", Description: "Skill · browser", SkillName: "browser"})
 	m = updateModel(t, m, tea.PasteMsg{Content: "/browser"})
 	if !m.hasExactSlashCommand() {
 		t.Fatal("management command no longer matches exactly")

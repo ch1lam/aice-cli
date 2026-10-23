@@ -6,6 +6,7 @@ import (
 	"unicode/utf8"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/ch1lam/aice-cli/internal/interaction"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -31,7 +32,7 @@ func (m *model) syncCommandCompletion() {
 	if m.commandMenuOpen() && m.flow.command.Name == command.Name {
 		return
 	}
-	m.flow = newCommandFlow("/"+command.Name, command, SlashCommandRequest{Name: command.Name})
+	m.flow = newCommandFlow("/"+command.Name, command, interaction.CommandRequest{Name: command.Name})
 	m.resetCommandOptionSelection()
 }
 
@@ -51,14 +52,14 @@ func (m *model) resetCommandOptionSelection() {
 	}
 }
 
-func (m model) matchingCommandOptions() []SlashCommandOption {
+func (m model) matchingCommandOptions() []interaction.CommandOption {
 	if !m.commandMenuOpen() {
 		return nil
 	}
 	request, _ := parseSlashCommand(m.input.Value())
 	frame := m.flow.menu()
 	type match struct {
-		option SlashCommandOption
+		option interaction.CommandOption
 		score  int
 	}
 	var ranked []match
@@ -70,7 +71,7 @@ func (m model) matchingCommandOptions() []SlashCommandOption {
 		}
 	}
 	slices.SortStableFunc(ranked, func(a, b match) int { return b.score - a.score })
-	matches := make([]SlashCommandOption, len(ranked))
+	matches := make([]interaction.CommandOption, len(ranked))
 	for index, hit := range ranked {
 		matches[index] = hit.option
 	}

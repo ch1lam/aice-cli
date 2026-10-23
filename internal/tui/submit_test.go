@@ -5,15 +5,16 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/ch1lam/aice-cli/internal/interaction"
 )
 
-func customLoginCommand() SlashCommand {
-	return SlashCommand{Name: "login", SecretPrompt: "API key", Menu: &SlashCommandMenu{
-		Title: "Select authentication method", Options: []SlashCommandOption{{
-			Label: "Sign in with an API key", Menu: &SlashCommandMenu{
-				Title: "Select API key provider", Options: []SlashCommandOption{{
-					Label: "Custom", Arguments: "custom", Menu: &SlashCommandMenu{
-						Title: "Custom credential", Options: []SlashCommandOption{
+func customLoginCommand() interaction.Command {
+	return interaction.Command{Name: "login", SecretPrompt: "API key", Menu: &interaction.CommandMenu{
+		Title: "Select authentication method", Options: []interaction.CommandOption{{
+			Label: "Sign in with an API key", Menu: &interaction.CommandMenu{
+				Title: "Select API key provider", Options: []interaction.CommandOption{{
+					Label: "Custom", Arguments: "custom", Menu: &interaction.CommandMenu{
+						Title: "Custom credential", Options: []interaction.CommandOption{
 							{Label: "Use saved credential", Arguments: "custom", UseSavedCredential: true},
 							{Label: "Enter a new API key", Arguments: "custom"},
 						},
@@ -132,7 +133,7 @@ func TestTypedSkillShortcutPreservesTaskAndAttachments(t *testing.T) {
 	t.Parallel()
 	requests := make(chan runRequest, 1)
 	const instruction = "[skill:review]"
-	m := newModel(requests, make(chan struct{}), SlashCommand{Name: "skill:review", SkillName: "review"})
+	m := newModel(requests, make(chan struct{}), interaction.Command{Name: "skill:review", SkillName: "review"})
 	m.input.SetValue("/skill:review inspect @main.go\nand explain")
 	m, cmd, _ := m.submit()
 	if cmd == nil {
@@ -152,7 +153,7 @@ func TestTypedSkillShortcutPreservesTaskAndAttachments(t *testing.T) {
 func TestPastedSkillShortcutRemainsLiteral(t *testing.T) {
 	t.Parallel()
 	requests := make(chan runRequest, 1)
-	m := newModel(requests, make(chan struct{}), SlashCommand{Name: "skill:review", SkillName: "review"})
+	m := newModel(requests, make(chan struct{}), interaction.Command{Name: "skill:review", SkillName: "review"})
 	literal := "/skill:review " + strings.Repeat("example\n", 100)
 	m = updateModel(t, m, tea.PasteMsg{Content: literal})
 	_, cmd, _ := m.submit()

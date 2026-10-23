@@ -16,7 +16,7 @@ func TestDesktopActivityLifecycleAndFolds(t *testing.T) {
 	m := newModel(nil, nil)
 	m = updateModel(t, m, tea.WindowSizeMsg{Width: 100, Height: 30})
 	m.running = true
-	m.applyAgentEvent(DisplayEvent{Kind: DisplayEventToolStart, Tool: ToolDisplay{
+	m.applyAgentEvent(interaction.Event{Kind: interaction.EventToolStart, Tool: interaction.ToolDisplay{
 		ID: "d", Name: "desktop_act", Detail: `{"text":"PRIVATE INPUT"}`,
 		Desktop: &interaction.DesktopDisplay{App: "Notes", Phase: "Background requested"},
 	}})
@@ -27,11 +27,11 @@ func TestDesktopActivityLifecycleAndFolds(t *testing.T) {
 	if !strings.Contains(ansi.Strip(m.transcriptView()), "PRIVATE INPUT") {
 		t.Fatal("expanded parameters absent")
 	}
-	m.applyAgentEvent(DisplayEvent{Kind: DisplayEventToolEnd, Tool: ToolDisplay{
+	m.applyAgentEvent(interaction.Event{Kind: interaction.EventToolEnd, Tool: interaction.ToolDisplay{
 		ID: "d", Desktop: &interaction.DesktopDisplay{App: "Notes", Phase: "Returned"},
 	}})
-	m.applyAgentEvent(DisplayEvent{Kind: DisplayEventAssistantStart})
-	m.applyAgentEvent(DisplayEvent{Kind: DisplayEventAssistantDelta, Delta: DisplayDelta{Kind: DisplayDeltaText, Delta: "Considering result"}})
+	m.applyAgentEvent(interaction.Event{Kind: interaction.EventAssistantStart})
+	m.applyAgentEvent(interaction.Event{Kind: interaction.EventAssistantDelta, Delta: interaction.Delta{Kind: interaction.DeltaText, Delta: "Considering result"}})
 	if got := ansi.Strip(m.composerView(96)); !strings.Contains(got, "Computer Use · Notes · Planning") {
 		t.Fatal(got)
 	}
@@ -48,7 +48,7 @@ func TestDesktopActivityLifecycleAndFolds(t *testing.T) {
 		t.Fatal("terminal run retained desktop activity")
 	}
 	m.running = true
-	m.applyAgentEvent(DisplayEvent{Kind: DisplayEventAssistantStart})
+	m.applyAgentEvent(interaction.Event{Kind: interaction.EventAssistantStart})
 	if m.desktopActivityView(96) != "" {
 		t.Fatal("new run inherited desktop activity")
 	}
@@ -59,13 +59,13 @@ func TestDesktopActivityRetainsFailuresAndHidesUnrelatedWork(t *testing.T) {
 	m := newModel(nil, nil)
 	m.running = true
 	for _, phase := range []string{"Outcome unknown", "Needs setup", "Observation failed"} {
-		m.applyAgentEvent(DisplayEvent{Kind: DisplayEventToolEnd, Tool: ToolDisplay{Failed: true, Desktop: &interaction.DesktopDisplay{Phase: phase}}})
-		m.applyAgentEvent(DisplayEvent{Kind: DisplayEventAssistantStart})
+		m.applyAgentEvent(interaction.Event{Kind: interaction.EventToolEnd, Tool: interaction.ToolDisplay{Failed: true, Desktop: &interaction.DesktopDisplay{Phase: phase}}})
+		m.applyAgentEvent(interaction.Event{Kind: interaction.EventAssistantStart})
 		if !strings.Contains(ansi.Strip(m.desktopActivityView(80)), phase) {
 			t.Fatal("failure changed to planning")
 		}
 	}
-	m.applyAgentEvent(DisplayEvent{Kind: DisplayEventToolStart, Tool: ToolDisplay{ID: "read", Name: "read"}})
+	m.applyAgentEvent(interaction.Event{Kind: interaction.EventToolStart, Tool: interaction.ToolDisplay{ID: "read", Name: "read"}})
 	if m.desktopActivity != nil {
 		t.Fatal("ordinary tool kept desktop activity")
 	}
@@ -75,7 +75,7 @@ func TestDesktopActivityRetainsFailuresAndHidesUnrelatedWork(t *testing.T) {
 		t.Fatal("main status leaked into BTW composer")
 	}
 	m.side.isVisible = false
-	m.applyAgentEvent(DisplayEvent{Kind: DisplayEventToolStart, Tool: ToolDisplay{ID: "unfinished", Name: "desktop_act", Desktop: &interaction.DesktopDisplay{Phase: "Background requested"}}})
+	m.applyAgentEvent(interaction.Event{Kind: interaction.EventToolStart, Tool: interaction.ToolDisplay{ID: "unfinished", Name: "desktop_act", Desktop: &interaction.DesktopDisplay{Phase: "Background requested"}}})
 	m.finishRun(context.Canceled)
 	entry := m.entries[len(m.entries)-2] // last entry is cancellation notice
 	if !entry.toolDone || !entry.toolError || entry.toolDesktop.Phase != "Result unavailable" {
@@ -109,14 +109,14 @@ func TestTerminalDesktopActivityAcrossModelWaitAndStop(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { _, err := program.Run(); done <- err }()
 	t.Cleanup(func() { cancel(); <-done })
-	send := func(event DisplayEvent, text string) {
+	send := func(event interaction.Event, text string) {
 		program.Send(runBatchMsg{updates: []runUpdate{{event: event}}})
 		waitForTerminalText(t, ctx, output, text)
 	}
-	send(DisplayEvent{Kind: DisplayEventToolStart, Tool: ToolDisplay{ID: "d", Name: "desktop_act", Desktop: &interaction.DesktopDisplay{App: "Notes", Phase: "Waiting"}}}, "Computer Use · Notes · Waiting")
-	send(DisplayEvent{Kind: DisplayEventToolEnd, Tool: ToolDisplay{ID: "d", Desktop: &interaction.DesktopDisplay{App: "Notes", Phase: "Returned"}}}, "Planning")
-	program.Send(runBatchMsg{updates: []runUpdate{{event: DisplayEvent{Kind: DisplayEventAssistantStart}}}})
-	send(DisplayEvent{Kind: DisplayEventAssistantDelta, Delta: DisplayDelta{Kind: DisplayDeltaText, Delta: "MODEL DECIDING"}}, "MODEL DECIDING")
+	send(interaction.Event{Kind: interaction.EventToolStart, Tool: interaction.ToolDisplay{ID: "d", Name: "desktop_act", Desktop: &interaction.DesktopDisplay{App: "Notes", Phase: "Waiting"}}}, "Computer Use · Notes · Waiting")
+	send(interaction.Event{Kind: interaction.EventToolEnd, Tool: interaction.ToolDisplay{ID: "d", Desktop: &interaction.DesktopDisplay{App: "Notes", Phase: "Returned"}}}, "Planning")
+	program.Send(runBatchMsg{updates: []runUpdate{{event: interaction.Event{Kind: interaction.EventAssistantStart}}}})
+	send(interaction.Event{Kind: interaction.EventAssistantDelta, Delta: interaction.Delta{Kind: interaction.DeltaText, Delta: "MODEL DECIDING"}}, "MODEL DECIDING")
 	program.Send(runBatchMsg{updates: []runUpdate{{done: true, err: context.Canceled}}})
 	waitForTerminalText(t, ctx, output, "Response cancelled")
 }

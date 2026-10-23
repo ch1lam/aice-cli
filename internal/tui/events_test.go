@@ -1,16 +1,17 @@
 package tui
 
 import (
+	"github.com/ch1lam/aice-cli/internal/interaction"
 	"reflect"
 	"testing"
 )
 
 func TestCollectRunUpdatesPreservesOrderAndBoundaries(t *testing.T) {
-	delta := runUpdate{event: DisplayEvent{Kind: DisplayEventAssistantDelta,
-		Delta: DisplayDelta{Kind: DisplayDeltaThinking, Delta: "part"}}}
-	end := runUpdate{event: DisplayEvent{Kind: DisplayEventAssistantEnd}}
+	delta := runUpdate{event: interaction.Event{Kind: interaction.EventAssistantDelta,
+		Delta: interaction.Delta{Kind: interaction.DeltaThinking, Delta: "part"}}}
+	end := runUpdate{event: interaction.Event{Kind: interaction.EventAssistantEnd}}
 	updates := make(chan runUpdate, maximumEventBatch+4)
-	want := []runUpdate{{event: DisplayEvent{Kind: DisplayEventAssistantStart}}}
+	want := []runUpdate{{event: interaction.Event{Kind: interaction.EventAssistantStart}}}
 	for range maximumEventBatch + 1 {
 		want = append(want, delta)
 	}
@@ -26,7 +27,7 @@ func TestCollectRunUpdatesPreservesOrderAndBoundaries(t *testing.T) {
 			t.Fatal("batch exceeded its event bound")
 		}
 		for i, update := range batch.updates {
-			if update.event.Kind != DisplayEventAssistantDelta && i != len(batch.updates)-1 {
+			if update.event.Kind != interaction.EventAssistantDelta && i != len(batch.updates)-1 {
 				t.Fatal("lifecycle update did not flush the batch")
 			}
 		}
@@ -42,7 +43,7 @@ func TestCollectRunUpdatesPreservesOrderAndBoundaries(t *testing.T) {
 
 func TestCollectRunUpdatesFlushesQuietStream(t *testing.T) {
 	updates := make(chan runUpdate, 1)
-	updates <- runUpdate{event: DisplayEvent{Kind: DisplayEventAssistantDelta}}
+	updates <- runUpdate{event: interaction.Event{Kind: interaction.EventAssistantDelta}}
 	batch := collectRunUpdates(updates)
 	if len(batch.updates) != 1 || batch.closed {
 		t.Fatal("quiet stream did not flush its pending delta")

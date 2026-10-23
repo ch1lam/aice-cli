@@ -50,13 +50,12 @@ func TestApplicationInteractiveFirstLoginKeepsWorkspaceGuard(t *testing.T) {
 		},
 		runTUI: func(
 			ctx context.Context,
-			runner tui.Runner,
+			runner interaction.Runner,
 			_ tui.Options,
 		) error {
-			commandRunner := runner.(tui.SlashCommandRunner)
+			commandRunner := runner.(interaction.CommandRunner)
 			if _, err := commandRunner.RunSlashCommand(
-				ctx,
-				tui.SlashCommandRequest{
+				ctx, interaction.CommandRequest{
 					Name:      "login",
 					Arguments: "deepseek",
 					Secret:    "test-key",

@@ -3,6 +3,7 @@ package tui
 import (
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
+	"github.com/ch1lam/aice-cli/internal/interaction"
 )
 
 // handleKey resolves the domain before its reserved keys. An unconsumed key
@@ -182,7 +183,7 @@ func (m model) handleComposerAction(match inputActionMatch) (model, tea.Cmd, boo
 		if m.isBTWCommandInput() || m.isInfoCommandInput() {
 			return m.submit()
 		}
-		return m.submitDelivery(deliveryQueue)
+		return m.submitDelivery(interaction.DeliveryKindFollowUp)
 	case inputActionNewline:
 		return m, m.updateInput(tea.PasteMsg{Content: "\n"}), true
 	case inputActionSend:
@@ -190,7 +191,7 @@ func (m model) handleComposerAction(match inputActionMatch) (model, tea.Cmd, boo
 			if m.isBTWCommandInput() || m.isInfoCommandInput() {
 				return m.submit()
 			}
-			return m.submitDelivery(deliverySteer)
+			return m.submitDelivery(interaction.DeliveryKindSteer)
 		}
 		return m.submit()
 	default:

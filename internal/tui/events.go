@@ -8,6 +8,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/ch1lam/aice-cli/internal/interaction"
 )
 
 func (m *model) beginProcess() int {
@@ -261,12 +262,12 @@ func (m model) applyRunBatch(batch runBatchMsg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(commands...)
 }
 
-func (m *model) applyAgentEvent(event DisplayEvent) (bool, tea.Cmd) {
+func (m *model) applyAgentEvent(event interaction.Event) (bool, tea.Cmd) {
 	if event.Context != nil {
 		m.contextUsage = *event.Context
 	}
 	switch event.Kind {
-	case DisplayEventAssistantStart:
+	case interaction.EventAssistantStart:
 		m.entries = append(m.entries, transcriptEntry{
 			kind:         entryAssistant,
 			presentation: &assistantPresentation{},
@@ -275,31 +276,31 @@ func (m *model) applyAgentEvent(event DisplayEvent) (bool, tea.Cmd) {
 		m.assistantEntry = len(m.entries) - 1
 		m.status = "Thinking..."
 		return true, nil
-	case DisplayEventAssistantDelta:
+	case interaction.EventAssistantDelta:
 		return m.applyAssistantDelta(event), nil
-	case DisplayEventAssistantEnd:
+	case interaction.EventAssistantEnd:
 		return true, m.completeAssistant(event.Assistant)
-	case DisplayEventToolStart:
+	case interaction.EventToolStart:
 		m.revokeConclusion()
 		m.startDisplayedTool(event.Tool)
 		m.setDesktopActivity(event.Tool.Desktop, false, event.Tool.Failed)
 		m.status = "Running " + event.Tool.Name + "..."
 		return true, nil
-	case DisplayEventToolEnd:
+	case interaction.EventToolEnd:
 		m.completeTool(event.Tool)
 		m.setDesktopActivity(event.Tool.Desktop, true, event.Tool.Failed)
 		m.status = "Thinking..."
 		return true, nil
-	case DisplayEventSteer:
+	case interaction.EventSteer:
 		return m.applySteer(event.Input), nil
-	case DisplayEventFollowUp:
+	case interaction.EventFollowUp:
 		m.startQueuedDelivery(pendingDelivery{
 			id:   event.Input.ID,
 			text: event.Input.Text,
-			mode: deliveryQueue,
+			mode: interaction.DeliveryKindFollowUp,
 		})
 		return true, nil
-	case DisplayEventRetryStart:
+	case interaction.EventRetryStart:
 		m.status = fmt.Sprintf(
 			"Retrying in %s (%d/%d)...",
 			event.Retry.Delay,
@@ -307,10 +308,10 @@ func (m *model) applyAgentEvent(event DisplayEvent) (bool, tea.Cmd) {
 			event.Retry.MaxRetries,
 		)
 		return true, nil
-	case DisplayEventRetryEnd:
+	case interaction.EventRetryEnd:
 		m.status = retryEndStatus(event.Retry.Succeeded)
 		return true, nil
-	case DisplayEventAgentEnd:
+	case interaction.EventAgentEnd:
 		if event.Err == nil {
 			m.status = "Response complete"
 		}
@@ -325,7 +326,7 @@ func retryEndStatus(succeeded bool) string {
 	return "Retry stopped"
 }
 
-func (m *model) applyAssistantDelta(event DisplayEvent) bool {
+func (m *model) applyAssistantDelta(event interaction.Event) bool {
 	if m.assistantEntry < 0 || m.assistantEntry >= len(m.entries) {
 		return false
 	}
@@ -334,16 +335,16 @@ func (m *model) applyAssistantDelta(event DisplayEvent) bool {
 		entry.presentation = &assistantPresentation{}
 	}
 	switch event.Delta.Kind {
-	case DisplayDeltaText:
+	case interaction.DeltaText:
 		entry.text = entry.presentation.appendText(entry.text, event.Delta.Delta)
 		if strings.TrimSpace(entry.text) != "" {
 			m.markConclusion()
 		}
 		m.status = "Responding..."
-	case DisplayDeltaThinking:
+	case interaction.DeltaThinking:
 		entry.thinking = entry.presentation.appendThinking(entry.thinking, event.Delta.Delta)
 		m.status = "Thinking..."
-	case DisplayDeltaToolCall:
+	case interaction.DeltaToolCall:
 		changed := m.revokeConclusion()
 		return m.applyWriteDelta(event.Delta) || changed
 	default:
@@ -352,7 +353,7 @@ func (m *model) applyAssistantDelta(event DisplayEvent) bool {
 	return true
 }
 
-func (m *model) completeAssistant(display AssistantDisplay) tea.Cmd {
+func (m *model) completeAssistant(display interaction.AssistantDisplay) tea.Cmd {
 	if m.assistantEntry < 0 || m.assistantEntry >= len(m.entries) {
 		m.entries = append(m.entries, transcriptEntry{
 			kind:         entryAssistant,
@@ -402,7 +403,7 @@ func (m *model) resetBranchTranscript() {
 	m.refreshViewport(true)
 }
 
-func (m *model) completeTool(tool ToolDisplay) {
+func (m *model) completeTool(tool interaction.ToolDisplay) {
 	for index := len(m.entries) - 1; index >= 0; index-- {
 		entry := &m.entries[index]
 		if entry.kind == entryTool && entry.toolID == tool.ID && !entry.toolDone {
@@ -506,7 +507,7 @@ type runBatchMsg struct {
 func startRun(
 	requests chan<- runRequest,
 	controllerDone <-chan struct{},
-	input RunInput,
+	input interaction.RunInput,
 ) tea.Cmd {
 	return func() tea.Msg {
 		updates := make(chan runUpdate, runUpdateBuffer)
@@ -529,7 +530,7 @@ func startRun(
 func startSlashCommand(
 	requests chan<- runRequest,
 	controllerDone <-chan struct{},
-	request SlashCommandRequest,
+	request interaction.CommandRequest,
 ) tea.Cmd {
 	return func() tea.Msg {
 		updates := make(chan runUpdate, runUpdateBuffer)
@@ -557,7 +558,7 @@ func collectRunUpdates(updates <-chan runUpdate) runBatchMsg {
 		return runBatchMsg{closed: true}
 	}
 	batch := runBatchMsg{updates: []runUpdate{first}}
-	if first.event.Kind != DisplayEventAssistantDelta {
+	if first.event.Kind != interaction.EventAssistantDelta {
 		return batch
 	}
 	timer := time.NewTimer(streamBatchInterval)
@@ -570,7 +571,7 @@ func collectRunUpdates(updates <-chan runUpdate) runBatchMsg {
 				return batch
 			}
 			batch.updates = append(batch.updates, update)
-			if update.event.Kind != DisplayEventAssistantDelta {
+			if update.event.Kind != interaction.EventAssistantDelta {
 				return batch
 			}
 		case <-timer.C:

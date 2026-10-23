@@ -115,10 +115,10 @@ type model struct {
 	sideRequests             chan<- runRequest
 	sideControllerDone       <-chan struct{}
 	updates                  <-chan runUpdate
-	prepareDelivery          func(ActiveRun, interaction.Delivery, composerDraft) (tea.Cmd, context.CancelFunc)
+	prepareDelivery          func(interaction.ActiveRun, interaction.Delivery, composerDraft) (tea.Cmd, context.CancelFunc)
 	deliveryPending          bool
 	cancelDelivery           context.CancelFunc
-	activeRun                ActiveRun
+	activeRun                interaction.ActiveRun
 	cancelRun                context.CancelFunc
 	side                     sidePanelState
 	guardRequests            <-chan interaction.GuardRequest
@@ -140,16 +140,16 @@ type model struct {
 	spinner               spinner.Model
 	help                  help.Model
 	keys                  keyMap
-	currentModel          DisplayModel
-	thinking              DisplayThinking
+	currentModel          interaction.DisplayModel
+	thinking              interaction.DisplayThinking
 	apiKeyConfigured      bool
-	sessionUsage          DisplayUsage
+	sessionUsage          interaction.DisplayUsage
 	contextShowFraction   bool
 	contextPressed        bool
 	workspacePress        *tea.Mouse
 	openDirectory         func(string) tea.Cmd
 	contextHoverConfirmed bool
-	contextUsage          DisplayContext
+	contextUsage          interaction.DisplayContext
 	usageAnimation        usageAnimation
 	welcomeAnimation      welcomeAnimation
 	welcomeTip            welcomeTip
@@ -159,7 +159,7 @@ type model struct {
 	version               string
 	entries               []transcriptEntry
 	processGroups         []processGroup
-	commands              []SlashCommand
+	commands              []interaction.Command
 	flow                  *commandFlow
 	commandDraft          *composerDraft
 	pendingDeliveries     []pendingDelivery
@@ -174,7 +174,7 @@ type model struct {
 	clearQuitPending bool
 	inputNotice      string
 	// Retained only until NewRun accepts the submission, so rejection restores it.
-	submittedInput *RunInput
+	submittedInput *interaction.RunInput
 	submittedDraft composerDraft
 
 	inputGeneration  uint64
@@ -203,7 +203,7 @@ type model struct {
 func newModel(
 	requests chan<- runRequest,
 	controllerDone <-chan struct{},
-	externalCommands ...SlashCommand,
+	externalCommands ...interaction.Command,
 ) model {
 	input := textarea.New()
 	// Selection edits bypass the composer's atomic attachment boundaries.

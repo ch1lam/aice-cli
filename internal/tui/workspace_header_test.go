@@ -94,7 +94,7 @@ func TestWorkspacePressCancellationAndHitBounds(t *testing.T) {
 	}
 	m := newModel(nil, nil)
 	m.workingDirectory = t.TempDir()
-	m.contextUsage = DisplayContext{Window: 1000000, Known: true}
+	m.contextUsage = interaction.DisplayContext{Window: 1000000, Known: true}
 	m = updateModel(t, m, tea.WindowSizeMsg{Width: 80, Height: 24})
 	for y, row := range strings.Split(ansi.Strip(m.View().Content), "\n") {
 		for _, text := range []string{"AICE", "READY", "0.00%"} {

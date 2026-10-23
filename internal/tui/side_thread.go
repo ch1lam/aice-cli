@@ -17,8 +17,8 @@ const (
 	sideNewTitle       = "New BTW thread"
 )
 
-func btwSlashCommand() SlashCommand {
-	return SlashCommand{
+func btwSlashCommand() interaction.Command {
+	return interaction.Command{
 		Name:         "btw",
 		Description:  "Ask an ephemeral side question without interrupting the main task",
 		ArgumentHint: "[question]",
@@ -496,12 +496,12 @@ func (m model) applySideThreadBatch(
 // visible thread publishes its progress notice.
 func (m *model) applySideEvent(
 	thread *sideThreadState,
-	event DisplayEvent,
+	event interaction.Event,
 ) bool {
 	entry := thread.activeEntry()
 	var notice string
 	switch event.Kind {
-	case DisplayEventAssistantStart, DisplayEventAssistantDelta, DisplayEventAssistantEnd:
+	case interaction.EventAssistantStart, interaction.EventAssistantDelta, interaction.EventAssistantEnd:
 		if entry == nil {
 			return false
 		}
@@ -510,13 +510,13 @@ func (m *model) applySideEvent(
 		if notice == "" {
 			return false
 		}
-	case DisplayEventToolStart, DisplayEventToolEnd:
+	case interaction.EventToolStart, interaction.EventToolEnd:
 		notice = "Side questions cannot use tools"
-	case DisplayEventRetryStart:
+	case interaction.EventRetryStart:
 		notice = "Retrying side answer..."
-	case DisplayEventRetryEnd:
+	case interaction.EventRetryEnd:
 		notice = retryEndStatus(event.Retry.Succeeded)
-	case DisplayEventAgentEnd:
+	case interaction.EventAgentEnd:
 		if event.Err == nil {
 			notice = "Answer complete"
 		}
@@ -531,14 +531,14 @@ func (m *model) applySideEvent(
 
 // applySideAssistant updates the answer and returns its progress notice, or
 // an empty notice for an unsupported delta.
-func (m *model) applySideAssistant(entry *sideThreadEntry, event DisplayEvent) string {
+func (m *model) applySideAssistant(entry *sideThreadEntry, event interaction.Event) string {
 	switch event.Kind {
-	case DisplayEventAssistantStart:
+	case interaction.EventAssistantStart:
 		entry.presentation = &assistantPresentation{}
 		entry.answer, entry.thinking, entry.err = "", "", ""
 		entry.complete = false
 		return "Thinking..."
-	case DisplayEventAssistantEnd:
+	case interaction.EventAssistantEnd:
 		entry.presentation = &assistantPresentation{}
 		entry.answer = event.Assistant.Text
 		entry.thinking = event.Assistant.Thinking
@@ -549,13 +549,13 @@ func (m *model) applySideAssistant(entry *sideThreadEntry, event DisplayEvent) s
 		entry.presentation = &assistantPresentation{}
 	}
 	switch event.Delta.Kind {
-	case DisplayDeltaText:
+	case interaction.DeltaText:
 		entry.answer = entry.presentation.appendText(entry.answer, event.Delta.Delta)
 		return "Answering..."
-	case DisplayDeltaThinking:
+	case interaction.DeltaThinking:
 		entry.thinking = entry.presentation.appendThinking(entry.thinking, event.Delta.Delta)
 		return "Thinking..."
-	case DisplayDeltaToolCall:
+	case interaction.DeltaToolCall:
 		return "Side questions cannot use tools"
 	}
 	return ""

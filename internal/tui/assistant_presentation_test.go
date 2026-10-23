@@ -7,6 +7,7 @@ import (
 	"unicode/utf8"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/ch1lam/aice-cli/internal/interaction"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -21,7 +22,7 @@ func TestStreamingMarkdownCompletion(t *testing.T) {
 			m.width, m.height, m.running = 80, 24, true
 			m.resizeLayout()
 			thread := &sideThreadState{entries: []sideThreadEntry{{}}, assistantEntry: 0, isRunning: true}
-			apply := func(event DisplayEvent) {
+			apply := func(event interaction.Event) {
 				if side {
 					m.applySideEvent(thread, event)
 				} else {
@@ -41,15 +42,15 @@ func TestStreamingMarkdownCompletion(t *testing.T) {
 				}
 				return m.entries[0].presentation
 			}
-			apply(DisplayEvent{Kind: DisplayEventAssistantStart})
+			apply(interaction.Event{Kind: interaction.EventAssistantStart})
 			source := strings.Repeat("stable paragraph\n\n", 30) + "```go\nvar answer = 42\n```\n\ntail"
-			apply(DisplayEvent{Kind: DisplayEventAssistantDelta, Delta: DisplayDelta{Kind: DisplayDeltaText, Delta: source}})
+			apply(interaction.Event{Kind: interaction.EventAssistantDelta, Delta: interaction.Delta{Kind: interaction.DeltaText, Delta: source}})
 			view()
 			m.viewport.GotoTop()
 			anchorIndex, anchorLine := m.viewport.index, m.viewport.line
 			for _, delta := range []string{" grows", "\n\n[target]: https://example.com", "\n\n[label][target]"} {
 				source += delta
-				apply(DisplayEvent{Kind: DisplayEventAssistantDelta, Delta: DisplayDelta{Kind: DisplayDeltaText, Delta: delta}})
+				apply(interaction.Event{Kind: interaction.EventAssistantDelta, Delta: interaction.Delta{Kind: interaction.DeltaText, Delta: delta}})
 				view()
 				want := layoutMarkdown(source, m.contentWidth()).pad(assistantBodyStyle.GetPaddingLeft(), assistantBodyStyle.GetPaddingRight())
 				cache := presentation().textCache
@@ -60,7 +61,7 @@ func TestStreamingMarkdownCompletion(t *testing.T) {
 			if !side && (m.viewport.index != anchorIndex || m.viewport.line != anchorLine) {
 				t.Fatal("streaming moved the scrolled-up viewport")
 			}
-			apply(DisplayEvent{Kind: DisplayEventAssistantEnd, Assistant: AssistantDisplay{Text: source, Concludes: true}})
+			apply(interaction.Event{Kind: interaction.EventAssistantEnd, Assistant: interaction.AssistantDisplay{Text: source, Concludes: true}})
 			final := view()
 			if !strings.Contains(ansi.Strip(final.view), "https://example.com") || len(final.blocks) != 1 {
 				t.Fatal("completion lost the resolved link or code block")
@@ -82,7 +83,7 @@ func TestLongThinkingPreviewPreservesCompleteMessage(t *testing.T) {
 			m := newModel(nil, nil)
 			m.width, m.height, m.running = 80, 24, true
 			thread := &sideThreadState{entries: []sideThreadEntry{{}}, assistantEntry: 0, isRunning: true}
-			apply := func(event DisplayEvent) {
+			apply := func(event interaction.Event) {
 				if side {
 					m.applySideEvent(thread, event)
 				} else {
@@ -95,10 +96,10 @@ func TestLongThinkingPreviewPreservesCompleteMessage(t *testing.T) {
 				}
 				return ansi.Strip(m.transcriptView())
 			}
-			apply(DisplayEvent{Kind: DisplayEventAssistantStart})
+			apply(interaction.Event{Kind: interaction.EventAssistantStart})
 			prefix := "BEGINNING " + strings.Repeat("中文推理🙂 ", 6000)
-			apply(DisplayEvent{Kind: DisplayEventAssistantDelta, Delta: DisplayDelta{Kind: DisplayDeltaThinking, Delta: prefix}})
-			apply(DisplayEvent{Kind: DisplayEventAssistantDelta, Delta: DisplayDelta{Kind: DisplayDeltaThinking, Delta: " LATEST"}})
+			apply(interaction.Event{Kind: interaction.EventAssistantDelta, Delta: interaction.Delta{Kind: interaction.DeltaThinking, Delta: prefix}})
+			apply(interaction.Event{Kind: interaction.EventAssistantDelta, Delta: interaction.Delta{Kind: interaction.DeltaThinking, Delta: " LATEST"}})
 			if !side {
 				m.setFoldExpanded(foldTarget{kind: foldThinking, id: 0}, true)
 			}
@@ -119,7 +120,7 @@ func TestLongThinkingPreviewPreservesCompleteMessage(t *testing.T) {
 			} else if retained[0].thinking != full {
 				t.Fatal("main thinking was truncated in storage")
 			}
-			apply(DisplayEvent{Kind: DisplayEventAssistantEnd, Assistant: AssistantDisplay{Thinking: full}})
+			apply(interaction.Event{Kind: interaction.EventAssistantEnd, Assistant: interaction.AssistantDisplay{Thinking: full}})
 			completed := view()
 			if !strings.Contains(completed, "BEGINNING") || !strings.Contains(completed, "LATEST") ||
 				strings.Contains(completed, liveThinkingNotice) {
@@ -198,9 +199,9 @@ func TestLongThinkingStillAllowsInputAndCancellation(t *testing.T) {
 	m := newModel(nil, nil)
 	m.width, m.height, m.running, m.acceptsDelivery = 80, 24, true, true
 	m.resizeLayout()
-	m.applyAgentEvent(DisplayEvent{Kind: DisplayEventAssistantStart})
-	m.applyAgentEvent(DisplayEvent{Kind: DisplayEventAssistantDelta, Delta: DisplayDelta{
-		Kind: DisplayDeltaThinking, Delta: strings.Repeat("reasoning ", 100000),
+	m.applyAgentEvent(interaction.Event{Kind: interaction.EventAssistantStart})
+	m.applyAgentEvent(interaction.Event{Kind: interaction.EventAssistantDelta, Delta: interaction.Delta{
+		Kind: interaction.DeltaThinking, Delta: strings.Repeat("reasoning ", 100000),
 	}})
 	m.refreshViewport(true)
 	m = updateModel(t, m, tea.KeyPressMsg{Code: 'x', Text: "x"})

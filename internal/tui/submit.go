@@ -51,7 +51,7 @@ func (m model) submit() (model, tea.Cmd, bool) {
 		return m, nil, true
 	}
 
-	input := RunInput{Prompt: prompt, Files: m.composerFiles(), Skills: m.composerSkills(), Images: interaction.CloneImages(m.composerImages())}
+	input := interaction.RunInput{Prompt: prompt, Files: m.composerFiles(), Skills: m.composerSkills(), Images: interaction.CloneImages(m.composerImages())}
 	m.submittedDraft = m.captureComposerDraft()
 	m.input.Reset()
 	m.pastes = nil
@@ -63,7 +63,7 @@ func (m model) submit() (model, tea.Cmd, bool) {
 
 // Composer submission and explicit Settings continuation share run startup.
 // Their callers own whether the current composer draft is consumed.
-func (m model) beginSubmittedRun(input RunInput) (model, tea.Cmd, bool) {
+func (m model) beginSubmittedRun(input interaction.RunInput) (model, tea.Cmd, bool) {
 	m.submittedInput = &input
 	m.entries = append(m.entries, transcriptEntry{kind: entryUser, text: imageInputText(input.Prompt, len(input.Images))})
 	m.beginProcess()
@@ -82,7 +82,7 @@ func (m model) beginSubmittedRun(input RunInput) (model, tea.Cmd, bool) {
 
 func (m model) submitSlashCommand(
 	raw string,
-	request SlashCommandRequest,
+	request interaction.CommandRequest,
 ) (model, tea.Cmd, bool) {
 	command, exists := findSlashCommand(m.commands, request.Name)
 	if !exists {
@@ -202,8 +202,8 @@ func (m model) submitSlashCommand(
 
 func (m model) startApplicationSlashCommand(
 	raw string,
-	request SlashCommandRequest,
-	command SlashCommand,
+	request interaction.CommandRequest,
+	command interaction.Command,
 ) (model, tea.Cmd, bool) {
 	return m.runCommandFlow(&commandFlow{raw: raw, command: command, request: request})
 }
@@ -242,8 +242,8 @@ func (m model) runCommandFlow(flow *commandFlow) (model, tea.Cmd, bool) {
 
 func (m model) openCommandMenu(
 	raw string,
-	request SlashCommandRequest,
-	command SlashCommand,
+	request interaction.CommandRequest,
+	command interaction.Command,
 ) (model, tea.Cmd, bool) {
 	if command.Menu == nil || len(command.Menu.Options) == 0 {
 		return m.commandError(raw, "/"+command.Name+" has no available choices")
@@ -313,7 +313,7 @@ func (m *model) moveCommandMenuSelection(delta int) {
 	frame.selection = wrapIndex(frame.selection, delta, len(m.matchingCommandOptions()))
 }
 
-func currentSlashCommandOption(options []SlashCommandOption) int {
+func currentSlashCommandOption(options []interaction.CommandOption) int {
 	for index, option := range options {
 		if option.Current {
 			return index
@@ -375,7 +375,7 @@ func (m model) cancelSecretInput() (model, tea.Cmd, bool) {
 
 func (m model) commandUsageError(
 	raw string,
-	command SlashCommand,
+	command interaction.Command,
 ) (model, tea.Cmd, bool) {
 	return m.commandError(
 		raw,

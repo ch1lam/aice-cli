@@ -15,7 +15,7 @@ func TestAccountLoginInputIsTransientAndCancelled(t *testing.T) {
 			requests := make(chan runRequest, 1)
 			m := newModel(requests, make(chan struct{}))
 			m = updateModel(t, m, tea.WindowSizeMsg{Width: 80, Height: 24})
-			m, command, _ := m.startApplicationSlashCommand("/login", SlashCommandRequest{Name: "login", Arguments: "openai-codex", LoginMethod: method}, SlashCommand{Name: "login", SecretPrompt: "API key"})
+			m, command, _ := m.startApplicationSlashCommand("/login", interaction.CommandRequest{Name: "login", Arguments: "openai-codex", LoginMethod: method}, interaction.Command{Name: "login", SecretPrompt: "API key"})
 			if m.secretEntry() || !m.authActive() || !m.running {
 				t.Fatal("account login fell into API key input")
 			}
@@ -81,7 +81,7 @@ func TestAccountLoginCancelBeforeControllerStarts(t *testing.T) {
 func TestControllerStreamsAuthenticationBeforeCompletion(t *testing.T) {
 	input := make(chan string, 1)
 	updates := make(chan runUpdate, runUpdateBuffer)
-	runner := &slashRunner{runCommand: func(ctx context.Context, request SlashCommandRequest) (string, error) {
+	runner := &slashRunner{runCommand: func(ctx context.Context, request interaction.CommandRequest) (string, error) {
 		if err := request.Auth.Notify(ctx, interaction.AuthPrompt{URL: "https://example.test", AllowInput: true}); err != nil {
 			return "", err
 		}
@@ -95,7 +95,7 @@ func TestControllerStreamsAuthenticationBeforeCompletion(t *testing.T) {
 	finished := make(chan struct{})
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
-	request := SlashCommandRequest{Name: "login", Auth: &interaction.AuthInteraction{Input: input}}
+	request := interaction.CommandRequest{Name: "login", Auth: &interaction.AuthInteraction{Input: input}}
 	go func() {
 		defer close(finished)
 		runSlashCommand(ctx, runner, runRequest{command: &request, updates: updates})
@@ -123,7 +123,7 @@ func TestBrowserCommandPromptsAndTabMenu(t *testing.T) {
 	requests := make(chan runRequest, 1)
 	m := newModel(requests, make(chan struct{}))
 	m = updateModel(t, m, tea.WindowSizeMsg{Width: 80, Height: 24})
-	m, cmd, _ := m.startApplicationSlashCommand("/browser", SlashCommandRequest{Name: "browser", Arguments: "connect"}, SlashCommand{Name: "browser", Interactive: true})
+	m, cmd, _ := m.startApplicationSlashCommand("/browser", interaction.CommandRequest{Name: "browser", Arguments: "connect"}, interaction.Command{Name: "browser", Interactive: true})
 	cmd()
 	request := <-requests
 	if request.command.Auth == nil {

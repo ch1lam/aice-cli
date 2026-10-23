@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"github.com/ch1lam/aice-cli/internal/interaction"
 	"slices"
 	"strings"
 	"testing"
@@ -11,15 +12,15 @@ func TestSlashCommandCatalogKeepsLocalCommandsAndNormalizesExternalCommands(
 ) {
 	t.Parallel()
 
-	commands := slashCommandCatalog([]SlashCommand{
+	commands := slashCommandCatalog([]interaction.Command{
 		{Name: "/TREE", Description: "Show tree"},
 		{Name: "help", Description: "Conflicting help"},
 		{Name: "bad command", Description: "Invalid"},
 		{
 			Name: "model",
-			Menu: &SlashCommandMenu{
+			Menu: &interaction.CommandMenu{
 				Title: " Select model ",
-				Options: []SlashCommandOption{
+				Options: []interaction.CommandOption{
 					{
 						Label:     " Pro ",
 						Arguments: " deepseek-v4-pro ",
@@ -58,19 +59,19 @@ func TestParseSlashCommand(t *testing.T) {
 	tests := []struct {
 		name        string
 		value       string
-		wantRequest SlashCommandRequest
+		wantRequest interaction.CommandRequest
 		wantSlash   bool
 	}{
 		{
 			name:        "command only",
 			value:       "/HELP",
-			wantRequest: SlashCommandRequest{Name: "help"},
+			wantRequest: interaction.CommandRequest{Name: "help"},
 			wantSlash:   true,
 		},
 		{
 			name:  "command with argument",
 			value: "  /checkout   root  ",
-			wantRequest: SlashCommandRequest{
+			wantRequest: interaction.CommandRequest{
 				Name:      "checkout",
 				Arguments: "root",
 			},
@@ -100,7 +101,7 @@ func TestParseSlashCommand(t *testing.T) {
 func TestMatchingSlashCommandsUsesFuzzyNames(t *testing.T) {
 	t.Parallel()
 
-	commands := slashCommandCatalog([]SlashCommand{
+	commands := slashCommandCatalog([]interaction.Command{
 		{Name: "compact", Description: "Compact Session"},
 		{Name: "checkout", Description: "Move leaf"},
 	})
@@ -127,7 +128,7 @@ func TestMatchingSlashCommandsUsesFuzzyNames(t *testing.T) {
 
 func TestSlashSuggestionsKeepSkillsLastOnlyWithoutSearch(t *testing.T) {
 	t.Parallel()
-	commands := []SlashCommand{
+	commands := []interaction.Command{
 		{Name: "skill:review", SkillName: "review", Description: "audit"},
 		{Name: "model"},
 		{Name: "skill:browser", SkillName: "browser"},
@@ -157,7 +158,7 @@ func TestSlashSuggestionsKeepSkillsLastOnlyWithoutSearch(t *testing.T) {
 func TestSlashCommandHelpIncludesUsageAndDescription(t *testing.T) {
 	t.Parallel()
 
-	help := slashCommandHelp([]SlashCommand{{
+	help := slashCommandHelp([]interaction.Command{{
 		Name:         "checkout",
 		Description:  "Move the active leaf",
 		ArgumentHint: "<entry|root>",
@@ -175,12 +176,12 @@ func TestSlashCommandHelpIncludesUsageAndDescription(t *testing.T) {
 func TestSlashCommandHelpDoesNotExposeInternalMenuArguments(t *testing.T) {
 	t.Parallel()
 
-	help := slashCommandHelp([]SlashCommand{{
+	help := slashCommandHelp([]interaction.Command{{
 		Name:        "model",
 		Description: "Choose a model",
-		Menu: &SlashCommandMenu{
+		Menu: &interaction.CommandMenu{
 			Title: "Select model",
-			Options: []SlashCommandOption{{
+			Options: []interaction.CommandOption{{
 				Label:     "Pro",
 				Arguments: "deepseek-v4-pro",
 			}},
@@ -197,7 +198,7 @@ func TestSlashCommandHelpDoesNotExposeInternalMenuArguments(t *testing.T) {
 }
 
 func TestBrowserCommandAppearsInHelp(t *testing.T) {
-	commands := slashCommandCatalog([]SlashCommand{{Name: "browser", Description: "Manage browser connection and tabs"}})
+	commands := slashCommandCatalog([]interaction.Command{{Name: "browser", Description: "Manage browser connection and tabs"}})
 	if !strings.Contains(slashCommandHelp(commands), "/browser") {
 		t.Fatal("browser missing from help")
 	}

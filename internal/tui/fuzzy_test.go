@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"github.com/ch1lam/aice-cli/internal/interaction"
 	"slices"
 	"testing"
 )
@@ -32,7 +33,7 @@ func TestFuzzyMatchReturnsBestVisibleAlignment(t *testing.T) {
 
 func TestFuzzySuggestionsRankRelevanceBeforeCatalogOrder(t *testing.T) {
 	t.Parallel()
-	commands := []SlashCommand{{Name: "m-o-d"}, {Name: "remodel"}, {Name: "model"}, {Name: "mod"}}
+	commands := []interaction.Command{{Name: "m-o-d"}, {Name: "remodel"}, {Name: "model"}, {Name: "mod"}}
 	matches := matchingSlashCommands(commands, "/mod")
 	for i, want := range []string{"mod", "model", "remodel", "m-o-d"} {
 		if len(matches) != 4 || matches[i].Name != want {

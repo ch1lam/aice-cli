@@ -22,11 +22,11 @@ func TestToolTruncationStatusInTranscript(t *testing.T) {
 			m := newModel(nil, nil)
 			m.width = 160
 			m.height = 30
-			m.applyAgentEvent(DisplayEvent{Kind: DisplayEventToolStart, Tool: ToolDisplay{ID: "read-1", Name: "read", Detail: "file.txt"}})
+			m.applyAgentEvent(interaction.Event{Kind: interaction.EventToolStart, Tool: interaction.ToolDisplay{ID: "read-1", Name: "read", Detail: "file.txt"}})
 			m.expandAllDetails(true)
 			// Populate the viewport cache before tool completion to catch stale status rows.
 			m.refreshViewport(true)
-			m.applyAgentEvent(DisplayEvent{Kind: DisplayEventToolEnd, Tool: ToolDisplay{ID: "read-1", Truncation: tt.details}})
+			m.applyAgentEvent(interaction.Event{Kind: interaction.EventToolEnd, Tool: interaction.ToolDisplay{ID: "read-1", Truncation: tt.details}})
 			m.refreshViewport(true)
 			view := m.transcriptView()
 			if tt.details.Hint != "" && (strings.Contains(view, "offset=") || strings.Contains(view, "total lines")) {

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"encoding/json"
+	"github.com/ch1lam/aice-cli/internal/interaction"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -28,7 +29,7 @@ type writePreview struct {
 	codeRendered   transcriptContent
 }
 
-func (m *model) applyWriteDelta(delta DisplayDelta) bool {
+func (m *model) applyWriteDelta(delta interaction.Delta) bool {
 	index := -1
 	for i := len(m.entries) - 1; i >= 0; i-- {
 		e := &m.entries[i]
@@ -80,7 +81,7 @@ func (m *model) applyWriteDelta(delta DisplayDelta) bool {
 	return true
 }
 
-func (m *model) startDisplayedTool(tool ToolDisplay) {
+func (m *model) startDisplayedTool(tool interaction.ToolDisplay) {
 	for i := len(m.entries) - 1; i >= 0; i-- {
 		e := &m.entries[i]
 		if e.kind == entryTool && e.toolPreparing && e.toolID == tool.ID {
@@ -107,7 +108,7 @@ func (m *model) startDisplayedTool(tool ToolDisplay) {
 	m.entries = append(m.entries, e)
 }
 
-func (p *writePreview) setContent(tool ToolDisplay) {
+func (p *writePreview) setContent(tool interaction.ToolDisplay) {
 	p.raw.Reset()
 	p.path = tool.Detail
 	p.content = strings.Clone(writePrefix(tool.Content, maximumWritePreviewBytes))

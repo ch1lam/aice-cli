@@ -17,7 +17,7 @@ import (
 
 func skillComposer() model {
 	m := completionTestModel()
-	m.commands = append(m.commands, SlashCommand{
+	m.commands = append(m.commands, interaction.Command{
 		Name: "skill:review", SkillName: "review", Description: "Skill · code audit",
 	})
 	return m
@@ -180,7 +180,7 @@ func TestSkillCompletionWhileRunningAndDeliveryRollback(t *testing.T) {
 func TestRunningNavigationWinsOverSkillDescriptionMatch(t *testing.T) {
 	t.Parallel()
 	m := skillComposer()
-	m.commands = append(m.commands, btwSlashCommand(), SlashCommand{
+	m.commands = append(m.commands, btwSlashCommand(), interaction.Command{
 		Name: "skill:desktop-guide", SkillName: "desktop-guide", Description: "desktop settings btw",
 	})
 	m.running, m.acceptsDelivery = true, true

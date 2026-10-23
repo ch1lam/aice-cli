@@ -23,12 +23,12 @@ func TestCompletedEditDiffInTranscript(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			m := newModel(nil, nil)
 			m.width, m.height = 100, 30
-			m.applyAgentEvent(DisplayEvent{Kind: DisplayEventToolStart, Tool: ToolDisplay{ID: "edit-1", Name: "edit", Detail: "missing-file"}})
+			m.applyAgentEvent(interaction.Event{Kind: interaction.EventToolStart, Tool: interaction.ToolDisplay{ID: "edit-1", Name: "edit", Detail: "missing-file"}})
 			m.refreshViewport(true)
 			if strings.Contains(m.transcriptView(), "@@") {
 				t.Fatal("premature diff")
 			}
-			m.applyAgentEvent(DisplayEvent{Kind: DisplayEventToolEnd, Tool: ToolDisplay{ID: "edit-1", Failed: tt.failed, Diff: tt.diff}})
+			m.applyAgentEvent(interaction.Event{Kind: interaction.EventToolEnd, Tool: interaction.ToolDisplay{ID: "edit-1", Failed: tt.failed, Diff: tt.diff}})
 			m.expandAllDetails(true)
 			m.refreshViewport(true)
 			view := ansi.Strip(m.transcriptView())
@@ -48,15 +48,15 @@ func TestCompletedEditDiffInTranscript(t *testing.T) {
 func TestCompletedWriteDiffReplacesStreamedPreview(t *testing.T) {
 	m := newModel(nil, nil)
 	m.width, m.height = 100, 40
-	m.applyAgentEvent(DisplayEvent{Kind: DisplayEventAssistantStart})
-	m.applyAgentEvent(DisplayEvent{Kind: DisplayEventAssistantDelta, Delta: DisplayDelta{
-		Kind: DisplayDeltaToolCall, Tool: ToolDisplay{ID: "w1", Name: "write"},
+	m.applyAgentEvent(interaction.Event{Kind: interaction.EventAssistantStart})
+	m.applyAgentEvent(interaction.Event{Kind: interaction.EventAssistantDelta, Delta: interaction.Delta{
+		Kind: interaction.DeltaToolCall, Tool: interaction.ToolDisplay{ID: "w1", Name: "write"},
 		Arguments: `{"path":"src/main.go","content":"PREVIEW"}`,
 	}})
-	m.applyAgentEvent(DisplayEvent{Kind: DisplayEventToolStart, Tool: ToolDisplay{
+	m.applyAgentEvent(interaction.Event{Kind: interaction.EventToolStart, Tool: interaction.ToolDisplay{
 		ID: "w1", Name: "write", Detail: "src/main.go", Content: "PREVIEW", HasContent: true,
 	}})
-	m.applyAgentEvent(DisplayEvent{Kind: DisplayEventToolEnd, Tool: ToolDisplay{
+	m.applyAgentEvent(interaction.Event{Kind: interaction.EventToolEnd, Tool: interaction.ToolDisplay{
 		ID: "w1", Diff: interaction.DiffDisplay{Text: "@@ -0,0 +1,1 @@\n+PREVIEW\n", Added: 1, StatsKnown: true},
 		Output: interaction.ToolOutputDisplay{Text: "Wrote 7 bytes", Available: true},
 	}})

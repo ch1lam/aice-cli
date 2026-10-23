@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/ch1lam/aice-cli/internal/hostpath"
+	"github.com/ch1lam/aice-cli/internal/interaction"
 )
 
 func (m *model) resizeLayout() {
@@ -263,7 +264,7 @@ func (m model) pendingQueueView(width int) string {
 	}
 	rows := make([]string, 0, len(m.pendingDeliveries))
 	for _, delivery := range m.pendingDeliveries {
-		if delivery.mode != deliveryQueue {
+		if delivery.mode != interaction.DeliveryKindFollowUp {
 			continue
 		}
 		prefix := mutedStyle.Render("  ↳ ")
@@ -297,7 +298,7 @@ func (m model) slashCommandMenuVisible() bool {
 		len(m.matchingSlashCommands()) > 0
 }
 
-func (m model) matchingSlashCommands() []SlashCommand {
+func (m model) matchingSlashCommands() []interaction.Command {
 	// Existing run-time navigation (e.g. /desktop) must keep Enter dispatch;
 	// a fuzzy skill-description match must never capture those exact commands.
 	if m.running && (m.isInfoCommandInput() || m.isBTWCommandInput()) {
@@ -309,7 +310,7 @@ func (m model) matchingSlashCommands() []SlashCommand {
 	}
 	matches := matchingSlashCommands(m.commands, query)
 	if m.running {
-		skills := make([]SlashCommand, 0, len(matches))
+		skills := make([]interaction.Command, 0, len(matches))
 		for _, command := range matches {
 			if command.SkillName != "" {
 				skills = append(skills, command)
@@ -324,10 +325,10 @@ func (m *model) moveSlashCommandSelection(delta int) {
 	m.commandSelection = wrapIndex(m.commandSelection, delta, len(m.matchingSlashCommands()))
 }
 
-func (m model) selectedSlashCommand() (SlashCommand, bool) {
+func (m model) selectedSlashCommand() (interaction.Command, bool) {
 	matches := m.matchingSlashCommands()
 	if len(matches) == 0 {
-		return SlashCommand{}, false
+		return interaction.Command{}, false
 	}
 	selection := min(max(m.commandSelection, 0), len(matches)-1)
 	return matches[selection], true
@@ -558,7 +559,7 @@ func truncateTerminalText(value string, width int) string {
 
 func (m model) hasPendingSteer() bool {
 	for _, delivery := range m.pendingDeliveries {
-		if delivery.mode == deliverySteer {
+		if delivery.mode == interaction.DeliveryKindSteer {
 			return true
 		}
 	}
@@ -568,7 +569,7 @@ func (m model) hasPendingSteer() bool {
 func (m model) pendingSteeringView() string {
 	parts := make([]transcriptViewPart, 0, len(m.pendingDeliveries))
 	for _, delivery := range m.pendingDeliveries {
-		if delivery.mode != deliverySteer {
+		if delivery.mode != interaction.DeliveryKindSteer {
 			continue
 		}
 		style := pendingSteerStyle.BorderStyle(lipgloss.Border{
@@ -831,7 +832,7 @@ func (m model) statusLine(width int) string {
 
 func (m model) contextStatus() string {
 	usage := m.contextUsage
-	if usage == (DisplayContext{}) {
+	if usage == (interaction.DisplayContext{}) {
 		return ""
 	}
 	if usage.Window <= 0 || !usage.Known {
@@ -927,7 +928,7 @@ func (m model) modelStatus(width int) string {
 		return ""
 	}
 	thinking := string(m.thinking)
-	if m.thinking == DisplayThinkingDefault {
+	if m.thinking == interaction.DisplayThinkingDefault {
 		thinking = "default"
 	}
 	suffix := " (" + thinking + ")"
@@ -935,17 +936,17 @@ func (m model) modelStatus(width int) string {
 	return mutedStyle.Render(name) + reasoningLevelStyle(m.thinking).Render(suffix)
 }
 
-func reasoningLevelStyle(level DisplayThinking) lipgloss.Style {
+func reasoningLevelStyle(level interaction.DisplayThinking) lipgloss.Style {
 	switch level {
-	case DisplayThinkingMax:
+	case interaction.DisplayThinkingMax:
 		return lipgloss.NewStyle().Foreground(accentColor)
-	case DisplayThinkingXHigh:
+	case interaction.DisplayThinkingXHigh:
 		return lipgloss.NewStyle().Foreground(lipgloss.Color("#F5735F"))
-	case DisplayThinkingHigh:
+	case interaction.DisplayThinkingHigh:
 		return lipgloss.NewStyle().Foreground(warningColor)
-	case DisplayThinkingMedium:
+	case interaction.DisplayThinkingMedium:
 		return lipgloss.NewStyle().Foreground(secondaryColor)
-	case DisplayThinkingLow, DisplayThinkingMinimal, DisplayThinkingOff, DisplayThinkingDefault:
+	case interaction.DisplayThinkingLow, interaction.DisplayThinkingMinimal, interaction.DisplayThinkingOff, interaction.DisplayThinkingDefault:
 		fallthrough
 	default:
 		return lipgloss.NewStyle().Foreground(mutedTextColor)

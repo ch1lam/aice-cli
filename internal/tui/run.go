@@ -17,13 +17,6 @@ import (
 
 const runUpdateBuffer = 32
 
-type RunInput = interaction.RunInput
-type ActiveRun = interaction.ActiveRun
-type Runner = interaction.Runner
-type RuntimeState = interaction.RuntimeState
-type RuntimeStateProvider = interaction.RuntimeStateProvider
-type SideThread = interaction.SideThread
-type SideThreadManager = interaction.SideThreadManager
 
 // UpdateCheckStatus identifies one welcome-screen update-check result.
 type UpdateCheckStatus uint8
@@ -57,11 +50,11 @@ type Options struct {
 	StartupNotice    string
 	Input            io.Reader
 	Output           io.Writer
-	Model            DisplayModel
-	Thinking         DisplayThinking
+	Model            interaction.DisplayModel
+	Thinking         interaction.DisplayThinking
 	APIKeyConfigured bool
-	Usage            DisplayUsage
-	Context          DisplayContext
+	Usage            interaction.DisplayUsage
+	Context          interaction.DisplayContext
 	WorkingDirectory string
 	// Version and CheckUpdate are shown on the welcome screen only; they stay
 	// off the transcript while the conversation is in use.
@@ -70,7 +63,7 @@ type Options struct {
 }
 
 // Run starts an interactive Bubble Tea program and owns its run controller.
-func Run(ctx context.Context, runner Runner, options Options) error {
+func Run(ctx context.Context, runner interaction.Runner, options Options) error {
 	if ctx == nil {
 		return fmt.Errorf("tui: context is required")
 	}
@@ -97,7 +90,7 @@ func Run(ctx context.Context, runner Runner, options Options) error {
 
 	var sideRequests chan runRequest
 	var sideControllerDone chan struct{}
-	if manager, ok := runner.(SideThreadManager); ok {
+	if manager, ok := runner.(interaction.SideThreadManager); ok {
 		sideRequests = make(chan runRequest)
 		sideControllerDone = make(chan struct{})
 		go serveSideRuns(
@@ -115,8 +108,8 @@ func Run(ctx context.Context, runner Runner, options Options) error {
 		}
 	}()
 
-	var slashCommands []SlashCommand
-	if commandRunner, ok := runner.(SlashCommandRunner); ok {
+	var slashCommands []interaction.Command
+	if commandRunner, ok := runner.(interaction.CommandRunner); ok {
 		slashCommands = commandRunner.SlashCommands()
 	}
 	if sideRequests != nil {
@@ -165,7 +158,7 @@ func Run(ctx context.Context, runner Runner, options Options) error {
 	}
 	initialModel.sideRequests = sideRequests
 	initialModel.sideControllerDone = sideControllerDone
-	if manager, ok := runner.(SideThreadManager); ok {
+	if manager, ok := runner.(interaction.SideThreadManager); ok {
 		initialModel.side.manager = manager
 	}
 	if guardReq, ok := runner.(interaction.GuardRequester); ok {
@@ -223,34 +216,34 @@ type runRequest struct {
 	files        []string
 	skills       []string
 	images       []llm.ImageContent
-	command      *SlashCommandRequest
+	command      *interaction.CommandRequest
 	updates      chan runUpdate
 	// sideCreate requests a brand-new side thread for this prompt;
 	// sideThreadID targets an existing thread for a follow-up. The resolved
 	// metadata is stored back on sideThread before the run starts.
 	sideCreate   bool
 	sideThreadID uint64
-	sideThread   *SideThread
+	sideThread   *interaction.SideThread
 }
 
 type runUpdate struct {
 	auth     *interaction.AuthPrompt
-	event    DisplayEvent
-	active   ActiveRun
+	event    interaction.Event
+	active   interaction.ActiveRun
 	cancel   context.CancelFunc
 	err      error
 	output   string
-	state    *RuntimeState
-	commands *[]SlashCommand
+	state    *interaction.RuntimeState
+	commands *[]interaction.Command
 	// sideThread is set on the first update of a side run and identifies the
 	// registry thread the run belongs to.
-	sideThread *SideThread
+	sideThread *interaction.SideThread
 	done       bool
 }
 
 func serveRuns(
 	ctx context.Context,
-	runner Runner,
+	runner interaction.Runner,
 	requests <-chan runRequest,
 	done chan<- struct{},
 ) {
@@ -272,7 +265,7 @@ func serveRuns(
 // controller only carries each run to its own event channel.
 func serveSideRuns(
 	ctx context.Context,
-	manager SideThreadManager,
+	manager interaction.SideThreadManager,
 	requests <-chan runRequest,
 	done chan<- struct{},
 ) {
@@ -296,14 +289,14 @@ func serveSideRuns(
 // success.
 func runSideRequest(
 	ctx context.Context,
-	manager SideThreadManager,
+	manager interaction.SideThreadManager,
 	request runRequest,
 	wg *sync.WaitGroup,
 ) {
 	defer wg.Done()
 
-	var thread SideThread
-	var runner Runner
+	var thread interaction.SideThread
+	var runner interaction.Runner
 	var err error
 	if request.sideCreate {
 		thread, runner, err = manager.CreateSideThread(request.prompt)
@@ -324,7 +317,7 @@ func runSideRequest(
 
 // runOne prepares and executes one run request, delivering every lifecycle
 // update, including the terminal error, on request.updates.
-func runOne(ctx context.Context, runner Runner, request runRequest) {
+func runOne(ctx context.Context, runner interaction.Runner, request runRequest) {
 	defer close(request.updates)
 
 	if request.command != nil {
@@ -337,9 +330,9 @@ func runOne(ctx context.Context, runner Runner, request runRequest) {
 	if !sendRunUpdate(ctx, request.updates, runUpdate{cancel: cancel, sideThread: request.sideThread}) {
 		return
 	}
-	active, err := runner.NewRun(runCtx, RunInput{Prompt: request.prompt, Images: request.images, Files: request.files, Skills: request.skills, Continuation: request.continuation}, func(
+	active, err := runner.NewRun(runCtx, interaction.RunInput{Prompt: request.prompt, Images: request.images, Files: request.files, Skills: request.skills, Continuation: request.continuation}, func(
 		eventCtx context.Context,
-		event DisplayEvent,
+		event interaction.Event,
 	) error {
 		if !sendRunUpdate(eventCtx, request.updates, runUpdate{event: event}) {
 			return eventCtx.Err()
@@ -378,7 +371,7 @@ func runOne(ctx context.Context, runner Runner, request runRequest) {
 	})
 }
 
-func runSlashCommand(ctx context.Context, runner Runner, request runRequest) {
+func runSlashCommand(ctx context.Context, runner interaction.Runner, request runRequest) {
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	if !sendRunUpdate(ctx, request.updates, runUpdate{cancel: cancel}) {
@@ -387,7 +380,7 @@ func runSlashCommand(ctx context.Context, runner Runner, request runRequest) {
 
 	var output string
 	var err error
-	commandRunner, ok := runner.(SlashCommandRunner)
+	commandRunner, ok := runner.(interaction.CommandRunner)
 	if !ok {
 		err = fmt.Errorf("tui: slash command runner is required")
 	} else {
@@ -414,14 +407,14 @@ func runSlashCommand(ctx context.Context, runner Runner, request runRequest) {
 	})
 }
 
-func runnerSnapshots(runner Runner) (*RuntimeState, *[]SlashCommand) {
-	var state *RuntimeState
-	if provider, ok := runner.(RuntimeStateProvider); ok {
+func runnerSnapshots(runner interaction.Runner) (*interaction.RuntimeState, *[]interaction.Command) {
+	var state *interaction.RuntimeState
+	if provider, ok := runner.(interaction.RuntimeStateProvider); ok {
 		snapshot := provider.RuntimeState()
 		state = &snapshot
 	}
-	var commands *[]SlashCommand
-	if commandRunner, ok := runner.(SlashCommandRunner); ok {
+	var commands *[]interaction.Command
+	if commandRunner, ok := runner.(interaction.CommandRunner); ok {
 		snapshot := commandRunner.SlashCommands()
 		commands = &snapshot
 	}

@@ -47,8 +47,11 @@ func TestClipboardImagesSubmitThroughController(t *testing.T) {
 			}
 			_ = command()
 			request := <-requests
-			var received RunInput
-			runner := runnerFunc(func(_ context.Context, input RunInput, _ DisplayEventSink) error { received = input; return nil })
+			var received interaction.RunInput
+			runner := runnerFunc(func(_ context.Context, input interaction.RunInput, _ interaction.EventSink) error {
+				received = input
+				return nil
+			})
 			go runOne(t.Context(), runner, request)
 			for update := range request.updates {
 				if update.err != nil {
@@ -86,7 +89,7 @@ func TestImageDraftRestoredWhenModelRejectsInput(t *testing.T) {
 
 func TestImageSteeringAndFollowUpPreserveDraftOnRejection(t *testing.T) {
 	t.Parallel()
-	for _, kind := range []deliveryMode{deliverySteer, deliveryQueue} {
+	for _, kind := range []interaction.DeliveryKind{interaction.DeliveryKindSteer, interaction.DeliveryKindFollowUp} {
 		t.Run(deliveryID(uint64(kind)), func(t *testing.T) {
 			m := newModel(make(chan runRequest), make(chan struct{}))
 			m.running, m.acceptsDelivery = true, true

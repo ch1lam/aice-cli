@@ -6,6 +6,7 @@ import (
 	"unicode/utf8"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/ch1lam/aice-cli/internal/interaction"
 )
 
 // slashAtCursor targets one whitespace-delimited token on any logical line.
@@ -98,7 +99,7 @@ func (m model) chooseSlashCommand() (model, tea.Cmd, bool) {
 		m.commandDraft = &draft
 		m.input.SetValue("/" + command.Name)
 		m.pastes = nil
-		next, cmd, handled := m.submitSlashCommand("/"+command.Name, SlashCommandRequest{Name: command.Name})
+		next, cmd, handled := m.submitSlashCommand("/"+command.Name, interaction.CommandRequest{Name: command.Name})
 		next.restoreCommandDraftIfIdle()
 		next.resizeLayout()
 		return next, cmd, handled

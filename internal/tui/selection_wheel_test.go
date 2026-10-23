@@ -351,9 +351,9 @@ func TestStreamingWheelKeepsFrozenVersion(t *testing.T) {
 	frozenCopy := selectedFrozenText(&m.selection.frozen, m.selection)
 	frozenHighlight := m.selection.highlightedView()
 	for i := 0; i < 3; i++ {
-		updated, _ := m.applyRunBatch(runBatchMsg{updates: []runUpdate{{event: DisplayEvent{
-			Kind:  DisplayEventAssistantDelta,
-			Delta: DisplayDelta{Kind: DisplayDeltaText, Delta: " streaming-token-0123456789"},
+		updated, _ := m.applyRunBatch(runBatchMsg{updates: []runUpdate{{event: interaction.Event{
+			Kind:  interaction.EventAssistantDelta,
+			Delta: interaction.Delta{Kind: interaction.DeltaText, Delta: " streaming-token-0123456789"},
 		}}}})
 		m = updated.(model)
 	}
@@ -419,9 +419,9 @@ func TestManualScrollReleaseStaysButNoScrollFollows(t *testing.T) {
 	press2 := wheelMouse(m2, top2, 0, 0, tea.MouseLeft)
 	m2 = updateModel(t, m2, tea.MouseClickMsg(press2))
 	m2 = updateModel(t, m2, tea.MouseMotionMsg(wheelMouse(m2, top2, 3, 1, tea.MouseLeft)))
-	updated2, _ := m2.applyRunBatch(runBatchMsg{updates: []runUpdate{{event: DisplayEvent{
-		Kind:  DisplayEventAssistantDelta,
-		Delta: DisplayDelta{Kind: DisplayDeltaText, Delta: " follow-token"},
+	updated2, _ := m2.applyRunBatch(runBatchMsg{updates: []runUpdate{{event: interaction.Event{
+		Kind:  interaction.EventAssistantDelta,
+		Delta: interaction.Delta{Kind: interaction.DeltaText, Delta: " follow-token"},
 	}}}})
 	m2 = updated2.(model)
 	release2 := wheelMouse(m2, top2, 3, 1, tea.MouseLeft)
@@ -509,9 +509,9 @@ func TestStreamingUnlaidHistoryKeepsFrozenVersion(t *testing.T) {
 	frozenCopyBefore := selectedFrozenText(&m.selection.frozen, m.selection)
 	// Stream new tokens into the live tail while the gesture is active.
 	for i := 0; i < 3; i++ {
-		updated, _ := m.applyRunBatch(runBatchMsg{updates: []runUpdate{{event: DisplayEvent{
-			Kind:  DisplayEventAssistantDelta,
-			Delta: DisplayDelta{Kind: DisplayDeltaText, Delta: " live-token-xyz"},
+		updated, _ := m.applyRunBatch(runBatchMsg{updates: []runUpdate{{event: interaction.Event{
+			Kind:  interaction.EventAssistantDelta,
+			Delta: interaction.Delta{Kind: interaction.DeltaText, Delta: " live-token-xyz"},
 		}}}})
 		m = updated.(model)
 	}

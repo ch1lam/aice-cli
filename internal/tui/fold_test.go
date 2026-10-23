@@ -93,7 +93,7 @@ func TestManualFoldsSurviveStreamingConclusionAndNewCalls(t *testing.T) {
 func TestFoldedResultsUpdateWithoutFormattingHiddenBody(t *testing.T) {
 	m := foldTestModel()
 	m.entries[2].toolDone = false
-	m.completeTool(ToolDisplay{ID: "read-1", Output: interaction.ToolOutputDisplay{Text: "LATEST_RESULT", Available: true}})
+	m.completeTool(interaction.ToolDisplay{ID: "read-1", Output: interaction.ToolOutputDisplay{Text: "LATEST_RESULT", Available: true}})
 	m.refreshViewport(false)
 	if strings.Contains(m.viewport.GetContent(), "LATEST_RESULT") {
 		t.Fatal("folded result leaked")
@@ -115,7 +115,7 @@ func TestThinkingActivityStaysOnSeparateRow(t *testing.T) {
 			m := foldTestModel()
 			m.entries = m.entries[:3]
 			m.running = true
-			m.applyAgentEvent(DisplayEvent{Kind: DisplayEventAssistantStart})
+			m.applyAgentEvent(interaction.Event{Kind: interaction.EventAssistantStart})
 			check := func(status string) {
 				t.Helper()
 				m.refreshViewport(true)
@@ -130,21 +130,21 @@ func TestThinkingActivityStaysOnSeparateRow(t *testing.T) {
 				}
 			}
 			check("Thinking...")
-			m.applyAgentEvent(DisplayEvent{Kind: DisplayEventAssistantDelta,
-				Delta: DisplayDelta{Kind: DisplayDeltaThinking, Delta: "LIVE_REASONING"}})
+			m.applyAgentEvent(interaction.Event{Kind: interaction.EventAssistantDelta,
+				Delta: interaction.Delta{Kind: interaction.DeltaThinking, Delta: "LIVE_REASONING"}})
 			m.setFoldExpanded(foldTarget{kind: foldThinking, id: m.assistantEntry}, expanded)
 			check("Thinking...")
 			if strings.Contains(m.viewport.GetContent(), "LIVE_REASONING") != expanded {
 				t.Fatal("activity rendering changed the thinking fold")
 			}
-			m.applyAgentEvent(DisplayEvent{Kind: DisplayEventAssistantDelta,
-				Delta: DisplayDelta{Kind: DisplayDeltaText, Delta: " \n"}})
+			m.applyAgentEvent(interaction.Event{Kind: interaction.EventAssistantDelta,
+				Delta: interaction.Delta{Kind: interaction.DeltaText, Delta: " \n"}})
 			check("Responding...")
 			m.width = 40
 			m.resizeLayout()
 			check("Responding...")
-			m.applyAgentEvent(DisplayEvent{Kind: DisplayEventAssistantDelta,
-				Delta: DisplayDelta{Kind: DisplayDeltaText, Delta: "ANSWER"}})
+			m.applyAgentEvent(interaction.Event{Kind: interaction.EventAssistantDelta,
+				Delta: interaction.Delta{Kind: interaction.DeltaText, Delta: "ANSWER"}})
 			m.refreshViewport(true)
 			view := ansi.Strip(m.viewport.GetContent())
 			if !strings.Contains(view, "ANSWER") || strings.Contains(view, "Responding...") {

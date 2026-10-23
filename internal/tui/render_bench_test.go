@@ -25,7 +25,7 @@ func BenchmarkThinkingRefresh(b *testing.B) {
 				b.ReportAllocs()
 				b.ResetTimer()
 				for b.Loop() {
-					m.applyAssistantDelta(DisplayEvent{Delta: DisplayDelta{Kind: DisplayDeltaThinking, Delta: "."}})
+					m.applyAssistantDelta(interaction.Event{Delta: interaction.Delta{Kind: interaction.DeltaThinking, Delta: "."}})
 					m.refreshViewport(true)
 				}
 			})
@@ -73,7 +73,7 @@ func BenchmarkLongConversation(b *testing.B) {
 				m.entries = append(m.entries, transcriptEntry{kind: entryAssistant, processID: id, complete: true,
 					thinking: strings.Repeat("Already considered implementation and verification. ", 80), presentation: &assistantPresentation{}})
 			}
-			m.applyAgentEvent(DisplayEvent{Kind: DisplayEventAssistantStart})
+			m.applyAgentEvent(interaction.Event{Kind: interaction.EventAssistantStart})
 			m.refreshViewport(true)
 			b.Run("draw", func(b *testing.B) {
 				b.ReportAllocs()
@@ -84,7 +84,7 @@ func BenchmarkLongConversation(b *testing.B) {
 			b.Run("stream", func(b *testing.B) {
 				b.ReportAllocs()
 				for b.Loop() {
-					m.applyAssistantDelta(DisplayEvent{Delta: DisplayDelta{Kind: DisplayDeltaThinking, Delta: "."}})
+					m.applyAssistantDelta(interaction.Event{Delta: interaction.Delta{Kind: interaction.DeltaThinking, Delta: "."}})
 					m.refreshViewport(true)
 					m.View()
 				}

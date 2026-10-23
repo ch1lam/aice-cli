@@ -5,8 +5,8 @@ import (
 	"testing"
 
 	"github.com/ch1lam/aice-cli/internal/agent"
+	"github.com/ch1lam/aice-cli/internal/interaction"
 	"github.com/ch1lam/aice-cli/internal/llm"
-	"github.com/ch1lam/aice-cli/internal/tui"
 )
 
 func TestTranslateAgentEventIgnoresUnrenderedEvents(t *testing.T) {
@@ -46,7 +46,7 @@ func TestTranslateAgentEventIgnoresUnrenderedEvents(t *testing.T) {
 		Type:    agent.EventTypeMessageStart,
 		Message: assistant,
 	}); display == nil ||
-		display.Kind != tui.DisplayEventAssistantStart {
+		display.Kind != interaction.EventAssistantStart {
 		t.Errorf("message_start translation = %#v, want assistant start", display)
 	}
 }
@@ -57,32 +57,32 @@ func TestTranslateAgentEventStreamsAssistantDeltas(t *testing.T) {
 	tests := []struct {
 		name  string
 		event *llm.Event
-		want  tui.DisplayDelta
+		want  interaction.Delta
 	}{
 		{
 			name:  "text delta",
 			event: &llm.Event{Type: llm.EventTypeTextDelta, Delta: "answer"},
-			want:  tui.DisplayDelta{Kind: tui.DisplayDeltaText, Delta: "answer"},
+			want:  interaction.Delta{Kind: interaction.DeltaText, Delta: "answer"},
 		},
 		{
 			name:  "thinking delta",
 			event: &llm.Event{Type: llm.EventTypeThinkingDelta, Delta: "reasoning"},
-			want:  tui.DisplayDelta{Kind: tui.DisplayDeltaThinking, Delta: "reasoning"},
+			want:  interaction.Delta{Kind: interaction.DeltaThinking, Delta: "reasoning"},
 		},
 		{
 			name:  "tool call start",
 			event: &llm.Event{Type: llm.EventTypeToolCallStart},
-			want:  tui.DisplayDelta{Kind: tui.DisplayDeltaToolCall},
+			want:  interaction.Delta{Kind: interaction.DeltaToolCall},
 		},
 		{
 			name:  "tool call delta",
 			event: &llm.Event{Type: llm.EventTypeToolCallDelta},
-			want:  tui.DisplayDelta{Kind: tui.DisplayDeltaToolCall},
+			want:  interaction.Delta{Kind: interaction.DeltaToolCall},
 		},
 		{
 			name:  "tool call end",
 			event: &llm.Event{Type: llm.EventTypeToolCallEnd},
-			want:  tui.DisplayDelta{Kind: tui.DisplayDeltaToolCall},
+			want:  interaction.Delta{Kind: interaction.DeltaToolCall},
 		},
 	}
 
@@ -95,7 +95,7 @@ func TestTranslateAgentEventStreamsAssistantDeltas(t *testing.T) {
 				AssistantMessageEvent: tt.event,
 			})
 			if display == nil ||
-				display.Kind != tui.DisplayEventAssistantDelta ||
+				display.Kind != interaction.EventAssistantDelta ||
 				display.Delta != tt.want {
 				t.Fatalf("message_update translation = %#v, want %#v", display, tt.want)
 			}
@@ -118,9 +118,9 @@ func TestTranslateAgentEventCompletesAssistant(t *testing.T) {
 		Type:    agent.EventTypeMessageEnd,
 		Message: conclusion,
 	})
-	want := &tui.DisplayEvent{
-		Kind: tui.DisplayEventAssistantEnd,
-		Assistant: tui.AssistantDisplay{
+	want := &interaction.Event{
+		Kind: interaction.EventAssistantEnd,
+		Assistant: interaction.AssistantDisplay{
 			Text:      "**Answer.**",
 			Thinking:  "reasoning",
 			Concludes: true,
@@ -142,7 +142,7 @@ func TestTranslateAgentEventCompletesAssistant(t *testing.T) {
 		Message: toolTurn,
 	})
 	if display == nil ||
-		display.Kind != tui.DisplayEventAssistantEnd ||
+		display.Kind != interaction.EventAssistantEnd ||
 		display.Assistant.Concludes {
 		t.Fatalf("tool-turn translation = %#v, want non-concluding assistant", display)
 	}
@@ -154,7 +154,7 @@ func TestTranslateAgentEventCompletesAssistant(t *testing.T) {
 		Message: errored,
 	})
 	if display == nil ||
-		display.Kind != tui.DisplayEventAssistantEnd ||
+		display.Kind != interaction.EventAssistantEnd ||
 		display.Assistant.Concludes {
 		t.Fatalf("error-turn translation = %#v, want non-concluding assistant", display)
 	}
@@ -173,9 +173,9 @@ func TestTranslateAgentEventAcceptsSteer(t *testing.T) {
 		InputKind: agent.InputKindSteering,
 		Message:   steering,
 	})
-	want := &tui.DisplayEvent{
-		Kind: tui.DisplayEventSteer,
-		Input: tui.InputDisplay{
+	want := &interaction.Event{
+		Kind: interaction.EventSteer,
+		Input: interaction.InputDisplay{
 			ID:   "steer-1",
 			Text: "change direction",
 		},
@@ -198,9 +198,9 @@ func TestTranslateAgentEventAcceptsFollowUp(t *testing.T) {
 		InputKind: agent.InputKindFollowUp,
 		Message:   followUp,
 	})
-	want := &tui.DisplayEvent{
-		Kind: tui.DisplayEventFollowUp,
-		Input: tui.InputDisplay{
+	want := &interaction.Event{
+		Kind: interaction.EventFollowUp,
+		Input: interaction.InputDisplay{
 			ID:   "follow-up-1",
 			Text: "continue",
 		},
@@ -222,9 +222,9 @@ func TestTranslateAgentEventExtractsToolInput(t *testing.T) {
 		Type:     agent.EventTypeToolExecutionStart,
 		ToolCall: &call,
 	})
-	want := &tui.DisplayEvent{
-		Kind: tui.DisplayEventToolStart,
-		Tool: tui.ToolDisplay{
+	want := &interaction.Event{
+		Kind: interaction.EventToolStart,
+		Tool: interaction.ToolDisplay{
 			ID:     "bash-call",
 			Name:   "bash",
 			Detail: "go test ./...\nprintf done",
@@ -244,7 +244,7 @@ func TestTranslateAgentEventExtractsToolInput(t *testing.T) {
 		ToolCall: &read,
 	})
 	if display == nil ||
-		display.Kind != tui.DisplayEventToolStart ||
+		display.Kind != interaction.EventToolStart ||
 		display.Tool.Detail != "go.mod" {
 		t.Fatalf("read translation = %#v, want path only", display)
 	}
@@ -259,7 +259,7 @@ func TestTranslateAgentEventExtractsToolInput(t *testing.T) {
 		ToolCall: &skill,
 	})
 	if display == nil ||
-		display.Kind != tui.DisplayEventToolStart ||
+		display.Kind != interaction.EventToolStart ||
 		display.Tool.Detail != "samber/cc-skills-golang@golang-how-to" {
 		t.Fatalf("skill translation = %#v, want skill name only", display)
 	}
@@ -277,7 +277,7 @@ func TestTranslateAgentEventExtractsToolInput(t *testing.T) {
 		ToolCall: &question,
 	})
 	if display == nil ||
-		display.Kind != tui.DisplayEventToolStart ||
+		display.Kind != interaction.EventToolStart ||
 		display.Tool.Detail != "执行方式 · 目标是什么？" {
 		t.Fatalf("question translation = %#v, want question headings", display)
 	}
@@ -288,7 +288,7 @@ func TestTranslateAgentEventExtractsToolInput(t *testing.T) {
 		Err:      agent.ErrProtocol,
 	})
 	if failed == nil ||
-		failed.Kind != tui.DisplayEventToolEnd ||
+		failed.Kind != interaction.EventToolEnd ||
 		!failed.Tool.Failed ||
 		failed.Tool.ID != "bash-call" {
 		t.Fatalf("tool end translation = %#v, want failed bash call", failed)
@@ -318,9 +318,9 @@ func TestTranslateAgentEventRetriesAndAgentEnd(t *testing.T) {
 			MaxRetries: 3,
 		},
 	})
-	want := &tui.DisplayEvent{
-		Kind: tui.DisplayEventRetryStart,
-		Retry: tui.RetryDisplay{
+	want := &interaction.Event{
+		Kind: interaction.EventRetryStart,
+		Retry: interaction.RetryDisplay{
 			Attempt:    2,
 			MaxRetries: 3,
 			Delay:      "0s",
@@ -335,14 +335,14 @@ func TestTranslateAgentEventRetriesAndAgentEnd(t *testing.T) {
 		Retry: &agent.RetryEvent{Success: true},
 	})
 	if display == nil ||
-		display.Kind != tui.DisplayEventRetryEnd ||
+		display.Kind != interaction.EventRetryEnd ||
 		!display.Retry.Succeeded {
 		t.Fatalf("retry_end translation = %#v, want succeeded", display)
 	}
 
 	display = translateAgentEvent(agent.AgentEvent{Type: agent.EventTypeAgentEnd})
 	if display == nil ||
-		display.Kind != tui.DisplayEventAgentEnd ||
+		display.Kind != interaction.EventAgentEnd ||
 		display.Err != nil {
 		t.Fatalf("agent_end translation = %#v, want clean completion", display)
 	}
@@ -359,7 +359,7 @@ func TestNewDisplayUsageFlattensCost(t *testing.T) {
 		TotalTokens:      195,
 		Cost:             &llm.Cost{Input: 0.001, Output: 0.002, Total: 0.0031},
 	}
-	want := tui.DisplayUsage{
+	want := interaction.DisplayUsage{
 		InputTokens:      120,
 		OutputTokens:     30,
 		CacheReadTokens:  40,
@@ -371,7 +371,7 @@ func TestNewDisplayUsageFlattensCost(t *testing.T) {
 	}
 
 	noCost := llm.Usage{InputTokens: 1}
-	if got := newDisplayUsage(noCost); got != (tui.DisplayUsage{InputTokens: 1}) {
+	if got := newDisplayUsage(noCost); got != (interaction.DisplayUsage{InputTokens: 1}) {
 		t.Fatalf("newDisplayUsage(no cost) = %#v, want zero cost", got)
 	}
 }
@@ -382,18 +382,18 @@ func TestDisplayThinking(t *testing.T) {
 	tests := []struct {
 		name    string
 		level   llm.ThinkingLevel
-		want    tui.DisplayThinking
+		want    interaction.DisplayThinking
 		wantErr bool
 	}{
-		{name: "unknown maps to default", level: llm.ThinkingLevelUnknown, want: tui.DisplayThinkingDefault},
-		{name: "off", level: llm.ThinkingLevelOff, want: tui.DisplayThinkingOff},
-		{name: "minimal", level: llm.ThinkingLevelMinimal, want: tui.DisplayThinkingMinimal},
-		{name: "low", level: llm.ThinkingLevelLow, want: tui.DisplayThinkingLow},
-		{name: "medium", level: llm.ThinkingLevelMedium, want: tui.DisplayThinkingMedium},
-		{name: "high", level: llm.ThinkingLevelHigh, want: tui.DisplayThinkingHigh},
-		{name: "xhigh", level: llm.ThinkingLevelXHigh, want: tui.DisplayThinkingXHigh},
-		{name: "max", level: llm.ThinkingLevelMax, want: tui.DisplayThinkingMax},
-		{name: "unsupported", level: llm.ThinkingLevel("nope"), want: tui.DisplayThinkingDefault, wantErr: true},
+		{name: "unknown maps to default", level: llm.ThinkingLevelUnknown, want: interaction.DisplayThinkingDefault},
+		{name: "off", level: llm.ThinkingLevelOff, want: interaction.DisplayThinkingOff},
+		{name: "minimal", level: llm.ThinkingLevelMinimal, want: interaction.DisplayThinkingMinimal},
+		{name: "low", level: llm.ThinkingLevelLow, want: interaction.DisplayThinkingLow},
+		{name: "medium", level: llm.ThinkingLevelMedium, want: interaction.DisplayThinkingMedium},
+		{name: "high", level: llm.ThinkingLevelHigh, want: interaction.DisplayThinkingHigh},
+		{name: "xhigh", level: llm.ThinkingLevelXHigh, want: interaction.DisplayThinkingXHigh},
+		{name: "max", level: llm.ThinkingLevelMax, want: interaction.DisplayThinkingMax},
+		{name: "unsupported", level: llm.ThinkingLevel("nope"), want: interaction.DisplayThinkingDefault, wantErr: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

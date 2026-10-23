@@ -13,8 +13,8 @@ import (
 // enters the transcript, Session history or prompt history.
 type commandFlow struct {
 	raw     string // composer text that opened the flow; empty in Settings
-	command SlashCommand
-	request SlashCommandRequest
+	command interaction.Command
+	request interaction.CommandRequest
 	menus   []commandMenuFrame
 	form    []credentialStep // non-nil while collecting credentials
 	step    int
@@ -26,7 +26,7 @@ type commandFlow struct {
 }
 
 type commandMenuFrame struct {
-	menu      SlashCommandMenu
+	menu      interaction.CommandMenu
 	selection int
 	draft     string // composer text restored when returning to this level
 }
@@ -47,7 +47,7 @@ func (m model) authPrompt() *interaction.AuthPrompt {
 	return m.flow.prompt
 }
 
-func newCommandFlow(raw string, command SlashCommand, request SlashCommandRequest) *commandFlow {
+func newCommandFlow(raw string, command interaction.Command, request interaction.CommandRequest) *commandFlow {
 	f := &commandFlow{raw: raw, command: command, request: request}
 	if command.Menu != nil {
 		f.pushMenu(*command.Menu)
@@ -55,7 +55,7 @@ func newCommandFlow(raw string, command SlashCommand, request SlashCommandReques
 	return f
 }
 
-func (f *commandFlow) pushMenu(menu SlashCommandMenu) {
+func (f *commandFlow) pushMenu(menu interaction.CommandMenu) {
 	f.menus = append(f.menus, commandMenuFrame{menu: menu, selection: currentSlashCommandOption(menu.Options)})
 }
 
@@ -78,7 +78,7 @@ func (f *commandFlow) back() bool {
 
 // choose opens an option's nested level and reports true, or applies a leaf
 // option to the request and closes the menus.
-func (f *commandFlow) choose(option SlashCommandOption) bool {
+func (f *commandFlow) choose(option interaction.CommandOption) bool {
 	if option.Menu != nil && len(option.Menu.Options) > 0 {
 		f.pushMenu(*option.Menu)
 		return true
@@ -98,7 +98,7 @@ func (f *commandFlow) needsCredential() bool {
 
 // activeMenu is the menu currently answering selection keys: the running
 // command's prompt menu, or the innermost option level.
-func (f *commandFlow) activeMenu() (*SlashCommandMenu, *int) {
+func (f *commandFlow) activeMenu() (*interaction.CommandMenu, *int) {
 	if f.prompt != nil {
 		return f.prompt.Menu, &f.selection
 	}
@@ -131,7 +131,7 @@ type credentialStep struct {
 	secret      bool // hosts that can show plain input still mask this field
 	optional    bool
 	check       func(string) string
-	assign      func(*SlashCommandRequest, string)
+	assign      func(*interaction.CommandRequest, string)
 }
 
 func (s credentialStep) title() string {
@@ -151,9 +151,9 @@ var customLoginSteps = []credentialStep{
 			}
 			return ""
 		},
-		assign: func(r *SlashCommandRequest, value string) { r.CustomEndpoint = value }},
+		assign: func(r *interaction.CommandRequest, value string) { r.CustomEndpoint = value }},
 	{label: "API key", hint: "leave empty for Ollama", secret: true, optional: true,
-		assign: func(r *SlashCommandRequest, value string) { r.Secret = value }},
+		assign: func(r *interaction.CommandRequest, value string) { r.Secret = value }},
 	{label: "Model name", hint: "e.g. llama3.1:8b, blank keeps current", optional: true,
 		check: func(value string) string {
 			if strings.ContainsAny(value, " \t") {
@@ -161,7 +161,7 @@ var customLoginSteps = []credentialStep{
 			}
 			return ""
 		},
-		assign: func(r *SlashCommandRequest, value string) { r.CustomModel = value }},
+		assign: func(r *interaction.CommandRequest, value string) { r.CustomModel = value }},
 }
 
 // beginCredential starts the hidden form for the chosen request.
@@ -169,7 +169,7 @@ func (f *commandFlow) beginCredential() {
 	f.menus = nil
 	f.step = 0
 	f.form = []credentialStep{{label: f.command.SecretPrompt, secret: true,
-		assign: func(r *SlashCommandRequest, value string) { r.Secret = value }}}
+		assign: func(r *interaction.CommandRequest, value string) { r.Secret = value }}}
 	if f.customLogin() {
 		f.form = customLoginSteps
 	}

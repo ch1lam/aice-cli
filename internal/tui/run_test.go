@@ -17,7 +17,7 @@ func TestRunRejectsInvalidDependencies(t *testing.T) {
 	tests := []struct {
 		name    string
 		ctx     context.Context
-		runner  Runner
+		runner  interaction.Runner
 		options Options
 		want    string
 	}{
@@ -33,13 +33,13 @@ func TestRunRejectsInvalidDependencies(t *testing.T) {
 		{
 			name:   "nil input",
 			ctx:    t.Context(),
-			runner: runnerFunc(func(context.Context, RunInput, DisplayEventSink) error { return nil }),
+			runner: runnerFunc(func(context.Context, interaction.RunInput, interaction.EventSink) error { return nil }),
 			want:   "input is required",
 		},
 		{
 			name:   "nil output",
 			ctx:    t.Context(),
-			runner: runnerFunc(func(context.Context, RunInput, DisplayEventSink) error { return nil }),
+			runner: runnerFunc(func(context.Context, interaction.RunInput, interaction.EventSink) error { return nil }),
 			options: Options{
 				Input: emptyReader{},
 			},
@@ -48,7 +48,7 @@ func TestRunRejectsInvalidDependencies(t *testing.T) {
 		{
 			name:   "missing model",
 			ctx:    t.Context(),
-			runner: runnerFunc(func(context.Context, RunInput, DisplayEventSink) error { return nil }),
+			runner: runnerFunc(func(context.Context, interaction.RunInput, interaction.EventSink) error { return nil }),
 			options: Options{
 				Input:  emptyReader{},
 				Output: io.Discard,
@@ -58,11 +58,11 @@ func TestRunRejectsInvalidDependencies(t *testing.T) {
 		{
 			name:   "missing working directory",
 			ctx:    t.Context(),
-			runner: runnerFunc(func(context.Context, RunInput, DisplayEventSink) error { return nil }),
+			runner: runnerFunc(func(context.Context, interaction.RunInput, interaction.EventSink) error { return nil }),
 			options: Options{
 				Input:  emptyReader{},
 				Output: io.Discard,
-				Model:  DisplayModel{ID: "test"},
+				Model:  interaction.DisplayModel{ID: "test"},
 			},
 			want: "working directory is required",
 		},
@@ -83,11 +83,11 @@ func TestRunRejectsInvalidDependencies(t *testing.T) {
 func TestServeRunsOwnsPerRunEventChannel(t *testing.T) {
 	t.Parallel()
 
-	runner := runnerFunc(func(ctx context.Context, input RunInput, sink DisplayEventSink) error {
+	runner := runnerFunc(func(ctx context.Context, input interaction.RunInput, sink interaction.EventSink) error {
 		if input.Prompt != "inspect" {
 			return errors.New("unexpected prompt")
 		}
-		return sink(ctx, DisplayEvent{Kind: DisplayEventAgentEnd})
+		return sink(ctx, interaction.Event{Kind: interaction.EventAgentEnd})
 	})
 	ctx, cancel := context.WithCancel(t.Context())
 	requests := make(chan runRequest)
@@ -106,8 +106,8 @@ func TestServeRunsOwnsPerRunEventChannel(t *testing.T) {
 		t.Fatal("first run update has no active run or cancellation function")
 	}
 	event := receiveRunUpdate(t, updates)
-	if event.event.Kind != DisplayEventAgentEnd {
-		t.Errorf("event kind = %d, want %d", event.event.Kind, DisplayEventAgentEnd)
+	if event.event.Kind != interaction.EventAgentEnd {
+		t.Errorf("event kind = %d, want %d", event.event.Kind, interaction.EventAgentEnd)
 	}
 	terminal := receiveRunUpdate(t, updates)
 	if !terminal.done || terminal.err != nil {
@@ -130,25 +130,24 @@ func TestServeRunsExecutesSlashCommandsThroughRunner(t *testing.T) {
 
 	runner := &slashRunner{
 		runnerFunc: func(
-			context.Context,
-			RunInput,
-			DisplayEventSink,
+			context.Context, interaction.RunInput, interaction.EventSink,
+
 		) error {
 			t.Fatal("slash command executed as an agent prompt")
 			return nil
 		},
 		runCommand: func(
 			_ context.Context,
-			request SlashCommandRequest,
+			request interaction.CommandRequest,
 		) (string, error) {
-			if request != (SlashCommandRequest{Name: "tree"}) {
+			if request != (interaction.CommandRequest{Name: "tree"}) {
 				t.Fatalf("slash command request = %#v, want tree", request)
 			}
 			return "Session tree", nil
 		},
-		state: RuntimeState{
-			Model:    DisplayModel{ID: "selected-model"},
-			Thinking: DisplayThinkingHigh,
+		state: interaction.RuntimeState{
+			Model:    interaction.DisplayModel{ID: "selected-model"},
+			Thinking: interaction.DisplayThinkingHigh,
 		},
 	}
 	ctx, cancel := context.WithCancel(t.Context())
@@ -157,7 +156,7 @@ func TestServeRunsExecutesSlashCommandsThroughRunner(t *testing.T) {
 	go serveRuns(ctx, runner, requests, done)
 
 	updates := make(chan runUpdate, runUpdateBuffer)
-	command := SlashCommandRequest{Name: "tree"}
+	command := interaction.CommandRequest{Name: "tree"}
 	requests <- runRequest{command: &command, updates: updates}
 
 	start := receiveRunUpdate(t, updates)
@@ -170,7 +169,7 @@ func TestServeRunsExecutesSlashCommandsThroughRunner(t *testing.T) {
 		terminal.output != "Session tree" ||
 		terminal.state == nil ||
 		terminal.state.Model.ID != "selected-model" ||
-		terminal.state.Thinking != DisplayThinkingHigh ||
+		terminal.state.Thinking != interaction.DisplayThinkingHigh ||
 		terminal.commands == nil ||
 		len(*terminal.commands) != 1 ||
 		(*terminal.commands)[0].Name != "tree" {
@@ -195,8 +194,8 @@ func TestServeSideRunsWhileMainRunIsBlocked(t *testing.T) {
 	mainRelease := make(chan struct{})
 	mainRunner := runnerFunc(func(
 		ctx context.Context,
-		_ RunInput,
-		_ DisplayEventSink,
+		_ interaction.RunInput,
+		_ interaction.EventSink,
 	) error {
 		close(mainStarted)
 		select {
@@ -207,16 +206,16 @@ func TestServeSideRunsWhileMainRunIsBlocked(t *testing.T) {
 		}
 	})
 	manager := newFakeSideManager()
-	manager.newRunner = func(_ uint64) Runner {
+	manager.newRunner = func(_ uint64) interaction.Runner {
 		return runnerFunc(func(
 			ctx context.Context,
-			input RunInput,
-			sink DisplayEventSink,
+			input interaction.RunInput,
+			sink interaction.EventSink,
 		) error {
 			if input.Prompt != "quick question" {
 				t.Fatalf("side prompt = %q, want quick question", input.Prompt)
 			}
-			return sink(ctx, DisplayEvent{Kind: DisplayEventAgentEnd})
+			return sink(ctx, interaction.Event{Kind: interaction.EventAgentEnd})
 		})
 	}
 
@@ -254,7 +253,7 @@ func TestServeSideRunsWhileMainRunIsBlocked(t *testing.T) {
 		t.Fatalf("side start update = %#v", sideStart)
 	}
 	sideEvent := receiveRunUpdate(t, sideUpdates)
-	if sideEvent.event.Kind != DisplayEventAgentEnd {
+	if sideEvent.event.Kind != interaction.EventAgentEnd {
 		t.Fatalf("side event = %#v, want agent end", sideEvent)
 	}
 	sideTerminal := receiveRunUpdate(t, sideUpdates)
@@ -295,11 +294,11 @@ func TestServeSideRunsRunsThreadsConcurrently(t *testing.T) {
 	started := make(chan struct{}, 2)
 	release := make(chan struct{})
 	manager := newFakeSideManager()
-	manager.newRunner = func(_ uint64) Runner {
+	manager.newRunner = func(_ uint64) interaction.Runner {
 		return runnerFunc(func(
 			ctx context.Context,
-			_ RunInput,
-			_ DisplayEventSink,
+			_ interaction.RunInput,
+			_ interaction.EventSink,
 		) error {
 			started <- struct{}{}
 			select {
@@ -360,13 +359,13 @@ func TestServeSideRunsFollowUpOpensExistingThread(t *testing.T) {
 	t.Parallel()
 
 	manager := newFakeSideManager()
-	manager.newRunner = func(_ uint64) Runner {
+	manager.newRunner = func(_ uint64) interaction.Runner {
 		return runnerFunc(func(
 			ctx context.Context,
-			_ RunInput,
-			sink DisplayEventSink,
+			_ interaction.RunInput,
+			sink interaction.EventSink,
 		) error {
-			return sink(ctx, DisplayEvent{Kind: DisplayEventAgentEnd})
+			return sink(ctx, interaction.Event{Kind: interaction.EventAgentEnd})
 		})
 	}
 	ctx, cancel := context.WithCancel(t.Context())
@@ -413,11 +412,10 @@ func TestServeSideRunsDeliversRunStartRejection(t *testing.T) {
 	t.Parallel()
 
 	manager := newFakeSideManager()
-	manager.newRunner = func(_ uint64) Runner {
+	manager.newRunner = func(_ uint64) interaction.Runner {
 		return runnerFunc(func(
-			context.Context,
-			RunInput,
-			DisplayEventSink,
+			context.Context, interaction.RunInput, interaction.EventSink,
+
 		) error {
 			return interaction.ErrSideThreadConcurrencyLimit
 		})
@@ -447,11 +445,11 @@ func TestServeSideRunsStopsBlockedRunsOnCancellation(t *testing.T) {
 	t.Parallel()
 
 	manager := newFakeSideManager()
-	manager.newRunner = func(_ uint64) Runner {
+	manager.newRunner = func(_ uint64) interaction.Runner {
 		return runnerFunc(func(
 			ctx context.Context,
-			_ RunInput,
-			_ DisplayEventSink,
+			_ interaction.RunInput,
+			_ interaction.EventSink,
 		) error {
 			<-ctx.Done()
 			return ctx.Err()
@@ -484,15 +482,14 @@ func TestServeRunsRefreshesSlashCommandMenusAfterPrompt(t *testing.T) {
 
 	runner := &slashRunner{
 		runnerFunc: func(
-			context.Context,
-			RunInput,
-			DisplayEventSink,
+			context.Context, interaction.RunInput, interaction.EventSink,
+
 		) error {
 			return nil
 		},
 		runCommand: func(
-			context.Context,
-			SlashCommandRequest,
+			context.Context, interaction.CommandRequest,
+
 		) (string, error) {
 			t.Fatal("prompt executed as a slash command")
 			return "", nil
@@ -547,13 +544,13 @@ func drainRunUpdate(t *testing.T, updates <-chan runUpdate) runUpdate {
 	return terminal
 }
 
-type runnerFunc func(context.Context, RunInput, DisplayEventSink) error
+type runnerFunc func(context.Context, interaction.RunInput, interaction.EventSink) error
 
 func (f runnerFunc) NewRun(
 	ctx context.Context,
-	input RunInput,
-	sink DisplayEventSink,
-) (ActiveRun, error) {
+	input interaction.RunInput,
+	sink interaction.EventSink,
+) (interaction.ActiveRun, error) {
 	return &activeRunFunc{
 		run: func(ctx context.Context) error {
 			return f(ctx, input, sink)
@@ -583,24 +580,24 @@ func (r *activeRunFunc) Deliver(ctx context.Context, delivery interaction.Delive
 type slashRunner struct {
 	runnerFunc
 	runCommand func(
-		context.Context,
-		SlashCommandRequest,
+		context.Context, interaction.CommandRequest,
+
 	) (string, error)
-	state RuntimeState
+	state interaction.RuntimeState
 }
 
-func (r *slashRunner) SlashCommands() []SlashCommand {
-	return []SlashCommand{{Name: "tree", Description: "Show Session tree"}}
+func (r *slashRunner) SlashCommands() []interaction.Command {
+	return []interaction.Command{{Name: "tree", Description: "Show Session tree"}}
 }
 
 func (r *slashRunner) RunSlashCommand(
 	ctx context.Context,
-	request SlashCommandRequest,
+	request interaction.CommandRequest,
 ) (string, error) {
 	return r.runCommand(ctx, request)
 }
 
-func (r *slashRunner) RuntimeState() RuntimeState {
+func (r *slashRunner) RuntimeState() interaction.RuntimeState {
 	return r.state
 }
 

@@ -5,6 +5,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/ch1lam/aice-cli/internal/interaction"
 )
 
 const (
@@ -17,16 +18,16 @@ type usageAnimationTickMsg struct {
 }
 
 type usageAnimation struct {
-	current     DisplayUsage
-	start       DisplayUsage
-	target      DisplayUsage
+	current     interaction.DisplayUsage
+	start       interaction.DisplayUsage
+	target      interaction.DisplayUsage
 	frame       int
 	generation  uint64
 	initialized bool
 	running     bool
 }
 
-func (a *usageAnimation) Start(initial, target DisplayUsage) tea.Cmd {
+func (a *usageAnimation) Start(initial, target interaction.DisplayUsage) tea.Cmd {
 	initialDisplay := initial
 	if a.initialized {
 		initialDisplay = a.current
@@ -70,7 +71,7 @@ func (a *usageAnimation) Update(message usageAnimationTickMsg) tea.Cmd {
 	return usageAnimationTick(a.generation)
 }
 
-func (a usageAnimation) Value(fallback DisplayUsage) DisplayUsage {
+func (a usageAnimation) Value(fallback interaction.DisplayUsage) interaction.DisplayUsage {
 	if !a.initialized {
 		return fallback
 	}
@@ -85,10 +86,10 @@ func usageAnimationTick(generation uint64) tea.Cmd {
 
 func interpolateUsageDisplay(
 	start,
-	target DisplayUsage,
+	target interaction.DisplayUsage,
 	progress float64,
-) DisplayUsage {
-	return DisplayUsage{
+) interaction.DisplayUsage {
+	return interaction.DisplayUsage{
 		InputTokens: interpolateInt64(
 			start.InputTokens,
 			target.InputTokens,

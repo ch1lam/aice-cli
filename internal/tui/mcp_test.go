@@ -14,8 +14,8 @@ func TestMCPTransientPublicAndSecretInputs(t *testing.T) {
 	requests := make(chan runRequest, 1)
 	m := newModel(requests, make(chan struct{}))
 	m = updateModel(t, m, tea.WindowSizeMsg{Width: 100, Height: 35})
-	m.commands = slashCommandCatalog([]SlashCommand{{Name: "mcp", Interactive: true}})
-	m, cmd, handled := m.submitSlashCommand("/mcp add", SlashCommandRequest{Name: "mcp", Arguments: "add"})
+	m.commands = slashCommandCatalog([]interaction.Command{{Name: "mcp", Interactive: true}})
+	m, cmd, handled := m.submitSlashCommand("/mcp add", interaction.CommandRequest{Name: "mcp", Arguments: "add"})
 	if !handled || cmd == nil {
 		t.Fatal("command not started")
 	}

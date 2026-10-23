@@ -21,7 +21,6 @@ import (
 	"github.com/ch1lam/aice-cli/internal/session"
 	"github.com/ch1lam/aice-cli/internal/skill"
 	"github.com/ch1lam/aice-cli/internal/tool"
-	"github.com/ch1lam/aice-cli/internal/tui"
 )
 
 // recordSettings keeps field-level assertions behind the batch persistence seam.
@@ -64,7 +63,7 @@ func TestInteractiveSessionSlashCommandsNavigateCurrentStore(t *testing.T) {
 		conversation: conversationState{store: store, history: history},
 	}
 
-	tree, err := runner.RunSlashCommand(t.Context(), tui.SlashCommandRequest{
+	tree, err := runner.RunSlashCommand(t.Context(), interaction.CommandRequest{
 		Name: "tree",
 	})
 	if err != nil {
@@ -74,7 +73,7 @@ func TestInteractiveSessionSlashCommandsNavigateCurrentStore(t *testing.T) {
 		t.Fatalf("/tree output = %q, want active second turn", tree)
 	}
 
-	output, err := runner.RunSlashCommand(t.Context(), tui.SlashCommandRequest{
+	output, err := runner.RunSlashCommand(t.Context(), interaction.CommandRequest{
 		Name:      "checkout",
 		Arguments: snapshot.Messages[1].ID,
 	})
@@ -159,7 +158,7 @@ func TestInteractiveSessionSlashNewStartsFreshSession(t *testing.T) {
 		t.Fatal("history before /new is empty, want prior turns")
 	}
 
-	output, err := runner.RunSlashCommand(t.Context(), tui.SlashCommandRequest{
+	output, err := runner.RunSlashCommand(t.Context(), interaction.CommandRequest{
 		Name: "new",
 	})
 	if err != nil {
@@ -260,7 +259,7 @@ func TestInteractiveSessionSlashNewRejectsArgumentsAndActiveRun(t *testing.T) {
 		}
 	}()
 
-	if _, err := runner.RunSlashCommand(t.Context(), tui.SlashCommandRequest{
+	if _, err := runner.RunSlashCommand(t.Context(), interaction.CommandRequest{
 		Name:      "new",
 		Arguments: "extra",
 	}); err == nil {
@@ -268,7 +267,7 @@ func TestInteractiveSessionSlashNewRejectsArgumentsAndActiveRun(t *testing.T) {
 	}
 
 	runner.conversation.activeMainRun = &mainRunState{}
-	if _, err := runner.RunSlashCommand(t.Context(), tui.SlashCommandRequest{
+	if _, err := runner.RunSlashCommand(t.Context(), interaction.CommandRequest{
 		Name: "new",
 	}); err == nil || !strings.Contains(err.Error(), "while a response is running") {
 		t.Fatalf("/new during a run error = %v, want active-run refusal", err)
@@ -298,7 +297,7 @@ func TestInteractiveSessionSlashNewRemovesEmptyPreviousSession(t *testing.T) {
 	empty := createAppTestSession(t, emptyPath, workspacePath)
 	runner := &interactiveSession{conversation: conversationState{store: empty}, workspace: workspace}
 
-	output, err := runner.RunSlashCommand(t.Context(), tui.SlashCommandRequest{
+	output, err := runner.RunSlashCommand(t.Context(), interaction.CommandRequest{
 		Name: "new",
 	})
 	if err != nil {
@@ -536,11 +535,11 @@ func TestInteractiveSessionSlashCommandCompactsAndReloadsHistory(
 		options:       llm.StreamOptions{Thinking: llm.ThinkingLevelHigh},
 		providers:     defaultProviders(),
 	}
-	if _, err := runner.RunSlashCommand(t.Context(), tui.SlashCommandRequest{Name: "model", Arguments: deepseek.ModelV4Pro}); err != nil {
+	if _, err := runner.RunSlashCommand(t.Context(), interaction.CommandRequest{Name: "model", Arguments: deepseek.ModelV4Pro}); err != nil {
 		t.Fatal(err)
 	}
 
-	output, err := runner.RunSlashCommand(t.Context(), tui.SlashCommandRequest{
+	output, err := runner.RunSlashCommand(t.Context(), interaction.CommandRequest{
 		Name: "compact",
 	})
 	if err != nil {
@@ -577,12 +576,12 @@ func TestInteractiveSessionSlashCommandsRejectInvalidArguments(t *testing.T) {
 	runner := &interactiveSession{conversation: conversationState{store: new(session.Store)}}
 	tests := []struct {
 		name    string
-		request tui.SlashCommandRequest
+		request interaction.CommandRequest
 		want    string
 	}{
 		{
 			name: "tree arguments",
-			request: tui.SlashCommandRequest{
+			request: interaction.CommandRequest{
 				Name:      "tree",
 				Arguments: "extra",
 			},
@@ -590,7 +589,7 @@ func TestInteractiveSessionSlashCommandsRejectInvalidArguments(t *testing.T) {
 		},
 		{
 			name: "skills arguments",
-			request: tui.SlashCommandRequest{
+			request: interaction.CommandRequest{
 				Name:      "skills",
 				Arguments: "extra",
 			},
@@ -598,7 +597,7 @@ func TestInteractiveSessionSlashCommandsRejectInvalidArguments(t *testing.T) {
 		},
 		{
 			name:    "missing checkout entry",
-			request: tui.SlashCommandRequest{Name: "checkout"},
+			request: interaction.CommandRequest{Name: "checkout"},
 			want:    "usage: /checkout",
 		},
 	}
@@ -744,8 +743,7 @@ func TestInteractiveSessionSlashCommandSkills(t *testing.T) {
 			t.Parallel()
 
 			output, err := tt.session.RunSlashCommand(
-				t.Context(),
-				tui.SlashCommandRequest{Name: "skills"},
+				t.Context(), interaction.CommandRequest{Name: "skills"},
 			)
 			if err != nil {
 				t.Fatalf("/skills error = %v", err)
@@ -814,8 +812,7 @@ func TestInteractiveSessionSlashCommandsPersistRuntimeSettings(t *testing.T) {
 	}
 
 	output, err := runner.RunSlashCommand(
-		t.Context(),
-		tui.SlashCommandRequest{
+		t.Context(), interaction.CommandRequest{
 			Name:      "model",
 			Arguments: deepseek.ModelV4Pro,
 		},
@@ -832,8 +829,7 @@ func TestInteractiveSessionSlashCommandsPersistRuntimeSettings(t *testing.T) {
 	}
 
 	_, err = runner.RunSlashCommand(
-		t.Context(),
-		tui.SlashCommandRequest{
+		t.Context(), interaction.CommandRequest{
 			Name:      "thinking",
 			Arguments: "off",
 		},
@@ -842,7 +838,7 @@ func TestInteractiveSessionSlashCommandsPersistRuntimeSettings(t *testing.T) {
 		t.Fatalf("/thinking error = %v", err)
 	}
 	state = runner.RuntimeState()
-	if state.Thinking != tui.DisplayThinkingOff {
+	if state.Thinking != interaction.DisplayThinkingOff {
 		t.Errorf("runtime thinking = %q, want off", state.Thinking)
 	}
 
@@ -867,12 +863,12 @@ func TestInteractiveSessionConfigurationCommandsRejectUnsupportedValues(
 	t.Parallel()
 	tests := []struct {
 		name    string
-		request tui.SlashCommandRequest
+		request interaction.CommandRequest
 		want    string
 	}{
 		{
 			name: "provider",
-			request: tui.SlashCommandRequest{
+			request: interaction.CommandRequest{
 				Name:      "provider",
 				Arguments: "other",
 			},
@@ -880,7 +876,7 @@ func TestInteractiveSessionConfigurationCommandsRejectUnsupportedValues(
 		},
 		{
 			name: "model",
-			request: tui.SlashCommandRequest{
+			request: interaction.CommandRequest{
 				Name:      "model",
 				Arguments: "missing",
 			},
@@ -888,7 +884,7 @@ func TestInteractiveSessionConfigurationCommandsRejectUnsupportedValues(
 		},
 		{
 			name: "thinking",
-			request: tui.SlashCommandRequest{
+			request: interaction.CommandRequest{
 				Name:      "thinking",
 				Arguments: "extreme",
 			},
@@ -896,7 +892,7 @@ func TestInteractiveSessionConfigurationCommandsRejectUnsupportedValues(
 		},
 		{
 			name: "extra value",
-			request: tui.SlashCommandRequest{
+			request: interaction.CommandRequest{
 				Name:      "model",
 				Arguments: "extra " + deepseek.ModelV4Pro,
 			},
@@ -966,7 +962,7 @@ func TestInteractiveSessionLoginCanRetryAfterPersistenceFailure(t *testing.T) {
 		},
 		providers: defaultProviders(),
 	}
-	request := tui.SlashCommandRequest{
+	request := interaction.CommandRequest{
 		Name:      "login",
 		Arguments: "deepseek",
 		Secret:    "secret-value",
@@ -1027,7 +1023,7 @@ func TestInteractiveSessionOpencodeMenusAndModelSelection(t *testing.T) {
 		t.Fatalf("/provider options = %d, want %d", len(providerCommand.Menu.Options), len(runner.providers))
 	}
 
-	output, err := runner.RunSlashCommand(t.Context(), tui.SlashCommandRequest{
+	output, err := runner.RunSlashCommand(t.Context(), interaction.CommandRequest{
 		Name:      "model",
 		Arguments: "kimi-k2.6",
 	})
@@ -1065,7 +1061,7 @@ func TestInteractiveSessionThinkingKeepsRequestedLevelAndClampsPerModel(t *testi
 		providers: defaultProviders(),
 	}
 
-	if _, err := runner.RunSlashCommand(t.Context(), tui.SlashCommandRequest{
+	if _, err := runner.RunSlashCommand(t.Context(), interaction.CommandRequest{
 		Name:      "thinking",
 		Arguments: "xhigh",
 	}); err != nil {
@@ -1090,7 +1086,7 @@ func TestInteractiveSessionThinkingKeepsRequestedLevelAndClampsPerModel(t *testi
 	// Switching to gpt-5.6-luna must restore the requested xhigh without
 	// rewriting the stored setting.
 	saved = nil
-	if _, err := runner.RunSlashCommand(t.Context(), tui.SlashCommandRequest{
+	if _, err := runner.RunSlashCommand(t.Context(), interaction.CommandRequest{
 		Name:      "model",
 		Arguments: "gpt-5.6-luna",
 	}); err != nil {
@@ -1110,7 +1106,7 @@ func TestInteractiveSessionThinkingKeepsRequestedLevelAndClampsPerModel(t *testi
 	}
 
 	// A model that always thinks at high or max still clamps the request.
-	if _, err := runner.RunSlashCommand(t.Context(), tui.SlashCommandRequest{
+	if _, err := runner.RunSlashCommand(t.Context(), interaction.CommandRequest{
 		Name:      "model",
 		Arguments: "glm-5.2",
 	}); err != nil {
@@ -1160,7 +1156,7 @@ func TestInteractiveSessionLoginOpencode(t *testing.T) {
 		providers: defaultProviders(),
 	}
 
-	output, err := runner.RunSlashCommand(t.Context(), tui.SlashCommandRequest{
+	output, err := runner.RunSlashCommand(t.Context(), interaction.CommandRequest{
 		Name:      "login",
 		Arguments: "opencode-go",
 		Secret:    "opencode-secret",
@@ -1240,7 +1236,7 @@ func TestInteractiveSessionLoginUsesSavedCredentialWithoutSaving(t *testing.T) {
 		providers: defaultProviders(),
 	}
 
-	output, err := runner.RunSlashCommand(t.Context(), tui.SlashCommandRequest{
+	output, err := runner.RunSlashCommand(t.Context(), interaction.CommandRequest{
 		Name:               "login",
 		Arguments:          string(opencode.ProviderID),
 		UseSavedCredential: true,
@@ -1315,7 +1311,7 @@ func TestInteractiveSessionLoginPersistsProviderAndFallsBackModel(t *testing.T) 
 		providers: defaultProviders(),
 	}
 
-	output, err := runner.RunSlashCommand(t.Context(), tui.SlashCommandRequest{
+	output, err := runner.RunSlashCommand(t.Context(), interaction.CommandRequest{
 		Name:      "login",
 		Arguments: "opencode-go",
 		Secret:    "opencode-secret",
@@ -1395,7 +1391,7 @@ func TestInteractiveSessionProviderSwitchPersistsFallenBackModel(t *testing.T) {
 		providers: defaultProviders(),
 	}
 
-	output, err := runner.RunSlashCommand(t.Context(), tui.SlashCommandRequest{
+	output, err := runner.RunSlashCommand(t.Context(), interaction.CommandRequest{
 		Name:      "provider",
 		Arguments: string(opencode.ProviderID),
 	})
@@ -1456,7 +1452,7 @@ func TestInteractiveSessionProviderSwitchRebuildsLoopAndModel(t *testing.T) {
 		providers: defaultProviders(),
 	}
 
-	output, err := runner.RunSlashCommand(t.Context(), tui.SlashCommandRequest{
+	output, err := runner.RunSlashCommand(t.Context(), interaction.CommandRequest{
 		Name:      "provider",
 		Arguments: string(opencode.ProviderID),
 	})
@@ -1491,18 +1487,18 @@ func TestInteractiveSessionLoopRebuildPreservesGuardContext(t *testing.T) {
 
 	commands := []struct {
 		name    string
-		request tui.SlashCommandRequest
+		request interaction.CommandRequest
 	}{
 		{
 			name: "provider",
-			request: tui.SlashCommandRequest{
+			request: interaction.CommandRequest{
 				Name:      "provider",
 				Arguments: string(opencode.ProviderID),
 			},
 		},
 		{
 			name: "login",
-			request: tui.SlashCommandRequest{
+			request: interaction.CommandRequest{
 				Name:               "login",
 				Arguments:          string(opencode.ProviderID),
 				UseSavedCredential: true,
@@ -1687,9 +1683,9 @@ func assertInteractiveTextMessage(
 
 func interactiveSlashCommand(
 	t *testing.T,
-	commands []tui.SlashCommand,
+	commands []interaction.Command,
 	name string,
-) tui.SlashCommand {
+) interaction.Command {
 	t.Helper()
 	for _, command := range commands {
 		if command.Name == name {
@@ -1697,5 +1693,5 @@ func interactiveSlashCommand(
 		}
 	}
 	t.Fatalf("slash command /%s not found: %#v", name, commands)
-	return tui.SlashCommand{}
+	return interaction.Command{}
 }

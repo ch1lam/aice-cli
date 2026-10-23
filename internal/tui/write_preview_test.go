@@ -7,25 +7,26 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/ch1lam/aice-cli/internal/interaction"
 	"github.com/charmbracelet/x/ansi"
 )
 
 func TestWritePreviewStreamAndExecution(t *testing.T) {
 	m := updateModel(t, newModel(nil, nil), tea.WindowSizeMsg{Width: 80, Height: 30})
-	m.applyAgentEvent(DisplayEvent{Kind: DisplayEventAssistantStart})
-	m.applyAgentEvent(DisplayEvent{Kind: DisplayEventAssistantDelta, Delta: DisplayDelta{Kind: DisplayDeltaToolCall, ToolIndex: 2, Tool: ToolDisplay{ID: "write-1", Name: "write"}}})
+	m.applyAgentEvent(interaction.Event{Kind: interaction.EventAssistantStart})
+	m.applyAgentEvent(interaction.Event{Kind: interaction.EventAssistantDelta, Delta: interaction.Delta{Kind: interaction.DeltaToolCall, ToolIndex: 2, Tool: interaction.ToolDisplay{ID: "write-1", Name: "write"}}})
 	raw := `{"path":"literal~@.go","content":"package main\n\n// 中文\n`
 	for _, fragment := range []string{raw[:20], raw[20:]} {
-		m.applyAgentEvent(DisplayEvent{Kind: DisplayEventAssistantDelta, Delta: DisplayDelta{Kind: DisplayDeltaToolCall, ToolIndex: 2, Arguments: fragment}})
+		m.applyAgentEvent(interaction.Event{Kind: interaction.EventAssistantDelta, Delta: interaction.Delta{Kind: interaction.DeltaToolCall, ToolIndex: 2, Arguments: fragment}})
 	}
 	m.setFoldExpanded(foldTarget{kind: foldTool, id: 1}, true)
 	view := ansi.Strip(m.transcriptView())
 	if !strings.Contains(view, "package main") || !strings.Contains(view, "not executed") || !strings.Contains(view, "中文") {
 		t.Fatalf("partial preview: %s", view)
 	}
-	tool := ToolDisplay{ID: "write-1", Name: "write", Detail: "literal~@.go", Content: "package main\n", HasContent: true}
-	m.applyAgentEvent(DisplayEvent{Kind: DisplayEventToolStart, Tool: tool})
-	m.applyAgentEvent(DisplayEvent{Kind: DisplayEventToolEnd, Tool: ToolDisplay{ID: tool.ID, Failed: true}})
+	tool := interaction.ToolDisplay{ID: "write-1", Name: "write", Detail: "literal~@.go", Content: "package main\n", HasContent: true}
+	m.applyAgentEvent(interaction.Event{Kind: interaction.EventToolStart, Tool: tool})
+	m.applyAgentEvent(interaction.Event{Kind: interaction.EventToolEnd, Tool: interaction.ToolDisplay{ID: tool.ID, Failed: true}})
 	if len(m.entries) != 2 || !m.entries[1].toolError || m.entries[1].toolPreparing {
 		t.Fatalf("execution did not reconcile preview: %+v", m.entries)
 	}
@@ -40,7 +41,7 @@ func TestWritePreviewBoundsAndExpand(t *testing.T) {
 	for i := 1; i <= 20; i++ {
 		fmt.Fprintf(&content, "line%02d\n", i)
 	}
-	m.applyAgentEvent(DisplayEvent{Kind: DisplayEventToolStart, Tool: ToolDisplay{ID: "a", Name: "write", Content: content.String(), HasContent: true}})
+	m.applyAgentEvent(interaction.Event{Kind: interaction.EventToolStart, Tool: interaction.ToolDisplay{ID: "a", Name: "write", Content: content.String(), HasContent: true}})
 	view := ansi.Strip(m.transcriptView())
 	if strings.Contains(view, "line01") {
 		t.Fatalf("tool details should start collapsed: %s", view)
@@ -61,7 +62,7 @@ func TestWritePreviewBoundsAndExpand(t *testing.T) {
 		t.Fatalf("Ctrl+O expansion: %s", view)
 	}
 	p := &writePreview{}
-	p.setContent(ToolDisplay{Content: strings.Repeat("界", maximumWritePreviewBytes), HasContent: true})
+	p.setContent(interaction.ToolDisplay{Content: strings.Repeat("界", maximumWritePreviewBytes), HasContent: true})
 	if len(p.content) > maximumWritePreviewBytes || !p.truncated {
 		t.Fatal("unbounded stored content")
 	}
@@ -86,7 +87,7 @@ func TestWritePreviewEscapesAndControls(t *testing.T) {
 		})
 	}
 	p := &writePreview{}
-	p.setContent(ToolDisplay{Content: "```\n\x1b]52;c;PAYLOAD\a\x9b\x00\n```", HasContent: true})
+	p.setContent(interaction.ToolDisplay{Content: "```\n\x1b]52;c;PAYLOAD\a\x9b\x00\n```", HasContent: true})
 	view := p.contentView(80, false).view
 	if strings.Contains(view, "\x1b]52") || strings.ContainsAny(ansi.Strip(view), "\a\x00\u009b") {
 		t.Fatalf("terminal control escaped: %q", view)
@@ -95,13 +96,13 @@ func TestWritePreviewEscapesAndControls(t *testing.T) {
 
 func TestWritePreviewLargeStreamStopsGrowing(t *testing.T) {
 	m := updateModel(t, newModel(nil, nil), tea.WindowSizeMsg{Width: 80, Height: 30})
-	m.applyAgentEvent(DisplayEvent{Kind: DisplayEventAssistantStart})
-	delta := DisplayDelta{Kind: DisplayDeltaToolCall, Tool: ToolDisplay{Name: "write", ID: "a"}, Arguments: strings.Repeat("x", maximumWritePreviewBytes+100)}
-	m.applyAssistantDelta(DisplayEvent{Delta: delta})
+	m.applyAgentEvent(interaction.Event{Kind: interaction.EventAssistantStart})
+	delta := interaction.Delta{Kind: interaction.DeltaToolCall, Tool: interaction.ToolDisplay{Name: "write", ID: "a"}, Arguments: strings.Repeat("x", maximumWritePreviewBytes+100)}
+	m.applyAssistantDelta(interaction.Event{Delta: delta})
 	p := m.entries[1].writePreview
 	revision := p.revision
 	for range 100 {
-		m.applyAssistantDelta(DisplayEvent{Delta: delta})
+		m.applyAssistantDelta(interaction.Event{Delta: delta})
 	}
 	if p.raw.Len() != maximumWritePreviewBytes || p.revision != revision {
 		t.Fatal("saturated stream keeps rebuilding")
@@ -122,12 +123,12 @@ func TestPartialWriteFieldsEveryBoundary(t *testing.T) {
 func TestWritePreviewCallsRemainIndependent(t *testing.T) {
 	m := updateModel(t, newModel(nil, nil), tea.WindowSizeMsg{Width: 80, Height: 30})
 	for round := range 2 {
-		m.applyAgentEvent(DisplayEvent{Kind: DisplayEventAssistantStart})
+		m.applyAgentEvent(interaction.Event{Kind: interaction.EventAssistantStart})
 		for index := range 2 {
 			id := fmt.Sprintf("round%d-call%d", round, index)
-			m.applyAgentEvent(DisplayEvent{Kind: DisplayEventAssistantDelta, Delta: DisplayDelta{Kind: DisplayDeltaToolCall, ToolIndex: index, Tool: ToolDisplay{ID: id, Name: "write"}, Arguments: `{"content":"` + id}})
+			m.applyAgentEvent(interaction.Event{Kind: interaction.EventAssistantDelta, Delta: interaction.Delta{Kind: interaction.DeltaToolCall, ToolIndex: index, Tool: interaction.ToolDisplay{ID: id, Name: "write"}, Arguments: `{"content":"` + id}})
 		}
-		m.applyAgentEvent(DisplayEvent{Kind: DisplayEventAssistantEnd})
+		m.applyAgentEvent(interaction.Event{Kind: interaction.EventAssistantEnd})
 	}
 	for _, e := range m.entries {
 		if e.kind != entryTool {
@@ -146,7 +147,7 @@ func BenchmarkWritePreviewVisiblePrefix(b *testing.B) {
 	for _, size := range []int{4096, 4 * 1024 * 1024} {
 		b.Run(fmt.Sprint(size), func(b *testing.B) {
 			p := &writePreview{}
-			p.setContent(ToolDisplay{Content: strings.Repeat("package main\n", size/13), Detail: "file.go", HasContent: true})
+			p.setContent(interaction.ToolDisplay{Content: strings.Repeat("package main\n", size/13), Detail: "file.go", HasContent: true})
 			p.contentView(80, false)
 			b.ReportAllocs()
 			b.ResetTimer()

@@ -6,6 +6,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/ch1lam/aice-cli/internal/interaction"
 )
 
 func (m model) contextFraction() string {
@@ -36,7 +37,7 @@ func formatContextTokens(tokens int64) string {
 
 // Reserve both representations so hovering never changes wrapping or hit bounds.
 func (m model) contextHeaderWidth() int {
-	if m.contextUsage == (DisplayContext{}) {
+	if m.contextUsage == (interaction.DisplayContext{}) {
 		return 0
 	}
 	return max(lipgloss.Width(m.contextStatus()), lipgloss.Width(m.contextFraction()))

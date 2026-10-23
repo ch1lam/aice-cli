@@ -12,6 +12,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/ch1lam/aice-cli/internal/interaction"
 	"github.com/ch1lam/aice-cli/internal/llm"
 )
 
@@ -45,26 +46,26 @@ func TestModelSubmitsPromptAndConsumesAgentEvents(t *testing.T) {
 
 	updated = updateModel(t, updated, runBatchMsg{updates: []runUpdate{
 		{active: &activeRunFunc{}, cancel: func() {}},
-		{event: DisplayEvent{Kind: DisplayEventAssistantStart}},
-		{event: DisplayEvent{
-			Kind:  DisplayEventAssistantDelta,
-			Delta: DisplayDelta{Kind: DisplayDeltaText, Delta: "Inspection"},
+		{event: interaction.Event{Kind: interaction.EventAssistantStart}},
+		{event: interaction.Event{
+			Kind:  interaction.EventAssistantDelta,
+			Delta: interaction.Delta{Kind: interaction.DeltaText, Delta: "Inspection"},
 		}},
-		{event: DisplayEvent{
-			Kind: DisplayEventAssistantEnd,
-			Assistant: AssistantDisplay{
+		{event: interaction.Event{
+			Kind: interaction.EventAssistantEnd,
+			Assistant: interaction.AssistantDisplay{
 				Text:      "**Inspection complete.**",
 				Thinking:  "checking context",
 				Concludes: true,
 			},
 		}},
-		{event: DisplayEvent{
-			Kind: DisplayEventToolStart,
-			Tool: ToolDisplay{ID: "call-1", Name: "read", Detail: "go.mod"},
+		{event: interaction.Event{
+			Kind: interaction.EventToolStart,
+			Tool: interaction.ToolDisplay{ID: "call-1", Name: "read", Detail: "go.mod"},
 		}},
-		{event: DisplayEvent{
-			Kind: DisplayEventToolEnd,
-			Tool: ToolDisplay{ID: "call-1"},
+		{event: interaction.Event{
+			Kind: interaction.EventToolEnd,
+			Tool: interaction.ToolDisplay{ID: "call-1"},
 		}},
 		{done: true},
 	}})
@@ -106,47 +107,47 @@ func TestModelCollapsesProcessWhenConclusionStartsStreaming(t *testing.T) {
 	current.running = true
 	processID := current.beginProcess()
 
-	current.applyAgentEvent(DisplayEvent{Kind: DisplayEventAssistantStart})
-	current.applyAgentEvent(DisplayEvent{
-		Kind:  DisplayEventAssistantDelta,
-		Delta: DisplayDelta{Kind: DisplayDeltaThinking, Delta: "INTERMEDIATE_REASONING"},
+	current.applyAgentEvent(interaction.Event{Kind: interaction.EventAssistantStart})
+	current.applyAgentEvent(interaction.Event{
+		Kind:  interaction.EventAssistantDelta,
+		Delta: interaction.Delta{Kind: interaction.DeltaThinking, Delta: "INTERMEDIATE_REASONING"},
 	})
-	current.applyAgentEvent(DisplayEvent{
-		Kind:  DisplayEventAssistantDelta,
-		Delta: DisplayDelta{Kind: DisplayDeltaText, Delta: "MIDDLEOUTPUT"},
+	current.applyAgentEvent(interaction.Event{
+		Kind:  interaction.EventAssistantDelta,
+		Delta: interaction.Delta{Kind: interaction.DeltaText, Delta: "MIDDLEOUTPUT"},
 	})
 	if group := current.processGroup(processID); group == nil || !group.collapsed {
 		t.Fatal("text delta did not provisionally collapse the process")
 	}
 
-	current.applyAgentEvent(DisplayEvent{
-		Kind:  DisplayEventAssistantDelta,
-		Delta: DisplayDelta{Kind: DisplayDeltaToolCall},
+	current.applyAgentEvent(interaction.Event{
+		Kind:  interaction.EventAssistantDelta,
+		Delta: interaction.Delta{Kind: interaction.DeltaToolCall},
 	})
 	if group := current.processGroup(processID); group == nil || group.collapsed {
 		t.Fatal("tool call did not reopen a provisionally collapsed process")
 	}
-	current.applyAgentEvent(DisplayEvent{
-		Kind: DisplayEventAssistantEnd,
-		Assistant: AssistantDisplay{
+	current.applyAgentEvent(interaction.Event{
+		Kind: interaction.EventAssistantEnd,
+		Assistant: interaction.AssistantDisplay{
 			Text:      "MIDDLEOUTPUT",
 			Thinking:  "INTERMEDIATE_REASONING",
 			Concludes: false,
 		},
 	})
-	current.applyAgentEvent(DisplayEvent{
-		Kind: DisplayEventToolStart,
-		Tool: ToolDisplay{ID: "call-1", Name: "read", Detail: "go.mod"},
+	current.applyAgentEvent(interaction.Event{
+		Kind: interaction.EventToolStart,
+		Tool: interaction.ToolDisplay{ID: "call-1", Name: "read", Detail: "go.mod"},
 	})
-	current.applyAgentEvent(DisplayEvent{
-		Kind: DisplayEventToolEnd,
-		Tool: ToolDisplay{ID: "call-1"},
+	current.applyAgentEvent(interaction.Event{
+		Kind: interaction.EventToolEnd,
+		Tool: interaction.ToolDisplay{ID: "call-1"},
 	})
 
-	current.applyAgentEvent(DisplayEvent{Kind: DisplayEventAssistantStart})
-	current.applyAgentEvent(DisplayEvent{
-		Kind:  DisplayEventAssistantDelta,
-		Delta: DisplayDelta{Kind: DisplayDeltaThinking, Delta: "FINAL_REASONING"},
+	current.applyAgentEvent(interaction.Event{Kind: interaction.EventAssistantStart})
+	current.applyAgentEvent(interaction.Event{
+		Kind:  interaction.EventAssistantDelta,
+		Delta: interaction.Delta{Kind: interaction.DeltaThinking, Delta: "FINAL_REASONING"},
 	})
 
 	beforeConclusion := ansi.Strip(current.transcriptView())
@@ -164,16 +165,16 @@ func TestModelCollapsesProcessWhenConclusionStartsStreaming(t *testing.T) {
 		}
 	}
 
-	current.applyAgentEvent(DisplayEvent{
-		Kind:  DisplayEventAssistantDelta,
-		Delta: DisplayDelta{Kind: DisplayDeltaText, Delta: " \n"},
+	current.applyAgentEvent(interaction.Event{
+		Kind:  interaction.EventAssistantDelta,
+		Delta: interaction.Delta{Kind: interaction.DeltaText, Delta: " \n"},
 	})
 	if group := current.processGroup(processID); group == nil || group.collapsed {
 		t.Fatal("leading whitespace collapsed the process before final output")
 	}
-	current.applyAgentEvent(DisplayEvent{
-		Kind:  DisplayEventAssistantDelta,
-		Delta: DisplayDelta{Kind: DisplayDeltaText, Delta: "FINAL_ANSWER"},
+	current.applyAgentEvent(interaction.Event{
+		Kind:  interaction.EventAssistantDelta,
+		Delta: interaction.Delta{Kind: interaction.DeltaText, Delta: "FINAL_ANSWER"},
 	})
 
 	collapsed := ansi.Strip(current.transcriptView())
@@ -822,13 +823,13 @@ func TestShellWorkingDirectoryUsesHomeShortcutAndRemovesControls(t *testing.T) {
 
 func TestComposerBorderShowsModelAndThinking(t *testing.T) {
 	t.Parallel()
-	for _, thinking := range []DisplayThinking{DisplayThinkingDefault, DisplayThinkingLow, DisplayThinkingHigh} {
+	for _, thinking := range []interaction.DisplayThinking{interaction.DisplayThinkingDefault, interaction.DisplayThinkingLow, interaction.DisplayThinkingHigh} {
 		for _, width := range []int{24, 80} {
 			current := newModel(nil, nil)
 			current = updateModel(t, current, tea.WindowSizeMsg{Width: width, Height: 24})
 			current.thinking = thinking
 			before := current.View()
-			current.currentModel = DisplayModel{ID: "deepseek-v4-flash"}
+			current.currentModel = interaction.DisplayModel{ID: "deepseek-v4-flash"}
 			after := current.View()
 			if *before.Cursor != *after.Cursor || lipgloss.Height(before.Content) != lipgloss.Height(after.Content) {
 				t.Fatal("model label moved the composer caret or changed screen height")
@@ -858,8 +859,8 @@ func TestComposerBorderShowsModelAndThinking(t *testing.T) {
 func TestModelStatusLineShowsSessionUsageAndEstimatedCost(t *testing.T) {
 	t.Parallel()
 	current := newModel(nil, nil)
-	current.currentModel = DisplayModel{ID: "deepseek-v4-flash"}
-	current.sessionUsage = DisplayUsage{
+	current.currentModel = interaction.DisplayModel{ID: "deepseek-v4-flash"}
+	current.sessionUsage = interaction.DisplayUsage{
 		InputTokens: 1200, OutputTokens: 456,
 		CacheReadTokens: 100, CacheWriteTokens: 20, TotalCost: 0.0074,
 	}
@@ -928,7 +929,7 @@ func TestModelAnimatesSnapshotUsage(t *testing.T) {
 	t.Parallel()
 
 	current := newModel(make(chan runRequest), make(chan struct{}))
-	state := RuntimeState{Usage: DisplayUsage{
+	state := interaction.RuntimeState{Usage: interaction.DisplayUsage{
 		InputTokens:  1_200,
 		OutputTokens: 456,
 		TotalCost:    0.0074,
@@ -986,16 +987,16 @@ func TestModelRendersRunActivityInTranscriptInsteadOfFooter(t *testing.T) {
 		t.Fatalf("run activity remains in footer: %q", footer)
 	}
 
-	current.applyAgentEvent(DisplayEvent{Kind: DisplayEventAssistantStart})
-	current.applyAgentEvent(DisplayEvent{
-		Kind:  DisplayEventAssistantDelta,
-		Delta: DisplayDelta{Kind: DisplayDeltaThinking, Delta: "checking context"},
+	current.applyAgentEvent(interaction.Event{Kind: interaction.EventAssistantStart})
+	current.applyAgentEvent(interaction.Event{
+		Kind:  interaction.EventAssistantDelta,
+		Delta: interaction.Delta{Kind: interaction.DeltaThinking, Delta: "checking context"},
 	})
 	assertActivityInTranscript(t, current, "Thinking...")
 
-	current.applyAgentEvent(DisplayEvent{
-		Kind:  DisplayEventAssistantDelta,
-		Delta: DisplayDelta{Kind: DisplayDeltaText, Delta: "Inspection"},
+	current.applyAgentEvent(interaction.Event{
+		Kind:  interaction.EventAssistantDelta,
+		Delta: interaction.Delta{Kind: interaction.DeltaText, Delta: "Inspection"},
 	})
 	if transcript := current.transcriptView(); strings.Contains(
 		transcript,
@@ -1004,22 +1005,22 @@ func TestModelRendersRunActivityInTranscriptInsteadOfFooter(t *testing.T) {
 		t.Fatalf("spinner remains after model output starts: %q", transcript)
 	}
 
-	current.applyAgentEvent(DisplayEvent{
-		Kind: DisplayEventAssistantEnd,
-		Assistant: AssistantDisplay{
+	current.applyAgentEvent(interaction.Event{
+		Kind: interaction.EventAssistantEnd,
+		Assistant: interaction.AssistantDisplay{
 			Text:      "Inspection complete.",
 			Concludes: true,
 		},
 	})
-	current.applyAgentEvent(DisplayEvent{
-		Kind: DisplayEventToolStart,
-		Tool: ToolDisplay{ID: "call-1", Name: "read"},
+	current.applyAgentEvent(interaction.Event{
+		Kind: interaction.EventToolStart,
+		Tool: interaction.ToolDisplay{ID: "call-1", Name: "read"},
 	})
 	assertActivityInTranscript(t, current, "read")
 
-	current.applyAgentEvent(DisplayEvent{
-		Kind: DisplayEventToolEnd,
-		Tool: ToolDisplay{ID: "call-1"},
+	current.applyAgentEvent(interaction.Event{
+		Kind: interaction.EventToolEnd,
+		Tool: interaction.ToolDisplay{ID: "call-1"},
 	})
 	assertActivityInTranscript(t, current, "Thinking...")
 }
@@ -1032,13 +1033,13 @@ func TestModelToolCallsShowRelevantInput(t *testing.T) {
 		"printf 'tool display complete'"
 	tests := []struct {
 		name      string
-		tool      ToolDisplay
+		tool      interaction.ToolDisplay
 		want      string
 		notWanted []string
 	}{
 		{
 			name: "bash shows the complete command",
-			tool: ToolDisplay{
+			tool: interaction.ToolDisplay{
 				ID:     "bash-call",
 				Name:   "bash",
 				Detail: bashCommand,
@@ -1047,7 +1048,7 @@ func TestModelToolCallsShowRelevantInput(t *testing.T) {
 		},
 		{
 			name: "read shows only the path",
-			tool: ToolDisplay{
+			tool: interaction.ToolDisplay{
 				ID:     "read-call",
 				Name:   "read",
 				Detail: "internal/tui/model.go",
@@ -1057,7 +1058,7 @@ func TestModelToolCallsShowRelevantInput(t *testing.T) {
 		},
 		{
 			name: "write shows the path without content",
-			tool: ToolDisplay{
+			tool: interaction.ToolDisplay{
 				ID:     "write-call",
 				Name:   "write",
 				Detail: "notes/output.txt",
@@ -1067,7 +1068,7 @@ func TestModelToolCallsShowRelevantInput(t *testing.T) {
 		},
 		{
 			name: "edit shows the path without replacements",
-			tool: ToolDisplay{
+			tool: interaction.ToolDisplay{
 				ID:     "edit-call",
 				Name:   "edit",
 				Detail: "internal/tui/model.go",
@@ -1080,7 +1081,7 @@ func TestModelToolCallsShowRelevantInput(t *testing.T) {
 		},
 		{
 			name: "path cannot inject terminal controls",
-			tool: ToolDisplay{
+			tool: interaction.ToolDisplay{
 				ID:     "unsafe-path-call",
 				Name:   "read",
 				Detail: "internal/[31mmodel.go",
@@ -1100,8 +1101,8 @@ func TestModelToolCallsShowRelevantInput(t *testing.T) {
 				Height: 24,
 			})
 			current.running = true
-			current.applyAgentEvent(DisplayEvent{
-				Kind: DisplayEventToolStart,
+			current.applyAgentEvent(interaction.Event{
+				Kind: interaction.EventToolStart,
 				Tool: tt.tool,
 			})
 
@@ -1126,8 +1127,8 @@ func TestModelToolCallsShowRelevantInput(t *testing.T) {
 				}
 			}
 
-			current.applyAgentEvent(DisplayEvent{
-				Kind: DisplayEventToolEnd,
+			current.applyAgentEvent(interaction.Event{
+				Kind: interaction.EventToolEnd,
 				Tool: tt.tool,
 			})
 			completed := ansi.Strip(current.transcriptView())
@@ -1314,20 +1315,20 @@ func TestModelSnapshotUsageReplacesAssistantUsage(t *testing.T) {
 	t.Parallel()
 
 	current := newModel(make(chan runRequest), make(chan struct{}))
-	current.sessionUsage = DisplayUsage{
+	current.sessionUsage = interaction.DisplayUsage{
 		InputTokens:  100,
 		OutputTokens: 20,
 		TotalCost:    0.01,
 	}
 
-	current.applyAgentEvent(DisplayEvent{
-		Kind: DisplayEventAssistantEnd,
-		Assistant: AssistantDisplay{
+	current.applyAgentEvent(interaction.Event{
+		Kind: interaction.EventAssistantEnd,
+		Assistant: interaction.AssistantDisplay{
 			Text:      "answer",
 			Concludes: true,
 		},
 	})
-	if current.sessionUsage != (DisplayUsage{
+	if current.sessionUsage != (interaction.DisplayUsage{
 		InputTokens:  100,
 		OutputTokens: 20,
 		TotalCost:    0.01,
@@ -1335,7 +1336,7 @@ func TestModelSnapshotUsageReplacesAssistantUsage(t *testing.T) {
 		t.Fatalf("assistant completion mutated session usage: %#v", current.sessionUsage)
 	}
 
-	snapshot := RuntimeState{Usage: DisplayUsage{
+	snapshot := interaction.RuntimeState{Usage: interaction.DisplayUsage{
 		InputTokens:     150,
 		OutputTokens:    50,
 		CacheReadTokens: 40,
@@ -1391,8 +1392,7 @@ func TestModelSlashCommandMenuCompletesAndRunsApplicationCommand(
 	requests := make(chan runRequest, 1)
 	current := newModel(
 		requests,
-		make(chan struct{}),
-		SlashCommand{Name: "compact", Description: "Compact Session"},
+		make(chan struct{}), interaction.Command{Name: "compact", Description: "Compact Session"},
 	)
 	current = updateModel(t, current, tea.WindowSizeMsg{Width: 80, Height: 24})
 	current.input.SetValue("/co")
@@ -1425,7 +1425,7 @@ func TestModelSlashCommandMenuCompletesAndRunsApplicationCommand(
 		t.Fatalf("start command message = %T, want runStartedMsg", rawStartMessage)
 	}
 	request := <-requests
-	if request.command == nil || *request.command != (SlashCommandRequest{Name: "compact"}) {
+	if request.command == nil || *request.command != (interaction.CommandRequest{Name: "compact"}) {
 		t.Fatalf("run request command = %#v, want compact", request.command)
 	}
 
@@ -1453,8 +1453,7 @@ func TestModelSlashCommandMenuCompletesArgumentCommand(t *testing.T) {
 
 	current := newModel(
 		make(chan runRequest),
-		make(chan struct{}),
-		SlashCommand{
+		make(chan struct{}), interaction.Command{
 			Name:         "checkout",
 			Description:  "Move active leaf",
 			ArgumentHint: "<entry|root>",
@@ -1482,14 +1481,13 @@ func TestModelLoginSelectsProviderThenHidesAndSubmitsSecret(t *testing.T) {
 	requests := make(chan runRequest, 1)
 	current := newModel(
 		requests,
-		make(chan struct{}),
-		SlashCommand{
+		make(chan struct{}), interaction.Command{
 			Name:         "login",
 			Description:  "Store a provider API key",
 			SecretPrompt: "DeepSeek API key",
-			Menu: &SlashCommandMenu{
+			Menu: &interaction.CommandMenu{
 				Title: "Select provider",
-				Options: []SlashCommandOption{{
+				Options: []interaction.CommandOption{{
 					Label:     "DeepSeek",
 					Arguments: "deepseek",
 				}},
@@ -1568,18 +1566,18 @@ func TestModelLoginSelectsProviderThenHidesAndSubmitsSecret(t *testing.T) {
 func TestModelLoginSeparatesSavedCredentialReuseFromReplacement(t *testing.T) {
 	t.Parallel()
 
-	loginCommand := func() SlashCommand {
-		return SlashCommand{
+	loginCommand := func() interaction.Command {
+		return interaction.Command{
 			Name:         "login",
 			Description:  "Store a provider API key",
 			SecretPrompt: "DeepSeek API key",
-			Menu: &SlashCommandMenu{
+			Menu: &interaction.CommandMenu{
 				Title: "Select provider",
-				Options: []SlashCommandOption{{
+				Options: []interaction.CommandOption{{
 					Label: "DeepSeek",
-					Menu: &SlashCommandMenu{
+					Menu: &interaction.CommandMenu{
 						Title: "DeepSeek credential",
-						Options: []SlashCommandOption{
+						Options: []interaction.CommandOption{
 							{
 								Label:              "Use saved credential",
 								Arguments:          "deepseek",
@@ -1675,14 +1673,13 @@ func TestModelSecretSlashCommandCanBeCancelledAndRestarted(t *testing.T) {
 	requests := make(chan runRequest, 1)
 	current := newModel(
 		requests,
-		make(chan struct{}),
-		SlashCommand{
+		make(chan struct{}), interaction.Command{
 			Name:         "login",
 			Description:  "Store a provider API key",
 			SecretPrompt: "DeepSeek API key",
-			Menu: &SlashCommandMenu{
+			Menu: &interaction.CommandMenu{
 				Title: "Select provider",
-				Options: []SlashCommandOption{{
+				Options: []interaction.CommandOption{{
 					Label:     "DeepSeek",
 					Arguments: "deepseek",
 				}},
@@ -1741,13 +1738,12 @@ func TestModelSlashCommandSelectionMenuRunsSelectedValue(
 	requests := make(chan runRequest, 1)
 	current := newModel(
 		requests,
-		make(chan struct{}),
-		SlashCommand{
+		make(chan struct{}), interaction.Command{
 			Name:        "model",
 			Description: "Choose a model",
-			Menu: &SlashCommandMenu{
+			Menu: &interaction.CommandMenu{
 				Title: "Select model",
-				Options: []SlashCommandOption{
+				Options: []interaction.CommandOption{
 					{
 						Label:       "DeepSeek V4 Flash",
 						Description: "deepseek-v4-flash",
@@ -1794,7 +1790,7 @@ func TestModelSlashCommandSelectionMenuRunsSelectedValue(
 	}
 	request := <-requests
 	if request.command == nil ||
-		*request.command != (SlashCommandRequest{
+		*request.command != (interaction.CommandRequest{
 			Name:      "model",
 			Arguments: "deepseek-v4-pro",
 		}) {
@@ -1817,16 +1813,15 @@ func TestNestedSlashCommandSelectionMenuEscGoesBackThenCancels(
 	requests := make(chan runRequest, 1)
 	current := newModel(
 		requests,
-		make(chan struct{}),
-		SlashCommand{
+		make(chan struct{}), interaction.Command{
 			Name: "configure",
-			Menu: &SlashCommandMenu{
+			Menu: &interaction.CommandMenu{
 				Title: "Select value",
-				Options: []SlashCommandOption{{
+				Options: []interaction.CommandOption{{
 					Label: "Primary",
-					Menu: &SlashCommandMenu{
+					Menu: &interaction.CommandMenu{
 						Title: "Select variant",
-						Options: []SlashCommandOption{{
+						Options: []interaction.CommandOption{{
 							Label:     "Default",
 							Arguments: "primary-default",
 						}},
@@ -1871,12 +1866,11 @@ func TestModelSlashCommandSelectionMenuAcceptsTypedArguments(t *testing.T) {
 	requests := make(chan runRequest, 1)
 	current := newModel(
 		requests,
-		make(chan struct{}),
-		SlashCommand{
+		make(chan struct{}), interaction.Command{
 			Name: "model",
-			Menu: &SlashCommandMenu{
+			Menu: &interaction.CommandMenu{
 				Title: "Select model",
-				Options: []SlashCommandOption{{
+				Options: []interaction.CommandOption{{
 					Label:     "DeepSeek V4 Pro",
 					Arguments: "deepseek-v4-pro",
 				}},
@@ -1931,15 +1925,11 @@ func TestModelSlashCommandMenuKeepsSuggestionsToOneLine(t *testing.T) {
 
 	current := newModel(
 		make(chan runRequest),
-		make(chan struct{}),
-		SlashCommand{Name: "session", Description: "Show current Session information"},
-		SlashCommand{Name: "tree", Description: "Show all Session branches and the active leaf"},
-		SlashCommand{
+		make(chan struct{}), interaction.Command{Name: "session", Description: "Show current Session information"}, interaction.Command{Name: "tree", Description: "Show all Session branches and the active leaf"}, interaction.Command{
 			Name:         "checkout",
 			Description:  "Move the active leaf without deleting later branches",
 			ArgumentHint: "<entry|root>",
-		},
-		SlashCommand{Name: "compact", Description: "Compact the active branch"},
+		}, interaction.Command{Name: "compact", Description: "Compact the active branch"},
 	)
 	current.input.SetValue("/")
 
@@ -2053,7 +2043,7 @@ func TestModelSessionChangeRebuildsBranchTranscript(t *testing.T) {
 		{kind: entryCommand, text: "Checked out Session entry turn-1. " +
 			"The next turn will branch from this point."},
 	}
-	state := RuntimeState{SessionChanged: true}
+	state := interaction.RuntimeState{SessionChanged: true}
 	updated := updateModel(t, current, runBatchMsg{updates: []runUpdate{
 		{state: &state},
 	}})
@@ -2183,7 +2173,7 @@ func TestModelControlCClearsThenQuits(t *testing.T) {
 				current.promptHistory = []string{"previous"}
 				current.historyIndex = 0
 				current.historyDraft = "saved draft"
-				current.pendingDeliveries = []pendingDelivery{{text: "queued", mode: deliveryQueue}}
+				current.pendingDeliveries = []pendingDelivery{{text: "queued", mode: interaction.DeliveryKindFollowUp}}
 				current.entries = []transcriptEntry{{kind: entryUser, text: "submitted"}}
 				if draft != "" {
 					current.insertPastePlaceholder(strings.Repeat("pasted\n", 10))
@@ -2258,7 +2248,7 @@ func TestModelRunningFooterShowsEditingHints(t *testing.T) {
 	current := newModel(make(chan runRequest), make(chan struct{}))
 	current.running = true
 	current.acceptsDelivery = true
-	current.currentModel = DisplayModel{ID: "deepseek-v4-flash"}
+	current.currentModel = interaction.DisplayModel{ID: "deepseek-v4-flash"}
 	footer := ansi.Strip(current.footerView(120))
 	for _, hint := range []string{"Ctrl+c clear", "Esc cancel"} {
 		if !strings.Contains(footer, hint) {
@@ -2279,7 +2269,7 @@ func TestModelComposerCursorMatchesRenderedInputAfterClear(t *testing.T) {
 				if chrome == "notice" {
 					current.inputNotice = "A notice that wraps across multiple rows in a narrow terminal"
 				} else if chrome == "queue" {
-					current.pendingDeliveries = []pendingDelivery{{text: "queued prompt", mode: deliveryQueue}}
+					current.pendingDeliveries = []pendingDelivery{{text: "queued prompt", mode: interaction.DeliveryKindFollowUp}}
 				}
 				current.resizeLayout()
 				current.refreshViewport(false)

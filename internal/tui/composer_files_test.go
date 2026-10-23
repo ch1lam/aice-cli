@@ -106,7 +106,7 @@ func TestComposerFileSubmissionAndRejectionPreservePathsAndSpans(t *testing.T) {
 
 func TestComposerFileDeliveryRejectionRestoresAttachment(t *testing.T) {
 	t.Parallel()
-	for _, kind := range []deliveryMode{deliverySteer, deliveryQueue} {
+	for _, kind := range []interaction.DeliveryKind{interaction.DeliveryKindSteer, interaction.DeliveryKindFollowUp} {
 		m := attachTestFile(t, completionTestModel(), "my folder/main.go")
 		m.running, m.acceptsDelivery = true, true
 		m.activeRun = &activeRunFunc{deliver: func(input interaction.Delivery) error {

@@ -134,7 +134,7 @@ func TestMutationHeaderStatsAndCompletedWriteView(t *testing.T) {
 			t.Fatalf("missing full counts: %s", got)
 		}
 		entry.writePreview = &writePreview{}
-		entry.writePreview.setContent(ToolDisplay{Content: "UNCOMMITTED_PREVIEW", HasContent: true})
+		entry.writePreview.setContent(interaction.ToolDisplay{Content: "UNCOMMITTED_PREVIEW", HasContent: true})
 		entry.toolExpanded = true
 		body := ansi.Strip(m.toolBodyView(entry))
 		if strings.Contains(body, "UNCOMMITTED_PREVIEW") || !strings.Contains(body, "+new") {

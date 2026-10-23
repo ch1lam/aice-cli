@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"github.com/ch1lam/aice-cli/internal/interaction"
 	"strings"
 	"testing"
 )
@@ -24,8 +25,8 @@ func BenchmarkMarkdownRefresh(b *testing.B) {
 				m := newModel(nil, nil)
 				m.width, m.height, m.running = 120, 40, true
 				m.resizeLayout()
-				m.applyAgentEvent(DisplayEvent{Kind: DisplayEventAssistantStart})
-				m.applyAssistantDelta(DisplayEvent{Delta: DisplayDelta{Kind: DisplayDeltaText, Delta: sources[0]}})
+				m.applyAgentEvent(interaction.Event{Kind: interaction.EventAssistantStart})
+				m.applyAssistantDelta(interaction.Event{Delta: interaction.Delta{Kind: interaction.DeltaText, Delta: sources[0]}})
 				m.refreshViewport(true)
 				i := 0
 				b.ReportAllocs()

@@ -440,16 +440,16 @@ func TestGuardDefersHiddenTranscriptRendering(t *testing.T) {
 	current = updateModel(t, current, tea.WindowSizeMsg{Width: 80, Height: 24})
 	current.running = true
 	current.acceptsDelivery = true // This fixture represents an active agent run.
-	current.applyAgentEvent(DisplayEvent{Kind: DisplayEventAssistantStart})
-	current.applyAgentEvent(DisplayEvent{Kind: DisplayEventAssistantEnd, Assistant: AssistantDisplay{Thinking: "earlier reasoning"}})
+	current.applyAgentEvent(interaction.Event{Kind: interaction.EventAssistantStart})
+	current.applyAgentEvent(interaction.Event{Kind: interaction.EventAssistantEnd, Assistant: interaction.AssistantDisplay{Thinking: "earlier reasoning"}})
 	current.setFoldExpanded(foldTarget{kind: foldThinking, id: 0}, true)
 	presentation := current.entries[0].presentation
 	reply := make(chan interaction.GuardReply, 1)
 	request := interaction.GuardRequest{Path: "/outside", Options: guardTestOptions(), Reply: reply}
 	current = updateModel(t, current, guardRequestMsg{req: &request})
 	current = updateModel(t, current, tea.WindowSizeMsg{Width: 60, Height: 20})
-	current = updateModel(t, current, runBatchMsg{updates: []runUpdate{{event: DisplayEvent{
-		Kind: DisplayEventAssistantEnd, Assistant: AssistantDisplay{Thinking: "latest reasoning"},
+	current = updateModel(t, current, runBatchMsg{updates: []runUpdate{{event: interaction.Event{
+		Kind: interaction.EventAssistantEnd, Assistant: interaction.AssistantDisplay{Thinking: "latest reasoning"},
 	}}}})
 	current.refreshViewport(false)
 	view := guardViewText(current)

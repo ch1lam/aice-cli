@@ -5,11 +5,12 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/ch1lam/aice-cli/internal/interaction"
 	"github.com/charmbracelet/x/ansi"
 )
 
 // testModel is a sized model whose run controller nobody serves.
-func testModel(t *testing.T, width, height int, commands ...SlashCommand) model {
+func testModel(t *testing.T, width, height int, commands ...interaction.Command) model {
 	t.Helper()
 	m := newModel(make(chan runRequest), make(chan struct{}), commands...)
 	return updateModel(t, m, tea.WindowSizeMsg{Width: width, Height: height})

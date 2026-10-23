@@ -26,7 +26,7 @@ func TestInteractiveRunBudgetPersistsAfterCompaction(t *testing.T) {
 		c.RunTokenBudget = 100_000
 		return c, err
 	}
-	deps.runTUI = func(ctx context.Context, runner tui.Runner, _ tui.Options) error {
+	deps.runTUI = func(ctx context.Context, runner interaction.Runner, _ tui.Options) error {
 		active, err := runner.NewRun(ctx, interaction.RunInput{Prompt: longTaskGoal}, nil)
 		if err != nil {
 			return err
@@ -71,7 +71,7 @@ func TestInteractiveMaxTurnsPreservesResumableSession(t *testing.T) {
 		c.MaxTurns = 100
 		return c, err
 	}
-	deps.runTUI = func(ctx context.Context, runner tui.Runner, _ tui.Options) error {
+	deps.runTUI = func(ctx context.Context, runner interaction.Runner, _ tui.Options) error {
 		active, err := runner.NewRun(ctx, interaction.RunInput{Prompt: longTaskGoal}, nil)
 		if err != nil {
 			return err

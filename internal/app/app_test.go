@@ -432,7 +432,7 @@ func TestApplicationInteractiveKeepsConversationHistory(t *testing.T) {
 		newModel: func(config.Config) (agent.Model, error) {
 			return model, nil
 		},
-		runTUI: func(ctx context.Context, runner tui.Runner, options tui.Options) error {
+		runTUI: func(ctx context.Context, runner interaction.Runner, options tui.Options) error {
 			if options.Input != input {
 				t.Error("TUI input does not match command input")
 			}
@@ -446,13 +446,13 @@ func TestApplicationInteractiveKeepsConversationHistory(t *testing.T) {
 					deepseek.ModelV4Flash,
 				)
 			}
-			if options.Thinking != tui.DisplayThinkingHigh {
+			if options.Thinking != interaction.DisplayThinkingHigh {
 				t.Errorf(
 					"TUI thinking = %q, want the medium default clamped to high",
 					options.Thinking,
 				)
 			}
-			if options.Usage != (tui.DisplayUsage{}) {
+			if options.Usage != (interaction.DisplayUsage{}) {
 				t.Errorf("TUI usage = %#v, want empty new session usage", options.Usage)
 			}
 			if options.WorkingDirectory != workspace {
@@ -542,7 +542,7 @@ func TestApplicationInteractiveDefersUpdateCheckToTUI(t *testing.T) {
 		},
 		runTUI: func(
 			ctx context.Context,
-			_ tui.Runner,
+			_ interaction.Runner,
 			options tui.Options,
 		) error {
 			if checkerCalled {
@@ -591,7 +591,7 @@ func TestApplicationInteractiveStartsWithoutCredentials(t *testing.T) {
 		},
 		runTUI: func(
 			ctx context.Context,
-			runner tui.Runner,
+			runner interaction.Runner,
 			options tui.Options,
 		) error {
 			if options.APIKeyConfigured {
@@ -601,7 +601,7 @@ func TestApplicationInteractiveStartsWithoutCredentials(t *testing.T) {
 			if err == nil || !strings.Contains(err.Error(), "/login") {
 				t.Fatalf("Run() error = %v, want /login guidance", err)
 			}
-			if runner.(tui.RuntimeStateProvider).RuntimeState().APIKeyConfigured {
+			if runner.(interaction.RuntimeStateProvider).RuntimeState().APIKeyConfigured {
 				t.Error("runtime state reports an API key before login")
 			}
 			return nil
@@ -654,16 +654,15 @@ func TestApplicationInteractiveLoginEnablesCurrentSession(t *testing.T) {
 		},
 		runTUI: func(
 			ctx context.Context,
-			runner tui.Runner,
+			runner interaction.Runner,
 			options tui.Options,
 		) error {
 			if options.APIKeyConfigured {
 				t.Error("TUI starts authenticated before /login")
 			}
-			commandRunner := runner.(tui.SlashCommandRunner)
+			commandRunner := runner.(interaction.CommandRunner)
 			output, err := commandRunner.RunSlashCommand(
-				ctx,
-				tui.SlashCommandRequest{
+				ctx, interaction.CommandRequest{
 					Name:      "login",
 					Arguments: "deepseek",
 					Secret:    "secret-value",
@@ -675,7 +674,7 @@ func TestApplicationInteractiveLoginEnablesCurrentSession(t *testing.T) {
 			if strings.Contains(output, "secret-value") {
 				t.Fatalf("/login output exposes API key: %q", output)
 			}
-			state := runner.(tui.RuntimeStateProvider).RuntimeState()
+			state := runner.(interaction.RuntimeStateProvider).RuntimeState()
 			if !state.APIKeyConfigured {
 				t.Error("runtime remains unauthenticated after /login")
 			}
@@ -855,7 +854,7 @@ func TestApplicationInteractiveResumesExplicitSession(t *testing.T) {
 		},
 		runTUI: func(
 			ctx context.Context,
-			runner tui.Runner,
+			runner interaction.Runner,
 			options tui.Options,
 		) error {
 			if !reflect.DeepEqual(options.Usage, newDisplayUsage(firstUsage)) {
@@ -1151,10 +1150,10 @@ func TestInteractiveSessionPersistsSteerInsideActiveRun(t *testing.T) {
 		conversation: conversationState{store: store},
 		model:        deepseek.DefaultModel(),
 	}
-	var displays []tui.DisplayEvent
-	active, err := runner.NewRun(context.Background(), tui.RunInput{Prompt: "inspect"}, func(
+	var displays []interaction.Event
+	active, err := runner.NewRun(context.Background(), interaction.RunInput{Prompt: "inspect"}, func(
 		_ context.Context,
-		event tui.DisplayEvent,
+		event interaction.Event,
 	) error {
 		displays = append(displays, event)
 		return nil
@@ -1191,7 +1190,7 @@ func TestInteractiveSessionPersistsSteerInsideActiveRun(t *testing.T) {
 	}
 	foundSteer := false
 	for _, display := range displays {
-		if display.Kind == tui.DisplayEventSteer &&
+		if display.Kind == interaction.EventSteer &&
 			display.Input.ID == "steer-1" &&
 			display.Input.Text == "focus on tests" {
 			foundSteer = true
@@ -1219,10 +1218,10 @@ func TestInteractiveSessionPersistsFollowUpsAsSourceMessages(t *testing.T) {
 		conversation: conversationState{store: store},
 		model:        deepseek.DefaultModel(),
 	}
-	var displays []tui.DisplayEvent
-	active, err := runner.NewRun(context.Background(), tui.RunInput{Prompt: "inspect"}, func(
+	var displays []interaction.Event
+	active, err := runner.NewRun(context.Background(), interaction.RunInput{Prompt: "inspect"}, func(
 		_ context.Context,
-		event tui.DisplayEvent,
+		event interaction.Event,
 	) error {
 		displays = append(displays, event)
 		return nil
@@ -1259,7 +1258,7 @@ func TestInteractiveSessionPersistsFollowUpsAsSourceMessages(t *testing.T) {
 	}
 	foundFollowUp := false
 	for _, display := range displays {
-		if display.Kind == tui.DisplayEventFollowUp &&
+		if display.Kind == interaction.EventFollowUp &&
 			display.Input.ID == "follow-up-1" &&
 			display.Input.Text == "continue with tests" {
 			foundFollowUp = true
@@ -1409,11 +1408,11 @@ func createAppTestSession(
 
 func runInteractive(
 	ctx context.Context,
-	runner tui.Runner,
+	runner interaction.Runner,
 	prompt string,
-	sink tui.DisplayEventSink,
+	sink interaction.EventSink,
 ) error {
-	active, err := runner.NewRun(context.Background(), tui.RunInput{Prompt: prompt}, sink)
+	active, err := runner.NewRun(context.Background(), interaction.RunInput{Prompt: prompt}, sink)
 	if err != nil {
 		return err
 	}

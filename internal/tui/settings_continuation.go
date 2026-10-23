@@ -24,6 +24,6 @@ func (m model) continueTask() (tea.Model, tea.Cmd) {
 	m.historyIndex = -1
 	m.historyDraft = ""
 	m.submittedDraft = composerDraft{}
-	next, cmd, _ := m.beginSubmittedRun(RunInput{Prompt: value.Prompt, Continuation: &value})
+	next, cmd, _ := m.beginSubmittedRun(interaction.RunInput{Prompt: value.Prompt, Continuation: &value})
 	return next, cmd
 }

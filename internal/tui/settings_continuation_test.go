@@ -31,7 +31,7 @@ func TestSettingsContinuationRequiresExplicitChoiceAndPreservesDraft(t *testing.
 			m.insertImagePlaceholder(llm.ImageContent{Data: []byte("synthetic")})
 			m.input.files = []composerFile{{path: "draft.txt"}}
 			draft := composerDraft{text: m.input.Value(), pastes: m.pastes, files: m.input.files}
-			m.pendingDeliveries = []pendingDelivery{{id: "old", text: "old follow-up", mode: deliveryQueue}}
+			m.pendingDeliveries = []pendingDelivery{{id: "old", text: "old follow-up", mode: interaction.DeliveryKindFollowUp}}
 			done := continuationResult(&m)
 			m = updateModel(t, m, done)
 			if m.running || len(m.entries) != 0 || len(m.promptHistory) != 0 || len(requests) != 0 {

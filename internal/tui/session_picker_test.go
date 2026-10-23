@@ -63,7 +63,7 @@ func TestSessionPickerCommandCannotBecomeSteering(t *testing.T) {
 	m.closeSessionPicker()
 	m.running = true
 	m.input.SetValue("/history")
-	m, command, _ := m.submitDelivery(deliverySteer)
+	m, command, _ := m.submitDelivery(interaction.DeliveryKindSteer)
 	if command != nil || m.input.Value() != "/history" || !strings.Contains(m.inputNotice, "Stop") || len(m.pendingDeliveries) != 0 {
 		t.Fatal("resume was accepted as steering")
 	}
@@ -79,7 +79,7 @@ func (pickerBrowser) PreviewSession(ctx context.Context, _, _ string) (string, e
 
 func pickerModel(t *testing.T, width, height int) model {
 	t.Helper()
-	m := testModel(t, width, height, SlashCommand{Name: "history"})
+	m := testModel(t, width, height, interaction.Command{Name: "history"})
 	var closeQueries func()
 	m.searchSessions, m.previewSession, m.readSession, m.renameSession, closeQueries = sessionBrowserCommands(t.Context(), pickerBrowser{})
 	t.Cleanup(closeQueries)
@@ -190,7 +190,7 @@ func TestSessionPickerRestoreInstallsHistoryAndClearsTransientState(t *testing.T
 		{Kind: interaction.TranscriptUser, ID: "user", Text: "restored question"},
 		{Kind: interaction.TranscriptAssistant, ID: "assistant", Assistant: interaction.AssistantDisplay{Text: "restored answer", Concludes: true}},
 	}}
-	m = updateModel(t, m, runBatchMsg{updates: []runUpdate{{done: true, output: "Cleanup warning: fixture", state: &RuntimeState{SessionID: "two", Transcript: view}}}})
+	m = updateModel(t, m, runBatchMsg{updates: []runUpdate{{done: true, output: "Cleanup warning: fixture", state: &interaction.RuntimeState{SessionID: "two", Transcript: view}}}})
 	if m.sessionPicker != nil || m.running || m.input.Value() != "" || len(m.side.threads) != 0 {
 		t.Fatal("transient state survived switch")
 	}

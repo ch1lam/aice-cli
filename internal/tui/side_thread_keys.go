@@ -21,7 +21,7 @@ func (m model) isBTWCommandInput() bool {
 // the blank new-thread composer otherwise. returnDraft is restored when a
 // menu is cancelled; fromPanel marks invocations typed inside the side panel.
 func (m model) handleBTWCommand(
-	request SlashCommandRequest,
+	request interaction.CommandRequest,
 	returnDraft string,
 	fromPanel bool,
 ) (model, tea.Cmd, bool) {

@@ -11,19 +11,19 @@ import (
 
 func TestCommandFlowCredentialValidation(t *testing.T) {
 	t.Parallel()
-	custom := SlashCommandRequest{Name: "login", Arguments: "custom"}
+	custom := interaction.CommandRequest{Name: "login", Arguments: "custom"}
 	for _, tc := range []struct {
 		name    string
-		request SlashCommandRequest
+		request interaction.CommandRequest
 		values  []string
 		problem string
 	}{
-		{name: "blank key", request: SlashCommandRequest{Name: "login", Arguments: "deepseek"}, values: []string{" "}, problem: "API key must not be blank"},
+		{name: "blank key", request: interaction.CommandRequest{Name: "login", Arguments: "deepseek"}, values: []string{" "}, problem: "API key must not be blank"},
 		{name: "endpoint scheme", request: custom, values: []string{"ftp://example"}, problem: "Endpoint must start with http://"},
 		{name: "model whitespace", request: custom, values: []string{"", "", "two words"}, problem: "Model name must not contain whitespace"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			f := newCommandFlow("", SlashCommand{Name: "login", SecretPrompt: "API key"}, tc.request)
+			f := newCommandFlow("", interaction.Command{Name: "login", SecretPrompt: "API key"}, tc.request)
 			f.beginCredential()
 			var problem string
 			for _, value := range tc.values {

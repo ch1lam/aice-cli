@@ -105,7 +105,7 @@ func TestFoldCachedHeadingsMatchFreshRenderingAfterUpdates(t *testing.T) {
 	if after := check(); before == after {
 		t.Fatal("running tool spinner did not advance")
 	}
-	m.completeTool(ToolDisplay{ID: "read-1", Failed: true,
+	m.completeTool(interaction.ToolDisplay{ID: "read-1", Failed: true,
 		Output: interaction.ToolOutputDisplay{Available: true, Text: "failure\nsecond line"}})
 	check()
 	m.entries[1].toolName = "read"
@@ -121,10 +121,10 @@ func TestFoldCachedHeadingsMatchFreshRenderingAfterUpdates(t *testing.T) {
 	m.setFoldExpanded(foldTarget{kind: foldCalls, id: 1}, true)
 	check()
 	m.entries[2] = transcriptEntry{kind: entryTool, processID: 1, toolName: "write", toolPreparing: true, writePreview: &writePreview{}}
-	m.entries[2].writePreview.setContent(ToolDisplay{Content: "one\n", HasContent: true})
+	m.entries[2].writePreview.setContent(interaction.ToolDisplay{Content: "one\n", HasContent: true})
 	m.entries[2].toolPreviewRevision = m.entries[2].writePreview.revision
 	check()
-	m.entries[2].writePreview.setContent(ToolDisplay{Content: "one\ntwo\n", HasContent: true})
+	m.entries[2].writePreview.setContent(interaction.ToolDisplay{Content: "one\ntwo\n", HasContent: true})
 	m.entries[2].toolPreviewRevision = m.entries[2].writePreview.revision
 	if !strings.Contains(check(), "2 lines") {
 		t.Fatal("preview line count stayed stale")

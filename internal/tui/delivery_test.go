@@ -35,7 +35,7 @@ func TestModelEnterSteersAndControlEnterQueues(t *testing.T) {
 	}
 	steered = updateModel(t, steered, command())
 	if len(steered.pendingDeliveries) != 1 ||
-		steered.pendingDeliveries[0].mode != deliverySteer {
+		steered.pendingDeliveries[0].mode != interaction.DeliveryKindSteer {
 		t.Fatalf("pending steer = %#v", steered.pendingDeliveries)
 	}
 	if len(delivered) != 1 ||
@@ -81,7 +81,7 @@ func TestModelEnterSteersAndControlEnterQueues(t *testing.T) {
 	}
 	queued = updateModel(t, queued, command())
 	if len(queued.pendingDeliveries) != 2 ||
-		queued.pendingDeliveries[1].mode != deliveryQueue {
+		queued.pendingDeliveries[1].mode != interaction.DeliveryKindFollowUp {
 		t.Fatalf("pending deliveries = %#v", queued.pendingDeliveries)
 	}
 	if len(delivered) != 2 ||
@@ -132,12 +132,12 @@ func TestModelSteerEventMovesPendingInputIntoTranscript(t *testing.T) {
 	current.pendingDeliveries = []pendingDelivery{{
 		id:   "steer-1",
 		text: "focus on tests",
-		mode: deliverySteer,
+		mode: interaction.DeliveryKindSteer,
 	}}
 
-	changed, _ := current.applyAgentEvent(DisplayEvent{
-		Kind: DisplayEventSteer,
-		Input: InputDisplay{
+	changed, _ := current.applyAgentEvent(interaction.Event{
+		Kind: interaction.EventSteer,
+		Input: interaction.InputDisplay{
 			ID:   "steer-1",
 			Text: "focus on tests",
 		},
@@ -159,13 +159,13 @@ func TestModelFollowUpEventStartsNextInteractionWithoutStartingAnotherRun(t *tes
 	current.running = true
 	current.activeRun = &activeRunFunc{}
 	current.pendingDeliveries = []pendingDelivery{
-		{id: "steer-1", text: "late steer", mode: deliverySteer},
-		{id: "follow-up-1", text: "continue", mode: deliveryQueue},
+		{id: "steer-1", text: "late steer", mode: interaction.DeliveryKindSteer},
+		{id: "follow-up-1", text: "continue", mode: interaction.DeliveryKindFollowUp},
 	}
 
-	changed, _ := current.applyAgentEvent(DisplayEvent{
-		Kind: DisplayEventFollowUp,
-		Input: InputDisplay{
+	changed, _ := current.applyAgentEvent(interaction.Event{
+		Kind: interaction.EventFollowUp,
+		Input: interaction.InputDisplay{
 			ID:   "follow-up-1",
 			Text: "continue",
 		},
@@ -177,7 +177,7 @@ func TestModelFollowUpEventStartsNextInteractionWithoutStartingAnotherRun(t *tes
 		t.Fatal("follow-up event discarded the active run")
 	}
 	if len(current.pendingDeliveries) != 1 ||
-		current.pendingDeliveries[0].mode != deliveryQueue {
+		current.pendingDeliveries[0].mode != interaction.DeliveryKindFollowUp {
 		t.Fatalf("pending deliveries = %#v, want promoted late steer", current.pendingDeliveries)
 	}
 	if got, want := current.entries[len(current.entries)-1], (transcriptEntry{

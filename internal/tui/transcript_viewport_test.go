@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/ch1lam/aice-cli/internal/interaction"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -111,10 +112,10 @@ func TestLongTranscriptLeavesUnseenThinkingUnrendered(t *testing.T) {
 			thinking: fmt.Sprintf("block %d ", i) + strings.Repeat("reasoning ", 100), presentation: &assistantPresentation{}})
 	}
 	m.expandAllDetails(true)
-	m.applyAgentEvent(DisplayEvent{Kind: DisplayEventAssistantStart})
+	m.applyAgentEvent(interaction.Event{Kind: interaction.EventAssistantStart})
 	m.refreshViewport(true)
 	for range 3 {
-		m.applyAssistantDelta(DisplayEvent{Delta: DisplayDelta{Kind: DisplayDeltaThinking, Delta: "latest "}})
+		m.applyAssistantDelta(interaction.Event{Delta: interaction.Delta{Kind: interaction.DeltaThinking, Delta: "latest "}})
 		m.refreshViewport(true)
 		m.View()
 	}
