@@ -83,7 +83,7 @@ func translateAgentEvent(event agent.AgentEvent) *interaction.Event {
 				Retry: interaction.RetryDisplay{
 					Attempt:    event.Retry.Attempt,
 					MaxRetries: event.Retry.MaxRetries,
-					Delay:      event.Retry.Delay.String(),
+					Delay:      event.Retry.Delay,
 				},
 			}
 		}

@@ -1,8 +1,10 @@
 package tui
 
 import (
-	"github.com/ch1lam/aice-cli/internal/interaction"
 	"testing"
+	"time"
+
+	"github.com/ch1lam/aice-cli/internal/interaction"
 )
 
 func TestModelShowsRetryLifecycleStatus(t *testing.T) {
@@ -14,7 +16,7 @@ func TestModelShowsRetryLifecycleStatus(t *testing.T) {
 		Retry: interaction.RetryDisplay{
 			Attempt:    2,
 			MaxRetries: 3,
-			Delay:      "4s",
+			Delay:      4 * time.Second,
 		},
 	})
 	if !changed || command != nil || current.status != "Retrying in 4s (2/3)..." {

@@ -295,12 +295,11 @@ type TruncationDisplay struct {
 	RequiresBash    bool
 }
 
-// RetryDisplay is one model-call retry status. Delay is pre-formatted by the
-// application bridge.
+// RetryDisplay is one model-call retry status.
 type RetryDisplay struct {
 	Attempt    int
 	MaxRetries int
-	Delay      string
+	Delay      time.Duration
 	Succeeded  bool
 }
 

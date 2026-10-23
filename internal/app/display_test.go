@@ -323,7 +323,7 @@ func TestTranslateAgentEventRetriesAndAgentEnd(t *testing.T) {
 		Retry: interaction.RetryDisplay{
 			Attempt:    2,
 			MaxRetries: 3,
-			Delay:      "0s",
+			Delay:      0,
 		},
 	}
 	if display == nil || *display != *want {
