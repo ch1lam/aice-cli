@@ -311,7 +311,7 @@ func questionFrameRows(t *testing.T, view string) (top, attach, draft, bottom in
 	draft = -1
 	for index, line := range lines {
 		// The placeholder is truncated on narrow terminals; match its head.
-		if strings.Contains(line, "自定义回复") || strings.Contains(line, "输入回复") {
+		if strings.Contains(line, "自定义回复") || strings.Contains(line, "Type a reply") {
 			draft = index
 			break
 		}
@@ -373,7 +373,7 @@ func TestQuestionDialogMergesWithComposer(t *testing.T) {
 		t.Fatalf("dialog height %d did not shrink from %d without options", current.chrome.question, options)
 	}
 	view := questionScreen(t, current)
-	if _, attach, draft, _ := questionFrameRows(t, view); !strings.Contains(strings.Split(view, "\n")[draft], "输入回复") || !strings.ContainsAny(strings.Split(view, "\n")[attach], "╯╰│") {
+	if _, attach, draft, _ := questionFrameRows(t, view); !strings.Contains(strings.Split(view, "\n")[draft], "Type a reply") || !strings.ContainsAny(strings.Split(view, "\n")[attach], "╯╰│") {
 		t.Fatalf("merged frame lost after switching questions:\n%s", view)
 	}
 }
@@ -397,7 +397,7 @@ func assertQuestionMergedFrame(t *testing.T, current model) {
 	assertColor(t, frame.GetBorderRightForeground(), secondaryColor)
 	assertColor(t, frame.GetBorderBottomForeground(), secondaryColor)
 	footer := ansi.Strip(current.footerView(current.layoutWidth()))
-	for _, label := range []string{"Enter 确认并继续", "Esc", "Ctrl+c", "Space", "↑↓", "←→", "PgUp/PgDn"} {
+	for _, label := range []string{"Enter confirm", "Esc", "Ctrl+c", "Space", "↑↓", "←→", "PgUp/PgDn"} {
 		if strings.Count(footer, label) != 1 || strings.Contains(strings.Join(lines[top:attach], "\n"), label) {
 			t.Fatalf("shortcut %q must appear once below the composer:\n%s", label, view)
 		}
@@ -458,7 +458,7 @@ func TestQuestionPanelRecommendsWithoutAnswering(t *testing.T) {
 	if strings.Contains(view, "1 / 2") {
 		t.Fatalf("panel must not show a question counter:\n%s", view)
 	}
-	if !strings.Contains(view, "推荐") {
+	if !strings.Contains(view, "recommended") {
 		t.Fatalf("panel must mark the recommended option:\n%s", view)
 	}
 	lines := strings.Split(view, "\n")

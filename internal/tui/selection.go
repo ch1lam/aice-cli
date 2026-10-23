@@ -263,7 +263,7 @@ func (m model) handleTranscriptMouseRelease(
 		m.selection.clear()
 		return m, nil, true
 	}
-	// A wheel during the gesture revokes click/fold/Copy资格 but keeps the
+	// A wheel during the gesture revokes click/fold/Copy eligibility but keeps the
 	// text range: a press that only wheeled must not toggle or copy.
 	wheeled := m.selection.wheeled
 	if !m.selection.moved && !wheeled && m.selection.fold.target.kind != foldNone {

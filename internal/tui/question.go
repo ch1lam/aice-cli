@@ -120,7 +120,7 @@ func (p *questionPanel) typeText(value string) {
 		return
 	}
 	if utf8.RuneCountInString(p.texts[p.index])+utf8.RuneCountInString(value) > interaction.MaxAnswerTextRunes {
-		p.notice = fmt.Sprintf("回答最多 %d 字，请缩短输入", interaction.MaxAnswerTextRunes)
+		p.notice = fmt.Sprintf("Answers are limited to %d characters; shorten the text", interaction.MaxAnswerTextRunes)
 		p.scroll, p.inputScroll = -1, -1
 		return
 	}
@@ -350,7 +350,7 @@ func (m *model) submitQuestion() tea.Cmd {
 	}
 	reply, err := panel.buildReply()
 	if err != nil {
-		panel.notice = "答案不完整：请回答每一题"
+		panel.notice = "Incomplete answers: answer every question"
 		m.resizeLayout()
 		m.refreshViewport(false)
 		return nil
@@ -470,7 +470,7 @@ func (m model) questionOptionRow(
 	recommend := ""
 	recommendStyle := lipgloss.NewStyle().Foreground(secondaryColor)
 	if option.ID == panel.current().RecommendedOptionID {
-		recommend = "  推荐"
+		recommend = "  recommended"
 	}
 	if description != "" {
 		// Wide terminals keep name and description on one row; narrow
@@ -515,11 +515,11 @@ func (m model) questionInputWindow(width int) (rows []string, offset, height int
 	text := sanitizeMultilineText(panel.texts[panel.index])
 	shown := bodyStyle.Render(text)
 	if text == "" {
-		placeholder := "输入回复…"
+		placeholder := "Type a reply…"
 		if panel.hasOptions() {
 			placeholder = "自定义回复…"
 			if panel.selected[panel.index] >= 0 && !panel.custom[panel.index] && panel.focus != panel.customRow() {
-				placeholder = "为所选项补充说明，或按 ↓ 选择自定义回复…"
+				placeholder = "Add a note for the selected option, or press ↓ for a custom answer…"
 			}
 		}
 		shown = mutedStyle.Render(truncateTerminalText(placeholder, textWidth))
@@ -603,12 +603,12 @@ func (m model) handleQuestionAction(match inputActionMatch) (model, tea.Cmd, boo
 			return m, m.submitQuestion(), true
 		}
 		if !panel.settled[panel.index] {
-			panel.notice = "请先回答当前问题"
+			panel.notice = "Answer the current question first"
 		} else if panel.index < len(panel.settled)-1 {
 			panel.moveQuestion(1)
 		} else {
 			panel.firstUnsettled()
-			panel.notice = "请回答剩余问题"
+			panel.notice = "Answer the remaining questions"
 		}
 		m.resizeLayout()
 		m.refreshViewport(false)

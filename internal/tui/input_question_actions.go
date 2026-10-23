@@ -12,16 +12,16 @@ func (m model) questionInputBindings() []inputBinding {
 	if m.question == nil {
 		return nil
 	}
-	submit := actionBinding(inputActionQuestionSubmit, "Enter", "确认并继续", "enter")
-	browse := actionBinding(inputActionQuestionBrowse, "Esc", "查看对话", "esc")
-	cancel := actionBinding(inputActionQuestionCancel, "Ctrl+c", "取消运行", "ctrl+c")
+	submit := actionBinding(inputActionQuestionSubmit, "Enter", "confirm", "enter")
+	browse := actionBinding(inputActionQuestionBrowse, "Esc", "view chat", "esc")
+	cancel := actionBinding(inputActionQuestionCancel, "Ctrl+c", "cancel run", "ctrl+c")
 	backspace := actionBinding(inputActionQuestionBackspace, "", "", "backspace")
 	backspace.short = false
-	newline := actionBinding(inputActionQuestionNewline, "Shift+Enter", "换行", "shift+enter")
+	newline := actionBinding(inputActionQuestionNewline, "Shift+Enter", "newline", "shift+enter")
 	newline.short = false
 	bindings := []inputBinding{submit, browse, cancel, backspace, newline}
 	if m.question.shouldSpaceSelect() {
-		selectBinding := actionBinding(inputActionQuestionSelect, "Space", "选中", "space", " ")
+		selectBinding := actionBinding(inputActionQuestionSelect, "Space", "select", "space", " ")
 		bindings = append(bindings, selectBinding)
 	}
 	for _, direction := range []struct {
@@ -30,7 +30,7 @@ func (m model) questionInputBindings() []inputBinding {
 	}{{key: "up", delta: -1}, {key: "down", delta: 1}} {
 		binding := actionBinding(inputActionQuestionMove, "", "", direction.key)
 		if m.question.hasOptions() {
-			binding.binding.SetHelp("↑↓", "选择")
+			binding.binding.SetHelp("↑↓", "choose")
 		}
 		binding.argument = direction.delta
 		bindings = append(bindings, binding)
@@ -41,7 +41,7 @@ func (m model) questionInputBindings() []inputBinding {
 	}{{key: "left", delta: -1}, {key: "right", delta: 1}} {
 		binding := actionBinding(inputActionQuestionSwitch, "", "", direction.key)
 		if len(m.question.prompt.Request.Questions) > 1 {
-			binding.binding.SetHelp("←→", "切题")
+			binding.binding.SetHelp("←→", "switch question")
 		}
 		binding.argument = direction.delta
 		bindings = append(bindings, binding)
@@ -50,7 +50,7 @@ func (m model) questionInputBindings() []inputBinding {
 		key   string
 		delta int
 	}{{key: "pgup", delta: -1}, {key: "pgdown", delta: 1}} {
-		binding := actionBinding(inputActionQuestionScroll, "PgUp/PgDn", "滚动", direction.key)
+		binding := actionBinding(inputActionQuestionScroll, "PgUp/PgDn", "scroll", direction.key)
 		binding.argument = direction.delta
 		bindings = append(bindings, binding)
 	}
