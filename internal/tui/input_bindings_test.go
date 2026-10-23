@@ -195,24 +195,9 @@ func TestProcessHeadingOnlyAdvertisesActiveBinding(t *testing.T) {
 	}
 }
 
-func TestExpandedHelpKeepsAvailableActionsAtNarrowWidths(t *testing.T) {
-	t.Parallel()
-	for _, width := range []int{40, 80, 160} {
-		m := newModel(nil, nil)
-		m = updateModel(t, m, tea.WindowSizeMsg{Width: width, Height: 50})
-		m.help.ShowAll = true
-		m.clipboard = func() tea.Msg { return nil }
-		m.searchSessions = func(uint64, string) (tea.Cmd, context.CancelFunc) { return nil, func() {} }
-		view := ansi.Strip(m.footerView(width))
-		for _, binding := range m.footerKeys().help(true) {
-			if !strings.Contains(view, binding.Help().Key) {
-				t.Fatalf("width %d lost %q from expanded help: %s", width, binding.Help().Key, view)
-			}
-		}
-	}
-}
-
-func TestExpandedFooterShowsEachShortcutOnce(t *testing.T) {
+// Expanded help keeps every available action at narrow widths and shows the
+// always-present shortcuts exactly once.
+func TestExpandedFooterShowsEachAvailableShortcutOnce(t *testing.T) {
 	t.Parallel()
 	for _, state := range []string{"main", "running", "side", "side running", "side read-only"} {
 		t.Run(state, func(t *testing.T) {
@@ -220,7 +205,14 @@ func TestExpandedFooterShowsEachShortcutOnce(t *testing.T) {
 				m := bindingTestModel(t, state)
 				m = updateModel(t, m, tea.WindowSizeMsg{Width: width, Height: 50})
 				m.help.ShowAll = true
+				m.clipboard = func() tea.Msg { return nil }
+				m.searchSessions = func(uint64, string) (tea.Cmd, context.CancelFunc) { return nil, func() {} }
 				view := ansi.Strip(m.footerView(width))
+				for _, binding := range m.footerKeys().help(true) {
+					if !strings.Contains(view, binding.Help().Key) {
+						t.Errorf("width %d lost %q from expanded help: %s", width, binding.Help().Key, view)
+					}
+				}
 				for _, label := range []string{"?", "Ctrl+c"} {
 					if count := strings.Count(view, label); count != 1 {
 						t.Errorf("width %d: %q appears %d times: %s", width, label, count, view)

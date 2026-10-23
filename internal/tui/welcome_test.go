@@ -142,58 +142,35 @@ func TestWelcomeHeaderHasNoBorderOrBackground(t *testing.T) {
 	}
 }
 
-func TestWelcomeViewOmitsLogoWhenNarrow(t *testing.T) {
+func TestWelcomeViewLogoAndVersionFollowSize(t *testing.T) {
 	t.Parallel()
-
-	current := testModel(t, 30, 50)
-
-	current.version = "v0.4.5"
-	welcome := current.welcomeView()
-	if strings.Contains(ansi.Strip(welcome), "⣤⣶⣾") {
-		t.Errorf("welcome = %q, want no logo on a narrow terminal", welcome)
-	}
-	if !strings.Contains(welcome, "v0.4.5") {
-		t.Errorf("welcome = %q, want the version on a narrow terminal", welcome)
-	}
-}
-
-func TestWelcomeViewOmitsLogoWhenShort(t *testing.T) {
-	t.Parallel()
-
-	current := testModel(t, 210, 10)
-
-	current.version = "v0.4.5"
-	welcome := current.welcomeView()
-	if strings.Contains(ansi.Strip(welcome), "⣤⣶⣾") {
-		t.Errorf("welcome = %q, want no logo on a short terminal", welcome)
-	}
-	if !strings.Contains(welcome, "v0.4.5") {
-		t.Errorf("welcome = %q, want the version on a short terminal", welcome)
-	}
-}
-
-func TestWelcomeViewShowsVersion(t *testing.T) {
-	t.Parallel()
-
-	current := testModel(t, 80, 24)
-	current.version = "v0.4.5"
-
-	welcome := current.welcomeView()
-	if !strings.Contains(welcome, "v0.4.5") {
-		t.Errorf("welcome = %q, want the version on the welcome screen", welcome)
-	}
-}
-
-func TestWelcomeViewOmitsVersionWhenUnset(t *testing.T) {
-	t.Parallel()
-
-	current := testModel(t, 80, 24)
-
-	welcome := current.welcomeView()
-	for _, line := range strings.Split(welcome, "\n") {
-		if strings.Contains(line, "v0.") || strings.Contains(line, "dev") {
-			t.Errorf("welcome = %q, want no version when unset", welcome)
-		}
+	for _, tc := range []struct {
+		name          string
+		width, height int
+		version       string
+		logo          bool
+	}{
+		{name: "narrow", width: 30, height: 50, version: "v0.4.5"},
+		{name: "short", width: 210, height: 10, version: "v0.4.5"},
+		{name: "standard", width: 80, height: 24, version: "v0.4.5"},
+		{name: "unset version", width: 80, height: 24},
+		{name: "large", width: 150, height: 30, version: "v0.4.5", logo: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			current := testModel(t, tc.width, tc.height)
+			current.version = tc.version
+			welcome := ansi.Strip(current.welcomeView())
+			if strings.Contains(welcome, "⣤⣶⣾") != tc.logo {
+				t.Errorf("logo shown = %v, want %v:\n%s", !tc.logo, tc.logo, welcome)
+			}
+			if tc.version != "" && !strings.Contains(welcome, tc.version) {
+				t.Errorf("welcome lost version %q:\n%s", tc.version, welcome)
+			}
+			if tc.version == "" && (strings.Contains(welcome, "v0.") || strings.Contains(welcome, "dev")) {
+				t.Errorf("welcome shows a version while unset:\n%s", welcome)
+			}
+		})
 	}
 }
 
@@ -244,11 +221,7 @@ func TestWelcomeViewShowsUpdateCheckStates(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			current := newModel(make(chan runRequest), make(chan struct{}))
-			current = updateModel(t, current, tea.WindowSizeMsg{
-				Width:  80,
-				Height: 24,
-			})
+			current := testModel(t, 80, 24)
 			current.version = "1.1.0"
 			current.welcomeUpdate = tt.status
 

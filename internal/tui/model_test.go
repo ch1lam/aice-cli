@@ -573,19 +573,6 @@ func TestModelQuestionMarkHelpTogglesAndUsesAvailableHeight(t *testing.T) {
 	}
 }
 
-func TestModelF1DoesNotToggleHelp(t *testing.T) {
-	t.Parallel()
-
-	current := newModel(make(chan runRequest), make(chan struct{}))
-	updated := updateModel(t, current, tea.KeyPressMsg{
-		Code: tea.KeyF1,
-	})
-
-	if updated.help.ShowAll {
-		t.Fatal("f1 still expands help")
-	}
-}
-
 func TestModelQuestionMarkTogglesHelpWithoutStealingComposerInput(t *testing.T) {
 	t.Parallel()
 
@@ -593,7 +580,7 @@ func TestModelQuestionMarkTogglesHelpWithoutStealingComposerInput(t *testing.T) 
 		name        string
 		value       string
 		secretInput bool
-		message     tea.KeyPressMsg
+		message     tea.Msg
 		wantHelp    bool
 		wantInput   string
 	}{
@@ -620,6 +607,15 @@ func TestModelQuestionMarkTogglesHelpWithoutStealingComposerInput(t *testing.T) 
 			wantInput: "为什么?",
 		},
 		{
+			name:    "f1 does not toggle help",
+			message: tea.KeyPressMsg{Code: tea.KeyF1},
+		},
+		{
+			name:      "pasted leading question mark remains input",
+			message:   tea.PasteMsg{Content: "?"},
+			wantInput: "?",
+		},
+		{
 			name:        "secret input keeps leading question mark",
 			secretInput: true,
 			message:     tea.KeyPressMsg{Code: '?', Text: "?"},
@@ -631,11 +627,7 @@ func TestModelQuestionMarkTogglesHelpWithoutStealingComposerInput(t *testing.T) 
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			current := newModel(make(chan runRequest), make(chan struct{}))
-			current = updateModel(t, current, tea.WindowSizeMsg{
-				Width:  80,
-				Height: 24,
-			})
+			current := testModel(t, 80, 24)
 			current.input.SetValue(tt.value)
 			if tt.secretInput {
 				current.flow = &commandFlow{form: []credentialStep{{label: "API key"}}}
@@ -660,20 +652,6 @@ func TestModelQuestionMarkTogglesHelpWithoutStealingComposerInput(t *testing.T) 
 				}
 			}
 		})
-	}
-}
-
-func TestModelPastedLeadingQuestionMarkRemainsComposerInput(t *testing.T) {
-	t.Parallel()
-
-	current := newModel(make(chan runRequest), make(chan struct{}))
-	current = updateModel(t, current, tea.PasteMsg{Content: "?"})
-
-	if current.help.ShowAll {
-		t.Fatal("pasted question mark expanded help")
-	}
-	if got := current.input.Value(); got != "?" {
-		t.Errorf("pasted input = %q, want literal question mark", got)
 	}
 }
 
