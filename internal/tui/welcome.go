@@ -9,6 +9,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/ch1lam/aice-cli/internal/interaction"
 )
 
 const (
@@ -77,7 +78,7 @@ type welcomeUpdateStatus struct {
 }
 
 type updateCheckMsg struct {
-	result UpdateCheckResult
+	result interaction.UpdateCheckResult
 	err    error
 }
 

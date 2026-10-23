@@ -99,13 +99,13 @@ func TestCommandFlagsAndOperationalConfiguration(t *testing.T) {
 			t.Error("disabled update check ran")
 			return update.StartupResult{}, nil
 		},
-		runTUI: func(ctx context.Context, _ interaction.Runner, options tui.Options) error {
+		runTUI: func(ctx context.Context, frontend interaction.Frontend, options tui.Options) error {
 			tuiChecked = true
 			if options.Model.ID != "flag-model" {
 				t.Errorf("TUI model = %q", options.Model.ID)
 			}
-			result, err := options.CheckUpdate(ctx)
-			if err != nil || result.Status != tui.UpdateCheckStatusDisabled {
+			result, err := frontend.CheckUpdate(ctx)
+			if err != nil || result.Status != interaction.UpdateCheckStatusDisabled {
 				t.Errorf("update status = %v: %v", result.Status, err)
 			}
 			return nil

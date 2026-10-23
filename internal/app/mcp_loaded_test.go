@@ -75,7 +75,8 @@ func TestMCPLoadedToolsActualCommandLifecycle(t *testing.T) {
 	command, err := newTestCommand(t, dependencies{
 		loadConfig: func(config.LoadOptions) (config.Config, error) { return c, nil },
 		newModel:   func(config.Config) (llm.Streamer, error) { return model, nil },
-		runTUI: func(ctx context.Context, runner interaction.Runner, _ tui.Options) error {
+		runTUI: func(ctx context.Context, frontend interaction.Frontend, _ tui.Options) error {
+			runner := frontend.Runner
 			s := runner.(*interactiveSession)
 			model.session = s
 			for _, outcome := range []string{"complete", "cancelled", "failed", "complete"} {

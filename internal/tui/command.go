@@ -8,7 +8,6 @@ import (
 	"github.com/ch1lam/aice-cli/internal/interaction"
 )
 
-
 func localSlashCommands() []interaction.Command {
 	return []interaction.Command{
 		{

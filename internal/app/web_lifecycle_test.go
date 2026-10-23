@@ -46,7 +46,8 @@ func TestInteractiveClosesCurrentWebBackendOnEveryExit(t *testing.T) {
 				},
 				webBackends: backends,
 				userHomeDir: func() (string, error) { return "", nil },
-				runTUI: func(ctx context.Context, runner interaction.Runner, _ tui.Options) error {
+				runTUI: func(ctx context.Context, frontend interaction.Frontend, _ tui.Options) error {
+					runner := frontend.Runner
 					tuiCalls++
 					if len(closes) != 1 || closes[0] != 0 {
 						t.Fatalf("startup backend lifetime = %v", closes)

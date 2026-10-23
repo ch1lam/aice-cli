@@ -42,7 +42,8 @@ func runMCPSettingsConfigurationFixture(t *testing.T, settings string, run func(
 	command, err := newTestCommand(t, dependencies{
 		loadConfig: func(options config.LoadOptions) (config.Config, error) { return config.LoadFiles(paths, options) },
 		newModel:   func(config.Config) (llm.Streamer, error) { return &recordingModel{response: "answer"}, nil },
-		runTUI: func(ctx context.Context, runner interaction.Runner, _ tui.Options) error {
+		runTUI: func(ctx context.Context, frontend interaction.Frontend, _ tui.Options) error {
+			runner := frontend.Runner
 			run(ctx, runner.(*interactiveSession))
 			return nil
 		},

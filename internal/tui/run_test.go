@@ -72,7 +72,7 @@ func TestRunRejectsInvalidDependencies(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			err := Run(tt.ctx, tt.runner, tt.options)
+			err := Run(tt.ctx, frontendOf(tt.runner), tt.options)
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("Run() error = %v, want text %q", err, tt.want)
 			}
@@ -92,7 +92,7 @@ func TestServeRunsOwnsPerRunEventChannel(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	requests := make(chan runRequest)
 	done := make(chan struct{})
-	go serveRuns(ctx, runner, requests, done)
+	go serveRuns(ctx, frontendOf(runner), requests, done)
 
 	updates := make(chan runUpdate, runUpdateBuffer)
 	requests <- runRequest{prompt: "inspect", updates: updates}
@@ -153,7 +153,7 @@ func TestServeRunsExecutesSlashCommandsThroughRunner(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	requests := make(chan runRequest)
 	done := make(chan struct{})
-	go serveRuns(ctx, runner, requests, done)
+	go serveRuns(ctx, frontendOf(runner), requests, done)
 
 	updates := make(chan runUpdate, runUpdateBuffer)
 	command := interaction.CommandRequest{Name: "tree"}
@@ -224,7 +224,7 @@ func TestServeSideRunsWhileMainRunIsBlocked(t *testing.T) {
 	sideRequests := make(chan runRequest)
 	mainDone := make(chan struct{})
 	sideDone := make(chan struct{})
-	go serveRuns(ctx, mainRunner, mainRequests, mainDone)
+	go serveRuns(ctx, frontendOf(mainRunner), mainRequests, mainDone)
 	go serveSideRuns(ctx, manager, sideRequests, sideDone)
 
 	mainUpdates := make(chan runUpdate, runUpdateBuffer)
@@ -498,7 +498,7 @@ func TestServeRunsRefreshesSlashCommandMenusAfterPrompt(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	requests := make(chan runRequest)
 	done := make(chan struct{})
-	go serveRuns(ctx, runner, requests, done)
+	go serveRuns(ctx, frontendOf(runner), requests, done)
 
 	updates := make(chan runUpdate, runUpdateBuffer)
 	requests <- runRequest{prompt: "inspect", updates: updates}

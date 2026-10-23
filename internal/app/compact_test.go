@@ -821,7 +821,8 @@ func TestInteractiveFollowUpCompactionRetainsAcceptedInputExactlyOnce(t *testing
 		providers:                  []provider.Provider{&compactTestProvider{model: info, service: model}},
 		compactionKeepRecentTokens: 1,
 		userHomeDir:                func() (string, error) { return home, nil },
-		runTUI: func(ctx context.Context, runner interaction.Runner, _ tui.Options) error {
+		runTUI: func(ctx context.Context, frontend interaction.Frontend, _ tui.Options) error {
+			runner := frontend.Runner
 			active, err := runner.NewRun(context.Background(), interaction.RunInput{Prompt: "initial task"}, nil)
 			if err != nil {
 				return err

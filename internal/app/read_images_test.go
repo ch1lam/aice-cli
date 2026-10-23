@@ -25,7 +25,8 @@ func TestInteractiveImageReaderSurvivesToolRebuild(t *testing.T) {
 			return config.Config{Paths: paths, Provider: "deepseek", APIKeys: map[string]string{"deepseek": "test-key"}}, nil
 		},
 		newModel: func(config.Config) (agent.Model, error) { return model, nil },
-		runTUI: func(ctx context.Context, runner interaction.Runner, _ tui.Options) error {
+		runTUI: func(ctx context.Context, frontend interaction.Frontend, _ tui.Options) error {
+			runner := frontend.Runner
 			settings := runner.(interaction.SettingsWriter)
 			if _, err := settings.ApplySettings(ctx, interaction.SettingsRequest{Changes: []interaction.SettingChange{{
 				ID: "desktop_enabled", Value: interaction.SettingValue{Kind: interaction.SettingBool},

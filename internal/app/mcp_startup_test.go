@@ -219,7 +219,8 @@ func TestMCPInteractiveCommandReusesTransportNotRunSelection(t *testing.T) {
 	model := &mcpStartupModel{t: t, search: true, wantRemote: true}
 	command, err := newTestCommand(t, dependencies{
 		loadConfig: func(config.LoadOptions) (config.Config, error) { return c, nil }, newModel: func(config.Config) (llm.Streamer, error) { return model, nil },
-		runTUI: func(ctx context.Context, runner interaction.Runner, _ tui.Options) error {
+		runTUI: func(ctx context.Context, frontend interaction.Frontend, _ tui.Options) error {
+			runner := frontend.Runner
 			if initializes.Load() != 0 {
 				t.Fatal("interactive startup eagerly connected")
 			}

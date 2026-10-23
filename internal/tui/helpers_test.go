@@ -52,3 +52,22 @@ func (m model) transcriptView() string {
 	}
 	return result.String()
 }
+
+// frontendOf offers every capability a test runner implements, as the
+// application does for its Session.
+func frontendOf(runner interaction.Runner) interaction.Frontend {
+	frontend := interaction.Frontend{Runner: runner}
+	frontend.State, _ = runner.(interaction.RuntimeStateProvider)
+	frontend.Commands, _ = runner.(interaction.CommandRunner)
+	frontend.SideThreads, _ = runner.(interaction.SideThreadManager)
+	frontend.Sessions, _ = runner.(interaction.SessionBrowser)
+	frontend.Usage, _ = runner.(interaction.UsageReader)
+	frontend.Settings, _ = runner.(interaction.SettingsReader)
+	frontend.SettingsStatus, _ = runner.(interaction.SettingsStatusReader)
+	frontend.SettingsActions, _ = runner.(interaction.SettingsActionRunner)
+	frontend.SettingsWriter, _ = runner.(interaction.SettingsWriter)
+	frontend.Files, _ = runner.(interaction.FileCompleter)
+	frontend.Guards, _ = runner.(interaction.GuardRequester)
+	frontend.Questions, _ = runner.(interaction.QuestionRequester)
+	return frontend
+}

@@ -30,7 +30,8 @@ func TestInteractiveSingleInputSurvives200ModelRounds(t *testing.T) {
 	workspace := t.TempDir()
 	sessionPath := filepath.Join(t.TempDir(), "longtask.jsonl")
 	model, deps := longTaskDependencies(t, workspace)
-	deps.runTUI = func(ctx context.Context, runner interaction.Runner, _ tui.Options) error {
+	deps.runTUI = func(ctx context.Context, frontend interaction.Frontend, _ tui.Options) error {
+		runner := frontend.Runner
 		active, err := runner.NewRun(context.Background(), interaction.RunInput{Prompt: longTaskGoal}, nil)
 		if err != nil {
 			return err
@@ -290,7 +291,8 @@ func TestInteractiveCompactionFailureBoundaries(t *testing.T) {
 			deps.loadConfig = func(config.LoadOptions) (config.Config, error) { return cfg, nil }
 			var beforeSummary []byte
 			var runErr error
-			deps.runTUI = func(ctx context.Context, runner interaction.Runner, _ tui.Options) error {
+			deps.runTUI = func(ctx context.Context, frontend interaction.Frontend, _ tui.Options) error {
+				runner := frontend.Runner
 				runCtx, cancel := context.WithCancel(ctx)
 				defer cancel()
 				active, err := runner.NewRun(context.Background(), interaction.RunInput{Prompt: "continue"}, nil)

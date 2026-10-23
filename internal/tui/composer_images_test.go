@@ -52,7 +52,7 @@ func TestClipboardImagesSubmitThroughController(t *testing.T) {
 				received = input
 				return nil
 			})
-			go runOne(t.Context(), runner, request)
+			go runOne(t.Context(), frontendOf(runner), request)
 			for update := range request.updates {
 				if update.err != nil {
 					t.Fatal(update.err)

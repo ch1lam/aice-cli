@@ -432,7 +432,8 @@ func TestApplicationInteractiveKeepsConversationHistory(t *testing.T) {
 		newModel: func(config.Config) (agent.Model, error) {
 			return model, nil
 		},
-		runTUI: func(ctx context.Context, runner interaction.Runner, options tui.Options) error {
+		runTUI: func(ctx context.Context, frontend interaction.Frontend, options tui.Options) error {
+			runner := frontend.Runner
 			if options.Input != input {
 				t.Error("TUI input does not match command input")
 			}
@@ -542,23 +543,23 @@ func TestApplicationInteractiveDefersUpdateCheckToTUI(t *testing.T) {
 		},
 		runTUI: func(
 			ctx context.Context,
-			_ interaction.Runner,
-			options tui.Options,
+			frontend interaction.Frontend,
+			_ tui.Options,
 		) error {
 			if checkerCalled {
 				t.Fatal("update check completed before the TUI started")
 			}
-			if options.CheckUpdate == nil {
+			if frontend.CheckUpdate == nil {
 				t.Fatal("TUI did not receive an update checker")
 			}
-			result, err := options.CheckUpdate(ctx)
+			result, err := frontend.CheckUpdate(ctx)
 			if err != nil {
 				return err
 			}
 			if !checkerCalled {
 				t.Fatal("TUI update checker did not invoke the application check")
 			}
-			if result.Status != tui.UpdateCheckStatusCurrent ||
+			if result.Status != interaction.UpdateCheckStatusCurrent ||
 				result.Latest != "1.2.0" {
 				t.Fatalf("TUI update result = %+v, want current 1.2.0", result)
 			}
@@ -591,9 +592,10 @@ func TestApplicationInteractiveStartsWithoutCredentials(t *testing.T) {
 		},
 		runTUI: func(
 			ctx context.Context,
-			runner interaction.Runner,
+			frontend interaction.Frontend,
 			options tui.Options,
 		) error {
+			runner := frontend.Runner
 			if options.APIKeyConfigured {
 				t.Error("TUI reports an API key before login")
 			}
@@ -654,9 +656,10 @@ func TestApplicationInteractiveLoginEnablesCurrentSession(t *testing.T) {
 		},
 		runTUI: func(
 			ctx context.Context,
-			runner interaction.Runner,
+			frontend interaction.Frontend,
 			options tui.Options,
 		) error {
+			runner := frontend.Runner
 			if options.APIKeyConfigured {
 				t.Error("TUI starts authenticated before /login")
 			}
@@ -854,9 +857,10 @@ func TestApplicationInteractiveResumesExplicitSession(t *testing.T) {
 		},
 		runTUI: func(
 			ctx context.Context,
-			runner interaction.Runner,
+			frontend interaction.Frontend,
 			options tui.Options,
 		) error {
+			runner := frontend.Runner
 			if !reflect.DeepEqual(options.Usage, newDisplayUsage(firstUsage)) {
 				t.Errorf(
 					"TUI restored usage = %#v, want %#v",

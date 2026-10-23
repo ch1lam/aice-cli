@@ -509,13 +509,13 @@ func (m model) update(message tea.Msg) (tea.Model, tea.Cmd) {
 			m.welcomeUpdate.state = welcomeUpdateFailed
 		} else {
 			switch message.result.Status {
-			case UpdateCheckStatusDisabled:
+			case interaction.UpdateCheckStatusDisabled:
 				m.welcomeUpdate.state = welcomeUpdateDisabled
-			case UpdateCheckStatusDevelopment:
+			case interaction.UpdateCheckStatusDevelopment:
 				m.welcomeUpdate.state = welcomeUpdateDevelopment
-			case UpdateCheckStatusCurrent:
+			case interaction.UpdateCheckStatusCurrent:
 				m.welcomeUpdate.state = welcomeUpdateCurrent
-			case UpdateCheckStatusAvailable:
+			case interaction.UpdateCheckStatusAvailable:
 				m.welcomeUpdate.state = welcomeUpdateAvailable
 			default:
 				m.welcomeUpdate.state = welcomeUpdateFailed

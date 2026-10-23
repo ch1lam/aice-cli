@@ -17,32 +17,6 @@ import (
 
 const runUpdateBuffer = 32
 
-
-// UpdateCheckStatus identifies one welcome-screen update-check result.
-type UpdateCheckStatus uint8
-
-const (
-	// UpdateCheckStatusUnknown is the unset state.
-	UpdateCheckStatusUnknown UpdateCheckStatus = iota
-	// UpdateCheckStatusDisabled means automatic checks are disabled.
-	UpdateCheckStatusDisabled
-	// UpdateCheckStatusDevelopment means this build has no comparable version.
-	UpdateCheckStatusDevelopment
-	// UpdateCheckStatusCurrent means no newer release is available.
-	UpdateCheckStatusCurrent
-	// UpdateCheckStatusAvailable means Latest is newer than this build.
-	UpdateCheckStatusAvailable
-)
-
-// UpdateCheckResult is the frontend-neutral result rendered on the welcome screen.
-type UpdateCheckResult struct {
-	Status UpdateCheckStatus
-	Latest string
-}
-
-// UpdateChecker performs one cache-aware, bounded update check.
-type UpdateChecker func(ctx context.Context) (UpdateCheckResult, error)
-
 // Options contains the terminal streams and model state shown by the program.
 type Options struct {
 	Transcript *interaction.Transcript
@@ -56,18 +30,17 @@ type Options struct {
 	Usage            interaction.DisplayUsage
 	Context          interaction.DisplayContext
 	WorkingDirectory string
-	// Version and CheckUpdate are shown on the welcome screen only; they stay
-	// off the transcript while the conversation is in use.
-	Version     string
-	CheckUpdate UpdateChecker
+	// Version is shown on the welcome screen only; it stays off the
+	// transcript while the conversation is in use.
+	Version string
 }
 
 // Run starts an interactive Bubble Tea program and owns its run controller.
-func Run(ctx context.Context, runner interaction.Runner, options Options) error {
+func Run(ctx context.Context, frontend interaction.Frontend, options Options) error {
 	if ctx == nil {
 		return fmt.Errorf("tui: context is required")
 	}
-	if runner == nil {
+	if frontend.Runner == nil {
 		return fmt.Errorf("tui: runner is required")
 	}
 	if options.Input == nil {
@@ -86,16 +59,16 @@ func Run(ctx context.Context, runner interaction.Runner, options Options) error 
 	controllerCtx, stopController := context.WithCancel(ctx)
 	requests := make(chan runRequest)
 	controllerDone := make(chan struct{})
-	go serveRuns(controllerCtx, runner, requests, controllerDone)
+	go serveRuns(controllerCtx, frontend, requests, controllerDone)
 
 	var sideRequests chan runRequest
 	var sideControllerDone chan struct{}
-	if manager, ok := runner.(interaction.SideThreadManager); ok {
+	if frontend.SideThreads != nil {
 		sideRequests = make(chan runRequest)
 		sideControllerDone = make(chan struct{})
 		go serveSideRuns(
 			controllerCtx,
-			manager,
+			frontend.SideThreads,
 			sideRequests,
 			sideControllerDone,
 		)
@@ -109,46 +82,46 @@ func Run(ctx context.Context, runner interaction.Runner, options Options) error 
 	}()
 
 	var slashCommands []interaction.Command
-	if commandRunner, ok := runner.(interaction.CommandRunner); ok {
-		slashCommands = commandRunner.SlashCommands()
+	if frontend.Commands != nil {
+		slashCommands = frontend.Commands.SlashCommands()
 	}
 	if sideRequests != nil {
 		slashCommands = append(slashCommands, btwSlashCommand())
 	}
 	initialModel := newModel(requests, controllerDone, slashCommands...)
-	if browser, ok := runner.(interaction.SessionBrowser); ok {
+	if frontend.Sessions != nil {
 		var closeQueries func()
-		initialModel.searchSessions, initialModel.previewSession, initialModel.readSession, initialModel.renameSession, closeQueries = sessionBrowserCommands(controllerCtx, browser)
+		initialModel.searchSessions, initialModel.previewSession, initialModel.readSession, initialModel.renameSession, closeQueries = sessionBrowserCommands(controllerCtx, frontend.Sessions)
 		defer closeQueries()
 	}
-	if reader, ok := runner.(interaction.UsageReader); ok {
+	if frontend.Usage != nil {
 		var closeUsage func()
-		initialModel.readUsage, closeUsage = usageCommands(controllerCtx, reader)
+		initialModel.readUsage, closeUsage = usageCommands(controllerCtx, frontend.Usage)
 		defer closeUsage()
 	}
-	if reader, ok := runner.(interaction.SettingsReader); ok {
-		if status, ok := runner.(interaction.SettingsStatusReader); ok {
+	if reader := frontend.Settings; reader != nil {
+		if frontend.SettingsStatus != nil {
 			var closeStatus func()
-			initialModel.readSettingsStatus, closeStatus = settingsStatusCommands(controllerCtx, status)
+			initialModel.readSettingsStatus, closeStatus = settingsStatusCommands(controllerCtx, frontend.SettingsStatus)
 			defer closeStatus()
 		}
-		if actions, ok := runner.(interaction.SettingsActionRunner); ok {
+		if frontend.SettingsActions != nil {
 			var closeActions func()
-			initialModel.runSettingsAction, closeActions = settingsActionCommands(controllerCtx, actions, reader)
+			initialModel.runSettingsAction, closeActions = settingsActionCommands(controllerCtx, frontend.SettingsActions, reader)
 			defer closeActions()
 		}
-		if writer, ok := runner.(interaction.SettingsWriter); ok {
+		if frontend.SettingsWriter != nil {
 			var closeSettings func()
-			initialModel.readSettings, initialModel.writeSettings, closeSettings = settingsCommands(controllerCtx, reader, writer)
+			initialModel.readSettings, initialModel.writeSettings, closeSettings = settingsCommands(controllerCtx, reader, frontend.SettingsWriter)
 			defer closeSettings()
 		}
 	}
 	if options.Transcript != nil {
 		initialModel.replaceTranscript(options.Transcript)
 	}
-	if completer, ok := runner.(interaction.FileCompleter); ok {
+	if frontend.Files != nil {
 		var closeCompletion func()
-		initialModel.completeFiles, closeCompletion = fileCompletionCommand(controllerCtx, completer)
+		initialModel.completeFiles, closeCompletion = fileCompletionCommand(controllerCtx, frontend.Files)
 		defer closeCompletion()
 	}
 	initialModel.prepareDelivery = deliveryCommand(controllerCtx)
@@ -158,14 +131,12 @@ func Run(ctx context.Context, runner interaction.Runner, options Options) error 
 	}
 	initialModel.sideRequests = sideRequests
 	initialModel.sideControllerDone = sideControllerDone
-	if manager, ok := runner.(interaction.SideThreadManager); ok {
-		initialModel.side.manager = manager
+	initialModel.side.manager = frontend.SideThreads
+	if frontend.Guards != nil {
+		initialModel.guardRequests = frontend.Guards.GuardRequests()
 	}
-	if guardReq, ok := runner.(interaction.GuardRequester); ok {
-		initialModel.guardRequests = guardReq.GuardRequests()
-	}
-	if questionReq, ok := runner.(interaction.QuestionRequester); ok {
-		initialModel.questionRequests = questionReq.QuestionRequests()
+	if frontend.Questions != nil {
+		initialModel.questionRequests = frontend.Questions.QuestionRequests()
 	}
 	if options.StartupNotice != "" {
 		initialModel.entries = append(initialModel.entries, transcriptEntry{kind: entryNotice, text: options.StartupNotice})
@@ -177,10 +148,10 @@ func Run(ctx context.Context, runner interaction.Runner, options Options) error 
 	initialModel.contextUsage = options.Context
 	initialModel.workingDirectory = options.WorkingDirectory
 	initialModel.version = options.Version
-	if options.CheckUpdate != nil {
+	if frontend.CheckUpdate != nil {
 		initialModel.updateCheck = checkForUpdate(
 			controllerCtx,
-			options.CheckUpdate,
+			frontend.CheckUpdate,
 		)
 		initialModel.welcomeUpdate.state = welcomeUpdateChecking
 	}
@@ -203,7 +174,7 @@ func Run(ctx context.Context, runner interaction.Runner, options Options) error 
 	return nil
 }
 
-func checkForUpdate(ctx context.Context, checker UpdateChecker) tea.Cmd {
+func checkForUpdate(ctx context.Context, checker interaction.UpdateChecker) tea.Cmd {
 	return func() tea.Msg {
 		result, err := checker(ctx)
 		return updateCheckMsg{result: result, err: err}
@@ -243,7 +214,7 @@ type runUpdate struct {
 
 func serveRuns(
 	ctx context.Context,
-	runner interaction.Runner,
+	frontend interaction.Frontend,
 	requests <-chan runRequest,
 	done chan<- struct{},
 ) {
@@ -253,7 +224,7 @@ func serveRuns(
 		case <-ctx.Done():
 			return
 		case request := <-requests:
-			runOne(ctx, runner, request)
+			runOne(ctx, frontend, request)
 		}
 	}
 }
@@ -312,16 +283,17 @@ func runSideRequest(
 		return
 	}
 	request.sideThread = &thread
-	runOne(ctx, runner, request)
+	// Side runs expose no commands or runtime state to refresh.
+	runOne(ctx, interaction.Frontend{Runner: runner}, request)
 }
 
 // runOne prepares and executes one run request, delivering every lifecycle
 // update, including the terminal error, on request.updates.
-func runOne(ctx context.Context, runner interaction.Runner, request runRequest) {
+func runOne(ctx context.Context, frontend interaction.Frontend, request runRequest) {
 	defer close(request.updates)
 
 	if request.command != nil {
-		runSlashCommand(ctx, runner, request)
+		runSlashCommand(ctx, frontend, request)
 		return
 	}
 
@@ -330,7 +302,7 @@ func runOne(ctx context.Context, runner interaction.Runner, request runRequest) 
 	if !sendRunUpdate(ctx, request.updates, runUpdate{cancel: cancel, sideThread: request.sideThread}) {
 		return
 	}
-	active, err := runner.NewRun(runCtx, interaction.RunInput{Prompt: request.prompt, Images: request.images, Files: request.files, Skills: request.skills, Continuation: request.continuation}, func(
+	active, err := frontend.Runner.NewRun(runCtx, interaction.RunInput{Prompt: request.prompt, Images: request.images, Files: request.files, Skills: request.skills, Continuation: request.continuation}, func(
 		eventCtx context.Context,
 		event interaction.Event,
 	) error {
@@ -340,7 +312,7 @@ func runOne(ctx context.Context, runner interaction.Runner, request runRequest) 
 		return nil
 	})
 	if err != nil {
-		state, commands := runnerSnapshots(runner)
+		state, commands := frontendSnapshots(frontend)
 		_ = sendRunUpdate(ctx, request.updates, runUpdate{
 			err:        err,
 			state:      state,
@@ -362,7 +334,7 @@ func runOne(ctx context.Context, runner interaction.Runner, request runRequest) 
 	err = active.Run(runCtx)
 	cancel()
 
-	state, commands := runnerSnapshots(runner)
+	state, commands := frontendSnapshots(frontend)
 	_ = sendRunUpdate(ctx, request.updates, runUpdate{
 		err:      err,
 		state:    state,
@@ -371,7 +343,7 @@ func runOne(ctx context.Context, runner interaction.Runner, request runRequest) 
 	})
 }
 
-func runSlashCommand(ctx context.Context, runner interaction.Runner, request runRequest) {
+func runSlashCommand(ctx context.Context, frontend interaction.Frontend, request runRequest) {
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	if !sendRunUpdate(ctx, request.updates, runUpdate{cancel: cancel}) {
@@ -380,8 +352,7 @@ func runSlashCommand(ctx context.Context, runner interaction.Runner, request run
 
 	var output string
 	var err error
-	commandRunner, ok := runner.(interaction.CommandRunner)
-	if !ok {
+	if frontend.Commands == nil {
 		err = fmt.Errorf("tui: slash command runner is required")
 	} else {
 		command := *request.command
@@ -395,9 +366,9 @@ func runSlashCommand(ctx context.Context, runner interaction.Runner, request run
 				},
 			}
 		}
-		output, err = commandRunner.RunSlashCommand(runCtx, command)
+		output, err = frontend.Commands.RunSlashCommand(runCtx, command)
 	}
-	state, commands := runnerSnapshots(runner)
+	state, commands := frontendSnapshots(frontend)
 	_ = sendRunUpdate(ctx, request.updates, runUpdate{
 		err:      err,
 		output:   output,
@@ -407,15 +378,15 @@ func runSlashCommand(ctx context.Context, runner interaction.Runner, request run
 	})
 }
 
-func runnerSnapshots(runner interaction.Runner) (*interaction.RuntimeState, *[]interaction.Command) {
+func frontendSnapshots(frontend interaction.Frontend) (*interaction.RuntimeState, *[]interaction.Command) {
 	var state *interaction.RuntimeState
-	if provider, ok := runner.(interaction.RuntimeStateProvider); ok {
-		snapshot := provider.RuntimeState()
+	if frontend.State != nil {
+		snapshot := frontend.State.RuntimeState()
 		state = &snapshot
 	}
 	var commands *[]interaction.Command
-	if commandRunner, ok := runner.(interaction.CommandRunner); ok {
-		snapshot := commandRunner.SlashCommands()
+	if frontend.Commands != nil {
+		snapshot := frontend.Commands.SlashCommands()
 		commands = &snapshot
 	}
 	return state, commands

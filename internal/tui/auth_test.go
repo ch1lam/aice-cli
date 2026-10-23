@@ -98,7 +98,7 @@ func TestControllerStreamsAuthenticationBeforeCompletion(t *testing.T) {
 	request := interaction.CommandRequest{Name: "login", Auth: &interaction.AuthInteraction{Input: input}}
 	go func() {
 		defer close(finished)
-		runSlashCommand(ctx, runner, runRequest{command: &request, updates: updates})
+		runSlashCommand(ctx, frontendOf(runner), runRequest{command: &request, updates: updates})
 	}()
 	first := <-updates
 	if first.cancel == nil {

@@ -46,7 +46,8 @@ func TestInteractiveUnavailableModelRequiresSelection(t *testing.T) {
 					saves++
 					return nil
 				}),
-				runTUI: func(ctx context.Context, runner interaction.Runner, options tui.Options) error {
+				runTUI: func(ctx context.Context, frontend interaction.Frontend, options tui.Options) error {
+					runner := frontend.Runner
 					if options.Model.ID != "removed-model" || !strings.Contains(options.StartupNotice, "/model") {
 						t.Fatalf("startup model/notice = %q/%q", options.Model.ID, options.StartupNotice)
 					}
@@ -124,7 +125,10 @@ func TestPrintUnavailableModelListsProviderChoices(t *testing.T) {
 			return config.Config{Provider: "deepseek", Model: "removed-model"}, nil
 		},
 		newModel: func(config.Config) (llm.Streamer, error) { t.Fatal("constructed unavailable model"); return nil, nil },
-		runTUI:   func(context.Context, interaction.Runner, tui.Options) error { t.Fatal("print opened TUI"); return nil },
+		runTUI: func(context.Context, interaction.Frontend, tui.Options) error {
+			t.Fatal("print opened TUI")
+			return nil
+		},
 	})
 	if err != nil {
 		t.Fatal(err)

@@ -10,6 +10,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/ch1lam/aice-cli/internal/interaction"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -246,29 +247,29 @@ func TestModelAppliesUpdateCheckResultToWelcomeScreen(t *testing.T) {
 	}{
 		{
 			name: "disabled",
-			msg: updateCheckMsg{result: UpdateCheckResult{
-				Status: UpdateCheckStatusDisabled,
+			msg: updateCheckMsg{result: interaction.UpdateCheckResult{
+				Status: interaction.UpdateCheckStatusDisabled,
 			}},
 			state: welcomeUpdateDisabled,
 		},
 		{
 			name: "development",
-			msg: updateCheckMsg{result: UpdateCheckResult{
-				Status: UpdateCheckStatusDevelopment,
+			msg: updateCheckMsg{result: interaction.UpdateCheckResult{
+				Status: interaction.UpdateCheckStatusDevelopment,
 			}},
 			state: welcomeUpdateDevelopment,
 		},
 		{
 			name: "current",
-			msg: updateCheckMsg{result: UpdateCheckResult{
-				Status: UpdateCheckStatusCurrent,
+			msg: updateCheckMsg{result: interaction.UpdateCheckResult{
+				Status: interaction.UpdateCheckStatusCurrent,
 			}},
 			state: welcomeUpdateCurrent,
 		},
 		{
 			name: "available",
-			msg: updateCheckMsg{result: UpdateCheckResult{
-				Status: UpdateCheckStatusAvailable,
+			msg: updateCheckMsg{result: interaction.UpdateCheckResult{
+				Status: interaction.UpdateCheckStatusAvailable,
 				Latest: "1.2.0",
 			}},
 			state: welcomeUpdateAvailable,
@@ -322,18 +323,18 @@ func TestCheckForUpdateCommandUsesCallerContext(t *testing.T) {
 	t.Parallel()
 
 	ctx := t.Context()
-	command := checkForUpdate(ctx, func(got context.Context) (UpdateCheckResult, error) {
+	command := checkForUpdate(ctx, func(got context.Context) (interaction.UpdateCheckResult, error) {
 		if got != ctx {
 			t.Error("update checker did not receive the TUI context")
 		}
-		return UpdateCheckResult{Status: UpdateCheckStatusCurrent}, nil
+		return interaction.UpdateCheckResult{Status: interaction.UpdateCheckStatusCurrent}, nil
 	})
 	rawMessage := command()
 	message, ok := rawMessage.(updateCheckMsg)
 	if !ok {
 		t.Fatalf("update command message = %T, want updateCheckMsg", rawMessage)
 	}
-	if message.err != nil || message.result.Status != UpdateCheckStatusCurrent {
+	if message.err != nil || message.result.Status != interaction.UpdateCheckStatusCurrent {
 		t.Fatalf("update command message = %#v, want current", message)
 	}
 }
@@ -344,12 +345,12 @@ func TestModelInitIncludesConfiguredUpdateCheck(t *testing.T) {
 	current := testModel(t, 80, 24)
 	current.welcomeUpdate.state = welcomeUpdateChecking
 	calls := 0
-	current.updateCheck = checkForUpdate(t.Context(), func(ctx context.Context) (UpdateCheckResult, error) {
+	current.updateCheck = checkForUpdate(t.Context(), func(ctx context.Context) (interaction.UpdateCheckResult, error) {
 		calls++
 		if ctx != t.Context() {
 			t.Error("Init update checker lost its caller context")
 		}
-		return UpdateCheckResult{Status: UpdateCheckStatusAvailable, Latest: "9.8.7"}, nil
+		return interaction.UpdateCheckResult{Status: interaction.UpdateCheckStatusAvailable, Latest: "9.8.7"}, nil
 	})
 	found := false
 	for _, message := range welcomeInitMessages(t, current) {

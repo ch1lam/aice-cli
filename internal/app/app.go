@@ -64,7 +64,7 @@ type dependencies struct {
 	saveAPIKey                 func(provider, apiKey string) (string, error)
 	newModel                   func(config.Config) (llm.Streamer, error)
 	checkUpdate                func(context.Context) (update.StartupResult, error)
-	runTUI                     func(context.Context, interaction.Runner, tui.Options) error
+	runTUI                     func(context.Context, interaction.Frontend, tui.Options) error
 	runTrustTUI                func(context.Context, tui.TrustPromptOptions) (trust.Choice, error)
 	compactionKeepRecentTokens int64
 	providers                  []provider.Provider
@@ -469,23 +469,18 @@ func (a *application) Interactive(
 		return errors.Join(err, store.Close())
 	}
 	if environment.modelErr == nil && providerConfigured(a.dependencies.providers, environment.configuration) {
-		loop, err := a.newAgentLoopWithOptions(
-			environment.configuration,
-			environment.tools,
-			agent.WithGuard(environment.guardAdapter),
-			agent.WithGuardAskHandler(runner.handleGuardAsk),
-		)
+		loop, err := runner.sessionLoop(environment.configuration, runner.tools)
 		if err != nil {
 			return errors.Join(err, store.Close())
 		}
 		runner.loop = loop
 	}
-	var checkUpdate tui.UpdateChecker
+	frontend := runner.frontend()
 	if a.dependencies.checkUpdate != nil {
-		checkUpdate = a.checkForUpdate
+		frontend.CheckUpdate = a.checkForUpdate
 		if environment.configuration.NoUpdateCheck {
-			checkUpdate = func(context.Context) (tui.UpdateCheckResult, error) {
-				return tui.UpdateCheckResult{Status: tui.UpdateCheckStatusDisabled}, nil
+			frontend.CheckUpdate = func(context.Context) (interaction.UpdateCheckResult, error) {
+				return interaction.UpdateCheckResult{Status: interaction.UpdateCheckStatusDisabled}, nil
 			}
 		}
 	}
@@ -511,14 +506,13 @@ func (a *application) Interactive(
 			return errors.Join(err, store.Close())
 		}
 	}
-	runErr := a.dependencies.runTUI(ctx, runner, tui.Options{
+	runErr := a.dependencies.runTUI(ctx, frontend, tui.Options{
 		Transcript:    transcript,
 		StartupNotice: startupNotice,
 		Input:         request.Input,
 		Output:        request.Output,
 		Model:         interaction.DisplayModel{ID: environment.model.ID},
 		Thinking:      thinking,
-		CheckUpdate:   checkUpdate,
 		APIKeyConfigured: providerConfigured(
 			a.dependencies.providers,
 			environment.configuration,
@@ -542,29 +536,29 @@ func (a *application) Interactive(
 
 func (a *application) checkForUpdate(
 	ctx context.Context,
-) (tui.UpdateCheckResult, error) {
+) (interaction.UpdateCheckResult, error) {
 	result, err := a.dependencies.checkUpdate(ctx)
 	if err != nil {
-		return tui.UpdateCheckResult{}, fmt.Errorf("app: check for updates: %w", err)
+		return interaction.UpdateCheckResult{}, fmt.Errorf("app: check for updates: %w", err)
 	}
 
-	status := tui.UpdateCheckStatusUnknown
+	status := interaction.UpdateCheckStatusUnknown
 	switch result.Status {
 	case update.StartupStatusDisabled:
-		status = tui.UpdateCheckStatusDisabled
+		status = interaction.UpdateCheckStatusDisabled
 	case update.StartupStatusDevelopment:
-		status = tui.UpdateCheckStatusDevelopment
+		status = interaction.UpdateCheckStatusDevelopment
 	case update.StartupStatusCurrent:
-		status = tui.UpdateCheckStatusCurrent
+		status = interaction.UpdateCheckStatusCurrent
 	case update.StartupStatusAvailable:
-		status = tui.UpdateCheckStatusAvailable
+		status = interaction.UpdateCheckStatusAvailable
 	default:
-		return tui.UpdateCheckResult{}, fmt.Errorf(
+		return interaction.UpdateCheckResult{}, fmt.Errorf(
 			"app: unsupported startup update status %d",
 			result.Status,
 		)
 	}
-	return tui.UpdateCheckResult{
+	return interaction.UpdateCheckResult{
 		Status: status,
 		Latest: result.Latest,
 	}, nil
@@ -919,6 +913,15 @@ func (s *interactiveSession) settingsSnapshot() interactiveSettings {
 		model:         cloneModel(s.model),
 		options:       cloneStreamOptions(s.options),
 		systemPrompt:  s.systemPrompt,
+	}
+}
+
+// frontend offers every Session capability to an interactive frontend.
+func (s *interactiveSession) frontend() interaction.Frontend {
+	return interaction.Frontend{
+		Runner: s, State: s, Commands: s, SideThreads: s, Sessions: s, Usage: s,
+		Settings: s, SettingsStatus: s, SettingsActions: s, SettingsWriter: s,
+		Files: s, Guards: s, Questions: s,
 	}
 }
 

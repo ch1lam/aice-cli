@@ -50,9 +50,10 @@ func TestApplicationInteractiveFirstLoginKeepsWorkspaceGuard(t *testing.T) {
 		},
 		runTUI: func(
 			ctx context.Context,
-			runner interaction.Runner,
+			frontend interaction.Frontend,
 			_ tui.Options,
 		) error {
+			runner := frontend.Runner
 			commandRunner := runner.(interaction.CommandRunner)
 			if _, err := commandRunner.RunSlashCommand(
 				ctx, interaction.CommandRequest{

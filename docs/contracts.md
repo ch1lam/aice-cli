@@ -405,6 +405,9 @@ The runtime boundary preserves these ownership rules:
   cancellation wins racing submissions. Q&A publishes only a complete explicit
   reply, never focus, drafts or recommendations. Permission UI may preempt it
   while retaining draft state. Neither exchange uses the steering mailbox.
+- App offers a frontend one explicit `interaction.Frontend` capability set; a
+  nil capability hides its feature. Frontends do not discover capabilities by
+  type assertion.
 - Only Bubble Tea Update mutates UI state. App translates Agent events into
   interaction types; TUI does not import LLM/tool/Session implementation types.
   Context occupancy arrives as immutable application snapshots, separately

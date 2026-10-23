@@ -95,7 +95,8 @@ func TestInteractiveCompactionsReuseRunSettingsAfterExternalChange(t *testing.T)
 		providers:                  []provider.Provider{&compactTestProvider{model: info, service: model}},
 		compactionKeepRecentTokens: 1,
 		userHomeDir:                func() (string, error) { return home, nil },
-		runTUI: func(ctx context.Context, runner interaction.Runner, _ tui.Options) error {
+		runTUI: func(ctx context.Context, frontend interaction.Frontend, _ tui.Options) error {
+			runner := frontend.Runner
 			active, err := runner.NewRun(context.Background(), interaction.RunInput{Prompt: "initial"}, func(_ context.Context, event interaction.Event) error {
 				if event.Kind == interaction.EventAssistantEnd {
 					global.Model = "externally-selected-model"
