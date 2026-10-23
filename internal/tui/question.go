@@ -517,7 +517,7 @@ func (m model) questionInputWindow(width int) (rows []string, offset, height int
 	if text == "" {
 		placeholder := "Type a reply…"
 		if panel.hasOptions() {
-			placeholder = "自定义回复…"
+			placeholder = "Custom answer…"
 			if panel.selected[panel.index] >= 0 && !panel.custom[panel.index] && panel.focus != panel.customRow() {
 				placeholder = "Add a note for the selected option, or press ↓ for a custom answer…"
 			}

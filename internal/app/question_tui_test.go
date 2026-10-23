@@ -82,7 +82,7 @@ func TestQuestionTUI(t *testing.T) {
 	waitFor("AICE")
 	send("ask me\r")
 	waitFor("Choose a mode")
-	waitFor("• 自定义回复")
+	waitFor("• Custom answer")
 	// Select an option, then replace it with a custom answer and switch
 	// questions before submitting. This must not revive the original choice.
 	send("14custom answer")

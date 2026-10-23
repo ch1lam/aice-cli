@@ -73,7 +73,7 @@ func TestQuestionLongContentStaysWithinTerminal(t *testing.T) {
 	for range 30 {
 		current = pressQuestionKey(t, current, tea.KeyPressMsg{Code: tea.KeyPgDown})
 	}
-	if view = questionScreen(t, current); !strings.Contains(view, "问题末尾") || !strings.Contains(view, "自定义回复") {
+	if view = questionScreen(t, current); !strings.Contains(view, "问题末尾") || !strings.Contains(view, "Custom answer") {
 		t.Fatalf("cannot browse the complete question:\n%s", view)
 	}
 	current = pressQuestionKey(t, current, tea.KeyPressMsg{Code: tea.KeyDown})
@@ -126,7 +126,7 @@ func TestQuestionComposerOwnsCustomAnswer(t *testing.T) {
 			prompt.Request.Questions[0].Options = append(prompt.Request.Questions[0].Options,
 				interaction.QuestionOption{ID: "explain", Label: "解释代码"})
 			current := newQuestionTestModelSized(t, prompt, width, 24)
-			if view := ansi.Strip(current.composerView(current.layoutWidth())); !strings.Contains(view, "• 自定义回复") {
+			if view := ansi.Strip(current.composerView(current.layoutWidth())); !strings.Contains(view, "• Custom answer") {
 				t.Fatalf("composer must show the custom option: %s", view)
 			}
 			current = pressQuestionKey(t, current, tea.KeyPressMsg{Code: '4', Text: "4"})
@@ -311,7 +311,7 @@ func questionFrameRows(t *testing.T, view string) (top, attach, draft, bottom in
 	draft = -1
 	for index, line := range lines {
 		// The placeholder is truncated on narrow terminals; match its head.
-		if strings.Contains(line, "自定义回复") || strings.Contains(line, "Type a reply") {
+		if strings.Contains(line, "Custom answer") || strings.Contains(line, "Type a reply") {
 			draft = index
 			break
 		}
@@ -431,7 +431,7 @@ func assertQuestionMergedFrame(t *testing.T, current model) {
 			t.Fatalf("right edge not aligned on row %d: %q", index, lines[index])
 		}
 	}
-	if strings.Contains(view, "Ask about") || strings.Count(view, "自定义回复") != 1 {
+	if strings.Contains(view, "Ask about") || strings.Count(view, "Custom answer") != 1 {
 		t.Fatalf("answer input must replace the normal composer placeholder exactly once:\n%s", view)
 	}
 	if layout := current.screenLayout(); layout.composer.y != layout.question.y+layout.question.height {
