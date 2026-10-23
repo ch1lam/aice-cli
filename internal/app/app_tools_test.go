@@ -157,26 +157,7 @@ func (m *builtInToolModel) Stream(
 		return toolCallEventStream(request.Model, calls[requestIndex]), nil
 	}
 
-	message := llm.NewAssistantMessage(request.Model)
-	message.Content = []llm.ContentPart{
-		llm.NewTextContent("completed").Part(),
-	}
-	message.StopReason = llm.StopReasonStop
-	return &eventStream{events: []llm.Event{
-		{Type: llm.EventTypeStart},
-		{Type: llm.EventTypeTextStart, ContentIndex: 0},
-		{
-			Type:         llm.EventTypeTextDelta,
-			ContentIndex: 0,
-			Delta:        "completed",
-		},
-		{Type: llm.EventTypeTextEnd, ContentIndex: 0},
-		{
-			Type:       llm.EventTypeDone,
-			StopReason: llm.StopReasonStop,
-			Message:    &message,
-		},
-	}}, nil
+	return textEventStream(request.Model, "completed", llm.Usage{}, llm.StopReasonStop), nil
 }
 
 func toolCallEventStream(

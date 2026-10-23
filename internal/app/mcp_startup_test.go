@@ -59,19 +59,10 @@ func (m *mcpStartupModel) Stream(_ context.Context, r llm.Request) (llm.Stream, 
 	if m.round == 2 && remote != "" {
 		call = &llm.ToolCall{ID: "execute", Name: remote, Arguments: []byte(`{}`)}
 	}
-	message := llm.NewAssistantMessage(r.Model)
-	events := []llm.Event{{Type: llm.EventTypeStart}}
 	if call != nil {
-		message.Content = []llm.ContentPart{{Type: llm.ContentTypeToolCall, ToolCall: call}}
-		message.StopReason = llm.StopReasonToolUse
-		events = append(events, llm.Event{Type: llm.EventTypeToolCallStart, ContentIndex: 0}, llm.Event{Type: llm.EventTypeToolCallEnd, ContentIndex: 0, ToolCall: call})
-	} else {
-		message.Content = []llm.ContentPart{llm.NewTextContent("finished").Part()}
-		message.StopReason = llm.StopReasonStop
-		events = append(events, llm.Event{Type: llm.EventTypeTextStart, ContentIndex: 0}, llm.Event{Type: llm.EventTypeTextDelta, ContentIndex: 0, Delta: "finished"}, llm.Event{Type: llm.EventTypeTextEnd, ContentIndex: 0})
+		return toolCallEventStream(r.Model, *call), nil
 	}
-	events = append(events, llm.Event{Type: llm.EventTypeDone, StopReason: message.StopReason, Message: &message})
-	return &eventStream{events: events}, nil
+	return textEventStream(r.Model, "finished", llm.Usage{}, llm.StopReasonStop), nil
 }
 
 func mcpStartupServer(t *testing.T, resultOverride ...string) (string, *atomic.Int32, *atomic.Int32, *atomic.Int32) {

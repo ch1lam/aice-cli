@@ -746,20 +746,7 @@ func (m *failThenSucceedModel) Stream(
 	if fail {
 		return nil, m.fail
 	}
-	message := llm.NewAssistantMessage(request.Model)
-	message.Content = []llm.ContentPart{llm.NewTextContent(m.response).Part()}
-	message.StopReason = llm.StopReasonStop
-	return &eventStream{events: []llm.Event{
-		{Type: llm.EventTypeStart},
-		{Type: llm.EventTypeTextStart, ContentIndex: 0},
-		{Type: llm.EventTypeTextDelta, ContentIndex: 0, Delta: m.response},
-		{Type: llm.EventTypeTextEnd, ContentIndex: 0},
-		{
-			Type:       llm.EventTypeDone,
-			StopReason: llm.StopReasonStop,
-			Message:    &message,
-		},
-	}}, nil
+	return textEventStream(request.Model, m.response, llm.Usage{}, llm.StopReasonStop), nil
 }
 
 // TestSideThreadTitleDerivedFromFirstQuestion proves titles come from the

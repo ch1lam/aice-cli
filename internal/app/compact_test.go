@@ -102,7 +102,7 @@ func TestApplicationCompactAppendsCheckpointAndRestoresDerivedContext(
 	runPrintTurn(t, workspace, sessionPath, "first prompt", "first answer")
 	runPrintTurn(t, workspace, sessionPath, "second prompt", "second answer")
 
-	summaryModel := &controlledModel{
+	summaryModel := &recordingModel{
 		response:   "checkpoint summary",
 		stopReason: llm.StopReasonStop,
 		usage: llm.Usage{
@@ -211,7 +211,7 @@ func TestApplicationCompactAppendsCheckpointAndRestoresDerivedContext(
 	assertTextMessage(t, messages[2], llm.RoleAssistant, "second answer")
 	assertTextMessage(t, messages[3], llm.RoleUser, "third prompt")
 
-	updatedSummaryModel := &controlledModel{
+	updatedSummaryModel := &recordingModel{
 		response:   "updated checkpoint",
 		stopReason: llm.StopReasonStop,
 	}
@@ -336,7 +336,7 @@ func TestApplicationPrintAutomaticallyCompacts(t *testing.T) {
 				t.Fatalf("close session: %v", err)
 			}
 
-			model := &controlledModel{response: test.summary, stopReason: llm.StopReasonStop}
+			model := &recordingModel{response: test.summary, stopReason: llm.StopReasonStop}
 			candidate := &compactTestProvider{model: modelInfo, service: model}
 			cfg, home := compactPrintConfig(t, modelInfo)
 			command, err := newTestCommand(t, dependencies{
@@ -413,17 +413,17 @@ func TestApplicationCompactRejectsUnsafeSummaryWithoutAppending(t *testing.T) {
 	wantErr := errors.New("provider disconnected")
 	tests := []struct {
 		name  string
-		model *controlledModel
+		model *recordingModel
 		want  string
 	}{
 		{
 			name:  "provider failure",
-			model: &controlledModel{err: wantErr},
+			model: &recordingModel{err: wantErr},
 			want:  wantErr.Error(),
 		},
 		{
 			name: "length truncated",
-			model: &controlledModel{
+			model: &recordingModel{
 				response:   "partial summary",
 				stopReason: llm.StopReasonLength,
 			},
@@ -431,7 +431,7 @@ func TestApplicationCompactRejectsUnsafeSummaryWithoutAppending(t *testing.T) {
 		},
 		{
 			name: "empty visible text",
-			model: &controlledModel{
+			model: &recordingModel{
 				response:   "   ",
 				stopReason: llm.StopReasonStop,
 			},
@@ -535,7 +535,7 @@ func TestApplicationCompactUsesOnlyActiveBranch(t *testing.T) {
 	}
 	runPrintTurn(t, workspace, sessionPath, "new branch", "new answer")
 
-	summaryModel := &controlledModel{
+	summaryModel := &recordingModel{
 		response:   "active branch checkpoint",
 		stopReason: llm.StopReasonStop,
 	}
@@ -718,53 +718,13 @@ func (p *compactTestProvider) CredentialNotConfiguredError() error {
 	return errors.New("test provider credential is not configured")
 }
 
-type controlledModel struct {
-	response   string
-	stopReason llm.StopReason
-	usage      llm.Usage
-	err        error
-	requests   []llm.Request
-}
-
-func (m *controlledModel) Stream(
-	_ context.Context,
-	request llm.Request,
-) (llm.Stream, error) {
-	m.requests = append(m.requests, request)
-	if m.err != nil {
-		return nil, m.err
-	}
-
-	message := llm.NewAssistantMessage(request.Model)
-	message.Content = []llm.ContentPart{
-		llm.NewTextContent(m.response).Part(),
-	}
-	message.StopReason = m.stopReason
-	message.Usage = m.usage
-	return &eventStream{events: []llm.Event{
-		{Type: llm.EventTypeStart},
-		{Type: llm.EventTypeTextStart, ContentIndex: 0},
-		{
-			Type:         llm.EventTypeTextDelta,
-			ContentIndex: 0,
-			Delta:        m.response,
-		},
-		{Type: llm.EventTypeTextEnd, ContentIndex: 0},
-		{
-			Type:       llm.EventTypeDone,
-			StopReason: m.stopReason,
-			Message:    &message,
-		},
-	}}, nil
-}
-
 func TestInteractiveFollowUpCompactionRetainsAcceptedInputExactlyOnce(t *testing.T) {
 	t.Parallel()
 	workspace := t.TempDir()
 	path := filepath.Join(t.TempDir(), "conversation.jsonl")
 	runPrintTurn(t, workspace, path, "old question", "old answer")
 	info := llm.Model{ID: "test-model", Name: "Test", API: llm.API("test-api"), Provider: llm.ProviderID("test-provider"), ContextWindow: 10000, MaxTokens: 1000}
-	model := &controlledModel{response: "checkpoint answer", stopReason: llm.StopReasonStop, usage: llm.Usage{TotalTokens: 9000}}
+	model := &recordingModel{response: "checkpoint answer", stopReason: llm.StopReasonStop, usage: llm.Usage{TotalTokens: 9000}}
 	cfg, home := compactPrintConfig(t, info)
 	command, err := newTestCommand(t, dependencies{
 		loadConfig:                 func(config.LoadOptions) (config.Config, error) { return cfg, nil },

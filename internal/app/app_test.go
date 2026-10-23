@@ -1423,10 +1423,14 @@ func runInteractive(
 	return active.Run(ctx)
 }
 
+// recordingModel records every request and answers with one text response.
+// An empty stopReason means llm.StopReasonStop; a non-nil err fails Stream.
 type recordingModel struct {
-	response string
-	usage    llm.Usage
-	requests []llm.Request
+	response   string
+	stopReason llm.StopReason
+	usage      llm.Usage
+	err        error
+	requests   []llm.Request
 }
 
 type toolLoopModel struct {
@@ -1473,20 +1477,7 @@ func (m *toolLoopModel) Stream(
 		return nil, m.secondErr
 	}
 
-	message := llm.NewAssistantMessage(request.Model)
-	message.Content = []llm.ContentPart{llm.NewTextContent("complete").Part()}
-	message.StopReason = llm.StopReasonStop
-	return &eventStream{events: []llm.Event{
-		{Type: llm.EventTypeStart},
-		{Type: llm.EventTypeTextStart, ContentIndex: 0},
-		{Type: llm.EventTypeTextDelta, ContentIndex: 0, Delta: "complete"},
-		{Type: llm.EventTypeTextEnd, ContentIndex: 0},
-		{
-			Type:       llm.EventTypeDone,
-			StopReason: llm.StopReasonStop,
-			Message:    &message,
-		},
-	}}, nil
+	return textEventStream(request.Model, "complete", llm.Usage{}, llm.StopReasonStop), nil
 }
 
 func (m *recordingModel) Stream(
@@ -1494,22 +1485,34 @@ func (m *recordingModel) Stream(
 	request llm.Request,
 ) (llm.Stream, error) {
 	m.requests = append(m.requests, request)
-	message := llm.NewAssistantMessage(request.Model)
-	message.Content = []llm.ContentPart{llm.NewTextContent(m.response).Part()}
-	message.Usage = m.usage
-	message.StopReason = llm.StopReasonStop
+	if m.err != nil {
+		return nil, m.err
+	}
+	stopReason := m.stopReason
+	if stopReason == "" {
+		stopReason = llm.StopReasonStop
+	}
+	return textEventStream(request.Model, m.response, m.usage, stopReason), nil
+}
 
+// textEventStream streams one complete text answer.
+func textEventStream(
+	model llm.Model,
+	text string,
+	usage llm.Usage,
+	stopReason llm.StopReason,
+) llm.Stream {
+	message := llm.NewAssistantMessage(model)
+	message.Content = []llm.ContentPart{llm.NewTextContent(text).Part()}
+	message.Usage = usage
+	message.StopReason = stopReason
 	return &eventStream{events: []llm.Event{
 		{Type: llm.EventTypeStart},
 		{Type: llm.EventTypeTextStart, ContentIndex: 0},
-		{Type: llm.EventTypeTextDelta, ContentIndex: 0, Delta: m.response},
+		{Type: llm.EventTypeTextDelta, ContentIndex: 0, Delta: text},
 		{Type: llm.EventTypeTextEnd, ContentIndex: 0},
-		{
-			Type:       llm.EventTypeDone,
-			StopReason: llm.StopReasonStop,
-			Message:    &message,
-		},
-	}}, nil
+		{Type: llm.EventTypeDone, StopReason: stopReason, Message: &message},
+	}}
 }
 
 type eventStream struct {

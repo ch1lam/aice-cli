@@ -508,7 +508,7 @@ func TestInteractiveSessionSlashCommandCompactsAndReloadsHistory(
 	if err != nil {
 		t.Fatalf("sessionHistory() error = %v", err)
 	}
-	summaryModel := &controlledModel{
+	summaryModel := &recordingModel{
 		response:   "interactive checkpoint",
 		stopReason: llm.StopReasonStop,
 	}
@@ -945,7 +945,7 @@ func TestInteractiveSessionLoginCanRetryAfterPersistenceFailure(t *testing.T) {
 				return nil
 			}),
 			newModel: func(config.Config) (agent.Model, error) {
-				return &controlledModel{
+				return &recordingModel{
 					response:   "ready",
 					stopReason: llm.StopReasonStop,
 				}, nil
@@ -1138,7 +1138,7 @@ func TestInteractiveSessionLoginOpencode(t *testing.T) {
 				return nil
 			}),
 			newModel: func(config.Config) (agent.Model, error) {
-				return &controlledModel{
+				return &recordingModel{
 					response:   "ready",
 					stopReason: llm.StopReasonStop,
 				}, nil
@@ -1217,7 +1217,7 @@ func TestInteractiveSessionLoginUsesSavedCredentialWithoutSaving(t *testing.T) {
 			}),
 			newModel: func(configuration config.Config) (agent.Model, error) {
 				modelConfiguration = configuration
-				return &controlledModel{
+				return &recordingModel{
 					response:   "ready",
 					stopReason: llm.StopReasonStop,
 				}, nil
@@ -1289,7 +1289,7 @@ func TestInteractiveSessionLoginPersistsProviderAndFallsBackModel(t *testing.T) 
 				return nil
 			}),
 			newModel: func(configuration config.Config) (agent.Model, error) {
-				return &controlledModel{
+				return &recordingModel{
 					response:   "ready",
 					stopReason: llm.StopReasonStop,
 				}, nil
@@ -1370,7 +1370,7 @@ func TestInteractiveSessionProviderSwitchPersistsFallenBackModel(t *testing.T) {
 				return nil
 			}),
 			newModel: func(configuration config.Config) (agent.Model, error) {
-				return &controlledModel{
+				return &recordingModel{
 					response:   "ready",
 					stopReason: llm.StopReasonStop,
 				}, nil
@@ -1436,7 +1436,7 @@ func TestInteractiveSessionProviderSwitchRebuildsLoopAndModel(t *testing.T) {
 				if configuration.APIKeys["opencode-go"] == "" {
 					t.Error("newModel called without opencode credential")
 				}
-				return &controlledModel{
+				return &recordingModel{
 					response:   "ready",
 					stopReason: llm.StopReasonStop,
 				}, nil

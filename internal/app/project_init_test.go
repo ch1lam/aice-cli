@@ -119,7 +119,7 @@ func TestInitCommandPropagatesModelFailure(t *testing.T) {
 
 	workspace := testWorkspace(t, t.TempDir())
 	runner := initTestRunner(t, workspace, nil)
-	model := &controlledModel{err: modelFailure}
+	model := &recordingModel{err: modelFailure}
 	loop := mustAppLoop(t, model, runner.tools)
 	runner.loop = loop
 
@@ -136,7 +136,7 @@ func TestInitCommandReportsMissingWrite(t *testing.T) {
 
 	workspace := testWorkspace(t, t.TempDir())
 	runner := initTestRunner(t, workspace, nil)
-	loop := mustAppLoop(t, &controlledModel{
+	loop := mustAppLoop(t, &recordingModel{
 		response:   "done",
 		stopReason: llm.StopReasonStop,
 	}, runner.tools)

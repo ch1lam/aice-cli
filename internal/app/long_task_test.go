@@ -285,7 +285,7 @@ func TestInteractiveCompactionFailureBoundaries(t *testing.T) {
 				t.Fatal(err)
 			}
 			usage := llm.Usage{InputTokens: 13, OutputTokens: 5, TotalTokens: 18}
-			model := &longTaskFaultModel{summary: controlledModel{response: longTaskGoal, stopReason: llm.StopReasonStop, usage: usage}}
+			model := &longTaskFaultModel{summary: recordingModel{response: longTaskGoal, stopReason: llm.StopReasonStop, usage: usage}}
 			deps.newModel = func(config.Config) (agent.Model, error) { return model, nil }
 			deps.providers = []provider.Provider{&compactTestProvider{model: info, service: model}}
 			deps.loadConfig = func(config.LoadOptions) (config.Config, error) { return cfg, nil }
@@ -376,7 +376,7 @@ func TestInteractiveCompactionFailureBoundaries(t *testing.T) {
 }
 
 type longTaskFaultModel struct {
-	summary                 controlledModel
+	summary                 recordingModel
 	summaryCalls, mainCalls int
 	onSummary, onMain       func() error
 }

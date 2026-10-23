@@ -45,7 +45,6 @@ func (f *mcpDispatchFixture) CallChecked(ctx context.Context, name string, args 
 
 func (m *mcpSearchLoopModel) Stream(_ context.Context, request llm.Request) (llm.Stream, error) {
 	m.round++
-	message := llm.NewAssistantMessage(request.Model)
 	var call *llm.ToolCall
 	switch m.round {
 	case 1:
@@ -63,20 +62,11 @@ func (m *mcpSearchLoopModel) Stream(_ context.Context, request llm.Request) (llm
 			m.t.Fatalf("search did not select next-round definition: %+v", request.Tools)
 		}
 		call = &llm.ToolCall{ID: "execute", Name: m.selected, Arguments: []byte(`{"n":9007199254740993}`)}
-	default:
-		message.Content = []llm.ContentPart{llm.NewTextContent("finished").Part()}
-		message.StopReason = llm.StopReasonStop
 	}
-	events := []llm.Event{{Type: llm.EventTypeStart}}
 	if call != nil {
-		message.Content = []llm.ContentPart{{Type: llm.ContentTypeToolCall, ToolCall: call}}
-		message.StopReason = llm.StopReasonToolUse
-		events = append(events, llm.Event{Type: llm.EventTypeToolCallStart, ContentIndex: 0}, llm.Event{Type: llm.EventTypeToolCallEnd, ContentIndex: 0, ToolCall: call})
-	} else {
-		events = append(events, llm.Event{Type: llm.EventTypeTextStart, ContentIndex: 0}, llm.Event{Type: llm.EventTypeTextDelta, ContentIndex: 0, Delta: "finished"}, llm.Event{Type: llm.EventTypeTextEnd, ContentIndex: 0})
+		return toolCallEventStream(request.Model, *call), nil
 	}
-	events = append(events, llm.Event{Type: llm.EventTypeDone, StopReason: message.StopReason, Message: &message})
-	return &eventStream{events: events}, nil
+	return textEventStream(request.Model, "finished", llm.Usage{}, llm.StopReasonStop), nil
 }
 
 func TestMCPSearchLoopHTTPAndSession(t *testing.T) {

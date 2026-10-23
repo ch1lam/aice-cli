@@ -129,10 +129,7 @@ func (m *resourcePrintModel) Stream(_ context.Context, r llm.Request) (llm.Strea
 			m.t.Fatal("connection approval authorized read")
 		}
 	}
-	message := llm.NewAssistantMessage(r.Model)
-	message.Content = []llm.ContentPart{llm.NewTextContent("finished").Part()}
-	message.StopReason = llm.StopReasonStop
-	return &eventStream{events: []llm.Event{{Type: llm.EventTypeStart}, {Type: llm.EventTypeTextStart, ContentIndex: 0}, {Type: llm.EventTypeTextDelta, ContentIndex: 0, Delta: "finished"}, {Type: llm.EventTypeTextEnd, ContentIndex: 0}, {Type: llm.EventTypeDone, StopReason: llm.StopReasonStop, Message: &message}}}, nil
+	return textEventStream(r.Model, "finished", llm.Usage{}, llm.StopReasonStop), nil
 }
 
 func TestMCPResourcesThroughPrintAndSession(t *testing.T) {

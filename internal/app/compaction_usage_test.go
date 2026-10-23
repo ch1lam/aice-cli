@@ -192,7 +192,7 @@ func (m *compactionUsageModel) Stream(ctx context.Context, request llm.Request) 
 		if m.summary != nil {
 			return m.summary.Stream(ctx, request)
 		}
-		model := &controlledModel{response: "summary", stopReason: llm.StopReasonStop, usage: llm.Usage{TotalTokens: 23}}
+		model := &recordingModel{response: "summary", stopReason: llm.StopReasonStop, usage: llm.Usage{TotalTokens: 23}}
 		return model.Stream(ctx, request)
 	}
 	m.mainCalls++
@@ -203,6 +203,6 @@ func (m *compactionUsageModel) Stream(ctx context.Context, request llm.Request) 
 		message.Usage = llm.Usage{TotalTokens: 9000}
 		return &eventStream{events: []llm.Event{{Type: llm.EventTypeStart}, {Type: llm.EventTypeDone, StopReason: message.StopReason, Message: &message}}}, nil
 	}
-	model := &controlledModel{response: "done", stopReason: llm.StopReasonStop, usage: llm.Usage{TotalTokens: 7}}
+	model := &recordingModel{response: "done", stopReason: llm.StopReasonStop, usage: llm.Usage{TotalTokens: 7}}
 	return model.Stream(ctx, request)
 }

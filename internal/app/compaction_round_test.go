@@ -87,7 +87,7 @@ type roundCompactionModel struct {
 func (m *roundCompactionModel) Stream(ctx context.Context, request llm.Request) (llm.Stream, error) {
 	if request.SystemPrompt == compactionSystemPrompt {
 		m.summaries++
-		model := &controlledModel{response: "large file inspected", stopReason: llm.StopReasonStop}
+		model := &recordingModel{response: "large file inspected", stopReason: llm.StopReasonStop}
 		return model.Stream(ctx, request)
 	}
 	m.mainCalls++

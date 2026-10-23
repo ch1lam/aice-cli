@@ -34,7 +34,7 @@ func TestPrintCompactionSharesFrozenServiceWithoutReloadingSettings(t *testing.T
 	if err := store.Close(); err != nil {
 		t.Fatal(err)
 	}
-	model := &controlledModel{response: "summary", stopReason: llm.StopReasonStop}
+	model := &recordingModel{response: "summary", stopReason: llm.StopReasonStop}
 	global, home := compactPrintConfig(t, info)
 	initial := global
 	loads, factories := 0, 0
@@ -79,7 +79,7 @@ func TestInteractiveCompactionsReuseRunSettingsAfterExternalChange(t *testing.T)
 	path := filepath.Join(t.TempDir(), "session.jsonl")
 	runPrintTurn(t, workspace, path, "old question", "old answer")
 	info := llm.Model{ID: "original", Name: "Original", API: llm.API("test-api"), Provider: llm.ProviderID("test-provider"), ContextWindow: 10000, MaxTokens: 1000}
-	model := &controlledModel{response: "answer", stopReason: llm.StopReasonStop, usage: llm.Usage{TotalTokens: 9000}}
+	model := &recordingModel{response: "answer", stopReason: llm.StopReasonStop, usage: llm.Usage{TotalTokens: 9000}}
 	global, home := compactPrintConfig(t, info)
 	initial := global
 	loads, factories := 0, 0

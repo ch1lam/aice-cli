@@ -300,17 +300,8 @@ func (m *mcpInteropModel) Stream(_ context.Context, request llm.Request) (llm.St
 	default:
 		return nil, fmt.Errorf("unexpected request or retry in interoperability fixture")
 	}
-	message := llm.NewAssistantMessage(request.Model)
-	events := []llm.Event{{Type: llm.EventTypeStart}}
 	if call != nil {
-		message.Content = []llm.ContentPart{{Type: llm.ContentTypeToolCall, ToolCall: call}}
-		message.StopReason = llm.StopReasonToolUse
-		events = append(events, llm.Event{Type: llm.EventTypeToolCallStart, ContentIndex: 0}, llm.Event{Type: llm.EventTypeToolCallEnd, ContentIndex: 0, ToolCall: call})
-	} else {
-		message.Content = []llm.ContentPart{llm.NewTextContent("interop read complete").Part()}
-		message.StopReason = llm.StopReasonStop
-		events = append(events, llm.Event{Type: llm.EventTypeTextStart, ContentIndex: 0}, llm.Event{Type: llm.EventTypeTextDelta, ContentIndex: 0, Delta: "interop read complete"}, llm.Event{Type: llm.EventTypeTextEnd, ContentIndex: 0})
+		return toolCallEventStream(request.Model, *call), nil
 	}
-	events = append(events, llm.Event{Type: llm.EventTypeDone, StopReason: message.StopReason, Message: &message})
-	return &eventStream{events: events}, nil
+	return textEventStream(request.Model, "interop read complete", llm.Usage{}, llm.StopReasonStop), nil
 }
