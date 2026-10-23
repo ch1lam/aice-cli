@@ -172,7 +172,7 @@ warnings. OAuth refresh has its own lock lifecycle below.
 ### Settings window
 
 To edit preferences, open `/settings`. To open its Computer Use area directly,
-use `/desktop` or `/mcp desktop`. Opening the panel creates no Session or Agent run.
+use `/desktop`. Opening the panel creates no Session or Agent run.
 
 | Area | Preferences or actions | Takes effect |
 | --- | --- | --- |

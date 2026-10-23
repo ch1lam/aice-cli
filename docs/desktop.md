@@ -107,7 +107,7 @@ configuration cannot claim managed identity or its endpoint; see
 [MCP admission](mcp.md#implementation-status).
 
 MCP status always displays the Computer Use preference without native I/O.
-`/mcp desktop` navigates to its setting. Ordinary MCP mutation commands cannot
+`/desktop` opens its setting. Ordinary MCP mutation commands cannot
 edit this managed entry. Discovery and the Skill create no extra permission
 exemptions; future upstream tool additions are not automatically authorized.
 

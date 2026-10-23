@@ -21,7 +21,7 @@ snapshot validity and input semantics. See the [managed boundary](desktop.md#man
 The managed row is always visible in status, including when disabled. It shows
 `desktop_enabled` and navigation to Computer Use settings, not native readiness.
 Status creates no desktop Run and performs no native discovery. Ordinary MCP
-mutations reject this row; `/mcp desktop` opens its owning setting.
+mutations reject this row; `/desktop` opens its owning setting.
 
 Ordinary stdio definitions cannot target AICE's managed CUA endpoint, even when
 Computer Use is disabled or yolo is enabled. Add/replace and connection startup
