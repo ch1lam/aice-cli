@@ -46,7 +46,7 @@ func BenchmarkGuardWithLongTranscript(b *testing.B) {
 		})
 	}
 	m.refreshViewport(true)
-	m.guardPending = &interaction.GuardRequest{Path: "/outside", Options: guardTestOptions()}
+	m.guard.request = &interaction.GuardRequest{Path: "/outside", Options: guardTestOptions()}
 	m.resizeLayout()
 	b.Run("view", func(b *testing.B) {
 		b.ReportAllocs()

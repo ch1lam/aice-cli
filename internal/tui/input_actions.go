@@ -109,7 +109,7 @@ func (m model) inputActionKeys() keyMap {
 		k.send.SetHelp("Enter", label)
 		k.queue.SetHelp("Ctrl+Enter", label)
 	}
-	if m.clipboardPending {
+	if m.clipboardRead.pending {
 		k.send.SetEnabled(false)
 		k.queue.SetEnabled(false)
 		k.paste.SetEnabled(false)

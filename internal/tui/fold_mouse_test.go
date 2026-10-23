@@ -132,7 +132,7 @@ func TestMouseHoverRecomputesAfterScrollAndBlocksOtherSurfaces(t *testing.T) {
 			case "side":
 				m.side.isVisible = true
 			case "guard":
-				m.guardPending = &interaction.GuardRequest{}
+				m.guard.request = &interaction.GuardRequest{}
 			case "composer":
 				mouse.Y = m.height - 2
 			case "outside":

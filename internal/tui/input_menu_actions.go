@@ -112,7 +112,7 @@ func (m model) completionInputBindings() []inputBinding {
 			if bindings[i].action != inputActionFileCancel {
 				bindings[i].binding.SetEnabled(!m.fileCompletion.pending)
 			}
-			if m.clipboardPending && bindings[i].action == inputActionFileAttach {
+			if m.clipboardRead.pending && bindings[i].action == inputActionFileAttach {
 				bindings[i].binding.SetEnabled(false)
 				bindings[i].blocked = inputActionClipboardPending
 			}
@@ -128,7 +128,7 @@ func (m model) completionInputBindings() []inputBinding {
 	}
 	if !m.hasExactSlashCommand() {
 		enter := actionBinding(inputActionSlashComplete, "Enter", "choose", "enter")
-		if m.clipboardPending {
+		if m.clipboardRead.pending {
 			enter.binding.SetEnabled(false)
 			enter.blocked = inputActionClipboardPending
 		}

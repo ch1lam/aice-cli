@@ -759,7 +759,7 @@ func selectedFrozenText(
 // overlayCopyNotice leaves layout and cursor coordinates unchanged. Hide the
 // bubble during another drag so it cannot obscure the text being selected.
 func (m model) overlayCopyNotice(content string, width int) string {
-	if !m.copyNotice || m.selection.active || m.guardPending != nil {
+	if !m.copyNotice || m.selection.active || m.guard.request != nil {
 		return content
 	}
 	bubble := lipgloss.NewStyle().

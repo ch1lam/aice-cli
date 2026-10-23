@@ -191,7 +191,7 @@ func TestGuardKeysConfirmOptions(t *testing.T) {
 		})
 		current = updateModel(t, current, tea.KeyPressMsg{Code: '2', Text: "2"})
 		assertGuardReply(t, reply, interaction.GuardReply{OptionID: "allow-always"})
-		if current.guardPending != nil {
+		if current.guard.request != nil {
 			t.Fatal("guard prompt remained after confirming")
 		}
 		if !current.input.Focused() {
@@ -210,7 +210,7 @@ func TestGuardKeysConfirmOptions(t *testing.T) {
 		})
 		current = updateModel(t, current, tea.KeyPressMsg{Code: 'y', Text: "y"})
 		assertGuardReply(t, reply, interaction.GuardReply{OptionID: "allow-once"})
-		if current.guardPending != nil {
+		if current.guard.request != nil {
 			t.Fatal("guard prompt remained after confirming")
 		}
 	})
@@ -225,16 +225,16 @@ func TestGuardKeysConfirmOptions(t *testing.T) {
 			Reply:   reply,
 		})
 		current = updateModel(t, current, tea.KeyPressMsg{Code: tea.KeyUp})
-		if current.guardSelection != 0 {
-			t.Errorf("selection = %d, want 0", current.guardSelection)
+		if current.guard.selection != 0 {
+			t.Errorf("selection = %d, want 0", current.guard.selection)
 		}
 		for range 10 {
 			current = updateModel(t, current, tea.KeyPressMsg{Code: tea.KeyDown})
 		}
-		if current.guardSelection != len(guardTestOptions())-1 {
+		if current.guard.selection != len(guardTestOptions())-1 {
 			t.Errorf(
 				"selection = %d, want %d",
-				current.guardSelection,
+				current.guard.selection,
 				len(guardTestOptions())-1,
 			)
 		}
@@ -255,7 +255,7 @@ func TestGuardDenyFeedback(t *testing.T) {
 			Reply:   reply,
 		})
 		current = updateModel(t, current, tea.KeyPressMsg{Code: 'n', Text: "n"})
-		if !current.guardFeedback {
+		if !current.guard.feedback {
 			t.Fatal("n did not enter deny feedback")
 		}
 		view := guardViewText(current)
@@ -270,7 +270,7 @@ func TestGuardDenyFeedback(t *testing.T) {
 			OptionID: "deny",
 			Feedback: "use rg instead",
 		})
-		if current.guardPending != nil || current.guardFeedback {
+		if current.guard.request != nil || current.guard.feedback {
 			t.Fatal("guard prompt remained after sending deny feedback")
 		}
 	})
@@ -287,10 +287,10 @@ func TestGuardDenyFeedback(t *testing.T) {
 		current = updateModel(t, current, tea.KeyPressMsg{Code: 'n', Text: "n"})
 		current = typeGuardText(t, current, "scratch")
 		current = updateModel(t, current, tea.KeyPressMsg{Code: tea.KeyEscape})
-		if current.guardFeedback {
+		if current.guard.feedback {
 			t.Fatal("escape did not leave deny feedback")
 		}
-		if current.guardPending == nil {
+		if current.guard.request == nil {
 			t.Fatal("escape dismissed the guard prompt")
 		}
 		view := guardViewText(current)
@@ -329,19 +329,19 @@ func TestGuardShortcutsRespectModifiersAndFeedbackFocus(t *testing.T) {
 		{Code: '2', Mod: tea.ModAlt},
 	} {
 		current = updateModel(t, current, message)
-		if current.guardPending == nil || current.guardSelection != 0 || current.guardViewport.YOffset() != 0 {
+		if current.guard.request == nil || current.guard.selection != 0 || current.guard.viewport.YOffset() != 0 {
 			t.Fatalf("modified shortcut %q triggered its unmodified action", message.String())
 		}
 	}
 	current = updateModel(t, current, tea.KeyPressMsg{Code: 'n', Text: "n"})
 	current = typeGuardText(t, current, "y12n")
 	current = updateModel(t, current, tea.KeyPressMsg{Code: tea.KeyBackspace, Mod: tea.ModAlt})
-	if current.guardFeedbackText != "y12n" || !current.guardFeedback {
+	if current.guard.feedbackText != "y12n" || !current.guard.feedback {
 		t.Fatal("feedback input used selection actions or an unmodified backspace action")
 	}
 	current = updateModel(t, current, tea.KeyPressMsg{Code: tea.KeyBackspace})
-	if current.guardFeedbackText != "y12" {
-		t.Fatalf("backspace did not edit feedback: %q", current.guardFeedbackText)
+	if current.guard.feedbackText != "y12" {
+		t.Fatalf("backspace did not edit feedback: %q", current.guard.feedbackText)
 	}
 }
 
@@ -467,7 +467,7 @@ func TestGuardDefersHiddenTranscriptRendering(t *testing.T) {
 		t.Fatal("deny unexpectedly returned a command with no guard request channel")
 	}
 	assertGuardReply(t, reply, interaction.GuardReply{OptionID: "deny"})
-	if !current.running || !current.input.Focused() || current.guardPending != nil {
+	if !current.running || !current.input.Focused() || current.guard.request != nil {
 		t.Fatal("deny did not restore the active conversation")
 	}
 	if !strings.Contains(ansi.Strip(current.viewport.GetContent()), "latest reasoning") {

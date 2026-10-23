@@ -16,7 +16,7 @@ import (
 )
 
 func (m model) workspaceRect() screenRect {
-	if m.guardPending != nil || m.reading != nil || strings.TrimSpace(m.workingDirectory) == "" {
+	if m.guard.request != nil || m.reading != nil || strings.TrimSpace(m.workingDirectory) == "" {
 		return screenRect{}
 	}
 	layout := m.headerLayout(m.layoutWidth())

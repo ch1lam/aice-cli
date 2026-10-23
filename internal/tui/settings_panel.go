@@ -42,9 +42,9 @@ type settingsPanel struct {
 	pressedLayout   modalLayout
 }
 
-func (m model) settingsVisible() bool {
-	return m.settings != nil && m.guardPending == nil && m.question == nil && m.flow == nil
-}
+// settingsVisible follows input ownership, so rendering and routing share one
+// overlay priority: dialogs that preempt Settings also hide it.
+func (m model) settingsVisible() bool { return m.inputContext().domain == inputSettings }
 
 func (m model) openSettings() (model, tea.Cmd, bool) {
 	if m.readSettings == nil {

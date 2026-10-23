@@ -24,7 +24,7 @@ func (m *model) resizeLayout() {
 	m.input.SetWidth(inputWidth)
 	m.help.SetWidth(max(width-2, 1))
 	m.viewport.SetWidth(width)
-	if m.guardPending != nil {
+	if m.guard.request != nil {
 		return
 	}
 	m.chrome = chromeMeasurements{
@@ -43,7 +43,7 @@ func (m *model) resizeLayout() {
 func (m *model) refreshViewport(forceBottom bool) {
 	// The permission prompt owns the screen. Keep accepting transcript updates,
 	// but defer their rendering until sendGuardReply restores the conversation.
-	if m.guardPending != nil {
+	if m.guard.request != nil {
 		return
 	}
 	if m.selection.active {

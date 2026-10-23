@@ -59,7 +59,7 @@ func TestInputActionHelpTracksClipboardAndDelivery(t *testing.T) {
 	if text := ansi.Strip(current.footerView(160)); !strings.Contains(text, "steer") || !strings.Contains(text, "queue") {
 		t.Fatalf("running agent help lost delivery actions: %q", text)
 	}
-	current.clipboardPending = true
+	current.clipboardRead.pending = true
 	message := tea.KeyPressMsg{Code: tea.KeyEnter}
 	match := current.matchInputAction(message)
 	if !match.matched || match.enabled || match.blocked != inputActionClipboardPending {
@@ -72,7 +72,7 @@ func TestInputActionHelpTracksClipboardAndDelivery(t *testing.T) {
 	if !strings.Contains(updated.inputNotice, "Reading clipboard") {
 		t.Fatal("blocked submission lost the clipboard explanation")
 	}
-	current.clipboardPending = false
+	current.clipboardRead.pending = false
 	current.deliveryPending = true
 	cancelled := false
 	current.cancelDelivery = func() { cancelled = true }

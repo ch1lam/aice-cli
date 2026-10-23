@@ -840,7 +840,7 @@ func TestQuestionPanelYieldsToPermissionPrompt(t *testing.T) {
 		t.Fatalf("permission prompt must own the screen:\n%s", view)
 	}
 	// Resolving the permission prompt returns the panel with drafts intact.
-	current.guardPending = nil
+	current.guard.request = nil
 	current.resizeLayout()
 	current.refreshViewport(true)
 	if current.question == nil || current.question.texts[0] != "half" {

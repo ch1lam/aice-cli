@@ -276,7 +276,7 @@ func (p *questionPanel) buildReply() (interaction.QuestionReply, error) {
 
 // questionVisible reports whether the question owns the composer frame.
 func (m model) questionVisible() bool {
-	return m.question != nil && !m.question.browse && m.guardPending == nil && m.reading == nil
+	return m.question != nil && !m.question.browse && m.guard.request == nil && m.reading == nil
 }
 
 type questionPromptMsg struct {

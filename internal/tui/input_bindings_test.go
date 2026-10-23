@@ -58,7 +58,7 @@ func bindingTestModel(t *testing.T, state string) model {
 	case "running":
 		m.running, m.acceptsDelivery = true, true
 	case "clipboard":
-		m.clipboardPending = true
+		m.clipboardRead.pending = true
 	case "delivery":
 		m.deliveryPending = true
 	case "slash":
@@ -95,8 +95,8 @@ func bindingTestModel(t *testing.T, state string) model {
 	case "secret":
 		m.flow = &commandFlow{form: []credentialStep{{}}}
 	case "guard", "feedback":
-		m.guardPending = &interaction.GuardRequest{Options: []interaction.GuardOption{{ID: "allow"}, {ID: "deny", Deny: true}}}
-		m.guardFeedback = state == "feedback"
+		m.guard.request = &interaction.GuardRequest{Options: []interaction.GuardOption{{ID: "allow"}, {ID: "deny", Deny: true}}}
+		m.guard.feedback = state == "feedback"
 	case "auth waiting", "auth input", "auth menu":
 		m.flow = &commandFlow{input: make(chan string, 1)}
 		m.flow.prompt = &interaction.AuthPrompt{AllowInput: state == "auth input"}

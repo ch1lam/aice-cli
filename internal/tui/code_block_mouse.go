@@ -21,7 +21,7 @@ type codeHit struct {
 }
 
 func (m model) codeHitAt(mouse tea.Mouse) codeHit {
-	if m.guardPending != nil || m.authActive() || m.secretEntry() ||
+	if m.guard.request != nil || m.authActive() || m.secretEntry() ||
 		m.side.menu != nil || m.side.confirm != nil {
 		return codeHit{}
 	}

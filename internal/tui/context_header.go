@@ -43,7 +43,7 @@ func (m model) contextHeaderWidth() int {
 }
 
 func (m model) contextRect() screenRect {
-	if m.guardPending != nil || m.reading != nil || m.contextHeaderWidth() == 0 {
+	if m.guard.request != nil || m.reading != nil || m.contextHeaderWidth() == 0 {
 		return screenRect{}
 	}
 	header := m.screenLayout().header

@@ -68,9 +68,9 @@ func (m model) inputContext() inputContext {
 			focus = inputFocusPreview
 		}
 		return inputContext{domain: inputSessions, focus: focus}
-	case m.guardPending != nil:
+	case m.guard.request != nil:
 		focus := inputFocusList
-		if m.guardFeedback {
+		if m.guard.feedback {
 			focus = inputFocusFeedback
 		}
 		return inputContext{domain: inputGuard, focus: focus}
@@ -152,7 +152,7 @@ func (m model) inputIdentity() inputIdentity {
 		id.picker, id.rename = m.sessionPicker, m.sessionPicker.rename
 		id.focus = c.focus
 	case inputGuard:
-		id.guard = m.guardPending
+		id.guard = m.guard.request
 		id.focus = c.focus
 	case inputQuestion:
 		id.question = m.question
@@ -178,8 +178,8 @@ func (m *model) finishInputTransition(before inputIdentity) tea.Cmd {
 		m.clearQuitPending = false
 		m.cancelPointer()
 		m.composerActive = false
-		if m.clipboardPending {
-			m.clipboardDiscard = true
+		if m.clipboardRead.pending {
+			m.clipboardRead.discard = true
 		}
 	}
 	if !m.composerInputEnabled() {

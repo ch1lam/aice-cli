@@ -21,7 +21,7 @@ type foldHit struct {
 }
 
 func (m model) foldHitAt(mouse tea.Mouse) foldHit {
-	blocked := m.side.isVisible || m.guardPending != nil || m.authActive() ||
+	blocked := m.side.isVisible || m.guard.request != nil || m.authActive() ||
 		m.secretEntry() || m.side.menu != nil || m.side.confirm != nil
 	if blocked || mouse.X < m.horizontalPadding() || mouse.X >= m.horizontalPadding()+m.viewport.Width() {
 		return foldHit{}

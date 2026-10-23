@@ -18,6 +18,14 @@ import (
 	"github.com/ch1lam/aice-cli/internal/media"
 )
 
+// clipboardRead tracks the one clipboard read in flight. Its result applies
+// only to the composer that requested it, unless input changed in between.
+type clipboardRead struct {
+	pending, discard bool
+	inSide           bool
+	sideID           uint64
+}
+
 type clipboardResult struct {
 	image *llm.ImageContent
 	text  string

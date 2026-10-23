@@ -8,23 +8,25 @@ import (
 // handleKey resolves the domain before its reserved keys. An unconsumed key
 // may reach only this domain's editor, never another domain's shortcuts.
 func (m model) handleKey(message tea.KeyPressMsg) (model, tea.Cmd, bool) {
-	if m.inputContext().domain == inputSettings {
+	c := m.inputContext()
+	switch c.domain {
+	case inputSettings:
 		next, command := m.handleSettings(message)
 		return next.(model), command, true
-	}
-	if m.inputContext().domain == inputMain {
-		m.syncCommandCompletion()
-	}
-	if m.inputContext().domain == inputSessions {
+	case inputSessions:
 		next, cmd := m.handleSessionPicker(message)
 		return next.(model), cmd, true
+	case inputMain:
+		// Typing "/cmd " can open an option menu, which owns this key.
+		m.syncCommandCompletion()
+		c = m.inputContext()
 	}
 	match := m.matchInputAction(message)
 	if match.matched {
 		if !match.enabled {
 			return m.blockedInputAction(match)
 		}
-		switch m.inputContext().domain {
+		switch c.domain {
 		case inputReading:
 			next, cmd := m.handleReadingAction(match)
 			return next.(model), cmd, true
@@ -46,17 +48,17 @@ func (m model) handleKey(message tea.KeyPressMsg) (model, tea.Cmd, bool) {
 			return m.handleComposerAction(match)
 		}
 	}
-	if m.inputContext().domain == inputGuard {
+	switch {
+	case c.domain == inputGuard:
 		return m.handleGuardText(message)
-	}
-	if m.inputContext().domain == inputQuestion {
+	case c.domain == inputQuestion:
 		return m.handleQuestionText(message)
-	}
-	if m.deliveryPending {
+	case m.deliveryPending:
 		return m, nil, true
 	}
-	if m.composerInputEnabled() {
-		if m.inputContext().domain == inputMain || m.inputContext().domain == inputSide {
+	conversation := c.domain == inputMain || c.domain == inputSide
+	if c.editor {
+		if conversation {
 			if updated, command, handled := m.handlePasteTokenKey(message); handled {
 				updated.resizeLayout()
 				return updated, command, true
@@ -64,10 +66,7 @@ func (m model) handleKey(message tea.KeyPressMsg) (model, tea.Cmd, bool) {
 		}
 		return m, nil, false
 	}
-	if m.inputContext().domain == inputMain || m.inputContext().domain == inputSide {
-		return m, nil, false
-	}
-	return m, nil, true
+	return m, nil, !conversation
 }
 
 func (m model) routeKey(message tea.KeyPressMsg) (tea.Model, tea.Cmd) {
@@ -140,9 +139,7 @@ func (m model) handleComposerAction(match inputActionMatch) (model, tea.Cmd, boo
 	case inputActionTurns:
 		return m.openCurrentReading(), nil, true
 	case inputActionPaste:
-		m.clipboardPending = true
-		m.clipboardInSide = m.side.isVisible
-		m.clipboardSideID = m.side.activeID
+		m.clipboardRead = clipboardRead{pending: true, inSide: m.side.isVisible, sideID: m.side.activeID}
 		return m, m.clipboard, true
 	case inputActionClear:
 		return m.clearInputOrQuit()

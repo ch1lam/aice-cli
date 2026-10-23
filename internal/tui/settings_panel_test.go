@@ -130,11 +130,11 @@ func TestSettingsGuardPreemptsAndSaveAfterClose(t *testing.T) {
 	t.Parallel()
 	m := panelModel(t, 80, 24)
 	p := m.settings
-	m.guardPending = &interaction.GuardRequest{ID: "guard"}
+	m.guard.request = &interaction.GuardRequest{ID: "guard"}
 	if m.settingsVisible() || m.inputContext().domain != inputGuard {
 		t.Fatal("settings hid permission request")
 	}
-	m.guardPending = nil
+	m.guard.request = nil
 	m.closeSettings()
 	m = updateModel(t, m, settingsSaveResult{generation: p.generation, snapshot: interaction.SettingsSnapshot{Runtime: interaction.RuntimeState{Model: interaction.DisplayModel{ID: "new-model"}}}})
 	if m.currentModel.ID != "new-model" || m.settings != nil {

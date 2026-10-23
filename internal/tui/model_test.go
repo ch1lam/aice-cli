@@ -2287,7 +2287,7 @@ func TestModelControlCDiscardsPendingClipboard(t *testing.T) {
 	current, read, _ := current.handleKey(tea.KeyPressMsg{Code: 'v', Mod: tea.ModCtrl})
 	current, _, _ = current.handleKey(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
 	current = updateModel(t, current, read())
-	if current.input.Value() != "" || current.clipboardPending {
+	if current.input.Value() != "" || current.clipboardRead.pending {
 		t.Fatal("clipboard result refilled the cleared editor")
 	}
 	current, read, _ = current.handleKey(tea.KeyPressMsg{Code: 'v', Mod: tea.ModCtrl})

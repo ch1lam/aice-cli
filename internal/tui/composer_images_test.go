@@ -34,7 +34,7 @@ func TestClipboardImagesSubmitThroughController(t *testing.T) {
 			m.clipboard = func() tea.Msg { return clipboardResult{image: &img} }
 			m.input.SetValue(text)
 			m, command, _ := m.handleKey(tea.KeyPressMsg{Code: 'v', Mod: tea.ModCtrl})
-			if command == nil || !m.clipboardPending {
+			if command == nil || !m.clipboardRead.pending {
 				t.Fatal("paste shortcut did not read clipboard")
 			}
 			m = updateModel(t, m, command())
@@ -146,7 +146,7 @@ func TestImageComposerDeletionCommandsAndTextPaste(t *testing.T) {
 func TestClipboardResultDoesNotCrossFocusBoundary(t *testing.T) {
 	t.Parallel()
 	m := newModel(make(chan runRequest), make(chan struct{}))
-	m.clipboardPending = true
+	m.clipboardRead.pending = true
 	m.side.isVisible = true
 	m.input.SetValue("side draft")
 	m = updateModel(t, m, clipboardResult{image: new(composerTestImage(t))})
@@ -158,7 +158,7 @@ func TestClipboardResultDoesNotCrossFocusBoundary(t *testing.T) {
 func TestTypingDuringClipboardReadIsNotDropped(t *testing.T) {
 	t.Parallel()
 	m := newModel(make(chan runRequest), make(chan struct{}))
-	m.clipboardPending = true
+	m.clipboardRead.pending = true
 	m = updateModel(t, m, tea.KeyPressMsg{Code: 'x', Text: "x"})
 	if m.input.Value() != "x" {
 		t.Fatal("clipboard read dropped typed caption")

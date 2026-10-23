@@ -264,7 +264,7 @@ func (m model) conversationInputBindings() []inputBinding {
 		bindings[i].blocked = inputActionUnavailable
 		if m.deliveryPending {
 			bindings[i].blocked = inputActionDeliveryPending
-		} else if m.clipboardPending {
+		} else if m.clipboardRead.pending {
 			switch bindings[i].action {
 			case inputActionSend, inputActionQueue, inputActionPaste, inputActionEditor:
 				bindings[i].blocked = inputActionClipboardPending

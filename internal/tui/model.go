@@ -11,7 +11,6 @@ import (
 	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/spinner"
 	"charm.land/bubbles/v2/textarea"
-	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
@@ -123,13 +122,9 @@ type model struct {
 	cancelRun                context.CancelFunc
 	side                     sidePanelState
 	guardRequests            <-chan interaction.GuardRequest
-	guardPending             *interaction.GuardRequest
+	guard                    guardPanel
 	questionRequests         <-chan interaction.QuestionPrompt
 	question                 *questionPanel
-	guardViewport            viewport.Model
-	guardSelection           int
-	guardFeedback            bool
-	guardFeedbackText        string
 
 	viewport  transcriptViewport
 	selection transcriptSelection
@@ -175,11 +170,8 @@ type model struct {
 	// pastes owns text and image payloads behind inline placeholder tokens.
 	pastes           []pasteAttachment
 	clipboard        tea.Cmd
-	clipboardPending bool
-	clipboardDiscard bool
+	clipboardRead    clipboardRead
 	clearQuitPending bool
-	clipboardInSide  bool
-	clipboardSideID  uint64
 	inputNotice      string
 	// Retained only until NewRun accepts the submission, so rejection restores it.
 	submittedInput *RunInput
@@ -379,12 +371,12 @@ func (m model) update(message tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case clipboardResult:
-		m.clipboardPending = false
-		if m.clipboardDiscard {
-			m.clipboardDiscard = false
+		m.clipboardRead.pending = false
+		if m.clipboardRead.discard {
+			m.clipboardRead.discard = false
 			return m, nil
 		}
-		if m.side.isVisible != m.clipboardInSide || m.side.activeID != m.clipboardSideID {
+		if m.side.isVisible != m.clipboardRead.inSide || m.side.activeID != m.clipboardRead.sideID {
 			return m, nil
 		}
 		return m.applyClipboard(message)
@@ -394,7 +386,7 @@ func (m model) update(message tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case guardExpiredMsg:
-		if m.guardPending != nil && m.guardPending.Reply == message.reply {
+		if m.guard.request != nil && m.guard.request.Reply == message.reply {
 			m.sendGuardReply("", "")
 			return m, m.nextGuardWait()
 		}
@@ -419,14 +411,8 @@ func (m model) update(message tea.Msg) (tea.Model, tea.Cmd) {
 				return m, m.nextGuardWait()
 			default:
 			}
-			m.guardPending = message.req
+			m.guard = newGuardPanel(message.req)
 			m.selection.clear()
-			m.guardViewport = viewport.New()
-			m.guardViewport.KeyMap = viewport.KeyMap{}
-			m.guardViewport.FillHeight = true
-			m.guardSelection = 0
-			m.guardFeedback = false
-			m.guardFeedbackText = ""
 			m.input.Blur()
 			m.resizeLayout()
 			m.refreshViewport(true)
@@ -542,7 +528,7 @@ func (m model) update(message tea.Msg) (tea.Model, tea.Cmd) {
 	case welcomeTickMsg:
 		active := len(m.entries) == 0 && !m.running
 		command := m.welcomeAnimation.Update(message, active)
-		if command != nil && m.welcomeTipsVisible() && m.guardPending == nil {
+		if command != nil && m.welcomeTipsVisible() && m.guard.request == nil {
 			m.welcomeTip.advance(message.at)
 		} else if message.generation == m.welcomeAnimation.generation {
 			m.welcomeTip.nextAt = time.Time{}
@@ -591,7 +577,7 @@ func (m model) update(message tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) View() tea.View {
-	if m.guardPending != nil {
+	if m.guard.request != nil {
 		return m.terminalView(m.guardView(max(m.width-2*m.horizontalPadding(), 1)))
 	}
 	width := m.layoutWidth()
@@ -648,7 +634,7 @@ func (m model) terminalView(content string) tea.View {
 		view.Cursor = settingsCursor
 	} else if m.sessionPicker != nil {
 		view.Cursor = pickerCursor
-	} else if !m.secretEntry() && !m.authActive() && m.guardPending == nil && m.question == nil {
+	} else if !m.secretEntry() && !m.authActive() && m.guard.request == nil && m.question == nil {
 		// Anchor the real terminal cursor on the composer caret. The IME
 		// candidate window follows the terminal cursor, and Bubble Tea's
 		// renderer hides the cursor around every updated frame and restores
@@ -718,7 +704,7 @@ func (m model) clearInputOrQuit() (model, tea.Cmd, bool) {
 	m.commandSelection = 0
 	m.commandDismissed = false
 	// A clipboard helper already in flight must not refill the cleared draft.
-	m.clipboardDiscard = m.clipboardPending
+	m.clipboardRead.discard = m.clipboardRead.pending
 	m.clearQuitPending = true
 	if m.side.isVisible {
 		if thread := m.side.activeThread(); thread != nil {

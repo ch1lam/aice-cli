@@ -35,7 +35,7 @@ func TestGuardLongContentKeepsOptionsVisible(t *testing.T) {
 		for {
 			check()
 			seenEnd = seenEnd || strings.Contains(guardViewText(current), "COMMAND_END")
-			if current.guardViewport.AtBottom() {
+			if current.guard.viewport.AtBottom() {
 				break
 			}
 			current = updateModel(t, current, tea.KeyPressMsg{Code: tea.KeyPgDown})
@@ -52,15 +52,15 @@ func TestGuardReviewPreservesLongText(t *testing.T) {
 		current = updateModel(t, current, tea.WindowSizeMsg{Width: 39, Height: 10})
 		var lines []string
 		for {
-			visible := strings.Split(ansi.Strip(current.guardViewport.View()), "\n")
+			visible := strings.Split(ansi.Strip(current.guard.viewport.View()), "\n")
 			lines = append(lines, strings.TrimRight(visible[0], " "))
-			if current.guardViewport.AtBottom() {
+			if current.guard.viewport.AtBottom() {
 				for _, line := range visible[1:] {
 					lines = append(lines, strings.TrimRight(line, " "))
 				}
 				break
 			}
-			current.guardViewport.ScrollDown(1)
+			current.guard.viewport.ScrollDown(1)
 		}
 		flat := strings.ReplaceAll(strings.Join(lines, ""), "\n", "")
 		if !strings.Contains(flat, strings.ReplaceAll(command, "\n", "")) {
@@ -77,13 +77,13 @@ func TestGuardLongOptionsAndScrollIsolation(t *testing.T) {
 	current := newGuardTestModel(t, interaction.GuardRequest{Path: path, Options: options})
 	initialTranscript := current.viewport.YOffset()
 	current = updateModel(t, current, tea.MouseWheelMsg{Button: tea.MouseWheelDown})
-	if current.guardViewport.YOffset() == 0 || current.viewport.YOffset() != initialTranscript || current.guardSelection != 0 {
+	if current.guard.viewport.YOffset() == 0 || current.viewport.YOffset() != initialTranscript || current.guard.selection != 0 {
 		t.Fatal("wheel failed to scroll only review content")
 	}
 	current = updateModel(t, current, tea.KeyPressMsg{Code: tea.KeyEnd})
-	offset := current.guardViewport.YOffset()
+	offset := current.guard.viewport.YOffset()
 	current = updateModel(t, current, tea.KeyPressMsg{Code: tea.KeyDown})
-	if current.guardSelection != 1 || current.guardViewport.YOffset() != offset {
+	if current.guard.selection != 1 || current.guard.viewport.YOffset() != offset {
 		t.Fatal("selection moved review content")
 	}
 	current = updateModel(t, current, tea.WindowSizeMsg{Width: 40, Height: 12})
@@ -91,12 +91,12 @@ func TestGuardLongOptionsAndScrollIsolation(t *testing.T) {
 	if lipgloss.Height(view) > 12 || lipgloss.Width(view) > 40 || !strings.Contains(view, "4. Deny") {
 		t.Fatalf("long option escaped screen:\n%s", view)
 	}
-	flat := strings.ReplaceAll(ansi.Strip(current.guardViewport.GetContent()), "\n", "")
+	flat := strings.ReplaceAll(ansi.Strip(current.guard.viewport.GetContent()), "\n", "")
 	if !strings.Contains(flat, options[2].Label) || !strings.Contains(flat, path) {
 		t.Fatal("long path/option omitted")
 	}
 	current = updateModel(t, current, tea.KeyPressMsg{Code: tea.KeyHome})
-	if !current.guardViewport.AtTop() {
+	if !current.guard.viewport.AtTop() {
 		t.Fatal("home did not reset scroll")
 	}
 	current = updateModel(t, current, tea.KeyPressMsg{Code: 'n', Text: "n"})
@@ -106,11 +106,11 @@ func TestGuardLongOptionsAndScrollIsolation(t *testing.T) {
 	}
 	current = updateModel(t, current, tea.KeyPressMsg{Code: tea.KeyEscape})
 	current = updateModel(t, current, tea.KeyPressMsg{Code: '1', Text: "1"})
-	if current.guardPending != nil {
+	if current.guard.request != nil {
 		t.Fatal("allow did not dismiss prompt")
 	}
 	current = updateModel(t, current, guardRequestMsg{req: &interaction.GuardRequest{Command: "ls", Options: guardTestOptions()}})
-	if !current.guardViewport.AtTop() {
+	if !current.guard.viewport.AtTop() {
 		t.Fatal("new request inherited scroll")
 	}
 }

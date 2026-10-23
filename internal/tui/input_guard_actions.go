@@ -14,7 +14,7 @@ const (
 )
 
 func (m model) guardInputBindings() []inputBinding {
-	if m.guardPending == nil {
+	if m.guard.request == nil {
 		return nil
 	}
 	var bindings []inputBinding
@@ -28,9 +28,9 @@ func (m model) guardInputBindings() []inputBinding {
 		bindings = append(bindings, backspace)
 	} else {
 		confirm := actionBinding(inputActionGuardConfirm, "Enter", "confirm", "enter")
-		confirm.binding.SetEnabled(m.guardSelection >= 0 && m.guardSelection < len(m.guardPending.Options))
+		confirm.binding.SetEnabled(m.guard.selection >= 0 && m.guard.selection < len(m.guard.request.Options))
 		deny := actionBinding(inputActionGuardOption, "n/Esc", "deny", "n", "N", "esc")
-		deny.argument = firstDenyGuardOption(m.guardPending.Options)
+		deny.argument = firstDenyGuardOption(m.guard.request.Options)
 		deny.binding.SetEnabled(deny.argument >= 0)
 		bindings = append(bindings, confirm, deny)
 		for _, direction := range []struct {
@@ -39,14 +39,14 @@ func (m model) guardInputBindings() []inputBinding {
 		}{{key: "up", delta: -1}, {key: "down", delta: 1}} {
 			binding := actionBinding(inputActionGuardSelect, "", "", direction.key)
 			binding.argument = direction.delta
-			binding.binding.SetEnabled(len(m.guardPending.Options) > 0)
+			binding.binding.SetEnabled(len(m.guard.request.Options) > 0)
 			bindings = append(bindings, binding)
 		}
 		first := actionBinding(inputActionGuardOption, "y", "first", "y", "Y")
-		first.binding.SetEnabled(len(m.guardPending.Options) > 0)
+		first.binding.SetEnabled(len(m.guard.request.Options) > 0)
 		first.short = false
 		bindings = append(bindings, first)
-		for index := range min(len(m.guardPending.Options), 9) {
+		for index := range min(len(m.guard.request.Options), 9) {
 			label := strconv.Itoa(index + 1)
 			binding := actionBinding(inputActionGuardOption, label, "confirm option", label)
 			binding.argument = index

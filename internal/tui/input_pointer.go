@@ -118,7 +118,7 @@ func (m model) routePointer(message tea.Msg) (tea.Model, tea.Cmd) {
 		if message.Button == tea.MouseLeft {
 			m.composerActive = m.composerContains(message.Mouse(), m.layoutWidth())
 		}
-		if m.guardPending != nil {
+		if m.guard.request != nil {
 			return m, nil
 		}
 		if updated, command, handled := m.handleTranscriptMouseClick(message); handled {
@@ -130,7 +130,7 @@ func (m model) routePointer(message tea.Msg) (tea.Model, tea.Cmd) {
 			m.workspacePress = nil
 		}
 		m.contextPressed = false
-		if m.guardPending != nil {
+		if m.guard.request != nil {
 			return m, nil
 		}
 		if updated, command, handled := m.handleTranscriptMouseMotion(message); handled {
@@ -155,7 +155,7 @@ func (m model) routePointer(message tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
-		if m.guardPending != nil {
+		if m.guard.request != nil {
 			return m, nil
 		}
 		if updated, command, handled := m.handleTranscriptMouseRelease(message); handled {
@@ -184,9 +184,9 @@ func (m model) routePointer(message tea.Msg) (tea.Model, tea.Cmd) {
 		// Scrolling needs fresh items; a deferred gesture may have skipped
 		// their rebuild, so settle before moving the anchor.
 		m.settleDeferredViewport()
-		if m.guardPending != nil {
+		if m.guard.request != nil {
 			var command tea.Cmd
-			m.guardViewport, command = m.guardViewport.Update(message)
+			m.guard.viewport, command = m.guard.viewport.Update(message)
 			return m, command
 		}
 		// Scrolling changes only the transcript anchor. Routing wheel events

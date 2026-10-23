@@ -17,7 +17,7 @@ func TestInputDomainsOwnPasteAndKeyRelease(t *testing.T) {
 			case inputReading:
 				m.reading = &sessionReading{}
 			case inputGuard:
-				m.guardPending = &interaction.GuardRequest{}
+				m.guard.request = &interaction.GuardRequest{}
 			case inputSideMenu:
 				m.side.menu = &sideMenuState{}
 			case inputSideConfirm:

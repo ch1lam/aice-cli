@@ -306,18 +306,18 @@ func TestCancelledApprovalRestoresComposerAndDoesNotDismissNewRequest(t *testing
 	req := &interaction.GuardRequest{Done: done, Reply: reply, Path: "outside.txt"}
 	updated, command := m.Update(guardRequestMsg{req: req})
 	m = updated.(model)
-	if command == nil || m.guardPending == nil {
+	if command == nil || m.guard.request == nil {
 		t.Fatal("approval not watching cancellation")
 	}
 	close(done)
 	m = updateModel(t, m, command())
-	if m.guardPending != nil {
+	if m.guard.request != nil {
 		t.Fatal("cancelled approval remained visible")
 	}
 	newer := &interaction.GuardRequest{Reply: make(chan interaction.GuardReply, 1), Path: "new.txt"}
 	m = updateModel(t, m, guardRequestMsg{req: newer})
 	m = updateModel(t, m, guardExpiredMsg{reply: reply})
-	if m.guardPending != newer {
+	if m.guard.request != newer {
 		t.Fatal("old cancellation dismissed newer approval")
 	}
 }
