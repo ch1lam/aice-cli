@@ -341,11 +341,6 @@ func (p *settingsPanel) actionView() string {
 	}
 	layout := p.actionMenuLayout(menu, *selection)
 	rows := append([]string(nil), layout.header...)
-	if a.command.Name == "mcp" {
-		for i, row := range rows {
-			rows[i] = mcpSettingsDetails(row, p.layout.inner)
-		}
-	}
 	if layout.more {
 		return strings.Join(append(rows, ansi.Truncate("Enter: more · PgUp: back", max(1, p.layout.inner), "…")), "\n")
 	}

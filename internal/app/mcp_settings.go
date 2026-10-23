@@ -163,45 +163,83 @@ func (s *interactiveSession) publishMCPConfiguration(next config.Config, reconne
 }
 
 func formatMCPStatus(services []interaction.MCPService) string {
+	return interaction.DetailsText(mcpStatusDetails(services))
+}
+
+// mcpStatusDetails describes each service's connection, catalog and
+// permissions; the application decides each state's tone.
+func mcpStatusDetails(services []interaction.MCPService) []interaction.Detail {
 	if len(services) == 0 {
-		return "No MCP services configured. Use /mcp add."
+		return []interaction.Detail{{Text: "No MCP services configured. Use /mcp add."}}
 	}
-	var b strings.Builder
+	var details []interaction.Detail
+	add := func(key, value string, tone interaction.DetailTone) {
+		details = append(details, interaction.Detail{Key: key, Value: value, Tone: tone})
+	}
+	heading := func(name string) { details = append(details, interaction.Detail{Heading: name}) }
+	text := func(line string) { details = append(details, interaction.Detail{Text: line}) }
 	for i, service := range services {
 		if i > 0 {
-			b.WriteString("\n")
+			text("")
 		}
-		loaded := "Loaded tools: 0 (no active main Run)\n"
+		loaded := "0 (no active main Run)"
 		if service.RunActive {
-			loaded = fmt.Sprintf("Loaded tools: %d (latest model request in current Run)\n", service.LoadedTools)
+			loaded = fmt.Sprintf("%d (latest model request in current Run)", service.LoadedTools)
 		}
+		add("Service", service.Key, interaction.ToneTitle)
+		heading("Connection")
+		add("State", service.State, mcpStateTone(service.State))
 		if service.Managed {
-			fmt.Fprintf(&b, "Service: %s\nConnection\nState: %s\nManaged by: Computer Use (/desktop)\n%s\n\nTool catalog\n", service.Key, service.State, service.Detail)
-			b.WriteString(loaded)
+			add("Managed by", "Computer Use (/desktop)", interaction.ToneDefault)
+			text(service.Detail)
+			text("")
+			heading("Tool catalog")
+			add("Loaded tools", loaded, interaction.ToneDefault)
 			continue
 		}
-		fmt.Fprintf(&b, "Service: %s\nConnection\nState: %s\nApproval: %s\nSource: %s\nFingerprint: %s\n\nTool catalog\n",
-			service.Key, service.State, service.Approval, service.Source, service.Fingerprint)
+		add("Approval", service.Approval, mcpStateTone(service.Approval))
+		add("Source", service.Source, interaction.ToneReference)
+		add("Fingerprint", service.Fingerprint, interaction.ToneReference)
+		text("")
+		heading("Tool catalog")
 		if service.CatalogKnown {
-			fmt.Fprintf(&b, "Tools: %d discovered, %d eligible\n", service.ToolCount, service.EligibleTools)
+			add("Tools", fmt.Sprintf("%d discovered, %d eligible", service.ToolCount, service.EligibleTools), interaction.ToneDefault)
 		} else {
-			b.WriteString("Tools: catalog not currently known\n")
+			add("Tools", "catalog not currently known", interaction.ToneDefault)
 		}
-		b.WriteString(loaded)
-		fmt.Fprintf(&b, "\nPermissions\nPermission scope: %s\n", service.PermissionScope)
+		add("Loaded tools", loaded, interaction.ToneDefault)
+		text("")
+		heading("Permissions")
+		add("Permission scope", service.PermissionScope, interaction.ToneDefault)
 		if len(service.Permissions) > 0 {
-			fmt.Fprintf(&b, "Saved rule binding: %s · %s\n", service.SavedPermissionFingerprint, service.SavedPermissionScope)
+			add("Saved rule binding", service.SavedPermissionFingerprint+" · "+service.SavedPermissionScope, interaction.ToneReference)
 			if service.SavedPermissionFingerprint != service.Fingerprint || service.SavedPermissionScope != service.PermissionScope {
-				b.WriteString("Saved rules are inactive for the current binding.\n")
+				text("Saved rules are inactive for the current binding.")
 			}
 		}
 		for _, rule := range service.Permissions {
-			fmt.Fprintf(&b, "Saved %s: %s %q · schema %s\n", rule.Decision, rule.Operation, rule.Tool, rule.SchemaFingerprint)
+			add("Saved "+rule.Decision, fmt.Sprintf("%s %q · schema %s", rule.Operation, rule.Tool, rule.SchemaFingerprint), interaction.ToneDefault)
 		}
 		if service.Detail != "" {
-			b.WriteString("\nDiagnostics\n" + service.Detail + "\n")
+			text("")
+			heading("Diagnostics")
+			text(service.Detail)
 		}
 	}
-	b.WriteString("\nNotes\nLoaded counts describe the latest request; revocation still blocks execution immediately. A ready connection does not grant tool execution permission.")
-	return b.String()
+	text("")
+	heading("Notes")
+	text("Loaded counts describe the latest request; revocation still blocks execution immediately. A ready connection does not grant tool execution permission.")
+	return details
+}
+
+func mcpStateTone(state string) interaction.DetailTone {
+	switch state {
+	case "ready", "allow":
+		return interaction.ToneGood
+	case "failed", "deny":
+		return interaction.ToneBad
+	case "needs_auth", "connecting", "ask":
+		return interaction.ToneWarning
+	}
+	return interaction.ToneMuted
 }

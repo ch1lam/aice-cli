@@ -89,10 +89,8 @@ func (m model) settingsPanelView() string {
 		title += " · " + field.Label
 		if field.Kind == interaction.SettingInfo {
 			details := sanitizeMultilineText(field.Description)
-			if field.ID == "mcp.status" || field.ID == "mcp.services" {
-				details = mcpSettingsDetails(details, l.inner)
-			} else if field.ID == "project.skills" {
-				details = skillsSettingsDetails(details, l.inner)
+			if len(field.Details) > 0 {
+				details = renderDetails(field.Details, l.inner)
 			}
 			lines := strings.Split(ansi.Hardwrap(details, l.inner, true), "\n")
 			start := min(p.detailOffset, max(0, len(lines)-l.bodyHeight))

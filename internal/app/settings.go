@@ -224,21 +224,26 @@ func (s *interactiveSession) ReadSettings(ctx context.Context) (interaction.Sett
 	browserState := "Browser manager unavailable"
 	mcpStatus := mcpManagementStatus(settings.configuration, settings.mcp, "")
 	s.applyMCPLoadedTools(mcpStatus)
-	result.Fields = append(result.Fields, interaction.SettingField{ID: "mcp.status", Category: "tools", Label: "MCP status", Kind: interaction.SettingInfo, Description: formatMCPStatus(mcpStatus)})
+	mcpDetails := mcpStatusDetails(mcpStatus)
+	result.Fields = append(result.Fields, interaction.SettingField{ID: "mcp.status", Category: "tools", Label: "MCP status", Kind: interaction.SettingInfo, Description: interaction.DetailsText(mcpDetails), Details: mcpDetails})
 	if s.browser != nil {
 		target := s.browser.Target()
 		browserState = fmt.Sprintf("Session: %s\nManaged window visible: %t\nAuto-detect: %t\nEndpoint: %s\nUse browser actions for live connection and tab status.", s.browser.Name(), s.browser.Headed(), target.Auto, target.Endpoint)
 	}
 	result.Fields = append(result.Fields, interaction.SettingField{ID: "browser.status", Category: "tools", Label: "Browser status", Kind: interaction.SettingInfo, Description: browserState}, interaction.SettingField{ID: "web.status", Category: "tools", Label: "Web status", Kind: interaction.SettingInfo, Description: s.webStatus()})
-	for _, entry := range []struct{ id, category, label, value string }{
-		{"project.directory", "project", "Working directory", s.workspacePath},
-		{"project.loaded", "project", "Loaded project trust", fmt.Sprintf("%v (%v)", s.trustDecision, s.trustSource)},
-		{"project.skills", "project", "Skills", formatSkillsSettings(s.skills, s.skillDiags, s.workspacePath)},
-		{"system.settings_path", "system", "User settings", settings.configuration.Paths.GlobalSettings},
-		{"system.project_path", "system", "Project settings (read only)", settings.configuration.Paths.ProjectSettings},
-		{"system.auth_path", "system", "Credentials", settings.configuration.Paths.GlobalAuth},
+	skillDetails := skillsDetails(s.skills, s.skillDiags, s.workspacePath)
+	for _, entry := range []struct {
+		id, category, label, value string
+		details                    []interaction.Detail
+	}{
+		{"project.directory", "project", "Working directory", s.workspacePath, nil},
+		{"project.loaded", "project", "Loaded project trust", fmt.Sprintf("%v (%v)", s.trustDecision, s.trustSource), nil},
+		{"project.skills", "project", "Skills", interaction.DetailsText(skillDetails), skillDetails},
+		{"system.settings_path", "system", "User settings", settings.configuration.Paths.GlobalSettings, nil},
+		{"system.project_path", "system", "Project settings (read only)", settings.configuration.Paths.ProjectSettings, nil},
+		{"system.auth_path", "system", "Credentials", settings.configuration.Paths.GlobalAuth, nil},
 	} {
-		result.Fields = append(result.Fields, interaction.SettingField{ID: entry.id, Category: entry.category, Label: entry.label, Kind: interaction.SettingInfo, Description: entry.value})
+		result.Fields = append(result.Fields, interaction.SettingField{ID: entry.id, Category: entry.category, Label: entry.label, Kind: interaction.SettingInfo, Description: entry.value, Details: entry.details})
 	}
 	for i, diagnostic := range result.Diagnostics {
 		result.Fields = append(result.Fields, interaction.SettingField{ID: fmt.Sprintf("system.diagnostic.%d", i), Category: "system", Kind: interaction.SettingInfo, Label: "Configuration diagnostic", Description: diagnostic})

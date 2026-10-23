@@ -214,40 +214,56 @@ func formatSkillsCommand(
 }
 
 func formatSkillsSettings(catalog skill.Catalog, diags []skill.Diagnostic, workspace string) string {
+	return interaction.DetailsText(skillsDetails(catalog, diags, workspace))
+}
+
+func skillsDetails(catalog skill.Catalog, diags []skill.Diagnostic, workspace string) []interaction.Detail {
 	skills := catalog.Skills()
-	lines := []string{fmt.Sprintf("%d skills loaded · %d diagnostics", len(skills), len(diags))}
+	details := []interaction.Detail{{Text: fmt.Sprintf("%d skills loaded · %d diagnostics", len(skills), len(diags))}}
+	add := func(indent int, key, value string, tone interaction.DetailTone) {
+		details = append(details, interaction.Detail{Indent: indent, Key: key, Value: value, Tone: tone})
+	}
+	blank := interaction.Detail{}
 	grouped := groupSkillsBySource(skills)
 	for _, group := range skillListGroups(workspace) {
 		items := grouped[group.source]
 		if len(items) == 0 {
 			continue
 		}
-		lines = append(lines, "", "Source: "+group.title, fmt.Sprintf("Count: %d", len(items)))
+		details = append(details, blank)
+		add(0, "Source", group.title, interaction.ToneTitle)
+		add(0, "Count", fmt.Sprint(len(items)), interaction.ToneMuted)
 		for _, item := range items {
-			lines = append(lines, "", "Skill: "+item.Name)
+			details = append(details, blank)
+			add(0, "Skill", item.Name, interaction.ToneGood)
 			if item.Description != "" {
-				lines = append(lines, "  Description: "+item.Description)
+				add(2, "Description", item.Description, interaction.ToneDefault)
 			}
 			if location := skillLocationLabel(item); location != "" {
-				lines = append(lines, "  Location: "+location)
+				add(2, "Location", location, interaction.ToneReference)
 			}
 		}
 	}
 	if len(diags) > 0 {
-		lines = append(lines, "", "Diagnostics")
+		details = append(details, blank, interaction.Detail{Heading: "Diagnostics"})
 		for _, diag := range diags {
-			lines = append(lines, "", "Severity: "+string(diag.Level))
-			if diag.Dir != "" {
-				lines = append(lines, "  Location: "+diag.Dir)
+			tone := interaction.ToneWarning
+			if diag.Level == "error" {
+				tone = interaction.ToneBad
 			}
-			lines = append(lines, "  Message: "+diag.Message)
+			details = append(details, blank)
+			add(0, "Severity", string(diag.Level), tone)
+			if diag.Dir != "" {
+				add(2, "Location", diag.Dir, interaction.ToneReference)
+			}
+			add(2, "Message", diag.Message, interaction.ToneDefault)
 		}
 	}
 	if len(skills) == 0 {
-		lines = append(lines, "", "No skills found.", "Install with: npx skills add <owner/repo>")
+		details = append(details, blank, interaction.Detail{Text: "No skills found."})
+		add(0, "Install with", "npx skills add <owner/repo>", interaction.ToneReference)
 	}
-	lines = append(lines, "", "Notes", skillsScanReminder)
-	return strings.Join(lines, "\n")
+	return append(details, blank, interaction.Detail{Heading: "Notes"}, interaction.Detail{Text: skillsScanReminder})
 }
 
 type skillListGroup struct {
