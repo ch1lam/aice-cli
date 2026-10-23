@@ -49,7 +49,7 @@ func (m model) handleGuardAction(match inputActionMatch) (model, tea.Cmd, bool) 
 			m.guardViewport.GotoBottom()
 		}
 	case inputActionGuardSelect:
-		m.guardSelection = min(max(m.guardSelection+match.argument, 0), len(m.guardPending.Options)-1)
+		m.guardSelection = clampIndex(m.guardSelection+match.argument, len(m.guardPending.Options))
 	case inputActionGuardConfirm:
 		return m.confirmGuardIndex(m.guardSelection)
 	case inputActionGuardOption:
@@ -282,10 +282,9 @@ func (m model) guardOptionsView(width int) string {
 	options := m.guardPending.Options
 	rows := make([]string, 0, len(options))
 	for i, opt := range options {
-		prefix := "  "
+		prefix := menuPrefix(i == m.guardSelection)
 		style := mutedStyle
 		if i == m.guardSelection {
-			prefix = "› "
 			style = guardEmphasisStyle
 		}
 		label := opt.Label

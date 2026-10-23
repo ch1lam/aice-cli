@@ -140,8 +140,7 @@ func (m model) completionInputBindings() []inputBinding {
 func (m model) handleCompletionAction(match inputActionMatch) (model, tea.Cmd, bool) {
 	switch match.action {
 	case inputActionFileMove:
-		count := len(m.fileCompletion.items)
-		m.fileCompletion.selection = (m.fileCompletion.selection + match.argument + count) % count
+		m.fileCompletion.selection = wrapIndex(m.fileCompletion.selection, match.argument, len(m.fileCompletion.items))
 	case inputActionFileCancel:
 		m.fileCompletion.dismissed = true
 	case inputActionFileAttach:

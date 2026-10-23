@@ -21,7 +21,7 @@ func (m model) handleAuthAction(match inputActionMatch) (model, tea.Cmd, bool) {
 		return m.settleCommand(false, nil)
 	case inputActionAuthSelect:
 		options := m.flow.prompt.Menu.Options
-		m.flow.selection = (m.flow.selection + len(options) + match.argument) % len(options)
+		m.flow.selection = wrapIndex(m.flow.selection, match.argument, len(options))
 		return m.settleCommand(true, nil)
 	case inputActionAuthChoose:
 		options := m.flow.prompt.Menu.Options
@@ -72,11 +72,7 @@ func (m model) authView() string {
 	parts = append(parts, prompt.Instructions)
 	if prompt.Menu != nil {
 		for i, option := range prompt.Menu.Options {
-			prefix := "  "
-			if i == m.flow.selection {
-				prefix = "› "
-			}
-			parts = append(parts, prefix+ansi.Strip(option.Label))
+			parts = append(parts, menuPrefix(i == m.flow.selection)+ansi.Strip(option.Label))
 		}
 	}
 	return strings.Join(parts, "\n\n")

@@ -8,9 +8,7 @@ import (
 )
 
 func (p *settingsPanel) visibleChoices() (start, end int) {
-	height := max(1, p.layout.bodyHeight-2)
-	start = max(0, p.choice-height+1)
-	return start, min(len(p.editing.Choices), start+height)
+	return listWindow(p.choice, max(1, p.layout.bodyHeight-2), len(p.editing.Choices))
 }
 
 func settingChoiceValue(field interaction.SettingField) string {
@@ -46,9 +44,9 @@ func settingRowValue(field interaction.SettingField) (value string, submenu bool
 }
 
 func settingRow(field interaction.SettingField, selected bool, width int) string {
-	prefix, nameStyle := "  ", bodyStyle
+	prefix, nameStyle := menuPrefix(selected), bodyStyle
 	if selected {
-		prefix, nameStyle = "› ", labelStyle
+		nameStyle = labelStyle
 	}
 	label := sanitizeSingleLineText(field.Label)
 	if width < 6 {

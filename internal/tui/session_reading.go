@@ -152,10 +152,7 @@ func (m *model) showTurnDirectory() {
 	r := m.reading
 	items := make([]transcriptItem, 0, len(r.turns))
 	for i, index := range r.turns {
-		prefix := "  "
-		if i == r.selected {
-			prefix = "› "
-		}
+		prefix := menuPrefix(i == r.selected)
 		question := sanitizeToolDetail(strings.Join(strings.Fields(m.entries[index].text), " "), false)
 		line := fmt.Sprintf("%s%d  %s", prefix, i+1, question)
 		items = append(items, staticTranscriptItem(i, ansi.Truncate(line, m.viewport.Width(), "…")))
@@ -203,16 +200,16 @@ func (m model) handleReadingAction(match inputActionMatch) (tea.Model, tea.Cmd) 
 		m.resizeLayout()
 		m.refreshViewport(false)
 	case inputActionReadingSelectPrevious:
-		r.selected = max(0, r.selected-1)
+		r.selected = clampIndex(r.selected-1, len(r.turns))
 		m.showTurnDirectory()
 	case inputActionReadingSelectNext:
-		r.selected = min(max(0, len(r.turns)-1), r.selected+1)
+		r.selected = clampIndex(r.selected+1, len(r.turns))
 		m.showTurnDirectory()
 	case inputActionReadingSelectPageUp:
-		r.selected = max(0, r.selected-m.viewport.Height())
+		r.selected = clampIndex(r.selected-m.viewport.Height(), len(r.turns))
 		m.showTurnDirectory()
 	case inputActionReadingSelectPageDown:
-		r.selected = min(max(0, len(r.turns)-1), r.selected+m.viewport.Height())
+		r.selected = clampIndex(r.selected+m.viewport.Height(), len(r.turns))
 		m.showTurnDirectory()
 	case inputActionReadingJump:
 		r.directory = false

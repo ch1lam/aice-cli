@@ -141,10 +141,9 @@ func (d sessionItemDelegate) Render(w io.Writer, model list.Model, index int, it
 	if !ok {
 		return
 	}
-	prefix := "  "
+	prefix := menuPrefix(index == model.Index())
 	style := bodyStyle
 	if index == model.Index() {
-		prefix = "› "
 		if d.focused {
 			style = labelStyle
 		}

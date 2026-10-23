@@ -173,9 +173,9 @@ func (m model) settingActionKey(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		switch name {
 		case "up":
-			*selection = max(0, *selection-1)
+			*selection = clampIndex(*selection-1, len(menu.Options))
 		case "down":
-			*selection = min(max(0, len(menu.Options)-1), *selection+1)
+			*selection = clampIndex(*selection+1, len(menu.Options))
 		case "enter":
 			if len(menu.Options) == 0 {
 				return m, nil
@@ -351,10 +351,7 @@ func (p *settingsPanel) actionView() string {
 	}
 	for i := layout.start; i < layout.end; i++ {
 		v := menu.Options[i]
-		prefix := "  "
-		if i == *selection {
-			prefix = "› "
-		}
+		prefix := menuPrefix(i == *selection)
 		row := sanitizeSingleLineText(fmt.Sprint(prefix, v.Label, "  ", v.Description))
 		if a.command.Name == "mcp" {
 			style := bodyStyle
@@ -399,7 +396,6 @@ func (p *settingsPanel) actionMenuLayout(menu *interaction.CommandMenu, selectio
 	end := min(len(lines), start+pageSize)
 	layout := actionMenuLayout{header: lines[start:end], more: end < len(lines)}
 	available := max(1, p.layout.bodyHeight-len(layout.header))
-	layout.start = max(0, selection-available+1)
-	layout.end = min(len(menu.Options), layout.start+available)
+	layout.start, layout.end = listWindow(selection, available, len(menu.Options))
 	return layout
 }

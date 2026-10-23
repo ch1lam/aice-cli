@@ -452,9 +452,9 @@ func (m model) handleSettings(message tea.Msg) (tea.Model, tea.Cmd) {
 			if field.Kind == interaction.SettingEnum && !field.AllowCustom {
 				switch name {
 				case "up":
-					p.choice = max(0, p.choice-1)
+					p.choice = clampIndex(p.choice-1, len(field.Choices))
 				case "down":
-					p.choice = min(max(0, len(field.Choices)-1), p.choice+1)
+					p.choice = clampIndex(p.choice+1, len(field.Choices))
 				case "enter":
 					if len(field.Choices) > 0 {
 						return m, m.submitSetting(interaction.SettingChange{ID: field.ID, Value: interaction.SettingValue{Kind: field.Kind, Text: field.Choices[p.choice].Value}})
@@ -489,7 +489,7 @@ func (m model) handleSettings(message tea.Msg) (tea.Model, tea.Cmd) {
 				n := len(p.snapshot.Categories)
 				if n > 0 {
 					p.positions[p.tab] = p.selection
-					p.tab = (p.tab + delta + n) % n
+					p.tab = wrapIndex(p.tab, delta, n)
 					p.selection = p.positions[p.tab]
 				}
 				return m, nil

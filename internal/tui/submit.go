@@ -310,12 +310,7 @@ func (m *model) moveCommandMenuSelection(delta int) {
 		return
 	}
 	frame := m.flow.menu()
-	options := m.matchingCommandOptions()
-	if len(options) == 0 {
-		frame.selection = 0
-		return
-	}
-	frame.selection = (frame.selection + delta + len(options)) % len(options)
+	frame.selection = wrapIndex(frame.selection, delta, len(m.matchingCommandOptions()))
 }
 
 func currentSlashCommandOption(options []SlashCommandOption) int {

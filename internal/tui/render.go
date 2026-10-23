@@ -321,12 +321,7 @@ func (m model) matchingSlashCommands() []SlashCommand {
 }
 
 func (m *model) moveSlashCommandSelection(delta int) {
-	matches := m.matchingSlashCommands()
-	if len(matches) == 0 {
-		m.commandSelection = 0
-		return
-	}
-	m.commandSelection = (m.commandSelection + delta + len(matches)) % len(matches)
+	m.commandSelection = wrapIndex(m.commandSelection, delta, len(m.matchingSlashCommands()))
 }
 
 func (m model) selectedSlashCommand() (SlashCommand, bool) {
@@ -464,8 +459,7 @@ func renderSlashMenuRows(
 	if len(rows) == 0 {
 		return ""
 	}
-	start := max(selection-maximumCommandRows+1, 0)
-	end := min(start+maximumCommandRows, len(rows))
+	start, end := listWindow(selection, maximumCommandRows, len(rows))
 
 	style := slashCommandMenuStyle
 	innerWidth := max(width-style.GetHorizontalFrameSize(), 1)
@@ -483,7 +477,7 @@ func renderSlashMenuRows(
 	}
 	for index := start; index < end; index++ {
 		row := rows[index]
-		prefix := "  "
+		prefix := menuPrefix(index == selection)
 		rowStyle := slashCommandRowStyle
 		labelStyle := slashCommandRowStyle
 		descriptionStyle := mutedStyle
@@ -492,7 +486,6 @@ func renderSlashMenuRows(
 			row.label += " (active)"
 		}
 		if index == selection {
-			prefix = "› "
 			labelStyle = slashCommandSelectedStyle
 		}
 		label := truncateTerminalText(

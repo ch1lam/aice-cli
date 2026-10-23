@@ -223,11 +223,8 @@ func (p *settingsPanel) sectionHeading(row settingListRow, width int, hovered st
 	if row.key == "" {
 		return ""
 	}
-	prefix := "  "
+	prefix := menuPrefix(row.selected)
 	style := mutedStyle
-	if row.selected {
-		prefix = "› "
-	}
 	target := "section:" + row.key
 	if hovered == target {
 		style = transcriptHoverStyle

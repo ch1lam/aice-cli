@@ -68,7 +68,7 @@ func (m model) collectionKey(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			if name == "shift+tab" {
 				delta = -1
 			}
-			d.cell = (d.cell + delta + len(d.cells)) % len(d.cells)
+			d.cell = wrapIndex(d.cell, delta, len(d.cells))
 			p.input.SetValue(d.cells[d.cell])
 			p.input.CursorEnd()
 			return m, nil
@@ -127,9 +127,9 @@ func (m model) collectionKey(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "ctrl+s":
 		return m, m.submitSetting(interaction.SettingChange{ID: p.editing.ID, Value: d.value})
 	case "up":
-		d.row = max(0, d.row-1)
+		d.row = clampIndex(d.row-1, d.count())
 	case "down":
-		d.row = min(max(0, d.count()-1), d.row+1)
+		d.row = clampIndex(d.row+1, d.count())
 	case "ctrl+up", "ctrl+down":
 		other := d.row - 1
 		if name == "ctrl+down" {
@@ -203,14 +203,10 @@ func (p *settingsPanel) collectionView() string {
 		return strings.Join(rows, "\n") + catalog + "\n\n" + sanitizeMultilineText(p.editing.Description)
 	}
 	rows := d.rows()
-	start := max(0, d.row-p.layout.bodyHeight+5)
+	start, end := listWindow(d.row, p.layout.bodyHeight-4, len(rows))
 	var visible []string
-	for i := start; i < min(len(rows), start+p.layout.bodyHeight-4); i++ {
-		prefix := "  "
-		if i == d.row {
-			prefix = "› "
-		}
-		visible = append(visible, sanitizeSingleLineText(prefix+rows[i]))
+	for i := start; i < end; i++ {
+		visible = append(visible, sanitizeSingleLineText(menuPrefix(i == d.row)+rows[i]))
 	}
 	if len(rows) == 0 {
 		visible = append(visible, "Empty list")

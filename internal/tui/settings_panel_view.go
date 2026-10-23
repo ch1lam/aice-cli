@@ -108,10 +108,9 @@ func (m model) settingsPanelView() string {
 			start, end := p.visibleChoices()
 			for i := start; i < end; i++ {
 				choice := field.Choices[i]
-				prefix := "  "
+				prefix := menuPrefix(i == p.choice)
 				style := bodyStyle
 				if i == p.choice {
-					prefix = "› "
 					style = slashCommandSelectedStyle
 				}
 				rows = append(rows, style.Render(ansi.Truncate(

@@ -360,8 +360,7 @@ func (m *model) moveSideMenuSelection(delta int) {
 	if menu == nil {
 		return
 	}
-	optionCount := len(menu.options) + 1 // synthetic New entry
-	menu.selection = (menu.selection + delta + optionCount) % optionCount
+	menu.selection = wrapIndex(menu.selection, delta, len(menu.options)+1) // synthetic New entry
 }
 
 func (m model) selectSideMenuOption() (model, tea.Cmd, bool) {
