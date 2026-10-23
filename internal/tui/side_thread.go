@@ -93,6 +93,9 @@ type sidePanelState struct {
 	closed     bool
 }
 
+// shows reports whether thread id owns the visible side panel.
+func (s sidePanelState) shows(id uint64) bool { return s.isVisible && s.activeID == id }
+
 func (s *sidePanelState) thread(id uint64) *sideThreadState {
 	if s == nil {
 		return nil
@@ -177,7 +180,7 @@ func (m *model) reconcileSideThreads(snapshot []interaction.SideThread) bool {
 		info, ok := alive[id]
 		if !ok {
 			delete(m.side.threads, id)
-			if m.side.isVisible && m.side.activeID == id {
+			if m.side.shows(id) {
 				prunedVisible = true
 			}
 			continue
@@ -425,7 +428,7 @@ func (m model) applySideThreadBatch(
 	follow := m.viewport.AtBottom()
 	changed := false
 	finished := false
-	visible := m.side.isVisible && m.side.activeID == thread.id
+	visible := m.side.shows(thread.id)
 
 	for _, update := range batch.updates {
 		if update.cancel != nil {
@@ -489,94 +492,80 @@ func (m model) applySideThreadBatch(
 	return m, tea.Batch(commands...)
 }
 
+// applySideEvent reduces one event into the thread's own entry. Only the
+// visible thread publishes its progress notice.
 func (m *model) applySideEvent(
 	thread *sideThreadState,
 	event DisplayEvent,
 ) bool {
 	entry := thread.activeEntry()
+	var notice string
 	switch event.Kind {
-	case DisplayEventAssistantStart:
+	case DisplayEventAssistantStart, DisplayEventAssistantDelta, DisplayEventAssistantEnd:
 		if entry == nil {
 			return false
 		}
 		thread.receivedContent = true
-		entry.presentation = &assistantPresentation{}
-		entry.answer = ""
-		entry.thinking = ""
-		entry.err = ""
-		entry.complete = false
-		if m.side.isVisible && m.side.activeID == thread.id {
-			m.side.notice = "Thinking..."
-		}
-	case DisplayEventAssistantDelta:
-		if entry == nil {
+		notice = m.applySideAssistant(entry, event)
+		if notice == "" {
 			return false
-		}
-		thread.receivedContent = true
-		if entry.presentation == nil {
-			entry.presentation = &assistantPresentation{}
-		}
-		switch event.Delta.Kind {
-		case DisplayDeltaText:
-			entry.answer = entry.presentation.appendText(entry.answer, event.Delta.Delta)
-			if m.side.isVisible && m.side.activeID == thread.id {
-				m.side.notice = "Answering..."
-			}
-		case DisplayDeltaThinking:
-			entry.thinking = entry.presentation.appendThinking(entry.thinking, event.Delta.Delta)
-			if m.side.isVisible && m.side.activeID == thread.id {
-				m.side.notice = "Thinking..."
-			}
-		case DisplayDeltaToolCall:
-			if m.side.isVisible && m.side.activeID == thread.id {
-				m.side.notice = "Side questions cannot use tools"
-			}
-		default:
-			return false
-		}
-	case DisplayEventAssistantEnd:
-		if entry == nil {
-			return false
-		}
-		thread.receivedContent = true
-		entry.presentation = &assistantPresentation{}
-		entry.answer = event.Assistant.Text
-		entry.thinking = event.Assistant.Thinking
-		entry.complete = true
-		if m.side.isVisible && m.side.activeID == thread.id {
-			m.side.notice = "Answer complete"
 		}
 	case DisplayEventToolStart, DisplayEventToolEnd:
-		if m.side.isVisible && m.side.activeID == thread.id {
-			m.side.notice = "Side questions cannot use tools"
-		}
+		notice = "Side questions cannot use tools"
 	case DisplayEventRetryStart:
-		if m.side.isVisible && m.side.activeID == thread.id {
-			m.side.notice = "Retrying side answer..."
-		}
+		notice = "Retrying side answer..."
 	case DisplayEventRetryEnd:
-		if m.side.isVisible && m.side.activeID == thread.id {
-			if event.Retry.Succeeded {
-				m.side.notice = "Retry succeeded"
-			} else {
-				m.side.notice = "Retry stopped"
-			}
-		}
+		notice = retryEndStatus(event.Retry.Succeeded)
 	case DisplayEventAgentEnd:
-		if event.Err == nil && m.side.isVisible && m.side.activeID == thread.id {
-			m.side.notice = "Answer complete"
+		if event.Err == nil {
+			notice = "Answer complete"
 		}
 	default:
 		return false
 	}
+	if notice != "" && m.side.shows(thread.id) {
+		m.side.notice = notice
+	}
 	return true
+}
+
+// applySideAssistant updates the answer and returns its progress notice, or
+// an empty notice for an unsupported delta.
+func (m *model) applySideAssistant(entry *sideThreadEntry, event DisplayEvent) string {
+	switch event.Kind {
+	case DisplayEventAssistantStart:
+		entry.presentation = &assistantPresentation{}
+		entry.answer, entry.thinking, entry.err = "", "", ""
+		entry.complete = false
+		return "Thinking..."
+	case DisplayEventAssistantEnd:
+		entry.presentation = &assistantPresentation{}
+		entry.answer = event.Assistant.Text
+		entry.thinking = event.Assistant.Thinking
+		entry.complete = true
+		return "Answer complete"
+	}
+	if entry.presentation == nil {
+		entry.presentation = &assistantPresentation{}
+	}
+	switch event.Delta.Kind {
+	case DisplayDeltaText:
+		entry.answer = entry.presentation.appendText(entry.answer, event.Delta.Delta)
+		return "Answering..."
+	case DisplayDeltaThinking:
+		entry.thinking = entry.presentation.appendThinking(entry.thinking, event.Delta.Delta)
+		return "Thinking..."
+	case DisplayDeltaToolCall:
+		return "Side questions cannot use tools"
+	}
+	return ""
 }
 
 // finishSideRun settles one thread after its run terminates for any reason.
 // The registry is refreshed as the lifecycle authority, so a thread that
 // expired or was closed elsewhere is pruned instead of lingering.
 func (m *model) finishSideRun(thread *sideThreadState, err error) {
-	visible := m.side.isVisible && m.side.activeID == thread.id
+	visible := m.side.shows(thread.id)
 	if err != nil {
 		message := sideFriendlyError(err)
 		if entry := thread.activeEntry(); entry != nil {
@@ -643,7 +632,7 @@ func (m model) endSideThreadNow(id uint64) (model, tea.Cmd) {
 	}
 	delete(m.side.threads, id)
 	m.side.confirm = nil
-	if m.side.isVisible && m.side.activeID == id {
+	if m.side.shows(id) {
 		m.status = "BTW thread ended"
 		m.closeSidePanelToMain()
 	} else {

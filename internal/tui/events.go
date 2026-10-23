@@ -308,11 +308,7 @@ func (m *model) applyAgentEvent(event DisplayEvent) (bool, tea.Cmd) {
 		)
 		return true, nil
 	case DisplayEventRetryEnd:
-		if event.Retry.Succeeded {
-			m.status = "Retry succeeded"
-		} else {
-			m.status = "Retry stopped"
-		}
+		m.status = retryEndStatus(event.Retry.Succeeded)
 		return true, nil
 	case DisplayEventAgentEnd:
 		if event.Err == nil {
@@ -320,6 +316,13 @@ func (m *model) applyAgentEvent(event DisplayEvent) (bool, tea.Cmd) {
 		}
 	}
 	return false, nil
+}
+
+func retryEndStatus(succeeded bool) string {
+	if succeeded {
+		return "Retry succeeded"
+	}
+	return "Retry stopped"
 }
 
 func (m *model) applyAssistantDelta(event DisplayEvent) bool {
