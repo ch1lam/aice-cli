@@ -22,10 +22,6 @@ func localSlashCommands() []interaction.Command {
 			Name:        "quit",
 			Description: "Quit AICE",
 		},
-		{
-			Name:        "desktop",
-			Description: "Open Computer Use in Settings",
-		},
 	}
 }
 

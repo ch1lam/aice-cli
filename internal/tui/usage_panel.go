@@ -28,8 +28,9 @@ func usageCommands(parent context.Context, reader interaction.UsageReader) (func
 }
 func usageFields(u interaction.UsageSnapshot) interaction.SettingsSnapshot {
 	s := interaction.SettingsSnapshot{Revision: u.Revision, Categories: []interaction.SettingCategory{{ID: "context", Label: "Context"}, {ID: "usage", Label: "Session usage"}, {ID: "session", Label: "Session info"}}}
+	sections := map[string]string{"context": "Context", "usage": "Session usage", "session": "Session information"}
 	add := func(category, label, value string) {
-		s.Fields = append(s.Fields, interaction.SettingField{ID: category + label, Category: category, Label: label, Kind: interaction.SettingInfo, Value: interaction.SettingValue{Text: value}, Description: value})
+		s.Fields = append(s.Fields, interaction.SettingField{ID: category + label, Category: category, Section: sections[category], Label: label, Kind: interaction.SettingInfo, Value: interaction.SettingValue{Text: value}, Description: value})
 	}
 	tokens := "Unknown"
 	if u.Context.Known {
@@ -86,14 +87,36 @@ func (m model) openUsage(tab int) (model, tea.Cmd, bool) {
 }
 func (m model) isInfoCommandInput() bool {
 	request, ok := parseSlashCommand(m.input.Value())
-	if !ok {
+	return ok && m.opensPanel(request)
+}
+
+// opensPanel reports whether request is a bare panel command whose view this
+// frontend can show; other panel commands run in the application.
+func (m model) opensPanel(request interaction.CommandRequest) bool {
+	command, ok := findSlashCommand(m.commands, request.Name)
+	if !ok || command.Panel == nil || request.Arguments != "" {
 		return false
 	}
-	if request.Name == "mcp" {
-		return m.readSettings != nil && (request.Arguments == "" || request.Arguments == "desktop")
+	switch command.Panel.View {
+	case interaction.PanelSettings:
+		return m.readSettings != nil
+	case interaction.PanelUsage:
+		return m.readUsage != nil
+	case interaction.PanelHistory:
+		return m.searchSessions != nil
 	}
-	if request.Arguments != "" {
-		return false
+	return false
+}
+
+// openPanel opens an available panel view; callers check opensPanel first.
+func (m model) openPanel(panel interaction.Panel) (model, tea.Cmd, bool) {
+	switch panel.View {
+	case interaction.PanelUsage:
+		return m.openUsage(panel.Tab)
+	case interaction.PanelHistory:
+		return m.openSessionPicker()
 	}
-	return ((request.Name == "settings" || request.Name == "desktop") && m.readSettings != nil) || ((request.Name == "usage" || request.Name == "context" || request.Name == "session") && m.readUsage != nil)
+	next, cmd, handled := m.openSettings()
+	next.settings.focusField, next.settings.focusAction = panel.Focus, panel.FocusAction
+	return next, cmd, handled
 }

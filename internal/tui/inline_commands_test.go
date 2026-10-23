@@ -180,7 +180,7 @@ func TestSkillCompletionWhileRunningAndDeliveryRollback(t *testing.T) {
 func TestRunningNavigationWinsOverSkillDescriptionMatch(t *testing.T) {
 	t.Parallel()
 	m := skillComposer()
-	m.commands = append(m.commands, btwSlashCommand(), interaction.Command{
+	m.commands = append(append(m.commands, panelCommands()...), btwSlashCommand(), interaction.Command{
 		Name: "skill:desktop-guide", SkillName: "desktop-guide", Description: "desktop settings btw",
 	})
 	m.running, m.acceptsDelivery = true, true

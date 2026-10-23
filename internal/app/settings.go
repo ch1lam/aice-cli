@@ -256,6 +256,9 @@ func (s *interactiveSession) ReadSettings(ctx context.Context) (interaction.Sett
 		return interaction.SettingsSnapshot{}, err
 	}
 	result.Runtime = s.settingsDisplay(settings)
+	for i := range result.Fields {
+		result.Fields[i].Section = settingSection(result.Fields[i])
+	}
 	return result, nil
 }
 
@@ -263,4 +266,61 @@ func (s *interactiveSession) ReadSettings(ctx context.Context) (interaction.Sett
 func (s *interactiveSession) settingsDisplay(settings interactiveSettings) interaction.RuntimeState {
 	history, _ := s.conversation.sideSnapshot()
 	return interaction.RuntimeState{Model: interaction.DisplayModel{ID: settings.model.ID}, Thinking: interaction.DisplayThinking(settings.options.Thinking), APIKeyConfigured: providerConfigured(s.providers, settings.configuration), Context: contextDisplay(settings.model, settings.configuration, settings.systemPrompt, settings.tools, history)}
+}
+
+// settingSection groups fields for display by their application-owned IDs.
+// Sections are presentation, not settings or persistence boundaries.
+func settingSection(field interaction.SettingField) string {
+	id := field.ID
+	switch field.Category {
+	case "models":
+		switch {
+		case strings.HasPrefix(id, "account."):
+			return "Accounts"
+		case strings.HasSuffix(id, "_base_url"):
+			return "Provider endpoints"
+		default:
+			return "Model & reasoning"
+		}
+	case "tools":
+		switch {
+		case strings.HasPrefix(id, "browser"):
+			return "Browser"
+		case strings.HasPrefix(id, "desktop"):
+			return "Computer Use"
+		case strings.HasPrefix(id, "web.service."):
+			instance := strings.TrimPrefix(id, "web.service.")
+			if end := strings.LastIndexByte(instance, '.'); end >= 0 {
+				return "Search service · " + instance[:end]
+			}
+		case strings.HasPrefix(id, "web.fetch."):
+			return "Web fetch"
+		case strings.HasPrefix(id, "web."):
+			return "Web search"
+		}
+	case "limits":
+		switch id {
+		case "run_no_progress_limit":
+			return "Progress detection"
+		default:
+			return "Run budgets"
+		}
+	case "project":
+		switch id {
+		case "default_project_trust", "project.trust", "project.loaded":
+			return "Trust"
+		default:
+			return "Workspace"
+		}
+	case "system":
+		switch {
+		case strings.HasPrefix(id, "system.diagnostic."):
+			return "Diagnostics"
+		case strings.HasPrefix(id, "system."):
+			return "Configuration files"
+		default:
+			return "Startup"
+		}
+	}
+	return "General"
 }

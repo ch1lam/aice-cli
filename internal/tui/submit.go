@@ -33,10 +33,9 @@ func (m model) submit() (model, tea.Cmd, bool) {
 				m.inputNotice = "Send or remove attached images before running a slash command"
 				return m.settleCommand(false, nil)
 			}
-			// Side questions never enter the main prompt history, even when
-			// submitted through the main composer while a run is active.
-			mcpNavigation := request.Name == "mcp" && m.readSettings != nil && (request.Arguments == "" || request.Arguments == "desktop")
-			if !mcpNavigation && request.Name != "btw" && request.Name != "settings" && request.Name != "desktop" && request.Name != "usage" && request.Name != "context" && request.Name != "session" {
+			// Side questions and panel navigation never enter the main prompt
+			// history, even when submitted while a run is active.
+			if request.Name != "btw" && !m.opensPanel(request) {
 				m.promptHistory = appendPromptHistory(m.promptHistory, prompt)
 				m.historyIndex = -1
 				m.historyDraft = ""
@@ -95,53 +94,11 @@ func (m model) submitSlashCommand(
 		)
 	}
 
-	switch command.Name {
-	case "mcp":
-		if m.readSettings != nil && (request.Arguments == "" || request.Arguments == "desktop") {
-			m.resetCommandInput()
-			next, cmd, handled := m.openSettings()
-			next.settings.focusField = "mcp.services"
-			next.settings.focusAction = true
-			if request.Arguments == "desktop" {
-				next.settings.focusField = "desktop_enabled"
-				next.settings.focusAction = false
-			}
-			return next, cmd, handled
-		}
-	case "desktop":
-		if request.Arguments != "" {
-			return m.commandUsageError(raw, command)
-		}
+	if m.opensPanel(request) {
 		m.resetCommandInput()
-		if m.readSettings == nil {
-			m.inputNotice = "Settings is unavailable"
-			return m, nil, true
-		}
-		next, cmd, handled := m.openSettings()
-		next.settings.focusField = "desktop_enabled"
-		return next, cmd, handled
-	case "usage", "context", "session":
-		if request.Arguments == "" && m.readUsage != nil {
-			tab := 1
-			if request.Name == "context" {
-				tab = 0
-			}
-			if request.Name == "session" {
-				tab = 2
-			}
-			m.resetCommandInput()
-			return m.openUsage(tab)
-		}
-	case "settings":
-		if request.Arguments == "" && m.readSettings != nil {
-			m.resetCommandInput()
-			return m.openSettings()
-		}
-	case "history":
-		if request.Arguments == "" && m.searchSessions != nil {
-			m.resetCommandInput()
-			return m.openSessionPicker()
-		}
+		return m.openPanel(*command.Panel)
+	}
+	switch command.Name {
 	case "btw":
 		m.resetCommandInput()
 		return m.handleBTWCommand(request, raw, false)

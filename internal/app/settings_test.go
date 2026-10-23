@@ -166,3 +166,24 @@ func TestSettingsWebPrepareFailureDoesNotSave(t *testing.T) {
 		t.Fatalf("unexpected save: %+v %v", result, err)
 	}
 }
+
+func TestSettingSectionsGroupApplicationFields(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		field interaction.SettingField
+		want  string
+	}{
+		{interaction.SettingField{ID: "account.openai", Category: "models"}, "Accounts"},
+		{interaction.SettingField{ID: "deepseek_base_url", Category: "models"}, "Provider endpoints"},
+		{interaction.SettingField{ID: "model", Category: "models"}, "Model & reasoning"},
+		{interaction.SettingField{ID: "web.service.exa-main.enabled", Category: "tools"}, "Search service · exa-main"},
+		{interaction.SettingField{ID: "run_no_progress_limit", Category: "limits"}, "Progress detection"},
+		{interaction.SettingField{ID: "project.loaded", Category: "project"}, "Trust"},
+		{interaction.SettingField{ID: "system.diagnostic.0", Category: "system"}, "Diagnostics"},
+		{interaction.SettingField{ID: "unknown", Category: "other"}, "General"},
+	} {
+		if got := settingSection(tc.field); got != tc.want {
+			t.Errorf("settingSection(%s) = %q, want %q", tc.field.ID, got, tc.want)
+		}
+	}
+}

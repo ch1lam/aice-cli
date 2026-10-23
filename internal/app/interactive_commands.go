@@ -22,15 +22,18 @@ import (
 
 func (s *interactiveSession) SlashCommands() []interaction.Command {
 	commands := []interaction.Command{
-		{Name: "usage", Description: "Open recorded Session usage"},
-		{Name: "context", Description: "Open current context information"},
-		{Name: "history", Description: "Browse conversation history in this project", ArgumentHint: "[id]"},
+		{Name: "usage", Description: "Open recorded Session usage", Panel: &interaction.Panel{View: interaction.PanelUsage, Tab: 1}},
+		{Name: "context", Description: "Open current context information", Panel: &interaction.Panel{View: interaction.PanelUsage}},
+		{Name: "history", Description: "Browse conversation history in this project", ArgumentHint: "[id]", Panel: &interaction.Panel{View: interaction.PanelHistory}},
 		{Name: "browser", Description: "Manage browser connection and tabs", Menu: s.browserMenu(), Interactive: true},
 		{Name: "web", Description: "Configure web search services, priority and web fetch", Menu: s.webMenu(), Interactive: true},
-		{Name: "mcp", Description: "Manage MCP services, connection approval and credentials", ArgumentHint: "[action] [service]", Interactive: true},
+		{Name: "mcp", Description: "Manage MCP services, connection approval and credentials", ArgumentHint: "[action] [service]", Interactive: true,
+			Panel: &interaction.Panel{View: interaction.PanelSettings, Focus: "mcp.services", FocusAction: true}},
+		{Name: "desktop", Description: "Open Computer Use in Settings", Panel: &interaction.Panel{View: interaction.PanelSettings, Focus: "desktop_enabled"}},
 		{
 			Name:        "session",
 			Description: "Show current Session information",
+			Panel:       &interaction.Panel{View: interaction.PanelUsage, Tab: 2},
 		},
 		{
 			Name:        "tree",
@@ -56,6 +59,7 @@ func (s *interactiveSession) SlashCommands() []interaction.Command {
 		{
 			Name:        "settings",
 			Description: "Open Settings (Ctrl+,)",
+			Panel:       &interaction.Panel{View: interaction.PanelSettings},
 		},
 		{
 			Name:        "skills",
@@ -381,6 +385,7 @@ var slashCommandHandlers = map[string]slashCommandHandler{
 	"new":      (*interactiveSession).slashNew,
 	"init":     (*interactiveSession).slashInit,
 	"settings": (*interactiveSession).slashPanel,
+	"desktop":  (*interactiveSession).slashPanel,
 	"skills":   (*interactiveSession).slashSkills,
 	"trust":    (*interactiveSession).slashTrust,
 	"provider": (*interactiveSession).slashProvider,

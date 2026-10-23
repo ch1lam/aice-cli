@@ -71,3 +71,19 @@ func frontendOf(runner interaction.Runner) interaction.Frontend {
 	frontend.Questions, _ = runner.(interaction.QuestionRequester)
 	return frontend
 }
+
+// panelCommands mirror the application's panel command metadata.
+func panelCommands() []interaction.Command {
+	settings := func(focus string, action bool) *interaction.Panel {
+		return &interaction.Panel{View: interaction.PanelSettings, Focus: focus, FocusAction: action}
+	}
+	return []interaction.Command{
+		{Name: "settings", Panel: settings("", false)},
+		{Name: "desktop", Panel: settings("desktop_enabled", false)},
+		{Name: "mcp", Interactive: true, Panel: settings("mcp.services", true)},
+		{Name: "context", Panel: &interaction.Panel{View: interaction.PanelUsage}},
+		{Name: "usage", Panel: &interaction.Panel{View: interaction.PanelUsage, Tab: 1}},
+		{Name: "session", Panel: &interaction.Panel{View: interaction.PanelUsage, Tab: 2}},
+		{Name: "history", Panel: &interaction.Panel{View: interaction.PanelHistory}},
+	}
+}

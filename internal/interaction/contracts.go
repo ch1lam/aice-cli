@@ -339,6 +339,27 @@ type Command struct {
 	ArgumentHint string
 	SecretPrompt string
 	Menu         *CommandMenu
+	// Panel, when set, is the view a frontend opens for the bare command
+	// instead of running it. Panel commands stay out of prompt history.
+	Panel *Panel
+}
+
+// PanelView names one application view a frontend can open.
+type PanelView string
+
+const (
+	PanelSettings PanelView = "settings"
+	PanelUsage    PanelView = "usage"
+	PanelHistory  PanelView = "history"
+)
+
+// Panel targets one view. Tab selects a multi-tab view's first tab; Focus
+// selects one setting field and FocusAction its action.
+type Panel struct {
+	View        PanelView
+	Tab         int
+	Focus       string
+	FocusAction bool
 }
 
 // CommandMenu describes one interactive choice level.

@@ -59,6 +59,8 @@ const (
 // SettingField is an immutable display projection assembled by the app.
 type SettingField struct {
 	ID, Category, Label, Description            string
+	// Section groups fields within a category for display.
+	Section                                     string
 	Keywords                                    []string
 	Kind                                        SettingKind
 	Value                                       SettingValue

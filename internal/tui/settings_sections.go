@@ -7,65 +7,11 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-// Sections are a presentation of the existing field IDs, not new settings or
-// persistence boundaries. Unknown fields remain visible in General.
+// settingSection is the application-supplied display group of a field.
+// Unsectioned fields remain visible in General.
 func settingSection(field interaction.SettingField) string {
-	id := field.ID
-	switch field.Category {
-	case "models":
-		switch {
-		case strings.HasPrefix(id, "account."):
-			return "Accounts"
-		case strings.HasSuffix(id, "_base_url"):
-			return "Provider endpoints"
-		default:
-			return "Model & reasoning"
-		}
-	case "tools":
-		switch {
-		case strings.HasPrefix(id, "browser"):
-			return "Browser"
-		case strings.HasPrefix(id, "desktop"):
-			return "Computer Use"
-		case strings.HasPrefix(id, "web.service."):
-			instance := strings.TrimPrefix(id, "web.service.")
-			if end := strings.LastIndexByte(instance, '.'); end >= 0 {
-				return "Search service · " + instance[:end]
-			}
-		case strings.HasPrefix(id, "web.fetch."):
-			return "Web fetch"
-		case strings.HasPrefix(id, "web."):
-			return "Web search"
-		}
-	case "limits":
-		switch id {
-		case "run_no_progress_limit":
-			return "Progress detection"
-		default:
-			return "Run budgets"
-		}
-	case "project":
-		switch id {
-		case "default_project_trust", "project.trust", "project.loaded":
-			return "Trust"
-		default:
-			return "Workspace"
-		}
-	case "system":
-		switch {
-		case strings.HasPrefix(id, "system.diagnostic."):
-			return "Diagnostics"
-		case strings.HasPrefix(id, "system."):
-			return "Configuration files"
-		default:
-			return "Startup"
-		}
-	case "context":
-		return "Context"
-	case "usage":
-		return "Session usage"
-	case "session":
-		return "Session information"
+	if field.Section != "" {
+		return field.Section
 	}
 	return "General"
 }

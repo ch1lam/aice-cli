@@ -18,12 +18,12 @@ func sectionPanelModel(t *testing.T, width, height int) model {
 	m := panelModel(t, width, height)
 	m.settings.tab = 1
 	m.settings.snapshot.Fields = nil
-	for _, prefix := range []string{"browser.", "desktop.", "web.search."} {
+	for _, group := range []struct{ prefix, section string }{{"browser.", "Browser"}, {"desktop.", "Computer Use"}, {"web.search.", "Web search"}} {
 		for i := range 3 {
-			id := fmt.Sprintf("%s%d", prefix, i)
+			id := fmt.Sprintf("%s%d", group.prefix, i)
 			value := interaction.SettingValue{Kind: interaction.SettingString, Text: "value"}
 			m.settings.snapshot.Fields = append(m.settings.snapshot.Fields, interaction.SettingField{
-				ID: id, Category: "tools", Label: id, Kind: interaction.SettingString,
+				ID: id, Category: "tools", Section: group.section, Label: id, Kind: interaction.SettingString,
 				Value: value, Default: &value, Inherited: &value,
 			})
 		}
@@ -280,7 +280,7 @@ func TestSettingsRepeatedSectionHeadingCollapsesAfterScrolling(t *testing.T) {
 	for i := 3; i < 18; i++ {
 		id := fmt.Sprintf("desktop.%d", i)
 		m.settings.snapshot.Fields = append(m.settings.snapshot.Fields, interaction.SettingField{
-			ID: id, Category: "tools", Label: id, Kind: interaction.SettingString,
+			ID: id, Category: "tools", Section: "Computer Use", Label: id, Kind: interaction.SettingString,
 		})
 	}
 	for range 20 {

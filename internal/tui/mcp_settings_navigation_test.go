@@ -10,13 +10,12 @@ import (
 
 func TestMCPSettingsNavigationAndStaleRedirect(t *testing.T) {
 	t.Parallel()
-	for _, args := range []string{"", "desktop"} {
+	for _, args := range []string{""} {
 		m := panelModel(t, 120, 40)
 		snapshot := m.settings.snapshot
 		snapshot.Fields = append(snapshot.Fields,
 			interaction.SettingField{ID: "mcp.services", Category: "tools", Label: "MCP services", Kind: interaction.SettingAction, Action: &interaction.Command{Name: "mcp", Menu: &interaction.CommandMenu{Title: "MCP services", Options: []interaction.CommandOption{{Label: "Computer Use settings", Arguments: "desktop"}}}}},
 			interaction.SettingField{ID: "desktop_enabled", Category: "tools", Label: "Computer Use", Kind: interaction.SettingBool})
-		m.commands = append(m.commands, interaction.Command{Name: "mcp", Interactive: true})
 		m.runSettingsAction = func(*settingsAction, uint64) tea.Cmd {
 			t.Fatal("navigation unexpectedly started a settings operation")
 			return nil
