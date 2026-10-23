@@ -17,8 +17,7 @@ import (
 func TestModelEnterSteersAndControlEnterQueues(t *testing.T) {
 	t.Parallel()
 
-	current := newModel(make(chan runRequest), make(chan struct{}))
-	current = updateModel(t, current, tea.WindowSizeMsg{Width: 80, Height: 24})
+	current := testModel(t, 80, 24)
 	current.running = true
 	current.acceptsDelivery = true
 	var delivered []interaction.Delivery
@@ -127,8 +126,7 @@ func TestModelEnterSteersAndControlEnterQueues(t *testing.T) {
 func TestModelSteerEventMovesPendingInputIntoTranscript(t *testing.T) {
 	t.Parallel()
 
-	current := newModel(make(chan runRequest), make(chan struct{}))
-	current = updateModel(t, current, tea.WindowSizeMsg{Width: 80, Height: 24})
+	current := testModel(t, 80, 24)
 	current.running = true
 	current.acceptsDelivery = true
 	current.pendingDeliveries = []pendingDelivery{{

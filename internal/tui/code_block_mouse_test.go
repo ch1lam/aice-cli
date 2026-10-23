@@ -11,12 +11,6 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-func codeTestModel(t *testing.T, width int) model {
-	t.Helper()
-	m := newModel(make(chan runRequest), make(chan struct{}))
-	return updateModel(t, m, tea.WindowSizeMsg{Width: width, Height: 40})
-}
-
 func codeButtonMouse(t *testing.T, m model, source string) tea.Mouse {
 	t.Helper()
 	for y, row := range m.viewport.visibleRows() {
@@ -71,7 +65,7 @@ func TestCodeButtonCopiesOriginalAcrossPresentations(t *testing.T) {
 	for _, width := range []int{30, 60, 100} {
 		for _, kind := range []string{"assistant", "process", "tool", "preview", "side"} {
 			t.Run(fmt.Sprintf("%s/%d", kind, width), func(t *testing.T) {
-				m := codeTestModel(t, width)
+				m := testModel(t, width, 40)
 				e := transcriptEntry{kind: entryAssistant, text: markdown, thinking: "thinking", complete: true}
 				var item transcriptItem
 				switch kind {
@@ -111,7 +105,7 @@ func TestCodeButtonCopiesOriginalAcrossPresentations(t *testing.T) {
 func TestCodeButtonRejectsStalePressAndDrag(t *testing.T) {
 	for _, change := range []string{"source", "resize", "scroll", "drag"} {
 		t.Run(change, func(t *testing.T) {
-			m := codeTestModel(t, 60)
+			m := testModel(t, 60, 40)
 			m.entries = []transcriptEntry{{kind: entryAssistant, text: "```\noriginal\n```", complete: true}}
 			m.refreshViewport(true)
 			mouse := codeButtonMouse(t, m, "original\n")
@@ -168,7 +162,7 @@ func TestCodeGeometrySurvivesOuterWrappingAndBlankRows(t *testing.T) {
 func TestCodeLineClickCopiesLogicalSource(t *testing.T) {
 	for _, clip := range []bool{false, true} {
 		t.Run(fmt.Sprint(clip), func(t *testing.T) {
-			m := codeTestModel(t, 40)
+			m := testModel(t, 40, 40)
 			lines := []string{"\t" + strings.Repeat("中文😀", 18) + "  ", "", "   ", "\\n\x1b[0m", "last\r"}
 			source := strings.Join(lines, "\r\n")
 			content := newCodeBlock(source, "text").layout(codeBlockOptions{width: 32, clip: clip}).content().pad(3, 1)
@@ -186,7 +180,7 @@ func TestCodeLineClickCopiesLogicalSource(t *testing.T) {
 }
 
 func TestCodeLineHoverPreservesGeometryAndHighlighting(t *testing.T) {
-	m := codeTestModel(t, 40)
+	m := testModel(t, 40, 40)
 	source := "var value = \"" + strings.Repeat("wide ", 20) + "\"\nother\n"
 	m.entries = []transcriptEntry{{kind: entryAssistant, text: "```go\n" + source + "```", complete: true}}
 	m.refreshViewport(true)
@@ -240,7 +234,7 @@ func TestCodeLineHoverPreservesGeometryAndHighlighting(t *testing.T) {
 }
 
 func TestCodeButtonHoverAndNonSourcePadding(t *testing.T) {
-	m := codeTestModel(t, 60)
+	m := testModel(t, 60, 40)
 	m.entries = []transcriptEntry{{kind: entryAssistant, text: "```text\nvalue\n```", complete: true}}
 	m.refreshViewport(true)
 	mouse := codeButtonMouse(t, m, "value\n")
@@ -265,7 +259,7 @@ func TestCodeButtonHoverAndNonSourcePadding(t *testing.T) {
 }
 
 func TestCodeLineClickAfterScrollAndResize(t *testing.T) {
-	m := codeTestModel(t, 60)
+	m := testModel(t, 60, 40)
 	long := strings.Repeat("原始行 ", 100)
 	m.entries = []transcriptEntry{{kind: entryAssistant, text: "```text\n" + long + "\nlast\n```", complete: true}}
 	m.refreshViewport(true)
@@ -278,7 +272,7 @@ func TestCodeLineClickAfterScrollAndResize(t *testing.T) {
 }
 
 func TestCodeHoverDistinguishesIdenticalBlocks(t *testing.T) {
-	m := codeTestModel(t, 60)
+	m := testModel(t, 60, 40)
 	m.entries = []transcriptEntry{{kind: entryAssistant, text: "```\nsame\n```\n\n```\nsame\n```", complete: true}}
 	m.refreshViewport(true)
 	before := strings.Split(m.viewport.View(), "\n")
@@ -332,7 +326,7 @@ func codeSourceRows(rows []transcriptRow, source string) (int, int) {
 }
 
 func TestCodeDragCopiesSourceWithoutLineNumbers(t *testing.T) {
-	m := codeTestModel(t, 60)
+	m := testModel(t, 60, 40)
 	source := "first\nsecond\nthird\n"
 	m.entries = []transcriptEntry{{kind: entryAssistant, text: "```text\n" + source + "```", complete: true}}
 	m.refreshViewport(true)
@@ -361,7 +355,7 @@ func TestCodeDragCopiesSourceWithoutLineNumbers(t *testing.T) {
 }
 
 func TestCodeDragPreservesLiteralAndWrappedLines(t *testing.T) {
-	m := codeTestModel(t, 40)
+	m := testModel(t, 40, 40)
 	source := "\thello  \nsecond line\n"
 	m.entries = []transcriptEntry{{kind: entryAssistant, text: "```text\n" + source + "```", complete: true}}
 	m.refreshViewport(true)
@@ -384,7 +378,7 @@ func TestCodeDragPreservesLiteralAndWrappedLines(t *testing.T) {
 		t.Fatalf("tab drag = %q, want literal with trailing spaces", got)
 	}
 
-	wide := codeTestModel(t, 30)
+	wide := testModel(t, 30, 40)
 	long := "prefix-" + strings.Repeat("x", 100) + "-suffix"
 	wideSource := long + "\nnext\n"
 	wide.entries = []transcriptEntry{{kind: entryAssistant, text: "```text\n" + wideSource + "```", complete: true}}
@@ -402,7 +396,7 @@ func TestCodeDragPreservesLiteralAndWrappedLines(t *testing.T) {
 }
 
 func TestCodeDragPartialWrappedLineDoesNotCopyHiddenEnds(t *testing.T) {
-	m := codeTestModel(t, 30)
+	m := testModel(t, 30, 40)
 	source := "START-" + strings.Repeat("x", 100) + "-END\n"
 	content := newCodeBlock(source, "text").layout(codeBlockOptions{width: 24}).content()
 	m.viewport.setItems([]transcriptItem{{renderContent: func() transcriptContent { return content }}})

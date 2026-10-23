@@ -32,8 +32,7 @@ func (f panelFixture) ApplySettings(_ context.Context, r interaction.SettingsReq
 }
 func panelModel(t *testing.T, w, h int) model {
 	t.Helper()
-	m := newModel(make(chan runRequest), make(chan struct{}), SlashCommand{Name: "settings"})
-	m = updateModel(t, m, tea.WindowSizeMsg{Width: w, Height: h})
+	m := testModel(t, w, h, SlashCommand{Name: "settings"})
 	var close func()
 	m.readSettings, m.writeSettings, close = settingsCommands(t.Context(), panelFixture{}, panelFixture{})
 	t.Cleanup(close)

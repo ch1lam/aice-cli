@@ -8,19 +8,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	"github.com/charmbracelet/x/ansi"
 )
-
-func sessionCopyMouse(t *testing.T, m model) tea.Mouse {
-	t.Helper()
-	for y, row := range strings.Split(ansi.Strip(m.View().Content), "\n") {
-		if x := strings.Index(row, "⧉"); x >= 0 {
-			return tea.Mouse{X: ansi.StringWidth(row[:x]), Y: y, Button: tea.MouseLeft}
-		}
-	}
-	t.Fatal("session copy button missing")
-	return tea.Mouse{}
-}
 
 func copyPickerModel(t *testing.T, width int) model {
 	t.Helper()
@@ -34,7 +22,7 @@ func TestSessionPickerCopyIDHoverAndClick(t *testing.T) {
 	t.Parallel()
 	for _, width := range []int{60, 160} {
 		m := copyPickerModel(t, width)
-		mouse := sessionCopyMouse(t, m)
+		mouse := findPainted(t, m, "⧉")
 		idle := m.View().Content
 		m = updateModel(t, m, tea.MouseMotionMsg(mouse))
 		if m.View().Content == idle || !strings.Contains(m.sessionPickerView(), "Copy session ID") {
@@ -74,7 +62,7 @@ func TestSessionPickerCopyIDHoverAndClick(t *testing.T) {
 func TestSessionPickerCopyTracksDisplayedPreview(t *testing.T) {
 	t.Parallel()
 	m := copyPickerModel(t, 160)
-	mouse := sessionCopyMouse(t, m)
+	mouse := findPainted(t, m, "⧉")
 	m = updateModel(t, m, tea.MouseClickMsg(mouse))
 	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyLeft})
 	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyDown})

@@ -11,7 +11,7 @@ import (
 
 func historyCodeModel(t *testing.T, source string) model {
 	t.Helper()
-	m := codeTestModel(t, 80)
+	m := testModel(t, 80, 40)
 	m.entries = []transcriptEntry{{kind: entryAssistant, complete: true, text: "```text\n" + source + "```\n\nReadable conclusion.", presentation: &assistantPresentation{}}}
 	m.refreshViewport(true)
 	m.viewport.GotoTop()
@@ -117,7 +117,7 @@ func BenchmarkHistoryCodeFirstView(b *testing.B) {
 
 func TestNestedHistoryCodePreviewKeepsLiteralCopy(t *testing.T) {
 	source := strings.Repeat("nested log\r\n", 120)
-	m := codeTestModel(t, 60)
+	m := testModel(t, 60, 40)
 	markdown := "> - item\n>\n>   ```text\n" + strings.Repeat(">   nested log\r\n", 120) + ">   ```\n\nConclusion."
 	m.entries = []transcriptEntry{{kind: entryAssistant, complete: true, text: markdown, presentation: &assistantPresentation{}}}
 	m.refreshViewport(true)

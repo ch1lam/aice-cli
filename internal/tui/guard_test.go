@@ -387,8 +387,7 @@ func newGuardTestModel(t *testing.T, req interaction.GuardRequest) model {
 	if req.Reply == nil {
 		req.Reply = make(chan interaction.GuardReply, 1)
 	}
-	current := newModel(make(chan runRequest), make(chan struct{}))
-	current = updateModel(t, current, tea.WindowSizeMsg{Width: 80, Height: 24})
+	current := testModel(t, 80, 24)
 	copied := req
 	return updateModel(t, current, guardRequestMsg{req: &copied})
 }

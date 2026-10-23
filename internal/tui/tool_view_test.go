@@ -171,7 +171,7 @@ func TestToolBodyShowsOutputLimitsAndEscapesControls(t *testing.T) {
 }
 
 func TestToolLineCountLivesInHeadingAboveSpacedCopyRow(t *testing.T) {
-	m := codeTestModel(t, 80)
+	m := testModel(t, 80, 40)
 	source := "first\n\nlast\n"
 	m.entries = []transcriptEntry{{kind: entryTool, toolName: "read", toolDetail: "file.txt", toolDone: true,
 		toolOutput: interaction.ToolOutputDisplay{Available: true, Text: source}}}

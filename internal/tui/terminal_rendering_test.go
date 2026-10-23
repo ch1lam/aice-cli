@@ -149,7 +149,7 @@ func TestTerminalDoesNotSetGlobalThemeColors(t *testing.T) {
 func TestTerminalCodeClicksWriteOriginalClipboardPayload(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
-	m := codeTestModel(t, 60)
+	m := testModel(t, 60, 40)
 	source := "\tclipboard  \r\n\n中文\n"
 	m.entries = []transcriptEntry{{kind: entryAssistant, text: "```text\n" + source + "```", complete: true}}
 	m.refreshViewport(true)

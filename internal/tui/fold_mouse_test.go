@@ -17,13 +17,9 @@ import (
 // must not invent hit rectangles independently of the displayed frame.
 func paintedMouse(t *testing.T, m model, text string) tea.Mouse {
 	t.Helper()
-	for y, row := range strings.Split(ansi.Strip(m.View().Content), "\n") {
-		if strings.Contains(row, text) {
-			return tea.Mouse{X: m.horizontalPadding() + m.viewport.Width() - 1, Y: y, Button: tea.MouseLeft}
-		}
-	}
-	t.Fatalf("no painted row %q in:\n%s", text, ansi.Strip(m.View().Content))
-	return tea.Mouse{}
+	mouse := findPainted(t, m, text)
+	mouse.X = m.horizontalPadding() + m.viewport.Width() - 1
+	return mouse
 }
 
 func clickPainted(t *testing.T, m model, text string) model {

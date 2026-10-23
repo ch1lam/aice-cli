@@ -79,8 +79,7 @@ func TestSecretInputHidesRealCursor(t *testing.T) {
 func TestWelcomeViewShowsAnimatedLogo(t *testing.T) {
 	t.Parallel()
 
-	current := newModel(make(chan runRequest), make(chan struct{}))
-	current = updateModel(t, current, tea.WindowSizeMsg{Width: 150, Height: 30})
+	current := testModel(t, 150, 30)
 	current.apiKeyConfigured = true
 	current.version = "v0.4.5"
 	current.welcomeUpdate.state = welcomeUpdateCurrent
@@ -146,8 +145,7 @@ func TestWelcomeHeaderHasNoBorderOrBackground(t *testing.T) {
 func TestWelcomeViewOmitsLogoWhenNarrow(t *testing.T) {
 	t.Parallel()
 
-	current := newModel(make(chan runRequest), make(chan struct{}))
-	current = updateModel(t, current, tea.WindowSizeMsg{Width: 30, Height: 50})
+	current := testModel(t, 30, 50)
 
 	current.version = "v0.4.5"
 	welcome := current.welcomeView()
@@ -162,8 +160,7 @@ func TestWelcomeViewOmitsLogoWhenNarrow(t *testing.T) {
 func TestWelcomeViewOmitsLogoWhenShort(t *testing.T) {
 	t.Parallel()
 
-	current := newModel(make(chan runRequest), make(chan struct{}))
-	current = updateModel(t, current, tea.WindowSizeMsg{Width: 210, Height: 10})
+	current := testModel(t, 210, 10)
 
 	current.version = "v0.4.5"
 	welcome := current.welcomeView()
@@ -178,8 +175,7 @@ func TestWelcomeViewOmitsLogoWhenShort(t *testing.T) {
 func TestWelcomeViewShowsVersion(t *testing.T) {
 	t.Parallel()
 
-	current := newModel(make(chan runRequest), make(chan struct{}))
-	current = updateModel(t, current, tea.WindowSizeMsg{Width: 80, Height: 24})
+	current := testModel(t, 80, 24)
 	current.version = "v0.4.5"
 
 	welcome := current.welcomeView()
@@ -191,8 +187,7 @@ func TestWelcomeViewShowsVersion(t *testing.T) {
 func TestWelcomeViewOmitsVersionWhenUnset(t *testing.T) {
 	t.Parallel()
 
-	current := newModel(make(chan runRequest), make(chan struct{}))
-	current = updateModel(t, current, tea.WindowSizeMsg{Width: 80, Height: 24})
+	current := testModel(t, 80, 24)
 
 	welcome := current.welcomeView()
 	for _, line := range strings.Split(welcome, "\n") {
@@ -373,8 +368,7 @@ func TestCheckForUpdateCommandUsesCallerContext(t *testing.T) {
 func TestModelInitIncludesConfiguredUpdateCheck(t *testing.T) {
 	t.Parallel()
 
-	current := newModel(make(chan runRequest), make(chan struct{}))
-	current = updateModel(t, current, tea.WindowSizeMsg{Width: 80, Height: 24})
+	current := testModel(t, 80, 24)
 	current.welcomeUpdate.state = welcomeUpdateChecking
 	calls := 0
 	current.updateCheck = checkForUpdate(t.Context(), func(ctx context.Context) (UpdateCheckResult, error) {
@@ -476,8 +470,7 @@ func TestWelcomeAnimationResumesAfterRestart(t *testing.T) {
 func TestWelcomeAnimationStopsWhenRunStarts(t *testing.T) {
 	t.Parallel()
 
-	current := newModel(make(chan runRequest), make(chan struct{}))
-	current = updateModel(t, current, tea.WindowSizeMsg{Width: 80, Height: 24})
+	current := testModel(t, 80, 24)
 	generation := current.welcomeAnimation.generation
 
 	current.running = true
@@ -493,8 +486,7 @@ func TestWelcomeAnimationStopsWhenRunStarts(t *testing.T) {
 func TestModelInitEmitsWelcomeTick(t *testing.T) {
 	t.Parallel()
 
-	current := newModel(make(chan runRequest), make(chan struct{}))
-	current = updateModel(t, current, tea.WindowSizeMsg{Width: 210, Height: 30})
+	current := testModel(t, 210, 30)
 	var tick welcomeTickMsg
 	found := false
 	for _, message := range welcomeInitMessages(t, current) {

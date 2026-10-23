@@ -11,7 +11,7 @@ func TestPickerPressCannotSurviveInterruptedGesture(t *testing.T) {
 	for _, interruption := range []string{"blur", "resize", "key", "wheel", "drag back", "wrong button"} {
 		t.Run(interruption, func(t *testing.T) {
 			m := pickerModel(t, 100, 28)
-			mouse := sessionCloseMouse(t, m)
+			mouse := findPainted(t, m, "✘")
 			m = updateModel(t, m, tea.MouseClickMsg(mouse))
 			if !m.sessionPicker.closePressed {
 				t.Fatal("fixture did not press close")

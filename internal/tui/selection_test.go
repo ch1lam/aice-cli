@@ -88,8 +88,7 @@ func TestTranscriptSelectionSelectedRange(t *testing.T) {
 func TestSelectedTranscriptTextHandlesANSIAndMultipleLines(t *testing.T) {
 	t.Parallel()
 
-	current := newModel(make(chan runRequest), make(chan struct{}))
-	current = updateModel(t, current, tea.WindowSizeMsg{Width: 40, Height: 14})
+	current := testModel(t, 40, 14)
 	current.viewport.SetContent("alpha bravo\ncharlie delta")
 	current.viewport.GotoTop()
 	viewportTop := current.verticalPadding() + lipgloss.Height(current.headerView(current.layoutWidth()))
@@ -120,8 +119,7 @@ func TestSelectedTranscriptTextHandlesANSIAndMultipleLines(t *testing.T) {
 func TestModelMouseDragSelectsAndCopiesTranscript(t *testing.T) {
 	t.Parallel()
 
-	current := newModel(make(chan runRequest), make(chan struct{}))
-	current = updateModel(t, current, tea.WindowSizeMsg{Width: 40, Height: 14})
+	current := testModel(t, 40, 14)
 	current.viewport.SetContent(
 		"alpha bravo\n" + strings.Repeat("line\n", 30),
 	)
@@ -203,8 +201,7 @@ func TestModelMouseDragSelectsAndCopiesTranscript(t *testing.T) {
 func TestCachedHighlightMatchesPureRecompute(t *testing.T) {
 	t.Parallel()
 
-	current := newModel(make(chan runRequest), make(chan struct{}))
-	current = updateModel(t, current, tea.WindowSizeMsg{Width: 100, Height: 30})
+	current := testModel(t, 100, 30)
 	var code strings.Builder
 	code.WriteString("```go\n")
 	for i := 0; i < 40; i++ {
@@ -253,8 +250,7 @@ func TestCachedHighlightMatchesPureRecompute(t *testing.T) {
 func TestStreamingBatchDuringSelectionDefersLayout(t *testing.T) {
 	t.Parallel()
 
-	current := newModel(make(chan runRequest), make(chan struct{}))
-	current = updateModel(t, current, tea.WindowSizeMsg{Width: 100, Height: 30})
+	current := testModel(t, 100, 30)
 	seed := strings.Repeat("streaming seed line with enough text to wrap. ", 60)
 	current.entries = append(current.entries, transcriptEntry{
 		kind:         entryAssistant,
@@ -345,8 +341,7 @@ func TestStreamingBatchDuringSelectionDefersLayout(t *testing.T) {
 func TestModelMouseClickWithoutDragDoesNotCopy(t *testing.T) {
 	t.Parallel()
 
-	current := newModel(make(chan runRequest), make(chan struct{}))
-	current = updateModel(t, current, tea.WindowSizeMsg{Width: 40, Height: 14})
+	current := testModel(t, 40, 14)
 	current.viewport.SetContent("alpha")
 	viewportTop := current.verticalPadding() + lipgloss.Height(current.headerView(current.layoutWidth()))
 
@@ -375,8 +370,7 @@ func TestModelMouseClickWithoutDragDoesNotCopy(t *testing.T) {
 func TestCopyNoticePreservesActivityAndExpires(t *testing.T) {
 	for _, state := range []string{"idle", "thinking", "side"} {
 		t.Run(state, func(t *testing.T) {
-			current := newModel(make(chan runRequest), make(chan struct{}))
-			current = updateModel(t, current, tea.WindowSizeMsg{Width: 40, Height: 14})
+			current := testModel(t, 40, 14)
 			current.running = state == "thinking"
 			current.side.isVisible = state == "side"
 			current.status = "Thinking..."
@@ -447,8 +441,7 @@ func TestCopyBubbleKeepsFooterAndCursor(t *testing.T) {
 
 func TestCopyNoticeTimerExpiresAfterOneSecond(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		current := newModel(make(chan runRequest), make(chan struct{}))
-		current = updateModel(t, current, tea.WindowSizeMsg{Width: 40, Height: 14})
+		current := testModel(t, 40, 14)
 		current.viewport.SetContent("alpha")
 		top := current.verticalPadding() + lipgloss.Height(current.headerView(current.layoutWidth()))
 		current = updateModel(t, current, tea.MouseClickMsg(tea.Mouse{X: current.horizontalPadding(), Y: top, Button: tea.MouseLeft}))

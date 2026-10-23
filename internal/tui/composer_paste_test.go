@@ -28,8 +28,7 @@ func largePasteFixture(first string, lines int) string {
 func TestPastePlaceholderKeepsSurroundingOrder(t *testing.T) {
 	t.Parallel()
 
-	current := newModel(make(chan runRequest), make(chan struct{}))
-	current = updateModel(t, current, tea.WindowSizeMsg{Width: 80, Height: 24})
+	current := testModel(t, 80, 24)
 	current = typeText(t, current, "AAAA")
 	paste := largePasteFixture("pasted body", 50)
 	current = updateModel(t, current, tea.PasteMsg{Content: paste})
@@ -50,8 +49,7 @@ func TestPastePlaceholderKeepsSurroundingOrder(t *testing.T) {
 func TestSmallPasteStaysPlain(t *testing.T) {
 	t.Parallel()
 
-	current := newModel(make(chan runRequest), make(chan struct{}))
-	current = updateModel(t, current, tea.WindowSizeMsg{Width: 80, Height: 24})
+	current := testModel(t, 80, 24)
 	current = updateModel(t, current, tea.PasteMsg{Content: "one\ntwo\nthree"})
 
 	if len(current.pastes) != 0 {
@@ -65,8 +63,7 @@ func TestSmallPasteStaysPlain(t *testing.T) {
 func TestLongSingleLinePasteCollapses(t *testing.T) {
 	t.Parallel()
 
-	current := newModel(make(chan runRequest), make(chan struct{}))
-	current = updateModel(t, current, tea.WindowSizeMsg{Width: 80, Height: 24})
+	current := testModel(t, 80, 24)
 	current = updateModel(t, current, tea.PasteMsg{Content: strings.Repeat("x", 1200)})
 
 	if len(current.pastes) != 1 {
@@ -80,8 +77,7 @@ func TestLongSingleLinePasteCollapses(t *testing.T) {
 func TestPlaceholderCursorMovesAsOne(t *testing.T) {
 	t.Parallel()
 
-	current := newModel(make(chan runRequest), make(chan struct{}))
-	current = updateModel(t, current, tea.WindowSizeMsg{Width: 80, Height: 24})
+	current := testModel(t, 80, 24)
 	current = typeText(t, current, "AAAA")
 	current = updateModel(t, current, tea.PasteMsg{Content: largePasteFixture("body", 50)})
 	tokenRunes := len([]rune(current.pastes[0].token))
@@ -107,8 +103,7 @@ func TestPlaceholderCursorMovesAsOne(t *testing.T) {
 func TestBackspaceRemovesPlaceholderAsOne(t *testing.T) {
 	t.Parallel()
 
-	current := newModel(make(chan runRequest), make(chan struct{}))
-	current = updateModel(t, current, tea.WindowSizeMsg{Width: 80, Height: 24})
+	current := testModel(t, 80, 24)
 	current = typeText(t, current, "AAAA")
 	current = updateModel(t, current, tea.PasteMsg{Content: largePasteFixture("remove me", 50)})
 	current = typeText(t, current, "bbb")
@@ -132,8 +127,7 @@ func TestBackspaceRemovesPlaceholderAsOne(t *testing.T) {
 func TestDeleteForwardRemovesPlaceholderAsOne(t *testing.T) {
 	t.Parallel()
 
-	current := newModel(make(chan runRequest), make(chan struct{}))
-	current = updateModel(t, current, tea.WindowSizeMsg{Width: 80, Height: 24})
+	current := testModel(t, 80, 24)
 	current = typeText(t, current, "AAAA")
 	current = updateModel(t, current, tea.PasteMsg{Content: largePasteFixture("remove me", 50)})
 
@@ -151,8 +145,7 @@ func TestDeleteForwardRemovesPlaceholderAsOne(t *testing.T) {
 func TestTypingAfterPlaceholderKeepsIt(t *testing.T) {
 	t.Parallel()
 
-	current := newModel(make(chan runRequest), make(chan struct{}))
-	current = updateModel(t, current, tea.WindowSizeMsg{Width: 80, Height: 24})
+	current := testModel(t, 80, 24)
 	paste := largePasteFixture("keep me", 50)
 	current = updateModel(t, current, tea.PasteMsg{Content: paste})
 	updated := typeText(t, current, "hi")
@@ -168,8 +161,7 @@ func TestTypingAfterPlaceholderKeepsIt(t *testing.T) {
 func TestBackspaceInTailDeletesNormally(t *testing.T) {
 	t.Parallel()
 
-	current := newModel(make(chan runRequest), make(chan struct{}))
-	current = updateModel(t, current, tea.WindowSizeMsg{Width: 80, Height: 24})
+	current := testModel(t, 80, 24)
 	current = updateModel(t, current, tea.PasteMsg{Content: largePasteFixture("tail test", 50)})
 	token := current.pastes[0].token
 	updated := typeText(t, current, "ab")
@@ -212,8 +204,7 @@ func TestSubmitExpandsPlaceholdersInOrder(t *testing.T) {
 func TestDuplicatePastesGainUniqueTokens(t *testing.T) {
 	t.Parallel()
 
-	current := newModel(make(chan runRequest), make(chan struct{}))
-	current = updateModel(t, current, tea.WindowSizeMsg{Width: 80, Height: 24})
+	current := testModel(t, 80, 24)
 	paste := largePasteFixture("same body", 20)
 	current = updateModel(t, current, tea.PasteMsg{Content: paste})
 	current = updateModel(t, current, tea.PasteMsg{Content: paste})
@@ -232,8 +223,7 @@ func TestDuplicatePastesGainUniqueTokens(t *testing.T) {
 func TestHistoryDraftKeepsExpandedText(t *testing.T) {
 	t.Parallel()
 
-	current := newModel(make(chan runRequest), make(chan struct{}))
-	current = updateModel(t, current, tea.WindowSizeMsg{Width: 80, Height: 24})
+	current := testModel(t, 80, 24)
 	current.promptHistory = []string{"old prompt"}
 	paste := largePasteFixture("draft body", 20)
 	current = updateModel(t, current, tea.PasteMsg{Content: paste})
@@ -257,8 +247,7 @@ func TestHistoryDraftKeepsExpandedText(t *testing.T) {
 func TestEditorRefillClearsPlaceholders(t *testing.T) {
 	t.Parallel()
 
-	current := newModel(make(chan runRequest), make(chan struct{}))
-	current = updateModel(t, current, tea.WindowSizeMsg{Width: 80, Height: 24})
+	current := testModel(t, 80, 24)
 	current = updateModel(t, current, tea.PasteMsg{Content: largePasteFixture("edited body", 20)})
 	if len(current.pastes) != 1 {
 		t.Fatal("large paste did not collapse into a placeholder")
@@ -285,8 +274,7 @@ func TestEditorRefillClearsPlaceholders(t *testing.T) {
 func TestEditorErrorKeepsDraft(t *testing.T) {
 	t.Parallel()
 
-	current := newModel(make(chan runRequest), make(chan struct{}))
-	current = updateModel(t, current, tea.WindowSizeMsg{Width: 80, Height: 24})
+	current := testModel(t, 80, 24)
 	paste := largePasteFixture("kept body", 20)
 	current = updateModel(t, current, tea.PasteMsg{Content: paste})
 	before := current.input.Value()
@@ -306,8 +294,7 @@ func TestEditorShortcutOpensExternalEditor(t *testing.T) {
 	t.Setenv("VISUAL", "true")
 	t.Setenv("EDITOR", "")
 
-	current := newModel(make(chan runRequest), make(chan struct{}))
-	current = updateModel(t, current, tea.WindowSizeMsg{Width: 80, Height: 24})
+	current := testModel(t, 80, 24)
 	_, command, handled := current.handleKey(tea.KeyPressMsg(tea.Key{Code: 'g', Mod: tea.ModCtrl}))
 	if !handled {
 		t.Fatal("ctrl+g was not handled")
@@ -321,8 +308,7 @@ func TestPastePlaceholderStatusNamesEditor(t *testing.T) {
 	t.Setenv("VISUAL", "myeditor --wait")
 	t.Setenv("EDITOR", "")
 
-	current := newModel(make(chan runRequest), make(chan struct{}))
-	current = updateModel(t, current, tea.WindowSizeMsg{Width: 80, Height: 24})
+	current := testModel(t, 80, 24)
 	current = updateModel(t, current, tea.PasteMsg{Content: largePasteFixture("body", 50)})
 
 	if want := "Ctrl+g edits in myeditor --wait"; !strings.Contains(current.status, want) {
@@ -360,8 +346,7 @@ func TestOpenComposerEditorUsesConfiguredBinary(t *testing.T) {
 }
 
 func TestEditorErrorNamesFailedEditor(t *testing.T) {
-	current := newModel(make(chan runRequest), make(chan struct{}))
-	current = updateModel(t, current, tea.WindowSizeMsg{Width: 80, Height: 24})
+	current := testModel(t, 80, 24)
 	current = updateModel(t, current, tea.PasteMsg{Content: largePasteFixture("kept body", 20)})
 	before := current.input.Value()
 
@@ -388,8 +373,7 @@ func TestEditorEmptyResultKeepsDraft(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			current := newModel(make(chan runRequest), make(chan struct{}))
-			current = updateModel(t, current, tea.WindowSizeMsg{Width: 80, Height: 24})
+			current := testModel(t, 80, 24)
 			current = updateModel(t, current, tea.PasteMsg{Content: largePasteFixture("kept body", 20)})
 			before := current.input.Value()
 
@@ -491,8 +475,7 @@ func TestPasteExcerpt(t *testing.T) {
 func TestUnknownBracketsStayPlain(t *testing.T) {
 	t.Parallel()
 
-	current := newModel(make(chan runRequest), make(chan struct{}))
-	current = updateModel(t, current, tea.WindowSizeMsg{Width: 80, Height: 24})
+	current := testModel(t, 80, 24)
 	current.input.SetValue("hello [ typed ] world")
 	if got := current.expandComposerText(); got != "hello [ typed ] world" {
 		t.Errorf("expanded = %q, want hand-typed brackets left alone", got)

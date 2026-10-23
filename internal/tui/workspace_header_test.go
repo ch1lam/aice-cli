@@ -18,15 +18,12 @@ import (
 	"github.com/ch1lam/aice-cli/internal/interaction"
 )
 
+// workspaceMouse points at the path that follows the painted product name.
 func workspaceMouse(t *testing.T, m model) tea.Mouse {
 	t.Helper()
-	for y, row := range strings.Split(ansi.Strip(m.View().Content), "\n") {
-		if index := strings.Index(row, "AICE  "); index >= 0 {
-			return tea.Mouse{X: ansi.StringWidth(row[:index+6]), Y: y, Button: tea.MouseLeft}
-		}
-	}
-	t.Fatal("workspace header is missing")
-	return tea.Mouse{}
+	mouse := findPainted(t, m, "AICE  ")
+	mouse.X += len("AICE  ")
+	return mouse
 }
 
 func TestWorkspaceHeaderHoverCopyAndOpen(t *testing.T) {

@@ -98,8 +98,7 @@ func TestModelSubmitsPromptAndConsumesAgentEvents(t *testing.T) {
 func TestModelCollapsesProcessWhenConclusionStartsStreaming(t *testing.T) {
 	t.Parallel()
 
-	current := newModel(make(chan runRequest), make(chan struct{}))
-	current = updateModel(t, current, tea.WindowSizeMsg{Width: 80, Height: 24})
+	current := testModel(t, 80, 24)
 	current.entries = append(
 		current.entries,
 		transcriptEntry{kind: entryUser, text: "inspect"},
@@ -228,8 +227,7 @@ func TestModelCollapsesProcessWhenConclusionStartsStreaming(t *testing.T) {
 func TestModelProcessSpacingKeepsToolsTogether(t *testing.T) {
 	t.Parallel()
 
-	current := newModel(make(chan runRequest), make(chan struct{}))
-	current = updateModel(t, current, tea.WindowSizeMsg{Width: 80, Height: 24})
+	current := testModel(t, 80, 24)
 	processID := current.beginProcess()
 	current.entries = []transcriptEntry{
 		{
@@ -301,8 +299,7 @@ func TestModelProcessSpacingKeepsToolsTogether(t *testing.T) {
 func TestModelAssistantBodyIsSeparatedAndUniformlyIndented(t *testing.T) {
 	t.Parallel()
 
-	current := newModel(make(chan runRequest), make(chan struct{}))
-	current = updateModel(t, current, tea.WindowSizeMsg{Width: 48, Height: 24})
+	current := testModel(t, 48, 24)
 	markdown := "First paragraph wraps onto another line so alignment stays visible.\n\n" +
 		"---\n\n" +
 		"## Heading\n\nSecond paragraph."
@@ -548,8 +545,7 @@ func TestModelEscapeBeforeRunStartsDefersCancellation(t *testing.T) {
 func TestModelQuestionMarkHelpTogglesAndUsesAvailableHeight(t *testing.T) {
 	t.Parallel()
 
-	current := newModel(make(chan runRequest), make(chan struct{}))
-	current = updateModel(t, current, tea.WindowSizeMsg{Width: 80, Height: 24})
+	current := testModel(t, 80, 24)
 	collapsedHeight := current.viewport.Height()
 
 	updated, command, handled := current.handleKey(tea.KeyPressMsg{
@@ -684,8 +680,7 @@ func TestModelPastedLeadingQuestionMarkRemainsComposerInput(t *testing.T) {
 func TestModelAcceptsLargePasteBeyondVisibleHeight(t *testing.T) {
 	t.Parallel()
 
-	current := newModel(make(chan runRequest), make(chan struct{}))
-	current = updateModel(t, current, tea.WindowSizeMsg{Width: 80, Height: 24})
+	current := testModel(t, 80, 24)
 
 	lines := make([]string, 200)
 	for index := range lines {
@@ -723,8 +718,7 @@ func TestModelAcceptsLargePasteBeyondVisibleHeight(t *testing.T) {
 func TestModelKeepsReadyInHeaderAndUsesBubblesHelpBelowComposer(t *testing.T) {
 	t.Parallel()
 
-	current := newModel(make(chan runRequest), make(chan struct{}))
-	current = updateModel(t, current, tea.WindowSizeMsg{Width: 80, Height: 24})
+	current := testModel(t, 80, 24)
 	current.input.SetValue("composer marker")
 	current.input.Blur()
 
@@ -782,8 +776,7 @@ func TestModelKeepsReadyInHeaderAndUsesBubblesHelpBelowComposer(t *testing.T) {
 func TestModelHeaderShowsShellWorkingDirectory(t *testing.T) {
 	t.Parallel()
 
-	current := newModel(make(chan runRequest), make(chan struct{}))
-	current = updateModel(t, current, tea.WindowSizeMsg{Width: 80, Height: 24})
+	current := testModel(t, 80, 24)
 	originalViewportHeight := current.viewport.Height()
 	current.workingDirectory = filepath.Join(
 		string(filepath.Separator),
@@ -1002,8 +995,7 @@ func TestModelAnimatesSnapshotUsage(t *testing.T) {
 func TestModelRendersRunActivityInTranscriptInsteadOfFooter(t *testing.T) {
 	t.Parallel()
 
-	current := newModel(make(chan runRequest), make(chan struct{}))
-	current = updateModel(t, current, tea.WindowSizeMsg{Width: 80, Height: 24})
+	current := testModel(t, 80, 24)
 	current.entries = []transcriptEntry{{kind: entryUser, text: "inspect"}}
 	current.running = true
 	current.status = "Starting response..."
@@ -1316,8 +1308,7 @@ func TestModelCollapsedProcessHidesDetailsUntilExpanded(t *testing.T) {
 func TestModelSpinnerTickRefreshesTranscriptViewport(t *testing.T) {
 	t.Parallel()
 
-	current := newModel(make(chan runRequest), make(chan struct{}))
-	current = updateModel(t, current, tea.WindowSizeMsg{Width: 80, Height: 24})
+	current := testModel(t, 80, 24)
 	current.entries = []transcriptEntry{{kind: entryUser, text: "inspect"}}
 	current.running = true
 	current.status = "Thinking..."
@@ -2075,8 +2066,7 @@ func TestModelCancellationIsRenderedAsNotice(t *testing.T) {
 func TestModelSessionChangeRebuildsBranchTranscript(t *testing.T) {
 	t.Parallel()
 
-	current := newModel(make(chan runRequest), make(chan struct{}))
-	current = updateModel(t, current, tea.WindowSizeMsg{Width: 80, Height: 24})
+	current := testModel(t, 80, 24)
 	current.entries = []transcriptEntry{
 		{kind: entryUser, text: "first question"},
 		{kind: entryAssistant, text: "OLD_BRANCH_ANSWER", complete: true},
@@ -2113,16 +2103,6 @@ func TestModelSessionChangeRebuildsBranchTranscript(t *testing.T) {
 		updated.assistantEntry != -1 {
 		t.Fatalf("branch state not reset: groups=%#v", updated.processGroups)
 	}
-}
-
-func updateModel(t *testing.T, current model, message tea.Msg) model {
-	t.Helper()
-	updated, _ := current.Update(message)
-	result, ok := updated.(model)
-	if !ok {
-		t.Fatalf("Update() model = %T, want tui.model", updated)
-	}
-	return result
 }
 
 func assertActivityInTranscript(t *testing.T, current model, want string) {
@@ -2206,8 +2186,7 @@ func assertTextOrder(t *testing.T, text string, values ...string) {
 func newScrollableModel(t *testing.T) model {
 	t.Helper()
 
-	current := newModel(make(chan runRequest), make(chan struct{}))
-	current = updateModel(t, current, tea.WindowSizeMsg{Width: 80, Height: 24})
+	current := testModel(t, 80, 24)
 	current.viewport.SetContent(strings.Repeat("line\n", 100))
 	current.viewport.SetYOffset(20)
 	return current

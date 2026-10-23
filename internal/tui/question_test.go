@@ -563,8 +563,7 @@ func TestQuestionPanelEnterReturnsToUnansweredQuestion(t *testing.T) {
 
 func TestQuestionPanelSpaceSelectSwitchSubmit(t *testing.T) {
 	prompt, replies := newQuestionTestPrompt()
-	current := newModel(make(chan runRequest), make(chan struct{}))
-	current = updateModel(t, current, tea.WindowSizeMsg{Width: 100, Height: 30})
+	current := testModel(t, 100, 30)
 	current.input.SetValue("wip draft")
 	current = updateModel(t, current, questionPromptMsg{prompt: prompt})
 

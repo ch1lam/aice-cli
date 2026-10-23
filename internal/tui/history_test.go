@@ -44,8 +44,7 @@ func TestAppendPromptHistoryIgnoresBlankAndCapsLength(t *testing.T) {
 func TestModelUpDownRecallsSubmittedPrompts(t *testing.T) {
 	t.Parallel()
 
-	current := newModel(make(chan runRequest), make(chan struct{}))
-	current = updateModel(t, current, tea.WindowSizeMsg{Width: 80, Height: 24})
+	current := testModel(t, 80, 24)
 	current = submitPrompt(t, current, "first question")
 	current = submitPrompt(t, current, "second question")
 
@@ -82,8 +81,7 @@ func TestModelUpDownRecallsSubmittedPrompts(t *testing.T) {
 func TestModelUpDownRecallsSlashCommands(t *testing.T) {
 	t.Parallel()
 
-	current := newModel(make(chan runRequest), make(chan struct{}))
-	current = updateModel(t, current, tea.WindowSizeMsg{Width: 80, Height: 24})
+	current := testModel(t, 80, 24)
 	current = submitPrompt(t, current, "/help")
 
 	up, _, handled := current.handleKey(tea.KeyPressMsg{Code: tea.KeyUp})
@@ -98,8 +96,7 @@ func TestModelUpDownRecallsSlashCommands(t *testing.T) {
 func TestModelRecallPreservesDraft(t *testing.T) {
 	t.Parallel()
 
-	current := newModel(make(chan runRequest), make(chan struct{}))
-	current = updateModel(t, current, tea.WindowSizeMsg{Width: 80, Height: 24})
+	current := testModel(t, 80, 24)
 	current = submitPrompt(t, current, "remembered question")
 	current.input.SetValue("my in-progress draft")
 
@@ -119,8 +116,7 @@ func TestModelRecallPreservesDraft(t *testing.T) {
 func TestModelRecallStaysAtOldestAndDoesNotStepBackFromDraft(t *testing.T) {
 	t.Parallel()
 
-	current := newModel(make(chan runRequest), make(chan struct{}))
-	current = updateModel(t, current, tea.WindowSizeMsg{Width: 80, Height: 24})
+	current := testModel(t, 80, 24)
 	current = submitPrompt(t, current, "only question")
 
 	up, _, handled := current.handleKey(tea.KeyPressMsg{Code: tea.KeyUp})
@@ -205,8 +201,7 @@ func TestModelUpDownDoesNotRecallWhileSelectionMenuOpen(t *testing.T) {
 func TestModelMultilineDraftNeverSwitchesHistory(t *testing.T) {
 	t.Parallel()
 
-	current := newModel(make(chan runRequest), make(chan struct{}))
-	current = updateModel(t, current, tea.WindowSizeMsg{Width: 80, Height: 24})
+	current := testModel(t, 80, 24)
 	current.promptHistory = []string{"older", "newer"}
 	current.input.SetValue("line one\nline two\nline three")
 	current.input.MoveToBegin()
@@ -241,8 +236,7 @@ func TestModelMultilineDraftNeverSwitchesHistory(t *testing.T) {
 func TestModelMultilineDraftDownAtBottomDoesNotSwitch(t *testing.T) {
 	t.Parallel()
 
-	current := newModel(make(chan runRequest), make(chan struct{}))
-	current = updateModel(t, current, tea.WindowSizeMsg{Width: 80, Height: 24})
+	current := testModel(t, 80, 24)
 	current.promptHistory = []string{"older", "newer"}
 	current.input.SetValue("line one\nline two\nline three")
 	current.input.CursorEnd()
@@ -266,8 +260,7 @@ func TestModelMultilineDraftDownAtBottomDoesNotSwitch(t *testing.T) {
 func TestModelRecalledMultilineEntryKeepsSwitching(t *testing.T) {
 	t.Parallel()
 
-	current := newModel(make(chan runRequest), make(chan struct{}))
-	current = updateModel(t, current, tea.WindowSizeMsg{Width: 80, Height: 24})
+	current := testModel(t, 80, 24)
 	current.promptHistory = []string{"older", "multi\nline\nentry", "newer"}
 
 	up := updateModel(t, current, tea.KeyPressMsg{Code: tea.KeyUp})
@@ -303,8 +296,7 @@ func TestModelRecalledMultilineEntryKeepsSwitching(t *testing.T) {
 func TestModelEditingRecalledPromptStopsHistorySwitching(t *testing.T) {
 	t.Parallel()
 
-	current := newModel(make(chan runRequest), make(chan struct{}))
-	current = updateModel(t, current, tea.WindowSizeMsg{Width: 80, Height: 24})
+	current := testModel(t, 80, 24)
 	current.promptHistory = []string{"multi\nline\ncommand", "newer"}
 
 	current = updateModel(t, current, tea.KeyPressMsg{Code: tea.KeyUp})
@@ -336,8 +328,7 @@ func TestModelEditingRecalledPromptStopsHistorySwitching(t *testing.T) {
 func TestModelEditingRecalledSingleLineKeepsEditAsDraft(t *testing.T) {
 	t.Parallel()
 
-	current := newModel(make(chan runRequest), make(chan struct{}))
-	current = updateModel(t, current, tea.WindowSizeMsg{Width: 80, Height: 24})
+	current := testModel(t, 80, 24)
 	current.promptHistory = []string{"cmd", "newer"}
 
 	current = updateModel(t, current, tea.KeyPressMsg{Code: tea.KeyUp})
@@ -362,8 +353,7 @@ func TestModelEditingRecalledSingleLineKeepsEditAsDraft(t *testing.T) {
 func TestModelSubmitResetsRecallPosition(t *testing.T) {
 	t.Parallel()
 
-	current := newModel(make(chan runRequest), make(chan struct{}))
-	current = updateModel(t, current, tea.WindowSizeMsg{Width: 80, Height: 24})
+	current := testModel(t, 80, 24)
 	current = submitPrompt(t, current, "first")
 	current.promptHistory = append(current.promptHistory, "older")
 	current.historyIndex = 1
@@ -406,8 +396,7 @@ func TestModelBTWDoesNotEnterMainPromptHistory(t *testing.T) {
 func TestModelHistoryIsNotSecretInTranscript(t *testing.T) {
 	t.Parallel()
 
-	current := newModel(make(chan runRequest), make(chan struct{}))
-	current = updateModel(t, current, tea.WindowSizeMsg{Width: 80, Height: 24})
+	current := testModel(t, 80, 24)
 	current = submitPrompt(t, current, "visible question")
 	current.historyDraft = "not a transcript entry"
 

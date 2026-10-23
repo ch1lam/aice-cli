@@ -79,8 +79,7 @@ func (pickerBrowser) PreviewSession(ctx context.Context, _, _ string) (string, e
 
 func pickerModel(t *testing.T, width, height int) model {
 	t.Helper()
-	m := newModel(make(chan runRequest), make(chan struct{}), SlashCommand{Name: "history"})
-	m = updateModel(t, m, tea.WindowSizeMsg{Width: width, Height: height})
+	m := testModel(t, width, height, SlashCommand{Name: "history"})
 	var closeQueries func()
 	m.searchSessions, m.previewSession, m.readSession, m.renameSession, closeQueries = sessionBrowserCommands(t.Context(), pickerBrowser{})
 	t.Cleanup(closeQueries)
@@ -330,7 +329,7 @@ func TestSessionPickerCloseButton(t *testing.T) {
 	for _, size := range [][2]int{{24, 10}, {60, 24}, {160, 40}} {
 		t.Run(fmt.Sprint(size), func(t *testing.T) {
 			m := pickerModel(t, size[0], size[1])
-			mouse := sessionCloseMouse(t, m)
+			mouse := findPainted(t, m, "✘")
 			if mouse.Y != m.sessionPickerLayout().y {
 				t.Fatal("close button is not on the top border")
 			}
@@ -393,23 +392,12 @@ func TestSessionPickerCloseButtonCancelsRestore(t *testing.T) {
 	m.sessionPicker.restoring = true
 	cancelled := false
 	m.cancelRun = func() { cancelled = true }
-	mouse := sessionCloseMouse(t, m)
+	mouse := findPainted(t, m, "✘")
 	m = updateModel(t, m, tea.MouseClickMsg(mouse))
 	m = updateModel(t, m, tea.MouseReleaseMsg(mouse))
 	if !cancelled || m.sessionPicker == nil {
 		t.Fatal("close during restore did not preserve restoration's cancellation lifecycle")
 	}
-}
-
-func sessionCloseMouse(t *testing.T, m model) tea.Mouse {
-	t.Helper()
-	for y, row := range strings.Split(ansi.Strip(m.View().Content), "\n") {
-		if x := strings.Index(row, "✘"); x >= 0 {
-			return tea.Mouse{X: ansi.StringWidth(row[:x]), Y: y, Button: tea.MouseLeft}
-		}
-	}
-	t.Fatal("close button not painted")
-	return tea.Mouse{}
 }
 
 func TestSessionPickerClickIgnoresPagePadding(t *testing.T) {

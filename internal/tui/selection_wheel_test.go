@@ -14,8 +14,7 @@ import (
 
 func wheelTestModel(t *testing.T, width, height int) (model, int) {
 	t.Helper()
-	m := newModel(make(chan runRequest), make(chan struct{}))
-	m = updateModel(t, m, tea.WindowSizeMsg{Width: width, Height: height})
+	m := testModel(t, width, height)
 	top := m.verticalPadding() + lipgloss.Height(m.headerView(m.layoutWidth()))
 	return m, top
 }

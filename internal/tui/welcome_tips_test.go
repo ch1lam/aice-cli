@@ -135,8 +135,7 @@ func TestWelcomeTipCentersEachSentence(t *testing.T) {
 func TestWelcomeTipAppearsBetweenLogoAndComposer(t *testing.T) {
 	t.Parallel()
 
-	current := newModel(make(chan runRequest), make(chan struct{}))
-	current = updateModel(t, current, tea.WindowSizeMsg{Width: 150, Height: 30})
+	current := testModel(t, 150, 30)
 	current.version = "dev"
 	text := "A centered usage sentence."
 	current.welcomeTip = welcomeTip{text: []rune(text), visible: len(text), phase: welcomeTipHolding}
@@ -190,8 +189,7 @@ func TestWelcomeTipsKeepLayoutStable(t *testing.T) {
 func TestWelcomeTipsLifecycle(t *testing.T) {
 	t.Parallel()
 
-	current := newModel(make(chan runRequest), make(chan struct{}))
-	current = updateModel(t, current, tea.WindowSizeMsg{Width: 80, Height: 24})
+	current := testModel(t, 80, 24)
 	now := time.Unix(100, 0)
 	generation := current.welcomeAnimation.generation
 	current = updateModel(t, current, welcomeTickMsg{generation: generation, at: now})
