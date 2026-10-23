@@ -178,8 +178,9 @@ func StandardThinkingLevelMap() ThinkingLevelMap {
 
 // SupportedThinkingLevels derives the distinct canonical effort levels a
 // model exposes. Multiple accepted inputs that map to the same canonical wire
-// token collapse to one choice. Models without a declared map use Pi's
-// defaults; models without thinking support expose only off.
+// token collapse to one choice. Models without a declared map expose off
+// through high (see ThinkingLevelMap); models without thinking support expose
+// only off.
 func SupportedThinkingLevels(model Model) []ThinkingLevel {
 	if !model.SupportsThinking {
 		return []ThinkingLevel{ThinkingLevelOff}
