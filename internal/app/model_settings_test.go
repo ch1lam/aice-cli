@@ -72,7 +72,13 @@ func TestModelSettingsEntryPoints(t *testing.T) {
 					failure := errors.New("synthetic settings failure")
 					s.application = &application{dependencies: dependencies{
 						providers: defaultProviders(),
-						newModel:  func(config.Config) (llm.Streamer, error) { rebuilds++; return &recordingModel{}, nil },
+						newModel: func(c config.Config) (llm.Streamer, error) {
+							rebuilds++
+							if c.Provider != selection.provider || c.Model != selection.model || c.APIKeys[c.Provider] == "" {
+								t.Errorf("rebuild configuration = %s/%s, want selected provider with credential", c.Provider, c.Model)
+							}
+							return &recordingModel{}, nil
+						},
 						saveSettings: func(_ context.Context, _ config.Paths, changes map[config.Setting]string) error {
 							saves++
 							saved = maps.Clone(changes)
