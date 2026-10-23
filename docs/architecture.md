@@ -87,7 +87,7 @@ Optional capabilities retain their own owners:
 | `internal/app` | Composition root, lifecycle, prompt assembly, Sessions, Agent-event translation, interactive commands |
 | `internal/cli` | Cobra commands, flags, validation, exit behavior |
 | `internal/tui` | Bubble Tea presentation and interaction-event rendering |
-| `internal/interaction` | Frontend-neutral active-run, event, command, state, question, and input-mailbox contracts |
+| `internal/interaction` | Frontend-neutral capability set (`Frontend`), active-run, event, command and panel, settings and structured details, question, and input-mailbox contracts |
 | `internal/agent` | Agent Loop, retries, tool lifecycle, Agent events |
 | `internal/media` | Shared image decoding, conversion, validation, resizing, original retention and coordinate descriptions |
 | `internal/mcpclient` | One stdio/HTTP transport: SDK decoding and typed mapping, exact schema/structured JSON, bounded discovery/results, invalidation, cancellation and cleanup |
