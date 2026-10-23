@@ -127,7 +127,7 @@ func TestRefreshFailurePreservesCredentialWithoutAPIFallback(t *testing.T) {
 func TestCatalogAndCredentialBoundaries(t *testing.T) {
 	t.Parallel()
 	p := &Provider{}
-	c := config.Config{AnthropicAPIKey: "api-key", AnthropicBaseURL: "https://other.test"}
+	c := config.Config{APIKeys: map[string]string{"anthropic": "api-key"}, BaseURLs: map[string]string{"anthropic": "https://other.test"}}
 	if p.Configured(c) {
 		t.Fatal("API key enabled subscription")
 	}

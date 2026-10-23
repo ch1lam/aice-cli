@@ -136,7 +136,7 @@ func TestMCPPrintCommandLazyDiscoveryAndSession(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			c.DeepSeekAPIKey = "offline-fixture"
+			c = c.WithAPIKey("deepseek", "offline-fixture")
 			c.Provider = string(deepseek.ProviderID)
 			c.Model = deepseek.ModelV4Flash
 			if mode == "approved-tools-ask" {
@@ -215,7 +215,7 @@ func TestMCPInteractiveCommandReusesTransportNotRunSelection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c.DeepSeekAPIKey = "offline-fixture"
+	c = c.WithAPIKey("deepseek", "offline-fixture")
 	model := &mcpStartupModel{t: t, search: true, wantRemote: true}
 	command, err := newTestCommand(t, dependencies{
 		loadConfig: func(config.LoadOptions) (config.Config, error) { return c, nil }, newModel: func(config.Config) (llm.Streamer, error) { return model, nil },

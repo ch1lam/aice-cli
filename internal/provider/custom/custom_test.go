@@ -167,7 +167,7 @@ func TestConfiguredAlwaysTrueForKeylessLocal(t *testing.T) {
 	if !p.Configured(config.Config{}) {
 		t.Error("Configured(empty) = false, want true for keyless local")
 	}
-	if !p.Configured(config.Config{CustomBaseURL: "http://localhost:11434/v1"}) {
+	if !p.Configured(config.Config{BaseURLs: map[string]string{"custom": "http://localhost:11434/v1"}}) {
 		t.Error("Configured with base URL = false, want true")
 	}
 }

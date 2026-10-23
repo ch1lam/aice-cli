@@ -71,7 +71,7 @@ func TestWebExampleParsesAndResolvesCredentials(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if loaded.DeepSeekAPIKey != "k" {
+	if loaded.APIKeys["deepseek"] != "k" {
 		t.Fatal("provider keys must survive the web namespace")
 	}
 	main := loaded.Web.Services["exa-main"]

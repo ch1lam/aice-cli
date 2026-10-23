@@ -97,7 +97,7 @@ func (c Config) frozen() *frozenSettings {
 	}
 	// Explicitly constructed Config values (embedding callers/tests) are a
 	// frozen baseline too. Do not consult files or the process environment.
-	values, _ := settingsValues(c.settings())
+	values, _ := c.values()
 	f := newFrozenSettings()
 	f.add(Source{Kind: "default"}, values)
 	return f
@@ -162,7 +162,7 @@ func (c Config) WithPatch(patch SettingsPatch) (Config, error) {
 	// Credentials are managed by dedicated auth operations and may have been
 	// replaced on this snapshot since startup. Never restore an old key when
 	// changing an unrelated preference.
-	credentials, err := settingsValues(c.settings())
+	credentials, err := c.values()
 	if err != nil {
 		return Config{}, err
 	}
@@ -255,7 +255,7 @@ func valueFromRaw(def SettingDefinition, raw any) (SettingValue, error) {
 	if def.Kind == ContextWindowsValue {
 		return SettingValue{Kind: def.Kind, Windows: c.settings().ContextWindows}, nil
 	}
-	values, err := settingsValues(c.settings())
+	values, err := c.values()
 	if err != nil {
 		return SettingValue{}, err
 	}
@@ -266,14 +266,15 @@ func valueFromRaw(def SettingDefinition, raw any) (SettingValue, error) {
 	return ParseSettingValue(def.ID, fmt.Sprint(normalized))
 }
 
-// CredentialSource exposes only where an effective key came from, never its
-// value. OAuth stores use their dedicated path functions instead.
-func (c Config) CredentialSource(key string) Source {
-	environment, ok := EnvironmentVariables()[key]
-	if !ok || !strings.HasSuffix(key, "_api_key") {
+// CredentialSource exposes only where provider id's effective API key came
+// from, never its value. OAuth stores use their dedicated path functions.
+func (c Config) CredentialSource(id string) Source {
+	provider, ok := findProviderKey(id)
+	if !ok {
 		return Source{Kind: "unavailable"}
 	}
-	values, _ := settingsValues(c.settings())
+	key, environment := provider.name+"_api_key", provider.apiKeyEnv
+	values, _ := c.values()
 	current, _ := values[key].(string)
 	if current == "" {
 		return Source{Kind: "not configured"}

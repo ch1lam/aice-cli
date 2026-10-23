@@ -46,16 +46,6 @@ func SaveSettingsFile(ctx context.Context, paths Paths, changes map[Setting]stri
 	return patchFile(ctx, paths.GlobalSettings, patch)
 }
 
-func saveAPIKeyFile(paths Paths, providerName, key, apiKey string) error {
-	if err := paths.validate(); err != nil {
-		return err
-	}
-	if strings.ContainsAny(apiKey, "\r\n") {
-		return fmt.Errorf("config: %s API key must be one line", providerName)
-	}
-	return patchFile(context.Background(), paths.GlobalAuth, map[string]any{key: apiKey})
-}
-
 func patchFile(ctx context.Context, path string, patch map[string]any) error {
 	return editFile(ctx, path, func(values map[string]any) error {
 		for key, value := range patch {

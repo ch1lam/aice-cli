@@ -125,35 +125,24 @@ func (p *Provider) DefaultModel() llm.Model {
 	return DefaultModel()
 }
 
-// Configured reports whether the configuration carries a Moonshot credential.
-func (p *Provider) Configured(configuration config.Config) bool {
-	return configuration.MoonshotAPIKey != ""
-}
+// credential is the Moonshot API key in AICE configuration.
+var credential = provider.APIKey{Provider: ProviderID, Label: "Moonshot"}
+
+// Configured reports whether the configuration carries an API key.
+func (p *Provider) Configured(c config.Config) bool { return credential.Configured(c) }
 
 // New constructs the credentialed Moonshot model service.
-func (p *Provider) New(configuration config.Config) (llm.Streamer, error) {
-	return New(Config{
-		APIKey:  configuration.MoonshotAPIKey,
-		BaseURL: configuration.MoonshotBaseURL,
-	})
+func (p *Provider) New(c config.Config) (llm.Streamer, error) {
+	return New(Config{APIKey: credential.Value(c), BaseURL: credential.BaseURL(c)})
 }
 
-// SaveAPIKey stores the Moonshot credential in the global auth file.
-func (p *Provider) SaveAPIKey(apiKey string) (string, error) {
-	return config.SaveMoonshotAPIKey(apiKey)
-}
+// SaveAPIKey stores the API key in the global auth file.
+func (p *Provider) SaveAPIKey(apiKey string) (string, error) { return credential.Save(apiKey) }
 
-// ApplyAPIKey stores the Moonshot credential in the configuration.
-func (p *Provider) ApplyAPIKey(configuration *config.Config, apiKey string) {
-	configuration.MoonshotAPIKey = apiKey
-}
+// ApplyAPIKey stores the API key in the configuration.
+func (p *Provider) ApplyAPIKey(c *config.Config, apiKey string) { credential.Apply(c, apiKey) }
 
-// CredentialNotConfiguredError describes the missing Moonshot credential.
-func (p *Provider) CredentialNotConfiguredError() error {
-	return fmt.Errorf(
-		"Moonshot API key is not configured; run /login in interactive mode or set %s",
-		config.EnvMoonshotAPIKey,
-	)
-}
+// CredentialNotConfiguredError describes the missing API key.
+func (p *Provider) CredentialNotConfiguredError() error { return credential.NotConfiguredError() }
 
 var _ provider.Provider = (*Provider)(nil)

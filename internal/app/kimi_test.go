@@ -12,7 +12,7 @@ import (
 func TestKimiModelSelectionAndMenus(t *testing.T) {
 	t.Parallel()
 	providers := defaultProviders()
-	configuration := config.Config{Provider: "kimi-coding", KimiAPIKey: "test-key"}
+	configuration := config.Config{Provider: "kimi-coding", APIKeys: map[string]string{"kimi-coding": "test-key"}}
 	model, options, err := resolveModelSettings(providers, configuration)
 	if err != nil {
 		t.Fatal(err)

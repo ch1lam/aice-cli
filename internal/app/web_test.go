@@ -175,7 +175,7 @@ func runWebPrint(t *testing.T, settings config.WebConfig, backends *webBackends,
 	model := &toolLoopModel{firstCall: &call}
 	command, err := newTestCommand(t, dependencies{
 		loadConfig: func(config.LoadOptions) (config.Config, error) {
-			return config.Config{DeepSeekAPIKey: "test-key", Web: settings}, nil
+			return config.Config{APIKeys: map[string]string{"deepseek": "test-key"}, Web: settings}, nil
 		},
 		newModel:    func(config.Config) (agent.Model, error) { return model, nil },
 		webBackends: backends,

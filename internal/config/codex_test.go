@@ -15,7 +15,7 @@ func TestCodexCredentialsRotateAtomicallyAndPreserveKeys(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	paths := Paths{GlobalAuth: filepath.Join(dir, "auth.json"), GlobalSettings: filepath.Join(dir, "settings.json"), GlobalTrust: filepath.Join(dir, "trust.json"), BinDir: filepath.Join(dir, "bin")}
-	if err := SaveOpenAIAPIKeyFile(paths, "api-key"); err != nil {
+	if err := SaveAPIKeyFile(paths, "openai", "api-key"); err != nil {
 		t.Fatal(err)
 	}
 	credential := CodexCredentials{AccessToken: "access", RefreshToken: "refresh", AccountID: "account", ExpiresAt: time.Now().Add(time.Hour)}
@@ -23,7 +23,7 @@ func TestCodexCredentialsRotateAtomicallyAndPreserveKeys(t *testing.T) {
 		t.Fatal(err)
 	}
 	loaded, err := LoadFiles(paths, LoadOptions{})
-	if err != nil || !loaded.CodexCredentials.Configured() || loaded.OpenAIAPIKey != "api-key" {
+	if err != nil || !loaded.CodexCredentials.Configured() || loaded.APIKeys["openai"] != "api-key" {
 		t.Fatalf("load credentials: %v", err)
 	}
 	info, err := os.Stat(CodexAuthPath(paths))
@@ -48,14 +48,14 @@ func TestCodexCredentialsRotateAtomicallyAndPreserveKeys(t *testing.T) {
 	if string(before) != string(after) {
 		t.Fatal("failed refresh altered stored credentials")
 	}
-	if err := SaveCustomAPIKeyFile(paths, "other-key"); err != nil {
+	if err := SaveAPIKeyFile(paths, "custom", "other-key"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := UpdateCodexCredentials(t.Context(), paths, func(CodexCredentials) (CodexCredentials, error) { return CodexCredentials{}, nil }); err != nil {
 		t.Fatal(err)
 	}
 	loaded, err = LoadFiles(paths, LoadOptions{})
-	if err != nil || loaded.CodexCredentials.Configured() || loaded.OpenAIAPIKey != "api-key" || loaded.CustomAPIKey != "other-key" {
+	if err != nil || loaded.CodexCredentials.Configured() || loaded.APIKeys["openai"] != "api-key" || loaded.APIKeys["custom"] != "other-key" {
 		t.Fatalf("logout did not preserve API credentials: %v", err)
 	}
 }

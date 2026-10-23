@@ -168,7 +168,7 @@ func TestCodexConcurrentStreamsRefreshOnceAndLogoutStopsNewRequests(t *testing.T
 func TestCodexRejectsAPIKeyAndIncompatibleModel(t *testing.T) {
 	t.Parallel()
 	p := &Provider{}
-	if p.Configured(config.Config{OpenAIAPIKey: "api-key"}) {
+	if p.Configured(config.Config{APIKeys: map[string]string{"openai": "api-key"}}) {
 		t.Fatal("API key enabled subscription")
 	}
 	if _, err := p.SaveAPIKey("api-key"); err == nil {

@@ -630,7 +630,7 @@ func trustTestConfig(paths config.Paths) config.Config {
 	return config.Config{
 		Provider:            string(deepseek.ProviderID),
 		Model:               deepseek.ModelV4Flash,
-		DeepSeekAPIKey:      "test-key",
+		APIKeys:             map[string]string{"deepseek": "test-key"},
 		DefaultProjectTrust: trust.DefaultAsk,
 		Paths:               paths,
 	}

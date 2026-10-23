@@ -12,7 +12,7 @@ import (
 func TestAiHubMixModelSelectionAndMenus(t *testing.T) {
 	t.Parallel()
 	providers := defaultProviders()
-	configuration := config.Config{Provider: "aihubmix", AiHubMixAPIKey: "test-key"}
+	configuration := config.Config{Provider: "aihubmix", APIKeys: map[string]string{"aihubmix": "test-key"}}
 	model, options, err := resolveModelSettings(providers, configuration)
 	if err != nil {
 		t.Fatal(err)

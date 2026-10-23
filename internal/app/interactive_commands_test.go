@@ -459,8 +459,8 @@ func TestInteractiveSessionLoginMenuSeparatesSavedCredentialActions(
 
 	runner := &interactiveSession{
 		configuration: config.Config{
-			Provider:       string(deepseek.ProviderID),
-			DeepSeekAPIKey: "saved-deepseek-key",
+			Provider: string(deepseek.ProviderID),
+			APIKeys:  map[string]string{"deepseek": "saved-deepseek-key"},
 		},
 		providers: defaultProviders(),
 	}
@@ -519,7 +519,7 @@ func TestInteractiveSessionSlashCommandCompactsAndReloadsHistory(
 			return config.Config{}, nil
 		},
 		newModel: func(configuration config.Config) (agent.Model, error) {
-			if configuration.Model != deepseek.ModelV4Pro || configuration.DeepSeekAPIKey != "session-key" {
+			if configuration.Model != deepseek.ModelV4Pro || configuration.APIKeys["deepseek"] != "session-key" {
 				t.Fatalf("summary service configuration = %#v", configuration)
 			}
 			return summaryModel, nil
@@ -531,7 +531,7 @@ func TestInteractiveSessionSlashCommandCompactsAndReloadsHistory(
 	runner := &interactiveSession{
 		application:   application,
 		conversation:  conversationState{store: store, history: history},
-		configuration: config.Config{Provider: string(deepseek.ProviderID), Model: deepseek.ModelV4Flash, DeepSeekAPIKey: "session-key", Thinking: llm.ThinkingLevelHigh},
+		configuration: config.Config{Provider: string(deepseek.ProviderID), Model: deepseek.ModelV4Flash, APIKeys: map[string]string{"deepseek": "session-key"}, Thinking: llm.ThinkingLevelHigh},
 		model:         deepseek.DefaultModel(),
 		options:       llm.StreamOptions{Thinking: llm.ThinkingLevelHigh},
 		providers:     defaultProviders(),
@@ -802,9 +802,9 @@ func TestInteractiveSessionSlashCommandsPersistRuntimeSettings(t *testing.T) {
 			Thinking: llm.ThinkingLevelMedium,
 		},
 		configuration: config.Config{
-			Provider:       string(deepseek.ProviderID),
-			Model:          deepseek.ModelV4Flash,
-			DeepSeekAPIKey: "secret",
+			Provider: string(deepseek.ProviderID),
+			Model:    deepseek.ModelV4Flash,
+			APIKeys:  map[string]string{"deepseek": "secret"},
 			Paths: config.Paths{
 				GlobalSettings: "/global/settings.json",
 				GlobalAuth:     "/global/auth.json",
@@ -1175,10 +1175,10 @@ func TestInteractiveSessionLoginOpencode(t *testing.T) {
 			savedKey,
 		)
 	}
-	if runner.configuration.OpenCodeAPIKey != "opencode-secret" {
+	if runner.configuration.APIKeys["opencode-go"] != "opencode-secret" {
 		t.Errorf(
-			"configuration.OpenCodeAPIKey = %q, want opencode-secret",
-			runner.configuration.OpenCodeAPIKey,
+			"configuration OpenCode Go API key = %q, want opencode-secret",
+			runner.configuration.APIKeys["opencode-go"],
 		)
 	}
 	if runner.model.Provider != opencode.ProviderID {
@@ -1233,10 +1233,9 @@ func TestInteractiveSessionLoginUsesSavedCredentialWithoutSaving(t *testing.T) {
 			Thinking: llm.ThinkingLevelMedium,
 		},
 		configuration: config.Config{
-			Provider:       string(deepseek.ProviderID),
-			Model:          "gpt-5.6-terra",
-			DeepSeekAPIKey: "deepseek-key",
-			OpenCodeAPIKey: "opencode-key",
+			Provider: string(deepseek.ProviderID),
+			Model:    "gpt-5.6-terra",
+			APIKeys:  map[string]string{"deepseek": "deepseek-key", "opencode-go": "opencode-key"},
 		},
 		providers: defaultProviders(),
 	}
@@ -1252,10 +1251,10 @@ func TestInteractiveSessionLoginUsesSavedCredentialWithoutSaving(t *testing.T) {
 	if saveAttempts != 0 {
 		t.Fatalf("save API key attempts = %d, want 0", saveAttempts)
 	}
-	if modelConfiguration.OpenCodeAPIKey != "opencode-key" {
+	if modelConfiguration.APIKeys["opencode-go"] != "opencode-key" {
 		t.Errorf(
 			"model configuration OpenCodeAPIKey = %q, want saved key",
-			modelConfiguration.OpenCodeAPIKey,
+			modelConfiguration.APIKeys["opencode-go"],
 		)
 	}
 	if runner.configuration.Provider != string(opencode.ProviderID) {
@@ -1309,9 +1308,9 @@ func TestInteractiveSessionLoginPersistsProviderAndFallsBackModel(t *testing.T) 
 			Thinking: llm.ThinkingLevelMedium,
 		},
 		configuration: config.Config{
-			Provider:     string(opencode.ProviderID),
-			Model:        "gpt-5.6-terra",
-			OpenAIAPIKey: "openai-key",
+			Provider: string(opencode.ProviderID),
+			Model:    "gpt-5.6-terra",
+			APIKeys:  map[string]string{"openai": "openai-key"},
 		},
 		providers: defaultProviders(),
 	}
@@ -1389,10 +1388,9 @@ func TestInteractiveSessionProviderSwitchPersistsFallenBackModel(t *testing.T) {
 			Thinking: llm.ThinkingLevelMedium,
 		},
 		configuration: config.Config{
-			Provider:       string(opencode.ProviderID),
-			Model:          "gpt-5.6-terra",
-			OpenCodeAPIKey: "opencode-key",
-			OpenAIAPIKey:   "openai-key",
+			Provider: string(opencode.ProviderID),
+			Model:    "gpt-5.6-terra",
+			APIKeys:  map[string]string{"opencode-go": "opencode-key", "openai": "openai-key"},
 		},
 		providers: defaultProviders(),
 	}
@@ -1439,7 +1437,7 @@ func TestInteractiveSessionProviderSwitchRebuildsLoopAndModel(t *testing.T) {
 		application: &application{dependencies: dependencies{
 			saveSettings: recordSettings(func(config.Setting, string) error { return nil }),
 			newModel: func(configuration config.Config) (agent.Model, error) {
-				if configuration.OpenCodeAPIKey == "" {
+				if configuration.APIKeys["opencode-go"] == "" {
 					t.Error("newModel called without opencode credential")
 				}
 				return &controlledModel{
@@ -1451,9 +1449,9 @@ func TestInteractiveSessionProviderSwitchRebuildsLoopAndModel(t *testing.T) {
 		}},
 		model: deepseek.DefaultModel(),
 		configuration: config.Config{
-			Provider:       string(deepseek.ProviderID),
-			Model:          deepseek.ModelV4Flash,
-			OpenCodeAPIKey: "opencode-key",
+			Provider: string(deepseek.ProviderID),
+			Model:    deepseek.ModelV4Flash,
+			APIKeys:  map[string]string{"opencode-go": "opencode-key"},
 		},
 		providers: defaultProviders(),
 	}
@@ -1577,10 +1575,9 @@ func TestInteractiveSessionLoopRebuildPreservesGuardContext(t *testing.T) {
 					application: application,
 					model:       deepseek.DefaultModel(),
 					configuration: config.Config{
-						Provider:       string(deepseek.ProviderID),
-						Model:          deepseek.ModelV4Flash,
-						DeepSeekAPIKey: "deepseek-key",
-						OpenCodeAPIKey: "opencode-key",
+						Provider: string(deepseek.ProviderID),
+						Model:    deepseek.ModelV4Flash,
+						APIKeys:  map[string]string{"deepseek": "deepseek-key", "opencode-go": "opencode-key"},
 					},
 					tools:         []agent.Tool{readTool},
 					providers:     defaultProviders(),

@@ -143,12 +143,14 @@ func TestCustomLoginPersistsOnePreferenceBatchAndReportsFailure(t *testing.T) {
 			runner := &interactiveSession{configuration: initial, model: model, options: options, providers: defaultProviders(), application: &application{dependencies: dependencies{
 				providers: defaultProviders(),
 				newModel: func(c config.Config) (llm.Streamer, error) {
-					if c.Model != "Org/Model.v1" || c.CustomBaseURL != "https://new.example" {
+					if c.Model != "Org/Model.v1" || c.BaseURLs["custom"] != "https://new.example" {
 						t.Error("constructed service before selection was prepared")
 					}
 					return &recordingModel{}, nil
 				},
-				saveAPIKey: func(_, key string) (string, error) { return paths.GlobalAuth, config.SaveCustomAPIKeyFile(paths, key) },
+				saveAPIKey: func(_, key string) (string, error) {
+					return paths.GlobalAuth, config.SaveAPIKeyFile(paths, "custom", key)
+				},
 				saveSettings: func(ctx context.Context, p config.Paths, changes map[config.Setting]string) error {
 					calls++
 					if len(changes) != 3 || changes[config.SettingModel] != "Org/Model.v1" || changes[config.SettingCustomBaseURL] != "https://new.example" {
@@ -169,7 +171,7 @@ func TestCustomLoginPersistsOnePreferenceBatchAndReportsFailure(t *testing.T) {
 				t.Fatal(loadErr)
 			}
 			if fail {
-				if err == nil || !strings.Contains(err.Error(), "credential saved") || disk.Model != "old" || runner.configuration.Model != "old" || disk.CustomBaseURL != "https://old.example" {
+				if err == nil || !strings.Contains(err.Error(), "credential saved") || disk.Model != "old" || runner.configuration.Model != "old" || disk.BaseURLs["custom"] != "https://old.example" {
 					t.Fatalf("partial change or misleading failure: %v", err)
 				}
 			} else if err != nil || disk.Model != "Org/Model.v1" || runner.configuration.Model != "Org/Model.v1" {
@@ -246,7 +248,7 @@ func TestCustomLoginFormKeepsDefaultsAndTreatsKeyLiterally(t *testing.T) {
 		{name: "reuse key", reuse: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			initial := config.Config{Provider: "custom", Model: "old-model", CustomBaseURL: "https://old.example", CustomAPIKey: "saved-key"}
+			initial := config.Config{Provider: "custom", Model: "old-model", BaseURLs: map[string]string{"custom": "https://old.example"}, APIKeys: map[string]string{"custom": "saved-key"}}
 			model, options, err := resolveModelSettings(defaultProviders(), initial)
 			if err != nil {
 				t.Fatal(err)
@@ -277,8 +279,8 @@ func TestCustomLoginFormKeepsDefaultsAndTreatsKeyLiterally(t *testing.T) {
 			if tc.reuse {
 				wantKey, wantSaves = "saved-key", 0
 			}
-			if runner.configuration.CustomBaseURL != initial.CustomBaseURL || runner.configuration.Model != wantModel ||
-				runner.configuration.CustomAPIKey != wantKey || saves != wantSaves {
+			if runner.configuration.BaseURLs["custom"] != initial.BaseURLs["custom"] || runner.configuration.Model != wantModel ||
+				runner.configuration.APIKeys["custom"] != wantKey || saves != wantSaves {
 				t.Fatal("form changed defaults or mishandled the credential action")
 			}
 		})

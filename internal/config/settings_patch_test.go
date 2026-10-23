@@ -163,15 +163,15 @@ func TestSettingsPatchKeepsNewCredentials(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c.AnthropicAPIKey = "new"
+	c = c.WithAPIKey("anthropic", "new")
 	c.ClaudeSubscriptionCredentials.AccessToken = "new-oauth"
 	next, err := c.WithPatch(settingPatch(t, "run_timeout", "2m"))
-	if err != nil || next.AnthropicAPIKey != "new" || next.ClaudeSubscriptionCredentials.AccessToken != "new-oauth" {
+	if err != nil || next.APIKeys["anthropic"] != "new" || next.ClaudeSubscriptionCredentials.AccessToken != "new-oauth" {
 		t.Fatal("preference restored old credential", err)
 	}
-	c.AnthropicAPIKey = ""
+	c = c.WithAPIKey("anthropic", "")
 	next, err = c.WithPatch(settingPatch(t, "run_timeout", "2m"))
-	if err != nil || next.AnthropicAPIKey != "" {
+	if err != nil || next.APIKeys["anthropic"] != "" {
 		t.Fatal("cleared credential returned", err)
 	}
 }

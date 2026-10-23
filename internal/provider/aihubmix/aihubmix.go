@@ -94,23 +94,24 @@ func (p *Provider) Models() []llm.Model { return Models() }
 // DefaultModel returns the default coding model.
 func (p *Provider) DefaultModel() llm.Model { return DefaultModel() }
 
-// Configured checks for an AiHubMix credential.
-func (p *Provider) Configured(c config.Config) bool { return strings.TrimSpace(c.AiHubMixAPIKey) != "" }
+// credential is the AiHubMix API key in AICE configuration.
+var credential = provider.APIKey{Provider: ProviderID, Label: "AiHubMix"}
 
-// New constructs a model service from the effective configuration.
+// Configured reports whether the configuration carries an API key.
+func (p *Provider) Configured(c config.Config) bool { return credential.Configured(c) }
+
+// New constructs the credentialed AiHubMix model service.
 func (p *Provider) New(c config.Config) (llm.Streamer, error) {
-	return New(Config{APIKey: c.AiHubMixAPIKey, BaseURL: c.AiHubMixBaseURL})
+	return New(Config{APIKey: credential.Value(c), BaseURL: credential.BaseURL(c)})
 }
 
-// SaveAPIKey persists the credential in the global auth file.
-func (p *Provider) SaveAPIKey(key string) (string, error) { return config.SaveAiHubMixAPIKey(key) }
+// SaveAPIKey stores the API key in the global auth file.
+func (p *Provider) SaveAPIKey(apiKey string) (string, error) { return credential.Save(apiKey) }
 
-// ApplyAPIKey applies a credential to a configuration snapshot.
-func (p *Provider) ApplyAPIKey(c *config.Config, key string) { c.AiHubMixAPIKey = key }
+// ApplyAPIKey stores the API key in the configuration.
+func (p *Provider) ApplyAPIKey(c *config.Config, apiKey string) { credential.Apply(c, apiKey) }
 
-// CredentialNotConfiguredError explains how to configure access.
-func (p *Provider) CredentialNotConfiguredError() error {
-	return fmt.Errorf("AiHubMix API key is not configured; run /login in interactive mode or set %s", config.EnvAiHubMixAPIKey)
-}
+// CredentialNotConfiguredError describes the missing API key.
+func (p *Provider) CredentialNotConfiguredError() error { return credential.NotConfiguredError() }
 
 var _ provider.Provider = (*Provider)(nil)

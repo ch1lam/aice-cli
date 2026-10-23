@@ -181,14 +181,7 @@ func (s *interactiveSession) ReadSettings(ctx context.Context) (interaction.Sett
 		if candidate != nil && candidate.Configured(settings.configuration) {
 			status = "Credential configured"
 		}
-		key := strings.ReplaceAll(option.Arguments, "-", "_") + "_api_key"
-		switch option.Arguments {
-		case "kimi-coding":
-			key = "kimi_api_key"
-		case "opencode-go":
-			key = "opencode_api_key"
-		}
-		source := settings.configuration.CredentialSource(key)
+		source := settings.configuration.CredentialSource(option.Arguments)
 		switch option.Arguments {
 		case "openai-codex":
 			source = config.Source{Kind: "OAuth store", Location: config.CodexAuthPath(settings.configuration.Paths)}

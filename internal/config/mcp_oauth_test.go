@@ -127,7 +127,7 @@ func TestMCPOAuthIdentityRotationAndLogout(t *testing.T) {
 	}
 	loggedOut := loadMCP(t, c.Paths, config.LoadOptions{})
 	_, ok := loggedOut.MCP.Servers[key].OAuthCredentials()
-	if ok || loggedOut.MCP.ConnectionDecision(key) != config.MCPConnectionAsk || loggedOut.OpenAIAPIKey != "provider-secret" {
+	if ok || loggedOut.MCP.ConnectionDecision(key) != config.MCPConnectionAsk || loggedOut.APIKeys["openai"] != "provider-secret" {
 		t.Fatal("logout did not isolate credentials")
 	}
 	if _, err := config.RefreshMCPOAuth(t.Context(), c.Paths, secondServer, func(ctx context.Context, v config.MCPOAuthCredentials) (config.MCPOAuthCredentials, error) {
@@ -402,7 +402,7 @@ func TestMCPOAuthRefreshSerializedAcrossProcesses(t *testing.T) {
 	}
 	final := loadMCP(t, c.Paths, config.LoadOptions{})
 	latest, ok := final.MCP.Servers["user:docs"].OAuthCredentials()
-	if !ok || latest.RefreshToken != "rotated-refresh" || final.OpenAIAPIKey != "provider-secret" {
+	if !ok || latest.RefreshToken != "rotated-refresh" || final.APIKeys["openai"] != "provider-secret" {
 		t.Fatal("rotation lost credential state")
 	}
 }

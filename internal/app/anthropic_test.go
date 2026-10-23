@@ -12,7 +12,7 @@ import (
 func TestAnthropicModelSelectionAndMenus(t *testing.T) {
 	t.Parallel()
 	providers := defaultProviders()
-	configuration := config.Config{Provider: "anthropic", AnthropicAPIKey: "test-key"}
+	configuration := config.Config{Provider: "anthropic", APIKeys: map[string]string{"anthropic": "test-key"}}
 	model, options, err := resolveModelSettings(providers, configuration)
 	if err != nil {
 		t.Fatal(err)

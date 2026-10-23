@@ -15,7 +15,7 @@ func TestClaudeSubscriptionCredentialsRotateAtomicallyAndPreserveKeys(t *testing
 	t.Parallel()
 	dir := t.TempDir()
 	paths := Paths{GlobalAuth: filepath.Join(dir, "auth.json"), GlobalSettings: filepath.Join(dir, "settings.json"), GlobalTrust: filepath.Join(dir, "trust.json"), BinDir: filepath.Join(dir, "bin")}
-	if err := SaveOpenAIAPIKeyFile(paths, "api-key"); err != nil {
+	if err := SaveAPIKeyFile(paths, "openai", "api-key"); err != nil {
 		t.Fatal(err)
 	}
 	credential := ClaudeSubscriptionCredentials{AccessToken: "access", RefreshToken: "refresh", ExpiresAt: time.Now().Add(time.Hour)}
@@ -50,7 +50,7 @@ func TestClaudeSubscriptionCredentialsRotateAtomicallyAndPreserveKeys(t *testing
 	if string(before) != string(after) {
 		t.Fatal("failed refresh altered stored credentials")
 	}
-	if err := SaveCustomAPIKeyFile(paths, "other-key"); err != nil {
+	if err := SaveAPIKeyFile(paths, "custom", "other-key"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := UpdateClaudeSubscriptionCredentials(t.Context(), paths, func(ClaudeSubscriptionCredentials) (ClaudeSubscriptionCredentials, error) {
@@ -60,7 +60,7 @@ func TestClaudeSubscriptionCredentialsRotateAtomicallyAndPreserveKeys(t *testing
 	}
 	loaded, err = LoadClaudeSubscriptionCredentials(paths)
 	apiConfig, configErr := LoadFiles(paths, LoadOptions{})
-	if configErr != nil || apiConfig.OpenAIAPIKey != "api-key" || apiConfig.CustomAPIKey != "other-key" {
+	if configErr != nil || apiConfig.APIKeys["openai"] != "api-key" || apiConfig.APIKeys["custom"] != "other-key" {
 		t.Fatalf("lost API credentials: %v", configErr)
 	}
 	if err != nil || loaded.Configured() {

@@ -194,7 +194,7 @@ func TestMCPResourcesThroughPrintAndSession(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			c.DeepSeekAPIKey = "offline-fixture"
+			c = c.WithAPIKey("deepseek", "offline-fixture")
 			if mode == "connection-only" || mode == "user-allow" || mode == "user-deny-yolo" {
 				c = ownerTestApprove(t, c, "user:service0", config.MCPConnectionAllow)
 			}

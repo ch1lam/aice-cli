@@ -55,10 +55,10 @@ func TestApplicationPrintRunsBuiltInAgent(t *testing.T) {
 			home := t.TempDir()
 			model := &recordingModel{response: tt.response}
 			wantConfig := config.Config{
-				Provider:        string(deepseek.ProviderID),
-				Model:           deepseek.ModelV4Flash,
-				DeepSeekAPIKey:  "test-key",
-				DeepSeekBaseURL: "https://deepseek.example/anthropic",
+				Provider: string(deepseek.ProviderID),
+				Model:    deepseek.ModelV4Flash,
+				APIKeys:  map[string]string{"deepseek": "test-key"},
+				BaseURLs: map[string]string{"deepseek": "https://deepseek.example/anthropic"},
 			}
 			command, err := newTestCommand(t, dependencies{
 				loadConfig: func(config.LoadOptions) (config.Config, error) {
@@ -133,7 +133,7 @@ func TestApplicationPrintDoesNotRunWelcomeUpdateCheck(t *testing.T) {
 	workspace := t.TempDir()
 	command, err := newTestCommand(t, dependencies{
 		loadConfig: func(config.LoadOptions) (config.Config, error) {
-			return config.Config{DeepSeekAPIKey: "test-key"}, nil
+			return config.Config{APIKeys: map[string]string{"deepseek": "test-key"}}, nil
 		},
 		newModel: func(config.Config) (agent.Model, error) {
 			return &recordingModel{response: "done"}, nil
@@ -164,10 +164,10 @@ func TestApplicationPrintUsesConfiguredModelAndThinking(t *testing.T) {
 	command, err := newTestCommand(t, dependencies{
 		loadConfig: func(config.LoadOptions) (config.Config, error) {
 			return config.Config{
-				Provider:       string(deepseek.ProviderID),
-				Model:          deepseek.ModelV4Pro,
-				Thinking:       llm.ThinkingLevelHigh,
-				DeepSeekAPIKey: "test-key",
+				Provider: string(deepseek.ProviderID),
+				Model:    deepseek.ModelV4Pro,
+				Thinking: llm.ThinkingLevelHigh,
+				APIKeys:  map[string]string{"deepseek": "test-key"},
 			}, nil
 		},
 		newModel: func(config.Config) (agent.Model, error) {
@@ -328,7 +328,7 @@ func TestApplicationPrintSeparatesToolLoopTurns(t *testing.T) {
 	model := &toolLoopModel{}
 	command, err := newTestCommand(t, dependencies{
 		loadConfig: func(config.LoadOptions) (config.Config, error) {
-			return config.Config{DeepSeekAPIKey: "test-key"}, nil
+			return config.Config{APIKeys: map[string]string{"deepseek": "test-key"}}, nil
 		},
 		newModel: func(config.Config) (agent.Model, error) {
 			return model, nil
@@ -367,7 +367,7 @@ func TestApplicationPrintEmitsJSONToolEvents(t *testing.T) {
 	model := &toolLoopModel{}
 	command, err := newTestCommand(t, dependencies{
 		loadConfig: func(config.LoadOptions) (config.Config, error) {
-			return config.Config{DeepSeekAPIKey: "test-key"}, nil
+			return config.Config{APIKeys: map[string]string{"deepseek": "test-key"}}, nil
 		},
 		newModel: func(config.Config) (agent.Model, error) {
 			return model, nil
@@ -427,7 +427,7 @@ func TestApplicationInteractiveKeepsConversationHistory(t *testing.T) {
 	output := new(bytes.Buffer)
 	command, err := newTestCommand(t, dependencies{
 		loadConfig: func(config.LoadOptions) (config.Config, error) {
-			return config.Config{DeepSeekAPIKey: "test-key"}, nil
+			return config.Config{APIKeys: map[string]string{"deepseek": "test-key"}}, nil
 		},
 		newModel: func(config.Config) (agent.Model, error) {
 			return model, nil
@@ -527,7 +527,7 @@ func TestApplicationInteractiveDefersUpdateCheckToTUI(t *testing.T) {
 	checkerCalled := false
 	command, err := newTestCommand(t, dependencies{
 		loadConfig: func(config.LoadOptions) (config.Config, error) {
-			return config.Config{DeepSeekAPIKey: "test-key"}, nil
+			return config.Config{APIKeys: map[string]string{"deepseek": "test-key"}}, nil
 		},
 		newModel: func(config.Config) (agent.Model, error) {
 			return &recordingModel{}, nil
@@ -644,10 +644,10 @@ func TestApplicationInteractiveLoginEnablesCurrentSession(t *testing.T) {
 			return "/global/auth.json", nil
 		},
 		newModel: func(configuration config.Config) (agent.Model, error) {
-			if configuration.DeepSeekAPIKey != "secret-value" {
+			if configuration.APIKeys["deepseek"] != "secret-value" {
 				t.Errorf(
 					"model API key = %q, want configured value",
-					configuration.DeepSeekAPIKey,
+					configuration.APIKeys["deepseek"],
 				)
 			}
 			return model, nil
@@ -742,7 +742,7 @@ func TestApplicationPrintResumesExplicitSession(t *testing.T) {
 	firstModel := &recordingModel{response: "first answer"}
 	firstCommand, err := newTestCommand(t, dependencies{
 		loadConfig: func(config.LoadOptions) (config.Config, error) {
-			return config.Config{DeepSeekAPIKey: "test-key"}, nil
+			return config.Config{APIKeys: map[string]string{"deepseek": "test-key"}}, nil
 		},
 		newModel: func(config.Config) (agent.Model, error) {
 			return firstModel, nil
@@ -764,7 +764,7 @@ func TestApplicationPrintResumesExplicitSession(t *testing.T) {
 	secondModel := &recordingModel{response: "second answer"}
 	secondCommand, err := newTestCommand(t, dependencies{
 		loadConfig: func(config.LoadOptions) (config.Config, error) {
-			return config.Config{DeepSeekAPIKey: "test-key"}, nil
+			return config.Config{APIKeys: map[string]string{"deepseek": "test-key"}}, nil
 		},
 		newModel: func(config.Config) (agent.Model, error) {
 			return secondModel, nil
@@ -826,7 +826,7 @@ func TestApplicationInteractiveResumesExplicitSession(t *testing.T) {
 	}
 	firstCommand, err := newTestCommand(t, dependencies{
 		loadConfig: func(config.LoadOptions) (config.Config, error) {
-			return config.Config{DeepSeekAPIKey: "test-key"}, nil
+			return config.Config{APIKeys: map[string]string{"deepseek": "test-key"}}, nil
 		},
 		newModel: func(config.Config) (agent.Model, error) {
 			return firstModel, nil
@@ -848,7 +848,7 @@ func TestApplicationInteractiveResumesExplicitSession(t *testing.T) {
 	secondModel := &recordingModel{response: "second answer"}
 	secondCommand, err := newTestCommand(t, dependencies{
 		loadConfig: func(config.LoadOptions) (config.Config, error) {
-			return config.Config{DeepSeekAPIKey: "test-key"}, nil
+			return config.Config{APIKeys: map[string]string{"deepseek": "test-key"}}, nil
 		},
 		newModel: func(config.Config) (agent.Model, error) {
 			return secondModel, nil
@@ -914,7 +914,7 @@ func TestApplicationPersistsFailedRunAfterToolSideEffect(t *testing.T) {
 	model := &toolLoopModel{firstCall: &call, secondErr: wantErr}
 	command, err := newTestCommand(t, dependencies{
 		loadConfig: func(config.LoadOptions) (config.Config, error) {
-			return config.Config{DeepSeekAPIKey: "test-key"}, nil
+			return config.Config{APIKeys: map[string]string{"deepseek": "test-key"}}, nil
 		},
 		newModel: func(config.Config) (agent.Model, error) {
 			return model, nil
@@ -972,7 +972,7 @@ func TestApplicationPersistsFailedRunAfterToolSideEffect(t *testing.T) {
 	resumeModel := &recordingModel{response: "recovered"}
 	resumeCommand, err := newTestCommand(t, dependencies{
 		loadConfig: func(config.LoadOptions) (config.Config, error) {
-			return config.Config{DeepSeekAPIKey: "test-key"}, nil
+			return config.Config{APIKeys: map[string]string{"deepseek": "test-key"}}, nil
 		},
 		newModel: func(config.Config) (agent.Model, error) {
 			return resumeModel, nil
@@ -1283,7 +1283,7 @@ func TestApplicationRejectsSessionWorkingDirectoryChange(t *testing.T) {
 		t.Helper()
 		command, err := newTestCommand(t, dependencies{
 			loadConfig: func(config.LoadOptions) (config.Config, error) {
-				return config.Config{DeepSeekAPIKey: "test-key"}, nil
+				return config.Config{APIKeys: map[string]string{"deepseek": "test-key"}}, nil
 			},
 			newModel: func(config.Config) (agent.Model, error) {
 				return model, nil

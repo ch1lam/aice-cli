@@ -36,7 +36,7 @@ func TestLoginEffectsKeepOrInvalidateHeldRuns(t *testing.T) {
 				s := h.session
 				paths := authTestPaths(t)
 				s.configuration.Paths = paths
-				if err := config.SaveDeepSeekAPIKeyFile(paths, s.configuration.DeepSeekAPIKey); err != nil {
+				if err := config.SaveAPIKeyFile(paths, "deepseek", s.configuration.APIKeys["deepseek"]); err != nil {
 					t.Fatal(err)
 				}
 				expiry := time.Now().UTC().Add(time.Hour)
@@ -57,7 +57,7 @@ func TestLoginEffectsKeepOrInvalidateHeldRuns(t *testing.T) {
 				var records []modelRecord
 				s.application.dependencies.newModel = func(c config.Config) (llm.Streamer, error) {
 					model := &recordingModel{response: "answer"}
-					records = append(records, modelRecord{model, c.DeepSeekAPIKey})
+					records = append(records, modelRecord{model, c.APIKeys["deepseek"]})
 					return model, nil
 				}
 				var err error
@@ -80,7 +80,7 @@ func TestLoginEffectsKeepOrInvalidateHeldRuns(t *testing.T) {
 					if scenario.credentialFailure {
 						return "", failure
 					}
-					if err := config.SaveDeepSeekAPIKeyFile(paths, key); err != nil {
+					if err := config.SaveAPIKeyFile(paths, "deepseek", key); err != nil {
 						return "", err
 					}
 					return paths.GlobalAuth, nil
@@ -156,7 +156,7 @@ func TestLoginEffectsKeepOrInvalidateHeldRuns(t *testing.T) {
 					if scenario.credentialFailure {
 						wantKey = "test-key"
 					}
-					if loaded.DeepSeekAPIKey != wantKey || keySaves != 1 {
+					if loaded.APIKeys["deepseek"] != wantKey || keySaves != 1 {
 						t.Error("credential write lost or replayed")
 					}
 				} else if scenario.provider == "openai-codex" {

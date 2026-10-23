@@ -22,7 +22,7 @@ func TestInteractiveUnavailableModelRequiresSelection(t *testing.T) {
 		}
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			configuration := config.Config{Provider: "deepseek", Model: "removed-model", DeepSeekAPIKey: key}
+			configuration := config.Config{Provider: "deepseek", Model: "removed-model", APIKeys: map[string]string{"deepseek": key}}
 			service := &recordingModel{response: "done"}
 			constructions, saves := 0, 0
 			failSave := true

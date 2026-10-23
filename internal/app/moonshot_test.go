@@ -12,7 +12,7 @@ import (
 func TestMoonshotModelSelectionAndMenus(t *testing.T) {
 	t.Parallel()
 	providers := defaultProviders()
-	configuration := config.Config{Provider: "moonshot", MoonshotAPIKey: "test-key"}
+	configuration := config.Config{Provider: "moonshot", APIKeys: map[string]string{"moonshot": "test-key"}}
 	model, options, err := resolveModelSettings(providers, configuration)
 	if err != nil {
 		t.Fatal(err)

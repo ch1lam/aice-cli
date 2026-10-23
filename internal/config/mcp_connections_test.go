@@ -25,7 +25,7 @@ func TestMCPConnectionApprovalSourceIdentityAndPersistence(t *testing.T) {
 		t.Fatalf("save: %v", err)
 	}
 	approved := loadMCP(t, paths, config.LoadOptions{})
-	if approved.MCP.ConnectionDecision(server.Key) != config.MCPConnectionAllow || approved.OpenAIAPIKey != "provider-secret" {
+	if approved.MCP.ConnectionDecision(server.Key) != config.MCPConnectionAllow || approved.APIKeys["openai"] != "provider-secret" {
 		t.Fatal("approval not isolated or not persisted")
 	}
 	next, err := c.WithMCPConnectionDecision(server.Key, server.Fingerprint, config.MCPConnectionAllow)

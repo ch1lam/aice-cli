@@ -130,35 +130,24 @@ func (p *Provider) DefaultModel() llm.Model {
 	return DefaultModel()
 }
 
-// Configured reports whether the configuration carries an Anthropic credential.
-func (p *Provider) Configured(configuration config.Config) bool {
-	return configuration.AnthropicAPIKey != ""
-}
+// credential is the Anthropic API key in AICE configuration.
+var credential = provider.APIKey{Provider: ProviderID, Label: "Anthropic"}
+
+// Configured reports whether the configuration carries an API key.
+func (p *Provider) Configured(c config.Config) bool { return credential.Configured(c) }
 
 // New constructs the credentialed Anthropic model service.
-func (p *Provider) New(configuration config.Config) (llm.Streamer, error) {
-	return New(Config{
-		APIKey:  configuration.AnthropicAPIKey,
-		BaseURL: configuration.AnthropicBaseURL,
-	})
+func (p *Provider) New(c config.Config) (llm.Streamer, error) {
+	return New(Config{APIKey: credential.Value(c), BaseURL: credential.BaseURL(c)})
 }
 
-// SaveAPIKey stores the Anthropic credential in the global auth file.
-func (p *Provider) SaveAPIKey(apiKey string) (string, error) {
-	return config.SaveAnthropicAPIKey(apiKey)
-}
+// SaveAPIKey stores the API key in the global auth file.
+func (p *Provider) SaveAPIKey(apiKey string) (string, error) { return credential.Save(apiKey) }
 
-// ApplyAPIKey stores the Anthropic credential in the configuration.
-func (p *Provider) ApplyAPIKey(configuration *config.Config, apiKey string) {
-	configuration.AnthropicAPIKey = apiKey
-}
+// ApplyAPIKey stores the API key in the configuration.
+func (p *Provider) ApplyAPIKey(c *config.Config, apiKey string) { credential.Apply(c, apiKey) }
 
-// CredentialNotConfiguredError describes the missing Anthropic credential.
-func (p *Provider) CredentialNotConfiguredError() error {
-	return fmt.Errorf(
-		"Anthropic API key is not configured; run /login in interactive mode or set %s",
-		config.EnvAnthropicAPIKey,
-	)
-}
+// CredentialNotConfiguredError describes the missing API key.
+func (p *Provider) CredentialNotConfiguredError() error { return credential.NotConfiguredError() }
 
 var _ provider.Provider = (*Provider)(nil)

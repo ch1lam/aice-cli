@@ -159,9 +159,9 @@ func TestUnconfiguredContextUsesProviderDefault(t *testing.T) {
 		{Provider: "custom", Model: "local"},
 		{Provider: "openai-codex", Model: "gpt-6-astra"},
 		{Provider: "openai-codex", Model: "gpt-5.6-terra"},
-		{Provider: "openai", OpenAIBaseURL: "https://gateway.example/v1"},
-		{Provider: "deepseek", DeepSeekBaseURL: "https://gateway.example"},
-		{Provider: "opencode-go", OpenCodeBaseURL: "https://gateway.example"},
+		{Provider: "openai", BaseURLs: map[string]string{"openai": "https://gateway.example/v1"}},
+		{Provider: "deepseek", BaseURLs: map[string]string{"deepseek": "https://gateway.example"}},
+		{Provider: "opencode-go", BaseURLs: map[string]string{"opencode-go": "https://gateway.example"}},
 	} {
 		model, _, err := resolveModelSettings(defaultProviders(), configuration)
 		if err != nil {

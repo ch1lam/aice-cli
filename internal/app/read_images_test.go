@@ -22,7 +22,7 @@ func TestInteractiveImageReaderSurvivesToolRebuild(t *testing.T) {
 	model := &toolLoopModel{firstCall: &call}
 	command, err := newTestCommand(t, dependencies{
 		loadConfig: func(config.LoadOptions) (config.Config, error) {
-			return config.Config{Paths: paths, Provider: "deepseek", DeepSeekAPIKey: "test-key"}, nil
+			return config.Config{Paths: paths, Provider: "deepseek", APIKeys: map[string]string{"deepseek": "test-key"}}, nil
 		},
 		newModel: func(config.Config) (agent.Model, error) { return model, nil },
 		runTUI: func(ctx context.Context, runner tui.Runner, _ tui.Options) error {

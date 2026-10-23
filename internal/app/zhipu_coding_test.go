@@ -12,7 +12,7 @@ import (
 func TestZhipuCodingModelSelectionAndMenus(t *testing.T) {
 	t.Parallel()
 	providers := defaultProviders()
-	configuration := config.Config{Provider: "zhipu-coding", ZhipuCodingAPIKey: "test-key"}
+	configuration := config.Config{Provider: "zhipu-coding", APIKeys: map[string]string{"zhipu-coding": "test-key"}}
 	model, options, err := resolveModelSettings(providers, configuration)
 	if err != nil {
 		t.Fatal(err)

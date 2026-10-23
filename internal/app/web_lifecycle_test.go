@@ -20,7 +20,7 @@ func TestInteractiveClosesCurrentWebBackendOnEveryExit(t *testing.T) {
 		t.Run(outcome, func(t *testing.T) {
 			paths := authTestPaths(t)
 			writeConfigFixture(t, paths.GlobalSettings, `{"web":{"search":{"enabled":true,"priority":["service:exa-main"]},"services":{"exa-main":{"provider":"exa","credential":{"auth_ref":"web_services.exa-main"}}}}}`)
-			if err := config.SaveDeepSeekAPIKeyFile(paths, "synthetic-model-key"); err != nil {
+			if err := config.SaveAPIKeyFile(paths, "deepseek", "synthetic-model-key"); err != nil {
 				t.Fatal(err)
 			}
 			if err := config.SaveWebCredentialFile(t.Context(), paths, "exa-main", "synthetic-search-key"); err != nil {

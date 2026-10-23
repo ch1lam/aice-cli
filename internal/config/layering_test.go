@@ -64,7 +64,7 @@ func TestLayeredConfigurationAndFrozenRuntime(t *testing.T) {
 	writeJSON(t, paths.ProjectSettings, map[string]any{"model": "peer", "custom_base_url": "https://peer.example", "no_dep_install": true})
 	t.Setenv(config.EnvDeepSeekAPIKey, "later-key")
 	next, err := selected.WithSettings(map[config.Setting]string{config.SettingThinking: "low"})
-	if err != nil || next.Model != "interactive" || next.CustomBaseURL != "" || next.DeepSeekAPIKey != "" || next.NoDepInstall {
+	if err != nil || next.Model != "interactive" || next.BaseURLs["custom"] != "" || next.APIKeys["deepseek"] != "" || next.NoDepInstall {
 		t.Fatalf("runtime edit reloaded another source: %v", err)
 	}
 }
@@ -127,7 +127,7 @@ func TestAllConfigurationSourcesIncludingEnvironmentOnlyValues(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.OpenAIAPIKey != "environment-key" || got.DeepSeekBaseURL != "https://project.example" || !got.NoDepInstall || got.NoUpdateCheck || got.DefaultProjectTrust != "never" || got.ContextWindows["custom/Org/Model.v1"] != 9007199254740993 {
+	if got.APIKeys["openai"] != "environment-key" || got.BaseURLs["deepseek"] != "https://project.example" || !got.NoDepInstall || got.NoUpdateCheck || got.DefaultProjectTrust != "never" || got.ContextWindows["custom/Org/Model.v1"] != 9007199254740993 {
 		t.Fatal("unified source resolution or exact identifiers/integers failed")
 	}
 	t.Setenv("AICE_NO_DEP_INSTALL", "sometimes")
@@ -137,7 +137,7 @@ func TestAllConfigurationSourcesIncludingEnvironmentOnlyValues(t *testing.T) {
 	t.Setenv("AICE_NO_DEP_INSTALL", "0")
 	t.Setenv(config.EnvOpenAIAPIKey, "")
 	got, err = config.LoadFiles(paths, opts)
-	if err != nil || got.NoDepInstall || got.OpenAIAPIKey != "project-key" {
+	if err != nil || got.NoDepInstall || got.APIKeys["openai"] != "project-key" {
 		t.Fatalf("false/empty environment semantics: %v", err)
 	}
 }
@@ -170,7 +170,7 @@ func TestImmediatePersistenceAndIndependentInstances(t *testing.T) {
 		t.Fatal(err)
 	}
 	c, err = config.LoadFiles(paths, config.LoadOptions{})
-	if err != nil || c.Model != "Y" || c.CustomBaseURL != "https://new.example" {
+	if err != nil || c.Model != "Y" || c.BaseURLs["custom"] != "https://new.example" {
 		t.Fatal("unrelated saved selection was overwritten")
 	}
 }

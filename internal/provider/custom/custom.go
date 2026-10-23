@@ -149,6 +149,9 @@ func (p *Provider) DefaultModel() llm.Model {
 	return DefaultModel()
 }
 
+// credential is the optional custom endpoint API key in AICE configuration.
+var credential = provider.APIKey{Provider: ProviderID, Label: "Custom"}
+
 // Configured reports whether the provider can be used. The custom provider is
 // keyless by design (Ollama ignores credentials), so it is always considered
 // configured. A missing or unreachable endpoint surfaces as a request error
@@ -160,20 +163,20 @@ func (p *Provider) Configured(_ config.Config) bool {
 // New constructs the credentialed model service from global configuration.
 func (p *Provider) New(configuration config.Config) (llm.Streamer, error) {
 	return New(Config{
-		APIKey:  configuration.CustomAPIKey,
-		BaseURL: configuration.CustomBaseURL,
+		APIKey:  credential.Value(configuration),
+		BaseURL: credential.BaseURL(configuration),
 	})
 }
 
 // SaveAPIKey stores the custom credential in the global auth file. An empty
 // value is allowed to clear the entry for keyless local servers.
 func (p *Provider) SaveAPIKey(apiKey string) (string, error) {
-	return config.SaveCustomAPIKey(apiKey)
+	return credential.Save(apiKey)
 }
 
 // ApplyAPIKey stores the credential in the configuration.
 func (p *Provider) ApplyAPIKey(configuration *config.Config, apiKey string) {
-	configuration.CustomAPIKey = apiKey
+	credential.Apply(configuration, apiKey)
 }
 
 // CredentialNotConfiguredError is never returned for the custom provider

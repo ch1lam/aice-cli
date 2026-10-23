@@ -177,7 +177,7 @@ func TestDesktopPrintUsesRealLoopAndClosesBinding(t *testing.T) {
 			model := &managedDesktopModel{operation: "list_windows"}
 			command, err := newTestCommand(t, dependencies{
 				loadConfig: func(config.LoadOptions) (config.Config, error) {
-					return config.Config{DeepSeekAPIKey: "test-key", DesktopEnabled: enabled, DesktopControlMode: tc.configured}, nil
+					return config.Config{APIKeys: map[string]string{"deepseek": "test-key"}, DesktopEnabled: enabled, DesktopControlMode: tc.configured}, nil
 				},
 				newModel: func(config.Config) (llm.Streamer, error) { return model, nil },
 				newDesktop: func(config.Config) (*desktopState, error) {

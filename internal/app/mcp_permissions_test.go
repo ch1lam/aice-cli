@@ -50,7 +50,7 @@ func TestMCPPermissionCLIAndPrintAcrossSessions(t *testing.T) {
 		command, err := newTestCommand(t, dependencies{
 			loadConfig: func(options config.LoadOptions) (config.Config, error) {
 				c, err := config.LoadFiles(paths, options)
-				c.DeepSeekAPIKey = "offline-fixture"
+				c = c.WithAPIKey("deepseek", "offline-fixture")
 				return c, err
 			},
 			newModel: func(config.Config) (llm.Streamer, error) { return model, nil },

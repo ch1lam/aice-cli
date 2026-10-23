@@ -18,7 +18,7 @@ import (
 func TestCredentialsAndValidation(t *testing.T) {
 	t.Parallel()
 	descriptor := &aihubmix.Provider{}
-	if descriptor.Configured(config.Config{OpenAIAPIKey: "unrelated", CustomAPIKey: "unrelated"}) {
+	if descriptor.Configured(config.Config{APIKeys: map[string]string{"openai": "unrelated", "custom": "unrelated"}}) {
 		t.Fatal("accepted another provider's credential")
 	}
 	for _, key := range []string{"", "  "} {

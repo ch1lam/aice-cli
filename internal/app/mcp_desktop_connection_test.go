@@ -197,7 +197,7 @@ func TestManagedCUAConnectionAdmissionAndManagementCLI(t *testing.T) {
 func TestManagedCUADuplicatePrintDiscoveryDoesNotLaunch(t *testing.T) {
 	home := t.TempDir()
 	c := ownerTestConfig(t, 0)
-	c.DeepSeekAPIKey = "offline-fixture"
+	c = c.WithAPIKey("deepseek", "offline-fixture")
 	var err error
 	c, err = c.WithMCP(config.MCPSettings{Servers: map[string]config.MCPServerSettings{"service0": {
 		Transport: "stdio", Command: filepath.Join(home, "proxy"), Cwd: home, Args: []string{"--socket", desktopServiceEndpoint(home)},

@@ -61,10 +61,10 @@ func newSideHarness(
 		providers:    defaultProviders(),
 	}}
 	configuration := config.Config{
-		Provider:       string(deepseek.ProviderID),
-		Model:          deepseek.DefaultModel().ID,
-		Thinking:       llm.ThinkingLevelMedium,
-		DeepSeekAPIKey: "test-key",
+		Provider: string(deepseek.ProviderID),
+		Model:    deepseek.DefaultModel().ID,
+		Thinking: llm.ThinkingLevelMedium,
+		APIKeys:  map[string]string{"deepseek": "test-key"},
 	}
 	model := deepseek.DefaultModel()
 	model.ThinkingLevelMap = model.ThinkingLevelMap.Clone()

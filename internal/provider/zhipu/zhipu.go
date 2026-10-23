@@ -128,55 +128,30 @@ func (p *Provider) Models() []llm.Model {
 // DefaultModel returns GLM-5.3, which both plans serve.
 func (p *Provider) DefaultModel() llm.Model { return p.Models()[0] }
 
-// Configured reports whether the configuration carries a Zhipu credential.
-func (p *Provider) Configured(configuration config.Config) bool {
-	if p.codingPlan {
-		return configuration.ZhipuCodingAPIKey != ""
-	}
-	return configuration.ZhipuAPIKey != ""
+// credential is the selected plan's API key in AICE configuration.
+func (p *Provider) credential() provider.APIKey {
+	return provider.APIKey{Provider: p.ProviderID(), Label: p.Label()}
 }
 
-// New constructs the credentialed Zhipu model service.
-func (p *Provider) New(configuration config.Config) (llm.Streamer, error) {
+// Configured reports whether the configuration carries the plan's API key.
+func (p *Provider) Configured(c config.Config) bool { return p.credential().Configured(c) }
+
+// New constructs the credentialed Zhipu model service for the selected plan.
+func (p *Provider) New(c config.Config) (llm.Streamer, error) {
+	configuration := Config{APIKey: p.credential().Value(c), BaseURL: p.credential().BaseURL(c)}
 	if p.codingPlan {
-		return NewCoding(Config{
-			APIKey:  configuration.ZhipuCodingAPIKey,
-			BaseURL: configuration.ZhipuCodingBaseURL,
-		})
+		return NewCoding(configuration)
 	}
-	return New(Config{
-		APIKey:  configuration.ZhipuAPIKey,
-		BaseURL: configuration.ZhipuBaseURL,
-	})
+	return New(configuration)
 }
 
-// SaveAPIKey stores the Zhipu credential in the global auth file.
-func (p *Provider) SaveAPIKey(apiKey string) (string, error) {
-	if p.codingPlan {
-		return config.SaveZhipuCodingAPIKey(apiKey)
-	}
-	return config.SaveZhipuAPIKey(apiKey)
-}
+// SaveAPIKey stores the plan's API key in the global auth file.
+func (p *Provider) SaveAPIKey(apiKey string) (string, error) { return p.credential().Save(apiKey) }
 
-// ApplyAPIKey stores the Zhipu credential in the configuration.
-func (p *Provider) ApplyAPIKey(configuration *config.Config, apiKey string) {
-	if p.codingPlan {
-		configuration.ZhipuCodingAPIKey = apiKey
-		return
-	}
-	configuration.ZhipuAPIKey = apiKey
-}
+// ApplyAPIKey stores the plan's API key in the configuration.
+func (p *Provider) ApplyAPIKey(c *config.Config, apiKey string) { p.credential().Apply(c, apiKey) }
 
-// CredentialNotConfiguredError describes the missing Zhipu credential.
-func (p *Provider) CredentialNotConfiguredError() error {
-	env := config.EnvZhipuAPIKey
-	if p.codingPlan {
-		env = config.EnvZhipuCodingAPIKey
-	}
-	return fmt.Errorf(
-		"%s API key is not configured; run /login in interactive mode or set %s",
-		p.Label(), env,
-	)
-}
+// CredentialNotConfiguredError describes the plan's missing API key.
+func (p *Provider) CredentialNotConfiguredError() error { return p.credential().NotConfiguredError() }
 
 var _ provider.Provider = (*Provider)(nil)

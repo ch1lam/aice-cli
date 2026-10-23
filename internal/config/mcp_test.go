@@ -60,7 +60,7 @@ func TestMCPSourceAndCredentialIsolation(t *testing.T) {
 	if headers["Authorization"] != "Bearer user-secret" || len(projectHeaders) != 0 || len(c.MCP.Servers[project.Key].MissingValues) != 1 {
 		t.Fatal("credential crossed source boundary")
 	}
-	if c.OpenAIAPIKey != "provider-secret" {
+	if c.APIKeys["openai"] != "provider-secret" {
 		t.Fatal("provider credential changed")
 	}
 	if data, _ := json.Marshal(c.MCP); strings.Contains(string(data), "user-secret") {

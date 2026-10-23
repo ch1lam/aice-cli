@@ -40,7 +40,7 @@ func TestMCPPermissionsPersistExactBindingAndIndependentSnapshot(t *testing.T) {
 			t.Fatal("rule crossed schema or operation domain")
 		}
 	}
-	if c.MCP.PermissionDecision(server.Key, "", "read", rule.SchemaFingerprint) != "ask" || loaded.OpenAIAPIKey != "untouched-provider" {
+	if c.MCP.PermissionDecision(server.Key, "", "read", rule.SchemaFingerprint) != "ask" || loaded.APIKeys["openai"] != "untouched-provider" {
 		t.Fatal("unrelated snapshot or auth changed")
 	}
 	rules := next.MCP.Permissions(server.Key)

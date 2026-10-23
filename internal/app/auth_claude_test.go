@@ -19,7 +19,7 @@ import (
 func TestClaudeAuthCommandsLoginStatusLogout(t *testing.T) {
 	t.Parallel()
 	paths := authTestPaths(t)
-	if err := config.SaveOpenAIAPIKeyFile(paths, "existing-api-key"); err != nil {
+	if err := config.SaveAPIKeyFile(paths, "openai", "existing-api-key"); err != nil {
 		t.Fatal(err)
 	}
 	load := func(config.LoadOptions) (config.Config, error) {
@@ -53,7 +53,7 @@ func TestClaudeAuthCommandsLoginStatusLogout(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if loaded.Provider != "anthropic-subscription" || loaded.Model != claudesubscription.DefaultModel().ID || loaded.OpenAIAPIKey != "existing-api-key" {
+		if loaded.Provider != "anthropic-subscription" || loaded.Model != claudesubscription.DefaultModel().ID || loaded.APIKeys["openai"] != "existing-api-key" {
 			t.Fatal("auth command did not preserve settings and other providers")
 		}
 		if action == "login" && !loaded.ClaudeSubscriptionCredentials.Configured() {

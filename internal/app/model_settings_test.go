@@ -59,7 +59,7 @@ func TestModelSettingsEntryPoints(t *testing.T) {
 					t.Parallel()
 					configuration := config.Config{
 						Provider: "opencode-go", Model: "gpt-5.6-luna", Thinking: llm.ThinkingLevelXHigh,
-						DeepSeekAPIKey: "synthetic-key", OpenCodeAPIKey: "synthetic-key",
+						APIKeys: map[string]string{"deepseek": "synthetic-key", "opencode-go": "synthetic-key"},
 					}
 					model, options, err := resolveModelSettings(defaultProviders(), configuration)
 					if err != nil {

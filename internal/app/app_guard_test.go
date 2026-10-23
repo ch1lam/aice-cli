@@ -644,7 +644,7 @@ func runPrintToolCall(
 	model := &toolLoopModel{firstCall: &call}
 	command, err := newTestCommand(t, dependencies{
 		loadConfig: func(config.LoadOptions) (config.Config, error) {
-			return config.Config{DeepSeekAPIKey: "test-key"}, nil
+			return config.Config{APIKeys: map[string]string{"deepseek": "test-key"}}, nil
 		},
 		newModel: func(config.Config) (agent.Model, error) {
 			return model, nil

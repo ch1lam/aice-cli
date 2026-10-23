@@ -114,7 +114,7 @@ func (s *interactiveSession) login(
 	// Prepare and validate the whole preference change before writing it.
 	if provider == string(custom.ProviderID) {
 		if customEndpoint != "" {
-			configuration.CustomBaseURL = customEndpoint
+			configuration.BaseURLs[string(custom.ProviderID)] = customEndpoint
 		}
 		if customModel != "" {
 			if strings.ContainsAny(customModel, " \t\r\n") {
@@ -185,7 +185,7 @@ func (s *interactiveSession) login(
 		location = " to " + path
 	}
 	if provider == string(custom.ProviderID) {
-		endpoint := strings.TrimSpace(configuration.CustomBaseURL)
+		endpoint := strings.TrimSpace(configuration.BaseURLs[string(custom.ProviderID)])
 		if endpoint == "" {
 			endpoint = custom.DefaultBaseURL
 		}

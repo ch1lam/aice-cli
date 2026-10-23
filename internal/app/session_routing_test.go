@@ -153,10 +153,10 @@ func TestPrintCommandSendsOpenCodeSessionHeader(t *testing.T) {
 		command, err := newTestCommand(t, dependencies{
 			loadConfig: func(config.LoadOptions) (config.Config, error) {
 				return config.Config{
-					Provider:        string(opencode.ProviderID),
-					Model:           opencode.DefaultModel().ID,
-					OpenCodeAPIKey:  "test-key",
-					OpenCodeBaseURL: server.URL + "/v1",
+					Provider: string(opencode.ProviderID),
+					Model:    opencode.DefaultModel().ID,
+					APIKeys:  map[string]string{"opencode-go": "test-key"},
+					BaseURLs: map[string]string{"opencode-go": server.URL + "/v1"},
 				}, nil
 			},
 			newModel: func(configuration config.Config) (llm.Streamer, error) {

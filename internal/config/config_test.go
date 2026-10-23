@@ -55,13 +55,13 @@ func TestLoadFilesAppliesGlobalAndEnvironmentPrecedence(t *testing.T) {
 	if got.Thinking != llm.ThinkingLevelHigh {
 		t.Errorf("Thinking = %q, want high", got.Thinking)
 	}
-	if got.DeepSeekAPIKey != "environment-key" {
-		t.Errorf("DeepSeekAPIKey = %q, want environment-key", got.DeepSeekAPIKey)
+	if got.APIKeys["deepseek"] != "environment-key" {
+		t.Errorf("DeepSeekAPIKey = %q, want environment-key", got.APIKeys["deepseek"])
 	}
-	if got.DeepSeekBaseURL != "https://deepseek.example/anthropic" {
+	if got.BaseURLs["deepseek"] != "https://deepseek.example/anthropic" {
 		t.Errorf(
 			"DeepSeekBaseURL = %q, want trimmed custom URL",
-			got.DeepSeekBaseURL,
+			got.BaseURLs["deepseek"],
 		)
 	}
 	if got.Paths != paths {
@@ -80,8 +80,8 @@ func TestLoadFilesUsesGlobalAuthAndOptionalSettings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadFiles() error = %v", err)
 	}
-	if got.DeepSeekAPIKey != "file-key" {
-		t.Errorf("DeepSeekAPIKey = %q, want file-key", got.DeepSeekAPIKey)
+	if got.APIKeys["deepseek"] != "file-key" {
+		t.Errorf("DeepSeekAPIKey = %q, want file-key", got.APIKeys["deepseek"])
 	}
 	if got.Provider != "" ||
 		got.Model != "" ||
@@ -97,8 +97,8 @@ func TestLoadFilesAllowsMissingCredentials(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadFiles() error = %v", err)
 	}
-	if got.DeepSeekAPIKey != "" {
-		t.Errorf("DeepSeekAPIKey = %q, want unconfigured", got.DeepSeekAPIKey)
+	if got.APIKeys["deepseek"] != "" {
+		t.Errorf("DeepSeekAPIKey = %q, want unconfigured", got.APIKeys["deepseek"])
 	}
 	if got.Paths != paths {
 		t.Errorf("Paths = %#v, want %#v", got.Paths, paths)
@@ -288,46 +288,6 @@ func TestSaveSettingFileValidatesInput(t *testing.T) {
 	}
 }
 
-func TestSaveDeepSeekAPIKeyFileWritesGlobalCredentialOnly(t *testing.T) {
-
-	paths := testPaths(t.TempDir())
-	if err := config.SaveDeepSeekAPIKeyFile(paths, " test-key "); err != nil {
-		t.Fatalf("SaveDeepSeekAPIKeyFile() error = %v", err)
-	}
-
-	var auth map[string]string
-	readJSON(t, paths.GlobalAuth, &auth)
-	if got := auth["deepseek_api_key"]; got != "test-key" {
-		t.Errorf("saved API key = %q, want test-key", got)
-	}
-	if _, err := os.Stat(paths.GlobalSettings); !os.IsNotExist(err) {
-		t.Fatalf(
-			"global settings stat error = %v, want not exist",
-			err,
-		)
-	}
-	if runtime.GOOS != "windows" {
-		info, err := os.Stat(paths.GlobalAuth)
-		if err != nil {
-			t.Fatalf("Stat() error = %v", err)
-		}
-		if got := info.Mode().Perm(); got != 0o600 {
-			t.Errorf("global auth mode = %#o, want 0600", got)
-		}
-	}
-}
-
-func TestSaveDeepSeekAPIKeyFileRejectsInvalidValues(t *testing.T) {
-
-	paths := testPaths(t.TempDir())
-	for _, value := range []string{"", "  ", "line-one\nline-two"} {
-		err := config.SaveDeepSeekAPIKeyFile(paths, value)
-		if err == nil {
-			t.Fatalf("SaveDeepSeekAPIKeyFile(%q) error = nil", value)
-		}
-	}
-}
-
 func testPaths(root string) config.Paths {
 	return config.Paths{
 		GlobalSettings: filepath.Join(root, "global", "settings.json"),
@@ -373,145 +333,6 @@ func readJSON(t *testing.T, path string, target any) {
 	}
 }
 
-func TestLoadFilesResolvesOpenCodeCredentials(t *testing.T) {
-
-	paths := testPaths(t.TempDir())
-	writeJSON(t, paths.GlobalAuth, map[string]any{
-		"opencode_api_key": "file-key",
-	})
-
-	values := map[string]string{
-		config.EnvOpenCodeAPIKey:  "environment-key",
-		config.EnvOpenCodeBaseURL: " https://opencode.example/zen/go/v1 ",
-	}
-	got, err := config.LoadFiles(paths, environmentOptions(t, values))
-	if err != nil {
-		t.Fatalf("LoadFiles() error = %v", err)
-	}
-	if got.OpenCodeAPIKey != "environment-key" {
-		t.Errorf("OpenCodeAPIKey = %q, want environment-key", got.OpenCodeAPIKey)
-	}
-	if got.OpenCodeBaseURL != "https://opencode.example/zen/go/v1" {
-		t.Errorf(
-			"OpenCodeBaseURL = %q, want trimmed custom URL",
-			got.OpenCodeBaseURL,
-		)
-	}
-}
-
-func TestSaveOpenCodeAPIKeyFilePreservesDeepSeekKey(t *testing.T) {
-
-	paths := testPaths(t.TempDir())
-	if err := config.SaveDeepSeekAPIKeyFile(paths, "deepseek-key"); err != nil {
-		t.Fatalf("SaveDeepSeekAPIKeyFile() error = %v", err)
-	}
-	if err := config.SaveOpenCodeAPIKeyFile(paths, " opencode-key "); err != nil {
-		t.Fatalf("SaveOpenCodeAPIKeyFile() error = %v", err)
-	}
-
-	var auth map[string]string
-	readJSON(t, paths.GlobalAuth, &auth)
-	if got := auth["deepseek_api_key"]; got != "deepseek-key" {
-		t.Errorf("deepseek_api_key = %q, want deepseek-key", got)
-	}
-	if got := auth["opencode_api_key"]; got != "opencode-key" {
-		t.Errorf("opencode_api_key = %q, want opencode-key", got)
-	}
-}
-
-func TestSaveDeepSeekAPIKeyFilePreservesOpenCodeKey(t *testing.T) {
-
-	paths := testPaths(t.TempDir())
-	if err := config.SaveOpenCodeAPIKeyFile(paths, "opencode-key"); err != nil {
-		t.Fatalf("SaveOpenCodeAPIKeyFile() error = %v", err)
-	}
-	if err := config.SaveDeepSeekAPIKeyFile(paths, "deepseek-key"); err != nil {
-		t.Fatalf("SaveDeepSeekAPIKeyFile() error = %v", err)
-	}
-
-	var auth map[string]string
-	readJSON(t, paths.GlobalAuth, &auth)
-	if got := auth["deepseek_api_key"]; got != "deepseek-key" {
-		t.Errorf("deepseek_api_key = %q, want deepseek-key", got)
-	}
-	if got := auth["opencode_api_key"]; got != "opencode-key" {
-		t.Errorf("opencode_api_key = %q, want opencode-key", got)
-	}
-}
-
-func TestSaveOpenCodeAPIKeyFileRejectsInvalidValues(t *testing.T) {
-
-	paths := testPaths(t.TempDir())
-	for _, value := range []string{"", "  ", "line-one\nline-two"} {
-		err := config.SaveOpenCodeAPIKeyFile(paths, value)
-		if err == nil {
-			t.Fatalf("SaveOpenCodeAPIKeyFile(%q) error = nil", value)
-		}
-	}
-}
-
-func TestLoadFilesResolvesOpenAICredentials(t *testing.T) {
-
-	paths := testPaths(t.TempDir())
-	writeJSON(t, paths.GlobalAuth, map[string]any{
-		"openai_api_key": "file-key",
-	})
-
-	values := map[string]string{
-		config.EnvOpenAIAPIKey:  "environment-key",
-		config.EnvOpenAIBaseURL: " https://openai.example/v1 ",
-	}
-	got, err := config.LoadFiles(paths, environmentOptions(t, values))
-	if err != nil {
-		t.Fatalf("LoadFiles() error = %v", err)
-	}
-	if got.OpenAIAPIKey != "environment-key" {
-		t.Errorf("OpenAIAPIKey = %q, want environment-key", got.OpenAIAPIKey)
-	}
-	if got.OpenAIBaseURL != "https://openai.example/v1" {
-		t.Errorf(
-			"OpenAIBaseURL = %q, want trimmed custom URL",
-			got.OpenAIBaseURL,
-		)
-	}
-}
-
-func TestSaveOpenAIAPIKeyFilePreservesOtherProviderKeys(t *testing.T) {
-
-	paths := testPaths(t.TempDir())
-	if err := config.SaveDeepSeekAPIKeyFile(paths, "deepseek-key"); err != nil {
-		t.Fatalf("SaveDeepSeekAPIKeyFile() error = %v", err)
-	}
-	if err := config.SaveOpenCodeAPIKeyFile(paths, "opencode-key"); err != nil {
-		t.Fatalf("SaveOpenCodeAPIKeyFile() error = %v", err)
-	}
-	if err := config.SaveOpenAIAPIKeyFile(paths, " openai-key "); err != nil {
-		t.Fatalf("SaveOpenAIAPIKeyFile() error = %v", err)
-	}
-
-	var auth map[string]string
-	readJSON(t, paths.GlobalAuth, &auth)
-	want := map[string]string{
-		"deepseek_api_key": "deepseek-key",
-		"opencode_api_key": "opencode-key",
-		"openai_api_key":   "openai-key",
-	}
-	if !reflect.DeepEqual(auth, want) {
-		t.Errorf("auth = %#v, want %#v", auth, want)
-	}
-}
-
-func TestSaveOpenAIAPIKeyFileRejectsInvalidValues(t *testing.T) {
-
-	paths := testPaths(t.TempDir())
-	for _, value := range []string{"", "  ", "line-one\nline-two"} {
-		err := config.SaveOpenAIAPIKeyFile(paths, value)
-		if err == nil {
-			t.Fatalf("SaveOpenAIAPIKeyFile(%q) error = nil", value)
-		}
-	}
-}
-
 func TestContextWindowsLoadAndSurviveSettingChanges(t *testing.T) {
 
 	paths := testPaths(t.TempDir())
@@ -548,150 +369,5 @@ func TestContextWindowsRejectInvalidLimits(t *testing.T) {
 		if _, err := config.LoadFiles(paths, environmentOptions(t, nil)); err == nil {
 			t.Fatalf("accepted %s", content)
 		}
-	}
-}
-
-func TestLoadFilesResolvesKimiCredentials(t *testing.T) {
-
-	paths := testPaths(t.TempDir())
-	writeJSON(t, paths.GlobalAuth, map[string]any{
-		"kimi_api_key": "file-key",
-	})
-
-	values := map[string]string{
-		config.EnvKimiAPIKey:  "environment-key",
-		config.EnvKimiBaseURL: " https://kimi.example/v1 ",
-	}
-	got, err := config.LoadFiles(paths, environmentOptions(t, values))
-	if err != nil {
-		t.Fatalf("LoadFiles() error = %v", err)
-	}
-	if got.KimiAPIKey != "environment-key" {
-		t.Errorf("KimiAPIKey = %q, want environment-key", got.KimiAPIKey)
-	}
-	if got.KimiBaseURL != "https://kimi.example/v1" {
-		t.Errorf(
-			"KimiBaseURL = %q, want trimmed custom URL",
-			got.KimiBaseURL,
-		)
-	}
-}
-
-func TestSaveKimiAPIKeyFilePreservesOtherProviderKeys(t *testing.T) {
-
-	paths := testPaths(t.TempDir())
-	if err := config.SaveDeepSeekAPIKeyFile(paths, "deepseek-key"); err != nil {
-		t.Fatalf("SaveDeepSeekAPIKeyFile() error = %v", err)
-	}
-	if err := config.SaveOpenCodeAPIKeyFile(paths, "opencode-key"); err != nil {
-		t.Fatalf("SaveOpenCodeAPIKeyFile() error = %v", err)
-	}
-	if err := config.SaveKimiAPIKeyFile(paths, " kimi-key "); err != nil {
-		t.Fatalf("SaveKimiAPIKeyFile() error = %v", err)
-	}
-
-	var auth map[string]string
-	readJSON(t, paths.GlobalAuth, &auth)
-	want := map[string]string{
-		"deepseek_api_key": "deepseek-key",
-		"opencode_api_key": "opencode-key",
-		"kimi_api_key":     "kimi-key",
-	}
-	if !reflect.DeepEqual(auth, want) {
-		t.Errorf("auth = %#v, want %#v", auth, want)
-	}
-}
-
-func TestSaveKimiAPIKeyFileRejectsInvalidValues(t *testing.T) {
-
-	paths := testPaths(t.TempDir())
-	for _, value := range []string{"", "  ", "line-one\nline-two"} {
-		err := config.SaveKimiAPIKeyFile(paths, value)
-		if err == nil {
-			t.Fatalf("SaveKimiAPIKeyFile(%q) error = nil", value)
-		}
-	}
-}
-
-func TestLoadFilesResolvesMoonshotCredentials(t *testing.T) {
-
-	paths := testPaths(t.TempDir())
-	writeJSON(t, paths.GlobalAuth, map[string]any{
-		"moonshot_api_key": "file-key",
-	})
-
-	values := map[string]string{
-		config.EnvMoonshotAPIKey:  "environment-key",
-		config.EnvMoonshotBaseURL: " https://moonshot.example/v1 ",
-	}
-	got, err := config.LoadFiles(paths, environmentOptions(t, values))
-	if err != nil {
-		t.Fatalf("LoadFiles() error = %v", err)
-	}
-	if got.MoonshotAPIKey != "environment-key" {
-		t.Errorf("MoonshotAPIKey = %q, want environment-key", got.MoonshotAPIKey)
-	}
-	if got.MoonshotBaseURL != "https://moonshot.example/v1" {
-		t.Errorf(
-			"MoonshotBaseURL = %q, want trimmed custom URL",
-			got.MoonshotBaseURL,
-		)
-	}
-}
-
-func TestSaveMoonshotAPIKeyFilePreservesOtherProviderKeys(t *testing.T) {
-
-	paths := testPaths(t.TempDir())
-	if err := config.SaveDeepSeekAPIKeyFile(paths, "deepseek-key"); err != nil {
-		t.Fatalf("SaveDeepSeekAPIKeyFile() error = %v", err)
-	}
-	if err := config.SaveOpenCodeAPIKeyFile(paths, "opencode-key"); err != nil {
-		t.Fatalf("SaveOpenCodeAPIKeyFile() error = %v", err)
-	}
-	if err := config.SaveMoonshotAPIKeyFile(paths, " moonshot-key "); err != nil {
-		t.Fatalf("SaveMoonshotAPIKeyFile() error = %v", err)
-	}
-
-	var auth map[string]string
-	readJSON(t, paths.GlobalAuth, &auth)
-	want := map[string]string{
-		"deepseek_api_key": "deepseek-key",
-		"opencode_api_key": "opencode-key",
-		"moonshot_api_key": "moonshot-key",
-	}
-	if !reflect.DeepEqual(auth, want) {
-		t.Errorf("auth = %#v, want %#v", auth, want)
-	}
-}
-
-func TestSaveMoonshotAPIKeyFileRejectsInvalidValues(t *testing.T) {
-
-	paths := testPaths(t.TempDir())
-	for _, value := range []string{"", "  ", "line-one\nline-two"} {
-		err := config.SaveMoonshotAPIKeyFile(paths, value)
-		if err == nil {
-			t.Fatalf("SaveMoonshotAPIKeyFile(%q) error = nil", value)
-		}
-	}
-}
-
-func TestMoonshotAndCodingCredentialsStaySeparate(t *testing.T) {
-
-	paths := testPaths(t.TempDir())
-	if err := config.SaveKimiAPIKeyFile(paths, "coding-key"); err != nil {
-		t.Fatal(err)
-	}
-	if err := config.SaveMoonshotAPIKeyFile(paths, "platform-key"); err != nil {
-		t.Fatal(err)
-	}
-	if err := config.SaveOpenAIAPIKeyFile(paths, "openai-key"); err != nil {
-		t.Fatal(err)
-	}
-	got, err := config.LoadFiles(paths, environmentOptions(t, map[string]string{config.EnvKimiAPIKey: "coding-env", config.EnvMoonshotAPIKey: " "}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got.KimiAPIKey != "coding-env" || got.MoonshotAPIKey != "platform-key" || got.OpenAIAPIKey != "openai-key" {
-		t.Fatal("provider credentials were mixed or overwritten")
 	}
 }

@@ -80,7 +80,7 @@ func TestCatalogResponsesAndThinking(t *testing.T) {
 		}
 	}
 	descriptor := &moonshot.Provider{}
-	if descriptor.Configured(config.Config{KimiAPIKey: "coding-key", OpenAIAPIKey: "openai-key"}) {
+	if descriptor.Configured(config.Config{APIKeys: map[string]string{"kimi-coding": "coding-key", "openai": "openai-key"}}) {
 		t.Error("accepted another provider's key")
 	}
 }

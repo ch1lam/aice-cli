@@ -87,7 +87,7 @@ func TestInteractiveCompactionsReuseRunSettingsAfterExternalChange(t *testing.T)
 		loadConfig: func(config.LoadOptions) (config.Config, error) { loads++; return global, nil },
 		newModel: func(configuration config.Config) (agent.Model, error) {
 			factories++
-			if configuration.Model != initial.Model || configuration.CustomBaseURL != initial.CustomBaseURL {
+			if configuration.Model != initial.Model || configuration.BaseURLs["custom"] != initial.BaseURLs["custom"] {
 				t.Fatalf("factory used external changes: %#v", configuration)
 			}
 			return model, nil
@@ -99,7 +99,7 @@ func TestInteractiveCompactionsReuseRunSettingsAfterExternalChange(t *testing.T)
 			active, err := runner.NewRun(context.Background(), interaction.RunInput{Prompt: "initial"}, func(_ context.Context, event interaction.Event) error {
 				if event.Kind == interaction.EventAssistantEnd {
 					global.Model = "externally-selected-model"
-					global.CustomBaseURL = "https://changed.invalid"
+					global.BaseURLs = map[string]string{"custom": "https://changed.invalid"}
 				}
 				return nil
 			})

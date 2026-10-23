@@ -46,7 +46,7 @@ func TestLoadFilesWithWindowsSharingConflict(t *testing.T) {
 	}
 	handle = windows.InvalidHandle
 	c, err := LoadFiles(paths, LoadOptions{})
-	if err != nil || c.OpenAIAPIKey != "fixture" {
+	if err != nil || c.APIKeys["openai"] != "fixture" {
 		t.Fatalf("load after sharing conflict cleared: %v", err)
 	}
 }

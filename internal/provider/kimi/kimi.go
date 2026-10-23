@@ -129,35 +129,24 @@ func (p *Provider) DefaultModel() llm.Model {
 	return DefaultModel()
 }
 
-// Configured reports whether the configuration carries a Kimi credential.
-func (p *Provider) Configured(configuration config.Config) bool {
-	return configuration.KimiAPIKey != ""
-}
+// credential is the Kimi API key in AICE configuration.
+var credential = provider.APIKey{Provider: ProviderID, Label: "Kimi"}
+
+// Configured reports whether the configuration carries an API key.
+func (p *Provider) Configured(c config.Config) bool { return credential.Configured(c) }
 
 // New constructs the credentialed Kimi model service.
-func (p *Provider) New(configuration config.Config) (llm.Streamer, error) {
-	return New(Config{
-		APIKey:  configuration.KimiAPIKey,
-		BaseURL: configuration.KimiBaseURL,
-	})
+func (p *Provider) New(c config.Config) (llm.Streamer, error) {
+	return New(Config{APIKey: credential.Value(c), BaseURL: credential.BaseURL(c)})
 }
 
-// SaveAPIKey stores the Kimi credential in the global auth file.
-func (p *Provider) SaveAPIKey(apiKey string) (string, error) {
-	return config.SaveKimiAPIKey(apiKey)
-}
+// SaveAPIKey stores the API key in the global auth file.
+func (p *Provider) SaveAPIKey(apiKey string) (string, error) { return credential.Save(apiKey) }
 
-// ApplyAPIKey stores the Kimi credential in the configuration.
-func (p *Provider) ApplyAPIKey(configuration *config.Config, apiKey string) {
-	configuration.KimiAPIKey = apiKey
-}
+// ApplyAPIKey stores the API key in the configuration.
+func (p *Provider) ApplyAPIKey(c *config.Config, apiKey string) { credential.Apply(c, apiKey) }
 
-// CredentialNotConfiguredError describes the missing Kimi credential.
-func (p *Provider) CredentialNotConfiguredError() error {
-	return fmt.Errorf(
-		"Kimi API key is not configured; run /login in interactive mode or set %s",
-		config.EnvKimiAPIKey,
-	)
-}
+// CredentialNotConfiguredError describes the missing API key.
+func (p *Provider) CredentialNotConfiguredError() error { return credential.NotConfiguredError() }
 
 var _ provider.Provider = (*Provider)(nil)

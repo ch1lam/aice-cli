@@ -37,7 +37,7 @@ func webCommandSession(t *testing.T, backends *webBackends, settingsFile map[str
 	if err != nil {
 		t.Fatal(err)
 	}
-	configuration.DeepSeekAPIKey = "test-key"
+	configuration = configuration.WithAPIKey("deepseek", "test-key")
 	configuration.Provider = "deepseek"
 	workspace, err := tool.NewWorkspace(t.TempDir())
 	if err != nil {

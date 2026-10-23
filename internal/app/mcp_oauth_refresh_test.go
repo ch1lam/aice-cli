@@ -255,7 +255,8 @@ func (b refreshTestBackend) Call(ctx context.Context, name string, args json.Raw
 func TestMCPOAuthRefreshCLIAndDurableRedaction(t *testing.T) {
 	f := newMCPRefreshFixture(t)
 	c := refreshFixtureConfig(t, f, time.Now().Add(-time.Hour))
-	c.Provider, c.Model, c.DeepSeekAPIKey = string(deepseek.ProviderID), deepseek.ModelV4Flash, "fixture"
+	c.Provider, c.Model = string(deepseek.ProviderID), deepseek.ModelV4Flash
+	c = c.WithAPIKey("deepseek", "fixture")
 	model := &mcpStartupModel{t: t, search: true, wantRemote: true}
 	command, err := newTestCommand(t, dependencies{loadConfig: func(config.LoadOptions) (config.Config, error) { return c, nil }, newModel: func(config.Config) (llm.Streamer, error) { return model, nil }})
 	if err != nil {

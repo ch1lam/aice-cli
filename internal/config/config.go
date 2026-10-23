@@ -106,7 +106,8 @@ type ContextWindow struct {
 }
 
 // Settings is the file schema shared by user and project configuration.
-// API keys normally live in auth.json, with the same keys and precedence.
+// Provider API keys and base URLs follow providerKeys and are decoded into
+// Config maps; API keys normally live in auth.json with the same precedence.
 type Settings struct {
 	DesktopEnabled      bool               `json:"desktop_enabled,omitempty"`
 	DesktopControlMode  DesktopControlMode `json:"desktop_control_mode,omitempty"`
@@ -120,26 +121,6 @@ type Settings struct {
 	Model               string             `json:"model,omitempty"`
 	Thinking            llm.ThinkingLevel  `json:"thinking,omitempty"`
 	DefaultProjectTrust trust.Default      `json:"default_project_trust,omitempty"`
-	DeepSeekAPIKey      string             `json:"deepseek_api_key,omitempty"`
-	DeepSeekBaseURL     string             `json:"deepseek_base_url,omitempty"`
-	OpenCodeAPIKey      string             `json:"opencode_api_key,omitempty"`
-	OpenCodeBaseURL     string             `json:"opencode_base_url,omitempty"`
-	OpenAIAPIKey        string             `json:"openai_api_key,omitempty"`
-	OpenAIBaseURL       string             `json:"openai_base_url,omitempty"`
-	AnthropicAPIKey     string             `json:"anthropic_api_key,omitempty"`
-	AnthropicBaseURL    string             `json:"anthropic_base_url,omitempty"`
-	KimiAPIKey          string             `json:"kimi_api_key,omitempty"`
-	KimiBaseURL         string             `json:"kimi_base_url,omitempty"`
-	ZhipuCodingAPIKey   string             `json:"zhipu_coding_api_key,omitempty"`
-	ZhipuCodingBaseURL  string             `json:"zhipu_coding_base_url,omitempty"`
-	ZhipuAPIKey         string             `json:"zhipu_api_key,omitempty"`
-	ZhipuBaseURL        string             `json:"zhipu_base_url,omitempty"`
-	MoonshotAPIKey      string             `json:"moonshot_api_key,omitempty"`
-	MoonshotBaseURL     string             `json:"moonshot_base_url,omitempty"`
-	AiHubMixAPIKey      string             `json:"aihubmix_api_key,omitempty"`
-	AiHubMixBaseURL     string             `json:"aihubmix_base_url,omitempty"`
-	CustomAPIKey        string             `json:"custom_api_key,omitempty"`
-	CustomBaseURL       string             `json:"custom_base_url,omitempty"`
 	NoDepInstall        bool               `json:"no_dep_install,omitempty"`
 	NoUpdateCheck       bool               `json:"no_update_check,omitempty"`
 }
@@ -168,35 +149,19 @@ type Config struct {
 	Model               string
 	Thinking            llm.ThinkingLevel
 	DefaultProjectTrust trust.Default
-	DeepSeekAPIKey      string
-	DeepSeekBaseURL     string
-	OpenCodeAPIKey      string
-	OpenCodeBaseURL     string
-	OpenAIAPIKey        string
-	OpenAIBaseURL       string
-	AnthropicAPIKey     string
-	AnthropicBaseURL    string
-	KimiAPIKey          string
-	KimiBaseURL         string
-	ZhipuCodingAPIKey   string
-	ZhipuCodingBaseURL  string
-	ZhipuAPIKey         string
-	ZhipuBaseURL        string
-	MoonshotAPIKey      string
-	MoonshotBaseURL     string
-	AiHubMixAPIKey      string
-	AiHubMixBaseURL     string
-	CustomAPIKey        string
-	CustomBaseURL       string
-	NoDepInstall        bool
-	NoUpdateCheck       bool
-	CodexCredentials    CodexCredentials
-	Web                 WebConfig
-	MCP                 MCPConfig
-	Paths               Paths
-	Diagnostics         []string
-	startupOverrides    map[string]bool
-	layers              *frozenSettings
+	// APIKeys and BaseURLs hold API-key provider settings keyed by provider
+	// ID. Snapshots share these maps; change them only through WithAPIKey.
+	APIKeys          map[string]string
+	BaseURLs         map[string]string
+	NoDepInstall     bool
+	NoUpdateCheck    bool
+	CodexCredentials CodexCredentials
+	Web              WebConfig
+	MCP              MCPConfig
+	Paths            Paths
+	Diagnostics      []string
+	startupOverrides map[string]bool
+	layers           *frozenSettings
 	// Credential references resolve against the frozen environment after runtime
 	// changes; Web and MCP never reread process environment during an edit.
 	webCredentials    map[string]string
@@ -252,7 +217,7 @@ func DefaultPaths() (Paths, error) {
 // EnvironmentVariables lists the explicitly supported inputs. Registering
 // every key also makes env-only values visible to Viper's AllSettings.
 func EnvironmentVariables() map[string]string {
-	return map[string]string{
+	variables := map[string]string{
 		"browser_headed":        "AICE_BROWSER_HEADED",
 		"max_turns":             "AICE_MAX_TURNS",
 		"run_no_progress_limit": "AICE_RUN_NO_PROGRESS_LIMIT",
@@ -261,27 +226,9 @@ func EnvironmentVariables() map[string]string {
 		"default_project_trust": "AICE_DEFAULT_PROJECT_TRUST",
 		"context_windows":       "AICE_CONTEXT_WINDOWS",
 		"no_dep_install":        "AICE_NO_DEP_INSTALL", "no_update_check": "AICE_NO_UPDATE_CHECK",
-		"deepseek_api_key":      EnvDeepSeekAPIKey,
-		"deepseek_base_url":     EnvDeepSeekBaseURL,
-		"opencode_api_key":      EnvOpenCodeAPIKey,
-		"opencode_base_url":     EnvOpenCodeBaseURL,
-		"openai_api_key":        EnvOpenAIAPIKey,
-		"openai_base_url":       EnvOpenAIBaseURL,
-		"anthropic_api_key":     EnvAnthropicAPIKey,
-		"anthropic_base_url":    EnvAnthropicBaseURL,
-		"kimi_api_key":          EnvKimiAPIKey,
-		"kimi_base_url":         EnvKimiBaseURL,
-		"zhipu_coding_api_key":  EnvZhipuCodingAPIKey,
-		"zhipu_coding_base_url": EnvZhipuCodingBaseURL,
-		"zhipu_api_key":         EnvZhipuAPIKey,
-		"zhipu_base_url":        EnvZhipuBaseURL,
-		"moonshot_api_key":      EnvMoonshotAPIKey,
-		"moonshot_base_url":     EnvMoonshotBaseURL,
-		"aihubmix_api_key":      EnvAiHubMixAPIKey,
-		"aihubmix_base_url":     EnvAiHubMixBaseURL,
-		"custom_api_key":        EnvCustomAPIKey,
-		"custom_base_url":       EnvCustomBaseURL,
 	}
+	providerEnvironmentVariables(variables)
+	return variables
 }
 
 func newRegistry(options LoadOptions) (*viper.Viper, error) {
@@ -496,26 +443,6 @@ func (c Config) settings() Settings {
 		Model:               c.Model,
 		Thinking:            c.Thinking,
 		DefaultProjectTrust: c.DefaultProjectTrust,
-		DeepSeekAPIKey:      c.DeepSeekAPIKey,
-		DeepSeekBaseURL:     c.DeepSeekBaseURL,
-		OpenCodeAPIKey:      c.OpenCodeAPIKey,
-		OpenCodeBaseURL:     c.OpenCodeBaseURL,
-		OpenAIAPIKey:        c.OpenAIAPIKey,
-		OpenAIBaseURL:       c.OpenAIBaseURL,
-		AnthropicAPIKey:     c.AnthropicAPIKey,
-		AnthropicBaseURL:    c.AnthropicBaseURL,
-		KimiAPIKey:          c.KimiAPIKey,
-		KimiBaseURL:         c.KimiBaseURL,
-		ZhipuCodingAPIKey:   c.ZhipuCodingAPIKey,
-		ZhipuCodingBaseURL:  c.ZhipuCodingBaseURL,
-		ZhipuAPIKey:         c.ZhipuAPIKey,
-		ZhipuBaseURL:        c.ZhipuBaseURL,
-		MoonshotAPIKey:      c.MoonshotAPIKey,
-		MoonshotBaseURL:     c.MoonshotBaseURL,
-		AiHubMixAPIKey:      c.AiHubMixAPIKey,
-		AiHubMixBaseURL:     c.AiHubMixBaseURL,
-		CustomAPIKey:        c.CustomAPIKey,
-		CustomBaseURL:       c.CustomBaseURL,
 		NoDepInstall:        c.NoDepInstall,
 		NoUpdateCheck:       c.NoUpdateCheck,
 		BrowserHeaded:       c.BrowserHeaded,
@@ -566,6 +493,10 @@ func decodeEffective(v *viper.Viper) (Config, error) {
 			values[key] = text
 		}
 	}
+	apiKeys, baseURLs, err := takeProviderValues(values)
+	if err != nil {
+		return Config{}, err
+	}
 	data, err := json.Marshal(values)
 	if err != nil {
 		return Config{}, fmt.Errorf("config: encode effective values: %w", err)
@@ -597,26 +528,8 @@ func decodeEffective(v *viper.Viper) (Config, error) {
 		Model:               s.Model,
 		Thinking:            s.Thinking,
 		DefaultProjectTrust: s.DefaultProjectTrust,
-		DeepSeekAPIKey:      s.DeepSeekAPIKey,
-		DeepSeekBaseURL:     s.DeepSeekBaseURL,
-		OpenCodeAPIKey:      s.OpenCodeAPIKey,
-		OpenCodeBaseURL:     s.OpenCodeBaseURL,
-		OpenAIAPIKey:        s.OpenAIAPIKey,
-		OpenAIBaseURL:       s.OpenAIBaseURL,
-		AnthropicAPIKey:     s.AnthropicAPIKey,
-		AnthropicBaseURL:    s.AnthropicBaseURL,
-		KimiAPIKey:          s.KimiAPIKey,
-		KimiBaseURL:         s.KimiBaseURL,
-		ZhipuCodingAPIKey:   s.ZhipuCodingAPIKey,
-		ZhipuCodingBaseURL:  s.ZhipuCodingBaseURL,
-		ZhipuAPIKey:         s.ZhipuAPIKey,
-		ZhipuBaseURL:        s.ZhipuBaseURL,
-		MoonshotAPIKey:      s.MoonshotAPIKey,
-		MoonshotBaseURL:     s.MoonshotBaseURL,
-		AiHubMixAPIKey:      s.AiHubMixAPIKey,
-		AiHubMixBaseURL:     s.AiHubMixBaseURL,
-		CustomAPIKey:        s.CustomAPIKey,
-		CustomBaseURL:       s.CustomBaseURL,
+		APIKeys:             apiKeys,
+		BaseURLs:            baseURLs,
 		NoDepInstall:        s.NoDepInstall,
 		NoUpdateCheck:       s.NoUpdateCheck,
 		BrowserHeaded:       s.BrowserHeaded,
@@ -628,6 +541,16 @@ func decodeEffective(v *viper.Viper) (Config, error) {
 		c.ContextWindows[entry.Provider+"/"+entry.Model] = entry.Tokens
 	}
 	return c, nil
+}
+
+// values returns this snapshot's settings as flat configuration values.
+func (c Config) values() (map[string]any, error) {
+	values, err := settingsValues(c.settings())
+	if err != nil {
+		return nil, err
+	}
+	putProviderValues(values, c.APIKeys, c.BaseURLs)
+	return values, nil
 }
 
 func settingsValues(s Settings) (map[string]any, error) {
@@ -672,229 +595,6 @@ func readValues(ctx context.Context, path string) (map[string]any, error) {
 		return nil, &sourceSyntaxError{path: path}
 	}
 	return values, nil
-}
-
-// SaveDeepSeekAPIKey stores the DeepSeek credential in the global auth file.
-func SaveDeepSeekAPIKey(apiKey string) (string, error) {
-	paths, err := DefaultPaths()
-	if err != nil {
-		return "", err
-	}
-	if err := SaveDeepSeekAPIKeyFile(paths, apiKey); err != nil {
-		return "", err
-	}
-	return paths.GlobalAuth, nil
-}
-
-// SaveDeepSeekAPIKeyFile stores the DeepSeek credential in an explicit global
-// auth file, preserving any other provider credentials already present.
-// Credentials are never stored in settings.
-func SaveDeepSeekAPIKeyFile(paths Paths, apiKey string) error {
-	apiKey = strings.TrimSpace(apiKey)
-	if apiKey == "" {
-		return errors.New("config: DeepSeek API key is required")
-	}
-	return saveAPIKeyFile(paths, "DeepSeek", "deepseek_api_key", apiKey)
-}
-
-// SaveOpenCodeAPIKey stores the OpenCode Go credential in the global auth file.
-func SaveOpenCodeAPIKey(apiKey string) (string, error) {
-	paths, err := DefaultPaths()
-	if err != nil {
-		return "", err
-	}
-	if err := SaveOpenCodeAPIKeyFile(paths, apiKey); err != nil {
-		return "", err
-	}
-	return paths.GlobalAuth, nil
-}
-
-// SaveOpenCodeAPIKeyFile stores the OpenCode Go credential in an explicit
-// global auth file, preserving any other provider credentials already present.
-func SaveOpenCodeAPIKeyFile(paths Paths, apiKey string) error {
-	apiKey = strings.TrimSpace(apiKey)
-	if apiKey == "" {
-		return errors.New("config: OpenCode Go API key is required")
-	}
-	return saveAPIKeyFile(paths, "OpenCode Go", "opencode_api_key", apiKey)
-}
-
-// SaveOpenAIAPIKey stores the OpenAI credential in the global auth file.
-func SaveOpenAIAPIKey(apiKey string) (string, error) {
-	paths, err := DefaultPaths()
-	if err != nil {
-		return "", err
-	}
-	if err := SaveOpenAIAPIKeyFile(paths, apiKey); err != nil {
-		return "", err
-	}
-	return paths.GlobalAuth, nil
-}
-
-// SaveOpenAIAPIKeyFile stores the OpenAI credential in an explicit global
-// auth file, preserving any other provider credentials already present.
-func SaveOpenAIAPIKeyFile(paths Paths, apiKey string) error {
-	apiKey = strings.TrimSpace(apiKey)
-	if apiKey == "" {
-		return errors.New("config: OpenAI API key is required")
-	}
-	return saveAPIKeyFile(paths, "OpenAI", "openai_api_key", apiKey)
-}
-
-// SaveAnthropicAPIKey stores the Anthropic credential in the global auth file.
-func SaveAnthropicAPIKey(apiKey string) (string, error) {
-	paths, err := DefaultPaths()
-	if err != nil {
-		return "", err
-	}
-	if err := SaveAnthropicAPIKeyFile(paths, apiKey); err != nil {
-		return "", err
-	}
-	return paths.GlobalAuth, nil
-}
-
-// SaveAnthropicAPIKeyFile stores the Anthropic credential in an explicit global
-// auth file, preserving any other provider credentials already present.
-func SaveAnthropicAPIKeyFile(paths Paths, apiKey string) error {
-	apiKey = strings.TrimSpace(apiKey)
-	if apiKey == "" {
-		return errors.New("config: Anthropic API key is required")
-	}
-	return saveAPIKeyFile(paths, "Anthropic", "anthropic_api_key", apiKey)
-}
-
-// SaveKimiAPIKey stores the Kimi credential in the global auth file.
-func SaveKimiAPIKey(apiKey string) (string, error) {
-	paths, err := DefaultPaths()
-	if err != nil {
-		return "", err
-	}
-	if err := SaveKimiAPIKeyFile(paths, apiKey); err != nil {
-		return "", err
-	}
-	return paths.GlobalAuth, nil
-}
-
-// SaveKimiAPIKeyFile stores the Kimi credential in an explicit global
-// auth file, preserving any other provider credentials already present.
-func SaveKimiAPIKeyFile(paths Paths, apiKey string) error {
-	apiKey = strings.TrimSpace(apiKey)
-	if apiKey == "" {
-		return errors.New("config: Kimi API key is required")
-	}
-	return saveAPIKeyFile(paths, "Kimi", "kimi_api_key", apiKey)
-}
-
-// SaveZhipuCodingAPIKey stores the Zhipu Coding Plan credential in the global auth file.
-func SaveZhipuCodingAPIKey(apiKey string) (string, error) {
-	paths, err := DefaultPaths()
-	if err != nil {
-		return "", err
-	}
-	if err := SaveZhipuCodingAPIKeyFile(paths, apiKey); err != nil {
-		return "", err
-	}
-	return paths.GlobalAuth, nil
-}
-
-// SaveZhipuCodingAPIKeyFile stores the Zhipu Coding Plan credential in an explicit global
-// auth file, preserving any other provider credentials already present.
-func SaveZhipuCodingAPIKeyFile(paths Paths, apiKey string) error {
-	apiKey = strings.TrimSpace(apiKey)
-	if apiKey == "" {
-		return errors.New("config: Zhipu Coding Plan API key is required")
-	}
-	return saveAPIKeyFile(paths, "Zhipu Coding Plan", "zhipu_coding_api_key", apiKey)
-}
-
-// SaveZhipuAPIKey stores the Zhipu credential in the global auth file.
-func SaveZhipuAPIKey(apiKey string) (string, error) {
-	paths, err := DefaultPaths()
-	if err != nil {
-		return "", err
-	}
-	if err := SaveZhipuAPIKeyFile(paths, apiKey); err != nil {
-		return "", err
-	}
-	return paths.GlobalAuth, nil
-}
-
-// SaveZhipuAPIKeyFile stores the Zhipu credential in an explicit global
-// auth file, preserving any other provider credentials already present.
-func SaveZhipuAPIKeyFile(paths Paths, apiKey string) error {
-	apiKey = strings.TrimSpace(apiKey)
-	if apiKey == "" {
-		return errors.New("config: Zhipu API key is required")
-	}
-	return saveAPIKeyFile(paths, "Zhipu", "zhipu_api_key", apiKey)
-}
-
-// SaveMoonshotAPIKey stores the Moonshot credential in the global auth file.
-func SaveMoonshotAPIKey(apiKey string) (string, error) {
-	paths, err := DefaultPaths()
-	if err != nil {
-		return "", err
-	}
-	if err := SaveMoonshotAPIKeyFile(paths, apiKey); err != nil {
-		return "", err
-	}
-	return paths.GlobalAuth, nil
-}
-
-// SaveMoonshotAPIKeyFile stores the Moonshot credential in an explicit global
-// auth file, preserving any other provider credentials already present.
-func SaveMoonshotAPIKeyFile(paths Paths, apiKey string) error {
-	apiKey = strings.TrimSpace(apiKey)
-	if apiKey == "" {
-		return errors.New("config: Moonshot API key is required")
-	}
-	return saveAPIKeyFile(paths, "Moonshot", "moonshot_api_key", apiKey)
-}
-
-// SaveAiHubMixAPIKey stores the AiHubMix credential in the global auth file.
-func SaveAiHubMixAPIKey(apiKey string) (string, error) {
-	paths, err := DefaultPaths()
-	if err != nil {
-		return "", err
-	}
-	if err := SaveAiHubMixAPIKeyFile(paths, apiKey); err != nil {
-		return "", err
-	}
-	return paths.GlobalAuth, nil
-}
-
-// SaveAiHubMixAPIKeyFile stores the AiHubMix credential in an explicit global
-// auth file, preserving any other provider credentials already present.
-func SaveAiHubMixAPIKeyFile(paths Paths, apiKey string) error {
-	apiKey = strings.TrimSpace(apiKey)
-	if apiKey == "" {
-		return errors.New("config: AiHubMix API key is required")
-	}
-	return saveAPIKeyFile(paths, "AiHubMix", "aihubmix_api_key", apiKey)
-}
-
-// SaveCustomAPIKey stores the custom OpenAI-compatible credential in the global auth file.
-func SaveCustomAPIKey(apiKey string) (string, error) {
-	paths, err := DefaultPaths()
-	if err != nil {
-		return "", err
-	}
-	if err := SaveCustomAPIKeyFile(paths, apiKey); err != nil {
-		return "", err
-	}
-	return paths.GlobalAuth, nil
-}
-
-// SaveCustomAPIKeyFile stores the custom credential in an explicit global
-// auth file, preserving any other provider credentials already present.
-// An empty key is allowed so keyless local servers (e.g. Ollama) can clear
-// the entry; callers that require auth should validate separately.
-func SaveCustomAPIKeyFile(paths Paths, apiKey string) error {
-	apiKey = strings.TrimSpace(apiKey)
-	if strings.ContainsAny(apiKey, "\r\n") {
-		return fmt.Errorf("config: Custom API key must be one line")
-	}
-	return saveAPIKeyFile(paths, "Custom", "custom_api_key", apiKey)
 }
 
 func (p Paths) validate() error {
@@ -965,38 +665,6 @@ func (s Settings) validate() error {
 			"unsupported default project trust %q",
 			s.DefaultProjectTrust,
 		)
-	}
-	for key, endpoint := range map[string]string{
-		"deepseek_base_url":     s.DeepSeekBaseURL,
-		"opencode_base_url":     s.OpenCodeBaseURL,
-		"openai_base_url":       s.OpenAIBaseURL,
-		"anthropic_base_url":    s.AnthropicBaseURL,
-		"kimi_base_url":         s.KimiBaseURL,
-		"zhipu_coding_base_url": s.ZhipuCodingBaseURL,
-		"zhipu_base_url":        s.ZhipuBaseURL,
-		"moonshot_base_url":     s.MoonshotBaseURL,
-		"aihubmix_base_url":     s.AiHubMixBaseURL,
-		"custom_base_url":       s.CustomBaseURL,
-	} {
-		if err := validateCustomBaseURL(endpoint); err != nil {
-			return fmt.Errorf("config: %s: %w", key, err)
-		}
-	}
-	for key, credential := range map[string]string{
-		"deepseek_api_key":     s.DeepSeekAPIKey,
-		"opencode_api_key":     s.OpenCodeAPIKey,
-		"openai_api_key":       s.OpenAIAPIKey,
-		"anthropic_api_key":    s.AnthropicAPIKey,
-		"kimi_api_key":         s.KimiAPIKey,
-		"zhipu_coding_api_key": s.ZhipuCodingAPIKey,
-		"zhipu_api_key":        s.ZhipuAPIKey,
-		"moonshot_api_key":     s.MoonshotAPIKey,
-		"aihubmix_api_key":     s.AiHubMixAPIKey,
-		"custom_api_key":       s.CustomAPIKey,
-	} {
-		if strings.ContainsAny(credential, "\r\n") {
-			return fmt.Errorf("config: %s must be one line", key)
-		}
 	}
 	return nil
 }

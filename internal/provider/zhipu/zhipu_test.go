@@ -138,7 +138,7 @@ func TestConnectionValidation(t *testing.T) {
 func TestCodingCredentialsAndIdentityAreIsolated(t *testing.T) {
 	t.Parallel()
 	platform, coding := &zhipu.Provider{}, zhipu.CodingPlan()
-	configuration := config.Config{ZhipuAPIKey: "platform", ZhipuBaseURL: "https://platform.example/v4"}
+	configuration := config.Config{APIKeys: map[string]string{"zhipu": "platform"}, BaseURLs: map[string]string{"zhipu": "https://platform.example/v4"}}
 	if coding.Configured(configuration) {
 		t.Fatal("Coding Plan used platform key")
 	}
@@ -147,10 +147,10 @@ func TestCodingCredentialsAndIdentityAreIsolated(t *testing.T) {
 	}
 	coding.ApplyAPIKey(&configuration, "coding")
 	platform.ApplyAPIKey(&configuration, "updated-platform")
-	if configuration.ZhipuAPIKey != "updated-platform" || configuration.ZhipuCodingAPIKey != "coding" {
+	if configuration.APIKeys["zhipu"] != "updated-platform" || configuration.APIKeys["zhipu-coding"] != "coding" {
 		t.Fatal("credentials overwritten")
 	}
-	if platform.Configured(config.Config{ZhipuCodingAPIKey: "coding"}) {
+	if platform.Configured(config.Config{APIKeys: map[string]string{"zhipu-coding": "coding"}}) {
 		t.Fatal("platform used Coding Plan key")
 	}
 	if !strings.Contains(coding.CredentialNotConfiguredError().Error(), config.EnvZhipuCodingAPIKey) {

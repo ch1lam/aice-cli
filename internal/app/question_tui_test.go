@@ -26,8 +26,10 @@ func TestQuestionTUI(t *testing.T) {
 	]}`),
 	}}
 	command, err := newTestCommand(t, dependencies{
-		loadConfig: func(config.LoadOptions) (config.Config, error) { return config.Config{DeepSeekAPIKey: "test-key"}, nil },
-		newModel:   func(config.Config) (llm.Streamer, error) { return backend, nil },
+		loadConfig: func(config.LoadOptions) (config.Config, error) {
+			return config.Config{APIKeys: map[string]string{"deepseek": "test-key"}}, nil
+		},
+		newModel: func(config.Config) (llm.Streamer, error) { return backend, nil },
 	})
 	if err != nil {
 		t.Fatal(err)

@@ -21,7 +21,7 @@ func TestLoginTUI(t *testing.T) {
 		loadConfig: func(options config.LoadOptions) (config.Config, error) { return config.LoadFiles(paths, options) },
 		newModel:   func(config.Config) (llm.Streamer, error) { return &recordingModel{}, nil },
 		saveAPIKey: func(_ string, key string) (string, error) {
-			return paths.GlobalAuth, config.SaveCustomAPIKeyFile(paths, key)
+			return paths.GlobalAuth, config.SaveAPIKeyFile(paths, "custom", key)
 		},
 		saveSettings: config.SaveSettingsFile,
 	})
@@ -107,7 +107,7 @@ func TestLoginTUI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if loaded.Provider != "custom" || loaded.CustomBaseURL != "https://form.example/v1" || loaded.Model != "form-model" || loaded.CustomAPIKey != "" {
+	if loaded.Provider != "custom" || loaded.BaseURLs["custom"] != "https://form.example/v1" || loaded.Model != "form-model" || loaded.APIKeys["custom"] != "" {
 		t.Fatal("menu configuration was not persisted")
 	}
 	if strings.Contains(transcript.String(), "/login custom [endpoint]") {

@@ -65,7 +65,7 @@ func (m *loadedToolsModel) Stream(ctx context.Context, request llm.Request) (llm
 func TestMCPLoadedToolsActualCommandLifecycle(t *testing.T) {
 	endpoint, initialized, calls, _ := mcpStartupServer(t)
 	c := ownerTestConfig(t, 0)
-	c.DeepSeekAPIKey = "offline-fixture"
+	c = c.WithAPIKey("deepseek", "offline-fixture")
 	var err error
 	c, err = c.WithMCP(config.MCPSettings{Servers: map[string]config.MCPServerSettings{"service0": {Transport: "http", URL: endpoint}}})
 	if err != nil {
