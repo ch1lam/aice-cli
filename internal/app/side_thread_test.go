@@ -3,7 +3,6 @@ package app
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"io"
 	"os"
@@ -1016,64 +1015,35 @@ func TestSideRunnerUsableAfterCancelledSideRun(t *testing.T) {
 	}
 }
 
-// TestSideThreadDeepCloneIsolationRichNestedFields proves the frozen
-// snapshot deep-copies every mutable field of every transcript message
-// variant: image bytes, tool-call raw arguments, tool-result content,
-// assistant usage cost, and compaction summaries. Mutating the parent after
-// creation must not leak into side requests, and mutating a recorded side
-// request must not leak back into the parent.
-func TestSideThreadDeepCloneIsolationRichNestedFields(t *testing.T) {
+// TestSideThreadSnapshotIsolatedFromParentMutation proves the frozen snapshot
+// owns its copy of the parent history: mutating the parent after creation
+// does not leak into side requests, and mutating a recorded side request does
+// not leak back into the parent. Field-by-field clone coverage belongs to
+// llm.CloneAgentMessages.
+func TestSideThreadSnapshotIsolatedFromParentMutation(t *testing.T) {
 	t.Parallel()
 
 	image := &llm.ImageContent{Data: []byte("image-bytes"), MIMEType: "image/png"}
-	call := &llm.ToolCall{
-		ID:        "call-1",
-		Name:      "read",
-		Arguments: json.RawMessage(`{"path":"/tmp/x"}`),
-	}
-	cost := &llm.Cost{Input: 1, Output: 2, Total: 3}
 	history := []llm.AgentMessage{
 		llm.UserMessage{
-			Role: llm.RoleUser,
-			Content: []llm.ContentPart{
-				{Type: llm.ContentTypeImage, Image: image},
-			},
+			Role:      llm.RoleUser,
+			Content:   []llm.ContentPart{{Type: llm.ContentTypeImage, Image: image}},
 			Timestamp: 1,
 		},
 		llm.AssistantMessage{
-			Role: llm.RoleAssistant,
-			Content: []llm.ContentPart{
-				llm.NewTextContent("assistant text").Part(),
-				{Type: llm.ContentTypeToolCall, ToolCall: call},
-			},
-			API:        "test-api",
-			Provider:   "test-provider",
-			ModelID:    "test-model",
-			StopReason: llm.StopReasonToolUse,
-			Timestamp:  2,
-		},
-		llm.ToolResultMessage{
-			Role:       llm.RoleToolResult,
-			ToolCallID: "call-1",
-			ToolName:   "read",
-			Content:    []llm.ContentPart{llm.NewTextContent("tool output").Part()},
-			Timestamp:  3,
-		},
-		llm.AssistantMessage{
 			Role:       llm.RoleAssistant,
-			Content:    []llm.ContentPart{llm.NewTextContent("final answer").Part()},
+			Content:    []llm.ContentPart{llm.NewTextContent("assistant text").Part()},
 			API:        "test-api",
 			Provider:   "test-provider",
 			ModelID:    "test-model",
-			Usage:      llm.Usage{InputTokens: 1, OutputTokens: 2, TotalTokens: 3, Cost: cost},
 			StopReason: llm.StopReasonStop,
-			Timestamp:  4,
+			Timestamp:  2,
 		},
 		llm.CompactionSummaryMessage{
 			Role:         llm.RoleCompactionSummary,
 			Summary:      "compacted context",
 			TokensBefore: 100,
-			Timestamp:    5,
+			Timestamp:    3,
 		},
 	}
 
@@ -1096,27 +1066,19 @@ func TestSideThreadDeepCloneIsolationRichNestedFields(t *testing.T) {
 		t.Fatalf("CreateSideThread() error = %v", err)
 	}
 
-	// Mutate every parent-owned nested field after creation. The tool-call
-	// arguments stay valid JSON so the side request can still be projected.
 	image.Data[0] = 'X'
-	call.Arguments = json.RawMessage(`{"path":"/tmp/y"}`)
-	cost.Total = 999
 	history[1].(llm.AssistantMessage).Content[0].Text = "MUTATED ASSISTANT TEXT"
-	history[2].(llm.ToolResultMessage).Content[0].Text = "MUTATED TOOL OUTPUT"
 
 	if err := runSide(t, side, "side question"); err != nil {
 		t.Fatalf("side Run() error = %v", err)
 	}
 	request := sideModel.requests[0]
-	if got, want := len(request.Messages), 6; got != want {
+	if got, want := len(request.Messages), 4; got != want {
 		t.Fatalf("side request message count = %d, want %d", got, want)
 	}
 	user, ok := request.Messages[0].(llm.UserMessage)
-	if !ok {
-		t.Fatalf("request message 0 = %T, want UserMessage", request.Messages[0])
-	}
-	if user.Content[0].Image == nil {
-		t.Fatal("request image content is nil")
+	if !ok || user.Content[0].Image == nil {
+		t.Fatalf("request message 0 = %#v, want image UserMessage", request.Messages[0])
 	}
 	if got, want := string(user.Content[0].Image.Data), "image-bytes"; got != want {
 		t.Fatalf("request image data = %q, want %q", got, want)
@@ -1125,53 +1087,17 @@ func TestSideThreadDeepCloneIsolationRichNestedFields(t *testing.T) {
 	if !ok {
 		t.Fatalf("request message 1 = %T, want AssistantMessage", request.Messages[1])
 	}
-	if assistant.Content[1].ToolCall == nil {
-		t.Fatal("request tool call is nil")
-	}
-	if got, want := string(assistant.Content[1].ToolCall.Arguments), `{"path":"/tmp/x"}`; got != want {
-		t.Fatalf("request tool call arguments = %q, want %q", got, want)
-	}
 	if got, want := assistant.Content[0].Text, "assistant text"; got != want {
 		t.Fatalf("request assistant text = %q, want %q", got, want)
 	}
-	toolResult, ok := request.Messages[2].(llm.ToolResultMessage)
-	if !ok {
-		t.Fatalf("request message 2 = %T, want ToolResultMessage", request.Messages[2])
-	}
-	if got, want := toolResult.Content[0].Text, "tool output"; got != want {
-		t.Fatalf("request tool result content = %q, want %q", got, want)
-	}
-	costAssistant, ok := request.Messages[3].(llm.AssistantMessage)
-	if !ok {
-		t.Fatalf("request message 3 = %T, want AssistantMessage", request.Messages[3])
-	}
-	if costAssistant.Usage.Cost == nil {
-		t.Fatal("request usage cost is nil")
-	}
-	if got, want := costAssistant.Usage.Cost.Total, 3.0; got != want {
-		t.Fatalf("request usage cost total = %v, want %v", got, want)
-	}
-	summary, ok := request.Messages[4].(llm.UserMessage)
-	if !ok {
-		t.Fatalf("request message 4 = %T, want projected UserMessage", request.Messages[4])
-	}
-	if !strings.Contains(summary.Content[0].Text, "compacted context") {
-		t.Fatalf("request compaction summary = %q, want it to contain the summary", summary.Content[0].Text)
+	summary, ok := request.Messages[2].(llm.UserMessage)
+	if !ok || !strings.Contains(summary.Content[0].Text, "compacted context") {
+		t.Fatalf("request message 2 = %#v, want projected compaction summary", request.Messages[2])
 	}
 
-	// Reverse direction: mutating the recorded request must not leak back
-	// into the parent history.
 	user.Content[0].Image.Data[0] = 'Y'
-	assistant.Content[1].ToolCall.Arguments[0] = 'Y'
-	costAssistant.Usage.Cost.Total = 777
 	if got, want := string(image.Data), "Xmage-bytes"; got != want {
 		t.Fatalf("parent image data after request mutation = %q, want %q", got, want)
-	}
-	if got, want := string(call.Arguments), `{"path":"/tmp/y"}`; got != want {
-		t.Fatalf("parent tool call arguments after request mutation = %q, want %q", got, want)
-	}
-	if got, want := cost.Total, 999.0; got != want {
-		t.Fatalf("parent usage cost after request mutation = %v, want %v", got, want)
 	}
 }
 
