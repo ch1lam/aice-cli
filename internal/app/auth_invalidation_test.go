@@ -18,14 +18,13 @@ import (
 func TestLoginEffectsKeepOrInvalidateHeldRuns(t *testing.T) {
 	for _, entry := range []string{"slash", "settings"} {
 		for _, scenario := range []struct {
-			name, provider                                                   string
-			credentialFailure, preferenceFailure, warning, unchanged, cancel bool
-			wantRevision, wantResources                                      uint64
+			name, provider                                          string
+			credentialFailure, preferenceFailure, unchanged, cancel bool
+			wantRevision, wantResources                             uint64
 		}{
 			{name: "key save failure", provider: "deepseek", credentialFailure: true},
 			{name: "key only", provider: "deepseek", preferenceFailure: true, wantRevision: 1},
-			{name: "key cleanup warning then preference failure", provider: "deepseek", warning: true, preferenceFailure: true, wantRevision: 1},
-			{name: "key cleanup warning then publish", provider: "deepseek", warning: true, wantRevision: 1, wantResources: 1},
+			{name: "key then publish", provider: "deepseek", wantRevision: 1, wantResources: 1},
 			{name: "Codex credential only", provider: "openai-codex", preferenceFailure: true, wantRevision: 1, wantResources: 1},
 			{name: "Codex unchanged then preference failure", provider: "openai-codex", preferenceFailure: true, unchanged: true},
 			{name: "Claude credential only", provider: "anthropic-subscription", preferenceFailure: true, wantRevision: 1, wantResources: 1},
@@ -75,7 +74,6 @@ func TestLoginEffectsKeepOrInvalidateHeldRuns(t *testing.T) {
 					t.Fatal(err)
 				}
 				failure := errors.New("synthetic save failure")
-				cleanup := errors.New("synthetic cleanup warning")
 				keySaves, preferenceSaves := 0, 0
 				s.application.dependencies.saveAPIKey = func(_ string, key string) (string, error) {
 					keySaves++
@@ -84,9 +82,6 @@ func TestLoginEffectsKeepOrInvalidateHeldRuns(t *testing.T) {
 					}
 					if err := config.SaveDeepSeekAPIKeyFile(paths, key); err != nil {
 						return "", err
-					}
-					if scenario.warning {
-						return "", &config.CommittedError{Warning: cleanup}
 					}
 					return paths.GlobalAuth, nil
 				}
@@ -139,9 +134,6 @@ func TestLoginEffectsKeepOrInvalidateHeldRuns(t *testing.T) {
 					}
 				} else if err != nil {
 					t.Errorf("login result: %v", err)
-				}
-				if scenario.warning && !strings.Contains(output, cleanup.Error()) {
-					t.Error("lost cleanup warning")
 				}
 				if strings.Contains(output, "new-private") {
 					t.Error("output leaked credential")

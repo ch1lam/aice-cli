@@ -57,7 +57,7 @@ func TestDesktopSettingsSetupUsesOneReservationAndRetainsExternalSuccess(t *test
 				} else {
 					// No settings file lock is held during native UI. A peer update
 					// must survive our later narrow preference commit.
-					_, err := config.SaveSettingsPatch(ctx, s.configuration.Paths, config.SettingsPatch{Changes: []config.SettingChange{{ID: "no_update_check", Value: config.SettingValue{Kind: "bool", Bool: true}}}})
+					err := config.SaveSettingsPatch(ctx, s.configuration.Paths, config.SettingsPatch{Changes: []config.SettingChange{{ID: "no_update_check", Value: config.SettingValue{Kind: "bool", Bool: true}}}})
 					if err != nil {
 						t.Fatal(err)
 					}

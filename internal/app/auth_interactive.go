@@ -66,15 +66,12 @@ func (s *interactiveSession) loginAccount(ctx context.Context, request interacti
 		changed = previous != credential
 		return credential, nil
 	})
-	if err != nil && !config.WasCommitted(err) {
+	if err != nil {
 		return result, fmt.Errorf("app: save account login: %w", err)
 	}
 	// Existing OAuth providers reread this file for each request, including
 	// providers retained by a side thread after the main selection changed.
 	result.committed, result.resourcesChanged = changed, changed
-	if err != nil {
-		s.settingsWarning(fmt.Errorf("Account credential saved; %w", err))
-	}
 	overridden, err := s.selectProvider(ctx, string(codex.ProviderID))
 	if err != nil {
 		status := "unchanged"

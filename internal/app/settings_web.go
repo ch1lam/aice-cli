@@ -254,17 +254,12 @@ func (s *interactiveSession) applyWebRequest(ctx context.Context, request intera
 	if err != nil {
 		return result, err
 	}
-	commit, err := config.SaveWebPatch(ctx, current.Paths, patch)
-	result.Committed = commit.Committed
 	result.Applies = interaction.SettingNextRun
-	if err != nil {
+	if _, err := config.SaveWebPatch(ctx, current.Paths, patch); err != nil {
 		prepared.state.closeBackend()
 		return result, err
 	}
 	s.publishWebSettings(prepared)
-	result.Applied = true
-	if commit.CleanupWarning != nil {
-		result.Warnings = append(result.Warnings, commit.CleanupWarning.Error())
-	}
+	result.Committed, result.Applied = true, true
 	return result, nil
 }

@@ -19,6 +19,7 @@ import (
 	"github.com/spf13/viper"
 
 	"github.com/ch1lam/aice-cli/internal/config"
+	"github.com/ch1lam/aice-cli/internal/lockedfile"
 )
 
 func TestLayeredConfigurationAndFrozenRuntime(t *testing.T) {
@@ -197,18 +198,16 @@ func TestSavePreservesDamagedSourcesAndShadowedValues(t *testing.T) {
 	if err != nil || string(after) != string(broken) {
 		t.Fatalf("damaged source changed: %v", err)
 	}
-	lock := paths.GlobalSettings + ".lock"
-	if err := os.Mkdir(lock, 0700); err != nil {
+	unlock, err := lockedfile.Lock(t.Context(), paths.GlobalSettings)
+	if err != nil {
 		t.Fatal(err)
 	}
+	defer unlock()
 	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
 	defer cancel()
 	err = config.SaveSettingsFile(ctx, paths, map[config.Setting]string{config.SettingModel: "other"})
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("lock wait = %v", err)
-	}
-	if _, err := os.Stat(lock); err != nil {
-		t.Fatal("waiting writer removed owner's lock")
 	}
 }
 

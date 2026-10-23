@@ -17,7 +17,7 @@ import (
 )
 
 // The panel and slash entry points must preserve the same selection and
-// persistence behavior, including failure before publication and late cleanup.
+// persistence behavior, including failure before publication.
 func TestModelSettingsEntryPoints(t *testing.T) {
 	t.Parallel()
 	for _, selection := range []struct {
@@ -51,7 +51,7 @@ func TestModelSettingsEntryPoints(t *testing.T) {
 		{name: "unsupported thinking", field: "thinking", input: "extreme", wantError: "unsupported thinking level"},
 	} {
 		for _, entry := range []string{"slash", "settings"} {
-			for _, persistence := range []string{"saved", "save failure", "cleanup warning"} {
+			for _, persistence := range []string{"saved", "save failure"} {
 				if selection.wantError != "" && persistence != "saved" {
 					continue
 				}
@@ -82,11 +82,8 @@ func TestModelSettingsEntryPoints(t *testing.T) {
 							if _, err := s.beginPreparation(); !errors.Is(err, interaction.ErrSettingsBusy) {
 								t.Errorf("preparation during save = %v", err)
 							}
-							switch persistence {
-							case "save failure":
+							if persistence == "save failure" {
 								return failure
-							case "cleanup warning":
-								return &config.CommittedError{Warning: failure}
 							}
 							return nil
 						},
@@ -133,9 +130,6 @@ func TestModelSettingsEntryPoints(t *testing.T) {
 						output = strings.Join(result.Warnings, "\n")
 					} else if !strings.Contains(output, "Set "+selection.field+" to "+strings.TrimSpace(selection.input)) {
 						t.Fatalf("selection message = %q", output)
-					}
-					if strings.Contains(output, "lock cleanup warning") != (persistence == "cleanup warning") {
-						t.Fatalf("cleanup warning = %q", output)
 					}
 				})
 			}

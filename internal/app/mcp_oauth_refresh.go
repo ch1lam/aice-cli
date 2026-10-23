@@ -20,7 +20,7 @@ type mcpRefreshFunc func(context.Context, config.MCPServer) (config.MCPOAuthCred
 // prompts, reconnects, or replays an RPC.
 func mcpOAuthRefresh(paths config.Paths) mcpRefreshFunc {
 	return func(ctx context.Context, server config.MCPServer) (config.MCPOAuthCredentials, error) {
-		credential, _, err := config.RefreshMCPOAuth(ctx, paths, server, func(ctx context.Context, current config.MCPOAuthCredentials) (config.MCPOAuthCredentials, error) {
+		credential, err := config.RefreshMCPOAuth(ctx, paths, server, func(ctx context.Context, current config.MCPOAuthCredentials) (config.MCPOAuthCredentials, error) {
 			if current.ExpiresAt.IsZero() || current.ExpiresAt.After(time.Now()) {
 				return current, nil
 			}

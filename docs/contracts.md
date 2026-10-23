@@ -474,8 +474,8 @@ Draft revision and resource revision track different effects:
 
 Resource changes reject held prepared runs and make existing BTW snapshots
 read-only. Operations prepare before writing and publish after atomic replacement;
-cleanup warnings preserve commit facts. Preferences and credentials are separate
-commits. Domain guides own [browser](browser.md), [Web](web.md) and [MCP](mcp.md)
+a successful save is committed, and a failed save left the file unchanged.
+Preferences and credentials are separate commits. Domain guides own [browser](browser.md), [Web](web.md) and [MCP](mcp.md)
 partial-failure rules. MCP management must publish saved revocation even if later
 preparation fails; new runs stop rather than reuse stale authority. Live MCP deny
 may revoke/cancel one service during a run without replacing another owner.

@@ -52,14 +52,14 @@ func (p MCPPatch) Apply(settings MCPSettings) (MCPSettings, error) {
 	return next, next.Validate()
 }
 
-// SaveMCPPatch uses the shared atomic writer and returns actual commit status.
+// SaveMCPPatch uses the shared atomic writer.
 // It never persists the merged project layer, resolved credentials, or grants.
-func SaveMCPPatch(ctx context.Context, paths Paths, patch MCPPatch) (MCPSettings, CommitResult, error) {
+func SaveMCPPatch(ctx context.Context, paths Paths, patch MCPPatch) (MCPSettings, error) {
 	if err := paths.validate(); err != nil {
-		return MCPSettings{}, CommitResult{}, err
+		return MCPSettings{}, err
 	}
 	var saved MCPSettings
-	commit, err := editFile(ctx, paths.GlobalSettings, func(values map[string]any) error {
+	err := editFile(ctx, paths.GlobalSettings, func(values map[string]any) error {
 		var raw json.RawMessage
 		if existing, ok := values[mcpSettingsKey]; ok {
 			raw, _ = json.Marshal(existing)
@@ -76,21 +76,21 @@ func SaveMCPPatch(ctx context.Context, paths Paths, patch MCPPatch) (MCPSettings
 		saved = next
 		return nil
 	})
-	return saved, commit, err
+	return saved, err
 }
 
 // SaveMCPCredential stores one explicit slot for the selected configuration
 // identity. Empty value removes it. It cannot write a provider credential or
 // transfer a slot to a changed source, endpoint, command or environment binding.
-func SaveMCPCredential(ctx context.Context, paths Paths, server MCPServer, slot, value string) (CommitResult, error) {
+func SaveMCPCredential(ctx context.Context, paths Paths, server MCPServer, slot, value string) error {
 	if err := paths.validate(); err != nil {
-		return CommitResult{}, err
+		return err
 	}
 	if !mcpID(slot) || !mcpText(value, 8192) {
-		return CommitResult{}, fmt.Errorf("config: invalid MCP credential slot (value omitted)")
+		return fmt.Errorf("config: invalid MCP credential slot (value omitted)")
 	}
 	if !mcpID(server.ID) || server.ID == ManagedCUAServerID || server.Settings.validate() != nil {
-		return CommitResult{}, fmt.Errorf("config: invalid MCP credential binding")
+		return fmt.Errorf("config: invalid MCP credential binding")
 	}
 	expectedPath := paths.GlobalSettings
 	switch server.Source.Kind {
@@ -98,18 +98,18 @@ func SaveMCPCredential(ctx context.Context, paths Paths, server MCPServer, slot,
 	case "project":
 		expectedPath = paths.ProjectSettings
 	default:
-		return CommitResult{}, fmt.Errorf("config: invalid MCP credential source")
+		return fmt.Errorf("config: invalid MCP credential source")
 	}
 	if expectedPath == "" {
-		return CommitResult{}, fmt.Errorf("config: MCP credential source is unavailable")
+		return fmt.Errorf("config: MCP credential source is unavailable")
 	}
 	absolute, err := filepath.Abs(expectedPath)
 	if err != nil || filepath.Clean(absolute) != server.Source.Location {
-		return CommitResult{}, fmt.Errorf("config: MCP credential source changed")
+		return fmt.Errorf("config: MCP credential source changed")
 	}
 	expected, err := resolveMCPServer(server.ID, server.Source, server.Settings, nil, nil)
 	if err != nil || expected.Key != server.Key || expected.CredentialScope != server.CredentialScope {
-		return CommitResult{}, fmt.Errorf("config: MCP credential binding changed")
+		return fmt.Errorf("config: MCP credential binding changed")
 	}
 	return editFile(ctx, paths.GlobalAuth, func(values map[string]any) error {
 		credentials := make(mcpCredentials)

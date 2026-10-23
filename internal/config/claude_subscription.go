@@ -2,12 +2,7 @@ package config
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
-	"fmt"
-	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"time"
 )
@@ -32,92 +27,15 @@ func ClaudeSubscriptionAuthPath(paths Paths) string {
 
 // LoadClaudeSubscriptionCredentials reads only AICE's explicit global credential path.
 func LoadClaudeSubscriptionCredentials(paths Paths) (ClaudeSubscriptionCredentials, error) {
-	if strings.TrimSpace(paths.GlobalAuth) == "" {
-		return ClaudeSubscriptionCredentials{}, errors.New("config: global auth path is required")
-	}
-	data, err := os.ReadFile(ClaudeSubscriptionAuthPath(paths))
-	if errors.Is(err, os.ErrNotExist) {
-		return ClaudeSubscriptionCredentials{}, nil
-	}
-	if err != nil {
-		return ClaudeSubscriptionCredentials{}, fmt.Errorf("config: read Claude subscription credentials: %w", err)
-	}
-	var credential ClaudeSubscriptionCredentials
-	if json.Unmarshal(data, &credential) != nil {
-		return ClaudeSubscriptionCredentials{}, &sourceSyntaxError{path: ClaudeSubscriptionAuthPath(paths)}
-	}
-	return credential, nil
+	return loadCredentialFile[ClaudeSubscriptionCredentials](paths, ClaudeSubscriptionAuthPath(paths), "Claude subscription")
 }
 
 // UpdateClaudeSubscriptionCredentials serializes refresh, login, and logout across AICE
 // processes. The callback receives the latest disk value under the lock.
-// A crashed lock is never stolen while its owner might still be refreshing.
-// A cleanup failure after a write or deletion is reported as a CommittedError.
 func UpdateClaudeSubscriptionCredentials(ctx context.Context, paths Paths,
 	update func(ClaudeSubscriptionCredentials) (ClaudeSubscriptionCredentials, error),
-) (credential ClaudeSubscriptionCredentials, returnErr error) {
-	if strings.TrimSpace(paths.GlobalAuth) == "" {
-		return credential, errors.New("config: global auth path is required")
-	}
-	ctx, cancel := context.WithTimeout(ctx, time.Minute)
-	defer cancel()
-	path := ClaudeSubscriptionAuthPath(paths)
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return credential, fmt.Errorf("config: create Claude subscription auth directory: %w", err)
-	}
-	lock := path + ".lock"
-	if err := acquireConfigLock(ctx, lock, os.Mkdir, runtime.GOOS == "windows"); err != nil {
-		return credential, err
-	}
-	committed := false
-	defer func() {
-		returnErr = legacyCommitError(CommitResult{
-			Committed: committed, CleanupWarning: os.Remove(lock),
-		}, returnErr)
-	}()
-	previous, err := LoadClaudeSubscriptionCredentials(paths)
-	if err != nil {
-		return credential, err
-	}
-	credential, err = update(previous)
-	if err != nil {
-		return ClaudeSubscriptionCredentials{}, err
-	}
-	if err := ctx.Err(); err != nil {
-		return ClaudeSubscriptionCredentials{}, err
-	}
-	if credential == previous {
-		return credential, nil
-	}
-	if credential == (ClaudeSubscriptionCredentials{}) {
-		err := os.Remove(path)
-		committed = err == nil
-		if errors.Is(err, os.ErrNotExist) {
-			err = nil
-		}
-		return credential, err
-	}
-	if !credential.Configured() || strings.ContainsAny(credential.AccessToken+credential.RefreshToken, "\r\n") {
-		return ClaudeSubscriptionCredentials{}, errors.New("config: incomplete or invalid Claude subscription credentials")
-	}
-	data, err := json.MarshalIndent(credential, "", "  ")
-	if err != nil {
-		return ClaudeSubscriptionCredentials{}, err
-	}
-	file, err := os.CreateTemp(filepath.Dir(path), ".claude-subscription-auth-*")
-	if err != nil {
-		return ClaudeSubscriptionCredentials{}, err
-	}
-	defer os.Remove(file.Name())
-	_, writeErr := file.Write(append(data, '\n'))
-	syncErr := file.Sync()
-	closeErr := file.Close()
-	if err := errors.Join(writeErr, syncErr, closeErr); err != nil {
-		return ClaudeSubscriptionCredentials{}, err
-	}
-	if err := renameConfigFile(ctx, file.Name(), path, os.Rename, runtime.GOOS == "windows"); err != nil {
-		return ClaudeSubscriptionCredentials{}, err
-	}
-	committed = true
-	return credential, nil
+) (ClaudeSubscriptionCredentials, error) {
+	return updateCredentialFile(ctx, paths, ClaudeSubscriptionAuthPath(paths), "Claude subscription", func(credential ClaudeSubscriptionCredentials) bool {
+		return credential.Configured()
+	}, update)
 }

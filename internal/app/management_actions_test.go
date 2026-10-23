@@ -90,7 +90,7 @@ func TestWebManagementActionEntryPoints(t *testing.T) {
 
 func TestBrowserManagementActionEntryPoints(t *testing.T) {
 	for _, entry := range []string{"slash", "settings"} {
-		for _, scenario := range []string{"toggle", "saved with cleanup warning", "save failure", "connected then cancel tab"} {
+		for _, scenario := range []string{"toggle", "save failure", "connected then cancel tab"} {
 			t.Run(entry+"/"+scenario, func(t *testing.T) {
 				s, _ := browserTestSession(t)
 				t.Cleanup(func() { _ = closeBrowser(context.Background(), s.browser) })
@@ -100,14 +100,6 @@ func TestBrowserManagementActionEntryPoints(t *testing.T) {
 				if scenario == "save failure" {
 					s.application.dependencies.saveSettings = func(context.Context, config.Paths, map[config.Setting]string) error {
 						return errors.New("synthetic preference failure")
-					}
-				}
-				if scenario == "saved with cleanup warning" {
-					s.application.dependencies.saveSettings = func(ctx context.Context, paths config.Paths, changes map[config.Setting]string) error {
-						if err := config.SaveSettingsFile(ctx, paths, changes); err != nil {
-							return err
-						}
-						return &config.CommittedError{Warning: errors.New("synthetic cleanup warning")}
 					}
 				}
 				if scenario == "connected then cancel tab" {
@@ -145,18 +137,14 @@ func TestBrowserManagementActionEntryPoints(t *testing.T) {
 						t.Fatalf("Settings action result = %+v", result)
 					}
 				}
-				if scenario == "saved with cleanup warning" {
-					if !strings.Contains(output+strings.Join(warnings, "\n"), "synthetic cleanup warning") {
-						t.Fatal("committed cleanup warning lost")
-					}
-				} else if len(warnings) != 0 {
+				if len(warnings) != 0 {
 					t.Fatalf("unexpected warnings: %v", warnings)
 				}
 				if s.lifecycle.revision != wantRevision || s.lifecycle.resourceRevision != wantRevision || s.lifecycle.changing {
 					t.Fatal("browser effects did not determine completion revisions")
 				}
 				switch scenario {
-				case "toggle", "saved with cleanup warning":
+				case "toggle":
 					loaded, loadErr := config.LoadFiles(s.configuration.Paths, config.LoadOptions{})
 					if err != nil || loadErr != nil || !loaded.BrowserHeaded || !s.configuration.BrowserHeaded || !s.browser.Headed() || os.Getenv("AGENT_BROWSER_HEADED") != "true" || s.browser.Name() != beforeName || !strings.Contains(output, "Show window: on (saved)") {
 						t.Fatalf("toggle did not save and publish: %q, %v, %v", output, err, loadErr)
@@ -170,7 +158,7 @@ func TestBrowserManagementActionEntryPoints(t *testing.T) {
 						t.Fatalf("cancellation lost completed connection effects: %q, %v", output, err)
 					}
 				}
-				if scenario != "toggle" && scenario != "saved with cleanup warning" {
+				if scenario != "toggle" {
 					if _, statErr := os.Stat(s.configuration.Paths.GlobalSettings); !errors.Is(statErr, os.ErrNotExist) {
 						t.Fatalf("unsaved action wrote preferences: %v", statErr)
 					}

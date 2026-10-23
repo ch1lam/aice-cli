@@ -14,7 +14,7 @@ import (
 
 func TestWebActionEffectsKeepOrInvalidateHeldRuns(t *testing.T) {
 	for _, entry := range []string{"slash", "settings"} {
-		for _, scenario := range []string{"already first", "credential then prepare failure", "credential then save failure", "preference committed cleanup warning"} {
+		for _, scenario := range []string{"already first", "credential then prepare failure", "credential then save failure", "preference committed"} {
 			t.Run(entry+"/"+scenario, func(t *testing.T) {
 				type backendRecord struct {
 					backend *fakeWireBackend
@@ -75,23 +75,15 @@ func TestWebActionEffectsKeepOrInvalidateHeldRuns(t *testing.T) {
 					s.application.dependencies.saveWebSettings = func(context.Context, config.Paths, config.WebPatch) (config.WebSettings, error) {
 						return config.WebSettings{}, failure
 					}
-				case "preference committed cleanup warning":
+				case "preference committed":
 					request.Arguments, request.Auth = "fetch", nil
 					wantResources = 2
-					s.application.dependencies.saveWebSettings = func(ctx context.Context, paths config.Paths, patch config.WebPatch) (config.WebSettings, error) {
-						saved, err := config.SaveWebSettingsFile(ctx, paths, patch)
-						if err != nil {
-							return saved, err
-						}
-						return saved, &config.CommittedError{Warning: failure}
-					}
 				}
-				var text string
 				if entry == "slash" {
-					text, err = s.RunSlashCommand(t.Context(), request)
+					_, err = s.RunSlashCommand(t.Context(), request)
 				} else {
 					result, actionErr := s.RunSettingsAction(t.Context(), 1, request)
-					text, err = result.Output+strings.Join(result.Warnings, "\n"), actionErr
+					err = actionErr
 					if result.Committed || result.Applied || result.Revision != wantRevision {
 						t.Errorf("Settings result = %+v", result)
 					}
@@ -102,9 +94,6 @@ func TestWebActionEffectsKeepOrInvalidateHeldRuns(t *testing.T) {
 					}
 				} else if err != nil {
 					t.Fatal(err)
-				}
-				if scenario == "preference committed cleanup warning" && !strings.Contains(text, failure.Error()) {
-					t.Error("cleanup warning lost")
 				}
 				if s.lifecycle.revision != wantRevision || s.lifecycle.resourceRevision != wantResources || s.lifecycle.changing {
 					t.Errorf("revisions/reservation = %d/%d/%v; want %d/%d/false", s.lifecycle.revision, s.lifecycle.resourceRevision, s.lifecycle.changing, wantRevision, wantResources)
@@ -195,7 +184,7 @@ func TestWebActionAdmission(t *testing.T) {
 				t.Errorf("%s concurrent mutation = %v", entry, err)
 			}
 		}
-		return config.SaveWebSettingsFile(ctx, paths, patch)
+		return config.SaveWebPatch(ctx, paths, patch)
 	}
 	if _, err := s.RunSlashCommand(t.Context(), interaction.CommandRequest{Name: "web", Arguments: "fetch"}); err != nil {
 		t.Fatal(err)

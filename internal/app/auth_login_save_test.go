@@ -3,8 +3,6 @@ package app
 import (
 	"context"
 	"errors"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -17,11 +15,11 @@ import (
 	"github.com/ch1lam/aice-cli/internal/provider/deepseek"
 )
 
-func TestAccountLoginCleanupWarning(t *testing.T) {
+func TestAccountLoginSavesCredentialBeforePreference(t *testing.T) {
 	// Both entries share the coordinator; exercise each independent writer with
 	// real temporary files, without repeating the held-run effect matrix.
 	for _, provider := range []string{"openai-codex", "anthropic-subscription"} {
-		for _, outcome := range []string{"publish", "preference failure", "unchanged"} {
+		for _, outcome := range []string{"publish", "preference failure"} {
 			t.Run(provider+"/"+outcome, func(t *testing.T) {
 				paths := authTestPaths(t)
 				s := &interactiveSession{configuration: config.Config{Provider: "deepseek", Paths: paths}, model: deepseek.DefaultModel(), providers: defaultProviders()}
@@ -38,25 +36,9 @@ func TestAccountLoginCleanupWarning(t *testing.T) {
 						return config.SaveSettingsFile(ctx, p, changes)
 					},
 				}}
-				blockCleanup := func(path string) {
-					t.Helper()
-					if err := os.WriteFile(filepath.Join(path+".lock", "cleanup-blocker"), nil, 0o600); err != nil {
-						t.Fatal(err)
-					}
-				}
 				expiry := time.Now().UTC().Add(time.Hour)
 				codexCredential := config.CodexCredentials{AccessToken: "private-token", RefreshToken: "private-refresh", AccountID: "fixture", ExpiresAt: expiry}
 				claudeCredential := config.ClaudeSubscriptionCredentials{AccessToken: "private-token", RefreshToken: "private-refresh", ExpiresAt: expiry}
-				if outcome == "unchanged" {
-					if _, err := config.UpdateCodexCredentials(t.Context(), paths, func(config.CodexCredentials) (config.CodexCredentials, error) { return codexCredential, nil }); err != nil {
-						t.Fatal(err)
-					}
-					if _, err := config.UpdateClaudeSubscriptionCredentials(t.Context(), paths, func(config.ClaudeSubscriptionCredentials) (config.ClaudeSubscriptionCredentials, error) {
-						return claudeCredential, nil
-					}); err != nil {
-						t.Fatal(err)
-					}
-				}
 				s.application.dependencies.codexInteractiveLogin = func(context.Context, bool, codex.LoginInteraction) (config.CodexCredentials, error) {
 					return codexCredential, nil
 				}
@@ -65,17 +47,11 @@ func TestAccountLoginCleanupWarning(t *testing.T) {
 				}
 				s.application.dependencies.updateCodexCredentials = func(ctx context.Context, p config.Paths, update func(config.CodexCredentials) (config.CodexCredentials, error)) (config.CodexCredentials, error) {
 					updates++
-					return config.UpdateCodexCredentials(ctx, p, func(previous config.CodexCredentials) (config.CodexCredentials, error) {
-						blockCleanup(config.CodexAuthPath(p))
-						return update(previous)
-					})
+					return config.UpdateCodexCredentials(ctx, p, update)
 				}
 				s.application.dependencies.updateClaudeCredentials = func(ctx context.Context, p config.Paths, update func(config.ClaudeSubscriptionCredentials) (config.ClaudeSubscriptionCredentials, error)) (config.ClaudeSubscriptionCredentials, error) {
 					updates++
-					return config.UpdateClaudeSubscriptionCredentials(ctx, p, func(previous config.ClaudeSubscriptionCredentials) (config.ClaudeSubscriptionCredentials, error) {
-						blockCleanup(config.ClaudeSubscriptionAuthPath(p))
-						return update(previous)
-					})
+					return config.UpdateClaudeSubscriptionCredentials(ctx, p, update)
 				}
 				request := interaction.CommandRequest{Name: "login", Arguments: provider, LoginMethod: "browser", Auth: &interaction.AuthInteraction{Notify: func(context.Context, interaction.AuthPrompt) error { return nil }}}
 				var output string
@@ -90,22 +66,12 @@ func TestAccountLoginCleanupWarning(t *testing.T) {
 					}
 				}
 				wantRevision, wantSaves := uint64(1), 1
-				if outcome == "unchanged" {
-					wantRevision, wantSaves = 0, 0
-					if err == nil || config.WasCommitted(err) || strings.Contains(output, "credential saved") {
-						t.Errorf("unchanged cleanup failure treated as committed: %v", err)
+				if outcome == "preference failure" {
+					if !errors.Is(err, failure) || !strings.Contains(err.Error(), "account credential saved") {
+						t.Errorf("partial success lost: %v", err)
 					}
-				} else {
-					if !strings.Contains(output, "Account credential saved;") || !strings.Contains(output, "lock cleanup warning") {
-						t.Error("credential cleanup warning missing")
-					}
-					if outcome == "preference failure" {
-						if !errors.Is(err, failure) || !strings.Contains(err.Error(), "account credential saved") {
-							t.Errorf("partial success lost: %v", err)
-						}
-					} else if err != nil {
-						t.Fatal(err)
-					}
+				} else if err != nil {
+					t.Fatal(err)
 				}
 				loaded, loadErr := config.LoadFiles(paths, config.LoadOptions{})
 				if loadErr != nil || provider == "openai-codex" && loaded.CodexCredentials != codexCredential || provider == "anthropic-subscription" && loaded.ClaudeSubscriptionCredentials != claudeCredential {

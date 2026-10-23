@@ -127,22 +127,17 @@ func nextExaInstanceID(existing map[string]config.WebService) string {
 }
 
 // saveWebCredential updates the cached auth-store value once replacement commits.
-// Lock cleanup warnings do not undo the write or stop the preference operation.
 func (s *interactiveSession) saveWebCredential(ctx context.Context, paths config.Paths, id, secret string) error {
 	save := config.SaveWebCredentialFile
 	if s.application != nil && s.application.dependencies.saveWebCredential != nil {
 		save = s.application.dependencies.saveWebCredential
 	}
-	err := save(ctx, paths, id, secret)
-	if err != nil && !config.WasCommitted(err) {
+	if err := save(ctx, paths, id, secret); err != nil {
 		return err
 	}
 	s.stateMu.Lock()
 	s.configuration = s.configuration.WithWebCredential(id, secret)
 	s.stateMu.Unlock()
-	if err != nil {
-		s.settingsWarning(fmt.Errorf("web credential %s: %w", id, err))
-	}
 	return nil
 }
 
@@ -370,11 +365,8 @@ func (s *interactiveSession) saveWeb(ctx context.Context, patch config.WebPatch,
 		return actionResult{}, err
 	}
 	if _, err := s.application.dependencies.saveWebSettings(ctx, current.Paths, patch); err != nil {
-		if !config.WasCommitted(err) {
-			prepared.state.closeBackend()
-			return actionResult{}, fmt.Errorf("app: save web settings; current Session unchanged: %w", err)
-		}
-		s.settingsWarning(err)
+		prepared.state.closeBackend()
+		return actionResult{}, fmt.Errorf("app: save web settings; current Session unchanged: %w", err)
 	}
 	s.publishWebSettings(prepared)
 	s.stateMu.RLock()

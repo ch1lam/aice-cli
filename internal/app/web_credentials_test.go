@@ -27,7 +27,7 @@ func TestWebCredentialCommitBoundary(t *testing.T) {
 			} else if tc.preferenceFails {
 				name += "/committed then preference failure"
 			} else {
-				name += "/committed cleanup warning"
+				name += "/committed"
 			}
 			t.Run(name, func(t *testing.T) {
 				search := &fakeWireBackend{}
@@ -42,7 +42,6 @@ func TestWebCredentialCommitBoundary(t *testing.T) {
 				}
 				before := s.settingsSnapshot()
 				revision, _ := s.settingsStatus()
-				cleanupErr := errors.New("synthetic auth lock cleanup")
 				writeErr := errors.New("synthetic auth write failure")
 				preferenceErr := errors.New("synthetic preference failure")
 				credentialWrites, preferenceWrites := 0, 0
@@ -51,18 +50,14 @@ func TestWebCredentialCommitBoundary(t *testing.T) {
 					if tc.writeFails {
 						return writeErr
 					}
-					// Real replacement first: CommittedError models only the later cleanup failure.
-					if err := config.SaveWebCredentialFile(ctx, paths, id, secret); err != nil {
-						return err
-					}
-					return &config.CommittedError{Warning: cleanupErr}
+					return config.SaveWebCredentialFile(ctx, paths, id, secret)
 				}
 				s.application.dependencies.saveWebSettings = func(ctx context.Context, paths config.Paths, patch config.WebPatch) (config.WebSettings, error) {
 					preferenceWrites++
 					if tc.preferenceFails {
 						return config.WebSettings{}, preferenceErr
 					}
-					return config.SaveWebSettingsFile(ctx, paths, patch)
+					return config.SaveWebPatch(ctx, paths, patch)
 				}
 				answers := []string{"key", "new-synthetic-key"}
 				if tc.action == "credential" {
@@ -116,9 +111,6 @@ func TestWebCredentialCommitBoundary(t *testing.T) {
 				}
 				if credentialWrites != 1 || preferenceWrites != wantPreferenceWrites {
 					t.Errorf("writes: credential=%d preference=%d; want 1/%d", credentialWrites, preferenceWrites, wantPreferenceWrites)
-				}
-				if strings.Contains(warnings, cleanupErr.Error()) != !tc.writeFails {
-					t.Errorf("cleanup warning missing or misclassified: %q; err=%v", warnings, err)
 				}
 				if strings.Contains(output+warnings, "synthetic-key") {
 					t.Fatal("credential leaked in action output")

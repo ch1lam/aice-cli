@@ -131,7 +131,7 @@ func newCommand(dependencies dependencies) (*cobra.Command, error) {
 		dependencies.ensureHelpers = deps.Ensure
 	}
 	if dependencies.saveWebSettings == nil {
-		dependencies.saveWebSettings = config.SaveWebSettingsFile
+		dependencies.saveWebSettings = config.SaveWebPatch
 	}
 	if dependencies.compactionKeepRecentTokens == 0 {
 		dependencies.compactionKeepRecentTokens = session.DefaultKeepRecentTokens

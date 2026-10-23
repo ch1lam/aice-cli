@@ -90,9 +90,9 @@ func TestSettingsPatchExplicitZeroEmptyAndDiskIsolation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := config.SaveSettingsPatch(t.Context(), paths, patch)
-	if err != nil || !result.Committed {
-		t.Fatalf("save=%+v err=%v", result, err)
+	err = config.SaveSettingsPatch(t.Context(), paths, patch)
+	if err != nil {
+		t.Fatal(err)
 	}
 	if next.BrowserHeaded || next.RunTokenBudget != 0 || next.Model != "" || next.Thinking != "low" || next.RunTimeout != time.Second+time.Nanosecond {
 		t.Fatal("candidate imported peer data or lost explicit zero/precision")
@@ -103,7 +103,7 @@ func TestSettingsPatchExplicitZeroEmptyAndDiskIsolation(t *testing.T) {
 		t.Fatalf("disk=%v", disk)
 	}
 	unset := config.SettingsPatch{Changes: []config.SettingChange{{ID: config.SettingModel, Unset: true}}}
-	if _, err := config.SaveSettingsPatch(t.Context(), paths, unset); err != nil {
+	if err := config.SaveSettingsPatch(t.Context(), paths, unset); err != nil {
 		t.Fatal(err)
 	}
 	disk = nil
@@ -149,7 +149,7 @@ func TestSettingsPatchRejectsInvalidAndUntrustedInheritance(t *testing.T) {
 		if _, err := c.WithPatch(patch); err == nil {
 			t.Fatal("accepted invalid patch")
 		}
-		if result, err := config.SaveSettingsPatch(t.Context(), paths, patch); err == nil || result.Committed {
+		if err := config.SaveSettingsPatch(t.Context(), paths, patch); err == nil {
 			t.Fatal("saved invalid patch")
 		}
 	}
@@ -182,15 +182,15 @@ func TestSettingsPatchCanceledAndDamagedFile(t *testing.T) {
 	writeJSON(t, paths.GlobalSettings, map[string]any{"model": "old"})
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	result, err := config.SaveSettingsPatch(ctx, paths, settingPatch(t, "model", "new"))
-	if err == nil || result.Committed {
+	err := config.SaveSettingsPatch(ctx, paths, settingPatch(t, "model", "new"))
+	if err == nil {
 		t.Fatal("canceled save committed")
 	}
 	if err := os.WriteFile(paths.GlobalSettings, []byte(`{"broken":`), 0600); err != nil {
 		t.Fatal(err)
 	}
-	result, err = config.SaveSettingsPatch(t.Context(), paths, settingPatch(t, "model", "new"))
-	if err == nil || result.Committed {
+	err = config.SaveSettingsPatch(t.Context(), paths, settingPatch(t, "model", "new"))
+	if err == nil {
 		t.Fatal("damaged file replaced")
 	}
 }
@@ -202,9 +202,9 @@ func TestWebPatchPreservesPeerInstanceFieldsAndEmptyList(t *testing.T) {
 	enabled := false
 	empty := []string{}
 	patch := config.WebPatch{ServiceEdits: map[string]config.WebServicePatch{"exa-main": {Enabled: &enabled}}, AllowedDomains: &empty}
-	result, err := config.SaveWebPatch(t.Context(), paths, patch)
-	if err != nil || !result.Committed {
-		t.Fatal(result, err)
+	_, err := config.SaveWebPatch(t.Context(), paths, patch)
+	if err != nil {
+		t.Fatal(err)
 	}
 	var disk map[string]any
 	readJSON(t, paths.GlobalSettings, &disk)

@@ -78,12 +78,12 @@ func (c Config) WithMCPConnectionDecision(key, fingerprint string, decision MCPC
 
 // SaveMCPConnectionDecision writes only a user-owned, exact-identity decision.
 // Project settings cannot grant connection access, and --yolo never saves one.
-func SaveMCPConnectionDecision(ctx context.Context, paths Paths, server MCPServer, decision MCPConnectionDecision) (CommitResult, error) {
+func SaveMCPConnectionDecision(ctx context.Context, paths Paths, server MCPServer, decision MCPConnectionDecision) error {
 	if !validMCPConnectionDecision(decision) {
-		return CommitResult{}, fmt.Errorf("config: invalid MCP connection decision")
+		return fmt.Errorf("config: invalid MCP connection decision")
 	}
 	if err := validateMCPStoredBinding(paths, server); err != nil {
-		return CommitResult{}, err
+		return err
 	}
 	return editFile(ctx, paths.GlobalAuth, func(values map[string]any) error {
 		approvals := make(map[string]mcpConnectionApproval)
@@ -138,9 +138,9 @@ func validateMCPStoredBinding(paths Paths, server MCPServer) error {
 
 // ForgetMCPServiceAccess removes every credential scope and connection decision
 // for one source-qualified service. Removal never touches provider credentials.
-func ForgetMCPServiceAccess(ctx context.Context, paths Paths, server MCPServer) (CommitResult, error) {
+func ForgetMCPServiceAccess(ctx context.Context, paths Paths, server MCPServer) error {
 	if err := validateMCPStoredBinding(paths, server); err != nil {
-		return CommitResult{}, err
+		return err
 	}
 	return editFile(ctx, paths.GlobalAuth, func(values map[string]any) error {
 		credentials := make(mcpCredentials)

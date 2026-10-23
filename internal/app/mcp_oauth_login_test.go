@@ -315,7 +315,7 @@ func TestMCPOAuthNewLoginRemovesOlderRuntimeScopes(t *testing.T) {
 	key := "user:docs"
 	original := c.MCP.Servers[key].Settings
 	credential := config.MCPOAuthCredentials{Resource: f.url + "/mcp", Issuer: f.url, TokenEndpoint: f.url + "/token", ClientID: "fixture", AuthMethod: "none", RedirectURI: "http://127.0.0.1:43123/callback", AccessToken: "old-access", RefreshToken: "old-refresh"}
-	saved, _, err := config.SaveMCPOAuthLogin(t.Context(), c.Paths, c.MCP.Servers[key], credential)
+	saved, err := config.SaveMCPOAuthLogin(t.Context(), c.Paths, c.MCP.Servers[key], credential)
 	if err != nil {
 		t.Fatal(err)
 	}

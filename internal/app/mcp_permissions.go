@@ -100,9 +100,9 @@ func saveMCPPermission(ctx context.Context, current config.Config, request inter
 	}
 	// This path is deliberately inert: the user supplies the reviewed schema.
 	// Only a later current catalog with the exact same schema can use an allow.
-	commit, err := config.SaveMCPPermission(ctx, current.Paths, current.MCP, request.Key, rule)
-	result := mcpCommitResult(commit, "MCP user permission saved. Connection approval and current catalog checks still apply; ordinary Session approvals remain temporary.")
-	if commit.Committed {
+	err = config.SaveMCPPermission(ctx, current.Paths, current.MCP, request.Key, rule)
+	result := mcpCommitResult(err, "MCP user permission saved. Connection approval and current catalog checks still apply; ordinary Session approvals remain temporary.")
+	if err == nil {
 		current = candidate
 	}
 	return current, result, err

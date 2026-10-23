@@ -535,29 +535,15 @@ type WebPatch struct {
 	Unset []WebSetting
 }
 
-// SaveWebSettingsFile applies one patch to the "web" object of the user
-// settings file under the shared lock. Other keys and unrelated instances are
+// SaveWebPatch applies one patch to the "web" object of the user settings
+// file under the shared lock. Other keys and unrelated instances are
 // preserved; the result is validated before it replaces the file.
-func SaveWebSettingsFile(ctx context.Context, paths Paths, patch WebPatch) (WebSettings, error) {
+func SaveWebPatch(ctx context.Context, paths Paths, patch WebPatch) (WebSettings, error) {
 	if err := paths.validate(); err != nil {
 		return WebSettings{}, err
 	}
-	result, commit, err := saveWebPatch(ctx, paths, patch)
-	return result, legacyCommitError(commit, err)
-}
-
-// SaveWebPatch exposes the replacement outcome separately from cleanup.
-func SaveWebPatch(ctx context.Context, paths Paths, patch WebPatch) (CommitResult, error) {
-	_, result, err := saveWebPatch(ctx, paths, patch)
-	return result, err
-}
-
-func saveWebPatch(ctx context.Context, paths Paths, patch WebPatch) (WebSettings, CommitResult, error) {
-	if err := paths.validate(); err != nil {
-		return WebSettings{}, CommitResult{}, err
-	}
 	var result WebSettings
-	commit, err := editFile(ctx, paths.GlobalSettings, func(values map[string]any) error {
+	err := editFile(ctx, paths.GlobalSettings, func(values map[string]any) error {
 		var raw json.RawMessage
 		if existing, ok := values[webSettingsKey]; ok {
 			encoded, err := json.Marshal(existing)
@@ -593,9 +579,9 @@ func saveWebPatch(ctx context.Context, paths Paths, patch WebPatch) (WebSettings
 		return nil
 	})
 	if err != nil {
-		return WebSettings{}, commit, err
+		return WebSettings{}, err
 	}
-	return result, commit, nil
+	return result, nil
 }
 
 func (p WebPatch) apply(settings WebSettings) WebSettings {
@@ -701,7 +687,7 @@ func SaveWebCredentialFile(ctx context.Context, paths Paths, instanceID, secret 
 	if strings.ContainsAny(secret, "\r\n") {
 		return errors.New("config: web service credential must be one line")
 	}
-	return patchFileWith(ctx, paths.GlobalAuth, func(values map[string]any) error {
+	return editFile(ctx, paths.GlobalAuth, func(values map[string]any) error {
 		namespace := make(map[string]any)
 		if existing, ok := values[webCredentialsKey]; ok {
 			object, ok := existing.(map[string]any)

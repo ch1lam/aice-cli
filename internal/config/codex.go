@@ -2,12 +2,7 @@ package config
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
-	"fmt"
-	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"time"
 )
@@ -32,120 +27,15 @@ func CodexAuthPath(paths Paths) string {
 
 // LoadCodexCredentials reads only AICE's explicit global credential path.
 func LoadCodexCredentials(paths Paths) (CodexCredentials, error) {
-	if strings.TrimSpace(paths.GlobalAuth) == "" {
-		return CodexCredentials{}, errors.New("config: global auth path is required")
-	}
-	data, err := os.ReadFile(CodexAuthPath(paths))
-	if errors.Is(err, os.ErrNotExist) {
-		return CodexCredentials{}, nil
-	}
-	if err != nil {
-		return CodexCredentials{}, fmt.Errorf("config: read Codex credentials: %w", err)
-	}
-	var credential CodexCredentials
-	if json.Unmarshal(data, &credential) != nil {
-		return CodexCredentials{}, &sourceSyntaxError{path: CodexAuthPath(paths)}
-	}
-	return credential, nil
+	return loadCredentialFile[CodexCredentials](paths, CodexAuthPath(paths), "Codex")
 }
 
 // UpdateCodexCredentials serializes refresh, login, and logout across AICE
 // processes. The callback receives the latest disk value under the lock.
-// A crashed lock is never stolen while its owner might still be refreshing.
-// A cleanup failure after a write or deletion is reported as a CommittedError.
 func UpdateCodexCredentials(ctx context.Context, paths Paths,
 	update func(CodexCredentials) (CodexCredentials, error),
-) (credential CodexCredentials, returnErr error) {
-	if strings.TrimSpace(paths.GlobalAuth) == "" {
-		return credential, errors.New("config: global auth path is required")
-	}
-	ctx, cancel := context.WithTimeout(ctx, time.Minute)
-	defer cancel()
-	path := CodexAuthPath(paths)
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return credential, fmt.Errorf("config: create Codex auth directory: %w", err)
-	}
-	lock := path + ".lock"
-	if err := acquireConfigLock(ctx, lock, os.Mkdir, runtime.GOOS == "windows"); err != nil {
-		return credential, err
-	}
-	committed := false
-	defer func() {
-		returnErr = legacyCommitError(CommitResult{
-			Committed: committed, CleanupWarning: os.Remove(lock),
-		}, returnErr)
-	}()
-	previous, err := LoadCodexCredentials(paths)
-	if err != nil {
-		return credential, err
-	}
-	credential, err = update(previous)
-	if err != nil {
-		return CodexCredentials{}, err
-	}
-	if credential == previous {
-		return credential, nil
-	}
-	if credential == (CodexCredentials{}) {
-		err := os.Remove(path)
-		committed = err == nil
-		if errors.Is(err, os.ErrNotExist) {
-			err = nil
-		}
-		return credential, err
-	}
-	if !credential.Configured() || strings.ContainsAny(credential.AccessToken+credential.RefreshToken+credential.AccountID, "\r\n") {
-		return CodexCredentials{}, errors.New("config: incomplete or invalid Codex credentials")
-	}
-	data, err := json.MarshalIndent(credential, "", "  ")
-	if err != nil {
-		return CodexCredentials{}, err
-	}
-	file, err := os.CreateTemp(filepath.Dir(path), ".codex-auth-*")
-	if err != nil {
-		return CodexCredentials{}, err
-	}
-	defer os.Remove(file.Name())
-	_, writeErr := file.Write(append(data, '\n'))
-	syncErr := file.Sync()
-	closeErr := file.Close()
-	if err := errors.Join(writeErr, syncErr, closeErr); err != nil {
-		return CodexCredentials{}, err
-	}
-	if err := renameConfigFile(ctx, file.Name(), path, os.Rename, runtime.GOOS == "windows"); err != nil {
-		return CodexCredentials{}, err
-	}
-	committed = true
-	return credential, nil
-}
-
-// acquireConfigLock keeps filesystem attempts injectable so retry
-// behavior can be tested without relying on OS-specific deletion timing.
-// The caller supplies the wait deadline and releases only an acquired lock.
-func acquireConfigLock(ctx context.Context, lock string,
-	mkdir func(string, os.FileMode) error, retryPermission bool,
-) error {
-	var lastLockErr error
-	for {
-		if err := ctx.Err(); err != nil {
-			return fmt.Errorf("config: wait for %s (check permissions; remove a stale lock only when no AICE process is running): %w", lock, errors.Join(err, lastLockErr))
-		}
-		err := mkdir(lock, 0o700)
-		if err == nil {
-			return nil
-		}
-		// Windows can deny creation while the previous lock directory is
-		// pending deletion. Retry within the same bounded, cancellable wait;
-		// only a successful Mkdir grants ownership of the lock.
-		if !errors.Is(err, os.ErrExist) && !(retryPermission && errors.Is(err, os.ErrPermission)) {
-			return fmt.Errorf("config: lock configuration: %w", err)
-		}
-		lastLockErr = err
-		timer := time.NewTimer(50 * time.Millisecond)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-		case <-timer.C:
-		}
-	}
+) (CodexCredentials, error) {
+	return updateCredentialFile(ctx, paths, CodexAuthPath(paths), "Codex", func(credential CodexCredentials) bool {
+		return credential.Configured() && !strings.ContainsAny(credential.AccessToken+credential.RefreshToken+credential.AccountID, "\r\n")
+	}, update)
 }

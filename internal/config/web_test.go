@@ -208,7 +208,7 @@ func TestSaveWebSettingsPatchesOnlyChangedParts(t *testing.T) {
 	// Add an instance and append it to the priority tail.
 	enabled := true
 	priority := []string{"native", "service:exa-main", "service:exa-new"}
-	saved, err := config.SaveWebSettingsFile(t.Context(), paths, config.WebPatch{
+	saved, err := config.SaveWebPatch(t.Context(), paths, config.WebPatch{
 		Services: map[string]*config.WebServiceSettings{"exa-new": {Provider: "exa", Credential: config.WebCredentialRef{AuthRef: "web_services.exa-new"}}},
 		Priority: &priority,
 	})
@@ -232,7 +232,7 @@ func TestSaveWebSettingsPatchesOnlyChangedParts(t *testing.T) {
 	}
 
 	// Removing a referenced instance must fail validation and leave the file unchanged.
-	if _, err := config.SaveWebSettingsFile(t.Context(), paths, config.WebPatch{Services: map[string]*config.WebServiceSettings{"exa-main": nil}}); err == nil || !strings.Contains(err.Error(), "not configured") {
+	if _, err := config.SaveWebPatch(t.Context(), paths, config.WebPatch{Services: map[string]*config.WebServiceSettings{"exa-main": nil}}); err == nil || !strings.Contains(err.Error(), "not configured") {
 		t.Fatalf("dangling priority accepted: %v", err)
 	}
 	var unchanged map[string]any
@@ -244,7 +244,7 @@ func TestSaveWebSettingsPatchesOnlyChangedParts(t *testing.T) {
 	// An explicit empty priority persists as [] rather than disappearing.
 	empty := []string{}
 	off := false
-	if _, err := config.SaveWebSettingsFile(t.Context(), paths, config.WebPatch{Priority: &empty, FetchEnabled: &off}); err != nil {
+	if _, err := config.SaveWebPatch(t.Context(), paths, config.WebPatch{Priority: &empty, FetchEnabled: &off}); err != nil {
 		t.Fatal(err)
 	}
 	readJSON(t, paths.GlobalSettings, &disk)
@@ -262,7 +262,7 @@ func TestSaveWebSettingsPatchesOnlyChangedParts(t *testing.T) {
 
 	// A malformed existing web object is preserved instead of overwritten.
 	writeJSON(t, paths.GlobalSettings, map[string]any{"web": map[string]any{"search": map[string]any{"bogus": 1}}})
-	if _, err := config.SaveWebSettingsFile(t.Context(), paths, config.WebPatch{FetchEnabled: &off}); err == nil || !strings.Contains(err.Error(), "left unchanged") {
+	if _, err := config.SaveWebPatch(t.Context(), paths, config.WebPatch{FetchEnabled: &off}); err == nil || !strings.Contains(err.Error(), "left unchanged") {
 		t.Fatalf("malformed target overwritten: %v", err)
 	}
 }
@@ -277,7 +277,7 @@ func TestSaveWebSettingsConcurrentInstances(t *testing.T) {
 		go func() {
 			defer group.Done()
 			id := "svc-" + string(rune('a'+i))
-			_, err := config.SaveWebSettingsFile(t.Context(), paths, config.WebPatch{Services: map[string]*config.WebServiceSettings{
+			_, err := config.SaveWebPatch(t.Context(), paths, config.WebPatch{Services: map[string]*config.WebServiceSettings{
 				id: {Provider: "exa", Credential: config.WebCredentialRef{Env: "KEY_" + strings.ToUpper(id[4:])}},
 			}})
 			errs <- err

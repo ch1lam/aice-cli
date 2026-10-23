@@ -174,13 +174,13 @@ func (c Config) WithMCPPermission(key, fingerprint string, rule MCPPermission) (
 // SaveMCPPermission changes one rule under the existing user auth-file lock.
 // The caller supplies the reviewed schema and frozen configuration; no discovery,
 // credential resolution or remote execution occurs in the writer.
-func SaveMCPPermission(ctx context.Context, paths Paths, configuration MCPConfig, key string, rule MCPPermission) (CommitResult, error) {
+func SaveMCPPermission(ctx context.Context, paths Paths, configuration MCPConfig, key string, rule MCPPermission) error {
 	server, ok := configuration.Servers[key]
 	if !ok || !rule.valid() {
-		return CommitResult{}, fmt.Errorf("config: invalid MCP permission rule")
+		return fmt.Errorf("config: invalid MCP permission rule")
 	}
 	if err := validateMCPStoredBinding(paths, server); err != nil {
-		return CommitResult{}, err
+		return err
 	}
 	return editFile(ctx, paths.GlobalAuth, func(values map[string]any) error {
 		sets, err := readMCPPermissions(values)

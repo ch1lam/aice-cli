@@ -22,10 +22,10 @@ func appOAuthConfig(t *testing.T, expiry time.Time) config.Config {
 	if err != nil {
 		t.Fatal(err)
 	}
-	saved, commit, err := config.SaveMCPOAuthLogin(t.Context(), c.Paths, c.MCP.Servers["user:service0"], config.MCPOAuthCredentials{
+	saved, err := config.SaveMCPOAuthLogin(t.Context(), c.Paths, c.MCP.Servers["user:service0"], config.MCPOAuthCredentials{
 		Resource: server.URL, Issuer: "https://example.com", TokenEndpoint: "https://example.com/token", ClientID: "public-client", AuthMethod: "none", RedirectURI: "http://127.0.0.1:43123/callback", AccessToken: "oauth-access-secret", RefreshToken: "oauth-refresh-secret", ExpiresAt: expiry,
 	})
-	if err != nil || !commit.Committed {
+	if err != nil {
 		t.Fatal(err)
 	}
 	c, err = c.WithMCPOAuth("user:service0", c.MCP.Servers["user:service0"].CredentialScope, saved)

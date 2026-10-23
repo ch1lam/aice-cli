@@ -106,6 +106,7 @@ Optional capabilities retain their own owners:
 | `internal/trust` | Protected-resource discovery and global Trust decisions |
 | `internal/skill` | Agent Skill discovery, SKILL.md parse, source layering, embedded builtins |
 | `internal/config` | Instance-local Viper precedence, effective snapshots, and locked atomic preference/credential persistence |
+| `internal/lockedfile` | Cross-process OS file locks with bounded waits and atomic file replacement, shared by config and Trust |
 | `internal/deps` | Verified ripgrep, Windows Git Bash, pinned agent-browser and Cua provisioning, including upstream browser skill resources |
 | `internal/desktop` | Pinned Cua admission, shared/owned runtime lifecycle, Run sessions, serialized calls, mode/image limits and setup validation; [platform scope](desktop.md) |
 | `internal/browser` | Process-owned browser names, environment, connection and bounded cleanup; app owns wiring, Loop remains unaware |

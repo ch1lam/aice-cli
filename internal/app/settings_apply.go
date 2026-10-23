@@ -144,14 +144,10 @@ func (s *interactiveSession) applySettingsReserved(ctx context.Context, request 
 			return result, err
 		}
 	}
-	commit, err := config.SaveSettingsPatch(ctx, candidate.Paths, patch)
-	result.Committed = commit.Committed
-	if err != nil {
+	if err := config.SaveSettingsPatch(ctx, candidate.Paths, patch); err != nil {
 		return result, err
 	}
-	if commit.CleanupWarning != nil {
-		result.Warnings = append(result.Warnings, "Saved, but lock cleanup failed: "+commit.CleanupWarning.Error())
-	}
+	result.Committed = true
 	s.stateMu.Lock()
 	s.configuration = candidate
 	if changesDesktop {

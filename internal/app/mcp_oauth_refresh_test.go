@@ -124,7 +124,7 @@ func refreshFixtureConfig(t *testing.T, f *mcpRefreshFixture, expiry time.Time) 
 		t.Fatal(err)
 	}
 	server := c.MCP.Servers["user:service0"]
-	credential, _, err := config.SaveMCPOAuthLogin(t.Context(), paths, server, config.MCPOAuthCredentials{Resource: f.url + "/mcp", Issuer: f.url, TokenEndpoint: f.url + "/token", ClientID: "public", AuthMethod: "none", RedirectURI: "http://127.0.0.1:43123/callback", AccessToken: "private-access-0", RefreshToken: "private-refresh-0", ExpiresAt: expiry})
+	credential, err := config.SaveMCPOAuthLogin(t.Context(), paths, server, config.MCPOAuthCredentials{Resource: f.url + "/mcp", Issuer: f.url, TokenEndpoint: f.url + "/token", ClientID: "public", AuthMethod: "none", RedirectURI: "http://127.0.0.1:43123/callback", AccessToken: "private-access-0", RefreshToken: "private-refresh-0", ExpiresAt: expiry})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,7 +141,7 @@ func expireMCPRefreshFixture(t *testing.T, c config.Config, owner *mcpOwner) {
 	s := owner.services["user:service0"]
 	server := s.server
 	owner.mu.Unlock()
-	credential, _, err := config.RefreshMCPOAuth(t.Context(), c.Paths, server, func(_ context.Context, current config.MCPOAuthCredentials) (config.MCPOAuthCredentials, error) {
+	credential, err := config.RefreshMCPOAuth(t.Context(), c.Paths, server, func(_ context.Context, current config.MCPOAuthCredentials) (config.MCPOAuthCredentials, error) {
 		current.ExpiresAt = time.Now().Add(-time.Hour)
 		return current, nil
 	})
@@ -297,7 +297,7 @@ func TestMCPOAuthRefreshHonorsApprovalAndFailsClosed(t *testing.T) {
 				c = ownerTestApprove(t, c, "user:service0", config.MCPConnectionDeny)
 			}
 			if mode == "removed" {
-				if _, err := config.DeleteMCPOAuth(t.Context(), c.Paths, c.MCP.Servers["user:service0"]); err != nil {
+				if err := config.DeleteMCPOAuth(t.Context(), c.Paths, c.MCP.Servers["user:service0"]); err != nil {
 					t.Fatal(err)
 				}
 			}

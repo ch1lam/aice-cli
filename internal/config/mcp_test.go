@@ -50,9 +50,9 @@ func TestMCPSourceAndCredentialIsolation(t *testing.T) {
 	if project.Key == "" || user.Fingerprint == project.Fingerprint || user.CredentialScope == project.CredentialScope {
 		t.Fatal("same-name sources share identity")
 	}
-	commit, err := config.SaveMCPCredential(t.Context(), paths, user, "token", "user-secret")
-	if err != nil || !commit.Committed {
-		t.Fatalf("credential save: %+v %v", commit, err)
+	err := config.SaveMCPCredential(t.Context(), paths, user, "token", "user-secret")
+	if err != nil {
+		t.Fatalf("credential save: %v", err)
 	}
 	c = loadMCP(t, paths, config.LoadOptions{})
 	_, headers := c.MCP.Servers[user.Key].ConnectionValues()
@@ -80,7 +80,7 @@ func TestMCPSourceAndCredentialIsolation(t *testing.T) {
 	if len(headers) != 0 || next.MCP.Servers[user.Key].CredentialScope == c.MCP.Servers[user.Key].CredentialScope {
 		t.Fatal("new endpoint inherited old credential")
 	}
-	if commit, err := config.SaveMCPCredential(t.Context(), paths, config.MCPServer{Key: user.Key, ID: user.ID, Source: user.Source, Settings: changed, CredentialScope: user.CredentialScope}, "token", "bad"); err == nil || commit.Committed {
+	if err := config.SaveMCPCredential(t.Context(), paths, config.MCPServer{Key: user.Key, ID: user.ID, Source: user.Source, Settings: changed, CredentialScope: user.CredentialScope}, "token", "bad"); err == nil {
 		t.Fatal("forged connection binding saved")
 	}
 }
@@ -215,10 +215,7 @@ func TestMCPAtomicPatchesAndCredentialSnapshots(t *testing.T) {
 	for i := range 4 {
 		group.Go(func() {
 			server := httpMCP()
-			_, commit, err := config.SaveMCPPatch(t.Context(), paths, config.MCPPatch{Servers: map[string]*config.MCPServerSettings{fmt.Sprintf("server-%d", i): &server}})
-			if err == nil && !commit.Committed {
-				err = fmt.Errorf("not committed")
-			}
+			_, err := config.SaveMCPPatch(t.Context(), paths, config.MCPPatch{Servers: map[string]*config.MCPServerSettings{fmt.Sprintf("server-%d", i): &server}})
 			errs <- err
 		})
 	}
@@ -247,15 +244,15 @@ func TestMCPAtomicPatchesAndCredentialSnapshots(t *testing.T) {
 	if err != nil || len(cleared.MCP.Servers[bound.Key].MissingValues) != 1 {
 		t.Fatal("credential removal failed")
 	}
-	saved, commit, err := config.SaveMCPPatch(t.Context(), paths, config.MCPPatch{Enabled: map[string]bool{"server-0": false}})
-	if err != nil || !commit.Committed || len(saved.Servers) != 4 || saved.Servers["server-0"].URL != bound.Settings.URL {
+	saved, err := config.SaveMCPPatch(t.Context(), paths, config.MCPPatch{Enabled: map[string]bool{"server-0": false}})
+	if err != nil || len(saved.Servers) != 4 || saved.Servers["server-0"].URL != bound.Settings.URL {
 		t.Fatalf("toggle patch: %v", err)
 	}
 	before, err := os.ReadFile(paths.GlobalSettings)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, commit, err := config.SaveMCPPatch(t.Context(), paths, config.MCPPatch{Enabled: map[string]bool{"missing": true}}); err == nil || commit.Committed {
+	if _, err := config.SaveMCPPatch(t.Context(), paths, config.MCPPatch{Enabled: map[string]bool{"missing": true}}); err == nil {
 		t.Fatal("invalid toggle committed")
 	}
 	after, _ := os.ReadFile(paths.GlobalSettings)
@@ -270,8 +267,8 @@ func TestMCPEmptyIncludeAndMalformedSaveArePreserved(t *testing.T) {
 	server := httpMCP()
 	server.Headers = nil
 	server.IncludeTools = &empty
-	saved, commit, err := config.SaveMCPPatch(t.Context(), paths, config.MCPPatch{Servers: map[string]*config.MCPServerSettings{"docs": &server}})
-	if err != nil || !commit.Committed || saved.Servers["docs"].IncludeTools == nil {
+	saved, err := config.SaveMCPPatch(t.Context(), paths, config.MCPPatch{Servers: map[string]*config.MCPServerSettings{"docs": &server}})
+	if err != nil || saved.Servers["docs"].IncludeTools == nil {
 		t.Fatalf("save empty include: %v", err)
 	}
 	c := loadMCP(t, paths, config.LoadOptions{})
@@ -287,7 +284,7 @@ func TestMCPEmptyIncludeAndMalformedSaveArePreserved(t *testing.T) {
 	}
 	writeJSON(t, paths.GlobalSettings, map[string]any{"mcp": map[string]any{"bad-field": "preserve-me"}})
 	before, _ := os.ReadFile(paths.GlobalSettings)
-	if _, commit, err := config.SaveMCPPatch(t.Context(), paths, config.MCPPatch{Servers: map[string]*config.MCPServerSettings{"docs": &server}}); err == nil || commit.Committed {
+	if _, err := config.SaveMCPPatch(t.Context(), paths, config.MCPPatch{Servers: map[string]*config.MCPServerSettings{"docs": &server}}); err == nil {
 		t.Fatal("malformed existing MCP configuration overwritten")
 	}
 	after, _ := os.ReadFile(paths.GlobalSettings)

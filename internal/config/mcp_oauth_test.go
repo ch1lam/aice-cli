@@ -32,9 +32,9 @@ func oauthCredential(endpoint string) config.MCPOAuthCredentials {
 func saveOAuthLogin(t *testing.T, c config.Config, key string, credential config.MCPOAuthCredentials) config.Config {
 	t.Helper()
 	server := c.MCP.Servers[key]
-	saved, commit, err := config.SaveMCPOAuthLogin(t.Context(), c.Paths, server, credential)
-	if err != nil || !commit.Committed {
-		t.Fatalf("login save: %v, %+v", err, commit)
+	saved, err := config.SaveMCPOAuthLogin(t.Context(), c.Paths, server, credential)
+	if err != nil {
+		t.Fatalf("login save: %v", err)
 	}
 	next, err := c.WithMCPOAuth(key, server.CredentialScope, saved)
 	if err != nil {
@@ -63,18 +63,18 @@ func TestMCPOAuthIdentityRotationAndLogout(t *testing.T) {
 	if server.Fingerprint == initial.Fingerprint || len(server.MissingValues) != 0 {
 		t.Fatal("login did not bind identity")
 	}
-	if _, err := config.SaveMCPConnectionDecision(t.Context(), c.Paths, server, config.MCPConnectionAllow); err != nil {
+	if err := config.SaveMCPConnectionDecision(t.Context(), c.Paths, server, config.MCPConnectionAllow); err != nil {
 		t.Fatal(err)
 	}
 	c = loadMCP(t, c.Paths, config.LoadOptions{})
 	before, _ := server.OAuthCredentials()
-	rotated, commit, err := config.RefreshMCPOAuth(t.Context(), c.Paths, server, func(ctx context.Context, v config.MCPOAuthCredentials) (config.MCPOAuthCredentials, error) {
+	rotated, err := config.RefreshMCPOAuth(t.Context(), c.Paths, server, func(ctx context.Context, v config.MCPOAuthCredentials) (config.MCPOAuthCredentials, error) {
 		v.AccessToken = "rotated-access"
 		v.RefreshToken = "rotated-refresh"
 		v.ExpiresAt = v.ExpiresAt.Add(time.Hour)
 		return v, nil
 	})
-	if err != nil || !commit.Committed || rotated.GrantID != before.GrantID {
+	if err != nil || rotated.GrantID != before.GrantID {
 		t.Fatal("rotation", err)
 	}
 	rotatedConfig := loadMCP(t, c.Paths, config.LoadOptions{})
@@ -99,7 +99,7 @@ func TestMCPOAuthIdentityRotationAndLogout(t *testing.T) {
 	if original.Scopes[0] != "read" || copy.Servers[key].Fingerprint != bound.Fingerprint {
 		t.Fatal("clone changed binding or aliases credential")
 	}
-	if _, err := config.SaveMCPConnectionDecision(t.Context(), c.Paths, copy.Servers[key], config.MCPConnectionAllow); err != nil {
+	if err := config.SaveMCPConnectionDecision(t.Context(), c.Paths, copy.Servers[key], config.MCPConnectionAllow); err != nil {
 		t.Fatal("cloned identity cannot be saved", err)
 	}
 	encoded, _ := json.Marshal(rotatedConfig.MCP)
@@ -116,13 +116,13 @@ func TestMCPOAuthIdentityRotationAndLogout(t *testing.T) {
 		t.Fatal("new login retained approval")
 	}
 	called := false
-	if _, commit, err := config.RefreshMCPOAuth(t.Context(), c.Paths, bound, func(ctx context.Context, v config.MCPOAuthCredentials) (config.MCPOAuthCredentials, error) {
+	if _, err := config.RefreshMCPOAuth(t.Context(), c.Paths, bound, func(ctx context.Context, v config.MCPOAuthCredentials) (config.MCPOAuthCredentials, error) {
 		called = true
 		return v, nil
-	}); err == nil || commit.Committed || called {
+	}); err == nil || called {
 		t.Fatal("replaced login was refreshed")
 	}
-	if _, err := config.DeleteMCPOAuth(t.Context(), c.Paths, secondServer); err != nil {
+	if err := config.DeleteMCPOAuth(t.Context(), c.Paths, secondServer); err != nil {
 		t.Fatal(err)
 	}
 	loggedOut := loadMCP(t, c.Paths, config.LoadOptions{})
@@ -130,7 +130,7 @@ func TestMCPOAuthIdentityRotationAndLogout(t *testing.T) {
 	if ok || loggedOut.MCP.ConnectionDecision(key) != config.MCPConnectionAsk || loggedOut.OpenAIAPIKey != "provider-secret" {
 		t.Fatal("logout did not isolate credentials")
 	}
-	if _, _, err := config.RefreshMCPOAuth(t.Context(), c.Paths, secondServer, func(ctx context.Context, v config.MCPOAuthCredentials) (config.MCPOAuthCredentials, error) {
+	if _, err := config.RefreshMCPOAuth(t.Context(), c.Paths, secondServer, func(ctx context.Context, v config.MCPOAuthCredentials) (config.MCPOAuthCredentials, error) {
 		called = true
 		return v, nil
 	}); err == nil || called {
@@ -212,11 +212,11 @@ func TestMCPOAuthFailedRefreshPreservesDisk(t *testing.T) {
 	server := c.MCP.Servers["user:docs"]
 	before, _ := os.ReadFile(c.Paths.GlobalAuth)
 	for _, mutate := range []func(*config.MCPOAuthCredentials){func(v *config.MCPOAuthCredentials) { v.Issuer = "https://other.example" }, func(v *config.MCPOAuthCredentials) { v.ClientID = "other" }, func(v *config.MCPOAuthCredentials) { v.GrantID = strings.Repeat("b", 64) }, func(v *config.MCPOAuthCredentials) { v.TokenEndpoint = "https://other.example/token" }} {
-		_, commit, err := config.RefreshMCPOAuth(t.Context(), c.Paths, server, func(ctx context.Context, v config.MCPOAuthCredentials) (config.MCPOAuthCredentials, error) {
+		_, err := config.RefreshMCPOAuth(t.Context(), c.Paths, server, func(ctx context.Context, v config.MCPOAuthCredentials) (config.MCPOAuthCredentials, error) {
 			mutate(&v)
 			return v, nil
 		})
-		if err == nil || commit.Committed {
+		if err == nil {
 			t.Fatal("refresh changed identity")
 		}
 		after, _ := os.ReadFile(c.Paths.GlobalAuth)
@@ -225,26 +225,23 @@ func TestMCPOAuthFailedRefreshPreservesDisk(t *testing.T) {
 		}
 	}
 	ctx, cancel := context.WithCancel(t.Context())
-	_, commit, err := config.RefreshMCPOAuth(ctx, c.Paths, server, func(ctx context.Context, v config.MCPOAuthCredentials) (config.MCPOAuthCredentials, error) {
+	_, err := config.RefreshMCPOAuth(ctx, c.Paths, server, func(ctx context.Context, v config.MCPOAuthCredentials) (config.MCPOAuthCredentials, error) {
 		cancel()
 		v.AccessToken = "unsaved"
 		return v, nil
 	})
-	if !errors.Is(err, context.Canceled) || commit.Committed {
+	if !errors.Is(err, context.Canceled) {
 		t.Fatal("canceled refresh committed", err)
 	}
 	after, _ := os.ReadFile(c.Paths.GlobalAuth)
 	if string(before) != string(after) {
 		t.Fatal("canceled refresh changed disk")
 	}
-	unchanged, commit, err := config.RefreshMCPOAuth(t.Context(), c.Paths, server, func(ctx context.Context, v config.MCPOAuthCredentials) (config.MCPOAuthCredentials, error) {
+	unchanged, err := config.RefreshMCPOAuth(t.Context(), c.Paths, server, func(ctx context.Context, v config.MCPOAuthCredentials) (config.MCPOAuthCredentials, error) {
 		return v, nil
 	})
-	if err != nil || commit.Committed || unchanged.GrantID == "" {
+	if err != nil || unchanged.GrantID == "" {
 		t.Fatal("unchanged credential was rewritten", err)
-	}
-	if _, err := os.Stat(c.Paths.GlobalAuth + ".lock"); !os.IsNotExist(err) {
-		t.Fatal("lock retained", err)
 	}
 }
 
@@ -253,7 +250,7 @@ func TestMCPOAuthMalformedAndRemoval(t *testing.T) {
 	c := newOAuthConfig(t, t.TempDir(), "https://example.com/mcp")
 	c = saveOAuthLogin(t, c, "user:docs", oauthCredential("https://example.com/mcp"))
 	server := c.MCP.Servers["user:docs"]
-	if _, err := config.ForgetMCPServiceAccess(t.Context(), c.Paths, server); err != nil {
+	if err := config.ForgetMCPServiceAccess(t.Context(), c.Paths, server); err != nil {
 		t.Fatal(err)
 	}
 	reloaded := loadMCP(t, c.Paths, config.LoadOptions{})
@@ -266,7 +263,7 @@ func TestMCPOAuthMalformedAndRemoval(t *testing.T) {
 		if _, err := config.LoadFiles(c.Paths, config.LoadOptions{}); err == nil || strings.Contains(err.Error(), "secret-value") {
 			t.Fatal("unsafe malformed error", err)
 		}
-		if _, commit, err := config.SaveMCPOAuthLogin(t.Context(), c.Paths, server, oauthCredential(server.Settings.URL)); err == nil || commit.Committed {
+		if _, err := config.SaveMCPOAuthLogin(t.Context(), c.Paths, server, oauthCredential(server.Settings.URL)); err == nil {
 			t.Fatal("malformed state overwritten")
 		}
 		after, _ := os.ReadFile(c.Paths.GlobalAuth)
@@ -330,7 +327,7 @@ func TestMCPOAuthStoredCredentialRejectsHTTPSDowngrade(t *testing.T) {
 	c := newOAuthConfig(t, t.TempDir(), "http://127.0.0.1:43123/mcp")
 	credential := oauthCredential("http://127.0.0.1:43123/mcp")
 	credential.Issuer = "HTTPS://auth.example.com"
-	if _, commit, err := config.SaveMCPOAuthLogin(t.Context(), c.Paths, c.MCP.Servers["user:docs"], credential); err == nil || commit.Committed {
+	if _, err := config.SaveMCPOAuthLogin(t.Context(), c.Paths, c.MCP.Servers["user:docs"], credential); err == nil {
 		t.Fatal("case-insensitive HTTPS issuer downgraded to HTTP token exchange")
 	}
 }
@@ -342,7 +339,7 @@ func TestMCPOAuthConcurrentRefreshProcess(t *testing.T) {
 	}
 	c := loadMCP(t, testPaths(root), config.LoadOptions{})
 	server := c.MCP.Servers["user:docs"]
-	_, _, err := config.RefreshMCPOAuth(t.Context(), c.Paths, server, func(ctx context.Context, v config.MCPOAuthCredentials) (config.MCPOAuthCredentials, error) {
+	_, err := config.RefreshMCPOAuth(t.Context(), c.Paths, server, func(ctx context.Context, v config.MCPOAuthCredentials) (config.MCPOAuthCredentials, error) {
 		if time.Until(v.ExpiresAt) > time.Minute {
 			return v, nil
 		}

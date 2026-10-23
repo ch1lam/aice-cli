@@ -20,9 +20,9 @@ func TestMCPConnectionApprovalSourceIdentityAndPersistence(t *testing.T) {
 	if c.MCP.ConnectionDecision(server.Key) != config.MCPConnectionAsk {
 		t.Fatal("configuration authorized itself")
 	}
-	commit, err := config.SaveMCPConnectionDecision(t.Context(), paths, server, config.MCPConnectionAllow)
-	if err != nil || !commit.Committed {
-		t.Fatalf("save: %v %v", commit, err)
+	err := config.SaveMCPConnectionDecision(t.Context(), paths, server, config.MCPConnectionAllow)
+	if err != nil {
+		t.Fatalf("save: %v", err)
 	}
 	approved := loadMCP(t, paths, config.LoadOptions{})
 	if approved.MCP.ConnectionDecision(server.Key) != config.MCPConnectionAllow || approved.OpenAIAPIKey != "provider-secret" {
@@ -46,7 +46,7 @@ func TestMCPConnectionApprovalSourceIdentityAndPersistence(t *testing.T) {
 	if err != nil || moved.MCP.ConnectionDecision(server.Key) != config.MCPConnectionAsk {
 		t.Fatal("endpoint change retained approval")
 	}
-	if _, err := config.SaveMCPConnectionDecision(t.Context(), paths, moved.MCP.Servers[server.Key], config.MCPConnectionDeny); err != nil {
+	if err := config.SaveMCPConnectionDecision(t.Context(), paths, moved.MCP.Servers[server.Key], config.MCPConnectionDeny); err != nil {
 		t.Fatal(err)
 	}
 	// One decision per service, so a new binding replaces, not accumulates, grants.
@@ -54,7 +54,7 @@ func TestMCPConnectionApprovalSourceIdentityAndPersistence(t *testing.T) {
 	if reloaded.MCP.ConnectionDecision(server.Key) != config.MCPConnectionAsk {
 		t.Fatal("changed binding granted original configuration")
 	}
-	if _, err := config.SaveMCPConnectionDecision(t.Context(), paths, server, config.MCPConnectionAsk); err != nil {
+	if err := config.SaveMCPConnectionDecision(t.Context(), paths, server, config.MCPConnectionAsk); err != nil {
 		t.Fatal(err)
 	}
 	data, _ := os.ReadFile(paths.GlobalAuth)
@@ -89,7 +89,7 @@ func TestMCPConnectionApprovalCannotComeFromSettings(t *testing.T) {
 		if server.Source.Kind != "project" {
 			continue
 		}
-		if _, err := config.SaveMCPConnectionDecision(t.Context(), paths, server, config.MCPConnectionAllow); err != nil {
+		if err := config.SaveMCPConnectionDecision(t.Context(), paths, server, config.MCPConnectionAllow); err != nil {
 			t.Fatal(err)
 		}
 		reloaded := loadMCP(t, paths, config.LoadOptions{})
@@ -106,7 +106,7 @@ func TestMCPConnectionApprovalMalformedAndForgedFailClosed(t *testing.T) {
 	server := c.MCP.Servers["user:docs"]
 	changed := server
 	changed.Fingerprint = strings.Repeat("a", 64)
-	if commit, err := config.SaveMCPConnectionDecision(t.Context(), paths, changed, config.MCPConnectionAllow); err == nil || commit.Committed {
+	if err := config.SaveMCPConnectionDecision(t.Context(), paths, changed, config.MCPConnectionAllow); err == nil {
 		t.Fatal("forged fingerprint accepted")
 	}
 	for _, raw := range []any{nil, map[string]any{"user:docs": map[string]any{"fingerprint": server.Fingerprint, "decision": "allow", "extra": true}}, map[string]any{"user:docs": map[string]any{"fingerprint": "bad", "decision": "allow"}}} {
@@ -115,7 +115,7 @@ func TestMCPConnectionApprovalMalformedAndForgedFailClosed(t *testing.T) {
 		if _, err := config.LoadFiles(paths, config.LoadOptions{}); err == nil {
 			t.Fatal("malformed approval loaded")
 		}
-		if commit, err := config.SaveMCPConnectionDecision(t.Context(), paths, server, config.MCPConnectionAllow); err == nil || commit.Committed {
+		if err := config.SaveMCPConnectionDecision(t.Context(), paths, server, config.MCPConnectionAllow); err == nil {
 			t.Fatal("malformed approval overwritten")
 		}
 		after, _ := os.ReadFile(paths.GlobalAuth)

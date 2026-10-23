@@ -67,9 +67,9 @@ func TestDesktopPatchPersistenceAndValidation(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeJSON(t, paths.GlobalSettings, map[string]any{"model": "peer", "unknown": "preserve"})
-	saved, err := config.SaveSettingsPatch(t.Context(), paths, patch)
-	if err != nil || !saved.Committed {
-		t.Fatal(saved, err)
+	err = config.SaveSettingsPatch(t.Context(), paths, patch)
+	if err != nil {
+		t.Fatal(err)
 	}
 	var disk map[string]any
 	readJSON(t, paths.GlobalSettings, &disk)
@@ -85,7 +85,7 @@ func TestDesktopPatchPersistenceAndValidation(t *testing.T) {
 		if _, err := c.WithPatch(patch); err == nil {
 			t.Fatal("invalid mode accepted")
 		}
-		if saved, err := config.SaveSettingsPatch(t.Context(), paths, patch); err == nil || saved.Committed {
+		if err := config.SaveSettingsPatch(t.Context(), paths, patch); err == nil {
 			t.Fatal("invalid mode persisted")
 		}
 	}

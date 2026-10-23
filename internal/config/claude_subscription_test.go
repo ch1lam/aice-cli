@@ -106,27 +106,6 @@ func TestClaudeSubscriptionCredentialLockRereadsAndCancels(t *testing.T) {
 	}
 }
 
-func TestClaudeSubscriptionCredentialLockWaitPreservesOwnerAndCause(t *testing.T) {
-	t.Parallel()
-	paths := Paths{GlobalAuth: filepath.Join(t.TempDir(), "auth.json")}
-	lock := ClaudeSubscriptionAuthPath(paths) + ".lock"
-	if err := os.Mkdir(lock, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	ctx, cancel := context.WithTimeout(t.Context(), 250*time.Millisecond)
-	defer cancel()
-	_, err := UpdateClaudeSubscriptionCredentials(ctx, paths, func(ClaudeSubscriptionCredentials) (ClaudeSubscriptionCredentials, error) {
-		t.Error("update ran while another writer owned the lock")
-		return ClaudeSubscriptionCredentials{}, nil
-	})
-	if !errors.Is(err, context.DeadlineExceeded) || !errors.Is(err, os.ErrExist) {
-		t.Fatalf("lock wait = %v, want deadline and existing lock", err)
-	}
-	if _, err := os.Stat(lock); err != nil {
-		t.Fatalf("waiting writer altered the owner's lock: %v", err)
-	}
-}
-
 func TestClaudeSubscriptionCredentialSurvivesSettingsChanges(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()

@@ -23,9 +23,9 @@ func permissionFixture(t *testing.T) (config.Paths, config.Config, config.MCPPer
 func TestMCPPermissionsPersistExactBindingAndIndependentSnapshot(t *testing.T) {
 	paths, c, rule := permissionFixture(t)
 	server := c.MCP.Servers["user:docs"]
-	commit, err := config.SaveMCPPermission(t.Context(), paths, c.MCP, server.Key, rule)
-	if err != nil || !commit.Committed {
-		t.Fatal(commit, err)
+	err := config.SaveMCPPermission(t.Context(), paths, c.MCP, server.Key, rule)
+	if err != nil {
+		t.Fatal(err)
 	}
 	next, err := c.WithMCPPermission(server.Key, server.Fingerprint, rule)
 	if err != nil {
@@ -77,7 +77,7 @@ func TestMCPPermissionsPersistExactBindingAndIndependentSnapshot(t *testing.T) {
 		})
 	}
 	rule.Decision = "deny"
-	if _, err := config.SaveMCPPermission(t.Context(), paths, c.MCP, server.Key, rule); err != nil {
+	if err := config.SaveMCPPermission(t.Context(), paths, c.MCP, server.Key, rule); err != nil {
 		t.Fatal(err)
 	}
 	denied := loadMCP(t, paths, config.LoadOptions{})
@@ -85,7 +85,7 @@ func TestMCPPermissionsPersistExactBindingAndIndependentSnapshot(t *testing.T) {
 		t.Fatal("schema change lifted explicit deny")
 	}
 	rule.Decision = "ask"
-	if _, err := config.SaveMCPPermission(t.Context(), paths, c.MCP, server.Key, rule); err != nil {
+	if err := config.SaveMCPPermission(t.Context(), paths, c.MCP, server.Key, rule); err != nil {
 		t.Fatal(err)
 	}
 	if len(loadMCP(t, paths, config.LoadOptions{}).MCP.Permissions(server.Key)) != 0 {
@@ -108,7 +108,7 @@ func TestMCPPermissionsUserOnlyAndMalformedPreserved(t *testing.T) {
 		if _, err := config.LoadFiles(paths, config.LoadOptions{}); err == nil {
 			t.Fatal("malformed rules loaded")
 		}
-		if commit, err := config.SaveMCPPermission(t.Context(), paths, c.MCP, server.Key, rule); err == nil || commit.Committed || strings.Contains(err.Error(), "secret-value") {
+		if err := config.SaveMCPPermission(t.Context(), paths, c.MCP, server.Key, rule); err == nil || strings.Contains(err.Error(), "secret-value") {
 			t.Fatal("malformed rules overwritten or exposed")
 		}
 		after, _ := os.ReadFile(paths.GlobalAuth)
@@ -125,7 +125,7 @@ func TestMCPPermissionConcurrentWritersAndRemoval(t *testing.T) {
 		wg.Go(func() {
 			r := rule
 			r.Tool = name
-			if _, err := config.SaveMCPPermission(t.Context(), paths, c.MCP, "user:docs", r); err != nil {
+			if err := config.SaveMCPPermission(t.Context(), paths, c.MCP, "user:docs", r); err != nil {
 				t.Error(err)
 			}
 		})
@@ -136,10 +136,10 @@ func TestMCPPermissionConcurrentWritersAndRemoval(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	if commit, err := config.SaveMCPPermission(ctx, paths, c.MCP, "user:docs", rule); err == nil || commit.Committed {
+	if err := config.SaveMCPPermission(ctx, paths, c.MCP, "user:docs", rule); err == nil {
 		t.Fatal("canceled write committed")
 	}
-	if _, err := config.ForgetMCPServiceAccess(t.Context(), paths, c.MCP.Servers["user:docs"]); err != nil {
+	if err := config.ForgetMCPServiceAccess(t.Context(), paths, c.MCP.Servers["user:docs"]); err != nil {
 		t.Fatal(err)
 	}
 	if len(loadMCP(t, paths, config.LoadOptions{}).MCP.Permissions("user:docs")) != 0 {
@@ -152,10 +152,10 @@ func TestMCPPermissionsOAuthRotationAndNewLogin(t *testing.T) {
 	c = saveOAuthLogin(t, c, "user:docs", oauthCredential("https://example.com/mcp"))
 	server := c.MCP.Servers["user:docs"]
 	rule := config.MCPPermission{Tool: "read", SchemaFingerprint: strings.Repeat("a", 64), Decision: "allow"}
-	if _, err := config.SaveMCPPermission(t.Context(), c.Paths, c.MCP, server.Key, rule); err != nil {
+	if err := config.SaveMCPPermission(t.Context(), c.Paths, c.MCP, server.Key, rule); err != nil {
 		t.Fatal(err)
 	}
-	rotated, _, err := config.RefreshMCPOAuth(t.Context(), c.Paths, server, func(_ context.Context, credential config.MCPOAuthCredentials) (config.MCPOAuthCredentials, error) {
+	rotated, err := config.RefreshMCPOAuth(t.Context(), c.Paths, server, func(_ context.Context, credential config.MCPOAuthCredentials) (config.MCPOAuthCredentials, error) {
 		credential.AccessToken = "rotated-access"
 		return credential, nil
 	})
@@ -166,8 +166,8 @@ func TestMCPPermissionsOAuthRotationAndNewLogin(t *testing.T) {
 	if loaded.MCP.PermissionDecision(server.Key, "", "read", rule.SchemaFingerprint) != "allow" {
 		t.Fatal("rotation invalidated user rule")
 	}
-	saved, commit, err := config.SaveMCPOAuthLogin(t.Context(), c.Paths, loaded.MCP.Servers[server.Key], rotated)
-	if err != nil || !commit.Committed {
+	saved, err := config.SaveMCPOAuthLogin(t.Context(), c.Paths, loaded.MCP.Servers[server.Key], rotated)
+	if err != nil {
 		t.Fatal(err)
 	}
 	loaded = loadMCP(t, c.Paths, config.LoadOptions{})
@@ -179,10 +179,10 @@ func TestMCPPermissionsOAuthRotationAndNewLogin(t *testing.T) {
 	if strings.Contains(string(data), rule.SchemaFingerprint) {
 		t.Fatal("new login retained old rule")
 	}
-	if _, err := config.SaveMCPPermission(t.Context(), c.Paths, loaded.MCP, server.Key, rule); err != nil {
+	if err := config.SaveMCPPermission(t.Context(), c.Paths, loaded.MCP, server.Key, rule); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := config.DeleteMCPOAuth(t.Context(), c.Paths, loaded.MCP.Servers[server.Key]); err != nil {
+	if err := config.DeleteMCPOAuth(t.Context(), c.Paths, loaded.MCP.Servers[server.Key]); err != nil {
 		t.Fatal(err)
 	}
 	without, err := loaded.WithoutMCPOAuth(server.Key)
@@ -204,7 +204,7 @@ func TestMCPInactivePermissionReviewAndRemoval(t *testing.T) {
 	server := c.MCP.Servers["user:docs"]
 	for _, name := range []string{"read", "write"} {
 		rule.Tool = name
-		if _, err := config.SaveMCPPermission(t.Context(), paths, c.MCP, server.Key, rule); err != nil {
+		if err := config.SaveMCPPermission(t.Context(), paths, c.MCP, server.Key, rule); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -219,7 +219,7 @@ func TestMCPInactivePermissionReviewAndRemoval(t *testing.T) {
 		t.Fatal("inactive rules not distinguishable")
 	}
 	rule.Tool, rule.Decision = "read", "ask"
-	if _, err := config.SaveMCPPermission(t.Context(), paths, changed.MCP, server.Key, rule); err != nil {
+	if err := config.SaveMCPPermission(t.Context(), paths, changed.MCP, server.Key, rule); err != nil {
 		t.Fatal(err)
 	}
 	_, _, saved = loadMCP(t, paths, config.LoadOptions{}).MCP.StoredPermissions(server.Key)

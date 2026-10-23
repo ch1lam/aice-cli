@@ -612,14 +612,13 @@ AICE stores access/refresh tokens, account ID, and expiry in
 `~/.aice/codex-auth.json` (mode `0600`, atomic replacement), without reading
 or modifying Codex CLI or pi credentials. It refreshes within one minute of
 expiry and saves rotated tokens before making a model request. Concurrent
-AICE processes serialize refresh/login/logout with `codex-auth.json.lock`.
-Lock waits are cancellable and bounded to one minute. On Windows, access-denied
-errors while creating the lock are retried within that bound to tolerate
-transient filesystem contention. Credential replacement also retries access-denied
-and sharing-violation errors while holding the lock, within the same deadline.
-If waiting fails, the error preserves both the cancellation/deadline and the last
-filesystem error so persistent permission failures remain visible. After a crash,
-remove that stale lock directory only when no AICE process is running. Failed refresh
+AICE processes serialize refresh/login/logout with an OS file lock on
+`codex-auth.json.lock`; the operating system releases it when a process exits,
+so a crash leaves no stale lock. Lock waits are cancellable and bounded to one
+minute. Credential replacement retries Windows access-denied and
+sharing-violation errors while holding the lock, within the same deadline. If
+waiting fails, the error preserves both the cancellation/deadline and the last
+filesystem error so persistent permission failures remain visible. Failed refresh
 preserves the prior credential; expired/revoked authorization requires logging
 in again. Logout removes only AICE's Codex credentials: in-flight requests may
 finish, but subsequent requests fail closed. It does not revoke the account's

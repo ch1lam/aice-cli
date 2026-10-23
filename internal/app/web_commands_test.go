@@ -48,7 +48,7 @@ func webCommandSession(t *testing.T, backends *webBackends, settingsFile map[str
 		t.Fatal(err)
 	}
 	app := &application{dependencies: dependencies{
-		saveWebSettings: config.SaveWebSettingsFile,
+		saveWebSettings: config.SaveWebPatch,
 		webBackends:     backends,
 		providers:       defaultProviders(),
 		newModel:        func(config.Config) (llm.Streamer, error) { return &toolLoopModel{}, nil },

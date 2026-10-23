@@ -161,7 +161,7 @@ func mcpOAuthReadRefresh(t *testing.T, configuration config.Config, key, remote 
 	before, _ := server.OAuthCredentials()
 	// This deliberately changes expiry metadata only for the separately named
 	// validation service. The next normal owner operation performs the exchange.
-	expired, _, err := config.RefreshMCPOAuth(t.Context(), configuration.Paths, server, func(_ context.Context, current config.MCPOAuthCredentials) (config.MCPOAuthCredentials, error) {
+	expired, err := config.RefreshMCPOAuth(t.Context(), configuration.Paths, server, func(_ context.Context, current config.MCPOAuthCredentials) (config.MCPOAuthCredentials, error) {
 		current.ExpiresAt = time.Now().Add(-time.Second)
 		return current, nil
 	})
@@ -198,7 +198,7 @@ func TestMCPExternalOAuthHarness(t *testing.T) {
 	configuration := refreshFixtureConfig(t, fixture, time.Now().Add(time.Hour))
 	const key = "user:service0"
 	configuration = ownerTestApprove(t, configuration, key, config.MCPConnectionAllow)
-	if _, err := config.SaveMCPConnectionDecision(t.Context(), configuration.Paths, configuration.MCP.Servers[key], config.MCPConnectionAllow); err != nil {
+	if err := config.SaveMCPConnectionDecision(t.Context(), configuration.Paths, configuration.MCP.Servers[key], config.MCPConnectionAllow); err != nil {
 		t.Fatal(err)
 	}
 	var report mcpOAuthRemoteReport

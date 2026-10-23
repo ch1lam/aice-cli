@@ -745,10 +745,7 @@ func (s *interactiveSession) persistSettings(
 		return config.Config{}, fmt.Errorf("app: configuration persistence is unavailable")
 	}
 	if err := s.application.dependencies.saveSettings(ctx, current.Paths, changes); err != nil {
-		if !config.WasCommitted(err) {
-			return config.Config{}, fmt.Errorf("app: save settings: %w", err)
-		}
-		s.settingsWarning(err)
+		return config.Config{}, fmt.Errorf("app: save settings: %w", err)
 	}
 	return next, nil
 }

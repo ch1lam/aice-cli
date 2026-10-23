@@ -1,18 +1,23 @@
 package trust
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"sort"
+	"time"
 
 	"github.com/ch1lam/aice-cli/internal/hostpath"
 	"github.com/ch1lam/aice-cli/internal/jsonutil"
+	"github.com/ch1lam/aice-cli/internal/lockedfile"
 )
 
 const storeVersion = 1
+
+// storeLockTimeout bounds waiting for another process's trust update.
+const storeLockTimeout = 5 * time.Second
 
 // Entry is one stored decision for a canonical directory path.
 type Entry struct {
@@ -53,13 +58,9 @@ func (s *Store) Lookup(path string) (Entry, bool, error) {
 	if s == nil {
 		return Entry{}, false, fmt.Errorf("trust: store is required")
 	}
-	release, err := acquireLock(lockPath(s.path))
-	if err != nil {
-		return Entry{}, false, err
-	}
-	defer release()
-
-	data, err := readStore(s.path)
+	ctx, cancel := context.WithTimeout(context.Background(), storeLockTimeout)
+	defer cancel()
+	data, err := readStore(ctx, s.path)
 	if err != nil {
 		return Entry{}, false, err
 	}
@@ -83,17 +84,19 @@ func (s *Store) Set(path string, decision Decision) error {
 
 // SetMany applies several updates atomically under one lock. A DecisionUnknown
 // update removes its entry.
-func (s *Store) SetMany(updates []Update) error {
+func (s *Store) SetMany(updates []Update) (returnErr error) {
 	if s == nil {
 		return fmt.Errorf("trust: store is required")
 	}
-	release, err := acquireLock(lockPath(s.path))
+	ctx, cancel := context.WithTimeout(context.Background(), storeLockTimeout)
+	defer cancel()
+	unlock, err := lockedfile.Lock(ctx, s.path)
 	if err != nil {
-		return err
+		return fmt.Errorf("trust: lock store: %w", err)
 	}
-	defer release()
+	defer func() { returnErr = errors.Join(returnErr, unlock()) }()
 
-	data, err := readStore(s.path)
+	data, err := readStore(ctx, s.path)
 	if err != nil {
 		return err
 	}
@@ -105,7 +108,7 @@ func (s *Store) SetMany(updates []Update) error {
 		}
 		data[key] = update.Decision
 	}
-	return writeStore(s.path, data)
+	return writeStore(ctx, s.path, data)
 }
 
 type storeFile struct {
@@ -113,12 +116,8 @@ type storeFile struct {
 	Projects map[string]*bool `json:"projects"`
 }
 
-func lockPath(path string) string {
-	return path + ".lock"
-}
-
-func readStore(path string) (map[string]Decision, error) {
-	data, err := os.ReadFile(path)
+func readStore(ctx context.Context, path string) (map[string]Decision, error) {
+	data, err := lockedfile.Read(ctx, path)
 	if errors.Is(err, os.ErrNotExist) {
 		return map[string]Decision{}, nil
 	}
@@ -150,7 +149,7 @@ func readStore(path string) (map[string]Decision, error) {
 	return projects, nil
 }
 
-func writeStore(path string, data map[string]Decision) error {
+func writeStore(ctx context.Context, path string, data map[string]Decision) error {
 	file := storeFile{
 		Version:  storeVersion,
 		Projects: make(map[string]*bool, len(data)),
@@ -169,32 +168,7 @@ func writeStore(path string, data map[string]Decision) error {
 		return fmt.Errorf("trust: encode store: %w", err)
 	}
 	encoded = append(encoded, '\n')
-
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return fmt.Errorf("trust: create store directory: %w", err)
-	}
-	temp, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".tmp*")
-	if err != nil {
-		return fmt.Errorf("trust: create store temp file: %w", err)
-	}
-	tempPath := temp.Name()
-	defer os.Remove(tempPath)
-	if err := temp.Chmod(0o600); err != nil {
-		temp.Close()
-		return fmt.Errorf("trust: set store permissions: %w", err)
-	}
-	if _, err := temp.Write(encoded); err != nil {
-		temp.Close()
-		return fmt.Errorf("trust: write store temp file: %w", err)
-	}
-	if err := temp.Sync(); err != nil {
-		temp.Close()
-		return fmt.Errorf("trust: sync store temp file: %w", err)
-	}
-	if err := temp.Close(); err != nil {
-		return fmt.Errorf("trust: close store temp file: %w", err)
-	}
-	if err := os.Rename(tempPath, path); err != nil {
+	if err := lockedfile.Write(ctx, path, encoded); err != nil {
 		return fmt.Errorf("trust: replace store %s: %w", path, err)
 	}
 	return nil

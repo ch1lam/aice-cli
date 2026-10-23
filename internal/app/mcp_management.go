@@ -102,9 +102,9 @@ func executeMCPManagement(ctx context.Context, current config.Config, owner *mcp
 			if err != nil {
 				return current, result, err
 			}
-			commit, err := config.DeleteMCPOAuth(ctx, current.Paths, server)
-			result = mcpCommitResult(commit, "MCP OAuth login and connection decision removed; user tool rules were cleared and explicit client-secret slots were preserved.")
-			if commit.Committed {
+			err = config.DeleteMCPOAuth(ctx, current.Paths, server)
+			result = mcpCommitResult(err, "MCP OAuth login and connection decision removed; user tool rules were cleared and explicit client-secret slots were preserved.")
+			if err == nil {
 				current = candidate
 			}
 			return current, result, err
@@ -123,9 +123,9 @@ func executeMCPManagement(ctx context.Context, current config.Config, owner *mcp
 		if err := ctx.Err(); err != nil {
 			return current, result, err
 		}
-		saved, commit, err := config.SaveMCPOAuthLogin(ctx, current.Paths, server, credential)
-		result = mcpCommitResult(commit, "MCP OAuth login saved; previous user tool rules were cleared. Inspect the new fingerprint and approve the connection before use; tool permissions are separate.")
-		if commit.Committed {
+		saved, err := config.SaveMCPOAuthLogin(ctx, current.Paths, server, credential)
+		result = mcpCommitResult(err, "MCP OAuth login saved; previous user tool rules were cleared. Inspect the new fingerprint and approve the connection before use; tool permissions are separate.")
+		if err == nil {
 			// Match the writer's removal of all older scopes/decisions. Even an
 			// unexpected projection failure must not leave the old login active.
 			current = cleared
@@ -191,9 +191,9 @@ func executeMCPManagement(ctx context.Context, current config.Config, owner *mcp
 			if err != nil {
 				return current, result, err
 			}
-			commit, err := config.SaveMCPCredential(ctx, current.Paths, server, request.Slot, request.Secret)
-			result = mcpCommitResult(commit, "MCP credential saved; a changed connection fingerprint requires approval again.")
-			if commit.Committed {
+			err = config.SaveMCPCredential(ctx, current.Paths, server, request.Slot, request.Secret)
+			result = mcpCommitResult(err, "MCP credential saved; a changed connection fingerprint requires approval again.")
+			if err == nil {
 				current = candidate
 			}
 			return current, result, err
@@ -209,9 +209,9 @@ func executeMCPManagement(ctx context.Context, current config.Config, owner *mcp
 		if err != nil {
 			return current, result, err
 		}
-		commit, err := config.SaveMCPConnectionDecision(ctx, current.Paths, server, decision)
-		result = mcpCommitResult(commit, "MCP connection decision saved; tool execution permissions are separate.")
-		if commit.Committed {
+		err = config.SaveMCPConnectionDecision(ctx, current.Paths, server, decision)
+		result = mcpCommitResult(err, "MCP connection decision saved; tool execution permissions are separate.")
+		if err == nil {
 			current = candidate
 		}
 		return current, result, err
@@ -267,25 +267,25 @@ func executeMCPManagement(ctx context.Context, current config.Config, owner *mcp
 		if err != nil {
 			return current, result, err
 		}
-		commit, err := config.ForgetMCPServiceAccess(ctx, current.Paths, server)
-		if commit.Committed {
+		err = config.ForgetMCPServiceAccess(ctx, current.Paths, server)
+		if err == nil {
 			current = candidate
 			accessRemoved = true
 		}
-		result = mcpCommitResult(commit, "Stored MCP credentials, connection decisions and user tool rules removed.")
+		result = mcpCommitResult(err, "Stored MCP credentials, connection decisions and user tool rules removed.")
 		if err != nil {
 			return current, result, err
 		}
 	}
-	saved, commit, err := config.SaveMCPPatch(ctx, current.Paths, patch)
+	saved, err := config.SaveMCPPatch(ctx, current.Paths, patch)
 	warnings := result.Warnings
-	result = mcpCommitResult(commit, "MCP configuration saved without connecting; connection approval and tool permissions are separate.")
+	result = mcpCommitResult(err, "MCP configuration saved without connecting; connection approval and tool permissions are separate.")
 	result.Warnings = append(warnings, result.Warnings...)
-	if accessRemoved && !commit.Committed {
+	if accessRemoved && err != nil {
 		result.Committed = true
 		result.Message = "Stored MCP access was removed, but the service definition was not removed."
 	}
-	if commit.Committed {
+	if err == nil {
 		candidate, applyErr := current.WithMCP(saved)
 		if applyErr != nil {
 			return current, result, fmt.Errorf("MCP configuration was saved but runtime projection failed: %w", applyErr)
@@ -320,15 +320,12 @@ func validateMCPManagement(r interaction.MCPRequest) error {
 	return nil
 }
 
-func mcpCommitResult(commit config.CommitResult, message string) interaction.MCPResult {
-	result := interaction.MCPResult{Committed: commit.Committed}
-	if commit.Committed {
-		result.Message = message
+// mcpCommitResult reports message only for a saved change.
+func mcpCommitResult(err error, message string) interaction.MCPResult {
+	if err != nil {
+		return interaction.MCPResult{}
 	}
-	if commit.CleanupWarning != nil {
-		result.Warnings = append(result.Warnings, "Saved, but configuration lock cleanup failed")
-	}
-	return result
+	return interaction.MCPResult{Committed: true, Message: message}
 }
 
 func mcpManagementStatus(configuration config.Config, owner *mcpOwner, key string) []interaction.MCPService {

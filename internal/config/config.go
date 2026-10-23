@@ -11,7 +11,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -21,6 +20,7 @@ import (
 
 	"github.com/ch1lam/aice-cli/internal/jsonutil"
 	"github.com/ch1lam/aice-cli/internal/llm"
+	"github.com/ch1lam/aice-cli/internal/lockedfile"
 	"github.com/ch1lam/aice-cli/internal/trust"
 )
 
@@ -660,7 +660,7 @@ func (e *sourceSyntaxError) Error() string { return "config: invalid JSON object
 func readValues(ctx context.Context, path string) (map[string]any, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	data, err := readConfigFile(ctx, path, os.ReadFile, runtime.GOOS == "windows")
+	data, err := lockedfile.Read(ctx, path)
 	if errors.Is(err, os.ErrNotExist) {
 		return map[string]any{}, nil
 	}

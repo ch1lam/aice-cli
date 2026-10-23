@@ -146,7 +146,7 @@ func (s *interactiveSession) login(
 	path := ""
 	if !request.UseSavedCredential {
 		path, err = s.application.dependencies.saveAPIKey(provider, apiKey)
-		if err != nil && !config.WasCommitted(err) {
+		if err != nil {
 			return result, fmt.Errorf(
 				"app: save %s API key: %w",
 				providerLabel(s.providers, provider),
@@ -154,9 +154,6 @@ func (s *interactiveSession) login(
 			)
 		}
 		result.committed = true
-		if err != nil {
-			s.settingsWarning(fmt.Errorf("API key saved; %w", err))
-		}
 	}
 
 	configuration, err = s.persistSettings(ctx, configuration, changes)

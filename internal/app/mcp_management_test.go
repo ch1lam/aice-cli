@@ -236,8 +236,8 @@ func TestMCPCreateOnlyConcurrentSave(t *testing.T) {
 	for i := range 2 {
 		wg.Go(func() {
 			definition := config.MCPServerSettings{Transport: "http", URL: fmt.Sprintf("https://example.com/%d", i)}
-			_, commit, err := config.SaveMCPPatch(t.Context(), paths, config.MCPPatch{CreateOnly: true, Servers: map[string]*config.MCPServerSettings{"docs": &definition}})
-			results <- err == nil && commit.Committed
+			_, err := config.SaveMCPPatch(t.Context(), paths, config.MCPPatch{CreateOnly: true, Servers: map[string]*config.MCPServerSettings{"docs": &definition}})
+			results <- err == nil
 		})
 	}
 	wg.Wait()
@@ -293,7 +293,7 @@ func TestMCPManagementRemoveReportsPartialCommit(t *testing.T) {
 		t.Fatal(err)
 	}
 	server := c.MCP.Servers["user:docs"]
-	if _, err := config.SaveMCPConnectionDecision(t.Context(), paths, server, config.MCPConnectionAllow); err != nil {
+	if err := config.SaveMCPConnectionDecision(t.Context(), paths, server, config.MCPConnectionAllow); err != nil {
 		t.Fatal(err)
 	}
 	c, err = config.LoadFiles(paths, config.LoadOptions{})

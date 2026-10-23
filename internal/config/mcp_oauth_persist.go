@@ -11,19 +11,19 @@ import (
 
 // SaveMCPOAuthLogin creates a fresh grant identity after successful consent.
 // Login never inherits connection approval, even for the same remote account.
-func SaveMCPOAuthLogin(ctx context.Context, paths Paths, server MCPServer, credential MCPOAuthCredentials) (MCPOAuthCredentials, CommitResult, error) {
+func SaveMCPOAuthLogin(ctx context.Context, paths Paths, server MCPServer, credential MCPOAuthCredentials) (MCPOAuthCredentials, error) {
 	if err := validateMCPStoredBinding(paths, server); err != nil {
-		return MCPOAuthCredentials{}, CommitResult{}, err
+		return MCPOAuthCredentials{}, err
 	}
 	id := make([]byte, 32)
 	_, _ = rand.Read(id)
 	credential.GrantID = hex.EncodeToString(id)
 	if !server.acceptsOAuth(credential) {
-		return MCPOAuthCredentials{}, CommitResult{}, fmt.Errorf("config: invalid MCP OAuth login binding")
+		return MCPOAuthCredentials{}, fmt.Errorf("config: invalid MCP OAuth login binding")
 	}
 	ctx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
-	commit, err := editLockedFile(ctx, paths.GlobalAuth, func(values map[string]any) error {
+	err := editLockedFile(ctx, paths.GlobalAuth, func(values map[string]any) error {
 		records, err := readMCPOAuthValues(values)
 		if err != nil {
 			return err
@@ -39,10 +39,10 @@ func SaveMCPOAuthLogin(ctx context.Context, paths Paths, server MCPServer, crede
 		values[mcpOAuthKey] = records
 		return nil
 	})
-	if !commit.Committed {
-		return MCPOAuthCredentials{}, commit, err
+	if err != nil {
+		return MCPOAuthCredentials{}, err
 	}
-	return credential.clone(), commit, err
+	return credential.clone(), nil
 }
 
 // RefreshMCPOAuth rereads the current grant while holding the shared auth-file
@@ -51,18 +51,18 @@ func SaveMCPOAuthLogin(ctx context.Context, paths Paths, server MCPServer, crede
 // cannot be resurrected by an old owner. No HTTP call is retried here.
 func RefreshMCPOAuth(ctx context.Context, paths Paths, server MCPServer,
 	refresh func(context.Context, MCPOAuthCredentials) (MCPOAuthCredentials, error),
-) (MCPOAuthCredentials, CommitResult, error) {
+) (MCPOAuthCredentials, error) {
 	if err := validateMCPStoredBinding(paths, server); err != nil {
-		return MCPOAuthCredentials{}, CommitResult{}, err
+		return MCPOAuthCredentials{}, err
 	}
 	expected, ok := server.OAuthCredentials()
 	if !ok || refresh == nil {
-		return MCPOAuthCredentials{}, CommitResult{}, fmt.Errorf("config: MCP OAuth login is required")
+		return MCPOAuthCredentials{}, fmt.Errorf("config: MCP OAuth login is required")
 	}
 	ctx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
 	var current MCPOAuthCredentials
-	commit, err := editLockedFile(ctx, paths.GlobalAuth, func(values map[string]any) error {
+	err := editLockedFile(ctx, paths.GlobalAuth, func(values map[string]any) error {
 		records, err := readMCPOAuthValues(values)
 		if err != nil {
 			return err
@@ -89,10 +89,10 @@ func RefreshMCPOAuth(ctx context.Context, paths Paths, server MCPServer,
 		values[mcpOAuthKey] = records
 		return nil
 	})
-	if err != nil && !commit.Committed {
-		return MCPOAuthCredentials{}, commit, err
+	if err != nil {
+		return MCPOAuthCredentials{}, err
 	}
-	return current, commit, err
+	return current, nil
 }
 
 func sameMCPOAuthGrant(a, b MCPOAuthCredentials) bool {
@@ -101,9 +101,9 @@ func sameMCPOAuthGrant(a, b MCPOAuthCredentials) bool {
 
 // DeleteMCPOAuth removes OAuth state and its connection decision atomically.
 // Explicit header/env slots and all other services/providers are preserved.
-func DeleteMCPOAuth(ctx context.Context, paths Paths, server MCPServer) (CommitResult, error) {
+func DeleteMCPOAuth(ctx context.Context, paths Paths, server MCPServer) error {
 	if err := validateMCPStoredBinding(paths, server); err != nil {
-		return CommitResult{}, err
+		return err
 	}
 	ctx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
