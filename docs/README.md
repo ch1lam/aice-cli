@@ -13,7 +13,7 @@ and quickstart. Use this index for task-specific guides.
 | Load project instructions and configure trust | [Project Trust](project-trust.md) |
 | Search the web or fetch pages | [Web](web.md) |
 | Automate a browser | [Browser automation](browser.md) |
-| Set up desktop automation and check platform limits | [Computer Use](desktop.md) |
+| Set up desktop automation through Cua Driver | [Computer Use](desktop.md) |
 | Connect external tools and resources | [MCP](mcp.md) |
 
 ## Contributing and evaluating

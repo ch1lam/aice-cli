@@ -59,14 +59,13 @@ type mcpOwnedService struct {
 // All mutable service fields and slot accounting are protected by mu. Each
 // service gate serializes its operations without holding mu during I/O.
 type mcpOwner struct {
-	mu              sync.Mutex
-	configuration   config.MCPConfig
-	guard           *guard.Guard
-	yolo            bool
-	open            mcpOpenFunc
-	checkConnection func(mcpclient.Config) error
-	refresh         mcpRefreshFunc
-	services        map[string]*mcpOwnedService
+	mu            sync.Mutex
+	configuration config.MCPConfig
+	guard         *guard.Guard
+	yolo          bool
+	open          mcpOpenFunc
+	refresh       mcpRefreshFunc
+	services      map[string]*mcpOwnedService
 	// approved and declined record in-run connection answers by key and
 	// fingerprint; a changed connection asks again. approvalMu serializes prompts.
 	approvalMu         sync.Mutex
@@ -79,7 +78,7 @@ type mcpOwner struct {
 }
 
 func newMCPOwner(configuration config.MCPConfig, gate *guard.Guard, yolo bool, open mcpOpenFunc, refresh mcpRefreshFunc) (*mcpOwner, error) {
-	if gate == nil || len(configuration.Servers) > 129 {
+	if gate == nil || len(configuration.Servers) > config.MaxMCPServices {
 		return nil, fmt.Errorf("MCP owner requires a Guard and bounded configuration")
 	}
 	if open == nil {
@@ -133,7 +132,7 @@ func newMCPOwnedService(server config.MCPServer) *mcpOwnedService {
 func (o *mcpOwner) reconfigure(configuration config.MCPConfig, reconnect ...string) (cleanupErr, err error) {
 	configuration = configuration.Clone()
 	o.mu.Lock()
-	if o.closed || len(configuration.Servers) > 129 {
+	if o.closed || len(configuration.Servers) > config.MaxMCPServices {
 		o.mu.Unlock()
 		return nil, fmt.Errorf("MCP owner is closed or configuration exceeds its bound")
 	}
@@ -374,9 +373,6 @@ func mcpLaunchReady(server config.MCPServer) error {
 }
 
 func mcpFailureStatus(err error) (string, string) {
-	if errors.Is(err, errManagedCUAConnection) {
-		return "disabled", errManagedCUAConnection.Error()
-	}
 	var launch mcpLaunchError
 	if errors.As(err, &launch) {
 		return "failed", launch.reason
@@ -564,4 +560,16 @@ func (o *mcpOwner) prepareRequired(ctx context.Context, key string) error {
 	defer release()
 	_, err = o.ensure(operation, s)
 	return err
+}
+
+func (a *application) newConfiguredMCPOwner(c config.Config, gate *guard.Guard, yolo bool) (*mcpOwner, error) {
+	return newMCPOwner(c.MCP, gate, yolo, a.dependencies.openMCP, mcpOAuthRefresh(c.Paths))
+}
+
+func mcpStdioConfiguration(server config.MCPServer) *mcpclient.StdioConfig {
+	if server.Settings.Transport != "stdio" {
+		return nil
+	}
+	env, _ := server.ConnectionValues()
+	return &mcpclient.StdioConfig{Executable: server.Executable, Args: slices.Clone(server.Settings.Args), Dir: server.WorkingDir, Env: env}
 }

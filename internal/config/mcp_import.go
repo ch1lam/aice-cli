@@ -73,7 +73,7 @@ func ParseMCPServers(raw []byte) (map[string]MCPServerSettings, []string, error)
 	var skipped []string
 	for name, entry := range entries {
 		id := portableMCPID(name)
-		if id == "" || id == ManagedCUAServerID {
+		if id == "" {
 			skipped = append(skipped, fmt.Sprintf("%q: name cannot be used as a server ID", name))
 			continue
 		}

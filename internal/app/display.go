@@ -180,9 +180,6 @@ func assistantConcludes(message llm.AssistantMessage) bool {
 }
 
 func toolCallDetail(call llm.ToolCall) string {
-	if desktopTool(call.Name) {
-		return string(call.Arguments[:min(len(call.Arguments), maximumDisplayToolOutputBytes)])
-	}
 	var arguments struct {
 		Command string `json:"command"`
 		Name    string `json:"name"`

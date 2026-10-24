@@ -101,7 +101,7 @@ AICE 提供模型调用、工具执行、上下文与会话管理，通过 TUI �
 | --- | --- |
 | 联网搜索与网页抓取 | `/web` — 配置 Exa 搜索和公开网页抓取；[指南](./docs/web.md) |
 | 浏览器自动化 | `/browser` — 通过 agent-browser 浏览和操作网页，支持 macOS/Linux；[指南](./docs/browser.md) |
-| Computer Use | `/desktop` — 显式启用基于 Cua Driver 的桌面自动化；[平台限制与验证状态](./docs/desktop.md#platform-evidence) |
+| Computer Use | `/desktop` — 将 Cua Driver 设置为普通 MCP 服务 `user:cua`；[Computer Use](./docs/desktop.md) |
 | MCP 服务 | `/mcp` 或 `aice mcp` — 接入外部工具与资源；[指南](./docs/mcp.md) |
 | Agent Skills | `/skills` — 查看启动时加载的 `SKILL.md` 列表；变更 Skills 后需重启；[指南](./docs/configuration.md#agent-skills) |
 

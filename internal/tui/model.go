@@ -73,7 +73,6 @@ type transcriptEntry struct {
 	// toolEvidence is an immutable projection assigned once on completion; the
 	// pointer keeps transcriptEntry comparable for viewport cache versions.
 	toolEvidence *interaction.EvidenceDisplay
-	toolDesktop  *interaction.DesktopDisplay
 }
 
 type processGroup struct {
@@ -97,7 +96,6 @@ type model struct {
 	settingsPositions        map[int]int
 	readUsage                func(uint64) (tea.Cmd, context.CancelFunc)
 	readSettings             func(uint64) (tea.Cmd, context.CancelFunc)
-	readSettingsStatus       func(uint64, uint64) (tea.Cmd, context.CancelFunc)
 	writeSettings            func(uint64, interaction.SettingsRequest) tea.Cmd
 	reading                  *sessionReading
 	readSession              func(uint64, string, string) (tea.Cmd, context.CancelFunc)
@@ -192,7 +190,6 @@ type model struct {
 	cancelRequested  bool
 	controllerClosed bool
 	status           string
-	desktopActivity  *interaction.DesktopDisplay
 	copyNotice       bool
 	copyGeneration   uint64
 	nextDeliveryID   uint64
@@ -336,8 +333,6 @@ func (m model) update(message tea.Msg) (tea.Model, tea.Cmd) {
 		return m.applySettingActionDone(message)
 	case settingsReadResult:
 		return m.applySettingsRead(message)
-	case settingsStatusResult:
-		return m.applySettingsStatus(message)
 	case settingsSaveResult:
 		return m.applySettingsSave(message)
 	case inputComponentResult:

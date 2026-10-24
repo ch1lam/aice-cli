@@ -189,7 +189,7 @@ func TestMCPStdioConfigIsInertAndDistinct(t *testing.T) {
 func TestMCPInvalidConfigurationDoesNotQuoteValues(t *testing.T) {
 	for _, raw := range []string{
 		`null`, `[]`, `{"secret-value":"secret-value"}`,
-		`{"servers":{"cua":{"transport":"http","url":"https://example.com/mcp"}}}`,
+		`{"servers":{"Docs":{"transport":"http","url":"https://example.com/mcp"}}}`,
 		`{"servers":{"bad":{"transport":"http","url":"http://127.attacker.example/mcp"}}}`,
 		`{"servers":{"bad":{"transport":"http","url":"https://user:secret-value@example.com/mcp"}}}`,
 		`{"servers":{"bad":{"transport":"http","url":"https://example.com/mcp","headers":{"Authorization":{"value":"secret-value"}}}}}`,

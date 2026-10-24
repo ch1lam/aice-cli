@@ -22,10 +22,7 @@ Credentials and login
 Set or clear credentials; log in or out with OAuth.
 
 Operation permissions
-Inspect, save or remove operation rules. Connection approval and tool execution permission are separate.
-
-Computer Use
-Manage the built-in CUA service in its own settings.`
+Inspect, save or remove operation rules. Connection approval and tool execution permission are separate.`
 
 func mcpMenu() *interaction.CommandMenu {
 	return &interaction.CommandMenu{Title: "MCP services", Options: []interaction.CommandOption{
@@ -45,7 +42,6 @@ func mcpMenu() *interaction.CommandMenu {
 		{Label: "Remove a user service and stored access", Arguments: "remove"},
 		{Label: "Inspect operation permissions", Arguments: "permissions"},
 		{Label: "Save or remove a user permission", Arguments: "permission"},
-		{Label: "Computer Use settings", Description: "Manage the built-in CUA service", Arguments: "desktop"},
 	}}
 }
 
@@ -76,7 +72,6 @@ func mcpSettingsMenu() *interaction.CommandMenu {
 			Label: group.label, Description: group.description, Menu: submenu,
 		})
 	}
-	menu.Options = append(menu.Options, actions[len(actions)-1])
 	return menu
 }
 
@@ -127,19 +122,13 @@ func prepareMCPCommand(ctx context.Context, configuration config.Config, owner *
 	if op.Action == "status" {
 		return op, nil
 	}
-	if op.Key == managedCUAKey {
-		return op, fmt.Errorf("managed:cua is controlled by Computer Use settings; open /desktop")
-	}
 	var err error
 	if op.Key == "" {
 		if op.Action == "add" {
-			op.Key, err = mcpPrompt(ctx, ui, interaction.AuthPrompt{Title: "MCP service ID", Instructions: "A unique user service ID, for example docs. The reserved cua service is managed separately.", InputLabel: "Service ID", AllowInput: true, PublicInput: true})
+			op.Key, err = mcpPrompt(ctx, ui, interaction.AuthPrompt{Title: "MCP service ID", Instructions: "A unique user service ID, for example docs.", InputLabel: "Service ID", AllowInput: true, PublicInput: true})
 		} else {
 			menu := &interaction.CommandMenu{Title: "Select the exact MCP service"}
 			for _, service := range mcpManagementStatus(configuration, owner, "") {
-				if service.Managed {
-					continue
-				}
 				server := configuration.MCP.Servers[service.Key]
 				if (op.Action == "replace" || op.Action == "enable" || op.Action == "disable" || op.Action == "remove") && server.Source.Kind != "user" {
 					continue

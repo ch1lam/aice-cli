@@ -12,7 +12,6 @@ type Frontend struct {
 	Sessions        SessionBrowser
 	Usage           UsageReader
 	Settings        SettingsReader
-	SettingsStatus  SettingsStatusReader
 	SettingsActions SettingsActionRunner
 	SettingsWriter  SettingsWriter
 	Files           FileCompleter

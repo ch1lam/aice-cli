@@ -118,7 +118,7 @@ func validateMCPStoredBinding(paths Paths, server MCPServer) error {
 	if err := paths.validate(); err != nil {
 		return err
 	}
-	if !mcpID(server.ID) || server.ID == ManagedCUAServerID || server.Settings.validate() != nil {
+	if !mcpID(server.ID) || server.Settings.validate() != nil {
 		return fmt.Errorf("config: invalid MCP connection decision")
 	}
 	source := paths.GlobalSettings

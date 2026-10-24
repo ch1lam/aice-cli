@@ -38,10 +38,6 @@ func settingPresentation(id string) (category, label, description string, timing
 		return "models", "Context windows", "Override a provider/model capacity in tokens. Removing an entry uses its catalog default.", timing, false
 	case "browser_headed":
 		return "tools", "Show browser window", "Changes visibility of the next managed browser session.", interaction.SettingNextBrowser, false
-	case "desktop_enabled":
-		return "tools", "Computer Use", "Allow desktop access beyond the project. Task window content may be sent to the current model provider; actions affect real applications. User preference only; enabled does not mean ready.", timing, false
-	case "desktop_control_mode":
-		return "tools", "Computer Use control mode", "Background only refuses actions that need foreground input. Foreground allowed may affect your real keyboard, pointer and focused window. Applies to the next run.", timing, false
 	case "max_turns":
 		return "limits", "Maximum turns", "0 means unlimited model turns.", timing, false
 	case "run_token_budget":
@@ -107,20 +103,6 @@ func (s *interactiveSession) ReadSettings(ctx context.Context) (interaction.Sett
 			field.DisabledReason = disabled
 		}
 		switch def.ID {
-		case config.SettingDesktopEnabled, config.SettingDesktopControlMode:
-			field.Keywords = []string{"desktop", "computer", "cua", "permission", "background", "foreground"}
-			if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
-				field.DisabledReason = "Computer Use native setup is not yet integrated on this platform"
-			} else if s.desktop == nil {
-				field.DisabledReason = "Computer Use runtime is unavailable in this session"
-			}
-			if def.ID == config.SettingDesktopEnabled {
-				field.Action = &interaction.Command{Name: "desktop", Interactive: true}
-				field.Arguments = "setup"
-			}
-			if def.ID == config.SettingDesktopControlMode {
-				field.Choices = []interaction.SettingChoice{{Value: string(config.DesktopBackgroundOnly), Label: "Background only"}, {Value: string(config.DesktopForegroundAllowed), Label: "Foreground allowed"}}
-			}
 		case config.SettingProvider:
 			field.Effective = activeProvider(settings.model, settings.configuration)
 			for _, candidate := range s.providers {
@@ -250,13 +232,12 @@ func (s *interactiveSession) ReadSettings(ctx context.Context) (interaction.Sett
 	}
 	result.Fields = append(result.Fields, webSettingFields(settings.configuration, disabled)...)
 	desktopReason := disabled
-	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
-		desktopReason = "Computer Use native setup is not yet integrated on this platform"
-	} else if s.desktop == nil {
-		desktopReason = "Computer Use runtime is unavailable in this session"
+	if s.desktop == nil {
+		desktopReason = "Computer Use setup is unavailable in this session"
 	}
-	result.Fields = append(result.Fields, interaction.SettingField{ID: "desktop.setup", Category: "tools", Label: "Computer Use setup / repair", Description: "Install and verify the Driver and desktop access, or retry saving the enabled preference. No Session is created.", Kind: interaction.SettingAction, Action: desktopSetupCommand(), Applies: interaction.SettingDomainAction, DisabledReason: desktopReason})
-	result.Fields = append(result.Fields, desktopStatusPlaceholder())
+	result.Fields = append(result.Fields,
+		interaction.SettingField{ID: "desktop.setup", Category: "tools", Label: "Computer Use", Description: "Set up or disable the Cua Driver as the ordinary MCP service " + desktopServiceKey + ".", Keywords: []string{"desktop", "computer", "cua"}, Kind: interaction.SettingAction, Action: desktopCommand(), Applies: interaction.SettingDomainAction, DisabledReason: desktopReason},
+		interaction.SettingField{ID: "desktop.status", Category: "tools", Label: "Computer Use status", Kind: interaction.SettingInfo, Description: s.desktopStatus(settings.configuration, settings.mcp)})
 	if err := ctx.Err(); err != nil {
 		return interaction.SettingsSnapshot{}, err
 	}

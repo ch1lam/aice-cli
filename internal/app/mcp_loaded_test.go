@@ -129,27 +129,27 @@ func TestMCPLoadedToolsSnapshotIsolation(t *testing.T) {
 	catalog := &mcpCatalog{entries: map[string]mcpCatalogEntry{
 		"ordinary/tool/a":        {service: "ordinary"},
 		"ordinary/resource/read": {service: "ordinary"},
-		"managed/tool/b":         {service: managedCUAKey},
+		"other/tool/b":           {service: "other"},
 	}}
 	observe, clear := s.beginMCPLoadedTools(catalog)
-	observe([]agent.ToolReference{{ID: "ordinary/tool/a"}, {ID: "ordinary/resource/read"}, {ID: "managed/tool/b"}})
-	services := []interaction.MCPService{{Key: "ordinary"}, {Key: managedCUAKey}}
+	observe([]agent.ToolReference{{ID: "ordinary/tool/a"}, {ID: "ordinary/resource/read"}, {ID: "other/tool/b"}})
+	services := []interaction.MCPService{{Key: "ordinary"}, {Key: "other"}}
 	s.applyMCPLoadedTools(services)
 	if services[0].LoadedTools != 2 || services[1].LoadedTools != 1 || !services[0].RunActive {
-		t.Fatal("service/resource/managed counts mixed", services)
+		t.Fatal("service/resource counts mixed", services)
 	}
 	// Reading concurrently never mutates the Loop/caller's snapshot. Old Run
 	// callbacks and cleanup cannot change a later Run's display.
 	newObserve, newClear := s.beginMCPLoadedTools(catalog)
 	defer newClear()
-	newObserve([]agent.ToolReference{{ID: "managed/tool/b"}})
+	newObserve([]agent.ToolReference{{ID: "other/tool/b"}})
 	var wg sync.WaitGroup
 	for range 8 {
 		wg.Go(func() {
 			for range 100 {
 				observe([]agent.ToolReference{{ID: "ordinary/tool/a"}})
 				clear()
-				copy := []interaction.MCPService{{Key: "ordinary"}, {Key: managedCUAKey}}
+				copy := []interaction.MCPService{{Key: "ordinary"}, {Key: "other"}}
 				s.applyMCPLoadedTools(copy)
 				if copy[0].LoadedTools != 0 || copy[1].LoadedTools != 1 || !copy[1].RunActive {
 					t.Error("late Run callback replaced current snapshot")

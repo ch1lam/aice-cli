@@ -93,12 +93,11 @@ func (m *model) startDisplayedTool(tool interaction.ToolDisplay) {
 		}
 	}
 	e := transcriptEntry{
-		kind:        entryTool,
-		processID:   m.ensureActiveProcess(),
-		toolID:      tool.ID,
-		toolName:    tool.Name,
-		toolDesktop: tool.Desktop,
-		toolDetail:  sanitizeToolDetail(tool.Detail, tool.Name == "bash"),
+		kind:       entryTool,
+		processID:  m.ensureActiveProcess(),
+		toolID:     tool.ID,
+		toolName:   tool.Name,
+		toolDetail: sanitizeToolDetail(tool.Detail, tool.Name == "bash"),
 	}
 	if tool.Name == "write" {
 		e.writePreview = &writePreview{}

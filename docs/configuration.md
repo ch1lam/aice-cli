@@ -39,17 +39,10 @@ another source.
 Invocation controls such as `--workspace`, `--session`, `--approve`, and
 `--yolo` retain their separate command semantics. No remote key/value store is used.
 
-Computer Use preferences are User-only: `desktop_enabled` defaults to `false`
-and `desktop_control_mode` defaults to `background_only` (the other value is
-`foreground_allowed`). Only the user settings file and explicit runtime patches
-can supply them. Auth files, trusted projects, environment and flag bindings
-cannot change them or become reset/inheritance candidates. On macOS and Linux, enabling
-in Settings opens the disclosed setup flow; the setup/repair action also offers
-preference-only saving without native effects. Saving these keys alone does not
-make a Driver ready. Linux setup checks X11 and asks for one window to capture
-locally; it never sends that verification image to a model or installs system
-packages. Wayland/XWayland routes and Windows setup remain unavailable.
-See [Computer Use](desktop.md) for implemented actions and acceptance status.
+Computer Use has no settings of its own: its setup writes the ordinary MCP
+service `user:cua` (see [Computer Use](desktop.md)). The removed
+`desktop_enabled` and `desktop_control_mode` keys are unknown fields: loading
+fails until they are deleted from `settings.json`.
 
 Project settings are protected by [Project Trust](project-trust.md).
 Until trusted, the project contributes no configuration values. The initial
@@ -171,8 +164,8 @@ warnings. OAuth refresh has its own lock lifecycle below.
 
 ### Settings window
 
-To edit preferences, open `/settings`. To open its Computer Use area directly,
-use `/desktop`. Opening the panel creates no Session or Agent run.
+To edit preferences, open `/settings`. `/desktop` opens its Computer Use
+action directly. Opening the panel creates no Session or Agent run.
 
 | Area | Preferences or actions | Takes effect |
 | --- | --- | --- |
@@ -207,11 +200,8 @@ the prior runtime; committed changes survive closing the panel. Domain actions
 report partial external effects separately. See [Settings lifecycle
 contracts](contracts.md#settings-and-usage-capabilities).
 
-Computer Use status loads separately through a bounded read-only check. Refresh
-never starts a service, captures, or asks for OS grants. An enabled preference
-alone does not mean ready. Setup and explicit task continuation are documented
-in [Computer Use](desktop.md#settings-and-task-continuation). Settings drafts,
-credentials and authorization responses never enter prompt or Session history.
+Settings drafts, credentials and authorization responses never enter prompt or
+Session history.
 
 ### Usage and Session information
 
@@ -748,10 +738,6 @@ These references are an interactive composer feature; `--print` accepts ordinary
 requests to use a named Skill.
 The builtin `browser` skill describes browsing through `bash` and `read`; see
 [Browser automation](browser.md) for installation and connection requirements.
-The builtin `computer-use` guide is pinned to Cua Driver 0.30.4 and applies when
-`managed:cua` is available. It uses normal on-demand activation and source
-shadowing; loading guidance neither enables Computer Use nor grants MCP access.
-Enabled production main runs expose only the managed discovery route; see [Computer Use](desktop.md#managed-mcp-boundary).
 Discovery and wiring are in [Skills](architecture.md#skills).
 
 Skill directories on disk are allowed automatically for read-class tools
@@ -783,7 +769,7 @@ The composer retains the real terminal cursor for IME composition.
 | `/btw [question]` | Create or choose an ephemeral, tool-free side thread |
 | `/init` | Create or improve root `AGENTS.md`; loaded after restart |
 | `/settings` | Open the five-category Settings window |
-| `/desktop` | Open Computer Use in the same Settings window |
+| `/desktop` | Set up or disable Computer Use (the `user:cua` MCP service) in Settings |
 | `/context`, `/usage` | Open current context or recorded Session usage |
 | `/browser` | Browser status, connection, tab selection and close; `/browser status` also works |
 | `/mcp` | Manage MCP services, connection approval and credentials; see [MCP](mcp.md) |

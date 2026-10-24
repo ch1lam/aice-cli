@@ -10,22 +10,12 @@ import (
 
 // RunInput contains one initial prompt for an interactive Agent run.
 type RunInput struct {
-	// Continuation binds an explicit Settings follow-up to its original task.
-	Continuation *TaskContinuation
-	Prompt       string
-	Images       []llm.ImageContent
+	Prompt string
+	Images []llm.ImageContent
 	// Files are explicit references parsed by the frontend before expanding literal pastes.
 	Files []string
 	// Skills are explicit catalog names selected by the frontend.
 	Skills []string
-}
-
-// TaskContinuation is a transient, application-issued proposal. The user must
-// choose it explicitly; NewRun rechecks its Session, branch and settings.
-// It grants no tool permissions and carries no old tool calls or queued inputs.
-type TaskContinuation struct {
-	SessionID, LeafID, Prompt string
-	Revision                  uint64
 }
 
 // ActiveRun is one prepared Agent run. Its implementation owns accepted input
@@ -223,7 +213,6 @@ type AssistantDisplay struct {
 // tool input already extracted for display by the application bridge. Content
 // is write input; HasContent distinguishes an empty file from absent input.
 type ToolDisplay struct {
-	Desktop    *DesktopDisplay
 	Output     ToolOutputDisplay
 	Diff       DiffDisplay
 	Truncation TruncationDisplay
@@ -236,14 +225,6 @@ type ToolDisplay struct {
 	Failed     bool
 	Content    string
 	HasContent bool
-}
-
-// DesktopDisplay contains presentation facts, never executable references.
-// App comes from returned discovery metadata; Phase describes a request or
-// recorded result, not proof that its business postcondition succeeded.
-type DesktopDisplay struct {
-	App   string
-	Phase string
 }
 
 // ToolOutputDisplay is a bounded, immutable projection of a tool result.

@@ -127,12 +127,7 @@ func (p *streamPrinter) startTool(event agent.AgentEvent) error {
 		return nil
 	}
 	p.toolStarts[event.ToolCall.ID] = p.now()
-	var detail string
-	// Desktop detail is the complete argument object for the interactive fold.
-	// Progress diagnostics must not duplicate input text or observation queries.
-	if !desktopTool(event.ToolCall.Name) {
-		detail = summarizeToolDetail(toolCallDetail(*event.ToolCall))
-	}
+	detail := summarizeToolDetail(toolCallDetail(*event.ToolCall))
 	if detail == "" {
 		return p.writeProgress(
 			"aice: tool name=%s status=started",

@@ -40,7 +40,7 @@ and routes; README files may summarize product behavior and link to details.
 | Product priorities and future direction | [Roadmap](ROADMAP.md); distinguish plans from shipped behavior |
 | Contributor onboarding, community and reporting | [Contributing](CONTRIBUTING.md), [Code of Conduct](CODE_OF_CONDUCT.md), [Security](SECURITY.md); user guides are indexed in [Documentation](docs/README.md) |
 | Browser automation, connection, tabs and lifecycle | [Browser automation](docs/browser.md) |
-| Computer Use, Cua installation/setup, native sessions, window actions and platform evidence | [Computer Use](docs/desktop.md) |
+| Computer Use preset (Cua Driver as an ordinary MCP service), installation and setup | [Computer Use](docs/desktop.md) |
 | Web search services, priority, `web_fetch`, network permissions, evidence | [Web search and fetch](docs/web.md) |
 | Generic MCP connection, discovery, OAuth, result limits and implementation status | [MCP](docs/mcp.md) |
 | Installation, helper binaries, source builds, updates | [Installation](docs/installation.md) |

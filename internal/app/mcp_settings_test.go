@@ -262,9 +262,8 @@ func TestMCPSettingsSingleServiceChangesPreserveOtherAuthority(t *testing.T) {
 			endpoint, opens, _, closes := mcpStartupServer(t)
 			otherEndpoint, otherOpens, _, otherCloses := mcpStartupServer(t)
 			definition := `{"transport":"http","url":"` + endpoint + `","headers":{"Authorization":{"auth_ref":"token"}}}`
-			settings := `"desktop_enabled":true,"mcp":{"servers":{"docs":` + definition + `,"other":{"transport":"http","url":"` + otherEndpoint + `"}}}`
+			settings := `"mcp":{"servers":{"docs":` + definition + `,"other":{"transport":"http","url":"` + otherEndpoint + `"}}}`
 			runMCPSettingsConfigurationFixture(t, settings, func(ctx context.Context, s *interactiveSession) {
-				s.desktop = managedLifecycleState(t)
 				act := func(action, key string, values ...string) interaction.SettingsActionResult {
 					t.Helper()
 					revision, _ := s.settingsStatus()
@@ -303,9 +302,6 @@ func TestMCPSettingsSingleServiceChangesPreserveOtherAuthority(t *testing.T) {
 					}
 					permits[key] = permit
 				}
-				managedCtx, managed := managedLifecycleCatalog(t, s.desktop, s.configuration, s.guard)
-				managedRef, managedPermit := selectManagedLifecycleTool(t, managedCtx, managed, s.guard)
-				identity := managed.config.Servers[managedCUAKey].Fingerprint
 				oldConnection := s.mcp.Connections()["user:docs"]
 				switch action {
 				case "failed-disable":
@@ -344,13 +340,6 @@ func TestMCPSettingsSingleServiceChangesPreserveOtherAuthority(t *testing.T) {
 				decision, _, err := s.guard.CheckMCP(ctx, "read", binding, scope)
 				if err != nil || decision.Decision != guard.DecisionAllow {
 					t.Fatal("unrelated MCP Session grant lost", err)
-				}
-				if managedPermit.Validate(managedCtx) != nil || managed.Check(managedCtx, managedRef) != nil {
-					t.Fatal("ordinary service change invalidated managed CUA")
-				}
-				_, freshManaged := managedLifecycleCatalog(t, s.desktop, s.configuration, s.guard)
-				if freshManaged.config.Servers[managedCUAKey].Fingerprint != identity {
-					t.Fatal("ordinary service change replaced managed CUA identity")
 				}
 				if action == "reconnect" && opens.Load() != 2 {
 					t.Fatal("reconnect did not establish a fresh selected transport")

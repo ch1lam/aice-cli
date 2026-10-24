@@ -100,11 +100,6 @@ func Run(ctx context.Context, frontend interaction.Frontend, options Options) er
 		defer closeUsage()
 	}
 	if reader := frontend.Settings; reader != nil {
-		if frontend.SettingsStatus != nil {
-			var closeStatus func()
-			initialModel.readSettingsStatus, closeStatus = settingsStatusCommands(controllerCtx, frontend.SettingsStatus)
-			defer closeStatus()
-		}
 		if frontend.SettingsActions != nil {
 			var closeActions func()
 			initialModel.runSettingsAction, closeActions = settingsActionCommands(controllerCtx, frontend.SettingsActions, reader)
@@ -182,13 +177,12 @@ func checkForUpdate(ctx context.Context, checker interaction.UpdateChecker) tea.
 }
 
 type runRequest struct {
-	continuation *interaction.TaskContinuation
-	prompt       string
-	files        []string
-	skills       []string
-	images       []llm.ImageContent
-	command      *interaction.CommandRequest
-	updates      chan runUpdate
+	prompt  string
+	files   []string
+	skills  []string
+	images  []llm.ImageContent
+	command *interaction.CommandRequest
+	updates chan runUpdate
 	// sideCreate requests a brand-new side thread for this prompt;
 	// sideThreadID targets an existing thread for a follow-up. The resolved
 	// metadata is stored back on sideThread before the run starts.
@@ -302,7 +296,7 @@ func runOne(ctx context.Context, frontend interaction.Frontend, request runReque
 	if !sendRunUpdate(ctx, request.updates, runUpdate{cancel: cancel, sideThread: request.sideThread}) {
 		return
 	}
-	active, err := frontend.Runner.NewRun(runCtx, interaction.RunInput{Prompt: request.prompt, Images: request.images, Files: request.files, Skills: request.skills, Continuation: request.continuation}, func(
+	active, err := frontend.Runner.NewRun(runCtx, interaction.RunInput{Prompt: request.prompt, Images: request.images, Files: request.files, Skills: request.skills}, func(
 		eventCtx context.Context,
 		event interaction.Event,
 	) error {

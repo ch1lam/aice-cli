@@ -27,7 +27,7 @@ tests. Search for the named symbols rather than relying on line numbers.
 | Web search and fetch | [app/web.go](../internal/app/web.go) (`bindWeb`), [app/web_commands.go](../internal/app/web_commands.go), [config/web.go](../internal/config/web.go), [web/resolve.go](../internal/web/resolve.go), [web/exa/client.go](../internal/web/exa/client.go), [web/httpfetch/fetch.go](../internal/web/httpfetch/fetch.go), [guard/network.go](../internal/guard/network.go), [tool/web_search.go](../internal/tool/web_search.go), [tool/web_fetch.go](../internal/tool/web_fetch.go) | [app/web_test.go](../internal/app/web_test.go), [app/web_commands_test.go](../internal/app/web_commands_test.go), [config/web_test.go](../internal/config/web_test.go), [web/web_test.go](../internal/web/web_test.go), [exa_test.go](../internal/web/exa/exa_test.go), [fetch_test.go](../internal/web/httpfetch/fetch_test.go), [guard/network_test.go](../internal/guard/network_test.go) |
 | MCP transport and run catalog | [mcpclient/client.go](../internal/mcpclient/client.go), [app/mcp_owner.go](../internal/app/mcp_owner.go), [app/mcp_catalog.go](../internal/app/mcp_catalog.go), [agent/tool_selection.go](../internal/agent/tool_selection.go) | [mcpclient/lifecycle_test.go](../internal/mcpclient/lifecycle_test.go), [app/mcp_startup_test.go](../internal/app/mcp_startup_test.go), [app/mcp_loop_test.go](../internal/app/mcp_loop_test.go), [agent/tool_selection_test.go](../internal/agent/tool_selection_test.go) |
 | MCP management, authorization and OAuth | [app/mcp_management.go](../internal/app/mcp_management.go), [app/mcp_guard.go](../internal/app/mcp_guard.go), [config/mcp_permissions.go](../internal/config/mcp_permissions.go), [mcpauth](../internal/mcpauth) | [app/mcp_tui_test.go](../internal/app/mcp_tui_test.go), [app/mcp_permissions_test.go](../internal/app/mcp_permissions_test.go), [app/mcp_oauth_login_test.go](../internal/app/mcp_oauth_login_test.go), [app/mcp_oauth_refresh_test.go](../internal/app/mcp_oauth_refresh_test.go) |
-| Managed Computer Use and MCP evaluation | [app/mcp_desktop.go](../internal/app/mcp_desktop.go), [desktop/mcp.go](../internal/desktop/mcp.go), [lexical retrieval tests](../internal/app/mcp_search_test.go) | [app/mcp_desktop_lifecycle_test.go](../internal/app/mcp_desktop_lifecycle_test.go), [app/desktop_native_linux_test.go](../internal/app/desktop_native_linux_test.go), [app/desktop_model_native_darwin_test.go](../internal/app/desktop_model_native_darwin_test.go) |
+| Computer Use preset and MCP evaluation | [app/desktop.go](../internal/app/desktop.go), [desktop/preset.go](../internal/desktop/preset.go), [lexical retrieval tests](../internal/app/mcp_search_test.go) | [desktop/preset_test.go](../internal/desktop/preset_test.go), [app/settings_tui_test.go](../internal/app/settings_tui_test.go) |
 | Print integrations | [json_printer.go](../internal/app/json_printer.go), [Harbor adapter](../integrations/harbor/aice_agent.py) | [stream_printer_test.go](../internal/app/stream_printer_test.go), [Harbor guide](../integrations/harbor/README.md) |
 
 For a new feature, identify what state it adds, who owns that state, how it
@@ -85,7 +85,7 @@ owns durable conversation publication and concurrent side snapshots. Preserve
 these differences. Lifecycle admission, transcript ownership and TUI delivery
 previews also have different authority and must not be merged merely to reduce
 state. GUI, remote transport and simultaneous frontend control are not implemented.
-MCP/CUA acceptance remains scoped by the domain guides below.
+MCP acceptance remains scoped by the domain guides below.
 
 ## Resolving discrepancies
 
@@ -168,18 +168,10 @@ Remote close errors do not prove remote session deletion.
 
 ### Computer Use integration
 
-The current [managed boundary](desktop.md#managed-mcp-boundary) delegates native
-target, token, capture and input semantics to Cua. AICE retains verified runtime
-admission, Run sessions, mode/image limits, Guard and generic result retention.
-Old typed-wrapper acceptance does not validate this forwarding path.
-
-[Platform evidence](desktop.md#platform-evidence) owns outstanding macOS input,
-Linux Unicode/launch/focus, Windows action admission and multi-display cursor
-limitations. Current-pin real-model task completion, screenshot coordinates,
-degraded observation, foreground continuation and physical input coexistence
-need native evidence. Tests or compile success must not erase failed or
-unverified postconditions. Reproduce through the [native gates](collaboration.md#computer-use-checks)
-and [real-model gate](collaboration.md#explicit-real-model-desktop-gate).
+Computer Use is the ordinary MCP service `user:cua`; Cua owns runtime, input
+and platform behavior. Earlier AICE-run native acceptance of the managed path
+does not carry over. Real-model desktop tasks and Linux/Windows setup are
+unverified in this design; see [Computer Use verification](desktop.md#verification).
 
 ### Self-update OpenPGP dependency warning
 

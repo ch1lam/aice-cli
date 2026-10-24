@@ -283,12 +283,10 @@ func (m *model) applyAgentEvent(event interaction.Event) (bool, tea.Cmd) {
 	case interaction.EventToolStart:
 		m.revokeConclusion()
 		m.startDisplayedTool(event.Tool)
-		m.setDesktopActivity(event.Tool.Desktop, false, event.Tool.Failed)
 		m.status = "Running " + event.Tool.Name + "..."
 		return true, nil
 	case interaction.EventToolEnd:
 		m.completeTool(event.Tool)
-		m.setDesktopActivity(event.Tool.Desktop, true, event.Tool.Failed)
 		m.status = "Thinking..."
 		return true, nil
 	case interaction.EventSteer:
@@ -376,7 +374,6 @@ func (m *model) completeAssistant(display interaction.AssistantDisplay) tea.Cmd 
 }
 
 func (m *model) resetBranchTranscript() {
-	m.desktopActivity = nil
 	kept := make([]transcriptEntry, 0, len(m.entries))
 	for index := len(m.entries) - 1; index >= 0; index-- {
 		entry := m.entries[index]
@@ -408,7 +405,6 @@ func (m *model) completeTool(tool interaction.ToolDisplay) {
 		entry := &m.entries[index]
 		if entry.kind == entryTool && entry.toolID == tool.ID && !entry.toolDone {
 			entry.toolDone = true
-			entry.toolDesktop = tool.Desktop
 			entry.toolError = tool.Failed
 			entry.toolTruncation = tool.Truncation
 			entry.toolEvidence = tool.Evidence
@@ -444,16 +440,6 @@ func (m *model) finishRun(err error) tea.Cmd {
 	m.updateActiveProcessDuration(time.Now())
 	m.running = false
 	m.restoreCommandDraftIfIdle()
-	m.desktopActivity = nil
-	for i := range m.entries {
-		entry := &m.entries[i]
-		if entry.toolDesktop != nil && !entry.toolDone {
-			display := *entry.toolDesktop
-			display.Phase = "Result unavailable"
-			entry.toolDesktop = &display
-			entry.toolDone, entry.toolError = true, true
-		}
-	}
 	m.acceptsDelivery = false
 	m.activeRun = nil
 	m.pendingDeliveries = nil
@@ -515,12 +501,11 @@ func startRun(
 		case <-controllerDone:
 			return runUnavailableMsg{}
 		case requests <- runRequest{
-			prompt:       input.Prompt,
-			continuation: input.Continuation,
-			files:        input.Files,
-			skills:       input.Skills,
-			images:       input.Images,
-			updates:      updates,
+			prompt:  input.Prompt,
+			files:   input.Files,
+			skills:  input.Skills,
+			images:  input.Images,
+			updates: updates,
 		}:
 			return runStartedMsg{updates: updates}
 		}

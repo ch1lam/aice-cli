@@ -30,16 +30,14 @@ libxkbcommon installed. These commands do not access a desktop. The two Windows
 status schemas were reviewed in the fixed source; Windows binaries were not
 executed and native Authenticode trust was not tested on this host.
 The updated Linux arm64 private installer also passed its native install and
-read-only reuse test in that container. See
-[schema provenance and review](../../desktop/schema/README.md).
+read-only reuse test in that container.
 
 Version 0.30.4 changes macOS foreground pixel clicks to HID delivery that moves
 the physical pointer and leaves it at the target; it also fixes per-display
 foreground-window verification and cursor-theme hotspot transforms. The
 main-screen-only macOS cursor overlay limitation remains. Archive integrity,
 metadata exports and schema review do not establish native input, focus, cursor
-alignment or real-application acceptance. Earlier 0.29.1 native results remain
-versioned evidence in [Computer Use](../../../docs/desktop.md#platform-evidence).
+alignment or real-application acceptance.
 
 No upstream installer is executed. The published top-level install.sh delegates
 to a secondary installer and includes skill/PATH integration outside AICE's
@@ -58,11 +56,9 @@ with its version locked in [go.mod](../../../go.mod). Its LICENSE
 contains the Apache-2.0/MIT transition notice; both licenses must be retained
 when redistributing SDK source. The SDK owns discovery/initialize, request
 correlation, cancellation, subscriptions, pagination and content decoding.
-AICE supplies `2025-06-18` through `ClientSessionOptions.ProtocolVersion` for
-the current Driver and checks the negotiated version and Driver identity;
-ordinary MCP connections use the SDK's default negotiation. The SDK stays private
-to `internal/mcpclient`, shared by ordinary MCP services and the desktop
-connection. Native installation and runtime admission remain in `internal/desktop`.
+The Driver is an ordinary MCP service using the SDK's default negotiation. The
+SDK stays private to `internal/mcpclient`; installation stays in
+`internal/deps` and the service definition in `internal/desktop`.
 
 SDK transitive runtime additions: google/jsonschema-go (MIT),
 segmentio/encoding and segmentio/asm (MIT), yosida95/uritemplate/v3 (BSD-3-Clause).

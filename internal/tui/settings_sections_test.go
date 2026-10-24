@@ -1,11 +1,9 @@
 package tui
 
 import (
-	"context"
 	"fmt"
 	"strings"
 	"testing"
-	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -127,59 +125,6 @@ func TestSettingsSectionHighlightClearsImmediately(t *testing.T) {
 				t.Fatal("hover did not clear in the same input update")
 			}
 		})
-	}
-}
-
-func TestSettingsSectionFeedbackDoesNotWaitForDesktopStatus(t *testing.T) {
-	t.Parallel()
-	m := sectionPanelModel(t, 120, 40)
-	p := m.settings
-	p.snapshot.Fields = append(p.snapshot.Fields, statusTestField("Checking…"))
-	started, release := make(chan struct{}), make(chan struct{})
-	finished := make(chan tea.Msg, 1)
-	var shutdown func()
-	m.readSettingsStatus, shutdown = settingsStatusCommands(t.Context(), settingsStatusFixture(
-		func(ctx context.Context, _ uint64) (interaction.SettingField, error) {
-			close(started)
-			select {
-			case <-release:
-				return statusTestField("Connected"), nil
-			case <-ctx.Done():
-				return interaction.SettingField{}, ctx.Err()
-			}
-		},
-	))
-	t.Cleanup(shutdown)
-	cmd := m.refreshSettingsStatus()
-	go func() { finished <- cmd() }()
-	select {
-	case <-started:
-	case <-time.After(5 * time.Second):
-		t.Fatal("status check did not start")
-	}
-	expanded := settingsHeadingLine(t, m, "Browser")
-	m = clickSettingSection(t, m, "Browser")
-	want := strings.Replace(expanded, "  Browser", "› Browser", 1)
-	if settingsHeadingLine(t, m, "Browser") != want {
-		t.Fatal("release feedback waited for pending status")
-	}
-	m = updateModel(t, m, tea.MouseMotionMsg(settingsPaintedMouse(t, m, "Browser")))
-	m = updateModel(t, m, tea.MouseMotionMsg{X: 0, Y: 0})
-	if settingsHeadingLine(t, m, "Browser") != want {
-		t.Fatal("hover exit waited for pending status")
-	}
-	close(release)
-	select {
-	case result := <-finished:
-		m = updateModel(t, m, result)
-	case <-time.After(5 * time.Second):
-		t.Fatal("status check did not finish")
-	}
-	if settingsHeadingLine(t, m, "Browser") != want || strings.Contains(ansi.Strip(m.settingsPanelView()), "browser.0") {
-		t.Fatal("late status changed section feedback or fold state")
-	}
-	if p.snapshot.Fields[len(p.snapshot.Fields)-1].Value.Text != "Connected" {
-		t.Fatal("status result was not applied")
 	}
 }
 

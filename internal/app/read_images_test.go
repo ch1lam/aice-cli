@@ -27,10 +27,9 @@ func TestInteractiveImageReaderSurvivesToolRebuild(t *testing.T) {
 		newModel: func(config.Config) (agent.Model, error) { return model, nil },
 		runTUI: func(ctx context.Context, frontend interaction.Frontend, _ tui.Options) error {
 			runner := frontend.Runner
-			settings := runner.(interaction.SettingsWriter)
-			if _, err := settings.ApplySettings(ctx, interaction.SettingsRequest{Changes: []interaction.SettingChange{{
-				ID: "desktop_enabled", Value: interaction.SettingValue{Kind: interaction.SettingBool},
-			}}}); err != nil {
+			// An MCP publication rebuilds the Session tools from the base set.
+			session := runner.(*interactiveSession)
+			if err := session.publishMCPConfiguration(session.configuration); err != nil {
 				return err
 			}
 			return runInteractive(ctx, runner, "inspect", nil)

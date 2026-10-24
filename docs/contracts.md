@@ -349,15 +349,6 @@ The public print format below is a separate, curated projection. Adding an
 internal event does not automatically expose it in NDJSON or justify serializing
 frontend state.
 
-Computer Use tool events carry an optional immutable `DesktopDisplay` with an
-application name and phase. The app's serial run event bridge derives this from
-bounded original results and keeps a bounded display-only reference/name cache;
-it performs no native I/O and creates no executable capability. The TUI owns one
-transient activity row and existing tool folds. History derives the same facts
-from Session records without replaying lifecycle events. Request, response,
-unknown effect and setup-needed labels remain distinct; see
-[Computer Use presentation](desktop.md#run-reference-and-result-contracts).
-
 ## Print NDJSON events
 
 `aice --print --output-format json` writes a stable, additive NDJSON stream to
@@ -492,8 +483,7 @@ partial-failure rules. MCP management must publish saved revocation even if late
 preparation fails; new runs stop rather than reuse stale authority. Live MCP deny
 may revoke/cancel one service during a run without replacing another owner.
 
-Settings reads do not probe the desktop: a separate bounded status read is checked
-against both revision and panel generation. Closing reads cancels them; closing a
+Settings reads perform no native or MCP I/O. Closing a read cancels it; closing a
 submitted write cannot undo a commit. Domain prompts use transient modal input,
 never the conversation composer. Query/action owners cancel and join at shutdown.
 The panel's Stop action uses ordinary run cancellation and waits for completion.

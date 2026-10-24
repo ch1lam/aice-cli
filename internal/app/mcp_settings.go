@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"reflect"
 	"strings"
 
 	"github.com/ch1lam/aice-cli/internal/agent"
@@ -36,7 +35,7 @@ func (s *interactiveSession) runMCPSettings(ctx context.Context, revision *uint6
 	if !mcpActionKnown(op.Action) {
 		return result, fmt.Errorf("unknown MCP action; use /mcp to choose an action")
 	}
-	shared := op.Action != "status" && op.Action != "deny" && op.Action != "desktop"
+	shared := op.Action != "status" && op.Action != "deny"
 	if err := s.beginSettingsOperation(revision, shared); err != nil {
 		return result, err
 	}
@@ -46,14 +45,6 @@ func (s *interactiveSession) runMCPSettings(ctx context.Context, revision *uint6
 		result.Revision, warnings = s.endSettingsOperation(changed, changed && shared)
 		result.Warnings = append(result.Warnings, warnings...)
 	}()
-	if op.Action == "desktop" {
-		if op.Key != "" {
-			return result, fmt.Errorf("usage: /mcp desktop")
-		}
-		result.FocusSetting = "desktop_enabled"
-		result.Output = "Computer Use is managed in /desktop."
-		return result, nil
-	}
 	s.stateMu.RLock()
 	current, owner := s.configuration, s.mcp
 	s.stateMu.RUnlock()
@@ -109,21 +100,16 @@ func (s *interactiveSession) runMCPSettings(ctx context.Context, revision *uint6
 }
 
 // publishMCPConfiguration is called only under an idle resource reservation.
-// Only changed services lose transports and Session grants. A global restriction
-// change also invalidates managed Computer Use authority, including on failure.
+// Only changed services lose transports and Session grants.
 func (s *interactiveSession) publishMCPConfiguration(next config.Config, reconnect ...string) error {
 	s.stateMu.RLock()
 	old := s.mcp
-	previous := s.configuration.MCP
 	s.stateMu.RUnlock()
 	tools, prompt, err := s.sessionTools(next, s.web)
 	model, options, modelErr := resolveModelSettings(s.providers, next)
 	var loop *agent.Loop
 	if err == nil && s.application != nil && modelErr == nil && providerConfigured(s.providers, next) {
 		loop, err = s.sessionLoop(next, tools)
-	}
-	if !reflect.DeepEqual(previous.Restrictions, next.MCP.Restrictions) {
-		s.desktop.invalidateManagedCatalog(s.guard)
 	}
 	if err == nil && (s.guard == nil || s.guardAdapter == nil) {
 		err = fmt.Errorf("MCP Guard is unavailable")
@@ -189,14 +175,6 @@ func mcpStatusDetails(services []interaction.MCPService) []interaction.Detail {
 		add("Service", service.Key, interaction.ToneTitle)
 		heading("Connection")
 		add("State", service.State, mcpStateTone(service.State))
-		if service.Managed {
-			add("Managed by", "Computer Use (/desktop)", interaction.ToneDefault)
-			text(service.Detail)
-			text("")
-			heading("Tool catalog")
-			add("Loaded tools", loaded, interaction.ToneDefault)
-			continue
-		}
 		add("Approval", service.Approval, mcpStateTone(service.Approval))
 		add("Source", service.Source, interaction.ToneReference)
 		add("Fingerprint", service.Fingerprint, interaction.ToneReference)

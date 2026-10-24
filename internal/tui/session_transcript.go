@@ -7,7 +7,6 @@ import "github.com/ch1lam/aice-cli/internal/interaction"
 func (m *model) replaceTranscript(view *interaction.Transcript) {
 	m.sessionID = view.SessionID
 	m.entries = nil
-	m.desktopActivity = nil
 	m.processGroups = nil
 	m.folds = nil
 	m.selection.clear()
@@ -39,7 +38,7 @@ func (m *model) replaceTranscript(view *interaction.Transcript) {
 				kind: entryTool, sourceID: item.ID, processID: m.activeProcessID,
 				toolID: tool.ID, toolName: tool.Name, toolDetail: sanitizeToolDetail(tool.Detail, tool.Name == "bash"),
 				toolDone: true, toolError: tool.Failed, toolOutput: tool.Output, toolDiff: tool.Diff, toolTruncation: tool.Truncation,
-				toolEvidence: tool.Evidence, toolDesktop: tool.Desktop,
+				toolEvidence: tool.Evidence,
 			}
 			if tool.Name == "write" {
 				e.writePreview = &writePreview{}

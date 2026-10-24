@@ -26,7 +26,7 @@ func (p MCPPatch) Apply(settings MCPSettings) (MCPSettings, error) {
 		if _, exists := settings.Servers[id]; p.CreateOnly && exists {
 			return MCPSettings{}, fmt.Errorf("config: MCP server already exists")
 		}
-		if !mcpID(id) || id == ManagedCUAServerID {
+		if !mcpID(id) {
 			return MCPSettings{}, fmt.Errorf("config: invalid or reserved MCP server ID")
 		}
 		if _, duplicate := p.Enabled[id]; duplicate {
@@ -89,7 +89,7 @@ func SaveMCPCredential(ctx context.Context, paths Paths, server MCPServer, slot,
 	if !mcpID(slot) || !mcpText(value, 8192) {
 		return fmt.Errorf("config: invalid MCP credential slot (value omitted)")
 	}
-	if !mcpID(server.ID) || server.ID == ManagedCUAServerID || server.Settings.validate() != nil {
+	if !mcpID(server.ID) || server.Settings.validate() != nil {
 		return fmt.Errorf("config: invalid MCP credential binding")
 	}
 	expectedPath := paths.GlobalSettings

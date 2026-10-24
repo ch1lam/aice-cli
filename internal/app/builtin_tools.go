@@ -3,8 +3,10 @@ package app
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	"github.com/ch1lam/aice-cli/internal/agent"
+	"github.com/ch1lam/aice-cli/internal/config"
 	"github.com/ch1lam/aice-cli/internal/deps"
 	"github.com/ch1lam/aice-cli/internal/tool"
 )
@@ -57,4 +59,31 @@ func hostBashShells() tool.BashShells {
 		return tool.BashShells{NativeErr: err, WSL: deps.WSLBashPaths(opts)}
 	}
 	return tool.BashShells{Native: native}
+}
+
+// composeTools is shared by startup, Web replacement and Settings publication.
+// Optional capabilities never become part of the host baseTools.
+func composeTools(base []agent.Tool, web webState, configuration config.Config) ([]agent.Tool, error) {
+	result := append(slices.Clone(base), web.tools()...)
+	readResult, err := tool.NewToolResultRead(runResultReader{})
+	if err != nil {
+		return nil, err
+	}
+	result = append(result, readResult)
+	if len(configuration.MCP.Servers) == 0 {
+		return result, nil
+	}
+	search, err := tool.NewToolSearch(mcpRunRouter{})
+	if err != nil {
+		return nil, err
+	}
+	resources, err := tool.NewMCPResourceList(mcpRunRouter{})
+	if err != nil {
+		return nil, err
+	}
+	info, err := tool.NewMCPInfo(mcpRunRouter{})
+	if err != nil {
+		return nil, err
+	}
+	return append(result, search, resources, info), nil
 }

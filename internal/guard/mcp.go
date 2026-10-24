@@ -176,8 +176,8 @@ func (g *Guard) setMCPService(input MCPService, operation string) error {
 			}
 		}
 	}
-	// Two 64-entry configuration collections plus the managed CUA instance.
-	if previous == nil && len(g.mcpServices) >= 129 {
+	// Three 64-entry configuration collections (config.MaxMCPServices).
+	if previous == nil && len(g.mcpServices) >= 192 {
 		return fmt.Errorf("MCP execution gate exceeds the service limit")
 	}
 	if g.mcpServices == nil {

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -83,45 +82,5 @@ func TestConnectionMessageLimits(t *testing.T) {
 		if (err != nil) != tc.invalid || (!tc.invalid && limits.MessageBytes != tc.want) {
 			t.Fatal("unexpected limit", tc, limits, err)
 		}
-	}
-}
-
-func TestStdioCompleteEnvironment(t *testing.T) {
-	t.Setenv("COMSPEC", "must-not-inherit")
-	for _, empty := range []bool{false, true} {
-		config := stdioConfig(t)
-		config.Stdio.ReplaceEnvironment = true
-		if empty {
-			config.Stdio.Env = nil
-		}
-		// The ordinary test helper needs a marker. Without it the test binary exits;
-		// opening only the transport lets us verify the intentionally empty Env too.
-		_, child, err := openStdio(*config.Stdio, defaultMessageBytes, &receipts{})
-		if err != nil {
-			t.Fatal(err)
-		}
-		env := child.cmd.Env
-		if env == nil {
-			t.Fatal("nil env would inherit the host environment")
-		}
-		for _, entry := range env {
-			if strings.HasPrefix(entry, "COMSPEC=") {
-				t.Fatal("base environment bypassed replacement")
-			}
-		}
-		if empty && len(env) != 0 {
-			t.Fatal("empty complete environment acquired values")
-		}
-		if err := child.Close(); err != nil {
-			t.Fatal(err)
-		}
-		select {
-		case <-child.done:
-		default:
-			t.Fatal("owned child not reaped")
-		}
-	}
-	if os.Getenv("COMSPEC") != "must-not-inherit" {
-		t.Fatal("parent environment changed")
 	}
 }

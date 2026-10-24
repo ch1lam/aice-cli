@@ -66,9 +66,6 @@ func executeMCPManagement(ctx context.Context, current config.Config, owner *mcp
 	if err := validateMCPManagement(request); err != nil {
 		return current, result, err
 	}
-	if request.Key == managedCUAKey && request.Action != "status" {
-		return current, result, fmt.Errorf("managed:cua is controlled by Computer Use settings; open /desktop")
-	}
 	key := request.Key
 	if request.Action == "add" {
 		key = "user:" + key
@@ -81,7 +78,7 @@ func executeMCPManagement(ctx context.Context, current config.Config, owner *mcp
 		return current, result, fmt.Errorf("MCP service key is not configured; use a source-qualified key from status")
 	}
 	if request.Action == "status" {
-		if key != "" && key != managedCUAKey && !exists {
+		if key != "" && !exists {
 			return current, result, fmt.Errorf("MCP service key is not configured")
 		}
 		result.Services = mcpManagementStatus(current, owner, key)
@@ -239,9 +236,6 @@ func executeMCPManagement(ctx context.Context, current config.Config, owner *mcp
 		if request.Action == "add" {
 			id = request.Key
 		}
-		if err := checkMCPDefinitions(current, owner, map[string]config.MCPServerSettings{id: definition}); err != nil {
-			return current, result, err
-		}
 		patch.Servers = map[string]*config.MCPServerSettings{id: &definition}
 		patch.CreateOnly = request.Action == "add"
 	case "enable", "disable", "remove":
@@ -293,24 +287,6 @@ func executeMCPManagement(ctx context.Context, current config.Config, owner *mcp
 	return current, result, err
 }
 
-// checkMCPDefinitions resolves proposed user definitions with the same frozen
-// inputs as runtime publication, without saving or connecting.
-func checkMCPDefinitions(current config.Config, owner *mcpOwner, definitions map[string]config.MCPServerSettings) error {
-	if owner == nil || owner.checkConnection == nil {
-		return nil
-	}
-	candidate, err := current.WithMCP(config.MCPSettings{Servers: definitions})
-	if err != nil {
-		return err
-	}
-	for id := range definitions {
-		if err := owner.checkConnection(mcpclient.Config{Stdio: mcpStdioConfiguration(candidate.MCP.Servers["user:"+id])}); err != nil {
-			return fmt.Errorf("%s: %w", id, err)
-		}
-	}
-	return nil
-}
-
 // importMCPServers adds every representable new server from a portable document.
 // Existing IDs are never replaced; skipped entries are reported as warnings.
 func importMCPServers(ctx context.Context, current config.Config, owner *mcpOwner, document []byte) (config.Config, interaction.MCPResult, error) {
@@ -333,9 +309,6 @@ func importMCPServers(ctx context.Context, current config.Config, owner *mcpOwne
 	if len(definitions) == 0 {
 		result.Warnings = skipped
 		return current, result, fmt.Errorf("MCP import found no new servers to add")
-	}
-	if err := checkMCPDefinitions(current, owner, definitions); err != nil {
-		return current, result, err
 	}
 	saved, err := config.SaveMCPPatch(ctx, current.Paths, patch)
 	result = mcpCommitResult(err, fmt.Sprintf("Imported %d MCP servers without connecting; connection approval and tool permissions are separate.", len(definitions)))
@@ -406,18 +379,6 @@ func mcpManagementStatus(configuration config.Config, owner *mcpOwner, key strin
 		definition, _ := json.Marshal(server.Settings)
 		savedFingerprint, savedScope, _ := configuration.MCP.StoredPermissions(id)
 		result = append(result, interaction.MCPService{Key: id, Enabled: server.Enabled, Name: server.Settings.Name, Source: server.Source.Kind + ":" + server.Source.Location, State: status.State, Detail: status.Detail, Fingerprint: server.Fingerprint, Approval: string(configuration.MCP.ConnectionDecision(id)), Definition: definition, ToolCount: status.ToolCount, CatalogKnown: status.CatalogKnown, EligibleTools: status.EligibleTools, PermissionScope: configuration.MCP.PermissionScope(id), Permissions: storedMCPPermissions(configuration.MCP, id), SavedPermissionFingerprint: savedFingerprint, SavedPermissionScope: savedScope})
-	}
-	if key == "" || key == managedCUAKey {
-		state := "disabled"
-		if configuration.DesktopEnabled {
-			state = "enabled"
-		}
-		result = append(result, interaction.MCPService{
-			Key: managedCUAKey, Name: "Computer Use", Source: "managed:computer-use",
-			Managed: true, Enabled: configuration.DesktopEnabled, State: state,
-			Approval: "computer_use", SettingsField: "desktop_enabled",
-			Detail: "Controlled by Computer Use settings (/desktop). Enabled is a preference, not verified native readiness; this status read performs no discovery or native inspection.",
-		})
 	}
 	return result
 }

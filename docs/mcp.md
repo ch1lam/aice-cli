@@ -13,24 +13,8 @@ configuration/credentials; `internal/app` owns reusable connections and a frozen
 catalog per Run. The Loop owns next-round tool selection and checks Guard before
 each dispatch. See [runtime contracts](contracts.md#run-local-tool-selection).
 
-Computer Use uses this path as `managed:cua`. Its 11 reviewed operations retain
-native schemas except for the host-owned session argument. AICE checks the
-frozen control mode and model image capability; Cua owns native targeting,
-snapshot validity and input semantics. See the [managed boundary](desktop.md#managed-mcp-boundary).
-
-The managed row is always visible in status, including when disabled. It shows
-`desktop_enabled` and navigation to Computer Use settings, not native readiness.
-Status creates no desktop Run and performs no native discovery. Ordinary MCP
-mutations reject this row; `/desktop` opens its owning setting.
-
-Ordinary stdio definitions cannot target AICE's managed CUA endpoint, even when
-Computer Use is disabled or yolo is enabled. Add/replace and connection startup
-check explicit socket/pipe paths, aliases and recognized Cua executables;
-implicit default-endpoint selection is refused. An independent endpoint,
-`mcp --direct` runtime or `cua-driver-local` namespace uses ordinary MCP
-authorization. This reservation is not host isolation: opaque scripts, renamed
-copies and HTTP proxies can hide destinations, and external programs retain
-their separate authority.
+[Computer Use](desktop.md) is an application of this path: its setup writes the
+ordinary user service `cua`, which then follows every rule below.
 
 ## Configuration identity and storage
 
@@ -60,8 +44,7 @@ For example, this defines a public service without connecting it:
 ```
 
 Server IDs use lowercase letters, digits, hyphens and underscores, start with
-a letter and are at most 64 characters. `cua` is reserved for the managed
-Computer Use instance. A stdio definition uses `transport: "stdio"`, a
+a letter and are at most 64 characters. A stdio definition uses `transport: "stdio"`, a
 `command`, `args`, optional `env` and optional absolute `cwd`. The command is an
 absolute path or a bare executable name such as `npx`/`uvx`; relative paths are
 rejected. A bare name resolves at load time against the service's `env.PATH` or
@@ -292,7 +275,7 @@ and removing a rule is possible when the service is offline.
 
 The MCP services and authorization settings menu groups actions into status,
 service configuration, connection authorization, credentials/login and operation
-permissions, with a separate Computer Use shortcut. Esc returns from a group
+permissions. Esc returns from a group
 to the main menu. Details, confirmations and action results use the MCP display
 highlights while preserving the complete paged authorization disclosure.
 
@@ -310,12 +293,11 @@ not enter Session history or model context. Project definitions are read-only.
 Configuration changes, permissions, login/logout and reconnect require idle
 state. After a committed save, only affected service leases and Session grants
 are retired; reconnect also retires its selected lease when configuration is
-unchanged. Unrelated services survive. Global restriction changes also invalidate
-managed Computer Use. A later runtime preparation failure retains the saved
+unchanged. Unrelated services survive. A later runtime preparation failure retains the saved
 change and stops new runs until repair/restart. Partial access removal is applied
 even when removing the definition subsequently fails.
 
-Status, deny and Computer Use navigation remain available during a Run. Deny
+Status and deny remain available during a Run. Deny
 saves the current connection decision, blocks new dispatches and cancels/closes
 that service's operations. It cannot undo dispatched effects; an unreceived
 outcome stays unknown. Reapproval while idle does not restore Session grants.
@@ -324,7 +306,7 @@ revocation or configuration watcher.
 
 Status distinguishes unknown from empty catalogs and reports discovered,
 eligible and loaded tool counts. `loaded_tools` is the latest model request's
-schema count in the current main Run, including pins/resource readers/CUA;
+schema count in the current main Run, including pins and resource readers;
 `run_active` distinguishes that snapshot from idle. Revocation blocks execution
 before that display count changes. Completion, cancellation, failure, `/new`
 and Session switching clear it. CLI status has no active Run and reports zero.
@@ -435,8 +417,8 @@ definitions; `/btw` stays tool-free.
 
 Within the same deadline, preparation also discovers every optional service
 whose connection is already approved (saved, approved earlier in this process,
-or under `--yolo`). It never prompts: unapproved services, and managed Computer
-Use, perform no I/O until `tool_search`. Optional discovery failures only leave
+or under `--yolo`). It never prompts: unapproved services perform no I/O until
+`tool_search`. Optional discovery failures only leave
 that service searchable. Whole services, in key order, whose eligible schemas
 fit the [dynamic schema budget](contracts.md#run-local-tool-selection) remaining
 after pins are installed as `InitialTools` and named in the service summary; a
@@ -452,7 +434,7 @@ keywords, refine mismatches or browse/select exactly. Changed catalogs can move
 page boundaries. Ranking has no connections or execution authority.
 
 Discovery has a ten-second deadline and up to four concurrent service requests.
-The owner admits eight connections; each Run allows 129 service bindings,
+The owner admits eight connections; each Run allows 192 service bindings (three collections of 64),
 16,000 eligible tools and 32 MiB catalog data. Failed/partial/invalidated discovery
 removes that service's stale Run entries and reports incompleteness. Unknown
 catalogs are not empty catalogs.
@@ -486,8 +468,7 @@ within the whole 32 KiB search result. Previewing performs no additional RPC.
 `offset`, `length` and `revision`. It initializes only that approved service and
 reads retained initialization data, without listing/calling tools, reading
 resources or fetching links. It returns source/connection identity, server
-version/protocol/capabilities and a separate instruction text block. Managed CUA
-requires prior managed discovery.
+version/protocol/capabilities and a separate instruction text block.
 
 Pages default to 1,024 bytes, maximum 8,192. Continue using `next_offset` and
 `revision`; invalid UTF-8 boundaries fail and changed revisions restart at zero.
@@ -562,9 +543,8 @@ session DELETE then always cancels local lifetime/idle sockets; a failed DELETE
 returns `ErrTransport` and does not establish remote session deletion. Repeated
 close does not retry DELETE.
 
-Internal consumers can pin protocol and replace the complete stdio environment;
-ordinary services use SDK discovery/negotiation, including `2026-07-28`.
-Only Cua pins `2025-06-18`, through the SDK's per-session option. The client
+Services use SDK discovery/negotiation, including `2026-07-28`; tests may pin
+an exact supported version through the SDK's per-session option. The client
 advertises no roots or sampling (both deprecated in `2026-07-28`) and exposes
 no Prompts operations. OAuth/approval remain owned outside transport.
 
@@ -588,9 +568,8 @@ a required field declines the whole request, skipping an optional one omits it,
 and nothing is sent until every page is answered; the SDK validates accepted
 content against the schema. Print and other callers without a frontend answer
 `cancel`. Answers go only to that server and never enter the Session; the
-eventual tool result is recorded normally. Clients without a configured
-handler, such as the managed Cua transport, keep returning an input-required
-result as unsupported without replay.
+eventual tool result is recorded normally. A client opened without a handler
+returns an input-required result as unsupported without replay.
 
 ## Discovery and results
 
@@ -720,5 +699,4 @@ bounded close, not remote session deletion. Lexical retrieval does not translate
 queries or establish general model-quality/performance gains.
 
 Reproduction commands belong to [Verification](collaboration.md#real-mcp-interoperability)
-and [retrieval checks](collaboration.md#mcp-retrieval-checks). Native Computer Use
-limits are in [platform evidence](desktop.md#platform-evidence).
+and [retrieval checks](collaboration.md#mcp-retrieval-checks).

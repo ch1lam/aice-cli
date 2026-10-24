@@ -5,16 +5,12 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"runtime"
 	"strings"
-	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/ch1lam/aice-cli/internal/config"
 	"github.com/ch1lam/aice-cli/internal/deps"
-	"github.com/ch1lam/aice-cli/internal/desktop"
 	"github.com/ch1lam/aice-cli/internal/llm"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -30,67 +26,24 @@ func TestSettingsUsageTUI(t *testing.T) {
 	t.Setenv("AGENT_BROWSER_HEADED", "")
 	paths := authTestPaths(t)
 	writeConfigFixture(t, paths.GlobalSettings, `{"provider":"custom","model":"old-model"}`)
-	installCalls, setupCalls := 0, 0
-	binds, closes := 0, 0
-	var windowsStatus atomic.Bool
-	statusRelease := make(chan struct{})
-	statusStarted := make(chan struct{})
-	statusCancelled := make(chan struct{})
-	signalStatusStarted := sync.OnceFunc(func() { close(statusStarted) })
-	signalStatusCancelled := sync.OnceFunc(func() { close(statusCancelled) })
-	model := &gatedModel{gates: map[int]chan struct{}{1: make(chan struct{}), 2: make(chan struct{})}, preDelta: "Synthetic run waiting"}
+	installCalls, grantCalls := 0, 0
+	model := &gatedModel{gates: map[int]chan struct{}{1: make(chan struct{})}, preDelta: "Synthetic run waiting"}
 	command, err := newTestCommand(t, dependencies{
 		loadConfig:   func(options config.LoadOptions) (config.Config, error) { return config.LoadFiles(paths, options) },
 		newModel:     func(config.Config) (llm.Streamer, error) { return model, nil },
 		userHomeDir:  func() (string, error) { return home, nil },
 		saveSettings: config.SaveSettingsFile,
-		newDesktop: func(c config.Config) (*desktopState, error) {
-			return &desktopState{installOptions: deps.DefaultOptions().WithNoInstall(c.NoDepInstall),
-				inspect: func(ctx context.Context) (desktop.Inspection, error) {
-					signalStatusStarted()
-					select {
-					case <-statusRelease:
-					case <-ctx.Done():
-						signalStatusCancelled()
-						return desktop.Inspection{}, ctx.Err()
-					}
-					if windowsStatus.Load() || runtime.GOOS == "windows" {
-						rid, session := uint32(0x2000), uint32(2)
-						return desktop.Inspection{ConnectionVerified: true, Windows: &desktop.WindowsInspection{
-							IntegrityLevel: "Medium", IntegrityRID: &rid, SessionID: &session, UIAccess: desktop.PermissionMissing,
-							UIAReported: desktop.PermissionGranted, PostMessageReported: desktop.PermissionGranted}, CheckedAt: time.Now()}, nil
-					}
-					if runtime.GOOS == "linux" {
-						return desktop.Inspection{ConnectionVerified: true, Linux: &desktop.LinuxInspection{X11: desktop.PermissionMissing, ATSPI: desktop.PermissionMissing}, CheckedAt: time.Now()}, nil
-					}
-					return desktop.Inspection{ConnectionVerified: true, Accessibility: desktop.PermissionGranted, ScreenRecording: desktop.PermissionMissing, CheckedAt: time.Now()}, nil
-				},
-				bind: func(ctx context.Context, _ desktop.RunOptions) (managedDesktopRun, func() error, error) {
-					binds++
-					return &appDesktopBackend{}, func() error {
-						closes++
-						if ctx.Err() == nil {
-							t.Error("cleanup began before run cancellation")
-						}
-						return nil
-					}, nil
-				},
+		newDesktop: func(c config.Config) *desktopPreset {
+			return &desktopPreset{installOptions: deps.DefaultOptions().WithNoInstall(c.NoDepInstall),
 				install: func(_ context.Context, o deps.Options) (deps.CuaInstallResult, error) {
 					installCalls++
 					if !o.NoInstall {
 						t.Error("startup download policy lost")
 					}
-					return deps.CuaInstallResult{Reused: true, Installation: deps.CuaInstallation{Binary: "/synthetic/driver"}}, nil
+					return deps.CuaInstallResult{Reused: true, Installation: deps.CuaInstallation{Binary: "/synthetic/cua-driver"}}, nil
 				},
-				setup: func(ctx context.Context, _ string, options desktop.SetupOptions) (desktop.SetupResult, error) {
-					setupCalls++
-					if runtime.GOOS == "linux" {
-						_, err := options.SelectWindow(ctx, []desktop.Window{{Ref: "synthetic-window", App: "Fixture", Title: "Setup window", PID: 41, WindowID: 99}})
-						return desktop.SetupResult{ConnectionVerified: true, CaptureVerified: err == nil, Ready: err == nil}, err
-					}
-					return desktop.SetupResult{AuthorizationRequested: true, AuthorizationCompleted: true, CaptureVerified: true, Ready: true}, nil
-				},
-			}, nil
+				grant: func(context.Context, string) error { grantCalls++; return nil },
+			}
 		},
 	})
 	if err != nil {
@@ -177,60 +130,22 @@ func TestSettingsUsageTUI(t *testing.T) {
 
 	send("/settings\r")
 	waitFor("Models & Accounts")
-	select {
-	case <-statusStarted:
-	case <-ctx.Done():
-		t.Fatal("background status read did not start")
-	}
-	select {
-	case <-statusCancelled:
-		t.Fatal("preferences waited for the native status deadline")
-	default:
-	}
 	send("/Run timeout")
 	waitFor("Run timeout")
 	send("\r")
 	waitFor("0s")
 	send("\x151m30.000000001s\r")
 	waitFor("Saved to user settings")
-	// The native reader is still blocked: opening, editing and saving must
-	// all work without it. Saving also cancels the obsolete inspection.
-	select {
-	case <-statusCancelled:
-	case <-ctx.Done():
-		t.Fatal("saving did not cancel the old status read")
-	}
-	close(statusRelease)
 	send("\x1b")
-	if runtime.GOOS == "darwin" || runtime.GOOS == "linux" {
-		send("/desktop\r")
-		waitFor("Computer Use control mode")
-		send("/Computer Use status\r")
-		if runtime.GOOS == "darwin" {
-			waitFor("Screen Recording: Missing")
-			waitFor("Known macOS input limits")
-		} else {
-			waitFor("X11 connection: Unavailable")
-			waitFor("AT-SPI bus owner: Unavailable")
-			waitFor("Known Linux input limits")
-		}
-		send("\x1b")
-		send("/Computer Use setup")
-		waitFor("Computer Use setup / repair")
-		send("\r")
-		waitFor("Enable preference only")
-		send("\r")
-		waitFor("outside this project")
-		waitFor("Continue?")
-		send("\x1b[B\r")
-		if runtime.GOOS == "linux" {
-			waitFor("Window capture test")
-			send("\x1b[B\r")
-		}
-		waitFor("Computer Use enabled for the next run")
-		send("\x1b")
-		send("\x1b")
-	}
+	send("/desktop\r")
+	waitFor("Set up / Repair", "Disable")
+	send("\r")
+	waitFor("user:cua")
+	waitFor("Continue?")
+	send("\x1b[B\r")
+	waitFor("Computer Use is available to the next Run")
+	send("\x1b")
+	send("\x1b")
 	send("/usage\r")
 	waitFor("Session usage")
 	send("\x1b")
@@ -251,46 +166,6 @@ func TestSettingsUsageTUI(t *testing.T) {
 	send("\x1b")
 	waitFor("Response cancelled", "● READY")
 
-	if runtime.GOOS == "darwin" || runtime.GOOS == "linux" {
-		send("/desktop\r")
-		waitFor("Computer Use control mode")
-		send("/Computer Use setup\r")
-		waitFor("Enable preference only")
-		send("\x1b[B\r")
-		waitFor("Continue?")
-		send("\x1b[B\r")
-		waitFor("[Continue] F6")
-		if model.requestCount() != 1 {
-			t.Fatal("setup automatically continued task")
-		}
-		// The previous partial output remains in the transcript. Wait for a
-		// distinct new-run delta before typing, so preparation cannot drop keys.
-		model.mu.Lock()
-		model.preDelta = "Synthetic continuation waiting"
-		model.mu.Unlock()
-		send("\x1b[17~")
-		waitFor("Continue the current task from its recorded progress")
-		waitFor("Synthetic continuation waiting")
-		send("/desktop\r")
-		waitFor("Stop current run")
-		send("\x1b[17~")
-		send("\x1b")
-		// The first cancellation remains visible while this run is stopping.
-		// Do not send the next command until this run's idle frame is rendered.
-		waitFor("Synthetic continuation waiting", "Response cancelled", "● READY")
-	}
-
-	// Render Windows facts through the actual command on every host. This is
-	// synthetic status evidence, never native Windows service acceptance.
-	windowsStatus.Store(true)
-	send("/desktop\r")
-	waitFor("Computer Use control mode")
-	send("/Computer Use status\r")
-	waitFor("Driver integrity level: Medium (RID 0x2000)")
-	waitFor("Driver UIAccess token: Unavailable")
-	waitFor("Windows setup and action runtime are not yet integrated")
-	send("\x1b")
-	send("\x1b")
 	send("\x15/quit\r")
 	select {
 	case err := <-done:
@@ -307,14 +182,11 @@ func TestSettingsUsageTUI(t *testing.T) {
 	if loaded.RunTimeout != time.Minute+30*time.Second+time.Nanosecond {
 		t.Fatalf("timeout not persisted: %v", loaded.RunTimeout)
 	}
-	if (runtime.GOOS == "darwin" || runtime.GOOS == "linux") && (!loaded.DesktopEnabled || installCalls != 1 || setupCalls != 1) {
-		t.Fatalf("desktop setup enabled=%v install=%d setup=%d", loaded.DesktopEnabled, installCalls, setupCalls)
+	server := loaded.MCP.Servers["user:cua"]
+	if !server.Enabled || server.Settings.Command != "/synthetic/cua-driver" || loaded.MCP.ConnectionDecision("user:cua") != config.MCPConnectionAllow || installCalls != 1 || grantCalls != 1 {
+		t.Fatalf("desktop setup server=%+v approval=%s install=%d grant=%d", server.Settings, loaded.MCP.ConnectionDecision("user:cua"), installCalls, grantCalls)
 	}
-	wantRequests := 1
-	if runtime.GOOS == "darwin" || runtime.GOOS == "linux" {
-		wantRequests = 2
-	}
-	if model.requestCount() != wantRequests || ((runtime.GOOS == "darwin" || runtime.GOOS == "linux") && (binds != 2 || closes != 2)) {
-		t.Fatalf("stop requests=%d binds=%d closes=%d", model.requestCount(), binds, closes)
+	if model.requestCount() != 1 {
+		t.Fatalf("stop requests=%d", model.requestCount())
 	}
 }

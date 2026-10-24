@@ -221,12 +221,9 @@ func TestMCPInitialToolsLoadWholeServicesWithinBudget(t *testing.T) {
 		t.Fatal(err)
 	}
 	pin := mcpToolID("user:c-pinned", "pin")
-	ids, services := c.initialTools(4096, []string{pin}, func(string) bool { return true })
+	ids, services := c.initialTools(4096, []string{pin})
 	want := []string{mcpToolID("user:b-small", "read"), mcpToolID("user:b-small", "write")}
 	if !slices.Equal(ids, want) || !slices.Equal(services, []string{"user:b-small"}) {
 		t.Fatalf("initial = %v from %v", ids, services)
-	}
-	if ids, _ := c.initialTools(4096, nil, func(key string) bool { return key != "user:b-small" }); !slices.Equal(ids, []string{pin}) {
-		t.Fatalf("excluded service was preloaded: %v", ids)
 	}
 }

@@ -63,7 +63,6 @@ func frontendOf(runner interaction.Runner) interaction.Frontend {
 	frontend.Sessions, _ = runner.(interaction.SessionBrowser)
 	frontend.Usage, _ = runner.(interaction.UsageReader)
 	frontend.Settings, _ = runner.(interaction.SettingsReader)
-	frontend.SettingsStatus, _ = runner.(interaction.SettingsStatusReader)
 	frontend.SettingsActions, _ = runner.(interaction.SettingsActionRunner)
 	frontend.SettingsWriter, _ = runner.(interaction.SettingsWriter)
 	frontend.Files, _ = runner.(interaction.FileCompleter)
@@ -79,7 +78,7 @@ func panelCommands() []interaction.Command {
 	}
 	return []interaction.Command{
 		{Name: "settings", Panel: settings("", false)},
-		{Name: "desktop", Panel: settings("desktop_enabled", false)},
+		{Name: "desktop", Panel: settings("desktop.setup", true)},
 		{Name: "mcp", Interactive: true, Panel: settings("mcp.services", true)},
 		{Name: "context", Panel: &interaction.Panel{View: interaction.PanelUsage}},
 		{Name: "usage", Panel: &interaction.Panel{View: interaction.PanelUsage, Tab: 1}},

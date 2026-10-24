@@ -115,11 +115,7 @@ func (s *interactiveSession) applySettingsReserved(ctx context.Context, request 
 	}
 	model, options, modelErr := resolveModelSettings(s.providers, candidate)
 	changesModel := false
-	changesDesktop := false
 	for _, change := range request.Changes {
-		if change.ID == "desktop_enabled" || change.ID == "desktop_control_mode" {
-			changesDesktop = true
-		}
 		if change.ID == "provider" || change.ID == "model" || change.ID == "thinking" || change.ID == "context_windows" || strings.HasSuffix(change.ID, "_base_url") {
 			changesModel = true
 		}
@@ -128,13 +124,7 @@ func (s *interactiveSession) applySettingsReserved(ctx context.Context, request 
 		return result, modelErr
 	}
 	loop := current.loop
-	tools, systemPrompt := current.tools, current.systemPrompt
-	if changesDesktop {
-		tools, systemPrompt, err = s.sessionTools(candidate, s.web)
-		if err != nil {
-			return result, err
-		}
-	}
+	tools := current.tools
 	if shared && !providerConfigured(s.providers, candidate) {
 		loop = nil
 	}
@@ -150,10 +140,6 @@ func (s *interactiveSession) applySettingsReserved(ctx context.Context, request 
 	result.Committed = true
 	s.stateMu.Lock()
 	s.configuration = candidate
-	if changesDesktop {
-		s.tools, s.systemPrompt = tools, systemPrompt
-		s.desktop.invalidateManagedCatalog(s.guard)
-	}
 	if shared {
 		s.loop = loop
 		if modelErr == nil {
@@ -214,9 +200,6 @@ func (s *interactiveSession) settingsAction(ctx context.Context, revision *uint6
 		changed := result.Committed || len(result.External) > 0
 		result.Revision, warnings = s.endSettingsOperation(changed, changed)
 		result.Warnings = append(result.Warnings, warnings...)
-		if result.Continuation != nil {
-			result.Continuation.Revision = result.Revision
-		}
 		return result, returnErr
 	}
 	return result, returnErr

@@ -82,7 +82,7 @@ type dependencies struct {
 	webBackends       *webBackends
 	saveWebSettings   func(context.Context, config.Paths, config.WebPatch) (config.WebSettings, error)
 	saveWebCredential func(context.Context, config.Paths, string, string) error
-	newDesktop        func(config.Config) (*desktopState, error)
+	newDesktop        func(config.Config) *desktopPreset
 	openMCP           mcpOpenFunc
 }
 
@@ -264,7 +264,6 @@ func (a *application) Print(
 	defer func() { returnErr = errors.Join(returnErr, closeBrowser(ctx, environment.browser)) }()
 	defer environment.web.closeBackend()
 	defer func() { returnErr = errors.Join(returnErr, environment.mcp.Close()) }()
-	defer func() { returnErr = errors.Join(returnErr, environment.desktop.Close()) }()
 	for _, diagnostic := range environment.configuration.Diagnostics {
 		fmt.Fprintln(diagnostics, "aice: "+diagnostic)
 	}
@@ -334,7 +333,7 @@ func (a *application) Print(
 		return nil
 	}
 
-	ctx, scope, err := bindRunScope(ctx, store, environment.desktop, environment.mcp, environment.configuration, environment.model, func() []llm.AgentMessage { return sourceMessages })
+	ctx, scope, err := bindRunScope(ctx, store, environment.mcp, environment.configuration, environment.model, func() []llm.AgentMessage { return sourceMessages })
 	if err != nil {
 		return err
 	}
@@ -413,7 +412,6 @@ func (a *application) Interactive(
 		}
 		returnErr = errors.Join(returnErr, owner.Close())
 	}()
-	defer func() { returnErr = errors.Join(returnErr, environment.desktop.Close()) }()
 	defer func() {
 		if !browserClosed {
 			returnErr = errors.Join(returnErr, closeBrowser(ctx, environment.browser))
@@ -447,7 +445,7 @@ func (a *application) Interactive(
 		tools:         environment.tools,
 		baseTools:     environment.baseTools,
 		web:           environment.web,
-		desktop:       environment.desktop,
+		desktop:       a.newDesktopPreset(environment.configuration),
 		systemPrompt:  environment.systemPrompt,
 		skills:        environment.skills,
 		skillDiags:    environment.skillDiags,
@@ -577,7 +575,6 @@ type runEnvironment struct {
 	// together when startup or Settings publishes a tool/prompt snapshot.
 	baseTools    []agent.Tool
 	web          webState
-	desktop      *desktopState
 	systemPrompt string
 	skills       skill.Catalog
 	skillDiags   []skill.Diagnostic
@@ -668,19 +665,13 @@ func (a *application) prepareRunEnvironment(
 	// Web tools are registered only when a source is usable; the model never
 	// sees a schema without an implementation behind it.
 	webState := bindWeb(a.webBackends(), configured.configuration.Web)
-	desktopState, err := a.newDesktopState(configured.configuration)
-	if err != nil {
-		webState.closeBackend()
-		return nil, err
-	}
 	prepared := false
 	defer func() {
 		if !prepared {
-			_ = desktopState.Close()
 			webState.closeBackend()
 		}
 	}()
-	tools, err = composeTools(baseTools, webState, desktopState, configured.configuration)
+	tools, err = composeTools(baseTools, webState, configured.configuration)
 	if err != nil {
 		return nil, err
 	}
@@ -739,7 +730,6 @@ func (a *application) prepareRunEnvironment(
 		tools:         tools,
 		baseTools:     baseTools,
 		web:           webState,
-		desktop:       desktopState,
 		systemPrompt:  systemPrompt,
 		skills:        discovery.catalog,
 		skillDiags:    discovery.diags,
@@ -858,7 +848,7 @@ type interactiveSession struct {
 	tools          []agent.Tool
 	baseTools      []agent.Tool
 	web            webState
-	desktop        *desktopState
+	desktop        *desktopPreset
 	systemPrompt   string
 	skills         skill.Catalog
 	skillDiags     []skill.Diagnostic
@@ -920,7 +910,7 @@ func (s *interactiveSession) settingsSnapshot() interactiveSettings {
 func (s *interactiveSession) frontend() interaction.Frontend {
 	return interaction.Frontend{
 		Runner: s, State: s, Commands: s, SideThreads: s, Sessions: s, Usage: s,
-		Settings: s, SettingsStatus: s, SettingsActions: s, SettingsWriter: s,
+		Settings: s, SettingsActions: s, SettingsWriter: s,
 		Files: s, Guards: s, Questions: s,
 	}
 }
@@ -928,7 +918,7 @@ func (s *interactiveSession) frontend() interaction.Frontend {
 // sessionTools composes the Session base tools with web and optional
 // capabilities for configuration, and assembles the matching system prompt.
 func (s *interactiveSession) sessionTools(configuration config.Config, web webState) ([]agent.Tool, string, error) {
-	tools, err := composeTools(s.baseTools, web, s.desktop, configuration)
+	tools, err := composeTools(s.baseTools, web, configuration)
 	if err != nil {
 		return nil, "", err
 	}

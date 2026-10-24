@@ -252,7 +252,7 @@ func TestMCPConcurrentGrantRevokeAndCatalogUpdates(t *testing.T) {
 	g.RevokeMCPService(service.Source, service.ServiceID)
 	checkMCPPolicy(t, g, service, "read", DecisionDeny)
 	// Bounded service storage does not evict existing denials or authority.
-	for i := range 128 {
+	for i := range 191 {
 		other := mcpPolicyFixture()
 		other.ServiceID = fmt.Sprint(i)
 		publishMCPPolicy(t, g, other)

@@ -70,11 +70,9 @@ Optional capabilities retain their own owners:
   a frozen catalog. The Loop loads complete schemas at tool-pair boundaries.
   Guard validates bound identities before dispatch; Session retains bounded
   results for local readback. See [MCP](mcp.md).
-- Computer Use: app injects a managed MCP entry; `desktop` owns pinned native
-  admission, sessions and frozen control/image capabilities. Cua owns targeting,
-  tokens, capture and input semantics. The model uses native schemas/results and
-  explicit observations; AICE has no second desktop action loop.
-  See [Computer Use](desktop.md#managed-mcp-boundary).
+- Computer Use: an application of MCP. The `desktop` preset installs the pinned
+  Cua Driver and writes the ordinary `user:cua` service; Cua owns its runtime,
+  permission mode, sessions and input. See [Computer Use](desktop.md).
 - Browser: app owns process-scoped connection and helper lifecycle; the Loop
   remains unaware of browser implementation. See [Browser](browser.md).
 
@@ -108,7 +106,7 @@ Optional capabilities retain their own owners:
 | `internal/config` | Instance-local Viper precedence, effective snapshots, and locked atomic preference/credential persistence |
 | `internal/lockedfile` | Cross-process OS file locks with bounded waits and atomic file replacement, shared by config and Trust |
 | `internal/deps` | Verified ripgrep, Windows Git Bash, pinned agent-browser and Cua provisioning, including upstream browser skill resources |
-| `internal/desktop` | Pinned Cua admission, shared/owned runtime lifecycle, Run sessions, serialized calls, mode/image limits and setup validation; [platform scope](desktop.md) |
+| `internal/desktop` | Computer Use preset: the `cua-driver mcp` service definition and Cua's macOS permission flow; [Computer Use](desktop.md) |
 | `internal/browser` | Process-owned browser names, environment, connection and bounded cleanup; app owns wiring, Loop remains unaware |
 | `internal/update` | Checksum-validated GitHub release updates |
 | `internal/hostpath` | Host path canonicalization, comparison keys, membership, tilde expansion, slash-normalized display |
@@ -167,9 +165,9 @@ service registry or a second runtime.
 When replacing an implementation, update its callers and delete the superseded
 path, adapters, fallback switches and obsolete tests/documentation in the same
 change. Do not maintain parallel implementations for old AICE behavior. An
-upstream protocol required by a current integration, such as the pinned Cua
-Driver, is handled through the current SDK's supported API, not by pinning the
-whole application to an old SDK or rebuilding that protocol in AICE.
+upstream protocol version required by a current integration is handled through
+the current SDK's supported API, not by pinning the whole application to an old
+SDK or rebuilding that protocol in AICE.
 
 Selected non-standard dependencies and their reason:
 
@@ -198,7 +196,7 @@ TUI never reads Skill files. Host Skill directories receive read-only resource
 access through Guard, without bypassing sensitive-file rules.
 
 Formats, limits and user paths live in [Agent Skills](configuration.md#agent-skills).
-Versioned browser/Cua reference material belongs to dependency provisioning;
+Versioned browser reference material belongs to dependency provisioning;
 it is not a second independently scanned catalog. No hot reload or Loop
 middleware is implemented.
 

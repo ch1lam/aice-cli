@@ -29,7 +29,7 @@ func (s *interactiveSession) SlashCommands() []interaction.Command {
 		{Name: "web", Description: "Configure web search services, priority and web fetch", Menu: s.webMenu(), Interactive: true},
 		{Name: "mcp", Description: "Manage MCP services, connection approval and credentials", ArgumentHint: "[action] [service]", Interactive: true,
 			Panel: &interaction.Panel{View: interaction.PanelSettings, Focus: "mcp.services", FocusAction: true}},
-		{Name: "desktop", Description: "Open Computer Use in Settings", Panel: &interaction.Panel{View: interaction.PanelSettings, Focus: "desktop_enabled"}},
+		{Name: "desktop", Description: "Open Computer Use in Settings", Panel: &interaction.Panel{View: interaction.PanelSettings, Focus: "desktop.setup", FocusAction: true}},
 		{
 			Name:        "session",
 			Description: "Show current Session information",

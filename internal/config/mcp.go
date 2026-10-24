@@ -22,8 +22,9 @@ const (
 	mcpCredentialsKey   = "mcp_services"
 	maxMCPSettingsBytes = 1 << 20
 	maxMCPServers       = 64
-	// ManagedCUAServerID cannot be supplied by user or project settings.
-	ManagedCUAServerID = "cua"
+	// MaxMCPServices bounds the effective configuration: the user settings,
+	// project settings and project .mcp.json collections of maxMCPServers each.
+	MaxMCPServices = 3 * maxMCPServers
 )
 
 // MCPSettings is a collection, loaded separately from Viper's deep merge.
@@ -215,8 +216,8 @@ func (s MCPSettings) Validate() error {
 		return fmt.Errorf("config: mcp settings exceed 1 MiB")
 	}
 	for id, server := range s.Servers {
-		if !mcpID(id) || id == ManagedCUAServerID {
-			return fmt.Errorf("config: mcp server ID must be lowercase and cannot use the reserved cua ID")
+		if !mcpID(id) {
+			return fmt.Errorf("config: mcp server ID must start with a lowercase letter and use lowercase letters, digits, - or _")
 		}
 		if err := server.validate(); err != nil {
 			return fmt.Errorf("config: mcp.servers.%s: %w", id, err)

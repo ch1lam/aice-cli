@@ -111,13 +111,6 @@ type SettingsReader interface {
 	ReadSettings(context.Context) (SettingsSnapshot, error)
 }
 
-// SettingsStatusReader supplies the slow Computer Use status row separately
-// from preferences. The revision binds the result to a settings snapshot;
-// even on error, the returned field identifies the row to update.
-type SettingsStatusReader interface {
-	ReadSettingsStatus(context.Context, uint64) (SettingField, error)
-}
-
 type SettingsWriter interface {
 	ApplySettings(context.Context, SettingsRequest) (SettingsResult, error)
 }
@@ -157,7 +150,6 @@ type SettingsActionRunner interface {
 type SettingsActionResult struct {
 	// FocusSetting is a local application navigation request, never server text.
 	FocusSetting       string
-	Continuation       *TaskContinuation
 	Output             string
 	External           []SettingsActionStep
 	Committed, Applied bool

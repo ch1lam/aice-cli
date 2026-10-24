@@ -13,12 +13,11 @@ import (
 )
 
 type interactiveRun struct {
-	session      *interactiveSession
-	prompt       llm.UserMessage
-	sink         interaction.EventSink
-	mailbox      *interaction.Mailbox
-	revision     uint64
-	continuation *interaction.TaskContinuation
+	session  *interactiveSession
+	prompt   llm.UserMessage
+	sink     interaction.EventSink
+	mailbox  *interaction.Mailbox
+	revision uint64
 
 	mu        sync.Mutex
 	isStarted bool
@@ -52,16 +51,6 @@ func (s *interactiveSession) NewRun(
 		return nil, err
 	}
 	defer s.endPreparation()
-	if input.Continuation != nil {
-		copy := *input.Continuation
-		input.Continuation = &copy
-		if input.Prompt != copy.Prompt || len(input.Images) != 0 || len(input.Files) != 0 || len(input.Skills) != 0 {
-			return nil, errDesktopContinuationStale
-		}
-		if err := s.validateDesktopContinuation(&copy); err != nil {
-			return nil, err
-		}
-	}
 	settings := s.settingsSnapshot()
 	if settings.modelErr != nil {
 		return nil, settings.modelErr
@@ -84,13 +73,12 @@ func (s *interactiveSession) NewRun(
 		return nil, err
 	}
 	return &interactiveRun{
-		session:      s,
-		prompt:       prompt,
-		sink:         sink,
-		mailbox:      interaction.NewMailbox(),
-		revision:     revision,
-		continuation: input.Continuation,
-		model:        settings.model,
+		session:  s,
+		prompt:   prompt,
+		sink:     sink,
+		mailbox:  interaction.NewMailbox(),
+		revision: revision,
+		model:    settings.model,
 	}, nil
 }
 
@@ -168,9 +156,6 @@ func (r *interactiveRun) Run(ctx context.Context) (returnErr error) {
 		return err
 	}
 	defer r.session.releaseMainRun()
-	if err := r.session.validateDesktopContinuation(r.continuation); err != nil {
-		return err
-	}
 	snapshot, err := r.session.beginMainRun(r.prompt)
 	if err != nil {
 		return err
@@ -181,7 +166,7 @@ func (r *interactiveRun) Run(ctx context.Context) (returnErr error) {
 	r.mu.Unlock()
 	ctx = withMCPConnectionApprover(ctx, r.session.approveMCPConnection(snapshot.configuration.Paths))
 	ctx = withMCPElicitor(ctx, r.session.elicitMCP)
-	ctx, scope, err := bindRunScope(ctx, r.session.conversation.store, r.session.desktop, snapshot.mcp, snapshot.configuration, snapshot.model, nil)
+	ctx, scope, err := bindRunScope(ctx, r.session.conversation.store, snapshot.mcp, snapshot.configuration, snapshot.model, nil)
 	if err != nil {
 		return err
 	}
@@ -196,7 +181,6 @@ func (r *interactiveRun) Run(ctx context.Context) (returnErr error) {
 	}
 	// This run-local projection includes completed messages even while a tool
 	// group is not yet replay-safe for the conversation's side snapshots.
-	var desktopDisplay desktopDisplayProjection
 	contextHistory := append([]llm.AgentMessage(nil), snapshot.history...)
 	input := scope.input(snapshot.model, snapshot.systemPrompt, snapshot.options, snapshot.history, r.prompt)
 	input.ObserveTools = observeTools
@@ -222,7 +206,6 @@ func (r *interactiveRun) Run(ctx context.Context) (returnErr error) {
 			return nil
 		}
 		display := translateAgentEvent(event)
-		desktopDisplay.decorate(event, display)
 		if display == nil {
 			return nil
 		}

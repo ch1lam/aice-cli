@@ -27,9 +27,7 @@ type MCPPermission struct {
 }
 
 type MCPService struct {
-	Managed                    bool            `json:"managed,omitempty"`
 	Enabled                    bool            `json:"enabled"`
-	SettingsField              string          `json:"settings_field,omitempty"`
 	Key                        string          `json:"key"`
 	Name                       string          `json:"name,omitempty"`
 	Source                     string          `json:"source"`

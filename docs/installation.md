@@ -93,11 +93,10 @@ directory under `~/.aice/bin/cua/`. Native file hashes and licenses are checked;
 Windows also requires the expected Authenticode signature. Pins and provenance
 are maintained in [Cua VENDOR.md](../internal/deps/cua/VENDOR.md).
 
-Setup does not invoke sudo or a package manager, change OS permissions, enable
-autostart, or grant Windows UIAccess. Linux needs the Driver's system libraries
-and a supported X11 display; setup includes choosing a window for a local capture
-test. Installation or a version probe alone does not prove input support.
-See [Computer Use](desktop.md) for setup, platform support and acceptance limits.
+Setup does not invoke sudo or a package manager, enable autostart, or grant
+Windows UIAccess. On macOS it runs Cua's public `permissions grant` flow; Linux
+needs the Driver's system libraries and display access. Installation alone does
+not prove input support. See [Computer Use](desktop.md).
 
 ## Update
 

@@ -16,13 +16,11 @@ import (
 type settingsPanel struct {
 	usage           bool
 	action          *settingsAction
-	continuation    *interaction.TaskContinuation
 	collection      *collectionDraft
 	generation      uint64
 	snapshot        interaction.SettingsSnapshot
 	loading, saving bool
 	cancelRead      context.CancelFunc
-	cancelStatus    context.CancelFunc
 	tab, selection  int
 	positions       map[int]int
 	collapsed       map[string]bool
@@ -81,13 +79,8 @@ func (m *model) refreshSettings() tea.Cmd {
 	if p.cancelRead != nil {
 		p.cancelRead()
 	}
-	if p.cancelStatus != nil {
-		p.cancelStatus()
-		p.cancelStatus = nil
-	}
 	m.settingsGeneration++
 	p.generation = m.settingsGeneration
-	p.continuation = nil
 	p.loading = true
 	read := m.readSettings
 	if p.usage {
@@ -103,9 +96,6 @@ func (m *model) refreshSettings() tea.Cmd {
 
 func (m *model) closeSettings() {
 	if p := m.settings; p != nil {
-		if p.cancelStatus != nil {
-			p.cancelStatus()
-		}
 		if p.cancelRead != nil {
 			p.cancelRead()
 		}
@@ -205,7 +195,7 @@ func (m model) applySettingsRead(message settingsReadResult) (tea.Model, tea.Cmd
 			return m.beginSettingEdit(false)
 		}
 	}
-	return m, m.refreshSettingsStatus()
+	return m, nil
 }
 
 func (m model) applySettingsSave(message settingsSaveResult) (tea.Model, tea.Cmd) {
@@ -225,13 +215,12 @@ func (m model) applySettingsSave(message settingsSaveResult) (tea.Model, tea.Cmd
 	if message.snapshot.Categories != nil {
 		p.snapshot = message.snapshot
 	}
-	status := m.refreshSettingsStatus()
 	if message.err != nil {
 		p.notice = message.err.Error()
 		if p.editing != nil && !p.confirmUnset && p.collection == nil && (p.editing.Kind != interaction.SettingEnum || p.editing.AllowCustom) {
-			return m, tea.Batch(p.input.Focus(), status)
+			return m, p.input.Focus()
 		}
-		return m, status
+		return m, nil
 	}
 	p.editing = nil
 	p.search = false
@@ -243,7 +232,7 @@ func (m model) applySettingsSave(message settingsSaveResult) (tea.Model, tea.Cmd
 	if len(message.result.Warnings) > 0 {
 		p.notice += " · " + strings.Join(message.result.Warnings, "; ")
 	}
-	return m, status
+	return m, nil
 }
 
 func (m *model) submitSetting(change interaction.SettingChange) tea.Cmd {
@@ -255,7 +244,6 @@ func (m *model) submitSettings(changes []interaction.SettingChange) tea.Cmd {
 		return nil
 	}
 	m.invalidateSettingsRead()
-	p.continuation = nil
 	p.saving = true
 	p.notice = "Saving…"
 	p.input.Blur()
@@ -291,7 +279,6 @@ func settingValueText(value interaction.SettingValue, invert bool) string {
 
 func (m model) beginSettingEdit(unset bool) (tea.Model, tea.Cmd) {
 	p := m.settings
-	p.continuation = nil
 	fields := p.fields()
 	if len(fields) == 0 || p.saving {
 		return m, nil
@@ -385,9 +372,6 @@ func (m model) handleSettings(message tea.Msg) (tea.Model, tea.Cmd) {
 			m.requestRunCancellation()
 			return m, nil
 		}
-		if name == "f6" && m.canContinueTask() {
-			return m.continueTask()
-		}
 		if p.action != nil {
 			return m.settingActionKey(key)
 		}
@@ -400,7 +384,6 @@ func (m model) handleSettings(message tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			if p.editing != nil {
-				p.continuation = nil
 				p.editing = nil
 				p.confirmUnset = false
 				p.input.SetValue("")
@@ -580,10 +563,6 @@ func (m *model) invalidateSettingsRead() {
 	p := m.settings
 	if p == nil {
 		return
-	}
-	if p.cancelStatus != nil {
-		p.cancelStatus()
-		p.cancelStatus = nil
 	}
 	if p.cancelRead != nil {
 		p.cancelRead()

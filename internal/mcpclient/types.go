@@ -49,9 +49,6 @@ type StdioConfig struct {
 	Args       []string
 	Dir        string            // explicit absolute working directory
 	Env        map[string]string // explicit additions to the small base allowlist
-	// ReplaceEnvironment supplies the complete environment instead of adding
-	// to the base allowlist. Only Go-required OS variables may be added.
-	ReplaceEnvironment bool
 }
 
 type HTTPConfig struct {

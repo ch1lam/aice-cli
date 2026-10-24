@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"errors"
 
 	"github.com/ch1lam/aice-cli/internal/agent"
 	"github.com/ch1lam/aice-cli/internal/config"
@@ -21,7 +20,6 @@ type runScope struct {
 func bindRunScope(
 	ctx context.Context,
 	store *session.Store,
-	desktop *desktopState,
 	mcp *mcpOwner,
 	configuration config.Config,
 	model llm.Model,
@@ -31,17 +29,13 @@ func bindRunScope(
 	if err != nil {
 		return nil, runScope{}, err
 	}
-	ctx, closeDesktop, err := desktop.bindContext(ctx, configuration, model)
+	ctx, run, err := mcp.bindRun(ctx, model)
 	if err != nil {
 		return nil, runScope{}, err
 	}
-	ctx, run, err := mcp.bindRun(ctx, model)
-	if err != nil {
-		return nil, runScope{}, errors.Join(err, closeDesktop())
-	}
 	return withResultReader(ctx, store, memory), runScope{mcp: run, close: func() error {
 		run.Close()
-		return closeDesktop()
+		return nil
 	}}, nil
 }
 

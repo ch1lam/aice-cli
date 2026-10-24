@@ -51,34 +51,19 @@ type mcpCatalog struct {
 	entries      map[string]mcpCatalogEntry
 	names        map[string]string
 	catalogBytes map[string]int
-	managedCUA   bool
-	grantedTools map[string][]string
 }
 
 func newMCPCatalog(configuration config.MCPConfig, connections map[string]mcpCatalogConnection, gate *guard.Guard) (*mcpCatalog, error) {
-	return buildMCPCatalog(configuration, connections, gate, nil)
-}
-
-func buildMCPCatalog(configuration config.MCPConfig, connections map[string]mcpCatalogConnection, gate *guard.Guard, managed *managedCUACatalogBinding) (*mcpCatalog, error) {
-	if gate == nil || len(configuration.Servers) > 129 || len(connections) > 129 {
+	if gate == nil || len(configuration.Servers) > config.MaxMCPServices || len(connections) > config.MaxMCPServices {
 		return nil, fmt.Errorf("MCP catalog requires a Guard and bounded service inputs")
-	}
-	configuration, connections, err := withManagedCUACatalog(configuration, connections, managed)
-	if err != nil {
-		return nil, err
 	}
 	c := &mcpCatalog{
 		refresh: make(chan struct{}, 1), config: configuration.Clone(), guard: gate,
 		connections: make(map[string]mcpCatalogConnection), scopes: make(map[string]string), entries: make(map[string]mcpCatalogEntry), names: make(map[string]string),
 		catalogBytes: make(map[string]int),
-		managedCUA:   managed != nil,
-		grantedTools: managedCUAToolGrants(managed),
 	}
 	for key := range c.config.Servers {
 		c.scopes[key] = mcpPermissionScope(c.config, key)
-		if managed != nil && key == managedCUAKey {
-			c.scopes[key] += ":managed-cua:" + string(managed.mode) + ":" + managedCUAPolicyVersion
-		}
 	}
 	for key, connection := range connections {
 		if _, found := configuration.Servers[key]; !found || connection == nil {
@@ -384,14 +369,6 @@ func (c *mcpCatalog) publish(server config.MCPServer, connection mcpCatalogConne
 			ToolName: remote.Name, SchemaFingerprint: mcpDigest([]json.RawMessage{remote.InputSchema, remote.OutputSchema})}
 		allowed := c.config.ToolAllowed(server.Key, remote.Name)
 		decision := guard.Decision(permissions.Decision("", remote.Name, binding.SchemaFingerprint))
-		if granted, ok := c.grantedTools[server.Key]; ok {
-			// Application grants narrow discovery and never lift a restriction
-			// or explicit deny. Server metadata cannot supply these grants.
-			allowed = allowed && slices.Contains(granted, remote.Name)
-			if allowed && decision != guard.DecisionDeny {
-				decision = guard.DecisionAllow
-			}
-		}
 		policy.Tools = append(policy.Tools, guard.MCPToolPolicy{Name: remote.Name, SchemaFingerprint: binding.SchemaFingerprint, Allowed: allowed, UserDecision: decision})
 		if !allowed || decision == guard.DecisionDeny {
 			continue
@@ -457,7 +434,7 @@ func mcpConnectionSecrets(server config.MCPServer) []string {
 // initialTools selects already discovered tools for the first request, whole
 // services at a time in key order, while they fit the schema budget. A service
 // that does not fit stays searchable instead of being partially loaded.
-func (c *mcpCatalog) initialTools(budget int64, pinned []string, include func(string) bool) (ids, services []string) {
+func (c *mcpCatalog) initialTools(budget int64, pinned []string) (ids, services []string) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	byService := make(map[string][]string)
@@ -467,7 +444,7 @@ func (c *mcpCatalog) initialTools(budget int64, pinned []string, include func(st
 			budget -= agent.SchemaTokens(entry.Tool.Definition())
 			continue
 		}
-		if entry.binding.Operation != "" || !include(entry.service) {
+		if entry.binding.Operation != "" {
 			continue
 		}
 		byService[entry.service] = append(byService[entry.service], id)

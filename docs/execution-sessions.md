@@ -108,18 +108,10 @@ when the URL passes the shared URL-shape check (malformed URLs, userinfo,
 zone-scoped IPv6 and non-default ports deny). Address validation, redirects
 and body limits run inside the tool, outside the Guard lock. See [Web search
 and fetch](web.md#permissions).
-Enabled Computer Use contributes the application-owned `managed:cua` service,
-not the legacy `desktop_*` tools. Discovery requires a live desktop Run binding;
-selected native operations pass the same identity-bound MCP Guard. Its reviewed
-operation inventory inherits the Computer Use preference without a separate
-per-application approval. Explicit deny, configured restrictions and revoked
-bindings still win under `--yolo`. Ordinary services cannot obtain this authority
-from their name or configuration. Native admission separately checks standard
-mode, identity and OS grants; tool calls cannot install or authorize the helper.
+[Computer Use](desktop.md) is the ordinary MCP service `user:cua`; its tools
+use the same identity-bound MCP Guard and ask like any other service's.
 Workspace file policies do not constrain GUI actions in other applications.
-The old `desktop_*` tools and their Guard toggle have been removed. Those names
-follow ordinary unknown-tool policy and have no executable registration. See
-[Computer Use integration status](desktop.md).
+Removed `desktop_*` names follow ordinary unknown-tool policy.
 `request_user_input` is a known interactive-only tool: the gate allows it
 without an extra confirmation step, and answers never change the
 authorization scope (`--yolo` never answers for the user). The tool is

@@ -33,14 +33,15 @@ func TestParseMCPServersConvertsPortableEntries(t *testing.T) {
 			"Authorization": {Env: "DOCS_TOKEN", Prefix: "Bearer "},
 		}},
 		"off": {Enabled: new(bool), Transport: "stdio", Command: "/bin/server"},
+		"cua": {Transport: "stdio", Command: "cua-driver", Args: []string{"mcp"}},
 	}
 	if !reflect.DeepEqual(servers, want) {
 		t.Fatalf("servers = %#v", servers)
 	}
-	if len(skipped) != 4 {
+	if len(skipped) != 3 {
 		t.Fatalf("skipped = %v", skipped)
 	}
-	for _, name := range []string{"literal", "legacy", "expanded", "cua"} {
+	for _, name := range []string{"literal", "legacy", "expanded"} {
 		if !strings.Contains(strings.Join(skipped, "\n"), `"`+name+`"`) {
 			t.Fatalf("%s was not reported: %v", name, skipped)
 		}

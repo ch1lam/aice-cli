@@ -69,7 +69,7 @@ func TestSettingsDisclosurePagesBeforeActionAndSharesMouseGeometry(t *testing.T)
 func TestSettingsBooleanEnableUsesDomainAction(t *testing.T) {
 	t.Parallel()
 	m := panelModel(t, 80, 24)
-	m.settings.snapshot.Fields = []interaction.SettingField{{ID: "desktop_enabled", Category: "models", Kind: interaction.SettingBool, Value: interaction.SettingValue{Kind: interaction.SettingBool}, Action: &interaction.Command{Name: "desktop"}, Arguments: "setup"}}
+	m.settings.snapshot.Fields = []interaction.SettingField{{ID: "desktop.setup", Category: "models", Kind: interaction.SettingBool, Value: interaction.SettingValue{Kind: interaction.SettingBool}, Action: &interaction.Command{Name: "desktop"}, Arguments: "setup"}}
 	started := false
 	m.runSettingsAction = func(a *settingsAction, revision uint64) tea.Cmd {
 		started = true

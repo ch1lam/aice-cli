@@ -60,7 +60,7 @@ func (m model) submit() (model, tea.Cmd, bool) {
 	return m.beginSubmittedRun(input)
 }
 
-// Composer submission and explicit Settings continuation share run startup.
+// Composer submission starts a run through this shared path.
 // Their callers own whether the current composer draft is consumed.
 func (m model) beginSubmittedRun(input interaction.RunInput) (model, tea.Cmd, bool) {
 	m.submittedInput = &input

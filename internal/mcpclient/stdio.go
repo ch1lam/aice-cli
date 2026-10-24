@@ -43,11 +43,9 @@ func openStdio(config StdioConfig, limit int, receipts *receipts) (mcp.Transport
 		return nil, nil, ErrConfig
 	}
 	env := make(map[string]string)
-	if !config.ReplaceEnvironment {
-		for _, key := range baseEnvironment {
-			if value, ok := os.LookupEnv(key); ok {
-				env[key] = value
-			}
+	for _, key := range baseEnvironment {
+		if value, ok := os.LookupEnv(key); ok {
+			env[key] = value
 		}
 	}
 	for key, value := range config.Env {
