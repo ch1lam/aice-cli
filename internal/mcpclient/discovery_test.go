@@ -41,8 +41,8 @@ func TestCurrentProtocolDiscoveryAndFreshReads(t *testing.T) {
 					case "resources/read":
 						reads.Add(1)
 					}
-					// A server TTL must not hide explicit refreshes or lose exact
-					// schemas through the SDK's decoded-result cache.
+					// Complete catalogs are reused for their ttlMs with exact
+					// schemas; explicit resource reads always reach the server.
 					return strings.Replace(fixtureResult(req), "{", `{"ttlMs":60000,`, 1)
 				}}
 				c := openFixture(t, f, func(c *Config) { c.ProtocolVersion = pin })
@@ -52,7 +52,7 @@ func TestCurrentProtocolDiscoveryAndFreshReads(t *testing.T) {
 				for range 2 {
 					assertRoundTrip(t, c)
 				}
-				if discoveries.Load() != 1 || lists.Load() != 6 || reads.Load() != 2 || f.calls.Load() != 2 {
+				if discoveries.Load() != 1 || lists.Load() != 3 || reads.Load() != 2 || f.calls.Load() != 2 {
 					t.Fatal("unexpected discovery/cache/replay behavior", discoveries.Load(), lists.Load(), reads.Load(), f.calls.Load())
 				}
 			})
@@ -120,5 +120,41 @@ func TestCurrentProtocolSubscriptions(t *testing.T) {
 	}
 	if err := c.Close(); err != nil {
 		t.Fatal("subscription cleanup", err)
+	}
+}
+
+// A catalog without ttlMs is fetched every time; an expired one is fetched again.
+func TestCatalogTTLExpiryAndAbsence(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		ttl   string
+		lists int32
+	}{
+		// The fixture catalog has two pages, so each full fetch lists twice.
+		{"absent", "", 6},
+		{"expired", `"ttlMs":1,`, 6},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var lists atomic.Int32
+			f := &httpFixture{result: func(req fixtureRequest) string {
+				switch req.Method {
+				case "server/discover":
+					return fixtureDiscover
+				case "tools/list":
+					lists.Add(1)
+				}
+				return strings.Replace(fixtureResult(req), "{", "{"+tc.ttl, 1)
+			}}
+			c := openFixture(t, f, nil)
+			for range 3 {
+				if catalog, err := c.Tools(t.Context()); err != nil || !catalog.Complete {
+					t.Fatal(catalog, err)
+				}
+				time.Sleep(5 * time.Millisecond)
+			}
+			if lists.Load() != tc.lists {
+				t.Fatalf("tools/list calls = %d, want %d", lists.Load(), tc.lists)
+			}
+		})
 	}
 }

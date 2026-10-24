@@ -37,6 +37,9 @@ type Client struct {
 	// during that operation are answered in its context.
 	activeMu sync.Mutex
 	active   context.Context
+	// Complete catalogs cached for their ttlMs; see catalogCache.
+	toolCache     catalogCache[Tool]
+	resourceCache catalogCache[Resource]
 }
 
 // Open initializes one connection. Canceling ctx bounds initialization; after

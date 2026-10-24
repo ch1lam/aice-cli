@@ -580,10 +580,13 @@ and notices. List notifications invalidate generations before dispatch.
 Duplicates, repeated cursors, invalid entries, changed pagination and failed pages
 are incomplete discovery, not empty success. The client checks schema object
 shape; the tool adapter owns the effective model/argument contract.
-SDK subscriptions deliver current-protocol list changes. Application-owned
-catalog freshness and explicit resource reads take precedence over server TTL
-hints: decoded SDK results are marked immediately stale so each explicit fetch
-passes through the bounded SDK result path.
+SDK subscriptions deliver current-protocol list changes. A complete tool or
+resource catalog whose pages carry `ttlMs` is reused for the smallest page TTL,
+at most ten minutes, with its exact wire schemas; a list-changed notification
+or a different connection invalidates it. Catalogs without `ttlMs` (older
+protocols) and incomplete catalogs are fetched every time. The SDK's own
+decoded cache is never used because it would round schema numbers, and explicit
+resource reads always reach the server.
 
 Default hard limits are 16 MiB per incoming JSON/SSE frame, 4 MiB catalog pages,
 2,000 entries, 20 pages and 1 MiB arguments. Internal callers may raise frames to

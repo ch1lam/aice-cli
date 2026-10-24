@@ -3,22 +3,62 @@ package mcpclient
 import (
 	"context"
 	"encoding/json"
+	"slices"
+	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+// maxCatalogTTL bounds a server's freshness hint for a complete catalog.
+const maxCatalogTTL = 10 * time.Minute
+
 type catalogPage[T any] struct {
 	items    []T
 	next     string
+	ttl      time.Duration
 	received receipt
 }
+
+// catalogCache keeps one complete catalog for its server-advertised ttlMs.
+// A list_changed notification advances the generation and invalidates it; a
+// result without ttlMs (older protocols) is never cached.
+type catalogCache[T any] struct {
+	mu      sync.Mutex
+	catalog Catalog[T]
+	expires time.Time
+}
+
+func (c *catalogCache[T]) get(generation uint64, now time.Time) (Catalog[T], bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !c.catalog.Complete || c.catalog.Generation != generation || !now.Before(c.expires) {
+		return Catalog[T]{}, false
+	}
+	copy := c.catalog
+	copy.Items = slices.Clone(c.catalog.Items)
+	return copy, true
+}
+
+func (c *catalogCache[T]) put(catalog Catalog[T], ttl time.Duration, now time.Time) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !catalog.Complete || ttl <= 0 {
+		c.catalog, c.expires = Catalog[T]{}, time.Time{}
+		return
+	}
+	c.catalog, c.expires = catalog, now.Add(min(ttl, maxCatalogTTL))
+	c.catalog.Items = slices.Clone(catalog.Items)
+}
+
+func pageTTL(ms int) time.Duration { return time.Duration(max(ms, 0)) * time.Millisecond }
 
 func (c *Client) Tools(ctx context.Context) (Catalog[Tool], error) {
 	if !c.info.Tools {
 		return Catalog[Tool]{Complete: true, Generation: c.ToolGeneration()}, ErrUnsupported
 	}
-	return listCatalog(ctx, c, &c.toolGeneration,
+	return listCatalog(ctx, c, &c.toolGeneration, &c.toolCache,
 		func(ctx context.Context, cursor string) (catalogPage[Tool], error) {
 			c.receipts.begin("tools/list")
 			page, err := c.session.ListTools(ctx, &mcp.ListToolsParams{Cursor: cursor})
@@ -26,8 +66,9 @@ func (c *Client) Tools(ctx context.Context) (Catalog[Tool], error) {
 			if page == nil {
 				return result, err
 			}
-			// App owns freshness. Never reuse decoded schemas rounded by the SDK.
-			page.TTLMs = 0
+			// This client caches exact wire schemas itself; the SDK's decoded
+			// cache would round them, so it never serves this page again.
+			result.ttl, page.TTLMs = pageTTL(page.TTLMs), 0
 			if err != nil {
 				return result, err
 			}
@@ -62,7 +103,7 @@ func (c *Client) Resources(ctx context.Context) (Catalog[Resource], error) {
 	if !c.info.Resources {
 		return Catalog[Resource]{Complete: true, Generation: c.ResourceGeneration()}, ErrUnsupported
 	}
-	return listCatalog(ctx, c, &c.resourceGeneration,
+	return listCatalog(ctx, c, &c.resourceGeneration, &c.resourceCache,
 		func(ctx context.Context, cursor string) (catalogPage[Resource], error) {
 			c.receipts.begin("resources/list")
 			page, err := c.session.ListResources(ctx, &mcp.ListResourcesParams{Cursor: cursor})
@@ -70,7 +111,7 @@ func (c *Client) Resources(ctx context.Context) (Catalog[Resource], error) {
 			if page == nil {
 				return result, err
 			}
-			page.TTLMs = 0
+			result.ttl, page.TTLMs = pageTTL(page.TTLMs), 0
 			if err != nil || page.Resources == nil {
 				return result, ErrProtocol
 			}
@@ -89,9 +130,12 @@ func (c *Client) Resources(ctx context.Context) (Catalog[Resource], error) {
 		})
 }
 
-func listCatalog[T any](ctx context.Context, c *Client, generation *atomic.Uint64,
+func listCatalog[T any](ctx context.Context, c *Client, generation *atomic.Uint64, cache *catalogCache[T],
 	fetch func(context.Context, string) (catalogPage[T], error), identity func(T) (string, bool),
 ) (Catalog[T], error) {
+	if cached, ok := cache.get(generation.Load(), time.Now()); ok {
+		return cached, ctx.Err()
+	}
 	result := Catalog[T]{Generation: generation.Load()}
 	ctx, release, err := c.acquire(ctx)
 	if err != nil {
@@ -100,7 +144,7 @@ func listCatalog[T any](ctx context.Context, c *Client, generation *atomic.Uint6
 	}
 	defer release()
 	result.Generation = generation.Load()
-	cursor, size := "", 0
+	cursor, size, ttl := "", 0, time.Duration(-1)
 	cursors, names := make(map[string]bool), make(map[string]bool)
 	for range c.limits.Pages {
 		page, fetchErr := fetch(ctx, cursor)
@@ -119,6 +163,9 @@ func listCatalog[T any](ctx context.Context, c *Client, generation *atomic.Uint6
 			return result, ErrProtocol
 		}
 		cursor = page.next
+		if ttl < 0 || page.ttl < ttl {
+			ttl = page.ttl
+		}
 		for _, item := range page.items {
 			name, valid := identity(item)
 			if !valid || names[name] {
@@ -138,6 +185,7 @@ func listCatalog[T any](ctx context.Context, c *Client, generation *atomic.Uint6
 		}
 		if cursor == "" {
 			result.Complete = true
+			cache.put(result, ttl, time.Now())
 			return result, nil
 		}
 		if cursors[cursor] {
