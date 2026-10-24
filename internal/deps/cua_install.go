@@ -33,7 +33,7 @@ type cuaBundleInstaller struct {
 	options      Options
 	applications string
 	artifact     CuaArtifact
-	verify       func(context.Context, string) error
+	verify       func(context.Context, string) (string, error)
 	publish      func(string, string) error
 }
 
@@ -44,12 +44,11 @@ func (i cuaBundleInstaller) install(ctx context.Context) (result CuaInstallResul
 	bundle := filepath.Join(i.applications, "CuaDriver.app")
 	installation := CuaInstallation{Bundle: bundle, Binary: filepath.Join(bundle, "Contents", "MacOS", "cua-driver"), Version: CuaDriverVersion}
 	// Reuse can be read-only even when helper downloads are disabled. Never
-	// trust a same-named PATH binary or replace an unverified existing App.
+	// trust a same-named PATH binary or replace an existing App. A Cua-signed
+	// App of another version is reused: Computer Use talks to it only through
+	// MCP, and the shared App may be updated by Cua's own updater.
 	if _, err := os.Lstat(bundle); err == nil {
-		if err := i.verify(ctx, bundle); err != nil {
-			return result, fmt.Errorf("Cua App already exists but is incompatible; existing files were preserved: %w", err)
-		}
-		return CuaInstallResult{Installation: installation, Reused: true}, nil
+		return i.reuse(ctx, bundle, installation, "Cua App already exists but is incompatible; existing files were preserved")
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return result, err
 	}
@@ -68,10 +67,7 @@ func (i cuaBundleInstaller) install(ctx context.Context) (result CuaInstallResul
 		}
 	}()
 	if _, err := os.Lstat(bundle); err == nil {
-		if err := i.verify(ctx, bundle); err != nil {
-			return result, fmt.Errorf("another installation appeared and was preserved: %w", err)
-		}
-		return CuaInstallResult{Installation: installation, Reused: true}, nil
+		return i.reuse(ctx, bundle, installation, "another installation appeared and was preserved")
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return result, err
 	}
@@ -98,8 +94,8 @@ func (i cuaBundleInstaller) install(ctx context.Context) (result CuaInstallResul
 		return result, err
 	}
 	stagedBundle := filepath.Join(stage, "CuaDriver.app")
-	if err := i.verify(ctx, stagedBundle); err != nil {
-		return result, fmt.Errorf("Cua staged App verification failed: %w", err)
+	if version, err := i.verify(ctx, stagedBundle); err != nil || version != CuaDriverVersion {
+		return result, fmt.Errorf("Cua staged App verification failed: %w", errors.Join(err, errors.New("staged App must report the pinned version")))
 	}
 	if err := ctx.Err(); err != nil {
 		return result, err
@@ -120,6 +116,19 @@ func (i cuaBundleInstaller) install(ctx context.Context) (result CuaInstallResul
 		return result, fmt.Errorf("publish Cua App (existing files preserved): %w", err)
 	}
 	result.Installation, result.Installed = installation, true
+	return result, nil
+}
+
+func (i cuaBundleInstaller) reuse(ctx context.Context, bundle string, installation CuaInstallation, rejected string) (CuaInstallResult, error) {
+	version, err := i.verify(ctx, bundle)
+	if err != nil {
+		return CuaInstallResult{}, fmt.Errorf("%s: %w", rejected, err)
+	}
+	result := CuaInstallResult{Installation: installation, Reused: true}
+	if version != CuaDriverVersion {
+		result.Installation.Version = version
+		result.Warnings = append(result.Warnings, fmt.Sprintf("Using the installed CuaDriver.app %s; AICE pins %s for new installations", version, CuaDriverVersion))
+	}
 	return result, nil
 }
 

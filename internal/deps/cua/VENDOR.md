@@ -1,43 +1,31 @@
 # Cua Driver provenance
 
-The native helper is pinned to **0.30.4**, release
-[`cua-driver-rs-v0.30.4`](https://github.com/trycua/cua/releases/tag/cua-driver-rs-v0.30.4),
-source commit `bf6c76786d938070f4ecf1e44004752f69f518b8`.
-The helper is MIT licensed; preserve LICENSE with installations. AICE does
-not embed its Node/Python SDK, perception extensions, or browser-profile tools.
+The native helper is pinned to **0.38.0**, release
+[`cua-driver-rs-v0.38.0`](https://github.com/trycua/cua/releases/tag/cua-driver-rs-v0.38.0),
+source commit `85e2b1318bd77ccf3cfa88ccdf875a4bb7eaed19`. GitHub marks every
+`cua-driver-rs` release as a pre-release so the repository-wide latest pointer
+stays on another product; 0.38.0 is the version Cua's own `check-update`
+reports as latest. The helper is MIT licensed; preserve LICENSE with
+installations. AICE does not embed its Node/Python SDK, perception extensions
+or browser-profile tools.
 
 The adjacent upstream release manifest has SHA-256
-`df3cdde0a4b2c1260abe548ffe3b6ca6967935d131b084e9a826b815b02fe59c`.
-It and GitHub's release asset digests agree with the pins in `cua.go`.
-All five full distribution archives (macOS universal and Windows/Linux on
-amd64/arm64) were downloaded and independently hashed on 2026-09-30. The
-selected Linux/Windows executable bytes supply the per-file hashes in
-`cua_install_native.go`; no unverified executable digest is carried forward.
+`d25e212faf86143f96ad77da7f9145c75b54ffd1164675077a30a5a8f2af59be`.
+On 2026-10-25 the five full distribution archives (macOS universal and
+Windows/Linux on amd64/arm64) were downloaded and hashed; the digests agree
+with `SHA256SUMS`, the release manifest and GitHub's asset digests, and with
+the pins in `cua.go`. The Linux/Windows executable bytes inside those archives
+supply the per-file hashes in `cua_install_native.go`; the installed file set
+is unchanged from earlier pins and the archive LICENSE matches the embedded one.
 
-The staged macOS App passed `codesign --verify --deep --strict` with the Cua
-signing requirement and `spctl --assess --type execute`. Its signed identity
-remains bundle `com.trycua.driver`, Developer ID team `YCK386LBJ7` (Cua AI, Inc.).
-The same verified App was installed at `/Applications/CuaDriver.app` on
-2026-09-30 and reports 0.30.4. The previous App and local AICE binary were
-preserved outside the installation before replacement. Do not bypass signature
-failures by re-signing or removing quarantine.
-
-The 15 macOS schemas were exported by the verified signed binary using
-`dump-docs --type mcp` with an isolated home and telemetry/update checks disabled.
-The Linux arm64 binary exported the same finite metadata inventory as an
-unprivileged user in a disposable Debian container with libX11, libXi and
-libxkbcommon installed. These commands do not access a desktop. The two Windows
-status schemas were reviewed in the fixed source; Windows binaries were not
-executed and native Authenticode trust was not tested on this host.
-The updated Linux arm64 private installer also passed its native install and
-read-only reuse test in that container.
-
-Version 0.30.4 changes macOS foreground pixel clicks to HID delivery that moves
-the physical pointer and leaves it at the target; it also fixes per-display
-foreground-window verification and cursor-theme hotspot transforms. The
-main-screen-only macOS cursor overlay limitation remains. Archive integrity,
-metadata exports and schema review do not establish native input, focus, cursor
-alignment or real-application acceptance.
+The extracted macOS App passed `codesign --verify --deep --strict` with the Cua
+signing requirement (bundle `com.trycua.driver`, Developer ID team
+`YCK386LBJ7`, Cua AI, Inc.) and `spctl --assess --type execute`, and reports
+`cua-driver 0.38.0`. Do not bypass signature failures by re-signing or
+removing quarantine. A new installation must report the pinned version; an
+existing Cua-signed `/Applications/CuaDriver.app` of another version is reused
+with a warning, because Computer Use talks to it only through MCP and Cua's
+own updater may manage that shared App.
 
 No upstream installer is executed. The published top-level install.sh delegates
 to a secondary installer and includes skill/PATH integration outside AICE's

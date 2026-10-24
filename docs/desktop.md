@@ -18,7 +18,8 @@ Use `/desktop` or Settings → Tools & Network → Computer Use.
 
 **Set up / Repair** shows a disclosure, then:
 
-1. installs or reuses the pinned Cua Driver (see [Installation](installation.md#computer-use-helper));
+1. installs the pinned Cua Driver 0.38.0, or reuses an existing verified
+   installation (see [Installation](installation.md#computer-use-helper));
 2. on macOS, runs `cua-driver permissions grant`, which launches CuaDriver through
    LaunchServices so Accessibility and Screen Recording are granted to the
    CuaDriver app and checks live capture (four-minute deadline; cancelling
@@ -74,5 +75,7 @@ install and grant functions ([preset](../internal/desktop/preset_test.go),
 [Settings TUI](../internal/app/settings_tui_test.go)). On macOS 2026-10-24,
 `cua-driver mcp` 0.30.4 initialized over stdio with protocol `2025-06-18`,
 started the CuaDriver.app daemon and listed 58 tools with 1.6 KB of server
-instructions. Real-model desktop tasks, Linux and Windows remain unverified in
+instructions. The 0.38.0 archives passed the signature and file-hash gates in
+[Verification](collaboration.md#computer-use-checks), but its runtime was not
+installed here. Real-model desktop tasks, Linux and Windows remain unverified in
 this design; Cua's own platform limits apply.

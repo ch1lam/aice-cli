@@ -41,15 +41,15 @@ func TestNativeCuaArtifactExtraction(t *testing.T) {
 		t.Fatal(err)
 	}
 	app := filepath.Join(stage, "CuaDriver.app")
-	if err := verifyCuaApp(t.Context(), app); err != nil {
-		t.Fatal(err)
+	if version, err := verifyCuaApp(t.Context(), app); err != nil || version != CuaDriverVersion {
+		t.Fatal(version, err)
 	}
 	destination := filepath.Join(t.TempDir(), "CuaDriver.app")
 	if err := publishCuaApp(app, destination); err != nil {
 		t.Fatal(err)
 	}
-	if err := verifyCuaApp(context.Background(), destination); err != nil {
-		t.Fatal(err)
+	if version, err := verifyCuaApp(context.Background(), destination); err != nil || version != CuaDriverVersion {
+		t.Fatal(version, err)
 	}
 	other := filepath.Join(t.TempDir(), "CuaDriver.app")
 	if err := os.Mkdir(other, 0755); err != nil {

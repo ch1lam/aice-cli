@@ -30,6 +30,9 @@ func syntheticCuaArchive(t *testing.T, extra ...tar.Header) []byte {
 	prefix := "cua-driver-rs-" + CuaDriverVersion + "-darwin-universal/"
 	for _, name := range []string{"CuaDriver.app/Contents/Info.plist", "CuaDriver.app/Contents/_CodeSignature/CodeResources", "CuaDriver.app/Contents/MacOS/cua-driver", "cua_driver_node_runtime.node", "cua-driver"} {
 		body := []byte("synthetic " + name)
+		if name == "CuaDriver.app/Contents/MacOS/cua-driver" {
+			body = []byte("synthetic " + CuaDriverVersion) // the synthetic version report
+		}
 		if err := w.WriteHeader(&tar.Header{Name: prefix + name, Mode: 0755, Size: int64(len(body)), Typeflag: tar.TypeReg}); err != nil {
 			t.Fatal(err)
 		}
@@ -58,15 +61,15 @@ func syntheticCuaInstaller(t *testing.T, data []byte) (cuaBundleInstaller, *atom
 		}
 		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(data)), ContentLength: int64(len(data)), Header: make(http.Header)}, nil
 	})}})
-	return cuaBundleInstaller{options: options, applications: t.TempDir(), artifact: CuaArtifact{Name: "synthetic.tar.gz", SHA256: fmt.Sprintf("%x", sha256.Sum256(data))}, verify: func(_ context.Context, path string) error {
+	return cuaBundleInstaller{options: options, applications: t.TempDir(), artifact: CuaArtifact{Name: "synthetic.tar.gz", SHA256: fmt.Sprintf("%x", sha256.Sum256(data))}, verify: func(_ context.Context, path string) (string, error) {
 		body, err := os.ReadFile(filepath.Join(path, "Contents", "MacOS", "cua-driver"))
 		if err != nil {
-			return err
+			return "", err
 		}
 		if !bytes.HasPrefix(body, []byte("synthetic ")) {
-			return errors.New("bad synthetic binary")
+			return "", errors.New("bad synthetic binary")
 		}
-		return nil
+		return strings.TrimSpace(strings.TrimPrefix(string(body), "synthetic ")), nil
 	}, publish: os.Rename}, count
 }
 
@@ -116,7 +119,7 @@ func TestCuaInstallationFailuresPreserveExternalState(t *testing.T) {
 			case "checksum":
 				i.artifact.SHA256 = strings.Repeat("0", 64)
 			case "signature":
-				i.verify = func(context.Context, string) error { return errors.New("signature rejected") }
+				i.verify = func(context.Context, string) (string, error) { return "", errors.New("signature rejected") }
 			case "publish":
 				i.publish = func(string, string) error { return errors.New("destination appeared") }
 			case "license":
@@ -193,5 +196,29 @@ func TestCuaInstallationLockCancellation(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(i.applications, ".aice-cua-install.lock")); err != nil {
 		t.Fatal("another owner's lock removed")
+	}
+}
+
+// A Cua-signed App of another version is reused with a warning; only a new
+// download must report the pinned version.
+func TestCuaInstallationVersionPolicy(t *testing.T) {
+	t.Parallel()
+	i, count := syntheticCuaInstaller(t, syntheticCuaArchive(t))
+	binary := filepath.Join(i.applications, "CuaDriver.app", "Contents", "MacOS", "cua-driver")
+	if err := os.MkdirAll(filepath.Dir(binary), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(binary, []byte("synthetic 0.30.4"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	result, err := i.install(t.Context())
+	if err != nil || !result.Reused || result.Installation.Version != "0.30.4" || len(result.Warnings) != 1 || count.Load() != 0 {
+		t.Fatalf("existing older App = %#v, %v", result, err)
+	}
+
+	fresh, _ := syntheticCuaInstaller(t, syntheticCuaArchive(t))
+	fresh.verify = func(context.Context, string) (string, error) { return "0.0.1", nil }
+	if result, err := fresh.install(t.Context()); err == nil || result.Installed {
+		t.Fatalf("staged App of another version was published: %#v", result)
 	}
 }

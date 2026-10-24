@@ -184,7 +184,7 @@ Installer artifact checks use already downloaded archives and do not download,
 execute desktop actions or grant OS permissions:
 
 ```sh
-AICE_CUA_TEST_ARCHIVE=/absolute/path/to/cua-driver-rs-0.30.4-darwin-universal.tar.gz \
+AICE_CUA_TEST_ARCHIVE=/absolute/path/to/cua-driver-rs-0.38.0-darwin-universal.tar.gz \
   go test -tags=integration ./internal/deps -run '^TestNativeCuaArtifactExtraction$' -v
 AICE_CUA_TEST_ARTIFACTS=/absolute/path/to/archives \
   go test -tags=integration ./internal/deps -run '^TestCuaNativeReleaseArchives$' -v

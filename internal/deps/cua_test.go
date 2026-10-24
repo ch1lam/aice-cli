@@ -14,7 +14,7 @@ func TestCuaArtifactsMatchPinnedRelease(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if fmt.Sprintf("%x", sha256.Sum256(data)) != "df3cdde0a4b2c1260abe548ffe3b6ca6967935d131b084e9a826b815b02fe59c" {
+	if fmt.Sprintf("%x", sha256.Sum256(data)) != "d25e212faf86143f96ad77da7f9145c75b54ffd1164675077a30a5a8f2af59be" {
 		t.Fatal("release manifest changed")
 	}
 	var manifest struct {
