@@ -636,7 +636,8 @@ structured data; otherwise a separate text block shows an explicitly incomplete
 raw UTF-8 prefix. It preserves numeric spelling and is never presented as a
 complete JSON document. Unused content budget can extend that preview.
 Images consume the existing 1,200-token estimate and require at most 4 MiB of
-view bytes. A clipping notice supplies callable `tool_result_read` JSON arguments
+view bytes; a text-only model receives a [text notice](contracts.md#structured-tool-outcomes)
+in place of each image. A clipping notice supplies callable `tool_result_read` JSON arguments
 with the source's exact `call_id`, selecting structured data when present or
 metadata otherwise. If an unusually long selector cannot fit, the notice points
 to the exact ID in the tool-call envelope instead of inventing a shortened ID.

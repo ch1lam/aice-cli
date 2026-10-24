@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/ch1lam/aice-cli/internal/agent"
@@ -16,6 +17,7 @@ func TestLoopPreservesExplicitPartialOutcome(t *testing.T) {
 	for _, state := range []llm.ExecutionState{llm.ExecutionReturned, llm.ExecutionUnknown} {
 		t.Run(string(state), func(t *testing.T) {
 			modelInfo := testModel()
+			modelInfo.InputModalities = []llm.InputModality{llm.InputModalityText, llm.InputModalityImage}
 			first := assistantMessage(modelInfo, llm.StopReasonToolUse, toolCallPart("call", "remote", `{}`))
 			last := assistantMessage(modelInfo, llm.StopReasonStop, textPart("inspect before retry"))
 			model := &scriptedModel{scripts: []*streamScript{{events: terminalEvents(first)}, {events: terminalEvents(last)}}}
@@ -63,5 +65,27 @@ func TestLoopInvalidExplicitOutcomeRemainsUnknown(t *testing.T) {
 	got := result.ModelRounds[0].ToolResults[0]
 	if got.Details == nil || got.Details.State != llm.ExecutionUnknown || got.Details.Loss == "" || !got.IsError || len(tool.calls) != 1 {
 		t.Fatalf("invalid outcome lost uncertainty: %#v", got)
+	}
+}
+
+func TestTextOnlyModelRequestOmitsToolResultImages(t *testing.T) {
+	t.Parallel()
+	modelInfo := testModel()
+	first := assistantMessage(modelInfo, llm.StopReasonToolUse, toolCallPart("call", "screenshot", `{}`))
+	last := assistantMessage(modelInfo, llm.StopReasonStop, textPart("described"))
+	model := &scriptedModel{scripts: []*streamScript{{events: terminalEvents(first)}, {events: terminalEvents(last)}}}
+	tool := newFakeTool("screenshot", func(context.Context, llm.ToolCall) (llm.ToolResult, error) {
+		return llm.ToolResult{Content: []llm.ContentPart{textPart("window"), {Type: llm.ContentTypeImage, Image: &llm.ImageContent{Data: []byte("png"), MIMEType: "image/png"}}}}, nil
+	})
+	result, err := mustLoop(t, model, []agent.Tool{tool}).Run(t.Context(), testInput(modelInfo, mustPrompt(t, "look")), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if source := result.ModelRounds[0].ToolResults[0]; len(source.Content) != 2 || source.Content[1].Image == nil {
+		t.Fatal("recorded source lost its image")
+	}
+	view := model.requests[1].Messages[len(model.requests[1].Messages)-1].(llm.ToolResultMessage)
+	if len(view.Content) != 2 || view.Content[0].Text != "window" || view.Content[1].Type != llm.ContentTypeText || !strings.Contains(view.Content[1].Text, "image/png omitted") {
+		t.Fatalf("request view = %#v", view.Content)
 	}
 }

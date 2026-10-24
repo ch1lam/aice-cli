@@ -59,6 +59,9 @@ func (e *runExecution) requestForHistory(
 		return llm.Request{}, fmt.Errorf("agent: project history: %w", err)
 	}
 	boundedResults := llm.BoundToolResultViews(messages, e.input.ResultViewTokens)
+	if !slices.Contains(e.input.Model.InputModalities, llm.InputModalityImage) {
+		boundedResults = omitToolResultImages(messages) || boundedResults
+	}
 	request := llm.Request{
 		Model:             e.input.Model,
 		SystemPrompt:      e.input.SystemPrompt,
@@ -122,4 +125,32 @@ func checkCompactionThreshold(request llm.Request) error {
 		compactionThreshold,
 		contextWindow,
 	)
+}
+
+// omitToolResultImages keeps a text-only model's request valid when a tool,
+// such as an MCP service, returned images. Only the projected request changes;
+// the recorded source result keeps its images for display and readback.
+func omitToolResultImages(messages []llm.Message) bool {
+	omitted := false
+	for i, message := range messages {
+		result, ok := message.(llm.ToolResultMessage)
+		if !ok || !slices.ContainsFunc(result.Content, func(part llm.ContentPart) bool { return part.Type == llm.ContentTypeImage }) {
+			continue
+		}
+		content := make([]llm.ContentPart, len(result.Content))
+		for j, part := range result.Content {
+			content[j] = part
+			if part.Type == llm.ContentTypeImage {
+				mime := "image"
+				if part.Image != nil && part.Image.MIMEType != "" {
+					mime = part.Image.MIMEType
+				}
+				content[j] = llm.NewTextContent("[" + mime + " omitted: the current model does not accept image input. The recorded result keeps it; use an image-capable model to inspect it.]").Part()
+			}
+		}
+		result.Content = content
+		messages[i] = result
+		omitted = true
+	}
+	return omitted
 }

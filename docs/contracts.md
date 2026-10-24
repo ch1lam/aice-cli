@@ -98,6 +98,12 @@ is bounded to 1 MiB of valid UTF-8 JSON. A loss notice describes missing source
 data, not model-only clipping, and must not promise recovery of unsaved bytes.
 Constructors, nested result clones and Session snapshots copy mutable details
 and image payloads. No protocol SDK values or new message roles are introduced.
+
+When the request model lacks the `image` input modality, the Loop's request
+projection replaces each tool-result image with a text notice naming its MIME
+type, so an image-returning tool (for example an MCP service) cannot make the
+provider request invalid. The recorded source keeps the image for display,
+readback and a later image-capable model.
 This is an additive v3 field; existing records without it remain readable.
 
 Serialization preserves the structured source's whitespace, JSON escapes,
