@@ -79,7 +79,7 @@ func panelCommands() []interaction.Command {
 	return []interaction.Command{
 		{Name: "settings", Panel: settings("", false)},
 		{Name: "desktop", Panel: settings("desktop.setup", true)},
-		{Name: "mcp", Interactive: true, Panel: settings("mcp.services", true)},
+		{Name: "mcp", Interactive: true, Panel: settings("mcp", false)},
 		{Name: "context", Panel: &interaction.Panel{View: interaction.PanelUsage}},
 		{Name: "usage", Panel: &interaction.Panel{View: interaction.PanelUsage, Tab: 1}},
 		{Name: "session", Panel: &interaction.Panel{View: interaction.PanelUsage, Tab: 2}},

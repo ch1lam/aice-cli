@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"slices"
 	"strings"
 	"testing"
 
@@ -73,10 +74,12 @@ func TestMCPSettingsReconnectRevocationAndExit(t *testing.T) {
 		}
 		found := false
 		for _, field := range read.Fields {
-			found = found || field.ID == "mcp.services"
+			if field.ID == "mcp.service.user:docs" && field.Action != nil && field.Action.Menu != nil {
+				found = field.Action.Menu.Options[0].Arguments == "approve user:docs"
+			}
 		}
 		if !found {
-			t.Fatal("missing MCP Settings entry")
+			t.Fatal("missing MCP service row offering approval")
 		}
 		approved, err := act("approve", "confirm")
 		if err != nil || !approved.Committed || !approved.Applied || initialized.Load() != 0 {
@@ -346,5 +349,32 @@ func TestMCPSettingsSingleServiceChangesPreserveOtherAuthority(t *testing.T) {
 				}
 			})
 		})
+	}
+}
+
+func TestMCPServiceMenuFollowsStateAndSource(t *testing.T) {
+	t.Parallel()
+	actions := func(server config.MCPServer, service interaction.MCPService) []string {
+		var result []string
+		for _, option := range mcpServiceMenu(server, service).Options {
+			action, key, _ := strings.Cut(option.Arguments, " ")
+			if key != service.Key {
+				t.Fatalf("option %q lacks its service key", option.Arguments)
+			}
+			result = append(result, action)
+		}
+		return result
+	}
+	user := config.MCPServer{Source: config.Source{Kind: "user"}}
+	approved := actions(user, interaction.MCPService{Key: "user:docs", Enabled: true, Approval: "allow"})
+	if !slices.Contains(approved, "connect") || slices.Contains(approved, "approve") || !slices.Contains(approved, "forget") || !slices.Contains(approved, "remove") {
+		t.Fatalf("approved user service actions = %v", approved)
+	}
+	pending := actions(config.MCPServer{Source: config.Source{Kind: "project"}}, interaction.MCPService{Key: "project:docs", Enabled: true, Approval: "ask"})
+	if pending[0] != "approve" || slices.Contains(pending, "connect") || slices.Contains(pending, "forget") || slices.Contains(pending, "remove") || slices.Contains(pending, "replace") {
+		t.Fatalf("pending project service actions = %v", pending)
+	}
+	if disabled := actions(user, interaction.MCPService{Key: "user:docs", Approval: "deny"}); disabled[0] != "enable" || slices.Contains(disabled, "deny") || slices.Contains(disabled, "disable") {
+		t.Fatalf("disabled user service actions = %v", disabled)
 	}
 }

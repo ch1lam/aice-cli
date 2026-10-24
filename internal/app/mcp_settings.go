@@ -85,15 +85,17 @@ func (s *interactiveSession) runMCPSettings(ctx context.Context, revision *uint6
 	}
 	result.Output = managed.Message
 	if err == nil && (op.Action == "connect" || op.Action == "reconnect") {
-		result.Output = "MCP " + op.Action + " completed.\n" + result.Output
+		result.Output = strings.TrimSpace("MCP " + op.Action + " completed.\n" + result.Output)
 	}
 	if op.Action == "status" || op.Action == "connect" || op.Action == "reconnect" || op.Action == "permissions" {
 		s.applyMCPLoadedTools(managed.Services)
-		result.Output = strings.TrimSpace(result.Output + "\n" + formatMCPStatus(managed.Services))
+		result.Details = mcpStatusDetails(managed.Services)
 	}
-	if op.Action == "permissions" {
+	if op.Action == "permissions" && len(managed.Permissions) > 0 {
+		result.Details = append(result.Details, interaction.Detail{}, interaction.Detail{Heading: "Operation permissions"})
 		for _, p := range managed.Permissions {
-			result.Output += fmt.Sprintf("\n%s %q · %s · eligible=%t\nSchema: %s", p.Operation, p.Tool, p.Decision, p.Eligible, p.SchemaFingerprint)
+			result.Details = append(result.Details, interaction.Detail{Indent: 2, Key: fmt.Sprintf("%s %q", p.Operation, p.Tool),
+				Value: fmt.Sprintf("%s · eligible=%t · schema %s", p.Decision, p.Eligible, p.SchemaFingerprint), Tone: mcpStateTone(p.Decision)})
 		}
 	}
 	return result, err
@@ -148,76 +150,153 @@ func (s *interactiveSession) publishMCPConfiguration(next config.Config, reconne
 	return err
 }
 
-func formatMCPStatus(services []interaction.MCPService) string {
-	return interaction.DetailsText(mcpStatusDetails(services))
-}
-
-// mcpStatusDetails describes each service's connection, catalog and
-// permissions; the application decides each state's tone.
+// mcpStatusDetails describes every service for /mcp output; the application
+// decides each state's tone.
 func mcpStatusDetails(services []interaction.MCPService) []interaction.Detail {
 	if len(services) == 0 {
 		return []interaction.Detail{{Text: "No MCP services configured. Use /mcp add."}}
 	}
 	var details []interaction.Detail
-	add := func(key, value string, tone interaction.DetailTone) {
-		details = append(details, interaction.Detail{Key: key, Value: value, Tone: tone})
-	}
-	heading := func(name string) { details = append(details, interaction.Detail{Heading: name}) }
-	text := func(line string) { details = append(details, interaction.Detail{Text: line}) }
 	for i, service := range services {
 		if i > 0 {
-			text("")
+			details = append(details, interaction.Detail{})
 		}
-		loaded := "0 (no active main Run)"
-		if service.RunActive {
-			loaded = fmt.Sprintf("%d (latest model request in current Run)", service.LoadedTools)
-		}
-		add("Service", service.Key, interaction.ToneTitle)
-		heading("Connection")
-		add("State", service.State, mcpStateTone(service.State))
-		add("Approval", service.Approval, mcpStateTone(service.Approval))
-		add("Source", service.Source, interaction.ToneReference)
-		add("Fingerprint", service.Fingerprint, interaction.ToneReference)
-		text("")
-		heading("Tool catalog")
-		if service.CatalogKnown {
-			add("Tools", fmt.Sprintf("%d discovered, %d eligible", service.ToolCount, service.EligibleTools), interaction.ToneDefault)
-		} else {
-			add("Tools", "catalog not currently known", interaction.ToneDefault)
-		}
-		add("Loaded tools", loaded, interaction.ToneDefault)
-		text("")
-		heading("Permissions")
-		add("Permission scope", service.PermissionScope, interaction.ToneDefault)
-		if len(service.Permissions) > 0 {
-			add("Saved rule binding", service.SavedPermissionFingerprint+" · "+service.SavedPermissionScope, interaction.ToneReference)
-			if service.SavedPermissionFingerprint != service.Fingerprint || service.SavedPermissionScope != service.PermissionScope {
-				text("Saved rules are inactive for the current binding.")
-			}
-		}
-		for _, rule := range service.Permissions {
-			add("Saved "+rule.Decision, fmt.Sprintf("%s %q · schema %s", rule.Operation, rule.Tool, rule.SchemaFingerprint), interaction.ToneDefault)
-		}
-		if service.Detail != "" {
-			text("")
-			heading("Diagnostics")
-			text(service.Detail)
+		details = append(details, interaction.Detail{Heading: service.Key})
+		for _, detail := range mcpServiceDetails(service) {
+			detail.Indent += 2
+			details = append(details, detail)
 		}
 	}
-	text("")
-	heading("Notes")
-	text("Loaded counts describe the latest request; revocation still blocks execution immediately. A ready connection does not grant tool execution permission.")
+	return append(details, interaction.Detail{}, interaction.Detail{Tone: interaction.ToneMuted,
+		Text: "Loaded counts describe the latest request; revocation still blocks execution immediately. A ready connection does not grant tool execution permission."})
+}
+
+// mcpServiceDetails lists one service's state first, then its catalog,
+// permissions and identity, so the useful facts lead a short header.
+func mcpServiceDetails(service interaction.MCPService) []interaction.Detail {
+	state, tone := mcpServiceSummary(service)
+	tools := "catalog not yet known"
+	if service.CatalogKnown {
+		tools = fmt.Sprintf("%d discovered · %d eligible", service.ToolCount, service.EligibleTools)
+	}
+	if service.RunActive {
+		tools += fmt.Sprintf(" · %d loaded in this Run", service.LoadedTools)
+	}
+	details := []interaction.Detail{
+		{Key: "State", Value: state, Tone: tone},
+		{Key: "Approval", Value: service.Approval, Tone: mcpStateTone(service.Approval)},
+		{Key: "Tools", Value: tools},
+		{Key: "Permissions", Value: service.PermissionScope, Tone: interaction.ToneReference},
+		{Key: "Source", Value: service.Source, Tone: interaction.ToneReference},
+		{Key: "Fingerprint", Value: service.Fingerprint, Tone: interaction.ToneReference},
+	}
+	if len(service.Permissions) > 0 {
+		details = append(details, interaction.Detail{}, interaction.Detail{Heading: "Saved rules"})
+		if service.SavedPermissionFingerprint != service.Fingerprint || service.SavedPermissionScope != service.PermissionScope {
+			details = append(details, interaction.Detail{Text: "Inactive: saved for " + service.SavedPermissionFingerprint + " · " + service.SavedPermissionScope, Tone: interaction.ToneWarning})
+		}
+		for _, rule := range service.Permissions {
+			details = append(details, interaction.Detail{Key: rule.Decision, Value: fmt.Sprintf("%s %q · schema %s", rule.Operation, rule.Tool, rule.SchemaFingerprint), Tone: mcpStateTone(rule.Decision)})
+		}
+	}
+	if service.Detail != "" {
+		details = append(details, interaction.Detail{}, interaction.Detail{Heading: "Diagnostics"}, interaction.Detail{Text: service.Detail, Tone: tone})
+	}
 	return details
+}
+
+// mcpServiceSummary is the short status a Settings row shows for a service.
+func mcpServiceSummary(service interaction.MCPService) (string, interaction.DetailTone) {
+	if !service.Enabled {
+		return "disabled", interaction.ToneMuted
+	}
+	state := strings.ReplaceAll(service.State, "_", " ")
+	if service.State == "disconnected" {
+		state = "not connected"
+	}
+	if service.State == "ready" && service.CatalogKnown {
+		state += fmt.Sprintf(" · %d tools", service.ToolCount)
+	}
+	return state, mcpStateTone(service.State)
 }
 
 func mcpStateTone(state string) interaction.DetailTone {
 	switch state {
 	case "ready", "allow":
 		return interaction.ToneGood
-	case "failed", "deny":
+	case "failed", "deny", "denied":
 		return interaction.ToneBad
-	case "needs_auth", "connecting", "ask":
+	case "needs_auth", "needs_approval", "connecting", "ask":
 		return interaction.ToneWarning
 	}
 	return interaction.ToneMuted
+}
+
+// mcpSettingFields lists each service with only the actions its state and
+// source allow, then the entry that adds a user service.
+func mcpSettingFields(configuration config.Config, services []interaction.MCPService, reason string) []interaction.SettingField {
+	fields := make([]interaction.SettingField, 0, len(services)+1)
+	for _, service := range services {
+		server := configuration.MCP.Servers[service.Key]
+		status, tone := mcpServiceSummary(service)
+		fields = append(fields, interaction.SettingField{
+			ID: "mcp.service." + service.Key, Category: "tools", Label: service.Key, Keywords: []string{"mcp", service.Name},
+			Description: "Connection, credentials and tool permissions of this " + server.Source.Kind + " MCP service.",
+			Kind:        interaction.SettingAction, Value: interaction.SettingValue{Text: status}, Tone: tone, Details: mcpServiceDetails(service),
+			Action:  &interaction.Command{Name: "mcp", Interactive: true, Menu: mcpServiceMenu(server, service)},
+			Applies: interaction.SettingDomainAction, DisabledReason: reason,
+		})
+	}
+	return append(fields, interaction.SettingField{
+		ID: "mcp.add", Category: "tools", Label: "Add service…", Keywords: []string{"mcp"},
+		Description: "Add a user MCP service from a JSON definition. Saving does not connect.",
+		Kind:        interaction.SettingAction, Action: &interaction.Command{Name: "mcp", Interactive: true}, Arguments: "add",
+		Applies: interaction.SettingDomainAction, DisabledReason: reason,
+	})
+}
+
+func mcpServiceMenu(server config.MCPServer, service interaction.MCPService) *interaction.CommandMenu {
+	menu := &interaction.CommandMenu{Title: service.Key}
+	add := func(label, action, description string) {
+		menu.Options = append(menu.Options, interaction.CommandOption{Label: label, Arguments: action + " " + service.Key, Description: description})
+	}
+	user := server.Source.Kind == "user"
+	approved := service.Approval == string(config.MCPConnectionAllow)
+	switch {
+	case !service.Enabled:
+		if user {
+			add("Enable", "enable", "")
+		}
+	case approved:
+		add("Test connection", "connect", "Connect and discover tools")
+		add("Reconnect", "reconnect", "Restart the connection and rediscover")
+	default:
+		add("Approve connection", "approve", "Allow this exact connection to start")
+	}
+	if server.Settings.OAuth != nil {
+		if _, loggedIn := server.OAuthCredentials(); loggedIn {
+			add("Log out", "logout", "Remove the OAuth login, its approval and tool rules")
+		} else {
+			add("Log in", "login", "Authorize in your browser")
+		}
+	}
+	if len(server.CredentialSlots()) > 0 {
+		add("Set or clear a credential", "credential", "")
+	}
+	add("Inspect tool permissions", "permissions", "")
+	add("Save or remove a tool permission", "permission", "")
+	if service.Approval != string(config.MCPConnectionDeny) {
+		add("Deny and revoke", "deny", "Cancel active work and block connections")
+	}
+	if service.Approval != string(config.MCPConnectionAsk) {
+		add("Forget approval", "forget", "Ask again before the next connection")
+	}
+	if user {
+		add("Replace definition", "replace", "")
+		if service.Enabled {
+			add("Disable", "disable", "")
+		}
+		add("Remove", "remove", "Delete the definition and its stored access")
+	}
+	return menu
 }

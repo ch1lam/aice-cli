@@ -167,8 +167,9 @@ func (m model) applySettingsRead(message settingsReadResult) (tea.Model, tea.Cmd
 	p.snapshot = message.snapshot
 	foundFocus := false
 	if p.focusField != "" {
+		// A focus names a field, or a group such as "mcp" for its first field.
 		for _, field := range p.snapshot.Fields {
-			if field.ID != p.focusField {
+			if field.ID != p.focusField && !strings.HasPrefix(field.ID, p.focusField+".") {
 				continue
 			}
 			foundFocus = true

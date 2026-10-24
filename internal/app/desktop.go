@@ -45,13 +45,6 @@ func (a *application) newDesktopPreset(configuration config.Config) *desktopPres
 	return preset
 }
 
-func desktopCommand() *interaction.Command {
-	return &interaction.Command{Name: "desktop", Interactive: true, Menu: &interaction.CommandMenu{Title: "Computer Use", Options: []interaction.CommandOption{
-		{Label: "Set up / Repair", Arguments: "setup", Description: "Install the Driver, request OS access and add the user:cua MCP service"},
-		{Label: "Disable", Arguments: "disable", Description: "Disable the user:cua MCP service; installation and OS grants stay"},
-	}}}
-}
-
 // runDesktopSettings runs under the shared Settings reservation; MCP changes
 // replace resources only while idle. External steps are reported even when a
 // later save fails.
@@ -156,20 +149,24 @@ func (s *interactiveSession) runDesktopSettings(ctx context.Context, request int
 	return result, nil
 }
 
-// desktopStatus is a configuration read; it performs no native or MCP I/O.
-func (s *interactiveSession) desktopStatus(configuration config.Config, owner *mcpOwner) string {
-	server, exists := configuration.MCP.Servers[desktopServiceKey]
-	if !exists {
-		return fmt.Sprintf("Not configured. Set up installs Cua Driver %s and adds the MCP service %s.", deps.CuaDriverVersion, desktopServiceKey)
+// desktopSettingField is a configuration read; it performs no native or MCP I/O.
+func (s *interactiveSession) desktopSettingField(configuration config.Config, owner *mcpOwner, reason string) interaction.SettingField {
+	if s.desktop == nil {
+		reason = "Computer Use setup is unavailable in this session"
 	}
-	state := "disabled"
-	if server.Enabled {
-		state = "enabled"
-		for _, status := range owner.Status() {
-			if status.Key == desktopServiceKey {
-				state += " · " + status.State
-			}
+	status, tone, configured := presetStatus(configuration, owner, desktopServiceKey)
+	details := []interaction.Detail{{Key: "Service", Value: desktopServiceKey + " · " + status, Tone: tone}}
+	menu := &interaction.CommandMenu{Title: "Computer Use", Options: []interaction.CommandOption{{Label: "Set up", Arguments: "setup", Description: "Install the Driver, request OS access and add the " + desktopServiceKey + " MCP service"}}}
+	note := "Set up installs the Cua Driver and adds the MCP service " + desktopServiceKey + "."
+	if configured {
+		server := configuration.MCP.Servers[desktopServiceKey]
+		details = append(details, interaction.Detail{Key: "Command", Value: strings.Join(append([]string{server.Settings.Command}, server.Settings.Args...), " "), Tone: interaction.ToneReference})
+		menu.Options = []interaction.CommandOption{
+			{Label: "Set up / Repair", Arguments: "setup", Description: "Verify the Driver and OS access, then enable the service"},
+			{Label: "Disable", Arguments: "disable", Description: "Installation and OS grants stay"},
 		}
+		note = "Cua owns permission mode, input delivery and sessions; AICE still asks before each tool unless you grant it."
 	}
-	return fmt.Sprintf("MCP service %s: %s\nCommand: %s %s\nPinned Driver: %s. Cua owns permission mode, input delivery and sessions; manage the service with /mcp.", desktopServiceKey, state, server.Settings.Command, strings.Join(server.Settings.Args, " "), deps.CuaDriverVersion)
+	details = append(details, interaction.Detail{Key: "Driver", Value: "Cua Driver " + deps.CuaDriverVersion + " (pinned)"}, interaction.Detail{}, interaction.Detail{Text: note, Tone: interaction.ToneMuted})
+	return interaction.SettingField{ID: "desktop.setup", Category: "tools", Label: "Computer Use", Description: "Control desktop applications through the Cua Driver, exposed as the ordinary MCP service " + desktopServiceKey + ".", Keywords: []string{"desktop", "computer", "cua"}, Kind: interaction.SettingAction, Value: interaction.SettingValue{Text: status}, Tone: tone, Details: details, Action: &interaction.Command{Name: "desktop", Interactive: true, Menu: menu}, Applies: interaction.SettingDomainAction, DisabledReason: reason}
 }

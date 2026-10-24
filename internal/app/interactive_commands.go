@@ -28,7 +28,7 @@ func (s *interactiveSession) SlashCommands() []interaction.Command {
 		{Name: "browser", Description: "Set up browser automation as the user:browser MCP service", Menu: s.browserMenu(), Interactive: true},
 		{Name: "web", Description: "Configure web search services, priority and web fetch", Menu: s.webMenu(), Interactive: true},
 		{Name: "mcp", Description: "Manage MCP services, connection approval and credentials", ArgumentHint: "[action] [service]", Interactive: true,
-			Panel: &interaction.Panel{View: interaction.PanelSettings, Focus: "mcp.services", FocusAction: true}},
+			Panel: &interaction.Panel{View: interaction.PanelSettings, Focus: "mcp"}},
 		{Name: "desktop", Description: "Open Computer Use in Settings", Panel: &interaction.Panel{View: interaction.PanelSettings, Focus: "desktop.setup", FocusAction: true}},
 		{
 			Name:        "session",
@@ -407,7 +407,11 @@ func (s *interactiveSession) RunSlashCommand(
 	case "mcp", "browser", "web", "login":
 		// Slash entries share the Settings actions without a draft revision.
 		result, err := s.settingsAction(ctx, nil, request)
-		return appendWarnings(result.Output, result.Warnings), err
+		output := result.Output
+		if len(result.Details) > 0 {
+			output = strings.TrimSpace(output + "\n" + interaction.DetailsText(result.Details))
+		}
+		return appendWarnings(output, result.Warnings), err
 	}
 	handler, ok := slashCommandHandlers[request.Name]
 	if !ok {

@@ -27,9 +27,14 @@ inherits only a small base environment, so options such as
 
 ## Set up and change
 
-Use `/browser` or Settings → Tools & Network → Browser automation. Each choice
+Use `/browser`, or the Browser rows in Settings → Tools & Network. Each choice
 rewrites the `user:browser` definition and saves its connection approval,
 because the user just chose it; tool calls still ask through Guard.
+
+Settings shows **Browser automation** with the service state and, once set up,
+its status above Set up / Repair, Close browser session and Disable. **Show
+window** toggles on Enter and **Connect to** chooses the target. `/browser`
+offers every choice in one menu.
 
 | Action | Effect on the service |
 | --- | --- |

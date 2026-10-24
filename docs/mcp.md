@@ -273,19 +273,17 @@ and removing a rule is possible when the service is offline.
 
 ## Interactive management
 
-The MCP services and authorization settings menu groups actions into status,
-service configuration, connection authorization, credentials/login and operation
-permissions. Esc returns from a group
-to the main menu. Details, confirmations and action results use the MCP display
-highlights while preserving the complete paged authorization disclosure.
+Settings → Tools & Network lists each service as a row whose value is its
+state, with the tool count once ready. Enter opens that service's actions,
+limited to what its state and source allow: approve, or test and reconnect once
+approved; OAuth log in or out; credentials for `auth_ref` slots; tool
+permissions; deny and forget; and for user services replace, enable or disable
+and remove. State, approval, tools, permission scope, source and fingerprint
+lead the menu; `?` shows them in full with saved rules and diagnostics. **Add
+service…** starts the add flow. Confirmations keep the complete paged
+authorization disclosure, and action results keep the status highlights.
 
-Settings MCP status details group each service into connection, tool catalog,
-permissions and optional diagnostics, followed by shared notes. The TUI highlights
-section headings, field labels and connection/approval states; long values wrap
-and the detail view scrolls without dropping fingerprints or saved rules.
-
-`/mcp` and Settings → Tools & Network → MCP services and authorization expose
-the management operations above. `/mcp ACTION [KEY]` selects one directly;
+`/mcp` opens Settings at the first service. `/mcp ACTION [KEY]` selects one directly;
 missing keys open a source-qualified selector. Add/replace uses a transient
 JSON editor; credentials use a hidden editor. These prompts and operations do
 not enter Session history or model context. Project definitions are read-only.

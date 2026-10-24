@@ -150,7 +150,7 @@ func TestBindWebRoutingTable(t *testing.T) {
 			if (state.configErr != nil) != tc.wantErr {
 				t.Fatalf("configErr = %v", state.configErr)
 			}
-			status := strings.Join(state.statusLines(), "\n")
+			status := interaction.DetailsText(state.statusDetails())
 			if tc.wantIn != "" && !strings.Contains(status, tc.wantIn) {
 				t.Fatalf("status lacks %q:\n%s", tc.wantIn, status)
 			}
@@ -164,7 +164,7 @@ func TestBindWebRoutingTable(t *testing.T) {
 	}
 	// Native stays visible as not implemented even when a service is chosen.
 	state := bindWeb(*backends, readyWebConfig("native", "service:fake-main"))
-	status := strings.Join(state.statusLines(), "\n")
+	status := interaction.DetailsText(state.statusDetails())
 	if !strings.Contains(status, "skipped native: not_implemented") || !strings.Contains(status, "Search source: service:fake-main (fake, https://fake.example)") {
 		t.Fatalf("status = %s", status)
 	}

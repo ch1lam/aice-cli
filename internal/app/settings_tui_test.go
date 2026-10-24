@@ -140,7 +140,7 @@ func TestSettingsUsageTUI(t *testing.T) {
 	waitFor("Saved to user settings")
 	send("\x1b")
 	send("/desktop\r")
-	waitFor("Set up / Repair", "Disable")
+	waitFor("not set up", "Set up  Install the Driver")
 	send("\r")
 	waitFor("user:cua")
 	waitFor("Continue?")

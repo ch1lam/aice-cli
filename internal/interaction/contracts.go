@@ -334,7 +334,8 @@ const (
 )
 
 // Panel targets one view. Tab selects a multi-tab view's first tab; Focus
-// selects one setting field and FocusAction its action.
+// selects one setting field, or the first field of a group such as "mcp";
+// FocusAction opens that field's action.
 type Panel struct {
 	View        PanelView
 	Tab         int

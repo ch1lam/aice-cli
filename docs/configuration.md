@@ -164,12 +164,13 @@ warnings. OAuth refresh has its own lock lifecycle below.
 ### Settings window
 
 To edit preferences, open `/settings`. `/desktop` opens its Computer Use
-action directly. Opening the panel creates no Session or Agent run.
+action directly and `/mcp` selects the first MCP service. Opening the panel
+creates no Session or Agent run.
 
 | Area | Preferences or actions | Takes effect |
 | --- | --- | --- |
 | Models & Accounts | Provider/model/thinking, endpoints, context windows, API keys and OAuth | Next Agent run |
-| Tools & Network | Browser, Computer Use, Web services and fetch, MCP | See the owning [browser](browser.md), [desktop](desktop.md), [Web](web.md), and [MCP](mcp.md) guides |
+| Tools & Network | MCP services, Browser, Computer Use, Web search sources and fetch | See the owning [browser](browser.md), [desktop](desktop.md), [Web](web.md), and [MCP](mcp.md) guides |
 | Run Limits | Turns, tokens, timeout and repeated-tool limit | Next Agent run |
 | Project & Trust | Default policy and saved project decision | Next startup |
 | System | Helper downloads, update checks, paths and diagnostics | Next startup |
@@ -177,6 +178,11 @@ action directly. Opening the panel creates no Session or Agent run.
 Use Tab/Shift+Tab to switch categories. Press `/` to search, use arrows to
 select a row, and press Enter to edit it. Press `?` for details. Click a heading
 or use Left/Right to fold or unfold a group.
+
+Action rows show their state as the value: `●` ready or configured, `▲` needs
+attention, `✕` failed, `○` off or not set up. Enter opens the row's actions with
+its status above them, offering only the actions that state allows; `?` shows
+the full status. A row without `›`, such as Show window, acts immediately.
 
 When you toggle a Boolean, AICE saves it immediately. For text, integers,
 durations and choices, press Enter to save.

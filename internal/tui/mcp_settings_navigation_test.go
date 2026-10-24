@@ -14,7 +14,8 @@ func TestMCPSettingsNavigationAndStaleRedirect(t *testing.T) {
 		m := panelModel(t, 120, 40)
 		snapshot := m.settings.snapshot
 		snapshot.Fields = append(snapshot.Fields,
-			interaction.SettingField{ID: "mcp.services", Category: "tools", Label: "MCP services", Kind: interaction.SettingAction, Action: &interaction.Command{Name: "mcp", Menu: &interaction.CommandMenu{Title: "MCP services", Options: []interaction.CommandOption{{Label: "Computer Use settings", Arguments: "desktop"}}}}},
+			interaction.SettingField{ID: "mcp.service.user:docs", Category: "tools", Label: "user:docs", Kind: interaction.SettingAction, Action: &interaction.Command{Name: "mcp", Menu: &interaction.CommandMenu{Title: "user:docs", Options: []interaction.CommandOption{{Label: "Computer Use settings", Arguments: "desktop"}}}}},
+			interaction.SettingField{ID: "mcp.add", Category: "tools", Label: "Add service…", Kind: interaction.SettingAction, Action: &interaction.Command{Name: "mcp"}, Arguments: "add"},
 			interaction.SettingField{ID: "desktop.setup", Category: "tools", Label: "Computer Use", Kind: interaction.SettingBool})
 		m.runSettingsAction = func(*settingsAction, uint64) tea.Cmd {
 			t.Fatal("navigation unexpectedly started a settings operation")
@@ -39,8 +40,12 @@ func TestMCPSettingsNavigationAndStaleRedirect(t *testing.T) {
 		}
 		m = updateModel(t, next, settingsReadResult{generation: next.settings.generation, snapshot: snapshot})
 		if args == "" {
+			if fields := m.settings.fields(); m.settings.action != nil || fields[m.settings.selection].ID != "mcp.service.user:docs" {
+				t.Fatal("MCP did not focus its first service")
+			}
+			m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
 			if m.settings.action == nil || m.settings.action.command.Name != "mcp" {
-				t.Fatal("MCP menu not opened")
+				t.Fatal("MCP service menu not opened")
 			}
 			a := m.settings.action
 			a.running = true

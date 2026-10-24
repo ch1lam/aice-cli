@@ -80,11 +80,36 @@ func (s *interactiveSession) webStatus() string {
 	s.stateMu.RLock()
 	state := s.web
 	s.stateMu.RUnlock()
-	lines := append([]string{"Web"}, state.statusLines()...)
+	return "Web\n" + interaction.DetailsText(s.webDetails(state))
+}
+
+func (s *interactiveSession) webDetails(state webState) []interaction.Detail {
+	details := state.statusDetails()
 	if path := s.settingsSnapshot().configuration.Paths.GlobalSettings; path != "" {
-		lines = append(lines, "Configured in: "+path+" (\"web\" object)")
+		details = append(details, interaction.Detail{Key: "Configured in", Value: path + " (\"web\" object)", Tone: interaction.ToneReference})
 	}
-	return strings.Join(lines, "\n")
+	return details
+}
+
+// webSourcesField manages search instances; priority, switches and limits
+// are ordinary rows beside it.
+func (s *interactiveSession) webSourcesField(reason string) interaction.SettingField {
+	s.stateMu.RLock()
+	state := s.web
+	s.stateMu.RUnlock()
+	status, tone := state.sourceSummary()
+	menu := &interaction.CommandMenu{Title: "Search sources", Options: []interaction.CommandOption{
+		{Label: "Add Exa instance…", Description: "Configure an Exa Search API account and append it to the priority list", Arguments: "add"},
+	}}
+	if len(state.settings.Services) > 0 {
+		menu.Options = append(menu.Options,
+			interaction.CommandOption{Label: "Set instance credential…", Description: "Replace the API key or environment reference", Arguments: "credential"},
+			interaction.CommandOption{Label: "Remove instance…", Description: "Delete an instance and its priority entry", Arguments: "remove"})
+	}
+	return interaction.SettingField{ID: "web.sources", Category: "tools", Label: "Search sources", Keywords: []string{"exa", "search", "service"},
+		Description: "Search instances and the source that answers web_search; reorder sources in Search priority.",
+		Kind:        interaction.SettingAction, Value: interaction.SettingValue{Text: status}, Tone: tone, Details: s.webDetails(state),
+		Action: &interaction.Command{Name: "web", Interactive: true, Menu: menu}, Applies: interaction.SettingDomainAction, DisabledReason: reason}
 }
 
 func webPrompt(ctx context.Context, ui *interaction.AuthInteraction, prompt interaction.AuthPrompt) (string, error) {

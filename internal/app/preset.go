@@ -99,3 +99,13 @@ func (s *interactiveSession) applyPresetMCP(ctx context.Context, current config.
 	}
 	return result, err
 }
+
+// presetStatus summarizes a preset's service for its Settings row.
+func presetStatus(configuration config.Config, owner *mcpOwner, key string) (status string, tone interaction.DetailTone, configured bool) {
+	services := mcpManagementStatus(configuration, owner, key)
+	if len(services) == 0 {
+		return "not set up", interaction.ToneMuted, false
+	}
+	status, tone = mcpServiceSummary(services[0])
+	return status, tone, true
+}

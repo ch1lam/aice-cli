@@ -46,8 +46,9 @@ service already named `cua` blocks setup. **Disable** disables `user:cua`;
 the installation and OS grants stay. The service can also be edited, removed or
 denied with `/mcp` like any other.
 
-Settings shows a status row read from configuration and the MCP owner; it does
-no native or MCP I/O. If tools report missing desktop access on Linux or
+The Settings row shows the service state, read from configuration and the MCP
+owner without native or MCP I/O, and its status above Set up / Repair and
+Disable. If tools report missing desktop access on Linux or
 Windows, run `cua-driver doctor`.
 
 ## Runtime behavior

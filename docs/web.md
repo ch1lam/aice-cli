@@ -121,9 +121,11 @@ Changes require idle main and BTW responses and apply to the next response.
 Status remains available through `/web` during a run. Menus and edits never test
 the search API or send paid requests.
 
-Settings → Tools & Network provides the same actions plus result count, timeouts,
-priority/domain lists and per-instance options. It shows user preferences and
-project restrictions separately. Successful publication replaces the backend,
+Settings → Tools & Network shows the selected source on **Search sources**;
+Enter shows the full status above the add, credential and remove instance
+actions. Search priority is a list row reordered with Ctrl+Up/Down, and the
+switches, result count, timeouts, domain lists and per-instance options are
+ordinary rows. It shows user preferences and project restrictions separately. Successful publication replaces the backend,
 tools, prompt and Guard binding together; prepared responses are invalidated.
 The application closes superseded and exiting backends. See
 [Settings](configuration.md#settings-window) and the

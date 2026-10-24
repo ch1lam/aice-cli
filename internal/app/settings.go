@@ -156,9 +156,9 @@ func (s *interactiveSession) ReadSettings(ctx context.Context) (interaction.Sett
 	}
 	for _, option := range loginProviderOptions(s.providers, settings.configuration) {
 		candidate := findProvider(s.providers, option.Arguments)
-		status := "Not configured"
+		status, tone := "not configured", interaction.ToneMuted
 		if candidate != nil && candidate.Configured(settings.configuration) {
-			status = "Credential configured"
+			status, tone = "configured", interaction.ToneGood
 		}
 		source := settings.configuration.CredentialSource(option.Arguments)
 		switch option.Arguments {
@@ -167,40 +167,26 @@ func (s *interactiveSession) ReadSettings(ctx context.Context) (interaction.Sett
 		case "anthropic-subscription":
 			source = config.Source{Kind: "OAuth store", Location: config.ClaudeSubscriptionAuthPath(settings.configuration.Paths)}
 		}
-		status += " · " + source.Kind + " " + source.Location
+		details := []interaction.Detail{{Key: "Credential", Value: status, Tone: tone}, {Key: "Source", Value: strings.TrimSpace(source.Kind + " " + source.Location), Tone: interaction.ToneReference}}
 		menu := &interaction.CommandMenu{Title: option.Label + " account", Options: []interaction.CommandOption{option}}
-		result.Fields = append(result.Fields, interaction.SettingField{ID: "account." + option.Arguments, Category: "models", Label: option.Label + " account", Description: status, Kind: interaction.SettingAction, Applies: interaction.SettingDomainAction, DisabledReason: disabled, Action: &interaction.Command{Name: "login", SecretPrompt: "API key", Menu: menu}})
+		result.Fields = append(result.Fields, interaction.SettingField{ID: "account." + option.Arguments, Category: "models", Label: option.Label + " account", Description: interaction.DetailsText(details), Details: details, Value: interaction.SettingValue{Text: status}, Tone: tone, Kind: interaction.SettingAction, Applies: interaction.SettingDomainAction, DisabledReason: disabled, Action: &interaction.Command{Name: "login", SecretPrompt: "API key", Menu: menu}})
 	}
-	commands := []interaction.Command{
-		{Name: "mcp", Menu: mcpSettingsMenu(), Interactive: true},
-		{Name: "browser", Menu: s.browserMenu(), Interactive: true},
-		{Name: "web", Menu: s.webMenu(), Interactive: true},
-		{Name: "trust", Menu: s.trustMenu()},
+	trust := interaction.Command{Name: "trust", Menu: s.trustMenu()}
+	trustReason := ""
+	if disabled == interaction.ErrSettingsBusy.Error() {
+		trustReason = disabled
 	}
-	for _, entry := range []struct{ id, category, label, name string }{{"mcp.services", "tools", "MCP services and authorization", "mcp"}, {"browser.actions", "tools", "Browser automation", "browser"}, {"web.services", "tools", "Search services and priority", "web"}, {"project.trust", "project", "Change project trust", "trust"}} {
-		for _, command := range commands {
-			if command.Name == entry.name {
-				reason := disabled
-				if (entry.name == "trust" || entry.name == "mcp") && reason != interaction.ErrSettingsBusy.Error() {
-					reason = ""
-				}
-				if entry.name == "browser" && s.browserBin == "" {
-					reason = "The pinned agent-browser helper is not installed on this platform"
-				}
-				description := ""
-				if entry.name == "mcp" {
-					description = mcpSettingsDescription
-				}
-				result.Fields = append(result.Fields, interaction.SettingField{Description: description, ID: entry.id, Category: entry.category, Label: entry.label, Kind: interaction.SettingAction, Applies: interaction.SettingDomainAction, Action: &command, DisabledReason: reason})
-				break
-			}
-		}
-	}
-	mcpStatus := mcpManagementStatus(settings.configuration, settings.mcp, "")
-	s.applyMCPLoadedTools(mcpStatus)
-	mcpDetails := mcpStatusDetails(mcpStatus)
-	result.Fields = append(result.Fields, interaction.SettingField{ID: "mcp.status", Category: "tools", Label: "MCP status", Kind: interaction.SettingInfo, Description: interaction.DetailsText(mcpDetails), Details: mcpDetails})
-	result.Fields = append(result.Fields, interaction.SettingField{ID: "browser.status", Category: "tools", Label: "Browser status", Kind: interaction.SettingInfo, Description: s.browserStatus(settings.configuration, settings.mcp)}, interaction.SettingField{ID: "web.status", Category: "tools", Label: "Web status", Kind: interaction.SettingInfo, Description: s.webStatus()})
+	result.Fields = append(result.Fields, interaction.SettingField{ID: "project.trust", Category: "project", Label: "Change project trust", Kind: interaction.SettingAction, Applies: interaction.SettingDomainAction, Action: &trust, DisabledReason: trustReason})
+	// Tools & Network sections follow this order: MCP, the presets built on
+	// it, then web search with its sources row beside the search switch.
+	mcpServices := mcpManagementStatus(settings.configuration, settings.mcp, "")
+	s.applyMCPLoadedTools(mcpServices)
+	result.Fields = append(result.Fields, mcpSettingFields(settings.configuration, mcpServices, trustReason)...)
+	result.Fields = append(result.Fields, s.browserSettingFields(settings.configuration, settings.mcp, disabled)...)
+	result.Fields = append(result.Fields, s.desktopSettingField(settings.configuration, settings.mcp, disabled))
+	webFields := webSettingFields(settings.configuration, disabled)
+	result.Fields = append(result.Fields, webFields[0], s.webSourcesField(disabled))
+	result.Fields = append(result.Fields, webFields[1:]...)
 	skillDetails := skillsDetails(s.skills, s.skillDiags, s.workspacePath)
 	for _, entry := range []struct {
 		id, category, label, value string
@@ -218,14 +204,6 @@ func (s *interactiveSession) ReadSettings(ctx context.Context) (interaction.Sett
 	for i, diagnostic := range result.Diagnostics {
 		result.Fields = append(result.Fields, interaction.SettingField{ID: fmt.Sprintf("system.diagnostic.%d", i), Category: "system", Kind: interaction.SettingInfo, Label: "Configuration diagnostic", Description: diagnostic})
 	}
-	result.Fields = append(result.Fields, webSettingFields(settings.configuration, disabled)...)
-	desktopReason := disabled
-	if s.desktop == nil {
-		desktopReason = "Computer Use setup is unavailable in this session"
-	}
-	result.Fields = append(result.Fields,
-		interaction.SettingField{ID: "desktop.setup", Category: "tools", Label: "Computer Use", Description: "Set up or disable the Cua Driver as the ordinary MCP service " + desktopServiceKey + ".", Keywords: []string{"desktop", "computer", "cua"}, Kind: interaction.SettingAction, Action: desktopCommand(), Applies: interaction.SettingDomainAction, DisabledReason: desktopReason},
-		interaction.SettingField{ID: "desktop.status", Category: "tools", Label: "Computer Use status", Kind: interaction.SettingInfo, Description: s.desktopStatus(settings.configuration, settings.mcp)})
 	if err := ctx.Err(); err != nil {
 		return interaction.SettingsSnapshot{}, err
 	}
@@ -258,6 +236,8 @@ func settingSection(field interaction.SettingField) string {
 		}
 	case "tools":
 		switch {
+		case strings.HasPrefix(id, "mcp."):
+			return "MCP services"
 		case strings.HasPrefix(id, "browser"):
 			return "Browser"
 		case strings.HasPrefix(id, "desktop"):

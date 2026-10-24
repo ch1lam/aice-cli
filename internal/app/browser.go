@@ -68,7 +68,8 @@ func (s *interactiveSession) browserMenu() *interaction.CommandMenu {
 func (s *interactiveSession) runBrowserSettings(ctx context.Context, revision *uint64, action string, ui *interaction.AuthInteraction) (result interaction.SettingsActionResult, returnErr error) {
 	action = strings.TrimSpace(action)
 	if action == "" || action == "status" {
-		result.Output = s.browserStatus(s.settingsSnapshot().configuration, s.settingsSnapshot().mcp)
+		settings := s.settingsSnapshot()
+		result.Output = interaction.DetailsText(s.browserDetails(settings.configuration, settings.mcp))
 		return result, nil
 	}
 	if s.browserBin == "" {
@@ -156,30 +157,72 @@ func browserPrompt(ctx context.Context, ui *interaction.AuthInteraction, prompt 
 	}
 }
 
-// browserStatus is a configuration read; it performs no helper or MCP I/O.
-func (s *interactiveSession) browserStatus(configuration config.Config, owner *mcpOwner) string {
-	helper := s.browserBin
+// browserDetails is a configuration read; it performs no helper or MCP I/O.
+func (s *interactiveSession) browserDetails(configuration config.Config, owner *mcpOwner) []interaction.Detail {
+	helper, helperTone := s.browserBin, interaction.ToneReference
 	if helper == "" {
-		helper = "not installed"
+		helper, helperTone = "not installed", interaction.ToneWarning
 	}
-	configured, headed, target := browserChoices(configuration)
+	status, tone, configured := presetStatus(configuration, owner, browserServiceKey)
+	details := []interaction.Detail{
+		{Key: "Service", Value: browserServiceKey + " · " + status, Tone: tone},
+		{Key: "Helper", Value: helper, Tone: helperTone},
+		{Key: "Version", Value: "agent-browser " + deps.AgentBrowserVersion},
+	}
 	if !configured {
-		return fmt.Sprintf("Helper: %s (agent-browser %s)\nNot configured. Set up adds the MCP service %s.", helper, deps.AgentBrowserVersion, browserServiceKey)
+		return append(details, interaction.Detail{}, interaction.Detail{Text: "Set up adds the MCP service " + browserServiceKey + ".", Tone: interaction.ToneMuted})
 	}
-	state := "disabled"
-	if configuration.MCP.Servers[browserServiceKey].Enabled {
-		state = "enabled"
-		for _, status := range owner.Status() {
-			if status.Key == browserServiceKey {
-				state += " · " + status.State
-			}
+	_, headed, target := browserChoices(configuration)
+	window := "hidden"
+	if headed {
+		window = "shown"
+	}
+	return append(details,
+		interaction.Detail{Key: "Session", Value: browser.Session + " · " + browserTargetText(target) + " · window " + window},
+		interaction.Detail{},
+		interaction.Detail{Text: "agent-browser owns the session and stops an idle browser after 10 minutes.", Tone: interaction.ToneMuted})
+}
+
+func browserTargetText(target browser.Target) string {
+	switch {
+	case target.Auto:
+		return "Running browser · auto-detect"
+	case target.Endpoint != "":
+		return "Running browser · " + target.Endpoint
+	}
+	return "Separate browser"
+}
+
+// browserSettingFields shows the service row, and once it exists, the
+// window and connection choices as direct rows instead of a nested menu.
+func (s *interactiveSession) browserSettingFields(configuration config.Config, owner *mcpOwner, reason string) []interaction.SettingField {
+	if s.browserBin == "" {
+		reason = "The pinned agent-browser helper is not installed on this platform"
+	}
+	status, tone, configured := presetStatus(configuration, owner, browserServiceKey)
+	field := func(id, label, description, value string, command *interaction.Command) interaction.SettingField {
+		return interaction.SettingField{ID: id, Category: "tools", Label: label, Description: description, Keywords: []string{"browser", "agent-browser", "chrome"}, Kind: interaction.SettingAction, Value: interaction.SettingValue{Text: value}, Applies: interaction.SettingDomainAction, DisabledReason: reason, Action: command}
+	}
+	menu := &interaction.CommandMenu{Title: "Browser automation", Options: []interaction.CommandOption{{Label: "Set up", Arguments: "setup", Description: "Add the " + browserServiceKey + " MCP service for the pinned agent-browser"}}}
+	if configured {
+		menu.Options = []interaction.CommandOption{
+			{Label: "Set up / Repair", Arguments: "setup", Description: "Rewrite and enable the service for the pinned helper"},
+			{Label: "Close browser session", Arguments: "close", Description: "Close the launched browser or disconnect the connected one"},
+			{Label: "Disable", Arguments: "disable", Description: "Keep the helper installed"},
 		}
 	}
-	mode := "separate browser"
-	if target.Auto {
-		mode = "running browser, auto-detect"
-	} else if target.Endpoint != "" {
-		mode = "running browser at " + target.Endpoint
+	service := field("browser.service", "Browser automation", "Browser automation through agent-browser, exposed as the ordinary MCP service "+browserServiceKey+".", status, &interaction.Command{Name: "browser", Interactive: true, Menu: menu})
+	service.Tone, service.Details = tone, s.browserDetails(configuration, owner)
+	if !configured {
+		return []interaction.SettingField{service}
 	}
-	return fmt.Sprintf("MCP service %s: %s\nHelper: %s (agent-browser %s)\nSession: %s · %s · show window: %t\nagent-browser owns the session and stops an idle browser after 10 minutes.", browserServiceKey, state, helper, deps.AgentBrowserVersion, browser.Session, mode, headed)
+	_, headed, target := browserChoices(configuration)
+	window := field("browser.window", "Show window", "Show the browser window; applies when agent-browser next launches a browser.", onOff(headed), &interaction.Command{Name: "browser", Interactive: true})
+	window.Arguments = "headed"
+	connection := field("browser.connection", "Connect to", "Launch a separate browser, or connect to a running one with remote debugging enabled.", browserTargetText(target), &interaction.Command{Name: "browser", Interactive: true, Menu: &interaction.CommandMenu{Title: "Connect to", Options: []interaction.CommandOption{
+		{Label: "Separate browser", Arguments: "separate", Description: "Launch a browser with a temporary profile"},
+		{Label: "Running browser · auto-detect", Arguments: "auto"},
+		{Label: "Running browser · port or URL…", Arguments: "connect"},
+	}}})
+	return []interaction.SettingField{service, window, connection}
 }

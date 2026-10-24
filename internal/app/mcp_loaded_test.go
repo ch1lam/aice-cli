@@ -35,9 +35,9 @@ func (m *loadedToolsModel) Stream(ctx context.Context, request llm.Request) (llm
 	if err != nil {
 		return nil, err
 	}
-	text := fmt.Sprintf("Loaded tools: %d (latest model request in current Run)", want)
-	if !strings.Contains(status.Output, text) {
-		return nil, fmt.Errorf("status disagrees with model request: %s", status.Output)
+	text := fmt.Sprintf("%d loaded in this Run", want)
+	if output := interaction.DetailsText(status.Details); !strings.Contains(output, text) {
+		return nil, fmt.Errorf("status disagrees with model request: %s", output)
 	}
 	snapshot, err := m.session.ReadSettings(ctx)
 	if err != nil {
@@ -45,8 +45,8 @@ func (m *loadedToolsModel) Stream(ctx context.Context, request llm.Request) (llm
 	}
 	found := false
 	for _, field := range snapshot.Fields {
-		if field.ID == "mcp.status" {
-			found = strings.Contains(field.Description, text)
+		if field.ID == "mcp.service.user:service0" {
+			found = strings.Contains(interaction.DetailsText(field.Details), text)
 		}
 	}
 	if !found {
@@ -102,7 +102,7 @@ func TestMCPLoadedToolsActualCommandLifecycle(t *testing.T) {
 				if err != nil {
 					return err
 				}
-				if !strings.Contains(status.Output, "Loaded tools: 0 (no active main Run)") {
+				if output := interaction.DetailsText(status.Details); !strings.Contains(output, "Tools: ") || strings.Contains(output, "loaded in this Run") {
 					return errors.New("completed/cancelled Run retained loaded tools")
 				}
 			}

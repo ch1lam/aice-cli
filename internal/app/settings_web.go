@@ -99,7 +99,7 @@ func webSettingFields(c config.Config, disabled string) []interaction.SettingFie
 			{"credential_auth_ref", "Stored credential reference", interaction.SettingValue{Kind: interaction.SettingString, Text: service.Credential.AuthRef}},
 			{"type", "Search type", interaction.SettingValue{Kind: interaction.SettingEnum, Text: options.Type}},
 		} {
-			field := interaction.SettingField{ID: "web.service." + id + "." + d.key, Category: "tools", Label: id + " · " + d.label, Description: description, Kind: d.value.Kind, Value: d.value, DisabledReason: disabled, Applies: interaction.SettingNextRun, Source: interaction.SettingSource{Kind: "user-settings", Location: c.Paths.GlobalSettings}}
+			field := interaction.SettingField{ID: "web.service." + id + "." + d.key, Category: "tools", Label: d.label, Description: description, Kind: d.value.Kind, Value: d.value, DisabledReason: disabled, Applies: interaction.SettingNextRun, Source: interaction.SettingSource{Kind: "user-settings", Location: c.Paths.GlobalSettings}}
 			if d.key == "type" {
 				field.Choices = []interaction.SettingChoice{{Value: exa.SearchTypeAuto, Label: "Auto"}, {Value: exa.SearchTypeFast, Label: "Fast"}}
 			}

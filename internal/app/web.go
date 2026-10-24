@@ -7,6 +7,7 @@ import (
 	"github.com/ch1lam/aice-cli/internal/agent"
 	"github.com/ch1lam/aice-cli/internal/config"
 	"github.com/ch1lam/aice-cli/internal/guard"
+	"github.com/ch1lam/aice-cli/internal/interaction"
 	"github.com/ch1lam/aice-cli/internal/tool"
 	"github.com/ch1lam/aice-cli/internal/web"
 	"github.com/ch1lam/aice-cli/internal/web/exa"
@@ -175,55 +176,95 @@ func (s webState) closeBackend() {
 	}
 }
 
-// webStatusLines renders the effective web configuration for /web and /settings.
-func (s webState) statusLines() []string {
-	lines := []string{"Web search: " + onOff(s.settings.SearchEnabled)}
-	if len(s.settings.Priority) == 0 {
-		lines = append(lines, "Priority: [] (no search source allowed)")
-	} else {
-		lines = append(lines, "Priority: "+strings.Join(s.settings.Priority, ", "))
+// statusDetails describes the effective web configuration for /web and
+// Settings: the chosen source first, then every candidate and policy.
+func (s webState) statusDetails() []interaction.Detail {
+	searchTone := interaction.ToneGood
+	if !s.settings.SearchEnabled {
+		searchTone = interaction.ToneMuted
 	}
+	source, sourceTone := s.sourceSummary()
 	switch {
 	case s.configErr != nil:
-		lines = append(lines, "Search source: unavailable — "+s.configErr.Error())
+		source += " — " + s.configErr.Error()
 	case s.binding.Kind == web.BindingService:
-		lines = append(lines, fmt.Sprintf("Search source: %s (%s, %s)", s.binding.Selected.Entry, s.binding.Selected.ProviderID, s.binding.Selected.EndpointOrigin))
+		source = fmt.Sprintf("%s (%s, %s)", s.binding.Selected.Entry, s.binding.Selected.ProviderID, s.binding.Selected.EndpointOrigin)
 	default:
-		lines = append(lines, "Search source: none — "+s.binding.Reason)
+		source += " — " + s.binding.Reason
 	}
-	for _, skipped := range s.binding.Skipped {
-		lines = append(lines, fmt.Sprintf("  skipped %s: %s (%s)", skipped.Entry, skipped.Availability, skipped.Detail))
+	priority := strings.Join(s.settings.Priority, ", ")
+	if priority == "" {
+		priority = "[] (no search source allowed)"
+	}
+	details := []interaction.Detail{
+		{Key: "Web search", Value: onOff(s.settings.SearchEnabled), Tone: searchTone},
+		{Key: "Search source", Value: source, Tone: sourceTone},
+		{Key: "Priority", Value: priority},
+	}
+	var candidates []interaction.Detail
+	skipped := make(map[string]bool)
+	for _, entry := range s.binding.Skipped {
+		skipped[entry.Entry] = true
+		candidates = append(candidates, interaction.Detail{Indent: 2, Key: "skipped " + entry.Entry, Value: fmt.Sprintf("%s (%s)", entry.Availability, entry.Detail), Tone: interaction.ToneMuted})
 	}
 	for _, candidate := range s.candidates {
-		if candidate.Entry == web.PriorityNative {
-			lines = append(lines, "  native: "+string(candidate.Availability)+" — "+candidate.Detail)
+		if skipped[candidate.Entry] {
 			continue
 		}
-		detail := string(candidate.Availability)
-		if candidate.Detail != "" {
-			detail += " — " + candidate.Detail
+		value := string(candidate.Availability)
+		if candidate.Entry != web.PriorityNative {
+			service := s.settings.Services[candidate.InstanceID]
+			value = fmt.Sprintf("%s, %s, credential %s: %s", candidate.ProviderID, candidate.EndpointOrigin, service.CredentialDescription(), candidate.Availability)
 		}
-		service := s.settings.Services[candidate.InstanceID]
-		lines = append(lines, fmt.Sprintf("  %s: %s, %s, credential %s: %s", candidate.Entry, candidate.ProviderID, candidate.EndpointOrigin, service.CredentialDescription(), detail))
+		if candidate.Detail != "" {
+			value += " — " + candidate.Detail
+		}
+		candidates = append(candidates, interaction.Detail{Indent: 2, Key: candidate.Entry, Value: value, Tone: availabilityTone(candidate.Availability)})
 	}
+	details = append(details, candidates...)
 	if len(s.settings.AllowedDomains) > 0 {
-		lines = append(lines, "Allowed domains (policy): "+strings.Join(s.settings.AllowedDomains, ", "))
+		details = append(details, interaction.Detail{Key: "Allowed domains (policy)", Value: strings.Join(s.settings.AllowedDomains, ", ")})
 	}
 	if len(s.settings.ExcludedDomains) > 0 {
-		lines = append(lines, "Excluded domains (policy): "+strings.Join(s.settings.ExcludedDomains, ", "))
+		details = append(details, interaction.Detail{Key: "Excluded domains (policy)", Value: strings.Join(s.settings.ExcludedDomains, ", ")})
 	}
-	fetch := "Web fetch: " + onOff(s.settings.FetchEnabled)
+	fetch, fetchTone := onOff(s.settings.FetchEnabled), interaction.ToneMuted
 	if s.settings.FetchEnabled {
-		fetch += fmt.Sprintf(" (standard proxy environment, no authentication, HTML/text/Markdown only, %s timeout)", s.settings.FetchTimeout)
+		fetch, fetchTone = fetch+fmt.Sprintf(" (standard proxy environment, no authentication, HTML/text/Markdown only, %s timeout)", s.settings.FetchTimeout), interaction.ToneGood
 	}
 	if s.fetchErr != nil {
-		fetch += " — unavailable: " + s.fetchErr.Error()
+		fetch, fetchTone = fetch+" — unavailable: "+s.fetchErr.Error(), interaction.ToneBad
 	}
-	lines = append(lines, fetch)
+	details = append(details, interaction.Detail{Key: "Web fetch", Value: fetch, Tone: fetchTone})
 	for _, restriction := range s.settings.ProjectRestricted {
-		lines = append(lines, "Project settings tightened: "+restriction)
+		details = append(details, interaction.Detail{Key: "Project settings tightened", Value: restriction, Tone: interaction.ToneWarning})
 	}
-	return lines
+	return details
+}
+
+// sourceSummary is the short search source state a Settings row shows.
+func (s webState) sourceSummary() (string, interaction.DetailTone) {
+	switch {
+	case s.configErr != nil:
+		return "unavailable", interaction.ToneBad
+	case !s.settings.SearchEnabled:
+		return "search off", interaction.ToneMuted
+	case s.binding.Kind == web.BindingService:
+		return s.binding.Selected.Entry, interaction.ToneGood
+	}
+	return "none", interaction.ToneWarning
+}
+
+func availabilityTone(availability web.Availability) interaction.DetailTone {
+	switch availability {
+	case web.AvailabilityReady:
+		return interaction.ToneGood
+	case web.AvailabilityMissingCredentials:
+		return interaction.ToneWarning
+	case web.AvailabilityInvalidConfig:
+		return interaction.ToneBad
+	}
+	return interaction.ToneMuted
 }
 
 func onOff(enabled bool) string {

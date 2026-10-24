@@ -393,7 +393,12 @@ func (p *settingsPanel) actionMenuLayout(menu *interaction.CommandMenu, selectio
 	// The first level of a row's own menu shows its status in place of the
 	// menu title, so choosing an action never requires a separate status page.
 	if a.prompt == nil && len(a.menus) == 1 && p.editing != nil && len(p.editing.Details) > 0 {
-		lines = append(strings.Split(renderDetails(p.editing.Details, p.layout.inner), "\n"), "")
+		lines = strings.Split(renderDetails(p.editing.Details, p.layout.inner), "\n")
+		// Keep every choice on the first page; ? on the row shows the rest.
+		if limit := max(1, p.layout.bodyHeight-2-len(menu.Options)); len(lines) > limit {
+			lines = append(lines[:limit-1], mutedStyle.Render(ansi.Truncate("… Esc, then ? shows the full status", max(1, p.layout.inner), "…")))
+		}
+		lines = append(lines, "")
 	}
 	pageSize := max(1, p.layout.bodyHeight-1-max(1, min(len(menu.Options), 3)))
 	start := min(a.page*pageSize, ((len(lines)-1)/pageSize)*pageSize)
