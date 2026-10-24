@@ -2,7 +2,6 @@ package tui
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
 	"charm.land/bubbles/v2/textinput"
@@ -276,45 +275,61 @@ func (m model) applySettingActionDone(msg settingsActionDone) (tea.Model, tea.Cm
 		p.notice = ""
 		return m, m.refreshSettings()
 	}
-	p.notice = settingsActionNotice(msg.result, msg.err)
-	if strings.Contains(p.notice, "\n") {
-		id := ""
-		if msg.action.command.Name == "mcp" {
-			id = "mcp.services"
-		}
-		p.editing = &interaction.SettingField{ID: id, Kind: interaction.SettingInfo, Label: "Action result", Description: p.notice}
+	details := settingsActionDetails(msg.result, msg.err)
+	p.notice = interaction.DetailsText(details)
+	if len(details) > 1 {
+		p.editing = &interaction.SettingField{Kind: interaction.SettingInfo, Label: "Action result", Description: p.notice, Details: details}
 		p.detailOffset = 0
 	}
 	return m, nil
 }
 
-func settingsActionNotice(result interaction.SettingsActionResult, err error) string {
-	var lines []string
+// settingsActionDetails orders an action's outcome: its output, external
+// steps, the saved and readiness states, then warnings, the error and any
+// structured details the application attached.
+func settingsActionDetails(result interaction.SettingsActionResult, err error) []interaction.Detail {
+	var details []interaction.Detail
+	text := func(text string, tone interaction.DetailTone) {
+		for line := range strings.SplitSeq(text, "\n") {
+			details = append(details, interaction.Detail{Text: line, Tone: tone})
+		}
+	}
 	if result.Output != "" {
-		lines = append(lines, result.Output)
+		text(result.Output, interaction.ToneDefault)
 	}
 	for _, step := range result.External {
-		status := "Incomplete"
+		status, tone := "Incomplete", interaction.ToneWarning
 		if step.Completed {
-			status = "Completed"
+			status, tone = "Completed", interaction.ToneGood
 		}
-		lines = append(lines, status+": "+step.Name+". "+step.Detail)
+		if step.Detail != "" {
+			status += " · " + step.Detail
+		}
+		details = append(details, interaction.Detail{Key: step.Name, Value: status, Tone: tone})
 	}
 	if result.Committed {
-		lines = append(lines, "Preference saved")
+		text("Preference saved", interaction.ToneGood)
 	}
 	if result.ReadinessKnown {
 		if result.Ready {
-			lines = append(lines, "Ready")
+			text("Ready", interaction.ToneGood)
 		} else {
-			lines = append(lines, "Not ready; check setup status")
+			text("Not ready; check setup status", interaction.ToneWarning)
 		}
 	}
-	lines = append(lines, result.Warnings...)
-	if err != nil {
-		lines = append(lines, err.Error())
+	for _, warning := range result.Warnings {
+		text(warning, interaction.ToneWarning)
 	}
-	return strings.Join(lines, "\n")
+	if err != nil {
+		text(err.Error(), interaction.ToneBad)
+	}
+	if len(result.Details) > 0 {
+		if len(details) > 0 {
+			details = append(details, interaction.Detail{})
+		}
+		details = append(details, result.Details...)
+	}
+	return details
 }
 func (p *settingsPanel) actionView() string {
 	a := p.action
@@ -339,17 +354,13 @@ func (p *settingsPanel) actionView() string {
 	}
 	for i := layout.start; i < layout.end; i++ {
 		v := menu.Options[i]
-		prefix := menuPrefix(i == *selection)
-		row := sanitizeSingleLineText(fmt.Sprint(prefix, v.Label, "  ", v.Description))
-		if a.command.Name == "mcp" {
-			style := bodyStyle
-			if i == *selection {
-				style = labelStyle
-			}
-			row = style.Render(sanitizeSingleLineText(prefix + v.Label))
-			if v.Description != "" {
-				row += mutedStyle.Render("  " + sanitizeSingleLineText(v.Description))
-			}
+		style := bodyStyle
+		if i == *selection {
+			style = labelStyle
+		}
+		row := style.Render(sanitizeSingleLineText(menuPrefix(i == *selection) + v.Label))
+		if v.Description != "" {
+			row += mutedStyle.Render("  " + sanitizeSingleLineText(v.Description))
 		}
 		rows = append(rows, ansi.Truncate(row, max(1, p.layout.inner), "…"))
 	}
@@ -379,6 +390,11 @@ func (p *settingsPanel) actionMenuLayout(menu *interaction.CommandMenu, selectio
 		}
 	}
 	lines := strings.Split(ansi.Hardwrap(sanitizeMultilineText(strings.Join(parts, "\n")), max(1, p.layout.inner), true), "\n")
+	// The first level of a row's own menu shows its status in place of the
+	// menu title, so choosing an action never requires a separate status page.
+	if a.prompt == nil && len(a.menus) == 1 && p.editing != nil && len(p.editing.Details) > 0 {
+		lines = append(strings.Split(renderDetails(p.editing.Details, p.layout.inner), "\n"), "")
+	}
 	pageSize := max(1, p.layout.bodyHeight-1-max(1, min(len(menu.Options), 3)))
 	start := min(a.page*pageSize, ((len(lines)-1)/pageSize)*pageSize)
 	end := min(len(lines), start+pageSize)

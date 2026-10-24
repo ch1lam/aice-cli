@@ -224,7 +224,7 @@ func TestSettingsActionPreservesPartialSuccess(t *testing.T) {
 		Warnings: []string{"Cleanup still pending"},
 	}
 	m = updateModel(t, m, settingsActionDone{action: a, result: result, err: errors.New("Connection unavailable")})
-	for _, fact := range []string{"Completed: Driver installation", "Preference saved", "Not ready", "Cleanup still pending", "Connection unavailable"} {
+	for _, fact := range []string{"Driver installation: Completed", "Preference saved", "Not ready", "Cleanup still pending", "Connection unavailable"} {
 		if !strings.Contains(m.settings.notice, fact) {
 			t.Fatalf("lost %q: %s", fact, m.settings.notice)
 		}
@@ -233,10 +233,10 @@ func TestSettingsActionPreservesPartialSuccess(t *testing.T) {
 		t.Fatal("action retained a secret or entered the transcript")
 	}
 	view := ansi.Strip(m.settingsPanelView())
-	if !strings.Contains(view, "Completed: Driver installation") || !strings.Contains(view, "Connection unavailable") || m.settings.editing == nil || m.settings.editing.Kind != interaction.SettingInfo {
+	if !strings.Contains(view, "Driver installation  Completed") || !strings.Contains(view, "Connection unavailable") || m.settings.editing == nil || m.settings.editing.Kind != interaction.SettingInfo {
 		t.Fatal("partial facts not available in scrollable result view", view)
 	}
-	if got := settingsActionNotice(interaction.SettingsActionResult{}, nil); strings.Contains(got, "Ready") {
+	if got := interaction.DetailsText(settingsActionDetails(interaction.SettingsActionResult{}, nil)); strings.Contains(got, "Ready") {
 		t.Fatal("unknown readiness became ready")
 	}
 }

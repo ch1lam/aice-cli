@@ -34,7 +34,8 @@ func settingRowValue(field interaction.SettingField) (value string, submenu bool
 		}
 		submenu = true
 	case interaction.SettingAction:
-		value, submenu = "", true
+		// Actions show an application status; only menus lead to another level.
+		value, submenu = field.Value.Text, field.Action == nil || field.Action.Menu != nil
 	case interaction.SettingInfo:
 		value, submenu = field.Value.Text, true
 	case interaction.SettingContexts, interaction.SettingList:
@@ -56,6 +57,9 @@ func settingRow(field interaction.SettingField, selected bool, width int) string
 	valueStyle := bodyStyle
 	if field.Source.Kind == "default" || (field.Kind == interaction.SettingBool && field.Value.Bool == field.InvertBool) {
 		valueStyle = mutedStyle
+	}
+	if field.Tone != interaction.ToneDefault && value != "" {
+		value, valueStyle = toneGlyph(field.Tone)+value, detailToneStyle(field.Tone)
 	}
 	// Reserve a shared right edge for values and a separate submenu arrow.
 	// Long values leave at least half the available space for the label.

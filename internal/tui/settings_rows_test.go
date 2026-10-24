@@ -163,3 +163,30 @@ func TestSettingsEnumMouseMatchesVisibleChoices(t *testing.T) {
 		}
 	}
 }
+
+func TestSettingActionRowsShowStatusAndMenuHeader(t *testing.T) {
+	t.Parallel()
+	menu := &interaction.CommandMenu{Title: "Browser", Options: []interaction.CommandOption{{Label: "Disable", Arguments: "disable"}}}
+	field := interaction.SettingField{ID: "browser.service", Category: "models", Label: "Browser automation", Kind: interaction.SettingAction,
+		Value: interaction.SettingValue{Text: "ready"}, Tone: interaction.ToneGood, Action: &interaction.Command{Name: "browser", Menu: menu},
+		Details: []interaction.Detail{{Key: "Service", Value: "user:browser"}, {Key: "Helper path", Value: "/bin/agent-browser", Tone: interaction.ToneReference}}}
+	row := settingRow(field, false, 60)
+	if !strings.Contains(row, skillStyle.Render("● ready")) || !strings.HasSuffix(ansi.Strip(row), " ›") {
+		t.Fatalf("status row = %q", row)
+	}
+	toggle := field
+	toggle.Action = &interaction.Command{Name: "browser"}
+	toggle.Tone = interaction.ToneDefault
+	if strings.HasSuffix(ansi.Strip(settingRow(toggle, false, 60)), "›") {
+		t.Fatal("an immediate action row shows a submenu arrow")
+	}
+
+	m := panelModel(t, 120, 40)
+	m.settings.snapshot.Fields = []interaction.SettingField{field}
+	m.runSettingsAction = func(*settingsAction, uint64) tea.Cmd { return nil }
+	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	view := ansi.Strip(m.settingsPanelView())
+	if !strings.Contains(view, "Service      user:browser") || !strings.Contains(view, "Helper path  /bin/agent-browser") || !strings.Contains(view, "› Disable") {
+		t.Fatalf("action menu lacks its status header:\n%s", view)
+	}
+}

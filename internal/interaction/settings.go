@@ -60,8 +60,12 @@ type SettingField struct {
 	ID, Category, Label, Description string
 	// Section groups fields within a category for display.
 	Section string
-	// Details, when present, is the structured form of an info Description.
-	Details                                     []Detail
+	// Details, when present, is the structured form of an info Description,
+	// or the status an action row shows above its menu and on request.
+	Details []Detail
+	// Tone colors a status shown as the row value, such as an action's
+	// Value.Text; the application decides what each state means.
+	Tone                                        DetailTone
 	Keywords                                    []string
 	Kind                                        SettingKind
 	Value                                       SettingValue
@@ -148,8 +152,10 @@ type SettingsActionRunner interface {
 // preference does not establish that a native capability is available.
 type SettingsActionResult struct {
 	// FocusSetting is a local application navigation request, never server text.
-	FocusSetting       string
-	Output             string
+	FocusSetting string
+	Output       string
+	// Details is structured output shown after Output, such as a status.
+	Details            []Detail
 	External           []SettingsActionStep
 	Committed, Applied bool
 	ReadinessKnown     bool
