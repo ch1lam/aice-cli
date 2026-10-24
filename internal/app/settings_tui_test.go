@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -27,6 +28,7 @@ func TestSettingsUsageTUI(t *testing.T) {
 	paths := authTestPaths(t)
 	writeConfigFixture(t, paths.GlobalSettings, `{"provider":"custom","model":"old-model"}`)
 	installCalls, grantCalls := 0, 0
+	driver := filepath.Join(home, "cua-driver")
 	model := &gatedModel{gates: map[int]chan struct{}{1: make(chan struct{})}, preDelta: "Synthetic run waiting"}
 	command, err := newTestCommand(t, dependencies{
 		loadConfig:   func(options config.LoadOptions) (config.Config, error) { return config.LoadFiles(paths, options) },
@@ -40,7 +42,7 @@ func TestSettingsUsageTUI(t *testing.T) {
 					if !o.NoInstall {
 						t.Error("startup download policy lost")
 					}
-					return deps.CuaInstallResult{Reused: true, Installation: deps.CuaInstallation{Binary: "/synthetic/cua-driver"}}, nil
+					return deps.CuaInstallResult{Reused: true, Installation: deps.CuaInstallation{Binary: driver}}, nil
 				},
 				grant: func(context.Context, string) error { grantCalls++; return nil },
 			}
@@ -183,7 +185,7 @@ func TestSettingsUsageTUI(t *testing.T) {
 		t.Fatalf("timeout not persisted: %v", loaded.RunTimeout)
 	}
 	server := loaded.MCP.Servers["user:cua"]
-	if !server.Enabled || server.Settings.Command != "/synthetic/cua-driver" || loaded.MCP.ConnectionDecision("user:cua") != config.MCPConnectionAllow || installCalls != 1 || grantCalls != 1 {
+	if !server.Enabled || server.Settings.Command != driver || loaded.MCP.ConnectionDecision("user:cua") != config.MCPConnectionAllow || installCalls != 1 || grantCalls != 1 {
 		t.Fatalf("desktop setup server=%+v approval=%s install=%d grant=%d", server.Settings, loaded.MCP.ConnectionDecision("user:cua"), installCalls, grantCalls)
 	}
 	if model.requestCount() != 1 {

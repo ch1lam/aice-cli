@@ -82,9 +82,10 @@ func TestSaveSettingsWithOpenWindowsReader(t *testing.T) {
 	if err != nil || string(data) != original {
 		t.Fatalf("original file changed: %q, %v", data, err)
 	}
+	// The lock file persists by design; only the temporary file must go.
 	entries, err := os.ReadDir(dir)
-	if err != nil || len(entries) != 1 || entries[0].Name() != "settings.json" {
-		t.Fatalf("lock or temporary file not cleaned up: %v, %v", entries, err)
+	if err != nil || len(entries) != 2 || entries[0].Name() != "settings.json" || entries[1].Name() != "settings.json.lock" {
+		t.Fatalf("temporary file not cleaned up: %v, %v", entries, err)
 	}
 	if err := reader.Close(); err != nil {
 		t.Fatal(err)

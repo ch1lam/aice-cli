@@ -2,13 +2,14 @@ package desktop
 
 import (
 	"encoding/json"
+	"path/filepath"
 	"testing"
 
 	"github.com/ch1lam/aice-cli/internal/config"
 )
 
 func TestDefinitionIsAnOrdinaryMCPServer(t *testing.T) {
-	encoded, err := json.Marshal(Definition("/Applications/CuaDriver.app/Contents/MacOS/cua-driver"))
+	encoded, err := json.Marshal(Definition(filepath.Join(t.TempDir(), "cua-driver")))
 	if err != nil {
 		t.Fatal(err)
 	}

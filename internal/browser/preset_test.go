@@ -2,6 +2,7 @@ package browser
 
 import (
 	"encoding/json"
+	"path/filepath"
 	"testing"
 
 	"github.com/ch1lam/aice-cli/internal/config"
@@ -17,7 +18,7 @@ func TestDefinitionRoundTripsChoices(t *testing.T) {
 		{false, Target{Endpoint: "9222"}},
 		{true, Target{Endpoint: "ws://127.0.0.1:9222/devtools/browser/x"}},
 	} {
-		encoded, err := json.Marshal(Definition("/bin/agent-browser", tc.headed, tc.target))
+		encoded, err := json.Marshal(Definition(filepath.Join(t.TempDir(), "agent-browser"), tc.headed, tc.target))
 		if err != nil {
 			t.Fatal(err)
 		}

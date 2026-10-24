@@ -388,11 +388,11 @@ func TestMCPManagementCanceledConnectionPreservesExitStatus(t *testing.T) {
 
 func TestMCPManagementImportAddsPortableServersWithoutReplacing(t *testing.T) {
 	paths := trustTestPaths(t)
-	if _, err := managementCommand(t, paths, `{"command":"/bin/existing"}`, "add", "docs"); err != nil {
+	if _, err := managementCommand(t, paths, `{"command":"existing"}`, "add", "docs"); err != nil {
 		t.Fatal(err)
 	}
 	result, err := managementCommand(t, paths, `{"mcpServers": {
-		"docs": {"command": "/bin/replacement"},
+		"docs": {"command": "replacement"},
 		"Fetch": {"command": "uvx", "args": ["mcp-server-fetch"]},
 		"legacy": {"type": "sse", "url": "https://example.com/sse"}
 	}}`, "import")
@@ -407,10 +407,10 @@ func TestMCPManagementImportAddsPortableServersWithoutReplacing(t *testing.T) {
 			definitions[service.Key] = definition
 		}
 	}
-	if definitions["user:docs"].Command != "/bin/existing" || definitions["user:fetch"].Command != "uvx" || definitions["user:fetch"].Name != "Fetch" {
+	if definitions["user:docs"].Command != "existing" || definitions["user:fetch"].Command != "uvx" || definitions["user:fetch"].Name != "Fetch" {
 		t.Fatalf("definitions = %#v", definitions)
 	}
-	if _, err := managementCommand(t, paths, `{"mcpServers": {"docs": {"command": "/bin/x"}}}`, "import"); err == nil {
+	if _, err := managementCommand(t, paths, `{"mcpServers": {"docs": {"command": "x"}}}`, "import"); err == nil {
 		t.Fatal("import without new servers reported success")
 	}
 

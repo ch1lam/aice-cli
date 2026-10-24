@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -85,6 +86,7 @@ func TestWebManagementActions(t *testing.T) {
 // The browser preset only writes and approves the ordinary user:browser
 // service; each choice is a definition change through the generic MCP path.
 func TestBrowserPresetActions(t *testing.T) {
+	bin := filepath.Join(t.TempDir(), "agent-browser")
 	paths := runMCPSettingsConfigurationFixture(t, `"mcp":{"servers":{}}`, func(ctx context.Context, s *interactiveSession) {
 		act := func(action string, input ...string) interaction.SettingsActionResult {
 			t.Helper()
@@ -103,7 +105,7 @@ func TestBrowserPresetActions(t *testing.T) {
 		choices := func() (bool, browser.Target) {
 			t.Helper()
 			server, exists := s.configuration.MCP.Servers[browserServiceKey]
-			if !exists || !server.Enabled || s.configuration.MCP.ConnectionDecision(browserServiceKey) != config.MCPConnectionAllow || server.Settings.Command != "/synthetic/agent-browser" {
+			if !exists || !server.Enabled || s.configuration.MCP.ConnectionDecision(browserServiceKey) != config.MCPConnectionAllow || server.Settings.Command != bin {
 				t.Fatalf("service = %+v approval=%s", server, s.configuration.MCP.ConnectionDecision(browserServiceKey))
 			}
 			return browser.Options(server.Settings)
@@ -111,7 +113,7 @@ func TestBrowserPresetActions(t *testing.T) {
 		if _, err := s.RunSettingsAction(ctx, 0, interaction.CommandRequest{Name: "browser", Arguments: "setup"}); err == nil {
 			t.Fatal("setup without a helper succeeded")
 		}
-		s.browserBin = "/synthetic/agent-browser"
+		s.browserBin = bin
 		if result := act("setup"); !result.Committed || !strings.Contains(result.Output, browserServiceKey) {
 			t.Fatalf("setup = %+v", result)
 		}

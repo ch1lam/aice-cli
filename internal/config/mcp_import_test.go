@@ -15,7 +15,7 @@ func TestParseMCPServersConvertsPortableEntries(t *testing.T) {
 	servers, skipped, err := config.ParseMCPServers([]byte(`{"mcpServers": {
 		"GitHub": {"command": "npx", "args": ["-y", "server-github"], "env": {"GITHUB_TOKEN": "${GITHUB_TOKEN}", "MODE": "read"}},
 		"docs.remote": {"type": "streamable-http", "url": "https://example.com/mcp", "headers": {"Authorization": "Bearer ${DOCS_TOKEN}"}},
-		"off": {"command": "/bin/server", "disabled": true},
+		"off": {"command": "server", "disabled": true},
 		"literal": {"url": "https://example.com/mcp", "headers": {"Authorization": "Bearer secret"}},
 		"legacy": {"type": "sse", "url": "https://example.com/sse"},
 		"expanded": {"command": "npx", "args": ["${HOME}/x"]},
@@ -32,7 +32,7 @@ func TestParseMCPServersConvertsPortableEntries(t *testing.T) {
 		"docs-remote": {Name: "docs.remote", Transport: "http", URL: "https://example.com/mcp", Headers: map[string]config.MCPValueRef{
 			"Authorization": {Env: "DOCS_TOKEN", Prefix: "Bearer "},
 		}},
-		"off": {Enabled: new(bool), Transport: "stdio", Command: "/bin/server"},
+		"off": {Enabled: new(bool), Transport: "stdio", Command: "server"},
 		"cua": {Transport: "stdio", Command: "cua-driver", Args: []string{"mcp"}},
 	}
 	if !reflect.DeepEqual(servers, want) {
