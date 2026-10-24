@@ -154,6 +154,27 @@ granting tool execution. Saved decisions are bounded to 1,024 entries/1 MiB.
 They store fingerprints, not resolved credentials. Session tool grants stay in
 memory; `--yolo` never persists either kind of approval.
 
+### In-run connection approval
+
+An interactive main Run asks before the first operation that would start or
+contact a `needs_approval` service, including discovery started by
+`tool_search`, resource listing, server info and required-service preparation.
+The guard panel shows the source, the resolved executable with its arguments
+and directory or the endpoint, and offers **Allow this connection while AICE is
+running**, **Always allow this exact connection** (saved as the `allow`
+decision for the current fingerprint) or **Deny**. Any other reply denies.
+Prompts are serialized, so concurrent discovery asks once per service. Allow
+and Deny answers are remembered for that exact fingerprint until the process
+exits; a changed command, endpoint or credential asks again, and a cancelled
+prompt records nothing. Remote tool calls still ask separately.
+
+Print, the management CLI and other non-interactive callers never ask: an
+unapproved connection remains `needs_approval` and fails closed. `--yolo`
+skips only the ask, never a saved or configured deny. A saved **Always** choice
+is written to the user auth file immediately, while this process keeps its
+frozen configuration snapshot; status reads in this process may still show
+`ask` until restart, although the remembered answer applies.
+
 ## Management CLI
 
 `aice mcp` works without a model credential, Session, helper installation or an
@@ -489,7 +510,8 @@ and returned links are not expanded automatically.
 The app owns configured transports for one Print invocation or interactive
 application. States are `disconnected`, `connecting`, `ready`, `needs_approval`,
 `needs_auth`, `failed` and `disabled`. Opening checks current restrictions and
-exact saved connection approval; missing credentials never reach transport.
+exact saved or [in-run](#in-run-connection-approval) connection approval;
+missing credentials never reach transport.
 Status uses local sanitized facts and never connects optional services.
 
 Operations serialize per service, including queue time in the call timeout

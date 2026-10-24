@@ -67,11 +67,15 @@ type mcpOwner struct {
 	checkConnection func(mcpclient.Config) error
 	refresh         mcpRefreshFunc
 	services        map[string]*mcpOwnedService
-	slots           int
-	closed          bool
-	work            sync.WaitGroup
-	closeOnce       sync.Once
-	closeErr        error
+	// approved and declined record in-run connection answers by key and
+	// fingerprint; a changed connection asks again. approvalMu serializes prompts.
+	approvalMu         sync.Mutex
+	approved, declined map[string]string
+	slots              int
+	closed             bool
+	work               sync.WaitGroup
+	closeOnce          sync.Once
+	closeErr           error
 }
 
 func newMCPOwner(configuration config.MCPConfig, gate *guard.Guard, yolo bool, open mcpOpenFunc, refresh mcpRefreshFunc) (*mcpOwner, error) {
@@ -81,7 +85,7 @@ func newMCPOwner(configuration config.MCPConfig, gate *guard.Guard, yolo bool, o
 	if open == nil {
 		open = openMCPConnection
 	}
-	o := &mcpOwner{configuration: configuration.Clone(), guard: gate, yolo: yolo, open: open, refresh: refresh, services: make(map[string]*mcpOwnedService)}
+	o := &mcpOwner{configuration: configuration.Clone(), guard: gate, yolo: yolo, open: open, refresh: refresh, services: make(map[string]*mcpOwnedService), approved: make(map[string]string), declined: make(map[string]string)}
 	for _, key := range o.configuration.ServerKeys() {
 		server := o.configuration.Servers[key]
 		service := newMCPOwnedService(server)
@@ -206,8 +210,10 @@ func (o *mcpOwner) policyLocked(s *mcpOwnedService) error {
 		state, detail = "needs_auth", "MCP connection values are missing"
 	case s.authFailed:
 		state, detail = "needs_auth", "MCP OAuth refresh or authentication failed; inspect credentials and explicitly reconnect or log in"
-	case !o.yolo && o.configuration.ConnectionDecision(s.server.Key) != config.MCPConnectionAllow:
-		state, detail = "needs_approval", "MCP connection needs explicit approval"
+	case o.declined[s.server.Key] == s.server.Fingerprint:
+		state, detail = "disabled", "MCP connection was declined while AICE is running"
+	case !o.yolo && o.configuration.ConnectionDecision(s.server.Key) != config.MCPConnectionAllow && o.approved[s.server.Key] != s.server.Fingerprint:
+		state, detail = "needs_approval", "MCP connection needs approval; interactive runs ask on first use"
 	}
 	if state == "" {
 		return nil
@@ -230,6 +236,9 @@ func (o *mcpOwner) permissionLocked(s *mcpOwnedService) error {
 
 func (o *mcpOwner) begin(ctx context.Context, s *mcpOwnedService) (*mcpOwnedService, context.Context, func(), error) {
 	if err := ctx.Err(); err != nil {
+		return nil, nil, nil, err
+	}
+	if err := o.approveIfNeeded(ctx, s); err != nil {
 		return nil, nil, nil, err
 	}
 	o.mu.Lock()

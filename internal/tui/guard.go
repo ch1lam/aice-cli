@@ -229,6 +229,9 @@ func guardOptionNeedsReview(opt interaction.GuardOption, width int) bool {
 }
 
 func guardTitle(req *interaction.GuardRequest) string {
+	if req.Title != "" {
+		return req.Title
+	}
 	if req.Command != "" {
 		return "Run this command?"
 	}

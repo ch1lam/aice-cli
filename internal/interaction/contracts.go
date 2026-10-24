@@ -443,7 +443,9 @@ type GuardReply struct {
 // GuardRequest is one interactive guard confirmation sent from the agent loop
 // to the frontend. The frontend must send one GuardReply on Reply.
 type GuardRequest struct {
-	ID        string
+	ID string
+	// Title optionally replaces the prompt title derived from the fields below.
+	Title     string
 	ToolName  string
 	Reason    string
 	RuleID    string
