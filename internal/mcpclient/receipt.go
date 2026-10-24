@@ -28,6 +28,8 @@ type receipt struct {
 	rpcError          bool
 	limited           bool
 	httpStatus        int
+	// continues marks an input-required result that a retry may follow.
+	continues bool
 }
 
 // Only these arbitrary-JSON fields need wire precision. Content, pagination,
@@ -88,10 +90,16 @@ func (r *receipts) observe(data []byte, outgoing bool) {
 		// evidence if it moves on to another mutually supported protocol.
 		*c = receipt{method: "connect", id: id, attempted: true}
 	}
-	if outgoing && msg.Method == c.method && c.id == "" {
-		c.id, c.attempted = id, true // before write: a failed write may be partial
+	if outgoing && msg.Method == c.method && (c.id == "" || c.continues) {
+		// Before write: a failed write may be partial. After an input-required
+		// result, the SDK completes the same operation with a new request.
+		*c = receipt{method: c.method, id: id, attempted: true}
 	}
 	if !outgoing && msg.Method == "" && c.id == id && !c.returned && !c.rpcError {
+		var interim struct {
+			ResultType string `json:"resultType"`
+		}
+		c.continues = json.Unmarshal(msg.Result, &interim) == nil && interim.ResultType == "input_required"
 		c.returned = len(msg.Result) > 0
 		c.resultBytes = len(msg.Result)
 		c.rpcError = len(msg.Error) > 0

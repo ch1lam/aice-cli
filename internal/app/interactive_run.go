@@ -180,6 +180,7 @@ func (r *interactiveRun) Run(ctx context.Context) (returnErr error) {
 	r.model = snapshot.model
 	r.mu.Unlock()
 	ctx = withMCPConnectionApprover(ctx, r.session.approveMCPConnection(snapshot.configuration.Paths))
+	ctx = withMCPElicitor(ctx, r.session.elicitMCP)
 	ctx, scope, err := bindRunScope(ctx, r.session.conversation.store, r.session.desktop, snapshot.mcp, snapshot.configuration, snapshot.model, nil)
 	if err != nil {
 		return err

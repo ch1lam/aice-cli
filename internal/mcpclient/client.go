@@ -33,6 +33,10 @@ type Client struct {
 	http               *http.Transport
 	toolGeneration     atomic.Uint64
 	resourceGeneration atomic.Uint64
+	// active is the operation holding gate; server requests for user input
+	// during that operation are answered in its context.
+	activeMu sync.Mutex
+	active   context.Context
 }
 
 // Open initializes one connection. Canceling ctx bounds initialization; after
@@ -89,14 +93,24 @@ func Open(ctx context.Context, config Config) (*Client, error) {
 	}
 	stopChild := c.cancelChildOn(ctx)
 	defer stopChild()
-	protocol := mcp.NewClient(&mcp.Implementation{Name: "aice", Version: buildinfo.Version}, &mcp.ClientOptions{
+	options := &mcp.ClientOptions{
 		Capabilities:               &mcp.ClientCapabilities{},
 		Logger:                     slog.New(slog.NewTextHandler(io.Discard, nil)),
 		ToolListChangedHandler:     func(context.Context, *mcp.ToolListChangedRequest) {},
 		ResourceListChangedHandler: func(context.Context, *mcp.ResourceListChangedRequest) {},
-		// The Loop owns follow-up and retries, including input-required results.
+		// Without an elicitation answerer, input-required results are returned
+		// as unsupported; the Loop owns follow-up and retries.
 		MultiRoundTrip: &mcp.MultiRoundTripOptions{Disabled: true},
-	})
+	}
+	if config.Elicit != nil {
+		// Form elicitation only. A 2026-07-28 input-required result is the
+		// server's request to complete this same call, not a replay of an
+		// executed operation, so the SDK retries it with the user's answer.
+		options.Capabilities.Elicitation = &mcp.ElicitationCapabilities{Form: &mcp.FormElicitationCapabilities{}}
+		options.ElicitationHandler = c.elicitationHandler(config.Elicit)
+		options.MultiRoundTrip = nil
+	}
+	protocol := mcp.NewClient(&mcp.Implementation{Name: "aice", Version: buildinfo.Version}, options)
 	// Retain the original connection only for failed-initialization cleanup.
 	// Returning it unchanged preserves SDK-private sessionUpdated hooks.
 	captured := &captureTransport{Transport: transport}
@@ -211,7 +225,8 @@ func (c *Client) acquire(ctx context.Context) (context.Context, context.CancelFu
 		return nil, nil, err
 	}
 	stopChild := c.cancelChildOn(ctx)
-	return ctx, func() { stopChild(); release() }, nil
+	c.setActiveOperation(ctx)
+	return ctx, func() { c.setActiveOperation(nil); stopChild(); release() }, nil
 }
 
 // os.Pipe writes are not context-aware. Canceling an active stdio operation

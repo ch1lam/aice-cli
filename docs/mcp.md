@@ -565,10 +565,32 @@ close does not retry DELETE.
 Internal consumers can pin protocol and replace the complete stdio environment;
 ordinary services use SDK discovery/negotiation, including `2026-07-28`.
 Only Cua pins `2025-06-18`, through the SDK's per-session option. The client
-advertises no roots, sampling or elicitation, and exposes no Prompts operations.
-OAuth/approval remain owned outside transport. Automatic SDK multi-round-trip
-handling is disabled: an input-required result is returned as unsupported,
-without replay, because the Loop owns follow-up and tool execution.
+advertises no roots or sampling (both deprecated in `2026-07-28`) and exposes
+no Prompts operations. OAuth/approval remain owned outside transport.
+
+### User input requests (elicitation)
+
+Application connections advertise form-mode elicitation. A legacy server's
+`elicitation/create` during an operation and a `2026-07-28` `input_required`
+result both reach one handler bound to the service identity, in the context of
+the operation the server is processing. For `input_required`, the SDK repeats
+that same call with the user's `inputResponses`; this completes the request the
+server explicitly left open and is not a replay of an executed operation. The
+receipt then tracks the follow-up request, so execution state and exact
+`structuredContent` come from the completed response. URL mode is not
+advertised and is cancelled; sampling and roots requests fail the call.
+
+In an interactive Run the question panel shows the source-qualified service,
+the untrusted server message and a warning not to enter secrets, three fields
+per page (at most twelve, flat string/number/integer/boolean properties; enums
+of up to three values become options, larger enums list their values). Skipping
+a required field declines the whole request, skipping an optional one omits it,
+and nothing is sent until every page is answered; the SDK validates accepted
+content against the schema. Print and other callers without a frontend answer
+`cancel`. Answers go only to that server and never enter the Session; the
+eventual tool result is recorded normally. Clients without a configured
+handler, such as the managed Cua transport, keep returning an input-required
+result as unsupported without replay.
 
 ## Discovery and results
 

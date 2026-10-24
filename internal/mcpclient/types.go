@@ -39,6 +39,9 @@ type Config struct {
 	Limits         Limits
 	// ProtocolVersion pins an exact supported tier; empty uses SDK negotiation.
 	ProtocolVersion string
+	// Elicit, when set, advertises form elicitation and answers server requests
+	// for user input made during an operation. Nil declares no such capability.
+	Elicit ElicitFunc
 }
 
 type StdioConfig struct {

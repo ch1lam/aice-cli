@@ -299,7 +299,7 @@ func (o *mcpOwner) ensure(ctx context.Context, s *mcpOwnedService) (mcpOwnedConn
 	s.status.State, s.status.Detail = "connecting", ""
 	o.mu.Unlock()
 	_, headers := s.server.ConnectionValues()
-	configuration := mcpclient.Config{ConnectTimeout: s.server.ConnectTimeout, CallTimeout: s.server.CallTimeout}
+	configuration := mcpclient.Config{ConnectTimeout: s.server.ConnectTimeout, CallTimeout: s.server.CallTimeout, Elicit: mcpElicit(s.server.Key)}
 	if s.server.Settings.Transport == "stdio" {
 		configuration.Stdio = mcpStdioConfiguration(s.server)
 	} else {
