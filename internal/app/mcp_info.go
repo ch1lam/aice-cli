@@ -112,3 +112,22 @@ func (c *mcpCatalog) serverPreviews(response *tool.ToolSearchResult) {
 		}
 	}
 }
+
+// initializedServerInfo copies retained initialize data for available services
+// in key order. It performs no I/O; uninitialized services are omitted.
+func (c *mcpCatalog) initializedServerInfo() []tool.MCPServerInfo {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	var sources []tool.MCPServerInfo
+	for _, key := range c.config.ServerKeys() {
+		connection := c.connections[key]
+		if connection == nil || c.closed || !c.serviceAvailable(key) {
+			continue
+		}
+		if info, ok := cachedMCPInfo(connection); ok {
+			server := c.config.Servers[key]
+			sources = append(sources, tool.MCPServerInfo{Service: key, Source: server.Source.Kind + ":" + server.Source.Location, Fingerprint: server.Fingerprint, Info: info, Secrets: mcpKnownSecrets(server, connection)})
+		}
+	}
+	return sources
+}

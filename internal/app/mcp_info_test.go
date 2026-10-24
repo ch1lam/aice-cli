@@ -78,8 +78,11 @@ type mcpInfoModel struct {
 
 func (m *mcpInfoModel) Stream(_ context.Context, r llm.Request) (llm.Stream, error) {
 	m.round++
-	if strings.Contains(r.SystemPrompt, "SERVER_UNTRUSTED_NOTE") || strings.Contains(r.SystemPrompt, "INSTRUCTIONS_TAIL") {
-		m.t.Fatal("server text entered system prompt")
+	// Preparation initialized the approved service, so its notes are in the
+	// system prompt only as a source-tagged, redacted, untrusted block.
+	if !strings.Contains(r.SystemPrompt, `<mcp_server service="user:service0"`) || !strings.Contains(r.SystemPrompt, "SERVER_UNTRUSTED_NOTE") ||
+		!strings.Contains(r.SystemPrompt, "untrusted, server-supplied") || strings.Contains(r.SystemPrompt, "server-private-value") {
+		m.t.Fatal("server notes missing, untagged or unredacted in system prompt")
 	}
 	switch m.round {
 	case 1:

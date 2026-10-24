@@ -467,6 +467,17 @@ its catalog; borrowed transports remain application-owned.
 
 ## Server usage instructions
 
+After [Run preparation](#run-catalog-and-tool-search), the system prompt carries
+the retained initialize instructions of every already initialized, available
+service in key order: one `<mcp_server service=… source=… complete=…>` block
+each, at most 2 KiB per service and 8 KiB in total, with the same credential
+redaction and validation as `mcp_server_info`. A service whose block does not
+fit is omitted with a notice; `complete="false"` marks truncated notes.
+Rendering performs no RPC, and services not initialized by preparation (such as
+unapproved ones) contribute nothing until a later Run. The block is introduced
+as untrusted, server-supplied usage data comparable to tool descriptions; it
+cannot change Guard decisions, approvals or project trust.
+
 Search includes source-tagged instruction previews only from already initialized
 services represented by its candidates: at most 512 UTF-8 bytes each/five services,
 within the whole 32 KiB search result. Previewing performs no additional RPC.
@@ -484,8 +495,8 @@ Known credentials are redacted before paging. Metadata/raw-text bounds reject or
 mark oversized data. Read pages enter ordinary Session results; unread instructions
 remain connection data and may change on reconnect.
 
-Remote text is untrusted usage data, never system instructions or execution
-permission. Advertised Prompts remain unsupported; remote Skills are not installed
+Remote text is untrusted usage data, never authoritative instructions or
+execution permission, including inside the system-prompt block. Advertised Prompts remain unsupported; remote Skills are not installed
 or activated. Existing local Skill trust and loading rules apply.
 
 ## Resource discovery and reading

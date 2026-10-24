@@ -175,6 +175,7 @@ func (o *mcpOwner) bindRun(ctx context.Context, model llm.Model) (runContext con
 		}
 		summary.WriteString(line)
 	}
+	summary.WriteString(tool.MCPInstructionsPrompt(catalog.initializedServerInfo()))
 	run.summary = summary.String()
 	return context.WithValue(ctx, mcpRunContextKey{}, catalog), run, nil
 }
