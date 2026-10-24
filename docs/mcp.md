@@ -322,9 +322,11 @@ redirect must reach this AICE process. Interactive login also accepts the comple
 redirect URL in a hidden prompt. Login has a 15-minute deadline.
 
 Supported: authorization code with S256 PKCE, pre-registered public or
-client-secret clients, and dynamic public-client registration. Hosted client-ID
-metadata documents, private-key authentication, device codes and proprietary SSO
-are unsupported. Multiple advertised issuers require explicit selection.
+client-secret clients, and dynamic public-client registration (deprecated by
+`2026-07-28` but still the fallback; requests send `application_type: "native"`).
+Client ID Metadata Documents need a hosted HTTPS client document and are not yet
+supported; private-key authentication, device codes and proprietary SSO are
+unsupported. Multiple advertised issuers require explicit selection.
 Discovery supports resource metadata, RFC 8414 and OIDC well-known paths;
 only 404/405 permits fallback. Identity mismatch or malformed metadata fails
 closed. HTTPS is required except local loopback HTTP; HTTPS cannot downgrade.

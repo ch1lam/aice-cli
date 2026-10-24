@@ -59,7 +59,7 @@ func newOAuthFixture(t *testing.T) *oauthFixture {
 			if r.Method != http.MethodPost || json.NewDecoder(r.Body).Decode(&v) != nil {
 				t.Error("invalid registration")
 			}
-			if v["client_name"] != "AICE" || v["token_endpoint_auth_method"] != "none" {
+			if v["client_name"] != "AICE" || v["application_type"] != "native" || v["token_endpoint_auth_method"] != "none" {
 				t.Error("registration identity/method")
 			}
 			v["client_id"] = "public-client"

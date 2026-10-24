@@ -90,13 +90,16 @@ func (c Client) Register(ctx context.Context, s Server, redirect string) (Regist
 	if s.registration == "" || !validRedirect(redirect) || !slices.Contains(s.authMethods, "none") {
 		return Registration{}, ErrConfig
 	}
+	// 2026-07-28 requires an application_type; OIDC servers otherwise assume
+	// "web" and may reject the native loopback redirect.
 	body, _ := json.Marshal(struct {
 		Name      string   `json:"client_name"`
+		Type      string   `json:"application_type"`
 		Redirects []string `json:"redirect_uris"`
 		Grants    []string `json:"grant_types"`
 		Responses []string `json:"response_types"`
 		Method    string   `json:"token_endpoint_auth_method"`
-	}{"AICE", []string{redirect}, []string{"authorization_code", "refresh_token"}, []string{"code"}, "none"})
+	}{"AICE", "native", []string{redirect}, []string{"authorization_code", "refresh_token"}, []string{"code"}, "none"})
 	var reply struct {
 		ID        string   `json:"client_id"`
 		Secret    string   `json:"client_secret"`
