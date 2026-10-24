@@ -15,6 +15,7 @@ Only these workspace-relative resources are protected:
 | `.aice/SYSTEM.md` | regular file | Replaces the base system prompt |
 | `.aice/APPEND_SYSTEM.md` | regular file | Appended after the base and `AGENTS.md` |
 | `.aice/settings.json` | regular file | Overrides user configuration, including endpoints and API keys, below environment variables and flags |
+| `.mcp.json` | regular file | Portable project MCP services (`mcpServers`/`servers`), loaded as separate project sources |
 | `.agents/skills/` | directory | Project-level Agent Skills are discovered and listed in the system prompt. See [Skills](architecture.md#skills). |
 
 The nested MCP collection is an exception to scalar configuration precedence:

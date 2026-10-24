@@ -88,12 +88,15 @@ type MCPServer struct {
 	Source                       Source
 	Settings                     MCPServerSettings
 	CredentialScope, Fingerprint string
-	Enabled                      bool
-	ConnectTimeout, CallTimeout  time.Duration
-	MissingValues                []string
-	environment, headers         map[string]string
-	oauthClientSecret            string
-	oauthCredential              *MCPOAuthCredentials
+	// Executable and WorkingDir are the resolved stdio launch parameters. A
+	// bare command resolves on PATH at load time; an omitted cwd is the workspace.
+	Executable, WorkingDir      string
+	Enabled                     bool
+	ConnectTimeout, CallTimeout time.Duration
+	MissingValues               []string
+	environment, headers        map[string]string
+	oauthClientSecret           string
+	oauthCredential             *MCPOAuthCredentials
 }
 
 func (s MCPServer) String() string { return s.Key }
@@ -253,8 +256,11 @@ func (s MCPServerSettings) validate() error {
 	}
 	switch s.Transport {
 	case "stdio":
-		if !filepath.IsAbs(s.Command) || !filepath.IsAbs(s.Cwd) || !mcpText(s.Command, 4096) || !mcpText(s.Cwd, 4096) {
-			return fmt.Errorf("stdio command and cwd must be explicit absolute paths")
+		if !mcpText(s.Command, 4096) || !mcpText(s.Cwd, 4096) || !filepath.IsAbs(s.Command) && !mcpCommandName(s.Command) {
+			return fmt.Errorf("stdio command must be an absolute path or an executable name on PATH")
+		}
+		if s.Cwd != "" && !filepath.IsAbs(s.Cwd) {
+			return fmt.Errorf("stdio cwd must be an absolute path; omit it to use the workspace")
 		}
 		if s.URL != "" || len(s.Headers) > 0 || s.OAuth != nil {
 			return fmt.Errorf("stdio cannot include HTTP fields")
@@ -317,6 +323,12 @@ func validMCPNames(names []string) bool {
 		seen[name] = true
 	}
 	return true
+}
+
+// mcpCommandName accepts a bare executable name such as npx or uvx. Relative
+// paths are rejected because their meaning depends on the launch directory.
+func mcpCommandName(name string) bool {
+	return name != "" && name != "." && name != ".." && !strings.ContainsAny(name, `/\`)
 }
 
 func mcpEnvName(name string) bool {

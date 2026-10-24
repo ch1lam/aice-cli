@@ -123,12 +123,12 @@ func validateMCPStoredBinding(paths Paths, server MCPServer) error {
 	}
 	source := paths.GlobalSettings
 	if server.Source.Kind == "project" {
-		source = paths.ProjectSettings
+		source = paths.projectMCPSource(server.Source.Location)
 	} else if server.Source.Kind != "user" {
 		source = ""
 	}
 	absolute, err := filepath.Abs(source)
-	expected, resolveErr := resolveMCPServer(server.ID, server.Source, server.Settings, nil, nil)
+	expected, resolveErr := resolveMCPServer(server.ID, server.Source, server.Settings, nil, nil, "")
 	fingerprint := server.connectionFingerprint()
 	if source == "" || err != nil || filepath.Clean(absolute) != server.Source.Location || resolveErr != nil || expected.Key != server.Key || expected.CredentialScope != server.CredentialScope || fingerprint != server.Fingerprint {
 		return fmt.Errorf("config: MCP connection approval identity changed")

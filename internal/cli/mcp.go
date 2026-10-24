@@ -31,7 +31,7 @@ func newMCPCommand(manager MCPManager) *cobra.Command {
 	root.PersistentFlags().StringVar(&workspace, "workspace", ".", "workspace whose trusted project configuration to inspect")
 	root.PersistentFlags().BoolVar(&trustProject, "trust-project", false, "load this project's configuration for this command; does not approve connections")
 	root.PersistentFlags().BoolVar(&distrustProject, "no-trust-project", false, "ignore this project's configuration")
-	for _, action := range []string{"status", "add", "replace", "enable", "disable", "remove", "approve", "deny", "forget", "credential", "login", "logout", "connect", "reconnect", "permissions", "permission"} {
+	for _, action := range []string{"status", "add", "import", "replace", "enable", "disable", "remove", "approve", "deny", "forget", "credential", "login", "logout", "connect", "reconnect", "permissions", "permission"} {
 		var fingerprint string
 		var clearSecret bool
 		var noBrowser bool
@@ -44,12 +44,16 @@ func newMCPCommand(manager MCPManager) *cobra.Command {
 		if action == "add" {
 			use = "add ID"
 		}
+		if action == "import" {
+			use = "import"
+		}
 		if action == "credential" {
 			use = "credential KEY SLOT"
 		}
 		descriptions := map[string]string{
 			"status":      "Show configured connection details and fingerprints without connecting",
-			"add":         "Read one server definition as JSON from stdin; save without connecting",
+			"add":         "Read one AICE or portable (.mcp.json style) server definition from stdin; save without connecting",
+			"import":      "Read an mcpServers/servers document (.mcp.json, Claude Desktop, Cursor, VS Code) from stdin; add new user servers without connecting",
 			"replace":     "Replace a user server from JSON on stdin; save without connecting",
 			"enable":      "Enable a user server without granting connection or tool permission",
 			"disable":     "Disable a user server",
@@ -70,6 +74,9 @@ func newMCPCommand(manager MCPManager) *cobra.Command {
 				return newUsageError(fmt.Errorf("workspace is required and project trust flags are mutually exclusive"))
 			}
 			validator := cobra.ExactArgs(1)
+			if action == "import" {
+				validator = cobra.NoArgs
+			}
 			if action == "status" {
 				validator = cobra.MaximumNArgs(1)
 			}
@@ -85,7 +92,7 @@ func newMCPCommand(manager MCPManager) *cobra.Command {
 			if len(args) > 0 {
 				request.Key = args[0]
 			}
-			if action == "add" || action == "replace" {
+			if action == "add" || action == "import" || action == "replace" {
 				data, err := readMCPInput(c.InOrStdin(), 1<<20)
 				if err != nil {
 					return err

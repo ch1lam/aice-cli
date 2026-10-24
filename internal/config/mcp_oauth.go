@@ -7,6 +7,7 @@ import (
 	"maps"
 	"net"
 	"net/url"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -258,6 +259,10 @@ func (s MCPServer) connectionFingerprint() string {
 		Scope                string
 		Environment, Headers map[string]string
 	}{s.CredentialScope, s.environment, s.headers})
+	if s.Settings.Transport == "stdio" && !filepath.IsAbs(s.Settings.Command) {
+		// A bare command is approved for the executable it resolved to.
+		base = mcpDigest(struct{ Connection, Executable string }{base, s.Executable})
+	}
 	if s.Settings.OAuth == nil {
 		return base
 	} // preserve every pre-OAuth identity

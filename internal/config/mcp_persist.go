@@ -96,7 +96,7 @@ func SaveMCPCredential(ctx context.Context, paths Paths, server MCPServer, slot,
 	switch server.Source.Kind {
 	case "user":
 	case "project":
-		expectedPath = paths.ProjectSettings
+		expectedPath = paths.projectMCPSource(server.Source.Location)
 	default:
 		return fmt.Errorf("config: invalid MCP credential source")
 	}
@@ -107,7 +107,7 @@ func SaveMCPCredential(ctx context.Context, paths Paths, server MCPServer, slot,
 	if err != nil || filepath.Clean(absolute) != server.Source.Location {
 		return fmt.Errorf("config: MCP credential source changed")
 	}
-	expected, err := resolveMCPServer(server.ID, server.Source, server.Settings, nil, nil)
+	expected, err := resolveMCPServer(server.ID, server.Source, server.Settings, nil, nil, "")
 	if err != nil || expected.Key != server.Key || expected.CredentialScope != server.CredentialScope {
 		return fmt.Errorf("config: MCP credential binding changed")
 	}

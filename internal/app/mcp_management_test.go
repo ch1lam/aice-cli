@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -382,5 +383,44 @@ func TestMCPManagementCanceledConnectionPreservesExitStatus(t *testing.T) {
 	cancel()
 	if err := <-done; cli.ExitCode(err) != 130 {
 		t.Fatalf("canceled management exit status: %v", err)
+	}
+}
+
+func TestMCPManagementImportAddsPortableServersWithoutReplacing(t *testing.T) {
+	paths := trustTestPaths(t)
+	if _, err := managementCommand(t, paths, `{"command":"/bin/existing"}`, "add", "docs"); err != nil {
+		t.Fatal(err)
+	}
+	result, err := managementCommand(t, paths, `{"mcpServers": {
+		"docs": {"command": "/bin/replacement"},
+		"Fetch": {"command": "uvx", "args": ["mcp-server-fetch"]},
+		"legacy": {"type": "sse", "url": "https://example.com/sse"}
+	}}`, "import")
+	if err != nil || !result.Committed || len(result.Warnings) != 2 {
+		t.Fatalf("import = %#v, %v", result, err)
+	}
+	status, _ := managementCommand(t, paths, "", "status")
+	definitions := make(map[string]config.MCPServerSettings)
+	for _, service := range status.Services {
+		var definition config.MCPServerSettings
+		if len(service.Definition) > 0 && json.Unmarshal(service.Definition, &definition) == nil {
+			definitions[service.Key] = definition
+		}
+	}
+	if definitions["user:docs"].Command != "/bin/existing" || definitions["user:fetch"].Command != "uvx" || definitions["user:fetch"].Name != "Fetch" {
+		t.Fatalf("definitions = %#v", definitions)
+	}
+	if _, err := managementCommand(t, paths, `{"mcpServers": {"docs": {"command": "/bin/x"}}}`, "import"); err == nil {
+		t.Fatal("import without new servers reported success")
+	}
+
+	// A bare command that did not resolve is reported before any launch.
+	fetch := status.Services[slices.IndexFunc(status.Services, func(s interaction.MCPService) bool { return s.Key == "user:fetch" })]
+	if _, err := managementCommand(t, paths, "", "approve", "user:fetch", "--fingerprint", fetch.Fingerprint); err != nil {
+		t.Fatal(err)
+	}
+	connected, err := managementCommand(t, paths, "", "connect", "user:fetch")
+	if err == nil || len(connected.Services) != 1 || connected.Services[0].State != "failed" || !strings.Contains(connected.Services[0].Detail, `"uvx" was not found on PATH`) {
+		t.Fatalf("connect = %#v, %v", connected.Services, err)
 	}
 }

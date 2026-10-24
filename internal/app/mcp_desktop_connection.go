@@ -49,7 +49,7 @@ func mcpStdioConfiguration(server config.MCPServer) *mcpclient.StdioConfig {
 		return nil
 	}
 	env, _ := server.ConnectionValues()
-	return &mcpclient.StdioConfig{Executable: server.Settings.Command, Args: slices.Clone(server.Settings.Args), Dir: server.Settings.Cwd, Env: env}
+	return &mcpclient.StdioConfig{Executable: server.Executable, Args: slices.Clone(server.Settings.Args), Dir: server.WorkingDir, Env: env}
 }
 
 func duplicatesManagedCUA(wire mcpclient.StdioConfig, home, goos string) bool {

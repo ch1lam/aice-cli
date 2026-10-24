@@ -35,8 +35,9 @@ their separate authority.
 ## Configuration identity and storage
 
 The loader accepts a file-only `mcp` object in user settings and trusted
-project settings. Loading or saving it does not start processes, probe an
-executable, connect to endpoints, or authorize either connection or tool use.
+project settings, plus a trusted project's portable `.mcp.json`. Loading or
+saving them does not start processes, connect to endpoints, or authorize either
+connection or tool use; resolving a bare command only inspects PATH entries.
 For example, this defines a public service without connecting it:
 
 ```json
@@ -60,8 +61,14 @@ For example, this defines a public service without connecting it:
 
 Server IDs use lowercase letters, digits, hyphens and underscores, start with
 a letter and are at most 64 characters. `cua` is reserved for the managed
-Computer Use instance. A stdio definition uses `transport: "stdio"`, an
-absolute `command`, explicit absolute `cwd`, `args`, and optional `env`.
+Computer Use instance. A stdio definition uses `transport: "stdio"`, a
+`command`, `args`, optional `env` and optional absolute `cwd`. The command is an
+absolute path or a bare executable name such as `npx`/`uvx`; relative paths are
+rejected. A bare name resolves at load time against the service's `env.PATH` or
+the frozen process `PATH`, skipping relative entries, and the connection
+fingerprint binds the resolved executable, so a different resolution asks for
+approval again. An unresolved command reports `failed` before launch. An
+omitted `cwd` runs in the workspace without becoming part of the fingerprint.
 HTTP and stdio fields cannot be mixed. Connect/call timeouts default to 15s/60s;
 configured values must be positive and no longer than 24h. Each collection is
 limited to 64 servers and a 1 MiB serialized settings object.
@@ -80,6 +87,30 @@ an ID or `*`; `tools` lists exact denied tools, or denies the whole service
 when empty/omitted. User and trusted-project restrictions accumulate. Projects
 cannot remove user restrictions or enable a disabled user-owned definition.
 The run catalog and connection owner both apply the relevant restrictions.
+
+### Portable definitions
+
+`aice mcp add` also accepts one portable entry, and `aice mcp import` reads a
+whole `{"mcpServers": {...}}` (`.mcp.json`, Claude Desktop, Cursor) or VS Code
+`{"servers": {...}}` document from stdin. A definition containing `transport` is
+an AICE definition and is decoded strictly. Portable entries map `type`
+(`stdio`, `http`, `streamable-http`; inferred from `command`/`url` when absent),
+`command`, `args`, `cwd`, `env`, `url`, `headers` and `disabled`; other
+host-specific fields are ignored. A value that is exactly `${NAME}`, or ends in
+one such reference like `Bearer ${TOKEN}`, becomes an environment reference
+with that prefix. Literal env values are kept; literal headers, other `${}`
+uses, `${}` in command/args/url and the deprecated SSE transport are skipped
+with a reason that never quotes the value. Names are lowercased into IDs
+(`.`, space, `/`, `:` and `@` become `-`) with the original kept as `name`.
+Import adds only new user IDs and never replaces an existing entry.
+
+The trusted project `.mcp.json` is a [protected resource](project-trust.md) and
+a separate project source from `.aice/settings.json`; unrepresentable entries
+are skipped with a diagnostic and the rest still load.
+
+```sh
+aice mcp import < ~/Library/Application\ Support/Claude/claude_desktop_config.json
+```
 
 Environment values and HTTP header credentials use explicit references. For
 example, `"headers": {"Authorization": {"env": "DOCS_TOKEN", "prefix": "Bearer "}}`
@@ -144,7 +175,8 @@ aice mcp connect user:docs
 | Command | Behavior |
 | --- | --- |
 | `status [KEY]` | Show source-qualified IDs, configured fields, effective fingerprint, approval and local status; resolved credentials are omitted |
-| `add ID` | Read one JSON definition from stdin, save a new user entry; duplicate/concurrent additions cannot replace it |
+| `add ID` | Read one AICE or portable JSON definition from stdin, save a new user entry; duplicate/concurrent additions cannot replace it |
+| `import` | Read a portable `mcpServers`/`servers` document from stdin; add each representable new user entry and report skipped ones |
 | `replace KEY` | Read a full replacement user definition from stdin; connection changes require new approval |
 | `enable KEY`, `disable KEY` | Change only the saved user toggle; enable is not a connection or tool grant |
 | `remove KEY` | Remove stored credentials/connection decisions/user rules for that source-qualified service, then its user definition |
@@ -474,7 +506,7 @@ unknown and are never replayed.
 
 `mcpclient.Open` initializes one caller-supplied stdio/HTTP connection without
 loading settings, installing software or granting authority. SDK types stay
-private. Stdio requires absolute executable/cwd; arguments have no shell
+private. Stdio requires the resolved absolute executable/cwd; arguments have no shell
 expansion. Only a small base environment and explicit additions are inherited,
 not provider credentials. Stderr is discarded. Close uses bounded pipe/process
 cleanup on its exact child, not a process group/shared daemon. Cancellation of

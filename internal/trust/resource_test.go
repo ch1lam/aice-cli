@@ -14,6 +14,7 @@ func TestDiscoverFindsProtectedResources(t *testing.T) {
 	writeFile(t, filepath.Join(root, ".aice", "SYSTEM.md"), "base prompt")
 	writeFile(t, filepath.Join(root, ".aice", "APPEND_SYSTEM.md"), "project notes")
 	writeFile(t, filepath.Join(root, SettingsFile), "{}")
+	writeFile(t, filepath.Join(root, MCPFile), "{}")
 
 	snapshot, err := Discover(root)
 	if err != nil {
@@ -31,6 +32,7 @@ func TestDiscoverFindsProtectedResources(t *testing.T) {
 		SystemFile,
 		AppendSystemFile,
 		SettingsFile,
+		MCPFile,
 	} {
 		if !found[name] {
 			t.Errorf("Discover() missing resource %q", name)

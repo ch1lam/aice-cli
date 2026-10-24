@@ -308,6 +308,11 @@ func LoadFiles(paths Paths, options LoadOptions) (Config, error) {
 		if err := mcpValues.extract(path, values, paths); err != nil {
 			return Config{}, err
 		}
+		if path == paths.ProjectSettings {
+			if err := mcpValues.readProjectFile(context.Background(), paths.ProjectMCP()); err != nil {
+				return Config{}, err
+			}
+		}
 		if err := webValues.extractWebValues(path, values, path == paths.ProjectSettings); err != nil {
 			return Config{}, err
 		}
@@ -595,6 +600,34 @@ func readValues(ctx context.Context, path string) (map[string]any, error) {
 		return nil, &sourceSyntaxError{path: path}
 	}
 	return values, nil
+}
+
+// Workspace is the project root that owns ProjectSettings, or "" without one.
+func (p Paths) Workspace() string {
+	if p.ProjectSettings == "" {
+		return ""
+	}
+	return filepath.Dir(filepath.Dir(p.ProjectSettings))
+}
+
+// projectMCPSource returns the project file that may define a project MCP
+// service at location, or "" when location is neither project source.
+func (p Paths) projectMCPSource(location string) string {
+	for _, candidate := range []string{p.ProjectSettings, p.ProjectMCP()} {
+		if absolute, err := filepath.Abs(candidate); candidate != "" && err == nil && filepath.Clean(absolute) == location {
+			return candidate
+		}
+	}
+	return ""
+}
+
+// ProjectMCP is the portable project MCP file (.mcp.json) at the workspace root.
+// It is read only when the project is trusted, like ProjectSettings.
+func (p Paths) ProjectMCP() string {
+	if p.ProjectSettings == "" {
+		return ""
+	}
+	return filepath.Join(p.Workspace(), ".mcp.json")
 }
 
 func (p Paths) validate() error {

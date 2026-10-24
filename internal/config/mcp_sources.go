@@ -1,12 +1,19 @@
 package config
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
+	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
+	"strings"
 	"time"
+
+	"github.com/ch1lam/aice-cli/internal/lockedfile"
 )
 
 // Credential slots are scoped by source-qualified server key and the hash of
@@ -15,11 +22,13 @@ type mcpCredentials map[string]map[string]map[string]string
 
 type mcpLayer struct {
 	user, project json.RawMessage
-	credentials   mcpCredentials
-	oauth         mcpOAuthCredentials
-	connections   map[string]mcpConnectionApproval
-	permissions   mcpPermissions
-	diagnostics   []string
+	// projectFile is the trusted project's .mcp.json converted to MCPSettings.
+	projectFile json.RawMessage
+	credentials mcpCredentials
+	oauth       mcpOAuthCredentials
+	connections map[string]mcpConnectionApproval
+	permissions mcpPermissions
+	diagnostics []string
 }
 
 func (l *mcpLayer) extract(path string, values map[string]any, paths Paths) error {
@@ -90,6 +99,36 @@ func (l *mcpLayer) extract(path string, values map[string]any, paths Paths) erro
 	return nil
 }
 
+// readProjectFile loads the portable project file. Entries AICE cannot represent
+// are skipped with a diagnostic instead of hiding the project's other services.
+func (l *mcpLayer) readProjectFile(ctx context.Context, path string) error {
+	if path == "" {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	data, err := lockedfile.Read(ctx, path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("config: read %s: %w", path, err)
+	}
+	servers, skipped, err := ParseMCPServers(data)
+	if err != nil {
+		l.diagnostics = append(l.diagnostics, fmt.Sprintf("Ignored invalid MCP file %s: %v", path, err))
+		return nil
+	}
+	for _, reason := range skipped {
+		l.diagnostics = append(l.diagnostics, fmt.Sprintf("Skipped MCP server in %s: %s", path, reason))
+	}
+	if len(servers) == 0 {
+		return nil
+	}
+	l.projectFile, err = json.Marshal(MCPSettings{Servers: servers})
+	return err
+}
+
 func decodeMCPCredentials(raw any) (mcpCredentials, error) {
 	data, err := json.Marshal(raw)
 	var credentials mcpCredentials
@@ -123,6 +162,10 @@ func effectiveMCP(layer mcpLayer, paths Paths, lookup func(string) (string, bool
 	if err != nil {
 		return MCPConfig{}, err
 	}
+	projectFile, err := decodeMCPSettings(layer.projectFile)
+	if err != nil {
+		return MCPConfig{}, err
+	}
 	result := MCPConfig{Servers: make(map[string]MCPServer), connections: maps.Clone(layer.connections), permissions: cloneMCPPermissions(layer.permissions)}
 	result.Restrictions = append(cloneMCPRestrictions(user.Restrictions), cloneMCPRestrictions(project.Restrictions)...)
 	for _, input := range []struct {
@@ -131,9 +174,10 @@ func effectiveMCP(layer mcpLayer, paths Paths, lookup func(string) (string, bool
 	}{
 		{Source{Kind: "user", Location: paths.GlobalSettings}, user},
 		{Source{Kind: "project", Location: paths.ProjectSettings}, project},
+		{Source{Kind: "project", Location: paths.ProjectMCP()}, projectFile},
 	} {
 		for id, settings := range input.settings.Servers {
-			server, err := resolveMCPServer(id, input.source, settings, layer.credentials, lookup)
+			server, err := resolveMCPServer(id, input.source, settings, layer.credentials, lookup, paths.Workspace())
 			if err != nil {
 				return MCPConfig{}, err
 			}
@@ -144,7 +188,7 @@ func effectiveMCP(layer mcpLayer, paths Paths, lookup func(string) (string, bool
 	return result, nil
 }
 
-func resolveMCPServer(id string, source Source, settings MCPServerSettings, credentials mcpCredentials, lookup func(string) (string, bool)) (MCPServer, error) {
+func resolveMCPServer(id string, source Source, settings MCPServerSettings, credentials mcpCredentials, lookup func(string) (string, bool), workspace string) (MCPServer, error) {
 	if source.Location == "" {
 		return MCPServer{}, fmt.Errorf("config: MCP configuration source path is required")
 	}
@@ -192,8 +236,50 @@ func resolveMCPServer(id string, source Source, settings MCPServerSettings, cred
 		server.MissingValues = append(server.MissingValues, missing...)
 	}
 	slices.Sort(server.MissingValues)
+	if settings.Transport == "stdio" {
+		server.Executable, server.WorkingDir = settings.Command, settings.Cwd
+		if !filepath.IsAbs(settings.Command) {
+			pathValue, ok := server.environment["PATH"]
+			if !ok && lookup != nil {
+				pathValue, _ = lookup("PATH")
+			}
+			server.Executable = mcpLookPath(settings.Command, pathValue, lookup)
+		}
+		if server.WorkingDir == "" {
+			server.WorkingDir = workspace
+		}
+	}
 	server.Fingerprint = server.connectionFingerprint()
 	return server, nil
+}
+
+// mcpLookPath resolves a bare command against an explicit PATH value without
+// executing anything. Relative PATH entries are ignored. An unresolved command
+// returns "" and the connection owner reports it before launching.
+func mcpLookPath(name, pathValue string, lookup func(string) (string, bool)) string {
+	extensions := []string{""}
+	if runtime.GOOS == "windows" {
+		value := ".COM;.EXE;.BAT;.CMD"
+		if lookup != nil {
+			if configured, ok := lookup("PATHEXT"); ok && configured != "" {
+				value = configured
+			}
+		}
+		extensions = append(extensions, strings.Split(value, ";")...)
+	}
+	for _, dir := range filepath.SplitList(pathValue) {
+		if !filepath.IsAbs(dir) {
+			continue
+		}
+		for _, extension := range extensions {
+			candidate := filepath.Join(dir, name+extension)
+			info, err := os.Stat(candidate)
+			if err == nil && info.Mode().IsRegular() && (runtime.GOOS == "windows" || info.Mode().Perm()&0o111 != 0) {
+				return candidate
+			}
+		}
+	}
+	return ""
 }
 
 func resolveMCPValues(refs map[string]MCPValueRef, slots map[string]string, lookup func(string) (string, bool), kind string) (map[string]string, []string) {

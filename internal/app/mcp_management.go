@@ -5,13 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
 	"github.com/ch1lam/aice-cli/internal/cli"
 	"github.com/ch1lam/aice-cli/internal/config"
 	"github.com/ch1lam/aice-cli/internal/interaction"
-	"github.com/ch1lam/aice-cli/internal/jsonutil"
 	"github.com/ch1lam/aice-cli/internal/mcpclient"
 	"github.com/ch1lam/aice-cli/internal/tool"
 	"github.com/ch1lam/aice-cli/internal/trust"
@@ -74,6 +74,9 @@ func executeMCPManagement(ctx context.Context, current config.Config, owner *mcp
 		key = "user:" + key
 	}
 	server, exists := current.MCP.Servers[key]
+	if request.Action == "import" {
+		return importMCPServers(ctx, current, owner, request.Definition)
+	}
 	if request.Action != "status" && request.Action != "add" && !exists {
 		return current, result, fmt.Errorf("MCP service key is not configured; use a source-qualified key from status")
 	}
@@ -225,24 +228,19 @@ func executeMCPManagement(ctx context.Context, current config.Config, owner *mcp
 		if request.Action == "replace" && server.Source.Kind != "user" {
 			return current, result, fmt.Errorf("project MCP definitions are read-only; edit the source configuration")
 		}
-		var definition config.MCPServerSettings
-		if len(request.Definition) > 1<<20 || jsonutil.DecodeStrict(request.Definition, &definition) != nil {
+		if len(request.Definition) > 1<<20 {
 			return current, result, fmt.Errorf("invalid MCP server definition (values omitted)")
+		}
+		definition, err := config.ParseMCPServerDefinition(request.Definition)
+		if err != nil {
+			return current, result, err
 		}
 		id := server.ID
 		if request.Action == "add" {
 			id = request.Key
 		}
-		if owner != nil && owner.checkConnection != nil {
-			// Resolve exactly this proposed definition using the same frozen
-			// inputs as runtime publication, without saving or connecting.
-			candidate, err := current.WithMCP(config.MCPSettings{Servers: map[string]config.MCPServerSettings{id: definition}})
-			if err != nil {
-				return current, result, err
-			}
-			if err := owner.checkConnection(mcpclient.Config{Stdio: mcpStdioConfiguration(candidate.MCP.Servers["user:"+id])}); err != nil {
-				return current, result, err
-			}
+		if err := checkMCPDefinitions(current, owner, map[string]config.MCPServerSettings{id: definition}); err != nil {
+			return current, result, err
 		}
 		patch.Servers = map[string]*config.MCPServerSettings{id: &definition}
 		patch.CreateOnly = request.Action == "add"
@@ -295,14 +293,74 @@ func executeMCPManagement(ctx context.Context, current config.Config, owner *mcp
 	return current, result, err
 }
 
+// checkMCPDefinitions resolves proposed user definitions with the same frozen
+// inputs as runtime publication, without saving or connecting.
+func checkMCPDefinitions(current config.Config, owner *mcpOwner, definitions map[string]config.MCPServerSettings) error {
+	if owner == nil || owner.checkConnection == nil {
+		return nil
+	}
+	candidate, err := current.WithMCP(config.MCPSettings{Servers: definitions})
+	if err != nil {
+		return err
+	}
+	for id := range definitions {
+		if err := owner.checkConnection(mcpclient.Config{Stdio: mcpStdioConfiguration(candidate.MCP.Servers["user:"+id])}); err != nil {
+			return fmt.Errorf("%s: %w", id, err)
+		}
+	}
+	return nil
+}
+
+// importMCPServers adds every representable new server from a portable document.
+// Existing IDs are never replaced; skipped entries are reported as warnings.
+func importMCPServers(ctx context.Context, current config.Config, owner *mcpOwner, document []byte) (config.Config, interaction.MCPResult, error) {
+	result := interaction.MCPResult{}
+	servers, skipped, err := config.ParseMCPServers(document)
+	if err != nil {
+		return current, result, fmt.Errorf("invalid MCP import document: %w", err)
+	}
+	patch := config.MCPPatch{Servers: make(map[string]*config.MCPServerSettings), CreateOnly: true}
+	definitions := make(map[string]config.MCPServerSettings)
+	for _, id := range slices.Sorted(maps.Keys(servers)) {
+		if _, exists := current.MCP.Servers["user:"+id]; exists {
+			skipped = append(skipped, fmt.Sprintf("%s: a user server with this ID already exists", id))
+			continue
+		}
+		definition := servers[id]
+		definitions[id] = definition
+		patch.Servers[id] = &definition
+	}
+	if len(definitions) == 0 {
+		result.Warnings = skipped
+		return current, result, fmt.Errorf("MCP import found no new servers to add")
+	}
+	if err := checkMCPDefinitions(current, owner, definitions); err != nil {
+		return current, result, err
+	}
+	saved, err := config.SaveMCPPatch(ctx, current.Paths, patch)
+	result = mcpCommitResult(err, fmt.Sprintf("Imported %d MCP servers without connecting; connection approval and tool permissions are separate.", len(definitions)))
+	result.Warnings = append(result.Warnings, skipped...)
+	if err != nil {
+		return current, result, err
+	}
+	candidate, err := current.WithMCP(saved)
+	if err != nil {
+		return current, result, fmt.Errorf("MCP configuration was saved but runtime projection failed: %w", err)
+	}
+	return candidate, result, nil
+}
+
 func validateMCPManagement(r interaction.MCPRequest) error {
 	if len(r.Key) > 256 || strings.ContainsAny(r.Key, "\x00\r\n") || len(r.Fingerprint) > 64 {
 		return fmt.Errorf("invalid MCP management identity")
 	}
-	if r.Action != "status" && r.Key == "" {
+	if r.Action != "status" && r.Action != "import" && r.Key == "" {
 		return fmt.Errorf("MCP service identity is required")
 	}
-	if r.Action != "add" && r.Action != "replace" && len(r.Definition) > 0 {
+	if r.Action == "import" && r.Key != "" {
+		return fmt.Errorf("MCP import reads server IDs from its document")
+	}
+	if r.Action != "add" && r.Action != "import" && r.Action != "replace" && len(r.Definition) > 0 {
 		return fmt.Errorf("MCP definition is only valid for add or replace")
 	}
 	if r.Action != "credential" && (r.Secret != "" || r.Slot != "") {

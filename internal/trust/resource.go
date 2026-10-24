@@ -8,7 +8,7 @@ import (
 
 // Protected resource names at the workspace root. Only these resources are
 // gated by project trust; the matching global user files are always trusted.
-// AgentsFile, SystemFile, AppendSystemFile, and SettingsFile must be regular files.
+// AgentsFile, SystemFile, AppendSystemFile, SettingsFile and MCPFile must be regular files.
 // SkillsDir must be a directory. Forward-slash names work on every platform;
 // os.Root and os.Open accept them on Windows.
 const (
@@ -17,6 +17,7 @@ const (
 	AppendSystemFile = ".aice/APPEND_SYSTEM.md"
 	SkillsDir        = ".agents/skills"
 	SettingsFile     = ".aice/settings.json"
+	MCPFile          = ".mcp.json"
 )
 
 // resourceKind is the filesystem type Discover requires for a protected
@@ -41,6 +42,7 @@ var protectedResources = []protectedSpec{
 	{name: AppendSystemFile, kind: resourceFile},
 	{name: SkillsDir, kind: resourceDir},
 	{name: SettingsFile, kind: resourceFile},
+	{name: MCPFile, kind: resourceFile},
 }
 
 // Resource is one protected project-local file or directory found during

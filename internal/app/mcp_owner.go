@@ -305,7 +305,11 @@ func (o *mcpOwner) ensure(ctx context.Context, s *mcpOwnedService) (mcpOwnedConn
 			}
 		}
 	}
-	client, err := o.open(ctx, configuration)
+	var client mcpOwnedConnection
+	err := mcpLaunchReady(s.server)
+	if err == nil {
+		client, err = o.open(ctx, configuration)
+	}
 	o.mu.Lock()
 	if err == nil {
 		err = ctx.Err()
@@ -342,9 +346,31 @@ func (o *mcpOwner) ensure(ctx context.Context, s *mcpOwnedService) (mcpOwnedConn
 	return client, nil
 }
 
+// mcpLaunchError is a local, already sanitized reason a stdio service cannot start.
+type mcpLaunchError struct{ reason string }
+
+func (e mcpLaunchError) Error() string { return e.reason }
+
+func mcpLaunchReady(server config.MCPServer) error {
+	if server.Settings.Transport != "stdio" {
+		return nil
+	}
+	if server.Executable == "" {
+		return mcpLaunchError{fmt.Sprintf("MCP command %q was not found on PATH when configuration loaded", server.Settings.Command)}
+	}
+	if server.WorkingDir == "" {
+		return mcpLaunchError{"MCP stdio cwd is unset and no workspace is available"}
+	}
+	return nil
+}
+
 func mcpFailureStatus(err error) (string, string) {
 	if errors.Is(err, errManagedCUAConnection) {
 		return "disabled", errManagedCUAConnection.Error()
+	}
+	var launch mcpLaunchError
+	if errors.As(err, &launch) {
+		return "failed", launch.reason
 	}
 	var httpError *mcpclient.HTTPError
 	if errors.As(err, &httpError) && (httpError.StatusCode == 401 || httpError.StatusCode == 403) {
