@@ -123,7 +123,7 @@ func TestMCPPermissionSettingsInvalidatesOldCatalog(t *testing.T) {
 		if _, err := act("approve", "confirm"); err != nil {
 			t.Fatal(err)
 		}
-		_, old, err := s.mcp.bindRun(ctx)
+		_, old, err := s.mcp.bindRun(ctx, llm.Model{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -136,7 +136,7 @@ func TestMCPPermissionSettingsInvalidatesOldCatalog(t *testing.T) {
 		if err != nil || !result.Applied || !result.Committed || old.catalog.Check(ctx, found.Selected[0]) == nil {
 			t.Fatal("saved rule did not replace runtime", result, err)
 		}
-		_, fresh, err := s.mcp.bindRun(ctx)
+		_, fresh, err := s.mcp.bindRun(ctx, llm.Model{})
 		if err != nil {
 			t.Fatal(err)
 		}

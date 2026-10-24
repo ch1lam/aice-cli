@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -202,5 +203,30 @@ func TestMCPCatalogIndependentDiscoveryAndLimits(t *testing.T) {
 	cancel()
 	if _, err := c.Search(ctx, tool.ToolSearchRequest{Limit: 5}); err == nil {
 		t.Fatal("canceled search succeeded")
+	}
+}
+
+func TestMCPInitialToolsLoadWholeServicesWithinBudget(t *testing.T) {
+	t.Parallel()
+	small := &mcpCatalogFixture{items: []mcpclient.Tool{catalogFixtureTool("read", "read"), catalogFixtureTool("write", "write")}}
+	large := &mcpCatalogFixture{items: []mcpclient.Tool{catalogFixtureTool("big", strings.Repeat("x", 40000))}}
+	pinned := &mcpCatalogFixture{items: []mcpclient.Tool{catalogFixtureTool("pin", "pin")}}
+	g, _ := guard.New("", guard.Config{})
+	c, err := newMCPCatalog(catalogTestConfig("user:a-large", "user:b-small", "user:c-pinned"), map[string]mcpCatalogConnection{"user:a-large": large, "user:b-small": small, "user:c-pinned": pinned}, g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	if _, err := c.Search(t.Context(), tool.ToolSearchRequest{Limit: 1}); err != nil {
+		t.Fatal(err)
+	}
+	pin := mcpToolID("user:c-pinned", "pin")
+	ids, services := c.initialTools(4096, []string{pin}, func(string) bool { return true })
+	want := []string{mcpToolID("user:b-small", "read"), mcpToolID("user:b-small", "write")}
+	if !slices.Equal(ids, want) || !slices.Equal(services, []string{"user:b-small"}) {
+		t.Fatalf("initial = %v from %v", ids, services)
+	}
+	if ids, _ := c.initialTools(4096, nil, func(key string) bool { return key != "user:b-small" }); !slices.Equal(ids, []string{pin}) {
+		t.Fatalf("excluded service was preloaded: %v", ids)
 	}
 }

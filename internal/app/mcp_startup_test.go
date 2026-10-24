@@ -46,17 +46,21 @@ func (m *mcpStartupModel) Stream(_ context.Context, r llm.Request) (llm.Stream, 
 	if !search || !strings.Contains(r.SystemPrompt, "user:service0") {
 		m.t.Fatal("startup omitted MCP discovery or service summary")
 	}
-	if m.round == 1 && remote != "" {
-		m.t.Fatal("previous run selection or eager schema leaked into initial request")
+	// An approved service is preloaded; otherwise the model searches first.
+	if m.round == 1 && remote != "" && !m.wantRemote {
+		m.t.Fatal("unapproved service schema leaked into initial request")
 	}
 	if m.round == 2 && m.wantRemote != (remote != "") {
 		m.t.Fatalf("remote selection = %q, wanted %v", remote, m.wantRemote)
 	}
 	var call *llm.ToolCall
-	if m.round == 1 && m.search {
+	switch {
+	case m.round == 1 && remote != "":
+		m.round = 2
+		call = &llm.ToolCall{ID: "execute", Name: remote, Arguments: []byte(`{}`)}
+	case m.round == 1 && m.search:
 		call = &llm.ToolCall{ID: "discover", Name: "tool_search", Arguments: []byte(`{"service":"user:service0"}`)}
-	}
-	if m.round == 2 && remote != "" {
+	case m.round == 2 && remote != "":
 		call = &llm.ToolCall{ID: "execute", Name: remote, Arguments: []byte(`{}`)}
 	}
 	if call != nil {
@@ -265,7 +269,7 @@ func TestMCPRequiredAndPinnedRunPreparation(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer owner.Close()
-			_, run, err := owner.bindRun(t.Context())
+			_, run, err := owner.bindRun(t.Context(), llm.Model{})
 			if mode == "pin-missing" || mode == "required-ask" || mode == "required-disabled" {
 				if err == nil {
 					run.Close()
@@ -277,7 +281,9 @@ func TestMCPRequiredAndPinnedRunPreparation(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer run.Close()
-			if mode == "optional" && opens != 0 || mode != "optional" && opens != 1 {
+			// Under yolo, preparation connects the optional service too and
+			// preloads its small catalog for the first request.
+			if opens != 1 || mode == "optional" && len(run.initial) != 1 {
 				t.Fatal("wrong preparation connection behavior")
 			}
 			if mode == "pinned" && len(run.pins) != 1 {
@@ -310,7 +316,7 @@ func TestMCPFailedPreparationRetainsOwnedTransport(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer owner.Close()
-			boundCtx, failed, err := owner.bindRun(ctx)
+			boundCtx, failed, err := owner.bindRun(ctx, llm.Model{})
 			if err == nil || failed.Catalog() != nil || len(failed.pins) != 0 || failed.summary != "" || boundCtx != ctx {
 				t.Fatalf("failed preparation published a binding: %+v, %v", failed, err)
 			}
@@ -322,7 +328,7 @@ func TestMCPFailedPreparationRetainsOwnedTransport(t *testing.T) {
 			// gets a fresh catalog while borrowing the same established client.
 			client.items = []mcpclient.Tool{catalogFixtureTool("read", "read")}
 			client.list = nil
-			_, run, err := owner.bindRun(t.Context())
+			_, run, err := owner.bindRun(t.Context(), llm.Model{})
 			if err != nil {
 				t.Fatal(err)
 			}

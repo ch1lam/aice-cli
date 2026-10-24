@@ -300,7 +300,9 @@ window, capped at 8192 tokens; unknown windows use 4096. Most recently selected
 tools take precedence, evicting complete older definitions with a model-visible
 notice. Oversized single candidates are refused. App-supplied `PinnedTools`
 cannot be evicted: missing pins or excessive pinned schemas fail preparation
-with an explicit error. No schema is truncated. These defaults still require
+with an explicit error. App-supplied `InitialTools` are installed in the first
+request as if selected earlier, so later selections may evict them; unavailable
+initial IDs are dropped with the same notice. No schema is truncated. These defaults still require
 task evaluation. Builtins remain under the ordinary whole-request budget.
 Catalog runs reestimate context including current schemas instead of relying on
 usage measured before tool loading. Selection is transient and isolated between

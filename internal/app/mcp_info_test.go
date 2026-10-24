@@ -148,7 +148,8 @@ func TestMCPServerInfoThroughPrintAndSession(t *testing.T) {
 	if err := command.ExecuteContext(t.Context()); err != nil {
 		t.Fatal(err, output.String())
 	}
-	if opens.Load() != 1 || calls.Load() != 0 || deletes.Load() != 1 || lists.Load() != 1 || model.round != 4 {
+	// Preparation and the explicit search each list the approved service once.
+	if opens.Load() != 1 || calls.Load() != 0 || deletes.Load() != 1 || lists.Load() != 2 || model.round != 4 {
 		t.Fatal("readback reconnected or instructions bypassed Guard")
 	}
 	if model.instructions != strings.ReplaceAll(instructions, "server-private-value", "[credential redacted]") {
@@ -185,7 +186,7 @@ func TestMCPServerInfoConnectionAuthorizationAndRunScope(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer owner.Close()
-			ctx, run, err := owner.bindRun(t.Context())
+			ctx, run, err := owner.bindRun(t.Context(), llm.Model{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -197,6 +198,15 @@ func TestMCPServerInfoConnectionAuthorizationAndRunScope(t *testing.T) {
 				var cancel context.CancelFunc
 				ctx, cancel = context.WithCancel(ctx)
 				cancel()
+			}
+			// Preparation discovers an approved service once; info reuses it.
+			approved := mode == "allow" || mode == "closed-run" || mode == "canceled"
+			prepared := int32(0)
+			if approved {
+				prepared = 1
+			}
+			if opens.Load() != prepared || lists.Load() != prepared {
+				t.Fatalf("preparation opens/lists = %d/%d", opens.Load(), lists.Load())
 			}
 			info, err := (mcpRunRouter{}).ServerInfo(ctx, "user:service0")
 			if mode == "allow" {
@@ -212,10 +222,10 @@ func TestMCPServerInfoConnectionAuthorizationAndRunScope(t *testing.T) {
 				if _, err := (mcpRunRouter{}).ServerInfo(ctx, "user:service0"); err == nil {
 					t.Fatal("revoked info remains readable")
 				}
-			} else if err == nil || opens.Load() != 0 {
+			} else if err == nil || opens.Load() != prepared {
 				t.Fatal("unavailable service initialized", err)
 			}
-			if calls.Load() != 0 || lists.Load() != 0 {
+			if calls.Load() != 0 || lists.Load() != prepared {
 				t.Fatal("instructions listed or called remote tools")
 			}
 		})

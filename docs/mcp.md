@@ -430,8 +430,18 @@ Each main Run gets a frozen service catalog borrowing application-owned lazy
 connections. It starts with builtins, `tool_search`, `mcp_resource_list`,
 `mcp_server_info` and a bounded service summary. Required services and pins share
 a ten-second preparation deadline; missing/denied services or unavailable pins
-fail before the first model request. Optional services perform no I/O until
-discovery. A new Run does not inherit selected definitions; `/btw` stays tool-free.
+fail before the first model request. A new Run does not inherit selected
+definitions; `/btw` stays tool-free.
+
+Within the same deadline, preparation also discovers every optional service
+whose connection is already approved (saved, approved earlier in this process,
+or under `--yolo`). It never prompts: unapproved services, and managed Computer
+Use, perform no I/O until `tool_search`. Optional discovery failures only leave
+that service searchable. Whole services, in key order, whose eligible schemas
+fit the [dynamic schema budget](contracts.md#run-local-tool-selection) remaining
+after pins are installed as `InitialTools` and named in the service summary; a
+service that does not fit is never partially loaded and stays searchable. Later
+search selections can evict initial tools like any older selection.
 
 `tool_search` supports keywords, source-qualified service browsing, up to five
 exact IDs and `next_offset` paging. Search is lexical: names/descriptions,

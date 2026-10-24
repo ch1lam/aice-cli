@@ -130,8 +130,8 @@ func (l *Loop) Run(ctx context.Context, input RunInput, sink AgentEventSink) (Re
 	if input.Catalog != nil && l.guard == nil {
 		return Result{}, fmt.Errorf("agent: a tool catalog requires a guard")
 	}
-	if len(input.PinnedTools) > 0 && input.Catalog == nil {
-		return Result{}, fmt.Errorf("agent: pinned tools require a catalog")
+	if (len(input.PinnedTools) > 0 || len(input.InitialTools) > 0) && input.Catalog == nil {
+		return Result{}, fmt.Errorf("agent: pinned or initial tools require a catalog")
 	}
 	execution := runExecution{
 		loop:        l,
@@ -141,6 +141,7 @@ func (l *Loop) Run(ctx context.Context, input RunInput, sink AgentEventSink) (Re
 		result:      initialResult,
 		tools:       l.tools,
 		definitions: l.definitions,
+		selected:    slices.Clone(input.InitialTools),
 	}
 	stop, runErr := stepAbort, execution.recordMessage(ctx, input.Prompt)
 	if runErr == nil {

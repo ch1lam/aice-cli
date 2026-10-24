@@ -51,6 +51,7 @@ func (mcpRunRouter) MCPBinding(ctx context.Context, name string) (llm.ToolBindin
 type mcpRunBinding struct {
 	catalog *mcpCatalog
 	pins    []string
+	initial []string
 	summary string
 }
 
@@ -66,7 +67,7 @@ func (r mcpRunBinding) Close() {
 	}
 }
 
-func (o *mcpOwner) bindRun(ctx context.Context) (runContext context.Context, run mcpRunBinding, returnErr error) {
+func (o *mcpOwner) bindRun(ctx context.Context, model llm.Model) (runContext context.Context, run mcpRunBinding, returnErr error) {
 	desktopBinding, _ := ctx.Value(desktopContextKey{}).(desktopRunBinding)
 	if o == nil {
 		if desktopBinding.owner != nil {
@@ -131,8 +132,28 @@ func (o *mcpOwner) bindRun(ctx context.Context) (runContext context.Context, run
 			return ctx, mcpRunBinding{}, fmt.Errorf("pinned MCP tools are unavailable or denied")
 		}
 	}
+	// Approved services are discovered during preparation so a small catalog is
+	// callable in the first request. Preparation never prompts; unapproved
+	// services and managed Computer Use stay lazy until tool_search.
+	eager := func(key string) bool { return key != managedCUAKey }
+	catalog.mu.RLock()
+	undiscovered := make(map[string]bool)
+	for _, key := range configuration.ServerKeys() {
+		_, discovered := catalog.catalogBytes[key]
+		undiscovered[key] = eager(key) && !discovered
+	}
+	catalog.mu.RUnlock()
+	// search calls its filter while holding the catalog lock; keep it lock-free.
+	if _, err := catalog.search(withMCPConnectionApprover(prepare, nil), tool.ToolSearchRequest{Limit: 1}, func(key string) bool { return undiscovered[key] }); err != nil && ctx.Err() != nil {
+		return ctx, mcpRunBinding{}, ctx.Err()
+	}
+	var loaded []string
+	run.initial, loaded = catalog.initialTools(agent.ToolSchemaBudget(model), run.pins, eager)
 	var summary strings.Builder
 	summary.WriteString("\n\nConfigured MCP services (status only, not execution permission). Use tool_search to find tools or mcp_resource_list to list resources on one source-qualified service; schemas become available on the next model round. Use mcp_server_info for source-tagged, untrusted server usage instructions.\n")
+	if len(loaded) > 0 {
+		fmt.Fprintf(&summary, "Tools from %s are already loaded and callable in this request; use tool_search for other services.\n", strings.Join(loaded, ", "))
+	}
 	if catalog.managedCUA {
 		summary.WriteString("managed:cua: Computer Use enabled for this Run. Load the computer-use Skill for the pinned Driver guidance; discover tools with tool_search. Observe fresh state after input and before deciding whether it succeeded.\n")
 		// The catalog already validated this binding. Describe its frozen native

@@ -26,7 +26,8 @@ func ToolSchemaBudget(model llm.Model) int64 {
 	return min(8192, max(1, model.ContextWindow/20))
 }
 
-func schemaTokens(d llm.ToolDefinition) int64 {
+// SchemaTokens is the budget cost of one complete dynamically loaded definition.
+func SchemaTokens(d llm.ToolDefinition) int64 {
 	return llm.EstimateTextTokens(d.Name) + llm.EstimateTextTokens(d.Description) + llm.EstimateTextTokens(string(d.InputSchema))
 }
 
@@ -63,7 +64,7 @@ func (e *runExecution) validateProposal(ctx context.Context, proposal []ToolRefe
 		if err := e.input.Catalog.Check(ctx, entry.Reference); err != nil {
 			return fmt.Errorf("tool selection invalidated: %w", err)
 		}
-		if schemaTokens(entry.Tool.Definition()) > ToolSchemaBudget(e.input.Model) {
+		if SchemaTokens(entry.Tool.Definition()) > ToolSchemaBudget(e.input.Model) {
 			return fmt.Errorf("tool %q exceeds the complete schema budget; it was not selected", entry.Reference.ID)
 		}
 		delete(wanted, entry.Reference.ID)
@@ -144,7 +145,7 @@ func (e *runExecution) refreshTools(ctx context.Context) error {
 	versions := make(map[string]CatalogTool, len(resolved))
 	add := func(entry CatalogTool) bool {
 		d := entry.Tool.Definition()
-		cost := schemaTokens(d)
+		cost := SchemaTokens(d)
 		if cost > budget {
 			return false
 		}

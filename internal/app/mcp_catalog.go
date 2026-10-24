@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net/url"
 	"slices"
 	"strings"
@@ -218,6 +219,11 @@ func (b mcpVersionBackend) Call(ctx context.Context, name string, args json.RawM
 // and a four-request concurrency bound. Lazy leases may connect after checking
 // prior authorization; a search query itself never grants access.
 func (c *mcpCatalog) Search(ctx context.Context, request tool.ToolSearchRequest) (tool.ToolSearchResult, error) {
+	return c.search(ctx, request, func(key string) bool { return request.Service == "" || request.Service == key })
+}
+
+// search discovers the services selected by include, then ranks the request.
+func (c *mcpCatalog) search(ctx context.Context, request tool.ToolSearchRequest, include func(string) bool) (tool.ToolSearchResult, error) {
 	if err := ctx.Err(); err != nil {
 		return tool.ToolSearchResult{}, err
 	}
@@ -252,7 +258,7 @@ func (c *mcpCatalog) Search(ctx context.Context, request tool.ToolSearchRequest)
 	limit := make(chan struct{}, 4)
 	var work sync.WaitGroup
 	for _, key := range keys {
-		if request.Service != "" && request.Service != key {
+		if !include(key) {
 			continue
 		}
 		connection := c.connections[key]
@@ -287,7 +293,7 @@ func (c *mcpCatalog) Search(ctx context.Context, request tool.ToolSearchRequest)
 	}
 	response := tool.ToolSearchResult{Complete: true}
 	for _, key := range keys {
-		if request.Service != "" && request.Service != key {
+		if !include(key) {
 			continue
 		}
 		server := c.config.Servers[key]
@@ -446,6 +452,36 @@ func mcpConnectionSecrets(server config.MCPServer) []string {
 	}
 	secrets = append(secrets, server.OAuthClientSecret())
 	return secrets
+}
+
+// initialTools selects already discovered tools for the first request, whole
+// services at a time in key order, while they fit the schema budget. A service
+// that does not fit stays searchable instead of being partially loaded.
+func (c *mcpCatalog) initialTools(budget int64, pinned []string, include func(string) bool) (ids, services []string) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	byService := make(map[string][]string)
+	cost := make(map[string]int64)
+	for id, entry := range c.entries {
+		if slices.Contains(pinned, id) {
+			budget -= agent.SchemaTokens(entry.Tool.Definition())
+			continue
+		}
+		if entry.binding.Operation != "" || !include(entry.service) {
+			continue
+		}
+		byService[entry.service] = append(byService[entry.service], id)
+		cost[entry.service] += agent.SchemaTokens(entry.Tool.Definition())
+	}
+	for _, key := range slices.Sorted(maps.Keys(byService)) {
+		if cost[key] > budget {
+			continue
+		}
+		budget -= cost[key]
+		ids = append(ids, slices.Sorted(slices.Values(byService[key]))...)
+		services = append(services, key)
+	}
+	return ids, services
 }
 
 // searchSnapshot is called with c.mu held. It omits resource readers and copies

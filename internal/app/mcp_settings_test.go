@@ -88,7 +88,7 @@ func TestMCPSettingsReconnectRevocationAndExit(t *testing.T) {
 		if _, err := act("connect"); err != nil {
 			t.Fatal(err)
 		}
-		_, oldRun, err := s.mcp.bindRun(ctx)
+		_, oldRun, err := s.mcp.bindRun(ctx, llm.Model{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -112,7 +112,7 @@ func TestMCPSettingsReconnectRevocationAndExit(t *testing.T) {
 		if initialized.Load() != 2 || closed.Load() != 1 || oldRun.catalog.Check(ctx, selected.Selected[0]) == nil {
 			t.Fatal("reconnect retained old transport or reference")
 		}
-		_, currentRun, err := s.mcp.bindRun(ctx)
+		_, currentRun, err := s.mcp.bindRun(ctx, llm.Model{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -140,7 +140,7 @@ func TestMCPSettingsReconnectRevocationAndExit(t *testing.T) {
 		s.lifecycle.mu.Lock()
 		s.lifecycle.mainRunning = false
 		s.lifecycle.mu.Unlock()
-		_, revokedRun, err := s.mcp.bindRun(ctx)
+		_, revokedRun, err := s.mcp.bindRun(ctx, llm.Model{})
 		if err != nil {
 			t.Fatal("optional revoked service blocked the next run", err)
 		}
@@ -277,7 +277,7 @@ func TestMCPSettingsSingleServiceChangesPreserveOtherAuthority(t *testing.T) {
 				act("credential", "user:docs", "token", "set", "old-service-secret")
 				act("approve", "user:docs", "confirm")
 				act("approve", "user:other", "confirm")
-				_, run, err := s.mcp.bindRun(ctx)
+				_, run, err := s.mcp.bindRun(ctx, llm.Model{})
 				if err != nil {
 					t.Fatal(err)
 				}

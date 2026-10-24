@@ -382,3 +382,36 @@ func TestToolSelectionEvictsWholeDefinitionsAndNotifiesModel(t *testing.T) {
 		}
 	}
 }
+
+func TestInitialToolsLoadFirstAndYieldToLaterSelections(t *testing.T) {
+	t.Parallel()
+	info := testModel()
+	budget := agent.ToolSchemaBudget(info)
+	// Each schema uses a little over half of the budget, so only one fits.
+	description := strings.Repeat("x", int(budget)*2)
+	initial := newFakeTool("initial", nil)
+	initial.definition.Description = description
+	searched := newFakeTool("searched", nil)
+	searched.definition.Description = description
+	initialEntry, searchedEntry := catalogEntry("initial", "v1", initial), catalogEntry("searched", "v1", searched)
+	first := assistantMessage(info, llm.StopReasonToolUse, toolCallPart("now", "initial", `{}`), toolCallPart("search", "tool_search", `{}`))
+	last := assistantMessage(info, llm.StopReasonStop, textPart("done"))
+	model := &scriptedModel{scripts: []*streamScript{{events: terminalEvents(first)}, {events: terminalEvents(last)}}}
+	loop := mustLoop(t, model, []agent.Tool{selectionTool{proposal: []agent.ToolReference{searchedEntry.Reference}}}, agent.WithGuard(allowAllGuard{}))
+	input := testInput(info, mustPrompt(t, "use preloaded tools"))
+	input.Catalog = &selectionCatalog{entries: []agent.CatalogTool{initialEntry, searchedEntry}}
+	input.InitialTools = []string{"initial"}
+	if _, err := loop.Run(t.Context(), input, nil); err != nil {
+		t.Fatal(err)
+	}
+	if !hasDefinition(model.requests[0], "initial") || len(initial.calls) != 1 {
+		t.Fatal("initial tool was not callable in the first request")
+	}
+	if hasDefinition(model.requests[1], "initial") || !hasDefinition(model.requests[1], "searched") {
+		t.Fatal("a later selection did not take precedence over an initial tool")
+	}
+	input.Catalog = nil
+	if _, err := loop.Run(t.Context(), input, nil); err == nil {
+		t.Fatal("initial tools without a catalog were accepted")
+	}
+}

@@ -95,7 +95,11 @@ type resultReadPrintModel struct {
 func (m *resultReadPrintModel) Stream(ctx context.Context, r llm.Request) (llm.Stream, error) {
 	m.step++
 	if m.step <= 2 {
-		return m.base.Stream(ctx, r)
+		stream, err := m.base.Stream(ctx, r)
+		if m.base.round == 2 {
+			m.step = 2 // a preloaded tool skips the search round
+		}
+		return stream, err
 	}
 	last := r.Messages[len(r.Messages)-1].(llm.ToolResultMessage)
 	switch m.step {

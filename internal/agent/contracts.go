@@ -185,8 +185,11 @@ type MessageRecorder func(context.Context, llm.AgentMessage) error
 type RunInput struct {
 	// Catalog is optional; selection belongs to this Run, not the shared Loop.
 	// PinnedTools contains application-selected stable IDs that cannot be evicted.
-	Catalog     ToolCatalog
-	PinnedTools []string
+	// InitialTools are application-selected IDs installed from the first request
+	// like earlier search selections: later selections may evict them.
+	Catalog      ToolCatalog
+	PinnedTools  []string
+	InitialTools []string
 	// ObserveTools receives an owned snapshot of catalog references immediately
 	// before each model request attempt, after preparation and budget checks.
 	// It must return promptly; it observes selection, never grants authority.

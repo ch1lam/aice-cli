@@ -35,7 +35,7 @@ func bindRunScope(
 	if err != nil {
 		return nil, runScope{}, err
 	}
-	ctx, run, err := mcp.bindRun(ctx)
+	ctx, run, err := mcp.bindRun(ctx, model)
 	if err != nil {
 		return nil, runScope{}, errors.Join(err, closeDesktop())
 	}
@@ -52,6 +52,7 @@ func (r runScope) input(model llm.Model, systemPrompt string, options llm.Stream
 		ResultViewTokens: llm.ResultViewBudget(model.ContextWindow),
 		Catalog:          r.mcp.Catalog(),
 		PinnedTools:      r.mcp.pins,
+		InitialTools:     r.mcp.initial,
 		Model:            model,
 		SystemPrompt:     systemPrompt + r.mcp.summary,
 		History:          history,

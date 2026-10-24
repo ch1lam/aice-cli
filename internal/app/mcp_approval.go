@@ -20,7 +20,8 @@ type mcpConnectionApproverKey struct{}
 
 // mcpConnectionApprover asks the user whether one exact connection may start.
 // It returns true only for an explicit allow and persists a saved choice itself.
-// Only interactive runs install one; without it, needs_approval fails closed.
+// Only interactive runs install one; without it (or with a nil approver, as
+// during Run preparation), needs_approval fails closed without prompting.
 type mcpConnectionApprover func(context.Context, config.MCPServer) (bool, error)
 
 func withMCPConnectionApprover(ctx context.Context, approve mcpConnectionApprover) context.Context {
@@ -32,8 +33,8 @@ func withMCPConnectionApprover(ctx context.Context, approve mcpConnectionApprove
 // remembered for this exact fingerprint for the owner's lifetime. No owner or
 // Guard lock is held while the user decides.
 func (o *mcpOwner) approveIfNeeded(ctx context.Context, s *mcpOwnedService) error {
-	approve, ok := ctx.Value(mcpConnectionApproverKey{}).(mcpConnectionApprover)
-	if !ok || s == nil {
+	approve, _ := ctx.Value(mcpConnectionApproverKey{}).(mcpConnectionApprover)
+	if approve == nil || s == nil {
 		return nil
 	}
 	o.approvalMu.Lock()
