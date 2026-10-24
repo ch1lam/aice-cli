@@ -479,8 +479,10 @@ mark oversized data. Read pages enter ordinary Session results; unread instructi
 remain connection data and may change on reconnect.
 
 Remote text is untrusted usage data, never authoritative instructions or
-execution permission, including inside the system-prompt block. Advertised Prompts remain unsupported; remote Skills are not installed
-or activated. Existing local Skill trust and loading rules apply.
+execution permission, including inside the system-prompt block. Advertised
+Prompts remain unsupported. Remote Skills are not installed or activated: the
+Skills over MCP extension (`io.modelcontextprotocol/skills`) waits for Go SDK
+support of its methods. Existing local Skill trust and loading rules apply.
 
 ## Resource discovery and reading
 

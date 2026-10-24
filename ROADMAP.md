@@ -37,6 +37,7 @@ reproduction and verification details in their owning guides.
 | --- | --- | --- |
 | Harness debugging and evaluation | Inspect why a run failed, reproduce it, and compare a proposed harness change. | Build on Session history and existing evaluation tasks. |
 | Shared runtime across interfaces | Keep model calls, tools, permissions and history independent of presentation. | Build on the existing application and interaction boundaries; validate another interface against the same runtime contracts. |
+| MCP specification alignment | Register OAuth clients through Client ID Metadata Documents, and load server-provided Skills over MCP through the existing Skill trust path. | CIMD needs a hosted HTTPS client document and fixed loopback redirects; Skills over MCP waits for Go SDK support of `skills/list`/`skills/get`. See [MCP](docs/mcp.md). |
 
 ## Longer term
 
