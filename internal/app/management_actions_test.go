@@ -82,71 +82,72 @@ func TestWebManagementActions(t *testing.T) {
 	}
 }
 
-func TestBrowserManagementActions(t *testing.T) {
-	for _, scenario := range []string{"toggle", "save failure", "connected then cancel tab"} {
-		t.Run(scenario, func(t *testing.T) {
-			s, _ := browserTestSession(t)
-			t.Cleanup(func() { _ = closeBrowser(context.Background(), s.browser) })
-			s.configuration.Paths = authTestPaths(t)
-			s.application = &application{dependencies: dependencies{saveSettings: config.SaveSettingsFile}}
-			request := interaction.CommandRequest{Name: "browser", Arguments: " headed "}
-			if scenario == "save failure" {
-				s.application.dependencies.saveSettings = func(context.Context, config.Paths, map[config.Setting]string) error {
-					return errors.New("synthetic preference failure")
-				}
+// The browser preset only writes and approves the ordinary user:browser
+// service; each choice is a definition change through the generic MCP path.
+func TestBrowserPresetActions(t *testing.T) {
+	paths := runMCPSettingsConfigurationFixture(t, `"mcp":{"servers":{}}`, func(ctx context.Context, s *interactiveSession) {
+		act := func(action string, input ...string) interaction.SettingsActionResult {
+			t.Helper()
+			values := make(chan string, len(input))
+			for _, value := range input {
+				values <- value
 			}
-			if scenario == "connected then cancel tab" {
-				if _, _, err := s.browser.Connect(t.Context(), browser.Target{Endpoint: "9111"}); err != nil {
-					t.Fatal(err)
-				}
-				if err := applyBrowserEnvironment(s.browser); err != nil {
-					t.Fatal(err)
-				}
-				request.Arguments = " connect "
-				input := make(chan string, 1)
-				request.Auth = &interaction.AuthInteraction{Input: input, Notify: func(_ context.Context, prompt interaction.AuthPrompt) error {
-					if prompt.Menu != nil {
-						return context.Canceled
-					}
-					input <- "9222"
-					return nil
-				}}
+			revision, _ := s.settingsStatus()
+			auth := &interaction.AuthInteraction{Input: values, Notify: func(context.Context, interaction.AuthPrompt) error { return nil }}
+			result, err := s.RunSettingsAction(ctx, revision, interaction.CommandRequest{Name: "browser", Arguments: action, Auth: auth})
+			if err != nil {
+				t.Fatal(action, err)
 			}
-			beforeName := s.browser.Name()
-			wantRevision := uint64(1)
-			if scenario == "save failure" {
-				wantRevision = 0
+			return result
+		}
+		choices := func() (bool, browser.Target) {
+			t.Helper()
+			server, exists := s.configuration.MCP.Servers[browserServiceKey]
+			if !exists || !server.Enabled || s.configuration.MCP.ConnectionDecision(browserServiceKey) != config.MCPConnectionAllow || server.Settings.Command != "/synthetic/agent-browser" {
+				t.Fatalf("service = %+v approval=%s", server, s.configuration.MCP.ConnectionDecision(browserServiceKey))
 			}
-			result, err := s.RunSettingsAction(t.Context(), 0, request)
-			output := result.Output
-			if result.Revision != wantRevision || result.Committed || result.Applied || len(result.Warnings) != 0 {
-				t.Fatalf("Settings action result = %+v", result)
-			}
-			if s.lifecycle.revision != wantRevision || s.lifecycle.resourceRevision != wantRevision || s.lifecycle.changing {
-				t.Fatal("browser effects did not determine completion revisions")
-			}
-			switch scenario {
-			case "toggle":
-				loaded, loadErr := config.LoadFiles(s.configuration.Paths, config.LoadOptions{})
-				if err != nil || loadErr != nil || !loaded.BrowserHeaded || !s.configuration.BrowserHeaded || !s.browser.Headed() || os.Getenv("AGENT_BROWSER_HEADED") != "true" || s.browser.Name() != beforeName || !strings.Contains(output, "Show window: on (saved)") {
-					t.Fatalf("toggle did not save and publish: %q, %v, %v", output, err, loadErr)
-				}
-			case "save failure":
-				if err == nil || output != "" || s.configuration.BrowserHeaded || s.browser.Headed() || os.Getenv("AGENT_BROWSER_HEADED") != "false" || s.browser.Name() != beforeName {
-					t.Fatalf("failed save changed browser state: %q, %v", output, err)
-				}
-			case "connected then cancel tab":
-				if !errors.Is(err, context.Canceled) || output != "" || s.browser.Target() != (browser.Target{Endpoint: "9222"}) || s.browser.Name() == beforeName || !s.browser.HasSidecar() || os.Getenv("AGENT_BROWSER_CDP") != "9222" || os.Getenv("AGENT_BROWSER_SESSION") != s.browser.Name() {
-					t.Fatalf("cancellation lost completed connection effects: %q, %v", output, err)
-				}
-			}
-			if scenario != "toggle" {
-				if _, statErr := os.Stat(s.configuration.Paths.GlobalSettings); !errors.Is(statErr, os.ErrNotExist) {
-					t.Fatalf("unsaved action wrote preferences: %v", statErr)
-				}
-			}
-		})
+			return browser.Options(server.Settings)
+		}
+		if _, err := s.RunSettingsAction(ctx, 0, interaction.CommandRequest{Name: "browser", Arguments: "setup"}); err == nil {
+			t.Fatal("setup without a helper succeeded")
+		}
+		s.browserBin = "/synthetic/agent-browser"
+		if result := act("setup"); !result.Committed || !strings.Contains(result.Output, browserServiceKey) {
+			t.Fatalf("setup = %+v", result)
+		}
+		if headed, target := choices(); headed || target != (browser.Target{}) {
+			t.Fatal("setup did not use a separate headless browser")
+		}
+		act("headed")
+		if headed, _ := choices(); !headed {
+			t.Fatal("window toggle not saved")
+		}
+		act("connect", "9222")
+		if headed, target := choices(); !headed || target != (browser.Target{Endpoint: "9222"}) {
+			t.Fatal("connection target not saved")
+		}
+		revision, _ := s.settingsStatus()
+		if _, err := s.RunSettingsAction(ctx, revision, interaction.CommandRequest{Name: "browser", Arguments: "connect", Auth: &interaction.AuthInteraction{Input: oneValue("http://bad"), Notify: func(context.Context, interaction.AuthPrompt) error { return nil }}}); err == nil {
+			t.Fatal("invalid endpoint accepted")
+		}
+		act("separate")
+		if _, target := choices(); target != (browser.Target{}) {
+			t.Fatal("separate browser not restored")
+		}
+		if result := act("disable"); !result.Committed || s.configuration.MCP.Servers[browserServiceKey].Enabled {
+			t.Fatal("disable did not take effect")
+		}
+	})
+	loaded, err := config.LoadFiles(paths, config.LoadOptions{})
+	if err != nil || loaded.MCP.Servers[browserServiceKey].Enabled {
+		t.Fatalf("persisted service = %+v, %v", loaded.MCP.Servers[browserServiceKey], err)
 	}
+}
+
+func oneValue(value string) chan string {
+	values := make(chan string, 1)
+	values <- value
+	return values
 }
 
 // Slash entries for Settings-owned domains delegate to the same action without
@@ -166,19 +167,6 @@ func TestSlashDelegatesToSettingsActions(t *testing.T) {
 			},
 			request: func() interaction.CommandRequest {
 				return interaction.CommandRequest{Name: "web", Arguments: "fetch"}
-			},
-		},
-		{
-			name: "browser",
-			session: func(t *testing.T) *interactiveSession {
-				s, _ := browserTestSession(t)
-				t.Cleanup(func() { _ = closeBrowser(context.Background(), s.browser) })
-				s.configuration.Paths = authTestPaths(t)
-				s.application = &application{dependencies: dependencies{saveSettings: config.SaveSettingsFile}}
-				return s
-			},
-			request: func() interaction.CommandRequest {
-				return interaction.CommandRequest{Name: "browser", Arguments: "headed"}
 			},
 		},
 		{

@@ -41,8 +41,8 @@ Invocation controls such as `--workspace`, `--session`, `--approve`, and
 
 Computer Use has no settings of its own: its setup writes the ordinary MCP
 service `user:cua` (see [Computer Use](desktop.md)). The removed
-`desktop_enabled` and `desktop_control_mode` keys are unknown fields: loading
-fails until they are deleted from `settings.json`.
+`desktop_enabled`, `desktop_control_mode` and `browser_headed` keys are
+unknown fields: loading fails until they are deleted from `settings.json`.
 
 Project settings are protected by [Project Trust](project-trust.md).
 Until trusted, the project contributes no configuration values. The initial
@@ -95,7 +95,6 @@ peak billing is twice the estimate.
 | Default Project Trust | `AICE_DEFAULT_PROJECT_TRUST` | `ask`, `always`, `never`; project values cannot grant startup trust |
 | Custom base URL | `AICE_CUSTOM_BASE_URL` | OpenAI-compatible endpoint persisted as `custom_base_url`; default `http://localhost:11434/v1` |
 | Context windows | `AICE_CONTEXT_WINDOWS` | JSON array of provider/model/token entries described below |
-| Show browser window | `AICE_BROWSER_HEADED` | Boolean; file key `browser_headed`, default `false`; saved through `/browser` → Show window, see [Browser automation](browser.md#show-the-browser-window) |
 | Disable helper downloads | `AICE_NO_DEP_INSTALL` | Boolean; file key `no_dep_install` |
 | Disable startup update check | `AICE_NO_UPDATE_CHECK` | Boolean; file key `no_update_check` |
 | Web search and fetch | none (file only) | Nested `web` object: search sources, priority, service instances, fetch switch; see [Web search and fetch](web.md#configuration) |
@@ -736,8 +735,6 @@ with Up/Down; recalled historical labels are plain text and can be reselected.
 disambiguate case-only collisions; select the displayed entry for those names.
 These references are an interactive composer feature; `--print` accepts ordinary
 requests to use a named Skill.
-The builtin `browser` skill describes browsing through `bash` and `read`; see
-[Browser automation](browser.md) for installation and connection requirements.
 Discovery and wiring are in [Skills](architecture.md#skills).
 
 Skill directories on disk are allowed automatically for read-class tools
@@ -771,7 +768,7 @@ The composer retains the real terminal cursor for IME composition.
 | `/settings` | Open the five-category Settings window |
 | `/desktop` | Set up or disable Computer Use (the `user:cua` MCP service) in Settings |
 | `/context`, `/usage` | Open current context or recorded Session usage |
-| `/browser` | Browser status, connection, tab selection and close; `/browser status` also works |
+| `/browser` | Set up, reconnect, close or disable browser automation (the `user:browser` MCP service); `/browser status` also works |
 | `/mcp` | Manage MCP services, connection approval and credentials; see [MCP](mcp.md) |
 | `/web` | Web search services, priority order, credentials and the `web_fetch` switch; see [Web search and fetch](web.md#the-web-command) |
 | `/skills` | List the process startup Skills catalog; restart to rescan |
@@ -1061,7 +1058,7 @@ Dragged file paths and separate print-mode image flags are not implemented;
 | Variable | Effect |
 | --- | --- |
 | `AICE_NO_DEP_INSTALL=1` | Disable ripgrep, Windows Git Bash and agent-browser downloads |
-| `AGENT_BROWSER_EXECUTABLE_PATH` | Use an installed browser executable; see [Browser automation](browser.md) |
+| `AGENT_BROWSER_EXECUTABLE_PATH` | Not inherited: add it to the `user:browser` service `env` to choose a browser executable; see [Browser automation](browser.md#installation) |
 | `AICE_NO_UPDATE_CHECK=1` | Disable the interactive update check |
 
 The two `AICE_NO_*` switches also support `true` and can be set to `false` or

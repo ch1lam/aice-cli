@@ -124,10 +124,9 @@ duplicate replies are dropped, and cancellation wins over a racing submit.
 `--workspace` sets the default working directory and is the boundary used by
 the path-access gate; it is not a sandbox.
 
-Browser commands pass through the same bash gate. It can check command strings
-and screenshot paths, but does not enforce website action or domain isolation.
-Browser skills provide behavioral guidance rather than a security boundary; see
-[Browser automation](browser.md#screenshots-and-authority).
+[Browser automation](browser.md) is the ordinary MCP service `user:browser`; its
+tools ask through the same MCP Guard and do not add website action or domain
+isolation; see [Browser automation](browser.md#screenshots-and-authority).
 
 This section is the source of truth for Guard product behavior. Other
 documents should link here instead of restating these lists.
@@ -488,7 +487,7 @@ resume first. Closing the editor cannot undo a committed save.
 
 Switching requires main and BTW responses to be idle. App validates/prepares the
 target before replacement; failures keep the old Session and draft. Success
-clears BTW threads and temporary Guard grants, rotates browser state, and keeps
+clears BTW threads and temporary Guard grants, and keeps
 current model/provider/thinking preferences. It never rolls back workspace files.
 The display restores original branch records with details folded; model context
 independently uses compaction checkpoints. Read-only inspection never writes a
@@ -527,9 +526,8 @@ file; the next accepted prompt starts a fresh one. A previous file that
 recorded messages is left untouched and stays resumable with `--session`.
 `/clear` only clears the visible transcript. `/new` does not rebuild the
 process environment: prompt files and skill discovery are reused. Dynamic Guard
-grants are cleared. The ephemeral browser session is closed, its generation
-advances and its external connection environment is cleared. Browser state is
-never restored from history; see [Browser automation](browser.md). Restart AICE
+grants are cleared. Browser state belongs to the browser MCP service and is
+neither reset nor restored from history; see [Browser automation](browser.md#lifetime-and-concurrency). Restart AICE
 to reload prompt files or Skills.
 
 ## Recovery and compaction

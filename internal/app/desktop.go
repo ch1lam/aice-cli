@@ -2,11 +2,9 @@ package app
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"path/filepath"
-	"reflect"
 	"runtime"
 	"strings"
 
@@ -70,7 +68,11 @@ func (s *interactiveSession) runDesktopSettings(ctx context.Context, request int
 			result.Output = "Computer Use is not configured"
 			return result, nil
 		}
-		return s.applyDesktopMCP(ctx, current, owner, interaction.MCPRequest{Action: "disable", Key: desktopServiceKey}, result)
+		result, err := s.applyPresetMCP(ctx, current, owner, interaction.MCPRequest{Action: "disable", Key: desktopServiceKey}, result)
+		if err == nil {
+			result.Output = "Computer Use disabled; the Driver installation and OS grants were kept"
+		}
+		return result, err
 	}
 	ui := request.Auth
 	if ui == nil || ui.Notify == nil || ui.Input == nil {
@@ -142,36 +144,9 @@ func (s *interactiveSession) runDesktopSettings(ctx context.Context, request int
 			return result, err
 		}
 	}
-	definition := desktop.Definition(installed.Installation.Binary)
-	encoded, err := json.Marshal(definition)
+	result, err = s.ensurePresetService(ctx, desktop.ServerID, desktop.Definition(installed.Installation.Binary), nil, result)
 	if err != nil {
 		return result, err
-	}
-	op := interaction.MCPRequest{Action: "add", Key: desktop.ServerID, Definition: encoded}
-	if existing, exists := current.MCP.Servers[desktopServiceKey]; exists {
-		if existing.Source.Kind != "user" {
-			return result, errors.New("app: a project MCP service already uses the cua ID; remove it before setup")
-		}
-		op = interaction.MCPRequest{Action: "replace", Key: desktopServiceKey, Definition: encoded}
-		if reflect.DeepEqual(desktopComparable(existing.Settings), desktopComparable(definition)) {
-			op = interaction.MCPRequest{Action: "enable", Key: desktopServiceKey}
-		}
-	}
-	result, err = s.applyDesktopMCP(ctx, current, owner, op, result)
-	if err != nil {
-		return result, err
-	}
-	// The user just reviewed this exact service; approve its connection so the
-	// next Run can discover it. Tool calls still ask through Guard.
-	s.stateMu.RLock()
-	current, owner = s.configuration, s.mcp
-	s.stateMu.RUnlock()
-	server := current.MCP.Servers[desktopServiceKey]
-	if current.MCP.ConnectionDecision(desktopServiceKey) != config.MCPConnectionAllow {
-		result, err = s.applyDesktopMCP(ctx, current, owner, interaction.MCPRequest{Action: "approve", Key: desktopServiceKey, Fingerprint: server.Fingerprint}, result)
-		if err != nil {
-			return result, err
-		}
 	}
 	result.ReadinessKnown, result.Ready = true, true
 	result.Output = "Computer Use is available to the next Run through the MCP service " + desktopServiceKey
@@ -179,27 +154,6 @@ func (s *interactiveSession) runDesktopSettings(ctx context.Context, request int
 		result.Output += ". If its tools report missing desktop access, run `cua-driver doctor`."
 	}
 	return result, nil
-}
-
-// desktopComparable ignores user preferences such as enablement and tool
-// filters when deciding whether the connection definition must be replaced.
-func desktopComparable(settings config.MCPServerSettings) config.MCPServerSettings {
-	return config.MCPServerSettings{Transport: settings.Transport, Command: settings.Command, Args: settings.Args, Cwd: settings.Cwd, Env: settings.Env}
-}
-
-func (s *interactiveSession) applyDesktopMCP(ctx context.Context, current config.Config, owner *mcpOwner, op interaction.MCPRequest, result interaction.SettingsActionResult) (interaction.SettingsActionResult, error) {
-	next, managed, err := executeMCPManagement(ctx, current, owner, op, nil)
-	result.Warnings = append(result.Warnings, managed.Warnings...)
-	result.Committed = result.Committed || managed.Committed
-	if managed.Committed {
-		applyErr := s.publishMCPConfiguration(next)
-		result.Applied = applyErr == nil
-		err = errors.Join(err, applyErr)
-	}
-	if err == nil && op.Action == "disable" {
-		result.Output = "Computer Use disabled; the Driver installation and OS grants were kept"
-	}
-	return result, err
 }
 
 // desktopStatus is a configuration read; it performs no native or MCP I/O.

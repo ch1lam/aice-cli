@@ -23,7 +23,7 @@ tests. Search for the named symbols rather than relying on line numbers.
 | Transcript folds and mouse input | [tui/fold.go](../internal/tui/fold.go), [tui/fold_mouse.go](../internal/tui/fold_mouse.go), [tui/transcript_viewport.go](../internal/tui/transcript_viewport.go), [app/display_output.go](../internal/app/display_output.go) | [fold_test.go](../internal/tui/fold_test.go), [fold_mouse_test.go](../internal/tui/fold_mouse_test.go), [display_output_test.go](../internal/app/display_output_test.go) |
 | Side conversations | [app/side_thread.go](../internal/app/side_thread.go), [tui/side_thread.go](../internal/tui/side_thread.go) | [side_thread_lifecycle_test.go](../internal/app/side_thread_lifecycle_test.go), [tui/side_thread_test.go](../internal/tui/side_thread_test.go) |
 | Provider and protocol changes | [providers.go](../internal/app/providers.go), [provider](../internal/provider), [api](../internal/api) | Cross-provider table tests in [provider_test.go](../internal/provider/provider_test.go), the affected provider and adapter tests; shared fixtures in [apitest](../internal/apitest) |
-| Browser lifecycle | [browser](../internal/browser), [app/browser.go](../internal/app/browser.go), [deps/agentbrowser.go](../internal/deps/agentbrowser.go) | [native_test.go](../internal/browser/native_test.go), [app/browser_test.go](../internal/app/browser_test.go) |
+| Browser preset | [browser/preset.go](../internal/browser/preset.go), [app/browser.go](../internal/app/browser.go), [deps/agentbrowser.go](../internal/deps/agentbrowser.go) | [browser/preset_test.go](../internal/browser/preset_test.go), [app/management_actions_test.go](../internal/app/management_actions_test.go) |
 | Web search and fetch | [app/web.go](../internal/app/web.go) (`bindWeb`), [app/web_commands.go](../internal/app/web_commands.go), [config/web.go](../internal/config/web.go), [web/resolve.go](../internal/web/resolve.go), [web/exa/client.go](../internal/web/exa/client.go), [web/httpfetch/fetch.go](../internal/web/httpfetch/fetch.go), [guard/network.go](../internal/guard/network.go), [tool/web_search.go](../internal/tool/web_search.go), [tool/web_fetch.go](../internal/tool/web_fetch.go) | [app/web_test.go](../internal/app/web_test.go), [app/web_commands_test.go](../internal/app/web_commands_test.go), [config/web_test.go](../internal/config/web_test.go), [web/web_test.go](../internal/web/web_test.go), [exa_test.go](../internal/web/exa/exa_test.go), [fetch_test.go](../internal/web/httpfetch/fetch_test.go), [guard/network_test.go](../internal/guard/network_test.go) |
 | MCP transport and run catalog | [mcpclient/client.go](../internal/mcpclient/client.go), [app/mcp_owner.go](../internal/app/mcp_owner.go), [app/mcp_catalog.go](../internal/app/mcp_catalog.go), [agent/tool_selection.go](../internal/agent/tool_selection.go) | [mcpclient/lifecycle_test.go](../internal/mcpclient/lifecycle_test.go), [app/mcp_startup_test.go](../internal/app/mcp_startup_test.go), [app/mcp_loop_test.go](../internal/app/mcp_loop_test.go), [agent/tool_selection_test.go](../internal/agent/tool_selection_test.go) |
 | MCP management, authorization and OAuth | [app/mcp_management.go](../internal/app/mcp_management.go), [app/mcp_guard.go](../internal/app/mcp_guard.go), [config/mcp_permissions.go](../internal/config/mcp_permissions.go), [mcpauth](../internal/mcpauth) | [app/mcp_tui_test.go](../internal/app/mcp_tui_test.go), [app/mcp_permissions_test.go](../internal/app/mcp_permissions_test.go), [app/mcp_oauth_login_test.go](../internal/app/mcp_oauth_login_test.go), [app/mcp_oauth_refresh_test.go](../internal/app/mcp_oauth_refresh_test.go) |
@@ -249,9 +249,7 @@ entry. Do not infer live-service or cross-platform acceptance from local tests.
 
 ### Browser acceptance gaps
 
-The [browser acceptance record](browser.md#maintenance-and-verification) owns
-platform coverage, outstanding cases, and acceptance conditions. Offline fixtures
-and native macOS/Linux helper tests do not establish full TUI or actual-model
-acceptance. That acceptance remains incomplete, and Windows browser support
-remains disabled pending native lifecycle validation. Consult the record before
-claiming support or extending browser lifecycle behavior.
+Browser automation is the ordinary MCP service `user:browser`; agent-browser
+owns its runtime. Real-model browsing, external CDP connection and Linux are
+unverified in this design, and Windows remains unavailable; see
+[Browser verification](browser.md#verification).

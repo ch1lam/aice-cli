@@ -527,6 +527,7 @@ func TestSkillCommandsUseTrustedCatalogAndKeepExactNames(t *testing.T) {
 	t.Parallel()
 	userRoot, projectRoot := t.TempDir(), t.TempDir()
 	writeTestSkill(t, userRoot, "review", "User review")
+	writeTestSkill(t, userRoot, "browser", "Shares a command name")
 	writeTestSkill(t, projectRoot, "review", "Project review")
 	writeTestSkill(t, projectRoot, "private", "Project only")
 	for _, tc := range []struct {

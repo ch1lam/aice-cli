@@ -25,7 +25,7 @@ func (s *interactiveSession) SlashCommands() []interaction.Command {
 		{Name: "usage", Description: "Open recorded Session usage", Panel: &interaction.Panel{View: interaction.PanelUsage, Tab: 1}},
 		{Name: "context", Description: "Open current context information", Panel: &interaction.Panel{View: interaction.PanelUsage}},
 		{Name: "history", Description: "Browse conversation history in this project", ArgumentHint: "[id]", Panel: &interaction.Panel{View: interaction.PanelHistory}},
-		{Name: "browser", Description: "Manage browser connection and tabs", Menu: s.browserMenu(), Interactive: true},
+		{Name: "browser", Description: "Set up browser automation as the user:browser MCP service", Menu: s.browserMenu(), Interactive: true},
 		{Name: "web", Description: "Configure web search services, priority and web fetch", Menu: s.webMenu(), Interactive: true},
 		{Name: "mcp", Description: "Manage MCP services, connection approval and credentials", ArgumentHint: "[action] [service]", Interactive: true,
 			Panel: &interaction.Panel{View: interaction.PanelSettings, Focus: "mcp.services", FocusAction: true}},
@@ -559,13 +559,6 @@ func (s *interactiveSession) slashNew(
 	s.conversation.store = nil
 	s.conversation.historyLeaf, s.conversation.historyReady = "", false
 	s.guard.ResetSessionGrants()
-	if s.browser != nil {
-		browserErr := closeBrowser(ctx, s.browser)
-		browserErr = errors.Join(browserErr, s.browser.Rotate(), applyBrowserEnvironment(s.browser))
-		if browserErr != nil {
-			defer func() { output += "\nBrowser cleanup warning: " + browserErr.Error() }()
-		}
-	}
 	s.conversation.historyMu.Lock()
 	s.conversation.history = nil
 	s.conversation.historyMu.Unlock()

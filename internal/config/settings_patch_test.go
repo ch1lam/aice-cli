@@ -73,16 +73,16 @@ func TestSettingsPatchFrozenSourcesAndInheritance(t *testing.T) {
 func TestSettingsPatchExplicitZeroEmptyAndDiskIsolation(t *testing.T) {
 	t.Parallel()
 	paths := testPaths(t.TempDir())
-	writeJSON(t, paths.GlobalSettings, map[string]any{"browser_headed": true, "run_token_budget": 42, "model": "old", "thinking": "low"})
+	writeJSON(t, paths.GlobalSettings, map[string]any{"no_update_check": true, "run_token_budget": 42, "model": "old", "thinking": "low"})
 	c, err := config.LoadFiles(paths, config.LoadOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	// A concurrent writer changes an unrelated preference; persist merges it,
 	// whereas publication retains the local frozen value.
-	writeJSON(t, paths.GlobalSettings, map[string]any{"browser_headed": true, "run_token_budget": 42, "model": "old", "thinking": "high", "unknown": "preserve"})
+	writeJSON(t, paths.GlobalSettings, map[string]any{"no_update_check": true, "run_token_budget": 42, "model": "old", "thinking": "high", "unknown": "preserve"})
 	patch := config.SettingsPatch{}
-	for id, text := range map[config.Setting]string{"browser_headed": "false", "run_token_budget": "0", "model": "", "run_timeout": "1.000000001s"} {
+	for id, text := range map[config.Setting]string{"no_update_check": "false", "run_token_budget": "0", "model": "", "run_timeout": "1.000000001s"} {
 		patch.Changes = append(patch.Changes, settingPatch(t, id, text).Changes...)
 	}
 	patch.Changes = append(patch.Changes, config.SettingChange{ID: "context_windows", Value: config.SettingValue{Kind: config.ContextWindowsValue, Windows: []config.ContextWindow{}}})
@@ -94,12 +94,12 @@ func TestSettingsPatchExplicitZeroEmptyAndDiskIsolation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if next.BrowserHeaded || next.RunTokenBudget != 0 || next.Model != "" || next.Thinking != "low" || next.RunTimeout != time.Second+time.Nanosecond {
+	if next.NoUpdateCheck || next.RunTokenBudget != 0 || next.Model != "" || next.Thinking != "low" || next.RunTimeout != time.Second+time.Nanosecond {
 		t.Fatal("candidate imported peer data or lost explicit zero/precision")
 	}
 	var disk map[string]any
 	readJSON(t, paths.GlobalSettings, &disk)
-	if disk["browser_headed"] != false || disk["run_token_budget"] != float64(0) || disk["model"] != "" || disk["thinking"] != "high" || disk["unknown"] != "preserve" || disk["run_timeout"] != "1.000000001s" {
+	if disk["no_update_check"] != false || disk["run_token_budget"] != float64(0) || disk["model"] != "" || disk["thinking"] != "high" || disk["unknown"] != "preserve" || disk["run_timeout"] != "1.000000001s" {
 		t.Fatalf("disk=%v", disk)
 	}
 	unset := config.SettingsPatch{Changes: []config.SettingChange{{ID: config.SettingModel, Unset: true}}}

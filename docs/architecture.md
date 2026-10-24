@@ -73,8 +73,9 @@ Optional capabilities retain their own owners:
 - Computer Use: an application of MCP. The `desktop` preset installs the pinned
   Cua Driver and writes the ordinary `user:cua` service; Cua owns its runtime,
   permission mode, sessions and input. See [Computer Use](desktop.md).
-- Browser: app owns process-scoped connection and helper lifecycle; the Loop
-  remains unaware of browser implementation. See [Browser](browser.md).
+- Browser: an application of MCP. The `browser` preset writes the ordinary
+  `user:browser` service for the pinned agent-browser; agent-browser owns its
+  sessions and browsers. See [Browser](browser.md).
 
 ## Package map
 
@@ -105,9 +106,9 @@ Optional capabilities retain their own owners:
 | `internal/skill` | Agent Skill discovery, SKILL.md parse, source layering, embedded builtins |
 | `internal/config` | Instance-local Viper precedence, effective snapshots, and locked atomic preference/credential persistence |
 | `internal/lockedfile` | Cross-process OS file locks with bounded waits and atomic file replacement, shared by config and Trust |
-| `internal/deps` | Verified ripgrep, Windows Git Bash, pinned agent-browser and Cua provisioning, including upstream browser skill resources |
+| `internal/deps` | Verified ripgrep, Windows Git Bash, pinned agent-browser and Cua provisioning |
 | `internal/desktop` | Computer Use preset: the `cua-driver mcp` service definition and Cua's macOS permission flow; [Computer Use](desktop.md) |
-| `internal/browser` | Process-owned browser names, environment, connection and bounded cleanup; app owns wiring, Loop remains unaware |
+| `internal/browser` | Browser preset: the `agent-browser mcp` service definition, its window/target choices and session close; [Browser](browser.md) |
 | `internal/update` | Checksum-validated GitHub release updates |
 | `internal/hostpath` | Host path canonicalization, comparison keys, membership, tilde expansion, slash-normalized display |
 | `internal/jsonutil`, `internal/apitest` | Focused shared JSON and test infrastructure |
@@ -196,8 +197,7 @@ TUI never reads Skill files. Host Skill directories receive read-only resource
 access through Guard, without bypassing sensitive-file rules.
 
 Formats, limits and user paths live in [Agent Skills](configuration.md#agent-skills).
-Versioned browser reference material belongs to dependency provisioning;
-it is not a second independently scanned catalog. No hot reload or Loop
+Helper reference material is not a second independently scanned catalog. No hot reload or Loop
 middleware is implemented.
 
 ## Planned extensions and restraint

@@ -45,7 +45,7 @@ var welcomeTips = [...]string{
 	"Run /compact to summarize older context on this branch.",
 	"Use /btw to ask a side question without tools.",
 	"Run /skills to see the skills loaded for this Session.",
-	"Use /browser to manage browser connections and tabs.",
+	"Use /browser to set up browser automation as an MCP service.",
 	"Run /init to create or improve your project AGENTS.md.",
 }
 

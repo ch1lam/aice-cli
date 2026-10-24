@@ -12,7 +12,7 @@ and quickstart. Use this index for task-specific guides.
 | Understand permissions, resume work or manage context | [Execution and Sessions](execution-sessions.md) |
 | Load project instructions and configure trust | [Project Trust](project-trust.md) |
 | Search the web or fetch pages | [Web](web.md) |
-| Automate a browser | [Browser automation](browser.md) |
+| Automate a browser through agent-browser | [Browser automation](browser.md) |
 | Set up desktop automation through Cua Driver | [Computer Use](desktop.md) |
 | Connect external tools and resources | [MCP](mcp.md) |
 

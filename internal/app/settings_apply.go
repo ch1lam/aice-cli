@@ -152,13 +152,6 @@ func (s *interactiveSession) applySettingsReserved(ctx context.Context, request 
 	if shared {
 		result.Applied = true
 	}
-	for _, change := range request.Changes {
-		if change.ID == "browser_headed" && s.browser != nil {
-			if err := s.applyBrowserHeaded(candidate.BrowserHeaded); err != nil {
-				result.Warnings = append(result.Warnings, "Preference saved; browser environment: "+err.Error())
-			}
-		}
-	}
 	return result, nil
 }
 

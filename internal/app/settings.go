@@ -3,7 +3,6 @@ package app
 import (
 	"context"
 	"fmt"
-	"runtime"
 	"strings"
 
 	"github.com/ch1lam/aice-cli/internal/config"
@@ -36,8 +35,6 @@ func settingPresentation(id string) (category, label, description string, timing
 		return "models", "Thinking", "Requested reasoning level; the model may use its nearest supported level.", timing, false
 	case "context_windows":
 		return "models", "Context windows", "Override a provider/model capacity in tokens. Removing an entry uses its catalog default.", timing, false
-	case "browser_headed":
-		return "tools", "Show browser window", "Changes visibility of the next managed browser session.", interaction.SettingNextBrowser, false
 	case "max_turns":
 		return "limits", "Maximum turns", "0 means unlimited model turns.", timing, false
 	case "run_token_budget":
@@ -180,19 +177,15 @@ func (s *interactiveSession) ReadSettings(ctx context.Context) (interaction.Sett
 		{Name: "web", Menu: s.webMenu(), Interactive: true},
 		{Name: "trust", Menu: s.trustMenu()},
 	}
-	for _, entry := range []struct{ id, category, label, name string }{{"mcp.services", "tools", "MCP services and authorization", "mcp"}, {"browser.actions", "tools", "Browser connection and tabs", "browser"}, {"web.services", "tools", "Search services and priority", "web"}, {"project.trust", "project", "Change project trust", "trust"}} {
+	for _, entry := range []struct{ id, category, label, name string }{{"mcp.services", "tools", "MCP services and authorization", "mcp"}, {"browser.actions", "tools", "Browser automation", "browser"}, {"web.services", "tools", "Search services and priority", "web"}, {"project.trust", "project", "Change project trust", "trust"}} {
 		for _, command := range commands {
 			if command.Name == entry.name {
 				reason := disabled
 				if (entry.name == "trust" || entry.name == "mcp") && reason != interaction.ErrSettingsBusy.Error() {
 					reason = ""
 				}
-				if entry.name == "browser" {
-					if runtime.GOOS == "windows" {
-						reason = "Browser automation is unavailable on Windows"
-					} else if s.browser == nil {
-						reason = "Browser manager is unavailable in this session"
-					}
+				if entry.name == "browser" && s.browserBin == "" {
+					reason = "The pinned agent-browser helper is not installed on this platform"
 				}
 				description := ""
 				if entry.name == "mcp" {
@@ -203,16 +196,11 @@ func (s *interactiveSession) ReadSettings(ctx context.Context) (interaction.Sett
 			}
 		}
 	}
-	browserState := "Browser manager unavailable"
 	mcpStatus := mcpManagementStatus(settings.configuration, settings.mcp, "")
 	s.applyMCPLoadedTools(mcpStatus)
 	mcpDetails := mcpStatusDetails(mcpStatus)
 	result.Fields = append(result.Fields, interaction.SettingField{ID: "mcp.status", Category: "tools", Label: "MCP status", Kind: interaction.SettingInfo, Description: interaction.DetailsText(mcpDetails), Details: mcpDetails})
-	if s.browser != nil {
-		target := s.browser.Target()
-		browserState = fmt.Sprintf("Session: %s\nManaged window visible: %t\nAuto-detect: %t\nEndpoint: %s\nUse browser actions for live connection and tab status.", s.browser.Name(), s.browser.Headed(), target.Auto, target.Endpoint)
-	}
-	result.Fields = append(result.Fields, interaction.SettingField{ID: "browser.status", Category: "tools", Label: "Browser status", Kind: interaction.SettingInfo, Description: browserState}, interaction.SettingField{ID: "web.status", Category: "tools", Label: "Web status", Kind: interaction.SettingInfo, Description: s.webStatus()})
+	result.Fields = append(result.Fields, interaction.SettingField{ID: "browser.status", Category: "tools", Label: "Browser status", Kind: interaction.SettingInfo, Description: s.browserStatus(settings.configuration, settings.mcp)}, interaction.SettingField{ID: "web.status", Category: "tools", Label: "Web status", Kind: interaction.SettingInfo, Description: s.webStatus()})
 	skillDetails := skillsDetails(s.skills, s.skillDiags, s.workspacePath)
 	for _, entry := range []struct {
 		id, category, label, value string

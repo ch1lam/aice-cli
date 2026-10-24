@@ -95,24 +95,3 @@ func TestBuiltinMatchesMapFSScan(t *testing.T) {
 		t.Fatalf("embed %#v != map %#v", embedded[0], mapped[0])
 	}
 }
-
-func TestBuiltinBrowserContract(t *testing.T) {
-	skills, diags, err := Builtin()
-	if err != nil || len(diags) != 0 {
-		t.Fatalf("%v %v", err, diags)
-	}
-	for _, item := range skills {
-		if item.Name == "browser" {
-			if item.Description == "" || item.Dir != "" || item.Source != SourceBuiltin {
-				t.Fatalf("invalid browser skill %+v", item)
-			}
-			for _, want := range []string{"skills get core", ".aice/browser/screenshots/page.png", "tab_gone", "close --all", "AGENT_BROWSER_SESSION"} {
-				if !strings.Contains(item.Body, want) {
-					t.Errorf("missing %s", want)
-				}
-			}
-			return
-		}
-	}
-	t.Fatal("missing browser skill")
-}

@@ -8,7 +8,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -18,7 +17,6 @@ import (
 	"github.com/spf13/viper"
 
 	"github.com/ch1lam/aice-cli/internal/agent"
-	"github.com/ch1lam/aice-cli/internal/browser"
 	"github.com/ch1lam/aice-cli/internal/buildinfo"
 	"github.com/ch1lam/aice-cli/internal/cli"
 	"github.com/ch1lam/aice-cli/internal/config"
@@ -261,7 +259,6 @@ func (a *application) Print(
 	if err != nil {
 		return err
 	}
-	defer func() { returnErr = errors.Join(returnErr, closeBrowser(ctx, environment.browser)) }()
 	defer environment.web.closeBackend()
 	defer func() { returnErr = errors.Join(returnErr, environment.mcp.Close()) }()
 	for _, diagnostic := range environment.configuration.Diagnostics {
@@ -392,7 +389,6 @@ func (a *application) Interactive(
 	if err != nil {
 		return err
 	}
-	browserClosed := false
 	var runner *interactiveSession
 	defer func() {
 		owner := environment.web
@@ -412,11 +408,6 @@ func (a *application) Interactive(
 		}
 		returnErr = errors.Join(returnErr, owner.Close())
 	}()
-	defer func() {
-		if !browserClosed {
-			returnErr = errors.Join(returnErr, closeBrowser(ctx, environment.browser))
-		}
-	}()
 	store, history, usage, err := prepareSession(
 		ctx,
 		environment.workspace,
@@ -428,7 +419,7 @@ func (a *application) Interactive(
 
 	runner = &interactiveSession{
 		mcp:           environment.mcp,
-		browser:       environment.browser,
+		browserBin:    a.browserHelper(),
 		application:   a,
 		guard:         environment.guard,
 		guardAdapter:  environment.guardAdapter,
@@ -523,9 +514,7 @@ func (a *application) Interactive(
 	// Close the runner's current store: /new may have detached the startup
 	// store, and a later prompt may have created another. Remove empty
 	// interactive files so unused explicit paths do not accumulate.
-	browserErr := closeBrowser(ctx, runner.browser)
-	browserClosed = true
-	closeErr := errors.Join(browserErr, closeInteractiveStore(runner.conversation.store))
+	closeErr := closeInteractiveStore(runner.conversation.store)
 	if runErr != nil {
 		return errors.Join(fmt.Errorf("app: run TUI: %w", runErr), closeErr)
 	}
@@ -564,7 +553,6 @@ func (a *application) checkForUpdate(
 
 type runEnvironment struct {
 	mcp           *mcpOwner
-	browser       *browser.Manager
 	modelErr      error
 	workspace     *tool.Workspace
 	configuration config.Config
@@ -699,29 +687,9 @@ func (a *application) prepareRunEnvironment(
 		return nil, err
 	}
 	adapter.mcp = mcpRunRouter{}
-	var browserManager *browser.Manager
-	if runtime.GOOS != "windows" {
-		if home, pathErr := a.userHome(); pathErr == nil && home != "" {
-			binDir := filepath.Join(home, ".aice", "bin")
-			browserManager, err = browser.NewManager(os.Getpid(), binDir, workspace.PhysicalPath())
-			if err == nil {
-				browserManager.SetHeaded(configured.configuration.BrowserHeaded)
-				err = applyBrowserEnvironment(browserManager)
-			}
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "aice: warning: browser setup: %v\n", err)
-				browserManager = nil
-			} else if _, helperErr := browserManager.Executable(); helperErr == nil {
-				for _, sweepErr := range browserManager.SweepStale(ctx) {
-					fmt.Fprintf(os.Stderr, "aice: warning: %v\n", sweepErr)
-				}
-			}
-		}
-	}
 	prepared = true
 	return &runEnvironment{
 		mcp:           mcpState,
-		browser:       browserManager,
 		modelErr:      configured.modelErr,
 		workspace:     workspace,
 		configuration: configured.configuration,
@@ -836,7 +804,7 @@ type interactiveSession struct {
 	mcpLoaded      *mcpLoadedTools // protected by stateMu; current main Run only
 	lifecycle      settingsLifecycle
 	catalog        sessionCatalog
-	browser        *browser.Manager
+	browserBin     string
 	modelErr       error
 	application    *application
 	stateMu        sync.RWMutex

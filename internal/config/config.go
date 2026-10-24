@@ -89,7 +89,6 @@ const (
 type Setting string
 
 const (
-	SettingBrowserHeaded Setting = "browser_headed"
 	SettingProvider      Setting = settingsKeyProvider
 	SettingModel         Setting = settingsKeyModel
 	SettingThinking      Setting = settingsKeyThinking
@@ -107,7 +106,6 @@ type ContextWindow struct {
 // Provider API keys and base URLs follow providerKeys and are decoded into
 // Config maps; API keys normally live in auth.json with the same precedence.
 type Settings struct {
-	BrowserHeaded       bool              `json:"browser_headed,omitempty"`
 	MaxTurns            int               `json:"max_turns,omitempty"`
 	RunNoProgressLimit  int               `json:"run_no_progress_limit"`
 	RunTokenBudget      int64             `json:"run_token_budget,omitempty"`
@@ -133,7 +131,6 @@ type Paths struct {
 // Config is an immutable effective snapshot owned by one application instance.
 // Interactive changes create another snapshot; they never reload file layers.
 type Config struct {
-	BrowserHeaded       bool
 	MaxTurns            int
 	RunNoProgressLimit  int
 	RunTokenBudget      int64
@@ -212,7 +209,6 @@ func DefaultPaths() (Paths, error) {
 // every key also makes env-only values visible to Viper's AllSettings.
 func EnvironmentVariables() map[string]string {
 	variables := map[string]string{
-		"browser_headed":        "AICE_BROWSER_HEADED",
 		"max_turns":             "AICE_MAX_TURNS",
 		"run_no_progress_limit": "AICE_RUN_NO_PROGRESS_LIMIT",
 		"run_token_budget":      "AICE_RUN_TOKEN_BUDGET", "run_timeout": "AICE_RUN_TIMEOUT",
@@ -434,7 +430,6 @@ func (c Config) settings() Settings {
 		DefaultProjectTrust: c.DefaultProjectTrust,
 		NoDepInstall:        c.NoDepInstall,
 		NoUpdateCheck:       c.NoUpdateCheck,
-		BrowserHeaded:       c.BrowserHeaded,
 	}
 	for key, tokens := range c.ContextWindows {
 		provider, model, _ := strings.Cut(key, "/")
@@ -460,7 +455,7 @@ func decodeEffective(v *viper.Viper) (Config, error) {
 		}
 		text = strings.TrimSpace(text)
 		switch key {
-		case "no_dep_install", "no_update_check", "browser_headed":
+		case "no_dep_install", "no_update_check":
 			parsed, err := strconv.ParseBool(text)
 			if err != nil {
 				return Config{}, fmt.Errorf("config: %s must be a boolean", key)
@@ -516,7 +511,6 @@ func decodeEffective(v *viper.Viper) (Config, error) {
 		BaseURLs:            baseURLs,
 		NoDepInstall:        s.NoDepInstall,
 		NoUpdateCheck:       s.NoUpdateCheck,
-		BrowserHeaded:       s.BrowserHeaded,
 	}
 	if len(s.ContextWindows) != 0 {
 		c.ContextWindows = make(map[string]int64, len(s.ContextWindows))

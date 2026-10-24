@@ -74,10 +74,6 @@ func (s *interactiveSession) slashResume(ctx context.Context, request interactio
 	s.publishTranscript(view)
 	// Once installed, cleanup failures are warnings, not a failed switch.
 	cleanupErr := closeInteractiveStore(previous)
-	if s.browser != nil {
-		cleanupErr = errors.Join(cleanupErr, closeBrowser(ctx, s.browser), s.browser.Rotate())
-		cleanupErr = errors.Join(cleanupErr, applyBrowserEnvironment(s.browser))
-	}
 	output := "Resumed session " + shortSessionID(snapshot.Header.ID)
 	if cleanupErr != nil {
 		output += "\nCleanup warning: " + cleanupErr.Error()

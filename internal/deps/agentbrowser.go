@@ -2,10 +2,8 @@ package deps
 
 import (
 	"context"
-	"embed"
 	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -13,22 +11,14 @@ import (
 	"time"
 )
 
-//go:embed agentbrowser/skill-data agentbrowser/LICENSE agentbrowser/VENDOR.md
-var browserResources embed.FS
-
 // AgentBrowserInstalled checks the private pinned installation, never PATH.
 func AgentBrowserInstalled(binDir string) bool {
 	version, err := os.ReadFile(filepath.Join(binDir, "agent-browser.version"))
 	if err != nil || strings.TrimSpace(string(version)) != AgentBrowserVersion {
 		return false
 	}
-	for _, path := range []string{"agent-browser", filepath.Join("agent-browser-skills", AgentBrowserVersion, "core", "SKILL.md")} {
-		info, err := os.Stat(filepath.Join(binDir, path))
-		if err != nil || !info.Mode().IsRegular() {
-			return false
-		}
-	}
-	return true
+	info, err := os.Stat(filepath.Join(binDir, "agent-browser"))
+	return err == nil && info.Mode().IsRegular()
 }
 
 func installAgentBrowser(ctx context.Context, opts Options) error {
@@ -72,55 +62,20 @@ func installAgentBrowser(ctx context.Context, opts Options) error {
 	if err := os.Chmod(binary, 0755); err != nil {
 		return err
 	}
-	skills := filepath.Join(stage, "skills")
-	err = fs.WalkDir(browserResources, "agentbrowser", func(path string, entry fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if entry.IsDir() {
-			return nil
-		}
-		name := strings.TrimPrefix(path, "agentbrowser/")
-		name = strings.TrimPrefix(name, "skill-data/")
-		data, err := browserResources.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		dest := filepath.Join(skills, filepath.FromSlash(name))
-		if err := os.MkdirAll(filepath.Dir(dest), 0755); err != nil {
-			return err
-		}
-		return os.WriteFile(dest, data, 0644)
-	})
-	if err != nil {
-		return fmt.Errorf("stage browser skills: %w", err)
-	}
 	if err := os.WriteFile(filepath.Join(stage, "version"), []byte(AgentBrowserVersion+"\n"), 0644); err != nil {
-		return err
-	}
-	root := filepath.Join(opts.BinDir, "agent-browser-skills")
-	if err := os.MkdirAll(root, 0755); err != nil {
 		return err
 	}
 	// Keep old files until every replacement succeeds, including the version marker.
 	replacements := []browserReplacement{
 		{from: binary, to: filepath.Join(opts.BinDir, "agent-browser")},
-		{from: skills, to: filepath.Join(root, AgentBrowserVersion)},
 		{from: filepath.Join(stage, "version"), to: filepath.Join(opts.BinDir, "agent-browser.version")},
 	}
 	if err := replaceBrowserFiles(stage, replacements); err != nil {
 		return err
 	}
-	entries, err := os.ReadDir(root)
-	if err != nil {
-		fmt.Fprintf(opts.Log, "aice: warning: list old browser skills: %v\n", err)
-	}
-	for _, entry := range entries {
-		if entry.IsDir() && entry.Name() != AgentBrowserVersion {
-			if err := os.RemoveAll(filepath.Join(root, entry.Name())); err != nil {
-				fmt.Fprintf(opts.Log, "aice: warning: remove old browser skills: %v\n", err)
-			}
-		}
+	// Earlier versions extracted CLI skill documents; the MCP tools replace them.
+	if err := os.RemoveAll(filepath.Join(opts.BinDir, "agent-browser-skills")); err != nil {
+		fmt.Fprintf(opts.Log, "aice: warning: remove old browser skills: %v\n", err)
 	}
 	os.RemoveAll(stage)
 	fmt.Fprintf(opts.Log, "aice: installed agent-browser %s\n", AgentBrowserVersion)

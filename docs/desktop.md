@@ -34,8 +34,9 @@ Use `/desktop` or Settings → Tools & Network → Computer Use.
    ```
 
    On Linux and Windows the command is the private installation under
-   `~/.aice/bin/cua/`. An existing user `cua` entry is replaced only when its
-   connection fields differ; enablement and tool filters are preferences.
+   `~/.aice/bin/cua/`. An existing user `cua` entry keeps its own fields (tool
+   filters, timeouts, other env entries); only connection fields and the
+   preset's env keys are rewritten, and only when they differ.
 4. saves the connection approval for that exact fingerprint, because the user
    just reviewed it. Tool calls still ask through Guard (once, per tool version
    for the Session, or for the service's current versions).

@@ -89,7 +89,6 @@ func SettingDefinitions() []SettingDefinition {
 		{ID: SettingModel, Kind: EnumValue},
 		{ID: SettingThinking, Kind: EnumValue, Default: SettingValue{Text: string(llm.DefaultThinkingLevel)}},
 		{ID: "default_project_trust", Kind: EnumValue, Default: SettingValue{Text: string(trust.DefaultAsk)}},
-		{ID: SettingBrowserHeaded, Kind: BoolValue},
 		{ID: "no_dep_install", Kind: BoolValue},
 		{ID: "no_update_check", Kind: BoolValue},
 		{ID: "max_turns", Kind: IntValue},

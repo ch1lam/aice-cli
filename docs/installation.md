@@ -72,7 +72,7 @@ default distribution's tools and Linux paths; native file tools still use
 Windows paths. See [execution and cancellation](execution-sessions.md#tool-execution-boundary).
 
 On macOS and Linux, AICE also provisions a private, checksum-pinned native
-`agent-browser` helper and its embedded upstream skills. Startup download
+`agent-browser` helper (no longer its CLI skill documents). Startup download
 progress goes to stderr. AICE does not download a browser automatically; see
 [Browser automation](browser.md) for supported platforms and connection setup.
 

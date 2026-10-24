@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -214,33 +213,5 @@ func TestBrowserProgressCancellation(t *testing.T) {
 	}
 	if AgentBrowserInstalled(opts.BinDir) {
 		t.Fatal("installed cancelled download")
-	}
-}
-
-func TestBrowserEmbeddedResources(t *testing.T) {
-	count := 0
-	err := fs.WalkDir(browserResources, "agentbrowser/skill-data", func(path string, entry fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if entry.IsDir() || entry.Name() != "SKILL.md" {
-			return nil
-		}
-		data, err := browserResources.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		if !strings.Contains(string(data), "name:") || !strings.Contains(string(data), "description:") {
-			t.Errorf("invalid %s", path)
-		}
-		count++
-		return nil
-	})
-	if err != nil || count != 9 {
-		t.Fatalf("resources %d: %v", count, err)
-	}
-	vendor, err := browserResources.ReadFile("agentbrowser/VENDOR.md")
-	if err != nil || !strings.Contains(string(vendor), "v"+AgentBrowserVersion) {
-		t.Fatalf("vendor %v", err)
 	}
 }

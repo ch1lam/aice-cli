@@ -200,21 +200,11 @@ Cua's own results. Keep generated Sessions and captures outside the repository.
 
 ## Browser checks
 
-The default browser/dependency tests use fake commands and local HTTP fixtures,
-not downloads or user profiles. Fake executable lookups must return host-absolute
-paths for installed helpers, including Git Bash, so Windows discovery does not
-trigger unrelated provisioning during browser tests.
-The opt-in native test requires the verified
-pinned helper plus installed Chrome/Chromium/Brave:
-
-```sh
-AICE_BROWSER_TEST_HELPER=/absolute/path/to/agent-browser \
-  go test -tags=integration ./internal/browser -run '^TestNativeManagedBrowserLifecycle$' -v
-```
-
-It checks headed and headless modes (the headed case requires a desktop display),
-using isolated sessions, a local data-URL form, snapshots, input actions,
-screenshot PNG decoding, close/sidecar checks and a fresh generation. Never point
-it at the user's live profile. Actual `/browser` TUI, external CDP connection and
-Chrome Allow acceptance need a dedicated profile and a desktop. Keep native,
-scripted-model and actual model evidence separate in the [acceptance matrix](browser.md#maintenance-and-verification).
+Default tests use synthetic helper paths and perform no browser or helper
+calls. Fake executable lookups must return host-absolute paths for installed
+helpers, including Git Bash, so Windows discovery does not trigger unrelated
+provisioning. Browser runtime behavior is agent-browser's; check it through the
+ordinary MCP path: `/browser` → Set up / Repair, `aice mcp connect user:browser`
+lists the core tools, then a task exercises Guard prompts, page actions and
+screenshot images. Use a dedicated profile for CDP connections, never the
+user's live profile.

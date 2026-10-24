@@ -51,7 +51,6 @@ type SettingTiming string
 
 const (
 	SettingNextRun      SettingTiming = "Next agent run"
-	SettingNextBrowser  SettingTiming = "Next browser session"
 	SettingRestart      SettingTiming = "Next startup"
 	SettingDomainAction SettingTiming = "Explicit action"
 )
