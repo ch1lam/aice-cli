@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"slices"
+	"strings"
 
 	"github.com/ch1lam/aice-cli/internal/agent"
 	"github.com/ch1lam/aice-cli/internal/config"
@@ -23,6 +24,8 @@ const (
 	guardOptionAllowRunDir     = "allow-run-dir"
 	guardOptionAllowRunCommand = "allow-run-command"
 	guardOptionAllowRunTool    = "allow-run-tool"
+	guardOptionAlwaysDir       = "allow-always-dir"
+	guardOptionAlwaysCommand   = "allow-always-command"
 	guardOptionAllowMCPTool    = "allow-mcp-tool-session"
 	guardOptionAllowMCPService = "allow-mcp-service-session"
 	guardOptionDeny            = "deny"
@@ -49,10 +52,16 @@ func newExecutionGuard(
 	return g, adapter, nil
 }
 
-// executionGuardConfig names the files AICE owns: credential stores are
-// denied, and configuration that changes AICE's own authority always asks.
-func executionGuardConfig(paths config.Paths, workspace string, readOnlyRoots []string) guard.Config {
-	cfg := guard.Config{ReadOnlyRoots: readOnlyRoots}
+// executionGuardConfig names the files AICE owns and the configured rules:
+// credential stores are denied, and configuration that changes AICE's own
+// authority always asks.
+func executionGuardConfig(configuration config.Config, workspace string, readOnlyRoots []string) guard.Config {
+	paths := configuration.Paths
+	cfg := guard.Config{ReadOnlyRoots: readOnlyRoots, Rules: guard.Rules{
+		Allow: configuration.Permissions.Allow,
+		Ask:   configuration.Permissions.Ask,
+		Deny:  configuration.Permissions.Deny,
+	}}
 	if paths.GlobalAuth != "" {
 		cfg.CredentialFiles = []string{paths.GlobalAuth, config.ClaudeSubscriptionAuthPath(paths), config.CodexAuthPath(paths)}
 	}
@@ -308,6 +317,10 @@ func (s *interactiveSession) handleGuardAsk(ctx context.Context, call llm.ToolCa
 			if err := result.AllowServiceSession(ctx); err != nil {
 				return agent.GuardAskReply{Decision: agent.GuardDeny}, err
 			}
+		case guardOptionAlwaysDir, guardOptionAlwaysCommand:
+			if err := s.saveGuardRule(ctx, got.OptionID, toolName, result); err != nil {
+				return agent.GuardAskReply{Decision: agent.GuardDeny}, err
+			}
 		default:
 			s.applyGuardAskGrant(got.OptionID, toolName, result)
 		}
@@ -335,6 +348,12 @@ func guardAskOptions(g *guard.Guard, toolName string, result agent.GuardApproval
 			return guardAskOnceOrDeny()
 		}
 		return pathAccessAskOptions(g, toolName, result.Action.Path, result.RuleID == guard.RuleOutsideWrite)
+	case guard.RuleUserAsk:
+		// An ask rule is the user's request to confirm; never offer to save it away.
+		if result.Action.Command != "" {
+			return commandAskOptions(g, "")
+		}
+		return guardAskOnceOrDeny()
 	case guardRuleUnknownTool:
 		return []interaction.GuardOption{
 			{ID: guardOptionAllowOnce, Label: "Allow once"},
@@ -346,7 +365,7 @@ func guardAskOptions(g *guard.Guard, toolName string, result agent.GuardApproval
 		}
 	default:
 		if guard.IsBashRule(result.RuleID) && result.Action.Command != "" {
-			return commandAskOptions()
+			return commandAskOptions(g, result.Action.Command)
 		}
 		return guardAskOnceOrDeny()
 	}
@@ -373,6 +392,13 @@ func pathAccessAskOptions(g *guard.Guard, toolName, path string, write bool) []i
 			Label: "Allow " + verb + " directory " + hostpath.HomeDisplay(parent) + "/ for this session",
 		})
 	}
+	if rule, ok := guard.SuggestPathRule(parent, write); ok {
+		options = append(options, interaction.GuardOption{
+			ID:     guardOptionAlwaysDir,
+			Label:  "Always allow " + verb + " directory " + hostpath.HomeDisplay(parent) + "/",
+			Detail: "saves " + rule + " to user settings",
+		})
+	}
 	return append(options, interaction.GuardOption{
 		ID:    guardOptionDeny,
 		Label: "Deny",
@@ -380,10 +406,20 @@ func pathAccessAskOptions(g *guard.Guard, toolName, path string, write bool) []i
 	})
 }
 
-func commandAskOptions() []interaction.GuardOption {
+// commandAskOptions offers a saved prefix rule only when one prefix covers
+// every finding of command.
+func commandAskOptions(g *guard.Guard, command string) []interaction.GuardOption {
 	options := []interaction.GuardOption{
 		{ID: guardOptionAllowOnce, Label: "Allow once"},
 		{ID: guardOptionAllowRunCommand, Label: "Allow this exact command for this session"},
+	}
+	if rule, ok := g.SuggestCommandRule(command); ok {
+		prefix := strings.TrimSuffix(strings.TrimPrefix(rule, "bash("), " *)")
+		options = append(options, interaction.GuardOption{
+			ID:     guardOptionAlwaysCommand,
+			Label:  "Always allow `" + prefix + " …` commands",
+			Detail: "saves " + rule + " to user settings",
+		})
 	}
 	return append(options, interaction.GuardOption{
 		ID:    guardOptionDeny,
@@ -418,6 +454,26 @@ func (s *interactiveSession) applyGuardAskGrant(optionID, toolName string, resul
 	case guardOptionAllowRunTool:
 		g.AllowToolSession(toolName)
 	}
+}
+
+// saveGuardRule persists the rule an "always" option showed, then applies
+// it to this process. A failed save allows nothing.
+func (s *interactiveSession) saveGuardRule(ctx context.Context, optionID, toolName string, result agent.GuardApproval) error {
+	g := s.guard
+	var rule string
+	var ok bool
+	if optionID == guardOptionAlwaysDir {
+		rule, ok = guard.SuggestPathRule(filepath.Dir(g.ResolveAbsolute(result.Action.Path, toolName)), result.RuleID == guard.RuleOutsideWrite)
+	} else {
+		rule, ok = g.SuggestCommandRule(result.Action.Command)
+	}
+	if !ok {
+		return fmt.Errorf("permission rule is no longer available")
+	}
+	if err := config.SavePermissionRule(ctx, s.configuration.Paths, guard.RuleDecisionAllow, rule); err != nil {
+		return err
+	}
+	return g.AddRule(guard.RuleDecisionAllow, rule)
 }
 
 func resolveGuardAbs(g *guard.Guard, path, toolName string) string {

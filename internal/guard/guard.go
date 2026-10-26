@@ -38,6 +38,8 @@ type Guard struct {
 	readOnlyRoots   []string
 	credentialFiles []string
 	controlFiles    []string
+	// rules are explicit settings rules; AddRule appends under mu.
+	rules ruleSet
 	// sessionAllowedTools tracks unknown tool names allowed for this Session.
 	sessionAllowedTools map[string]bool
 	// sessionCommands are bash commands granted by exact equality.
@@ -63,7 +65,12 @@ type pathGrant struct {
 // New constructs a Guard for the given workspace and configuration.
 // workspace may be empty (uses raw paths without relative conversion).
 func New(workspace string, cfg Config) (*Guard, error) {
+	rules, err := parseRules(cfg.Rules, workspace)
+	if err != nil {
+		return nil, err
+	}
 	return &Guard{
+		rules:               rules,
 		workspace:           workspace,
 		readOnlyRoots:       resolveReadOnlyRoots(cfg.ReadOnlyRoots, workspace),
 		credentialFiles:     cleanPaths(cfg.CredentialFiles),
@@ -173,15 +180,21 @@ func (g *Guard) Check(ctx context.Context, call llm.ToolCall) (Result, error) {
 	if isNetworkTool(call.Name) {
 		return g.checkNetwork(call), nil
 	}
-	actions, findings := extractActions(call, g.workspace)
+	analysis := extractActions(call, g.workspace)
 	var approvals []Approval
 	if call.Name == "bash" {
-		if approval, ok := g.commandApproval(extractCommand(call.Arguments), findings); ok {
+		cmd := extractCommand(call.Arguments)
+		for _, words := range analysis.commands {
+			if r, ok := firstCommandRule(g.rules.deny, words); ok {
+				return Result{Decision: DecisionDeny, Reason: "Command " + strings.Join(words, " ") + " is denied by permission rule " + r.text + ".", RuleID: RuleUserDeny, Action: Action{Kind: "command", Command: cmd, ToolName: "bash"}}, nil
+			}
+		}
+		if approval, ok := g.commandApproval(cmd, analysis); ok {
 			approvals = append(approvals, approval)
 		}
 	}
 	seen := make(map[string]bool)
-	for _, act := range actions {
+	for _, act := range analysis.actions {
 		abs := resolveAbsolute(act.Path, g.workspace, act.ToolName)
 		if secretFileTools[call.Name] {
 			if !act.Unresolved && g.isCredentialPath(abs) {
@@ -190,6 +203,9 @@ func (g *Guard) Check(ctx context.Context, call llm.ToolCall) (Result, error) {
 			if reason, denied := checkSecretFile(ctx, act, g.workspace); denied {
 				return Result{Decision: DecisionDeny, Reason: reason, RuleID: secretFilesRuleID, Action: act}, nil
 			}
+		}
+		if r, ok := firstPathRule(g.rules.deny, abs, act.Op, false); ok {
+			return Result{Decision: DecisionDeny, Reason: "Access to " + resolveForDisplay(abs, g.workspace) + " is denied by permission rule " + r.text + ".", RuleID: RuleUserDeny, Action: act}, nil
 		}
 		write := act.Op == opWrite
 		key := act.Op + "\x00" + abs
@@ -204,9 +220,19 @@ func (g *Guard) Check(ctx context.Context, call llm.ToolCall) (Result, error) {
 			})
 			continue
 		}
+		if r, ok := firstPathRule(g.rules.ask, abs, act.Op, false); ok {
+			approvals = append(approvals, Approval{
+				Reason: fmt.Sprintf("Access to %s requires confirmation (permission rule %s).", resolveForDisplay(abs, g.workspace), r.text),
+				RuleID: RuleUserAsk, Action: act,
+			})
+			continue
+		}
 		if g.workspace != "" && hostpath.Within(g.workspace, abs) ||
 			!write && inReadOnlyRoot(abs, g.readOnlyRoots) ||
 			g.pathGranted(abs, write) {
+			continue
+		}
+		if _, ok := firstPathRule(g.rules.allow, abs, act.Op, true); ok {
 			continue
 		}
 		rule, verb := RuleOutsideRead, "Reading"
@@ -243,30 +269,30 @@ func (g *Guard) pathGranted(abs string, write bool) bool {
 	return false
 }
 
-// commandApproval combines the findings of one bash command into a single
-// approval named after the most severe rule. An exact Session grant covers it.
-func (g *Guard) commandApproval(cmd string, findings []finding) (Approval, bool) {
+// commandApproval combines the findings and ask-rule matches of one bash
+// command into a single approval named after the most severe rule. An exact
+// Session grant covers it.
+func (g *Guard) commandApproval(cmd string, analysis bashAnalysis) (Approval, bool) {
 	if cmd == "" || g.sessionCommands[cmd] {
 		return Approval{}, false
 	}
-	var kept []finding
-	for _, f := range findings {
-		if f.scoped && !g.riskyDelete(f) {
-			continue
-		}
-		if !slices.ContainsFunc(kept, func(k finding) bool { return k.rule == f.rule && k.desc == f.desc }) {
-			kept = append(kept, f)
+	kept := g.pendingFindings(analysis.findings)
+	for _, words := range analysis.commands {
+		if r, ok := firstCommandRule(g.rules.ask, words); ok {
+			kept = append(kept, finding{rule: RuleUserAsk, desc: "permission rule " + r.text, pattern: strings.Join(words, " ")})
 		}
 	}
 	if len(kept) == 0 {
 		return Approval{}, false
 	}
 	slices.SortStableFunc(kept, func(a, b finding) int {
-		return slices.Index(bashRuleOrder, a.rule) - slices.Index(bashRuleOrder, b.rule)
+		return severity(a.rule) - severity(b.rule)
 	})
-	descs := make([]string, len(kept))
-	for i, f := range kept {
-		descs[i] = f.desc
+	descs := make([]string, 0, len(kept))
+	for _, f := range kept {
+		if !slices.Contains(descs, f.desc) {
+			descs = append(descs, f.desc)
+		}
 	}
 	return Approval{
 		Reason:  "Command requires confirmation (" + strings.Join(descs, "; ") + "): " + kept[0].pattern,
@@ -274,6 +300,32 @@ func (g *Guard) commandApproval(cmd string, findings []finding) (Approval, bool)
 		Action:  Action{Kind: "command", Command: cmd, ToolName: "bash"},
 		Pattern: kept[0].pattern,
 	}, true
+}
+
+// severity orders bash rules; user ask rules rank last.
+func severity(ruleID string) int {
+	if i := slices.Index(bashRuleOrder, ruleID); i >= 0 {
+		return i
+	}
+	return len(bashRuleOrder)
+}
+
+// pendingFindings drops safe deletes, findings covered by allow rules and
+// duplicates. The caller holds g.mu.
+func (g *Guard) pendingFindings(findings []finding) []finding {
+	var kept []finding
+	for _, f := range findings {
+		if f.scoped && !g.riskyDelete(f) {
+			continue
+		}
+		if _, ok := firstCommandRule(g.rules.allow, f.words); ok && len(f.words) > 0 {
+			continue
+		}
+		if !slices.ContainsFunc(kept, func(k finding) bool { return k.rule == f.rule && k.desc == f.desc }) {
+			kept = append(kept, f)
+		}
+	}
+	return kept
 }
 
 // riskyDelete reports whether a recursive delete may reach beyond concrete

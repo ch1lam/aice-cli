@@ -32,6 +32,8 @@ type finding struct {
 	rule    string
 	desc    string
 	pattern string
+	// words is the command as rules match it; empty for pipeline findings.
+	words []string
 
 	scoped        bool // a recursive delete limited to deleteTargets
 	deleteTargets []shellWord
@@ -353,6 +355,25 @@ func curlDataFile(value string) (string, bool) {
 	return "", false
 }
 
+// commandWords is cmd as rules match it: the command's base name, and for
+// git the subcommand directly after it, without global options.
+func commandWords(cmd shellCommand) []string {
+	words := cmd.texts()
+	words[0] = cmd.name()
+	if words[0] != "git" {
+		return words
+	}
+	_, sub, args := gitInvocation(cmd)
+	if sub == "" {
+		return words[:1]
+	}
+	out := []string{"git", sub}
+	for _, w := range args {
+		out = append(out, w.text)
+	}
+	return out
+}
+
 // gitReadSubcommands only inspect the repository.
 var gitReadSubcommands = map[string]bool{
 	"status": true, "log": true, "diff": true, "show": true, "blame": true, "grep": true, "ls-files": true,
@@ -447,7 +468,7 @@ func isBlockDevice(path string) bool {
 func classifyCommand(cmd shellCommand) []finding {
 	words := cmd.texts()
 	add := func(rule, desc string) []finding {
-		return []finding{{rule: rule, desc: desc, pattern: cmd.display()}}
+		return []finding{{rule: rule, desc: desc, pattern: cmd.display(), words: commandWords(cmd)}}
 	}
 	name := cmd.name()
 	if name == "mkfs" || strings.HasPrefix(name, "mkfs.") {
@@ -488,14 +509,14 @@ func classifyCommand(cmd shellCommand) []finding {
 		return add(RuleBashDelete, "secure file overwrite")
 	case "rm":
 		if hasShortFlag(words[1:], "r") || hasShortFlag(words[1:], "R") || hasLongOption(words, "recursive") || hasLongOption(words, "dir") {
-			return []finding{{rule: RuleBashDelete, desc: "recursive delete", pattern: cmd.display(), scoped: true, deleteTargets: operandsOf(cmd), base: cmd.base, extraArgs: cmd.extraArgs}}
+			return []finding{{rule: RuleBashDelete, desc: "recursive delete", pattern: cmd.display(), words: commandWords(cmd), scoped: true, deleteTargets: operandsOf(cmd), base: cmd.base, extraArgs: cmd.extraArgs}}
 		}
 	case "find":
 		if slices.Contains(words, "-delete") {
 			filtered := slices.ContainsFunc(words, func(w string) bool {
 				return slices.Contains([]string{"-name", "-iname", "-path", "-ipath", "-regex", "-iregex", "-type", "-newer", "-mtime", "-mmin", "-size", "-empty"}, w)
 			})
-			return []finding{{rule: RuleBashDelete, desc: "find delete", pattern: cmd.display(), scoped: true, deleteTargets: findStarts(cmd), base: cmd.base, filtered: filtered}}
+			return []finding{{rule: RuleBashDelete, desc: "find delete", pattern: cmd.display(), words: commandWords(cmd), scoped: true, deleteTargets: findStarts(cmd), base: cmd.base, filtered: filtered}}
 		}
 	case "git":
 		return gitFindings(cmd, add)

@@ -47,10 +47,12 @@ func (c shellCommand) display() string {
 	return text
 }
 
-// bashAnalysis is everything the gate needs from one bash command string.
+// bashAnalysis is everything the gate needs from one tool call.
 type bashAnalysis struct {
 	actions  []Action
 	findings []finding
+	// commands lists every command as rules see it, launchers included.
+	commands [][]string
 }
 
 // maxShellDepth bounds nested `bash -c` parsing.
@@ -61,7 +63,7 @@ const maxShellDepth = 4
 func analyzeBash(command, workspace string) bashAnalysis {
 	a := &bashAnalyzer{command: command, workspace: workspace}
 	a.script(command, workspace, 0)
-	return bashAnalysis{actions: a.actions, findings: a.findings}
+	return bashAnalysis{actions: a.actions, findings: a.findings, commands: a.commands}
 }
 
 type bashAnalyzer struct {
@@ -69,6 +71,7 @@ type bashAnalyzer struct {
 	workspace string
 	actions   []Action
 	findings  []finding
+	commands  [][]string
 }
 
 func (a *bashAnalyzer) script(script, base string, depth int) {
@@ -130,9 +133,12 @@ func (a *bashAnalyzer) redirect(r *syntax.Redirect, base string) {
 // simple classifies one command, unwrapping launchers and nested shells.
 func (a *bashAnalyzer) simple(cmd shellCommand, depth int) {
 	for {
+		if len(cmd.words) > 0 {
+			a.commands = append(a.commands, commandWords(cmd))
+		}
 		inner, privileged, ok := unwrap(cmd)
 		if privileged != "" {
-			a.findings = append(a.findings, finding{rule: RuleBashPrivileged, desc: privileged, pattern: cmd.display()})
+			a.findings = append(a.findings, finding{rule: RuleBashPrivileged, desc: privileged, pattern: cmd.display(), words: commandWords(cmd)})
 		}
 		if !ok {
 			break

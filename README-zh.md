@@ -106,6 +106,8 @@ AICE 提供模型调用、工具执行、上下文与会话管理，通过 TUI �
 | Agent Skills | `/skills` — 查看启动时加载的 `SKILL.md` 列表；变更 Skills 后需重启；[指南](./docs/configuration.md#agent-skills) |
 
 工具使用当前用户的本机权限执行，工作目录不是操作系统沙箱。
+工作目录内的常规读写和命令直接执行；访问工作目录外、外发、破坏性或提权命令需要确认，凭据文件一律拒绝。
+设置中的 `permissions` 规则可以对指定命令和路径设为允许、询问或拒绝。
 模型请求会将任务上下文发送给你配置的模型服务。处理敏感项目之前，请了解
 [工具权限](./docs/execution-sessions.md#tool-execution-boundary)和 [Project Trust](./docs/project-trust.md)。
 

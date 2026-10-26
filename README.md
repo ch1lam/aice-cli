@@ -110,7 +110,11 @@ non-interactive CLI.
 | Agent Skills | `/skills` — list the startup `SKILL.md` catalog; restart after changing Skills; [guide](./docs/configuration.md#agent-skills) |
 
 AICE runs tools with your local user permissions; the workspace is not an OS
-sandbox. Model requests send task context to your configured provider.
+sandbox. Inside the workspace, ordinary reads, writes and commands run without
+prompts; access outside it and outbound, destructive or privileged commands ask,
+and credential files are denied. `permissions` rules in settings can allow, ask
+for or deny specific commands and paths. Model requests send task context to
+your configured provider.
 See [tool permissions](./docs/execution-sessions.md#tool-execution-boundary)
 and [Project Trust](./docs/project-trust.md) before working with sensitive projects.
 

@@ -321,6 +321,7 @@ func TestGuardAskOptions(t *testing.T) {
 				guardOptionAllowOnce,
 				guardOptionAllowRunFile,
 				guardOptionAllowRunDir,
+				guardOptionAlwaysDir,
 				guardOptionDeny,
 			},
 		},
@@ -352,6 +353,45 @@ func TestGuardAskOptions(t *testing.T) {
 			wantIDs: []string{
 				guardOptionAllowOnce,
 				guardOptionAllowRunCommand,
+				guardOptionDeny,
+			},
+		},
+		{
+			name: "outbound command offers a saved prefix",
+			result: agent.GuardApproval{
+				RuleID: guard.RuleBashOutbound,
+				Action: agent.GuardAction{Kind: "command", Command: "git push origin main", ToolName: "bash"},
+			},
+			toolName: "bash",
+			wantIDs: []string{
+				guardOptionAllowOnce,
+				guardOptionAllowRunCommand,
+				guardOptionAlwaysCommand,
+				guardOptionDeny,
+			},
+		},
+		{
+			name: "ask rule never offers to save",
+			result: agent.GuardApproval{
+				RuleID: guard.RuleUserAsk,
+				Action: agent.GuardAction{Kind: "command", Command: "git push origin main", ToolName: "bash"},
+			},
+			toolName: "bash",
+			wantIDs: []string{
+				guardOptionAllowOnce,
+				guardOptionAllowRunCommand,
+				guardOptionDeny,
+			},
+		},
+		{
+			name: "control file asks once",
+			result: agent.GuardApproval{
+				RuleID: guard.RuleControlFile,
+				Action: agent.GuardAction{Kind: "file", Path: outsideFile, ToolName: "write"},
+			},
+			toolName: "write",
+			wantIDs: []string{
+				guardOptionAllowOnce,
 				guardOptionDeny,
 			},
 		},
@@ -676,6 +716,56 @@ func runPrintToolCall(
 	return result
 }
 
+func TestHandleGuardAskAlwaysSavesRule(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	paths := config.Paths{GlobalSettings: filepath.Join(root, "settings.json"), GlobalAuth: filepath.Join(root, "auth.json"), GlobalTrust: filepath.Join(root, "trust.json"), BinDir: filepath.Join(root, "bin")}
+	workspace := t.TempDir()
+	session := newGuardAskSession(t, workspace, guard.Config{})
+	session.configuration.Paths = paths
+	outside := filepath.Join(t.TempDir(), "notes.txt")
+	tests := []struct {
+		name   string
+		call   llm.ToolCall
+		option string
+		later  llm.ToolCall
+		rule   string
+	}{
+		{
+			name:   "command prefix",
+			call:   llm.ToolCall{ID: "push", Name: "bash", Arguments: mustCommandArgs(t, "git push origin main")},
+			option: guardOptionAlwaysCommand,
+			later:  llm.ToolCall{ID: "push-dev", Name: "bash", Arguments: mustCommandArgs(t, "git push origin dev")},
+			rule:   "bash(git push *)",
+		},
+		{
+			name:   "read directory",
+			call:   llm.ToolCall{ID: "read", Name: "read", Arguments: mustPathArgs(t, outside)},
+			option: guardOptionAlwaysDir,
+			later:  llm.ToolCall{ID: "read-sibling", Name: "read", Arguments: mustPathArgs(t, filepath.Join(filepath.Dir(outside), "other.txt"))},
+			rule:   "read(" + filepath.ToSlash(filepath.Dir(outside)) + "/**)",
+		},
+	}
+	for _, test := range tests {
+		result, err := session.guard.Check(t.Context(), test.call)
+		if err != nil || result.Decision != guard.DecisionAsk {
+			t.Fatalf("%s: check = %+v, %v", test.name, result, err)
+		}
+		reply, _ := handleGuardAskWithReply(t, session, test.call, mapGuardResult(result).Approvals[0], interaction.GuardReply{OptionID: test.option})
+		if reply.Decision != agent.GuardAllow {
+			t.Fatalf("%s: reply = %+v", test.name, reply)
+		}
+		if later, err := session.guard.Check(t.Context(), test.later); err != nil || later.Decision != guard.DecisionAllow {
+			t.Fatalf("%s: later check = %+v, %v", test.name, later, err)
+		}
+		loaded, err := config.LoadFiles(paths, config.LoadOptions{})
+		if err != nil || !slices.Contains(loaded.Permissions.Allow, test.rule) {
+			t.Fatalf("%s: saved rules = %#v, %v; want %s", test.name, loaded.Permissions, err, test.rule)
+		}
+	}
+}
+
 func newGuardAskSession(t *testing.T, workspace string, cfg guard.Config) *interactiveSession {
 	t.Helper()
 	gate, err := guard.New(workspace, cfg)
@@ -757,6 +847,15 @@ func findGuardOption(t *testing.T, options []interaction.GuardOption, id string)
 func mustFilePathArgs(t *testing.T, path string) json.RawMessage {
 	t.Helper()
 	payload, err := json.Marshal(map[string]string{"file_path": path})
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+	return payload
+}
+
+func mustPathArgs(t *testing.T, path string) json.RawMessage {
+	t.Helper()
+	payload, err := json.Marshal(map[string]string{"path": path})
 	if err != nil {
 		t.Fatalf("json.Marshal() error = %v", err)
 	}

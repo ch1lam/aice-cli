@@ -13,4 +13,6 @@ type Config struct {
 	// ControlFiles configure AICE itself. Every write asks, regardless of
 	// workspace location or Session grants.
 	ControlFiles []string
+	// Rules are explicit allow/ask/deny rules from settings.
+	Rules Rules
 }

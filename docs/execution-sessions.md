@@ -135,8 +135,9 @@ documents should link here instead of restating these lists.
 
 `internal/app` constructs the gate through `newExecutionGuard` and
 `executionGuardConfig`, passing the physical workspace, discovered skill
-directories as `ReadOnlyRoots`, AICE credential stores and AICE control files.
-The policies are fixed in `internal/guard`; `settings.json` has no Guard field.
+directories as `ReadOnlyRoots`, AICE credential stores, AICE control files
+and the [permission rules](#permission-rules) from settings. The built-in
+policies below are fixed in `internal/guard`.
 
 The default permission mode works like accept-edits inside the workspace:
 ordinary reads, writes and commands there run without confirmation. The gate
@@ -207,8 +208,9 @@ confirmation prompt. It does not lift `deny`: `secret-files` and
 from the triggering rule. Grants last for the current Session, across its Agent
 runs and provider or credential changes. `/new` clears all dynamic grants,
 including when no Session file has been created yet. Policies, skill read
-roots, and the invocation's `--yolo` setting remain unchanged. Grants never
-persist to disk, so resuming a Session in another process starts without them.
+roots, permission rules and the invocation's `--yolo` setting remain unchanged.
+Session grants never persist to disk, so resuming a Session in another process
+starts without them; an "Always allow" choice saves a permission rule instead.
 
 The gate checks all applicable policies and extracted paths before returning
 an approval list. Any hard denial wins before a prompt is shown. When one call
@@ -222,14 +224,15 @@ replies, and canceled approval waits fail closed.
 
 | Rule | Options |
 | --- | --- |
-| `path.outside.read` | Allow once; Allow reading this file for this session; Allow reading directory `<dir>/` for this session; Deny |
-| `path.outside.write` | Allow once; Allow writing this file for this session; Allow writing directory `<dir>/` for this session; Deny |
-| `bash.*` | Allow once; Allow this exact command for this session; Deny |
+| `path.outside.read` | Allow once; Allow reading this file for this session; Allow reading directory `<dir>/` for this session; Always allow reading directory `<dir>/`; Deny |
+| `path.outside.write` | Allow once; Allow writing this file for this session; Allow writing directory `<dir>/` for this session; Always allow writing directory `<dir>/`; Deny |
+| `bash.*` | Allow once; Allow this exact command for this session; Always allow `` `<prefix> …` `` commands (`bash.outbound` and `bash.loseWork` only, when one prefix covers every finding); Deny |
+| `rule.ask` | Allow once; Allow this exact command for this session (commands only); Deny |
 | `unknownTool` | Allow once; Allow tool `"X"` for this session; Deny |
 | `mcp.tool` (bound integration) | Allow once; Allow current tool version for this Session; Allow current service tool versions for this Session; Deny |
 | `controlFile.write` and other `ask` rules | Allow once; Deny |
 
-The directory option is omitted when the parent is `/` or `$HOME`.
+The directory options are omitted when the parent is `/` or `$HOME`.
 
 Grant scope within the current Session:
 
@@ -245,6 +248,44 @@ Grant scope within the current Session:
   rules are saved separately through MCP management, bound to the reviewed
   connection, configured scope, operation and schema; Session prompts never save
   them. User denies survive yolo. See [MCP permission](mcp.md#bound-execution-permission).
+
+#### Permission rules
+
+The `permissions` object in `~/.aice/settings.json` and trusted
+`.aice/settings.json` holds explicit rules. Unlike scalar settings, the lists
+of both files are concatenated; rules in `auth.json` are ignored with a
+diagnostic. An invalid rule stops startup.
+
+```json
+{
+  "permissions": {
+    "allow": ["bash(git push *)", "read(~/go/pkg/mod/**)", "write(/tmp/aice/**)"],
+    "ask": ["bash(git commit *)", "write(./docs/**)"],
+    "deny": ["bash(curl *)", "read(./private/**)"]
+  }
+}
+```
+
+- `bash(words)` matches a command whose words equal `words`; a trailing `*`
+  matches any further words. Commands are matched after launcher unwrapping
+  and also as written, so `bash(sudo *)` matches `sudo ls` and `bash(curl *)`
+  matches `timeout 5 curl URL`. Git global options such as `-C dir` are
+  dropped first, so `bash(git push *)` matches `git -C . push`. Every command
+  of a compound line is matched separately; `bash(*)` is rejected.
+- `read(path)` and `write(path)` match an absolute path, a glob, or a
+  directory and its descendants with a trailing `/**`. `~` expands to the
+  home directory and relative paths resolve against the workspace. A
+  directory rule for `/` or `$HOME` is rejected.
+
+Deny rules deny (rule `rule.deny`), and `--yolo` does not lift them. Ask rules
+add a `rule.ask` confirmation even for workspace access or commands without a
+finding; Session grants do not cover them. Allow rules cover outside-workspace
+access (a `write` rule also covers reads) and `bash.*` findings of the
+matching command. No rule covers the `secret-files` and `credentials` denials
+or `controlFile.write`. Pipeline findings such as `bash.fetchExec` have no
+single command to match. "Always allow" saves `bash(<prefix> *)`,
+`read(<dir>/**)` or `write(<dir>/**)` to the user settings file and applies it
+to the running process.
 
 Exact command grants compare the complete original string, including whitespace
 and quoting. An exact grant does not authorize a changed argument or an

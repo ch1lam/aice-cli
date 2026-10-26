@@ -333,7 +333,7 @@ func TestGuard_PathAccess_SessionAllowCaseFold(t *testing.T) {
 
 func TestExtractActionsWindowsDrivePath(t *testing.T) {
 	call := toolCall("bash", map[string]any{"command": `cat 'C:\Users\x\secret.env'`})
-	acts, _ := extractActions(call, "")
+	acts := extractActions(call, "").actions
 	found := false
 	for _, act := range acts {
 		if act.Path == `C:\Users\x\secret.env` {
@@ -346,7 +346,7 @@ func TestExtractActionsWindowsDrivePath(t *testing.T) {
 	}
 
 	call = toolCall("bash", map[string]any{"command": `cat 'C:\Users\x\secret'`})
-	acts, _ = extractActions(call, "")
+	acts = extractActions(call, "").actions
 	found = false
 	for _, act := range acts {
 		if act.Path == `C:\Users\x\secret` {

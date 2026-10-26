@@ -37,7 +37,7 @@ func (a *application) ManageMCP(ctx context.Context, request cli.MCPRequest) (re
 	if err != nil {
 		return result, err
 	}
-	gate, _, err := newExecutionGuard(workspace.PhysicalPath(), executionGuardConfig(configuration.Paths, workspace.PhysicalPath(), nil), false)
+	gate, _, err := newExecutionGuard(workspace.PhysicalPath(), executionGuardConfig(configuration, workspace.PhysicalPath(), nil), false)
 	if err != nil {
 		return result, err
 	}

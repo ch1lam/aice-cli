@@ -78,29 +78,26 @@ func extractStringArgument(raw json.RawMessage, key string) string {
 	return ""
 }
 
-// extractActions returns the file actions of call and, for bash, the command
-// findings that need confirmation.
-func extractActions(call llm.ToolCall, workspace string) ([]Action, []finding) {
+// extractActions returns the file actions of call and, for bash, its
+// commands and the findings that need confirmation.
+func extractActions(call llm.ToolCall, workspace string) bashAnalysis {
 	if fileTools[call.Name] {
 		p := extractFilePath(call.Arguments)
 		if strings.TrimSpace(p) == "" {
-			return nil, nil
+			return bashAnalysis{}
 		}
 		op := opRead
 		if call.Name == "write" || call.Name == "edit" {
 			op = opWrite
 		}
-		return []Action{{Kind: "file", Op: op, Path: p, ToolName: call.Name, Unresolved: containsExpansion(p)}}, nil
+		return bashAnalysis{actions: []Action{{Kind: "file", Op: op, Path: p, ToolName: call.Name, Unresolved: containsExpansion(p)}}}
 	}
 	if call.Name == "bash" {
-		cmd := extractCommand(call.Arguments)
-		if strings.TrimSpace(cmd) == "" {
-			return nil, nil
+		if cmd := extractCommand(call.Arguments); strings.TrimSpace(cmd) != "" {
+			return analyzeBash(cmd, workspace)
 		}
-		analysis := analyzeBash(cmd, workspace)
-		return analysis.actions, analysis.findings
 	}
-	return nil, nil
+	return bashAnalysis{}
 }
 
 func extractFilePath(raw json.RawMessage) string {

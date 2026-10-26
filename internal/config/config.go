@@ -149,6 +149,9 @@ type Config struct {
 	CodexCredentials CodexCredentials
 	Web              WebConfig
 	MCP              MCPConfig
+	// Permissions concatenates user and trusted project rules; the execution
+	// gate validates them.
+	Permissions      PermissionRules
 	Paths            Paths
 	Diagnostics      []string
 	startupOverrides map[string]bool
@@ -259,6 +262,7 @@ func LoadFiles(paths Paths, options LoadOptions) (Config, error) {
 	var diagnostics []string
 	var webValues webLayer
 	var mcpValues mcpLayer
+	var permissions PermissionRules
 	layers := newFrozenSettings()
 	fileValues := make(map[string]any)
 	for _, path := range []string{paths.GlobalSettings, paths.GlobalAuth, paths.ProjectSettings} {
@@ -297,6 +301,18 @@ func LoadFiles(paths Paths, options LoadOptions) (Config, error) {
 		// Nested service collections retain their identity outside Viper's deep merge.
 		if err := mcpValues.extract(path, values, paths); err != nil {
 			return Config{}, err
+		}
+		if raw, ok := values[permissionsKey]; ok {
+			delete(values, permissionsKey)
+			if path == paths.GlobalAuth {
+				diagnostics = append(diagnostics, "Ignored permissions in the user auth file: rules belong in settings")
+			} else {
+				rules, err := decodePermissionRules(raw)
+				if err != nil {
+					return Config{}, err
+				}
+				permissions.merge(rules)
+			}
 		}
 		if path == paths.ProjectSettings {
 			if err := mcpValues.readProjectFile(context.Background(), paths.ProjectMCP()); err != nil {
@@ -340,6 +356,7 @@ func LoadFiles(paths Paths, options LoadOptions) (Config, error) {
 		return Config{}, err
 	}
 	c.Paths, c.Diagnostics = paths, diagnostics
+	c.Permissions = permissions
 	c.layers = layers
 	if options.Environment {
 		environment := make(map[string]string)

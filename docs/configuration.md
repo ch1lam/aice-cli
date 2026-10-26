@@ -97,6 +97,7 @@ peak billing is twice the estimate.
 | Context windows | `AICE_CONTEXT_WINDOWS` | JSON array of provider/model/token entries described below |
 | Disable helper downloads | `AICE_NO_DEP_INSTALL` | Boolean; file key `no_dep_install` |
 | Disable startup update check | `AICE_NO_UPDATE_CHECK` | Boolean; file key `no_update_check` |
+| Tool permission rules | none (file only) | `permissions` object with `allow`/`ask`/`deny` rule lists, concatenated from user and trusted project settings; see [permission rules](execution-sessions.md#permission-rules) |
 | Web search and fetch | none (file only) | Nested `web` object: search sources, priority, service instances, fetch switch; see [Web search and fetch](web.md#configuration) |
 
 The `web` object and the `web_services` credential namespace in `auth.json`
