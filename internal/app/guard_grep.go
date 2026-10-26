@@ -62,20 +62,7 @@ func (g *guardAdapter) checkGrepPaths(
 		}
 		if other.Decision == guard.DecisionAsk {
 			result.Decision = guard.DecisionAsk
-			for _, approval := range other.Approvals {
-				duplicate := false
-				for _, existing := range result.Approvals {
-					existingPath := g.inner.ResolveAbsolute(existing.Action.Path, "grep")
-					approvalPath := g.inner.ResolveAbsolute(approval.Action.Path, "grep")
-					if existing.RuleID == approval.RuleID && existingPath == approvalPath {
-						duplicate = true
-						break
-					}
-				}
-				if !duplicate {
-					result.Approvals = append(result.Approvals, approval)
-				}
-			}
+			result.Approvals = appendUniqueApprovals(g.inner, result.Approvals, other.Approvals)
 		}
 	}
 	revalidate := func(ctx context.Context) error {

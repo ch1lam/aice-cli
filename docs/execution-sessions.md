@@ -158,12 +158,25 @@ commands are unwrapped and checked as the command they run. A command table
 records which operands are patterns or messages rather than paths (`grep`,
 `rg`, `sed`, `awk`, `jq`, `echo`, `printf`, ...), which are read and which are
 written (`cp`/`mv` destinations, `curl -o`, `sed -i`, `go build -o`, ...).
-Commands outside the table treat path-like operands as writes. `$HOME` and
-`$TMPDIR` are substituted; other expansions are unresolved. `cd`/`pushd`
-moves the base for later relative paths; a target that cannot be resolved
-makes later relative paths unresolved. The table is a usability boundary, not
-isolation: `python -c`, `node -e` and other inline programs run like any
-other workspace command.
+Commands outside the table treat path-like operands as writes; `docker`/`podman`
+bind-mount sources (`-v SRC:DST`, `--mount source=SRC`) are writes. Unquoted
+backslash escapes are removed (`\rm` is `rm`). `$HOME`, `$TMPDIR` and literal
+assignments earlier in the same command line (`X=~/.ssh`, `export`,
+`declare`, `local`, `readonly`) are substituted; other expansions are
+unresolved. `for` loop items are checked as reads. A literal `eval` script is
+checked like `bash -c`. `cd`/`pushd` moves the base for later relative paths;
+a target that cannot be resolved makes later relative paths unresolved.
+
+Boundary checks use physical paths: symlinks in the longest existing prefix
+are resolved for every file action, bash included, so a workspace symlink to
+`~/.ssh` is a credential and one to another directory is outside access,
+shown and granted by its target. Grants, read-only roots and rule paths are
+stored physically as well.
+
+The table is a usability boundary, not isolation. Inline programs
+(`python -c`, `node -e`), scripts written and then run, build tools (`make`,
+`npx`) and requests that carry data in a URL run like any other workspace
+command; only an OS sandbox can contain them.
 
 Command consequences ask with one combined approval named after the most
 severe rule:
@@ -173,6 +186,7 @@ severe rule:
 | `bash.privileged` | `sudo`, `su`, `doas`, `pkexec`, `run0`, `docker`/`podman` `run`/`create --privileged` |
 | `bash.disk` | `dd of=/dev/...`, `mkfs*`, `wipefs`, `blkdiscard`, `fdisk`/`sfdisk`/`cfdisk`, `parted`/`sgdisk`, `diskutil erase*`/`partition*` |
 | `bash.fetchExec` | downloaded content piped or substituted into a shell or interpreter, such as `curl URL \| sh` or `bash <(curl URL)` |
+| `bash.dynamic` | a command name from a variable or substitution (`$CMD push`), `eval` of a computed script, git aliases (`git config alias.*`, `git -c alias.*`) |
 | `bash.permissions` | `chmod -R 777` and equivalents, `chown -R`, `chgrp -R` |
 | `bash.delete` | `shred`; a recursive delete whose target is unresolved, a glob at the workspace root, the workspace itself, `.git` or below, outside the workspace, or supplied by `xargs`/`find -exec`; `find -delete` at the workspace root without a test such as `-name` |
 | `bash.loseWork` | `git reset --hard`, `git clean -f`, `git checkout .`/`git restore .`, `git stash drop`/`clear`, `git branch -D` |
@@ -187,7 +201,7 @@ Two denylists apply to `read`/`write`/`edit`/`bash`/`grep`/`find`/`ls`:
   `.env.*` glob. Unresolved expansions are denied conservatively. The `skill`
   tool has no path argument.
 - **Credentials** — rule `credentials` denies every operation, whether or not
-  the target exists, on `~/.ssh/` (except `*.pub`, `known_hosts`,
+  the target exists and including a glob that could match one, on `~/.ssh/` (except `*.pub`, `known_hosts`,
   `known_hosts.old` and `config` directly inside it), `~/.aws/`, `~/.gnupg/`,
   `~/Library/Keychains/`, `~/.netrc`, `~/.git-credentials`, `~/.npmrc`,
   `~/.pypirc`, `~/.docker/config.json`, `~/.kube/config`,
@@ -197,14 +211,20 @@ Two denylists apply to `read`/`write`/`edit`/`bash`/`grep`/`find`/`ls`:
 **Control files** — rule `controlFile.write` asks for every write to
 `~/.aice/settings.json`, `~/.aice/trust.json` and the workspace's
 `.aice/settings.json`, `.aice/SYSTEM.md`, `.aice/APPEND_SYSTEM.md` and
-`.mcp.json`. Path and command grants never cover it, so a Session grant cannot
-let the model change AICE's own configuration. Reading them is ordinary access.
+`.mcp.json`, and for every bash invocation of the AICE binary (`aice`, or
+`go run ./cmd/aice`) except `--version`, `--help`, `help`, `mcp status` and
+`session tree`: its subcommands approve MCP connections, save permissions and
+credentials, or start another agent. Path grants, exact command grants and
+allow rules never cover it, so the model cannot change AICE's own
+configuration without a confirmation. Reading the files is ordinary access.
 
 Each check returns Decision `allow` / `ask` / `deny`. Non-interactive
 `--print` runs treat `ask` as `deny` (fail-closed) unless `--yolo` is
 set. `--yolo` upgrades every `ask` to `allow` and skips the interactive
-confirmation prompt. It does not lift `deny`: `secret-files` and
-`credentials` denials are unchanged. Interactive `ask` prompts generate options
+confirmation prompt, except `controlFile.write`: changing AICE's own
+configuration could remove a user deny, so it still prompts interactively and
+denies under `--print`. It does not lift `deny`: `secret-files`,
+`credentials` and `rule.deny` denials are unchanged. Interactive `ask` prompts generate options
 from the triggering rule. Grants last for the current Session, across its Agent
 runs and provider or credential changes. `/new` clears all dynamic grants,
 including when no Session file has been created yet. Policies, skill read
@@ -255,6 +275,15 @@ The `permissions` object in `~/.aice/settings.json` and trusted
 `.aice/settings.json` holds explicit rules. Unlike scalar settings, the lists
 of both files are concatenated; rules in `auth.json` are ignored with a
 diagnostic. An invalid rule stops startup.
+
+Rules apply to `bash`, the built-in file tools (`read`, `write`, `edit`,
+`grep`, `find`, `ls`) and `@file` attachments. They do not apply to
+`web_search`/`web_fetch`, which follow [web permissions](web.md#permissions),
+or to MCP tools and resources, which use identity-bound
+[MCP permissions](mcp.md#bound-execution-permission) managed with `/mcp`. A
+`bash(curl *)` deny therefore does not disable `web_fetch`, and the
+`credentials` denial does not inspect MCP arguments: an MCP service has the
+access of the process it runs as.
 
 ```json
 {

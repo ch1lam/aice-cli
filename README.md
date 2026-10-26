@@ -113,7 +113,8 @@ AICE runs tools with your local user permissions; the workspace is not an OS
 sandbox. Inside the workspace, ordinary reads, writes and commands run without
 prompts; access outside it and outbound, destructive or privileged commands ask,
 and credential files are denied. `permissions` rules in settings can allow, ask
-for or deny specific commands and paths. Model requests send task context to
+for or deny specific commands and paths (not MCP or web tools, which have
+their own permissions). Model requests send task context to
 your configured provider.
 See [tool permissions](./docs/execution-sessions.md#tool-execution-boundary)
 and [Project Trust](./docs/project-trust.md) before working with sensitive projects.

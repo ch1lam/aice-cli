@@ -212,7 +212,7 @@ func NewRootCommand(dependencies Dependencies) (*cobra.Command, error) {
 		&options.yolo,
 		"yolo",
 		false,
-		"automatically allow tool calls that would otherwise ask; for isolated containers/CI; dangerous",
+		"automatically allow tool calls that would otherwise ask, except changes to AICE configuration; for isolated containers/CI; dangerous",
 	)
 	command.Flags().Int("max-turns", 0, "maximum model request attempts per agent run, including retries; 0 is unlimited")
 	command.Flags().Int("run-no-progress-limit", 8, "stop after this many identical tool rounds; 0 disables detection")

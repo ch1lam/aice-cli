@@ -131,7 +131,7 @@ func (g *guardAdapter) Check(ctx context.Context, call llm.ToolCall) (agent.Guar
 					res = other
 				} else if other.Decision == guard.DecisionAsk {
 					res.Decision = guard.DecisionAsk
-					res.Approvals = append(res.Approvals, other.Approvals...)
+					res.Approvals = appendUniqueApprovals(g.inner, res.Approvals, other.Approvals)
 				}
 			}
 		}
@@ -201,17 +201,36 @@ func (g *guardAdapter) Check(ctx context.Context, call llm.ToolCall) (agent.Guar
 				res = other
 			} else if other.Decision == guard.DecisionAsk {
 				res.Decision = guard.DecisionAsk
-				res.Approvals = append(res.Approvals, other.Approvals...)
+				res.Approvals = appendUniqueApprovals(g.inner, res.Approvals, other.Approvals)
 			}
 		}
 	}
 	mapped := mapGuardResult(res)
 	mapped.Revalidate = revalidate
 	if g.yolo && mapped.Decision == agent.GuardAsk {
-		mapped.Decision = agent.GuardAllow
-		mapped.Approvals = nil
+		// Changing AICE's own configuration could lift a user deny, so it
+		// still needs a person: the prompt stays, and --print denies.
+		mapped.Approvals = slices.DeleteFunc(mapped.Approvals, func(a agent.GuardApproval) bool { return a.RuleID != guard.RuleControlFile })
+		if len(mapped.Approvals) == 0 {
+			mapped.Decision = agent.GuardAllow
+		}
 	}
 	return mapped, nil
+}
+
+// appendUniqueApprovals adds approvals whose rule and resolved path are not
+// already listed; the gate may already have checked a physical target.
+func appendUniqueApprovals(g *guard.Guard, approvals, more []guard.Approval) []guard.Approval {
+	for _, approval := range more {
+		duplicate := slices.ContainsFunc(approvals, func(existing guard.Approval) bool {
+			return existing.RuleID == approval.RuleID && existing.Action.Command == approval.Action.Command &&
+				g.ResolveAbsolute(existing.Action.Path, existing.Action.ToolName) == g.ResolveAbsolute(approval.Action.Path, approval.Action.ToolName)
+		})
+		if !duplicate {
+			approvals = append(approvals, approval)
+		}
+	}
+	return approvals
 }
 
 func mapGuardResult(res guard.Result) agent.GuardResult {

@@ -90,7 +90,7 @@ func parseRule(text, workspace string) (rule, error) {
 				spec = "/"
 			}
 		}
-		r.path = filepath.Clean(resolveAbsolute(filepath.FromSlash(spec), workspace, ""))
+		r.path = physicalPath(filepath.Clean(resolveAbsolute(filepath.FromSlash(spec), workspace, "")))
 		if r.dir && isGrantTooBroad(r.path) {
 			return rule{}, fmt.Errorf("guard: permission rule %q covers the filesystem root or home directory", text)
 		}

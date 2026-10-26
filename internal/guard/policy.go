@@ -5,6 +5,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/ch1lam/aice-cli/internal/hostpath"
@@ -62,33 +63,55 @@ var (
 )
 
 // isCredentialPath reports whether abs is a built-in or configured
-// credential location.
+// credential location. A glob is denied when it could match one.
 func (g *Guard) isCredentialPath(abs string) bool {
-	for _, file := range g.credentialFiles {
-		if hostpath.Same(file, abs) {
+	files := slices.Clone(g.credentialFiles)
+	var dirs []string
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		for _, file := range credentialFiles {
+			files = append(files, filepath.Join(home, filepath.FromSlash(file)))
+		}
+		for _, dir := range credentialDirs {
+			dirs = append(dirs, filepath.Join(home, filepath.FromSlash(dir)))
+		}
+	}
+	glob := strings.ContainsAny(abs, "*?[")
+	for _, file := range files {
+		if glob && globCovers(abs, file, true) || hostpath.Same(file, abs) {
 			return true
 		}
 	}
-	home, err := os.UserHomeDir()
-	if err != nil || home == "" {
-		return false
-	}
-	for _, file := range credentialFiles {
-		if hostpath.Same(filepath.Join(home, filepath.FromSlash(file)), abs) {
-			return true
-		}
-	}
-	for _, dir := range credentialDirs {
-		root := filepath.Join(home, filepath.FromSlash(dir))
-		if !hostpath.Within(root, abs) {
+	for _, root := range dirs {
+		inside := glob && globCovers(abs, root, false) || !glob && hostpath.Within(root, abs)
+		if !inside {
 			continue
 		}
-		if dir == ".ssh" && filepath.Dir(abs) == root && matchesAny(sshPublicFiles, filepath.Base(abs)) {
+		// Public material directly inside ~/.ssh stays readable.
+		if filepath.Base(root) == ".ssh" && len(splitPath(abs)) == len(splitPath(root))+1 && matchesAny(sshPublicFiles, filepath.Base(abs)) {
 			return false
 		}
 		return true
 	}
 	return false
+}
+
+// globCovers reports whether pattern can match target, or with exact unset
+// any path below target, by matching it component by component.
+func globCovers(pattern, target string, exact bool) bool {
+	pat, want := splitPath(pattern), splitPath(target)
+	if len(pat) < len(want) || exact && len(pat) != len(want) {
+		return false
+	}
+	for i, component := range want {
+		if matched, err := filepath.Match(pat[i], component); err != nil || !matched {
+			return false
+		}
+	}
+	return true
+}
+
+func splitPath(p string) []string {
+	return strings.FieldsFunc(filepath.ToSlash(filepath.Clean(p)), func(r rune) bool { return r == '/' })
 }
 
 // isControlPath reports whether abs is a file that configures AICE itself.

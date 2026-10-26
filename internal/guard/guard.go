@@ -33,11 +33,14 @@ func isBashRootedPath(path, toolName string) bool {
 // Guard is the built-in execution gate. Its policies are fixed; bound
 // service state and Session grants are protected by mu.
 type Guard struct {
-	mu              sync.RWMutex
-	workspace       string
-	readOnlyRoots   []string
-	credentialFiles []string
-	controlFiles    []string
+	mu        sync.RWMutex
+	workspace string
+	// physicalWorkspace is workspace with symlinks resolved; boundary
+	// checks compare physical paths.
+	physicalWorkspace string
+	readOnlyRoots     []string
+	credentialFiles   []string
+	controlFiles      []string
 	// rules are explicit settings rules; AddRule appends under mu.
 	rules ruleSet
 	// sessionAllowedTools tracks unknown tool names allowed for this Session.
@@ -72,6 +75,7 @@ func New(workspace string, cfg Config) (*Guard, error) {
 	return &Guard{
 		rules:               rules,
 		workspace:           workspace,
+		physicalWorkspace:   physicalWorkspace(workspace),
 		readOnlyRoots:       resolveReadOnlyRoots(cfg.ReadOnlyRoots, workspace),
 		credentialFiles:     cleanPaths(cfg.CredentialFiles),
 		controlFiles:        cleanPaths(cfg.ControlFiles),
@@ -90,7 +94,7 @@ func (g *Guard) AllowPathSession(absPath string, isDir, write bool) {
 	}
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	cleaned := filepath.Clean(absPath)
+	cleaned := physicalPath(filepath.Clean(absPath))
 	if isGrantTooBroad(cleaned) {
 		return
 	}
@@ -196,58 +200,106 @@ func (g *Guard) Check(ctx context.Context, call llm.ToolCall) (Result, error) {
 	seen := make(map[string]bool)
 	for _, act := range analysis.actions {
 		abs := resolveAbsolute(act.Path, g.workspace, act.ToolName)
-		if secretFileTools[call.Name] {
-			if !act.Unresolved && g.isCredentialPath(abs) {
-				return Result{Decision: DecisionDeny, Reason: secretDenial(normalizeTarget(act.Path, g.workspace)), RuleID: credentialsRuleID, Action: act}, nil
-			}
-			if reason, denied := checkSecretFile(ctx, act, g.workspace); denied {
-				return Result{Decision: DecisionDeny, Reason: reason, RuleID: secretFilesRuleID, Action: act}, nil
-			}
+		phys := physicalPath(abs)
+		if denied, ok := g.denyPath(ctx, call.Name, act, abs, phys); ok {
+			return denied, nil
 		}
-		if r, ok := firstPathRule(g.rules.deny, abs, act.Op, false); ok {
-			return Result{Decision: DecisionDeny, Reason: "Access to " + resolveForDisplay(abs, g.workspace) + " is denied by permission rule " + r.text + ".", RuleID: RuleUserDeny, Action: act}, nil
-		}
-		write := act.Op == opWrite
-		key := act.Op + "\x00" + abs
+		key := act.Op + "\x00" + phys
 		if seen[key] {
 			continue
 		}
 		seen[key] = true
-		if write && g.isControlPath(abs) {
-			approvals = append(approvals, Approval{
-				Reason: fmt.Sprintf("Changing %s requires confirmation (AICE configuration).", resolveForDisplay(abs, g.workspace)),
-				RuleID: RuleControlFile, Action: act,
-			})
-			continue
+		if approval, ok := g.pathApproval(act, abs, phys); ok {
+			approvals = append(approvals, approval)
 		}
-		if r, ok := firstPathRule(g.rules.ask, abs, act.Op, false); ok {
-			approvals = append(approvals, Approval{
-				Reason: fmt.Sprintf("Access to %s requires confirmation (permission rule %s).", resolveForDisplay(abs, g.workspace), r.text),
-				RuleID: RuleUserAsk, Action: act,
-			})
-			continue
-		}
-		if g.workspace != "" && hostpath.Within(g.workspace, abs) ||
-			!write && inReadOnlyRoot(abs, g.readOnlyRoots) ||
-			g.pathGranted(abs, write) {
-			continue
-		}
-		if _, ok := firstPathRule(g.rules.allow, abs, act.Op, true); ok {
-			continue
-		}
-		rule, verb := RuleOutsideRead, "Reading"
-		if write {
-			rule, verb = RuleOutsideWrite, "Writing"
-		}
-		approvals = append(approvals, Approval{
-			Reason: fmt.Sprintf("%s %s requires confirmation (outside working directory).", verb, resolveForDisplay(abs, g.workspace)),
-			RuleID: rule, Action: act,
-		})
 	}
 	if len(approvals) > 0 {
 		return Result{Decision: DecisionAsk, Approvals: approvals}, nil
 	}
 	return Result{Decision: DecisionAllow}, nil
+}
+
+// denyPath applies hard denials to the spelled and the physical path.
+func (g *Guard) denyPath(ctx context.Context, toolName string, act Action, abs, phys string) (Result, bool) {
+	if secretFileTools[toolName] {
+		if !act.Unresolved && (g.isCredentialPath(abs) || g.isCredentialPath(phys)) {
+			return Result{Decision: DecisionDeny, Reason: secretDenial(normalizeTarget(act.Path, g.workspace)), RuleID: credentialsRuleID, Action: act}, true
+		}
+		if reason, denied := checkSecretFile(ctx, act, g.workspace); denied {
+			return Result{Decision: DecisionDeny, Reason: reason, RuleID: secretFilesRuleID, Action: act}, true
+		}
+	}
+	for _, p := range []string{abs, phys} {
+		if r, ok := firstPathRule(g.rules.deny, p, act.Op, false); ok {
+			return Result{Decision: DecisionDeny, Reason: "Access to " + resolveForDisplay(p, g.workspace) + " is denied by permission rule " + r.text + ".", RuleID: RuleUserDeny, Action: act}, true
+		}
+	}
+	return Result{}, false
+}
+
+// pathApproval returns the confirmation an action needs. Control files and
+// ask rules match either spelling; whether access stays inside the
+// workspace, a read-only root, a grant or an allow rule is decided on the
+// physical path, so a symlink cannot carry access outside.
+func (g *Guard) pathApproval(act Action, abs, phys string) (Approval, bool) {
+	write := act.Op == opWrite
+	display := resolveForDisplay(abs, g.workspace)
+	// A symlink inside the workspace that leads outside it is shown and
+	// granted by its target.
+	escapes := g.workspace != "" && hostpath.Within(g.workspace, abs) && !hostpath.Within(g.physicalWorkspace, phys)
+	if escapes {
+		display += " (resolves to " + hostpath.HomeDisplay(phys) + ")"
+	}
+	if write && (g.isControlPath(abs) || g.isControlPath(phys)) {
+		return Approval{
+			Reason: fmt.Sprintf("Changing %s requires confirmation (AICE configuration).", display),
+			RuleID: RuleControlFile, Action: act,
+		}, true
+	}
+	for _, p := range []string{abs, phys} {
+		if r, ok := firstPathRule(g.rules.ask, p, act.Op, false); ok {
+			return Approval{
+				Reason: fmt.Sprintf("Access to %s requires confirmation (permission rule %s).", display, r.text),
+				RuleID: RuleUserAsk, Action: act,
+			}, true
+		}
+	}
+	if g.physicalWorkspace != "" && hostpath.Within(g.physicalWorkspace, phys) ||
+		!write && inReadOnlyRoot(phys, g.readOnlyRoots) ||
+		g.pathGranted(phys, write) {
+		return Approval{}, false
+	}
+	if _, ok := firstPathRule(g.rules.allow, phys, act.Op, true); ok {
+		return Approval{}, false
+	}
+	rule, verb := RuleOutsideRead, "Reading"
+	if write {
+		rule, verb = RuleOutsideWrite, "Writing"
+	}
+	if escapes {
+		act.Path = phys
+	}
+	return Approval{
+		Reason: fmt.Sprintf("%s %s requires confirmation (outside working directory).", verb, display),
+		RuleID: rule, Action: act,
+	}, true
+}
+
+// physicalPath resolves symlinks in the longest existing prefix of abs and
+// keeps the missing remainder, so new files resolve through their parents.
+func physicalPath(abs string) string {
+	rest := ""
+	for p := abs; ; {
+		if real, err := filepath.EvalSymlinks(p); err == nil {
+			return filepath.Join(real, rest)
+		}
+		parent := filepath.Dir(p)
+		if parent == p {
+			return abs
+		}
+		rest = filepath.Join(filepath.Base(p), rest)
+		p = parent
+	}
 }
 
 // Path rule identifiers.
@@ -273,13 +325,18 @@ func (g *Guard) pathGranted(abs string, write bool) bool {
 // command into a single approval named after the most severe rule. An exact
 // Session grant covers it.
 func (g *Guard) commandApproval(cmd string, analysis bashAnalysis) (Approval, bool) {
-	if cmd == "" || g.sessionCommands[cmd] {
+	if cmd == "" {
 		return Approval{}, false
 	}
 	kept := g.pendingFindings(analysis.findings)
-	for _, words := range analysis.commands {
-		if r, ok := firstCommandRule(g.rules.ask, words); ok {
-			kept = append(kept, finding{rule: RuleUserAsk, desc: "permission rule " + r.text, pattern: strings.Join(words, " ")})
+	if g.sessionCommands[cmd] {
+		// An exact grant never covers changes to AICE's own configuration.
+		kept = slices.DeleteFunc(kept, func(f finding) bool { return f.rule != RuleControlFile })
+	} else {
+		for _, words := range analysis.commands {
+			if r, ok := firstCommandRule(g.rules.ask, words); ok {
+				kept = append(kept, finding{rule: RuleUserAsk, desc: "permission rule " + r.text, pattern: strings.Join(words, " ")})
+			}
 		}
 	}
 	if len(kept) == 0 {
@@ -302,8 +359,12 @@ func (g *Guard) commandApproval(cmd string, analysis bashAnalysis) (Approval, bo
 	}, true
 }
 
-// severity orders bash rules; user ask rules rank last.
+// severity orders command rules: AICE configuration first, user ask rules
+// last.
 func severity(ruleID string) int {
+	if ruleID == RuleControlFile {
+		return -1
+	}
 	if i := slices.Index(bashRuleOrder, ruleID); i >= 0 {
 		return i
 	}
@@ -318,7 +379,7 @@ func (g *Guard) pendingFindings(findings []finding) []finding {
 		if f.scoped && !g.riskyDelete(f) {
 			continue
 		}
-		if _, ok := firstCommandRule(g.rules.allow, f.words); ok && len(f.words) > 0 {
+		if _, ok := firstCommandRule(g.rules.allow, f.words); ok && len(f.words) > 0 && f.rule != RuleControlFile {
 			continue
 		}
 		if !slices.ContainsFunc(kept, func(k finding) bool { return k.rule == f.rule && k.desc == f.desc }) {
@@ -361,11 +422,18 @@ func (g *Guard) riskyDelete(f finding) bool {
 	return false
 }
 
+func physicalWorkspace(workspace string) string {
+	if workspace == "" {
+		return ""
+	}
+	return physicalPath(filepath.Clean(workspace))
+}
+
 func cleanPaths(paths []string) []string {
 	var out []string
 	for _, p := range paths {
 		if p = strings.TrimSpace(p); p != "" {
-			out = append(out, filepath.Clean(p))
+			out = append(out, physicalPath(filepath.Clean(p)))
 		}
 	}
 	return out

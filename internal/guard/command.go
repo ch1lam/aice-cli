@@ -1,6 +1,7 @@
 package guard
 
 import (
+	"path/filepath"
 	"slices"
 	"strings"
 )
@@ -10,6 +11,7 @@ const (
 	RuleBashPrivileged  = "bash.privileged"
 	RuleBashDisk        = "bash.disk"
 	RuleBashFetchExec   = "bash.fetchExec"
+	RuleBashDynamic     = "bash.dynamic"
 	RuleBashPermissions = "bash.permissions"
 	RuleBashDelete      = "bash.delete"
 	RuleBashLoseWork    = "bash.loseWork"
@@ -18,7 +20,7 @@ const (
 
 // bashRuleOrder ranks bash rules by severity for the combined approval.
 var bashRuleOrder = []string{
-	RuleBashPrivileged, RuleBashDisk, RuleBashFetchExec, RuleBashPermissions,
+	RuleBashPrivileged, RuleBashDisk, RuleBashFetchExec, RuleBashDynamic, RuleBashPermissions,
 	RuleBashDelete, RuleBashLoseWork, RuleBashOutbound,
 }
 
@@ -264,6 +266,9 @@ func commandPaths(cmd shellCommand, movedBase bool) []pathArg {
 	if name == "dd" {
 		return ddPaths(cmd)
 	}
+	if name == "docker" || name == "podman" {
+		return containerPaths(cmd)
+	}
 	spec, known := argSpecs[name]
 	if !known {
 		spec = argSpec{op: opWrite}
@@ -459,6 +464,38 @@ func ddPaths(cmd shellCommand) []pathArg {
 	return out
 }
 
+// containerPaths returns host sources of bind mounts (-v SRC:DST,
+// --mount source=SRC). A mounted directory is readable and writable.
+func containerPaths(cmd shellCommand) []pathArg {
+	var out []pathArg
+	words := cmd.words[1:]
+	for i := 0; i < len(words); i++ {
+		flag, value, attached := splitFlag(words[i].text, "v")
+		if flag != "-v" && flag != "--volume" && flag != "--mount" {
+			continue
+		}
+		unresolved := words[i].unresolved
+		if !attached && i+1 < len(words) {
+			i++
+			value, unresolved = words[i].text, words[i].unresolved
+		}
+		source := ""
+		if flag == "--mount" {
+			for _, field := range strings.Split(value, ",") {
+				if key, v, ok := strings.Cut(field, "="); ok && (key == "source" || key == "src") {
+					source = v
+				}
+			}
+		} else {
+			source, _, _ = strings.Cut(value, ":")
+		}
+		if isRootedWord(source) || strings.HasPrefix(source, ".") {
+			out = append(out, pathArg{word: shellWord{text: source, unresolved: unresolved}, op: opWrite, force: true})
+		}
+	}
+	return out
+}
+
 func isBlockDevice(path string) bool {
 	return strings.HasPrefix(path, "/dev/") && !neutralDevice(path)
 }
@@ -473,6 +510,9 @@ func classifyCommand(cmd shellCommand) []finding {
 	name := cmd.name()
 	if name == "mkfs" || strings.HasPrefix(name, "mkfs.") {
 		return add(RuleBashDisk, "filesystem format")
+	}
+	if runsAICE(words) && !aiceReadOnly(words) {
+		return add(RuleControlFile, "runs AICE, which can change its own configuration and permissions")
 	}
 	switch name {
 	case "dd":
@@ -577,6 +617,15 @@ func gitFindings(cmd shellCommand, add func(rule, desc string) []finding) []find
 	for i, w := range args {
 		texts[i] = w.text
 	}
+	// An alias can run any git subcommand or shell command under a new name.
+	for i, w := range cmd.words[:len(cmd.words)-len(args)] {
+		if w.text == "-c" && i+1 < len(cmd.words) && strings.HasPrefix(cmd.words[i+1].text, "alias.") {
+			return add(RuleBashDynamic, "inline git alias")
+		}
+	}
+	if sub == "config" && slices.ContainsFunc(texts, func(w string) bool { return strings.HasPrefix(w, "alias.") }) {
+		return add(RuleBashDynamic, "defines a git alias")
+	}
 	switch sub {
 	case "push":
 		if hasShortFlag(texts, "f") || hasLongOption(texts, "force") || hasLongOption(texts, "force-with-lease") ||
@@ -626,6 +675,35 @@ func curlUploads(words []string) bool {
 		}
 	}
 	return false
+}
+
+// runsAICE reports an invocation of the AICE binary, directly or through
+// `go run` of its main package.
+func runsAICE(words []string) bool {
+	if filepath.Base(words[0]) == "aice" {
+		return true
+	}
+	return filepath.Base(words[0]) == "go" && len(words) > 2 && words[1] == "run" &&
+		slices.ContainsFunc(words[2:], func(w string) bool {
+			return strings.TrimSuffix(filepath.ToSlash(w), "/") == "./cmd/aice" || strings.HasSuffix(w, "/cmd/aice")
+		})
+}
+
+// aiceReadOnly lists AICE invocations that cannot change configuration,
+// permissions, credentials or start another agent.
+func aiceReadOnly(words []string) bool {
+	args := words[1:]
+	if filepath.Base(words[0]) == "go" {
+		args = words[3:]
+	}
+	if slices.ContainsFunc(args, func(w string) bool { return w == "--help" || w == "-h" }) {
+		return true
+	}
+	switch strings.Join(args, " ") {
+	case "--version", "-v", "help", "mcp status", "session tree":
+		return true
+	}
+	return len(args) == 3 && args[0] == "mcp" && args[1] == "status"
 }
 
 // isRemoteSpec reports rsync/scp style host:path or rsync:// operands.

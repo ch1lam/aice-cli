@@ -653,7 +653,7 @@ aice [--print <prompt>] [flags]
 --run-no-progress-limit <N>  consecutive identical completed tool rounds before stopping
 --approve, -a        trust project-local resources for this invocation
 --no-approve         ignore project-local resources for this invocation
---yolo               automatically allow tool calls that would otherwise ask; for isolated containers/CI; dangerous
+--yolo               automatically allow tool calls that would otherwise ask, except changes to AICE configuration; for isolated containers/CI; dangerous
 --version, -v        show the version
 --help, -h           show command help
 ```

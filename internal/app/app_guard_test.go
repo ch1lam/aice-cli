@@ -870,3 +870,29 @@ func mustCommandArgs(t *testing.T, command string) json.RawMessage {
 	}
 	return payload
 }
+
+func TestYoloKeepsControlFileAsk(t *testing.T) {
+	t.Parallel()
+
+	workspace := t.TempDir()
+	settings := filepath.Join(workspace, ".aice", "settings.json")
+	_, adapter, err := newExecutionGuard(workspace, guard.Config{ControlFiles: []string{settings}}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for command, want := range map[string]agent.GuardDecision{
+		"git push && echo x > ../outside.txt": agent.GuardAllow,
+		"aice mcp approve evil":               agent.GuardAsk,
+		"echo '{}' > .aice/settings.json":     agent.GuardAsk,
+	} {
+		result, err := adapter.Check(t.Context(), llm.ToolCall{ID: "c", Name: "bash", Arguments: mustCommandArgs(t, command)})
+		if err != nil || result.Decision != want {
+			t.Fatalf("%s: %+v, %v; want %s", command, result, err, want)
+		}
+		for _, approval := range result.Approvals {
+			if approval.RuleID != guard.RuleControlFile {
+				t.Fatalf("%s: yolo kept %s", command, approval.RuleID)
+			}
+		}
+	}
+}

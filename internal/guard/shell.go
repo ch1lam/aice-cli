@@ -61,7 +61,7 @@ const maxShellDepth = 4
 // analyzeBash parses command and returns its file actions and command
 // findings. Unparseable input falls back to whitespace tokenization.
 func analyzeBash(command, workspace string) bashAnalysis {
-	a := &bashAnalyzer{command: command, workspace: workspace}
+	a := &bashAnalyzer{command: command, workspace: workspace, vars: map[string]string{}}
 	a.script(command, workspace, 0)
 	return bashAnalysis{actions: a.actions, findings: a.findings, commands: a.commands}
 }
@@ -72,6 +72,9 @@ type bashAnalyzer struct {
 	actions   []Action
 	findings  []finding
 	commands  [][]string
+	// vars holds literal shell assignments seen so far, so `X=~/.ssh; cat
+	// $X/id` resolves. Subshell and function scoping is ignored.
+	vars map[string]string
 }
 
 func (a *bashAnalyzer) script(script, base string, depth int) {
@@ -91,13 +94,28 @@ func (a *bashAnalyzer) script(script, base string, depth int) {
 			for _, r := range n.Redirs {
 				a.redirect(r, base)
 			}
+		case *syntax.DeclClause:
+			for _, assign := range n.Args {
+				if !assign.Naked {
+					a.assign(assign)
+				}
+			}
+		case *syntax.WordIter:
+			// Loop items are expanded like operands, so `for f in ~/.ssh/*` is a read.
+			delete(a.vars, n.Name.Value)
+			for _, item := range n.Items {
+				a.path(a.literalWord(item), opRead, base, false)
+			}
 		case *syntax.CallExpr:
 			if len(n.Args) == 0 {
+				for _, assign := range n.Assigns {
+					a.assign(assign)
+				}
 				return true
 			}
 			words := make([]shellWord, len(n.Args))
 			for i, w := range n.Args {
-				words[i] = literalWord(w)
+				words[i] = a.literalWord(w)
 			}
 			cmd := shellCommand{words: words, base: base}
 			a.simple(cmd, depth)
@@ -105,6 +123,22 @@ func (a *bashAnalyzer) script(script, base string, depth int) {
 		}
 		return true
 	})
+}
+
+// assign records a literal assignment; any other value forgets the name.
+func (a *bashAnalyzer) assign(assign *syntax.Assign) {
+	if assign.Name == nil || assign.Array != nil || assign.Index != nil {
+		return
+	}
+	value := shellWord{}
+	if assign.Value != nil {
+		value = a.literalWord(assign.Value)
+	}
+	if value.unresolved || assign.Append {
+		delete(a.vars, assign.Name.Value)
+		return
+	}
+	a.vars[assign.Name.Value] = value.text
 }
 
 // redirect records file effects of redirections. Descriptor duplication and
@@ -124,7 +158,7 @@ func (a *bashAnalyzer) redirect(r *syntax.Redirect, base string) {
 			return
 		}
 	}
-	w := literalWord(r.Word)
+	w := a.literalWord(r.Word)
 	if w.text != "" {
 		a.path(w, op, base, true)
 	}
@@ -148,6 +182,13 @@ func (a *bashAnalyzer) simple(cmd shellCommand, depth int) {
 	if len(cmd.words) == 0 {
 		return
 	}
+	if cmd.words[0].unresolved {
+		a.findings = append(a.findings, finding{rule: RuleBashDynamic, desc: "command name from a variable or substitution", pattern: cmd.display()})
+	}
+	if cmd.name() == "eval" {
+		a.eval(cmd, depth)
+		return
+	}
 	if script, ok := shellScript(cmd); ok {
 		if depth < maxShellDepth && !script.unresolved {
 			a.script(script.text, cmd.base, depth+1)
@@ -160,6 +201,21 @@ func (a *bashAnalyzer) simple(cmd shellCommand, depth int) {
 	a.findings = append(a.findings, classifyCommand(cmd)...)
 	for _, arg := range commandPaths(cmd, cmd.base != a.workspace) {
 		a.path(arg.word, arg.op, cmd.base, arg.force)
+	}
+}
+
+// eval checks a literal script like `bash -c`; anything else asks.
+func (a *bashAnalyzer) eval(cmd shellCommand, depth int) {
+	parts := make([]string, 0, len(cmd.words)-1)
+	for _, w := range cmd.words[1:] {
+		if w.unresolved {
+			a.findings = append(a.findings, finding{rule: RuleBashDynamic, desc: "eval of a computed script", pattern: cmd.display()})
+			return
+		}
+		parts = append(parts, w.text)
+	}
+	if depth < maxShellDepth {
+		a.script(strings.Join(parts, " "), cmd.base, depth+1)
 	}
 }
 
@@ -232,9 +288,14 @@ func isDigits(s string) bool {
 	return true
 }
 
-// literalWord renders w with expansions marked. $HOME and $TMPDIR are
-// substituted from the environment so common spellings resolve.
-func literalWord(w *syntax.Word) shellWord {
+// literalWord renders w as the shell would, with unknown expansions marked
+// unresolved. Recorded literal assignments, $HOME and $TMPDIR are
+// substituted; unquoted backslash escapes are removed, so `\rm` is rm.
+func (a *bashAnalyzer) literalWord(w *syntax.Word) shellWord {
+	return expandWord(w, a.vars)
+}
+
+func expandWord(w *syntax.Word, vars map[string]string) shellWord {
 	if w == nil {
 		return shellWord{}
 	}
@@ -243,14 +304,14 @@ func literalWord(w *syntax.Word) shellWord {
 	for _, part := range w.Parts {
 		switch p := part.(type) {
 		case *syntax.Lit:
-			b.WriteString(p.Value)
+			b.WriteString(unescape(p.Value))
 		case *syntax.SglQuoted:
 			b.WriteString(p.Value)
 		case *syntax.DblQuoted:
 			for _, inner := range p.Parts {
 				if lit, ok := inner.(*syntax.Lit); ok {
 					b.WriteString(lit.Value)
-				} else if value, ok := knownVariable(inner); ok {
+				} else if value, ok := knownVariable(inner, vars); ok {
 					b.WriteString(value)
 				} else {
 					b.WriteString("$")
@@ -258,7 +319,7 @@ func literalWord(w *syntax.Word) shellWord {
 				}
 			}
 		default:
-			if value, ok := knownVariable(part); ok {
+			if value, ok := knownVariable(part, vars); ok {
 				b.WriteString(value)
 				continue
 			}
@@ -269,11 +330,34 @@ func literalWord(w *syntax.Word) shellWord {
 	return shellWord{text: b.String(), unresolved: unresolved}
 }
 
-// knownVariable substitutes a plain $HOME or $TMPDIR.
-func knownVariable(part syntax.WordPart) (string, bool) {
+// unescape removes the backslashes of an unquoted literal.
+func unescape(lit string) string {
+	if !strings.Contains(lit, `\`) {
+		return lit
+	}
+	var b strings.Builder
+	for i := 0; i < len(lit); i++ {
+		if lit[i] == '\\' && i+1 < len(lit) {
+			i++
+			if lit[i] == '\n' {
+				continue
+			}
+		} else if lit[i] == '\\' {
+			continue
+		}
+		b.WriteByte(lit[i])
+	}
+	return b.String()
+}
+
+// knownVariable substitutes a plain recorded variable, $HOME or $TMPDIR.
+func knownVariable(part syntax.WordPart, vars map[string]string) (string, bool) {
 	p, ok := part.(*syntax.ParamExp)
 	if !ok || p.Param == nil || p.Exp != nil || p.Slice != nil || p.Repl != nil || p.Index != nil || p.Length || p.Width || p.Excl {
 		return "", false
+	}
+	if value, ok := vars[p.Param.Value]; ok {
+		return value, true
 	}
 	switch p.Param.Value {
 	case "HOME":
@@ -286,9 +370,9 @@ func knownVariable(part syntax.WordPart) (string, bool) {
 	return "", false
 }
 
-// wordToString renders w with each expansion as "$".
+// wordToString renders w with each unknown expansion as "$".
 func wordToString(w *syntax.Word) string {
-	return literalWord(w).text
+	return expandWord(w, nil).text
 }
 
 // fetchExecFindings detects downloaded content piped or substituted into a

@@ -23,7 +23,7 @@ func resolveReadOnlyRoots(roots []string, cwd string) []string {
 		if root = strings.TrimSpace(root); root == "" {
 			continue
 		}
-		out = append(out, resolveAbsolute(root, cwd, ""))
+		out = append(out, physicalPath(resolveAbsolute(root, cwd, "")))
 	}
 	return out
 }
