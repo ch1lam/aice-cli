@@ -99,7 +99,7 @@ func (c *mcpCatalog) ListResources(ctx context.Context, request tool.ResourceLis
 		Generation uint64
 		Scope      string
 	}{binding, catalog.Generation, c.scopes[server.Key]})}
-	name := "mcp_resource_read_" + mcpDigest([]string{"resource", server.Key})[:32]
+	name := c.mcpModelName(server.Key, "resource_read", id)
 	if previous, ok := c.names[name]; ok && previous != id {
 		return response, fmt.Errorf("MCP resource model name collision")
 	}

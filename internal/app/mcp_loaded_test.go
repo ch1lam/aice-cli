@@ -26,7 +26,7 @@ type loadedToolsModel struct {
 func (m *loadedToolsModel) Stream(ctx context.Context, request llm.Request) (llm.Stream, error) {
 	want := 0
 	for _, d := range request.Tools {
-		if strings.HasPrefix(d.Name, "mcp_read_") {
+		if strings.HasPrefix(d.Name, "mcp__service0__read") {
 			want++
 		}
 	}
@@ -89,7 +89,7 @@ func TestMCPLoadedToolsActualCommandLifecycle(t *testing.T) {
 					model.cancel = cancel
 				}
 				run, err := runner.NewRun(runCtx, interaction.RunInput{Prompt: "find fixture"}, func(_ context.Context, event interaction.Event) error {
-					if event.Kind == interaction.EventToolStart && strings.HasPrefix(event.Tool.Name, "mcp_read_") {
+					if event.Kind == interaction.EventToolStart && strings.HasPrefix(event.Tool.Name, "mcp__") {
 						return fmt.Errorf("MCP tool shown by its model name %s", event.Tool.Name)
 					}
 					if event.Kind == interaction.EventToolStart && strings.HasPrefix(event.Tool.Name, "service0 · ") {

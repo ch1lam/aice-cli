@@ -440,8 +440,12 @@ removes that service's stale Run entries and reports incompleteness. Unknown
 catalogs are not empty catalogs.
 
 Stable IDs combine source-qualified service and escaped remote name. Model names
-include a readable prefix/hash and are collision-checked; frontends show
-`<service> · <remote tool>` instead, from the Run catalog live and from each
+are `mcp__<service ID>__<remote tool>`; the service is written
+`<source>_<ID>` only when user and project both configure that ID. A remote
+name outside `[A-Za-z0-9_-]`, a result over 64 characters, or a name already
+bound to another tool in the Run keeps a sanitized readable prefix and adds an
+8-hex hash. Permissions bind the remote name, never the model name. Frontends
+show `<service> · <remote tool>`, from the Run catalog live and from each
 result's recorded binding on Session replay. Immutable versions bind
 connection, schemas and catalog generation. Notifications invalidate versions
 before dispatch. Search proposes typed references; only the Loop installs full
@@ -493,7 +497,7 @@ and `next_offset`, never reading resources/following links/calling tools.
 Unsupported, unavailable and incomplete catalogs are explicit failures/notices,
 not empty success. Pages rediscover, so changing catalogs can shift offsets.
 
-Successful listing proposes one `mcp_resource_read_<hash>` schema through the
+Successful listing proposes one `mcp__<service>__resource_read` schema through the
 same next-round selection budget. Its catalog ID is `<service>/resource/read`.
 The reader sends one exact `uri` (up to 4,096 UTF-8 bytes) only to that server;
 it never interprets the URI as a local path/HTTP target. URIs from returned links

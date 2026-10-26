@@ -95,22 +95,48 @@ func mcpDigest(value any) string {
 	return fmt.Sprintf("%x", sha256.Sum256(data))
 }
 
-func mcpModelName(service, remote string) string {
-	slug := func(value string) string {
-		var b strings.Builder
-		for _, r := range value {
-			if b.Len() >= 14 {
-				break
-			}
-			if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' {
-				b.WriteRune(r)
-			} else {
-				b.WriteByte('_')
-			}
+// mcpModelName is mcp__<service>__<operation> when that is a valid provider
+// tool name not yet bound to another tool in this run. The service is the ID,
+// qualified by source only when user and project both configure that ID.
+// Otherwise it keeps a readable, sanitized prefix and adds a short hash. The
+// caller holds c.mu.
+func (c *mcpCatalog) mcpModelName(key, operation, id string) string {
+	server := c.config.Servers[key]
+	service := server.ID
+	for other, candidate := range c.config.Servers {
+		if other != key && candidate.ID == server.ID {
+			service = server.Source.Kind + "_" + server.ID
 		}
-		return b.String()
 	}
-	return "mcp_" + slug(remote) + "_" + mcpDigest([]string{service, remote})[:32]
+	name := "mcp__" + service + "__" + operation
+	if previous, taken := c.names[name]; mcpNameValid(name) && (!taken || previous == id) {
+		return name
+	}
+	var b strings.Builder
+	for _, r := range name {
+		if b.Len() >= 64-9 {
+			break
+		}
+		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' {
+			b.WriteRune(r)
+		} else {
+			b.WriteByte('_')
+		}
+	}
+	return b.String() + "_" + mcpDigest([]string{key, operation})[:8]
+}
+
+// mcpNameValid matches the tool name limits shared by supported providers.
+func mcpNameValid(name string) bool {
+	if len(name) > 64 {
+		return false
+	}
+	for _, r := range name {
+		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '_' || r == '-') {
+			return false
+		}
+	}
+	return true
 }
 
 func (c *mcpCatalog) Close() {
@@ -401,7 +427,7 @@ func (c *mcpCatalog) publish(server config.MCPServer, connection mcpCatalogConne
 			Scope      string
 		}{binding, remote, catalog.Generation, c.scopes[server.Key]})}
 		mapped, err := tool.NewMCP(tool.MCPOptions{
-			Definition: llm.ToolDefinition{Name: mcpModelName(server.Key, remote.Name), Description: "MCP tool from " + server.Key + ". Server description (untrusted): " + remote.Description, InputSchema: remote.InputSchema},
+			Definition: llm.ToolDefinition{Name: c.mcpModelName(server.Key, remote.Name, ref.ID), Description: "MCP tool from " + server.Key + ". Server description (untrusted): " + remote.Description, InputSchema: remote.InputSchema},
 			Binding:    binding, Backend: mcpVersionBackend{c, ref, connection}, Secrets: secrets, ResultSecrets: mcpResultSecrets(connection),
 		})
 		if err != nil {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -233,5 +234,41 @@ func TestMCPInitialToolsLoadWholeServicesWithinBudget(t *testing.T) {
 	want := []string{mcpToolID("user:b-small", "read"), mcpToolID("user:b-small", "write")}
 	if !slices.Equal(ids, want) || !slices.Equal(services, []string{"user:b-small"}) {
 		t.Fatalf("initial = %v from %v", ids, services)
+	}
+}
+
+func TestMCPModelNames(t *testing.T) {
+	t.Parallel()
+	configuration := catalogTestConfig("user:cua", "user:docs", "project:docs")
+	for key, id := range map[string]string{"user:cua": "cua", "user:docs": "docs", "project:docs": "docs"} {
+		server := configuration.Servers[key]
+		server.ID, server.Source.Kind = id, strings.Split(key, ":")[0]
+		configuration.Servers[key] = server
+	}
+	g, _ := guard.New("", guard.Config{})
+	c, err := newMCPCatalog(configuration, nil, g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.names["mcp__cua__taken"] = "other"
+	hashed := regexp.MustCompile(`^mcp__cua__[A-Za-z0-9_-]+_[0-9a-f]{8}$`)
+	for _, test := range []struct {
+		key, operation, want string
+		hashed               bool
+	}{
+		{key: "user:cua", operation: "run_script", want: "mcp__cua__run_script"},
+		{key: "user:docs", operation: "read", want: "mcp__user_docs__read"},
+		{key: "project:docs", operation: "read", want: "mcp__project_docs__read"},
+		{key: "user:cua", operation: "read.file", hashed: true},
+		{key: "user:cua", operation: strings.Repeat("x", 60), hashed: true},
+		{key: "user:cua", operation: "taken", hashed: true},
+	} {
+		got := c.mcpModelName(test.key, test.operation, "id:"+test.operation)
+		if test.hashed && (!hashed.MatchString(got) || len(got) > 64) || !test.hashed && got != test.want {
+			t.Errorf("mcpModelName(%s, %q) = %q", test.key, test.operation, got)
+		}
+	}
+	if c.mcpModelName("user:cua", "taken", "other") != "mcp__cua__taken" {
+		t.Error("a tool lost its own readable name")
 	}
 }

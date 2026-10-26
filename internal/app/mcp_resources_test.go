@@ -95,7 +95,7 @@ type resourcePrintModel struct {
 func (m *resourcePrintModel) Stream(_ context.Context, r llm.Request) (llm.Stream, error) {
 	m.round++
 	for _, d := range r.Tools {
-		if strings.HasPrefix(d.Name, "mcp_resource_read_") {
+		if strings.HasSuffix(d.Name, "__resource_read") {
 			m.reader = d.Name
 		}
 	}

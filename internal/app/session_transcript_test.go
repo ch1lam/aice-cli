@@ -103,7 +103,7 @@ func TestSessionTranscriptLabelsMCPToolsByBinding(t *testing.T) {
 	t.Parallel()
 	s := browserHarness(t)
 	store := browserFixture(t, s, "mcp", "", "", 100)
-	call := llm.ToolCall{ID: "mcp-call", Name: mcpModelName("user:cua", "run_script"), Arguments: []byte(`{}`)}
+	call := llm.ToolCall{ID: "mcp-call", Name: "mcp__cua__run_script", Arguments: []byte(`{}`)}
 	binding := llm.ToolBinding{Source: "user:settings.json", ServiceID: "cua", ConnectionFingerprint: "connection", ToolName: "run_script", SchemaFingerprint: "schema"}
 	messages := []llm.AgentMessage{
 		llm.UserMessage{Role: llm.RoleUser, Content: []llm.ContentPart{llm.NewTextContent("Check it").Part()}, Timestamp: 100},
