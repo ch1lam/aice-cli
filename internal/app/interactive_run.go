@@ -209,6 +209,9 @@ func (r *interactiveRun) Run(ctx context.Context) (returnErr error) {
 		if display == nil {
 			return nil
 		}
+		if label, ok := scope.mcp.catalog.displayName(display.Tool.Name); ok && display.Kind == interaction.EventToolStart {
+			display.Tool.Name = label
+		}
 		if display.Kind != interaction.EventAssistantDelta {
 			usage := contextDisplay(snapshot.model, snapshot.configuration,
 				input.SystemPrompt, snapshot.tools, contextHistory)

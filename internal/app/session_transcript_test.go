@@ -98,3 +98,30 @@ func TestSessionSearchOtherBranchDoesNotCheckout(t *testing.T) {
 		t.Fatal("search moved branch", err)
 	}
 }
+
+func TestSessionTranscriptLabelsMCPToolsByBinding(t *testing.T) {
+	t.Parallel()
+	s := browserHarness(t)
+	store := browserFixture(t, s, "mcp", "", "", 100)
+	call := llm.ToolCall{ID: "mcp-call", Name: mcpModelName("user:cua", "run_script"), Arguments: []byte(`{}`)}
+	binding := llm.ToolBinding{Source: "user:settings.json", ServiceID: "cua", ConnectionFingerprint: "connection", ToolName: "run_script", SchemaFingerprint: "schema"}
+	messages := []llm.AgentMessage{
+		llm.UserMessage{Role: llm.RoleUser, Content: []llm.ContentPart{llm.NewTextContent("Check it").Part()}, Timestamp: 100},
+		llm.AssistantMessage{Role: llm.RoleAssistant, API: "api", Provider: "provider", ModelID: "model", Timestamp: 101,
+			StopReason: llm.StopReasonToolUse, Content: []llm.ContentPart{{Type: llm.ContentTypeToolCall, ToolCall: &call}}},
+		llm.ToolResultMessage{Role: llm.RoleToolResult, ToolCallID: call.ID, ToolName: call.Name, Timestamp: 102,
+			Content: []llm.ContentPart{llm.NewTextContent("ok").Part()},
+			Details: &llm.ToolResultDetails{State: llm.ExecutionReturned, Binding: &binding}},
+	}
+	if err := appendTestSessionMessages(t.Context(), store, messages); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, _ := store.Snapshot()
+	view, err := sessionTranscript(snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := view.Entries[len(view.Entries)-1].Tool.Name; got != "cua · run_script" {
+		t.Fatalf("tool label = %q", got)
+	}
+}

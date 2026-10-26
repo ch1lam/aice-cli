@@ -79,6 +79,14 @@ func TestMCPCatalogSearchAndExactIdentity(t *testing.T) {
 	if response.Entries[0].Name == response.Entries[1].Name || len(response.Entries[0].Name) > 64 {
 		t.Fatal("same remote names collided")
 	}
+	for _, entry := range response.Entries {
+		if label, ok := c.displayName(entry.Name); !ok || label != "docs · read_wiki" {
+			t.Fatalf("display name for %s = %q, %t", entry.Name, label, ok)
+		}
+	}
+	if _, ok := c.displayName("read"); ok {
+		t.Fatal("built-in tool mapped to an MCP label")
+	}
 	exact := response.Selected[0]
 	response, err = c.Search(t.Context(), tool.ToolSearchRequest{IDs: []string{exact.ID}, Limit: 1})
 	if err != nil || len(response.Selected) != 1 || response.Selected[0] != exact {

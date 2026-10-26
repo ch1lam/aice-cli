@@ -440,7 +440,9 @@ removes that service's stale Run entries and reports incompleteness. Unknown
 catalogs are not empty catalogs.
 
 Stable IDs combine source-qualified service and escaped remote name. Model names
-include a readable prefix/hash and are collision-checked. Immutable versions bind
+include a readable prefix/hash and are collision-checked; frontends show
+`<service> · <remote tool>` instead, from the Run catalog live and from each
+result's recorded binding on Session replay. Immutable versions bind
 connection, schemas and catalog generation. Notifications invalidate versions
 before dispatch. Search proposes typed references; only the Loop installs full
 schemas after recording a complete tool-result group, under its schema budget.

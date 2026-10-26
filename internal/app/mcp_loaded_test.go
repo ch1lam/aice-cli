@@ -72,6 +72,7 @@ func TestMCPLoadedToolsActualCommandLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	model := &loadedToolsModel{base: &mcpStartupModel{t: t, search: true, wantRemote: true}}
+	labeled := false
 	command, err := newTestCommand(t, dependencies{
 		loadConfig: func(config.LoadOptions) (config.Config, error) { return c, nil },
 		newModel:   func(config.Config) (llm.Streamer, error) { return model, nil },
@@ -87,7 +88,15 @@ func TestMCPLoadedToolsActualCommandLifecycle(t *testing.T) {
 				if outcome == "cancelled" {
 					model.cancel = cancel
 				}
-				run, err := runner.NewRun(runCtx, interaction.RunInput{Prompt: "find fixture"}, nil)
+				run, err := runner.NewRun(runCtx, interaction.RunInput{Prompt: "find fixture"}, func(_ context.Context, event interaction.Event) error {
+					if event.Kind == interaction.EventToolStart && strings.HasPrefix(event.Tool.Name, "mcp_read_") {
+						return fmt.Errorf("MCP tool shown by its model name %s", event.Tool.Name)
+					}
+					if event.Kind == interaction.EventToolStart && strings.HasPrefix(event.Tool.Name, "service0 · ") {
+						labeled = true
+					}
+					return nil
+				})
 				if err != nil {
 					cancel()
 					return err
@@ -121,6 +130,9 @@ func TestMCPLoadedToolsActualCommandLifecycle(t *testing.T) {
 	}
 	if initialized.Load() != 1 || calls.Load() != 2 {
 		t.Fatal("status caused discovery/calls or changed connection reuse", initialized.Load(), calls.Load())
+	}
+	if !labeled {
+		t.Fatal("remote MCP call was not labeled by service and tool")
 	}
 }
 

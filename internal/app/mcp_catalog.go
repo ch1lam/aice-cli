@@ -182,6 +182,27 @@ func (c *mcpCatalog) MCPBinding(ctx context.Context, name string) (llm.ToolBindi
 	return entry.binding, c.scopes[entry.service], true, nil
 }
 
+// displayName labels a model-facing MCP tool name for frontends. It reports
+// false for names this run never mapped, including built-in tools.
+func (c *mcpCatalog) displayName(name string) (string, bool) {
+	if c == nil {
+		return "", false
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	entry, ok := c.entries[c.names[name]]
+	if !ok {
+		return "", false
+	}
+	return mcpDisplayName(entry.binding), true
+}
+
+// mcpDisplayName names the remote operation instead of its hashed model name.
+// The separator keeps it distinct from every built-in tool name.
+func mcpDisplayName(binding llm.ToolBinding) string {
+	return binding.ServiceID + " · " + binding.ToolName
+}
+
 type mcpVersionBackend struct {
 	catalog *mcpCatalog
 	ref     agent.ToolReference
