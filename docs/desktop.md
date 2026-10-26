@@ -19,7 +19,8 @@ Use `/desktop` or Settings → Tools & Network → Computer Use.
 **Set up / Repair** shows a disclosure, then:
 
 1. installs the pinned Cua Driver 0.38.0, or reuses an existing verified
-   installation (see [Installation](installation.md#computer-use-helper));
+   installation of 0.38.0 or later; an older macOS App must be moved to the
+   Trash first (see [Installation](installation.md#computer-use-helper));
 2. on macOS, runs `cua-driver permissions grant`, which launches CuaDriver through
    LaunchServices so Accessibility and Screen Recording are granted to the
    CuaDriver app and checks live capture (four-minute deadline; cancelling

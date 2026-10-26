@@ -167,6 +167,6 @@ func (s *interactiveSession) desktopSettingField(configuration config.Config, ow
 		}
 		note = "Cua owns permission mode, input delivery and sessions; AICE still asks before each tool unless you grant it."
 	}
-	details = append(details, interaction.Detail{Key: "Driver", Value: "Cua Driver " + deps.CuaDriverVersion + " (pinned)"}, interaction.Detail{}, interaction.Detail{Text: note, Tone: interaction.ToneMuted})
+	details = append(details, interaction.Detail{Key: "Driver", Value: "Cua Driver " + deps.CuaMinimumVersion + " or later (installs " + deps.CuaDriverVersion + ")"}, interaction.Detail{}, interaction.Detail{Text: note, Tone: interaction.ToneMuted})
 	return interaction.SettingField{ID: "desktop.setup", Category: "tools", Label: "Computer Use", Description: "Control desktop applications through the Cua Driver, exposed as the ordinary MCP service " + desktopServiceKey + ".", Keywords: []string{"desktop", "computer", "cua"}, Kind: interaction.SettingAction, Value: interaction.SettingValue{Text: status}, Tone: tone, Details: details, Action: &interaction.Command{Name: "desktop", Interactive: true, Menu: menu}, Applies: interaction.SettingDomainAction, DisabledReason: reason}
 }

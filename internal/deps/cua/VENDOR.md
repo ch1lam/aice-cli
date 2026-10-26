@@ -23,9 +23,10 @@ signing requirement (bundle `com.trycua.driver`, Developer ID team
 `YCK386LBJ7`, Cua AI, Inc.) and `spctl --assess --type execute`, and reports
 `cua-driver 0.38.0`. Do not bypass signature failures by re-signing or
 removing quarantine. A new installation must report the pinned version; an
-existing Cua-signed `/Applications/CuaDriver.app` of another version is reused
-with a warning, because Computer Use talks to it only through MCP and Cua's
-own updater may manage that shared App.
+existing Cua-signed `/Applications/CuaDriver.app` is reused when it reports at
+least `CuaMinimumVersion`, because Computer Use talks to it only through MCP and
+Cua's own updater may manage that shared App. Raise the minimum when AICE
+depends on newer Driver behavior.
 
 No upstream installer is executed. The published top-level install.sh delegates
 to a secondary installer and includes skill/PATH integration outside AICE's

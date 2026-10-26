@@ -199,8 +199,8 @@ func TestCuaInstallationLockCancellation(t *testing.T) {
 	}
 }
 
-// A Cua-signed App of another version is reused with a warning; only a new
-// download must report the pinned version.
+// A Cua-signed App of the minimum version or later is reused; an older one is
+// rejected and kept. Only a new download must report the pinned version.
 func TestCuaInstallationVersionPolicy(t *testing.T) {
 	t.Parallel()
 	i, count := syntheticCuaInstaller(t, syntheticCuaArchive(t))
@@ -212,13 +212,32 @@ func TestCuaInstallationVersionPolicy(t *testing.T) {
 		t.Fatal(err)
 	}
 	result, err := i.install(t.Context())
-	if err != nil || !result.Reused || result.Installation.Version != "0.30.4" || len(result.Warnings) != 1 || count.Load() != 0 {
+	if err == nil || !strings.Contains(err.Error(), "Trash") || result.Reused || count.Load() != 0 {
 		t.Fatalf("existing older App = %#v, %v", result, err)
+	}
+	if body, _ := os.ReadFile(binary); string(body) != "synthetic 0.30.4" {
+		t.Fatal("older App was changed")
+	}
+	if err := os.WriteFile(binary, []byte("synthetic 0.41.2"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	result, err = i.install(t.Context())
+	if err != nil || !result.Reused || result.Installation.Version != "0.41.2" || len(result.Warnings) != 0 || count.Load() != 0 {
+		t.Fatalf("existing newer App = %#v, %v", result, err)
 	}
 
 	fresh, _ := syntheticCuaInstaller(t, syntheticCuaArchive(t))
 	fresh.verify = func(context.Context, string) (string, error) { return "0.0.1", nil }
 	if result, err := fresh.install(t.Context()); err == nil || result.Installed {
 		t.Fatalf("staged App of another version was published: %#v", result)
+	}
+}
+
+func TestCuaVersionSupported(t *testing.T) {
+	t.Parallel()
+	for version, want := range map[string]bool{CuaMinimumVersion: true, "0.38.1": true, "0.40.0": true, "1.0.0": true, "0.30.4": false, "0.37.99": false, "0.38": false, "0.38.0-rc1": false, "": false} {
+		if got := CuaVersionSupported(version); got != want {
+			t.Errorf("CuaVersionSupported(%q) = %t", version, got)
+		}
 	}
 }

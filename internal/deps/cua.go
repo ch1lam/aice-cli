@@ -1,8 +1,36 @@
 package deps
 
-import "fmt"
+import (
+	"fmt"
+	"strconv"
+	"strings"
+)
 
-const CuaDriverVersion = "0.38.0"
+// CuaDriverVersion is what new installations download. CuaMinimumVersion is
+// the oldest installed Driver setup accepts; newer ones are Cua's to update.
+const (
+	CuaDriverVersion  = "0.38.0"
+	CuaMinimumVersion = "0.38.0"
+)
+
+// CuaVersionSupported reports whether a Driver version is at least
+// CuaMinimumVersion. Unparsable versions are unsupported.
+func CuaVersionSupported(version string) bool {
+	have, want := strings.Split(version, "."), strings.Split(CuaMinimumVersion, ".")
+	if len(have) != len(want) {
+		return false
+	}
+	for j := range want {
+		h, err := strconv.Atoi(have[j])
+		if err != nil || h < 0 {
+			return false
+		}
+		if w, _ := strconv.Atoi(want[j]); h != w {
+			return h > w
+		}
+	}
+	return true
+}
 
 // CuaArtifact identifies an immutable native distribution. macOS deliberately
 // uses the full signed App distribution, never the bare-binary archive.

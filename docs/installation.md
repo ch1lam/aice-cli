@@ -88,8 +88,12 @@ saving a restart-only policy change does not alter this instance.
 
 On macOS, setup verifies the pinned signed App before installing
 `/Applications/CuaDriver.app`. An existing App is never overwritten: a
-Cua-signed one of another version is reused with a warning, and anything else
-is rejected. Linux and Windows helper provisioning uses a private versioned
+Cua-signed one of the minimum version (`CuaMinimumVersion`, currently 0.38.0)
+or later is reused, and newer versions are Cua's to update. An older one, or
+anything not Cua-signed, is rejected with the App kept. macOS App Management
+usually stops the terminal running AICE, and Cua's own `update --apply`
+started from it, from replacing a launched App, so setup asks the user to move
+the old App to the Trash in Finder and run setup again. Linux and Windows helper provisioning uses a private versioned
 directory under `~/.aice/bin/cua/`. Native file hashes and licenses are checked;
 Windows also requires the expected Authenticode signature. Pins and provenance
 are maintained in [Cua VENDOR.md](../internal/deps/cua/VENDOR.md).

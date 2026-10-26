@@ -45,8 +45,10 @@ func (i cuaBundleInstaller) install(ctx context.Context) (result CuaInstallResul
 	installation := CuaInstallation{Bundle: bundle, Binary: filepath.Join(bundle, "Contents", "MacOS", "cua-driver"), Version: CuaDriverVersion}
 	// Reuse can be read-only even when helper downloads are disabled. Never
 	// trust a same-named PATH binary or replace an existing App. A Cua-signed
-	// App of another version is reused: Computer Use talks to it only through
-	// MCP, and the shared App may be updated by Cua's own updater.
+	// App of the minimum version or later is reused: Computer Use talks to it
+	// only through MCP, and Cua's own updater may update the shared App. An
+	// older one is rejected; macOS App Management usually blocks the terminal
+	// from replacing it, so the user removes it in Finder.
 	if _, err := os.Lstat(bundle); err == nil {
 		return i.reuse(ctx, bundle, installation, "Cua App already exists but is incompatible; existing files were preserved")
 	} else if !errors.Is(err, os.ErrNotExist) {
@@ -124,12 +126,11 @@ func (i cuaBundleInstaller) reuse(ctx context.Context, bundle string, installati
 	if err != nil {
 		return CuaInstallResult{}, fmt.Errorf("%s: %w", rejected, err)
 	}
-	result := CuaInstallResult{Installation: installation, Reused: true}
-	if version != CuaDriverVersion {
-		result.Installation.Version = version
-		result.Warnings = append(result.Warnings, fmt.Sprintf("Using the installed CuaDriver.app %s; AICE pins %s for new installations", version, CuaDriverVersion))
+	if !CuaVersionSupported(version) {
+		return CuaInstallResult{}, fmt.Errorf("CuaDriver.app %s is older than the %s that Computer Use requires; existing files were preserved. Move CuaDriver.app to the Trash in Finder, then run Set up again to install %s", version, CuaMinimumVersion, CuaDriverVersion)
 	}
-	return result, nil
+	installation.Version = version
+	return CuaInstallResult{Installation: installation, Reused: true}, nil
 }
 
 func lockCuaInstall(ctx context.Context, directory string) (func() error, error) {
