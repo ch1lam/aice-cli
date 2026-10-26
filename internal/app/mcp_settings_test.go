@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -36,13 +37,24 @@ func runMCPSettingsFixture(t *testing.T, definition string, run func(context.Con
 	return runMCPSettingsConfigurationFixture(t, `"mcp":{"servers":{"docs":`+definition+`}}`, run)
 }
 
+// workspacePaths roots the project settings at the run's workspace, as
+// config.Load does, so stdio services get a working directory.
+func workspacePaths(paths config.Paths, options config.LoadOptions) config.Paths {
+	if options.Workspace != "" {
+		paths.ProjectSettings = filepath.Join(options.Workspace, ".aice", "settings.json")
+	}
+	return paths
+}
+
 func runMCPSettingsConfigurationFixture(t *testing.T, settings string, run func(context.Context, *interactiveSession)) config.Paths {
 	t.Helper()
 	paths := authTestPaths(t)
 	writeConfigFixture(t, paths.GlobalSettings, `{"provider":"custom","model":"fixture",`+settings+`}`)
 	command, err := newTestCommand(t, dependencies{
-		loadConfig: func(options config.LoadOptions) (config.Config, error) { return config.LoadFiles(paths, options) },
-		newModel:   func(config.Config) (llm.Streamer, error) { return &recordingModel{response: "answer"}, nil },
+		loadConfig: func(options config.LoadOptions) (config.Config, error) {
+			return config.LoadFiles(workspacePaths(paths, options), options)
+		},
+		newModel: func(config.Config) (llm.Streamer, error) { return &recordingModel{response: "answer"}, nil },
 		runTUI: func(ctx context.Context, frontend interaction.Frontend, _ tui.Options) error {
 			runner := frontend.Runner
 			run(ctx, runner.(*interactiveSession))

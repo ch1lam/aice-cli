@@ -59,6 +59,26 @@ func (s *interactiveSession) ensurePresetService(ctx context.Context, id string,
 		if result, err = s.applyPresetMCP(ctx, current, owner, approve, result); err != nil {
 			return result, err
 		}
+	} else if op.Action == "" {
+		// Setup may have installed the helper or granted OS access behind an
+		// unchanged definition. Drop the cached connection and its failure.
+		if err = s.publishMCPConfiguration(current, key); err != nil {
+			return result, err
+		}
+		result.Applied = true
+	}
+	// Verify the saved service as /mcp connect does, so the result and the
+	// service row report the live connection rather than a pending state.
+	s.stateMu.RLock()
+	current, owner = s.configuration, s.mcp
+	s.stateMu.RUnlock()
+	_, _, err = executeMCPManagement(ctx, current, owner, interaction.MCPRequest{Action: "connect", Key: key}, nil)
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return result, ctxErr
+	}
+	result.ReadinessKnown, result.Ready = true, err == nil
+	if err != nil {
+		result.Warnings = append(result.Warnings, "The service was saved, but its connection test failed; see /mcp for details")
 	}
 	return result, nil
 }

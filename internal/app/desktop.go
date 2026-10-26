@@ -141,7 +141,10 @@ func (s *interactiveSession) runDesktopSettings(ctx context.Context, request int
 	if err != nil {
 		return result, err
 	}
-	result.ReadinessKnown, result.Ready = true, true
+	if !result.Ready {
+		result.Output = "Computer Use was saved as the MCP service " + desktopServiceKey + " but is not connected"
+		return result, nil
+	}
 	result.Output = "Computer Use is available to the next Run through the MCP service " + desktopServiceKey
 	if runtime.GOOS != "darwin" {
 		result.Output += ". If its tools report missing desktop access, run `cua-driver doctor`."

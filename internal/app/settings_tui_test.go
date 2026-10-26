@@ -13,6 +13,7 @@ import (
 	"github.com/ch1lam/aice-cli/internal/config"
 	"github.com/ch1lam/aice-cli/internal/deps"
 	"github.com/ch1lam/aice-cli/internal/llm"
+	"github.com/ch1lam/aice-cli/internal/mcpclient"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -31,10 +32,15 @@ func TestSettingsUsageTUI(t *testing.T) {
 	driver := filepath.Join(home, "cua-driver")
 	model := &gatedModel{gates: map[int]chan struct{}{1: make(chan struct{})}, preDelta: "Synthetic run waiting"}
 	command, err := newTestCommand(t, dependencies{
-		loadConfig:   func(options config.LoadOptions) (config.Config, error) { return config.LoadFiles(paths, options) },
+		loadConfig: func(options config.LoadOptions) (config.Config, error) {
+			return config.LoadFiles(workspacePaths(paths, options), options)
+		},
 		newModel:     func(config.Config) (llm.Streamer, error) { return model, nil },
 		userHomeDir:  func() (string, error) { return home, nil },
 		saveSettings: config.SaveSettingsFile,
+		openMCP: func(context.Context, mcpclient.Config) (mcpOwnedConnection, error) {
+			return &mcpOwnedFixture{}, nil
+		},
 		newDesktop: func(c config.Config) *desktopPreset {
 			return &desktopPreset{installOptions: deps.DefaultOptions().WithNoInstall(c.NoDepInstall),
 				install: func(_ context.Context, o deps.Options) (deps.CuaInstallResult, error) {

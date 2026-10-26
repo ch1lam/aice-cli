@@ -13,6 +13,7 @@ import (
 	"github.com/ch1lam/aice-cli/internal/browser"
 	"github.com/ch1lam/aice-cli/internal/config"
 	"github.com/ch1lam/aice-cli/internal/interaction"
+	"github.com/ch1lam/aice-cli/internal/mcpclient"
 	"github.com/ch1lam/aice-cli/internal/provider/codex"
 )
 
@@ -114,11 +115,27 @@ func TestBrowserPresetActions(t *testing.T) {
 			t.Fatal("setup without a helper succeeded")
 		}
 		s.browserBin = bin
-		if result := act("setup"); !result.Committed || !strings.Contains(result.Output, browserServiceKey) {
+		// The helper path does not exist, so the connection test fails and is
+		// reported instead of claiming readiness.
+		if result := act("setup"); !result.Committed || !result.ReadinessKnown || result.Ready || !strings.Contains(result.Output, "not connected") {
 			t.Fatalf("setup = %+v", result)
 		}
 		if headed, target := choices(); headed || target != (browser.Target{}) {
 			t.Fatal("setup did not use a separate headless browser")
+		}
+		if status, _, _ := presetStatus(s.configuration, s.mcp, browserServiceKey); status != "failed" {
+			t.Fatalf("status = %q", status)
+		}
+		// Once the helper works, repeating setup over the unchanged definition
+		// replaces the cached failure with a live connection.
+		s.mcp.open = func(context.Context, mcpclient.Config) (mcpOwnedConnection, error) {
+			return &mcpOwnedFixture{mcpCatalogFixture: mcpCatalogFixture{items: []mcpclient.Tool{catalogFixtureTool("open", "Open a page")}}}, nil
+		}
+		if result := act("setup"); !result.Applied || !result.Ready || !strings.Contains(result.Output, "available") {
+			t.Fatalf("repeat setup = %+v", result)
+		}
+		if status, _, _ := presetStatus(s.configuration, s.mcp, browserServiceKey); status != "ready · 1 tools" {
+			t.Fatalf("status after repair = %q", status)
 		}
 		act("headed")
 		if headed, _ := choices(); !headed {

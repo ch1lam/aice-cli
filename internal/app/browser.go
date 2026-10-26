@@ -135,6 +135,10 @@ func (s *interactiveSession) runBrowserSettings(ctx context.Context, revision *u
 	if err != nil {
 		return result, err
 	}
+	if !result.Ready {
+		result.Output = "Browser automation was saved as the MCP service " + browserServiceKey + " but is not connected"
+		return result, nil
+	}
 	result.Output = "Browser automation is available to the next Run through the MCP service " + browserServiceKey
 	if action != "setup" && configured {
 		result.Output += ". An already running browser session keeps its window and connection until it is closed."

@@ -40,7 +40,13 @@ Use `/desktop` or Settings → Tools & Network → Computer Use.
    preset's env keys are rewritten, and only when they differ.
 4. saves the connection approval for that exact fingerprint, because the user
    just reviewed it. Tool calls still ask through Guard (once, per tool version
-   for the Session, or for the service's current versions).
+   for the Session, or for the service's current versions). When the
+   definition and approval are already current, setup still drops the cached
+   connection and status, so a failure recorded before installation or OS
+   grants does not persist;
+5. tests the connection as `/mcp connect` does (initialize and discover tools,
+   no tool call). The result reports Ready or Not ready, and the service row
+   shows the live state; a failed test keeps the saved service.
 
 Setup requires idle state like other MCP configuration changes. A project MCP
 service already named `cua` blocks setup. **Disable** disables `user:cua`;
