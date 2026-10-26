@@ -297,7 +297,7 @@ func (m model) settingsPointer(message tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		switch {
 		case target == "close" || target == "outside":
-			if p.editing != nil && !p.saving {
+			if p.hasDraft() {
 				p.notice = "Unsaved field draft · Esc discards this field"
 			} else {
 				m.closeSettings()

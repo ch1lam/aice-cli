@@ -346,19 +346,40 @@ func (m model) beginSettingEdit(unset bool) (tea.Model, tea.Cmd) {
 			p.choice = i
 		}
 	}
-	p.input.SetValue(field.Value.Text)
-	if field.Kind == interaction.SettingInt {
-		p.input.SetValue(strconv.FormatInt(field.Value.Int, 10))
-	}
-	if field.Kind == interaction.SettingDuration {
-		p.input.SetValue(field.Value.Duration.String())
-	}
+	p.input.SetValue(settingEditText(field))
 	if field.Kind == interaction.SettingEnum && !field.AllowCustom {
 		p.input.Blur()
 		return m, nil
 	}
 	p.input.CursorEnd()
 	return m, p.input.Focus()
+}
+
+// settingEditText is the editor's initial text for a scalar field.
+func settingEditText(field interaction.SettingField) string {
+	switch field.Kind {
+	case interaction.SettingInt:
+		return strconv.FormatInt(field.Value.Int, 10)
+	case interaction.SettingDuration:
+		return field.Value.Duration.String()
+	}
+	return field.Value.Text
+}
+
+// hasDraft reports typed input that closing the panel would discard. Menus,
+// choice cursors and an unchanged editor are not drafts.
+func (p *settingsPanel) hasDraft() bool {
+	switch {
+	case p.saving || p.editing == nil:
+		return false
+	case p.collection != nil:
+		return p.collection.dirty || p.collection.editing
+	case p.action != nil:
+		return p.input.Value() != ""
+	case p.confirmUnset || p.editing.Kind == interaction.SettingInfo || p.editing.Kind == interaction.SettingEnum && !p.editing.AllowCustom:
+		return false
+	}
+	return p.input.Value() != settingEditText(*p.editing)
 }
 
 func (m model) handleSettings(message tea.Msg) (tea.Model, tea.Cmd) {

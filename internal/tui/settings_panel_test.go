@@ -240,3 +240,28 @@ func TestSettingsActionPreservesPartialSuccess(t *testing.T) {
 		t.Fatal("unknown readiness became ready")
 	}
 }
+func TestSettingsCloseButtonKeepsOnlyTypedDrafts(t *testing.T) {
+	t.Parallel()
+	click := func(m model) model {
+		l := m.settings.layout
+		mouse := tea.Mouse{X: l.x + 1 + l.inner, Y: l.y, Button: tea.MouseLeft}
+		m = updateModel(t, m, tea.MouseClickMsg(mouse))
+		return updateModel(t, m, tea.MouseReleaseMsg(mouse))
+	}
+	m := panelModel(t, 120, 40)
+	m.settings.tab = 2
+	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	if m.settings.editing == nil {
+		t.Fatal("field editor did not open")
+	}
+	if m = click(m); m.settings != nil {
+		t.Fatal("close button kept an unchanged editor open")
+	}
+	m = panelModel(t, 120, 40)
+	m.settings.tab = 2
+	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	m.settings.input.SetValue("2m")
+	if m = click(m); m.settings == nil || !strings.Contains(m.settings.notice, "Unsaved") {
+		t.Fatal("close button discarded a typed draft")
+	}
+}
