@@ -90,7 +90,8 @@ func parseRule(text, workspace string) (rule, error) {
 				spec = "/"
 			}
 		}
-		r.path = physicalPath(filepath.Clean(resolveAbsolute(filepath.FromSlash(spec), workspace, "")))
+		// Rules use Bash path syntax: a leading "/" is rooted on Windows too.
+		r.path = physicalPath(resolveAbsolute(filepath.ToSlash(spec), workspace, "bash"))
 		if r.dir && isGrantTooBroad(r.path) {
 			return rule{}, fmt.Errorf("guard: permission rule %q covers the filesystem root or home directory", text)
 		}

@@ -170,7 +170,8 @@ a target that cannot be resolved makes later relative paths unresolved.
 Boundary checks use physical paths: symlinks in the longest existing prefix
 are resolved for every file action, bash included, so a workspace symlink to
 `~/.ssh` is a credential and one to another directory is outside access,
-shown and granted by its target. Grants, read-only roots and rule paths are
+shown and granted by its target. A dangling symlink resolves by its target
+too, so the check does not depend on whether the target exists yet. Grants, read-only roots and rule paths are
 stored physically as well.
 
 The table is a usability boundary, not isolation. Inline programs
@@ -303,8 +304,9 @@ access of the process it runs as.
   of a compound line is matched separately; `bash(*)` is rejected.
 - `read(path)` and `write(path)` match an absolute path, a glob, or a
   directory and its descendants with a trailing `/**`. `~` expands to the
-  home directory and relative paths resolve against the workspace. A
-  directory rule for `/` or `$HOME` is rejected.
+  home directory and relative paths resolve against the workspace. Paths use
+  Bash syntax, so a leading `/` is rooted on Windows too. A directory rule for
+  `/` or `$HOME` is rejected.
 
 Deny rules deny (rule `rule.deny`), and `--yolo` does not lift them. Ask rules
 add a `rule.ask` confirmation even for workspace access or commands without a

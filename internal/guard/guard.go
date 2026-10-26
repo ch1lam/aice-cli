@@ -3,6 +3,7 @@ package guard
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -287,11 +288,26 @@ func (g *Guard) pathApproval(act Action, abs, phys string) (Approval, bool) {
 
 // physicalPath resolves symlinks in the longest existing prefix of abs and
 // keeps the missing remainder, so new files resolve through their parents.
+// A dangling symlink on the way resolves by its target, so a link to a
+// missing credential directory is still checked as that directory.
 func physicalPath(abs string) string {
+	return physicalPathDepth(abs, 0)
+}
+
+// maxSymlinkHops bounds dangling-link resolution against link cycles.
+const maxSymlinkHops = 40
+
+func physicalPathDepth(abs string, hops int) string {
 	rest := ""
 	for p := abs; ; {
 		if real, err := filepath.EvalSymlinks(p); err == nil {
 			return filepath.Join(real, rest)
+		}
+		if target, err := os.Readlink(p); err == nil && hops < maxSymlinkHops {
+			if !filepath.IsAbs(target) {
+				target = filepath.Join(filepath.Dir(p), target)
+			}
+			return physicalPathDepth(filepath.Join(target, rest), hops+1)
 		}
 		parent := filepath.Dir(p)
 		if parent == p {
