@@ -69,7 +69,7 @@ func TestGuardEditPhysicalTarget(t *testing.T) {
 					t.Skipf("symlink unavailable: %v", err)
 				}
 			}
-			inner, gate, err := newExecutionGuard(root, nil, false)
+			inner, gate, err := newExecutionGuard(root, guard.Config{}, false)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -90,7 +90,7 @@ func TestGuardEditPhysicalTarget(t *testing.T) {
 			}
 			if want == agent.GuardDeny {
 				gate.yolo = true
-				inner.AllowPathSession(target, false)
+				inner.AllowPathSession(target, false, true)
 				result, err = gate.Check(t.Context(), call)
 				if err != nil || result.Decision != agent.GuardDeny {
 					t.Fatalf("yolo bypassed policy: %+v, %v", result, err)
@@ -112,7 +112,7 @@ func TestGuardEditPhysicalTarget(t *testing.T) {
 			if len(result.Approvals) != 1 || result.Approvals[0].Action.Path != physical {
 				t.Fatalf("approval != edit target %q: %+v", physical, result)
 			}
-			inner.AllowPathSession(physical, false)
+			inner.AllowPathSession(physical, false, true)
 			result, err = gate.Check(t.Context(), call)
 			if err != nil || result.Decision != agent.GuardAllow {
 				t.Fatalf("grant rejected: %+v, %v", result, err)
@@ -141,7 +141,7 @@ func TestGuardEditRejectsRetargetedLink(t *testing.T) {
 	if err := os.Symlink(first, link); err != nil {
 		t.Skipf("symlink unavailable: %v", err)
 	}
-	_, gate, err := newExecutionGuard(root, nil, false)
+	_, gate, err := newExecutionGuard(root, guard.Config{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -214,7 +214,7 @@ func TestGuardEditRevalidatesExistingTarget(t *testing.T) {
 			if err := os.Symlink(first, link); err != nil {
 				t.Skipf("symlink unavailable: %v", err)
 			}
-			_, gate, err := newExecutionGuard(root, nil, false)
+			_, gate, err := newExecutionGuard(root, guard.Config{}, false)
 			if err != nil {
 				t.Fatal(err)
 			}

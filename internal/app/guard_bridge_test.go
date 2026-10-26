@@ -49,7 +49,7 @@ func TestGuardReadUnicodeTarget(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			inner, gate, err := newExecutionGuard(root, nil, false)
+			inner, gate, err := newExecutionGuard(root, guard.Config{}, false)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -69,7 +69,7 @@ func TestGuardReadUnicodeTarget(t *testing.T) {
 			if err != nil || resolved != physical {
 				t.Fatalf("read target = %q, %v; guard target = %q", resolved, err, physical)
 			}
-			inner.AllowPathSession(physical, false)
+			inner.AllowPathSession(physical, false, false)
 			decision, err = gate.Check(t.Context(), call)
 			if err != nil || decision.Decision != agent.GuardAllow {
 				t.Fatalf("authorized target rejected: %+v, %v", decision, err)
@@ -126,7 +126,7 @@ func TestGuardReadChecksWinningCandidate(t *testing.T) {
 			if err := os.Symlink(secret, filepath.Join(root, protected)); err != nil {
 				t.Skipf("symlink unavailable: %v", err)
 			}
-			_, gate, err := newExecutionGuard(root, nil, true)
+			_, gate, err := newExecutionGuard(root, guard.Config{}, true)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -225,7 +225,7 @@ func TestGuardWritePhysicalTarget(t *testing.T) {
 					t.Skipf("symlink unavailable: %v", err)
 				}
 			}
-			inner, gate, err := newExecutionGuard(root, nil, false)
+			inner, gate, err := newExecutionGuard(root, guard.Config{}, false)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -246,7 +246,7 @@ func TestGuardWritePhysicalTarget(t *testing.T) {
 			}
 			if want == agent.GuardDeny {
 				gate.yolo = true
-				inner.AllowPathSession(target, false)
+				inner.AllowPathSession(target, false, true)
 				result, err = gate.Check(t.Context(), call)
 				if err != nil || result.Decision != agent.GuardDeny {
 					t.Fatalf("yolo bypassed policy: %+v, %v", result, err)
@@ -268,7 +268,7 @@ func TestGuardWritePhysicalTarget(t *testing.T) {
 			if len(result.Approvals) != 1 || result.Approvals[0].Action.Path != physical {
 				t.Fatalf("approval != write target %q: %+v", physical, result)
 			}
-			inner.AllowPathSession(physical, false)
+			inner.AllowPathSession(physical, false, true)
 			result, err = gate.Check(t.Context(), call)
 			if err != nil || result.Decision != agent.GuardAllow {
 				t.Fatalf("grant rejected: %+v, %v", result, err)
@@ -297,7 +297,7 @@ func TestGuardWriteRejectsRetargetedLink(t *testing.T) {
 	if err := os.Symlink(first, link); err != nil {
 		t.Skipf("symlink unavailable: %v", err)
 	}
-	_, gate, err := newExecutionGuard(root, nil, false)
+	_, gate, err := newExecutionGuard(root, guard.Config{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}

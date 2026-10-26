@@ -19,7 +19,7 @@ func TestGuardViewRendersCommandCard(t *testing.T) {
 	current := newGuardTestModel(t, interaction.GuardRequest{
 		ToolName:  "bash",
 		Reason:    "Dangerous command requires confirmation.",
-		RuleID:    "permissionGate.dangerous",
+		RuleID:    "bash.privileged",
 		Command:   "rm -rf /tmp/workspace",
 		Highlight: "rm -rf",
 		Options:   guardTestOptions(),

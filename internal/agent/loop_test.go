@@ -1105,7 +1105,7 @@ func TestLoopAskHandlerDenyIncludesUserFeedback(t *testing.T) {
 	const denyReason = "dangerous command requires confirmation"
 	askGate := fixedDecisionGuard{result: agent.GuardResult{
 		Decision:  agent.GuardAsk,
-		Approvals: []agent.GuardApproval{{Reason: denyReason, RuleID: "permissionGate.dangerous"}},
+		Approvals: []agent.GuardApproval{{Reason: denyReason, RuleID: "bash.privileged"}},
 	}}
 
 	tests := []struct {

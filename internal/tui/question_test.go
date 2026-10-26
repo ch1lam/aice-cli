@@ -825,7 +825,7 @@ func TestQuestionPanelYieldsToPermissionPrompt(t *testing.T) {
 		ToolName: "bash",
 		Command:  "rm -rf /tmp/x",
 		Reason:   "dangerous",
-		RuleID:   "permissionGate.dangerous",
+		RuleID:   "bash.privileged",
 		Options:  []interaction.GuardOption{{ID: "allow-once", Label: "Allow once"}},
 		Reply:    guardReply,
 		Done:     make(chan struct{}),

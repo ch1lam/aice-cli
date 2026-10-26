@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"slices"
+	"strings"
 	"sync"
 
 	"github.com/ch1lam/aice-cli/internal/hostpath"
@@ -31,18 +33,17 @@ func isBashRootedPath(path, toolName string) bool {
 // Guard is the built-in execution gate. Its policies are fixed; bound
 // service state and Session grants are protected by mu.
 type Guard struct {
-	mu            sync.RWMutex
-	workspace     string
-	readOnlyRoots []string
-	// sessionAllowed tracks secret-file paths allowed for this Session.
-	sessionAllowed map[string]bool
+	mu              sync.RWMutex
+	workspace       string
+	readOnlyRoots   []string
+	credentialFiles []string
+	controlFiles    []string
 	// sessionAllowedTools tracks unknown tool names allowed for this Session.
 	sessionAllowedTools map[string]bool
-	// sessionCommands are dangerous raw commands granted by exact equality.
+	// sessionCommands are bash commands granted by exact equality.
 	sessionCommands map[string]bool
-	// sessionAllowedPaths holds outside-workspace grants: absolute paths or
-	// "dir:" prefixed directories.
-	sessionAllowedPaths map[string]bool
+	// sessionPaths are outside-workspace grants.
+	sessionPaths []pathGrant
 	// searchTarget is the bound search service fingerprint set by the
 	// application per run. An empty value means web_search is unbound.
 	searchTarget string
@@ -51,38 +52,32 @@ type Guard struct {
 	mcpSession   uint64
 }
 
+// pathGrant covers one file, or a directory and its descendants. A write
+// grant also covers reads.
+type pathGrant struct {
+	path  string
+	dir   bool
+	write bool
+}
+
 // New constructs a Guard for the given workspace and configuration.
 // workspace may be empty (uses raw paths without relative conversion).
 func New(workspace string, cfg Config) (*Guard, error) {
 	return &Guard{
 		workspace:           workspace,
 		readOnlyRoots:       resolveReadOnlyRoots(cfg.ReadOnlyRoots, workspace),
-		sessionAllowed:      map[string]bool{},
+		credentialFiles:     cleanPaths(cfg.CredentialFiles),
+		controlFiles:        cleanPaths(cfg.ControlFiles),
 		sessionAllowedTools: map[string]bool{},
 		sessionCommands:     map[string]bool{},
-		sessionAllowedPaths: map[string]bool{},
 	}, nil
 }
 
-// AllowSession records that path is allowed for the remainder of this session.
-// Caller should normalize via normalizeTarget before calling; we do it again
-// for safety.
-func (g *Guard) AllowSession(path string) {
-	if g == nil {
-		return
-	}
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	key := normalizeTarget(path, g.workspace)
-	g.sessionAllowed[key] = true
-}
-
-// AllowPathSession records a path-access grant for the remainder of this session.
-// isDir indicates whether the grant is for the directory and its descendants.
-// Grants of the filesystem root or the user's home directory are ignored so
-// a session-scoped grant ("Allow … for this session") cannot authorize those
-// too-broad scopes; later checks stay ask.
-func (g *Guard) AllowPathSession(absPath string, isDir bool) {
+// AllowPathSession records an outside-workspace grant for the remainder of
+// this Session. isDir covers the directory and its descendants; write also
+// covers reads. Grants of the filesystem root or the user's home directory
+// are ignored so a Session grant cannot authorize those too-broad scopes.
+func (g *Guard) AllowPathSession(absPath string, isDir, write bool) {
 	if g == nil {
 		return
 	}
@@ -92,16 +87,12 @@ func (g *Guard) AllowPathSession(absPath string, isDir bool) {
 	if isGrantTooBroad(cleaned) {
 		return
 	}
-	if isDir {
-		g.sessionAllowedPaths["dir:"+cleaned] = true
-		return
-	}
-	g.sessionAllowedPaths[cleaned] = true
+	g.sessionPaths = append(g.sessionPaths, pathGrant{path: cleaned, dir: isDir, write: write})
 }
 
-// AllowCommandSession records that a dangerous command is allowed for the
-// remainder of this session. Only an identical raw command bypasses the
-// dangerous check.
+// AllowCommandSession records that a bash command needing confirmation is
+// allowed for the remainder of this Session. Only an identical raw command
+// bypasses command findings; file and path checks still apply.
 func (g *Guard) AllowCommandSession(command string) {
 	if g == nil || command == "" {
 		return
@@ -131,10 +122,9 @@ func (g *Guard) ResetSessionGrants() {
 	}
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	clear(g.sessionAllowed)
 	clear(g.sessionAllowedTools)
-	clear(g.sessionAllowedPaths)
 	clear(g.sessionCommands)
+	g.sessionPaths = nil
 	g.mcpSession++
 	for _, service := range g.mcpServices {
 		clear(service.granted)
@@ -150,11 +140,12 @@ func (g *Guard) ResolveAbsolute(p, toolName string) string {
 // Workspace returns the workspace this guard is scoped to.
 func (g *Guard) Workspace() string { return g.workspace }
 
-// Check evaluates one ToolCall against the secret-file policy, dangerous
-// commands and outside-workspace access. It returns DecisionDeny for hard
-// blocks and DecisionAsk when user confirmation is required. Non-interactive
-// callers treat Ask as Deny (fail-closed); the interactive TUI confirms every
-// approval in an Ask. Pending asks never short-circuit checks that could deny.
+// Check evaluates one ToolCall against credential and secret-file denials,
+// bash command findings, AICE control files and outside-workspace access. It
+// returns DecisionDeny for hard blocks and DecisionAsk when user confirmation
+// is required. Non-interactive callers treat Ask as Deny (fail-closed); the
+// interactive TUI confirms every approval in an Ask. Pending asks never
+// short-circuit checks that could deny.
 func (g *Guard) Check(ctx context.Context, call llm.ToolCall) (Result, error) {
 	if g == nil {
 		return Result{Decision: DecisionAllow}, nil
@@ -182,29 +173,49 @@ func (g *Guard) Check(ctx context.Context, call llm.ToolCall) (Result, error) {
 	if isNetworkTool(call.Name) {
 		return g.checkNetwork(call), nil
 	}
+	actions, findings := extractActions(call, g.workspace)
 	var approvals []Approval
 	if call.Name == "bash" {
-		if approval, ok := g.checkDangerousCommand(extractCommand(call.Arguments)); ok {
+		if approval, ok := g.commandApproval(extractCommand(call.Arguments), findings); ok {
 			approvals = append(approvals, approval)
 		}
 	}
-	seenPaths := make(map[string]bool)
-	for _, act := range extractActions(call) {
-		if secretFileTools[call.Name] && !g.sessionAllowed[normalizeTarget(act.Path, g.workspace)] {
+	seen := make(map[string]bool)
+	for _, act := range actions {
+		abs := resolveAbsolute(act.Path, g.workspace, act.ToolName)
+		if secretFileTools[call.Name] {
+			if !act.Unresolved && g.isCredentialPath(abs) {
+				return Result{Decision: DecisionDeny, Reason: secretDenial(normalizeTarget(act.Path, g.workspace)), RuleID: credentialsRuleID, Action: act}, nil
+			}
 			if reason, denied := checkSecretFile(ctx, act, g.workspace); denied {
 				return Result{Decision: DecisionDeny, Reason: reason, RuleID: secretFilesRuleID, Action: act}, nil
 			}
 		}
-		abs := resolveAbsolute(act.Path, g.workspace, act.ToolName)
-		if g.workspace != "" && hostpath.Within(g.workspace, abs) ||
-			isPathAccessReadTool(call.Name) && inReadOnlyRoot(abs, g.readOnlyRoots) ||
-			isPathGranted(abs, g.sessionAllowedPaths) || seenPaths[abs] {
+		write := act.Op == opWrite
+		key := act.Op + "\x00" + abs
+		if seen[key] {
 			continue
 		}
-		seenPaths[abs] = true
+		seen[key] = true
+		if write && g.isControlPath(abs) {
+			approvals = append(approvals, Approval{
+				Reason: fmt.Sprintf("Changing %s requires confirmation (AICE configuration).", resolveForDisplay(abs, g.workspace)),
+				RuleID: RuleControlFile, Action: act,
+			})
+			continue
+		}
+		if g.workspace != "" && hostpath.Within(g.workspace, abs) ||
+			!write && inReadOnlyRoot(abs, g.readOnlyRoots) ||
+			g.pathGranted(abs, write) {
+			continue
+		}
+		rule, verb := RuleOutsideRead, "Reading"
+		if write {
+			rule, verb = RuleOutsideWrite, "Writing"
+		}
 		approvals = append(approvals, Approval{
-			Reason: fmt.Sprintf("Access to %s requires confirmation (outside working directory).", resolveForDisplay(abs, g.workspace)),
-			RuleID: "pathAccess.ask", Action: act,
+			Reason: fmt.Sprintf("%s %s requires confirmation (outside working directory).", verb, resolveForDisplay(abs, g.workspace)),
+			RuleID: rule, Action: act,
 		})
 	}
 	if len(approvals) > 0 {
@@ -213,20 +224,97 @@ func (g *Guard) Check(ctx context.Context, call llm.ToolCall) (Result, error) {
 	return Result{Decision: DecisionAllow}, nil
 }
 
-// checkDangerousCommand asks for a structurally dangerous command unless an
-// exact Session grant covers it.
-func (g *Guard) checkDangerousCommand(cmd string) (Approval, bool) {
+// Path rule identifiers.
+const (
+	RuleOutsideRead  = "path.outside.read"
+	RuleOutsideWrite = "path.outside.write"
+	RuleControlFile  = "controlFile.write"
+)
+
+func (g *Guard) pathGranted(abs string, write bool) bool {
+	for _, grant := range g.sessionPaths {
+		if write && !grant.write {
+			continue
+		}
+		if grant.dir && hostpath.Within(grant.path, abs) || hostpath.Same(grant.path, abs) {
+			return true
+		}
+	}
+	return false
+}
+
+// commandApproval combines the findings of one bash command into a single
+// approval named after the most severe rule. An exact Session grant covers it.
+func (g *Guard) commandApproval(cmd string, findings []finding) (Approval, bool) {
 	if cmd == "" || g.sessionCommands[cmd] {
 		return Approval{}, false
 	}
-	desc, pattern := structuralDangerousMatch(cmd)
-	if desc == "" {
+	var kept []finding
+	for _, f := range findings {
+		if f.scoped && !g.riskyDelete(f) {
+			continue
+		}
+		if !slices.ContainsFunc(kept, func(k finding) bool { return k.rule == f.rule && k.desc == f.desc }) {
+			kept = append(kept, f)
+		}
+	}
+	if len(kept) == 0 {
 		return Approval{}, false
 	}
+	slices.SortStableFunc(kept, func(a, b finding) int {
+		return slices.Index(bashRuleOrder, a.rule) - slices.Index(bashRuleOrder, b.rule)
+	})
+	descs := make([]string, len(kept))
+	for i, f := range kept {
+		descs[i] = f.desc
+	}
 	return Approval{
-		Reason:  "Dangerous command requires confirmation (" + desc + "): " + pattern,
-		RuleID:  "permissionGate.dangerous",
+		Reason:  "Command requires confirmation (" + strings.Join(descs, "; ") + "): " + kept[0].pattern,
+		RuleID:  kept[0].rule,
 		Action:  Action{Kind: "command", Command: cmd, ToolName: "bash"},
-		Pattern: pattern,
+		Pattern: kept[0].pattern,
 	}, true
+}
+
+// riskyDelete reports whether a recursive delete may reach beyond concrete
+// workspace paths: unknown targets, globs at the workspace root, the
+// workspace itself, its .git directory, or anything outside it.
+func (g *Guard) riskyDelete(f finding) bool {
+	if g.workspace == "" || f.extraArgs {
+		return true
+	}
+	for _, target := range f.deleteTargets {
+		text := target.text
+		if target.unresolved || f.base == "" && !isRootedWord(text) || text == "" {
+			return true
+		}
+		dir, last := filepath.Split(filepath.FromSlash(text))
+		if strings.ContainsAny(dir, "*?[") {
+			return true
+		}
+		abs := resolveAbsolute(text, f.base, "bash")
+		if strings.ContainsAny(last, "*?[") {
+			abs = filepath.Dir(abs)
+			if hostpath.Same(abs, g.workspace) {
+				return true
+			}
+		}
+		if !hostpath.Within(g.workspace, abs) || hostpath.Within(filepath.Join(g.workspace, ".git"), abs) {
+			return true
+		}
+		if hostpath.Same(abs, g.workspace) && !f.filtered {
+			return true
+		}
+	}
+	return false
+}
+
+func cleanPaths(paths []string) []string {
+	var out []string
+	for _, p := range paths {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, filepath.Clean(p))
+		}
+	}
+	return out
 }

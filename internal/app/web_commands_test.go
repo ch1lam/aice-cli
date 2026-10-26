@@ -43,7 +43,7 @@ func webCommandSession(t *testing.T, backends *webBackends, settingsFile map[str
 	if err != nil {
 		t.Fatal(err)
 	}
-	g, adapter, err := newExecutionGuard(workspace.PhysicalPath(), nil, false)
+	g, adapter, err := newExecutionGuard(workspace.PhysicalPath(), guard.Config{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}

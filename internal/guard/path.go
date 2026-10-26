@@ -28,15 +28,6 @@ func resolveReadOnlyRoots(roots []string, cwd string) []string {
 	return out
 }
 
-func isPathAccessReadTool(name string) bool {
-	switch name {
-	case "read", "grep", "find", "ls":
-		return true
-	default:
-		return false
-	}
-}
-
 func inReadOnlyRoot(abs string, roots []string) bool {
 	if abs == "" {
 		return false
@@ -44,25 +35,6 @@ func inReadOnlyRoot(abs string, roots []string) bool {
 	abs = filepath.Clean(abs)
 	for _, root := range roots {
 		if hostpath.Within(root, abs) {
-			return true
-		}
-	}
-	return false
-}
-
-// isPathGranted reports whether a Session grant covers abs. Directory grants
-// are stored with a "dir:" prefix.
-func isPathGranted(abs string, granted map[string]bool) bool {
-	abs = filepath.Clean(abs)
-	if granted[abs] {
-		return true
-	}
-	for key := range granted {
-		if dir, ok := strings.CutPrefix(key, "dir:"); ok {
-			if hostpath.Within(dir, abs) {
-				return true
-			}
-		} else if hostpath.Same(key, abs) {
 			return true
 		}
 	}

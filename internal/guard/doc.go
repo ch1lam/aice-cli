@@ -4,13 +4,18 @@
 // capability rather than a plugin.
 //
 // Design principles:
-//   - Policies are fixed: a secret-file rule, structural dangerous-command
-//     detection over parsed shell words, and an ask for paths outside the
-//     workspace. Only startup-discovered read-only roots are configurable.
+//   - Policies are fixed. Inside the workspace, ordinary reads, writes and
+//     commands allow; outside it, reads and writes ask separately. Bash is
+//     parsed into commands whose consequences (privilege, disk, fetch-exec,
+//     permissions, delete, lost work, outbound) ask. Secret files and
+//     credential stores deny; AICE control files ask on every write. Only
+//     application-owned paths and startup-discovered read-only roots are
+//     configurable.
 //   - Single interception point: agent.Loop checks via the Guard interface
 //     defined by the consumer (agent), never by the guard importing agent.
-//   - Session grants cover file and directory paths, exact commands and
-//     unknown tool names. MCP grants separately bind source, service,
-//     connection, permission scope and tool schema. All are memory-only for
-//     the current Session; new runs do not clear them, a new Session does.
+//   - Session grants cover file and directory paths per operation, exact
+//     commands and unknown tool names. MCP grants separately bind source,
+//     service, connection, permission scope and tool schema. All are
+//     memory-only for the current Session; new runs do not clear them, a new
+//     Session does.
 package guard

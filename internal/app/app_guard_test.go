@@ -220,7 +220,7 @@ func TestGuardAdapterYoloRemapsAskOnly(t *testing.T) {
 				Arguments: outsideArgs,
 			},
 			want:     agent.GuardAsk,
-			wantRule: "pathAccess.ask",
+			wantRule: guard.RuleOutsideRead,
 		},
 		{
 			name: "noAccess stays deny",
@@ -265,7 +265,7 @@ func TestGuardAdapterYoloRemapsAskOnly(t *testing.T) {
 func TestMapGuardResultPassesPattern(t *testing.T) {
 	t.Parallel()
 	got := mapGuardResult(guard.Result{Decision: guard.DecisionAsk, Approvals: []guard.Approval{{
-		Reason: "dangerous", RuleID: guardRuleDangerous, Pattern: "rm -rf x",
+		Reason: "dangerous", RuleID: guard.RuleBashDelete, Pattern: "rm -rf x",
 		Action: guard.Action{Kind: "command", Command: "rm -rf x", ToolName: "bash"},
 	}}})
 	if got.Decision != agent.GuardAsk || len(got.Approvals) != 1 || got.Approvals[0].Pattern != "rm -rf x" {
@@ -313,7 +313,7 @@ func TestGuardAskOptions(t *testing.T) {
 		{
 			name: "path access asks for file and directory",
 			result: agent.GuardApproval{
-				RuleID: guardRulePathAccessAsk,
+				RuleID: guard.RuleOutsideRead,
 				Action: agent.GuardAction{Kind: "file", Path: outsideFile, ToolName: "read"},
 			},
 			toolName: "read",
@@ -328,7 +328,7 @@ func TestGuardAskOptions(t *testing.T) {
 			name: "path access omits directory at home",
 			skip: homeFile == "",
 			result: agent.GuardApproval{
-				RuleID: guardRulePathAccessAsk,
+				RuleID: guard.RuleOutsideRead,
 				Action: agent.GuardAction{Kind: "file", Path: homeFile, ToolName: "read"},
 			},
 			toolName: "read",
@@ -341,7 +341,7 @@ func TestGuardAskOptions(t *testing.T) {
 		{
 			name: "dangerous command",
 			result: agent.GuardApproval{
-				RuleID: guardRuleDangerous,
+				RuleID: guard.RuleBashDelete,
 				Action: agent.GuardAction{
 					Kind:     "command",
 					Command:  "rm -rf x",
@@ -414,12 +414,12 @@ func TestGuardAskOptionsPathAccessLabels(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "nested", "secret.txt")
 	abs := gate.ResolveAbsolute(path, "read")
 	options := guardAskOptions(gate, "read", agent.GuardApproval{
-		RuleID: guardRulePathAccessAsk,
+		RuleID: guard.RuleOutsideRead,
 		Action: agent.GuardAction{Kind: "file", Path: path, ToolName: "read"},
 	})
 
 	file := findGuardOption(t, options, guardOptionAllowRunFile)
-	if file.Label != "Allow this file for this session" {
+	if file.Label != "Allow reading this file for this session" {
 		t.Fatalf("allow-run-file Label = %q", file.Label)
 	}
 	if file.Detail != hostpath.HomeDisplay(abs) {
@@ -430,7 +430,7 @@ func TestGuardAskOptionsPathAccessLabels(t *testing.T) {
 	}
 
 	dir := findGuardOption(t, options, guardOptionAllowRunDir)
-	wantDir := "Allow directory " + hostpath.HomeDisplay(filepath.Dir(abs)) + "/ for this session"
+	wantDir := "Allow reading directory " + hostpath.HomeDisplay(filepath.Dir(abs)) + "/ for this session"
 	if dir.Label != wantDir {
 		t.Fatalf("allow-run-dir Label = %q, want %q", dir.Label, wantDir)
 	}
@@ -445,7 +445,7 @@ func TestHandleGuardAskHighlightFromPattern(t *testing.T) {
 	session := newGuardAskSession(t, t.TempDir(), guard.Config{})
 	call := llm.ToolCall{ID: "call-1", Name: "bash", Arguments: mustCommandArgs(t, "rm -rf x")}
 	_, request := handleGuardAskWithReply(t, session, call, agent.GuardApproval{
-		RuleID:  guardRuleDangerous,
+		RuleID:  guard.RuleBashDelete,
 		Pattern: "rm -rf x",
 		Action: agent.GuardAction{
 			Kind:     "command",
@@ -711,7 +711,7 @@ func handleGuardAskWithReply(
 
 func pathAccessAskResult(path string) agent.GuardApproval {
 	return agent.GuardApproval{
-		RuleID: guardRulePathAccessAsk,
+		RuleID: guard.RuleOutsideRead,
 		Action: agent.GuardAction{
 			Kind:     "file",
 			Path:     path,

@@ -2,7 +2,7 @@ package guard
 
 import "testing"
 
-func TestParsePathCandidates_AssignmentOnlyDoesNotPanic(t *testing.T) {
+func TestAnalyzeBash_DegenerateInputDoesNotPanic(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -18,13 +18,17 @@ func TestParsePathCandidates_AssignmentOnlyDoesNotPanic(t *testing.T) {
 		{name: "pipe only", command: "|"},
 		{name: "redirect only", command: "> file"},
 		{name: "ls sessions", command: "ls -lt .aice/sessions/ | head -n 20"},
+		{name: "bare launcher", command: "sudo"},
+		{name: "bare shell -c", command: "bash -c"},
+		{name: "find exec without command", command: "find . -exec"},
+		{name: "unterminated quote", command: "echo 'x"},
+		{name: "nested shells", command: `bash -c "bash -c \"bash -c 'bash -c \\\"ls\\\"'\""`},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			_ = parsePathCandidates(tt.command)
-			_ = parseCallWords(tt.command)
+			_ = analyzeBash(tt.command, "/workspace")
 		})
 	}
 }

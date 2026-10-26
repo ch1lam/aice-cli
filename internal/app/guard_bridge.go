@@ -5,13 +5,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"slices"
 
 	"github.com/ch1lam/aice-cli/internal/agent"
+	"github.com/ch1lam/aice-cli/internal/config"
 	"github.com/ch1lam/aice-cli/internal/guard"
 	"github.com/ch1lam/aice-cli/internal/hostpath"
 	"github.com/ch1lam/aice-cli/internal/interaction"
 	"github.com/ch1lam/aice-cli/internal/llm"
 	"github.com/ch1lam/aice-cli/internal/tool"
+	"github.com/ch1lam/aice-cli/internal/trust"
 )
 
 const (
@@ -24,9 +27,7 @@ const (
 	guardOptionAllowMCPService = "allow-mcp-service-session"
 	guardOptionDeny            = "deny"
 
-	guardRulePathAccessAsk = "pathAccess.ask"
-	guardRuleDangerous     = "permissionGate.dangerous"
-	guardRuleUnknownTool   = "unknownTool"
+	guardRuleUnknownTool = "unknownTool"
 )
 
 // newExecutionGuard constructs the intrinsic gate independently of provider
@@ -34,23 +35,34 @@ const (
 // workspace boundary and can preserve it through the first /login.
 func newExecutionGuard(
 	workspace string,
-	readOnlyRoots []string,
+	cfg guard.Config,
 	yolo bool,
 ) (*guard.Guard, *guardAdapter, error) {
-	// Built-in guard: intrinsic execution gate, not a plugin. Workspace-scoped
-	// so .env relative to the project is correctly recognized. Disabled only
-	// when explicitly configured off (future: guard config in settings.json).
 	if physical, err := filepath.EvalSymlinks(workspace); err == nil {
 		workspace = physical
 	}
-	g, err := guard.New(workspace, guard.Config{
-		ReadOnlyRoots: readOnlyRoots,
-	})
+	g, err := guard.New(workspace, cfg)
 	if err != nil {
 		return nil, nil, fmt.Errorf("app: create guard: %w", err)
 	}
 	adapter := &guardAdapter{inner: g, yolo: yolo}
 	return g, adapter, nil
+}
+
+// executionGuardConfig names the files AICE owns: credential stores are
+// denied, and configuration that changes AICE's own authority always asks.
+func executionGuardConfig(paths config.Paths, workspace string, readOnlyRoots []string) guard.Config {
+	cfg := guard.Config{ReadOnlyRoots: readOnlyRoots}
+	if paths.GlobalAuth != "" {
+		cfg.CredentialFiles = []string{paths.GlobalAuth, config.ClaudeSubscriptionAuthPath(paths), config.CodexAuthPath(paths)}
+	}
+	cfg.ControlFiles = slices.DeleteFunc([]string{paths.GlobalSettings, paths.GlobalTrust}, func(p string) bool { return p == "" })
+	if workspace != "" {
+		for _, name := range []string{trust.SettingsFile, trust.SystemFile, trust.AppendSystemFile, trust.MCPFile} {
+			cfg.ControlFiles = append(cfg.ControlFiles, filepath.Join(workspace, filepath.FromSlash(name)))
+		}
+	}
+	return cfg
 }
 
 // guardAdapter bridges internal/guard.Guard to agent.Guard without making
@@ -318,16 +330,11 @@ func guardAskOptions(g *guard.Guard, toolName string, result agent.GuardApproval
 			})
 		}
 		return append(options, interaction.GuardOption{ID: guardOptionDeny, Label: "Deny", Deny: true})
-	case guardRulePathAccessAsk:
+	case guard.RuleOutsideRead, guard.RuleOutsideWrite:
 		if result.Action.Path == "" {
 			return guardAskOnceOrDeny()
 		}
-		return pathAccessAskOptions(g, toolName, result.Action.Path)
-	case guardRuleDangerous:
-		if result.Action.Command == "" {
-			return guardAskOnceOrDeny()
-		}
-		return dangerousAskOptions(result.Action.Command)
+		return pathAccessAskOptions(g, toolName, result.Action.Path, result.RuleID == guard.RuleOutsideWrite)
 	case guardRuleUnknownTool:
 		return []interaction.GuardOption{
 			{ID: guardOptionAllowOnce, Label: "Allow once"},
@@ -338,17 +345,24 @@ func guardAskOptions(g *guard.Guard, toolName string, result agent.GuardApproval
 			{ID: guardOptionDeny, Label: "Deny", Deny: true},
 		}
 	default:
+		if guard.IsBashRule(result.RuleID) && result.Action.Command != "" {
+			return commandAskOptions()
+		}
 		return guardAskOnceOrDeny()
 	}
 }
 
-func pathAccessAskOptions(g *guard.Guard, toolName, path string) []interaction.GuardOption {
+func pathAccessAskOptions(g *guard.Guard, toolName, path string, write bool) []interaction.GuardOption {
 	abs := resolveGuardAbs(g, path, toolName)
+	verb := "reading"
+	if write {
+		verb = "writing"
+	}
 	options := []interaction.GuardOption{
 		{ID: guardOptionAllowOnce, Label: "Allow once"},
 		{
 			ID:     guardOptionAllowRunFile,
-			Label:  "Allow this file for this session",
+			Label:  "Allow " + verb + " this file for this session",
 			Detail: hostpath.HomeDisplay(abs),
 		},
 	}
@@ -356,7 +370,7 @@ func pathAccessAskOptions(g *guard.Guard, toolName, path string) []interaction.G
 	if !guard.GrantTooBroad(parent) {
 		options = append(options, interaction.GuardOption{
 			ID:    guardOptionAllowRunDir,
-			Label: "Allow directory " + hostpath.HomeDisplay(parent) + "/ for this session",
+			Label: "Allow " + verb + " directory " + hostpath.HomeDisplay(parent) + "/ for this session",
 		})
 	}
 	return append(options, interaction.GuardOption{
@@ -366,7 +380,7 @@ func pathAccessAskOptions(g *guard.Guard, toolName, path string) []interaction.G
 	})
 }
 
-func dangerousAskOptions(command string) []interaction.GuardOption {
+func commandAskOptions() []interaction.GuardOption {
 	options := []interaction.GuardOption{
 		{ID: guardOptionAllowOnce, Label: "Allow once"},
 		{ID: guardOptionAllowRunCommand, Label: "Allow this exact command for this session"},
@@ -395,10 +409,10 @@ func (s *interactiveSession) applyGuardAskGrant(optionID, toolName string, resul
 		return
 	case guardOptionAllowRunFile:
 		abs := g.ResolveAbsolute(result.Action.Path, toolName)
-		g.AllowPathSession(abs, false)
+		g.AllowPathSession(abs, false, result.RuleID == guard.RuleOutsideWrite)
 	case guardOptionAllowRunDir:
 		abs := g.ResolveAbsolute(result.Action.Path, toolName)
-		g.AllowPathSession(filepath.Dir(abs), true)
+		g.AllowPathSession(filepath.Dir(abs), true, result.RuleID == guard.RuleOutsideWrite)
 	case guardOptionAllowRunCommand:
 		g.AllowCommandSession(result.Action.Command)
 	case guardOptionAllowRunTool:

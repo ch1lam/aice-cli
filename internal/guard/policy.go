@@ -40,7 +40,65 @@ func checkSecretFile(ctx context.Context, act Action, workspace string) (string,
 	if !act.Unresolved && !fileExists(act.Path, workspace) {
 		return "", false
 	}
-	return "Accessing " + target + " is not allowed. This file contains secrets. Explain to the user why you want to access this file, and if changes are needed ask the user to make them.", true
+	return secretDenial(target), true
+}
+
+func secretDenial(target string) string {
+	return "Accessing " + target + " is not allowed. This file contains secrets. Explain to the user why you want to access this file, and if changes are needed ask the user to make them."
+}
+
+const credentialsRuleID = "credentials"
+
+// credentialDirs and credentialFiles are home-relative stores of host
+// credentials. Every operation on them is denied, whether or not they exist.
+var (
+	credentialDirs  = []string{".ssh", ".aws", ".gnupg", "Library/Keychains"}
+	credentialFiles = []string{
+		".netrc", ".git-credentials", ".npmrc", ".pypirc", ".docker/config.json",
+		".kube/config", ".config/gh/hosts.yml",
+	}
+	// sshPublicFiles are public material directly inside ~/.ssh.
+	sshPublicFiles = []string{"*.pub", "known_hosts", "known_hosts.old", "config"}
+)
+
+// isCredentialPath reports whether abs is a built-in or configured
+// credential location.
+func (g *Guard) isCredentialPath(abs string) bool {
+	for _, file := range g.credentialFiles {
+		if hostpath.Same(file, abs) {
+			return true
+		}
+	}
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return false
+	}
+	for _, file := range credentialFiles {
+		if hostpath.Same(filepath.Join(home, filepath.FromSlash(file)), abs) {
+			return true
+		}
+	}
+	for _, dir := range credentialDirs {
+		root := filepath.Join(home, filepath.FromSlash(dir))
+		if !hostpath.Within(root, abs) {
+			continue
+		}
+		if dir == ".ssh" && filepath.Dir(abs) == root && matchesAny(sshPublicFiles, filepath.Base(abs)) {
+			return false
+		}
+		return true
+	}
+	return false
+}
+
+// isControlPath reports whether abs is a file that configures AICE itself.
+func (g *Guard) isControlPath(abs string) bool {
+	for _, file := range g.controlFiles {
+		if hostpath.Same(file, abs) {
+			return true
+		}
+	}
+	return false
 }
 
 func matchesAny(patterns []string, name string) bool {

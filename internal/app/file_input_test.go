@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/ch1lam/aice-cli/internal/agent"
+	"github.com/ch1lam/aice-cli/internal/guard"
 	"github.com/ch1lam/aice-cli/internal/interaction"
 	"github.com/ch1lam/aice-cli/internal/provider/openai"
 	"github.com/ch1lam/aice-cli/internal/tool"
@@ -21,7 +22,7 @@ func TestFileInputFreezesTextAndImageWithReadSemantics(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, gate, err := newExecutionGuard(dir, nil, false)
+	_, gate, err := newExecutionGuard(dir, guard.Config{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +56,7 @@ func TestFileInputDoesNotBypassGuardOrPartiallyAccept(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, gate, err := newExecutionGuard(dir, nil, false)
+	_, gate, err := newExecutionGuard(dir, guard.Config{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,7 +74,7 @@ func TestFileInputDoesNotBypassGuardOrPartiallyAccept(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, ".env"), []byte("protected"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	_, yolo, err := newExecutionGuard(dir, nil, true)
+	_, yolo, err := newExecutionGuard(dir, guard.Config{}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +95,7 @@ func TestFileDeliveryFreezesBeforeMailboxAndDoesNotReparseFileText(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, gate, err := newExecutionGuard(dir, nil, false)
+	_, gate, err := newExecutionGuard(dir, guard.Config{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,7 +140,7 @@ func TestFileInputDoesNotNormalizePhysicalTargetAgain(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, gate, err := newExecutionGuard(root, nil, false)
+	_, gate, err := newExecutionGuard(root, guard.Config{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}

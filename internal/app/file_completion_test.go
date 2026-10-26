@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ch1lam/aice-cli/internal/guard"
 	"github.com/ch1lam/aice-cli/internal/tool"
 )
 
@@ -18,7 +19,7 @@ func TestFileCompletionFuzzyPathsAndPermissions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, gate, err := newExecutionGuard(dir, nil, false)
+	_, gate, err := newExecutionGuard(dir, guard.Config{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +66,7 @@ func TestFileCompletionListsCurrentLevelBeyondEightResults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, gate, err := newExecutionGuard(dir, nil, false)
+	_, gate, err := newExecutionGuard(dir, guard.Config{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,7 +119,7 @@ func TestFileCompletionMatchesAcrossDirectoryLevels(t *testing.T) {
 		t.Fatal(err)
 	}
 	dir = workspace.PhysicalPath()
-	_, gate, err := newExecutionGuard(dir, nil, false)
+	_, gate, err := newExecutionGuard(dir, guard.Config{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}

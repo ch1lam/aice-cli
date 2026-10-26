@@ -14,7 +14,6 @@ func TestResetSessionGrants(t *testing.T) {
 	outsideDir := t.TempDir()
 	readRoot := t.TempDir()
 	workspace := t.TempDir()
-	writeFiles(t, workspace, ".env")
 	g := newTestGuard(t, workspace, readRoot)
 	grants := []struct {
 		name    string
@@ -22,10 +21,10 @@ func TestResetSessionGrants(t *testing.T) {
 		call    llm.ToolCall
 		without Decision
 	}{
-		{"file policy", func() { g.AllowSession(".env") }, toolCall("read", map[string]any{"path": ".env"}), DecisionDeny},
-		{"file path", func() { g.AllowPathSession(outsideFile, false) }, toolCall("read", map[string]any{"path": outsideFile}), DecisionAsk},
-		{"directory path", func() { g.AllowPathSession(outsideDir, true) }, toolCall("read", map[string]any{"path": filepath.Join(outsideDir, "child.txt")}), DecisionAsk},
-		{"exact command", func() { g.AllowCommandSession("rm -rf ./scratch") }, toolCall("bash", map[string]any{"command": "rm -rf ./scratch"}), DecisionAsk},
+		{"file path", func() { g.AllowPathSession(outsideFile, false, false) }, toolCall("read", map[string]any{"path": outsideFile}), DecisionAsk},
+		{"directory path", func() { g.AllowPathSession(outsideDir, true, false) }, toolCall("read", map[string]any{"path": filepath.Join(outsideDir, "child.txt")}), DecisionAsk},
+		{"directory write", func() { g.AllowPathSession(outsideDir, true, true) }, toolCall("write", map[string]any{"path": filepath.Join(outsideDir, "child.txt")}), DecisionAsk},
+		{"exact command", func() { g.AllowCommandSession("git push") }, toolCall("bash", map[string]any{"command": "git push"}), DecisionAsk},
 		{"unknown tool", func() { g.AllowToolSession("custom") }, toolCall("custom", nil), DecisionAsk},
 	}
 	check := func(t *testing.T, call llm.ToolCall, want Decision) {

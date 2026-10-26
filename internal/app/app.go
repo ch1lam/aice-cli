@@ -675,7 +675,7 @@ func (a *application) prepareRunEnvironment(
 	}
 	g, adapter, err := newExecutionGuard(
 		workspace.PhysicalPath(),
-		skillReadOnlyRoots(discovery.catalog),
+		executionGuardConfig(configured.configuration.Paths, workspace.PhysicalPath(), skillReadOnlyRoots(discovery.catalog)),
 		yolo,
 	)
 	if err != nil {

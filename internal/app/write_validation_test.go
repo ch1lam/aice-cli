@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/ch1lam/aice-cli/internal/agent"
+	"github.com/ch1lam/aice-cli/internal/guard"
 	"github.com/ch1lam/aice-cli/internal/llm"
 )
 
@@ -52,7 +53,7 @@ func TestApplicationPrintWriteContentValidation(t *testing.T) {
 					t.Fatal(err)
 				}
 				call := llm.ToolCall{ID: "write-1", Name: "write", Arguments: payload}
-				_, gate, err := newExecutionGuard(workspace, nil, false)
+				_, gate, err := newExecutionGuard(workspace, guard.Config{}, false)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -99,7 +100,7 @@ func TestApplicationPrintWriteGuardDenialPrecedesValidation(t *testing.T) {
 		t.Fatal(err)
 	}
 	call := llm.ToolCall{ID: "write-denied", Name: "write", Arguments: json.RawMessage(`{"path":".env","content":null}`)}
-	_, gate, err := newExecutionGuard(workspace, nil, true)
+	_, gate, err := newExecutionGuard(workspace, guard.Config{}, true)
 	if err != nil {
 		t.Fatal(err)
 	}

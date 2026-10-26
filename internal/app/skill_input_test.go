@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/ch1lam/aice-cli/internal/agent"
+	"github.com/ch1lam/aice-cli/internal/guard"
 	"github.com/ch1lam/aice-cli/internal/interaction"
 	"github.com/ch1lam/aice-cli/internal/provider/openai"
 	"github.com/ch1lam/aice-cli/internal/skill"
@@ -20,7 +21,7 @@ func TestAttachedSkillsUseTrustedCatalogAndFullBody(t *testing.T) {
 	writeTestSkill(t, user, "review", "user description")
 	writeTestSkill(t, project, "private", "project only")
 	catalog := discoverSkills(user, project, false).catalog
-	_, gate, err := newExecutionGuard(root, nil, false)
+	_, gate, err := newExecutionGuard(root, guard.Config{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,7 +64,7 @@ func TestAttachedSkillDeliveryAndSessionRetainAcceptedSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, gate, err := newExecutionGuard(root, nil, false)
+	_, gate, err := newExecutionGuard(root, guard.Config{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}

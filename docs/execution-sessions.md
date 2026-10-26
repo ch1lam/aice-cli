@@ -133,65 +133,109 @@ documents should link here instead of restating these lists.
 
 ### Policies
 
-`internal/app` constructs the gate through `newExecutionGuard`, passing the
-physical workspace and discovered skill directories as `ReadOnlyRoots`. The
-policies are fixed in `internal/guard`; `settings.json` has no Guard field.
+`internal/app` constructs the gate through `newExecutionGuard` and
+`executionGuardConfig`, passing the physical workspace, discovered skill
+directories as `ReadOnlyRoots`, AICE credential stores and AICE control files.
+The policies are fixed in `internal/guard`; `settings.json` has no Guard field.
 
-The gate evaluates three layers in order:
+The default permission mode works like accept-edits inside the workspace:
+ordinary reads, writes and commands there run without confirmation. The gate
+asks when a call leaves the workspace or has a consequence listed below, and
+denies credential access.
 
-1. **Permission gate (`bash`)** — structural dangerous-command detection.
-   Built-in matchers require confirmation for shapes such as `rm -rf`, `sudo`,
-   `dd of=`, `mkfs.`, `chmod -R 777`, `chown -R`, `shred`, `wipefs`,
-   `blkdiscard`, `fdisk`/`parted`, `doas`/`pkexec`, and container
-   `docker`/`podman` with subcommand `run` or `create` plus `--privileged`
-   (example: `docker run --privileged`). Matching uses parsed command words,
-   so `echo rm -rf` is not dangerous.
-2. **Secret files** — rule `secret-files` denies existing files with the
-   basenames `.env`, `.env.local`, `.env.production`, `.env.prod` and
-   `.dev.vars`. Template names `*.example.env`, `*.sample.env`, `*.test.env`,
-   `.env.example`, `.env.sample` and `.env.test` are allowed. There is no
-   `.env.*` glob. Unresolved expansions are denied conservatively. The rule
-   applies to `read`/`write`/`edit`/`bash`/`grep`/`find`/`ls`; the `skill`
-   tool has no path argument.
-3. **Path access** — paths outside the workspace ask for confirmation.
-   `ReadOnlyRoots` (and descendants) skip that ask for
-   `read`/`grep`/`find`/`ls`; `write`/`edit` are not granted.
+| Area | Inside the workspace | Outside the workspace |
+| --- | --- | --- |
+| Read (`read`/`grep`/`find`/`ls`, bash read commands, `<`) | allow | ask `path.outside.read`; `ReadOnlyRoots` allow |
+| Write (`write`/`edit`, bash write commands, every output redirect including `2>` and `&>`) | allow | ask `path.outside.write` |
+| Recursive delete (`rm -r`, `find -delete`) of concrete paths | allow | ask `path.outside.write` and `bash.delete` |
+| `/dev/null`, `/dev/zero`, `/dev/random`, `/dev/urandom`, `/dev/std{in,out,err}`, `/dev/tty`, `/dev/fd/N` | allow | allow |
+
+Bash commands are parsed with `mvdan.cc/sh`. Launchers (`env`, `time`, `nice`,
+`nohup`, `command`, `exec`, `timeout`, `stdbuf`, `xargs`, `sudo`, `doas`,
+`pkexec`, `run0`), `bash`/`sh`/`zsh`/`dash`/`ksh -c` scripts and `find -exec`
+commands are unwrapped and checked as the command they run. A command table
+records which operands are patterns or messages rather than paths (`grep`,
+`rg`, `sed`, `awk`, `jq`, `echo`, `printf`, ...), which are read and which are
+written (`cp`/`mv` destinations, `curl -o`, `sed -i`, `go build -o`, ...).
+Commands outside the table treat path-like operands as writes. `$HOME` and
+`$TMPDIR` are substituted; other expansions are unresolved. `cd`/`pushd`
+moves the base for later relative paths; a target that cannot be resolved
+makes later relative paths unresolved. The table is a usability boundary, not
+isolation: `python -c`, `node -e` and other inline programs run like any
+other workspace command.
+
+Command consequences ask with one combined approval named after the most
+severe rule:
+
+| Rule | Commands |
+| --- | --- |
+| `bash.privileged` | `sudo`, `su`, `doas`, `pkexec`, `run0`, `docker`/`podman` `run`/`create --privileged` |
+| `bash.disk` | `dd of=/dev/...`, `mkfs*`, `wipefs`, `blkdiscard`, `fdisk`/`sfdisk`/`cfdisk`, `parted`/`sgdisk`, `diskutil erase*`/`partition*` |
+| `bash.fetchExec` | downloaded content piped or substituted into a shell or interpreter, such as `curl URL \| sh` or `bash <(curl URL)` |
+| `bash.permissions` | `chmod -R 777` and equivalents, `chown -R`, `chgrp -R` |
+| `bash.delete` | `shred`; a recursive delete whose target is unresolved, a glob at the workspace root, the workspace itself, `.git` or below, outside the workspace, or supplied by `xargs`/`find -exec`; `find -delete` at the workspace root without a test such as `-name` |
+| `bash.loseWork` | `git reset --hard`, `git clean -f`, `git checkout .`/`git restore .`, `git stash drop`/`clear`, `git branch -D` |
+| `bash.outbound` | `git push`; `curl` request bodies or uploads (`-d`, `-F`, `-T`, `--data*`, `--json`, non-GET `-X`); `wget --post-*`/`--body-*`/non-GET `--method`; `ssh`, `scp`, `sftp`, `nc`, `telnet`, `socat`, `ftp`; remote `rsync`; package publishing; `docker`/`podman push`; mutating `gh` subcommands and `gh api` writes |
+
+Two denylists apply to `read`/`write`/`edit`/`bash`/`grep`/`find`/`ls`:
+
+- **Secret files** — rule `secret-files` denies existing files with the
+  basenames `.env`, `.env.local`, `.env.production`, `.env.prod` and
+  `.dev.vars`. Template names `*.example.env`, `*.sample.env`, `*.test.env`,
+  `.env.example`, `.env.sample` and `.env.test` are allowed. There is no
+  `.env.*` glob. Unresolved expansions are denied conservatively. The `skill`
+  tool has no path argument.
+- **Credentials** — rule `credentials` denies every operation, whether or not
+  the target exists, on `~/.ssh/` (except `*.pub`, `known_hosts`,
+  `known_hosts.old` and `config` directly inside it), `~/.aws/`, `~/.gnupg/`,
+  `~/Library/Keychains/`, `~/.netrc`, `~/.git-credentials`, `~/.npmrc`,
+  `~/.pypirc`, `~/.docker/config.json`, `~/.kube/config`,
+  `~/.config/gh/hosts.yml`, and AICE's `auth.json`,
+  `claude-subscription-auth.json` and `codex-auth.json`.
+
+**Control files** — rule `controlFile.write` asks for every write to
+`~/.aice/settings.json`, `~/.aice/trust.json` and the workspace's
+`.aice/settings.json`, `.aice/SYSTEM.md`, `.aice/APPEND_SYSTEM.md` and
+`.mcp.json`. Path and command grants never cover it, so a Session grant cannot
+let the model change AICE's own configuration. Reading them is ordinary access.
 
 Each check returns Decision `allow` / `ask` / `deny`. Non-interactive
 `--print` runs treat `ask` as `deny` (fail-closed) unless `--yolo` is
 set. `--yolo` upgrades every `ask` to `allow` and skips the interactive
-confirmation prompt. It does not lift `deny`: `secret-files` denials are
-unchanged. Interactive `ask` prompts generate options from the
-triggering rule. Grants last for the current Session, across its Agent runs
-and provider or credential changes. `/new` clears all dynamic grants, including
-when no Session file has been created yet. Policies, skill read roots, and the
-invocation's `--yolo` setting remain unchanged. Grants never persist to
-disk, so resuming a Session in another process starts without them.
+confirmation prompt. It does not lift `deny`: `secret-files` and
+`credentials` denials are unchanged. Interactive `ask` prompts generate options
+from the triggering rule. Grants last for the current Session, across its Agent
+runs and provider or credential changes. `/new` clears all dynamic grants,
+including when no Session file has been created yet. Policies, skill read
+roots, and the invocation's `--yolo` setting remain unchanged. Grants never
+persist to disk, so resuming a Session in another process starts without them.
 
 The gate checks all applicable policies and extracted paths before returning
 an approval list. Any hard denial wins before a prompt is shown. When one call
 needs command approval and access to several outside paths, every independent
 scope must be approved before the tool executes. Repeated normalized paths
-appear once. A directory grant may still leave another already-listed path
-to confirm for that call; it applies automatically to later calls. Allow once
-approves only the displayed scope for that call and creates no Session grant.
-Unknown decisions, empty approval lists on `ask`, invalid replies, and canceled
-approval waits fail closed.
+appear once per operation. A directory grant may still leave another
+already-listed path to confirm for that call; it applies automatically to later
+calls. Allow once approves only the displayed scope for that call and creates
+no Session grant. Unknown decisions, empty approval lists on `ask`, invalid
+replies, and canceled approval waits fail closed.
 
 | Rule | Options |
 | --- | --- |
-| `pathAccess.ask` | Allow once; Allow this file for this session; Allow directory `<dir>/` for this session; Deny |
-| `permissionGate.dangerous` | Allow once; Allow this exact command for this session; Deny |
+| `path.outside.read` | Allow once; Allow reading this file for this session; Allow reading directory `<dir>/` for this session; Deny |
+| `path.outside.write` | Allow once; Allow writing this file for this session; Allow writing directory `<dir>/` for this session; Deny |
+| `bash.*` | Allow once; Allow this exact command for this session; Deny |
 | `unknownTool` | Allow once; Allow tool `"X"` for this session; Deny |
 | `mcp.tool` (bound integration) | Allow once; Allow current tool version for this Session; Allow current service tool versions for this Session; Deny |
-| Other `ask` rules | Allow once; Deny |
+| `controlFile.write` and other `ask` rules | Allow once; Deny |
 
 The directory option is omitted when the parent is `/` or `$HOME`.
 
 Grant scope within the current Session:
 
-- **file** — that absolute path only
-- **directory** — the parent directory and its descendants
+- **file** — that absolute path only; a write grant also covers reads
+- **directory** — the parent directory and its descendants; a write grant also
+  covers reads
 - **exact command** — the identical bash command string
 - **tool name** — that unknown tool name (`AllowToolSession`)
 - **bound MCP tool/service** — source, service, connection, effective permission
@@ -204,7 +248,7 @@ Grant scope within the current Session:
 
 Exact command grants compare the complete original string, including whitespace
 and quoting. An exact grant does not authorize a changed argument or an
-additional command, and does not bypass file or path policies.
+additional command, and does not bypass file, path or control-file policies.
 
 Path grants of `/` or the user's home directory are ignored, so a
 Session-scoped grant cannot authorize the entire filesystem or home

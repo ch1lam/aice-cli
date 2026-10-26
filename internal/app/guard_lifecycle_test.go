@@ -15,7 +15,7 @@ func TestInteractiveSessionNewResetsGrantsAfterDetach(t *testing.T) {
 	t.Parallel()
 
 	workspace := t.TempDir()
-	gate, adapter, err := newExecutionGuard(workspace, nil, false)
+	gate, adapter, err := newExecutionGuard(workspace, guard.Config{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -31,8 +31,8 @@ func TestInteractiveSessionNewResetsGrantsAfterDetach(t *testing.T) {
 		loop:         mustAppLoop(t, &recordingModel{response: "answer"}, nil),
 		model:        deepseek.DefaultModel(),
 	}
-	call := llm.ToolCall{ID: "check", Name: "bash", Arguments: mustCommandArgs(t, "rm -rf ./scratch")}
-	gate.AllowCommandSession("rm -rf ./scratch")
+	call := llm.ToolCall{ID: "check", Name: "bash", Arguments: mustCommandArgs(t, "git push")}
+	gate.AllowCommandSession("git push")
 	check := func(want guard.Decision) {
 		t.Helper()
 		result, err := gate.Check(t.Context(), call)
@@ -62,7 +62,7 @@ func TestInteractiveSessionNewResetsGrantsAfterDetach(t *testing.T) {
 	check(guard.DecisionAsk)
 	// The adapter continues using the same gate, including its yolo setting.
 	adapter.yolo = true
-	gate.AllowCommandSession("rm -rf ./scratch")
+	gate.AllowCommandSession("git push")
 	if _, err := runner.RunSlashCommand(t.Context(), interaction.CommandRequest{Name: "new"}); err != nil {
 		t.Fatal(err)
 	}

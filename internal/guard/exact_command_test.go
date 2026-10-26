@@ -9,7 +9,7 @@ func TestGuardExactCommandGrant(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	const granted = "rm -rf ./scratch"
+	const granted = "sudo rm -rf ./scratch"
 	before, err := g.Check(t.Context(), toolCall("bash", map[string]any{"command": granted}))
 	if err != nil || before.Decision != DecisionAsk {
 		t.Fatalf("before grant = %#v, error = %v, want ask", before, err)
@@ -25,13 +25,13 @@ func TestGuardExactCommandGrant(t *testing.T) {
 		{"identical", granted, DecisionAllow},
 		{"path suffix", granted + "-other", DecisionAsk},
 		{"extra argument", granted + " ./other", DecisionAsk},
-		{"changed argument", "rm -rf ./other", DecisionAsk},
-		{"compound suffix", granted + "; rm -rf ./other", DecisionAsk},
-		{"compound prefix", "rm -rf ./other && " + granted, DecisionAsk},
+		{"changed argument", "sudo rm -rf ./other", DecisionAsk},
+		{"compound suffix", granted + "; git push", DecisionAsk},
+		{"compound prefix", "git push && " + granted, DecisionAsk},
 		{"pipeline", granted + " | cat", DecisionAsk},
 		{"leading whitespace", " " + granted, DecisionAsk},
 		{"trailing whitespace", granted + " ", DecisionAsk},
-		{"quoting differs", "rm -rf './scratch'", DecisionAsk},
+		{"quoting differs", "sudo rm -rf './scratch'", DecisionAsk},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -42,7 +42,7 @@ func TestGuardExactCommandGrant(t *testing.T) {
 			if result.Decision != test.want {
 				t.Fatalf("Check(%q) = %#v, want %s", test.command, result, test.want)
 			}
-			if test.want == DecisionAsk && result.Approvals[0].RuleID != "permissionGate.dangerous" {
+			if test.want == DecisionAsk && !IsBashRule(result.Approvals[0].RuleID) {
 				t.Fatalf("Check(%q) rule = %q, want dangerous-command check", test.command, result.RuleID)
 			}
 		})
@@ -67,12 +67,12 @@ func TestGuardExactCommandGrantPreservesOtherChecks(t *testing.T) {
 		{
 			name:  "outside path still asks",
 			grant: "rm -rf ../outside", command: "rm -rf ../outside",
-			want: DecisionAsk, rule: "pathAccess.ask",
+			want: DecisionAsk, rule: RuleOutsideWrite,
 		},
 		{
 			name:  "empty grant does not allow commands",
-			grant: "", command: "rm -rf ./scratch",
-			want: DecisionAsk, rule: "permissionGate.dangerous",
+			grant: "", command: "sudo rm -rf ./scratch",
+			want: DecisionAsk, rule: RuleBashPrivileged,
 		},
 	}
 	for _, test := range tests {

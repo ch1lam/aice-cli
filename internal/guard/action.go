@@ -10,7 +10,9 @@ import (
 
 // Action is the normalized guard input derived from a ToolCall.
 type Action struct {
-	Kind       string // "file", "command", "network" or "mcp"
+	Kind string // "file", "command", "network" or "mcp"
+	// Op is "read" or "write" for file actions.
+	Op         string
 	Path       string
 	Command    string
 	ToolName   string
@@ -76,37 +78,29 @@ func extractStringArgument(raw json.RawMessage, key string) string {
 	return ""
 }
 
-// extractActions extracts one or more Actions from a ToolCall.
-// For file tools it returns one file Action; for bash it extracts candidate
-// paths via AST parsing with heuristic fallback.
-func extractActions(call llm.ToolCall) []Action {
+// extractActions returns the file actions of call and, for bash, the command
+// findings that need confirmation.
+func extractActions(call llm.ToolCall, workspace string) ([]Action, []finding) {
 	if fileTools[call.Name] {
 		p := extractFilePath(call.Arguments)
 		if strings.TrimSpace(p) == "" {
-			return nil
+			return nil, nil
 		}
-		return []Action{{Kind: "file", Path: p, ToolName: call.Name, Unresolved: containsExpansion(p)}}
+		op := opRead
+		if call.Name == "write" || call.Name == "edit" {
+			op = opWrite
+		}
+		return []Action{{Kind: "file", Op: op, Path: p, ToolName: call.Name, Unresolved: containsExpansion(p)}}, nil
 	}
 	if call.Name == "bash" {
 		cmd := extractCommand(call.Arguments)
 		if strings.TrimSpace(cmd) == "" {
-			return nil
+			return nil, nil
 		}
-		cands := parsePathCandidates(cmd)
-		var out []Action
-		for _, c := range cands {
-			tok := c.token
-			if tok == "" || strings.HasPrefix(tok, "-") {
-				continue
-			}
-			if !c.forcePath && !maybePathLike(tok) {
-				continue
-			}
-			out = append(out, Action{Kind: "file", Path: tok, ToolName: call.Name, Unresolved: c.unresolved, Command: cmd})
-		}
-		return out
+		analysis := analyzeBash(cmd, workspace)
+		return analysis.actions, analysis.findings
 	}
-	return nil
+	return nil, nil
 }
 
 func extractFilePath(raw json.RawMessage) string {
@@ -135,10 +129,6 @@ func extractCommand(raw json.RawMessage) string {
 		}
 	}
 	return ""
-}
-
-func containsExpansion(s string) bool {
-	return strings.Contains(s, "$") || strings.Contains(s, "`") || strings.Contains(s, "$(")
 }
 
 func maybePathLike(s string) bool {
@@ -187,53 +177,4 @@ func windowsPathLike(s string) bool {
 
 func isDriveLetter(b byte) bool {
 	return (b >= 'A' && b <= 'Z') || (b >= 'a' && b <= 'z')
-}
-
-// tokenizeBash does minimal shell tokenization: split on whitespace and
-// shell operators, honor single/double quotes and backticks.
-func tokenizeBash(cmd string) []string {
-	var tokens []string
-	var cur strings.Builder
-	inSingle, inDouble, inBacktick := false, false, false
-	flush := func() {
-		if cur.Len() > 0 {
-			tokens = append(tokens, cur.String())
-			cur.Reset()
-		}
-	}
-	for _, r := range cmd {
-		switch r {
-		case '\'':
-			if !inDouble && !inBacktick {
-				inSingle = !inSingle
-				cur.WriteRune(r)
-				continue
-			}
-		case '"':
-			if !inSingle && !inBacktick {
-				inDouble = !inDouble
-				cur.WriteRune(r)
-				continue
-			}
-		case '`':
-			if !inSingle && !inDouble {
-				inBacktick = !inBacktick
-				cur.WriteRune(r)
-				continue
-			}
-		}
-		if !inSingle && !inDouble && !inBacktick {
-			if r == ' ' || r == '\t' || r == '\n' || r == '|' || r == '&' || r == ';' || r == '<' || r == '>' || r == '(' || r == ')' {
-				flush()
-				continue
-			}
-		}
-		cur.WriteRune(r)
-	}
-	flush()
-	// Strip surrounding quotes from tokens
-	for i, t := range tokens {
-		tokens[i] = strings.Trim(t, "'\"`")
-	}
-	return tokens
 }

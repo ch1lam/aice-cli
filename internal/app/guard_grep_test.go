@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/ch1lam/aice-cli/internal/agent"
+	"github.com/ch1lam/aice-cli/internal/guard"
 	"github.com/ch1lam/aice-cli/internal/llm"
 	"github.com/ch1lam/aice-cli/internal/tool"
 )
@@ -73,7 +74,7 @@ func TestGuardGrepChecksNormalizedAndPhysicalTargets(t *testing.T) {
 			if err := os.Symlink(linkTarget, filepath.Join(root, alias)); err != nil {
 				t.Skipf("symlink unavailable: %v", err)
 			}
-			inner, gate, err := newExecutionGuard(root, readOnlyRoots, false)
+			inner, gate, err := newExecutionGuard(root, guard.Config{ReadOnlyRoots: readOnlyRoots}, false)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -84,7 +85,7 @@ func TestGuardGrepChecksNormalizedAndPhysicalTargets(t *testing.T) {
 			}
 			if want == agent.GuardDeny {
 				gate.yolo = true
-				inner.AllowPathSession(target, false)
+				inner.AllowPathSession(target, false, false)
 				result, err = gate.Check(t.Context(), call)
 				if err != nil || result.Decision != agent.GuardDeny {
 					t.Fatalf("deny bypassed: %+v %v", result, err)
@@ -110,7 +111,7 @@ func TestGuardGrepChecksNormalizedAndPhysicalTargets(t *testing.T) {
 					t.Fatalf("actual target %q not checked: %+v", physical, result)
 				}
 				for _, approval := range result.Approvals {
-					inner.AllowPathSession(inner.ResolveAbsolute(approval.Action.Path, "grep"), false)
+					inner.AllowPathSession(inner.ResolveAbsolute(approval.Action.Path, "grep"), false, false)
 				}
 				result, err = gate.Check(t.Context(), call)
 				if err != nil || result.Decision != agent.GuardAllow {
@@ -152,13 +153,13 @@ func TestGuardGrepBlocksOutsideAndRetargetedPaths(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, gate, err := newExecutionGuard(workspace.PhysicalPath(), nil, false)
+	_, gate, err := newExecutionGuard(workspace.PhysicalPath(), guard.Config{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	call := grepPathCall(t, "@alias")
 	result, err := gate.Check(t.Context(), call)
-	if err != nil || result.Decision != agent.GuardAsk || result.Approvals[0].RuleID != guardRulePathAccessAsk || result.Revalidate == nil {
+	if err != nil || result.Decision != agent.GuardAsk || result.Approvals[0].RuleID != guard.RuleOutsideRead || result.Revalidate == nil {
 		t.Fatalf("outside symlink target: %+v %v", result, err)
 	}
 	if err := os.Remove(link); err != nil {
@@ -175,7 +176,7 @@ func TestGuardGrepBlocksOutsideAndRetargetedPaths(t *testing.T) {
 func TestGuardGrepDefaultPathAndInvalidTargets(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
-	_, gate, err := newExecutionGuard(root, nil, false)
+	_, gate, err := newExecutionGuard(root, guard.Config{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}

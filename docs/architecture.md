@@ -174,7 +174,7 @@ Selected non-standard dependencies and their reason:
 
 | Dependency | Reason / license |
 | --- | --- |
-| `mvdan.cc/sh/v3` | Bash AST for dangerous-command checks; MIT |
+| `mvdan.cc/sh/v3` | Bash AST for command and path checks; MIT |
 | `gopkg.in/yaml.v3` | Agent Skill frontmatter; MIT |
 | `golang.org/x/text` | Unicode normalization for read-path matching; BSD-3-Clause |
 | `golang.org/x/image` | BMP/WebP decoding; BSD-3-Clause |

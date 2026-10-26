@@ -108,17 +108,17 @@ func TestGuardAllScopesMustBeApproved(t *testing.T) {
 				t.Fatalf("remaining approvals: %#v", remaining)
 			}
 			for i, prompt := range prompts {
-				if i == 0 && prompt.RuleID != guardRuleDangerous {
+				if i == 0 && prompt.RuleID != guard.RuleBashDelete {
 					t.Fatalf("first scope = %s", prompt.RuleID)
 				}
-				if i > 0 && (prompt.RuleID != guardRulePathAccessAsk || prompt.Path == "") {
+				if i > 0 && (prompt.RuleID != guard.RuleOutsideWrite || prompt.Path == "") {
 					t.Fatalf("path scope = %#v", prompt)
 				}
 			}
 			// Once grants do not leak to the next invocation, even after a later denial.
 			if test.options[0] == guardOptionAllowOnce {
 				_, again := runGuardedFake(t, t.Context(), session, command, false, func(_ int, _ agent.GuardApproval) string { return guardOptionDeny })
-				if len(again) != 1 || again[0].RuleID != guardRuleDangerous {
+				if len(again) != 1 || again[0].RuleID != guard.RuleBashDelete {
 					t.Fatalf("once leaked: %#v", again)
 				}
 			}

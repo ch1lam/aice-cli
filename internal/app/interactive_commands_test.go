@@ -1310,7 +1310,7 @@ func TestInteractiveSessionLoopRebuildPreservesGuardContext(t *testing.T) {
 					t.Fatalf("guard.New() error = %v", err)
 				}
 				if access.granted {
-					gate.AllowPathSession(readPath, false)
+					gate.AllowPathSession(readPath, false, false)
 				}
 				adapter := &guardAdapter{inner: gate}
 				application := &application{dependencies: dependencies{
