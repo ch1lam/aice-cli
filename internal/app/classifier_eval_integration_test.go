@@ -4,6 +4,7 @@ package app
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -23,9 +24,10 @@ import (
 //	AICE_CLASSIFY_EVAL=1 AICE_PROVIDER=opencode-go AICE_MODEL=deepseek-v4.1-flash \
 //	  go test -tags=integration ./internal/app -run TestClassifierEval -v -timeout 30m
 //
-// AICE_CLASSIFY_EVAL_FILTER limits cases by ID substring and
-// AICE_CLASSIFY_EVAL_CONCURRENCY sets parallel requests (default 4). The
-// report is written to internal/classify/eval/results/<model>@<version>.json.
+// AICE_CLASSIFY_EVAL_FILTER limits cases by ID substring,
+// AICE_CLASSIFY_EVAL_CONCURRENCY sets parallel requests (default 4) and
+// AICE_CLASSIFY_EVAL_RUNS repeats the set (default 1). The summary is written
+// to internal/classify/eval/results/<model>@<version>.json.
 func TestClassifierEval(t *testing.T) {
 	if os.Getenv("AICE_CLASSIFY_EVAL") != "1" {
 		t.Skip("set AICE_CLASSIFY_EVAL=1 to run the paid classifier evaluation")
@@ -67,6 +69,59 @@ func TestClassifierEval(t *testing.T) {
 	if n, err := strconv.Atoi(os.Getenv("AICE_CLASSIFY_EVAL_CONCURRENCY")); err == nil && n > 0 {
 		workers = n
 	}
+	runs := 1
+	if n, err := strconv.Atoi(os.Getenv("AICE_CLASSIFY_EVAL_RUNS")); err == nil && n > 0 {
+		runs = n
+	}
+	var all [][]classify.Verdict
+	for run := range runs {
+		verdicts := classifyAll(t, classifier, cases, workers)
+		all = append(all, verdicts)
+		report := classify.Score(cases, verdicts)
+		line := fmt.Sprintf("run %d:", run+1)
+		for _, set := range []string{classify.SetBenign, classify.SetOvereager, classify.SetInjection} {
+			if s := report.Sets[set]; s != nil {
+				line += fmt.Sprintf(" %s %.1f%% (%d unavailable)", set, s.Rate*100, s.Unavailable)
+			}
+		}
+		t.Logf("%s; fast allows %d (mean %dms), reasoned %d, tokens %d", line, report.FastAllows, report.FastMillis, report.Reasoned, report.Tokens)
+		for _, miss := range report.Misses {
+			t.Logf("  miss %-9s %-28s got=%s %s", miss.Set, miss.ID, miss.Got, miss.Reason)
+		}
+		for i, v := range verdicts {
+			if v.Decision == classify.Unavailable {
+				t.Logf("  unavailable %-28s %s", cases[i].ID, v.Reason)
+			}
+		}
+	}
+	summary := classify.Summarize(cases, all)
+	for _, set := range []string{classify.SetBenign, classify.SetOvereager, classify.SetInjection} {
+		if s := summary.Sets[set]; s != nil {
+			t.Logf("%-9s mean error %.1f%% worst %.1f%% (threshold %.1f%%) over %d runs", set, s.MeanRate*100, s.WorstRate*100, s.Threshold*100, runs)
+		}
+	}
+	for _, flaky := range summary.Flaky {
+		t.Logf("flaky %-9s %-28s correct %d/%d", flaky.Set, flaky.ID, flaky.Correct, flaky.Runs)
+	}
+	data, err := json.MarshalIndent(summary, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join("..", "classify", "eval", "results")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	name := strings.NewReplacer("/", "_", " ", "_").Replace(summary.Classifier) + ".json"
+	if err := os.WriteFile(filepath.Join(dir, name), append(data, '\n'), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, failure := range summary.Failures() {
+		t.Error(failure)
+	}
+}
+
+// classifyAll judges every case once with bounded concurrency.
+func classifyAll(t *testing.T, classifier *classify.Classifier, cases []classify.Case, workers int) []classify.Verdict {
 	verdicts := make([]classify.Verdict, len(cases))
 	jobs := make(chan int)
 	var wg sync.WaitGroup
@@ -86,36 +141,5 @@ func TestClassifierEval(t *testing.T) {
 	}
 	close(jobs)
 	wg.Wait()
-
-	report := classify.Score(cases, verdicts)
-	for _, set := range []string{classify.SetBenign, classify.SetOvereager, classify.SetInjection} {
-		if s := report.Sets[set]; s != nil {
-			t.Logf("%-9s total=%d allowed=%d blocked=%d unavailable=%d error_rate=%.1f%% (threshold %.1f%%)",
-				set, s.Total, s.Allowed, s.Blocked, s.Unavailable, s.Rate*100, s.Threshold*100)
-		}
-	}
-	t.Logf("fast allows=%d (mean %dms) reasoned=%d mean latency=%dms tokens=%d", report.FastAllows, report.FastMillis, report.Reasoned, report.MeanMillis, report.Tokens)
-	for _, miss := range report.Misses {
-		t.Logf("miss %-9s %-28s got=%s %s", miss.Set, miss.ID, miss.Got, miss.Reason)
-	}
-	for i, v := range verdicts {
-		if v.Decision == classify.Unavailable {
-			t.Logf("unavailable %-28s %s", cases[i].ID, v.Reason)
-		}
-	}
-	data, err := json.MarshalIndent(report, "", "  ")
-	if err != nil {
-		t.Fatal(err)
-	}
-	dir := filepath.Join("..", "classify", "eval", "results")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	name := strings.NewReplacer("/", "_", " ", "_").Replace(report.Classifier) + ".json"
-	if err := os.WriteFile(filepath.Join(dir, name), append(data, '\n'), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	for _, failure := range report.Failures() {
-		t.Error(failure)
-	}
+	return verdicts
 }

@@ -15,8 +15,11 @@
   bump `classify.PromptVersion` and attach a fresh evaluation report from
   `AICE_CLASSIFY_EVAL=1 go test -tags=integration ./internal/app -run TestClassifierEval -v`
   (provider and model from `AICE_PROVIDER`/`AICE_MODEL`), written to
-  `internal/classify/eval/results/`. A set above its threshold in
-  `classify.Thresholds` blocks the change; any allowed `injection` case does.
+  `internal/classify/eval/results/`. Run it at least three times with
+  `AICE_CLASSIFY_EVAL_RUNS=3`; verdicts vary between runs and the summary lists
+  flaky cases. A set whose mean error rate exceeds its threshold in
+  `classify.Thresholds` blocks the change; an allowed `injection` case in any
+  run does.
 - Mark real-provider tests with an integration build tag and run them explicitly. Default tests must use faux providers and must not read provider credentials.
 - Verify CLI/TUI work through the actual user-facing command. Do not treat package tests alone as proof that interactive behavior works.
 - Do not invent build, release, changelog, or publishing commands before the repository defines them.

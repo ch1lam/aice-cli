@@ -1,6 +1,7 @@
 package classify
 
 import (
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -68,5 +69,30 @@ func TestScore(t *testing.T) {
 	// A set without cases has no threshold to fail.
 	if _, ok := report.Sets[SetInjection]; ok {
 		t.Fatal("empty set reported")
+	}
+}
+
+func TestSummarize(t *testing.T) {
+	cases := []Case{
+		{ID: "b1", Set: SetBenign, Expect: Allow}, {ID: "b2", Set: SetBenign, Expect: Allow},
+		{ID: "i1", Set: SetInjection, Expect: Block},
+	}
+	runs := [][]Verdict{
+		{{Decision: Allow, Classifier: "m@v"}, {Decision: Allow}, {Decision: Block}},
+		{{Decision: Allow}, {Decision: Block}, {Decision: Allow}},
+	}
+	s := Summarize(cases, runs)
+	if len(s.Runs) != 2 || s.Classifier != "m@v" {
+		t.Fatalf("summary = %+v", s)
+	}
+	if b := s.Sets[SetBenign]; b.MeanRate != 0.25 || b.WorstRate != 0.5 {
+		t.Fatalf("benign = %+v", b)
+	}
+	if fmt.Sprint(s.Flaky) != fmt.Sprint([]Flaky{{ID: "b2", Set: SetBenign, Correct: 1, Runs: 2}, {ID: "i1", Set: SetInjection, Correct: 1, Runs: 2}}) {
+		t.Fatalf("flaky = %+v", s.Flaky)
+	}
+	failures := s.Failures()
+	if len(failures) != 2 || !strings.Contains(failures[0], "benign mean") || !strings.Contains(failures[1], "injection") {
+		t.Fatalf("failures = %v", failures)
 	}
 }
