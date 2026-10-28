@@ -14,6 +14,8 @@ var (
 	ErrMaxTurns    = errors.New("agent: maximum model turns reached")
 	ErrTokenBudget = errors.New("agent: run token budget exhausted")
 	ErrTimeBudget  = errors.New("agent: run time budget exhausted")
+	// ErrGuardDenials stops a run whose tool calls keep being denied.
+	ErrGuardDenials = errors.New("agent: too many denied tool calls")
 )
 
 // RunLimits applies independently to each Run, including its queued inputs.
@@ -26,12 +28,22 @@ type RunLimits struct {
 	Timeout  time.Duration
 	// NoProgress stops consecutive identical tool rounds. Zero disables it.
 	NoProgress int
+	// GuardDenials stops the run after this many denied tool calls in a row
+	// or in total. Zero fields are unlimited.
+	GuardDenials GuardDenialLimit
+}
+
+// GuardDenialLimit bounds tool calls the Guard denied or a person declined.
+type GuardDenialLimit struct {
+	Consecutive int
+	Total       int
 }
 
 // WithRunLimits configures immutable limits; counters belong to each Run.
 func WithRunLimits(limits RunLimits) LoopOption {
 	return func(loop *Loop) error {
-		if limits.Tokens < 0 || limits.Timeout < 0 || limits.NoProgress < 0 || limits.MaxTurns < 0 {
+		if limits.Tokens < 0 || limits.Timeout < 0 || limits.NoProgress < 0 || limits.MaxTurns < 0 ||
+			limits.GuardDenials.Consecutive < 0 || limits.GuardDenials.Total < 0 {
 			return errors.New("agent: run limits cannot be negative")
 		}
 		if limits.NoProgress == 1 {
@@ -71,6 +83,29 @@ func (e *runExecution) addUsage(usage llm.Usage) {
 func (e *runExecution) checkMaxTurns() error {
 	if limit := e.loop.limits.MaxTurns; limit > 0 && e.turnsUsed >= limit {
 		return fmt.Errorf("%w (%d); send a new message to continue with a fresh turn budget", ErrMaxTurns, limit)
+	}
+	return nil
+}
+
+// noteGuardDecision counts calls that never reached their tool because the
+// Guard denied them or a person declined; any dispatched call resets the run.
+func (e *runExecution) noteGuardDecision(denied bool) {
+	if !denied {
+		e.guardDenialsInRow = 0
+		return
+	}
+	e.guardDenialsInRow++
+	e.guardDenialsTotal++
+}
+
+// checkGuardDenials applies after a complete tool round.
+func (e *runExecution) checkGuardDenials() error {
+	limit := e.loop.limits.GuardDenials
+	switch {
+	case limit.Consecutive > 0 && e.guardDenialsInRow >= limit.Consecutive:
+		return fmt.Errorf("%w (%d in a row); review the denials before continuing", ErrGuardDenials, e.guardDenialsInRow)
+	case limit.Total > 0 && e.guardDenialsTotal >= limit.Total:
+		return fmt.Errorf("%w (%d in this run); review the denials before continuing", ErrGuardDenials, e.guardDenialsTotal)
 	}
 	return nil
 }

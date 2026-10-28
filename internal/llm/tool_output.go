@@ -47,6 +47,17 @@ type ToolResultDetails struct {
 	Binding           *ToolBinding    `json:"binding,omitempty"`
 	StructuredContent json.RawMessage `json:"structured_content,omitempty"`
 	Loss              string          `json:"loss,omitempty"`
+	// Review records who decided an automatic permission for this call.
+	Review *ToolReview `json:"review,omitempty"`
+}
+
+// ToolReview is the provenance of an automatic permission decision.
+type ToolReview struct {
+	Mode       string `json:"mode"`                 // permission mode, such as "auto"
+	Decision   string `json:"decision"`             // allow or block
+	Stage      int    `json:"stage,omitempty"`      // classifier stage that decided
+	Reason     string `json:"reason,omitempty"`     // shown to the agent and the user
+	Classifier string `json:"classifier,omitempty"` // "<model>@<prompt version>"
 }
 
 // MarshalJSON keeps the existing JSON value for older readers. encoding/json
@@ -139,6 +150,10 @@ func (d *ToolResultDetails) Clone() *ToolResultDetails {
 		binding := *d.Binding
 		copy.Binding = &binding
 	}
+	if d.Review != nil {
+		review := *d.Review
+		copy.Review = &review
+	}
 	return &copy
 }
 
@@ -162,6 +177,14 @@ func (d *ToolResultDetails) Validate() error {
 	}
 	if !utf8.ValidString(d.Loss) || len(d.Loss) > 4096 {
 		return fmt.Errorf("tool result loss notice must be UTF-8 and at most 4096 bytes")
+	}
+	if r := d.Review; r != nil {
+		if r.Mode == "" || (r.Decision != "allow" && r.Decision != "block") || r.Stage < 0 {
+			return fmt.Errorf("tool result review is invalid")
+		}
+		if !utf8.ValidString(r.Reason+r.Classifier) || len(r.Reason) > 4096 || len(r.Classifier) > 256 {
+			return fmt.Errorf("tool result review text must be UTF-8 and bounded")
+		}
 	}
 	if d.Binding != nil {
 		if d.Binding.Operation != "" && d.Binding.Operation != OperationResourceRead {

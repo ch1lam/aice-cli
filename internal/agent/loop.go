@@ -195,6 +195,9 @@ type runExecution struct {
 	tokensUsed       int64
 	turnsUsed        int
 	repetition       repetitionTracker
+	// guardDenialsInRow and guardDenialsTotal feed RunLimits.GuardDenials.
+	guardDenialsInRow int
+	guardDenialsTotal int
 	// degradeReasoning filters reasoning items out of assistant history after
 	// the first gateway rejection of a replayed reasoning item. It is armed
 	// once per run; poisoned sessions self-heal on the immediate retry.
@@ -398,6 +401,9 @@ func (e *runExecution) settleToolsAndSteering(
 	}
 
 	if err := e.checkProgress(completedTurn); err != nil {
+		return stepEnd, err
+	}
+	if err := e.checkGuardDenials(); err != nil {
 		return stepEnd, err
 	}
 	*retryAttempt = 0

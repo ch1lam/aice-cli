@@ -115,6 +115,7 @@ func (e *runExecution) executeTool(
 		return newErrorToolResult(call, err)
 	}
 	var revalidate func(context.Context) error
+	var review *llm.ToolReview
 	// Built-in guard: deny or ask before the tool ever starts. This preserves
 	// the "pair every tool call with one result" invariant while preventing
 	// the side effect. Ask is resolved via the injected handler or fails closed.
@@ -126,14 +127,19 @@ func (e *runExecution) executeTool(
 		if !res.Valid() {
 			return newErrorToolResult(call, errors.New("guard returned an invalid result"))
 		}
-		revalidate = res.Revalidate
+		revalidate, review = res.Revalidate, res.Review
 		switch res.Decision {
 		case GuardDeny:
+			e.noteGuardDecision(true)
 			reason := res.Reason
 			if reason == "" {
 				reason = fmt.Sprintf("tool %q blocked by guard rule %q", call.Name, res.RuleID)
 			}
-			return newErrorToolResult(call, errors.New(reason))
+			message, err := newErrorToolResult(call, errors.New(reason))
+			if err == nil && review != nil {
+				message.Details = withReview(e.notDispatchedDetails(call.Name), llm.ExecutionNotDispatched, review)
+			}
+			return message, err
 		case GuardAsk:
 			for _, approval := range res.Approvals {
 				if err := ctx.Err(); err != nil {
@@ -148,6 +154,7 @@ func (e *runExecution) executeTool(
 					}
 				}
 				if reply.Decision != GuardAllow {
+					e.noteGuardDecision(true)
 					reason := approval.Reason
 					if reason == "" {
 						reason = fmt.Sprintf("tool %q requires confirmation (rule %q)", call.Name, approval.RuleID)
@@ -164,6 +171,7 @@ func (e *runExecution) executeTool(
 	if err := ctx.Err(); err != nil {
 		return newErrorToolResult(call, err)
 	}
+	e.noteGuardDecision(false)
 
 	tool, exists := e.tools[call.Name]
 	if !exists {
@@ -194,6 +202,9 @@ func (e *runExecution) executeTool(
 		result, proposal, err = selector.SelectTools(ctx, call)
 	} else {
 		result, err = tool.Execute(ctx, call)
+	}
+	if review != nil {
+		result.Details = withReview(result.Details, llm.ExecutionReturned, review)
 	}
 	if err == nil && !result.IsError {
 		if selectionErr := e.validateProposal(ctx, proposal); selectionErr != nil {
@@ -326,6 +337,19 @@ func newErrorToolResult(call llm.ToolCall, err error) (llm.ToolResultMessage, er
 		)
 	}
 	return message, nil
+}
+
+// withReview attaches review to a copy of details, creating details with
+// state when the tool reported none.
+func withReview(details *llm.ToolResultDetails, state llm.ExecutionState, review *llm.ToolReview) *llm.ToolResultDetails {
+	if details == nil {
+		details = &llm.ToolResultDetails{State: state}
+	} else {
+		details = details.Clone()
+	}
+	copy := *review
+	details.Review = &copy
+	return details
 }
 
 func (e *runExecution) notDispatchedDetails(name string) *llm.ToolResultDetails {

@@ -38,6 +38,9 @@ type GuardResult struct {
 	// Revalidate checks call-local assumptions after approvals, before execution.
 	// It must not grant authority or perform tool side effects; errors fail closed.
 	Revalidate func(context.Context) error
+	// Review records an automatic decision. The Loop copies it to the tool
+	// result without reading it.
+	Review *llm.ToolReview
 }
 
 // GuardApproval is one independent permission scope for this tool invocation.

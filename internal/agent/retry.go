@@ -106,6 +106,7 @@ func isRetryable(err error) bool {
 		errors.Is(err, ErrContextLimit) ||
 		errors.Is(err, ErrToolSelection) ||
 		errors.Is(err, ErrNoProgress) ||
+		errors.Is(err, ErrGuardDenials) ||
 		errors.Is(err, ErrMaxTurns) ||
 		errors.Is(err, ErrTokenBudget) ||
 		errors.Is(err, ErrTimeBudget) ||

@@ -221,6 +221,11 @@ retain the short content summary; Session keeps the additive metadata.
   its operation slot, before sending. It is a bounded local check, does not
   reenter the transport or hold a Guard lock across I/O, and cannot authorize or
   replay work. It catches permission changes while waiting after initial approval.
+  A Guard result may also carry `Review`, the provenance of an automatic
+  decision; the Loop copies it into the tool result's `ToolResultDetails.Review`
+  without reading it. `RunLimits.GuardDenials` stops a run after the configured
+  number of consecutive or total calls the Guard denied or a person declined;
+  any dispatched call resets the consecutive count.
   Product behavior of the gate, including Session-scoped grants,
   is in [Tool execution and
   Sessions](execution-sessions.md#tool-execution-boundary).
