@@ -97,6 +97,8 @@ peak billing is twice the estimate.
 | Context windows | `AICE_CONTEXT_WINDOWS` | JSON array of provider/model/token entries described below |
 | Disable helper downloads | `AICE_NO_DEP_INSTALL` | Boolean; file key `no_dep_install` |
 | Disable startup update check | `AICE_NO_UPDATE_CHECK` | Boolean; file key `no_update_check` |
+| Permission mode | `AICE_PERMISSION_MODE` | `default` or `auto`; file key `permission_mode`; see [auto mode](execution-sessions.md#auto-mode) |
+| Auto mode classifier | none (file only) | `auto_mode` object with `model`, `environment`, `block`, `allow`; project settings may add `environment` and `block` only |
 | Tool permission rules | none (file only) | `permissions` object with `allow`/`ask`/`deny` rule lists, concatenated from user and trusted project settings; see [permission rules](execution-sessions.md#permission-rules) |
 | Web search and fetch | none (file only) | Nested `web` object: search sources, priority, service instances, fetch switch; see [Web search and fetch](web.md#configuration) |
 
@@ -645,6 +647,7 @@ aice [--print <prompt>] [flags]
 --provider <id>      override the provider for this invocation
 --model <id>         override the model for this invocation
 --thinking <level>   override the requested thinking level
+--permission-mode <mode>  default or auto for this invocation
 --no-dep-install    disable automatic helper downloads
 --no-update-check   disable the interactive startup update check
 --max-turns <N>      model request attempts per Agent run, including retries
@@ -657,6 +660,10 @@ aice [--print <prompt>] [flags]
 --version, -v        show the version
 --help, -h           show command help
 ```
+
+`--permission-mode` overrides the `permission_mode` setting; see
+[auto mode](execution-sessions.md#auto-mode). It cannot be combined with
+`--yolo`.
 
 `--approve` and `--no-approve` are mutually exclusive startup Trust choices;
 they do not grant tool permissions. `--yolo` allows Ask decisions but cannot

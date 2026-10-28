@@ -43,6 +43,8 @@ func settingPresentation(id string) (category, label, description string, timing
 		return "limits", "Run timeout", "0s means unlimited. Examples: 30m, 1h30m.", timing, false
 	case "run_no_progress_limit":
 		return "limits", "Repeated tool limit", "0 disables detection; otherwise use at least 2 consecutive repeated calls.", timing, false
+	case "permission_mode":
+		return "tools", "Permission mode", "default asks you; auto lets the action classifier decide eligible tool calls and asks only at its limits. Applies after restart.", interaction.SettingRestart, false
 	case "default_project_trust":
 		return "project", "Default project trust", "Startup policy for projects without a saved decision; does not reload this project.", interaction.SettingRestart, false
 	case "no_dep_install":
@@ -123,6 +125,8 @@ func (s *interactiveSession) ReadSettings(ctx context.Context) (interaction.Sett
 			}
 		case "default_project_trust":
 			field.Choices = []interaction.SettingChoice{{Value: "ask", Label: "Ask"}, {Value: "always", Label: "Always trust"}, {Value: "never", Label: "Never trust"}}
+		case "permission_mode":
+			field.Choices = []interaction.SettingChoice{{Value: "default", Label: "Default", Description: "Ask before actions outside the workspace or with consequences"}, {Value: "auto", Label: "Auto", Description: "The action classifier decides; you are asked only at its limits"}}
 		}
 		if def.ID == config.SettingProvider || def.ID == config.SettingModel {
 			field.ResetIDs = []string{"provider", "model", "thinking"}

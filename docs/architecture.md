@@ -101,7 +101,7 @@ Optional capabilities retain their own owners:
 | `internal/web/exa` | Exa Search REST adapter: wire types, bounded HTTP, error classification, normalization into evidence |
 | `internal/web/httpfetch` | Page fetcher: URL policy, IP-literal checks, standard-transport proxy/DNS/dialing, bounded redirects and bodies, HTML-to-Markdown extraction |
 | `internal/guard` | File/command/network policies, identity-bound MCP permissions, transient grants and allow/ask/deny decisions |
-| `internal/classify` | Auto mode action classifier: reasoning-blind request/verdict contract, nonce-framed two-stage prompt, labeled evaluation cases and scoring; not yet wired into the Guard path |
+| `internal/classify` | Auto mode action classifier: reasoning-blind request/verdict contract, nonce-framed two-stage prompt, labeled evaluation cases and scoring; `internal/app` routes auto mode decisions to it |
 | `internal/session` | Versioned JSONL replay, tree navigation, compaction context |
 | `internal/trust` | Protected-resource discovery and global Trust decisions |
 | `internal/skill` | Agent Skill discovery, SKILL.md parse, source layering, embedded builtins |

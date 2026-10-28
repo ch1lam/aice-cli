@@ -67,6 +67,7 @@ func (s *interactiveSession) slashResume(ctx context.Context, request interactio
 	view.ResetSideThreads = true
 	if s.guard != nil {
 		s.guard.ResetSessionGrants()
+		s.guardAdapter.autoState().reset()
 	}
 	s.stateMu.Lock()
 	s.totalUsage = session.TotalUsage(snapshot)

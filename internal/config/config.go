@@ -117,7 +117,18 @@ type Settings struct {
 	DefaultProjectTrust trust.Default     `json:"default_project_trust,omitempty"`
 	NoDepInstall        bool              `json:"no_dep_install,omitempty"`
 	NoUpdateCheck       bool              `json:"no_update_check,omitempty"`
+	PermissionMode      PermissionMode    `json:"permission_mode,omitempty"`
 }
+
+// PermissionMode selects who resolves tool calls that would ask.
+type PermissionMode string
+
+const (
+	// PermissionModeDefault asks a person.
+	PermissionModeDefault PermissionMode = "default"
+	// PermissionModeAuto lets the action classifier decide eligible calls.
+	PermissionModeAuto PermissionMode = "auto"
+)
 
 // Paths identifies configuration sources and helper storage.
 type Paths struct {
@@ -146,12 +157,15 @@ type Config struct {
 	BaseURLs         map[string]string
 	NoDepInstall     bool
 	NoUpdateCheck    bool
+	PermissionMode   PermissionMode
 	CodexCredentials CodexCredentials
 	Web              WebConfig
 	MCP              MCPConfig
 	// Permissions concatenates user and trusted project rules; the execution
 	// gate validates them.
-	Permissions      PermissionRules
+	Permissions PermissionRules
+	// AutoMode configures the auto mode classifier.
+	AutoMode         AutoModeSettings
 	Paths            Paths
 	Diagnostics      []string
 	startupOverrides map[string]bool
@@ -219,6 +233,7 @@ func EnvironmentVariables() map[string]string {
 		"default_project_trust": "AICE_DEFAULT_PROJECT_TRUST",
 		"context_windows":       "AICE_CONTEXT_WINDOWS",
 		"no_dep_install":        "AICE_NO_DEP_INSTALL", "no_update_check": "AICE_NO_UPDATE_CHECK",
+		"permission_mode": "AICE_PERMISSION_MODE",
 	}
 	providerEnvironmentVariables(variables)
 	return variables
@@ -263,6 +278,7 @@ func LoadFiles(paths Paths, options LoadOptions) (Config, error) {
 	var webValues webLayer
 	var mcpValues mcpLayer
 	var permissions PermissionRules
+	var autoMode AutoModeSettings
 	layers := newFrozenSettings()
 	fileValues := make(map[string]any)
 	for _, path := range []string{paths.GlobalSettings, paths.GlobalAuth, paths.ProjectSettings} {
@@ -300,6 +316,9 @@ func LoadFiles(paths Paths, options LoadOptions) (Config, error) {
 		}
 		// Nested service collections retain their identity outside Viper's deep merge.
 		if err := mcpValues.extract(path, values, paths); err != nil {
+			return Config{}, err
+		}
+		if err := autoMode.extract(path, values, paths, &diagnostics); err != nil {
 			return Config{}, err
 		}
 		if raw, ok := values[permissionsKey]; ok {
@@ -357,6 +376,7 @@ func LoadFiles(paths Paths, options LoadOptions) (Config, error) {
 	}
 	c.Paths, c.Diagnostics = paths, diagnostics
 	c.Permissions = permissions
+	c.AutoMode = autoMode
 	c.layers = layers
 	if options.Environment {
 		environment := make(map[string]string)
@@ -447,6 +467,7 @@ func (c Config) settings() Settings {
 		DefaultProjectTrust: c.DefaultProjectTrust,
 		NoDepInstall:        c.NoDepInstall,
 		NoUpdateCheck:       c.NoUpdateCheck,
+		PermissionMode:      c.PermissionMode,
 	}
 	for key, tokens := range c.ContextWindows {
 		provider, model, _ := strings.Cut(key, "/")
@@ -528,6 +549,10 @@ func decodeEffective(v *viper.Viper) (Config, error) {
 		BaseURLs:            baseURLs,
 		NoDepInstall:        s.NoDepInstall,
 		NoUpdateCheck:       s.NoUpdateCheck,
+		PermissionMode:      s.PermissionMode,
+	}
+	if c.PermissionMode == "" {
+		c.PermissionMode = PermissionModeDefault
 	}
 	if len(s.ContextWindows) != 0 {
 		c.ContextWindows = make(map[string]int64, len(s.ContextWindows))
@@ -675,6 +700,11 @@ func (s Settings) validate() error {
 		llm.ThinkingLevelMax:
 	default:
 		return fmt.Errorf("unsupported thinking level %q", s.Thinking)
+	}
+	switch s.PermissionMode {
+	case "", PermissionModeDefault, PermissionModeAuto:
+	default:
+		return fmt.Errorf("unsupported permission_mode %q (default or auto)", s.PermissionMode)
 	}
 	switch s.DefaultProjectTrust {
 	case "", trust.DefaultAsk, trust.DefaultAlways, trust.DefaultNever:

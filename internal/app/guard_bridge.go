@@ -80,30 +80,56 @@ func executionGuardConfig(configuration config.Config, workspace string, readOnl
 type guardAdapter struct {
 	inner *guard.Guard
 	mcp   mcpToolBindings
+	// auto is set in auto permission mode.
+	auto *autoMode
 	// yolo upgrades Decision ask to allow. It never remaps deny.
 	yolo bool
 }
 
 func (g *guardAdapter) Check(ctx context.Context, call llm.ToolCall) (agent.GuardResult, error) {
+	result, hints, err := g.evaluate(ctx, call)
+	if err != nil || g.autoState() == nil {
+		return result, err
+	}
+	return g.auto.decide(ctx, call, result, hints)
+}
+
+// checkInput checks a user attachment. The user chose the file, so auto mode
+// does not classify it; approvals stay with the person.
+func (g *guardAdapter) checkInput(ctx context.Context, call llm.ToolCall) (agent.GuardResult, error) {
+	result, _, err := g.evaluate(ctx, call)
+	return result, err
+}
+
+// routeHints tell auto mode how an allowed call was reached.
+type routeHints struct {
+	readOnly    bool // bash made only of read-only commands
+	ruleCovered bool // bash covered by explicit allow rules or an exact grant
+	mcp         bool // an MCP binding decided the call
+}
+
+// evaluate applies the default-mode gate, including --yolo.
+func (g *guardAdapter) evaluate(ctx context.Context, call llm.ToolCall) (agent.GuardResult, routeHints, error) {
 	if g == nil || g.inner == nil {
 		return agent.GuardResult{
 			Decision: agent.GuardDeny,
 			Reason:   "execution gate is not configured",
 			RuleID:   "guard.unavailable",
-		}, nil
+		}, routeHints{}, nil
 	}
 	if g.mcp != nil {
 		binding, scope, found, err := g.mcp.MCPBinding(ctx, call.Name)
 		if err != nil {
-			return agent.GuardResult{}, fmt.Errorf("MCP run binding is unavailable")
+			return agent.GuardResult{}, routeHints{}, fmt.Errorf("MCP run binding is unavailable")
 		}
 		if found {
-			return g.checkMCP(ctx, call, binding, scope)
+			result, err := g.checkMCP(ctx, call, binding, scope)
+			return result, routeHints{mcp: true}, err
 		}
 	}
 	res, err := g.inner.Check(ctx, call)
 	if err != nil {
-		return agent.GuardResult{}, err
+		return agent.GuardResult{}, routeHints{}, err
 	}
 	// Read's tolerant path spelling and symlink resolution must not bypass the
 	// gate. Check both the requested name and the physical target before asking.
@@ -112,11 +138,11 @@ func (g *guardAdapter) Check(ctx context.Context, call llm.ToolCall) (agent.Guar
 		if json.Unmarshal(call.Arguments, &args) == nil && args.Path != "" && g.inner.Workspace() != "" {
 			workspace, err := tool.NewWorkspace(g.inner.Workspace())
 			if err != nil {
-				return agent.GuardResult{}, err
+				return agent.GuardResult{}, routeHints{}, err
 			}
 			reader, err := tool.NewRead(workspace)
 			if err != nil {
-				return agent.GuardResult{}, err
+				return agent.GuardResult{}, routeHints{}, err
 			}
 			resolved, err := reader.ResolvePath(args.Path)
 			if err == nil && resolved != g.inner.ResolveAbsolute(args.Path, "read") {
@@ -125,7 +151,7 @@ func (g *guardAdapter) Check(ctx context.Context, call llm.ToolCall) (agent.Guar
 				physical.Arguments, _ = json.Marshal(args)
 				other, err := g.inner.Check(ctx, physical)
 				if err != nil {
-					return agent.GuardResult{}, err
+					return agent.GuardResult{}, routeHints{}, err
 				}
 				if other.Decision == guard.DecisionDeny {
 					res = other
@@ -140,7 +166,7 @@ func (g *guardAdapter) Check(ctx context.Context, call llm.ToolCall) (agent.Guar
 	if call.Name == "grep" && res.Decision != guard.DecisionDeny {
 		res, revalidate, err = g.checkGrepPaths(ctx, call, res)
 		if err != nil {
-			return agent.GuardResult{}, err
+			return agent.GuardResult{}, routeHints{}, err
 		}
 	}
 	// Mutations keep literal spelling but follow existing symlinks. Fail closed
@@ -148,33 +174,33 @@ func (g *guardAdapter) Check(ctx context.Context, call llm.ToolCall) (agent.Guar
 	if (call.Name == "write" || call.Name == "edit") && res.Decision != guard.DecisionDeny {
 		var args map[string]json.RawMessage
 		if err := json.Unmarshal(call.Arguments, &args); err != nil {
-			return agent.GuardResult{}, err
+			return agent.GuardResult{}, routeHints{}, err
 		}
 		var path string
 		if err := json.Unmarshal(args["path"], &path); err != nil {
-			return agent.GuardResult{}, err
+			return agent.GuardResult{}, routeHints{}, err
 		}
 		workspace, err := tool.NewWorkspace(g.inner.Workspace())
 		if err != nil {
-			return agent.GuardResult{}, err
+			return agent.GuardResult{}, routeHints{}, err
 		}
 		var resolvePath func(string) (string, error)
 		if call.Name == "edit" {
 			editor, err := tool.NewEdit(workspace)
 			if err != nil {
-				return agent.GuardResult{}, err
+				return agent.GuardResult{}, routeHints{}, err
 			}
 			resolvePath = editor.ResolvePath
 		} else {
 			writer, err := tool.NewWrite(workspace)
 			if err != nil {
-				return agent.GuardResult{}, err
+				return agent.GuardResult{}, routeHints{}, err
 			}
 			resolvePath = writer.ResolvePath
 		}
 		resolved, err := resolvePath(path)
 		if err != nil {
-			return agent.GuardResult{}, err
+			return agent.GuardResult{}, routeHints{}, err
 		}
 		revalidate = func(ctx context.Context) error {
 			if err := ctx.Err(); err != nil {
@@ -195,7 +221,7 @@ func (g *guardAdapter) Check(ctx context.Context, call llm.ToolCall) (agent.Guar
 			physical.Arguments, _ = json.Marshal(args)
 			other, err := g.inner.Check(ctx, physical)
 			if err != nil {
-				return agent.GuardResult{}, err
+				return agent.GuardResult{}, routeHints{}, err
 			}
 			if other.Decision == guard.DecisionDeny {
 				res = other
@@ -215,7 +241,7 @@ func (g *guardAdapter) Check(ctx context.Context, call llm.ToolCall) (agent.Guar
 			mapped.Decision = agent.GuardAllow
 		}
 	}
-	return mapped, nil
+	return mapped, routeHints{readOnly: res.ReadOnly, ruleCovered: res.RuleCovered}, nil
 }
 
 // appendUniqueApprovals adds approvals whose rule and resolved path are not

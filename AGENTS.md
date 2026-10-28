@@ -81,7 +81,8 @@ and routes; README files may summarize product behavior and link to details.
   derived views. [Sessions](docs/execution-sessions.md#sessions)
 - **Keep authority explicit.** Every tool execution goes through the injected
   Guard; non-empty tool sets require one. Unknown tools ask, non-interactive
-  asks fail closed, and `--yolo` must not lift a deny. Trust controls project
+  asks fail closed, and `--yolo` must not lift a deny. Auto mode's classifier
+  never sees tool output and never resolves denials or human-only rules. Trust controls project
   configuration and instruction loading, not host isolation. Check documented deviations before
   extending these paths. [Execution boundary](docs/execution-sessions.md#tool-execution-boundary)
 - **Extend only for a concrete need.** Use the existing boundaries; review any

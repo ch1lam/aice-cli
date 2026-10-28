@@ -61,6 +61,7 @@ func (s *interactiveSession) NewRun(
 			settings.configuration,
 		)
 	}
+	typed := input.Prompt
 	input, err = s.prepareAttachedInput(ctx, input)
 	if err != nil {
 		return nil, err
@@ -72,6 +73,7 @@ func (s *interactiveSession) NewRun(
 	if err := s.ensureSessionStore(ctx); err != nil {
 		return nil, err
 	}
+	s.guardAdapter.autoState().recordIntent(typed, "prompt")
 	return &interactiveRun{
 		session:  s,
 		prompt:   prompt,
@@ -113,6 +115,7 @@ func (r *interactiveRun) Deliver(ctx context.Context, delivery interaction.Deliv
 	if r.session == nil {
 		return interaction.ErrClosed
 	}
+	typed := delivery.Text
 	input, err := r.session.prepareAttachedInput(ctx, interaction.RunInput{Prompt: delivery.Text, Images: delivery.Images, Files: delivery.Files, Skills: delivery.Skills})
 	if err != nil {
 		return err
@@ -133,7 +136,15 @@ func (r *interactiveRun) Deliver(ctx context.Context, delivery interaction.Deliv
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	return r.mailbox.Deliver(delivery)
+	if err := r.mailbox.Deliver(delivery); err != nil {
+		return err
+	}
+	kind := "steer"
+	if delivery.Kind == interaction.DeliveryKindFollowUp {
+		kind = "follow-up"
+	}
+	r.session.guardAdapter.autoState().recordIntent(typed, kind)
+	return nil
 }
 
 func (r *interactiveRun) Run(ctx context.Context) (returnErr error) {

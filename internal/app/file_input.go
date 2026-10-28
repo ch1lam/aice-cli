@@ -77,7 +77,7 @@ func prepareFileInput(ctx context.Context, input interaction.RunInput, workspace
 func authorizeInputTool(ctx context.Context, call llm.ToolCall, label string, gate *guardAdapter,
 	ask func(context.Context, llm.ToolCall, agent.GuardApproval) (agent.GuardAskReply, error),
 ) error {
-	decision, err := gate.Check(ctx, call)
+	decision, err := gate.checkInput(ctx, call)
 	if err != nil {
 		return err
 	}

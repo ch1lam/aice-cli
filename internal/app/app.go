@@ -159,6 +159,7 @@ func newCommand(dependencies dependencies) (*cobra.Command, error) {
 			"run_token_budget":      "run-token-budget", "run_timeout": "run-timeout",
 			"provider": "provider", "model": "model", "thinking": "thinking",
 			"no_dep_install": "no-dep-install", "no_update_check": "no-update-check",
+			"permission_mode": "permission-mode",
 		} {
 			if !command.Flags().Changed(name) {
 				continue
@@ -317,7 +318,8 @@ func (a *application) Print(
 	}, environment.tools); err != nil {
 		return err
 	}
-	loop, err := agent.NewLoop(configured.service, environment.tools, agent.WithGuard(environment.guardAdapter), agent.WithRunLimits(runLimits(configured.configuration)))
+	environment.guardAdapter.autoState().recordIntent(request.Prompt, "prompt")
+	loop, err := agent.NewLoop(configured.service, environment.tools, agent.WithGuard(environment.guardAdapter), agent.WithRunLimits(autoRunLimits(configured.configuration)))
 	if err != nil {
 		return fmt.Errorf("app: create agent loop: %w", err)
 	}
@@ -687,6 +689,12 @@ func (a *application) prepareRunEnvironment(
 		return nil, err
 	}
 	adapter.mcp = mcpRunRouter{}
+	if configured.configuration.PermissionMode == config.PermissionModeAuto {
+		if yolo {
+			return nil, fmt.Errorf("app: --yolo cannot be combined with permission mode auto")
+		}
+		adapter.auto = newAutoMode(a.autoClassifier(configured), workspace.PhysicalPath(), configured.configuration.AutoMode, !interactive)
+	}
 	prepared = true
 	return &runEnvironment{
 		mcp:           mcpState,

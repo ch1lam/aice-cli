@@ -332,6 +332,83 @@ isolation still belongs to an external container, VM, or OS sandbox.
 Project Trust does not change tool permissions; see [Project Trust and
 prompts](project-trust.md).
 
+### Auto mode
+
+`permission_mode` selects who resolves calls that would ask: `default` (the
+rules above; a person decides) or `auto`, where the action classifier in
+`internal/classify` decides eligible calls. Set it in settings, with
+`AICE_PERMISSION_MODE`, or with `--permission-mode` for one invocation; a
+Settings change applies after restart. `--yolo` cannot be combined with auto.
+
+In auto mode every call is routed by the default-mode result:
+
+| Result | Handling |
+| --- | --- |
+| Deny (`credentials`, `secret-files`, `rule.deny`, MCP user deny) | deny |
+| Ask with `controlFile.write`, `bash.privileged`, `bash.disk`, `bash.fetchExec`, `rule.ask`, `mcp.connection` or `unknownTool` | a person decides; `--print` denies |
+| Read-only bash (`cat`, `rg`, `git status`, … with no writes or findings), bash covered by explicit non-broad allow rules or an exact Session grant, read tools, workspace `write`/`edit` outside `.git/`, MCP calls an explicit permission or Session grant allows | allow without review |
+| Any other ask (`path.outside.*`, `bash.delete`/`loseWork`/`outbound`/`dynamic`/`permissions`, `mcp.tool`), any other bash, `web_fetch`, `web_search`, writes under `.git/` | classifier |
+
+Broad allow rules that permit arbitrary code (`bash(python *)`, `bash(npm run *)`,
+`bash(make *)`, `bash(git *)` and similar) do not count as coverage in auto
+mode; those commands go to the classifier. `@file` attachments are never
+classified: the user chose them, so they keep their default-mode approvals.
+
+The classifier is reasoning-blind. It receives the text the user typed in this
+Session (prompts, steers and follow-ups, recorded before attachments and Skills
+are inlined), earlier tool calls of the Session with their gate outcome but
+without output, and the pending call with the effects the gate resolved. It
+never sees tool output, web or MCP content, assistant text or reasoning,
+compaction summaries, project instructions or MCP tool descriptions. Agent data
+is JSON-encoded inside blocks framed by a per-process random marker. The
+environment names the workspace, its current git branch and remotes. A fast
+single-word stage allows clear cases; anything else is reasoned over the same
+prompt prefix.
+
+| Verdict | Effect |
+| --- | --- |
+| allow | the call runs; its tool result records `review` |
+| block | a `auto.block` deny returned to the model with the reason and an instruction to take a safer path; recorded as `review` |
+| unavailable (model error, timeout, missing credentials) | a person decides, with the gate's approvals and the reason; `--print` denies |
+
+Interactively, the third consecutive block, and every block from the
+twentieth after the latest prompt, becomes a confirmation (`auto.block`)
+instead of a denial; answering it restarts the streak, and so does any new
+message. In `--print` the Loop's
+`GuardDenials` run limit stops the run after three consecutive or twenty total
+denied calls. Verdicts are cached per call until the user sends another
+message; `/new` and Session restore forget intent, history and cache. Action
+history is kept in memory for the process, so a restored Session starts
+without earlier calls.
+
+`auto_mode` in settings extends the built-in template:
+
+```json
+{
+  "permission_mode": "auto",
+  "auto_mode": {
+    "model": "deepseek-v4.1-flash",
+    "environment": ["docs.acme.internal is our documentation host"],
+    "block": ["Never run migrations against databases other than localhost"],
+    "allow": ["Pushing to branches named feature/* is fine"]
+  }
+}
+```
+
+`model` selects another model of the configured provider (empty uses the startup
+model); `environment`, `block` and `allow` append to the built-in trust
+boundary, block rules and allow exceptions. Trusted project settings may add
+`environment` and `block` only; project `model` and `allow` are ignored with a
+diagnostic, and `auth.json` entries are ignored.
+
+The classifier is a usability and risk-reduction layer, not isolation. It can
+allow an action the user did not intend: a run of individually plausible steps,
+a consent phrase read too broadly, or an identifier whose origin it cannot
+verify because it never sees tool output. The published reference design
+reports a 17% miss rate on real overeager actions; AICE's own evaluation set and
+results are in `internal/classify/eval/`. Use default mode or an isolated
+environment for high-stakes infrastructure.
+
 ### Tool behavior
 
 The tool layer validates arguments before effects, propagates cancellation,

@@ -563,6 +563,7 @@ func (s *interactiveSession) slashNew(
 	s.conversation.store = nil
 	s.conversation.historyLeaf, s.conversation.historyReady = "", false
 	s.guard.ResetSessionGrants()
+	s.guardAdapter.autoState().reset()
 	s.conversation.historyMu.Lock()
 	s.conversation.history = nil
 	s.conversation.historyMu.Unlock()
