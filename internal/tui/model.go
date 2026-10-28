@@ -130,16 +130,19 @@ type model struct {
 	// screen. Streaming batches skip layout until the gesture settles, then
 	// release and clear paths pay one catch-up refresh instead of one per
 	// batch. It is only ever true while entries changed mid-gesture.
-	viewportStale         bool
-	folds                 map[foldTarget]bool
-	pointer               transcriptPointer
-	composerActive        bool
-	input                 composerInput
-	spinner               spinner.Model
-	help                  help.Model
-	keys                  keyMap
-	currentModel          interaction.DisplayModel
-	thinking              interaction.DisplayThinking
+	viewportStale  bool
+	folds          map[foldTarget]bool
+	pointer        transcriptPointer
+	composerActive bool
+	input          composerInput
+	spinner        spinner.Model
+	help           help.Model
+	keys           keyMap
+	currentModel   interaction.DisplayModel
+	thinking       interaction.DisplayThinking
+	// permissionMode is "default" or "auto"; setPermissionMode switches it.
+	permissionMode        string
+	setPermissionMode     func(string) tea.Cmd
 	apiKeyConfigured      bool
 	sessionUsage          interaction.DisplayUsage
 	contextShowFraction   bool
@@ -335,6 +338,8 @@ func (m model) update(message tea.Msg) (tea.Model, tea.Cmd) {
 		return m.applySettingsRead(message)
 	case settingsSaveResult:
 		return m.applySettingsSave(message)
+	case permissionModeResult:
+		return m.applyPermissionMode(message), nil
 	case inputComponentResult:
 		if message.generation != m.inputGeneration || message.owner != m.inputIdentity() {
 			return m, nil

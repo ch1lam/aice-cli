@@ -889,6 +889,7 @@ The composer remains active while an Agent run is working:
 | `Shift+Enter`, `Alt+Enter`, or `Ctrl+J` | Insert a newline |
 | `Esc` | Cancel the active response, preserving the draft |
 | `Ctrl+C` | Clear the editor; press again consecutively to exit AICE |
+| `Shift+Tab` | Switch this Session between `default` and `auto` [permission modes](execution-sessions.md#auto-mode) from the next tool call |
 
 In the main and side composers, the first `Ctrl+C` clears all unsent text,
 long-paste placeholders, and image attachments without adding a notice row.

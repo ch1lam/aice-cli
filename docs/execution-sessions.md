@@ -336,9 +336,12 @@ prompts](project-trust.md).
 
 `permission_mode` selects who resolves calls that would ask: `default` (the
 rules above; a person decides) or `auto`, where the action classifier in
-`internal/classify` decides eligible calls. Set it in settings, with
-`AICE_PERMISSION_MODE`, or with `--permission-mode` for one invocation; a
-Settings change applies after restart. `--yolo` cannot be combined with auto.
+`internal/classify` decides eligible calls. The saved default comes from
+settings, `AICE_PERMISSION_MODE` or `--permission-mode`; a Settings change is
+saved and applies to the next tool call. In the TUI, Shift+Tab switches the
+current Session between `default` and `auto` without saving, also from the next
+tool call, including during a run; the composer shows `auto ·` before the model
+name. `--yolo` cannot be combined with auto.
 
 In auto mode every call is routed by the default-mode result:
 
@@ -354,10 +357,12 @@ Broad allow rules that permit arbitrary code (`bash(python *)`, `bash(npm run *)
 mode; those commands go to the classifier. `@file` attachments are never
 classified: the user chose them, so they keep their default-mode approvals.
 
-The classifier is reasoning-blind. It receives the text the user typed in this
-Session (prompts, steers and follow-ups, recorded before attachments and Skills
-are inlined), earlier tool calls of the Session with their gate outcome but
-without output, and the pending call with the effects the gate resolved. It
+The classifier is reasoning-blind. Auto mode keeps no state of its own: at each
+check it reads the run's active branch (the Session, or a print run's messages)
+and passes the text the user typed (each user message up to the first
+attached-Skill or attached-file marker the application appends), earlier tool
+calls with their outcome but without output, and the pending call with the
+effects the gate resolved. It
 never sees tool output, web or MCP content, assistant text or reasoning,
 compaction summaries, project instructions or MCP tool descriptions. Agent data
 is JSON-encoded inside blocks framed by a per-process random marker. The
@@ -376,10 +381,8 @@ twentieth after the latest prompt, becomes a confirmation (`auto.block`)
 instead of a denial; answering it restarts the streak, and so does any new
 message. In `--print` the Loop's
 `GuardDenials` run limit stops the run after three consecutive or twenty total
-denied calls. Verdicts are cached per call until the user sends another
-message; `/new` and Session restore forget intent, history and cache. Action
-history is kept in memory for the process, so a restored Session starts
-without earlier calls.
+denied calls. Block counts come from `review` records on the active branch, so
+a restored Session or another branch carries its own history.
 
 `auto_mode` in settings extends the built-in template:
 

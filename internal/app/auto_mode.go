@@ -2,7 +2,6 @@ package app
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -11,6 +10,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/ch1lam/aice-cli/internal/agent"
 	"github.com/ch1lam/aice-cli/internal/classify"
@@ -18,6 +18,7 @@ import (
 	"github.com/ch1lam/aice-cli/internal/guard"
 	"github.com/ch1lam/aice-cli/internal/hostpath"
 	"github.com/ch1lam/aice-cli/internal/llm"
+	"github.com/ch1lam/aice-cli/internal/session"
 )
 
 // Auto mode rule identifiers.
@@ -26,12 +27,12 @@ const (
 	ruleAutoUnavailable = "auto.unavailable"
 )
 
-// Fuse limits: consecutive or total classifier blocks per user turn before
-// a person decides. Headless runs stop through agent.RunLimits instead.
+// Fuse limits: consecutive or total classifier blocks since the latest user
+// message before a person decides. Headless runs stop through
+// agent.RunLimits instead.
 const (
 	autoBlockStreak = 3
 	autoBlockTotal  = 20
-	autoHistoryCap  = 200
 )
 
 // humanOnlyRules never go to the classifier: AICE configuration, privilege,
@@ -94,16 +95,29 @@ func autoRunLimits(c config.Config) agent.RunLimits {
 	return limits
 }
 
-// autoState returns the adapter's auto mode, or nil.
-func (g *guardAdapter) autoState() *autoMode {
-	if g == nil {
-		return nil
-	}
-	return g.auto
+// autoActive reports whether auto mode decides this adapter's calls.
+func (g *guardAdapter) autoActive() bool {
+	return g != nil && g.auto != nil && g.auto.enabled.Load()
 }
 
-// autoMode resolves eligible gate decisions with the action classifier. Its
-// state belongs to one interactive Session or print run.
+// setPermissionMode switches modes for the next check. Auto mode cannot be
+// combined with --yolo.
+func (g *guardAdapter) setPermissionMode(mode config.PermissionMode) error {
+	if g == nil || g.auto == nil {
+		return fmt.Errorf("app: permission modes are unavailable")
+	}
+	auto := mode == config.PermissionModeAuto
+	if auto && g.yolo {
+		return fmt.Errorf("app: --yolo cannot be combined with permission mode auto")
+	}
+	g.auto.enabled.Store(auto)
+	return nil
+}
+
+// autoMode resolves eligible gate decisions with the action classifier. It
+// keeps no conversation state: intent, earlier actions and the block streak
+// are read from the run's active branch at each check, so switching modes
+// takes effect on the next call and a restored Session keeps its history.
 type autoMode struct {
 	classify  classifierFunc
 	workspace string
@@ -111,54 +125,18 @@ type autoMode struct {
 	// headless runs have no person: escalations deny and the Loop's
 	// GuardDenials limit stops a blocked run.
 	headless bool
-
-	mu        sync.Mutex
-	intent    []classify.UserTurn
-	intentVer int
-	history   []classify.PastAction
-	cache     map[string]classify.Verdict
-	streak    int
-	total     int
+	enabled  atomic.Bool
 }
 
-func newAutoMode(classifier classifierFunc, workspace string, settings config.AutoModeSettings, headless bool) *autoMode {
-	return &autoMode{
+func newAutoMode(classifier classifierFunc, workspace string, settings config.AutoModeSettings, headless, enabled bool) *autoMode {
+	a := &autoMode{
 		classify:  classifier,
 		workspace: workspace,
 		slots:     classify.Slots{Environment: settings.Environment, Block: settings.Block, Allow: settings.Allow},
 		headless:  headless,
-		cache:     map[string]classify.Verdict{},
 	}
-}
-
-// recordIntent stores text the user typed, before attachments are inlined.
-// A new prompt starts a fresh fuse budget; steering resets the streak.
-func (a *autoMode) recordIntent(text, kind string) {
-	if a == nil || strings.TrimSpace(text) == "" {
-		return
-	}
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	a.intent = append(a.intent, classify.UserTurn{Text: text, Kind: kind})
-	a.intentVer++
-	clear(a.cache)
-	a.streak = 0
-	if kind == "prompt" {
-		a.total = 0
-	}
-}
-
-// reset forgets the Session's intent, history, cache and fuse counts.
-func (a *autoMode) reset() {
-	if a == nil {
-		return
-	}
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	a.intent, a.history = nil, nil
-	a.intentVer++
-	clear(a.cache)
-	a.streak, a.total = 0, 0
+	a.enabled.Store(enabled)
+	return a
 }
 
 // decide routes a default-mode result: denials and human-only approvals
@@ -166,31 +144,31 @@ func (a *autoMode) reset() {
 // classifier.
 func (a *autoMode) decide(ctx context.Context, call llm.ToolCall, res agent.GuardResult, hints routeHints) (agent.GuardResult, error) {
 	switch {
-	case res.Decision == agent.GuardDeny:
-		a.remember(call, "denied")
-		return res, nil
-	case res.Decision == agent.GuardAsk && slices.ContainsFunc(res.Approvals, func(ap agent.GuardApproval) bool { return slices.Contains(humanOnlyRules, ap.RuleID) }):
-		a.remember(call, "asked")
-		return res, nil
-	case res.Decision == agent.GuardAllow && !a.needsReview(call, hints):
-		a.remember(call, "allowed")
+	case res.Decision == agent.GuardDeny,
+		res.Decision == agent.GuardAsk && slices.ContainsFunc(res.Approvals, func(ap agent.GuardApproval) bool { return slices.Contains(humanOnlyRules, ap.RuleID) }),
+		res.Decision == agent.GuardAllow && !a.needsReview(call, hints):
 		return res, nil
 	}
-	verdict, err := a.verdict(ctx, call, res)
+	entries, err := transcriptFrom(ctx)
+	if err != nil {
+		return a.escalate(call, res, err.Error()), nil
+	}
+	req := transcriptRequest(entries, call)
+	req.Action = classifierAction(call, res)
+	req.Environment = gitEnvironment(a.workspace)
+	req.Environment.Slots = a.slots
+	verdict, err := a.classify(ctx, req)
 	if err != nil {
 		return agent.GuardResult{}, err
 	}
 	review := &llm.ToolReview{Mode: string(config.PermissionModeAuto), Decision: string(verdict.Decision), Stage: verdict.Stage, Reason: verdict.Reason, Classifier: verdict.Classifier}
 	switch verdict.Decision {
 	case classify.Allow:
-		a.count(false)
-		a.remember(call, "allowed")
 		return agent.GuardResult{Decision: agent.GuardAllow, Revalidate: res.Revalidate, Review: review}, nil
 	case classify.Block:
-		streak, total := a.count(true)
-		a.remember(call, "blocked")
+		streak, total := blockCounts(entries)
+		streak, total = streak+1, total+1
 		if !a.headless && (streak >= autoBlockStreak || total >= autoBlockTotal) {
-			a.resetStreak()
 			return agent.GuardResult{Decision: agent.GuardAsk, Revalidate: res.Revalidate, Approvals: []agent.GuardApproval{{
 				RuleID: ruleAutoBlock,
 				Reason: fmt.Sprintf("Auto mode blocked %d actions in a row; you decide this one. Classifier: %s", streak, verdict.Reason),
@@ -202,17 +180,105 @@ func (a *autoMode) decide(ctx context.Context, call llm.ToolCall, res agent.Guar
 			Reason: "Auto mode blocked this action: " + strings.TrimRight(verdict.Reason, ". ") + ". Do not retry it or work around the block; take a safer approach, or stop and ask the user.",
 		}, nil
 	}
-	// No judgement: a person decides, with the gate's own approvals if any.
-	a.remember(call, "asked")
-	approvals := res.Approvals
+	return a.escalate(call, res, verdict.Reason), nil
+}
+
+// escalate gives a call without a judgement to a person, keeping the gate's
+// approvals when it had any. Headless runs deny it.
+func (a *autoMode) escalate(call llm.ToolCall, res agent.GuardResult, reason string) agent.GuardResult {
+	approvals := slices.Clone(res.Approvals)
 	if len(approvals) == 0 {
 		approvals = []agent.GuardApproval{{RuleID: ruleAutoUnavailable, Action: approvalAction(call, res)}}
 	}
-	approvals = slices.Clone(approvals)
 	for i := range approvals {
-		approvals[i].Reason = strings.TrimSpace(approvals[i].Reason + " Auto mode could not review it: " + verdict.Reason)
+		approvals[i].Reason = strings.TrimSpace(approvals[i].Reason + " Auto mode could not review it: " + reason)
 	}
-	return agent.GuardResult{Decision: agent.GuardAsk, Revalidate: res.Revalidate, Approvals: approvals}, nil
+	return agent.GuardResult{Decision: agent.GuardAsk, Revalidate: res.Revalidate, Approvals: approvals}
+}
+
+// transcriptRequest derives the classifier's view of the conversation: the
+// text the user typed and earlier tool calls with their outcome, never tool
+// output, assistant text or compaction summaries.
+func transcriptRequest(entries []session.MessageEntry, pending llm.ToolCall) classify.Request {
+	var req classify.Request
+	outcomes := map[string]string{}
+	for _, entry := range entries {
+		if result, ok := entry.Message.(llm.ToolResultMessage); ok {
+			outcomes[result.ToolCallID] = toolOutcome(result)
+		}
+	}
+	for _, entry := range entries {
+		switch message := entry.Message.(type) {
+		case llm.UserMessage:
+			if text := typedText(message); text != "" {
+				req.Intent = append(req.Intent, classify.UserTurn{Text: text})
+			}
+		case llm.AssistantMessage:
+			for _, part := range message.Content {
+				call := part.ToolCall
+				if part.Type != llm.ContentTypeToolCall || call == nil || call.ID == pending.ID {
+					continue
+				}
+				if outcome, ok := outcomes[call.ID]; ok {
+					req.History = append(req.History, classify.PastAction{Tool: call.Name, Arguments: call.Arguments, Outcome: outcome})
+				}
+			}
+		}
+	}
+	return req
+}
+
+// typedText is the user's own words: attachments are appended after them,
+// starting at an application marker the attachment cannot move.
+func typedText(message llm.UserMessage) string {
+	var text strings.Builder
+	for _, part := range message.Content {
+		if part.Type == llm.ContentTypeText {
+			text.WriteString(part.Text)
+		}
+	}
+	typed := text.String()
+	for _, marker := range []string{attachedSkillsMarker, attachedFileMarker} {
+		if i := strings.Index(typed, marker); i >= 0 {
+			typed = typed[:i]
+		}
+	}
+	return strings.TrimSpace(typed)
+}
+
+func toolOutcome(result llm.ToolResultMessage) string {
+	switch {
+	case result.Details != nil && result.Details.Review != nil && result.Details.Review.Decision == string(classify.Block):
+		return "blocked"
+	case result.IsError && result.Details != nil && result.Details.State == llm.ExecutionNotDispatched:
+		return "denied"
+	case result.IsError:
+		return "failed"
+	}
+	return "executed"
+}
+
+// blockCounts counts classifier blocks since the latest user message: the
+// trailing streak and the total.
+func blockCounts(entries []session.MessageEntry) (streak, total int) {
+	counting := true
+	for i := len(entries) - 1; i >= 0; i-- {
+		switch message := entries[i].Message.(type) {
+		case llm.UserMessage:
+			return streak, total
+		case llm.ToolResultMessage:
+			blocked := toolOutcome(message) == "blocked"
+			if blocked {
+				total++
+			}
+			if counting && blocked {
+				streak++
+			} else {
+				counting = false
+			}
+		}
+	}
+	return streak, total
 }
 
 // needsReview reports allowed calls whose side effects the classifier must
@@ -241,60 +307,6 @@ func (a *autoMode) needsReview(call llm.ToolCall, hints routeHints) bool {
 		return hostpath.Within(filepath.Join(a.workspace, ".git"), filepath.Clean(path))
 	}
 	return false
-}
-
-func (a *autoMode) verdict(ctx context.Context, call llm.ToolCall, res agent.GuardResult) (classify.Verdict, error) {
-	a.mu.Lock()
-	key := fmt.Sprintf("%d\x00%s\x00%s", a.intentVer, call.Name, canonicalArguments(call.Arguments))
-	if cached, ok := a.cache[key]; ok {
-		a.mu.Unlock()
-		return cached, nil
-	}
-	req := classify.Request{
-		Intent:      slices.Clone(a.intent),
-		History:     slices.Clone(a.history),
-		Action:      classifierAction(call, res),
-		Environment: gitEnvironment(a.workspace),
-	}
-	a.mu.Unlock()
-	req.Environment.Slots = a.slots
-	verdict, err := a.classify(ctx, req)
-	if err != nil {
-		return classify.Verdict{}, err
-	}
-	if verdict.Decision != classify.Unavailable {
-		a.mu.Lock()
-		a.cache[key] = verdict
-		a.mu.Unlock()
-	}
-	return verdict, nil
-}
-
-func (a *autoMode) remember(call llm.ToolCall, outcome string) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	a.history = append(a.history, classify.PastAction{Tool: call.Name, Arguments: call.Arguments, Outcome: outcome})
-	if len(a.history) > autoHistoryCap {
-		a.history = slices.Clone(a.history[len(a.history)-autoHistoryCap:])
-	}
-}
-
-func (a *autoMode) count(blocked bool) (streak, total int) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	if blocked {
-		a.streak++
-		a.total++
-	} else {
-		a.streak = 0
-	}
-	return a.streak, a.total
-}
-
-func (a *autoMode) resetStreak() {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	a.streak = 0
 }
 
 // classifierAction describes the pending call with the effects the gate
@@ -333,21 +345,6 @@ func approvalAction(call llm.ToolCall, res agent.GuardResult) agent.GuardAction 
 		}
 	}
 	return action
-}
-
-// canonicalArguments makes equivalent JSON spellings share a cache entry.
-func canonicalArguments(raw json.RawMessage) string {
-	var value any
-	decoder := json.NewDecoder(bytes.NewReader(raw))
-	decoder.UseNumber()
-	if decoder.Decode(&value) != nil {
-		return string(raw)
-	}
-	canonical, err := json.Marshal(value)
-	if err != nil {
-		return string(raw)
-	}
-	return string(canonical)
 }
 
 // gitEnvironment reads the current branch and remotes from the repository
@@ -391,4 +388,27 @@ func gitEnvironment(workspace string) classify.Environment {
 		}
 	}
 	return env
+}
+
+// permissionMode reports the Session's effective mode.
+func (s *interactiveSession) permissionMode() string {
+	if s.guardAdapter.autoActive() {
+		return string(config.PermissionModeAuto)
+	}
+	return string(config.PermissionModeDefault)
+}
+
+// SetPermissionMode switches modes for this Session's next tool call. It is
+// not saved; the Settings window changes the saved default.
+func (s *interactiveSession) SetPermissionMode(ctx context.Context, mode string) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return s.permissionMode(), err
+	}
+	switch config.PermissionMode(mode) {
+	case config.PermissionModeDefault, config.PermissionModeAuto:
+	default:
+		return s.permissionMode(), fmt.Errorf("unknown permission mode %q", mode)
+	}
+	err := s.guardAdapter.setPermissionMode(config.PermissionMode(mode))
+	return s.permissionMode(), err
 }

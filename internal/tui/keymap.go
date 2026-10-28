@@ -22,11 +22,13 @@ type keyMap struct {
 	interrupt   key.Binding
 	quit        key.Binding
 	close       key.Binding
+	mode        key.Binding
 }
 
 func newKeyMap() keyMap {
 	return keyMap{
 		close:    key.NewBinding(key.WithKeys("alt+esc"), key.WithHelp("Alt+Esc", "close")),
+		mode:     key.NewBinding(key.WithKeys("shift+tab"), key.WithHelp("Shift+Tab", "auto mode")),
 		code:     key.NewBinding(key.WithKeys("alt+o"), key.WithHelp("Alt+o", "visible code")),
 		turns:    key.NewBinding(key.WithKeys("ctrl+t"), key.WithHelp("Ctrl+t", "questions")),
 		sessions: key.NewBinding(key.WithKeys("ctrl+r"), key.WithHelp("Ctrl+r", "history")),

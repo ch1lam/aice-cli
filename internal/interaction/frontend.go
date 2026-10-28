@@ -17,6 +17,8 @@ type Frontend struct {
 	Files           FileCompleter
 	Guards          GuardRequester
 	Questions       QuestionRequester
+	// PermissionModes switches the Session's permission mode.
+	PermissionModes PermissionModeSwitcher
 	// CheckUpdate, when set, performs the welcome-screen update check.
 	CheckUpdate UpdateChecker
 }
@@ -45,3 +47,9 @@ type UpdateCheckResult struct {
 
 // UpdateChecker performs one cache-aware, bounded update check.
 type UpdateChecker func(ctx context.Context) (UpdateCheckResult, error)
+
+// PermissionModeSwitcher changes the permission mode of the running Session
+// for its next tool call, without saving it. It returns the effective mode.
+type PermissionModeSwitcher interface {
+	SetPermissionMode(ctx context.Context, mode string) (string, error)
+}

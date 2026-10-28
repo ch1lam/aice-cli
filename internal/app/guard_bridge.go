@@ -88,7 +88,7 @@ type guardAdapter struct {
 
 func (g *guardAdapter) Check(ctx context.Context, call llm.ToolCall) (agent.GuardResult, error) {
 	result, hints, err := g.evaluate(ctx, call)
-	if err != nil || g.autoState() == nil {
+	if err != nil || !g.autoActive() {
 		return result, err
 	}
 	return g.auto.decide(ctx, call, result, hints)

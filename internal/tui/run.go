@@ -136,6 +136,12 @@ func Run(ctx context.Context, frontend interaction.Frontend, options Options) er
 	if options.StartupNotice != "" {
 		initialModel.entries = append(initialModel.entries, transcriptEntry{kind: entryNotice, text: options.StartupNotice})
 	}
+	if frontend.PermissionModes != nil {
+		initialModel.setPermissionMode = permissionModeCommand(controllerCtx, frontend.PermissionModes)
+	}
+	if frontend.State != nil {
+		initialModel.permissionMode = frontend.State.RuntimeState().PermissionMode
+	}
 	initialModel.currentModel = options.Model
 	initialModel.thinking = options.Thinking
 	initialModel.apiKeyConfigured = options.APIKeyConfigured

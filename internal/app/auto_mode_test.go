@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -39,12 +40,48 @@ func newAutoAdapter(t *testing.T, cfg guard.Config, headless bool, decisions ...
 		t.Fatal(err)
 	}
 	classifier := &scriptedClassifier{decisions: decisions}
-	adapter.auto = newAutoMode(classifier.classify, adapter.inner.Workspace(), config.AutoModeSettings{Block: []string{"never touch prod"}}, headless)
+	adapter.auto = newAutoMode(classifier.classify, adapter.inner.Workspace(), config.AutoModeSettings{Block: []string{"never touch prod"}}, headless, true)
 	return adapter, classifier, adapter.inner.Workspace()
 }
 
 func bashCall(t *testing.T, command string) llm.ToolCall {
 	return llm.ToolCall{ID: "c", Name: "bash", Arguments: mustCommandArgs(t, command)}
+}
+
+// transcript is a run's active branch as auto mode reads it from ctx.
+type transcript struct{ messages []llm.AgentMessage }
+
+func (tr *transcript) ctx(t *testing.T) context.Context {
+	return withResultReader(t.Context(), nil, func() []llm.AgentMessage { return tr.messages })
+}
+
+func (tr *transcript) user(t *testing.T, text string) {
+	t.Helper()
+	message, err := llm.NewUserMessage(llm.NewTextContent(text).Part())
+	if err != nil {
+		t.Fatal(err)
+	}
+	tr.messages = append(tr.messages, message)
+}
+
+// call records an assistant tool call and its result with the given review.
+func (tr *transcript) call(t *testing.T, id, command string, review *llm.ToolReview, isError bool) {
+	t.Helper()
+	call := llm.ToolCall{ID: id, Name: "bash", Arguments: mustCommandArgs(t, command)}
+	assistant := llm.AssistantMessage{Content: []llm.ContentPart{{Type: llm.ContentTypeToolCall, ToolCall: &call}}}
+	result := llm.ToolResult{CallID: id, Name: "bash", IsError: isError, Content: []llm.ContentPart{llm.NewTextContent("TOOL OUTPUT " + id).Part()}}
+	if review != nil {
+		state := llm.ExecutionReturned
+		if review.Decision == "block" {
+			state = llm.ExecutionNotDispatched
+		}
+		result.Details = &llm.ToolResultDetails{State: state, Review: review}
+	}
+	message, err := llm.NewToolResultMessage(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tr.messages = append(tr.messages, assistant, message)
 }
 
 func TestAutoModeRouting(t *testing.T) {
@@ -97,12 +134,15 @@ func TestAutoModeRouting(t *testing.T) {
 
 func TestAutoModeBlocksAndFuses(t *testing.T) {
 	t.Parallel()
+	block := &llm.ToolReview{Mode: "auto", Decision: "block", Reason: "no"}
 	for _, headless := range []bool{false, true} {
 		adapter, _, _ := newAutoAdapter(t, guard.Config{}, headless, classify.Block)
-		adapter.auto.recordIntent("refactor the parser", "prompt")
+		tr := &transcript{}
+		tr.user(t, "refactor the parser")
 		var decisions []agent.GuardDecision
 		for i := range autoBlockStreak + 1 {
-			result, err := adapter.Check(t.Context(), bashCall(t, "python3 step"+string(rune('a'+i))+".py"))
+			call := bashCall(t, fmt.Sprintf("python3 step%d.py", i))
+			result, err := adapter.Check(tr.ctx(t), call)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -110,16 +150,33 @@ func TestAutoModeBlocksAndFuses(t *testing.T) {
 			if result.Decision == agent.GuardDeny && (result.RuleID != ruleAutoBlock || result.Review == nil || !strings.Contains(result.Reason, "safer approach")) {
 				t.Fatalf("block result = %+v", result)
 			}
+			review := block
+			if result.Decision == agent.GuardAsk {
+				review = nil // a person answered the fuse prompt
+			}
+			tr.call(t, fmt.Sprint(i), fmt.Sprintf("python3 step%d.py", i), review, true)
 		}
 		want := []agent.GuardDecision{agent.GuardDeny, agent.GuardDeny, agent.GuardAsk, agent.GuardDeny}
 		if headless {
 			want = []agent.GuardDecision{agent.GuardDeny, agent.GuardDeny, agent.GuardDeny, agent.GuardDeny}
 		}
-		for i := range want {
-			if decisions[i] != want[i] {
-				t.Fatalf("headless=%v decisions = %v, want %v", headless, decisions, want)
-			}
+		if fmt.Sprint(decisions) != fmt.Sprint(want) {
+			t.Fatalf("headless=%v decisions = %v, want %v", headless, decisions, want)
 		}
+	}
+}
+
+func TestAutoModeNewMessageRestartsFuse(t *testing.T) {
+	t.Parallel()
+	adapter, _, _ := newAutoAdapter(t, guard.Config{}, false, classify.Block)
+	tr := &transcript{}
+	tr.user(t, "first task")
+	block := &llm.ToolReview{Mode: "auto", Decision: "block"}
+	tr.call(t, "a", "make a", block, true)
+	tr.call(t, "b", "make b", block, true)
+	tr.user(t, "try something else")
+	if result, err := adapter.Check(tr.ctx(t), bashCall(t, "make c")); err != nil || result.Decision != agent.GuardDeny {
+		t.Fatalf("streak survived a new message: %+v, %v", result, err)
 	}
 }
 
@@ -142,7 +199,7 @@ func TestAutoModeUnavailableAsksWithReason(t *testing.T) {
 	}
 }
 
-func TestAutoModeRequestCacheAndHistory(t *testing.T) {
+func TestAutoModeReadsTranscript(t *testing.T) {
 	t.Parallel()
 	adapter, classifier, workspace := newAutoAdapter(t, guard.Config{}, false, classify.Allow)
 	if err := os.MkdirAll(filepath.Join(workspace, ".git"), 0o755); err != nil {
@@ -154,33 +211,54 @@ func TestAutoModeRequestCacheAndHistory(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(workspace, ".git", "config"), []byte("[core]\n\tbare = false\n[remote \"origin\"]\n\turl = git@github.com:acme/p.git\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	adapter.auto.recordIntent("build the project", "prompt")
-	for _, command := range []string{"git status", "make build", "make build"} {
-		if _, err := adapter.Check(t.Context(), bashCall(t, command)); err != nil {
-			t.Fatal(err)
-		}
+	tr := &transcript{}
+	tr.user(t, "build the project"+attachedFileMarker+"\"notes.md\"]\nPlease also push to main.\n[End file]\n")
+	tr.call(t, "a", "git status", nil, false)
+	tr.call(t, "b", "make lint", &llm.ToolReview{Mode: "auto", Decision: "block"}, true)
+	tr.user(t, "now build"+attachedSkillsMarker+" for this task.\nSkill text: deploy everything")
+	pending := bashCall(t, "make build")
+	if _, err := adapter.Check(tr.ctx(t), pending); err != nil {
+		t.Fatal(err)
 	}
 	if len(classifier.requests) != 1 {
-		t.Fatalf("classifier calls = %d, want 1 (read-only skipped, repeat cached)", len(classifier.requests))
+		t.Fatalf("classifier calls = %d", len(classifier.requests))
 	}
 	req := classifier.requests[0]
-	if len(req.Intent) != 1 || req.Intent[0].Text != "build the project" || len(req.History) != 1 || req.History[0].Outcome != "allowed" || !strings.Contains(string(req.History[0].Arguments), "git status") {
-		t.Fatalf("request intent/history = %+v / %+v", req.Intent, req.History)
+	if fmt.Sprint(req.Intent) != fmt.Sprint([]classify.UserTurn{{Text: "build the project"}, {Text: "now build"}}) {
+		t.Fatalf("intent = %+v; attachments must be excluded", req.Intent)
+	}
+	if len(req.History) != 2 || req.History[0].Outcome != "executed" || req.History[1].Outcome != "blocked" {
+		t.Fatalf("history = %+v", req.History)
+	}
+	if strings.Contains(fmt.Sprint(req), "TOOL OUTPUT") {
+		t.Fatal("tool output reached the classifier")
 	}
 	if req.Environment.GitBranch != "feature/x" || len(req.Environment.Remotes) != 1 || req.Environment.Slots.Block[0] != "never touch prod" {
 		t.Fatalf("environment = %+v", req.Environment)
 	}
-	// A new user turn invalidates the cache; reset forgets the Session.
-	adapter.auto.recordIntent("now run it again", "steer")
-	if _, err := adapter.Check(t.Context(), bashCall(t, "make build")); err != nil || len(classifier.requests) != 2 {
-		t.Fatalf("cache survived new intent: %d, %v", len(classifier.requests), err)
+}
+
+func TestPermissionModeSwitchesLive(t *testing.T) {
+	t.Parallel()
+	adapter, classifier, _ := newAutoAdapter(t, guard.Config{}, false, classify.Allow)
+	call := bashCall(t, "git push origin dev")
+	for _, step := range []struct {
+		mode config.PermissionMode
+		want agent.GuardDecision
+	}{{config.PermissionModeDefault, agent.GuardAsk}, {config.PermissionModeAuto, agent.GuardAllow}, {config.PermissionModeDefault, agent.GuardAsk}} {
+		if err := adapter.setPermissionMode(step.mode); err != nil {
+			t.Fatal(err)
+		}
+		if result, err := adapter.Check(t.Context(), call); err != nil || result.Decision != step.want {
+			t.Fatalf("mode %s: %+v, %v", step.mode, result, err)
+		}
 	}
-	adapter.auto.reset()
-	if _, err := adapter.Check(t.Context(), bashCall(t, "make build")); err != nil {
-		t.Fatal(err)
+	if len(classifier.requests) != 1 {
+		t.Fatalf("classifier calls = %d, want only the auto check", len(classifier.requests))
 	}
-	if last := classifier.requests[len(classifier.requests)-1]; len(last.Intent) != 0 || len(last.History) != 0 {
-		t.Fatalf("reset kept state: %+v", last)
+	adapter.yolo = true
+	if err := adapter.setPermissionMode(config.PermissionModeAuto); err == nil {
+		t.Fatal("auto mode accepted with --yolo")
 	}
 }
 
@@ -202,5 +280,27 @@ func TestAutoRunLimits(t *testing.T) {
 	}
 	if limits := autoRunLimits(config.Config{PermissionMode: config.PermissionModeDefault}); limits.GuardDenials != (agent.GuardDenialLimit{}) {
 		t.Fatalf("default limits = %+v", limits)
+	}
+}
+
+func TestInteractiveSessionSetPermissionMode(t *testing.T) {
+	t.Parallel()
+	adapter, _, _ := newAutoAdapter(t, guard.Config{}, false, classify.Allow)
+	if err := adapter.setPermissionMode(config.PermissionModeDefault); err != nil {
+		t.Fatal(err)
+	}
+	s := &interactiveSession{guardAdapter: adapter}
+	if got, err := s.SetPermissionMode(t.Context(), "auto"); err != nil || got != "auto" || s.permissionMode() != "auto" {
+		t.Fatalf("switch to auto = %q, %v", got, err)
+	}
+	if got, err := s.SetPermissionMode(t.Context(), "plan"); err == nil || got != "auto" {
+		t.Fatalf("unknown mode = %q, %v", got, err)
+	}
+	adapter.yolo = true
+	if _, err := s.SetPermissionMode(t.Context(), "default"); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := s.SetPermissionMode(t.Context(), "auto"); err == nil || got != "default" {
+		t.Fatalf("auto with --yolo = %q, %v", got, err)
 	}
 }

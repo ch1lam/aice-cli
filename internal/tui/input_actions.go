@@ -26,6 +26,7 @@ const (
 	inputActionInterrupt inputAction = "interrupt"
 	inputActionQuit      inputAction = "quit"
 	inputActionClose     inputAction = "close"
+	inputActionMode      inputAction = "mode"
 
 	inputActionQuestionMove      inputAction = "question.move"
 	inputActionQuestionSwitch    inputAction = "question.switch"
@@ -86,6 +87,10 @@ func (m model) inputActionKeys() keyMap {
 	k.interrupt.SetEnabled(main && (m.running || m.slashCommandMenuVisible() || m.fileCompletionVisible()))
 	k.quit.SetEnabled(main && !m.running && empty)
 	k.close.SetEnabled(side)
+	k.mode.SetEnabled(main && m.setPermissionMode != nil)
+	if m.permissionMode == permissionModeAuto {
+		k.mode.SetHelp("Shift+Tab", "default mode")
+	}
 	if side {
 		k.send.SetHelp("Enter", "ask")
 		k.interrupt.SetEnabled(true)

@@ -13,6 +13,9 @@ import (
 
 const maximumInputSkills = 8
 
+// attachedSkillsMarker starts attached Skill instructions after the typed prompt.
+const attachedSkillsMarker = "\n\nUse the following explicitly attached skills"
+
 func (s *interactiveSession) prepareAttachedInput(ctx context.Context, input interaction.RunInput) (interaction.RunInput, error) {
 	input, err := s.prepareSkillInput(ctx, input)
 	if err != nil {
@@ -50,7 +53,7 @@ func (s *interactiveSession) prepareSkillInput(ctx context.Context, input intera
 	loader := tool.NewSkill(entries)
 	var text strings.Builder
 	text.WriteString(input.Prompt)
-	text.WriteString("\n\nUse the following explicitly attached skills for this task. Their full instructions are already loaded.\n")
+	text.WriteString(attachedSkillsMarker + " for this task. Their full instructions are already loaded.\n")
 	for _, entry := range entries {
 		args, _ := json.Marshal(map[string]string{"name": entry.Name})
 		call := llm.ToolCall{ID: "attachment", Name: "skill", Arguments: args}

@@ -44,7 +44,7 @@ func settingPresentation(id string) (category, label, description string, timing
 	case "run_no_progress_limit":
 		return "limits", "Repeated tool limit", "0 disables detection; otherwise use at least 2 consecutive repeated calls.", timing, false
 	case "permission_mode":
-		return "tools", "Permission mode", "default asks you; auto lets the action classifier decide eligible tool calls and asks only at its limits. Applies after restart.", interaction.SettingRestart, false
+		return "tools", "Permission mode", "default asks you; auto lets the action classifier decide eligible tool calls and asks only at its limits. Applies to the next tool call.", timing, false
 	case "default_project_trust":
 		return "project", "Default project trust", "Startup policy for projects without a saved decision; does not reload this project.", interaction.SettingRestart, false
 	case "no_dep_install":

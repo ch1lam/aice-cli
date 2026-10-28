@@ -134,10 +134,18 @@ func (s *interactiveSession) applySettingsReserved(ctx context.Context, request 
 			return result, err
 		}
 	}
+	if candidate.PermissionMode == config.PermissionModeAuto && s.guardAdapter != nil && s.guardAdapter.yolo {
+		return result, fmt.Errorf("--yolo cannot be combined with permission mode auto")
+	}
 	if err := config.SaveSettingsPatch(ctx, candidate.Paths, patch); err != nil {
 		return result, err
 	}
 	result.Committed = true
+	if s.guardAdapter != nil && s.guardAdapter.auto != nil {
+		if err := s.guardAdapter.setPermissionMode(candidate.PermissionMode); err != nil {
+			return result, err
+		}
+	}
 	s.stateMu.Lock()
 	s.configuration = candidate
 	if shared {

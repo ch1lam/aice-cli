@@ -318,7 +318,6 @@ func (a *application) Print(
 	}, environment.tools); err != nil {
 		return err
 	}
-	environment.guardAdapter.autoState().recordIntent(request.Prompt, "prompt")
 	loop, err := agent.NewLoop(configured.service, environment.tools, agent.WithGuard(environment.guardAdapter), agent.WithRunLimits(autoRunLimits(configured.configuration)))
 	if err != nil {
 		return fmt.Errorf("app: create agent loop: %w", err)
@@ -689,11 +688,9 @@ func (a *application) prepareRunEnvironment(
 		return nil, err
 	}
 	adapter.mcp = mcpRunRouter{}
-	if configured.configuration.PermissionMode == config.PermissionModeAuto {
-		if yolo {
-			return nil, fmt.Errorf("app: --yolo cannot be combined with permission mode auto")
-		}
-		adapter.auto = newAutoMode(a.autoClassifier(configured), workspace.PhysicalPath(), configured.configuration.AutoMode, !interactive)
+	adapter.auto = newAutoMode(a.autoClassifier(configured), workspace.PhysicalPath(), configured.configuration.AutoMode, !interactive, false)
+	if err := adapter.setPermissionMode(configured.configuration.PermissionMode); err != nil {
+		return nil, err
 	}
 	prepared = true
 	return &runEnvironment{
@@ -887,7 +884,7 @@ func (s *interactiveSession) frontend() interaction.Frontend {
 	return interaction.Frontend{
 		Runner: s, State: s, Commands: s, SideThreads: s, Sessions: s, Usage: s,
 		Settings: s, SettingsActions: s, SettingsWriter: s,
-		Files: s, Guards: s, Questions: s,
+		Files: s, Guards: s, Questions: s, PermissionModes: s,
 	}
 }
 

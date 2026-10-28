@@ -563,7 +563,6 @@ func (s *interactiveSession) slashNew(
 	s.conversation.store = nil
 	s.conversation.historyLeaf, s.conversation.historyReady = "", false
 	s.guard.ResetSessionGrants()
-	s.guardAdapter.autoState().reset()
 	s.conversation.historyMu.Lock()
 	s.conversation.history = nil
 	s.conversation.historyMu.Unlock()
@@ -695,6 +694,7 @@ func (s *interactiveSession) RuntimeState() interaction.RuntimeState {
 		Model:            interaction.DisplayModel{ID: s.model.ID},
 		Thinking:         thinking,
 		APIKeyConfigured: providerConfigured(s.providers, s.configuration),
+		PermissionMode:   s.permissionMode(),
 		Usage:            usage,
 		Context:          s.contextSnapshotFor(s.model, s.configuration, s.systemPrompt),
 		SessionChanged:   s.sessionChanged,

@@ -14,6 +14,9 @@ import (
 
 const maximumInputFiles = 8
 
+// attachedFileMarker starts each attached file after the typed prompt.
+const attachedFileMarker = "\n\n[File "
+
 // prepareFileInput freezes authorized file contents before the input is accepted.
 // It uses the same bounded reader as model tool calls; no paths reach the mailbox.
 func prepareFileInput(ctx context.Context, input interaction.RunInput, workspace *tool.Workspace, gate *guardAdapter,
@@ -61,7 +64,7 @@ func prepareFileInput(ctx context.Context, input interaction.RunInput, workspace
 				input.Images = append(input.Images, part.Image.Clone())
 			}
 			if part.Type == llm.ContentTypeText {
-				fmt.Fprintf(&text, "\n\n[File %q]\n%s\n[End file]\n", resolved, part.Text)
+				fmt.Fprintf(&text, "%s%q]\n%s\n[End file]\n", attachedFileMarker, resolved, part.Text)
 			}
 		}
 		if err := interaction.ValidateImages(input.Images); err != nil {

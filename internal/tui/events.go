@@ -182,6 +182,7 @@ func (m model) applyRunBatch(batch runBatchMsg) (tea.Model, tea.Cmd) {
 			m.contextUsage = update.state.Context
 			m.currentModel = update.state.Model
 			m.thinking = update.state.Thinking
+			m.permissionMode = update.state.PermissionMode
 			m.apiKeyConfigured = update.state.APIKeyConfigured
 			if update.state.Usage != m.sessionUsage {
 				commands = append(

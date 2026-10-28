@@ -149,6 +149,12 @@ func (m model) handleComposerAction(match inputActionMatch) (model, tea.Cmd, boo
 		return updated, command, true
 	case inputActionCommands:
 		return m, m.updateInput(tea.PasteMsg{Content: "/"}), true
+	case inputActionMode:
+		next := permissionModeAuto
+		if m.permissionMode == permissionModeAuto {
+			next = permissionModeDefault
+		}
+		return m, m.setPermissionMode(next), true
 	case inputActionHelp:
 		m.help.ShowAll = !m.help.ShowAll
 		m.resizeLayout()

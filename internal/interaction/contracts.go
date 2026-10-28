@@ -148,8 +148,10 @@ type RuntimeState struct {
 	Model            DisplayModel
 	Thinking         DisplayThinking
 	APIKeyConfigured bool
-	Usage            DisplayUsage
-	Context          DisplayContext
+	// PermissionMode is "default" or "auto".
+	PermissionMode string
+	Usage          DisplayUsage
+	Context        DisplayContext
 	// SessionChanged reports that the active Session branch changed, so a
 	// frontend must discard its visible branch transcript.
 	SessionChanged bool
