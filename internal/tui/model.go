@@ -142,7 +142,8 @@ type model struct {
 	keys           keyMap
 	currentModel   interaction.DisplayModel
 	thinking       interaction.DisplayThinking
-	// permissionMode is "default" or "auto"; setPermissionMode switches it.
+	// permissionMode is "default" (shown as manual) or "auto";
+	// setPermissionMode switches it.
 	permissionMode        string
 	setPermissionMode     func(string) tea.Cmd
 	apiKeyConfigured      bool

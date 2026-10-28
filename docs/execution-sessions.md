@@ -340,8 +340,11 @@ rules above; a person decides) or `auto`, where the action classifier in
 settings, `AICE_PERMISSION_MODE` or `--permission-mode`; a Settings change is
 saved and applies to the next tool call. In the TUI, Shift+Tab switches the
 current Session between `default` and `auto` without saving, also from the next
-tool call, including during a run; the composer shows `auto ·` before the model
-name. `--yolo` cannot be combined with auto.
+tool call, including during a run. The mode is shown as state, not as a
+transcript message: the TUI labels `default` as manual, the composer shows
+`manual ·` or `auto ·` before the model name, and the shortcut bar names the
+mode Shift+Tab switches to. `--yolo` cannot be combined
+with auto; a refused switch is reported beside the composer.
 
 In auto mode every call is routed by the default-mode result:
 

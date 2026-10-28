@@ -929,12 +929,15 @@ func (m model) modelStatus(width int) string {
 		thinking = "default"
 	}
 	suffix := " (" + thinking + ")"
-	prefix := ""
-	if m.permissionMode == permissionModeAuto {
-		prefix = "auto · "
+	prefix, prefixStyle := "", mutedStyle
+	switch m.permissionMode {
+	case permissionModeAuto:
+		prefix, prefixStyle = "auto · ", lipgloss.NewStyle().Foreground(accentColor)
+	case permissionModeDefault:
+		prefix = "manual · "
 	}
 	name := truncateTerminalText(sanitizeToolDetail(m.currentModel.ID, false), max(width-lipgloss.Width(prefix+suffix), 1))
-	return lipgloss.NewStyle().Foreground(accentColor).Render(prefix) + mutedStyle.Render(name) + reasoningLevelStyle(m.thinking).Render(suffix)
+	return prefixStyle.Render(prefix) + mutedStyle.Render(name) + reasoningLevelStyle(m.thinking).Render(suffix)
 }
 
 func reasoningLevelStyle(level interaction.DisplayThinking) lipgloss.Style {

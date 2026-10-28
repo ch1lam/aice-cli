@@ -21,6 +21,12 @@ func TestShiftTabTogglesPermissionMode(t *testing.T) {
 		return func() tea.Msg { return permissionModeResult{mode: mode} }
 	}
 	m = updateModel(t, m, tea.WindowSizeMsg{Width: 100, Height: 24})
+	if status := ansi.Strip(m.modelStatus(80)); !strings.Contains(status, "manual · deepseek-v4.1-flash") {
+		t.Fatalf("manual status = %q", status)
+	}
+	if footer := ansi.Strip(m.statusLine(100)); !strings.Contains(footer, "Shift+Tab auto mode") {
+		t.Fatalf("default footer = %q", footer)
+	}
 
 	updated, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift})
 	m = updated.(model)
@@ -31,20 +37,23 @@ func TestShiftTabTogglesPermissionMode(t *testing.T) {
 	if m.permissionMode != permissionModeAuto || !strings.Contains(ansi.Strip(m.modelStatus(80)), "auto · deepseek-v4.1-flash") {
 		t.Fatalf("mode %q status %q", m.permissionMode, ansi.Strip(m.modelStatus(80)))
 	}
-	if last := m.entries[len(m.entries)-1]; last.kind != entryNotice || !strings.Contains(last.text, "Permission mode: auto") {
-		t.Fatalf("notice = %+v", last)
+	if len(m.entries) != 0 {
+		t.Fatalf("switch wrote transcript entries: %+v", m.entries)
+	}
+	if footer := ansi.Strip(m.statusLine(100)); !strings.Contains(footer, "Shift+Tab manual mode") {
+		t.Fatalf("auto footer = %q", footer)
 	}
 
 	updated, cmd = m.Update(tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift})
 	m = updateModel(t, updated.(model), cmd())
-	if requested[1] != permissionModeDefault || m.permissionMode != permissionModeDefault || strings.Contains(ansi.Strip(m.modelStatus(80)), "auto") {
+	if requested[1] != permissionModeDefault || m.permissionMode != permissionModeDefault || !strings.Contains(ansi.Strip(m.modelStatus(80)), "manual · ") {
 		t.Fatalf("second toggle: %v mode %q", requested, m.permissionMode)
 	}
 
-	// A refused switch keeps the effective mode and says why.
+	// A refused switch keeps the effective mode and says why beside the composer.
 	m = updateModel(t, m, permissionModeResult{mode: permissionModeDefault, err: errors.New("--yolo cannot be combined with permission mode auto")})
-	if m.permissionMode != permissionModeDefault || !strings.Contains(m.entries[len(m.entries)-1].text, "unchanged: --yolo") {
-		t.Fatalf("refused switch: %q %+v", m.permissionMode, m.entries[len(m.entries)-1])
+	if m.permissionMode != permissionModeDefault || !strings.Contains(m.inputNotice, "unchanged: --yolo") || len(m.entries) != 0 {
+		t.Fatalf("refused switch: %q %q %+v", m.permissionMode, m.inputNotice, m.entries)
 	}
 }
 

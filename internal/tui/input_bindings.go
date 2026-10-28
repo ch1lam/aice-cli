@@ -233,7 +233,7 @@ func (m model) conversationInputBindings() []inputBinding {
 		{action: inputActionClear, binding: k.clear, short: true},
 		{action: inputActionClose, binding: k.close, short: side},
 		{action: inputActionQuit, binding: k.quit, short: side},
-		{action: inputActionMode, binding: k.mode},
+		{action: inputActionMode, binding: k.mode, short: true},
 	}
 	if k.help.Enabled() || m.deliveryPending {
 		help := inputBinding{action: inputActionHelp, binding: k.help, short: true}

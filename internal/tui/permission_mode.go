@@ -26,19 +26,16 @@ func permissionModeCommand(ctx context.Context, switcher interaction.PermissionM
 	}
 }
 
-// applyPermissionMode shows the effective mode after a switch.
+// applyPermissionMode records the effective mode after a switch. The mode is
+// state shown beside the model name, so only a refused switch says anything.
 func (m model) applyPermissionMode(result permissionModeResult) model {
 	if result.mode != "" {
 		m.permissionMode = result.mode
 	}
-	text := "Permission mode: default. You confirm actions outside the workspace or with consequences."
-	if m.permissionMode == permissionModeAuto {
-		text = "Permission mode: auto. The action classifier decides eligible tool calls; you are asked only at its limits."
-	}
 	if result.err != nil {
-		text = "Permission mode unchanged: " + result.err.Error()
+		m.inputNotice = "Permission mode unchanged: " + result.err.Error()
+		m.resizeLayout()
 	}
-	m.entries = append(m.entries, transcriptEntry{kind: entryNotice, text: text})
-	m.refreshViewport(true)
+	m.refreshViewport(false)
 	return m
 }

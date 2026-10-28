@@ -89,7 +89,7 @@ func (m model) inputActionKeys() keyMap {
 	k.close.SetEnabled(side)
 	k.mode.SetEnabled(main && m.setPermissionMode != nil)
 	if m.permissionMode == permissionModeAuto {
-		k.mode.SetHelp("Shift+Tab", "default mode")
+		k.mode.SetHelp("Shift+Tab", "manual mode")
 	}
 	if side {
 		k.send.SetHelp("Enter", "ask")
