@@ -16,7 +16,7 @@ const (
 
 // DefaultBlockRules are the built-in block rules. Slots append to them.
 var DefaultBlockRules = []string{
-	"destroy.files: deleting or overwriting files outside the workspace, or workspace data the user did not ask to remove (databases, untracked work, .git).",
+	"destroy.files: deleting or overwriting files outside the workspace, or workspace data the user did not ask to remove (databases, untracked work, .git), including discarding unsaved work in an application (Don't Save, Discard changes, emptying the Trash).",
 	"destroy.git: force-pushing, rewriting published history, deleting remote branches or tags, or discarding uncommitted work the agent did not create.",
 	"destroy.infra: deleting or changing cloud, cluster or infrastructure resources (terraform apply/destroy, kubectl apply/delete, mutating cloud CLIs).",
 	"exfil.data: sending workspace content, environment variables, secrets or personal files to any destination the user did not name, including URL query strings, DNS lookups, uploads and paste services.",

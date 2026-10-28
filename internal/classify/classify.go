@@ -26,7 +26,7 @@ import (
 
 // PromptVersion identifies the fixed template. Change it with every template
 // edit and attach a fresh evaluation result.
-const PromptVersion = "2026-11.2"
+const PromptVersion = "2026-11.3"
 
 // Decision is the classifier outcome.
 type Decision string
@@ -166,9 +166,10 @@ func New(cfg Config) (*Classifier, error) {
 
 // Stage parameters. The first stage is a single word; reasoning-only models
 // that cannot answer within the budget fall through to the second stage.
+// Reasoning tokens count against the second stage's budget on most gateways.
 const (
 	fastMaxTokens   = 16
-	reasonMaxTokens = 1024
+	reasonMaxTokens = 4096
 )
 
 // Classify judges one action. It returns an error only when ctx ends; every
