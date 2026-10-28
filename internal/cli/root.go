@@ -227,6 +227,7 @@ func NewRootCommand(dependencies Dependencies) (*cobra.Command, error) {
 	command.AddCommand(newCompactCommand(dependencies.Compactor))
 	command.AddCommand(newSessionCommand(dependencies.Navigator))
 	command.AddCommand(newConfigCommand(dependencies.Configurator))
+	command.AddCommand(newAutoModeCommand())
 	if dependencies.MCPManager != nil {
 		command.AddCommand(newMCPCommand(dependencies.MCPManager))
 	}
