@@ -40,6 +40,12 @@ type Result struct {
 	RuleID    string
 	Action    Action
 	Approvals []Approval
+	// ReadOnly reports a bash command made only of read-only commands with
+	// no writes or findings. RuleCovered reports a bash command whose every
+	// command is read-only or matched by an explicit, non-broad allow rule,
+	// or which an exact Session grant covers. Auto mode routes on them.
+	ReadOnly    bool
+	RuleCovered bool
 }
 
 // Approval describes one scope requiring confirmation. It cannot override a deny.

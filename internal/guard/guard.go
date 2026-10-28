@@ -217,7 +217,36 @@ func (g *Guard) Check(ctx context.Context, call llm.ToolCall) (Result, error) {
 	if len(approvals) > 0 {
 		return Result{Decision: DecisionAsk, Approvals: approvals}, nil
 	}
-	return Result{Decision: DecisionAllow}, nil
+	result := Result{Decision: DecisionAllow}
+	if call.Name == "bash" {
+		result.ReadOnly, result.RuleCovered = g.bashHints(extractCommand(call.Arguments), analysis)
+	}
+	return result, nil
+}
+
+// bashHints classifies an allowed bash command for auto mode routing.
+func (g *Guard) bashHints(cmd string, analysis bashAnalysis) (readOnly, covered bool) {
+	readOnly = len(analysis.findings) == 0 && !slices.ContainsFunc(analysis.actions, func(a Action) bool { return a.Op == opWrite })
+	// Writes into .git (hooks, config) run code later, so they always need review.
+	gitDir := filepath.Join(g.physicalWorkspace, ".git")
+	if slices.ContainsFunc(analysis.actions, func(a Action) bool {
+		return a.Op == opWrite && hostpath.Within(gitDir, physicalPath(resolveAbsolute(a.Path, g.workspace, a.ToolName)))
+	}) {
+		return false, false
+	}
+	covered = g.sessionCommands[cmd]
+	allCovered := true
+	for _, words := range analysis.commands {
+		if isLauncher(words[0]) {
+			continue
+		}
+		read := readOnlyCommand(words)
+		readOnly = readOnly && read
+		if !read && !slices.ContainsFunc(g.rules.allow, func(r rule) bool { return !r.broadExecution() && r.matchCommand(words) }) {
+			allCovered = false
+		}
+	}
+	return readOnly, covered || allCovered && len(analysis.commands) > 0
 }
 
 // denyPath applies hard denials to the spelled and the physical path.

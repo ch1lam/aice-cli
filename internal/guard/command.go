@@ -379,6 +379,56 @@ func commandWords(cmd shellCommand) []string {
 	return out
 }
 
+// readOnlyCommands only read files or print. Writes they make through
+// redirects or flags are separate write actions.
+var readOnlyCommands = map[string]bool{
+	"cat": true, "ls": true, "head": true, "tail": true, "wc": true, "grep": true, "egrep": true, "fgrep": true, "rg": true,
+	"stat": true, "file": true, "tree": true, "du": true, "df": true, "diff": true, "cmp": true, "sort": true, "uniq": true,
+	"cut": true, "jq": true, "echo": true, "printf": true, "pwd": true, "which": true, "type": true, "basename": true,
+	"dirname": true, "realpath": true, "readlink": true, "date": true, "true": true, "false": true, "test": true, "[": true,
+	"nl": true, "tr": true, "column": true, "less": true, "more": true, "sed": true, "cd": true, "md5sum": true, "shasum": true,
+	"sha256sum": true, "xxd": true, "od": true, "strings": true, "uname": true, "whoami": true, "id": true, "hostname": true,
+}
+
+// gitReadOnly lists git subcommands that never change the repository or
+// contact a remote.
+var gitReadOnly = map[string]bool{
+	"status": true, "log": true, "diff": true, "show": true, "blame": true, "grep": true, "ls-files": true,
+	"rev-parse": true, "describe": true, "shortlog": true, "reflog": true,
+}
+
+// readOnlyCommand reports whether rule words name a read-only command.
+// find with an action, sed -i and branch changes are not.
+func readOnlyCommand(words []string) bool {
+	name := words[0]
+	switch name {
+	case "git":
+		if len(words) < 2 {
+			return false
+		}
+		if words[1] == "branch" {
+			return !slices.ContainsFunc(words[2:], func(w string) bool {
+				return !strings.HasPrefix(w, "-") || w == "-d" || w == "-D" || w == "-m" || w == "-M" || w == "-c" || w == "-C" || strings.HasPrefix(w, "--delete") || strings.HasPrefix(w, "--move")
+			})
+		}
+		return gitReadOnly[words[1]]
+	case "find":
+		return !slices.ContainsFunc(words, func(w string) bool {
+			return w == "-delete" || strings.HasPrefix(w, "-exec") || strings.HasPrefix(w, "-ok") || strings.HasPrefix(w, "-fprint") || w == "-fls"
+		})
+	case "sed":
+		return !hasShortFlag(words[1:], "i") && !hasLongOption(words, "in-place")
+	}
+	return readOnlyCommands[name]
+}
+
+// isLauncher reports commands that only run another command; the inner
+// command is classified on its own.
+func isLauncher(name string) bool {
+	_, ok := launchers[filepath.Base(name)]
+	return ok
+}
+
 // gitReadSubcommands only inspect the repository.
 var gitReadSubcommands = map[string]bool{
 	"status": true, "log": true, "diff": true, "show": true, "blame": true, "grep": true, "ls-files": true,

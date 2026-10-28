@@ -101,6 +101,27 @@ func parseRule(text, workspace string) (rule, error) {
 	return r, nil
 }
 
+// broadExecution reports bash rules that allow arbitrary code, such as
+// bash(python *) or bash(npm run *). Auto mode sends those commands to the
+// classifier instead of trusting the rule.
+func (r rule) broadExecution() bool {
+	if r.tool != "bash" || !r.prefix {
+		return false
+	}
+	switch r.words[0] {
+	case "python", "python3", "node", "ruby", "perl", "php", "sh", "bash", "zsh", "dash", "ksh", "fish",
+		"deno", "bun", "npx", "make", "eval", "exec", "xargs", "env", "sudo":
+		return true
+	}
+	if len(r.words) == 2 && r.words[1] == "run" {
+		switch r.words[0] {
+		case "npm", "pnpm", "yarn", "go", "cargo", "uv", "poetry":
+			return true
+		}
+	}
+	return len(r.words) == 1 && (r.words[0] == "git" || r.words[0] == "docker" || r.words[0] == "kubectl")
+}
+
 func (r rule) matchCommand(words []string) bool {
 	if r.tool != "bash" || len(words) < len(r.words) || !r.prefix && len(words) != len(r.words) {
 		return false
