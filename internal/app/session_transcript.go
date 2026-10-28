@@ -66,6 +66,7 @@ func sessionTranscript(snapshot session.Snapshot) (*interaction.Transcript, erro
 			tool.Diff = displayToolDiff(event)
 			tool.Truncation = displayToolTruncation(&message)
 			tool.Evidence = displayToolEvidence(&message)
+			tool.Review = displayToolReview(&message)
 			tool.Failed = message.IsError
 			if message.Details != nil && message.Details.Binding != nil {
 				tool.Name = mcpDisplayName(*message.Details.Binding)

@@ -59,6 +59,9 @@ func usageFields(u interaction.UsageSnapshot) interaction.SettingsSnapshot {
 		cost = fmt.Sprintf("$%.6f · %s", u.Usage.TotalCost, cost)
 	}
 	add("usage", "Recorded cost", cost)
+	if u.Reviews > 0 {
+		add("usage", "Auto mode classifier", fmt.Sprintf("%d decisions · %d input / %d output tokens (not included above)", u.Reviews, u.ReviewUsage.InputTokens, u.ReviewUsage.OutputTokens))
+	}
 	add("usage", "Scope", u.Scope)
 	if u.SessionID == "" {
 		add("session", "Session", "Not started; no Session file has been created")

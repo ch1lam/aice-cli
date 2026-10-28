@@ -29,6 +29,7 @@ const (
 	guardOptionAllowMCPTool    = "allow-mcp-tool-session"
 	guardOptionAllowMCPService = "allow-mcp-service-session"
 	guardOptionDeny            = "deny"
+	guardOptionDenyDefaultMode = "deny-default-mode"
 
 	guardRuleUnknownTool = "unknownTool"
 )
@@ -344,6 +345,12 @@ func (s *interactiveSession) handleGuardAsk(ctx context.Context, call llm.ToolCa
 	case got := <-reply:
 		// Honor only IDs this prompt actually offered so a reply cannot
 		// escalate to a broader grant than the user was shown.
+		if got.OptionID == guardOptionDenyDefaultMode && guardOptionOffered(options, got.OptionID) {
+			if err := s.guardAdapter.setPermissionMode(config.PermissionModeDefault); err != nil {
+				return agent.GuardAskReply{Decision: agent.GuardDeny}, err
+			}
+			return agent.GuardAskReply{Decision: agent.GuardDeny, Feedback: strings.TrimSpace(got.Feedback + " The user switched to default permission mode; each further action of this kind needs their confirmation.")}, nil
+		}
 		if !guardOptionOffered(options, got.OptionID) || got.OptionID == guardOptionDeny {
 			return agent.GuardAskReply{
 				Decision: agent.GuardDeny,
@@ -393,6 +400,12 @@ func guardAskOptions(g *guard.Guard, toolName string, result agent.GuardApproval
 			return guardAskOnceOrDeny()
 		}
 		return pathAccessAskOptions(g, toolName, result.Action.Path, result.RuleID == guard.RuleOutsideWrite)
+	case ruleAutoBlock:
+		return []interaction.GuardOption{
+			{ID: guardOptionAllowOnce, Label: "Allow once"},
+			{ID: guardOptionDeny, Label: "Deny", Deny: true},
+			{ID: guardOptionDenyDefaultMode, Label: "Deny and switch to default mode", Deny: true},
+		}
 	case guard.RuleUserAsk:
 		// An ask rule is the user's request to confirm; never offer to save it away.
 		if result.Action.Command != "" {

@@ -347,8 +347,7 @@ func withReview(details *llm.ToolResultDetails, state llm.ExecutionState, review
 	} else {
 		details = details.Clone()
 	}
-	copy := *review
-	details.Review = &copy
+	details.Review = (&llm.ToolResultDetails{Review: review}).Clone().Review
 	return details
 }
 

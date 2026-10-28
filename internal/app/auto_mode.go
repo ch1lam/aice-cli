@@ -162,6 +162,10 @@ func (a *autoMode) decide(ctx context.Context, call llm.ToolCall, res agent.Guar
 		return agent.GuardResult{}, err
 	}
 	review := &llm.ToolReview{Mode: string(config.PermissionModeAuto), Decision: string(verdict.Decision), Stage: verdict.Stage, Reason: verdict.Reason, Classifier: verdict.Classifier}
+	if verdict.Usage != (llm.Usage{}) {
+		usage := verdict.Usage
+		review.Usage = &usage
+	}
 	switch verdict.Decision {
 	case classify.Allow:
 		return agent.GuardResult{Decision: agent.GuardAllow, Revalidate: res.Revalidate, Review: review}, nil

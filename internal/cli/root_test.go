@@ -583,6 +583,10 @@ func (*recordingNavigator) CheckoutSession(
 	return nil
 }
 
+func (*recordingNavigator) SessionReviews(context.Context, cli.SessionTreeRequest, io.Writer) error {
+	return nil
+}
+
 func (*recordingConfigurator) SaveAPIKey(
 	context.Context,
 	cli.APIKeyRequest,

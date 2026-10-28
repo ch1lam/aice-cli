@@ -56,6 +56,16 @@ func (s *interactiveSession) ReadUsage(ctx context.Context) (interaction.UsageSn
 	for _, entry := range snapshot.Compactions {
 		count(entry.Usage)
 	}
+	var reviews llm.Usage
+	for _, entry := range snapshot.Messages {
+		if r, ok := entry.Message.(llm.ToolResultMessage); ok && r.Details != nil && r.Details.Review != nil {
+			result.Reviews++
+			if u := r.Details.Review.Usage; u != nil {
+				reviews = llm.AddUsage(reviews, *u)
+			}
+		}
+	}
+	result.ReviewUsage = newDisplayUsage(reviews)
 	if priced > 0 {
 		result.CostStatus = "Partial estimate"
 		if priced == records {

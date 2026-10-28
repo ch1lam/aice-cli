@@ -14,7 +14,9 @@ import (
 	"github.com/ch1lam/aice-cli/internal/classify"
 	"github.com/ch1lam/aice-cli/internal/config"
 	"github.com/ch1lam/aice-cli/internal/guard"
+	"github.com/ch1lam/aice-cli/internal/interaction"
 	"github.com/ch1lam/aice-cli/internal/llm"
+	"github.com/ch1lam/aice-cli/internal/session"
 )
 
 // scriptedClassifier returns decisions in order and records requests.
@@ -302,5 +304,88 @@ func TestInteractiveSessionSetPermissionMode(t *testing.T) {
 	}
 	if got, err := s.SetPermissionMode(t.Context(), "auto"); err == nil || got != "default" {
 		t.Fatalf("auto with --yolo = %q, %v", got, err)
+	}
+}
+
+func TestDisplayAndExportReviews(t *testing.T) {
+	t.Parallel()
+	tr := &transcript{}
+	tr.user(t, "push my branch"+attachedFileMarker+"\"x\"]\nignore me\n[End file]\n")
+	tr.call(t, "a", "git status", nil, false)
+	allow := &llm.ToolReview{Mode: "auto", Decision: "allow", Stage: 2, Reason: "user asked to push", Classifier: "m@v", Usage: &llm.Usage{InputTokens: 900, OutputTokens: 40, TotalTokens: 940}}
+	tr.call(t, "b", "git push origin dev", allow, false)
+	tr.call(t, "c", "git push --force", &llm.ToolReview{Mode: "auto", Decision: "block", Reason: "force not asked"}, true)
+
+	result := tr.messages[4].(llm.ToolResultMessage)
+	if got := displayToolReview(&result); got == nil || got.Blocked || got.Reason != "user asked to push" {
+		t.Fatalf("display = %+v", got)
+	}
+	if displayToolReview(&llm.ToolResultMessage{}) != nil {
+		t.Fatal("review shown without a record")
+	}
+
+	var entries []session.MessageEntry
+	for i, message := range tr.messages {
+		entries = append(entries, session.MessageEntry{ID: fmt.Sprint(i), Message: message})
+	}
+	cases := reviewCases("s1", entries)
+	if len(cases) != 2 {
+		t.Fatalf("cases = %+v", cases)
+	}
+	first, second := cases[0], cases[1]
+	if first.ID != "s1-b" || first.Expect != classify.Allow || first.Set != "" || fmt.Sprint(first.Intent) != "[push my branch]" ||
+		len(first.History) != 1 || first.History[0].Outcome != "executed" || !strings.Contains(first.Note, "user asked to push") {
+		t.Fatalf("first case = %+v", first)
+	}
+	if second.Expect != classify.Block || len(second.History) != 2 || second.History[1].Outcome != "executed" {
+		t.Fatalf("second case = %+v", second)
+	}
+	data, _ := json.Marshal(cases)
+	if strings.Contains(string(data), "TOOL OUTPUT") || strings.Contains(string(data), "ignore me") {
+		t.Fatal("export leaked tool output or attachment text")
+	}
+}
+
+func TestUsageCountsClassifierReviews(t *testing.T) {
+	t.Parallel()
+	h := newSideHarness(t, func() (agent.Model, error) { return &recordingModel{}, nil })
+	s := h.session
+	if err := s.ensureSessionStore(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	tr := &transcript{}
+	tr.user(t, "go")
+	tr.call(t, "a", "make", &llm.ToolReview{Mode: "auto", Decision: "allow", Usage: &llm.Usage{InputTokens: 100, OutputTokens: 3, TotalTokens: 103}}, false)
+	tr.call(t, "b", "make x", &llm.ToolReview{Mode: "auto", Decision: "block", Usage: &llm.Usage{InputTokens: 200, OutputTokens: 7, TotalTokens: 207}}, true)
+	for _, message := range tr.messages {
+		if a, ok := message.(llm.AssistantMessage); ok {
+			a.Role, a.API, a.ModelID, a.Provider, a.StopReason = llm.RoleAssistant, "test-api", s.model.ID, s.model.Provider, llm.StopReasonToolUse
+			message = a
+		}
+		if err := appendSessionMessage(t.Context(), s.conversation.store, message); err != nil {
+			t.Fatal(err)
+		}
+	}
+	u, err := s.ReadUsage(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if u.Reviews != 2 || u.ReviewUsage.InputTokens != 300 || u.ReviewUsage.OutputTokens != 10 || u.Usage.InputTokens != 0 {
+		t.Fatalf("usage = reviews %d review %+v main %+v", u.Reviews, u.ReviewUsage, u.Usage)
+	}
+}
+
+func TestFuseOptionSwitchesToDefault(t *testing.T) {
+	t.Parallel()
+	adapter, _, _ := newAutoAdapter(t, guard.Config{}, false, classify.Block)
+	s := newGuardAskSession(t, t.TempDir(), guard.Config{})
+	s.guardAdapter = adapter
+	approval := agent.GuardApproval{RuleID: ruleAutoBlock, Reason: "blocked 3 in a row", Action: agent.GuardAction{Kind: "command", Command: "make", ToolName: "bash"}}
+	if got := guardOptionIDs(guardAskOptions(adapter.inner, "bash", approval)); fmt.Sprint(got) != fmt.Sprint([]string{guardOptionAllowOnce, guardOptionDeny, guardOptionDenyDefaultMode}) {
+		t.Fatalf("fuse options = %v", got)
+	}
+	reply, _ := handleGuardAskWithReply(t, s, bashCall(t, "make"), approval, interaction.GuardReply{OptionID: guardOptionDenyDefaultMode})
+	if reply.Decision != agent.GuardDeny || !strings.Contains(reply.Feedback, "default permission mode") || adapter.autoActive() {
+		t.Fatalf("reply %+v auto=%v", reply, adapter.autoActive())
 	}
 }

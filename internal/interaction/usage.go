@@ -18,6 +18,10 @@ type UsageSnapshot struct {
 	ReasoningTokens                    int64
 	CostStatus                         string
 	Scope                              string
+	// Reviews and ReviewUsage cover auto mode classifier decisions recorded
+	// on tool results; they are not part of Usage.
+	Reviews     int
+	ReviewUsage DisplayUsage
 }
 
 type UsageReader interface {

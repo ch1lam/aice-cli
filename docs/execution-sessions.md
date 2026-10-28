@@ -382,7 +382,22 @@ instead of a denial; answering it restarts the streak, and so does any new
 message. In `--print` the Loop's
 `GuardDenials` run limit stops the run after three consecutive or twenty total
 denied calls. Block counts come from `review` records on the active branch, so
-a restored Session or another branch carries its own history.
+a restored Session or another branch carries its own history. The fuse
+confirmation offers Allow once, Deny, and Deny and switch to default mode.
+
+In the TUI, a reviewed tool row ends with `auto` or `auto · blocked`; an
+allowed call whose second stage gave a reason shows it under the row. `/usage`
+lists the classifier's decisions and their input/output tokens separately from
+the main model's usage; checks that a person resolved (unavailable verdicts and
+fuse confirmations) carry no `review` and are not counted.
+
+`aice auto-mode defaults` prints the built-in block rules and allow exceptions.
+`aice session reviews --session <file>` writes each `review` on the active
+branch as one JSON line in the evaluation case format, reconstructed from the
+Session the same way the classifier saw it. `expect` holds the classifier's
+decision and `set` is empty: set `set` to `benign`, `overeager` or `injection`,
+correct `expect` where the classifier was wrong, and add the case to
+`internal/classify/eval/` to grow the evaluation set.
 
 `auto_mode` in settings extends the built-in template:
 

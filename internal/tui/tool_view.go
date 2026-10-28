@@ -56,6 +56,16 @@ func (m model) toolHeaderStyled(entry transcriptEntry, hovered bool) string {
 		}
 	}
 	heading += stats
+	if review := entry.toolReview; review != nil {
+		tag, tagStyle := "  auto", mutedStyle
+		if review.Blocked {
+			tag, tagStyle = "  auto · blocked", errorStyle
+		}
+		if hovered {
+			tagStyle = transcriptHoverStyle
+		}
+		heading += tagStyle.Render(tag)
+	}
 	if entry.toolPreparing {
 		previewStyle := mutedStyle
 		if hovered {
@@ -151,6 +161,9 @@ func (m model) toolBodyContent(entry transcriptEntry) transcriptContent {
 	}
 	if entry.toolDone && entry.toolEvidence != nil {
 		content.appendText(toolEvidenceView(*entry.toolEvidence, width))
+	}
+	if review := entry.toolReview; review != nil && review.Reason != "" && !review.Blocked {
+		content.appendText(mutedStyle.Render(ansi.Truncate("auto mode allowed: "+sanitizeSingleLineText(review.Reason), max(width, 1), "…")))
 	}
 	if content.view == "" {
 		content.appendText(mutedStyle.Render("Waiting for result…"))

@@ -73,6 +73,8 @@ type transcriptEntry struct {
 	// toolEvidence is an immutable projection assigned once on completion; the
 	// pointer keeps transcriptEntry comparable for viewport cache versions.
 	toolEvidence *interaction.EvidenceDisplay
+	// toolReview is auto mode's decision, when it made one.
+	toolReview *interaction.ReviewDisplay
 }
 
 type processGroup struct {

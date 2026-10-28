@@ -73,6 +73,7 @@ func translateAgentEvent(event agent.AgentEvent) *interaction.Event {
 					Diff:       displayToolDiff(event),
 					Truncation: displayToolTruncation(event.ToolResult),
 					Evidence:   displayToolEvidence(event.ToolResult),
+					Review:     displayToolReview(event.ToolResult),
 				},
 			}
 		}
@@ -347,6 +348,14 @@ func displayToolEvidence(result *llm.ToolResultMessage) *interaction.EvidenceDis
 		return nil
 	}
 	return display
+}
+
+func displayToolReview(result *llm.ToolResultMessage) *interaction.ReviewDisplay {
+	if result == nil || result.Details == nil || result.Details.Review == nil {
+		return nil
+	}
+	review := result.Details.Review
+	return &interaction.ReviewDisplay{Blocked: review.Decision == "block", Reason: review.Reason}
 }
 
 func displayToolCall(call llm.ToolCall) interaction.ToolDisplay {

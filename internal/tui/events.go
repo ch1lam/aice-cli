@@ -409,6 +409,7 @@ func (m *model) completeTool(tool interaction.ToolDisplay) {
 			entry.toolError = tool.Failed
 			entry.toolTruncation = tool.Truncation
 			entry.toolEvidence = tool.Evidence
+			entry.toolReview = tool.Review
 			entry.toolOutput = tool.Output
 			if (entry.toolName == "edit" || entry.toolName == "write") && !tool.Failed {
 				entry.toolDiff = tool.Diff

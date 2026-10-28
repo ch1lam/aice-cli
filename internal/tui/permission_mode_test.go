@@ -60,3 +60,32 @@ func TestShiftTabUnavailableWithoutSwitcher(t *testing.T) {
 		}
 	}
 }
+
+func TestToolRowsShowAutoReview(t *testing.T) {
+	t.Parallel()
+	m := newModel(make(chan runRequest, 1), make(chan struct{}))
+	m = updateModel(t, m, tea.WindowSizeMsg{Width: 100, Height: 24})
+	base := transcriptEntry{kind: entryTool, toolName: "bash", toolDetail: "make build", toolDone: true, toolOutput: interaction.ToolOutputDisplay{Text: "ok", Available: true}}
+
+	allowed := base
+	allowed.toolReview = &interaction.ReviewDisplay{Reason: "user asked\x1b[31m to build"}
+	if header := ansi.Strip(m.toolHeaderView(allowed)); !strings.HasSuffix(header, "auto") {
+		t.Fatalf("allowed header = %q", header)
+	}
+	if body := ansi.Strip(m.toolBodyView(allowed)); !strings.Contains(body, "auto mode allowed: user asked") || strings.Contains(body, "\x1b[31m") {
+		t.Fatalf("allowed body = %q", body)
+	}
+
+	blocked := base
+	blocked.toolError = true
+	blocked.toolReview = &interaction.ReviewDisplay{Blocked: true, Reason: "not requested"}
+	if header := ansi.Strip(m.toolHeaderView(blocked)); !strings.HasSuffix(header, "auto · blocked") {
+		t.Fatalf("blocked header = %q", header)
+	}
+	if body := ansi.Strip(m.toolBodyView(blocked)); strings.Contains(body, "auto mode allowed") {
+		t.Fatalf("blocked body = %q", body)
+	}
+	if header := ansi.Strip(m.toolHeaderView(base)); strings.Contains(header, "auto") {
+		t.Fatalf("unreviewed header = %q", header)
+	}
+}

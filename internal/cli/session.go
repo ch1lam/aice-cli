@@ -35,6 +35,13 @@ type SessionNavigator interface {
 		request SessionCheckoutRequest,
 		output io.Writer,
 	) error
+	// SessionReviews writes the active branch's auto mode decisions as
+	// unlabeled evaluation cases, one JSON object per line.
+	SessionReviews(
+		ctx context.Context,
+		request SessionTreeRequest,
+		output io.Writer,
+	) error
 }
 
 func newSessionCommand(navigator SessionNavigator) *cobra.Command {
@@ -48,7 +55,31 @@ func newSessionCommand(navigator SessionNavigator) *cobra.Command {
 	command.AddCommand(
 		newSessionTreeCommand(navigator),
 		newSessionCheckoutCommand(navigator),
+		newSessionReviewsCommand(navigator),
 	)
+	return command
+}
+
+func newSessionReviewsCommand(navigator SessionNavigator) *cobra.Command {
+	options := sessionTreeOptions{workspace: "."}
+	command := &cobra.Command{
+		Use:   "reviews",
+		Short: "Export auto mode decisions as unlabeled classifier evaluation cases",
+		Args: func(command *cobra.Command, args []string) error {
+			if err := cobra.NoArgs(command, args); err != nil {
+				return newUsageError(err)
+			}
+			return validateSessionOptions(options.workspace, options.session)
+		},
+		RunE: func(command *cobra.Command, _ []string) error {
+			request := SessionTreeRequest{Workspace: options.workspace, Session: options.session}
+			if err := navigator.SessionReviews(command.Context(), request, command.OutOrStdout()); err != nil {
+				return fmt.Errorf("export session reviews: %w", err)
+			}
+			return nil
+		},
+	}
+	addSessionFlags(command, &options.workspace, &options.session)
 	return command
 }
 

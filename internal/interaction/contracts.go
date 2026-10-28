@@ -220,13 +220,21 @@ type ToolDisplay struct {
 	Truncation TruncationDisplay
 	// Evidence is nil when no sources were recorded; a pointer keeps the
 	// display value comparable for frontend cache keys.
-	Evidence   *EvidenceDisplay
+	Evidence *EvidenceDisplay
+	// Review is set when auto mode decided the call.
+	Review     *ReviewDisplay
 	ID         string
 	Name       string
 	Detail     string
 	Failed     bool
 	Content    string
 	HasContent bool
+}
+
+// ReviewDisplay is an automatic permission decision on a tool call.
+type ReviewDisplay struct {
+	Blocked bool
+	Reason  string
 }
 
 // ToolOutputDisplay is a bounded, immutable projection of a tool result.

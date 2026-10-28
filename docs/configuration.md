@@ -781,7 +781,7 @@ The composer retains the real terminal cursor for IME composition.
 | `/init` | Create or improve root `AGENTS.md`; loaded after restart |
 | `/settings` | Open the five-category Settings window |
 | `/desktop` | Set up or disable Computer Use (the `user:cua` MCP service) in Settings |
-| `/context`, `/usage` | Open current context or recorded Session usage |
+| `/context`, `/usage` | Open current context or recorded Session usage, including auto mode classifier decisions |
 | `/browser` | Set up, reconnect, close or disable browser automation (the `user:browser` MCP service); `/browser status` also works |
 | `/mcp` | Manage MCP services, connection approval and credentials; see [MCP](mcp.md) |
 | `/web` | Web search services, priority order, credentials and the `web_fetch` switch; see [Web search and fetch](web.md#the-web-command) |

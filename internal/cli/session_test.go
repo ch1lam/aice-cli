@@ -174,6 +174,7 @@ func TestSessionCommandReturnsNavigatorError(t *testing.T) {
 
 type sessionRecorder struct {
 	treeRequest     cli.SessionTreeRequest
+	reviewsRequest  cli.SessionTreeRequest
 	checkoutRequest cli.SessionCheckoutRequest
 	response        string
 	err             error
@@ -185,6 +186,19 @@ func (s *sessionRecorder) SessionTree(
 	output io.Writer,
 ) error {
 	s.treeRequest = request
+	if s.err != nil {
+		return s.err
+	}
+	_, err := io.WriteString(output, s.response)
+	return err
+}
+
+func (s *sessionRecorder) SessionReviews(
+	_ context.Context,
+	request cli.SessionTreeRequest,
+	output io.Writer,
+) error {
+	s.reviewsRequest = request
 	if s.err != nil {
 		return s.err
 	}

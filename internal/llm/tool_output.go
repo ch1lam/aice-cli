@@ -58,6 +58,8 @@ type ToolReview struct {
 	Stage      int    `json:"stage,omitempty"`      // classifier stage that decided
 	Reason     string `json:"reason,omitempty"`     // shown to the agent and the user
 	Classifier string `json:"classifier,omitempty"` // "<model>@<prompt version>"
+	// Usage is what deciding cost, reported by the classifier model.
+	Usage *Usage `json:"usage,omitempty"`
 }
 
 // MarshalJSON keeps the existing JSON value for older readers. encoding/json
@@ -152,6 +154,14 @@ func (d *ToolResultDetails) Clone() *ToolResultDetails {
 	}
 	if d.Review != nil {
 		review := *d.Review
+		if review.Usage != nil {
+			usage := *review.Usage
+			if usage.Cost != nil {
+				cost := *usage.Cost
+				usage.Cost = &cost
+			}
+			review.Usage = &usage
+		}
 		copy.Review = &review
 	}
 	return &copy
