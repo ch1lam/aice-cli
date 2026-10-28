@@ -222,7 +222,8 @@ func Models() []llm.Model {
 		{
 			ID: "deepseek-v4-pro", Name: "DeepSeek V4 Pro", API: openaicompletions.API,
 			ContextWindow: 1_000_000, MaxTokens: 384_000, InputModalities: textInput(),
-			ThinkingLevelMap: llm.ThinkingLevelsMap(llm.ThinkingLevelHigh, llm.ThinkingLevelMax),
+			// The gateway accepts thinking {"type":"disabled"} for off.
+			ThinkingLevelMap: llm.ThinkingLevelsMap(llm.ThinkingLevelOff, llm.ThinkingLevelHigh, llm.ThinkingLevelMax),
 			ThinkingFormat:   llm.ThinkingFormatDeepSeek, SupportsReasoningEffort: true,
 			Pricing: llm.Pricing{Input: 0.66, Output: 1.98, CacheRead: 0.022},
 		},
@@ -230,7 +231,8 @@ func Models() []llm.Model {
 		{
 			ID: "deepseek-v4.1-flash", Name: "DeepSeek V4.1 Flash", API: openaicompletions.API,
 			ContextWindow: 1_000_000, MaxTokens: 384_000, InputModalities: imageInput(),
-			ThinkingLevelMap: llm.ThinkingLevelsMap(llm.ThinkingLevelLow, llm.ThinkingLevelHigh, llm.ThinkingLevelMax),
+			// The gateway accepts thinking {"type":"disabled"} for off.
+			ThinkingLevelMap: llm.ThinkingLevelsMap(llm.ThinkingLevelOff, llm.ThinkingLevelLow, llm.ThinkingLevelHigh, llm.ThinkingLevelMax),
 			ThinkingFormat:   llm.ThinkingFormatDeepSeek, SupportsReasoningEffort: true,
 			Pricing: llm.Pricing{Input: 0.15, Output: 0.6, CacheRead: 0.003},
 		},

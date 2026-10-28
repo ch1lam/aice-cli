@@ -78,3 +78,24 @@ func TestProviderDispatchesModelsThroughConfiguredAPIs(t *testing.T) {
 		t.Errorf("request paths = %v, want %v", got, want)
 	}
 }
+
+// The gateway accepts thinking {"type":"disabled"} for these models, which
+// lets fast callers such as the auto mode classifier skip reasoning.
+func TestDeepSeekModelsCanDisableThinking(t *testing.T) {
+	t.Parallel()
+	for _, id := range []string{"deepseek-v4.1-flash", "deepseek-v4-pro"} {
+		found := false
+		for _, model := range opencode.Models() {
+			if model.ID != id {
+				continue
+			}
+			found = true
+			if llm.ClampThinkingLevel(model, llm.ThinkingLevelOff) != llm.ThinkingLevelOff {
+				t.Errorf("%s does not expose thinking off: %v", id, llm.SupportedThinkingLevels(model))
+			}
+		}
+		if !found {
+			t.Errorf("model %s is missing", id)
+		}
+	}
+}
